@@ -6,11 +6,11 @@ version: '3'
 # This information is used to generate the build assets.
 info:
   companyName: "Christian Smith" # The name of the company
-  productName: "wails-template" # The name of the application
-  productIdentifier: "com.christianws.wails-template" # The unique product identifier
-  description: "A batteries-included Wails v3 desktop app template with GitHub Releases auto-update" # The application description
+  productName: "spectra" # The name of the application
+  productIdentifier: "com.christianwsmith.spectra" # The unique product identifier
+  description: "A powerful, feature-rich CS2 demo viewer and match analysis toolkit." # The application description
   copyright: "© 2026, Christian Smith" # Copyright text
-  comments: "wails-template" # Comments
+  comments: "spectra" # Comments
   version: "0.1.1" # The application version
   # cfBundleIconName: "appicon" # The macOS icon name in Assets.car icon bundles (optional)
   #                               # Should match the name of your .icon file without the extension

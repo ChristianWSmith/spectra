@@ -5,13 +5,13 @@
 !include "FileFunc.nsh"
 
 !ifndef INFO_PROJECTNAME
-    !define INFO_PROJECTNAME "wails-template"
+    !define INFO_PROJECTNAME "spectra"
 !endif
 !ifndef INFO_COMPANYNAME
     !define INFO_COMPANYNAME "Christian Smith"
 !endif
 !ifndef INFO_PRODUCTNAME
-    !define INFO_PRODUCTNAME "wails-template"
+    !define INFO_PRODUCTNAME "spectra"
 !endif
 !ifndef INFO_PRODUCTVERSION
     !define INFO_PRODUCTVERSION "0.1.1"

@@ -8,7 +8,7 @@
   IgnorableNamespaces="uap3">
   
   <Identity 
-    Name="com.christianws.wails-template"
+    Name="com.christianwsmith.spectra"
     Publisher="CN=My Company"
     Version="0.1.0.0" 
     ProcessorArchitecture="x64" />
@@ -16,7 +16,7 @@
   <Properties>
     <DisplayName>My Product</DisplayName>
     <PublisherDisplayName>My Company</PublisherDisplayName>
-    <Description>A batteries-included Wails v3 desktop app template with GitHub Releases auto-update</Description>
+    <Description>A powerful, feature-rich CS2 demo viewer and match analysis toolkit.</Description>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
   
@@ -29,10 +29,10 @@
   </Resources>
   
   <Applications>
-    <Application Id="com.christianws.wails-template" Executable="wails-template" EntryPoint="Windows.FullTrustApplication">
+    <Application Id="com.christianwsmith.spectra" Executable="spectra" EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements
         DisplayName="My Product"
-        Description="A batteries-included Wails v3 desktop app template with GitHub Releases auto-update"
+        Description="A powerful, feature-rich CS2 demo viewer and match analysis toolkit."
         BackgroundColor="transparent"
         Square150x150Logo="Assets\Square150x150Logo.png"
         Square44x44Logo="Assets\Square44x44Logo.png">
@@ -41,7 +41,7 @@
       </uap:VisualElements>
       
       <Extensions>
-        <desktop:Extension Category="windows.fullTrustProcess" Executable="wails-template" />
+        <desktop:Extension Category="windows.fullTrustProcess" Executable="spectra" />
         
         
       </Extensions>

@@ -1,13 +1,13 @@
 [Desktop Entry]
 Version=1.0
-Name=wails-template
-Comment=A batteries-included Wails v3 desktop app template with GitHub Releases auto-update
+Name=spectra
+Comment=A powerful, feature-rich CS2 demo viewer and match analysis toolkit.
 # The Exec line includes %u to pass the URL to the application
-Exec=/usr/local/bin/wails-template %u
+Exec=/usr/local/bin/spectra %u
 Terminal=false
 Type=Application
-Icon=wails-template
+Icon=spectra
 Categories=Utility;
-StartupWMClass=wails-template
+StartupWMClass=spectra
 
  

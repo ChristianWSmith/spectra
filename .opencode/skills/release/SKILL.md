@@ -123,8 +123,8 @@ tag, and the release must all sit on this exact commit.
    gh api "repos/{owner}/{repo}/actions/runs/<RUN_ID>/artifacts" \
      --jq '.artifacts[] | [.name, .size_in_bytes] | @tsv'
    ```
-   Expect exactly: `wails-template-linux-amd64`,
-   `wails-template-windows-amd64.exe`, `wails-template-darwin-arm64.zip`,
+   Expect exactly: `spectra-linux-amd64`,
+   `spectra-windows-amd64.exe`, `spectra-darwin-arm64.zip`,
    all with non-zero sizes. Missing artifact on a green run = packaging
    bug; stop and investigate.
 7. **Tag the built commit.** Tags don't trigger CI anymore — this is a
@@ -144,7 +144,7 @@ tag, and the release must all sit on this exact commit.
    a git working tree:
    ```sh
    REPO=$(gh repo view --json nameWithOwner --jq .nameWithOwner)
-   mkdir -p /tmp/wails-template-release && cd /tmp/wails-template-release
+   mkdir -p /tmp/spectra-release && cd /tmp/spectra-release
    gh api "repos/$REPO/actions/runs/<RUN_ID>/artifacts" \
       --jq '.artifacts[] | [.id, .name] | @tsv' |
    while IFS=$'\t' read -r id name; do
@@ -162,12 +162,12 @@ tag, and the release must all sit on this exact commit.
    never the assets (`*.zip` matches the double-suffixed wrapper too):
    ```sh
    for f in *.zip; do unzip -o "$f"; done
-   # → wails-template-linux-amd64
-   #   wails-template-windows-amd64.exe
-   #   wails-template-darwin-arm64.zip
-   rm -f wails-template-linux-amd64.zip \
-         wails-template-windows-amd64.exe.zip \
-         wails-template-darwin-arm64.zip.zip
+   # → spectra-linux-amd64
+   #   spectra-windows-amd64.exe
+   #   spectra-darwin-arm64.zip
+   rm -f spectra-linux-amd64.zip \
+         spectra-windows-amd64.exe.zip \
+         spectra-darwin-arm64.zip.zip
    ls   # exactly the three assets (+ SHA256SUMS after the next step); any
         # leftover *.zip here means a wrapper survived — remove it
    ```
@@ -176,19 +176,19 @@ tag, and the release must all sit on this exact commit.
    downloads these exact names).
 3. **Sanity-check the assets:**
    ```sh
-   file wails-template-linux-amd64   # ELF 64-bit LSB executable, executable bit set
-   file wails-template-windows-amd64.exe  # PE32+ executable (GUI)
-   unzip -l wails-template-darwin-arm64.zip
-   # exactly one top-level entry: wails-template.app/ (the updater
+   file spectra-linux-amd64   # ELF 64-bit LSB executable, executable bit set
+   file spectra-windows-amd64.exe  # PE32+ executable (GUI)
+   unzip -l spectra-darwin-arm64.zip
+   # exactly one top-level entry: spectra.app/ (the updater
    # rejects multi-entry archives)
    ```
 4. **Generate `SHA256SUMS`** in the scratch dir — the updater fetches
    this sidecar and refuses to install an asset whose hash doesn't match
    (format is `sha256sum` output: `<hash>  <filename>`):
    ```sh
-   sha256sum wails-template-linux-amd64 \
-             wails-template-windows-amd64.exe \
-             wails-template-darwin-arm64.zip > SHA256SUMS
+   sha256sum spectra-linux-amd64 \
+             spectra-windows-amd64.exe \
+             spectra-darwin-arm64.zip > SHA256SUMS
    cat SHA256SUMS   # three lines, bare asset filenames
    ```
 5. **Release notes:** one bullet per commit since the last tag —
@@ -203,10 +203,10 @@ tag, and the release must all sit on this exact commit.
      --title <X.Y.Z> \
      --target <SHA> \
      --notes "<notes>" \
-     /tmp/wails-template-release/wails-template-linux-amd64 \
-     /tmp/wails-template-release/wails-template-windows-amd64.exe \
-     /tmp/wails-template-release/wails-template-darwin-arm64.zip \
-     /tmp/wails-template-release/SHA256SUMS
+     /tmp/spectra-release/spectra-linux-amd64 \
+     /tmp/spectra-release/spectra-windows-amd64.exe \
+     /tmp/spectra-release/spectra-darwin-arm64.zip \
+     /tmp/spectra-release/SHA256SUMS
    ```
 7. **Verify:**
    ```sh

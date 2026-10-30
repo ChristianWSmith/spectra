@@ -8,7 +8,7 @@
         AllowPromptForPassword="false">
     </Settings>
     <Installer
-        Path="wails-template"
+        Path="spectra"
         Arguments=""
         InstallLocation="C:\Program Files\My Company\My Product">
     </Installer>
@@ -18,17 +18,17 @@
         PublisherName="CN=My Company"
         PublisherDisplayName="My Company"
         Version="0.1.0.0"
-        PackageDescription="A batteries-included Wails v3 desktop app template with GitHub Releases auto-update">
+        PackageDescription="A powerful, feature-rich CS2 demo viewer and match analysis toolkit.">
         <Capabilities>
             <Capability Name="runFullTrust" />
             
         </Capabilities>
         <Applications>
             <Application
-                Id="com.christianws.wails-template"
-                Description="A batteries-included Wails v3 desktop app template with GitHub Releases auto-update"
+                Id="com.christianwsmith.spectra"
+                Description="A powerful, feature-rich CS2 demo viewer and match analysis toolkit."
                 DisplayName="My Product"
-                ExecutableName="wails-template"
+                ExecutableName="spectra"
                 EntryPoint="Windows.FullTrustApplication">
                 
             </Application>
@@ -43,11 +43,11 @@
             <Framework>false</Framework>
             <DisplayName>My Product</DisplayName>
             <PublisherDisplayName>My Company</PublisherDisplayName>
-            <Description>A batteries-included Wails v3 desktop app template with GitHub Releases auto-update</Description>
+            <Description>A powerful, feature-rich CS2 demo viewer and match analysis toolkit.</Description>
             <Logo>Assets\AppIcon.png</Logo>
         </Properties>
     </PackageInformation>
-    <SaveLocation PackagePath="wails-template.msix" />
+    <SaveLocation PackagePath="spectra.msix" />
     <PackageIntegrity>
         <CertificatePath></CertificatePath>
     </PackageIntegrity>

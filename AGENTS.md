@@ -1,14 +1,15 @@
 # AGENTS.md
 
 Guide for AI agents (and humans) working in this repository. This is a
-Wails v3 desktop-app template (Go services + Svelte 5 frontend): single Go
+Wails v3 desktop app (*A powerful, feature-rich CS2 demo viewer and match
+analysis toolkit.*; Go services + Svelte 5 frontend): single Go
 module at the repo root, GitHub Releases distribution, framework in-app
 auto-updater.
 
 ## Commands
 
 ```sh
-make build          # wails3 build → bin/wails-template (bootstraps pinned wails3 CLI)
+make build          # wails3 build → bin/spectra (bootstraps pinned wails3 CLI)
 make run            # build + run
 make dev            # hot reload: wails3 dev (Go rebuilds + Vite dev server)
 make build-assets   # regenerate platform metadata from build/config.yml
@@ -30,6 +31,39 @@ stock Taskfiles shell out to it) — `make deps` handles that (it also checks
 Node is 22+ and warns on missing Linux WebKitGTK libs), and
 the Makefile prepends `$(go env GOPATH)/bin` to PATH.
 
+### Visual smoke tests (Linux/KDE)
+
+Interactive UI checks drive the live app with `xdotool` and screenshot
+with `spectacle`. On KDE the app must run on **X11** (native Wayland
+windows are invisible to xdotool), detached (tool runners kill background
+process groups when a command times out):
+
+```sh
+setsid -f env GDK_BACKEND=x11 ./bin/spectra >/tmp/spectra.log 2>&1
+sleep 5
+WID=$(xdotool search --class "spectra" | head -1)
+xdotool windowactivate "$WID"
+xdotool mousemove X Y click 1            # X11 logical coords
+xdotool type --delay 60 "text"
+xdotool key Return
+spectacle -b -n -o /tmp/shot.png         # then Read the PNG
+```
+
+- Click targets come from reading a prior screenshot, not window
+  geometry: screenshots are physical pixels and the screen scale
+  (~1.14× here) makes them drift from xdotool's logical coordinates.
+  `xdotool mousemove` is **screen**-absolute: add the window origin
+  (`xdotool getwindowgeometry --shell`, which also gives the logical
+  size to derive the scale) to in-window coordinates, and mind that
+  the screenshot includes the titlebar (~31 logical px at top).
+- Input injection needs KWin's EIS permission — the one-time "Remote
+  Control" prompt (tick "Always allow") writes
+  `XwaylandEisNoPromptApps=xdotool` into `~/.config/kwinrc`.
+- Kill with `pkill -x spectra` — never `pkill -f bin/spectra`, which
+  matches the invoking shell's own command line.
+- Known quirk: the KWin titlebar can steal the first click after
+  activation; verify effects with a screenshot after each step.
+
 ## Layout
 
 | Path | Role |
@@ -42,6 +76,11 @@ the Makefile prepends `$(go env GOPATH)/bin` to PATH.
 | `Taskfile.yml` + `build/` | stock Wails v3 build system (per-OS tasks, packaging, icons, platform metadata). `build/config.yml` holds product name/ID/version; run `make build-assets` after editing it |
 | `build/appicon.png` | the app icon source (512×512 PNG); `wails3 task common:generate:icons` (run automatically by every build) derives `.ico`/`.icns` |
 | `Makefile` | the single source of build/package commands, shared with CI |
+| `ref/` | project reference docs & sources: `PRD.md`, `PLAN_MILESTONE_*.md`, `EXTRACTION_TECHNIQUES.md`, `FINAL_REPORT.md`, `TAXONOMY.md`, plus `extractor/` (standalone research extractor + probe as nested modules — reference only, never built/linted by the root module) |
+| `donk.dem.zst` | the golden acceptance demo, tracked via **Git LFS** (`.gitattributes`); acceptance tests parse it and skip if absent; regenerate golden fixtures deliberately when extraction changes |
+
+`ref/extractor`'s nested `go.mod` files keep it out of root `./...` builds.
+After cloning, run `git lfs pull` if the golden demo is needed.
 
 ## Release pipeline
 
@@ -52,9 +91,9 @@ the Makefile prepends `$(go env GOPATH)/bin` to PATH.
   `make artifact`) so CI and local flows are the same commands; the uploaded
   artifact name comes from `make artifact-name`.
 - Release assets (named for the updater's GitHub provider matcher, which
-  picks by GOOS+GOARCH substrings): `wails-template-linux-amd64` (raw
-  binary), `wails-template-windows-amd64.exe` (raw),
-  `wails-template-darwin-arm64.zip` (the `.app` bundle as the sole
+  picks by GOOS+GOARCH substrings): `spectra-linux-amd64` (raw
+  binary), `spectra-windows-amd64.exe` (raw),
+  `spectra-darwin-arm64.zip` (the `.app` bundle as the sole
   top-level entry — the updater rejects multi-entry archives). The release
   skill adds a `SHA256SUMS` sidecar that the updater verifies downloads
   against. These layouts are a contract between `make artifact`,
@@ -85,14 +124,3 @@ the Makefile prepends `$(go env GOPATH)/bin` to PATH.
   `make build-assets` and commit the
   regenerated assets. The release skill bumps its `version` in lockstep with
   the dispatch input (two sources, one release).
-
-## Renaming the template
-
-The identity tokens are `wails-template` (app name, asset prefix, module
-tail) and `ChristianWSmith` (owner). Grep both and update: `go.mod`,
-`main.go` (`appName`, `updateRepo`), `build/config.yml` (+ regenerate build
-assets), `Taskfile.yml` (`APP_NAME`), `frontend/index.html` (title),
-`frontend/src/App.svelte` (bindings import path contains the module path),
-`Makefile` (`APP`), `.gitignore`, `icon` (`build/appicon.png`), plus this
-file and the release skill. `appName` must equal `build/config.yml`'s
-`productName` and Taskfile's `APP_NAME`.

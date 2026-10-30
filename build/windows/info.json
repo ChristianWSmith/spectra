@@ -6,10 +6,10 @@
 		"0409": {
 			"ProductVersion": "0.1.1",
 			"CompanyName": "Christian Smith",
-			"FileDescription": "A batteries-included Wails v3 desktop app template with GitHub Releases auto-update",
+			"FileDescription": "A powerful, feature-rich CS2 demo viewer and match analysis toolkit.",
 			"LegalCopyright": "© 2026, Christian Smith",
-			"ProductName": "wails-template",
-			"Comments": "wails-template"
+			"ProductName": "spectra",
+			"Comments": "spectra"
 		}
 	}
 }

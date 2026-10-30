@@ -1,8 +1,8 @@
 [Desktop Entry]
 Type=Application
-Name=wails-template
-Exec=wails-template
-Icon=wails-template
+Name=spectra
+Exec=spectra
+Icon=spectra
 Categories=Development;
 Terminal=false
 Keywords=wails

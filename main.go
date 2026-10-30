@@ -20,10 +20,10 @@ const (
 	// appName is the binary/app name. Keep in sync with Taskfile.yml's
 	// APP_NAME and build/config.yml's productName — packaging, the window
 	// title, the prefs file, and the updater all key off the same string.
-	appName = "wails-template"
+	appName = "spectra"
 	// updateRepo is the GitHub repo whose releases are checked for updates.
 	// Keep in sync with the repository's owner/name.
-	updateRepo = "ChristianWSmith/wails-template"
+	updateRepo = "ChristianWSmith/spectra"
 
 	// defaultWindowWidth / defaultWindowHeight are used until the user
 	// resizes the window, and whenever a saved size is missing or corrupt.
@@ -53,7 +53,7 @@ func main() {
 
 	app := application.New(application.Options{
 		Name:        appName,
-		Description: "A batteries-included Wails v3 desktop app template with GitHub Releases auto-update",
+		Description: "A powerful, feature-rich CS2 demo viewer and match analysis toolkit.",
 		Services: []application.Service{
 			application.NewService(kvs),
 			application.NewService(svc),

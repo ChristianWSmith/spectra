@@ -1,4 +1,4 @@
-module github.com/ChristianWSmith/wails-template
+module github.com/ChristianWSmith/spectra
 
 go 1.26.0
 

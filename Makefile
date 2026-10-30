@@ -1,4 +1,4 @@
-APP := wails-template
+APP := spectra
 GOPATH_BIN := $(shell go env GOPATH)/bin
 # Pin the CLI to the same version the app imports: go.mod is the single
 # source of truth (Dependabot bumps it like any other dependency).

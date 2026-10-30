@@ -3,26 +3,26 @@
 #
 # The lines below are called `modelines`. See `:help modeline`
 
-name: "wails-template"
+name: "spectra"
 arch: ${GOARCH}
 platform: "linux"
 version: "0.1.1"
 section: "default"
 priority: "extra"
 maintainer: ${GIT_COMMITTER_NAME} <${GIT_COMMITTER_EMAIL}>
-description: "A batteries-included Wails v3 desktop app template with GitHub Releases auto-update"
+description: "A powerful, feature-rich CS2 demo viewer and match analysis toolkit."
 vendor: "Christian Smith"
 homepage: "https://wails.io"
 license: "MIT"
 release: "1"
 
 contents:
-  - src: "./bin/wails-template"
-    dst: "/usr/local/bin/wails-template"
+  - src: "./bin/spectra"
+    dst: "/usr/local/bin/spectra"
   - src: "./build/appicon.png"
-    dst: "/usr/share/icons/hicolor/128x128/apps/wails-template.png"
-  - src: "./build/linux/wails-template.desktop"
-    dst: "/usr/share/applications/wails-template.desktop"
+    dst: "/usr/share/icons/hicolor/128x128/apps/spectra.png"
+  - src: "./build/linux/spectra.desktop"
+    dst: "/usr/share/applications/spectra.desktop"
 
 # Default dependencies for the GTK4 + WebKitGTK 6.0 stack (Ubuntu 24.04+ / Debian 13+)
 depends:

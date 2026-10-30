@@ -1,6 +1,6 @@
 <script>
   import { onMount } from 'svelte';
-  import { AppService } from '../bindings/github.com/ChristianWSmith/wails-template';
+  import { AppService } from '../bindings/github.com/ChristianWSmith/spectra';
 
   let version = $state('…');
 
