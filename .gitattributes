@@ -1,3 +1,6 @@
 * text=auto eol=lf
 
 *.png binary
+
+# Golden acceptance demo (see ref/PLAN_MILESTONE_1.md §6)
+*.dem.zst filter=lfs diff=lfs merge=lfs -text

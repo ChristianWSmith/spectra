@@ -42,3 +42,9 @@ go.work.sum
 # Session working notes (untracked reference)
 .opencode/*
 !.opencode/skills/
+
+# CS2 Demos
+*.zst
+*.dem
+# …except the golden acceptance demo, tracked via Git LFS
+!donk.dem.zst
