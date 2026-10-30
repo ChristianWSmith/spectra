@@ -8,10 +8,10 @@
 
 ## 1. Grounding facts
 
-- **Voice is real and big.** The probe (EXTRACTION_TECHNIQUES §10) found **77 702 Opus chunks, all 10 XUIDs, 0 casters** in the local research FACEIT demo. `svc_CDemoFileHeader`-style net-handler pattern applies: `msg.CSVCMsg_VoiceData` gives payload + XUID + (via GameState at handler time) tick + caster flag + audible mask. Whether the golden demo carries voice is TBD — the M1 baseline pass records presence in `donk.golden.json`.
-- **Availability is conditional** (PRD §5.9): present in the examined FACEIT/server demos; **not established for Valve MM** (GOTV strips it). UI must show a per-match "Voice: 77k chunks / 10 players" badge — or "not present" — never pretend.
-- Audio format: Opus frames in Steam's CS2 voice framing (48 kHz mono typical). Decode needs an Opus decoder: **pure-Go `pion/opus` first** (keeps cgo-free builds); `libopus` cgo fallback only if quality/compat fails (evaluation task M4-T1).
-- Chat is already captured in M1 (`chat` table; 3 messages in the research demo). Public-chat **decryption** (post-2026-09 `svc_EncryptedData`) needs the `.dem.info` GC key (`cl_decryptdata_key_pub`, 16 hex chars) — the research demo had **0 encrypted messages**, so decryption is implemented but dormant until a Valve MM demo with companion file appears (M4-T5 research; PRD §5.15).
+- **Voice is real and big — and the golden demo HAS IT.** Baseline 2026-10-30: **123,507 `CSVCMsg_VoiceData` chunks, all 10 XUIDs, 0 casters** on donk (research demo: 77,702). Framing decoded end-to-end (`ref/findings/findings-voice.md`): `m.GetAudio()` = `CMsgVoiceAudio{format=OPUS, sample_rate=48000, num_packets=1, packet_offsets=[N,0,0,0]}` → **`voice_data` bytes are exactly one raw Opus packet** (no TOC/length wrapper), 10 ms frames = 480 samples mono. `m.Tick` is 0 — take tick from `GameState().IngameTick()` at handler time. Payload: 31–137 B, mean 62.5 B (≈50 kbps), **≈7.7 MB raw sidecar** for the golden demo. No DTX (silence = absence of chunks); `section_number` is a per-sender counter — use it to detect the 0.014 % gaps.
+- **Availability by source** (PRD §5.9 — web-researched with citations, `ref/findings/findings-q4-voice-availability.md`): **FACEIT yes** (both our demos, empirically + FACEIT support posts + 8 dedicated tools); ESEA yes, 5EPlay yes (restored Nov 2024); **Valve Premier/Competitive MM no** (unanimous across every voice-extractor README + mechanism: GOTV hears nobody with `sv_alltalk` off — MM demos are *the* normal no-voice case, no `.dem.info` sidecar changes it); pro/HLTV GOTV no (`tv_relayvoice 0` in official tournament configs); POV demos: teammates yes, own voice only with `voice_loopback 1`, enemies no (CS:GO-documented, CS2 undertested). UI must show a per-match "Voice: 123k chunks / 10 players" badge — or "not present" — never pretend; a no-voice MM demo must read as normal, not broken.
+- Audio format solved (was evaluation task M4-T1 — **spike closed 2026-10-30**): decode with **pure-Go `github.com/pion/opus` pinned to a main pseudo-version** (`v0.1.1-0.20261026214112-e7b8aa55508c` — tag v0.1.0 misses libopus-parity + PLC fixes): **0 errors / 41,288 packets**, spectrograms show real speech, `CGO_ENABLED=0` verified. No libopus/cgo fallback needed; revisit only if a demo with lossy/40–60 ms frames appears (pion issues noted in `ref/findings/findings-deps.md` §2).
+- Chat is already captured in M1 (`chat` table; 34 messages on the golden demo). Public-chat **decryption** (post-2026-09 `svc_EncryptedData`) needs the `.dem.info` GC key (`cl_decryptdata_key_pub`, 16 hex chars) — **both known demos had 0 encrypted messages** (probe: EncryptedData 0), so decryption stays implemented-but-dormant and synthetic-tested until a Valve MM demo with companion file appears (M4-T5 research; PRD §5.15).
 - Match administration events (connect/disconnect/team/name change, ConVars) already flow into M1 generic/typed events; M4 surfaces them as a proper "Context" view.
 
 ## 2. Scope
@@ -57,7 +57,7 @@ Rationale: opus payloads concatenated per player → one file per player (few ha
 
 ## 4. Sync model
 
-- **Master clock = replay/timeline time (match seconds).** Audio engine consumes the clock: at time T, find chunks with tick ≤ T·tickrate and schedule PCM blocks with offset. Drift correction: resync if > 50 ms off; Web Audio `AudioContext` clock preferred over `<audio>` for precise mixing (check WebKitGTK AudioContext support in the M4-T1 spike; fallback: one `<audio>` per player with block-queue scheduling).
+- **Master clock = replay/timeline time (match seconds).** Audio engine consumes the clock: at time T, find chunks with tick ≤ T·tickrate and schedule PCM blocks with offset. Drift correction: resync if > 50 ms off; Web Audio `AudioContext` clock preferred over `<audio>` for precise mixing. **WebKitGTK AudioContext verified (pre-work, `ref/findings/findings-webview.md`): usable — scheduling error ≤0.2 ms, `currentTime` tracks wall clock; NO `<audio>` fallback needed.** Requirements: one user-gesture `resume()` ("Enable voice" pattern, context starts `suspended`), **`gst-plugins-good` as a documented Linux runtime dep** (else "Failed to start the audio device"), startup self-test (`resume()` → `state==='running'` → badge), and `audioCtx.currentTime` for timing (`performance.now()` is 1.0 ms coarse).
 - Seek/loop/speed all re-anchor audio; mute/solo are gain nodes.
 - Timeline voice lanes are index-only (no audio) → click seeks master clock → audio + replay follow.
 
@@ -80,7 +80,7 @@ Match header gains voice badge; Timeline gains voice filter + around-event affor
 
 ## 6. Work breakdown
 
-1. **Opus evaluation spike (M4-T1)** — `pion/opus` decode of a real voice chunk → WAV → listen check (robotic/garbled = framing wrong; investigate Steam voice framing, sample rate, FEC). Source chunk: the golden demo if the baseline shows voice present; otherwise source a voice-bearing demo locally (the research parse found 77 702 chunks in a FACEIT demo — ref/EXTRACTION_TECHNIQUES §10). Decide pure-Go vs libopus; record here.
+1. **Opus evaluation spike (M4-T1)** — **DONE as pre-work 2026-10-30** (full report `ref/findings/findings-voice.md`, code `ref/findings/spikes/voicespike/`): whole payload = one raw Opus packet @ 48 kHz mono 10 ms; `pion/opus` main pseudo-version, 0/41,288 decode errors; WAVs + spectrograms verified as real speech; pure-Go verdict = **ship it** (no libopus). Remaining build work: the chunk dump/drain pipeline below.
 2. **Extraction + storage** — chunk writer sidecar + DB index; presence job; reprocess integration; unit tests with synthetic chunk streams.
 3. **Decode pipeline** — block cache, background decode job, progress, cache eviction.
 4. **Audio engine (frontend)** — master-clock sync, per-player gain, Web Audio spike on WebKitGTK; fallback path.
@@ -93,8 +93,8 @@ Match header gains voice badge; Timeline gains voice filter + around-event affor
 ## 7. Testing & acceptance
 
 - Synthetic chunk-stream unit tests for writer/index/decode scheduling (no demo bytes in repo).
-- Integration (same skip-if-absent + fixture harness as M1 §6): golden demo → `voice_presence` asserted against `donk.golden.json` — whatever it is, **including zero**. A zero-voice baseline still CI-tests presence detection and the absence UX. If the golden demo has no voice, deep playback acceptance runs only on the dev machine against a locally sourced voice-bearing demo.
-- Manual acceptance on a voice-bearing demo (golden if present, else a locally sourced one): play match audio; solo a chosen player; verify a known voice spike aligns with a round event; seek mid-round — audio resumes in sync < 100 ms; mute one player while replay plays at 2×.
+- Integration (same skip-if-absent + fixture harness as M1 §6): golden demo → `voice_presence` asserted against `donk.golden.json` — baseline says **present (123,507 chunks / 10 XUIDs / 0 casters)**. The absence path (Valve MM demos, fixture=zero) is covered by synthetic/unit tests since the golden demo no longer exercises it.
+- Manual acceptance on the golden demo itself: play match audio; solo a chosen player; verify a known voice spike aligns with a round event; seek mid-round — audio resumes in sync < 100 ms; mute one player while replay plays at 2×.
 - Exit-criteria walkthrough: open a voice-bearing match → see voice badge + lanes → click a plant event → hear comms around it while replay shows the plant → export a chosen player's track.
 
 ## 8. Performance targets
@@ -109,15 +109,15 @@ Match header gains voice badge; Timeline gains voice filter + around-event affor
 
 ## 9. Risks & open questions
 
-1. **Opus framing** — Steam voice framing quirks (TOC byte, band ranges) are the #1 technical risk; the M4-T1 spike gates everything. Fallback: `libopus` cgo for decode-only builds is acceptable if pure-Go fails (but keep main binary cgo-free if possible — decode as optional helper process is plan C).
-2. **WebKitGTK AudioContext** — verify; fallback scheduling path budgeted in M4-T4.
-3. **Disk bloat** — PCM cache for 10 players × 30 min ≈ 3.4 GB @ 48 kHz s16 mono… too big: decode compressed (FLAC) or store 16 kHz mono for speech (≈ 1.1 GB), or stream-decode without cache. Decision in M4-T2: **default 16 kHz mono FLAC cache** (speech-band sufficient), full-rate optional.
+1. **Opus framing** — **closed by pre-work spike**: framing/rate proven (0 decode errors on two full player corpora, spectrograms clean; `ref/findings/findings-voice.md`). Residual: pion/opus has no FEC (LBRR discarded upstream) and PLC only on our pinned main — golden demo loses 0.014 % of chunks (17/123,507), `section_number` detects gaps; acceptable. libopus/cgo fallback retired unless a badly-behaved demo appears.
+2. **WebKitGTK AudioContext** — **verified by pre-work spike**: usable, ≤0.2 ms scheduling; residual = document `gst-plugins-good` Linux runtime dep + user-gesture `resume()` + startup self-test (§4). No fallback path budgeted anymore.
+3. **Disk bloat** — PCM cache for 10 players × 30 min ≈ 3.4 GB @ 48 kHz s16 mono… too big: decode compressed (FLAC) or store 16 kHz mono for speech (≈ 1.1 GB), or stream-decode without cache. Decision in M4-T2: **default 16 kHz mono FLAC cache** (speech-band sufficient), full-rate optional. Scale reference: raw compressed voice sidecar for the golden demo ≈ **7.7 MB** (measured).
 4. **Valve MM voice absence** — product must not look broken; presence badge + explainer link.
 5. **Whisper runtime weight** — keep fully optional, external binary, no bundled models.
 
 ## 10. Definition of done
 
-- Golden demo: presence matches fixture; if voice is present, per-player tracks are playable synced to replay, lanes render, export works. If the fixture shows zero voice, the absence path is CI-enforced and playback acceptance is recorded against a locally sourced voice-bearing demo on a dev machine.
+- Golden demo (voice confirmed present): fixture says voice_presence=true/123,507; per-player tracks playable synced to replay, lanes render, export works. The zero-voice path is unit/synthetic-tested (the golden demo no longer exercises it).
 - A Valve-MM-style no-voice demo degrades gracefully with a clear badge.
 - Chat decryption path implemented + tested with synthetic vectors; `.dem.info` discovery works.
 - Transcription either shipped behind a Settings flag or explicitly deferred with a note in this file.

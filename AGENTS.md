@@ -76,7 +76,7 @@ spectacle -b -n -o /tmp/shot.png         # then Read the PNG
 | `Taskfile.yml` + `build/` | stock Wails v3 build system (per-OS tasks, packaging, icons, platform metadata). `build/config.yml` holds product name/ID/version; run `make build-assets` after editing it |
 | `build/appicon.png` | the app icon source (512×512 PNG); `wails3 task common:generate:icons` (run automatically by every build) derives `.ico`/`.icns` |
 | `Makefile` | the single source of build/package commands, shared with CI |
-| `ref/` | project reference docs & sources: `PRD.md`, `PLAN_MILESTONE_*.md`, `EXTRACTION_TECHNIQUES.md`, `FINAL_REPORT.md`, `TAXONOMY.md`, plus `extractor/` (standalone research extractor + probe as nested modules — reference only, never built/linted by the root module) |
+| `ref/` | project reference docs & sources: `PRD.md`, `PLAN_MILESTONE_*.md`, `EXTRACTION_TECHNIQUES.md`, `FINAL_REPORT.md`, `TAXONOMY.md`, `findings/` (pre-work spike reports + index + spike code), plus `extractor/` (standalone research extractor + probe as nested modules — reference only, never built/linted by the root module) |
 | `donk.dem.zst` | the golden acceptance demo, tracked via **Git LFS** (`.gitattributes`); acceptance tests parse it and skip if absent; regenerate golden fixtures deliberately when extraction changes |
 
 `ref/extractor`'s nested `go.mod` files keep it out of root `./...` builds.

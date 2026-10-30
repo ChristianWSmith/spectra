@@ -8,9 +8,9 @@
 
 ## 1. Grounding facts
 
-- Positions are **not** in game events — they live in entity state and must be **sampled during parsing** (PRD §6.3: "cannot be reconstructed later if discarded"). The extractor never sampled; EXTRACTION_TECHNIQUES §13 documents `events.FrameDone` → `Player.Position()` as the proven next step (~4.5 B/tick/player estimate there; budget differently below).
-- Reference demo: 120 736 frames @ 64 Hz, ~31.5 min, 10 players → raw per-player-frame record ≈ 120k × 10 = **1.2 M samples/match**.
-- Map: first map pack = **whatever map the golden demo is on** (known after the M1 baseline pass). The research parse was on `de_mirage` — its calibration notes in `ref/` apply if the golden demo matches; otherwise calibrate fresh. PRD open question #8 (map assets/coordinate transforms) is this milestone's core research task.
+- Positions are **not** in game events — they live in entity state and must be **sampled during parsing** (PRD §6.3: "cannot be reconstructed later if discarded"). The extractor never sampled; EXTRACTION_TECHNIQUES §13 documents `events.FrameDone` → `Player.Position()` as the proven next step. **Spike (M2-T1) ran 2026-10-30 — measured numbers in §3; code in `ref/findings/spikes/sampler/`.**
+- Golden demo: **136,948 frames @ 64 Hz, 35m39s, 10 players, avgAlive 7.56** → **~1.04 M player-records/match** (measured, not estimated).
+- Map: first map pack = **`de_cache`** (confirmed by baseline parse — header sniff in `ref/findings/findings-mappack.md`, demoinfocs agrees). Research parse was `de_mirage` — its calibration notes apply to mirage only, when that map pack is added. **PRD open question #8 is answered in `ref/findings/findings-mappack.md`** (transform formula, asset sources, licensing posture, JSON schema) — M2's remaining work is implementing it, not discovering it.
 - The M1 event stream already carries: kill/damage positions (where the event struct exposes them), grenade throw/detonation ticks, bomb plant site/tick, smoke/fire start ticks — replay sync anchors.
 - Frontend: Svelte 5 in WebKitGTK 6.0 / WebView2 / WKWebView — Canvas 2D is the safe renderer; WebGL exists but is not required for M2's scope (10 markers + trails). Heatmaps (M3) may revisit.
 
@@ -20,7 +20,7 @@
 
 - Historical position extraction: per-frame (or sampled) position + view angles for all players, gated to real rounds (skip warmup or tag it).
 - Sidecar storage per match, outside SQLite blobs (see §4) with an index; DB records format version + tick rate.
-- Map asset pack: calibrated radar image + coordinate transform for `de_mirage` (then a process to add maps cheaply).
+- Map asset pack: calibrated radar image + coordinate transform for **`de_cache`** (golden demo), then a process to add maps cheaply.
 - Replay canvas: map, player dots (team colors, name labels, alive/dead, health/armor readout, active weapon), view direction cones, movement trails, bomb (carried/planted/site), grenades (projectile + smoke circle + molly area), zoom/pan.
 - Playback controls: play/pause, speed (0.25×–8×), tick/frame step, jump to round start, jump to events (kills/plants/defuses/detonations via M1 timeline), scrub, loop interval, reverse (data is fully indexed — trivial).
 - Event ↔ replay sync both directions: click event in timeline → replay seeks; click a player moment → timeline filters.
@@ -49,7 +49,16 @@ type PlayerSample struct {
 ```
 
 - Hook `events.FrameDone`; skip warmup frames (flag, don't drop — cheap and useful); one writer goroutine appending to a buffered channel → file writer (never hold a match in RAM).
-- Sampling decision (task M2-T1, benchmark on the golden demo): **full 64 Hz first**, measure sidecar size after delta+zstd; if > ~50 MB/match, offer half-rate (32 Hz) fallback and record choice per match. Frontend interpolates between samples anyway. (If the golden demo's tickrate differs from 64, scale targets accordingly.)
+- Sampling decision (task M2-T1, benchmarked on the golden demo 2026-10-30, code `ref/findings/spikes/sampler/`):
+
+  | buffer (136,948 frames, 10 slots, avgAlive 7.56) | raw | zstd |
+  |---|---:|---:|
+  | full 64 Hz, f32 (17 B/player) | 18.4 MB | 6.9 MB |
+  | full 64 Hz, int16@1.0 u + u8 yaw (8 B/player) | 9.1 MB | **2.5 MB** |
+  | half 32 Hz, f32 | 9.2 MB | 3.7 MB |
+  | half 32 Hz, q16 | 4.6 MB | 1.4 MB |
+
+  Parse overhead: **28.9 s → 39.8 s (+37.6 %)** for the worst case (four encodings buffered in RAM simultaneously; a real single-encoding writer will be cheaper) — within the ≤+50 % target. **Decision: full 64 Hz, no 32 Hz fallback** (budget was ≤30 MB raw — f32 18.4 MB clears it even uncompressed). Record encoding choice per match in `meta.json`; delta/varint refinement (§4) stays an M2 build task — int16@1.0 u already halves raw and is visually indistinguishable at radar scale (verify visually in M2). Frame records: 6 B header (tick i32 + alive bitmask u16) + per-alive-player payload; bomb/grenade entities add a little on top (not in spike).
 - Extend the M1 job pipeline: stage `positions` after `store`; progress events continue to work. Reprocess must regenerate sidecars when format version changes.
 
 ## 4. Sidecar storage
@@ -75,18 +84,24 @@ frontend/public/maps/<name>/
 
 `meta.json`: affine or homography world→image (`pos.x, pos.y → px, py`), world bounds, bombsites A/B polygons (for plant highlighting), callout label anchors (P1).
 
-- **Calibration process (M2-T2):** derive the mirage transform from known landmark correspondences (spawn points / bomb sites vs radar pixels) — the extractor can print world coords at plant ticks (bomb site positions) to bootstrap; hand-tune visually in a dev calibration view (dev-only route, drag crosshair → log pairs).
+- **Transform constants come from Valve's overview txt, not hand-calibration** (`ref/findings/findings-mappack.md` §2): `resource/overviews/de_cache.txt` inside `pak01_dir.vpk` carries `pos_x/pos_y/scale`; community tabulation gives de_cache `pos_x=-2000, pos_y=3250, scale=5.5` — **verify by parsing the game file or a community mirror, don't trust the transcription blindly.** Formula: `px=(wx-pos_x)/scale`, `py=(pos_y-wy)/scale` (inverted Y). M2-T2 calibration view becomes a **verification** step (drag crosshair → log pairs) rather than derivation; the extractor can still print world coords at plant ticks for the bomb-in-site assertion.
+- **Radar pixels: tiered acquisition, never bundled in public releases** (posture in `findings-mappack.md` §4): numeric metadata (transform constants, site/spawn fractions) ships in-repo as our own JSON (schema sketch in `findings-mappack.md` §5 — modeled on awpy `map_data.json`); pixels come from (1) extraction from the user's local CS2 install (`overheadmaps/<map>_radar_psd.vtex_c`), or (2) optional runtime download of a community mirror with a "© Valve" notice. Site polygons (bomb-in-site invariant) need nav-mesh `bomb-target` flags or vmap `func_bombsite` extraction — centers from the overview txt suffice for M2 with a distance threshold.
 - Format is the contract: adding `de_inferno` later = one image + one JSON + verification, no code change.
 - Unknown map in library: replay tab shows "map pack missing" with import-a-pack affordance; everything else in M1 still works.
 
 ## 6. Data path to the frontend
 
-Spike early (M2-T3): two candidates — benchmark both on the golden demo, pick one, record decision here.
+Spike run (M2-T3, pre-work 2026-10-30; Linux WebKitGTK 2.54.2 + Wails v3.0.0 — full data `ref/findings/findings-webview.md` Q2, methodology `ref/findings/spikes/webvprobe/`):
 
-- **A. Range API:** `ReplayService.GetPositions(matchID, startFrame, endFrame) → []byte` (raw, decompressed server-side or ship zstd blocks + `DecompressionStream` in webview). Frontend keeps a sliding window; memory bounded; chatty.
-- **B. Full sidecar stream:** one `ArrayBuffer` (~5–25 MB after compression for the golden demo) transferred once on replay open; all playback client-side; simplest and likely fine for desktop webviews.
+| path | 32 MiB measured | note |
+|---|---|---|
+| **Asset-server HTTP full fetch** (`AssetOptions.Handler` + `http.ServeContent`) | ~1.1–1.3 s ≈ **25–30 MB/s** | Range/206 free |
+| Asset-server **Range** slice (1 MiB @ 16 MiB offset) | **34–40 ms** | 206 verified — sliding window without full buffering |
+| Bound service call `[]byte` | ~2.2 s + ~0.3 s atob ≈ 14–16 MB/s | **base64 +33 % wire** — control plane only |
+| `EventsEmit` | (not re-measured) | >8 KB offloads to 64 MiB one-shot store, 30 s TTL — **never for bulk** (findings-deps §5) |
+| GoStream (`app.HandleStream`) | unmeasured, purpose-built | bounded buffers, no eval — consider for sustained streams |
 
-Recommendation: **B**, with A as fallback if webview transfer stalls (WKWebView IPC can be slow with big payloads — measure on macOS early if practical). Playback, interpolation, trails, scrubbing all run in the frontend against the typed-array view; no per-tick Go calls.
+**Decision:** sidecar delivery = **asset-server HTTP route** — B-style whole-sidecar fetch on replay open (zstd sidecar is **2.5–6.9 MB** → <0.5 s at measured rates) with A-style **Range** requests as the sliding-window/fallback path, both on the same mechanism. Frontend keeps the full typed-array view client-side for playback (original B architecture); no per-tick Go calls. `ReplayService.GetPositions` remains available but bulk bytes should ride `fetch()`/Range, not bound `[]byte`. **Still unmeasured: macOS WKWebView and Windows WebView2** (WebView2 buffers whole responses — Range slices fine; peak mem ≈ response size) — validate on first run on those platforms.
 
 Playback engine (frontend `lib/replay/engine.js`): clock-driven `requestAnimationFrame`, frame index = f(t, speed), lerp between samples, render layer redraw. Seeking = binary search on tick. Event sync: M1 event list already has ticks — precompute seek targets.
 
@@ -111,10 +126,10 @@ Embed points: Match view gets "Watch round" per round (round start seek); Timeli
 
 ## 8. Work breakdown
 
-1. **Sampling spike** — add FrameDone sampling to the extractor behind a flag; dump sidecar for the golden demo; measure size/time at full/half rate (M2-T1).
+1. **Sampling spike** — *(pre-work done 2026-10-30: standalone prototype measured sizes/time, results §3; remaining M2 work = implement in `internal/extract` behind the job pipeline with a real single-encoding writer)*.
 2. **Sidecar format v1** — writer, idx, reader API + Go unit tests (roundtrip, delta correctness); wire into job pipeline + reprocess.
-3. **Frontend transfer spike** — A vs B on the golden demo; decide; document in §6 (M2-T3).
-4. **Map pack: mirage** — radar asset, transform via calibration view, sites/callouts (M2-T2).
+3. **Frontend transfer spike** — *(pre-work done 2026-10-30 on Linux WebKitGTK; decision recorded §6; remaining = macOS WKWebView / Windows WebView2 validation when those platforms are first run)*.
+4. **Map pack: de_cache** — radar asset (tiered acquisition per §5 / `findings-mappack.md`), transform constants verified from overview txt, sites/callouts (M2-T2).
 5. **Renderer MVP** — static map + players + labels at a fixed tick; zoom/pan.
 6. **Playback engine** — clock, speed, step, scrub, trails, bomb, alive/dead.
 7. **Grenades** — projectile points, smoke circles w/ lifetime, molly areas; throw→detonate polyline for selected nades.
@@ -136,16 +151,16 @@ Embed points: Match view gets "Watch round" per round (round start seek); Timeli
 
 | Metric | Target | Notes |
 |---|---|---|
-| Sidecar size (golden demo) | ≤ 30 MB @ 64 Hz | measure; fall back to 32 Hz if over |
-| Sampling overhead on parse | ≤ +50 % over M1 parse (≤ 45 s total) | writer is async |
-| Replay open → first frame | < 500 ms | includes transfer + map decode |
+| Sidecar size (golden demo) | ≤ 30 MB @ 64 Hz | **measured: 18.4 MB f32 / 9.1 MB q16 raw, 6.9 / 2.5 MB zstd** (§3) — budget cleared, 64 Hz confirmed |
+| Sampling overhead on parse | ≤ +50 % over M1 parse (≤ 45 s total) | **measured +37.6 % (28.9 → 39.8 s)** worst case, dual-encoding in RAM; async single writer will be cheaper |
+| Replay open → first frame | < 500 ms | includes transfer + map decode — sidecar fetch projects < 100 ms at measured 25–30 MB/s (§6) |
 | Playback | 60 fps @ 1×–8× | lerp, not per-tick redraw of map |
 
 ## 11. Risks & open questions
 
-1. **Radar licensing/quality** — community radars vary; prefer Valve-shipped radar assets extracted locally by the user, or hand-drawn packs. Keep packs out of git until licensing is checked.
-2. **Big-buffer transfer on WKWebView** — validate early (M2-T3); fall back to range API.
-3. **Position quantization** — 0.1 u grid is likely over-precise; benchmark 1.0 u (visually indistinguishable at radar scale) if size is a problem.
+1. **Radar licensing/quality** — **posture decided** (`ref/findings/findings-mappack.md` §4): numeric metadata in-repo (facts, not artwork); pixels via user-install extraction or runtime download with "© Valve" notice; never bundled in public releases. Community radar quality varies — prefer Valve-shipped assets.
+2. **Big-buffer transfer** — **measured on Linux** (§6): asset-server HTTP + Range is the path; **WKWebView/macOS still unmeasured**, WebView2/Windows buffers whole responses. Validate on first macOS/Windows run; Range slices are the portable fallback everywhere.
+3. **Position quantization** — **benchmarked** (§3): int16 @ 1.0 u halves raw (18.4 → 9.1 MB); visual-indistinguishability claim still needs the M2 visual check; 0.1 u fallback available at int32 cost if calibration demands it.
 4. **Crouch/air state** — Flags bit for duck changes apparent height; 2D top-down ignores z beyond label priority. Fine for M2.
 5. **Multiple demos per map session** — some matches contain knife/warmup/restarts with teleporting entities; keep all samples, tag phases, let playback follow match flow events (MatchStarted etc. already extracted).
 

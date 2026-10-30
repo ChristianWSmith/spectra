@@ -10,15 +10,15 @@
 
 **Repo state** (after branding): stock Wails v3 app — `AppService` (`GetVersion`, `SaveWindowSize`), kvstore prefs, framework updater, embedded Svelte 5 + Vite 8 frontend showing a hello-world. No app functionality yet. Default window 480×270 (too small; bump in this milestone).
 
-**Proven extraction assets** (research phase, outside the repo):
+**Proven extraction assets** (research phase, now in-repo under `ref/`):
 
 - `ref/extractor/main.go` — 61K working extractor (own nested module, reference only): demoinfocs-golang **v6.0.0-rc.1**, 52 typed event handlers, `SteamID64`-keyed identity aggregator (`getAgg`), round state machine, derived metrics (ADR, trades, entries, clutches, streaks, 3K/4K/ACE, accuracy, HS%, kill distances). Parsed the research demo in **22 s / 224.7 MB with zero parser warnings**. The M1 port moves its handler logic into `internal/extract`.
 - `ref/FINAL_REPORT.md` — output of the research parse (de_mirage FACEIT demo: CT 13–6 T, 20 real rounds + 1 warmup, 146 kills, bvcket 23/12/5 @ 133.6 ADR); human reference for extraction techniques.
 - `ref/TAXONOMY.md` — what exists in a CS2 demo format vs what that parse found.
 - `ref/EXTRACTION_TECHNIQUES.md` — playbook: why v6 (v4 OOM'd), memory-lean parser options, header via `msg.CDemoFileHeader` net-handler (v6 dropped `Parser.Header()`), pitfalls (null bytes in names, warmup gating, bot keys). Probe sources in `ref/extractor/probe/`.
-- **`donk.dem.zst` (repo root) — the golden acceptance demo, checked in via Git LFS.** ~190 MB zst → 256.9 MB, PBDEMS2 verified. All automated acceptance targets this file. Its concrete properties (map, tickrate, rounds, rosters, voice presence) are TBD until the first baseline pass (§6); do not assume research-demo numbers.
+- **`donk.dem.zst` (repo root) — the golden acceptance demo, checked in via Git LFS.** 190 MB zst → 245.0 MB, PBDEMS2 verified. Baseline pass done 2026-10-30 (full numbers §6): **de_cache**, FACEIT SourceTV, 64 Hz, 35m39s / 136,948 frames, CT 10–13 T, voice present, zero parser warnings, 28.9–29.5 s parse. Full report reproducible via `ref/extractor` (`go run . /path/to/donk.dem out.md`).
 
-**Decisions already settled by research:** parser library (v6 RC), SQLite storage (PRD §7.3), pure-Go zstd decompression, SteamID64 as player key, warmup gating, fact/inference separation (PRD §6.1).
+**Decisions already settled by research:** parser library (v6 RC), SQLite storage (PRD §7.3), pure-Go zstd decompression, SteamID64 as player key, warmup gating, fact/inference separation (PRD §6.1). Pre-work spikes (2026-10-30) additionally settled: exact dep versions + Go-directive bump, SQLite writer verdict, golden-demo baseline (§6), voice presence/Opus framing, radar transform + asset posture, frontend transfer paths — see `ref/findings/`.
 
 ## 2. Scope
 
@@ -31,7 +31,7 @@
 - Scoreboard: sortable; K/D/A, ADR, HS%, K/D, KDA, damage, rounds played, multi-kills, entry kills, trade kills, opening kills/deaths, kill streaks, utility damage, kills/damage by weapon (tab detail).
 - Round browser: winner, reason, duration, economy snapshot (equip values), first kill, MVP, bomb site; per-round kill feed; open-in-replay hook (stub for M2).
 - Event timeline foundation: normalized kill/damage/bomb/round/utility events, filter by round + player + type; click event → detail (raw payload).
-- Raw inspection: generic-game-event histogram (46 types observed in the research parse) + payload viewer.
+- Raw inspection: generic-game-event histogram (46 types observed in the golden-demo baseline) + payload viewer. The full net-message surface is already census'd — `ref/findings/findings-q6-msgtypes.md` (what's valuable, who reads it) + `ref/findings/spikes/msgcensus/census-donk.txt` (all 639 msg types registered; 39 fire on donk). Raw inspector should surface the census'd oddities (`CMsgTEFireBullets` 3,302, `CMsgPlaceDecalEvent` 1,514 — ballistics-adjacent; `CCSUsrMsg_ShootInfo` exists raw-only).
 - Chat capture (plaintext from this demo) into the DB; minimal display in round view.
 
 **Out (deferred):** positions/frames sampling (M2), heatmaps (M3), economy curves & round classification UI (M3), voice (M4), chat decryption (needs `.dem.info`; M4/M5), custom metrics (M5), KAST (needs trade-death + survival tracking — stretch goal, else M3), video export (M5).
@@ -58,11 +58,11 @@ Keep extraction presentation-independent (PRD §7.1): `extract` emits `models` v
 
 | Dep | Why |
 |---|---|
-| `github.com/markus-wa/demoinfocs-golang/v6 v6.0.0-rc.1` | proven parser; pin exactly (RC churn risk) |
-| `modernc.org/sqlite` | pure-Go driver — keeps `make build`/CI cgo-free (current pipeline has no cgo) |
-| `github.com/klauspost/compress/zstd` | in-app `.dem.zst` decompression (P1) |
+| `github.com/markus-wa/demoinfocs-golang/v6 v6.0.0-rc.1` | proven parser; pin exactly (RC churn risk — rc.1 still newest as of 2026-10-30, main head == rc.1). **Requires `go ≥1.27` → bump this repo's `go 1.26.0` directive when adding it** (toolchain 1.27.3 installed) |
+| `modernc.org/sqlite v1.61.0` | pure-Go driver — keeps `make build`/CI cgo-free (current pipeline has no cgo). WAL verified; pin `modernc.org/libc` exactly as its go.mod says (fragile-dep warning). Benchmark verdict: `ref/findings/findings-sqlite.md` |
+| `github.com/klauspost/compress/zstd v1.20.3` | in-app `.dem.zst` decompression (P1); ≥v1.20.2 includes the GHSA-fpmh-frq8-7rj8 DecodeAll crash fix; pure Go (asm optional) |
 
-`adrg/xdg` already present. Expect a `go 1.27` directive bump (v6 requires it; toolchain 1.27.3 installed).
+`adrg/xdg` already present. Voice (M4) will add `github.com/pion/opus` at a **pinned pseudo-version of main** (v0.1.0 tag misses libopus-parity + PLC fixes) — see `ref/findings/findings-deps.md` §2.
 
 ### 3.3 Storage
 
@@ -171,7 +171,17 @@ Two tiers, deliberately separated:
 
 - The research demo itself was never committed and has been deleted; its findings live on in `ref/FINAL_REPORT.md`, `ref/TAXONOMY.md`, and `ref/EXTRACTION_TECHNIQUES.md`. If a voice-bearing demo is ever needed for manual work (M4), source one at that time — the golden demo's voice presence is whatever the baseline records.
 
-**Baseline to capture on first full donk pass:** map, tickrate, duration, real/warmup round counts, rosters, top-line scoreboard, generic-event histogram, voice presence, zero-warning expectation, parse time. Until that fixture exists, research-demo numbers in this plan are historical context only.
+**Baseline captured 2026-10-30** (first full donk pass; reproduction: `go run . /tmp/opencode/donk.dem out.md` in `ref/extractor`, probe in `ref/extractor/probe`). `donk.golden.json` in the M1 test suite must reproduce these numbers:
+
+- **Header:** map **de_cache**, FACEIT.com server / SourceTV client, patch 14191, tick rate **64.00 Hz**, playback **35m39s** (136,896 ticks / **136,948 frames**), 245.0 MB, 222 entity classes, POV=false.
+- **Match:** clans CT `team_kRaSnaL` vs T `team_Magnojezzz`, final **CT 10 – 13 T**, **24 real rounds + 1 warmup**, 1 side switch, no OT. Longest R17 (121.1 s TargetBombed), shortest R9 (42.4 s).
+- **Roster (10 players, no bots):** llorente, Magnojezzz, donk666, kRaSnaL, hades--, Zuedsta, FREELOOK, forever2kELO, adamS, -meg2k. Top fragger **forever2kELO 25/14/3 @ 142.9 ADR**. Caveat confirmed: final-state scoreboard holds only 3 rows (players disconnected mid-demo) — event-derived aggregates are the complete source; **PRD §6.1 provenance labeling is mandatory, not theoretical**.
+- **Volumes:** 170 kills, 662 hurts, 3,903 weapon fires, 34 player-chat msgs, **0 encrypted messages** (chat decryption dormant), **46 generic event types / ~21,032 generic events** (histogram in report §18; `bullet_impact`/`bullet_damage` **absent** — see risks), 7 disconnects.
+- **Voice:** **123,507 chunks / 10 XUIDs / 0 casters** (Opus 48 kHz — `ref/findings/findings-voice.md`).
+- **Quality:** **zero parser warnings**; parse wall-time **28.9 s** (no sampling) / 29.5 s (with report generation) — within the ≤30 s target.
+- **Known quirks to verify during extract port:** round-level MVP column empty (per-player MVP counts present — find the event source or drop round MVP in UI); `Match started=false (tick 3334)` flag oddity; "total rounds played (game rules)"=23 vs 24 real rounds.
+
+Research-demo numbers elsewhere in this plan are historical context only.
 
 Known data caveat to surface in UI (observed in research demo): 5/10 players disconnected before demo end — final-state fields empty, event-derived stats complete. The PRD §6.1 fact/inference rule applies (label provenance).
 
@@ -179,18 +189,20 @@ Known data caveat to surface in UI (observed in research demo): 5/10 players dis
 
 | Metric | Target | Basis |
 |---|---|---|
-| Parse 224 MB demo | ≤ 30 s wall, < 1 GB RAM | proven 22 s |
-| Library list (1 000 matches) | < 50 ms | indexed query |
-| Timeline filter (50 k events) | < 100 ms | indexes in §3.3 |
-| DB size per match | measure & record; budget < 20 MB for the golden demo | report as success metric |
+| Parse 245 MB golden demo | ≤ 30 s wall, < 1 GB RAM | **measured 28.9 s** (pre-work, no sampling) |
+| Library list (1 000 matches) | < 50 ms | indexed query; bench: 2–32 ms/kind query over 100 matches |
+| Timeline filter (50 k events) | < 100 ms | indexes in §3.3; bench: 2–32 ms |
+| DB size per match | budget < 20 MB | **bench: 5.08 MB/match** at 11k rows (`ref/findings/findings-sqlite.md`); golden-demo scale (~25k rows incl. 21k generic) still projects well under 20 MB — measure for real in M1 |
 
 ## 8. Risks & open questions
 
 1. **demoinfocs v6 is an RC** — pin `v6.0.0-rc.1`; parser_version column in DB makes reprocess-after-upgrade explicit (PRD §9.2).
-2. **modernc.org/sqlite performance** vs cgo — acceptable for M1 volumes; revisit at M3 benchmarks (PRD §7.3).
-3. **Event insert volume** — research demo scale: 566 hurts + 3 213 fires + generic events per match; batch inserts inside transactions; avoid per-event JSON marshal of duplicate data.
-4. **Disappearing players** — event-derived vs final-state provenance must be modeled now (column or JSON flag), not retrofitted.
+2. **modernc.org/sqlite performance** vs cgo — **closed by bench** (`ref/findings/findings-sqlite.md`): 0.29–0.32 s/match insert, 100-match library ~31 s, flat as DB grows, reads ms-scale; naive per-row transactions are 58–76× slower (never auto-commit per row). Revisit only if M3 analytics reads regress.
+3. **Event insert volume** — golden-demo scale: 662 hurts + 3,903 fires + **~21,032 generic events** per match; batch inside one transaction (measured design win above). Per-event `json.Marshal` costs ~100 ms/match on weak CPU — reuse buffers / pre-marshaled shared fragments if import latency matters (`findings-sqlite.md` §6).
+4. **Disappearing players** — event-derived vs final-state provenance must be modeled now (column or JSON flag), not retrofitted. **Confirmed on golden demo:** final-state scoreboard 3/10 rows; PRD §6.1 labeling is mandatory.
 5. **KAST** — stretch in M1 (needs per-round survival + trade-death); otherwise M3.
+6. **Round-level MVP missing on golden demo** — rounds table MVP column empty while per-player MVP counts exist (e.g. forever2kELO 4). Find the event/entity source during the extract port (research demo tallied MVPTally — compare handlers); if absent from demo data, ship per-player MVPs only and drop the round-MVP column.
+7. **Ballistics events absent on FACEIT SourceTV** — `bullet_impact`/`bullet_damage` = 0 on **both** known demos (research + donk, `ref/findings/README.md` Q7). Don't promise per-bullet game-event analytics; **but the message census found adjacent raw sources** (`CMsgTEFireBullets` 3,302, `CMsgPlaceDecalEvent` 1,514 on donk, plus raw-only `CS_UM_ShootInfo`) — probe them in the raw inspector before dropping the PRD's ballistics ambition. Wallbang kill flags + grenade trajectories remain available regardless.
 
 ## 9. Definition of done
 
