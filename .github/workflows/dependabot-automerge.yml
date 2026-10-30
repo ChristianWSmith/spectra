@@ -1,0 +1,48 @@
+name: Dependabot auto-merge
+
+# Merges a Dependabot PR once its checks are green, removing the human from
+# the dependency-update loop. Triggered by pushes to Dependabot's branches
+# (which live in this repo), NOT by pull_request: a pull_request-triggered
+# waiter runs `gh pr checks --watch` and would sit waiting for its own job
+# to finish. This repo has no branch protection, so GitHub's own
+# auto-merge (`--auto`) would merge instantly with zero checks — watch the
+# checks ourselves, then merge.
+on:
+  push:
+    branches: [ "dependabot/**" ]
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: read
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Find the PR for this branch
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          number=$(gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number // empty')
+          echo "number=$number" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for checks
+        if: steps.pr.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ steps.pr.outputs.number }}
+        run: gh pr checks "$PR" --watch --fail-fast
+
+      - name: Merge when green
+        if: steps.pr.outputs.number != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ steps.pr.outputs.number }}
+        # Re-check the state: a concurrent push may have merged or closed it.
+        run: |
+          if [ "$(gh pr view "$PR" --json state --jq .state)" = "OPEN" ]; then
+            gh pr merge "$PR" --squash
+          fi

@@ -1,0 +1,28 @@
+name: Lint
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  golangci:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      # golangci-lint typechecks, and Wails' cgo packages need the
+      # GTK4/WebKitGTK headers to load — same deps the build workflow
+      # installs.
+      - name: Install Wails Build Dependencies (Linux)
+        run: make linux-deps
+
+      - name: Lint
+        run: make lint

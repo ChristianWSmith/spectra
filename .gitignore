@@ -1,0 +1,44 @@
+# Wails v3 project layout
+.task
+bin/
+frontend/dist/
+frontend/bindings/
+frontend/node_modules/
+
+# Release artifacts produced by `make artifact`
+*.zip
+SHA256SUMS
+
+# Binaries for programs and plugins
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Code coverage profiles and other test artifacts
+*.out
+coverage.*
+*.coverprofile
+profile.cov
+
+# Dependency directories (remove the comment below to include it)
+# vendor/
+
+# Go workspace file
+go.work
+go.work.sum
+
+# env file
+.env
+
+# Editor/IDE
+# .idea/
+# .vscode/
+
+# Session working notes (untracked reference)
+.opencode/*
+!.opencode/skills/

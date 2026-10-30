@@ -1,0 +1,99 @@
+name: Build Wails App
+
+# Builds run only on demand: the release skill dispatches this workflow
+# with the version to stamp into the binary, and pull requests build to
+# stay validated. Pushes to main/develop do NOT build (a release is one
+# dispatch run, not a branch run plus a tag run).
+#
+# Build/package/artifact steps call the Makefile directly so CI and local
+# dev flows are the same commands (see "Commands" in AGENTS.md).
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to stamp into the binary (X.Y.Z)"
+        required: true
+        type: string
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Validate version input
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          if [[ ! "${{ inputs.version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "version input must be X.Y.Z, got '${{ inputs.version }}'" >&2
+            exit 1
+          fi
+
+      - name: Stamp version (release builds)
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        # Overwrite the committed "dev" placeholder with the release version
+        # so the binary knows its own version for the update check.
+        run: printf 'package main\n\n// version is the release this binary was built from.\nvar version = "%s"\n' "${{ inputs.version }}" > version.go
+
+      - name: Install Wails Build Dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: make linux-deps
+
+      # Windows runner images don't ship GNU make; all build/package
+      # steps below go through the Makefile, so install it up front.
+      - name: Install Make (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: command -v make || choco install make -y
+
+      - name: Install dev deps
+        shell: bash
+        # Ensures the wails3 CLI at the version go.mod pins (the build
+        # Taskfiles shell out to it) and checks Node is 22+. The Linux
+        # build libraries were installed by `make linux-deps` above.
+        run: |
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          make deps
+
+      - name: Vet and Test
+        shell: bash
+        run: |
+          make vet
+          make test
+
+      - name: Artifact name
+        id: artifact
+        shell: bash
+        run: echo "name=$(make -s artifact-name)" >> "$GITHUB_OUTPUT"
+
+      - name: Build release artifact
+        shell: bash
+        run: make artifact
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.artifact.outputs.name }}
+          path: ${{ steps.artifact.outputs.name }}

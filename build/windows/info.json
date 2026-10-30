@@ -1,0 +1,15 @@
+{
+	"fixed": {
+		"file_version": "0.1.1"
+	},
+	"info": {
+		"0409": {
+			"ProductVersion": "0.1.1",
+			"CompanyName": "Christian Smith",
+			"FileDescription": "A batteries-included Wails v3 desktop app template with GitHub Releases auto-update",
+			"LegalCopyright": "© 2026, Christian Smith",
+			"ProductName": "wails-template",
+			"Comments": "wails-template"
+		}
+	}
+}
