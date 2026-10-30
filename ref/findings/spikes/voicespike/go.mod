@@ -1,0 +1,19 @@
+module voicespike
+
+go 1.27.3
+
+require (
+	github.com/markus-wa/demoinfocs-golang/v6 v6.0.0-rc.1
+	github.com/pion/opus v0.1.1-0.20261026214112-e7b8aa55508c
+)
+
+require (
+	github.com/golang/geo v0.0.0-20230421003525-6adc56603217 // indirect
+	github.com/golang/snappy v1.0.0 // indirect
+	github.com/markus-wa/go-unassert v0.1.3 // indirect
+	github.com/markus-wa/gobitread v0.2.5 // indirect
+	github.com/markus-wa/godispatch v1.5.1 // indirect
+	github.com/markus-wa/ice-cipher-go v1.0.0 // indirect
+	github.com/markus-wa/quickhull-go/v2 v2.2.0 // indirect
+	google.golang.org/protobuf v1.36.12 // indirect
+)

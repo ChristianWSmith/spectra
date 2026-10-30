@@ -1,0 +1,37 @@
+== environment ==
+tempdir: /var/tmp/sqlitebench-2577892793
+go: go1.27.3-X:nodwarf5 platform: linux/amd64 cpus: 4
+cpu: AMD A12-9720P RADEON R7, 12 COMPUTE CORES 4C+8G
+== config (per match) ==
+events: hurt=566 fire=3213 death=146 => 3925 | generic=7000 | chat=200 | rounds=22 | players=10
+rows/match=11168  json-bearing rows=10925  detail=400B raw=300B generic=200B
+== pragmas ==
+journal_mode=wal foreign_keys=1 busy_timeout=5000  schema create=70.9ms
+== phase A: single match insert (one txn per match, prepared stmts per table) ==
+  warmup: 266.8ms  11168 rows  41861 rows/s
+  run 1:   315.4ms  11168 rows  35406 rows/s
+  run 2:   290.0ms  11168 rows  38510 rows/s
+  run 3:   355.2ms  11168 rows  31437 rows/s
+  run 4:   327.6ms  11168 rows  34085 rows/s
+  run 5:   266.6ms  11168 rows  41887 rows/s
+  MEDIAN=315.4ms  min=266.6ms  35406 rows/s
+== phase B: naive (one txn per row, same prepared stmts) ==
+  run 0: 19366.6ms  11168 rows  577 rows/s
+  MEDIAN=19366.6ms  577 rows/s  batched is 61.4x faster (315.4ms vs 19366.6ms)
+== phase C: library insert (100 matches, one txn per match) ==
+  insert total=32.119s  per-match avg=321.2ms  34771 rows/s
+  data generation (excluded from insert timer)=3.562s  wall incl generation=35.682s
+  first 20 matches avg=302.1ms   last 20 matches avg=317.8ms   (growth factor 1.05x)
+== phase D: file size (wal_checkpoint TRUNCATE) ==
+  checkpoint busy=0 log=0 checkpointed=0
+  db=507.7 MB  wal=0 B  shm=32768 B  => 5.077 MB/match over 100 matches
+== phase E: read smoke ==
+  SELECT * FROM events WHERE match_id=? AND kind="weapon_fire" ORDER BY tick  over 100 matches: total=2.954s avg/query=29.5ms rows=321300
+  SELECT * FROM events WHERE match_id=? AND kind="player_death" ORDER BY tick  over 100 matches: total=0.233s avg/query=2.3ms rows=14600
+== phase F: json marshal cost (3925 events, median of 7 reps after warmup) ==
+  json.Marshal                9.22 us/event   all-10925-payload-rows/match: 100.7ms   31.9% of single insert   json bytes=2.2 MB   0% vs json.Marshal
+  Encoder+reused buffer       7.67 us/event   all-10925-payload-rows/match: 83.8ms    26.6% of single insert   json bytes=2.2 MB   17% vs json.Marshal
+  hand-built+shared reuse     2.55 us/event   all-10925-payload-rows/match: 27.8ms     8.8% of single insert   json bytes=2.2 MB   72% vs json.Marshal
+  delta: hand-built saves 6.67 us/event = 72.9 ms per match on 10925 json rows; json.Marshal of one match payloads = 100.7 ms
+== done ==
+dbs: /var/tmp/sqlitebench-2577892793
