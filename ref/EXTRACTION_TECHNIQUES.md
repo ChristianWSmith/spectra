@@ -228,7 +228,7 @@ p.RegisterNetMessageHandler(func(m *msg.CDemoUserCmd)        { demoUserCmd.Add(1
 
 **Results:** 77,702 voice chunks across 10 XUIDs (0 caster) · 0 encrypted messages · 0 user commands (GOTV).
 
-**Why a separate pass:** probes are cheap to iterate (compile/run/throwaway) and avoid bloating the main extractor with handlers whose data we hadn't decided how to report yet. Voice decoding itself was *not* attempted — counting proved presence and player attribution; opus decode (libopus + CS2VoiceData pattern) is the documented next step.
+**Why a separate pass:** probes are cheap to iterate (compile/run/throwaway) and avoid bloating the main extractor with handlers whose data we hadn't decided how to report yet. Voice decoding itself was *not* attempted — counting proved presence and player attribution; opus decode (libopus + CS2VoiceData pattern) is the documented next step. *(Superseded 2026-10-30: pure-Go `pion/opus` decode proven end-to-end — no libopus needed; `ref/findings/findings-voice.md`.)*
 
 ---
 
@@ -256,8 +256,8 @@ Complementary to parsing — establishing *what exists*:
 
 | Technique | Why skipped |
 |---|---|
-| Per-frame position recording (`events.FrameDone` → `Player.Position()`) | Not requested for v1 report; documented as next step (needs tick-rate-gated sampling, ~4.5 bytes/tick/player) |
-| Opus decode of voice chunks | Needs `libopus` system dep; probe proved data exists — decode is a standalone follow-up |
+| Per-frame position recording (`events.FrameDone` → `Player.Position()`) | Not requested for v1 report; documented as next step (needs tick-rate-gated sampling, ~4.5 bytes/tick/player) — *(executed as pre-work 2026-10-30; sizes/time in `ref/PLAN_MILESTONE_2.md` §3)* |
+| Opus decode of voice chunks | Needs `libopus` system dep; probe proved data exists — decode is a standalone follow-up — *(superseded: pure-Go `pion/opus` works, 0 decode errors; `ref/findings/findings-voice.md`)* |
 | `.dem.info` key extraction | No companion file exists for this FACEIT demo; and probe showed 0 encrypted messages anyway |
 | v4 `ParserHeader()` direct read | v4 OOM'd on this demo (§2); v6 has no public header — net-message technique instead |
 | Registering *all* `AdditionalNetMessageCreators` | No unknown-message problem observed; generic events covered the gap |

@@ -280,9 +280,77 @@ async function audioTests(useGesture) {
     ctx.close();
 }
 
+// ---------- export-capability checks (M5 MediaRecorder matrix, M2 frontend zstd) ----------
+async function exportTests(useGesture) {
+    // Compression Streams: which formats construct? (zstd expected missing — spec only
+    // covers gzip/deflate/deflate-raw; sidecars are zstd → frontend must NOT rely on this)
+    res(typeof DecompressionStream !== "undefined", "DecompressionStream present", typeof DecompressionStream);
+    for (const fmt of ["gzip", "deflate", "deflate-raw", "zstd"]) {
+        try {
+            new DecompressionStream(fmt);
+            res(true, `DecompressionStream('${fmt}')`, "constructs OK");
+        } catch (e) {
+            res(false, `DecompressionStream('${fmt}')`, String((e && e.message) || e));
+        }
+    }
+
+    // MediaRecorder support matrix (Linux/WebKitGTK leg of M5's per-OS matrix)
+    if (typeof MediaRecorder === "undefined") {
+        res(false, "MediaRecorder", "missing");
+        return;
+    }
+    res(true, "MediaRecorder present", typeof MediaRecorder);
+    const mimes = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus",
+        "video/webm;codecs=vp9", "video/webm;codecs=h264", "video/mp4;codecs=avc1"];
+    for (const m of mimes) {
+        res(null, `MediaRecorder.isTypeSupported('${m}')`, String(MediaRecorder.isTypeSupported(m)));
+    }
+
+    // Real encode roundtrip: oscillator → MediaStreamDestination → MediaRecorder → blob
+    if (!useGesture) {
+        res(null, "MediaRecorder record roundtrip", "skipped (needs gesture run for AudioContext)");
+        return;
+    }
+    let ctx;
+    try {
+        ctx = new AudioContext();
+        await Promise.race([ctx.resume(), new Promise(r => setTimeout(r, 1000))]);
+        if (ctx.state !== "running") {
+            res(false, "MediaRecorder record roundtrip", `AudioContext ${ctx.state} — encoder not exercised`);
+            return;
+        }
+        const dest = ctx.createMediaStreamDestination();
+        const osc = ctx.createOscillator();
+        osc.frequency.value = 440;
+        const g = ctx.createGain();
+        g.gain.value = 0.5;
+        osc.connect(g).connect(dest);
+        osc.start();
+        const preferred = ["audio/webm;codecs=opus", "audio/ogg;codecs=opus"]
+            .find(m => MediaRecorder.isTypeSupported(m));
+        const rec = new MediaRecorder(dest.stream, preferred ? { mimeType: preferred } : undefined);
+        const chunks = [];
+        rec.ondataavailable = e => { if (e.data && e.data.size) chunks.push(e.data); };
+        const stopped = new Promise(r => { rec.onstop = r; });
+        rec.start();
+        await new Promise(r => setTimeout(r, 600));
+        rec.stop();
+        await stopped;
+        try { osc.stop(); } catch (_) {}
+        const blob = new Blob(chunks, { type: rec.mimeType || preferred || "audio/webm" });
+        res(blob.size > 0, `MediaRecorder encode roundtrip (${rec.mimeType || preferred || "default"})`,
+            `600 ms tone → blob ${blob.size} bytes → encoder ${blob.size > 0 ? "WORKS" : "produced nothing"}`);
+        ctx.close();
+    } catch (e) {
+        res(false, "MediaRecorder record roundtrip", String((e && e.message) || e));
+        if (ctx) { try { ctx.close(); } catch (_) {} }
+    }
+}
+
 async function runAll(withGesture) {
     log(`— — — run (${withGesture ? "user gesture" : "no gesture"}) — — —`);
     await audioTests(withGesture);
+    await exportTests(withGesture);
     await workerCloneTest();
     await transferTests();
     log("— done —");

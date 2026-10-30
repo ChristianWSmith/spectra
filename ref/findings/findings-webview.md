@@ -62,3 +62,53 @@ Notes:
 - Probe source: `/tmp/opencode/webvprobe/` (`main.go`, `frontend/index.html`, `frontend/app.js`, generated `frontend/bindings/`)
 - Screenshots: `/tmp/opencode/webvprobe/shot*.png` (shot15 = full passing gesture run)
 - Logs: `/tmp/opencode/webvprobe/run.log`, `run2.log`
+
+---
+
+## Round 2 (2026-10-30): MediaRecorder matrix + Compression Streams + plugin dependency
+
+Same probe (`spikes/webvprobe/`), page extended with `exportTests()` (app.js in the spike archive includes it). Screenshots: `shot-auto.png` (no-gesture), `shot-gst2.png` (gesture run with plugins — roundtrip PASS).
+
+### Compression Streams (relevant to M2 sidecar delivery)
+
+| format | `new DecompressionStream(fmt)` |
+|---|---|
+| `gzip` | constructs OK |
+| `deflate` | constructs OK |
+| `deflate-raw` | constructs OK |
+| `brotli` | allowed by this WebKit (error message lists it) |
+| **`zstd`** | **FAILS** — "requires a single argument with the value 'brotli', 'deflate', 'deflate-raw', or 'gzip'" |
+
+⇒ The frontend can never decompress our zstd sidecars natively; serve decompressed / decompress per-block server-side (decision recorded in PLAN_MILESTONE_2.md §6).
+
+### MediaRecorder (Linux leg of M5's per-OS matrix) — capability is gst-plugins-good-DEPENDENT
+
+`isTypeSupported` results, **without** vs **with** `gst-plugins-good` (1.28.8):
+
+| mimeType | no plugins | with plugins |
+|---|---|---|
+| `audio/webm;codecs=opus` | false | **true** |
+| `audio/ogg;codecs=opus` | true | **true** |
+| `video/webm;codecs=vp9` | false | **true** |
+| `video/webm;codecs=h264` | false | false |
+| `video/mp4;codecs=avc1` | false | false |
+
+**Roundtrip (with plugins, user gesture):** oscillator (440 Hz, gain 0.5) → `MediaStreamAudioDestinationNode` → `MediaRecorder('audio/webm;codecs=opus')` → 600 ms record → **blob 16,088 bytes, encoder WORKS** (≈214 kbps — sane opus). Note the roundtrip needs a running AudioContext, so **it inherits the gst-plugins-good + gesture requirements from Q1**.
+
+⇒ M5 in-webview export: WebM (VP9 video + Opus audio) is viable on WebKitGTK **with the documented plugin dep**; mp4/h264 still needs the ffmpeg fallback. The earlier "no-gst" matrix (ogg-only audio) is what a misconfigured distro install sees — ship the startup self-test idea for audio, and treat missing webm support as the same missing-plugin symptom.
+
+### Repro recipe (no root)
+
+```sh
+# extract Arch package to /tmp and point GST_PLUGIN_PATH at it (probe run used this):
+FN=gst-plugins-good-1.28.8-1-x86_64.pkg.tar.zst   # check archlinux.org/packages JSON for current
+curl -sfL "https://geo.mirror.pkgbuild.com/extra/os/x86_64/$FN" -o /tmp/gst.tar.zst
+tar -C /tmp/gst -xf /tmp/gst.tar.zst
+GST_PLUGIN_PATH=/tmp/gst/usr/lib/gstreamer-1.0 GDK_BACKEND=x11 ./webvprobe
+```
+
+(`libgstautodetect.so` + `libgstpulseaudio.so` both live in this package; host already has gstreamer + gst-plugins-base.)
+
+### Version re-check (2026-10-30, end of pre-work)
+
+demoinfocs-golang/v6 → still `v6.0.0-rc.1` (newest; main head unchanged). pion/opus → tag still `v0.1.0` (keep our main pseudo-version pin). wails v3 → still `v3.0.0`. No upgrade actions.

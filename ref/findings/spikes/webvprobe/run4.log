@@ -1,0 +1,10 @@
+5:38PM INF Build Info: Wails=v3.0.0 Compiler=go1.27.3-X:nodwarf5 CGO_CPPFLAGS= CGO_CXXFLAGS= CGO_LDFLAGS= CGO_ENABLED=1 GOARCH=amd64 GOEXPERIMENT=nodwarf5 GOOS=linux GOAMD64=v1 -buildmode=exe -compiler=gc CGO_CFLAGS=
+5:38PM INF Platform Info: ID=arch Name=Arch Linux Version=Unknown Branding= GTK=4.24.1 WebKitGTK=2.54.2
+Overriding existing handler for signal 10. Set JSC_SIGNAL_FOR_GC if you want WebKit to use a different signal
+
+(gst-plugin-scanner:36): GStreamer-WARNING **: 17:38:35.577: Failed to load plugin '/tmp/opencode/gstpkgs/usr/lib/gstreamer-1.0/libgstshout2.so': libshout.so.3: cannot open shared object file: No such file or directory
+
+(gst-plugin-scanner:36): GStreamer-WARNING **: 17:38:35.671: Failed to load plugin '/tmp/opencode/gstpkgs/usr/lib/gstreamer-1.0/libgstdv.so': libdv.so.4: cannot open shared object file: No such file or directory
+
+(gst-plugin-scanner:36): GStreamer-WARNING **: 17:38:35.680: Failed to load plugin '/tmp/opencode/gstpkgs/usr/lib/gstreamer-1.0/libgstcacasink.so': libcaca.so.0: cannot open shared object file: No such file or directory
+5:40PM INF Quitting application...

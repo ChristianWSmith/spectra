@@ -79,7 +79,7 @@ spectacle -b -n -o /tmp/shot.png         # then Read the PNG
 | `ref/` | project reference docs & sources: `PRD.md`, `PLAN_MILESTONE_*.md`, `EXTRACTION_TECHNIQUES.md`, `FINAL_REPORT.md`, `TAXONOMY.md`, `findings/` (pre-work spike reports + index + spike code), plus `extractor/` (standalone research extractor + probe as nested modules — reference only, never built/linted by the root module) |
 | `donk.dem.zst` | the golden acceptance demo, tracked via **Git LFS** (`.gitattributes`); acceptance tests parse it and skip if absent; regenerate golden fixtures deliberately when extraction changes |
 
-`ref/extractor`'s nested `go.mod` files keep it out of root `./...` builds.
+`ref/extractor` and `ref/findings/spikes/` nested `go.mod` files keep them out of root `./...` builds.
 After cloning, run `git lfs pull` if the golden demo is needed.
 
 ## Release pipeline

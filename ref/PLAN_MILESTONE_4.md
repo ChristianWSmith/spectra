@@ -83,7 +83,7 @@ Match header gains voice badge; Timeline gains voice filter + around-event affor
 1. **Opus evaluation spike (M4-T1)** — **DONE as pre-work 2026-10-30** (full report `ref/findings/findings-voice.md`, code `ref/findings/spikes/voicespike/`): whole payload = one raw Opus packet @ 48 kHz mono 10 ms; `pion/opus` main pseudo-version, 0/41,288 decode errors; WAVs + spectrograms verified as real speech; pure-Go verdict = **ship it** (no libopus). Remaining build work: the chunk dump/drain pipeline below.
 2. **Extraction + storage** — chunk writer sidecar + DB index; presence job; reprocess integration; unit tests with synthetic chunk streams.
 3. **Decode pipeline** — block cache, background decode job, progress, cache eviction.
-4. **Audio engine (frontend)** — master-clock sync, per-player gain, Web Audio spike on WebKitGTK; fallback path.
+4. **Audio engine (frontend)** — master-clock sync, per-player gain; AudioContext **verified by pre-work spike** (≤0.2 ms scheduling — no fallback path; requirements in §4: gesture resume + `gst-plugins-good` + startup self-test).
 5. **Voice UI** — lanes, transport, controls; replay sync; comms-around-event.
 6. **Context view** — merged stream + filters + export; wire chat decryption detection + key extraction (synthetic tests).
 7. **Export** — WAV/mixed Opus; transcript formats.
@@ -101,7 +101,7 @@ Match header gains voice badge; Timeline gains voice filter + around-event affor
 
 | Metric | Target | Notes |
 |---|---|---|
-| Voice extract overhead on parse | ≤ +10 % (≈ +2 s on golden demo) | sidecar write only |
+| Voice extract overhead on parse | ≤ +10 % (≈ +2 s on golden demo) | **measured pre-work: +0.85 s (+5.7 %)** median-of-3 A/B (capture + histogram + 2.5 MB writes vs same harness with handler disabled) — within target; run-to-run noise ±1–2 s under system load |
 | Decode (full match, background) | < 60 s for 10 players | lazy per-player preferred |
 | PCM block fetch (100 ms) | < 20 ms | local disk |
 | Seek → audible | < 150 ms | |

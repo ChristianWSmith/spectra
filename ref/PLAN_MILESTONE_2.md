@@ -71,7 +71,7 @@ $XDG_DATA_HOME/spectra/matches/<matchID>/
 ```
 
 - Rationale: SQLite blobs bloat WAL and complicate streaming; files stream by range (PRD §7.3 "separate efficient storage for high-frequency datasets").
-- Encoding sketch: varint delta on tick/pos (quantize positions to 0.1 u ≈ mm), zstd block-framed (e.g. 256 frames/block) so the frontend can request byte ranges without full decompress.
+- Encoding sketch: varint delta on tick/pos (quantize positions to **1.0 u by default — measured best size/precision trade in §3; 0.1 u available at int32 cost if calibration needs it**), zstd block-framed (e.g. 256 frames/block) so the frontend can request byte ranges.
 - DB: `matches.position_format`, `matches.sample_rate`, `matches.position_frames`; delete/reprocess cascade removes the directory.
 
 ## 5. Map asset packs
@@ -82,7 +82,7 @@ frontend/public/maps/<name>/
     meta.json            # transform, bounds, callouts
 ```
 
-`meta.json`: affine or homography world→image (`pos.x, pos.y → px, py`), world bounds, bombsites A/B polygons (for plant highlighting), callout label anchors (P1).
+`meta.json`: **linear world→image transform (`pos_x, pos_y, scale` — the 3-parameter Valve overview model, `findings-mappack.md` §2; no homography needed)**, world bounds, bombsites A/B polygons (for plant highlighting), callout label anchors (P1).
 
 - **Transform constants come from Valve's overview txt, not hand-calibration** (`ref/findings/findings-mappack.md` §2): `resource/overviews/de_cache.txt` inside `pak01_dir.vpk` carries `pos_x/pos_y/scale`; community tabulation gives de_cache `pos_x=-2000, pos_y=3250, scale=5.5` — **verify by parsing the game file or a community mirror, don't trust the transcription blindly.** Formula: `px=(wx-pos_x)/scale`, `py=(pos_y-wy)/scale` (inverted Y). M2-T2 calibration view becomes a **verification** step (drag crosshair → log pairs) rather than derivation; the extractor can still print world coords at plant ticks for the bomb-in-site assertion.
 - **Radar pixels: tiered acquisition, never bundled in public releases** (posture in `findings-mappack.md` §4): numeric metadata (transform constants, site/spawn fractions) ships in-repo as our own JSON (schema sketch in `findings-mappack.md` §5 — modeled on awpy `map_data.json`); pixels come from (1) extraction from the user's local CS2 install (`overheadmaps/<map>_radar_psd.vtex_c`), or (2) optional runtime download of a community mirror with a "© Valve" notice. Site polygons (bomb-in-site invariant) need nav-mesh `bomb-target` flags or vmap `func_bombsite` extraction — centers from the overview txt suffice for M2 with a distance threshold.
@@ -102,6 +102,8 @@ Spike run (M2-T3, pre-work 2026-10-30; Linux WebKitGTK 2.54.2 + Wails v3.0.0 —
 | GoStream (`app.HandleStream`) | unmeasured, purpose-built | bounded buffers, no eval — consider for sustained streams |
 
 **Decision:** sidecar delivery = **asset-server HTTP route** — B-style whole-sidecar fetch on replay open (zstd sidecar is **2.5–6.9 MB** → <0.5 s at measured rates) with A-style **Range** requests as the sliding-window/fallback path, both on the same mechanism. Frontend keeps the full typed-array view client-side for playback (original B architecture); no per-tick Go calls. `ReplayService.GetPositions` remains available but bulk bytes should ride `fetch()`/Range, not bound `[]byte`. **Still unmeasured: macOS WKWebView and Windows WebView2** (WebView2 buffers whole responses — Range slices fine; peak mem ≈ response size) — validate on first run on those platforms.
+
+**Frontend must not own zstd** (verified pre-work, `findings-webview.md` round 2): WebKitGTK's Compression Streams API constructs only `brotli`/`gzip`/`deflate`/`deflate-raw` — `DecompressionStream('zstd')` throws. So: (a) whole-fetch path serves **decompressed** bytes (Go decompresses once per open — trivial), or even raw `q16` (9.1 MB ≈ 0.4 s, clears budget uncompressed); (b) Range path decompresses the requested block **server-side** (sidecars are block-framed for exactly this). No wasm zstd decoder, no Compression Streams reliance.
 
 Playback engine (frontend `lib/replay/engine.js`): clock-driven `requestAnimationFrame`, frame index = f(t, speed), lerp between samples, render layer redraw. Seeking = binary search on tick. Event sync: M1 event list already has ticks — precompute seek targets.
 

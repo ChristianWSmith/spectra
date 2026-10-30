@@ -133,7 +133,7 @@ Ordering note: 1–3 are the differentiator core; 8–10 are UX leverage; 11 is 
 1. **SQL console safety** — read-only + timeout + row cap; document that the DB is user-local (worst case = user harming own data), but never grant write from the console UI.
 2. **Expression language scope creep** — freeze v1 grammar early; complex needs escalate to SQL/views, not new syntax.
 3. **Sandbox robustness** — goja/gopher-lua have long safety track records but capability APIs must be explicit; no raw `os` ever. WASM (wazero) is the harder isolation upgrade path — keep as v2 note.
-4. **MediaRecorder/codec support varies by webview** — ffmpeg fallback for audio-mixed exports; document per-OS support matrix.
+4. **MediaRecorder/codec support varies by webview** — ffmpeg fallback for audio-mixed exports; per-OS matrix, **Linux/WebKitGTK leg measured 2026-10-30** (`ref/findings/findings-webview.md` round 2): capability is **`gst-plugins-good`-dependent** — with it: `audio/webm;codecs=opus` ✓, `audio/ogg;codecs=opus` ✓, `video/webm;codecs=vp9` ✓, h264/mp4 ✗ (ffmpeg needed for those); without the plugin only `audio/ogg;codecs=opus` survives. End-to-end encode roundtrip proven (600 ms tone → 16 KB webm/opus blob). macOS WKWebView + Windows WebView2 legs unmeasured.
 5. **Community plugin trust** — hash-pinning + explicit install warnings; no auto-update.
 
 ## 8. Definition of done

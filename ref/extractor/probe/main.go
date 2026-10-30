@@ -12,7 +12,11 @@ import (
 )
 
 func main() {
-	f, err := os.Open("/home/christian/Programming/demo/demo.dem")
+	demoPath := "/tmp/opencode/donk.dem"
+	if len(os.Args) > 1 {
+		demoPath = os.Args[1]
+	}
+	f, err := os.Open(demoPath)
 	if err != nil {
 		log.Fatal(err)
 	}
