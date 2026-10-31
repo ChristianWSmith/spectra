@@ -5,6 +5,12 @@ frontend/dist/
 frontend/bindings/
 frontend/node_modules/
 
+# Mobile-only scaffolding: unsupported platforms (macOS/Linux/Windows
+# desktop only). `wails3 update build-assets` re-extracts the stock iOS/
+# Android trees from the CLI's embedded template; keep them untracked.
+build/ios/
+build/android/
+
 # Release artifacts produced by `make artifact`
 *.zip
 SHA256SUMS

@@ -25,6 +25,8 @@ analytics, voice, and the platform tools follow).
 
 ## Download
 
+Supported platforms: macOS, Linux, and Windows (desktop only).
+
 Grab the latest release for your platform from the
 [Releases page](https://github.com/ChristianWSmith/spectra/releases/latest):
 

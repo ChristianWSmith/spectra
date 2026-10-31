@@ -10,13 +10,14 @@ vars:
   # tasks below dispatch to the matching platform Taskfile via this variable.
   GOOS: '{{.GOOS | default OS}}'
 
+# Supported platforms: macOS (darwin), Linux, windows. The stock Wails
+# mobile (iOS/Android) includes are intentionally absent — this app is
+# desktop-only (see AGENTS.md).
 includes:
   common: ./build/Taskfile.yml
   windows: ./build/windows/Taskfile.yml
   darwin: ./build/darwin/Taskfile.yml
   linux: ./build/linux/Taskfile.yml
-  ios: ./build/ios/Taskfile.yml
-  android: ./build/android/Taskfile.yml
 
 tasks:
   build:

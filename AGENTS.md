@@ -6,6 +6,11 @@ analysis toolkit.*; Go services + Svelte 5 frontend): single Go
 module at the repo root, GitHub Releases distribution, framework in-app
 auto-updater.
 
+Supported platforms: **macOS, Linux, Windows** (desktop only). The stock
+Wails mobile scaffolding (iOS/Android) is removed from `build/` and
+gitignored — `wails3 update build-assets` may re-extract it locally; do
+not commit or wire it up.
+
 ## Commands
 
 ```sh

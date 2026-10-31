@@ -1,25 +1,107 @@
-/* spectra — M1 dark theme.
-   Palette: near-black bg, panels, borders; amber accent (app icon);
-   CT/T team colors readable on dark. */
+/* spectra — VS Code-derived dark+ theme (default).
+   Surfaces/chrome follow VS Code Dark+ (editor #1e1e1e, sidebar/list
+   #252526, inputs #3c3c3c, terminal #cccccc on #1e1e1e, selection
+   #264f78); the brand pair #28387C (indigo) / #F5A618 (amber)
+   substitutes VS Code's #007ACC/#0078d4 blues: indigo for primary
+   buttons / focus / badges / status-bar-like fills, amber for active
+   highlights (tabs, selected rows, sorted headers). Light mode lives in
+   style-m3b.css under [data-theme="light"], derived from Light+. */
 
 :root {
   color-scheme: dark;
-  --bg: #0e1116;
-  --panel: #161b24;
-  --border: #232a37;
-  --text: #d7dde8;
-  --muted: #8b94a7;
+  /* App surfaces (VS Code Dark+ workbench) */
+  --bg: #1e1e1e; /* editor.background */
+  --panel: #252526; /* sideBar.background / tabsBackground */
+  --border: #3c3c3c; /* input.border / widget chrome */
+  --divider: rgba(255, 255, 255, 0.08); /* table/list row separators */
+  --inset: rgba(0, 0, 0, 0.25); /* recessed blocks (payloads, charts) */
+  --text: #cccccc; /* terminal/default foreground */
+  --muted: #969696; /* descriptions, placeholders */
+  /* Brand pair — VS Code's #007ACC/#0078d4 substitutions */
+  --brand: #28387c;
+  --brand-hover: #33478f; /* lightened, per button.hoverBackground dark */
+  --brand-active: #1f2c60;
   --accent: #f5a618;
+  --accent-tint: rgba(245, 166, 24, 0.12);
+  --accent-border: rgba(245, 166, 24, 0.5);
+  /* Lists (list.* — hover adapted to a desaturated #28387C tint) */
+  --list-hover: #2a3146;
+  --list-hover-strong: #343d5c;
+  --list-active: #1f2c60;
+  /* Controls */
+  --input-bg: #3c3c3c;
+  --input-border: #3c3c3c;
+  --focus: #4d61b0; /* focusBorder, lightened brand for dark chrome */
+  --btn-border: #3c3c3c; /* button.secondary border */
+  --btn-primary-fg: #ffffff;
+  /* Scrollbars (scrollbarSlider.* — thin, rounded) */
+  --scroll-thumb: #4f4f4f;
+  --scroll-thumb-hover: #7a7a7a;
+  --scroll-thumb-active: #bfbfbf;
+  /* Editor / terminal surfaces (editor.*, terminal.*) */
+  --editor-bg: #1e1e1e;
+  --editor-fg: #cccccc;
+  --editor-sel: #264f78; /* terminal.selectionBackground */
+  --editor-sel-inactive: #3a3d41;
+  /* Tabs (editorGroupHeader.tabs* / tab.*) */
+  --tab-strip: #252526;
+  --tab-active-bg: #1e1e1e;
+  --tab-inactive-fg: #a6a6a6;
+  /* Status-bar-like fills + badges (statusBar.background / badge.*) */
+  --status-bg: #28387c;
+  --status-fg: #ffffff;
+  --badge-bg: #28387c;
+  --badge-fg: #ffffff;
+  /* Game-domain semantics */
   --ct: #5aa9e6;
   --t: #e6a35a;
   --success: #4caf7d;
   --danger: #e05b5b;
-  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --mono:
+    'SF Mono', Menlo, Monaco, 'Cascadia Code', 'Cascadia Mono', Consolas,
+    'Courier New', monospace;
   --sp: 8px;
-  --radius: 6px;
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  font-size: 14px;
+  --radius: 2px; /* VS Code control radius */
+  font-family:
+    system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
+    sans-serif;
+  font-size: 13px; /* VS Code UI font size */
   line-height: 1.45;
+}
+
+/* VS Code-style scrollbars: thin, rounded thumb, transparent track. */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border-radius: 5px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-thumb-hover);
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-thumb:active {
+  background: var(--scroll-thumb-active);
+  background-clip: content-box;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+::selection {
+  background: var(--editor-sel);
 }
 
 * {
@@ -107,7 +189,7 @@ select {
   display: flex;
   flex-direction: column;
   padding: var(--sp);
-  gap: 4px;
+  gap: 2px;
 }
 
 .brand {
@@ -115,8 +197,9 @@ select {
   align-items: center;
   gap: 8px;
   padding: 6px 8px 14px;
-  font-weight: 700;
+  font-weight: 600;
   letter-spacing: 0.02em;
+  color: var(--text);
 }
 
 /* Bracket motif: [spectra] */
@@ -135,20 +218,20 @@ select {
   background: none;
   border: none;
   border-radius: var(--radius);
-  padding: 8px 10px;
+  padding: 6px 10px;
   color: var(--muted);
   cursor: pointer;
   position: relative;
 }
 
 .nav-item:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--list-hover);
   color: var(--text);
 }
 
 .nav-item.active {
   color: var(--text);
-  background: rgba(245, 166, 24, 0.1);
+  background: var(--accent-tint);
 }
 
 /* Amber [ bracket accent on the active nav item */
@@ -193,7 +276,7 @@ select {
 
 .view-header h1 {
   font-size: 1.35rem;
-  font-weight: 700;
+  font-weight: 600;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -209,17 +292,21 @@ select {
 /* --- Buttons / inputs ------------------------------------------------------ */
 
 .btn {
-  background: var(--panel);
-  border: 1px solid var(--border);
+  background: transparent;
+  border: 1px solid var(--btn-border);
   border-radius: var(--radius);
-  padding: 6px 12px;
+  padding: 5px 12px;
   cursor: pointer;
   color: var(--text);
   white-space: nowrap;
+  transition:
+    background 0.1s,
+    border-color 0.1s;
 }
 
 .btn:hover {
   border-color: var(--muted);
+  background: var(--list-hover);
 }
 
 .btn:focus-visible,
@@ -229,19 +316,24 @@ select {
 .th-sort:focus-visible,
 .vrow:focus-visible,
 .round-cell:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--focus);
   outline-offset: 1px;
 }
 
 .btn.primary {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: #14100a;
-  font-weight: 600;
+  background: var(--brand);
+  border-color: transparent;
+  color: var(--btn-primary-fg);
+  font-weight: 400;
 }
 
 .btn.primary:hover {
-  filter: brightness(1.08);
+  background: var(--brand-hover);
+  border-color: transparent;
+}
+
+.btn.primary:active {
+  background: var(--brand-active);
 }
 
 .btn.danger:hover {
@@ -255,8 +347,8 @@ select {
 }
 
 .btn.small {
-  padding: 2px 8px;
-  font-size: 0.85em;
+  padding: 1px 8px;
+  font-size: 0.92em;
 }
 
 .btn.ghost {
@@ -265,25 +357,39 @@ select {
 }
 
 .btn.ghost:hover {
-  border-color: var(--border);
+  border-color: var(--btn-border);
+  background: var(--list-hover);
 }
 
 .btn:disabled {
-  opacity: 0.45;
+  opacity: 0.4;
   cursor: not-allowed;
 }
 
 .input {
-  background: var(--bg);
-  border: 1px solid var(--border);
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
   border-radius: var(--radius);
-  padding: 6px 10px;
+  padding: 5px 8px;
   color: var(--text);
   min-width: 0;
 }
 
 .input::placeholder {
   color: var(--muted);
+}
+
+.input:hover {
+  border-color: var(--muted);
+}
+
+.input:focus-visible {
+  border-color: var(--focus);
+  outline: none;
+}
+
+.input::selection {
+  background: var(--editor-sel);
 }
 
 .toolbar,
@@ -326,7 +432,7 @@ select {
   font-size: 0.78em;
   line-height: 1.6;
   color: var(--muted);
-  background: rgba(255, 255, 255, 0.03);
+  background: rgba(255, 255, 255, 0.04);
   white-space: nowrap;
 }
 
@@ -474,7 +580,7 @@ select {
 
 .data-table td {
   padding: 5px 10px;
-  border-bottom: 1px solid rgba(35, 42, 55, 0.6);
+  border-bottom: 1px solid var(--divider);
   vertical-align: middle;
 }
 
@@ -484,7 +590,7 @@ select {
 }
 
 .data-table tbody tr:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--list-hover);
 }
 
 .data-table tbody tr.clickable {
@@ -492,7 +598,7 @@ select {
 }
 
 .data-table tbody tr.active {
-  background: rgba(245, 166, 24, 0.08);
+  background: var(--accent-tint);
 }
 
 .data-table tbody tr.dim td {
@@ -540,7 +646,7 @@ select {
 }
 
 .expand-row td {
-  background: rgba(0, 0, 0, 0.25);
+  background: var(--inset);
   padding: 10px 14px;
 }
 
@@ -610,7 +716,7 @@ select {
   gap: 10px;
   flex-wrap: wrap;
   padding: 4px 0;
-  border-bottom: 1px solid rgba(35, 42, 55, 0.6);
+  border-bottom: 1px solid var(--divider);
 }
 
 .problem-row .path {
@@ -695,19 +801,22 @@ select {
   border-color: var(--accent);
 }
 
-/* Tabs */
+/* Tabs — VS Code editor tabs: strip on --tab-strip, active tab sits on the
+   editor surface with an amber accent edge (brand sub for #0078d4). */
 
 .tabs {
   display: flex;
-  gap: 4px;
+  gap: 2px;
   border-bottom: 1px solid var(--border);
+  background: var(--tab-strip);
+  padding: 0 4px;
 }
 
 .tab {
   background: none;
   border: none;
   border-bottom: 2px solid transparent;
-  color: var(--muted);
+  color: var(--tab-inactive-fg);
   padding: 7px 14px;
   cursor: pointer;
   margin-bottom: -1px;
@@ -715,12 +824,18 @@ select {
 
 .tab:hover {
   color: var(--text);
+  background: var(--list-hover);
 }
 
 .tab.active {
-  color: var(--accent);
+  color: var(--text);
+  background: var(--tab-active-bg);
   border-bottom-color: var(--accent);
-  font-weight: 600;
+  font-weight: 400;
+}
+
+.tab.active:hover {
+  background: var(--tab-active-bg);
 }
 
 /* Overview */
@@ -856,7 +971,7 @@ select {
   align-items: center;
   padding: 6px 10px;
   border-bottom: 1px solid var(--border);
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--inset);
 }
 
 .payload pre,
@@ -948,7 +1063,7 @@ select {
   padding: 0 10px;
   background: none;
   border: none;
-  border-bottom: 1px solid rgba(35, 42, 55, 0.5);
+  border-bottom: 1px solid var(--divider);
   color: var(--text);
   font-size: 0.85em;
   text-align: left;
@@ -968,11 +1083,11 @@ select {
 }
 
 .vrow:hover {
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--list-hover);
 }
 
 .vrow.active {
-  background: rgba(245, 166, 24, 0.12);
+  background: var(--accent-tint);
 }
 
 .vrow .seq {
@@ -1126,7 +1241,7 @@ select {
   align-items: center;
   gap: 8px;
   padding: 2px 0;
-  border-bottom: 1px solid rgba(35, 42, 55, 0.5);
+  border-bottom: 1px solid var(--divider);
 }
 
 .replay-transport {

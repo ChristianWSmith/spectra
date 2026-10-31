@@ -140,7 +140,7 @@
 }
 
 .comb-card {
-  background: rgba(0, 0, 0, 0.18);
+  background: var(--inset);
   border: 1px solid var(--border);
   border-left-width: 3px;
   border-radius: var(--radius);
@@ -287,7 +287,7 @@
   border-radius: 4px;
   padding: 5px 7px;
   min-width: 64px;
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--inset);
 }
 
 .comb-round.kast {
@@ -313,7 +313,7 @@
   border-radius: 50%;
   font-size: 0.6em;
   font-weight: 700;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--divider);
   color: var(--muted);
   cursor: help;
 }
@@ -396,7 +396,7 @@
   width: 100%;
   height: auto;
   aspect-ratio: 640 / 130;
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--inset);
   border: 1px solid var(--border);
   border-radius: var(--radius);
 }
@@ -478,7 +478,7 @@
   gap: 6px;
   align-items: baseline;
   flex-wrap: wrap;
-  border-bottom: 1px solid rgba(35, 42, 55, 0.5);
+  border-bottom: 1px solid var(--divider);
   padding-bottom: 2px;
 }
 
@@ -494,7 +494,7 @@
   font-size: 0.82em;
   max-height: 260px;
   overflow-y: auto;
-  background: rgba(0, 0, 0, 0.18);
+  background: var(--inset);
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 6px 8px;
@@ -505,7 +505,7 @@
   gap: 6px;
   align-items: baseline;
   padding: 1px 0;
-  border-bottom: 1px solid rgba(35, 42, 55, 0.45);
+  border-bottom: 1px solid var(--divider);
 }
 
 .cmp-ev-names {
@@ -619,7 +619,7 @@
   gap: 10px;
   align-items: center;
   justify-content: space-between;
-  border-bottom: 1px solid rgba(35, 42, 55, 0.6);
+  border-bottom: 1px solid var(--divider);
   padding: 5px 0;
   font-size: 0.9em;
 }
@@ -634,7 +634,7 @@
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 6px 10px;
-  background: rgba(0, 0, 0, 0.16);
+  background: var(--inset);
 }
 
 .sett-defs summary {
@@ -728,7 +728,7 @@
   padding: 2px 6px;
   border: 1px solid var(--border);
   border-radius: 999px;
-  background: rgba(0, 0, 0, 0.2);
+  background: var(--inset);
   font-size: 0.85em;
 }
 
@@ -1172,7 +1172,7 @@ button.chip.ctx-chip.on {
   gap: 10px;
   align-items: baseline;
   padding: 1px 0 1px 4px;
-  border-bottom: 1px solid rgba(35, 42, 55, 0.35);
+  border-bottom: 1px solid var(--divider);
 }
 
 .kv-key {
@@ -1233,7 +1233,7 @@ button.chip.ctx-chip.on {
 }
 
 .kv-obj[open] > summary {
-  border-bottom: 1px solid rgba(35, 42, 55, 0.35);
+  border-bottom: 1px solid var(--divider);
 }
 
 .kv-obj > details,
@@ -1271,7 +1271,7 @@ button.chip.ctx-chip.on {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  background: rgba(0, 0, 0, 0.18);
+  background: var(--inset);
   border: 1px solid var(--border);
   border-left-width: 3px;
   border-radius: var(--radius);
@@ -1371,7 +1371,7 @@ button.chip.ctx-chip.on {
   overflow-wrap: anywhere;
   max-height: 60vh;
   overflow-y: auto;
-  background: rgba(0, 0, 0, 0.18);
+  background: var(--inset);
 }
 
 .rep-html {
@@ -1436,7 +1436,7 @@ button.chip.ctx-chip.on {
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  border-bottom: 1px solid rgba(35, 42, 55, 0.6);
+  border-bottom: 1px solid var(--divider);
   padding: 6px 0;
   font-size: 0.92em;
 }
@@ -1510,7 +1510,7 @@ button.chip.ctx-chip.on {
   width: 100%;
   height: 140px;
   display: block;
-  background: rgba(0, 0, 0, 0.18);
+  background: var(--inset);
   border: 1px solid var(--border);
   border-radius: var(--radius);
 }
@@ -1537,18 +1537,50 @@ button.chip.ctx-chip.on {
 }
 
 /* --- Light theme (plan §2.6) -------------------------------------------------
-   Overrides every root token the app reads from style.css plus the worst
-   hardcoded-dark offenders in shared surfaces. Known remaining gaps: the
-   replay canvas paints its own near-black stage bg, heatmap raster colors
-   and some rgba-black shadows/menus still assume dark. */
+   VS Code Light+ derived: editor #ffffff, sidebar/list chrome #f3f3f3,
+   inputs #ffffff/#cecece, terminal selection #add6ff; brand #28387C
+   takes over every #007ACC/#0078d4 accent (primary buttons, focus,
+   badges, list-active fills) and amber #F5A618 keeps the active-state
+   highlights. Applied via [data-theme="light"] by theme.js. */
 
 :root[data-theme="light"] {
   color-scheme: light;
-  --bg: #f4f6f9;
-  --panel: #ffffff;
-  --border: #d5dae3;
-  --text: #1b2330;
-  --muted: #5a6475;
+  --bg: #ffffff; /* editor.background */
+  --panel: #f3f3f3; /* sideBar.background / tabsBackground */
+  --border: #d4d4d4;
+  --divider: rgba(0, 0, 0, 0.09);
+  --inset: rgba(0, 0, 0, 0.04);
+  --text: #333333;
+  --muted: #616161;
+  --brand: #28387c;
+  --brand-hover: #1f2c60; /* darkened, per button.hoverBackground light */
+  --brand-active: #1a2550;
+  --accent: #f5a618;
+  --accent-tint: rgba(245, 166, 24, 0.14);
+  --accent-border: rgba(245, 166, 24, 0.55);
+  /* Brand-tinted list hover (VS Code light uses #f0f0f0 neutral) */
+  --list-hover: #e9ebf3;
+  --list-hover-strong: #dde1ee;
+  --list-active: rgba(40, 56, 124, 0.12);
+  --input-bg: #ffffff;
+  --input-border: #cecece;
+  --focus: #28387c; /* focusBorder -> brand */
+  --btn-border: #cecece;
+  --btn-primary-fg: #ffffff;
+  --scroll-thumb: rgba(100, 100, 100, 0.4); /* scrollbarSlider light */
+  --scroll-thumb-hover: rgba(100, 100, 100, 0.7);
+  --scroll-thumb-active: #b0b0b0;
+  --editor-bg: #ffffff;
+  --editor-fg: #333333;
+  --editor-sel: #add6ff; /* light selection */
+  --editor-sel-inactive: #e4e6eb;
+  --tab-strip: #f3f3f3;
+  --tab-active-bg: #ffffff;
+  --tab-inactive-fg: #616161;
+  --status-bg: #28387c;
+  --status-fg: #ffffff;
+  --badge-bg: #28387c;
+  --badge-fg: #ffffff;
   --ct: #2f7bbd;
   --t: #b9722f;
   --success: #2f8558;
@@ -1556,40 +1588,40 @@ button.chip.ctx-chip.on {
 }
 
 [data-theme="light"] .nav-item:hover {
-  background: rgba(27, 35, 48, 0.05);
+  background: var(--list-hover);
 }
 
 [data-theme="light"] .nav-item.active {
-  background: rgba(245, 166, 24, 0.14);
+  background: var(--accent-tint);
 }
 
 [data-theme="light"] .chip {
-  background: rgba(27, 35, 48, 0.04);
+  background: rgba(0, 0, 0, 0.04);
 }
 
 [data-theme="light"] .chip-bar,
 [data-theme="light"] .progress {
-  background: rgba(27, 35, 48, 0.08);
+  background: rgba(0, 0, 0, 0.08);
 }
 
 [data-theme="light"] .data-table td {
-  border-bottom: 1px solid rgba(27, 35, 48, 0.12);
+  border-bottom: 1px solid var(--divider);
 }
 
 [data-theme="light"] .data-table tbody tr:hover {
-  background: rgba(27, 35, 48, 0.04);
+  background: var(--list-hover);
 }
 
 [data-theme="light"] .data-table tbody tr.active {
-  background: rgba(245, 166, 24, 0.14);
+  background: var(--accent-tint);
 }
 
 [data-theme="light"] .expand-row td {
-  background: rgba(27, 35, 48, 0.05);
+  background: var(--inset);
 }
 
 [data-theme="light"] .payload-head {
-  background: rgba(27, 35, 48, 0.05);
+  background: var(--inset);
 }
 
 [data-theme="light"] .problem-row,
@@ -1600,16 +1632,16 @@ button.chip.ctx-chip.on {
 [data-theme="light"] .cmp-list li,
 [data-theme="light"] .kv-row,
 [data-theme="light"] .kv-obj[open] > summary {
-  border-bottom-color: rgba(27, 35, 48, 0.12);
+  border-bottom-color: var(--divider);
 }
 
 [data-theme="light"] .vrow:hover,
 [data-theme="light"] .cp-item:hover {
-  background: rgba(27, 35, 48, 0.05);
+  background: var(--list-hover);
 }
 
 [data-theme="light"] .vrow.active {
-  background: rgba(245, 166, 24, 0.14);
+  background: var(--accent-tint);
 }
 
 [data-theme="light"] .comb-card,
@@ -1621,29 +1653,30 @@ button.chip.ctx-chip.on {
 [data-theme="light"] .rep-md,
 [data-theme="light"] .spat-svg,
 [data-theme="light"] .comb-dot {
-  background: rgba(27, 35, 48, 0.04);
+  background: var(--inset);
 }
 
 [data-theme="light"] .comb-modal,
 [data-theme="light"] .prof-results,
 [data-theme="light"] .cp-panel {
-  box-shadow: 0 12px 32px rgba(27, 35, 48, 0.18);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.15);
 }
 
-[data-theme="light"] .cp-back {
-  background: rgba(27, 35, 48, 0.35);
+[data-theme="light"] .cp-back,
+[data-theme="light"] .comb-modal-back {
+  background: rgba(0, 0, 0, 0.35);
 }
 
 [data-theme="light"] .cp-item.active {
-  background: rgba(245, 166, 24, 0.16);
+  background: var(--accent-tint);
 }
 
 [data-theme="light"] .voice-player {
-  background: rgba(27, 35, 48, 0.04);
+  background: var(--inset);
 }
 
 [data-theme="light"] .btn.primary {
-  color: #14100a;
+  color: var(--btn-primary-fg);
 }
 
 [data-theme="light"] .scrub-marker.kill {
