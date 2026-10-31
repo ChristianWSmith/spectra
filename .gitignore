@@ -48,3 +48,6 @@ go.work.sum
 *.dem
 # …except the golden acceptance demo, tracked via Git LFS
 !donk.dem.zst
+
+# stray `go build .` output (root package binary)
+/spectra
