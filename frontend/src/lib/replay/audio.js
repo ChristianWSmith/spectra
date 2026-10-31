@@ -357,6 +357,13 @@ export function createVoiceEngine({ engine, matchId, fetchPCM, onError, onStateC
     get state() {
       return currentState();
     },
+    // Mixed-clip tap: the live AudioContext + master gain (post
+    // mute/solo/volume) so the clip recorder can attach a
+    // MediaStreamDestination without reaching engine internals.
+    getStreamTap() {
+      if (!ctx || !master || !enabled) return null;
+      return { ctx, master };
+    },
     setEnabled,
     setPlayers(list) {
       players = list || [];

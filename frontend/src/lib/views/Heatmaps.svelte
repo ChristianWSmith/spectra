@@ -4,6 +4,7 @@
     getScoreboard,
     getRounds,
     getHeatmap,
+    getSpatialSeries,
     setPendingTimelineFilter,
   } from '../services.js';
   import { loadMapPack } from '../components/mapxform.js';
@@ -148,6 +149,72 @@
       nav(`/timeline/${id}`);
     }, 400);
   }
+  // --- M5 spatial series (plan §2.4 — series only; pattern detection -----
+  // descoped pending bomb-site region polygons, see findings-mappack §5).
+  const SPAT_W = 640;
+  const SPAT_H = 140;
+
+  let spatKind = $state('spacing'); // spacing|spread
+  let series = $state(null); // SpatialSeries
+  let spatLoading = $state(false);
+  let spatError = $state('');
+  let spatGen = 0;
+
+  $effect(() => {
+    const k = spatKind;
+    const rid = id;
+    const my = ++spatGen;
+    spatLoading = true;
+    spatError = '';
+    getSpatialSeries(rid, k, 120)
+      .then((s) => {
+        if (my !== spatGen) return;
+        series = s;
+        spatLoading = false;
+      })
+      .catch((e) => {
+        if (my !== spatGen) return;
+        series = null;
+        spatError = errText(e);
+        spatLoading = false;
+      });
+  });
+
+  // Polyline geometry: x = bucket over match time, y = world units; -1
+  // buckets (no valid sample) break the path into separate segments.
+  const spatPaths = $derived.by(() => {
+    if (!series || !series.values || !series.values.length) {
+      return { segs: [], min: 0, max: 0 };
+    }
+    let min = Infinity;
+    let max = -Infinity;
+    for (const v of series.values) {
+      if (v < 0) continue;
+      if (v < min) min = v;
+      if (v > max) max = v;
+    }
+    if (!Number.isFinite(min)) {
+      min = 0;
+      max = 0;
+    }
+    const span = Math.max(1e-6, max - min);
+    const n = series.values.length;
+    const segs = [];
+    let cur = [];
+    for (let i = 0; i < n; i++) {
+      const v = series.values[i];
+      if (v < 0) {
+        if (cur.length > 1) segs.push(cur);
+        cur = [];
+        continue;
+      }
+      const x = n === 1 ? 0 : (i / (n - 1)) * SPAT_W;
+      const y = SPAT_H - ((v - min) / span) * SPAT_H;
+      cur.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+    }
+    if (cur.length > 1) segs.push(cur);
+    return { segs, min, max };
+  });
 </script>
 
 <div class="heat-view">
@@ -249,4 +316,62 @@
       Choose filters and press Generate — heatmaps are computed on demand.
     </p>
   {/if}
+
+  <section class="panel spat-panel">
+    <h2>Spatial series</h2>
+    <div class="spat-controls">
+      <div class="sett-seg" role="group" aria-label="Series kind">
+        <button
+          class="btn"
+          class:primary={spatKind === 'spacing'}
+          aria-pressed={spatKind === 'spacing'}
+          onclick={() => (spatKind = 'spacing')}>spacing</button
+        >
+        <button
+          class="btn"
+          class:primary={spatKind === 'spread'}
+          aria-pressed={spatKind === 'spread'}
+          onclick={() => (spatKind = 'spread')}>spread</button
+        >
+      </div>
+      <span class="muted"
+        >{spatKind === 'spacing'
+          ? 'average distance between alive teammates'
+          : 'mean pairwise distance across all alive players'} —
+        world units over match time</span
+      >
+      {#if series && !spatLoading}
+        <span class="chip" title="Compute time">{series.ms} ms</span>
+      {/if}
+    </div>
+    {#if spatError}
+      <p class="error" role="alert">{spatError}</p>
+    {/if}
+    {#if spatLoading}
+      <p class="muted" role="status">Computing series…</p>
+    {:else if series}
+      <svg
+        class="spat-svg"
+        viewBox="0 0 {SPAT_W} {SPAT_H}"
+        preserveAspectRatio="none"
+        role="img"
+        aria-label="{spatKind} series over match time"
+      >
+        {#each spatPaths.segs as seg, i (i)}
+          <polyline points={seg.join(' ')} />
+        {/each}
+      </svg>
+      <div class="spat-axis muted">
+        <span class="mono">max {fmtInt(spatPaths.max)}</span>
+        <span class="mono"
+          >{series.buckets} buckets · ticks {series.fromTick}–{series.toTick}</span
+        >
+        <span class="mono">min {fmtInt(spatPaths.min)}</span>
+      </div>
+    {/if}
+    <p class="muted spat-desc">
+      Pattern detection (executes/setups) descoped — needs bomb-site region
+      polygons (ref/findings/findings-mappack.md §5).
+    </p>
+  </section>
 </div>

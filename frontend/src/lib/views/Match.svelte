@@ -11,6 +11,11 @@
     getRoundClasses,
     getVoicePresence,
     listMatches,
+    listMetrics,
+    previewMetric,
+    getProvenance,
+    getConVars,
+    getEntitySummary,
     setPendingTimelineFilter,
     setPendingSeek,
   } from '../services.js';
@@ -104,6 +109,24 @@
   // Rounds-tab compare picker: round numbers (max 4, non-warmup only).
   let compareSel = $state([]);
 
+  // M5: provenance / entity / ConVar explorer-lite (Raw tab).
+  let prov = $state(null);
+  let provError = $state('');
+  let ents = $state(null);
+  let entsError = $state('');
+  let convars = $state([]);
+  let cvError = $state('');
+  let cvFilter = $state('');
+
+  // localStorage contract (M5): 'spectra:pinned-metrics' holds a JSON array
+  // of metric ids — written by Builder's pin toggles, read here when a
+  // scoreboard renders. Ids are resolved through listMetrics() on load (a
+  // deleted metric simply drops out) and each pin is previewed grouped by
+  // player, scoped to this match; preview rows map group (SteamID64) → value.
+  let pins = $state([]);
+  let metricCols = $state([]);
+  let metricError = $state('');
+
   // Match header + rounds + summary. Scoreboard has its own effect below
   // (sort changes must not re-trigger this one).
   $effect(() => {
@@ -134,7 +157,10 @@
   $effect(() => {
     sortKey;
     desc;
-    if (sortKey === 'kast') return;
+    // kast + m:* metric columns sort client-side (viewRows) — the store
+    // sort only ever runs for SCORE_COLS keys, so server ordering for
+    // K/D/ADR/… stays exactly as GetScoreboard returns it.
+    if (sortKey === 'kast' || sortKey.startsWith('m:')) return;
     let live = true;
     getScoreboard(id, sortKey, desc)
       .then((sb) => {
@@ -177,16 +203,143 @@
   });
 
   const viewRows = $derived.by(() => {
-    if (sortKey !== 'kast') return scoreboard;
-    const dir = desc ? -1 : 1;
-    return [...scoreboard].sort(
-      (a, b) => dir * ((kastPct(a) ?? -1) - (kastPct(b) ?? -1)),
-    );
+    if (sortKey === 'kast') return scoreboard;
+    if (sortKey.startsWith('m:')) {
+      const col = metricCols.find((c) => metricSortKey(c.def.id) === sortKey);
+      if (!col) return scoreboard;
+      return [...scoreboard].sort((a, b) => {
+        const va = metricSortVal(col, a);
+        const vb = metricSortVal(col, b);
+        if (va == null && vb == null) return 0;
+        if (va == null) return 1;
+        if (vb == null) return -1;
+        return desc ? vb - va : va - vb;
+      });
+    }
+    return scoreboard;
   });
 
   function kastPct(p) {
     const row = combatBySteam.get(p.steamId);
     return row && Number.isFinite(row.kastPct) ? row.kastPct : null;
+  }
+
+  // --- M5 pinned metric columns ---------------------------------------------
+  // Column-merge: SCORE_COLS stays a pure store-driven set; pinned metrics
+  // append as extra <th>/<td> cells rendered from their own preview map.
+  // Sorting a metric key never leaves the client (the fetch effect skips
+  // m:* keys), so GetScoreboard ordering for the M1/M3/M4 columns is
+  // untouched; players without a value for the metric sort last either way.
+  function readPins() {
+    try {
+      const raw = localStorage.getItem('spectra:pinned-metrics');
+      const arr = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(arr)) return [];
+      return [...new Set(arr.map(Number).filter((n) => Number.isFinite(n)))];
+    } catch {
+      return [];
+    }
+  }
+
+  function metricSortKey(metricId) {
+    return `m:${metricId}`;
+  }
+
+  function metricSortVal(col, p) {
+    const r = col.map.get(p.steamId);
+    return r && Number.isFinite(r.value) ? r.value : null;
+  }
+
+  function columnOf(def, pv) {
+    const rows = (pv && pv.rows) || [];
+    let totalN = 0;
+    for (const r of rows) totalN += r.n || 0;
+    return { def, rows, map: new Map(rows.map((r) => [r.group, r])), error: '', totalN };
+  }
+
+  $effect(() => {
+    id;
+    let live = true;
+    // Read localStorage directly — reading the `pins` state here would make
+    // it a dependency of this effect and re-trigger it on every pin write.
+    const pinIds = readPins();
+    pins = pinIds;
+    metricCols = [];
+    metricError = '';
+    if (pinIds.length === 0) return;
+    listMetrics()
+      .then((defs) => {
+        const byId = new Map((defs || []).map((d) => [d.id, d]));
+        const picked = pinIds.map((pid) => byId.get(pid)).filter(Boolean);
+        return Promise.all(
+          picked.map((def) =>
+            previewMetric(def.id, '', 'player', `match:${id}`, 200)
+              .then((pv) => columnOf(def, pv))
+              .catch((e) => ({
+                def,
+                rows: [],
+                map: new Map(),
+                error: errText(e),
+                totalN: 0,
+              })),
+          ),
+        );
+      })
+      .then((cols) => {
+        if (live) metricCols = cols;
+      })
+      .catch((e) => {
+        if (live) metricError = errText(e);
+      });
+    return () => (live = false);
+  });
+
+  function unpin(metricId) {
+    pins = pins.filter((x) => x !== metricId);
+    try {
+      localStorage.setItem('spectra:pinned-metrics', JSON.stringify(pins));
+    } catch {
+      /* storage unavailable — the column still drops for this render */
+    }
+    metricCols = metricCols.filter((c) => c.def.id !== metricId);
+    if (sortKey === metricSortKey(metricId)) {
+      sortKey = 'kills';
+      desc = true;
+    }
+  }
+
+  function fmtMetricValue(v, format) {
+    if (!Number.isFinite(v)) return '—';
+    switch (format) {
+      case 'int':
+        return fmtInt(v);
+      case 'float1':
+        return fmt1(v);
+      case 'percent':
+        return fmtPercent(v * 100);
+      case 'currency':
+        return '$' + v.toLocaleString(undefined, { maximumFractionDigits: 2 });
+      default:
+        return Number.isInteger(v) ? fmtInt(v) : fmt2(v);
+    }
+  }
+
+  function metricCell(mc, p) {
+    if (mc.error) return null;
+    return mc.map.get(p.steamId) || null;
+  }
+
+  function metricCellText(mc, p) {
+    const r = metricCell(mc, p);
+    if (!r) return '—';
+    return fmtMetricValue(r.value, mc.def.format);
+  }
+
+  function metricCellTitle(mc, p) {
+    if (mc.error) return mc.error;
+    const r = metricCell(mc, p);
+    if (!r) return 'no data for this player';
+    return `${mc.def.title || mc.def.name} — sample size n=${r.n}`;
   }
 
   $effect(() => {
@@ -224,6 +377,36 @@
       })
       .catch((e) => {
         if (live) error = errText(e);
+      });
+    return () => (live = false);
+  });
+
+  $effect(() => {
+    if (tab !== 'Raw') return;
+    let live = true;
+    provError = '';
+    entsError = '';
+    cvError = '';
+    getProvenance(id)
+      .then((p) => {
+        if (live) prov = p;
+      })
+      .catch((e) => {
+        if (live) provError = errText(e);
+      });
+    getEntitySummary(id)
+      .then((e) => {
+        if (live) ents = e;
+      })
+      .catch((err) => {
+        if (live) entsError = errText(err);
+      });
+    getConVars(id)
+      .then((rows) => {
+        if (live) convars = rows || [];
+      })
+      .catch((err) => {
+        if (live) cvError = errText(err);
       });
     return () => (live = false);
   });
@@ -316,6 +499,12 @@
   const rawTotal = $derived(
     rawName ? (histogram.find((h) => h.name === rawName)?.count ?? rawEvents.length) : 0,
   );
+
+  const convarRows = $derived.by(() => {
+    const f = cvFilter.trim().toLowerCase();
+    if (!f) return convars;
+    return convars.filter((c) => `${c.name} ${c.value}`.toLowerCase().includes(f));
+  });
 
   async function toggleWarnings() {
     warningsOpen = !warningsOpen;
@@ -585,6 +774,9 @@
       {#if combatError}
         <p class="error" role="alert">KAST% unavailable: {combatError}</p>
       {/if}
+      {#if metricError}
+        <p class="error" role="alert">Pinned metrics unavailable: {metricError}</p>
+      {/if}
       <div class="table-scroll">
         <table class="data-table scoreboard">
           <thead>
@@ -600,6 +792,36 @@
                   >
                     {col.label}{#if sortKey === col.key}{desc ? ' ↓' : ' ↑'}{/if}
                   </button>
+                </th>
+              {/each}
+              {#each metricCols as mc (mc.def.id)}
+                <th
+                  scope="col"
+                  class="num m5-def"
+                  title="{mc.def.doc || mc.def.name}{mc.error ? ' — preview failed: ' + mc.error : ''}"
+                >
+                  <button
+                    class="th-sort"
+                    class:sorted={sortKey === metricSortKey(mc.def.id)}
+                    aria-label="Sort by {mc.def.title || mc.def.name}"
+                    onclick={() => toggleSort(metricSortKey(mc.def.id))}
+                  >
+                    {mc.def.title || mc.def.name}{#if sortKey === metricSortKey(mc.def.id)}{desc
+                      ? ' ↓'
+                      : ' ↑'}{/if}
+                  </button>
+                  <span class="m5-ib" title={mc.def.doc || ''}>ⓘ</span>
+                  <span
+                    class="m5-n"
+                    title="sample size: N={mc.totalN} across {mc.rows.length} groups"
+                    >({fmtInt(mc.totalN)})</span
+                  >
+                  <button
+                    class="m5-unpin"
+                    title="Unpin from scoreboard"
+                    aria-label="Unpin {mc.def.title || mc.def.name}"
+                    onclick={() => unpin(mc.def.id)}>✕</button
+                  >
                 </th>
               {/each}
             </tr>
@@ -654,10 +876,15 @@
                     <td class="num">{cellText(col, p)}</td>
                   {/if}
                 {/each}
+                {#each metricCols as mc (mc.def.id)}
+                  <td class="num m5-cell" title={metricCellTitle(mc, p)}
+                    >{metricCellText(mc, p)}</td
+                  >
+                {/each}
               </tr>
               {#if expanded === p.steamId}
                 <tr class="expand-row">
-                  <td colspan={SCORE_COLS.length + 1}>
+                  <td colspan={SCORE_COLS.length + 1 + metricCols.length}>
                     <div class="weapon-grid">
                       <div>
                         <h3>Kills by weapon</h3>
@@ -845,6 +1072,113 @@
     {:else if tab === 'Context'}
       <Context {id} {nav} />
     {:else if tab === 'Raw'}
+      <section class="panel m5-raw">
+        <div class="row-between">
+          <h2>Provenance &amp; parser index</h2>
+          <button class="btn small" onclick={() => nav('/explorer')}>
+            Open in Explorer view →
+          </button>
+        </div>
+        {#if provError}
+          <p class="error" role="alert">Provenance unavailable: {provError}</p>
+        {/if}
+        {#if entsError}
+          <p class="error" role="alert">Entity summary unavailable: {entsError}</p>
+        {/if}
+        {#if cvError}
+          <p class="error" role="alert">ConVars unavailable: {cvError}</p>
+        {/if}
+        <div class="m5-raw-grid">
+          {#if prov}
+            <div class="m5-card">
+              <h3>Provenance</h3>
+              <dl class="m5-kv">
+                <div><dt>Parser</dt><dd class="mono">{prov.parserVersion || '—'}</dd></div>
+                <div><dt>Extracted</dt><dd>{fmtDate(prov.extractedAt)}</dd></div>
+                <div><dt>Parse time</dt><dd class="num">{fmtInt(prov.parseMs)} ms</dd></div>
+                <div><dt>Warnings</dt><dd class="num">{fmtInt(prov.warnings)}</dd></div>
+                <div><dt>Enc messages</dt><dd class="num">{fmtInt(prov.encMessages)}</dd></div>
+                <div>
+                  <dt>Position</dt>
+                  <dd>fmt {prov.positionFormat} · {fmtInt(prov.sampleRate)} Hz</dd>
+                </div>
+                <div><dt>Voice chunks</dt><dd class="num">{fmtInt(prov.voiceChunks)}</dd></div>
+                <div>
+                  <dt>Rules</dt>
+                  <dd>v{prov.ruleVersion} · trade window {prov.tradeWindowS}s</dd>
+                </div>
+                <div><dt>Map</dt><dd>{prov.map || '—'}</dd></div>
+                <div><dt>Status</dt><dd>{prov.status || '—'}</dd></div>
+              </dl>
+              {#if prov.notes && prov.notes.length}
+                <ul class="m5-notes">
+                  {#each prov.notes as n, i (i)}
+                    <li>{n}</li>
+                  {/each}
+                </ul>
+              {/if}
+            </div>
+          {:else if !provError}
+            <p class="muted">Loading provenance…</p>
+          {/if}
+          {#if ents}
+            <div class="m5-card">
+              <h3>Entities</h3>
+              <dl class="m5-kv">
+                <div><dt>Server classes</dt><dd class="num">{fmtInt(ents.entityClasses)}</dd></div>
+                <div><dt>End entities</dt><dd class="num">{fmtInt(ents.endEntities)}</dd></div>
+                <div><dt>Generic types</dt><dd class="num">{fmtInt(ents.genericTypes)}</dd></div>
+                <div><dt>Generic events</dt><dd class="num">{fmtInt(ents.genericTotal)}</dd></div>
+              </dl>
+              {#if ents.notes}
+                <p class="m5-note-line">{ents.notes}</p>
+              {/if}
+            </div>
+          {:else if !entsError}
+            <p class="muted">Loading entity summary…</p>
+          {/if}
+          <div class="m5-card m5-cv-card">
+            <div class="row-between">
+              <h3>ConVars</h3>
+              <span class="chip">{convarRows.length}/{convars.length}</span>
+            </div>
+            <input
+              class="input"
+              placeholder="Filter name / value…"
+              bind:value={cvFilter}
+              aria-label="Filter ConVars"
+            />
+            <div class="m5-cv-scroll">
+              <table class="data-table mini">
+                <thead>
+                  <tr>
+                    <th scope="col" class="num">Tick</th>
+                    <th scope="col" class="num">Round</th>
+                    <th scope="col">Name</th>
+                    <th scope="col">Value</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each convarRows as c, i (i)}
+                    <tr>
+                      <td class="num mono">{c.tick}</td>
+                      <td class="num"><span class="chip round-chip">{c.round}</span></td>
+                      <td class="mono">{c.name}</td>
+                      <td class="mono m5-cv-val">{c.value}</td>
+                    </tr>
+                  {:else}
+                    <tr>
+                      <td colspan="4" class="muted">
+                        {cvError ? '—' : 'No ConVars recorded in this demo.'}
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
       <div class="raw-grid">
         <section class="panel">
           <h2>Generic event histogram</h2>

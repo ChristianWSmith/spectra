@@ -7,6 +7,9 @@
 import { Events } from '@wailsio/runtime';
 import {
   AppService,
+  MetricsService,
+  QueryService,
+  PlatformService,
   LibraryService,
   MatchService,
   ReplayService,
@@ -275,3 +278,45 @@ export function getCareerTrend(steamId, metric) { return ProfileService.GetCaree
 // EventFilter shape too — {kind, steamId, round, weapon, tickFrom, tickTo,
 // dmgMin, dmgMax, distanceMax, headshotOnly, bbox:{minX,minY,maxX,maxY}} —
 // Timeline applies any subset. Heatmap click → setPendingTimelineFilter({bbox}).
+
+// --- MetricsService (M5) -----------------------------------------------------
+
+export function listMetrics() { return MetricsService.ListMetrics(); }
+export function getMetric(id) { return MetricsService.GetMetric(id); }
+export function saveMetric(m) { return MetricsService.SaveMetric(m); }
+export function deleteMetric(id) { return MetricsService.DeleteMetric(id); }
+export function previewMetric(id, expr, groupBy, scope, limit) {
+  return MetricsService.PreviewMetric(id, expr || '', groupBy || '', scope || '', limit || 200);
+}
+export function validateExpr(expr, groupBy) { return MetricsService.ValidateExpr(expr, groupBy || ''); }
+
+// --- QueryService (M5) -------------------------------------------------------
+
+export function runQuery(sql, limit, timeoutMS) { return QueryService.Run(sql, limit || 0, timeoutMS || 0); }
+export function getSchema() { return QueryService.GetSchema(); }
+export function listSavedQueries() { return QueryService.ListSavedQueries(); }
+export function saveQuery(name, sql) { return QueryService.SaveQuery(name, sql); }
+export function deleteQuery(id) { return QueryService.DeleteQuery(id); }
+export function listQueryHistory(limit) { return QueryService.ListHistory(limit || 50); }
+export function clearQueryHistory() { return QueryService.ClearHistory(); }
+
+// --- PlatformService (M5) ----------------------------------------------------
+
+export function getProvenance(matchId) { return PlatformService.GetProvenance(matchId); }
+export function getConVars(matchId) { return PlatformService.GetConVars(matchId); }
+export function getEntitySummary(matchId) { return PlatformService.GetEntitySummary(matchId); }
+export function getSpatialSeries(matchId, kind, buckets) {
+  return PlatformService.GetSpatialSeries(matchId, kind, buckets || 120);
+}
+export function listPlugins() { return PlatformService.ListPlugins(); }
+export function installPlugin(path) { return PlatformService.InstallPlugin(path); }
+export function setPluginEnabled(id, enabled) { return PlatformService.SetPluginEnabled(id, enabled); }
+export function removePlugin(id) { return PlatformService.RemovePlugin(id); }
+export function listReportTemplates() { return PlatformService.ListReportTemplates(); }
+export function renderReport(templateId, matchId, steamId, round) {
+  return PlatformService.RenderReport(templateId, matchId || 0, steamId || '', round || 0);
+}
+// Report file downloads + DB copy ride HTTP: /api/export/<matchId>/report?template=&format=md|html
+export function reportDownloadURL(matchId, templateId, format) {
+  return `/api/export/${matchId}/report?template=${encodeURIComponent(templateId)}&format=${format}`;
+}

@@ -108,6 +108,7 @@
   // (startEngine re-runs it on the live path).
   function teardown() {
     ready = false;
+    discardClip();
     if (voiceEngine) voiceEngine.destroy();
     voiceEngine = null;
     uiVoiceOn = false;
@@ -216,6 +217,7 @@
       uiLoopTo = st.loopTo;
       uiLoopOn = st.loopEnabled;
       renderer.draw();
+      if (recState === 'recording' && recEndFrame >= 0 && st.frame >= recEndFrame) stopClip();
     });
     input = attachReplayInput({
       canvas: canvasEl,
@@ -299,6 +301,176 @@
     if (canvasEl && engine) snapshot(canvasEl, id, engine.state.tick);
   }
 
+  // --- M5 clip recorder (plan §2.5) ------------------------------------------
+  // canvas.captureStream(30) → MediaRecorder WebM. Mimetype fallback list is
+  // required (findings-webview round 2: encoders are gst-plugins-good
+  // dependent — without it video/webm may be absent or encoder-less).
+  // Audio: video-only — the M4 voice engine keeps its AudioContext/master
+  // gain internal to audio.js (no exposed node), so there is nothing to tap
+  // via createMediaStreamDestination without restructuring that module.
+  const CLIP_MIMES = [
+    'video/webm;codecs=vp9,opus',
+    'video/webm;codecs=vp8,opus',
+    'video/webm;codecs=vp9',
+    'video/webm',
+  ];
+  const CLIP_SEC = 10;
+
+  let recState = $state('idle'); // idle|recording|encoding|saved|error
+  let recNote = $state('');
+  let recEndFrame = -1; // plain local: only read inside the onChange callback
+  let recorder = null;
+  let recChunks = [];
+  let recAudioTap = null;
+  let recStartTick = 0;
+
+  function pickClipMime() {
+    if (typeof MediaRecorder === 'undefined') return null;
+    for (const m of CLIP_MIMES) {
+      if (MediaRecorder.isTypeSupported(m)) return m;
+    }
+    return '';
+  }
+
+  function toggleRecord() {
+    if (recState === 'recording') stopClip();
+    else startClip();
+  }
+
+  function startClip() {
+    if (!canvasEl || !engine || !data || !data.frames) {
+      recState = 'error';
+      recNote = `clip prerequisites missing (canvas=${!!canvasEl} engine=${!!engine} frames=${data && data.frames})`;
+      return;
+    }
+    try {
+    if (typeof MediaRecorder === 'undefined' || !canvasEl.captureStream) {
+      recState = 'error';
+      recNote =
+        'this webview lacks MediaRecorder/captureStream — clips need a WebM encoder (on Linux install gst-plugins-good)';
+      return;
+    }
+    const loopSet = uiLoopFrom >= 0 && uiLoopTo >= uiLoopFrom;
+    const startFrame = loopSet ? uiLoopFrom : Math.min(uiFrame, data.frames - 1);
+    const tr = meta && meta.tickRate > 0 ? meta.tickRate : 64;
+    const targetTick = data.ticks[startFrame] + Math.round(CLIP_SEC * tr);
+    let endFrame = data.frames - 1;
+    for (let f = startFrame; f < data.frames; f++) {
+      if (data.ticks[f] >= targetTick) {
+        endFrame = f;
+        break;
+      }
+    }
+    if (endFrame <= startFrame) endFrame = Math.min(data.frames - 1, startFrame + 1);
+    const mime = pickClipMime();
+    if (mime === null) {
+      recState = 'error';
+      recNote = 'MediaRecorder is unavailable in this webview — recording not possible';
+      return;
+    }
+    const stream = canvasEl.captureStream(30);
+    // Mixed voice track (acceptance #5): tap the voice engine's master bus
+    // when voice is enabled; falls back to video-only otherwise.
+    recAudioTap = null;
+    const tap = voiceEngine?.getStreamTap?.();
+    if (tap) {
+      try {
+        const dest = tap.ctx.createMediaStreamDestination();
+        tap.master.connect(dest);
+        for (const t of dest.stream.getAudioTracks()) stream.addTrack(t);
+        recAudioTap = { ctx: tap.ctx, master: tap.master, dest };
+      } catch {
+        recAudioTap = null;
+      }
+    }
+    recChunks = [];
+    recStartTick = data.ticks[startFrame];
+    recEndFrame = endFrame;
+    try {
+      recorder = mime ? new MediaRecorder(stream, { mimeType: mime }) : new MediaRecorder(stream);
+    } catch (e) {
+      recState = 'error';
+      recNote = `MediaRecorder failed: ${errText(e)} — on Linux install gst-plugins-good for WebM encoders`;
+      recEndFrame = -1;
+      return;
+    }
+    recorder.ondataavailable = (e) => {
+      if (e.data && e.data.size) recChunks.push(e.data);
+    };
+    recorder.onstop = finishClip;
+    recorder.start(250);
+    recState = 'recording';
+    recNote = `${(mime || 'video/webm default').replace('video/', '')} · ${recAudioTap ? 'canvas + voice mix' : 'video only (enable voice for mixed audio)'}`;
+    engine.seekTick(data.ticks[startFrame]);
+    engine.setSpeed(1);
+    engine.play();
+    } catch (e) {
+      recState = 'error';
+      recNote = `clip failed: ${errText(e)}`;
+      recEndFrame = -1;
+      recChunks = [];
+    }
+
+  }
+
+  function stopClip() {
+    if (!recorder || recState !== 'recording') return;
+    recState = 'encoding';
+    engine?.pause();
+    try {
+      recorder.stop();
+    } catch {
+      finishClip();
+    }
+  }
+
+  function finishClip() {
+    const type = (recorder && recorder.mimeType) || 'video/webm';
+    const blob = new Blob(recChunks, { type });
+    recChunks = [];
+    recorder = null;
+    if (recAudioTap) {
+      try {
+        recAudioTap.master.disconnect(recAudioTap.dest);
+      } catch {
+        /* already torn down */
+      }
+      for (const t of recAudioTap.dest.stream.getAudioTracks()) t.stop();
+      recAudioTap = null;
+    }
+    recEndFrame = -1;
+    if (!blob.size) {
+      recState = 'error';
+      recNote =
+        'recorder produced an empty blob — no WebM encoder available (on Linux install gst-plugins-good)';
+      return;
+    }
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `clip-${id}-${recStartTick}.webm`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    recState = 'saved';
+    recNote = `${type.replace('video/', '')} · ${(blob.size / 1024).toFixed(0)} KB`;
+  }
+
+  function discardClip() {
+    if (recorder) {
+      recorder.onstop = null;
+      try {
+        if (recorder.state !== 'inactive') recorder.stop();
+      } catch {
+        /* already stopped */
+      }
+    }
+    recorder = null;
+    recChunks = [];
+    recEndFrame = -1;
+    recState = 'idle';
+    recNote = '';
+  }
+
   function openTimeline() {
     if (!engine) return;
     setPendingTimelineFilter({ tick: engine.state.tick });
@@ -340,6 +512,35 @@
       <span class="mono muted replay-readout">tick {uiTick}</span>
       <button class="btn" onclick={openTimeline}>Open timeline at tick</button>
       <button class="btn" onclick={doSnapshot}>Snapshot</button>
+      <button
+        class="btn clip-btn"
+        class:primary={recState === 'recording'}
+        disabled={recState === 'encoding'}
+        onclick={toggleRecord}
+        title="Record a WebM clip — loop range if set, else 10s from the playhead (video only)"
+        >{recState === 'recording' ? '■ Stop clip' : '● Record clip'}</button
+      >
+      {#if recState !== 'idle'}
+        <span
+          class="chip clip-state"
+          class:recording={recState === 'recording'}
+          class:encoding={recState === 'encoding'}
+          class:saved={recState === 'saved'}
+          class:err={recState === 'error'}
+          title={recNote}
+          role="status"
+          >{recState === 'recording'
+            ? `recording · ${recNote}`
+            : recState === 'encoding'
+              ? 'encoding…'
+              : recState === 'saved'
+                ? `saved · ${recNote}`
+                : recNote}</span
+        >
+        {#if recState === 'saved' || recState === 'error'}
+          <button class="btn small ghost" onclick={discardClip} title="Dismiss">✕</button>
+        {/if}
+      {/if}
     {/if}
   </header>
 

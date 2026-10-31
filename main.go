@@ -1,12 +1,14 @@
 package main
 
 import (
+	"database/sql"
 	"embed"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"math"
 	"net/http"
@@ -27,6 +29,7 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/extract"
 	"github.com/ChristianWSmith/spectra/internal/library"
 	"github.com/ChristianWSmith/spectra/internal/models"
+	"github.com/ChristianWSmith/spectra/internal/report"
 	"github.com/ChristianWSmith/spectra/internal/sidecar"
 	"github.com/ChristianWSmith/spectra/internal/store"
 )
@@ -112,6 +115,10 @@ func main() {
 			handleSidecar(st, w, r, p)
 			return
 		}
+		if p := strings.TrimPrefix(r.URL.Path, "/api/export/"); p != r.URL.Path {
+			handleExport(st, w, r, p)
+			return
+		}
 		bundled.ServeHTTP(w, r)
 	})
 
@@ -149,6 +156,9 @@ func main() {
 	app.RegisterService(application.NewService(&AnalyticsService{st: st, app: app}))
 	app.RegisterService(application.NewService(&ProfileService{st: st, app: app}))
 	app.RegisterService(application.NewService(&VoiceService{st: st, app: app}))
+	app.RegisterService(application.NewService(&MetricsService{st: st, app: app}))
+	app.RegisterService(application.NewService(&QueryService{st: st, app: app}))
+	app.RegisterService(application.NewService(&PlatformService{st: st, app: app}))
 
 	initUpdater(app)
 
@@ -322,6 +332,107 @@ func handleSidecar(st *store.Store, w http.ResponseWriter, r *http.Request, p st
 // engine asks for ≤2 s windows). 64 ticks/s is the fallback when the
 // match header lacks a tick rate.
 const voiceMaxWindowSeconds = 60
+
+// handleExport serves the heavy-download routes (plan M2 §6 asset-server
+// pattern; M5 §2.5 reports/export):
+//
+//	GET /api/export/library.db                best-effort WAL checkpoint,
+//	                                          then the SQLite file as a
+//	                                          download (application/vnd.sqlite3)
+//	GET /api/export/<matchID>/report          rendered report attachment
+//	        ?template=<id>[&format=md|html]   (template without an
+//	                                          extension resolves via
+//	                                          format, default md; ids like
+//	                                          match.md are used as-is),
+//	                                          optional &steamId= (player
+//	                                          scope) &round= (round scope)
+//
+// A missing match/template is 404. No auth: only the app's own webview
+// reaches the asset server. (Zip bundle of db + per-match reports is the
+// documented §2.5 v1 deferral.)
+func handleExport(st *store.Store, w http.ResponseWriter, r *http.Request, p string) {
+	if p == "library.db" {
+		handleExportLibraryDB(w, r)
+		return
+	}
+	idStr, rem, ok := strings.Cut(p, "/")
+	if !ok || rem != "report" {
+		http.NotFound(w, r)
+		return
+	}
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || id <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+	if _, err := st.GetMatch(id); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	q := r.URL.Query()
+	templateID := q.Get("template")
+	if templateID == "" {
+		http.Error(w, "export: missing template", http.StatusBadRequest)
+		return
+	}
+	if !strings.Contains(templateID, ".") {
+		format := q.Get("format")
+		if format == "" {
+			format = "md"
+		}
+		templateID += "." + format
+	}
+	steamID := q.Get("steamId")
+	round, _ := strconv.Atoi(q.Get("round"))
+	text, format, err := renderReportDoc(st, templateID, id, steamID, round)
+	if errors.Is(err, report.ErrNotFound) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	contentType := "text/markdown; charset=utf-8"
+	if format == "html" {
+		contentType = "text/html; charset=utf-8"
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", `attachment; filename="spectra-`+idStr+`-`+templateID+`"`)
+	if _, err := io.WriteString(w, text); err != nil {
+		log.Printf("export: write report: %v", err)
+	}
+}
+
+// handleExportLibraryDB checkpoints the WAL (best-effort, on a short-lived
+// second connection — the store keeps its own single connection open) and
+// streams the SQLite file as a download. The checkpoint only succeeds when
+// the writer is idle; a busy WAL simply ships with the -wal bytes absent,
+// which SQLite recovers on open.
+func handleExportLibraryDB(w http.ResponseWriter, r *http.Request) {
+	path := data.DBPath()
+	if db, err := sql.Open("sqlite", path); err == nil {
+		_, _ = db.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`)
+		_ = db.Close()
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	defer func() { _ = f.Close() }()
+	info, err := f.Stat()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/vnd.sqlite3")
+	w.Header().Set("Content-Disposition", `attachment; filename="spectra-library.db"`)
+	w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
+	if _, err := io.Copy(w, f); err != nil {
+		log.Printf("export: write library.db: %v", err)
+	}
+}
 
 // handleVoice serves the /api/sidecar/<id>/voice/{pcm,wav} routes.
 func handleVoice(st *store.Store, w http.ResponseWriter, r *http.Request, matchID int64, idStr, kind string) {

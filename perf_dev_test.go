@@ -130,3 +130,40 @@ func TestPerfVoiceDevDB(t *testing.T) {
 	t.Logf("voice WAV full match (%s): %d chunks → %.1f MB in %s",
 		steam, presence.ChunkCount, float64(len(wav))/1e6, time.Since(t0).Round(time.Millisecond))
 }
+
+// TestPerfSpatialDevDB measures the M5 §2.4 spatial series against the
+// developer's real data: full sidecar decode + 137k frames × O(n²)
+// pairwise must stay far under the plan §6 <20 s precompute budget
+// (computed on read). CI skips (SPECTRA_DEV_DB unset).
+func TestPerfSpatialDevDB(t *testing.T) {
+	dbPath := os.Getenv("SPECTRA_DEV_DB")
+	if dbPath == "" {
+		t.Skip("set SPECTRA_DEV_DB to run spatial perf measurements")
+	}
+	matchID, _ := strconv.ParseInt(os.Getenv("SPECTRA_DEV_MATCH"), 10, 64)
+	if matchID == 0 {
+		matchID = 1
+	}
+	st, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open dev db: %v", err)
+	}
+	defer func() { _ = st.Close() }()
+
+	ps := &PlatformService{st: st}
+	for _, kind := range []string{"spacing", "spread"} {
+		t0 := time.Now()
+		ser, err := ps.GetSpatialSeries(matchID, kind, 120)
+		if err != nil {
+			t.Fatalf("GetSpatialSeries(%s): %v", kind, err)
+		}
+		valid := 0
+		for _, v := range ser.Values {
+			if v >= 0 {
+				valid++
+			}
+		}
+		t.Logf("GetSpatialSeries(%s): %d/%d buckets valid, toTick=%d in %s (service ms=%d)",
+			kind, valid, ser.Buckets, ser.ToTick, time.Since(t0).Round(time.Millisecond), ser.MS)
+	}
+}

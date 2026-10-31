@@ -7,13 +7,99 @@
     setAnalysisConfig,
     recomputeAnalysis,
     listMatches,
+    listPlugins,
+    installPlugin,
+    setPluginEnabled,
+    removePlugin,
   } from '../services.js';
   import { probeAudio } from '../replay/audio.js';
   import { fmtDate } from '../fmt.js';
+  import { getTheme, applyTheme } from '../theme.js';
 
   let version = $state('…');
   let info = $state(null);
   let error = $state('');
+
+  // M5 appearance (plan §2.6): dark default, light tokens in style-m3b.css.
+  let theme = $state(getTheme());
+
+  function setTheme(t) {
+    theme = applyTheme(t);
+  }
+
+  // M5 plugins (plan §2.7 / acceptance 6): declarative bundles installed by
+  // path; enable/disable/remove reflected on the next list — no restart.
+  let plugins = $state([]);
+  let pluginsError = $state('');
+  let pluginsLoading = $state(true);
+  let installPath = $state('');
+  let installBusy = $state(false);
+  let pluginMsg = $state('');
+  let pluginOp = $state({}); // plugin id → 'busy' | error text
+
+  async function refreshPlugins() {
+    pluginsLoading = true;
+    try {
+      plugins = (await listPlugins()) || [];
+      pluginsError = '';
+    } catch (e) {
+      pluginsError = errText(e);
+    } finally {
+      pluginsLoading = false;
+    }
+  }
+
+  async function doInstall() {
+    const path = installPath.trim();
+    if (!path) return;
+    installBusy = true;
+    pluginMsg = '';
+    pluginsError = '';
+    try {
+      const st = await installPlugin(path);
+      if (st && st.error) pluginMsg = `Installed with validation error: ${st.error}`;
+      else pluginMsg = `Installed ${(st && st.manifest && st.manifest.id) || path}.`;
+      installPath = '';
+      await refreshPlugins();
+    } catch (e) {
+      pluginsError = errText(e);
+    } finally {
+      installBusy = false;
+    }
+  }
+
+  async function togglePlugin(p) {
+    const pid = p.manifest.id;
+    pluginOp = { ...pluginOp, [pid]: 'busy' };
+    try {
+      await setPluginEnabled(pid, !p.enabled);
+      await refreshPlugins();
+    } catch (e) {
+      pluginOp = { ...pluginOp, [pid]: errText(e) };
+      return;
+    }
+    const next = { ...pluginOp };
+    delete next[pid];
+    pluginOp = next;
+  }
+
+  async function doRemove(p) {
+    const pid = p.manifest.id;
+    if (!confirm(`Remove plugin "${p.manifest.name || pid}" (${pid})? Its bundle is deleted from disk.`)) {
+      return;
+    }
+    pluginOp = { ...pluginOp, [pid]: 'busy' };
+    try {
+      await removePlugin(pid);
+      await refreshPlugins();
+    } catch (e) {
+      pluginOp = { ...pluginOp, [pid]: errText(e) };
+      return;
+    }
+    const next = { ...pluginOp };
+    delete next[pid];
+    pluginOp = next;
+  }
 
   // Analysis rules (plan §2.1 / §10 DoD: classification + trade window
   // configurable from Settings; rule_version recorded on save).
@@ -68,6 +154,7 @@
       .catch((e) => {
         matchesError = errText(e);
       });
+    refreshPlugins();
   });
 
   async function saveCfg() {
@@ -195,6 +282,107 @@
     {:else if !error}
       <p class="muted">Loading…</p>
     {/if}
+  </section>
+
+  <section class="panel">
+    <h2>Appearance</h2>
+    <div class="row-between">
+      <span class="muted"
+        >Theme — dark ships as the default; light tokens are new in M5 (plan
+        §2.6). The choice is remembered and applied at startup.</span
+      >
+      <div class="sett-seg" role="group" aria-label="Theme">
+        <button
+          class="btn"
+          class:primary={theme === 'dark'}
+          aria-pressed={theme === 'dark'}
+          onclick={() => setTheme('dark')}>Dark</button
+        >
+        <button
+          class="btn"
+          class:primary={theme === 'light'}
+          aria-pressed={theme === 'light'}
+          onclick={() => setTheme('light')}>Light</button
+        >
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Plugins</h2>
+    <p class="muted">
+      Declarative bundles (plan §2.7): a directory with
+      <span class="mono">spectra-plugin.json</span> (plus optional metric /
+      report-template definitions) or a single manifest JSON. Enabled plugins
+      contribute metrics and report templates on the next list — no restart.
+    </p>
+    <div class="row-between">
+      <input
+        class="input sett-plugin-path"
+        placeholder="/path/to/plugin-dir or manifest.json"
+        bind:value={installPath}
+        onkeydown={(e) => e.key === 'Enter' && doInstall()}
+        aria-label="Plugin source path"
+      />
+      <button class="btn primary" disabled={installBusy || !installPath.trim()} onclick={doInstall}
+        >{installBusy ? 'Installing…' : 'Install from path'}</button
+      >
+    </div>
+    {#if pluginsError}
+      <p class="error" role="alert">{pluginsError}</p>
+    {/if}
+    {#if pluginMsg}
+      <p class="sett-msg" role="status">{pluginMsg}</p>
+    {/if}
+    {#if pluginsLoading}
+      <p class="muted">Loading plugins…</p>
+    {:else if plugins.length === 0}
+      <p class="muted">No plugins installed yet.</p>
+    {:else}
+      <div class="sett-plugins">
+        {#each plugins as p (p.manifest.id)}
+          {@const op = pluginOp[p.manifest.id]}
+          <div class="plugin-row" class:plugin-disabled={!p.enabled}>
+            <span class="plugin-name">
+              <strong>{p.manifest.name || p.manifest.id}</strong>
+              <span class="mono muted"> {p.manifest.id} · v{p.manifest.version}</span>
+            </span>
+            <span class="chip" title="Metrics contributed">{(p.manifest.metrics || []).length} metrics</span>
+            <span class="chip" title="Report templates contributed"
+              >{(p.manifest.reportTpls || []).length} templates</span
+            >
+            {#if p.error}
+              <span class="error-text" title={p.error}>invalid</span>
+            {:else}
+              <button
+                class="btn small"
+                class:warn={p.enabled}
+                disabled={op === 'busy'}
+                aria-pressed={p.enabled}
+                onclick={() => togglePlugin(p)}
+                title={p.enabled ? 'Disable plugin' : 'Enable plugin'}
+                >{p.enabled ? 'Enabled' : 'Disabled'}</button
+              >
+            {/if}
+            {#if op && op !== 'busy'}
+              <span class="error-text" title={op}>failed</span>
+            {/if}
+            <span class="spacer"></span>
+            <button class="btn small danger" disabled={op === 'busy'} onclick={() => doRemove(p)}
+              >Remove</button
+            >
+            {#if p.error}
+              <p class="plugin-err error-text">{p.error}</p>
+            {/if}
+          </div>
+        {/each}
+      </div>
+    {/if}
+    <p class="muted">
+      Trust model: install only bundles you built or got from someone you
+      trust — manifests may pin a sha256 hash; there is no auto-update
+      (plan §7.5).
+    </p>
   </section>
 
   <section class="panel">

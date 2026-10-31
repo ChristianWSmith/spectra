@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Spectra match report — {{.Match.Map}}</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 60rem; color: #1a1a1a; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
+  th, td { border: 1px solid #ccc; padding: 0.3rem 0.5rem; text-align: left; font-size: 0.9rem; }
+  th { background: #f0f0f0; }
+  h1, h2 { margin-top: 1.6rem; }
+  .meta { color: #555; }
+  @media print { body { margin: 0; } }
+</style>
+</head>
+<body>
+<h1>Match report — {{.Match.Map}}</h1>
+<p class="meta">Score <strong>CT {{.Match.ScoreCT}} – {{.Match.ScoreT}} T</strong> ·
+{{.Match.RealRounds}} real rounds (+{{.Match.WarmupRounds}} warmup) ·
+{{.Match.PlaybackTimeS}} s · extracted {{.Match.ExtractedAt}} (parser {{.Match.ParserVersion}})</p>
+
+<h2>Scoreboard</h2>
+<table>
+<tr><th>Player</th><th>Side</th><th>K</th><th>D</th><th>A</th><th>ADR</th><th>HS%</th><th>KD</th><th>Openings</th><th>Trades</th><th>MVPs</th></tr>
+{{range .Scoreboard}}<tr><td>{{.Name}}</td><td>{{.Side}}</td><td>{{.Kills}}</td><td>{{.Deaths}}</td><td>{{.Assists}}</td><td>{{printf "%.1f" .ADR}}</td><td>{{printf "%.0f" .HSPct}}</td><td>{{printf "%.2f" .KD}}</td><td>{{.OpeningKills}}/{{.OpeningDeaths}}</td><td>{{.TradeKills}}</td><td>{{.MVPs}}</td></tr>
+{{end}}
+</table>
+
+<h2>Rounds</h2>
+<table>
+<tr><th>#</th><th>Winner</th><th>Reason</th><th>Duration s</th><th>Kills</th><th>MVP</th><th>Equip CT</th><th>Equip T</th></tr>
+{{range .Rounds}}<tr><td>{{.Number}}</td><td>{{.Winner}}</td><td>{{.Reason}}</td><td>{{printf "%.1f" .DurationS}}</td><td>{{.Kills}}</td><td>{{.MVPName}}</td><td>{{.EquipCT}}</td><td>{{.EquipT}}</td></tr>
+{{end}}
+</table>
+
+<h2>Clutches</h2>
+<table>
+<tr><th>Round</th><th>Player</th><th>Size</th><th>Won</th><th>HP left</th></tr>
+{{range .Clutches}}<tr><td>{{.Round}}</td><td>{{.Name}}</td><td>{{.Size}}</td><td>{{.Won}}</td><td>{{.HPLeft}}</td></tr>
+{{end}}
+</table>
+
+<p class="meta">Generated {{.GeneratedAt}} by Spectra.</p>
+</body>
+</html>

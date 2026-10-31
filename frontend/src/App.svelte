@@ -7,6 +7,11 @@
   import Timeline from './lib/views/Timeline.svelte';
   import Replay from './lib/views/Replay.svelte';
   import Settings from './lib/views/Settings.svelte';
+  import Builder from './lib/views/Builder.svelte';
+  import SqlConsole from './lib/views/SqlConsole.svelte';
+  import Explorer from './lib/views/Explorer.svelte';
+  import Reports from './lib/views/Reports.svelte';
+  import CommandPalette from './lib/components/CommandPalette.svelte';
   import PlayerProfile from './lib/views/PlayerProfile.svelte';
   import CompareRounds from './lib/views/CompareRounds.svelte';
 
@@ -34,6 +39,10 @@
     if (m) return { name: 'timeline', id: Number(m[1]) };
     m = h.match(/^\/replay\/(\d+)$/);
     if (m) return { name: 'replay', id: Number(m[1]) };
+    if (h.startsWith('/builder')) return { name: 'builder' };
+    if (h.startsWith('/sql')) return { name: 'sql' };
+    if (h.startsWith('/explorer')) return { name: 'explorer' };
+    if (h.startsWith('/reports')) return { name: 'reports' };
     if (h.startsWith('/settings')) return { name: 'settings' };
     return { name: 'library' };
   }
@@ -93,6 +102,34 @@
     >
       Settings
     </button>
+    <button
+      class="nav-item"
+      class:active={route.name === 'builder'}
+      onclick={() => nav('/builder')}
+    >
+      Builder
+    </button>
+    <button
+      class="nav-item"
+      class:active={route.name === 'sql'}
+      onclick={() => nav('/sql')}
+    >
+      SQL console
+    </button>
+    <button
+      class="nav-item"
+      class:active={route.name === 'explorer'}
+      onclick={() => nav('/explorer')}
+    >
+      Explorer
+    </button>
+    <button
+      class="nav-item"
+      class:active={route.name === 'reports'}
+      onclick={() => nav('/reports')}
+    >
+      Reports
+    </button>
     <div class="spacer"></div>
   </nav>
   <main class="content">
@@ -110,8 +147,17 @@
       <Timeline id={route.id} {nav} />
     {:else if route.name === 'replay'}
       <Replay id={route.id} {nav} />
+    {:else if route.name === 'builder'}
+      <Builder {nav} />
+    {:else if route.name === 'sql'}
+      <SqlConsole {nav} />
+    {:else if route.name === 'explorer'}
+      <Explorer {nav} />
+    {:else if route.name === 'reports'}
+      <Reports {nav} />
     {:else if route.name === 'settings'}
       <Settings />
     {/if}
   </main>
+  <CommandPalette {nav} />
 </div>

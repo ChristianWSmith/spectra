@@ -1,0 +1,41 @@
+# Match report — {{.Match.Map}}
+
+- Path: {{.Match.Path}}
+- Score: **CT {{.Match.ScoreCT}} – {{.Match.ScoreT}} T**
+- Rounds: {{.Match.RealRounds}} real (+{{.Match.WarmupRounds}} warmup)
+- Duration: {{.Match.PlaybackTimeS}} s @ {{.Match.TickRate}} ticks/s
+- Extracted: {{.Match.ExtractedAt}} (parser {{.Match.ParserVersion}}, {{.Match.ParseMS}} ms)
+
+## Scoreboard
+
+| Player | Side | K | D | A | ADR | HS% | KD | Rounds | Openings | Trades | MVPs |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+{{range .Scoreboard}}| {{.Name}} | {{.Side}} | {{.Kills}} | {{.Deaths}} | {{.Assists}} | {{printf "%.1f" .ADR}} | {{printf "%.0f" .HSPct}} | {{printf "%.2f" .KD}} | {{.RoundsPlayed}} | {{.OpeningKills}}/{{.OpeningDeaths}} | {{.TradeKills}} | {{.MVPs}} |
+{{end}}
+## Rounds
+
+| # | Winner | Reason | Duration s | Kills | MVP | Equip CT | Equip T |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+{{range .Rounds}}| {{.Number}} | {{.Winner}} | {{.Reason}} | {{printf "%.1f" .DurationS}} | {{.Kills}} | {{.MVPName}} | {{.EquipCT}} | {{.EquipT}} |
+{{end}}
+## Economy (warmup excluded)
+
+| Round | Winner | Equip CT | Equip T | Money CT | Money T | Loss bonus CT | Loss bonus T | Class |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+{{range .Economy}}| {{.Round}} | {{.Winner}} | {{.EquipCT}} | {{.EquipT}} | {{.MoneyCT}} | {{.MoneyT}} | {{.LossBonusCT}} | {{.LossBonusT}} | {{.Label}} |
+{{end}}
+## Clutches
+
+| Round | Player | Size | Won | HP left | Equip |
+| --- | --- | --- | --- | --- | --- |
+{{range .Clutches}}| {{.Round}} | {{.Name}} | {{.Size}} | {{.Won}} | {{.HPLeft}} | {{.Equip}} |
+{{end}}
+## Utility
+
+| Seq | Tick | Thrower | Kind | Damage | Flash ms | Site |
+| --- | --- | --- | --- | --- | --- | --- |
+{{range .Utility}}| {{.Seq}} | {{.Tick}} | {{.ThrowerName}} | {{.Kind}} | {{.Damage}} | {{.FlashMs}} | {{.Site}} |
+{{end}}
+---
+
+Generated {{.GeneratedAt}} by Spectra from the local library. Inferred values (loss bonus, classifications) carry their rule version in-app; CSV/JSON exports are available from the read-only SQL console.

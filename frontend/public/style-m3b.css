@@ -938,3 +938,722 @@ button.chip.ctx-chip.on {
 .voice-lane-bar.empty.side-t {
   background: transparent;
 }
+
+/* M5 platform — Explorer/Reports/CommandPalette/Settings (plugins+theme)/
+   Replay clip recorder/Heatmaps spatial series + light-theme tokens.
+   Prefixes: cp- (command palette), expl-/kv- (explorer), rep- (reports),
+   sett- additions (appearance/plugins), clip- (replay recorder),
+   spat- (spatial series). */
+
+/* --- Command palette (cp-) -------------------------------------------------- */
+
+.cp-back {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 12vh 16px 16px;
+}
+
+.cp-panel {
+  width: min(640px, 94vw);
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  max-height: 70vh;
+  overflow: hidden;
+}
+
+.cp-input {
+  border: none;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  padding: 12px 14px;
+  font-size: 1.02em;
+  background: var(--panel);
+}
+
+.cp-input:focus-visible {
+  outline: none;
+  border-bottom-color: var(--accent);
+}
+
+.cp-body {
+  overflow-y: auto;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cp-section {
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--muted);
+  padding: 8px 8px 3px;
+}
+
+.cp-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  padding: 7px 8px;
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.cp-item.active {
+  background: rgba(245, 166, 24, 0.12);
+}
+
+.cp-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cp-hl {
+  color: var(--accent);
+}
+
+.cp-sub {
+  font-size: 0.82em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cp-empty {
+  padding: 14px 10px;
+  font-size: 0.9em;
+}
+
+.cp-foot {
+  display: flex;
+  gap: 14px;
+  padding: 6px 12px;
+  border-top: 1px solid var(--border);
+  font-size: 0.76em;
+}
+
+/* --- Explorer (expl-/kv-) --------------------------------------------------- */
+
+.expl-notes {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.expl-note-chip {
+  color: var(--accent);
+  border-color: rgba(245, 166, 24, 0.45);
+}
+
+.expl-enc {
+  font-size: 0.88em;
+  color: var(--accent);
+  padding: 4px 10px;
+  border: 1px solid rgba(245, 166, 24, 0.4);
+  border-radius: var(--radius);
+  background: rgba(245, 166, 24, 0.06);
+}
+
+.expl-ent-note {
+  font-size: 0.86em;
+}
+
+.expl-convars {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.expl-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) minmax(320px, 1.6fr);
+  gap: 14px;
+  align-items: start;
+}
+
+.expl-hist {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.expl-hist-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 480px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 4px;
+  background: var(--panel);
+}
+
+.expl-hist-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  padding: 4px 8px;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.86em;
+  text-align: left;
+  cursor: pointer;
+}
+
+.expl-hist-row:hover {
+  background: rgba(245, 166, 24, 0.1);
+}
+
+.expl-hist-row.active {
+  background: rgba(245, 166, 24, 0.16);
+  color: var(--accent);
+}
+
+.expl-hist-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.expl-payloads {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.expl-ev {
+  margin-bottom: 0;
+}
+
+.expl-kv {
+  padding: 6px 10px;
+  font-size: 0.85em;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 360px;
+  overflow-y: auto;
+}
+
+.expl-kv-err {
+  color: var(--danger);
+  font-size: 0.8em;
+  padding: 8px 10px;
+}
+
+.kv-row {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  padding: 1px 0 1px 4px;
+  border-bottom: 1px solid rgba(35, 42, 55, 0.35);
+}
+
+.kv-key {
+  font-family: var(--mono);
+  font-size: 0.92em;
+  color: var(--text);
+  min-width: 90px;
+  overflow-wrap: anywhere;
+}
+
+.kv-num {
+  color: var(--accent);
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.kv-bool {
+  color: var(--success);
+  font-family: var(--mono);
+}
+
+.kv-str {
+  color: var(--text);
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.kv-null {
+  color: var(--muted);
+  font-family: var(--mono);
+}
+
+.kv-obj {
+  padding-left: 4px;
+}
+
+.kv-obj > summary {
+  cursor: pointer;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  padding: 1px 0;
+  list-style: none;
+}
+
+.kv-obj > summary::-webkit-details-marker {
+  display: none;
+}
+
+.kv-obj > summary::before {
+  content: '▸';
+  color: var(--muted);
+  font-size: 0.8em;
+}
+
+.kv-obj[open] > summary::before {
+  content: '▾';
+}
+
+.kv-obj[open] > summary {
+  border-bottom: 1px solid rgba(35, 42, 55, 0.35);
+}
+
+.kv-obj > details,
+.kv-obj > .kv-row,
+.kv-obj > .kv-obj {
+  margin-left: 16px;
+}
+
+.kv-meta {
+  font-size: 0.8em;
+}
+
+.expl-ref-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 0.88em;
+}
+
+.expl-ref-list li::before {
+  content: '· ';
+  color: var(--accent);
+}
+
+/* --- Reports (rep-) --------------------------------------------------------- */
+
+.rep-tpl-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.rep-tpl {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid var(--border);
+  border-left-width: 3px;
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.rep-tpl:hover {
+  border-color: var(--muted);
+}
+
+.rep-tpl.active {
+  border-left-color: var(--accent);
+  border-color: var(--accent);
+}
+
+.rep-tpl-title {
+  font-weight: 600;
+}
+
+.rep-tpl-meta {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.rep-targets {
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+
+.rep-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 220px;
+}
+
+.rep-field label {
+  font-size: 0.75em;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+
+.rep-hint {
+  font-size: 0.8em;
+}
+
+.rep-mgroup {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.rep-metric {
+  flex-wrap: wrap;
+}
+
+.rep-metric-expr {
+  font-size: 0.8em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 42ch;
+}
+
+.rep-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.rep-actions a.btn {
+  text-decoration: none;
+}
+
+.rep-raw-note {
+  font-size: 0.8em;
+}
+
+.rep-md {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  font-size: 0.82em;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 60vh;
+  overflow-y: auto;
+  background: rgba(0, 0, 0, 0.18);
+}
+
+.rep-html {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.rep-html h1,
+.rep-html h2 {
+  font-size: 1.05rem;
+  margin: 10px 0 6px;
+}
+
+.rep-html h3 {
+  font-size: 0.95rem;
+  margin: 8px 0 4px;
+}
+
+.rep-html table {
+  border-collapse: collapse;
+  font-size: 0.88em;
+  margin: 6px 0 10px;
+}
+
+.rep-html th,
+.rep-html td {
+  border-bottom: 1px solid var(--border);
+  padding: 3px 10px 3px 0;
+  text-align: left;
+}
+
+.rep-html th {
+  color: var(--muted);
+  font-size: 0.8em;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* --- Settings additions: appearance + plugins (sett-) ----------------------- */
+
+.sett-seg {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.sett-plugin-path {
+  flex: 1;
+  min-width: 0;
+}
+
+.sett-plugins {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.plugin-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  border-bottom: 1px solid rgba(35, 42, 55, 0.6);
+  padding: 6px 0;
+  font-size: 0.92em;
+}
+
+.plugin-row.plugin-disabled {
+  opacity: 0.75;
+}
+
+.plugin-name {
+  min-width: 0;
+}
+
+.plugin-err {
+  flex: 1 1 100%;
+  font-size: 0.82em;
+  padding: 2px 0 0;
+}
+
+/* --- Replay clip recorder (clip-) ------------------------------------------- */
+
+.clip-btn.recording-btn {
+  border-color: var(--danger);
+}
+
+.chip.clip-state {
+  color: var(--muted);
+}
+
+.chip.clip-state.recording {
+  color: #fff;
+  background: var(--danger);
+  border-color: var(--danger);
+  animation: clip-pulse 1.1s ease-in-out infinite;
+}
+
+.chip.clip-state.encoding {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.chip.clip-state.saved {
+  color: var(--success);
+  border-color: var(--success);
+}
+
+.chip.clip-state.err {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+
+@keyframes clip-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+
+/* --- Heatmaps: spatial series (spat-) --------------------------------------- */
+
+.spat-controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.spat-svg {
+  width: 100%;
+  height: 140px;
+  display: block;
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.spat-svg polyline {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.spat-axis {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 0.8em;
+  padding: 2px 2px 0;
+}
+
+.spat-desc {
+  font-size: 0.85em;
+}
+
+/* --- Light theme (plan §2.6) -------------------------------------------------
+   Overrides every root token the app reads from style.css plus the worst
+   hardcoded-dark offenders in shared surfaces. Known remaining gaps: the
+   replay canvas paints its own near-black stage bg, heatmap raster colors
+   and some rgba-black shadows/menus still assume dark. */
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f4f6f9;
+  --panel: #ffffff;
+  --border: #d5dae3;
+  --text: #1b2330;
+  --muted: #5a6475;
+  --ct: #2f7bbd;
+  --t: #b9722f;
+  --success: #2f8558;
+  --danger: #c94040;
+}
+
+[data-theme="light"] .nav-item:hover {
+  background: rgba(27, 35, 48, 0.05);
+}
+
+[data-theme="light"] .nav-item.active {
+  background: rgba(245, 166, 24, 0.14);
+}
+
+[data-theme="light"] .chip {
+  background: rgba(27, 35, 48, 0.04);
+}
+
+[data-theme="light"] .chip-bar,
+[data-theme="light"] .progress {
+  background: rgba(27, 35, 48, 0.08);
+}
+
+[data-theme="light"] .data-table td {
+  border-bottom: 1px solid rgba(27, 35, 48, 0.12);
+}
+
+[data-theme="light"] .data-table tbody tr:hover {
+  background: rgba(27, 35, 48, 0.04);
+}
+
+[data-theme="light"] .data-table tbody tr.active {
+  background: rgba(245, 166, 24, 0.14);
+}
+
+[data-theme="light"] .expand-row td {
+  background: rgba(27, 35, 48, 0.05);
+}
+
+[data-theme="light"] .payload-head {
+  background: rgba(27, 35, 48, 0.05);
+}
+
+[data-theme="light"] .problem-row,
+[data-theme="light"] .vrow,
+[data-theme="light"] .landmark-list li,
+[data-theme="light"] .sett-match-row,
+[data-theme="light"] .plugin-row,
+[data-theme="light"] .cmp-list li,
+[data-theme="light"] .kv-row,
+[data-theme="light"] .kv-obj[open] > summary {
+  border-bottom-color: rgba(27, 35, 48, 0.12);
+}
+
+[data-theme="light"] .vrow:hover,
+[data-theme="light"] .cp-item:hover {
+  background: rgba(27, 35, 48, 0.05);
+}
+
+[data-theme="light"] .vrow.active {
+  background: rgba(245, 166, 24, 0.14);
+}
+
+[data-theme="light"] .comb-card,
+[data-theme="light"] .comb-round,
+[data-theme="light"] .cmp-events,
+[data-theme="light"] .prof-spark,
+[data-theme="light"] .sett-defs details,
+[data-theme="light"] .rep-tpl,
+[data-theme="light"] .rep-md,
+[data-theme="light"] .spat-svg,
+[data-theme="light"] .comb-dot {
+  background: rgba(27, 35, 48, 0.04);
+}
+
+[data-theme="light"] .comb-modal,
+[data-theme="light"] .prof-results,
+[data-theme="light"] .cp-panel {
+  box-shadow: 0 12px 32px rgba(27, 35, 48, 0.18);
+}
+
+[data-theme="light"] .cp-back {
+  background: rgba(27, 35, 48, 0.35);
+}
+
+[data-theme="light"] .cp-item.active {
+  background: rgba(245, 166, 24, 0.16);
+}
+
+[data-theme="light"] .voice-player {
+  background: rgba(27, 35, 48, 0.04);
+}
+
+[data-theme="light"] .btn.primary {
+  color: #14100a;
+}
+
+[data-theme="light"] .scrub-marker.kill {
+  background: #5a6475;
+}
+
+[data-theme="light"] .replay-stage {
+  background: #dfe4ec; /* canvas renderer still paints its own dark clear */
+}
+
+[data-theme="light"] .chip.clip-state.recording {
+  color: #fff;
+}
