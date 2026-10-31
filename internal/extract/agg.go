@@ -179,6 +179,11 @@ type agg struct {
 	chatRows []models.Chat
 	warnings []string
 
+	// svc_EncryptedData net-messages seen (M4): decrypted inner messages
+	// dispatch as ordinary events, so this raw count is the extract's only
+	// encrypted-chat provenance (models.Match.EncryptedMessages).
+	encrypted int
+
 	// Raw-payload pairing: demoinfocs dispatches the typed event before the
 	// GenericGameEvent carrying the raw payload (same frame either way, typed
 	// handlers may be delayed to frame end). Rows queued this frame are paired
@@ -232,6 +237,9 @@ func (a *agg) setHeader(h headerInfo) { a.header = h }
 func (a *agg) setPOV() { a.header.isPOV = true }
 
 func (a *agg) setMeta(m metaInfo) { a.meta = m }
+
+// countEncrypted bumps the svc_EncryptedData counter (net-message handler).
+func (a *agg) countEncrypted() { a.encrypted++ }
 
 func (a *agg) setFinalTeam(side string, t teamFinal) {
 	if side == "t" {

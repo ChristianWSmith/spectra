@@ -5,12 +5,16 @@
     getLandmarks,
     getMatch,
     getRounds,
+    getVoicePresence,
+    getVoicePlayers,
+    voiceWavURL,
     setPendingTimelineFilter,
     takePendingSeek,
   } from '../services.js';
   import { createEngine, parsePositions, SPEEDS } from '../replay/engine.js';
   import { createRenderer } from '../replay/renderer.js';
   import { attachReplayInput, snapshot } from '../replay/input.js';
+  import { createVoiceEngine, fetchVoicePCM } from '../replay/audio.js';
 
   let { id = 0, nav = () => {} } = $props();
 
@@ -23,6 +27,18 @@
   let loading = $state(true);
   let loadError = $state('');
   let noSidecar = $state(false);
+
+  // M4 voice: presence gates the whole controls block; players feed mute/
+  // solo chips; the voice engine mirrors live in ui* state via callbacks.
+  let voicePresence = $state(null);
+  let voicePlayers = $state([]);
+  let voiceEngine = null;
+  let uiVoiceOn = $state(false);
+  let uiVoiceCtx = $state('none');
+  let uiVoiceErr = $state('');
+  let uiVoiceVol = $state(0.8);
+  const uiVoiceMute = $state({}); // steamId → bool
+  const uiVoiceSolo = $state({}); // steamId → bool
 
   // Transport-bar mirror of the engine state (updated via onChange).
   let uiFrame = $state(0);
@@ -92,6 +108,9 @@
   // (startEngine re-runs it on the live path).
   function teardown() {
     ready = false;
+    if (voiceEngine) voiceEngine.destroy();
+    voiceEngine = null;
+    uiVoiceOn = false;
     if (input) input.detach();
     if (ro) ro.disconnect();
     if (offChange) offChange();
@@ -148,6 +167,13 @@
       ]);
       matchMap = (match && match.map) || '';
       rounds = rs || [];
+      // Voice presence gates the controls block; players ride alongside.
+      voicePresence = await getVoicePresence(id).catch(() => null);
+      if (voicePresence && voicePresence.hasVoice) {
+        voicePlayers = (await getVoicePlayers(id).catch(() => [])) || [];
+      } else {
+        voicePlayers = [];
+      }
       const { pack: p, img } = await loadPack(matchMap);
       pack = p;
       radarImg = img;
@@ -200,9 +226,39 @@
     });
     ro = new ResizeObserver(() => renderer.resize());
     ro.observe(stageEl);
-    // Cross-view hand-off: pendingSeek {tick} from Match/RoundDetail/Timeline.
+    // M4: wire voice before the pendingSeek hand-off so {play, voice}
+    // flags from Timeline's Hear ±10s / lane click can act on it.
+    if (voicePresence && voicePresence.hasVoice) {
+      voiceEngine = createVoiceEngine({
+        engine,
+        matchId: id,
+        fetchPCM: (steamId, fromTick, toTick) =>
+          fetchVoicePCM(id, steamId, fromTick, toTick),
+        onError: (msg) => {
+          uiVoiceErr = msg;
+        },
+        onStateChange: (s) => {
+          uiVoiceOn = s.enabled;
+          uiVoiceCtx = s.ctxState;
+          uiVoiceErr = s.error;
+        },
+      });
+      voiceEngine.setPlayers(voicePlayers);
+      voiceEngine.setMasterVolume(uiVoiceVol);
+      for (const p of voicePlayers) {
+        if (uiVoiceMute[p.steamId]) voiceEngine.setMuted(p.steamId, true);
+        if (uiVoiceSolo[p.steamId]) voiceEngine.setSolo(p.steamId, true);
+      }
+    }
+    // Cross-view hand-off: pendingSeek {tick, play?, voice?} from
+    // Match/RoundDetail/Timeline. play/voice are new in M4: Replay starts
+    // playback and (gesture-permitting) audio so "Hear ±10s" is audible.
     const seek = takePendingSeek();
     if (seek && Number.isFinite(seek.tick)) engine.seekTick(seek.tick);
+    if (seek && seek.voice && voiceEngine) {
+      voiceEngine.setEnabled(true).catch(() => {});
+    }
+    if (seek && seek.play) engine.play();
     renderer.draw();
     ready = true;
   }
@@ -247,6 +303,27 @@
     if (!engine) return;
     setPendingTimelineFilter({ tick: engine.state.tick });
     nav(`/timeline/${id}`);
+  }
+
+  // --- M4 voice controls ------------------------------------------------------
+  async function toggleVoice() {
+    if (!voiceEngine) return;
+    await voiceEngine.setEnabled(!uiVoiceOn);
+  }
+
+  function onVoiceVol(e) {
+    uiVoiceVol = Number(e.currentTarget.value);
+    voiceEngine?.setMasterVolume(uiVoiceVol);
+  }
+
+  function toggleVoiceMute(steamId) {
+    uiVoiceMute[steamId] = !uiVoiceMute[steamId];
+    voiceEngine?.setMuted(steamId, !!uiVoiceMute[steamId]);
+  }
+
+  function toggleVoiceSolo(steamId) {
+    uiVoiceSolo[steamId] = !uiVoiceSolo[steamId];
+    voiceEngine?.setSolo(steamId, !!uiVoiceSolo[steamId]);
   }
 </script>
 
@@ -420,5 +497,71 @@
 
       <span class="muted" title="Space play/pause · , . speed · ←/→ step · Shift ±64 · L loop · F follow · 1-9 select · S snapshot">⌨ hints</span>
     </div>
+
+    {#if voicePresence && voicePresence.hasVoice}
+      <div class="voice-bar" role="group" aria-label="Voice controls">
+        <button
+          class="btn"
+          class:primary={!uiVoiceOn}
+          onclick={toggleVoice}
+          title={uiVoiceErr || (uiVoiceOn ? 'Stop voice playback' : 'Start voice playback (needs one click — browser gesture rule)')}
+        >{uiVoiceOn ? '🔊 Voice on' : 'Enable voice'}</button
+        >
+        <span
+          class="chip voice-state"
+          class:on={uiVoiceOn}
+          class:err={!!uiVoiceErr}
+          title={uiVoiceErr ? `AudioContext: ${uiVoiceCtx} — ${uiVoiceErr}` : `AudioContext: ${uiVoiceCtx}`}
+        >{uiVoiceErr ? 'error' : uiVoiceOn ? `on · ${uiVoiceCtx}` : 'off'}</span>
+        {#if uiVoiceErr}
+          <span class="voice-hint" role="alert"
+            >{uiVoiceErr} — install <span class="mono">gst-plugins-good</span> (GStreamer) if audio fails to start.</span
+          >
+        {/if}
+        <label class="sr-only" for="rp-vol">Voice volume</label>
+        <input
+          class="voice-vol"
+          id="rp-vol"
+          type="range"
+          min="0"
+          max="1"
+          step="0.05"
+          value={uiVoiceVol}
+          oninput={onVoiceVol}
+        />
+        <span class="voice-players">
+          {#each voicePlayers as p (p.steamId)}
+            <span class="voice-player" title="{p.name} — {p.chunks.toLocaleString()} chunks, {Math.round(p.seconds)}s of voice">
+              <span class="voice-name">{p.name}</span>
+              <button
+                class="btn small ghost voice-ms"
+                class:warn={!!uiVoiceMute[p.steamId]}
+                aria-pressed={!!uiVoiceMute[p.steamId]}
+                aria-label="Mute {p.name}"
+                title="Mute {p.name}"
+                onclick={() => toggleVoiceMute(p.steamId)}>M</button
+              >
+              <button
+                class="btn small ghost voice-ms"
+                class:warn={!!uiVoiceSolo[p.steamId]}
+                aria-pressed={!!uiVoiceSolo[p.steamId]}
+                aria-label="Solo {p.name}"
+                title="Solo {p.name} (overrides mutes)"
+                onclick={() => toggleVoiceSolo(p.steamId)}>S</button
+              >
+              <details class="voice-export">
+                <summary class="btn small ghost" aria-label="Export {p.name} voice" title="Export {p.name}'s track">▾</summary>
+                <a
+                  class="voice-dl"
+                  href={voiceWavURL(id, p.steamId)}
+                  download="{p.name || p.steamId}.wav"
+                  title="Download full-track WAV for {p.name}">WAV</a
+                >
+              </details>
+            </span>
+          {/each}
+        </span>
+      </div>
+    {/if}
   {/if}
 </div>

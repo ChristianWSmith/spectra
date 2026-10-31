@@ -12,6 +12,7 @@ import {
   ReplayService,
   AnalyticsService,
   ProfileService,
+  VoiceService,
 } from '../../bindings/github.com/ChristianWSmith/spectra';
 
 // --- AppService ---------------------------------------------------------------
@@ -207,11 +208,11 @@ export function takePendingTimelineFilter() {
 }
 
 // Replay-seek hand-off, mirroring the Timeline filter contract above: one
-// sessionStorage key holds {tick} (sometimes with extra keys — Timeline
-// ignores what it doesn't know). Writers (Match header, RoundDetail kill
-// feed, Timeline rows) set it just before navigating to #/replay/:id;
-// Replay reads + clears it on mount and seeks to that tick. null clears
-// any stale value without writing one.
+// sessionStorage key holds {tick} (sometimes with extra keys — Replay uses
+// tick plus optional play/voice booleans; Timeline ignores what it doesn't
+// know). Writers (Match header, RoundDetail kill feed, Timeline rows) set it
+// just before navigating to #/replay/:id; Replay reads + clears it on mount
+// and seeks to that tick. null clears any stale value without writing one.
 export const REPLAY_PENDING_KEY = 'spectra:replay-seek';
 
 export function setPendingSeek(seek) {
@@ -250,6 +251,19 @@ export function getHeatmap(matchId, kind, filter) { return AnalyticsService.GetH
 export function listSavedFilters() { return AnalyticsService.ListSavedFilters(); }
 export function saveFilter(name, scope, filterJson) { return AnalyticsService.SaveFilter(name, scope, filterJson); }
 export function deleteSavedFilter(id) { return AnalyticsService.DeleteSavedFilter(id); }
+
+// --- VoiceService (M4) -------------------------------------------------------
+// Bulk PCM/WAV audio does NOT ride the bindings — it is fetched from the
+// HTTP routes /api/sidecar/<id>/voice/pcm|wav (see replay/audio.js).
+
+export function getVoicePresence(id) { return VoiceService.GetVoicePresence(id); }
+export function getVoicePlayers(id) { return VoiceService.GetVoicePlayers(id); }
+export function getVoiceLanes(id, buckets) { return VoiceService.GetVoiceLanes(id, buckets || 180); }
+
+// voiceWavURL is the per-player full-track download link (anchor `download`).
+export function voiceWavURL(matchId, steamId) {
+  return `/api/sidecar/${matchId}/voice/wav?steamId=${encodeURIComponent(steamId)}`;
+}
 
 // --- ProfileService (M3) -----------------------------------------------------
 

@@ -94,6 +94,12 @@ type Match struct {
 	PositionFormat int `json:"positionFormat"`
 	SampleRate     int `json:"sampleRate"`
 	PositionFrames int `json:"positionFrames"`
+	// EncryptedMessages counts svc_EncryptedData net-messages seen during
+	// the parse (M4): encrypted chat is demoinfocs-internal (decrypted inner
+	// messages dispatch as normal chat events when ParseOptions.NetKey is
+	// set), so this counter plus voice_presence.key_found are the only
+	// provenance the UI has for the "chat possibly encrypted" lock chip.
+	EncryptedMessages int `json:"encryptedMessages"`
 }
 
 // Team is one side's summary for a match (teams table).
@@ -256,6 +262,14 @@ type Chat struct {
 	Name    string `json:"name"`
 	Text    string `json:"text"`
 	Kind    string `json:"kind"` // "chat" | "system" | "saytext"
+	// Decrypted marks a chat row recovered from svc_EncryptedData via the
+	// .dem.info GC key. v1 always stores 0: decryption happens inside
+	// demoinfocs during the parse (the inner messages dispatch as ordinary
+	// chat events with no origin provenance), so the extractor cannot
+	// honestly distinguish decrypted rows from plaintext ones — see
+	// presence.key_found + Match.EncryptedMessages for the real state.
+	// Set when an extractor-side provenance signal exists (TODO M4+).
+	Decrypted bool `json:"decrypted"`
 }
 
 // Job is one import/reprocess unit (jobs table). Progress is 0..1 within

@@ -2,11 +2,13 @@ package main
 
 import (
 	"embed"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -14,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/pion/opus"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 	"github.com/wailsapp/wails/v3/pkg/services/kvstore"
@@ -145,6 +148,7 @@ func main() {
 	app.RegisterService(application.NewService(&ReplayService{st: st, app: app}))
 	app.RegisterService(application.NewService(&AnalyticsService{st: st, app: app}))
 	app.RegisterService(application.NewService(&ProfileService{st: st, app: app}))
+	app.RegisterService(application.NewService(&VoiceService{st: st, app: app}))
 
 	initUpdater(app)
 
@@ -236,20 +240,32 @@ func runImport(path string) {
 	}
 }
 
-// handleSidecar serves a match's position sidecar over the asset server
-// (plan M2 §6 — HTTP asset-server route, server-side decompress):
+// handleSidecar serves a match's sidecars over the asset server (plan M2 §6
+// HTTP asset-server route, server-side decompress; plan M4 voice routes):
 //
 //	/api/sidecar/<matchID>/positions?from=&to=   decompressed q16-v1 frame
 //	                                             stream (from/to frame
 //	                                             indexes; 0/0 = whole match)
 //	/api/sidecar/<matchID>/meta                  meta.json as JSON
+//	/api/sidecar/<matchID>/voice/pcm?steamId=&fromTick=&toTick=
+//	                                             s16le mono @16 kHz window
+//	                                             with a fixed 8-byte header
+//	                                             (int32 fromTick, int32
+//	                                             sampleRate); gaps zero-
+//	                                             filled; ≤60 s windows
+//	/api/sidecar/<matchID>/voice/wav?steamId=    full-match WAV download
 //
 // A missing sidecar or match is 404 (HasSidecar=false territory, not an
 // error). No auth: the asset server is only reachable by the app's own
 // webview.
 func handleSidecar(st *store.Store, w http.ResponseWriter, r *http.Request, p string) {
-	idStr, sub, ok := strings.Cut(p, "/")
-	if !ok || (sub != "positions" && sub != "meta") {
+	idStr, rem, ok := strings.Cut(p, "/")
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+	sub, tail, hasTail := strings.Cut(rem, "/")
+	if sub != "positions" && sub != "meta" && sub != "voice" {
 		http.NotFound(w, r)
 		return
 	}
@@ -260,6 +276,14 @@ func handleSidecar(st *store.Store, w http.ResponseWriter, r *http.Request, p st
 	}
 	if _, err := st.GetMatch(id); err != nil {
 		http.NotFound(w, r)
+		return
+	}
+	if sub == "voice" {
+		if !hasTail {
+			http.NotFound(w, r)
+			return
+		}
+		handleVoice(st, w, r, id, idStr, tail)
 		return
 	}
 	rd, err := sidecar.Open(filepath.Join(data.MatchesDir(), idStr))
@@ -291,6 +315,177 @@ func handleSidecar(st *store.Store, w http.ResponseWriter, r *http.Request, p st
 			log.Printf("sidecar: write positions: %v", err)
 		}
 	}
+}
+
+// voiceMaxWindowTicks caps pcm windows at 60 s of match time (plan M4 §7:
+// 60 s @16 kHz s16 ≈ 19 MB — keeps one request bounded; the timeline
+// engine asks for ≤2 s windows). 64 ticks/s is the fallback when the
+// match header lacks a tick rate.
+const voiceMaxWindowSeconds = 60
+
+// handleVoice serves the /api/sidecar/<id>/voice/{pcm,wav} routes.
+func handleVoice(st *store.Store, w http.ResponseWriter, r *http.Request, matchID int64, idStr, kind string) {
+	presence, err := st.GetVoicePresence(matchID)
+	if errors.Is(err, store.ErrNotFound) || (err == nil && presence.ChunkCount == 0) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	m, err := st.GetMatch(matchID)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	steamID := r.URL.Query().Get("steamId")
+	if steamID == "" {
+		http.Error(w, "voice: missing steamId", http.StatusBadRequest)
+		return
+	}
+	voiceDir := filepath.Join(data.MatchesDir(), idStr, sidecar.VoiceDirName)
+	tickRate := m.TickRate
+	if tickRate <= 0 {
+		tickRate = 64
+	}
+
+	switch kind {
+	case "pcm":
+		from := 0
+		if v := r.URL.Query().Get("fromTick"); v != "" {
+			from, _ = strconv.Atoi(v)
+		}
+		to := m.DurationTicks
+		if v := r.URL.Query().Get("toTick"); v != "" {
+			to, _ = strconv.Atoi(v)
+		}
+		if from < 0 {
+			from = 0
+		}
+		if to > m.DurationTicks {
+			to = m.DurationTicks
+		}
+		if to <= from {
+			http.Error(w, "voice: empty tick range", http.StatusBadRequest)
+			return
+		}
+		if to-from > int(voiceMaxWindowSeconds*tickRate) {
+			http.Error(w, "voice: tick range exceeds 60s window", http.StatusBadRequest)
+			return
+		}
+		pcm, err := decodeVoicePCM(st, voiceDir, matchID, steamID, from, to, tickRate)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		// Fixed 8-byte header: int32 fromTick | int32 sampleRate (LE), then
+		// s16le mono PCM (plan M4 §7).
+		out := make([]byte, 8+len(pcm))
+		binary.LittleEndian.PutUint32(out[0:4], uint32(from))
+		binary.LittleEndian.PutUint32(out[4:8], models.VoiceOutSampleRate)
+		copy(out[8:], pcm)
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Length", strconv.Itoa(len(out)))
+		if _, err := w.Write(out); err != nil {
+			log.Printf("sidecar: write voice pcm: %v", err)
+		}
+	case "wav":
+		from, to := 0, m.DurationTicks
+		pcm, err := decodeVoicePCM(st, voiceDir, matchID, steamID, from, to, tickRate)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		out := waveFile(pcm, models.VoiceOutSampleRate)
+		w.Header().Set("Content-Type", "audio/wav")
+		w.Header().Set("Content-Disposition", `attachment; filename="voice-`+steamID+`.wav"`)
+		w.Header().Set("Content-Length", strconv.Itoa(len(out)))
+		if _, err := w.Write(out); err != nil {
+			log.Printf("sidecar: write voice wav: %v", err)
+		}
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+// voiceSamplesPerTick converts a tick delta to output samples at 16 kHz
+// (16000/64 = 250 samples per tick at the Source 2 standard rate).
+func voiceSamplesPerTick(tickRate float64) int {
+	if tickRate <= 0 {
+		return 250
+	}
+	return int(math.Round(models.VoiceOutSampleRate / tickRate))
+}
+
+// decodeVoicePCM decodes one player's chunks in [from,to] onto a
+// zero-filled 16 kHz s16le mono timeline (plan M4 §7): each chunk's Opus
+// payload is decoded once and poked in place at sample offset
+// (tick-from)*samplesPerTick, clamped to the window. A missing .opus file
+// surfaces as an error; stray undecodable packets are skipped.
+func decodeVoicePCM(st *store.Store, voiceDir string, matchID int64, steamID string, from, to int, tickRate float64) ([]byte, error) {
+	rows, err := st.GetVoiceChunkRange(matchID, steamID, from, to)
+	if err != nil {
+		return nil, err
+	}
+	spt := voiceSamplesPerTick(tickRate)
+	totalSamples := (to - from) * spt
+	pcm := make([]byte, totalSamples*2) // zero-filled: silence = absence of chunks
+	if len(rows) == 0 {
+		return pcm, nil
+	}
+	f, err := os.Open(filepath.Join(voiceDir, steamID+".opus"))
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	dec, err := opus.NewDecoderWithOutput(models.VoiceOutSampleRate, 1)
+	if err != nil {
+		return nil, err
+	}
+	// 10 ms @ 48 kHz is 480 samples; 2048 leaves headroom for longer frames.
+	samples := make([]int16, 2048)
+	payload := make([]byte, 512)
+	for _, row := range rows {
+		if row.Len <= 0 || row.Len > int64(cap(payload)) {
+			continue
+		}
+		if _, err := f.ReadAt(payload[:row.Len], row.Off); err != nil {
+			return nil, err
+		}
+		n, derr := dec.DecodeToInt16(payload[:row.Len], samples)
+		if derr != nil || n <= 0 {
+			continue // tolerate stray packets: leave the window silent there
+		}
+		start := (row.Tick - from) * spt
+		if start >= totalSamples || start < 0 {
+			continue
+		}
+		for i := 0; i < n && start+i < totalSamples; i++ {
+			binary.LittleEndian.PutUint16(pcm[(start+i)*2:], uint16(samples[i]))
+		}
+	}
+	return pcm, nil
+}
+
+// waveFile wraps s16le mono PCM in a canonical 44-byte RIFF/WAVE header.
+func waveFile(pcm []byte, sampleRate int) []byte {
+	out := make([]byte, 44+len(pcm))
+	copy(out[0:4], "RIFF")
+	binary.LittleEndian.PutUint32(out[4:8], uint32(36+len(pcm)))
+	copy(out[8:12], "WAVE")
+	copy(out[12:16], "fmt ")
+	binary.LittleEndian.PutUint32(out[16:20], 16)
+	binary.LittleEndian.PutUint16(out[20:22], 1) // PCM
+	binary.LittleEndian.PutUint16(out[22:24], 1) // mono
+	binary.LittleEndian.PutUint32(out[24:28], uint32(sampleRate))
+	binary.LittleEndian.PutUint32(out[28:32], uint32(sampleRate*2)) // byte rate
+	binary.LittleEndian.PutUint16(out[32:34], 2)                    // block align
+	binary.LittleEndian.PutUint16(out[34:36], 16)                   // bits per sample
+	copy(out[36:40], "data")
+	binary.LittleEndian.PutUint32(out[40:44], uint32(len(pcm)))
+	copy(out[44:], pcm)
+	return out
 }
 
 // filesDroppedEvent is the payload of spectra:files-dropped: absolute paths

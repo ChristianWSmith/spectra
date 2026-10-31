@@ -9,6 +9,7 @@
     getGenericEvents,
     getCombatStats,
     getRoundClasses,
+    getVoicePresence,
     listMatches,
     setPendingTimelineFilter,
     setPendingSeek,
@@ -28,11 +29,12 @@
   import Utility from './Utility.svelte';
   import Heatmaps from './Heatmaps.svelte';
   import Combat from './Combat.svelte';
+  import Context from './Context.svelte';
   import StatusChip from '../components/StatusChip.svelte';
 
   let { id = 0, nav = () => {} } = $props();
 
-  const TABS = ['Overview', 'Scoreboard', 'Rounds', 'Economy', 'Utility', 'Heatmaps', 'Combat', 'Timeline', 'Chat', 'Raw'];
+  const TABS = ['Overview', 'Scoreboard', 'Rounds', 'Economy', 'Utility', 'Heatmaps', 'Combat', 'Timeline', 'Chat', 'Context', 'Raw'];
 
   // GetScoreboard sort whitelist (mirror of the Go store's map). Columns
   // follow plan §2; combined columns sort by their primary key.
@@ -89,6 +91,8 @@
   let rawEvents = $state([]);
   let rawLimit = $state(100);
   let error = $state('');
+  // M4 header badges: voice presence (plan §1/§5) + chat-decrypt key state.
+  let voice = $state(null);
 
   // Analytics (M3): per-player KAST for the scoreboard column + per-round
   // classification chips for the Rounds tab. Both are optional — failures
@@ -104,12 +108,18 @@
   // (sort changes must not re-trigger this one).
   $effect(() => {
     let live = true;
-    Promise.all([getMatch(id), getRounds(id), listMatches('', 'extracted_at', false)])
-      .then(([m, r, list]) => {
+    Promise.all([
+      getMatch(id),
+      getRounds(id),
+      listMatches('', 'extracted_at', false),
+      getVoicePresence(id).catch(() => null),
+    ])
+      .then(([m, r, list, v]) => {
         if (!live) return;
         match = m;
         rounds = r || [];
         summary = (list || []).find((s) => s.id === id) || null;
+        voice = v;
         error = m ? '' : 'Match not found.';
       })
       .catch((e) => {
@@ -381,6 +391,28 @@
           · {fmt1(match.tickRate)} Hz
           · patch {match.patchVersion}
           · <StatusChip status={match.status || 'ready'} title={match.error || ''} />
+          {#if voice}
+            {#if voice.hasVoice}
+              <span
+                class="chip voice-badge"
+                title="Voice: {fmtInt(voice.chunkCount)} chunks across {voice.playerCount} players — Opus, decoded on demand"
+                >🔊 {(voice.chunkCount / 1000).toFixed(1)}k · {voice.playerCount}</span
+              >
+            {:else}
+              <span
+                class="chip voice-badge none"
+                title="This demo source does not record voice (e.g. Valve MM) — normal, not broken"
+                >no voice</span
+              >
+            {/if}
+            {#if !voice.keyFound && (match.encryptedMessages || 0) > 0}
+              <span
+                class="chip voice-badge lock"
+                title="Encrypted chat present — .dem.info key not found"
+                >🔒</span
+              >
+            {/if}
+          {/if}
           · parser {match.parserVersion || '—'}
         </p>
       </div>
@@ -810,6 +842,8 @@
           </tbody>
         </table>
       </div>
+    {:else if tab === 'Context'}
+      <Context {id} {nav} />
     {:else if tab === 'Raw'}
       <div class="raw-grid">
         <section class="panel">

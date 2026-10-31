@@ -15,7 +15,7 @@ const matchColumns = `id, path, sha256, size, map, patch_version, tick_rate, dur
 	warmup_rounds, real_rounds, score_ct, score_t, half_ct, half_t, side_switches,
 	entity_classes, end_entity_count, parser_version, extracted_at, parse_ms,
 	warnings_count, status, error,
-	position_format, sample_rate, position_frames`
+	position_format, sample_rate, position_frames, enc_messages`
 
 // landmarkLimit is the hard row cap for GetLandmarks (plan M2 §7).
 const landmarkLimit = 5000
@@ -163,6 +163,7 @@ func (s *Store) GetMatch(id int64) (*models.Match, error) {
 		&m.ScoreT, &m.HalfCT, &m.HalfT, &m.SideSwitches, &m.EntityClasses,
 		&m.EndEntityCount, &m.ParserVersion, &extracted, &m.ParseMS, &m.WarningsCount,
 		&m.Status, &m.Error, &m.PositionFormat, &m.SampleRate, &m.PositionFrames,
+		&m.EncryptedMessages,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -468,7 +469,7 @@ func (s *Store) GetLandmarks(matchID int64, limit int) ([]models.EventRow, error
 // GetChat returns a match's chat lines ordered by tick, id. Round < 0
 // selects all rounds.
 func (s *Store) GetChat(matchID int64, round int) ([]models.ChatRow, error) {
-	q := `SELECT id, tick, round, steam_id, name, text, kind FROM chat WHERE match_id = ?`
+	q := `SELECT id, tick, round, steam_id, name, text, kind, decrypted FROM chat WHERE match_id = ?`
 	args := []any{matchID}
 	if round >= 0 {
 		q += ` AND round = ?`
@@ -482,10 +483,14 @@ func (s *Store) GetChat(matchID int64, round int) ([]models.ChatRow, error) {
 	defer rows.Close()
 	var out []models.ChatRow
 	for rows.Next() {
-		var c models.ChatRow
-		if err := rows.Scan(&c.ID, &c.Tick, &c.Round, &c.SteamID, &c.Name, &c.Text, &c.Kind); err != nil {
+		var (
+			c         models.ChatRow
+			decrypted int
+		)
+		if err := rows.Scan(&c.ID, &c.Tick, &c.Round, &c.SteamID, &c.Name, &c.Text, &c.Kind, &decrypted); err != nil {
 			return nil, fmt.Errorf("store: get chat: %w", err)
 		}
+		c.Decrypted = decrypted != 0
 		out = append(out, c)
 	}
 	if err := rows.Err(); err != nil {

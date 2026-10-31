@@ -167,14 +167,17 @@ type BBox struct {
 }
 
 // ChatRow is one chat line with display name (chat table join players).
+// Decrypted marks a row recovered from svc_EncryptedData via the .dem.info
+// key — v1 always stores false (see models.Chat for the provenance note).
 type ChatRow struct {
-	ID      int64  `json:"id"`
-	Tick    int    `json:"tick"`
-	Round   int    `json:"round"`
-	SteamID string `json:"steamId"`
-	Name    string `json:"name"`
-	Text    string `json:"text"`
-	Kind    string `json:"kind"`
+	ID        int64  `json:"id"`
+	Tick      int    `json:"tick"`
+	Round     int    `json:"round"`
+	SteamID   string `json:"steamId"`
+	Name      string `json:"name"`
+	Text      string `json:"text"`
+	Kind      string `json:"kind"`
+	Decrypted bool   `json:"decrypted"`
 }
 
 // NameCount is one histogram bucket (generic event name → occurrences).

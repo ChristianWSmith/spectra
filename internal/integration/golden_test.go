@@ -115,14 +115,20 @@ type goldenFixture struct {
 	Warnings           int            `json:"warnings"`
 	Players            int            `json:"players"`
 	FinalStatePlayers  int            `json:"finalStatePlayers"`
-	// VoiceChunks stays 0 in M1: internal/extract does not capture voice
-	// (deferred to M4 per plan §6). The field is kept so the fixture shape is
-	// stable when M4 starts recording real chunk counts — do not parse voice
-	// here.
-	VoiceChunks     int              `json:"voiceChunks"`
+	// Voice is the M4 voice-capture block (counting VoiceSink over
+	// CSVCMsg_VoiceData): baseline 2026-10-30 is 123,507 chunks / 10 XUIDs /
+	// 0 casters (ref/PLAN_MILESTONE_4.md §1); safety nets enforce it.
+	Voice           goldenVoice      `json:"voice"`
 	PlayersHeadline []headlinePlayer `json:"playersHeadline"`
 	TopPlayer       topPlayer        `json:"topPlayer"`
 	ParseSecondsMax int              `json:"parseSecondsMax"`
+}
+
+// goldenVoice is the voice-sink projection of one golden parse.
+type goldenVoice struct {
+	Chunks  int `json:"chunks"`
+	XUIDs   int `json:"xuids"`
+	Casters int `json:"casters"`
 }
 
 // headlinePlayer is one scoreboard row's headline stats, sorted by kills
@@ -220,6 +226,30 @@ func TestGoldenSkipBehavior(t *testing.T) {
 	})
 }
 
+// countingVoiceSink tallies the CSVCMsg_VoiceData stream for the fixture
+// (chunks / distinct XUIDs / caster chunks).
+type countingVoiceSink struct {
+	chunks int
+	xuids  map[uint64]bool
+	casts  int
+}
+
+func (s *countingVoiceSink) Add(c extract.VoiceChunk) error {
+	if s.xuids == nil {
+		s.xuids = map[uint64]bool{}
+	}
+	s.chunks++
+	s.xuids[c.XUID] = true
+	if c.Caster {
+		s.casts++
+	}
+	return nil
+}
+
+func (s *countingVoiceSink) fixture() goldenVoice {
+	return goldenVoice{Chunks: s.chunks, XUIDs: len(s.xuids), Casters: s.casts}
+}
+
 // TestGolden is the Tier-1 acceptance check against the committed fixture.
 // Skipped under -short and when the demo is absent or an LFS pointer so
 // `make test` never hard-fails on missing LFS content.
@@ -254,7 +284,8 @@ func TestGolden(t *testing.T) {
 	}
 
 	start := time.Now()
-	m, err := extract.Parse(context.Background(), reader, extract.ParseOptions{})
+	voice := &countingVoiceSink{}
+	m, err := extract.Parse(context.Background(), reader, extract.ParseOptions{Voice: voice})
 	parseSeconds := time.Since(start).Seconds()
 	if err != nil {
 		t.Fatalf("extract.Parse: %v", err)
@@ -262,9 +293,16 @@ func TestGolden(t *testing.T) {
 	if m == nil {
 		t.Fatal("extract.Parse returned nil ExtractedMatch")
 	}
-	t.Logf("parsed donk.dem.zst in %.1fs", parseSeconds)
+	t.Logf("parsed donk.dem.zst in %.1fs (%d voice chunks)", parseSeconds, voice.chunks)
 
-	got := buildGolden(t, m)
+	// Both known demos carry 0 svc_EncryptedData messages (plan M4 §1) —
+	// the encrypted-chat path stays synthetic-only until a Valve MM demo
+	// with a .info companion appears.
+	if m.Match.EncryptedMessages != 0 {
+		t.Errorf("enc_messages = %d, want 0 (golden demo baseline)", m.Match.EncryptedMessages)
+	}
+
+	got := buildGolden(t, m, voice)
 	if parseSeconds > parseSecondsMax {
 		t.Errorf("parse wall-time %.1fs exceeds ceiling %ds (fixture records the ceiling, not the measurement)",
 			parseSeconds, parseSecondsMax)
@@ -466,7 +504,7 @@ func compareAnalyticsGolden(t *testing.T, got, want *analyticsFixture) {
 }
 
 // buildGolden projects the extract output onto the fixture shape.
-func buildGolden(t *testing.T, m *models.ExtractedMatch) goldenFixture {
+func buildGolden(t *testing.T, m *models.ExtractedMatch, voice *countingVoiceSink) goldenFixture {
 	t.Helper()
 
 	kindCounts := map[string]int{}
@@ -556,7 +594,7 @@ func buildGolden(t *testing.T, m *models.ExtractedMatch) goldenFixture {
 		Warnings:           m.Match.WarningsCount,
 		Players:            len(m.Players),
 		FinalStatePlayers:  finalState,
-		VoiceChunks:        0, // M1: extract captures no voice; M4 extends (see struct comment)
+		Voice:              voice.fixture(),
 		PlayersHeadline:    headline,
 		TopPlayer:          top,
 		ParseSecondsMax:    parseSecondsMax,
@@ -593,6 +631,16 @@ func assertSafetyNets(t *testing.T, got *goldenFixture) {
 	}
 	if got.TopPlayer.Kills != 25 {
 		t.Errorf("safety: topPlayer kills = %d, want 25", got.TopPlayer.Kills)
+	}
+	// M4 voice baseline (plan §1: 123,507 chunks, all 10 XUIDs, 0 casters).
+	if got.Voice.Chunks != 123507 {
+		t.Errorf("safety: voice chunks = %d, want 123507", got.Voice.Chunks)
+	}
+	if got.Voice.XUIDs != 10 {
+		t.Errorf("safety: voice xuids = %d, want 10", got.Voice.XUIDs)
+	}
+	if got.Voice.Casters != 0 {
+		t.Errorf("safety: voice casters = %d, want 0", got.Voice.Casters)
 	}
 }
 
@@ -633,7 +681,9 @@ func compareGolden(t *testing.T, got, want *goldenFixture) {
 	cmpInt(t, "warnings", got.Warnings, want.Warnings)
 	cmpInt(t, "players", got.Players, want.Players)
 	cmpInt(t, "finalStatePlayers", got.FinalStatePlayers, want.FinalStatePlayers)
-	cmpInt(t, "voiceChunks", got.VoiceChunks, want.VoiceChunks)
+	cmpInt(t, "voice.chunks", got.Voice.Chunks, want.Voice.Chunks)
+	cmpInt(t, "voice.xuids", got.Voice.XUIDs, want.Voice.XUIDs)
+	cmpInt(t, "voice.casters", got.Voice.Casters, want.Voice.Casters)
 
 	cmpInt(t, "playersHeadline.len", len(got.PlayersHeadline), len(want.PlayersHeadline))
 	for i := range got.PlayersHeadline {

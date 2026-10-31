@@ -27,11 +27,14 @@ const interruptedJobErr = "interrupted by restart"
 
 // childTables are the per-match child tables deleted (oldest dependency
 // first) by SaveExtracted and DeleteMatchData. All FK to matches(id).
+// voice_* tables join here too (M4): SaveExtracted clears them before a
+// reprocess's InsertVoice refills them.
 var childTables = []string{
 	"events", "generic_events", "chat", "round_economy", "rounds",
 	"player_stats", "players", "teams", "warnings",
 	"round_classifications", "player_round_stats", "clutches",
 	"engagements", "utility_events",
+	"voice_chunks", "voice_presence",
 }
 
 // Store is a SQLite-backed persistence handle. The underlying database is

@@ -2,6 +2,7 @@
   import {
     getEvents,
     getEvent,
+    getVoicePresence,
     takePendingTimelineFilter,
     setPendingSeek,
     listSavedFilters,
@@ -10,6 +11,7 @@
   } from '../services.js';
   import { prettyJson } from '../fmt.js';
   import FilterBar from '../components/FilterBar.svelte';
+  import VoiceLanes from '../components/VoiceLanes.svelte';
 
   let { id = 0, nav = () => {} } = $props();
 
@@ -44,6 +46,22 @@
   let listEl = $state(null);
   let copied = $state(false);
   let scrollReset = $state(0); // bump → scroll list back to top
+
+  // M4: voice presence gates the lanes strip + "Hear ±10s" affordance.
+  // Voice hasVoice only — absence is the normal MM case (plan §1).
+  let voice = $state(null);
+
+  $effect(() => {
+    let live = true;
+    getVoicePresence(id)
+      .then((p) => {
+        if (live) voice = p;
+      })
+      .catch(() => {
+        /* lanes/hear simply hidden */
+      });
+    return () => (live = false);
+  });
 
   // Saved filter presets (scope "match", plan §2.8).
   let saved = $state([]);
@@ -225,6 +243,21 @@
     nav(`/replay/${id}`);
   }
 
+  // M4 comms-around (plan §7 walkthrough): open replay AT the event with
+  // playback + voice on — the audio engine starts from there. play/voice
+  // are extra pendingSeek keys Replay understands; other writers omit them.
+  function hearTick(ev, e) {
+    e.stopPropagation();
+    setPendingSeek({ tick: ev.tick, play: true, voice: true });
+    nav(`/replay/${id}`);
+  }
+
+  // Lanes click → same exit path (plan §2.5: index-only, audio follows).
+  function laneSeek(tick) {
+    setPendingSeek({ tick, play: true, voice: true });
+    nav(`/replay/${id}`);
+  }
+
   // Profile icon on a row → cross-match profile (#/player/:steamid).
   function isSteam(s) {
     return /^\d{17}$/.test(s || '');
@@ -270,6 +303,12 @@
 
   {#if listError}
     <p class="error" role="alert">{listError}</p>
+  {/if}
+
+  {#if voice && voice.hasVoice}
+    <div class="voice-lanes-wrap">
+      <VoiceLanes matchId={id} onSeek={laneSeek} />
+    </div>
   {/if}
 
   <div class="timeline-body">
@@ -364,6 +403,13 @@
           <span class="mono muted">tick {selected.tick}</span>
           <span class="chip round-chip">R{selected.round}</span>
           <div class="spacer"></div>
+          {#if voice && voice.hasVoice}
+            <button
+              class="btn small hear-btn"
+              title="Open replay at this event with voice on — hear comms around it (±10s window from the replay engine)"
+              onclick={(e) => hearTick(selected, e)}>Hear ±10s ▶</button
+            >
+          {/if}
           <button class="btn small" onclick={copyDetail}>
             {copied ? 'Copied' : 'Copy'}
           </button>

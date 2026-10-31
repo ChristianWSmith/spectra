@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zstd"
+	demoinfocs "github.com/markus-wa/demoinfocs-golang/v6/pkg/demoinfocs"
 
 	"github.com/ChristianWSmith/spectra/internal/analytics"
 	"github.com/ChristianWSmith/spectra/internal/data"
@@ -393,6 +394,11 @@ func (im *Importer) process(item queueItem) {
 	// returns, so Close receives it afterwards; any failure from here on
 	// removes the half-written sidecar (a failed match never serves stale
 	// or partial frames).
+	//
+	// Voice sidecar (plan M4 §3) mirrors the positions lifecycle exactly:
+	// wiped + created before the parse, payloads stream into per-player
+	// .opus files via the extract.VoiceSink, and the DB index is inserted
+	// after SaveExtracted.
 	sidecarPath := filepath.Join(im.sidecarDir, strconv.FormatInt(matchID, 10))
 	sw, werr := sidecar.NewWriter(sidecarPath, 0)
 	if werr != nil {
@@ -400,6 +406,27 @@ func (im *Importer) process(item queueItem) {
 		return
 	}
 	cleanupSidecar := func() { _ = os.RemoveAll(sidecarPath) }
+
+	if err := os.RemoveAll(filepath.Join(sidecarPath, sidecar.VoiceDirName)); err != nil {
+		cleanupSidecar()
+		im.failJob(jobID, matchID, models.StageParse, err.Error(), false)
+		return
+	}
+	vw, verr := sidecar.NewVoiceWriter(sidecarPath)
+	if verr != nil {
+		cleanupSidecar()
+		im.failJob(jobID, matchID, models.StageParse, verr.Error(), false)
+		return
+	}
+	// Release the per-player file handles on any early-exit path; the
+	// success path Close below wins (a second Close is a harmless error).
+	defer func() { _, _, _ = vw.Close() }()
+
+	// Chat decryption key (plan M4 §4): a <demo>.info companion next to the
+	// demo supplies the GC key for svc_EncryptedData. Discovery/extraction
+	// failures never fail the import — the demo simply imports without
+	// decryption (KeyFound=false on the voice_presence row).
+	netKey := netKeyFromInfoFile(item.path)
 
 	var lastProgress atomic.Int64
 	lastProgress.Store(time.Now().UnixNano())
@@ -421,6 +448,8 @@ func (im *Importer) process(item queueItem) {
 			im.emitEvent(EventJobProgress, JobProgressEvent{JobID: jobID, Stage: models.StageParse, Progress: pct, MatchID: matchID})
 		},
 		Positions: sw,
+		Voice:     vw,
+		NetKey:    netKey,
 	})
 	if err != nil {
 		cleanupSidecar()
@@ -457,6 +486,29 @@ func (im *Importer) process(item queueItem) {
 		return
 	}
 	if err := im.st.SaveExtracted(matchID, em); err != nil {
+		cleanupSidecar()
+		im.failJob(jobID, matchID, models.StageStore, err.Error(), false)
+		return
+	}
+
+	// Voice index (plan M4 §3/§4): close the payload writer and insert the
+	// chunk rows + presence in one store transaction. Rounds come straight
+	// from the parse — InsertVoice assigns each row's round from the round
+	// tick ranges. SaveExtracted already cleared stale voice rows (reprocess
+	// path), so InsertVoice's delete-then-insert is a no-op delete here.
+	voiceMeta, voiceRows, cerr := vw.Close()
+	if cerr != nil {
+		cleanupSidecar()
+		im.failJob(jobID, matchID, models.StageStore, cerr.Error(), false)
+		return
+	}
+	if err := im.st.InsertVoice(matchID, voiceRows, models.VoicePresenceRow{
+		ChunkCount:    voiceMeta.Chunks,
+		PlayerCount:   voiceMeta.Players,
+		CasterCount:   voiceMeta.Casters,
+		KeyFound:      netKey != nil,
+		OutSampleRate: models.VoiceOutSampleRate,
+	}, em.Rounds); err != nil {
 		cleanupSidecar()
 		im.failJob(jobID, matchID, models.StageStore, err.Error(), false)
 		return
@@ -535,4 +587,49 @@ func validateImportPath(path string) string {
 		return "not a file"
 	}
 	return ""
+}
+
+// infoCompanionCandidates returns the <demo>.info candidate paths in
+// discovery order (plan M4 §4): the classic Valve match730 naming sits
+// next to the demo with the .dem suffix replaced by .info; the other two
+// candidates cover companions named after the full demo filename.
+func infoCompanionCandidates(path string) []string {
+	return []string{
+		strings.TrimSuffix(path, ".dem.zst") + ".info",
+		strings.TrimSuffix(path, ".dem") + ".info",
+		path + ".info",
+	}
+}
+
+// findInfoFile returns the first existing non-directory companion
+// <demo>.info candidate, or "" when none exists.
+func findInfoFile(path string) string {
+	for _, c := range infoCompanionCandidates(path) {
+		if st, err := os.Stat(c); err == nil && !st.IsDir() {
+			return c
+		}
+	}
+	return ""
+}
+
+// netKeyFromInfoFile discovers and extracts the chat decryption key from a
+// <demo>.info companion (plan M4 §4). Missing/unreadable/unparseable
+// companions never fail the import — they log and return nil (the demo
+// imports without decryption; presence.key_found records the miss).
+func netKeyFromInfoFile(path string) []byte {
+	infoPath := findInfoFile(path)
+	if infoPath == "" {
+		return nil
+	}
+	raw, err := os.ReadFile(infoPath) //nolint:gosec // path is the user-selected demo's sibling companion
+	if err != nil {
+		slog.Warn("library: read .info companion", "path", infoPath, "error", err)
+		return nil
+	}
+	key, err := demoinfocs.MatchInfoDecryptionKey(raw)
+	if err != nil {
+		slog.Warn("library: extract chat decryption key", "path", infoPath, "error", err)
+		return nil
+	}
+	return key
 }

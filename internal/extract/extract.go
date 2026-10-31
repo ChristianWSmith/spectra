@@ -15,6 +15,7 @@ import (
 
 	demoinfocs "github.com/markus-wa/demoinfocs-golang/v6/pkg/demoinfocs"
 	"github.com/markus-wa/demoinfocs-golang/v6/pkg/demoinfocs/events"
+	"github.com/markus-wa/demoinfocs-golang/v6/pkg/demoinfocs/msg"
 	"github.com/markus-wa/demoinfocs-golang/v6/pkg/demoinfocs/option"
 
 	"github.com/ChristianWSmith/spectra/internal/models"
@@ -51,10 +52,16 @@ type PositionSink interface {
 // with (framesDone, framesTotal) throttled to ~every 1000 frames plus one
 // final call; framesTotal is 0 until the playback values are known (they
 // only arrive at the end of a Source 2 demo). Positions, if non-nil,
-// receives the per-frame alive-player sample stream (plan M2 §3).
+// receives the per-frame alive-player sample stream (plan M2 §3). Voice,
+// if non-nil, receives every CSVCMsg_VoiceData chunk (plan M4 §2).
+// NetKey, when non-empty, is the chat decryption key extracted from a
+// <demo>.info companion (demoinfocs.MatchInfoDecryptionKey) and enables
+// decryption of svc_EncryptedData net-messages during the parse.
 type ParseOptions struct {
 	Progress  func(done, total int)
 	Positions PositionSink
+	Voice     VoiceSink
+	NetKey    []byte
 }
 
 // Parse reads one raw .dem stream, aggregating a normalized ExtractedMatch.
@@ -69,18 +76,61 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	p := demoinfocs.NewParser(r,
+	parserOpts := []option.Option{
 		option.IgnorePacketEntitiesPanic(true), // corrupt PacketEntities → ParserWarn, not fatal
 		option.MsgQueueBufferSize(0),           // sequential parse, lower memory (as proven)
-	)
+	}
+	if len(opts.NetKey) > 0 {
+		parserOpts = append(parserOpts, option.NetMessageDecryptionKey(opts.NetKey))
+	}
+	p := demoinfocs.NewParser(r, parserOpts...)
 	defer func() { _ = p.Close() }()
 
 	a := newAgg()
 	registerHandlers(p, a)
 
+	// sinkErr carries a failing Position/Voice sink's error out of the
+	// handlers below; cancel aborts the parse so demoinfocs stops.
+	var sinkErr error
+
+	// Voice chunks (M4): net-message handlers run on the parse goroutine
+	// (MsgQueueBufferSize(0) is sequential), so sinkErr/cancel mirror the
+	// FrameDone positions-sink abort below. Only registered when a sink is
+	// wired — a demo-independent no-op otherwise.
+	if opts.Voice != nil {
+		p.RegisterNetMessageHandler(func(m *msg.CSVCMsg_VoiceData) {
+			if sinkErr != nil {
+				return
+			}
+			audio := m.GetAudio()
+			if audio == nil {
+				return
+			}
+			payload := audio.GetVoiceData()
+			if len(payload) == 0 {
+				return
+			}
+			if err := opts.Voice.Add(VoiceChunk{
+				Tick:    p.GameState().IngameTick(),
+				XUID:    m.GetXuid(),
+				Payload: payload,
+				Caster:  m.GetCaster(),
+				Section: audio.GetSectionNumber(),
+			}); err != nil {
+				sinkErr = fmt.Errorf("extract: voice sink: %w", err)
+				cancel()
+			}
+		})
+	}
+	// svc_EncryptedData counter (M4): decrypted inner messages dispatch as
+	// normal events (when NetKey is set), so the raw count is the only
+	// provenance the extract output carries.
+	p.RegisterNetMessageHandler(func(*msg.CSVCMsg_EncryptedData) {
+		a.countEncrypted()
+	})
+
 	pt := &progressTracker{cb: opts.Progress}
 	frames := 0
-	var sinkErr error
 	// Reused across frames: the sink consumes AddFrame synchronously.
 	frameBuf := make([]PositionPlayer, 0, 10)
 	p.RegisterEventHandler(func(events.FrameDone) {

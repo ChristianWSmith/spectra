@@ -2,10 +2,14 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"strconv"
 	"testing"
 	"time"
 
+	"github.com/ChristianWSmith/spectra/internal/data"
+	"github.com/ChristianWSmith/spectra/internal/models"
+	"github.com/ChristianWSmith/spectra/internal/sidecar"
 	"github.com/ChristianWSmith/spectra/internal/store"
 )
 
@@ -58,4 +62,71 @@ func TestPerfServiceDevDB(t *testing.T) {
 	}
 	t.Logf("GetProfile(%s): matches=%d ADR=%.1f KAST=%.1f in %s",
 		steam, pf.Matches, pf.ADRAvg, pf.KASTPct, time.Since(t0).Round(time.Millisecond))
+}
+
+// TestPerfVoiceDevDB measures the M4 voice routes against the developer's
+// real data: a 2 s PCM window must decode in <20 ms (plan §8) and the full
+// WAV generation time is recorded. Requires an imported voice-bearing
+// match (run `spectra -import donk.dem.zst` first). CI skips
+// (SPECTRA_DEV_DB unset).
+func TestPerfVoiceDevDB(t *testing.T) {
+	dbPath := os.Getenv("SPECTRA_DEV_DB")
+	if dbPath == "" {
+		t.Skip("set SPECTRA_DEV_DB to run voice perf measurements")
+	}
+	matchID, _ := strconv.ParseInt(os.Getenv("SPECTRA_DEV_MATCH"), 10, 64)
+	if matchID == 0 {
+		matchID = 1
+	}
+	st, err := store.Open(dbPath)
+	if err != nil {
+		t.Fatalf("open dev db: %v", err)
+	}
+	defer func() { _ = st.Close() }()
+
+	presence, err := st.GetVoicePresence(matchID)
+	if err != nil {
+		t.Fatalf("GetVoicePresence: %v (import a voice demo first)", err)
+	}
+	m, err := st.GetMatch(matchID)
+	if err != nil {
+		t.Fatalf("GetMatch: %v", err)
+	}
+	players, err := st.GetVoicePlayers(matchID)
+	if err != nil || len(players) == 0 {
+		t.Fatalf("GetVoicePlayers: %v, %v", players, err)
+	}
+	steam := players[0].SteamID
+	voiceDir := filepath.Join(data.MatchesDir(), strconv.FormatInt(matchID, 10), sidecar.VoiceDirName)
+	tickRate := m.TickRate
+	if tickRate <= 0 {
+		tickRate = 64
+	}
+
+	// 2-second PCM window from the player's first voice tick (the timeline
+	// engine's request shape; target <20 ms).
+	from := players[0].FirstTick
+	to := from + int(2*tickRate)
+	t0 := time.Now()
+	pcm, err := decodeVoicePCM(st, voiceDir, matchID, steam, from, to, tickRate)
+	if err != nil {
+		t.Fatalf("decodeVoicePCM(2s window): %v", err)
+	}
+	window := time.Since(t0)
+	t.Logf("voice PCM 2s window (%s): %d bytes in %s (presence chunks=%d)",
+		steam, len(pcm), window.Round(time.Microsecond), presence.ChunkCount)
+	if window > 20*time.Millisecond {
+		t.Errorf("PCM 2s window took %s, plan §8 target is <20ms", window)
+	}
+
+	// Full-match WAV: record the wall time (no hard target beyond plan §8's
+	// "decode full match < 60 s" background-job budget).
+	t0 = time.Now()
+	full, err := decodeVoicePCM(st, voiceDir, matchID, steam, 0, m.DurationTicks, tickRate)
+	if err != nil {
+		t.Fatalf("decodeVoicePCM(full match): %v", err)
+	}
+	wav := waveFile(full, models.VoiceOutSampleRate)
+	t.Logf("voice WAV full match (%s): %d chunks → %.1f MB in %s",
+		steam, presence.ChunkCount, float64(len(wav))/1e6, time.Since(t0).Round(time.Millisecond))
 }

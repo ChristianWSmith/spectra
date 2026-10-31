@@ -40,7 +40,11 @@
   "warnings": 0,
   "players": 10,
   "finalStatePlayers": 3,
-  "voiceChunks": 0,
+  "voice": {
+    "chunks": 123507,
+    "xuids": 10,
+    "casters": 0
+  },
   "playersHeadline": [
     {
       "steamId": "76561198296382419",

@@ -359,13 +359,13 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 			net_proto = ?, is_pov = ?, warmup_rounds = ?, real_rounds = ?, score_ct = ?,
 			score_t = ?, half_ct = ?, half_t = ?, side_switches = ?, entity_classes = ?,
 			end_entity_count = ?, parser_version = ?, extracted_at = ?, parse_ms = ?,
-			warnings_count = ?, status = ?, error = ?
+			warnings_count = ?, status = ?, error = ?, enc_messages = ?
 		 WHERE id = ?`,
 		scrub(m.Map), m.PatchVersion, m.TickRate, m.DurationTicks, m.PlaybackTimeS, m.Frames,
 		scrub(m.ServerName), scrub(m.ClientName), scrub(m.GameDir), scrub(m.NetProto), b2i(m.IsPOV),
 		m.WarmupRounds, m.RealRounds, m.ScoreCT, m.ScoreT, m.HalfCT, m.HalfT, m.SideSwitches,
 		m.EntityClasses, m.EndEntityCount, scrub(m.ParserVersion), m.ExtractedAt, m.ParseMS,
-		m.WarningsCount, models.StatusReady, "", matchID,
+		m.WarningsCount, models.StatusReady, "", m.EncryptedMessages, matchID,
 	)
 	if err != nil {
 		return fmt.Errorf("store: save extracted: update match: %w", err)

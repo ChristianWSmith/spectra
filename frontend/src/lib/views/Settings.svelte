@@ -8,6 +8,7 @@
     recomputeAnalysis,
     listMatches,
   } from '../services.js';
+  import { probeAudio } from '../replay/audio.js';
   import { fmtDate } from '../fmt.js';
 
   let version = $state('…');
@@ -25,6 +26,18 @@
   let readyMatches = $state([]);
   let matchesError = $state('');
   let recomputeState = $state({}); // matchId → 'busy' | 'ok' | error text
+
+  // M4 audio self-test (plan §4): probe creates a throwaway AudioContext,
+  // resumes it (user click = gesture), and reports state/rate or the exact
+  // device failure with the gst-plugins-good hint.
+  let audioProbe = $state(null); // null | {ok, state, sampleRate, error}
+  let audioRunning = $state(false);
+
+  async function runAudioSelfTest() {
+    audioRunning = true;
+    audioProbe = await probeAudio();
+    audioRunning = false;
+  }
 
   function errText(e) {
     if (e == null) return 'unknown error';
@@ -182,6 +195,46 @@
     {:else if !error}
       <p class="muted">Loading…</p>
     {/if}
+  </section>
+
+  <section class="panel">
+    <h2>Audio &amp; voice</h2>
+    <div class="row-between">
+      <span class="muted"
+        >Audio self-test — creates an AudioContext, resumes it and reports the
+        device state (plan §4).</span
+      >
+      <button class="btn" onclick={runAudioSelfTest} disabled={audioRunning}
+        >{audioRunning ? 'Testing…' : 'Run audio self-test'}</button
+      >
+    </div>
+    {#if audioProbe}
+      {#if audioProbe.ok}
+        <p class="sett-audio-ok" role="status">
+          PASS — AudioContext running at {audioProbe.sampleRate} Hz.
+        </p>
+      {:else}
+        <p class="error" role="alert">
+          FAIL — {audioProbe.error}
+        </p>
+        {#if !audioProbe.error.includes('gst-plugins-good')}
+          <p class="muted">
+            Hint: on Linux install <span class="mono">gst-plugins-good</span>
+            (GStreamer) so WebKitGTK can open the audio device, then retry.
+          </p>
+        {/if}
+      {/if}
+    {/if}
+    <p class="muted">
+      Voice decode: on-demand Opus decode (pure-Go pion/opus) — no cache
+      directory in v1. PCM is served over HTTP per playback window at 16 kHz
+      mono and mixed live with the replay clock.
+    </p>
+    <p class="muted">
+      Transcription (local whisper) is <strong>explicitly deferred from
+      v1</strong> (plan §2.10 / DoD §10) — no whisper UI in this release; the
+      storage and export contracts stay reserved for a later milestone.
+    </p>
   </section>
 
   <section class="panel">
