@@ -68,8 +68,15 @@ spectacle -b -n -o /tmp/shot.png         # then Read the PNG
 
 | Path | Role |
 |---|---|
-| `main.go` | composition root: app + services + window + menu + updater wiring |
+| `main.go` | composition root: app + services + window + menu + updater wiring; also `spectra -import <path>` headless CLI smoke import |
 | `appservice.go` | `AppService` — frontend-callable methods (`GetVersion`, `SaveWindowSize`) and the update-check flow |
+| `libraryservice.go` / `matchservice.go` | `LibraryService` / `MatchService` — the M1 frontend API surface (import/list/jobs/inspectors; match/scoreboard/rounds/events/chat) over `internal/store` |
+| `internal/models` | normalized domain types + read DTOs — the contract between extract, store, and the bindings |
+| `internal/store` | SQLite (modernc, single-writer, WAL) + embedded migrations + batch writers/queries; scrubs NUL bytes on every write |
+| `internal/extract` | demoinfocs v6 engine: handlers → `models.ExtractedMatch`; `Parse(ctx, r, progress)`; unit-tested accumulator |
+| `internal/library` | import pipeline: hash/dedupe, zstd sniff, single-worker job queue, cancellation, `spectra:*` events |
+| `internal/data` | XDG data-dir paths (db, per-match sidecars, tmp) |
+| `internal/integration` | golden-demo acceptance test (`donk.dem.zst`, skip-if-absent/pointer, `-update` fixture regen) |
 | `prefs.go` | preference keys + window-size helpers (backed by the v3 `kvstore` service) |
 | `version.go` | **stamp-only**: `var version = "dev"` — CI overwrites the whole file on release builds; never put logic here |
 | `frontend/` | Svelte 5 + Vite app; built into `frontend/dist` (embedded, gitignored) and `frontend/bindings` (generated per build, gitignored) |

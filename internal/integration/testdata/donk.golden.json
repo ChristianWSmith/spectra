@@ -1,0 +1,154 @@
+{
+  "parserVersion": "demoinfocs-golang/v6@v6.0.0-rc.1",
+  "map": "de_cache",
+  "tickRate": 64,
+  "frames": 136948,
+  "durationTicks": 136896,
+  "playbackTimeS": 2139,
+  "scoreCT": 10,
+  "scoreT": 13,
+  "halfCT": 7,
+  "halfT": 4,
+  "sideSwitches": 1,
+  "realRounds": 24,
+  "warmupRounds": 1,
+  "roundsTotal": 25,
+  "warmupRoundNumbers": [
+    2
+  ],
+  "events": {
+    "blind": 206,
+    "bomb_defuse": 5,
+    "bomb_drop": 42,
+    "bomb_explode": 4,
+    "bomb_pickup": 57,
+    "bomb_plant": 14,
+    "damage": 662,
+    "grenade": 478,
+    "grenade_throw": 393,
+    "kill": 170,
+    "player_connect": 11,
+    "player_disconnect": 7,
+    "round_end": 24,
+    "round_start": 25
+  },
+  "eventTotal": 2098,
+  "eventKindsDistinct": 14,
+  "genericDistinct": 46,
+  "genericTotal": 21029,
+  "chat": 34,
+  "warnings": 0,
+  "players": 10,
+  "finalStatePlayers": 3,
+  "voiceChunks": 0,
+  "playersHeadline": [
+    {
+      "steamId": "76561198296382419",
+      "name": "forever2kELO",
+      "side": "t",
+      "kills": 25,
+      "deaths": 14,
+      "assists": 3,
+      "adr": 142.9,
+      "hsPct": 52
+    },
+    {
+      "steamId": "76561198210730700",
+      "name": "Zuedsta",
+      "side": "",
+      "kills": 20,
+      "deaths": 14,
+      "assists": 8,
+      "adr": 112.4,
+      "hsPct": 60
+    },
+    {
+      "steamId": "76561197968389863",
+      "name": "adamS",
+      "side": "ct",
+      "kills": 20,
+      "deaths": 15,
+      "assists": 4,
+      "adr": 109.2,
+      "hsPct": 55
+    },
+    {
+      "steamId": "76561198386265483",
+      "name": "donk666",
+      "side": "",
+      "kills": 20,
+      "deaths": 18,
+      "assists": 3,
+      "adr": 110.1,
+      "hsPct": 55
+    },
+    {
+      "steamId": "76561198061660686",
+      "name": "llorente",
+      "side": "",
+      "kills": 19,
+      "deaths": 18,
+      "assists": 6,
+      "adr": 100.1,
+      "hsPct": 42.1
+    },
+    {
+      "steamId": "76561198372023214",
+      "name": "Magnojezzz",
+      "side": "",
+      "kills": 14,
+      "deaths": 17,
+      "assists": 4,
+      "adr": 78.6,
+      "hsPct": 50
+    },
+    {
+      "steamId": "76561198050922008",
+      "name": "hades--",
+      "side": "",
+      "kills": 14,
+      "deaths": 19,
+      "assists": 4,
+      "adr": 84.4,
+      "hsPct": 42.9
+    },
+    {
+      "steamId": "76561198296417934",
+      "name": "kRaSnaL",
+      "side": "",
+      "kills": 13,
+      "deaths": 18,
+      "assists": 8,
+      "adr": 89.5,
+      "hsPct": 53.8
+    },
+    {
+      "steamId": "76561199063899602",
+      "name": "-meg2k",
+      "side": "t",
+      "kills": 10,
+      "deaths": 16,
+      "assists": 3,
+      "adr": 62.1,
+      "hsPct": 60
+    },
+    {
+      "steamId": "76561198136696922",
+      "name": "FREELOOK",
+      "side": "",
+      "kills": 10,
+      "deaths": 19,
+      "assists": 6,
+      "adr": 57.9,
+      "hsPct": 40
+    }
+  ],
+  "topPlayer": {
+    "steamId": "76561198296382419",
+    "kills": 25,
+    "deaths": 14,
+    "assists": 3,
+    "adr": 142.9
+  },
+  "parseSecondsMax": 90
+}

@@ -1,0 +1,207 @@
+-- Initial schema (v1): 1:1 with internal/models structs.
+-- All child tables FK to matches(id) ON DELETE CASCADE.
+
+CREATE TABLE IF NOT EXISTS matches (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	path TEXT NOT NULL DEFAULT '',
+	sha256 TEXT NOT NULL UNIQUE,
+	size INTEGER NOT NULL DEFAULT 0,
+	map TEXT NOT NULL DEFAULT '',
+	patch_version INTEGER NOT NULL DEFAULT 0,
+	tick_rate REAL NOT NULL DEFAULT 0,
+	duration_ticks INTEGER NOT NULL DEFAULT 0,
+	playback_time_s REAL NOT NULL DEFAULT 0,
+	frames INTEGER NOT NULL DEFAULT 0,
+	server_name TEXT NOT NULL DEFAULT '',
+	client_name TEXT NOT NULL DEFAULT '',
+	game_dir TEXT NOT NULL DEFAULT '',
+	net_proto TEXT NOT NULL DEFAULT '',
+	is_pov INTEGER NOT NULL DEFAULT 0,
+	warmup_rounds INTEGER NOT NULL DEFAULT 0,
+	real_rounds INTEGER NOT NULL DEFAULT 0,
+	score_ct INTEGER NOT NULL DEFAULT 0,
+	score_t INTEGER NOT NULL DEFAULT 0,
+	half_ct INTEGER NOT NULL DEFAULT 0,
+	half_t INTEGER NOT NULL DEFAULT 0,
+	side_switches INTEGER NOT NULL DEFAULT 0,
+	entity_classes INTEGER NOT NULL DEFAULT 0,
+	end_entity_count INTEGER NOT NULL DEFAULT 0,
+	parser_version TEXT NOT NULL DEFAULT '',
+	extracted_at DATETIME,
+	parse_ms INTEGER NOT NULL DEFAULT 0,
+	warnings_count INTEGER NOT NULL DEFAULT 0,
+	status TEXT NOT NULL DEFAULT 'queued',
+	error TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS teams (
+	match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+	side TEXT NOT NULL,
+	name TEXT NOT NULL DEFAULT '',
+	flag TEXT NOT NULL DEFAULT '',
+	score INTEGER NOT NULL DEFAULT 0,
+	money_spent INTEGER NOT NULL DEFAULT 0,
+	equip_total INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (match_id, side)
+);
+
+CREATE TABLE IF NOT EXISTS players (
+	match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+	steam_id TEXT NOT NULL,
+	name TEXT NOT NULL DEFAULT '',
+	is_bot INTEGER NOT NULL DEFAULT 0,
+	side TEXT NOT NULL DEFAULT '',
+	clan_tag TEXT NOT NULL DEFAULT '',
+	crosshair_code TEXT NOT NULL DEFAULT '',
+	rank INTEGER NOT NULL DEFAULT 0,
+	rank_type INTEGER NOT NULL DEFAULT 0,
+	wins INTEGER NOT NULL DEFAULT 0,
+	ping INTEGER NOT NULL DEFAULT 0,
+	final_alive INTEGER NOT NULL DEFAULT 0,
+	final_state_present INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (match_id, steam_id)
+);
+
+CREATE TABLE IF NOT EXISTS player_stats (
+	match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+	steam_id TEXT NOT NULL,
+	side TEXT NOT NULL DEFAULT '',
+	name TEXT NOT NULL DEFAULT '',
+	kills INTEGER NOT NULL DEFAULT 0,
+	deaths INTEGER NOT NULL DEFAULT 0,
+	assists INTEGER NOT NULL DEFAULT 0,
+	headshots INTEGER NOT NULL DEFAULT 0,
+	teamkills INTEGER NOT NULL DEFAULT 0,
+	suicides INTEGER NOT NULL DEFAULT 0,
+	mvps INTEGER NOT NULL DEFAULT 0,
+	score INTEGER NOT NULL DEFAULT 0,
+	total_damage INTEGER NOT NULL DEFAULT 0,
+	damage_taken INTEGER NOT NULL DEFAULT 0,
+	shots INTEGER NOT NULL DEFAULT 0,
+	hits INTEGER NOT NULL DEFAULT 0,
+	adr REAL NOT NULL DEFAULT 0,
+	hs_pct REAL NOT NULL DEFAULT 0,
+	rounds_played INTEGER NOT NULL DEFAULT 0,
+	entry_kills INTEGER NOT NULL DEFAULT 0,
+	entry_deaths INTEGER NOT NULL DEFAULT 0,
+	opening_kills INTEGER NOT NULL DEFAULT 0,
+	opening_deaths INTEGER NOT NULL DEFAULT 0,
+	trade_kills INTEGER NOT NULL DEFAULT 0,
+	best_streak INTEGER NOT NULL DEFAULT 0,
+	three_k INTEGER NOT NULL DEFAULT 0,
+	four_k INTEGER NOT NULL DEFAULT 0,
+	five_k INTEGER NOT NULL DEFAULT 0,
+	utility_damage INTEGER NOT NULL DEFAULT 0,
+	flashes_popped INTEGER NOT NULL DEFAULT 0,
+	flashed_times INTEGER NOT NULL DEFAULT 0,
+	bomb_plants INTEGER NOT NULL DEFAULT 0,
+	bomb_defuses INTEGER NOT NULL DEFAULT 0,
+	money_spent_total INTEGER NOT NULL DEFAULT 0,
+	kills_by_weapon TEXT NOT NULL DEFAULT '',
+	damage_by_weapon TEXT NOT NULL DEFAULT '',
+	PRIMARY KEY (match_id, steam_id)
+);
+
+CREATE TABLE IF NOT EXISTS rounds (
+	match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+	number INTEGER NOT NULL,
+	winner TEXT NOT NULL DEFAULT '',
+	reason TEXT NOT NULL DEFAULT '',
+	duration_s REAL NOT NULL DEFAULT 0,
+	start_tick INTEGER NOT NULL DEFAULT 0,
+	end_tick INTEGER NOT NULL DEFAULT 0,
+	warmup INTEGER NOT NULL DEFAULT 0,
+	mvp TEXT NOT NULL DEFAULT '',
+	mvp_reason TEXT NOT NULL DEFAULT '',
+	equip_ct INTEGER NOT NULL DEFAULT 0,
+	equip_t INTEGER NOT NULL DEFAULT 0,
+	bomb_site TEXT NOT NULL DEFAULT '',
+	freeze_end_tick INTEGER NOT NULL DEFAULT 0,
+	first_kill_steam TEXT NOT NULL DEFAULT '',
+	first_death_steam TEXT NOT NULL DEFAULT '',
+	PRIMARY KEY (match_id, number)
+);
+
+CREATE TABLE IF NOT EXISTS round_economy (
+	match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+	round INTEGER NOT NULL,
+	side TEXT NOT NULL,
+	equip_value INTEGER NOT NULL DEFAULT 0,
+	money_sampled_sum INTEGER NOT NULL DEFAULT 0,
+	money_samples INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (match_id, round, side)
+);
+
+CREATE TABLE IF NOT EXISTS events (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+	seq INTEGER NOT NULL,
+	tick INTEGER NOT NULL DEFAULT 0,
+	round INTEGER NOT NULL DEFAULT 0,
+	kind TEXT NOT NULL DEFAULT '',
+	attacker TEXT NOT NULL DEFAULT '',
+	victim TEXT NOT NULL DEFAULT '',
+	assister TEXT NOT NULL DEFAULT '',
+	weapon TEXT NOT NULL DEFAULT '',
+	headshot INTEGER NOT NULL DEFAULT 0,
+	wallbang INTEGER NOT NULL DEFAULT 0,
+	noscope INTEGER NOT NULL DEFAULT 0,
+	through_smoke INTEGER NOT NULL DEFAULT 0,
+	attacker_blind INTEGER NOT NULL DEFAULT 0,
+	assisted_flash INTEGER NOT NULL DEFAULT 0,
+	distance REAL NOT NULL DEFAULT 0,
+	hitgroup TEXT NOT NULL DEFAULT '',
+	dmg INTEGER NOT NULL DEFAULT 0,
+	site TEXT NOT NULL DEFAULT '',
+	detail_json TEXT NOT NULL DEFAULT '',
+	raw_json TEXT NOT NULL DEFAULT '',
+	UNIQUE (match_id, seq)
+);
+
+CREATE TABLE IF NOT EXISTS generic_events (
+	match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+	name TEXT NOT NULL DEFAULT '',
+	tick INTEGER NOT NULL DEFAULT 0,
+	round INTEGER NOT NULL DEFAULT 0,
+	payload_json TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS chat (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+	tick INTEGER NOT NULL DEFAULT 0,
+	round INTEGER NOT NULL DEFAULT 0,
+	steam_id TEXT NOT NULL DEFAULT '',
+	name TEXT NOT NULL DEFAULT '',
+	text TEXT NOT NULL DEFAULT '',
+	kind TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS warnings (
+	match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+	seq INTEGER NOT NULL,
+	message TEXT NOT NULL DEFAULT '',
+	PRIMARY KEY (match_id, seq)
+);
+
+CREATE TABLE IF NOT EXISTS jobs (
+	id INTEGER PRIMARY KEY AUTOINCREMENT,
+	kind TEXT NOT NULL DEFAULT '',
+	path TEXT NOT NULL DEFAULT '',
+	status TEXT NOT NULL DEFAULT 'queued',
+	progress REAL NOT NULL DEFAULT 0,
+	stage TEXT NOT NULL DEFAULT 'queued',
+	error TEXT NOT NULL DEFAULT '',
+	created_at DATETIME NOT NULL,
+	started_at DATETIME,
+	finished_at DATETIME,
+	match_id INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_events_match_round ON events(match_id, round);
+CREATE INDEX IF NOT EXISTS idx_events_match_kind ON events(match_id, kind);
+CREATE INDEX IF NOT EXISTS idx_events_match_attacker ON events(match_id, attacker);
+CREATE INDEX IF NOT EXISTS idx_events_match_victim ON events(match_id, victim);
+CREATE INDEX IF NOT EXISTS idx_events_match_kind_tick ON events(match_id, kind, tick);
+CREATE INDEX IF NOT EXISTS idx_generic_events_match_name ON generic_events(match_id, name);
+CREATE INDEX IF NOT EXISTS idx_chat_match_tick ON chat(match_id, tick);

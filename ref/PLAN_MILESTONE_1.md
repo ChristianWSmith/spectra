@@ -1,5 +1,7 @@
 # Spectra — Implementation Plan: Milestone 1 (Foundation & Core Match Analysis)
 
+**Status: implemented 2026-10-31** — shipped in one pass: `internal/{models,store,extract,library,data,integration}`, `LibraryService`/`MatchService`, Svelte views (library/match/rounds/timeline/settings), `spectra -import` CLI smoke, `donk.golden.json` fixture (regen: `go test ./internal/integration -update`), CI `git lfs pull` step. Visual smoke on the golden demo walked the DoD end-to-end.
+
 **PRD reference:** §5.1 (library), §5.2 (overview/scoreboard), §5.3 (rounds), §5.5 (timeline), §5.17 (raw events, partial), §6–7 (data/architecture), §10 Milestone 1
 **Depends on:** nothing — this is the first milestone
 **Exit criteria (PRD §10):** a user can import a demo, inspect the match, browse rounds, examine player statistics, and investigate the underlying events without opening CS2.

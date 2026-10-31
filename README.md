@@ -4,11 +4,24 @@ A powerful, feature-rich CS2 demo viewer and match analysis toolkit.
 
 ## Features
 
+- Import `.dem` / `.dem.zst` demos (picker or drag-and-drop) with background
+  parsing, progress, and duplicate detection — originals are never modified
+- Searchable match library: reprocess, delete extracted data (optionally the
+  file too), per-match parser version and extraction warnings
+- Match overview, sortable scoreboard (K/D/A, ADR, HS%, K/D, KDA, entries,
+  trades, openings, streaks, multi-kills, utility, MVPs…), round browser with
+  economy + kill feed, player chat, raw game-event histogram + payload viewer
+- Universal event timeline with round/player/type filters and drill-down to
+  the underlying event payloads
 - Interactive 2D tactical replay of entire matches — no CS2 install required
 - Comprehensive match, player, round, economy, and utility statistics
-- Universal searchable event timeline with drill-down to the underlying data
 - Voice and chat review synchronized with the replay (when available in the demo)
 - Local-first: demos and extracted data stay on your machine, fully offline
+
+Development status: milestones land incrementally — see
+[ref/PLAN_MILESTONE_1.md](ref/PLAN_MILESTONE_1.md) … `_5.md` for what has
+shipped versus what is next (import/statistics above shipped in M1; replay,
+analytics, voice, and the platform tools follow).
 
 ## Download
 
@@ -24,7 +37,7 @@ itself, verifying downloads against the release's `SHA256SUMS`.
 
 ## Building from source
 
-Requires Go 1.26+, Node.js 22+, and — on Linux only — the GTK4 +
+Requires Go 1.27+, Node.js 22+, and — on Linux only — the GTK4 +
 WebKitGTK 6.0 dev packages (Ubuntu 24.04+ / Debian 13+):
 
     sudo apt-get install build-essential pkg-config libgtk-4-dev \
