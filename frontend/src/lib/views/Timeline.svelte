@@ -5,6 +5,7 @@
     getRounds,
     getScoreboard,
     takePendingTimelineFilter,
+    setPendingSeek,
   } from '../services.js';
   import { prettyJson } from '../fmt.js';
 
@@ -158,6 +159,13 @@
     if (e.assistedFlash) f.push(['AFL', 'assisted flash']);
     return f;
   }
+
+  // ▶ hands the event's tick to the replay via the pendingSeek contract.
+  function watchTick(ev, e) {
+    e.stopPropagation();
+    setPendingSeek({ tick: ev.tick });
+    nav(`/replay/${id}`);
+  }
 </script>
 
 <div class="view timeline-view">
@@ -215,6 +223,17 @@
             style="top:{(start + i) * ROW_H}px"
             onclick={() => select(ev)}
           >
+            <span
+              class="vrow-play"
+              role="button"
+              tabindex="-1"
+              title="Watch at tick {ev.tick} in replay"
+              aria-label="Watch tick {ev.tick} in replay"
+              onclick={(e) => watchTick(ev, e)}
+              onkeydown={(e) =>
+                (e.key === 'Enter' || e.key === ' ') &&
+                (e.preventDefault(), watchTick(ev, e))}>▶</span
+            >
             <span class="num seq">{ev.seq}</span>
             <span class="mono tick">{ev.tick}</span>
             <span class="chip round-chip">R{ev.round}</span>

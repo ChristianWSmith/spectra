@@ -1,0 +1,29 @@
+{
+  "frames": 136948,
+  "slots": 10,
+  "tickRate": 64,
+  "realRounds": 24,
+  "firstFreezeTick": 1280,
+  "aliveAtFreeze": 10,
+  "bounds": {
+    "MinX": -2000,
+    "MinY": -2382,
+    "MaxX": 3632,
+    "MaxY": 3250
+  },
+  "plantCentroids": {
+    "A": {
+      "x": -66.359375,
+      "y": 1887.0052083333333,
+      "n": 6
+    },
+    "B": {
+      "x": -119.7109375,
+      "y": -1350.171875,
+      "n": 8
+    }
+  },
+  "maxPlantEccentricity": 225.70463949496207,
+  "killPosPairs": 170,
+  "maxKillSidecarDelta": 1.3496725841161932
+}

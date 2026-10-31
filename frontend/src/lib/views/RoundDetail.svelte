@@ -1,5 +1,5 @@
 <script>
-  import { getRoundDetail, getRounds, getMatch } from '../services.js';
+  import { getRoundDetail, getRounds, getMatch, setPendingSeek } from '../services.js';
   import { fmtDuration, fmtTickSeconds, fmtInt } from '../fmt.js';
   import RoundStrip from '../components/RoundStrip.svelte';
 
@@ -37,12 +37,26 @@
   );
   const economy = $derived(detail?.economy || []);
   const chat = $derived(detail?.chat || []);
+
+  // Jump to the replay at a tick (per-kill ▶ uses the kill's own tick; the
+  // header button uses the round start).
+  function watchTick(tick) {
+    setPendingSeek({ tick });
+    nav(`/replay/${id}`);
+  }
 </script>
 
 <div class="view">
   <header class="view-header">
     <button class="btn" onclick={() => nav(`/match/${id}`)}>← Match</button>
     {#if detail}
+      <button
+        class="btn primary"
+        title="Watch this round from its start in the replay"
+        onclick={() => watchTick(detail.round.startTick || 0)}
+      >
+        ▶ Watch round
+      </button>
       <h1>
         Round {detail.round.number}
         <span class="chip side {detail.round.winner || 'none'}">
@@ -93,9 +107,9 @@
                 <td>
                   <button
                     class="btn small ghost"
-                    disabled
-                    title="replay arrives in Milestone 2"
-                    aria-label="Jump to replay (Milestone 2)"
+                    title="Jump to this kill in the replay"
+                    aria-label="Jump to kill at tick {e.tick} in the replay"
+                    onclick={() => watchTick(e.tick)}
                   >▶</button>
                 </td>
                 <td class="num mono">{e.tick}</td>

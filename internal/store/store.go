@@ -90,3 +90,12 @@ func b2i(b bool) int64 {
 	}
 	return 0
 }
+
+// nvl dereferences a nullable float for SQL binding: nil becomes an untyped
+// NULL, non-nil its value (events.pos_* are NULL-able by design).
+func nvl(p *float64) any {
+	if p == nil {
+		return nil
+	}
+	return *p
+}

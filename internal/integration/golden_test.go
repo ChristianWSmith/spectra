@@ -248,7 +248,7 @@ func TestGolden(t *testing.T) {
 	}
 
 	start := time.Now()
-	m, err := extract.Parse(context.Background(), reader, nil)
+	m, err := extract.Parse(context.Background(), reader, extract.ParseOptions{})
 	parseSeconds := time.Since(start).Seconds()
 	if err != nil {
 		t.Fatalf("extract.Parse: %v", err)

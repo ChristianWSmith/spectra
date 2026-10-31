@@ -31,8 +31,10 @@ func TestParseGolden(t *testing.T) {
 
 	type prog struct{ done, total int }
 	var progress []prog
-	m, err := Parse(context.Background(), f, func(done, total int) {
-		progress = append(progress, prog{done, total})
+	m, err := Parse(context.Background(), f, ParseOptions{
+		Progress: func(done, total int) {
+			progress = append(progress, prog{done, total})
+		},
 	})
 	if err != nil {
 		t.Fatalf("Parse: %v", err)

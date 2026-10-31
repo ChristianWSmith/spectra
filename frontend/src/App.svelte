@@ -5,6 +5,7 @@
   import Match from './lib/views/Match.svelte';
   import RoundDetail from './lib/views/RoundDetail.svelte';
   import Timeline from './lib/views/Timeline.svelte';
+  import Replay from './lib/views/Replay.svelte';
   import Settings from './lib/views/Settings.svelte';
 
   // Hand-rolled hash router (M1 plan §4): deep-navigable URLs without a
@@ -13,6 +14,7 @@
   //   #/match/:id
   //   #/match/:id/round/:n
   //   #/timeline/:id
+  //   #/replay/:id
   //   #/settings
   let route = $state(parseHash(location.hash));
 
@@ -24,6 +26,8 @@
     if (m) return { name: 'match', id: Number(m[1]) };
     m = h.match(/^\/timeline\/(\d+)$/);
     if (m) return { name: 'timeline', id: Number(m[1]) };
+    m = h.match(/^\/replay\/(\d+)$/);
+    if (m) return { name: 'replay', id: Number(m[1]) };
     if (h.startsWith('/settings')) return { name: 'settings' };
     return { name: 'library' };
   }
@@ -68,7 +72,8 @@
       class:active={route.name === 'library' ||
         route.name === 'match' ||
         route.name === 'round' ||
-        route.name === 'timeline'}
+        route.name === 'timeline' ||
+        route.name === 'replay'}
       onclick={() => nav('/library')}
     >
       Library
@@ -91,6 +96,8 @@
       <RoundDetail id={route.id} round={route.round} {nav} />
     {:else if route.name === 'timeline'}
       <Timeline id={route.id} {nav} />
+    {:else if route.name === 'replay'}
+      <Replay id={route.id} {nav} />
     {:else if route.name === 'settings'}
       <Settings />
     {/if}

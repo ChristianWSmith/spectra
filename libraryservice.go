@@ -3,6 +3,8 @@ package main
 import (
 	"errors"
 	"os"
+	"path/filepath"
+	"strconv"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
@@ -46,10 +48,11 @@ func (s *LibraryService) ListMatches(query, sortKey string, desc bool) ([]models
 	return s.st.ListMatches(query, sortKey, desc)
 }
 
-// DeleteMatch removes a match and its extracted data. When deleteOriginal
-// is set the source demo file is removed from disk as well — its path is
-// looked up before the row is deleted. A missing match surfaces
-// store.ErrNotFound.
+// DeleteMatch removes a match and its extracted data, including the
+// per-match position sidecar directory (best-effort — plan M2 §4: delete
+// cascade removes the directory). When deleteOriginal is set the source
+// demo file is removed from disk as well — its path is looked up before
+// the row is deleted. A missing match surfaces store.ErrNotFound.
 func (s *LibraryService) DeleteMatch(id int64, deleteOriginal bool) error {
 	var path string
 	if deleteOriginal {
@@ -62,6 +65,7 @@ func (s *LibraryService) DeleteMatch(id int64, deleteOriginal bool) error {
 	if err := s.st.DeleteMatchData(id); err != nil {
 		return err
 	}
+	_ = os.RemoveAll(filepath.Join(data.MatchesDir(), strconv.FormatInt(id, 10)))
 	if deleteOriginal && path != "" {
 		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err

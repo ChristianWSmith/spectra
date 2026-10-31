@@ -3,6 +3,7 @@ package store
 import (
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -30,9 +31,13 @@ func openFileStore(t *testing.T) (*Store, string) {
 	return s, path
 }
 
+// pf is a *float64 literal helper for event positions.
+func pf(v float64) *float64 { return &v }
+
 // testExtracted builds a synthetic extract: NUL bytes in player/chat/warning
 // strings, 2 players, 2 rounds (0 warmup + 1 real), 5 events, 3 generic
-// events, 2 chat lines, 1 warning, teams and economies.
+// events, 2 chat lines, 1 warning, teams and economies. The first kill and
+// the bomb plant carry positions; the damage event has none (NULL roundtrip).
 func testExtracted(sha string, extractedAt time.Time) *models.ExtractedMatch {
 	return &models.ExtractedMatch{
 		Match: models.Match{
@@ -79,12 +84,14 @@ func testExtracted(sha string, extractedAt time.Time) *models.ExtractedMatch {
 		Events: []models.Event{
 			{Tick: 100, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "200",
 				Weapon: "ak47", Headshot: true, Distance: 12.5, Dmg: 100,
+				PosX: pf(123.5), PosY: pf(-456.25), PosZ: pf(12.0),
 				DetailJSON: `{"k":1}`, RawJSON: `{"r":1}`},
 			{Tick: 99, Round: 1, Kind: models.EventDamage, Attacker: "100", Victim: "200",
 				Weapon: "ak47", Dmg: 30},
 			{Tick: 200, Round: 1, Kind: models.EventKill, Attacker: "200", Victim: "100",
 				Weapon: "awp", Headshot: true},
-			{Tick: 150, Round: 1, Kind: models.EventBombPlant, Attacker: "200", Site: "A"},
+			{Tick: 150, Round: 1, Kind: models.EventBombPlant, Attacker: "200", Site: "A",
+				PosX: pf(100.0), PosY: pf(-200.0), PosZ: pf(1.0)},
 			{Tick: 300, Round: 1, Kind: models.EventRoundEnd},
 		},
 		GenericEvents: []models.GenericEvent{
@@ -123,12 +130,22 @@ func TestOpenMigrationsIdempotent(t *testing.T) {
 	}
 	defer func() { _ = s2.Close() }()
 
+	entries, err := migrationsFS.ReadDir("migrations")
+	if err != nil {
+		t.Fatalf("list migrations: %v", err)
+	}
+	wantMigrations := 0
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".sql") {
+			wantMigrations++
+		}
+	}
 	var n int
 	if err := s2.db.QueryRow(`SELECT COUNT(*) FROM schema_version`).Scan(&n); err != nil {
 		t.Fatalf("schema_version: %v", err)
 	}
-	if n != 1 {
-		t.Fatalf("schema_version rows = %d, want 1", n)
+	if n != wantMigrations {
+		t.Fatalf("schema_version rows = %d, want %d (each migration applied exactly once)", n, wantMigrations)
 	}
 	for _, table := range []string{"matches", "teams", "players", "player_stats", "rounds",
 		"round_economy", "events", "generic_events", "chat", "warnings", "jobs"} {
@@ -138,6 +155,85 @@ func TestOpenMigrationsIdempotent(t *testing.T) {
 		).Scan(&name); err != nil {
 			t.Errorf("table %s missing: %v", table, err)
 		}
+	}
+}
+
+// TestMigration002ReplayColumns reopens an existing database and checks the
+// M2 columns: match-side position mirrors default to 0 and event positions
+// to NULL (the ALTER ADD COLUMN defaults that migration 002 ships).
+func TestMigration002ReplayColumns(t *testing.T) {
+	s, path := openFileStore(t)
+	id := saveTestMatch(t, s, "/d/m2.dem", "sha-mig002", time.Now())
+	// Rewrite as a pre-M2 row: events without positions read as NULL → nil.
+	em := testExtracted("sha-mig002", time.Now())
+	for i := range em.Events {
+		em.Events[i].PosX, em.Events[i].PosY, em.Events[i].PosZ = nil, nil, nil
+	}
+	if err := s.SaveExtracted(id, em); err != nil {
+		t.Fatalf("SaveExtracted: %v", err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	s2, err := Open(path) // second Open: migration 002 must not re-run/fail
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	defer func() { _ = s2.Close() }()
+
+	m, err := s2.GetMatch(id)
+	if err != nil {
+		t.Fatalf("GetMatch: %v", err)
+	}
+	if m.PositionFormat != 0 || m.SampleRate != 0 || m.PositionFrames != 0 {
+		t.Errorf("fresh position columns = %d/%d/%d, want 0/0/0",
+			m.PositionFormat, m.SampleRate, m.PositionFrames)
+	}
+
+	rows, err := s2.GetEvents(models.EventFilter{MatchID: id, Round: -1})
+	if err != nil {
+		t.Fatalf("GetEvents: %v", err)
+	}
+	for _, r := range rows {
+		if r.PosX != nil || r.PosY != nil || r.PosZ != nil {
+			t.Fatalf("event seq %d has positions %v/%v/%v, want nil (NULL columns)", r.Seq, r.PosX, r.PosY, r.PosZ)
+		}
+	}
+}
+
+// TestSetPositionMeta persists the sidecar mirror columns on the match row.
+func TestSetPositionMeta(t *testing.T) {
+	s := openMem(t)
+	id, err := s.CreateMatchRow("/d/a.dem", "sha-posmeta", 1)
+	if err != nil {
+		t.Fatalf("CreateMatchRow: %v", err)
+	}
+	if err := s.SetPositionMeta(id, 1, 64, 136948); err != nil {
+		t.Fatalf("SetPositionMeta: %v", err)
+	}
+	m, err := s.GetMatch(id)
+	if err != nil {
+		t.Fatalf("GetMatch: %v", err)
+	}
+	if m.PositionFormat != 1 || m.SampleRate != 64 || m.PositionFrames != 136948 {
+		t.Errorf("position columns = %d/%d/%d, want 1/64/136948",
+			m.PositionFormat, m.SampleRate, m.PositionFrames)
+	}
+	// SaveExtracted must not clobber them (it never touches the columns).
+	em := testExtracted("sha-posmeta", time.Now())
+	if err := s.SaveExtracted(id, em); err != nil {
+		t.Fatalf("SaveExtracted: %v", err)
+	}
+	m, err = s.GetMatch(id)
+	if err != nil {
+		t.Fatalf("GetMatch after save: %v", err)
+	}
+	if m.PositionFormat != 1 || m.SampleRate != 64 || m.PositionFrames != 136948 {
+		t.Errorf("position columns after SaveExtracted = %d/%d/%d, want 1/64/136948",
+			m.PositionFormat, m.SampleRate, m.PositionFrames)
+	}
+	if err := s.SetPositionMeta(999999, 1, 64, 1); !errors.Is(err, ErrNotFound) {
+		t.Errorf("SetPositionMeta(999999) err = %v, want ErrNotFound", err)
 	}
 }
 
@@ -297,6 +393,51 @@ func TestSaveExtractedRoundtrip(t *testing.T) {
 	}
 	if det.DetailJSON != `{"k":1}` || det.RawJSON != `{"r":1}` || det.Seq != 0 {
 		t.Errorf("GetEvent mismatch: %+v", det)
+	}
+	if det.PosX == nil || *det.PosX != 123.5 || det.PosY == nil || *det.PosY != -456.25 ||
+		det.PosZ == nil || *det.PosZ != 12.0 {
+		t.Errorf("GetEvent positions = %v/%v/%v, want 123.5/-456.25/12", det.PosX, det.PosY, det.PosZ)
+	}
+	// Event positions roundtrip through every read path: seq 0 (kill) and
+	// seq 3 (plant) carry them, seq 1 (damage) stays NULL → nil.
+	if all[0].PosX == nil || *all[0].PosX != 123.5 || *all[0].PosY != -456.25 || *all[0].PosZ != 12.0 {
+		t.Errorf("GetEvents seq 0 positions = %v/%v/%v, want 123.5/-456.25/12",
+			all[0].PosX, all[0].PosY, all[0].PosZ)
+	}
+	if all[1].PosX != nil || all[1].PosY != nil || all[1].PosZ != nil {
+		t.Errorf("GetEvents seq 1 positions = %v/%v/%v, want nil (no source position)",
+			all[1].PosX, all[1].PosY, all[1].PosZ)
+	}
+	if all[3].Kind != models.EventBombPlant || all[3].PosX == nil || *all[3].PosX != 100.0 ||
+		*all[3].PosY != -200.0 || *all[3].PosZ != 1.0 {
+		t.Errorf("GetEvents plant positions = %+v, want 100/-200/1", all[3])
+	}
+	if detail.Events[0].PosX == nil || *detail.Events[0].PosX != 123.5 {
+		t.Errorf("GetRoundDetail event positions = %v, want 123.5", detail.Events[0].PosX)
+	}
+
+	// Landmarks: positioned events plus the landmark-kind fallbacks,
+	// ordered by tick. Damage without a position is not a landmark.
+	marks, err := s.GetLandmarks(id, 0)
+	if err != nil {
+		t.Fatalf("GetLandmarks: %v", err)
+	}
+	if len(marks) != 3 {
+		t.Fatalf("GetLandmarks len = %d, want 3 (%+v)", len(marks), marks)
+	}
+	if marks[0].Tick != 100 || marks[0].Kind != models.EventKill ||
+		marks[1].Tick != 150 || marks[1].Kind != models.EventBombPlant ||
+		marks[2].Tick != 200 || marks[2].Kind != models.EventKill {
+		t.Errorf("GetLandmarks order = %+v, want kill@100, plant@150, kill@200", marks)
+	}
+	if marks[0].PosX == nil || *marks[0].PosX != 123.5 {
+		t.Errorf("landmark 0 pos = %v, want 123.5", marks[0].PosX)
+	}
+	if marks[1].Site != "A" || marks[1].PosX == nil {
+		t.Errorf("plant landmark mismatch: %+v", marks[1])
+	}
+	if marks[2].PosX != nil {
+		t.Errorf("kill without a position still included but pos should be nil, got %v", *marks[2].PosX)
 	}
 	if _, err := s.GetEvent(999999); !errors.Is(err, ErrNotFound) {
 		t.Errorf("GetEvent(999999) err = %v, want ErrNotFound", err)

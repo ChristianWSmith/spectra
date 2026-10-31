@@ -2,10 +2,16 @@ package main
 
 import (
 	"embed"
+	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -18,6 +24,7 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/extract"
 	"github.com/ChristianWSmith/spectra/internal/library"
 	"github.com/ChristianWSmith/spectra/internal/models"
+	"github.com/ChristianWSmith/spectra/internal/sidecar"
 	"github.com/ChristianWSmith/spectra/internal/store"
 )
 
@@ -92,6 +99,19 @@ func main() {
 
 	svc := &AppService{kvs: kvs}
 
+	// The asset server doubles as the position-sidecar endpoint (plan M2
+	// §6: bulk bytes ride HTTP fetch/Range, decompressed server-side — the
+	// frontend never owns a zstd decoder). Everything else falls through
+	// to the bundled frontend.
+	bundled := application.AssetFileServerFS(assets)
+	assetsHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if p := strings.TrimPrefix(r.URL.Path, "/api/sidecar/"); p != r.URL.Path {
+			handleSidecar(st, w, r, p)
+			return
+		}
+		bundled.ServeHTTP(w, r)
+	})
+
 	app := application.New(application.Options{
 		Name:        appName,
 		Description: "A powerful, feature-rich CS2 demo viewer and match analysis toolkit.",
@@ -100,7 +120,7 @@ func main() {
 			application.NewService(svc),
 		},
 		Assets: application.AssetOptions{
-			Handler: application.AssetFileServerFS(assets),
+			Handler: assetsHandler,
 		},
 		Mac: application.MacOptions{
 			ApplicationShouldTerminateAfterLastWindowClosed: true,
@@ -122,6 +142,7 @@ func main() {
 
 	app.RegisterService(application.NewService(&LibraryService{st: st, imp: imp, app: app}))
 	app.RegisterService(application.NewService(&MatchService{st: st}))
+	app.RegisterService(application.NewService(&ReplayService{st: st, app: app}))
 
 	initUpdater(app)
 
@@ -210,6 +231,63 @@ func runImport(path string) {
 			os.Exit(1)
 		}
 		time.Sleep(200 * time.Millisecond)
+	}
+}
+
+// handleSidecar serves a match's position sidecar over the asset server
+// (plan M2 §6 — HTTP asset-server route, server-side decompress):
+//
+//	/api/sidecar/<matchID>/positions?from=&to=   decompressed q16-v1 frame
+//	                                             stream (from/to frame
+//	                                             indexes; 0/0 = whole match)
+//	/api/sidecar/<matchID>/meta                  meta.json as JSON
+//
+// A missing sidecar or match is 404 (HasSidecar=false territory, not an
+// error). No auth: the asset server is only reachable by the app's own
+// webview.
+func handleSidecar(st *store.Store, w http.ResponseWriter, r *http.Request, p string) {
+	idStr, sub, ok := strings.Cut(p, "/")
+	if !ok || (sub != "positions" && sub != "meta") {
+		http.NotFound(w, r)
+		return
+	}
+	id, err := strconv.ParseInt(idStr, 10, 64)
+	if err != nil || id <= 0 {
+		http.NotFound(w, r)
+		return
+	}
+	if _, err := st.GetMatch(id); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	rd, err := sidecar.Open(filepath.Join(data.MatchesDir(), idStr))
+	if errors.Is(err, sidecar.ErrNoSidecar) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	switch sub {
+	case "meta":
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(rd.Meta()); err != nil {
+			log.Printf("sidecar: write meta: %v", err)
+		}
+	case "positions":
+		from, _ := strconv.Atoi(r.URL.Query().Get("from"))
+		to, _ := strconv.Atoi(r.URL.Query().Get("to"))
+		buf, err := rd.ReadRange(from, to)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Length", strconv.Itoa(len(buf)))
+		if _, err := w.Write(buf); err != nil {
+			log.Printf("sidecar: write positions: %v", err)
+		}
 	}
 }
 

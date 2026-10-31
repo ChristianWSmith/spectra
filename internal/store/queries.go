@@ -14,7 +14,11 @@ const matchColumns = `id, path, sha256, size, map, patch_version, tick_rate, dur
 	playback_time_s, frames, server_name, client_name, game_dir, net_proto, is_pov,
 	warmup_rounds, real_rounds, score_ct, score_t, half_ct, half_t, side_switches,
 	entity_classes, end_entity_count, parser_version, extracted_at, parse_ms,
-	warnings_count, status, error`
+	warnings_count, status, error,
+	position_format, sample_rate, position_frames`
+
+// landmarkLimit is the hard row cap for GetLandmarks (plan M2 §7).
+const landmarkLimit = 5000
 
 // matchListSort whitelists ListMatches sort keys (identifiers only — every
 // user value is bound as a parameter).
@@ -64,12 +68,14 @@ var scoreboardSort = map[string]string{
 }
 
 // eventRowCols/eventRowFrom select typed timeline columns with player
-// display names joined for attacker/victim/assister.
+// display names joined for attacker/victim/assister. The trailing
+// e.pos_* columns are NULL for events without a source position.
 const eventRowCols = `e.id, e.seq, e.tick, e.round, e.kind,
 	e.attacker, COALESCE(ap.name, ''), e.victim, COALESCE(vp.name, ''),
 	e.assister, COALESCE(asp.name, ''),
 	e.weapon, e.headshot, e.wallbang, e.noscope, e.through_smoke,
-	e.attacker_blind, e.assisted_flash, e.distance, e.hitgroup, e.dmg, e.site`
+	e.attacker_blind, e.assisted_flash, e.distance, e.hitgroup, e.dmg, e.site,
+	e.pos_x, e.pos_y, e.pos_z`
 
 const eventRowFrom = ` FROM events e
 	LEFT JOIN players ap ON ap.match_id = e.match_id AND e.attacker <> '' AND ap.steam_id = e.attacker
@@ -156,7 +162,7 @@ func (s *Store) GetMatch(id int64) (*models.Match, error) {
 		&m.GameDir, &m.NetProto, &m.IsPOV, &m.WarmupRounds, &m.RealRounds, &m.ScoreCT,
 		&m.ScoreT, &m.HalfCT, &m.HalfT, &m.SideSwitches, &m.EntityClasses,
 		&m.EndEntityCount, &m.ParserVersion, &extracted, &m.ParseMS, &m.WarningsCount,
-		&m.Status, &m.Error,
+		&m.Status, &m.Error, &m.PositionFormat, &m.SampleRate, &m.PositionFrames,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -365,7 +371,8 @@ func (s *Store) GetEvent(id int64) (*models.EventDetail, error) {
 		&er.ID, &er.Seq, &er.Tick, &er.Round, &er.Kind, &er.Attacker, &er.AttackerName,
 		&er.Victim, &er.VictimName, &er.Assister, &er.AssisterName, &er.Weapon, &er.Headshot,
 		&er.Wallbang, &er.Noscope, &er.ThroughSmoke, &er.AttackerBlind, &er.AssistedFlash,
-		&er.Distance, &er.Hitgroup, &er.Dmg, &er.Site, &det, &raw,
+		&er.Distance, &er.Hitgroup, &er.Dmg, &er.Site, &er.PosX, &er.PosY, &er.PosZ,
+		&det, &raw,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
@@ -374,6 +381,55 @@ func (s *Store) GetEvent(id int64) (*models.EventDetail, error) {
 		return nil, fmt.Errorf("store: get event: %w", err)
 	}
 	return &models.EventDetail{EventRow: er, DetailJSON: det, RawJSON: raw}, nil
+}
+
+// landmarkKinds are event kinds that surface as replay anchors even when
+// their position columns are NULL (plan M2 §7 — a missing bomb entity must
+// not hide the plant/defuse/explode marker from the scrubber).
+var landmarkKinds = []string{
+	models.EventKill,
+	models.EventGrenade,
+	models.EventGrenadeThrow,
+	models.EventBombPlant,
+	models.EventBombDefuse,
+	models.EventBombExplode,
+}
+
+// GetLandmarks returns position-stamped anchor events for one match —
+// every event carrying a position plus the landmark kinds above — ordered
+// by tick/seq. limit <= 0 means the hard cap of 5000 (plan M2 §7).
+func (s *Store) GetLandmarks(matchID int64, limit int) ([]models.EventRow, error) {
+	if limit <= 0 || limit > landmarkLimit {
+		limit = landmarkLimit
+	}
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(landmarkKinds)), ",")
+	q := `SELECT ` + eventRowCols + eventRowFrom +
+		` WHERE e.match_id = ? AND (e.pos_x IS NOT NULL OR e.kind IN (` + placeholders + `))` +
+		` ORDER BY e.tick, e.seq LIMIT ?`
+	args := make([]any, 0, len(landmarkKinds)+2)
+	args = append(args, matchID)
+	for _, k := range landmarkKinds {
+		args = append(args, k)
+	}
+	args = append(args, limit)
+
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("store: get landmarks: %w", err)
+	}
+	defer rows.Close()
+	var out []models.EventRow
+	for rows.Next() {
+		er, err := scanEventRow(rows)
+		if err != nil {
+			return nil, fmt.Errorf("store: get landmarks: %w", err)
+		}
+		out = append(out, er)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: get landmarks: %w", err)
+	}
+	return out, nil
 }
 
 // GetChat returns a match's chat lines ordered by tick, id. Round < 0
@@ -457,7 +513,7 @@ func scanEventRow(row interface{ Scan(...any) error }) (models.EventRow, error) 
 		&er.ID, &er.Seq, &er.Tick, &er.Round, &er.Kind, &er.Attacker, &er.AttackerName,
 		&er.Victim, &er.VictimName, &er.Assister, &er.AssisterName, &er.Weapon, &er.Headshot,
 		&er.Wallbang, &er.Noscope, &er.ThroughSmoke, &er.AttackerBlind, &er.AssistedFlash,
-		&er.Distance, &er.Hitgroup, &er.Dmg, &er.Site,
+		&er.Distance, &er.Hitgroup, &er.Dmg, &er.Site, &er.PosX, &er.PosY, &er.PosZ,
 	)
 	return er, err
 }

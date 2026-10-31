@@ -1,5 +1,9 @@
 # Spectra — Implementation Plan: Milestone 2 (2D Tactical Replay)
 
+**Status: implemented 2026-10-31** — sampling in `extract.Parse` (`ParseOptions.Positions`), `internal/sidecar` (q16-v1 layout, 256-frame zstd blocks + idx + meta.json), migration 002 (event positions + match position columns), `ReplayService` + `GET /api/sidecar/<id>/positions` (server-side decompress), map pack `de_cache` (schematic radar + transform constants; site centroids derived in fixture), replay engine/renderer/transport + `pendingSeek` hooks from Match/RoundDetail/Timeline, fixture `internal/integration/testdata/donk.replay.json` (`-update-replay`).
+
+**Measured (golden demo):** sidecar bin **2.3 MB** / idx 8.5 KB (target ≤30 MB ✓); import 24.2 → **35.9 s (+48 %)** with sampling+sidecar (target ≤+50 % ✓); replay smoke on dev machine: radar + players + playback + scrub + 1,726 landmarks verified visually (X11 smoke) — open→first frame observed ≤4.5 s incl. uninstrumented 9 MB fetch; fixture enforces map-bounds at freeze end, plant clustering (eccentricity 225.7 u), and **event↔sidecar kill-position agreement ≤1.35 u across all 170 kills**. Known gaps: radar art is an original schematic (real-art acquisition posture in `ref/findings/findings-mappack.md` §4), fps/first-frame not instrumented, macOS/Windows transfer unmeasured.
+
 **PRD reference:** §5.4 (tactical replay), §5.10 (positional capture), §6.3 (extraction), §10 Milestone 2
 **Depends on:** Milestone 1 (import pipeline, store, match/round/event model, timeline UI)
 **Exit criteria (PRD §10):** a user can reconstruct and navigate an entire match in 2D, inspect player positioning at arbitrary points in time, and jump directly from an event to the corresponding replay state.

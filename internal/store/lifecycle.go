@@ -296,8 +296,8 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 	eventsStmt, err := tx.Prepare(
 		`INSERT INTO events (match_id, seq, tick, round, kind, attacker, victim, assister, weapon,
 			headshot, wallbang, noscope, through_smoke, attacker_blind, assisted_flash, distance,
-			hitgroup, dmg, site, detail_json, raw_json)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			hitgroup, dmg, site, detail_json, raw_json, pos_x, pos_y, pos_z)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
 		return fmt.Errorf("store: save extracted: %w", err)
@@ -309,6 +309,7 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 			scrub(e.Assister), scrub(e.Weapon), b2i(e.Headshot), b2i(e.Wallbang), b2i(e.Noscope),
 			b2i(e.ThroughSmoke), b2i(e.AttackerBlind), b2i(e.AssistedFlash), e.Distance, scrub(e.Hitgroup),
 			e.Dmg, scrub(e.Site), scrub(e.DetailJSON), scrub(e.RawJSON),
+			nvl(e.PosX), nvl(e.PosY), nvl(e.PosZ),
 		); err != nil {
 			return fmt.Errorf("store: save extracted: events: %w", err)
 		}
@@ -376,6 +377,21 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 		return fmt.Errorf("store: save extracted: %w", err)
 	}
 	return nil
+}
+
+// SetPositionMeta records the position sidecar's mirror columns on the
+// match row (format version, sample rate, frame count). Callers write it
+// from sidecar.Writer.Close's meta after a successful parse; 0 values mean
+// "no sidecar". Unknown ids return ErrNotFound.
+func (s *Store) SetPositionMeta(matchID int64, format, sampleRate, frames int) error {
+	res, err := s.db.Exec(
+		`UPDATE matches SET position_format = ?, sample_rate = ?, position_frames = ? WHERE id = ?`,
+		format, sampleRate, frames, matchID,
+	)
+	if err != nil {
+		return fmt.Errorf("store: set position meta: %w", err)
+	}
+	return affectedOrNotFound(res, "store: set position meta")
 }
 
 // DeleteMatchData removes a match row and all of its child data in one

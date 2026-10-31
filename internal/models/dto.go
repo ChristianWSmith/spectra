@@ -99,29 +99,34 @@ type RoundDetail struct {
 
 // EventRow is one timeline row — typed columns only, no payloads (fetch
 // EventDetail on click so a 50 k-event filter stays cheap on the wire).
+// PosX/PosY/PosZ mirror events.pos_* (nil when the event has no position);
+// EventDetail embeds this row so it carries the same fields.
 type EventRow struct {
-	ID            int64   `json:"id"`
-	Seq           int     `json:"seq"`
-	Tick          int     `json:"tick"`
-	Round         int     `json:"round"`
-	Kind          string  `json:"kind"`
-	Attacker      string  `json:"attacker"`
-	AttackerName  string  `json:"attackerName"`
-	Victim        string  `json:"victim"`
-	VictimName    string  `json:"victimName"`
-	Assister      string  `json:"assister"`
-	AssisterName  string  `json:"assisterName"`
-	Weapon        string  `json:"weapon"`
-	Headshot      bool    `json:"headshot"`
-	Wallbang      bool    `json:"wallbang"`
-	Noscope       bool    `json:"noscope"`
-	ThroughSmoke  bool    `json:"throughSmoke"`
-	AttackerBlind bool    `json:"attackerBlind"`
-	AssistedFlash bool    `json:"assistedFlash"`
-	Distance      float64 `json:"distance"`
-	Hitgroup      string  `json:"hitgroup"`
-	Dmg           int     `json:"dmg"`
-	Site          string  `json:"site"`
+	ID            int64    `json:"id"`
+	Seq           int      `json:"seq"`
+	Tick          int      `json:"tick"`
+	Round         int      `json:"round"`
+	Kind          string   `json:"kind"`
+	Attacker      string   `json:"attacker"`
+	AttackerName  string   `json:"attackerName"`
+	Victim        string   `json:"victim"`
+	VictimName    string   `json:"victimName"`
+	Assister      string   `json:"assister"`
+	AssisterName  string   `json:"assisterName"`
+	Weapon        string   `json:"weapon"`
+	Headshot      bool     `json:"headshot"`
+	Wallbang      bool     `json:"wallbang"`
+	Noscope       bool     `json:"noscope"`
+	ThroughSmoke  bool     `json:"throughSmoke"`
+	AttackerBlind bool     `json:"attackerBlind"`
+	AssistedFlash bool     `json:"assistedFlash"`
+	Distance      float64  `json:"distance"`
+	Hitgroup      string   `json:"hitgroup"`
+	Dmg           int      `json:"dmg"`
+	Site          string   `json:"site"`
+	PosX          *float64 `json:"posX,omitempty"`
+	PosY          *float64 `json:"posY,omitempty"`
+	PosZ          *float64 `json:"posZ,omitempty"`
 }
 
 // EventDetail is one event with its JSON payloads (detail pane).

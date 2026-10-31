@@ -6,6 +6,8 @@ import (
 	"math"
 	"strconv"
 
+	"github.com/golang/geo/r3"
+	demoinfocs "github.com/markus-wa/demoinfocs-golang/v6/pkg/demoinfocs"
 	"github.com/markus-wa/demoinfocs-golang/v6/pkg/demoinfocs/common"
 	"github.com/markus-wa/demoinfocs-golang/v6/pkg/demoinfocs/events"
 	"github.com/markus-wa/demoinfocs-golang/v6/pkg/demoinfocs/msg"
@@ -155,6 +157,36 @@ func keyStr(key uint64) string {
 		return ""
 	}
 	return strconv.FormatUint(key, 10)
+}
+
+// posPtrs converts a world position into the Event.Pos* triple. The zero
+// vector means "no position available" (demoinfocs reports {0,0,0} when
+// the pawn/entity backing the position is gone) — it yields nils so the
+// store keeps the column NULL instead of stamping a bogus map-center point.
+func posPtrs(v r3.Vector) (px, py, pz *float64) {
+	if v.X == 0 && v.Y == 0 && v.Z == 0 {
+		return nil, nil, nil
+	}
+	x, y, z := v.X, v.Y, v.Z
+	return &x, &y, &z
+}
+
+// pos3 is posPtrs for plain coordinates (grenade blasts carry x/y/z
+// already extracted from the event).
+func pos3(x, y, z float64) (px, py, pz *float64) {
+	if x == 0 && y == 0 && z == 0 {
+		return nil, nil, nil
+	}
+	return &x, &y, &z
+}
+
+// bombPos reads the bomb entity's position at handler time (nils when the
+// bomb has no known location yet — gs.Bomb() itself is never nil).
+func bombPos(gs *demoinfocs.GameState) (px, py, pz *float64) {
+	if gs == nil {
+		return nil, nil, nil
+	}
+	return posPtrs(gs.Bomb().Position())
 }
 
 // pct is the percentage helper ported from the extractor (0 when b is 0).

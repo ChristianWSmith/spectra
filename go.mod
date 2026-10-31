@@ -4,6 +4,7 @@ go 1.27.0
 
 require (
 	github.com/adrg/xdg v0.5.3
+	github.com/golang/geo v0.0.0-20230421003525-6adc56603217
 	github.com/klauspost/compress v1.20.3
 	github.com/markus-wa/demoinfocs-golang/v6 v6.0.0-rc.1
 	github.com/wailsapp/wails/v3 v3.0.0
@@ -132,7 +133,6 @@ require (
 	github.com/godbus/dbus/v5 v5.2.2 // indirect
 	github.com/godoc-lint/godoc-lint v0.11.4 // indirect
 	github.com/gofrs/flock v0.13.1 // indirect
-	github.com/golang/geo v0.0.0-20230421003525-6adc56603217 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
 	github.com/golang/protobuf v1.5.4 // indirect
 	github.com/golang/snappy v1.0.0 // indirect

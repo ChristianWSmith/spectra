@@ -16,6 +16,8 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -23,7 +25,10 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
+	"github.com/ChristianWSmith/spectra/internal/data"
+	"github.com/ChristianWSmith/spectra/internal/extract"
 	"github.com/ChristianWSmith/spectra/internal/models"
+	"github.com/ChristianWSmith/spectra/internal/sidecar"
 	"github.com/ChristianWSmith/spectra/internal/store"
 )
 
@@ -70,12 +75,16 @@ type LibraryChangedEvent struct{}
 
 // Options configures an Importer. Parse is the extraction entry point
 // (normally extract.Parse); Emit receives event name + payload and may be
-// nil; ParserVersion is stamped onto extracted matches.
+// nil; ParserVersion is stamped onto extracted matches; SidecarDir is the
+// root that holds one position-sidecar directory per match (<root>/<id>),
+// defaulting to data.MatchesDir() when empty (tests point it at a temp
+// dir so they never touch the user's real data).
 type Options struct {
 	Store         *store.Store
-	Parse         func(ctx context.Context, r io.Reader, progress func(done, total int)) (*models.ExtractedMatch, error)
+	Parse         func(ctx context.Context, r io.Reader, opts extract.ParseOptions) (*models.ExtractedMatch, error)
 	Emit          func(event string, data any)
 	ParserVersion string
+	SidecarDir    string
 }
 
 // queueItem is one unit of work for the worker.
@@ -91,9 +100,10 @@ type queueItem struct {
 // store.
 type Importer struct {
 	st            *store.Store
-	parse         func(ctx context.Context, r io.Reader, progress func(done, total int)) (*models.ExtractedMatch, error)
+	parse         func(ctx context.Context, r io.Reader, opts extract.ParseOptions) (*models.ExtractedMatch, error)
 	emit          func(event string, data any)
 	parserVersion string
+	sidecarDir    string
 
 	mu        sync.Mutex
 	queue     []queueItem
@@ -109,11 +119,16 @@ type Importer struct {
 
 // New creates an Importer and starts its single worker goroutine.
 func New(o Options) *Importer {
+	sidecarDir := o.SidecarDir
+	if sidecarDir == "" {
+		sidecarDir = data.MatchesDir()
+	}
 	im := &Importer{
 		st:            o.Store,
 		parse:         o.Parse,
 		emit:          o.Emit,
 		parserVersion: o.ParserVersion,
+		sidecarDir:    sidecarDir,
 		queued:        map[int64]bool{},
 		cancels:       map[int64]context.CancelFunc{},
 		cancelled:     map[int64]bool{},
@@ -371,25 +386,43 @@ func (im *Importer) process(item queueItem) {
 	}
 
 	im.emitEvent(EventJobProgress, JobProgressEvent{JobID: jobID, Stage: models.StageParse, MatchID: matchID})
+
+	// Position sidecar (plan M2 §5): sampled frames stream into a per-match
+	// directory while the parse runs. Tick rate is unknown until the parse
+	// returns, so Close receives it afterwards; any failure from here on
+	// removes the half-written sidecar (a failed match never serves stale
+	// or partial frames).
+	sidecarPath := filepath.Join(im.sidecarDir, strconv.FormatInt(matchID, 10))
+	sw, werr := sidecar.NewWriter(sidecarPath, 0)
+	if werr != nil {
+		im.failJob(jobID, matchID, models.StageParse, werr.Error(), false)
+		return
+	}
+	cleanupSidecar := func() { _ = os.RemoveAll(sidecarPath) }
+
 	var lastProgress atomic.Int64
 	lastProgress.Store(time.Now().UnixNano())
-	em, err := im.parse(ctx, reader, func(done, total int) {
-		now := time.Now().UnixNano()
-		prev := lastProgress.Load()
-		if now-prev < int64(progressMinInterval) {
-			return
-		}
-		if !lastProgress.CompareAndSwap(prev, now) {
-			return
-		}
-		var pct float64
-		if total > 0 {
-			pct = float64(done) / float64(total)
-		}
-		_ = im.st.UpdateJob(jobID, models.JobRunning, models.StageParse, pct, "")
-		im.emitEvent(EventJobProgress, JobProgressEvent{JobID: jobID, Stage: models.StageParse, Progress: pct, MatchID: matchID})
+	em, err := im.parse(ctx, reader, extract.ParseOptions{
+		Progress: func(done, total int) {
+			now := time.Now().UnixNano()
+			prev := lastProgress.Load()
+			if now-prev < int64(progressMinInterval) {
+				return
+			}
+			if !lastProgress.CompareAndSwap(prev, now) {
+				return
+			}
+			var pct float64
+			if total > 0 {
+				pct = float64(done) / float64(total)
+			}
+			_ = im.st.UpdateJob(jobID, models.JobRunning, models.StageParse, pct, "")
+			im.emitEvent(EventJobProgress, JobProgressEvent{JobID: jobID, Stage: models.StageParse, Progress: pct, MatchID: matchID})
+		},
+		Positions: sw,
 	})
 	if err != nil {
+		cleanupSidecar()
 		cancelled := ctx.Err() != nil
 		msg := err.Error()
 		if cancelled {
@@ -401,14 +434,29 @@ func (im *Importer) process(item queueItem) {
 	// A parser that ignores cancellation must not overwrite the terminal
 	// state a concurrent Cancel() already wrote.
 	if err := ctx.Err(); err != nil {
+		cleanupSidecar()
 		im.failJob(jobID, matchID, models.StageParse, "cancelled", true)
+		return
+	}
+
+	meta, err := sw.Close(em.Match.TickRate)
+	if err != nil {
+		cleanupSidecar()
+		im.failJob(jobID, matchID, models.StageStore, err.Error(), false)
 		return
 	}
 
 	em.Match.ParserVersion = im.parserVersion
 	im.emitEvent(EventJobProgress, JobProgressEvent{JobID: jobID, Stage: models.StageStore, Progress: 1, MatchID: matchID})
-	// SaveExtracted forces match status ready itself — don't double-set.
+	// Mirror the sidecar meta onto the match row, then save. SaveExtracted
+	// forces match status ready itself — don't double-set.
+	if err := im.st.SetPositionMeta(matchID, meta.FormatVersion, meta.SampleRate, meta.Frames); err != nil {
+		cleanupSidecar()
+		im.failJob(jobID, matchID, models.StageStore, err.Error(), false)
+		return
+	}
 	if err := im.st.SaveExtracted(matchID, em); err != nil {
+		cleanupSidecar()
 		im.failJob(jobID, matchID, models.StageStore, err.Error(), false)
 		return
 	}

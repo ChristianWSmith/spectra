@@ -400,6 +400,8 @@ type killInfo struct {
 	assistedFlash bool
 	distance      float64
 	samePlayer    bool
+	// Victim position at handler time (nil when unknown).
+	posX, posY, posZ *float64
 }
 
 func (a *agg) kill(k killInfo) {
@@ -417,6 +419,9 @@ func (a *agg) kill(k killInfo) {
 		AttackerBlind: k.attackerBlind,
 		AssistedFlash: k.assistedFlash,
 		Distance:      k.distance,
+		PosX:          k.posX,
+		PosY:          k.posY,
+		PosZ:          k.posZ,
 		DetailJSON: detailJSON(map[string]any{
 			"killer":   k.killerName,
 			"victim":   k.victimName,
@@ -522,6 +527,8 @@ type hurtInfo struct {
 	healthDamageTaken int
 	health            int
 	hitgroup          string
+	// Victim hit position at handler time (nil when unknown).
+	posX, posY, posZ *float64
 }
 
 func (a *agg) hurt(h hurtInfo) {
@@ -535,6 +542,9 @@ func (a *agg) hurt(h hurtInfo) {
 		Weapon:   h.weapon,
 		Dmg:      h.healthDamage,
 		Hitgroup: h.hitgroup,
+		PosX:     h.posX,
+		PosY:     h.posY,
+		PosZ:     h.posZ,
 		DetailJSON: detailJSON(map[string]any{
 			"attacker":    h.attackerName,
 			"victim":      h.victimName,
@@ -613,11 +623,15 @@ type blastInfo struct {
 }
 
 func (a *agg) grenadeBlast(g blastInfo) {
+	px, py, pz := pos3(g.x, g.y, g.z)
 	a.addEvent(models.Event{
 		Tick:     g.tick,
 		Kind:     models.EventGrenade,
 		Attacker: keyStr(g.throwerKey),
 		Weapon:   g.weapon,
+		PosX:     px,
+		PosY:     py,
+		PosZ:     pz,
 		DetailJSON: detailJSON(map[string]any{
 			"thrower": g.throwerName,
 			"grenade": g.weapon,
@@ -632,13 +646,17 @@ func (a *agg) grenadeBlast(g blastInfo) {
 }
 
 // grenadeThrown is entity-derived (projectile created), so it has no raw
-// game-event payload to pair.
-func (a *agg) grenadeThrown(tick int, throwerKey uint64, throwerName, weapon string) {
+// game-event payload to pair. px/py/pz are the throw position (nil when
+// the projectile entity had no position yet).
+func (a *agg) grenadeThrown(tick int, throwerKey uint64, throwerName, weapon string, px, py, pz *float64) {
 	a.addEvent(models.Event{
 		Tick:     tick,
 		Kind:     models.EventGrenadeThrow,
 		Attacker: keyStr(throwerKey),
 		Weapon:   weapon,
+		PosX:     px,
+		PosY:     py,
+		PosZ:     pz,
 		DetailJSON: detailJSON(map[string]any{
 			"thrower": throwerName,
 			"grenade": weapon,
@@ -646,7 +664,7 @@ func (a *agg) grenadeThrown(tick int, throwerKey uint64, throwerName, weapon str
 	}, "")
 }
 
-func (a *agg) bombPlanted(tick int, site string, key uint64, name string) {
+func (a *agg) bombPlanted(tick int, site string, key uint64, name string, px, py, pz *float64) {
 	if n := len(a.rounds); n > 0 {
 		a.rounds[n-1].bombSite = site
 	}
@@ -658,11 +676,14 @@ func (a *agg) bombPlanted(tick int, site string, key uint64, name string) {
 		Kind:       models.EventBombPlant,
 		Attacker:   keyStr(key),
 		Site:       site,
+		PosX:       px,
+		PosY:       py,
+		PosZ:       pz,
 		DetailJSON: detailJSON(map[string]any{"player": name}),
 	}, "bomb_planted")
 }
 
-func (a *agg) bombDefused(tick int, site string, key uint64, name string, hasKit bool) {
+func (a *agg) bombDefused(tick int, site string, key uint64, name string, hasKit bool, px, py, pz *float64) {
 	if key != 0 {
 		a.ensure(key, name).bombDefuses++
 	}
@@ -671,15 +692,21 @@ func (a *agg) bombDefused(tick int, site string, key uint64, name string, hasKit
 		Kind:       models.EventBombDefuse,
 		Attacker:   keyStr(key),
 		Site:       site,
+		PosX:       px,
+		PosY:       py,
+		PosZ:       pz,
 		DetailJSON: detailJSON(map[string]any{"player": name, "hasKit": hasKit}),
 	}, "bomb_defused")
 }
 
-func (a *agg) bombExploded(tick int, site string) {
+func (a *agg) bombExploded(tick int, site string, px, py, pz *float64) {
 	a.addEvent(models.Event{
 		Tick:       tick,
 		Kind:       models.EventBombExplode,
 		Site:       site,
+		PosX:       px,
+		PosY:       py,
+		PosZ:       pz,
 		DetailJSON: detailJSON(map[string]any{"site": site}),
 	}, "bomb_exploded")
 }

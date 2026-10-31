@@ -27,14 +27,47 @@ const ParserVersion = "demoinfocs-golang/v6@v6.0.0-rc.1"
 // (plus the one final call made after the parse ends).
 const progressEvery = 1000
 
+// PositionPlayer is one alive participant's sampled state at one frame —
+// the unit the sidecar writer (internal/sidecar) encodes. Coordinates are
+// world units; Yaw is ViewDirectionY (pitch) in degrees as demoinfocs
+// reports it; Air/Duck map to the q16-v1 flags bits. SteamID is the raw
+// SteamID64 (0 for bots, which have no SteamID64).
+type PositionPlayer struct {
+	SteamID uint64
+	X, Y, Z float32
+	Yaw     float32
+	Air     bool
+	Duck    bool
+}
+
+// PositionSink receives one call per parsed frame with every alive playing
+// participant. Implementations must not retain players (the slice is
+// reused across frames). An error returned from AddFrame aborts the parse.
+type PositionSink interface {
+	AddFrame(tick int32, players []PositionPlayer) error
+}
+
+// ParseOptions configures one Parse call. Progress, if non-nil, is called
+// with (framesDone, framesTotal) throttled to ~every 1000 frames plus one
+// final call; framesTotal is 0 until the playback values are known (they
+// only arrive at the end of a Source 2 demo). Positions, if non-nil,
+// receives the per-frame alive-player sample stream (plan M2 §3).
+type ParseOptions struct {
+	Progress  func(done, total int)
+	Positions PositionSink
+}
+
 // Parse reads one raw .dem stream, aggregating a normalized ExtractedMatch.
-// progress, if non-nil, is called with (framesDone, framesTotal); framesTotal
-// is 0 until the playback values are known (they only arrive at the end of a
-// Source 2 demo). Calls are throttled to ~every 1000 frames plus one final
-// call. ctx is honored via parser.ParseToEnd(ctx) — cancellation returns
-// ctx.Err() wrapped.
-func Parse(ctx context.Context, r io.Reader, progress func(done, total int)) (*models.ExtractedMatch, error) {
+// ctx is honored via parser.ParseToEnd(ctx) — cancellation (including a
+// failing Positions sink) returns ctx.Err() wrapped; a failing sink's own
+// error is returned instead of the cancellation error.
+func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.ExtractedMatch, error) {
 	parseStart := time.Now()
+
+	// Own the cancellation so a PositionSink failure can abort the parse
+	// from inside a FrameDone handler (demoinfocs stops on ctx done).
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 
 	p := demoinfocs.NewParser(r,
 		option.IgnorePacketEntitiesPanic(true), // corrupt PacketEntities → ParserWarn, not fatal
@@ -45,15 +78,45 @@ func Parse(ctx context.Context, r io.Reader, progress func(done, total int)) (*m
 	a := newAgg()
 	registerHandlers(p, a)
 
-	pt := &progressTracker{cb: progress}
+	pt := &progressTracker{cb: opts.Progress}
 	frames := 0
+	var sinkErr error
+	// Reused across frames: the sink consumes AddFrame synchronously.
+	frameBuf := make([]PositionPlayer, 0, 10)
 	p.RegisterEventHandler(func(events.FrameDone) {
 		frames++
 		a.flushRaw()
+		if sink := opts.Positions; sink != nil && sinkErr == nil {
+			gs := p.GameState()
+			frameBuf = frameBuf[:0]
+			for _, pl := range gs.Participants().Playing() {
+				if pl == nil || !pl.IsAlive() {
+					continue
+				}
+				pos := pl.Position()
+				frameBuf = append(frameBuf, PositionPlayer{
+					SteamID: pl.SteamID64,
+					X:       float32(pos.X),
+					Y:       float32(pos.Y),
+					Z:       float32(pos.Z),
+					Yaw:     pl.ViewDirectionY(),
+					Air:     pl.IsAirborne(),
+					Duck:    pl.IsDucking(),
+				})
+			}
+			if err := sink.AddFrame(int32(gs.IngameTick()), frameBuf); err != nil {
+				sinkErr = fmt.Errorf("extract: position sink: %w", err)
+				cancel()
+			}
+		}
 		pt.frame(frames, frameTotal(p))
 	})
 
-	if err := p.ParseToEnd(ctx); err != nil {
+	err := p.ParseToEnd(ctx)
+	if sinkErr != nil {
+		return nil, sinkErr
+	}
+	if err != nil {
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return nil, fmt.Errorf("extract: parse cancelled: %w", ctxErr)
 		}

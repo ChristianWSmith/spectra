@@ -9,6 +9,7 @@
     getGenericEvents,
     listMatches,
     setPendingTimelineFilter,
+    setPendingSeek,
   } from '../services.js';
   import {
     fmtDuration,
@@ -188,6 +189,11 @@
     nav(`/timeline/${id}`);
   }
 
+  function openReplay() {
+    setPendingSeek(null); // clear any stale seek; the whole match plays from 0
+    nav(`/replay/${id}`);
+  }
+
   function selectRaw(name) {
     if (rawName === name) return;
     rawName = name;
@@ -288,6 +294,7 @@
       {:else}
         <button class="btn" onclick={toggleWarnings}>Warnings</button>
       {/if}
+      <button class="btn primary" onclick={openReplay}>Replay</button>
       <button class="btn primary" onclick={() => nav(`/timeline/${id}`)}>
         Timeline
       </button>

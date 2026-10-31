@@ -2,18 +2,22 @@ package library
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/ChristianWSmith/spectra/internal/extract"
 	"github.com/ChristianWSmith/spectra/internal/models"
+	"github.com/ChristianWSmith/spectra/internal/sidecar"
 	"github.com/ChristianWSmith/spectra/internal/store"
 )
 
-func newTestImporter(t *testing.T, parse func(ctx context.Context, r io.Reader, progress func(done, total int)) (*models.ExtractedMatch, error)) (*Importer, *store.Store) {
+func newTestImporter(t *testing.T, parse func(ctx context.Context, r io.Reader, opts extract.ParseOptions) (*models.ExtractedMatch, error)) (*Importer, *store.Store) {
 	t.Helper()
 	st, err := store.Open(":memory:")
 	if err != nil {
@@ -24,19 +28,36 @@ func newTestImporter(t *testing.T, parse func(ctx context.Context, r io.Reader, 
 		Store:         st,
 		Parse:         parse,
 		ParserVersion: "test",
+		// Never the user's real data dir: test matches share the same
+		// numeric ids as real ones (Options doc).
+		SidecarDir: t.TempDir(),
 	})
 	t.Cleanup(im.Shutdown)
 	return im, st
 }
 
-// fakeParse reads the stream (proving it is a valid reader) and returns a
-// minimal ExtractedMatch.
-func fakeParse(ctx context.Context, r io.Reader, progress func(done, total int)) (*models.ExtractedMatch, error) {
+// fakeParse reads the stream (proving it is a valid reader), feeds the
+// progress + position sinks the pipeline wired up, and returns a minimal
+// ExtractedMatch.
+func fakeParse(ctx context.Context, r io.Reader, opts extract.ParseOptions) (*models.ExtractedMatch, error) {
 	if _, err := io.ReadAll(r); err != nil {
 		return nil, err
 	}
-	progress(1, 1)
-	return &models.ExtractedMatch{Match: models.Match{Map: "de_test"}}, nil
+	if opts.Progress != nil {
+		opts.Progress(1, 1)
+	}
+	if opts.Positions != nil {
+		for i := 0; i < 3; i++ {
+			players := []extract.PositionPlayer{{SteamID: 100, X: float32(i), Y: 1, Z: 2}}
+			if i%2 == 0 {
+				players = append(players, extract.PositionPlayer{SteamID: 200, X: 3, Y: 4, Z: 5})
+			}
+			if err := opts.Positions.AddFrame(int32(i*64), players); err != nil {
+				return nil, err
+			}
+		}
+	}
+	return &models.ExtractedMatch{Match: models.Match{Map: "de_test", TickRate: 64}}, nil
 }
 
 func writeDemo(t *testing.T, name, content string) string {
@@ -120,7 +141,7 @@ func TestImportInvalidPathFailsImmediately(t *testing.T) {
 
 func TestCancelQueuedJob(t *testing.T) {
 	block := make(chan struct{})
-	parse := func(ctx context.Context, r io.Reader, progress func(done, total int)) (*models.ExtractedMatch, error) {
+	parse := func(ctx context.Context, r io.Reader, opts extract.ParseOptions) (*models.ExtractedMatch, error) {
 		<-block // hold the worker on the first job
 		return &models.ExtractedMatch{}, nil
 	}
@@ -146,5 +167,75 @@ func TestReprocessRequiresMatch(t *testing.T) {
 	im, _ := newTestImporter(t, fakeParse)
 	if _, err := im.Reprocess(999); err == nil {
 		t.Fatal("Reprocess of missing match: want error, got nil")
+	}
+}
+
+// TestImportWritesSidecar proves the pipeline wires the position sink: a
+// successful import leaves a readable sidecar (frames fed by fakeParse)
+// and mirrors its meta onto the match row.
+func TestImportWritesSidecar(t *testing.T) {
+	im, st := newTestImporter(t, fakeParse)
+	path := writeDemo(t, "sidecar.dem", "fake demo bytes")
+
+	ids := im.Enqueue([]string{path})
+	job := waitStatus(t, st, ids[0], models.JobDone)
+
+	dir := filepath.Join(im.sidecarDir, strconv.FormatInt(job.MatchID, 10))
+	r, err := sidecar.Open(dir)
+	if err != nil {
+		t.Fatalf("sidecar.Open after import: %v", err)
+	}
+	meta := r.Meta()
+	if meta.Frames != 3 || meta.TickRate != 64 ||
+		meta.FormatVersion != sidecar.FormatVersion || meta.SampleRate != sidecar.SampleRate {
+		t.Errorf("sidecar meta = %+v, want frames=3 tickRate=64 format=1 sample=64", meta)
+	}
+	if len(meta.Players) != 2 {
+		t.Errorf("slot table = %v, want 2 players", meta.Players)
+	}
+	raw, err := r.ReadRange(0, 0)
+	if err != nil {
+		t.Fatalf("ReadRange: %v", err)
+	}
+	if len(raw) == 0 {
+		t.Error("sidecar stream is empty")
+	}
+
+	m, err := st.GetMatch(job.MatchID)
+	if err != nil {
+		t.Fatalf("GetMatch: %v", err)
+	}
+	if m.PositionFormat != sidecar.FormatVersion || m.SampleRate != sidecar.SampleRate ||
+		m.PositionFrames != 3 {
+		t.Errorf("match position columns = %d/%d/%d, want %d/%d/3",
+			m.PositionFormat, m.SampleRate, m.PositionFrames,
+			sidecar.FormatVersion, sidecar.SampleRate)
+	}
+}
+
+// TestImportParseFailureRemovesSidecar asserts a failed parse never leaves
+// a half-written sidecar behind.
+func TestImportParseFailureRemovesSidecar(t *testing.T) {
+	failing := func(ctx context.Context, r io.Reader, opts extract.ParseOptions) (*models.ExtractedMatch, error) {
+		if _, err := io.ReadAll(r); err != nil {
+			return nil, err
+		}
+		if opts.Positions != nil {
+			if err := opts.Positions.AddFrame(1, []extract.PositionPlayer{{SteamID: 1}}); err != nil {
+				return nil, err
+			}
+		}
+		return nil, errors.New("boom")
+	}
+	im, st := newTestImporter(t, failing)
+
+	ids := im.Enqueue([]string{writeDemo(t, "boom.dem", "x")})
+	job := waitStatus(t, st, ids[0], models.JobFailed)
+	if !strings.Contains(job.Error, "boom") {
+		t.Errorf("job error = %q, want it to contain boom", job.Error)
+	}
+	dir := filepath.Join(im.sidecarDir, strconv.FormatInt(job.MatchID, 10))
+	if _, err := os.Stat(dir); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("sidecar dir after failure: stat err = %v, want not-exist", err)
 	}
 }

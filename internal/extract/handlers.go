@@ -134,6 +134,7 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 			k.victimName = e.Victim.Name
 			k.victimSide = sideString(e.Victim.Team)
 			k.samePlayer = e.Killer != nil && e.Killer.EntityID == e.Victim.EntityID
+			k.posX, k.posY, k.posZ = posPtrs(e.Victim.Position())
 		}
 		if e.Assister != nil {
 			k.assisterKey = playerKey(e.Assister)
@@ -170,6 +171,7 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 		if e.Player != nil {
 			h.victimKey = playerKey(e.Player)
 			h.victimName = e.Player.Name
+			h.posX, h.posY, h.posZ = posPtrs(e.Player.Position())
 		}
 		a.hurt(h)
 	})
@@ -210,7 +212,8 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 			key = playerKey(e.Player)
 			name = e.Player.Name
 		}
-		a.bombPlanted(gs.IngameTick(), bombSite(e.Site), key, name)
+		bx, by, bz := bombPos(gs)
+		a.bombPlanted(gs.IngameTick(), bombSite(e.Site), key, name, bx, by, bz)
 	})
 
 	p.RegisterEventHandler(func(e events.BombDefused) {
@@ -221,11 +224,14 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 			name = e.Player.Name
 			hasKit = e.Player.HasDefuseKit()
 		}
-		a.bombDefused(gs.IngameTick(), bombSite(e.Site), key, name, hasKit)
+		bx, by, bz := bombPos(gs)
+		a.bombDefused(gs.IngameTick(), bombSite(e.Site), key, name, hasKit, bx, by, bz)
 	})
 
 	p.RegisterEventHandler(func(e events.BombExplode) {
-		a.bombExploded(p.GameState().IngameTick(), bombSite(e.Site))
+		gs := p.GameState()
+		bx, by, bz := bombPos(gs)
+		a.bombExploded(gs.IngameTick(), bombSite(e.Site), bx, by, bz)
 	})
 
 	p.RegisterEventHandler(func(e events.BombDropped) {
@@ -281,7 +287,11 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 		if e.Projectile.WeaponInstance != nil {
 			weapon = e.Projectile.WeaponInstance.Type.String()
 		}
-		a.grenadeThrown(p.GameState().IngameTick(), key, name, weapon)
+		var px, py, pz *float64
+		if e.Projectile.Entity != nil {
+			px, py, pz = posPtrs(e.Projectile.Position())
+		}
+		a.grenadeThrown(p.GameState().IngameTick(), key, name, weapon, px, py, pz)
 	})
 
 	// ---- people, chat ----

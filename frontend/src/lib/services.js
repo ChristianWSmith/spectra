@@ -9,6 +9,7 @@ import {
   AppService,
   LibraryService,
   MatchService,
+  ReplayService,
 } from '../../bindings/github.com/ChristianWSmith/spectra';
 
 // --- AppService ---------------------------------------------------------------
@@ -100,6 +101,18 @@ export function getChat(matchId, round) {
   return MatchService.GetChat(matchId, round);
 }
 
+// --- ReplayService ------------------------------------------------------------
+// Bulk position bytes do NOT ride the bindings (base64-inflated); the Replay
+// view fetches them from HTTP /api/sidecar/<matchId>/positions directly.
+
+export function getReplayMeta(id) {
+  return ReplayService.GetReplayMeta(id);
+}
+
+export function getLandmarks(id) {
+  return ReplayService.GetLandmarks(id);
+}
+
 // --- Events -------------------------------------------------------------------
 
 // onEvent subscribes to a Wails event; returns an unsubscribe fn (safe to
@@ -184,6 +197,34 @@ export function takePendingTimelineFilter() {
   try {
     const raw = sessionStorage.getItem(TIMELINE_PENDING_KEY);
     sessionStorage.removeItem(TIMELINE_PENDING_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    console.error(e);
+    return null;
+  }
+}
+
+// Replay-seek hand-off, mirroring the Timeline filter contract above: one
+// sessionStorage key holds {tick} (sometimes with extra keys — Timeline
+// ignores what it doesn't know). Writers (Match header, RoundDetail kill
+// feed, Timeline rows) set it just before navigating to #/replay/:id;
+// Replay reads + clears it on mount and seeks to that tick. null clears
+// any stale value without writing one.
+export const REPLAY_PENDING_KEY = 'spectra:replay-seek';
+
+export function setPendingSeek(seek) {
+  try {
+    if (seek == null) sessionStorage.removeItem(REPLAY_PENDING_KEY);
+    else sessionStorage.setItem(REPLAY_PENDING_KEY, JSON.stringify(seek));
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+export function takePendingSeek() {
+  try {
+    const raw = sessionStorage.getItem(REPLAY_PENDING_KEY);
+    sessionStorage.removeItem(REPLAY_PENDING_KEY);
     return raw ? JSON.parse(raw) : null;
   } catch (e) {
     console.error(e);

@@ -86,6 +86,12 @@ type Match struct {
 	WarningsCount  int       `json:"warningsCount"`
 	Status         string    `json:"status"`
 	Error          string    `json:"error"`
+	// Position sidecar mirror (matches.position_* / sample_rate): 0 when the
+	// match has no sidecar (pre-M2 imports). The sidecar meta.json is the
+	// source of truth when present (plan M2 §4).
+	PositionFormat int `json:"positionFormat"`
+	SampleRate     int `json:"sampleRate"`
+	PositionFrames int `json:"positionFrames"`
 }
 
 // Team is one side's summary for a match (teams table).
@@ -199,27 +205,34 @@ type RoundEconomy struct {
 // order, assigned by the store. DetailJSON carries the extractor's derived
 // detail; RawJSON the original game-event payload (PRD: never silently
 // discard). Attacker/Victim/Assister are SteamID64 strings ("" if none).
+// PosX/PosY/PosZ are the position the source event exposes — victim/hit
+// position for damage/kill, throw position for grenade_throw, detonation
+// position for grenade, bomb-entity position for bomb plant/defuse/explode
+// — nil when the source lacks a position (plan M2 §7).
 type Event struct {
-	Seq           int     `json:"seq"`
-	Tick          int     `json:"tick"`
-	Round         int     `json:"round"`
-	Kind          string  `json:"kind"`
-	Attacker      string  `json:"attacker"`
-	Victim        string  `json:"victim"`
-	Assister      string  `json:"assister"`
-	Weapon        string  `json:"weapon"`
-	Headshot      bool    `json:"headshot"`
-	Wallbang      bool    `json:"wallbang"`
-	Noscope       bool    `json:"noscope"`
-	ThroughSmoke  bool    `json:"throughSmoke"`
-	AttackerBlind bool    `json:"attackerBlind"`
-	AssistedFlash bool    `json:"assistedFlash"`
-	Distance      float64 `json:"distance"`
-	Hitgroup      string  `json:"hitgroup"`
-	Dmg           int     `json:"dmg"`
-	Site          string  `json:"site"`
-	DetailJSON    string  `json:"detailJson"`
-	RawJSON       string  `json:"rawJson"`
+	Seq           int      `json:"seq"`
+	Tick          int      `json:"tick"`
+	Round         int      `json:"round"`
+	Kind          string   `json:"kind"`
+	Attacker      string   `json:"attacker"`
+	Victim        string   `json:"victim"`
+	Assister      string   `json:"assister"`
+	Weapon        string   `json:"weapon"`
+	Headshot      bool     `json:"headshot"`
+	Wallbang      bool     `json:"wallbang"`
+	Noscope       bool     `json:"noscope"`
+	ThroughSmoke  bool     `json:"throughSmoke"`
+	AttackerBlind bool     `json:"attackerBlind"`
+	AssistedFlash bool     `json:"assistedFlash"`
+	Distance      float64  `json:"distance"`
+	Hitgroup      string   `json:"hitgroup"`
+	Dmg           int      `json:"dmg"`
+	Site          string   `json:"site"`
+	DetailJSON    string   `json:"detailJson"`
+	RawJSON       string   `json:"rawJson"`
+	PosX          *float64 `json:"posX,omitempty"`
+	PosY          *float64 `json:"posY,omitempty"`
+	PosZ          *float64 `json:"posZ,omitempty"`
 }
 
 // GenericEvent is one raw game-event (generic_events table) — the histogram
