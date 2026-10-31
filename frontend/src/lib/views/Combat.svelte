@@ -1,5 +1,5 @@
 <script>
-  // Combat tab (plan §2.3/§2.6): clutches, engagement deep-dive and
+  // Combat tab: clutches, engagement deep-dive and
   // per-player damage/trade stats. Every inferred metric carries the §6.1
   // badge with its definition in the title attribute.
   import {
@@ -16,7 +16,7 @@
 
   let { id = 0, nav = () => {} } = $props();
 
-  // Definition texts (plan §6.1 — keep in sync with Settings → Metric
+  // Definition texts (keep in sync with Settings → Metric
   // definitions; wording stays generic where the rules are configurable).
   const KAST_DEF =
     'KAST% — share of rounds where the player got a Kill, an Assist, was Traded after death, or Survived (player_round_stats; the trade part follows analysis_config / rule_version).';
@@ -29,7 +29,7 @@
   const UNTRADED_DEF =
     'Untraded deaths — deaths with no teammate kill inside the trade window afterwards (engagement detection).';
   const TRADE_OPP_MISSED_DEF =
-    'Trade opportunities missed — INFERRED heuristic (v1): a death where a living teammate was near and alive within the trade window but did not kill the attacker (plan §2.3). Not a demo fact.';
+    'Trade opportunities missed — INFERRED heuristic (v1): a death where a living teammate was near and alive within the trade window but did not kill the attacker. Not a demo fact.';
   const ENG_KIND_TITLES = {
     opening: 'opening duel — first kill of the round',
     entry: 'entry kill — first kill onto the site by the attacking side',

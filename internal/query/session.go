@@ -1,5 +1,5 @@
-// Package query is the M5 §2.2 read-only SQL console session (plan §2.2 /
-// PRD §5.17 power-user escape hatch): statement validation + execution on
+// Package query is the read-only SQL console session (PRD §5.17
+// power-user escape hatch): statement validation + execution on
 // the store's separate read-only connection, result mapping with row cap
 // and timing, run history, and the schema browser with provenance notes.
 //
@@ -9,7 +9,7 @@
 // reachable from a console statement), a context deadline is interrupted
 // server-side by the driver's progress handler, and reads stop at the row
 // cap. This package composes them and owns the console-facing policy:
-// defaults (5 000 rows / 5 000 ms per plan §6), history FIFO depth
+// defaults (5 000 rows / 5 000 ms), history FIFO depth
 // (100, newest kept), and the schema notes for known tables.
 package query
 
@@ -19,8 +19,8 @@ import (
 )
 
 const (
-	// DefaultLimit / DefaultTimeoutMS are the console defaults (plan §6:
-	// bounded by the timeout, default 5 s). Re-exported from the store so
+	// DefaultLimit / DefaultTimeoutMS are the console defaults (bounded by
+	// the timeout, default 5 s). Re-exported from the store so
 	// the numbers have one owner.
 	DefaultLimit     = store.DefaultRowLimit
 	DefaultTimeoutMS = store.DefaultTimeoutMS

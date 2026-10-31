@@ -9,7 +9,7 @@ import (
 )
 
 // seededStore opens a file-backed store and loads the synthetic corpus
-// (plan §5 golden library fixture): a second short-lived write connection
+// (golden library fixture): a second short-lived write connection
 // next to the store handle — WAL tolerates it. The metrics fixture,
 // property and perf suites share it.
 func seededStore(t *testing.T) *store.Store {
@@ -34,7 +34,7 @@ func seededStore(t *testing.T) *store.Store {
 	return st
 }
 
-// prdFixtures maps each PRD §5.16 example query (plan §5: "treat them as
+// prdFixtures maps each PRD §5.16 example query ("treat them as
 // acceptance fixtures") onto its builtin metric row (005_metrics.sql —
 // expr/groupBy/denominator are LOCKED to the migration by this table) plus
 // the hand-computed seed expectation. interpretation records how v1
@@ -124,7 +124,7 @@ var prdFixtures = []struct {
 	},
 }
 
-// TestPRDFixtureMetrics is the plan §5 acceptance test: every PRD §5.16
+// TestPRDFixtureMetrics is the acceptance test: every PRD §5.16
 // example must (a) exist as a builtin whose migration expr matches this
 // table, (b) compile, (c) return the hand-computed seed values with labels
 // and sample sizes, and (d) carry formula documentation.
@@ -291,7 +291,7 @@ func TestPercentilePreview(t *testing.T) {
 	}
 }
 
-// TestRowCapAndTruncation pins preview caps (plan §2.2: preview has a row
+// TestRowCapAndTruncation pins preview caps (preview has a row
 // cap; Truncated reports hitting it).
 func TestRowCapAndTruncation(t *testing.T) {
 	st := seededStore(t)

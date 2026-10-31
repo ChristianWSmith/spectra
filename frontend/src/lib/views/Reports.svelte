@@ -1,5 +1,5 @@
 <script>
-  // M5 reports (plan §2.5): templated HTML/MD reports rendered by Go
+  // M5 reports: templated HTML/MD reports rendered by Go
   // (trusted templates), with a metrics appendix composed client-side.
   // Acceptance #1: a checked saved metric's table lands under the report.
   import {
@@ -249,7 +249,7 @@
 <div class="view">
   <header class="view-header">
     <h1>Reports</h1>
-    <span class="muted">Templated match / player / round reports (plan §2.5).</span>
+    <span class="muted">Templated match / player / round reports.</span>
   </header>
 
   {#if tplError}

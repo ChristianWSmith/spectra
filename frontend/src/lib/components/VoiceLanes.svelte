@@ -1,5 +1,5 @@
 <script>
-  // M4 voice density lanes (plan §2.5): index-only per-player bucket bars
+  // M4 voice density lanes: index-only per-player bucket bars
   // on a slim strip above the event list — no decode, one fetch per mount.
   // Click anywhere on the strip → map x to a tick → onSeek(tick), which the
   // parent turns into setPendingSeek + nav('/replay/…') (exit walkthrough).

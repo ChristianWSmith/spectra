@@ -3,7 +3,7 @@
 // store getters — no frontend round-trip, printable, diffable. Builtin
 // templates cover the match/player/round scopes (acceptance: "save to a
 // report"); declarative plugins may register additional templates with
-// the same data maps (plan §2.7).
+// the same data maps.
 //
 // v1 deviation (documented): heatmap PNG embeds, clip links and the zip
 // bundle are deferred — the per-match report + the SQLite file copy

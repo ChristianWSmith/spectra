@@ -1,4 +1,4 @@
-// M5 theming (plan §2.6): dark ships default, light tokens live in
+// M5 theming: dark ships default, light tokens live in
 // style-m3b.css under [data-theme="light"]. Both palettes are derived
 // from VS Code dark+/light+ with the brand pair #28387C / #F5A618
 // substituting VS Code's #007ACC/#0078d4 accents; the token blocks are

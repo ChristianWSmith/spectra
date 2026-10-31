@@ -15,7 +15,7 @@
   import PlayerProfile from './lib/views/PlayerProfile.svelte';
   import CompareRounds from './lib/views/CompareRounds.svelte';
 
-  // Hand-rolled hash router (M1 plan §4): deep-navigable URLs without a
+  // Hand-rolled hash router: deep-navigable URLs without a
   // router dependency.
   //   #/library
   //   #/match/:id

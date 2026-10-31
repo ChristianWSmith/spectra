@@ -1,6 +1,6 @@
 package query
 
-// Schema provenance notes (plan §2.2: "schema browser sidebar (tables,
+// Schema provenance notes ("schema browser sidebar (tables,
 // columns, parser schema notes)"). One line per known table; column notes
 // only where the meaning is not obvious from the name. Unknown tables and
 // columns keep "" (contract) — that is also the path for plugin/virtual

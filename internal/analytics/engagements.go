@@ -6,7 +6,7 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/models"
 )
 
-// Engagement kinds produced by v1 (plan M3 §2.3). The entry kind is
+// Engagement kinds produced by v1. The entry kind is
 // DEFERRED: extractor player_stats.entry_kills already carries per-player
 // entry attribution, and a position-based "committed onto site" rule needs
 // map packs the pure pass does not own (documented re-scope).
@@ -16,7 +16,7 @@ const (
 	KindUntraded = "untraded"
 )
 
-// Engagements detects per-round engagement events (plan M3 §2.3):
+// Engagements detects per-round engagement events:
 //
 //	opening   the round's first kill (a = killer, b = victim)
 //	trade     a kill by a player whose TEAMMATE died ≤ cfg.TradeWindowS

@@ -146,7 +146,7 @@ type EventFilter struct {
 	SteamID string `json:"steamId"`
 	Offset  int    `json:"offset"`
 	Limit   int    `json:"limit"`
-	// M3 advanced filters (plan §2.8). Zero/""/nil = unconstrained.
+	// M3 advanced filters. Zero/""/nil = unconstrained.
 	// TickTo/DmgMax/DistanceMax: <= 0 means open-ended (never clamp to 0).
 	Weapon       string  `json:"weapon,omitempty"`
 	TickFrom     int     `json:"tickFrom,omitempty"`

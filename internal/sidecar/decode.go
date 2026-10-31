@@ -15,7 +15,7 @@ type FramePlayer struct {
 	Duck    bool
 }
 
-// FrameWithPlayers is one decoded q16-v1 frame (plan M2 §6 stream layout).
+// FrameWithPlayers is one decoded q16-v1 frame (stream layout).
 type FrameWithPlayers struct {
 	Tick    int
 	Players []FramePlayer

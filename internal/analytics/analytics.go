@@ -1,4 +1,4 @@
-// Package analytics is the M3 computation core (plan §4): pure functions
+// Package analytics is the M3 computation core: pure functions
 // that derive the stored analytics rows — round classifications, KAST
 // player-rounds, clutch v2 records, engagements, utility pairings, combat
 // stats and the economy view — from extracted events/rounds plus the
@@ -6,7 +6,7 @@
 // event sets; Compute is the store orchestration (read → derive → replace
 // → career rebuild).
 //
-// # Documented v1 limitations (plan §9 — heuristics need UI badges)
+// # Documented v1 limitations (heuristics need UI badges)
 //
 //   - Round label (round_classifications) is the buy class of the
 //     LOWER-equip side of a non-pistol round (ties → CT); per-side classes

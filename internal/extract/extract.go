@@ -1,10 +1,10 @@
 // Package extract is the demoinfocs-based extraction engine: it reads ONE
 // raw CS2 .dem stream (the caller handles .zstd decompression) and emits a
 // normalized models.ExtractedMatch — no report/markdown generation, and no
-// demoinfocs type ever appears in the output. It is the in-repo port of the
-// proven research extractor (ref/extractor/main.go): identical parser
-// options, handler families, warmup gating, and aggregation math, re-targeted
-// onto the models contract.
+// demoinfocs type ever appears in the output. Parser options, handler
+// families, warmup gating, and aggregation math were ported from the proven
+// research extractor (since removed — in git history) and re-targeted onto
+// the models contract.
 package extract
 
 import (
@@ -52,8 +52,8 @@ type PositionSink interface {
 // with (framesDone, framesTotal) throttled to ~every 1000 frames plus one
 // final call; framesTotal is 0 until the playback values are known (they
 // only arrive at the end of a Source 2 demo). Positions, if non-nil,
-// receives the per-frame alive-player sample stream (plan M2 §3). Voice,
-// if non-nil, receives every CSVCMsg_VoiceData chunk (plan M4 §2).
+// receives the per-frame alive-player sample stream. Voice,
+// if non-nil, receives every CSVCMsg_VoiceData chunk.
 // NetKey, when non-empty, is the chat decryption key extracted from a
 // <demo>.info companion (demoinfocs.MatchInfoDecryptionKey) and enables
 // decryption of svc_EncryptedData net-messages during the parse.

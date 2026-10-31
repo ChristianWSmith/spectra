@@ -112,7 +112,7 @@
   );
 
   // The heavy GetHeatmap call fires only on Generate — never on control
-  // changes (plan §8: heatmap generate is the expensive op).
+  // changes (heatmap generate is the expensive op).
   async function generate() {
     if (roundFrom >= 0 && roundTo >= 0 && roundFrom > roundTo) {
       error = 'round range inverted — first round must be ≤ last';
@@ -149,8 +149,8 @@
       nav(`/timeline/${id}`);
     }, 400);
   }
-  // --- M5 spatial series (plan §2.4 — series only; pattern detection -----
-  // descoped pending bomb-site region polygons, see findings-mappack §5).
+  // --- Spatial series (series only; pattern detection descoped pending -----
+  // bomb-site region polygons — see ref/MISSING.md).
   const SPAT_W = 640;
   const SPAT_H = 140;
 
@@ -371,7 +371,7 @@
     {/if}
     <p class="muted spat-desc">
       Pattern detection (executes/setups) descoped — needs bomb-site region
-      polygons (ref/findings/findings-mappack.md §5).
+      polygons (see ref/MISSING.md).
     </p>
   </section>
 </div>

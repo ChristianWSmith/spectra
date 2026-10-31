@@ -4,7 +4,7 @@
 // landmarks → bomb → players → HUD. Camera is a pan/zoom view over the
 // radar's image-pixel space; world→image uses the map pack's transform:
 //   px = (wx - pos_x) / scale
-//   py = (pos_y - wy) / scale        (Z-up world, inverted Y — mappack §2)
+//   py = (pos_y - wy) / scale        (Z-up world, inverted Y)
 // With no transform (missing pack) one is derived from sample extents so a
 // blank coordinate grid still frames the players.
 

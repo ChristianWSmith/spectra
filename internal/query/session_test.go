@@ -13,7 +13,7 @@ import (
 )
 
 // seededStore opens a file store with the synthetic corpus (metrics.
-// LoadSeed — the shared plan §5 loader, exercised here exactly as the SQL
+// LoadSeed — the shared seed loader, exercised here exactly as the SQL
 // console would meet a real library).
 func seededStore(t *testing.T) *store.Store {
 	t.Helper()
@@ -212,7 +212,7 @@ func TestSessionSchema(t *testing.T) {
 	}
 }
 
-// TestConsoleTypicalQuery measures plan §6 console latency on the seed
+// TestConsoleTypicalQuery measures console latency on the seed
 // (bounded by timeout; target ms-level for typical queries).
 func TestConsoleTypicalQuery(t *testing.T) {
 	st := seededStore(t)

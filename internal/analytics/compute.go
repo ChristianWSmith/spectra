@@ -10,7 +10,7 @@ import (
 // Compute runs the full analytics pass for one match: read rounds /
 // economy / players / events from the store, derive the M3 rows under cfg,
 // replace the per-match derived tables (one transaction each) and rebuild
-// the player_career rollup (plan M4 §4 orchestration; the career rebuild
+// the player_career rollup (orchestration; the career rebuild
 // is the cheap full-aggregate path — see store.RebuildCareer).
 //
 // cfg.TickRate is filled from the match row when unset/<= 0. A match with

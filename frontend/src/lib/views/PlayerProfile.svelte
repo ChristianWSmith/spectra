@@ -1,6 +1,6 @@
 <script>
-  // Cross-match player profile (plan §2.7 / PRD §5.13): header stats,
-  // hand-rolled SVG sparklines (no chart lib — plan §9.3), splits and
+  // Cross-match player profile (PRD §5.13): header stats,
+  // hand-rolled SVG sparklines (no chart lib), splits and
   // match history. Inline player picker (listPlayers) lives at the top.
   import { getProfile, listPlayers, getCareerTrend } from '../services.js';
   import { fmt1, fmt2, fmtPercent, fmtDate, fmtInt } from '../fmt.js';

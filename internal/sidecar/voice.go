@@ -29,8 +29,8 @@ type voiceFile struct {
 }
 
 // VoiceWriter appends Opus payloads to a match's voice/<xuid>.opus files
-// and accumulates the chunk-index rows the store persists as voice_chunks
-// (plan M4 §3). Deviation from plan §3, deliberate: there is NO chunks.idx
+// and accumulates the chunk-index rows the store persists as voice_chunks.
+// Deliberate design: there is NO chunks.idx
 // file — the database IS the index (voice_chunks rows carry per-player
 // Off/Len); one fewer file to keep consistent with the DB, and rows are
 // written in a single transaction at import end anyway.
@@ -45,7 +45,7 @@ type VoiceWriter struct {
 	closed bool
 }
 
-// NewVoiceWriter creates <dir>/voice (plan M4 §3 layout).
+// NewVoiceWriter creates <dir>/voice (layout).
 func NewVoiceWriter(dir string) (*VoiceWriter, error) {
 	voiceDir := filepath.Join(dir, VoiceDirName)
 	if err := os.MkdirAll(voiceDir, 0o755); err != nil {

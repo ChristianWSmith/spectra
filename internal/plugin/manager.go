@@ -28,7 +28,7 @@ func DefaultDir() string {
 
 // State is one installed (or on-disk) plugin: registry row + validated
 // manifest. Error is set for invalid/missing bundles — listed, never
-// silently dropped (plan §2.7 registry contract).
+// silently dropped (registry contract).
 type State struct {
 	Manifest Manifest
 	Path     string

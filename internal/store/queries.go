@@ -17,7 +17,7 @@ const matchColumns = `id, path, sha256, size, map, patch_version, tick_rate, dur
 	warnings_count, status, error,
 	position_format, sample_rate, position_frames, enc_messages`
 
-// landmarkLimit is the hard row cap for GetLandmarks (plan M2 §7).
+// landmarkLimit is the hard row cap for GetLandmarks.
 const landmarkLimit = 5000
 
 // matchListSort whitelists ListMatches sort keys (identifiers only — every
@@ -328,7 +328,7 @@ func (s *Store) GetEvents(f models.EventFilter) ([]models.EventRow, error) {
 		where = append(where, "(e.attacker = ? OR e.victim = ?)")
 		args = append(args, sid, sid)
 	}
-	// M3 advanced filters (plan §2.8): every clause is an AND'ed bound
+	// M3 advanced filters: every clause is an AND'ed bound
 	// parameter; zero/""/nil means unconstrained.
 	if w := scrub(f.Weapon); w != "" {
 		where = append(where, "e.weapon = ?")
@@ -418,7 +418,7 @@ func (s *Store) GetEvent(id int64) (*models.EventDetail, error) {
 }
 
 // landmarkKinds are event kinds that surface as replay anchors even when
-// their position columns are NULL (plan M2 §7 — a missing bomb entity must
+// their position columns are NULL (a missing bomb entity must
 // not hide the plant/defuse/explode marker from the scrubber).
 var landmarkKinds = []string{
 	models.EventKill,
@@ -431,7 +431,7 @@ var landmarkKinds = []string{
 
 // GetLandmarks returns position-stamped anchor events for one match —
 // every event carrying a position plus the landmark kinds above — ordered
-// by tick/seq. limit <= 0 means the hard cap of 5000 (plan M2 §7).
+// by tick/seq. limit <= 0 means the hard cap of 5000.
 func (s *Store) GetLandmarks(matchID int64, limit int) ([]models.EventRow, error) {
 	if limit <= 0 || limit > landmarkLimit {
 		limit = landmarkLimit

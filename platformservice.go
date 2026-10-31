@@ -114,7 +114,7 @@ type PlatformService struct {
 
 // GetProvenance composes the per-match reproducibility panel: match
 // fields + voice presence + the analytics rule config, annotated with
-// honest descoped/caveat notes (plan M5 §2.3, PRD §9.2).
+// honest descoped/caveat notes (PRD §9.2).
 func (s *PlatformService) GetProvenance(matchID int64) (ProvenancePanel, error) {
 	m, err := s.st.GetMatch(matchID)
 	if err != nil {

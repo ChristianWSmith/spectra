@@ -14,12 +14,12 @@ import (
 
 // ErrNoSidecar reports that a match directory does not hold a sidecar
 // (missing directory or files) — callers treat it as "no replay data",
-// not as a failure (plan M2 §6: HasSidecar=false is not an error).
+// not as a failure (HasSidecar=false is not an error).
 var ErrNoSidecar = errors.New("sidecar: not present")
 
 // Reader serves meta lookups and decompressed frame ranges from a match's
 // sidecar. The frontend never decodes zstd: ranges come back as the raw
-// q16-v1 stream (plan M2 §6, HTTP asset-server route).
+// q16-v1 stream (HTTP asset-server route).
 type Reader struct {
 	dir     string
 	meta    Meta

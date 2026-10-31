@@ -1,5 +1,5 @@
 <script>
-  // Hand-rolled SVG economy curve (plan §9.3: no chart lib). Two team lines
+  // Hand-rolled SVG economy curve (no chart lib). Two team lines
   // per round (equip value or money), winner strip beneath, hover readout,
   // click-through to the round detail.
   let { rows = [], id = 0, nav = () => {} } = $props();

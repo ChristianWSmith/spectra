@@ -42,7 +42,7 @@ func utilKind(weapon string) string {
 }
 
 // Utility pairs grenade throws with their detonations and attributes
-// damage/flashes (plan M3 §2.4). One row is emitted per detonation:
+// damage/flashes. One row is emitted per detonation:
 //
 //	Tick          detonation tick
 //	Damage        Σ damage events of the matching weapon kind within the

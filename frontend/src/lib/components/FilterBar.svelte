@@ -1,5 +1,5 @@
 <script>
-  // FilterBar — composable advanced event filter (plan §2.8) for Timeline.
+  // FilterBar — composable advanced event filter for Timeline.
   //
   // Props:
   //   filter   — {kind, steamId, round, weapon, tickFrom, tickTo, dmgMin,

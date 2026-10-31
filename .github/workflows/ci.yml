@@ -33,7 +33,7 @@ jobs:
         shell: bash
         # donk.dem.zst is LFS-backed; internal/integration skips cleanly
         # when it's a pointer file, but CI runs the golden assertions
-        # (M1 plan §6) so pull the real bytes.
+        # so pull the real bytes.
         run: |
           git lfs install --local
           git lfs pull

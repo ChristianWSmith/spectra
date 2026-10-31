@@ -1405,114 +1405,10 @@ Changes to extraction logic or metric definitions should not silently alter hist
 
 # 10. Development Roadmap
 
-The roadmap is organized around dependencies. The extraction foundation must precede features that rely on historical data.
-
-## Milestone 1 — Foundation and Core Match Analysis
-
-**Objective:** Build a functional demo analysis application.
-
-Deliverables:
-
-- Demo import and library.
-- Background parsing.
-- Match metadata.
-- Team and player identification.
-- Round extraction.
-- Kill feed.
-- Event timeline foundation.
-- Match overview.
-- Scoreboard.
-- Basic player statistics.
-- Raw event inspection.
-- SQLite persistence.
-- Parser versioning and extraction warnings.
-
-**Exit criteria:**
-
-A user can import a demo, inspect the match, browse rounds, examine player statistics, and investigate the underlying events without opening CS2.
-
-## Milestone 2 — Tactical Replay
-
-**Objective:** Deliver the defining visualization capability.
-
-Deliverables:
-
-- Map rendering.
-- Calibrated map assets.
-- Historical positional extraction.
-- Player movement visualization.
-- View direction.
-- Replay controls.
-- Tick/frame navigation.
-- Event synchronization.
-- Bomb visualization.
-- Grenade trajectories.
-- Player trails.
-- Basic tactical overlays.
-
-**Exit criteria:**
-
-A user can reconstruct and navigate an entire match in 2D, inspect player positioning at arbitrary points in time, and jump directly from an event to the corresponding replay state.
-
-## Milestone 3 — Deep Match Analytics
-
-**Objective:** Turn Spectra into a serious analytical platform.
-
-Deliverables:
-
-- Advanced combat statistics.
-- Economy analysis.
-- Utility analysis.
-- Heatmaps.
-- Clutch detection and analysis.
-- Player profiles.
-- Cross-match statistics.
-- Round comparison.
-- Advanced event filtering.
-- Custom statistical definitions.
-
-**Exit criteria:**
-
-A user can investigate player performance, economy, utility, positioning, and tactical patterns across individual matches and their imported match library.
-
-## Milestone 4 — Communications and Context
-
-**Objective:** Integrate communications into the analytical environment.
-
-Deliverables:
-
-- Voice extraction.
-- Audio decoding.
-- Individual player tracks.
-- Synchronized audio playback.
-- Voice activity timeline.
-- Chat extraction where available.
-- Transcript support.
-- Searchable communications.
-- Communication analytics.
-
-**Exit criteria:**
-
-Where voice data exists, users can navigate between audio, replay, and game events without losing synchronization.
-
-## Milestone 5 — Advanced Platform
-
-**Objective:** Establish Spectra as an extensible analytical environment.
-
-Deliverables:
-
-- Custom metric builder.
-- Advanced query interface.
-- Spatial analytics.
-- Tactical pattern recognition.
-- Advanced video export.
-- Plugin architecture.
-- Scripting and local API.
-- Community-shared analytical tools.
-
-**Exit criteria:**
-
-Advanced users can extend Spectra, define custom analyses, automate workflows, and investigate complex match questions without depending on predefined statistics.
+The milestone roadmap that delivered this spec shipped in full on
+2026-10-31 and was retired from this document (git history keeps it).
+Prospective work — everything still missing — lives in one place:
+`ref/MISSING.md`.
 
 ---
 
@@ -1572,22 +1468,9 @@ Spectra should distinguish itself through the combination of:
 
 # 13. Open Technical Questions
 
-These should be investigated during implementation rather than treated as solved assumptions.
-
-1. What parser implementation provides the best coverage, maintainability, and cross-platform compatibility?
-2. What temporal sampling rate provides a good balance between positional accuracy and storage?
-3. Can entity sampling be optimized without losing meaningful movement or engagement information?
-4. Which demo formats and recording sources can reliably provide voice?
-5. What is the exact process for decoding and synchronizing embedded Opus data?
-6. Which network and user-message types provide meaningful additional analytical value?
-7. Which ballistics events are reliable across supported CS2 builds?
-8. How should map assets and coordinate transformations be managed?
-9. What storage format best handles high-volume positional histories?
-10. What is the appropriate architecture for a responsive 2D replay renderer?
-11. How should parser updates and schema changes affect previously extracted demos?
-12. Which metrics can be calculated deterministically, and which require heuristics?
-
-These questions should have explicit investigation and validation tasks before the corresponding features are committed to a release.
+All twelve questions were closed by pre-work research before Milestone 1;
+the answers are baked into the code. Residual open questions and
+settle-if-needed recipes are tracked in `ref/MISSING.md`.
 
 ---
 

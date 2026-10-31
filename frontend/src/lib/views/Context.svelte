@@ -1,5 +1,5 @@
 <script>
-  // M4 Context stream (plan §2.7): merged chat + match administration —
+  // M4 Context stream: merged chat + match administration —
   // connects/disconnects (typed events), server ConVars and team changes
   // (generic events) — one tick-sorted list with per-source filter chips and
   // client-side CSV/JSON export. Sources fetched independently; a failed
@@ -114,7 +114,7 @@
     }
 
     // Generic-event names are probed defensively (only the two known-good
-    // names — no speculative probing, plan M4 report).
+    // names — no speculative probing).
     for (const [name, src] of [
       ['server_cvar', 'convar'],
       ['player_team', 'team'],

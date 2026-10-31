@@ -21,7 +21,7 @@ const voiceDecoderName = "pion/opus e7b8aa5 (pure Go)"
 // caller passes <= 0.
 const voiceDefaultBuckets = 160
 
-// VoicePresence is the match header badge payload (plan §5).
+// VoicePresence is the match header badge payload.
 type VoicePresence struct {
 	MatchID     int64 `json:"matchId"`
 	HasVoice    bool  `json:"hasVoice"`

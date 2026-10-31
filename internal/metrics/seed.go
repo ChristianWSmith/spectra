@@ -6,7 +6,7 @@ import (
 	"fmt"
 )
 
-// seedSQL is the committed synthetic corpus (plan §5 — "synthetic match
+// seedSQL is the committed synthetic corpus ("synthetic match
 // corpus committed as tiny SQL seed — no demo bytes"): 3 matches ×
 // 8 players × 24 rounds with hand-computable aggregates (formulas in the
 // file header). The same loader feeds the metrics fixture/property tests,

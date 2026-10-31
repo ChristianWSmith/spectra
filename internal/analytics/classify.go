@@ -18,7 +18,7 @@ import (
 //
 // prevWon/prevEquip describe this side's PREVIOUS non-warmup round (prevWon
 // false + prevEquip 0 for the first round of a half/match → eco, not save).
-// Anti-eco and bonus classes from plan §2.1 are deferred: v1 keeps the rule
+// Anti-eco and bonus classes are deferred: v1 keeps the rule
 // set minimal and documented.
 func BuyClass(equip int, prevWon bool, prevEquip int, cfg Config, pistol bool) (label, why string) {
 	if pistol {
@@ -36,8 +36,8 @@ func BuyClass(equip int, prevWon bool, prevEquip int, cfg Config, pistol bool) (
 	return "eco", fmt.Sprintf("equip %d < force threshold %d → eco", equip, cfg.EcoForce)
 }
 
-// Classify derives one stored classification per non-warmup round (plan M3
-// §2.1). Pistol rounds are detected by position in the non-warmup sequence
+// Classify derives one stored classification per non-warmup round.
+// Pistol rounds are detected by position in the non-warmup sequence
 // (MR12: index % 12 == 0). Every other round's label is the buy class of
 // the LOWER-equip side (ties → CT) — an "eco"/"force" round is defined by
 // the weaker side; both sides' reasoning lands in the explanation.

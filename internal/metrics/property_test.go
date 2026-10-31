@@ -24,7 +24,7 @@ func runValues(t *testing.T, st *store.Store, expr, groupBy string) map[string]f
 	return out
 }
 
-// TestAggregationIdentities are the plan §5 property tests over the
+// TestAggregationIdentities are property tests over the
 // synthetic seed: aggregation laws must hold per group and ungrouped.
 func TestAggregationIdentities(t *testing.T) {
 	st := seededStore(t)

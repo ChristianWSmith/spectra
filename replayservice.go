@@ -17,7 +17,7 @@ import (
 // ReplayService is the M2 frontend surface for the tactical replay. Bulk
 // position bytes do NOT go through here — they ride the asset-server HTTP
 // route /api/sidecar/<matchID>/positions (Range-capable, decompressed
-// server-side; plan M2 §6) because bound []byte calls are base64-inflated.
+// server-side) because bound []byte calls are base64-inflated.
 // This service carries the small control-plane data: meta + landmarks.
 
 // ReplayMeta describes one match's position sidecar for the renderer.
@@ -130,7 +130,7 @@ func (s *ReplayService) GetReplayMeta(matchID int64) (ReplayMeta, error) {
 	return meta, nil
 }
 
-// GetLandmarks returns position-stamped anchors for a match (plan M2 §7):
+// GetLandmarks returns position-stamped anchors for a match:
 // events carrying a position plus the bomb/grenade/kill landmark kinds,
 // ordered by tick, capped at 5000 rows. SteamID attributes the actor —
 // attacker for kills/damage, thrower for grenades, empty for bomb events

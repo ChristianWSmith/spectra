@@ -5,7 +5,7 @@ package integration_test
 // store lifecycle: migrations (005 metrics/saved_queries/query_history +
 // 006 plugins) → synthetic library seed → builtin metric previews →
 // console session safety (multi-statement rejection, write rejection,
-// timeout). No demo bytes (plan §5): the corpus is internal/metrics'
+// timeout). No demo bytes: the corpus is internal/metrics'
 // committed SQL seed.
 
 import (

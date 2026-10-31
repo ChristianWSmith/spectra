@@ -18,7 +18,7 @@
   const ROW_H = 30;
   const OVERSCAN = 8;
 
-  // Advanced filter state (plan §2.8). Seeded from the sessionStorage
+  // Advanced filter state. Seeded from the sessionStorage
   // pending-filter hand-off (services.js TIMELINE_PENDING_KEY) — the whole
   // extended object (kind/steamId/round/weapon/ticks/dmg/distance/headshot/
   // bbox) passes through, FilterBar normalizes missing fields.
@@ -48,7 +48,7 @@
   let scrollReset = $state(0); // bump → scroll list back to top
 
   // M4: voice presence gates the lanes strip + "Hear ±10s" affordance.
-  // Voice hasVoice only — absence is the normal MM case (plan §1).
+  // Voice hasVoice only — absence is the normal MM case.
   let voice = $state(null);
 
   $effect(() => {
@@ -63,7 +63,7 @@
     return () => (live = false);
   });
 
-  // Saved filter presets (scope "match", plan §2.8).
+  // Saved filter presets (scope "match").
   let saved = $state([]);
   let savedSel = $state('');
   let savedError = $state('');
@@ -243,7 +243,7 @@
     nav(`/replay/${id}`);
   }
 
-  // M4 comms-around (plan §7 walkthrough): open replay AT the event with
+  // M4 comms-around (walkthrough): open replay AT the event with
   // playback + voice on — the audio engine starts from there. play/voice
   // are extra pendingSeek keys Replay understands; other writers omit them.
   function hearTick(ev, e) {
@@ -252,7 +252,7 @@
     nav(`/replay/${id}`);
   }
 
-  // Lanes click → same exit path (plan §2.5: index-only, audio follows).
+  // Lanes click → same exit path (index-only, audio follows).
   function laneSeek(tick) {
     setPendingSeek({ tick, play: true, voice: true });
     nav(`/replay/${id}`);

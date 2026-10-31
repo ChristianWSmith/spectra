@@ -1,5 +1,5 @@
 <script>
-  // M5 command palette (plan §2.6): Ctrl/Cmd-K overlay with fuzzy search
+  // M5 command palette: Ctrl/Cmd-K overlay with fuzzy search
   // across nav actions, matches, players, saved filters, metrics and saved
   // queries. Sources are async and debounced; each section caps at 15 rows.
   import {

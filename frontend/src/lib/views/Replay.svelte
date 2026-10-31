@@ -301,13 +301,13 @@
     if (canvasEl && engine) snapshot(canvasEl, id, engine.state.tick);
   }
 
-  // --- M5 clip recorder (plan §2.5) ------------------------------------------
+  // --- Clip recorder ---------------------------------------------------------
   // canvas.captureStream(30) → MediaRecorder WebM. Mimetype fallback list is
-  // required (findings-webview round 2: encoders are gst-plugins-good
-  // dependent — without it video/webm may be absent or encoder-less).
-  // Audio: video-only — the M4 voice engine keeps its AudioContext/master
-  // gain internal to audio.js (no exposed node), so there is nothing to tap
-  // via createMediaStreamDestination without restructuring that module.
+  // required: WebKitGTK encoders are gst-plugins-good dependent — without it
+  // video/webm may be absent or encoder-less.
+  // Audio: mixed when the voice engine is live — its getStreamTap() exposes
+  // the AudioContext/master gain for a MediaStreamDestination; otherwise the
+  // clip is video-only.
   const CLIP_MIMES = [
     'video/webm;codecs=vp9,opus',
     'video/webm;codecs=vp8,opus',

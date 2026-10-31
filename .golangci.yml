@@ -22,8 +22,8 @@ linters:
       # application code; regenerated (desktop only) by
       # `wails3 task common:update:build-assets`.
       - '^build/'
-      # Reference implementation kept byte-compatible with the original
-      # research extractor (only gofmt-normalized); not application code.
+      # Reference docs only (no Go since the research extractor was
+      # removed); safety net for regenerated scaffolding.
       - '^ref/'
 
 formatters:

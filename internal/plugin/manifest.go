@@ -8,7 +8,7 @@
 // Manifest metrics get only a structural sanity check here (name + expr
 // non-empty); full expression validation belongs to the metrics engine
 // when the metric is previewed/used (no cross-service dependency on
-// internal/metrics — plan §6 "plugin metric call" budget lives there).
+// internal/metrics — the plugin metric call budget lives there).
 package plugin
 
 import (
@@ -35,8 +35,8 @@ var slugRe = regexp.MustCompile(`^[a-z0-9-]{2,40}$`)
 // snake_case (and a 64-char ceiling) is allowed.
 var metricNameRe = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,63}$`)
 
-// allowedCapabilities is the v1 capability whitelist (plan §2.7:
-// metrics + report templates only). Manifests parsed into a raw map must
+// allowedCapabilities is the v1 capability whitelist (metrics + report
+// templates only). Manifests parsed into a raw map must
 // not name any other capability — unknown keys are a hard install error,
 // not a warning.
 var allowedCapabilities = map[string]bool{

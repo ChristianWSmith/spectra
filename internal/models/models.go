@@ -90,7 +90,7 @@ type Match struct {
 	Error          string    `json:"error"`
 	// Position sidecar mirror (matches.position_* / sample_rate): 0 when the
 	// match has no sidecar (pre-M2 imports). The sidecar meta.json is the
-	// source of truth when present (plan M2 §4).
+	// source of truth when present.
 	PositionFormat int `json:"positionFormat"`
 	SampleRate     int `json:"sampleRate"`
 	PositionFrames int `json:"positionFrames"`
@@ -216,7 +216,7 @@ type RoundEconomy struct {
 // PosX/PosY/PosZ are the position the source event exposes — victim/hit
 // position for damage/kill, throw position for grenade_throw, detonation
 // position for grenade, bomb-entity position for bomb plant/defuse/explode
-// — nil when the source lacks a position (plan M2 §7).
+// — nil when the source lacks a position.
 type Event struct {
 	Seq           int      `json:"seq"`
 	Tick          int      `json:"tick"`

@@ -16,7 +16,7 @@ import (
 // reconstruction, combat stats computed from stored rows, saved-filter
 // presets and the player_career rollup. Every string write passes scrub.
 
-// DefaultConfig is the seeded analysis_config row (plan M3 — configurable
+// DefaultConfig is the seeded analysis_config row (configurable
 // definitions with transparent rules).
 var DefaultConfig = models.AnalysisConfig{
 	TradeWindowS: 5.0,
@@ -422,8 +422,8 @@ func (s *Store) GetEconomy(matchID int64) ([]models.EconomyRow, error) {
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("store: get economy: %w", err)
 	}
-	// Loss-bonus reconstruction + outcome flags (inferred — plan M3 §9.1
-	// requires the fact/inference badge, which Inferred* signals).
+	// Loss-bonus reconstruction + outcome flags (inferred — Inferred*
+	// signals the fact/inference badge).
 	for i := range out {
 		r := &out[i]
 		r.WonCT = r.Winner == "ct"
@@ -474,7 +474,7 @@ func lossBonusFor(prefix []models.EconomyRow, side string) int {
 }
 
 // GetCombatStats computes per-player combat deep-dive rows from stored data
-// (plan M3 §2.3): damage conversion and friendly fire from the events
+// — damage conversion and friendly fire from the events
 // table, entry/trade rates from player_stats, untraded deaths from
 // engagements, KAST% from player_round_stats. Team attribution (FF, and the
 // trade-opportunity heuristic) uses each player's FINAL side — events carry
@@ -744,8 +744,8 @@ func (s *Store) DeleteSavedFilter(id int64) error {
 // RebuildCareer recomputes the whole player_career table from player_stats
 // ⋈ matches (wins/ADR/KD/HS/openings/trades), player_round_stats (KAST)
 // and clutches (record count). Full rebuild in one transaction — at the
-// plan's scale (100 matches) this is well under the 5 s budget and is the
-// only writer of the table, so it cannot drift (plan M3 §4).
+// practice scale (100 matches) this is well under the 5 s budget and is the
+// only writer of the table, so it cannot drift.
 func (s *Store) RebuildCareer() error {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -795,7 +795,7 @@ func (s *Store) RebuildCareer() error {
 // match's rows changed. Implementation note: this performs the same full
 // rebuild as RebuildCareer — incremental per-match merging is not worth the
 // correctness risk at this library scale, and the full path stays under the
-// plan §8 budget (documented deviation from the incremental wording).
+// 5 s budget (documented deviation from the incremental wording).
 func (s *Store) UpsertCareerFromMatch(_ int64) error { return s.RebuildCareer() }
 
 // GetCareer returns one player's career rollup (ErrNotFound when absent).

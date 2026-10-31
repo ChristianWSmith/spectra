@@ -17,7 +17,7 @@ type clutchInst struct {
 }
 
 // Clutches detects 1vN clutches by walking each non-warmup round's events
-// and maintaining per-team alive sets (plan M3 §2.6 — clutch v2, replacing
+// and maintaining per-team alive sets (clutch v2, replacing
 // the M1 sole-survivor approximation). The cfg parameter carries
 // HalfSwitchRound so per-round sides flip correctly around the half
 // switch (see package doc).
@@ -32,7 +32,7 @@ type clutchInst struct {
 // at round end take the round winner as their outcome (bomb/timeout edges).
 // HPLeft is reconstructed: 100 − damage the solo took after the start
 // (damage events, clamped ≥ 1; 100 when untouched) — a reconstruction, not
-// a sampled HP value (plan §9 badge). BombState is read from bomb events
+// a sampled HP value (badge). BombState is read from bomb events
 // up to the start tick (planted|carried|dropped). KillTicks is the JSON
 // array of the solo's kills after the start; ReplayAnchor = StartTick.
 func Clutches(events []models.Event, rounds []RoundInfo, players []PlayerRef, cfg Config) []Clutch {

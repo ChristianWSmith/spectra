@@ -4,7 +4,7 @@
 // the M5 status note — they need per-map region polygons Spectra does not
 // capture; this package ships the recomputable series only.)
 //
-// The series is computed on read from the position sidecar (plan M2): the
+// The series is computed on read from the position sidecar: the
 // whole stream is decoded once (same pattern as the presence heatmap) and
 // every frame contributes at most one sample to its tick bucket. Values
 // are world-unit distances in the horizontal (x,y) plane; buckets without

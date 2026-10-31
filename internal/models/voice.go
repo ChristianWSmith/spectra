@@ -1,12 +1,12 @@
 // Voice persistence vocabulary (M4): the store-level rows for the
 // voice_chunks index and voice_presence header. Audio payloads themselves
 // live in the per-match sidecar (<matchDir>/voice/<steamid>.opus) — the DB
-// IS the chunk index (plan §3's chunks.idx file is intentionally replaced
+// IS the chunk index (the chunks.idx file is intentionally replaced
 // by these rows; see internal/sidecar VoiceWriter).
 package models
 
 // VoiceOutSampleRate is the PCM decode output rate served by the voice
-// HTTP routes (plan M4 §5: 16 kHz mono is speech-band sufficient).
+// HTTP routes (16 kHz mono is speech-band sufficient).
 const VoiceOutSampleRate = 16000
 
 // VoiceIndexRow is one chunk's row in voice_chunks. SteamID is the decimal

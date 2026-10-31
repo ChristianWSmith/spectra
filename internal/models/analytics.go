@@ -9,7 +9,7 @@ import "time"
 // shared vocabulary both sides may depend on (package docs).
 
 // AnalysisConfig is the single-row analysis_config: the versioned
-// heuristic thresholds (plan M3 §3). RuleVersion bumps on every SetConfig.
+// heuristic thresholds. RuleVersion bumps on every SetConfig.
 type AnalysisConfig struct {
 	TradeWindowS float64 `json:"tradeWindowS"`
 	EcoFullBuy   int     `json:"ecoFullBuy"`
@@ -49,7 +49,7 @@ type PlayerRef struct {
 
 // RoundClassification is one round_classifications row: the stored buy-class
 // label with its rule version and the REQUIRED human-readable explanation
-// (plan M3 §2.1 — transparent rules).
+// (transparent rules).
 type RoundClassification struct {
 	MatchID     int64   `json:"matchId"`
 	Round       int     `json:"round"`
@@ -60,7 +60,7 @@ type RoundClassification struct {
 }
 
 // PlayerRoundStat is one player_round_stats row: per-player-per-round combat
-// facts including the KAST decomposition (plan M3 §2.9). MoneyStart/Equip/
+// facts including the KAST decomposition. MoneyStart/Equip/
 // Spent are 0 in v1 — per-player purchase payloads are not extractable
 // (item_equip carries no price; see store analytics notes).
 type PlayerRoundStat struct {
@@ -83,7 +83,7 @@ type PlayerRoundStat struct {
 }
 
 // Clutch is one clutches row: a 1vN detected by alive-count analysis
-// (plan M3 §2.6 — clutch v2). KillTicks is a JSON array of int ticks.
+// (clutch v2). KillTicks is a JSON array of int ticks.
 type Clutch struct {
 	MatchID      int64  `json:"matchId"`
 	Round        int    `json:"round"`
@@ -102,7 +102,7 @@ type Clutch struct {
 
 // Engagement is one engagements row (kinds: opening|trade|untraded — the
 // entry kind is deferred; extractor entry_kills already covers per-player
-// entry attribution, plan M3 §2.3).
+// entry attribution).
 type Engagement struct {
 	MatchID  int64   `json:"matchId"`
 	Seq      int     `json:"seq"`
@@ -118,7 +118,7 @@ type Engagement struct {
 }
 
 // UtilityEvent is one utility_events row: a grenade throw paired with its
-// nearest same-thrower/same-kind detonation (plan M3 §2.4). DetX/DetY are
+// nearest same-thrower/same-kind detonation. DetX/DetY are
 // nil when the detonation had no position. Affected is a JSON array of
 // victim SteamID strings.
 type UtilityEvent struct {
@@ -139,7 +139,7 @@ type UtilityEvent struct {
 }
 
 // CombatStat is one per-player combat deep-dive row derived from stored
-// analytics rows (plan M3 §2.3). TradeOppMissed is inferred (= untraded
+// analytics rows. TradeOppMissed is inferred (= untraded
 // deaths; see analytics CombatStats notes) and needs a UI badge.
 type CombatStat struct {
 	SteamID        string  `json:"steamId"`
@@ -188,7 +188,7 @@ type EconomyRow struct {
 	Explanation string `json:"explanation"`
 }
 
-// CareerRow is one player_career rollup (plan M3 §2.7) — rebuildable from
+// CareerRow is one player_career rollup — rebuildable from
 // player_stats ⋈ matches + player_round_stats + clutches.
 type CareerRow struct {
 	SteamID    string    `json:"steamId"`

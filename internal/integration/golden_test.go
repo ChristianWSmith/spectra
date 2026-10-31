@@ -1,7 +1,7 @@
 // Package integration_test is the M1 acceptance harness: it parses the
 // golden demo (donk.dem.zst at the repo root) through internal/extract and
-// asserts a committed fixture of golden numbers (ref/PLAN_MILESTONE_1.md §6,
-// "Baseline captured 2026-10-30"). The directory holds only test files and
+// asserts a committed fixture of golden numbers (baseline captured
+// 2026-10-30). The directory holds only test files and
 // testdata/, so it never joins production builds.
 //
 // Regenerate the fixture deliberately (PRD §9.2 — treat the fixture diff as
@@ -45,7 +45,7 @@ const (
 	analyticsFixturePath = "testdata/donk.analytics.json"
 
 	// parseSecondsMax is a generous upper bound on the parse wall-time, not
-	// an exact expectation: CI runners vary (plan §6 — wall-time tolerance,
+	// an exact expectation: CI runners vary (wall-time tolerance,
 	// all other numbers are deterministic). The fixture stores this ceiling,
 	// never a measured value.
 	parseSecondsMax = 90
@@ -53,7 +53,7 @@ const (
 	// lfsPointerPrefix / lfsPointerMaxSize detect a Git LFS pointer file
 	// (what a checkout yields without `git lfs pull`): < 4 KB ASCII starting
 	// with the spec URL. A pointer passes the "exists" check but is not a
-	// demo (plan §6).
+	// demo.
 	lfsPointerPrefix  = "version https://git-lfs.github.com/spec"
 	lfsPointerMaxSize = 4096
 
@@ -117,7 +117,7 @@ type goldenFixture struct {
 	FinalStatePlayers  int            `json:"finalStatePlayers"`
 	// Voice is the M4 voice-capture block (counting VoiceSink over
 	// CSVCMsg_VoiceData): baseline 2026-10-30 is 123,507 chunks / 10 XUIDs /
-	// 0 casters (ref/PLAN_MILESTONE_4.md §1); safety nets enforce it.
+	// 0 casters; safety nets enforce it.
 	Voice           goldenVoice      `json:"voice"`
 	PlayersHeadline []headlinePlayer `json:"playersHeadline"`
 	TopPlayer       topPlayer        `json:"topPlayer"`
@@ -295,7 +295,7 @@ func TestGolden(t *testing.T) {
 	}
 	t.Logf("parsed donk.dem.zst in %.1fs (%d voice chunks)", parseSeconds, voice.chunks)
 
-	// Both known demos carry 0 svc_EncryptedData messages (plan M4 §1) —
+	// Both known demos carry 0 svc_EncryptedData messages —
 	// the encrypted-chat path stays synthetic-only until a Valve MM demo
 	// with a .info companion appears.
 	if m.Match.EncryptedMessages != 0 {
@@ -360,8 +360,8 @@ func TestGolden(t *testing.T) {
 	compareAnalyticsGolden(t, &gotAnalytics, &wantAnalytics)
 }
 
-// analyticsFixture is the committed M3 analytics baseline (plan M3 §7:
-// regenerate after rule changes and record the delta).
+// analyticsFixture is the committed M3 analytics baseline (regenerate
+// after rule changes and record the delta).
 type analyticsFixture struct {
 	Clutches          int            `json:"clutches"`
 	ClutchWins        int            `json:"clutchWins"`
@@ -399,7 +399,7 @@ func runGoldenAnalytics(t *testing.T, m *models.ExtractedMatch) analyticsFixture
 	analyticsSeconds := time.Since(start).Seconds()
 	t.Logf("analytics pass on golden demo in %.2fs", analyticsSeconds)
 	if analyticsSeconds > 10 {
-		t.Errorf("analytics pass %.2fs exceeds the plan §8 budget of 10s", analyticsSeconds)
+		t.Errorf("analytics pass %.2fs exceeds the 10s budget", analyticsSeconds)
 	}
 
 	clutches, err := st.GetClutches(id)
@@ -601,7 +601,7 @@ func buildGolden(t *testing.T, m *models.ExtractedMatch, voice *countingVoiceSin
 	}
 }
 
-// assertSafetyNets re-checks the plan §6 baseline invariants directly against
+// assertSafetyNets re-checks the baseline invariants directly against
 // the got-object, independent of the fixture file.
 func assertSafetyNets(t *testing.T, got *goldenFixture) {
 	t.Helper()
@@ -632,7 +632,7 @@ func assertSafetyNets(t *testing.T, got *goldenFixture) {
 	if got.TopPlayer.Kills != 25 {
 		t.Errorf("safety: topPlayer kills = %d, want 25", got.TopPlayer.Kills)
 	}
-	// M4 voice baseline (plan §1: 123,507 chunks, all 10 XUIDs, 0 casters).
+	// M4 voice baseline (123,507 chunks, all 10 XUIDs, 0 casters).
 	if got.Voice.Chunks != 123507 {
 		t.Errorf("safety: voice chunks = %d, want 123507", got.Voice.Chunks)
 	}

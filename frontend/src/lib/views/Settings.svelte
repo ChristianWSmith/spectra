@@ -20,14 +20,14 @@
   let info = $state(null);
   let error = $state('');
 
-  // M5 appearance (plan §2.6): dark default, light tokens in style-m3b.css.
+  // M5 appearance: dark default, light tokens in style-m3b.css.
   let theme = $state(getTheme());
 
   function setTheme(t) {
     theme = applyTheme(t);
   }
 
-  // M5 plugins (plan §2.7 / acceptance 6): declarative bundles installed by
+  // Plugins: declarative bundles installed by
   // path; enable/disable/remove reflected on the next list — no restart.
   let plugins = $state([]);
   let pluginsError = $state('');
@@ -101,7 +101,7 @@
     pluginOp = next;
   }
 
-  // Analysis rules (plan §2.1 / §10 DoD: classification + trade window
+  // Analysis rules (DoD: classification + trade window
   // configurable from Settings; rule_version recorded on save).
   let cfg = $state({ tradeWindowS: 5, ecoFullBuy: 4000, ecoForce: 2000, ruleVersion: 0 });
   let cfgError = $state('');
@@ -113,7 +113,7 @@
   let matchesError = $state('');
   let recomputeState = $state({}); // matchId → 'busy' | 'ok' | error text
 
-  // M4 audio self-test (plan §4): probe creates a throwaway AudioContext,
+  // M4 audio self-test: probe creates a throwaway AudioContext,
   // resumes it (user click = gesture), and reports state/rate or the exact
   // device failure with the gst-plugins-good hint.
   let audioProbe = $state(null); // null | {ok, state, sampleRate, error}
@@ -193,7 +193,7 @@
     }
   }
 
-  // Hand-written metric definitions (plan §9.1). Keep the wording aligned
+  // Hand-written metric definitions. Keep the wording aligned
   // with what internal/analytics computes — generic where the exact rule is
   // configurable; every rule set is versioned via analysis_config/rule_version.
   const DEFINITIONS = [
@@ -220,7 +220,7 @@
     {
       term: 'Trade opportunities missed (inferred)',
       inferred: true,
-      text: 'Heuristic v1: a player died while a living teammate was near and alive within the trade window but did not kill the attacker in time. It is an inference from positions/timing, not a demo fact — treat counts as indicative (plan §2.3).',
+      text: 'Heuristic v1: a player died while a living teammate was near and alive within the trade window but did not kill the attacker in time. It is an inference from positions/timing, not a demo fact — treat counts as indicative.',
     },
     {
       term: 'Damage conversion',
@@ -311,7 +311,7 @@
   <section class="panel">
     <h2>Plugins</h2>
     <p class="muted">
-      Declarative bundles (plan §2.7): a directory with
+      Declarative bundles: a directory with
       <span class="mono">spectra-plugin.json</span> (plus optional metric /
       report-template definitions) or a single manifest JSON. Enabled plugins
       contribute metrics and report templates on the next list — no restart.
@@ -380,8 +380,7 @@
     {/if}
     <p class="muted">
       Trust model: install only bundles you built or got from someone you
-      trust — manifests may pin a sha256 hash; there is no auto-update
-      (plan §7.5).
+      trust — manifests may pin a sha256 hash; there is no auto-update.
     </p>
   </section>
 
@@ -390,7 +389,7 @@
     <div class="row-between">
       <span class="muted"
         >Audio self-test — creates an AudioContext, resumes it and reports the
-        device state (plan §4).</span
+        device state.</span
       >
       <button class="btn" onclick={runAudioSelfTest} disabled={audioRunning}
         >{audioRunning ? 'Testing…' : 'Run audio self-test'}</button
@@ -420,7 +419,7 @@
     </p>
     <p class="muted">
       Transcription (local whisper) is <strong>explicitly deferred from
-      v1</strong> (plan §2.10 / DoD §10) — no whisper UI in this release; the
+      v1</strong> — no whisper UI in this release; the
       storage and export contracts stay reserved for a later milestone.
     </p>
   </section>
@@ -537,7 +536,7 @@
             {#if d.inferred}
               <span
                 class="chip sett-inferred"
-                title="Heuristic/reconstructed — not a raw demo fact (plan §6.1)"
+                title="Heuristic/reconstructed — not a raw demo fact"
               >inferred</span>
             {/if}
           </summary>

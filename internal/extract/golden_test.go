@@ -17,7 +17,7 @@ import (
 //
 //	SPECTRA_TEST_DEMO=/path/to/donk.dem go test ./internal/extract -run TestParseGolden -v
 //
-// Expected values are the golden baseline from ref/PLAN_MILESTONE_1.md §6.
+// Expected values are the golden baseline captured 2026-10-30.
 func TestParseGolden(t *testing.T) {
 	path := os.Getenv("SPECTRA_TEST_DEMO")
 	if path == "" {

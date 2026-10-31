@@ -1,4 +1,4 @@
-// Package metrics is the M5 §2.1 custom-metric engine (plan §2.1): a
+// Package metrics is the M5 §2.1 custom-metric engine: a
 // frozen v1 expression grammar, a whitelist-validating parser (identifiers
 // never reach SQL unvalidated — no user SQL is ever interpolated), a SQL
 // compiler producing parameterized statements, and the preview runner

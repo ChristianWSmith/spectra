@@ -23,7 +23,7 @@ import (
 
 var updateReplay = flag.Bool("update-replay", false, "regenerate testdata/donk.replay.json")
 
-// replayGolden captures M2 plan §9 cross-source invariants: the position
+// replayGolden captures cross-source invariants: the position
 // sidecar and the typed events must agree about where the match happened.
 type replayGolden struct {
 	Frames        int     `json:"frames"`

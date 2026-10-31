@@ -1,5 +1,5 @@
 <script>
-  // M5 data explorer / developer mode (plan §2.3): per-match provenance,
+  // M5 data explorer / developer mode: per-match provenance,
   // entity summary, ConVars, generic-event payload browser (key/value tree)
   // and parser warnings — the raw inspectors M1's Match Raw tab only
   // histograms. Acceptance walkthrough #3.
@@ -41,8 +41,8 @@
 
   let gen = 0; // match-switch generation — drops stale async results
 
-  // Reference block (ref/findings/findings-q6-msgtypes.md +
-  // spikes/msgcensus/census-donk.txt): a SHORT static summary, not a dump.
+  // Reference block: a SHORT static summary of the golden demo's
+  // network-message census, not a dump.
   const REF_BULLETS = [
     'UserCommands dominate: 1,367,690 of 1,965,413 total messages (POV input history).',
     'CSVCMsg_VoiceData fires 123,507 times — the Opus chunks M4 voice playback decodes.',
@@ -214,7 +214,7 @@
 
   const payloadQ = $derived(payloadFilter.trim().toLowerCase());
 
-  // Encrypted-message note (plan §2.3: presence, never content).
+  // Encrypted-message note (presence, never content).
   const encNote = $derived.by(() => {
     if (!prov) return '';
     const n = Number(prov.encMessages) || 0;
@@ -239,7 +239,7 @@
         >
       {/each}
     </select>
-    <span class="muted">Developer-mode inspectors over the stored corpus (plan §2.3).</span>
+    <span class="muted">Developer-mode inspectors over the stored corpus.</span>
   </header>
 
   {#if loadError}
@@ -252,7 +252,7 @@
       <p class="muted">Import a demo in the Library first.</p>
     </div>
   {:else}
-    <!-- Provenance (plan §2.3): reproducibility panel per match. -->
+    <!-- Provenance: reproducibility panel per match. -->
     <section class="panel">
       <h2>Provenance</h2>
       {#if provError}
@@ -521,9 +521,7 @@
       <h2>Network message census — reference</h2>
       <p class="muted">
         <strong>639</strong> protobuf network-message types enumerated on the
-        golden demo; <strong>39</strong> fire (1,965,413 messages total) —
-        see <span class="mono">ref/findings/spikes/msgcensus/census-donk.txt</span>
-        and <span class="mono">ref/findings/findings-q6-msgtypes.md</span>.
+        golden demo; <strong>39</strong> fire (1,965,413 messages total).
       </p>
       <ul class="expl-ref-list">
         {#each REF_BULLETS as b, i (i)}

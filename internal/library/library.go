@@ -389,13 +389,13 @@ func (im *Importer) process(item queueItem) {
 
 	im.emitEvent(EventJobProgress, JobProgressEvent{JobID: jobID, Stage: models.StageParse, MatchID: matchID})
 
-	// Position sidecar (plan M2 §5): sampled frames stream into a per-match
+	// Position sidecar: sampled frames stream into a per-match
 	// directory while the parse runs. Tick rate is unknown until the parse
 	// returns, so Close receives it afterwards; any failure from here on
 	// removes the half-written sidecar (a failed match never serves stale
 	// or partial frames).
 	//
-	// Voice sidecar (plan M4 §3) mirrors the positions lifecycle exactly:
+	// Voice sidecar mirrors the positions lifecycle exactly:
 	// wiped + created before the parse, payloads stream into per-player
 	// .opus files via the extract.VoiceSink, and the DB index is inserted
 	// after SaveExtracted.
@@ -422,7 +422,7 @@ func (im *Importer) process(item queueItem) {
 	// success path Close below wins (a second Close is a harmless error).
 	defer func() { _, _, _ = vw.Close() }()
 
-	// Chat decryption key (plan M4 §4): a <demo>.info companion next to the
+	// Chat decryption key: a <demo>.info companion next to the
 	// demo supplies the GC key for svc_EncryptedData. Discovery/extraction
 	// failures never fail the import — the demo simply imports without
 	// decryption (KeyFound=false on the voice_presence row).
@@ -491,7 +491,7 @@ func (im *Importer) process(item queueItem) {
 		return
 	}
 
-	// Voice index (plan M4 §3/§4): close the payload writer and insert the
+	// Voice index: close the payload writer and insert the
 	// chunk rows + presence in one store transaction. Rounds come straight
 	// from the parse — InsertVoice assigns each row's round from the round
 	// tick ranges. SaveExtracted already cleared stale voice rows (reprocess
@@ -514,7 +514,7 @@ func (im *Importer) process(item queueItem) {
 		return
 	}
 
-	// M3 analytics pass (plan §4): classification/KAST/clutch/engagement/
+	// M3 analytics pass: classification/KAST/clutch/engagement/
 	// utility rows + career rebuild over the freshly stored events. Failure
 	// here must NOT lose the extracted data: the match stays ready and only
 	// the job is marked failed (with the analytics error prefixed).
@@ -590,7 +590,7 @@ func validateImportPath(path string) string {
 }
 
 // infoCompanionCandidates returns the <demo>.info candidate paths in
-// discovery order (plan M4 §4): the classic Valve match730 naming sits
+// discovery order: the classic Valve match730 naming sits
 // next to the demo with the .dem suffix replaced by .info; the other two
 // candidates cover companions named after the full demo filename.
 func infoCompanionCandidates(path string) []string {
@@ -613,7 +613,7 @@ func findInfoFile(path string) string {
 }
 
 // netKeyFromInfoFile discovers and extracts the chat decryption key from a
-// <demo>.info companion (plan M4 §4). Missing/unreadable/unparseable
+// <demo>.info companion. Missing/unreadable/unparseable
 // companions never fail the import — they log and return nil (the demo
 // imports without decryption; presence.key_found records the miss).
 func netKeyFromInfoFile(path string) []byte {

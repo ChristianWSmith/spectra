@@ -41,8 +41,8 @@
 
   const TABS = ['Overview', 'Scoreboard', 'Rounds', 'Economy', 'Utility', 'Heatmaps', 'Combat', 'Timeline', 'Chat', 'Context', 'Raw'];
 
-  // GetScoreboard sort whitelist (mirror of the Go store's map). Columns
-  // follow plan §2; combined columns sort by their primary key.
+  // GetScoreboard sort whitelist (mirror of the Go store's map).
+  // Combined columns sort by their primary key.
   // KAST% lives in the analytics pass (getCombatStats → kastPct), not the
   // scoreboard store — its sort is applied client-side (see viewRows).
   const KAST_DEF =
@@ -96,7 +96,7 @@
   let rawEvents = $state([]);
   let rawLimit = $state(100);
   let error = $state('');
-  // M4 header badges: voice presence (plan §1/§5) + chat-decrypt key state.
+  // M4 header badges: voice presence + chat-decrypt key state.
   let voice = $state(null);
 
   // Analytics (M3): per-player KAST for the scoreboard column + per-round

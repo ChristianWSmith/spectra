@@ -52,7 +52,7 @@ const (
 	// defaultWindowWidth / defaultWindowHeight are used until the user
 	// resizes the window, and whenever a saved size is missing or corrupt.
 	// Data-dense tables need room; the window never opens smaller than the
-	// minimums below (M1 plan §3.5).
+	// minimums below.
 	defaultWindowWidth  = 1280
 	defaultWindowHeight = 800
 
@@ -63,7 +63,7 @@ const (
 )
 
 func main() {
-	// CLI smoke import (M1 plan §5.4): `spectra -import path.dem[.zst]`
+	// CLI smoke import: `spectra -import path.dem[.zst]`
 	// runs the full pipeline headlessly, prints the result, and exits —
 	// used by dev smoke tests and useful for batch import scripting.
 	importPath := flag.String("import", "", "import a demo, print the result, exit")
@@ -105,8 +105,8 @@ func main() {
 
 	svc := &AppService{kvs: kvs}
 
-	// The asset server doubles as the position-sidecar endpoint (plan M2
-	// §6: bulk bytes ride HTTP fetch/Range, decompressed server-side — the
+	// The asset server doubles as the position-sidecar endpoint (bulk
+	// bytes ride HTTP fetch/Range, decompressed server-side — the
 	// frontend never owns a zstd decoder). Everything else falls through
 	// to the bundled frontend.
 	bundled := application.AssetFileServerFS(assets)
@@ -250,8 +250,8 @@ func runImport(path string) {
 	}
 }
 
-// handleSidecar serves a match's sidecars over the asset server (plan M2 §6
-// HTTP asset-server route, server-side decompress; plan M4 voice routes):
+// handleSidecar serves a match's sidecars over the asset server (HTTP
+// asset-server route, server-side decompress; voice routes):
 //
 //	/api/sidecar/<matchID>/positions?from=&to=   decompressed q16-v1 frame
 //	                                             stream (from/to frame
@@ -327,14 +327,14 @@ func handleSidecar(st *store.Store, w http.ResponseWriter, r *http.Request, p st
 	}
 }
 
-// voiceMaxWindowTicks caps pcm windows at 60 s of match time (plan M4 §7:
-// 60 s @16 kHz s16 ≈ 19 MB — keeps one request bounded; the timeline
+// voiceMaxWindowTicks caps pcm windows at 60 s of match time (60 s
+// @16 kHz s16 ≈ 19 MB — keeps one request bounded; the timeline
 // engine asks for ≤2 s windows). 64 ticks/s is the fallback when the
 // match header lacks a tick rate.
 const voiceMaxWindowSeconds = 60
 
-// handleExport serves the heavy-download routes (plan M2 §6 asset-server
-// pattern; M5 §2.5 reports/export):
+// handleExport serves the heavy-download routes (asset-server
+// pattern; reports/export):
 //
 //	GET /api/export/library.db                best-effort WAL checkpoint,
 //	                                          then the SQLite file as a
@@ -491,7 +491,7 @@ func handleVoice(st *store.Store, w http.ResponseWriter, r *http.Request, matchI
 			return
 		}
 		// Fixed 8-byte header: int32 fromTick | int32 sampleRate (LE), then
-		// s16le mono PCM (plan M4 §7).
+		// s16le mono PCM.
 		out := make([]byte, 8+len(pcm))
 		binary.LittleEndian.PutUint32(out[0:4], uint32(from))
 		binary.LittleEndian.PutUint32(out[4:8], models.VoiceOutSampleRate)
@@ -530,7 +530,7 @@ func voiceSamplesPerTick(tickRate float64) int {
 }
 
 // decodeVoicePCM decodes one player's chunks in [from,to] onto a
-// zero-filled 16 kHz s16le mono timeline (plan M4 §7): each chunk's Opus
+// zero-filled 16 kHz s16le mono timeline: each chunk's Opus
 // payload is decoded once and poked in place at sample offset
 // (tick-from)*samplesPerTick, clamped to the window. A missing .opus file
 // surfaces as an error; stray undecodable packets are skipped.

@@ -33,7 +33,7 @@ import (
 // two migrations land in either order (005 < 006 alphabetically, but a
 // database created from an older binary may lack 005 when this code runs).
 // Full expression validation belongs to the metrics engine on preview/use
-// (plan §6 plugin metric budget) — the plugin loader only enforces
+// (plugin metric budget) — the plugin loader only enforces
 // structural sanity (name + expr non-empty).
 
 // PluginRow is one plugins-registry row (M5 §2.7).

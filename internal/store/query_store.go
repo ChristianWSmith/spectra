@@ -14,8 +14,8 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/models"
 )
 
-// This file is the M5 §2.2 persistence surface: the read-only SQL console
-// session (plan §2.2 / PRD §5.17) plus query_history / saved_queries CRUD.
+// This file is the persistence surface: the read-only SQL console
+// session (PRD §5.17) plus query_history / saved_queries CRUD.
 //
 // Console safety is layered, in execution order:
 //
@@ -43,9 +43,9 @@ import (
 // only query RESULTS are read-only.
 
 const (
-	// DefaultRowLimit is the console row cap (plan §2.2 result grid cap).
+	// DefaultRowLimit is the console row cap (result grid cap).
 	DefaultRowLimit = 5000
-	// DefaultTimeoutMS is the console statement timeout (plan §6: 5 s).
+	// DefaultTimeoutMS is the console statement timeout (5 s).
 	DefaultTimeoutMS = 5000
 	// QueryHistoryCap is the history FIFO depth (newest kept).
 	QueryHistoryCap = 100

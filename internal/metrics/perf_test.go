@@ -11,7 +11,7 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/store"
 )
 
-// This file measures the plan §6 targets against a GENERATED 100-match
+// This file measures the perf targets against a GENERATED 100-match
 // corpus (in-test, not committed — the committed seed stays the tiny 3-match
 // eyeball fixture). Skipped under -short (CI runs make test = go test
 // -short); run `go test ./internal/metrics -run Perf -v` to see the
@@ -195,7 +195,7 @@ func seedPerfStore(t *testing.T, matches int) *store.Store {
 	return st
 }
 
-// TestPerfPreview100Matches measures plan §6: preview < 1 s @ 100 matches.
+// TestPerfPreview100Matches measures preview < 1 s @ 100 matches.
 func TestPerfPreview100Matches(t *testing.T) {
 	if testing.Short() {
 		t.Skip("perf measurement (run without -short)")
@@ -231,12 +231,12 @@ func TestPerfPreview100Matches(t *testing.T) {
 		}
 		t.Logf("preview %-42s rows=%-3d truncated=%-5v %s", c.name, len(pv.Rows), pv.Truncated, el.Round(time.Millisecond))
 		if el >= time.Second {
-			t.Errorf("%s: preview took %s, want < 1s (plan §6)", c.name, el)
+			t.Errorf("%s: preview took %s, want < 1s", c.name, el)
 		}
 	}
 }
 
-// TestPerfCompile measures the compile path alone (plan §6: compiled
+// TestPerfCompile measures the compile path alone (compiled
 // metric as SQL < 3 s — trivially, since compilation never sees row
 // counts; 1000 compiles stand in for the 1000-match budget).
 func TestPerfCompile(t *testing.T) {
@@ -257,6 +257,6 @@ func TestPerfCompile(t *testing.T) {
 	el := time.Since(start)
 	t.Logf("compiled %d expressions in %s (avg %s)", iterations, el.Round(time.Microsecond), (el / iterations).Round(time.Microsecond))
 	if el >= 3*time.Second {
-		t.Errorf("compile of %d expressions took %s, want < 3s (plan §6)", iterations, el)
+		t.Errorf("compile of %d expressions took %s, want < 3s", iterations, el)
 	}
 }

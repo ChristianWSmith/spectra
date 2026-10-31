@@ -1,7 +1,7 @@
 // Package sidecar persists the per-match tactical position stream outside
-// SQLite (plan M2 §4): a quantized per-frame player sample written during
+// SQLite: a quantized per-frame player sample written during
 // extraction, block-compressed so ranges can be fetched and decompressed
-// server-side without the frontend ever owning a zstd decoder (plan M2 §6).
+// server-side without the frontend ever owning a zstd decoder.
 //
 // # Raw stream layout (encoding "q16-v1", format version 1)
 //
@@ -19,8 +19,8 @@
 // The slot table (steamID per slot, first-seen order) lives in meta.json;
 // slots are assigned at the first frame that carries players and later
 // unknown SteamIDs are skipped with a log line (never a parse failure).
-// The quantization is the M2-T1 spike measurement (ref/findings/spikes/
-// sampler): 8 B/player, ~9.1 MB raw / ~2.5 MB zstd for the golden demo.
+// The quantization is 1.0 u int16 — 8 B/player, ~9.1 MB raw / ~2.5 MB zstd
+// for the golden demo.
 //
 // # Files
 //
@@ -44,10 +44,10 @@ import (
 // Format constants recorded in meta.json.
 const (
 	// FormatVersion identifies this layout; bump when it changes so
-	// reprocessing regenerates stale sidecars (plan M2 §3).
+	// reprocessing regenerates stale sidecars.
 	FormatVersion = 1
 	// SampleRate is frames per second: samples are 1:1 with demo frames
-	// (the M2 decision is full 64 Hz — plan M2 §3).
+	// (full 64 Hz).
 	SampleRate = 64
 	// Encoding names the quantization scheme of the raw stream.
 	Encoding = "q16-v1"
@@ -77,7 +77,7 @@ type Player struct {
 
 // Meta is meta.json: the sidecar's self-describing header. It is the
 // source of truth for frame count and the slot table; matches.position_*
-// mirror it (plan M2 §4).
+// mirror it.
 type Meta struct {
 	FormatVersion int       `json:"formatVersion"` // 1
 	TickRate      float64   `json:"tickRate"`

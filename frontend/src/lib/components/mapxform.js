@@ -1,8 +1,7 @@
 // Shared world↔image transform for map-pack consumers (heatmap layer,
 // round-compare ghost, any overlay). World coords are CS2 Z-up units; the
-// radar image is a top-down X/Y projection with inverted Y — formula per
-// ref/findings/findings-mappack.md §2: px=(wx-pos_x)/scale,
-// py=(pos_y-wy)/scale.
+// radar image is a top-down X/Y projection with inverted Y — formula:
+// px=(wx-pos_x)/scale, py=(pos_y-wy)/scale.
 export function makeTransform(meta) {
   const t = meta && meta.transform;
   const w = (meta && meta.radar && meta.radar.width) || 1024;

@@ -1,5 +1,5 @@
 // M4 voice playback engine — Web Audio locked to the M2 replay clock
-// (plan §4). The replay engine is the single master clock: audio follows
+//. The replay engine is the single master clock: audio follows
 // REPLAY time, never wall time.
 //
 // Sync contract (the scheduling math):
@@ -21,7 +21,7 @@
 const WIN_SEC = 1.0;      // fetch window, replay seconds (≤2 s contract)
 const LOOKAHEAD = 1.5;    // schedule this far ahead of the clock
 const CACHE_MAX = 40;     // decoded-window cache entries, LRU
-const DRIFT_S = 0.05;     // plan §4 resync threshold
+const DRIFT_S = 0.05;     // resync threshold
 
 function errText(e) {
   if (e == null) return 'unknown error';
@@ -47,7 +47,7 @@ export async function fetchVoicePCM(matchId, steamId, fromTick, toTick) {
   return { fromTick: hdrFrom, sampleRate: rate || 16000, samples };
 }
 
-// probeAudio is the Settings self-test (plan §4): fresh AudioContext,
+// probeAudio is the Settings self-test: fresh AudioContext,
 // resume(), report running-state + sample rate or the exact failure.
 export async function probeAudio() {
   try {

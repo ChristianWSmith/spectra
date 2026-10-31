@@ -10,7 +10,7 @@ import (
 )
 
 // Preview execution constants: the runner uses the store's read-only
-// session (plan §6 preview target < 1 s @ 100 matches — the timeout is a
+// session (preview target < 1 s @ 100 matches — the timeout is a
 // safety net, not the target) and a hard raw-value cap for percentiles.
 const (
 	PreviewTimeoutMS  = 10000

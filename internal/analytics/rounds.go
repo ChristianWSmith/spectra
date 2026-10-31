@@ -4,8 +4,8 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/models"
 )
 
-// utilWeapons maps damage-event weapon names to "utility damage" (plan M3
-// §2.4) for the per-player-round util_dmg column.
+// utilWeapons maps damage-event weapon names to "utility damage" for the
+// per-player-round util_dmg column.
 var utilWeapons = map[string]bool{
 	"HE Grenade":         true,
 	"Molotov":            true,
@@ -16,7 +16,7 @@ var utilWeapons = map[string]bool{
 }
 
 // PlayerRounds derives per-player-per-round stats incl. the KAST
-// decomposition (plan M3 §2.9) from a match's typed events:
+// decomposition from a match's typed events:
 //
 //	K        kill credited to the player (kill event attacker)
 //	A        assist (kill event assister)

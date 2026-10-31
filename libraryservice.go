@@ -49,7 +49,7 @@ func (s *LibraryService) ListMatches(query, sortKey string, desc bool) ([]models
 }
 
 // DeleteMatch removes a match and its extracted data, including the
-// per-match position sidecar directory (best-effort — plan M2 §4: delete
+// per-match position sidecar directory (best-effort — the delete
 // cascade removes the directory). When deleteOriginal is set the source
 // demo file is removed from disk as well — its path is looked up before
 // the row is deleted. A missing match surfaces store.ErrNotFound.

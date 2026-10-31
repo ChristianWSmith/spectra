@@ -1,5 +1,5 @@
 <script>
-  // Side-by-side round comparison (plan §2.10). Reads the
+  // Side-by-side round comparison. Reads the
   // sessionStorage contract introduced by Match's Rounds tab:
   //   key 'spectra:compare-rounds' = {matchId: number, rounds: number[]}
   // Read + cleared once on init; anything else → hint + back.

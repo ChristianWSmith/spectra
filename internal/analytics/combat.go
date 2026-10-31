@@ -6,8 +6,8 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/models"
 )
 
-// CombatStats derives per-player engagement/damage deep-dive rows (plan M3
-// §2.3) from in-memory rows. Definitions (mirrored by the store's SQL read
+// CombatStats derives per-player engagement/damage deep-dive rows from
+// in-memory rows. Definitions (mirrored by the store's SQL read
 // path, store.GetCombatStats — both are unit-tested against the same
 // fixtures):
 //

@@ -1,7 +1,7 @@
 # Map packs
 
 One directory per map under `frontend/public/maps/<mapName>/`. A pack is
-**one image + one JSON**; adding a map never touches code (M2 plan §5).
+**one image + one JSON**; adding a map never touches code.
 
 ## Contract
 
@@ -27,7 +27,7 @@ maps/<mapName>/radar.svg     optional — any raster/vector image the webview
 ```
 
 - `transform` — the 3-parameter Valve overview model. World → radar-image
-  pixels (Z-up, inverted Y; `ref/findings/findings-mappack.md` §2):
+  pixels (Z-up, inverted Y):
 
   ```
   px = (wx - pos_x) / scale
@@ -54,8 +54,7 @@ Numeric metadata (transform constants) is our own JSON in-repo — facts, not
 artwork. Radar **pixels** are placeholders or user-supplied: official radars
 are Valve IP and are never bundled in public releases; extract from a local
 CS2 install (`overheadmaps/<map>_radar_psd.vtex_c`) or drop in any
-user-supplied image named in `meta.json`. Background and rationale:
-`ref/findings/findings-mappack.md` §4.
+user-supplied image named in `meta.json`.
 
 The checked-in `de_cache/radar.svg` is an original schematic (grid + rough
 A/B markers), not derived from any Valve asset; it exists so the golden

@@ -1,8 +1,7 @@
 // Package store persists extraction output in SQLite and serves the
 // frontend-facing queries. The database is opened with WAL, a busy timeout
 // and foreign keys enabled, capped at a single connection; every string
-// bound into SQL is scrubbed of NUL bytes (demo names contain them —
-// ref/EXTRACTION_TECHNIQUES.md §11).
+// bound into SQL is scrubbed of NUL bytes (demo names contain them).
 package store
 
 import (

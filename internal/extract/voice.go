@@ -1,8 +1,8 @@
 package extract
 
-// VoiceChunk is one CSVCMsg_VoiceData capture unit (plan M4 §2). Payload is
-// exactly one raw Opus packet (ref/findings/findings-voice.md: no TOC/length
-// wrapper, 10 ms mono frame); Tick is GameState().IngameTick() at handler
+// VoiceChunk is one CSVCMsg_VoiceData capture unit. Payload is exactly one
+// raw Opus packet (no TOC/length wrapper, 10 ms mono frame); Tick is
+// GameState().IngameTick() at handler
 // time (the message's own tick field is 0 in SourceTV demos); Section is the
 // per-sender chunk counter used to detect rare gaps. XUID is the sender's
 // SteamID64 (0 when absent).

@@ -65,7 +65,7 @@ func TestPerfServiceDevDB(t *testing.T) {
 }
 
 // TestPerfVoiceDevDB measures the M4 voice routes against the developer's
-// real data: a 2 s PCM window must decode in <20 ms (plan §8) and the full
+// real data: a 2 s PCM window must decode in <20 ms and the full
 // WAV generation time is recorded. Requires an imported voice-bearing
 // match (run `spectra -import donk.dem.zst` first). CI skips
 // (SPECTRA_DEV_DB unset).
@@ -116,10 +116,10 @@ func TestPerfVoiceDevDB(t *testing.T) {
 	t.Logf("voice PCM 2s window (%s): %d bytes in %s (presence chunks=%d)",
 		steam, len(pcm), window.Round(time.Microsecond), presence.ChunkCount)
 	if window > 20*time.Millisecond {
-		t.Errorf("PCM 2s window took %s, plan §8 target is <20ms", window)
+		t.Errorf("PCM 2s window took %s, target is <20ms", window)
 	}
 
-	// Full-match WAV: record the wall time (no hard target beyond plan §8's
+	// Full-match WAV: record the wall time (no hard target beyond the
 	// "decode full match < 60 s" background-job budget).
 	t0 = time.Now()
 	full, err := decodeVoicePCM(st, voiceDir, matchID, steam, 0, m.DurationTicks, tickRate)
@@ -133,7 +133,7 @@ func TestPerfVoiceDevDB(t *testing.T) {
 
 // TestPerfSpatialDevDB measures the M5 §2.4 spatial series against the
 // developer's real data: full sidecar decode + 137k frames × O(n²)
-// pairwise must stay far under the plan §6 <20 s precompute budget
+// pairwise must stay far under the <20 s precompute budget
 // (computed on read). CI skips (SPECTRA_DEV_DB unset).
 func TestPerfSpatialDevDB(t *testing.T) {
 	dbPath := os.Getenv("SPECTRA_DEV_DB")
