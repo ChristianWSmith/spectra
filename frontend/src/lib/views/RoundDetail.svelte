@@ -1,5 +1,11 @@
 <script>
-  import { getRoundDetail, getRounds, getMatch, setPendingSeek } from '../services.js';
+  import {
+    getRoundDetail,
+    getRounds,
+    getMatch,
+    getRoundClasses,
+    setPendingSeek,
+  } from '../services.js';
   import { fmtDuration, fmtTickSeconds, fmtInt } from '../fmt.js';
   import RoundStrip from '../components/RoundStrip.svelte';
 
@@ -9,6 +15,7 @@
   let rounds = $state([]);
   let tickRate = $state(64);
   let error = $state('');
+  let cls = $state(null); // RoundClassRow for this round (may be null)
 
   $effect(() => {
     let live = true;
@@ -26,10 +33,32 @@
     return () => (live = false);
   });
 
+  // Classification chip (analytics pass) — best-effort, absence is fine.
+  $effect(() => {
+    let live = true;
+    getRoundClasses(id)
+      .then((rows) => {
+        if (!live) return;
+        cls = (rows || []).find((r) => r.round === round) || null;
+      })
+      .catch(() => {
+        if (live) cls = null;
+      });
+    return () => (live = false);
+  });
+
   function errText(e) {
     if (e == null) return 'unknown error';
     if (typeof e === 'string') return e;
     return e.message || String(e);
+  }
+
+  function isSteam(s) {
+    return /^\d{17}$/.test(s || '');
+  }
+
+  function openProfile(steam) {
+    if (isSteam(steam)) nav(`/player/${steam}`);
   }
 
   const kills = $derived(
@@ -63,6 +92,13 @@
           {detail.round.winner ? detail.round.winner.toUpperCase() : '—'}
         </span>
         {#if detail.round.warmup}<span class="chip">warmup</span>{/if}
+        {#if cls}
+          <span
+            class="chip cmp-class"
+            title="{cls.explanation || 'classified'} (rule v{cls.ruleVersion}, confidence {Math.round((cls.confidence || 0) * 100)}%)"
+            >{cls.label}</span
+          >
+        {/if}
       </h1>
       <p class="muted">
         {detail.round.reason || '—'}
@@ -113,9 +149,29 @@
                   >▶</button>
                 </td>
                 <td class="num mono">{e.tick}</td>
-                <td class="ct">{e.attackerName || '—'}</td>
+                <td class="ct">
+                  {#if isSteam(e.attacker)}
+                    <button
+                      class="comb-name-btn"
+                      title="Open {e.attackerName} profile"
+                      onclick={() => openProfile(e.attacker)}
+                    >{e.attackerName || '—'}</button>
+                  {:else}
+                    {e.attackerName || '—'}
+                  {/if}
+                </td>
                 <td class="mono">{e.weapon || '—'}</td>
-                <td class="t">{e.victimName || '—'}</td>
+                <td class="t">
+                  {#if isSteam(e.victim)}
+                    <button
+                      class="comb-name-btn"
+                      title="Open {e.victimName} profile"
+                      onclick={() => openProfile(e.victim)}
+                    >{e.victimName || '—'}</button>
+                  {:else}
+                    {e.victimName || '—'}
+                  {/if}
+                </td>
                 <td>
                   {#if e.headshot}<span class="chip flag" title="headshot">HS</span>{/if}
                   {#if e.wallbang}<span class="chip flag" title="wallbang">WB</span>{/if}

@@ -7,6 +7,8 @@
   import Timeline from './lib/views/Timeline.svelte';
   import Replay from './lib/views/Replay.svelte';
   import Settings from './lib/views/Settings.svelte';
+  import PlayerProfile from './lib/views/PlayerProfile.svelte';
+  import CompareRounds from './lib/views/CompareRounds.svelte';
 
   // Hand-rolled hash router (M1 plan §4): deep-navigable URLs without a
   // router dependency.
@@ -24,6 +26,10 @@
     if (m) return { name: 'round', id: Number(m[1]), round: Number(m[2]) };
     m = h.match(/^\/match\/(\d+)$/);
     if (m) return { name: 'match', id: Number(m[1]) };
+    m = h.match(/^\/player\/(\d{17})$/);
+    if (m) return { name: 'player', steamId: m[1] };
+    m = h.match(/^\/compare\/(\d+)$/);
+    if (m) return { name: 'compare', id: Number(m[1]) };
     m = h.match(/^\/timeline\/(\d+)$/);
     if (m) return { name: 'timeline', id: Number(m[1]) };
     m = h.match(/^\/replay\/(\d+)$/);
@@ -73,7 +79,9 @@
         route.name === 'match' ||
         route.name === 'round' ||
         route.name === 'timeline' ||
-        route.name === 'replay'}
+        route.name === 'replay' ||
+        route.name === 'player' ||
+        route.name === 'compare'}
       onclick={() => nav('/library')}
     >
       Library
@@ -94,6 +102,10 @@
       <Match id={route.id} {nav} />
     {:else if route.name === 'round'}
       <RoundDetail id={route.id} round={route.round} {nav} />
+    {:else if route.name === 'player'}
+      <PlayerProfile steamId={route.steamId} {nav} />
+    {:else if route.name === 'compare'}
+      <CompareRounds id={route.id} {nav} />
     {:else if route.name === 'timeline'}
       <Timeline id={route.id} {nav} />
     {:else if route.name === 'replay'}

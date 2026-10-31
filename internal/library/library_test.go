@@ -239,3 +239,61 @@ func TestImportParseFailureRemovesSidecar(t *testing.T) {
 		t.Errorf("sidecar dir after failure: stat err = %v, want not-exist", err)
 	}
 }
+
+// TestImportRunsAnalyzeStage proves the M3 wiring: a successful import
+// runs the analytics pass (stage "analyze") and leaves classified rows,
+// player rounds and a career rollup behind.
+func TestImportRunsAnalyzeStage(t *testing.T) {
+	parse := func(ctx context.Context, r io.Reader, opts extract.ParseOptions) (*models.ExtractedMatch, error) {
+		if _, err := io.ReadAll(r); err != nil {
+			return nil, err
+		}
+		return &models.ExtractedMatch{
+			Match: models.Match{Map: "de_analyze", TickRate: 64},
+			Players: []models.Player{
+				{SteamID: "1", Name: "one", Side: "ct"},
+				{SteamID: "2", Name: "two", Side: "t"},
+			},
+			PlayerStats: []models.PlayerStats{
+				{SteamID: "1", Name: "one", Side: "ct", Kills: 1, ADR: 50, RoundsPlayed: 1},
+				{SteamID: "2", Name: "two", Side: "t", Deaths: 1, ADR: 25, RoundsPlayed: 1},
+			},
+			Rounds: []models.Round{
+				{Number: 1, Winner: "ct", EquipCT: 5000, EquipT: 4200, StartTick: 100, EndTick: 7600},
+			},
+			RoundEconomy: []models.RoundEconomy{
+				{Round: 1, Side: "ct", EquipValue: 5000},
+				{Round: 1, Side: "t", EquipValue: 4200},
+			},
+			Events: []models.Event{
+				{Tick: 500, Round: 1, Kind: models.EventKill, Attacker: "1", Victim: "2", Distance: 12},
+			},
+		}, nil
+	}
+	im, st := newTestImporter(t, parse)
+	ids := im.Enqueue([]string{writeDemo(t, "analyze.dem", "x")})
+	job := waitStatus(t, st, ids[0], models.JobDone)
+	if job.MatchID == 0 {
+		t.Fatal("job has no match link")
+	}
+	classes, err := st.GetRoundClasses(job.MatchID)
+	if err != nil || len(classes) != 1 || classes[0].Label != "pistol" {
+		t.Fatalf("round classes = %+v, %v, want 1 pistol row", classes, err)
+	}
+	prs, err := st.GetPlayerRounds(job.MatchID, "")
+	if err != nil || len(prs) != 2 {
+		t.Fatalf("player rounds = %+v, %v, want 2 rows", prs, err)
+	}
+	if prs[0].Kills != 1 && prs[1].Kills != 1 {
+		t.Errorf("kills not attributed: %+v", prs)
+	}
+	career, err := st.GetCareer("1")
+	if err != nil || career.Matches != 1 {
+		t.Fatalf("career = %+v, %v, want 1 match after analyze", career, err)
+	}
+	// Economy rows join classifications (label carried through GetEconomy).
+	econ, err := st.GetEconomy(job.MatchID)
+	if err != nil || len(econ) != 1 || econ[0].Label != "pistol" {
+		t.Fatalf("economy = %+v, %v", econ, err)
+	}
+}

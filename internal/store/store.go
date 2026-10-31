@@ -30,6 +30,8 @@ const interruptedJobErr = "interrupted by restart"
 var childTables = []string{
 	"events", "generic_events", "chat", "round_economy", "rounds",
 	"player_stats", "players", "teams", "warnings",
+	"round_classifications", "player_round_stats", "clutches",
+	"engagements", "utility_events",
 }
 
 // Store is a SQLite-backed persistence handle. The underlying database is

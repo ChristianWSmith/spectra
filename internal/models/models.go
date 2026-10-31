@@ -31,7 +31,9 @@ const (
 	StageDecompress = "decompress"
 	StageParse      = "parse"
 	StageStore      = "store"
-	StageDone       = "done"
+	// StageAnalyze is the post-import analytics pass (M3, library worker).
+	StageAnalyze = "analyze"
+	StageDone    = "done"
 )
 
 // Event kinds (events.kind). The timeline filter and round views key off

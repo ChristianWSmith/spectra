@@ -31,6 +31,7 @@
     decompress: 'decompressing',
     parse: 'parsing',
     store: 'storing',
+    analyze: 'analyzing',
     done: 'done',
   };
 

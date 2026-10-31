@@ -143,6 +143,8 @@ func main() {
 	app.RegisterService(application.NewService(&LibraryService{st: st, imp: imp, app: app}))
 	app.RegisterService(application.NewService(&MatchService{st: st}))
 	app.RegisterService(application.NewService(&ReplayService{st: st, app: app}))
+	app.RegisterService(application.NewService(&AnalyticsService{st: st, app: app}))
+	app.RegisterService(application.NewService(&ProfileService{st: st, app: app}))
 
 	initUpdater(app)
 

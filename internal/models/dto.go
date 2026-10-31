@@ -146,6 +146,24 @@ type EventFilter struct {
 	SteamID string `json:"steamId"`
 	Offset  int    `json:"offset"`
 	Limit   int    `json:"limit"`
+	// M3 advanced filters (plan §2.8). Zero/""/nil = unconstrained.
+	// TickTo/DmgMax/DistanceMax: <= 0 means open-ended (never clamp to 0).
+	Weapon       string  `json:"weapon,omitempty"`
+	TickFrom     int     `json:"tickFrom,omitempty"`
+	TickTo       int     `json:"tickTo,omitempty"`
+	DmgMin       int     `json:"dmgMin,omitempty"`
+	DmgMax       int     `json:"dmgMax,omitempty"`
+	DistanceMax  float64 `json:"distanceMax,omitempty"`
+	HeadshotOnly bool    `json:"headshotOnly,omitempty"`
+	BBox         *BBox   `json:"bbox,omitempty"` // world-space position filter
+}
+
+// BBox is a world-coordinate rectangle (event pos must fall inside).
+type BBox struct {
+	MinX float64 `json:"minX"`
+	MinY float64 `json:"minY"`
+	MaxX float64 `json:"maxX"`
+	MaxY float64 `json:"maxY"`
 }
 
 // ChatRow is one chat line with display name (chat table join players).

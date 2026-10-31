@@ -327,6 +327,39 @@ func (s *Store) GetEvents(f models.EventFilter) ([]models.EventRow, error) {
 		where = append(where, "(e.attacker = ? OR e.victim = ?)")
 		args = append(args, sid, sid)
 	}
+	// M3 advanced filters (plan §2.8): every clause is an AND'ed bound
+	// parameter; zero/""/nil means unconstrained.
+	if w := scrub(f.Weapon); w != "" {
+		where = append(where, "e.weapon = ?")
+		args = append(args, w)
+	}
+	if f.TickFrom > 0 {
+		where = append(where, "e.tick >= ?")
+		args = append(args, f.TickFrom)
+	}
+	if f.TickTo > 0 {
+		where = append(where, "e.tick <= ?")
+		args = append(args, f.TickTo)
+	}
+	if f.DmgMin > 0 {
+		where = append(where, "e.dmg >= ?")
+		args = append(args, f.DmgMin)
+	}
+	if f.DmgMax > 0 {
+		where = append(where, "e.dmg <= ?")
+		args = append(args, f.DmgMax)
+	}
+	if f.DistanceMax > 0 {
+		where = append(where, "e.distance <= ?")
+		args = append(args, f.DistanceMax)
+	}
+	if f.HeadshotOnly {
+		where = append(where, "e.headshot = 1")
+	}
+	if bb := f.BBox; bb != nil {
+		where = append(where, "e.pos_x BETWEEN ? AND ? AND e.pos_y BETWEEN ? AND ?")
+		args = append(args, bb.MinX, bb.MaxX, bb.MinY, bb.MaxY)
+	}
 	limit := f.Limit
 	if limit <= 0 {
 		limit = 50000

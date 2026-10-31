@@ -25,6 +25,7 @@ import (
 
 	"github.com/klauspost/compress/zstd"
 
+	"github.com/ChristianWSmith/spectra/internal/analytics"
 	"github.com/ChristianWSmith/spectra/internal/data"
 	"github.com/ChristianWSmith/spectra/internal/extract"
 	"github.com/ChristianWSmith/spectra/internal/models"
@@ -460,9 +461,38 @@ func (im *Importer) process(item queueItem) {
 		im.failJob(jobID, matchID, models.StageStore, err.Error(), false)
 		return
 	}
+
+	// M3 analytics pass (plan §4): classification/KAST/clutch/engagement/
+	// utility rows + career rebuild over the freshly stored events. Failure
+	// here must NOT lose the extracted data: the match stays ready and only
+	// the job is marked failed (with the analytics error prefixed).
+	im.emitEvent(EventJobProgress, JobProgressEvent{JobID: jobID, Stage: models.StageAnalyze, Progress: 0.95, MatchID: matchID})
+	_ = im.st.UpdateJob(jobID, models.JobRunning, models.StageAnalyze, 0.95, "")
+	if aerr := im.analyze(matchID); aerr != nil {
+		msg := "analytics: " + aerr.Error()
+		_ = im.st.UpdateJob(jobID, models.JobFailed, models.StageAnalyze, 0.95, msg)
+		im.emitEvent(EventJobDone, JobDoneEvent{JobID: jobID, MatchID: matchID, Status: models.JobFailed, Error: msg})
+		im.emitEvent(EventLibraryChanged, LibraryChangedEvent{})
+		return
+	}
+
 	_ = im.st.UpdateJob(jobID, models.JobDone, models.StageDone, 1, "")
 	im.emitEvent(EventJobDone, JobDoneEvent{JobID: jobID, MatchID: matchID, Status: models.JobDone})
 	im.emitEvent(EventLibraryChanged, LibraryChangedEvent{})
+}
+
+// analyze runs analytics.Compute for one match under the stored config.
+func (im *Importer) analyze(matchID int64) error {
+	cfg, err := im.st.GetConfig()
+	if err != nil {
+		return err
+	}
+	return analytics.Compute(im.st, matchID, analytics.Config{
+		TradeWindowS: cfg.TradeWindowS,
+		EcoFullBuy:   cfg.EcoFullBuy,
+		EcoForce:     cfg.EcoForce,
+		RuleVersion:  cfg.RuleVersion,
+	})
 }
 
 // failJob records a terminal failure for jobID. When the job had a match

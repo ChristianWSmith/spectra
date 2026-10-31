@@ -10,6 +10,8 @@ import {
   LibraryService,
   MatchService,
   ReplayService,
+  AnalyticsService,
+  ProfileService,
 } from '../../bindings/github.com/ChristianWSmith/spectra';
 
 // --- AppService ---------------------------------------------------------------
@@ -231,3 +233,31 @@ export function takePendingSeek() {
     return null;
   }
 }
+
+// --- AnalyticsService (M3) ---------------------------------------------------
+
+export function getAnalysisConfig() { return AnalyticsService.GetConfig(); }
+export function setAnalysisConfig(cfg) { return AnalyticsService.SetConfig(cfg); }
+export function recomputeAnalysis(matchId) { return AnalyticsService.RecomputeAnalysis(matchId); }
+export function getEconomy(matchId) { return AnalyticsService.GetEconomy(matchId); }
+export function getRoundClasses(matchId) { return AnalyticsService.GetRoundClasses(matchId); }
+export function getPlayerRounds(matchId, steamId) { return AnalyticsService.GetPlayerRounds(matchId, steamId || ''); }
+export function getClutches(matchId) { return AnalyticsService.GetClutches(matchId); }
+export function getEngagements(matchId, kind) { return AnalyticsService.GetEngagements(matchId, kind || ''); }
+export function getUtility(matchId) { return AnalyticsService.GetUtility(matchId); }
+export function getCombatStats(matchId) { return AnalyticsService.GetCombatStats(matchId); }
+export function getHeatmap(matchId, kind, filter) { return AnalyticsService.GetHeatmap(matchId, kind, filter || {}); }
+export function listSavedFilters() { return AnalyticsService.ListSavedFilters(); }
+export function saveFilter(name, scope, filterJson) { return AnalyticsService.SaveFilter(name, scope, filterJson); }
+export function deleteSavedFilter(id) { return AnalyticsService.DeleteSavedFilter(id); }
+
+// --- ProfileService (M3) -----------------------------------------------------
+
+export function getProfile(steamId) { return ProfileService.GetProfile(steamId); }
+export function listPlayers(query) { return ProfileService.ListPlayers(query || ''); }
+export function getCareerTrend(steamId, metric) { return ProfileService.GetCareerTrend(steamId, metric); }
+
+// M3 pending-filter contract: setPendingTimelineFilter() accepts the extended
+// EventFilter shape too — {kind, steamId, round, weapon, tickFrom, tickTo,
+// dmgMin, dmgMax, distanceMax, headshotOnly, bbox:{minX,minY,maxX,maxY}} —
+// Timeline applies any subset. Heatmap click → setPendingTimelineFilter({bbox}).

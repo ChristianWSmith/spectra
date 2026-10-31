@@ -2,47 +2,40 @@
   import {
     getEvents,
     getEvent,
-    getRounds,
-    getScoreboard,
     takePendingTimelineFilter,
     setPendingSeek,
+    listSavedFilters,
+    saveFilter,
+    deleteSavedFilter,
   } from '../services.js';
   import { prettyJson } from '../fmt.js';
+  import FilterBar from '../components/FilterBar.svelte';
 
   let { id = 0, nav = () => {} } = $props();
-
-  // Hardcoded kind list — mirrors models.EventKind (Go side).
-  const KINDS = [
-    'kill',
-    'damage',
-    'blind',
-    'bomb_plant',
-    'bomb_defuse',
-    'bomb_explode',
-    'bomb_drop',
-    'bomb_pickup',
-    'grenade_throw',
-    'grenade',
-    'round_start',
-    'round_end',
-    'player_connect',
-    'player_disconnect',
-  ];
 
   const ROW_H = 30;
   const OVERSCAN = 8;
 
+  // Advanced filter state (plan §2.8). Seeded from the sessionStorage
+  // pending-filter hand-off (services.js TIMELINE_PENDING_KEY) — the whole
+  // extended object (kind/steamId/round/weapon/ticks/dmg/distance/headshot/
+  // bbox) passes through, FilterBar normalizes missing fields.
+  let filter = $state({
+    round: -1,
+    kind: '',
+    steamId: '',
+    weapon: '',
+    tickFrom: 0,
+    tickTo: 0,
+    dmgMin: 0,
+    dmgMax: 0,
+    distanceMax: 0,
+    headshotOnly: false,
+    bbox: null,
+    ...(takePendingTimelineFilter() || {}),
+  });
+
   let events = $state([]);
-  let rounds = $state([]);
-  let players = $state([]);
-  // Pending-filter hand-off from Match (sessionStorage, read+clear once at
-  // init so the first fetch already applies it).
-  let initialFilter = takePendingTimelineFilter() || {};
-  let roundF = $state(
-    typeof initialFilter.round === 'number' ? initialFilter.round : -1,
-  ); // -1 = all rounds (0 would mean round zero!)
-  let kindF = $state(initialFilter.kind || '');
-  let steamF = $state(initialFilter.steamId || '');
   let selected = $state(null); // EventDetail
   let detailError = $state('');
   let listError = $state('');
@@ -52,29 +45,41 @@
   let copied = $state(false);
   let scrollReset = $state(0); // bump → scroll list back to top
 
-  // Load filter options (rounds + players).
+  // Saved filter presets (scope "match", plan §2.8).
+  let saved = $state([]);
+  let savedSel = $state('');
+  let savedError = $state('');
+
+  async function refreshSaved() {
+    try {
+      const rows = await listSavedFilters();
+      saved = (rows || []).filter((s) => s.scope === 'match');
+      if (savedSel && !saved.some((s) => String(s.id) === savedSel)) savedSel = '';
+    } catch (e) {
+      savedError = errText(e);
+    }
+  }
+
   $effect(() => {
-    let live = true;
-    Promise.all([getRounds(id), getScoreboard(id, 'kills', true)])
-      .then(([r, sb]) => {
-        if (!live) return;
-        rounds = r || [];
-        players = sb || [];
-      })
-      .catch((e) => {
-        if (live) listError = errText(e);
-      });
-    return () => (live = false);
+    refreshSaved();
   });
 
-  // Refetch only when filters change — a 50k fetch is a few MB, so no
-  // per-keystroke refetch (the controls are selects, not inputs).
+  // Refetch only when the filter object changes — a 50k fetch is a few MB,
+  // so no per-keystroke refetch (the controls commit on change/blur).
   $effect(() => {
     const f = {
       matchId: id,
-      round: roundF,
-      kind: kindF,
-      steamId: steamF,
+      round: typeof filter.round === 'number' ? filter.round : -1,
+      kind: filter.kind || '',
+      steamId: filter.steamId || '',
+      weapon: filter.weapon || '',
+      tickFrom: Number(filter.tickFrom) || 0,
+      tickTo: Number(filter.tickTo) || 0,
+      dmgMin: Number(filter.dmgMin) || 0,
+      dmgMax: Number(filter.dmgMax) || 0,
+      distanceMax: Number(filter.distanceMax) || 0,
+      headshotOnly: !!filter.headshotOnly,
+      bbox: filter.bbox || undefined,
       offset: 0,
       limit: 50000, // store hard cap
     };
@@ -106,10 +111,63 @@
     return e.message || String(e);
   }
 
-  function resetFilters() {
-    roundF = -1;
-    kindF = '';
-    steamF = '';
+  function onFilterChange(next) {
+    filter = next;
+  }
+
+  // --- Saved presets ---------------------------------------------------------
+  function applySaved() {
+    const s = saved.find((x) => String(x.id) === savedSel);
+    if (!s) return;
+    try {
+      const parsed = JSON.parse(s.filterJson || '{}');
+      filter = { ...filter, ...parsed, round: typeof parsed.round === 'number' ? parsed.round : -1 };
+      savedError = '';
+    } catch (e) {
+      savedError = 'Saved filter is not valid JSON: ' + errText(e);
+    }
+  }
+
+  async function saveCurrent() {
+    const name = prompt('Save current filter as:');
+    if (!name) return;
+    try {
+      // Match-scope preset: the extended filter minus matchId/offset/limit —
+      // applying it later rebinds to the match being viewed.
+      const { round, kind, steamId, weapon, tickFrom, tickTo, dmgMin, dmgMax, distanceMax, headshotOnly, bbox } = filter;
+      const json = JSON.stringify({
+        round,
+        kind,
+        steamId,
+        weapon,
+        tickFrom,
+        tickTo,
+        dmgMin,
+        dmgMax,
+        distanceMax,
+        headshotOnly,
+        bbox,
+      });
+      const row = await saveFilter(name, 'match', json);
+      await refreshSaved();
+      if (row) savedSel = String(row.id);
+      savedError = '';
+    } catch (e) {
+      savedError = errText(e);
+    }
+  }
+
+  async function removeSaved() {
+    const s = saved.find((x) => String(x.id) === savedSel);
+    if (!s) return;
+    try {
+      await deleteSavedFilter(s.id);
+      savedSel = '';
+      savedError = '';
+      await refreshSaved();
+    } catch (e) {
+      savedError = errText(e);
+    }
   }
 
   function onScroll(e) {
@@ -166,6 +224,16 @@
     setPendingSeek({ tick: ev.tick });
     nav(`/replay/${id}`);
   }
+
+  // Profile icon on a row → cross-match profile (#/player/:steamid).
+  function isSteam(s) {
+    return /^\d{17}$/.test(s || '');
+  }
+
+  function watchProfile(steam, e) {
+    e.stopPropagation();
+    nav(`/player/${steam}`);
+  }
 </script>
 
 <div class="view timeline-view">
@@ -173,35 +241,32 @@
     <button class="btn" onclick={() => nav(`/match/${id}`)}>← Match</button>
     <h1>Timeline</h1>
     <div class="spacer"></div>
-    <div class="filter-bar" role="group" aria-label="Event filters">
-      <label class="sr-only" for="tl-round">Round</label>
-      <select class="input" id="tl-round" bind:value={roundF}>
-        <option value={-1}>All rounds</option>
-        {#each rounds as r (r.number)}
-          <option value={r.number}>Round {r.number}</option>
+    <div class="filter-bar filt-saved" role="group" aria-label="Saved filters">
+      <label class="sr-only" for="tl-saved">Saved filter</label>
+      <select class="input" id="tl-saved" value={savedSel} onchange={(e) => (savedSel = e.currentTarget.value)}>
+        <option value="">Saved filters…</option>
+        {#each saved as s (s.id)}
+          <option value={String(s.id)}>{s.name}</option>
         {/each}
       </select>
-
-      <label class="sr-only" for="tl-kind">Kind</label>
-      <select class="input" id="tl-kind" bind:value={kindF}>
-        <option value="">All kinds</option>
-        {#each KINDS as k (k)}
-          <option value={k}>{k}</option>
-        {/each}
-      </select>
-
-      <label class="sr-only" for="tl-player">Player</label>
-      <select class="input" id="tl-player" bind:value={steamF}>
-        <option value="">All players</option>
-        {#each players as p (p.steamId)}
-          <option value={p.steamId}>{p.name}</option>
-        {/each}
-      </select>
-
-      <button class="btn" onclick={resetFilters}>Reset</button>
-      <span class="muted num">{events.length} events</span>
+      <button class="btn small" disabled={!savedSel} onclick={applySaved}>Apply</button>
+      <button
+        class="btn small"
+        disabled={!savedSel}
+        title="Delete the selected saved filter"
+        onclick={removeSaved}
+      >✕</button>
+      <button class="btn small" onclick={saveCurrent} title="Save the current filter as a preset">Save</button>
     </div>
+    <span class="muted num">{events.length} events</span>
   </header>
+
+  <div class="filter-wrap">
+    <FilterBar {id} filter={filter} onchange={onFilterChange} />
+    {#if savedError}
+      <p class="error" role="alert">{savedError}</p>
+    {/if}
+  </div>
 
   {#if listError}
     <p class="error" role="alert">{listError}</p>
@@ -221,7 +286,11 @@
             class="vrow"
             class:active={selected?.id === ev.id}
             style="top:{(start + i) * ROW_H}px"
-            onclick={() => select(ev)}
+            onclick={(e) => {
+              if (e.target instanceof Element && e.target.closest('.vrow-play, .filt-prof'))
+                return;
+              select(ev);
+            }}
           >
             <span
               class="vrow-play"
@@ -238,9 +307,37 @@
             <span class="mono tick">{ev.tick}</span>
             <span class="chip round-chip">R{ev.round}</span>
             <span class="chip kind">{ev.kind}</span>
-            <span class="name atk">{ev.attackerName || '—'}</span>
+            <span class="name atk"
+              >{ev.attackerName || '—'}{#if isSteam(ev.attacker)}
+                <span
+                  class="filt-prof"
+                  role="button"
+                  tabindex="-1"
+                  title="Open {ev.attackerName} profile"
+                  aria-label="Open {ev.attackerName} profile"
+                  onclick={(e) => watchProfile(ev.attacker, e)}
+                  onkeydown={(e) =>
+                    (e.key === 'Enter' || e.key === ' ') &&
+                    (e.preventDefault(), watchProfile(ev.attacker, e))}>◉</span
+                >
+              {/if}</span
+            >
             <span class="mono weapon">{ev.weapon || ''}</span>
-            <span class="name vic">{ev.victimName || '—'}</span>
+            <span class="name vic"
+              >{ev.victimName || '—'}{#if isSteam(ev.victim)}
+                <span
+                  class="filt-prof"
+                  role="button"
+                  tabindex="-1"
+                  title="Open {ev.victimName} profile"
+                  aria-label="Open {ev.victimName} profile"
+                  onclick={(e) => watchProfile(ev.victim, e)}
+                  onkeydown={(e) =>
+                    (e.key === 'Enter' || e.key === ' ') &&
+                    (e.preventDefault(), watchProfile(ev.victim, e))}>◉</span
+                >
+              {/if}</span
+            >
             <span class="flags">
               {#each flagsOf(ev) as [code, title] (code)}
                 <span class="chip flag" {title}>{code}</span>

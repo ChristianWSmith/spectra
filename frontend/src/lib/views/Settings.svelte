@@ -1,10 +1,30 @@
 <script>
   import { onMount } from 'svelte';
-  import { getVersion, getDataInfo } from '../services.js';
+  import {
+    getVersion,
+    getDataInfo,
+    getAnalysisConfig,
+    setAnalysisConfig,
+    recomputeAnalysis,
+    listMatches,
+  } from '../services.js';
+  import { fmtDate } from '../fmt.js';
 
   let version = $state('…');
   let info = $state(null);
   let error = $state('');
+
+  // Analysis rules (plan §2.1 / §10 DoD: classification + trade window
+  // configurable from Settings; rule_version recorded on save).
+  let cfg = $state({ tradeWindowS: 5, ecoFullBuy: 4000, ecoForce: 2000, ruleVersion: 0 });
+  let cfgError = $state('');
+  let cfgMsg = $state('');
+  let cfgLoading = $state(true);
+
+  // Per-match recompute list (recomputeAnalysis is per-match, never global).
+  let readyMatches = $state([]);
+  let matchesError = $state('');
+  let recomputeState = $state({}); // matchId → 'busy' | 'ok' | error text
 
   function errText(e) {
     if (e == null) return 'unknown error';
@@ -19,7 +39,105 @@
     getDataInfo()
       .then((d) => (info = d))
       .catch((e) => (error = errText(e)));
+    getAnalysisConfig()
+      .then((c) => {
+        cfg = c || cfg;
+        cfgLoading = false;
+      })
+      .catch((e) => {
+        cfgError = errText(e);
+        cfgLoading = false;
+      });
+    listMatches('', 'extracted_at', false)
+      .then((rows) => {
+        readyMatches = (rows || []).filter((m) => m.status === 'ready');
+      })
+      .catch((e) => {
+        matchesError = errText(e);
+      });
   });
+
+  async function saveCfg() {
+    cfgError = '';
+    cfgMsg = '';
+    try {
+      const saved = await setAnalysisConfig({
+        tradeWindowS: Number(cfg.tradeWindowS) || 0,
+        ecoFullBuy: Number(cfg.ecoFullBuy) || 0,
+        ecoForce: Number(cfg.ecoForce) || 0,
+      });
+      cfg = saved || cfg;
+      cfgMsg =
+        `Saved — rule_version ${cfg.ruleVersion}. Stored rows keep the version they ` +
+        'were computed with; run a recompute below to apply the new rules.';
+    } catch (e) {
+      cfgError = errText(e);
+    }
+  }
+
+  async function recompute(m) {
+    if (
+      !confirm(
+        `Recompute analysis for ${m.map || 'match #' + m.id} (${fmtDate(m.extractedAt)}) ` +
+          'under the current rules? Stored derived rows for this match are rebuilt.',
+      )
+    ) {
+      return;
+    }
+    recomputeState = { ...recomputeState, [m.id]: 'busy' };
+    try {
+      await recomputeAnalysis(m.id);
+      recomputeState = { ...recomputeState, [m.id]: 'ok' };
+    } catch (e) {
+      recomputeState = { ...recomputeState, [m.id]: errText(e) };
+    }
+  }
+
+  // Hand-written metric definitions (plan §9.1). Keep the wording aligned
+  // with what internal/analytics computes — generic where the exact rule is
+  // configurable; every rule set is versioned via analysis_config/rule_version.
+  const DEFINITIONS = [
+    {
+      term: 'KAST%',
+      inferred: false,
+      text: 'Share of rounds where the player recorded a Kill, an Assist, was Traded after their death, or Survived the round. Stored per player-round (player_round_stats); the “traded” part follows the trade window from analysis_config / rule_version.',
+    },
+    {
+      term: 'Trade window',
+      inferred: false,
+      text: 'Seconds after a death during which a teammate’s kill counts as a trade (default 5 s, configurable under Analysis rules). Trade rate, trade opportunities and untraded deaths all use this window. Changing it bumps rule_version.',
+    },
+    {
+      term: 'Buy classes (full / force / eco / save / pistol / bonus)',
+      inferred: false,
+      text: 'Derived per side from the round-start equipment value against the configured thresholds (full buy ≥ ecoFullBuy, force ≥ ecoForce, below that = eco/save), plus pistol detection by round number and side-switch pattern, and bonus/save by spend behaviour. Each round stores its label, explanation and rule_version — hover a round chip for the exact rule text that produced it.',
+    },
+    {
+      term: 'Loss bonus (reconstructed)',
+      inferred: true,
+      text: 'A team’s loss-bonus money is reconstructed from consecutive round losses rather than read from a raw net message, so it is labelled reconstructed/inferred (fact/inference badge). The base amounts follow the game rules, not a configurable threshold.',
+    },
+    {
+      term: 'Trade opportunities missed (inferred)',
+      inferred: true,
+      text: 'Heuristic v1: a player died while a living teammate was near and alive within the trade window but did not kill the attacker in time. It is an inference from positions/timing, not a demo fact — treat counts as indicative (plan §2.3).',
+    },
+    {
+      term: 'Damage conversion',
+      inferred: false,
+      text: 'Share of a player’s dealt damage that contributed to a kill by that player (damage preceding a kill in the same engagement), derived from stored events rather than reported by the game.',
+    },
+    {
+      term: 'ADR',
+      inferred: false,
+      text: 'Average damage per round = total damage ÷ rounds played, from the player aggregates (player_stats). Friendly-fire damage is reported separately in the Combat tab.',
+    },
+    {
+      term: 'Consistency σ',
+      inferred: false,
+      text: 'Standard deviation of per-match ADR across a player’s match history, shown as “ADR ± σ” on profiles: a spread, not an error bar. Lower σ = steadier performance (PRD §5.13).',
+    },
+  ];
 </script>
 
 <div class="view">
@@ -64,5 +182,127 @@
     {:else if !error}
       <p class="muted">Loading…</p>
     {/if}
+  </section>
+
+  <section class="panel">
+    <h2>Analysis rules</h2>
+    {#if cfgError}
+      <p class="error" role="alert">{cfgError}</p>
+    {/if}
+    {#if cfgLoading && !cfgError}
+      <p class="muted">Loading…</p>
+    {/if}
+    <div class="sett-rules">
+      <div class="sett-field">
+        <label for="sett-trade">Trade window (seconds)</label>
+        <input
+          class="input"
+          id="sett-trade"
+          type="number"
+          min="1"
+          max="30"
+          step="0.5"
+          bind:value={cfg.tradeWindowS}
+        />
+        <span class="muted sett-hint">Kill after a teammate death within this window = trade (default 5).</span>
+      </div>
+      <div class="sett-field">
+        <label for="sett-full">Full-buy threshold (equip $)</label>
+        <input
+          class="input"
+          id="sett-full"
+          type="number"
+          min="0"
+          step="100"
+          bind:value={cfg.ecoFullBuy}
+        />
+        <span class="muted sett-hint">Team equipment ≥ this = full buy (default 4000).</span>
+      </div>
+      <div class="sett-field">
+        <label for="sett-force">Force threshold (equip $)</label>
+        <input
+          class="input"
+          id="sett-force"
+          type="number"
+          min="0"
+          step="100"
+          bind:value={cfg.ecoForce}
+        />
+        <span class="muted sett-hint">Team equipment ≥ this = force buy (default 2000).</span>
+      </div>
+    </div>
+    <div class="row-between">
+      <span class="muted">Active rule_version: <strong class="mono">{cfg.ruleVersion}</strong></span>
+      <button class="btn primary" onclick={saveCfg}>Save rules</button>
+    </div>
+    {#if cfgMsg}
+      <p class="sett-msg" role="status">{cfgMsg}</p>
+    {/if}
+    <p class="muted">
+      Saving stores the rules and bumps <span class="mono">rule_version</span>;
+      it does <strong>not</strong> rewrite stored rows — recompute explicitly below.
+    </p>
+
+    <h3 class="sett-sub">Recompute analysis…</h3>
+    <p class="muted">
+      Per match, under the current rules (classification, KAST, clutches,
+      engagements, career rollups refresh too).
+    </p>
+    {#if matchesError}
+      <p class="error" role="alert">{matchesError}</p>
+    {/if}
+    <div class="sett-matches">
+      {#each readyMatches as m (m.id)}
+        {@const state = recomputeState[m.id]}
+        <div class="sett-match-row">
+          <span>
+            <span class="chip side ct">#{m.id}</span>
+            {m.map || '—'} · {m.scoreCT}–{m.scoreT} · {fmtDate(m.extractedAt)}
+          </span>
+          <span class="row-actions">
+            {#if state === 'busy'}
+              <span class="muted">recomputing…</span>
+            {:else if state === 'ok'}
+              <span class="chip status ready">done</span>
+            {:else if state}
+              <span class="error-text" title={state}>failed</span>
+              <button class="btn small" onclick={() => recompute(m)}>Retry</button>
+            {:else}
+              <button class="btn small" onclick={() => recompute(m)}>Recompute</button>
+            {/if}
+          </span>
+        </div>
+      {:else}
+        <p class="muted">
+          {matchesError ? 'Matches unavailable.' : 'No ready matches to recompute yet.'}
+        </p>
+      {/each}
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Metric definitions</h2>
+    <p class="muted">
+      Every derived or heuristic number in the app, with its rule. Thresholds
+      live in <span class="mono">analysis_config</span> and are versioned —
+      stored rows keep the <span class="mono">rule_version</span> they were
+      computed with.
+    </p>
+    <div class="sett-defs">
+      {#each DEFINITIONS as d (d.term)}
+        <details>
+          <summary>
+            {d.term}
+            {#if d.inferred}
+              <span
+                class="chip sett-inferred"
+                title="Heuristic/reconstructed — not a raw demo fact (plan §6.1)"
+              >inferred</span>
+            {/if}
+          </summary>
+          <p>{d.text}</p>
+        </details>
+      {/each}
+    </div>
   </section>
 </div>

@@ -7,6 +7,8 @@
     getWarnings,
     getGenericHistogram,
     getGenericEvents,
+    getCombatStats,
+    getRoundClasses,
     listMatches,
     setPendingTimelineFilter,
     setPendingSeek,
@@ -22,14 +24,23 @@
     prettyJson,
   } from '../fmt.js';
   import RoundStrip from '../components/RoundStrip.svelte';
+  import Economy from './Economy.svelte';
+  import Utility from './Utility.svelte';
+  import Heatmaps from './Heatmaps.svelte';
+  import Combat from './Combat.svelte';
   import StatusChip from '../components/StatusChip.svelte';
 
   let { id = 0, nav = () => {} } = $props();
 
-  const TABS = ['Overview', 'Scoreboard', 'Rounds', 'Timeline', 'Chat', 'Raw'];
+  const TABS = ['Overview', 'Scoreboard', 'Rounds', 'Economy', 'Utility', 'Heatmaps', 'Combat', 'Timeline', 'Chat', 'Raw'];
 
   // GetScoreboard sort whitelist (mirror of the Go store's map). Columns
   // follow plan §2; combined columns sort by their primary key.
+  // KAST% lives in the analytics pass (getCombatStats → kastPct), not the
+  // scoreboard store — its sort is applied client-side (see viewRows).
+  const KAST_DEF =
+    'KAST% — rounds with a Kill, Assist, traded death or survival ÷ rounds played (player_round_stats; trade window from analysis_config / rule_version).';
+
   const SCORE_COLS = [
     { key: 'name', label: 'Name' },
     { key: 'side', label: 'Side' },
@@ -37,6 +48,7 @@
     { key: 'deaths', label: 'D' },
     { key: 'assists', label: 'A' },
     { key: 'adr', label: 'ADR' },
+    { key: 'kast', label: 'KAST%', title: KAST_DEF },
     { key: 'hs_pct', label: 'HS%' },
     { key: 'kd', label: 'K/D' },
     { key: 'kda', label: 'KDA' },
@@ -78,6 +90,16 @@
   let rawLimit = $state(100);
   let error = $state('');
 
+  // Analytics (M3): per-player KAST for the scoreboard column + per-round
+  // classification chips for the Rounds tab. Both are optional — failures
+  // surface inline per section instead of breaking the whole match view.
+  let combatBySteam = $state(new Map());
+  let combatError = $state('');
+  let classByRound = $state(new Map());
+  let classError = $state('');
+  // Rounds-tab compare picker: round numbers (max 4, non-warmup only).
+  let compareSel = $state([]);
+
   // Match header + rounds + summary. Scoreboard has its own effect below
   // (sort changes must not re-trigger this one).
   $effect(() => {
@@ -96,10 +118,13 @@
     return () => (live = false);
   });
 
-  // Scoreboard fetch: initial load + every sort change.
+  // Scoreboard fetch: initial load + every sort change. KAST% is not a
+  // store column — when it is the sort key we keep the current rows and
+  // sort them client-side against combatBySteam (viewRows).
   $effect(() => {
     sortKey;
     desc;
+    if (sortKey === 'kast') return;
     let live = true;
     getScoreboard(id, sortKey, desc)
       .then((sb) => {
@@ -110,6 +135,49 @@
       });
     return () => (live = false);
   });
+
+  // Per-player KAST% (CombatStatRow.kastPct) for the scoreboard column.
+  $effect(() => {
+    let live = true;
+    combatError = '';
+    getCombatStats(id)
+      .then((rows) => {
+        if (live) {
+          combatBySteam = new Map((rows || []).map((r) => [r.steamId, r]));
+        }
+      })
+      .catch((e) => {
+        if (live) combatError = errText(e);
+      });
+    return () => (live = false);
+  });
+
+  // Round classification chips (label + explanation + rule version).
+  $effect(() => {
+    let live = true;
+    classError = '';
+    getRoundClasses(id)
+      .then((rows) => {
+        if (live) classByRound = new Map((rows || []).map((r) => [r.round, r]));
+      })
+      .catch((e) => {
+        if (live) classError = errText(e);
+      });
+    return () => (live = false);
+  });
+
+  const viewRows = $derived.by(() => {
+    if (sortKey !== 'kast') return scoreboard;
+    const dir = desc ? -1 : 1;
+    return [...scoreboard].sort(
+      (a, b) => dir * ((kastPct(a) ?? -1) - (kastPct(b) ?? -1)),
+    );
+  });
+
+  function kastPct(p) {
+    const row = combatBySteam.get(p.steamId);
+    return row && Number.isFinite(row.kastPct) ? row.kastPct : null;
+  }
 
   $effect(() => {
     if (tab !== 'Chat') return;
@@ -173,6 +241,10 @@
     switch (col.key) {
       case 'adr':
         return fmt1(p.adr);
+      case 'kast': {
+        const v = kastPct(p);
+        return v == null ? '—' : fmtPercent(v);
+      }
       case 'hs_pct':
         return fmtPercent(p.hsPct);
       case 'kd':
@@ -192,6 +264,32 @@
   function openReplay() {
     setPendingSeek(null); // clear any stale seek; the whole match plays from 0
     nav(`/replay/${id}`);
+  }
+
+  // SteamID64 guard — bots/short ids never match #/player/(\d{17}).
+  function isSteam(s) {
+    return /^\d{17}$/.test(s || '');
+  }
+
+  // --- Rounds-tab compare picker (max 4, non-warmup) ------------------------
+  function toggleCompare(n) {
+    if (compareSel.includes(n)) compareSel = compareSel.filter((x) => x !== n);
+    else if (compareSel.length < 4) compareSel = [...compareSel, n];
+  }
+
+  // sessionStorage contract (M3 WAVE B): key 'spectra:compare-rounds' holds
+  // {matchId: number, rounds: number[]}. Written here right before navigating
+  // to #/compare/:id; CompareRounds reads + clears it once on init.
+  function goCompare() {
+    try {
+      sessionStorage.setItem(
+        'spectra:compare-rounds',
+        JSON.stringify({ matchId: id, rounds: [...compareSel] }),
+      );
+      nav(`/compare/${id}`);
+    } catch (e) {
+      error = errText(e);
+    }
   }
 
   function selectRaw(name) {
@@ -452,13 +550,16 @@
         </dl>
       </section>
     {:else if tab === 'Scoreboard'}
+      {#if combatError}
+        <p class="error" role="alert">KAST% unavailable: {combatError}</p>
+      {/if}
       <div class="table-scroll">
         <table class="data-table scoreboard">
           <thead>
             <tr>
               <th scope="col"><span class="sr-only">Expand</span></th>
               {#each SCORE_COLS as col (col.key)}
-                <th scope="col" class="num">
+                <th scope="col" class="num" class:cmp-def={col.title} title={col.title || ''}>
                   <button
                     class="th-sort"
                     class:sorted={sortKey === col.key}
@@ -472,10 +573,16 @@
             </tr>
           </thead>
           <tbody>
-            {#each scoreboard as p (p.steamId)}
+            {#each viewRows as p (p.steamId)}
               <tr
                 class="clickable"
-                onclick={() => openPlayerTimeline(p.steamId)}
+                onclick={(e) => {
+                  // Svelte 5 delegated events: child stopPropagation does not
+                  // reliably stop this row handler — guard on target instead.
+                  if (e.target instanceof Element && e.target.closest('button, input, a'))
+                    return;
+                  openPlayerTimeline(p.steamId);
+                }}
                 onkeydown={(e) => e.key === 'Enter' && openPlayerTimeline(p.steamId)}
                 tabindex="0"
               >
@@ -492,7 +599,18 @@
                 {#each SCORE_COLS as col (col.key)}
                   {#if col.key === 'name'}
                     <td class="num name-cell"
-                      >{p.name}{#if p.isBot}<span class="chip">bot</span>{/if}</td
+                      >{#if isSteam(p.steamId)}
+                        <button
+                          class="btn ghost small name-link"
+                          title="Open {p.name}'s profile"
+                          onclick={(e) => {
+                            e.stopPropagation();
+                            nav(`/player/${p.steamId}`);
+                          }}
+                        >{p.name}</button>
+                      {:else}
+                        {p.name}
+                      {/if}{#if p.isBot}<span class="chip">bot</span>{/if}</td
                     >
                   {:else if col.key === 'side'}
                     <td class="num"
@@ -548,12 +666,25 @@
         </table>
       </div>
     {:else if tab === 'Rounds'}
+      {#if classError}
+        <p class="error" role="alert">Round classes unavailable: {classError}</p>
+      {/if}
       <div class="table-scroll">
         <table class="data-table">
           <thead>
             <tr>
+              <th
+                scope="col"
+                class="num cmp-cmp-col"
+                title="Tick rounds to compare (max 4 non-warmup rounds)"
+              >Cmp</th>
               <th scope="col" class="num">№</th>
               <th scope="col">Winner</th>
+              <th
+                scope="col"
+                class="cmp-def"
+                title="Buy/round classification (pistol/anti-eco/eco/force/full/bonus/save) with the rule text and rule_version — hover a chip"
+              >Class</th>
               <th scope="col">Reason</th>
               <th scope="col" class="num">Duration</th>
               <th scope="col">Site</th>
@@ -566,17 +697,45 @@
           </thead>
           <tbody>
             {#each rounds as r (r.number)}
+              {@const cls = classByRound.get(r.number)}
               <tr
                 class="clickable"
-                onclick={() => nav(`/match/${id}/round/${r.number}`)}
+                onclick={(e) => {
+                  if (e.target instanceof Element && e.target.closest('input, button, a'))
+                    return;
+                  nav(`/match/${id}/round/${r.number}`);
+                }}
                 onkeydown={(e) => e.key === 'Enter' && nav(`/match/${id}/round/${r.number}`)}
                 tabindex="0"
               >
+                <td class="num cmp-cmp-col" onclick={(e) => e.stopPropagation()}>
+                  {#if !r.warmup}
+                    <input
+                      type="checkbox"
+                      class="cmp-cb"
+                      checked={compareSel.includes(r.number)}
+                      disabled={compareSel.length >= 4 && !compareSel.includes(r.number)}
+                      aria-label="Compare round {r.number}"
+                      onchange={() => toggleCompare(r.number)}
+                    />
+                  {/if}
+                </td>
                 <td class="num">{r.number}{#if r.warmup}<span class="chip">wu</span>{/if}</td>
                 <td>
                   <span class="chip side {r.winner || 'none'}">
                     {r.winner ? r.winner.toUpperCase() : '—'}
                   </span>
+                </td>
+                <td>
+                  {#if cls}
+                    <span
+                      class="chip cmp-class"
+                      title="{cls.explanation || 'classified'} (rule v{cls.ruleVersion}, confidence {Math.round((cls.confidence || 0) * 100)}%)"
+                      >{cls.label}</span
+                    >
+                  {:else}
+                    <span class="muted">—</span>
+                  {/if}
                 </td>
                 <td>{r.reason || '—'}</td>
                 <td class="num">{fmtDuration(r.durationS)}</td>
@@ -597,6 +756,24 @@
           </tbody>
         </table>
       </div>
+      {#if compareSel.length > 0}
+        <p class="cmp-hint">
+          {compareSel.length} of 4 rounds selected — warmup rounds cannot be compared.
+        </p>
+      {/if}
+      {#if compareSel.length >= 2}
+        <button class="btn primary cmp-float" onclick={goCompare}>
+          Compare {compareSel.length} rounds ▸
+        </button>
+      {/if}
+    {:else if tab === 'Economy'}
+      <Economy {id} {nav} />
+    {:else if tab === 'Utility'}
+      <Utility {id} />
+    {:else if tab === 'Heatmaps'}
+      <Heatmaps {id} {nav} />
+    {:else if tab === 'Combat'}
+      <Combat {id} {nav} />
     {:else if tab === 'Chat'}
       <div class="toolbar">
         <label for="chat-round">Round</label>

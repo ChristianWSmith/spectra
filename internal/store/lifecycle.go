@@ -421,6 +421,11 @@ func (s *Store) DeleteMatchData(id int64) error {
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("store: delete match data: %w", err)
 	}
+	// The deleted match's rows no longer exist — refresh the career rollup
+	// so profiles stay correct (M3: LibraryService.DeleteMatch → rebuild).
+	if err := s.RebuildCareer(); err != nil {
+		return err
+	}
 	return nil
 }
 
