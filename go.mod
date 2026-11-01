@@ -7,6 +7,7 @@ require (
 	github.com/golang/geo v0.0.0-20230421003525-6adc56603217
 	github.com/klauspost/compress v1.20.3
 	github.com/markus-wa/demoinfocs-golang/v6 v6.0.0-rc.1
+	github.com/pierrec/lz4/v4 v4.1.33
 	github.com/pion/opus v0.1.1-0.20261026214112-e7b8aa55508c
 	github.com/wailsapp/wails/v3 v3.0.0
 	google.golang.org/protobuf v1.36.12

@@ -12,6 +12,7 @@
   import Explorer from './lib/views/Explorer.svelte';
   import Reports from './lib/views/Reports.svelte';
   import CommandPalette from './lib/components/CommandPalette.svelte';
+  import MapPackPrompt from './lib/components/MapPackPrompt.svelte';
   import PlayerProfile from './lib/views/PlayerProfile.svelte';
   import CompareRounds from './lib/views/CompareRounds.svelte';
 
@@ -24,6 +25,7 @@
   //   #/replay/:id
   //   #/settings
   let route = $state(parseHash(location.hash));
+  let mapPackPrompt = $state(null); // MapPackPrompt instance (bind:this)
 
   function parseHash(hash) {
     const h = hash.replace(/^#/, '') || '/library';
@@ -50,6 +52,10 @@
   onMount(() => {
     const onChange = () => (route = parseHash(location.hash));
     window.addEventListener('hashchange', onChange);
+
+    // One-time CS2 radar-extraction prompt: detection + decision persist
+    // in Go (MapPackPrompt decides whether to show; never throws).
+    mapPackPrompt?.maybePrompt();
 
     // Report the window size to Go (debounced) whenever the user resizes,
     // so the next launch can restore it. See prefs.go on the Go side.
@@ -160,4 +166,5 @@
     {/if}
   </main>
   <CommandPalette {nav} />
+  <MapPackPrompt bind:this={mapPackPrompt} />
 </div>

@@ -92,11 +92,15 @@ it rather than archive it.
 ## 2. Data & asset gaps
 
 - **Radar art**: `de_cache/radar.svg` is an original schematic, not Valve
-  art; real pixels are user-supplied by design (acquisition posture lives
-  in `frontend/public/maps/README.md` — Valve IP never ships in releases).
-- **Map packs**: only `de_cache` is complete (transform + schematic);
-  `de_mirage` has constants only. Add maps from
-  `resource/overviews/<map>.txt`.
+  art; real pixels come from the in-app extractor (Settings → Map packs →
+  extracts from the user's local CS2 into the data dir — Valve IP never
+  ships in releases; `internal/mappack`). Bundled placeholders remain
+  user-suppliable (acquisition posture in
+  `frontend/public/maps/README.md`).
+- **Map packs**: bundled packs are still only `de_cache` (transform +
+  schematic) and `de_mirage` (transform); the extractor covers every
+  official map at runtime from `resource/overviews/<map>.txt` in the
+  user's install.
 - **Bomb-site region polygons** — extractable from nav/vmap; unblocks
   pattern detection, better heatmaps, and clutch/site analytics.
 - **Per-round money columns are 0** — `item_equip` payloads carry no

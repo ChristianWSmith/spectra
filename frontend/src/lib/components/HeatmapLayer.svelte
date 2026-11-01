@@ -26,7 +26,9 @@
     }
     let live = true;
     const img = new Image();
-    img.src = `/maps/${encodeURIComponent(map)}/${meta.radar.file}`;
+    // pack.base: /api/mappack/<map> for extracted packs, /maps/<map> for
+    // bundled (loadMapPack resolves the source).
+    img.src = `${pack.base || '/maps/' + encodeURIComponent(map)}/${meta.radar.file}`;
     img
       .decode()
       .then(() => {

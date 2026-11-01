@@ -19,6 +19,14 @@ Palette searching status,Command palette,"""Searching…"" status text shown bel
 Palette section header,Command palette,"Small heading above each result group such as ""Actions"", ""Matches"", ""Players"", ""Saved filters"", ""Metrics"", or ""Saved queries"".",CommandPalette.svelte:cp-section
 Palette shortcut footer,Command palette,"Footer strip of keyboard hints reading ""↑↓ move"", ""Enter run"", ""Esc close"", and ""Ctrl/⌘K toggle"".",CommandPalette.svelte:cp-foot
 Theme toggle action,Command palette,"Palette action row labeled ""Toggle theme (now dark/light)"" that flips the app theme when run.",CommandPalette.svelte:toggleTheme
+Choose folder button,Map pack prompt,"""Choose folder…"" button on the extraction prompt opening the native folder picker for a non-Steam or custom CS2 install.",MapPackPrompt.svelte:pickFolder
+CS2 install path line,Map pack prompt,Monospace path of the detected CS2 install shown on the extraction prompt.,MapPackPrompt.svelte:pickedDir
+Data-handling note,Map pack prompt,"Fine print on the extraction prompt: images are read from the user's game files, stay in Spectra's data folder, and nothing Valve ships with the app.",MapPackPrompt.svelte:mp-fine
+Extract radar images button,Map pack prompt,"""Extract radar images"" primary button on the extraction prompt that runs the local extraction and shows ""Extracting…"" while busy.",MapPackPrompt.svelte:accept
+Extraction prompt backdrop,Map pack prompt,"Dimmed full-window backdrop behind the extraction prompt; clicking it outside the panel closes the prompt (except while extracting).",MapPackPrompt.svelte:cp-back
+Extraction prompt panel,Map pack prompt,"Modal dialog shown once when a local CS2 install is found, offering to extract official radar images locally.",MapPackPrompt.svelte:mp-prompt
+Extraction result line,Map pack prompt,Status line on the extraction prompt reporting how many map packs were extracted and any per-map failures.,MapPackPrompt.svelte:mp-result
+Not now button,Map pack prompt,"""Not now"" button on the extraction prompt that declines permanently (the prompt never returns).",MapPackPrompt.svelte:decline
 Check for Updates menu item,Native OS menu & dialogs,"""Check for Updates…"" item in the Help menu that triggers an immediate update check.",main.go:checkForUpdateNow
 Demo file picker dialog,Native OS menu & dialogs,"Native OS file-open dialog filtered to ""CS2 demos"" (*.dem;*.dem.zst) for selecting demos to import, opened from the Library import flow.",libraryservice.go:ImportDialog
 Help menu,Native OS menu & dialogs,"Native application menu submenu named ""Help"" in the OS menu bar.",main.go:appMenu
@@ -640,6 +648,11 @@ Audio self-test fail message,Settings — Audio & voice,"Red ""FAIL — …"" st
 Audio self-test pass message,Settings — Audio & voice,"Green ""PASS — AudioContext running at N Hz."" status in the Settings view audio panel.",Settings.svelte:sett-audio-ok
 Transcription deferred note,Settings — Audio & voice,Note in the Settings view audio panel stating local-whisper transcription is deferred from v1.,Settings.svelte:audioProbe
 Voice decode note,Settings — Audio & voice,Note in the Settings view audio panel describing on-demand Opus decode with no cache and 16 kHz mono PCM.,Settings.svelte:audioProbe
+Choose folder button,Settings — Map packs,"""Choose folder…"" button in the Settings map-packs panel opening the native picker for a manual CS2 install path.",Settings.svelte:mpChooseFolder
+CS2 install facts,Settings — Map packs,"Fact list in the Settings map-packs panel showing the detected CS2 path (with a ""manual"" chip) and the extracted pack names.",Settings.svelte:mpStatus
+Extract radar images button,Settings — Map packs,"Primary Extracting…/Extract radar images button in the Settings map-packs panel that (re-)extracts all official-map radars idempotently.",Settings.svelte:doExtract
+Extraction status message,Settings — Map packs,Status line in the Settings map-packs panel reporting how many packs were extracted or what failed.,Settings.svelte:mpMsg
+Map packs panel,Settings — Map packs,"Panel in the Settings view explaining local radar extraction and showing detection status plus the extract controls.",Settings.svelte:mpStatus
 Install from path button,Settings — Plugins,Primary Installing…/Install from path button in the Settings view plugins panel that installs the entered plugin path.,Settings.svelte:doInstall
 No plugins message,Settings — Plugins,"""No plugins installed yet."" empty message in the Settings view plugins panel.",Settings.svelte:plugins
 Plugin error detail text,Settings — Plugins,Full validation error text shown under an invalid Settings view plugin row.,Settings.svelte:plugin-err

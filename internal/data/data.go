@@ -48,6 +48,19 @@ func TempDir() string {
 	return dir
 }
 
+// MapsDir returns the extracted map-pack root
+// ($XDG_DATA_HOME/spectra/maps), creating it if needed. Each map gets a
+// <name>/ subdirectory (meta.json + radar.png) — the same on-disk shape
+// as frontend/public/maps, but written by the in-app CS2 extractor and
+// never committed (Valve IP stays local; see internal/mappack).
+func MapsDir() string {
+	dir := filepath.Join(xdg.DataHome, appName, "maps")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return dir
+	}
+	return dir
+}
+
 // EnsureDirs creates every directory the app writes to. Called once at
 // startup so later call sites can assume paths exist.
 func EnsureDirs() error {

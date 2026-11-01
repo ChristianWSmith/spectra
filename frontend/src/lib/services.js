@@ -16,6 +16,7 @@ import {
   AnalyticsService,
   ProfileService,
   VoiceService,
+  MapPackService,
 } from '../../bindings/github.com/ChristianWSmith/spectra';
 
 // --- AppService ---------------------------------------------------------------
@@ -320,3 +321,14 @@ export function renderReport(templateId, matchId, steamId, round) {
 export function reportDownloadURL(matchId, templateId, format) {
   return `/api/export/${matchId}/report?template=${encodeURIComponent(templateId)}&format=${format}`;
 }
+
+// --- MapPackService -----------------------------------------------------------
+// Radar extraction from the user's local CS2 install (Valve IP stays
+// local — see internal/mappack). Packs load through loadMapPack().
+
+export function getMapPackStatus() { return MapPackService.GetMapPackStatus(); }
+export function extractMapPacks(cs2Dir) { return MapPackService.ExtractMapPacks(cs2Dir || ''); }
+export function setMapPackPromptState(state, path) {
+  return MapPackService.SetMapPackPromptState(state || '', path || '');
+}
+export function chooseCS2Dir() { return MapPackService.ChooseCS2Dir(); }

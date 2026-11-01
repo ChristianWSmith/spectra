@@ -15,6 +15,7 @@
   import { createRenderer } from '../replay/renderer.js';
   import { attachReplayInput, snapshot } from '../replay/input.js';
   import { createVoiceEngine, fetchVoicePCM } from '../replay/audio.js';
+  import { loadMapPack } from '../components/mapxform.js';
 
   let { id = 0, nav = () => {} } = $props();
 
@@ -132,24 +133,20 @@
 
   async function loadPack(map) {
     if (!map) return { pack: null, img: null };
-    try {
-      const res = await fetch(`/maps/${encodeURIComponent(map)}/meta.json`);
-      if (!res.ok) return { pack: null, img: null };
-      const p = await res.json();
-      if (p && p.radar && p.radar.file) {
-        const img = new Image();
-        img.src = `/maps/${encodeURIComponent(map)}/${p.radar.file}`;
-        try {
-          await img.decode();
-          return { pack: p, img };
-        } catch {
-          return { pack: p, img: null };
-        }
+    // Shared loader: extracted pack (local CS2) wins over bundled.
+    const p = await loadMapPack(map);
+    if (!p || !p.meta) return { pack: null, img: null };
+    if (p.meta.radar && p.meta.radar.file) {
+      const img = new Image();
+      img.src = `${p.base}/${p.meta.radar.file}`;
+      try {
+        await img.decode();
+        return { pack: p.meta, img };
+      } catch {
+        return { pack: p.meta, img: null };
       }
-      return { pack: p, img: null };
-    } catch {
-      return { pack: null, img: null };
     }
+    return { pack: p.meta, img: null };
   }
 
   async function load() {

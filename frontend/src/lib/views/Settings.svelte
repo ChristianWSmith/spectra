@@ -11,6 +11,10 @@
     installPlugin,
     setPluginEnabled,
     removePlugin,
+    getMapPackStatus,
+    extractMapPacks,
+    setMapPackPromptState,
+    chooseCS2Dir,
   } from '../services.js';
   import { probeAudio } from '../replay/audio.js';
   import { fmtDate } from '../fmt.js';
@@ -29,13 +33,59 @@
 
   // Plugins: declarative bundles installed by
   // path; enable/disable/remove reflected on the next list — no restart.
-  let plugins = $state([]);
-  let pluginsError = $state('');
+  let plugins = $state([]);  let pluginsError = $state('');
   let pluginsLoading = $state(true);
   let installPath = $state('');
   let installBusy = $state(false);
   let pluginMsg = $state('');
   let pluginOp = $state({}); // plugin id → 'busy' | error text
+
+  // Map packs: radar extraction from a local CS2 install (Valve IP stays
+  // local — internal/mappack). Status loads on mount; extract re-runs
+  // idempotently after game updates.
+  let mpStatus = $state(null); // MapPackStatus
+  let mpBusy = $state(false);
+  let mpMsg = $state('');
+  let mpError = $state('');
+
+  async function refreshMapPacks() {
+    try {
+      mpStatus = await getMapPackStatus();
+    } catch (e) {
+      mpError = errText(e);
+    }
+  }
+
+  async function doExtract() {
+    mpBusy = true;
+    mpMsg = '';
+    mpError = '';
+    try {
+      const out = await extractMapPacks(mpStatus?.path || '');
+      const n = (out.maps || []).length;
+      const errs = out.errors || [];
+      if (n > 0 && !errs.length) mpMsg = `Extracted ${n} map pack${n === 1 ? '' : 's'}.`;
+      else if (n > 0) mpMsg = `Extracted ${n}, ${errs.length} failed: ${errs[0]}`;
+      else mpError = errs[0] || 'nothing extracted';
+      await refreshMapPacks();
+    } catch (e) {
+      mpError = errText(e);
+    } finally {
+      mpBusy = false;
+    }
+  }
+
+  async function mpChooseFolder() {
+    try {
+      const dir = await chooseCS2Dir();
+      if (dir) {
+        await setMapPackPromptState('', dir);
+        await refreshMapPacks();
+      }
+    } catch (e) {
+      mpError = errText(e);
+    }
+  }
 
   async function refreshPlugins() {
     pluginsLoading = true;
@@ -138,6 +188,7 @@
     getDataInfo()
       .then((d) => (info = d))
       .catch((e) => (error = errText(e)));
+    refreshMapPacks();
     getAnalysisConfig()
       .then((c) => {
         cfg = c || cfg;
@@ -282,6 +333,52 @@
     {:else if !error}
       <p class="muted">Loading…</p>
     {/if}
+  </section>
+
+  <section class="panel">
+    <h2>Map packs</h2>
+    <p class="muted">
+      Radar images and map transforms are extracted from your local
+      Counter-Strike 2 installation on this machine — nothing is uploaded,
+      and no Valve assets ship with the app.
+    </p>
+    {#if mpStatus}
+      <dl class="facts">
+        <div class="fact-wide">
+          <dt>CS2 install</dt>
+          <dd class="mono">
+            {mpStatus.found ? mpStatus.path : 'not found'}
+            {#if mpStatus.manual}<span class="chip">manual</span>{/if}
+          </dd>
+        </div>
+        <div>
+          <dt>Extracted packs</dt>
+          <dd class="mono">
+            {mpStatus.maps && mpStatus.maps.length
+              ? `${mpStatus.maps.length} (${mpStatus.maps.join(', ')})`
+              : 'none'}
+          </dd>
+        </div>
+      </dl>
+    {:else}
+      <p class="muted">Loading…</p>
+    {/if}
+    {#if mpMsg}<p class="sett-msg" role="status">{mpMsg}</p>{/if}
+    {#if mpError}<p class="error" role="alert">{mpError}</p>{/if}
+    <div class="row-between">
+      <span class="muted"
+        >Extract all official-map radars (idempotent — re-run after a CS2
+        update to refresh).</span
+      >
+      <div class="sett-seg">
+        <button class="btn" disabled={mpBusy} onclick={mpChooseFolder}>
+          Choose folder…
+        </button>
+        <button class="btn primary" disabled={mpBusy || !mpStatus?.found} onclick={doExtract}>
+          {mpBusy ? 'Extracting…' : 'Extract radar images'}
+        </button>
+      </div>
+    </div>
   </section>
 
   <section class="panel">
