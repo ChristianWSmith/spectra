@@ -13,6 +13,13 @@ const (
 	// prefsWindowWidthKey / prefsWindowHeightKey persist the window size.
 	prefsWindowWidthKey  = "window_width"
 	prefsWindowHeightKey = "window_height"
+
+	// prefsMapPackPromptKey records the CS2 radar-extraction prompt state:
+	// "" (never asked), "declined" (don't ask again), or "done".
+	prefsMapPackPromptKey = "mappack_prompt_state"
+	// prefsMapPackCS2PathKey holds a manually chosen CS2 folder (empty =
+	// auto-detect through Steam).
+	prefsMapPackCS2PathKey = "mappack_cs2_path"
 )
 
 // prefsFilename returns the path of the on-disk prefs file, creating the

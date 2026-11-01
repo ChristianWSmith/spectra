@@ -22,15 +22,22 @@ export function makeTransform(meta) {
   };
 }
 
-// Load /maps/<map>/meta.json (null when the pack is missing).
+// Load a map pack: the user-extracted pack (from the local CS2 install,
+// served at /api/mappack/) wins over the bundled placeholder at /maps/.
+// Returns { meta, transform, base } or null when neither source has the
+// map. base is the URL prefix for meta.radar.file.
 export async function loadMapPack(map) {
   if (!map) return null;
-  try {
-    const res = await fetch(`/maps/${encodeURIComponent(map)}/meta.json`);
-    if (!res.ok) return null;
-    const meta = await res.json();
-    return { meta, transform: makeTransform(meta) };
-  } catch {
-    return null;
+  const enc = encodeURIComponent(map);
+  for (const base of [`/api/mappack/${enc}`, `/maps/${enc}`]) {
+    try {
+      const res = await fetch(`${base}/meta.json`);
+      if (!res.ok) continue;
+      const meta = await res.json();
+      return { meta, transform: makeTransform(meta), base };
+    } catch {
+      // try the next source
+    }
   }
+  return null;
 }

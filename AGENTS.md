@@ -82,6 +82,7 @@ spectacle -b -n -o /tmp/shot.png         # then Read the PNG
 | `internal/library` | import pipeline: hash/dedupe, zstd sniff, single-worker job queue, cancellation, `spectra:*` events |
 | `internal/data` | XDG data-dir paths (db, per-match sidecars, tmp) |
 | `internal/integration` | golden-demo acceptance test (`donk.dem.zst`, skip-if-absent/pointer, `-update` fixture regen) |
+| `internal/mappack` | CS2 radar extraction: Steam install detection → VPK v2 reader → vtex_c decode → map packs in the data dir (Valve IP never ships — see `mappackservice.go` + `frontend/public/maps/README.md`) |
 | `prefs.go` | preference keys + window-size helpers (backed by the v3 `kvstore` service) |
 | `version.go` | **stamp-only**: `var version = "dev"` — CI overwrites the whole file on release builds; never put logic here |
 | `frontend/` | Svelte 5 + Vite app; built into `frontend/dist` (embedded, gitignored) and `frontend/bindings` (generated per build, gitignored) |

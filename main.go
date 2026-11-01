@@ -119,6 +119,10 @@ func main() {
 			handleExport(st, w, r, p)
 			return
 		}
+		if p := strings.TrimPrefix(r.URL.Path, "/api/mappack/"); p != r.URL.Path {
+			handleMapPack(w, r, p)
+			return
+		}
 		bundled.ServeHTTP(w, r)
 	})
 
@@ -159,6 +163,7 @@ func main() {
 	app.RegisterService(application.NewService(&MetricsService{st: st, app: app}))
 	app.RegisterService(application.NewService(&QueryService{st: st, app: app}))
 	app.RegisterService(application.NewService(&PlatformService{st: st, app: app}))
+	app.RegisterService(application.NewService(&MapPackService{kvs: kvs, app: app}))
 
 	initUpdater(app)
 
@@ -248,6 +253,55 @@ func runImport(path string) {
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
+}
+
+// handleMapPack serves user-extracted radar map packs from the app data
+// dir (written by MapPackService.ExtractMapPacks) over the asset server:
+//
+//	/api/mappack/<map>/meta.json    pack manifest (schema_version 1)
+//	/api/mappack/<map>/radar.png    decoded radar image
+//
+// Paths are strictly validated (map = [a-z0-9_]+, file = meta.json or
+// radar.png) so a crafted URL can't escape the data dir. 404 when the
+// pack is absent — the frontend falls back to the bundled /maps/ copy.
+func handleMapPack(w http.ResponseWriter, r *http.Request, p string) {
+	if r.Method != http.MethodGet {
+		http.NotFound(w, r)
+		return
+	}
+	mapName, file, ok := strings.Cut(p, "/")
+	if !ok || file == "" || strings.Contains(file, "/") {
+		http.NotFound(w, r)
+		return
+	}
+	if !validPackName(mapName) {
+		http.NotFound(w, r)
+		return
+	}
+	if file != "meta.json" && file != "radar.png" {
+		http.NotFound(w, r)
+		return
+	}
+	path := filepath.Join(data.MapsDir(), mapName, file)
+	if _, err := os.Stat(path); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	http.ServeFile(w, r, path)
+}
+
+// validPackName reports whether s is a safe map-pack directory name
+// (mirrors the extractor's map-name shape: lowercase, digits, _).
+func validPackName(s string) bool {
+	if s == "" || len(s) > 64 {
+		return false
+	}
+	for _, c := range s {
+		if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '_' {
+			return false
+		}
+	}
+	return true
 }
 
 // handleSidecar serves a match's sidecars over the asset server (HTTP

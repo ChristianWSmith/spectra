@@ -52,9 +52,13 @@ render, no radar pixels.
 
 Numeric metadata (transform constants) is our own JSON in-repo — facts, not
 artwork. Radar **pixels** are placeholders or user-supplied: official radars
-are Valve IP and are never bundled in public releases; extract from a local
-CS2 install (`overheadmaps/<map>_radar_psd.vtex_c`) or drop in any
-user-supplied image named in `meta.json`.
+are Valve IP and are never bundled in public releases. The preferred path is
+the in-app extractor (Settings → Map packs, or the first-run prompt): it
+reads `panorama/images/overheadmaps/<map>_radar_psd.vtex_c` and
+`resource/overviews/<map>.txt` from the user's own `pak01_dir.vpk` and
+writes packs into the app data dir (`internal/mappack`), which the frontend
+serves at `/api/mappack/` and prefers over these bundled copies. Manual
+extraction or any user-supplied image named in `meta.json` also works.
 
 The checked-in `de_cache/radar.svg` is an original schematic (grid + rough
 A/B markers), not derived from any Valve asset; it exists so the golden
