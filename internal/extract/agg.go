@@ -40,7 +40,9 @@ type teamFinal struct {
 }
 
 // finalPlayer is one row of the end-of-demo roster snapshot (the subset of
-// fields the extractor overwrites from the live entity state).
+// fields the extractor overwrites from the live entity state). Combat
+// counters are deliberately absent — event-derived stats own K/D/A/MVP
+// (see applyFinal).
 type finalPlayer struct {
 	key             uint64
 	name            string
@@ -53,10 +55,6 @@ type finalPlayer struct {
 	wins            int
 	ping            int
 	alive           bool
-	kills           int
-	deaths          int
-	assists         int
-	mvps            int
 	score           int
 	moneySpentTotal int
 }
@@ -78,6 +76,7 @@ type roundInfo struct {
 	startTick       int
 	endTick         int
 	warmup          bool
+	pregame         bool
 	mvp             string
 	mvpReason       string
 	equipCT         int
@@ -86,6 +85,16 @@ type roundInfo struct {
 	freezeEndTick   int
 	firstKillSteam  string
 	firstDeathSteam string
+}
+
+// tradeRec remembers one enemy kill for the strict trade-window rule: the
+// killer (victimKey of a later kill trades them), when, and which side the
+// dead player was on (a trade requires the later killer to be on that
+// side — i.e. the death was a teammate's).
+type tradeRec struct {
+	tick       int
+	killerKey  uint64
+	victimSide string
 }
 
 // playerAgg is one participant's accumulator (models.Player + models.PlayerStats
@@ -104,6 +113,7 @@ type playerAgg struct {
 	kills           int
 	deaths          int
 	assists         int
+	flashAssists    int
 	headshots       int
 	teamkills       int
 	suicides        int
@@ -159,19 +169,32 @@ type agg struct {
 	finalPresent  map[uint64]bool
 	participation map[uint64]map[int]bool
 
-	rounds       []roundInfo
-	currentRound int
-	warmupRounds int
-	realRounds   int
-	sideSwitches int
-	halfCT       int
-	halfT        int
+	rounds        []roundInfo
+	currentRound  int
+	warmupRounds  int
+	pregameRounds int
+	realRounds    int
+	sideSwitches  int
+	halfCT        int
+	halfT         int
+	// halfPending marks a GameHalfEnded observation awaiting the score
+	// (which that event fires before — see freezeEnd).
+	halfPending bool
 
 	ctTeam teamFinal
 	tTeam  teamFinal
 
-	lastDeathTick map[string]int
-	roundKills    map[int]map[uint64]int
+	// tradeWindow keys recent victims → who killed them and when (the
+	// strict trade-kill rule; reset every RoundStart).
+	tradeWindow map[uint64]tradeRec
+	roundKills  map[int]map[uint64]int
+
+	// lastMVP tracks each player's scoreboard MVP counter for per-round
+	// delta attribution at RoundEnd (RoundMVPAnnouncement is absent in
+	// many demos, golden included).
+	lastMVP map[uint64]int
+
+	roundSides []models.RoundPlayerSide
 
 	economy  []models.RoundEconomy
 	events   []models.Event
@@ -198,9 +221,11 @@ func newAgg() *agg {
 		players:       make(map[uint64]*playerAgg),
 		finalPresent:  make(map[uint64]bool),
 		participation: make(map[uint64]map[int]bool),
-		lastDeathTick: make(map[string]int),
+		tradeWindow:   make(map[uint64]tradeRec),
 		roundKills:    make(map[int]map[uint64]int),
+		lastMVP:       make(map[uint64]int),
 		economy:       make([]models.RoundEconomy, 0, 64),
+		roundSides:    make([]models.RoundPlayerSide, 0, 256),
 		events:        make([]models.Event, 0, 512),
 		generic:       make([]models.GenericEvent, 0, 21000),
 		chatRows:      make([]models.Chat, 0, 64),
@@ -249,10 +274,10 @@ func (a *agg) setFinalTeam(side string, t teamFinal) {
 	}
 }
 
-func (a *agg) halfEnd(ctScore, tScore int) {
-	a.halfCT = ctScore
-	a.halfT = tScore
-}
+// setHalfPending records that a half ended; the score is resolved at the
+// next freezeEnd (GameHalfEnded fires before the winning round's score
+// increments — see freezeEnd).
+func (a *agg) setHalfPending() { a.halfPending = true }
 
 func (a *agg) sideSwitch() { a.sideSwitches++ }
 
@@ -261,8 +286,13 @@ func (a *agg) warn(typeID int, message string) {
 }
 
 // applyFinal folds the end-of-demo roster snapshot into the accumulators:
-// present players get their identity/scoreboard fields overwritten from live
-// entity state and are marked FinalStatePresent (provenance).
+// present players get their identity/scoreboard-only fields overwritten
+// from live entity state and are marked FinalStatePresent (provenance).
+// K/D/A/MVPs are deliberately NOT overwritten: event-derived stats now
+// follow one convention for every player (warmup/pregame excluded, flash
+// assists split out) while the game's own counters disagree (m_iAssists
+// includes flash assists; m_iMVPs included the golden demo's knife-round
+// MVP) and only covered 3/10 players here anyway.
 func (a *agg) applyFinal(finals []finalPlayer) {
 	for _, f := range finals {
 		p := a.ensure(f.key, f.name)
@@ -276,10 +306,6 @@ func (a *agg) applyFinal(finals []finalPlayer) {
 		p.wins = f.wins
 		p.ping = f.ping
 		p.finalAlive = f.alive
-		p.kills = f.kills
-		p.deaths = f.deaths
-		p.assists = f.assists
-		p.mvps = f.mvps
 		p.score = f.score
 		p.moneySpentTotal = f.moneySpentTotal
 		a.finalPresent[f.key] = true
@@ -288,20 +314,24 @@ func (a *agg) applyFinal(finals []finalPlayer) {
 
 // ---- round state machine ----
 
-func (a *agg) roundStart(tick int, warmup bool, timeLimit int, objective string) {
+func (a *agg) roundStart(tick int, warmup, pregame bool, timeLimit int, objective string) {
 	a.currentRound++
-	if warmup {
+	switch {
+	case warmup:
 		a.warmupRounds++
-	} else {
+	case pregame:
+		a.pregameRounds++
+	default:
 		a.realRounds++
 	}
 	a.rounds = append(a.rounds, roundInfo{
 		number:    a.currentRound,
 		startTick: tick,
 		warmup:    warmup,
+		pregame:   pregame,
 	})
 	a.roundKills[a.currentRound] = make(map[uint64]int)
-	a.lastDeathTick = make(map[string]int)
+	a.tradeWindow = make(map[uint64]tradeRec)
 	a.addEvent(models.Event{
 		Tick:       tick,
 		Kind:       models.EventRoundStart,
@@ -331,9 +361,16 @@ func (a *agg) roundEnd(tick int, winner, reason, message string, tickRate float6
 }
 
 // freezeEnd records freeze-time-end ticks/equip values on the current round
-// and samples each playing participant's money per side (the extractor's
-// sampling method, re-targeted at per-round-per-side RoundEconomy rows).
-func (a *agg) freezeEnd(tick int, equipCT, equipT int, samples []moneySample, warmup bool) {
+// and samples each playing participant's money and side per side (the
+// extractor's sampling method, re-targeted at per-round-per-side
+// RoundEconomy rows + per-round-per-player RoundPlayerSide rows).
+//
+// It also resolves the pending halftime score. GameHalfEnded fires BEFORE
+// the final round of the half increments the team score (golden demo:
+// reads 7/4 while the same tick's RoundEnd reads the settled 8/4), so the
+// handler only marks the half pending; the first freeze-end after the side
+// switch reads the settled, already-swapped scores and swaps them back.
+func (a *agg) freezeEnd(tick, equipCT, equipT, scoreCT, scoreT int, samples []moneySample) {
 	for _, s := range samples {
 		if s.key == 0 {
 			continue
@@ -348,11 +385,30 @@ func (a *agg) freezeEnd(tick int, equipCT, equipT int, samples []moneySample, wa
 	r.freezeEndTick = tick
 	r.equipCT = equipCT
 	r.equipT = equipT
+	// Warmup and pregame (knife) rounds are not "counted" play: no
+	// participation credit, no stat round.
+	counted := !r.warmup && !r.pregame
 
 	sum := map[string]int{}
 	cnt := map[string]int{}
 	for _, s := range samples {
-		if !warmup {
+		if s.key == 0 {
+			continue
+		}
+		if s.side == "ct" || s.side == "t" {
+			// Last-observed side: the final-side source for players the
+			// end-of-demo snapshot misses (3/10 on the golden demo), plus
+			// exact per-round rows for analytics/replay consumers.
+			if p := a.players[s.key]; p != nil {
+				p.side = s.side
+			}
+			a.roundSides = append(a.roundSides, models.RoundPlayerSide{
+				Round: r.number, SteamID: keyStr(s.key), Side: s.side,
+			})
+			sum[s.side] += s.money
+			cnt[s.side]++
+		}
+		if counted {
 			rounds := a.participation[s.key]
 			if rounds == nil {
 				rounds = make(map[int]bool)
@@ -360,36 +416,77 @@ func (a *agg) freezeEnd(tick int, equipCT, equipT int, samples []moneySample, wa
 			}
 			rounds[r.number] = true
 		}
-		if s.side == "ct" || s.side == "t" {
-			sum[s.side] += s.money
-			cnt[s.side]++
-		}
 	}
 	a.economy = append(a.economy,
 		models.RoundEconomy{Round: r.number, Side: "ct", EquipValue: equipCT, MoneySampledSum: sum["ct"], MoneySamples: cnt["ct"]},
 		models.RoundEconomy{Round: r.number, Side: "t", EquipValue: equipT, MoneySampledSum: sum["t"], MoneySamples: cnt["t"]},
 	)
+
+	if a.halfPending {
+		a.halfPending = false
+		if a.sideSwitches > 0 {
+			// Scores already reflect the swap — flip them back to the
+			// first-half sides.
+			a.halfCT, a.halfT = scoreT, scoreCT
+		} else {
+			a.halfCT, a.halfT = scoreCT, scoreT
+		}
+	}
 }
 
-// roundMVP is best-effort: many demos never announce a round MVP (the golden
-// demo does not) — rows stay empty when absent.
+// roundMVP fills the round's MVP fields from the round_mvp announcement
+// (reason source). The COUNT is not incremented here — mvpScan's
+// per-round counter diffs own counting so demos emitting both paths cannot
+// double-credit.
 func (a *agg) roundMVP(key uint64, name, reason string) {
-	if key != 0 {
-		a.ensure(key, name).mvps++
-	}
 	if n := len(a.rounds); n > 0 {
 		r := &a.rounds[n-1]
-		r.mvp = keyStr(key)
-		r.mvpReason = reason
+		if key != 0 && r.mvp == "" {
+			r.mvp = keyStr(key)
+		}
+		if r.mvpReason == "" {
+			r.mvpReason = reason
+		}
+	}
+}
+
+// mvpScan diffs a player's scoreboard MVP counter at RoundEnd against the
+// last observed value and credits the delta to the round being closed.
+// RoundMVPAnnouncement is absent in many CS2 demos (golden included);
+// m_iMVPs is not. The diff base starts at 0 so the first observed round
+// carries the full count (correct when the counter increments inside the
+// demo, e.g. the golden demo's knife-round MVP — which the game's own
+// counter includes and the external scoreboard matches). Warmup rounds are
+// never credited.
+func (a *agg) mvpScan(key uint64, name string, count int) {
+	if key == 0 {
+		return
+	}
+	prev := a.lastMVP[key]
+	a.lastMVP[key] = count
+	delta := count - prev
+	if delta <= 0 {
+		return
+	}
+	n := len(a.rounds)
+	if n == 0 || a.rounds[n-1].warmup {
+		return
+	}
+	p := a.ensure(key, name)
+	p.mvps += delta
+	if a.rounds[n-1].mvp == "" {
+		a.rounds[n-1].mvp = keyStr(key)
 	}
 }
 
 // ---- combat ----
 
 // killInfo carries the plain values a Kill handler extracts from the event.
+// real marks stats-eligible play (warmup/pregame/post-match excluded —
+// handlers compute it via realPeriod).
 type killInfo struct {
 	tick          int
-	warmup        bool
+	real          bool
 	tickRate      float64
 	killerKey     uint64
 	killerName    string
@@ -399,6 +496,7 @@ type killInfo struct {
 	victimSide    string
 	assisterKey   uint64
 	assisterName  string
+	assisterSide  string
 	weapon        string
 	headshot      bool
 	wallbang      bool
@@ -437,67 +535,19 @@ func (a *agg) kill(k killInfo) {
 		}),
 	}, "player_death")
 
-	// Warmup knife fights never pollute stats (event row still emitted).
-	if k.warmup {
+	// Warmup knife fights, pregame (knife) rounds and post-match kills
+	// never pollute stats (event rows are still emitted).
+	if !k.real {
 		return
 	}
 
-	if k.killerKey != 0 {
-		kp := a.ensure(k.killerKey, k.killerName)
-		kp.kills++
-		kp.weaponKills[k.weapon]++
-		if k.headshot {
-			kp.headshots++
-		}
-		if k.killerSide != "" && k.killerSide == k.victimSide {
-			kp.teamkills++
-		}
-
-		// First blood of the round: entry + opening attribution.
-		if n := len(a.rounds); n > 0 {
-			r := &a.rounds[n-1]
-			if r.firstKillSteam == "" {
-				r.firstKillSteam = keyStr(k.killerKey)
-				r.firstDeathSteam = keyStr(k.victimKey)
-				kp.entryKills++
-				kp.openingKills++
-			}
-		}
-
-		// Trade: kill an enemy within 5 s of any prior death on that side
-		// (window resets at every RoundStart).
-		if k.victimKey != 0 {
-			if lt, ok := a.lastDeathTick[k.victimSide]; ok {
-				tr := k.tickRate
-				if tr <= 0 {
-					tr = 64
-				}
-				if float64(k.tick-lt)/tr <= 5.0 {
-					kp.tradeKills++
-				}
-			}
-		}
-
-		// Per-round multi-kills: exact-hit at 3/4/5.
-		if a.roundKills[a.currentRound] == nil {
-			a.roundKills[a.currentRound] = make(map[uint64]int)
-		}
-		a.roundKills[a.currentRound][k.killerKey]++
-		switch a.roundKills[a.currentRound][k.killerKey] {
-		case 3:
-			kp.threeK++
-		case 4:
-			kp.fourK++
-		case 5:
-			kp.fiveK++
-		}
-
-		kp.killStreak++
-		if kp.killStreak > kp.bestStreak {
-			kp.bestStreak = kp.killStreak
-		}
+	// Live side observation: the freshest side truth for identity.
+	if k.victimSide == "ct" || k.victimSide == "t" {
+		a.ensure(k.victimKey, k.victimName).side = k.victimSide
 	}
 
+	// Victim bookkeeping: every real death counts (incl. suicides and
+	// teamkills — the scoreboard's D column does too).
 	if k.victimKey != 0 {
 		vp := a.ensure(k.victimKey, k.victimName)
 		vp.deaths++
@@ -505,30 +555,120 @@ func (a *agg) kill(k killInfo) {
 		if k.samePlayer {
 			vp.suicides++
 		}
-		a.lastDeathTick[k.victimSide] = k.tick
-		// The first-blood victim gets the matching entry/opening death.
-		if n := len(a.rounds); n > 0 {
-			r := &a.rounds[n-1]
-			if r.firstDeathSteam != "" && r.firstDeathSteam == keyStr(k.victimKey) {
-				vp.entryDeaths++
-				vp.openingDeaths++
+	}
+
+	// Killer credit requires a real ENEMY kill: no credit for world/no
+	// killer, suicides (killer == victim) or teamkills — only kills++ for
+	// enemies (awpy/HLTV convention; the game's scoreboard agrees).
+	if k.killerKey == 0 || k.samePlayer {
+		return
+	}
+	kp := a.ensure(k.killerKey, k.killerName)
+	if k.killerSide == "ct" || k.killerSide == "t" {
+		kp.side = k.killerSide
+	}
+	if sameSide(k.killerSide, k.victimSide) {
+		kp.teamkills++
+		return
+	}
+	kp.kills++
+	kp.weaponKills[k.weapon]++
+	if k.headshot {
+		kp.headshots++
+	}
+
+	// Strict trade: a kill answers a teammate's death when the victim is
+	// the player who killed one of the killer's teammates within the
+	// 5 s window (HLTV/Leetify rule — the KAST "T" rule mirrored).
+	if k.victimKey != 0 && k.killerSide != "" {
+		tr := k.tickRate
+		if tr <= 0 {
+			tr = 64
+		}
+		window := int(5 * tr)
+		for _, rec := range a.tradeWindow {
+			if rec.killerKey == k.victimKey && k.tick-rec.tick <= window &&
+				rec.victimSide == k.killerSide {
+				kp.tradeKills++
+				break
 			}
 		}
 	}
 
-	if k.assisterKey != 0 {
-		a.ensure(k.assisterKey, k.assisterName).assists++
+	// First blood of the round: entry + opening attribution.
+	if n := len(a.rounds); n > 0 {
+		r := &a.rounds[n-1]
+		if r.firstKillSteam == "" {
+			r.firstKillSteam = keyStr(k.killerKey)
+			r.firstDeathSteam = keyStr(k.victimKey)
+			kp.entryKills++
+			kp.openingKills++
+		}
+	}
+
+	// Per-round multi-kills: exact-hit at 3/4/5.
+	if a.roundKills[a.currentRound] == nil {
+		a.roundKills[a.currentRound] = make(map[uint64]int)
+	}
+	a.roundKills[a.currentRound][k.killerKey]++
+	switch a.roundKills[a.currentRound][k.killerKey] {
+	case 3:
+		kp.threeK++
+	case 4:
+		kp.fourK++
+	case 5:
+		kp.fiveK++
+	}
+
+	kp.killStreak++
+	if kp.killStreak > kp.bestStreak {
+		kp.bestStreak = kp.killStreak
+	}
+
+	// Record the death for future trade checks (who killed whom, when).
+	if k.victimKey != 0 {
+		a.tradeWindow[k.victimKey] = tradeRec{tick: k.tick, killerKey: k.killerKey, victimSide: k.victimSide}
+	}
+
+	// Entry/opening death: the first-blood victim.
+	if n := len(a.rounds); n > 0 {
+		r := &a.rounds[n-1]
+		if r.firstDeathSteam != "" && r.firstDeathSteam == keyStr(k.victimKey) {
+			vp := a.players[k.victimKey]
+			if vp == nil {
+				vp = a.ensure(k.victimKey, k.victimName)
+			}
+			vp.entryDeaths++
+			vp.openingDeaths++
+		}
+	}
+
+	// Assists: cross-team only (no suicide/teamkill assists), and flash
+	// assists are split into their own column — external scoreboards
+	// exclude them from the assist column (the game's m_iAssists
+	// includes them).
+	if k.assisterKey != 0 && k.assisterKey != k.victimKey &&
+		!sameSide(k.assisterSide, k.victimSide) {
+		ap := a.ensure(k.assisterKey, k.assisterName)
+		if k.assistedFlash {
+			ap.flashAssists++
+		} else {
+			ap.assists++
+		}
 	}
 }
 
-// hurtInfo carries the plain values a PlayerHurt handler extracts.
+// hurtInfo carries the plain values a PlayerHurt handler extracts. real
+// marks stats-eligible play (warmup/pregame/post-match excluded).
 type hurtInfo struct {
 	tick              int
-	warmup            bool
+	real              bool
 	attackerKey       uint64
 	attackerName      string
+	attackerSide      string
 	victimKey         uint64
 	victimName        string
+	victimSide        string
 	weapon            string
 	isUtility         bool
 	healthDamage      int
@@ -540,8 +680,8 @@ type hurtInfo struct {
 }
 
 func (a *agg) hurt(h hurtInfo) {
-	// Every PlayerHurt becomes an event (the extractor's TotalHurt is
-	// ungated); stat accumulation below is warmup-gated.
+	// Every PlayerHurt becomes an event (raw damage stream is never
+	// gated); stat accumulation below is gated.
 	a.addEvent(models.Event{
 		Tick:     h.tick,
 		Kind:     models.EventDamage,
@@ -561,10 +701,14 @@ func (a *agg) hurt(h hurtInfo) {
 		}),
 	}, "player_hurt")
 
-	if h.warmup {
+	if !h.real {
 		return
 	}
-	if h.attackerKey != 0 {
+	// Attacker stats count ENEMY damage only — friendly fire and self
+	// damage are not "damage dealt" on any scoreboard (awpy/HLTV/ProSettings).
+	enemy := h.attackerKey != 0 && h.attackerKey != h.victimKey &&
+		!sameSide(h.attackerSide, h.victimSide)
+	if enemy {
 		ap := a.ensure(h.attackerKey, h.attackerName)
 		ap.totalDamage += h.healthDamage
 		ap.hits++
@@ -588,7 +732,7 @@ func (a *agg) shot(key uint64, name string) {
 // blindInfo carries the plain values a PlayerFlashed handler extracts.
 type blindInfo struct {
 	tick         int
-	warmup       bool
+	real         bool
 	playerKey    uint64
 	playerName   string
 	attackerKey  uint64
@@ -608,7 +752,7 @@ func (a *agg) blind(b blindInfo) {
 			"flashDurationMs": b.flashMs,
 		}),
 	}, "player_blind")
-	if b.warmup {
+	if !b.real {
 		return
 	}
 	if b.playerKey != 0 {
@@ -619,9 +763,11 @@ func (a *agg) blind(b blindInfo) {
 // ---- utility & objective ----
 
 // blastInfo carries a grenade detonation (EventGrenade); source is the game
-// event the raw payload will be paired from.
+// event the raw payload will be paired from. real gates the flash-pop
+// counter (warmup/pregame grenade spam must not pollute stats).
 type blastInfo struct {
 	tick        int
+	real        bool
 	weapon      string
 	source      string
 	throwerKey  uint64
@@ -648,7 +794,7 @@ func (a *agg) grenadeBlast(g blastInfo) {
 			"z":       g.z,
 		}),
 	}, g.source)
-	if g.isFlash && g.throwerKey != 0 {
+	if g.isFlash && g.real && g.throwerKey != 0 {
 		a.ensure(g.throwerKey, g.throwerName).flashesPopped++
 	}
 }
@@ -672,11 +818,11 @@ func (a *agg) grenadeThrown(tick int, throwerKey uint64, throwerName, weapon str
 	}, "")
 }
 
-func (a *agg) bombPlanted(tick int, site string, key uint64, name string, px, py, pz *float64) {
+func (a *agg) bombPlanted(tick int, site string, key uint64, name string, real bool, px, py, pz *float64) {
 	if n := len(a.rounds); n > 0 {
 		a.rounds[n-1].bombSite = site
 	}
-	if key != 0 {
+	if key != 0 && real {
 		a.ensure(key, name).bombPlants++
 	}
 	a.addEvent(models.Event{
@@ -691,8 +837,8 @@ func (a *agg) bombPlanted(tick int, site string, key uint64, name string, px, py
 	}, "bomb_planted")
 }
 
-func (a *agg) bombDefused(tick int, site string, key uint64, name string, hasKit bool, px, py, pz *float64) {
-	if key != 0 {
+func (a *agg) bombDefused(tick int, site string, key uint64, name string, hasKit bool, real bool, px, py, pz *float64) {
+	if key != 0 && real {
 		a.ensure(key, name).bombDefuses++
 	}
 	a.addEvent(models.Event{

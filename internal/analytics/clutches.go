@@ -16,11 +16,11 @@ type clutchInst struct {
 	dmgTook int
 }
 
-// Clutches detects 1vN clutches by walking each non-warmup round's events
+// Clutches detects 1vN clutches by walking each counted round's events
 // and maintaining per-team alive sets (clutch v2, replacing
-// the M1 sole-survivor approximation). The cfg parameter carries
-// HalfSwitchRound so per-round sides flip correctly around the half
-// switch (see package doc).
+// the M1 sole-survivor approximation). sides carries the extractor's
+// exact per-round side samples (nil for legacy matches — cfg's
+// HalfSwitchRound parity applies there; see package doc).
 //
 // An instance starts the moment a side transitions INTO exactly one alive
 // player while the opposing side still has ≥ 1 alive: start = the tick of
@@ -35,8 +35,8 @@ type clutchInst struct {
 // a sampled HP value (badge). BombState is read from bomb events
 // up to the start tick (planted|carried|dropped). KillTicks is the JSON
 // array of the solo's kills after the start; ReplayAnchor = StartTick.
-func Clutches(events []models.Event, rounds []RoundInfo, players []PlayerRef, cfg Config) []Clutch {
-	real := nonWarmupRounds(rounds)
+func Clutches(events []models.Event, rounds []RoundInfo, players []PlayerRef, cfg Config, sides map[int]map[string]string) []Clutch {
+	real := CountedRounds(rounds)
 	if len(real) == 0 {
 		return nil
 	}
@@ -49,7 +49,7 @@ func Clutches(events []models.Event, rounds []RoundInfo, players []PlayerRef, cf
 
 	var out []Clutch
 	for _, r := range real {
-		teamR := sideMapForRound(team, cfg, r.Number)
+		teamR := resolveRoundSides(sides, team, cfg, r.Number)
 		alive := map[string]bool{}
 		for _, p := range players {
 			if p.SteamID != "" && (teamR[p.SteamID] == "ct" || teamR[p.SteamID] == "t") {

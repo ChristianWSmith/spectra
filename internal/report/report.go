@@ -33,8 +33,12 @@ type Template struct {
 }
 
 // MatchReport is the match-scope data map (builtin + plugin templates).
+// CTName/TName are the display names of the two teams behind ScoreCT/
+// ScoreT — teams, never sides (sides switch at halftime): see teamNames.
 type MatchReport struct {
 	Match       models.Match
+	CTName      string
+	TName       string
 	Scoreboard  []models.PlayerStatsRow
 	Rounds      []models.RoundRow
 	Economy     []models.EconomyRow
@@ -85,10 +89,66 @@ func BuildMatchData(st *store.Store, matchID int64) (*MatchReport, error) {
 	if err != nil {
 		return nil, fmt.Errorf("report: utility: %w", err)
 	}
+	ctName, tName := teamNames(st, matchID, sb)
 	return &MatchReport{
-		Match: *m, Scoreboard: sb, Rounds: rounds, Economy: econ,
+		Match: *m, CTName: ctName, TName: tName, Scoreboard: sb,
+		Rounds: rounds, Economy: econ,
 		Clutches: clutches, Utility: utility, GeneratedAt: time.Now().UTC(),
 	}, nil
+}
+
+// teamNames resolves display names for a match's two teams (the score line
+// names teams, never sides — sides switch at halftime): the demo's clan
+// names via the existing library read model when the extract recorded them,
+// else a synthesized `team_<playerName>` from each final side's scoreboard
+// rows (lowest SteamID — deterministic), else the bare side when no player
+// records one at all. A ListMatches failure only costs the real names.
+func teamNames(st *store.Store, matchID int64, sb []models.PlayerStatsRow) (ctName, tName string) {
+	ctName, tName = synthTeamNames(sb)
+	if list, err := st.ListMatches("", "", false); err == nil {
+		for _, m := range list {
+			if m.ID != matchID {
+				continue
+			}
+			if m.CTName != "" {
+				ctName = m.CTName
+			}
+			if m.TName != "" {
+				tName = m.TName
+			}
+			break
+		}
+	}
+	if ctName == "" {
+		ctName = "CT"
+	}
+	if tName == "" {
+		tName = "T"
+	}
+	return ctName, tName
+}
+
+// synthTeamNames derives `team_<playerName>` names from a scoreboard's
+// final sides — the pick is the lowest SteamID on each side so the name
+// doesn't depend on the store's sort order. Sides without a player yield
+// "" (teamNames falls back to the bare side).
+func synthTeamNames(sb []models.PlayerStatsRow) (ctName, tName string) {
+	pick := func(side string) string {
+		name, steamID := "", ""
+		for _, r := range sb {
+			if r.Side != side || r.Name == "" {
+				continue
+			}
+			if name == "" || r.SteamID < steamID || (r.SteamID == steamID && r.Name < name) {
+				name, steamID = r.Name, r.SteamID
+			}
+		}
+		if name == "" {
+			return ""
+		}
+		return "team_" + name
+	}
+	return pick("ct"), pick("t")
 }
 
 // BuildPlayerData composes the player-scope data: the aggregate row from

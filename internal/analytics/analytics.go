@@ -25,6 +25,10 @@
 //     start (100 - sum(dmg taken), clamped ≥ 1; 100 when no damage after
 //     start) — a reconstruction, not a sampled HP value.
 //   - Friendly fire uses each player's FINAL side (events carry no team).
+//
+// Round eligibility: CountedRounds drops warmup AND pregame (knife)
+// rounds everywhere — the game's own scoreboard excludes knife rounds,
+// and index-based rules (MR12 pistol stride) shift if they stay in.
 package analytics
 
 import (
@@ -95,15 +99,29 @@ func sortedEvents(events []models.Event) []models.Event {
 	return out
 }
 
-// nonWarmupRounds filters warmup rounds, preserving number order.
-func nonWarmupRounds(rounds []RoundInfo) []RoundInfo {
+// CountedRounds filters rounds to stats-eligible play, preserving number
+// order: warmup rounds and pregame (knife) rounds are not counted play
+// (the golden demo's round 1 is a knife round the game itself excludes
+// from the scoreboard).
+func CountedRounds(rounds []RoundInfo) []RoundInfo {
 	out := make([]RoundInfo, 0, len(rounds))
 	for _, r := range rounds {
-		if !r.Warmup {
+		if !r.Warmup && !r.Pregame {
 			out = append(out, r)
 		}
 	}
 	return out
+}
+
+// resolveRoundSides returns every player's side for one round: the
+// extractor's exact per-round freeze-end samples when present (new
+// imports), else the final-side map flipped by Config.HalfSwitchRound
+// (legacy single-switch parity — see recover.go).
+func resolveRoundSides(exact map[int]map[string]string, team map[string]string, cfg Config, round int) map[string]string {
+	if m, ok := exact[round]; ok && len(m) > 0 {
+		return m
+	}
+	return sideMapForRound(team, cfg, round)
 }
 
 // teamOf builds a steamID → team map from the player refs.
@@ -134,6 +152,11 @@ func otherTeam(side string) string {
 	}
 	return ""
 }
+
+// sameSide reports whether two observed sides are both known and equal
+// (an unknown side never matches — permissive attribution for bots /
+// unassigned players).
+func sameSide(a, b string) bool { return a != "" && a == b }
 
 // pistolEvery is the non-warmup sequence stride between half-start pistol
 // rounds under MR12 (indexes 0, 12, 24, …; OT not special-cased — see

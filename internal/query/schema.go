@@ -9,17 +9,18 @@ package query
 // tableNotes maps table → one-line purpose.
 var tableNotes = map[string]string{
 	// M1 core library.
-	"matches":        "imported demo files: identity (sha256), parse metadata, score/outcome, sidecar position meta",
-	"teams":          "per-match team rows by side (name, flag, score, spend)",
-	"players":        "per-match player roster: SteamID64, name, final side (label source for metric previews)",
-	"player_stats":   "per-match scoreboard rollup per player (K/D/A, ADR, openings, trades, weapon JSON)",
-	"rounds":         "per-round outcome + timing (winner, reason, ticks, first kill, MVP, warmup flag)",
-	"round_economy":  "per-round per-side equipment value + money samples (buy classification input)",
-	"events":         "normalized game events (kill/damage/blind/bomb/…) with tick, actors, weapon flags, positions",
-	"generic_events": "raw parser events not in the normalized taxonomy (name/tick/payload JSON)",
-	"chat":           "in-game chat/user messages (+ M4 decryption provenance columns)",
-	"warnings":       "parser warnings captured during extraction, per match, ordered",
-	"jobs":           "import job queue state (queued/running/done/failed + progress)",
+	"matches":            "imported demo files: identity (sha256), parse metadata, score/outcome, sidecar position meta",
+	"teams":              "per-match team rows by side (name, flag, score, spend)",
+	"players":            "per-match player roster: SteamID64, name, final side (label source for metric previews)",
+	"player_stats":       "per-match scoreboard rollup per player (K/D/A, ADR, openings, trades, weapon JSON)",
+	"rounds":             "per-round outcome + timing (winner, reason, ticks, first kill, MVP, warmup/pregame flags)",
+	"round_player_sides": "per-round player sides from freeze-end samples (exact side per round — halftime switches)",
+	"round_economy":      "per-round per-side equipment value + money samples (buy classification input)",
+	"events":             "normalized game events (kill/damage/blind/bomb/…) with tick, actors, weapon flags, positions",
+	"generic_events":     "raw parser events not in the normalized taxonomy (name/tick/payload JSON)",
+	"chat":               "in-game chat/user messages (+ M4 decryption provenance columns)",
+	"warnings":           "parser warnings captured during extraction, per match, ordered",
+	"jobs":               "import job queue state (queued/running/done/failed + progress)",
 
 	// M3 analytics (derived rows).
 	"round_classifications": "per-round buy classification with rule_version + human explanation",
@@ -54,9 +55,13 @@ var columnNotes = map[string]map[string]string{
 		"pos_x":          "world position when the event carried one (NULL otherwise; sidecar has full tracks)",
 	},
 	"rounds": {
-		"winner": "ct|t|'' (empty = unresolved)",
-		"warmup": "1 = warmup round (analytics excludes it)",
-		"mvp":    "SteamID64 of the round MVP",
+		"winner":  "ct|t|'' (empty = unresolved)",
+		"warmup":  "1 = warmup round (analytics excludes it)",
+		"pregame": "1 = pre-match (knife) round — GamePhase=Pregame, scoreboard resets after; excluded from stats like warmup",
+		"mvp":     "SteamID64 of the round MVP",
+	},
+	"round_player_sides": {
+		"side": "player's side in that round (ct|t) — freeze-end sample; sides switch at halftime, so this is the exact per-round truth",
 	},
 	"player_round_stats": {
 		"traded":   "victim's death was answered inside the trade window (M3 rule)",
@@ -82,6 +87,8 @@ var columnNotes = map[string]map[string]string{
 	"player_stats": {
 		"trade_kills":     "kills answering a teammate death inside the trade window",
 		"opening_kills":   "first-kill attributions (extractor rule)",
+		"assists":         "cross-team assists, AssistedFlash excluded (external-scoreboard convention)",
+		"flash_assists":   "AssistedFlash assists, split out of assists (the game's m_iAssists includes them)",
 		"kills_by_weapon": "JSON object (excluded from the metrics expression whitelist)",
 	},
 	"metrics": {

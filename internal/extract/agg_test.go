@@ -15,11 +15,11 @@ func TestRoundStateMachine(t *testing.T) {
 		t.Fatalf("evRound before first RoundStart = %d, want 1", got)
 	}
 
-	a.roundStart(1000, false, 115, "BOMB TARGET")
+	a.roundStart(1000, false, false, 115, "BOMB TARGET")
 	a.roundEnd(1500, "ct", "CTWin", "Round over", 64)
-	a.roundStart(2000, true, 115, "BOMB TARGET") // round 2: warmup
+	a.roundStart(2000, true, false, 115, "BOMB TARGET") // round 2: warmup
 	a.roundEnd(2600, "t", "TerroristsWin", "", 64)
-	a.roundStart(3000, false, 115, "BOMB TARGET")
+	a.roundStart(3000, false, false, 115, "BOMB TARGET")
 
 	if len(a.rounds) != 3 {
 		t.Fatalf("rounds = %d, want 3", len(a.rounds))
@@ -50,14 +50,18 @@ func TestRoundStateMachine(t *testing.T) {
 	}
 
 	// Side switch + half scores + final scores land in the match row.
-	a.halfEnd(7, 4)
+	// GameHalfEnded fires before the last round's score increment, so it
+	// only marks the half pending; the first freeze-end after the switch
+	// reads settled (already-swapped) scores and swaps them back.
+	a.setHalfPending()
 	a.sideSwitch()
+	a.freezeEnd(3500, 0, 0, 4, 8, nil) // post-switch: CT 4 / T 8 → 8/4
 	a.setFinalTeam("ct", teamFinal{score: 10})
 	a.setFinalTeam("t", teamFinal{score: 13})
 
 	m := a.build()
-	if m.Match.HalfCT != 7 || m.Match.HalfT != 4 {
-		t.Errorf("halves = %d/%d, want 7/4", m.Match.HalfCT, m.Match.HalfT)
+	if m.Match.HalfCT != 8 || m.Match.HalfT != 4 {
+		t.Errorf("halves = %d/%d, want 8/4 (settled, swapped back)", m.Match.HalfCT, m.Match.HalfT)
 	}
 	if m.Match.SideSwitches != 1 {
 		t.Errorf("sideSwitches = %d, want 1", m.Match.SideSwitches)
@@ -92,53 +96,67 @@ func TestRoundStateMachine(t *testing.T) {
 
 func TestTradeKillWindow(t *testing.T) {
 	a := newAgg()
-	a.roundStart(0, false, 115, "BOMB TARGET")
+	a.roundStart(0, false, false, 115, "BOMB TARGET")
 
-	// A CT player dies at tick 100 (world death: no killer).
-	a.kill(killInfo{tick: 100, tickRate: 64, victimKey: 2, victimName: "victim1", victimSide: "ct", weapon: "World"})
-
-	// Teammate of the dead player trades 4 s later → inside the 5 s window.
+	// A T player kills a CT at tick 100 — the CT's death enters the
+	// trade window keyed by the dead player: {killed-by, tick, side}.
 	a.kill(killInfo{
-		tick: 100 + 4*64, tickRate: 64,
-		killerKey: 3, killerName: "trader", killerSide: "t",
-		victimKey: 4, victimName: "victim2", victimSide: "ct",
+		tick: 100, tickRate: 64, real: true,
+		killerKey: 3, killerName: "killer", killerSide: "t",
+		victimKey: 2, victimName: "victim1", victimSide: "ct",
 		weapon: "AK-47",
 	})
-	if p := a.players[3]; p == nil || p.tradeKills != 1 {
-		t.Fatalf("trade within 5s not counted: %+v", a.players[3])
+
+	// The dead CT's teammate kills that T 4 s later → strict trade
+	// (the victim is the player who killed a teammate of the killer).
+	a.kill(killInfo{
+		tick: 100 + 4*64, tickRate: 64, real: true,
+		killerKey: 4, killerName: "trader", killerSide: "ct",
+		victimKey: 3, victimName: "killer", victimSide: "t",
+		weapon: "AK-47",
+	})
+	if p := a.players[4]; p == nil || p.tradeKills != 1 {
+		t.Fatalf("trade of the teammate's killer within 5s not counted: %+v", a.players[4])
 	}
 
-	// Kill 7 s after the last death → outside the window.
+	// A second CT death at tick 200 killed by T11…
 	a.kill(killInfo{
-		tick: 100 + 4*64 + 7*64, tickRate: 64,
-		killerKey: 5, killerName: "late", killerSide: "t",
-		victimKey: 6, victimName: "victim3", victimSide: "ct",
+		tick: 200, tickRate: 64, real: true,
+		killerKey: 11, killerName: "t2", killerSide: "t",
+		victimKey: 12, victimName: "ct2", victimSide: "ct",
 		weapon: "AK-47",
 	})
-	if p := a.players[5]; p == nil || p.tradeKills != 0 {
-		t.Fatalf("kill outside 5s window must not be a trade: %+v", a.players[5])
+	// …and T11 is killed 11 s later: outside the 5 s window → not a trade.
+	a.kill(killInfo{
+		tick: 200 + 11*64, tickRate: 64, real: true,
+		killerKey: 13, killerName: "late", killerSide: "ct",
+		victimKey: 11, victimName: "t2", victimSide: "t",
+		weapon: "AK-47",
+	})
+	if p := a.players[13]; p == nil || p.tradeKills != 0 {
+		t.Fatalf("kill outside the 5s window must not be a trade: %+v", a.players[13])
 	}
 
-	// The window resets at every RoundStart.
-	a.kill(killInfo{tick: 1000, tickRate: 64, victimKey: 7, victimName: "victim4", victimSide: "ct", weapon: "World"})
-	a.roundStart(1100, false, 115, "BOMB TARGET")
+	// The window resets at every RoundStart: T3 (killer of CT2 in the
+	// previous round) dies to a CT in the new round — no stale trade.
+	a.roundStart(1100, false, false, 115, "BOMB TARGET")
 	a.kill(killInfo{
-		tick: 1100 + 7*64, tickRate: 64,
-		killerKey: 8, killerName: "after", killerSide: "t",
-		victimKey: 9, victimName: "victim5", victimSide: "ct",
+		tick: 1100 + 4*64, tickRate: 64, real: true,
+		killerKey: 14, killerName: "after", killerSide: "ct",
+		victimKey: 15, victimName: "fresh", victimSide: "t",
 		weapon: "AK-47",
 	})
-	if p := a.players[8]; p == nil || p.tradeKills != 0 {
-		t.Fatalf("trade window must reset at RoundStart: %+v", a.players[8])
+	if p := a.players[14]; p == nil || p.tradeKills != 0 {
+		t.Fatalf("trade window must reset at RoundStart: %+v", a.players[14])
 	}
 }
 
 func TestEntryOpeningAttribution(t *testing.T) {
 	a := newAgg()
-	a.roundStart(0, false, 115, "BOMB TARGET")
+	a.roundStart(0, false, false, 115, "BOMB TARGET")
 
 	a.kill(killInfo{
-		tick: 128, tickRate: 64,
+		tick: 128, tickRate: 64, real: true,
 		killerKey: 10, killerName: "entry", killerSide: "ct",
 		victimKey: 20, victimName: "firstdead", victimSide: "t",
 		weapon: "AK-47",
@@ -158,7 +176,7 @@ func TestEntryOpeningAttribution(t *testing.T) {
 
 	// Later kills do not re-attribute first blood.
 	a.kill(killInfo{
-		tick: 256, tickRate: 64,
+		tick: 256, tickRate: 64, real: true,
 		killerKey: 11, killerName: "second", killerSide: "ct",
 		victimKey: 21, victimName: "seconddead", victimSide: "t",
 		weapon: "AK-47",
@@ -173,11 +191,11 @@ func TestEntryOpeningAttribution(t *testing.T) {
 
 func TestStreakAcrossDeaths(t *testing.T) {
 	a := newAgg()
-	a.roundStart(0, false, 115, "BOMB TARGET")
+	a.roundStart(0, false, false, 115, "BOMB TARGET")
 
 	kill := func(killer, victim uint64, tick int) {
 		a.kill(killInfo{
-			tick: tick, tickRate: 64,
+			tick: tick, tickRate: 64, real: true,
 			killerKey: killer, killerName: "k", killerSide: "ct",
 			victimKey: victim, victimName: "v", victimSide: "t",
 			weapon: "AK-47",
@@ -205,11 +223,11 @@ func TestStreakAcrossDeaths(t *testing.T) {
 
 func TestMultiKillCounts(t *testing.T) {
 	a := newAgg()
-	a.roundStart(0, false, 115, "BOMB TARGET")
+	a.roundStart(0, false, false, 115, "BOMB TARGET")
 
 	kill := func(tick int, victim uint64) {
 		a.kill(killInfo{
-			tick: tick, tickRate: 64,
+			tick: tick, tickRate: 64, real: true,
 			killerKey: 1, killerName: "ace", killerSide: "t",
 			victimKey: victim, victimName: "x", victimSide: "ct",
 			weapon: "AK-47",
@@ -231,7 +249,7 @@ func TestMultiKillCounts(t *testing.T) {
 	}
 
 	// Per-round counter restarts with the round.
-	a.roundStart(1000, false, 115, "BOMB TARGET")
+	a.roundStart(1000, false, false, 115, "BOMB TARGET")
 	kill(1010, 200)
 	kill(1020, 201)
 	if p.threeK != 1 {
@@ -253,9 +271,9 @@ func TestNullByteNamesPassThrough(t *testing.T) {
 		t.Errorf("chat text = %q, want unmodified %q", a.chatRows[0].Text, text)
 	}
 
-	a.roundStart(10, false, 115, "BOMB TARGET")
+	a.roundStart(10, false, false, 115, "BOMB TARGET")
 	a.kill(killInfo{
-		tick: 11, tickRate: 64,
+		tick: 11, tickRate: 64, real: true,
 		killerKey: 76561198000000001, killerName: name, killerSide: "ct",
 		victimKey: 76561198000000002, victimName: "vic\x00tim", victimSide: "t",
 		weapon: "AK-47", headshot: true,
@@ -350,11 +368,11 @@ func TestProgressCallback(t *testing.T) {
 
 func TestWeaponMapJSONShape(t *testing.T) {
 	a := newAgg()
-	a.roundStart(0, false, 115, "BOMB TARGET")
+	a.roundStart(0, false, false, 115, "BOMB TARGET")
 
 	kill := func(tick int, victim uint64, weapon string, hs bool) {
 		a.kill(killInfo{
-			tick: tick, tickRate: 64,
+			tick: tick, tickRate: 64, real: true,
 			killerKey: 1, killerName: "a", killerSide: "ct",
 			victimKey: victim, victimName: "v", victimSide: "t",
 			weapon: weapon, headshot: hs,
@@ -365,7 +383,7 @@ func TestWeaponMapJSONShape(t *testing.T) {
 	kill(30, 102, "AWP", false)
 
 	a.hurt(hurtInfo{
-		tick: 15, attackerKey: 1, attackerName: "a",
+		tick: 15, real: true, attackerKey: 1, attackerName: "a",
 		victimKey: 100, victimName: "v",
 		weapon: "AK-47", healthDamage: 34, healthDamageTaken: 30, health: 66, hitgroup: "Chest",
 	})
@@ -448,6 +466,228 @@ func TestRawPayloadPairing(t *testing.T) {
 	// Rows before the first RoundStart are attributed to round 1.
 	if a.events[0].Round != 1 || a.generic[0].Round != 1 {
 		t.Errorf("pre-round rows got round 0: events=%d generic=%d", a.events[0].Round, a.generic[0].Round)
+	}
+}
+
+// TestPregameRoundGating: pregame (knife) rounds never pollute stats —
+// event rows still emit, but kills/damage/assists/participation skip and
+// the round counts as neither warmup nor real.
+func TestPregameRoundGating(t *testing.T) {
+	a := newAgg()
+	a.roundStart(0, false, true, 115, "BOMB TARGET") // knife round
+	a.kill(killInfo{
+		tick: 10, tickRate: 64, real: false,
+		killerKey: 1, killerName: "k", killerSide: "t",
+		victimKey: 2, victimName: "v", victimSide: "ct",
+		assisterKey: 3, assisterName: "a", assisterSide: "t",
+		weapon: "Knife",
+	})
+	a.hurt(hurtInfo{
+		tick: 11, real: false, attackerKey: 1, attackerName: "k",
+		victimKey: 2, victimName: "v", weapon: "Knife", healthDamage: 55,
+	})
+	if a.players[1] != nil || a.players[2] != nil || a.players[3] != nil {
+		t.Fatalf("pregame kill created stat accumulators: %+v %+v %+v",
+			a.players[1], a.players[2], a.players[3])
+	}
+	// The event rows themselves are still emitted.
+	kills := 0
+	for _, e := range a.events {
+		if e.Kind == models.EventKill {
+			kills++
+		}
+	}
+	if kills != 1 {
+		t.Fatalf("pregame kill event row missing: %+v", a.events)
+	}
+
+	// First REAL round counts and its stats land.
+	a.roundStart(100, false, false, 115, "BOMB TARGET")
+	a.kill(killInfo{
+		tick: 200, tickRate: 64, real: true,
+		killerKey: 1, killerName: "k", killerSide: "t",
+		victimKey: 2, victimName: "v", victimSide: "ct",
+		weapon: "AK-47",
+	})
+	a.freezeEnd(110, 0, 0, 0, 0, []moneySample{
+		{key: 1, name: "k", side: "t", money: 800},
+		{key: 2, name: "v", side: "ct", money: 800},
+	})
+	if p := a.players[1]; p == nil || p.kills != 1 {
+		t.Fatalf("real kill not counted: %+v", p)
+	}
+	m := a.build()
+	if m.Match.RealRounds != 1 || m.Match.WarmupRounds != 0 {
+		t.Errorf("round counts = %d real / %d warmup, want 1/0", m.Match.RealRounds, m.Match.WarmupRounds)
+	}
+	if !m.Rounds[0].Pregame || m.Rounds[1].Pregame {
+		t.Errorf("pregame flags = %v/%v, want true/false", m.Rounds[0].Pregame, m.Rounds[1].Pregame)
+	}
+	if rs := a.participation[1]; len(rs) != 1 || !rs[2] {
+		t.Errorf("participation = %v, want only round 2", rs)
+	}
+}
+
+// TestSuicideTeamkillCredit: suicides and teamkills never credit kills or
+// first blood; deaths/suicides/teamkills still count.
+func TestSuicideTeamkillCredit(t *testing.T) {
+	a := newAgg()
+	a.roundStart(0, false, false, 115, "BOMB TARGET")
+
+	a.kill(killInfo{
+		tick: 10, tickRate: 64, real: true, samePlayer: true,
+		killerKey: 1, killerName: "s", killerSide: "ct",
+		victimKey: 1, victimName: "s", victimSide: "ct",
+		weapon: "World",
+	})
+	p := a.players[1]
+	if p == nil || p.kills != 0 || p.deaths != 1 || p.suicides != 1 {
+		t.Fatalf("suicide accounting = %+v, want 0 kills / 1 death / 1 suicide", p)
+	}
+	if r := a.rounds[0]; r.firstKillSteam != "" || r.firstDeathSteam != "" {
+		t.Fatalf("suicide must not open the round's first blood: %+v", r)
+	}
+
+	a.kill(killInfo{
+		tick: 20, tickRate: 64, real: true,
+		killerKey: 2, killerName: "tk", killerSide: "ct",
+		victimKey: 3, victimName: "mate", victimSide: "ct",
+		weapon: "M4A1",
+	})
+	if p := a.players[2]; p == nil || p.kills != 0 || p.teamkills != 1 {
+		t.Fatalf("teamkill accounting = %+v, want 0 kills / 1 teamkill", p)
+	}
+	if p := a.players[3]; p == nil || p.deaths != 1 {
+		t.Fatalf("teamkill victim accounting = %+v, want 1 death", p)
+	}
+
+	// First blood still opens on the first real enemy kill.
+	a.kill(killInfo{
+		tick: 30, tickRate: 64, real: true,
+		killerKey: 4, killerName: "ek", killerSide: "t",
+		victimKey: 5, victimName: "foe", victimSide: "ct",
+		weapon: "AK-47",
+	})
+	if r := a.rounds[0]; r.firstKillSteam != "4" || r.firstDeathSteam != "5" {
+		t.Fatalf("first blood = %q killed %q, want 4 killed 5", r.firstKillSteam, r.firstDeathSteam)
+	}
+}
+
+// TestFlashAssistSplit: AssistedFlash assists land in flashAssists, not
+// assists; cross-team only.
+func TestFlashAssistSplit(t *testing.T) {
+	a := newAgg()
+	a.roundStart(0, false, false, 115, "BOMB TARGET")
+
+	a.kill(killInfo{
+		tick: 10, tickRate: 64, real: true,
+		killerKey: 1, killerName: "k", killerSide: "t",
+		victimKey: 2, victimName: "v", victimSide: "ct",
+		assisterKey: 3, assisterName: "flashy", assisterSide: "t",
+		assistedFlash: true, weapon: "AK-47",
+	})
+	if p := a.players[3]; p == nil || p.assists != 0 || p.flashAssists != 1 {
+		t.Fatalf("flash assist split = %+v, want 0 assists / 1 flashAssist", p)
+	}
+
+	a.kill(killInfo{
+		tick: 20, tickRate: 64, real: true,
+		killerKey: 1, killerName: "k", killerSide: "t",
+		victimKey: 4, victimName: "v2", victimSide: "ct",
+		assisterKey: 5, assisterName: "damager", assisterSide: "t",
+		weapon: "AK-47",
+	})
+	if p := a.players[5]; p == nil || p.assists != 1 || p.flashAssists != 0 {
+		t.Fatalf("normal assist = %+v, want 1 assist / 0 flashAssists", p)
+	}
+
+	// A same-side assister (teamkill assist) counts nothing.
+	a.kill(killInfo{
+		tick: 30, tickRate: 64, real: true,
+		killerKey: 1, killerName: "k", killerSide: "t",
+		victimKey: 4, victimName: "v2", victimSide: "ct",
+		assisterKey: 6, assisterName: "victim-mate", assisterSide: "ct",
+		weapon: "AK-47",
+	})
+	if p := a.players[6]; p != nil && (p.assists != 0 || p.flashAssists != 0) {
+		t.Fatalf("same-side assister credited: %+v", p)
+	}
+}
+
+// TestMVPScanDelta: MVPs come from per-round counter diffs at RoundEnd;
+// warmup rounds never credit.
+func TestMVPScanDelta(t *testing.T) {
+	a := newAgg()
+	a.roundStart(0, false, true, 115, "BOMB TARGET") // knife round (pregame)
+	a.mvpScan(1, "ace", 1)                           // knife MVP — credited (game counter includes it)
+	if p := a.players[1]; p == nil || p.mvps != 1 {
+		t.Fatalf("pregame MVP not credited: %+v", p)
+	}
+	if a.rounds[0].mvp != "1" {
+		t.Fatalf("round MVP = %q, want 1", a.rounds[0].mvp)
+	}
+
+	a.roundStart(100, true, false, 115, "BOMB TARGET") // warmup
+	a.mvpScan(1, "ace", 2)                             // warmup MVP increase — dropped
+	if p := a.players[1]; p.mvps != 1 {
+		t.Fatalf("warmup MVP credited: %+v", p)
+	}
+
+	a.roundStart(200, false, false, 115, "BOMB TARGET") // real round
+	a.mvpScan(1, "ace", 3)
+	a.mvpScan(2, "other", 1)
+	if p := a.players[1]; p == nil || p.mvps != 2 {
+		t.Fatalf("real MVP delta = %+v, want 2", p)
+	}
+	if p := a.players[2]; p == nil || p.mvps != 1 {
+		t.Fatalf("other player MVP = %+v, want 1", p)
+	}
+	if a.rounds[2].mvp != "1" {
+		t.Fatalf("round 3 MVP = %q, want 1 (first observed)", a.rounds[2].mvp)
+	}
+
+	// The announcement fills reason but never double-counts.
+	a.roundMVP(1, "ace", "MostEliminations")
+	if p := a.players[1]; p.mvps != 2 {
+		t.Fatalf("announcement double-counted MVP: %+v", p)
+	}
+	if a.rounds[2].mvpReason != "MostEliminations" {
+		t.Fatalf("round MVP reason = %q", a.rounds[2].mvpReason)
+	}
+}
+
+// TestFreezeEndSides: freeze-end samples persist per-round sides and
+// update each player's last-observed (final) side; participation skips
+// warmup/pregame rounds.
+func TestFreezeEndSides(t *testing.T) {
+	a := newAgg()
+	a.roundStart(0, false, true, 115, "BOMB TARGET") // pregame
+	a.freezeEnd(10, 0, 0, 0, 0, []moneySample{
+		{key: 1, name: "a", side: "ct", money: 800},
+		{key: 2, name: "b", side: "t", money: 800},
+	})
+	a.roundStart(20, false, false, 115, "BOMB TARGET") // real, sides picked
+	a.freezeEnd(30, 0, 0, 0, 0, []moneySample{
+		{key: 1, name: "a", side: "t", money: 3200},
+		{key: 2, name: "b", side: "ct", money: 2400},
+	})
+
+	if len(a.roundSides) != 4 {
+		t.Fatalf("round-side rows = %d, want 4", len(a.roundSides))
+	}
+	last := a.roundSides[len(a.roundSides)-1]
+	if last.Round != 2 || last.SteamID != "2" || last.Side != "ct" {
+		t.Fatalf("last round-side row = %+v, want round 2 / 2 / ct", last)
+	}
+	if p := a.players[1]; p == nil || p.side != "t" {
+		t.Fatalf("last-observed side = %+v, want t", p)
+	}
+	if rs := a.participation[1]; len(rs) != 1 || !rs[2] {
+		t.Fatalf("participation = %v, want only counted round 2", rs)
+	}
+	m := a.build()
+	if len(m.RoundSides) != 4 || m.RoundSides[3].Side != "ct" {
+		t.Fatalf("built round sides = %+v", m.RoundSides)
 	}
 }
 

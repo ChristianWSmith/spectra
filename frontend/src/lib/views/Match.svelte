@@ -29,6 +29,7 @@
     fmtInt,
     prettyJson,
   } from '../fmt.js';
+  import { teamNames } from '../teams.js';
   import RoundStrip from '../components/RoundStrip.svelte';
   import Economy from './Economy.svelte';
   import Utility from './Utility.svelte';
@@ -530,6 +531,18 @@
     }
   }
 
+  // Team display names for the scoreline header and the roster headings:
+  // the demo's clan names when the extract recorded them, else a
+  // player-derived `team_<player>` name per side (see lib/teams.js).
+  // These label the TEAMS (final sides) — never the sides themselves.
+  const teams = $derived(
+    teamNames({
+      ctName: summary?.ctName || '',
+      tName: summary?.tName || '',
+      players: scoreboard,
+    }),
+  );
+
   const rosters = $derived.by(() => {
     const ct = scoreboard.filter((p) => p.side === 'ct');
     const t = scoreboard.filter((p) => p.side === 't');
@@ -569,9 +582,9 @@
     <header class="view-header match-header">
       <div>
         <h1>
-          <span class="ct">{summary?.ctName || 'CT'}</span>
+          <span class="ct">{teams.ct}</span>
           <span class="score">{match.scoreCT}–{match.scoreT}</span>
-          <span class="t">{summary?.tName || 'T'}</span>
+          <span class="t">{teams.t}</span>
         </h1>
         <p class="muted match-sub">
           {match.map || '—'}
@@ -672,7 +685,7 @@
 
       <div class="roster-grid">
         <section class="panel">
-          <h2 class="side-ct">CT roster</h2>
+          <h2 class="side-ct">{teams.ct} roster</h2>
           <table class="data-table">
             <thead>
               <tr>
@@ -705,7 +718,7 @@
           </table>
         </section>
         <section class="panel">
-          <h2 class="side-t">T roster</h2>
+          <h2 class="side-t">{teams.t} roster</h2>
           <table class="data-table">
             <thead>
               <tr>

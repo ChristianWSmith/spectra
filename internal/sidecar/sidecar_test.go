@@ -3,6 +3,7 @@ package sidecar
 import (
 	"encoding/binary"
 	"errors"
+	"math"
 	"os"
 	"path/filepath"
 	"testing"
@@ -19,10 +20,12 @@ const (
 
 // syntheticState derives frame i's players from a deterministic pattern:
 // moving integer coordinates (they survive int16 quantization exactly),
-// yaw sweeping the full circle, alternating flags, and a mask that cycles
+// yaw sweeping the full circle (including the 0..360 raw range), a side
+// cycling ct/t/unknown, alternating flags, and a mask that cycles
 // through both-alive / A-only / B-only / both-dead.
 func syntheticState(i int) (tick int32, players []extract.PositionPlayer) {
 	tick = int32(1000 + i*2)
+	sides := [...]string{"ct", "t", ""}
 	mk := func(id uint64, i int, air, duck bool) extract.PositionPlayer {
 		return extract.PositionPlayer{
 			SteamID: id,
@@ -32,6 +35,7 @@ func syntheticState(i int) (tick int32, players []extract.PositionPlayer) {
 			Yaw:     float32((i*13)%360 - 180),
 			Air:     air,
 			Duck:    duck,
+			Side:    sides[i%3],
 		}
 	}
 	switch i % 5 {
@@ -166,8 +170,12 @@ func assertFrames(t *testing.T, got []decodedFrame, from int) {
 			if p.Duck {
 				wantFlags |= 2
 			}
+			wantFlags |= sideFlagBits(p.Side)
 			if got.flags != wantFlags {
 				t.Errorf("frame %d slot %d flags = %#b, want %#b", i, slot, got.flags, wantFlags)
+			}
+			if s := sideFlagString(got.flags); s != p.Side {
+				t.Errorf("frame %d slot %d side = %q, want %q", i, slot, s, p.Side)
 			}
 		}
 	}
@@ -517,5 +525,30 @@ func TestBlockIndependentDecode(t *testing.T) {
 	}
 	if total != 1000 {
 		t.Errorf("total frames across blocks = %d, want 1000", total)
+	}
+}
+
+// TestQuantYawWrap: yaw encodes modulo 360 (real yaw is 0..360; the decode
+// contract is -180..180) — no clamping saturation like v1's pitch input.
+func TestQuantYawWrap(t *testing.T) {
+	if quantYaw(270) != quantYaw(-90) {
+		t.Errorf("quantYaw(270)=%d != quantYaw(-90)=%d (must wrap)", quantYaw(270), quantYaw(-90))
+	}
+	if quantYaw(359) == quantYaw(179) {
+		t.Error("359° and 179° must encode differently")
+	}
+	for _, deg := range []float32{-180, -90, 0, 45, 90, 179, 180, 270, 359.9} {
+		got := float64(quantYaw(deg))/256*360 - 180
+		want := float64(deg)
+		if want > 180 {
+			want -= 360
+		}
+		delta := math.Abs(got - want)
+		if delta > 180 {
+			delta = 360 - delta // circular distance (±180 are the same angle)
+		}
+		if delta > 360.0/256+0.001 {
+			t.Errorf("quantYaw(%v) decoded to %v, want ~%v", deg, got, want)
+		}
 	}
 }

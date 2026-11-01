@@ -620,8 +620,8 @@ func assertSafetyNets(t *testing.T, got *goldenFixture) {
 	if got.RoundsTotal != 25 {
 		t.Errorf("safety: roundsTotal = %d, want 25", got.RoundsTotal)
 	}
-	if got.RealRounds != 24 {
-		t.Errorf("safety: realRounds = %d, want 24", got.RealRounds)
+	if got.RealRounds != 23 {
+		t.Errorf("safety: realRounds = %d, want 23 (24 rounds minus the pregame knife round)", got.RealRounds)
 	}
 	if got.Players != 10 {
 		t.Errorf("safety: players = %d, want 10", got.Players)

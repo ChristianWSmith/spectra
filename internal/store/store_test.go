@@ -35,8 +35,9 @@ func openFileStore(t *testing.T) (*Store, string) {
 func pf(v float64) *float64 { return &v }
 
 // testExtracted builds a synthetic extract: NUL bytes in player/chat/warning
-// strings, 2 players, 2 rounds (0 warmup + 1 real), 5 events, 3 generic
-// events, 2 chat lines, 1 warning, teams and economies. The first kill and
+// strings, 2 players, 3 rounds (warmup + real + pregame), 5 events, 3 generic
+// events, 2 chat lines, 1 warning, teams, economies and per-round sides. The
+// first kill and
 // the bomb plant carry positions; the damage event has none (NULL roundtrip).
 func testExtracted(sha string, extractedAt time.Time) *models.ExtractedMatch {
 	return &models.ExtractedMatch{
@@ -61,7 +62,7 @@ func testExtracted(sha string, extractedAt time.Time) *models.ExtractedMatch {
 		},
 		PlayerStats: []models.PlayerStats{
 			{SteamID: "100", Side: "ct", Name: "al\x00ice", Kills: 10, Deaths: 0, Assists: 2,
-				Headshots: 4, MVPs: 1, Score: 22, TotalDamage: 1200, DamageTaken: 400, Shots: 50,
+				FlashAssists: 1, Headshots: 4, MVPs: 1, Score: 22, TotalDamage: 1200, DamageTaken: 400, Shots: 50,
 				Hits: 20, ADR: 60, HSPct: 40, RoundsPlayed: 2, EntryKills: 1, OpeningKills: 1,
 				TradeKills: 2, BestStreak: 5, ThreeK: 1, UtilityDamage: 50, FlashesPopped: 3,
 				BombPlants: 1, MoneySpentTotal: 7500,
@@ -76,10 +77,15 @@ func testExtracted(sha string, extractedAt time.Time) *models.ExtractedMatch {
 			{Number: 1, Winner: "ct", Reason: "CTWin", DurationS: 117.5, StartTick: 100,
 				EndTick: 7620, MVP: "100", MVPReason: "kill", EquipCT: 25000, EquipT: 20000,
 				FreezeEndTick: 150, FirstKillSteam: "100", FirstDeathSteam: "200"},
+			{Number: 2, Pregame: true, StartTick: 7700},
 		},
 		RoundEconomy: []models.RoundEconomy{
 			{Round: 1, Side: "ct", EquipValue: 25000, MoneySampledSum: 15000, MoneySamples: 5},
 			{Round: 1, Side: "t", EquipValue: 20000, MoneySampledSum: 12500, MoneySamples: 5},
+		},
+		RoundSides: []models.RoundPlayerSide{
+			{Round: 1, SteamID: "100", Side: "ct"},
+			{Round: 1, SteamID: "200", Side: "t"},
 		},
 		Events: []models.Event{
 			{Tick: 100, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "200",
@@ -314,7 +320,8 @@ func TestSaveExtractedRoundtrip(t *testing.T) {
 	if alice.SteamID != "100" || alice.Name != "alice" || alice.Side != "ct" || alice.IsBot {
 		t.Errorf("alice row mismatch: %+v", alice)
 	}
-	if alice.Kills != 10 || alice.Deaths != 0 || alice.Assists != 2 || alice.KD != 10 || alice.KDA != 12 {
+	if alice.Kills != 10 || alice.Deaths != 0 || alice.Assists != 2 || alice.FlashAssists != 1 ||
+		alice.KD != 10 || alice.KDA != 12 {
 		t.Errorf("alice stats mismatch: %+v", alice)
 	}
 	if alice.HSPct != 40 || alice.ADR != 60 || alice.MoneySpent != 7500 ||
@@ -329,11 +336,14 @@ func TestSaveExtractedRoundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetRounds: %v", err)
 	}
-	if len(rounds) != 2 {
-		t.Fatalf("GetRounds len = %d, want 2", len(rounds))
+	if len(rounds) != 3 {
+		t.Fatalf("GetRounds len = %d, want 3", len(rounds))
 	}
 	if rounds[0].Number != 0 || !rounds[0].Warmup || rounds[0].MVPName != "" {
 		t.Errorf("warmup round mismatch: %+v", rounds[0])
+	}
+	if rounds[2].Number != 2 || !rounds[2].Pregame || rounds[2].Warmup {
+		t.Errorf("pregame round mismatch: %+v", rounds[2])
 	}
 	r1 := rounds[1]
 	if r1.Number != 1 || r1.Winner != "ct" || r1.Reason != "CTWin" || r1.DurationS != 117.5 ||
@@ -378,6 +388,14 @@ func TestSaveExtractedRoundtrip(t *testing.T) {
 	}
 	if _, err := s.GetRoundDetail(id, 99); !errors.Is(err, ErrNotFound) {
 		t.Errorf("GetRoundDetail(99) err = %v, want ErrNotFound", err)
+	}
+
+	sides, err := s.GetRoundPlayerSides(id)
+	if err != nil {
+		t.Fatalf("GetRoundPlayerSides: %v", err)
+	}
+	if len(sides) != 1 || sides[1]["100"] != "ct" || sides[1]["200"] != "t" {
+		t.Errorf("round player sides = %v, want round 1: 100→ct 200→t", sides)
 	}
 
 	all, err := s.GetEvents(models.EventFilter{MatchID: id, Round: -1})
@@ -496,11 +514,18 @@ func TestSaveExtractedReplaces(t *testing.T) {
 		{"warnings", len(mustWarnings(t, s, id))},
 		{"histogram", len(mustHist(t, s, id))},
 	}
-	want := map[string]int{"board": 2, "rounds": 2, "events": 5, "chat": 2, "warnings": 1, "histogram": 2}
+	want := map[string]int{"board": 2, "rounds": 3, "events": 5, "chat": 2, "warnings": 1, "histogram": 2}
 	for _, c := range checks {
 		if c.n != want[c.name] {
 			t.Errorf("%s count = %d, want %d (no duplicates)", c.name, c.n, want[c.name])
 		}
+	}
+	sides, err := s.GetRoundPlayerSides(id)
+	if err != nil {
+		t.Fatalf("GetRoundPlayerSides: %v", err)
+	}
+	if n := len(sides[1]); n != 2 {
+		t.Errorf("round-side rows = %d, want 2 (no duplicates)", n)
 	}
 	m, err := s.GetMatch(id)
 	if err != nil {

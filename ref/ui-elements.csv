@@ -53,7 +53,7 @@ Sort direction button,Library,Arrow button (↓/↑) right of the sort dropdown 
 Sort field dropdown,Library,"""Sort by"" select in the Library header choosing the sort column (Extracted, Map, Size, Score, Duration, Status).",Library.svelte:lib-sort
 Combat tab content,Match — Overview & header,Embedded combat-stats view rendered when the Combat tab is active.,Match.svelte:Combat
 Context tab content,Match — Overview & header,Embedded demo-context view rendered when the Context tab is active.,Match.svelte:Context
-CT roster table,Match — Overview & header,"Overview panel table of CT players with Player, K/D/A and ADR columns; clicking a row opens that player's timeline.",Match.svelte:side-ct
+CT roster table,Match — Overview & header,"Overview panel table of the team that finished CT, headed by that team's display name (demo clan name, else team_<player>, else ""CT"") with Player, K/D/A and ADR columns; clicking a row opens that player's timeline.",Match.svelte:side-ct
 Current round highlight,Match — Overview & header,Highlight styling on the round cell matching the round currently open in Round Detail.,RoundStrip.svelte:current
 Derived stats badge,Match — Overview & header,"""derived"" chip next to a player name in the roster tables when they were absent from the final snapshot and stats came from events.",Match.svelte:provenance
 Economy tab content,Match — Overview & header,Embedded Economy analysis view rendered in the match body when the Economy tab is active.,Match.svelte:Economy
@@ -64,16 +64,16 @@ Heatmaps tab content,Match — Overview & header,Embedded heatmap view rendered 
 Key facts list,Match — Overview & header,"Definition list on the Overview tab: Server, Map, Tickrate, Frames, Duration, Size, Extracted, Warnings, First blood and Source path.",Match.svelte:facts
 Match loading text,Match — Overview & header,"""Loading…"" placeholder shown while the match view is still fetching its data.",Match.svelte:match
 Match not found message,Match — Overview & header,"Error alert ""Match not found."" when the match id has no matching record.",Match.svelte:error
-Match scoreline header,Match — Overview & header,Large CT name – score – T name title at the top of the match view.,Match.svelte:score
+Match scoreline header,Match — Overview & header,Large team name – score – team name title at the top of the match view (team names, never the sides),Match.svelte:score
 Match section tab bar,Match — Overview & header,"Nav of tabs (Overview, Scoreboard, Rounds, Economy, Utility, Heatmaps, Combat, Timeline, Chat, Context, Raw); Timeline navigates away, the rest switch in-page panels.",Match.svelte:tabs
 Match subtitle line,Match — Overview & header,"Muted meta line under the scoreline: map, half score, duration, tickrate, patch, status chip, voice badges and parser version.",Match.svelte:match-sub
-Other players table,Match — Overview & header,"Small table under the T roster for players outside CT/T, showing name, K/D/A and ADR.",Match.svelte:rosters
+Other players table,Match — Overview & header,"Small table under the second roster for players outside both sides, showing name, K/D/A and ADR.",Match.svelte:rosters
 Overview stat card,Match — Overview & header,"One of five clickable cards on the Overview tab (Top fragger, Best ADR, Most util, Entry opens, Most MVPs) that opens the timeline filtered to that player.",Match.svelte:stat-cell
 Replay button,Match — Overview & header,Primary header button opening the replay view for the whole match from tick 0.,Match.svelte:openReplay
 Roster ADR chip,Match — Overview & header,Small chip showing a player's ADR value in the Overview roster tables.,Match.svelte:adr
 Round cell button,Match — Overview & header,Winner-tinted (CT blue / T yellow) round-number button that opens that round's detail view; warmup or no-winner rounds are muted.,RoundStrip.svelte:round-cell
 Round strip,Match — Overview & header,"Horizontal row of numbered round cells showing round-by-round winners, displayed above the match and round detail views.",RoundStrip.svelte:round-strip
-T roster table,Match — Overview & header,"Overview panel table of T players with the same Player, K/D/A and ADR columns.",Match.svelte:side-t
+T roster table,Match — Overview & header,"Overview panel table of the team that finished T, headed by that team's display name (demo clan name, else team_<player>, else ""T"") with the same Player, K/D/A and ADR columns.",Match.svelte:side-t
 Timeline button,Match — Overview & header,Primary header button opening the timeline view for this match.,Match.svelte:match-header
 Utility tab content,Match — Overview & header,Embedded utility-analysis view rendered when the Utility tab is active.,Match.svelte:Utility
 Voice presence badge,Match — Overview & header,"🔊 chip in the subtitle showing voice chunk count and player count, or a ""no voice"" variant when the demo has no voice track.",Match.svelte:voice

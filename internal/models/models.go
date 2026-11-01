@@ -137,13 +137,17 @@ type Player struct {
 // Every field is computed by the extractor from events/final state; ratios
 // like ADR/HS% are stored precomputed so reads never re-derive them.
 type PlayerStats struct {
-	MatchID         int64   `json:"matchId"`
-	SteamID         string  `json:"steamId"`
-	Side            string  `json:"side"`
-	Name            string  `json:"name"` // denormalized for display convenience
-	Kills           int     `json:"kills"`
-	Deaths          int     `json:"deaths"`
-	Assists         int     `json:"assists"`
+	MatchID int64  `json:"matchId"`
+	SteamID string `json:"steamId"`
+	Side    string `json:"side"`
+	Name    string `json:"name"` // denormalized for display convenience
+	Kills   int    `json:"kills"`
+	Deaths  int    `json:"deaths"`
+	Assists int    `json:"assists"`
+	// FlashAssists are AssistedFlash assists, split out of Assists —
+	// external scoreboards exclude them from the assist column (the game's
+	// own m_iAssists includes them; see models.Round/CS2 knowledge).
+	FlashAssists    int     `json:"flashAssists"`
 	Headshots       int     `json:"headshots"`
 	Teamkills       int     `json:"teamkills"`
 	Suicides        int     `json:"suicides"`
@@ -176,26 +180,31 @@ type PlayerStats struct {
 }
 
 // Round is one round's summary (rounds table). Number is the extractor's
-// chronological index (warmup rounds included — Warmup distinguishes them).
-// MVP/MVPReason are best-effort: some demos never emit round-MVP data (the
-// golden demo does not) — empty means "absent", not zero.
+// chronological index (warmup and pregame rounds included — Warmup and
+// Pregame distinguish them; neither counts toward Match.RealRounds or any
+// stat). MVP/MVPReason are best-effort: some demos never emit round-MVP data
+// (the golden demo does not) — empty means "absent", not zero.
 type Round struct {
-	MatchID         int64   `json:"matchId"`
-	Number          int     `json:"number"`
-	Winner          string  `json:"winner"` // "ct" | "t" | "" (warmup/none)
-	Reason          string  `json:"reason"` // CTWin | TerroristsWin | BombDefused | TargetBombed | …
-	DurationS       float64 `json:"durationS"`
-	StartTick       int     `json:"startTick"`
-	EndTick         int     `json:"endTick"`
-	Warmup          bool    `json:"warmup"`
-	MVP             string  `json:"mvp"` // SteamID64, may be empty
-	MVPReason       string  `json:"mvpReason"`
-	EquipCT         int     `json:"equipCT"`
-	EquipT          int     `json:"equipT"`
-	BombSite        string  `json:"bombSite"` // "A" | "B" | ""
-	FreezeEndTick   int     `json:"freezeEndTick"`
-	FirstKillSteam  string  `json:"firstKillSteam"`
-	FirstDeathSteam string  `json:"firstDeathSteam"`
+	MatchID   int64   `json:"matchId"`
+	Number    int     `json:"number"`
+	Winner    string  `json:"winner"` // "ct" | "t" | "" (warmup/none)
+	Reason    string  `json:"reason"` // CTWin | TerroristsWin | BombDefused | TargetBombed | …
+	DurationS float64 `json:"durationS"`
+	StartTick int     `json:"startTick"`
+	EndTick   int     `json:"endTick"`
+	Warmup    bool    `json:"warmup"`
+	// Pregame marks a pre-match (knife) round: runs with warmup=false and
+	// the match started but GamePhase()==Pregame; the scoreboard resets
+	// afterwards (golden demo round 1). Excluded from stats like Warmup.
+	Pregame         bool   `json:"pregame"`
+	MVP             string `json:"mvp"` // SteamID64, may be empty
+	MVPReason       string `json:"mvpReason"`
+	EquipCT         int    `json:"equipCT"`
+	EquipT          int    `json:"equipT"`
+	BombSite        string `json:"bombSite"` // "A" | "B" | ""
+	FreezeEndTick   int    `json:"freezeEndTick"`
+	FirstKillSteam  string `json:"firstKillSteam"`
+	FirstDeathSteam string `json:"firstDeathSteam"`
 }
 
 // RoundEconomy is one side's economy sample for one round
@@ -288,19 +297,32 @@ type Job struct {
 	MatchID    int64      `json:"matchId"` // 0 until the job has a match row
 }
 
+// RoundPlayerSide is one player's side in one round (round_player_sides) —
+// the extractor's freeze-end sample. Side is a per-round FACT, not a player
+// identity: teams switch sides at halftime and between the knife round and
+// the pistol, and the end-of-demo roster snapshot is unreliable (golden
+// demo: 3/10 players present).
+type RoundPlayerSide struct {
+	MatchID int64  `json:"matchId"`
+	Round   int    `json:"round"`
+	SteamID string `json:"steamId"`
+	Side    string `json:"side"` // "ct" | "t"
+}
+
 // ExtractedMatch is the complete extract output for one demo — the single
 // value internal/extract produces and internal/store persists in one
 // transaction. Match fields filled here: everything except ID/Status/Error
 // (the store joins it onto the existing lifecycle row).
 type ExtractedMatch struct {
-	Match         Match          `json:"match"`
-	Teams         []Team         `json:"teams"`
-	Players       []Player       `json:"players"`
-	PlayerStats   []PlayerStats  `json:"playerStats"`
-	Rounds        []Round        `json:"rounds"`
-	RoundEconomy  []RoundEconomy `json:"roundEconomy"`
-	Events        []Event        `json:"events"`
-	GenericEvents []GenericEvent `json:"genericEvents"`
-	Chat          []Chat         `json:"chat"`
-	Warnings      []string       `json:"warnings"`
+	Match         Match             `json:"match"`
+	Teams         []Team            `json:"teams"`
+	Players       []Player          `json:"players"`
+	PlayerStats   []PlayerStats     `json:"playerStats"`
+	Rounds        []Round           `json:"rounds"`
+	RoundEconomy  []RoundEconomy    `json:"roundEconomy"`
+	RoundSides    []RoundPlayerSide `json:"roundSides"`
+	Events        []Event           `json:"events"`
+	GenericEvents []GenericEvent    `json:"genericEvents"`
+	Chat          []Chat            `json:"chat"`
+	Warnings      []string          `json:"warnings"`
 }

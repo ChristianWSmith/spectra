@@ -1,20 +1,20 @@
 {
-  "clutches": 27,
+  "clutches": 26,
   "clutchWins": 4,
-  "kastPctAvg": 75,
+  "kastPctAvg": 73.48,
   "classCounts": {
     "eco": 0,
-    "force": 2,
+    "force": 1,
     "full": 19,
     "pistol": 2,
     "save": 1
   },
   "engagementsByKind": {
-    "opening": 24,
-    "trade": 64,
-    "untraded": 128
+    "opening": 23,
+    "trade": 32,
+    "untraded": 124
   },
   "utilityRows": 478,
-  "playerRoundRows": 240,
-  "economyRows": 24
+  "playerRoundRows": 230,
+  "economyRows": 23
 }

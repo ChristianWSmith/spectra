@@ -235,12 +235,12 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 	}
 
 	statsStmt, err := tx.Prepare(
-		`INSERT INTO player_stats (match_id, steam_id, side, name, kills, deaths, assists, headshots,
+		`INSERT INTO player_stats (match_id, steam_id, side, name, kills, deaths, assists, flash_assists, headshots,
 			teamkills, suicides, mvps, score, total_damage, damage_taken, shots, hits, adr, hs_pct,
 			rounds_played, entry_kills, entry_deaths, opening_kills, opening_deaths, trade_kills,
 			best_streak, three_k, four_k, five_k, utility_damage, flashes_popped, flashed_times,
 			bomb_plants, bomb_defuses, money_spent_total, kills_by_weapon, damage_by_weapon)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
 		return fmt.Errorf("store: save extracted: %w", err)
@@ -249,11 +249,11 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 	for _, ps := range em.PlayerStats {
 		if _, err := statsStmt.Exec(
 			matchID, scrub(ps.SteamID), scrub(ps.Side), scrub(ps.Name), ps.Kills, ps.Deaths, ps.Assists,
-			ps.Headshots, ps.Teamkills, ps.Suicides, ps.MVPs, ps.Score, ps.TotalDamage, ps.DamageTaken,
-			ps.Shots, ps.Hits, ps.ADR, ps.HSPct, ps.RoundsPlayed, ps.EntryKills, ps.EntryDeaths,
-			ps.OpeningKills, ps.OpeningDeaths, ps.TradeKills, ps.BestStreak, ps.ThreeK, ps.FourK,
-			ps.FiveK, ps.UtilityDamage, ps.FlashesPopped, ps.FlashedTimes, ps.BombPlants, ps.BombDefuses,
-			ps.MoneySpentTotal, scrub(ps.KillsByWeapon), scrub(ps.DamageByWeapon),
+			ps.FlashAssists, ps.Headshots, ps.Teamkills, ps.Suicides, ps.MVPs, ps.Score, ps.TotalDamage,
+			ps.DamageTaken, ps.Shots, ps.Hits, ps.ADR, ps.HSPct, ps.RoundsPlayed, ps.EntryKills,
+			ps.EntryDeaths, ps.OpeningKills, ps.OpeningDeaths, ps.TradeKills, ps.BestStreak, ps.ThreeK,
+			ps.FourK, ps.FiveK, ps.UtilityDamage, ps.FlashesPopped, ps.FlashedTimes, ps.BombPlants,
+			ps.BombDefuses, ps.MoneySpentTotal, scrub(ps.KillsByWeapon), scrub(ps.DamageByWeapon),
 		); err != nil {
 			return fmt.Errorf("store: save extracted: player_stats: %w", err)
 		}
@@ -261,9 +261,9 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 
 	roundsStmt, err := tx.Prepare(
 		`INSERT INTO rounds (match_id, number, winner, reason, duration_s, start_tick, end_tick,
-			warmup, mvp, mvp_reason, equip_ct, equip_t, bomb_site, freeze_end_tick,
+			warmup, pregame, mvp, mvp_reason, equip_ct, equip_t, bomb_site, freeze_end_tick,
 			first_kill_steam, first_death_steam)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
 		return fmt.Errorf("store: save extracted: %w", err)
@@ -272,10 +272,23 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 	for _, r := range em.Rounds {
 		if _, err := roundsStmt.Exec(
 			matchID, r.Number, scrub(r.Winner), scrub(r.Reason), r.DurationS, r.StartTick, r.EndTick,
-			b2i(r.Warmup), scrub(r.MVP), scrub(r.MVPReason), r.EquipCT, r.EquipT, scrub(r.BombSite),
-			r.FreezeEndTick, scrub(r.FirstKillSteam), scrub(r.FirstDeathSteam),
+			b2i(r.Warmup), b2i(r.Pregame), scrub(r.MVP), scrub(r.MVPReason), r.EquipCT, r.EquipT,
+			scrub(r.BombSite), r.FreezeEndTick, scrub(r.FirstKillSteam), scrub(r.FirstDeathSteam),
 		); err != nil {
 			return fmt.Errorf("store: save extracted: rounds: %w", err)
+		}
+	}
+
+	sidesStmt, err := tx.Prepare(
+		`INSERT INTO round_player_sides (match_id, round, steam_id, side) VALUES (?, ?, ?, ?)`,
+	)
+	if err != nil {
+		return fmt.Errorf("store: save extracted: %w", err)
+	}
+	defer sidesStmt.Close()
+	for _, rs := range em.RoundSides {
+		if _, err := sidesStmt.Exec(matchID, rs.Round, scrub(rs.SteamID), scrub(rs.Side)); err != nil {
+			return fmt.Errorf("store: save extracted: round_player_sides: %w", err)
 		}
 	}
 

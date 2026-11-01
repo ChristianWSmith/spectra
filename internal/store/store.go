@@ -30,7 +30,7 @@ const interruptedJobErr = "interrupted by restart"
 // reprocess's InsertVoice refills them.
 var childTables = []string{
 	"events", "generic_events", "chat", "round_economy", "rounds",
-	"player_stats", "players", "teams", "warnings",
+	"round_player_sides", "player_stats", "players", "teams", "warnings",
 	"round_classifications", "player_round_stats", "clutches",
 	"engagements", "utility_events",
 	"voice_chunks", "voice_presence",

@@ -387,12 +387,13 @@ func (s *Store) GetUtility(matchID int64) ([]models.UtilityEvent, error) {
 	return out, nil
 }
 
-// GetEconomy returns the per-round economy view (warmup rounds excluded):
-// rounds ⋈ round_economy ⋈ round_classifications with loss-bonus
-// reconstruction applied. Loss bonus is INFERRED (reconstructed from winner
-// streaks: 1400/1900/2400/2900/3400 capped) — InferredCT/InferredT are set
-// accordingly; per-side ClassCT/ClassT/ClassWhy* stay empty for the caller
-// to fill via analytics.BuyClass (documented cycle deviation).
+// GetEconomy returns the per-round economy view (warmup and pregame/knife
+// rounds excluded): rounds ⋈ round_economy ⋈ round_classifications with
+// loss-bonus reconstruction applied. Loss bonus is INFERRED (reconstructed
+// from winner streaks: 1400/1900/2400/2900/3400 capped) — InferredCT/
+// InferredT are set accordingly; per-side ClassCT/ClassT/ClassWhy* stay
+// empty for the caller to fill via analytics.BuyClass (documented cycle
+// deviation).
 func (s *Store) GetEconomy(matchID int64) ([]models.EconomyRow, error) {
 	rows, err := s.db.Query(
 		`SELECT r.number, r.winner, r.warmup, r.equip_ct, r.equip_t,
@@ -403,7 +404,7 @@ func (s *Store) GetEconomy(matchID int64) ([]models.EconomyRow, error) {
 		 LEFT JOIN round_economy ct ON ct.match_id = r.match_id AND ct.round = r.number AND ct.side = 'ct'
 		 LEFT JOIN round_economy t ON t.match_id = r.match_id AND t.round = r.number AND t.side = 't'
 		 LEFT JOIN round_classifications rc ON rc.match_id = r.match_id AND rc.round = r.number
-		 WHERE r.match_id = ? AND r.warmup = 0
+		 WHERE r.match_id = ? AND r.warmup = 0 AND r.pregame = 0
 		 ORDER BY r.number ASC`, matchID,
 	)
 	if err != nil {
@@ -652,10 +653,10 @@ func (s *Store) GetRoundEconomyViews(matchID int64) ([]models.RoundEconomyView, 
 }
 
 // GetRoundInfos returns one match's rounds as analytics RoundInfos (warmup
-// included — callers filter).
+// and pregame included — callers filter).
 func (s *Store) GetRoundInfos(matchID int64) ([]models.RoundInfo, error) {
 	rows, err := s.db.Query(
-		`SELECT number, winner, warmup, start_tick, end_tick, freeze_end_tick, equip_ct, equip_t
+		`SELECT number, winner, warmup, pregame, start_tick, end_tick, freeze_end_tick, equip_ct, equip_t
 		 FROM rounds WHERE match_id = ? ORDER BY number ASC`, matchID,
 	)
 	if err != nil {
@@ -665,13 +666,49 @@ func (s *Store) GetRoundInfos(matchID int64) ([]models.RoundInfo, error) {
 	var out []models.RoundInfo
 	for rows.Next() {
 		var r models.RoundInfo
-		if err := rows.Scan(&r.Number, &r.Winner, &r.Warmup, &r.StartTick, &r.EndTick, &r.FreezeEndTick, &r.EquipCT, &r.EquipT); err != nil {
+		if err := rows.Scan(&r.Number, &r.Winner, &r.Warmup, &r.Pregame, &r.StartTick, &r.EndTick, &r.FreezeEndTick, &r.EquipCT, &r.EquipT); err != nil {
 			return nil, fmt.Errorf("store: get round infos: %w", err)
 		}
 		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("store: get round infos: %w", err)
+	}
+	return out, nil
+}
+
+// GetRoundPlayerSides returns the extractor's per-round side samples as
+// round → steamID → side (round ASC). Empty map when the match predates
+// the round_player_sides migration — callers fall back to final-side
+// parity there.
+func (s *Store) GetRoundPlayerSides(matchID int64) (map[int]map[string]string, error) {
+	rows, err := s.db.Query(
+		`SELECT round, steam_id, side FROM round_player_sides
+		 WHERE match_id = ? ORDER BY round ASC, steam_id ASC`, matchID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("store: get round player sides: %w", err)
+	}
+	defer rows.Close()
+	out := map[int]map[string]string{}
+	for rows.Next() {
+		var (
+			round int
+			sid   string
+			side  string
+		)
+		if err := rows.Scan(&round, &sid, &side); err != nil {
+			return nil, fmt.Errorf("store: get round player sides: %w", err)
+		}
+		m := out[round]
+		if m == nil {
+			m = map[string]string{}
+			out[round] = m
+		}
+		m[sid] = side
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: get round player sides: %w", err)
 	}
 	return out, nil
 }

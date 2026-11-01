@@ -1,7 +1,7 @@
 # Match report — {{.Match.Map}}
 
 - Path: {{.Match.Path}}
-- Score: **CT {{.Match.ScoreCT}} – {{.Match.ScoreT}} T**
+- Score: **{{.CTName}} {{.Match.ScoreCT}} – {{.Match.ScoreT}} {{.TName}}**
 - Rounds: {{.Match.RealRounds}} real (+{{.Match.WarmupRounds}} warmup)
 - Duration: {{.Match.PlaybackTimeS}} s @ {{.Match.TickRate}} ticks/s
 - Extracted: {{.Match.ExtractedAt}} (parser {{.Match.ParserVersion}}, {{.Match.ParseMS}} ms)

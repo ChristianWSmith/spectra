@@ -2,7 +2,7 @@
   "frames": 136948,
   "slots": 10,
   "tickRate": 64,
-  "realRounds": 24,
+  "realRounds": 23,
   "firstFreezeTick": 1280,
   "aliveAtFreeze": 10,
   "bounds": {

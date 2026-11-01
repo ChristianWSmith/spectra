@@ -530,10 +530,14 @@ func voiceSamplesPerTick(tickRate float64) int {
 }
 
 // decodeVoicePCM decodes one player's chunks in [from,to] onto a
-// zero-filled 16 kHz s16le mono timeline: each chunk's Opus
-// payload is decoded once and poked in place at sample offset
-// (tick-from)*samplesPerTick, clamped to the window. A missing .opus file
-// surfaces as an error; stray undecodable packets are skipped.
+// zero-filled 16 kHz s16le mono timeline. Frames are placed with an
+// anchor cursor: at max((tick-from)*samplesPerTick, cursor), where
+// cursor is the end of the last placed frame. Frames arriving faster
+// than the tick rate (10 ms Opus vs. 15.6 ms ticks at 64 tick) continue
+// back-to-back instead of clobbering each other at a shared tick
+// offset, while real pauses stay silent — speech stays contiguous and
+// on the timeline. A missing .opus file surfaces as an error; stray
+// undecodable packets are skipped.
 func decodeVoicePCM(st *store.Store, voiceDir string, matchID int64, steamID string, from, to int, tickRate float64) ([]byte, error) {
 	rows, err := st.GetVoiceChunkRange(matchID, steamID, from, to)
 	if err != nil {
@@ -556,7 +560,10 @@ func decodeVoicePCM(st *store.Store, voiceDir string, matchID int64, steamID str
 	}
 	// 10 ms @ 48 kHz is 480 samples; 2048 leaves headroom for longer frames.
 	samples := make([]int16, 2048)
-	payload := make([]byte, 512)
+	// 1275 is the max Opus packet size (RFC 6716); a smaller cap silently
+	// dropped big packets as holes in the speech.
+	payload := make([]byte, 1275)
+	cursor := 0 // end of the last placed frame; never write before it
 	for _, row := range rows {
 		if row.Len <= 0 || row.Len > int64(cap(payload)) {
 			continue
@@ -569,12 +576,16 @@ func decodeVoicePCM(st *store.Store, voiceDir string, matchID int64, steamID str
 			continue // tolerate stray packets: leave the window silent there
 		}
 		start := (row.Tick - from) * spt
+		if start < cursor {
+			start = cursor // same-tick/burst frames continue after the last one
+		}
 		if start >= totalSamples || start < 0 {
 			continue
 		}
 		for i := 0; i < n && start+i < totalSamples; i++ {
 			binary.LittleEndian.PutUint16(pcm[(start+i)*2:], uint16(samples[i]))
 		}
+		cursor = start + n
 	}
 	return pcm, nil
 }

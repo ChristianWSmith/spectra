@@ -89,6 +89,7 @@ spectacle -b -n -o /tmp/shot.png         # then Read the PNG
 | `build/appicon.png` | the app icon source (512×512 PNG); `wails3 task common:generate:icons` (run automatically by every build) derives `.ico`/`.icns` |
 | `Makefile` | the single source of build/package commands, shared with CI |
 | `ref/` | project reference docs: `PRD.md` (product spec) and `MISSING.md` (the open backlog — everything not yet in the app) |
+| `CS2.md` | domain-knowledge cache for CS2 facts (formats, mechanics, rules, events); see "CS2 domain knowledge" |
 | `donk.dem.zst` | the golden acceptance demo, tracked via **Git LFS** (`.gitattributes`); acceptance tests parse it and skip if absent; regenerate golden fixtures deliberately when extraction changes |
 
 After cloning, run `git lfs pull` if the golden demo is needed.
@@ -135,3 +136,19 @@ After cloning, run `git lfs pull` if the golden demo is needed.
   `make build-assets` and commit the
   regenerated assets. The release skill bumps its `version` in lockstep with
   the dispatch input (two sources, one release).
+
+## CS2 domain knowledge
+
+Anything about Counter-Strike 2 itself — demo/event semantics, game
+mechanics, official rules, cvars, third-party tools — must be **looked
+up, not guessed**. Do not speculate about CS2 domain facts from memory or
+infer them from context.
+
+- First check `CS2.md` (the domain-knowledge cache). If the answer is
+  there, use it.
+- If it isn't, search the web (official Valve docs, demoinfocs docs,
+  community wikis), then **record the finding in `CS2.md`** using the
+  format described there — question, distilled answer, source URL(s) and
+  retrieval date — so future agents can skip the search.
+- Keep entries short and sourced; re-verify and update stale entries
+  rather than piling on contradicting ones.

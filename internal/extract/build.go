@@ -92,10 +92,6 @@ func (a *agg) build() *models.ExtractedMatch {
 			FinalStatePresent: a.finalPresent[key],
 		})
 
-		adr := 0.0
-		if a.realRounds > 0 {
-			adr = float64(p.totalDamage) / float64(a.realRounds)
-		}
 		killsByWeapon, err := json.Marshal(p.weaponKills)
 		if err != nil {
 			killsByWeapon = []byte("{}")
@@ -108,6 +104,12 @@ func (a *agg) build() *models.ExtractedMatch {
 		if rs := a.participation[key]; rs != nil {
 			roundsPlayed = len(rs)
 		}
+		// ADR = enemy damage per round the player played (HLTV/awpy
+		// convention: per-player denominator, not the match round count).
+		adr := 0.0
+		if roundsPlayed > 0 {
+			adr = float64(p.totalDamage) / float64(roundsPlayed)
+		}
 
 		out.PlayerStats = append(out.PlayerStats, models.PlayerStats{
 			SteamID:         steam,
@@ -116,6 +118,7 @@ func (a *agg) build() *models.ExtractedMatch {
 			Kills:           p.kills,
 			Deaths:          p.deaths,
 			Assists:         p.assists,
+			FlashAssists:    p.flashAssists,
 			Headshots:       p.headshots,
 			Teamkills:       p.teamkills,
 			Suicides:        p.suicides,
@@ -158,6 +161,7 @@ func (a *agg) build() *models.ExtractedMatch {
 			StartTick:       r.startTick,
 			EndTick:         r.endTick,
 			Warmup:          r.warmup,
+			Pregame:         r.pregame,
 			MVP:             r.mvp,
 			MVPReason:       r.mvpReason,
 			EquipCT:         r.equipCT,
@@ -170,6 +174,7 @@ func (a *agg) build() *models.ExtractedMatch {
 	}
 
 	out.RoundEconomy = a.economy
+	out.RoundSides = a.roundSides
 	out.Events = a.events
 	out.GenericEvents = a.generic
 	out.Chat = a.chatRows

@@ -15,7 +15,7 @@
 </head>
 <body>
 <h1>Match report — {{.Match.Map}}</h1>
-<p class="meta">Score <strong>CT {{.Match.ScoreCT}} – {{.Match.ScoreT}} T</strong> ·
+<p class="meta">Score <strong>{{.CTName}} {{.Match.ScoreCT}} – {{.Match.ScoreT}} {{.TName}}</strong> ·
 {{.Match.RealRounds}} real rounds (+{{.Match.WarmupRounds}} warmup) ·
 {{.Match.PlaybackTimeS}} s · extracted {{.Match.ExtractedAt}} (parser {{.Match.ParserVersion}})</p>
 

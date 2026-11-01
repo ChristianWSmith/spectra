@@ -18,11 +18,13 @@ type AnalysisConfig struct {
 }
 
 // RoundInfo is one round's summary for the analytics pass (read from the
-// rounds table). Number includes warmup rounds; Warmup distinguishes them.
+// rounds table). Number includes warmup/pregame rounds; Warmup and Pregame
+// distinguish them (neither is "counted" play).
 type RoundInfo struct {
 	Number        int    `json:"number"`
 	Winner        string `json:"winner"` // "ct" | "t" | ""
 	Warmup        bool   `json:"warmup"`
+	Pregame       bool   `json:"pregame"`
 	StartTick     int    `json:"startTick"`
 	EndTick       int    `json:"endTick"`
 	FreezeEndTick int    `json:"freezeEndTick"`

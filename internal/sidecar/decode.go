@@ -13,15 +13,16 @@ type FramePlayer struct {
 	Yaw     float64 // degrees, -180..180
 	Air     bool
 	Duck    bool
+	Side    string // "ct" | "t" | "" (v2 side bits)
 }
 
-// FrameWithPlayers is one decoded q16-v1 frame (stream layout).
+// FrameWithPlayers is one decoded q16-v2 frame (stream layout).
 type FrameWithPlayers struct {
 	Tick    int
 	Players []FramePlayer
 }
 
-// DecodeFrames walks a decompressed q16-v1 stream (the raw bytes a
+// DecodeFrames walks a decompressed q16-v2 stream (the raw bytes a
 // Reader.ReadRange returns) and decodes every frame. slotTable is the
 // meta.json slot table (SteamID per slot, first-seen order); slots absent
 // from it are skipped, mirroring Writer.AddFrame. Truncated/misaligned
@@ -59,6 +60,7 @@ func DecodeFrames(b []byte, slotTable []uint64) ([]FrameWithPlayers, error) {
 				Yaw:     float64(p[6])/256*360 - 180,
 				Air:     p[7]&1 != 0,
 				Duck:    p[7]&2 != 0,
+				Side:    sideFlagString(p[7]),
 			})
 		}
 		out = append(out, f)

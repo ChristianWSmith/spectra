@@ -46,27 +46,36 @@ func Compute(st *store.Store, matchID int64, cfg Config) error {
 		evs[i] = models.Event{
 			Seq: er.Seq, Tick: er.Tick, Round: er.Round, Kind: er.Kind,
 			Attacker: er.Attacker, Victim: er.Victim, Assister: er.Assister,
-			Weapon: er.Weapon, Headshot: er.Headshot, Distance: er.Distance,
-			Dmg: er.Dmg, Site: er.Site, PosX: er.PosX, PosY: er.PosY, PosZ: er.PosZ,
+			Weapon: er.Weapon, Headshot: er.Headshot, AssistedFlash: er.AssistedFlash,
+			Distance: er.Distance, Dmg: er.Dmg, Site: er.Site,
+			PosX: er.PosX, PosY: er.PosY, PosZ: er.PosZ,
 		}
+	}
+	// Exact per-round sides from the extractor's freeze-end samples (new
+	// imports); legacy matches fall back to RecoverSides + parity.
+	sides, err := st.GetRoundPlayerSides(matchID)
+	if err != nil {
+		return fmt.Errorf("analytics: load round sides: %w", err)
 	}
 	// Recover missing final sides from the enemy graph (players absent
 	// from the final-state snapshot have Side "" in the store).
 	players = RecoverSides(evs, rounds, players)
-	// Side-switch parity: sides flip for rounds before the first
-	// second-half round (MR12: 12 rounds per half; OT not special-cased).
+	// Legacy parity fallback: sides flip for rounds before the first
+	// second-half round. Ceiling division locates the boundary (floor
+	// landed one round early: with 23 counted rounds the second half
+	// starts at index 12, not 11).
 	if m.SideSwitches > 0 {
-		real := nonWarmupRounds(rounds)
-		idx := len(real) / (m.SideSwitches + 1)
+		real := CountedRounds(rounds)
+		idx := (len(real) + m.SideSwitches) / (m.SideSwitches + 1)
 		if idx > 0 && idx < len(real) {
 			cfg.HalfSwitchRound = real[idx].Number
 		}
 	}
 
 	classes := Classify(eco, rounds, cfg)
-	prs := PlayerRounds(evs, rounds, players, cfg)
-	clutches := Clutches(evs, rounds, players, cfg)
-	engs := Engagements(evs, rounds, cfg, players)
+	prs := PlayerRounds(evs, rounds, players, cfg, sides)
+	clutches := Clutches(evs, rounds, players, cfg, sides)
+	engs := Engagements(evs, rounds, cfg, players, sides)
 	utils := Utility(evs, players, cfg)
 
 	// Replace* take matchID as their own argument (rows stay unstamped —

@@ -18,8 +18,10 @@ var utilWeapons = map[string]bool{
 // PlayerRounds derives per-player-per-round stats incl. the KAST
 // decomposition from a match's typed events:
 //
-//	K        kill credited to the player (kill event attacker)
-//	A        assist (kill event assister)
+//	K        kill credited to the player (kill event attacker; suicides
+//	         and teamkills excluded)
+//	A        assist (kill event assister, AssistedFlash excluded — the
+//	         external-scoreboard convention)
 //	S        survived — no death event for them in the round
 //	T        traded — their death was answered: a teammate of theirs killed
 //	         their killer within cfg.TradeWindowS after the death
@@ -28,10 +30,11 @@ var utilWeapons = map[string]bool{
 // DMG/UtilDmg aggregate damage events (attacker side; util = utility
 // weapons). MoneyStart/Equip/Spent stay 0 in v1 (item_equip payloads carry
 // no price — see package doc). Rows are emitted for EVERY player × every
-// non-warmup round (round ASC, players sorted by SteamID for stable
-// output).
-func PlayerRounds(events []models.Event, rounds []RoundInfo, players []PlayerRef, cfg Config) []PlayerRound {
-	real := nonWarmupRounds(rounds)
+// counted round (round ASC, players sorted by SteamID for stable output).
+// sides carries the extractor's exact per-round side samples (nil for
+// legacy matches — final-side parity applies there).
+func PlayerRounds(events []models.Event, rounds []RoundInfo, players []PlayerRef, cfg Config, sides map[int]map[string]string) []PlayerRound {
+	real := CountedRounds(rounds)
 	if len(real) == 0 {
 		return nil
 	}
@@ -46,7 +49,7 @@ func PlayerRounds(events []models.Event, rounds []RoundInfo, players []PlayerRef
 
 	out := make([]PlayerRound, 0, len(real)*len(sorted))
 	for _, r := range real {
-		teamR := sideMapForRound(team, cfg, r.Number)
+		teamR := resolveRoundSides(sides, team, cfg, r.Number)
 		roundEvents := byRound[r.Number]
 		var kills, assists, deaths, dmg, utilDmg = map[string]int{}, map[string]int{}, map[string]int{}, map[string]int{}, map[string]int{}
 		deathTick := map[string]int{}   // victim → death tick
@@ -54,10 +57,15 @@ func PlayerRounds(events []models.Event, rounds []RoundInfo, players []PlayerRef
 		for _, e := range roundEvents {
 			switch e.Kind {
 			case models.EventKill:
-				if e.Attacker != "" && e.Attacker != e.Victim {
+				kt, vt := teamR[e.Attacker], teamR[e.Victim]
+				// Enemy kills only (suicides/teamkills excluded); an
+				// unknown side is permissive — count it.
+				if e.Attacker != "" && !sameSide(kt, vt) {
 					kills[e.Attacker]++
 				}
-				if e.Assister != "" {
+				// Assists: cross-team, non-flash (external convention).
+				if e.Assister != "" && e.Assister != e.Victim &&
+					!sameSide(vt, teamR[e.Assister]) && !e.AssistedFlash {
 					assists[e.Assister]++
 				}
 				if e.Victim != "" {

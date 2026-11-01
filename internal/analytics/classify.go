@@ -56,7 +56,7 @@ func Classify(eco []RoundEconomyView, rounds []RoundInfo, cfg Config) []Classifi
 		}
 	}
 
-	real := nonWarmupRounds(rounds)
+	real := CountedRounds(rounds)
 	out := make([]Classification, 0, len(real))
 	for idx, r := range real {
 		ctEquip, tEquip := r.EquipCT, r.EquipT

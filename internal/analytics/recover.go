@@ -8,8 +8,10 @@ import (
 
 // RecoverSides fills missing final-side data for players absent from the
 // demo's final-state snapshot (the M1 "disappearing players" risk: the
-// extractor only persists side for players present at match end, which on
-// the golden demo is 3 of 10). The recovery is a 2-coloring of the
+// extractor only persisted side for players present at match end, which on
+// the golden demo is 3 of 10 — new imports populate players.side from the
+// last freeze-end sample and carry exact per-round sides, making this a
+// legacy-import fallback). The recovery is a 2-coloring of the
 // non-warmup enemy graph (a kill edge connects opponents), oriented by the
 // known final sides; bomb-plant attackers anchor the orientation when no
 // final side is known at all (a planter is T). Teamkill edges (same-color
@@ -24,7 +26,7 @@ import (
 // for pre-switch rounds via Config.HalfSwitchRound (teams do not reshuffle
 // between halves — only sides swap).
 func RecoverSides(events []models.Event, rounds []RoundInfo, players []PlayerRef) []PlayerRef {
-	real := nonWarmupRounds(rounds)
+	real := CountedRounds(rounds)
 	realSet := map[int]bool{}
 	for _, r := range real {
 		realSet[r.Number] = true

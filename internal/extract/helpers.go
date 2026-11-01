@@ -26,6 +26,26 @@ func sideString(t common.Team) string {
 	}
 }
 
+// sameSide reports whether two observed sides are both known and equal
+// (an unknown side never matches — permissive attribution for bots /
+// unassigned players).
+func sameSide(a, b string) bool { return a != "" && a == b }
+
+// realPeriod reports whether stats-eligible (real) play is underway: the
+// match has started, warmup is over, and the game phase has advanced past
+// Pregame. IsWarmupPeriod() alone misses two polluters observed in real
+// demos:
+//
+//   - pre-match (knife) rounds: warmup=false, IsMatchStarted()=true,
+//     GamePhase()==Pregame — the scoreboard resets to 0-0 afterwards and
+//     the game's own counters exclude them (golden demo round 1);
+//   - post-match cooldown kills: IsMatchStarted() flips back to false
+//     after the final round (golden demo's trailing World suicides).
+func realPeriod(gs *demoinfocs.GameState) bool {
+	return gs != nil && gs.IsMatchStarted() && !gs.IsWarmupPeriod() &&
+		gs.GamePhase() >= common.GamePhaseStartGamePhase
+}
+
 func hitGroupName(h events.HitGroup) string {
 	switch h {
 	case events.HitGroupGeneric:

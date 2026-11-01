@@ -35,6 +35,7 @@ type PlayerStatsRow struct {
 	Kills             int     `json:"kills"`
 	Deaths            int     `json:"deaths"`
 	Assists           int     `json:"assists"`
+	FlashAssists      int     `json:"flashAssists"`
 	Headshots         int     `json:"headshots"`
 	HSPct             float64 `json:"hsPct"`
 	ADR               float64 `json:"adr"`
@@ -72,6 +73,7 @@ type RoundRow struct {
 	Reason          string  `json:"reason"`
 	DurationS       float64 `json:"durationS"`
 	Warmup          bool    `json:"warmup"`
+	Pregame         bool    `json:"pregame"`
 	BombSite        string  `json:"bombSite"`
 	MVP             string  `json:"mvp"`
 	MVPName         string  `json:"mvpName"`

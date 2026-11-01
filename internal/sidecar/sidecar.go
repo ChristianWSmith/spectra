@@ -3,7 +3,7 @@
 // extraction, block-compressed so ranges can be fetched and decompressed
 // server-side without the frontend ever owning a zstd decoder.
 //
-// # Raw stream layout (encoding "q16-v1", format version 1)
+// # Raw stream layout (encoding "q16-v2", format version 2)
 //
 // positions.bin decompresses to a concatenation of frames, each:
 //
@@ -13,8 +13,13 @@
 //		x      int16 little-endian, world units quantized at 1.0 (clamped ±32767)
 //		y      int16 little-endian, same quantization
 //		z      int16 little-endian, same quantization
-//		yaw    uint8, (deg+180)/360*256 truncated to 0..255
-//		flags  uint8, bit0 = airborne, bit1 = ducking
+//		yaw    uint8, (deg+180)/360*256 wrapped to 0..255 (deg in -180..180)
+//		flags  uint8, bit0 = airborne, bit1 = ducking,
+//		       bits2-3 = side (0 unknown, 1 t, 2 ct)
+//
+// v2 (this layout): yaw carries the real view yaw (v1 stored pitch —
+// demoinfocs ViewDirectionY — garbage) and flags gained the per-frame
+// side bits. Readers/rewriters must check Meta.FormatVersion.
 //
 // The slot table (steamID per slot, first-seen order) lives in meta.json;
 // slots are assigned at the first frame that carries players and later
@@ -35,6 +40,7 @@ package sidecar
 import (
 	"encoding/binary"
 	"fmt"
+	"math"
 	"math/bits"
 	"time"
 
@@ -44,19 +50,26 @@ import (
 // Format constants recorded in meta.json.
 const (
 	// FormatVersion identifies this layout; bump when it changes so
-	// reprocessing regenerates stale sidecars.
-	FormatVersion = 1
+	// reprocessing regenerates stale sidecars (v2: real yaw + side bits).
+	FormatVersion = 2
 	// SampleRate is frames per second: samples are 1:1 with demo frames
 	// (full 64 Hz).
 	SampleRate = 64
 	// Encoding names the quantization scheme of the raw stream.
-	Encoding = "q16-v1"
+	Encoding = "q16-v2"
 	// BlockFrames is the maximum number of frames per zstd block.
 	BlockFrames = 256
 	// maxSlots is the alive-mask width (uint16) — the hard slot-table cap.
 	maxSlots = 16
 	// coordClamp bounds world coordinates into the int16 grid.
 	coordClamp = 32767
+	// side bits in the flags byte: 0 unknown, 1 t, 2 ct (sideMask is the
+	// value mask; shift by sideShift at use).
+	sideShift       = 2
+	sideMask        = 3
+	flagSideUnknown = 0
+	flagSideT       = 1
+	flagSideCT      = 2
 )
 
 // Sidecar file names inside a match directory.
@@ -79,11 +92,11 @@ type Player struct {
 // source of truth for frame count and the slot table; matches.position_*
 // mirror it.
 type Meta struct {
-	FormatVersion int       `json:"formatVersion"` // 1
+	FormatVersion int       `json:"formatVersion"` // 2
 	TickRate      float64   `json:"tickRate"`
 	SampleRate    int       `json:"sampleRate"` // 64
 	Frames        int       `json:"frames"`
-	Encoding      string    `json:"encoding"` // "q16-v1"
+	Encoding      string    `json:"encoding"` // "q16-v2"
 	Players       []uint64  `json:"players"`  // slot table, first-seen order
 	CreatedAt     time.Time `json:"createdAt"`
 }
@@ -148,16 +161,40 @@ func quantCoord(v float32) uint16 {
 	return uint16(int16(c))
 }
 
-// quantYaw maps a direction in degrees onto 0..255 (spike encoding).
+// quantYaw maps a direction in degrees onto 0..255 (spike encoding),
+// wrapping any input (real yaw is 0..360; the decode contract is
+// -180..180).
 func quantYaw(deg float32) byte {
-	y := (float64(deg) + 180.0) / 360.0 * 256.0
+	y := math.Mod(float64(deg)+180.0, 360.0)
 	if y < 0 {
-		y = 0
+		y += 360.0
 	}
-	if y > 255 {
-		y = 255
+	return byte(y / 360.0 * 256.0)
+}
+
+// sideFlagBits maps a models side string onto the flags-byte side bits.
+func sideFlagBits(side string) byte {
+	switch side {
+	case "t":
+		return flagSideT << sideShift
+	case "ct":
+		return flagSideCT << sideShift
+	default:
+		return flagSideUnknown << sideShift
 	}
-	return byte(y)
+}
+
+// sideFlagString maps decoded flags-byte side bits back to the models side
+// vocabulary ("" for unknown).
+func sideFlagString(flags byte) string {
+	switch (flags >> sideShift) & sideMask {
+	case flagSideT:
+		return "t"
+	case flagSideCT:
+		return "ct"
+	default:
+		return ""
+	}
 }
 
 // encodeFrame appends one frame to dst. bySlot is indexed by slot; only
@@ -185,6 +222,7 @@ func encodeFrame(dst []byte, tick int32, mask uint16, bySlot *[maxSlots]extract.
 		if p.Duck {
 			flags |= 2
 		}
+		flags |= sideFlagBits(p.Side)
 		pb[7] = flags
 		dst = append(dst, pb[:]...)
 	}

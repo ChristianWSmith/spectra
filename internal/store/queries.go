@@ -84,7 +84,7 @@ const eventRowFrom = ` FROM events e
 
 // roundRowSelect joins display names for MVP/first-kill/first-death
 // ("" when the SteamID is absent or unknown).
-const roundRowSelect = `SELECT r.number, r.winner, r.reason, r.duration_s, r.warmup, r.bomb_site,
+const roundRowSelect = `SELECT r.number, r.winner, r.reason, r.duration_s, r.warmup, r.pregame, r.bomb_site,
 	r.mvp, COALESCE(mp.name, ''), r.mvp_reason, r.equip_ct, r.equip_t,
 	(SELECT COUNT(*) FROM events e WHERE e.match_id = r.match_id AND e.round = r.number AND e.kind = 'kill'),
 	r.first_kill_steam, COALESCE(fp.name, ''), r.first_death_steam, COALESCE(dp.name, ''),
@@ -193,7 +193,7 @@ func (s *Store) GetScoreboard(id int64, sortKey string, desc bool) ([]models.Pla
 	rows, err := s.db.Query(
 		`SELECT ps.steam_id, p.name, p.is_bot, p.side, p.final_state_present,
 			ps.rounds_played, ps.kills, ps.deaths,
-			ps.assists, ps.headshots, ps.hs_pct, ps.adr,
+			ps.assists, ps.flash_assists, ps.headshots, ps.hs_pct, ps.adr,
 			CAST(ps.kills AS REAL) / MAX(ps.deaths, 1),
 			CAST(ps.kills + ps.assists AS REAL) / MAX(ps.deaths, 1),
 			ps.total_damage, ps.damage_taken, ps.entry_kills, ps.entry_deaths,
@@ -217,7 +217,7 @@ func (s *Store) GetScoreboard(id int64, sortKey string, desc bool) ([]models.Pla
 		if err := rows.Scan(
 			&r.SteamID, &r.Name, &r.IsBot, &r.Side, &r.FinalStatePresent,
 			&r.RoundsPlayed, &r.Kills, &r.Deaths,
-			&r.Assists, &r.Headshots, &r.HSPct, &r.ADR, &r.KD, &r.KDA, &r.TotalDamage,
+			&r.Assists, &r.FlashAssists, &r.Headshots, &r.HSPct, &r.ADR, &r.KD, &r.KDA, &r.TotalDamage,
 			&r.DamageTaken, &r.EntryKills, &r.EntryDeaths, &r.OpeningKills, &r.OpeningDeaths,
 			&r.TradeKills, &r.BestStreak, &r.ThreeK, &r.FourK, &r.FiveK, &r.UtilityDamage,
 			&r.FlashesPopped, &r.FlashedTimes, &r.BombPlants, &r.BombDefuses, &r.MVPs,
@@ -302,7 +302,7 @@ func (s *Store) GetRoundDetail(id int64, round int) (*models.RoundDetail, error)
 func scanRoundRow(row interface{ Scan(...any) error }) (models.RoundRow, error) {
 	var rr models.RoundRow
 	err := row.Scan(
-		&rr.Number, &rr.Winner, &rr.Reason, &rr.DurationS, &rr.Warmup, &rr.BombSite,
+		&rr.Number, &rr.Winner, &rr.Reason, &rr.DurationS, &rr.Warmup, &rr.Pregame, &rr.BombSite,
 		&rr.MVP, &rr.MVPName, &rr.MVPReason, &rr.EquipCT, &rr.EquipT, &rr.Kills,
 		&rr.FirstKillSteam, &rr.FirstKillName, &rr.FirstDeathSteam, &rr.FirstDeathName,
 		&rr.StartTick, &rr.EndTick, &rr.FreezeEndTick,

@@ -18,23 +18,24 @@ const (
 
 // Engagements detects per-round engagement events:
 //
-//	opening   the round's first kill (a = killer, b = victim)
-//	trade     a kill by a player whose TEAMMATE died ≤ cfg.TradeWindowS
-//	          before it (same window rule as the M1 extractor)
+//	opening   the round's first kill (a = killer, b = victim; suicides
+//	          excluded)
+//	trade     a kill whose VICTIM is the player who killed one of the
+//	          killer's teammates ≤ cfg.TradeWindowS earlier (the strict
+//	          HLTV rule — mirrors KAST "T" and the extractor's
+//	          player_stats.trade_kills)
 //	untraded  a death NOT answered: no teammate of the victim killed the
 //	          victim's killer within cfg.TradeWindowS after the death
 //	          (a = killer, b = victim)
 //
 // One kill can yield multiple rows (kinds are independent detections: the
 // first kill can also be untraded later classified per victim, a trade
-// kill's victim can themselves go untraded). Warmup rounds are skipped;
-// kills with an unknown-side killer or victim are skipped (team
-// attribution uses the final sides — events carry no team column).
-//
-// The rounds parameter exists beyond the sketch API to make warmup
-// filtering possible (events carry no warmup flag).
-func Engagements(events []models.Event, rounds []RoundInfo, cfg Config, players []PlayerRef) []Engagement {
-	real := nonWarmupRounds(rounds)
+// kill's victim can themselves go untraded). Warmup and pregame rounds are
+// skipped; kills with an unknown-side killer or victim are skipped (team
+// attribution uses the per-round sides — sides carries the extractor's
+// exact samples, nil for legacy matches where final-side parity applies).
+func Engagements(events []models.Event, rounds []RoundInfo, cfg Config, players []PlayerRef, sides map[int]map[string]string) []Engagement {
+	real := CountedRounds(rounds)
 	if len(real) == 0 {
 		return nil
 	}
@@ -53,8 +54,9 @@ func Engagements(events []models.Event, rounds []RoundInfo, cfg Config, players 
 	window := cfg.ticks(cfg.TradeWindowS)
 
 	type deathRec struct {
-		tick int
-		side string // side of the DEATH's victim
+		tick      int
+		side      string // side of the DEATH's victim
+		killerKey string // who killed them (the trade target)
 	}
 
 	var out []Engagement
@@ -73,7 +75,7 @@ func Engagements(events []models.Event, rounds []RoundInfo, cfg Config, players 
 	}
 
 	for _, r := range real {
-		teamR := sideMapForRound(team, cfg, r.Number)
+		teamR := resolveRoundSides(sides, team, cfg, r.Number)
 		roundEvents := byRound[r.Number]
 		var deaths []deathRec
 		firstKillDone := false
@@ -90,11 +92,11 @@ func Engagements(events []models.Event, rounds []RoundInfo, cfg Config, players 
 				firstKillDone = true
 				emit(e, KindOpening, e.Attacker, e.Victim, kt)
 			}
-			// Trade: the killer's teammate died within the window before
-			// this kill.
+			// Trade: the victim is the player who killed one of the
+			// killer's teammates within the window (strict HLTV rule).
 			isTrade := false
 			for _, d := range deaths {
-				if d.side == kt && e.Tick-d.tick <= window {
+				if d.killerKey == e.Victim && d.side == kt && e.Tick-d.tick <= window {
 					isTrade = true
 					break
 				}
@@ -117,7 +119,7 @@ func Engagements(events []models.Event, rounds []RoundInfo, cfg Config, players 
 			if untraded {
 				emit(e, KindUntraded, e.Attacker, e.Victim, kt)
 			}
-			deaths = append(deaths, deathRec{tick: e.Tick, side: vt})
+			deaths = append(deaths, deathRec{tick: e.Tick, side: vt, killerKey: e.Attacker})
 		}
 	}
 	// Stable order: round, tick, kind.

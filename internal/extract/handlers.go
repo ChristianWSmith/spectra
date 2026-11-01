@@ -37,15 +37,10 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 	})
 
 	p.RegisterEventHandler(func(events.GameHalfEnded) {
-		gs := p.GameState()
-		ct, t := 0, 0
-		if s := gs.TeamCounterTerrorists(); s != nil {
-			ct = s.Score()
-		}
-		if s := gs.TeamTerrorists(); s != nil {
-			t = s.Score()
-		}
-		a.halfEnd(ct, t)
+		// The score at this event is one increment stale (it fires from
+		// the m_gamePhase prop write before the winner's score lands);
+		// freezeEnd resolves the settled score once the sides switch.
+		a.setHalfPending()
 	})
 
 	p.RegisterEventHandler(func(events.TeamSideSwitch) {
@@ -56,7 +51,12 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 
 	p.RegisterEventHandler(func(e events.RoundStart) {
 		gs := p.GameState()
-		a.roundStart(gs.IngameTick(), gs.IsWarmupPeriod(), e.TimeLimit, e.Objective)
+		warmup := gs.IsWarmupPeriod()
+		// Non-warmup round that isn't stats-eligible play → pregame
+		// (MatchZy-style knife round: match started, phase Pregame, or a
+		// post-match round while IsMatchStarted already flipped back).
+		pregame := !warmup && !realPeriod(gs)
+		a.roundStart(gs.IngameTick(), warmup, pregame, e.TimeLimit, e.Objective)
 	})
 
 	p.RegisterEventHandler(func(e events.RoundFreezetimeChanged) {
@@ -65,11 +65,14 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 		}
 		gs := p.GameState()
 		equipCT, equipT := 0, 0
+		scoreCT, scoreT := 0, 0
 		if ct := gs.TeamCounterTerrorists(); ct != nil {
 			equipCT = ct.FreezeTimeEndEquipmentValue()
+			scoreCT = ct.Score()
 		}
 		if t := gs.TeamTerrorists(); t != nil {
 			equipT = t.FreezeTimeEndEquipmentValue()
+			scoreT = t.Score()
 		}
 		playing := gs.Participants().Playing()
 		samples := make([]moneySample, 0, len(playing))
@@ -84,7 +87,7 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 				money: pl.Money(),
 			})
 		}
-		a.freezeEnd(gs.IngameTick(), equipCT, equipT, samples, gs.IsWarmupPeriod())
+		a.freezeEnd(gs.IngameTick(), equipCT, equipT, scoreCT, scoreT, samples)
 	})
 
 	p.RegisterEventHandler(func(e events.RoundEnd) {
@@ -96,6 +99,14 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 			e.Message,
 			p.TickRate(),
 		)
+		// MVP attribution via scoreboard-counter diffs (the round_mvp
+		// announcement is absent in many demos, golden included).
+		for _, pl := range gs.Participants().Playing() {
+			if pl == nil {
+				continue
+			}
+			a.mvpScan(playerKey(pl), pl.Name, pl.MVPs())
+		}
 	})
 
 	p.RegisterEventHandler(func(e events.RoundMVPAnnouncement) {
@@ -113,7 +124,7 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 		gs := p.GameState()
 		k := killInfo{
 			tick:          gs.IngameTick(),
-			warmup:        gs.IsWarmupPeriod(),
+			real:          realPeriod(gs),
 			tickRate:      p.TickRate(),
 			weapon:        wepName(e.Weapon),
 			headshot:      e.IsHeadshot,
@@ -139,6 +150,7 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 		if e.Assister != nil {
 			k.assisterKey = playerKey(e.Assister)
 			k.assisterName = e.Assister.Name
+			k.assisterSide = sideString(e.Assister.Team)
 		}
 		a.kill(k)
 	})
@@ -151,7 +163,7 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 		}
 		h := hurtInfo{
 			tick:              gs.IngameTick(),
-			warmup:            gs.IsWarmupPeriod(),
+			real:              realPeriod(gs),
 			weapon:            wn,
 			healthDamage:      e.HealthDamage,
 			healthDamageTaken: e.HealthDamageTaken,
@@ -167,10 +179,12 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 		if e.Attacker != nil {
 			h.attackerKey = playerKey(e.Attacker)
 			h.attackerName = e.Attacker.Name
+			h.attackerSide = sideString(e.Attacker.Team)
 		}
 		if e.Player != nil {
 			h.victimKey = playerKey(e.Player)
 			h.victimName = e.Player.Name
+			h.victimSide = sideString(e.Player.Team)
 			h.posX, h.posY, h.posZ = posPtrs(e.Player.Position())
 		}
 		a.hurt(h)
@@ -178,7 +192,7 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 
 	p.RegisterEventHandler(func(e events.WeaponFire) {
 		gs := p.GameState()
-		if e.Shooter == nil || gs.IsWarmupPeriod() {
+		if e.Shooter == nil || !realPeriod(gs) {
 			return
 		}
 		a.shot(playerKey(e.Shooter), e.Shooter.Name)
@@ -191,7 +205,7 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 		gs := p.GameState()
 		b := blindInfo{
 			tick:       gs.IngameTick(),
-			warmup:     gs.IsWarmupPeriod(),
+			real:       realPeriod(gs),
 			playerKey:  playerKey(e.Player),
 			playerName: e.Player.Name,
 			flashMs:    int(e.FlashDuration().Milliseconds()),
@@ -213,7 +227,7 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 			name = e.Player.Name
 		}
 		bx, by, bz := bombPos(gs)
-		a.bombPlanted(gs.IngameTick(), bombSite(e.Site), key, name, bx, by, bz)
+		a.bombPlanted(gs.IngameTick(), bombSite(e.Site), key, name, realPeriod(gs), bx, by, bz)
 	})
 
 	p.RegisterEventHandler(func(e events.BombDefused) {
@@ -225,7 +239,7 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 			hasKit = e.Player.HasDefuseKit()
 		}
 		bx, by, bz := bombPos(gs)
-		a.bombDefused(gs.IngameTick(), bombSite(e.Site), key, name, hasKit, bx, by, bz)
+		a.bombDefused(gs.IngameTick(), bombSite(e.Site), key, name, hasKit, realPeriod(gs), bx, by, bz)
 	})
 
 	p.RegisterEventHandler(func(e events.BombExplode) {
@@ -339,10 +353,12 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 }
 
 // blastFor converts a grenade detonation event into blastInfo. isFlash marks
-// flashbang detonations (they attribute pops to the thrower).
+// flashbang detonations (they attribute pops to the thrower); real gates the
+// flash-pop stat counter.
 func blastFor(ge events.GrenadeEvent, source string, p *demoinfocs.Parser, isFlash bool) blastInfo {
 	g := blastInfo{
 		tick:   p.GameState().IngameTick(),
+		real:   realPeriod(p.GameState()),
 		weapon: ge.GrenadeType.String(),
 		source: source,
 		x:      ge.Position.X,

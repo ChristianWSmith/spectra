@@ -7,12 +7,14 @@
     deleteMatch,
     reprocess,
     cancelJob,
+    getScoreboard,
     subscribeJobProgress,
     onJobDone,
     onLibraryChanged,
     onFilesDropped,
   } from '../services.js';
   import { fmtBytes, fmtDuration, fmtDate, basename } from '../fmt.js';
+  import { teamNames } from '../teams.js';
   import StatusChip from '../components/StatusChip.svelte';
 
   let { nav = () => {} } = $props();
@@ -196,9 +198,55 @@
     }
   }
 
+  // Team names for rows whose extract recorded no clan name: the list
+  // carries no player rows, so fetch each such match's scoreboard once,
+  // derive the per-side `team_<player>` names (shared with Match — see
+  // lib/teams.js) and cache them per match id (the list refreshes on every
+  // search/sort). Empty results (still parsing) and failures aren't cached,
+  // so a later refresh picks up the extracted players or retries.
+  let synthPlayers = $state(new Map()); // matchId → scoreboard rows
+
+  $effect(() => {
+    const missing = matches.filter(
+      (m) => (!m.ctName || !m.tName) && !synthPlayers.has(m.id),
+    );
+    if (!missing.length) return;
+    let live = true;
+    Promise.all(
+      missing.map((m) =>
+        getScoreboard(m.id, '', false).catch(() => null),
+      ),
+    ).then((rows) => {
+      if (!live) return;
+      // Only publish when something new arrived — reassigning an unchanged
+      // map would re-trigger this effect (and refetch) forever.
+      let changed = false;
+      const next = new Map(synthPlayers);
+      missing.forEach((m, i) => {
+        if (rows[i] && rows[i].length) {
+          next.set(m.id, rows[i]);
+          changed = true;
+        }
+      });
+      if (changed) synthPlayers = next;
+    });
+    return () => (live = false);
+  });
+
   function matchup(m) {
-    if (!m.ctName && !m.tName) return '—';
-    return `${m.ctName || '—'} vs ${m.tName || '—'}`;
+    // Both demo clan names known: no need for the scoreboard fallback.
+    if (m.ctName && m.tName) return `${m.ctName} vs ${m.tName}`;
+    const players = synthPlayers.get(m.id);
+    if (!players) return '—'; // fallback still loading
+    if (!players.length) return '—'; // no extracted players (parsing/failed row)
+    // Sides switch at halftime — these are team names, resolved per side
+    // (demo name → team_<player> → bare side as a last resort).
+    const { ct, t } = teamNames({
+      ctName: m.ctName || '',
+      tName: m.tName || '',
+      players,
+    });
+    return `${ct} vs ${t}`;
   }
 </script>
 

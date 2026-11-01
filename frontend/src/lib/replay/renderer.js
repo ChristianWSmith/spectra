@@ -242,13 +242,24 @@ export function createRenderer(canvas, { engine, data, players }) {
     return true;
   }
 
+  // sideAtFrame resolves a slot's side at frame f: the per-frame side
+  // bits (q16-v2 — sides flip at halftime, so the final-side table is
+  // only the fallback for legacy sidecars).
+  function sideBits(flagsByte) {
+    const b = (flagsByte >> 2) & 3;
+    return b === 1 ? 't' : b === 2 ? 'ct' : '';
+  }
+  function sideAtFrame(slot, f) {
+    return sideBits(store.slots[slot].flags[f]) || slotSides[slot] || '';
+  }
+
   function drawTrails(frame) {
     const n = store.frames;
     const from = Math.max(0, frame - TRAIL_FRAMES);
     const s = cam.fit * cam.zoom;
     for (let slot = 0; slot < store.slots.length; slot++) {
       const p = store.slots[slot].pos;
-      const color = teamColor(slotSides[slot]);
+      const color = teamColor(sideAtFrame(slot, frame));
       let prev = null;
       for (let f = frame; f >= from; f--) {
         if (!(store.masks[f] & (1 << slot))) {
@@ -401,7 +412,7 @@ export function createRenderer(canvas, { engine, data, players }) {
       if (!tmp.alive) continue;
       const c = worldToScreen(tmp.x, tmp.y);
       if (c.x < -60 || c.y < -60 || c.x > cssW + 60 || c.y > cssH + 60) continue;
-      const color = teamColor(slotSides[slot]);
+      const color = teamColor(sideAtFrame(slot, engine.state.frame));
       const r = tmp.duck ? 6.5 : 9;
       // view cone ±22°, semi-transparent
       const a0 = (-tmp.yaw - 22) * Math.PI / 180;

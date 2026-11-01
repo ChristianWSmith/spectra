@@ -113,6 +113,28 @@ func TestBuiltinsAndFind(t *testing.T) {
 	}
 }
 
+func TestSynthTeamNames(t *testing.T) {
+	sb := []models.PlayerStatsRow{
+		{SteamID: "B00", Name: "zed", Side: "t"},
+		{SteamID: "A00", Name: "kRaSnaL", Side: "ct"},
+		{SteamID: "A01", Name: "lowix", Side: "ct"},
+		{SteamID: "C00", Name: "sideless", Side: ""},
+	}
+	ct, tn := synthTeamNames(sb)
+	if ct != "team_kRaSnaL" || tn != "team_zed" {
+		t.Fatalf("synthTeamNames = %q / %q, want team_kRaSnaL / team_zed", ct, tn)
+	}
+	// Input order must not matter (callers pass store-sorted scoreboards).
+	ct2, tn2 := synthTeamNames([]models.PlayerStatsRow{sb[3], sb[2], sb[1], sb[0]})
+	if ct2 != ct || tn2 != tn {
+		t.Errorf("synthTeamNames reordered = %q / %q, want %q / %q", ct2, tn2, ct, tn)
+	}
+	// No recorded sides → empty pair (teamNames falls back to CT/T).
+	if ct3, tn3 := synthTeamNames(nil); ct3 != "" || tn3 != "" {
+		t.Errorf("synthTeamNames(nil) = %q / %q, want empty", ct3, tn3)
+	}
+}
+
 func TestRenderMatchSnapshot(t *testing.T) {
 	st, err := store.Open(":memory:")
 	if err != nil {
@@ -135,7 +157,7 @@ func TestRenderMatchSnapshot(t *testing.T) {
 	}
 	for _, want := range []string{
 		"# Match report — De_Mirage",
-		"CT 3 – 2 T",
+		"Alpha 3 – 2 Bravo", // team names, never the sides (sides switch)
 		"player0", "player9",
 		"## Scoreboard", "## Rounds", "## Economy", "## Clutches", "## Utility",
 		"| 1 | ct | ctWin |", // rounds table row

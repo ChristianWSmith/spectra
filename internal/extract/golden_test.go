@@ -62,14 +62,15 @@ func TestParseGolden(t *testing.T) {
 	if m.Match.ScoreCT != 10 || m.Match.ScoreT != 13 {
 		t.Errorf("score = CT %d – %d T, want 10–13", m.Match.ScoreCT, m.Match.ScoreT)
 	}
-	if m.Match.RealRounds != 24 || m.Match.WarmupRounds != 1 {
-		t.Errorf("rounds = %d real + %d warmup, want 24 + 1", m.Match.RealRounds, m.Match.WarmupRounds)
+	if m.Match.RealRounds != 23 || m.Match.WarmupRounds != 1 {
+		t.Errorf("rounds = %d real + %d warmup, want 23 + 1 (round 1 is the pregame knife round)",
+			m.Match.RealRounds, m.Match.WarmupRounds)
 	}
 	if m.Match.SideSwitches != 1 {
 		t.Errorf("sideSwitches = %d, want 1", m.Match.SideSwitches)
 	}
-	if m.Match.HalfCT != 7 || m.Match.HalfT != 4 {
-		t.Errorf("half score = %d/%d, want 7/4", m.Match.HalfCT, m.Match.HalfT)
+	if m.Match.HalfCT != 8 || m.Match.HalfT != 4 {
+		t.Errorf("half score = %d/%d, want 8/4 (settled, swapped back)", m.Match.HalfCT, m.Match.HalfT)
 	}
 	if m.Match.IsPOV {
 		t.Error("isPOV = true, want false")
@@ -188,8 +189,11 @@ func TestParseGolden(t *testing.T) {
 	if forever.Kills != 25 {
 		t.Errorf("forever2kELO kills = %d, want 25", forever.Kills)
 	}
-	if math.Abs(forever.ADR-142.9) > 0.05 {
-		t.Errorf("forever2kELO ADR = %.4f, want ≈142.9", forever.ADR)
+	// ADR = enemy damage (knife round excluded) / rounds played: the
+	// external scoreboard's 116.9 uses its own damage basis; ours follows
+	// the awpy/HLTV convention.
+	if math.Abs(forever.ADR-144.3) > 0.05 {
+		t.Errorf("forever2kELO ADR = %.4f, want ≈144.3", forever.ADR)
 	}
 
 	// Weapon maps must be valid JSON objects.

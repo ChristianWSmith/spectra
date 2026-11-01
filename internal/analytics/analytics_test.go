@@ -134,7 +134,7 @@ func TestPlayerRoundsKASTTruthTable(t *testing.T) {
 		ev(3, 250, 1, models.EventDamage, "C", "B", withDmg(40)),
 		ev(4, 260, 1, models.EventDamage, "A", "X", withDmg(30), withWeapon("HE Grenade")),
 	}
-	got := PlayerRounds(events, rounds, players, testCfg)
+	got := PlayerRounds(events, rounds, players, testCfg, nil)
 	byID := map[string]PlayerRound{}
 	for _, r := range got {
 		byID[r.SteamID] = r
@@ -178,7 +178,7 @@ func TestPlayerRoundsTradeWindowBoundary(t *testing.T) {
 		ev(0, 100, 1, models.EventKill, "X", "A"),
 		ev(1, 100+window, 1, models.EventKill, "B", "X"), // exactly at the window edge
 	}
-	got := PlayerRounds(events, rounds, players, testCfg)
+	got := PlayerRounds(events, rounds, players, testCfg, nil)
 	for _, r := range got {
 		if r.SteamID == "A" && !r.Traded {
 			t.Errorf("A traded = false at exact window edge (%d ticks), want true", window)
@@ -186,7 +186,7 @@ func TestPlayerRoundsTradeWindowBoundary(t *testing.T) {
 	}
 
 	events[1].Tick = 100 + window + 1
-	got = PlayerRounds(events, rounds, players, testCfg)
+	got = PlayerRounds(events, rounds, players, testCfg, nil)
 	for _, r := range got {
 		if r.SteamID == "A" && r.Traded {
 			t.Errorf("A traded = true beyond window, want false")
@@ -212,7 +212,7 @@ func TestClutches1v3Won(t *testing.T) {
 		ev(4, 500, 1, models.EventKill, "C", "Y"),
 		ev(5, 600, 1, models.EventKill, "C", "Z"), // opponents wiped → won at 600
 	}
-	got := Clutches(events, rounds, players, testCfg)
+	got := Clutches(events, rounds, players, testCfg, nil)
 	// Both sides of the endgame record their own instance: C's won 1v2 and
 	// Z's lost 1v1 (Z transitions into exactly-1 when Y dies — the spec's
 	// "2v1 then 1v1" symmetric accounting).
@@ -270,7 +270,7 @@ func TestClutchesLostWithBombPlanted(t *testing.T) {
 		ev(1, 200, 1, models.EventKill, "X", "A"), // B solo 1v1, bomb planted
 		ev(2, 300, 1, models.EventKill, "X", "B"), // lost
 	}
-	got := Clutches(events, rounds, players, testCfg)
+	got := Clutches(events, rounds, players, testCfg, nil)
 	// B's lost 1v1 and X's won 1v1 — both sides transitioned into exactly-1.
 	if len(got) != 2 {
 		t.Fatalf("clutches = %d (%+v), want 2", len(got), got)
@@ -296,24 +296,27 @@ func TestEngagementsKinds(t *testing.T) {
 	rounds := []RoundInfo{{Number: 1, Winner: "ct"}}
 	events := []models.Event{
 		ev(0, 100, 1, models.EventKill, "A", "X", withWeapon("AK-47")),
-		ev(1, 150, 1, models.EventKill, "Y", "A"), // trade (X died within window)
-		ev(2, 200, 1, models.EventKill, "Y", "B"), // trade (X died within window)
-		ev(3, 250, 1, models.EventKill, "C", "Y"), // Y's death untraded
+		ev(1, 150, 1, models.EventKill, "Y", "A"), // trade: Y is A, who killed Y's teammate X
+		ev(2, 200, 1, models.EventKill, "Y", "B"), // NOT a trade (B never killed a T teammate)
+		ev(3, 250, 1, models.EventKill, "C", "Y"), // trade: C traded teammate A; Y's death untraded
 	}
-	got := Engagements(events, rounds, testCfg, players)
+	got := Engagements(events, rounds, testCfg, players, nil)
 	counts := map[string]int{}
 	for _, e := range got {
 		counts[e.Kind]++
 	}
-	// C's kill of Y is ALSO a trade under the prompt's rule (C's teammate
-	// B died ≤ window before — Y literally killed B).
-	if counts[KindOpening] != 1 || counts[KindTrade] != 3 || counts[KindUntraded] != 1 {
-		t.Errorf("engagement counts = %v, want opening=1 trade=3 untraded=1 (rows: %+v)", counts, got)
+	// Strict rule: only kills whose VICTIM killed one of the killer's
+	// teammates inside the window count as trades (Y→B produces no row).
+	if counts[KindOpening] != 1 || counts[KindTrade] != 2 || counts[KindUntraded] != 1 {
+		t.Errorf("engagement counts = %v, want opening=1 trade=2 untraded=1 (rows: %+v)", counts, got)
 	}
 	// Opening row: A killed X.
 	for _, e := range got {
 		if e.Kind == KindOpening && (e.ASteam != "A" || e.BSteam != "X" || e.WonBy != "ct") {
 			t.Errorf("opening row = %+v", e)
+		}
+		if e.BSteam == "B" {
+			t.Errorf("Y killing B must not be an engagement row: %+v", e)
 		}
 		if e.Kind == KindUntraded && (e.ASteam != "C" || e.BSteam != "Y") {
 			t.Errorf("untraded row = %+v, want killer C victim Y", e)
@@ -328,7 +331,7 @@ func TestEngagementsSkipsWarmup(t *testing.T) {
 		ev(0, 10, 0, models.EventKill, "A", "X"),
 		ev(1, 100, 1, models.EventKill, "A", "X"),
 	}
-	got := Engagements(events, rounds, testCfg, players)
+	got := Engagements(events, rounds, testCfg, players, nil)
 	// Warmup produces no rows; the round-1 kill yields opening + untraded
 	// (X's death has no teammate revenge).
 	if len(got) != 2 {

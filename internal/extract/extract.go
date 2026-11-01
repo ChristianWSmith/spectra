@@ -30,15 +30,17 @@ const progressEvery = 1000
 
 // PositionPlayer is one alive participant's sampled state at one frame —
 // the unit the sidecar writer (internal/sidecar) encodes. Coordinates are
-// world units; Yaw is ViewDirectionY (pitch) in degrees as demoinfocs
-// reports it; Air/Duck map to the q16-v1 flags bits. SteamID is the raw
-// SteamID64 (0 for bots, which have no SteamID64).
+// world units; Yaw is ViewDirectionX (yaw) in degrees, normalized to
+// -180..180 before the sink; Air/Duck map to the q16-v2 flags bits and Side
+// ("ct"/"t"/"") to the side bits. SteamID is the raw SteamID64 (0 for bots,
+// which have no SteamID64).
 type PositionPlayer struct {
 	SteamID uint64
 	X, Y, Z float32
 	Yaw     float32
 	Air     bool
 	Duck    bool
+	Side    string
 }
 
 // PositionSink receives one call per parsed frame with every alive playing
@@ -144,14 +146,23 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 					continue
 				}
 				pos := pl.Position()
+				// ViewDirectionX is yaw (0..360); normalize to the
+				// -180..180 range the sidecar codec expects.
+				// (ViewDirectionY is pitch — feeding it here drew
+				// garbage view cones.)
+				yaw := pl.ViewDirectionX()
+				if yaw > 180 {
+					yaw -= 360
+				}
 				frameBuf = append(frameBuf, PositionPlayer{
 					SteamID: pl.SteamID64,
 					X:       float32(pos.X),
 					Y:       float32(pos.Y),
 					Z:       float32(pos.Z),
-					Yaw:     pl.ViewDirectionY(),
+					Yaw:     yaw,
 					Air:     pl.IsAirborne(),
 					Duck:    pl.IsDucking(),
+					Side:    sideString(pl.Team),
 				})
 			}
 			if err := sink.AddFrame(int32(gs.IngameTick()), frameBuf); err != nil {
@@ -197,10 +208,6 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 			wins:            pl.CompetitiveWins(),
 			ping:            pl.Ping(),
 			alive:           pl.IsAlive(),
-			kills:           pl.Kills(),
-			deaths:          pl.Deaths(),
-			assists:         pl.Assists(),
-			mvps:            pl.MVPs(),
 			score:           pl.Score(),
 			moneySpentTotal: pl.MoneySpentTotal(),
 		})

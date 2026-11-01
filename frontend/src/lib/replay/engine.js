@@ -7,7 +7,8 @@
 //   then, for each set bit in slot order:
 //     int16 x, int16 y, int16 z   (world units, 1.0 grid, Z-up)
 //     uint8 yaw                   (decode: degrees = byte/256*360 - 180)
-//     uint8 flags                 (bit0 = air, bit1 = duck)
+//     uint8 flags                 (bit0 = air, bit1 = duck,
+//                                  bits2-3 = side: 0 unknown, 1 t, 2 ct)
 // Slot order == meta.players[]. Everything is decoded once into flat typed
 // arrays — no per-frame objects — so scrub/seek/lerp are O(1)/O(log n).
 

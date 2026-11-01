@@ -422,35 +422,50 @@ func (s *AnalyticsService) GetHeatmap(matchID int64, kind string, f HeatmapFilte
 	roundInfos := make([]models.RoundInfo, len(rounds))
 	for i, r := range rounds {
 		roundInfos[i] = models.RoundInfo{Number: r.Number, Winner: r.Winner, Warmup: r.Warmup,
-			StartTick: r.StartTick, EndTick: r.EndTick, FreezeEndTick: r.FreezeEndTick}
+			Pregame: r.Pregame, StartTick: r.StartTick, EndTick: r.EndTick, FreezeEndTick: r.FreezeEndTick}
 	}
 	players = analytics.RecoverSides(kills, roundInfos, players)
 	side := map[string]string{}
 	for _, p := range players {
 		side[p.SteamID] = p.Side
 	}
-	// Team filters flip sides for pre-switch rounds (single-switch parity).
+	// Exact per-round sides when the extractor persisted them (new
+	// imports); legacy matches fall back to final-side parity with the
+	// first second-half round — ceiling division locates the boundary
+	// (floor landed one round early).
+	exact, err := s.st.GetRoundPlayerSides(matchID)
+	if err != nil {
+		return HeatmapGrid{}, err
+	}
 	halfSwitch := 0
 	if m, err := s.st.GetMatch(matchID); err == nil && m.SideSwitches > 0 {
-		real := make([]models.RoundInfo, 0, len(rounds))
-		for _, r := range roundInfos {
-			if !r.Warmup {
-				real = append(real, r)
-			}
-		}
-		if idx := len(real) / (m.SideSwitches + 1); idx > 0 && idx < len(real) {
+		real := analytics.CountedRounds(roundInfos)
+		if idx := (len(real) + m.SideSwitches) / (m.SideSwitches + 1); idx > 0 && idx < len(real) {
 			halfSwitch = real[idx].Number
 		}
 	}
-	if kind == "presence" {
-		return s.heatmapPresence(matchID, f, rounds, side, halfSwitch)
+	sideAt := func(steamID string, round int) string {
+		if m, ok := exact[round]; ok && m[steamID] != "" {
+			return m[steamID]
+		}
+		s := side[steamID]
+		if halfSwitch > 0 && round < halfSwitch && (s == "ct" || s == "t") {
+			if s == "ct" {
+				return "t"
+			}
+			return "ct"
+		}
+		return s
 	}
-	return s.heatmapEvents(matchID, kind, f, side, halfSwitch)
+	if kind == "presence" {
+		return s.heatmapPresence(matchID, f, rounds, sideAt)
+	}
+	return s.heatmapEvents(matchID, kind, f, sideAt)
 }
 
 // heatmapPresence streams the whole sidecar stream and accumulates
 // time-weighted dwell per cell.
-func (s *AnalyticsService) heatmapPresence(matchID int64, f HeatmapFilter, rounds []models.RoundRow, side map[string]string, halfSwitch int) (HeatmapGrid, error) {
+func (s *AnalyticsService) heatmapPresence(matchID int64, f HeatmapFilter, rounds []models.RoundRow, sideAt func(string, int) string) (HeatmapGrid, error) {
 	rd, err := sidecar.Open(filepath.Join(data.MatchesDir(), strconv.FormatInt(matchID, 10)))
 	if err != nil {
 		return HeatmapGrid{}, fmt.Errorf("analytics: heatmap presence: %w", err)
@@ -474,18 +489,8 @@ func (s *AnalyticsService) heatmapPresence(matchID int64, f HeatmapFilter, round
 		if f.SteamID != "" && steamID != f.SteamID {
 			return false
 		}
-		if f.Team != "" {
-			s := side[steamID]
-			if halfSwitch > 0 && round < halfSwitch && (s == "ct" || s == "t") {
-				if s == "ct" {
-					s = "t"
-				} else {
-					s = "ct"
-				}
-			}
-			if s != f.Team {
-				return false
-			}
+		if f.Team != "" && sideAt(steamID, round) != f.Team {
+			return false
 		}
 		return true
 	}
@@ -571,21 +576,11 @@ func (s *AnalyticsService) heatmapPresence(matchID int64, f HeatmapFilter, round
 // heatmapEvents rasterizes kill/death/damage event positions (victim
 // position for all three; the SteamID filter applies to the attacker on
 // kills and to the victim on deaths/damage).
-func (s *AnalyticsService) heatmapEvents(matchID int64, kind string, f HeatmapFilter, side map[string]string, halfSwitch int) (HeatmapGrid, error) {
+func (s *AnalyticsService) heatmapEvents(matchID int64, kind string, f HeatmapFilter, sideAt func(string, int) string) (HeatmapGrid, error) {
 	eventKind := map[string]string{"kills": models.EventKill, "deaths": models.EventKill, "damage": models.EventDamage}[kind]
 	rows, err := s.st.GetEvents(models.EventFilter{MatchID: matchID, Kind: eventKind, Round: -1, Limit: 50000})
 	if err != nil {
 		return HeatmapGrid{}, err
-	}
-	sideAt := func(steamID string, round int) string {
-		s := side[steamID]
-		if halfSwitch > 0 && round < halfSwitch && (s == "ct" || s == "t") {
-			if s == "ct" {
-				return "t"
-			}
-			return "ct"
-		}
-		return s
 	}
 	type sample struct{ x, y float64 }
 	var samples []sample

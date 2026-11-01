@@ -263,7 +263,7 @@ func TestReplaySidecar(t *testing.T) {
 	}
 
 	// 4. Hard safety nets (always, even on -update-replay).
-	if got.Frames != 136948 || got.Slots != 10 || got.RealRounds != 24 || math.Abs(got.TickRate-64) > 0.01 {
+	if got.Frames != 136948 || got.Slots != 10 || got.RealRounds != 23 || math.Abs(got.TickRate-64) > 0.01 {
 		t.Fatalf("safety net: golden demo identity drifted: %+v", got)
 	}
 
