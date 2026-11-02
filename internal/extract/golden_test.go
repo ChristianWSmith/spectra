@@ -63,7 +63,7 @@ func TestParseGolden(t *testing.T) {
 		t.Errorf("score = CT %d – %d T, want 10–13", m.Match.ScoreCT, m.Match.ScoreT)
 	}
 	if m.Match.RealRounds != 23 || m.Match.WarmupRounds != 1 {
-		t.Errorf("rounds = %d real + %d warmup, want 23 + 1 (round 1 is the pregame knife round)",
+		t.Errorf("rounds = %d real + %d warmup, want 23 + 1 (knife + warmup precede the first-half pistol)",
 			m.Match.RealRounds, m.Match.WarmupRounds)
 	}
 	if m.Match.SideSwitches != 1 {
@@ -90,18 +90,31 @@ func TestParseGolden(t *testing.T) {
 	}
 
 	// ---- rounds ----
+	// Ingest numbering: real rounds are 1..23 (first-half pistol = 1),
+	// knife/pregame and warmup rounds take negative indices counting back
+	// from round 1 (-2 knife, -1 warmup) so number order stays chrono.
 	if len(m.Rounds) != 25 {
 		t.Fatalf("rounds = %d, want 25", len(m.Rounds))
 	}
 	warmupRounds := 0
 	for i, r := range m.Rounds {
-		if r.Number != i+1 {
-			t.Errorf("round[%d].Number = %d, want %d (chronological)", i, r.Number, i+1)
+		var want int
+		switch i {
+		case 0: // pregame knife round
+			want = -2
+		case 1: // warmup
+			want = -1
+		default: // real rounds count 1..23
+			want = i - 1
+		}
+		if r.Number != want {
+			t.Errorf("round[%d].Number = %d, want %d (ingest numbering: pistol=1, pre-match negatives)",
+				i, r.Number, want)
 		}
 		if r.Warmup {
 			warmupRounds++
-			if r.Number != 2 {
-				t.Errorf("warmup round is #%d, want #2", r.Number)
+			if r.Number != -1 {
+				t.Errorf("warmup round is #%d, want #-1", r.Number)
 			}
 		}
 	}
@@ -111,24 +124,40 @@ func TestParseGolden(t *testing.T) {
 	if m.Rounds[1].Winner != "" || m.Rounds[1].DurationS != 0 {
 		t.Errorf("warmup round end state = %q/%v, want empty/0", m.Rounds[1].Winner, m.Rounds[1].DurationS)
 	}
+	if m.Rounds[2].Number != 1 || m.Rounds[2].Warmup || m.Rounds[2].Pregame {
+		t.Errorf("round[2] = #%d warmup=%v pregame=%v, want the first-half pistol as round 1",
+			m.Rounds[2].Number, m.Rounds[2].Warmup, m.Rounds[2].Pregame)
+	}
 
-	// Freeze-end economy port check: round 1 equip values from the baseline.
+	// Freeze-end economy port check: the knife round (#-2) starts both
+	// sides at 3250; the first real round (#1, pistol) at 4000/3600.
 	econ := map[string]models.RoundEconomy{}
 	for _, e := range m.RoundEconomy {
-		if e.Round == 1 {
+		switch e.Round {
+		case -2:
+			econ["knife-"+e.Side] = e
+		case 1:
 			econ[e.Side] = e
 		}
 	}
-	if econ["ct"].EquipValue != 3250 || econ["t"].EquipValue != 3250 {
-		t.Errorf("round 1 equip = ct %d / t %d, want 3250/3250", econ["ct"].EquipValue, econ["t"].EquipValue)
+	if econ["knife-ct"].EquipValue != 3250 || econ["knife-t"].EquipValue != 3250 {
+		t.Errorf("knife round equip = ct %d / t %d, want 3250/3250",
+			econ["knife-ct"].EquipValue, econ["knife-t"].EquipValue)
+	}
+	if econ["ct"].EquipValue != 4000 || econ["t"].EquipValue != 3600 {
+		t.Errorf("round 1 (pistol) equip = ct %d / t %d, want 4000/3600",
+			econ["ct"].EquipValue, econ["t"].EquipValue)
 	}
 
 	// ---- typed events ----
+	// Round stamps follow the ingest numbering: -2/-1 for pre-match rows,
+	// 1..23 for real rounds.
+	minRound, maxRound := -2, 23
 	counts := map[string]int{}
 	for _, e := range m.Events {
 		counts[e.Kind]++
-		if e.Round < 1 || e.Round > 25 {
-			t.Errorf("event kind=%s tick=%d round=%d outside 1..25", e.Kind, e.Tick, e.Round)
+		if e.Round < minRound || e.Round > maxRound {
+			t.Errorf("event kind=%s tick=%d round=%d outside %d..%d", e.Kind, e.Tick, e.Round, minRound, maxRound)
 		}
 	}
 	if counts[models.EventKill] != 170 {
@@ -142,8 +171,8 @@ func TestParseGolden(t *testing.T) {
 	distinct := map[string]bool{}
 	for _, g := range m.GenericEvents {
 		distinct[g.Name] = true
-		if g.Round < 1 || g.Round > 25 {
-			t.Errorf("generic %s tick=%d round=%d outside 1..25", g.Name, g.Tick, g.Round)
+		if g.Round < minRound || g.Round > maxRound {
+			t.Errorf("generic %s tick=%d round=%d outside %d..%d", g.Name, g.Tick, g.Round, minRound, maxRound)
 		}
 	}
 	if len(distinct) != 46 {
@@ -158,8 +187,8 @@ func TestParseGolden(t *testing.T) {
 		t.Errorf("chat rows = %d, want 34", len(m.Chat))
 	}
 	for _, c := range m.Chat {
-		if c.Round < 1 || c.Round > 25 {
-			t.Errorf("chat round=%d outside 1..25", c.Round)
+		if c.Round < minRound || c.Round > maxRound {
+			t.Errorf("chat round=%d outside %d..%d", c.Round, minRound, maxRound)
 		}
 	}
 
@@ -189,11 +218,13 @@ func TestParseGolden(t *testing.T) {
 	if forever.Kills != 25 {
 		t.Errorf("forever2kELO kills = %d, want 25", forever.Kills)
 	}
-	// ADR = enemy damage (knife round excluded) / rounds played: the
-	// external scoreboard's 116.9 uses its own damage basis; ours follows
-	// the awpy/HLTV convention.
-	if math.Abs(forever.ADR-144.3) > 0.05 {
-		t.Errorf("forever2kELO ADR = %.4f, want ≈144.3", forever.ADR)
+	// ADR = enemy damage capped per hit at the victim's remaining HP
+	// (overkill is not damage dealt), divided by the player's counted
+	// rounds (knife/warmup excluded). 116.9 is the external scoreboard's
+	// official value for this demo (donk.png) — the extractor now matches
+	// it for all ten players.
+	if math.Abs(forever.ADR-116.9) > 0.05 {
+		t.Errorf("forever2kELO ADR = %.4f, want ≈116.9", forever.ADR)
 	}
 
 	// Weapon maps must be valid JSON objects.

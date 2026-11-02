@@ -680,7 +680,7 @@
         <option value="">Jump to round…</option>
         {#each rounds as r (r.number)}
           <option value={r.number}>
-            R{r.number}{r.warmup ? ' (wu)' : ''}{r.bombSite ? ` · ${r.bombSite}` : ''}
+            R{r.number}{r.warmup ? ' (wu)' : ''}{r.pregame ? ' (knife)' : ''}{r.bombSite ? ` · ${r.bombSite}` : ''}
           </option>
         {/each}
       </select>

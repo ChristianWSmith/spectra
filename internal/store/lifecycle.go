@@ -309,8 +309,8 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 	eventsStmt, err := tx.Prepare(
 		`INSERT INTO events (match_id, seq, tick, round, kind, attacker, victim, assister, weapon,
 			headshot, wallbang, noscope, through_smoke, attacker_blind, assisted_flash, distance,
-			hitgroup, dmg, site, detail_json, raw_json, pos_x, pos_y, pos_z)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			hitgroup, dmg, site, detail_json, raw_json, pos_x, pos_y, pos_z, apos_x, apos_y, apos_z)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
 		return fmt.Errorf("store: save extracted: %w", err)
@@ -323,6 +323,7 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 			b2i(e.ThroughSmoke), b2i(e.AttackerBlind), b2i(e.AssistedFlash), e.Distance, scrub(e.Hitgroup),
 			e.Dmg, scrub(e.Site), scrub(e.DetailJSON), scrub(e.RawJSON),
 			nvl(e.PosX), nvl(e.PosY), nvl(e.PosZ),
+			nvl(e.AttackerPosX), nvl(e.AttackerPosY), nvl(e.AttackerPosZ),
 		); err != nil {
 			return fmt.Errorf("store: save extracted: events: %w", err)
 		}

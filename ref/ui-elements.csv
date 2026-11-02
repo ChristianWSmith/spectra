@@ -27,9 +27,8 @@ Extraction prompt backdrop,Map pack prompt,"Dimmed full-window backdrop behind t
 Extraction prompt panel,Map pack prompt,"Modal dialog shown once when a local CS2 install is found, offering to extract official radar images locally.",MapPackPrompt.svelte:mp-prompt
 Extraction result line,Map pack prompt,Status line on the extraction prompt reporting how many map packs were extracted and any per-map failures.,MapPackPrompt.svelte:mp-result
 Not now button,Map pack prompt,"""Not now"" button on the extraction prompt that declines permanently (the prompt never returns).",MapPackPrompt.svelte:decline
-Check for Updates menu item,Native OS menu & dialogs,"""Check for Updates…"" item in the Help menu that triggers an immediate update check.",main.go:checkForUpdateNow
+Check for Updates button,Settings — App & appearance,"""Check for Updates…"" button in the Settings About panel that triggers an immediate update check (moved out of the removed Help menu).",Settings.svelte:checkForUpdates
 Demo file picker dialog,Native OS menu & dialogs,"Native OS file-open dialog filtered to ""CS2 demos"" (*.dem;*.dem.zst) for selecting demos to import, opened from the Library import flow.",libraryservice.go:ImportDialog
-Help menu,Native OS menu & dialogs,"Native application menu submenu named ""Help"" in the OS menu bar.",main.go:appMenu
 Cancel import button,Library,Small red button at the end of an active job row that cancels that import.,Library.svelte:onCancel
 Chip percent label,Library,"Percentage text such as ""42%"" shown beside the progress bar inside a status chip while progress is between 0 and 100.",StatusChip.svelte:chip-pct
 Chip progress bar,Library,Mini inline bar inside a parsing or running status chip showing import progress; renders indeterminate at 0%.,StatusChip.svelte:chip-bar
@@ -53,12 +52,11 @@ Match score cell,Library,CT–T score cell in the Score column with the CT numbe
 Match search input,Library,"Search box in the Library header that filters the match list by map, path or team as you type.",Library.svelte:query
 Match status chip,Library,"Small colored chip showing a match or job lifecycle state (ready, queued, parsing, failed, running, done, cancelled) in the library table, the imports-in-progress panel, and the match header.",StatusChip.svelte:StatusChip
 Match table row,Library,Clickable (and Enter-key focusable) row in the matches table that navigates to that match.,Library.svelte:clickable
-Matches table,Library,"Main library table of imported matches with Map, Matchup, Score, Rounds, Duration, Size, Extracted, Status and Actions columns; rows open the match view.",Library.svelte:data-table
+Matches table,Library,"Main library table of imported matches with Map, Matchup, Score, Rounds, Duration, Size, Extracted, Status and Actions columns; headers sort the list when clicked (Matchup and Actions are not sortable) and rows open the match view.",Library.svelte:data-table
+Match table sort header,Library,"Clickable column header in the matches table that sorts the list server-side and shows ↑/↓ when active; the first click applies the column's natural default (newest/largest first, A→Z for names).",Library.svelte:sortTh
 No results message,Library,"Message under the matches table when it is empty — either ""No matches match query"" after a search or ""No matches yet — imports will appear here.""",Library.svelte:dropzone
 Recent import problems panel,Library,"Panel above the drop zone listing recent failed/cancelled imports (last 7 days, max 10) with status, filename and error.",Library.svelte:problemJobs
 Reprocess button,Library,Small button in a match row's Actions column that re-parses the original demo.,Library.svelte:onReprocess
-Sort direction button,Library,Arrow button (↓/↑) right of the sort dropdown that flips the Library sort between descending and ascending.,Library.svelte:desc
-Sort field dropdown,Library,"""Sort by"" select in the Library header choosing the sort column (Extracted, Map, Size, Score, Duration, Status).",Library.svelte:lib-sort
 Combat tab content,Match — Overview & header,Embedded combat-stats view rendered when the Combat tab is active.,Match.svelte:Combat
 Context tab content,Match — Overview & header,Embedded demo-context view rendered when the Context tab is active.,Match.svelte:Context
 CT roster table,Match — Overview & header,"Overview panel table of the team that finished CT, headed by that team's display name (demo clan name, else team_<player>, else ""CT"") with Player, K/D/A and ADR columns; clicking a row opens that player's timeline.",Match.svelte:side-ct
@@ -72,15 +70,15 @@ Heatmaps tab content,Match — Overview & header,Embedded heatmap view rendered 
 Key facts list,Match — Overview & header,"Definition list on the Overview tab: Server, Map, Tickrate, Frames, Duration, Size, Extracted, Warnings, First blood and Source path.",Match.svelte:facts
 Match loading text,Match — Overview & header,"""Loading…"" placeholder shown while the match view is still fetching its data.",Match.svelte:match
 Match not found message,Match — Overview & header,"Error alert ""Match not found."" when the match id has no matching record.",Match.svelte:error
-Match scoreline header,Match — Overview & header,Large team name – score – team name title at the top of the match view (team names, never the sides),Match.svelte:score
+Match scoreline header,Match — Overview & header,"Large team name – score – team name title at the top of the match view (team names, never the sides)",Match.svelte:score
 Match section tab bar,Match — Overview & header,"Nav of tabs (Overview, Scoreboard, Rounds, Economy, Utility, Heatmaps, Combat, Timeline, Chat, Context, Raw); Timeline navigates away, the rest switch in-page panels.",Match.svelte:tabs
 Match subtitle line,Match — Overview & header,"Muted meta line under the scoreline: map, half score, duration, tickrate, patch, status chip, voice badges and parser version.",Match.svelte:match-sub
 Other players table,Match — Overview & header,"Small table under the second roster for players outside both sides, showing name, K/D/A and ADR.",Match.svelte:rosters
 Overview stat card,Match — Overview & header,"One of five clickable cards on the Overview tab (Top fragger, Best ADR, Most util, Entry opens, Most MVPs) that opens the timeline filtered to that player.",Match.svelte:stat-cell
 Replay button,Match — Overview & header,Primary header button opening the replay view for the whole match from tick 0.,Match.svelte:openReplay
 Roster ADR chip,Match — Overview & header,Small chip showing a player's ADR value in the Overview roster tables.,Match.svelte:adr
-Round cell button,Match — Overview & header,Winner-tinted (CT blue / T yellow) round-number button that opens that round's detail view; warmup or no-winner rounds are muted.,RoundStrip.svelte:round-cell
-Round strip,Match — Overview & header,"Horizontal row of numbered round cells showing round-by-round winners, displayed above the match and round detail views.",RoundStrip.svelte:round-strip
+Round cell button,Match — Overview & header,"Winner-tinted (CT blue / T yellow) round-number button that opens that round's detail view and carries an arrow pointing toward the team that won it (▲ above, ▼ below); warmup/knife or no-winner rounds are muted.",RoundStrip.svelte:round-cell
+Round strip,Match — Overview & header,"Horizontal row of numbered round cells showing round-by-round winners with the two teams labelled above and below, arrows pointing at each round's winning team, and a split after real round 12 (MR12 halftime); displayed above the match and round detail views.",RoundStrip.svelte:round-strip
 T roster table,Match — Overview & header,"Overview panel table of the team that finished T, headed by that team's display name (demo clan name, else team_<player>, else ""T"") with the same Player, K/D/A and ADR columns.",Match.svelte:side-t
 Timeline button,Match — Overview & header,Primary header button opening the timeline view for this match.,Match.svelte:match-header
 Utility tab content,Match — Overview & header,Embedded utility-analysis view rendered when the Utility tab is active.,Match.svelte:Utility
@@ -104,7 +102,7 @@ Player name link,Match — Scoreboard tab,Name-cell button in the scoreboard tha
 Scoreboard row click,Match — Scoreboard tab,Clicking a scoreboard row (away from buttons) opens the timeline filtered to that player; rows are Enter-key focusable.,Match.svelte:openPlayerTimeline
 Scoreboard sort header,Match — Scoreboard tab,Clickable column header that sorts the scoreboard (shows ↑/↓ when active); KAST% and pinned metric columns sort in the browser.,Match.svelte:th-sort
 Scoreboard stat cell,Match — Scoreboard tab,"One numeric scoreboard cell (kills, ADR, HS%, K/D, etc.) formatted per column.",Match.svelte:cellText
-Scoreboard table,Match — Scoreboard tab,"Full per-player stats table on the Scoreboard tab with Name, Side, K, D, A, ADR, KAST%, HS%, K/D, KDA, DMG, Rnds, 3K/4K/5K, Entry, Trade, Opening K/D, Streak, Util, MVPs and Score columns, plus any pinned metric columns.",Match.svelte:viewRows
+Scoreboard table,Match — Scoreboard tab,"Full per-player stats table on the Scoreboard tab with Name, Side, K, D, A, ADR, KAST%, HS%, K/D, KDA, DMG, Rnds, 5K, 4K, 3K, Entry, Trade, Opening K/D, Streak, Util, MVPs and Score columns, plus any pinned metric columns.",Match.svelte:viewRows
 Side chip,Match — Scoreboard tab,"CT/T side chip used in the scoreboard Side column, roster tables, round winner cells, equip columns, and the player profile's sides and history tables.",Match.svelte:side
 Unpin metric button,Match — Scoreboard tab,✕ on a pinned metric header that removes the column from the scoreboard and updates localStorage.,Match.svelte:unpin
 Weapon breakdown expand button,Match — Scoreboard tab,▸/▾ toggle at the start of each scoreboard row that expands that player's weapon breakdown.,Match.svelte:expanded
@@ -115,10 +113,11 @@ Equip value chips,Match — Rounds tab,Colored CT/T chips showing each side's eq
 Round class chip,Match — Rounds tab,"Buy/round classification chip (pistol, eco, force, etc.) in the Rounds table, round detail header, and comparison columns whose tooltip shows the rule, rule version and confidence.",Match.svelte:cmp-class; CompareRounds.svelte:cmp-class
 Round classes error alert,Match — Rounds tab,Red alert on the Rounds tab when round classification data fails to load.,Match.svelte:classError
 Round compare checkbox,Match — Rounds tab,Checkbox in the Cmp column selecting a non-warmup round for comparison (max 4; later ones disable).,Match.svelte:cmp-cb
-Rounds table,Match — Rounds tab,"Per-round table on the Rounds tab with Cmp checkbox, №, Winner, Class, Reason, Duration, Site, MVP, Equip CT, Equip T, First blood and Kills columns; rows open the round detail.",Match.svelte:cmp-cmp-col
-Warmup badge,Match — Rounds tab,"""wu"" chip next to a warmup round's number in the Rounds table.",Match.svelte:warmup
+Rounds table,Match — Rounds tab,"Per-round table on the Rounds tab with Cmp checkbox, № (negative for knife/warmup rounds, first-half pistol = 1), Winner, Class, Reason (human-readable: Elimination, Bomb exploded, Bomb defused, …), Duration, Site, MVP, Equip CT, Equip T, First blood and Kills columns; rows open the round detail.",Match.svelte:cmp-cmp-col
+Warmup badge,Match — Rounds tab,"""wu"" chip next to a warmup round's negative number in the Rounds table.",Match.svelte:warmup
+Knife round badge,Match — Rounds tab,"""knife"" chip next to a pre-match knife round's negative number in the Rounds table (also shown beside the round title in Round detail).",Match.svelte:pregame
 Chat round chip,Match — Chat & Raw tabs,Round-number chip in the Chat table's Round column (also used in the Raw tab's ConVars table and payload headers).,Match.svelte:round-chip
-Chat round filter dropdown,Match — Chat & Raw tabs,"""Round"" select on the Chat tab filtering messages to All rounds or a single round.",Match.svelte:chat-round
+Chat round filter dropdown,Match — Chat & Raw tabs,"""Round"" select on the Chat tab filtering messages to All rounds or a single counted round (knife/warmup rounds are numbered negatively and are not offered).",Match.svelte:chat-round
 Chat table,Match — Chat & Raw tabs,"Chat tab table with Tick, Round, Name and Text columns; shows ""No chat in this selection."" when empty.",Match.svelte:chat
 ConVars card,Match — Chat & Raw tabs,"Raw-tab card with a filter box and scrollable table of ConVar changes (Tick, Round, Name, Value).",Match.svelte:m5-cv-card
 ConVars count chip,Match — Chat & Raw tabs,"""filtered/total"" chip in the ConVars card header reflecting the active filter.",Match.svelte:convarRows
@@ -144,9 +143,9 @@ Economy panel,Round detail,"Right-side panel table with per-side CT/T chip, Equi
 Kill feed panel,Round detail,"Left panel table of the round's kills with replay button, Tick, Attacker, Weapon, Victim and Flags columns; shows ""No kills recorded in this round."" when empty.",RoundDetail.svelte:kills
 Kill flag chips,Round detail,"HS/WB/NS/SMK/BLD chips in the Flags column marking headshot, wallbang, no-scope, through-smoke and attacker-blind kills.",RoundDetail.svelte:flag
 Kill replay jump button,Round detail,▶ button on a kill row that opens the replay at that kill's tick.,RoundDetail.svelte:watchTick
-Next round button,Round detail,"""Round N+1 →"" button in the bottom round navigation, shown when a later round exists.",RoundDetail.svelte:round-nav
+Next round button,Round detail,"""Round N →"" button in the bottom round navigation, shown when a later round exists (the label names the actual next round, which is negative for pre-match rounds).",RoundDetail.svelte:round-nav
 No kills row,Round detail,"""No kills recorded in this round."" placeholder row in an empty kill feed.",RoundDetail.svelte:kills
-Previous round button,Round detail,"""← Round N-1"" button in the bottom round navigation, shown when not on round 1.",RoundDetail.svelte:round-nav
+Previous round button,Round detail,"""← Round N"" button in the bottom round navigation, shown when an earlier round exists (rounds count up from the first-half pistol, with negative knife/warmup rounds before it).",RoundDetail.svelte:round-nav
 Round chat message item,Round detail,"One chat line in the round chat panel: muted tick, bold speaker name and message text.",RoundDetail.svelte:chat-list
 Round chat panel,Round detail,"Right-side panel listing this round's chat messages, or ""No chat this round."" when none.",RoundDetail.svelte:chat
 Round classification chip,Round detail,"Classification label chip (e.g. eco, force) beside the round title with rule, version and confidence tooltip.",RoundDetail.svelte:cmp-class
@@ -248,7 +247,7 @@ Player voice lane row,Timeline,One horizontal lane per player with a side-colore
 Position filter chip,Timeline,Chip showing the active map-region bounding box coordinates with a ✕ to clear it; appears only when a heatmap region filter is set.,FilterBar.svelte:filt-bbox
 Raw JSON block,Timeline,Collapsible pretty-printed raw.json (original demo data) for the event.,Timeline.svelte:json-block
 Reset filters button,Timeline,"""Reset"" button that clears every control in the filter bar back to defaults.",FilterBar.svelte:reset
-Round filter dropdown,Timeline,"Select narrowing events to a single round, with All plus R1…Rn options loaded for the match.",FilterBar.svelte:filt-round
+Round filter dropdown,Timeline,"Select narrowing events to a single counted round, with All plus R1…Rn options loaded for the match (knife/warmup rounds are numbered negatively and are not offered).",FilterBar.svelte:filt-round
 Row flag chips,Timeline,Small HS/WB/NS/SMK/BLD/AFL chips on an event row for special kill attributes.,Timeline.svelte:flagsOf
 Save filter button,Timeline,Saves the current filter settings as a named preset.,Timeline.svelte:saveCurrent
 Save filter name prompt,Timeline,Native dialog asking for the preset name when saving a filter.,Timeline.svelte:saveCurrent
@@ -396,12 +395,12 @@ Heatmap click hint,Heatmaps tab,"""Click the map to filter the timeline by regio
 Heatmap color ramp,Heatmaps tab,Amber-to-red gradient bar in the heatmap legend.,Heatmaps.svelte:heat-ramp
 Heatmap empty state,Heatmaps tab,"""Choose filters and press Generate — heatmaps are computed on demand."" message before any heatmap is generated.",Heatmaps.svelte:heat-empty
 Heatmap filter controls,Heatmaps tab,"Bar of Kind, Player, Team, and round-range selects plus the Generate button above the map.",Heatmaps.svelte:heat-controls
-Heatmap kind select,Heatmaps tab,"Dropdown choosing the heatmap metric: presence, kills, deaths, or damage.",Heatmaps.svelte:heat-kind
+Heatmap kind select,Heatmaps tab,"Dropdown choosing the heatmap metric: presence, kills, deaths, or damage — kills plot where the KILLER was, deaths/damage where the victim was hit.",Heatmaps.svelte:heat-kind
 Heatmap legend,Heatmaps tab,"Legend row showing 0-to-max scale, color ramp, unit chip, sample count, and grid size under the controls.",Heatmaps.svelte:heat-legend
 Heatmap load error,Heatmaps tab,Red alert at the top of the Heatmaps tab when match data fails to load.,Heatmaps.svelte:error
 Heatmap player select,Heatmaps tab,Dropdown limiting the heatmap to one player or all players.,Heatmaps.svelte:heat-player
-Heatmap rounds-from select,Heatmaps tab,"Dropdown setting the first round of the heatmap range, with warmup rounds marked ""(wu)"".",Heatmaps.svelte:heat-from
-Heatmap rounds-to select,Heatmaps tab,"Dropdown setting the last round of the heatmap range, with warmup rounds marked ""(wu)"".",Heatmaps.svelte:heat-to
+Heatmap rounds-from select,Heatmaps tab,Dropdown setting the first counted round of the heatmap range (knife/warmup rounds are numbered negatively and are not offered).,Heatmaps.svelte:heat-from
+Heatmap rounds-to select,Heatmaps tab,Dropdown setting the last counted round of the heatmap range (knife/warmup rounds are numbered negatively and are not offered).,Heatmaps.svelte:heat-to
 Heatmap team select,Heatmaps tab,"Dropdown limiting the heatmap to Both, CT, or T.",Heatmaps.svelte:heat-team
 Heatmap unit chip,Heatmaps tab,"Chip reading ""time-weighted seconds"" or ""count"" beside the heatmap legend.",Heatmaps.svelte:heat-unit
 Map heatmap canvas,Heatmaps tab,Canvas on the Heatmaps tab showing the map radar with an amber-to-red density overlay; clicking a region filters the Timeline by that map area.,HeatmapLayer.svelte:heat-canvas
@@ -630,7 +629,7 @@ Template origin chip,Reports,Origin chip (e.g. builtin) on each Reports view tem
 Template panel,Reports,Top panel in the Reports view listing available report templates as selectable cards.,Reports.svelte:templates
 Template scope chip,Reports,scope chip (match/player/round) on each Reports view template card.,Reports.svelte:rep-tpl-meta
 Template title,Reports,Title text shown on each Reports view template card.,Reports.svelte:rep-tpl-title
-About panel,Settings — App & appearance,"First panel in the Settings view showing the app version and the offline, local-first product description.",Settings.svelte:version
+About panel,Settings — App & appearance,"First panel in the Settings view showing the app version, the offline, local-first product description and the Check for Updates button.",Settings.svelte:version
 Appearance explanation text,Settings — App & appearance,"Muted text in the Settings view appearance panel explaining the dark default, new light tokens, and persistence.",Settings.svelte:theme
 Appearance panel,Settings — App & appearance,Panel in the Settings view for choosing the app color theme.,Settings.svelte:theme
 Dark theme button,Settings — App & appearance,Dark option in the Settings view theme selector that applies and remembers the dark theme.,Settings.svelte:setTheme
@@ -674,9 +673,9 @@ Plugins panel,Settings — Plugins,"Panel in the Settings view for installing, e
 Settings plugins error message,Settings — Plugins,Red alert in the Settings view plugins panel shown when plugin install or listing fails.,Settings.svelte:pluginsError
 Active rule version text,Settings — Analysis rules,"""Active rule_version: N"" line above the Settings view save rules button.",Settings.svelte:cfg
 Analysis rules panel,Settings — Analysis rules,Panel in the Settings view for editing trade-window and buy-threshold rules and recomputing matches.,Settings.svelte:cfg
-Force threshold hint,Settings — Analysis rules,Muted hint under the Settings view force threshold input (default 2000).,Settings.svelte:sett-hint
+Force threshold hint,Settings — Analysis rules,Muted hint under the Settings view force threshold input (default 10000).,Settings.svelte:sett-hint
 Force threshold input,Settings — Analysis rules,Number field in the Settings view analysis rules panel setting the force-buy equipment-value threshold.,Settings.svelte:sett-force
-Full-buy hint,Settings — Analysis rules,Muted hint under the Settings view full-buy threshold input (default 4000).,Settings.svelte:sett-hint
+Full-buy hint,Settings — Analysis rules,Muted hint under the Settings view full-buy threshold input (default 20000).,Settings.svelte:sett-hint
 Full-buy threshold input,Settings — Analysis rules,Number field in the Settings view analysis rules panel setting the full-buy equipment-value threshold.,Settings.svelte:sett-full
 Inferred badge,Settings — Analysis rules,"""inferred"" chip on heuristic entries in the Settings view metric definitions panel marking non-fact values.",Settings.svelte:sett-inferred
 Match id chip,Settings — Analysis rules,"""#id"" chip on each Settings view recompute match row.",Settings.svelte:sett-match-row

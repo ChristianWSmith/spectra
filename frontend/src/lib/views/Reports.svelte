@@ -75,10 +75,17 @@
     getRounds(id)
       .then((rs) => {
         rounds = rs || [];
-        if (roundNo > rounds.length) roundNo = Math.max(1, rounds.length);
+        // Round-scoped reports address COUNTED rounds only — knife/warmup
+        // rounds carry negative numbers, so the clamp runs against the
+        // highest positive round rather than the row count.
+        const maxRound = (rs || []).reduce((m, r) => Math.max(m, r.number), 0);
+        if (roundNo > maxRound) roundNo = Math.max(1, maxRound);
       })
       .catch(() => (rounds = []));
   });
+
+  // Highest counted round (negatives are knife/warmup rounds).
+  const maxRound = $derived(rounds.reduce((m, r) => Math.max(m, r.number), 0));
 
   const tpl = $derived(templates.find((t) => t.id === tplId) || null);
 
@@ -317,10 +324,10 @@
               id="rep-round"
               type="number"
               min="1"
-              max={Math.max(1, rounds.length)}
+              max={Math.max(1, maxRound)}
               bind:value={roundNo}
             />
-            <span class="muted rep-hint">1..{Math.max(1, rounds.length)}</span>
+            <span class="muted rep-hint">1..{Math.max(1, maxRound)}</span>
           </div>
         {/if}
       </div>

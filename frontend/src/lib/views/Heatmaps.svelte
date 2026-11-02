@@ -256,10 +256,10 @@
       <label for="heat-from">Rounds from</label>
       <select class="input" id="heat-from" bind:value={roundFrom}>
         <option value={-1}>All</option>
-        {#each rounds as r (r.number)}
-          <option value={r.number}
-            >R{r.number}{r.warmup ? ' (wu)' : ''}</option
-          >
+        <!-- Counted rounds only: knife/warmup rounds are numbered
+             negatively, and -1 is this range's "all" sentinel. -->
+        {#each rounds.filter((r) => r.number >= 1) as r (r.number)}
+          <option value={r.number}>R{r.number}</option>
         {/each}
       </select>
     </div>
@@ -267,10 +267,8 @@
       <label for="heat-to">Rounds to</label>
       <select class="input" id="heat-to" bind:value={roundTo}>
         <option value={-1}>All</option>
-        {#each rounds as r (r.number)}
-          <option value={r.number}
-            >R{r.number}{r.warmup ? ' (wu)' : ''}</option
-          >
+        {#each rounds.filter((r) => r.number >= 1) as r (r.number)}
+          <option value={r.number}>R{r.number}</option>
         {/each}
       </select>
     </div>

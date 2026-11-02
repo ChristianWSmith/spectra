@@ -383,7 +383,10 @@
           </table>
         </div>
         <p class="econ-table-note muted">
-          Loss CT/T = round loss bonus for that side (0 when recorded);
+          Loss CT/T = the round loss bonus that side would collect by losing
+          this round — CS2's ladder runs $1400 → $3400 in $500 steps: a loss
+          steps it up, a win steps it down (never a full reset), and every
+          half starts one level up (a pistol loss pays $1900);
           <span class="chip econ-badge-inferred">inferred</span> marks rows
           reconstructed from round results rather than recorded.
         </p>

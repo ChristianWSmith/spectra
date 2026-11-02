@@ -19,14 +19,22 @@
 
   let { nav = () => {} } = $props();
 
-  const SORT_KEYS = [
-    ['extracted_at', 'Extracted'],
-    ['map', 'Map'],
-    ['size', 'Size'],
-    ['score', 'Score'],
-    ['duration', 'Duration'],
-    ['status', 'Status'],
-  ];
+  // Sortable column headers replace the old "Sort by" dropdown + direction
+  // button: clicking a header sorts the list by that column (the store
+  // whitelists the keys — see matchListSort), a second click on the active
+  // header flips the direction. The first click applies the column's
+  // natural default — newest/largest first for dates and sizes, A→Z for
+  // names. Matchup is synthesized client-side and Actions is not data, so
+  // those headers stay plain.
+  const SORT_DEFAULT_DESC = {
+    extracted_at: true,
+    map: false,
+    size: true,
+    score: true,
+    duration: true,
+    rounds: true,
+    status: false,
+  };
 
   const STAGE_LABELS = {
     queued: 'queued',
@@ -73,6 +81,14 @@
       error = '';
     } catch (e) {
       error = errText(e);
+    }
+  }
+
+  function toggleSort(key) {
+    if (sortKey === key) desc = !desc;
+    else {
+      sortKey = key;
+      desc = !!SORT_DEFAULT_DESC[key];
     }
   }
 
@@ -265,21 +281,21 @@
       aria-label="Search matches"
       bind:value={query}
     />
-    <label class="sr-only" for="lib-sort">Sort by</label>
-    <select class="input" id="lib-sort" bind:value={sortKey}>
-      {#each SORT_KEYS as [key, label] (key)}
-        <option value={key}>{label}</option>
-      {/each}
-    </select>
-    <button
-      class="btn"
-      aria-label={desc ? 'Sort descending' : 'Sort ascending'}
-      title={desc ? 'Descending (newest/largest first)' : 'Ascending'}
-      onclick={() => (desc = !desc)}
-    >
-      {desc ? '↓' : '↑'}
-    </button>
   </header>
+
+  <!-- Sortable header cell: label + active-direction arrow; the button is
+       the whole header target (same styling as the scoreboard's). -->
+  {#snippet sortTh(label, key, cls)}
+    <th scope="col" class={cls}>
+      <button
+        class="th-sort"
+        class:sorted={sortKey === key}
+        aria-label="Sort by {label}"
+        title="Sort by {label}"
+        onclick={() => toggleSort(key)}
+      >{label}{#if sortKey === key}{desc ? ' ↓' : ' ↑'}{/if}</button>
+    </th>
+  {/snippet}
 
   {#if importError}
     <p class="error" role="alert">{importError}</p>
@@ -345,14 +361,14 @@
       <table class="data-table">
         <thead>
           <tr>
-            <th scope="col">Map</th>
+            {@render sortTh('Map', 'map', '')}
             <th scope="col">Matchup</th>
-            <th scope="col" class="num">Score</th>
-            <th scope="col" class="num">Rounds</th>
-            <th scope="col" class="num">Duration</th>
-            <th scope="col" class="num">Size</th>
-            <th scope="col">Extracted</th>
-            <th scope="col">Status</th>
+            {@render sortTh('Score', 'score', 'num')}
+            {@render sortTh('Rounds', 'rounds', 'num')}
+            {@render sortTh('Duration', 'duration', 'num')}
+            {@render sortTh('Size', 'size', 'num')}
+            {@render sortTh('Extracted', 'extracted_at', '')}
+            {@render sortTh('Status', 'status', '')}
             <th scope="col"><span class="sr-only">Actions</span></th>
           </tr>
         </thead>

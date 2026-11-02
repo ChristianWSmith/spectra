@@ -14,7 +14,7 @@
   "warmupRounds": 1,
   "roundsTotal": 25,
   "warmupRoundNumbers": [
-    2
+    -1
   ],
   "events": {
     "blind": 206,
@@ -53,7 +53,7 @@
       "kills": 25,
       "deaths": 14,
       "assists": 3,
-      "adr": 144.3,
+      "adr": 116.9,
       "hsPct": 52
     },
     {
@@ -63,7 +63,7 @@
       "kills": 20,
       "deaths": 15,
       "assists": 3,
-      "adr": 109.2,
+      "adr": 89.2,
       "hsPct": 55
     },
     {
@@ -73,7 +73,7 @@
       "kills": 18,
       "deaths": 12,
       "assists": 6,
-      "adr": 108.2,
+      "adr": 86.2,
       "hsPct": 66.7
     },
     {
@@ -83,7 +83,7 @@
       "kills": 18,
       "deaths": 17,
       "assists": 4,
-      "adr": 99.5,
+      "adr": 72.5,
       "hsPct": 44.4
     },
     {
@@ -93,7 +93,7 @@
       "kills": 18,
       "deaths": 17,
       "assists": 3,
-      "adr": 108.2,
+      "adr": 81.6,
       "hsPct": 61.1
     },
     {
@@ -103,7 +103,7 @@
       "kills": 14,
       "deaths": 16,
       "assists": 2,
-      "adr": 79.6,
+      "adr": 62.9,
       "hsPct": 50
     },
     {
@@ -113,7 +113,7 @@
       "kills": 14,
       "deaths": 18,
       "assists": 2,
-      "adr": 85.7,
+      "adr": 65.3,
       "hsPct": 42.9
     },
     {
@@ -123,7 +123,7 @@
       "kills": 12,
       "deaths": 17,
       "assists": 7,
-      "adr": 84.1,
+      "adr": 69.4,
       "hsPct": 58.3
     },
     {
@@ -133,7 +133,7 @@
       "kills": 10,
       "deaths": 16,
       "assists": 3,
-      "adr": 57.7,
+      "adr": 51.3,
       "hsPct": 60
     },
     {
@@ -143,7 +143,7 @@
       "kills": 10,
       "deaths": 18,
       "assists": 3,
-      "adr": 56.7,
+      "adr": 49,
       "hsPct": 40
     }
   ],
@@ -152,7 +152,7 @@
     "kills": 25,
     "deaths": 14,
     "assists": 3,
-    "adr": 144.3
+    "adr": 116.9
   },
   "parseSecondsMax": 90
 }

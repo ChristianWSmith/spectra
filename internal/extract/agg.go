@@ -181,6 +181,12 @@ type agg struct {
 	// (which that event fires before — see freezeEnd).
 	halfPending bool
 
+	// victimHP tracks each participant's current-round health so damage
+	// can be capped at the victim's remaining HP (external ADR basis —
+	// overkill is not damage dealt). Reset every RoundStart; seeded from
+	// the player_hurt `health` field (HP after the hit).
+	victimHP map[uint64]int
+
 	ctTeam teamFinal
 	tTeam  teamFinal
 
@@ -221,6 +227,7 @@ func newAgg() *agg {
 		players:       make(map[uint64]*playerAgg),
 		finalPresent:  make(map[uint64]bool),
 		participation: make(map[uint64]map[int]bool),
+		victimHP:      make(map[uint64]int),
 		tradeWindow:   make(map[uint64]tradeRec),
 		roundKills:    make(map[int]map[uint64]int),
 		lastMVP:       make(map[uint64]int),
@@ -332,6 +339,8 @@ func (a *agg) roundStart(tick int, warmup, pregame bool, timeLimit int, objectiv
 	})
 	a.roundKills[a.currentRound] = make(map[uint64]int)
 	a.tradeWindow = make(map[uint64]tradeRec)
+	// Health resets with the round: every player spawns back at 100 HP.
+	a.victimHP = make(map[uint64]int)
 	a.addEvent(models.Event{
 		Tick:       tick,
 		Kind:       models.EventRoundStart,
@@ -508,6 +517,10 @@ type killInfo struct {
 	samePlayer    bool
 	// Victim position at handler time (nil when unknown).
 	posX, posY, posZ *float64
+	// Attacker position at handler time (nil when unknown) — the kills
+	// heatmap plots where the killer was, the deaths heatmap where the
+	// victim fell.
+	attackerPosX, attackerPosY, attackerPosZ *float64
 }
 
 func (a *agg) kill(k killInfo) {
@@ -528,6 +541,9 @@ func (a *agg) kill(k killInfo) {
 		PosX:          k.posX,
 		PosY:          k.posY,
 		PosZ:          k.posZ,
+		AttackerPosX:  k.attackerPosX,
+		AttackerPosY:  k.attackerPosY,
+		AttackerPosZ:  k.attackerPosZ,
 		DetailJSON: detailJSON(map[string]any{
 			"killer":   k.killerName,
 			"victim":   k.victimName,
@@ -606,19 +622,14 @@ func (a *agg) kill(k killInfo) {
 		}
 	}
 
-	// Per-round multi-kills: exact-hit at 3/4/5.
+	// Per-round multi-kills: only the running count is kept here — the
+	// exact 3K/4K/5K tiers are decided in build() from the round's final
+	// total (external scoreboards count a round at exactly one tier: a
+	// 4-kill round is a 4K, not also a 3K).
 	if a.roundKills[a.currentRound] == nil {
 		a.roundKills[a.currentRound] = make(map[uint64]int)
 	}
 	a.roundKills[a.currentRound][k.killerKey]++
-	switch a.roundKills[a.currentRound][k.killerKey] {
-	case 3:
-		kp.threeK++
-	case 4:
-		kp.fourK++
-	case 5:
-		kp.fiveK++
-	}
 
 	kp.killStreak++
 	if kp.killStreak > kp.bestStreak {
@@ -704,22 +715,63 @@ func (a *agg) hurt(h hurtInfo) {
 	if !h.real {
 		return
 	}
+	// Health bookkeeping for EVERY real hit (team/world damage drains HP
+	// too) — the returned credit is capped at the victim's remaining HP.
+	dealt := a.capDamage(h.victimKey, h.healthDamage, h.health)
 	// Attacker stats count ENEMY damage only — friendly fire and self
 	// damage are not "damage dealt" on any scoreboard (awpy/HLTV/ProSettings).
 	enemy := h.attackerKey != 0 && h.attackerKey != h.victimKey &&
 		!sameSide(h.attackerSide, h.victimSide)
 	if enemy {
 		ap := a.ensure(h.attackerKey, h.attackerName)
-		ap.totalDamage += h.healthDamage
+		ap.totalDamage += dealt
 		ap.hits++
-		ap.weaponDmg[h.weapon] += h.healthDamage
+		ap.weaponDmg[h.weapon] += dealt
 		if h.isUtility {
-			ap.utilityDamage += h.healthDamage
+			ap.utilityDamage += dealt
 		}
 	}
 	if h.victimKey != 0 {
 		a.ensure(h.victimKey, h.victimName).damageTaken += h.healthDamageTaken
 	}
+}
+
+// capDamage credits one hit at most the victim's remaining HP — external
+// ADR/total-damage boards do not count overkill (a 115-damage AWP hit on
+// a 10-HP player dealt 10 damage). HP is tracked per round, starting at
+// 100, and updated from the player_hurt `health` field (the victim's HP
+// AFTER the hit), which is authoritative — simulating `before - dmg`
+// drifts (events the extractor does not model, e.g. world damage).
+// Returns the damage credit for this hit (0 when the victim is already
+// down or the hit is outside a tracked victim).
+func (a *agg) capDamage(victim uint64, dmg, healthAfter int) int {
+	if victim == 0 || dmg <= 0 {
+		return 0
+	}
+	before, ok := a.victimHP[victim]
+	if !ok {
+		before = 100
+	}
+	dealt := dmg
+	switch {
+	case before <= 0:
+		dealt = 0
+	case dealt > before:
+		dealt = before
+	}
+	after := healthAfter
+	if after < 0 {
+		after = 0
+	}
+	if after == 0 {
+		// `health` is 0 both for a kill and for an absent field: trust the
+		// field only when the simulation agrees the victim went down.
+		if sim := before - dmg; sim > 0 {
+			after = sim
+		}
+	}
+	a.victimHP[victim] = after
+	return dealt
 }
 
 func (a *agg) shot(key uint64, name string) {

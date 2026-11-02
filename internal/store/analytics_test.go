@@ -51,8 +51,8 @@ func TestConfigSeedAndSet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetConfig: %v", err)
 	}
-	if c.TradeWindowS != 5.0 || c.EcoFullBuy != 4000 || c.EcoForce != 2000 || c.RuleVersion != 1 {
-		t.Errorf("seeded config = %+v, want defaults 5/4000/2000/v1", c)
+	if c.TradeWindowS != 5.0 || c.EcoFullBuy != 20000 || c.EcoForce != 10000 || c.RuleVersion != 1 {
+		t.Errorf("seeded config = %+v, want defaults 5/20000/10000/v1", c)
 	}
 	// Second Get returns the seeded row (idempotent).
 	if c2, err := s.GetConfig(); err != nil || c2 != c {
@@ -146,6 +146,55 @@ func TestAnalyticsReplaceAndGetters(t *testing.T) {
 	}
 }
 
+func TestGetEconomyLossBonusFollowsTeams(t *testing.T) {
+	s := openMem(t)
+	id := saveTestMatch(t, s, "/d/teams.dem", "sha-teams", time.Now())
+	em := testExtracted("sha-teams", time.Now())
+	em.Match.RealRounds = 4
+	em.Match.SideSwitches = 1
+	// Two halves: player 100's team (A) opens CT and wins round 1, player
+	// 200's team (B) answers round 2; the sides swap before round 3 where A
+	// now plays T and wins again, B (now CT) takes round 4.
+	em.Rounds = []models.Round{
+		{Number: 1, Winner: "ct", EquipCT: 20000, EquipT: 20000, StartTick: 100, EndTick: 2000},
+		{Number: 2, Winner: "t", EquipCT: 15000, EquipT: 25000, StartTick: 2001, EndTick: 4000},
+		{Number: 3, Winner: "t", EquipCT: 25000, EquipT: 15000, StartTick: 4001, EndTick: 6000},
+		{Number: 4, Winner: "ct", EquipCT: 25000, EquipT: 15000, StartTick: 6001, EndTick: 8000},
+	}
+	em.RoundEconomy = nil
+	em.RoundSides = []models.RoundPlayerSide{
+		{Round: 1, SteamID: "100", Side: "ct"}, {Round: 1, SteamID: "200", Side: "t"},
+		{Round: 2, SteamID: "100", Side: "ct"}, {Round: 2, SteamID: "200", Side: "t"},
+		{Round: 3, SteamID: "100", Side: "t"}, {Round: 3, SteamID: "200", Side: "ct"},
+		{Round: 4, SteamID: "100", Side: "t"}, {Round: 4, SteamID: "200", Side: "ct"},
+	}
+	if err := s.SaveExtracted(id, em); err != nil {
+		t.Fatalf("SaveExtracted: %v", err)
+	}
+	rows, err := s.GetEconomy(id)
+	if err != nil {
+		t.Fatalf("GetEconomy: %v", err)
+	}
+	if len(rows) != 4 {
+		t.Fatalf("rows = %d, want 4", len(rows))
+	}
+	// Loss counts follow the TEAM across the side switch and restart at 1
+	// for each half (a pistol loss pays $1900); a win steps the count down
+	// by one, a loss up one (cap 4 = $3400).
+	want := []struct{ ct, t int }{
+		{1900, 1900}, // half 1 starts at loss count 1 for both teams
+		{1400, 2400}, // A won r1 (step down), B lost twice (count 2)
+		{1900, 1900}, // half 2 restarts both counts at 1 — B is now CT
+		{2400, 1400}, // A (T) won r3 → count 0; B (CT) lost it → count 2
+	}
+	for i, w := range want {
+		if rows[i].LossBonusCT != w.ct || rows[i].LossBonusT != w.t {
+			t.Errorf("round %d bonuses = CT %d / T %d, want %d/%d (team-tracked ladder)",
+				rows[i].Round, rows[i].LossBonusCT, rows[i].LossBonusT, w.ct, w.t)
+		}
+	}
+}
+
 func TestGetEconomyLossBonus(t *testing.T) {
 	s := openMem(t)
 	id := saveTestMatch(t, s, "/d/econ.dem", "sha-econ", time.Now())
@@ -182,16 +231,24 @@ func TestGetEconomyLossBonus(t *testing.T) {
 	if len(rows) != 3 {
 		t.Fatalf("rows = %d, want 3 (warmup excluded)", len(rows))
 	}
-	// T loses every round: into r2 = 1-loss streak (1400), into r3 = 2
-	// (1900). CT wins everything → 0. All inferred.
-	if rows[0].LossBonusT != 0 || rows[0].LossBonusCT != 0 {
-		t.Errorf("round 1 bonuses = %d/%d, want 0/0", rows[0].LossBonusCT, rows[0].LossBonusT)
+	// CS2 loss-count rules: every half starts at loss count 1, a loss
+	// steps the count up (+$500 each, cap $3400) and a win steps it DOWN
+	// by one (it does not reset). CT wins all three rounds here —
+	// no side switch in this fixture (SideSwitches 0).
+	//   r1: both teams enter at count 1 → 1900/1900 (pistol rule);
+	//   r2: CT won → count 0 → 1400; T lost twice → count 2 → 2400;
+	//   r3: CT still 0 → 1400; T count 3 → 2900.
+	if rows[0].LossBonusCT != 1900 || rows[0].LossBonusT != 1900 {
+		t.Errorf("round 1 bonuses = %d/%d, want 1900/1900 (half starts at loss count 1)",
+			rows[0].LossBonusCT, rows[0].LossBonusT)
 	}
-	if rows[1].LossBonusT != 1400 {
-		t.Errorf("round 2 T bonus = %d, want 1400", rows[1].LossBonusT)
+	if rows[1].LossBonusCT != 1400 || rows[1].LossBonusT != 2400 {
+		t.Errorf("round 2 bonuses = %d/%d, want 1400/2400 (win steps down, 2-loss T)",
+			rows[1].LossBonusCT, rows[1].LossBonusT)
 	}
-	if rows[2].LossBonusT != 1900 {
-		t.Errorf("round 3 T bonus = %d, want 1900 (2-loss streak)", rows[2].LossBonusT)
+	if rows[2].LossBonusCT != 1400 || rows[2].LossBonusT != 2900 {
+		t.Errorf("round 3 bonuses = %d/%d, want 1400/2900 (3-loss T)",
+			rows[2].LossBonusCT, rows[2].LossBonusT)
 	}
 	for _, r := range rows {
 		if !r.InferredCT || !r.InferredT {

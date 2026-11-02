@@ -3,11 +3,11 @@
   "clutchWins": 4,
   "kastPctAvg": 73.48,
   "classCounts": {
-    "eco": 0,
-    "force": 1,
-    "full": 19,
+    "eco": 3,
+    "force": 5,
+    "full": 11,
     "pistol": 2,
-    "save": 1
+    "save": 2
   },
   "engagementsByKind": {
     "opening": 23,

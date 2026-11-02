@@ -142,13 +142,43 @@ at the end of the section.
   blood/opening likewise requires a distinct enemy victim. Deaths
   include them. **Source** — awpy stats.rs (2026-11-01).
 
-- **ADR** — enemy health damage (awpy caps per-hit at remaining HP;
-  spectra sums `HealthDamage` to enemies only) ÷ rounds played;
-  denominator is the player's own counted rounds (knife/warmup
-  excluded). Third-party ADR columns may use different damage bases —
-  the golden demo's external board reports ~0.8× ours with no derivable
-  single rule. **Source** — https://awpy.readthedocs.io,
-  https://prosettings.net/blog/cs2-scoreboard/ (2026-11-01).
+- **ADR** — average damage per round: Σ over ENEMY hits of
+  MIN(hit damage, victim's remaining HP before the hit) ÷ rounds the
+  player played (knife/warmup excluded). Overkill is not damage dealt — a
+  115-damage AWP hit on a 10-HP player credits 10. Track each victim's HP
+  per round starting at 100 and update it from the player_hurt `health`
+  field (the victim's HP AFTER the hit — authoritative; a pure
+  `before − dmg` simulation drifts on world/team damage the extractor does
+  not attribute the same way). demoinfocs' `HealthDamageTaken` is the same
+  quantity when the server build emits it. Verified against the golden
+  demo's external scoreboard (donk.png): all ten players match to ±0.05
+  (forever2kELO 116.9, was 144.3 on the raw-damage basis).
+  **Source** — donk.png (external scoreboard, repo root); demoinfocs v6
+  `events.PlayerHurt` doc comments;
+  https://awpy.readthedocs.io,
+  https://prosettings.net/blog/cs2-scoreboard/ (2026-11-02).
+
+- **Loss bonus** — a per-TEAM loss count: +1 after every loss, −1 after
+  every win (min 0, max 4). `mp_consecutive_loss_aversion` defaults to 1:
+  a win STEPS THE LADDER DOWN one level, it does not reset it. A lost
+  round pays `cash_team_loser_bonus` (1400) +
+  `cash_team_loser_bonus_consecutive_rounds` (500) × count, capped at
+  3400 → $1400 / $1900 / $2400 / $2900 / $3400. Every half starts BOTH
+  teams at count 1 (`mp_starting_losses`), so losing a pistol round pays
+  $1900, not $1400. The count follows the TEAM across the halftime side
+  switch — reconstructing it per side mixes two teams' streaks.
+  **Source** — https://counterstrike.fandom.com/wiki/Money (mirrors Valve's
+  2018-10-09 and 2019-03-13 update notes),
+  https://developer.valvesoftware.com/wiki/List_of_Counter-Strike_2_console_commands_and_variables
+  (convar defaults; readable dump: https://cs2.poggu.me/dumped-data/convar-list)
+  (2026-11-02).
+
+- **Multi-kill columns (3K/4K/5K)** — a round counts at EXACTLY one tier:
+  a round with 4 kills is one 4K and NOT also a 3K (cumulative counting
+  disagrees with external scoreboards); 5+ kills = one 5K. Counted per
+  round over stats-eligible enemy kills only.
+  **Source** — golden demo's external scoreboard (donk.png: adamS 1×3K +
+  2×4K not 3×3K; FREELOOK 1×4K + 0×3K) (2026-11-02).
 
 - **MVPs** — `RoundMVPAnnouncement` (round_mvp) is often absent in CS2
   demos; recover per-round MVPs by diffing `Player.MVPs()` (`m_iMVPs`)
@@ -174,9 +204,14 @@ at the end of the section.
   identical constants in spectra/roundtable/cs2d/boshgg map packs
   (2026-11-01).
 
-- **Round numbering** — the game numbers rounds by `total_rounds_played`
-  (first real round = "Round 1"); warmup and knife rounds are
-  unnumbered. spectra keeps a raw chronological Number (warmup +
-  pregame flagged) and excludes flagged rounds from RealRounds and all
-  stats. MR12 pistol rounds are counted-round indices 0 and 12.
-  **Source** — golden-demo diag; awpy datasets.rs (2026-11-01).
+- **Round numbering** — the game numbers rounds from the first counted
+  (non-warmup, non-knife) round: the first-half pistol is "Round 1";
+  warmup and knife rounds are unnumbered. spectra ingest mirrors that:
+  real rounds are 1..N in chronological order and every other round takes
+  a NEGATIVE index counting back from round 1 (the round immediately
+  before round 1 is −1), so sorting by number stays chronological
+  (−2 knife, −1 warmup, 1 pistol, …). MR12 halves are counted-round
+  indices 0 and 12. Round-filter sentinels stay "-1 = all" (never a valid
+  round number), so filter dropdowns offer counted rounds only.
+  **Source** — golden-demo diag; awpy datasets.rs (2026-11-01);
+  ingest renumber in `internal/extract/build.go` (2026-11-02).

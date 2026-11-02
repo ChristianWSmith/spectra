@@ -15,6 +15,7 @@
     extractMapPacks,
     setMapPackPromptState,
     chooseCS2Dir,
+    checkForUpdateNow,
   } from '../services.js';
   import { probeAudio } from '../replay/audio.js';
   import { fmtDate } from '../fmt.js';
@@ -23,6 +24,21 @@
   let version = $state('…');
   let info = $state(null);
   let error = $state('');
+  let updateBusy = $state(false);
+
+  // Settings → About → Check for Updates: hands off to the framework's
+  // update window (it reports "up to date" and failures itself), so this
+  // only guards the button while the check is kicked off.
+  async function checkForUpdates() {
+    updateBusy = true;
+    try {
+      await checkForUpdateNow();
+    } catch (e) {
+      error = errText(e);
+    } finally {
+      updateBusy = false;
+    }
+  }
 
   // M5 appearance: dark default, light tokens in style-m3b.css.
   let theme = $state(getTheme());
@@ -153,7 +169,7 @@
 
   // Analysis rules (DoD: classification + trade window
   // configurable from Settings; rule_version recorded on save).
-  let cfg = $state({ tradeWindowS: 5, ecoFullBuy: 4000, ecoForce: 2000, ruleVersion: 0 });
+  let cfg = $state({ tradeWindowS: 5, ecoFullBuy: 20000, ecoForce: 10000, ruleVersion: 0 });
   let cfgError = $state('');
   let cfgMsg = $state('');
   let cfgLoading = $state(true);
@@ -311,6 +327,15 @@
       Product requirements live in <span class="mono">ref/PRD.md</span> in the
       repository.
     </p>
+    <div class="row-between">
+      <span class="muted"
+        >Checks GitHub Releases for a newer version and runs the update flow
+        when one exists (already up to date is reported too).</span
+      >
+      <button class="btn" disabled={updateBusy} onclick={checkForUpdates}>
+        {updateBusy ? 'Checking…' : 'Check for Updates…'}
+      </button>
+    </div>
   </section>
 
   <section class="panel">
@@ -553,7 +578,7 @@
           step="100"
           bind:value={cfg.ecoFullBuy}
         />
-        <span class="muted sett-hint">Team equipment ≥ this = full buy (default 4000).</span>
+        <span class="muted sett-hint">Team equipment ≥ this = full buy (default 20000).</span>
       </div>
       <div class="sett-field">
         <label for="sett-force">Force threshold (equip $)</label>
@@ -565,7 +590,7 @@
           step="100"
           bind:value={cfg.ecoForce}
         />
-        <span class="muted sett-hint">Team equipment ≥ this = force buy (default 2000).</span>
+        <span class="muted sett-hint">Team equipment ≥ this = force buy (default 10000).</span>
       </div>
     </div>
     <div class="row-between">

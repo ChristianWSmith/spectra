@@ -63,9 +63,16 @@
     { key: 'total_damage', label: 'DMG' },
     { key: 'rounds_played', label: 'Rnds' },
     {
+      key: 'five_k',
+      label: '5K',
+    },
+    {
+      key: 'four_k',
+      label: '4K',
+    },
+    {
       key: 'three_k',
-      label: '3K/4K/5K',
-      fmt: (p) => `${p.threeK}/${p.fourK}/${p.fiveK}`,
+      label: '3K',
     },
     { key: 'entry_kills', label: 'Entry' },
     { key: 'trade_kills', label: 'Trade' },
@@ -654,7 +661,14 @@
       </div>
     {/if}
 
-    <RoundStrip {rounds} matchId={id} {nav} />
+    <RoundStrip
+      {rounds}
+      matchId={id}
+      teamAbove={teams.ct}
+      teamBelow={teams.t}
+      sideSwitches={match.sideSwitches || 0}
+      {nav}
+    />
 
     <nav class="tabs" aria-label="Match sections">
       {#each TABS as t (t)}
@@ -992,7 +1006,13 @@
                     />
                   {/if}
                 </td>
-                <td class="num">{r.number}{#if r.warmup}<span class="chip">wu</span>{/if}</td>
+                <td class="num"
+                  >{r.number}{#if r.warmup}<span class="chip">wu</span>{:else if r.pregame}<span
+                      class="chip"
+                      title="pre-match knife round — not counted play"
+                      >knife</span
+                    >{/if}</td
+                >
                 <td>
                   <span class="chip side {r.winner || 'none'}">
                     {r.winner ? r.winner.toUpperCase() : '—'}
@@ -1051,7 +1071,9 @@
         <label for="chat-round">Round</label>
         <select class="input" id="chat-round" bind:value={chatRound}>
           <option value={-1}>All rounds</option>
-          {#each rounds as r (r.number)}
+          <!-- Counted rounds only: knife/warmup rounds are numbered
+               negatively, and -1 is this filter's "all rounds" sentinel. -->
+          {#each rounds.filter((r) => r.number >= 1) as r (r.number)}
             <option value={r.number}>Round {r.number}</option>
           {/each}
         </select>

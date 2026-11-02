@@ -185,12 +185,9 @@ func main() {
 		}
 	})
 
-	menu := app.Menu.New()
-	appMenu := menu.AddSubmenu("Help")
-	appMenu.Add("Check for Updates…").OnClick(func(*application.Context) {
-		svc.checkForUpdateNow()
-	})
-	app.Menu.SetApplicationMenu(menu)
+	// No native application menu: the Help submenu and its "Check for
+	// Updates" item were removed — the action lives in Settings → About
+	// (Settings.svelte), which calls AppService.CheckForUpdateNow.
 
 	svc.maybeCheckForUpdates()
 

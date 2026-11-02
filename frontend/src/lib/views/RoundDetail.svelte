@@ -3,10 +3,13 @@
     getRoundDetail,
     getRounds,
     getMatch,
+    getScoreboard,
     getRoundClasses,
+    listMatches,
     setPendingSeek,
   } from '../services.js';
   import { fmtDuration, fmtTickSeconds, fmtInt } from '../fmt.js';
+  import { teamNames } from '../teams.js';
   import RoundStrip from '../components/RoundStrip.svelte';
 
   let { id = 0, round = 0, nav = () => {} } = $props();
@@ -14,8 +17,14 @@
   let detail = $state(null);
   let rounds = $state([]);
   let tickRate = $state(64);
+  let sideSwitches = $state(0);
   let error = $state('');
   let cls = $state(null); // RoundClassRow for this round (may be null)
+
+  // Team display names for the round strip's above/below labels — the
+  // same resolution the Match header uses (demo clan names → derived
+  // `team_<player>` → bare side), loaded once per match.
+  let teams = $state({ ct: 'CT', t: 'T' });
 
   $effect(() => {
     let live = true;
@@ -25,11 +34,33 @@
         detail = d;
         rounds = r || [];
         if (m && m.tickRate > 0) tickRate = m.tickRate;
+        if (m) sideSwitches = m.sideSwitches || 0;
         error = d ? '' : 'Round not found.';
       })
       .catch((e) => {
         if (live) error = errText(e);
       });
+    return () => (live = false);
+  });
+
+  // Match-level identity (runs once per id, not per round navigation).
+  $effect(() => {
+    id;
+    let live = true;
+    Promise.all([
+      listMatches('', 'extracted_at', false).catch(() => []),
+      getScoreboard(id, 'kills', true).catch(() => []),
+    ])
+      .then(([list, sb]) => {
+        if (!live) return;
+        const s = (list || []).find((m) => m.id === id);
+        teams = teamNames({
+          ctName: (s && s.ctName) || '',
+          tName: (s && s.tName) || '',
+          players: sb || [],
+        });
+      })
+      .catch(() => {});
     return () => (live = false);
   });
 
@@ -67,6 +98,16 @@
   const economy = $derived(detail?.economy || []);
   const chat = $derived(detail?.chat || []);
 
+  // Prev/next by INDEX into the numbered list, not number arithmetic: the
+  // first real round is 1 with negative knife/warmup rounds before it, so
+  // "round 0" never exists and ±1 arithmetic would skip over (or invent)
+  // rounds across that gap.
+  const roundIdx = $derived(rounds.findIndex((r) => r.number === round));
+  const prevRound = $derived(roundIdx > 0 ? rounds[roundIdx - 1] : null);
+  const nextRound = $derived(
+    roundIdx >= 0 && roundIdx < rounds.length - 1 ? rounds[roundIdx + 1] : null,
+  );
+
   // Jump to the replay at a tick (per-kill ▶ uses the kill's own tick; the
   // header button uses the round start).
   function watchTick(tick) {
@@ -92,6 +133,9 @@
           {detail.round.winner ? detail.round.winner.toUpperCase() : '—'}
         </span>
         {#if detail.round.warmup}<span class="chip">warmup</span>{/if}
+        {#if detail.round.pregame}
+          <span class="chip" title="pre-match knife round — not counted play">knife</span>
+        {/if}
         {#if cls}
           <span
             class="chip cmp-class"
@@ -236,15 +280,23 @@
     </div>
 
     <div class="round-nav">
-      {#if detail.round.number > 1}
-        <button class="btn" onclick={() => nav(`/match/${id}/round/${detail.round.number - 1}`)}>
-          ← Round {detail.round.number - 1}
+      {#if prevRound}
+        <button class="btn" onclick={() => nav(`/match/${id}/round/${prevRound.number}`)}>
+          ← Round {prevRound.number}
         </button>
       {/if}
-      <RoundStrip {rounds} current={round} matchId={id} {nav} />
-      {#if rounds.length > 0 && detail.round.number < rounds[rounds.length - 1].number}
-        <button class="btn" onclick={() => nav(`/match/${id}/round/${detail.round.number + 1}`)}>
-          Round {detail.round.number + 1} →
+      <RoundStrip
+        {rounds}
+        current={round}
+        matchId={id}
+        teamAbove={teams.ct}
+        teamBelow={teams.t}
+        {sideSwitches}
+        {nav}
+      />
+      {#if nextRound}
+        <button class="btn" onclick={() => nav(`/match/${id}/round/${nextRound.number}`)}>
+          Round {nextRound.number} →
         </button>
       {/if}
     </div>

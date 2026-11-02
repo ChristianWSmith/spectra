@@ -70,51 +70,54 @@ func hitGroupName(h events.HitGroup) string {
 }
 
 // roundEndReasonName is the v6 port's hand-written reason map (v6's
-// RoundEndReason has no String()).
+// RoundEndReason has no String()). It renders HUMAN-READABLE names — this
+// string is what the Rounds table's Reason column and the round detail
+// summary show ("Bomb defused", "Elimination"), not the enum identifier.
+// The raw game-event payload (raw_json) still carries the original value.
 func roundEndReasonName(r events.RoundEndReason) string {
 	switch r {
 	case events.RoundEndReasonStillInProgress:
-		return "StillInProgress"
+		return "In progress"
 	case events.RoundEndReasonTargetBombed:
-		return "TargetBombed"
+		return "Bomb exploded"
 	case events.RoundEndReasonVIPEscaped:
-		return "VIPEscaped"
+		return "VIP escaped"
 	case events.RoundEndReasonVIPKilled:
-		return "VIPKilled"
+		return "VIP killed"
 	case events.RoundEndReasonTerroristsEscaped:
-		return "TerroristsEscaped"
+		return "Terrorists escaped"
 	case events.RoundEndReasonCTStoppedEscape:
-		return "CTStoppedEscape"
+		return "Escape stopped"
 	case events.RoundEndReasonTerroristsStopped:
-		return "TerroristsStopped"
+		return "Terrorists stopped"
 	case events.RoundEndReasonBombDefused:
-		return "BombDefused"
-	case events.RoundEndReasonCTWin:
-		return "CTWin"
-	case events.RoundEndReasonTerroristsWin:
-		return "TerroristsWin"
+		return "Bomb defused"
+	case events.RoundEndReasonCTWin, events.RoundEndReasonTerroristsWin:
+		// Round decided by eliminating the other team — the Winner column
+		// already says WHICH team did it.
+		return "Elimination"
 	case events.RoundEndReasonDraw:
 		return "Draw"
 	case events.RoundEndReasonHostagesRescued:
-		return "HostagesRescued"
+		return "Hostages rescued"
 	case events.RoundEndReasonTargetSaved:
-		return "TargetSaved"
+		return "Time expired"
 	case events.RoundEndReasonHostagesNotRescued:
-		return "HostagesNotRescued"
+		return "Hostages not rescued"
 	case events.RoundEndReasonTerroristsNotEscaped:
-		return "TerroristsNotEscaped"
+		return "Terrorists did not escape"
 	case events.RoundEndReasonVIPNotEscaped:
-		return "VIPNotEscaped"
+		return "VIP not escaped"
 	case events.RoundEndReasonGameStart:
-		return "GameStart"
+		return "Game start"
 	case events.RoundEndReasonTerroristsSurrender:
-		return "TerroristsSurrender"
+		return "Terrorists surrendered"
 	case events.RoundEndReasonCTSurrender:
-		return "CTSurrender"
+		return "CTs surrendered"
 	case events.RoundEndReasonTerroristsPlanted:
-		return "TerroristsPlanted"
+		return "Bomb planted"
 	case events.RoundEndReasonCTsReachedHostage:
-		return "CTsReachedHostage"
+		return "CTs reached hostage"
 	default:
 		return fmt.Sprintf("Reason%d", r)
 	}

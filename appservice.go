@@ -39,7 +39,8 @@ func (s *AppService) SaveWindowSize(w, h int) {
 // maybeCheckForUpdates checks for a newer release on launch, silently. Any
 // failure or "no update" is swallowed — a nagging dialog on a network blip
 // is worse than missing an update until the next launch. Dev/unstamped
-// builds never hit the network; Help → Check for Updates bypasses that gate.
+// builds never hit the network; Settings → About → Check for Updates
+// bypasses that gate.
 func (s *AppService) maybeCheckForUpdates() {
 	if !shouldCheckUpdate(version) {
 		return
@@ -61,11 +62,12 @@ func (s *AppService) maybeCheckForUpdates() {
 	}()
 }
 
-// checkForUpdateNow is the Help → Check for Updates action. Unlike the
-// startup check it always reports an outcome: CheckAndInstall opens the
-// update window even when the app is already up to date (or the check
-// failed), so local builds and opted-out users get feedback too.
-func (s *AppService) checkForUpdateNow() {
+// CheckForUpdateNow is the Settings → About → Check for Updates action.
+// Unlike the startup check it always reports an outcome: CheckAndInstall
+// opens the update window even when the app is already up to date (or the
+// check failed), so local builds and opted-out users get feedback too.
+// Exported — the frontend calls it through the generated bindings.
+func (s *AppService) CheckForUpdateNow() {
 	go func() {
 		if err := s.app.Updater.CheckAndInstall(context.Background()); err != nil {
 			slog.Info("update flow failed", "error", err)

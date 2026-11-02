@@ -28,6 +28,7 @@ var matchListSort = map[string]string{
 	"size":         "m.size",
 	"score":        "(m.score_ct + m.score_t)",
 	"duration":     "m.playback_time_s",
+	"rounds":       "m.real_rounds",
 	"status":       "m.status",
 }
 
@@ -69,13 +70,14 @@ var scoreboardSort = map[string]string{
 
 // eventRowCols/eventRowFrom select typed timeline columns with player
 // display names joined for attacker/victim/assister. The trailing
-// e.pos_* columns are NULL for events without a source position.
+// e.pos_* columns are NULL for events without a source position; the
+// e.apos_* columns carry the attacker's position (kill events).
 const eventRowCols = `e.id, e.seq, e.tick, e.round, e.kind,
 	e.attacker, COALESCE(ap.name, ''), e.victim, COALESCE(vp.name, ''),
 	e.assister, COALESCE(asp.name, ''),
 	e.weapon, e.headshot, e.wallbang, e.noscope, e.through_smoke,
 	e.attacker_blind, e.assisted_flash, e.distance, e.hitgroup, e.dmg, e.site,
-	e.pos_x, e.pos_y, e.pos_z`
+	e.pos_x, e.pos_y, e.pos_z, e.apos_x, e.apos_y, e.apos_z`
 
 const eventRowFrom = ` FROM events e
 	LEFT JOIN players ap ON ap.match_id = e.match_id AND e.attacker <> '' AND ap.steam_id = e.attacker
@@ -406,6 +408,7 @@ func (s *Store) GetEvent(id int64) (*models.EventDetail, error) {
 		&er.Victim, &er.VictimName, &er.Assister, &er.AssisterName, &er.Weapon, &er.Headshot,
 		&er.Wallbang, &er.Noscope, &er.ThroughSmoke, &er.AttackerBlind, &er.AssistedFlash,
 		&er.Distance, &er.Hitgroup, &er.Dmg, &er.Site, &er.PosX, &er.PosY, &er.PosZ,
+		&er.AttackerPosX, &er.AttackerPosY, &er.AttackerPosZ,
 		&det, &raw,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -552,6 +555,7 @@ func scanEventRow(row interface{ Scan(...any) error }) (models.EventRow, error) 
 		&er.Victim, &er.VictimName, &er.Assister, &er.AssisterName, &er.Weapon, &er.Headshot,
 		&er.Wallbang, &er.Noscope, &er.ThroughSmoke, &er.AttackerBlind, &er.AssistedFlash,
 		&er.Distance, &er.Hitgroup, &er.Dmg, &er.Site, &er.PosX, &er.PosY, &er.PosZ,
+		&er.AttackerPosX, &er.AttackerPosY, &er.AttackerPosZ,
 	)
 	return er, err
 }

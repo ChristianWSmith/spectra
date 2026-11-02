@@ -225,7 +225,9 @@ type RoundEconomy struct {
 // PosX/PosY/PosZ are the position the source event exposes — victim/hit
 // position for damage/kill, throw position for grenade_throw, detonation
 // position for grenade, bomb-entity position for bomb plant/defuse/explode
-// — nil when the source lacks a position.
+// — nil when the source lacks a position. AttackerPos* is the attacker's
+// position at the source event (kill events — the "where the killer was"
+// half of the kills heatmap; nil when the source lacks it).
 type Event struct {
 	Seq           int      `json:"seq"`
 	Tick          int      `json:"tick"`
@@ -250,6 +252,9 @@ type Event struct {
 	PosX          *float64 `json:"posX,omitempty"`
 	PosY          *float64 `json:"posY,omitempty"`
 	PosZ          *float64 `json:"posZ,omitempty"`
+	AttackerPosX  *float64 `json:"attackerPosX,omitempty"`
+	AttackerPosY  *float64 `json:"attackerPosY,omitempty"`
+	AttackerPosZ  *float64 `json:"attackerPosZ,omitempty"`
 }
 
 // GenericEvent is one raw game-event (generic_events table) — the histogram

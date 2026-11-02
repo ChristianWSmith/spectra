@@ -76,15 +76,20 @@ func TestRoundStateMachine(t *testing.T) {
 		t.Errorf("teams = %+v, want ct then t", m.Teams)
 	}
 
-	// Round start/end events carry the extractor's round numbers.
+	// Round start/end events carry the INGEST round numbers after build:
+	// real rounds count 1..N while warmup/knife rounds take negative
+	// indices (here: real, warmup, real → 1, -1, 2).
+	wantRounds := []int{1, -1, 2}
 	starts, ends := 0, 0
 	for _, e := range m.Events {
 		switch e.Kind {
 		case models.EventRoundStart:
-			starts++
-			if e.Round != starts {
-				t.Errorf("round_start #%d has round %d, want %d", starts, e.Round, starts)
+			if starts >= len(wantRounds) {
+				t.Errorf("extra round_start #%d (round %d)", starts+1, e.Round)
+			} else if e.Round != wantRounds[starts] {
+				t.Errorf("round_start #%d has round %d, want %d", starts+1, e.Round, wantRounds[starts])
 			}
+			starts++
 		case models.EventRoundEnd:
 			ends++
 		}
@@ -221,6 +226,17 @@ func TestStreakAcrossDeaths(t *testing.T) {
 	}
 }
 
+// statsFor finds one player's built stats row by accumulator key.
+func statsFor(m *models.ExtractedMatch, key uint64) *models.PlayerStats {
+	id := keyStr(key)
+	for i := range m.PlayerStats {
+		if m.PlayerStats[i].SteamID == id {
+			return &m.PlayerStats[i]
+		}
+	}
+	return nil
+}
+
 func TestMultiKillCounts(t *testing.T) {
 	a := newAgg()
 	a.roundStart(0, false, false, 115, "BOMB TARGET")
@@ -237,23 +253,63 @@ func TestMultiKillCounts(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		kill(10*i+1, uint64(100+i))
 	}
-	p := a.players[1]
-	if p.threeK != 1 || p.fourK != 1 || p.fiveK != 1 {
-		t.Fatalf("after 5 rounds-worth of kills in one round: 3K/4K/5K = %d/%d/%d, want 1/1/1",
-			p.threeK, p.fourK, p.fiveK)
-	}
+	kill(61, 105) // 6th kill: still one 5K (5+ counts once)
 
-	kill(61, 105) // 6th kill: no new tier
-	if p.threeK != 1 || p.fourK != 1 || p.fiveK != 1 {
-		t.Fatalf("6th kill changed multi-kill counts: %d/%d/%d", p.threeK, p.fourK, p.fiveK)
-	}
-
-	// Per-round counter restarts with the round.
+	// Per-round counter restarts with the round: 2 kills add no tier.
 	a.roundStart(1000, false, false, 115, "BOMB TARGET")
 	kill(1010, 200)
 	kill(1020, 201)
-	if p.threeK != 1 {
-		t.Fatalf("2 kills in a new round must not add a 3K: threeK=%d", p.threeK)
+
+	// Tiers resolve in build() from each round's final kill total.
+	m := a.build()
+	p := statsFor(m, 1)
+	if p == nil {
+		t.Fatal("killer missing from built player stats")
+	}
+	if p.ThreeK != 0 || p.FourK != 0 || p.FiveK != 1 {
+		t.Fatalf("3K/4K/5K = %d/%d/%d, want 0/0/1 (one round of 5+ kills = one 5K)",
+			p.ThreeK, p.FourK, p.FiveK)
+	}
+}
+
+// A round counts at EXACTLY one multi-kill tier: a 4-kill round is one 4K
+// and no 3K (the golden demo's official scoreboard: adamS 1×3K + 2×4K,
+// FREELOOK 1×4K + 0×3K — cumulative counting gave adamS 3×3K).
+func TestMultiKillTiersAreExact(t *testing.T) {
+	a := newAgg()
+	kill := func(tick int, victim uint64) {
+		a.kill(killInfo{
+			tick: tick, tickRate: 64, real: true,
+			killerKey: 7, killerName: "entry", killerSide: "ct",
+			victimKey: victim, victimName: "x", victimSide: "t",
+			weapon: "M4A1-S",
+		})
+	}
+
+	a.roundStart(0, false, false, 115, "BOMB TARGET")
+	for i := 0; i < 4; i++ {
+		kill(10*i+1, uint64(100+i))
+	}
+	a.roundStart(1000, false, false, 115, "BOMB TARGET")
+	for i := 0; i < 3; i++ {
+		kill(1010+10*i, uint64(200+i))
+	}
+	a.roundStart(2000, false, false, 115, "BOMB TARGET")
+	kill(2010, 300)
+	kill(2020, 301)
+	kill(2030, 302)
+	kill(2040, 303)
+	kill(2050, 304)
+
+	m := a.build()
+	p := statsFor(m, 7)
+	if p == nil {
+		t.Fatal("killer missing from built player stats")
+	}
+	// rounds: 4 kills → 4K only; 3 kills → 3K only; 5 kills → 5K only.
+	if p.ThreeK != 1 || p.FourK != 1 || p.FiveK != 1 {
+		t.Fatalf("3K/4K/5K = %d/%d/%d, want exactly 1/1/1 across three rounds",
+			p.ThreeK, p.FourK, p.FiveK)
 	}
 }
 

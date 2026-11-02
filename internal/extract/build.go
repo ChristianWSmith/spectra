@@ -11,6 +11,13 @@ import (
 // build assembles the accumulated state into the normalized extract output.
 // Match ID/Path/SHA256/Size/Status/Error stay zero — the store owns them.
 func (a *agg) build() *models.ExtractedMatch {
+	// Ingest round numbering first: rows stamped during the parse carry the
+	// chronological index and are remapped together with the rounds.
+	a.renumber()
+	// Multi-kill tiers from each round's final kill total (exact-hit:
+	// a round counts at ONE tier — see buildMultiKills).
+	a.buildMultiKills()
+
 	out := &models.ExtractedMatch{}
 
 	playbackTimeS := 0.0
@@ -104,8 +111,10 @@ func (a *agg) build() *models.ExtractedMatch {
 		if rs := a.participation[key]; rs != nil {
 			roundsPlayed = len(rs)
 		}
-		// ADR = enemy damage per round the player played (HLTV/awpy
-		// convention: per-player denominator, not the match round count).
+		// ADR = enemy damage per round the player played. Damage is
+		// capped per hit at the victim's remaining HP while parsing (see
+		// agg.capDamage) — the external-board basis the golden demo's
+		// official values were checked against.
 		adr := 0.0
 		if roundsPlayed > 0 {
 			adr = float64(p.totalDamage) / float64(roundsPlayed)
@@ -180,4 +189,92 @@ func (a *agg) build() *models.ExtractedMatch {
 	out.Chat = a.chatRows
 	out.Warnings = a.warnings
 	return out
+}
+
+// renumber assigns the ingest round numbering: the first real (non-warmup,
+// non-pregame) round is round 1 and real rounds count up from there, while
+// knife/warmup rounds take NEGATIVE indices counting backwards from round 1
+// (the round immediately before round 1 is -1). Sorting by number therefore
+// stays chronological — -2 (knife), -1 (warmup), 1 (pistol), 2, … — and the
+// first pistol round of the first half is round 1, matching how the game
+// and external scoreboards number rounds.
+//
+// During the parse every round is stamped with a chronological index
+// (knife = 1, warmup = 2, first real = 3 …) so rows can reference their
+// round before the match is known; this pass rewrites the rounds and every
+// row that carries a round number through one old→new table. Non-counted
+// rounds that appear AFTER real play has started (mid-match restarts) are
+// still numbered negatively, but can only sort before round 1 — a corner
+// case no standard demo hits.
+func (a *agg) renumber() {
+	mapping := make(map[int]int, len(a.rounds))
+	next := 1
+	for i := range a.rounds {
+		r := &a.rounds[i]
+		if r.warmup || r.pregame {
+			continue
+		}
+		mapping[r.number] = next
+		next++
+	}
+	// Reverse walk so the non-counted round closest to round 1 gets -1.
+	pre := -1
+	for i := len(a.rounds) - 1; i >= 0; i-- {
+		r := &a.rounds[i]
+		if !r.warmup && !r.pregame {
+			continue
+		}
+		mapping[r.number] = pre
+		pre--
+	}
+	remap := func(old int) int {
+		if n, ok := mapping[old]; ok {
+			return n
+		}
+		return old
+	}
+	for i := range a.rounds {
+		a.rounds[i].number = remap(a.rounds[i].number)
+	}
+	for i := range a.events {
+		a.events[i].Round = remap(a.events[i].Round)
+	}
+	for i := range a.generic {
+		a.generic[i].Round = remap(a.generic[i].Round)
+	}
+	for i := range a.chatRows {
+		a.chatRows[i].Round = remap(a.chatRows[i].Round)
+	}
+	for i := range a.economy {
+		a.economy[i].Round = remap(a.economy[i].Round)
+	}
+	for i := range a.roundSides {
+		a.roundSides[i].Round = remap(a.roundSides[i].Round)
+	}
+}
+
+// buildMultiKills resolves each player's 3K/4K/5K columns from the final
+// per-round kill totals. External scoreboards count a round at EXACTLY one
+// tier — a round with 4 kills is one 4K and no 3K (the golden demo's
+// official scoreboard: adamS 1×3K + 2×4K, not 3×3K) — so the tiers are
+// mutually exclusive: exactly 3 → threeK, exactly 4 → fourK, 5+ → fiveK.
+// roundKills only ever holds stats-eligible kills (warmup/knife/post-match
+// kills never reach it).
+func (a *agg) buildMultiKills() {
+	for _, perRound := range a.roundKills {
+		for key, n := range perRound {
+			p, ok := a.players[key]
+			if !ok {
+				continue
+			}
+			switch {
+			case n == 3:
+				p.threeK++
+			case n == 4:
+				p.fourK++
+			case n >= 5:
+				p.fiveK++
+			}
+		}
+	}
 }

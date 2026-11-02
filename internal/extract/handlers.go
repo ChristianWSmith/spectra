@@ -139,6 +139,7 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 			k.killerKey = playerKey(e.Killer)
 			k.killerName = e.Killer.Name
 			k.killerSide = sideString(e.Killer.Team)
+			k.attackerPosX, k.attackerPosY, k.attackerPosZ = posPtrs(e.Killer.Position())
 		}
 		if e.Victim != nil {
 			k.victimKey = playerKey(e.Victim)

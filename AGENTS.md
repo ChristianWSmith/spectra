@@ -73,7 +73,7 @@ spectacle -b -n -o /tmp/shot.png         # then Read the PNG
 
 | Path | Role |
 |---|---|
-| `main.go` | composition root: app + services + window + menu + updater wiring; also `spectra -import <path>` headless CLI smoke import |
+| `main.go` | composition root: app + services + window + updater wiring; also `spectra -import <path>` headless CLI smoke import |
 | `appservice.go` | `AppService` — frontend-callable methods (`GetVersion`, `SaveWindowSize`) and the update-check flow |
 | `libraryservice.go` / `matchservice.go` | `LibraryService` / `MatchService` — the M1 frontend API surface (import/list/jobs/inspectors; match/scoreboard/rounds/events/chat) over `internal/store` |
 | `internal/models` | normalized domain types + read DTOs — the contract between extract, store, and the bindings |

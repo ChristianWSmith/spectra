@@ -29,7 +29,9 @@
 
   function parseHash(hash) {
     const h = hash.replace(/^#/, '') || '/library';
-    let m = h.match(/^\/match\/(\d+)\/round\/(\d+)$/);
+    // Round numbers can be negative (knife/warmup rounds carry negative
+    // indices — see extract's renumber), so the round segment allows "-?".
+    let m = h.match(/^\/match\/(\d+)\/round\/(-?\d+)$/);
     if (m) return { name: 'round', id: Number(m[1]), round: Number(m[2]) };
     m = h.match(/^\/match\/(\d+)$/);
     if (m) return { name: 'match', id: Number(m[1]) };

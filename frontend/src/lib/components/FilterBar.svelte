@@ -207,7 +207,9 @@
     Round
     <select class="input" id="filt-round" value={f.round} onchange={(e) => set('round', Number(e.currentTarget.value))}>
       <option value={-1}>All</option>
-      {#each rounds as r (r.number)}
+      <!-- Counted rounds only: knife/warmup rounds are numbered
+           negatively, and -1 is this filter's "all rounds" sentinel. -->
+      {#each rounds.filter((r) => r.number >= 1) as r (r.number)}
         <option value={r.number}>R{r.number}</option>
       {/each}
     </select>

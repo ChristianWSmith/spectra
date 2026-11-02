@@ -129,6 +129,12 @@ type EventRow struct {
 	PosX          *float64 `json:"posX,omitempty"`
 	PosY          *float64 `json:"posY,omitempty"`
 	PosZ          *float64 `json:"posZ,omitempty"`
+	// AttackerPos* mirrors events.apos_* — the attacker's position on
+	// kill events (nil otherwise); the kills heatmap plots it while
+	// Pos* keeps the victim/hit position.
+	AttackerPosX *float64 `json:"attackerPosX,omitempty"`
+	AttackerPosY *float64 `json:"attackerPosY,omitempty"`
+	AttackerPosZ *float64 `json:"attackerPosZ,omitempty"`
 }
 
 // EventDetail is one event with its JSON payloads (detail pane).

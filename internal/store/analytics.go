@@ -17,11 +17,13 @@ import (
 // presets and the player_career rollup. Every string write passes scrub.
 
 // DefaultConfig is the seeded analysis_config row (configurable
-// definitions with transparent rules).
+// definitions with transparent rules). The eco thresholds are TEAM
+// equipment values at freeze-time end (a full buy for five sits around
+// $20k, a force around $10k).
 var DefaultConfig = models.AnalysisConfig{
 	TradeWindowS: 5.0,
-	EcoFullBuy:   4000,
-	EcoForce:     2000,
+	EcoFullBuy:   20000,
+	EcoForce:     10000,
 	RuleVersion:  1,
 }
 
@@ -390,10 +392,10 @@ func (s *Store) GetUtility(matchID int64) ([]models.UtilityEvent, error) {
 // GetEconomy returns the per-round economy view (warmup and pregame/knife
 // rounds excluded): rounds ⋈ round_economy ⋈ round_classifications with
 // loss-bonus reconstruction applied. Loss bonus is INFERRED (reconstructed
-// from winner streaks: 1400/1900/2400/2900/3400 capped) — InferredCT/
-// InferredT are set accordingly; per-side ClassCT/ClassT/ClassWhy* stay
-// empty for the caller to fill via analytics.BuyClass (documented cycle
-// deviation).
+// from round winners under the CS2 loss-count rules — see
+// applyLossBonuses); InferredCT/ InferredT are set accordingly; per-side
+// ClassCT/ClassT/ClassWhy* stay empty for the caller to fill via
+// analytics.BuyClass (documented cycle deviation).
 func (s *Store) GetEconomy(matchID int64) ([]models.EconomyRow, error) {
 	rows, err := s.db.Query(
 		`SELECT r.number, r.winner, r.warmup, r.equip_ct, r.equip_t,
@@ -423,55 +425,134 @@ func (s *Store) GetEconomy(matchID int64) ([]models.EconomyRow, error) {
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("store: get economy: %w", err)
 	}
-	// Loss-bonus reconstruction + outcome flags (inferred — Inferred*
+	// Outcome flags + loss-bonus reconstruction (inferred — Inferred*
 	// signals the fact/inference badge).
 	for i := range out {
 		r := &out[i]
 		r.WonCT = r.Winner == "ct"
 		r.WonT = r.Winner == "t"
-		// Bonus applies when the side LOST the previous non-warmup round;
-		// streak counts consecutive losses ending at that previous round.
-		if i > 0 {
-			r.LossBonusCT = lossBonusFor(out[:i], "ct")
-			r.LossBonusT = lossBonusFor(out[:i], "t")
-		}
 		r.InferredCT, r.InferredT = true, true
 	}
+	switches := 0
+	if m, err := s.GetMatch(matchID); err == nil && m != nil {
+		switches = m.SideSwitches
+	}
+	exact, _ := s.GetRoundPlayerSides(matchID)
+	applyLossBonuses(out, sideFlips(out, switches, exact))
 	return out, nil
 }
 
-// lossBonusFor reconstructs the loss bonus a side carries INTO the round
-// after prefix: 1400 for a 1-round streak, +500 per consecutive loss,
-// capped at 3400. 0 when the side won the most recent round.
-func lossBonusFor(prefix []models.EconomyRow, side string) int {
-	if len(prefix) == 0 {
+// CS2 loss-bonus rules (verified against the game — see CS2.md):
+//
+//   - per-TEAM loss count: +1 after a loss, -1 after a win (min 0, max 4;
+//     mp_consecutive_loss_aversion = 1 — a win STEPS DOWN, it does not
+//     reset the ladder);
+//   - every half starts with the loss count at 1 (mp_starting_losses), so
+//     losing a pistol round pays $1900, not $1400;
+//   - a lost round pays cash_team_loser_bonus (1400) +
+//     cash_team_loser_bonus_consecutive_rounds (500) × count, capped at
+//     3400 (count 4).
+//
+// Sides are not teams: they swap at every side switch, so the walk tracks
+// two teams (A opens CT, B opens T) and re-maps sides per round.
+const (
+	lossBonusBase  = 1400
+	lossBonusStep  = 500
+	lossBonusMax   = 4 // mp_consecutive_loss_max
+	lossBonusStart = 1 // mp_starting_losses
+)
+
+// applyLossBonuses fills LossBonusCT/LossBonusT for every round: the bonus
+// the side's team would collect by LOSING that round (never 0 in CS2 —
+// even a team off a win earns the $1400 base). flips[i] marks a side
+// switch on the boundary before round i.
+func applyLossBonuses(out []models.EconomyRow, flips []bool) {
+	bonus := func(count int) int {
+		if count > lossBonusMax {
+			count = lossBonusMax
+		}
+		return lossBonusBase + lossBonusStep*count
+	}
+	stepDown := func(c int) int {
+		if c > 0 {
+			return c - 1
+		}
 		return 0
 	}
-	last := prefix[len(prefix)-1]
-	won := func(r models.EconomyRow) bool {
+	stepUp := func(c int) int {
+		if c < lossBonusMax {
+			return c + 1
+		}
+		return lossBonusMax
+	}
+	counts := [2]int{lossBonusStart, lossBonusStart} // team A, team B
+	flip := false                                    // sides swapped vs the first half
+	teamOn := func(side string) int {                // 0 = team A, 1 = team B
+		// A opens CT: before the first switch CT names A, afterwards B.
+		ctIsA := !flip
 		if side == "ct" {
-			return r.WonCT
+			if ctIsA {
+				return 0
+			}
+			return 1
 		}
-		return r.WonT
-	}
-	if won(last) {
+		if ctIsA {
+			return 1
+		}
 		return 0
 	}
-	streak := 0
-	for i := len(prefix) - 1; i >= 0; i-- {
-		if won(prefix[i]) {
-			break
+	for i := range out {
+		r := &out[i]
+		if i < len(flips) && flips[i] {
+			flip = !flip
+			counts = [2]int{lossBonusStart, lossBonusStart} // half start
 		}
-		streak++
+		ct, t := teamOn("ct"), teamOn("t")
+		r.LossBonusCT = bonus(counts[ct])
+		r.LossBonusT = bonus(counts[t])
+		switch r.Winner {
+		case "ct":
+			counts[ct] = stepDown(counts[ct])
+			counts[t] = stepUp(counts[t])
+		case "t":
+			counts[t] = stepDown(counts[t])
+			counts[ct] = stepUp(counts[ct])
+		}
 	}
-	bonus := 1400 + 500*(streak-1)
-	if bonus > 3400 {
-		bonus = 3400
+}
+
+// sideFlips reports, per round index, whether the side↔team mapping
+// differs from the previous round (a side switch happened at that
+// boundary). Exact per-round freeze-end sides win when the extractor
+// persisted them (new imports — a player observed on the other side
+// proves the switch); legacy matches fall back to the equal-length half
+// heuristic (ceiling division — the same parity model the heatmap uses).
+func sideFlips(rounds []models.EconomyRow, switches int, exact map[int]map[string]string) []bool {
+	n := len(rounds)
+	flips := make([]bool, n)
+	if n == 0 {
+		return flips
 	}
-	if bonus < 0 {
-		bonus = 0
+	heuristic := map[int]bool{}
+	for k := 1; k <= switches; k++ {
+		if idx := (n*k + switches) / (switches + 1); idx > 0 && idx < n {
+			heuristic[idx] = true
+		}
 	}
-	return bonus
+	for i := 1; i < n; i++ {
+		prev, cur := exact[rounds[i-1].Round], exact[rounds[i].Round]
+		if len(prev) > 0 && len(cur) > 0 {
+			for sid, ps := range prev {
+				if cs, ok := cur[sid]; ok && ps != "" && cs != "" && ps != cs {
+					flips[i] = true
+					break
+				}
+			}
+			continue
+		}
+		flips[i] = heuristic[i]
+	}
+	return flips
 }
 
 // GetCombatStats computes per-player combat deep-dive rows from stored data

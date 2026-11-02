@@ -27,8 +27,8 @@ import (
 // were computed with — recompute is always explicit (PRD §9.2).
 type AnalysisConfig struct {
 	TradeWindowS float64 `json:"tradeWindowS"` // trade/ opportunity window (default 5)
-	EcoFullBuy   int     `json:"ecoFullBuy"`   // equip ≥ this = full buy (default 4000)
-	EcoForce     int     `json:"ecoForce"`     // equip ≥ this = force (default 2000)
+	EcoFullBuy   int     `json:"ecoFullBuy"`   // equip ≥ this = full buy (default 20000)
+	EcoForce     int     `json:"ecoForce"`     // equip ≥ this = force (default 10000)
 	RuleVersion  int     `json:"ruleVersion"`
 }
 
@@ -386,8 +386,9 @@ func (s *AnalyticsService) GetCombatStats(matchID int64) ([]CombatStatRow, error
 }
 
 // GetHeatmap computes a raster for kind presence|kills|deaths|damage.
-// presence streams the M2 sidecar; kills/deaths/damage use event positions
-// (victim position — the hitpoint). Filters are applied server-side:
+// presence streams the M2 sidecar; kills use the attacker's position (where
+// the killer was), deaths/damage the victim's/hit position. Filters are
+// applied server-side:
 // presence by round range via the tick↔round spans + steam/team via the
 // slot table; events by round, attacker (kills) or victim
 // (deaths/damage) and their team's final side. Bounds come from the
@@ -573,9 +574,12 @@ func (s *AnalyticsService) heatmapPresence(matchID int64, f HeatmapFilter, round
 	}, nil
 }
 
-// heatmapEvents rasterizes kill/death/damage event positions (victim
-// position for all three; the SteamID filter applies to the attacker on
-// kills and to the victim on deaths/damage).
+// heatmapEvents rasterizes kill/death/damage event positions: kills plot
+// the ATTACKER's position (where the killer was — events.apos_*), deaths
+// and damage plot the VICTIM's position (where the player fell / the
+// hitpoint — events.pos_*). The SteamID filter applies to the attacker on
+// kills and to the victim on deaths/damage; legacy imports without stored
+// attacker positions fall back to the victim position.
 func (s *AnalyticsService) heatmapEvents(matchID int64, kind string, f HeatmapFilter, sideAt func(string, int) string) (HeatmapGrid, error) {
 	eventKind := map[string]string{"kills": models.EventKill, "deaths": models.EventKill, "damage": models.EventDamage}[kind]
 	rows, err := s.st.GetEvents(models.EventFilter{MatchID: matchID, Kind: eventKind, Round: -1, Limit: 50000})
@@ -591,7 +595,7 @@ func (s *AnalyticsService) heatmapEvents(matchID int64, kind string, f HeatmapFi
 		if f.RoundTo >= 0 && e.Round > f.RoundTo {
 			continue
 		}
-		party := e.Victim // deaths/damage: victim; kills: victim position, filter on attacker
+		party := e.Victim // deaths/damage: victim; kills: attacker position, filter on attacker
 		if kind == "kills" {
 			party = e.Attacker
 		}
@@ -601,10 +605,14 @@ func (s *AnalyticsService) heatmapEvents(matchID int64, kind string, f HeatmapFi
 		if f.Team != "" && sideAt(party, e.Round) != f.Team {
 			continue
 		}
-		if e.PosX == nil || e.PosY == nil {
+		x, y := e.PosX, e.PosY
+		if kind == "kills" && e.AttackerPosX != nil && e.AttackerPosY != nil {
+			x, y = e.AttackerPosX, e.AttackerPosY
+		}
+		if x == nil || y == nil {
 			continue
 		}
-		samples = append(samples, sample{x: *e.PosX, y: *e.PosY})
+		samples = append(samples, sample{x: *x, y: *y})
 	}
 	if len(samples) == 0 {
 		return HeatmapGrid{Kind: kind, W: heatmapGridSide, H: heatmapGridSide,

@@ -91,6 +91,7 @@ func testExtracted(sha string, extractedAt time.Time) *models.ExtractedMatch {
 			{Tick: 100, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "200",
 				Weapon: "ak47", Headshot: true, Distance: 12.5, Dmg: 100,
 				PosX: pf(123.5), PosY: pf(-456.25), PosZ: pf(12.0),
+				AttackerPosX: pf(10.0), AttackerPosY: pf(20.0), AttackerPosZ: pf(30.0),
 				DetailJSON: `{"k":1}`, RawJSON: `{"r":1}`},
 			{Tick: 99, Round: 1, Kind: models.EventDamage, Attacker: "100", Victim: "200",
 				Weapon: "ak47", Dmg: 30},
@@ -415,6 +416,18 @@ func TestSaveExtractedRoundtrip(t *testing.T) {
 	if det.PosX == nil || *det.PosX != 123.5 || det.PosY == nil || *det.PosY != -456.25 ||
 		det.PosZ == nil || *det.PosZ != 12.0 {
 		t.Errorf("GetEvent positions = %v/%v/%v, want 123.5/-456.25/12", det.PosX, det.PosY, det.PosZ)
+	}
+	// Attacker position (the kills-heatmap source) roundtrips too; the
+	// damage event (seq 1) has no attacker position → nil.
+	if det.AttackerPosX == nil || *det.AttackerPosX != 10.0 ||
+		det.AttackerPosY == nil || *det.AttackerPosY != 20.0 ||
+		det.AttackerPosZ == nil || *det.AttackerPosZ != 30.0 {
+		t.Errorf("GetEvent attacker positions = %v/%v/%v, want 10/20/30",
+			det.AttackerPosX, det.AttackerPosY, det.AttackerPosZ)
+	}
+	if all[1].AttackerPosX != nil || all[1].AttackerPosY != nil || all[1].AttackerPosZ != nil {
+		t.Errorf("GetEvents seq 1 attacker positions = %v/%v/%v, want nil",
+			all[1].AttackerPosX, all[1].AttackerPosY, all[1].AttackerPosZ)
 	}
 	// Event positions roundtrip through every read path: seq 0 (kill) and
 	// seq 3 (plant) carry them, seq 1 (damage) stays NULL → nil.

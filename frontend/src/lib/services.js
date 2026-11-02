@@ -29,6 +29,13 @@ export function saveWindowSize(w, h) {
   return AppService.SaveWindowSize(w, h);
 }
 
+// Immediate update check (Settings → About → Check for Updates). Unlike the
+// silent startup check this always reports an outcome — the framework's
+// update window opens even when already up to date.
+export function checkForUpdateNow() {
+  return AppService.CheckForUpdateNow();
+}
+
 // --- LibraryService -----------------------------------------------------------
 
 export function importDialog() {
