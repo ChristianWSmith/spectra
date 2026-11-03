@@ -18,16 +18,18 @@
 // HTTP PCM window layout (fixed by the Go writer, little-endian):
 //   int32 fromTick | int32 sampleRate (16000) | s16le mono PCM
 
+import { errText } from '../services.js';
+import { normTickRate } from '../fmt.js';
+
 const WIN_SEC = 1.0;      // fetch window, replay seconds (≤2 s contract)
 const LOOKAHEAD = 1.5;    // schedule this far ahead of the clock
 const CACHE_MAX = 40;     // decoded-window cache entries, LRU
 const DRIFT_S = 0.05;     // resync threshold
-
-function errText(e) {
-  if (e == null) return 'unknown error';
-  if (typeof e === 'string') return e;
-  return e.message || String(e);
-}
+// Shared tail of both AudioContext-failed messages: WebKitGTK's audio
+// output needs the GStreamer plugin set (probeAudio + the runtime start
+// path used to spell this out twice).
+const GST_AUDIO_HINT =
+  'On Linux install gst-plugins-good (GStreamer) — WebKitGTK needs it for audio output.';
 
 // fetchVoicePCM pulls one aligned PCM window over HTTP and parses the
 // 8-byte header. Rejections (route 404 while the Go side is pending) are
@@ -67,7 +69,7 @@ export async function probeAudio() {
           sampleRate: c.sampleRate,
           error:
             `Failed to start the audio device (AudioContext state "${c.state}"). ` +
-            'On Linux install gst-plugins-good (GStreamer) — WebKitGTK needs it for audio output.',
+            GST_AUDIO_HINT,
         };
     try {
       await c.close();
@@ -85,7 +87,7 @@ export async function probeAudio() {
 // if it is not running after resume() the error string is reported through
 // onError and state so the UI can show its Enable-voice fallback chip.
 export function createVoiceEngine({ engine, matchId, fetchPCM, onError, onStateChange }) {
-  const tr = engine.tickRate > 0 ? engine.tickRate : 64;
+  const tr = normTickRate(engine.tickRate);
   const windowTicks = Math.max(1, Math.round(WIN_SEC * tr));
 
   let ctx = null;
@@ -337,7 +339,7 @@ export function createVoiceEngine({ engine, matchId, fetchPCM, onError, onStateC
         enabled = false;
         error =
           `Failed to start the audio device (AudioContext state "${ctx.state}"). ` +
-          'On Linux install gst-plugins-good (GStreamer) — WebKitGTK needs it for audio output.';
+          GST_AUDIO_HINT;
         if (onError) onError(error);
         emit();
         return;

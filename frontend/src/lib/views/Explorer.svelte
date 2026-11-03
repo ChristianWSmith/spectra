@@ -11,6 +11,7 @@
     getGenericHistogram,
     getGenericEvents,
     getWarnings,
+    errText,
   } from '../services.js';
   import { fmtDate, fmtInt } from '../fmt.js';
   import MatchPicker from '../components/MatchPicker.svelte';
@@ -117,12 +118,6 @@
         if (my === gen) warnError = errText(e);
       });
   });
-
-  function errText(e) {
-    if (e == null) return 'unknown error';
-    if (typeof e === 'string') return e;
-    return e.message || String(e);
-  }
 
   function selectEventName(name) {
     selectedName = name;

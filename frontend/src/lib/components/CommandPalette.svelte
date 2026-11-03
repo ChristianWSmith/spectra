@@ -86,12 +86,6 @@
     return out;
   }
 
-  function errText(e) {
-    if (e == null) return 'unknown error';
-    if (typeof e === 'string') return e;
-    return e.message || String(e);
-  }
-
   function quickSections() {
     const items = NAV_ACTIONS.map((a) => ({ ...a, sub: '', hl: [] }));
     items.push({

@@ -8,6 +8,7 @@
     extractMapPacks,
     setMapPackPromptState,
     chooseCS2Dir,
+    errText,
   } from '../services.js';
 
   let open = $state(false);
@@ -77,39 +78,33 @@
       error = errText(e);
     }
   }
-
-  function errText(e) {
-    if (e == null) return 'unknown error';
-    if (typeof e === 'string') return e;
-    return e.message || String(e);
-  }
 </script>
 
 {#if open}
   <div class="cp-back" role="presentation" onclick={(e) => {
     if (e.target === e.currentTarget && !busy) close();
   }}>
-    <div class="cp-panel mp-prompt" role="dialog" aria-modal="true" aria-label="Extract radar images">
-      <div class="mp-body">
-        <h2 class="mp-title">Found Counter-Strike 2</h2>
+    <div class="cp-panel pk-prompt" role="dialog" aria-modal="true" aria-label="Extract radar images">
+      <div class="pk-body">
+        <h2 class="pk-title">Found Counter-Strike 2</h2>
         <p class="muted">
           Spectra can extract the official radar images and map transforms
           from your local CS2 installation for authentic map backgrounds in
           replay and heatmaps.
         </p>
-        <p class="muted mp-path mono">{pickedDir || status?.path || 'CS2 install'}</p>
-        <p class="muted mp-fine">
+        <p class="muted pk-path mono">{pickedDir || status?.path || 'CS2 install'}</p>
+        <p class="muted pk-fine">
           Images are read from your game files and stored in Spectra's data
           folder on this machine. Nothing is uploaded, and nothing from
           Counter-Strike ships with the app.
         </p>
         {#if result}
-          <p class="mp-result" role="status">
+          <p class="pk-result" role="status">
             {#if result.maps && result.maps.length}
               Extracted {result.maps.length} map pack{result.maps.length === 1 ? '' : 's'}.
             {/if}
             {#if result.errors && result.errors.length}
-              <span class="mp-err">{result.errors.length} failed: {result.errors[0]}</span>
+              <span class="pk-err">{result.errors.length} failed: {result.errors[0]}</span>
             {/if}
           </p>
         {/if}
@@ -117,7 +112,7 @@
           <p class="error" role="alert">{error}</p>
         {/if}
       </div>
-      <div class="mp-actions">
+      <div class="pk-actions">
         <button class="btn" disabled={busy} onclick={pickFolder}>
           Choose folder…
         </button>
@@ -132,41 +127,41 @@
 {/if}
 
 <style>
-  .mp-prompt {
+  .pk-prompt {
     width: min(520px, 94vw);
     padding: 20px 22px;
   }
-  .mp-title {
+  .pk-title {
     margin: 0 0 8px;
     font-size: 1.1em;
   }
-  .mp-body p {
+  .pk-body p {
     margin: 8px 0;
     line-height: 1.45;
   }
-  .mp-path {
+  .pk-path {
     font-size: 0.9em;
     word-break: break-all;
     color: var(--text);
     opacity: 0.85;
   }
-  .mp-fine {
+  .pk-fine {
     font-size: 0.85em;
     opacity: 0.75;
   }
-  .mp-result {
+  .pk-result {
     font-size: 0.9em;
   }
-  .mp-err {
-    color: var(--error, #e66a6a);
+  .pk-err {
+    color: var(--danger);
   }
-  .mp-actions {
+  .pk-actions {
     display: flex;
     gap: 8px;
     align-items: center;
     margin-top: 14px;
   }
-  .mp-actions .spacer {
+  .pk-actions .spacer {
     flex: 1;
   }
 </style>

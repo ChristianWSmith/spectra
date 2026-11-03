@@ -5,8 +5,9 @@
     getMatch,
     setPendingTimelineFilter,
     setPendingSeek,
+    errText,
   } from '../services.js';
-  import { fmtClock, tickSeconds } from '../fmt.js';
+  import { fmtClock, tickSeconds, fmtMs } from '../fmt.js';
 
   // Match renders <Utility {id} /> — nav is optional, fall back to the hash
   // router directly so the drill-downs still work.
@@ -48,12 +49,6 @@
       });
     return () => (live = false);
   });
-
-  function errText(e) {
-    if (e == null) return 'unknown error';
-    if (typeof e === 'string') return e;
-    return e.message || String(e);
-  }
 
   const sideBySteam = $derived.by(() => {
     const m = new Map();
@@ -129,10 +124,6 @@
     } catch {
       return 0;
     }
-  }
-
-  function flashSec(ms) {
-    return (ms / 1000).toFixed(1) + 's';
   }
 
   function toggleRound(round) {
@@ -247,12 +238,12 @@
         <div class="util-flash-grid">
           <div class="util-flash-cell">
             <span class="stat-label ct">CT blinds</span>
-            <span class="util-flash-value">{flashSec(flash.ctMs)}</span>
+            <span class="util-flash-value">{fmtMs(flash.ctMs)}</span>
             <span class="muted">{flash.ctAff} affected</span>
           </div>
           <div class="util-flash-cell">
             <span class="stat-label t">T blinds</span>
-            <span class="util-flash-value">{flashSec(flash.tMs)}</span>
+            <span class="util-flash-value">{fmtMs(flash.tMs)}</span>
             <span class="muted">{flash.tAff} affected</span>
           </div>
         </div>
@@ -312,7 +303,7 @@
                     >
                     <span class="util-num muted" title="total blind time"
                       >{r.flashMsTotal > 0
-                        ? flashSec(r.flashMsTotal)
+                        ? fmtMs(r.flashMsTotal)
                         : '—'}</span
                     >
                     <span

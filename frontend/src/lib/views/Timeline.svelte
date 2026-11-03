@@ -8,8 +8,10 @@
     listSavedFilters,
     saveFilter,
     deleteSavedFilter,
+    errText,
   } from '../services.js';
   import { prettyJson } from '../fmt.js';
+  import { isSteam } from '../nav.js';
   import FilterBar from '../components/FilterBar.svelte';
   import VoiceLanes from '../components/VoiceLanes.svelte';
 
@@ -18,8 +20,8 @@
   const ROW_H = 30;
   const OVERSCAN = 8;
 
-  // Advanced filter state. Seeded from the sessionStorage
-  // pending-filter hand-off (services.js TIMELINE_PENDING_KEY) — the whole
+  // Advanced filter state. Seeded from the one-shot pending-filter
+  // hand-off (lib/handoff.js: HANDOFF_KEYS.timelineFilter) — the whole
   // extended object (kind/steamId/round/weapon/ticks/dmg/distance/headshot/
   // bbox) passes through, FilterBar normalizes missing fields.
   const DEFAULT_FILTER = {
@@ -134,12 +136,6 @@
     scrollReset;
     if (listEl) listEl.scrollTop = 0;
   });
-
-  function errText(e) {
-    if (e == null) return 'unknown error';
-    if (typeof e === 'string') return e;
-    return e.message || String(e);
-  }
 
   function onFilterChange(next) {
     filter = next;
@@ -271,10 +267,8 @@
   }
 
   // Profile icon on a row → cross-match profile (#/player/:steamid).
-  function isSteam(s) {
-    return /^\d{17}$/.test(s || '');
-  }
-
+  // Rows gate the click on isSteam() themselves, so this only has to stop
+  // the row's own click from firing alongside it.
   function watchProfile(steam, e) {
     e.stopPropagation();
     nav(`/player/${steam}`);

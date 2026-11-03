@@ -12,6 +12,8 @@
 // Slot order == meta.players[]. Everything is decoded once into flat typed
 // arrays — no per-frame objects — so scrub/seek/lerp are O(1)/O(log n).
 
+import { normTickRate } from '../fmt.js';
+
 // popcount for a 16-bit alive mask.
 function popcount16(m) {
   m = m - ((m >> 1) & 0x5555);
@@ -103,7 +105,7 @@ export const SPEEDS = [0.25, 0.5, 1, 2, 4, 8];
 export function createEngine(data, tickRate) {
   const frames = data.frames;
   const ticks = data.ticks;
-  const tr = Number(tickRate) > 0 ? Number(tickRate) : 64;
+  const tr = normTickRate(tickRate);
 
   const state = {
     playing: false,

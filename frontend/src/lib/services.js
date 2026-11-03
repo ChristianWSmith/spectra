@@ -20,6 +20,18 @@ import {
   DialogService,
 } from '../../bindings/github.com/ChristianWSmith/spectra';
 import { KVStoreService } from '../../bindings/github.com/wailsapp/wails/v3/pkg/services/kvstore';
+import { HANDOFF_KEYS, setHandoff, takeHandoff } from './handoff.js';
+
+// --- Error text ---------------------------------------------------------------
+// The one errText: normalizes a Go/binding rejection (Error, string, null)
+// into the short message every view shows in its error slot. Views used to
+// each carry a byte-identical copy — import this instead.
+
+export function errText(e) {
+  if (e == null) return 'unknown error';
+  if (typeof e === 'string') return e;
+  return e.message || String(e);
+}
 
 // --- AppService ---------------------------------------------------------------
 
@@ -195,58 +207,38 @@ export function onFilesDropped(callback) {
 }
 
 // --- Cross-view hand-off ------------------------------------------------------
-// sessionStorage contract: one key holds a JSON filter for Timeline.
-// Writers (Match scoreboard row / overview stat cells) set
-// {steamId?} or {kind?} just before navigating to #/match/:id/timeline;
-// Timeline reads + clears it on mount (and on an in-place match switch)
-// and applies it as its initial filter.
-export const TIMELINE_PENDING_KEY = 'spectra:timeline-filter';
+// The one-shot sessionStorage contract lives in lib/handoff.js (key table,
+// read-once semantics and every writer/reader). These are the named
+// wrappers the views call; both swallow storage failures — a hand-off that
+// could not be written simply arrives empty at the receiver.
 
 export function setPendingTimelineFilter(filter) {
   try {
-    sessionStorage.setItem(TIMELINE_PENDING_KEY, JSON.stringify(filter));
+    setHandoff(HANDOFF_KEYS.timelineFilter, filter);
   } catch (e) {
     console.error(e);
   }
 }
 
 export function takePendingTimelineFilter() {
-  try {
-    const raw = sessionStorage.getItem(TIMELINE_PENDING_KEY);
-    sessionStorage.removeItem(TIMELINE_PENDING_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch (e) {
-    console.error(e);
-    return null;
-  }
+  return takeHandoff(HANDOFF_KEYS.timelineFilter);
 }
 
-// Replay-seek hand-off, mirroring the Timeline filter contract above: one
-// sessionStorage key holds {tick} (sometimes with extra keys — Replay uses
-// tick plus optional play/voice booleans; Timeline ignores what it doesn't
-// know). Writers (Match header, RoundDetail kill feed, Timeline rows) set it
-// just before navigating to #/replay/:id; Replay reads + clears it on mount
-// and seeks to that tick. null clears any stale value without writing one.
-export const REPLAY_PENDING_KEY = 'spectra:replay-seek';
-
+// Replay-seek hand-off: {tick} (Replay also honours optional play/voice
+// booleans; the other readers ignore what they don't know). Writers set it
+// just before navigating to #/replay/:id; Replay reads + clears it on
+// mount and seeks to that tick. null clears any stale value without
+// writing one.
 export function setPendingSeek(seek) {
   try {
-    if (seek == null) sessionStorage.removeItem(REPLAY_PENDING_KEY);
-    else sessionStorage.setItem(REPLAY_PENDING_KEY, JSON.stringify(seek));
+    setHandoff(HANDOFF_KEYS.replaySeek, seek);
   } catch (e) {
     console.error(e);
   }
 }
 
 export function takePendingSeek() {
-  try {
-    const raw = sessionStorage.getItem(REPLAY_PENDING_KEY);
-    sessionStorage.removeItem(REPLAY_PENDING_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch (e) {
-    console.error(e);
-    return null;
-  }
+  return takeHandoff(HANDOFF_KEYS.replaySeek);
 }
 
 // --- AnalyticsService (M3) ---------------------------------------------------

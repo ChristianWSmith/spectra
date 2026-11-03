@@ -1,16 +1,22 @@
 /* M3 wave B — Combat/Profiles/FilterBar/Compare/Settings (agent-owned) — appended styles for Milestone 3.
    Prefixes: comb- (Combat + ClutchCard), prof- (PlayerProfile),
    cmp- (compare/round-class chips), filt- (FilterBar + Timeline row
-   actions), sett- (Settings). */
+   actions), sett- (Settings), voice-/clip-/kv-/rep-/cp-/plugin-/spat-/
+   ctx-/expl- (their owning components).
+
+   Layering: loaded third by index.html, after style.css (tokens/utilities/
+   shared components) and style-m3a.css (wave-A groups). Later files may
+   override equal-specificity base rules; rules are not moved between files
+   without proving no cascade overlap.
+   Prefix policy: every component/view owns one unique hyphenated class
+   prefix used in both markup and rules; new components pick a fresh
+   prefix. `mp-` belongs to MatchPicker alone (MapPackPrompt uses `pk-`). */
 
 /* --- Fact/inference badge (plan §6.1) — shared by every wave-B view ---- */
 .comb-inferred,
-.prof-inferred,
-.cmp-inferred,
-.filt-inferred,
 .sett-inferred {
   border-style: dashed;
-  border-color: rgba(251, 172, 24, 0.45);
+  border-color: var(--accent-45);
   color: var(--accent);
   font-size: 0.68em;
   padding: 0 5px;
@@ -19,9 +25,7 @@
 
 /* Dotted underline marks a definition tooltip (header cells, etc.). */
 .comb-def,
-.cmp-def,
-.prof-def,
-.sett-def {
+.cmp-def {
   text-decoration: underline dotted;
   text-underline-offset: 3px;
   cursor: help;
@@ -74,7 +78,7 @@
 
 .filt-bbox {
   color: var(--accent);
-  border-color: rgba(251, 172, 24, 0.45);
+  border-color: var(--accent-45);
 }
 
 .filt-x {
@@ -191,7 +195,7 @@
 /* Engagement kind chips: opening = gold, trade = green, untraded = red. */
 .comb-kind-chip.opening {
   color: var(--accent);
-  border-color: rgba(251, 172, 24, 0.5);
+  border-color: var(--accent-50);
 }
 
 .comb-kind-chip.trade {
@@ -250,7 +254,7 @@
 .comb-modal-back {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--overlay-55);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -269,7 +273,7 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 12px 40px var(--overlay-60);
 }
 
 .comb-kast-grid {
@@ -284,14 +288,14 @@
   align-items: center;
   gap: 3px;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   padding: 5px 7px;
   min-width: 64px;
   background: var(--inset);
 }
 
 .comb-round.kast {
-  border-color: rgba(251, 172, 24, 0.5);
+  border-color: var(--accent-50);
 }
 
 .comb-round-n {
@@ -370,7 +374,7 @@
   align-items: baseline;
   background: none;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   color: var(--text);
   padding: 6px 8px;
   cursor: pointer;
@@ -378,7 +382,7 @@
 }
 
 .prof-result:hover {
-  background: rgba(251, 172, 24, 0.12);
+  background: var(--accent-12);
 }
 
 .prof-metrics {
@@ -496,7 +500,7 @@
   overflow-y: auto;
   background: var(--inset);
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   padding: 6px 8px;
 }
 
@@ -523,7 +527,7 @@
 /* Round-classification chip (Match Rounds tab, RoundDetail, Compare). */
 .cmp-class {
   color: var(--accent);
-  border-color: rgba(251, 172, 24, 0.4);
+  border-color: var(--accent-40);
 }
 
 .cmp-hint {
@@ -537,7 +541,7 @@
   right: 26px;
   bottom: 26px;
   z-index: 30;
-  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.55);
+  box-shadow: 0 8px 28px var(--overlay-55);
   font-weight: 600;
 }
 
@@ -727,7 +731,7 @@
   gap: 3px;
   padding: 2px 6px;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   background: var(--inset);
   font-size: 0.85em;
 }
@@ -773,7 +777,7 @@
 }
 
 .voice-export[open] > .voice-dl:hover {
-  background: rgba(251, 172, 24, 0.12);
+  background: var(--accent-12);
 }
 
 /* --- Timeline voice lanes strip (sticky above the event list) -------------- */
@@ -906,7 +910,7 @@ button.chip.ctx-chip.on {
 
 .chip.ctx-src.src-chat {
   color: var(--accent);
-  border-color: rgba(251, 172, 24, 0.5);
+  border-color: var(--accent-50);
 }
 
 .ctx-detail {
@@ -955,7 +959,7 @@ button.chip.ctx-chip.on {
   position: fixed;
   inset: 0;
   z-index: 60;
-  background: rgba(0, 0, 0, 0.55);
+  background: var(--overlay-55);
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -967,7 +971,7 @@ button.chip.ctx-chip.on {
   background: var(--widget-bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+  box-shadow: 0 16px 48px var(--overlay-60);
   display: flex;
   flex-direction: column;
   max-height: 70vh;
@@ -1012,7 +1016,7 @@ button.chip.ctx-chip.on {
   width: 100%;
   background: none;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   padding: 5px 8px;
   line-height: 1.3;
   color: var(--text);
@@ -1022,7 +1026,7 @@ button.chip.ctx-chip.on {
 }
 
 .cp-item.active {
-  background: rgba(251, 172, 24, 0.12);
+  background: var(--accent-12);
 }
 
 .cp-label {
@@ -1067,16 +1071,16 @@ button.chip.ctx-chip.on {
 
 .expl-note-chip {
   color: var(--accent);
-  border-color: rgba(251, 172, 24, 0.45);
+  border-color: var(--accent-45);
 }
 
 .expl-enc {
   font-size: 0.88em;
   color: var(--accent);
   padding: 4px 10px;
-  border: 1px solid rgba(251, 172, 24, 0.4);
+  border: 1px solid var(--accent-40);
   border-radius: var(--radius);
-  background: rgba(251, 172, 24, 0.06);
+  background: var(--accent-06);
 }
 
 .expl-ent-note {
@@ -1120,7 +1124,7 @@ button.chip.ctx-chip.on {
   width: 100%;
   background: none;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   padding: 4px 8px;
   color: var(--text);
   font: inherit;
@@ -1464,10 +1468,6 @@ button.chip.ctx-chip.on {
 
 /* --- Replay clip recorder (clip-) ------------------------------------------- */
 
-.clip-btn.recording-btn {
-  border-color: var(--danger);
-}
-
 .chip.clip-state {
   color: var(--muted);
 }
@@ -1564,11 +1564,9 @@ button.chip.ctx-chip.on {
   --brand-active: #1a2653;
   --accent: #fbac18;
   --accent-tint: rgba(251, 172, 24, 0.14);
-  --accent-border: rgba(251, 172, 24, 0.55);
   /* Neutral list hover (VS Code light list.hoverBackground) */
   --list-hover: #f0f0f0;
   --list-hover-strong: #dde2f1;
-  --list-active: rgba(40, 57, 127, 0.12);
   --input-bg: #ffffff;
   --input-border: #cecece;
   --focus: #28397f; /* focusBorder -> brand */
@@ -1584,26 +1582,13 @@ button.chip.ctx-chip.on {
   --editor-bg: #ffffff;
   --editor-fg: #333333;
   --editor-sel: #add6ff; /* light selection */
-  --editor-sel-inactive: #e4e6eb;
   --tab-strip: #f8f8f8;
   --tab-active-bg: #ffffff;
   --tab-inactive-fg: #616161;
-  --status-bg: #28397f;
-  --status-fg: #ffffff;
-  --badge-bg: #28397f;
-  --badge-fg: #ffffff;
   --ct: #2f7bbd;
   --t: #b9722f;
   --success: #2f8558;
   --danger: #c94040;
-}
-
-[data-theme="light"] .nav-item:hover {
-  background: var(--list-hover);
-}
-
-[data-theme="light"] .nav-item.active {
-  background: var(--accent-tint);
 }
 
 [data-theme="light"] .chip {
@@ -1615,54 +1600,12 @@ button.chip.ctx-chip.on {
   background: rgba(0, 0, 0, 0.08);
 }
 
-[data-theme="light"] .data-table td {
-  border-bottom: 1px solid var(--divider);
-}
-
-[data-theme="light"] .data-table tbody tr:hover {
-  background: var(--list-hover);
-}
-
-[data-theme="light"] .data-table tbody tr.active {
-  background: var(--accent-tint);
-}
-
-[data-theme="light"] .expand-row td {
-  background: var(--inset);
-}
-
-[data-theme="light"] .payload-head {
-  background: var(--inset);
-}
-
-[data-theme="light"] .problem-row,
-[data-theme="light"] .vrow,
-[data-theme="light"] .landmark-list li,
-[data-theme="light"] .sett-match-row,
-[data-theme="light"] .plugin-row,
-[data-theme="light"] .cmp-list li,
-[data-theme="light"] .kv-row,
-[data-theme="light"] .kv-obj[open] > summary {
-  border-bottom-color: var(--divider);
-}
-
-[data-theme="light"] .vrow:hover,
+/* No dark base rule: light-only hover affordance. */
 [data-theme="light"] .cp-item:hover {
   background: var(--list-hover);
 }
 
-[data-theme="light"] .vrow.active {
-  background: var(--accent-tint);
-}
-
-[data-theme="light"] .comb-card,
-[data-theme="light"] .comb-round,
-[data-theme="light"] .cmp-events,
-[data-theme="light"] .prof-spark,
-[data-theme="light"] .sett-defs details,
-[data-theme="light"] .rep-tpl,
-[data-theme="light"] .rep-md,
-[data-theme="light"] .spat-svg,
+/* Base uses --divider; light swaps to the softer --inset wash. */
 [data-theme="light"] .comb-dot {
   background: var(--inset);
 }
@@ -1682,22 +1625,10 @@ button.chip.ctx-chip.on {
   background: var(--accent-tint);
 }
 
-[data-theme="light"] .voice-player {
-  background: var(--inset);
-}
-
-[data-theme="light"] .btn.primary {
-  color: var(--btn-primary-fg);
-}
-
 [data-theme="light"] .scrub-marker.kill {
   background: #5a6475;
 }
 
 [data-theme="light"] .replay-stage {
   background: #dfe4ec; /* canvas renderer still paints its own dark clear */
-}
-
-[data-theme="light"] .chip.clip-state.recording {
-  color: #fff;
 }

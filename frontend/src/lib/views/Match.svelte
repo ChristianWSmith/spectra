@@ -1,4 +1,7 @@
 <script>
+  import { isSteam } from '../nav.js';
+  import { HANDOFF_KEYS, setHandoff } from '../handoff.js';
+  import { KAST_DEF } from '../definitions.js';
   import {
     getMatch,
     getScoreboard,
@@ -18,6 +21,7 @@
     getEntitySummary,
     setPendingTimelineFilter,
     setPendingSeek,
+    errText,
   } from '../services.js';
   // Preference keys (prefs.go) are read straight through the generated
   // kvstore binding — services.js has no pref wrappers (Settings owns the
@@ -34,6 +38,7 @@
     fmtClock,
     tickSeconds,
     prettyJson,
+    fmtMetric,
   } from '../fmt.js';
   import { teamNames } from '../teams.js';
   import RoundStrip from '../components/RoundStrip.svelte';
@@ -57,9 +62,6 @@
   // Combined columns sort by their primary key.
   // KAST% lives in the analytics pass (getCombatStats → kastPct), not the
   // scoreboard store — its sort is applied client-side (see viewRows).
-  const KAST_DEF =
-    'KAST% — rounds with a Kill, Assist, traded death or survival ÷ rounds played (player_round_stats; trade window from analysis_config / rule_version).';
-
   const SCORE_COLS = [
     { key: 'name', label: 'Name' },
     { key: 'side', label: 'Side' },
@@ -383,22 +385,6 @@
     }
   }
 
-  function fmtMetricValue(v, format) {
-    if (!Number.isFinite(v)) return '—';
-    switch (format) {
-      case 'int':
-        return fmtInt(v);
-      case 'float1':
-        return fmt1(v);
-      case 'percent':
-        return fmtPercent(v * 100);
-      case 'currency':
-        return '$' + v.toLocaleString(undefined, { maximumFractionDigits: 2 });
-      default:
-        return Number.isInteger(v) ? fmtInt(v) : fmt2(v);
-    }
-  }
-
   function metricCell(mc, p) {
     if (mc.error) return null;
     return mc.map.get(p.steamId) || null;
@@ -407,7 +393,7 @@
   function metricCellText(mc, p) {
     const r = metricCell(mc, p);
     if (!r) return '—';
-    return fmtMetricValue(r.value, mc.def.format);
+    return fmtMetric(r.value, mc.def.format);
   }
 
   function metricCellTitle(mc, p) {
@@ -506,12 +492,6 @@
     return () => (live = false);
   });
 
-  function errText(e) {
-    if (e == null) return 'unknown error';
-    if (typeof e === 'string') return e;
-    return e.message || String(e);
-  }
-
   function toggleSort(key) {
     if (sortKey === key) desc = !desc;
     else {
@@ -555,25 +535,22 @@
   }
 
   // SteamID64 guard — bots/short ids never match #/player/(\d{17}).
-  function isSteam(s) {
-    return /^\d{17}$/.test(s || '');
-  }
-
   // --- Rounds-tab compare picker (max 4, non-warmup) ------------------------
   function toggleCompare(n) {
     if (compareSel.includes(n)) compareSel = compareSel.filter((x) => x !== n);
     else if (compareSel.length < 4) compareSel = [...compareSel, n];
   }
 
-  // sessionStorage contract (M3 WAVE B): key 'spectra:compare-rounds' holds
-  // {matchId: number, rounds: number[]}. Written here right before navigating
-  // to #/compare/:id; CompareRounds reads + clears it once on init.
+  // Hand-off contract (M3 WAVE B): {matchId: number, rounds: number[]}
+  // under HANDOFF_KEYS.compareRounds, written right before navigating to
+  // #/compare/:id; CompareRounds reads + clears it once on init (see
+  // lib/handoff.js for the whole writer/reader table).
   function goCompare() {
     try {
-      sessionStorage.setItem(
-        'spectra:compare-rounds',
-        JSON.stringify({ matchId: id, rounds: [...compareSel] }),
-      );
+      setHandoff(HANDOFF_KEYS.compareRounds, {
+        matchId: id,
+        rounds: [...compareSel],
+      });
       nav(`/compare/${id}`);
     } catch (e) {
       error = errText(e);

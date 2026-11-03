@@ -2,6 +2,8 @@
   // Hand-rolled SVG economy curve (no chart lib). Two team lines
   // per round (equip value or money), winner strip beneath, hover readout,
   // click-through to the round detail.
+  import { fmtMoney } from '../fmt.js';
+
   let { rows = [], id = 0, nav = () => {} } = $props();
 
   const W = 1000;
@@ -50,10 +52,6 @@
     [0, 0.25, 0.5, 0.75, 1].map((f) => yAt(series.max * f)),
   );
 
-  function money(v) {
-    return '$' + Math.round(v).toLocaleString();
-  }
-
   // Strip mark: ✓ = the winner also led on freeze-end equip (favorite held),
   // ✗ = upset (lower-equip team won). Equip, not the toggled metric, so the
   // mark is stable across the toggle.
@@ -68,9 +66,9 @@
     const w = r.winner ? r.winner.toUpperCase() : '—';
     const m =
       r.winner === 'ct'
-        ? `${money(r.equipCT)} vs ${money(r.equipT)}`
-        : `${money(r.equipT)} vs ${money(r.equipCT)}`;
-    return `Round ${r.round} — ${w} wins · equip CT ${money(r.equipCT)} / T ${money(r.equipT)} · winner equip ${m} · ${mark(r) === '✗' ? 'upset (lower-equip side won)' : 'favorite held'}${r.pistolRound ? ' · pistol' : ''}`;
+        ? `${fmtMoney(r.equipCT)} vs ${fmtMoney(r.equipT)}`
+        : `${fmtMoney(r.equipT)} vs ${fmtMoney(r.equipCT)}`;
+    return `Round ${r.round} — ${w} wins · equip CT ${fmtMoney(r.equipCT)} / T ${fmtMoney(r.equipT)} · winner equip ${m} · ${mark(r) === '✗' ? 'upset (lower-equip side won)' : 'favorite held'}${r.pistolRound ? ' · pistol' : ''}`;
   }
 
   function onMove(e) {
@@ -88,7 +86,7 @@
     </h2>
     <div class="econ-curve-meta">
       {#if n > 0}
-        <span class="econ-axis-note mono">0 – {money(series.max)}</span>
+        <span class="econ-axis-note mono">0 – {fmtMoney(series.max)}</span>
       {/if}
       <div class="econ-toggle" role="group" aria-label="Curve metric">
         <button
@@ -177,7 +175,7 @@
           <div class="econ-tip-row">
             <span class="ct">CT</span>
             <span class="mono"
-              >{money(
+              >{fmtMoney(
                 metric === 'equip' ? hoverRow.equipCT : hoverRow.moneyCT,
               )}</span
             >
@@ -185,14 +183,14 @@
           <div class="econ-tip-row">
             <span class="t">T</span>
             <span class="mono"
-              >{money(
+              >{fmtMoney(
                 metric === 'equip' ? hoverRow.equipT : hoverRow.moneyT,
               )}</span
             >
           </div>
           <div class="econ-tip-row muted">
             <span>spent CT/T</span>
-            <span class="mono">{money(hoverRow.spentCT)} / {money(hoverRow.spentT)}</span>
+            <span class="mono">{fmtMoney(hoverRow.spentCT)} / {fmtMoney(hoverRow.spentT)}</span>
           </div>
         </div>
       {/if}

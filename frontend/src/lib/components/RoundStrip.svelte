@@ -11,6 +11,8 @@
 // the TEAM across the halftime side switch while the cell tint keeps
 // following the SIDE. A marker splits the row after the 12th real round
 // (the MR12 halftime).
+import { flipIndexes, eraOf } from '../sideparity.js';
+
 let {
   rounds = [],
   current = 0,
@@ -27,18 +29,19 @@ const HALFTIME_AFTER = 12;
 
 // Per-cell data: split marker + the side the team-above played in that
 // round. Sides swap at every half, so an era index is derived from the
-// counted rounds (pre-match rounds sit in the first era). The
-// equal-length era split is the same ceiling-division parity model the
-// backend uses for legacy matches — exact for the normal single-switch
-// MR12 match, approximate for overtime's short halves.
+// counted rounds (pre-match rounds sit in the first era) using the
+// canonical side-parity helper shared with the backend (flip boundaries at
+// floor((n*k + switches) / (switches + 1)) — see ../sideparity.js and
+// internal/rules). Regulation MR12 is exact; overtime's short halves get
+// their per-boundary split instead of one uniform era length.
 const cells = $derived.by(() => {
   const eras = Math.max(1, sideSwitches + 1);
   const counted = rounds.filter((r) => !r.warmup && !r.pregame);
-  const eraLen = Math.max(1, Math.ceil(counted.length / eras));
+  const flips = flipIndexes(counted.length, sideSwitches);
   let seen = 0;
   return rounds.map((r) => {
     const isReal = !r.warmup && !r.pregame;
-    const era = isReal ? Math.min(eras - 1, Math.floor(seen / eraLen)) : 0;
+    const era = isReal ? Math.min(eras - 1, eraOf(seen, flips)) : 0;
     // The team above finished CT, so it plays CT in the LAST era; each
     // earlier era flips it.
     const aboveSide = (eras - 1 - era) % 2 === 0 ? 'ct' : 't';

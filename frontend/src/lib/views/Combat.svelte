@@ -10,32 +10,22 @@
     getMatch,
     setPendingSeek,
     setPendingTimelineFilter,
+    errText,
   } from '../services.js';
   import { fmtInt, fmtPercent } from '../fmt.js';
+  import { isSteam, openProfile } from '../nav.js';
+  import {
+    KAST_DEF,
+    DMG_CONV_DEF,
+    ENTRY_DEF,
+    TRADE_DEF,
+    UNTRADED_DEF,
+    TRADE_OPP_MISSED_DEF,
+    ENG_KIND_TITLES,
+  } from '../definitions.js';
   import ClutchCard from '../components/ClutchCard.svelte';
 
   let { id = 0, nav = () => {} } = $props();
-
-  // Definition texts (keep in sync with Settings → Metric
-  // definitions; wording stays generic where the rules are configurable).
-  const KAST_DEF =
-    'KAST% — share of rounds where the player got a Kill, an Assist, was Traded after death, or Survived (player_round_stats; the trade part follows analysis_config / rule_version).';
-  const DMG_CONV_DEF =
-    'Damage conversion — damage by this player that contributed to a kill ÷ total damage dealt, derived from stored events (not a raw demo value).';
-  const ENTRY_DEF =
-    'Entry rate — entry kills ÷ detected entry opportunities, derived from the engagement pass (first kill / site hit).';
-  const TRADE_DEF =
-    'Trade rate — trades ÷ detected deaths inside the trade window of a teammate kill (window from analysis_config, default 5 s).';
-  const UNTRADED_DEF =
-    'Untraded deaths — deaths with no teammate kill inside the trade window afterwards (engagement detection).';
-  const TRADE_OPP_MISSED_DEF =
-    'Trade opportunities missed — INFERRED heuristic (v1): a death where a living teammate was near and alive within the trade window but did not kill the attacker. Not a demo fact.';
-  const ENG_KIND_TITLES = {
-    opening: 'opening duel — first kill of the round',
-    entry: 'entry kill — first kill onto the site by the attacking side',
-    trade: 'trade — kill inside the trade window after a teammate died',
-    untraded: 'untraded death — neither side answered inside the trade window',
-  };
 
   const STAT_COLS = [
     { key: 'name', label: 'Player', fmt: (r) => r.name },
@@ -116,12 +106,6 @@
     return () => (live = false);
   });
 
-  function errText(e) {
-    if (e == null) return 'unknown error';
-    if (typeof e === 'string') return e;
-    return e.message || String(e);
-  }
-
   const visibleEngagements = $derived(
     engKind ? engagements.filter((e) => e.kind === engKind) : engagements,
   );
@@ -156,14 +140,6 @@
   function openRoundTimeline(round) {
     setPendingTimelineFilter({ round });
     nav(`/match/${id}/timeline`);
-  }
-
-  function isSteam(s) {
-    return /^\d{17}$/.test(s || '');
-  }
-
-  function openProfile(steam) {
-    if (isSteam(steam)) nav(`/player/${steam}`);
   }
 
   function wonByName(e) {
@@ -276,7 +252,7 @@
                   class="comb-name-btn"
                   disabled={!isSteam(e.aSteam)}
                   title={isSteam(e.aSteam) ? `Open profile — ${e.aName}` : ''}
-                  onclick={() => openProfile(e.aSteam)}
+                  onclick={() => openProfile(nav, e.aSteam)}
                 >{e.aName || '—'}</button>
               </td>
               <td class="muted">vs</td>
@@ -285,7 +261,7 @@
                   class="comb-name-btn"
                   disabled={!isSteam(e.bSteam)}
                   title={isSteam(e.bSteam) ? `Open profile — ${e.bName}` : ''}
-                  onclick={() => openProfile(e.bSteam)}
+                  onclick={() => openProfile(nav, e.bSteam)}
                 >{e.bName || '—'}</button>
               </td>
               <td class="num">{e.distance ? Math.round(e.distance) : '—'}</td>
@@ -341,7 +317,7 @@
                       class="comb-name-btn"
                       disabled={!isSteam(r.steamId)}
                       title={isSteam(r.steamId) ? 'Open player profile' : ''}
-                      onclick={() => openProfile(r.steamId)}
+                      onclick={() => openProfile(nav, r.steamId)}
                     >{r.name}</button>
                   </td>
                 {:else if col.key === 'kastPct'}

@@ -10,13 +10,15 @@
     voiceWavURL,
     setPendingTimelineFilter,
     takePendingSeek,
+    errText,
   } from '../services.js';
   import { createEngine, parsePositions, SPEEDS } from '../replay/engine.js';
   import { createRenderer } from '../replay/renderer.js';
   import { attachReplayInput, snapshot } from '../replay/input.js';
   import { createVoiceEngine, fetchVoicePCM } from '../replay/audio.js';
   import { loadMapPack } from '../components/mapxform.js';
-  import { saveBlob, saveExportURL } from '../save.js';
+  import { saveExportURL } from '../save.js';
+  import { downloadBlob } from '../download.js';
 
   let { id = 0, nav = () => {} } = $props();
 
@@ -124,12 +126,6 @@
   function cleanup() {
     live = false;
     teardown();
-  }
-
-  function errText(e) {
-    if (e == null) return 'unknown error';
-    if (typeof e === 'string') return e;
-    return e.message || String(e);
   }
 
   async function loadPack(map) {
@@ -350,7 +346,9 @@
     }
     const loopSet = uiLoopFrom >= 0 && uiLoopTo >= uiLoopFrom;
     const startFrame = loopSet ? uiLoopFrom : Math.min(uiFrame, data.frames - 1);
-    const tr = meta && meta.tickRate > 0 ? meta.tickRate : 64;
+    // engine is non-null above (startClip's guard) and already holds the
+    // normalized tick rate (createEngine → normTickRate).
+    const tr = engine.tickRate;
     const targetTick = data.ticks[startFrame] + Math.round(CLIP_SEC * tr);
     let endFrame = data.frames - 1;
     for (let f = startFrame; f < data.frames; f++) {
@@ -446,7 +444,7 @@
     // Native save dialog (lib/save.js): on cancel the clip is discarded
     // silently, on write failure the error lands in the status chip.
     try {
-      const path = await saveBlob(`clip-${id}-${recStartTick}.webm`, 'webm', blob);
+      const path = await downloadBlob(`clip-${id}-${recStartTick}.webm`, blob);
       if (path) {
         recState = 'saved';
         recNote = `${type.replace('video/', '')} · ${(blob.size / 1024).toFixed(0)} KB`;

@@ -6,7 +6,21 @@
    substitutes VS Code's #007ACC/#0078d4 blues: indigo for primary
    buttons / focus / badges / status-bar-like fills, amber for active
    highlights (tabs, selected rows, sorted headers). Light mode lives in
-   style-m3b.css under [data-theme="light"], derived from Light+. */
+   style-m3b.css under [data-theme="light"], derived from Light+.
+
+   Layering (index.html loads in this order): this file is the base layer —
+   design tokens (:root), shared primitives (btn, chip, input, panel, view,
+   data-table, nav, tabs, progress, empty/error …), and the M1/M2 components
+   styled here (round-, replay-, scrub-, timeline-, vrow-, landmark-, …).
+   style-m3a.css (wave A: econ-/util-/heat-/bld-/sql-/m5-) and
+   style-m3b.css (wave B: comb-/prof-/cmp-/filt-/sett-/voice-/clip-/kv-/
+   rep-/cp-/plugin-/spat-/ctx-/expl-) append component groups; a later file
+   may override an equal-specificity base rule (later wins). Rules are not
+   moved between files without proving no cascade overlap.
+   Prefix policy: every component/view owns ONE unique hyphenated class
+   prefix used on both its markup and its rules; new components pick a
+   fresh prefix and never borrow another's (mp- = MatchPicker only,
+   pk- = MapPackPrompt, pp- = PlayerPicker). */
 
 :root {
   color-scheme: dark;
@@ -16,6 +30,9 @@
   --border: #3c3c3c; /* panel + widget chrome borders */
   --divider: rgba(255, 255, 255, 0.08); /* table/list row separators */
   --inset: rgba(0, 0, 0, 0.25); /* recessed blocks (payloads, charts) */
+  /* Black overlay washes — fixed, theme-independent */
+  --overlay-55: rgba(0, 0, 0, 0.55);
+  --overlay-60: rgba(0, 0, 0, 0.6);
   --text: #cccccc; /* terminal/default foreground */
   --muted: #969696; /* descriptions, placeholders */
   /* Brand pair — VS Code's #007ACC/#0078d4 substitutions */
@@ -23,12 +40,17 @@
   --brand-hover: #334892; /* lightened, per button.hoverBackground dark */
   --brand-active: #1f2d63;
   --accent: #fbac18;
-  --accent-tint: rgba(251, 172, 24, 0.12);
-  --accent-border: rgba(251, 172, 24, 0.5);
+  --accent-tint: rgba(251, 172, 24, 0.12); /* theme-adjusted wash (0.14 in light) */
+  /* Fixed accent alpha steps — theme-independent (light does not re-declare) */
+  --accent-55: rgba(251, 172, 24, 0.55);
+  --accent-50: rgba(251, 172, 24, 0.5);
+  --accent-45: rgba(251, 172, 24, 0.45);
+  --accent-40: rgba(251, 172, 24, 0.4);
+  --accent-12: rgba(251, 172, 24, 0.12); /* fixed step, unlike --accent-tint */
+  --accent-06: rgba(251, 172, 24, 0.06);
   /* Lists (list.* — neutral hover per Dark Modern, indigo selection) */
   --list-hover: #2a2d2e; /* list.hoverBackground */
   --list-hover-strong: #343e5f;
-  --list-active: #04165e; /* list.activeSelectionBackground #04395e, hue-shifted to the brand indigo hue (228°), S/L preserved */
   /* Controls */
   --input-bg: #313131; /* input.background */
   --input-border: #3b3b3b; /* input.border */
@@ -39,6 +61,8 @@
   --btn-primary-fg: #ffffff;
   /* Floating widgets (editorWidget.background — popovers/modals/tooltips) */
   --widget-bg: #202020;
+  /* Dark render stage (replay stage, heat canvas) */
+  --stage-bg: #0a0d12;
   /* Scrollbars (scrollbarSlider.* — thin, rounded) */
   --scroll-thumb: #4f4f4f;
   --scroll-thumb-hover: #7a7a7a;
@@ -47,16 +71,10 @@
   --editor-bg: #1f1f1f;
   --editor-fg: #cccccc;
   --editor-sel: #264f78; /* terminal.selectionBackground */
-  --editor-sel-inactive: #3a3d41;
   /* Tabs (editorGroupHeader.tabs* / tab.*) */
   --tab-strip: #181818;
   --tab-active-bg: #1f1f1f;
   --tab-inactive-fg: #9d9d9d;
-  /* Status-bar-like fills + badges (statusBar.background / badge.*) */
-  --status-bg: #28397f;
-  --status-fg: #ffffff;
-  --badge-bg: #28397f;
-  --badge-fg: #ffffff;
   /* Game-domain semantics */
   --ct: #5aa9e6;
   --t: #e6a35a;
@@ -67,6 +85,8 @@
     'Courier New', monospace;
   --sp: 8px;
   --radius: 2px; /* VS Code control radius */
+  --radius-md: 4px; /* cards, popovers, chart tiles */
+  --radius-pill: 999px; /* chips, pills */
   font-family:
     system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
     sans-serif;
@@ -421,7 +441,7 @@ input[type='checkbox'] {
   height: 14px;
   margin: 0;
   border: 1px solid var(--input-border);
-  border-radius: 2px;
+  border-radius: var(--radius);
   background: var(--input-bg);
   cursor: pointer;
   position: relative;
@@ -480,7 +500,7 @@ input[type='checkbox']:focus-visible {
   align-items: center;
   gap: 6px;
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   padding: 1px 8px;
   font-size: 0.78em;
   line-height: 1.6;
@@ -508,7 +528,7 @@ input[type='checkbox']:focus-visible {
 .chip.status.parsing,
 .chip.status.running {
   color: var(--accent);
-  border-color: rgba(251, 172, 24, 0.5);
+  border-color: var(--accent-50);
 }
 
 .chip.side.ct {
@@ -533,7 +553,7 @@ input[type='checkbox']:focus-visible {
 
 .chip.flag {
   color: var(--accent);
-  border-color: rgba(251, 172, 24, 0.4);
+  border-color: var(--accent-40);
   padding: 0 5px;
   font-size: 0.7em;
 }
@@ -588,14 +608,14 @@ input[type='checkbox']:focus-visible {
   height: 8px;
   min-width: 80px;
   background: rgba(255, 255, 255, 0.06);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   overflow: hidden;
 }
 
 .progress-fill {
   height: 100%;
   background: var(--accent);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   transition: width 0.2s;
 }
 
@@ -798,7 +818,7 @@ input[type='checkbox']:focus-visible {
 }
 
 .warnings-panel {
-  border-color: rgba(251, 172, 24, 0.4);
+  border-color: var(--accent-40);
 }
 
 .warning-list {
@@ -851,7 +871,7 @@ input[type='checkbox']:focus-visible {
   width: 30px;
   height: 26px;
   border: 1px solid var(--border);
-  border-radius: 4px;
+  border-radius: var(--radius-md);
   background: var(--panel);
   color: var(--muted);
   font-size: 0.78em;
@@ -1298,9 +1318,9 @@ input[type='checkbox']:focus-visible {
   color: var(--accent);
   font-size: 0.88em;
   padding: 4px 10px;
-  border: 1px solid rgba(251, 172, 24, 0.4);
+  border: 1px solid var(--accent-40);
   border-radius: var(--radius);
-  background: rgba(251, 172, 24, 0.06);
+  background: var(--accent-06);
 }
 
 .replay-body {
@@ -1316,7 +1336,7 @@ input[type='checkbox']:focus-visible {
   position: relative;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  background: #0a0d12;
+  background: var(--stage-bg);
   overflow: hidden;
 }
 

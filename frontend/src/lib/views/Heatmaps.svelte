@@ -6,6 +6,7 @@
     getHeatmap,
     getSpatialSeries,
     setPendingTimelineFilter,
+    errText,
   } from '../services.js';
   import { loadMapPack } from '../components/mapxform.js';
   import HeatmapLayer from '../components/HeatmapLayer.svelte';
@@ -74,12 +75,6 @@
   $effect(() => () => {
     if (navTimer) clearTimeout(navTimer);
   });
-
-  function errText(e) {
-    if (e == null) return 'unknown error';
-    if (typeof e === 'string') return e;
-    return e.message || String(e);
-  }
 
   const packNote = $derived.by(() => {
     if (!matchLoaded) return '';

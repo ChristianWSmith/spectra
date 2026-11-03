@@ -18,9 +18,11 @@
     checkForUpdateNow,
     getPref,
     setPref,
+    errText,
   } from '../services.js';
   import { probeAudio } from '../replay/audio.js';
   import { fmtDate } from '../fmt.js';
+  import { GLOSSARY } from '../definitions.js';
   import { getTheme, applyTheme } from '../theme.js';
   import { getFontSize, applyFontSize, reconcileFontSize, FONT_SIZES } from '../fontsize.js';
 
@@ -220,12 +222,6 @@
     audioRunning = false;
   }
 
-  function errText(e) {
-    if (e == null) return 'unknown error';
-    if (typeof e === 'string') return e;
-    return e.message || String(e);
-  }
-
   onMount(() => {
     getVersion()
       .then((v) => (version = v))
@@ -300,51 +296,6 @@
     }
   }
 
-  // Hand-written metric definitions. Keep the wording aligned
-  // with what internal/analytics computes — generic where the exact rule is
-  // configurable; every rule set is versioned via analysis_config/rule_version.
-  const DEFINITIONS = [
-    {
-      term: 'KAST%',
-      inferred: false,
-      text: 'Share of rounds where the player recorded a Kill, an Assist, was Traded after their death, or Survived the round. Stored per player-round (player_round_stats); the “traded” part follows the trade window from analysis_config / rule_version.',
-    },
-    {
-      term: 'Trade window',
-      inferred: false,
-      text: 'Seconds after a death during which a teammate’s kill counts as a trade (default 5 s, configurable under Analysis rules). Trade rate, trade opportunities and untraded deaths all use this window. Changing it bumps rule_version.',
-    },
-    {
-      term: 'Buy classes (full / force / eco / save / pistol / bonus)',
-      inferred: false,
-      text: 'Derived per side from the round-start equipment value against the configured thresholds (full buy ≥ ecoFullBuy, force ≥ ecoForce, below that = eco/save), plus pistol detection by round number and side-switch pattern, and bonus/save by spend behaviour. Each round stores its label, explanation and rule_version — hover a round chip for the exact rule text that produced it.',
-    },
-    {
-      term: 'Loss bonus (reconstructed)',
-      inferred: true,
-      text: 'A team’s loss-bonus money is reconstructed from consecutive round losses rather than read from a raw net message, so it is labelled reconstructed/inferred (fact/inference badge). The base amounts follow the game rules, not a configurable threshold.',
-    },
-    {
-      term: 'Trade opportunities missed (inferred)',
-      inferred: true,
-      text: 'Heuristic v1: a player died while a living teammate was near and alive within the trade window but did not kill the attacker in time. It is an inference from positions/timing, not a demo fact — treat counts as indicative.',
-    },
-    {
-      term: 'Damage conversion',
-      inferred: false,
-      text: 'Share of a player’s dealt damage that contributed to a kill by that player (damage preceding a kill in the same engagement), derived from stored events rather than reported by the game.',
-    },
-    {
-      term: 'ADR',
-      inferred: false,
-      text: 'Average damage per round = total damage ÷ rounds played, from the player aggregates (player_stats). Friendly-fire damage is reported separately in the Combat tab.',
-    },
-    {
-      term: 'Consistency σ',
-      inferred: false,
-      text: 'Standard deviation of per-match ADR across a player’s match history, shown as “ADR ± σ” on profiles: a spread, not an error bar. Lower σ = steadier performance (PRD §5.13).',
-    },
-  ];
 </script>
 
 <div class="view">
@@ -726,7 +677,7 @@
       computed with.
     </p>
     <div class="sett-defs">
-      {#each DEFINITIONS as d (d.term)}
+      {#each GLOSSARY as d (d.term)}
         <details>
           <summary>
             {d.term}

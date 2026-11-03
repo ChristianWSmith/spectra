@@ -3,8 +3,9 @@
     getEconomy,
     getRounds,
     setPendingTimelineFilter,
+    errText,
   } from '../services.js';
-  import { fmtInt } from '../fmt.js';
+  import { fmtInt, fmtMoney } from '../fmt.js';
   import EconCurve from '../components/EconCurve.svelte';
 
   let { id = 0, nav = () => {} } = $props();
@@ -33,17 +34,6 @@
       });
     return () => (live = false);
   });
-
-  function errText(e) {
-    if (e == null) return 'unknown error';
-    if (typeof e === 'string') return e;
-    return e.message || String(e);
-  }
-
-  function money(v) {
-    const n = Math.round(Number(v) || 0);
-    return (n < 0 ? '−$' : '$') + Math.abs(n).toLocaleString();
-  }
 
   const warmupSkipped = $derived(rounds.filter((r) => r.warmup).length);
 
@@ -252,7 +242,7 @@
           <span class="chip econ-badge-computed">computed</span></span
         >
         <span class="stat-value"
-          >{summary.avgGap == null ? '—' : money(summary.avgGap)}</span
+          >{summary.avgGap == null ? '—' : fmtMoney(summary.avgGap)}</span
         >
         <span class="stat-sub">avg winner − loser spend per round</span>
       </button>
@@ -267,9 +257,9 @@
           >Lost equipment
           <span class="chip econ-badge-inferred">inferred</span></span
         >
-        <span class="stat-value">{money(summary.lostTotal)}</span>
+        <span class="stat-value">{fmtMoney(summary.lostTotal)}</span>
         <span class="stat-sub"
-          >CT {money(summary.lostCT)} · T {money(summary.lostT)}</span
+          >CT {fmtMoney(summary.lostCT)} · T {fmtMoney(summary.lostT)}</span
         >
       </button>
     </div>
@@ -332,8 +322,8 @@
                       onclick={() => toggleWhy(r, 't')}>{tc.cls}</button
                     >
                   </td>
-                  <td class="num">{money(r.spentCT)}</td>
-                  <td class="num">{money(r.spentT)}</td>
+                  <td class="num">{fmtMoney(r.spentCT)}</td>
+                  <td class="num">{fmtMoney(r.spentT)}</td>
                   <td class="num econ-loss">
                     {fmtInt(r.lossBonusCT)}
                     {#if r.inferredCT}

@@ -7,8 +7,9 @@
     validateExpr,
     listMatches,
     listPlugins,
+    errText,
   } from '../services.js';
-  import { fmtDate, fmtInt, fmt1, fmt2, fmtPercent } from '../fmt.js';
+  import { fmtDate, fmtInt, fmtMetric } from '../fmt.js';
 
   let { nav = () => {} } = $props();
 
@@ -69,12 +70,6 @@
       denominator: f.denominator,
       doc: f.doc,
     });
-  }
-
-  function errText(e) {
-    if (e == null) return 'unknown error';
-    if (typeof e === 'string') return e;
-    return e.message || String(e);
   }
 
   function readPins() {
@@ -280,22 +275,6 @@
       previewError = errText(e);
     } finally {
       previewBusy = false;
-    }
-  }
-
-  function fmtMetric(v, format) {
-    if (!Number.isFinite(v)) return '—';
-    switch (format) {
-      case 'int':
-        return fmtInt(v);
-      case 'float1':
-        return fmt1(v);
-      case 'percent':
-        return fmtPercent(v * 100);
-      case 'currency':
-        return '$' + v.toLocaleString(undefined, { maximumFractionDigits: 2 });
-      default:
-        return Number.isInteger(v) ? fmtInt(v) : fmt2(v);
     }
   }
 </script>

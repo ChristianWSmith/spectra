@@ -4,6 +4,7 @@
   // pending-filter contract ({round}).
   import { setPendingSeek, setPendingTimelineFilter } from '../services.js';
   import { fmtDuration } from '../fmt.js';
+  import { openProfile } from '../nav.js';
 
   let { clutch, id = 0, nav = () => {}, tickRate = 64 } = $props();
 
@@ -32,9 +33,6 @@
     nav(`/match/${id}/timeline`);
   }
 
-  function openProfile() {
-    if (/^\d{17}$/.test(clutch.steamId || '')) nav(`/player/${clutch.steamId}`);
-  }
 </script>
 
 <article
@@ -57,7 +55,7 @@
     <button
       class="comb-name-btn"
       title="Open player profile"
-      onclick={openProfile}
+      onclick={() => openProfile(nav, clutch.steamId)}
     >{clutch.name || '—'}</button>
     {#if clutch.equip > 0}
       <span class="muted">equip {clutch.equip}</span>

@@ -7,8 +7,10 @@
     deleteQuery,
     listQueryHistory,
     clearQueryHistory,
+    errText,
   } from '../services.js';
-  import { saveText } from '../save.js';
+  import { downloadText } from '../download.js';
+  import { toCSV } from '../csv.js';
 
   let { nav = () => {} } = $props();
 
@@ -34,12 +36,6 @@
   let savedError = $state('');
   let saveName = $state('');
   let saveError = $state('');
-
-  function errText(e) {
-    if (e == null) return 'unknown error';
-    if (typeof e === 'string') return e;
-    return e.message || String(e);
-  }
 
   $effect(() => {
     let live = true;
@@ -194,19 +190,13 @@
   // Native save dialog via lib/save.js: cancel resolves to "" silently;
   // this view has no export status strip, so failures log to the console.
 
-  function csvCell(v) {
-    if (v === null || v === undefined) return '';
-    const s = typeof v === 'object' ? JSON.stringify(v) : String(v);
-    return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
-  }
-
   function stamp() {
     return new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').replace('Z', '');
   }
 
   async function download(text, mime, ext) {
     try {
-      await saveText(`query-${stamp()}.${ext}`, ext, text, mime);
+      await downloadText(`query-${stamp()}.${ext}`, mime, text);
     } catch (e) {
       console.error('SQL export failed:', e);
     }
@@ -214,9 +204,11 @@
 
   function exportCSV() {
     if (!result) return;
-    const lines = [result.columns.map(csvCell).join(',')];
-    for (const row of result.rows) lines.push(row.map(csvCell).join(','));
-    return download(lines.join('\r\n') + '\r\n', 'text/csv;charset=utf-8', 'csv');
+    return download(
+      toCSV([result.columns, ...result.rows]),
+      'text/csv;charset=utf-8',
+      'csv',
+    );
   }
 
   function exportJSON() {

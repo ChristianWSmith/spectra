@@ -2,7 +2,8 @@
   // Cross-match player profile (PRD §5.13): header stats,
   // hand-rolled SVG sparklines (no chart lib), splits and
   // match history. Inline player picker (listPlayers) lives at the top.
-  import { getProfile, listPlayers, getCareerTrend } from '../services.js';
+  import { getProfile, listPlayers, getCareerTrend, errText } from '../services.js';
+  import { ADR_SIGMA_DEF, OPENING_DEF, TRADE_DEF, KAST_DEF } from '../definitions.js';
   import { fmt1, fmt2, fmtPercent, fmtDate, fmtInt } from '../fmt.js';
 
   let { steamId = null, nav = () => {} } = $props();
@@ -13,15 +14,6 @@
     { key: 'kd', label: 'K/D' },
     { key: 'hs', label: 'HS%' },
   ];
-
-  const ADR_SIGMA_DEF =
-    'ADR ± σ — average damage per round plus the standard deviation of per-match ADR across the player’s history: σ is the consistency measure (lower = steadier), not an error bar.';
-  const OPENING_DEF =
-    'Opening duel win rate — share of detected opening duels won (engagement pass; trade window from analysis_config / rule_version).';
-  const TRADE_DEF =
-    'Trade rate — share of detected teammate deaths answered inside the trade window (heuristic window, default 5 s).';
-  const KAST_DEF =
-    'KAST% — share of rounds with a Kill, Assist, traded death or Survival (player_round_stats).';
 
   let profile = $state(null);
   let profileError = $state('');
@@ -87,19 +79,13 @@
     return () => clearTimeout(t);
   });
 
-  function errText(e) {
-    if (e == null) return 'unknown error';
-    if (typeof e === 'string') return e;
-    return e.message || String(e);
-  }
-
   function pick(steam) {
     q = '';
     results = [];
     nav(`/player/${steam}`);
   }
 
-  function fmtMetric(v, m) {
+  function fmtProfileMetric(v, m) {
     if (!Number.isFinite(v)) return '—';
     if (m === 'kast' || m === 'hs') return fmtPercent(v);
     if (m === 'kd') return fmt2(v);
@@ -145,7 +131,7 @@
         y: Y(p.value),
         value: p.value,
         matchId: p.matchId,
-        title: `${fmtDate(dateByMatch.get(p.matchId) || '')} · ${fmtMetric(p.value, metric)}`,
+        title: `${fmtDate(dateByMatch.get(p.matchId) || '')} · ${fmtProfileMetric(p.value, metric)}`,
       })),
     };
   });
@@ -234,7 +220,7 @@
       <div class="stat-cell" title={TRADE_DEF}>
         <span class="stat-label">Trade rate</span>
         <span class="stat-value">{fmtPercent(profile.tradeRate)}</span>
-        <span class="stat-sub">answered deaths</span>
+        <span class="stat-sub">kills ÷ deaths</span>
       </div>
       <div class="stat-cell" title="Detected clutches (1vN) and the share won (clutch v2)">
         <span class="stat-label">Clutches</span>
@@ -284,7 +270,7 @@
           {/each}
         </svg>
         <p class="muted prof-spark-cap">
-          {trend.length} matches · min {fmtMetric(spark.min, metric)} · max {fmtMetric(spark.max, metric)}
+          {trend.length} matches · min {fmtProfileMetric(spark.min, metric)} · max {fmtProfileMetric(spark.max, metric)}
           · x = sequence (oldest → newest) · click a dot to open the match
         </p>
       {:else if trend.length === 1}

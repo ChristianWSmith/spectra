@@ -1,8 +1,8 @@
 <script>
-  // Side-by-side round comparison. Reads the
-  // sessionStorage contract introduced by Match's Rounds tab:
-  //   key 'spectra:compare-rounds' = {matchId: number, rounds: number[]}
-  // Read + cleared once on init; anything else → hint + back.
+  // Side-by-side round comparison. Reads the hand-off Match's Rounds tab
+  // writes (lib/handoff.js: HANDOFF_KEYS.compareRounds =
+  // {matchId: number, rounds: number[]}) — read + cleared once on init;
+  // anything else → hint + back.
   //
   // Ghost overlay (two trail sets over the M2 sidecar) is intentionally NOT
   // implemented here — it needs sidecar streaming + mapxform wiring and is
@@ -15,26 +15,23 @@
     getRoundClasses,
     getMatch,
     setPendingSeek,
+    errText,
   } from '../services.js';
-  import { fmtDuration, fmtInt, fmtTickSeconds } from '../fmt.js';
+  import { fmtDuration, fmtInt, fmtTickSeconds, fmtMs } from '../fmt.js';
+  import { HANDOFF_KEYS, takeHandoff } from '../handoff.js';
 
   let { id = 0, nav = () => {} } = $props();
 
-  const COMPARE_KEY = 'spectra:compare-rounds';
   const SEQ_LIMIT = 30;
 
+  // Read-once hand-off from Match's Rounds tab (lib/handoff.js): a
+  // missing, foreign-match or malformed payload all land on the hint + back
+  // path below.
   function readSelection() {
-    try {
-      const raw = sessionStorage.getItem(COMPARE_KEY);
-      sessionStorage.removeItem(COMPARE_KEY);
-      if (!raw) return null;
-      const p = JSON.parse(raw);
-      if (!p || p.matchId !== id || !Array.isArray(p.rounds)) return null;
-      const rounds = p.rounds.filter((n) => Number.isInteger(n)).slice(0, 4);
-      return rounds.length >= 2 ? { matchId: id, rounds } : null;
-    } catch {
-      return null;
-    }
+    const p = takeHandoff(HANDOFF_KEYS.compareRounds);
+    if (!p || p.matchId !== id || !Array.isArray(p.rounds)) return null;
+    const rounds = p.rounds.filter((n) => Number.isInteger(n)).slice(0, 4);
+    return rounds.length >= 2 ? { matchId: id, rounds } : null;
   }
 
   let sel = $state(readSelection());
@@ -85,12 +82,6 @@
     return () => (live = false);
   });
 
-  function errText(e) {
-    if (e == null) return 'unknown error';
-    if (typeof e === 'string') return e;
-    return e.message || String(e);
-  }
-
   function replayStart(col) {
     const tick = col.detail?.round?.startTick || 0;
     setPendingSeek({ tick });
@@ -105,7 +96,7 @@
     if (col.utils.length === 0) return 'none';
     const dmg = col.utils.reduce((a, u) => a + (u.damage || 0), 0);
     const flash = col.utils.reduce((a, u) => a + (u.flashMsTotal || 0), 0);
-    return `${col.utils.length} nade${col.utils.length === 1 ? '' : 's'} · ${dmg} dmg · ${(flash / 1000).toFixed(1)}s flash`;
+    return `${col.utils.length} nade${col.utils.length === 1 ? '' : 's'} · ${dmg} dmg · ${fmtMs(flash)} flash`;
   }
 
   const gridStyle = $derived(
@@ -227,7 +218,7 @@
                       <span>{u.throwerName || '—'}</span>
                       <span class="muted">
                         {u.damage > 0 ? `${u.damage} dmg` : ''}
-                        {u.flashMsTotal > 0 ? ` · ${(u.flashMsTotal / 1000).toFixed(1)}s flash` : ''}
+                        {u.flashMsTotal > 0 ? ` · ${fmtMs(u.flashMsTotal)} flash` : ''}
                       </span>
                     </li>
                   {/each}

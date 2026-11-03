@@ -29,8 +29,51 @@ export function fmtClock(seconds) {
 // tickSeconds converts demo ticks to seconds at the match tickrate
 // (tickrate <= 0 falls back to 64 — CS2's standard).
 export function tickSeconds(ticks, tickRate) {
-  const tr = Number(tickRate) > 0 ? Number(tickRate) : 64;
-  return ticks / tr;
+  return ticks / normTickRate(tickRate);
+}
+
+// normTickRate normalizes a match tick rate: anything absent, non-numeric
+// or <= 0 falls back to 64 (CS2's fixed simulation rate). This was the
+// `> 0 ? : 64` fallback copied around fmt.js, replay/engine.js,
+// replay/audio.js and Replay.svelte.
+export function normTickRate(tickRate) {
+  return Number(tickRate) > 0 ? Number(tickRate) : 64;
+}
+
+// fmtMoney renders a money amount in the signed, rounded, grouped style
+// the Economy view canonicalised: "$1,234" and "−$1,234" (U+2212 minus,
+// abs value grouped by the locale). Whole dollars only; a missing /
+// non-numeric value counts as 0.
+export function fmtMoney(v) {
+  const n = Math.round(Number(v) || 0);
+  return (n < 0 ? '−$' : '$') + Math.abs(n).toLocaleString();
+}
+
+// fmtMetric renders one metric value for its format tag — the tag-driven
+// formatter shared by the metric Builder's preview and the match
+// scoreboard's pinned-metric columns (int | float1 | percent | currency,
+// defaulting by integrality). PlayerProfile's per-key metric formatter is
+// a different shape (metric id, not format tag) and stays local.
+export function fmtMetric(v, format) {
+  if (!Number.isFinite(v)) return '—';
+  switch (format) {
+    case 'int':
+      return fmtInt(v);
+    case 'float1':
+      return fmt1(v);
+    case 'percent':
+      return fmtPercent(v * 100);
+    case 'currency':
+      return fmtMoney(v);
+    default:
+      return Number.isInteger(v) ? fmtInt(v) : fmt2(v);
+  }
+}
+
+// fmtMs renders a millisecond duration as seconds with one decimal
+// ("1.5s") — flash durations in Utility / CompareRounds.
+export function fmtMs(ms) {
+  return (ms / 1000).toFixed(1) + 's';
 }
 
 // fmtTickSeconds renders ticks as a seconds string ("12.3s").

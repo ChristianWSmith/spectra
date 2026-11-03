@@ -12,8 +12,10 @@
     getScoreboard,
     listMetrics,
     previewMetric,
+    errText,
   } from '../services.js';
-  import { saveText, saveExportURL } from '../save.js';
+  import { saveExportURL } from '../save.js';
+  import { downloadText } from '../download.js';
   import MatchPicker from '../components/MatchPicker.svelte';
   import PlayerPicker from '../components/PlayerPicker.svelte';
 
@@ -119,12 +121,6 @@
       });
     return () => (live = false);
   });
-
-  function errText(e) {
-    if (e == null) return 'unknown error';
-    if (typeof e === 'string') return e;
-    return e.message || String(e);
-  }
 
   // Group the metric checkbox list by groupBy (player/round/team/…).
   const metricGroups = $derived.by(() => {
@@ -276,11 +272,10 @@
     const target = scope === 'player' ? steamId || 'player' : matchId;
     docError = '';
     try {
-      await saveText(
+      await downloadText(
         `spectra-${scope}-${target}.${ext}`,
-        ext,
-        compositeText(),
         ext === 'html' ? 'text/html;charset=utf-8' : 'text/markdown;charset=utf-8',
+        compositeText(),
       );
     } catch (e) {
       docError = errText(e);

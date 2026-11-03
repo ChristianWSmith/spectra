@@ -14,47 +14,13 @@
   import MapPackPrompt from './lib/components/MapPackPrompt.svelte';
   import PlayerProfile from './lib/views/PlayerProfile.svelte';
   import CompareRounds from './lib/views/CompareRounds.svelte';
+  import { parseHash } from './lib/router.js';
 
-  // Hand-rolled hash router: deep-navigable URLs without a
-  // router dependency.
-  //   #/library
-  //   #/match/:id
-  //   #/match/:id/timeline   (the match view's Timeline tab)
-  //   #/match/:id/round/:n
-  //   #/timeline/:id         (legacy — redirects to #/match/:id/timeline)
-  //   #/replay/:id
-  //   #/settings
+  // Hand-rolled hash router: the route table (parseHash) lives in
+  // lib/router.js with its own tests; this component owns the hashchange
+  // wiring, the legacy-hash canonicalize() rewrite and the view switch.
   let route = $state(parseHash(location.hash));
   let mapPackPrompt = $state(null); // MapPackPrompt instance (bind:this)
-
-  function parseHash(hash) {
-    const h = hash.replace(/^#/, '') || '/library';
-    // Round numbers can be negative (knife/warmup rounds carry negative
-    // indices — see extract's renumber), so the round segment allows "-?".
-    let m = h.match(/^\/match\/(\d+)\/round\/(-?\d+)$/);
-    if (m) return { name: 'round', id: Number(m[1]), round: Number(m[2]) };
-    m = h.match(/^\/match\/(\d+)\/timeline$/);
-    if (m) return { name: 'match', id: Number(m[1]), tab: 'Timeline' };
-    m = h.match(/^\/match\/(\d+)$/);
-    if (m) return { name: 'match', id: Number(m[1]) };
-    m = h.match(/^\/player\/(\d{17})$/);
-    if (m) return { name: 'player', steamId: m[1] };
-    m = h.match(/^\/compare\/(\d+)$/);
-    if (m) return { name: 'compare', id: Number(m[1]) };
-    // Legacy deep link from before Timeline was a match tab — parse it
-    // straight into the match view's Timeline tab (canonicalize() below
-    // rewrites the address bar).
-    m = h.match(/^\/timeline\/(\d+)$/);
-    if (m) return { name: 'match', id: Number(m[1]), tab: 'Timeline', legacy: true };
-    m = h.match(/^\/replay\/(\d+)$/);
-    if (m) return { name: 'replay', id: Number(m[1]) };
-    if (h.startsWith('/builder')) return { name: 'builder' };
-    if (h.startsWith('/sql')) return { name: 'sql' };
-    if (h.startsWith('/explorer')) return { name: 'explorer' };
-    if (h.startsWith('/reports')) return { name: 'reports' };
-    if (h.startsWith('/settings')) return { name: 'settings' };
-    return { name: 'library' };
-  }
 
   // Rewrite a legacy #/timeline/:id hash to its canonical
   // #/match/:id/timeline form (same-document navigation — the hashchange

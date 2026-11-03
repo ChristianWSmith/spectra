@@ -7,8 +7,10 @@
     getRoundClasses,
     listMatches,
     setPendingSeek,
+    errText,
   } from '../services.js';
   import { fmtDuration, fmtTickSeconds, fmtInt } from '../fmt.js';
+  import { isSteam, openProfile } from '../nav.js';
   import { teamNames } from '../teams.js';
   import RoundStrip from '../components/RoundStrip.svelte';
 
@@ -77,20 +79,6 @@
       });
     return () => (live = false);
   });
-
-  function errText(e) {
-    if (e == null) return 'unknown error';
-    if (typeof e === 'string') return e;
-    return e.message || String(e);
-  }
-
-  function isSteam(s) {
-    return /^\d{17}$/.test(s || '');
-  }
-
-  function openProfile(steam) {
-    if (isSteam(steam)) nav(`/player/${steam}`);
-  }
 
   const kills = $derived(
     (detail?.events || []).filter((e) => e.kind === 'kill'),
@@ -198,7 +186,7 @@
                     <button
                       class="comb-name-btn"
                       title="Open {e.attackerName} profile"
-                      onclick={() => openProfile(e.attacker)}
+                      onclick={() => openProfile(nav, e.attacker)}
                     >{e.attackerName || '—'}</button>
                   {:else}
                     {e.attackerName || '—'}
@@ -210,7 +198,7 @@
                     <button
                       class="comb-name-btn"
                       title="Open {e.victimName} profile"
-                      onclick={() => openProfile(e.victim)}
+                      onclick={() => openProfile(nav, e.victim)}
                     >{e.victimName || '—'}</button>
                   {:else}
                     {e.victimName || '—'}

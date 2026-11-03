@@ -12,6 +12,7 @@
     onJobDone,
     onLibraryChanged,
     onFilesDropped,
+    errText,
   } from '../services.js';
   import { fmtBytes, fmtDuration, fmtDate, basename } from '../fmt.js';
   import { teamNames } from '../teams.js';
@@ -123,12 +124,6 @@
     ];
     return () => offs.forEach((off) => off());
   });
-
-  function errText(e) {
-    if (e == null) return 'unknown error';
-    if (typeof e === 'string') return e;
-    return e.message || String(e);
-  }
 
   const activeJobs = $derived(
     jobs.filter((j) => j.status === 'queued' || j.status === 'running'),

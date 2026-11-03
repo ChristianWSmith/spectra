@@ -4,8 +4,9 @@
   // (generic events) — one tick-sorted list with per-source filter chips and
   // CSV/JSON export through the native save dialog. Sources fetched
   // independently; a failed source shows its error but never blanks the rest.
-  import { getChat, getEvents, getGenericEvents, setPendingSeek } from '../services.js';
-  import { saveText } from '../save.js';
+  import { getChat, getEvents, getGenericEvents, setPendingSeek, errText } from '../services.js';
+  import { downloadText } from '../download.js';
+  import { toCSV } from '../csv.js';
   import { fmtInt } from '../fmt.js';
 
   let { id = 0, nav = () => {} } = $props();
@@ -39,12 +40,6 @@
     const entries = Object.entries(p);
     if (!entries.length) return '';
     return entries.map(([k, v]) => `${k}=${v}`).join(' ');
-  }
-
-  function errText(e) {
-    if (e == null) return 'unknown error';
-    if (typeof e === 'string') return e;
-    return e.message || String(e);
   }
 
   $effect(() => {
@@ -164,10 +159,8 @@
   // The view has no status strip for save failures; cancel is a silent
   // no-op by contract, real failures land in the console.
   async function download(filename, mime, text) {
-    const dot = filename.lastIndexOf('.');
-    const ext = dot > 0 ? filename.slice(dot + 1) : 'txt';
     try {
-      await saveText(filename, ext, text, mime);
+      await downloadText(filename, mime, text);
     } catch (e) {
       console.error('Context export failed:', e);
     }
@@ -181,19 +174,14 @@
     );
   }
 
-  function csvCell(v) {
-    const s = String(v ?? '');
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  }
-
   function exportCSV() {
-    const lines = ['tick,round,source,name,text'];
-    for (const r of visible) {
-      lines.push(
-        [r.tick, r.round, r.src, r.name, r.text].map(csvCell).join(','),
-      );
-    }
-    return download(`match-${id}-context.csv`, 'text/csv', lines.join('\n'));
+    const rows = [['tick', 'round', 'source', 'name', 'text']];
+    for (const r of visible) rows.push([r.tick, r.round, r.src, r.name, r.text]);
+    return download(
+      `match-${id}-context.csv`,
+      'text/csv;charset=utf-8',
+      toCSV(rows),
+    );
   }
 
   function watchTick(r) {
