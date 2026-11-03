@@ -221,7 +221,7 @@ type CareerSummary struct {
 
 // ProfileHistoryRow is one match-history entry for a player profile.
 // KASTPct is the average over player_round_stats for the match (0 when the
-// match predates the analytics pass).
+// match has no stored player_round_stats rows).
 type ProfileHistoryRow struct {
 	MatchID     int64     `json:"matchId"`
 	ExtractedAt time.Time `json:"extractedAt"`

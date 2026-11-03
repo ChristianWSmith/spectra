@@ -1,7 +1,7 @@
 // Hand-rolled hash router: deep-navigable URLs without a router
 // dependency. parseHash is pure (hash string → route object) so the route
 // table is unit-testable headlessly; App.svelte owns the hashchange
-// wiring, the legacy canonicalize() rewrite and the view switch.
+// wiring and the view switch.
 //
 //   #/library                default (also: "", "#", unknown hashes)
 //   #/match/:id              the match view, Overview tab (the default)
@@ -14,9 +14,6 @@
 //                            allows "-?"
 //   #/player/:steamid        17-digit Steam id
 //   #/compare/:id
-//   #/timeline/:id           legacy — parses to the match view's Timeline
-//                            tab with legacy: true (canonicalize() in
-//                            App.svelte rewrites the address bar)
 //   #/replay/:id
 //   #/explorer/:id           optional context id: the match Explorer's
 //                            inspectors preselect (absent = newest match)
@@ -77,11 +74,6 @@ export function parseHash(hash) {
   if (m) return { name: 'player', steamId: m[1] };
   m = h.match(/^\/compare\/(\d+)$/);
   if (m) return { name: 'compare', id: Number(m[1]) };
-  // Legacy deep link from before Timeline was a match tab — parse it
-  // straight into the match view's Timeline tab (canonicalize() below
-  // rewrites the address bar).
-  m = h.match(/^\/timeline\/(\d+)$/);
-  if (m) return { name: 'match', id: Number(m[1]), tab: 'Timeline', legacy: true };
   m = h.match(/^\/replay\/(\d+)$/);
   if (m) return { name: 'replay', id: Number(m[1]) };
   if (h.startsWith('/builder')) return { name: 'builder' };

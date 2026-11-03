@@ -11,7 +11,7 @@ way".
 
 | Concern | Canonical home | Notes |
 |---|---|---|
-| Side-parity / half-switch arithmetic | `internal/rules` (`FlipIndexes`, `SideAt`, `OtherSide`) | One formula for analytics, store, services; cross-language fixture `internal/rules/testdata/sideparity.json` asserted in Go and `frontend/src/lib/sideparity.test.js`; `RoundStrip.svelte` uses it too |
+| Side-parity / half-switch arithmetic | `internal/rules` (`FlipIndexes`, `SideAt`, `OtherSide`) + frontend twin `lib/sideparity.js` | Cross-language fixture `internal/rules/testdata/sideparity.json` asserted in Go and `frontend/src/lib/sideparity.test.js`; `RoundStrip.svelte` consumes the JS twin. Go production caller is `rules.OtherSide` (clutches) — the parity *guess* for data without exact sides was removed in the legacy-fallback pass |
 | Trade window / trade rule | analytics pass (`analytics.Compute` → `store.ReplaceTradeKills`) | `engagements(kind='trade')` is THE rule; extract's 5 s column is the import-time default Compute overwrites; teamkill gates mirrored between extract and analytics (`TestTradeKillsMatchExtractorAtDefault`) |
 | Combat stats (KAST, DMG conv, entry, trade…) | `store.GetCombatStats` SQL | The Go twin (`analytics/combat.go`) was deleted; the 3 SQL decision drifts are pinned by `TestGetCombatStatsSQLDecisions` |
 | Counted rounds | `analytics.CountedRounds` | SQL predicate cross-referenced at `store.GetEconomy`; frontend twin `lib/rounds.js` `isCounted` |
@@ -25,7 +25,7 @@ way".
 | Single-match lookups | `store.GetMatchSummary` / `GetTeamNames` + `MatchService.*` | never fetch the whole library for one row; `replayservice` uses `GetPlayerRefs` |
 | EventRow → Event conversion | `models.EventFromRow` | payload-free by design; blind-event payloads reach analytics via `store.GetBlindFlashDetails` (keyed by `events.seq`) |
 | Read-side caching | `services.js` `cachedRead` | keyed `(method, args)`, flushed on every `spectra:*` event and on mutating wrappers (delete/reprocess emit no event); explicit `invalidate()` |
-| Router | `lib/router.js` (`parseHash`, `MATCH_TABS`) | characterization-tested; all Match tabs deep-linkable, legacy `#/timeline/:id` redirects |
+| Router | `lib/router.js` (`parseHash`, `MATCH_TABS`) | characterization-tested; all Match tabs deep-linkable |
 | Hand-offs | `lib/handoff.js` | the only module that touches `sessionStorage` |
 | Definition/tooltip strings | `lib/definitions.js` | Settings' glossary renders the same `GLOSSARY` array the tooltips import |
 | Errors / nav / formatting / CSV / download | `lib/services.js` `errText`; `lib/nav.js` (`isSteam`, `openProfile`, `NAV_ACTIONS`); `lib/fmt.js`; `lib/csv.js`; `lib/download.js` + `lib/save.js` | sidebar and command palette share `NAV_ACTIONS` |
@@ -87,6 +87,39 @@ different modality); `internal/plugin.MetricDef` / `store.PluginMetricDef`
     additive fields (`label`, `explanation`, `matchId`, `ruleVersion`,
     `seq`, metric `createdAt`/`denominator`, RFC3339 `extractedAt`) — no
     key renamed or removed.
+
+## Legacy-fallback / migration removal pass (pre-release)
+
+Second pass: the app is 100% pre-release, so everything whose only job was
+to serve data or links from an older pre-release build was deleted rather
+than maintained. The standing policy is in AGENTS.md → "No versioned
+migrations, no legacy-data fallbacks".
+
+- **Versioned schema migrations → one baseline.** `migrate.go`, the
+  `schema_version` table, and `migrations/001–010.sql` are gone;
+  `internal/store/schema.sql` + `schema.go` hold the complete schema and
+  run (idempotently) on every `Open`. ALTERs were folded into their
+  CREATE TABLEs (verified byte-identical column/index metadata against
+  the old path before deletion); `009`'s threshold data-fix and `010`'s
+  `two_k` backfill were dropped (`store.DefaultConfig` already seeds the
+  corrected thresholds; the extractor writes `two_k`). Stale dev DBs are
+  no longer upgraded — recreate them.
+- **`analytics.RecoverSides` + side-parity guesses deleted.** Evidence on
+  `donk.dem`: 10/10 players have a final side, 23/23 counted rounds have
+  exact `round_player_sides` for every player, and `RecoverSides` changed
+  0/10 sides — the graph recovery and the `HalfSwitchRound`/`FlipIndexes`
+  parity fallback (`resolveRoundSides`, `store.sideFlips` heuristic,
+  heatmap `sideAt`) were dead for new imports. Missing data now means
+  unknown sides → skipped team-dependent rows, never a guess.
+- **Frontend shims removed:** the legacy `#/timeline/:id` rewrite
+  (`canonicalize()`), string-typed pref coercion (writers verified to emit
+  JSON booleans), and the unreachable `he`/`he_explode` event-kind aliases
+  (not in `models.EventKind`; the utility-kind `"he"` is a different
+  vocabulary). The renderer's final-side fallback was **kept** — v2 side
+  bits are legitimately absent for dead/unassigned slots.
+- Golden fixtures byte-unchanged; only behavior changes are the two
+  expected ones (no auto-upgrade of stale DBs; no parity guess for data
+  lacking exact sides).
 
 ## Verification gates used
 

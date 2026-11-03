@@ -58,7 +58,6 @@ test('#/match/:id/timeline carries routeTab Timeline', () => {
     id: 42,
     tab: 'Timeline',
   });
-  assert.equal('legacy' in parseHash('#/match/42/timeline'), false);
 });
 
 test('every match tab deep-links as #/match/:id/<slug> (slug = lowercase tab)', () => {
@@ -129,13 +128,31 @@ test('a palette jump between match tabs keeps route.name stable (no remount)', (
   assert.equal(parseHash('#/match/42/combat').name, 'match');
 });
 
-test('legacy #/timeline/:id parses to the match Timeline tab with legacy flag', () => {
-  assert.deepEqual(parseHash('#/timeline/42'), {
-    name: 'match',
-    id: 42,
-    tab: 'Timeline',
-    legacy: true,
-  });
+test('#/timeline/:id (removed deep-link shape) falls through to the library', () => {
+  // Timeline is a match tab (#/match/:id/timeline); the standalone shape
+  // is not a route — it lands on the default like any unknown hash, with
+  // no rewrite and no legacy key on the parsed route object.
+  assert.deepEqual(parseHash('#/timeline/42'), { name: 'library' });
+  const hashes = [
+    '',
+    '#',
+    '#/library',
+    '#/match/42',
+    '#/match/42/timeline',
+    '#/match/42/round/7',
+    '#/player/76561198012345678',
+    '#/compare/9',
+    '#/timeline/42',
+    '#/replay/42',
+    '#/explorer/42',
+    '#/reports/42',
+    '#/settings',
+    '#/builder',
+    '#/sql',
+  ];
+  for (const h of hashes) {
+    assert.equal('legacy' in parseHash(h), false, h);
+  }
 });
 
 test('#/replay/:id', () => {

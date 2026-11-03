@@ -9,6 +9,12 @@
 // frontend/src/lib/sideparity.js; both are pinned to the same fixture
 // (testdata/sideparity.json — see sideparity_test.go and
 // frontend/src/lib/sideparity.test.js).
+//
+// Production callers today: rules.OtherSide (analytics.Clutches). The
+// parity *guess* for data lacking exact per-round sides was removed with
+// the legacy-fallback pass (every import stores round_player_sides), so
+// FlipIndexes/SideAt are fixture-pinned references the frontend twin is
+// tested against — do not reintroduce a fallback that re-expresses them.
 package rules
 
 // FlipIndexes returns the 0-based indexes into a slice of n COUNTED rounds
@@ -45,8 +51,7 @@ func FlipIndexes(n, switches int) []int {
 // side and the round NUMBER of the first second-half round (halfSwitchRound,
 // 0 = this match never switched): sides flip for every round before it and
 // keep it from there on. Sides that are not "ct"/"t" are unknown and stay
-// "" — an unknown side is never guessed here (RecoverSides fills what it
-// can upstream).
+// "" — an unknown side is never guessed here.
 //
 // Frontend twin: RoundStrip.svelte's aboveSide derivation (era-based).
 func SideAt(finalSide string, halfSwitchRound, round int) string {

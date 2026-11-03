@@ -9,9 +9,11 @@ import (
 )
 
 // The cross-language fixture: the SAME JSON is asserted here and by
-// frontend/src/lib/sideparity.test.js (node --test), so the Go call sites
-// (analytics.Compute, store sideFlips, the heatmap side resolver) and the
-// frontend RoundStrip can never drift apart again.
+// frontend/src/lib/sideparity.test.js (node --test), so the Go formula
+// and the frontend RoundStrip (frontend/src/lib/sideparity.js) can never
+// drift apart again. Go's production consumer of side parity is
+// rules.OtherSide (analytics.Clutches); FlipIndexes/SideAt are pinned here
+// for the frontend twin.
 type sideparityCase struct {
 	Rounds   int   `json:"rounds"`
 	Switches int   `json:"switches"`

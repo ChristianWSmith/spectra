@@ -74,8 +74,11 @@
     setPref('show_knife_warmup_rounds', v).catch((e) => (error = errText(e)));
   }
 
+  // kvstore round-trips JSON, and the only writer of this key passes a
+  // real boolean (the toggle's checked state) — anything that is not
+  // exactly true (unset, null, corrupt) reads as off.
   function prefBool(v) {
-    return v === true || v === 'true';
+    return v === true;
   }
 
   // Plugins: declarative bundles installed by

@@ -21,8 +21,9 @@ import (
 // set in models.IsUtilityWeapon). MoneyStart/Equip/Spent stay 0 in v1 (item_equip payloads carry
 // no price — see package doc). Rows are emitted for EVERY player × every
 // counted round (round ASC, players sorted by SteamID for stable output).
-// sides carries the extractor's exact per-round side samples (nil for
-// legacy matches — final-side parity applies there).
+// sides carries the extractor's exact per-round freeze-end side samples;
+// a round without them leaves every side unknown — kills/assists stay
+// permissive (an unknown side never matches) and no trade is claimed.
 func PlayerRounds(events []models.Event, rounds []RoundInfo, players []PlayerRef, cfg Config, sides map[int]map[string]string) []PlayerRound {
 	real := CountedRounds(rounds)
 	if len(real) == 0 {
@@ -34,12 +35,11 @@ func PlayerRounds(events []models.Event, rounds []RoundInfo, players []PlayerRef
 	}
 
 	sorted := sortedPlayerRefs(players)
-	team := teamOf(players)
 	window := cfg.ticks(cfg.TradeWindowS)
 
 	out := make([]PlayerRound, 0, len(real)*len(sorted))
 	for _, r := range real {
-		teamR := resolveRoundSides(sides, team, cfg, r.Number)
+		teamR := resolveRoundSides(sides, r.Number)
 		roundEvents := byRound[r.Number]
 		var kills, assists, deaths, dmg, utilDmg = map[string]int{}, map[string]int{}, map[string]int{}, map[string]int{}, map[string]int{}
 		deathTick := map[string]int{}   // victim → death tick

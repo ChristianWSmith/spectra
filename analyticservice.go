@@ -12,7 +12,6 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/analytics"
 	"github.com/ChristianWSmith/spectra/internal/data"
 	"github.com/ChristianWSmith/spectra/internal/models"
-	"github.com/ChristianWSmith/spectra/internal/rules"
 	"github.com/ChristianWSmith/spectra/internal/sidecar"
 	"github.com/ChristianWSmith/spectra/internal/store"
 )
@@ -225,7 +224,9 @@ func (s *AnalyticsService) GetCombatStats(matchID int64) ([]models.CombatStat, e
 // applied server-side:
 // presence by round range via the tick↔round spans + steam/team via the
 // slot table; events by round, attacker (kills) or victim
-// (deaths/damage) and their team's final side. Bounds come from the
+// (deaths/damage) and their side in that round (exact freeze-end samples —
+// a round without them resolves no side, so a team filter drops it). Bounds
+// come from the
 // sampled extents + 2u pad; the grid is 64×64 with per-axis cell sizes;
 // presence cells are dwell seconds (1/sample-rate per frame per player),
 // event cells are counts.
@@ -248,49 +249,15 @@ func (s *AnalyticsService) GetHeatmap(matchID int64, kind string, f HeatmapFilte
 	for i, r := range roundInfos {
 		roundSpans[i] = models.Round{Number: r.Number, StartTick: r.StartTick, EndTick: r.EndTick}
 	}
-	players, err := s.st.GetPlayerRefs(matchID)
-	if err != nil {
-		return HeatmapGrid{}, err
-	}
-	// Team filters need real sides: recover the final sides of players
-	// absent from the final-state snapshot (same inference as the analytics
-	// pass — see analytics.RecoverSides). Kills only: RecoverSides builds
-	// its enemy graph from kill edges, and the extra typed columns
-	// models.EventFromRow carries are not part of that decision.
-	ers, err := s.st.GetEvents(models.EventFilter{MatchID: matchID, Kind: models.EventKill, Round: -1, Limit: store.DefaultEventLimit})
-	if err != nil {
-		return HeatmapGrid{}, err
-	}
-	kills := make([]models.Event, len(ers))
-	for i, er := range ers {
-		kills[i] = models.EventFromRow(er)
-	}
-	players = analytics.RecoverSides(kills, roundInfos, players)
-	side := map[string]string{}
-	for _, p := range players {
-		side[p.SteamID] = p.Side
-	}
-	// Exact per-round sides when the extractor persisted them (new
-	// imports); legacy matches fall back to final-side parity with the
-	// first second-half round — rules.FlipIndexes locates the boundary
-	// (ceiling division; floor landed one round early).
+	// Team filters resolve sides from the extractor's exact per-round
+	// freeze-end samples: a round (or player) without a stored sample
+	// resolves "" there, so a team filter excludes it — sides are never
+	// guessed from final sides here.
 	exact, err := s.st.GetRoundPlayerSides(matchID)
 	if err != nil {
 		return HeatmapGrid{}, err
 	}
-	halfSwitch := 0
-	if m, err := s.st.GetMatch(matchID); err == nil && m.SideSwitches > 0 {
-		real := analytics.CountedRounds(roundInfos)
-		if flips := rules.FlipIndexes(len(real), m.SideSwitches); len(flips) > 0 {
-			halfSwitch = real[flips[0]].Number
-		}
-	}
-	sideAt := func(steamID string, round int) string {
-		if m, ok := exact[round]; ok && m[steamID] != "" {
-			return m[steamID]
-		}
-		return rules.SideAt(side[steamID], halfSwitch, round)
-	}
+	sideAt := func(steamID string, round int) string { return exact[round][steamID] }
 	if kind == "presence" {
 		return s.heatmapPresence(matchID, f, roundSpans, sideAt)
 	}
@@ -384,8 +351,11 @@ func (s *AnalyticsService) heatmapPresence(matchID int64, f HeatmapFilter, round
 // the ATTACKER's position (where the killer was — events.apos_*), deaths
 // and damage plot the VICTIM's position (where the player fell / the
 // hitpoint — events.pos_*). The SteamID filter applies to the attacker on
-// kills and to the victim on deaths/damage; legacy imports without stored
-// attacker positions fall back to the victim position.
+// kills and to the victim on deaths/damage; a kill with no stored attacker
+// position falls back to the victim position (world kills have no killer
+// entity and a vanished pawn reads {0,0,0} — both keep apos_* NULL even in
+// current imports; see extract's posPtrs — the schema keeps events.apos_*
+// nullable).
 func (s *AnalyticsService) heatmapEvents(matchID int64, kind string, f HeatmapFilter, sideAt func(string, int) string) (HeatmapGrid, error) {
 	eventKind := map[string]string{"kills": models.EventKill, "deaths": models.EventKill, "damage": models.EventDamage}[kind]
 	rows, err := s.st.GetEvents(models.EventFilter{MatchID: matchID, Kind: eventKind, Round: -1, Limit: store.DefaultEventLimit})

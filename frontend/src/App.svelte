@@ -19,23 +19,14 @@
 
   // Hand-rolled hash router: the route table (parseHash) lives in
   // lib/router.js with its own tests; this component owns the hashchange
-  // wiring, the legacy-hash canonicalize() rewrite and the view switch.
+  // wiring and the view switch.
   let route = $state(parseHash(location.hash));
   let mapPackPrompt = $state(null); // MapPackPrompt instance (bind:this)
-
-  // Rewrite a legacy #/timeline/:id hash to its canonical
-  // #/match/:id/timeline form (same-document navigation — the hashchange
-  // it fires re-parses to the same route without the legacy flag).
-  function canonicalize() {
-    if (route.legacy) location.replace(`#/match/${route.id}/timeline`);
-  }
 
   onMount(() => {
     const onChange = () => {
       route = parseHash(location.hash);
-      canonicalize();
     };
-    canonicalize();
     window.addEventListener('hashchange', onChange);
 
     // One-time CS2 radar-extraction prompt: detection + decision persist

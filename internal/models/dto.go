@@ -150,8 +150,7 @@ type EventDetail struct {
 // the row id and the joined display names stay with the read DTO, and the
 // JSON payloads are never on EventRow (they stay in SQLite — the analytics
 // pass reads typed columns only), so DetailJSON/RawJSON are "" here.
-// Both callers — analytics.Compute and AnalyticsService.GetHeatmap — use
-// this, never a hand-rolled literal.
+// analytics.Compute uses this, never a hand-rolled literal.
 func EventFromRow(r EventRow) Event {
 	return Event{
 		Seq: r.Seq, Tick: r.Tick, Round: r.Round, Kind: r.Kind,

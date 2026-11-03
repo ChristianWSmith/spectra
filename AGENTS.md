@@ -77,7 +77,7 @@ spectacle -b -n -o /tmp/shot.png         # then Read the PNG
 | `appservice.go` | `AppService` — frontend-callable methods (`GetVersion`, `SaveWindowSize`) and the update-check flow |
 | `libraryservice.go` / `matchservice.go` | `LibraryService` / `MatchService` — the M1 frontend API surface (import/list/jobs/inspectors; match/scoreboard/rounds/events/chat) over `internal/store` |
 | `internal/models` | normalized domain types + read DTOs — the contract between extract, store, and the bindings |
-| `internal/store` | SQLite (modernc, single-writer, WAL) + embedded migrations + batch writers/queries; scrubs NUL bytes on every write |
+| `internal/store` | SQLite (modernc, single-writer, WAL) + embedded baseline schema (`schema.sql`, applied on every Open) + batch writers/queries; scrubs NUL bytes on every write |
 | `internal/extract` | demoinfocs v6 engine: handlers → `models.ExtractedMatch`; `Parse(ctx, r, progress)`; unit-tested accumulator |
 | `internal/library` | import pipeline: hash/dedupe, zstd sniff, single-worker job queue, cancellation, `spectra:*` events |
 | `internal/data` | XDG data-dir paths (db, per-match sidecars, tmp) |
@@ -146,7 +146,8 @@ query fragment, check whether a canonical one already exists — extend it
 instead of forking it.
 
 - **Domain rules live in one place:** side-parity arithmetic in
-  `internal/rules`; the trade window in the analytics pass
+  `internal/rules` (frontend twin `lib/sideparity.js`, both pinned to
+  `internal/rules/testdata/sideparity.json`); the trade window in the analytics pass
   (`analytics.Compute` recomputes `player_stats.trade_kills`);
   `store.GetCombatStats` SQL is authoritative for combat stats (its
   decisions are pinned by `TestGetCombatStatsSQLDecisions`); counted
@@ -155,6 +156,14 @@ instead of forking it.
   predicate `models.WinFor`; config building `analytics.ConfigFrom`.
   Never re-express a rule in a second layer — add a comment cross-referencing
   the canonical implementation instead.
+- **No versioned migrations, no legacy-data fallbacks** (pre-release
+  policy): the schema is one baseline `internal/store/schema.sql` applied
+  on every Open — there is no `schema_version` table and no upgrade path,
+  so a stale dev DB is NOT upgraded (delete it and re-import; adding
+  versioned migrations back is a 1.0 decision). Data missing a required input
+  (exact per-round sides, player final side, stored positions) yields
+  unknown/skipped rows — never a guessed parity/recovery fallback. Do not
+  reintroduce `RecoverSides`, a side-parity guess, or a backfill.
 - **Frontend helpers:** errors `errText` → `lib/services.js`; Steam
   profiles/nav actions → `lib/nav.js`; formatting → `lib/fmt.js`; CSV and
   downloads → `lib/csv.js` / `lib/download.js` (native save dialogs via

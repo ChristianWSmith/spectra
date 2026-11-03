@@ -50,7 +50,8 @@ type Series struct {
 // Compute decodes the sidecar in dir (match sidecar root) and computes
 // the requested kind series. sides maps SteamID → final side ("ct"/"t");
 // players absent from it are excluded from both metrics (team attribution
-// requires a known side — same final-side model as the heatmap filters).
+// requires a known side — final-side here, exact per-round samples in the
+// heatmap filters).
 // durationTicks ≤ 0 falls back to the largest frame tick; buckets ≤ 0
 // means DefaultBuckets. Warmup frames are kept: their values are valid
 // positions.

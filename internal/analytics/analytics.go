@@ -43,18 +43,13 @@ import (
 // Config is the versioned rules input for the analytics pass. TickRate is
 // needed to convert the seconds-based windows (trade window, utility
 // pairing) into ticks — Compute fills it from the match row; a value <= 0
-// means 64 (CS2's fixed simulation rate). HalfSwitchRound is the round
-// NUMBER of the first second-half round (0 = no side switch in this
-// match): player sides are stored as final-half sides and flipped for
-// rounds before it (single-switch parity — OT switching is not
-// special-cased).
+// means 64 (CS2's fixed simulation rate).
 type Config struct {
-	TradeWindowS    float64
-	EcoFullBuy      int
-	EcoForce        int
-	RuleVersion     int
-	TickRate        float64
-	HalfSwitchRound int
+	TradeWindowS float64
+	EcoFullBuy   int
+	EcoForce     int
+	RuleVersion  int
+	TickRate     float64
 }
 
 // DefaultTickRate is the CS2 fixed simulation rate used when Config's is
@@ -135,24 +130,23 @@ func CountedRounds(rounds []RoundInfo) []RoundInfo {
 	return out
 }
 
-// resolveRoundSides returns every player's side for one round: the
-// extractor's exact per-round freeze-end samples when present (new
-// imports), else the final-side map flipped by Config.HalfSwitchRound
-// (legacy single-switch parity — see recover.go).
-func resolveRoundSides(exact map[int]map[string]string, team map[string]string, cfg Config, round int) map[string]string {
+// resolveRoundSides returns the extractor's exact per-round freeze-end
+// sides for one round, or nil when the round has no stored sample (a round
+// without exact sides gets NO side-derived rows downstream — sides are
+// never guessed from final sides here).
+func resolveRoundSides(exact map[int]map[string]string, round int) map[string]string {
 	if m, ok := exact[round]; ok && len(m) > 0 {
 		return m
 	}
-	return sideMapForRound(team, cfg, round)
+	return nil
 }
 
-// teamOf builds a steamID → team map from the player refs.
-func teamOf(players []PlayerRef) map[string]string {
-	m := make(map[string]string, len(players))
-	for _, p := range players {
-		m[p.SteamID] = p.Side
-	}
-	return m
+// sortedPlayerRefs orders players by SteamID for stable output.
+func sortedPlayerRefs(players []PlayerRef) []PlayerRef {
+	out := make([]PlayerRef, len(players))
+	copy(out, players)
+	sort.SliceStable(out, func(i, j int) bool { return out[i].SteamID < out[j].SteamID })
+	return out
 }
 
 // nameOf builds a steamID → display-name map from the player refs.

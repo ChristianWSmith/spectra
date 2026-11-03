@@ -10,6 +10,21 @@ import (
 
 func pf(v float64) *float64 { return &v }
 
+// exactSides builds the per-round side map new imports store in
+// round_player_sides: every player's side in every COUNTED round (the
+// extractor stamps them from the freeze-end samples).
+func exactSides(rounds []RoundInfo, players []PlayerRef) map[int]map[string]string {
+	out := map[int]map[string]string{}
+	for _, r := range CountedRounds(rounds) {
+		m := make(map[string]string, len(players))
+		for _, p := range players {
+			m[p.SteamID] = p.Side
+		}
+		out[r.Number] = m
+	}
+	return out
+}
+
 var testCfg = Config{TradeWindowS: 5.0, EcoFullBuy: 4000, EcoForce: 2000, RuleVersion: 1, TickRate: 64}
 
 func ev(seq, tick, round int, kind, attacker, victim string, extra ...func(*models.Event)) models.Event {
@@ -134,7 +149,7 @@ func TestPlayerRoundsKASTTruthTable(t *testing.T) {
 		ev(3, 250, 1, models.EventDamage, "C", "B", withDmg(40)),
 		ev(4, 260, 1, models.EventDamage, "A", "X", withDmg(30), withWeapon("HE Grenade")),
 	}
-	got := PlayerRounds(events, rounds, players, testCfg, nil)
+	got := PlayerRounds(events, rounds, players, testCfg, exactSides(rounds, players))
 	byID := map[string]PlayerRound{}
 	for _, r := range got {
 		byID[r.SteamID] = r
@@ -178,7 +193,7 @@ func TestPlayerRoundsTradeWindowBoundary(t *testing.T) {
 		ev(0, 100, 1, models.EventKill, "X", "A"),
 		ev(1, 100+window, 1, models.EventKill, "B", "X"), // exactly at the window edge
 	}
-	got := PlayerRounds(events, rounds, players, testCfg, nil)
+	got := PlayerRounds(events, rounds, players, testCfg, exactSides(rounds, players))
 	for _, r := range got {
 		if r.SteamID == "A" && !r.Traded {
 			t.Errorf("A traded = false at exact window edge (%d ticks), want true", window)
@@ -186,7 +201,7 @@ func TestPlayerRoundsTradeWindowBoundary(t *testing.T) {
 	}
 
 	events[1].Tick = 100 + window + 1
-	got = PlayerRounds(events, rounds, players, testCfg, nil)
+	got = PlayerRounds(events, rounds, players, testCfg, exactSides(rounds, players))
 	for _, r := range got {
 		if r.SteamID == "A" && r.Traded {
 			t.Errorf("A traded = true beyond window, want false")
@@ -212,7 +227,7 @@ func TestClutches1v3Won(t *testing.T) {
 		ev(4, 500, 1, models.EventKill, "C", "Y"),
 		ev(5, 600, 1, models.EventKill, "C", "Z"), // opponents wiped → won at 600
 	}
-	got := Clutches(events, rounds, players, testCfg, nil)
+	got := Clutches(events, rounds, players, exactSides(rounds, players))
 	// Both sides of the endgame record their own instance: C's won 1v2 and
 	// Z's lost 1v1 (Z transitions into exactly-1 when Y dies — the spec's
 	// "2v1 then 1v1" symmetric accounting).
@@ -270,7 +285,7 @@ func TestClutchesLostWithBombPlanted(t *testing.T) {
 		ev(1, 200, 1, models.EventKill, "X", "A"), // B solo 1v1, bomb planted
 		ev(2, 300, 1, models.EventKill, "X", "B"), // lost
 	}
-	got := Clutches(events, rounds, players, testCfg, nil)
+	got := Clutches(events, rounds, players, exactSides(rounds, players))
 	// B's lost 1v1 and X's won 1v1 — both sides transitioned into exactly-1.
 	if len(got) != 2 {
 		t.Fatalf("clutches = %d (%+v), want 2", len(got), got)
@@ -300,7 +315,7 @@ func TestEngagementsKinds(t *testing.T) {
 		ev(2, 200, 1, models.EventKill, "Y", "B"), // NOT a trade (B never killed a T teammate)
 		ev(3, 250, 1, models.EventKill, "C", "Y"), // trade: C traded teammate A; Y's death untraded
 	}
-	got := Engagements(events, rounds, testCfg, players, nil)
+	got := Engagements(events, rounds, testCfg, players, exactSides(rounds, players))
 	counts := map[string]int{}
 	for _, e := range got {
 		counts[e.Kind]++
@@ -331,7 +346,7 @@ func TestEngagementsSkipsWarmup(t *testing.T) {
 		ev(0, 10, 0, models.EventKill, "A", "X"),
 		ev(1, 100, 1, models.EventKill, "A", "X"),
 	}
-	got := Engagements(events, rounds, testCfg, players, nil)
+	got := Engagements(events, rounds, testCfg, players, exactSides(rounds, players))
 	// Warmup produces no rows; the round-1 kill yields opening + untraded
 	// (X's death has no teammate revenge).
 	if len(got) != 2 {
@@ -484,75 +499,5 @@ func TestEconomyRowsFillsClasses(t *testing.T) {
 	}
 	if got[1].ClassWhyCT == "" || got[1].ClassWhyT == "" {
 		t.Error("per-side explanations are REQUIRED")
-	}
-}
-
-func TestRecoverSides(t *testing.T) {
-	players := []PlayerRef{
-		{SteamID: "A", Name: "A", Side: "ct"}, // known final side
-		{SteamID: "B", Name: "B"},             // unknown — same group as A
-		{SteamID: "X", Name: "X", Side: "t"},  // known final side
-		{SteamID: "Y", Name: "Y"},             // unknown — same group as X
-		{SteamID: "Z", Name: "Z"},             // unknown — same group as X
-	}
-	rounds := []RoundInfo{{Number: 1, Winner: "t"}}
-	// Dense true-enemy edges (like a real match): the teamkill lie edge
-	// X→Y cannot dominate the coloring when redundant enemy paths exist
-	// (documented: sparse graphs with teamkill lies are ambiguous).
-	events := []models.Event{
-		ev(0, 100, 1, models.EventKill, "A", "X"),
-		ev(1, 110, 1, models.EventKill, "A", "Y"),
-		ev(2, 120, 1, models.EventKill, "B", "X"),
-		ev(3, 130, 1, models.EventKill, "B", "Y"),
-		ev(4, 140, 1, models.EventKill, "Z", "A"),
-		ev(5, 150, 1, models.EventKill, "Z", "B"),
-		ev(6, 160, 1, models.EventKill, "X", "Y"), // teamkill edge — skipped
-	}
-	got := RecoverSides(events, rounds, players)
-	side := map[string]string{}
-	for _, p := range got {
-		side[p.SteamID] = p.Side
-	}
-	if side["B"] != "ct" || side["Y"] != "t" || side["Z"] != "t" {
-		t.Errorf("recovered sides = %v, want B=ct (grouped with A), Y/Z=t (grouped with X)", side)
-	}
-	// Anchors untouched.
-	if side["A"] != "ct" || side["X"] != "t" {
-		t.Errorf("anchors changed: %v", side)
-	}
-}
-
-func TestRecoverSidesBombAnchor(t *testing.T) {
-	players := []PlayerRef{
-		{SteamID: "A"}, {SteamID: "B"}, {SteamID: "X"}, {SteamID: "Y"},
-	}
-	rounds := []RoundInfo{{Number: 1, Winner: "t"}}
-	events := []models.Event{
-		ev(0, 50, 1, models.EventKill, "A", "X"),
-		ev(1, 60, 1, models.EventKill, "B", "Y"),
-		ev(2, 100, 1, models.EventBombPlant, "X", ""), // X planted → X's group is T
-	}
-	got := RecoverSides(events, rounds, players)
-	side := map[string]string{}
-	for _, p := range got {
-		side[p.SteamID] = p.Side
-	}
-	if side["X"] != "t" || side["Y"] != "t" || side["A"] != "ct" || side["B"] != "ct" {
-		t.Errorf("bomb-anchored sides = %v, want X/Y=t A/B=ct", side)
-	}
-}
-
-func TestSideAtFlipsBeforeSwitch(t *testing.T) {
-	if got := sideAt("ct", Config{HalfSwitchRound: 13}, 1); got != "t" {
-		t.Errorf("sideAt(ct, r1) = %q, want t (first half flipped)", got)
-	}
-	if got := sideAt("ct", Config{HalfSwitchRound: 13}, 13); got != "ct" {
-		t.Errorf("sideAt(ct, r13) = %q, want ct (second half)", got)
-	}
-	if got := sideAt("ct", Config{}, 1); got != "ct" {
-		t.Errorf("sideAt(ct, no switch) = %q, want ct", got)
-	}
-	if got := sideAt("", Config{}, 1); got != "" {
-		t.Errorf("sideAt(unknown) = %q, want empty", got)
 	}
 }

@@ -141,13 +141,11 @@
   // remounts this view; switching to the Rounds tab re-runs the effect).
   let showKnifeWarmup = $state(false);
 
-  // kvstore values round-trip as JSON — a bool stays a bool — but a
-  // hand-edited/legacy prefs file may hold "true"/"false" strings.
+  // kvstore values round-trip as JSON — a bool stays a bool (Settings
+  // writes this key as a real boolean through the kvstore service).
   // Anything else (unset, null, corrupt) falls back to false = hidden.
   function coercePrefBool(v) {
-    if (typeof v === 'boolean') return v;
-    if (typeof v === 'string') return v.trim().toLowerCase() === 'true';
-    return false;
+    return v === true;
   }
 
   $effect(() => {

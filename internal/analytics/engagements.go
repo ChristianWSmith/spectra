@@ -40,7 +40,7 @@ const (
 // kill's victim can themselves go untraded). Warmup and pregame rounds are
 // skipped; kills with an unknown-side killer or victim are skipped (team
 // attribution uses the per-round sides — sides carries the extractor's
-// exact samples, nil for legacy matches where final-side parity applies).
+// exact samples; a round without them yields no engagement rows).
 func Engagements(events []models.Event, rounds []RoundInfo, cfg Config, players []PlayerRef, sides map[int]map[string]string) []Engagement {
 	real := CountedRounds(rounds)
 	if len(real) == 0 {
@@ -56,7 +56,6 @@ func Engagements(events []models.Event, rounds []RoundInfo, cfg Config, players 
 			byRound[e.Round] = append(byRound[e.Round], e)
 		}
 	}
-	team := teamOf(players)
 	names := nameOf(players)
 	window := cfg.ticks(cfg.TradeWindowS)
 
@@ -82,7 +81,7 @@ func Engagements(events []models.Event, rounds []RoundInfo, cfg Config, players 
 	}
 
 	for _, r := range real {
-		teamR := resolveRoundSides(sides, team, cfg, r.Number)
+		teamR := resolveRoundSides(sides, r.Number)
 		roundEvents := byRound[r.Number]
 		var deaths []deathRec
 		firstKillDone := false

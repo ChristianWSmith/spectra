@@ -32,8 +32,6 @@ test('classifyLandmark buckets every landmark kind', () => {
   // renderer.setLandmarks buckets (the pre-consolidation behavior)
   assert.equal(classifyLandmark('grenade_throw'), 'throw');
   assert.equal(classifyLandmark('grenade'), 'detonation');
-  assert.equal(classifyLandmark('he'), 'detonation');
-  assert.equal(classifyLandmark('he_explode'), 'detonation');
   assert.equal(classifyLandmark('smoke'), 'smoke');
   assert.equal(classifyLandmark('smokegrenade'), 'smoke'); // substring branch
   assert.equal(classifyLandmark('fire'), 'fire');
@@ -58,6 +56,10 @@ test('classifyLandmark returns "" for kinds neither surface handles', () => {
     assert.equal(classifyLandmark(kind), '', kind);
   }
   assert.equal(classifyLandmark('teleport'), '');
+  // 'he' is the utility-row grenade type (models.IsUtilityWeapon), not an
+  // events.kind value — the classifier only ever sees events kinds.
+  assert.equal(classifyLandmark('he'), '');
+  assert.equal(classifyLandmark('he_explode'), '');
 });
 
 test('grenade_throw never falls into the detonation bucket (order matters)', () => {

@@ -33,14 +33,13 @@ export const LANDMARK_KINDS = [
 // surfaces draw from. Case-insensitive; unknown/empty kinds return ''
 // (each consumer decides what "unclassified" means for it — the
 // renderer skips it, the scrubber skips it). The substring branches
-// (smoke/fire/molotov) and the he/he_explode aliases predate this module
-// and are kept: legacy/extended kind spellings must keep bucketing the
-// same way.
+// (smoke/fire/molotov) predate this module and stay: they bucket
+// extended kind spellings the same way.
 export function classifyLandmark(kind) {
   const k = String(kind || '').toLowerCase();
   if (k === 'kill') return 'kill';
   if (k === 'grenade_throw') return 'throw';
-  if (k === 'grenade' || k === 'he' || k === 'he_explode') return 'detonation';
+  if (k === 'grenade') return 'detonation';
   if (k.includes('smoke')) return 'smoke';
   if (k.includes('fire') || k.includes('molotov')) return 'fire';
   if (k === 'bomb_plant') return 'plant';

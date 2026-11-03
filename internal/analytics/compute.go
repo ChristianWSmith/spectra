@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/ChristianWSmith/spectra/internal/models"
-	"github.com/ChristianWSmith/spectra/internal/rules"
 	"github.com/ChristianWSmith/spectra/internal/store"
 )
 
@@ -60,30 +59,16 @@ func Compute(st *store.Store, matchID int64, cfg Config) error {
 	if err != nil {
 		return fmt.Errorf("analytics: load blind details: %w", err)
 	}
-	// Exact per-round sides from the extractor's freeze-end samples (new
-	// imports); legacy matches fall back to RecoverSides + parity.
+	// Exact per-round sides from the extractor's freeze-end samples; a
+	// round without stored sides produces no side-derived rows.
 	sides, err := st.GetRoundPlayerSides(matchID)
 	if err != nil {
 		return fmt.Errorf("analytics: load round sides: %w", err)
 	}
-	// Recover missing final sides from the enemy graph (players absent
-	// from the final-state snapshot have Side "" in the store).
-	players = RecoverSides(evs, rounds, players)
-	// Legacy parity fallback: sides flip for rounds before the first
-	// second-half round. The boundary index comes from the canonical
-	// helper (rules.FlipIndexes — ceiling division; floor landed one
-	// round early: with 23 counted rounds the second half starts at
-	// index 12, not 11).
-	if m.SideSwitches > 0 {
-		real := CountedRounds(rounds)
-		if flips := rules.FlipIndexes(len(real), m.SideSwitches); len(flips) > 0 {
-			cfg.HalfSwitchRound = real[flips[0]].Number
-		}
-	}
 
 	classes := Classify(eco, rounds, cfg)
 	prs := PlayerRounds(evs, rounds, players, cfg, sides)
-	clutches := Clutches(evs, rounds, players, cfg, sides)
+	clutches := Clutches(evs, rounds, players, sides)
 	engs := Engagements(evs, rounds, cfg, players, sides)
 	utils := Utility(evs, players, cfg, blindDetails)
 

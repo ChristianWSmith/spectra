@@ -161,8 +161,7 @@ export function createRenderer(canvas, { engine, data, players }) {
       const bucket = classifyLandmark(l.kind);
       if (bucket === 'throw') {
         // pair with the nearest detonation of same round+thrower+weapon
-        // (the partner filter is the detonation bucket — 'grenade' for
-        // real data; 'he'/'he_explode' aliases bucket the same way).
+        // (the partner filter is the detonation bucket — 'grenade').
         let best = null;
         let bestDelta = Infinity;
         for (const d of landmarks) {
@@ -259,8 +258,11 @@ export function createRenderer(canvas, { engine, data, players }) {
   }
 
   // sideAtFrame resolves a slot's side at frame f: the per-frame side
-  // bits (q16-v2 — sides flip at halftime, so the final-side table is
-  // only the fallback for legacy sidecars).
+  // bits (q16-v2 — sides flip at halftime), falling back to the slot's
+  // final side from meta. The fallback is not an old-format shim: v2
+  // side bits are 0 (unknown) whenever the slot carries no payload that
+  // frame (dead player) or the extractor saw an unassigned team, and the
+  // final-side table is all we have for those frames.
   function sideBits(flagsByte) {
     const b = (flagsByte >> 2) & 3;
     return b === 1 ? 't' : b === 2 ? 'ct' : '';

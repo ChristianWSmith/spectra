@@ -40,7 +40,7 @@ func tradeScenario() ([]models.Event, []RoundInfo, []PlayerRef) {
 // revenge teamkill (answer) may pair, while the enemy control still does.
 func TestEngagementsTeamkillsNeverTrade(t *testing.T) {
 	events, rounds, players := tradeScenario()
-	got := Engagements(events, rounds, testCfg, players, nil)
+	got := Engagements(events, rounds, testCfg, players, exactSides(rounds, players))
 
 	var trades []Engagement
 	for _, e := range got {
@@ -62,7 +62,7 @@ func TestEngagementsTeamkillsNeverTrade(t *testing.T) {
 // player_stats.trade_kills; the enemy control death still trades.
 func TestPlayerRoundsTeamkillDeathNotTraded(t *testing.T) {
 	events, rounds, players := tradeScenario()
-	got := PlayerRounds(events, rounds, players, testCfg, nil)
+	got := PlayerRounds(events, rounds, players, testCfg, exactSides(rounds, players))
 	byID := map[string]PlayerRound{}
 	for _, r := range got {
 		byID[r.SteamID] = r
