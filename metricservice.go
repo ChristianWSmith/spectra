@@ -58,30 +58,14 @@ type ExprError struct {
 	Pos     int    `json:"pos"`
 }
 
-// ---- metric expression grammar (v1 — FROZEN; full spec: internal/metrics package doc) ----
+// ---- metric expression grammar (v1 — FROZEN) ----
 //
-// An expression is a single source clause plus a comma-separated
-// aggregation list:
-//
-//	from <table>: <op>(<args>) [AS alias] , ...
-//
-// <table> must be one of the ten v1 sources (events, engagements, rounds,
-// player_stats, player_round_stats, round_economy, clutches,
-// utility_events, chat, voice_chunks) — no other table names are ever
-// accepted, and every column an expression mentions is checked against a
-// per-source whitelist before compilation (unknown → ExprError with byte
-// position; nothing is interpolated into SQL — literals bind as `?`).
-// Aggregations: count() / count(<cond>) / count(where <cond>),
-// sum|avg|min|max|stddev(<col>) with an optional `where <cond>,` filter
-// prefix, percentile(<p>, <col>) and median(<col>) (percentile requires
-// groupBy "" — computed in Go over all rows), and ratio(<a1>, <a2>).
-// Conditions: whitelisted columns, numbers, 'strings', true/false, the
-// operators = != > >= < <= AND OR NOT and parentheses; a bare operand is
-// SQLite-truthy (count(headshot) counts flagged rows). Optional
-// Denominator ∈ {rounds, matches, player_rounds} divides the value by a
-// scalar COUNT(*) subquery over the same scope; scope "" = library-wide,
-// "match:<id>" binds match_id. groupBy maps through a fixed per-source
-// table (player|round|team|weapon|side|map|none; unmapped → ExprError).
+// The full spec (source clause + aggregation list, the op table, condition
+// grammar, GroupBy/Denominator/Scope rules, percentile and preview
+// semantics) lives in ONE place: the internal/metrics package doc
+// (doc.go). This service only forwards expressions to metrics.Compile /
+// metrics.RunPreview and maps their ParseError onto the ExprError binding
+// shape — no grammar knowledge of its own, so the two can never drift.
 
 // MetricsService — see doc comment above.
 type MetricsService struct {
@@ -217,9 +201,8 @@ func (s *MetricsService) PreviewMetric(id int64, expr string, groupBy string, sc
 		def = metrics.Def{Expr: expr, GroupBy: groupBy}
 		echo = MetricDef{ID: id, Expr: expr, GroupBy: groupBy}
 	}
-	if limit <= 0 {
-		limit = metrics.PreviewDefaultRow
-	}
+	// limit ≤0 is normalized inside metrics.RunPreview — the one canonical
+	// default (PreviewDefaultRow), never here.
 	pv, perr, err := metrics.RunPreview(s.st, def, scope, limit)
 	if perr != nil {
 		return MetricPreview{}, exprErrorErr(perr)

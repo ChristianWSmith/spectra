@@ -418,6 +418,12 @@ func (s *AnalyticsService) GetHeatmap(matchID int64, kind string, f HeatmapFilte
 	if err != nil {
 		return HeatmapGrid{}, err
 	}
+	// Round spans for the tick→round lookup — the domain type of the shared
+	// store.RoundForTick (the only implementation of that mapping).
+	roundSpans := make([]models.Round, len(rounds))
+	for i, r := range rounds {
+		roundSpans[i] = models.Round{Number: r.Number, StartTick: r.StartTick, EndTick: r.EndTick}
+	}
 	players, err := s.st.GetPlayerRefs(matchID)
 	if err != nil {
 		return HeatmapGrid{}, err
@@ -425,7 +431,7 @@ func (s *AnalyticsService) GetHeatmap(matchID int64, kind string, f HeatmapFilte
 	// Team filters need real sides: recover the final sides of players
 	// absent from the final-state snapshot (same inference as the analytics
 	// pass — see analytics.RecoverSides).
-	ers, err := s.st.GetEvents(models.EventFilter{MatchID: matchID, Kind: models.EventKill, Round: -1, Limit: 50000})
+	ers, err := s.st.GetEvents(models.EventFilter{MatchID: matchID, Kind: models.EventKill, Round: -1, Limit: store.DefaultEventLimit})
 	if err != nil {
 		return HeatmapGrid{}, err
 	}
@@ -465,14 +471,14 @@ func (s *AnalyticsService) GetHeatmap(matchID int64, kind string, f HeatmapFilte
 		return rules.SideAt(side[steamID], halfSwitch, round)
 	}
 	if kind == "presence" {
-		return s.heatmapPresence(matchID, f, rounds, sideAt)
+		return s.heatmapPresence(matchID, f, roundSpans, sideAt)
 	}
 	return s.heatmapEvents(matchID, kind, f, sideAt)
 }
 
 // heatmapPresence streams the whole sidecar stream and accumulates
 // time-weighted dwell per cell.
-func (s *AnalyticsService) heatmapPresence(matchID int64, f HeatmapFilter, rounds []models.RoundRow, sideAt func(string, int) string) (HeatmapGrid, error) {
+func (s *AnalyticsService) heatmapPresence(matchID int64, f HeatmapFilter, rounds []models.Round, sideAt func(string, int) string) (HeatmapGrid, error) {
 	// Whole sidecar stream, decoded once (sidecar.Load = Open → ReadRange →
 	// DecodeFrames; the spatial series uses the same helper).
 	stream, err := sidecar.Load(filepath.Join(data.MatchesDir(), strconv.FormatInt(matchID, 10)), 0, 0)
@@ -504,14 +510,9 @@ func (s *AnalyticsService) heatmapPresence(matchID int64, f HeatmapFilter, round
 		}
 		return true
 	}
-	roundAt := func(tick int) (int, bool) {
-		for _, r := range rounds {
-			if tick >= r.StartTick && tick <= r.EndTick {
-				return r.Number, true
-			}
-		}
-		return 0, false
-	}
+	// Shared tick→round mapping (store.RoundForTick — the same helper the
+	// voice writer uses): (round, found).
+	roundAt := func(tick int) (int, bool) { return store.RoundForTick(rounds, tick) }
 
 	// Sampled extents (every 8th frame) for the bounds, then the shared
 	// raster (bounds → pad → cells; see heatmap.go).
@@ -566,7 +567,7 @@ func (s *AnalyticsService) heatmapPresence(matchID int64, f HeatmapFilter, round
 // attacker positions fall back to the victim position.
 func (s *AnalyticsService) heatmapEvents(matchID int64, kind string, f HeatmapFilter, sideAt func(string, int) string) (HeatmapGrid, error) {
 	eventKind := map[string]string{"kills": models.EventKill, "deaths": models.EventKill, "damage": models.EventDamage}[kind]
-	rows, err := s.st.GetEvents(models.EventFilter{MatchID: matchID, Kind: eventKind, Round: -1, Limit: 50000})
+	rows, err := s.st.GetEvents(models.EventFilter{MatchID: matchID, Kind: eventKind, Round: -1, Limit: store.DefaultEventLimit})
 	if err != nil {
 		return HeatmapGrid{}, err
 	}
@@ -625,7 +626,7 @@ func (s *AnalyticsService) ListSavedFilters() ([]SavedFilter, error) {
 	}
 	out := make([]SavedFilter, len(rows))
 	for i, r := range rows {
-		out[i] = SavedFilter{ID: r.ID, Name: r.Name, Scope: r.Scope, FilterJSON: r.FilterJSON, CreatedAt: r.CreatedAt.Format("2006-01-02T15:04:05Z07:00")}
+		out[i] = SavedFilter{ID: r.ID, Name: r.Name, Scope: r.Scope, FilterJSON: r.FilterJSON, CreatedAt: r.CreatedAt.Format(timeFormat)}
 	}
 	return out, nil
 }
@@ -638,7 +639,7 @@ func (s *AnalyticsService) SaveFilter(name, scope, filterJSON string) (SavedFilt
 	if err != nil {
 		return SavedFilter{}, err
 	}
-	return SavedFilter{ID: r.ID, Name: r.Name, Scope: r.Scope, FilterJSON: r.FilterJSON, CreatedAt: r.CreatedAt.Format("2006-01-02T15:04:05Z07:00")}, nil
+	return SavedFilter{ID: r.ID, Name: r.Name, Scope: r.Scope, FilterJSON: r.FilterJSON, CreatedAt: r.CreatedAt.Format(timeFormat)}, nil
 }
 
 func (s *AnalyticsService) DeleteSavedFilter(id int64) error { return s.st.DeleteSavedFilter(id) }

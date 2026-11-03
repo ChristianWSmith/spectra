@@ -52,15 +52,11 @@ type Result struct {
 
 // Run validates sqlText (single statement, read verbs only), executes it
 // read-only with the row cap and statement timeout, and appends a history
-// entry — success or failure. limit ≤0 → DefaultLimit, timeoutMS ≤0 →
-// DefaultTimeoutMS.
+// entry — success or failure. Defaults are the store's (limit ≤0 →
+// DefaultLimit = store.DefaultRowLimit, timeoutMS ≤0 →
+// DefaultTimeoutMS): RunReadOnly owns the normalization, this session only
+// re-exports the numbers so they have one owner.
 func (s *Session) Run(sqlText string, limit, timeoutMS int) Result {
-	if limit <= 0 {
-		limit = DefaultLimit
-	}
-	if timeoutMS <= 0 {
-		timeoutMS = DefaultTimeoutMS
-	}
 	res, err := s.st.RunReadOnly(sqlText, nil, limit, timeoutMS)
 	out := Result{
 		Columns:   res.Columns,

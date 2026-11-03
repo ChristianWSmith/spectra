@@ -477,6 +477,14 @@ func (s *Store) schemaColumns(table string) ([]models.SchemaColumnRow, error) {
 
 // ---- query history (write handle; capped FIFO) ----
 
+// Per-table column lists (G1): the row WITHOUT the autoincrement id — the
+// writers insert the list verbatim, the readers select `id, ` + it.
+const (
+	queryHistoryCols = `sql, ms, row_count, ok, ran_at`
+
+	savedQueryCols = `name, sql, created_at`
+)
+
 // AppendQueryHistory records one console run (success or error) and trims
 // the table back to QueryHistoryCap newest entries.
 func (s *Store) AppendQueryHistory(e models.QueryHistoryRow) error {
@@ -484,7 +492,7 @@ func (s *Store) AppendQueryHistory(e models.QueryHistoryRow) error {
 		e.RanAt = time.Now()
 	}
 	if _, err := s.db.Exec(
-		`INSERT INTO query_history (sql, ms, row_count, ok, ran_at) VALUES (?, ?, ?, ?, ?)`,
+		`INSERT INTO query_history (`+queryHistoryCols+`) VALUES (?, ?, ?, ?, ?)`,
 		scrub(e.SQL), e.MS, e.Rows, b2i(e.OK), e.RanAt,
 	); err != nil {
 		return fmt.Errorf("store: append query history: %w", err)
@@ -505,7 +513,7 @@ func (s *Store) ListQueryHistory(limit int) ([]models.QueryHistoryRow, error) {
 		limit = QueryHistoryCap
 	}
 	rows, err := s.db.Query(
-		`SELECT id, sql, ms, row_count, ok, ran_at FROM query_history
+		`SELECT id, `+queryHistoryCols+` FROM query_history
 		 ORDER BY id DESC LIMIT ?`, limit,
 	)
 	if err != nil {
@@ -516,12 +524,12 @@ func (s *Store) ListQueryHistory(limit int) ([]models.QueryHistoryRow, error) {
 	for rows.Next() {
 		var (
 			r  models.QueryHistoryRow
-			ok int
+			ok int64
 		)
 		if err := rows.Scan(&r.ID, &r.SQL, &r.MS, &r.Rows, &ok, &r.RanAt); err != nil {
 			return nil, fmt.Errorf("store: list query history: %w", err)
 		}
-		r.OK = ok != 0
+		r.OK = i2b(ok)
 		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {
@@ -543,7 +551,7 @@ func (s *Store) ClearHistory() error {
 // ListSavedQueries returns named console queries (name ASC).
 func (s *Store) ListSavedQueries() ([]models.SavedQueryRow, error) {
 	rows, err := s.db.Query(
-		`SELECT id, name, sql, created_at FROM saved_queries ORDER BY name ASC`,
+		`SELECT id, ` + savedQueryCols + ` FROM saved_queries ORDER BY name ASC`,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("store: list saved queries: %w", err)
@@ -567,11 +575,11 @@ func (s *Store) ListSavedQueries() ([]models.SavedQueryRow, error) {
 // error) and returns the stored row.
 func (s *Store) SaveQuery(name, query string) (models.SavedQueryRow, error) {
 	res, err := s.db.Exec(
-		`INSERT INTO saved_queries (name, sql, created_at) VALUES (?, ?, ?)`,
+		`INSERT INTO saved_queries (`+savedQueryCols+`) VALUES (?, ?, ?)`,
 		scrub(name), scrub(query), time.Now(),
 	)
 	if err != nil {
-		if strings.Contains(err.Error(), "UNIQUE") {
+		if isUniqueErr(err) {
 			return models.SavedQueryRow{}, fmt.Errorf("store: a query named %q already exists", scrub(name))
 		}
 		return models.SavedQueryRow{}, fmt.Errorf("store: save query: %w", err)
@@ -582,7 +590,7 @@ func (s *Store) SaveQuery(name, query string) (models.SavedQueryRow, error) {
 	}
 	var r models.SavedQueryRow
 	if err := s.db.QueryRow(
-		`SELECT id, name, sql, created_at FROM saved_queries WHERE id = ?`, id,
+		`SELECT id, `+savedQueryCols+` FROM saved_queries WHERE id = ?`, id,
 	).Scan(&r.ID, &r.Name, &r.SQL, &r.CreatedAt); err != nil {
 		return models.SavedQueryRow{}, fmt.Errorf("store: save query: %w", err)
 	}

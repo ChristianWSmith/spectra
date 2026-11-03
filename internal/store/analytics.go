@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/ChristianWSmith/spectra/internal/models"
@@ -28,16 +27,39 @@ var DefaultConfig = models.AnalysisConfig{
 	RuleVersion:  1,
 }
 
+// Per-table column lists (G1): each const is the row WITHOUT the
+// match_id key column — the Replace* INSERT prefixes `match_id, `, the
+// getter selects the list verbatim. Order is the scan/insert order.
+const (
+	analysisConfigCols = `trade_window_s, eco_full_buy, eco_force, rule_version`
+
+	roundClassCols = `round, label, confidence, rule_version, explanation`
+
+	playerRoundCols = `round, steam_id, name, kills, assists, deaths, traded, survived,
+		kast, dmg, util_dmg, money_start, equip, spent, rule_version`
+
+	clutchCols = `round, size, steam_id, name, start_tick, end_tick, bomb_state, hp_left,
+		equip, won, kill_ticks, replay_anchor`
+
+	engagementCols = `seq, tick, round, kind, a_steam, a_name, b_steam, b_name, distance, won_by`
+
+	utilityCols = `seq, tick, round, thrower, thrower_name, kind, det_x, det_y, damage,
+		flash_ms, affected, site, trajectory_ref`
+
+	playerCareerCols = `steam_id, name, matches, wins, adr_avg, adr_std, kd, hs_pct,
+		kast_pct, openings, opener_wins, trades, clutches, updated_at`
+)
+
 // GetConfig returns the analysis_config row, seeding the defaults on first
 // use (single-row table: id = 1).
 func (s *Store) GetConfig() (models.AnalysisConfig, error) {
 	var c models.AnalysisConfig
 	err := s.db.QueryRow(
-		`SELECT trade_window_s, eco_full_buy, eco_force, rule_version FROM analysis_config WHERE id = 1`,
+		`SELECT `+analysisConfigCols+` FROM analysis_config WHERE id = 1`,
 	).Scan(&c.TradeWindowS, &c.EcoFullBuy, &c.EcoForce, &c.RuleVersion)
 	if errors.Is(err, sql.ErrNoRows) {
 		if _, err := s.db.Exec(
-			`INSERT INTO analysis_config (id, trade_window_s, eco_full_buy, eco_force, rule_version)
+			`INSERT INTO analysis_config (id, `+analysisConfigCols+`)
 			 VALUES (1, ?, ?, ?, ?)`,
 			DefaultConfig.TradeWindowS, DefaultConfig.EcoFullBuy, DefaultConfig.EcoForce, DefaultConfig.RuleVersion,
 		); err != nil {
@@ -54,7 +76,7 @@ func (s *Store) GetConfig() (models.AnalysisConfig, error) {
 // SetConfig upserts the analysis_config row and returns the stored value.
 func (s *Store) SetConfig(c models.AnalysisConfig) (models.AnalysisConfig, error) {
 	if _, err := s.db.Exec(
-		`INSERT INTO analysis_config (id, trade_window_s, eco_full_buy, eco_force, rule_version)
+		`INSERT INTO analysis_config (id, `+analysisConfigCols+`)
 		 VALUES (1, ?, ?, ?, ?)
 		 ON CONFLICT(id) DO UPDATE SET trade_window_s = excluded.trade_window_s,
 			eco_full_buy = excluded.eco_full_buy, eco_force = excluded.eco_force,
@@ -69,172 +91,89 @@ func (s *Store) SetConfig(c models.AnalysisConfig) (models.AnalysisConfig, error
 // ReplaceRoundClassifications swaps a match's round_classifications rows in
 // one transaction (delete-then-insert).
 func (s *Store) ReplaceRoundClassifications(matchID int64, rows []models.RoundClassification) error {
-	tx, err := s.db.Begin()
-	if err != nil {
-		return fmt.Errorf("store: replace round classifications: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.Exec(`DELETE FROM round_classifications WHERE match_id = ?`, matchID); err != nil {
-		return fmt.Errorf("store: replace round classifications: %w", err)
-	}
-	stmt, err := tx.Prepare(
-		`INSERT INTO round_classifications (match_id, round, label, confidence, rule_version, explanation)
-		 VALUES (?, ?, ?, ?, ?, ?)`,
-	)
-	if err != nil {
-		return fmt.Errorf("store: replace round classifications: %w", err)
-	}
-	defer stmt.Close()
-	for _, r := range rows {
-		if _, err := stmt.Exec(matchID, r.Round, scrub(r.Label), r.Confidence, r.RuleVersion, scrub(r.Explanation)); err != nil {
-			return fmt.Errorf("store: replace round classifications: %w", err)
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("store: replace round classifications: %w", err)
-	}
-	return nil
+	const op = "store: replace round classifications"
+	return s.replaceMatchRows(op, "round_classifications", "match_id, "+roundClassCols, matchID, len(rows),
+		func(stmt *sql.Stmt, i int) error {
+			r := rows[i]
+			if _, err := stmt.Exec(matchID, r.Round, scrub(r.Label), r.Confidence, r.RuleVersion, scrub(r.Explanation)); err != nil {
+				return fmt.Errorf("%s: %w", op, err)
+			}
+			return nil
+		})
 }
 
 // ReplacePlayerRounds swaps a match's player_round_stats rows in one
 // transaction.
 func (s *Store) ReplacePlayerRounds(matchID int64, rows []models.PlayerRoundStat) error {
-	tx, err := s.db.Begin()
-	if err != nil {
-		return fmt.Errorf("store: replace player rounds: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.Exec(`DELETE FROM player_round_stats WHERE match_id = ?`, matchID); err != nil {
-		return fmt.Errorf("store: replace player rounds: %w", err)
-	}
-	stmt, err := tx.Prepare(
-		`INSERT INTO player_round_stats (match_id, round, steam_id, name, kills, assists, deaths,
-			traded, survived, kast, dmg, util_dmg, money_start, equip, spent, rule_version)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-	)
-	if err != nil {
-		return fmt.Errorf("store: replace player rounds: %w", err)
-	}
-	defer stmt.Close()
-	for _, r := range rows {
-		if _, err := stmt.Exec(
-			matchID, r.Round, scrub(r.SteamID), scrub(r.Name), r.Kills, r.Assists, r.Deaths,
-			b2i(r.Traded), b2i(r.Survived), b2i(r.KAST), r.DMG, r.UtilDmg,
-			r.MoneyStart, r.Equip, r.Spent, r.RuleVersion,
-		); err != nil {
-			return fmt.Errorf("store: replace player rounds: %w", err)
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("store: replace player rounds: %w", err)
-	}
-	return nil
+	const op = "store: replace player rounds"
+	return s.replaceMatchRows(op, "player_round_stats", "match_id, "+playerRoundCols, matchID, len(rows),
+		func(stmt *sql.Stmt, i int) error {
+			r := rows[i]
+			if _, err := stmt.Exec(
+				matchID, r.Round, scrub(r.SteamID), scrub(r.Name), r.Kills, r.Assists, r.Deaths,
+				b2i(r.Traded), b2i(r.Survived), b2i(r.KAST), r.DMG, r.UtilDmg,
+				r.MoneyStart, r.Equip, r.Spent, r.RuleVersion,
+			); err != nil {
+				return fmt.Errorf("%s: %w", op, err)
+			}
+			return nil
+		})
 }
 
 // ReplaceClutches swaps a match's clutches rows in one transaction.
 func (s *Store) ReplaceClutches(matchID int64, rows []models.Clutch) error {
-	tx, err := s.db.Begin()
-	if err != nil {
-		return fmt.Errorf("store: replace clutches: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.Exec(`DELETE FROM clutches WHERE match_id = ?`, matchID); err != nil {
-		return fmt.Errorf("store: replace clutches: %w", err)
-	}
-	stmt, err := tx.Prepare(
-		`INSERT INTO clutches (match_id, round, size, steam_id, name, start_tick, end_tick,
-			bomb_state, hp_left, equip, won, kill_ticks, replay_anchor)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-	)
-	if err != nil {
-		return fmt.Errorf("store: replace clutches: %w", err)
-	}
-	defer stmt.Close()
-	for _, r := range rows {
-		if _, err := stmt.Exec(
-			matchID, r.Round, r.Size, scrub(r.SteamID), scrub(r.Name), r.StartTick, r.EndTick,
-			scrub(r.BombState), r.HPLeft, r.Equip, b2i(r.Won), scrub(r.KillTicks), r.ReplayAnchor,
-		); err != nil {
-			return fmt.Errorf("store: replace clutches: %w", err)
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("store: replace clutches: %w", err)
-	}
-	return nil
+	const op = "store: replace clutches"
+	return s.replaceMatchRows(op, "clutches", "match_id, "+clutchCols, matchID, len(rows),
+		func(stmt *sql.Stmt, i int) error {
+			r := rows[i]
+			if _, err := stmt.Exec(
+				matchID, r.Round, r.Size, scrub(r.SteamID), scrub(r.Name), r.StartTick, r.EndTick,
+				scrub(r.BombState), r.HPLeft, r.Equip, b2i(r.Won), scrub(r.KillTicks), r.ReplayAnchor,
+			); err != nil {
+				return fmt.Errorf("%s: %w", op, err)
+			}
+			return nil
+		})
 }
 
 // ReplaceEngagements swaps a match's engagements rows in one transaction
 // (seq is rewritten 0..n-1 in slice order so the PK stays dense).
 func (s *Store) ReplaceEngagements(matchID int64, rows []models.Engagement) error {
-	tx, err := s.db.Begin()
-	if err != nil {
-		return fmt.Errorf("store: replace engagements: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.Exec(`DELETE FROM engagements WHERE match_id = ?`, matchID); err != nil {
-		return fmt.Errorf("store: replace engagements: %w", err)
-	}
-	stmt, err := tx.Prepare(
-		`INSERT INTO engagements (match_id, seq, tick, round, kind, a_steam, a_name, b_steam, b_name, distance, won_by)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-	)
-	if err != nil {
-		return fmt.Errorf("store: replace engagements: %w", err)
-	}
-	defer stmt.Close()
-	for i, r := range rows {
-		if _, err := stmt.Exec(
-			matchID, i, r.Tick, r.Round, scrub(r.Kind), scrub(r.ASteam), scrub(r.AName),
-			scrub(r.BSteam), scrub(r.BName), r.Distance, scrub(r.WonBy),
-		); err != nil {
-			return fmt.Errorf("store: replace engagements: %w", err)
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("store: replace engagements: %w", err)
-	}
-	return nil
+	const op = "store: replace engagements"
+	return s.replaceMatchRows(op, "engagements", "match_id, "+engagementCols, matchID, len(rows),
+		func(stmt *sql.Stmt, i int) error {
+			r := rows[i]
+			if _, err := stmt.Exec(
+				matchID, i, r.Tick, r.Round, scrub(r.Kind), scrub(r.ASteam), scrub(r.AName),
+				scrub(r.BSteam), scrub(r.BName), r.Distance, scrub(r.WonBy),
+			); err != nil {
+				return fmt.Errorf("%s: %w", op, err)
+			}
+			return nil
+		})
 }
 
 // ReplaceUtility swaps a match's utility_events rows in one transaction
 // (seq rewritten 0..n-1 in slice order).
 func (s *Store) ReplaceUtility(matchID int64, rows []models.UtilityEvent) error {
-	tx, err := s.db.Begin()
-	if err != nil {
-		return fmt.Errorf("store: replace utility: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.Exec(`DELETE FROM utility_events WHERE match_id = ?`, matchID); err != nil {
-		return fmt.Errorf("store: replace utility: %w", err)
-	}
-	stmt, err := tx.Prepare(
-		`INSERT INTO utility_events (match_id, seq, tick, round, thrower, thrower_name, kind,
-			det_x, det_y, damage, flash_ms, affected, site, trajectory_ref)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-	)
-	if err != nil {
-		return fmt.Errorf("store: replace utility: %w", err)
-	}
-	defer stmt.Close()
-	for i, r := range rows {
-		if _, err := stmt.Exec(
-			matchID, i, r.Tick, r.Round, scrub(r.Thrower), scrub(r.ThrowerName), scrub(r.Kind),
-			nvl(r.DetX), nvl(r.DetY), r.Damage, r.FlashMs, scrub(r.Affected), scrub(r.Site), scrub(r.TrajectoryRef),
-		); err != nil {
-			return fmt.Errorf("store: replace utility: %w", err)
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("store: replace utility: %w", err)
-	}
-	return nil
+	const op = "store: replace utility"
+	return s.replaceMatchRows(op, "utility_events", "match_id, "+utilityCols, matchID, len(rows),
+		func(stmt *sql.Stmt, i int) error {
+			r := rows[i]
+			if _, err := stmt.Exec(
+				matchID, i, r.Tick, r.Round, scrub(r.Thrower), scrub(r.ThrowerName), scrub(r.Kind),
+				nvl(r.DetX), nvl(r.DetY), r.Damage, r.FlashMs, scrub(r.Affected), scrub(r.Site), scrub(r.TrajectoryRef),
+			); err != nil {
+				return fmt.Errorf("%s: %w", op, err)
+			}
+			return nil
+		})
 }
 
 // GetRoundClasses returns a match's stored classifications by round ASC.
 func (s *Store) GetRoundClasses(matchID int64) ([]models.RoundClassification, error) {
 	rows, err := s.db.Query(
-		`SELECT round, label, confidence, rule_version, explanation
+		`SELECT `+roundClassCols+`
 		 FROM round_classifications WHERE match_id = ? ORDER BY round ASC`, matchID,
 	)
 	if err != nil {
@@ -259,8 +198,7 @@ func (s *Store) GetRoundClasses(matchID int64) ([]models.RoundClassification, er
 // GetPlayerRounds returns one player's per-round rows (steamID "" = all
 // players), ordered by round ASC, steam_id.
 func (s *Store) GetPlayerRounds(matchID int64, steamID string) ([]models.PlayerRoundStat, error) {
-	q := `SELECT round, steam_id, name, kills, assists, deaths, traded, survived, kast,
-		dmg, util_dmg, money_start, equip, spent, rule_version
+	q := `SELECT ` + playerRoundCols + `
 		FROM player_round_stats WHERE match_id = ?`
 	args := []any{matchID}
 	if sid := scrub(steamID); sid != "" {
@@ -295,8 +233,7 @@ func (s *Store) GetPlayerRounds(matchID int64, steamID string) ([]models.PlayerR
 // GetClutches returns a match's clutch records by round, start_tick ASC.
 func (s *Store) GetClutches(matchID int64) ([]models.Clutch, error) {
 	rows, err := s.db.Query(
-		`SELECT round, size, steam_id, name, start_tick, end_tick, bomb_state, hp_left,
-			equip, won, kill_ticks, replay_anchor
+		`SELECT `+clutchCols+`
 		 FROM clutches WHERE match_id = ? ORDER BY round ASC, start_tick ASC`, matchID,
 	)
 	if err != nil {
@@ -324,7 +261,7 @@ func (s *Store) GetClutches(matchID int64) ([]models.Clutch, error) {
 // GetEngagements returns a match's engagements (kind "" = all kinds),
 // ordered by seq.
 func (s *Store) GetEngagements(matchID int64, kind string) ([]models.Engagement, error) {
-	q := `SELECT seq, tick, round, kind, a_steam, a_name, b_steam, b_name, distance, won_by
+	q := `SELECT ` + engagementCols + `
 		FROM engagements WHERE match_id = ?`
 	args := []any{matchID}
 	if k := scrub(kind); k != "" {
@@ -355,8 +292,7 @@ func (s *Store) GetEngagements(matchID int64, kind string) ([]models.Engagement,
 // GetUtility returns a match's per-grenade rows, ordered by seq.
 func (s *Store) GetUtility(matchID int64) ([]models.UtilityEvent, error) {
 	rows, err := s.db.Query(
-		`SELECT seq, tick, round, thrower, thrower_name, kind, det_x, det_y, damage,
-			flash_ms, affected, site, trajectory_ref
+		`SELECT `+utilityCols+`
 		 FROM utility_events WHERE match_id = ? ORDER BY seq ASC`, matchID,
 	)
 	if err != nil {
@@ -374,14 +310,7 @@ func (s *Store) GetUtility(matchID int64) ([]models.UtilityEvent, error) {
 		); err != nil {
 			return nil, fmt.Errorf("store: get utility: %w", err)
 		}
-		if detX.Valid {
-			v := detX.Float64
-			r.DetX = &v
-		}
-		if detY.Valid {
-			v := detY.Float64
-			r.DetY = &v
-		}
+		r.DetX, r.DetY = nullFloat(detX), nullFloat(detY)
 		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {
@@ -598,8 +527,8 @@ func (s *Store) GetCombatStats(matchID int64) ([]models.CombatStat, error) {
 			) THEN e.dmg ELSE 0 END),
 			SUM(CASE WHEN vp.steam_id IS NOT NULL AND ap.side = vp.side THEN e.dmg ELSE 0 END)
 		 FROM events e
-		 LEFT JOIN players ap ON ap.match_id = e.match_id AND ap.steam_id = e.attacker
-		 LEFT JOIN players vp ON vp.match_id = e.match_id AND vp.steam_id = e.victim
+		 `+playersJoin(joinLeft, "ap", "e.match_id", "e.attacker", true)+`
+		 `+playersJoin(joinLeft, "vp", "e.match_id", "e.victim", true)+`
 		 WHERE e.match_id = ? AND e.kind = 'damage' AND e.attacker <> ''
 		 GROUP BY e.attacker`, matchID,
 	)
@@ -669,7 +598,7 @@ func (s *Store) GetCombatStats(matchID int64) ([]models.CombatStat, error) {
 	base, err := s.db.Query(
 		`SELECT ps.steam_id, p.name, ps.entry_kills, ps.trade_kills, ps.deaths, ps.rounds_played
 		 FROM player_stats ps
-		 JOIN players p ON p.match_id = ps.match_id AND p.steam_id = ps.steam_id
+		 `+playersJoin(joinInner, "p", "ps.match_id", "ps.steam_id", false)+`
 		 WHERE ps.match_id = ? ORDER BY p.name ASC`, matchID,
 	)
 	if err != nil {
@@ -733,7 +662,7 @@ func (s *Store) GetPlayerRefs(matchID int64) ([]models.PlayerRef, error) {
 // match (round ASC, side).
 func (s *Store) GetRoundEconomyViews(matchID int64) ([]models.RoundEconomyView, error) {
 	rows, err := s.db.Query(
-		`SELECT round, side, equip_value, money_sampled_sum, money_samples
+		`SELECT `+roundEconomyCols+`
 		 FROM round_economy WHERE match_id = ? ORDER BY round ASC, side ASC`, matchID,
 	)
 	if err != nil {
@@ -848,7 +777,7 @@ func (s *Store) CreateSavedFilter(name, scope, filterJSON string) (models.SavedF
 		scrub(name), scrub(scope), scrub(filterJSON), time.Now(),
 	)
 	if err != nil {
-		if strings.Contains(err.Error(), "UNIQUE") {
+		if isUniqueErr(err) {
 			return models.SavedFilterRow{}, fmt.Errorf("store: a filter named %q already exists in this scope", scrub(name))
 		}
 		return models.SavedFilterRow{}, fmt.Errorf("store: create saved filter: %w", err)
@@ -911,8 +840,7 @@ func (s *Store) RebuildCareer() error {
 		return fmt.Errorf("store: rebuild career: %w", err)
 	}
 	_, err = tx.Exec(
-		`INSERT INTO player_career (steam_id, name, matches, wins, adr_avg, adr_std, kd, hs_pct,
-			kast_pct, openings, opener_wins, trades, clutches, updated_at)
+		`INSERT INTO player_career (`+playerCareerCols+`)
 		SELECT ps.steam_id,
 			COALESCE((SELECT p2.name FROM player_stats p2
 				JOIN matches m2 ON m2.id = p2.match_id
@@ -957,8 +885,7 @@ func (s *Store) GetCareer(steamID string) (*models.CareerRow, error) {
 		updated time.Time
 	)
 	err := s.db.QueryRow(
-		`SELECT steam_id, name, matches, wins, adr_avg, adr_std, kd, hs_pct, kast_pct,
-			openings, opener_wins, trades, clutches, updated_at
+		`SELECT `+playerCareerCols+`
 		 FROM player_career WHERE steam_id = ?`, scrub(steamID),
 	).Scan(
 		&c.SteamID, &c.Name, &c.Matches, &c.Wins, &c.ADRAvg, &c.ADRStd, &c.KD,
@@ -1093,9 +1020,7 @@ func (s *Store) GetPlayerHistory(steamID string) ([]models.ProfileHistoryRow, er
 		); err != nil {
 			return nil, fmt.Errorf("store: get player history: %w", err)
 		}
-		if extracted.Valid {
-			r.ExtractedAt = extracted.Time
-		}
+		r.ExtractedAt = nullTime(extracted)
 		r.Win = models.WinFor(r.Side, r.ScoreCT, r.ScoreT)
 		out = append(out, r)
 	}

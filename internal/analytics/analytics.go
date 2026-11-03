@@ -63,11 +63,12 @@ const DefaultTickRate = 64.0
 
 // ConfigFrom builds the analytics rules input from a stored config row
 // (models.AnalysisConfig) — the ONE constructor shared by the import
-// pipeline (library.analyze), AnalyticsService.RecomputeAnalysis and
-// AnalyticsService.GetEconomy, so a rule field can never be dropped from
-// one call site. tickRate <= 0 means "not known here": Compute then fills
-// Config.TickRate from the match row, and Config.tr falls back to
-// DefaultTickRate (every current caller passes 0 for that reason).
+// pipeline (library.analyze), AnalyticsService.RecomputeAnalysis,
+// AnalyticsService.GetEconomy and report.BuildMatchData, so a rule field
+// can never be dropped from one call site. tickRate <= 0 means "not known
+// here": Compute then fills Config.TickRate from the match row, and
+// Config.tr falls back to DefaultTickRate (every current caller passes 0
+// for that reason).
 func ConfigFrom(c models.AnalysisConfig, tickRate float64) Config {
 	return Config{
 		TradeWindowS: c.TradeWindowS,

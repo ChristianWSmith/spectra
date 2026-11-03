@@ -78,13 +78,15 @@ func (s *ReplayService) GetReplayMeta(matchID int64) (ReplayMeta, error) {
 		FormatVersion: m.PositionFormat,
 	}
 
-	board, err := s.st.GetScoreboard(matchID, "name", false)
+	// Roster identity for the slot table (name + final side): the players
+	// read model, not the 37-column scoreboard — meta only needs identity.
+	refs, err := s.st.GetPlayerRefs(matchID)
 	if err != nil {
 		return ReplayMeta{}, err
 	}
-	bySteam := make(map[string]models.PlayerStatsRow, len(board))
-	for _, row := range board {
-		bySteam[row.SteamID] = row
+	bySteam := make(map[string]models.PlayerRef, len(refs))
+	for _, ref := range refs {
+		bySteam[ref.SteamID] = ref
 	}
 
 	rd, err := sidecar.Open(filepath.Join(data.MatchesDir(), strconv.FormatInt(matchID, 10)))
@@ -132,11 +134,11 @@ func (s *ReplayService) GetReplayMeta(matchID int64) (ReplayMeta, error) {
 
 // GetLandmarks returns position-stamped anchors for a match:
 // events carrying a position plus the bomb/grenade/kill landmark kinds,
-// ordered by tick, capped at 5000 rows. SteamID attributes the actor —
-// attacker for kills/damage, thrower for grenades, empty for bomb events
-// (the bomb entity is the subject, not a player).
+// ordered by tick, capped at store.LandmarkLimit rows. SteamID attributes
+// the actor — attacker for kills/damage, thrower for grenades, empty for
+// bomb events (the bomb entity is the subject, not a player).
 func (s *ReplayService) GetLandmarks(matchID int64) ([]Landmark, error) {
-	rows, err := s.st.GetLandmarks(matchID, 5000)
+	rows, err := s.st.GetLandmarks(matchID, store.LandmarkLimit)
 	if err != nil {
 		return nil, err
 	}

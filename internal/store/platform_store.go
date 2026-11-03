@@ -84,11 +84,15 @@ func (s *Store) ensureMetricsTable() error {
 	return nil
 }
 
+// pluginCols is the plugins-registry row (G1): the ONE list — the upsert
+// INSERT, GetPluginRow and ListPluginRows all use it verbatim.
+const pluginCols = `id, name, version, path, hash, enabled, error, installed_at`
+
 // UpsertPlugin inserts or replaces one plugins-registry row keyed by id.
 // installed_at is refreshed on every upsert (reinstall time).
 func (s *Store) UpsertPlugin(row PluginRow) error {
 	_, err := s.db.Exec(
-		`INSERT INTO plugins (id, name, version, path, hash, enabled, error, installed_at)
+		`INSERT INTO plugins (`+pluginCols+`)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		 ON CONFLICT(id) DO UPDATE SET
 			name = excluded.name, version = excluded.version, path = excluded.path,
@@ -107,11 +111,11 @@ func (s *Store) UpsertPlugin(row PluginRow) error {
 func (s *Store) GetPluginRow(id string) (PluginRow, error) {
 	var (
 		row       PluginRow
-		enabled   int
+		enabled   int64
 		installed time.Time
 	)
 	err := s.db.QueryRow(
-		`SELECT id, name, version, path, hash, enabled, error, installed_at
+		`SELECT `+pluginCols+`
 		 FROM plugins WHERE id = ?`, scrub(id),
 	).Scan(&row.ID, &row.Name, &row.Version, &row.Path, &row.Hash, &enabled, &row.Error, &installed)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -120,7 +124,7 @@ func (s *Store) GetPluginRow(id string) (PluginRow, error) {
 	if err != nil {
 		return PluginRow{}, fmt.Errorf("store: get plugin: %w", err)
 	}
-	row.Enabled = enabled != 0
+	row.Enabled = i2b(enabled)
 	row.InstalledAt = installed
 	return row, nil
 }
@@ -128,7 +132,7 @@ func (s *Store) GetPluginRow(id string) (PluginRow, error) {
 // ListPluginRows returns every registry row, id ASC.
 func (s *Store) ListPluginRows() ([]PluginRow, error) {
 	rows, err := s.db.Query(
-		`SELECT id, name, version, path, hash, enabled, error, installed_at
+		`SELECT ` + pluginCols + `
 		 FROM plugins ORDER BY id ASC`,
 	)
 	if err != nil {
@@ -139,13 +143,13 @@ func (s *Store) ListPluginRows() ([]PluginRow, error) {
 	for rows.Next() {
 		var (
 			row       PluginRow
-			enabled   int
+			enabled   int64
 			installed time.Time
 		)
 		if err := rows.Scan(&row.ID, &row.Name, &row.Version, &row.Path, &row.Hash, &enabled, &row.Error, &installed); err != nil {
 			return nil, fmt.Errorf("store: list plugins: %w", err)
 		}
-		row.Enabled = enabled != 0
+		row.Enabled = i2b(enabled)
 		row.InstalledAt = installed
 		out = append(out, row)
 	}
@@ -176,6 +180,11 @@ func (s *Store) DeletePluginRow(id string) error {
 // ReplacePluginMetrics swaps one plugin's metrics rows: deletes every row
 // with plugin_id, then upserts defs keyed by name (origin='plugin').
 // Pass nil/empty to just clear. Creates the metrics table when missing.
+//
+// Deliberately NOT replaceMatchRows: the delete keys on plugin_id (not
+// match_id), the INSERT carries a literal 'plugin' for origin (9 of its 10
+// placeholders) plus an ON CONFLICT upsert clause — neither fits the
+// helper's `WHERE match_id = ?` + plain-VALUES body.
 func (s *Store) ReplacePluginMetrics(pluginID string, defs []PluginMetricDef) error {
 	if err := s.ensureMetricsTable(); err != nil {
 		return err

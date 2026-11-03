@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ChristianWSmith/spectra/internal/analytics"
 	"github.com/ChristianWSmith/spectra/internal/models"
 	"github.com/ChristianWSmith/spectra/internal/store"
 )
@@ -161,6 +162,9 @@ func TestRenderMatchSnapshot(t *testing.T) {
 		"player0", "player9",
 		"## Scoreboard", "## Rounds", "## Economy", "## Clutches", "## Utility",
 		"| 1 | ct | ctWin |", // rounds table row
+		// Enriched buy classes render next to the stored round class
+		// (Class column stays the round_classifications label).
+		"| Class | CT buy | T buy |", "|  | full | full |",
 		"vtest-1",
 	} {
 		if !strings.Contains(out, want) {
@@ -253,5 +257,60 @@ func TestRenderPluginTemplate(t *testing.T) {
 	}
 	if out != "plug report: De_Mirage 3-2 (10 players)" {
 		t.Fatalf("plugin render = %q", out)
+	}
+}
+
+// TestMatchReportEconomyBuyClasses pins the approved surface-alignment
+// change: BuildMatchData runs the read-time enrichment (analytics.
+// EconomyRows under the stored analysis_config) exactly like
+// AnalyticsService.GetEconomy, so the report's economy rows carry the
+// per-side buy classes instead of empty ClassCT/ClassT.
+func TestMatchReportEconomyBuyClasses(t *testing.T) {
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	defer func() { _ = st.Close() }()
+	id := seedMatch(t, st)
+
+	data, err := BuildMatchData(st, id)
+	if err != nil {
+		t.Fatalf("BuildMatchData: %v", err)
+	}
+	if len(data.Economy) != 5 {
+		t.Fatalf("economy rows = %d, want 5", len(data.Economy))
+	}
+	// Fixture buys: CT 24000 / T 21000, thresholds 20000 (full) / 10000
+	// (force) — both sides are full buys, with the why string populated.
+	for _, r := range data.Economy {
+		if r.ClassCT != "full" || r.ClassT != "full" {
+			t.Errorf("round %d classes = %q/%q, want full/full", r.Round, r.ClassCT, r.ClassT)
+		}
+		if r.ClassWhyCT == "" || r.ClassWhyT == "" {
+			t.Errorf("round %d why strings empty: %q/%q", r.Round, r.ClassWhyCT, r.ClassWhyT)
+		}
+	}
+	if data.Economy[0].ClassWhyCT != "equip 24000 ≥ full-buy threshold 20000 → full buy" {
+		t.Errorf("ClassWhyCT = %q", data.Economy[0].ClassWhyCT)
+	}
+	// The same rows the Economy tab serves (one canonical enrichment).
+	raw, err := st.GetEconomy(id)
+	if err != nil {
+		t.Fatalf("GetEconomy: %v", err)
+	}
+	cfg, err := st.GetConfig()
+	if err != nil {
+		t.Fatalf("GetConfig: %v", err)
+	}
+	want := analytics.EconomyRows(raw, analytics.ConfigFrom(cfg, 0))
+	if len(want) != len(data.Economy) {
+		t.Fatalf("Economy tab rows = %d, report rows = %d", len(want), len(data.Economy))
+	}
+	for i := range want {
+		if want[i].ClassCT != data.Economy[i].ClassCT || want[i].ClassT != data.Economy[i].ClassT {
+			t.Errorf("round %d report classes %q/%q != Economy tab %q/%q",
+				want[i].Round, data.Economy[i].ClassCT, data.Economy[i].ClassT,
+				want[i].ClassCT, want[i].ClassT)
+		}
 	}
 }

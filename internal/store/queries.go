@@ -9,16 +9,46 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/models"
 )
 
-// matchColumns is the full matches column list in scan order.
-const matchColumns = `id, path, sha256, size, map, patch_version, tick_rate, duration_ticks,
-	playback_time_s, frames, server_name, client_name, game_dir, net_proto, is_pov,
-	warmup_rounds, real_rounds, score_ct, score_t, half_ct, half_t, side_switches,
-	entity_classes, end_entity_count, parser_version, extracted_at, parse_ms,
-	warnings_count, status, error,
-	position_format, sample_rate, position_frames, enc_messages`
+// matchColumns is the full matches column list in scan order — the ONE
+// matches list: GetMatch selects it verbatim, SaveExtracted's UPDATE walks
+// it (skipping the lifecycle-owned path/sha256/size and the sidecar-owned
+// position_format/sample_rate/position_frames columns) so a column added
+// here cannot silently drift from the extract write.
+var matchColumns = []string{
+	"id", "path", "sha256", "size", "map", "patch_version", "tick_rate",
+	"duration_ticks", "playback_time_s", "frames", "server_name", "client_name",
+	"game_dir", "net_proto", "is_pov", "warmup_rounds", "real_rounds",
+	"score_ct", "score_t", "half_ct", "half_t", "side_switches",
+	"entity_classes", "end_entity_count", "parser_version", "extracted_at",
+	"parse_ms", "warnings_count", "status", "error", "position_format",
+	"sample_rate", "position_frames", "enc_messages",
+}
 
-// landmarkLimit is the hard row cap for GetLandmarks.
-const landmarkLimit = 5000
+// matchColumnsSQL is matchColumns joined for SELECT text (built once —
+// GetMatch runs per view load).
+var matchColumnsSQL = strings.Join(matchColumns, ", ")
+
+// matchOwnedElsewhere are the matchColumns SaveExtracted must NOT rewrite:
+// path/sha256/size stay lifecycle-owned (CreateMatchRow wrote them) and
+// position_* stay sidecar-owned (SetPositionMeta writes them from the
+// sidecar's close meta).
+var matchOwnedElsewhere = map[string]bool{
+	"id": true, "path": true, "sha256": true, "size": true,
+	"position_format": true, "sample_rate": true, "position_frames": true,
+}
+
+// LandmarkLimit is the hard row cap for GetLandmarks (replayservice's
+// scrubber markers ride it).
+const LandmarkLimit = 5000
+
+// Event limits: DefaultEventLimit is what GetEvents applies when the caller
+// asks for <= 0 rows; MaxEventLimit is the largest limit any caller passes
+// (the analytics pass — it is a NAMED CEILING, not an enforced clamp:
+// queryEvents still honors an explicit larger limit).
+const (
+	DefaultEventLimit = 50000
+	MaxEventLimit     = 100000
+)
 
 // Shared SQL expressions — ONE definition per scope. K/D and KAST% are the
 // two metrics computed at both the per-match layer (one player_stats row of
@@ -27,6 +57,15 @@ const landmarkLimit = 5000
 // separate consts instead of one parameterized string. Keep them here, next
 // to each other: the whole point is that the trend/profile queries and the
 // scoreboard cannot drift from the career rollup.
+//
+// Zero-denominator spelling, deliberate scope variants (do NOT unify):
+// the store floors the denominator — `MAX(deaths, 1)` — so a player with no
+// deaths reports K/D 0 instead of NULL, because the scoreboard/trend cells
+// are typed floats with no "missing" state. internal/metrics expresses the
+// same idea generically as `1.0*a1 / NULLIF(a2, 0)` (ratio()): there a NULL
+// denominator is the honest "no rows to divide by" the preview renders as
+// Value 0 with N, and the operands are user-chosen columns the compiler
+// cannot assume a floor for. Same intent, two scopes, two spellings.
 const (
 	// kdPerMatchSQL is kills/deaths for ONE match, deaths floored at 1
 	// (GetScoreboard's SELECT and GetTrend's per-match series).
@@ -99,6 +138,42 @@ var scoreboardSort = map[string]string{
 	"money_spent":    "ps.money_spent_total",
 }
 
+// playersJoin renders the ONE players-join idiom (roster display names by
+// (match, SteamID)): pass joinLeft for the name-bearing form, joinInner
+// where a row without a roster entry must be dropped (GetScoreboard /
+// GetCombatStats' base rows), and guard=true to skip an empty SteamID —
+// the fragment then tests the column for non-empty BEFORE the lookup, so a
+// world/absent actor never picks up the single players row a match may
+// carry with an empty steam_id. Every LEFT JOIN is guarded (that is the
+// point of the guard); the INNER forms stay unguarded because guarding
+// them would FILTER rows out instead of nulling a name, which is a
+// result-set change, not a naming rule.
+const (
+	joinLeft  = "LEFT JOIN"
+	joinInner = "JOIN"
+)
+
+func playersJoin(kind, alias, matchCol, steamCol string, guard bool) string {
+	var b strings.Builder
+	b.WriteString(kind)
+	b.WriteString(" players ")
+	b.WriteString(alias)
+	b.WriteString(" ON ")
+	b.WriteString(alias)
+	b.WriteString(".match_id = ")
+	b.WriteString(matchCol)
+	if guard {
+		b.WriteString(" AND ")
+		b.WriteString(steamCol)
+		b.WriteString(" <> ''")
+	}
+	b.WriteString(" AND ")
+	b.WriteString(alias)
+	b.WriteString(".steam_id = ")
+	b.WriteString(steamCol)
+	return b.String()
+}
+
 // eventRowCols/eventRowFrom select typed timeline columns with player
 // display names joined for attacker/victim/assister. The trailing
 // e.pos_* columns are NULL for events without a source position; the
@@ -110,23 +185,34 @@ const eventRowCols = `e.id, e.seq, e.tick, e.round, e.kind,
 	e.attacker_blind, e.assisted_flash, e.distance, e.hitgroup, e.dmg, e.site,
 	e.pos_x, e.pos_y, e.pos_z, e.apos_x, e.apos_y, e.apos_z`
 
-const eventRowFrom = ` FROM events e
-	LEFT JOIN players ap ON ap.match_id = e.match_id AND e.attacker <> '' AND ap.steam_id = e.attacker
-	LEFT JOIN players vp ON vp.match_id = e.match_id AND e.victim <> '' AND vp.steam_id = e.victim
-	LEFT JOIN players asp ON asp.match_id = e.match_id AND e.assister <> '' AND asp.steam_id = e.assister`
+var eventRowFrom = ` FROM events e
+	` + playersJoin(joinLeft, "ap", "e.match_id", "e.attacker", true) + `
+	` + playersJoin(joinLeft, "vp", "e.match_id", "e.victim", true) + `
+	` + playersJoin(joinLeft, "asp", "e.match_id", "e.assister", true)
 
 // roundRowSelect joins display names for MVP/first-kill/first-death
 // ("" when the SteamID is absent or unknown).
-const roundRowSelect = `SELECT r.number, r.winner, r.reason, r.duration_s, r.warmup, r.pregame, r.bomb_site,
+var roundRowSelect = `SELECT r.number, r.winner, r.reason, r.duration_s, r.warmup, r.pregame, r.bomb_site,
 	r.mvp, COALESCE(mp.name, ''), r.mvp_reason, r.equip_ct, r.equip_t,
 	(SELECT COUNT(*) FROM events e WHERE e.match_id = r.match_id AND e.round = r.number AND e.kind = 'kill'),
 	r.first_kill_steam, COALESCE(fp.name, ''), r.first_death_steam, COALESCE(dp.name, ''),
 	r.start_tick, r.end_tick, r.freeze_end_tick
 	FROM rounds r
-	LEFT JOIN players mp ON mp.match_id = r.match_id AND r.mvp <> '' AND mp.steam_id = r.mvp
-	LEFT JOIN players fp ON fp.match_id = r.match_id AND r.first_kill_steam <> '' AND fp.steam_id = r.first_kill_steam
-	LEFT JOIN players dp ON dp.match_id = r.match_id AND r.first_death_steam <> '' AND dp.steam_id = r.first_death_steam
+	` + playersJoin(joinLeft, "mp", "r.match_id", "r.mvp", true) + `
+	` + playersJoin(joinLeft, "fp", "r.match_id", "r.first_kill_steam", true) + `
+	` + playersJoin(joinLeft, "dp", "r.match_id", "r.first_death_steam", true) + `
 	WHERE r.match_id = ?`
+
+// matchSummaryCols/matchSummaryFrom are the library-list projection and its
+// teams join — ONE denormalized read model shared by ListMatches
+// (search/sort), GetMatchSummary (one row) and GetTeamNames (names only).
+const matchSummaryCols = `m.id, m.path, m.map, m.size, m.score_ct, m.score_t,
+	COALESCE(ct.name, ''), COALESCE(t.name, ''), m.real_rounds, m.playback_time_s,
+	m.extracted_at, m.status, m.error, m.sha256`
+
+const matchSummaryFrom = ` FROM matches m
+	LEFT JOIN teams ct ON ct.match_id = m.id AND ct.side = 'ct'
+	LEFT JOIN teams t ON t.match_id = m.id AND t.side = 't'`
 
 // ListMatches returns the library list: matches matching query (a
 // case-insensitive LIKE across map, path and both team names; "" matches
@@ -141,12 +227,7 @@ func (s *Store) ListMatches(query, sortKey string, desc bool) ([]models.MatchSum
 		dir = "DESC"
 	}
 	var b strings.Builder
-	b.WriteString(`SELECT m.id, m.path, m.map, m.size, m.score_ct, m.score_t,
-		COALESCE(ct.name, ''), COALESCE(t.name, ''), m.real_rounds, m.playback_time_s,
-		m.extracted_at, m.status, m.error, m.sha256
-		FROM matches m
-		LEFT JOIN teams ct ON ct.match_id = m.id AND ct.side = 'ct'
-		LEFT JOIN teams t ON t.match_id = m.id AND t.side = 't'`)
+	b.WriteString(`SELECT ` + matchSummaryCols + matchSummaryFrom)
 	var args []any
 	if q := scrub(query); q != "" {
 		like := "%" + q + "%"
@@ -162,18 +243,9 @@ func (s *Store) ListMatches(query, sortKey string, desc bool) ([]models.MatchSum
 	defer rows.Close()
 	var out []models.MatchSummary
 	for rows.Next() {
-		var (
-			mm        models.MatchSummary
-			extracted sql.NullTime
-		)
-		if err := rows.Scan(
-			&mm.ID, &mm.Path, &mm.Map, &mm.Size, &mm.ScoreCT, &mm.ScoreT, &mm.CTName, &mm.TName,
-			&mm.RealRounds, &mm.DurationS, &extracted, &mm.Status, &mm.Error, &mm.SHA256,
-		); err != nil {
+		mm, err := scanMatchSummary(rows)
+		if err != nil {
 			return nil, fmt.Errorf("store: list matches: %w", err)
-		}
-		if extracted.Valid {
-			mm.ExtractedAt = extracted.Time
 		}
 		out = append(out, mm)
 	}
@@ -183,13 +255,62 @@ func (s *Store) ListMatches(query, sortKey string, desc bool) ([]models.MatchSum
 	return out, nil
 }
 
+// GetMatchSummary returns ONE match's library-list row (the ListMatches
+// projection, no search/sort) — the single-match read for callers that
+// would otherwise list the whole library and filter (ErrNotFound when
+// absent).
+func (s *Store) GetMatchSummary(id int64) (models.MatchSummary, error) {
+	row := s.db.QueryRow(`SELECT `+matchSummaryCols+matchSummaryFrom+` WHERE m.id = ?`, id)
+	mm, err := scanMatchSummary(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return models.MatchSummary{}, ErrNotFound
+	}
+	if err != nil {
+		return models.MatchSummary{}, fmt.Errorf("store: get match summary: %w", err)
+	}
+	return mm, nil
+}
+
+// GetTeamNames returns a match's two display names: the score line names
+// TEAMS, never sides (sides switch at halftime — see the teams join). Both
+// are "" when the extract recorded none (callers synthesize `team_<player>`
+// or fall back to the bare side). ErrNotFound when the match is absent.
+func (s *Store) GetTeamNames(id int64) (ctName, tName string, err error) {
+	err = s.db.QueryRow(
+		`SELECT COALESCE(ct.name, ''), COALESCE(t.name, '')`+matchSummaryFrom+` WHERE m.id = ?`, id,
+	).Scan(&ctName, &tName)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", "", ErrNotFound
+	}
+	if err != nil {
+		return "", "", fmt.Errorf("store: get team names: %w", err)
+	}
+	return ctName, tName, nil
+}
+
+// scanMatchSummary reads the matchSummaryCols projection.
+func scanMatchSummary(row interface{ Scan(...any) error }) (models.MatchSummary, error) {
+	var (
+		mm        models.MatchSummary
+		extracted sql.NullTime
+	)
+	if err := row.Scan(
+		&mm.ID, &mm.Path, &mm.Map, &mm.Size, &mm.ScoreCT, &mm.ScoreT, &mm.CTName, &mm.TName,
+		&mm.RealRounds, &mm.DurationS, &extracted, &mm.Status, &mm.Error, &mm.SHA256,
+	); err != nil {
+		return models.MatchSummary{}, err
+	}
+	mm.ExtractedAt = nullTime(extracted)
+	return mm, nil
+}
+
 // GetMatch returns one match header row (ErrNotFound when absent).
 func (s *Store) GetMatch(id int64) (*models.Match, error) {
 	var (
 		m         models.Match
 		extracted sql.NullTime
 	)
-	err := s.db.QueryRow(`SELECT `+matchColumns+` FROM matches WHERE id = ?`, id).Scan(
+	err := s.db.QueryRow(`SELECT `+matchColumnsSQL+` FROM matches WHERE id = ?`, id).Scan(
 		&m.ID, &m.Path, &m.SHA256, &m.Size, &m.Map, &m.PatchVersion, &m.TickRate,
 		&m.DurationTicks, &m.PlaybackTimeS, &m.Frames, &m.ServerName, &m.ClientName,
 		&m.GameDir, &m.NetProto, &m.IsPOV, &m.WarmupRounds, &m.RealRounds, &m.ScoreCT,
@@ -204,9 +325,7 @@ func (s *Store) GetMatch(id int64) (*models.Match, error) {
 	if err != nil {
 		return nil, fmt.Errorf("store: get match: %w", err)
 	}
-	if extracted.Valid {
-		m.ExtractedAt = extracted.Time
-	}
+	m.ExtractedAt = nullTime(extracted)
 	return &m, nil
 }
 
@@ -235,7 +354,7 @@ func (s *Store) GetScoreboard(id int64, sortKey string, desc bool) ([]models.Pla
 			ps.flashed_times, ps.bomb_plants, ps.bomb_defuses, ps.mvps, ps.score,
 			ps.teamkills, ps.suicides, ps.money_spent_total, ps.kills_by_weapon, ps.damage_by_weapon
 		FROM player_stats ps
-		JOIN players p ON p.match_id = ps.match_id AND p.steam_id = ps.steam_id
+		`+playersJoin(joinInner, "p", "ps.match_id", "ps.steam_id", false)+`
 		WHERE ps.match_id = ?
 		ORDER BY `+order+` `+dir+`, p.name ASC`,
 		id,
@@ -346,12 +465,43 @@ func scanRoundRow(row interface{ Scan(...any) error }) (models.RoundRow, error) 
 	return rr, err
 }
 
+// whereClause accumulates the optional AND'ed filters of a read whose base
+// WHERE clause is fixed (match-scoped): add each fragment with its bound
+// values, render with sql() ("" when nothing was added), bind bound() in
+// order after the base parameters. This is the ONE optional-filter idiom —
+// it replaces both the append-the-AND loop and the optional-placeholder
+// trick (a bound empty-string parameter ORed with the real filter — dead
+// weight whenever the filter is off), which tied the placeholder count to
+// the filter state.
+type whereClause struct {
+	parts []string
+	args  []any
+}
+
+// add appends one AND'ed fragment and its arguments.
+func (w *whereClause) add(clause string, args ...any) {
+	w.parts = append(w.parts, clause)
+	w.args = append(w.args, args...)
+}
+
+// sql renders the fragments as ` AND a AND b` (empty string when no filter
+// was added — the base WHERE then stands alone).
+func (w *whereClause) sql() string {
+	if len(w.parts) == 0 {
+		return ""
+	}
+	return " AND " + strings.Join(w.parts, " AND ")
+}
+
+// bound returns the filter arguments in clause order.
+func (w *whereClause) bound() []any { return w.args }
+
 // GetEvents returns typed timeline rows for a filter, ordered by seq.
 // Round < 0 selects all rounds (the sentinel the timeline, heatmaps and
 // analytics pass over the whole match); Kind "" all kinds; SteamID matches
-// attacker or victim. Limit <= 0 means the hard cap of 50000. Round detail
-// needs exact matching for the negative knife/warmup round numbers instead
-// — see queryEvents.
+// attacker or victim. Limit <= 0 means the hard cap of DefaultEventLimit.
+// Round detail needs exact matching for the negative knife/warmup round
+// numbers instead — see queryEvents.
 func (s *Store) GetEvents(f models.EventFilter) ([]models.EventRow, error) {
 	return s.queryEvents(f, false)
 }
@@ -362,58 +512,50 @@ func (s *Store) GetEvents(f models.EventFilter) ([]models.EventRow, error) {
 // round's rows, not the whole match). false keeps the documented
 // EventFilter contract (Round < 0 = all rounds).
 func (s *Store) queryEvents(f models.EventFilter, exactRound bool) ([]models.EventRow, error) {
-	where := []string{"e.match_id = ?"}
-	args := []any{f.MatchID}
+	var w whereClause
 	if f.Round >= 0 || exactRound {
-		where = append(where, "e.round = ?")
-		args = append(args, f.Round)
+		w.add("e.round = ?", f.Round)
 	}
 	if k := scrub(f.Kind); k != "" {
-		where = append(where, "e.kind = ?")
-		args = append(args, k)
+		w.add("e.kind = ?", k)
 	}
 	if sid := scrub(f.SteamID); sid != "" {
-		where = append(where, "(e.attacker = ? OR e.victim = ?)")
-		args = append(args, sid, sid)
+		w.add("(e.attacker = ? OR e.victim = ?)", sid, sid)
 	}
 	// M3 advanced filters: every clause is an AND'ed bound
 	// parameter; zero/""/nil means unconstrained.
-	if w := scrub(f.Weapon); w != "" {
-		where = append(where, "e.weapon = ?")
-		args = append(args, w)
+	if ww := scrub(f.Weapon); ww != "" {
+		w.add("e.weapon = ?", ww)
 	}
 	if f.TickFrom > 0 {
-		where = append(where, "e.tick >= ?")
-		args = append(args, f.TickFrom)
+		w.add("e.tick >= ?", f.TickFrom)
 	}
 	if f.TickTo > 0 {
-		where = append(where, "e.tick <= ?")
-		args = append(args, f.TickTo)
+		w.add("e.tick <= ?", f.TickTo)
 	}
 	if f.DmgMin > 0 {
-		where = append(where, "e.dmg >= ?")
-		args = append(args, f.DmgMin)
+		w.add("e.dmg >= ?", f.DmgMin)
 	}
 	if f.DmgMax > 0 {
-		where = append(where, "e.dmg <= ?")
-		args = append(args, f.DmgMax)
+		w.add("e.dmg <= ?", f.DmgMax)
 	}
 	if f.DistanceMax > 0 {
-		where = append(where, "e.distance <= ?")
-		args = append(args, f.DistanceMax)
+		w.add("e.distance <= ?", f.DistanceMax)
 	}
 	if f.HeadshotOnly {
-		where = append(where, "e.headshot = 1")
+		w.add("e.headshot = 1")
 	}
 	if bb := f.BBox; bb != nil {
-		where = append(where, "e.pos_x BETWEEN ? AND ? AND e.pos_y BETWEEN ? AND ?")
-		args = append(args, bb.MinX, bb.MaxX, bb.MinY, bb.MaxY)
+		w.add("e.pos_x BETWEEN ? AND ? AND e.pos_y BETWEEN ? AND ?", bb.MinX, bb.MaxX, bb.MinY, bb.MaxY)
 	}
 	limit := f.Limit
 	if limit <= 0 {
-		limit = 50000
+		limit = DefaultEventLimit
 	}
-	q := `SELECT ` + eventRowCols + eventRowFrom + ` WHERE ` + strings.Join(where, " AND ") + ` ORDER BY e.seq LIMIT ?`
+	q := `SELECT ` + eventRowCols + eventRowFrom + ` WHERE e.match_id = ?` + w.sql() + ` ORDER BY e.seq LIMIT ?`
+	args := make([]any, 0, 1+len(w.args)+2)
+	args = append(args, f.MatchID)
+	args = append(args, w.bound()...)
 	args = append(args, limit)
 	if f.Offset > 0 {
 		q += ` OFFSET ?`
@@ -480,10 +622,10 @@ var landmarkKinds = []string{
 
 // GetLandmarks returns position-stamped anchor events for one match —
 // every event carrying a position plus the landmark kinds above — ordered
-// by tick/seq. limit <= 0 means the hard cap of 5000.
+// by tick/seq. limit <= 0 means the hard cap of LandmarkLimit.
 func (s *Store) GetLandmarks(matchID int64, limit int) ([]models.EventRow, error) {
-	if limit <= 0 || limit > landmarkLimit {
-		limit = landmarkLimit
+	if limit <= 0 || limit > LandmarkLimit {
+		limit = LandmarkLimit
 	}
 	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(landmarkKinds)), ",")
 	q := `SELECT ` + eventRowCols + eventRowFrom +
@@ -542,12 +684,12 @@ func (s *Store) queryChat(matchID int64, round int, exactRound bool) ([]models.C
 	for rows.Next() {
 		var (
 			c         models.ChatRow
-			decrypted int
+			decrypted int64
 		)
 		if err := rows.Scan(&c.ID, &c.Tick, &c.Round, &c.SteamID, &c.Name, &c.Text, &c.Kind, &decrypted); err != nil {
 			return nil, fmt.Errorf("store: get chat: %w", err)
 		}
-		c.Decrypted = decrypted != 0
+		c.Decrypted = i2b(decrypted)
 		out = append(out, c)
 	}
 	if err := rows.Err(); err != nil {
@@ -617,7 +759,9 @@ func scanEventRow(row interface{ Scan(...any) error }) (models.EventRow, error) 
 // GetGenericEvents returns raw game-event rows for one event name ("" = all
 // names), in insertion order — the payload viewer's data source. limit <= 0
 // defaults to 500 (hard cap 5000): payloads are JSON blobs, so callers page
-// rather than pull a whole match's worth.
+// rather than pull a whole match's worth. The optional name filter goes
+// through the shared whereClause (the old form bound a dead
+// optional-placeholder parameter — see TestGetGenericEventsFilterEquivalence).
 func (s *Store) GetGenericEvents(id int64, name string, limit int) ([]models.GenericEvent, error) {
 	if limit <= 0 {
 		limit = 500
@@ -625,9 +769,17 @@ func (s *Store) GetGenericEvents(id int64, name string, limit int) ([]models.Gen
 	if limit > 5000 {
 		limit = 5000
 	}
+	var w whereClause
+	if name != "" {
+		w.add("name = ?", name)
+	}
 	q := `SELECT name, tick, round, payload_json FROM generic_events
-		WHERE match_id = ? AND (? = '' OR name = ?) ORDER BY rowid LIMIT ?`
-	rows, err := s.db.Query(q, id, name, name, limit)
+		WHERE match_id = ?` + w.sql() + ` ORDER BY rowid LIMIT ?`
+	args := make([]any, 0, 1+len(w.args)+1)
+	args = append(args, id)
+	args = append(args, w.bound()...)
+	args = append(args, limit)
+	rows, err := s.db.Query(q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("store: get generic events: %w", err)
 	}

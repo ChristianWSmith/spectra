@@ -60,7 +60,9 @@ type HistoryEntry struct {
 	RanAt string `json:"ranAt"`
 }
 
-// timeFormat matches the other services' timestamp rendering.
+// timeFormat is THE timestamp layout every service renders JSON times
+// with (query history/saved queries, saved filters, profile history) —
+// one const, never a per-service literal.
 const timeFormat = "2006-01-02T15:04:05Z07:00"
 
 // QueryService — see doc comment above.

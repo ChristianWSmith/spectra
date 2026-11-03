@@ -33,7 +33,7 @@ func Compute(st *store.Store, matchID int64, cfg Config) error {
 	if err != nil {
 		return fmt.Errorf("analytics: load economy: %w", err)
 	}
-	events, err := st.GetEvents(models.EventFilter{MatchID: matchID, Round: -1, Limit: 100000})
+	events, err := st.GetEvents(models.EventFilter{MatchID: matchID, Round: -1, Limit: store.MaxEventLimit})
 	if err != nil {
 		return fmt.Errorf("analytics: load events: %w", err)
 	}

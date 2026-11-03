@@ -125,9 +125,10 @@ func RunPreview(st *store.Store, def Def, scope string, limit int) (Preview, *Pa
 }
 
 // resolveLabels fills Row.Label: SteamID64-shaped groups resolve to the
-// players-table name (one batched lookup; scoped match, else latest by
-// match id), everything else falls back to its raw key. Best effort — a
-// label lookup failure never fails the preview.
+// players-table name (scoped match → store.GetPlayerRefs, the roster read
+// model; library-wide → one batched IN-list lookup, latest match wins),
+// everything else falls back to its raw key. Best effort — a label lookup
+// failure never fails the preview (it gives up quietly, labels stay "").
 func resolveLabels(st *store.Store, rows []PreviewRow, matchID int64) {
 	names := map[string]string{}
 	var ids []string
@@ -139,37 +140,49 @@ func resolveLabels(st *store.Store, rows []PreviewRow, matchID int64) {
 		seen[r.Group] = true
 		ids = append(ids, r.Group)
 	}
-	for start := 0; start < len(ids); start += 400 {
-		end := start + 400
-		if end > len(ids) {
-			end = len(ids)
-		}
-		chunk := ids[start:end]
-		q := `SELECT steam_id, name FROM players WHERE steam_id IN (` + strings.TrimSuffix(strings.Repeat("?,", len(chunk)), ",") + `)`
-		args := make([]any, 0, len(chunk)+1)
-		for _, id := range chunk {
-			args = append(args, id)
-		}
+	if len(ids) > 0 {
 		if matchID > 0 {
-			q += ` AND match_id = ?`
-			args = append(args, matchID)
-		}
-		q += ` ORDER BY match_id DESC`
-		res, err := st.RunReadOnly(q, args, len(chunk), PreviewTimeoutMS)
-		if err != nil {
-			return // labels are cosmetic — give up quietly
-		}
-		for _, r := range res.Rows {
-			if len(r) != 2 {
-				continue
+			// Scoped preview: every id must come from THIS match's roster —
+			// GetPlayerRefs is exactly that read (no chunked IN-list needed).
+			refs, err := st.GetPlayerRefs(matchID)
+			if err != nil {
+				return // labels are cosmetic — give up quietly
 			}
-			sid, _ := r[0].(string)
-			name, _ := r[1].(string)
-			if sid == "" {
-				continue
+			for _, ref := range refs {
+				if ref.SteamID != "" {
+					names[ref.SteamID] = ref.Name
+				}
 			}
-			if _, dup := names[sid]; !dup {
-				names[sid] = name // ORDER BY match_id DESC → first hit is latest
+		} else {
+			// Library-wide: the latest name per SteamID across matches.
+			for start := 0; start < len(ids); start += 400 {
+				end := start + 400
+				if end > len(ids) {
+					end = len(ids)
+				}
+				chunk := ids[start:end]
+				q := `SELECT steam_id, name FROM players WHERE steam_id IN (` + strings.TrimSuffix(strings.Repeat("?,", len(chunk)), ",") + `) ORDER BY match_id DESC`
+				args := make([]any, 0, len(chunk))
+				for _, id := range chunk {
+					args = append(args, id)
+				}
+				res, err := st.RunReadOnly(q, args, len(chunk), PreviewTimeoutMS)
+				if err != nil {
+					return // labels are cosmetic — give up quietly
+				}
+				for _, r := range res.Rows {
+					if len(r) != 2 {
+						continue
+					}
+					sid, _ := r[0].(string)
+					name, _ := r[1].(string)
+					if sid == "" {
+						continue
+					}
+					if _, dup := names[sid]; !dup {
+						names[sid] = name // ORDER BY match_id DESC → first hit is latest
+					}
+				}
 			}
 		}
 	}
@@ -225,7 +238,11 @@ func percentileOf(sorted []float64, p float64) float64 {
 	return sorted[lo] + (pos-float64(lo))*(sorted[hi]-sorted[lo])
 }
 
-// numeric coerces a scanned driver value to float64.
+// numeric coerces a scanned driver value to float64. Values arrive through
+// store.RunReadOnly, which already normalizes driver types (the store's
+// normValue: []byte → string, time.Time → RFC3339Nano), so the coercers
+// below only ever see JSON scalars — there is deliberately NO second
+// []byte/time normalization here (one canonical normalizer, in the store).
 func numeric(v any) (float64, bool) {
 	switch t := v.(type) {
 	case float64:

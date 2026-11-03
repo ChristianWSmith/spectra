@@ -184,7 +184,7 @@ func (s *ProfileService) GetProfile(steamID string) (Profile, error) {
 			ADR: h.ADR, KASTPct: h.KASTPct,
 		}
 		if !h.ExtractedAt.IsZero() {
-			row.ExtractedAt = h.ExtractedAt.Format("2006-01-02T15:04:05Z07:00")
+			row.ExtractedAt = h.ExtractedAt.Format(timeFormat)
 		}
 		p.History = append(p.History, row)
 	}

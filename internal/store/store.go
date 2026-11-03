@@ -95,6 +95,47 @@ func b2i(b bool) int64 {
 	return 0
 }
 
+// i2b is b2i's inverse for scanned INTEGER columns (0/1 → bool).
+func i2b(v int64) bool { return v != 0 }
+
+// nullTime dereferences a scanned nullable DATETIME: the zero time on NULL
+// (ListMatches/GetMatch/GetPlayerHistory/scanMetric — "never extracted").
+func nullTime(nt sql.NullTime) time.Time {
+	if !nt.Valid {
+		return time.Time{}
+	}
+	return nt.Time
+}
+
+// nullTimePtr dereferences a scanned nullable DATETIME into an OPTIONAL
+// timestamp: nil on NULL (jobs.started_at/finished_at before the job
+// reaches that stage).
+func nullTimePtr(nt sql.NullTime) *time.Time {
+	if !nt.Valid {
+		return nil
+	}
+	t := nt.Time
+	return &t
+}
+
+// nullFloat dereferences a scanned nullable REAL into an optional float:
+// nil on NULL (utility_events.det_x/det_y — grenades with no detonation
+// position).
+func nullFloat(nf sql.NullFloat64) *float64 {
+	if !nf.Valid {
+		return nil
+	}
+	v := nf.Float64
+	return &v
+}
+
+// isUniqueErr reports whether err is SQLite's UNIQUE-constraint violation
+// (the driver message carries "UNIQUE" — used to turn duplicate names into
+// user-facing errors).
+func isUniqueErr(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "UNIQUE")
+}
+
 // nvl dereferences a nullable float for SQL binding: nil becomes an untyped
 // NULL, non-nil its value (events.pos_* are NULL-able by design).
 func nvl(p *float64) any {

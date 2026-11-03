@@ -12,12 +12,26 @@ import (
 // voice_chunks (migration 004). The DB is the chunk index — audio payloads
 // stay in the sidecar's per-player .opus files (internal/sidecar).
 
+// Per-table column lists (G1). voicePresenceCols is the WHOLE row (the
+// reader selects the identical list); voiceChunksCols is the row without
+// the match_id key column (the writer prefixes `match_id, `).
+const (
+	voicePresenceCols = `match_id, chunk_count, player_count, caster_count, key_found, out_sample_rate`
+
+	voiceChunksCols = `seq, steam_id, tick, round, byte_off, len, caster, section`
+)
+
 // InsertVoice replaces a match's voice index in one transaction
 // (delete-then-insert — reprocess safe). Round is computed per row here
 // from the match's round tick ranges (rows arrive with Round 0: writers
 // never know about rounds; library passes em.Rounds straight from the
 // parse). Callers run it after SaveExtracted so the match row exists.
 // A 123k-chunk match is one batched txn (measured import target).
+//
+// Not the replaceMatchRows shape: the transaction spans TWO tables plus the
+// single presence row, and the per-row error names the failing index — so
+// the shared helper's one-table BEGIN/DELETE/INSERT body does not fit
+// without splitting the transaction (atomicity) or relabeling errors.
 func (s *Store) InsertVoice(matchID int64, rows []models.VoiceIndexRow, presence models.VoicePresenceRow, rounds []models.Round) error {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -31,7 +45,7 @@ func (s *Store) InsertVoice(matchID int64, rows []models.VoiceIndexRow, presence
 		}
 	}
 	if _, err := tx.Exec(
-		`INSERT INTO voice_presence (match_id, chunk_count, player_count, caster_count, key_found, out_sample_rate)
+		`INSERT INTO voice_presence (`+voicePresenceCols+`)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
 		matchID, presence.ChunkCount, presence.PlayerCount, presence.CasterCount,
 		b2i(presence.KeyFound), presence.OutSampleRate,
@@ -40,7 +54,7 @@ func (s *Store) InsertVoice(matchID int64, rows []models.VoiceIndexRow, presence
 	}
 
 	stmt, err := tx.Prepare(
-		`INSERT INTO voice_chunks (match_id, seq, steam_id, tick, round, byte_off, len, caster, section)
+		`INSERT INTO voice_chunks (match_id, ` + voiceChunksCols + `)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
@@ -48,8 +62,9 @@ func (s *Store) InsertVoice(matchID int64, rows []models.VoiceIndexRow, presence
 	}
 	defer stmt.Close()
 	for i, r := range rows {
+		round, _ := RoundForTick(rounds, r.Tick)
 		if _, err := stmt.Exec(
-			matchID, i, scrub(r.SteamID), r.Tick, roundForTick(rounds, r.Tick),
+			matchID, i, scrub(r.SteamID), r.Tick, round,
 			r.Off, r.Len, b2i(r.Caster), r.Section,
 		); err != nil {
 			return fmt.Errorf("store: insert voice chunk %d: %w", i, err)
@@ -61,17 +76,19 @@ func (s *Store) InsertVoice(matchID int64, rows []models.VoiceIndexRow, presence
 	return nil
 }
 
-// roundForTick returns the round number whose [StartTick, EndTick] range
-// contains tick (rounds are chronological and non-overlapping; 0 when
-// outside every range — warmup-less gaps between rounds attribute to the
-// preceding round via inclusive EndTick, else 0).
-func roundForTick(rounds []models.Round, tick int) int {
+// RoundForTick returns the round number whose [StartTick, EndTick] range
+// contains tick, and whether any round did (false → 0 — a tick outside
+// every range, e.g. before the first freeze). Rounds are chronological and
+// non-overlapping; a warmup-less gap between rounds attributes to the
+// preceding round via inclusive EndTick. The one implementation: the voice
+// writer (chunk → round) and the heatmap's tick→round lookup both use it.
+func RoundForTick(rounds []models.Round, tick int) (int, bool) {
 	for _, r := range rounds {
 		if tick >= r.StartTick && tick <= r.EndTick {
-			return r.Number
+			return r.Number, true
 		}
 	}
-	return 0
+	return 0, false
 }
 
 // GetVoicePresence returns a match's voice_presence row (ErrNotFound when
@@ -79,9 +96,9 @@ func roundForTick(rounds []models.Round, tick int) int {
 // "badge off").
 func (s *Store) GetVoicePresence(matchID int64) (models.VoicePresenceRow, error) {
 	var p models.VoicePresenceRow
-	var keyFound int
+	var keyFound int64
 	err := s.db.QueryRow(
-		`SELECT match_id, chunk_count, player_count, caster_count, key_found, out_sample_rate
+		`SELECT `+voicePresenceCols+`
 		 FROM voice_presence WHERE match_id = ?`, matchID,
 	).Scan(&p.MatchID, &p.ChunkCount, &p.PlayerCount, &p.CasterCount, &keyFound, &p.OutSampleRate)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -90,7 +107,7 @@ func (s *Store) GetVoicePresence(matchID int64) (models.VoicePresenceRow, error)
 	if err != nil {
 		return models.VoicePresenceRow{}, fmt.Errorf("store: get voice presence: %w", err)
 	}
-	p.KeyFound = keyFound != 0
+	p.KeyFound = i2b(keyFound)
 	return p, nil
 }
 
@@ -101,7 +118,7 @@ func (s *Store) GetVoicePlayers(matchID int64) ([]models.VoicePlayerRow, error) 
 	rows, err := s.db.Query(
 		`SELECT v.steam_id, COALESCE(p.name, ''), COUNT(*), MIN(v.tick), MAX(v.tick)
 		 FROM voice_chunks v
-		 LEFT JOIN players p ON p.match_id = v.match_id AND p.steam_id = v.steam_id
+		 `+playersJoin(joinLeft, "p", "v.match_id", "v.steam_id", true)+`
 		 WHERE v.match_id = ?
 		 GROUP BY v.steam_id
 		 ORDER BY COUNT(*) DESC, v.steam_id ASC`, matchID,
@@ -161,7 +178,7 @@ func (s *Store) GetVoiceTicks(matchID int64, steamID string) ([]int, error) {
 // carry Off/Len into that player's .opus file).
 func (s *Store) GetVoiceChunkRange(matchID int64, steamID string, from, to int) ([]models.VoiceIndexRow, error) {
 	rows, err := s.db.Query(
-		`SELECT seq, steam_id, tick, round, byte_off, len, caster, section
+		`SELECT `+voiceChunksCols+`
 		 FROM voice_chunks
 		 WHERE match_id = ? AND steam_id = ? AND tick BETWEEN ? AND ?
 		 ORDER BY tick, seq`, matchID, scrub(steamID), from, to,
@@ -175,12 +192,12 @@ func (s *Store) GetVoiceChunkRange(matchID int64, steamID string, from, to int) 
 		var (
 			r      models.VoiceIndexRow
 			seq    int
-			caster int
+			caster int64
 		)
 		if err := rows.Scan(&seq, &r.SteamID, &r.Tick, &r.Round, &r.Off, &r.Len, &caster, &r.Section); err != nil {
 			return nil, fmt.Errorf("store: get voice chunk range: %w", err)
 		}
-		r.Caster = caster != 0
+		r.Caster = i2b(caster)
 		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {

@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/ChristianWSmith/spectra/internal/models"
@@ -33,9 +32,7 @@ func scanMetric(row interface{ Scan(...any) error }) (models.MetricRow, error) {
 	if err != nil {
 		return models.MetricRow{}, err
 	}
-	if createdAt.Valid {
-		m.CreatedAt = createdAt.Time
-	}
+	m.CreatedAt = nullTime(createdAt)
 	return m, nil
 }
 
@@ -89,7 +86,7 @@ func (s *Store) CreateMetric(m models.MetricRow) (models.MetricRow, error) {
 		scrub(m.Denominator), time.Now(),
 	)
 	if err != nil {
-		if strings.Contains(err.Error(), "UNIQUE") {
+		if isUniqueErr(err) {
 			return models.MetricRow{}, fmt.Errorf("store: a metric named %q already exists", scrub(m.Name))
 		}
 		return models.MetricRow{}, fmt.Errorf("store: create metric: %w", err)
@@ -118,7 +115,7 @@ func (s *Store) UpdateMetric(m models.MetricRow) (models.MetricRow, error) {
 		scrub(m.Name), scrub(m.Title), scrub(m.Expr), scrub(m.GroupBy),
 		scrub(m.Format), scrub(m.Doc), scrub(m.PluginID), scrub(m.Denominator), m.ID,
 	); err != nil {
-		if strings.Contains(err.Error(), "UNIQUE") {
+		if isUniqueErr(err) {
 			return models.MetricRow{}, fmt.Errorf("store: a metric named %q already exists", scrub(m.Name))
 		}
 		return models.MetricRow{}, fmt.Errorf("store: update metric: %w", err)

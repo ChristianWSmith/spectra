@@ -18,6 +18,7 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/ChristianWSmith/spectra/internal/analytics"
 	"github.com/ChristianWSmith/spectra/internal/models"
 	"github.com/ChristianWSmith/spectra/internal/store"
 )
@@ -35,6 +36,9 @@ type Template struct {
 // MatchReport is the match-scope data map (builtin + plugin templates).
 // CTName/TName are the display names of the two teams behind ScoreCT/
 // ScoreT — teams, never sides (sides switch at halftime): see teamNames.
+// Economy rows carry the read-time buy classes (ClassCT/ClassT/ClassWhy*,
+// PistolRound) filled by analytics.EconomyRows — the same enrichment the
+// Economy tab applies.
 type MatchReport struct {
 	Match       models.Match
 	CTName      string
@@ -81,6 +85,16 @@ func BuildMatchData(st *store.Store, matchID int64) (*MatchReport, error) {
 	if err != nil {
 		return nil, fmt.Errorf("report: economy: %w", err)
 	}
+	// Read-time buy-class enrichment — the SAME rules the Economy tab runs
+	// (analytics.EconomyRows under the stored analysis_config): ClassCT/
+	// ClassT/ClassWhyCT/ClassWhyT/PistolRound are filled here so report and
+	// app agree. store.GetEconomy leaves them empty by design (the store
+	// cannot import analytics — documented cycle deviation).
+	cfg, err := st.GetConfig()
+	if err != nil {
+		return nil, fmt.Errorf("report: analysis config: %w", err)
+	}
+	econ = analytics.EconomyRows(econ, analytics.ConfigFrom(cfg, 0))
 	clutches, err := st.GetClutches(matchID)
 	if err != nil {
 		return nil, fmt.Errorf("report: clutches: %w", err)
@@ -99,24 +113,20 @@ func BuildMatchData(st *store.Store, matchID int64) (*MatchReport, error) {
 
 // teamNames resolves display names for a match's two teams (the score line
 // names teams, never sides — sides switch at halftime): the demo's clan
-// names via the existing library read model when the extract recorded them,
-// else a synthesized `team_<playerName>` from each final side's scoreboard
-// rows (lowest SteamID — deterministic), else the bare side when no player
-// records one at all. A ListMatches failure only costs the real names.
+// names via store.GetTeamNames (one targeted read — it replaced listing the
+// WHOLE library through ListMatches and filtering down to this match) when
+// the extract recorded them, else a synthesized `team_<playerName>` from
+// each final side's scoreboard rows (lowest SteamID — deterministic), else
+// the bare side when no player records one at all. A GetTeamNames failure
+// only costs the real names.
 func teamNames(st *store.Store, matchID int64, sb []models.PlayerStatsRow) (ctName, tName string) {
 	ctName, tName = synthTeamNames(sb)
-	if list, err := st.ListMatches("", "", false); err == nil {
-		for _, m := range list {
-			if m.ID != matchID {
-				continue
-			}
-			if m.CTName != "" {
-				ctName = m.CTName
-			}
-			if m.TName != "" {
-				tName = m.TName
-			}
-			break
+	if ct, t, err := st.GetTeamNames(matchID); err == nil {
+		if ct != "" {
+			ctName = ct
+		}
+		if t != "" {
+			tName = t
 		}
 	}
 	if ctName == "" {
@@ -132,6 +142,12 @@ func teamNames(st *store.Store, matchID int64, sb []models.PlayerStatsRow) (ctNa
 // final sides — the pick is the lowest SteamID on each side so the name
 // doesn't depend on the store's sort order. Sides without a player yield
 // "" (teamNames falls back to the bare side).
+//
+// CROSS-LAYER TWIN: frontend/lib/teams.js implements the same
+// `team_<player>` synthesis for display-only surfaces (no store access).
+// Different layers, deliberately both kept — the fixture is
+// TestSynthTeamNames here; the matching JS fixture is a follow-up for the
+// frontend owner (same inputs/outputs, see that comment).
 func synthTeamNames(sb []models.PlayerStatsRow) (ctName, tName string) {
 	pick := func(side string) string {
 		name, steamID := "", ""

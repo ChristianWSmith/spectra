@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/ChristianWSmith/spectra/internal/models"
@@ -96,15 +97,29 @@ func (s *Store) UpdateJob(id int64, status, stage string, progress float64, errM
 	if err != nil {
 		return fmt.Errorf("store: update job: %w", err)
 	}
-	var one int
-	err = s.db.QueryRow(`SELECT 1 FROM jobs WHERE id = ?`, id).Scan(&one)
-	if errors.Is(err, sql.ErrNoRows) {
-		return ErrNotFound
-	}
+	ok, err := s.jobExists(id)
 	if err != nil {
 		return fmt.Errorf("store: update job: %w", err)
 	}
+	if !ok {
+		return ErrNotFound
+	}
 	return nil
+}
+
+// jobExists reports whether the jobs row is present: false for an unknown
+// id, the raw driver error otherwise (callers wrap it with their own op
+// label — the two blocks this replaces wrapped differently).
+func (s *Store) jobExists(id int64) (bool, error) {
+	var one int
+	err := s.db.QueryRow(`SELECT 1 FROM jobs WHERE id = ?`, id).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // CancelJob moves a non-terminal (queued/running) job to cancelled. Jobs
@@ -124,13 +139,12 @@ func (s *Store) CancelJob(id int64) error {
 	if n > 0 {
 		return nil
 	}
-	var one int
-	err = s.db.QueryRow(`SELECT 1 FROM jobs WHERE id = ?`, id).Scan(&one)
-	if errors.Is(err, sql.ErrNoRows) {
-		return ErrNotFound
-	}
+	ok, err := s.jobExists(id)
 	if err != nil {
 		return fmt.Errorf("store: cancel job: %w", err)
+	}
+	if !ok {
+		return ErrNotFound
 	}
 	return nil
 }
@@ -173,16 +187,35 @@ func scanJob(row interface{ Scan(...any) error }) (models.Job, error) {
 		return j, err
 	}
 	j.CreatedAt = created
-	if started.Valid {
-		t := started.Time
-		j.StartedAt = &t
-	}
-	if finished.Valid {
-		t := finished.Time
-		j.FinishedAt = &t
-	}
+	j.StartedAt = nullTimePtr(started)
+	j.FinishedAt = nullTimePtr(finished)
 	return j, nil
 }
+
+// Per-table column lists (G1 — the ONE hand-written list per table). The
+// consts below carry the row WITHOUT the match_id key column: SaveExtracted
+// prefixes `match_id, ` for the INSERT, the readers select the list
+// verbatim. player_stats/rounds/events have no second identical site (the
+// read projections interleave joined display names and computed columns —
+// eventRowCols, roundRowSelect, GetScoreboard), so they are named here for
+// the schema test to pin against the DDL instead.
+const (
+	playerStatsCols = `steam_id, side, name, kills, deaths, assists, flash_assists, headshots,
+		teamkills, suicides, mvps, score, total_damage, damage_taken, shots, hits, adr, hs_pct,
+		rounds_played, entry_kills, entry_deaths, opening_kills, opening_deaths, trade_kills,
+		best_streak, two_k, three_k, four_k, five_k, utility_damage, flashes_popped, flashed_times,
+		bomb_plants, bomb_defuses, money_spent_total, kills_by_weapon, damage_by_weapon`
+
+	roundCols = `number, winner, reason, duration_s, start_tick, end_tick,
+		warmup, pregame, mvp, mvp_reason, equip_ct, equip_t, bomb_site, freeze_end_tick,
+		first_kill_steam, first_death_steam`
+
+	roundEconomyCols = `round, side, equip_value, money_sampled_sum, money_samples`
+
+	eventCols = `seq, tick, round, kind, attacker, victim, assister, weapon,
+		headshot, wallbang, noscope, through_smoke, attacker_blind, assisted_flash, distance,
+		hitgroup, dmg, site, detail_json, raw_json, pos_x, pos_y, pos_z, apos_x, apos_y, apos_z`
+)
 
 // SaveExtracted persists a complete extract output for one match in a
 // single transaction: existing child rows are deleted, all children are
@@ -235,11 +268,7 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 	}
 
 	statsStmt, err := tx.Prepare(
-		`INSERT INTO player_stats (match_id, steam_id, side, name, kills, deaths, assists, flash_assists, headshots,
-			teamkills, suicides, mvps, score, total_damage, damage_taken, shots, hits, adr, hs_pct,
-			rounds_played, entry_kills, entry_deaths, opening_kills, opening_deaths, trade_kills,
-			best_streak, two_k, three_k, four_k, five_k, utility_damage, flashes_popped, flashed_times,
-			bomb_plants, bomb_defuses, money_spent_total, kills_by_weapon, damage_by_weapon)
+		`INSERT INTO player_stats (match_id, ` + playerStatsCols + `)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
@@ -260,9 +289,7 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 	}
 
 	roundsStmt, err := tx.Prepare(
-		`INSERT INTO rounds (match_id, number, winner, reason, duration_s, start_tick, end_tick,
-			warmup, pregame, mvp, mvp_reason, equip_ct, equip_t, bomb_site, freeze_end_tick,
-			first_kill_steam, first_death_steam)
+		`INSERT INTO rounds (match_id, ` + roundCols + `)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
@@ -293,7 +320,7 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 	}
 
 	econStmt, err := tx.Prepare(
-		`INSERT INTO round_economy (match_id, round, side, equip_value, money_sampled_sum, money_samples)
+		`INSERT INTO round_economy (match_id, ` + roundEconomyCols + `)
 		 VALUES (?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
@@ -307,9 +334,7 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 	}
 
 	eventsStmt, err := tx.Prepare(
-		`INSERT INTO events (match_id, seq, tick, round, kind, attacker, victim, assister, weapon,
-			headshot, wallbang, noscope, through_smoke, attacker_blind, assisted_flash, distance,
-			hitgroup, dmg, site, detail_json, raw_json, pos_x, pos_y, pos_z, apos_x, apos_y, apos_z)
+		`INSERT INTO events (match_id, ` + eventCols + `)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
@@ -367,14 +392,19 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 	}
 
 	m := em.Match
+	// ONE matches list: the SET clause walks matchColumns, skipping the
+	// columns other writers own (path/sha256/size = lifecycle,
+	// position_* = sidecar), so the extract write can never drift from
+	// GetMatch's SELECT list.
+	set := make([]string, 0, len(matchColumns))
+	for _, c := range matchColumns {
+		if matchOwnedElsewhere[c] {
+			continue
+		}
+		set = append(set, c+" = ?")
+	}
 	res, err := tx.Exec(
-		`UPDATE matches SET map = ?, patch_version = ?, tick_rate = ?, duration_ticks = ?,
-			playback_time_s = ?, frames = ?, server_name = ?, client_name = ?, game_dir = ?,
-			net_proto = ?, is_pov = ?, warmup_rounds = ?, real_rounds = ?, score_ct = ?,
-			score_t = ?, half_ct = ?, half_t = ?, side_switches = ?, entity_classes = ?,
-			end_entity_count = ?, parser_version = ?, extracted_at = ?, parse_ms = ?,
-			warnings_count = ?, status = ?, error = ?, enc_messages = ?
-		 WHERE id = ?`,
+		`UPDATE matches SET `+strings.Join(set, ", ")+` WHERE id = ?`,
 		scrub(m.Map), m.PatchVersion, m.TickRate, m.DurationTicks, m.PlaybackTimeS, m.Frames,
 		scrub(m.ServerName), scrub(m.ClientName), scrub(m.GameDir), scrub(m.NetProto), b2i(m.IsPOV),
 		m.WarmupRounds, m.RealRounds, m.ScoreCT, m.ScoreT, m.HalfCT, m.HalfT, m.SideSwitches,
@@ -451,6 +481,43 @@ func affectedOrNotFound(res sql.Result, op string) error {
 	}
 	if n == 0 {
 		return ErrNotFound
+	}
+	return nil
+}
+
+// replaceMatchRows is the canonical delete-then-insert transaction for one
+// match's child table: BEGIN, DELETE FROM <table> WHERE match_id = ?,
+// prepare INSERT INTO <table> (<cols>) VALUES (?, …) — placeholders derived
+// from the column list — fill n rows in slice order, COMMIT (the deferred
+// rollback swallows every failure path, as before). op wraps the begin/
+// delete/prepare/commit failures with the caller's label; fill returns its
+// per-row error ALREADY labeled (row errors carry context the helper cannot
+// know, e.g. a row index), so they pass through unwrapped. Transaction shape
+// and error text are identical to the five hand-rolled Replace* bodies this
+// replaces.
+func (s *Store) replaceMatchRows(op, table, cols string, matchID int64, n int, fill func(*sql.Stmt, int) error) error {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec(`DELETE FROM `+table+` WHERE match_id = ?`, matchID); err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+	// n columns → n-1 commas → n placeholders (`?,?,?`).
+	placeholders := strings.Repeat("?,", strings.Count(cols, ",")) + "?"
+	stmt, err := tx.Prepare(`INSERT INTO ` + table + ` (` + cols + `) VALUES (` + placeholders + `)`)
+	if err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+	defer stmt.Close()
+	for i := 0; i < n; i++ {
+		if err := fill(stmt, i); err != nil {
+			return err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("%s: %w", op, err)
 	}
 	return nil
 }

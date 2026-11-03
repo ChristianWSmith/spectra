@@ -36,7 +36,13 @@
 //	                               requires groupBy "" (see below)
 //	median(<col>)                  sugar for percentile(0.5, <col>)
 //	ratio(<a1>, <a2>)              1.0*a1 / NULLIF(a2, 0); a1/a2 are value
-//	                               aggregations (no nested ratio/percentile)
+//	                               aggregations (no nested ratio/percentile).
+//	                               Spelling note: the store's fixed K/D
+//	                               metric floors instead (MAX(deaths, 1),
+//	                               internal/store kdPerMatchSQL) — a typed
+//	                               float cell with no NULL state vs this
+//	                               generic compiler over user-chosen
+//	                               columns; both are deliberate.
 //
 // Conditions (the <cond> grammar): operands are whitelisted columns,
 // numbers, 'strings', true/false; operators are = != > >= < <=, AND, OR,
