@@ -9,10 +9,13 @@
     listMatches,
     listPlayers,
     getRounds,
+    getScoreboard,
     listMetrics,
     previewMetric,
   } from '../services.js';
-  import { fmtDate } from '../fmt.js';
+  import { saveText, saveExportURL } from '../save.js';
+  import MatchPicker from '../components/MatchPicker.svelte';
+  import PlayerPicker from '../components/PlayerPicker.svelte';
 
   let { nav = () => {} } = $props();
 
@@ -88,6 +91,34 @@
   const maxRound = $derived(rounds.reduce((m, r) => Math.max(m, r.number), 0));
 
   const tpl = $derived(templates.find((t) => t.id === tplId) || null);
+
+  // Player-scoped targets: the scoreboard of the selected match gives the
+  // player picker each candidate's side + in-match stats; the profile list
+  // (players) carries career totals for players outside this match. Other
+  // scopes never need it, so it is only fetched — and kept — for
+  // player-scoped templates.
+  let sbBySteam = $state({});
+
+  $effect(() => {
+    const id = matchId;
+    const scope = tpl && tpl.scope;
+    if (!id || scope !== 'player') {
+      sbBySteam = {};
+      return;
+    }
+    let live = true;
+    getScoreboard(id, '', false)
+      .then((rows) => {
+        if (!live) return;
+        const m = {};
+        for (const r of rows || []) m[r.steamId] = r;
+        sbBySteam = m;
+      })
+      .catch(() => {
+        if (live) sbBySteam = {};
+      });
+    return () => (live = false);
+  });
 
   function errText(e) {
     if (e == null) return 'unknown error';
@@ -234,20 +265,62 @@
       .replace(/"/g, '&quot;');
   }
 
-  function download() {
+  // Save the rendered document (report + appendix when one is checked)
+  // through the native save dialog (lib/save.js). Cancel resolves to ""
+  // and does nothing; a dialog/write failure reports in docError below the
+  // preview (the view's error slot).
+  async function download() {
     const fmt = (tpl && tpl.format) || 'md';
-    const text = compositeText();
-    const blob = new Blob([text], {
-      type: fmt === 'html' ? 'text/html;charset=utf-8' : 'text/markdown;charset=utf-8',
-    });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
+    const ext = fmt === 'html' ? 'html' : 'md';
     const scope = (tpl && tpl.scope) || 'match';
     const target = scope === 'player' ? steamId || 'player' : matchId;
-    a.download = `spectra-${scope}-${target}.${fmt === 'html' ? 'html' : 'md'}`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    docError = '';
+    try {
+      await saveText(
+        `spectra-${scope}-${target}.${ext}`,
+        ext,
+        compositeText(),
+        ext === 'html' ? 'text/html;charset=utf-8' : 'text/markdown;charset=utf-8',
+      );
+    } catch (e) {
+      docError = errText(e);
+    }
+  }
+
+  // "Open raw" target: only the Go-rendered document (no appendix, and no
+  // Render needed — the endpoint renders on demand). Template ids may
+  // already carry an extension (match.md), which the Go exporter uses as-is.
+  function rawTarget() {
+    const fmt = (tpl && tpl.format) || 'md';
+    const base = String(tplId || 'report');
+    const dot = base.lastIndexOf('.');
+    const ext = dot > 0 ? base.slice(dot + 1) : fmt === 'html' ? 'html' : 'md';
+    const name = dot > 0 ? `spectra-${matchId}-${base}` : `spectra-${matchId}-${base}.${ext}`;
+    return { name, ext };
+  }
+
+  // Open raw: the URL rides SaveExport (lib/save.js) — the native dialog
+  // picks the path, Go fetches /api/export/… itself and writes it there.
+  async function saveRaw() {
+    docError = '';
+    const { name, ext } = rawTarget();
+    try {
+      await saveExportURL(reportDownloadURL(matchId, tplId, tpl.format || 'md'), name, ext);
+    } catch (e) {
+      docError = errText(e);
+    }
+  }
+
+  // Copy library DB: URL-served (~19 MB SQLite) → SaveExport streams it
+  // straight to the dialog path; Go checkpoints the WAL on the way. Never
+  // round-trips the bindings as base64.
+  async function saveLibraryDb() {
+    docError = '';
+    try {
+      await saveExportURL('/api/export/library.db', 'spectra-library.db', 'db');
+    } catch (e) {
+      docError = errText(e);
+    }
   }
 
   const hasAppendix = $derived(appendixEntries().length > 0);
@@ -298,22 +371,23 @@
         {/if}
         <div class="rep-field">
           <label for="rep-match">Match</label>
-          <select class="input" id="rep-match" bind:value={matchId}>
-            {#each matches as m (m.id)}
-              <option value={m.id}
-                >#{m.id} · {m.map || 'unknown'} · {m.scoreCT}–{m.scoreT} · {fmtDate(m.extractedAt)}</option
-              >
-            {/each}
-          </select>
+          <MatchPicker
+            {matches}
+            value={matchId}
+            id="rep-match"
+            onselect={(mid) => (matchId = mid)}
+          />
         </div>
         {#if tpl.scope === 'player'}
           <div class="rep-field">
             <label for="rep-player">Player</label>
-            <select class="input" id="rep-player" bind:value={steamId}>
-              {#each players as p (p.steamId)}
-                <option value={p.steamId}>{p.name || p.steamId}</option>
-              {/each}
-            </select>
+            <PlayerPicker
+              {players}
+              stats={sbBySteam}
+              value={steamId}
+              id="rep-player"
+              onselect={(sid) => (steamId = sid)}
+            />
           </div>
         {/if}
         {#if tpl.scope === 'round'}
@@ -341,8 +415,9 @@
       {/if}
       <p class="muted">
         Check metrics to append their tables under the report (scoped to this
-        match). Download composes report + appendix; “Open raw” serves only the
-        Go-rendered document.
+        match). Download composes report + appendix; “Open raw” saves only the
+        Go-rendered document (native file dialog). “Copy library DB” writes a
+        snapshot of the whole library SQLite file.
       </p>
       {#each metricGroups as [group, rows] (group)}
         <div class="rep-mgroup">
@@ -385,21 +460,13 @@
             >Download {hasAppendix ? '(composite)' : `.${tpl.format === 'html' ? 'html' : 'md'}`}</button
           >
           {#if !hasAppendix}
-            <a
-              class="btn"
-              href={reportDownloadURL(matchId, tplId, tpl.format || 'md')}
-              target="_blank"
-              rel="noreferrer"
-              >Open raw</a
-            >
+            <button class="btn" onclick={saveRaw}>Open raw</button>
           {:else}
             <span class="muted rep-raw-note" title="Appendix is composed client-side — use Download"
               >Open raw unavailable with appendix</span
             >
           {/if}
-          <a class="btn" href="/api/export/library.db" download="spectra-library.db"
-            >Copy library DB</a
-          >
+          <button class="btn" onclick={saveLibraryDb}>Copy library DB</button>
         </span>
       </div>
       {#if docError}
