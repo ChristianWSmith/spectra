@@ -19,8 +19,8 @@ const (
 	steamIDPrefix     = "7656119"
 )
 
-// Def is the runtime metric handle Preview needs (the service maps its
-// frozen MetricDef onto this — metrics cannot import package main).
+// Def is the runtime metric handle Preview needs (the stored definition —
+// models.MetricRow — maps its Expr/GroupBy/Denominator onto this).
 type Def struct {
 	Expr        string
 	GroupBy     string

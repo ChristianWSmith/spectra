@@ -53,6 +53,13 @@ func Compute(st *store.Store, matchID int64, cfg Config) error {
 	for i, er := range events {
 		evs[i] = models.EventFromRow(er)
 	}
+	// Blind payloads are the ONE exception, read narrowly (kind='blind'
+	// only, keyed by seq): utility_events.flash_ms needs the extractor's
+	// flashDurationMs, which EventRow deliberately never carries.
+	blindDetails, err := st.GetBlindFlashDetails(matchID)
+	if err != nil {
+		return fmt.Errorf("analytics: load blind details: %w", err)
+	}
 	// Exact per-round sides from the extractor's freeze-end samples (new
 	// imports); legacy matches fall back to RecoverSides + parity.
 	sides, err := st.GetRoundPlayerSides(matchID)
@@ -78,7 +85,7 @@ func Compute(st *store.Store, matchID int64, cfg Config) error {
 	prs := PlayerRounds(evs, rounds, players, cfg, sides)
 	clutches := Clutches(evs, rounds, players, cfg, sides)
 	engs := Engagements(evs, rounds, cfg, players, sides)
-	utils := Utility(evs, players, cfg)
+	utils := Utility(evs, players, cfg, blindDetails)
 
 	// Replace* take matchID as their own argument (rows stay unstamped —
 	// the MatchID column is written from the parameter).

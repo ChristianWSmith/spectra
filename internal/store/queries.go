@@ -608,6 +608,37 @@ func (s *Store) GetEvent(id int64) (*models.EventDetail, error) {
 	return &models.EventDetail{EventRow: er, DetailJSON: det, RawJSON: raw}, nil
 }
 
+// GetBlindFlashDetails returns detail_json for every blind event of a
+// match, keyed by events.seq (UNIQUE (match_id, seq) — one entry per
+// blind row). This is the one payload read outside GetEvent/GetRoundDetail:
+// analytics.Compute needs the extractor's flashDurationMs to fill
+// utility_events.flash_ms, and widening eventRowCols would drag
+// detail_json into every timeline read (the typed-columns boundary —
+// models.EventRow — stays payload-free).
+func (s *Store) GetBlindFlashDetails(matchID int64) (map[int]string, error) {
+	rows, err := s.db.Query(
+		`SELECT seq, detail_json FROM events WHERE match_id = ? AND kind = ?`,
+		matchID, models.EventBlind,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("store: get blind details: %w", err)
+	}
+	defer rows.Close()
+	out := map[int]string{}
+	for rows.Next() {
+		var seq int
+		var det string
+		if err := rows.Scan(&seq, &det); err != nil {
+			return nil, fmt.Errorf("store: get blind details: %w", err)
+		}
+		out[seq] = det
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: get blind details: %w", err)
+	}
+	return out, nil
+}
+
 // landmarkKinds are event kinds that surface as replay anchors even when
 // their position columns are NULL (a missing bomb entity must
 // not hide the plant/defuse/explode marker from the scrubber).

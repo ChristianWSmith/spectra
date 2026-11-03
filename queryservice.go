@@ -22,13 +22,6 @@ import (
 // SQL engine (internal/query) and the store produce them directly and this
 // service only validates input — no re-typing.
 
-// timeFormat is the timestamp layout services hand to the frontend when
-// they render a time.Time into a STRING field themselves (today: the profile
-// history row's extractedAt). Row types served as models types carry
-// time.Time and marshal through encoding/json (RFC3339) instead — one
-// mechanism per shape, never a per-service literal.
-const timeFormat = "2006-01-02T15:04:05Z07:00"
-
 // QueryService — see doc comment above.
 type QueryService struct {
 	st  *store.Store

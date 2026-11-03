@@ -55,9 +55,27 @@ func utilKind(weapon string) string {
 //
 // Throws that never detonate are skipped; detonations without a known
 // throw still emit (thrower from the detonation event's attacker).
-func Utility(events []models.Event, players []PlayerRef, cfg Config) []UtilityEvent {
+//
+// blindDetails carries the blind events' detail_json keyed by event Seq
+// (models.Event.Seq — the store's UNIQUE (match_id, seq) insertion order;
+// store.GetBlindFlashDetails). The typed-column read (models.EventFromRow)
+// never populates ev.DetailJSON, so the durations must arrive through this
+// side channel; they are parsed ONCE here, not per attribution-loop hit.
+func Utility(events []models.Event, players []PlayerRef, cfg Config, blindDetails map[int]string) []UtilityEvent {
 	names := nameOf(players)
 	sorted := sortedEvents(events)
+
+	// seq → flash duration (ms); blind rows without a readable
+	// flashDurationMs detail contribute 0.
+	flashMsBySeq := make(map[int]int, len(blindDetails))
+	for seq, det := range blindDetails {
+		var detail struct {
+			FlashDurationMs int `json:"flashDurationMs"`
+		}
+		if json.Unmarshal([]byte(det), &detail) == nil {
+			flashMsBySeq[seq] = detail.FlashDurationMs
+		}
+	}
 
 	byRound := map[int][]models.Event{}
 	for _, e := range sorted {
@@ -136,12 +154,7 @@ func Utility(events []models.Event, players []PlayerRef, cfg Config) []UtilityEv
 				case models.EventBlind:
 					if flash && ev.Attacker == e.Attacker && ev.Victim != "" {
 						affectedSet[ev.Victim] = true
-						var detail struct {
-							FlashDurationMs int `json:"flashDurationMs"`
-						}
-						if json.Unmarshal([]byte(ev.DetailJSON), &detail) == nil {
-							flashMs += detail.FlashDurationMs
-						}
+						flashMs += flashMsBySeq[ev.Seq]
 					}
 				}
 			}

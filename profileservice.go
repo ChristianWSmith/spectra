@@ -3,7 +3,6 @@ package main
 import (
 	"encoding/json"
 	"errors"
-	"math"
 	"sort"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -17,29 +16,18 @@ import (
 // player_stats joins. Profiles are read models — rollups are maintained
 // transactionally on import/delete and rebuilt explicitly on rule changes.
 
-// ProfileSummary is one row of the player picker.
+// ProfileSummary is one row of the player picker. KEPT twin (models.
+// CareerSummary is field-identical but its LastSeen is time.Time): this
+// LastSeen is a display-ready "" | YYYY-MM-DD short date the picker and
+// command palette render raw — time.Time would JSON-marshal the zero
+// value as "0001-01-01T00:00:00Z" (indistinguishable from a real value
+// for those readers) and add a time-of-day they don't want.
 type ProfileSummary struct {
 	SteamID  string  `json:"steamId"`
 	Name     string  `json:"name"`
 	Matches  int     `json:"matches"`
 	LastSeen string  `json:"lastSeen"` // date of most recent match ("" if unknown)
 	ADRAvg   float64 `json:"adrAvg"`
-}
-
-// ProfileMatchRow is one history entry.
-type ProfileMatchRow struct {
-	MatchID     int64   `json:"matchId"`
-	ExtractedAt string  `json:"extractedAt"`
-	Map         string  `json:"map"`
-	Win         bool    `json:"win"`
-	ScoreCT     int     `json:"scoreCT"`
-	ScoreT      int     `json:"scoreT"`
-	Side        string  `json:"side"`
-	Kills       int     `json:"kills"`
-	Deaths      int     `json:"deaths"`
-	Assists     int     `json:"assists"`
-	ADR         float64 `json:"adr"`
-	KASTPct     float64 `json:"kastPct"`
 }
 
 // ProfileSide is the per-side split.
@@ -70,31 +58,24 @@ type ProfileWeapon struct {
 
 // Profile is the full cross-match read model.
 type Profile struct {
-	SteamID      string            `json:"steamId"`
-	Name         string            `json:"name"`
-	Matches      int               `json:"matches"`
-	Wins         int               `json:"wins"`
-	WinPct       float64           `json:"winPct"`
-	ADRAvg       float64           `json:"adrAvg"`
-	ADRStd       float64           `json:"adrStd"` // consistency (PRD §5.13)
-	KD           float64           `json:"kd"`
-	HSPct        float64           `json:"hsPct"`
-	KASTPct      float64           `json:"kastPct"`
-	OpeningRate  float64           `json:"openingRate"` // duel win rate
-	TradeRate    float64           `json:"tradeRate"`
-	Clutches     int               `json:"clutches"`
-	ClutchWinPct float64           `json:"clutchWinPct"`
-	Sides        []ProfileSide     `json:"sides"`
-	Maps         []ProfileMap      `json:"maps"`
-	Weapons      []ProfileWeapon   `json:"weapons"` // top by kills
-	History      []ProfileMatchRow `json:"history"` // most recent first, ≤100
-}
-
-// TrendPoint is one sparkline point (GetCareerTrend).
-type TrendPoint struct {
-	MatchID int64   `json:"matchId"`
-	Seq     int     `json:"seq"` // history index, oldest = 0
-	Value   float64 `json:"value"`
+	SteamID      string                     `json:"steamId"`
+	Name         string                     `json:"name"`
+	Matches      int                        `json:"matches"`
+	Wins         int                        `json:"wins"`
+	WinPct       float64                    `json:"winPct"`
+	ADRAvg       float64                    `json:"adrAvg"`
+	ADRStd       float64                    `json:"adrStd"` // consistency (PRD §5.13)
+	KD           float64                    `json:"kd"`
+	HSPct        float64                    `json:"hsPct"`
+	KASTPct      float64                    `json:"kastPct"`
+	OpeningRate  float64                    `json:"openingRate"` // duel win rate
+	TradeRate    float64                    `json:"tradeRate"`
+	Clutches     int                        `json:"clutches"`
+	ClutchWinPct float64                    `json:"clutchWinPct"`
+	Sides        []ProfileSide              `json:"sides"`
+	Maps         []ProfileMap               `json:"maps"`
+	Weapons      []ProfileWeapon            `json:"weapons"` // top by kills
+	History      []models.ProfileHistoryRow `json:"history"` // most recent first, ≤100
 }
 
 // weaponTopLimit caps the profile's weapon proficiency list.
@@ -177,17 +158,8 @@ func (s *ProfileService) GetProfile(steamID string) (Profile, error) {
 			m.Wins++
 		}
 		m.ADR += h.ADR
-
-		row := ProfileMatchRow{
-			MatchID: h.MatchID, Map: h.Map, Win: h.Win, ScoreCT: h.ScoreCT, ScoreT: h.ScoreT,
-			Side: h.Side, Kills: h.Kills, Deaths: h.Deaths, Assists: h.Assists,
-			ADR: h.ADR, KASTPct: h.KASTPct,
-		}
-		if !h.ExtractedAt.IsZero() {
-			row.ExtractedAt = h.ExtractedAt.Format(timeFormat)
-		}
-		p.History = append(p.History, row)
 	}
+	p.History = history
 	if deaths > 0 {
 		p.TradeRate = float64(career.Trades) / float64(deaths)
 	}
@@ -282,15 +254,8 @@ func (s *ProfileService) ListPlayers(query string) ([]ProfileSummary, error) {
 }
 
 // GetCareerTrend returns a metric series across matches (oldest → newest).
-// metric ∈ adr|kast|kd|hs.
-func (s *ProfileService) GetCareerTrend(steamID, metric string) ([]TrendPoint, error) {
-	rows, err := s.st.GetTrend(steamID, metric)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]TrendPoint, len(rows))
-	for i, r := range rows {
-		out[i] = TrendPoint{MatchID: r.MatchID, Seq: r.Seq, Value: math.Round(r.Value*100) / 100}
-	}
-	return out, nil
+// metric ∈ adr|kast|kd|hs. Values are served at full precision — the
+// frontend's fmt1/fmt2/round1 do the display rounding.
+func (s *ProfileService) GetCareerTrend(steamID, metric string) ([]models.ProfileTrendPoint, error) {
+	return s.st.GetTrend(steamID, metric)
 }

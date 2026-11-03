@@ -44,8 +44,9 @@ var allowedCapabilities = map[string]bool{
 	"report_templates": true,
 }
 
-// MetricDef is one manifest metric definition (JSON shape matches the
-// frontend MetricDef contract; id/origin/pluginId are loader-assigned).
+// MetricDef is one manifest metric definition (JSON shape is the shared
+// metric-definition contract — models.MetricRow minus createdAt;
+// id/origin/pluginId are loader-assigned).
 type MetricDef struct {
 	ID          int64  `json:"id"`
 	Name        string `json:"name"`

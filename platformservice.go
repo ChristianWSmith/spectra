@@ -12,6 +12,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"github.com/ChristianWSmith/spectra/internal/data"
+	"github.com/ChristianWSmith/spectra/internal/models"
 	"github.com/ChristianWSmith/spectra/internal/plugin"
 	"github.com/ChristianWSmith/spectra/internal/report"
 	"github.com/ChristianWSmith/spectra/internal/sidecar"
@@ -74,16 +75,18 @@ type SpatialSeries struct {
 
 // PluginManifest is the spectra-plugin.json contract (M5 §2.7 v1:
 // declarative — metric expressions + report templates only, no scripts).
+// Metrics are models.MetricRow with loader-assigned id/origin/pluginId
+// (id stays 0 here — manifest rows are pre-persistence).
 type PluginManifest struct {
-	ID          string            `json:"id"` // slug, unique
-	Name        string            `json:"name"`
-	Version     string            `json:"version"`
-	Author      string            `json:"author,omitempty"`
-	Description string            `json:"description,omitempty"`
-	Hash        string            `json:"hash,omitempty"`    // sha256 of bundle (share format)
-	Metrics     []MetricDef       `json:"metrics,omitempty"` // origin=plugin filled by loader
-	ReportTpls  []ReportTemplate  `json:"reportTpls,omitempty"`
-	Extra       map[string]string `json:"extra,omitempty"`
+	ID          string             `json:"id"` // slug, unique
+	Name        string             `json:"name"`
+	Version     string             `json:"version"`
+	Author      string             `json:"author,omitempty"`
+	Description string             `json:"description,omitempty"`
+	Hash        string             `json:"hash,omitempty"`    // sha256 of bundle (share format)
+	Metrics     []models.MetricRow `json:"metrics,omitempty"` // origin=plugin filled by loader
+	ReportTpls  []ReportTemplate   `json:"reportTpls,omitempty"`
+	Extra       map[string]string  `json:"extra,omitempty"`
 }
 
 // PluginState is one installed plugin (registry row + manifest).
@@ -374,7 +377,7 @@ func manifestFromPlugin(m plugin.Manifest) PluginManifest {
 		Description: m.Description, Hash: m.Hash, Extra: m.Extra,
 	}
 	for _, d := range m.Metrics {
-		out.Metrics = append(out.Metrics, MetricDef{
+		out.Metrics = append(out.Metrics, models.MetricRow{
 			Name: d.Name, Title: d.Title, Expr: d.Expr, GroupBy: d.GroupBy,
 			Format: d.Format, Doc: d.Doc, Origin: "plugin", PluginID: m.ID,
 			Denominator: d.Denominator,

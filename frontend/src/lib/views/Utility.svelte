@@ -308,7 +308,7 @@
                     >
                     <span
                       class="util-num muted"
-                      title="affected players (parsed from the event payload)"
+                      title="affected players (blinded or damaged by this throw)"
                       >{affectedCount(r.affected)} aff</span
                     >
                     <span class="util-site muted" title="detonation site"

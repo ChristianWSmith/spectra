@@ -77,8 +77,9 @@
 //
 // # Denominator
 //
-// MetricDef.Denominator (optional) is a scalar-subquery source — allowed
-// values: rounds, matches, player_rounds (= player_round_stats) — compiled
+// models.MetricRow.Denominator (optional) is a scalar-subquery source —
+// allowed values: rounds, matches, player_rounds (= player_round_stats) —
+// compiled
 // as `1.0*(<value>) / NULLIF((SELECT COUNT(*) FROM <t> [WHERE match_id=?]),0)`.
 // The denominator is a SCALAR over the whole scope: for rounds/matches that
 // is correct for by-player rates (every player shares the round count);

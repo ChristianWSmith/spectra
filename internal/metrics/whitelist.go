@@ -82,8 +82,9 @@ func colSet(cols ...string) map[string]bool {
 	return m
 }
 
-// groupTokens are the valid MetricDef.GroupBy values (frozen contract
-// comment: ""|player|round|team|weapon|side|map|none).
+// groupTokens are the valid GroupBy values of a metric definition
+// (models.MetricRow.GroupBy — frozen contract comment:
+// ""|player|round|team|weapon|side|map|none).
 var groupTokens = map[string]bool{
 	"player": true, "round": true, "team": true, "weapon": true,
 	"side": true, "map": true, "none": true,
@@ -144,8 +145,9 @@ var groupColumns = map[string]map[string]string{
 	},
 }
 
-// denominatorTables whitelists MetricDef.Denominator (scalar subquery
-// sources; player_rounds is the contract's name for player_round_stats).
+// denominatorTables whitelists models.MetricRow.Denominator (scalar
+// subquery sources; player_rounds is the contract's name for
+// player_round_stats).
 var denominatorTables = map[string]string{
 	"rounds":        "rounds",
 	"matches":       "matches",

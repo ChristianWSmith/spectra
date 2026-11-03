@@ -6,8 +6,9 @@ import "time"
 // flow between internal/store (persistence), internal/metrics +
 // internal/query (engines) and the M5 services; models stays the shared
 // vocabulary (package docs). The SQL-console rows (schema, result, saved
-// queries, history) are served as-is — their JSON tags ARE the frontend
-// contract; MetricRow still maps onto MetricsService's MetricDef.
+// queries, history) and the metric definitions are served as-is — their
+// JSON tags ARE the frontend contract (MetricsService and PlatformService
+// return MetricRow directly; no service-side twin).
 //
 // MetricRow mirrors the `metrics` table whose DDL is fixed by the
 // coordination contract with internal/store/platform_store.go (005_metrics

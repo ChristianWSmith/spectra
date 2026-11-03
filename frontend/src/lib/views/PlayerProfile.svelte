@@ -102,7 +102,7 @@
     return fmt1(v);
   }
 
-  // TrendPoint has no date — join matchId → extractedAt via history.
+  // ProfileTrendPoint has no date — join matchId → extractedAt via history.
   const dateByMatch = $derived.by(() => {
     const map = new Map();
     for (const h of profile?.history || []) map.set(h.matchId, h.extractedAt);

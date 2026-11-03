@@ -355,10 +355,12 @@ func TestUtilityPairingAndFlash(t *testing.T) {
 		{SteamID: "X", Side: "t"},
 		{SteamID: "Y", Side: "t"},
 	}
-	detail := func(ms int) func(*models.Event) {
-		return func(e *models.Event) {
-			e.DetailJSON = `{"flashDurationMs":` + itoa(ms) + `}`
-		}
+	// Blind payloads arrive as a side-channel map keyed by event Seq
+	// (the typed-column read never populates ev.DetailJSON).
+	blindDetails := map[int]string{
+		7: `{"flashDurationMs":500}`,
+		8: `{"flashDurationMs":300}`,
+		9: `{"flashDurationMs":999}`,
 	}
 	events := []models.Event{
 		ev(0, 100, 1, models.EventGrenadeThrow, "A", "", withWeapon("HE Grenade")),
@@ -368,13 +370,13 @@ func TestUtilityPairingAndFlash(t *testing.T) {
 		ev(4, 155, 1, models.EventDamage, "A", "X", withWeapon("AK-47"), withDmg(99)), // wrong weapon
 		ev(5, 200, 1, models.EventGrenadeThrow, "A", "", withWeapon("Flashbang")),
 		ev(6, 240, 1, models.EventGrenade, "A", "", withWeapon("Flashbang")),
-		ev(7, 245, 1, models.EventBlind, "A", "X", detail(500)),
-		ev(8, 250, 1, models.EventBlind, "A", "Y", detail(300)),
-		ev(9, 251, 1, models.EventBlind, "B", "X", detail(999)), // wrong attacker
+		ev(7, 245, 1, models.EventBlind, "A", "X"),
+		ev(8, 250, 1, models.EventBlind, "A", "Y"),
+		ev(9, 251, 1, models.EventBlind, "B", "X"), // wrong attacker
 		ev(10, 300, 1, models.EventGrenadeThrow, "A", "", withWeapon("Smoke Grenade")),
 		// throw with no detonation → no row
 	}
-	got := Utility(events, players, testCfg)
+	got := Utility(events, players, testCfg, blindDetails)
 	if len(got) != 2 {
 		t.Fatalf("utility rows = %d (%+v), want 2 (HE + flash; un-detonated smoke skipped)", len(got), got)
 	}
@@ -416,7 +418,7 @@ func TestUtilityDetWithoutThrow(t *testing.T) {
 			e.PosX, e.PosY = pf(10), pf(-20)
 		}),
 	}
-	got := Utility(events, players, testCfg)
+	got := Utility(events, players, testCfg, nil)
 	if len(got) != 1 || got[0].Kind != "smoke" || got[0].Thrower != "A" {
 		t.Errorf("rows = %+v, want one smoke row keyed on the detonation", got)
 	}
@@ -483,19 +485,6 @@ func TestEconomyRowsFillsClasses(t *testing.T) {
 	if got[1].ClassWhyCT == "" || got[1].ClassWhyT == "" {
 		t.Error("per-side explanations are REQUIRED")
 	}
-}
-
-// itoa avoids strconv import churn in the synthetic detail payloads.
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	var b []byte
-	for n > 0 {
-		b = append([]byte{byte('0' + n%10)}, b...)
-		n /= 10
-	}
-	return string(b)
 }
 
 func TestRecoverSides(t *testing.T) {

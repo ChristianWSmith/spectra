@@ -1013,3 +1013,44 @@ func mustHist(t *testing.T, s *Store, id int64) []models.NameCount {
 	}
 	return h
 }
+
+// TestGetBlindFlashDetails pins the analytics payload side channel: only
+// blind rows contribute, keyed by their match-scoped seq (the key
+// models.Event.Seq carries into Utility), detail_json roundtrips, and
+// other kinds/matches stay out.
+func TestGetBlindFlashDetails(t *testing.T) {
+	s := openMem(t)
+	id, err := s.CreateMatchRow("/demos/flash.dem", "sha-flash-details", 0)
+	if err != nil {
+		t.Fatalf("CreateMatchRow: %v", err)
+	}
+	if err := s.SaveExtracted(id, &models.ExtractedMatch{Events: []models.Event{
+		{Tick: 100, Round: 1, Kind: models.EventBlind, Attacker: "100", Victim: "200",
+			DetailJSON: `{"player":"bob","flashDurationMs":3200}`},
+		{Tick: 101, Round: 1, Kind: models.EventBlind, Attacker: "100", Victim: "300"},
+		{Tick: 102, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "200",
+			DetailJSON: `{"not":"blind"}`},
+	}}); err != nil {
+		t.Fatalf("SaveExtracted: %v", err)
+	}
+	det, err := s.GetBlindFlashDetails(id)
+	if err != nil {
+		t.Fatalf("GetBlindFlashDetails: %v", err)
+	}
+	if len(det) != 2 {
+		t.Fatalf("GetBlindFlashDetails len = %d (%v), want 2 blind rows only", len(det), det)
+	}
+	if det[0] != `{"player":"bob","flashDurationMs":3200}` {
+		t.Errorf("seq 0 detail = %q, want the stored flashDurationMs payload", det[0])
+	}
+	if det[1] != "" {
+		t.Errorf("seq 1 detail = %q, want empty (no detail stored)", det[1])
+	}
+	other, err := s.CreateMatchRow("/demos/other.dem", "sha-other", 0)
+	if err != nil {
+		t.Fatalf("CreateMatchRow(other): %v", err)
+	}
+	if d, err := s.GetBlindFlashDetails(other); err != nil || len(d) != 0 {
+		t.Errorf("empty match = %v, %v; want empty map, nil", d, err)
+	}
+}
