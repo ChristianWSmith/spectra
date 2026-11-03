@@ -65,7 +65,7 @@
   font-family:
     system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
     sans-serif;
-  font-size: 13px; /* VS Code UI font size */
+  font-size: 15px; /* medium default — font-size setting (lib/fontsize.js) overrides this pre-paint: small 13 / medium 15 / large 17 */
   line-height: 1.45;
 }
 

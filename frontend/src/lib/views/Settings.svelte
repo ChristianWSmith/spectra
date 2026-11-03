@@ -16,10 +16,13 @@
     setMapPackPromptState,
     chooseCS2Dir,
     checkForUpdateNow,
+    getPref,
+    setPref,
   } from '../services.js';
   import { probeAudio } from '../replay/audio.js';
   import { fmtDate } from '../fmt.js';
   import { getTheme, applyTheme } from '../theme.js';
+  import { getFontSize, applyFontSize, reconcileFontSize, FONT_SIZES } from '../fontsize.js';
 
   let version = $state('…');
   let info = $state(null);
@@ -45,6 +48,32 @@
 
   function setTheme(t) {
     theme = applyTheme(t);
+  }
+
+  // Font size (changes.txt #6): small/medium/large segmented control.
+  // applyFontSize paints immediately (localStorage cache — main.js applied
+  // the same value pre-paint) and the kvstore pref font_size is the durable
+  // record, reconciled on every boot by reconcileFontSize().
+  let fontSize = $state(getFontSize());
+
+  function setFontSize(sz) {
+    fontSize = applyFontSize(sz);
+    setPref('font_size', sz).catch((e) => (error = errText(e)));
+  }
+
+  const FONT_LABELS = { small: 'Small', medium: 'Medium', large: 'Large' };
+
+  // Show knife & warmup rounds (changes.txt #8): pure kvstore pref
+  // `show_knife_warmup_rounds`, default off; the Match view consumes it.
+  let showKnife = $state(false);
+
+  function setShowKnife(v) {
+    showKnife = v;
+    setPref('show_knife_warmup_rounds', v).catch((e) => (error = errText(e)));
+  }
+
+  function prefBool(v) {
+    return v === true || v === 'true';
   }
 
   // Plugins: declarative bundles installed by
@@ -222,6 +251,17 @@
         matchesError = errText(e);
       });
     refreshPlugins();
+    // Prefs: the font size re-reconciles against the durable kvstore (the
+    // boot-time pass may still be in flight for a deep-linked Settings),
+    // and the knife/warmup toggle reads its bool (never-set = off).
+    reconcileFontSize()
+      .then((v) => (fontSize = v))
+      .catch(() => {});
+    getPref('show_knife_warmup_rounds')
+      .then((v) => (showKnife = prefBool(v)))
+      .catch(() => {
+        /* keep the default (off) */
+      });
   });
 
   async function saveCfg() {
@@ -427,6 +467,41 @@
           onclick={() => setTheme('light')}>Light</button
         >
       </div>
+    </div>
+    <div class="row-between">
+      <span class="muted"
+        >Font size — scales the whole UI (13 / 15 / 17 px); applied instantly
+        and remembered across restarts. Medium is the default.</span
+      >
+      <div class="sett-seg" role="group" aria-label="Font size">
+        {#each FONT_SIZES as sz (sz)}
+          <button
+            class="btn"
+            class:primary={fontSize === sz}
+            aria-pressed={fontSize === sz}
+            onclick={() => setFontSize(sz)}>{FONT_LABELS[sz]}</button
+          >
+        {/each}
+      </div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Match view</h2>
+    <div class="row-between">
+      <label class="filt-check" for="sett-knife">
+        <input
+          id="sett-knife"
+          type="checkbox"
+          checked={showKnife}
+          onchange={(e) => setShowKnife(e.target.checked)}
+        />
+        <span>Show knife &amp; warmup rounds</span>
+      </label>
+      <span class="muted"
+        >Include pregame knife and warmup rounds (negative round numbers,
+        not counted play) in the round lists. Off by default.</span
+      >
     </div>
   </section>
 
