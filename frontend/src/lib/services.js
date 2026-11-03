@@ -17,7 +17,9 @@ import {
   ProfileService,
   VoiceService,
   MapPackService,
+  DialogService,
 } from '../../bindings/github.com/ChristianWSmith/spectra';
+import { KVStoreService } from '../../bindings/github.com/wailsapp/wails/v3/pkg/services/kvstore';
 
 // --- AppService ---------------------------------------------------------------
 
@@ -340,3 +342,36 @@ export function setMapPackPromptState(state, path) {
   return MapPackService.SetMapPackPromptState(state || '', path || '');
 }
 export function chooseCS2Dir() { return MapPackService.ChooseCS2Dir(); }
+
+// --- DialogService (native file dialogs) --------------------------------------
+// The webview can't open OS dialogs or write files; save.js wraps these into
+// the saveText/saveBlob/saveExportURL helpers every download path uses.
+
+// SaveFile opens the native save dialog; resolves to the absolute path or
+// "" when the user cancels.
+export function saveFile(defaultName, extensions) {
+  return DialogService.SaveFile(defaultName, extensions);
+}
+
+// writeFile lands bytes on path (0o644). data rides as a standard base64
+// string (encoding/json decodes it into []byte).
+export function writeFile(path, data) {
+  return DialogService.WriteFile(path, data);
+}
+
+// saveExport picks a path via the native dialog, then has Go fetch urlPath
+// (path + query, e.g. "/api/export/library.db") through the app's own HTTP
+// routes and stream it to the file — for URL-served payloads too large to
+// round-trip the bindings (library.db, full-match WAVs, raw reports).
+// Resolves to "" on cancel.
+export function saveExport(urlPath, defaultName, extensions) {
+  return DialogService.SaveExport(urlPath, defaultName, extensions);
+}
+
+// --- KVStore prefs --------------------------------------------------------------
+// Durable preference storage (AutoSave — every write is on disk immediately;
+// prefs.go holds the Go-side key constants). localStorage is only the
+// pre-paint cache for font_size (see fontsize.js).
+
+export function getPref(key) { return KVStoreService.Get(key); }
+export function setPref(key, value) { return KVStoreService.Set(key, value); }

@@ -16,6 +16,7 @@
   import { attachReplayInput, snapshot } from '../replay/input.js';
   import { createVoiceEngine, fetchVoicePCM } from '../replay/audio.js';
   import { loadMapPack } from '../components/mapxform.js';
+  import { saveBlob, saveExportURL } from '../save.js';
 
   let { id = 0, nav = () => {} } = $props();
 
@@ -421,7 +422,7 @@
     }
   }
 
-  function finishClip() {
+  async function finishClip() {
     const type = (recorder && recorder.mimeType) || 'video/webm';
     const blob = new Blob(recChunks, { type });
     recChunks = [];
@@ -442,14 +443,23 @@
         'recorder produced an empty blob — no WebM encoder available (on Linux install gst-plugins-good)';
       return;
     }
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `clip-${id}-${recStartTick}.webm`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
-    recState = 'saved';
-    recNote = `${type.replace('video/', '')} · ${(blob.size / 1024).toFixed(0)} KB`;
+    // Native save dialog (lib/save.js): on cancel the clip is discarded
+    // silently, on write failure the error lands in the status chip.
+    try {
+      const path = await saveBlob(`clip-${id}-${recStartTick}.webm`, 'webm', blob);
+      if (path) {
+        recState = 'saved';
+        recNote = `${type.replace('video/', '')} · ${(blob.size / 1024).toFixed(0)} KB`;
+      } else {
+        // Cancel: the chip renders at idle (hidden), so the UI returns to
+        // its pre-record state — a cancel looks like nothing happened.
+        recState = 'idle';
+        recNote = '';
+      }
+    } catch (e) {
+      recState = 'error';
+      recNote = `clip save failed: ${errText(e)}`;
+    }
   }
 
   function discardClip() {
@@ -466,6 +476,17 @@
     recEndFrame = -1;
     recState = 'idle';
     recNote = '';
+  }
+
+  // Per-player full-track WAV: rides SaveExport — the native dialog picks
+  // the path, then Go serves the sidecar route straight to the file (full
+  // matches are tens of MB, so they never cross the bindings). Cancel = "".
+  async function exportWav(p) {
+    try {
+      await saveExportURL(voiceWavURL(id, p.steamId), `${p.name || p.steamId}.wav`, 'wav');
+    } catch (e) {
+      console.error('voice WAV save failed:', e);
+    }
   }
 
   function openTimeline() {
@@ -749,11 +770,11 @@
               >
               <details class="voice-export">
                 <summary class="btn small ghost" aria-label="Export {p.name} voice" title="Export {p.name}'s track">▾</summary>
-                <a
+                <button
+                  type="button"
                   class="voice-dl"
-                  href={voiceWavURL(id, p.steamId)}
-                  download="{p.name || p.steamId}.wav"
-                  title="Download full-track WAV for {p.name}">WAV</a
+                  title="Download full-track WAV for {p.name}"
+                  onclick={() => exportWav(p)}>WAV</button
                 >
               </details>
             </span>
@@ -763,3 +784,12 @@
     {/if}
   {/if}
 </div>
+
+<style>
+  /* The WAV control is a real button now (it opens the native save dialog
+     rather than navigating), so it needs the pointer cursor the old anchor
+     got from the UA stylesheet. */
+  .voice-dl {
+    cursor: pointer;
+  }
+</style>
