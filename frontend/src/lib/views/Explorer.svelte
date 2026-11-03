@@ -13,6 +13,7 @@
     getWarnings,
   } from '../services.js';
   import { fmtDate, fmtInt } from '../fmt.js';
+  import PayloadTree from '../components/PayloadTree.svelte';
 
   let { nav = () => {} } = $props();
 
@@ -164,55 +165,10 @@
     return hist.filter((h) => h.name.toLowerCase().includes(q));
   });
 
-  // --- Key/value tree helpers ------------------------------------------------
-  function parsePayload(s) {
-    try {
-      return JSON.parse(s || '{}');
-    } catch {
-      return null;
-    }
-  }
-
-  function kvText(v) {
-    if (v === null) return 'null';
-    if (v === undefined) return 'undefined';
-    if (typeof v === 'object') return Array.isArray(v) ? `[…]` : `{…}`;
-    return String(v);
-  }
-
-  function kvClass(v) {
-    if (v === null || v === undefined) return 'kv-null';
-    if (typeof v === 'number') return 'kv-num';
-    if (typeof v === 'boolean') return 'kv-bool';
-    if (typeof v === 'object') return 'kv-obj';
-    return 'kv-str';
-  }
-
-  function isObj(v) {
-    return v !== null && typeof v === 'object';
-  }
-
-  function entries(v) {
-    return Object.entries(v);
-  }
-
-  function countKeys(v) {
-    return isObj(v) ? Object.keys(v).length : 0;
-  }
-
-  // Key search: keep a row when its own key matches OR any nested key does.
-  function keyMatches(key, val, q) {
-    if (!q) return true;
-    if (String(key).toLowerCase().includes(q)) return true;
-    if (isObj(val)) {
-      for (const [k, v] of Object.entries(val)) {
-        if (keyMatches(k, v, q)) return true;
-      }
-    }
-    return false;
-  }
-
-  const payloadQ = $derived(payloadFilter.trim().toLowerCase());
+  // Key/value tree rendering (parse, leaf formatting, filter matching,
+  // lazy expansion) lives in components/PayloadTree.svelte + the pure
+  // payloadTree.js module — see there. Explorer only feeds it the raw
+  // payload JSON and the filter text.
 
   // Encrypted-message note (presence, never content).
   const encNote = $derived.by(() => {
@@ -432,8 +388,10 @@
             {#if eventsError}
               <p class="error" role="alert">{eventsError}</p>
             {/if}
-            {#each events as ev, i (i)}
-              {@const payload = parsePayload(ev.payloadJson)}
+            <!-- Keyed by event name + index: switching events remounts the
+                 payload trees (fresh expansion state) while "load 100
+                 more" keeps existing rows' state (stable indices). -->
+            {#each events as ev, i (selectedName + ':' + i)}
               <div class="payload expl-ev">
                 <div class="payload-head">
                   <span class="mono muted">#{i + 1}</span>
@@ -450,41 +408,8 @@
                 </div>
                 {#if rawOpen[i]}
                   <pre class="mono">{ev.payloadJson}</pre>
-                {:else if payload === null}
-                  <pre class="mono expl-kv-err">unparseable payload JSON — use the raw toggle</pre>
                 {:else}
-                  <div class="expl-kv">
-                    {#each entries(payload) as [k, v] (k)}
-                      {#if keyMatches(k, v, payloadQ)}
-                        {#snippet node(key, val, depth)}
-                          {#if isObj(val)}
-                            <details class="kv-obj" open={depth === 0}>
-                              <summary>
-                                <span class="kv-key">{key}</span>
-                                <span class="kv-meta muted"
-                                  >{Array.isArray(val) ? 'array' : 'object'} ({countKeys(val)})</span
-                                >
-                              </summary>
-                              {#each entries(val) as [k2, v2] (k2)}
-                                {#if keyMatches(k2, v2, payloadQ)}
-                                  {node(k2, v2, depth + 1)}
-                                {/if}
-                              {/each}
-                            </details>
-                          {:else}
-                            <div class="kv-row">
-                              <span class="kv-key">{key}</span>
-                              <span class={kvClass(val)}>{kvText(val)}</span>
-                            </div>
-                          {/if}
-                        {/snippet}
-                        {node(k, v, 0)}
-                      {/if}
-                    {/each}
-                    {#if payloadQ && !Object.entries(payload).some(([k, v]) => keyMatches(k, v, payloadQ))}
-                      <p class="muted">No keys match “{payloadFilter}”.</p>
-                    {/if}
-                  </div>
+                  <PayloadTree json={ev.payloadJson} query={payloadFilter.trim()} />
                 {/if}
               </div>
             {/each}
