@@ -138,6 +138,46 @@ After cloning, run `git lfs pull` if the golden demo is needed.
   regenerated assets. The release skill bumps its `version` in lockstep with
   the dispatch input (two sources, one release).
 
+### One canonical way (consolidation conventions)
+
+Adopted by the application-wide consolidation pass; full canonical-home
+table in `ref/CONSOLIDATION.md`. Before adding any helper, rule, class, or
+query fragment, check whether a canonical one already exists — extend it
+instead of forking it.
+
+- **Domain rules live in one place:** side-parity arithmetic in
+  `internal/rules`; the trade window in the analytics pass
+  (`analytics.Compute` recomputes `player_stats.trade_kills`);
+  `store.GetCombatStats` SQL is authoritative for combat stats (its
+  decisions are pinned by `TestGetCombatStatsSQLDecisions`); counted
+  rounds in `analytics.CountedRounds` (frontend twin: `lib/rounds.js`
+  `isCounted`); utility-weapon set in `models.IsUtilityWeapon`; win
+  predicate `models.WinFor`; config building `analytics.ConfigFrom`.
+  Never re-express a rule in a second layer — add a comment cross-referencing
+  the canonical implementation instead.
+- **Frontend helpers:** errors `errText` → `lib/services.js`; Steam
+  profiles/nav actions → `lib/nav.js`; formatting → `lib/fmt.js`; CSV and
+  downloads → `lib/csv.js` / `lib/download.js` (native save dialogs via
+  `lib/save.js`); one-shot sessionStorage hand-offs → `lib/handoff.js`
+  (never touch `sessionStorage` directly); metric/definition tooltip
+  strings → `lib/definitions.js` (Settings' glossary is rendered from the
+  same array); event landmark kinds → `lib/replay/landmarks.js`.
+- **CSS:** one unique prefix per component (`mp-` MatchPicker, `pk-`
+  MapPackPrompt, `pp-` PlayerPicker, …); concept classes have one spelling
+  in `style.css` — `.chip.badge-computed/.badge-inferred`, `.def`,
+  `.field-label`, `.note-amber`, `.chip.ok/.bad/.busy/.idle`, `.toolbar`,
+  `.view <name>-view`, `--fs-section`. Do not add a prefixed synonym for
+  an existing concept.
+- **View-level aggregates are allowed** only when they are pure functions
+  over already-fetched rows, the formula is documented in the card's title
+  or tooltip, and the value is not derivable from a stored metric without
+  cost. If a view aggregate duplicates a stored metric, relocate it.
+- **Tests:** characterization tests before behavior changes; frontend unit
+  tests are `node --test src/lib/*.test.js`, DOM tests are the jsdom
+  harnesses in `frontend/test/` (`npm i --no-save jsdom` first). Golden
+  fixtures may only be regenerated deliberately, with the diff explained —
+  a fixture diff without justification is a rejected change.
+
 ## CS2 domain knowledge
 
 Anything about Counter-Strike 2 itself — demo/event semantics, game
