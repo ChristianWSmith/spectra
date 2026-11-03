@@ -19,6 +19,10 @@
     setPendingTimelineFilter,
     setPendingSeek,
   } from '../services.js';
+  // Preference keys (prefs.go) are read straight through the generated
+  // kvstore binding — services.js has no pref wrappers (Settings owns the
+  // writes; Go never consumes these keys).
+  import { KVStoreService } from '../../../bindings/github.com/wailsapp/wails/v3/pkg/services/kvstore';
   import {
     fmtDuration,
     fmtBytes,
@@ -27,6 +31,8 @@
     fmt2,
     fmtPercent,
     fmtInt,
+    fmtClock,
+    tickSeconds,
     prettyJson,
   } from '../fmt.js';
   import { teamNames } from '../teams.js';
@@ -67,17 +73,22 @@
     { key: 'kda', label: 'KDA' },
     { key: 'total_damage', label: 'DMG' },
     { key: 'rounds_played', label: 'Rnds' },
+    // Multi-kill tiers, ascending 2K → 5K (a round counts at exactly one
+    // tier — CS2.md "Multi-kill columns"). Keys are the snake_case store
+    // sort keys ("two_k" is whitelisted in the Go scoreboardSort map); the
+    // row field is the camelCase JSON tag (cellText: two_k → twoK).
+    { key: 'two_k', label: '2K' },
     {
-      key: 'five_k',
-      label: '5K',
+      key: 'three_k',
+      label: '3K',
     },
     {
       key: 'four_k',
       label: '4K',
     },
     {
-      key: 'three_k',
-      label: '3K',
+      key: 'five_k',
+      label: '5K',
     },
     { key: 'entry_kills', label: 'Entry' },
     { key: 'trade_kills', label: 'Trade' },
@@ -121,6 +132,47 @@
   let classError = $state('');
   // Rounds-tab compare picker: round numbers (max 4, non-warmup only).
   let compareSel = $state([]);
+
+  // Rounds-tab visibility pref (key: show_knife_warmup_rounds, prefs.go).
+  // false (the default) hides warmup and pregame/knife rounds — they are
+  // negative/zero-numbered, not counted play. Read through the kvstore
+  // binding on mount and on every tab switch: Settings writes the key
+  // directly and there is no cross-view change event, so re-reading on
+  // activation is the refresh mechanism (returning from Settings
+  // remounts this view; switching to the Rounds tab re-runs the effect).
+  let showKnifeWarmup = $state(false);
+
+  // kvstore values round-trip as JSON — a bool stays a bool — but a
+  // hand-edited/legacy prefs file may hold "true"/"false" strings.
+  // Anything else (unset, null, corrupt) falls back to false = hidden.
+  function coercePrefBool(v) {
+    if (typeof v === 'boolean') return v;
+    if (typeof v === 'string') return v.trim().toLowerCase() === 'true';
+    return false;
+  }
+
+  $effect(() => {
+    id;
+    tab;
+    let live = true;
+    KVStoreService.Get('show_knife_warmup_rounds')
+      .then((v) => {
+        if (live) showKnifeWarmup = coercePrefBool(v);
+      })
+      .catch(() => {
+        // Unreadable store → conservative default: hidden.
+        if (live) showKnifeWarmup = false;
+      });
+    return () => (live = false);
+  });
+
+  // Rounds tab rows: hide warmup and pregame (knife) rounds unless the pref
+  // opts in. Only visibility changes — row numbers stay exactly as stored
+  // (negative for warmup, 0 for knife; they are extracted facts and are
+  // never renumbered here).
+  const viewRounds = $derived(
+    showKnifeWarmup ? rounds : rounds.filter((r) => !r.warmup && !r.pregame),
+  );
 
   // M5: provenance / entity / ConVar explorer-lite (Raw tab).
   let prov = $state(null);
@@ -377,6 +429,26 @@
       });
     return () => (live = false);
   });
+
+  // Round objects the view already loads on mount (header effect) — reused
+  // by the Chat tab, no extra backend call.
+  const roundByNumber = $derived(new Map(rounds.map((r) => [r.number, r])));
+
+  // Chat time cell: "R12 1:23" — how far INTO its round the message was
+  // said: (tick − round.startTick) / tickRate, rendered with fmtClock.
+  // Messages with no containing round, in round 0/negative (knife/warmup)
+  // or with a negative offset fall back to a match-relative clock
+  // (tick / tickRate) — plain "m:ss", never a negative; keep it simple.
+  // The raw tick stays in the cell's title tooltip.
+  function chatTime(c) {
+    const rate = match ? match.tickRate : 0;
+    const r = roundByNumber.get(c.round);
+    if (r && r.number >= 1) {
+      const intoRound = tickSeconds(c.tick - r.startTick, rate);
+      if (intoRound >= 0) return `R${r.number} ${fmtClock(intoRound)}`;
+    }
+    return fmtClock(tickSeconds(c.tick, rate));
+  }
 
   $effect(() => {
     if (tab !== 'Raw' || rawName) return;
@@ -1001,7 +1073,7 @@
             </tr>
           </thead>
           <tbody>
-            {#each rounds as r (r.number)}
+            {#each viewRounds as r (r.number)}
               {@const cls = classByRound.get(r.number)}
               <tr
                 class="clickable"
@@ -1103,7 +1175,7 @@
         <table class="data-table">
           <thead>
             <tr>
-              <th scope="col" class="num">Tick</th>
+              <th scope="col" class="num">Time</th>
               <th scope="col" class="num">Round</th>
               <th scope="col">Name</th>
               <th scope="col">Text</th>
@@ -1112,7 +1184,7 @@
           <tbody>
             {#each chat as c (c.id)}
               <tr>
-                <td class="num mono">{c.tick}</td>
+                <td class="num mono chat-time" title="tick {c.tick}">{chatTime(c)}</td>
                 <td class="num"
                   ><span class="chip round-chip">{c.round}</span></td
                 >
@@ -1292,3 +1364,11 @@
     <p class="muted">Loading…</p>
   {/if}
 </div>
+
+<style>
+  /* Chat time cell ("R12 1:23"): keep the round+clock label on one line —
+     round numbers are short, so the column can stay narrow and tidy. */
+  .chat-time {
+    white-space: nowrap;
+  }
+</style>
