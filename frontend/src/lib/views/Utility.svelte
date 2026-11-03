@@ -2,9 +2,11 @@
   import {
     getUtility,
     getScoreboard,
+    getMatch,
     setPendingTimelineFilter,
     setPendingSeek,
   } from '../services.js';
+  import { fmtClock, tickSeconds } from '../fmt.js';
 
   // Match renders <Utility {id} /> — nav is optional, fall back to the hash
   // router directly so the drill-downs still work.
@@ -19,17 +21,22 @@
   let kindF = $state('');
   let throwerF = $state('');
   let closed = $state({}); // round -> true = collapsed
+  // Match tickrate for the tick → clock conversion (unknown until the
+  // match metadata lands; 64 is CS2's standard fallback).
+  let tickRate = $state(64);
 
   $effect(() => {
     let live = true;
     Promise.all([
       getUtility(id),
       getScoreboard(id, 'kills', true).catch(() => []),
+      getMatch(id).catch(() => null),
     ])
-      .then(([u, sb]) => {
+      .then(([u, sb, m]) => {
         if (!live) return;
         rows = u || [];
         players = sb || [];
+        if (m && m.tickRate > 0) tickRate = m.tickRate;
         loading = false;
         error = '';
       })
@@ -295,7 +302,11 @@
                     <span class="util-thrower"
                       >{r.throwerName || r.thrower || '—'}</span
                     >
-                    <span class="mono muted util-tick">t{r.tick}</span>
+                    <span
+                      class="mono muted util-tick"
+                      title="tick {r.tick}"
+                      >{fmtClock(tickSeconds(r.tick, tickRate))}</span
+                    >
                     <span class="util-num" title="damage dealt"
                       >{r.damage || 0} dmg</span
                     >
