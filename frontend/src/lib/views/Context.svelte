@@ -2,9 +2,10 @@
   // M4 Context stream: merged chat + match administration —
   // connects/disconnects (typed events), server ConVars and team changes
   // (generic events) — one tick-sorted list with per-source filter chips and
-  // client-side CSV/JSON export. Sources fetched independently; a failed
-  // source shows its error but never blanks the rest.
+  // CSV/JSON export through the native save dialog. Sources fetched
+  // independently; a failed source shows its error but never blanks the rest.
   import { getChat, getEvents, getGenericEvents, setPendingSeek } from '../services.js';
+  import { saveText } from '../save.js';
   import { fmtInt } from '../fmt.js';
 
   let { id = 0, nav = () => {} } = $props();
@@ -159,21 +160,21 @@
     active = { ...active, [key]: !active[key] };
   }
 
-  // --- Export (client-side Blob downloads) -----------------------------------
-  function download(filename, mime, text) {
-    const blob = new Blob([text], { type: mime });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
+  // --- Export (native save dialog — lib/save.js) ------------------------------
+  // The view has no status strip for save failures; cancel is a silent
+  // no-op by contract, real failures land in the console.
+  async function download(filename, mime, text) {
+    const dot = filename.lastIndexOf('.');
+    const ext = dot > 0 ? filename.slice(dot + 1) : 'txt';
+    try {
+      await saveText(filename, ext, text, mime);
+    } catch (e) {
+      console.error('Context export failed:', e);
+    }
   }
 
   function exportJSON() {
-    download(
+    return download(
       `match-${id}-context.json`,
       'application/json',
       JSON.stringify(visible, null, 2),
@@ -192,7 +193,7 @@
         [r.tick, r.round, r.src, r.name, r.text].map(csvCell).join(','),
       );
     }
-    download(`match-${id}-context.csv`, 'text/csv', lines.join('\n'));
+    return download(`match-${id}-context.csv`, 'text/csv', lines.join('\n'));
   }
 
   function watchTick(r) {

@@ -4,16 +4,17 @@
 // Shift+← / → ±64 frames · L toggle loop · F toggle follow · 1-9 select
 // (+follow) player slot · S snapshot PNG.
 
-// snapshot downloads the canvas as replay-<matchId>-<tick>.png.
+import { saveBlob } from '../save.js';
+
+// snapshot saves the canvas as replay-<matchId>-<tick>.png through the
+// native save dialog (lib/save.js) — cancel is a silent no-op; the S-key /
+// button path has no error surface, so failures log to the console.
 export function snapshot(canvas, matchId, tick) {
   canvas.toBlob((blob) => {
     if (!blob) return;
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `replay-${matchId}-${tick}.png`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
+    saveBlob(`replay-${matchId}-${tick}.png`, 'png', blob).catch((e) =>
+      console.error('snapshot save failed:', e),
+    );
   }, 'image/png');
 }
 

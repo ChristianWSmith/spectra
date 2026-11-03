@@ -8,6 +8,7 @@
     listQueryHistory,
     clearQueryHistory,
   } from '../services.js';
+  import { saveText } from '../save.js';
 
   let { nav = () => {} } = $props();
 
@@ -189,7 +190,9 @@
     return s.length > 60 ? s : '';
   }
 
-  // --- CSV / JSON export (acceptance walkthrough #2) -------------------------
+  // --- CSV / JSON export (acceptance walkthrough #2) ---------------------------
+  // Native save dialog via lib/save.js: cancel resolves to "" silently;
+  // this view has no export status strip, so failures log to the console.
 
   function csvCell(v) {
     if (v === null || v === undefined) return '';
@@ -201,28 +204,24 @@
     return new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').replace('Z', '');
   }
 
-  function download(text, mime, ext) {
-    const blob = new Blob([text], { type: mime });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `query-${stamp()}.${ext}`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  async function download(text, mime, ext) {
+    try {
+      await saveText(`query-${stamp()}.${ext}`, ext, text, mime);
+    } catch (e) {
+      console.error('SQL export failed:', e);
+    }
   }
 
   function exportCSV() {
     if (!result) return;
     const lines = [result.columns.map(csvCell).join(',')];
     for (const row of result.rows) lines.push(row.map(csvCell).join(','));
-    download(lines.join('\r\n') + '\r\n', 'text/csv;charset=utf-8', 'csv');
+    return download(lines.join('\r\n') + '\r\n', 'text/csv;charset=utf-8', 'csv');
   }
 
   function exportJSON() {
     if (!result) return;
-    download(
+    return download(
       JSON.stringify({ columns: result.columns, rows: result.rows }, null, 2),
       'application/json',
       'json',
