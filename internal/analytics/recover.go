@@ -4,6 +4,7 @@ import (
 	"sort"
 
 	"github.com/ChristianWSmith/spectra/internal/models"
+	"github.com/ChristianWSmith/spectra/internal/rules"
 )
 
 // RecoverSides fills missing final-side data for players absent from the
@@ -123,10 +124,10 @@ func RecoverSides(events []models.Event, rounds []RoundInfo, players []PlayerRef
 	// teams).
 	if s, ok := colorSide[0]; ok {
 		if _, taken := colorSide[1]; !taken {
-			colorSide[1] = otherTeam(s)
+			colorSide[1] = rules.OtherSide(s)
 		}
 	} else if s, ok := colorSide[1]; ok {
-		colorSide[0] = otherTeam(s)
+		colorSide[0] = rules.OtherSide(s)
 	}
 
 	for i := range out {
@@ -175,15 +176,11 @@ func sideMapForRound(team map[string]string, cfg Config, round int) map[string]s
 	return out
 }
 
-// sideAt flips a final-half side for rounds before the half switch.
+// sideAt flips a final-half side for rounds before the half switch — the
+// arithmetic is canonical in rules.SideAt (shared with the store's economy
+// view, the heatmap side resolver and the frontend RoundStrip).
 func sideAt(finalSide string, cfg Config, round int) string {
-	if finalSide != "ct" && finalSide != "t" {
-		return ""
-	}
-	if cfg.HalfSwitchRound > 0 && round < cfg.HalfSwitchRound {
-		return otherTeam(finalSide)
-	}
-	return finalSide
+	return rules.SideAt(finalSide, cfg.HalfSwitchRound, round)
 }
 
 // sortedPlayerRefs orders players by SteamID for stable output.

@@ -24,19 +24,14 @@ const (
 
 // utilKind normalizes a weapon string to the stored utility kind (pairing
 // must treat Molotov ≡ Incendiary — the detonation event records the
-// latter for both).
+// latter for both). The SET and the name→kind projection are canonical in
+// models (models.IsUtilityWeapon / models.UtilityWeaponKind — shared with
+// the util-dmg attribution and pinned to extract's equipment enum by
+// extract.TestUtilityWeaponSetsIdentical); non-utility weapons keep their
+// lowercased name as the pairing key.
 func utilKind(weapon string) string {
-	switch strings.ToLower(weapon) {
-	case "he grenade":
-		return "he"
-	case "flashbang":
-		return "flash"
-	case "smoke grenade":
-		return "smoke"
-	case "molotov", "incendiary grenade":
-		return "molotov"
-	case "decoy grenade":
-		return "decoy"
+	if kind := models.UtilityWeaponKind(weapon); kind != "" {
+		return kind
 	}
 	return strings.ToLower(weapon)
 }

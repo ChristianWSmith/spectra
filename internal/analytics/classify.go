@@ -6,7 +6,7 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/models"
 )
 
-// BuyClass classifies one side's buy for one round against the configured
+// buyClass classifies one side's buy for one round against the configured
 // equipment thresholds (transparent-rules requirement: the why string is
 // REQUIRED and is what the UI shows). Rules v1:
 //
@@ -20,7 +20,7 @@ import (
 // false + prevEquip 0 for the first round of a half/match → eco, not save).
 // Anti-eco and bonus classes are deferred: v1 keeps the rule
 // set minimal and documented.
-func BuyClass(equip int, prevWon bool, prevEquip int, cfg Config, pistol bool) (label, why string) {
+func buyClass(equip int, prevWon bool, prevEquip int, cfg Config, pistol bool) (label, why string) {
 	if pistol {
 		return "pistol", fmt.Sprintf("half-start pistol round (equip %d)", equip)
 	}

@@ -55,9 +55,9 @@ func TestBuyClassThresholds(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, why := BuyClass(tc.equip, tc.prevWon, tc.prevEquip, cfg, tc.pistol)
+			got, why := buyClass(tc.equip, tc.prevWon, tc.prevEquip, cfg, tc.pistol)
 			if got != tc.want {
-				t.Errorf("BuyClass(%d, prevWon=%v, prevEquip=%d, pistol=%v) = %q, want %q",
+				t.Errorf("buyClass(%d, prevWon=%v, prevEquip=%d, pistol=%v) = %q, want %q",
 					tc.equip, tc.prevWon, tc.prevEquip, tc.pistol, got, tc.want)
 			}
 			if why == "" {
@@ -425,55 +425,42 @@ func TestUtilityDetWithoutThrow(t *testing.T) {
 	}
 }
 
-func TestCombatStats(t *testing.T) {
-	players := []PlayerRef{
-		{SteamID: "A", Name: "Alice", Side: "ct"},
-		{SteamID: "X", Side: "t"},
-		{SteamID: "B", Side: "ct"}, // A's teammate — the FF victim
+// TestUtilKindUsesModelsUtilitySet pins analytics' third copy of the utility
+// set: utilKind and the util-dmg attribution both go through models now, so
+// every canonical grenade normalizes to the stored kind and nothing else
+// does (the set itself is pinned in extract.TestUtilityWeaponSetsIdentical).
+func TestUtilKindUsesModelsUtilitySet(t *testing.T) {
+	for _, tc := range []struct{ weapon, kind string }{
+		{"HE Grenade", "he"},
+		{"Flashbang", "flash"},
+		{"Smoke Grenade", "smoke"},
+		{"Molotov", "molotov"},
+		{"Incendiary Grenade", "molotov"},
+		{"Decoy Grenade", "decoy"},
+	} {
+		if !models.IsUtilityWeapon(tc.weapon) {
+			t.Errorf("IsUtilityWeapon(%q) = false, want true", tc.weapon)
+		}
+		if got := utilKind(tc.weapon); got != tc.kind {
+			t.Errorf("utilKind(%q) = %q, want %q", tc.weapon, got, tc.kind)
+		}
 	}
-	stats := []models.PlayerStats{
-		{SteamID: "A", Name: "Alice", EntryKills: 2, TradeKills: 3, Deaths: 4, RoundsPlayed: 10},
-	}
-	events := []models.Event{
-		ev(0, 10, 1, models.EventKill, "A", "X"),
-		ev(1, 10, 1, models.EventDamage, "A", "X", withDmg(60)), // on-kill damage
-		ev(2, 20, 1, models.EventDamage, "A", "X", withDmg(30)), // damage without kill
-		ev(3, 30, 1, models.EventDamage, "A", "B", withDmg(10)), // friendly fire (final sides)
-	}
-	engs := []Engagement{
-		{Kind: KindUntraded, BSteam: "A"},
-		{Kind: KindUntraded, BSteam: "A"},
-	}
-	prs := []PlayerRound{
-		{SteamID: "A", KAST: true}, {SteamID: "A", KAST: false}, {SteamID: "A", KAST: true},
-	}
-	got := CombatStats(events, players, nil, prs, engs, stats, testCfg)
-	if len(got) != 1 {
-		t.Fatalf("rows = %d, want 1", len(got))
-	}
-	r := got[0]
-	if r.DMGNoKill != 40 {
-		t.Errorf("dmgNoKill = %d, want 40", r.DMGNoKill)
-	}
-	if r.DMGConvPct < 59.9 || r.DMGConvPct > 60.1 {
-		t.Errorf("dmgConvPct = %v, want 60", r.DMGConvPct)
-	}
-	if r.FFDamage != 10 {
-		t.Errorf("ffDamage = %d, want 10", r.FFDamage)
-	}
-	if r.EntryRate != 0.2 {
-		t.Errorf("entryRate = %v, want 0.2", r.EntryRate)
-	}
-	if r.TradeRate != 0.75 {
-		t.Errorf("tradeRate = %v, want 0.75", r.TradeRate)
-	}
-	if r.UntradedDeaths != 2 || r.TradeOppMissed != 2 {
-		t.Errorf("untraded/oppMissed = %d/%d, want 2/2", r.UntradedDeaths, r.TradeOppMissed)
-	}
-	if r.KASTPct < 66.6 || r.KASTPct > 66.8 {
-		t.Errorf("kastPct = %v, want ~66.67", r.KASTPct)
+	for _, weapon := range []string{"AK-47", "AWP", "knife", "weapon_hegrenade"} {
+		if models.IsUtilityWeapon(weapon) {
+			t.Errorf("IsUtilityWeapon(%q) = true, want false", weapon)
+		}
+		if got := utilKind(weapon); got != strings.ToLower(weapon) {
+			t.Errorf("utilKind(%q) = %q, want the lowercased pairing key %q",
+				weapon, got, strings.ToLower(weapon))
+		}
 	}
 }
+
+// TestCombatStats moved: the in-memory twin (analytics.CombatStats) was
+// deleted — store.GetCombatStats is the only implementation and its
+// semantics (including the three documented SQL-vs-Go drift decisions) are
+// pinned in internal/store/analytics_test.go (TestGetCombatStatsFromStoredRows
+// and TestGetCombatStatsSQLDecisions).
 
 func TestEconomyRowsFillsClasses(t *testing.T) {
 	rows := []models.EconomyRow{

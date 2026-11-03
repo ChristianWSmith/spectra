@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ChristianWSmith/spectra/internal/models"
+	"github.com/ChristianWSmith/spectra/internal/rules"
 )
 
 // This file is the M3 persistence surface: analysis_config, the per-match
@@ -390,12 +391,16 @@ func (s *Store) GetUtility(matchID int64) ([]models.UtilityEvent, error) {
 }
 
 // GetEconomy returns the per-round economy view (warmup and pregame/knife
-// rounds excluded): rounds ⋈ round_economy ⋈ round_classifications with
+// rounds excluded — the counted-rounds predicate `warmup = 0 AND pregame = 0`
+// below is the SQL twin of analytics.CountedRounds; keep the two in sync:
+// index-based rules such as the MR12 pistol stride shift if a knife round
+// slips into either side): rounds ⋈ round_economy ⋈ round_classifications with
 // loss-bonus reconstruction applied. Loss bonus is INFERRED (reconstructed
 // from round winners under the CS2 loss-count rules — see
 // applyLossBonuses); InferredCT/ InferredT are set accordingly; per-side
 // ClassCT/ClassT/ClassWhy* stay empty for the caller to fill via
-// analytics.BuyClass (documented cycle deviation).
+// analytics.buyClass (unexported: package-internal only, and the store
+// cannot import analytics anyway — documented cycle deviation).
 func (s *Store) GetEconomy(matchID int64) ([]models.EconomyRow, error) {
 	rows, err := s.db.Query(
 		`SELECT r.number, r.winner, r.warmup, r.equip_ct, r.equip_t,
@@ -526,7 +531,8 @@ func applyLossBonuses(out []models.EconomyRow, flips []bool) {
 // boundary). Exact per-round freeze-end sides win when the extractor
 // persisted them (new imports — a player observed on the other side
 // proves the switch); legacy matches fall back to the equal-length half
-// heuristic (ceiling division — the same parity model the heatmap uses).
+// heuristic (rules.FlipIndexes — the same parity model the heatmap and
+// RoundStrip use).
 func sideFlips(rounds []models.EconomyRow, switches int, exact map[int]map[string]string) []bool {
 	n := len(rounds)
 	flips := make([]bool, n)
@@ -534,10 +540,8 @@ func sideFlips(rounds []models.EconomyRow, switches int, exact map[int]map[strin
 		return flips
 	}
 	heuristic := map[int]bool{}
-	for k := 1; k <= switches; k++ {
-		if idx := (n*k + switches) / (switches + 1); idx > 0 && idx < n {
-			heuristic[idx] = true
-		}
+	for _, idx := range rules.FlipIndexes(n, switches) {
+		heuristic[idx] = true
 	}
 	for i := 1; i < n; i++ {
 		prev, cur := exact[rounds[i-1].Round], exact[rounds[i].Round]
@@ -563,6 +567,23 @@ func sideFlips(rounds []models.EconomyRow, switches int, exact map[int]map[strin
 // no team column, so this is an approximation (documented; badge in UI).
 // TradeOppMissed = untraded deaths (inferred heuristic — no position-based
 // opportunity scan in v1).
+//
+// This SQL is AUTHORITATIVE: the in-memory twin that once duplicated these
+// rules in Go (analytics.CombatStats) was deleted — it had drifted in three
+// decisions, each pinned by TestGetCombatStatsSQLDecisions:
+//
+//  1. Friendly fire is `ap.side = vp.side`: an absent player row (LEFT JOIN
+//     NULL) never matches, but two players whose stored side is "" (unknown)
+//     DO match (empty == empty). The Go twin required both sides to be
+//     known.
+//  2. Damage-on-kill needs a kill row with the SAME attacker, victim AND
+//     tick; the Go twin credited any death of the victim on that tick, so a
+//     trade kill on the same tick credited the wrong attacker.
+//  3. Rows come back ordered by player NAME (ORDER BY p.name ASC); the Go
+//     twin sorted by SteamID.
+//
+// Do not "fix" these from the Go side — change the SQL (and this comment)
+// deliberately instead.
 func (s *Store) GetCombatStats(matchID int64) ([]models.CombatStat, error) {
 	// Damage per attacker, splitting damage-on-kill (a kill event with the
 	// same attacker/victim on the same tick) from damage-without-kill, and
@@ -864,6 +885,22 @@ func (s *Store) DeleteSavedFilter(id int64) error {
 // and clutches (record count). Full rebuild in one transaction — at the
 // practice scale (100 matches) this is well under the 5 s budget and is the
 // only writer of the table, so it cannot drift.
+//
+// Layer notes — per-match rows (player_stats) vs the cross-match rollup,
+// justified and deliberate, not duplication:
+//
+//   - wins: the SUM(CASE WHEN …) below is the SQL twin of models.WinFor
+//     (the Go helper GetPlayerHistory uses for its per-match Win flag).
+//   - HS%: player_stats.hs_pct is the PER-MATCH rate (extract stamps it as
+//     headshots/kills of that match); the career column pools the counts —
+//     SUM(headshots)/SUM(kills) — because an average of per-match
+//     percentages would over-weight short matches (same pooled shape the
+//     metrics layer's ratio() emits).
+//   - ADRStd: population stddev of the per-match player_stats.adr values,
+//     sqrt(avg(x²) − avg(x)²), computed in SQL here because those are the
+//     same rows this statement already aggregates; no Go code computes it
+//     (internal/metrics' stddev() is a separate generic query layer over
+//     arbitrary columns, not a second implementation of this one).
 func (s *Store) RebuildCareer() error {
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -886,10 +923,9 @@ func (s *Store) RebuildCareer() error {
 				OR (ps.side = 't' AND m.score_t > m.score_ct) THEN 1 ELSE 0 END),
 			AVG(ps.adr),
 			sqrt(MAX(AVG(ps.adr * ps.adr) - AVG(ps.adr) * AVG(ps.adr), 0)),
-			CAST(SUM(ps.kills) AS REAL) / MAX(SUM(ps.deaths), 1),
+			`+kdCareerSQL+`,
 			CASE WHEN SUM(ps.kills) > 0 THEN 100.0 * SUM(ps.headshots) / SUM(ps.kills) ELSE 0 END,
-			COALESCE((SELECT 100.0 * AVG(prs.kast) FROM player_round_stats prs
-				WHERE prs.steam_id = ps.steam_id), 0),
+			`+kastCareerSQL+`,
 			SUM(ps.opening_kills + ps.opening_deaths),
 			SUM(ps.opening_kills),
 			SUM(ps.trade_kills),
@@ -909,12 +945,10 @@ func (s *Store) RebuildCareer() error {
 	return nil
 }
 
-// UpsertCareerFromMatch refreshes the player_career rollup after one
-// match's rows changed. Implementation note: this performs the same full
-// rebuild as RebuildCareer — incremental per-match merging is not worth the
-// correctness risk at this library scale, and the full path stays under the
-// 5 s budget (documented deviation from the incremental wording).
-func (s *Store) UpsertCareerFromMatch(_ int64) error { return s.RebuildCareer() }
+// UpsertCareerFromMatch used to refresh the player_career rollup after one
+// match's rows changed; it was a thin wrapper over RebuildCareer (see the
+// RebuildCareer doc) and had no callers, so it was removed — RebuildCareer
+// is the only writer of the table.
 
 // GetCareer returns one player's career rollup (ErrNotFound when absent).
 func (s *Store) GetCareer(steamID string) (*models.CareerRow, error) {
@@ -989,13 +1023,14 @@ func (s *Store) ListPlayers(query string) ([]models.CareerSummary, error) {
 }
 
 // trendMetricWhitelist maps GetTrend metric names to SQL expressions
-// (identifiers only — no user input ever reaches the query text).
+// (identifiers only — no user input ever reaches the query text). The kast
+// and kd entries reuse the shared scope consts in queries.go — the same
+// expressions GetPlayerHistory and GetScoreboard run.
 var trendMetricWhitelist = map[string]string{
-	"adr": "ps.adr",
-	"kast": `COALESCE((SELECT 100.0 * AVG(prs.kast) FROM player_round_stats prs
-		WHERE prs.match_id = m.id AND prs.steam_id = ps.steam_id), 0)`,
-	"kd": "CAST(ps.kills AS REAL) / MAX(ps.deaths, 1)",
-	"hs": "ps.hs_pct"}
+	"adr":  "ps.adr",
+	"kast": kastPerMatchSQL,
+	"kd":   kdPerMatchSQL,
+	"hs":   "ps.hs_pct"}
 
 // GetTrend returns a per-match metric series for one player, oldest →
 // newest. metric ∈ adr|kast|kd|hs (unknown names yield an error).
@@ -1037,8 +1072,7 @@ func (s *Store) GetPlayerHistory(steamID string) ([]models.ProfileHistoryRow, er
 	rows, err := s.db.Query(
 		`SELECT m.id, m.extracted_at, m.map, m.score_ct, m.score_t, ps.side,
 			ps.kills, ps.deaths, ps.assists, ps.adr,
-			COALESCE((SELECT 100.0 * AVG(prs.kast) FROM player_round_stats prs
-				WHERE prs.match_id = m.id AND prs.steam_id = ps.steam_id), 0)
+			`+kastPerMatchSQL+`
 		 FROM player_stats ps
 		 JOIN matches m ON m.id = ps.match_id
 		 WHERE ps.steam_id = ? AND m.extracted_at IS NOT NULL
@@ -1062,7 +1096,7 @@ func (s *Store) GetPlayerHistory(steamID string) ([]models.ProfileHistoryRow, er
 		if extracted.Valid {
 			r.ExtractedAt = extracted.Time
 		}
-		r.Win = (r.Side == "ct" && r.ScoreCT > r.ScoreT) || (r.Side == "t" && r.ScoreT > r.ScoreCT)
+		r.Win = models.WinFor(r.Side, r.ScoreCT, r.ScoreT)
 		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {

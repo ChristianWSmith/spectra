@@ -544,6 +544,70 @@ func TestGetCombatStatsFromStoredRows(t *testing.T) {
 	}
 }
 
+// TestGetCombatStatsSQLDecisions pins the three decisions where the deleted
+// in-memory twin (analytics.CombatStats) had drifted from this SQL. The SQL
+// is authoritative — see the GetCombatStats doc comment.
+func TestGetCombatStatsSQLDecisions(t *testing.T) {
+	s := openMem(t)
+	id := saveTestMatch(t, s, "/d/combat2.dem", "sha-combat2", time.Now())
+	em := testExtracted("sha-combat2", time.Now())
+	// Names deliberately sort differently from SteamIDs (ORDER BY name).
+	em.Players = []models.Player{
+		{SteamID: "100", Name: "zoe", Side: "ct"},
+		{SteamID: "200", Name: "amy", Side: "t"},
+		{SteamID: "300", Name: "carl", Side: "ct"},
+		{SteamID: "400", Name: "dave", Side: ""}, // unknown side
+		{SteamID: "500", Name: "erin", Side: ""}, // unknown side
+	}
+	em.PlayerStats = []models.PlayerStats{
+		{SteamID: "100", Name: "zoe", Side: "ct", RoundsPlayed: 2},
+		{SteamID: "200", Name: "amy", Side: "t", RoundsPlayed: 2},
+		{SteamID: "300", Name: "carl", Side: "ct", RoundsPlayed: 2},
+		{SteamID: "400", Name: "dave", Side: "", RoundsPlayed: 2},
+		{SteamID: "500", Name: "erin", Side: "", RoundsPlayed: 2},
+	}
+	em.Events = []models.Event{
+		// (1) Friendly fire with BOTH sides unknown: ap.side = vp.side
+		// matches '' = '' → counted (the Go twin required non-empty sides).
+		{Tick: 100, Round: 1, Kind: models.EventDamage, Attacker: "400", Victim: "500", Dmg: 10},
+		// (2) Damage whose victim dies the same tick from a DIFFERENT
+		// attacker: the kill must match attacker+victim+tick, so this stays
+		// damage-without-kill (the Go twin credited any death that tick).
+		{Tick: 200, Round: 1, Kind: models.EventDamage, Attacker: "100", Victim: "200", Dmg: 50},
+		{Tick: 200, Round: 1, Kind: models.EventKill, Attacker: "300", Victim: "200"},
+		// (3) Same attacker+victim+tick → on-kill damage.
+		{Tick: 300, Round: 1, Kind: models.EventDamage, Attacker: "100", Victim: "200", Dmg: 40},
+		{Tick: 300, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "200"},
+	}
+	if err := s.SaveExtracted(id, em); err != nil {
+		t.Fatalf("SaveExtracted: %v", err)
+	}
+	rows, err := s.GetCombatStats(id)
+	if err != nil {
+		t.Fatalf("GetCombatStats: %v", err)
+	}
+	// (3) Ordering is by NAME, not SteamID.
+	if len(rows) != 5 {
+		t.Fatalf("rows = %d, want 5", len(rows))
+	}
+	wantOrder := []string{"200", "300", "400", "500", "100"}
+	for i, sid := range wantOrder {
+		if rows[i].SteamID != sid {
+			t.Fatalf("row %d steam = %q, want %q (ORDER BY p.name)", i, rows[i].SteamID, sid)
+		}
+	}
+	byID := map[string]models.CombatStat{}
+	for _, r := range rows {
+		byID[r.SteamID] = r
+	}
+	if zoe := byID["100"]; zoe.DMGNoKill != 50 {
+		t.Errorf("zoe dmgNoKill = %d, want 50 (90 total − 40 same-attacker on-kill)", zoe.DMGNoKill)
+	}
+	if dave := byID["400"]; dave.FFDamage != 10 || dave.DMGNoKill != 10 {
+		t.Errorf("dave ff/noKill = %d/%d, want 10/10 ('' == '' counts as FF)", dave.FFDamage, dave.DMGNoKill)
+	}
+}
+
 func TestDeleteMatchRebuildsCareer(t *testing.T) {
 	s := openMem(t)
 	id := saveTestMatch(t, s, "/d/del.dem", "sha-del", time.Now())

@@ -25,6 +25,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/updater"
 	"github.com/wailsapp/wails/v3/pkg/updater/providers/github"
 
+	"github.com/ChristianWSmith/spectra/internal/analytics"
 	"github.com/ChristianWSmith/spectra/internal/data"
 	"github.com/ChristianWSmith/spectra/internal/extract"
 	"github.com/ChristianWSmith/spectra/internal/library"
@@ -513,7 +514,7 @@ func handleVoice(st *store.Store, w http.ResponseWriter, r *http.Request, matchI
 	voiceDir := filepath.Join(data.MatchesDir(), idStr, sidecar.VoiceDirName)
 	tickRate := m.TickRate
 	if tickRate <= 0 {
-		tickRate = 64
+		tickRate = analytics.DefaultTickRate // CS2's fixed simulation rate
 	}
 
 	switch kind {

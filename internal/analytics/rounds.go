@@ -4,17 +4,6 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/models"
 )
 
-// utilWeapons maps damage-event weapon names to "utility damage" for the
-// per-player-round util_dmg column.
-var utilWeapons = map[string]bool{
-	"HE Grenade":         true,
-	"Molotov":            true,
-	"Incendiary Grenade": true,
-	"Smoke Grenade":      true,
-	"Flashbang":          true,
-	"Decoy Grenade":      true,
-}
-
 // PlayerRounds derives per-player-per-round stats incl. the KAST
 // decomposition from a match's typed events:
 //
@@ -27,8 +16,8 @@ var utilWeapons = map[string]bool{
 //	         their killer within cfg.TradeWindowS after the death
 //	kast     K || A || T || S
 //
-// DMG/UtilDmg aggregate damage events (attacker side; util = utility
-// weapons). MoneyStart/Equip/Spent stay 0 in v1 (item_equip payloads carry
+// DMG/UtilDmg aggregate damage events (attacker side; util = the utility
+// set in models.IsUtilityWeapon). MoneyStart/Equip/Spent stay 0 in v1 (item_equip payloads carry
 // no price — see package doc). Rows are emitted for EVERY player × every
 // counted round (round ASC, players sorted by SteamID for stable output).
 // sides carries the extractor's exact per-round side samples (nil for
@@ -76,7 +65,7 @@ func PlayerRounds(events []models.Event, rounds []RoundInfo, players []PlayerRef
 			case models.EventDamage:
 				if e.Attacker != "" {
 					dmg[e.Attacker] += e.Dmg
-					if utilWeapons[e.Weapon] {
+					if models.IsUtilityWeapon(e.Weapon) {
 						utilDmg[e.Attacker] += e.Dmg
 					}
 				}

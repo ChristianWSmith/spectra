@@ -12,6 +12,7 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/analytics"
 	"github.com/ChristianWSmith/spectra/internal/data"
 	"github.com/ChristianWSmith/spectra/internal/models"
+	"github.com/ChristianWSmith/spectra/internal/rules"
 	"github.com/ChristianWSmith/spectra/internal/sidecar"
 	"github.com/ChristianWSmith/spectra/internal/store"
 )
@@ -30,6 +31,28 @@ type AnalysisConfig struct {
 	EcoFullBuy   int     `json:"ecoFullBuy"`   // equip ≥ this = full buy (default 20000)
 	EcoForce     int     `json:"ecoForce"`     // equip ≥ this = force (default 10000)
 	RuleVersion  int     `json:"ruleVersion"`
+}
+
+// analysisConfigFromModel / (AnalysisConfig).toModel are the only
+// conversions between the frontend binding type and the stored
+// models.AnalysisConfig row (the binding type stays for the API surface;
+// every field moves through this pair, never through ad-hoc literals).
+func analysisConfigFromModel(m models.AnalysisConfig) AnalysisConfig {
+	return AnalysisConfig{
+		TradeWindowS: m.TradeWindowS,
+		EcoFullBuy:   m.EcoFullBuy,
+		EcoForce:     m.EcoForce,
+		RuleVersion:  m.RuleVersion,
+	}
+}
+
+func (c AnalysisConfig) toModel() models.AnalysisConfig {
+	return models.AnalysisConfig{
+		TradeWindowS: c.TradeWindowS,
+		EcoFullBuy:   c.EcoFullBuy,
+		EcoForce:     c.EcoForce,
+		RuleVersion:  c.RuleVersion,
+	}
 }
 
 // RoundEconomyRow is one round's economy + buy-classification view.
@@ -185,11 +208,8 @@ type SavedFilter struct {
 	CreatedAt  string `json:"createdAt"`
 }
 
-// heatmapGridSide is the raster resolution per axis (plan: 64×64).
-const heatmapGridSide = 64
-
-// heatmapPad is the world-unit padding added around the sampled extents.
-const heatmapPad = 2.0
+// heatmapGridSide/heatmapPad and the raster arithmetic live in heatmap.go
+// (shared by the presence and event kinds).
 
 // AnalyticsService — see doc comment above.
 type AnalyticsService struct {
@@ -203,11 +223,15 @@ func (s *AnalyticsService) GetConfig() (AnalysisConfig, error) {
 	if err != nil {
 		return AnalysisConfig{}, err
 	}
-	return AnalysisConfig{TradeWindowS: c.TradeWindowS, EcoFullBuy: c.EcoFullBuy, EcoForce: c.EcoForce, RuleVersion: c.RuleVersion}, nil
+	return analysisConfigFromModel(c), nil
 }
 
 // SetConfig stores new rules (bumps rule_version). Does NOT recompute —
 // call RecomputeAnalysis per match explicitly.
+//
+// This is the single validation gate for analysis rules (the import
+// pipeline's analyze path and RecomputeAnalysis read the already-validated
+// row straight from the store).
 func (s *AnalyticsService) SetConfig(c AnalysisConfig) (AnalysisConfig, error) {
 	if c.TradeWindowS <= 0 {
 		return AnalysisConfig{}, errors.New("analytics: tradeWindowS must be > 0")
@@ -222,16 +246,13 @@ func (s *AnalyticsService) SetConfig(c AnalysisConfig) (AnalysisConfig, error) {
 	if err != nil {
 		return AnalysisConfig{}, err
 	}
-	saved, err := s.st.SetConfig(models.AnalysisConfig{
-		TradeWindowS: c.TradeWindowS,
-		EcoFullBuy:   c.EcoFullBuy,
-		EcoForce:     c.EcoForce,
-		RuleVersion:  cur.RuleVersion + 1, // input RuleVersion ignored — always bump
-	})
+	next := c.toModel()
+	next.RuleVersion = cur.RuleVersion + 1 // input RuleVersion ignored — always bump
+	saved, err := s.st.SetConfig(next)
 	if err != nil {
 		return AnalysisConfig{}, err
 	}
-	return AnalysisConfig{TradeWindowS: saved.TradeWindowS, EcoFullBuy: saved.EcoFullBuy, EcoForce: saved.EcoForce, RuleVersion: saved.RuleVersion}, nil
+	return analysisConfigFromModel(saved), nil
 }
 
 // RecomputeAnalysis re-runs classification + analytics for one match under
@@ -241,12 +262,7 @@ func (s *AnalyticsService) RecomputeAnalysis(matchID int64) error {
 	if err != nil {
 		return err
 	}
-	return analytics.Compute(s.st, matchID, analytics.Config{
-		TradeWindowS: c.TradeWindowS,
-		EcoFullBuy:   c.EcoFullBuy,
-		EcoForce:     c.EcoForce,
-		RuleVersion:  c.RuleVersion,
-	})
+	return analytics.Compute(s.st, matchID, analytics.ConfigFrom(c, 0))
 }
 
 // GetEconomy returns per-round economy + buy classes (warmup rounds
@@ -261,10 +277,7 @@ func (s *AnalyticsService) GetEconomy(matchID int64) ([]RoundEconomyRow, error) 
 	if err != nil {
 		return nil, err
 	}
-	rows = analytics.EconomyRows(rows, analytics.Config{
-		TradeWindowS: cfg.TradeWindowS, EcoFullBuy: cfg.EcoFullBuy,
-		EcoForce: cfg.EcoForce, RuleVersion: cfg.RuleVersion,
-	})
+	rows = analytics.EconomyRows(rows, analytics.ConfigFrom(cfg, 0))
 	out := make([]RoundEconomyRow, len(rows))
 	for i, r := range rows {
 		out[i] = RoundEconomyRow{
@@ -432,8 +445,8 @@ func (s *AnalyticsService) GetHeatmap(matchID int64, kind string, f HeatmapFilte
 	}
 	// Exact per-round sides when the extractor persisted them (new
 	// imports); legacy matches fall back to final-side parity with the
-	// first second-half round — ceiling division locates the boundary
-	// (floor landed one round early).
+	// first second-half round — rules.FlipIndexes locates the boundary
+	// (ceiling division; floor landed one round early).
 	exact, err := s.st.GetRoundPlayerSides(matchID)
 	if err != nil {
 		return HeatmapGrid{}, err
@@ -441,22 +454,15 @@ func (s *AnalyticsService) GetHeatmap(matchID int64, kind string, f HeatmapFilte
 	halfSwitch := 0
 	if m, err := s.st.GetMatch(matchID); err == nil && m.SideSwitches > 0 {
 		real := analytics.CountedRounds(roundInfos)
-		if idx := (len(real) + m.SideSwitches) / (m.SideSwitches + 1); idx > 0 && idx < len(real) {
-			halfSwitch = real[idx].Number
+		if flips := rules.FlipIndexes(len(real), m.SideSwitches); len(flips) > 0 {
+			halfSwitch = real[flips[0]].Number
 		}
 	}
 	sideAt := func(steamID string, round int) string {
 		if m, ok := exact[round]; ok && m[steamID] != "" {
 			return m[steamID]
 		}
-		s := side[steamID]
-		if halfSwitch > 0 && round < halfSwitch && (s == "ct" || s == "t") {
-			if s == "ct" {
-				return "t"
-			}
-			return "ct"
-		}
-		return s
+		return rules.SideAt(side[steamID], halfSwitch, round)
 	}
 	if kind == "presence" {
 		return s.heatmapPresence(matchID, f, rounds, sideAt)
@@ -467,20 +473,14 @@ func (s *AnalyticsService) GetHeatmap(matchID int64, kind string, f HeatmapFilte
 // heatmapPresence streams the whole sidecar stream and accumulates
 // time-weighted dwell per cell.
 func (s *AnalyticsService) heatmapPresence(matchID int64, f HeatmapFilter, rounds []models.RoundRow, sideAt func(string, int) string) (HeatmapGrid, error) {
-	rd, err := sidecar.Open(filepath.Join(data.MatchesDir(), strconv.FormatInt(matchID, 10)))
+	// Whole sidecar stream, decoded once (sidecar.Load = Open → ReadRange →
+	// DecodeFrames; the spatial series uses the same helper).
+	stream, err := sidecar.Load(filepath.Join(data.MatchesDir(), strconv.FormatInt(matchID, 10)), 0, 0)
 	if err != nil {
 		return HeatmapGrid{}, fmt.Errorf("analytics: heatmap presence: %w", err)
 	}
-	raw, err := rd.ReadRange(0, 0)
-	if err != nil {
-		return HeatmapGrid{}, fmt.Errorf("analytics: heatmap presence: %w", err)
-	}
-	meta := rd.Meta()
-	frames, err := sidecar.DecodeFrames(raw, meta.Players)
-	if err != nil {
-		return HeatmapGrid{}, fmt.Errorf("analytics: heatmap presence: %w", err)
-	}
-	sampleRate := meta.SampleRate
+	frames := stream.Frames
+	sampleRate := stream.Meta.SampleRate
 	if sampleRate <= 0 {
 		sampleRate = sidecar.SampleRate
 	}
@@ -513,7 +513,8 @@ func (s *AnalyticsService) heatmapPresence(matchID int64, f HeatmapFilter, round
 		return 0, false
 	}
 
-	// Sampled extents (every 8th frame) for the bounds, +pad.
+	// Sampled extents (every 8th frame) for the bounds, then the shared
+	// raster (bounds → pad → cells; see heatmap.go).
 	minX, minY := math.Inf(1), math.Inf(1)
 	maxX, maxY := math.Inf(-1), math.Inf(-1)
 	for i, fr := range frames {
@@ -537,16 +538,7 @@ func (s *AnalyticsService) heatmapPresence(matchID int64, f HeatmapFilter, round
 		return HeatmapGrid{Kind: "presence", W: heatmapGridSide, H: heatmapGridSide,
 			Cells: make([]float64, heatmapGridSide*heatmapGridSide)}, nil
 	}
-	minX, minY, maxX, maxY = minX-heatmapPad, minY-heatmapPad, maxX+heatmapPad, maxY+heatmapPad
-	cellW := (maxX - minX) / heatmapGridSide
-	cellH := (maxY - minY) / heatmapGridSide
-	if cellW <= 0 {
-		cellW = 1
-	}
-	if cellH <= 0 {
-		cellH = 1
-	}
-	cells := make([]float64, heatmapGridSide*heatmapGridSide)
+	g := newHeatmapRaster(minX, minY, maxX, maxY)
 	samples := 0
 	for _, fr := range frames {
 		rn, ok := roundAt(fr.Tick)
@@ -558,20 +550,12 @@ func (s *AnalyticsService) heatmapPresence(matchID int64, f HeatmapFilter, round
 			if !keep(sid, rn) {
 				continue
 			}
-			cx := int((p.X - minX) / cellW)
-			cy := int((p.Y - minY) / cellH)
-			if cx < 0 || cx >= heatmapGridSide || cy < 0 || cy >= heatmapGridSide {
-				continue
+			if g.add(p.X, p.Y, dt) {
+				samples++
 			}
-			cells[cy*heatmapGridSide+cx] += dt
-			samples++
 		}
 	}
-	return HeatmapGrid{
-		Kind: "presence", W: heatmapGridSide, H: heatmapGridSide,
-		MinX: minX, MinY: minY, MaxX: maxX, MaxY: maxY,
-		Max: maxCell(cells), Samples: samples, Cells: cells,
-	}, nil
+	return g.grid("presence", samples), nil
 }
 
 // heatmapEvents rasterizes kill/death/damage event positions: kills plot
@@ -624,40 +608,13 @@ func (s *AnalyticsService) heatmapEvents(matchID int64, kind string, f HeatmapFi
 		minX, minY = math.Min(minX, sm.x), math.Min(minY, sm.y)
 		maxX, maxY = math.Max(maxX, sm.x), math.Max(maxY, sm.y)
 	}
-	minX, minY, maxX, maxY = minX-heatmapPad, minY-heatmapPad, maxX+heatmapPad, maxY+heatmapPad
-	cellW := (maxX - minX) / heatmapGridSide
-	cellH := (maxY - minY) / heatmapGridSide
-	if cellW <= 0 {
-		cellW = 1
-	}
-	if cellH <= 0 {
-		cellH = 1
-	}
-	cells := make([]float64, heatmapGridSide*heatmapGridSide)
+	// Shared raster (bounds → pad → cells; see heatmap.go): each event
+	// counts 1, Samples stays the pre-raster sample count.
+	g := newHeatmapRaster(minX, minY, maxX, maxY)
 	for _, sm := range samples {
-		cx := int((sm.x - minX) / cellW)
-		cy := int((sm.y - minY) / cellH)
-		if cx < 0 || cx >= heatmapGridSide || cy < 0 || cy >= heatmapGridSide {
-			continue
-		}
-		cells[cy*heatmapGridSide+cx]++
+		g.add(sm.x, sm.y, 1)
 	}
-	return HeatmapGrid{
-		Kind: kind, W: heatmapGridSide, H: heatmapGridSide,
-		MinX: minX, MinY: minY, MaxX: maxX, MaxY: maxY,
-		Max: maxCell(cells), Samples: len(samples), Cells: cells,
-	}, nil
-}
-
-// maxCell returns the largest value in a raster.
-func maxCell(cells []float64) float64 {
-	m := 0.0
-	for _, v := range cells {
-		if v > m {
-			m = v
-		}
-	}
-	return m
+	return g.grid(kind, len(samples)), nil
 }
 
 // Saved filters.

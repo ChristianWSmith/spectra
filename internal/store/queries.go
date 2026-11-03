@@ -20,6 +20,36 @@ const matchColumns = `id, path, sha256, size, map, patch_version, tick_rate, dur
 // landmarkLimit is the hard row cap for GetLandmarks.
 const landmarkLimit = 5000
 
+// Shared SQL expressions — ONE definition per scope. K/D and KAST% are the
+// two metrics computed at both the per-match layer (one player_stats row of
+// one match) and the career layer (a player's whole history, GROUP BY
+// steam_id); the two shapes are genuinely different SQL, so they stay
+// separate consts instead of one parameterized string. Keep them here, next
+// to each other: the whole point is that the trend/profile queries and the
+// scoreboard cannot drift from the career rollup.
+const (
+	// kdPerMatchSQL is kills/deaths for ONE match, deaths floored at 1
+	// (GetScoreboard's SELECT and GetTrend's per-match series).
+	kdPerMatchSQL = `CAST(ps.kills AS REAL) / MAX(ps.deaths, 1)`
+
+	// kdCareerSQL is the career rollup's K/D (RebuildCareer): sums across
+	// every match, not the average of the per-match ratios.
+	kdCareerSQL = `CAST(SUM(ps.kills) AS REAL) / MAX(SUM(ps.deaths), 1)`
+
+	// kastPerMatchSQL is a player's KAST% WITHIN one match, correlated
+	// from the outer row to that match's player_round_stats rows (0 when
+	// the match has no analytics rows). Used by GetTrend's per-match
+	// series and GetPlayerHistory; the aliases m/ps must exist in the
+	// outer query.
+	kastPerMatchSQL = `COALESCE((SELECT 100.0 * AVG(prs.kast) FROM player_round_stats prs
+		WHERE prs.match_id = m.id AND prs.steam_id = ps.steam_id), 0)`
+
+	// kastCareerSQL is the career rollup's KAST% (RebuildCareer): averaged
+	// over ALL of the player's player_round_stats rows (alias ps only).
+	kastCareerSQL = `COALESCE((SELECT 100.0 * AVG(prs.kast) FROM player_round_stats prs
+		WHERE prs.steam_id = ps.steam_id), 0)`
+)
+
 // matchListSort whitelists ListMatches sort keys (identifiers only — every
 // user value is bound as a parameter).
 var matchListSort = map[string]string{
@@ -182,7 +212,7 @@ func (s *Store) GetMatch(id int64) (*models.Match, error) {
 
 // GetScoreboard returns one player's-aggregate rows for a match, joined
 // with identity, sorted by a whitelisted sortKey (default kills DESC).
-// KD = kills/max(deaths,1); KDA = (kills+assists)/max(deaths,1).
+// KD = kdPerMatchSQL (kills/max(deaths,1)); KDA = (kills+assists)/max(deaths,1).
 func (s *Store) GetScoreboard(id int64, sortKey string, desc bool) ([]models.PlayerStatsRow, error) {
 	order, ok := scoreboardSort[sortKey]
 	dir := "ASC"
@@ -197,7 +227,7 @@ func (s *Store) GetScoreboard(id int64, sortKey string, desc bool) ([]models.Pla
 		`SELECT ps.steam_id, p.name, p.is_bot, p.side, p.final_state_present,
 			ps.rounds_played, ps.kills, ps.deaths,
 			ps.assists, ps.flash_assists, ps.headshots, ps.hs_pct, ps.adr,
-			CAST(ps.kills AS REAL) / MAX(ps.deaths, 1),
+			`+kdPerMatchSQL+`,
 			CAST(ps.kills + ps.assists AS REAL) / MAX(ps.deaths, 1),
 			ps.total_damage, ps.damage_taken, ps.entry_kills, ps.entry_deaths,
 			ps.opening_kills, ps.opening_deaths, ps.trade_kills, ps.best_streak,
@@ -258,7 +288,10 @@ func (s *Store) GetRounds(id int64) ([]models.RoundRow, error) {
 }
 
 // GetRoundDetail returns one round with its economy, typed events and chat
-// lines (ErrNotFound when the round is absent).
+// lines (ErrNotFound when the round is absent). Negative round numbers are
+// real rounds here — knife/warmup rounds take them (extract.agg.renumber:
+// -2 knife, -1 warmup) — so events and chat are matched EXACTLY, never
+// through the GetEvents/GetChat "Round < 0 = all rounds" sentinel.
 func (s *Store) GetRoundDetail(id int64, round int) (*models.RoundDetail, error) {
 	rr, err := scanRoundRow(s.db.QueryRow(roundRowSelect+` AND r.number = ?`, id, round))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -290,11 +323,11 @@ func (s *Store) GetRoundDetail(id int64, round int) (*models.RoundDetail, error)
 		return nil, fmt.Errorf("store: get round detail: %w", err)
 	}
 
-	events, err := s.GetEvents(models.EventFilter{MatchID: id, Round: round})
+	events, err := s.queryEvents(models.EventFilter{MatchID: id, Round: round}, true)
 	if err != nil {
 		return nil, fmt.Errorf("store: get round detail: %w", err)
 	}
-	chat, err := s.GetChat(id, round)
+	chat, err := s.queryChat(id, round, true)
 	if err != nil {
 		return nil, fmt.Errorf("store: get round detail: %w", err)
 	}
@@ -314,12 +347,24 @@ func scanRoundRow(row interface{ Scan(...any) error }) (models.RoundRow, error) 
 }
 
 // GetEvents returns typed timeline rows for a filter, ordered by seq.
-// Round < 0 selects all rounds; Kind "" all kinds; SteamID matches
-// attacker or victim. Limit <= 0 means the hard cap of 50000.
+// Round < 0 selects all rounds (the sentinel the timeline, heatmaps and
+// analytics pass over the whole match); Kind "" all kinds; SteamID matches
+// attacker or victim. Limit <= 0 means the hard cap of 50000. Round detail
+// needs exact matching for the negative knife/warmup round numbers instead
+// — see queryEvents.
 func (s *Store) GetEvents(f models.EventFilter) ([]models.EventRow, error) {
+	return s.queryEvents(f, false)
+}
+
+// queryEvents is GetEvents with an exactRound switch: true forces
+// `e.round = ?` for EVERY round number, including the negative ones knife/
+// warmup rounds carry (a round-detail read of round -1 must return that
+// round's rows, not the whole match). false keeps the documented
+// EventFilter contract (Round < 0 = all rounds).
+func (s *Store) queryEvents(f models.EventFilter, exactRound bool) ([]models.EventRow, error) {
 	where := []string{"e.match_id = ?"}
 	args := []any{f.MatchID}
-	if f.Round >= 0 {
+	if f.Round >= 0 || exactRound {
 		where = append(where, "e.round = ?")
 		args = append(args, f.Round)
 	}
@@ -471,11 +516,19 @@ func (s *Store) GetLandmarks(matchID int64, limit int) ([]models.EventRow, error
 }
 
 // GetChat returns a match's chat lines ordered by tick, id. Round < 0
-// selects all rounds.
+// selects all rounds (same sentinel as GetEvents — the Context view's
+// match-wide chat feed passes -1); round detail reads exact rounds instead,
+// see queryChat.
 func (s *Store) GetChat(matchID int64, round int) ([]models.ChatRow, error) {
+	return s.queryChat(matchID, round, false)
+}
+
+// queryChat is GetChat with an exactRound switch — mirror of
+// queryEvents (negative knife/warmup round numbers are real rounds here).
+func (s *Store) queryChat(matchID int64, round int, exactRound bool) ([]models.ChatRow, error) {
 	q := `SELECT id, tick, round, steam_id, name, text, kind, decrypted FROM chat WHERE match_id = ?`
 	args := []any{matchID}
-	if round >= 0 {
+	if round >= 0 || exactRound {
 		q += ` AND round = ?`
 		args = append(args, round)
 	}

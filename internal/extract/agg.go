@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/ChristianWSmith/spectra/internal/analytics"
 	"github.com/ChristianWSmith/spectra/internal/models"
 )
 
@@ -358,7 +359,7 @@ func (a *agg) roundEnd(tick int, winner, reason, message string, tickRate float6
 		if r.startTick > 0 && tick > r.startTick {
 			tr := tickRate
 			if tr <= 0 {
-				tr = 64
+				tr = analytics.DefaultTickRate
 			}
 			r.durationSec = float64(tick-r.startTick) / tr
 		}
@@ -396,7 +397,11 @@ func (a *agg) freezeEnd(tick, equipCT, equipT, scoreCT, scoreT int, samples []mo
 	r.equipCT = equipCT
 	r.equipT = equipT
 	// Warmup and pregame (knife) rounds are not "counted" play: no
-	// participation credit, no stat round.
+	// participation credit, no stat round. This predicate is the extract
+	// twin of analytics.CountedRounds (`!warmup && !pregame`) and of the
+	// store's SQL twin (`warmup = 0 AND pregame = 0` in store.GetEconomy) —
+	// all three must stay identical or index-based rules (MR12 pistol
+	// stride, half boundaries) shift.
 	counted := !r.warmup && !r.pregame
 
 	sum := map[string]int{}
@@ -600,7 +605,7 @@ func (a *agg) kill(k killInfo) {
 	if k.victimKey != 0 && k.killerSide != "" {
 		tr := k.tickRate
 		if tr <= 0 {
-			tr = 64
+			tr = analytics.DefaultTickRate
 		}
 		window := int(5 * tr)
 		for _, rec := range a.tradeWindow {

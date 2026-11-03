@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/ChristianWSmith/spectra/internal/models"
+	"github.com/ChristianWSmith/spectra/internal/rules"
 	"github.com/ChristianWSmith/spectra/internal/store"
 )
 
@@ -61,14 +62,14 @@ func Compute(st *store.Store, matchID int64, cfg Config) error {
 	// from the final-state snapshot have Side "" in the store).
 	players = RecoverSides(evs, rounds, players)
 	// Legacy parity fallback: sides flip for rounds before the first
-	// second-half round. Ceiling division locates the boundary (floor
-	// landed one round early: with 23 counted rounds the second half
-	// starts at index 12, not 11).
+	// second-half round. The boundary index comes from the canonical
+	// helper (rules.FlipIndexes — ceiling division; floor landed one
+	// round early: with 23 counted rounds the second half starts at
+	// index 12, not 11).
 	if m.SideSwitches > 0 {
 		real := CountedRounds(rounds)
-		idx := (len(real) + m.SideSwitches) / (m.SideSwitches + 1)
-		if idx > 0 && idx < len(real) {
-			cfg.HalfSwitchRound = real[idx].Number
+		if flips := rules.FlipIndexes(len(real), m.SideSwitches); len(flips) > 0 {
+			cfg.HalfSwitchRound = real[flips[0]].Number
 		}
 	}
 

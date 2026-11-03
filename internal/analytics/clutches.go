@@ -5,6 +5,7 @@ import (
 	"sort"
 
 	"github.com/ChristianWSmith/spectra/internal/models"
+	"github.com/ChristianWSmith/spectra/internal/rules"
 )
 
 // clutchInst is one in-flight 1vN instance (solo SteamID is the map key).
@@ -107,7 +108,7 @@ func Clutches(events []models.Event, rounds []RoundInfo, players []PlayerRef, cf
 				delete(alive, e.Victim)
 				// Any remaining solo whose opponents are now all dead won.
 				for solo, ac := range active {
-					if opp, _ := countAlive(alive, teamR, otherTeam(ac.team)); opp == 0 {
+					if opp, _ := countAlive(alive, teamR, rules.OtherSide(ac.team)); opp == 0 {
 						resolve(solo, ac, e.Tick, true)
 					}
 				}

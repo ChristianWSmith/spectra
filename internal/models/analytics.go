@@ -141,8 +141,8 @@ type UtilityEvent struct {
 }
 
 // CombatStat is one per-player combat deep-dive row derived from stored
-// analytics rows. TradeOppMissed is inferred (= untraded
-// deaths; see analytics CombatStats notes) and needs a UI badge.
+// rows. TradeOppMissed is inferred (= untraded deaths; see the
+// store.GetCombatStats notes) and needs a UI badge.
 type CombatStat struct {
 	SteamID        string  `json:"steamId"`
 	Name           string  `json:"name"`
@@ -159,9 +159,10 @@ type CombatStat struct {
 // EconomyRow is the raw per-round economy view (rounds ⋈ round_economy ⋈
 // round_classifications) with loss-bonus reconstruction applied. ClassCT/
 // ClassT/ClassWhy* are left empty by the store and filled by the caller via
-// analytics.BuyClass (the store cannot import analytics — cycle); everything
-// else is complete on return. Money* is the sampled money sum; Spent* is 0
-// in v1 (no per-round spend data — see analytics notes).
+// analytics.buyClass (unexported: package-internal only, and the store
+// cannot import analytics — cycle); everything else is complete on return.
+// Money* is the sampled money sum; Spent* is 0 in v1 (no per-round spend
+// data — see analytics notes).
 type EconomyRow struct {
 	Round       int    `json:"round"`
 	Winner      string `json:"winner"`
@@ -234,6 +235,15 @@ type ProfileHistoryRow struct {
 	Assists     int       `json:"assists"`
 	ADR         float64   `json:"adr"`
 	KASTPct     float64   `json:"kastPct"`
+}
+
+// WinFor reports whether side won the match with the given final score —
+// the ONE Go implementation of the win predicate (a tie is not a win; an
+// unknown side never wins). Its SQL twin lives in store.RebuildCareer's
+// career rollup (`SUM(CASE WHEN (ps.side = 'ct' AND m.score_ct > m.score_t)
+// OR (ps.side = 't' AND m.score_t > m.score_ct) …`) — keep the two in sync.
+func WinFor(side string, scoreCT, scoreT int) bool {
+	return (side == "ct" && scoreCT > scoreT) || (side == "t" && scoreT > scoreCT)
 }
 
 // ProfileTrendPoint is one career sparkline point (GetTrend).

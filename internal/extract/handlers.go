@@ -171,11 +171,8 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 			health:            e.Health,
 			hitgroup:          hitGroupName(e.HitGroup),
 		}
-		if e.Weapon != nil {
-			switch e.Weapon.Type {
-			case common.EqHE, common.EqMolotov, common.EqIncendiary, common.EqDecoy, common.EqSmoke, common.EqFlash:
-				h.isUtility = true
-			}
+		if e.Weapon != nil && isUtilityEquipment(e.Weapon.Type) {
+			h.isUtility = true
 		}
 		if e.Attacker != nil {
 			h.attackerKey = playerKey(e.Attacker)

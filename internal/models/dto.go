@@ -145,7 +145,10 @@ type EventDetail struct {
 	RawJSON    string `json:"rawJson"`
 }
 
-// EventFilter selects timeline rows. Round < 0 = all rounds; Kind "" = all
+// EventFilter selects timeline rows. Round < 0 = all rounds (the sentinel
+// the timeline and match-wide feeds pass); round detail reads are NOT a
+// filter — store.GetRoundDetail matches its (possibly negative knife/
+// warmup) round exactly, see store.queryEvents. Kind "" = all
 // kinds; SteamID matches attacker OR victim. Offset/Limit paginate (Limit
 // <= 0 means "no limit" — the store still applies a hard cap).
 type EventFilter struct {

@@ -1,16 +1,18 @@
 // Package analytics is the M3 computation core: pure functions
 // that derive the stored analytics rows — round classifications, KAST
-// player-rounds, clutch v2 records, engagements, utility pairings, combat
-// stats and the economy view — from extracted events/rounds plus the
-// versioned rules config. Every function is unit-testable with synthetic
-// event sets; Compute is the store orchestration (read → derive → replace
-// → career rebuild).
+// player-rounds, clutch v2 records, engagements, utility pairings and the
+// economy view — from extracted events/rounds plus the versioned rules
+// config. Every function is unit-testable with synthetic event sets;
+// Compute is the store orchestration (read → derive → replace → career
+// rebuild). The combat deep-dive rows (models.CombatStat) are NOT derived
+// here: store.GetCombatStats is their single implementation (see the drift
+// notes there).
 //
 // # Documented v1 limitations (heuristics need UI badges)
 //
 //   - Round label (round_classifications) is the buy class of the
 //     LOWER-equip side of a non-pistol round (ties → CT); per-side classes
-//     are filled into the economy view by EconomyRows/BuyClass.
+//     are filled into the economy view by EconomyRows/buyClass.
 //   - OT pistol rounds are not special-cased (none in the golden demo):
 //     pistol = non-warmup sequence index % 12 == 0 (MR12 half starts).
 //   - Per-player money_start/equip/spent stay 0: the item_equip payload
@@ -59,6 +61,23 @@ type Config struct {
 // unset.
 const DefaultTickRate = 64.0
 
+// ConfigFrom builds the analytics rules input from a stored config row
+// (models.AnalysisConfig) — the ONE constructor shared by the import
+// pipeline (library.analyze), AnalyticsService.RecomputeAnalysis and
+// AnalyticsService.GetEconomy, so a rule field can never be dropped from
+// one call site. tickRate <= 0 means "not known here": Compute then fills
+// Config.TickRate from the match row, and Config.tr falls back to
+// DefaultTickRate (every current caller passes 0 for that reason).
+func ConfigFrom(c models.AnalysisConfig, tickRate float64) Config {
+	return Config{
+		TradeWindowS: c.TradeWindowS,
+		EcoFullBuy:   c.EcoFullBuy,
+		EcoForce:     c.EcoForce,
+		RuleVersion:  c.RuleVersion,
+		TickRate:     tickRate,
+	}
+}
+
 // Type aliases: the row vocabulary lives in internal/models (store and
 // analytics must both produce/consume it without an import cycle).
 type (
@@ -70,7 +89,6 @@ type (
 	Clutch           = models.Clutch
 	Engagement       = models.Engagement
 	UtilityEvent     = models.UtilityEvent
-	CombatStat       = models.CombatStat
 )
 
 // tr returns the effective tick rate for cfg.
@@ -102,7 +120,10 @@ func sortedEvents(events []models.Event) []models.Event {
 // CountedRounds filters rounds to stats-eligible play, preserving number
 // order: warmup rounds and pregame (knife) rounds are not counted play
 // (the golden demo's round 1 is a knife round the game itself excludes
-// from the scoreboard).
+// from the scoreboard). This is the Go twin of two other predicates that
+// must stay identical: extract's `!warmup && !pregame` (agg.roundStart —
+// the rows are stamped there) and store.GetEconomy's
+// `warmup = 0 AND pregame = 0` SQL.
 func CountedRounds(rounds []RoundInfo) []RoundInfo {
 	out := make([]RoundInfo, 0, len(rounds))
 	for _, r := range rounds {
@@ -142,17 +163,6 @@ func nameOf(players []PlayerRef) map[string]string {
 	return m
 }
 
-// otherTeam returns the opposing side of ct|t ("" for unknown).
-func otherTeam(side string) string {
-	switch side {
-	case "ct":
-		return "t"
-	case "t":
-		return "ct"
-	}
-	return ""
-}
-
 // sameSide reports whether two observed sides are both known and equal
 // (an unknown side never matches — permissive attribution for bots /
 // unassigned players).
@@ -163,11 +173,11 @@ func sameSide(a, b string) bool { return a != "" && a == b }
 // package doc).
 const pistolEvery = 12
 
-// buyClassAllSides classifies both sides of one round via BuyClass,
+// buyClassAllSides classifies both sides of one round via buyClass,
 // returning (ctLabel, ctWhy, tLabel, tWhy).
 func buyClassAllSides(equipCT, equipT int, prevWonCT, prevWonT bool, prevEquipCT, prevEquipT int, cfg Config, pistol bool) (string, string, string, string) {
-	ct, ctWhy := BuyClass(equipCT, prevWonCT, prevEquipCT, cfg, pistol)
-	t, tWhy := BuyClass(equipT, prevWonT, prevEquipT, cfg, pistol)
+	ct, ctWhy := buyClass(equipCT, prevWonCT, prevEquipCT, cfg, pistol)
+	t, tWhy := buyClass(equipT, prevWonT, prevEquipT, cfg, pistol)
 	return ct, ctWhy, t, tWhy
 }
 

@@ -5,8 +5,9 @@
 // capture; this package ships the recomputable series only.)
 //
 // The series is computed on read from the position sidecar: the
-// whole stream is decoded once (same pattern as the presence heatmap) and
-// every frame contributes at most one sample to its tick bucket. Values
+// whole stream is decoded once (sidecar.Load — the same helper the
+// presence heatmap uses) and every frame contributes at most one sample to
+// its tick bucket. Values
 // are world-unit distances in the horizontal (x,y) plane; buckets without
 // a valid frame sample are -1 (team dead / warmup gaps / unknown sides).
 package spatial
@@ -14,7 +15,6 @@ package spatial
 import (
 	"fmt"
 	"math"
-	"path/filepath"
 
 	"github.com/ChristianWSmith/spectra/internal/sidecar"
 )
@@ -61,18 +61,13 @@ func Compute(dir, kind string, buckets, durationTicks int, sides map[uint64]stri
 	if buckets <= 0 {
 		buckets = DefaultBuckets
 	}
-	rd, err := sidecar.Open(filepath.Clean(dir))
+	// Whole sidecar stream decoded once (sidecar.Load = Open → ReadRange →
+	// DecodeFrames — the same helper the presence heatmap uses).
+	stream, err := sidecar.Load(dir, 0, 0)
 	if err != nil {
 		return Series{}, fmt.Errorf("spatial: %w", err)
 	}
-	raw, err := rd.ReadRange(0, 0)
-	if err != nil {
-		return Series{}, fmt.Errorf("spatial: read stream: %w", err)
-	}
-	frames, err := sidecar.DecodeFrames(raw, rd.Meta().Players)
-	if err != nil {
-		return Series{}, fmt.Errorf("spatial: decode frames: %w", err)
-	}
+	frames := stream.Frames
 	if durationTicks <= 0 {
 		for _, fr := range frames {
 			if fr.Tick > durationTicks {

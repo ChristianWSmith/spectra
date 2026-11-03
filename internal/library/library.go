@@ -539,12 +539,7 @@ func (im *Importer) analyze(matchID int64) error {
 	if err != nil {
 		return err
 	}
-	return analytics.Compute(im.st, matchID, analytics.Config{
-		TradeWindowS: cfg.TradeWindowS,
-		EcoFullBuy:   cfg.EcoFullBuy,
-		EcoForce:     cfg.EcoForce,
-		RuleVersion:  cfg.RuleVersion,
-	})
+	return analytics.Compute(im.st, matchID, analytics.ConfigFrom(cfg, 0))
 }
 
 // failJob records a terminal failure for jobID. When the job had a match

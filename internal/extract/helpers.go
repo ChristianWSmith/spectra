@@ -143,6 +143,27 @@ func wepName(w *common.Equipment) string {
 	return w.Type.String()
 }
 
+// utilEquipmentTypes is extract's copy of the utility set: the equipment
+// types whose PLAYER_HURT damage counts as utility damage (h.isUtility →
+// the util_dmg column). The parser gate sees equipment TYPES, not the
+// canonical names models.IsUtilityWeapon keys on (demoinfocs resolves the
+// raw weapon string to a type first), so the two representations are pinned
+// together by TestUtilityWeaponSetsIdentical — a grenade added here must be
+// added to models.utilityWeaponKinds too.
+var utilEquipmentTypes = []common.EquipmentType{
+	common.EqHE, common.EqMolotov, common.EqIncendiary, common.EqDecoy, common.EqSmoke, common.EqFlash,
+}
+
+// isUtilityEquipment reports whether t is one of utilEquipmentTypes.
+func isUtilityEquipment(t common.EquipmentType) bool {
+	for _, u := range utilEquipmentTypes {
+		if u == t {
+			return true
+		}
+	}
+	return false
+}
+
 // bombSite renders the raw site rune as "A"/"B"; anything else is "".
 func bombSite(s events.Bombsite) string {
 	switch s {

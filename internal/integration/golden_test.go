@@ -391,7 +391,9 @@ func runGoldenAnalytics(t *testing.T, m *models.ExtractedMatch) analyticsFixture
 	if err := st.SaveExtracted(id, m); err != nil {
 		t.Fatalf("SaveExtracted: %v", err)
 	}
-	cfg := analytics.Config{TradeWindowS: 5.0, EcoFullBuy: 20000, EcoForce: 10000, RuleVersion: 1}
+	cfg := analytics.ConfigFrom(models.AnalysisConfig{
+		TradeWindowS: 5.0, EcoFullBuy: 20000, EcoForce: 10000, RuleVersion: 1,
+	}, 0)
 	start := time.Now()
 	if err := analytics.Compute(st, id, cfg); err != nil {
 		t.Fatalf("analytics.Compute: %v", err)
