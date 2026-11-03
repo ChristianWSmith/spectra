@@ -262,7 +262,7 @@
                   title="Watch this engagement in the replay"
                   aria-label="Watch tick {e.tick} in the replay"
                   onclick={() => replay(e.tick)}
-                >▶</button>
+                ><span class="codicon codicon-play"></span></button>
               </td>
               <td class="num mono">{e.tick}</td>
               <td class="num"><span class="chip round-chip">R{e.round}</span></td>
@@ -322,7 +322,7 @@
                   aria-label="Sort by {col.label}"
                   onclick={() => toggleStatSort(col.key)}
                 >
-                  {col.label}{#if statSort.key === col.key}{statSort.desc ? ' ↓' : ' ↑'}{/if}
+                  {col.label}{#if statSort.key === col.key}<span class="codicon {statSort.desc ? 'codicon-arrow-down' : 'codicon-arrow-up'}"></span>{/if}
                 </button>
                 {#if col.inferred}
                   <span class="chip comb-inferred" title={col.badge}>inferred</span>
@@ -387,7 +387,7 @@
       >
         <div class="row-between">
           <h2>KAST rounds — {kastName}</h2>
-          <button class="btn small" aria-label="Close" onclick={closeKast}>✕</button>
+          <button class="btn small" aria-label="Close" onclick={closeKast}><span class="codicon codicon-close"></span></button>
         </div>
         <p class="muted" title={KAST_DEF}>
           {#if kastRows.length > 0}

@@ -118,14 +118,14 @@
 
 <div class="view">
   <header class="view-header">
-    <button class="btn" onclick={() => nav(`/match/${id}`)}>← Match</button>
+    <button class="btn" onclick={() => nav(`/match/${id}`)}><span class="codicon codicon-arrow-left"></span> Match</button>
     {#if detail}
       <button
         class="btn primary"
         title="Watch this round from its start in the replay"
         onclick={() => watchTick(detail.round.startTick || 0)}
       >
-        ▶ Watch round
+        <span class="codicon codicon-play"></span> Watch round
       </button>
       <h1>
         Round {detail.round.number}
@@ -190,7 +190,7 @@
                     title="Jump to this kill in the replay"
                     aria-label="Jump to kill at tick {e.tick} in the replay"
                     onclick={() => watchTick(e.tick)}
-                  >▶</button>
+                  ><span class="codicon codicon-play"></span></button>
                 </td>
                 <td class="num mono">{e.tick}</td>
                 <td class="ct">
@@ -282,7 +282,7 @@
     <div class="round-nav">
       {#if prevRound}
         <button class="btn" onclick={() => nav(`/match/${id}/round/${prevRound.number}`)}>
-          ← Round {prevRound.number}
+          <span class="codicon codicon-arrow-left"></span> Round {prevRound.number}
         </button>
       {/if}
       <RoundStrip

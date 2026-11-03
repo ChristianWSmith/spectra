@@ -1344,7 +1344,9 @@ canvas.heat-canvas {
 }
 
 .m5-notes li::before {
-  content: '⚠ ';
+  content: '\ea6c' ' ';
+  font-family: 'codicon';
+  font-weight: normal;
   opacity: 0.8;
 }
 

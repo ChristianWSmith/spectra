@@ -321,7 +321,7 @@
         class="filt-x"
         aria-label="Clear position filter"
         onclick={clearBbox}
-      >✕</button>
+      ><span class="codicon codicon-close"></span></button>
     </span>
   {/if}
 

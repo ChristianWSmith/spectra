@@ -74,7 +74,7 @@
 
   <div class="comb-actions">
     <button class="btn small" title="Watch the clutch in the replay" onclick={replay}>
-      ▶ Replay
+      <span class="codicon codicon-play"></span> Replay
     </button>
     <button class="btn small" title="Open this round in the timeline" onclick={openTimeline}>
       Timeline

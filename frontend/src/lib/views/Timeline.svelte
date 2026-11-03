@@ -299,7 +299,7 @@
         disabled={!savedSel}
         title="Delete the selected saved filter"
         onclick={removeSaved}
-      >✕</button>
+      ><span class="codicon codicon-close"></span></button>
       <button class="btn small" onclick={saveCurrent} title="Save the current filter as a preset">Save</button>
     </div>
     <span class="muted num">{events.length} events</span>
@@ -351,7 +351,7 @@
               onclick={(e) => watchTick(ev, e)}
               onkeydown={(e) =>
                 (e.key === 'Enter' || e.key === ' ') &&
-                (e.preventDefault(), watchTick(ev, e))}>▶</span
+                (e.preventDefault(), watchTick(ev, e))}><span class="codicon codicon-play"></span></span
             >
             <span class="num seq">{ev.seq}</span>
             <span class="mono tick">{ev.tick}</span>
@@ -368,7 +368,7 @@
                   onclick={(e) => watchProfile(ev.attacker, e)}
                   onkeydown={(e) =>
                     (e.key === 'Enter' || e.key === ' ') &&
-                    (e.preventDefault(), watchProfile(ev.attacker, e))}>◉</span
+                    (e.preventDefault(), watchProfile(ev.attacker, e))}><span class="codicon codicon-circle-filled"></span></span
                 >
               {/if}</span
             >
@@ -384,7 +384,7 @@
                   onclick={(e) => watchProfile(ev.victim, e)}
                   onkeydown={(e) =>
                     (e.key === 'Enter' || e.key === ' ') &&
-                    (e.preventDefault(), watchProfile(ev.victim, e))}>◉</span
+                    (e.preventDefault(), watchProfile(ev.victim, e))}><span class="codicon codicon-circle-filled"></span></span
                 >
               {/if}</span
             >
@@ -418,7 +418,7 @@
             <button
               class="btn small hear-btn"
               title="Open replay at this event with voice on — hear comms around it (±10s window from the replay engine)"
-              onclick={(e) => hearTick(selected, e)}>Hear ±10s ▶</button
+              onclick={(e) => hearTick(selected, e)}>Hear ±10s <span class="codicon codicon-play"></span></button
             >
           {/if}
           <button class="btn small" onclick={copyDetail}>

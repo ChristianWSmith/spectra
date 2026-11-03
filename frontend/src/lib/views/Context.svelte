@@ -257,7 +257,7 @@
                   class="btn small ghost vrow-play"
                   title="Watch at tick {r.tick} in replay"
                   aria-label="Watch tick {r.tick} in replay"
-                  onclick={() => watchTick(r)}>▶</button
+                  onclick={() => watchTick(r)}><span class="codicon codicon-play"></span></button
                 >
               </td>
             </tr>
@@ -273,7 +273,7 @@
     </div>
     <p class="muted ctx-note">
       {fmtInt(rows.length)} total rows across all sources — toggle chips above
-      to filter, ▶ opens the replay at that tick.
+      to filter, <span class="codicon codicon-play"></span> opens the replay at that tick.
     </p>
   {/if}
 </div>

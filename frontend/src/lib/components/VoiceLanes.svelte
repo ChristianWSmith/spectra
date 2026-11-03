@@ -100,7 +100,7 @@
 {:else}
   <div class="voice-lanes" aria-label="Voice activity per player">
     <div class="voice-lanes-head">
-      <span class="voice-lanes-title">🔊 Voice</span>
+      <span class="voice-lanes-title"><span class="codicon codicon-unmute"></span> Voice</span>
       <span class="muted num">{rows.length} players · click to play from there</span>
     </div>
     <div

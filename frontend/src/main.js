@@ -1,4 +1,7 @@
 import { mount } from 'svelte'
+// VS Code's icon font (bundled: Vite emits the .ttf into dist/assets and
+// rewrites the @font-face url, so the embedded build stays self-contained).
+import '@vscode/codicons/dist/codicon.css'
 import App from './App.svelte'
 import { applyTheme, getTheme } from './lib/theme.js'
 import { applyFontSize, getFontSize, reconcileFontSize } from './lib/fontsize.js'

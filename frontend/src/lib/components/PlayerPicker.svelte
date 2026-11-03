@@ -146,7 +146,7 @@
     {:else}
       <span class="muted">Select player…</span>
     {/if}
-    <span class="pp-caret" aria-hidden="true">{open ? '▴' : '▾'}</span>
+    <span class="pp-caret" aria-hidden="true"><span class="codicon {open ? 'codicon-chevron-up' : 'codicon-chevron-down'}"></span></span>
   </button>
 
   {#if open}
@@ -219,7 +219,7 @@
         </p>
       {/if}
       <div class="pp-foot muted">
-        <span>↑↓ move</span><span>Enter select</span><span>Esc close</span>
+        <span><span class="codicon codicon-arrow-up"></span><span class="codicon codicon-arrow-down"></span> move</span><span>Enter select</span><span>Esc close</span>
         <span class="spacer"></span>
         <span class="num">{filtered.length}/{players.length}</span>
       </div>

@@ -292,7 +292,7 @@
               <span class="chip round-chip">{list.length}</span>
               <span class="muted mono">CT {ctDmg} · T {tDmg} dmg</span>
               <span class="spacer"></span>
-              <span class="muted">{closed[round] ? '▸' : '▾'}</span>
+              <span class="muted"><span class="codicon {closed[round] ? 'codicon-chevron-right' : 'codicon-chevron-down'}"></span></span>
             </button>
             {#if !closed[round]}
               <ul class="util-nades">
@@ -332,7 +332,7 @@
                       <button
                         class="btn small ghost"
                         title="Watch this throw in the replay (seek to tick {r.tick})"
-                        onclick={() => openReplay(r)}>replay ▶</button
+                        onclick={() => openReplay(r)}>replay <span class="codicon codicon-play"></span></button
                       >
                     </span>
                     <span

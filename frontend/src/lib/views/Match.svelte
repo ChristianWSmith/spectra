@@ -703,7 +703,7 @@
               <span
                 class="chip voice-badge"
                 title="Voice: {fmtInt(voice.chunkCount)} chunks across {voice.playerCount} players — Opus, decoded on demand"
-                >🔊 {(voice.chunkCount / 1000).toFixed(1)}k · {voice.playerCount}</span
+                ><span class="codicon codicon-unmute"></span> {(voice.chunkCount / 1000).toFixed(1)}k · {voice.playerCount}</span
               >
             {:else}
               <span
@@ -716,7 +716,7 @@
               <span
                 class="chip voice-badge lock"
                 title="Encrypted chat present — .dem.info key not found"
-                >🔒</span
+                ><span class="codicon codicon-lock"></span></span
               >
             {/if}
           {/if}
@@ -739,7 +739,7 @@
         <div class="row-between">
           <h2>Extraction warnings</h2>
           <button class="btn small" aria-label="Dismiss warnings" onclick={() => (warningsOpen = false)}>
-            ✕
+            <span class="codicon codicon-close"></span>
           </button>
         </div>
         {#if warnings == null}
@@ -908,7 +908,7 @@
                     aria-label="Sort by {col.label}"
                     onclick={() => toggleSort(col.key)}
                   >
-                    {col.label}{#if sortKey === col.key}{desc ? ' ↓' : ' ↑'}{/if}
+                    {col.label}{#if sortKey === col.key}<span class="codicon {desc ? 'codicon-arrow-down' : 'codicon-arrow-up'}"></span>{/if}
                   </button>
                 </th>
               {/each}
@@ -924,11 +924,11 @@
                     aria-label="Sort by {mc.def.title || mc.def.name}"
                     onclick={() => toggleSort(metricSortKey(mc.def.id))}
                   >
-                    {mc.def.title || mc.def.name}{#if sortKey === metricSortKey(mc.def.id)}{desc
-                      ? ' ↓'
-                      : ' ↑'}{/if}
+                    {mc.def.title || mc.def.name}{#if sortKey === metricSortKey(mc.def.id)}<span
+                        class="codicon {desc ? 'codicon-arrow-down' : 'codicon-arrow-up'}"
+                      ></span>{/if}
                   </button>
-                  <span class="m5-ib" title={mc.def.doc || ''}>ⓘ</span>
+                  <span class="m5-ib" title={mc.def.doc || ''}><span class="codicon codicon-info"></span></span>
                   <span
                     class="m5-n"
                     title="sample size: N={mc.totalN} across {mc.rows.length} groups"
@@ -938,7 +938,7 @@
                     class="m5-unpin"
                     title="Unpin from scoreboard"
                     aria-label="Unpin {mc.def.title || mc.def.name}"
-                    onclick={() => unpin(mc.def.id)}>✕</button
+                    onclick={() => unpin(mc.def.id)}><span class="codicon codicon-close"></span></button
                   >
                 </th>
               {/each}
@@ -965,7 +965,7 @@
                     aria-expanded={expanded === p.steamId}
                     onclick={() => (expanded = expanded === p.steamId ? 0 : p.steamId)}
                   >
-                    {expanded === p.steamId ? '▾' : '▸'}
+                    <span class="codicon {expanded === p.steamId ? 'codicon-chevron-down' : 'codicon-chevron-right'}"></span>
                   </button>
                 </td>
                 {#each SCORE_COLS as col (col.key)}
@@ -1146,7 +1146,7 @@
       {/if}
       {#if compareSel.length >= 2}
         <button class="btn primary cmp-float" onclick={goCompare}>
-          Compare {compareSel.length} rounds ▸
+          Compare {compareSel.length} rounds <span class="codicon codicon-chevron-right"></span>
         </button>
       {/if}
     {:else if tab === 'Economy'}

@@ -1227,13 +1227,15 @@ button.chip.ctx-chip.on {
 }
 
 .kv-obj > summary::before {
-  content: '▸';
+  content: '\eab6';
+  font-family: 'codicon';
+  font-weight: normal;
   color: var(--muted);
   font-size: 0.8em;
 }
 
 .kv-obj[open] > summary::before {
-  content: '▾';
+  content: '\eab4';
 }
 
 .kv-obj[open] > summary {
