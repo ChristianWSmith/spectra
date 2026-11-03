@@ -853,12 +853,16 @@
 
 .voice-lane-bar {
   flex: 1 1 0;
-  min-width: 1px;
+  /* min-width 0 (not 1px) + padding 0: the bars row must never force a
+     horizontal overflow — every bucket shares the container width, and no
+     generic padding rule may floor a bucket's width. */
+  min-width: 0;
+  padding: 0;
   background: var(--accent);
   border-radius: 1px;
 }
 
-.voice-lane-bar.empty {
+.voice-lane-bar.zero {
   background: transparent;
 }
 
@@ -933,9 +937,9 @@ button.chip.ctx-chip.on {
 }
 
 /* empty buckets must stay blank — reassert after the side colors above */
-.voice-lane-bar.empty,
-.voice-lane-bar.empty.side-ct,
-.voice-lane-bar.empty.side-t {
+.voice-lane-bar.zero,
+.voice-lane-bar.zero.side-ct,
+.voice-lane-bar.zero.side-t {
   background: transparent;
 }
 

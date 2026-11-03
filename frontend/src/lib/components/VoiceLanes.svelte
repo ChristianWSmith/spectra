@@ -47,7 +47,10 @@
   });
 
   // Per-row normalized bars: height = count / row-max (max1), empty
-  // buckets render at 0 height (blank).
+  // buckets render at 0 height (blank). Zero buckets use the class
+  // `zero`, NOT `empty`: the global .empty empty-state rule
+  // (style.css padding: 40px 20px) would force a 40px floor on each
+  // zero bucket and blow the bars wide past the card.
   const rows = $derived.by(() => {
     if (!lanes || !lanes.players || !lanes.players.length) return [];
     return lanes.players.map((p) => {
@@ -119,7 +122,7 @@
             {#each row.counts as c, i (i)}
               <span
                 class="voice-lane-bar side-{row.side}"
-                class:empty={c === 0}
+                class:zero={c === 0}
                 style="height:{row.max ? Math.max(c === 0 ? 0 : 12, (c / row.max) * 100) : 0}%"
                 title={c ? `${c} chunks` : ''}
               ></span>
