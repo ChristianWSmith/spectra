@@ -10,7 +10,7 @@
 .filt-inferred,
 .sett-inferred {
   border-style: dashed;
-  border-color: rgba(245, 166, 24, 0.45);
+  border-color: rgba(251, 172, 24, 0.45);
   color: var(--accent);
   font-size: 0.68em;
   padding: 0 5px;
@@ -74,7 +74,7 @@
 
 .filt-bbox {
   color: var(--accent);
-  border-color: rgba(245, 166, 24, 0.45);
+  border-color: rgba(251, 172, 24, 0.45);
 }
 
 .filt-x {
@@ -191,7 +191,7 @@
 /* Engagement kind chips: opening = gold, trade = green, untraded = red. */
 .comb-kind-chip.opening {
   color: var(--accent);
-  border-color: rgba(245, 166, 24, 0.5);
+  border-color: rgba(251, 172, 24, 0.5);
 }
 
 .comb-kind-chip.trade {
@@ -239,7 +239,7 @@
 }
 
 .comb-kast-btn:hover {
-  color: #ffc355;
+  color: #ffc955;
 }
 
 .comb-note {
@@ -291,7 +291,7 @@
 }
 
 .comb-round.kast {
-  border-color: rgba(245, 166, 24, 0.5);
+  border-color: rgba(251, 172, 24, 0.5);
 }
 
 .comb-round-n {
@@ -320,7 +320,7 @@
 
 .comb-dot.on {
   background: var(--accent);
-  color: #14100a;
+  color: #1a160a;
 }
 
 /* --- Player profile (prof-) ---------------------------------------------- */
@@ -378,7 +378,7 @@
 }
 
 .prof-result:hover {
-  background: rgba(245, 166, 24, 0.12);
+  background: rgba(251, 172, 24, 0.12);
 }
 
 .prof-metrics {
@@ -523,7 +523,7 @@
 /* Round-classification chip (Match Rounds tab, RoundDetail, Compare). */
 .cmp-class {
   color: var(--accent);
-  border-color: rgba(245, 166, 24, 0.4);
+  border-color: rgba(251, 172, 24, 0.4);
 }
 
 .cmp-hint {
@@ -773,7 +773,7 @@
 }
 
 .voice-export[open] > .voice-dl:hover {
-  background: rgba(245, 166, 24, 0.12);
+  background: rgba(251, 172, 24, 0.12);
 }
 
 /* --- Timeline voice lanes strip (sticky above the event list) -------------- */
@@ -906,7 +906,7 @@ button.chip.ctx-chip.on {
 
 .chip.ctx-src.src-chat {
   color: var(--accent);
-  border-color: rgba(245, 166, 24, 0.5);
+  border-color: rgba(251, 172, 24, 0.5);
 }
 
 .ctx-detail {
@@ -1021,7 +1021,7 @@ button.chip.ctx-chip.on {
 }
 
 .cp-item.active {
-  background: rgba(245, 166, 24, 0.12);
+  background: rgba(251, 172, 24, 0.12);
 }
 
 .cp-label {
@@ -1066,16 +1066,16 @@ button.chip.ctx-chip.on {
 
 .expl-note-chip {
   color: var(--accent);
-  border-color: rgba(245, 166, 24, 0.45);
+  border-color: rgba(251, 172, 24, 0.45);
 }
 
 .expl-enc {
   font-size: 0.88em;
   color: var(--accent);
   padding: 4px 10px;
-  border: 1px solid rgba(245, 166, 24, 0.4);
+  border: 1px solid rgba(251, 172, 24, 0.4);
   border-radius: var(--radius);
-  background: rgba(245, 166, 24, 0.06);
+  background: rgba(251, 172, 24, 0.06);
 }
 
 .expl-ent-note {
@@ -1129,11 +1129,11 @@ button.chip.ctx-chip.on {
 }
 
 .expl-hist-row:hover {
-  background: rgba(245, 166, 24, 0.1);
+  background: rgba(251, 172, 24, 0.1);
 }
 
 .expl-hist-row.active {
-  background: rgba(245, 166, 24, 0.16);
+  background: rgba(251, 172, 24, 0.16);
   color: var(--accent);
 }
 
@@ -1542,9 +1542,9 @@ button.chip.ctx-chip.on {
 
 /* --- Light theme (plan §2.6) -------------------------------------------------
    VS Code Light+ derived: editor #ffffff, sidebar/list chrome #f3f3f3,
-   inputs #ffffff/#cecece, terminal selection #add6ff; brand #28387C
+   inputs #ffffff/#cecece, terminal selection #add6ff; brand #28397F
    takes over every #007ACC/#0078d4 accent (primary buttons, focus,
-   badges, list-active fills) and amber #F5A618 keeps the active-state
+   badges, list-active fills) and amber #FBAC18 keeps the active-state
    highlights. Applied via [data-theme="light"] by theme.js. */
 
 :root[data-theme="light"] {
@@ -1556,19 +1556,19 @@ button.chip.ctx-chip.on {
   --inset: rgba(0, 0, 0, 0.04);
   --text: #333333;
   --muted: #616161;
-  --brand: #28387c;
-  --brand-hover: #1f2c60; /* darkened, per button.hoverBackground light */
-  --brand-active: #1a2550;
-  --accent: #f5a618;
-  --accent-tint: rgba(245, 166, 24, 0.14);
-  --accent-border: rgba(245, 166, 24, 0.55);
+  --brand: #28397f;
+  --brand-hover: #1f2d63; /* darkened, per button.hoverBackground light */
+  --brand-active: #1a2653;
+  --accent: #fbac18;
+  --accent-tint: rgba(251, 172, 24, 0.14);
+  --accent-border: rgba(251, 172, 24, 0.55);
   /* Brand-tinted list hover (VS Code light uses #f0f0f0 neutral) */
-  --list-hover: #e9ebf3;
-  --list-hover-strong: #dde1ee;
-  --list-active: rgba(40, 56, 124, 0.12);
+  --list-hover: #e9ecf6;
+  --list-hover-strong: #dde2f1;
+  --list-active: rgba(40, 57, 127, 0.12);
   --input-bg: #ffffff;
   --input-border: #cecece;
-  --focus: #28387c; /* focusBorder -> brand */
+  --focus: #28397f; /* focusBorder -> brand */
   --btn-border: #cecece;
   --btn-primary-fg: #ffffff;
   --scroll-thumb: rgba(100, 100, 100, 0.4); /* scrollbarSlider light */
@@ -1581,9 +1581,9 @@ button.chip.ctx-chip.on {
   --tab-strip: #f3f3f3;
   --tab-active-bg: #ffffff;
   --tab-inactive-fg: #616161;
-  --status-bg: #28387c;
+  --status-bg: #28397f;
   --status-fg: #ffffff;
-  --badge-bg: #28387c;
+  --badge-bg: #28397f;
   --badge-fg: #ffffff;
   --ct: #2f7bbd;
   --t: #b9722f;

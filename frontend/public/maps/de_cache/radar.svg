@@ -52,7 +52,7 @@
   <!-- north indicator -->
   <g transform="translate(80, 110)">
     <circle r="34" fill="none" stroke="#3a4356" stroke-width="2"/>
-    <path d="M 0 -24 L 9 10 L 0 4 L -9 10 Z" fill="#f5a618"/>
+    <path d="M 0 -24 L 9 10 L 0 4 L -9 10 Z" fill="#fbac18"/>
     <text x="0" y="-38" font-family="system-ui, sans-serif" font-size="18" font-weight="700"
           fill="#d7dde8" text-anchor="middle">N</text>
   </g>
