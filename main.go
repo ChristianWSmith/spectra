@@ -164,6 +164,7 @@ func main() {
 	app.RegisterService(application.NewService(&QueryService{st: st, app: app}))
 	app.RegisterService(application.NewService(&PlatformService{st: st, app: app}))
 	app.RegisterService(application.NewService(&MapPackService{kvs: kvs, app: app}))
+	app.RegisterService(application.NewService(&DialogService{app: app}))
 
 	initUpdater(app)
 
