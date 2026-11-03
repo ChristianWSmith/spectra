@@ -279,7 +279,7 @@
   <header class="view-header">
     <h1>Timeline</h1>
     <div class="spacer"></div>
-    <div class="filter-bar filt-saved" role="group" aria-label="Saved filters">
+    <div class="toolbar filt-saved" role="group" aria-label="Saved filters">
       <label class="sr-only" for="tl-saved">Saved filter</label>
       <select class="input" id="tl-saved" value={savedSel} onchange={(e) => (savedSel = e.currentTarget.value)}>
         <option value="">Saved filters…</option>
@@ -392,7 +392,7 @@
           </button>
         {/each}
         {#if events.length === 0 && !listError}
-          <p class="empty muted">No events match these filters.</p>
+          <p class="empty muted" role="status">No events match these filters.</p>
         {/if}
       </div>
     </div>

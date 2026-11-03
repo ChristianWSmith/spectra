@@ -7,6 +7,7 @@
   } from '../services.js';
   import { fmtInt, fmtMoney } from '../fmt.js';
   import EconCurve from '../components/EconCurve.svelte';
+  import StatCard from '../components/StatCard.svelte';
 
   let { id = 0, nav = () => {} } = $props();
 
@@ -171,13 +172,13 @@
   }
 </script>
 
-<div class="econ-view">
+<div class="view econ-view">
   {#if error}
     <p class="error" role="alert">{error}</p>
   {/if}
 
   {#if loading}
-    <p class="muted">Loading economy…</p>
+    <p class="muted" role="status">Loading economy…</p>
   {:else}
     <div class="econ-head">
       <span class="muted"
@@ -193,81 +194,59 @@
     <EconCurve {rows} {id} {nav} />
 
     <div class="econ-summary stat-grid">
-      <button
-        class="stat-cell"
+      <StatCard
+        label="Pistol → next round"
+        value={summary.pistolWon ? `${summary.held}/${summary.pistolWon}` : '—'}
+        sub="pistol wins held next round"
+        cls={!summary.firstPistol ? 'no-drill' : ''}
         title="Formula: pistol rounds won by a side where that side also won the immediately following round ÷ pistol rounds won. Click: open timeline filtered to round {summary.firstPistol || '—'}."
-        class:no-drill={!summary.firstPistol}
         onclick={() => drill(summary.firstPistol)}
       >
-        <span class="stat-label"
-          >Pistol → next round
-          <span class="chip econ-badge-computed">computed</span></span
-        >
-        <span class="stat-value"
-          >{summary.pistolWon ? `${summary.held}/${summary.pistolWon}` : '—'}</span
-        >
-        <span class="stat-sub">pistol wins held next round</span>
-      </button>
+        {#snippet badge()}<span class="chip badge-computed">computed</span>{/snippet}
+      </StatCard>
 
-      <button
-        class="stat-cell"
+      <StatCard
+        label="Force-buy win rate"
+        value={summary.forceTotal
+          ? Math.round((100 * summary.forceWon) / summary.forceTotal) + '%'
+          : '—'}
+        sub={summary.forceTotal
+          ? `${summary.forceWon}/${summary.forceTotal} · CT ${summary.forceCT}/${summary.forceCTT} · T ${summary.forceT}/${summary.forceTT}`
+          : 'no force buys'}
+        cls={!summary.firstForce ? 'no-drill' : ''}
         title="Formula: force-buy rounds won by the force-buying side ÷ all force-buy rounds (per side). Click: open timeline filtered to round {summary.firstForce || '—'}."
-        class:no-drill={!summary.firstForce}
         onclick={() => drill(summary.firstForce)}
       >
-        <span class="stat-label"
-          >Force-buy win rate
-          <span class="chip econ-badge-computed">computed</span></span
-        >
-        <span class="stat-value"
-          >{summary.forceTotal
-            ? Math.round((100 * summary.forceWon) / summary.forceTotal) + '%'
-            : '—'}</span
-        >
-        <span class="stat-sub"
-          >{summary.forceTotal
-            ? `${summary.forceWon}/${summary.forceTotal} · CT ${summary.forceCT}/${summary.forceCTT} · T ${summary.forceT}/${summary.forceTT}`
-            : 'no force buys'}</span
-        >
-      </button>
+        {#snippet badge()}<span class="chip badge-computed">computed</span>{/snippet}
+      </StatCard>
 
-      <button
-        class="stat-cell"
+      <StatCard
+        label="Winner spend advantage"
+        value={summary.avgGap == null ? '—' : fmtMoney(summary.avgGap)}
+        sub="avg winner − loser spend per round"
+        cls={!summary.gapRound ? 'no-drill' : ''}
         title="Formula: mean over decided rounds of (winner spent − loser spent). Click: open timeline filtered to round {summary.gapRound || '—'} (largest gap)."
-        class:no-drill={!summary.gapRound}
         onclick={() => drill(summary.gapRound)}
       >
-        <span class="stat-label"
-          >Winner spend advantage
-          <span class="chip econ-badge-computed">computed</span></span
-        >
-        <span class="stat-value"
-          >{summary.avgGap == null ? '—' : fmtMoney(summary.avgGap)}</span
-        >
-        <span class="stat-sub">avg winner − loser spend per round</span>
-      </button>
+        {#snippet badge()}<span class="chip badge-computed">computed</span>{/snippet}
+      </StatCard>
 
-      <button
-        class="stat-cell"
+      <StatCard
+        label="Lost equipment"
+        value={fmtMoney(summary.lostTotal)}
+        sub={`CT ${fmtMoney(summary.lostCT)} · T ${fmtMoney(summary.lostT)}`}
+        cls={!summary.lostRound ? 'no-drill' : ''}
         title="Formula: Σ losing side's freeze-end equipment value over decided rounds — inferred: assumes all losing-side equipment is destroyed (PRD §6.1). Click: open timeline filtered to round {summary.lostRound || '—'} (largest loss)."
-        class:no-drill={!summary.lostRound}
         onclick={() => drill(summary.lostRound)}
       >
-        <span class="stat-label"
-          >Lost equipment
-          <span class="chip econ-badge-inferred">inferred</span></span
-        >
-        <span class="stat-value">{fmtMoney(summary.lostTotal)}</span>
-        <span class="stat-sub"
-          >CT {fmtMoney(summary.lostCT)} · T {fmtMoney(summary.lostT)}</span
-        >
-      </button>
+        {#snippet badge()}<span class="chip badge-inferred">inferred</span>{/snippet}
+      </StatCard>
     </div>
 
     <section class="panel">
       <h2>Buy classification</h2>
       {#if rows.length === 0}
-        <p class="muted">No classification rows.</p>
+        <p class="muted" role="status">No classification rows.</p>
       {:else}
         <div class="table-scroll">
           <table class="data-table econ-table">
@@ -328,7 +307,7 @@
                     {fmtInt(r.lossBonusCT)}
                     {#if r.inferredCT}
                       <span
-                        class="chip econ-badge-inferred"
+                        class="chip badge-inferred"
                         title="reconstructed from round results — inferred"
                         >inferred</span
                       >
@@ -338,7 +317,7 @@
                     {fmtInt(r.lossBonusT)}
                     {#if r.inferredT}
                       <span
-                        class="chip econ-badge-inferred"
+                        class="chip badge-inferred"
                         title="reconstructed from round results — inferred"
                         >inferred</span
                       >
@@ -377,7 +356,7 @@
           this round — CS2's ladder runs $1400 → $3400 in $500 steps: a loss
           steps it up, a win steps it down (never a full reset), and every
           half starts one level up (a pistol loss pays $1900);
-          <span class="chip econ-badge-inferred">inferred</span> marks rows
+          <span class="chip badge-inferred">inferred</span> marks rows
           reconstructed from round results rather than recorded.
         </p>
       {/if}

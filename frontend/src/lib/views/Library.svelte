@@ -17,6 +17,7 @@
   import { fmtBytes, fmtDuration, fmtDate, basename } from '../fmt.js';
   import { teamNames } from '../teams.js';
   import StatusChip from '../components/StatusChip.svelte';
+  import SortTh from '../components/SortTh.svelte';
 
   let { nav = () => {} } = $props();
 
@@ -278,19 +279,8 @@
     />
   </header>
 
-  <!-- Sortable header cell: label + active-direction arrow; the button is
-       the whole header target (same styling as the scoreboard's). -->
-  {#snippet sortTh(label, key, cls)}
-    <th scope="col" class={cls}>
-      <button
-        class="th-sort"
-        class:sorted={sortKey === key}
-        aria-label="Sort by {label}"
-        title="Sort by {label}"
-        onclick={() => toggleSort(key)}
-      >{label}{#if sortKey === key}<span class="codicon {desc ? 'codicon-arrow-down' : 'codicon-arrow-up'}"></span>{/if}</button>
-    </th>
-  {/snippet}
+  <!-- Sortable header cells (SortTh): label + active-direction arrow; the
+       button is the whole header target (same styling as the scoreboard's). -->
 
   {#if importError}
     <p class="error" role="alert">{importError}</p>
@@ -333,7 +323,7 @@
       <h2>Recent import problems</h2>
       {#each problemJobs as job (job.id)}
         <div class="problem-row">
-          <span class="chip status {job.status}">{job.status}</span>
+          <StatusChip status={job.status} />
           <span class="mono path" title={job.path}>{basename(job.path)}</span>
           <span class="error-text">{job.error || 'no error message'}</span>
         </div>
@@ -344,7 +334,7 @@
   <div class="dropzone">
     {#if matches.length === 0 && jobs.length === 0}
       <div class="empty">
-        <p class="empty-title">No matches yet</p>
+        <p class="empty-title" role="status">No matches yet</p>
         <p class="muted">
           Import a CS2 demo with the button above, or drop <span class="mono"
             >.dem</span
@@ -356,14 +346,14 @@
       <table class="data-table">
         <thead>
           <tr>
-            {@render sortTh('Map', 'map', '')}
+            <SortTh label="Map" active={sortKey === 'map'} {desc} onclick={() => toggleSort('map')} />
             <th scope="col">Matchup</th>
-            {@render sortTh('Score', 'score', 'num')}
-            {@render sortTh('Rounds', 'rounds', 'num')}
-            {@render sortTh('Duration', 'duration', 'num')}
-            {@render sortTh('Size', 'size', 'num')}
-            {@render sortTh('Extracted', 'extracted_at', '')}
-            {@render sortTh('Status', 'status', '')}
+            <SortTh label="Score" cls="num" active={sortKey === 'score'} {desc} onclick={() => toggleSort('score')} />
+            <SortTh label="Rounds" cls="num" active={sortKey === 'rounds'} {desc} onclick={() => toggleSort('rounds')} />
+            <SortTh label="Duration" cls="num" active={sortKey === 'duration'} {desc} onclick={() => toggleSort('duration')} />
+            <SortTh label="Size" cls="num" active={sortKey === 'size'} {desc} onclick={() => toggleSort('size')} />
+            <SortTh label="Extracted" active={sortKey === 'extracted_at'} {desc} onclick={() => toggleSort('extracted_at')} />
+            <SortTh label="Status" active={sortKey === 'status'} {desc} onclick={() => toggleSort('status')} />
             <th scope="col"><span class="sr-only">Actions</span></th>
           </tr>
         </thead>

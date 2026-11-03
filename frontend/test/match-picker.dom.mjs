@@ -68,9 +68,13 @@ svelteCompile(
 );
 
 // MatchPicker → rewrite its .svelte / ../fmt.js imports to local bundles.
+const popSrc = readFileSync('src/lib/components/Popover.svelte', 'utf8');
+svelteCompile(popSrc, 'Popover.svelte', join(dir, 'popover.js'));
+
 const mpSrc = readFileSync('src/lib/components/MatchPicker.svelte', 'utf8')
   .replace("import { fmtDate, fmtDuration } from '../fmt.js';", "import { fmtDate, fmtDuration } from './fmt.js';")
-  .replace("import StatusChip from './StatusChip.svelte';", "import StatusChip from './statuschip.js';");
+  .replace("import StatusChip from './StatusChip.svelte';", "import StatusChip from './statuschip.js';")
+  .replace("import Popover from './Popover.svelte';", "import Popover from './popover.js';");
 svelteCompile(mpSrc, 'MatchPicker.svelte', join(dir, 'matchpicker-bundle.js'));
 
 // Harness.

@@ -144,17 +144,17 @@
   const barH = 90;
 </script>
 
-<div class="util-view">
+<div class="view util-view">
   {#if error}
     <p class="error" role="alert">{error}</p>
   {/if}
 
   {#if loading}
-    <p class="muted">Loading utility events…</p>
+    <p class="muted" role="status">Loading utility events…</p>
   {:else}
     <div class="util-filters toolbar">
       <label class="util-field" for="util-kind">
-        <span class="util-field-label">Kind</span>
+        <span class="field-label">Kind</span>
         <select class="input" id="util-kind" bind:value={kindF}>
           <option value="">All kinds</option>
           {#each kindOptions as k (k)}
@@ -163,7 +163,7 @@
         </select>
       </label>
       <label class="util-field" for="util-thrower">
-        <span class="util-field-label">Thrower</span>
+        <span class="field-label">Thrower</span>
         <select class="input" id="util-thrower" bind:value={throwerF}>
           <option value="">All players</option>
           {#each players as p (p.steamId)}
@@ -187,7 +187,7 @@
       <section class="panel">
         <h2>Utility damage per round</h2>
         {#if damageBars.per.length === 0}
-          <p class="muted">No utility damage in this selection.</p>
+          <p class="muted" role="status">No utility damage in this selection.</p>
         {:else}
           <svg
             class="util-bars"
@@ -222,7 +222,7 @@
           <div class="util-legend">
             <span
               ><span class="util-dot ct"></span>CT
-              <span class="chip util-badge-computed">computed</span></span
+              <span class="chip badge-computed">computed</span></span
             >
             <span><span class="util-dot t"></span>T</span>
             <span class="muted"
@@ -237,19 +237,19 @@
         <h2>Flash effectiveness</h2>
         <div class="util-flash-grid">
           <div class="util-flash-cell">
-            <span class="stat-label ct">CT blinds</span>
+            <span class="field-label ct">CT blinds</span>
             <span class="util-flash-value">{fmtMs(flash.ctMs)}</span>
             <span class="muted">{flash.ctAff} affected</span>
           </div>
           <div class="util-flash-cell">
-            <span class="stat-label t">T blinds</span>
+            <span class="field-label t">T blinds</span>
             <span class="util-flash-value">{fmtMs(flash.tMs)}</span>
             <span class="muted">{flash.tAff} affected</span>
           </div>
         </div>
         <p class="util-flash-note">
           <span
-            class="chip util-badge-inferred"
+            class="chip badge-inferred"
             title="derived from blind events — inferred"
             >inferred</span
           >
@@ -261,7 +261,7 @@
     </div>
 
     {#if groups.length === 0}
-      <p class="muted">No grenades match the current filters.</p>
+      <p class="muted" role="status">No grenades match the current filters.</p>
     {:else}
       <div class="util-groups">
         {#each groups as [round, list] (round)}

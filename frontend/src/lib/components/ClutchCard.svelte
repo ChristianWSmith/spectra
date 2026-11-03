@@ -43,7 +43,7 @@
 >
   <div class="comb-sum">
     <strong>1v{clutch.size}</strong>
-    <span class="chip status {clutch.won ? 'ready' : 'failed'}">
+    <span class="chip status {clutch.won ? 'ok' : 'bad'}">
       {clutch.won ? 'won' : 'lost'}
     </span>
     <span class="chip round-chip">R{clutch.round}</span>
@@ -70,7 +70,7 @@
     </div>
   {/if}
 
-  <div class="comb-actions">
+  <div class="toolbar comb-actions">
     <button class="btn small" title="Watch the clutch in the replay" onclick={replay}>
       <span class="codicon codicon-play"></span> Replay
     </button>

@@ -5,6 +5,8 @@
   import { getProfile, listPlayers, getCareerTrend, errText } from '../services.js';
   import { ADR_SIGMA_DEF, OPENING_DEF, TRADE_DEF, KAST_DEF } from '../definitions.js';
   import { fmt1, fmt2, fmtPercent, fmtDate, fmtInt } from '../fmt.js';
+  import Popover from '../components/Popover.svelte';
+  import StatCard from '../components/StatCard.svelte';
 
   let { steamId = null, nav = () => {} } = $props();
 
@@ -25,6 +27,14 @@
   let q = $state('');
   let results = $state([]);
   let searchTok = 0;
+  let pickerEl = $state(null);
+
+  // Escape / click-outside dismissal. Bumping searchTok drops an in-flight
+  // search so it cannot reopen the list we just closed.
+  function dismissResults() {
+    searchTok++;
+    results = [];
+  }
 
   $effect(() => {
     const sid = steamId;
@@ -152,7 +162,7 @@
       <h1>Player</h1>
     {/if}
     <div class="spacer"></div>
-    <div class="prof-picker">
+    <div class="prof-picker" bind:this={pickerEl}>
       <label class="sr-only" for="prof-q">Find players</label>
       <input
         class="input"
@@ -161,7 +171,7 @@
         placeholder="Find players…"
         bind:value={q}
       />
-      {#if results.length > 0}
+      <Popover open={results.length > 0} anchor={pickerEl} onClose={dismissResults}>
         <div class="prof-results" role="listbox" aria-label="Player results">
           {#each results as r (r.steamId)}
             <button class="prof-result" onclick={() => pick(r.steamId)}>
@@ -172,7 +182,7 @@
             </button>
           {/each}
         </div>
-      {/if}
+      </Popover>
     </div>
   </header>
 
@@ -182,51 +192,20 @@
 
   {#if profile}
     <div class="stat-grid">
-      <div class="stat-cell" title="Matches in the library for this player">
-        <span class="stat-label">Matches</span>
-        <span class="stat-value">{profile.matches}</span>
-        <span class="stat-sub">{profile.wins} wins</span>
-      </div>
-      <div class="stat-cell" title="Share of matches won">
-        <span class="stat-label">Win%</span>
-        <span class="stat-value">{fmtPercent(profile.winPct)}</span>
-        <span class="stat-sub">{profile.wins}/{profile.matches || 0}</span>
-      </div>
-      <div class="stat-cell" title={ADR_SIGMA_DEF}>
-        <span class="stat-label">ADR ± σ</span>
-        <span class="stat-value">{fmt1(profile.adrAvg)} ± {fmt1(profile.adrStd)}</span>
-        <span class="stat-sub">consistency</span>
-      </div>
-      <div class="stat-cell" title="Kills ÷ deaths across all matches">
-        <span class="stat-label">K/D</span>
-        <span class="stat-value">{fmt2(profile.kd)}</span>
-        <span class="stat-sub">career</span>
-      </div>
-      <div class="stat-cell" title="Headshot share of kills">
-        <span class="stat-label">HS%</span>
-        <span class="stat-value">{fmtPercent(profile.hsPct)}</span>
-        <span class="stat-sub">headshots</span>
-      </div>
-      <div class="stat-cell" title={KAST_DEF}>
-        <span class="stat-label">KAST%</span>
-        <span class="stat-value">{fmtPercent(profile.kastPct)}</span>
-        <span class="stat-sub">kill/assist/trade/survive</span>
-      </div>
-      <div class="stat-cell" title={OPENING_DEF}>
-        <span class="stat-label">Opening duels</span>
-        <span class="stat-value">{fmtPercent(profile.openingRate)}</span>
-        <span class="stat-sub">win rate</span>
-      </div>
-      <div class="stat-cell" title={TRADE_DEF}>
-        <span class="stat-label">Trade rate</span>
-        <span class="stat-value">{fmtPercent(profile.tradeRate)}</span>
-        <span class="stat-sub">kills ÷ deaths</span>
-      </div>
-      <div class="stat-cell" title="Detected clutches (1vN) and the share won (clutch v2)">
-        <span class="stat-label">Clutches</span>
-        <span class="stat-value">{profile.clutches}</span>
-        <span class="stat-sub">{fmtPercent(profile.clutchWinPct)} won</span>
-      </div>
+      <StatCard label="Matches" value={profile.matches} sub={`${profile.wins} wins`} title="Matches in the library for this player" />
+      <StatCard label="Win%" value={fmtPercent(profile.winPct)} sub={`${profile.wins}/${profile.matches || 0}`} title="Share of matches won" />
+      <StatCard label="ADR ± σ" value={`${fmt1(profile.adrAvg)} ± ${fmt1(profile.adrStd)}`} sub="consistency" title={ADR_SIGMA_DEF} />
+      <StatCard label="K/D" value={fmt2(profile.kd)} sub="career" title="Kills ÷ deaths across all matches" />
+      <StatCard label="HS%" value={fmtPercent(profile.hsPct)} sub="headshots" title="Headshot share of kills" />
+      <StatCard label="KAST%" value={fmtPercent(profile.kastPct)} sub="kill/assist/trade/survive" title={KAST_DEF} />
+      <StatCard label="Opening duels" value={fmtPercent(profile.openingRate)} sub="win rate" title={OPENING_DEF} />
+      <StatCard label="Trade rate" value={fmtPercent(profile.tradeRate)} sub="kills ÷ deaths" title={TRADE_DEF} />
+      <StatCard
+        label="Clutches"
+        value={profile.clutches}
+        sub={`${fmtPercent(profile.clutchWinPct)} won`}
+        title="Detected clutches (1vN) and the share won (clutch v2)"
+      />
     </div>
 
     <section class="panel">
@@ -276,7 +255,7 @@
       {:else if trend.length === 1}
         <p class="muted">Only one data point — a trend needs at least two matches.</p>
       {:else}
-        <p class="muted">No trend data for this metric yet.</p>
+        <p class="muted" role="status">No trend data for this metric yet.</p>
       {/if}
     </section>
 
@@ -392,7 +371,7 @@
                 <td>{fmtDate(h.extractedAt)}</td>
                 <td>{h.map || '—'}</td>
                 <td>
-                  <span class="chip status {h.win ? 'ready' : 'failed'}">
+                  <span class="chip status {h.win ? 'ok' : 'bad'}">
                     {h.win ? 'W' : 'L'}
                   </span>
                 </td>
@@ -410,6 +389,6 @@
       </div>
     </section>
   {:else if !profileError}
-    <p class="muted">Loading…</p>
+    <p class="muted" role="status">Loading…</p>
   {/if}
 </div>

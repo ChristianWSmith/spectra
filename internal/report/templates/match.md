@@ -20,9 +20,9 @@
 {{end}}
 ## Economy (warmup excluded)
 
-| Round | Winner | Equip CT | Equip T | Money CT | Money T | Loss bonus CT | Loss bonus T | Class |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-{{range .Economy}}| {{.Round}} | {{.Winner}} | {{.EquipCT}} | {{.EquipT}} | {{.MoneyCT}} | {{.MoneyT}} | {{.LossBonusCT}} | {{.LossBonusT}} | {{.Label}} |
+| Round | Winner | Equip CT | Equip T | Money CT | Money T | Loss bonus CT | Loss bonus T | Class | CT buy | T buy |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+{{range .Economy}}| {{.Round}} | {{.Winner}} | {{.EquipCT}} | {{.EquipT}} | {{.MoneyCT}} | {{.MoneyT}} | {{.LossBonusCT}} | {{.LossBonusT}} | {{.Label}} | {{.ClassCT}} | {{.ClassT}} |
 {{end}}
 ## Clutches
 

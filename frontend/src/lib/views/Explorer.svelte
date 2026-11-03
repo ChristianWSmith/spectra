@@ -16,6 +16,7 @@
   import { fmtDate, fmtInt } from '../fmt.js';
   import MatchPicker from '../components/MatchPicker.svelte';
   import PayloadTree from '../components/PayloadTree.svelte';
+  import StatusChip from '../components/StatusChip.svelte';
 
   let { nav = () => {} } = $props();
 
@@ -198,7 +199,7 @@
 
   {#if !matchId}
     <div class="panel empty">
-      <p class="empty-title">No matches</p>
+      <p class="empty-title" role="status">No matches</p>
       <p class="muted">Import a demo in the Library first.</p>
     </div>
   {:else}
@@ -208,7 +209,7 @@
       {#if provError}
         <p class="error" role="alert">{provError}</p>
       {:else if !prov}
-        <p class="muted">Loading…</p>
+        <p class="muted" role="status">Loading…</p>
       {:else}
         <dl class="facts">
           <div>
@@ -249,7 +250,7 @@
           </div>
           <div>
             <dt>Status</dt>
-            <dd><span class="chip status {prov.status}">{prov.status || '—'}</span></dd>
+            <dd><StatusChip status={prov.status} /></dd>
           </div>
         </dl>
         {#if prov.notes && prov.notes.length}
@@ -260,7 +261,7 @@
           </div>
         {/if}
         {#if encNote}
-          <p class="expl-enc" role="note">{encNote}</p>
+          <p class="note-amber" role="note">{encNote}</p>
         {/if}
       {/if}
     </section>
@@ -271,7 +272,7 @@
       {#if entError}
         <p class="error" role="alert">{entError}</p>
       {:else if !entities}
-        <p class="muted">Loading…</p>
+        <p class="muted" role="status">Loading…</p>
       {:else}
         <dl class="facts">
           <div>
@@ -310,9 +311,9 @@
           aria-label="Filter ConVars"
         />
         {#if convars.length === 0}
-          <p class="muted">No server_cvar events recorded for this match.</p>
+          <p class="muted" role="status">No server_cvar events recorded for this match.</p>
         {:else if filteredConvars.length === 0}
-          <p class="muted">No ConVars match the filter.</p>
+          <p class="muted" role="status">No ConVars match the filter.</p>
         {:else}
           <div class="table-scroll expl-convars">
             <table class="data-table mini">
@@ -361,7 +362,7 @@
                 <span class="num muted">{fmtInt(h.count)}</span>
               </button>
             {:else}
-              <p class="muted">No generic events stored for this match.</p>
+              <p class="muted" role="status">No generic events stored for this match.</p>
             {/each}
           </div>
         </div>
@@ -425,7 +426,7 @@
       {#if warnError}
         <p class="error" role="alert">{warnError}</p>
       {:else if warnings.length === 0}
-        <p class="muted">No extraction warnings for this match.</p>
+        <p class="muted" role="status">No extraction warnings for this match.</p>
       {:else}
         <ul class="warning-list">
           {#each warnings as w, i (i)}
@@ -455,7 +456,7 @@
             notes above; content is never stored or shown.
           </p>
         {:else}
-          <p class="muted">No encrypted network messages recorded for this match.</p>
+          <p class="muted" role="status">No encrypted network messages recorded for this match.</p>
         {/if}
       {/if}
     </section>

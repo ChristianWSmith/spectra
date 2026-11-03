@@ -202,7 +202,7 @@
   }
 </script>
 
-<div class="filter-bar filt-bar" role="group" aria-label="Event filters">
+<div class="toolbar filt-bar" role="group" aria-label="Event filters">
   <label class="filt-grp" for="filt-round">
     Round
     <select class="input" id="filt-round" value={f.round} onchange={(e) => set('round', Number(e.currentTarget.value))}>

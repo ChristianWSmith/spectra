@@ -12,6 +12,7 @@
   } from '../services.js';
   import { toggleTheme } from '../theme.js';
   import { fmtDate } from '../fmt.js';
+  import Dialog from './Dialog.svelte';
 
   let { nav = () => {} } = $props();
 
@@ -316,63 +317,45 @@
   }
 </script>
 
-{#if open}
-  <div
-    class="cp-back"
-    role="presentation"
-    onclick={(e) => {
-      if (e.target === e.currentTarget) close();
-    }}
-    onkeydown={(e) => {
-      if (e.key === 'Escape') close();
-    }}
-  >
-    <div
-      class="cp-panel"
-      role="dialog"
-      aria-modal="true"
-      aria-label="Command palette"
-    >
-      <input
-        class="input cp-input"
-        bind:this={inputEl}
-        bind:value={query}
-        placeholder="Type a command or search…"
-        aria-label="Command palette search"
-      />
-      <div class="cp-body">
-        {#each sections as s (s.header)}
-          <div class="cp-section">{s.header}</div>
-          {#each s.items as it, i (it)}
-            {@const gi = flat.indexOf(it)}
-            <button
-              class="cp-item"
-              class:active={gi === active}
-              id={'cp-item-' + gi}
-              type="button"
-              onmouseenter={() => (active = gi)}
-              onclick={() => pick(gi)}
-            >
-              <span class="cp-label">
-                {#each segs(it.label, it.hl) as seg, j (j)}
-                  {#if seg.on}<strong class="cp-hl">{seg.text}</strong>{:else}{seg.text}{/if}
-                {/each}
-              </span>
-              {#if it.sub}<span class="cp-sub muted">{it.sub}</span>{/if}
-            </button>
-          {/each}
-        {/each}
-        {#if loading}
-          <div class="cp-empty muted" role="status">Searching…</div>
-        {:else if query.trim() && flat.length === 0}
-          <div class="cp-empty muted">No results for “{query.trim()}”.</div>
-        {/if}
-      </div>
-      <div class="cp-foot muted">
-        <span><span class="codicon codicon-arrow-up"></span><span class="codicon codicon-arrow-down"></span> move</span><span>Enter run</span><span>Esc close</span>
-        <span class="spacer"></span>
-        <span>Ctrl/⌘K toggle</span>
-      </div>
-    </div>
+<Dialog open={open} backClass="top" label="Command palette" onClose={close}>
+  <input
+    class="input cp-input"
+    bind:this={inputEl}
+    bind:value={query}
+    placeholder="Type a command or search…"
+    aria-label="Command palette search"
+  />
+  <div class="cp-body">
+    {#each sections as s (s.header)}
+      <div class="cp-section">{s.header}</div>
+      {#each s.items as it, i (it)}
+        {@const gi = flat.indexOf(it)}
+        <button
+          class="cp-item"
+          class:active={gi === active}
+          id={'cp-item-' + gi}
+          type="button"
+          onmouseenter={() => (active = gi)}
+          onclick={() => pick(gi)}
+        >
+          <span class="cp-label">
+            {#each segs(it.label, it.hl) as seg, j (j)}
+              {#if seg.on}<strong class="cp-hl">{seg.text}</strong>{:else}{seg.text}{/if}
+            {/each}
+          </span>
+          {#if it.sub}<span class="cp-sub muted">{it.sub}</span>{/if}
+        </button>
+      {/each}
+    {/each}
+    {#if loading}
+      <div class="cp-empty muted" role="status">Searching…</div>
+    {:else if query.trim() && flat.length === 0}
+      <div class="cp-empty muted" role="status">No results for “{query.trim()}”.</div>
+    {/if}
   </div>
-{/if}
+  <div class="cp-foot muted">
+    <span><span class="codicon codicon-arrow-up"></span><span class="codicon codicon-arrow-down"></span> move</span><span>Enter run</span><span>Esc close</span>
+    <span class="spacer"></span>
+    <span>Ctrl/⌘K toggle</span>
+  </div>
+</Dialog>

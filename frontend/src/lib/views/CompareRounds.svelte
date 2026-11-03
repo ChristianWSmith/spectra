@@ -152,7 +152,7 @@
             <p class="muted">Round not found.</p>
           {:else}
             <div>
-              <p class="cmp-sec-t">Economy</p>
+              <p class="section-title cmp-sec-t">Economy</p>
               <table class="data-table mini">
                 <thead>
                   <tr>
@@ -189,7 +189,7 @@
             </div>
 
             <div>
-              <p class="cmp-sec-t">Loadout summary</p>
+              <p class="section-title cmp-sec-t">Loadout summary</p>
               <ul class="cmp-list">
                 <li><span class="muted">Kills</span> <strong>{col.detail.round.kills}</strong></li>
                 <li>
@@ -208,7 +208,7 @@
             </div>
 
             <div>
-              <p class="cmp-sec-t">Utility</p>
+              <p class="section-title cmp-sec-t">Utility</p>
               <p class="muted cmp-note">{utilSummary(col)}</p>
               {#if col.utils.length > 0}
                 <ul class="cmp-list">
@@ -227,7 +227,7 @@
             </div>
 
             <div>
-              <p class="cmp-sec-t">Event sequence {col.seq.length >= SEQ_LIMIT ? `(first ${SEQ_LIMIT})` : ''}</p>
+              <p class="section-title cmp-sec-t">Event sequence {col.seq.length >= SEQ_LIMIT ? `(first ${SEQ_LIMIT})` : ''}</p>
               <ol class="cmp-events">
                 {#each col.seq as e (e.id)}
                   <li>
@@ -247,7 +247,7 @@
               </ol>
             </div>
 
-            <div class="cmp-actions">
+            <div class="toolbar cmp-actions">
               <button
                 class="btn small"
                 title="Replay from the round start ({fmtTickSeconds(col.detail.round.startTick, tickRate)})"

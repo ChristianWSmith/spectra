@@ -49,6 +49,8 @@
   import Context from './Context.svelte';
   import Timeline from './Timeline.svelte';
   import StatusChip from '../components/StatusChip.svelte';
+  import SortTh from '../components/SortTh.svelte';
+  import StatCard from '../components/StatCard.svelte';
 
   // routeTab: the deep-linked tab from App's route (#/match/:id/timeline);
   // '' for plain #/match/:id. Tabs are otherwise local state like every
@@ -678,20 +680,20 @@
           {#if voice}
             {#if voice.hasVoice}
               <span
-                class="chip voice-badge"
+                class="chip voice-badge busy"
                 title="Voice: {fmtInt(voice.chunkCount)} chunks across {voice.playerCount} players — Opus, decoded on demand"
                 ><span class="codicon codicon-unmute"></span> {(voice.chunkCount / 1000).toFixed(1)}k · {voice.playerCount}</span
               >
             {:else}
               <span
-                class="chip voice-badge none"
+                class="chip voice-badge idle"
                 title="This demo source does not record voice (e.g. Valve MM) — normal, not broken"
                 >no voice</span
               >
             {/if}
             {#if !voice.keyFound && (match.encryptedMessages || 0) > 0}
               <span
-                class="chip voice-badge lock"
+                class="chip voice-badge idle"
                 title="Encrypted chat present — .dem.info key not found"
                 ><span class="codicon codicon-lock"></span></span
               >
@@ -720,7 +722,7 @@
           </button>
         </div>
         {#if warnings == null}
-          <p class="muted">Loading…</p>
+          <p class="muted" role="status">Loading…</p>
         {:else if warnings.length === 0}
           <p class="muted">None — the parser ran clean.</p>
         {:else}
@@ -753,15 +755,13 @@
     {#if tab === 'Overview'}
       <div class="stat-grid">
         {#each topStats as s (s.label)}
-          <button
-            class="stat-cell"
+          <StatCard
+            label={s.label}
+            value={s.value}
+            sub={s.p.name}
             title="Open timeline filtered to {s.p.name}"
             onclick={() => openPlayerTimeline(s.p.steamId)}
-          >
-            <span class="stat-label">{s.label}</span>
-            <span class="stat-value">{s.value}</span>
-            <span class="stat-sub">{s.p.name}</span>
-          </button>
+          />
         {/each}
       </div>
 
@@ -878,33 +878,24 @@
             <tr>
               <th scope="col"><span class="sr-only">Expand</span></th>
               {#each SCORE_COLS as col (col.key)}
-                <th scope="col" class="num" class:cmp-def={col.title} title={col.title || ''}>
-                  <button
-                    class="th-sort"
-                    class:sorted={sortKey === col.key}
-                    aria-label="Sort by {col.label}"
-                    onclick={() => toggleSort(col.key)}
-                  >
-                    {col.label}{#if sortKey === col.key}<span class="codicon {desc ? 'codicon-arrow-down' : 'codicon-arrow-up'}"></span>{/if}
-                  </button>
-                </th>
+                <SortTh
+                  label={col.label}
+                  cls={col.title ? 'num def' : 'num'}
+                  title={col.title || ''}
+                  active={sortKey === col.key}
+                  {desc}
+                  onclick={() => toggleSort(col.key)}
+                />
               {/each}
               {#each metricCols as mc (mc.def.id)}
-                <th
-                  scope="col"
-                  class="num m5-def"
+                <SortTh
+                  label={mc.def.title || mc.def.name}
+                  cls="num def"
                   title="{mc.def.doc || mc.def.name}{mc.error ? ' — preview failed: ' + mc.error : ''}"
+                  active={sortKey === metricSortKey(mc.def.id)}
+                  {desc}
+                  onclick={() => toggleSort(metricSortKey(mc.def.id))}
                 >
-                  <button
-                    class="th-sort"
-                    class:sorted={sortKey === metricSortKey(mc.def.id)}
-                    aria-label="Sort by {mc.def.title || mc.def.name}"
-                    onclick={() => toggleSort(metricSortKey(mc.def.id))}
-                  >
-                    {mc.def.title || mc.def.name}{#if sortKey === metricSortKey(mc.def.id)}<span
-                        class="codicon {desc ? 'codicon-arrow-down' : 'codicon-arrow-up'}"
-                      ></span>{/if}
-                  </button>
                   <span class="m5-ib" title={mc.def.doc || ''}><span class="codicon codicon-info"></span></span>
                   <span
                     class="m5-n"
@@ -917,7 +908,7 @@
                     aria-label="Unpin {mc.def.title || mc.def.name}"
                     onclick={() => unpin(mc.def.id)}><span class="codicon codicon-close"></span></button
                   >
-                </th>
+                </SortTh>
               {/each}
             </tr>
           </thead>
@@ -1036,7 +1027,7 @@
               <th scope="col">Winner</th>
               <th
                 scope="col"
-                class="cmp-def"
+                class="def"
                 title="Buy/round classification (pistol/anti-eco/eco/force/full/bonus/save) with the rule text and rule_version — hover a chip"
               >Class</th>
               <th scope="col">Reason</th>
@@ -1224,7 +1215,7 @@
               {/if}
             </div>
           {:else if !provError}
-            <p class="muted">Loading provenance…</p>
+            <p class="muted" role="status">Loading provenance…</p>
           {/if}
           {#if ents}
             <div class="m5-card">
@@ -1240,7 +1231,7 @@
               {/if}
             </div>
           {:else if !entsError}
-            <p class="muted">Loading entity summary…</p>
+            <p class="muted" role="status">Loading entity summary…</p>
           {/if}
           <div class="m5-card m5-cv-card">
             <div class="row-between">
@@ -1338,7 +1329,7 @@
       </div>
     {/if}
   {:else if !error}
-    <p class="muted">Loading…</p>
+    <p class="muted" role="status">Loading…</p>
   {/if}
 </div>
 

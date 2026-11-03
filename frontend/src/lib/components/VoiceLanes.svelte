@@ -92,11 +92,11 @@
 </script>
 
 {#if loading}
-  <p class="muted voice-lanes-loading">Loading voice lanes…</p>
+  <p class="muted voice-lanes-loading" role="status">Loading voice lanes…</p>
 {:else if error}
   <p class="error" role="alert">Voice lanes unavailable: {error}</p>
 {:else if rows.length === 0}
-  <p class="muted voice-lanes-loading">No voice activity.</p>
+  <p class="muted voice-lanes-loading" role="status">No voice activity.</p>
 {:else}
   <div class="voice-lanes" aria-label="Voice activity per player">
     <div class="voice-lanes-head">

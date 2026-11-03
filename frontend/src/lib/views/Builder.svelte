@@ -380,7 +380,7 @@
         </div>
       {/if}
       {#if metrics.length === 0 && !listError}
-        <p class="muted">Loading…</p>
+        <p class="muted" role="status">Loading…</p>
       {/if}
     </section>
 
@@ -397,15 +397,15 @@
 
         <div class="bld-fields">
           <div class="bld-field">
-            <label for="bld-name">Name</label>
+            <label class="field-label" for="bld-name">Name</label>
             <input id="bld-name" class="input mono" bind:value={form.name} placeholder="slug_name" />
           </div>
           <div class="bld-field">
-            <label for="bld-title">Title</label>
+            <label class="field-label" for="bld-title">Title</label>
             <input id="bld-title" class="input" bind:value={form.title} placeholder="Display label" />
           </div>
           <div class="bld-field">
-            <label for="bld-group">GroupBy</label>
+            <label class="field-label" for="bld-group">GroupBy</label>
             <select id="bld-group" class="input" bind:value={form.groupBy}>
               <option value="">none</option>
               <option value="player">player</option>
@@ -417,7 +417,7 @@
             </select>
           </div>
           <div class="bld-field">
-            <label for="bld-format">Format</label>
+            <label class="field-label" for="bld-format">Format</label>
             <select id="bld-format" class="input" bind:value={form.format}>
               <option value="">auto</option>
               <option value="int">int</option>
@@ -427,7 +427,7 @@
             </select>
           </div>
           <div class="bld-field">
-            <label for="bld-denom">Denominator</label>
+            <label class="field-label" for="bld-denom">Denominator</label>
             <select id="bld-denom" class="input" bind:value={form.denominator}>
               <option value="">none</option>
               <option value="rounds">rounds</option>
@@ -436,11 +436,11 @@
             </select>
           </div>
           <div class="bld-field wide">
-            <label for="bld-doc">Doc (formula, required)</label>
+            <label class="field-label" for="bld-doc">Doc (formula, required)</label>
             <textarea id="bld-doc" class="input" rows="3" bind:value={form.doc} placeholder="Formula: … — what this counts, over what, and any proxy/deviation."></textarea>
           </div>
           <div class="bld-field wide">
-            <label for="bld-expr">Expression</label>
+            <label class="field-label" for="bld-expr">Expression</label>
             <textarea
               id="bld-expr"
               class="input mono bld-expr"
@@ -466,7 +466,7 @@
           </div>
         </div>
 
-        <div class="bld-actions">
+        <div class="toolbar bld-actions">
           <button class="btn primary" onclick={save} disabled={saving}>
             {saving ? 'Saving…' : form.id && !dirty ? 'Saved' : 'Save metric'}
           </button>
@@ -493,7 +493,7 @@
         <div class="row-between">
           <h2>Preview</h2>
           <div class="toolbar bld-scope-bar">
-            <label class="bld-lab" for="bld-scope">Scope</label>
+            <label class="bld-lab field-label" for="bld-scope">Scope</label>
             <select class="input" id="bld-scope" bind:value={scope}>
               <option value="">Whole library</option>
               {#each matches as m (m.id)}
@@ -523,7 +523,7 @@
             </p>
           {/if}
           {#if preview.rows.length === 0}
-            <p class="muted">No groups for this scope — empty result.</p>
+            <p class="muted" role="status">No groups for this scope — empty result.</p>
           {:else}
             <div class="table-scroll">
               <table class="data-table">

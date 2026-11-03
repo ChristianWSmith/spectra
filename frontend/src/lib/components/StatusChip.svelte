@@ -13,10 +13,24 @@ const LABELS = {
   cancelled: 'cancelled',
 };
 
+// Lifecycle state → the shared .chip palette modifier (style.css). An
+// unknown state falls back to `idle`, which is exactly the base .chip
+// look an unmatched status colour rule used to leave behind.
+const PALETTE = {
+  ready: 'ok',
+  done: 'ok',
+  failed: 'bad',
+  queued: 'busy',
+  parsing: 'busy',
+  running: 'busy',
+  cancelled: 'idle',
+};
+
 let pct = $derived(progress != null ? Math.round(progress * 100) : null);
+let palette = $derived(PALETTE[status] || 'idle');
 </script>
 
-<span class="chip status {status}" {title}>
+<span class="chip status {palette}" {title}>
   {LABELS[status] || status || '—'}
   {#if pct != null && status !== 'ready' && status !== 'failed'}
     <span class="chip-bar" aria-hidden="true">

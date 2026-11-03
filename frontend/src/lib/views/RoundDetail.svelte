@@ -251,7 +251,7 @@
         <section class="panel">
           <h2>Round chat</h2>
           {#if chat.length === 0}
-            <p class="muted">No chat this round.</p>
+            <p class="muted" role="status">No chat this round.</p>
           {:else}
             <ul class="chat-list">
               {#each chat as c (c.id)}

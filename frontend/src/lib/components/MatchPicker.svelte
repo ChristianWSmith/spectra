@@ -12,6 +12,7 @@
   // highlighted option.
   import { fmtDate, fmtDuration } from '../fmt.js';
   import StatusChip from './StatusChip.svelte';
+  import Popover from './Popover.svelte';
 
   let { matches = [], value = 0, onselect = () => {}, id = '' } = $props();
 
@@ -94,29 +95,16 @@
     }
   }
 
-  // Close when the pointer lands outside the picker.
-  $effect(() => {
-    if (!open) return;
-    const onDown = (e) => {
-      if (root && !root.contains(e.target)) close(false);
-    };
-    document.addEventListener('pointerdown', onDown, true);
-    return () => document.removeEventListener('pointerdown', onDown, true);
-  });
+  // Popover owns the two dismissal listeners (outside pointerdown and
+  // Escape). Focus handling stays here: a keyboard dismissal returns focus
+  // to the trigger, a pointer dismissal leaves it where the click put it.
+  function closeOnEscape() {
+    close(true);
+  }
 
-  // Esc closes from wherever focus is (filter input or a highlighted row)
-  // — document-level, the same shape CommandPalette uses.
-  $effect(() => {
-    if (!open) return;
-    const onKey = (e) => {
-      if (e.key === 'Escape') {
-        e.preventDefault();
-        close(true);
-      }
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  });
+  function closeOnOutside() {
+    close(false);
+  }
 
   // Keep the highlighted row in view (DOM-only, no state loop).
   $effect(() => {
@@ -155,7 +143,7 @@
     <span class="mp-caret" aria-hidden="true"><span class="codicon {open ? 'codicon-chevron-up' : 'codicon-chevron-down'}"></span></span>
   </button>
 
-  {#if open}
+  <Popover open={open} anchor={root} onClose={closeOnEscape} onOutside={closeOnOutside}>
     <div class="mp-pop">
       <input
         class="input mp-search"
@@ -218,7 +206,7 @@
         <span class="num">{filtered.length}/{matches.length}</span>
       </div>
     </div>
-  {/if}
+  </Popover>
 </div>
 
 <style>

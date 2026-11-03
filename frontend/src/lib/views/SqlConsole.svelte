@@ -276,14 +276,14 @@
                     {/if}
                   </button>
                 {:else}
-                  <p class="muted sql-col-empty">No columns.</p>
+                  <p class="muted sql-col-empty" role="status">No columns.</p>
                 {/each}
               </div>
             {/if}
           </div>
         {:else}
           {#if !schemaError}
-            <p class="muted">Loading schema…</p>
+            <p class="muted" role="status">Loading schema…</p>
           {/if}
         {/each}
       </div>
@@ -396,7 +396,7 @@
               </button>
             {:else}
               {#if !historyError}
-                <p class="muted">No runs yet.</p>
+                <p class="muted" role="status">No runs yet.</p>
               {/if}
             {/each}
           </div>
@@ -441,7 +441,7 @@
               </div>
             {:else}
               {#if !savedError}
-                <p class="muted">Nothing saved yet — run a statement, name it, press Save.</p>
+                <p class="muted" role="status">Nothing saved yet — run a statement, name it, press Save.</p>
               {/if}
             {/each}
           </div>

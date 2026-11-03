@@ -190,7 +190,7 @@
   }
 </script>
 
-<div class="ctx-wrap">
+<div class="view ctx-view">
   <div class="toolbar ctx-toolbar">
     <span class="muted">Sources</span>
     {#each SOURCES as s (s.key)}
@@ -216,7 +216,7 @@
   {/each}
 
   {#if loading}
-    <p class="muted">Loading context…</p>
+    <p class="muted" role="status">Loading context…</p>
   {:else}
     <div class="table-scroll">
       <table class="data-table ctx-table">

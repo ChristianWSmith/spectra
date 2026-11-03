@@ -212,18 +212,18 @@
   });
 </script>
 
-<div class="heat-view">
+<div class="view heat-view">
   {#if error}
     <p class="error" role="alert">{error}</p>
   {/if}
 
   {#if packNote}
-    <p class="heat-note" role="status">{packNote}</p>
+    <p class="note-amber" role="status">{packNote}</p>
   {/if}
 
-  <div class="heat-controls">
+  <div class="toolbar heat-controls">
     <div class="heat-field">
-      <label for="heat-kind">Kind</label>
+      <label class="field-label" for="heat-kind">Kind</label>
       <select class="input" id="heat-kind" bind:value={kind}>
         {#each KINDS as k (k)}
           <option value={k}>{k}</option>
@@ -231,7 +231,7 @@
       </select>
     </div>
     <div class="heat-field">
-      <label for="heat-player">Player</label>
+      <label class="field-label" for="heat-player">Player</label>
       <select class="input" id="heat-player" bind:value={player}>
         <option value="">All players</option>
         {#each players as p (p.steamId)}
@@ -240,7 +240,7 @@
       </select>
     </div>
     <div class="heat-field">
-      <label for="heat-team">Team</label>
+      <label class="field-label" for="heat-team">Team</label>
       <select class="input" id="heat-team" bind:value={team}>
         <option value="">Both</option>
         <option value="ct">CT</option>
@@ -248,7 +248,7 @@
       </select>
     </div>
     <div class="heat-field">
-      <label for="heat-from">Rounds from</label>
+      <label class="field-label" for="heat-from">Rounds from</label>
       <select class="input" id="heat-from" bind:value={roundFrom}>
         <option value={-1}>All</option>
         <!-- Counted rounds only: knife/warmup rounds are numbered
@@ -259,7 +259,7 @@
       </select>
     </div>
     <div class="heat-field">
-      <label for="heat-to">Rounds to</label>
+      <label class="field-label" for="heat-to">Rounds to</label>
       <select class="input" id="heat-to" bind:value={roundTo}>
         <option value={-1}>All</option>
         {#each rounds.filter((r) => r.number >= 1) as r (r.number)}
@@ -312,7 +312,7 @@
 
   <section class="panel spat-panel">
     <h2>Spatial series</h2>
-    <div class="spat-controls">
+    <div class="toolbar spat-controls">
       <div class="sett-seg" role="group" aria-label="Series kind">
         <button
           class="btn"

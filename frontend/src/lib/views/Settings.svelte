@@ -347,7 +347,7 @@
         </div>
       </dl>
     {:else if !error}
-      <p class="muted">Loading…</p>
+      <p class="muted" role="status">Loading…</p>
     {/if}
   </section>
 
@@ -377,7 +377,7 @@
         </div>
       </dl>
     {:else}
-      <p class="muted">Loading…</p>
+      <p class="muted" role="status">Loading…</p>
     {/if}
     {#if mpMsg}<p class="sett-msg" role="status">{mpMsg}</p>{/if}
     {#if mpError}<p class="error" role="alert">{mpError}</p>{/if}
@@ -483,9 +483,9 @@
       <p class="sett-msg" role="status">{pluginMsg}</p>
     {/if}
     {#if pluginsLoading}
-      <p class="muted">Loading plugins…</p>
+      <p class="muted" role="status">Loading plugins…</p>
     {:else if plugins.length === 0}
-      <p class="muted">No plugins installed yet.</p>
+      <p class="muted" role="status">No plugins installed yet.</p>
     {:else}
       <div class="sett-plugins">
         {#each plugins as p (p.manifest.id)}
@@ -578,11 +578,11 @@
       <p class="error" role="alert">{cfgError}</p>
     {/if}
     {#if cfgLoading && !cfgError}
-      <p class="muted">Loading…</p>
+      <p class="muted" role="status">Loading…</p>
     {/if}
     <div class="sett-rules">
       <div class="sett-field">
-        <label for="sett-trade">Trade window (seconds)</label>
+        <label class="field-label" for="sett-trade">Trade window (seconds)</label>
         <input
           class="input"
           id="sett-trade"
@@ -595,7 +595,7 @@
         <span class="muted sett-hint">Kill after a teammate death within this window = trade (default 5).</span>
       </div>
       <div class="sett-field">
-        <label for="sett-full">Full-buy threshold (equip $)</label>
+        <label class="field-label" for="sett-full">Full-buy threshold (equip $)</label>
         <input
           class="input"
           id="sett-full"
@@ -607,7 +607,7 @@
         <span class="muted sett-hint">Team equipment ≥ this = full buy (default 20000).</span>
       </div>
       <div class="sett-field">
-        <label for="sett-force">Force threshold (equip $)</label>
+        <label class="field-label" for="sett-force">Force threshold (equip $)</label>
         <input
           class="input"
           id="sett-force"
@@ -631,7 +631,7 @@
       it does <strong>not</strong> rewrite stored rows — recompute explicitly below.
     </p>
 
-    <h3 class="sett-sub">Recompute analysis…</h3>
+    <h3 class="section-title sett-sub">Recompute analysis…</h3>
     <p class="muted">
       Per match, under the current rules (classification, KAST, clutches,
       engagements, career rollups refresh too).
@@ -651,7 +651,7 @@
             {#if state === 'busy'}
               <span class="muted">recomputing…</span>
             {:else if state === 'ok'}
-              <span class="chip status ready">done</span>
+              <span class="chip status ok">done</span>
             {:else if state}
               <span class="error-text" title={state}>failed</span>
               <button class="btn small" onclick={() => recompute(m)}>Retry</button>
@@ -683,7 +683,7 @@
             {d.term}
             {#if d.inferred}
               <span
-                class="chip sett-inferred"
+                class="chip badge-inferred"
                 title="Heuristic/reconstructed — not a raw demo fact"
               >inferred</span>
             {/if}

@@ -102,7 +102,7 @@
       {/if}
     {/each}
     {#if matches && matches.size === 0}
-      <p class="muted">No keys match “{query}”.</p>
+      <p class="muted" role="status">No keys match “{query}”.</p>
     {/if}
   </div>
 {/if}

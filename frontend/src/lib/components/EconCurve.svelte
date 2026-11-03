@@ -106,7 +106,7 @@
   </div>
 
   {#if n === 0}
-    <p class="muted">No economy rows for this match.</p>
+    <p class="muted" role="status">No economy rows for this match.</p>
   {:else}
     <div
       class="econ-chart"

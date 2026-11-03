@@ -352,7 +352,7 @@
           </span>
         </button>
       {:else}
-        <p class="muted">No report templates available.</p>
+        <p class="muted" role="status">No report templates available.</p>
       {/each}
     </div>
   </section>
@@ -362,10 +362,10 @@
       <h2>Target</h2>
       <div class="rep-targets">
         {#if matches.length === 0}
-          <p class="muted">No matches in the library yet.</p>
+          <p class="muted" role="status">No matches in the library yet.</p>
         {/if}
         <div class="rep-field">
-          <label for="rep-match">Match</label>
+          <label class="field-label" for="rep-match">Match</label>
           <MatchPicker
             {matches}
             value={matchId}
@@ -375,7 +375,7 @@
         </div>
         {#if tpl.scope === 'player'}
           <div class="rep-field">
-            <label for="rep-player">Player</label>
+            <label class="field-label" for="rep-player">Player</label>
             <PlayerPicker
               {players}
               stats={sbBySteam}
@@ -387,7 +387,7 @@
         {/if}
         {#if tpl.scope === 'round'}
           <div class="rep-field">
-            <label for="rep-round">Round</label>
+            <label class="field-label" for="rep-round">Round</label>
             <input
               class="input"
               id="rep-round"
@@ -416,7 +416,7 @@
       </p>
       {#each metricGroups as [group, rows] (group)}
         <div class="rep-mgroup">
-          <h3 class="sett-sub">by {group}</h3>
+          <h3 class="section-title sett-sub">by {group}</h3>
           {#each rows as m (m.id)}
             <label class="filt-check rep-metric">
               <input
@@ -437,7 +437,7 @@
           {/each}
         </div>
       {:else}
-        <p class="muted">No metrics defined yet — build one in the Builder.</p>
+        <p class="muted" role="status">No metrics defined yet — build one in the Builder.</p>
       {/each}
     </section>
 
@@ -447,7 +447,7 @@
         <span class="muted"
           >{tpl.title} · {tpl.scope} · {tpl.format}{hasAppendix ? ' + appendix' : ''}</span
         >
-        <span class="rep-actions">
+        <span class="toolbar rep-actions">
           <button class="btn primary" disabled={rendering || !targetReady()} onclick={render}
             >{rendering ? 'Rendering…' : 'Render'}</button
           >

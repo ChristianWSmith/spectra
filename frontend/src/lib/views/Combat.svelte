@@ -24,6 +24,8 @@
     ENG_KIND_TITLES,
   } from '../definitions.js';
   import ClutchCard from '../components/ClutchCard.svelte';
+  import Dialog from '../components/Dialog.svelte';
+  import SortTh from '../components/SortTh.svelte';
 
   let { id = 0, nav = () => {} } = $props();
 
@@ -183,7 +185,7 @@
   }
 </script>
 
-<div class="comb-root">
+<div class="view comb-view">
   {#if error}
     <p class="error" role="alert">{error}</p>
   {/if}
@@ -193,7 +195,7 @@
       Clutches <span class="chip provenance" title="clutch v2: alive-count analysis over stored events, replaces the M1 sole-survivor approximation">clutch v2</span>
     </h2>
     {#if clutches.length === 0 && !error}
-      <p class="muted">No clutches detected in this match.</p>
+      <p class="muted" role="status">No clutches detected in this match.</p>
     {:else}
       <div class="comb-grid">
         {#each clutches as c (c.id)}
@@ -286,24 +288,18 @@
         <thead>
           <tr>
             {#each STAT_COLS as col (col.key)}
-              <th
-                scope="col"
-                class="num"
-                class:comb-def={col.title}
+              <SortTh
+                label={col.label}
+                cls={col.title ? 'num def' : 'num'}
                 title={col.title || ''}
+                active={statSort.key === col.key}
+                desc={statSort.desc}
+                onclick={() => toggleStatSort(col.key)}
               >
-                <button
-                  class="th-sort"
-                  class:sorted={statSort.key === col.key}
-                  aria-label="Sort by {col.label}"
-                  onclick={() => toggleStatSort(col.key)}
-                >
-                  {col.label}{#if statSort.key === col.key}<span class="codicon {statSort.desc ? 'codicon-arrow-down' : 'codicon-arrow-up'}"></span>{/if}
-                </button>
                 {#if col.inferred}
-                  <span class="chip comb-inferred" title={col.badge}>inferred</span>
+                  <span class="chip badge-inferred" title={col.badge}>inferred</span>
                 {/if}
-              </th>
+              </SortTh>
             {/each}
           </tr>
         </thead>
@@ -340,60 +336,43 @@
       </table>
     </div>
     <p class="muted comb-note">
-      Dotted headers and <span class="chip comb-inferred">inferred</span> badges
+      Dotted headers and <span class="chip badge-inferred">inferred</span> badges
       mark derived/heuristic metrics — hover for the rule text.
     </p>
   </section>
 
-  {#if kastSteam}
-    <div
-      class="comb-modal-back"
-      role="presentation"
-      onclick={closeKast}
-      onkeydown={(e) => e.key === 'Escape' && closeKast()}
-    >
-      <div
-        class="comb-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-label="KAST rounds for {kastName}"
-        tabindex="-1"
-        onclick={(e) => e.stopPropagation()}
-        onkeydown={(e) => e.key === 'Escape' && closeKast()}
-      >
-        <div class="row-between">
-          <h2>KAST rounds — {kastName}</h2>
-          <button class="btn small" aria-label="Close" onclick={closeKast}><span class="codicon codicon-close"></span></button>
-        </div>
-        <p class="muted" title={KAST_DEF}>
-          {#if kastRows.length > 0}
-            {fmtPercent((kastRows.filter((r) => r.kast).length / kastRows.length) * 100)} KAST over
-            {kastRows.length} rounds —
-          {/if}
-          dots = K kill · A assist · T traded · S survived (filled = applied).
-        </p>
-        {#if kastError}
-          <p class="error" role="alert">{kastError}</p>
-        {:else if kastLoading}
-          <p class="muted">Loading…</p>
-        {:else}
-          <div class="comb-kast-grid">
-            {#each kastRows as r (r.round)}
-              <div class="comb-round" class:kast={r.kast} title={kastDotTitle(r, 'all parts')}>
-                <span class="mono comb-round-n">R{r.round}</span>
-                <span class="comb-dots">
-                  <span class="comb-dot" class:on={r.kills > 0} title={kastDotTitle(r, 'kill')}>K</span>
-                  <span class="comb-dot" class:on={r.assists > 0} title={kastDotTitle(r, 'assist')}>A</span>
-                  <span class="comb-dot" class:on={r.traded} title={kastDotTitle(r, 'traded')}>T</span>
-                  <span class="comb-dot" class:on={r.survived} title={kastDotTitle(r, 'survived')}>S</span>
-                </span>
-              </div>
-            {:else}
-              <p class="muted">No per-round rows for this player.</p>
-            {/each}
-          </div>
-        {/if}
-      </div>
+  <Dialog open={!!kastSteam} label="KAST rounds for {kastName}" panelClass="wide" onClose={closeKast}>
+    <div class="row-between">
+      <h2>KAST rounds — {kastName}</h2>
+      <button class="btn small" aria-label="Close" onclick={closeKast}><span class="codicon codicon-close"></span></button>
     </div>
-  {/if}
+    <p class="muted" title={KAST_DEF}>
+      {#if kastRows.length > 0}
+        {fmtPercent((kastRows.filter((r) => r.kast).length / kastRows.length) * 100)} KAST over
+        {kastRows.length} rounds —
+      {/if}
+      dots = K kill · A assist · T traded · S survived (filled = applied).
+    </p>
+    {#if kastError}
+      <p class="error" role="alert">{kastError}</p>
+    {:else if kastLoading}
+      <p class="muted" role="status">Loading…</p>
+    {:else}
+      <div class="comb-kast-grid">
+        {#each kastRows as r (r.round)}
+          <div class="comb-round" class:kast={r.kast} title={kastDotTitle(r, 'all parts')}>
+            <span class="mono comb-round-n">R{r.round}</span>
+            <span class="comb-dots">
+              <span class="comb-dot" class:on={r.kills > 0} title={kastDotTitle(r, 'kill')}>K</span>
+              <span class="comb-dot" class:on={r.assists > 0} title={kastDotTitle(r, 'assist')}>A</span>
+              <span class="comb-dot" class:on={r.traded} title={kastDotTitle(r, 'traded')}>T</span>
+              <span class="comb-dot" class:on={r.survived} title={kastDotTitle(r, 'survived')}>S</span>
+            </span>
+          </div>
+        {:else}
+          <p class="muted" role="status">No per-round rows for this player.</p>
+        {/each}
+      </div>
+    {/if}
+  </Dialog>
 </div>

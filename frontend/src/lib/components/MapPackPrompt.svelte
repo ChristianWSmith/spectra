@@ -10,6 +10,7 @@
     chooseCS2Dir,
     errText,
   } from '../services.js';
+  import Dialog from './Dialog.svelte';
 
   let open = $state(false);
   let status = $state(null); // MapPackStatus once loaded
@@ -80,54 +81,57 @@
   }
 </script>
 
-{#if open}
-  <div class="cp-back" role="presentation" onclick={(e) => {
-    if (e.target === e.currentTarget && !busy) close();
-  }}>
-    <div class="cp-panel pk-prompt" role="dialog" aria-modal="true" aria-label="Extract radar images">
-      <div class="pk-body">
-        <h2 class="pk-title">Found Counter-Strike 2</h2>
-        <p class="muted">
-          Spectra can extract the official radar images and map transforms
-          from your local CS2 installation for authentic map backgrounds in
-          replay and heatmaps.
-        </p>
-        <p class="muted pk-path mono">{pickedDir || status?.path || 'CS2 install'}</p>
-        <p class="muted pk-fine">
-          Images are read from your game files and stored in Spectra's data
-          folder on this machine. Nothing is uploaded, and nothing from
-          Counter-Strike ships with the app.
-        </p>
-        {#if result}
-          <p class="pk-result" role="status">
-            {#if result.maps && result.maps.length}
-              Extracted {result.maps.length} map pack{result.maps.length === 1 ? '' : 's'}.
-            {/if}
-            {#if result.errors && result.errors.length}
-              <span class="pk-err">{result.errors.length} failed: {result.errors[0]}</span>
-            {/if}
-          </p>
+<Dialog
+  open={open}
+  backClass="top"
+  panelClass="pk-prompt"
+  label="Extract radar images"
+  dismissable={!busy}
+  onClose={close}
+>
+  <div class="pk-body">
+    <h2 class="pk-title">Found Counter-Strike 2</h2>
+    <p class="muted">
+      Spectra can extract the official radar images and map transforms
+      from your local CS2 installation for authentic map backgrounds in
+      replay and heatmaps.
+    </p>
+    <p class="muted pk-path mono">{pickedDir || status?.path || 'CS2 install'}</p>
+    <p class="muted pk-fine">
+      Images are read from your game files and stored in Spectra's data
+      folder on this machine. Nothing is uploaded, and nothing from
+      Counter-Strike ships with the app.
+    </p>
+    {#if result}
+      <p class="pk-result" role="status">
+        {#if result.maps && result.maps.length}
+          Extracted {result.maps.length} map pack{result.maps.length === 1 ? '' : 's'}.
         {/if}
-        {#if error}
-          <p class="error" role="alert">{error}</p>
+        {#if result.errors && result.errors.length}
+          <span class="pk-err">{result.errors.length} failed: {result.errors[0]}</span>
         {/if}
-      </div>
-      <div class="pk-actions">
-        <button class="btn" disabled={busy} onclick={pickFolder}>
-          Choose folder…
-        </button>
-        <span class="spacer"></span>
-        <button class="btn" disabled={busy} onclick={decline}>Not now</button>
-        <button class="btn primary" disabled={busy} onclick={accept}>
-          {busy ? 'Extracting…' : 'Extract radar images'}
-        </button>
-      </div>
-    </div>
+      </p>
+    {/if}
+    {#if error}
+      <p class="error" role="alert">{error}</p>
+    {/if}
   </div>
-{/if}
+  <div class="toolbar pk-actions">
+    <button class="btn" disabled={busy} onclick={pickFolder}>
+      Choose folder…
+    </button>
+    <span class="spacer"></span>
+    <button class="btn" disabled={busy} onclick={decline}>Not now</button>
+    <button class="btn primary" disabled={busy} onclick={accept}>
+      {busy ? 'Extracting…' : 'Extract radar images'}
+    </button>
+  </div>
+</Dialog>
 
 <style>
-  .pk-prompt {
+  /* The panel element belongs to Dialog.svelte, so the prompt's own size
+     has to reach it through a global selector (pk- = MapPackPrompt). */
+  :global(.dlg-panel.pk-prompt) {
     width: min(520px, 94vw);
     padding: 20px 22px;
   }
@@ -156,9 +160,6 @@
     color: var(--danger);
   }
   .pk-actions {
-    display: flex;
-    gap: 8px;
-    align-items: center;
     margin-top: 14px;
   }
   .pk-actions .spacer {

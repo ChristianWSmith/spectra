@@ -87,6 +87,7 @@
   --radius: 2px; /* VS Code control radius */
   --radius-md: 4px; /* cards, popovers, chart tiles */
   --radius-pill: 999px; /* chips, pills */
+  --fs-section: 0.85rem; /* section headings (.panel h2 / .section-title) */
   font-family:
     system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial,
     sans-serif;
@@ -198,6 +199,16 @@ select {
 
 .error-text {
   color: var(--danger);
+}
+
+/* Amber note — one-off informational callout (replay/heat/explorer). */
+.note-amber {
+  color: var(--accent);
+  font-size: 0.88em;
+  padding: 4px 10px;
+  border: 1px solid var(--accent-40);
+  border-radius: var(--radius);
+  background: var(--accent-06);
 }
 
 .sr-only {
@@ -465,8 +476,9 @@ input[type='checkbox']:focus-visible {
   outline-offset: 1px;
 }
 
-.toolbar,
-.filter-bar {
+/* Row of controls — the ONE toolbar spelling (views and components add
+   their prefix class only for local deltas: alignment, gap, chrome). */
+.toolbar {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -485,12 +497,61 @@ input[type='checkbox']:focus-visible {
   gap: 10px;
 }
 
-.panel h2 {
-  font-size: 0.85rem;
+/* Section headings — ONE body. `.panel h2` is the canonical spelling;
+   `.section-title` is the same heading for markup that is not an <h2>
+   inside a .panel. Headings whose size carries a real hierarchy step
+   (.m5-card h3, .bld-group h3), a dense overlay's density (.cp-section)
+   or table chrome (.data-table th) keep their own font-size — see the
+   consolidation report. */
+.panel h2,
+.section-title {
+  font-size: var(--fs-section);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--muted);
+}
+
+/* --- Dialog (Dialog.svelte) ------------------------------------------------
+   The one modal backdrop/panel pair: Combat's KAST modal and the command
+   palette / map-pack prompt each used to spell it out for themselves.
+   Variants are named classes the component applies:
+   `.dlg-back.top` (hangs under the top edge) and `.dlg-panel.wide`
+   (modal-width scrolling body). */
+.dlg-back {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: var(--overlay-55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.dlg-back.top {
+  align-items: flex-start;
+  padding: 12vh 16px 16px;
+}
+
+.dlg-panel {
+  width: min(640px, 94vw);
+  max-height: 70vh;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--widget-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 16px 48px var(--overlay-60);
+}
+
+.dlg-panel.wide {
+  width: min(780px, 94vw);
+  max-height: 82vh;
+  gap: 10px;
+  padding: 14px 16px;
+  box-shadow: 0 12px 40px var(--overlay-60);
 }
 
 /* --- Chips ----------------------------------------------------------------- */
@@ -509,24 +570,28 @@ input[type='checkbox']:focus-visible {
   white-space: nowrap;
 }
 
-.chip.status.ready,
-.chip.status.done {
+/* Chip state palette — the ONE {idle/ok/bad/busy} set. Job status, the
+   match header voice/key badges, the replay voice transport and the clip
+   recorder all re-declared these four colours; state-specific extras
+   (filled background, pulse animation, icons) stay on their own classes.
+   The 50%-alpha borders match .chip.side.* — the house rule for a
+   coloured chip border. */
+.chip.idle {
+  color: var(--muted);
+  border-color: var(--border);
+}
+
+.chip.ok {
   color: var(--success);
   border-color: rgba(76, 175, 125, 0.5);
 }
 
-.chip.status.failed {
+.chip.bad {
   color: var(--danger);
   border-color: rgba(224, 91, 91, 0.5);
 }
 
-.chip.status.cancelled {
-  color: var(--muted);
-}
-
-.chip.status.queued,
-.chip.status.parsing,
-.chip.status.running {
+.chip.busy {
   color: var(--accent);
   border-color: var(--accent-50);
 }
@@ -565,6 +630,34 @@ input[type='checkbox']:focus-visible {
 .chip.provenance {
   color: var(--muted);
   border-style: dashed;
+}
+
+/* Fact/inference badges (PRD §6.1) — the one badge spelling, shared by
+   every view that marks a cell computed vs. inferred. */
+.chip.badge-computed {
+  color: var(--muted);
+  border-color: var(--border);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.66em;
+  padding: 0 6px;
+}
+
+.chip.badge-inferred {
+  color: var(--accent);
+  border-color: var(--accent-55);
+  border-style: dashed;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-size: 0.66em;
+  padding: 0 6px;
+}
+
+/* Dotted underline marks a definition tooltip (header cells, ⓘ cells). */
+.def {
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  cursor: help;
 }
 
 .chip-bar {
@@ -991,7 +1084,12 @@ input[type='checkbox']:focus-visible {
   border-color: var(--accent);
 }
 
-.stat-label {
+/* Field labels — one body for every form label, stat-cell label and
+   <facts> <dt>. The <dt> spelling stays a selector rather than a class:
+   the dl markup carries 52 terms and a per-dt class would be churn with
+   zero visual gain. */
+.field-label,
+.facts dt {
   font-size: 0.75em;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -1036,13 +1134,6 @@ input[type='checkbox']:focus-visible {
 
 .fact-wide {
   grid-column: 1 / -1;
-}
-
-.facts dt {
-  font-size: 0.75em;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--muted);
 }
 
 .facts dd {
@@ -1314,15 +1405,6 @@ input[type='checkbox']:focus-visible {
   gap: 10px;
 }
 
-.replay-note {
-  color: var(--accent);
-  font-size: 0.88em;
-  padding: 4px 10px;
-  border: 1px solid var(--accent-40);
-  border-radius: var(--radius);
-  background: var(--accent-06);
-}
-
 .replay-body {
   flex: 1;
   display: flex;
@@ -1396,13 +1478,10 @@ input[type='checkbox']:focus-visible {
   border-bottom: 1px solid var(--divider);
 }
 
+/* Sticky transport chrome on top of .toolbar. */
 .replay-transport {
   position: sticky;
   bottom: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
   padding: 8px 10px;
   background: var(--panel);
   border: 1px solid var(--border);

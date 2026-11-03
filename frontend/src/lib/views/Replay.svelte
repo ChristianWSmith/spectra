@@ -539,11 +539,13 @@
       >
       {#if recState !== 'idle'}
         <span
-          class="chip clip-state"
-          class:recording={recState === 'recording'}
-          class:encoding={recState === 'encoding'}
-          class:saved={recState === 'saved'}
-          class:err={recState === 'error'}
+          class="chip clip-state {recState === 'recording'
+            ? 'recording'
+            : recState === 'encoding'
+              ? 'busy'
+              : recState === 'saved'
+                ? 'ok'
+                : 'bad'}"
           title={recNote}
           role="status"
           >{recState === 'recording'
@@ -566,10 +568,10 @@
   {/if}
 
   {#if loading}
-    <p class="muted">Loading replay…</p>
+    <p class="muted" role="status">Loading replay…</p>
   {:else if noSidecar}
     <div class="panel empty">
-      <p class="empty-title">No replay data for this match</p>
+      <p class="empty-title" role="status">No replay data for this match</p>
       <p class="muted">
         Positions are recorded during parsing — reprocess to record them, then
         reopen the replay.
@@ -580,10 +582,10 @@
     </div>
   {:else if data}
     {#if packNote}
-      <p class="replay-note" role="status">{packNote}</p>
+      <p class="note-amber" role="status">{packNote}</p>
     {/if}
     {#if meta && data.frames !== meta.frames}
-      <p class="replay-note" role="status">
+      <p class="note-amber" role="status">
         frame count mismatch: stream has {data.frames}, meta says {meta.frames}
       </p>
     {/if}
@@ -625,7 +627,7 @@
       </aside>
     </div>
 
-    <div class="replay-transport" role="group" aria-label="Replay transport">
+    <div class="toolbar replay-transport" role="group" aria-label="Replay transport">
       <button
         class="btn primary"
         aria-label={uiPlaying ? 'Pause' : 'Play'}
@@ -717,7 +719,7 @@
     </div>
 
     {#if voicePresence && voicePresence.hasVoice}
-      <div class="voice-bar" role="group" aria-label="Voice controls">
+      <div class="toolbar voice-bar" role="group" aria-label="Voice controls">
         <button
           class="btn"
           class:primary={!uiVoiceOn}
@@ -726,9 +728,7 @@
         >{#if uiVoiceOn}<span class="codicon codicon-unmute"></span> Voice on{:else}Enable voice{/if}</button
         >
         <span
-          class="chip voice-state"
-          class:on={uiVoiceOn}
-          class:err={!!uiVoiceErr}
+          class="chip voice-state {uiVoiceErr ? 'bad' : uiVoiceOn ? 'ok' : 'idle'}"
           title={uiVoiceErr ? `AudioContext: ${uiVoiceCtx} — ${uiVoiceErr}` : `AudioContext: ${uiVoiceCtx}`}
         >{uiVoiceErr ? 'error' : uiVoiceOn ? `on · ${uiVoiceCtx}` : 'off'}</span>
         {#if uiVoiceErr}
