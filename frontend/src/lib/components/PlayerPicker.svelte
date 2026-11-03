@@ -288,7 +288,7 @@
     min-width: 100%;
     max-width: min(640px, 92vw);
     padding: 6px;
-    background: var(--panel);
+    background: var(--widget-bg);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
@@ -311,7 +311,8 @@
     flex-direction: column;
     gap: 2px;
     width: 100%;
-    padding: 5px 8px;
+    padding: 4px 8px;
+    line-height: 1.3;
     text-align: left;
     background: none;
     border: 1px solid transparent;

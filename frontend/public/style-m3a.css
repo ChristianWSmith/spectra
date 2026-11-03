@@ -140,7 +140,7 @@
   position: absolute;
   top: 8px;
   transform: translateX(-50%);
-  background: #0b0e13;
+  background: var(--widget-bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 6px 9px;
@@ -469,7 +469,7 @@
 
 .util-flash-value {
   font-size: 1.15em;
-  font-weight: 700;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
 
@@ -1109,7 +1109,7 @@ canvas.heat-canvas {
   font-size: 0.78em;
 }
 
-/* VS Code terminal look: #1e1e1e bg, #cccccc fg, #264f78 selection. */
+/* VS Code terminal look: #1f1f1f bg, #cccccc fg, #264f78 selection. */
 .sql-editor {
   font-family: var(--mono);
   font-size: 0.9em;
