@@ -29,7 +29,7 @@
 
   function openTimeline() {
     setPendingTimelineFilter({ round: clutch.round });
-    nav(`/timeline/${id}`);
+    nav(`/match/${id}/timeline`);
   }
 
   function openProfile() {

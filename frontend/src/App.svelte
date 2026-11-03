@@ -4,7 +4,6 @@
   import Library from './lib/views/Library.svelte';
   import Match from './lib/views/Match.svelte';
   import RoundDetail from './lib/views/RoundDetail.svelte';
-  import Timeline from './lib/views/Timeline.svelte';
   import Replay from './lib/views/Replay.svelte';
   import Settings from './lib/views/Settings.svelte';
   import Builder from './lib/views/Builder.svelte';
@@ -20,8 +19,9 @@
   // router dependency.
   //   #/library
   //   #/match/:id
+  //   #/match/:id/timeline   (the match view's Timeline tab)
   //   #/match/:id/round/:n
-  //   #/timeline/:id
+  //   #/timeline/:id         (legacy — redirects to #/match/:id/timeline)
   //   #/replay/:id
   //   #/settings
   let route = $state(parseHash(location.hash));
@@ -33,14 +33,19 @@
     // indices — see extract's renumber), so the round segment allows "-?".
     let m = h.match(/^\/match\/(\d+)\/round\/(-?\d+)$/);
     if (m) return { name: 'round', id: Number(m[1]), round: Number(m[2]) };
+    m = h.match(/^\/match\/(\d+)\/timeline$/);
+    if (m) return { name: 'match', id: Number(m[1]), tab: 'Timeline' };
     m = h.match(/^\/match\/(\d+)$/);
     if (m) return { name: 'match', id: Number(m[1]) };
     m = h.match(/^\/player\/(\d{17})$/);
     if (m) return { name: 'player', steamId: m[1] };
     m = h.match(/^\/compare\/(\d+)$/);
     if (m) return { name: 'compare', id: Number(m[1]) };
+    // Legacy deep link from before Timeline was a match tab — parse it
+    // straight into the match view's Timeline tab (canonicalize() below
+    // rewrites the address bar).
     m = h.match(/^\/timeline\/(\d+)$/);
-    if (m) return { name: 'timeline', id: Number(m[1]) };
+    if (m) return { name: 'match', id: Number(m[1]), tab: 'Timeline', legacy: true };
     m = h.match(/^\/replay\/(\d+)$/);
     if (m) return { name: 'replay', id: Number(m[1]) };
     if (h.startsWith('/builder')) return { name: 'builder' };
@@ -51,8 +56,19 @@
     return { name: 'library' };
   }
 
+  // Rewrite a legacy #/timeline/:id hash to its canonical
+  // #/match/:id/timeline form (same-document navigation — the hashchange
+  // it fires re-parses to the same route without the legacy flag).
+  function canonicalize() {
+    if (route.legacy) location.replace(`#/match/${route.id}/timeline`);
+  }
+
   onMount(() => {
-    const onChange = () => (route = parseHash(location.hash));
+    const onChange = () => {
+      route = parseHash(location.hash);
+      canonicalize();
+    };
+    canonicalize();
     window.addEventListener('hashchange', onChange);
 
     // One-time CS2 radar-extraction prompt: detection + decision persist
@@ -95,7 +111,6 @@
       class:active={route.name === 'library' ||
         route.name === 'match' ||
         route.name === 'round' ||
-        route.name === 'timeline' ||
         route.name === 'replay' ||
         route.name === 'player' ||
         route.name === 'compare'}
@@ -144,15 +159,13 @@
     {#if route.name === 'library'}
       <Library {nav} />
     {:else if route.name === 'match'}
-      <Match id={route.id} {nav} />
+      <Match id={route.id} routeTab={route.tab || ''} {nav} />
     {:else if route.name === 'round'}
       <RoundDetail id={route.id} round={route.round} {nav} />
     {:else if route.name === 'player'}
       <PlayerProfile steamId={route.steamId} {nav} />
     {:else if route.name === 'compare'}
       <CompareRounds id={route.id} {nav} />
-    {:else if route.name === 'timeline'}
-      <Timeline id={route.id} {nav} />
     {:else if route.name === 'replay'}
       <Replay id={route.id} {nav} />
     {:else if route.name === 'builder'}

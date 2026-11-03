@@ -146,7 +146,7 @@
     if (navTimer) clearTimeout(navTimer);
     navTimer = setTimeout(() => {
       navTimer = null;
-      nav(`/timeline/${id}`);
+      nav(`/match/${id}/timeline`);
     }, 400);
   }
   // --- Spatial series (series only; pattern detection descoped pending -----

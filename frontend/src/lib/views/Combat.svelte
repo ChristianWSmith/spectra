@@ -155,7 +155,7 @@
 
   function openRoundTimeline(round) {
     setPendingTimelineFilter({ round });
-    nav(`/timeline/${id}`);
+    nav(`/match/${id}/timeline`);
   }
 
   function isSteam(s) {
