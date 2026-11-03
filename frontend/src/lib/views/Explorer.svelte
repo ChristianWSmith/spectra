@@ -13,6 +13,7 @@
     getWarnings,
   } from '../services.js';
   import { fmtDate, fmtInt } from '../fmt.js';
+  import MatchPicker from '../components/MatchPicker.svelte';
   import PayloadTree from '../components/PayloadTree.svelte';
 
   let { nav = () => {} } = $props();
@@ -187,14 +188,12 @@
 <div class="view">
   <header class="view-header">
     <h1>Explorer</h1>
-    <label class="sr-only" for="expl-match">Match</label>
-    <select class="input" id="expl-match" bind:value={matchId}>
-      {#each matches as m (m.id)}
-        <option value={m.id}
-          >#{m.id} · {m.map || 'unknown'} · {m.scoreCT}–{m.scoreT}</option
-        >
-      {/each}
-    </select>
+    <MatchPicker
+      id="expl-match"
+      matches={matches}
+      value={matchId}
+      onselect={(id) => (matchId = id)}
+    />
     <span class="muted">Developer-mode inspectors over the stored corpus.</span>
   </header>
 
