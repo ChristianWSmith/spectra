@@ -12,6 +12,20 @@ export function fmtDuration(seconds) {
   return `${sec}s`;
 }
 
+// fmtClock renders seconds as a clock position: "m:ss" ("0:45", "12:34")
+// and "h:mm:ss" from one hour on ("1:02:03"). Rounds to the nearest
+// second; non-finite or negative input renders "—". Unlike fmtDuration
+// this is a *time of day* style readout, not a duration label.
+export function fmtClock(seconds) {
+  if (!Number.isFinite(seconds) || seconds < 0) return '—';
+  const s = Math.round(seconds);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+  return `${m}:${String(sec).padStart(2, '0')}`;
+}
+
 // tickSeconds converts demo ticks to seconds at the match tickrate
 // (tickrate <= 0 falls back to 64 — CS2's standard).
 export function tickSeconds(ticks, tickRate) {
