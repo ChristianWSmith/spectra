@@ -220,3 +220,74 @@ at the end of the section.
   round number), so filter dropdowns offer counted rounds only.
   **Source** — golden-demo diag; awpy datasets.rs (2026-11-01);
   ingest renumber in `internal/extract/build.go` (2026-11-02).
+
+- **Weapon/inventory icons in a CS2 install** — where the gun icons live
+  for extraction. In `pak01_dir.vpk`: (1) killfeed/HUD-style SVG
+  silhouettes at `panorama/images/icons/equipment/<weapon>.vsvg_c`
+  (101 files: ak47…xm1014, all knives, grenades, armor, c4, defuser…),
+  referenced by the game's own layouts as `.vsvg` (e.g.
+  `huddeathnotice.vxml_c`, `loadout_grid.vts_c` →
+  `file://{images}/icons/equipment/<name>.svg`). The vsvg resource's
+  DATA block = 6-byte prefix (u32 CRC32 of the rest + u16 0) + raw SVG
+  text starting at `<?xml` or `<svg` through `</svg>\n` — no external
+  refs, so extraction is slice-and-write (verified: CRC matches
+  `crc32(body[6:])` on all 101; the same layout holds for all 894
+  `.vsvg_c` under `panorama/images/{icons,hud,econ}`). (2) inventory
+  render images at
+  `panorama/images/econ/weapons/base_weapons/weapon_<name>_png.vtex_c`
+  (68 files, 512×384 BGRA8888) — these decode with spectra's existing
+  `decodeVTex` unchanged (verified: 68/68 → 512×384 PNG). Per-skin
+  variants live in `panorama/images/econ/default_generated/`
+  (6,804 files, 1.2 GB — opt-in only).
+  **Source** — local probe of pak01_dir.vpk + decode of all entries
+  (2026-11-03).
+
+- **Sound assets (`.vsnd_c`) in a CS2 install** — where gun/footstep/
+  grenade audio lives and how to turn it into playable files. In
+  `pak01_dir.vpk` under `sounds/`: 20,471 `.vsnd_c` files / 4.66 GB
+  (`weapons/` 1,237 files/107 MB incl. `<gun>_01.vsnd_c` fire sounds and
+  `hegrenade_detonate_02`, `flashbang_explode1`; `player/footsteps/`
+  409 files/25 MB surface variants; `vo/`+`music/` are the other 3.4 GB).
+  Two resource versions, both with the audio payload starting at the
+  resource header's `FileSize` offset (structured size only — same
+  convention as vtex): **v4** (17,978 files) stores a fixed header in
+  the DATA block — u16 rate, u8 format (0=PCM16, 1=PCM8, 2=MP3,
+  3=ADPCM), u8 channels, i32 loopStart, u32 sampleCount, f32 duration,
+  …, u32 streamingSize — while **v5** (2,493) leaves DATA empty and puts
+  the same fields in a CTRL block (binary KV3: `_class
+  CVoiceContainerDefault`, `m_vSound.{m_nFormat,m_nRate,m_nChannels,
+  m_nSampleCount,m_nStreamingSize,…}`). Decoding: PCM16/PCM8 → prepend
+  the standard 44-byte RIFF/WAV header (Valve strips it; VRF does the
+  same in `Sound.GetSound()`); MP3 → payload is already a raw MP3 stream,
+  write as `.mp3`. Formats in this build: v4 header census PCM16 16,721
+  / MP3 1,239 / PCM8 18, rates 44,100 (17,888), 22,050 (78), 11,025 (12),
+  mono 16,346 / stereo 1,632; v5 CTRL strings MP3 2,030 / PCM16 422.
+  Verified end-to-end: `bass_01` footstep → WAV →
+  ffprobe `pcm_s16le 44100 mono 0.066s`; `flamenco` → `.mp3` →
+  ffprobe `mp3 11025 mono`; ak47 fire (v5) → WAV → `44100 stereo 2.45s`.
+  **Source** — local probe of pak01_dir.vpk + ffprobe (2026-11-03);
+  VRF `Sound.cs` (github.com/ValveResourceFormat/ValveResourceFormat,
+  2026-11-03).
+
+- **Sound-event names ↔ demo `soundevent_hash`** — resolving which event
+  a demo's `CMsgSosStartSoundEvent` refers to. The demo carries only a
+  `fixed32 soundevent_hash`; the names live in `soundevents/*.vsndevts_c`
+  (183 files in `pak01_dir.vpk`, binary KV3 v5 with LZ4-compressed
+  buffers — VRF `BinaryKV3.cs` is the reference parser; a minimal
+  header+LZ4 reader recovers the string table: ~41,552 dotted names
+  across all files, e.g. `Weapon_AK47.Single`, `Default.WalkJump`,
+  `SmokeGrenade.Bounce`, plus the `.vsnd` paths they play). The hash is
+  **MurmurHash2-32 over the LOWERCASED event name with seed
+  0x53524332** — verified against the golden demo: 126/127 distinct
+  hashes (25,265/25,266 messages) resolve to vsndevts names; CRC32
+  (which some proto docs claim) matches 0. The one unmatched hash fired
+  once and appears in no shipped file (likely a runtime-generated name).
+  `packed_params` parameter names use the same MurmurHash2 with seed
+  0x31415926 (verified: `murmur2("public.volume")` → `BD6054E9`, the
+  byte-reverse of the published `E9 54 60 BD` sample). This is the
+  lookup the sound-event layer (ref/MISSING.md §5.14) needs to turn the
+  golden demo's 25,266 SOS messages into named events.
+  **Source** — golden-demo parse + vsndevts probe (2026-11-03);
+  hash seed from csgocn.net RE post (2025-06-08);
+  https://cs2opendev.github.io/CS2OpenDev-Docs/protobufs/gameevents/
+  (2026-11-03, its "CRC32" claim disproved above).
