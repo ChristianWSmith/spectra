@@ -14,6 +14,12 @@ import (
 // the player_career rollup (orchestration; the career rebuild
 // is the cheap full-aggregate path — see store.RebuildCareer).
 //
+// player_stats.trade_kills is rewritten here from the same engagements
+// pass (KindTrade per killer), so the frozen extractor column (import-time
+// 5 s default) becomes cfg-aware for every consumer — the scoreboard
+// Trade column, career trades, profile trade rate and the successful_trades
+// metric — without touching their SQL.
+//
 // cfg.TickRate is filled from the match row when unset/<= 0. A match with
 // no extracted rounds is a no-op (not an error). Errors name the failing
 // stage.
@@ -92,6 +98,19 @@ func Compute(st *store.Store, matchID int64, cfg Config) error {
 	}
 	if err := st.ReplaceEngagements(matchID, engs); err != nil {
 		return err
+	}
+	// The ONE trade-window rule's output: count the same engagements pass
+	// (KindTrade per killer) into player_stats.trade_kills. Runs BEFORE
+	// RebuildCareer so the career rollup aggregates the fresh column; the
+	// extractor's import-time 5 s default is the seed this overwrites.
+	tradeKills := map[string]int{}
+	for _, e := range engs {
+		if e.Kind == KindTrade {
+			tradeKills[e.ASteam]++
+		}
+	}
+	if err := st.ReplaceTradeKills(matchID, tradeKills); err != nil {
+		return fmt.Errorf("analytics: replace trade kills: %w", err)
 	}
 	if err := st.ReplaceUtility(matchID, utils); err != nil {
 		return err

@@ -26,7 +26,7 @@ export const GLOSSARY = [
   {
     term: 'Trade window',
     inferred: false,
-    text: 'Seconds after a death during which a teammate’s kill counts as a trade (default 5 s, configurable under Analysis rules). Trade rate, trade opportunities and untraded deaths all use this window. Changing it bumps rule_version.',
+    text: 'Seconds after a death during which a teammate’s kill counts as a trade (default 5 s, configurable under Analysis rules; saving bumps rule_version — stored rows keep the version they were computed with until you run a recompute). Every trade surface follows the window of its recompute: KAST “traded”, the engagement trade and untraded rows, and player_stats.trade_kills — recomputed by the analytics pass from the configured window — which feeds the scoreboard Trade column, career trades, profile Trade rate, the successful-trades metric and the Combat tab Trade rate.',
   },
   {
     term: 'Buy classes (full / force / eco / save / pistol / bonus)',
@@ -41,7 +41,7 @@ export const GLOSSARY = [
   {
     term: 'Trade opportunities missed (inferred)',
     inferred: true,
-    text: 'Heuristic v1: a player died while a living teammate was near and alive within the trade window but did not kill the attacker in time. It is an inference from positions/timing, not a demo fact — treat counts as indicative.',
+    text: 'A death that went unanswered: no teammate of the dead player killed their killer within the trade window after the death (counted from the engagement pass as untraded deaths — the Combat tab’s Untraded deaths metric reads the same rows). v1 has no position or line-of-fire scan: it measures kill timing only, not whether a teammate was near, so treat it as a heuristic proxy for a missed opportunity.',
   },
   {
     term: 'Damage conversion',

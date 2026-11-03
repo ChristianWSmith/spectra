@@ -602,6 +602,14 @@ func (a *agg) kill(k killInfo) {
 	// Strict trade: a kill answers a teammate's death when the victim is
 	// the player who killed one of the killer's teammates within the
 	// 5 s window (HLTV/Leetify rule — the KAST "T" rule mirrored).
+	//
+	// This is the IMPORT-TIME DEFAULT only: the extractor has no access
+	// to analysis_config, so analytics.Compute rewrites
+	// player_stats.trade_kills from the cfg-aware engagements pass right
+	// after import (and on every rule recompute). The two rules must stay
+	// equivalent at 5 s — pinned by the golden trade-rule test — and the
+	// gates here (enemy kills only: no teamkills, no suicides, no
+	// post-match kills) are mirrored in analytics.Engagements.
 	if k.victimKey != 0 && k.killerSide != "" {
 		tr := k.tickRate
 		if tr <= 0 {

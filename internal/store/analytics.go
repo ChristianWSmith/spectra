@@ -170,6 +170,45 @@ func (s *Store) ReplaceUtility(matchID int64, rows []models.UtilityEvent) error 
 		})
 }
 
+// ReplaceTradeKills rewrites one match's player_stats.trade_kills from the
+// cfg-aware analytics pass — the ONE trade-window rule (analytics.
+// Engagements KindTrade rows counted per killer). Every player row resets
+// to 0 first so a recompute under a smaller window leaves no stale counts;
+// steam IDs without a player_stats row are ignored. The extractor's
+// import-time value (hardcoded 5 s) is the seed this overwrites on every
+// Compute, which is what makes the column — and every consumer of it
+// (scoreboard Trade, career trades, profile trade rate, the
+// successful_trades metric, Combat TradeRate) — follow
+// analysis_config.TradeWindowS.
+func (s *Store) ReplaceTradeKills(matchID int64, counts map[string]int) error {
+	const op = "store: replace trade kills"
+	tx, err := s.db.Begin()
+	if err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	if _, err := tx.Exec(`UPDATE player_stats SET trade_kills = 0 WHERE match_id = ?`, matchID); err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+	stmt, err := tx.Prepare(`UPDATE player_stats SET trade_kills = ? WHERE match_id = ? AND steam_id = ?`)
+	if err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+	defer func() { _ = stmt.Close() }()
+	for sid, n := range counts {
+		if n <= 0 {
+			continue
+		}
+		if _, err := stmt.Exec(n, matchID, scrub(sid)); err != nil {
+			return fmt.Errorf("%s: %w", op, err)
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("%s: %w", op, err)
+	}
+	return nil
+}
+
 // GetRoundClasses returns a match's stored classifications by round ASC.
 func (s *Store) GetRoundClasses(matchID int64) ([]models.RoundClassification, error) {
 	rows, err := s.db.Query(

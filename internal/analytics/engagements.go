@@ -23,11 +23,18 @@ const (
 //	trade     a kill whose VICTIM is the player who killed one of the
 //	          killer's teammates ≤ cfg.TradeWindowS earlier (the strict
 //	          HLTV rule — mirrors KAST "T" and the extractor's
-//	          player_stats.trade_kills)
+//	          player_stats.trade_kills). Only ENEMY kills participate:
+//	          teamkills neither anchor a trade nor count as one (the
+//	          extractor's gate — a teamkill death writes no trade
+//	          record there).
 //	untraded  a death NOT answered: no teammate of the victim killed the
 //	          victim's killer within cfg.TradeWindowS after the death
 //	          (a = killer, b = victim)
 //
+// The KindTrade row is THE trade-window rule (one owner):
+// analytics.Compute derives player_stats.trade_kills from these rows, so
+// the scoreboard Trade column, career trades, profile trade rate and the
+// successful_trades metric all follow cfg.TradeWindowS too.
 // One kill can yield multiple rows (kinds are independent detections: the
 // first kill can also be untraded later classified per victim, a trade
 // kill's victim can themselves go untraded). Warmup and pregame rounds are
@@ -94,11 +101,15 @@ func Engagements(events []models.Event, rounds []RoundInfo, cfg Config, players 
 			}
 			// Trade: the victim is the player who killed one of the
 			// killer's teammates within the window (strict HLTV rule).
+			// Enemy kills only — a teamkill never answers a death (the
+			// extractor writes no trade record for one).
 			isTrade := false
-			for _, d := range deaths {
-				if d.killerKey == e.Victim && d.side == kt && e.Tick-d.tick <= window {
-					isTrade = true
-					break
+			if kt != vt {
+				for _, d := range deaths {
+					if d.killerKey == e.Victim && d.side == kt && e.Tick-d.tick <= window {
+						isTrade = true
+						break
+					}
 				}
 			}
 			if isTrade {
@@ -119,7 +130,12 @@ func Engagements(events []models.Event, rounds []RoundInfo, cfg Config, players 
 			if untraded {
 				emit(e, KindUntraded, e.Attacker, e.Victim, kt)
 			}
-			deaths = append(deaths, deathRec{tick: e.Tick, side: vt, killerKey: e.Attacker})
+			// Anchor records feed ONLY trade detection: an enemy kill
+			// (teamkills/suicides excluded) whose victim may later be
+			// traded.
+			if kt != vt {
+				deaths = append(deaths, deathRec{tick: e.Tick, side: vt, killerKey: e.Attacker})
+			}
 		}
 	}
 	// Stable order: round, tick, kind.

@@ -49,3 +49,28 @@ func (s *MatchService) GetEvent(id int64) (*models.EventDetail, error) {
 func (s *MatchService) GetChat(matchID int64, round int) ([]models.ChatRow, error) {
 	return s.st.GetChat(matchID, round)
 }
+
+// GetMatchSummary returns ONE match's library-list row (the ListMatches
+// projection for a single id — store.ErrNotFound for an unknown match).
+func (s *MatchService) GetMatchSummary(matchID int64) (models.MatchSummary, error) {
+	return s.st.GetMatchSummary(matchID)
+}
+
+// TeamNames is a match's two score-line team display names. The names
+// identify TEAMS, never sides (sides switch at halftime); both are "" when
+// the extract recorded none.
+type TeamNames struct {
+	CT string `json:"ct"`
+	T  string `json:"t"`
+}
+
+// GetTeamNames returns a match's CT/T display names (thin delegate over
+// store.GetTeamNames; store.ErrNotFound surfaces as an error, like every
+// sibling method).
+func (s *MatchService) GetTeamNames(matchID int64) (TeamNames, error) {
+	ct, t, err := s.st.GetTeamNames(matchID)
+	if err != nil {
+		return TeamNames{}, err
+	}
+	return TeamNames{CT: ct, T: t}, nil
+}

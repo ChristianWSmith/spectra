@@ -13,7 +13,8 @@ import (
 //	         external-scoreboard convention)
 //	S        survived — no death event for them in the round
 //	T        traded — their death was answered: a teammate of theirs killed
-//	         their killer within cfg.TradeWindowS after the death
+//	         their killer within cfg.TradeWindowS after the death (enemy
+//	         deaths only — a teamkill death is never traded)
 //	kast     K || A || T || S
 //
 // DMG/UtilDmg aggregate damage events (attacker side; util = the utility
@@ -73,6 +74,10 @@ func PlayerRounds(events []models.Event, rounds []RoundInfo, players []PlayerRef
 		}
 		// Trades: a death is traded when the victim's killer dies to one of
 		// the victim's teammates within the trade window after the death.
+		// Enemy deaths only (a teamkill death is never tradeable — the
+		// extractor writes no trade record for it and Engagements anchors
+		// enemy kills only, so KAST "T" stays bijective with trade kills);
+		// an unknown killer side cannot be classified either.
 		traded := map[string]bool{}
 		for victim, dTick := range deathTick {
 			killer := killerOf[victim]
@@ -81,6 +86,9 @@ func PlayerRounds(events []models.Event, rounds []RoundInfo, players []PlayerRef
 			}
 			vTeam := teamR[victim]
 			if vTeam == "" {
+				continue
+			}
+			if killerSide := teamR[killer]; killerSide == "" || killerSide == vTeam {
 				continue
 			}
 			for _, e := range roundEvents {
