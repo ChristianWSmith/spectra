@@ -64,7 +64,7 @@ func testExtracted(sha string, extractedAt time.Time) *models.ExtractedMatch {
 			{SteamID: "100", Side: "ct", Name: "al\x00ice", Kills: 10, Deaths: 0, Assists: 2,
 				FlashAssists: 1, Headshots: 4, MVPs: 1, Score: 22, TotalDamage: 1200, DamageTaken: 400, Shots: 50,
 				Hits: 20, ADR: 60, HSPct: 40, RoundsPlayed: 2, EntryKills: 1, OpeningKills: 1,
-				TradeKills: 2, BestStreak: 5, ThreeK: 1, UtilityDamage: 50, FlashesPopped: 3,
+				TradeKills: 2, BestStreak: 5, TwoK: 3, ThreeK: 1, UtilityDamage: 50, FlashesPopped: 3,
 				BombPlants: 1, MoneySpentTotal: 7500,
 				KillsByWeapon: `{"ak47":10}`, DamageByWeapon: `{"ak47":1200}`},
 			{SteamID: "200", Side: "t", Name: "bob", Kills: 5, Deaths: 2, Assists: 1,
@@ -244,6 +244,72 @@ func TestSetPositionMeta(t *testing.T) {
 	}
 }
 
+// TestMigration010TwoKBackfill reopens a database staged as pre-010 (the
+// two_k column dropped, its schema_version row removed) with analytics rows
+// present, and checks that migration 010 adds the column AND backfills it
+// from player_round_stats (rounds with exactly 2 kills per player).
+func TestMigration010TwoKBackfill(t *testing.T) {
+	s, path := openFileStore(t)
+	id := saveTestMatch(t, s, "/d/mig010.dem", "sha-mig010", time.Now())
+	// Analytics rows: alice has two 2-kill rounds (and one 3-kill round
+	// that must NOT count), bob none.
+	if err := s.ReplacePlayerRounds(id, []models.PlayerRoundStat{
+		{Round: 1, SteamID: "100", Name: "alice", Kills: 2},
+		{Round: 2, SteamID: "100", Name: "alice", Kills: 2},
+		{Round: 3, SteamID: "100", Name: "alice", Kills: 3},
+		{Round: 1, SteamID: "200", Name: "bob", Kills: 1},
+	}); err != nil {
+		t.Fatalf("ReplacePlayerRounds: %v", err)
+	}
+	// Stage the pre-010 schema: drop the column and forget the migration.
+	if _, err := s.db.Exec(`ALTER TABLE player_stats DROP COLUMN two_k`); err != nil {
+		t.Fatalf("drop two_k: %v", err)
+	}
+	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE name = '010_scoreboard_two_k.sql'`); err != nil {
+		t.Fatalf("unrecord 010: %v", err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	s2, err := Open(path) // second Open: 010 applies + backfills
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	defer func() { _ = s2.Close() }()
+
+	board, err := s2.GetScoreboard(id, "", false)
+	if err != nil {
+		t.Fatalf("GetScoreboard: %v", err)
+	}
+	for _, r := range board {
+		switch r.SteamID {
+		case "100":
+			if r.TwoK != 2 {
+				t.Errorf("alice two_k = %d, want 2 (backfilled from player_round_stats)", r.TwoK)
+			}
+		case "200":
+			if r.TwoK != 0 {
+				t.Errorf("bob two_k = %d, want 0", r.TwoK)
+			}
+		}
+	}
+	// A second Open must not re-run (or re-backfill) the migration.
+	if err := s2.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	s3, err := Open(path)
+	if err != nil {
+		t.Fatalf("third open: %v", err)
+	}
+	defer func() { _ = s3.Close() }()
+	var applied int
+	if err := s3.db.QueryRow(
+		`SELECT COUNT(*) FROM schema_version WHERE name = '010_scoreboard_two_k.sql'`,
+	).Scan(&applied); err != nil || applied != 1 {
+		t.Errorf("010 applied rows = %d (err %v), want 1", applied, err)
+	}
+}
+
 func TestSaveExtractedRoundtrip(t *testing.T) {
 	s := openMem(t)
 	const sha = "sha-roundtrip"
@@ -326,6 +392,7 @@ func TestSaveExtractedRoundtrip(t *testing.T) {
 		t.Errorf("alice stats mismatch: %+v", alice)
 	}
 	if alice.HSPct != 40 || alice.ADR != 60 || alice.MoneySpent != 7500 ||
+		alice.TwoK != 3 || alice.ThreeK != 1 ||
 		alice.KillsByWeapon != `{"ak47":10}` || alice.DamageByWeapon != `{"ak47":1200}` {
 		t.Errorf("alice detail mismatch: %+v", alice)
 	}
@@ -661,6 +728,16 @@ func TestGetScoreboardSorting(t *testing.T) {
 	}
 	if board[0].Name != "bob" || board[1].Name != "alice" {
 		t.Errorf("name desc order = %+v", board)
+	}
+
+	// two_k ASC → bob (0) before alice (3); the 2K column sorts like its
+	// 3K/4K/5K siblings.
+	board, err = s.GetScoreboard(id, "two_k", false)
+	if err != nil {
+		t.Fatalf("GetScoreboard two_k asc: %v", err)
+	}
+	if board[0].SteamID != "200" || board[1].SteamID != "100" {
+		t.Errorf("two_k asc order = %+v", board)
 	}
 
 	// Bogus key falls back to default kills DESC.

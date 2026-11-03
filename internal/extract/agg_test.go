@@ -255,7 +255,7 @@ func TestMultiKillCounts(t *testing.T) {
 	}
 	kill(61, 105) // 6th kill: still one 5K (5+ counts once)
 
-	// Per-round counter restarts with the round: 2 kills add no tier.
+	// Per-round counter restarts with the round: 2 kills now add one 2K.
 	a.roundStart(1000, false, false, 115, "BOMB TARGET")
 	kill(1010, 200)
 	kill(1020, 201)
@@ -266,15 +266,16 @@ func TestMultiKillCounts(t *testing.T) {
 	if p == nil {
 		t.Fatal("killer missing from built player stats")
 	}
-	if p.ThreeK != 0 || p.FourK != 0 || p.FiveK != 1 {
-		t.Fatalf("3K/4K/5K = %d/%d/%d, want 0/0/1 (one round of 5+ kills = one 5K)",
-			p.ThreeK, p.FourK, p.FiveK)
+	if p.TwoK != 1 || p.ThreeK != 0 || p.FourK != 0 || p.FiveK != 1 {
+		t.Fatalf("2K/3K/4K/5K = %d/%d/%d/%d, want 1/0/0/1 (one 5+ round = one 5K, one 2-kill round = one 2K)",
+			p.TwoK, p.ThreeK, p.FourK, p.FiveK)
 	}
 }
 
 // A round counts at EXACTLY one multi-kill tier: a 4-kill round is one 4K
 // and no 3K (the golden demo's official scoreboard: adamS 1×3K + 2×4K,
-// FREELOOK 1×4K + 0×3K — cumulative counting gave adamS 3×3K).
+// FREELOOK 1×4K + 0×3K — cumulative counting gave adamS 3×3K). The same
+// exclusivity holds at the 2K tier: a 3-kill round is a 3K, not a 2K.
 func TestMultiKillTiersAreExact(t *testing.T) {
 	a := newAgg()
 	kill := func(tick int, victim uint64) {
@@ -300,16 +301,20 @@ func TestMultiKillTiersAreExact(t *testing.T) {
 	kill(2030, 302)
 	kill(2040, 303)
 	kill(2050, 304)
+	a.roundStart(3000, false, false, 115, "BOMB TARGET")
+	kill(3010, 400)
+	kill(3020, 401)
 
 	m := a.build()
 	p := statsFor(m, 7)
 	if p == nil {
 		t.Fatal("killer missing from built player stats")
 	}
-	// rounds: 4 kills → 4K only; 3 kills → 3K only; 5 kills → 5K only.
-	if p.ThreeK != 1 || p.FourK != 1 || p.FiveK != 1 {
-		t.Fatalf("3K/4K/5K = %d/%d/%d, want exactly 1/1/1 across three rounds",
-			p.ThreeK, p.FourK, p.FiveK)
+	// rounds: 4 kills → 4K only; 3 kills → 3K only; 5 kills → 5K only;
+	// 2 kills → 2K only.
+	if p.TwoK != 1 || p.ThreeK != 1 || p.FourK != 1 || p.FiveK != 1 {
+		t.Fatalf("2K/3K/4K/5K = %d/%d/%d/%d, want exactly 1/1/1/1 across four rounds",
+			p.TwoK, p.ThreeK, p.FourK, p.FiveK)
 	}
 }
 

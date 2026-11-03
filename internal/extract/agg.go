@@ -131,6 +131,7 @@ type playerAgg struct {
 	tradeKills      int
 	killStreak      int
 	bestStreak      int
+	twoK            int
 	threeK          int
 	fourK           int
 	fiveK           int
@@ -623,7 +624,7 @@ func (a *agg) kill(k killInfo) {
 	}
 
 	// Per-round multi-kills: only the running count is kept here — the
-	// exact 3K/4K/5K tiers are decided in build() from the round's final
+	// exact 2K/3K/4K/5K tiers are decided in build() from the round's final
 	// total (external scoreboards count a round at exactly one tier: a
 	// 4-kill round is a 4K, not also a 3K).
 	if a.roundKills[a.currentRound] == nil {

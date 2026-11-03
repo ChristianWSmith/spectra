@@ -40,3 +40,16 @@ func TestShouldCheckUpdate(t *testing.T) {
 		t.Error("stamped builds should check for updates on startup")
 	}
 }
+
+// The frontend reads/writes these kvstore keys by their literal strings
+// through the kvstore service (Go never consumes them), so the strings ARE
+// the contract — a rename here silently breaks the Settings tab.
+func TestFrontendPrefKeyStrings(t *testing.T) {
+	if prefsFontSizeKey != "font_size" {
+		t.Errorf("font-size key = %q, want %q", prefsFontSizeKey, "font_size")
+	}
+	if prefsShowKnifeWarmupRoundsKey != "show_knife_warmup_rounds" {
+		t.Errorf("knife/warmup key = %q, want %q",
+			prefsShowKnifeWarmupRoundsKey, "show_knife_warmup_rounds")
+	}
+}

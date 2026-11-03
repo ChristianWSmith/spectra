@@ -20,6 +20,19 @@ const (
 	// prefsMapPackCS2PathKey holds a manually chosen CS2 folder (empty =
 	// auto-detect through Steam).
 	prefsMapPackCS2PathKey = "mappack_cs2_path"
+
+	// prefsFontSizeKey is the app font-size setting: "small" | "medium" |
+	// "large". "medium" is the default (unset/corrupt values fall back to
+	// it in the frontend); "small" is today's hardcoded size. The frontend
+	// reads/writes it directly through the kvstore service — Go never
+	// consumes it.
+	prefsFontSizeKey = "font_size"
+
+	// prefsShowKnifeWarmupRoundsKey toggles showing knife (pregame) and
+	// warmup rounds — negative-numbered, not counted play — in the round
+	// lists. Boolean; default false (hidden). The frontend reads/writes it
+	// directly through the kvstore service — Go never consumes it.
+	prefsShowKnifeWarmupRoundsKey = "show_knife_warmup_rounds"
 )
 
 // prefsFilename returns the path of the on-disk prefs file, creating the

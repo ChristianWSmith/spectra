@@ -43,8 +43,8 @@ var sourceColumns = map[string]map[string]bool{
 		"flash_assists", "headshots", "teamkills", "suicides", "mvps", "score",
 		"total_damage", "damage_taken", "shots", "hits", "adr", "hs_pct",
 		"rounds_played", "entry_kills", "entry_deaths", "opening_kills",
-		"opening_deaths", "trade_kills", "best_streak", "three_k", "four_k",
-		"five_k", "utility_damage", "flashes_popped", "flashed_times",
+		"opening_deaths", "trade_kills", "best_streak", "two_k", "three_k",
+		"four_k", "five_k", "utility_damage", "flashes_popped", "flashed_times",
 		"bomb_plants", "bomb_defuses", "money_spent_total",
 	),
 	"player_round_stats": colSet(

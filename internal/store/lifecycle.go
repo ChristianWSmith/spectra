@@ -238,9 +238,9 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 		`INSERT INTO player_stats (match_id, steam_id, side, name, kills, deaths, assists, flash_assists, headshots,
 			teamkills, suicides, mvps, score, total_damage, damage_taken, shots, hits, adr, hs_pct,
 			rounds_played, entry_kills, entry_deaths, opening_kills, opening_deaths, trade_kills,
-			best_streak, three_k, four_k, five_k, utility_damage, flashes_popped, flashed_times,
+			best_streak, two_k, three_k, four_k, five_k, utility_damage, flashes_popped, flashed_times,
 			bomb_plants, bomb_defuses, money_spent_total, kills_by_weapon, damage_by_weapon)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
 		return fmt.Errorf("store: save extracted: %w", err)
@@ -251,8 +251,8 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 			matchID, scrub(ps.SteamID), scrub(ps.Side), scrub(ps.Name), ps.Kills, ps.Deaths, ps.Assists,
 			ps.FlashAssists, ps.Headshots, ps.Teamkills, ps.Suicides, ps.MVPs, ps.Score, ps.TotalDamage,
 			ps.DamageTaken, ps.Shots, ps.Hits, ps.ADR, ps.HSPct, ps.RoundsPlayed, ps.EntryKills,
-			ps.EntryDeaths, ps.OpeningKills, ps.OpeningDeaths, ps.TradeKills, ps.BestStreak, ps.ThreeK,
-			ps.FourK, ps.FiveK, ps.UtilityDamage, ps.FlashesPopped, ps.FlashedTimes, ps.BombPlants,
+			ps.EntryDeaths, ps.OpeningKills, ps.OpeningDeaths, ps.TradeKills, ps.BestStreak, ps.TwoK,
+			ps.ThreeK, ps.FourK, ps.FiveK, ps.UtilityDamage, ps.FlashesPopped, ps.FlashedTimes, ps.BombPlants,
 			ps.BombDefuses, ps.MoneySpentTotal, scrub(ps.KillsByWeapon), scrub(ps.DamageByWeapon),
 		); err != nil {
 			return fmt.Errorf("store: save extracted: player_stats: %w", err)
