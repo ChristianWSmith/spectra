@@ -1,7 +1,8 @@
-/* spectra — VS Code-derived dark+ theme (default).
-   Surfaces/chrome follow VS Code Dark+ (editor #1e1e1e, sidebar/list
-   #252526, inputs #3c3c3c, terminal #cccccc on #1e1e1e, selection
-   #264f78); the brand pair #28387C (indigo) / #F5A618 (amber)
+/* spectra — VS Code-derived dark modern theme (default).
+   Surfaces/chrome follow VS Code Dark Modern (editor #1f1f1f, sidebar/list
+   #181818, inputs #313131/#3b3b3b, secondary-button hover #2b2b2b, selection
+   #04395e → indigo-shifted, focus #007fd4 → indigo-shifted); the brand pair
+   #28397F (indigo) / #FBAC18 (amber)
    substitutes VS Code's #007ACC/#0078d4 blues: indigo for primary
    buttons / focus / badges / status-bar-like fills, amber for active
    highlights (tabs, selected rows, sorted headers). Light mode lives in
@@ -9,48 +10,52 @@
 
 :root {
   color-scheme: dark;
-  /* App surfaces (VS Code Dark+ workbench) */
-  --bg: #1e1e1e; /* editor.background */
-  --panel: #252526; /* sideBar.background / tabsBackground */
-  --border: #3c3c3c; /* input.border / widget chrome */
+  /* App surfaces (VS Code Dark Modern workbench) */
+  --bg: #1f1f1f; /* editor.background */
+  --panel: #181818; /* sideBar.background / tabsBackground */
+  --border: #3c3c3c; /* panel + widget chrome borders */
   --divider: rgba(255, 255, 255, 0.08); /* table/list row separators */
   --inset: rgba(0, 0, 0, 0.25); /* recessed blocks (payloads, charts) */
   --text: #cccccc; /* terminal/default foreground */
   --muted: #969696; /* descriptions, placeholders */
   /* Brand pair — VS Code's #007ACC/#0078d4 substitutions */
-  --brand: #28387c;
-  --brand-hover: #33478f; /* lightened, per button.hoverBackground dark */
-  --brand-active: #1f2c60;
-  --accent: #f5a618;
-  --accent-tint: rgba(245, 166, 24, 0.12);
-  --accent-border: rgba(245, 166, 24, 0.5);
-  /* Lists (list.* — hover adapted to a desaturated #28387C tint) */
-  --list-hover: #2a3146;
-  --list-hover-strong: #343d5c;
-  --list-active: #1f2c60;
+  --brand: #28397f;
+  --brand-hover: #334892; /* lightened, per button.hoverBackground dark */
+  --brand-active: #1f2d63;
+  --accent: #fbac18;
+  --accent-tint: rgba(251, 172, 24, 0.12);
+  --accent-border: rgba(251, 172, 24, 0.5);
+  /* Lists (list.* — neutral hover per Dark Modern, indigo selection) */
+  --list-hover: #2a2d2e; /* list.hoverBackground */
+  --list-hover-strong: #343e5f;
+  --list-active: #04165e; /* list.activeSelectionBackground #04395e, hue-shifted to the brand indigo hue (228°), S/L preserved */
   /* Controls */
-  --input-bg: #3c3c3c;
-  --input-border: #3c3c3c;
-  --focus: #4d61b0; /* focusBorder, lightened brand for dark chrome */
-  --btn-border: #3c3c3c; /* button.secondary border */
+  --input-bg: #313131; /* input.background */
+  --input-border: #3b3b3b; /* input.border */
+  --focus: #0029d4; /* focusBorder #007fd4, hue-shifted to the brand indigo hue (228°), S/L preserved */
+  --btn-border: rgba(255, 255, 255, 0.1); /* button.border #ffffff1a */
+  --btn-bg: transparent; /* button.secondaryBackground #00000000 */
+  --btn-hover-bg: #2b2b2b; /* button.secondaryHoverBackground */
   --btn-primary-fg: #ffffff;
+  /* Floating widgets (editorWidget.background — popovers/modals/tooltips) */
+  --widget-bg: #202020;
   /* Scrollbars (scrollbarSlider.* — thin, rounded) */
   --scroll-thumb: #4f4f4f;
   --scroll-thumb-hover: #7a7a7a;
   --scroll-thumb-active: #bfbfbf;
   /* Editor / terminal surfaces (editor.*, terminal.*) */
-  --editor-bg: #1e1e1e;
+  --editor-bg: #1f1f1f;
   --editor-fg: #cccccc;
   --editor-sel: #264f78; /* terminal.selectionBackground */
   --editor-sel-inactive: #3a3d41;
   /* Tabs (editorGroupHeader.tabs* / tab.*) */
-  --tab-strip: #252526;
-  --tab-active-bg: #1e1e1e;
-  --tab-inactive-fg: #a6a6a6;
+  --tab-strip: #181818;
+  --tab-active-bg: #1f1f1f;
+  --tab-inactive-fg: #9d9d9d;
   /* Status-bar-like fills + badges (statusBar.background / badge.*) */
-  --status-bg: #28387c;
+  --status-bg: #28397f;
   --status-fg: #ffffff;
-  --badge-bg: #28387c;
+  --badge-bg: #28397f;
   --badge-fg: #ffffff;
   /* Game-domain semantics */
   --ct: #5aa9e6;
@@ -67,6 +72,16 @@
     sans-serif;
   font-size: 15px; /* medium default — font-size setting (lib/fontsize.js) overrides this pre-paint: small 13 / medium 15 / large 17 */
   line-height: 1.45;
+}
+
+/* --- Codicons (@vscode/codicons) -------------------------------------------
+   The npm stylesheet pins 16px; ours must follow the app font-size scale
+   (lib/fontsize.js: 13/15/17px root) and sit on the text baseline like the
+   glyphs it replaces. :root prefix outranks the package's
+   `.codicon[class*='codicon-']` regardless of stylesheet order. */
+:root .codicon[class*='codicon-'] {
+  font-size: 1em;
+  vertical-align: -0.125em;
 }
 
 /* VS Code-style scrollbars: thin, rounded thumb, transparent track. */
@@ -218,7 +233,8 @@ select {
   background: none;
   border: none;
   border-radius: var(--radius);
-  padding: 6px 10px;
+  padding: 4px 10px;
+  line-height: 1.3;
   color: var(--muted);
   cursor: pointer;
   position: relative;
@@ -242,7 +258,7 @@ select {
   top: 50%;
   transform: translateY(-50%);
   color: var(--accent);
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .nav-item.active {
@@ -292,10 +308,11 @@ select {
 /* --- Buttons / inputs ------------------------------------------------------ */
 
 .btn {
-  background: transparent;
+  background: var(--btn-bg);
   border: 1px solid var(--btn-border);
   border-radius: var(--radius);
-  padding: 5px 12px;
+  padding: 3px 10px;
+  line-height: 1.2;
   cursor: pointer;
   color: var(--text);
   white-space: nowrap;
@@ -306,7 +323,7 @@ select {
 
 .btn:hover {
   border-color: var(--muted);
-  background: var(--list-hover);
+  background: var(--btn-hover-bg);
 }
 
 .btn:focus-visible,
@@ -358,7 +375,7 @@ select {
 
 .btn.ghost:hover {
   border-color: var(--btn-border);
-  background: var(--list-hover);
+  background: var(--btn-hover-bg);
 }
 
 .btn:disabled {
@@ -370,7 +387,8 @@ select {
   background: var(--input-bg);
   border: 1px solid var(--input-border);
   border-radius: var(--radius);
-  padding: 5px 8px;
+  padding: 3px 8px;
+  line-height: 1.2;
   color: var(--text);
   min-width: 0;
 }
@@ -390,6 +408,41 @@ select {
 
 .input::selection {
   background: var(--editor-sel);
+}
+
+/* Checkboxes: VS Code-style flat box (native controls don't take our
+   borders; a pseudo-element on <input> never renders, so the check is a
+   data-URI SVG painted as the checked background). */
+input[type='checkbox'] {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  border: 1px solid var(--input-border);
+  border-radius: 2px;
+  background: var(--input-bg);
+  cursor: pointer;
+  position: relative;
+}
+
+input[type='checkbox']:checked {
+  background: var(--brand);
+  border-color: var(--brand);
+}
+
+input[type='checkbox']:checked::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23ffffff' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='M3.5 8.5l3 3 6-6'/%3E%3C/svg%3E")
+    center / 10px 10px no-repeat;
+}
+
+input[type='checkbox']:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
 }
 
 .toolbar,
@@ -455,7 +508,7 @@ select {
 .chip.status.parsing,
 .chip.status.running {
   color: var(--accent);
-  border-color: rgba(245, 166, 24, 0.5);
+  border-color: rgba(251, 172, 24, 0.5);
 }
 
 .chip.side.ct {
@@ -480,7 +533,7 @@ select {
 
 .chip.flag {
   color: var(--accent);
-  border-color: rgba(245, 166, 24, 0.4);
+  border-color: rgba(251, 172, 24, 0.4);
   padding: 0 5px;
   font-size: 0.7em;
 }
@@ -638,6 +691,11 @@ select {
   color: var(--accent);
 }
 
+/* Sort direction codicon sits just right of the header label. */
+.th-sort .codicon {
+  margin-left: 3px;
+}
+
 .row-actions {
   display: flex;
   gap: 6px;
@@ -678,7 +736,7 @@ select {
    [data-file-drop-target] element (the whole Library view). */
 .view.file-drop-target-active .dropzone {
   border-color: var(--accent);
-  background: rgba(245, 166, 24, 0.05);
+  background: rgba(251, 172, 24, 0.05);
 }
 
 .empty {
@@ -740,7 +798,7 @@ select {
 }
 
 .warnings-panel {
-  border-color: rgba(245, 166, 24, 0.4);
+  border-color: rgba(251, 172, 24, 0.4);
 }
 
 .warning-list {
@@ -752,7 +810,9 @@ select {
 }
 
 .warning-list li::before {
-  content: '⚠ ';
+  content: '\ea6c' ' ';
+  font-family: 'codicon';
+  font-weight: normal;
   color: var(--accent);
 }
 
@@ -864,7 +924,7 @@ select {
 .tab {
   background: none;
   border: none;
-  border-bottom: 2px solid transparent;
+  border-bottom: 1px solid transparent;
   color: var(--tab-inactive-fg);
   padding: 7px 14px;
   cursor: pointer;
@@ -873,7 +933,7 @@ select {
 
 .tab:hover {
   color: var(--text);
-  background: var(--list-hover);
+  background: var(--bg);
 }
 
 .tab.active {
@@ -920,7 +980,7 @@ select {
 
 .stat-value {
   font-size: 1.2em;
-  font-weight: 700;
+  font-weight: 600;
 }
 
 .stat-sub {
@@ -1238,9 +1298,9 @@ select {
   color: var(--accent);
   font-size: 0.88em;
   padding: 4px 10px;
-  border: 1px solid rgba(245, 166, 24, 0.4);
+  border: 1px solid rgba(251, 172, 24, 0.4);
   border-radius: var(--radius);
-  background: rgba(245, 166, 24, 0.06);
+  background: rgba(251, 172, 24, 0.06);
 }
 
 .replay-body {

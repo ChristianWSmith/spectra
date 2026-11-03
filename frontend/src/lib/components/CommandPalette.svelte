@@ -375,7 +375,7 @@
         {/if}
       </div>
       <div class="cp-foot muted">
-        <span>↑↓ move</span><span>Enter run</span><span>Esc close</span>
+        <span><span class="codicon codicon-arrow-up"></span><span class="codicon codicon-arrow-down"></span> move</span><span>Enter run</span><span>Esc close</span>
         <span class="spacer"></span>
         <span>Ctrl/⌘K toggle</span>
       </div>

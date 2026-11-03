@@ -519,7 +519,7 @@
 
 <div class="view replay-view">
   <header class="view-header">
-    <button class="btn" onclick={() => nav(`/match/${id}`)}>← Match</button>
+    <button class="btn" onclick={() => nav(`/match/${id}`)}><span class="codicon codicon-arrow-left"></span> Match</button>
     <h1>Replay</h1>
     {#if matchMap}<span class="chip">{matchMap}</span>{/if}
     {#if meta && !noSidecar}
@@ -536,7 +536,8 @@
         disabled={recState === 'encoding'}
         onclick={toggleRecord}
         title="Record a WebM clip — loop range if set, else 10s from the playhead (video only)"
-        >{recState === 'recording' ? '■ Stop clip' : '● Record clip'}</button
+        ><span class="codicon {recState === 'recording' ? 'codicon-debug-stop' : 'codicon-record'}"></span>
+          {recState === 'recording' ? 'Stop clip' : 'Record clip'}</button
       >
       {#if recState !== 'idle'}
         <span
@@ -556,7 +557,7 @@
                 : recNote}</span
         >
         {#if recState === 'saved' || recState === 'error'}
-          <button class="btn small ghost" onclick={discardClip} title="Dismiss">✕</button>
+          <button class="btn small ghost" onclick={discardClip} title="Dismiss"><span class="codicon codicon-close"></span></button>
         {/if}
       {/if}
     {/if}
@@ -601,7 +602,7 @@
           <h2>Landmarks</h2>
           <span class="spacer"></span>
           <span class="muted num">{landmarks.length}</span>
-          <span class="muted">{eventsOpen ? '▾' : '▸'}</span>
+          <span class="muted"><span class="codicon {eventsOpen ? 'codicon-chevron-down' : 'codicon-chevron-right'}"></span></span>
         </button>
         {#if eventsOpen}
           <ul class="landmark-list">
@@ -615,7 +616,7 @@
                   class="btn small ghost"
                   title="Seek replay to tick {l.tick}"
                   aria-label="Seek to tick {l.tick}"
-                  onclick={() => engine?.seekTick(l.tick)}>▶</button
+                  onclick={() => engine?.seekTick(l.tick)}><span class="codicon codicon-play"></span></button
                 >
               </li>
             {:else}
@@ -631,7 +632,7 @@
         class="btn primary"
         aria-label={uiPlaying ? 'Pause' : 'Play'}
         title={uiPlaying ? 'Pause (Space)' : 'Play (Space)'}
-        onclick={togglePlay}>{uiPlaying ? '⏸' : '▶'}</button
+        onclick={togglePlay}><span class="codicon {uiPlaying ? 'codicon-debug-pause' : 'codicon-play'}"></span></button
       >
       <label class="sr-only" for="rp-speed">Speed</label>
       <select class="input" id="rp-speed" value={uiSpeed} onchange={onSpeed}>
@@ -714,7 +715,7 @@
         {/each}
       </select>
 
-      <span class="muted" title="Space play/pause · , . speed · ←/→ step · Shift ±64 · L loop · F follow · 1-9 select · S snapshot">⌨ hints</span>
+      <span class="muted" title="Space play/pause · , . speed · ←/→ step · Shift ±64 · L loop · F follow · 1-9 select · S snapshot"><span class="codicon codicon-keyboard"></span> hints</span>
     </div>
 
     {#if voicePresence && voicePresence.hasVoice}
@@ -724,7 +725,7 @@
           class:primary={!uiVoiceOn}
           onclick={toggleVoice}
           title={uiVoiceErr || (uiVoiceOn ? 'Stop voice playback' : 'Start voice playback (needs one click — browser gesture rule)')}
-        >{uiVoiceOn ? '🔊 Voice on' : 'Enable voice'}</button
+        >{#if uiVoiceOn}<span class="codicon codicon-unmute"></span> Voice on{:else}Enable voice{/if}</button
         >
         <span
           class="chip voice-state"
@@ -769,7 +770,7 @@
                 onclick={() => toggleVoiceSolo(p.steamId)}>S</button
               >
               <details class="voice-export">
-                <summary class="btn small ghost" aria-label="Export {p.name} voice" title="Export {p.name}'s track">▾</summary>
+                <summary class="btn small ghost" aria-label="Export {p.name} voice" title="Export {p.name}'s track"><span class="codicon codicon-chevron-down"></span></summary>
                 <button
                   type="button"
                   class="voice-dl"

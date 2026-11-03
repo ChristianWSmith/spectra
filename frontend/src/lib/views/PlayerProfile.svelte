@@ -158,7 +158,7 @@
 
 <div class="view">
   <header class="view-header prof-head">
-    <button class="btn" onclick={() => nav('/library')}>← Library</button>
+    <button class="btn" onclick={() => nav('/library')}><span class="codicon codicon-arrow-left"></span> Library</button>
     {#if profile}
       <h1 class="prof-name">{profile.name || '—'}</h1>
       <span class="mono muted">{profile.steamId}</span>

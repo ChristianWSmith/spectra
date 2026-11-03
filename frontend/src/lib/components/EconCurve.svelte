@@ -213,14 +213,16 @@
           <span
             class="econ-strip-mark"
             class:hold={mark(r) === '✓'}
-            class:upset={mark(r) === '✗'}>{mark(r)}</span
+            class:upset={mark(r) === '✗'}
+            >{#if mark(r) === '✓'}<span class="codicon codicon-check"></span>{:else if mark(r) === '✗'}<span class="codicon codicon-error"></span>{:else}·{/if}</span
           >
         </button>
       {/each}
     </div>
     <p class="econ-strip-note muted">
       <span class="econ-strip-swatch pistol" aria-hidden="true"></span>
-      pistol round · ✓ favorite (higher equip) held · ✗ upset · click a round
+      pistol round · <span class="codicon codicon-check"></span> favorite (higher equip) held ·
+      <span class="codicon codicon-error"></span> upset · click a round
       to open it
     </p>
   {/if}

@@ -372,7 +372,7 @@
                         <button
                           class="btn small ghost"
                           aria-label="Close explanation"
-                          onclick={() => (whyOpen = '')}>✕</button
+                          onclick={() => (whyOpen = '')}><span class="codicon codicon-close"></span></button
                         >
                       </div>
                     </td>

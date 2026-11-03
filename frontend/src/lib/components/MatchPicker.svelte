@@ -152,7 +152,7 @@
     {:else}
       <span class="muted">Select match…</span>
     {/if}
-    <span class="mp-caret" aria-hidden="true">{open ? '▴' : '▾'}</span>
+    <span class="mp-caret" aria-hidden="true"><span class="codicon {open ? 'codicon-chevron-up' : 'codicon-chevron-down'}"></span></span>
   </button>
 
   {#if open}
@@ -213,7 +213,7 @@
         </p>
       {/if}
       <div class="mp-foot muted">
-        <span>↑↓ move</span><span>Enter select</span><span>Esc close</span>
+        <span><span class="codicon codicon-arrow-up"></span><span class="codicon codicon-arrow-down"></span> move</span><span>Enter select</span><span>Esc close</span>
         <span class="spacer"></span>
         <span class="num">{filtered.length}/{matches.length}</span>
       </div>
@@ -283,7 +283,7 @@
     min-width: 100%;
     max-width: min(640px, 92vw);
     padding: 6px;
-    background: var(--panel);
+    background: var(--widget-bg);
     border: 1px solid var(--border);
     border-radius: var(--radius);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
@@ -306,7 +306,8 @@
     flex-direction: column;
     gap: 2px;
     width: 100%;
-    padding: 5px 8px;
+    padding: 4px 8px;
+    line-height: 1.3;
     text-align: left;
     background: none;
     border: 1px solid transparent;

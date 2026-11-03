@@ -115,7 +115,7 @@
 
 <div class="view">
   <header class="view-header">
-    <button class="btn" onclick={() => nav(`/match/${id}`)}>← Match</button>
+    <button class="btn" onclick={() => nav(`/match/${id}`)}><span class="codicon codicon-arrow-left"></span> Match</button>
     <h1>Compare rounds</h1>
     <div class="spacer"></div>
     {#if sel}
@@ -134,7 +134,7 @@
         two to four rounds (max 4), then press <strong>Compare</strong>.
       </p>
       <div>
-        <button class="btn primary" onclick={() => nav(`/match/${id}`)}>← Back to match</button>
+        <button class="btn primary" onclick={() => nav(`/match/${id}`)}><span class="codicon codicon-arrow-left"></span> Back to match</button>
       </div>
     </section>
   {:else}
@@ -261,7 +261,7 @@
                 class="btn small"
                 title="Replay from the round start ({fmtTickSeconds(col.detail.round.startTick, tickRate)})"
                 onclick={() => replayStart(col)}
-              >▶ Replay start</button>
+              ><span class="codicon codicon-play"></span> Replay start</button>
               <button class="btn small" onclick={() => openRound(col)}>Round detail</button>
             </div>
           {/if}

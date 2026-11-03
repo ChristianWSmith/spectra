@@ -306,7 +306,7 @@
       <span class="bld-row-title">
         {m.title || m.name}
         {#if m.doc}
-          <span class="m5-ib" title={m.doc}>ⓘ</span>
+          <span class="m5-ib" title={m.doc}><span class="codicon codicon-info"></span></span>
         {/if}
       </span>
       <span class="bld-row-sub">
@@ -329,21 +329,21 @@
         onclick={() => {
           editMetric(m);
           runPreview();
-        }}>▶</button
+        }}><span class="codicon codicon-play"></span></button
       >
       <button
         class="btn small ghost"
         class:bld-pin-on={pins.includes(m.id)}
         title={pins.includes(m.id) ? 'Unpin from scoreboard' : 'Pin as scoreboard column'}
         aria-label="Toggle pin for {m.name}"
-        onclick={() => togglePin(m)}>📌</button
+        onclick={() => togglePin(m)}><span class="codicon codicon-pin"></span></button
       >
       {#if m.origin === 'user'}
         <button
           class="btn small ghost"
           title="Delete metric"
           aria-label="Delete {m.name}"
-          onclick={() => removeMetric(m)}>✕</button
+          onclick={() => removeMetric(m)}><span class="codicon codicon-close"></span></button
         >
       {/if}
     </span>
@@ -355,7 +355,7 @@
     <div>
       <h1>Metric builder</h1>
       <p class="muted bld-head-note">
-        Saved metrics are appended to match reports in Reports · pinned (📌)
+        Saved metrics are appended to match reports in Reports · pinned (<span class="codicon codicon-pin"></span>)
         metrics show as scoreboard columns on every match.
       </p>
     </div>
@@ -478,10 +478,10 @@
             {#if exprCheck.state === 'pending'}
               <p class="bld-expr-state muted">checking…</p>
             {:else if exprCheck.state === 'valid'}
-              <p class="bld-expr-state ok">✓ valid</p>
+              <p class="bld-expr-state ok"><span class="codicon codicon-check"></span> valid</p>
             {:else if exprCheck.state === 'error'}
               <p class="bld-expr-state bad">
-                ✗ {exprCheck.msg}{exprCheck.pos >= 0 ? ` · byte ${exprCheck.pos}` : ''}
+                <span class="codicon codicon-error"></span> {exprCheck.msg}{exprCheck.pos >= 0 ? ` · byte ${exprCheck.pos}` : ''}
               </p>
             {/if}
           </div>
@@ -501,7 +501,8 @@
               if (m) togglePin(m);
             }}
           >
-            {form.id > 0 && pins.includes(form.id) ? '📌 Pinned' : '📌 Pin'}
+            <span class="codicon codicon-pin"></span>
+            {form.id > 0 && pins.includes(form.id) ? 'Pinned' : 'Pin'}
           </button>
           <span class="muted bld-note">
             Saved metrics are appended to match reports in Reports.
@@ -578,7 +579,7 @@
           </details>
         {:else}
           <p class="muted">
-            Nothing previewed yet — pick a scope and press Preview (or ▶ on a metric).
+            Nothing previewed yet — pick a scope and press Preview (or <span class="codicon codicon-play"></span> on a metric).
           </p>
         {/if}
       </section>

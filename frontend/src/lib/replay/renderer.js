@@ -323,13 +323,13 @@ export function createRenderer(canvas, { engine, data, players }) {
       if (tick < pl.from.tick) continue;
       if (pl.to && tick > pl.to.tick) continue;
       const a = worldToScreen(pl.from.x, pl.from.y);
-      ctx.fillStyle = 'rgba(245, 166, 24, 0.8)';
+      ctx.fillStyle = 'rgba(251, 172, 24, 0.8)';
       ctx.beginPath();
       ctx.arc(a.x, a.y, 3, 0, Math.PI * 2);
       ctx.fill();
       if (pl.to && hasPos(pl.to)) {
         const b = worldToScreen(pl.to.x, pl.to.y);
-        ctx.strokeStyle = 'rgba(245, 166, 24, 0.5)';
+        ctx.strokeStyle = 'rgba(251, 172, 24, 0.5)';
         ctx.lineWidth = 1.5;
         ctx.setLineDash([4, 4]);
         ctx.beginPath();
@@ -369,14 +369,14 @@ export function createRenderer(canvas, { engine, data, players }) {
       if (tick < l.tick || tick > endTick) continue;
       const c = worldToScreen(l.x, l.y);
       const pulse = 10 + 4 * Math.sin(now / 200);
-      ctx.strokeStyle = 'rgba(245, 166, 24, 0.95)';
-      ctx.fillStyle = 'rgba(245, 166, 24, 0.25)';
+      ctx.strokeStyle = 'rgba(251, 172, 24, 0.95)';
+      ctx.fillStyle = 'rgba(251, 172, 24, 0.25)';
       ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.arc(c.x, c.y, pulse, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
-      ctx.fillStyle = '#f5a618';
+      ctx.fillStyle = '#fbac18';
       ctx.font = 'bold 10px ui-monospace, monospace';
       ctx.textAlign = 'center';
       ctx.fillText('C4', c.x, c.y + 3);
@@ -435,7 +435,7 @@ export function createRenderer(canvas, { engine, data, players }) {
       ctx.stroke();
       // follow ring
       if (engine.state.followSlot === slot) {
-        ctx.strokeStyle = '#f5a618';
+        ctx.strokeStyle = '#fbac18';
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.arc(c.x, c.y, r + 5, 0, Math.PI * 2);
@@ -496,7 +496,7 @@ export function createRenderer(canvas, { engine, data, players }) {
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     lines.forEach((ln, i) => {
-      ctx.fillStyle = i === 0 ? '#f5a618' : '#8b94a7';
+      ctx.fillStyle = i === 0 ? '#fbac18' : '#8b94a7';
       ctx.fillText(ln, 8 + pad, 8 + pad + i * lh);
     });
     ctx.textBaseline = 'alphabetic';

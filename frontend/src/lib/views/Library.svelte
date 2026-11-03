@@ -293,7 +293,7 @@
         aria-label="Sort by {label}"
         title="Sort by {label}"
         onclick={() => toggleSort(key)}
-      >{label}{#if sortKey === key}{desc ? ' ↓' : ' ↑'}{/if}</button>
+      >{label}{#if sortKey === key}<span class="codicon {desc ? 'codicon-arrow-down' : 'codicon-arrow-up'}"></span>{/if}</button>
     </th>
   {/snippet}
 

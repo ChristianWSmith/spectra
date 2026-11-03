@@ -1,6 +1,6 @@
 // M5 theming: dark ships default, light tokens live in
 // style-m3b.css under [data-theme="light"]. Both palettes are derived
-// from VS Code dark+/light+ with the brand pair #28387C / #F5A618
+// from VS Code dark+/light+ with the brand pair #28397F / #FBAC18
 // substituting VS Code's #007ACC/#0078d4 accents; the token blocks are
 // at the top of public/style.css (dark) and public/style-m3b.css
 // (light). Shared by main.js (boot), Settings and the command palette's

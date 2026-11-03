@@ -237,7 +237,7 @@
     </div>
     <div class="spacer"></div>
     <button class="btn primary" onclick={run} disabled={running || !sql.trim()}>
-      Run ▸ Ctrl+Enter
+      Run <span class="codicon codicon-play"></span> Ctrl+Enter
     </button>
     {#if slow}
       <span class="chip sql-running">running…</span>
@@ -263,10 +263,10 @@
               title={t.note || t.name}
               onclick={() => toggleTable(t.name)}
             >
-              <span class="sql-caret">{openTables[t.name] ? '▾' : '▸'}</span>
+              <span class="sql-caret"><span class="codicon {openTables[t.name] ? 'codicon-chevron-down' : 'codicon-chevron-right'}"></span></span>
               <span class="mono">{t.name}</span>
               {#if t.note}
-                <span class="m5-ib" title={t.note}>ⓘ</span>
+                <span class="m5-ib" title={t.note}><span class="codicon codicon-info"></span></span>
               {/if}
             </button>
             {#if openTables[t.name]}
@@ -280,7 +280,7 @@
                     <span class="mono">{c.name}</span>
                     <span class="chip sql-type">{c.type}</span>
                     {#if c.note}
-                      <span class="m5-ib" title={c.note}>ⓘ</span>
+                      <span class="m5-ib" title={c.note}><span class="codicon codicon-info"></span></span>
                     {/if}
                   </button>
                 {:else}
@@ -319,7 +319,7 @@
         ></textarea>
         <div class="toolbar">
           <button class="btn primary" onclick={run} disabled={running || !sql.trim()}>
-            {running ? 'Running…' : 'Run ▸'}
+            {#if running}Running…{:else}Run <span class="codicon codicon-play"></span>{/if}
           </button>
           <button class="btn" disabled={!result} onclick={exportCSV}>Export CSV</button>
           <button class="btn" disabled={!result} onclick={exportJSON}>Export JSON</button>
@@ -444,7 +444,7 @@
                   class="btn small ghost"
                   title="Delete saved query"
                   aria-label="Delete {sq.name}"
-                  onclick={() => removeSaved(sq)}>✕</button
+                  onclick={() => removeSaved(sq)}><span class="codicon codicon-close"></span></button
                 >
               </div>
             {:else}
