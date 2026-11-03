@@ -134,7 +134,7 @@
 
   function openTimeline(r) {
     setPendingTimelineFilter({ round: r.round, kind: 'grenade' });
-    go(`/timeline/${id}`);
+    go(`/match/${id}/timeline`);
   }
 
   function openReplay(r) {

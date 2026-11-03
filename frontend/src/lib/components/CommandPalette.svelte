@@ -290,7 +290,7 @@
             return;
           }
           setPendingTimelineFilter(f);
-          nav(`/timeline/${mid}`);
+          nav(`/match/${mid}/timeline`);
         },
       })),
     );

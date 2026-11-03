@@ -471,7 +471,7 @@
   function openTimeline() {
     if (!engine) return;
     setPendingTimelineFilter({ tick: engine.state.tick });
-    nav(`/timeline/${id}`);
+    nav(`/match/${id}/timeline`);
   }
 
   // --- M4 voice controls ------------------------------------------------------

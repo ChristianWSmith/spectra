@@ -22,7 +22,7 @@
   // pending-filter hand-off (services.js TIMELINE_PENDING_KEY) — the whole
   // extended object (kind/steamId/round/weapon/ticks/dmg/distance/headshot/
   // bbox) passes through, FilterBar normalizes missing fields.
-  let filter = $state({
+  const DEFAULT_FILTER = {
     round: -1,
     kind: '',
     steamId: '',
@@ -34,8 +34,9 @@
     distanceMax: 0,
     headshotOnly: false,
     bbox: null,
-    ...(takePendingTimelineFilter() || {}),
-  });
+  };
+
+  let filter = $state({ ...DEFAULT_FILTER, ...(takePendingTimelineFilter() || {}) });
 
   let events = $state([]);
   let selected = $state(null); // EventDetail
@@ -61,6 +62,17 @@
         /* lanes/hear simply hidden */
       });
     return () => (live = false);
+  });
+
+  // The command palette can jump Timeline to another match without
+  // remounting this component (the Timeline tab stays active, only the
+  // id prop changes) — the constructor's take above already ran, so re-arm
+  // the pending-filter hand-off on every match switch. On first mount this
+  // finds nothing (the seed above consumed it).
+  $effect(() => {
+    const mid = id;
+    const pending = mid ? takePendingTimelineFilter() : null;
+    if (pending) filter = { ...DEFAULT_FILTER, ...pending };
   });
 
   // Saved filter presets (scope "match").
@@ -271,7 +283,6 @@
 
 <div class="view timeline-view">
   <header class="view-header">
-    <button class="btn" onclick={() => nav(`/match/${id}`)}>← Match</button>
     <h1>Timeline</h1>
     <div class="spacer"></div>
     <div class="filter-bar filt-saved" role="group" aria-label="Saved filters">

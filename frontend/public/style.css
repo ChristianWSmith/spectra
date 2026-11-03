@@ -1070,10 +1070,29 @@ select {
 
 /* --- Timeline -------------------------------------------------------------- */
 
+/* Timeline renders inside the match view as a tab (deep link
+   #/match/:id/timeline; the old #/timeline/:id route redirects there).
+   It fills the match view's tab area instead of the old standalone
+   calc(100vh - 32px): flex:1 grows into the viewport-min-height'd match
+   view below its header/strip/tabs, min-height keeps it usable when
+   those wrap on a short window (then .content scrolls), and the internals
+   (.timeline-body → .vlist / .detail-pane) scroll within it. */
 .timeline-view {
-  height: calc(100vh - 32px);
+  flex: 1 1 0;
+  min-height: 320px;
   display: flex;
   flex-direction: column;
+  /* .view's margin: 0 auto would turn off cross-axis stretch for this
+     flex item (auto side margins → fit-content width); the match view
+     already centers its content, so reset it to span the tab area. */
+  margin: 0;
+}
+
+/* Only while Timeline is embedded does the match view reach the viewport
+   height (content padding is 16px top+bottom), giving the flex:1 above a
+   definite height to fill; every other tab keeps its natural height. */
+.view:has(> .timeline-view) {
+  min-height: calc(100vh - 32px);
 }
 
 .timeline-body {
@@ -1086,6 +1105,10 @@ select {
 .vlist {
   flex: 1;
   min-width: 0;
+  /* The embedded tab area can get short (match header/strip/tabs above,
+     narrow windows): never collapse the virtual scroller's viewport —
+     if the floor overflows .timeline-body, .content scrolls instead. */
+  min-height: 180px;
   overflow-y: auto;
   border: 1px solid var(--border);
   border-radius: var(--radius);

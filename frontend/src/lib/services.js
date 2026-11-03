@@ -195,8 +195,9 @@ export function onFilesDropped(callback) {
 // --- Cross-view hand-off ------------------------------------------------------
 // sessionStorage contract: one key holds a JSON filter for Timeline.
 // Writers (Match scoreboard row / overview stat cells) set
-// {steamId?} or {kind?} just before navigating to #/timeline/:id; Timeline
-// reads + clears it on mount and applies it as its initial filter.
+// {steamId?} or {kind?} just before navigating to #/match/:id/timeline;
+// Timeline reads + clears it on mount (and on an in-place match switch)
+// and applies it as its initial filter.
 export const TIMELINE_PENDING_KEY = 'spectra:timeline-filter';
 
 export function setPendingTimelineFilter(filter) {

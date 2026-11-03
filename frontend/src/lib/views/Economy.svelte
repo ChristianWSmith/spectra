@@ -154,7 +154,7 @@
   function drill(round) {
     if (!round) return;
     setPendingTimelineFilter({ round });
-    nav(`/timeline/${id}`);
+    nav(`/match/${id}/timeline`);
   }
 
   function toggleWhy(r, side) {

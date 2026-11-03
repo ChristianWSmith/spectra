@@ -36,9 +36,14 @@
   import Heatmaps from './Heatmaps.svelte';
   import Combat from './Combat.svelte';
   import Context from './Context.svelte';
+  import Timeline from './Timeline.svelte';
   import StatusChip from '../components/StatusChip.svelte';
 
-  let { id = 0, nav = () => {} } = $props();
+  // routeTab: the deep-linked tab from App's route (#/match/:id/timeline);
+  // '' for plain #/match/:id. Tabs are otherwise local state like every
+  // other match tab — see selectTab for how Timeline mirrors itself in
+  // the URL.
+  let { id = 0, nav = () => {}, routeTab = '' } = $props();
 
   const TABS = ['Overview', 'Scoreboard', 'Rounds', 'Economy', 'Utility', 'Heatmaps', 'Combat', 'Timeline', 'Chat', 'Context', 'Raw'];
 
@@ -157,6 +162,16 @@
         if (live) error = errText(e);
       });
     return () => (live = false);
+  });
+
+  // Deep-linked tab from App's route (#/match/:id/timeline): select the
+  // Timeline tab whenever the route carries one — runs on mount before
+  // first paint, so it also seeds the initial tab (no local prop read in
+  // the $state initializer). When the tab bar clears the segment
+  // (selectTab → plain #/match/:id) routeTab becomes '' and the local
+  // tab state is left alone.
+  $effect(() => {
+    if (routeTab) tab = routeTab;
   });
 
   // Scoreboard fetch: initial load + every sort change. KAST% is not a
@@ -459,7 +474,7 @@
 
   function openPlayerTimeline(steamId) {
     setPendingTimelineFilter({ steamId });
-    nav(`/timeline/${id}`);
+    nav(`/match/${id}/timeline`);
   }
 
   function openReplay() {
@@ -491,6 +506,17 @@
     } catch (e) {
       error = errText(e);
     }
+  }
+
+  // Tab switch. Timeline mirrors itself in the URL (#/match/:id/timeline)
+  // so deep-link callers always produce a hashchange: the segment only
+  // exists while the Timeline tab is showing, and it is cleared when
+  // another tab is picked (otherwise nav('/match/:id/timeline') from a
+  // drill-down would be a no-op while a different tab is visible).
+  function selectTab(t) {
+    tab = t;
+    if (t === 'Timeline') nav(`/match/${id}/timeline`);
+    else if (routeTab) nav(`/match/${id}`);
   }
 
   function selectRaw(name) {
@@ -634,9 +660,6 @@
         <button class="btn" onclick={toggleWarnings}>Warnings</button>
       {/if}
       <button class="btn primary" onclick={openReplay}>Replay</button>
-      <button class="btn primary" onclick={() => nav(`/timeline/${id}`)}>
-        Timeline
-      </button>
     </header>
 
     {#if warningsOpen}
@@ -672,13 +695,9 @@
 
     <nav class="tabs" aria-label="Match sections">
       {#each TABS as t (t)}
-        {#if t === 'Timeline'}
-          <button class="tab" onclick={() => nav(`/timeline/${id}`)}>{t}</button>
-        {:else}
-          <button class="tab" class:active={tab === t} onclick={() => (tab = t)}>
-            {t}
-          </button>
-        {/if}
+        <button class="tab" class:active={tab === t} onclick={() => selectTab(t)}>
+          {t}
+        </button>
       {/each}
     </nav>
 
@@ -1066,6 +1085,8 @@
       <Heatmaps {id} {nav} />
     {:else if tab === 'Combat'}
       <Combat {id} {nav} />
+    {:else if tab === 'Timeline'}
+      <Timeline {id} {nav} />
     {:else if tab === 'Chat'}
       <div class="toolbar">
         <label for="chat-round">Round</label>
