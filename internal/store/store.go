@@ -43,7 +43,7 @@ type Store struct {
 }
 
 // Open opens (creating the parent directory if needed) the SQLite database
-// at path, applies the embedded migrations, and marks any jobs left
+// at path, applies the embedded baseline schema, and marks any jobs left
 // queued/running by a previous process as failed. The special path
 // ":memory:" opens a private in-memory database (no directory is created).
 func Open(path string) (*Store, error) {
@@ -66,7 +66,7 @@ func Open(path string) (*Store, error) {
 		return nil, fmt.Errorf("store: open: %w", err)
 	}
 	s := &Store{db: db}
-	if err := s.migrate(); err != nil {
+	if err := s.applySchema(); err != nil {
 		_ = db.Close()
 		return nil, err
 	}

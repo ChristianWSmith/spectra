@@ -10,9 +10,9 @@ import (
 )
 
 // This file is the M5 §2.1 persistence surface: CRUD over the `metrics`
-// table created by migrations/005_metrics.sql (column list fixed by the
-// coordination contract in platform_store.go). The write handle owns all
-// of it — the read-only console session never reaches these methods.
+// table created by the baseline schema (schema.sql — column list fixed by
+// the coordination contract in platform_store.go). The write handle owns
+// all of it — the read-only console session never reaches these methods.
 
 // metricColumns is the full metrics column list in scan order.
 const metricColumns = `id, name, title, expr, group_by, format, doc, origin,
@@ -100,7 +100,7 @@ func (s *Store) CreateMetric(m models.MetricRow) (models.MetricRow, error) {
 
 // UpdateMetric replaces one definition (id must exist). Builtin and plugin
 // rows are immutable through this path — the plugin loader writes its own
-// rows via ReplacePluginMetrics, and builtins are migration-owned.
+// rows via ReplacePluginMetrics, and builtins are schema-seeded.
 func (s *Store) UpdateMetric(m models.MetricRow) (models.MetricRow, error) {
 	existing, err := s.GetMetric(m.ID)
 	if err != nil {

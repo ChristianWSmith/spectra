@@ -37,11 +37,10 @@ var tableNotes = map[string]string{
 	"voice_chunks":   "voice chunk index: SteamID, tick, byte range, caster flag (audio lives in sidecars)",
 
 	// M5 (this milestone).
-	"metrics":        "custom metric definitions (origin builtin|user|plugin; grammar in internal/metrics)",
-	"saved_queries":  "named SQL console queries (unique names)",
-	"query_history":  "SQL console run history (sql/ms/rows/ok, capped at 100 newest)",
-	"schema_version": "applied embedded migration files",
-	"plugins":        "declarative plugin registry (M5 §2.7)",
+	"metrics":       "custom metric definitions (origin builtin|user|plugin; grammar in internal/metrics)",
+	"saved_queries": "named SQL console queries (unique names)",
+	"query_history": "SQL console run history (sql/ms/rows/ok, capped at 100 newest)",
+	"plugins":       "declarative plugin registry (M5 §2.7)",
 }
 
 // columnNotes maps table → column → note.
@@ -79,7 +78,7 @@ var columnNotes = map[string]map[string]string{
 		"map":    "map name as extracted (source for groupBy=map)",
 	},
 	"chat": {
-		"decrypted": "M4: chat considered decrypted (see 004_voice.sql — v1 writes 0)",
+		"decrypted": "chat considered decrypted (v1 always writes 0 — extractor provenance note in schema.sql)",
 	},
 	"utility_events": {
 		"kind": "he|flash|smoke|molotov|incendiary|decoy",
@@ -92,7 +91,7 @@ var columnNotes = map[string]map[string]string{
 		"kills_by_weapon": "JSON object (excluded from the metrics expression whitelist)",
 	},
 	"metrics": {
-		"origin":      "builtin|user|plugin — builtin rows are migration-seeded PRD §5.16 fixtures",
+		"origin":      "builtin|user|plugin — builtin rows are schema-seeded PRD §5.16 fixtures",
 		"expr":        "metric grammar: from <table>: <aggregations> (internal/metrics package doc)",
 		"denominator": "scalar subquery source: ''|rounds|matches|player_rounds",
 	},

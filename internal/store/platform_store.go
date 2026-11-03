@@ -8,8 +8,8 @@ import (
 )
 
 // This file is the M5 platform persistence surface: the declarative-plugin
-// registry (migrations/006_platform.sql) and the plugin-metric rows it
-// mirrors into the `metrics` table (created by 005_metrics.sql — G1).
+// registry and the plugin-metric rows it mirrors into the `metrics` table
+// (created by the baseline schema — G1).
 //
 // COORDINATION CONTRACT with the metrics engine (M5 §2.1): the metrics
 // table this file writes against is exactly:
@@ -29,9 +29,8 @@ import (
 //	);
 //
 // ensureMetricsTable creates that table IF NOT EXISTS before any plugin
-// metric write: a no-op once 005 has applied, and a safety net while the
-// two migrations land in either order (005 < 006 alphabetically, but a
-// database created from an older binary may lack 005 when this code runs).
+// metric write: a no-op once the baseline schema has created it, and a
+// safety net if this code ever runs against a database that predates it.
 // Full expression validation belongs to the metrics engine on preview/use
 // (plugin metric budget) — the plugin loader only enforces
 // structural sanity (name + expr non-empty).
@@ -76,7 +75,7 @@ const metricsTableDDL = `CREATE TABLE IF NOT EXISTS metrics (
 )`
 
 // ensureMetricsTable creates the metrics table when missing (no-op when
-// 005_metrics.sql already created it).
+// the baseline schema already created it).
 func (s *Store) ensureMetricsTable() error {
 	if _, err := s.db.Exec(metricsTableDDL); err != nil {
 		return fmt.Errorf("store: ensure metrics table: %w", err)

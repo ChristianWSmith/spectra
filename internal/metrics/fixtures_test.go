@@ -35,9 +35,9 @@ func seededStore(t *testing.T) *store.Store {
 }
 
 // prdFixtures maps each PRD §5.16 example query ("treat them as
-// acceptance fixtures") onto its builtin metric row (005_metrics.sql —
-// expr/groupBy/denominator are LOCKED to the migration by this table) plus
-// the hand-computed seed expectation. interpretation records how v1
+// acceptance fixtures") onto its builtin metric row (schema.sql —
+// expr/groupBy/denominator are LOCKED to the baseline seed by this table)
+// plus the hand-computed seed expectation. interpretation records how v1
 // expresses examples the frozen grammar cannot state literally (DoD:
 // "demonstrably expressible" — never silently).
 var prdFixtures = []struct {
@@ -125,13 +125,13 @@ var prdFixtures = []struct {
 }
 
 // TestPRDFixtureMetrics is the acceptance test: every PRD §5.16
-// example must (a) exist as a builtin whose migration expr matches this
+// example must (a) exist as a builtin whose seeded expr matches this
 // table, (b) compile, (c) return the hand-computed seed values with labels
 // and sample sizes, and (d) carry formula documentation.
 func TestPRDFixtureMetrics(t *testing.T) {
 	st := seededStore(t)
 
-	// (a) Lock the migration's builtin rows to this table.
+	// (a) Lock the schema-seeded builtin rows to this table.
 	res, err := st.RunReadOnly(
 		`SELECT name, expr, group_by, denominator, doc FROM metrics WHERE origin = 'builtin' ORDER BY name`,
 		nil, 100, 5000,
@@ -149,11 +149,11 @@ func TestPRDFixtureMetrics(t *testing.T) {
 	for _, f := range prdFixtures {
 		row, ok := got[f.name]
 		if !ok {
-			t.Errorf("builtin %q missing from migration", f.name)
+			t.Errorf("builtin %q missing from the schema seed", f.name)
 			continue
 		}
 		if row[0] != f.expr || row[1] != f.groupBy || row[2] != f.denominator {
-			t.Errorf("builtin %q migration row = expr %q group %q denom %q, want expr %q group %q denom %q",
+			t.Errorf("builtin %q seeded row = expr %q group %q denom %q, want expr %q group %q denom %q",
 				f.name, row[0], row[1], row[2], f.expr, f.groupBy, f.denominator)
 		}
 		if row[3] == "" {

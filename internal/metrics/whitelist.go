@@ -3,11 +3,12 @@ package metrics
 import "strings"
 
 // This file IS the whitelist (frozen v1): sources, per-source columns
-// curated from internal/store/migrations/001–004, the GroupBy mapping
-// table, and the Denominator subquery sources. Compile validates every
-// identifier an expression mentions against these structures — unknown →
-// ExprError{Message,Pos}. Nothing here is derived at runtime from user
-// input; the maps are the single place a schema change must be mirrored.
+// curated from the store's schema (internal/store/schema.sql), the
+// GroupBy mapping table, and the Denominator subquery sources. Compile
+// validates every identifier an expression mentions against these
+// structures — unknown → ExprError{Message,Pos}. Nothing here is derived
+// at runtime from user input; the maps are the single place a schema
+// change must be mirrored.
 
 // Sources are the v1 single-source tables (package doc).
 var sources = []string{

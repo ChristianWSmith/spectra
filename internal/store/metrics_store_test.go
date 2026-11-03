@@ -10,18 +10,28 @@ import (
 
 // metricColumnsContract is the coordination contract with
 // platform_store.go (its metricsTableDDL must stay column-compatible).
-// The pragma order below IS the migration's column order — drift breaks
+// The pragma order below IS the schema.sql column order — drift breaks
 // the plugin writer's explicit INSERT list.
 var metricColumnsContract = []string{
 	"id", "name", "title", "expr", "group_by", "format", "doc", "origin",
 	"plugin_id", "denominator", "created_at",
 }
 
-// TestMigration005Metrics reopens a file store (migrations must be
-// idempotent) and asserts the M5 tables, the metrics column contract, and
-// the seven PRD §5.16 builtin fixtures.
-func TestMigration005Metrics(t *testing.T) {
+// TestMetricsSchemaFreshOpen: a fresh Open creates the M5 tables and
+// seeds the seven builtin metrics; a second Open re-applies the baseline
+// as a no-op — the seed INSERT is idempotent, so no builtin rows are
+// duplicated — and the metrics column contract plus the builtin set still
+// hold.
+func TestMetricsSchemaFreshOpen(t *testing.T) {
 	s, path := openFileStore(t)
+	for _, table := range []string{"metrics", "query_history", "saved_queries"} {
+		var name string
+		if err := s.db.QueryRow(
+			`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`, table,
+		).Scan(&name); err != nil {
+			t.Fatalf("table %s missing on fresh Open: %v", table, err)
+		}
+	}
 	if err := s.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
@@ -39,14 +49,8 @@ func TestMigration005Metrics(t *testing.T) {
 		if err := s2.db.QueryRow(
 			`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`, table,
 		).Scan(&name); err != nil {
-			t.Fatalf("table %s missing: %v", table, err)
+			t.Fatalf("table %s missing after reopen: %v", table, err)
 		}
-	}
-	var applied int
-	if err := s2.db.QueryRow(
-		`SELECT COUNT(*) FROM schema_version WHERE name = '005_metrics.sql'`,
-	).Scan(&applied); err != nil || applied != 1 {
-		t.Fatalf("005_metrics.sql applied rows = %d (err %v), want 1", applied, err)
 	}
 
 	// Column contract (platform_store.go coordination).
@@ -72,14 +76,15 @@ func TestMigration005Metrics(t *testing.T) {
 		}
 	}
 
-	// The seven builtins, names + doc present (values validated by
-	// internal/metrics fixture tests).
+	// The seven builtins, names + doc present — still exactly seven
+	// AFTER the reopen, so the baseline's seed did not duplicate rows
+	// (values validated by internal/metrics fixture tests).
 	list, err := s2.ListMetrics()
 	if err != nil {
 		t.Fatalf("ListMetrics: %v", err)
 	}
 	if len(list) != 7 {
-		t.Fatalf("builtin count = %d, want 7", len(list))
+		t.Fatalf("builtin count after reopen = %d, want 7 (no duplicate seed rows)", len(list))
 	}
 	want := map[string]bool{
 		"untraded_deaths": true, "successful_trades": true,

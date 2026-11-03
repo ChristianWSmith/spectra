@@ -10,8 +10,9 @@ import (
 
 // TestColumnListConstsMatchSchema pins G1: every hand-written per-table
 // column list const in this package names REAL columns of the table it is
-// written against (the DDL is the other half of every drift pair — a
-// migration renaming a column must fail here instead of at import time).
+// written against (the DDL in schema.sql is the other half of every drift
+// pair — a schema change renaming a column must fail here instead of at
+// import time).
 // The metrics whitelist keeps its own curated copy (a different concern —
 // internal/metrics/whitelist.go) and is checked against the same schema in
 // internal/metrics' schema-consistency test.

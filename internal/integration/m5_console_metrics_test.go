@@ -2,8 +2,8 @@ package integration_test
 
 // M5 §2.1–2.2 acceptance composition (added file — existing fixtures stay
 // untouched): the metric engine + read-only SQL console over one real
-// store lifecycle: migrations (005 metrics/saved_queries/query_history +
-// 006 plugins) → synthetic library seed → builtin metric previews →
+// store lifecycle: the baseline schema (metrics/saved_queries/query_history
+// + plugins tables) → synthetic library seed → builtin metric previews →
 // console session safety (multi-statement rejection, write rejection,
 // timeout). No demo bytes: the corpus is internal/metrics'
 // committed SQL seed.
@@ -42,7 +42,7 @@ func openSeededLibrary(t *testing.T) *store.Store {
 	return st
 }
 
-// TestM5BuiltinMetricsPreview: every migration-seeded builtin (the seven
+// TestM5BuiltinMetricsPreview: every schema-seeded builtin (the seven
 // PRD §5.16 acceptance fixtures) compiles and runs on a fresh library —
 // the DoD "demonstrably expressible" loop end to end.
 func TestM5BuiltinMetricsPreview(t *testing.T) {

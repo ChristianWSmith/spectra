@@ -9,8 +9,9 @@ import (
 )
 
 // This file is the M4 voice persistence surface: voice_presence +
-// voice_chunks (migration 004). The DB is the chunk index — audio payloads
-// stay in the sidecar's per-player .opus files (internal/sidecar).
+// voice_chunks (see the baseline schema). The DB is the chunk index —
+// audio payloads stay in the sidecar's per-player .opus files
+// (internal/sidecar).
 
 // Per-table column lists (G1). voicePresenceCols is the WHOLE row (the
 // reader selects the identical list); voiceChunksCols is the row without

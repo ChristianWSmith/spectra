@@ -5,9 +5,10 @@ import (
 	"testing"
 )
 
-// TestPluginMigrationReopen applies 006 on a fresh file DB, closes it, and
-// reopens: the plugins table must survive and migrations stay idempotent.
-func TestPluginMigrationReopen(t *testing.T) {
+// TestPluginsTableReopen: a fresh Open creates the plugins registry; a
+// second Open re-applies the baseline as a no-op and the registry still
+// answers.
+func TestPluginsTableReopen(t *testing.T) {
 	s, path := openFileStore(t)
 	if _, err := s.ListPluginRows(); err != nil {
 		t.Fatalf("ListPluginRows on fresh db: %v", err)

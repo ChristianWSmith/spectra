@@ -3,7 +3,6 @@ package store
 import (
 	"errors"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -126,7 +125,12 @@ func saveTestMatch(t *testing.T, s *Store, path, sha string, at time.Time) int64
 	return id
 }
 
-func TestOpenMigrationsIdempotent(t *testing.T) {
+// TestOpenBaselineSchemaIdempotent opens a file database, reopens it (the
+// baseline re-applies as a no-op) and checks the schema is complete: a
+// representative table from every schema surface, every column folded into
+// the core tables with its original definition, and NO schema_version
+// tracking table (the baseline carries no per-file state).
+func TestOpenBaselineSchemaIdempotent(t *testing.T) {
 	s, path := openFileStore(t)
 	if err := s.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
@@ -137,25 +141,17 @@ func TestOpenMigrationsIdempotent(t *testing.T) {
 	}
 	defer func() { _ = s2.Close() }()
 
-	entries, err := migrationsFS.ReadDir("migrations")
-	if err != nil {
-		t.Fatalf("list migrations: %v", err)
-	}
-	wantMigrations := 0
-	for _, e := range entries {
-		if !e.IsDir() && strings.HasSuffix(e.Name(), ".sql") {
-			wantMigrations++
-		}
-	}
-	var n int
-	if err := s2.db.QueryRow(`SELECT COUNT(*) FROM schema_version`).Scan(&n); err != nil {
-		t.Fatalf("schema_version: %v", err)
-	}
-	if n != wantMigrations {
-		t.Fatalf("schema_version rows = %d, want %d (each migration applied exactly once)", n, wantMigrations)
-	}
-	for _, table := range []string{"matches", "teams", "players", "player_stats", "rounds",
-		"round_economy", "events", "generic_events", "chat", "warnings", "jobs"} {
+	// Tables from every schema surface (core, analytics, voice, metrics/
+	// console, platform, round sides).
+	for _, table := range []string{
+		"matches", "teams", "players", "player_stats", "rounds",
+		"round_economy", "events", "generic_events", "chat", "warnings", "jobs",
+		"round_classifications", "player_round_stats", "clutches", "engagements",
+		"utility_events", "player_career", "saved_filters", "analysis_config",
+		"voice_presence", "voice_chunks",
+		"metrics", "saved_queries", "query_history",
+		"plugins", "round_player_sides",
+	} {
 		var name string
 		if err := s2.db.QueryRow(
 			`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`, table,
@@ -163,32 +159,72 @@ func TestOpenMigrationsIdempotent(t *testing.T) {
 			t.Errorf("table %s missing: %v", table, err)
 		}
 	}
+
+	// Columns folded into the core tables keep their original definitions
+	// (type, NOT NULL, default / NULL-ability).
+	cols := []struct {
+		table, column, typ string
+		notnull            int
+		dflt               string // "" = no default (NULL)
+	}{
+		{"matches", "position_format", "INTEGER", 1, "0"},
+		{"matches", "sample_rate", "INTEGER", 1, "0"},
+		{"matches", "position_frames", "INTEGER", 1, "0"},
+		{"matches", "enc_messages", "INTEGER", 1, "0"},
+		{"events", "pos_x", "REAL", 0, ""},
+		{"events", "pos_y", "REAL", 0, ""},
+		{"events", "pos_z", "REAL", 0, ""},
+		{"events", "apos_x", "REAL", 0, ""},
+		{"events", "apos_y", "REAL", 0, ""},
+		{"events", "apos_z", "REAL", 0, ""},
+		{"rounds", "pregame", "INTEGER", 1, "0"},
+		{"player_stats", "flash_assists", "INTEGER", 1, "0"},
+		{"player_stats", "two_k", "INTEGER", 1, "0"},
+		{"chat", "decrypted", "INTEGER", 1, "0"},
+		{"chat", "key_source", "TEXT", 1, "''"},
+	}
+	for _, c := range cols {
+		var dflt any
+		if c.dflt != "" {
+			dflt = c.dflt
+		}
+		var n int
+		if err := s2.db.QueryRow(
+			`SELECT COUNT(*) FROM pragma_table_info(?)
+			 WHERE name = ? AND type = ? AND "notnull" = ? AND dflt_value IS ?`,
+			c.table, c.column, c.typ, c.notnull, dflt,
+		).Scan(&n); err != nil || n != 1 {
+			t.Errorf("column %s.%s: match count %d (err %v), want %s notnull=%d default=%q",
+				c.table, c.column, n, err, c.typ, c.notnull, c.dflt)
+		}
+	}
+
+	// No schema_version tracking table — the baseline carries no
+	// per-file state.
+	var n int
+	if err := s2.db.QueryRow(
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'schema_version'`,
+	).Scan(&n); err != nil || n != 0 {
+		t.Errorf("schema_version table count = %d (err %v), want 0", n, err)
+	}
 }
 
-// TestMigration002ReplayColumns reopens an existing database and checks the
-// M2 columns: match-side position mirrors default to 0 and event positions
-// to NULL (the ALTER ADD COLUMN defaults that migration 002 ships).
-func TestMigration002ReplayColumns(t *testing.T) {
-	s, path := openFileStore(t)
-	id := saveTestMatch(t, s, "/d/m2.dem", "sha-mig002", time.Now())
-	// Rewrite as a pre-M2 row: events without positions read as NULL → nil.
-	em := testExtracted("sha-mig002", time.Now())
+// TestReplayColumnsFreshOpen: a fresh Open creates the tactical-replay
+// columns — match-side position mirrors default to 0 and event world
+// positions to NULL (events written without positions read as nil).
+func TestReplayColumnsFreshOpen(t *testing.T) {
+	s := openMem(t)
+	id := saveTestMatch(t, s, "/d/replay.dem", "sha-replay", time.Now())
+	// Events written without positions read as NULL → nil.
+	em := testExtracted("sha-replay", time.Now())
 	for i := range em.Events {
 		em.Events[i].PosX, em.Events[i].PosY, em.Events[i].PosZ = nil, nil, nil
 	}
 	if err := s.SaveExtracted(id, em); err != nil {
 		t.Fatalf("SaveExtracted: %v", err)
 	}
-	if err := s.Close(); err != nil {
-		t.Fatalf("Close: %v", err)
-	}
-	s2, err := Open(path) // second Open: migration 002 must not re-run/fail
-	if err != nil {
-		t.Fatalf("reopen: %v", err)
-	}
-	defer func() { _ = s2.Close() }()
 
-	m, err := s2.GetMatch(id)
+	m, err := s.GetMatch(id)
 	if err != nil {
 		t.Fatalf("GetMatch: %v", err)
 	}
@@ -197,7 +233,7 @@ func TestMigration002ReplayColumns(t *testing.T) {
 			m.PositionFormat, m.SampleRate, m.PositionFrames)
 	}
 
-	rows, err := s2.GetEvents(models.EventFilter{MatchID: id, Round: -1})
+	rows, err := s.GetEvents(models.EventFilter{MatchID: id, Round: -1})
 	if err != nil {
 		t.Fatalf("GetEvents: %v", err)
 	}
@@ -244,69 +280,35 @@ func TestSetPositionMeta(t *testing.T) {
 	}
 }
 
-// TestMigration010TwoKBackfill reopens a database staged as pre-010 (the
-// two_k column dropped, its schema_version row removed) with analytics rows
-// present, and checks that migration 010 adds the column AND backfills it
-// from player_round_stats (rounds with exactly 2 kills per player).
-func TestMigration010TwoKBackfill(t *testing.T) {
-	s, path := openFileStore(t)
-	id := saveTestMatch(t, s, "/d/mig010.dem", "sha-mig010", time.Now())
-	// Analytics rows: alice has two 2-kill rounds (and one 3-kill round
-	// that must NOT count), bob none.
-	if err := s.ReplacePlayerRounds(id, []models.PlayerRoundStat{
-		{Round: 1, SteamID: "100", Name: "alice", Kills: 2},
-		{Round: 2, SteamID: "100", Name: "alice", Kills: 2},
-		{Round: 3, SteamID: "100", Name: "alice", Kills: 3},
-		{Round: 1, SteamID: "200", Name: "bob", Kills: 1},
-	}); err != nil {
-		t.Fatalf("ReplacePlayerRounds: %v", err)
+// TestTwoKColumn: player_stats.two_k exists after a fresh Open as
+// INTEGER NOT NULL DEFAULT 0 — the exclusive 2K scoreboard tier (same
+// rule as 3K/4K/5K; the extractor writes the value on import) — and the
+// scoreboard reads it back.
+func TestTwoKColumn(t *testing.T) {
+	s := openMem(t)
+	var n int
+	if err := s.db.QueryRow(
+		`SELECT COUNT(*) FROM pragma_table_info('player_stats')
+		 WHERE name = 'two_k' AND type = 'INTEGER' AND "notnull" = 1 AND dflt_value = '0'`,
+	).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("player_stats.two_k column match count = %d (err %v), want INTEGER NOT NULL DEFAULT 0", n, err)
 	}
-	// Stage the pre-010 schema: drop the column and forget the migration.
-	if _, err := s.db.Exec(`ALTER TABLE player_stats DROP COLUMN two_k`); err != nil {
-		t.Fatalf("drop two_k: %v", err)
-	}
-	if _, err := s.db.Exec(`DELETE FROM schema_version WHERE name = '010_scoreboard_two_k.sql'`); err != nil {
-		t.Fatalf("unrecord 010: %v", err)
-	}
-	if err := s.Close(); err != nil {
-		t.Fatalf("Close: %v", err)
-	}
-	s2, err := Open(path) // second Open: 010 applies + backfills
-	if err != nil {
-		t.Fatalf("reopen: %v", err)
-	}
-	defer func() { _ = s2.Close() }()
-
-	board, err := s2.GetScoreboard(id, "", false)
+	id := saveTestMatch(t, s, "/d/twok.dem", "sha-twok", time.Now())
+	board, err := s.GetScoreboard(id, "", false)
 	if err != nil {
 		t.Fatalf("GetScoreboard: %v", err)
 	}
+	if len(board) != 2 {
+		t.Fatalf("GetScoreboard len = %d, want 2", len(board))
+	}
 	for _, r := range board {
-		switch r.SteamID {
-		case "100":
-			if r.TwoK != 2 {
-				t.Errorf("alice two_k = %d, want 2 (backfilled from player_round_stats)", r.TwoK)
-			}
-		case "200":
-			if r.TwoK != 0 {
-				t.Errorf("bob two_k = %d, want 0", r.TwoK)
-			}
+		want := 0
+		if r.SteamID == "100" {
+			want = 3
 		}
-	}
-	// A second Open must not re-run (or re-backfill) the migration.
-	if err := s2.Close(); err != nil {
-		t.Fatalf("Close: %v", err)
-	}
-	s3, err := Open(path)
-	if err != nil {
-		t.Fatalf("third open: %v", err)
-	}
-	defer func() { _ = s3.Close() }()
-	var applied int
-	if err := s3.db.QueryRow(
-		`SELECT COUNT(*) FROM schema_version WHERE name = '010_scoreboard_two_k.sql'`,
-	).Scan(&applied); err != nil || applied != 1 {
-		t.Errorf("010 applied rows = %d (err %v), want 1", applied, err)
+		if r.TwoK != want {
+			t.Errorf("player %s two_k = %d, want %d", r.SteamID, r.TwoK, want)
+		}
 	}
 }
 

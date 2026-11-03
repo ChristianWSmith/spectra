@@ -12,8 +12,8 @@ import (
 //
 //	a) every source the metrics whitelist exposes — and every column of it —
 //	   exists in the store's real schema (Store.Schema over the embedded
-//	   migrations), so a migration/DDL change cannot silently invalidate a
-//	   compiled metric;
+//	   baseline schema.sql), so a schema/DDL change cannot silently
+//	   invalidate a compiled metric;
 //	b) the SQL console's schema browser annotates every metrics source
 //	   (query.Session.Schema notes ⊇ whitelist sources), so a source the
 //	   expression grammar accepts is documented where users browse it.

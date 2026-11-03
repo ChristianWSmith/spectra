@@ -91,8 +91,8 @@ func main() {
 		kvs.Get(prefsWindowWidthKey), kvs.Get(prefsWindowHeightKey),
 		defaultWindowWidth, defaultWindowHeight)
 
-	// Durable state first: data dirs, then the SQLite store (migrations +
-	// stale-job recovery run inside Open). st.Close is deferred first, so
+	// Durable state first: data dirs, then the SQLite store (baseline
+	// schema apply + stale-job recovery run inside Open). st.Close is deferred first, so
 	// LIFO makes it run last — after imp.Shutdown below, whose worker must
 	// be gone before the DB closes.
 	if err := data.EnsureDirs(); err != nil {

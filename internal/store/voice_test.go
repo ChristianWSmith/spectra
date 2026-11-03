@@ -8,14 +8,15 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/models"
 )
 
-// TestMigration004Voice reopens a file store (migrations must be
-// idempotent) and proves the M4 columns/tables exist: matches.enc_messages
-// roundtrips and voice_presence/voice_chunks accept rows.
-func TestMigration004Voice(t *testing.T) {
+// TestVoiceSchemaFreshOpen: a fresh Open creates the M4 columns/tables
+// (matches.enc_messages, voice_presence/voice_chunks), a second Open
+// re-applies the baseline as a no-op, and the voice surface roundtrips
+// after the reopen.
+func TestVoiceSchemaFreshOpen(t *testing.T) {
 	s, path := openFileStore(t)
-	id := saveTestMatch(t, s, "/d/m4.dem", "sha-mig004", time.Now())
+	id := saveTestMatch(t, s, "/d/voice.dem", "sha-voice-schema", time.Now())
 
-	em := testExtracted("sha-mig004", time.Now())
+	em := testExtracted("sha-voice-schema", time.Now())
 	em.Match.EncryptedMessages = 3
 	if err := s.SaveExtracted(id, em); err != nil {
 		t.Fatalf("SaveExtracted: %v", err)
@@ -23,7 +24,7 @@ func TestMigration004Voice(t *testing.T) {
 	if err := s.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	s2, err := Open(path) // second Open: migration 004 must not re-run/fail
+	s2, err := Open(path) // second Open: baseline re-applies as a no-op
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
@@ -36,7 +37,7 @@ func TestMigration004Voice(t *testing.T) {
 	if m.EncryptedMessages != 3 {
 		t.Errorf("enc_messages = %d, want 3", m.EncryptedMessages)
 	}
-	// Presence insert/read proves both new tables were created.
+	// Presence insert/read proves both tables were created.
 	if err := s2.InsertVoice(id, nil, models.VoicePresenceRow{
 		ChunkCount: 7, PlayerCount: 2, OutSampleRate: models.VoiceOutSampleRate,
 	}, nil); err != nil {

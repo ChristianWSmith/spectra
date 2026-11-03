@@ -53,7 +53,8 @@
 //
 // # Sources and the column whitelist
 //
-// The ten v1 sources (columns curated from the store migrations — JSON/blob
+// The ten v1 sources (columns curated from the store schema,
+// internal/store/schema.sql — JSON/blob
 // payload columns such as events.detail_json, events.raw_json,
 // utility_events.affected, player_stats.kills_by_weapon are deliberately
 // excluded): events, engagements, rounds, player_stats, player_round_stats,

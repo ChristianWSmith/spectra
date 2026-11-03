@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/ChristianWSmith/spectra/internal/models"
-	"github.com/ChristianWSmith/spectra/internal/rules"
 )
 
 // This file is the M3 persistence surface: analysis_config, the per-match
@@ -410,12 +409,8 @@ func (s *Store) GetEconomy(matchID int64) ([]models.EconomyRow, error) {
 		r.WonT = r.Winner == "t"
 		r.InferredCT, r.InferredT = true, true
 	}
-	switches := 0
-	if m, err := s.GetMatch(matchID); err == nil && m != nil {
-		switches = m.SideSwitches
-	}
 	exact, _ := s.GetRoundPlayerSides(matchID)
-	applyLossBonuses(out, sideFlips(out, switches, exact))
+	applyLossBonuses(out, sideFlips(out, exact))
 	return out, nil
 }
 
@@ -500,33 +495,24 @@ func applyLossBonuses(out []models.EconomyRow, flips []bool) {
 
 // sideFlips reports, per round index, whether the side↔team mapping
 // differs from the previous round (a side switch happened at that
-// boundary). Exact per-round freeze-end sides win when the extractor
-// persisted them (new imports — a player observed on the other side
-// proves the switch); legacy matches fall back to the equal-length half
-// heuristic (rules.FlipIndexes — the same parity model the heatmap and
-// RoundStrip use).
-func sideFlips(rounds []models.EconomyRow, switches int, exact map[int]map[string]string) []bool {
+// boundary). The comparison uses the extractor's exact per-round
+// freeze-end sides (round_player_sides): a player observed on the other
+// side proves the switch. Rounds missing exact samples on either side of
+// the boundary report no flip.
+func sideFlips(rounds []models.EconomyRow, exact map[int]map[string]string) []bool {
 	n := len(rounds)
 	flips := make([]bool, n)
-	if n == 0 {
-		return flips
-	}
-	heuristic := map[int]bool{}
-	for _, idx := range rules.FlipIndexes(n, switches) {
-		heuristic[idx] = true
-	}
 	for i := 1; i < n; i++ {
 		prev, cur := exact[rounds[i-1].Round], exact[rounds[i].Round]
-		if len(prev) > 0 && len(cur) > 0 {
-			for sid, ps := range prev {
-				if cs, ok := cur[sid]; ok && ps != "" && cs != "" && ps != cs {
-					flips[i] = true
-					break
-				}
-			}
+		if len(prev) == 0 || len(cur) == 0 {
 			continue
 		}
-		flips[i] = heuristic[i]
+		for sid, ps := range prev {
+			if cs, ok := cur[sid]; ok && ps != "" && cs != "" && ps != cs {
+				flips[i] = true
+				break
+			}
+		}
 	}
 	return flips
 }
@@ -752,9 +738,9 @@ func (s *Store) GetRoundInfos(matchID int64) ([]models.RoundInfo, error) {
 }
 
 // GetRoundPlayerSides returns the extractor's per-round side samples as
-// round → steamID → side (round ASC). Empty map when the match predates
-// the round_player_sides migration — callers fall back to final-side
-// parity there.
+// round → steamID → side (round ASC). Empty map when the match has no
+// stored samples (e.g. an import that failed before they were written) —
+// callers treat a missing sample as an unknown side (no guess).
 func (s *Store) GetRoundPlayerSides(matchID int64) (map[int]map[string]string, error) {
 	rows, err := s.db.Query(
 		`SELECT round, steam_id, side FROM round_player_sides

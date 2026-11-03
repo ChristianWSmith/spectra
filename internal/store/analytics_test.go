@@ -9,9 +9,24 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/models"
 )
 
-func TestMigration003AnalyticsTables(t *testing.T) {
+// TestAnalyticsTablesFreshOpen: a fresh Open creates the analytics
+// tables; a second Open re-applies the baseline as a no-op (no error) and
+// the stored rows survive.
+func TestAnalyticsTablesFreshOpen(t *testing.T) {
 	s, path := openFileStore(t)
-	id := saveTestMatch(t, s, "/d/m3.dem", "sha-mig003", time.Now())
+	analyticsTables := []string{
+		"round_classifications", "player_round_stats", "clutches", "engagements",
+		"utility_events", "player_career", "saved_filters", "analysis_config",
+	}
+	for _, table := range analyticsTables {
+		var name string
+		if err := s.db.QueryRow(
+			`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`, table,
+		).Scan(&name); err != nil {
+			t.Errorf("table %s missing on fresh Open: %v", table, err)
+		}
+	}
+	id := saveTestMatch(t, s, "/d/analytics.dem", "sha-analytics", time.Now())
 	if err := s.ReplaceRoundClassifications(id, []models.RoundClassification{
 		{Round: 1, Label: "pistol", Confidence: 1, RuleVersion: 1, Explanation: "half start"},
 	}); err != nil {
@@ -20,20 +35,17 @@ func TestMigration003AnalyticsTables(t *testing.T) {
 	if err := s.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	s2, err := Open(path) // reopen: 003 must not re-run/fail
+	s2, err := Open(path) // second Open: baseline re-applies as a no-op
 	if err != nil {
 		t.Fatalf("reopen: %v", err)
 	}
 	defer func() { _ = s2.Close() }()
-	for _, table := range []string{
-		"round_classifications", "player_round_stats", "clutches", "engagements",
-		"utility_events", "player_career", "saved_filters", "analysis_config",
-	} {
+	for _, table := range analyticsTables {
 		var name string
 		if err := s2.db.QueryRow(
 			`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`, table,
 		).Scan(&name); err != nil {
-			t.Errorf("table %s missing: %v", table, err)
+			t.Errorf("table %s missing after reopen: %v", table, err)
 		}
 	}
 	rows, err := s2.GetRoundClasses(id)
@@ -234,7 +246,7 @@ func TestGetEconomyLossBonus(t *testing.T) {
 	// CS2 loss-count rules: every half starts at loss count 1, a loss
 	// steps the count up (+$500 each, cap $3400) and a win steps it DOWN
 	// by one (it does not reset). CT wins all three rounds here —
-	// no side switch in this fixture (SideSwitches 0).
+	// no side switch in this fixture.
 	//   r1: both teams enter at count 1 → 1900/1900 (pistol rule);
 	//   r2: CT won → count 0 → 1400; T lost twice → count 2 → 2400;
 	//   r3: CT still 0 → 1400; T count 3 → 2900.
