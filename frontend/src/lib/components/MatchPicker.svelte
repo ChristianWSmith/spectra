@@ -14,7 +14,7 @@
   import StatusChip from './StatusChip.svelte';
   import Popover from './Popover.svelte';
 
-  let { matches = [], value = 0, onselect = () => {}, id = '' } = $props();
+  let { matches = [], value = 0, onselect = () => {}, id = '', placeholder = 'Select match…' } = $props();
 
   let open = $state(false);
   let query = $state('');
@@ -138,7 +138,7 @@
       >
       <span class="mp-trigger-id mono muted">#{cur.id}</span>
     {:else}
-      <span class="muted">Select match…</span>
+      <span class="muted">{placeholder}</span>
     {/if}
     <span class="mp-caret" aria-hidden="true"><span class="codicon {open ? 'codicon-chevron-up' : 'codicon-chevron-down'}"></span></span>
   </button>
@@ -194,7 +194,7 @@
           {/each}
         </div>
       {:else}
-        <p class="mp-empty muted">
+        <p class="mp-empty muted" role="status">
           {query.trim()
             ? `No matches match “${query.trim()}”.`
             : 'No matches yet — import one in the Library.'}

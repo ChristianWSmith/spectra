@@ -4,7 +4,7 @@
   // pending-filter contract ({round}).
   import { setPendingSeek, setPendingTimelineFilter } from '../services.js';
   import { fmtDuration } from '../fmt.js';
-  import { openProfile } from '../nav.js';
+  import ProfileLink from './ProfileLink.svelte';
 
   let { clutch, id = 0, nav = () => {}, tickRate = 64 } = $props();
 
@@ -52,11 +52,12 @@
     {#if clutch.bombState && clutch.bombState !== 'none'}
       <span class="chip">bomb {clutch.bombState}</span>
     {/if}
-    <button
-      class="comb-name-btn"
+    <ProfileLink
+      steam={clutch.steamId}
+      name={clutch.name || '—'}
+      {nav}
       title="Open player profile"
-      onclick={() => openProfile(nav, clutch.steamId)}
-    >{clutch.name || '—'}</button>
+    />
     {#if clutch.equip > 0}
       <span class="muted">equip {clutch.equip}</span>
     {/if}

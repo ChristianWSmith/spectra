@@ -212,7 +212,7 @@
           {/each}
         </div>
       {:else}
-        <p class="pp-empty muted">
+        <p class="pp-empty muted" role="status">
           {query.trim()
             ? `No players match “${query.trim()}”.`
             : 'No players yet — import a match in the Library.'}

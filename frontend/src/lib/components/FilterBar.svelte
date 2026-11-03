@@ -10,26 +10,14 @@
   //   id       — match id (> 0 loads the round/player options and the
   //              scoreboard's killsByWeapon union for the weapon select).
   import { getRounds, getScoreboard } from '../services.js';
+  import { isCounted } from '../rounds.js';
+  import { LANDMARK_KINDS } from '../replay/landmarks.js';
 
   let { filter = {}, onchange = () => {}, id = 0 } = $props();
 
-  // Hardcoded kind list — mirrors models.EventKind (Go side).
-  const KINDS = [
-    'kill',
-    'damage',
-    'blind',
-    'bomb_plant',
-    'bomb_defuse',
-    'bomb_explode',
-    'bomb_drop',
-    'bomb_pickup',
-    'grenade_throw',
-    'grenade',
-    'round_start',
-    'round_end',
-    'player_connect',
-    'player_disconnect',
-  ];
+  // The kind list lives in lib/replay/landmarks.js — the one mirror of
+  // models.EventKind (Go side), shared with the replay surfaces.
+  const KINDS = LANDMARK_KINDS;
 
   // Fallback weapon list — the live union of scoreboard killsByWeapon keys
   // is merged on top (see weapons below).
@@ -207,9 +195,10 @@
     Round
     <select class="input" id="filt-round" value={f.round} onchange={(e) => set('round', Number(e.currentTarget.value))}>
       <option value={-1}>All</option>
-      <!-- Counted rounds only: knife/warmup rounds are numbered
-           negatively, and -1 is this filter's "all rounds" sentinel. -->
-      {#each rounds.filter((r) => r.number >= 1) as r (r.number)}
+      <!-- Counted rounds only (lib/rounds.js): knife/warmup rounds are
+           numbered negatively, and -1 is this filter's "all rounds"
+           sentinel. -->
+      {#each rounds.filter(isCounted) as r (r.number)}
         <option value={r.number}>R{r.number}</option>
       {/each}
     </select>

@@ -3,16 +3,16 @@
     getRoundDetail,
     getRounds,
     getMatch,
-    getScoreboard,
     getRoundClasses,
-    listMatches,
+    getTeamNames,
     setPendingSeek,
     errText,
   } from '../services.js';
   import { fmtDuration, fmtTickSeconds, fmtInt } from '../fmt.js';
-  import { isSteam, openProfile } from '../nav.js';
-  import { teamNames } from '../teams.js';
   import RoundStrip from '../components/RoundStrip.svelte';
+  import EventFlags from '../components/EventFlags.svelte';
+  import EventPlay from '../components/EventPlay.svelte';
+  import ProfileLink from '../components/ProfileLink.svelte';
 
   let { id = 0, round = 0, nav = () => {} } = $props();
 
@@ -25,7 +25,8 @@
 
   // Team display names for the round strip's above/below labels — the
   // same resolution the Match header uses (demo clan names → derived
-  // `team_<player>` → bare side), loaded once per match.
+  // `team_<player>` → bare side), resolved by Go's GetTeamNames (the
+  // synth twin of lib/teams.js — see the cross-reference there).
   let teams = $state({ ct: 'CT', t: 'T' });
 
   $effect(() => {
@@ -46,23 +47,19 @@
   });
 
   // Match-level identity (runs once per id, not per round navigation).
+  // GetTeamNames is the one-match getter ({ct, t}, synthesized
+  // team_<player> fallbacks included Go-side) — never the whole library
+  // list for one header lookup.
   $effect(() => {
     id;
     let live = true;
-    Promise.all([
-      listMatches('', 'extracted_at', false).catch(() => []),
-      getScoreboard(id, 'kills', true).catch(() => []),
-    ])
-      .then(([list, sb]) => {
-        if (!live) return;
-        const s = (list || []).find((m) => m.id === id);
-        teams = teamNames({
-          ctName: (s && s.ctName) || '',
-          tName: (s && s.tName) || '',
-          players: sb || [],
-        });
+    getTeamNames(id)
+      .then((t) => {
+        if (live && t) teams = t;
       })
-      .catch(() => {});
+      .catch(() => {
+        /* keep the CT/T defaults */
+      });
     return () => (live = false);
   });
 
@@ -173,44 +170,32 @@
             {#each kills as e (e.id)}
               <tr>
                 <td>
-                  <button
-                    class="btn small ghost"
+                  <EventPlay
+                    tick={e.tick}
                     title="Jump to this kill in the replay"
-                    aria-label="Jump to kill at tick {e.tick} in the replay"
+                    label="Jump to kill at tick {e.tick} in the replay"
                     onclick={() => watchTick(e.tick)}
-                  ><span class="codicon codicon-play"></span></button>
+                  />
                 </td>
                 <td class="num mono">{e.tick}</td>
                 <td class="ct">
-                  {#if isSteam(e.attacker)}
-                    <button
-                      class="comb-name-btn"
-                      title="Open {e.attackerName} profile"
-                      onclick={() => openProfile(nav, e.attacker)}
-                    >{e.attackerName || '—'}</button>
-                  {:else}
-                    {e.attackerName || '—'}
-                  {/if}
+                  <ProfileLink
+                    steam={e.attacker}
+                    name={e.attackerName || '—'}
+                    {nav}
+                    title="Open {e.attackerName} profile"
+                  />
                 </td>
                 <td class="mono">{e.weapon || '—'}</td>
                 <td class="t">
-                  {#if isSteam(e.victim)}
-                    <button
-                      class="comb-name-btn"
-                      title="Open {e.victimName} profile"
-                      onclick={() => openProfile(nav, e.victim)}
-                    >{e.victimName || '—'}</button>
-                  {:else}
-                    {e.victimName || '—'}
-                  {/if}
+                  <ProfileLink
+                    steam={e.victim}
+                    name={e.victimName || '—'}
+                    {nav}
+                    title="Open {e.victimName} profile"
+                  />
                 </td>
-                <td>
-                  {#if e.headshot}<span class="chip flag" title="headshot">HS</span>{/if}
-                  {#if e.wallbang}<span class="chip flag" title="wallbang">WB</span>{/if}
-                  {#if e.noscope}<span class="chip flag" title="no scope">NS</span>{/if}
-                  {#if e.throughSmoke}<span class="chip flag" title="through smoke">SMK</span>{/if}
-                  {#if e.attackerBlind}<span class="chip flag" title="attacker blind">BLD</span>{/if}
-                </td>
+                <td><EventFlags event={e} /></td>
               </tr>
             {:else}
               <tr><td colspan="6" class="muted">No kills recorded in this round.</td></tr>

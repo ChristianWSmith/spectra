@@ -15,6 +15,7 @@
   import PlayerProfile from './lib/views/PlayerProfile.svelte';
   import CompareRounds from './lib/views/CompareRounds.svelte';
   import { parseHash } from './lib/router.js';
+  import { NAV_ACTIONS } from './lib/nav.js';
 
   // Hand-rolled hash router: the route table (parseHash) lives in
   // lib/router.js with its own tests; this component owns the hashchange
@@ -72,53 +73,14 @@
       <img src="/wails.png" alt="" width="22" height="22" />
       <span class="brand-name">spectra</span>
     </div>
-    <button
-      class="nav-item"
-      class:active={route.name === 'library' ||
-        route.name === 'match' ||
-        route.name === 'round' ||
-        route.name === 'replay' ||
-        route.name === 'player' ||
-        route.name === 'compare'}
-      onclick={() => nav('/library')}
-    >
-      Library
-    </button>
-    <button
-      class="nav-item"
-      class:active={route.name === 'settings'}
-      onclick={() => nav('/settings')}
-    >
-      Settings
-    </button>
-    <button
-      class="nav-item"
-      class:active={route.name === 'builder'}
-      onclick={() => nav('/builder')}
-    >
-      Builder
-    </button>
-    <button
-      class="nav-item"
-      class:active={route.name === 'sql'}
-      onclick={() => nav('/sql')}
-    >
-      SQL console
-    </button>
-    <button
-      class="nav-item"
-      class:active={route.name === 'explorer'}
-      onclick={() => nav('/explorer')}
-    >
-      Explorer
-    </button>
-    <button
-      class="nav-item"
-      class:active={route.name === 'reports'}
-      onclick={() => nav('/reports')}
-    >
-      Reports
-    </button>
+    <!-- One action list, shared with CommandPalette's Actions section
+         (lib/nav.js NAV_ACTIONS) — membership, order and labels live
+         there; active(route) drives the highlight here. -->
+    {#each NAV_ACTIONS as a (a.label)}
+      <button class="nav-item" class:active={a.active(route)} onclick={() => nav(a.hash)}>
+        {a.label}
+      </button>
+    {/each}
     <div class="spacer"></div>
   </nav>
   <main class="content">
@@ -139,9 +101,9 @@
     {:else if route.name === 'sql'}
       <SqlConsole {nav} />
     {:else if route.name === 'explorer'}
-      <Explorer {nav} />
+      <Explorer {nav} routeId={route.id || 0} />
     {:else if route.name === 'reports'}
-      <Reports {nav} />
+      <Reports {nav} routeId={route.id || 0} />
     {:else if route.name === 'settings'}
       <Settings />
     {/if}

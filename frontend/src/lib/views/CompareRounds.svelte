@@ -120,7 +120,7 @@
 
   {#if !sel}
     <section class="panel">
-      <p class="muted">
+      <p class="muted" role="status">
         No rounds selected. Open the match's <strong>Rounds</strong> tab, tick
         two to four rounds (max 4), then press <strong>Compare</strong>.
       </p>
@@ -149,7 +149,7 @@
           </h3>
 
           {#if !col.detail}
-            <p class="muted">Round not found.</p>
+            <p class="muted" role="status">Round not found.</p>
           {:else}
             <div>
               <p class="section-title cmp-sec-t">Economy</p>

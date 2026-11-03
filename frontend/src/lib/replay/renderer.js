@@ -2,11 +2,14 @@
 //
 // Layers, bottom → top: radar (or world grid) → movement trails → grenade
 // landmarks → bomb → players → HUD. Camera is a pan/zoom view over the
-// radar's image-pixel space; world→image uses the map pack's transform:
-//   px = (wx - pos_x) / scale
-//   py = (pos_y - wy) / scale        (Z-up world, inverted Y)
-// With no transform (missing pack) one is derived from sample extents so a
-// blank coordinate grid still frames the players.
+// radar's image-pixel space; world→image uses the map pack's transform —
+// the canonical pack→transform reader is makeTransform (lib/components/
+// mapxform.js, shared with HeatmapLayer): px=(wx-pos_x)/scale,
+// py=(pos_y-wy)/scale (Z-up world, inverted Y). With no transform
+// (missing pack) one is derived from sample extents so a blank
+// coordinate grid still frames the players.
+import { makeTransform } from '../components/mapxform.js';
+import { classifyLandmark } from './landmarks.js';
 
 const CT_COLOR = '#5aa9e6';
 const T_COLOR = '#e6a35a';
@@ -39,6 +42,8 @@ export function createRenderer(canvas, { engine, data, players }) {
   let slotSides = (players || []).map((p) => p.side);
   let slotNames = (players || []).map((p) => p.name || '');
   let pack = null; // map pack meta.json or null
+  let packTf = null; // makeTransform(meta) output — the canonical
+  //                    pack→{posX,posY,scale,width,height} derivation
   let radar = null; // Image, when the pack ships one
   let landmarks = [];
   let polylines = []; // grenade throw→detonate pairs
@@ -53,7 +58,10 @@ export function createRenderer(canvas, { engine, data, players }) {
   // Camera: center of view in image-pixel space + zoom multiplier over the
   // fit scale (which is recomputed on resize).
   const cam = { cx: 0, cy: 0, zoom: 1, fit: 1 };
-  // Effective world→image transform + image extent, rebuilt by reproject().
+  // Effective world→image transform + image extent, rebuilt by reproject()
+  // from packTf (makeTransform's canonical derivation) or sample bounds.
+  // The numeric fields — not an allocating toImage() call — keep the
+  // per-frame paths (drawTrails) allocation-free.
   const tf = { pos_x: 0, pos_y: 0, scale: 1 };
   let extW = 1024;
   let extH = 1024;
@@ -81,19 +89,20 @@ export function createRenderer(canvas, { engine, data, players }) {
   }
 
   // reproject derives the effective transform + extent from whatever we have:
-  // pack transform ± radar size, else sample bounds.
+  // the pack transform (via makeTransform — packTf) ± radar size, else
+  // sample bounds (the no-pack fallback stays renderer-only).
   function reproject() {
     const b = store ? store.bounds : { minX: 0, maxX: 1024, minY: 0, maxY: 1024 };
     const spanX = Math.max(1, b.maxX - b.minX);
     const spanY = Math.max(1, b.maxY - b.minY);
-    if (pack && pack.transform && Number.isFinite(pack.transform.pos_x)) {
-      tf.pos_x = pack.transform.pos_x;
-      tf.pos_y = pack.transform.pos_y;
-      tf.scale = pack.transform.scale > 0 ? pack.transform.scale : 1;
-      const rw = pack.radar && pack.radar.width > 0 ? pack.radar.width : 1024;
-      const rh = pack.radar && pack.radar.height > 0 ? pack.radar.height : 1024;
-      extW = rw;
-      extH = rh;
+    if (packTf && Number.isFinite(packTf.posX)) {
+      tf.pos_x = packTf.posX;
+      tf.pos_y = packTf.posY;
+      // makeTransform copies scale verbatim; keep the renderer's
+      // degenerate-scale guard (0/negative would divide to NaN/infinity).
+      tf.scale = packTf.scale > 0 ? packTf.scale : 1;
+      extW = packTf.width;
+      extH = packTf.height;
       if (radar) packNote = '';
       else packNote = 'map pack has no radar image — grid only';
     } else {
@@ -128,9 +137,14 @@ export function createRenderer(canvas, { engine, data, players }) {
     draw();
   }
 
-  function setPack(newPack, image) {
+  // setPack(meta, image, transform): transform is the makeTransform()
+  // output loadMapPack already built (Replay passes it through); a caller
+  // handing us a bare meta gets it derived here — either way makeTransform
+  // is the single pack→transform reader.
+  function setPack(newPack, image, transform) {
     pack = newPack || null;
     radar = image || null;
+    packTf = transform || (pack ? makeTransform(pack) : null);
     fit();
   }
 
@@ -144,13 +158,15 @@ export function createRenderer(canvas, { engine, data, players }) {
     explodes = [];
     defuses = [];
     for (const l of landmarks) {
-      const k = String(l.kind || '').toLowerCase();
-      if (k === 'grenade_throw') {
+      const bucket = classifyLandmark(l.kind);
+      if (bucket === 'throw') {
         // pair with the nearest detonation of same round+thrower+weapon
+        // (the partner filter is the detonation bucket — 'grenade' for
+        // real data; 'he'/'he_explode' aliases bucket the same way).
         let best = null;
         let bestDelta = Infinity;
         for (const d of landmarks) {
-          if (String(d.kind).toLowerCase() !== 'grenade') continue;
+          if (classifyLandmark(d.kind) !== 'detonation') continue;
           if (d.round !== l.round) continue;
           if (l.steamId && d.steamId !== l.steamId) continue;
           if (l.weapon && d.weapon && d.weapon !== l.weapon) continue;
@@ -162,17 +178,17 @@ export function createRenderer(canvas, { engine, data, players }) {
           }
         }
         polylines.push({ from: l, to: best });
-      } else if (k === 'grenade' || k === 'he' || k === 'he_explode') {
+      } else if (bucket === 'detonation') {
         dets.push(l);
-      } else if (k.includes('smoke')) {
+      } else if (bucket === 'smoke') {
         smokes.push(l);
-      } else if (k.includes('fire') || k.includes('molotov')) {
+      } else if (bucket === 'fire') {
         fires.push(l);
-      } else if (k === 'bomb_plant') {
+      } else if (bucket === 'plant') {
         plants.push(l);
-      } else if (k === 'bomb_explode') {
+      } else if (bucket === 'explode') {
         explodes.push(l);
-      } else if (k === 'bomb_defuse') {
+      } else if (bucket === 'defuse') {
         defuses.push(l);
       }
     }

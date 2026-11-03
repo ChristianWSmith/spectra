@@ -13,7 +13,6 @@
     errText,
   } from '../services.js';
   import { fmtInt, fmtPercent } from '../fmt.js';
-  import { isSteam, openProfile } from '../nav.js';
   import {
     KAST_DEF,
     DMG_CONV_DEF,
@@ -26,6 +25,8 @@
   import ClutchCard from '../components/ClutchCard.svelte';
   import Dialog from '../components/Dialog.svelte';
   import SortTh from '../components/SortTh.svelte';
+  import EventPlay from '../components/EventPlay.svelte';
+  import ProfileLink from '../components/ProfileLink.svelte';
 
   let { id = 0, nav = () => {} } = $props();
 
@@ -82,6 +83,7 @@
   // KAST drill-down modal (per-round K/A/T/S grid).
   let kastSteam = $state('');
   let kastName = $state('');
+  let kastPct = $state(null); // the row's displayed KAST% (never recomputed)
   let kastRows = $state([]);
   let kastLoading = $state(false);
   let kastError = $state('');
@@ -150,10 +152,14 @@
     return e.wonBy || '—';
   }
 
-  // KAST% cell click → per-round K/A/T/S grid for that player.
+  // KAST% cell click → per-round K/A/T/S grid for that player. The modal
+  // header shows THIS row's kastPct — the exact value the column renders —
+  // so the two can never disagree; the per-round grid below is the
+  // breakdown behind it.
   async function openKast(row) {
     kastSteam = row.steamId;
     kastName = row.name;
+    kastPct = Number.isFinite(row.kastPct) ? row.kastPct : null;
     kastRows = [];
     kastError = '';
     kastLoading = true;
@@ -169,6 +175,7 @@
 
   function closeKast() {
     kastSteam = '';
+    kastPct = null;
     kastRows = [];
     kastError = '';
   }
@@ -235,12 +242,12 @@
           {#each visibleEngagements as e, i (i)}
             <tr>
               <td>
-                <button
-                  class="btn small ghost"
+                <EventPlay
+                  tick={e.tick}
                   title="Watch this engagement in the replay"
-                  aria-label="Watch tick {e.tick} in the replay"
+                  label="Watch tick {e.tick} in the replay"
                   onclick={() => replay(e.tick)}
-                ><span class="codicon codicon-play"></span></button>
+                />
               </td>
               <td class="num mono">{e.tick}</td>
               <td class="num"><span class="chip round-chip">R{e.round}</span></td>
@@ -250,21 +257,11 @@
                 </span>
               </td>
               <td>
-                <button
-                  class="comb-name-btn"
-                  disabled={!isSteam(e.aSteam)}
-                  title={isSteam(e.aSteam) ? `Open profile — ${e.aName}` : ''}
-                  onclick={() => openProfile(nav, e.aSteam)}
-                >{e.aName || '—'}</button>
+                <ProfileLink steam={e.aSteam} name={e.aName || '—'} {nav} title="Open profile — {e.aName}" />
               </td>
               <td class="muted">vs</td>
               <td>
-                <button
-                  class="comb-name-btn"
-                  disabled={!isSteam(e.bSteam)}
-                  title={isSteam(e.bSteam) ? `Open profile — ${e.bName}` : ''}
-                  onclick={() => openProfile(nav, e.bSteam)}
-                >{e.bName || '—'}</button>
+                <ProfileLink steam={e.bSteam} name={e.bName || '—'} {nav} title="Open profile — {e.bName}" />
               </td>
               <td class="num">{e.distance ? Math.round(e.distance) : '—'}</td>
               <td class="muted">{wonByName(e)}</td>
@@ -309,12 +306,12 @@
               {#each STAT_COLS as col (col.key)}
                 {#if col.key === 'name'}
                   <td>
-                    <button
-                      class="comb-name-btn"
-                      disabled={!isSteam(r.steamId)}
-                      title={isSteam(r.steamId) ? 'Open player profile' : ''}
-                      onclick={() => openProfile(nav, r.steamId)}
-                    >{r.name}</button>
+                    <ProfileLink
+                      steam={r.steamId}
+                      name={r.name}
+                      {nav}
+                      title="Open player profile"
+                    />
                   </td>
                 {:else if col.key === 'kastPct'}
                   <td class="num">
@@ -348,7 +345,9 @@
     </div>
     <p class="muted" title={KAST_DEF}>
       {#if kastRows.length > 0}
-        {fmtPercent((kastRows.filter((r) => r.kast).length / kastRows.length) * 100)} KAST over
+        {kastPct != null
+          ? fmtPercent(kastPct)
+          : fmtPercent((kastRows.filter((r) => r.kast).length / kastRows.length) * 100)} KAST over
         {kastRows.length} rounds —
       {/if}
       dots = K kill · A assist · T traded · S survived (filled = applied).

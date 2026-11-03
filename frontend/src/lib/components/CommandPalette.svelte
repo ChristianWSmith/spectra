@@ -12,6 +12,7 @@
   } from '../services.js';
   import { toggleTheme } from '../theme.js';
   import { fmtDate } from '../fmt.js';
+  import { NAV_ACTIONS } from '../nav.js';
   import Dialog from './Dialog.svelte';
 
   let { nav = () => {} } = $props();
@@ -25,14 +26,11 @@
   let inputEl = $state(null);
   let gen = 0; // search generation — drops stale async results
 
-  const NAV_ACTIONS = [
-    { label: 'Library', run: () => nav('/library') },
-    { label: 'Builder', run: () => nav('/builder') },
-    { label: 'SQL console', run: () => nav('/sql') },
-    { label: 'Explorer', run: () => nav('/explorer') },
-    { label: 'Reports', run: () => nav('/reports') },
-    { label: 'Settings', run: () => nav('/settings') },
-  ];
+  // The sidebar's action list (lib/nav.js) rendered for the palette:
+  // same membership, order and labels as App.svelte's sidebar buttons.
+  function navActions() {
+    return NAV_ACTIONS.map((a) => ({ label: a.label, run: () => nav(a.hash) }));
+  }
 
   // Subsequence fuzzy match: consecutive + word-start bonuses, shorter
   // haystacks win ties. Returns {score, indices} or null.
@@ -88,7 +86,7 @@
   }
 
   function quickSections() {
-    const items = NAV_ACTIONS.map((a) => ({ ...a, sub: '', hl: [] }));
+    const items = navActions().map((a) => ({ ...a, sub: '', hl: [] }));
     items.push({
       label: `Toggle theme (now ${themeNow})`,
       sub: '',
@@ -222,7 +220,7 @@
   }
 
   function navSection(q) {
-    const rows = NAV_ACTIONS.map((a) => ({ ...a, sub: '' }));
+    const rows = navActions().map((a) => ({ ...a, sub: '' }));
     rows.push({
       label: `Toggle theme (now ${themeNow})`,
       sub: '',

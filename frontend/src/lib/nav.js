@@ -14,3 +14,29 @@ export function isSteam(s) {
 export function openProfile(nav, steam) {
   if (isSteam(steam)) nav(`/player/${steam}`);
 }
+
+// NAV_ACTIONS is the one sidebar action list: App.svelte renders it as
+// the sidebar buttons (active(route) drives the highlight) and
+// CommandPalette renders it as its Actions section (run closes over the
+// palette's nav). Membership and order are shared — a nav entry added
+// here appears in both surfaces.
+export const NAV_ACTIONS = [
+  {
+    label: 'Library',
+    hash: '/library',
+    // The Library is the hub: every in-app detail view (match, round,
+    // replay, profile, compare) is reached from it.
+    active: (r) =>
+      r.name === 'library' ||
+      r.name === 'match' ||
+      r.name === 'round' ||
+      r.name === 'replay' ||
+      r.name === 'player' ||
+      r.name === 'compare',
+  },
+  { label: 'Settings', hash: '/settings', active: (r) => r.name === 'settings' },
+  { label: 'Builder', hash: '/builder', active: (r) => r.name === 'builder' },
+  { label: 'SQL console', hash: '/sql', active: (r) => r.name === 'sql' },
+  { label: 'Explorer', hash: '/explorer', active: (r) => r.name === 'explorer' },
+  { label: 'Reports', hash: '/reports', active: (r) => r.name === 'reports' },
+];

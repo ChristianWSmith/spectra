@@ -540,8 +540,7 @@
   font-size: 0.88em;
 }
 
-/* Spacing only — the typography comes from .section-title (style.css).
-   Also borrowed by Reports.svelte's per-group sub-heading. */
+/* Spacing only — the typography comes from .section-title (style.css). */
 .sett-sub {
   margin-top: 6px;
 }
@@ -1137,6 +1136,12 @@ button.chip.ctx-chip.on {
 }
 
 /* --- Reports (rep-) --------------------------------------------------------- */
+
+/* Spacing only — the typography comes from .section-title (style.css).
+   Reports' per-group sub-heading (Metrics appendix groups). */
+.rep-sub {
+  margin-top: 6px;
+}
 
 .rep-tpl-grid {
   display: grid;

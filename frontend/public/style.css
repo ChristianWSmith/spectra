@@ -500,7 +500,7 @@ input[type='checkbox']:focus-visible {
 /* Section headings — ONE body. `.panel h2` is the canonical spelling;
    `.section-title` is the same heading for markup that is not an <h2>
    inside a .panel. Headings whose size carries a real hierarchy step
-   (.m5-card h3, .bld-group h3), a dense overlay's density (.cp-section)
+   (.bld-group h3), a dense overlay's density (.cp-section)
    or table chrome (.data-table th) keep their own font-size — see the
    consolidation report. */
 .panel h2,
@@ -1170,15 +1170,6 @@ input[type='checkbox']:focus-visible {
   min-width: 90px;
 }
 
-/* Raw tab */
-
-.raw-grid {
-  display: grid;
-  grid-template-columns: minmax(280px, 1fr) minmax(320px, 1.4fr);
-  gap: 16px;
-  align-items: start;
-}
-
 .payload {
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -1562,7 +1553,6 @@ input[type='checkbox']:focus-visible {
   }
 
   .roster-grid,
-  .raw-grid,
   .round-grid,
   .weapon-grid {
     grid-template-columns: 1fr;

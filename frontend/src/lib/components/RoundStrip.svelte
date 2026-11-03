@@ -12,6 +12,7 @@
 // following the SIDE. A marker splits the row after the 12th real round
 // (the MR12 halftime).
 import { flipIndexes, eraOf } from '../sideparity.js';
+import { isCounted } from '../rounds.js';
 
 let {
   rounds = [],
@@ -36,11 +37,11 @@ const HALFTIME_AFTER = 12;
 // their per-boundary split instead of one uniform era length.
 const cells = $derived.by(() => {
   const eras = Math.max(1, sideSwitches + 1);
-  const counted = rounds.filter((r) => !r.warmup && !r.pregame);
+  const counted = rounds.filter(isCounted);
   const flips = flipIndexes(counted.length, sideSwitches);
   let seen = 0;
   return rounds.map((r) => {
-    const isReal = !r.warmup && !r.pregame;
+    const isReal = isCounted(r);
     const era = isReal ? Math.min(eras - 1, eraOf(seen, flips)) : 0;
     // The team above finished CT, so it plays CT in the LAST era; each
     // earlier era flips it.

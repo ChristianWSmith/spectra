@@ -8,6 +8,7 @@
   import { downloadText } from '../download.js';
   import { toCSV } from '../csv.js';
   import { fmtInt } from '../fmt.js';
+  import EventPlay from '../components/EventPlay.svelte';
 
   let { id = 0, nav = () => {} } = $props();
 
@@ -241,12 +242,7 @@
               <td>{r.name || '—'}</td>
               <td class="ctx-detail">{r.text}</td>
               <td>
-                <button
-                  class="btn small ghost vrow-play"
-                  title="Watch at tick {r.tick} in replay"
-                  aria-label="Watch tick {r.tick} in replay"
-                  onclick={() => watchTick(r)}><span class="codicon codicon-play"></span></button
-                >
+                <EventPlay tick={r.tick} cls="vrow-play" onclick={() => watchTick(r)} />
               </td>
             </tr>
           {:else}

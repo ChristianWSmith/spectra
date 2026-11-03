@@ -33,6 +33,69 @@ export function errText(e) {
   return e.message || String(e);
 }
 
+// --- Read-through cache (transparent) ---------------------------------------
+// One canonical cache for the repeated single-match/library reads:
+// getMatch, getRounds, getScoreboard, listMatches, getMatchSummary,
+// getTeamNames. Views call the exported functions exactly as before —
+// the cache lives inside them, keyed by (method, args), so per-argument
+// freshness falls out of the key (Match's sort-driven GetScoreboard
+// refetches pass different args -> different entries) and fetch-on-
+// activate laziness is unchanged (a cache hit just resolves faster).
+//
+// Invalidation: EVERY spectra:* event the Go side can emit flushes the
+// whole cache (the payloads never change what we key on, so a full flush
+// is the safe, simple rule):
+//   spectra:library-changed - any view backed by the matches/jobs tables
+//   spectra:job-done        - import/reprocess/cancel outcome
+//   spectra:job-progress    - parse/store progress (data lands mid-stream)
+//   spectra:files-dropped   - import kickoff (its own events may lag the
+//                             call site's refetch)
+// Mutating wrappers (deleteMatch/importPaths/reprocess/cancelJob/
+// recomputeAnalysis) also invalidate on success: DeleteMatch and
+// RecomputeAnalysis emit no event at all, and the event round-trip for
+// the others can land AFTER the call site's own refetch - invalidating
+// inside the wrapper closes that race without any call-site change.
+// Exported for the explicit cases a view knows about before refetching.
+const readCache = new Map(); // "Method:JSON(args)" -> in-flight/resolved promise
+const READ_CACHE_MAX = 256; // bounded: library search spawns one entry per query
+
+export function invalidate() {
+  readCache.clear();
+}
+
+function cachedRead(method, args, fn) {
+  const key = method + ':' + JSON.stringify(args);
+  const hit = readCache.get(key);
+  if (hit) return hit;
+  let p;
+  try {
+    p = Promise.resolve(fn());
+  } catch (e) {
+    p = Promise.reject(e);
+  }
+  readCache.set(key, p);
+  // Bounded FIFO: drop the oldest entry (Map preserves insertion order).
+  if (readCache.size > READ_CACHE_MAX) readCache.delete(readCache.keys().next().value);
+  // Failed reads are not cached - the next call retries. Attaching the
+  // handler also marks the shared promise handled for both callers.
+  p.catch(() => {
+    if (readCache.get(key) === p) readCache.delete(key);
+  });
+  return p;
+}
+
+// The invalidation listeners register once per process (module load);
+// Events.On returns an unsubscribe we intentionally keep for the app's
+// lifetime - services.js is a singleton.
+for (const evt of [
+  'spectra:library-changed',
+  'spectra:job-done',
+  'spectra:job-progress',
+  'spectra:files-dropped',
+]) {
+  Events.On(evt, () => invalidate());
+}
+
 // --- AppService ---------------------------------------------------------------
 
 export function getVersion() {
@@ -57,23 +120,37 @@ export function importDialog() {
 }
 
 export function importPaths(paths) {
-  return LibraryService.ImportPaths(paths);
+  return LibraryService.ImportPaths(paths).then((r) => {
+    invalidate();
+    return r;
+  });
 }
 
 export function listMatches(query, sortKey, desc) {
-  return LibraryService.ListMatches(query, sortKey, desc);
+  return cachedRead('ListMatches', [query, sortKey, desc], () =>
+    LibraryService.ListMatches(query, sortKey, desc),
+  );
 }
 
 export function deleteMatch(id, deleteOriginal) {
-  return LibraryService.DeleteMatch(id, deleteOriginal);
+  return LibraryService.DeleteMatch(id, deleteOriginal).then((r) => {
+    invalidate();
+    return r;
+  });
 }
 
 export function reprocess(id) {
-  return LibraryService.Reprocess(id);
+  return LibraryService.Reprocess(id).then((r) => {
+    invalidate();
+    return r;
+  });
 }
 
 export function cancelJob(id) {
-  return LibraryService.CancelJob(id);
+  return LibraryService.CancelJob(id).then((r) => {
+    invalidate();
+    return r;
+  });
 }
 
 export function listJobs() {
@@ -99,15 +176,32 @@ export function getDataInfo() {
 // --- MatchService -------------------------------------------------------------
 
 export function getMatch(id) {
-  return MatchService.GetMatch(id);
+  return cachedRead('GetMatch', [id], () => MatchService.GetMatch(id));
 }
 
 export function getScoreboard(id, sortKey, desc) {
-  return MatchService.GetScoreboard(id, sortKey, desc);
+  return cachedRead('GetScoreboard', [id, sortKey, desc], () =>
+    MatchService.GetScoreboard(id, sortKey, desc),
+  );
 }
 
 export function getRounds(id) {
-  return MatchService.GetRounds(id);
+  return cachedRead('GetRounds', [id], () => MatchService.GetRounds(id));
+}
+
+// getMatchSummary returns ONE match's summary row — the same JSON shape
+// as one element of ListMatches (models.MatchSummary) — so a view that
+// only needs one match's header/team names never pulls the whole
+// library list.
+export function getMatchSummary(id) {
+  return cachedRead('GetMatchSummary', [id], () => MatchService.GetMatchSummary(id));
+}
+
+// getTeamNames returns {ct, t} for one match — the demo's clan names
+// when recorded, else the synthesized team_<player> fallbacks (Go side;
+// the JS twin is lib/teams.js).
+export function getTeamNames(id) {
+  return cachedRead('GetTeamNames', [id], () => MatchService.GetTeamNames(id));
 }
 
 export function getRoundDetail(id, round) {
@@ -245,7 +339,14 @@ export function takePendingSeek() {
 
 export function getAnalysisConfig() { return AnalyticsService.GetConfig(); }
 export function setAnalysisConfig(cfg) { return AnalyticsService.SetConfig(cfg); }
-export function recomputeAnalysis(matchId) { return AnalyticsService.RecomputeAnalysis(matchId); }
+// Recompute rebuilds a match's derived rows and emits no event — flush
+// the read cache so the next read (and the call site's refetch) is fresh.
+export function recomputeAnalysis(matchId) {
+  return AnalyticsService.RecomputeAnalysis(matchId).then((r) => {
+    invalidate();
+    return r;
+  });
+}
 export function getEconomy(matchId) { return AnalyticsService.GetEconomy(matchId); }
 export function getRoundClasses(matchId) { return AnalyticsService.GetRoundClasses(matchId); }
 export function getPlayerRounds(matchId, steamId) { return AnalyticsService.GetPlayerRounds(matchId, steamId || ''); }

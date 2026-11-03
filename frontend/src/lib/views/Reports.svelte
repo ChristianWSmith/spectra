@@ -19,7 +19,7 @@
   import MatchPicker from '../components/MatchPicker.svelte';
   import PlayerPicker from '../components/PlayerPicker.svelte';
 
-  let { nav = () => {} } = $props();
+  let { nav = () => {}, routeId = 0 } = $props();
 
   let templates = $state([]);
   let tplError = $state('');
@@ -27,6 +27,16 @@
 
   let matches = $state([]);
   let matchId = $state(0);
+
+  // Route context (#/reports/:id): preselects the target match (and
+  // re-seeds if the route id changes while mounted — App's if-branch
+  // only remounts on a route NAME change). The list effect below only
+  // defaults to the newest match while nothing is selected, so a context
+  // id wins over the default.
+  $effect(() => {
+    const rid = routeId;
+    if (rid) matchId = rid;
+  });
   let players = $state([]);
   let steamId = $state('');
   let rounds = $state([]);
@@ -54,9 +64,9 @@
       .then((rows) => {
         matches = (rows || []).filter((m) => m.status === 'ready' || m.status === '');
         if (!matches.length) matches = rows || [];
-        if (matches.length && !matches.some((m) => m.id === matchId)) {
-          matchId = matches[0].id;
-        }
+        // Default to the newest match only while nothing is selected —
+        // a route context id (seeded above) wins over it.
+        if (!matchId && matches.length) matchId = matches[0].id;
       })
       .catch((e) => (tplError = tplError || errText(e)));
     listMetrics()
@@ -416,7 +426,7 @@
       </p>
       {#each metricGroups as [group, rows] (group)}
         <div class="rep-mgroup">
-          <h3 class="section-title sett-sub">by {group}</h3>
+          <h3 class="section-title rep-sub">by {group}</h3>
           {#each rows as m (m.id)}
             <label class="filt-check rep-metric">
               <input
@@ -475,7 +485,7 @@
           <pre class="rep-md">{compositeText()}</pre>
         {/if}
       {:else if !rendering}
-        <p class="muted">Press Render to generate the report.</p>
+        <p class="muted" role="status">Press Render to generate the report.</p>
       {/if}
     </section>
   {/if}

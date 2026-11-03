@@ -661,7 +661,7 @@
           </span>
         </div>
       {:else}
-        <p class="muted">
+        <p class="muted" role="status">
           {matchesError ? 'Matches unavailable.' : 'No ready matches to recompute yet.'}
         </p>
       {/each}

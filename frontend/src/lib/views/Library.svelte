@@ -406,7 +406,7 @@
       </table>
       {#if matches.length === 0}
         <div class="empty">
-          <p class="muted">
+          <p class="muted" role="status">
             {query
               ? `No matches match “${query}”.`
               : 'No matches yet — imports will appear here.'}

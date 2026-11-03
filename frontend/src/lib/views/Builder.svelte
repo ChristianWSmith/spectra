@@ -9,7 +9,8 @@
     listPlugins,
     errText,
   } from '../services.js';
-  import { fmtDate, fmtInt, fmtMetric } from '../fmt.js';
+  import { fmtInt, fmtMetric } from '../fmt.js';
+  import MatchPicker from '../components/MatchPicker.svelte';
 
   let { nav = () => {} } = $props();
 
@@ -494,14 +495,22 @@
           <h2>Preview</h2>
           <div class="toolbar bld-scope-bar">
             <label class="bld-lab field-label" for="bld-scope">Scope</label>
-            <select class="input" id="bld-scope" bind:value={scope}>
-              <option value="">Whole library</option>
-              {#each matches as m (m.id)}
-                <option value={String(m.id)}>
-                  #{m.id} · {m.map || '—'} · {m.scoreCT}–{m.scoreT} · {fmtDate(m.extractedAt)}
-                </option>
-              {/each}
-            </select>
+            <!-- Match scope picker: no selection = the whole library
+                 (placeholder), the clear button returns to it. -->
+            <MatchPicker
+              {matches}
+              value={Number(scope) || 0}
+              id="bld-scope"
+              placeholder="Whole library"
+              onselect={(mid) => (scope = mid ? String(mid) : '')}
+            />
+            {#if scope}
+              <button
+                class="btn small"
+                title="Preview across the whole library"
+                onclick={() => (scope = '')}>Whole library</button
+              >
+            {/if}
             <button class="btn primary" onclick={runPreview} disabled={previewBusy}>
               {previewBusy ? 'Running…' : 'Preview'}
             </button>
@@ -557,7 +566,7 @@
             <pre class="mono">{preview.sql}</pre>
           </details>
         {:else}
-          <p class="muted">
+          <p class="muted" role="status">
             Nothing previewed yet — pick a scope and press Preview (or <span class="codicon codicon-play"></span> on a metric).
           </p>
         {/if}

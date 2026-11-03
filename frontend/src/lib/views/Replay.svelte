@@ -14,6 +14,7 @@
   } from '../services.js';
   import { createEngine, parsePositions, SPEEDS } from '../replay/engine.js';
   import { createRenderer } from '../replay/renderer.js';
+  import { classifyLandmark } from '../replay/landmarks.js';
   import { attachReplayInput, snapshot } from '../replay/input.js';
   import { createVoiceEngine, fetchVoicePCM } from '../replay/audio.js';
   import { loadMapPack } from '../components/mapxform.js';
@@ -25,6 +26,8 @@
   let meta = $state(null);
   let matchMap = $state('');
   let pack = $state(null); // map pack meta.json or null
+  let packTf = null; // makeTransform(meta) from loadMapPack — passed to
+  //                    the renderer instead of re-deriving pack fields
   let data = $state(null); // parsed position store
   let landmarks = $state([]);
   let rounds = $state([]);
@@ -78,6 +81,8 @@
 
   // Scrubber event markers: kills = small gray, plants/defuses = amber,
   // detonations = red; positioned by tick over the whole-match tick span.
+  // Buckets come from the shared classifyLandmark (lib/replay/landmarks.js)
+  // — the same normalization the renderer's layers use.
   const markers = $derived.by(() => {
     if (!data || !data.frames || !landmarks.length) return [];
     const t0 = data.ticks[0];
@@ -85,11 +90,11 @@
     const span = Math.max(1, t1 - t0);
     const out = [];
     for (const l of landmarks) {
-      const k = String(l.kind || '').toLowerCase();
+      const bucket = classifyLandmark(l.kind);
       let cls = '';
-      if (k === 'kill') cls = 'kill';
-      else if (k === 'bomb_plant' || k === 'bomb_defuse') cls = 'plant';
-      else if (k === 'bomb_explode' || k === 'grenade') cls = 'det';
+      if (bucket === 'kill') cls = 'kill';
+      else if (bucket === 'plant' || bucket === 'defuse') cls = 'plant';
+      else if (bucket === 'explode' || bucket === 'detonation') cls = 'det';
       else continue;
       if (l.tick < t0 || l.tick > t1) continue;
       out.push({ cls, pct: ((l.tick - t0) / span) * 100 });
@@ -129,21 +134,23 @@
   }
 
   async function loadPack(map) {
-    if (!map) return { pack: null, img: null };
-    // Shared loader: extracted pack (local CS2) wins over bundled.
+    if (!map) return { pack: null, transform: null, img: null };
+    // Shared loader: extracted pack (local CS2) wins over bundled. The
+    // makeTransform() output rides along — the renderer consumes it
+    // instead of re-deriving the pack's transform fields.
     const p = await loadMapPack(map);
-    if (!p || !p.meta) return { pack: null, img: null };
+    if (!p || !p.meta) return { pack: null, transform: null, img: null };
     if (p.meta.radar && p.meta.radar.file) {
       const img = new Image();
       img.src = `${p.base}/${p.meta.radar.file}`;
       try {
         await img.decode();
-        return { pack: p.meta, img };
+        return { pack: p.meta, transform: p.transform, img };
       } catch {
-        return { pack: p.meta, img: null };
+        return { pack: p.meta, transform: p.transform, img: null };
       }
     }
-    return { pack: p.meta, img: null };
+    return { pack: p.meta, transform: p.transform, img: null };
   }
 
   async function load() {
@@ -169,8 +176,9 @@
       } else {
         voicePlayers = [];
       }
-      const { pack: p, img } = await loadPack(matchMap);
+      const { pack: p, transform: tf, img } = await loadPack(matchMap);
       pack = p;
+      packTf = tf;
       radarImg = img;
       const res = await fetch(`/api/sidecar/${id}/positions`);
       if (!res.ok) {
@@ -198,7 +206,7 @@
     if (!canvasEl || !data || !data.frames) return;
     engine = createEngine(data, meta.tickRate);
     renderer = createRenderer(canvasEl, { engine, data, players });
-    renderer.setPack(pack, radarImg);
+    renderer.setPack(pack, radarImg, packTf);
     renderer.setLandmarks(landmarks);
     renderer.resize();
     offChange = engine.onChange((st) => {

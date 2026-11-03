@@ -7,6 +7,13 @@
 // `team_<playerName>` (e.g. team_kRaSnaL). Only when no player on a side
 // has a recorded side at all (a known data-quality gap) do we fall back to
 // the bare side as a last resort.
+//
+// CROSS-LAYER TWIN: Go's report.synthTeamNames (internal/report/report.go)
+// implements the same synthesis for surfaces with store access, and the
+// MatchService.GetTeamNames getter serves it to the frontend. The Go
+// fixture is TestSynthTeamNames (internal/report/report_test.go); this
+// file's fixture is src/lib/teams.test.js — same inputs/outputs, same
+// tie-break. Keep the three in sync or the labels diverge per surface.
 
 // pickPlayer chooses the player used to name one side's team: the lowest
 // SteamID on that side (then name). Deterministic by design — callers pass

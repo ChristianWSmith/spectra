@@ -14,6 +14,7 @@
   import { isSteam } from '../nav.js';
   import FilterBar from '../components/FilterBar.svelte';
   import VoiceLanes from '../components/VoiceLanes.svelte';
+  import EventFlags from '../components/EventFlags.svelte';
 
   let { id = 0, nav = () => {} } = $props();
 
@@ -233,16 +234,10 @@
     }
   }
 
-  function flagsOf(e) {
-    const f = [];
-    if (e.headshot) f.push(['HS', 'headshot']);
-    if (e.wallbang) f.push(['WB', 'wallbang']);
-    if (e.noscope) f.push(['NS', 'no scope']);
-    if (e.throughSmoke) f.push(['SMK', 'through smoke']);
-    if (e.attackerBlind) f.push(['BLD', 'attacker blind']);
-    if (e.assistedFlash) f.push(['AFL', 'assisted flash']);
-    return f;
-  }
+  // Row-action note: Timeline's virtualized rows keep their own
+  // span[role=button] play/profile controls (a <button> may not nest
+  // inside the row button) — only the flag chips are the shared
+  // EventFlags component (import above).
 
   // ▶ hands the event's tick to the replay via the pendingSeek contract.
   function watchTick(ev, e) {
@@ -382,11 +377,7 @@
                 >
               {/if}</span
             >
-            <span class="flags">
-              {#each flagsOf(ev) as [code, title] (code)}
-                <span class="chip flag" {title}>{code}</span>
-              {/each}
-            </span>
+            <span class="flags"><EventFlags event={ev} /></span>
             <span class="num dmg">{ev.dmg || ''}</span>
             <span class="num dist">{ev.distance ? Math.round(ev.distance) : ''}</span>
           </button>
@@ -454,17 +445,7 @@
           </div>
           <div class="fact-wide">
             <dt>Flags</dt>
-            <dd>
-              {#if selected.headshot}<span class="chip flag" title="headshot">HS</span>{/if}
-              {#if selected.wallbang}<span class="chip flag" title="wallbang">WB</span>{/if}
-              {#if selected.noscope}<span class="chip flag" title="no scope">NS</span>{/if}
-              {#if selected.throughSmoke}<span class="chip flag" title="through smoke">SMK</span>{/if}
-              {#if selected.attackerBlind}<span class="chip flag" title="attacker blind">BLD</span>{/if}
-              {#if selected.assistedFlash}<span class="chip flag" title="assisted flash">AFL</span>{/if}
-              {#if !selected.headshot && !selected.wallbang && !selected.noscope && !selected.throughSmoke && !selected.attackerBlind && !selected.assistedFlash}
-                <span class="muted">none</span>
-              {/if}
-            </dd>
+            <dd><EventFlags event={selected} none /></dd>
           </div>
         </dl>
         <details class="json-block" open>
@@ -476,7 +457,7 @@
           <pre class="mono">{prettyJson(selected.rawJson)}</pre>
         </details>
       {:else}
-        <p class="muted">Select an event to inspect its payload.</p>
+        <p class="muted" role="status">Select an event to inspect its payload.</p>
       {/if}
     </aside>
   </div>

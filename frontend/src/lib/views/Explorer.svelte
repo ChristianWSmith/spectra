@@ -1,8 +1,10 @@
 <script>
   // M5 data explorer / developer mode: per-match provenance,
   // entity summary, ConVars, generic-event payload browser (key/value tree)
-  // and parser warnings — the raw inspectors M1's Match Raw tab only
-  // histograms. Acceptance walkthrough #3.
+  // and parser warnings — the raw inspectors the Match view's removed Raw
+  // tab used to own. The Match header's "Open in Explorer view →" carries
+  // this match over as the route context (#/explorer/:id); without one the
+  // picker follows the newest match. Acceptance walkthrough #3.
   import {
     listMatches,
     getProvenance,
@@ -18,11 +20,21 @@
   import PayloadTree from '../components/PayloadTree.svelte';
   import StatusChip from '../components/StatusChip.svelte';
 
-  let { nav = () => {} } = $props();
+  let { nav = () => {}, routeId = 0 } = $props();
 
   let matches = $state([]);
   let matchId = $state(0);
   let loadError = $state('');
+
+  // Route context (#/explorer/:id): authoritative — it seeds the picker
+  // (and re-seeds if the route id changes while this view stays mounted;
+  // App's if-branch only remounts on a route NAME change). The list
+  // effect below only defaults to the newest match while nothing is
+  // selected, so a context id is never swapped out.
+  $effect(() => {
+    const rid = routeId;
+    if (rid) matchId = rid;
+  });
 
   let prov = $state(null);
   let provError = $state('');
@@ -58,9 +70,9 @@
     listMatches('', 'extracted_at', true)
       .then((rows) => {
         matches = rows || [];
-        if (matches.length && !matches.some((m) => m.id === matchId)) {
-          matchId = matches[0].id;
-        }
+        // Default to the newest match only while nothing is selected —
+        // a route context id (seeded above) wins over it.
+        if (!matchId && matches.length) matchId = matches[0].id;
       })
       .catch((e) => {
         loadError = errText(e);
@@ -368,7 +380,7 @@
         </div>
         <div class="expl-payloads">
           {#if !selectedName}
-            <p class="muted">Pick an event name on the left to browse payloads.</p>
+            <p class="muted" role="status">Pick an event name on the left to browse payloads.</p>
           {:else}
             <div class="row-between">
               <span class="chip kind">{selectedName}</span>

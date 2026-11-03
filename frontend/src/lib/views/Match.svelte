@@ -8,17 +8,12 @@
     getRounds,
     getChat,
     getWarnings,
-    getGenericHistogram,
-    getGenericEvents,
     getCombatStats,
     getRoundClasses,
     getVoicePresence,
-    listMatches,
+    getMatchSummary,
     listMetrics,
     previewMetric,
-    getProvenance,
-    getConVars,
-    getEntitySummary,
     setPendingTimelineFilter,
     setPendingSeek,
     errText,
@@ -37,10 +32,11 @@
     fmtInt,
     fmtClock,
     tickSeconds,
-    prettyJson,
     fmtMetric,
   } from '../fmt.js';
   import { teamNames } from '../teams.js';
+  import { isCounted } from '../rounds.js';
+  import { MATCH_TABS, matchTabSlug } from '../router.js';
   import RoundStrip from '../components/RoundStrip.svelte';
   import Economy from './Economy.svelte';
   import Utility from './Utility.svelte';
@@ -52,13 +48,16 @@
   import SortTh from '../components/SortTh.svelte';
   import StatCard from '../components/StatCard.svelte';
 
-  // routeTab: the deep-linked tab from App's route (#/match/:id/timeline);
-  // '' for plain #/match/:id. Tabs are otherwise local state like every
-  // other match tab — see selectTab for how Timeline mirrors itself in
+  // routeTab: the deep-linked tab from App's route (#/match/:id/<slug> —
+  // every tab is deep-linkable, see MATCH_TABS in lib/router.js); '' for
+  // plain #/match/:id. Tabs are otherwise local state like every other
+  // match tab — see selectTab for how the active tab mirrors itself in
   // the URL.
   let { id = 0, nav = () => {}, routeTab = '' } = $props();
 
-  const TABS = ['Overview', 'Scoreboard', 'Rounds', 'Economy', 'Utility', 'Heatmaps', 'Combat', 'Timeline', 'Chat', 'Context', 'Raw'];
+  // The tab bar is the canonical list from the route table, so a deep
+  // link can never point at a tab that does not exist.
+  const TABS = MATCH_TABS;
 
   // GetScoreboard sort whitelist (mirror of the Go store's map).
   // Combined columns sort by their primary key.
@@ -119,10 +118,6 @@
   let warningsOpen = $state(false);
   let chat = $state([]);
   let chatRound = $state(-1);
-  let histogram = $state([]);
-  let rawName = $state('');
-  let rawEvents = $state([]);
-  let rawLimit = $state(100);
   let error = $state('');
   // M4 header badges: voice presence + chat-decrypt key state.
   let voice = $state(null);
@@ -171,21 +166,11 @@
   });
 
   // Rounds tab rows: hide warmup and pregame (knife) rounds unless the pref
-  // opts in. Only visibility changes — row numbers stay exactly as stored
-  // (negative for warmup, 0 for knife; they are extracted facts and are
-  // never renumbered here).
-  const viewRounds = $derived(
-    showKnifeWarmup ? rounds : rounds.filter((r) => !r.warmup && !r.pregame),
-  );
-
-  // M5: provenance / entity / ConVar explorer-lite (Raw tab).
-  let prov = $state(null);
-  let provError = $state('');
-  let ents = $state(null);
-  let entsError = $state('');
-  let convars = $state([]);
-  let cvError = $state('');
-  let cvFilter = $state('');
+  // opts in (isCounted — lib/rounds.js, the analytics.CountedRounds
+  // twin). Only visibility changes — row numbers stay exactly as stored
+  // (negative for warmup/knife; they are extracted facts and are never
+  // renumbered here).
+  const viewRounds = $derived(showKnifeWarmup ? rounds : rounds.filter(isCounted));
 
   // localStorage contract (M5): 'spectra:pinned-metrics' holds a JSON array
   // of metric ids — written by Builder's pin toggles, read here when a
@@ -197,20 +182,22 @@
   let metricError = $state('');
 
   // Match header + rounds + summary. Scoreboard has its own effect below
-  // (sort changes must not re-trigger this one).
+  // (sort changes must not re-trigger this one). The summary row is the
+  // one-match GetMatchSummary getter (same JSON shape as a ListMatches
+  // element) — never the whole library list for a single header lookup.
   $effect(() => {
     let live = true;
     Promise.all([
       getMatch(id),
       getRounds(id),
-      listMatches('', 'extracted_at', false),
+      getMatchSummary(id),
       getVoicePresence(id).catch(() => null),
     ])
-      .then(([m, r, list, v]) => {
+      .then(([m, r, s, v]) => {
         if (!live) return;
         match = m;
         rounds = r || [];
-        summary = (list || []).find((s) => s.id === id) || null;
+        summary = s || null;
         voice = v;
         error = m ? '' : 'Match not found.';
       })
@@ -220,12 +207,12 @@
     return () => (live = false);
   });
 
-  // Deep-linked tab from App's route (#/match/:id/timeline): select the
-  // Timeline tab whenever the route carries one — runs on mount before
-  // first paint, so it also seeds the initial tab (no local prop read in
-  // the $state initializer). When the tab bar clears the segment
-  // (selectTab → plain #/match/:id) routeTab becomes '' and the local
-  // tab state is left alone.
+  // Deep-linked tab from App's route (#/match/:id/<slug>): select the
+  // tab whenever the route carries one — runs on mount before first
+  // paint, so it also seeds the initial tab (no local prop read in the
+  // $state initializer). When the tab bar clears the segment (selectTab →
+  // plain #/match/:id for Overview) routeTab becomes '' and the local tab
+  // state is left alone.
   $effect(() => {
     if (routeTab) tab = routeTab;
   });
@@ -424,75 +411,20 @@
 
   // Chat time cell: "R12 1:23" — how far INTO its round the message was
   // said: (tick − round.startTick) / tickRate, rendered with fmtClock.
-  // Messages with no containing round, in round 0/negative (knife/warmup)
-  // or with a negative offset fall back to a match-relative clock
-  // (tick / tickRate) — plain "m:ss", never a negative; keep it simple.
-  // The raw tick stays in the cell's title tooltip.
+  // Messages with no containing round, in a counted-out round
+  // (knife/warmup — lib/rounds.js) or with a negative offset fall back to
+  // a match-relative clock (tick / tickRate) — plain "m:ss", never a
+  // negative; keep it simple. The raw tick stays in the cell's title
+  // tooltip.
   function chatTime(c) {
     const rate = match ? match.tickRate : 0;
     const r = roundByNumber.get(c.round);
-    if (r && r.number >= 1) {
+    if (r && isCounted(r)) {
       const intoRound = tickSeconds(c.tick - r.startTick, rate);
       if (intoRound >= 0) return `R${r.number} ${fmtClock(intoRound)}`;
     }
     return fmtClock(tickSeconds(c.tick, rate));
   }
-
-  $effect(() => {
-    if (tab !== 'Raw' || rawName) return;
-    let live = true;
-    getGenericHistogram(id)
-      .then((h) => {
-        if (live) histogram = h || [];
-      })
-      .catch((e) => {
-        if (live) error = errText(e);
-      });
-    return () => (live = false);
-  });
-
-  $effect(() => {
-    if (tab !== 'Raw' || !rawName) return;
-    let live = true;
-    getGenericEvents(id, rawName, rawLimit)
-      .then((rows) => {
-        if (live) rawEvents = rows || [];
-      })
-      .catch((e) => {
-        if (live) error = errText(e);
-      });
-    return () => (live = false);
-  });
-
-  $effect(() => {
-    if (tab !== 'Raw') return;
-    let live = true;
-    provError = '';
-    entsError = '';
-    cvError = '';
-    getProvenance(id)
-      .then((p) => {
-        if (live) prov = p;
-      })
-      .catch((e) => {
-        if (live) provError = errText(e);
-      });
-    getEntitySummary(id)
-      .then((e) => {
-        if (live) ents = e;
-      })
-      .catch((err) => {
-        if (live) entsError = errText(err);
-      });
-    getConVars(id)
-      .then((rows) => {
-        if (live) convars = rows || [];
-      })
-      .catch((err) => {
-        if (live) cvError = errText(err);
-      });
-    return () => (live = false);
-  });
 
   function toggleSort(key) {
     if (sortKey === key) desc = !desc;
@@ -559,37 +491,19 @@
     }
   }
 
-  // Tab switch. Timeline mirrors itself in the URL (#/match/:id/timeline)
-  // so deep-link callers always produce a hashchange: the segment only
-  // exists while the Timeline tab is showing, and it is cleared when
-  // another tab is picked (otherwise nav('/match/:id/timeline') from a
-  // drill-down would be a no-op while a different tab is visible).
+  // Tab switch: the active tab mirrors itself in the URL so every tab is
+  // deep-linkable (#/match/:id/<slug>, slugs from MATCH_TABS in
+  // lib/router.js). The default Overview tab keeps the plain #/match/:id
+  // form (that is the URL-cleanup case — plain parses back to Overview),
+  // and writing the segment always produces a hashchange, so drill-downs
+  // that target another tab (nav('/match/:id/timeline')) are never a
+  // no-op while a different tab is visible. The hashchange re-parses to
+  // the same route.name, so this view never remounts — only routeTab
+  // changes, which the effect above applies.
   function selectTab(t) {
     tab = t;
-    if (t === 'Timeline') nav(`/match/${id}/timeline`);
-    else if (routeTab) nav(`/match/${id}`);
+    nav(t === 'Overview' ? `/match/${id}` : `/match/${id}/${matchTabSlug(t)}`);
   }
-
-  function selectRaw(name) {
-    if (rawName === name) return;
-    rawName = name;
-    rawLimit = 100;
-    rawEvents = [];
-  }
-
-  function loadMoreRaw() {
-    rawLimit += 100;
-  }
-
-  const rawTotal = $derived(
-    rawName ? (histogram.find((h) => h.name === rawName)?.count ?? rawEvents.length) : 0,
-  );
-
-  const convarRows = $derived.by(() => {
-    const f = cvFilter.trim().toLowerCase();
-    if (!f) return convars;
-    return convars.filter((c) => `${c.name} ${c.value}`.toLowerCase().includes(f));
-  });
 
   async function toggleWarnings() {
     warningsOpen = !warningsOpen;
@@ -710,6 +624,12 @@
       {:else}
         <button class="btn" onclick={toggleWarnings}>Warnings</button>
       {/if}
+      <!-- The old Raw tab's inspectors (provenance, ConVars, payload
+           browser, census) live in the Explorer view; carry this match
+           over as its context instead of defaulting to the newest. -->
+      <button class="btn" onclick={() => nav('/explorer/' + id)}>
+        Open in Explorer view →
+      </button>
       <button class="btn primary" onclick={openReplay}>Replay</button>
     </header>
 
@@ -724,7 +644,7 @@
         {#if warnings == null}
           <p class="muted" role="status">Loading…</p>
         {:else if warnings.length === 0}
-          <p class="muted">None — the parser ran clean.</p>
+          <p class="muted" role="status">None — the parser ran clean.</p>
         {:else}
           <ul class="warning-list">
             {#each warnings as w, i (i)}
@@ -1132,9 +1052,10 @@
         <label for="chat-round">Round</label>
         <select class="input" id="chat-round" bind:value={chatRound}>
           <option value={-1}>All rounds</option>
-          <!-- Counted rounds only: knife/warmup rounds are numbered
-               negatively, and -1 is this filter's "all rounds" sentinel. -->
-          {#each rounds.filter((r) => r.number >= 1) as r (r.number)}
+          <!-- Counted rounds only (lib/rounds.js): knife/warmup rounds
+               are numbered negatively, and -1 is this filter's "all
+               rounds" sentinel. -->
+          {#each rounds.filter(isCounted) as r (r.number)}
             <option value={r.number}>Round {r.number}</option>
           {/each}
         </select>
@@ -1167,166 +1088,6 @@
       </div>
     {:else if tab === 'Context'}
       <Context {id} {nav} />
-    {:else if tab === 'Raw'}
-      <section class="panel m5-raw">
-        <div class="row-between">
-          <h2>Provenance &amp; parser index</h2>
-          <button class="btn small" onclick={() => nav('/explorer')}>
-            Open in Explorer view →
-          </button>
-        </div>
-        {#if provError}
-          <p class="error" role="alert">Provenance unavailable: {provError}</p>
-        {/if}
-        {#if entsError}
-          <p class="error" role="alert">Entity summary unavailable: {entsError}</p>
-        {/if}
-        {#if cvError}
-          <p class="error" role="alert">ConVars unavailable: {cvError}</p>
-        {/if}
-        <div class="m5-raw-grid">
-          {#if prov}
-            <div class="m5-card">
-              <h3>Provenance</h3>
-              <dl class="m5-kv">
-                <div><dt>Parser</dt><dd class="mono">{prov.parserVersion || '—'}</dd></div>
-                <div><dt>Extracted</dt><dd>{fmtDate(prov.extractedAt)}</dd></div>
-                <div><dt>Parse time</dt><dd class="num">{fmtInt(prov.parseMs)} ms</dd></div>
-                <div><dt>Warnings</dt><dd class="num">{fmtInt(prov.warnings)}</dd></div>
-                <div><dt>Enc messages</dt><dd class="num">{fmtInt(prov.encMessages)}</dd></div>
-                <div>
-                  <dt>Position</dt>
-                  <dd>fmt {prov.positionFormat} · {fmtInt(prov.sampleRate)} Hz</dd>
-                </div>
-                <div><dt>Voice chunks</dt><dd class="num">{fmtInt(prov.voiceChunks)}</dd></div>
-                <div>
-                  <dt>Rules</dt>
-                  <dd>v{prov.ruleVersion} · trade window {prov.tradeWindowS}s</dd>
-                </div>
-                <div><dt>Map</dt><dd>{prov.map || '—'}</dd></div>
-                <div><dt>Status</dt><dd>{prov.status || '—'}</dd></div>
-              </dl>
-              {#if prov.notes && prov.notes.length}
-                <ul class="m5-notes">
-                  {#each prov.notes as n, i (i)}
-                    <li>{n}</li>
-                  {/each}
-                </ul>
-              {/if}
-            </div>
-          {:else if !provError}
-            <p class="muted" role="status">Loading provenance…</p>
-          {/if}
-          {#if ents}
-            <div class="m5-card">
-              <h3>Entities</h3>
-              <dl class="m5-kv">
-                <div><dt>Server classes</dt><dd class="num">{fmtInt(ents.entityClasses)}</dd></div>
-                <div><dt>End entities</dt><dd class="num">{fmtInt(ents.endEntities)}</dd></div>
-                <div><dt>Generic types</dt><dd class="num">{fmtInt(ents.genericTypes)}</dd></div>
-                <div><dt>Generic events</dt><dd class="num">{fmtInt(ents.genericTotal)}</dd></div>
-              </dl>
-              {#if ents.notes}
-                <p class="m5-note-line">{ents.notes}</p>
-              {/if}
-            </div>
-          {:else if !entsError}
-            <p class="muted" role="status">Loading entity summary…</p>
-          {/if}
-          <div class="m5-card m5-cv-card">
-            <div class="row-between">
-              <h3>ConVars</h3>
-              <span class="chip">{convarRows.length}/{convars.length}</span>
-            </div>
-            <input
-              class="input"
-              placeholder="Filter name / value…"
-              bind:value={cvFilter}
-              aria-label="Filter ConVars"
-            />
-            <div class="m5-cv-scroll">
-              <table class="data-table mini">
-                <thead>
-                  <tr>
-                    <th scope="col" class="num">Tick</th>
-                    <th scope="col" class="num">Round</th>
-                    <th scope="col">Name</th>
-                    <th scope="col">Value</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {#each convarRows as c, i (i)}
-                    <tr>
-                      <td class="num mono">{c.tick}</td>
-                      <td class="num"><span class="chip round-chip">{c.round}</span></td>
-                      <td class="mono">{c.name}</td>
-                      <td class="mono m5-cv-val">{c.value}</td>
-                    </tr>
-                  {:else}
-                    <tr>
-                      <td colspan="4" class="muted">
-                        {cvError ? '—' : 'No ConVars recorded in this demo.'}
-                      </td>
-                    </tr>
-                  {/each}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      </section>
-      <div class="raw-grid">
-        <section class="panel">
-          <h2>Generic event histogram</h2>
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th scope="col">Name</th>
-                <th scope="col" class="num">Count</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each histogram as h (h.name)}
-                <tr
-                  class="clickable"
-                  class:active={rawName === h.name}
-                  onclick={() => selectRaw(h.name)}
-                  onkeydown={(e) => e.key === 'Enter' && selectRaw(h.name)}
-                  tabindex="0"
-                >
-                  <td class="mono">{h.name}</td>
-                  <td class="num">{h.count}</td>
-                </tr>
-              {/each}
-            </tbody>
-          </table>
-        </section>
-        <section class="panel">
-          <h2>
-            {#if rawName}
-              <span class="mono">{rawName}</span>
-            {:else}
-              Pick an event name
-            {/if}
-          </h2>
-          {#if rawName}
-            {#each rawEvents as ge, i (i)}
-              <div class="payload">
-                <div class="payload-head">
-                  <span class="chip round-chip">R{ge.round}</span>
-                  <span class="mono muted">tick {ge.tick}</span>
-                </div>
-                <pre class="mono">{prettyJson(ge.payloadJson)}</pre>
-              </div>
-            {/each}
-            {#if rawTotal > rawEvents.length}
-              <button class="btn" onclick={loadMoreRaw}>
-                + {rawTotal - rawEvents.length} more
-              </button>
-            {/if}
-          {/if}
-        </section>
-      </div>
     {/if}
   {:else if !error}
     <p class="muted" role="status">Loading…</p>

@@ -11,6 +11,7 @@
   import { loadMapPack } from '../components/mapxform.js';
   import HeatmapLayer from '../components/HeatmapLayer.svelte';
   import { fmt1, fmtInt } from '../fmt.js';
+  import { isCounted } from '../rounds.js';
 
   let { id = 0, nav = () => {} } = $props();
 
@@ -251,9 +252,9 @@
       <label class="field-label" for="heat-from">Rounds from</label>
       <select class="input" id="heat-from" bind:value={roundFrom}>
         <option value={-1}>All</option>
-        <!-- Counted rounds only: knife/warmup rounds are numbered
-             negatively, and -1 is this range's "all" sentinel. -->
-        {#each rounds.filter((r) => r.number >= 1) as r (r.number)}
+        <!-- Counted rounds only (lib/rounds.js): knife/warmup rounds are
+             numbered negatively, and -1 is this range's "all" sentinel. -->
+        {#each rounds.filter(isCounted) as r (r.number)}
           <option value={r.number}>R{r.number}</option>
         {/each}
       </select>
@@ -262,7 +263,7 @@
       <label class="field-label" for="heat-to">Rounds to</label>
       <select class="input" id="heat-to" bind:value={roundTo}>
         <option value={-1}>All</option>
-        {#each rounds.filter((r) => r.number >= 1) as r (r.number)}
+        {#each rounds.filter(isCounted) as r (r.number)}
           <option value={r.number}>R{r.number}</option>
         {/each}
       </select>
@@ -305,7 +306,7 @@
       Click the map to filter the timeline by region (cell-sized bbox).
     </p>
   {:else if !loading}
-    <p class="heat-empty muted">
+    <p class="heat-empty muted" role="status">
       Choose filters and press Generate — heatmaps are computed on demand.
     </p>
   {/if}

@@ -253,7 +253,7 @@
           · x = sequence (oldest → newest) · click a dot to open the match
         </p>
       {:else if trend.length === 1}
-        <p class="muted">Only one data point — a trend needs at least two matches.</p>
+        <p class="muted" role="status">Only one data point — a trend needs at least two matches.</p>
       {:else}
         <p class="muted" role="status">No trend data for this metric yet.</p>
       {/if}

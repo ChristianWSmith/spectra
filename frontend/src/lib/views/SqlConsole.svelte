@@ -339,7 +339,7 @@
         </div>
         {#if result}
           {#if result.rows.length === 0}
-            <p class="muted">0 rows.</p>
+            <p class="muted" role="status">0 rows.</p>
           {:else}
             <div class="table-scroll sql-results">
               <table class="data-table">
@@ -369,7 +369,7 @@
             {/if}
           {/if}
         {:else if !running && !runError}
-          <p class="muted">Run a statement to see rows here.</p>
+          <p class="muted" role="status">Run a statement to see rows here.</p>
         {/if}
       </section>
 
