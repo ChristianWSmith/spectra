@@ -30,6 +30,8 @@ var DefaultConfig = models.AnalysisConfig{
 // Per-table column lists (G1): each const is the row WITHOUT the
 // match_id key column — the Replace* INSERT prefixes `match_id, `, the
 // getter selects the list verbatim. Order is the scan/insert order.
+// savedFilterCols has no match_id (saved_filters is library-scoped): the
+// INSERT names it verbatim, the getters prefix `id, `.
 const (
 	analysisConfigCols = `trade_window_s, eco_full_buy, eco_force, rule_version`
 
@@ -48,6 +50,8 @@ const (
 
 	playerCareerCols = `steam_id, name, matches, wins, adr_avg, adr_std, kd, hs_pct,
 		kast_pct, openings, opener_wins, trades, clutches, updated_at`
+
+	savedFilterCols = `name, scope, filter_json, created_at`
 )
 
 // GetConfig returns the analysis_config row, seeding the defaults on first
@@ -788,7 +792,7 @@ func (s *Store) GetRoundPlayerSides(matchID int64) (map[int]map[string]string, e
 // ListSavedFilters returns all saved filter presets, newest first.
 func (s *Store) ListSavedFilters() ([]models.SavedFilterRow, error) {
 	rows, err := s.db.Query(
-		`SELECT id, name, scope, filter_json, created_at FROM saved_filters ORDER BY created_at DESC, id DESC`,
+		`SELECT id, ` + savedFilterCols + ` FROM saved_filters ORDER BY created_at DESC, id DESC`,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("store: list saved filters: %w", err)
@@ -812,7 +816,7 @@ func (s *Store) ListSavedFilters() ([]models.SavedFilterRow, error) {
 // already used within the same scope yields a user-facing error.
 func (s *Store) CreateSavedFilter(name, scope, filterJSON string) (models.SavedFilterRow, error) {
 	res, err := s.db.Exec(
-		`INSERT INTO saved_filters (name, scope, filter_json, created_at) VALUES (?, ?, ?, ?)`,
+		`INSERT INTO saved_filters (`+savedFilterCols+`) VALUES (?, ?, ?, ?)`,
 		scrub(name), scrub(scope), scrub(filterJSON), time.Now(),
 	)
 	if err != nil {

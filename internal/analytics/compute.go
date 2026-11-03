@@ -47,16 +47,11 @@ func Compute(st *store.Store, matchID int64, cfg Config) error {
 	if err != nil {
 		return fmt.Errorf("analytics: load players: %w", err)
 	}
-	// EventRow → Event (the typed columns only — payloads stay in SQLite).
+	// EventRow → Event (the typed columns only — payloads stay in SQLite;
+	// models.EventFromRow is the one conversion).
 	evs := make([]models.Event, len(events))
 	for i, er := range events {
-		evs[i] = models.Event{
-			Seq: er.Seq, Tick: er.Tick, Round: er.Round, Kind: er.Kind,
-			Attacker: er.Attacker, Victim: er.Victim, Assister: er.Assister,
-			Weapon: er.Weapon, Headshot: er.Headshot, AssistedFlash: er.AssistedFlash,
-			Distance: er.Distance, Dmg: er.Dmg, Site: er.Site,
-			PosX: er.PosX, PosY: er.PosY, PosZ: er.PosZ,
-		}
+		evs[i] = models.EventFromRow(er)
 	}
 	// Exact per-round sides from the extractor's freeze-end samples (new
 	// imports); legacy matches fall back to RecoverSides + parity.

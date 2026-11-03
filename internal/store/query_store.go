@@ -207,7 +207,7 @@ func roErr(err error, ctx context.Context, timeoutMS int) error {
 
 // normValue converts driver values to JSON scalars: []byte → string,
 // time.Time → RFC3339Nano (the console grid contract is numbers/strings/
-// nil — queryservice.QueryResult).
+// nil — models.QueryResult).
 func normValue(v any) any {
 	switch t := v.(type) {
 	case []byte:

@@ -145,6 +145,26 @@ type EventDetail struct {
 	RawJSON    string `json:"rawJson"`
 }
 
+// EventFromRow is THE EventRow → Event conversion (the typed-columns read
+// shape onto the domain event): every field the two share moves across;
+// the row id and the joined display names stay with the read DTO, and the
+// JSON payloads are never on EventRow (they stay in SQLite — the analytics
+// pass reads typed columns only), so DetailJSON/RawJSON are "" here.
+// Both callers — analytics.Compute and AnalyticsService.GetHeatmap — use
+// this, never a hand-rolled literal.
+func EventFromRow(r EventRow) Event {
+	return Event{
+		Seq: r.Seq, Tick: r.Tick, Round: r.Round, Kind: r.Kind,
+		Attacker: r.Attacker, Victim: r.Victim, Assister: r.Assister,
+		Weapon: r.Weapon, Headshot: r.Headshot, Wallbang: r.Wallbang,
+		Noscope: r.Noscope, ThroughSmoke: r.ThroughSmoke,
+		AttackerBlind: r.AttackerBlind, AssistedFlash: r.AssistedFlash,
+		Distance: r.Distance, Hitgroup: r.Hitgroup, Dmg: r.Dmg, Site: r.Site,
+		PosX: r.PosX, PosY: r.PosY, PosZ: r.PosZ,
+		AttackerPosX: r.AttackerPosX, AttackerPosY: r.AttackerPosY, AttackerPosZ: r.AttackerPosZ,
+	}
+}
+
 // EventFilter selects timeline rows. Round < 0 = all rounds (the sentinel
 // the timeline and match-wide feeds pass); round detail reads are NOT a
 // filter — store.GetRoundDetail matches its (possibly negative knife/

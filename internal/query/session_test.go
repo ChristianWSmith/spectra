@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ChristianWSmith/spectra/internal/metrics"
+	"github.com/ChristianWSmith/spectra/internal/models"
 	"github.com/ChristianWSmith/spectra/internal/query"
 	"github.com/ChristianWSmith/spectra/internal/store"
 )
@@ -178,7 +179,7 @@ func TestSessionSchema(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Schema: %v", err)
 	}
-	byName := map[string]query.Table{}
+	byName := map[string]models.SchemaTableRow{}
 	for _, tb := range tables {
 		byName[tb.Name] = tb
 	}

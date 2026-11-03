@@ -22,97 +22,20 @@ import (
 // engagements, utility, heatmaps), and saved filter presets. Heavy rows are
 // computed by internal/analytics after import (worker stage "analyze") and
 // read back through here.
-
-// AnalysisConfig holds the versioned heuristic rules (analysis_config row).
-// Changing thresholds bumps RuleVersion; stored rows keep the version they
-// were computed with — recompute is always explicit (PRD §9.2).
-type AnalysisConfig struct {
-	TradeWindowS float64 `json:"tradeWindowS"` // trade/ opportunity window (default 5)
-	EcoFullBuy   int     `json:"ecoFullBuy"`   // equip ≥ this = full buy (default 20000)
-	EcoForce     int     `json:"ecoForce"`     // equip ≥ this = force (default 10000)
-	RuleVersion  int     `json:"ruleVersion"`
-}
-
-// analysisConfigFromModel / (AnalysisConfig).toModel are the only
-// conversions between the frontend binding type and the stored
-// models.AnalysisConfig row (the binding type stays for the API surface;
-// every field moves through this pair, never through ad-hoc literals).
-func analysisConfigFromModel(m models.AnalysisConfig) AnalysisConfig {
-	return AnalysisConfig{
-		TradeWindowS: m.TradeWindowS,
-		EcoFullBuy:   m.EcoFullBuy,
-		EcoForce:     m.EcoForce,
-		RuleVersion:  m.RuleVersion,
-	}
-}
-
-func (c AnalysisConfig) toModel() models.AnalysisConfig {
-	return models.AnalysisConfig{
-		TradeWindowS: c.TradeWindowS,
-		EcoFullBuy:   c.EcoFullBuy,
-		EcoForce:     c.EcoForce,
-		RuleVersion:  c.RuleVersion,
-	}
-}
-
-// RoundEconomyRow is one round's economy + buy-classification view.
-// ClassWhy* carries the explanation string (PRD: transparent rules);
-// LossBonus*/Inferred* are reconstructed → fact/inference badge required.
-type RoundEconomyRow struct {
-	Round       int    `json:"round"`
-	Winner      string `json:"winner"`
-	Warmup      bool   `json:"warmup"`
-	EquipCT     int    `json:"equipCT"`
-	EquipT      int    `json:"equipT"`
-	MoneyCT     int    `json:"moneyCT"`
-	MoneyT      int    `json:"moneyT"`
-	SpentCT     int    `json:"spentCT"`
-	SpentT      int    `json:"spentT"`
-	ClassCT     string `json:"classCT"` // pistol|anti-eco|eco|force|full|bonus|save|unknown
-	ClassT      string `json:"classT"`
-	ClassWhyCT  string `json:"classWhyCT"`
-	ClassWhyT   string `json:"classWhyT"`
-	LossBonusCT int    `json:"lossBonusCT"`
-	LossBonusT  int    `json:"lossBonusT"`
-	InferredCT  bool   `json:"inferredCT"`
-	InferredT   bool   `json:"inferredT"`
-	WonCT       bool   `json:"wonCT"`
-	WonT        bool   `json:"wonT"`
-	PistolRound bool   `json:"pistolRound"`
-	RuleVersion int    `json:"ruleVersion"`
-}
-
-// RoundClassRow is the stored classification row (round_classifications).
-type RoundClassRow struct {
-	Round       int     `json:"round"`
-	Label       string  `json:"label"`
-	Confidence  float64 `json:"confidence"`
-	RuleVersion int     `json:"ruleVersion"`
-	Explanation string  `json:"explanation"`
-}
-
-// PlayerRoundRow is per-player-per-round stats incl. KAST
-// (player_round_stats). KAST: kill/assist/trade-death/survived.
-type PlayerRoundRow struct {
-	Round      int    `json:"round"`
-	SteamID    string `json:"steamId"`
-	Name       string `json:"name"`
-	Kills      int    `json:"kills"`
-	Assists    int    `json:"assists"`
-	Deaths     int    `json:"deaths"`
-	Traded     bool   `json:"traded"`
-	Survived   bool   `json:"survived"`
-	KAST       bool   `json:"kast"`
-	DMG        int    `json:"dmg"`
-	MoneyStart int    `json:"moneyStart"`
-	Equip      int    `json:"equip"`
-	Spent      int    `json:"spent"`
-	UtilDmg    int    `json:"utilDmg"`
-}
+//
+// Row vocabulary: every derived view is served AS a models type
+// (models.AnalysisConfig, EconomyRow, RoundClassification, PlayerRoundStat,
+// Engagement, CombatStat, SavedFilterRow) — their JSON tags are the
+// frontend contract and the store returns them directly, so there is no
+// copy loop to drift. Two twins are deliberately kept below, each for a
+// shape the models type does not have.
 
 // ClutchRow is a detected 1vN (clutch v2 — alive-count analysis, replaces
 // the M1 survivor approximation). ReplayAnchorTick = start_tick for deep
-// link.
+// link. KEPT (not models.Clutch): the synthetic per-row ID the frontend
+// keys its list on (models.Clutch has no id — rows are stored, not
+// identified) and the replayAnchorTick tag the UI reads (models tags it
+// replayAnchor).
 type ClutchRow struct {
 	ID           int64  `json:"id"`
 	Round        int    `json:"round"`
@@ -129,22 +52,11 @@ type ClutchRow struct {
 	ReplayAnchor int    `json:"replayAnchorTick"`
 }
 
-// EngagementRow is one detected engagement (kinds: opening|trade|untraded
-// — the entry kind is deferred; player_stats.entry_kills from the
-// extractor already carries per-player entry attribution).
-type EngagementRow struct {
-	Tick     int     `json:"tick"`
-	Round    int     `json:"round"`
-	Kind     string  `json:"kind"`
-	ASteam   string  `json:"aSteam"`
-	BSteam   string  `json:"bSteam"`
-	AName    string  `json:"aName"`
-	BName    string  `json:"bName"`
-	Distance float64 `json:"distance"`
-	WonBy    string  `json:"wonBy"`
-}
-
 // UtilityRow is one grenade with position/impact detail (utility_events).
+// KEPT (not models.UtilityEvent): DetX/DetY are value floats — a missing
+// detonation position reads 0, while models.UtilityEvent carries
+// *float64 + omitempty, which would drop the key and render NaN in the
+// utility grid.
 type UtilityRow struct {
 	Tick        int     `json:"tick"`
 	Round       int     `json:"round"`
@@ -157,22 +69,6 @@ type UtilityRow struct {
 	FlashMs     int     `json:"flashMsTotal"`
 	Affected    string  `json:"affected"` // JSON array of steamIDs
 	Site        string  `json:"site"`
-}
-
-// CombatStatRow is per-player engagement/damage deep-dive numbers
-// (damage conversion, friendly fire, trade-opportunity heuristics —
-// inferred rows need badges).
-type CombatStatRow struct {
-	SteamID        string  `json:"steamId"`
-	Name           string  `json:"name"`
-	DMGNoKill      int     `json:"dmgNoKill"`
-	DMGConvPct     float64 `json:"dmgConvPct"`
-	FFDamage       int     `json:"ffDamage"`
-	EntryRate      float64 `json:"entryRate"`
-	TradeRate      float64 `json:"tradeRate"`
-	UntradedDeaths int     `json:"untradedDeaths"`
-	TradeOppMissed int     `json:"tradeOppMissed"` // inferred (heuristic)
-	KASTPct        float64 `json:"kastPct"`
 }
 
 // HeatmapFilter selects the sample population for a heatmap.
@@ -199,15 +95,6 @@ type HeatmapGrid struct {
 	Cells   []float64 `json:"cells"` // row-major w*h, time-weighted (seconds) or counts
 }
 
-// SavedFilter is a named preset (saved_filters).
-type SavedFilter struct {
-	ID         int64  `json:"id"`
-	Name       string `json:"name"`
-	Scope      string `json:"scope"` // "library" | "match"
-	FilterJSON string `json:"filterJson"`
-	CreatedAt  string `json:"createdAt"`
-}
-
 // heatmapGridSide/heatmapPad and the raster arithmetic live in heatmap.go
 // (shared by the presence and event kinds).
 
@@ -218,12 +105,8 @@ type AnalyticsService struct {
 }
 
 // GetConfig returns the active analysis rules (defaults seeded on first use).
-func (s *AnalyticsService) GetConfig() (AnalysisConfig, error) {
-	c, err := s.st.GetConfig()
-	if err != nil {
-		return AnalysisConfig{}, err
-	}
-	return analysisConfigFromModel(c), nil
+func (s *AnalyticsService) GetConfig() (models.AnalysisConfig, error) {
+	return s.st.GetConfig()
 }
 
 // SetConfig stores new rules (bumps rule_version). Does NOT recompute —
@@ -232,27 +115,22 @@ func (s *AnalyticsService) GetConfig() (AnalysisConfig, error) {
 // This is the single validation gate for analysis rules (the import
 // pipeline's analyze path and RecomputeAnalysis read the already-validated
 // row straight from the store).
-func (s *AnalyticsService) SetConfig(c AnalysisConfig) (AnalysisConfig, error) {
+func (s *AnalyticsService) SetConfig(c models.AnalysisConfig) (models.AnalysisConfig, error) {
 	if c.TradeWindowS <= 0 {
-		return AnalysisConfig{}, errors.New("analytics: tradeWindowS must be > 0")
+		return models.AnalysisConfig{}, errors.New("analytics: tradeWindowS must be > 0")
 	}
 	if c.EcoForce <= 0 || c.EcoFullBuy <= 0 {
-		return AnalysisConfig{}, errors.New("analytics: eco thresholds must be > 0")
+		return models.AnalysisConfig{}, errors.New("analytics: eco thresholds must be > 0")
 	}
 	if c.EcoForce > c.EcoFullBuy {
-		return AnalysisConfig{}, errors.New("analytics: ecoForce must be ≤ ecoFullBuy")
+		return models.AnalysisConfig{}, errors.New("analytics: ecoForce must be ≤ ecoFullBuy")
 	}
 	cur, err := s.st.GetConfig()
 	if err != nil {
-		return AnalysisConfig{}, err
+		return models.AnalysisConfig{}, err
 	}
-	next := c.toModel()
-	next.RuleVersion = cur.RuleVersion + 1 // input RuleVersion ignored — always bump
-	saved, err := s.st.SetConfig(next)
-	if err != nil {
-		return AnalysisConfig{}, err
-	}
-	return analysisConfigFromModel(saved), nil
+	c.RuleVersion = cur.RuleVersion + 1 // input RuleVersion ignored — always bump
+	return s.st.SetConfig(c)
 }
 
 // RecomputeAnalysis re-runs classification + analytics for one match under
@@ -268,7 +146,7 @@ func (s *AnalyticsService) RecomputeAnalysis(matchID int64) error {
 // GetEconomy returns per-round economy + buy classes (warmup rounds
 // excluded). Loss bonus is reconstructed (inferred — UI badge); per-side
 // classes are completed here via the shared analytics rules.
-func (s *AnalyticsService) GetEconomy(matchID int64) ([]RoundEconomyRow, error) {
+func (s *AnalyticsService) GetEconomy(matchID int64) ([]models.EconomyRow, error) {
 	rows, err := s.st.GetEconomy(matchID)
 	if err != nil {
 		return nil, err
@@ -277,51 +155,17 @@ func (s *AnalyticsService) GetEconomy(matchID int64) ([]RoundEconomyRow, error) 
 	if err != nil {
 		return nil, err
 	}
-	rows = analytics.EconomyRows(rows, analytics.ConfigFrom(cfg, 0))
-	out := make([]RoundEconomyRow, len(rows))
-	for i, r := range rows {
-		out[i] = RoundEconomyRow{
-			Round: r.Round, Winner: r.Winner, Warmup: r.Warmup,
-			EquipCT: r.EquipCT, EquipT: r.EquipT, MoneyCT: r.MoneyCT, MoneyT: r.MoneyT,
-			SpentCT: r.SpentCT, SpentT: r.SpentT, ClassCT: r.ClassCT, ClassT: r.ClassT,
-			ClassWhyCT: r.ClassWhyCT, ClassWhyT: r.ClassWhyT,
-			LossBonusCT: r.LossBonusCT, LossBonusT: r.LossBonusT,
-			InferredCT: r.InferredCT, InferredT: r.InferredT,
-			WonCT: r.WonCT, WonT: r.WonT, PistolRound: r.PistolRound, RuleVersion: r.RuleVersion,
-		}
-	}
-	return out, nil
+	return analytics.EconomyRows(rows, analytics.ConfigFrom(cfg, 0)), nil
 }
 
 // GetRoundClasses returns stored classifications.
-func (s *AnalyticsService) GetRoundClasses(matchID int64) ([]RoundClassRow, error) {
-	rows, err := s.st.GetRoundClasses(matchID)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]RoundClassRow, len(rows))
-	for i, r := range rows {
-		out[i] = RoundClassRow{Round: r.Round, Label: r.Label, Confidence: r.Confidence, RuleVersion: r.RuleVersion, Explanation: r.Explanation}
-	}
-	return out, nil
+func (s *AnalyticsService) GetRoundClasses(matchID int64) ([]models.RoundClassification, error) {
+	return s.st.GetRoundClasses(matchID)
 }
 
 // GetPlayerRounds returns per-round rows for one player ("" = all players).
-func (s *AnalyticsService) GetPlayerRounds(matchID int64, steamID string) ([]PlayerRoundRow, error) {
-	rows, err := s.st.GetPlayerRounds(matchID, steamID)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]PlayerRoundRow, len(rows))
-	for i, r := range rows {
-		out[i] = PlayerRoundRow{
-			Round: r.Round, SteamID: r.SteamID, Name: r.Name, Kills: r.Kills,
-			Assists: r.Assists, Deaths: r.Deaths, Traded: r.Traded, Survived: r.Survived,
-			KAST: r.KAST, DMG: r.DMG, MoneyStart: r.MoneyStart, Equip: r.Equip,
-			Spent: r.Spent, UtilDmg: r.UtilDmg,
-		}
-	}
-	return out, nil
+func (s *AnalyticsService) GetPlayerRounds(matchID int64, steamID string) ([]models.PlayerRoundStat, error) {
+	return s.st.GetPlayerRounds(matchID, steamID)
 }
 
 // GetClutches returns clutch v2 records.
@@ -342,19 +186,8 @@ func (s *AnalyticsService) GetClutches(matchID int64) ([]ClutchRow, error) {
 }
 
 // GetEngagements returns detected engagements; kind "" = all.
-func (s *AnalyticsService) GetEngagements(matchID int64, kind string) ([]EngagementRow, error) {
-	rows, err := s.st.GetEngagements(matchID, kind)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]EngagementRow, len(rows))
-	for i, r := range rows {
-		out[i] = EngagementRow{
-			Tick: r.Tick, Round: r.Round, Kind: r.Kind, ASteam: r.ASteam, BSteam: r.BSteam,
-			AName: r.AName, BName: r.BName, Distance: r.Distance, WonBy: r.WonBy,
-		}
-	}
-	return out, nil
+func (s *AnalyticsService) GetEngagements(matchID int64, kind string) ([]models.Engagement, error) {
+	return s.st.GetEngagements(matchID, kind)
 }
 
 // GetUtility returns per-grenade rows.
@@ -382,20 +215,8 @@ func (s *AnalyticsService) GetUtility(matchID int64) ([]UtilityRow, error) {
 
 // GetCombatStats returns per-player engagement/damage deep-dive rows
 // (computed from stored rows; TradeOppMissed is inferred — UI badge).
-func (s *AnalyticsService) GetCombatStats(matchID int64) ([]CombatStatRow, error) {
-	rows, err := s.st.GetCombatStats(matchID)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]CombatStatRow, len(rows))
-	for i, r := range rows {
-		out[i] = CombatStatRow{
-			SteamID: r.SteamID, Name: r.Name, DMGNoKill: r.DMGNoKill, DMGConvPct: r.DMGConvPct,
-			FFDamage: r.FFDamage, EntryRate: r.EntryRate, TradeRate: r.TradeRate,
-			UntradedDeaths: r.UntradedDeaths, TradeOppMissed: r.TradeOppMissed, KASTPct: r.KASTPct,
-		}
-	}
-	return out, nil
+func (s *AnalyticsService) GetCombatStats(matchID int64) ([]models.CombatStat, error) {
+	return s.st.GetCombatStats(matchID)
 }
 
 // GetHeatmap computes a raster for kind presence|kills|deaths|damage.
@@ -414,14 +235,17 @@ func (s *AnalyticsService) GetHeatmap(matchID int64, kind string, f HeatmapFilte
 	default:
 		return HeatmapGrid{}, fmt.Errorf("analytics: unknown heatmap kind %q", kind)
 	}
-	rounds, err := s.st.GetRounds(matchID)
+	// ONE round read feeds both shapes the heatmap needs: the canonical
+	// store.GetRoundInfos (warmup/pregame included — callers filter) plus
+	// the Number/StartTick/EndTick projection store.RoundForTick's domain
+	// type takes (the shared tick→round mapping, same helper the voice
+	// writer uses).
+	roundInfos, err := s.st.GetRoundInfos(matchID)
 	if err != nil {
 		return HeatmapGrid{}, err
 	}
-	// Round spans for the tick→round lookup — the domain type of the shared
-	// store.RoundForTick (the only implementation of that mapping).
-	roundSpans := make([]models.Round, len(rounds))
-	for i, r := range rounds {
+	roundSpans := make([]models.Round, len(roundInfos))
+	for i, r := range roundInfos {
 		roundSpans[i] = models.Round{Number: r.Number, StartTick: r.StartTick, EndTick: r.EndTick}
 	}
 	players, err := s.st.GetPlayerRefs(matchID)
@@ -430,19 +254,16 @@ func (s *AnalyticsService) GetHeatmap(matchID int64, kind string, f HeatmapFilte
 	}
 	// Team filters need real sides: recover the final sides of players
 	// absent from the final-state snapshot (same inference as the analytics
-	// pass — see analytics.RecoverSides).
+	// pass — see analytics.RecoverSides). Kills only: RecoverSides builds
+	// its enemy graph from kill edges, and the extra typed columns
+	// models.EventFromRow carries are not part of that decision.
 	ers, err := s.st.GetEvents(models.EventFilter{MatchID: matchID, Kind: models.EventKill, Round: -1, Limit: store.DefaultEventLimit})
 	if err != nil {
 		return HeatmapGrid{}, err
 	}
 	kills := make([]models.Event, len(ers))
 	for i, er := range ers {
-		kills[i] = models.Event{Seq: er.Seq, Tick: er.Tick, Round: er.Round, Kind: er.Kind, Attacker: er.Attacker, Victim: er.Victim}
-	}
-	roundInfos := make([]models.RoundInfo, len(rounds))
-	for i, r := range rounds {
-		roundInfos[i] = models.RoundInfo{Number: r.Number, Winner: r.Winner, Warmup: r.Warmup,
-			Pregame: r.Pregame, StartTick: r.StartTick, EndTick: r.EndTick, FreezeEndTick: r.FreezeEndTick}
+		kills[i] = models.EventFromRow(er)
 	}
 	players = analytics.RecoverSides(kills, roundInfos, players)
 	side := map[string]string{}
@@ -619,27 +440,15 @@ func (s *AnalyticsService) heatmapEvents(matchID int64, kind string, f HeatmapFi
 }
 
 // Saved filters.
-func (s *AnalyticsService) ListSavedFilters() ([]SavedFilter, error) {
-	rows, err := s.st.ListSavedFilters()
-	if err != nil {
-		return nil, err
-	}
-	out := make([]SavedFilter, len(rows))
-	for i, r := range rows {
-		out[i] = SavedFilter{ID: r.ID, Name: r.Name, Scope: r.Scope, FilterJSON: r.FilterJSON, CreatedAt: r.CreatedAt.Format(timeFormat)}
-	}
-	return out, nil
+func (s *AnalyticsService) ListSavedFilters() ([]models.SavedFilterRow, error) {
+	return s.st.ListSavedFilters()
 }
 
-func (s *AnalyticsService) SaveFilter(name, scope, filterJSON string) (SavedFilter, error) {
+func (s *AnalyticsService) SaveFilter(name, scope, filterJSON string) (models.SavedFilterRow, error) {
 	if name == "" {
-		return SavedFilter{}, errors.New("analytics: filter name is required")
+		return models.SavedFilterRow{}, errors.New("analytics: filter name is required")
 	}
-	r, err := s.st.CreateSavedFilter(name, scope, filterJSON)
-	if err != nil {
-		return SavedFilter{}, err
-	}
-	return SavedFilter{ID: r.ID, Name: r.Name, Scope: r.Scope, FilterJSON: r.FilterJSON, CreatedAt: r.CreatedAt.Format(timeFormat)}, nil
+	return s.st.CreateSavedFilter(name, scope, filterJSON)
 }
 
 func (s *AnalyticsService) DeleteSavedFilter(id int64) error { return s.st.DeleteSavedFilter(id) }

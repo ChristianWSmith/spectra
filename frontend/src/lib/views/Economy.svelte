@@ -11,7 +11,7 @@
 
   let { id = 0, nav = () => {} } = $props();
 
-  let rows = $state([]); // non-warmup RoundEconomyRow[]
+  let rows = $state([]); // non-warmup models.EconomyRow[]
   let rounds = $state([]); // RoundRow[] (warmup counts / context)
   let loading = $state(true);
   let error = $state('');

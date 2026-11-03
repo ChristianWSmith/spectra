@@ -38,27 +38,17 @@ type Session struct {
 // New returns a console session bound to st.
 func New(st *store.Store) *Session { return &Session{st: st} }
 
-// Result is one console run (mirrors the frontend QueryResult contract:
-// row-major JSON scalars + timing + truncation + an Err string instead of
-// a rejected call, so history can record failures too).
-type Result struct {
-	Columns   []string
-	Rows      [][]any
-	RowCount  int
-	Truncated bool
-	MS        int64
-	Err       string
-}
-
 // Run validates sqlText (single statement, read verbs only), executes it
 // read-only with the row cap and statement timeout, and appends a history
-// entry — success or failure. Defaults are the store's (limit ≤0 →
-// DefaultLimit = store.DefaultRowLimit, timeoutMS ≤0 →
+// entry — success or failure. The result is models.QueryResult (row-major
+// JSON scalars + timing + truncation + an Err string instead of a rejected
+// call, so history can record failures too). Defaults are the store's
+// (limit ≤0 → DefaultLimit = store.DefaultRowLimit, timeoutMS ≤0 →
 // DefaultTimeoutMS): RunReadOnly owns the normalization, this session only
 // re-exports the numbers so they have one owner.
-func (s *Session) Run(sqlText string, limit, timeoutMS int) Result {
+func (s *Session) Run(sqlText string, limit, timeoutMS int) models.QueryResult {
 	res, err := s.st.RunReadOnly(sqlText, nil, limit, timeoutMS)
-	out := Result{
+	out := models.QueryResult{
 		Columns:   res.Columns,
 		Rows:      res.Rows,
 		RowCount:  len(res.Rows),
@@ -79,36 +69,20 @@ func (s *Session) Run(sqlText string, limit, timeoutMS int) Result {
 	return out
 }
 
-// Table is one schema-browser entry (table note + annotated columns).
-type Table struct {
-	Name    string
-	Note    string
-	Columns []Column
-}
-
-// Column is one column + note.
-type Column struct {
-	Name string
-	Type string
-	Note string
-}
-
 // Schema returns the schema browser model: every user table from
-// sqlite_master with PRAGMA table_info columns, annotated with the notes
-// below (unknown tables/columns keep Note "" per contract).
-func (s *Session) Schema() ([]Table, error) {
-	raw, err := s.st.Schema()
+// sqlite_master with PRAGMA table_info columns (models.SchemaTableRow — the
+// store's raw rows), annotated with the notes below (unknown tables/columns
+// keep Note "" per contract).
+func (s *Session) Schema() ([]models.SchemaTableRow, error) {
+	out, err := s.st.Schema()
 	if err != nil {
 		return nil, err
 	}
-	out := make([]Table, len(raw))
-	for i, t := range raw {
-		tt := Table{Name: t.Name, Note: tableNotes[t.Name]}
-		tt.Columns = make([]Column, len(t.Columns))
-		for j, c := range t.Columns {
-			tt.Columns[j] = Column{Name: c.Name, Type: c.Type, Note: columnNote(t.Name, c.Name)}
+	for i := range out {
+		out[i].Note = tableNotes[out[i].Name]
+		for j := range out[i].Columns {
+			out[i].Columns[j].Note = columnNote(out[i].Name, out[i].Columns[j].Name)
 		}
-		out[i] = tt
 	}
 	return out, nil
 }

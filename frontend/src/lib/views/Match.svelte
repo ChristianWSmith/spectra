@@ -238,7 +238,7 @@
     return () => (live = false);
   });
 
-  // Per-player KAST% (CombatStatRow.kastPct) for the scoreboard column.
+  // Per-player KAST% (models.CombatStat.kastPct) for the scoreboard column.
   $effect(() => {
     let live = true;
     combatError = '';

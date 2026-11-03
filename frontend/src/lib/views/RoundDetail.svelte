@@ -21,7 +21,7 @@
   let tickRate = $state(64);
   let sideSwitches = $state(0);
   let error = $state('');
-  let cls = $state(null); // RoundClassRow for this round (may be null)
+  let cls = $state(null); // models.RoundClassification for this round (may be null)
 
   // Team display names for the round strip's above/below labels — the
   // same resolution the Match header uses (demo clan names → derived

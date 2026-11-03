@@ -668,7 +668,7 @@ func (s *Store) GetChat(matchID int64, round int) ([]models.ChatRow, error) {
 // queryChat is GetChat with an exactRound switch — mirror of
 // queryEvents (negative knife/warmup round numbers are real rounds here).
 func (s *Store) queryChat(matchID int64, round int, exactRound bool) ([]models.ChatRow, error) {
-	q := `SELECT id, tick, round, steam_id, name, text, kind, decrypted FROM chat WHERE match_id = ?`
+	q := `SELECT id, ` + chatCols + `, decrypted FROM chat WHERE match_id = ?`
 	args := []any{matchID}
 	if round >= 0 || exactRound {
 		q += ` AND round = ?`

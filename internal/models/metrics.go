@@ -5,8 +5,9 @@ import "time"
 // M5 (custom metrics + read-only SQL console) row vocabulary. These types
 // flow between internal/store (persistence), internal/metrics +
 // internal/query (engines) and the M5 services; models stays the shared
-// vocabulary (package docs). The service layer maps them onto its
-// frontend-facing frozen contract types.
+// vocabulary (package docs). The SQL-console rows (schema, result, saved
+// queries, history) are served as-is — their JSON tags ARE the frontend
+// contract; MetricRow still maps onto MetricsService's MetricDef.
 //
 // MetricRow mirrors the `metrics` table whose DDL is fixed by the
 // coordination contract with internal/store/platform_store.go (005_metrics
@@ -46,16 +47,34 @@ type SavedQueryRow struct {
 	CreatedAt time.Time `json:"createdAt"`
 }
 
-// SchemaColumnRow is one table column from PRAGMA table_info (raw shape;
-// notes are attached by internal/query).
+// SchemaColumnRow is one table column from PRAGMA table_info (store shape).
+// Note is NOT a column: internal/query attaches the provenance note and the
+// store leaves it "" (see package docs — models is the shared vocabulary).
 type SchemaColumnRow struct {
 	Name string `json:"name"`
 	Type string `json:"type"`
+	Note string `json:"note"`
 }
 
-// SchemaTableRow is one user table plus its columns (raw shape; notes are
-// attached by internal/query).
+// SchemaTableRow is one user table plus its columns (store shape). Note is
+// the table-level provenance note, attached the same way as the column
+// notes ("" from the store, "" for tables internal/query does not know).
 type SchemaTableRow struct {
 	Name    string            `json:"name"`
+	Note    string            `json:"note"`
 	Columns []SchemaColumnRow `json:"columns"`
+}
+
+// QueryResult is one SQL-console run: columns + row-major JSON-scalar
+// values + the grid's timing/truncation metadata. Err is a STRING (not a
+// rejected call) so the run can land in history as ok=false — the console
+// contract. The store's ROResult stays the pure execution result (row cap
+// and timing without history semantics, shared with the metrics preview).
+type QueryResult struct {
+	Columns   []string `json:"columns"`
+	Rows      [][]any  `json:"rows"`
+	RowCount  int      `json:"rowCount"`  // returned rows (≤ cap)
+	Truncated bool     `json:"truncated"` // hit the cap
+	MS        int64    `json:"ms"`
+	Err       string   `json:"err,omitempty"`
 }
