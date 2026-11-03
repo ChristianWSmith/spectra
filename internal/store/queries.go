@@ -53,6 +53,7 @@ var scoreboardSort = map[string]string{
 	"opening_deaths": "ps.opening_deaths",
 	"trade_kills":    "ps.trade_kills",
 	"best_streak":    "ps.best_streak",
+	"two_k":          "ps.two_k",
 	"three_k":        "ps.three_k",
 	"four_k":         "ps.four_k",
 	"five_k":         "ps.five_k",
@@ -200,7 +201,7 @@ func (s *Store) GetScoreboard(id int64, sortKey string, desc bool) ([]models.Pla
 			CAST(ps.kills + ps.assists AS REAL) / MAX(ps.deaths, 1),
 			ps.total_damage, ps.damage_taken, ps.entry_kills, ps.entry_deaths,
 			ps.opening_kills, ps.opening_deaths, ps.trade_kills, ps.best_streak,
-			ps.three_k, ps.four_k, ps.five_k, ps.utility_damage, ps.flashes_popped,
+			ps.two_k, ps.three_k, ps.four_k, ps.five_k, ps.utility_damage, ps.flashes_popped,
 			ps.flashed_times, ps.bomb_plants, ps.bomb_defuses, ps.mvps, ps.score,
 			ps.teamkills, ps.suicides, ps.money_spent_total, ps.kills_by_weapon, ps.damage_by_weapon
 		FROM player_stats ps
@@ -221,7 +222,7 @@ func (s *Store) GetScoreboard(id int64, sortKey string, desc bool) ([]models.Pla
 			&r.RoundsPlayed, &r.Kills, &r.Deaths,
 			&r.Assists, &r.FlashAssists, &r.Headshots, &r.HSPct, &r.ADR, &r.KD, &r.KDA, &r.TotalDamage,
 			&r.DamageTaken, &r.EntryKills, &r.EntryDeaths, &r.OpeningKills, &r.OpeningDeaths,
-			&r.TradeKills, &r.BestStreak, &r.ThreeK, &r.FourK, &r.FiveK, &r.UtilityDamage,
+			&r.TradeKills, &r.BestStreak, &r.TwoK, &r.ThreeK, &r.FourK, &r.FiveK, &r.UtilityDamage,
 			&r.FlashesPopped, &r.FlashedTimes, &r.BombPlants, &r.BombDefuses, &r.MVPs,
 			&r.Score, &r.Teamkills, &r.Suicides, &r.MoneySpent, &r.KillsByWeapon, &r.DamageByWeapon,
 		); err != nil {

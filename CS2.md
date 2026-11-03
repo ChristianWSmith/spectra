@@ -173,12 +173,17 @@ at the end of the section.
   (convar defaults; readable dump: https://cs2.poggu.me/dumped-data/convar-list)
   (2026-11-02).
 
-- **Multi-kill columns (3K/4K/5K)** — a round counts at EXACTLY one tier:
-  a round with 4 kills is one 4K and NOT also a 3K (cumulative counting
-  disagrees with external scoreboards); 5+ kills = one 5K. Counted per
-  round over stats-eligible enemy kills only.
+- **Multi-kill columns (2K/3K/4K/5K)** — a round counts at EXACTLY one
+  tier: a round with 4 kills is one 4K and NOT also a 3K (cumulative
+  counting disagrees with external scoreboards); 5+ kills = one 5K; a
+  round with exactly 2 kills is one 2K (same exclusivity — a 3-kill round
+  is a 3K, not a 2K). Counted per round over stats-eligible enemy kills
+  only.
   **Source** — golden demo's external scoreboard (donk.png: adamS 1×3K +
-  2×4K not 3×3K; FREELOOK 1×4K + 0×3K) (2026-11-02).
+  2×4K not 3×3K; FREELOOK 1×4K + 0×3K; 2K column: adamS 2, llorente 3,
+  kRaSnaL 3, hades 3, FREELOOK 2, forever2kELO 6, Zuedsta 4, donk666 2,
+  Magnojezzz 2, -meg2k 3 — all ten reproduced by the extractor)
+  (2026-11-02).
 
 - **MVPs** — `RoundMVPAnnouncement` (round_mvp) is often absent in CS2
   demos; recover per-round MVPs by diffing `Player.MVPs()` (`m_iMVPs`)

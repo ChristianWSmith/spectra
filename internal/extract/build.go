@@ -15,7 +15,7 @@ func (a *agg) build() *models.ExtractedMatch {
 	// chronological index and are remapped together with the rounds.
 	a.renumber()
 	// Multi-kill tiers from each round's final kill total (exact-hit:
-	// a round counts at ONE tier — see buildMultiKills).
+	// a round counts at ONE tier, 2K included — see buildMultiKills).
 	a.buildMultiKills()
 
 	out := &models.ExtractedMatch{}
@@ -146,6 +146,7 @@ func (a *agg) build() *models.ExtractedMatch {
 			OpeningDeaths:   p.openingDeaths,
 			TradeKills:      p.tradeKills,
 			BestStreak:      p.bestStreak,
+			TwoK:            p.twoK,
 			ThreeK:          p.threeK,
 			FourK:           p.fourK,
 			FiveK:           p.fiveK,
@@ -253,13 +254,13 @@ func (a *agg) renumber() {
 	}
 }
 
-// buildMultiKills resolves each player's 3K/4K/5K columns from the final
+// buildMultiKills resolves each player's 2K/3K/4K/5K columns from the final
 // per-round kill totals. External scoreboards count a round at EXACTLY one
 // tier — a round with 4 kills is one 4K and no 3K (the golden demo's
 // official scoreboard: adamS 1×3K + 2×4K, not 3×3K) — so the tiers are
-// mutually exclusive: exactly 3 → threeK, exactly 4 → fourK, 5+ → fiveK.
-// roundKills only ever holds stats-eligible kills (warmup/knife/post-match
-// kills never reach it).
+// mutually exclusive: exactly 2 → twoK, exactly 3 → threeK, exactly 4 →
+// fourK, 5+ → fiveK. roundKills only ever holds stats-eligible kills
+// (warmup/knife/post-match kills never reach it).
 func (a *agg) buildMultiKills() {
 	for _, perRound := range a.roundKills {
 		for key, n := range perRound {
@@ -268,6 +269,8 @@ func (a *agg) buildMultiKills() {
 				continue
 			}
 			switch {
+			case n == 2:
+				p.twoK++
 			case n == 3:
 				p.threeK++
 			case n == 4:

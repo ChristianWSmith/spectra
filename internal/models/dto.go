@@ -49,6 +49,7 @@ type PlayerStatsRow struct {
 	OpeningDeaths     int     `json:"openingDeaths"`
 	TradeKills        int     `json:"tradeKills"`
 	BestStreak        int     `json:"bestStreak"`
+	TwoK              int     `json:"twoK"`
 	ThreeK            int     `json:"threeK"`
 	FourK             int     `json:"fourK"`
 	FiveK             int     `json:"fiveK"`
