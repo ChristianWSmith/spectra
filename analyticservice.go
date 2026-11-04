@@ -232,7 +232,7 @@ func (s *AnalyticsService) GetCombatStats(matchID int64) ([]models.CombatStat, e
 // a round without them resolves no side, so a team filter drops it). Bounds
 // come from the sampled extents ± heatmapPad — 450u, the 3σ reach of the
 // Gaussian splat (sigma 150u), so an edge sample paints a whole blob
-// instead of a clipped half; the grid is 64×64 with per-axis cell sizes;
+// instead of a clipped half; the grid is 128×128 with per-axis cell sizes;
 // presence cells are dwell seconds (1/sample-rate per frame per player),
 // event cells are counts.
 func (s *AnalyticsService) GetHeatmap(matchID int64, kind string, f HeatmapFilter) (HeatmapGrid, error) {

@@ -1,12 +1,6 @@
 <script>
   import { makeTransform } from './mapxform.js';
-  import {
-    HEAT_STOPS,
-    DEATH_STOPS,
-    intensity,
-    signedIntensity,
-    rampColor,
-  } from '../heatramp.js';
+  import { renderHeatField } from '../heatramp.js';
 
   // Canvas heatmap layer: map-pack radar as base, HeatmapGrid raster as
   // overlay. All world→image math goes through mapxform's transform — the
@@ -14,16 +8,20 @@
   // transform built from the heatmap's own world bounds gives one generic
   // presentation: a plain coordinate grid (the app ships no radar art).
   //
-  // Grid mapping contract: cells[] is row-major (r*w+c) with row 0 at
-  // grid.minY, so cell (r,c) covers world
-  //   x ∈ [minX + c*cw, minX + (c+1)*cw],  y ∈ [minY + r*ch, minY + (r+1)*ch]
-  // where cw=(maxX-minX)/w, ch=(maxY-minY)/h. Row 0 (minY) sits at the
-  // BOTTOM of image space (toImage flips Y), hence the row flip when
-  // writing the offscreen ImageData.
+  // The backing store is sized in DEVICE pixels (wrapper width ×
+  // devicePixelRatio), so neither the radar nor the overlay is ever
+  // browser-upscaled from CSS pixels — the classic hiDPI smudge. The
+  // overlay is rasterized by heatramp's renderHeatField at the device
+  // resolution of the grid's world-bounds rect and blitted at ~1:1, so
+  // cells never appear as blocks. cells[] is row-major (r*w+c) with row
+  // 0 at grid.minY (the BOTTOM of image space — renderHeatField flips
+  // rows into image space itself).
   let { map = '', pack = null, grid = null, onRegion = () => {} } = $props();
 
   let canvas = $state(null);
   let radar = $state(null); // decoded radar image | null
+  let boxW = $state(0); // wrapper content width (CSS px)
+  let dpr = $state(1); // window devicePixelRatio
 
   const xf = $derived(pack && pack.transform ? pack.transform : null);
   // No-pack fallback: derive the world→image mapping from the heatmap's own
@@ -32,8 +30,8 @@
   // Built through makeTransform (mapxform), so the formula stays canonical:
   // image space = padded bounds at ~900 px, mirroring renderer.reproject().
   const fb = $derived.by(() => {
-    // A radar image without a transform stays the old path (image only) —
-    // never position data over pixels we can't align.
+    // A radar image without a transform paints the image alone — never
+    // position data over pixels we can't align.
     if (xf || radar || !grid || !grid.w || !grid.h) return null;
     const spanX = Math.max(1, grid.maxX - grid.minX);
     const spanY = Math.max(1, grid.maxY - grid.minY);
@@ -53,6 +51,19 @@
   const eff = $derived(xf || fb);
   const W = $derived(eff ? eff.width : 1024);
   const H = $derived(eff ? eff.height : 1024);
+
+  // Device-pixel backing store: displayed CSS width × DPR, aspect-locked
+  // to image space. The canvas keeps width:100%/height:auto in CSS, so
+  // this only changes resolution, never layout.
+  const bw = $derived(Math.max(1, Math.round(boxW * dpr)));
+  const bh = $derived(Math.max(1, Math.round((bw * H) / W)));
+
+  $effect(() => {
+    const update = () => (dpr = Math.max(1, window.devicePixelRatio || 1));
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  });
 
   $effect(() => {
     const meta = pack && pack.meta;
@@ -86,44 +97,76 @@
   function draw() {
     const c = canvas;
     if (!c) return;
-    if (c.width !== W || c.height !== H) {
-      c.width = W;
-      c.height = H;
+    if (c.width !== bw || c.height !== bh) {
+      c.width = bw;
+      c.height = bh;
     }
     const ctx = c.getContext('2d');
     if (!ctx) return;
-    ctx.clearRect(0, 0, W, H);
+    ctx.clearRect(0, 0, bw, bh);
     if (radar) {
-      ctx.drawImage(radar, 0, 0, W, H);
+      // Radar art → device-pixel backing: smoothing high, and no
+      // CSS-pixel upscale on either side of this draw.
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(radar, 0, 0, bw, bh);
     } else {
       // No radar art (missing pack, or a pack without an image): one
       // generic presentation — dark surface + plain coordinate grid,
       // same line colors as the replay renderer's grid.
       ctx.fillStyle = '#0a0d12';
-      ctx.fillRect(0, 0, W, H);
+      ctx.fillRect(0, 0, bw, bh);
       drawPlainGrid(ctx);
     }
     drawOverlay(ctx);
   }
 
+  // Plain grid drawn straight in device pixels (the 64-image-px step of
+  // renderer.drawGrid(), scaled and snapped so lines stay hairlines).
   function drawPlainGrid(ctx) {
+    const sx = bw / W;
+    const sy = bh / H;
     ctx.strokeStyle = 'rgba(215, 221, 232, 0.06)';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    const step = 64; // image px — renderer.drawGrid()'s step
-    for (let x = step; x < W; x += step) {
-      ctx.moveTo(x + 0.5, 0);
-      ctx.lineTo(x + 0.5, H);
+    const stepX = 64 * sx;
+    const stepY = 64 * sy;
+    for (let x = stepX; x < bw; x += stepX) {
+      const px = Math.round(x) + 0.5;
+      ctx.moveTo(px, 0);
+      ctx.lineTo(px, bh);
     }
-    for (let y = step; y < H; y += step) {
-      ctx.moveTo(0, y + 0.5);
-      ctx.lineTo(W, y + 0.5);
+    for (let y = stepY; y < bh; y += stepY) {
+      const py = Math.round(y) + 0.5;
+      ctx.moveTo(0, py);
+      ctx.lineTo(bw, py);
     }
     ctx.stroke();
     // extent border
     ctx.strokeStyle = 'rgba(58, 67, 86, 0.9)';
     ctx.lineWidth = 2;
-    ctx.strokeRect(1, 1, W - 2, H - 2);
+    ctx.strokeRect(1, 1, bw - 2, bh - 2);
+  }
+
+  // Overlay raster cache: the field→pixel render is the expensive step;
+  // redraws (radar arrival, resize) reuse it while both inputs — the
+  // grid object and the device-pixel rect size — are unchanged.
+  let overlay = null; // { grid, ow, oh, cv } | null
+
+  function overlayCanvas(g, ow, oh) {
+    if (overlay && overlay.grid === g && overlay.ow === ow && overlay.oh === oh) {
+      return overlay.cv;
+    }
+    const cv = document.createElement('canvas');
+    cv.width = ow;
+    cv.height = oh;
+    const octx = cv.getContext('2d');
+    if (!octx) return null;
+    const img = octx.createImageData(ow, oh);
+    img.data.set(renderHeatField(g.cells, g.w, g.h, g.max, g.kind === 'kd', ow, oh));
+    octx.putImageData(img, 0, 0);
+    overlay = { grid: g, ow, oh, cv };
+    return cv;
   }
 
   function drawOverlay(ctx) {
@@ -135,56 +178,33 @@
     const ch = (g.maxY - g.minY) / g.h;
     if (!(cw > 0) || !(ch > 0)) return;
 
-    // Grid-resolution offscreen raster, then one smoothed upscale into the
-    // grid's world-bounds rect — bilinear gives the interpolated ramp.
-    const off = document.createElement('canvas');
-    off.width = g.w;
-    off.height = g.h;
-    const octx = off.getContext('2d');
-    if (!octx) return;
-    const imgData = octx.createImageData(g.w, g.h);
-    const data = imgData.data;
-    const max = g.max > 0 ? g.max : 0;
-    // The signed kd raster normalizes by |v|max and picks its ramp per
-    // sign (deaths blue, kills amber→white-hot); everything else rides
-    // HEAT_STOPS on the sqrt intensity curve (lib/heatramp.js — the
-    // legend's gradient is painted from the same stops).
-    const signed = g.kind === 'kd';
-    for (let r = 0; r < g.h; r++) {
-      const dstRow = g.h - 1 - r; // row 0 (minY) → bottom of image space
-      for (let c = 0; c < g.w; c++) {
-        const v = cells[r * g.w + c] || 0;
-        const t = signed ? signedIntensity(v, max) : intensity(v, max);
-        const o = (dstRow * g.w + c) * 4;
-        if (t === 0) {
-          data[o + 3] = 0;
-          continue;
-        }
-        const [cr, cg, cb, ca] = rampColor(
-          t < 0 ? DEATH_STOPS : HEAT_STOPS,
-          Math.abs(t),
-        );
-        data[o] = Math.round(cr);
-        data[o + 1] = Math.round(cg);
-        data[o + 2] = Math.round(cb);
-        data[o + 3] = Math.round(ca * 255);
-      }
-    }
-    octx.putImageData(imgData, 0, 0);
-
-    // World-bounds rect → image pixels: top-left is (minX, maxY) because
-    // toImage flips Y. Cells whose bounds run past the radar simply clip.
+    // World-bounds rect → device pixels (image space × the device
+    // scale). The overlay is rendered AT that rect's device resolution
+    // and drawn ~1:1 (fractional origin keeps it locked to world space;
+    // the ≤1 device-px edge softness beats a half-pixel world shift).
+    // Top-left is (minX, maxY) because toImage flips Y. Cells whose
+    // bounds run past the radar simply clip.
     const p0 = eff.toImage(g.minX, g.maxY);
     const p1 = eff.toImage(g.maxX, g.minY);
+    const sx = bw / W;
+    const sy = bh / H;
+    const ox = p0.x * sx;
+    const oy = p0.y * sy;
+    const ow = Math.max(1, Math.round((p1.x - p0.x) * sx));
+    const oh = Math.max(1, Math.round((p1.y - p0.y) * sy));
+    const off = overlayCanvas(g, ow, oh);
+    if (!off) return;
     ctx.save();
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
-    ctx.drawImage(off, p0.x, p0.y, p1.x - p0.x, p1.y - p0.y);
+    ctx.drawImage(off, ox, oy, ow, oh);
     ctx.restore();
   }
 
   // Click → world coords → the grid cell containing the point (snapped to
-  // cell size) → bbox drill into the replay landmark feed.
+  // cell size) → bbox drill into the replay landmark feed. Client pixels
+  // map through the displayed size to IMAGE space (the backing store is
+  // device pixels, so c.width is the wrong scale here).
   function onClick(e) {
     const c = canvas;
     if (!eff || !c || !grid || !grid.w || !grid.h) return;
@@ -193,9 +213,9 @@
     if (!(cw > 0) || !(ch > 0)) return;
     const rect = c.getBoundingClientRect();
     if (rect.width <= 0 || rect.height <= 0) return;
-    const px = ((e.clientX - rect.left) / rect.width) * c.width;
-    const py = ((e.clientY - rect.top) / rect.height) * c.height;
-    const world = eff.toWorld(px, py);
+    const ix = ((e.clientX - rect.left) / rect.width) * W;
+    const iy = ((e.clientY - rect.top) / rect.height) * H;
+    const world = eff.toWorld(ix, iy);
     const ci = Math.floor((world.x - grid.minX) / cw);
     const ri = Math.floor((world.y - grid.minY) / ch);
     onRegion({
@@ -207,12 +227,12 @@
   }
 </script>
 
-<div class="heat-canvas-wrap">
+<div class="heat-canvas-wrap" bind:clientWidth={boxW}>
   <canvas
     bind:this={canvas}
     class="heat-canvas"
-    width={W}
-    height={H}
+    width={bw}
+    height={bh}
     title="Click a region to open the replay events for that position"
     onclick={onClick}
     aria-label="Heatmap over the map grid"
