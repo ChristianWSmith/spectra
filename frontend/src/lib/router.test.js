@@ -61,12 +61,14 @@ test('every match tab deep-links as #/match/:id/<slug> (slug = lowercase tab)', 
   // Context are NOT tabs — they resolve to the Replay landmark feed.
   assert.deepEqual(MATCH_TABS, [
     'Overview',
+    'Details',
     'Scoreboard',
     'Rounds',
     'Economy',
     'Utility',
     'Heatmaps',
     'Combat',
+    'Reports',
   ]);
   assert.equal(new Set(MATCH_TABS.map(matchTabSlug)).size, MATCH_TABS.length);
   for (const tab of MATCH_TABS) {

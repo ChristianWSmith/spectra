@@ -36,6 +36,10 @@
   import Utility from './Utility.svelte';
   import Heatmaps from './Heatmaps.svelte';
   import Combat from './Combat.svelte';
+  // Details / Reports tabs embed the standalone views (embedded=true
+  // fixes them to THIS match — no picker, no newest-match default).
+  import Explorer from './Explorer.svelte';
+  import Reports from './Reports.svelte';
   import StatusChip from '../components/StatusChip.svelte';
   import SortTh from '../components/SortTh.svelte';
   import StatCard from '../components/StatCard.svelte';
@@ -107,7 +111,10 @@
   let desc = $state(true);
   let expanded = $state(0); // steamId of the expanded scoreboard row
   let warnings = $state(null); // null = not loaded
-  let warningsOpen = $state(false);
+  // Warnings render directly (no header button): the panel is open by
+  // default whenever the match has warnings, and the dismiss X hides it
+  // for the rest of this mounted session.
+  let warningsDismissed = $state(false);
   let error = $state('');
   // M4 header badges: voice presence + chat-decrypt key state.
   let voice = $state(null);
@@ -191,6 +198,28 @@
       })
       .catch((e) => {
         if (live) error = errText(e);
+      });
+    return () => (live = false);
+  });
+
+  // Warnings fetch — only when the match actually has warnings
+  // (match.warningsCount > 0; a clean match renders no panel at all).
+  // Re-runs when the match changes (id switch) and resets the list, so
+  // the panel always shows this match's warnings while it is visible.
+  $effect(() => {
+    const n = match ? match.warningsCount : 0;
+    if (!(n > 0)) return;
+    let live = true;
+    warnings = null;
+    getWarnings(id)
+      .then((w) => {
+        if (live) warnings = w || [];
+      })
+      .catch((e) => {
+        if (live) {
+          warnings = [];
+          error = errText(e);
+        }
       });
     return () => (live = false);
   });
@@ -421,12 +450,12 @@
 
   // Every event drill-down goes to THE event browser: Replay's landmark
   // feed, scoped by the entry point (the old Timeline hand-off).
-  function openPlayerEvents(steamId) {
-    nav(replayHash(id, { steamId }, { back: backPath() }));
-  }
-
-  function openChat() {
-    nav(replayHash(id, { cats: ['chat'] }, { back: backPath() }));
+  // opts.follow (player-line clicks: roster rows, scoreboard rows) also
+  // asks Replay to set the camera to that player — StatCard clicks keep
+  // the plain event view.
+  function openPlayerEvents(steamId, opts) {
+    const follow = opts && opts.follow ? { follow: steamId } : {};
+    nav(replayHash(id, { steamId }, { back: backPath(), ...follow }));
   }
 
   function openReplay() {
@@ -464,18 +493,6 @@
   function selectTab(t) {
     tab = t;
     nav(t === 'Overview' ? `/match/${id}` : `/match/${id}/${matchTabSlug(t)}`);
-  }
-
-  async function toggleWarnings() {
-    warningsOpen = !warningsOpen;
-    if (warningsOpen && warnings == null) {
-      try {
-        warnings = await getWarnings(id);
-      } catch (e) {
-        error = errText(e);
-        warnings = [];
-      }
-    }
   }
 
   // JSON.parse of killsByWeapon/damageByWeapon — "" or malformed → [].
@@ -545,64 +562,35 @@
           <span class="score">{match.scoreCT}–{match.scoreT}</span>
           <span class="t">{teams.t}</span>
         </h1>
+        <!-- Tickrate, voice presence and parser version moved to the
+             Details tab (Key facts); only the encrypted-chat key state
+             stays up here. -->
         <p class="muted match-sub">
           {match.map || '—'}
           · half {match.halfCT}–{match.halfT}
           · {fmtDuration(match.playbackTimeS)}
-          · {fmt1(match.tickRate)} Hz
           · patch {match.patchVersion}
           · <StatusChip status={match.status || 'ready'} title={match.error || ''} />
-          {#if voice}
-            {#if voice.hasVoice}
-              <span
-                class="chip voice-badge busy"
-                title="Voice: {fmtInt(voice.chunkCount)} chunks across {voice.playerCount} players — Opus, decoded on demand"
-                ><span class="codicon codicon-unmute"></span> {(voice.chunkCount / 1000).toFixed(1)}k · {voice.playerCount}</span
-              >
-            {:else}
-              <span
-                class="chip voice-badge idle"
-                title="This demo source does not record voice (e.g. Valve MM) — normal, not broken"
-                >no voice</span
-              >
-            {/if}
-            {#if !voice.keyFound && (match.encryptedMessages || 0) > 0}
-              <span
-                class="chip voice-badge idle"
-                title="Encrypted chat present — .dem.info key not found"
-                ><span class="codicon codicon-lock"></span></span
-              >
-            {/if}
+          {#if voice && !voice.keyFound && (match.encryptedMessages || 0) > 0}
+            <span
+              class="chip voice-badge idle"
+              title="Encrypted chat present — .dem.info key not found"
+              ><span class="codicon codicon-lock"></span></span
+            >
           {/if}
-          · parser {match.parserVersion || '—'}
         </p>
       </div>
       <div class="spacer"></div>
-      {#if match.warningsCount > 0}
-        <button class="btn warn" onclick={toggleWarnings}>
-          {match.warningsCount} warning{match.warningsCount === 1 ? '' : 's'}
-        </button>
-      {:else}
-        <button class="btn" onclick={toggleWarnings}>Warnings</button>
-      {/if}
-      <!-- The old Raw tab's inspectors (provenance, census) live in the
-           Explorer view; carry this match over as its context instead of
-           defaulting to the newest. -->
-      <button class="btn" onclick={() => nav('/explorer/' + id)}>
-        Open in Explorer view →
-      </button>
-      <!-- Chat is a shortcut into THE event browser with the chat
-           category pre-enabled (the old Chat tab's list retired into
-           Replay's landmark feed). -->
-      <button class="btn" onclick={openChat}>Chat</button>
       <button class="btn primary" onclick={openReplay}>Replay</button>
     </header>
 
-    {#if warningsOpen}
+    <!-- Warnings: no button — the panel is present iff the match has
+         warnings (fetched on load), open until dismissed. -->
+    {#if match.warningsCount > 0 && !warningsDismissed}
       <div class="panel warnings-panel">
         <div class="row-between">
           <h2>Extraction warnings</h2>
-          <button class="btn small" aria-label="Dismiss warnings" onclick={() => (warningsOpen = false)}>
+          <button class="btn small" aria-label="Dismiss warnings" onclick={() => (warningsDismissed = true)}>
             <span class="codicon codicon-close"></span>
           </button>
         </div>
@@ -670,7 +658,7 @@
                   title={p.finalStatePresent === false
                     ? 'not in final snapshot — stats derived from events'
                     : ''}
-                  onclick={() => openPlayerEvents(p.steamId)}
+                  onclick={() => openPlayerEvents(p.steamId, { follow: true })}
                 >
                   <td>
                     {p.name}
@@ -703,7 +691,7 @@
                   title={p.finalStatePresent === false
                     ? 'not in final snapshot — stats derived from events'
                     : ''}
-                  onclick={() => openPlayerEvents(p.steamId)}
+                  onclick={() => openPlayerEvents(p.steamId, { follow: true })}
                 >
                   <td>
                     {p.name}
@@ -722,7 +710,7 @@
             <table class="data-table">
               <tbody>
                 {#each rosters.other as p (p.steamId)}
-                  <tr class="clickable" onclick={() => openPlayerEvents(p.steamId)}>
+                  <tr class="clickable" onclick={() => openPlayerEvents(p.steamId, { follow: true })}>
                     <td>{p.name}</td>
                     <td class="num">{p.kills}/{p.deaths}/{p.assists}</td>
                     <td class="num"><span class="chip adr">{fmt1(p.adr)}</span></td>
@@ -734,16 +722,39 @@
         </section>
       </div>
 
+      <!-- Key facts first, then Explorer's diagnostics panels below
+           (embedded — fixed to THIS match). Map/Duration live in the
+           match header; Provenance/Entity/census come from Explorer. -->
       <section class="panel">
         <h2>Key facts</h2>
         <dl class="facts">
           <div><dt>Server</dt><dd>{match.serverName || '—'}</dd></div>
-          <div><dt>Map</dt><dd>{match.map || '—'}</dd></div>
           <div><dt>Tickrate</dt><dd>{fmt1(match.tickRate)} Hz</dd></div>
           <div><dt>Frames</dt><dd class="num">{fmtInt(match.frames)}</dd></div>
-          <div><dt>Duration</dt><dd>{fmtDuration(match.playbackTimeS)}</dd></div>
           <div><dt>Size</dt><dd>{fmtBytes(match.size)}</dd></div>
           <div><dt>Extracted</dt><dd>{fmtDate(match.extractedAt)}</dd></div>
+          <div><dt>Parser</dt><dd class="mono">{match.parserVersion || '—'}</dd></div>
+          <div>
+            <dt>Voice</dt>
+            <dd>
+              {#if !voice}
+                <span class="muted">—</span>
+              {:else if voice.hasVoice}
+                <span
+                  class="chip voice-badge busy"
+                  title="Voice: {fmtInt(voice.chunkCount)} chunks across {voice.playerCount} players — Opus, decoded on demand"
+                  ><span class="codicon codicon-unmute"></span>
+                  {(voice.chunkCount / 1000).toFixed(1)}k chunks · {voice.playerCount} players</span
+                >
+              {:else}
+                <span
+                  class="chip voice-badge idle"
+                  title="This demo source does not record voice (e.g. Valve MM) — normal, not broken"
+                  >no voice</span
+                >
+              {/if}
+            </dd>
+          </div>
           <div><dt>Warnings</dt><dd>{match.warningsCount}</dd></div>
           {#if firstBlood}
             <div><dt>First blood</dt><dd>{firstBlood}</dd></div>
@@ -751,6 +762,7 @@
           <div class="fact-wide"><dt>Source</dt><dd class="mono">{match.path}</dd></div>
         </dl>
       </section>
+      <Explorer embedded routeId={id} {nav} />
     {:else if tab === 'Scoreboard'}
       {#if combatError}
         <p class="error" role="alert">KAST% unavailable: {combatError}</p>
@@ -807,15 +819,16 @@
                   // reliably stop this row handler — guard on target instead.
                   if (e.target instanceof Element && e.target.closest('button, input, a'))
                     return;
-                  openPlayerEvents(p.steamId);
+                  openPlayerEvents(p.steamId, { follow: true });
                 }}
-                onkeydown={(e) => e.key === 'Enter' && openPlayerEvents(p.steamId)}
+                onkeydown={(e) =>
+                  e.key === 'Enter' && openPlayerEvents(p.steamId, { follow: true })}
                 tabindex="0"
               >
                 <td class="expand-cell" onclick={(e) => e.stopPropagation()}>
                   <button
                     class="btn small ghost"
-                    aria-label="Weapon breakdown for {p.name}"
+                    aria-label="Breakdown for {p.name}"
                     aria-expanded={expanded === p.steamId}
                     onclick={() => (expanded = expanded === p.steamId ? 0 : p.steamId)}
                   >
@@ -857,7 +870,7 @@
               {#if expanded === p.steamId}
                 <tr class="expand-row">
                   <td colspan={SCORE_COLS.length + 1 + metricCols.length}>
-                    <div class="weapon-grid">
+                    <div class="weapon-grid util-grid">
                       <div>
                         <h3>Kills by weapon</h3>
                         <table class="data-table mini">
@@ -885,6 +898,22 @@
                             {:else}
                               <tr><td colspan="2" class="muted">None recorded</td></tr>
                             {/each}
+                          </tbody>
+                        </table>
+                      </div>
+                      <!-- Utility usage: read-only columns the scoreboard
+                           row already carries (store GetScoreboard SELECT). -->
+                      <div>
+                        <h3>Utility</h3>
+                        <table class="data-table mini">
+                          <thead>
+                            <tr><th scope="col">Stat</th><th scope="col" class="num">Value</th></tr>
+                          </thead>
+                          <tbody>
+                            <tr><td>Utility damage</td><td class="num">{p.utilityDamage}</td></tr>
+                            <tr><td>Flashes popped</td><td class="num">{p.flashesPopped}</td></tr>
+                            <tr><td>Flash assists</td><td class="num">{p.flashAssists}</td></tr>
+                            <tr><td>Times flashed</td><td class="num">{p.flashedTimes}</td></tr>
                           </tbody>
                         </table>
                       </div>
@@ -1012,6 +1041,8 @@
       <Heatmaps {id} {nav} />
     {:else if tab === 'Combat'}
       <Combat {id} {nav} />
+    {:else if tab === 'Reports'}
+      <Reports embedded routeId={id} {nav} />
     {/if}
   {:else if !error}
     <p class="muted" role="status">Loading…</p>

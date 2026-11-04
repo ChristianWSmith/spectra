@@ -6,7 +6,9 @@
 //
 // The two teams are labelled ABOVE and BELOW the cells in the scoreline's
 // order (the team that finished CT on top, the team that finished T
-// below). Each cell points an arrow toward the team that WON that round —
+// below); both labels are centered horizontally over the range of round
+// buttons (the wrap hugs the strip — .round-strip-wrap / .round-strip-team
+// in public/style.css). Each cell points an arrow toward the team that WON that round —
 // ▲ toward the team above, ▼ toward the team below — so the arrow follows
 // the TEAM across the halftime side switch while the cell tint keeps
 // following the SIDE. A marker splits the row after the 12th real round
