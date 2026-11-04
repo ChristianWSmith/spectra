@@ -373,35 +373,10 @@
         {/if}
       </section>
 
+      <!-- Saved queries above history: one column, never side by side — a
+           long history row can only scroll inside its own list, so it can
+           never squeeze the saved panel off the screen. -->
       <div class="sql-lower">
-        <section class="panel">
-          <div class="row-between">
-            <h2>History (last 50)</h2>
-            <button class="btn small" onclick={clearHistory} disabled={!history.length}>Clear</button>
-          </div>
-          {#if historyError}
-            <p class="error" role="alert">{historyError}</p>
-          {/if}
-          <div class="sql-hist-list">
-            {#each history as h (h.id)}
-              <button class="sql-hist" title={h.sql} onclick={() => (sql = h.sql)}>
-                <span
-                  class="sql-dot"
-                  class:ok={h.ok}
-                  class:bad={!h.ok}
-                  title={h.ok ? 'ok' : 'error'}
-                ></span>
-                <span class="mono sql-hist-sql">{short(truncateSql(h.sql), 100)}</span>
-                <span class="sql-hist-meta num">{h.ms} ms · {h.rows} rows</span>
-              </button>
-            {:else}
-              {#if !historyError}
-                <p class="muted" role="status">No runs yet.</p>
-              {/if}
-            {/each}
-          </div>
-        </section>
-
         <section class="panel">
           <div class="row-between">
             <h2>Saved queries</h2>
@@ -442,6 +417,34 @@
             {:else}
               {#if !savedError}
                 <p class="muted" role="status">Nothing saved yet — run a statement, name it, press Save.</p>
+              {/if}
+            {/each}
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="row-between">
+            <h2>History (last 50)</h2>
+            <button class="btn small" onclick={clearHistory} disabled={!history.length}>Clear</button>
+          </div>
+          {#if historyError}
+            <p class="error" role="alert">{historyError}</p>
+          {/if}
+          <div class="sql-hist-list">
+            {#each history as h (h.id)}
+              <button class="sql-hist" title={h.sql} onclick={() => (sql = h.sql)}>
+                <span
+                  class="sql-dot"
+                  class:ok={h.ok}
+                  class:bad={!h.ok}
+                  title={h.ok ? 'ok' : 'error'}
+                ></span>
+                <span class="mono sql-hist-sql">{short(truncateSql(h.sql), 100)}</span>
+                <span class="sql-hist-meta num">{h.ms} ms · {h.rows} rows</span>
+              </button>
+            {:else}
+              {#if !historyError}
+                <p class="muted" role="status">No runs yet.</p>
               {/if}
             {/each}
           </div>
