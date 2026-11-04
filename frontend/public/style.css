@@ -1602,3 +1602,17 @@ button.lm-cat-chip.on {
     grid-template-columns: 1fr;
   }
 }
+
+/* --- Heatmap legend (appended block) --------------------------------------
+   The .heat-ramp gradient is set inline from lib/heatramp.js — the exact
+   stops the canvas renders — so the legend can never drift from the
+   overlay (the static gradient in style-m3a.css is only the fallback).
+   Only the signed kd legend's end-label hues live here: deaths (−) icy
+   blue, kills (+) amber. */
+.heat-legend-neg {
+  color: #6ea8ff;
+}
+
+.heat-legend-pos {
+  color: #fbac18;
+}

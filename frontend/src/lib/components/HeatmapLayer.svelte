@@ -1,5 +1,12 @@
 <script>
   import { makeTransform } from './mapxform.js';
+  import {
+    HEAT_STOPS,
+    DEATH_STOPS,
+    intensity,
+    signedIntensity,
+    rampColor,
+  } from '../heatramp.js';
 
   // Canvas heatmap layer: map-pack radar as base, HeatmapGrid raster as
   // overlay. All world→image math goes through mapxform's transform — the
@@ -138,24 +145,29 @@
     const imgData = octx.createImageData(g.w, g.h);
     const data = imgData.data;
     const max = g.max > 0 ? g.max : 0;
-    const logMax = Math.log(10); // log(1 + 9·1): normalizes v/max → 0..1
+    // The signed kd raster normalizes by |v|max and picks its ramp per
+    // sign (deaths blue, kills amber→white-hot); everything else rides
+    // HEAT_STOPS on the sqrt intensity curve (lib/heatramp.js — the
+    // legend's gradient is painted from the same stops).
+    const signed = g.kind === 'kd';
     for (let r = 0; r < g.h; r++) {
       const dstRow = g.h - 1 - r; // row 0 (minY) → bottom of image space
       for (let c = 0; c < g.w; c++) {
         const v = cells[r * g.w + c] || 0;
-        // Log-ish scale so low-traffic cells stay visible next to hotspots.
-        const t = max > 0 && v > 0 ? Math.log(1 + 9 * (v / max)) / logMax : 0;
+        const t = signed ? signedIntensity(v, max) : intensity(v, max);
         const o = (dstRow * g.w + c) * 4;
-        if (t <= 0) {
+        if (t === 0) {
           data[o + 3] = 0;
           continue;
         }
-        // Ramp: transparent → amber → red, normalized by grid.max.
-        const a = Math.min(1, t * 1.5) * 0.92;
-        data[o] = Math.round(245 + (224 - 245) * t);
-        data[o + 1] = Math.round(166 + (91 - 166) * t);
-        data[o + 2] = Math.round(24 + (91 - 24) * t);
-        data[o + 3] = Math.round(a * 255);
+        const [cr, cg, cb, ca] = rampColor(
+          t < 0 ? DEATH_STOPS : HEAT_STOPS,
+          Math.abs(t),
+        );
+        data[o] = Math.round(cr);
+        data[o + 1] = Math.round(cg);
+        data[o + 2] = Math.round(cb);
+        data[o + 3] = Math.round(ca * 255);
       }
     }
     octx.putImageData(imgData, 0, 0);
