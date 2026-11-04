@@ -1228,6 +1228,27 @@ input[type='checkbox']:focus-visible {
   cursor: grabbing;
 }
 
+/* Follow chip — the "Following <player>" overlay on the replay stage.
+   It mirrors the engine's follow state (the ?follow= entry, the
+   transport select and the F/1-9 keys all land here) and is the dismiss
+   surface for it. Top-right, clear of the HUD readout at top-left. */
+.follow-chip {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+  gap: 4px;
+  padding: 2px 4px 2px 8px;
+  background: rgba(14, 17, 22, 0.85);
+  border-color: var(--accent-40);
+  color: var(--text);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.follow-chip .btn {
+  padding: 0 4px;
+}
+
 .replay-side {
   width: 340px;
   flex: 0 0 340px;

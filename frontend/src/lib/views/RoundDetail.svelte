@@ -7,11 +7,13 @@
     getTeamNames,
     errText,
   } from '../services.js';
-  import { fmtDuration, fmtTickSeconds, fmtInt, chatClock } from '../fmt.js';
+  import { fmtDuration, fmtTickSeconds, fmtInt, fmtClock, tickSeconds, chatClock } from '../fmt.js';
+  import { isCounted } from '../rounds.js';
   import { replayHash } from '../nav.js';
   import { buildHash } from '../router.js';
   import { roundsByNumber } from '../replay/landmarks.js';
   import RoundStrip from '../components/RoundStrip.svelte';
+  import EventFlags from '../components/EventFlags.svelte';
 
   let { id = 0, round = 0, query = {}, nav = () => {} } = $props();
 
@@ -83,6 +85,50 @@
   const economy = $derived(detail?.economy || []);
   const chat = $derived(detail?.chat || []);
   const rbn = $derived(roundsByNumber(rounds));
+
+  // Round events from the ONE round-detail read (models.RoundDetail
+  // .events — typed EventRows for exactly this round, already ordered by
+  // seq): the kill feed and the bomb timeline live here again (the
+  // canonical event browser still holds every other round event).
+  const events = $derived(detail?.events || []);
+  const kills = $derived(events.filter((e) => e.kind === 'kill'));
+  const bombEvents = $derived(
+    events.filter(
+      (e) => e.kind === 'bomb_plant' || e.kind === 'bomb_defuse' || e.kind === 'bomb_explode',
+    ),
+  );
+
+  // Scoreline at this round: cumulative counted-round wins by side — a
+  // pure view aggregate over the already-fetched rounds rows
+  // (lib/rounds.js isCounted drops the knife/warmup winners; rounds are
+  // numbered in time order, so number <= round is "through this round").
+  const scoreAt = $derived.by(() => {
+    let ct = 0;
+    let t = 0;
+    for (const r of rounds) {
+      if (!isCounted(r) || r.number > round) continue;
+      if (r.winner === 'ct') ct++;
+      else if (r.winner === 't') t++;
+    }
+    return { ct, t };
+  });
+
+  // Into-round clock for an event row ("0:47" = that far past the round
+  // start) — fmt.js fmtClock over tickSeconds; the raw tick rides the
+  // title tooltip.
+  function roundClock(tick) {
+    const start = detail?.round?.startTick;
+    const into = Number.isFinite(start) ? tick - start : tick;
+    return fmtClock(tickSeconds(into, tickRate));
+  }
+
+  // Bomb event label for the timeline's Event column.
+  function bombLabel(kind) {
+    if (kind === 'bomb_plant') return 'Planted';
+    if (kind === 'bomb_defuse') return 'Defused';
+    if (kind === 'bomb_explode') return 'Exploded';
+    return kind;
+  }
 
   // Prev/next by INDEX into the numbered list, not number arithmetic: the
   // first real round is 1 with negative knife/warmup rounds before it, so
@@ -170,53 +216,184 @@
   {/if}
 
   {#if detail}
-    <!-- Round analysis: economy + this round's chat (the kill feed
-         retired into the canonical event browser — see openEvents). -->
+    <!-- Round analysis: the round's result, kill feed and bomb timeline
+         (the round-detail read's typed events), with economy and this
+         round's chat alongside. Every event row drills into the replay
+         at its tick (watchTick); openEvents keeps the canonical
+         landmark-feed entry. -->
     <div class="round-grid">
-      <section class="panel">
-        <h2>Economy</h2>
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th scope="col">Side</th>
-              <th scope="col" class="num">Equip</th>
-              <th scope="col" class="num">Money</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each economy as e (e.side)}
-              <tr>
-                <td><span class="chip side {e.side}">{e.side.toUpperCase()}</span></td>
-                <td class="num">{e.equipValue}</td>
-                <td class="num">
-                  {e.moneySamples > 0
-                    ? fmtInt(Math.round(e.moneySampledSum / e.moneySamples))
-                    : '—'}
-                </td>
-              </tr>
-            {:else}
-              <tr><td colspan="3" class="muted">No economy samples.</td></tr>
-            {/each}
-          </tbody>
-        </table>
-      </section>
+      <div class="round-side">
+        <section class="panel">
+          <h2>Round result</h2>
+          <dl class="facts">
+            <div>
+              <dt>Winner</dt>
+              <dd>
+                {#if detail.round.winner}
+                  <span class="chip side {detail.round.winner}"
+                    >{teams[detail.round.winner] || detail.round.winner.toUpperCase()}</span
+                  >
+                {:else}
+                  <span class="muted">—</span>
+                {/if}
+              </dd>
+            </div>
+            <div>
+              <dt>Reason</dt>
+              <dd>{detail.round.reason || '—'}</dd>
+            </div>
+            <div>
+              <dt>Score</dt>
+              <dd
+                title="Counted-round wins through this round (knife/warmup excluded)"
+              >
+                {#if round >= 1 && rounds.length}
+                  <span class="ct">{scoreAt.ct}</span>–<span class="t">{scoreAt.t}</span>
+                {:else}
+                  <span class="muted">—</span>
+                {/if}
+              </dd>
+            </div>
+            <div>
+              <dt>First kill</dt>
+              <dd>
+                {detail.round.firstKillName || '—'}{detail.round.firstDeathName
+                  ? ` → ${detail.round.firstDeathName}`
+                  : ''}
+              </dd>
+            </div>
+          </dl>
+        </section>
 
-      <section class="panel">
-        <h2>Round chat</h2>
-        {#if chat.length === 0}
-          <p class="muted" role="status">No chat this round.</p>
-        {:else}
-          <ul class="chat-list">
-            {#each chat as c (c.id)}
-              <li>
-                <span class="mono muted" title="tick {c.tick}">{chatClock(c, rbn, tickRate)}</span>
-                <strong>{c.name || '—'}</strong>
-                <span>{c.text}</span>
-              </li>
-            {/each}
-          </ul>
-        {/if}
-      </section>
+        <section class="panel">
+          <h2>Kills <span class="muted">({kills.length})</span></h2>
+          {#if kills.length === 0}
+            <p class="muted" role="status">No kills this round.</p>
+          {:else}
+            <div class="table-scroll">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Time</th>
+                    <th scope="col">Killer</th>
+                    <th scope="col">Victim</th>
+                    <th scope="col">Weapon</th>
+                    <th scope="col">Flags</th>
+                    <th scope="col"><span class="sr-only">Watch</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each kills as k (k.id)}
+                    <tr>
+                      <td class="mono" title="tick {k.tick}">{roundClock(k.tick)}</td>
+                      <td>{k.attackerName || k.attacker || '—'}</td>
+                      <td>{k.victimName || k.victim || '—'}</td>
+                      <td class="mono">{k.weapon || '—'}</td>
+                      <td><EventFlags event={k} none /></td>
+                      <td>
+                        <button
+                          class="btn small ghost"
+                          title="Watch from this kill in the replay"
+                          aria-label="Watch from tick {k.tick} in the replay"
+                          onclick={() => watchTick(k.tick)}
+                          ><span class="codicon codicon-play"></span></button
+                        >
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          {/if}
+        </section>
+
+        <section class="panel">
+          <h2>Bomb</h2>
+          {#if bombEvents.length === 0}
+            <p class="muted" role="status">No bomb events this round.</p>
+          {:else}
+            <div class="table-scroll">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Time</th>
+                    <th scope="col">Event</th>
+                    <th scope="col">Player</th>
+                    <th scope="col">Site</th>
+                    <th scope="col"><span class="sr-only">Watch</span></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each bombEvents as e (e.id)}
+                    <tr>
+                      <td class="mono" title="tick {e.tick}">{roundClock(e.tick)}</td>
+                      <td>{bombLabel(e.kind)}</td>
+                      <td>{e.attackerName || e.attacker || '—'}</td>
+                      <td>{e.site || '—'}</td>
+                      <td>
+                        <button
+                          class="btn small ghost"
+                          title="Watch from this event in the replay"
+                          aria-label="Watch from tick {e.tick} in the replay"
+                          onclick={() => watchTick(e.tick)}
+                          ><span class="codicon codicon-play"></span></button
+                        >
+                      </td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+          {/if}
+        </section>
+
+        <section class="panel">
+          <h2>Economy</h2>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th scope="col">Side</th>
+                <th scope="col" class="num">Equip</th>
+                <th scope="col" class="num">Money</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each economy as e (e.side)}
+                <tr>
+                  <td><span class="chip side {e.side}">{e.side.toUpperCase()}</span></td>
+                  <td class="num">{e.equipValue}</td>
+                  <td class="num">
+                    {e.moneySamples > 0
+                      ? fmtInt(Math.round(e.moneySampledSum / e.moneySamples))
+                      : '—'}
+                  </td>
+                </tr>
+              {:else}
+                <tr><td colspan="3" class="muted">No economy samples.</td></tr>
+              {/each}
+            </tbody>
+          </table>
+        </section>
+      </div>
+
+      <div class="round-side">
+        <section class="panel">
+          <h2>Round chat</h2>
+          {#if chat.length === 0}
+            <p class="muted" role="status">No chat this round.</p>
+          {:else}
+            <ul class="chat-list">
+              {#each chat as c (c.id)}
+                <li>
+                  <span class="mono muted" title="tick {c.tick}">{chatClock(c, rbn, tickRate)}</span>
+                  <strong>{c.name || '—'}</strong>
+                  <span>{c.text}</span>
+                </li>
+              {/each}
+            </ul>
+          {/if}
+        </section>
+      </div>
     </div>
 
     <div class="round-nav">

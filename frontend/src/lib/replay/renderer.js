@@ -16,6 +16,15 @@ const CT_COLOR = '#5aa9e6';
 const T_COLOR = '#e6a35a';
 const OTHER_COLOR = '#9aa4b5';
 const TRAIL_FRAMES = 192; // ~3 s at 64 Hz
+// Trail continuity: a trail segment is only drawn between two ADJACENT
+// frames that are continuous — a bounded tick gap AND a bounded step.
+// Round resets and death→respawns teleport a player across the map
+// between two otherwise-alive frames; without this rule the polyline
+// connects through the teleport and draws one long streaking line from
+// the old position back to spawn. The sidecar samples 1:1 with demo
+// frames, so a normal gap is ~1 tick and a normal step is a few units.
+const TRAIL_MAX_TICK_GAP = 8; // ticks — anything larger is a discontinuity
+const TRAIL_MAX_STEP2 = 256 * 256; // world units² — human movement is ~8/frame
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 8;
 const SMOKE_LIFETIME_S = 18;
@@ -31,6 +40,25 @@ function teamColor(side) {
 
 function hasPos(l) {
   return l && Number.isFinite(l.x) && Number.isFinite(l.y);
+}
+
+// trailConnects — the pure continuity rule drawTrails applies per segment:
+// does the trail draw between frame f and f+1 of one slot? `ticks` is the
+// store's tick array, `pos` that slot's interleaved Float32Array
+// [x, y, z, yaw] per frame. False breaks the polyline here (teleport /
+// stalled sampling); the chain restarts at the next segment, so trails
+// across a round reset or a death→respawn never connect — the first
+// post-respawn segments start fresh at spawn. Exported for the headless
+// test in src/lib/renderer.test.js.
+export function trailConnects(ticks, pos, f) {
+  if (f < 0 || f + 1 >= ticks.length) return false;
+  const gap = ticks[f + 1] - ticks[f];
+  if (gap <= 0 || gap > TRAIL_MAX_TICK_GAP) return false;
+  const b = f * 4;
+  const pb = (f + 1) * 4;
+  const dx = pos[b] - pos[pb];
+  const dy = pos[b + 1] - pos[pb + 1];
+  return dx * dx + dy * dy <= TRAIL_MAX_STEP2;
 }
 
 export function createRenderer(canvas, { engine, data, players }) {
@@ -59,6 +87,11 @@ export function createRenderer(canvas, { engine, data, players }) {
   // Camera: center of view in image-pixel space + zoom multiplier over the
   // fit scale (which is recomputed on resize).
   const cam = { cx: 0, cy: 0, zoom: 1, fit: 1 };
+  // Follow camera: last ALIVE world position of the followed slot (the
+  // camera holds it while they are dead — see draw()).
+  let followFor = -1;
+  let followX = null;
+  let followY = null;
   // Effective world→image transform + image extent, rebuilt by reproject()
   // from packTf (makeTransform's canonical derivation) or sample bounds.
   // The numeric fields — not an allocating toImage() call — keep the
@@ -302,7 +335,10 @@ export function createRenderer(canvas, { engine, data, players }) {
         const b = f * 4;
         const sx = cssW / 2 + ((p[b] - tf.pos_x) / tf.scale - cam.cx) * s;
         const sy = cssH / 2 + ((tf.pos_y - p[b + 1]) / tf.scale - cam.cy) * s;
-        if (prev) {
+        // prev is frame f+1 (the loop is contiguous and only alive frames
+        // set it); trailConnects breaks the chain across a round reset /
+        // respawn teleport instead of drawing the streaking line.
+        if (prev && trailConnects(store.ticks, p, f)) {
           const age = (frame - f) / TRAIL_FRAMES;
           ctx.strokeStyle = color;
           ctx.globalAlpha = (1 - age) * 0.5;
@@ -544,10 +580,26 @@ export function createRenderer(canvas, { engine, data, players }) {
     if (store && store.frames > 0) {
       // center on the followed player before drawing the rest
       if (st.followSlot != null) {
+        if (st.followSlot !== followFor) {
+          followFor = st.followSlot;
+          followX = followY = null;
+        }
         engine.lerpAt(st.followSlot, tmp);
-        worldToImage(tmp.x, tmp.y, imgPt);
-        cam.cx = imgPt.x;
-        cam.cy = imgPt.y;
+        // Hold the last ALIVE position while they are dead (respawn /
+        // round transition): lerpAt leaves x/y untouched for dead frames
+        // and tmp is shared with drawPlayers, so without this hold the
+        // camera would jump to whichever slot drew last.
+        if (tmp.alive && Number.isFinite(tmp.x)) {
+          followX = tmp.x;
+          followY = tmp.y;
+        }
+        if (followX != null) {
+          worldToImage(followX, followY, imgPt);
+          cam.cx = imgPt.x;
+          cam.cy = imgPt.y;
+        }
+      } else {
+        followFor = -1;
       }
       drawTrails(st.frame);
       drawGrenades(st.tick);
