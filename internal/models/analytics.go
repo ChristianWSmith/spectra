@@ -149,8 +149,10 @@ type UtilityEvent struct {
 }
 
 // CombatStat is one per-player combat deep-dive row derived from stored
-// rows. TradeOppMissed is inferred (= untraded deaths; see the
-// store.GetCombatStats notes) and needs a UI badge.
+// rows. TradeOppMissed is inferred — a gated subset of the untraded
+// deaths (kill-event detail_json.nearDist within the configured
+// trade-opportunity distance; see the store.GetCombatStats notes) — and
+// needs a UI badge.
 type CombatStat struct {
 	SteamID        string  `json:"steamId"`
 	Name           string  `json:"name"`

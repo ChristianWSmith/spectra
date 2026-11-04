@@ -82,7 +82,7 @@ type HeatmapFilter struct {
 // (world units → grid cells; streamed from the sidecar, never fully loaded
 // client-side).
 type HeatmapGrid struct {
-	Kind    string    `json:"kind"` // presence|kills|deaths|damage
+	Kind    string    `json:"kind"` // presence|kills|deaths|damage|kd (kd: the signed combine, GetHeatmapKD)
 	W       int       `json:"w"`
 	H       int       `json:"h"`
 	MinX    float64   `json:"minX"`
@@ -221,16 +221,18 @@ func (s *AnalyticsService) GetCombatStats(matchID int64) ([]models.CombatStat, e
 	return s.st.GetCombatStats(matchID)
 }
 
-// GetHeatmap computes a raster for kind presence|kills|deaths|damage.
-// presence streams the M2 sidecar; kills use the attacker's position (where
+// GetHeatmap computes a raster for kind presence|kills|deaths|damage (the
+// signed kills−deaths combine is GetHeatmapKD). presence streams the M2
+// sidecar; kills use the attacker's position (where
 // the killer was), deaths/damage the victim's/hit position. Filters are
 // applied server-side:
 // presence by round range via the tick↔round spans + steam/team via the
 // slot table; events by round, attacker (kills) or victim
 // (deaths/damage) and their side in that round (exact freeze-end samples —
 // a round without them resolves no side, so a team filter drops it). Bounds
-// come from the
-// sampled extents + 2u pad; the grid is 64×64 with per-axis cell sizes;
+// come from the sampled extents ± heatmapPad — 450u, the 3σ reach of the
+// Gaussian splat (sigma 150u), so an edge sample paints a whole blob
+// instead of a clipped half; the grid is 64×64 with per-axis cell sizes;
 // presence cells are dwell seconds (1/sample-rate per frame per player),
 // event cells are counts.
 func (s *AnalyticsService) GetHeatmap(matchID int64, kind string, f HeatmapFilter) (HeatmapGrid, error) {

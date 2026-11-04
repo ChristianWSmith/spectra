@@ -291,3 +291,23 @@ at the end of the section.
   hash seed from csgocn.net RE post (2025-06-08);
   https://cs2opendev.github.io/CS2OpenDev-Docs/protobufs/gameevents/
   (2026-11-03, its "CRC32" claim disproved above).
+
+- **Cumulative cash-spent counter (`m_iTotalCashSpent`)** — is a player's
+  total spend readable mid-demo? Yes: the CS2 player property
+  `m_pInGameMoneyServices.m_iTotalCashSpent` (field of the player
+  controller's economy component; demoinfocs v6
+  `Player.MoneySpentTotal()`, sibling `MoneySpentThisRound()`) is a LIVE,
+  monotonic cumulative spend counter for the whole match — it advances as
+  the demo plays, so sampling it at each freeze-time-end and differencing
+  consecutive samples yields per-round spend whose sum reproduces the
+  end-of-demo total (verified on the golden demo; `round_economy.spent`
+  is built exactly that way).
+  **Source** — demoinfocs `Player.MoneySpentTotal()`
+  (https://pkg.go.dev/github.com/markus-wa/demoinfocs-golang/v6/pkg/demoinfocs/common#Player.MoneySpentTotal
+  and the source it reads,
+  https://github.com/markus-wa/demoinfocs-golang/blob/master/pkg/demoinfocs/common/player.go);
+  CS2OpenDev schema page
+  `CCSPlayerController_InGameMoneyServices.m_iTotalCashSpent` ("Cumulative
+  money the player has spent across the whole match")
+  (https://cs2opendev.github.io/CS2OpenDev-Docs/schemas/server/CCSPlayerController_InGameMoneyServices/)
+  (2026-11-04).

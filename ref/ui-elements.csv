@@ -226,19 +226,16 @@ Voice state chip,Replay,"Chip showing voice off/on with the AudioContext state, 
 Voice toggle button,Replay,"Enables/disables voice playback (""Enable voice"" / ""🔊 Voice on"").",Replay.svelte:toggleVoice
 Voice volume slider,Replay,Range slider (0–1) controlling master voice volume.,Replay.svelte:onVoiceVol
 Voice WAV download link,Replay,Link that downloads that player's full voice track as a WAV file.,Replay.svelte:voiceWavURL
-Clutch bomb state chip,Combat tab,"""bomb planted/defused/…"" chip on a clutch card shown when the bomb was active during the clutch.",ClutchCard.svelte:clutch.bombState; ClutchCard.svelte:bombState
-Clutch card,Combat tab,"Card summarizing one detected 1vN clutch (outcome, round, duration, HP, bomb state, player, actions) in the Clutches panel on the Combat tab.",ClutchCard.svelte:comb-card
-Clutch duration and HP readout,Combat tab,Muted text on a clutch card showing how long the clutch lasted and the clutcher's remaining HP.,ClutchCard.svelte:fmtDuration
-Clutch equip value text,Combat tab,"Muted ""equip N"" text on a clutch card showing the clutcher's equipment value at the clutch start.",ClutchCard.svelte:clutch.equip
-Clutch kill tick chip,Combat tab,"Monospace chip per kill (e.g. ""K1 · 12345"") under the clutch summary showing the tick each kill landed.",ClutchCard.svelte:comb-ticks
-Clutch player name button,Combat tab,Clickable player name on a clutch card that opens that player's profile page.,ClutchCard.svelte:comb-name-btn
-Clutch provenance chip,Combat tab,"Small ""clutch v2"" chip beside the Clutches heading whose hover text explains the clutch detection method.",Combat.svelte:provenance
-Clutch replay button,Combat tab,"""▶ Replay"" button on a clutch card that opens the replay view seeked to the clutch start tick.",ClutchCard.svelte:replay
-Clutch round chip,Combat tab,"""R#"" chip on a clutch card showing which round the clutch occurred in.",ClutchCard.svelte:round-chip
-Clutch size label,Combat tab,"Bold ""1vN"" text at the left of a clutch card stating how many opponents the clutcher faced.",ClutchCard.svelte:comb-sum
-Clutch timeline button,Combat tab,"""Timeline"" button on a clutch card that opens the timeline pre-filtered to the clutch's round.",ClutchCard.svelte:openTimeline
-Clutch won-lost chip,Combat tab,"Green ""won"" or red ""lost"" chip on a clutch card indicating the clutch outcome.",ClutchCard.svelte:clutch.won
-Clutches section panel,Combat tab,"Panel at the top of the Combat tab headed ""Clutches"" holding the clutch v2 chip, clutch cards, or an empty message.",Combat.svelte:comb-sec
+Clutch bomb state chip,Combat tab,"""bomb planted/defused/…"" chip in a clutches-table row shown when the bomb was active during the clutch (a muted ""—"" otherwise).",Combat.svelte:c.bombState
+Clutch HP left cell,Combat tab,Numeric cell in a clutches-table row showing the clutcher's remaining HP when the clutch resolved.,Combat.svelte:c.hpLeft
+Clutch player name button,Combat tab,Clickable player name in a clutches-table row that opens that player's profile page.,Combat.svelte:comb-name-btn
+Clutch provenance chip,Combat tab,"Small ""alive-count"" chip beside the Clutches heading whose hover text explains the clutch detection method.",Combat.svelte:provenance
+Clutch replay button,Combat tab,"""▶"" ghost button at the start of a clutches-table row that opens the replay at the clutch's anchor tick.",Combat.svelte:replay
+Clutch round chip,Combat tab,"""R#"" button in a clutches-table row that opens that round in the replay landmark feed.",Combat.svelte:openRoundEvents
+Clutch size label,Combat tab,"Bold ""1vN"" cell in a clutches-table row stating how many opponents the clutcher faced.",Combat.svelte:c.size
+Clutch won-lost chip,Combat tab,"Green ""won"" or red ""lost"" chip in a clutches-table row indicating the clutch outcome.",Combat.svelte:c.won
+Clutches section panel,Combat tab,"Panel at the top of the Combat tab headed ""Clutches"" holding the provenance chip, the clutches table, or an empty message.",Combat.svelte:comb-sec
+Clutches table,Combat tab,"Table of detected 1vN clutches (replay, round, size, player, outcome, bomb state, HP left) in the Clutches panel on the Combat tab.",Combat.svelte:clutches
 Combat load error,Combat tab,"Red alert at the top of the Combat tab shown when combat stats, clutches, or engagements fail to load.",Combat.svelte:error
 Combat stats empty message,Combat tab,"""No combat stats."" empty row in the combat stats table on the Combat tab.",Combat.svelte:stats
 Combat stats table,Combat tab,"Per-player table of damage, trade, entry, untraded, and KAST metrics in the Combat stats panel on the Combat tab.",Combat.svelte:sortedStats

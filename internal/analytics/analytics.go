@@ -21,8 +21,12 @@
 //   - Engagement kinds are opening|trade|untraded; the entry kind is
 //     deferred (player_stats.entry_kills from the extractor already covers
 //     per-player entry attribution).
-//   - TradeOppMissed = untraded deaths (inferred heuristic — no
-//     position/line-of-fire opportunity scan in v1).
+//   - TradeOppMissed = the distance-gated subset of untraded deaths
+//     (inferred → UI badge): the kill event's detail_json.nearDist —
+//     the nearest living teammate of the victim to the killer, measured
+//     once at extract — must fall within [0, tradeOppDistance]
+//     (config, default 200u; the gate itself lives in
+//     store.GetCombatStats).
 //   - Clutch HPLeft reconstructs from damage events after the clutch
 //     start (100 - sum(dmg taken), clamped ≥ 1; 100 when no damage after
 //     start) — a reconstruction, not a sampled HP value.
