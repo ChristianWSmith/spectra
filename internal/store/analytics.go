@@ -371,11 +371,15 @@ func (s *Store) GetUtility(matchID int64) ([]models.UtilityEvent, error) {
 // applyLossBonuses); InferredCT/ InferredT are set accordingly; per-side
 // ClassCT/ClassT/ClassWhy* stay empty for the caller to fill via
 // analytics.buyClass (unexported: package-internal only, and the store
-// cannot import analytics anyway — documented cycle deviation).
+// cannot import analytics anyway — documented cycle deviation). SpentCT/
+// SpentT carry round_economy.spent — the side's real per-round buy spend
+// (sum of the players' cumulative money-spent deltas between freeze-time
+// ends, see extract.agg.freezeEnd).
 func (s *Store) GetEconomy(matchID int64) ([]models.EconomyRow, error) {
 	rows, err := s.db.Query(
 		`SELECT r.number, r.winner, r.warmup, r.equip_ct, r.equip_t,
 			COALESCE(ct.money_sampled_sum, 0), COALESCE(t.money_sampled_sum, 0),
+			COALESCE(ct.spent, 0), COALESCE(t.spent, 0),
 			COALESCE(rc.label, ''), COALESCE(rc.explanation, ''),
 			COALESCE(rc.rule_version, 0)
 		 FROM rounds r
@@ -393,7 +397,7 @@ func (s *Store) GetEconomy(matchID int64) ([]models.EconomyRow, error) {
 	for rows.Next() {
 		var r models.EconomyRow
 		if err := rows.Scan(&r.Round, &r.Winner, &r.Warmup, &r.EquipCT, &r.EquipT,
-			&r.MoneyCT, &r.MoneyT, &r.Label, &r.Explanation, &r.RuleVersion); err != nil {
+			&r.MoneyCT, &r.MoneyT, &r.SpentCT, &r.SpentT, &r.Label, &r.Explanation, &r.RuleVersion); err != nil {
 			return nil, fmt.Errorf("store: get economy: %w", err)
 		}
 		out = append(out, r)
@@ -688,10 +692,14 @@ func (s *Store) GetPlayerRefs(matchID int64) ([]models.PlayerRef, error) {
 }
 
 // GetRoundEconomyViews returns the raw per-side economy samples for one
-// match (round ASC, side).
+// match (round ASC, side). The SELECT is hand-listed rather than
+// roundEconomyCols on purpose: the analytics view stops at the v1 fields
+// (models.RoundEconomyView) while the table also carries `spent` (the
+// writer's list, round_economyCols) — widen the view type first if the
+// classification pass ever needs it.
 func (s *Store) GetRoundEconomyViews(matchID int64) ([]models.RoundEconomyView, error) {
 	rows, err := s.db.Query(
-		`SELECT `+roundEconomyCols+`
+		`SELECT round, side, equip_value, money_sampled_sum, money_samples
 		 FROM round_economy WHERE match_id = ? ORDER BY round ASC, side ASC`, matchID,
 	)
 	if err != nil {

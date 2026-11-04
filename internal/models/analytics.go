@@ -161,8 +161,11 @@ type CombatStat struct {
 // ClassT/ClassWhy* are left empty by the store and filled by the caller via
 // analytics.buyClass (unexported: package-internal only, and the store
 // cannot import analytics — cycle); everything else is complete on return.
-// Money* is the sampled money sum; Spent* is 0 in v1 (no per-round spend
-// data — see analytics notes).
+// Money* is the sampled freeze-end money sum; Spent* is the side's real
+// per-round buy spend (round_economy.spent — Σ over the side's players of
+// the delta in the cumulative money-spent counter between freeze-time
+// ends; see extract.agg.freezeEnd). Per-player player_round_stats.spent
+// stays 0 in v1 (item_equip payloads carry no spend — analytics notes).
 type EconomyRow struct {
 	Round       int    `json:"round"`
 	Winner      string `json:"winner"`

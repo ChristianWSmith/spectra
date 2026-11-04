@@ -224,7 +224,7 @@
         value={summary.avgGap == null ? '—' : fmtMoney(summary.avgGap)}
         sub="avg winner − loser spend per round"
         cls={!summary.gapRound ? 'no-drill' : ''}
-        title="Formula: mean over decided rounds of (winner spent − loser spent). Click: open Replay events for round {summary.gapRound || '—'} (largest gap)."
+        title="Formula: mean over decided rounds of (winner spent − loser spent), where a side's per-round spend is real buy money — the sum of its players' cumulative money-spent deltas between freeze-time ends (round_economy.spent), not equipment value. Click: open Replay events for round {summary.gapRound || '—'} (largest gap)."
         onclick={() => drill(summary.gapRound)}
       >
         {#snippet badge()}<span class="chip badge-computed">computed</span>{/snippet}
@@ -351,7 +351,9 @@
           </table>
         </div>
         <p class="econ-table-note muted">
-          Loss CT/T = the round loss bonus that side would collect by losing
+          Spent CT/T = that side's real buy spend this round (Σ its players'
+          cumulative money-spent delta between freeze-time ends); Loss CT/T =
+          the round loss bonus that side would collect by losing
           this round — CS2's ladder runs $1400 → $3400 in $500 steps: a loss
           steps it up, a win steps it down (never a full reset), and every
           half starts one level up (a pistol loss pays $1900);

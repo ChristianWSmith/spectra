@@ -61,11 +61,15 @@ type finalPlayer struct {
 }
 
 // moneySample is one participant's freeze-time-end economy reading.
+// spent is the live cumulative cash-spent counter (entity property
+// m_pInGameMoneyServices.m_iTotalCashSpent) at this freeze end — freezeEnd
+// diffs consecutive samples into the per-round side spend.
 type moneySample struct {
 	key   uint64
 	name  string
 	side  string
 	money int
+	spent int
 }
 
 // roundInfo is one round's running state (models.Round at build time).
@@ -202,6 +206,11 @@ type agg struct {
 	// many demos, golden included).
 	lastMVP map[uint64]int
 
+	// lastSpent tracks each participant's cumulative money-spent counter
+	// (m_iTotalCashSpent) at the previous freeze time end, so freezeEnd
+	// can diff it into round_economy's per-round side spend.
+	lastSpent map[uint64]int
+
 	roundSides []models.RoundPlayerSide
 
 	economy  []models.RoundEconomy
@@ -233,6 +242,7 @@ func newAgg() *agg {
 		tradeWindow:   make(map[uint64]tradeRec),
 		roundKills:    make(map[int]map[uint64]int),
 		lastMVP:       make(map[uint64]int),
+		lastSpent:     make(map[uint64]int),
 		economy:       make([]models.RoundEconomy, 0, 64),
 		roundSides:    make([]models.RoundPlayerSide, 0, 256),
 		events:        make([]models.Event, 0, 512),
@@ -372,9 +382,12 @@ func (a *agg) roundEnd(tick int, winner, reason, message string, tickRate float6
 }
 
 // freezeEnd records freeze-time-end ticks/equip values on the current round
-// and samples each playing participant's money and side per side (the
-// extractor's sampling method, re-targeted at per-round-per-side
-// RoundEconomy rows + per-round-per-player RoundPlayerSide rows).
+// and samples each playing participant's money, cumulative money-spent
+// counter and side per side (the extractor's sampling method, re-targeted
+// at per-round-per-side RoundEconomy rows + per-round-per-player
+// RoundPlayerSide rows). The per-side Spent on a RoundEconomy row is the
+// sum of the participants' cumulative-spent deltas since the previous
+// freeze end (see the loop below).
 //
 // It also resolves the pending halftime score. GameHalfEnded fires BEFORE
 // the final round of the half increments the team score (golden demo:
@@ -406,10 +419,23 @@ func (a *agg) freezeEnd(tick, equipCT, equipT, scoreCT, scoreT int, samples []mo
 
 	sum := map[string]int{}
 	cnt := map[string]int{}
+	spent := map[string]int{}
 	for _, s := range samples {
 		if s.key == 0 {
 			continue
 		}
+		// Per-round side spend: delta of the participant's cumulative
+		// money-spent counter (m_iTotalCashSpent — live entity state)
+		// since the previous freeze time end. A missing baseline (the
+		// demo's first freeze end) or a counter that went DOWN (a match
+		// restart resets it) reads from 0, so the current total is the
+		// spend since that reset.
+		prev, seen := a.lastSpent[s.key]
+		delta := s.spent - prev
+		if !seen || delta < 0 {
+			delta = s.spent
+		}
+		a.lastSpent[s.key] = s.spent
 		if s.side == "ct" || s.side == "t" {
 			// Last-observed side: the final-side source for players the
 			// end-of-demo snapshot misses (3/10 on the golden demo), plus
@@ -422,6 +448,7 @@ func (a *agg) freezeEnd(tick, equipCT, equipT, scoreCT, scoreT int, samples []mo
 			})
 			sum[s.side] += s.money
 			cnt[s.side]++
+			spent[s.side] += delta
 		}
 		if counted {
 			rounds := a.participation[s.key]
@@ -433,8 +460,8 @@ func (a *agg) freezeEnd(tick, equipCT, equipT, scoreCT, scoreT int, samples []mo
 		}
 	}
 	a.economy = append(a.economy,
-		models.RoundEconomy{Round: r.number, Side: "ct", EquipValue: equipCT, MoneySampledSum: sum["ct"], MoneySamples: cnt["ct"]},
-		models.RoundEconomy{Round: r.number, Side: "t", EquipValue: equipT, MoneySampledSum: sum["t"], MoneySamples: cnt["t"]},
+		models.RoundEconomy{Round: r.number, Side: "ct", EquipValue: equipCT, MoneySampledSum: sum["ct"], MoneySamples: cnt["ct"], Spent: spent["ct"]},
+		models.RoundEconomy{Round: r.number, Side: "t", EquipValue: equipT, MoneySampledSum: sum["t"], MoneySamples: cnt["t"], Spent: spent["t"]},
 	)
 
 	if a.halfPending {

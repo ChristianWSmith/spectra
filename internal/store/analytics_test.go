@@ -278,6 +278,51 @@ func TestGetEconomyLossBonus(t *testing.T) {
 	}
 }
 
+// TestGetEconomySpent pins the round-trip of round_economy.spent into
+// EconomyRow.SpentCT/SpentT (the "Winner spend advantage" card's input),
+// including the COALESCE to 0 for a round with no economy row.
+func TestGetEconomySpent(t *testing.T) {
+	s := openMem(t)
+	id := saveTestMatch(t, s, "/d/spent.dem", "sha-spent", time.Now())
+	em := testExtracted("sha-spent", time.Now())
+	em.Match.RealRounds = 2
+	em.Rounds = []models.Round{
+		{Number: 1, Winner: "ct", EquipCT: 4500, EquipT: 4200, StartTick: 100, EndTick: 2000},
+		{Number: 2, Winner: "t", EquipCT: 5000, EquipT: 1500, StartTick: 2001, EndTick: 4000},
+	}
+	// Round 2 has no round_economy rows on purpose (COALESCE path).
+	em.RoundEconomy = []models.RoundEconomy{
+		{Round: 1, Side: "ct", EquipValue: 4500, MoneySampledSum: 20000, MoneySamples: 5, Spent: 4000},
+		{Round: 1, Side: "t", EquipValue: 4200, MoneySampledSum: 18000, MoneySamples: 5, Spent: 3400},
+	}
+	if err := s.SaveExtracted(id, em); err != nil {
+		t.Fatalf("SaveExtracted: %v", err)
+	}
+	rows, err := s.GetEconomy(id)
+	if err != nil {
+		t.Fatalf("GetEconomy: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("rows = %d, want 2", len(rows))
+	}
+	if rows[0].SpentCT != 4000 || rows[0].SpentT != 3400 {
+		t.Errorf("round 1 spent = CT %d / T %d, want 4000/3400 (stored round_economy.spent)",
+			rows[0].SpentCT, rows[0].SpentT)
+	}
+	if rows[1].SpentCT != 0 || rows[1].SpentT != 0 {
+		t.Errorf("round 2 spent = CT %d / T %d, want 0/0 (no economy row)",
+			rows[1].SpentCT, rows[1].SpentT)
+	}
+	// The round-detail read carries the same column.
+	det, err := s.GetRoundDetail(id, 1)
+	if err != nil {
+		t.Fatalf("GetRoundDetail: %v", err)
+	}
+	if len(det.Economy) != 2 || det.Economy[0].Spent != 4000 || det.Economy[1].Spent != 3400 {
+		t.Errorf("round detail economy = %+v, want spent 4000/3400", det.Economy)
+	}
+}
+
 func TestCareerRebuildMath(t *testing.T) {
 	s := openMem(t)
 	id := saveTestMatch(t, s, "/d/career.dem", "sha-career", time.Now())
