@@ -24,10 +24,13 @@
     badge = null,
   } = $props();
 
-  // A click (or Enter/Space) that lands on the sub line's own controls —
-  // ProfileLink renders a real button — belongs to them, never to the cell.
+  // A control nested INSIDE the cell — the sub line's ProfileLink — owns
+  // its own activation; everything else (including the cell button itself,
+  // which `closest` would also match) keeps the cell's drill.
   function insideLink(e) {
-    return e.target instanceof Element && !!e.target.closest('button, a, input');
+    const cell = e.currentTarget;
+    const hit = e.target instanceof Element ? e.target.closest('button, a, input') : null;
+    return !!hit && hit !== cell;
   }
 
   function onCellActivate(e) {
