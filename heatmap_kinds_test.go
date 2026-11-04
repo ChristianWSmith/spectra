@@ -1,6 +1,7 @@
 package main
 
 import (
+	"math"
 	"path/filepath"
 	"testing"
 	"time"
@@ -132,8 +133,8 @@ func TestHeatmapKernelRadiates(t *testing.T) {
 			peak = v
 		}
 	}
-	// The kernel radius (3σ, capped at heatmapMaxSigmaCells) covers a
-	// broad disk of the 64×64 grid; a delta would leave exactly 1 cell.
+	// The kernel (3σ reach, tapered to zero at its edge) covers a broad
+	// disk of the 128×128 grid; a delta would leave exactly 1 cell.
 	if nonzero < 500 {
 		t.Errorf("single sample painted %d cells, want a broad blob (≥500)", nonzero)
 	}
@@ -223,5 +224,136 @@ func TestHeatmapKDEmpty(t *testing.T) {
 	if kd.Kind != "kd" || kd.Samples != 0 || kd.Max != 0 || len(kd.Cells) != heatmapGridSide*heatmapGridSide {
 		t.Errorf("empty kd = kind %q, samples %d, max %v, cells %d — want kd/0/0/full grid",
 			kd.Kind, kd.Samples, kd.Max, len(kd.Cells))
+	}
+}
+
+// TestGaussianTapTapersToZero pins the kernel window: peak-normalized
+// at the center, positive inside the 3σ reach, exactly zero at and
+// beyond it — a splat ends in transparency (value 0 → alpha 0 at the
+// renderer) instead of the hard ring a bare Gaussian cutoff leaves.
+func TestGaussianTapTapersToZero(t *testing.T) {
+	const sigma = 4.0
+	if v := gaussianTap(0, sigma); v != 1 {
+		t.Errorf("center tap = %v, want 1 (peak-normalized)", v)
+	}
+	prev := 1.0
+	for off := 1; off < int(heatmapKernelSigmas*sigma); off++ {
+		v := gaussianTap(off, sigma)
+		if v <= 0 || v >= prev {
+			t.Fatalf("tap(%d) = %v, want in (0, %v) and decreasing", off, v, prev)
+		}
+		prev = v
+	}
+	// The ceil'd radius step and everything after is dead (u ≥ 1).
+	for _, off := range []int{int(math.Ceil(heatmapKernelSigmas * sigma)), int(heatmapKernelSigmas*sigma) + 3, 99} {
+		if v := gaussianTap(off, sigma); v != 0 {
+			t.Errorf("tap(%d) = %v, want 0 at/after the 3σ reach", off, v)
+		}
+	}
+}
+
+// TestHeatmapConvolveMatchesDirectSplat guards the separable refactor:
+// delta accumulation + the two 1D passes must reproduce the per-sample
+// 2D splat (Gaussian × taper per axis) cell for cell — the same field,
+// only the order of summation may differ.
+func TestHeatmapConvolveMatchesDirectSplat(t *testing.T) {
+	samples := []struct {
+		x, y, w float64
+	}{{100, 100, 1}, {137, 91, 2.5}, {100, 100, 0.75}, {600, 640, 1}}
+	minX, minY := math.Inf(1), math.Inf(1)
+	maxX, maxY := math.Inf(-1), math.Inf(-1)
+	for _, s := range samples {
+		minX, minY = math.Min(minX, s.x), math.Min(minY, s.y)
+		maxX, maxY = math.Max(maxX, s.x), math.Max(maxY, s.y)
+	}
+	g := newHeatmapRaster(minX, minY, maxX, maxY)
+	for _, s := range samples {
+		if !g.add(s.x, s.y, s.w) {
+			t.Fatalf("sample (%v,%v) fell outside the padded grid", s.x, s.y)
+		}
+	}
+	got := g.grid("test", len(samples)).Cells
+
+	// Direct 2D splat over every cell of every sample (clipped at the
+	// border), with the separable weight computed independently.
+	sx := heatmapSigmaWorld / g.cellW
+	sy := heatmapSigmaWorld / g.cellH
+	want := make([]float64, heatmapGridSide*heatmapGridSide)
+	for _, s := range samples {
+		cx := int((s.x - g.minX) / g.cellW)
+		cy := int((s.y - g.minY) / g.cellH)
+		for dy := -heatmapGridSide; dy < heatmapGridSide; dy++ {
+			for dx := -heatmapGridSide; dx < heatmapGridSide; dx++ {
+				tx, ty := cx+dx, cy+dy
+				if tx < 0 || tx >= heatmapGridSide || ty < 0 || ty >= heatmapGridSide {
+					continue
+				}
+				w := s.w * gaussianTap(dx, sx) * gaussianTap(dy, sy)
+				if w != 0 {
+					want[ty*heatmapGridSide+tx] += w
+				}
+			}
+		}
+	}
+	for i := range want {
+		diff := math.Abs(want[i] - got[i])
+		if scale := math.Abs(want[i]); scale > 1 {
+			diff /= scale
+		}
+		if diff > 1e-9 {
+			t.Fatalf("cell %d: convolved %v, direct splat %v (diff %v)",
+				i, got[i], want[i], diff)
+		}
+	}
+}
+
+// TestSampleHeatmapCellBilinear pins the combine's resample: a linear
+// field reads back exactly at any point (interpolated, not snapped to
+// the containing cell), edge cells extend, and points outside the raster
+// read 0.
+func TestSampleHeatmapCellBilinear(t *testing.T) {
+	const side = 4
+	g := HeatmapGrid{W: side, H: side, MinX: 0, MinY: 0, MaxX: 40, MaxY: 40}
+	for r := 0; r < side; r++ {
+		for c := 0; c < side; c++ {
+			g.Cells = append(g.Cells, float64(r*side+c)) // value = row*side + col
+		}
+	}
+	cw := (g.MaxX - g.MinX) / side
+	at := func(x, y float64) float64 { return sampleHeatmapCell(g, x, y) }
+	// Cell centers read their own cell exactly.
+	for r := 0; r < side; r++ {
+		for c := 0; c < side; c++ {
+			got := at(float64(c)*cw+cw/2, float64(r)*cw+cw/2)
+			if got != float64(r*side+c) {
+				t.Errorf("center (%.1f,%.1f) = %v, want %d", float64(c)*cw+cw/2, float64(r)*cw+cw/2, got, r*side+c)
+			}
+		}
+	}
+	// Midpoints between adjacent cell centers: the average of the two
+	// neighbours — a nearest-neighbour resample would snap to one.
+	if got := at(10, 5); got != (0+1)/2.0 {
+		t.Errorf("midpoint (10,5) = %v, want 0.5", got)
+	}
+	if got := at(5, 10); got != (0+4)/2.0 {
+		t.Errorf("midpoint (5,10) = %v, want 2 (vertical neighbour)", got)
+	}
+	// Bilinear on a linear field reproduces the plane: value = row*4+col
+	// evaluated at (col 0.75, row 0.75) — between the four centres at
+	// (5|15, 5|15).
+	if got := at(12.5, 12.5); math.Abs(got-(0.75*4+0.75)) > 1e-9 {
+		t.Errorf("interpolated (12.5,12.5) = %v, want %v", got, 0.75*4+0.75)
+	}
+	// Points past the last cell center extend the edge value instead of
+	// reading a phantom cell beyond the grid (y=35 sits exactly on row
+	// 3's center; x=37.5 is past col 3's center at 35).
+	if got := at(37.5, 35); got != 3*side+3 {
+		t.Errorf("edge (37.5,35) = %v, want the extended edge cell %d", got, 3*side+3)
+	}
+	// Outside the raster reads 0 (union bounds extend past a population).
+	for _, p := range [][2]float64{{-0.01, 5}, {40, 5}, {5, -0.01}, {5, 40}} {
+		if got := at(p[0], p[1]); got != 0 {
+			t.Errorf("outside (%v,%v) = %v, want 0", p[0], p[1], got)
+		}
 	}
 }
