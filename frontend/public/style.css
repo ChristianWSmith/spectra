@@ -114,6 +114,50 @@
   vertical-align: -0.125em;
 }
 
+/* Disclosure chevrons — the ONE house pattern for <details> affordances
+   (introduced by PayloadTree's .kv-obj): a codicon chevron-right when
+   closed, chevron-down when [open], with the browser's default ▸ triangle
+   / list marker suppressed. Applied to every disclosure that would
+   otherwise show that raw UA triangle or no affordance at all: Replay's
+   filter and payload blocks, Builder's compiled SQL, Settings' glossary.
+   Per-component summary typography (size, case, hover) stays with each
+   component's own rule. */
+.lm-filters > summary::before,
+.json-block > summary::before,
+.bld-sql > summary::before,
+.sett-defs summary::before,
+.kv-obj > summary::before {
+  content: '\eab6';
+  font-family: 'codicon';
+  font-weight: normal;
+  color: var(--muted);
+  font-size: 0.8em;
+}
+
+.lm-filters[open] > summary::before,
+.json-block[open] > summary::before,
+.bld-sql[open] > summary::before,
+.sett-defs details[open] summary::before,
+.kv-obj[open] > summary::before {
+  content: '\eab4';
+}
+
+.lm-filters > summary,
+.json-block > summary,
+.bld-sql > summary,
+.sett-defs summary,
+.kv-obj > summary {
+  list-style: none;
+}
+
+.lm-filters > summary::-webkit-details-marker,
+.json-block > summary::-webkit-details-marker,
+.bld-sql > summary::-webkit-details-marker,
+.sett-defs summary::-webkit-details-marker,
+.kv-obj > summary::-webkit-details-marker {
+  display: none;
+}
+
 /* VS Code-style scrollbars: thin, rounded thumb, transparent track. */
 ::-webkit-scrollbar {
   width: 10px;

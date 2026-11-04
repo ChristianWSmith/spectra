@@ -116,9 +116,11 @@
   // equal — the label set mirrors internal/analytics/classify.go:
   // pistol|full|force|save|eco, unknown → null); missing/unknown on
   // either side stays neutral. ✓ = the winner bought the stronger class
-  // (favorite held), ✗ = the cheaper-buys side won (upset), · = even
-  // buy (toss-up). Class, not the toggled metric, so the mark is stable
-  // across the toggle.
+  // (favorite held), ✗ = the cheaper-buys side won (upset), a codicon
+  // circle = even buy (toss-up). Class, not the toggled metric, so the
+  // mark is stable across the toggle. The ✓/✗ values double as the
+  // class:hold / class:upset sentinels below — only the RENDERED neutral
+  // glyph differs from them.
   const CLASS_RANK = { full: 2, force: 1 };
 
   function classRank(c) {
@@ -316,7 +318,7 @@
             class="econ-strip-mark"
             class:hold={mark(r) === '✓'}
             class:upset={mark(r) === '✗'}
-            >{#if mark(r) === '✓'}<span class="codicon codicon-check"></span>{:else if mark(r) === '✗'}<span class="codicon codicon-error"></span>{:else}·{/if}</span
+            >{#if mark(r) === '✓'}<span class="codicon codicon-check"></span>{:else if mark(r) === '✗'}<span class="codicon codicon-error"></span>{:else}<span class="codicon codicon-circle-small"></span>{/if}</span
           >
         </button>
       {/each}

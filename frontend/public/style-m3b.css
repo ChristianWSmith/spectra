@@ -915,29 +915,14 @@
   padding-left: 4px;
 }
 
+/* Layout only — the disclosure chevron itself lives in style.css's shared
+   disclosure block (the house pattern this component introduced). */
 .kv-obj > summary {
   cursor: pointer;
   display: flex;
   gap: 8px;
   align-items: baseline;
   padding: 1px 0;
-  list-style: none;
-}
-
-.kv-obj > summary::-webkit-details-marker {
-  display: none;
-}
-
-.kv-obj > summary::before {
-  content: '\eab6';
-  font-family: 'codicon';
-  font-weight: normal;
-  color: var(--muted);
-  font-size: 0.8em;
-}
-
-.kv-obj[open] > summary::before {
-  content: '\eab4';
 }
 
 .kv-obj[open] > summary {
@@ -962,8 +947,12 @@
   font-size: 0.88em;
 }
 
+/* Bullet is a codicon dot (the house list pattern from .warning-list in
+   style.css) — never a raw · typed into the stylesheet. */
 .expl-ref-list li::before {
-  content: '· ';
+  content: '\eb8a' ' ';
+  font-family: 'codicon';
+  font-weight: normal;
   color: var(--accent);
 }
 
