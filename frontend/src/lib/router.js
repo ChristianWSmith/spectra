@@ -26,7 +26,7 @@
 //   #/explorer/:id           optional context id: the match Explorer's
 //                            inspectors preselect (absent = newest match)
 //   #/reports/:id            optional context id: Reports' match preselect
-//   #/builder | #/sql | #/explorer | #/reports | #/settings
+//   #/builder | #/sql | #/profiles | #/explorer | #/reports | #/settings
 //
 // Legacy raw-event routes from the pre-consolidation app resolve to the
 // canonical Replay landmark feed with the equivalent scope (the old
@@ -35,9 +35,9 @@
 //   #/match/:id/chat               → #/replay/:id?cat=chat
 //   #/match/:id/context            → #/replay/:id?cat=chat,connects,convars,team_changes
 //
-// Prefix routes (builder/sql/explorer/reports/settings) match with
-// startsWith, so "#/settings/foo" is still Settings; every other shape
-// falls through to the library default.
+// Prefix routes (builder/sql/profiles/explorer/reports/settings) match
+// with startsWith, so "#/settings/foo" is still Settings; every other
+// shape falls through to the library default.
 
 // Canonical match-tab list (display order). Shared by Match.svelte's tab
 // bar and the route table so a deep link can never drift from the tabs
@@ -138,6 +138,9 @@ export function parseHash(hash) {
   if (m) return withQuery({ name: 'replay', id: Number(m[1]) });
   if (path.startsWith('/builder')) return withQuery({ name: 'builder' });
   if (path.startsWith('/sql')) return withQuery({ name: 'sql' });
+  // The player directory (the sidebar's Profiles entry) — prefix route,
+  // no params; a row click drills into /player/:steamid instead.
+  if (path.startsWith('/profiles')) return withQuery({ name: 'profiles' });
   // Context ids are optional: absent → no id key (the view keeps its own
   // default), present → {id}. Prefix semantics stay startsWith.
   if (path.startsWith('/explorer')) {

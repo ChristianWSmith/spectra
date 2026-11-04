@@ -39,9 +39,19 @@ export function replayHash(matchId, filter, extras) {
 // CommandPalette renders it as its Actions section (run closes over the
 // palette's nav). Membership and order are shared — a nav entry added
 // here appears in both surfaces.
+//
+// `icon` is a codicon class for the icon-only sidebar rail: the button
+// shows only the glyph and carries `label` in its title/aria-label (hover
+// tooltip); the palette still renders the label as text. `bottom: true`
+// partitions the list for the sidebar LAYOUT only — App.svelte pins those
+// entries at the rail's foot (Settings as a gear) while the palette
+// renders every action inline in array order. Explorer and Reports are
+// gone from the nav list (they are match-view tabs now); their standalone
+// #/explorer and #/reports routes still parse and render.
 export const NAV_ACTIONS = [
   {
     label: 'Library',
+    icon: 'codicon-library',
     hash: '/library',
     // The Library is the hub: every in-app detail view (match, round,
     // replay, profile, compare) is reached from it.
@@ -53,9 +63,21 @@ export const NAV_ACTIONS = [
       r.name === 'player' ||
       r.name === 'compare',
   },
-  { label: 'Settings', hash: '/settings', active: (r) => r.name === 'settings' },
-  { label: 'Builder', hash: '/builder', active: (r) => r.name === 'builder' },
-  { label: 'SQL console', hash: '/sql', active: (r) => r.name === 'sql' },
-  { label: 'Explorer', hash: '/explorer', active: (r) => r.name === 'explorer' },
-  { label: 'Reports', hash: '/reports', active: (r) => r.name === 'reports' },
+  {
+    label: 'Profiles',
+    icon: 'codicon-person',
+    hash: '/profiles',
+    // The player directory — its own route; a row click drills into the
+    // player profile (#/player/:steamid), which stays Library-active.
+    active: (r) => r.name === 'profiles',
+  },
+  { label: 'Builder', icon: 'codicon-wand', hash: '/builder', active: (r) => r.name === 'builder' },
+  { label: 'SQL console', icon: 'codicon-terminal', hash: '/sql', active: (r) => r.name === 'sql' },
+  {
+    label: 'Settings',
+    icon: 'codicon-settings-gear',
+    hash: '/settings',
+    active: (r) => r.name === 'settings',
+    bottom: true, // sidebar: pinned gear at the rail's foot (see above)
+  },
 ];
