@@ -7,6 +7,11 @@
     getSpatialSeries,
     errText,
   } from '../services.js';
+  // The signed kd raster has its own Go entry point (heatmap.go
+  // GetHeatmapKD) — called on the binding directly; every other kind
+  // shares getHeatmap.
+  import { AnalyticsService } from '../../../bindings/github.com/ChristianWSmith/spectra';
+  import { HEAT_STOPS, DEATH_STOPS, rampCss, signedRampCss } from '../heatramp.js';
   import { loadMapPack } from '../components/mapxform.js';
   import HeatmapLayer from '../components/HeatmapLayer.svelte';
   import { fmt1, fmtInt } from '../fmt.js';
@@ -15,7 +20,9 @@
 
   let { id = 0, nav = () => {} } = $props();
 
-  const KINDS = ['presence', 'kills', 'deaths', 'damage'];
+  const KINDS = ['presence', 'kills', 'deaths', 'damage', 'kd'];
+  // Selector label for the raw kind id (the option text shows "K/D").
+  const kindLabel = (k) => (k === 'kd' ? 'K/D' : k);
 
   let kind = $state('presence');
   let player = $state(''); // steamId, '' = all
@@ -95,7 +102,11 @@
   // controls (fetch is on-demand, so the two can diverge).
   const unitKind = $derived(grid && grid.kind ? grid.kind : kind);
   const unit = $derived(
-    unitKind === 'presence' ? 'time-weighted seconds' : 'count',
+    unitKind === 'presence'
+      ? 'time-weighted seconds'
+      : unitKind === 'kd'
+        ? 'kills − deaths (net)'
+        : 'count',
   );
   const maxLabel = $derived(
     grid ? (unitKind === 'presence' ? fmt1(grid.max) : fmtInt(grid.max)) : '—',
@@ -118,12 +129,13 @@
     error = '';
     regionNote = '';
     try {
-      grid = await getHeatmap(id, kind, {
-        roundFrom,
-        roundTo,
-        steamId: player,
-        team,
-      });
+      const filter = { roundFrom, roundTo, steamId: player, team };
+      // kd is the signed kills−deaths raster (heatmap.go GetHeatmapKD);
+      // every other kind shares GetHeatmap.
+      grid =
+        kind === 'kd'
+          ? await AnalyticsService.GetHeatmapKD(id, filter)
+          : await getHeatmap(id, kind, filter);
       lastKey = filterKey(kind, player, team, roundFrom, roundTo);
     } catch (e) {
       grid = null;
@@ -232,7 +244,7 @@
       <label class="field-label" for="heat-kind">Kind</label>
       <select class="input" id="heat-kind" bind:value={kind}>
         {#each KINDS as k (k)}
-          <option value={k}>{k}</option>
+          <option value={k}>{kindLabel(k)}</option>
         {/each}
       </select>
     </div>
@@ -293,13 +305,23 @@
 
   {#if grid}
     <div class="heat-legend">
-      <span class="mono heat-legend-label">0</span>
-      <span class="heat-ramp" aria-hidden="true"></span>
-      <span class="mono heat-legend-label">{maxLabel}</span>
+      <!-- The ramp gradient is painted from lib/heatramp.js — the same
+           stops the canvas renders — so legend and overlay cannot
+           diverge. The kd legend is diverging: deaths (−) blue on the
+           left, kills (+) amber→white-hot on the right, 0 transparent
+           in the middle. -->
+      {#if unitKind === 'kd'}
+        <span class="mono heat-legend-label heat-legend-neg">−{maxLabel}</span>
+        <span class="heat-ramp" aria-hidden="true" style={signedRampCss(DEATH_STOPS, HEAT_STOPS)}></span>
+        <span class="mono heat-legend-label heat-legend-pos">+{maxLabel}</span>
+      {:else}
+        <span class="mono heat-legend-label">0</span>
+        <span class="heat-ramp" aria-hidden="true" style={rampCss(HEAT_STOPS)}></span>
+        <span class="mono heat-legend-label">{maxLabel}</span>
+      {/if}
       <span class="chip heat-unit">{unit}</span>
       <span class="muted"
-        >{fmtInt(grid.samples)} samples · {grid.w}×{grid.h} grid · log-ish
-        scale</span
+        >{fmtInt(grid.samples)} samples · {grid.w}×{grid.h} grid · √ scale</span
       >
     </div>
   {/if}
