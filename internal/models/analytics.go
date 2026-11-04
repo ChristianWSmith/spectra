@@ -15,7 +15,7 @@ type AnalysisConfig struct {
 	EcoFullBuy   int     `json:"ecoFullBuy"`
 	EcoForce     int     `json:"ecoForce"`
 	// TradeOppDistance is the trade-opportunity radius in world units
-	// (default 200): an untraded death counts toward Combat's "Trade
+	// (default 1000): an untraded death counts toward Combat's "Trade
 	// opportunities missed" only when a living teammate of the victim was
 	// within this distance of the KILLER at the death tick. The proximity
 	// itself is measured once at extract time (config-independent, stored
@@ -281,9 +281,12 @@ type ProfileClutchCounts struct {
 	Won    int `json:"won"`
 }
 
-// ProfileWeaponJSONs is one match's weapon breakdown JSON pair (merge in
-// the caller — see ProfileService.GetProfile).
+// ProfileWeaponJSONs is one match's weapon breakdown JSON triplet (merge
+// in the caller — see ProfileService.GetProfile). HeadshotsByWeapon is
+// derived from the stored kill events (not an extract column), with the
+// same eligibility as kills_by_weapon — see store.GetPlayerWeaponJSONs.
 type ProfileWeaponJSONs struct {
-	KillsByWeapon  string `json:"killsByWeapon"`
-	DamageByWeapon string `json:"damageByWeapon"`
+	KillsByWeapon     string `json:"killsByWeapon"`
+	DamageByWeapon    string `json:"damageByWeapon"`
+	HeadshotsByWeapon string `json:"headshotsByWeapon"`
 }

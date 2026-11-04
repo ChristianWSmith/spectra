@@ -51,7 +51,7 @@ export const GLOSSARY = [
   {
     term: 'Trade opportunities missed (inferred)',
     inferred: true,
-    text: 'A death that went unanswered: no teammate of the dead player killed their killer within the trade window after the death, AND at the death tick a living teammate of the victim stood within the trade-opportunity distance of the killer — close enough to actually trade him. That distance is measured once per kill at import (nearest living teammate to the killer’s position) and gated against the configurable threshold (Settings → Analysis rules, default 200 units): a death with no living teammate nearby, or with no position data for the kill, does not count. The Combat tab’s Untraded deaths metric reads the same engagement rows without the distance gate.',
+    text: 'A death that went unanswered: no teammate of the dead player killed their killer within the trade window after the death, AND at the death tick a living teammate of the victim stood within the trade-opportunity distance of the killer — close enough to actually trade him. That distance is measured once per kill at import (nearest living teammate to the killer’s position) and gated against the configurable threshold (Settings → Analysis rules, default 1000 units ≈ 25 m — the ground a player covers inside the default 5 s trade window, and the range trades actually happen at): a death with no living teammate nearby, or with no position data for the kill, does not count. The Combat tab’s Untraded deaths metric reads the same engagement rows without the distance gate.',
   },
   {
     term: 'Damage conversion',

@@ -20,12 +20,17 @@ import (
 // equipment values at freeze-time end (a full buy for five sits around
 // $20k, a force around $10k). TradeOppDistance is the trade-opportunity
 // radius in world units (an untraded death only counts as a missed trade
-// when a living teammate of the victim was within it of the killer).
+// when a living teammate of the victim was within it of the killer). The
+// 1000 u default (~25 m) is the range in which trades actually happen:
+// teammates close that much ground inside the default 5 s trade window at
+// CS2 run speeds (215 u/s with a rifle, 250 u/s knife), and a radius
+// inside the melee zone (5 m ≈ 200 u) would only ever select deaths that
+// get traded anyway — leaving the gated count at ~0 on real demos.
 var DefaultConfig = models.AnalysisConfig{
 	TradeWindowS:     5.0,
 	EcoFullBuy:       20000,
 	EcoForce:         10000,
-	TradeOppDistance: 200,
+	TradeOppDistance: 1000,
 	RuleVersion:      1,
 }
 
@@ -538,7 +543,8 @@ func sideFlips(rounds []models.EconomyRow, exact map[int]map[string]string) []bo
 // detail_json.nearDist — the closest living teammate of the victim to the
 // KILLER at the death tick, measured once at extract time (extract.
 // nearTeammateDist) — is ≥ 0 (nobody measurable → -1 → never counted) and
-// ≤ the stored analysis_config.trade_opp_distance (default 200 units).
+// ≤ the stored analysis_config.trade_opp_distance (default 1000 units,
+// calibrated to the range trades actually happen in — see DefaultConfig).
 //
 // This SQL is AUTHORITATIVE: the in-memory twin that once duplicated these
 // rules in Go (analytics.CombatStats) was deleted — it had drifted in three
@@ -1138,11 +1144,44 @@ func (s *Store) GetPlayerClutchStats(steamID string) (models.ProfileClutchCounts
 }
 
 // GetPlayerWeaponJSONs returns one player's per-match weapon-breakdown JSON
-// pairs (merge in the caller — see ProfileService.GetProfile).
+// triplets (merge in the caller — ProfileService.GetProfile).
+//
+// HeadshotsByWeapon is derived from the stored kill events rather than an
+// extract column, with the SAME eligibility extract uses to credit
+// player_stats.headshots and kills_by_weapon (internal/extract/agg.go):
+//
+//   - kind='kill' with headshot=1 (kp.headshots++ next to weaponKills),
+//   - attacker = this player (killerKey != 0) and attacker <> victim
+//     (suicides get no credit),
+//   - NOT a teamkill: mirrors extract's sameSide gate — only two KNOWN,
+//     equal sides block credit. The sides come from round_player_sides
+//     (freeze-end samples) via LEFT JOINs, so a missing sample on either
+//     side behaves like extract's unknown "" side and passes.
+//   - a counted round (rounds.warmup = 0 AND pregame = 0): extract's
+//     realPeriod gates warmup and pre-match (knife) rounds the same way,
+//     and those rounds' kills still land in events.
+//
+// The golden-demo acceptance test pins the sum of the folded per-weapon
+// headshots to player_stats.headshots for every player.
 func (s *Store) GetPlayerWeaponJSONs(steamID string) ([]models.ProfileWeaponJSONs, error) {
 	rows, err := s.db.Query(
-		`SELECT kills_by_weapon, damage_by_weapon FROM player_stats
-		 WHERE steam_id = ? ORDER BY match_id ASC`, scrub(steamID),
+		`SELECT ps.kills_by_weapon, ps.damage_by_weapon,
+			COALESCE((SELECT json_group_object(w.weapon, w.n) FROM (
+				SELECT e.weapon, COUNT(*) AS n
+				FROM events e
+				LEFT JOIN round_player_sides ka
+					ON ka.match_id = e.match_id AND ka.round = e.round AND ka.steam_id = e.attacker
+				LEFT JOIN round_player_sides kv
+					ON kv.match_id = e.match_id AND kv.round = e.round AND kv.steam_id = e.victim
+				JOIN rounds r ON r.match_id = e.match_id AND r.number = e.round
+				WHERE e.match_id = ps.match_id AND e.attacker = ps.steam_id
+					AND e.kind = 'kill' AND e.headshot = 1
+					AND e.attacker <> e.victim
+					AND r.warmup = 0 AND r.pregame = 0
+					AND (ka.side IS NULL OR kv.side IS NULL OR ka.side <> kv.side)
+				GROUP BY e.weapon) w), '')
+		 FROM player_stats ps
+		 WHERE ps.steam_id = ? ORDER BY ps.match_id ASC`, scrub(steamID),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("store: get player weapon jsons: %w", err)
@@ -1151,7 +1190,7 @@ func (s *Store) GetPlayerWeaponJSONs(steamID string) ([]models.ProfileWeaponJSON
 	var out []models.ProfileWeaponJSONs
 	for rows.Next() {
 		var r models.ProfileWeaponJSONs
-		if err := rows.Scan(&r.KillsByWeapon, &r.DamageByWeapon); err != nil {
+		if err := rows.Scan(&r.KillsByWeapon, &r.DamageByWeapon, &r.HeadshotsByWeapon); err != nil {
 			return nil, fmt.Errorf("store: get player weapon jsons: %w", err)
 		}
 		out = append(out, r)

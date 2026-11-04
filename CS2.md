@@ -355,3 +355,22 @@ at the end of the section.
   cs2pulse (https://cs2pulse.com/where-to-find-cs2-replay-file-location),
   tradeit.gg CS2 replay controls (https://tradeit.gg/blog/cs2-replay-controls),
   immortalboost "How to Watch CS2 Demos" (2026-11-04).
+
+- **World units ↔ meters, and player movement speeds** — coordinate and
+  distance units for any proximity math. One world unit is one inch
+  (2.54 cm), so 1 m ≈ 39.37 units and a player model is 72 units tall;
+  the game's own `distance` field (what demoinfocs surfaces as
+  `events.Kill.Distance`) is in METERS — verified on the golden demo by
+  dividing attacker↔victim world-position deltas by it (mean ratio
+  39.45). Max run speed is 250 u/s with knife/C4, ~215 u/s with a
+  rifle, ~240 u/s pistol, 245 u/s grenades — a player covers roughly
+  1075–1250 units inside the 5-second trade window at those speeds.
+  **Source** — cs.money movement guide ("one unit is equal to one inch
+  or 2.54 centimeters", "250 units per second — maximum running speed",
+  https://cs.money/blog/esports/based-movement-in-csgo/, 2026-11-04);
+  Counter-Strike Wiki "Movement" (250 u/s knife),
+  https://counterstrike.fandom.com/wiki/Movement (2026-11-04);
+  cs2-nav `RUNNING_SPEED = 250.0`,
+  https://docs.rs/cs2-nav/latest/src/cs2_nav/constants.rs.html
+  (2026-11-04); meters observation from this repo's golden-demo events
+  (2026-11-04).
