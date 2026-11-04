@@ -89,9 +89,9 @@ type ProfileService struct {
 
 // GetProfile builds the full profile for one SteamID64. A player with no
 // career row yields an empty profile (SteamID filled) rather than an error
-// — the frontend shows an empty state. Per-weapon headshots are not
-// extracted (player_stats carries only per-match totals), so
-// ProfileWeapon.Headshots is 0 in v1 (documented).
+// — the frontend shows an empty state. Per-weapon headshots come from the
+// stored kill events (store.GetPlayerWeaponJSONs), folded per weapon by
+// mergeWeapons alongside kills and damage.
 func (s *ProfileService) GetProfile(steamID string) (Profile, error) {
 	p := Profile{SteamID: steamID}
 
@@ -134,6 +134,10 @@ func (s *ProfileService) GetProfile(steamID string) (Profile, error) {
 	// this library scale).
 	deaths := 0
 	sideAgg := map[string]*ProfileSide{}
+	// Per-side kill/death pools for ProfileSide.KD — the same rows the
+	// side's Matches/Wins/ADR/KAST aggregates come from.
+	sideKills := map[string]int{}
+	sideDeaths := map[string]int{}
 	mapAgg := map[string]*ProfileMap{}
 	for _, h := range history {
 		deaths += h.Deaths
@@ -143,6 +147,8 @@ func (s *ProfileService) GetProfile(steamID string) (Profile, error) {
 			sideAgg[h.Side] = side
 		}
 		side.Matches++
+		sideKills[h.Side] += h.Kills
+		sideDeaths[h.Side] += h.Deaths
 		if h.Win {
 			side.Wins++
 		}
@@ -168,6 +174,10 @@ func (s *ProfileService) GetProfile(steamID string) (Profile, error) {
 			side.ADR /= float64(side.Matches)
 			side.KASTPct /= float64(side.Matches)
 		}
+		// KD uses the career rollup's pooled shape (kdCareerSQL):
+		// SUM(kills) / MAX(SUM(deaths), 1) over these history rows — a
+		// zero-death side counts every kill (same floor, no NaN).
+		side.KD = float64(sideKills[side.Side]) / float64(max(sideDeaths[side.Side], 1))
 		p.Sides = append(p.Sides, *side)
 	}
 	sort.Slice(p.Sides, func(i, j int) bool { return p.Sides[i].Side < p.Sides[j].Side })
@@ -192,10 +202,11 @@ func (s *ProfileService) GetProfile(steamID string) (Profile, error) {
 	return p, nil
 }
 
-// mergeWeapons folds the per-match kills_by_weapon/damage_by_weapon JSON
-// objects into one top-N list sorted by kills descending (ties: name).
+// mergeWeapons folds the per-match kills_by_weapon/damage_by_weapon and
+// headshots_by_weapon JSON objects into one top-N list sorted by kills
+// descending (ties: name).
 func mergeWeapons(rows []models.ProfileWeaponJSONs) []ProfileWeapon {
-	type aggT struct{ kills, dmg int }
+	type aggT struct{ kills, dmg, hs int }
 	agg := map[string]*aggT{}
 	merge := func(raw string, pick func(a *aggT) *int) {
 		if raw == "" {
@@ -217,10 +228,11 @@ func mergeWeapons(rows []models.ProfileWeaponJSONs) []ProfileWeapon {
 	for _, r := range rows {
 		merge(r.KillsByWeapon, func(a *aggT) *int { return &a.kills })
 		merge(r.DamageByWeapon, func(a *aggT) *int { return &a.dmg })
+		merge(r.HeadshotsByWeapon, func(a *aggT) *int { return &a.hs })
 	}
 	out := make([]ProfileWeapon, 0, len(agg))
 	for weapon, a := range agg {
-		out = append(out, ProfileWeapon{Weapon: weapon, Kills: a.kills, Damage: a.dmg})
+		out = append(out, ProfileWeapon{Weapon: weapon, Kills: a.kills, Damage: a.dmg, Headshots: a.hs})
 	}
 	sort.Slice(out, func(i, j int) bool {
 		if out[i].Kills != out[j].Kills {

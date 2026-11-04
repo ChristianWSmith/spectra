@@ -66,8 +66,8 @@ func TestConfigSeedAndSet(t *testing.T) {
 	if c.TradeWindowS != 5.0 || c.EcoFullBuy != 20000 || c.EcoForce != 10000 || c.RuleVersion != 1 {
 		t.Errorf("seeded config = %+v, want defaults 5/20000/10000/v1", c)
 	}
-	if c.TradeOppDistance != 200 {
-		t.Errorf("seeded tradeOppDistance = %d, want the 200u default", c.TradeOppDistance)
+	if c.TradeOppDistance != 1000 {
+		t.Errorf("seeded tradeOppDistance = %d, want the 1000u default", c.TradeOppDistance)
 	}
 	// Second Get returns the seeded row (idempotent).
 	if c2, err := s.GetConfig(); err != nil || c2 != c {
@@ -450,6 +450,65 @@ func TestCareerRebuildMath(t *testing.T) {
 	}
 }
 
+// TestGetPlayerWeaponJSONsHeadshots pins the headshots-by-weapon
+// derivation in GetPlayerWeaponJSONs: it counts exactly the headshot
+// kills extract would credit to player_stats.headshots/kills_by_weapon
+// (enemy kills in counted rounds) and folds them into the same JSON shape
+// mergeWeapons consumes.
+func TestGetPlayerWeaponJSONsHeadshots(t *testing.T) {
+	s := openMem(t)
+	id := saveTestMatch(t, s, "/d/weap.dem", "sha-weap", time.Now())
+	em := testExtracted("sha-weap", time.Now())
+	em.Players = []models.Player{
+		{SteamID: "100", Name: "alice", Side: "ct"},
+		{SteamID: "200", Name: "bob", Side: "t"},
+		{SteamID: "300", Name: "carl", Side: "ct"},
+	}
+	em.PlayerStats = []models.PlayerStats{
+		{SteamID: "100", Side: "ct", Name: "alice", KillsByWeapon: `{"ak47":10}`, DamageByWeapon: `{"ak47":900}`},
+	}
+	em.RoundSides = []models.RoundPlayerSide{
+		{Round: 1, SteamID: "100", Side: "ct"},
+		{Round: 1, SteamID: "200", Side: "t"},
+		{Round: 1, SteamID: "300", Side: "ct"},
+	}
+	// Rounds come from testExtracted: number 0 = warmup, 1 = real,
+	// number 2 = pregame (knife) — only the real round counts.
+	em.Events = []models.Event{
+		// Credited: enemy headshot in the counted round.
+		{Tick: 10, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "200", Weapon: "ak47", Headshot: true},
+		// Enemy body kill — not a headshot.
+		{Tick: 11, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "200", Weapon: "ak47"},
+		// Teamkill headshot (both ct) — extract credits no kill at all.
+		{Tick: 12, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "300", Weapon: "ak47", Headshot: true},
+		// Suicide headshot — no credit.
+		{Tick: 13, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "100", Weapon: "ak47", Headshot: true},
+		// Warmup round headshot — outside realPeriod.
+		{Tick: 14, Round: 0, Kind: models.EventKill, Attacker: "100", Victim: "200", Weapon: "awp", Headshot: true},
+		// Pregame (knife) round headshot — outside realPeriod.
+		{Tick: 15, Round: 2, Kind: models.EventKill, Attacker: "100", Victim: "200", Weapon: "awp", Headshot: true},
+		// Another player's headshot — not alice's.
+		{Tick: 16, Round: 1, Kind: models.EventKill, Attacker: "200", Victim: "100", Weapon: "awp", Headshot: true},
+	}
+	if err := s.SaveExtracted(id, em); err != nil {
+		t.Fatalf("SaveExtracted: %v", err)
+	}
+	rows, err := s.GetPlayerWeaponJSONs("100")
+	if err != nil {
+		t.Fatalf("GetPlayerWeaponJSONs: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("rows = %d, want 1", len(rows))
+	}
+	if rows[0].KillsByWeapon != `{"ak47":10}` || rows[0].DamageByWeapon != `{"ak47":900}` {
+		t.Errorf("kills/damage JSON = %q/%q, want the stored player_stats pair",
+			rows[0].KillsByWeapon, rows[0].DamageByWeapon)
+	}
+	if rows[0].HeadshotsByWeapon != `{"ak47":1}` {
+		t.Errorf("headshots JSON = %q, want {\"ak47\":1} (only the credited enemy headshot)", rows[0].HeadshotsByWeapon)
+	}
+}
+
 func TestSavedFiltersCRUD(t *testing.T) {
 	s := openMem(t)
 	r1, err := s.CreateSavedFilter("opening deaths", "library", `{"kind":"kill"}`)
@@ -563,9 +622,9 @@ func TestGetCombatStatsFromStoredRows(t *testing.T) {
 		{Tick: 30, Round: 1, Kind: models.EventDamage, Attacker: "100", Victim: "300", Dmg: 10}, // FF (both ct)
 		// Kill events backing the two untraded engagements below: alice's
 		// teammate was 150u from bob's killer on tick 50 (within the 200u
-		// default → counted) but 500u away on tick 60 (beyond → not
-		// counted). Decision 4: TradeOppMissed is the proximity-gated
-		// subset, UntradedDeaths stays the raw count.
+		// distance this test configures → counted) but 500u away on tick 60
+		// (beyond → not counted). Decision 4: TradeOppMissed is the
+		// proximity-gated subset, UntradedDeaths stays the raw count.
 		{Tick: 50, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "200",
 			DetailJSON: `{"killer":"alice","victim":"bob","nearDist":150}`},
 		{Tick: 60, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "200",
@@ -573,6 +632,13 @@ func TestGetCombatStatsFromStoredRows(t *testing.T) {
 	}
 	if err := s.SaveExtracted(id, em); err != nil {
 		t.Fatalf("SaveExtracted: %v", err)
+	}
+	// Pin the proximity gate explicitly: the fixtures below are calibrated
+	// to a 200u radius, not to whatever DefaultConfig seeds.
+	if _, err := s.SetConfig(models.AnalysisConfig{
+		TradeWindowS: 5, EcoFullBuy: 20000, EcoForce: 10000, TradeOppDistance: 200, RuleVersion: 1,
+	}); err != nil {
+		t.Fatalf("SetConfig (distance 200): %v", err)
 	}
 	if err := s.ReplacePlayerRounds(id, []models.PlayerRoundStat{
 		{Round: 1, SteamID: "100", KAST: true},
@@ -617,7 +683,7 @@ func TestGetCombatStatsFromStoredRows(t *testing.T) {
 	// Untraded rows attribute to victim 200 (bob), not alice. Decision 4:
 	// UntradedDeaths is the raw timing count (2), TradeOppMissed only the
 	// proximity-gated subset (1 — the 150u death; the 500u one is beyond
-	// the 200u default).
+	// the configured 200u radius).
 	var bob *models.CombatStat
 	for i := range rows {
 		if rows[i].SteamID == "200" {
@@ -699,12 +765,13 @@ func TestGetCombatStatsSQLDecisions(t *testing.T) {
 	}
 
 	// (4) TradeOppMissed is proximity-gated by analysis_config.
-	//     trade_opp_distance (default 200): the untraded engagement must
-	//     join to its kill event's detail_json.nearDist within [0, dist].
-	//     -1 (extract's "nobody measurable" sentinel), a missing kill
-	//     event, malformed JSON and an absent nearDist key all fail the
-	//     gate; UntradedDeaths counts every untraded row regardless.
-	//     A wider configured distance pulls in the beyond-range death.
+	//     trade_opp_distance (pinned to 200 here, independent of the
+	//     default): the untraded engagement must join to its kill event's
+	//     detail_json.nearDist within [0, dist]. -1 (extract's "nobody
+	//     measurable" sentinel), a missing kill event, malformed JSON and
+	//     an absent nearDist key all fail the gate; UntradedDeaths counts
+	//     every untraded row regardless. A wider configured distance pulls
+	//     in the beyond-range death.
 	em2 := testExtracted("sha-combat2", time.Now())
 	em2.Events = []models.Event{
 		{Tick: 400, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "200",
@@ -731,6 +798,13 @@ func TestGetCombatStatsSQLDecisions(t *testing.T) {
 		{Tick: 450, Round: 1, Kind: "untraded", ASteam: "100", BSteam: "200"},
 	}); err != nil {
 		t.Fatalf("ReplaceEngagements (gating): %v", err)
+	}
+	// Pin the 200u gate before reading: the fixture's 150u/500u deaths
+	// are calibrated to that radius, not to the seeded default.
+	if _, err := s.SetConfig(models.AnalysisConfig{
+		TradeWindowS: 5, EcoFullBuy: 20000, EcoForce: 10000, TradeOppDistance: 200, RuleVersion: 1,
+	}); err != nil {
+		t.Fatalf("SetConfig (distance 200): %v", err)
 	}
 	gated, err := s.GetCombatStats(id)
 	if err != nil {
