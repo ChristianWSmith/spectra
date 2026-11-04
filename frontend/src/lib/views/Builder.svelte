@@ -11,6 +11,7 @@
   } from '../services.js';
   import { fmtInt, fmtMetric } from '../fmt.js';
   import MatchPicker from '../components/MatchPicker.svelte';
+  import ProfileLink from '../components/ProfileLink.svelte';
 
   let { nav = () => {} } = $props();
 
@@ -554,7 +555,13 @@
                       title={r.n === 0 ? 'missing data — N=0 behind this value' : ''}
                     >
                       <td class="mono">{r.group || '—'}</td>
-                      <td>{r.label || '—'}</td>
+                      <td>
+                        <!-- A player grouping carries the Steam id in r.group
+                             (ProfileLink's own isSteam guard makes that a
+                             link); every other grouping — side, weapon, … —
+                             stays plain text. -->
+                        <ProfileLink steam={r.group} name={r.label || '—'} {nav} />
+                      </td>
                       <td class="num">{fmtMetric(r.value, form.format)}</td>
                       <td class="num">{fmtInt(r.n)}</td>
                     </tr>

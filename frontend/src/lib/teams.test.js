@@ -7,7 +7,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { synthTeamName, teamNames, teamStartClass, playerStartClass, displayHalfScore } from './teams.js';
+import { synthTeamName, teamNames, teamStartClass, playerStartClass, playerSideClassAt, displayHalfScore } from './teams.js';
+
+// Round rows for the per-round helper: a warmup (-1) plus 24 counted
+// rounds (MR12 regulation, one side switch — the same shape as the
+// sideparity fixture runner).
+const ROUNDS = [
+  { number: -1 },
+  ...Array.from({ length: 24 }, (_, i) => ({ number: i + 1 })),
+];
 
 // Same scoreboard as TestSynthTeamNames (models.PlayerStatsRow → the JS
 // row shape: steamId/name/side), including the sideless player that must
@@ -116,4 +124,35 @@ test('displayHalfScore orders the half score by the teams’ display order', () 
     first: 0,
     second: 0,
   });
+});
+
+test('playerSideClassAt: the SIDE the player had in that round, not the team start side', () => {
+  // A00 finished CT → the aggregate color is the team's start side (T =
+  // orange .team-start-t), but in round 13 (second half) they were CT, so
+  // the round-scoped color is the CT side color (.side-ct). This is the
+  // golden demo's FREELOOK-on-round-13 case in one assertion pair.
+  assert.equal(playerStartClass(SB, 1, 'A00', ''), 'team-start-t');
+  assert.equal(playerSideClassAt(SB, 1, ROUNDS, 13, 'A00', ''), 'side-ct');
+  // First half flips it back: round 1 is still the opening-half side.
+  assert.equal(playerSideClassAt(SB, 1, ROUNDS, 1, 'A00', ''), 'side-t');
+  assert.equal(playerSideClassAt(SB, 1, ROUNDS, 12, 'A00', ''), 'side-t');
+  // A player who finished T was CT in the first half.
+  assert.equal(playerSideClassAt(SB, 1, ROUNDS, 1, 'B00', ''), 'side-ct');
+  assert.equal(playerSideClassAt(SB, 1, ROUNDS, 24, 'B00', ''), 'side-t');
+  // Steam-id lookup first, exact-name fallback — the same resolution
+  // playerStartClass uses (round/chat rows may carry only a name).
+  assert.equal(playerSideClassAt(SB, 1, ROUNDS, 13, '', 'lowix'), 'side-ct');
+  assert.equal(playerSideClassAt(SB, 1, ROUNDS, 13, '', 'zed'), 'side-t');
+});
+
+test('playerSideClassAt: unresolvable inputs fall back to the aggregate color, never a guess', () => {
+  // No rounds list (not fetched / fetch failed) → the per-MATCH start-side
+  // color, exactly what the surface rendered before the round was known.
+  assert.equal(playerSideClassAt(SB, 1, [], 13, 'A00', ''), 'team-start-t');
+  // Round not in the list → same aggregate fallback.
+  assert.equal(playerSideClassAt(SB, 1, ROUNDS, 99, 'A00', ''), 'team-start-t');
+  // Unknown player or a player with no recorded side → no color at all.
+  assert.equal(playerSideClassAt(SB, 1, ROUNDS, 13, 'missing', 'nobody'), '');
+  assert.equal(playerSideClassAt(SB, 1, ROUNDS, 13, 'C00', 'sideless'), '');
+  assert.equal(playerSideClassAt(null, 1, ROUNDS, 13, 'A00', 'kRaSnaL'), '');
 });

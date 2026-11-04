@@ -11,6 +11,8 @@
   // deferred (documented in the wave report).
   import {
     getRoundDetail,
+    getRounds,
+    getScoreboard,
     getEconomy,
     getUtility,
     getRoundClasses,
@@ -21,7 +23,9 @@
   import { replayHash } from '../nav.js';
   import { buildHash } from '../router.js';
   import { normalizeEvent } from '../replay/landmarks.js';
+  import { playerSideClassAt } from '../teams.js';
   import LandmarkRow from '../components/LandmarkRow.svelte';
+  import ProfileLink from '../components/ProfileLink.svelte';
 
   let { id = 0, query = {}, nav = () => {} } = $props();
 
@@ -55,6 +59,19 @@
   let cols = $state([]);
   let tickRate = $state(64);
   let error = $state('');
+  // Round-scoped name colors: the round list (the counted-round index
+  // behind the per-round side) and the scoreboard (each player's final
+  // side), plus the match's side-switch count. Fetched once per
+  // selection alongside the round details above.
+  let rounds = $state([]);
+  let players = $state([]);
+  let sideSwitches = $state(0);
+
+  // Per-round SIDE color for a name in ONE compared round — lib/teams.js
+  // playerSideClassAt; '' when the player or round can't be resolved.
+  function playerRoundCls(roundNumber, steamId, name) {
+    return playerSideClassAt(players, sideSwitches, rounds, roundNumber, steamId, name);
+  }
 
   $effect(() => {
     if (!sel) return;
@@ -62,6 +79,8 @@
     const wanted = sel.rounds;
     Promise.all([
       getMatch(id),
+      getRounds(id),
+      getScoreboard(id, 'kills', true).catch(() => []),
       getEconomy(id),
       getUtility(id),
       getRoundClasses(id),
@@ -69,8 +88,11 @@
     ])
       .then((all) => {
         if (!live) return;
-        const [m, econRows, utilRows, classRows, ...details] = all;
+        const [m, roundRows, sb, econRows, utilRows, classRows, ...details] = all;
         if (m && m.tickRate > 0) tickRate = m.tickRate;
+        sideSwitches = (m && m.sideSwitches) || 0;
+        rounds = roundRows || [];
+        players = sb || [];
         const econBy = new Map((econRows || []).map((e) => [e.round, e]));
         const classBy = new Map((classRows || []).map((c) => [c.round, c]));
         const utils = utilRows || [];
@@ -87,8 +109,15 @@
             econ: econBy.get(r) || null,
             cls: classBy.get(r) || null,
             utils: utils.filter((u) => u.round === r),
+            // Kept as parts (not one formatted string) so both names can
+            // carry their per-round side color and link to their profiles.
             firstBlood: detail?.round?.firstKillName
-              ? `${detail.round.firstKillName} killed ${detail.round.firstDeathName}`
+              ? {
+                  kill: detail.round.firstKillName,
+                  killSteam: detail.round.firstKillSteam,
+                  death: detail.round.firstDeathName,
+                  deathSteam: detail.round.firstDeathSteam,
+                }
               : null,
           };
         });
@@ -221,7 +250,35 @@
                 <li><span class="muted">Kills</span> <strong>{col.detail.round.kills}</strong></li>
                 <li>
                   <span class="muted">First blood</span>
-                  {col.firstBlood || '—'}
+                  <span>
+                    {#if col.firstBlood}
+                      <ProfileLink
+                        steam={col.firstBlood.killSteam}
+                        name={col.firstBlood.kill}
+                        {nav}
+                        cls={playerRoundCls(
+                          col.round,
+                          col.firstBlood.killSteam,
+                          col.firstBlood.kill,
+                        )}
+                        title="Open {col.firstBlood.kill} profile"
+                      />
+                      killed
+                      <ProfileLink
+                        steam={col.firstBlood.deathSteam}
+                        name={col.firstBlood.death}
+                        {nav}
+                        cls={playerRoundCls(
+                          col.round,
+                          col.firstBlood.deathSteam,
+                          col.firstBlood.death,
+                        )}
+                        title="Open {col.firstBlood.death} profile"
+                      />
+                    {:else}
+                      —
+                    {/if}
+                  </span>
                 </li>
                 <li>
                   <span class="muted">Bomb site</span>
@@ -229,7 +286,21 @@
                 </li>
                 <li>
                   <span class="muted">MVP</span>
-                  {col.detail.round.mvpName || '—'}
+                  {#if col.detail.round.mvpName}
+                    <ProfileLink
+                      steam={col.detail.round.mvp}
+                      name={col.detail.round.mvpName}
+                      {nav}
+                      cls={playerRoundCls(
+                        col.round,
+                        col.detail.round.mvp,
+                        col.detail.round.mvpName,
+                      )}
+                      title="Open {col.detail.round.mvpName} profile"
+                    />
+                  {:else}
+                    —
+                  {/if}
                 </li>
               </ul>
             </div>
@@ -242,7 +313,13 @@
                   {#each col.utils as u, i (i)}
                     <li>
                       <span class="chip">{u.kind}</span>
-                      <span>{u.throwerName || '—'}</span>
+                      <ProfileLink
+                        steam={u.thrower}
+                        name={u.throwerName || u.thrower}
+                        {nav}
+                        cls={playerRoundCls(col.round, u.thrower, u.throwerName)}
+                        title="Open {u.throwerName || u.thrower} profile"
+                      />
                       <span class="muted">
                         {u.damage > 0 ? `${u.damage} dmg` : ''}
                         {u.flashMsTotal > 0 ? ` · ${fmtMs(u.flashMsTotal)} flash` : ''}
@@ -259,6 +336,7 @@
                 {#each col.seq.map(toLandmark).filter(Boolean) as row (row.key)}
                   <LandmarkRow
                     {row}
+                    {nav}
                     compact={true}
                     onselect={openEvent}
                     onseek={openEvent}

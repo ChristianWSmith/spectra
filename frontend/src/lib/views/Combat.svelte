@@ -7,13 +7,14 @@
     getClutches,
     getEngagements,
     getPlayerRounds,
+    getRounds,
     getScoreboard,
     getMatch,
     errText,
   } from '../services.js';
   import { fmtInt, fmtPercent } from '../fmt.js';
   import { replayHash } from '../nav.js';
-  import { playerStartClass } from '../teams.js';
+  import { playerStartClass, playerSideClassAt } from '../teams.js';
   import {
     KAST_DEF,
     DMG_CONV_DEF,
@@ -82,11 +83,20 @@
   // also carry the exact-name fallback for rows without a steam id.
   let players = $state([]);
   let sideSwitches = $state(0);
+  // Round list: the counted-round index behind the per-round side colors
+  // on the engagement/clutch rows (lib/teams.js playerSideClassAt).
+  let rounds = $state([]);
 
-  // Team-identity color class for a name surface — '' when the player or
-  // their side can't be resolved (never a guessed color).
+  // Per-MATCH color for a name surface (the stats table, the KAST modal
+  // header) — the team's start side, which never changes mid-match.
   function playerCls(steamId, name) {
     return playerStartClass(players, sideSwitches, steamId, name);
+  }
+
+  // Per-ROUND color for a row that belongs to ONE round (an engagement or
+  // a clutch) — the side that player had in that round.
+  function playerRoundCls(roundNumber, steamId, name) {
+    return playerSideClassAt(players, sideSwitches, rounds, roundNumber, steamId, name);
   }
 
   let engKind = $state('');
@@ -108,13 +118,15 @@
       getEngagements(id, ''),
       getScoreboard(id, 'kills', true).catch(() => []),
       getMatch(id).catch(() => null),
+      getRounds(id).catch(() => []),
     ])
-      .then(([cs, cl, en, sb, m]) => {
+      .then(([cs, cl, en, sb, m, rd]) => {
         if (!live) return;
         stats = cs || [];
         clutches = cl || [];
         engagements = en || [];
         players = sb || [];
+        rounds = rd || [];
         sideSwitches = (m && m.sideSwitches) || 0;
         error = '';
       })
@@ -160,9 +172,12 @@
     nav(replayHash(id, { round }, { back: `match/${id}/combat` }));
   }
 
+  // Won-by cell text: models.Engagement.wonBy carries the winning SIDE
+  // ("ct"|"t" — the killer's team, internal/analytics/engagements.go),
+  // never a player id, so this cell holds no name to link: the killer,
+  // who always wins the engagement, is already profile-linked in column A,
+  // and the side token is the row's only hint at which team won it.
   function wonByName(e) {
-    if (e.wonBy === e.aSteam) return e.aName || e.wonBy || '—';
-    if (e.wonBy === e.bSteam) return e.bName || e.wonBy || '—';
     return e.wonBy || '—';
   }
 
@@ -327,7 +342,7 @@
                   steam={e.aSteam}
                   name={e.aName || '—'}
                   {nav}
-                  cls={playerCls(e.aSteam, e.aName)}
+                  cls={playerRoundCls(e.round, e.aSteam, e.aName)}
                   title="Open profile — {e.aName}"
                 />
               </td>
@@ -337,7 +352,7 @@
                   steam={e.bSteam}
                   name={e.bName || '—'}
                   {nav}
-                  cls={playerCls(e.bSteam, e.bName)}
+                  cls={playerRoundCls(e.round, e.bSteam, e.bName)}
                   title="Open profile — {e.bName}"
                 />
               </td>
@@ -400,7 +415,7 @@
                     steam={c.steamId}
                     name={c.name || '—'}
                     {nav}
-                    cls={playerCls(c.steamId, c.name)}
+                    cls={playerRoundCls(c.round, c.steamId, c.name)}
                     title="Open player profile"
                   />
                 </td>
@@ -427,7 +442,16 @@
 
   <Dialog open={!!kastSteam} label="KAST rounds for {kastName}" panelClass="wide" onClose={closeKast}>
     <div class="row-between">
-      <h2>KAST rounds — <span class={playerCls(kastSteam, kastName)}>{kastName}</span></h2>
+      <h2>
+        KAST rounds —
+        <ProfileLink
+          steam={kastSteam}
+          name={kastName}
+          {nav}
+          cls={playerCls(kastSteam, kastName)}
+          title="Open {kastName} profile"
+        />
+      </h2>
       <button class="btn small" aria-label="Close" onclick={closeKast}><span class="codicon codicon-close"></span></button>
     </div>
     <p class="muted" title={KAST_DEF}>

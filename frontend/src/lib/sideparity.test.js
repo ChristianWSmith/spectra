@@ -8,7 +8,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-import { flipIndexes, eraOf, startSideFor, sideInEra, teamKeyAt } from './sideparity.js';
+import { flipIndexes, eraOf, startSideFor, sideInEra, teamKeyAt, sideAtRound } from './sideparity.js';
 
 const fixture = JSON.parse(
   readFileSync(new URL('../../../internal/rules/testdata/sideparity.json', import.meta.url), 'utf8'),
@@ -120,4 +120,58 @@ test('teamKeyAt: a round\'s side resolves to the TEAM that played it', () => {
   // Unknown side never gets a guessed team.
   assert.equal(teamKeyAt('', 0, 23, 1), null);
   assert.equal(teamKeyAt('ct2', 0, 23, 1), null);
+});
+
+// A match's round rows the way the views hold them: the negative-numbered
+// warmup/knife rounds ahead of `counted` real rounds (extract's renumber —
+// the first real round is 1, so these never count).
+function roundList(counted) {
+  return [
+    { number: -2 },
+    { number: -1 },
+    ...Array.from({ length: counted }, (_, i) => ({ number: i + 1 })),
+  ];
+}
+
+test('sideAtRound: a round number resolves to the side played in that round', () => {
+  const rounds = roundList(24); // MR12 regulation, one side switch
+  // First half (rounds 1–12): the team that finished CT played T.
+  assert.equal(sideAtRound(rounds, 1, 1, 'ct'), 't');
+  assert.equal(sideAtRound(rounds, 1, 12, 'ct'), 't');
+  assert.equal(sideAtRound(rounds, 1, 1, 't'), 'ct');
+  // Second half (rounds 13–24): the sides are back to the final sides —
+  // the golden demo's FREELOOK-on-round-13 case lives here.
+  assert.equal(sideAtRound(rounds, 1, 13, 'ct'), 'ct');
+  assert.equal(sideAtRound(rounds, 1, 24, 'ct'), 'ct');
+  assert.equal(sideAtRound(rounds, 1, 13, 't'), 't');
+  // The derivation is eraOf over the COUNTED index — the same one
+  // startSideFor feeds the team-identity colors at era 0.
+  assert.equal(sideAtRound(rounds, 1, 1, 'ct'), startSideFor('ct', 1));
+});
+
+test('sideAtRound: knife/warmup rounds read as the first era, like RoundStrip cells', () => {
+  const rounds = roundList(24);
+  assert.equal(sideAtRound(rounds, 1, -2, 'ct'), startSideFor('ct', 1));
+  assert.equal(sideAtRound(rounds, 1, -1, 't'), startSideFor('t', 1));
+  // No recorded switch → the side never moves.
+  assert.equal(sideAtRound(rounds, 0, 1, 'ct'), 'ct');
+  assert.equal(sideAtRound(rounds, 0, 24, 'ct'), 'ct');
+  // Overtime: 25 counted rounds, two switches → flips at 9 and 17.
+  const ot = roundList(25);
+  assert.equal(sideAtRound(ot, 2, 10, 'ct'), 't');
+  assert.equal(sideAtRound(ot, 2, 18, 'ct'), 'ct');
+});
+
+test('sideAtRound: missing data never gets a guessed side', () => {
+  const rounds = roundList(24);
+  // Round not in this match's list.
+  assert.equal(sideAtRound(rounds, 1, 99, 'ct'), null);
+  // No rounds list at all (fetch failed / not loaded yet).
+  assert.equal(sideAtRound([], 1, 13, 'ct'), null);
+  assert.equal(sideAtRound(null, 1, 13, 'ct'), null);
+  // Not a side.
+  assert.equal(sideAtRound(rounds, 1, 13, ''), null);
+  assert.equal(sideAtRound(rounds, 1, 13, 'ct2'), null);
+  // Garbage switch counts coerce to 0 rather than throwing.
+  assert.equal(sideAtRound(rounds, undefined, 13, 'ct'), 'ct');
 });

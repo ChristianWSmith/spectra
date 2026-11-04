@@ -16,7 +16,7 @@
 // file's fixture is src/lib/teams.test.js — same inputs/outputs, same
 // tie-break. Keep the three in sync or the labels diverge per surface.
 
-import { startSideFor } from './sideparity.js';
+import { sideAtRound, startSideFor } from './sideparity.js';
 
 // pickPlayer chooses the player used to name one side's team: the lowest
 // SteamID on that side (then name). Deterministic by design — callers pass
@@ -92,12 +92,11 @@ export function teamStartClass(finalSide, sideSwitches) {
   return start === 'ct' ? 'team-start-ct' : start === 't' ? 'team-start-t' : '';
 }
 
-// playerStartClass resolves ONE name surface (a scoreboard row, a round's
-// MVP/first-blood, a kill-feed killer…) to its team's color class: the
-// player's FINAL side, looked up by steam id first and exact display name
-// as the fallback (round/chat rows may carry only a name). Unresolvable →
-// '' — best effort, no guessing.
-export function playerStartClass(players, sideSwitches, steamId, name) {
+// resolveSide is the ONE name → final-side lookup shared by the two name
+// color helpers below: steam id first, exact display name as the fallback
+// (round/chat rows may carry only a name). Unresolvable → '' — best
+// effort, no guessing.
+function resolveSide(players, steamId, name) {
   let side = '';
   if (steamId) {
     const byId = (players || []).find((p) => p && p.steamId === steamId);
@@ -107,5 +106,39 @@ export function playerStartClass(players, sideSwitches, steamId, name) {
     const byName = (players || []).find((p) => p && p.name === name);
     if (byName) side = byName.side || '';
   }
-  return teamStartClass(side, sideSwitches);
+  return side;
+}
+
+// playerStartClass resolves ONE PER-MATCH name surface (a scoreboard row,
+// a roster, a top-stat card) to its team's color class: the player's
+// FINAL side through teamStartClass — the team's START side, which never
+// changes mid-match. Unresolvable → '' — best effort, no guessing.
+export function playerStartClass(players, sideSwitches, steamId, name) {
+  return teamStartClass(resolveSide(players, steamId, name), sideSwitches);
+}
+
+// sideClassOf maps a side to the canonical SIDE color class (style.css
+// `:root .side-ct/.side-t` — the side spellings, not the team-identity
+// pair, per the "For SIDE semantics keep .ct/.t/.side-*" note there).
+function sideClassOf(side) {
+  return side === 'ct' ? 'side-ct' : side === 't' ? 'side-t' : '';
+}
+
+// playerSideClassAt resolves ONE PER-ROUND name surface (a round's MVP,
+// first blood, kill row, thrower) to the color of the side that player
+// had IN THAT ROUND — the round-scoped twin of playerStartClass above:
+// same name lookup, then sideparity.sideAtRound maps the round number
+// through the counted-round eras. When the round cannot be resolved
+// (no rounds list yet) it falls back to the per-MATCH start-side color —
+// the aggregate color, never a guessed side for this round; an
+// unresolvable player yields ''. The classes are the side spellings
+// (`.side-ct` / `.side-t`), so they read against the side chips in the
+// same row rather than against a team's identity color.
+export function playerSideClassAt(players, sideSwitches, rounds, roundNumber, steamId, name) {
+  const side = resolveSide(players, steamId, name);
+  const at = sideAtRound(rounds, sideSwitches, roundNumber, side);
+  // Round resolved → this round's SIDE color; otherwise the per-MATCH
+  // start-side color (the surface's aggregate look — still never a guess
+  // of this round's side); unknown player → ''.
+  return sideClassOf(at) || teamStartClass(side, sideSwitches);
 }

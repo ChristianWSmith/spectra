@@ -14,7 +14,11 @@
 // frontend/src/lib/sideparity.test.js (node --test src/lib/sideparity.test.js).
 // RoundStrip consumes eraOf()/sideInEra() per cell; startSideFor (era 0)
 // feeds the team-identity name colors through lib/teams.js; teamKeyAt
-// maps a round's side onto the TEAM behind it for per-team rollups.
+// maps a round's side onto the TEAM behind it for per-team rollups;
+// sideAtRound maps a round NUMBER onto the side played in that round for
+// the per-round name colors (lib/teams.js playerSideClassAt).
+
+import { isCounted } from './rounds.js';
 
 // flipIndexes returns the counted-round indexes (0-based, ascending) where
 // side switches happen. Boundaries outside (0, n) are dropped — a match too
@@ -86,4 +90,28 @@ export function teamKeyAt(side, index, counted, switches) {
   if (side !== 'ct' && side !== 't') return null;
   const era = eraOf(index, flipIndexes(counted, switches));
   return sideInEra('ct', switches, era) === side ? 'ct' : 't';
+}
+
+// sideAtRound maps a round NUMBER to the side a team played in THAT round
+// — the per-round form of startSideFor for surfaces that show data about
+// one round (a round's MVP/first blood, a kill row): the round's position
+// among the COUNTED rounds (lib/rounds.js isCounted — knife and warmup
+// rounds never reach a switch, so they read as era 0, exactly like
+// RoundStrip's cells) picks the era, then sideInEra resolves `finalSide`
+// (the team's FINAL side) into it. RoundStrip derives its per-cell sides
+// through this helper, so the strip arrows and the per-round name colors
+// can never disagree. Returns null when the round is not in `rounds` or
+// finalSide is not a side — missing data never gets a guessed side.
+// Frontend-only composition over the primitives above.
+export function sideAtRound(rounds, sideSwitches, roundNumber, finalSide) {
+  if (finalSide !== 'ct' && finalSide !== 't') return null;
+  const list = Array.isArray(rounds) ? rounds : [];
+  if (!list.some((r) => r && r.number === roundNumber)) return null;
+  const s = Number.isFinite(sideSwitches) ? Math.trunc(sideSwitches) : 0;
+  const counted = list.filter(isCounted);
+  const idx = counted.findIndex((r) => r && r.number === roundNumber);
+  const flips = flipIndexes(counted.length, s);
+  const eras = Math.max(1, s + 1);
+  const era = idx < 0 ? 0 : Math.min(eras - 1, eraOf(idx, flips));
+  return sideInEra(finalSide, s, era);
 }

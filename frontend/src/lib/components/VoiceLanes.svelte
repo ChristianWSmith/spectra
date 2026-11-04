@@ -5,8 +5,9 @@
   // the strip → map x to a tick → onSeek(tick), which Replay turns into
   // an in-place seek with voice enabled.
   import { getVoiceLanes, getScoreboard } from '../services.js';
+  import ProfileLink from './ProfileLink.svelte';
 
-  let { matchId = 0, fromTick = 0, toTick = 0, onSeek = () => {} } = $props();
+  let { matchId = 0, fromTick = 0, toTick = 0, nav = () => {}, onSeek = () => {} } = $props();
 
   const BUCKETS = 180;
 
@@ -72,6 +73,10 @@
   const t1 = $derived(lanes ? lanes.toTick : toTick);
 
   function seekFromX(e) {
+    // A click on the lane's profile link belongs to the link, not to the
+    // strip (the whole strip is click-to-seek — target guard, since a
+    // delegated child stopPropagation is not reliable here).
+    if (e.target instanceof Element && e.target.closest('button, a, input')) return;
     const el = stripEl;
     if (!el || t1 <= t0) return;
     // Map against the BARS column, not the whole strip — the left-hand
@@ -118,7 +123,15 @@
     >
       {#each rows as row (row.steamId)}
         <div class="voice-lane-row">
-          <span class="voice-lane-label side-{row.side}" title={row.steamId}>{row.label}</span>
+          <span class="voice-lane-label">
+            <ProfileLink
+              steam={row.steamId}
+              name={row.label}
+              {nav}
+              cls={row.side ? `side-${row.side}` : ''}
+              title="{row.steamId} — open profile"
+            />
+          </span>
           <span class="voice-lane-bars">
             {#each row.counts as c, i (i)}
               <span

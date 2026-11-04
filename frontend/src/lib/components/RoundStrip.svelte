@@ -15,7 +15,7 @@
 // follows the TEAM across the halftime side switch while the cell tint
 // keeps following the SIDE. A marker splits the row after the 12th real
 // round (the MR12 halftime).
-import { flipIndexes, eraOf, sideInEra } from '../sideparity.js';
+import { sideAtRound } from '../sideparity.js';
 import { teamStartClass } from '../teams.js';
 import { isCounted } from '../rounds.js';
 import { buildHash } from '../router.js';
@@ -36,24 +36,20 @@ let {
 const HALFTIME_AFTER = 12;
 
 // Per-cell data: split marker + the side the team-above played in that
-// round. Sides swap at every half, so an era index is derived from the
-// counted rounds (pre-match rounds sit in the first era) using the
+// round. Sides swap at every half, so each cell's side comes from the
 // canonical side-parity helper shared with the backend (flip boundaries at
-// floor((n*k + switches) / (switches + 1)) — see ../sideparity.js and
-// internal/rules). Regulation MR12 is exact; overtime's short halves get
-// their per-boundary split instead of one uniform era length.
+// floor((n*k + switches) / (switches + 1)) — see ../sideparity.js
+// sideAtRound, which maps the round number through the counted rounds;
+// the per-round name colors resolve through the same helper, so the strip
+// and the names can never disagree).
 const cells = $derived.by(() => {
-  const eras = Math.max(1, sideSwitches + 1);
-  const counted = rounds.filter(isCounted);
-  const flips = flipIndexes(counted.length, sideSwitches);
   let seen = 0;
   return rounds.map((r) => {
     const isReal = isCounted(r);
-    const era = isReal ? Math.min(eras - 1, eraOf(seen, flips)) : 0;
-    // The team above FINISHED CT, so its side in this era is the
-    // canonical derivation (../sideparity.js sideInEra — the same one
-    // startSideFor feeds the team-identity name colors with).
-    const aboveSide = sideInEra('ct', sideSwitches, era);
+    // The team above FINISHED CT, so its side in this round is the
+    // canonical derivation (../sideparity.js sideAtRound → sideInEra —
+    // the same one startSideFor feeds the team-identity name colors with).
+    const aboveSide = sideAtRound(rounds, sideSwitches, r.number, 'ct');
     const after = isReal && ++seen === HALFTIME_AFTER;
     return { r, after, aboveSide };
   });

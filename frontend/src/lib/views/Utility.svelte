@@ -1,6 +1,7 @@
 <script>
   import {
     getUtility,
+    getRounds,
     getScoreboard,
     getMatch,
     getTeamNames,
@@ -8,10 +9,12 @@
   } from '../services.js';
   import { fmtClock, tickSeconds, fmtMs } from '../fmt.js';
   import { replayHash } from '../nav.js';
-  import { playerStartClass, teamNames, teamStartClass } from '../teams.js';
+  import { playerSideClassAt, teamNames, teamStartClass } from '../teams.js';
+  import ProfileLink from '../components/ProfileLink.svelte';
 
   // Match renders <Utility {id} /> — nav is optional, fall back to the hash
-  // router directly so the drill-downs still work.
+  // router directly so the drill-downs still work. `go` is what the
+  // ProfileLinks below navigate through for the same reason.
   let { id = 0, nav = null } = $props();
 
   const go = (hash) => (nav ? nav(hash) : (location.hash = hash));
@@ -19,6 +22,7 @@
 
   let rows = $state([]);
   let players = $state([]);
+  let rounds = $state([]); // round rows: the counted index behind per-round colors
   let names = $state({ ct: 'CT', t: 'T' }); // team names, final-side keyed
   let loading = $state(true);
   let error = $state('');
@@ -27,27 +31,31 @@
   let closed = $state({}); // round -> true = collapsed
   // Match tickrate for the tick → clock conversion (unknown until the
   // match metadata lands; 64 is CS2's standard fallback). sideSwitches is
-  // the other half of the team-identity name colors (changes.txt #20).
+  // the other half of the per-round name colors (changes.txt #20).
   let tickRate = $state(64);
   let sideSwitches = $state(0);
 
-  // Team-identity color class for a name surface — '' when the player or
-  // their side can't be resolved (never a guessed color).
-  function playerCls(steamId, name) {
-    return playerStartClass(players, sideSwitches, steamId, name);
+  // Per-round SIDE color class for a thrower row — every name in the
+  // per-round groups belongs to that round, so the color follows the side
+  // the thrower had in it (lib/teams.js playerSideClassAt); '' when the
+  // player or round can't be resolved (never a guessed color).
+  function playerCls(roundNumber, steamId, name) {
+    return playerSideClassAt(players, sideSwitches, rounds, roundNumber, steamId, name);
   }
 
   $effect(() => {
     let live = true;
     Promise.all([
       getUtility(id),
+      getRounds(id),
       getScoreboard(id, 'kills', true).catch(() => []),
       getMatch(id).catch(() => null),
       getTeamNames(id).catch(() => null),
     ])
-      .then(([u, sb, m, tn]) => {
+      .then(([u, rd, sb, m, tn]) => {
         if (!live) return;
         rows = u || [];
+        rounds = rd || [];
         players = sb || [];
         if (m && m.tickRate > 0) tickRate = m.tickRate;
         if (m) sideSwitches = m.sideSwitches || 0;
@@ -323,9 +331,13 @@
                 {#each list as r, i (r.tick + ':' + i)}
                   <li class="util-nade">
                     <span class="chip util-kind {r.kind}">{r.kind}</span>
-                    <span class="util-thrower {playerCls(r.thrower, r.throwerName)}"
-                      >{r.throwerName || r.thrower || '—'}</span
-                    >
+                    <ProfileLink
+                      steam={r.thrower}
+                      name={r.throwerName || r.thrower}
+                      nav={go}
+                      cls="util-thrower {playerCls(r.round, r.thrower, r.throwerName)}"
+                      title="Open {r.throwerName || r.thrower} profile"
+                    />
                     <span
                       class="mono muted util-tick"
                       title="tick {r.tick}"

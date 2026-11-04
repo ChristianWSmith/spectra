@@ -57,6 +57,7 @@
   import { toCSV } from '../csv.js';
   import { chatClock, prettyJson } from '../fmt.js';
   import { isCounted } from '../rounds.js';
+  import { isSteam } from '../nav.js';
   import { buildHash } from '../router.js';
   import FilterBar from '../components/FilterBar.svelte';
   import LandmarkRow from '../components/LandmarkRow.svelte';
@@ -553,6 +554,17 @@
   }
 
   const players = $derived(meta?.players || []);
+
+  // Generic-event rows carry only a display name (`who`) — resolve it to a
+  // Steam id through the sidecar slot table (meta.players) on an EXACT
+  // name match only: a partial match could link the wrong person, so an
+  // unresolvable name renders as plain text (ProfileLink's non-steam
+  // branch). Used by the detail pane and the landmark feed's generic rows.
+  function resolveWho(name) {
+    if (!name) return '';
+    const hit = players.find((p) => p && p.name === name);
+    return hit && isSteam(hit.steamId) ? hit.steamId : '';
+  }
 
   // --- Follow camera (?follow=<steamid17>) -----------------------------------
   // The Match view's "open the replay on this player" hand-off: the
@@ -1188,6 +1200,8 @@
             {#each feedRows as row (row.key)}
               <LandmarkRow
                 {row}
+                {nav}
+                resolveSteam={resolveWho}
                 selected={selected?.key === row.key}
                 onselect={select}
                 onseek={(r) => seekTo(r.tick)}
@@ -1247,7 +1261,14 @@
                   </div>
                   <div>
                     <dt>Assister</dt>
-                    <dd>{selected.assisterName || '—'}</dd>
+                    <dd>
+                      <ProfileLink
+                        steam={selected.assister}
+                        name={selected.assisterName || '—'}
+                        {nav}
+                        title="Open {selected.assisterName} profile"
+                      />
+                    </dd>
                   </div>
                   <div>
                     <dt>Weapon</dt>
@@ -1320,7 +1341,17 @@
                   {#if selected.who}
                     <div>
                       <dt>Player</dt>
-                      <dd>{selected.who}</dd>
+                      <dd>
+                        <!-- Generic rows carry only a display name — resolve
+                             it through the replay meta's player list on an
+                             EXACT match only; unresolvable stays plain text. -->
+                        <ProfileLink
+                          steam={resolveWho(selected.who)}
+                          name={selected.who}
+                          {nav}
+                          title="Open {selected.who} profile"
+                        />
+                      </dd>
                     </div>
                   {/if}
                   {#if selected.label}
@@ -1369,7 +1400,7 @@
 
     {#if lanesOpen && voicePresence && voicePresence.hasVoice}
       <div class="voice-lanes-wrap">
-        <VoiceLanes matchId={id} onSeek={laneSeek} />
+        <VoiceLanes matchId={id} {nav} onSeek={laneSeek} />
       </div>
     {/if}
 

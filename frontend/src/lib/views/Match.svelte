@@ -28,7 +28,7 @@
     fmtInt,
     fmtMetric,
   } from '../fmt.js';
-  import { teamNames, teamStartClass, playerStartClass, displayHalfScore } from '../teams.js';
+  import { teamNames, teamStartClass, playerSideClassAt, displayHalfScore } from '../teams.js';
   import { isCounted } from '../rounds.js';
   import { MATCH_TABS, matchTabSlug, buildHash } from '../router.js';
   import RoundStrip from '../components/RoundStrip.svelte';
@@ -43,6 +43,7 @@
   import StatusChip from '../components/StatusChip.svelte';
   import SortTh from '../components/SortTh.svelte';
   import StatCard from '../components/StatCard.svelte';
+  import ProfileLink from '../components/ProfileLink.svelte';
 
   // routeTab: the deep-linked tab from App's route (#/match/:id/<slug> —
   // every tab is deep-linkable, see MATCH_TABS in lib/router.js); '' for
@@ -544,11 +545,21 @@
     return teamStartClass(finalSide, match?.sideSwitches || 0);
   }
 
-  // Same color for a player NAME surfaced as steam id + display name
-  // (round MVP / first-blood rows): scoreboard lookup by id, then by
-  // exact name; unresolved → ''.
-  function playerCls(steamId, name) {
-    return playerStartClass(scoreboard, match?.sideSwitches || 0, steamId, name);
+  // Per-round SIDE color for a NAME carried as steam id + display name
+  // (round MVP / first-blood rows): the side that player had IN THAT
+  // round, resolved through lib/teams.js playerSideClassAt (scoreboard
+  // lookup by id, then exact name, then the round's era) — not the
+  // team's start side, which is what the aggregate surfaces above use.
+  // Unresolved player → '' (never a guessed color).
+  function playerRoundCls(roundNumber, steamId, name) {
+    return playerSideClassAt(
+      scoreboard,
+      match?.sideSwitches || 0,
+      rounds,
+      roundNumber,
+      steamId,
+      name,
+    );
   }
 
   const topStats = $derived.by(() => {
@@ -569,8 +580,8 @@
   });
 
   // First blood of the first round that recorded one — kept as parts (not
-  // one formatted string) so both names can carry their team's color
-  // (changes.txt #20).
+  // one formatted string) so both names can carry their per-round side
+  // color (lib/teams.js playerSideClassAt) and link to their profiles.
   const firstBlood = $derived.by(() => {
     const r = rounds.find((x) => x.firstKillName && x.firstDeathName);
     return r
@@ -680,7 +691,20 @@
             subCls={teamCls(s.p.side)}
             title="Open Replay events filtered to {s.p.name}"
             onclick={() => openPlayerEvents(s.p.steamId)}
-          />
+          >
+            <!-- Aggregate (per-match) surface: the name keeps the TEAM
+                 identity color, but the text itself is the profile link —
+                 the card's own click still opens Replay events. -->
+            {#snippet subSlot()}
+              <ProfileLink
+                steam={s.p.steamId}
+                name={s.p.name}
+                {nav}
+                cls={teamCls(s.p.side)}
+                title="Open {s.p.name} profile"
+              />
+            {/snippet}
+          </StatCard>
         {/each}
       </div>
 
@@ -703,10 +727,24 @@
                   title={p.finalStatePresent === false
                     ? 'not in final snapshot — stats derived from events'
                     : ''}
-                  onclick={() => openPlayerEvents(p.steamId, { follow: true })}
+                  onclick={(e) => {
+                    // The name cell carries ProfileLink: a click on the
+                    // link belongs to the profile, not to this row's
+                    // Replay drill-down (target guard, as on the
+                    // scoreboard rows).
+                    if (e.target instanceof Element && e.target.closest('button, input, a'))
+                      return;
+                    openPlayerEvents(p.steamId, { follow: true });
+                  }}
                 >
                   <td class={teamCls(p.side)}>
-                    {p.name}
+                    <ProfileLink
+                      steam={p.steamId}
+                      name={p.name}
+                      {nav}
+                      cls={teamCls(p.side)}
+                      title="Open {p.name} profile"
+                    />
                     {#if p.finalStatePresent === false}
                       <span class="chip provenance" title="not in final snapshot — stats derived from events">derived</span>
                     {/if}
@@ -736,10 +774,24 @@
                   title={p.finalStatePresent === false
                     ? 'not in final snapshot — stats derived from events'
                     : ''}
-                  onclick={() => openPlayerEvents(p.steamId, { follow: true })}
+                  onclick={(e) => {
+                    // The name cell carries ProfileLink: a click on the
+                    // link belongs to the profile, not to this row's
+                    // Replay drill-down (target guard, as on the
+                    // scoreboard rows).
+                    if (e.target instanceof Element && e.target.closest('button, input, a'))
+                      return;
+                    openPlayerEvents(p.steamId, { follow: true });
+                  }}
                 >
                   <td class={teamCls(p.side)}>
-                    {p.name}
+                    <ProfileLink
+                      steam={p.steamId}
+                      name={p.name}
+                      {nav}
+                      cls={teamCls(p.side)}
+                      title="Open {p.name} profile"
+                    />
                     {#if p.finalStatePresent === false}
                       <span class="chip provenance" title="not in final snapshot — stats derived from events">derived</span>
                     {/if}
@@ -755,8 +807,17 @@
             <table class="data-table">
               <tbody>
                 {#each rosters.other as p (p.steamId)}
-                  <tr class="clickable" onclick={() => openPlayerEvents(p.steamId, { follow: true })}>
-                    <td>{p.name}</td>
+                  <tr
+                    class="clickable"
+                    onclick={(e) => {
+                      if (e.target instanceof Element && e.target.closest('button, input, a'))
+                        return;
+                      openPlayerEvents(p.steamId, { follow: true });
+                    }}
+                  >
+                    <td>
+                      <ProfileLink steam={p.steamId} name={p.name} {nav} title="Open {p.name} profile" />
+                    </td>
                     <td class="num">{p.kills}/{p.deaths}/{p.assists}</td>
                     <td class="num"><span class="chip adr">{fmt1(p.adr)}</span></td>
                   </tr>
@@ -1019,7 +1080,13 @@
                 <td>{r.bombSite || '—'}</td>
                 <td>
                   {#if r.mvpName}
-                    <span class={playerCls(r.mvp, r.mvpName)}>{r.mvpName}</span>
+                    <ProfileLink
+                      steam={r.mvp}
+                      name={r.mvpName}
+                      {nav}
+                      cls={playerRoundCls(r.number, r.mvp, r.mvpName)}
+                      title="Open {r.mvpName} profile"
+                    />
                   {:else}
                     —
                   {/if}
@@ -1028,13 +1095,21 @@
                 <td class="num"><span class="chip side t">{r.equipT}</span></td>
                 <td>
                   {#if r.firstKillName && r.firstDeathName}
-                    <span class={playerCls(r.firstKillSteam, r.firstKillName)}
-                      >{r.firstKillName}</span
-                    >
+                    <ProfileLink
+                      steam={r.firstKillSteam}
+                      name={r.firstKillName}
+                      {nav}
+                      cls={playerRoundCls(r.number, r.firstKillSteam, r.firstKillName)}
+                      title="Open {r.firstKillName} profile"
+                    />
                     killed
-                    <span class={playerCls(r.firstDeathSteam, r.firstDeathName)}
-                      >{r.firstDeathName}</span
-                    >
+                    <ProfileLink
+                      steam={r.firstDeathSteam}
+                      name={r.firstDeathName}
+                      {nav}
+                      cls={playerRoundCls(r.number, r.firstDeathSteam, r.firstDeathName)}
+                      title="Open {r.firstDeathName} profile"
+                    />
                   {:else}
                     —
                   {/if}
@@ -1104,13 +1179,21 @@
             <div>
               <dt>First blood</dt>
               <dd>
-                <span class={playerCls(firstBlood.killSteam, firstBlood.kill)}
-                  >{firstBlood.kill}</span
-                >
+                <ProfileLink
+                  steam={firstBlood.killSteam}
+                  name={firstBlood.kill}
+                  {nav}
+                  cls={playerRoundCls(firstBlood.number, firstBlood.killSteam, firstBlood.kill)}
+                  title="Open {firstBlood.kill} profile"
+                />
                 killed
-                <span class={playerCls(firstBlood.deathSteam, firstBlood.death)}
-                  >{firstBlood.death}</span
-                >
+                <ProfileLink
+                  steam={firstBlood.deathSteam}
+                  name={firstBlood.death}
+                  {nav}
+                  cls={playerRoundCls(firstBlood.number, firstBlood.deathSteam, firstBlood.death)}
+                  title="Open {firstBlood.death} profile"
+                />
                 (R{firstBlood.number})
               </dd>
             </div>
