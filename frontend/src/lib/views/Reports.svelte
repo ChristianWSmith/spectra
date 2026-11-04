@@ -5,7 +5,6 @@
   import {
     listReportTemplates,
     renderReport,
-    reportDownloadURL,
     listMatches,
     listPlayers,
     getRounds,
@@ -14,8 +13,6 @@
     previewMetric,
     errText,
   } from '../services.js';
-  import { saveExportURL } from '../save.js';
-  import { downloadText } from '../download.js';
   import MatchPicker from '../components/MatchPicker.svelte';
   import PlayerPicker from '../components/PlayerPicker.svelte';
 
@@ -273,63 +270,6 @@
       .replace(/"/g, '&quot;');
   }
 
-  // Save the rendered document (report + appendix when one is checked)
-  // through the native save dialog (lib/save.js). Cancel resolves to ""
-  // and does nothing; a dialog/write failure reports in docError below the
-  // preview (the view's error slot).
-  async function download() {
-    const fmt = (tpl && tpl.format) || 'md';
-    const ext = fmt === 'html' ? 'html' : 'md';
-    const scope = (tpl && tpl.scope) || 'match';
-    const target = scope === 'player' ? steamId || 'player' : matchId;
-    docError = '';
-    try {
-      await downloadText(
-        `spectra-${scope}-${target}.${ext}`,
-        ext === 'html' ? 'text/html;charset=utf-8' : 'text/markdown;charset=utf-8',
-        compositeText(),
-      );
-    } catch (e) {
-      docError = errText(e);
-    }
-  }
-
-  // "Open raw" target: only the Go-rendered document (no appendix, and no
-  // Render needed — the endpoint renders on demand). Template ids may
-  // already carry an extension (match.md), which the Go exporter uses as-is.
-  function rawTarget() {
-    const fmt = (tpl && tpl.format) || 'md';
-    const base = String(tplId || 'report');
-    const dot = base.lastIndexOf('.');
-    const ext = dot > 0 ? base.slice(dot + 1) : fmt === 'html' ? 'html' : 'md';
-    const name = dot > 0 ? `spectra-${matchId}-${base}` : `spectra-${matchId}-${base}.${ext}`;
-    return { name, ext };
-  }
-
-  // Open raw: the URL rides SaveExport (lib/save.js) — the native dialog
-  // picks the path, Go fetches /api/export/… itself and writes it there.
-  async function saveRaw() {
-    docError = '';
-    const { name, ext } = rawTarget();
-    try {
-      await saveExportURL(reportDownloadURL(matchId, tplId, tpl.format || 'md'), name, ext);
-    } catch (e) {
-      docError = errText(e);
-    }
-  }
-
-  // Copy library DB: URL-served (~19 MB SQLite) → SaveExport streams it
-  // straight to the dialog path; Go checkpoints the WAL on the way. Never
-  // round-trips the bindings as base64.
-  async function saveLibraryDb() {
-    docError = '';
-    try {
-      await saveExportURL('/api/export/library.db', 'spectra-library.db', 'db');
-    } catch (e) {
-      docError = errText(e);
-    }
-  }
-
   const hasAppendix = $derived(appendixEntries().length > 0);
 </script>
 
@@ -346,7 +286,14 @@
   {/if}
 
   <section class="panel">
-    <h2>Template</h2>
+    <div class="row-between">
+      <h2>Template &amp; target</h2>
+      <!-- Render lives with its inputs: template + target pick the scope,
+           this button produces the document they both address. -->
+      <button class="btn primary" disabled={rendering || !targetReady()} onclick={render}>
+        {#if rendering}Rendering…{:else}Render <span class="codicon codicon-play"></span>{/if}
+      </button>
+    </div>
     <div class="rep-tpl-grid">
       {#each templates as t (t.id)}
         <button
@@ -369,11 +316,7 @@
         <p class="muted" role="status">No report templates available.</p>
       {/each}
     </div>
-  </section>
-
-  {#if tpl}
-    <section class="panel">
-      <h2>Target</h2>
+    {#if tpl}
       <div class="rep-targets">
         {#if !embedded && matches.length === 0}
           <p class="muted" role="status">No matches in the library yet.</p>
@@ -419,8 +362,10 @@
           </div>
         {/if}
       </div>
-    </section>
+    {/if}
+  </section>
 
+  {#if tpl}
     <!-- Metrics appendix (acceptance #1: checked metric → table under the report). -->
     <section class="panel">
       <h2>Metrics appendix</h2>
@@ -429,9 +374,8 @@
       {/if}
       <p class="muted">
         Check metrics to append their tables under the report (scoped to this
-        match). Download composes report + appendix; “Open raw” saves only the
-        Go-rendered document (native file dialog). “Copy library DB” writes a
-        snapshot of the whole library SQLite file.
+        match). They are composed with the rendered document and shown in the
+        Preview below.
       </p>
       {#each metricGroups as [group, rows] (group)}
         <div class="rep-mgroup">
@@ -462,27 +406,9 @@
 
     <section class="panel">
       <h2>Preview</h2>
-      <div class="row-between">
-        <span class="muted"
-          >{tpl.title} · {tpl.scope} · {tpl.format}{hasAppendix ? ' + appendix' : ''}</span
-        >
-        <span class="toolbar rep-actions">
-          <button class="btn primary" disabled={rendering || !targetReady()} onclick={render}
-            >{rendering ? 'Rendering…' : 'Render'}</button
-          >
-          <button class="btn" disabled={!doc || !targetReady()} onclick={download}
-            >Download {hasAppendix ? '(composite)' : `.${tpl.format === 'html' ? 'html' : 'md'}`}</button
-          >
-          {#if !hasAppendix}
-            <button class="btn" onclick={saveRaw}>Open raw</button>
-          {:else}
-            <span class="muted rep-raw-note" title="Appendix is composed client-side — use Download"
-              >Open raw unavailable with appendix</span
-            >
-          {/if}
-          <button class="btn" onclick={saveLibraryDb}>Copy library DB</button>
-        </span>
-      </div>
+      <p class="muted">
+        {tpl.title} · {tpl.scope} · {tpl.format}{hasAppendix ? ' + appendix' : ''}
+      </p>
       {#if docError}
         <p class="error" role="alert">{docError}</p>
       {/if}

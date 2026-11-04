@@ -394,10 +394,6 @@ export function listReportTemplates() { return PlatformService.ListReportTemplat
 export function renderReport(templateId, matchId, steamId, round) {
   return PlatformService.RenderReport(templateId, matchId || 0, steamId || '', round || 0);
 }
-// Report file downloads + DB copy ride HTTP: /api/export/<matchId>/report?template=&format=md|html
-export function reportDownloadURL(matchId, templateId, format) {
-  return `/api/export/${matchId}/report?template=${encodeURIComponent(templateId)}&format=${format}`;
-}
 
 // --- MapPackService -----------------------------------------------------------
 // Radar extraction from the user's local CS2 install (Valve IP stays
@@ -429,8 +425,9 @@ export function writeFile(path, data) {
 // saveExport picks a path via the native dialog, then has Go fetch urlPath
 // (path + query, e.g. "/api/export/library.db") through the app's own HTTP
 // routes and stream it to the file — for URL-served payloads too large to
-// round-trip the bindings (library.db, full-match WAVs, raw reports).
-// Resolves to "" on cancel.
+// round-trip the bindings (Replay's full-match WAVs; the /api/export
+// routes also cover the library DB and rendered reports). Resolves to ""
+// on cancel.
 export function saveExport(urlPath, defaultName, extensions) {
   return DialogService.SaveExport(urlPath, defaultName, extensions);
 }
