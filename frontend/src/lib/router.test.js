@@ -230,6 +230,24 @@ test('#/player/:steamid requires exactly 17 digits', () => {
   }); // 18 digits
 });
 
+test('#/player/:steamid carries ?back= (the profile return trip)', () => {
+  assert.deepEqual(parseHash('#/player/76561198012345678?back=profiles'), {
+    name: 'player',
+    steamId: '76561198012345678',
+    query: { back: 'profiles' },
+  });
+  // Origin paths keep their slashes (and their own query) — the same
+  // readable-URL rule buildHash applies when stamping them.
+  assert.equal(
+    parseHash('#/player/76561198012345678?back=match/5/scoreboard').query.back,
+    'match/5/scoreboard',
+  );
+  assert.equal(
+    parseHash('#/player/76561198012345678?back=compare/5?rounds=3,5').query.back,
+    'compare/5?rounds=3,5',
+  );
+});
+
 test('#/compare/:id', () => {
   assert.deepEqual(parseHash('#/compare/9'), { name: 'compare', id: 9 });
 });

@@ -7,8 +7,12 @@
   import { fmt1, fmt2, fmtPercent, fmtDate, fmtInt } from '../fmt.js';
   import Popover from '../components/Popover.svelte';
   import StatCard from '../components/StatCard.svelte';
+  import { profileBackTarget } from '../nav.js';
 
-  let { steamId = null, nav = () => {} } = $props();
+  // query is the route's own (?back= origin for the return trip);
+  // origin is the hash the app navigated from — App records it on
+  // hashchange. profileBackTarget (lib/nav.js) resolves both.
+  let { steamId = null, query = {}, origin = '', nav = () => {} } = $props();
 
   const METRICS = [
     { key: 'adr', label: 'ADR' },
@@ -150,11 +154,20 @@
   const maps = $derived(profile?.maps || []);
   const weapons = $derived((profile?.weapons || []).slice(0, 8));
   const history = $derived(profile?.history || []);
+
+  // Return trip: where the button points, and how to name it (the default
+  // target is the Profiles list, so the label names it; anything else is
+  // simply "Back").
+  const backHash = $derived(profileBackTarget(query, origin));
+  const backLabel = $derived(backHash === '/profiles' ? 'Profiles' : 'Back');
 </script>
 
 <div class="view">
   <header class="view-header prof-head">
-    <button class="btn" onclick={() => nav('/library')}><span class="codicon codicon-arrow-left"></span> Library</button>
+    <button class="btn" onclick={() => nav(backHash)}>
+      <span class="codicon codicon-arrow-left"></span>
+      {backLabel}
+    </button>
     {#if profile}
       <h1 class="prof-name">{profile.name || '—'}</h1>
       <span class="mono muted">{profile.steamId}</span>

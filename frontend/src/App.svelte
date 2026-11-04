@@ -22,6 +22,12 @@
   // lib/router.js with its own tests; this component owns the hashchange
   // wiring and the view switch.
   let route = $state(parseHash(location.hash));
+  // In-app origin for views that return "where you came from":
+  // PlayerProfile's back button resolves it through profileBackTarget
+  // (lib/nav.js). Recorded on every hashchange — the hash BEFORE the
+  // current one — so it is empty until the first navigation.
+  let originHash = $state('');
+  let lastHash = location.hash;
   let mapPackPrompt = $state(null); // MapPackPrompt instance (bind:this)
 
   // Sidebar layout partitions the shared action list (lib/nav.js):
@@ -33,6 +39,8 @@
 
   onMount(() => {
     const onChange = () => {
+      originHash = lastHash;
+      lastHash = location.hash;
       route = parseHash(location.hash);
     };
     window.addEventListener('hashchange', onChange);
@@ -110,7 +118,7 @@
     {:else if route.name === 'round'}
       <RoundDetail id={route.id} round={route.round} query={route.query || {}} {nav} />
     {:else if route.name === 'player'}
-      <PlayerProfile steamId={route.steamId} {nav} />
+      <PlayerProfile steamId={route.steamId} query={route.query || {}} origin={originHash} {nav} />
     {:else if route.name === 'compare'}
       <CompareRounds id={route.id} query={route.query || {}} {nav} />
     {:else if route.name === 'replay'}
