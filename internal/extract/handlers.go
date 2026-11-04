@@ -85,6 +85,11 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 				name:  pl.Name,
 				side:  sideString(pl.Team),
 				money: pl.Money(),
+				// Live cumulative cash-spent counter (entity property
+				// m_pInGameMoneyServices.m_iTotalCashSpent): freezeEnd
+				// diffs it against the previous freeze end for the
+				// per-round side spend (round_economy.spent).
+				spent: pl.MoneySpentTotal(),
 			})
 		}
 		a.freezeEnd(gs.IngameTick(), equipCT, equipT, scoreCT, scoreT, samples)

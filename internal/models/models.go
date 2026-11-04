@@ -210,6 +210,11 @@ type Round struct {
 
 // RoundEconomy is one side's economy sample for one round
 // (round_economy table). Side is "ct" | "t".
+// Spent is the side's real per-round spend: Σ over its players of the
+// delta in the live cumulative money-spent counter
+// (m_pInGameMoneyServices.m_iTotalCashSpent) between this round's
+// freeze time end and the previous one (extract.agg.freezeEnd) — money
+// spent on buys, not equipment value.
 type RoundEconomy struct {
 	MatchID         int64  `json:"matchId"`
 	Round           int    `json:"round"`
@@ -217,6 +222,7 @@ type RoundEconomy struct {
 	EquipValue      int    `json:"equipValue"`
 	MoneySampledSum int    `json:"moneySampledSum"`
 	MoneySamples    int    `json:"moneySamples"`
+	Spent           int    `json:"spent"`
 }
 
 // Event is one normalized typed event (events table). Seq is insertion

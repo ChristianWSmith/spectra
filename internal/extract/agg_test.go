@@ -752,6 +752,64 @@ func TestFreezeEndSides(t *testing.T) {
 	}
 }
 
+// TestFreezeEndSpentDeltas: round_economy's Spent is the per-side sum of
+// the participants' CUMULATIVE money-spent deltas since the previous
+// freeze end — from 0 at the demo's first freeze end, only the delta on
+// later ones, and from the current total when the counter goes down (a
+// match restart resets it). A sample without a side updates its baseline
+// but contributes spend only once a side is known.
+func TestFreezeEndSpentDeltas(t *testing.T) {
+	a := newAgg()
+
+	// 1) No baseline yet (the demo's first freeze end) → delta from 0.
+	a.roundStart(0, false, true, 115, "BOMB TARGET") // pregame knife
+	a.freezeEnd(10, 0, 0, 0, 0, []moneySample{
+		{key: 1, name: "a", side: "ct", money: 800, spent: 3250},
+		{key: 2, name: "b", side: "t", money: 800, spent: 3250},
+	})
+
+	// 2) Only the delta since the previous freeze end counts (the knife
+	//    round's spend never lands in the pistol's).
+	a.roundStart(20, false, false, 115, "BOMB TARGET")
+	a.freezeEnd(30, 0, 0, 0, 0, []moneySample{
+		{key: 1, name: "a", side: "ct", money: 400, spent: 7250}, // +4000
+		{key: 2, name: "b", side: "t", money: 100, spent: 6650},  // +3400
+		{key: 3, name: "c", side: "", money: 0, spent: 9999},     // no side: baseline only
+	})
+
+	// 3) Counter reset (spend went DOWN) reads from the current total;
+	//    key 3's earlier baseline spend lands now that a side is known.
+	a.roundStart(40, false, false, 115, "BOMB TARGET")
+	a.freezeEnd(50, 0, 0, 0, 0, []moneySample{
+		{key: 1, name: "a", side: "ct", money: 800, spent: 700}, // reset → 700
+		{key: 2, name: "b", side: "t", money: 800, spent: 6650}, // no buys → 0
+		{key: 3, name: "c", side: "ct", money: 0, spent: 10100}, // +101
+	})
+
+	want := []struct{ round, ct, t int }{
+		{1, 3250, 3250},
+		{2, 4000, 3400},
+		{3, 801, 0},
+	}
+	if len(a.economy) != 2*len(want) {
+		t.Fatalf("economy rows = %d, want %d", len(a.economy), 2*len(want))
+	}
+	for i, w := range want {
+		ct, tr := a.economy[2*i], a.economy[2*i+1]
+		if ct.Round != w.round || ct.Side != "ct" || ct.Spent != w.ct {
+			t.Errorf("round %d ct row = %+v, want round %d / ct / spent %d", w.round, ct, w.round, w.ct)
+		}
+		if tr.Round != w.round || tr.Side != "t" || tr.Spent != w.t {
+			t.Errorf("round %d t row = %+v, want round %d / t / spent %d", w.round, tr, w.round, w.t)
+		}
+	}
+	// The built extract carries the same numbers to the store writer.
+	m := a.build()
+	if len(m.RoundEconomy) != 6 || m.RoundEconomy[4].Spent != 801 {
+		t.Fatalf("built round economy = %+v", m.RoundEconomy)
+	}
+}
+
 func TestGameEventPayloadJSON(t *testing.T) {
 	s := "hello"
 	i := int32(42)

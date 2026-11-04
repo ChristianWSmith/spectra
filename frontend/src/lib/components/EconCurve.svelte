@@ -52,23 +52,55 @@
     [0, 0.25, 0.5, 0.75, 1].map((f) => yAt(series.max * f)),
   );
 
-  // Strip mark: ✓ = the winner also led on freeze-end equip (favorite held),
-  // ✗ = upset (lower-equip team won). Equip, not the toggled metric, so the
-  // mark is stable across the toggle.
+  // Strip mark: coarse BUY-CLASS comparison — equipment value is not
+  // compared (a $100 equip difference says nothing), the buy class is.
+  // Rank is full > force > everything else (eco/save/pistol/… all rank
+  // equal — the label set mirrors internal/analytics/classify.go:
+  // pistol|full|force|save|eco, unknown → null); missing/unknown on
+  // either side stays neutral. ✓ = the winner bought the stronger class
+  // (favorite held), ✗ = the cheaper-buys side won (upset), · = even
+  // buy (toss-up). Class, not the toggled metric, so the mark is stable
+  // across the toggle.
+  const CLASS_RANK = { full: 2, force: 1 };
+
+  function classRank(c) {
+    if (!c || c === 'unknown') return null; // unknown → neutral
+    return CLASS_RANK[c] ?? 0;
+  }
+
+  // ranks is [winner class rank, loser class rank] for a decided round,
+  // null when the round has no winner (both consumers map that to their
+  // own neutral text).
+  function ranks(r) {
+    if (!r.winner) return null;
+    return [
+      classRank(r.winner === 'ct' ? r.classCT : r.classT),
+      classRank(r.winner === 'ct' ? r.classT : r.classCT),
+    ];
+  }
+
   function mark(r) {
-    if (!r.winner) return '·';
-    const win = r.winner === 'ct' ? r.equipCT : r.equipT;
-    const lose = r.winner === 'ct' ? r.equipT : r.equipCT;
-    return win >= lose ? '✓' : '✗';
+    const rr = ranks(r);
+    if (!rr || rr[0] === null || rr[1] === null) return '·';
+    if (rr[0] > rr[1]) return '✓';
+    if (rr[0] < rr[1]) return '✗';
+    return '·';
+  }
+
+  // verdict spells mark() out for the tooltip title (the legend carries
+  // the same phrases).
+  function verdict(r) {
+    if (!r.winner) return 'no winner recorded';
+    const rr = ranks(r);
+    if (rr[0] === null || rr[1] === null) return 'unknown buy class — neutral';
+    if (rr[0] > rr[1]) return 'favorite (higher buy class) held';
+    if (rr[0] < rr[1]) return 'upset (lower buy class won)';
+    return 'toss-up (even buy)';
   }
 
   function cellTitle(r) {
     const w = r.winner ? r.winner.toUpperCase() : '—';
-    const m =
-      r.winner === 'ct'
-        ? `${fmtMoney(r.equipCT)} vs ${fmtMoney(r.equipT)}`
-        : `${fmtMoney(r.equipT)} vs ${fmtMoney(r.equipCT)}`;
-    return `Round ${r.round} — ${w} wins · equip CT ${fmtMoney(r.equipCT)} / T ${fmtMoney(r.equipT)} · winner equip ${m} · ${mark(r) === '✗' ? 'upset (lower-equip side won)' : 'favorite held'}${r.pistolRound ? ' · pistol' : ''}`;
+    return `Round ${r.round} — ${w} wins · buy CT ${r.classCT || 'unknown'} / T ${r.classT || 'unknown'} · ${verdict(r)}${r.pistolRound ? ' · pistol' : ''}`;
   }
 
   function onMove(e) {
@@ -219,9 +251,9 @@
     </div>
     <p class="econ-strip-note muted">
       <span class="econ-strip-swatch pistol" aria-hidden="true"></span>
-      pistol round · <span class="codicon codicon-check"></span> favorite (higher equip) held ·
-      <span class="codicon codicon-error"></span> upset · click a round
-      to open it
+      pistol round · <span class="codicon codicon-check"></span> favorite (higher buy
+      class) held · <span class="codicon codicon-error"></span> upset (lower buy class
+      won) · even buy = toss-up · click a round to open it
     </p>
   {/if}
 </section>

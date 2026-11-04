@@ -150,14 +150,24 @@
   cursor: default;
 }
 
+/* The strip must sit EXACTLY under the chart's columns for any round
+   count (`.econ-chart` is a border-box div with a 1px border, so its SVG
+   content box starts 1px in and is 2px narrower than the panel): 1px of
+   horizontal padding mirrors that border, there is no gap, and every cell
+   is an equal flex-basis-0 share — exactly 1/n of the chart width. The
+   cell border stays INSIDE the box (box-sizing: border-box), so it never
+   widens or shifts a cell away from its column. */
 .econ-strip {
   display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
+  flex-wrap: nowrap;
+  gap: 0;
+  padding: 0 1px;
 }
 
 .econ-strip-cell {
-  width: 40px;
+  flex: 1 1 0;
+  min-width: 0;
+  overflow: hidden;
   height: 38px;
   display: flex;
   flex-direction: column;
