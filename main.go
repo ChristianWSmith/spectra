@@ -155,7 +155,12 @@ func main() {
 	})
 	defer imp.Shutdown()
 
-	app.RegisterService(application.NewService(&LibraryService{st: st, imp: imp, app: app}))
+	// Watched-folder scanner (Library's not-yet-imported demos): shares
+	// the store's match index and keeps its own hash cache for the life
+	// of the process.
+	sc := library.NewScanner(library.ScannerOptions{Store: st})
+
+	app.RegisterService(application.NewService(&LibraryService{st: st, imp: imp, sc: sc, kvs: kvs, app: app}))
 	app.RegisterService(application.NewService(&MatchService{st: st}))
 	app.RegisterService(application.NewService(&ReplayService{st: st, app: app}))
 	app.RegisterService(application.NewService(&AnalyticsService{st: st, app: app}))

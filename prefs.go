@@ -33,6 +33,14 @@ const (
 	// lists. Boolean; default false (hidden). The frontend reads/writes it
 	// directly through the kvstore service — Go never consumes it.
 	prefsShowKnifeWarmupRoundsKey = "show_knife_warmup_rounds"
+
+	// prefsDemoDirsKey holds the "where to look for demos" folder list the
+	// Library scans (absolute paths, normalized by library.NormalizeDirs).
+	// Unset = the defaults (library.DefaultDemoDirs: Downloads + CS2's
+	// replay folder), recomputed on every read; an empty list = watch
+	// nothing. Written and read by LibraryService — the frontend goes
+	// through GetDemoDirs/SetDemoDirs/ResetDemoDirs, never the raw key.
+	prefsDemoDirsKey = "demo_dirs"
 )
 
 // prefsFilename returns the path of the on-disk prefs file, creating the
@@ -72,5 +80,30 @@ func prefInt(v any) (int, bool) {
 		return int(n), true
 	default:
 		return 0, false
+	}
+}
+
+// prefStrings coerces a value read from the prefs store to a string
+// slice. ok is false when the value is absent or is not a list of
+// strings, so a corrupt pref makes the caller fall back to its default
+// instead of breaking the feature. The store round-trips JSON: an array
+// arrives as []any of string after a reload and stays []string until
+// then — both shapes are accepted.
+func prefStrings(v any) ([]string, bool) {
+	switch t := v.(type) {
+	case []string:
+		return t, true
+	case []any:
+		out := make([]string, 0, len(t))
+		for _, e := range t {
+			s, ok := e.(string)
+			if !ok {
+				return nil, false
+			}
+			out = append(out, s)
+		}
+		return out, true
+	default:
+		return nil, false
 	}
 }

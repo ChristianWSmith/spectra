@@ -189,6 +189,33 @@ func (s *DialogService) SaveExport(urlPath, defaultName string, extensions []str
 	return abs, nil
 }
 
+// chooseDirectory opens the native folder picker for exactly one
+// directory under title and returns the chosen path (absolute, like
+// SaveFile). "" with a nil error means cancel — the same contract as
+// SaveFile; a dialog failure is an error instead. This is THE
+// directory-picker implementation: MapPackService's CS2 folder and
+// LibraryService's watched demo folders both go through it.
+func chooseDirectory(app *application.App, title string) (string, error) {
+	dir, err := app.Dialog.OpenFile().
+		CanChooseFiles(false).
+		CanChooseDirectories(true).
+		SetTitle(title).
+		PromptForSingleSelection()
+	if err != nil {
+		return "", fmt.Errorf("dialogs: choose directory: %w", err)
+	}
+	if dir == "" {
+		return "", nil
+	}
+	abs, err := filepath.Abs(dir)
+	if err != nil {
+		// Dialog output is already absolute in practice; fall back to it
+		// rather than failing a choice the user already made (SaveFile).
+		return dir, nil
+	}
+	return abs, nil
+}
+
 // saveFilters derives native dialog filters from requested extensions:
 // ["png"] → [{PNG, *.png}], ["png", "jpg"] → [{PNG/JPG, *.png;*.jpg}].
 // Entries are normalized (leading "."/"*" stripped, lowercased) and empty

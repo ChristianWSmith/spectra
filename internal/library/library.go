@@ -1,10 +1,13 @@
 // Package library is the presentation-free import pipeline: a single-worker
-// job queue that hashes, dedupes (sha256), decompresses (.dem.zst, streamed
-// — never to a temp file) and parses demos via internal/extract, persisting
-// through internal/store. Progress and terminal transitions are announced as
+// job queue that hashes, dedupes (sha256), copies the raw demo into the
+// app's managed demo dir (copy-on-import — the source file may later move
+// or vanish), decompresses (.dem.zst, streamed — never to a temp file) and
+// parses demos via internal/extract, persisting through internal/store.
+// Progress and terminal transitions are announced as
 // Wails events (spectra:job-progress / spectra:job-done /
 // spectra:library-changed) through an injected Emit hook; originals are
-// never written.
+// never written. The same package owns watched-folder discovery (Scan,
+// DefaultDemoDirs) for the Library's not-yet-imported list.
 package library
 
 import (
@@ -79,14 +82,17 @@ type LibraryChangedEvent struct{}
 // (normally extract.Parse); Emit receives event name + payload and may be
 // nil; ParserVersion is stamped onto extracted matches; SidecarDir is the
 // root that holds one position-sidecar directory per match (<root>/<id>),
-// defaulting to data.MatchesDir() when empty (tests point it at a temp
-// dir so they never touch the user's real data).
+// defaulting to data.MatchesDir() when empty; CopyDir is where raw demos
+// are copied on import (<copyDir>/<sha256>.dem[.zst]), defaulting to
+// data.DemosDir() when empty (tests point both at temp dirs so they never
+// touch the user's real data).
 type Options struct {
 	Store         *store.Store
 	Parse         func(ctx context.Context, r io.Reader, opts extract.ParseOptions) (*models.ExtractedMatch, error)
 	Emit          func(event string, data any)
 	ParserVersion string
 	SidecarDir    string
+	CopyDir       string
 }
 
 // queueItem is one unit of work for the worker.
@@ -106,6 +112,7 @@ type Importer struct {
 	emit          func(event string, data any)
 	parserVersion string
 	sidecarDir    string
+	copyDir       string
 
 	mu        sync.Mutex
 	queue     []queueItem
@@ -125,12 +132,17 @@ func New(o Options) *Importer {
 	if sidecarDir == "" {
 		sidecarDir = data.MatchesDir()
 	}
+	copyDir := o.CopyDir
+	if copyDir == "" {
+		copyDir = data.DemosDir()
+	}
 	im := &Importer{
 		st:            o.Store,
 		parse:         o.Parse,
 		emit:          o.Emit,
 		parserVersion: o.ParserVersion,
 		sidecarDir:    sidecarDir,
+		copyDir:       copyDir,
 		queued:        map[int64]bool{},
 		cancels:       map[int64]context.CancelFunc{},
 		cancelled:     map[int64]bool{},
@@ -167,22 +179,25 @@ func (im *Importer) Enqueue(paths []string) []int64 {
 	return ids
 }
 
-// Reprocess queues a re-parse of an existing match's original file. The
-// match must exist (store.ErrNotFound passes through); a reprocess job is
-// linked to its match immediately and skips sha256 dedupe.
+// Reprocess queues a re-parse of a match's demo file: spectra's own copy
+// when one exists (copy-on-import), else the stored path — rows imported
+// before copy-on-import point at the user's original file. The match must
+// exist (store.ErrNotFound passes through); a reprocess job is linked to
+// its match immediately and skips sha256 dedupe.
 func (im *Importer) Reprocess(matchID int64) (int64, error) {
 	m, err := im.st.GetMatch(matchID)
 	if err != nil {
 		return 0, err
 	}
-	id, err := im.st.CreateJob(jobKindReprocess, m.Path)
+	path := im.resolveDemoFile(m.SHA256, m.Path)
+	id, err := im.st.CreateJob(jobKindReprocess, path)
 	if err != nil {
 		return 0, err
 	}
 	if err := im.st.SetJobMatch(id, matchID); err != nil {
 		return 0, err
 	}
-	im.push(queueItem{jobID: id, kind: jobKindReprocess, path: m.Path, matchID: matchID})
+	im.push(queueItem{jobID: id, kind: jobKindReprocess, path: path, matchID: matchID})
 	return id, nil
 }
 
@@ -342,6 +357,15 @@ func (im *Importer) process(item queueItem) {
 			_ = im.st.UpdateJob(jobID, models.JobFailed, models.StageQueued, 0, msg)
 			im.emitEvent(EventJobDone, JobDoneEvent{JobID: jobID, MatchID: existing, Status: models.JobFailed, Error: msg})
 			im.emitEvent(EventLibraryChanged, LibraryChangedEvent{})
+			return
+		}
+		// Copy-on-import: the raw demo lands in the managed dir before any
+		// row exists, so a failed copy never leaves a match that cannot be
+		// reprocessed later. matches.path keeps the SOURCE path (the file
+		// the user handed us — searchable, and what DeleteMatch refuses to
+		// touch); the managed copy is found by content hash instead.
+		if _, cerr := im.copyDemo(item.path, sha); cerr != nil {
+			im.failJob(jobID, 0, models.StageQueued, cerr.Error(), false)
 			return
 		}
 		matchID, err = im.st.CreateMatchRow(item.path, sha, size)
@@ -567,11 +591,19 @@ func (im *Importer) emitEvent(name string, data any) {
 	}
 }
 
+// isDemoFilename reports whether a file NAME is an importable demo:
+// .dem or .dem.zst, case-insensitive. The one extension rule — both
+// validateImportPath (dialog/drop/typed paths) and the watched-folder
+// scanner apply it.
+func isDemoFilename(name string) bool {
+	lower := strings.ToLower(name)
+	return strings.HasSuffix(lower, ".dem") || strings.HasSuffix(lower, ".dem.zst")
+}
+
 // validateImportPath returns a user-facing reason the path cannot be
 // imported, or "" when it looks importable. Existence only — no hashing.
 func validateImportPath(path string) string {
-	lower := strings.ToLower(path)
-	if !strings.HasSuffix(lower, ".dem") && !strings.HasSuffix(lower, ".dem.zst") {
+	if !isDemoFilename(filepath.Base(path)) {
 		return "unsupported file type (expected .dem or .dem.zst)"
 	}
 	info, err := os.Stat(path)

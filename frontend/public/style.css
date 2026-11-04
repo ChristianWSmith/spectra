@@ -10,8 +10,8 @@
 
    Layering (index.html loads in this order): this file is the base layer —
    design tokens (:root), shared primitives (btn, chip, input, panel, view,
-   data-table, nav, tabs, progress, empty/error …), and the M1/M2 components
-   styled here (round-, replay-, scrub-, landmark-, lm-, …).
+   data-table, nav, tabs, empty/error …), and the M1/M2 components
+   styled here (round-, replay-, scrub-, landmark-, lm-, lib-, …).
    style-m3a.css (wave A: econ-/util-/heat-/bld-/sql-/m5-) and
    style-m3b.css (wave B: comb-/prof-/cmp-/filt-/sett-/voice-/clip-/kv-/
    rep-/cp-/plugin-/spat-/expl-) append component groups; a later file
@@ -702,28 +702,6 @@ input[type='checkbox']:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 
-/* --- Progress bars --------------------------------------------------------- */
-
-.progress {
-  flex: 1;
-  height: 8px;
-  min-width: 80px;
-  background: rgba(255, 255, 255, 0.06);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-}
-
-.progress-fill {
-  height: 100%;
-  background: var(--accent);
-  border-radius: var(--radius-md);
-  transition: width 0.2s;
-}
-
-.progress-fill.indeterminate {
-  animation: indeterminate 1.2s ease-in-out infinite;
-}
-
 /* --- Tables ---------------------------------------------------------------- */
 
 .table-scroll {
@@ -876,19 +854,6 @@ input[type='checkbox']:focus-visible {
 
 /* --- Jobs / problems ------------------------------------------------------- */
 
-.job-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.job-row .path {
-  max-width: 280px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .problem-row {
   display: flex;
   align-items: baseline;
@@ -899,6 +864,24 @@ input[type='checkbox']:focus-visible {
 }
 
 .problem-row .path {
+  color: var(--muted);
+}
+
+/* --- Library: watched-folder demo list (lib-) ------------------------------- */
+
+/* Long demo file names / folder names truncate; the full path rides the
+   title tooltip. */
+.lib-demo-name,
+.lib-demo-root {
+  display: inline-block;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.lib-demo-root {
   color: var(--muted);
 }
 

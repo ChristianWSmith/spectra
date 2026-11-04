@@ -483,6 +483,31 @@
   font-size: 0.9em;
 }
 
+/* Watched demo folders (Settings → Where to look for demos). */
+.sett-dirs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0;
+}
+
+.sett-dir-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--divider);
+  padding: 5px 0;
+  font-size: 0.9em;
+}
+
+.sett-dir-path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sett-defs {
   display: flex;
   flex-direction: column;
@@ -1236,8 +1261,7 @@
   background: rgba(0, 0, 0, 0.04);
 }
 
-[data-theme="light"] .chip-bar,
-[data-theme="light"] .progress {
+[data-theme="light"] .chip-bar {
   background: rgba(0, 0, 0, 0.08);
 }
 

@@ -1,5 +1,6 @@
 // Package data owns the on-disk locations for the app's durable state:
-// the SQLite database and per-match sidecar directories. Paths follow the
+// the SQLite database, per-match sidecar directories and the managed demo
+// copies (DemosDir). Paths follow the
 // XDG base-directory spec ($XDG_DATA_HOME, default ~/.local/share), mirroring
 // how prefs.go derives the config path — a crash or upgrade must never move
 // data out from under the user.
@@ -16,6 +17,14 @@ import (
 // appName must stay in sync with build/config.yml's productName and the
 // main.go const of the same name (importing main is not possible here).
 const appName = "spectra"
+
+// RootDir returns the app data root ($XDG_DATA_HOME/spectra) without
+// creating it — the directory every other path below lives in, and the
+// subtree the demo scanner must never walk into (spectra's own files are
+// not the user's demos).
+func RootDir() string {
+	return filepath.Join(xdg.DataHome, appName)
+}
 
 // DBPath returns the SQLite database path ($XDG_DATA_HOME/spectra/spectra.db),
 // creating the parent directory if needed.
@@ -48,6 +57,21 @@ func TempDir() string {
 	return dir
 }
 
+// DemosDir returns the managed demo-copy directory
+// ($XDG_DATA_HOME/spectra/demos), creating it if needed. Every import
+// copies the raw demo here, named by its content hash, so the match can be
+// reprocessed after the user's original file is moved or deleted. Only
+// files under this directory are ever deleted by the app (see
+// library.Importer.RemoveManagedDemo) — a user's original demo is never
+// ours to remove.
+func DemosDir() string {
+	dir := filepath.Join(RootDir(), "demos")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return dir
+	}
+	return dir
+}
+
 // MapsDir returns the extracted map-pack root
 // ($XDG_DATA_HOME/spectra/maps), creating it if needed. Each map gets a
 // <name>/ subdirectory (meta.json + radar.png) — the same on-disk shape
@@ -68,6 +92,7 @@ func EnsureDirs() error {
 		filepath.Dir(DBPath()),
 		MatchesDir(),
 		TempDir(),
+		DemosDir(),
 	} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			return fmt.Errorf("data: mkdir %s: %w", dir, err)
