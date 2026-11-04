@@ -407,12 +407,15 @@
 
   // --- Navigation (URL-backed) ----------------------------------------------
   // Every filter change navigates: serialize + preserve the entry
-  // context (tick/back) + write the hash. sel is entry-only — it is not
+  // context (tick/back/follow) + write the hash. sel is entry-only — it is not
   // re-pinned on later filter changes (selection stays local).
-  function navigateFilter(next) {
+  // keepFollow=false drops the follow param (the chip's dismiss — see
+  // releaseFollow), so a preserved entry context cannot re-arm it.
+  function navigateFilter(next, { keepFollow = true } = {}) {
     const q = serializeLandmarkFilter(next);
     if (query.tick) q.tick = query.tick;
     if (query.back) q.back = query.back;
+    if (keepFollow && query.follow) q.follow = query.follow;
     const target = buildHash(`/replay/${id}`, q);
     if (location.hash !== '#' + target) nav(target);
   }
@@ -550,6 +553,39 @@
   }
 
   const players = $derived(meta?.players || []);
+
+  // --- Follow camera (?follow=<steamid17>) -----------------------------------
+  // The Match view's "open the replay on this player" hand-off: the
+  // contract is a 17-digit steam id in the route query. Resolved against
+  // the sidecar slot table — a malformed id or one that is not in this
+  // match resolves to -1 and the param is ignored (free camera, no
+  // error). Follow itself is engine state (engine.setFollow): the
+  // renderer recenters the camera on that slot every frame, across
+  // rounds, and the transport select / F and 1-9 keys drive the same
+  // state.
+  const followSlot = $derived.by(() => {
+    const sid = String(query.follow || '');
+    if (!sid) return -1;
+    return players.findIndex((p) => p && p.steamId === sid);
+  });
+
+  // Apply the URL-driven slot whenever it changes (or the engine comes
+  // up under it). Guarded against redundant emits so a manual transport
+  // selection can never be clobbered by an unchanged param.
+  $effect(() => {
+    const slot = followSlot;
+    if (!ready || !engine) return;
+    const want = slot >= 0 && players[slot] ? slot : null;
+    if (engine.state.followSlot !== want) engine.setFollow(want);
+  });
+
+  // Dismiss the follow chip: release the camera AND drop ?follow= from
+  // the route (entry context rides the query — navigateFilter preserves
+  // it, so the param has to go for the dismissal to stick).
+  function releaseFollow() {
+    engine?.setFollow(null);
+    if (query.follow) navigateFilter(filter, { keepFollow: false });
+  }
 
   onMount(() => {
     load();
@@ -1050,6 +1086,22 @@
     <div class="replay-body">
       <div class="replay-stage" bind:this={stageEl}>
         <canvas bind:this={canvasEl} aria-label="Replay canvas"></canvas>
+        {#if uiFollow != null && players[uiFollow]}
+          <!-- Follow chip: the dismiss surface for the camera-follow
+               state (?follow= entry, the transport select and the F/1-9
+               keys all land here). -->
+          <span class="chip follow-chip" role="status">
+            <span class="codicon codicon-eye" aria-hidden="true"></span>
+            Following {players[uiFollow].name || `slot ${uiFollow}`}
+            <button
+              class="btn small ghost"
+              aria-label="Stop following {players[uiFollow].name || 'player'}"
+              title="Release the follow camera"
+              onclick={releaseFollow}
+              ><span class="codicon codicon-close"></span></button
+            >
+          </span>
+        {/if}
       </div>
       <aside class="replay-side" aria-label="Landmark events">
         <button
