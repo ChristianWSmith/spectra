@@ -39,6 +39,16 @@ export const GLOSSARY = [
     text: 'A team’s loss-bonus money is reconstructed from consecutive round losses rather than read from a raw net message, so it is labelled reconstructed/inferred (fact/inference badge). The base amounts follow the game rules, not a configurable threshold.',
   },
   {
+    term: 'Equipment value',
+    inferred: false,
+    text: 'Freeze-time-end value of the gear a side actually holds: every weapon — including ones picked up and carried over from earlier rounds — plus armor, grenades and the defuse kit, as recorded by the game’s own per-player equipment value. It is never this round’s spend, so a team that survives with a stolen rifle shows that rifle’s value next round.',
+  },
+  {
+    term: 'Net worth',
+    inferred: false,
+    text: 'Team equipment value plus that team’s unspent money at freeze time end: what the team already holds in gear plus the cash it can still spend. The economy chart’s Net worth metric plots this per team per round.',
+  },
+  {
     term: 'Trade opportunities missed (inferred)',
     inferred: true,
     text: 'A death that went unanswered: no teammate of the dead player killed their killer within the trade window after the death, AND at the death tick a living teammate of the victim stood within the trade-opportunity distance of the killer — close enough to actually trade him. That distance is measured once per kill at import (nearest living teammate to the killer’s position) and gated against the configurable threshold (Settings → Analysis rules, default 200 units): a death with no living teammate nearby, or with no position data for the kill, does not count. The Combat tab’s Untraded deaths metric reads the same engagement rows without the distance gate.',
@@ -80,6 +90,17 @@ export const KAST_DEF = `KAST% — ${lowerFirst(glossaryText('KAST%'))}`;
 export const DMG_CONV_DEF = `Damage conversion — ${lowerFirst(glossaryText('Damage conversion'))}`;
 
 export const TRADE_OPP_MISSED_DEF = `Trade opportunities missed — ${lowerFirst(glossaryText('Trade opportunities missed (inferred)'))}`;
+
+// Economy tab (chart metric titles / table column headers). Verified:
+// equipment value is the game's freeze-time-end per-player equipment
+// summed per side (internal/extract/handlers.go →
+// Team.FreezeTimeEndEquipmentValue, stored in rounds.equip_ct/equip_t and
+// round_economy.equip_value); net worth is computed frontend-side as that
+// equipment value plus the sampled freeze-end unspent money
+// (round_economy.money_sampled_sum → EconomyRow.Money*).
+export const EQUIP_DEF = `Equipment value — ${lowerFirst(glossaryText('Equipment value'))}`;
+
+export const NETWORTH_DEF = `Net worth — ${lowerFirst(glossaryText('Net worth'))}`;
 
 // --- Tooltips with no glossary entry ----------------------------------------
 

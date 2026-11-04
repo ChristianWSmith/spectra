@@ -149,6 +149,42 @@ func TestParseGolden(t *testing.T) {
 			econ["ct"].EquipValue, econ["t"].EquipValue)
 	}
 
+	// Equipment value is INVENTORY value at freeze time end — the gear a
+	// side actually holds — never this round's spend: round 3's CT side
+	// spent 4200 yet holds 8350 of gear (rifles carried over from earlier
+	// rounds), and its T opponent spent 5000 for 23800. round_economy.spent
+	// keeps the spend in its own column (CS2.md
+	// "m_unFreezetimeEndEquipmentValue").
+	for _, want := range []struct {
+		round int
+		side  string
+		equip int
+		spent int
+	}{
+		{3, "ct", 8350, 4200},
+		{3, "t", 23800, 5000},
+	} {
+		var got models.RoundEconomy
+		found := false
+		for _, e := range m.RoundEconomy {
+			if e.Round == want.round && e.Side == want.side {
+				got, found = e, true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("round %d %s economy row missing", want.round, want.side)
+		}
+		if got.EquipValue != want.equip || got.Spent != want.spent {
+			t.Errorf("round %d %s equip/spent = %d/%d, want %d/%d",
+				want.round, want.side, got.EquipValue, got.Spent, want.equip, want.spent)
+		}
+		if got.EquipValue <= got.Spent {
+			t.Errorf("round %d %s equip %d must exceed the round's spend %d — equipment value counts gear carried into the round",
+				want.round, want.side, got.EquipValue, got.Spent)
+		}
+	}
+
 	// ---- typed events ----
 	// Round stamps follow the ingest numbering: -2/-1 for pre-match rows,
 	// 1..23 for real rounds.

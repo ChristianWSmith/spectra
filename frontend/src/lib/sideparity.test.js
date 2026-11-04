@@ -8,7 +8,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-import { flipIndexes, eraOf, startSideFor, sideInEra } from './sideparity.js';
+import { flipIndexes, eraOf, startSideFor, sideInEra, teamKeyAt } from './sideparity.js';
 
 const fixture = JSON.parse(
   readFileSync(new URL('../../../internal/rules/testdata/sideparity.json', import.meta.url), 'utf8'),
@@ -98,4 +98,26 @@ test('startSideFor is sideInEra at era 0, and each era flips it', () => {
       assert.equal(sideInEra(side, switches, 1), start === 'ct' ? 't' : 'ct');
     }
   }
+});
+
+test('teamKeyAt: a round\'s side resolves to the TEAM that played it', () => {
+  // MR12 (23 counted rounds, one switch): the team that FINISHED CT
+  // opened T, so the 'ct' side of round 1 belongs to the final-T team
+  // and the 'ct' side of round 13 (the second-half pistol) belongs to
+  // the final-CT team — the mapping flips exactly at the half.
+  assert.equal(teamKeyAt('ct', 0, 23, 1), 't');
+  assert.equal(teamKeyAt('t', 0, 23, 1), 'ct');
+  assert.equal(teamKeyAt('ct', 12, 23, 1), 'ct');
+  assert.equal(teamKeyAt('t', 12, 23, 1), 't');
+  // No recorded switch: side and team key are the same thing.
+  assert.equal(teamKeyAt('ct', 0, 23, 0), 'ct');
+  assert.equal(teamKeyAt('t', 22, 23, 0), 't');
+  // Two switches (OT) flip twice — era 0 and the last era share the
+  // opening mapping, the middle era is the flipped one.
+  assert.equal(teamKeyAt('ct', 0, 25, 2), 'ct');
+  assert.equal(teamKeyAt('ct', 10, 25, 2), 't');
+  assert.equal(teamKeyAt('ct', 17, 25, 2), 'ct');
+  // Unknown side never gets a guessed team.
+  assert.equal(teamKeyAt('', 0, 23, 1), null);
+  assert.equal(teamKeyAt('ct2', 0, 23, 1), null);
 });

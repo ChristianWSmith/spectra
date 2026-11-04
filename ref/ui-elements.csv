@@ -266,41 +266,42 @@ Buy chip hint text,Economy tab,"Muted ""buy classes are versioned rules — clic
 Buy class chip button,Economy tab,Clickable CT buy or T buy chip (pistol/force/full/eco…) that expands an explanation row beneath the round.,Economy.svelte:toggleWhy
 Buy class explanation row,Economy tab,"Expanded row under a round showing the classification text, rule version, and a ✕ close button.",Economy.svelte:econ-why
 Buy classification empty message,Economy tab,"""No classification rows."" empty state in the Buy classification panel on the Economy tab.",Economy.svelte:rows
-Buy classification table,Economy tab,"Per-round table of winner, CT/T buy class, spend, and loss bonus in the Buy classification panel on the Economy tab.",Economy.svelte:econ-table
+Buy classification table,Economy tab,"Per-round table of winner, CT/T buy class, equipment value, and loss bonus in the Buy classification panel on the Economy tab.",Economy.svelte:econ-table
 Buy explanation close button,Economy tab,"""✕"" button that collapses the open buy-class explanation row on the Economy tab.",Economy.svelte:whyOpen
-Buy table footnote,Economy tab,Note under the buy table explaining the Loss CT/T columns and the inferred marker.,Economy.svelte:econ-table-note
+Buy table footnote,Economy tab,Note under the buy table explaining the Equip CT/T and Loss CT/T columns and the inferred marker.,Economy.svelte:econ-table-note
 Chart grid lines,Economy tab,"Horizontal reference lines at 0, 25, 50, 75, and 100 percent of the chart's dollar scale.",EconCurve.svelte:econ-grid-line
 Chart hover guide,Economy tab,Vertical line following the hovered round column inside the chart.,EconCurve.svelte:econ-guide
 Computed badge,Economy tab,"""computed"" chip on Economy tab summary cards whose hover shows the formula.",Economy.svelte:econ-badge-computed
-CT economy line,Economy tab,The CT team's economy polyline drawn across the chart.,EconCurve.svelte:econ-line-ct
-Economy chart,Economy tab,SVG line chart plotting CT and T economy per round with grid lines and pistol-round bands; hovering shows per-round values.,EconCurve.svelte:econ-chart
-Economy chart title,Economy tab,"Panel heading that reads ""Equip value per round"" or ""Team money per round"" depending on the selected metric.",EconCurve.svelte:econ-curve-head; EconCurve.svelte:metric
+CT economy line,Economy tab,"Polyline of the team that finished CT across the chart — team-identity color, dashed when that team lost the match.",EconCurve.svelte:econ-line
+Economy chart,Economy tab,SVG line chart plotting one line per team (equipment value or net worth) per round with grid lines and pistol-round bands; hovering shows per-round values.,EconCurve.svelte:econ-chart
+Economy chart title,Economy tab,"Panel heading that reads ""Equip value per round"" or ""Team net worth per round"" depending on the selected metric.",EconCurve.svelte:econ-curve-head; EconCurve.svelte:metric
 Economy curve panel,Economy tab,"Panel on the match's Economy tab showing the per-round economy chart with metric toggle, hover tooltip, and winner strip.",EconCurve.svelte:econ-curve-panel
 Economy empty state message,Economy tab,"""No economy rows for this match."" placeholder shown inside the panel when the chart has no data.",EconCurve.svelte:n
 Economy header row,Economy tab,"Line above the economy chart showing round count, warmup rounds skipped, and a hint to click buy chips.",Economy.svelte:econ-head
-Economy hover tooltip,Economy tab,"Floating tooltip over the hovered round showing round number, winner side chip, optional pistol badge, CT/T values, and spent totals.",EconCurve.svelte:econ-tooltip
+Economy hover tooltip,Economy tab,"Floating tooltip over the hovered round showing round number, winner side chip, optional pistol badge, and per-team equip / net worth columns.",EconCurve.svelte:econ-tooltip
 Economy legend note,Economy tab,"Muted caption under the strip explaining the pistol swatch, ✓ favorite held, ✗ upset, and click-to-open behavior.",EconCurve.svelte:econ-strip-note
 Economy load error,Economy tab,Red alert at the top of the Economy tab when economy or round data fails to load.,Economy.svelte:error
 Economy loading state,Economy tab,"""Loading economy…"" placeholder shown on the Economy tab until data arrives.",Economy.svelte:loading
-Economy metric toggle,Economy tab,"""Equip value"" and ""Money"" buttons switching the economy chart between equipment value and team money.",EconCurve.svelte:econ-toggle
+Economy metric toggle,Economy tab,"""Equip value"" and ""Net worth"" buttons switching the economy chart between equipment value and net worth (equipment value + unspent money).",EconCurve.svelte:econ-toggle
 Economy round column,Economy tab,"Invisible clickable, keyboard-focusable per-round column over the chart that opens that round's detail view.",EconCurve.svelte:econ-hit
 Economy round strip cell,Economy tab,One round cell in the winner strip that opens that round's detail page and shows a hover tooltip.,EconCurve.svelte:econ-strip-cell
-Economy summary cards,Economy tab,"Four stat cards (pistol hold, force-buy win rate, spend advantage, lost equipment) with computed/inferred badges and click-through to the timeline.",Economy.svelte:econ-summary
+Economy summary cards,Economy tab,"Four stat cards (pistol hold, force-buy win rate per team, winner equipment value advantage, lost equipment per team) with computed/inferred badges and click-through to the timeline.",Economy.svelte:econ-summary
 Economy winner strip,Economy tab,Row of small round cells beneath the chart showing each round's winner color and an upset or favorite mark.,EconCurve.svelte:econ-strip
 Equip value toggle button,Economy tab,Left segment of the economy metric toggle that plots team equipment value per round.,EconCurve.svelte:metric='equip'
-Force-buy win rate card,Economy tab,"""Force-buy win rate"" card with CT/T breakdown; click opens the timeline filtered to the first force buy.",Economy.svelte:forceTotal
+Force-buy win rate card,Economy tab,"""Force-buy win rate"" card with a per-team breakdown of force buys and force-buy wins; click opens the timeline filtered to the first force buy.",Economy.svelte:forceTotal
 Loss inferred badge,Economy tab,"""inferred"" chip on reconstructed CT/T loss bonus values in the buy table.",Economy.svelte:econ-loss
-Lost equipment card,Economy tab,"""Lost equipment"" card totalling losing-side equipment value with an inferred badge; click drills to the biggest loss round.",Economy.svelte:lostTotal
-Money toggle button,Economy tab,Right segment of the economy metric toggle that plots team money per round.,EconCurve.svelte:metric='money'
+Lost equipment card,Economy tab,"""Lost equipment"" card totalling the losing team's freeze-end equipment value with a per-team breakdown and an inferred badge; click drills to the biggest loss round.",Economy.svelte:lostTotal
+Net worth toggle button,Economy tab,Right segment of the economy metric toggle that plots team net worth (equipment value + unspent money) per round.,EconCurve.svelte:metric='networth'
 Pistol hold stat card,Economy tab,"""Pistol → next round"" card showing pistol wins held; click opens the timeline filtered to the first pistol round.",Economy.svelte:firstPistol
 Pistol round band,Economy tab,Shaded vertical band marking pistol rounds behind the economy chart lines.,EconCurve.svelte:econ-pistol-band
 Pistol round pip,Economy tab,Small dot next to a round number in the buy table marking pistol rounds.,Economy.svelte:econ-pip
 Round number button,Economy tab,Round number button in the buy table that opens that round's detail page.,Economy.svelte:econ-rd
-Spend advantage card,Economy tab,"""Winner spend advantage"" card showing average winner-minus-loser spend; click drills to the largest-gap round.",Economy.svelte:avgGap
 Stat card formula tooltip,Economy tab,Hover text on each economy summary card explaining its formula and drill-down round.,Economy.svelte:stat-cell
 Summary inferred badge,Economy tab,"""inferred"" chip on the Lost equipment summary card flagging the destroyed-equipment assumption.",Economy.svelte:econ-badge-inferred
-T economy line,Economy tab,The T team's economy polyline drawn across the chart.,EconCurve.svelte:econ-line-t
+T economy line,Economy tab,"Polyline of the team that finished T across the chart — team-identity color, dashed when that team lost the match.",EconCurve.svelte:econ-line
+Team line legend,Economy tab,"Legend above the chart naming both teams with their line swatch (identity-colored; dashed = match loser) and the solid/dashed reading.",EconCurve.svelte:econ-legend
 Upset favorite mark,Economy tab,"""✓"" or ""✗"" glyph in a strip cell marking whether the higher-equip favorite team won or was upset.",EconCurve.svelte:econ-strip-mark
+Winner equipment value advantage card,Economy tab,"""Winner equipment value advantage"" card showing average winner-minus-loser equipment value; click drills to the largest-gap round.",Economy.svelte:avgGap
 Winner side chip,Economy tab,CT/T/— chip in the Winner column of the buy table.,Economy.svelte:side
 Generate heatmap button,Heatmaps tab,"""Generate"" or ""Regenerate"" button that computes the heatmap raster; shows ""Generating…"" while running.",Heatmaps.svelte:generate
 Heatmap click hint,Heatmaps tab,"""Click the map to filter the timeline by region"" hint under the map on the Heatmaps tab.",Heatmaps.svelte:heat-hint
@@ -330,22 +331,22 @@ Spatial series panel,Heatmaps tab,"Panel on the Heatmaps tab with the spacing/sp
 Stale controls warning,Heatmaps tab,"""controls changed — press Regenerate to apply them to the raster"" message when filters differ from the displayed heatmap.",Heatmaps.svelte:heat-stale
 Export CSV button,Replay — landmark feed,"""CSV"" button in the feed toolbar downloading the loaded rows as CSV (canonical columns: tick, round, source, category, kind, who, label, weapon, dmg) through the native save dialog; the SQL console has its own export.",Replay.svelte:exportCSV
 Export JSON button,Replay — landmark feed,"""JSON"" button in the feed toolbar downloading the loaded rows (full row objects) through the native save dialog.",Replay.svelte:exportJSON
-CT blinds stat cell,Utility tab,Cell showing total CT-caused blind seconds and number of affected players.,Utility.svelte:ctMs
-Flash effectiveness panel,Utility tab,"Panel headed ""Flash effectiveness"" showing CT and T blind totals with an inferred badge.",Utility.svelte:flash
+CT blinds stat cell,Utility tab,Cell showing the team that finished CT's total blind seconds and number of affected players (team name + identity color).,Utility.svelte:ctMs
+Flash effectiveness panel,Utility tab,"Panel headed ""Flash effectiveness"" showing per-team blind totals with an inferred badge.",Utility.svelte:flash
 Flash inferred badge,Utility tab,"""inferred"" chip in the Flash effectiveness panel noting the metric is derived from blind events.",Utility.svelte:util-badge-inferred
 Flash note text,Utility tab,"""total blind time + affected players, by thrower team"" caption under the flash cells.",Utility.svelte:util-flash-note
 Grenade event row,Utility tab,"One grenade entry listing kind, thrower, tick, damage, blind time, affected players, site, actions, and detonation coordinates.",Utility.svelte:util-nade
 Grenade kind chip,Utility tab,"Kind chip (flash, smoke, he, molotov…) at the start of each grenade row.",Utility.svelte:util-kind
 Grenade replay button,Utility tab,"""replay ▶"" button on a grenade row opening the replay at that throw's tick.",Utility.svelte:openReplay
 Grenade timeline button,Utility tab,"""timeline"" button on a grenade row opening the timeline filtered to that round's grenade events.",Utility.svelte:openTimeline
-Round damage summary,Utility tab,"""CT x · T y dmg"" text in the round group header on the Utility tab.",Utility.svelte:ctDmg
+Round damage summary,Utility tab,"""teamA x · teamB y dmg"" text in the round group header on the Utility tab, keyed by thrower team.",Utility.svelte:ctDmg
 Round grenade count chip,Utility tab,Chip with the number of grenades in that round inside the round group header.,Utility.svelte:round-chip
-Round group header,Utility tab,"Collapsible ""Round N"" button row showing grenade count, CT/T damage totals, and a ▸/▾ caret.",Utility.svelte:util-group-head
-T blinds stat cell,Utility tab,Cell showing total T-caused blind seconds and number of affected players.,Utility.svelte:tMs
-Utility damage bar chart,Utility tab,Paired CT and T bar chart of utility damage per round with hover titles showing exact values.,Utility.svelte:util-bars
+Round group header,Utility tab,"Collapsible ""Round N"" button row showing grenade count, per-team damage totals, and a ▸/▾ caret.",Utility.svelte:util-group-head
+T blinds stat cell,Utility tab,"Cell showing the team that finished T's total blind seconds and number of affected players (team name + identity color).",Utility.svelte:tMs
+Utility damage bar chart,Utility tab,Paired per-team bar chart of utility damage per round (team-identity colors) with hover titles showing exact values.,Utility.svelte:util-bars
 Utility damage chart panel,Utility tab,"Panel headed ""Utility damage per round"" on the Utility tab showing per-team damage bars or an empty message.",Utility.svelte:damageBars
 Utility damage empty message,Utility tab,"""No utility damage in this selection."" message inside the damage panel when no damage rows match.",Utility.svelte:damageBars
-Utility damage legend,Utility tab,"Legend with CT and T dots, a ""computed"" chip, and the max damage-per-round note.",Utility.svelte:util-legend
+Utility damage legend,Utility tab,"Legend with one identity-colored dot per team (display names), a ""computed"" chip, and the max damage-per-round note.",Utility.svelte:util-legend
 Utility drill hint,Utility tab,Hint text that timeline opens the round's grenade events and replay seeks to the throw.,Utility.svelte:util-hint
 Utility empty message,Utility tab,"""No grenades match the current filters."" message when the round groups list is empty.",Utility.svelte:groups
 Utility filter bar,Utility tab,"Toolbar on the Utility tab with Kind and Thrower selects, a grenade count, and a drill-down hint.",Utility.svelte:util-filters
