@@ -311,3 +311,23 @@ at the end of the section.
   money the player has spent across the whole match")
   (https://cs2opendev.github.io/CS2OpenDev-Docs/schemas/server/CCSPlayerController_InGameMoneyServices/)
   (2026-11-04).
+
+- **CS2 demo download folder (in-client)** — where demos the CS2 client
+  downloads itself land (Watch / recent-games menu "download", incl.
+  Premier): **`<CS2 install>/game/csgo/replays`**. CS2 keeps the CS:GO
+  install folder name (`Counter-Strike Global Offensive`, already pinned
+  by "Steam CS2 install detection"), so the per-OS difference is only the
+  Steam library location — `mappack.FindCS2` resolves that, and
+  `library.DefaultDemoDirs` derives the folder as
+  `filepath.Join(mappack.FindCS2(""), "replays")`. POV `record` output
+  lands in the same folder. Separate path: demos fetched from Steam's web
+  "Download GOTV replay" button arrive in the **browser's Downloads
+  folder** as a `.bz2`/zip archive that must be extracted into
+  `game/csgo` (spectra's default list therefore watches Downloads + this
+  folder; it never walks `game/csgo` itself).
+  **Source** — scope.gg CS2 demo guide
+  (https://scope.gg/guides/cs2-demo-guide-en), Steam thread "Where do i
+  find my Demo files?" (https://steamcommunity.com/app/730/discussions/0/4517759395050894377),
+  cs2pulse (https://cs2pulse.com/where-to-find-cs2-replay-file-location),
+  tradeit.gg CS2 replay controls (https://tradeit.gg/blog/cs2-replay-controls),
+  immortalboost "How to Watch CS2 Demos" (2026-11-04).

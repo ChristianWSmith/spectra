@@ -109,13 +109,11 @@ func (s *MapPackService) SetMapPackPromptState(state, path string) error {
 
 // ChooseCS2Dir opens the native folder picker for non-Steam or custom
 // installs; an empty string means cancel. The choice is validated and
-// persisted via SetMapPackPromptState by the caller.
+// persisted via SetMapPackPromptState by the caller. The picker itself
+// lives in dialogs.go (chooseDirectory — one implementation for every
+// folder the user picks).
 func (s *MapPackService) ChooseCS2Dir() string {
-	dir, err := s.app.Dialog.OpenFile().
-		CanChooseFiles(false).
-		CanChooseDirectories(true).
-		SetTitle("Choose your Counter-Strike 2 folder").
-		PromptForSingleSelection()
+	dir, err := chooseDirectory(s.app, "Choose your Counter-Strike 2 folder")
 	if err != nil || dir == "" {
 		return ""
 	}

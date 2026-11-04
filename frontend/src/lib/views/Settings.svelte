@@ -18,6 +18,10 @@
     checkForUpdateNow,
     getPref,
     setPref,
+    getDemoDirs,
+    setDemoDirs,
+    resetDemoDirs,
+    chooseDemoDir,
     errText,
   } from '../services.js';
   import { probeAudio } from '../replay/audio.js';
@@ -79,6 +83,58 @@
   // exactly true (unset, null, corrupt) reads as off.
   function prefBool(v) {
     return v === true;
+  }
+
+  // Watched demo folders ("where to look for demos"): the Library lists
+  // .dem / .dem.zst files found under them, each with a one-click
+  // Import. The backend owns the pref — an unset pref means "defaults in
+  // effect" (Downloads + the CS2 replay folder, recomputed on every
+  // read), so the list below always shows the effective folders.
+  let demoDirs = $state([]);
+  let demoDirsCustom = $state(false);
+  let demoDirError = $state('');
+
+  async function refreshDemoDirs() {
+    try {
+      const r = await getDemoDirs();
+      demoDirs = (r && r.dirs) || [];
+      demoDirsCustom = !!(r && r.custom);
+    } catch (e) {
+      demoDirError = errText(e);
+    }
+  }
+
+  async function saveDemoDirs(dirs) {
+    try {
+      await setDemoDirs(dirs);
+      await refreshDemoDirs();
+      demoDirError = '';
+    } catch (e) {
+      demoDirError = errText(e);
+    }
+  }
+
+  function removeDemoDir(dir) {
+    saveDemoDirs(demoDirs.filter((d) => d !== dir));
+  }
+
+  async function addDemoDir() {
+    try {
+      const dir = await chooseDemoDir();
+      if (dir && !demoDirs.includes(dir)) await saveDemoDirs([...demoDirs, dir]);
+    } catch (e) {
+      demoDirError = errText(e);
+    }
+  }
+
+  async function onResetDemoDirs() {
+    try {
+      await resetDemoDirs();
+      await refreshDemoDirs();
+      demoDirError = '';
+    } catch (e) {
+      demoDirError = errText(e);
+    }
   }
 
   // Plugins: declarative bundles installed by
@@ -269,6 +325,7 @@
       .catch(() => {
         /* keep the default (off) */
       });
+    refreshDemoDirs();
   });
 
   async function saveCfg() {
@@ -361,6 +418,51 @@
     {:else if !error}
       <p class="muted" role="status">Loading…</p>
     {/if}
+  </section>
+
+  <section class="panel">
+    <h2>Where to look for demos</h2>
+    <p class="muted">
+      The Library lists <span class="mono">.dem</span> /
+      <span class="mono">.dem.zst</span> files found in these folders and imports
+      them with one click — each import copies the demo into Spectra’s data
+      folder, so your original files are never moved, modified or deleted.
+      Subfolders are scanned up to four levels deep; hidden folders are skipped.
+    </p>
+    {#if demoDirs.length === 0}
+      <p class="muted" role="status">
+        No folders — the Library won’t offer any demos to import.
+      </p>
+    {:else}
+      <div class="sett-dirs">
+        {#each demoDirs as dir (dir)}
+          <div class="sett-dir-row">
+            <span class="mono sett-dir-path" title={dir}>{dir}</span>
+            <button
+              class="btn small danger"
+              aria-label={`Remove ${dir}`}
+              onclick={() => removeDemoDir(dir)}>Remove</button
+            >
+          </div>
+        {/each}
+      </div>
+    {/if}
+    {#if demoDirError}
+      <p class="error" role="alert">{demoDirError}</p>
+    {/if}
+    <div class="row-between">
+      <span class="muted">
+        {demoDirsCustom
+          ? 'Saved as your list — the defaults no longer apply.'
+          : 'Defaults in effect: your Downloads folder and the CS2 replay folder, where the client saves downloaded matches.'}
+      </span>
+      <div class="sett-seg">
+        <button class="btn" onclick={addDemoDir}>Add folder…</button>
+        <button class="btn" disabled={!demoDirsCustom} onclick={onResetDemoDirs}
+          >Reset to defaults</button
+        >
+      </div>
+    </div>
   </section>
 
   <section class="panel">

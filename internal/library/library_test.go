@@ -29,8 +29,10 @@ func newTestImporter(t *testing.T, parse func(ctx context.Context, r io.Reader, 
 		Parse:         parse,
 		ParserVersion: "test",
 		// Never the user's real data dir: test matches share the same
-		// numeric ids as real ones (Options doc).
+		// numeric ids as real ones (Options doc), and copy-on-import must
+		// land in the test's own temp dir.
 		SidecarDir: t.TempDir(),
+		CopyDir:    t.TempDir(),
 	})
 	t.Cleanup(im.Shutdown)
 	return im, st

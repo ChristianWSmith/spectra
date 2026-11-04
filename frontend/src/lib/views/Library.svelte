@@ -6,12 +6,13 @@
     listJobs,
     deleteMatch,
     reprocess,
-    cancelJob,
     getScoreboard,
     subscribeJobProgress,
     onJobDone,
     onLibraryChanged,
     onFilesDropped,
+    listDemoFiles,
+    invalidate,
     errText,
   } from '../services.js';
   import { fmtBytes, fmtDuration, fmtDate, basename } from '../fmt.js';
@@ -38,15 +39,6 @@
     status: false,
   };
 
-  const STAGE_LABELS = {
-    queued: 'queued',
-    decompress: 'decompressing',
-    parse: 'parsing',
-    store: 'storing',
-    analyze: 'analyzing',
-    done: 'done',
-  };
-
   // Recent import problems age out client-side (no server-side job delete).
   const PROBLEM_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
   const PROBLEM_MAX = 10;
@@ -59,6 +51,20 @@
   let desc = $state(true);
   let error = $state('');
   let importError = $state('');
+
+  // Demos sitting in the configured folders (Settings → "where to look
+  // for demos"), not yet in the library first — each with a one-click
+  // Import that runs through the same pipeline as drag-and-drop.
+  let demoFiles = $state([]);
+  let demoScanning = $state(false); // UI: refresh button + "Scanning…"
+  // Non-reactive in-flight guard: refreshDemoFiles runs inside the mount
+  // $effect, and reading $state there would make the effect depend on it
+  // (every scan start/end would re-run the effect → rescan forever).
+  // demoScanAgain queues one follow-up scan when an event lands mid-scan.
+  let demoScanInFlight = false;
+  let demoScanAgain = false;
+  let demoError = $state('');
+  let notice = $state('');
 
   // Debounced list fetch: re-arms on every query/sort change and fires
   // 250 ms later, so typing doesn't hammer the store. First run is
@@ -102,19 +108,22 @@
     }
   }
 
-  // Mount: jobs + event subscriptions. The initial list load comes from
-  // the debounced effect above (fires once on mount).
+  // Mount: jobs + watched-folder scan + event subscriptions. The initial
+  // list load comes from the debounced effect above (fires once on mount).
   $effect(() => {
     refreshJobs();
+    refreshDemoFiles();
     const offs = [
       subscribeJobProgress((snap) => (jobProgress = snap)),
       onJobDone(() => {
         refreshJobs();
         refreshList();
+        refreshDemoFiles();
       }),
       onLibraryChanged(() => {
         refreshJobs();
         refreshList();
+        refreshDemoFiles();
       }),
       // Drop only reaches JS when the pointer is over an element with
       // data-file-drop-target (the drop zone below).
@@ -172,18 +181,51 @@
       await importPaths(paths);
       await refreshJobs();
       await refreshList();
+      await refreshDemoFiles();
     } catch (e) {
       importError = errText(e);
     }
   }
 
-  async function onCancel(job) {
-    try {
-      await cancelJob(job.id);
-      await refreshJobs();
-    } catch (e) {
-      error = errText(e);
+  // Rescan the configured folders (Settings → "where to look for
+  // demos"). The backend hashes only files it has never seen (bounded
+  // per scan) and caches every hash by path+size+mtime, so repeat scans
+  // are stat-only; force drops the frontend read cache first (the
+  // Refresh button — a demo downloaded while the app was open is not
+  // announced by any event).
+  async function refreshDemoFiles(force = false) {
+    if (force) invalidate();
+    if (demoScanInFlight) {
+      // A scan is already running: don't pile up (the walk + stats are
+      // cheap, but a rescan mid-scan would only return the same rows) —
+      // remember the request and run it once the current scan lands, so
+      // a library event that arrived mid-scan is never lost.
+      demoScanAgain = true;
+      return;
     }
+    demoScanInFlight = true;
+    demoScanning = true;
+    try {
+      demoFiles = await listDemoFiles();
+      demoError = '';
+    } catch (e) {
+      demoError = errText(e);
+    } finally {
+      demoScanInFlight = false;
+      demoScanning = false;
+      if (demoScanAgain) {
+        demoScanAgain = false;
+        refreshDemoFiles();
+      }
+    }
+  }
+
+  // Import one demo straight from the watched-folder list: the same
+  // pipeline as the Import… dialog and drag-and-drop (hash dedupe decides
+  // duplicates, the row indicator shows progress).
+  async function doImportFile(f, ev) {
+    ev.stopPropagation();
+    await doImportPaths([f.path]);
   }
 
   async function onReprocess(id, ev) {
@@ -199,12 +241,21 @@
 
   async function onDelete(id, ev) {
     ev.stopPropagation();
+    notice = '';
     if (!confirm('Delete extracted data?')) return;
-    const alsoFile = confirm('Also delete the demo file from disk?');
+    // Only Spectra's OWN copy of the demo file is ever removed — the
+    // backend reports removedDemo=false when there is no managed copy
+    // (a row imported before copy-on-import points at the user's
+    // original file, which stays untouched).
+    const alsoFile = confirm('Also delete the imported copy of the demo file from disk?');
     try {
-      await deleteMatch(id, alsoFile);
+      const removedDemo = await deleteMatch(id, alsoFile);
+      if (alsoFile && !removedDemo) {
+        notice = 'The demo file was kept — Spectra only deletes the copy it imported.';
+      }
       await refreshJobs();
       await refreshList();
+      await refreshDemoFiles();
     } catch (e) {
       error = errText(e);
     }
@@ -288,34 +339,8 @@
   {#if error}
     <p class="error" role="alert">{error}</p>
   {/if}
-
-  {#if activeJobs.length > 0}
-    <section class="panel" aria-label="Imports in progress">
-      <h2>Imports in progress</h2>
-      {#each activeJobs as job (job.id)}
-        {@const j = jobView(job)}
-        <div class="job-row">
-          <span class="mono path" title={j.path}>{basename(j.path)}</span>
-          <span class="chip">{STAGE_LABELS[j.stage] || j.stage || 'queued'}</span>
-          <div
-            class="progress"
-            role="progressbar"
-            aria-label="Import progress"
-            aria-valuemin="0"
-            aria-valuemax="100"
-            aria-valuenow={Math.round((j.progress || 0) * 100)}
-          >
-            <div
-              class="progress-fill"
-              class:indeterminate={!j.progress}
-              style="width:{Math.max(4, Math.round((j.progress || 0) * 100))}%"
-            ></div>
-          </div>
-          <span class="num muted">{Math.round((j.progress || 0) * 100)}%</span>
-          <button class="btn small danger" onclick={() => onCancel(j)}>Cancel</button>
-        </div>
-      {/each}
-    </section>
+  {#if notice}
+    <p class="muted" role="status">{notice}</p>
   {/if}
 
   {#if problemJobs.length > 0}
@@ -391,7 +416,7 @@
               <td class="row-actions" onclick={(e) => e.stopPropagation()}>
                 <button
                   class="btn small"
-                  title="Re-parse the original demo"
+                  title="Re-parse the demo — from Spectra's copy when one exists"
                   onclick={(e) => onReprocess(m.id, e)}>Reprocess</button
                 >
                 <button
@@ -415,4 +440,90 @@
       {/if}
     {/if}
   </div>
+
+  <!-- Watched folders: .dem / .dem.zst files under the dirs configured in
+       Settings → "where to look for demos", not-yet-imported rows first.
+       One Import button per row runs the ordinary pipeline (hash dedupe,
+       row status chip); already-imported files link to their match
+       instead of being re-importable. -->
+  <section class="panel" aria-label="Demos in your folders">
+    <div class="row-between">
+      <h2>Demos in your folders</h2>
+      <button
+        class="btn small"
+        disabled={demoScanning}
+        title="Rescan the configured folders"
+        onclick={() => refreshDemoFiles(true)}>Refresh</button
+      >
+    </div>
+    <p class="muted">
+      Found under the folders in Settings → Where to look for demos — subfolders up to
+      four levels deep, hidden folders skipped. Importing copies the demo into
+      Spectra’s data folder; your original file is never touched.
+    </p>
+    {#if demoError}
+      <p class="error" role="alert">{demoError}</p>
+    {/if}
+    {#if demoScanning && demoFiles.length === 0}
+      <p class="muted" role="status">Scanning folders…</p>
+    {:else if demoFiles.length === 0}
+      <p class="muted" role="status">
+        No demos found — add folders in Settings, or use Import… / drop files on this
+        panel.
+      </p>
+    {:else}
+      <table class="data-table">
+        <thead>
+          <tr>
+            <th scope="col">Demo</th>
+            <th scope="col">Folder</th>
+            <th scope="col" class="num">Size</th>
+            <th scope="col">Modified</th>
+            <th scope="col">Library</th>
+            <th scope="col"><span class="sr-only">Actions</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {#each demoFiles as f (f.path)}
+            <tr>
+              <td>
+                <span class="mono lib-demo-name" title={f.path}>{basename(f.path)}</span>
+              </td>
+              <td>
+                <span class="mono lib-demo-root" title={f.root}
+                  >{basename(f.root) || f.root}</span
+                >
+              </td>
+              <td class="num">{fmtBytes(f.size)}</td>
+              <td>{fmtDate(f.modTime)}</td>
+              <td>
+                {#if f.matchId}
+                  <span class="chip ok" title="Already in the library">imported</span>
+                {:else}
+                  <span
+                    class="chip idle"
+                    title={f.hashed
+                      ? 'Not in the library yet'
+                      : 'Not content-checked yet — importing is safe, duplicates are detected by hash'}
+                    >not imported</span
+                  >
+                {/if}
+              </td>
+              <td class="row-actions" onclick={(e) => e.stopPropagation()}>
+                {#if f.matchId}
+                  <button class="btn small" onclick={() => nav(`/match/${f.matchId}`)}
+                    >Open</button
+                  >
+                {:else}
+                  <button class="btn small primary" onclick={(e) => doImportFile(f, e)}
+                    >Import</button
+                  >
+                {/if}
+              </td>
+            </tr>
+          {/each}
+        </tbody>
+      </table>
+    {/if}
+  </section>
 </div>

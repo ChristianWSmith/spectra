@@ -1,12 +1,12 @@
 package main
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
+	"github.com/wailsapp/wails/v3/pkg/services/kvstore"
 
 	"github.com/ChristianWSmith/spectra/internal/data"
 	"github.com/ChristianWSmith/spectra/internal/extract"
@@ -16,11 +16,14 @@ import (
 )
 
 // LibraryService is the frontend-facing library surface: import (dialog +
-// paths), the match list, delete/reprocess, job control, and the raw-data
-// inspectors. Thin delegate over internal/store and the import pipeline.
+// paths), the watched-folder demo list, the match list, delete/reprocess,
+// job control, and the raw-data inspectors. Thin delegate over
+// internal/store and the import pipeline.
 type LibraryService struct {
 	st  *store.Store
 	imp *library.Importer
+	sc  *library.Scanner
+	kvs *kvstore.KVStoreService
 	app *application.App
 }
 
@@ -43,6 +46,59 @@ func (s *LibraryService) ImportPaths(paths []string) []int64 {
 	return s.imp.Enqueue(paths)
 }
 
+// --- Watched demo folders (Settings → "where to look for demos") ----------
+
+// DemoDirsResult is Settings' folder list: Dirs is the effective list —
+// the stored pref, or the defaults when Custom is false.
+type DemoDirsResult struct {
+	Dirs   []string `json:"dirs"`
+	Custom bool     `json:"custom"` // false = defaults, nothing persisted
+}
+
+// GetDemoDirs returns the folders the Library scans for demos. An unset
+// (or corrupt) pref means "defaults in effect": the user's Downloads
+// folder plus CS2's replay folder, recomputed on every read.
+func (s *LibraryService) GetDemoDirs() DemoDirsResult {
+	dirs, ok := prefStrings(s.kvs.Get(prefsDemoDirsKey))
+	if !ok {
+		return DemoDirsResult{Dirs: library.DefaultDemoDirs(), Custom: false}
+	}
+	return DemoDirsResult{Dirs: dirs, Custom: true}
+}
+
+// SetDemoDirs replaces the folder list — normalized (absolute, cleaned,
+// deduped, empties dropped) — and persists it. From then on the stored
+// list, not the defaults, is what the scanner uses; an empty list means
+// "watch nothing" (ResetDemoDirs restores the defaults).
+func (s *LibraryService) SetDemoDirs(dirs []string) error {
+	return s.kvs.Set(prefsDemoDirsKey, library.NormalizeDirs(dirs))
+}
+
+// ResetDemoDirs drops the stored list so the defaults apply again (the
+// pref is deleted, not overwritten: future default changes keep flowing).
+func (s *LibraryService) ResetDemoDirs() error {
+	return s.kvs.Delete(prefsDemoDirsKey)
+}
+
+// ChooseDemoDir opens the native folder picker for the watched list; an
+// empty string means cancel. The caller persists the choice (the picker
+// itself is dialogs.go's chooseDirectory, shared with MapPackService).
+func (s *LibraryService) ChooseDemoDir() string {
+	dir, err := chooseDirectory(s.app, "Choose a folder to look for demos in")
+	if err != nil || dir == "" {
+		return ""
+	}
+	return dir
+}
+
+// ListDemoFiles scans the configured folders for .dem / .dem.zst files
+// and reports which are already in the library (unimported first). The
+// walk is bounded — see internal/library Scan for depth/skip/hash rules.
+// Missing or unmounted folders simply yield no rows.
+func (s *LibraryService) ListDemoFiles() ([]library.DemoFile, error) {
+	return s.sc.Scan(s.GetDemoDirs().Dirs)
+}
+
 // ListMatches returns the searchable, sortable library list.
 func (s *LibraryService) ListMatches(query, sortKey string, desc bool) ([]models.MatchSummary, error) {
 	return s.st.ListMatches(query, sortKey, desc)
@@ -50,31 +106,33 @@ func (s *LibraryService) ListMatches(query, sortKey string, desc bool) ([]models
 
 // DeleteMatch removes a match and its extracted data, including the
 // per-match position sidecar directory (best-effort — the delete
-// cascade removes the directory). When deleteOriginal is set the source
-// demo file is removed from disk as well — its path is looked up before
-// the row is deleted. A missing match surfaces store.ErrNotFound.
-func (s *LibraryService) DeleteMatch(id int64, deleteOriginal bool) error {
-	var path string
-	if deleteOriginal {
+// cascade removes the directory). When deleteDemo is set, spectra's OWN
+// copy of the demo (the copy-on-import file under data.DemosDir) is
+// removed from disk as well — a user's original file is never ours to
+// delete, so rows without a managed copy remove nothing. A missing match
+// surfaces store.ErrNotFound. The bool reports whether a demo file was
+// actually deleted.
+func (s *LibraryService) DeleteMatch(id int64, deleteDemo bool) (bool, error) {
+	var sha string
+	if deleteDemo {
 		m, err := s.st.GetMatch(id)
 		if err != nil {
-			return err
+			return false, err
 		}
-		path = m.Path
+		sha = m.SHA256
 	}
 	if err := s.st.DeleteMatchData(id); err != nil {
-		return err
+		return false, err
 	}
 	_ = os.RemoveAll(filepath.Join(data.MatchesDir(), strconv.FormatInt(id, 10)))
-	if deleteOriginal && path != "" {
-		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
+	if !deleteDemo {
+		return false, nil
 	}
-	return nil
+	return s.imp.RemoveManagedDemo(sha)
 }
 
-// Reprocess queues a re-parse of a match's original demo file.
+// Reprocess queues a re-parse of a match's demo file: the managed copy
+// when one exists, else the stored path (see Importer.Reprocess).
 func (s *LibraryService) Reprocess(id int64) (int64, error) {
 	return s.imp.Reprocess(id)
 }

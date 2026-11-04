@@ -49,7 +49,7 @@ export function errText(e) {
 //   spectra:job-progress    - parse/store progress (data lands mid-stream)
 //   spectra:files-dropped   - import kickoff (its own events may lag the
 //                             call site's refetch)
-// Mutating wrappers (deleteMatch/importPaths/reprocess/cancelJob/
+// Mutating wrappers (deleteMatch/importPaths/reprocess/
 // recomputeAnalysis) also invalidate on success: DeleteMatch and
 // RecomputeAnalysis emit no event at all, and the event round-trip for
 // the others can land AFTER the call site's own refetch - invalidating
@@ -131,8 +131,11 @@ export function listMatches(query, sortKey, desc) {
   );
 }
 
-export function deleteMatch(id, deleteOriginal) {
-  return LibraryService.DeleteMatch(id, deleteOriginal).then((r) => {
+// deleteMatch removes a match's extracted data; deleteDemo also removes
+// Spectra's OWN copy of the demo file (a user's original is never deleted).
+// Resolves to whether a demo file was actually removed from disk.
+export function deleteMatch(id, deleteDemo) {
+  return LibraryService.DeleteMatch(id, deleteDemo).then((r) => {
     invalidate();
     return r;
   });
@@ -145,15 +148,38 @@ export function reprocess(id) {
   });
 }
 
-export function cancelJob(id) {
-  return LibraryService.CancelJob(id).then((r) => {
-    invalidate();
-    return r;
-  });
-}
-
 export function listJobs() {
   return LibraryService.ListJobs();
+}
+
+// --- Watched demo folders (Settings → "where to look for demos") ----------
+// The Library lists .dem/.dem.zst files under these folders with a
+// one-click Import. Deliberately NOT read-cached: a folder list edit in
+// Settings must show up on the next scan (the expensive part — hashing
+// demo files — is cached Go-side by path+size+mtime, so a repeat scan
+// costs a walk of stats).
+
+export function getDemoDirs() {
+  return LibraryService.GetDemoDirs();
+}
+
+export function setDemoDirs(dirs) {
+  return LibraryService.SetDemoDirs(dirs);
+}
+
+export function resetDemoDirs() {
+  return LibraryService.ResetDemoDirs();
+}
+
+// chooseDemoDir opens the native folder picker; resolves to "" on cancel.
+export function chooseDemoDir() {
+  return LibraryService.ChooseDemoDir();
+}
+
+// listDemoFiles scans the configured folders; rows carry matchId != 0
+// when the demo is already in the library (unimported rows sort first).
+export function listDemoFiles() {
+  return LibraryService.ListDemoFiles();
 }
 
 export function getGenericHistogram(id) {
@@ -381,7 +407,6 @@ export function clearQueryHistory() { return QueryService.ClearHistory(); }
 // --- PlatformService (M5) ----------------------------------------------------
 
 export function getProvenance(matchId) { return PlatformService.GetProvenance(matchId); }
-export function getConVars(matchId) { return PlatformService.GetConVars(matchId); }
 export function getEntitySummary(matchId) { return PlatformService.GetEntitySummary(matchId); }
 export function getSpatialSeries(matchId, kind, buckets) {
   return PlatformService.GetSpatialSeries(matchId, kind, buckets || 120);
