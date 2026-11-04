@@ -1,0 +1,29 @@
+- Explorer and Reports should be tabs of the match view rather than separate sidebar items
+- I've updated the app icon png, please propogate the change to the favicon and bundles as needed
+- get rid of "[ spectra ]" and the app icon in the side bar
+- the side bar should be collapsable
+- replace the sidebar labels with codicons, hover for the name
+- settings on the sidebar should be a gear on the bottom
+- remove the chat button from the match view
+- remove the "Open in Explorer view" in match view
+- audit for ascii symbols where we should be using codicons
+- in the match view, team names are color-coded currently.  they should be color-coded based on which team started on which side (indigo if they started the first half on CT, orange if they started on T)
+- in the match view, we don't need a warnings button.  the warnings box should appear if the match has warnings, and it shouldn't be present if the match doesn't have warnings.  no need for a button.
+- on the overview tab in the match view, "Key Facts" should probably go onto the "Explore" tab, once we've ported explore over to the match view.  de-duplicate as necessary.  we might even want to rename "Explore" to something like "Details"
+- in the match view, we don't need the tickrate, the number of voice samples, and the parser version up top.  those can probably live in the details tab.
+- during replay the trails behind players look odd when the round resets.  they instantly teleport back to spawn and their tracers are long.  we should prevent those trails from drawing specifically during respawns
+- in the match view, the round summary near the top uses arrows to indicate whether the team above or below won.  those team names should be centered over the range of the round buttons.
+- the round detail view is currently too sparse.  it should include kills, bomb plants, and round win
+- in the combat tab, we should remove "version" verbiage - the end user doesn't care about version, they care about how the stat is computed.  also, we should reorder it to be combat stats first, then engagements, then clutches last.  clutches should be in a list instead of cards - the cards take way too much room
+- we need to add distance to the trad opportunity missed calculation.  the distance should be configurable in settings in the same place where the user can set the full buy threshold.  it should have a sensible default like 200 units.
+- heatmaps are currently pretty bad.  it seems that it requires to points to be basically on top of eachother to add heat.  we need the "heat" to "radiate" a bit more - currently it just looks like a bunch of individual smudgy dots that are all the same color.
+- in all places where a player's name is used in the match view, we need to color-code their name according to the team they were on.  it should match the team color we've assigned based on which side they started on in the first half
+- we need to add a profiles tab on the left bar that's searchable by player.  currently the only way to get to a player's profile is through the match view
+- on the scoreboard tab, expanding a given player should also give some details about their utility usage
+- on the overview and scoreboard tabs, clicking a player's line just brings you to the replay currently - it should probably bring you to the replay and set the camera to follow that player.
+- on the economy tab, we should try to get the round buttons to align to the columns of the chart above them.  might be tricky, but currently its visually difficult to correlate the chart and the round wins/losses
+- on the economy tab, we should change how favorite/upset works.  it should be a little more coarse-grained.  total equipement value shouldn't be compared, buy class should be.  full vs full = toss-up, full vs force = full is favored
+- on the economy tab winner spend advantage is seemingly bugged - just showing zero dollars
+- on heatmaps we should add a k/d option that adds heat to a point for a kill and subtracts heat from a point for a death
+-
+
