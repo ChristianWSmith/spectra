@@ -383,12 +383,13 @@ CREATE TABLE IF NOT EXISTS saved_filters (
 
 -- Single-row rules config (plan M3 §3): id is pinned to 1 by CHECK; the
 -- Go GetConfig seeds DefaultConfig on first use (trade 5s / full 20000 /
--- force 10000 / rule v1).
+-- force 10000 / trade-opp 200u / rule v1).
 CREATE TABLE IF NOT EXISTS analysis_config (
 	id INTEGER PRIMARY KEY CHECK (id = 1),
 	trade_window_s REAL NOT NULL DEFAULT 5.0,
 	eco_full_buy INTEGER NOT NULL DEFAULT 4000,
 	eco_force INTEGER NOT NULL DEFAULT 2000,
+	trade_opp_distance INTEGER NOT NULL DEFAULT 200,
 	rule_version INTEGER NOT NULL DEFAULT 1
 );
 

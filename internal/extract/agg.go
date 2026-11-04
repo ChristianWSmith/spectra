@@ -6,6 +6,7 @@ import (
 
 	"github.com/ChristianWSmith/spectra/internal/analytics"
 	"github.com/ChristianWSmith/spectra/internal/models"
+	"github.com/golang/geo/r3"
 )
 
 // headerInfo holds the demo header fields captured from the CDemoFileHeader
@@ -554,9 +555,26 @@ type killInfo struct {
 	// heatmap plots where the killer was, the deaths heatmap where the
 	// victim fell.
 	attackerPosX, attackerPosY, attackerPosZ *float64
+	// matePos are the world positions of the victim's living teammates at
+	// the death tick (killer/victim excluded, unknown positions dropped):
+	// the raw input for the trade-opportunity proximity stored on the kill
+	// event as detail_json.nearDist (config-independent, measured once).
+	matePos []r3.Vector
 }
 
 func (a *agg) kill(k killInfo) {
+	// Trade-opportunity proximity (config-independent, measured once at
+	// extract time): the closest living teammate of the victim to the
+	// KILLER at this death tick, -1 when nobody is measurable. Stored on
+	// the kill event as detail_json.nearDist; store.GetCombatStats gates
+	// "Trade opp missed" on it against analysis_config.trade_opp_distance.
+	nearDist := -1.0
+	if k.attackerPosX != nil && k.attackerPosY != nil && k.attackerPosZ != nil {
+		nearDist = nearTeammateDist(
+			r3.Vector{X: *k.attackerPosX, Y: *k.attackerPosY, Z: *k.attackerPosZ},
+			k.matePos,
+		)
+	}
 	a.addEvent(models.Event{
 		Tick:          k.tick,
 		Kind:          models.EventKill,
@@ -581,6 +599,7 @@ func (a *agg) kill(k killInfo) {
 			"killer":   k.killerName,
 			"victim":   k.victimName,
 			"assister": k.assisterName,
+			"nearDist": nearDist,
 		}),
 	}, "player_death")
 

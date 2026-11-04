@@ -1,13 +1,12 @@
 <script>
-  // Combat tab: clutches, engagement deep-dive and
-  // per-player damage/trade stats. Every inferred metric carries the §6.1
-  // badge with its definition in the title attribute.
+  // Combat tab: per-player damage/trade stats, the engagement deep-dive
+  // and detected clutches. Every inferred metric carries the badge with
+  // its definition in the title attribute.
   import {
     getCombatStats,
     getClutches,
     getEngagements,
     getPlayerRounds,
-    getMatch,
     errText,
   } from '../services.js';
   import { fmtInt, fmtPercent } from '../fmt.js';
@@ -21,7 +20,6 @@
     TRADE_OPP_MISSED_DEF,
     ENG_KIND_TITLES,
   } from '../definitions.js';
-  import ClutchCard from '../components/ClutchCard.svelte';
   import Dialog from '../components/Dialog.svelte';
   import SortTh from '../components/SortTh.svelte';
   import EventPlay from '../components/EventPlay.svelte';
@@ -75,7 +73,6 @@
   let clutches = $state([]);
   let engagements = $state([]);
   let stats = $state([]);
-  let tickRate = $state(64);
   let error = $state('');
 
   let engKind = $state('');
@@ -91,18 +88,12 @@
 
   $effect(() => {
     let live = true;
-    Promise.all([
-      getCombatStats(id),
-      getClutches(id),
-      getEngagements(id, ''),
-      getMatch(id),
-    ])
-      .then(([cs, cl, en, m]) => {
+    Promise.all([getCombatStats(id), getClutches(id), getEngagements(id, '')])
+      .then(([cs, cl, en]) => {
         if (!live) return;
         stats = cs || [];
         clutches = cl || [];
         engagements = en || [];
-        if (m && m.tickRate > 0) tickRate = m.tickRate;
         error = '';
       })
       .catch((e) => {
@@ -199,18 +190,63 @@
   {/if}
 
   <section class="panel comb-sec">
-    <h2>
-      Clutches <span class="chip provenance" title="clutch v2: alive-count analysis over stored events, replaces the M1 sole-survivor approximation">clutch v2</span>
-    </h2>
-    {#if clutches.length === 0 && !error}
-      <p class="muted" role="status">No clutches detected in this match.</p>
-    {:else}
-      <div class="comb-grid">
-        {#each clutches as c (c.id)}
-          <ClutchCard clutch={c} {id} {nav} {tickRate} />
-        {/each}
-      </div>
-    {/if}
+    <h2>Combat stats</h2>
+    <div class="table-scroll">
+      <table class="data-table">
+        <thead>
+          <tr>
+            {#each STAT_COLS as col (col.key)}
+              <SortTh
+                label={col.label}
+                cls={col.title ? 'num def' : 'num'}
+                title={col.title || ''}
+                active={statSort.key === col.key}
+                desc={statSort.desc}
+                onclick={() => toggleStatSort(col.key)}
+              >
+                {#if col.inferred}
+                  <span class="chip badge-inferred" title={col.badge}>inferred</span>
+                {/if}
+              </SortTh>
+            {/each}
+          </tr>
+        </thead>
+        <tbody>
+          {#each sortedStats as r (r.steamId)}
+            <tr>
+              {#each STAT_COLS as col (col.key)}
+                {#if col.key === 'name'}
+                  <td>
+                    <ProfileLink
+                      steam={r.steamId}
+                      name={r.name}
+                      {nav}
+                      title="Open player profile"
+                    />
+                  </td>
+                {:else if col.key === 'kastPct'}
+                  <td class="num">
+                    <button
+                      class="comb-kast-btn"
+                      title="{KAST_DEF} — click for the per-round K/A/T/S grid"
+                      onclick={() => openKast(r)}
+                    >{col.fmt(r)}</button>
+                  </td>
+                {:else}
+                  <td class="num" title={col.title || ''}>{col.fmt(r)}</td>
+                {/if}
+              {/each}
+            </tr>
+          {:else}
+            <tr><td colspan={STAT_COLS.length} class="muted">No combat stats.</td></tr>
+          {/each}
+        </tbody>
+      </table>
+    </div>
+    <p class="muted comb-note">
+      Dotted headers and <span class="chip badge-inferred">inferred</span> badges
+      mark derived/heuristic metrics — hover for the rule text.
+    </p>
   </section>
 
   <section class="panel comb-sec">
@@ -286,63 +322,66 @@
   </section>
 
   <section class="panel comb-sec">
-    <h2>Combat stats</h2>
-    <div class="table-scroll">
-      <table class="data-table">
-        <thead>
-          <tr>
-            {#each STAT_COLS as col (col.key)}
-              <SortTh
-                label={col.label}
-                cls={col.title ? 'num def' : 'num'}
-                title={col.title || ''}
-                active={statSort.key === col.key}
-                desc={statSort.desc}
-                onclick={() => toggleStatSort(col.key)}
-              >
-                {#if col.inferred}
-                  <span class="chip badge-inferred" title={col.badge}>inferred</span>
-                {/if}
-              </SortTh>
-            {/each}
-          </tr>
-        </thead>
-        <tbody>
-          {#each sortedStats as r (r.steamId)}
+    <h2>
+      Clutches <span class="chip provenance" title="Detected by alive-count analysis over the stored events: a 1vN starts when a side drops to one alive player while the opponents still have ≥ 1, and ends when the solo dies or the last opponent falls">alive-count</span>
+    </h2>
+    {#if clutches.length === 0 && !error}
+      <p class="muted" role="status">No clutches detected in this match.</p>
+    {:else}
+      <div class="table-scroll">
+        <table class="data-table">
+          <thead>
             <tr>
-              {#each STAT_COLS as col (col.key)}
-                {#if col.key === 'name'}
-                  <td>
-                    <ProfileLink
-                      steam={r.steamId}
-                      name={r.name}
-                      {nav}
-                      title="Open player profile"
-                    />
-                  </td>
-                {:else if col.key === 'kastPct'}
-                  <td class="num">
-                    <button
-                      class="comb-kast-btn"
-                      title="{KAST_DEF} — click for the per-round K/A/T/S grid"
-                      onclick={() => openKast(r)}
-                    >{col.fmt(r)}</button>
-                  </td>
-                {:else}
-                  <td class="num" title={col.title || ''}>{col.fmt(r)}</td>
-                {/if}
-              {/each}
+              <th scope="col"><span class="sr-only">Replay</span></th>
+              <th scope="col" class="num">Round</th>
+              <th scope="col">Size</th>
+              <th scope="col">Player</th>
+              <th scope="col">Outcome</th>
+              <th scope="col">Bomb</th>
+              <th scope="col" class="num">HP left</th>
             </tr>
-          {:else}
-            <tr><td colspan={STAT_COLS.length} class="muted">No combat stats.</td></tr>
-          {/each}
-        </tbody>
-      </table>
-    </div>
-    <p class="muted comb-note">
-      Dotted headers and <span class="chip badge-inferred">inferred</span> badges
-      mark derived/heuristic metrics — hover for the rule text.
-    </p>
+          </thead>
+          <tbody>
+            {#each clutches as c (c.id)}
+              <tr>
+                <td>
+                  <EventPlay
+                    tick={c.replayAnchorTick || c.startTick}
+                    title="Watch this clutch in the replay"
+                    label="Watch the clutch in round {c.round} in the replay"
+                    onclick={() => replay(c.replayAnchorTick || c.startTick)}
+                  />
+                </td>
+                <td class="num">
+                  <button
+                    class="btn small ghost"
+                    title="Open round {c.round} in the replay landmark feed"
+                    onclick={() => openRoundEvents(c.round)}
+                  >R{c.round}</button>
+                </td>
+                <td><strong>1v{c.size}</strong></td>
+                <td>
+                  <ProfileLink steam={c.steamId} name={c.name || '—'} {nav} title="Open player profile" />
+                </td>
+                <td>
+                  <span class="chip status {c.won ? 'ok' : 'bad'}">{c.won ? 'won' : 'lost'}</span>
+                </td>
+                <td>
+                  {#if c.bombState && c.bombState !== 'none'}
+                    <span class="chip">bomb {c.bombState}</span>
+                  {:else}
+                    <span class="muted">—</span>
+                  {/if}
+                </td>
+                <td class="num">{c.hpLeft}</td>
+              </tr>
+            {:else}
+              <tr><td colspan="7" class="muted">No clutches detected in this match.</td></tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    {/if}
   </section>
 
   <Dialog open={!!kastSteam} label="KAST rounds for {kastName}" panelClass="wide" onClose={closeKast}>

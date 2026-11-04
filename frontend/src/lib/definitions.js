@@ -21,7 +21,7 @@ export const GLOSSARY = [
   {
     term: 'KAST%',
     inferred: false,
-    text: 'Share of rounds where the player recorded a Kill, an Assist, was Traded after their death, or Survived the round. Stored per player-round (player_round_stats); the “traded” part follows the trade window from analysis_config / rule_version.',
+    text: 'Share of rounds where the player recorded a Kill, an Assist, was Traded after their death, or Survived the round. Stored per player-round (player_round_stats); the “traded” part follows the configured trade window (Settings → Analysis rules).',
   },
   {
     term: 'Trade window',
@@ -41,7 +41,7 @@ export const GLOSSARY = [
   {
     term: 'Trade opportunities missed (inferred)',
     inferred: true,
-    text: 'A death that went unanswered: no teammate of the dead player killed their killer within the trade window after the death (counted from the engagement pass as untraded deaths — the Combat tab’s Untraded deaths metric reads the same rows). v1 has no position or line-of-fire scan: it measures kill timing only, not whether a teammate was near, so treat it as a heuristic proxy for a missed opportunity.',
+    text: 'A death that went unanswered: no teammate of the dead player killed their killer within the trade window after the death, AND at the death tick a living teammate of the victim stood within the trade-opportunity distance of the killer — close enough to actually trade him. That distance is measured once per kill at import (nearest living teammate to the killer’s position) and gated against the configurable threshold (Settings → Analysis rules, default 200 units): a death with no living teammate nearby, or with no position data for the kill, does not count. The Combat tab’s Untraded deaths metric reads the same engagement rows without the distance gate.',
   },
   {
     term: 'Damage conversion',
