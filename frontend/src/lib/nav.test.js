@@ -1,11 +1,12 @@
 // Tests for lib/nav.js: the profile return trip (profileBackTarget — the
-// resolution behind PlayerProfile's top-left back button) and the
-// navigation guards the profile links share (isSteam/openProfile).
+// resolution behind PlayerProfile's top-left back button), the navigation
+// guards the profile links share (isSteam/openProfile) and the sidebar
+// action highlighters (NAV_ACTIONS active()).
 // Run: node --test src/lib/nav.test.js   (from frontend/)
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { isSteam, openProfile, profileBackTarget } from './nav.js';
+import { isSteam, openProfile, profileBackTarget, NAV_ACTIONS } from './nav.js';
 
 test('an explicit ?back= origin wins (durable, deep-linkable)', () => {
   assert.equal(
@@ -54,4 +55,39 @@ test('openProfile navigates only for a well-formed Steam id', () => {
   openProfile(nav, '');
   openProfile(nav, undefined);
   assert.deepEqual(seen, ['/player/76561198012345678']);
+});
+
+test('sidebar active(): the player profile highlights Profiles, not Library', () => {
+  // The profile's back button returns to the Profiles directory
+  // (profileBackTarget), so the profile route belongs to that action.
+  const active = Object.fromEntries(NAV_ACTIONS.map((a) => [a.label, a.active]));
+  const route = (name) => ({ name });
+  assert.equal(active.Profiles(route('player')), true);
+  assert.equal(active.Library(route('player')), false);
+  // The directory itself stays Profiles-active.
+  assert.equal(active.Profiles(route('profiles')), true);
+  // Match detail routes still light up the Library hub.
+  for (const name of ['library', 'match', 'round', 'replay', 'compare']) {
+    assert.equal(active.Library(route(name)), true, `Library on ${name}`);
+    assert.equal(active.Profiles(route(name)), false, `Profiles on ${name}`);
+  }
+});
+
+test('sidebar active(): exactly one action lights up per route', () => {
+  const routes = [
+    'library',
+    'match',
+    'round',
+    'replay',
+    'compare',
+    'player',
+    'profiles',
+    'builder',
+    'sql',
+    'settings',
+  ];
+  for (const name of routes) {
+    const on = NAV_ACTIONS.filter((a) => a.active({ name })).map((a) => a.label);
+    assert.equal(on.length, 1, `${name} → ${on.join(', ')}`);
+  }
 });

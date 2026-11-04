@@ -76,14 +76,13 @@ export const NAV_ACTIONS = [
     label: 'Library',
     icon: 'codicon-library',
     hash: '/library',
-    // The Library is the hub: every in-app detail view (match, round,
-    // replay, profile, compare) is reached from it.
+    // The Library is the hub: every in-app match detail view (match,
+    // round, replay, compare) is reached from it.
     active: (r) =>
       r.name === 'library' ||
       r.name === 'match' ||
       r.name === 'round' ||
       r.name === 'replay' ||
-      r.name === 'player' ||
       r.name === 'compare',
   },
   {
@@ -91,8 +90,9 @@ export const NAV_ACTIONS = [
     icon: 'codicon-person',
     hash: '/profiles',
     // The player directory — its own route; a row click drills into the
-    // player profile (#/player/:steamid), which stays Library-active.
-    active: (r) => r.name === 'profiles',
+    // player profile (#/player/:steamid), which is Profiles-active: the
+    // profile's back button returns to this list (profileBackTarget).
+    active: (r) => r.name === 'profiles' || r.name === 'player',
   },
   { label: 'Builder', icon: 'codicon-wand', hash: '/builder', active: (r) => r.name === 'builder' },
   { label: 'SQL console', icon: 'codicon-terminal', hash: '/sql', active: (r) => r.name === 'sql' },

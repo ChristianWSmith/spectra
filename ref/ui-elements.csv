@@ -1,8 +1,9 @@
 short human name,category,description,code reference
 Builder nav button,App shell,Sidebar button that navigates to the metric Builder view and highlights when the builder route is active.,App.svelte:nav('/builder')
 Explorer nav button,App shell,Sidebar button that navigates to the Explorer view and highlights when the explorer route is active.,App.svelte:nav('/explorer')
-Library nav button,App shell,"Sidebar button that navigates to the match Library view and highlights whenever any library-related route (library, match, round, replay, player, compare) is active.",App.svelte:nav('/library')
+Library nav button,App shell,"Sidebar button that navigates to the match Library view and highlights whenever a match-related route (library, match, round, replay, compare) is active — the player profile route highlights Profiles instead.",App.svelte:nav('/library')
 Main content area,App shell,"Right-hand pane beside the sidebar where the current routed view (Library, Match, Settings, etc.) renders.",App.svelte:content
+Profiles nav button,App shell,Sidebar button that navigates to the player directory and highlights while the profiles list or a player profile route is open.,App.svelte:nav('/profiles')
 Reports nav button,App shell,Sidebar button that navigates to the Reports view and highlights when the reports route is active.,App.svelte:nav('/reports')
 Settings nav button,App shell,Sidebar button that navigates to the Settings view and highlights when the settings route is active.,App.svelte:nav('/settings')
 Sidebar,App shell,"Left-hand navigation rail listing the app's six top-level views, always visible along the left edge of the window.",App.svelte:sidebar
