@@ -292,6 +292,19 @@ select {
   background: var(--accent-tint);
 }
 
+/* App mark pinned above the rail's first action (Library): branding, not
+   a nav item — no hover/active state, no pointer events, so it reads as
+   chrome. Square source (320×320), sized to sit inside the 36px button
+   box below it. */
+.sidebar-mark {
+  width: 30px;
+  height: 30px;
+  margin-bottom: 6px;
+  pointer-events: none;
+  user-select: none;
+  cursor: default;
+}
+
 .spacer {
   flex: 1;
 }

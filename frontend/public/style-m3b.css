@@ -1028,14 +1028,6 @@
   max-width: 42ch;
 }
 
-.rep-actions a.btn {
-  text-decoration: none;
-}
-
-.rep-raw-note {
-  font-size: 0.8em;
-}
-
 .rep-md {
   border: 1px solid var(--border);
   border-radius: var(--radius);

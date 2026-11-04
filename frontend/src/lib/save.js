@@ -6,7 +6,7 @@
 //                         data crosses the bindings as base64)
 //   saveExportURL       → SaveExport (pick a path, then Go fetches the URL
 //                         route itself) — for URL-served payloads too big
-//                         to round-trip: library.db, full-match WAVs.
+//                         to round-trip: full-match WAVs.
 //
 // Cancel contract: every helper resolves to "" and otherwise does nothing.
 // Failures reject so callers can surface them (there is no global error
@@ -36,7 +36,7 @@ export async function saveBlob(defaultName, ext, blob) {
   return path;
 }
 
-// saveText is saveBlob for strings (reports, CSV/JSON exports).
+// saveText is saveBlob for strings (CSV/JSON exports).
 export async function saveText(defaultName, ext, text, mime) {
   return saveBlob(
     defaultName,

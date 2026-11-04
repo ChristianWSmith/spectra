@@ -1119,11 +1119,15 @@ canvas.heat-canvas {
   font-size: 0.8em;
 }
 
+/* One column, saved queries first (SQLConsole): the two lists stack, so a
+   long history row scrolls inside its own list and can never squeeze the
+   saved panel out of view. min-width: 0 keeps the row's own ellipsis
+   working inside the column. */
 .sql-lower {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
+  display: flex;
+  flex-direction: column;
   gap: 16px;
-  align-items: start;
+  min-width: 0;
 }
 
 .sql-hist-list {
@@ -1218,8 +1222,7 @@ canvas.heat-canvas {
 
 @media (max-width: 1000px) {
   .bld-grid,
-  .sql-grid,
-  .sql-lower {
+  .sql-grid {
     grid-template-columns: 1fr;
   }
 

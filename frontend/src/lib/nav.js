@@ -1,7 +1,7 @@
 // Player-profile navigation helpers, shared by every view that links a
 // name/chip to #/player/:steamid. One Steam-id test, one navigation —
 // the views used to each carry a byte-identical copy.
-import { buildHash } from './router.js';
+import { buildHash, parseHash } from './router.js';
 import { serializeLandmarkFilter } from './replay/landmarks.js';
 
 // isSteam reports whether a name/id field holds a 17-digit Steam id
@@ -32,6 +32,29 @@ export function replayHash(matchId, filter, extras) {
     ...serializeLandmarkFilter(filter || {}),
     ...(extras || {}),
   });
+}
+
+// profileBackTarget resolves the player profile's top-left back button —
+// the same return trip every other detail view takes (RoundDetail,
+// CompareRounds and Replay all read ?back= and fall back to their own
+// default). Priority:
+//   1. the route's ?back= origin — durable and deep-linkable (the view
+//      that linked in can stamp its own path),
+//   2. else the hash the app navigated from (App records it on
+//      hashchange), unless that origin is another profile: profile →
+//      profile is a sibling jump, not a way back,
+//   3. else the Profiles directory — a profile opened directly (deep
+//      link, refresh, first launch) returns to the list it lives in.
+export function profileBackTarget(query, originHash) {
+  const explicit = query && query.back;
+  if (explicit) return '/' + explicit;
+  if (originHash) {
+    const origin = String(originHash).replace(/^#/, '');
+    // A player origin is rejected; every other hash is handed back to the
+    // router as-is (legacy shapes such as /match/:id/chat redirect there).
+    if (origin && parseHash(originHash).name !== 'player') return origin;
+  }
+  return '/profiles';
 }
 
 // NAV_ACTIONS is the one sidebar action list: App.svelte renders it as
