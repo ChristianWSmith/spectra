@@ -192,7 +192,7 @@
         title="Open this round's events in the replay landmark feed"
         onclick={openEvents}
       >
-        Events in Replay →
+        Events in Replay <span class="codicon codicon-chevron-right"></span>
       </button>
       <h1>
         Round {detail.round.number}
@@ -455,7 +455,7 @@
       />
       {#if nextRound}
         <button class="btn" onclick={() => nav(roundNav(nextRound.number))}>
-          Round {nextRound.number} →
+          Round {nextRound.number} <span class="codicon codicon-arrow-right"></span>
         </button>
       {/if}
     </div>

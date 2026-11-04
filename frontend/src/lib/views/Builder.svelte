@@ -354,7 +354,9 @@
     <section class="panel bld-list">
       <div class="row-between">
         <h2>Metrics</h2>
-        <button class="btn small" onclick={newMetric}>+ New</button>
+        <button class="btn small" onclick={newMetric}
+          ><span class="codicon codicon-add"></span> New</button
+        >
       </div>
       {#if groups.builtins.length}
         <div class="bld-group">
