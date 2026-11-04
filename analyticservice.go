@@ -124,6 +124,9 @@ func (s *AnalyticsService) SetConfig(c models.AnalysisConfig) (models.AnalysisCo
 	if c.EcoForce > c.EcoFullBuy {
 		return models.AnalysisConfig{}, errors.New("analytics: ecoForce must be ≤ ecoFullBuy")
 	}
+	if c.TradeOppDistance < 0 {
+		return models.AnalysisConfig{}, errors.New("analytics: tradeOppDistance must be ≥ 0")
+	}
 	cur, err := s.st.GetConfig()
 	if err != nil {
 		return models.AnalysisConfig{}, err

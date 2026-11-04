@@ -203,7 +203,13 @@
 
   // Analysis rules (DoD: classification + trade window
   // configurable from Settings; rule_version recorded on save).
-  let cfg = $state({ tradeWindowS: 5, ecoFullBuy: 20000, ecoForce: 10000, ruleVersion: 0 });
+  let cfg = $state({
+    tradeWindowS: 5,
+    ecoFullBuy: 20000,
+    ecoForce: 10000,
+    tradeOppDistance: 200,
+    ruleVersion: 0,
+  });
   let cfgError = $state('');
   let cfgMsg = $state('');
   let cfgLoading = $state(true);
@@ -235,7 +241,9 @@
     refreshMapPacks();
     getAnalysisConfig()
       .then((c) => {
-        cfg = c || cfg;
+        // Merge (not replace) so a missing key falls back to the default
+        // above instead of binding an empty input that would save 0.
+        if (c) cfg = { ...cfg, ...c };
         cfgLoading = false;
       })
       .catch((e) => {
@@ -271,8 +279,9 @@
         tradeWindowS: Number(cfg.tradeWindowS) || 0,
         ecoFullBuy: Number(cfg.ecoFullBuy) || 0,
         ecoForce: Number(cfg.ecoForce) || 0,
+        tradeOppDistance: Number(cfg.tradeOppDistance) || 0,
       });
-      cfg = saved || cfg;
+      if (saved) cfg = { ...cfg, ...saved };
       cfgMsg =
         `Saved — rule_version ${cfg.ruleVersion}. Stored rows keep the version they ` +
         'were computed with; run a recompute below to apply the new rules.';
@@ -608,6 +617,24 @@
           bind:value={cfg.ecoFullBuy}
         />
         <span class="muted sett-hint">Team equipment ≥ this = full buy (default 20000).</span>
+      </div>
+      <div class="sett-field">
+        <label
+          class="field-label"
+          for="sett-trade-dist"
+          title="A death counts as a missed trade opportunity only if a living teammate of the victim was within this distance of the killer at the death tick — someone close enough to actually trade him. The proximity is measured once per kill at import; this threshold only gates the count. Deaths with no nearby teammate or no position data never count.">Trade-opportunity distance (units)</label
+        >
+        <input
+          class="input"
+          id="sett-trade-dist"
+          type="number"
+          min="0"
+          step="10"
+          bind:value={cfg.tradeOppDistance}
+        />
+        <span class="muted sett-hint"
+          >“Trade opp missed” counts an untraded death only when a living teammate of the victim was within this distance of the killer (default 200).</span
+        >
       </div>
       <div class="sett-field">
         <label class="field-label" for="sett-force">Force threshold (equip $)</label>

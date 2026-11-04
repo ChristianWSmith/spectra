@@ -233,6 +233,70 @@ func bombPos(gs *demoinfocs.GameState) (px, py, pz *float64) {
 	return posPtrs(gs.Bomb().Position())
 }
 
+// livingTeammatePos returns the world positions of the victim's teammates
+// who are still alive at this instant — the players who could have traded
+// the killer. The victim and the killer are excluded (a player cannot
+// trade himself; in a teamkill the killer IS a victim's teammate, so the
+// exclusion matters there too). Teammates without a known position (the
+// zero vector — same convention as posPtrs) are skipped rather than
+// guessed. A victim with no known team yields nothing.
+func livingTeammatePos(gs *demoinfocs.GameState, killer, victim *common.Player) []r3.Vector {
+	if victim == nil {
+		return nil
+	}
+	team := victim.Team
+	if team != common.TeamCounterTerrorists && team != common.TeamTerrorists {
+		return nil
+	}
+	if gs == nil {
+		return nil
+	}
+	var out []r3.Vector
+	for _, p := range gs.Participants().TeamMembers(team) {
+		if p == nil || !p.IsAlive() {
+			continue
+		}
+		if p == victim || (killer != nil && p == killer) {
+			continue
+		}
+		pos := p.Position()
+		if pos.X == 0 && pos.Y == 0 && pos.Z == 0 {
+			continue
+		}
+		out = append(out, pos)
+	}
+	return out
+}
+
+// nearTeammateDist measures the trade-opportunity proximity of a death:
+// the shortest distance from the KILLER's position to any of the victim's
+// then-living teammates — how close someone was to actually trading the
+// killer. The zero vector means "no position known" (the posPtrs
+// convention), so an unknown killer position or teammates without
+// positions yield -1: the sentinel store.GetCombatStats treats as "not
+// countable" (see the TradeOppMissed gate). Rounded to one decimal — the
+// value rides in the kill event's detail_json, which the Replay detail
+// pane renders.
+func nearTeammateDist(killer r3.Vector, mates []r3.Vector) float64 {
+	if killer.X == 0 && killer.Y == 0 && killer.Z == 0 {
+		return -1
+	}
+	best := -1.0
+	for _, m := range mates {
+		if m.X == 0 && m.Y == 0 && m.Z == 0 {
+			continue
+		}
+		d := killer.Distance(m)
+		if best < 0 || d < best {
+			best = d
+		}
+	}
+	if best < 0 {
+		return -1
+	}
+	return math.Round(best*10) / 10
+}
+
 // pct is the percentage helper ported from the extractor (0 when b is 0).
 func pct(a, b int) float64 {
 	if b == 0 {

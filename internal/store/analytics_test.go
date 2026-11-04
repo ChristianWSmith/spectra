@@ -66,16 +66,28 @@ func TestConfigSeedAndSet(t *testing.T) {
 	if c.TradeWindowS != 5.0 || c.EcoFullBuy != 20000 || c.EcoForce != 10000 || c.RuleVersion != 1 {
 		t.Errorf("seeded config = %+v, want defaults 5/20000/10000/v1", c)
 	}
+	if c.TradeOppDistance != 200 {
+		t.Errorf("seeded tradeOppDistance = %d, want the 200u default", c.TradeOppDistance)
+	}
 	// Second Get returns the seeded row (idempotent).
 	if c2, err := s.GetConfig(); err != nil || c2 != c {
 		t.Errorf("second GetConfig = %+v, %v", c2, err)
 	}
-	saved, err := s.SetConfig(models.AnalysisConfig{TradeWindowS: 3.5, EcoFullBuy: 3500, EcoForce: 1800, RuleVersion: 2})
+	// Round-trip the new field with the rest of the config.
+	saved, err := s.SetConfig(models.AnalysisConfig{
+		TradeWindowS: 3.5, EcoFullBuy: 3500, EcoForce: 1800, TradeOppDistance: 350, RuleVersion: 2,
+	})
 	if err != nil {
 		t.Fatalf("SetConfig: %v", err)
 	}
 	if saved.TradeWindowS != 3.5 || saved.RuleVersion != 2 {
 		t.Errorf("saved = %+v", saved)
+	}
+	if saved.TradeOppDistance != 350 {
+		t.Errorf("saved tradeOppDistance = %d, want 350 (round-trip)", saved.TradeOppDistance)
+	}
+	if c3, err := s.GetConfig(); err != nil || c3.TradeOppDistance != 350 {
+		t.Errorf("re-read tradeOppDistance = %d, %v, want 350", c3.TradeOppDistance, err)
 	}
 }
 
@@ -504,6 +516,15 @@ func TestGetCombatStatsFromStoredRows(t *testing.T) {
 		{Tick: 10, Round: 1, Kind: models.EventDamage, Attacker: "100", Victim: "200", Dmg: 60},
 		{Tick: 20, Round: 1, Kind: models.EventDamage, Attacker: "100", Victim: "200", Dmg: 40},
 		{Tick: 30, Round: 1, Kind: models.EventDamage, Attacker: "100", Victim: "300", Dmg: 10}, // FF (both ct)
+		// Kill events backing the two untraded engagements below: alice's
+		// teammate was 150u from bob's killer on tick 50 (within the 200u
+		// default → counted) but 500u away on tick 60 (beyond → not
+		// counted). Decision 4: TradeOppMissed is the proximity-gated
+		// subset, UntradedDeaths stays the raw count.
+		{Tick: 50, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "200",
+			DetailJSON: `{"killer":"alice","victim":"bob","nearDist":150}`},
+		{Tick: 60, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "200",
+			DetailJSON: `{"killer":"alice","victim":"bob","nearDist":500}`},
 	}
 	if err := s.SaveExtracted(id, em); err != nil {
 		t.Fatalf("SaveExtracted: %v", err)
@@ -514,8 +535,8 @@ func TestGetCombatStatsFromStoredRows(t *testing.T) {
 		t.Fatalf("ReplacePlayerRounds: %v", err)
 	}
 	if err := s.ReplaceEngagements(id, []models.Engagement{
-		{Tick: 50, Round: 1, Kind: "untraded", BSteam: "200"},
-		{Tick: 60, Round: 1, Kind: "untraded", BSteam: "200"},
+		{Tick: 50, Round: 1, Kind: "untraded", ASteam: "100", BSteam: "200"},
+		{Tick: 60, Round: 1, Kind: "untraded", ASteam: "100", BSteam: "200"},
 		{Tick: 70, Round: 1, Kind: "opening", ASteam: "100", BSteam: "200"},
 	}); err != nil {
 		t.Fatalf("ReplaceEngagements: %v", err)
@@ -548,11 +569,24 @@ func TestGetCombatStatsFromStoredRows(t *testing.T) {
 	if alice.KASTPct != 100 {
 		t.Errorf("kastPct = %v, want 100", alice.KASTPct)
 	}
-	// Untraded rows attribute to victim 200 (bob), not alice.
-	for _, r := range rows {
-		if r.SteamID == "200" && (r.UntradedDeaths != 2 || r.TradeOppMissed != 2) {
-			t.Errorf("bob untraded = %d/%d, want 2/2", r.UntradedDeaths, r.TradeOppMissed)
+	// Untraded rows attribute to victim 200 (bob), not alice. Decision 4:
+	// UntradedDeaths is the raw timing count (2), TradeOppMissed only the
+	// proximity-gated subset (1 — the 150u death; the 500u one is beyond
+	// the 200u default).
+	var bob *models.CombatStat
+	for i := range rows {
+		if rows[i].SteamID == "200" {
+			bob = &rows[i]
 		}
+	}
+	if bob == nil {
+		t.Fatalf("no bob row in %+v", rows)
+	}
+	if bob.UntradedDeaths != 2 {
+		t.Errorf("bob untraded = %d, want 2 (raw timing count)", bob.UntradedDeaths)
+	}
+	if bob.TradeOppMissed != 1 {
+		t.Errorf("bob tradeOppMissed = %d, want 1 (only the 150u death is within 200u)", bob.TradeOppMissed)
 	}
 }
 
@@ -617,6 +651,92 @@ func TestGetCombatStatsSQLDecisions(t *testing.T) {
 	}
 	if dave := byID["400"]; dave.FFDamage != 10 || dave.DMGNoKill != 10 {
 		t.Errorf("dave ff/noKill = %d/%d, want 10/10 ('' == '' counts as FF)", dave.FFDamage, dave.DMGNoKill)
+	}
+
+	// (4) TradeOppMissed is proximity-gated by analysis_config.
+	//     trade_opp_distance (default 200): the untraded engagement must
+	//     join to its kill event's detail_json.nearDist within [0, dist].
+	//     -1 (extract's "nobody measurable" sentinel), a missing kill
+	//     event, malformed JSON and an absent nearDist key all fail the
+	//     gate; UntradedDeaths counts every untraded row regardless.
+	//     A wider configured distance pulls in the beyond-range death.
+	em2 := testExtracted("sha-combat2", time.Now())
+	em2.Events = []models.Event{
+		{Tick: 400, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "200",
+			DetailJSON: `{"nearDist":150}`}, // within 200 → counted
+		{Tick: 410, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "200",
+			DetailJSON: `{"nearDist":500}`}, // beyond 200 → not counted
+		{Tick: 420, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "200",
+			DetailJSON: `{"nearDist":-1}`}, // sentinel → not counted
+		{Tick: 430, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "200",
+			DetailJSON: `{"killer":"x"}`}, // no nearDist key → not counted
+		{Tick: 440, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "200",
+			DetailJSON: `{not json`}, // malformed → json_valid guards → not counted
+		// tick 450: no kill event at all → not counted
+	}
+	if err := s.SaveExtracted(id, em2); err != nil {
+		t.Fatalf("SaveExtracted (gating): %v", err)
+	}
+	if err := s.ReplaceEngagements(id, []models.Engagement{
+		{Tick: 400, Round: 1, Kind: "untraded", ASteam: "100", BSteam: "200"},
+		{Tick: 410, Round: 1, Kind: "untraded", ASteam: "100", BSteam: "200"},
+		{Tick: 420, Round: 1, Kind: "untraded", ASteam: "100", BSteam: "200"},
+		{Tick: 430, Round: 1, Kind: "untraded", ASteam: "100", BSteam: "200"},
+		{Tick: 440, Round: 1, Kind: "untraded", ASteam: "100", BSteam: "200"},
+		{Tick: 450, Round: 1, Kind: "untraded", ASteam: "100", BSteam: "200"},
+	}); err != nil {
+		t.Fatalf("ReplaceEngagements (gating): %v", err)
+	}
+	gated, err := s.GetCombatStats(id)
+	if err != nil {
+		t.Fatalf("GetCombatStats (gated): %v", err)
+	}
+	var gatedAmy *models.CombatStat
+	for i := range gated {
+		if gated[i].SteamID == "200" {
+			gatedAmy = &gated[i]
+		}
+	}
+	if gatedAmy == nil {
+		t.Fatalf("no amy row in %+v", gated)
+	}
+	if gatedAmy.UntradedDeaths != 6 {
+		t.Errorf("amy untraded = %d, want 6 (raw count is never gated)", gatedAmy.UntradedDeaths)
+	}
+	if gatedAmy.TradeOppMissed != 1 {
+		t.Errorf("amy tradeOppMissed = %d, want 1 (only nearDist=150 passes the 200u gate)", gatedAmy.TradeOppMissed)
+	}
+	// Widen the configured distance → the 500u death joins the count; the
+	// -1/keyless/malformed/no-event rows still never count.
+	if _, err := s.SetConfig(models.AnalysisConfig{
+		TradeWindowS: 5, EcoFullBuy: 20000, EcoForce: 10000, TradeOppDistance: 600, RuleVersion: 1,
+	}); err != nil {
+		t.Fatalf("SetConfig (distance 600): %v", err)
+	}
+	wide, err := s.GetCombatStats(id)
+	if err != nil {
+		t.Fatalf("GetCombatStats (wide): %v", err)
+	}
+	for i := range wide {
+		if wide[i].SteamID == "200" && wide[i].TradeOppMissed != 2 {
+			t.Errorf("amy tradeOppMissed @600u = %d, want 2 (150 and 500 pass; -1/keyless/malformed/no-event never do)",
+				wide[i].TradeOppMissed)
+		}
+	}
+	// A zero distance counts only a teammate exactly on the killer.
+	if _, err := s.SetConfig(models.AnalysisConfig{
+		TradeWindowS: 5, EcoFullBuy: 20000, EcoForce: 10000, TradeOppDistance: 0, RuleVersion: 1,
+	}); err != nil {
+		t.Fatalf("SetConfig (distance 0): %v", err)
+	}
+	tight, err := s.GetCombatStats(id)
+	if err != nil {
+		t.Fatalf("GetCombatStats (tight): %v", err)
+	}
+	for i := range tight {
+		if tight[i].SteamID == "200" && tight[i].TradeOppMissed != 0 {
+			t.Errorf("amy tradeOppMissed @0u = %d, want 0 (no death has nearDist in [0,0])", tight[i].TradeOppMissed)
+		}
 	}
 }
 

@@ -153,6 +153,10 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 			k.assisterName = e.Assister.Name
 			k.assisterSide = sideString(e.Assister.Team)
 		}
+		// Trade-opportunity proximity input: the victim's living
+		// teammates' positions at this death tick (config-independent —
+		// measured once here, gated later against analysis_config).
+		k.matePos = livingTeammatePos(gs, e.Killer, e.Victim)
 		a.kill(k)
 	})
 

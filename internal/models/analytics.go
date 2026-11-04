@@ -14,7 +14,15 @@ type AnalysisConfig struct {
 	TradeWindowS float64 `json:"tradeWindowS"`
 	EcoFullBuy   int     `json:"ecoFullBuy"`
 	EcoForce     int     `json:"ecoForce"`
-	RuleVersion  int     `json:"ruleVersion"`
+	// TradeOppDistance is the trade-opportunity radius in world units
+	// (default 200): an untraded death counts toward Combat's "Trade
+	// opportunities missed" only when a living teammate of the victim was
+	// within this distance of the KILLER at the death tick. The proximity
+	// itself is measured once at extract time (config-independent, stored
+	// on the kill event as detail_json.nearDist); this threshold only
+	// gates the read in store.GetCombatStats.
+	TradeOppDistance int `json:"tradeOppDistance"`
+	RuleVersion      int `json:"ruleVersion"`
 }
 
 // RoundInfo is one round's summary for the analytics pass (read from the

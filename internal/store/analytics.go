@@ -18,12 +18,15 @@ import (
 // DefaultConfig is the seeded analysis_config row (configurable
 // definitions with transparent rules). The eco thresholds are TEAM
 // equipment values at freeze-time end (a full buy for five sits around
-// $20k, a force around $10k).
+// $20k, a force around $10k). TradeOppDistance is the trade-opportunity
+// radius in world units (an untraded death only counts as a missed trade
+// when a living teammate of the victim was within it of the killer).
 var DefaultConfig = models.AnalysisConfig{
-	TradeWindowS: 5.0,
-	EcoFullBuy:   20000,
-	EcoForce:     10000,
-	RuleVersion:  1,
+	TradeWindowS:     5.0,
+	EcoFullBuy:       20000,
+	EcoForce:         10000,
+	TradeOppDistance: 200,
+	RuleVersion:      1,
 }
 
 // Per-table column lists (G1): each const is the row WITHOUT the
@@ -32,7 +35,7 @@ var DefaultConfig = models.AnalysisConfig{
 // savedFilterCols has no match_id (saved_filters is library-scoped): the
 // INSERT names it verbatim, the getters prefix `id, `.
 const (
-	analysisConfigCols = `trade_window_s, eco_full_buy, eco_force, rule_version`
+	analysisConfigCols = `trade_window_s, eco_full_buy, eco_force, trade_opp_distance, rule_version`
 
 	roundClassCols = `round, label, confidence, rule_version, explanation`
 
@@ -59,12 +62,13 @@ func (s *Store) GetConfig() (models.AnalysisConfig, error) {
 	var c models.AnalysisConfig
 	err := s.db.QueryRow(
 		`SELECT `+analysisConfigCols+` FROM analysis_config WHERE id = 1`,
-	).Scan(&c.TradeWindowS, &c.EcoFullBuy, &c.EcoForce, &c.RuleVersion)
+	).Scan(&c.TradeWindowS, &c.EcoFullBuy, &c.EcoForce, &c.TradeOppDistance, &c.RuleVersion)
 	if errors.Is(err, sql.ErrNoRows) {
 		if _, err := s.db.Exec(
 			`INSERT INTO analysis_config (id, `+analysisConfigCols+`)
-			 VALUES (1, ?, ?, ?, ?)`,
-			DefaultConfig.TradeWindowS, DefaultConfig.EcoFullBuy, DefaultConfig.EcoForce, DefaultConfig.RuleVersion,
+			 VALUES (1, ?, ?, ?, ?, ?)`,
+			DefaultConfig.TradeWindowS, DefaultConfig.EcoFullBuy, DefaultConfig.EcoForce,
+			DefaultConfig.TradeOppDistance, DefaultConfig.RuleVersion,
 		); err != nil {
 			return models.AnalysisConfig{}, fmt.Errorf("store: seed analysis_config: %w", err)
 		}
@@ -80,11 +84,12 @@ func (s *Store) GetConfig() (models.AnalysisConfig, error) {
 func (s *Store) SetConfig(c models.AnalysisConfig) (models.AnalysisConfig, error) {
 	if _, err := s.db.Exec(
 		`INSERT INTO analysis_config (id, `+analysisConfigCols+`)
-		 VALUES (1, ?, ?, ?, ?)
+		 VALUES (1, ?, ?, ?, ?, ?)
 		 ON CONFLICT(id) DO UPDATE SET trade_window_s = excluded.trade_window_s,
 			eco_full_buy = excluded.eco_full_buy, eco_force = excluded.eco_force,
+			trade_opp_distance = excluded.trade_opp_distance,
 			rule_version = excluded.rule_version`,
-		c.TradeWindowS, c.EcoFullBuy, c.EcoForce, c.RuleVersion,
+		c.TradeWindowS, c.EcoFullBuy, c.EcoForce, c.TradeOppDistance, c.RuleVersion,
 	); err != nil {
 		return models.AnalysisConfig{}, fmt.Errorf("store: set analysis_config: %w", err)
 	}
@@ -523,8 +528,13 @@ func sideFlips(rounds []models.EconomyRow, exact map[int]map[string]string) []bo
 // engagements, KAST% from player_round_stats. Team attribution (FF, and the
 // trade-opportunity heuristic) uses each player's FINAL side — events carry
 // no team column, so this is an approximation (documented; badge in UI).
-// TradeOppMissed = untraded deaths (inferred heuristic — no position-based
-// opportunity scan in v1).
+// UntradedDeaths is the raw engagement count (timing only);
+// TradeOppMissed is the distance-gated subset of it (inferred heuristic —
+// UI badge): an untraded death counts only when the kill event's
+// detail_json.nearDist — the closest living teammate of the victim to the
+// KILLER at the death tick, measured once at extract time (extract.
+// nearTeammateDist) — is ≥ 0 (nobody measurable → -1 → never counted) and
+// ≤ the stored analysis_config.trade_opp_distance (default 200 units).
 //
 // This SQL is AUTHORITATIVE: the in-memory twin that once duplicated these
 // rules in Go (analytics.CombatStats) was deleted — it had drifted in three
@@ -539,10 +549,21 @@ func sideFlips(rounds []models.EconomyRow, exact map[int]map[string]string) []bo
 //     trade kill on the same tick credited the wrong attacker.
 //  3. Rows come back ordered by player NAME (ORDER BY p.name ASC); the Go
 //     twin sorted by SteamID.
+//  4. TradeOppMissed is proximity-gated against analysis_config.
+//     trade_opp_distance: the untraded row must join to its kill event's
+//     detail_json.nearDist within [0, distance]. No matching kill event,
+//     malformed/absent JSON, a missing nearDist key or the -1 sentinel all
+//     yield NULL/−1 → NOT counted (no position data → no opportunity
+//     claim). UntradedDeaths stays the ungated count — the two columns are
+//     deliberately different metrics.
 //
 // Do not "fix" these from the Go side — change the SQL (and this comment)
 // deliberately instead.
 func (s *Store) GetCombatStats(matchID int64) ([]models.CombatStat, error) {
+	cfg, err := s.GetConfig()
+	if err != nil {
+		return nil, err
+	}
 	// Damage per attacker, splitting damage-on-kill (a kill event with the
 	// same attacker/victim on the same tick) from damage-without-kill, and
 	// same-final-side (friendly) damage.
@@ -579,7 +600,7 @@ func (s *Store) GetCombatStats(matchID int64) ([]models.CombatStat, error) {
 		return nil, fmt.Errorf("store: get combat stats: %w", err)
 	}
 
-	// Untraded deaths per victim.
+	// Untraded deaths per victim (raw — timing only, no position claim).
 	untraded := map[string]int{}
 	utrRows, err := s.db.Query(
 		`SELECT b_steam, COUNT(*) FROM engagements
@@ -598,6 +619,43 @@ func (s *Store) GetCombatStats(matchID int64) ([]models.CombatStat, error) {
 		untraded[sid] = n
 	}
 	if err := utrRows.Err(); err != nil {
+		return nil, fmt.Errorf("store: get combat stats: %w", err)
+	}
+
+	// Trade opportunities missed: the untraded deaths whose kill event
+	// carries a nearDist within [0, cfg.TradeOppDistance] — i.e. a living
+	// teammate of the victim was close enough to the killer at the death
+	// tick to actually trade him. The scalar subquery joins the untraded
+	// engagement back to its kill event (same tick/attacker/victim);
+	// json_valid guards malformed payloads (json_extract would error),
+	// a missing key or the -1 sentinel yields NULL/out-of-range → not
+	// counted (decision 4 — see the doc comment).
+	tradeOpp := map[string]int{}
+	toRows, err := s.db.Query(
+		`SELECT e.b_steam, COUNT(*) FROM engagements e
+		 WHERE e.match_id = ? AND e.kind = 'untraded' AND e.b_steam <> ''
+		   AND (SELECT CASE WHEN json_valid(k.detail_json)
+		                    THEN json_extract(k.detail_json, '$.nearDist') END
+		        FROM events k
+		        WHERE k.match_id = e.match_id AND k.kind = 'kill'
+		          AND k.tick = e.tick AND k.attacker = e.a_steam
+		          AND k.victim = e.b_steam
+		        LIMIT 1) BETWEEN 0 AND ?
+		 GROUP BY e.b_steam`, matchID, cfg.TradeOppDistance,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("store: get combat stats: %w", err)
+	}
+	defer toRows.Close()
+	for toRows.Next() {
+		var sid string
+		var n int
+		if err := toRows.Scan(&sid, &n); err != nil {
+			return nil, fmt.Errorf("store: get combat stats: %w", err)
+		}
+		tradeOpp[sid] = n
+	}
+	if err := toRows.Err(); err != nil {
 		return nil, fmt.Errorf("store: get combat stats: %w", err)
 	}
 
@@ -654,7 +712,7 @@ func (s *Store) GetCombatStats(matchID int64) ([]models.CombatStat, error) {
 			r.TradeRate = float64(tradeKills) / float64(deaths)
 		}
 		r.UntradedDeaths = untraded[r.SteamID]
-		r.TradeOppMissed = r.UntradedDeaths // inferred heuristic (UI badge)
+		r.TradeOppMissed = tradeOpp[r.SteamID] // distance-gated subset (UI badge)
 		r.KASTPct = kastPct[r.SteamID]
 		out = append(out, r)
 	}
