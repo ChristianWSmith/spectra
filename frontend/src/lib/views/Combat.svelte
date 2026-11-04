@@ -7,10 +7,13 @@
     getClutches,
     getEngagements,
     getPlayerRounds,
+    getScoreboard,
+    getMatch,
     errText,
   } from '../services.js';
   import { fmtInt, fmtPercent } from '../fmt.js';
   import { replayHash } from '../nav.js';
+  import { playerStartClass } from '../teams.js';
   import {
     KAST_DEF,
     DMG_CONV_DEF,
@@ -74,6 +77,17 @@
   let engagements = $state([]);
   let stats = $state([]);
   let error = $state('');
+  // Final side per player + the match's side-switch count: the inputs for
+  // the team-identity colors on names (changes.txt #20). Scoreboard rows
+  // also carry the exact-name fallback for rows without a steam id.
+  let players = $state([]);
+  let sideSwitches = $state(0);
+
+  // Team-identity color class for a name surface — '' when the player or
+  // their side can't be resolved (never a guessed color).
+  function playerCls(steamId, name) {
+    return playerStartClass(players, sideSwitches, steamId, name);
+  }
 
   let engKind = $state('');
   let statSort = $state({ key: 'kastPct', desc: true });
@@ -88,12 +102,20 @@
 
   $effect(() => {
     let live = true;
-    Promise.all([getCombatStats(id), getClutches(id), getEngagements(id, '')])
-      .then(([cs, cl, en]) => {
+    Promise.all([
+      getCombatStats(id),
+      getClutches(id),
+      getEngagements(id, ''),
+      getScoreboard(id, 'kills', true).catch(() => []),
+      getMatch(id).catch(() => null),
+    ])
+      .then(([cs, cl, en, sb, m]) => {
         if (!live) return;
         stats = cs || [];
         clutches = cl || [];
         engagements = en || [];
+        players = sb || [];
+        sideSwitches = (m && m.sideSwitches) || 0;
         error = '';
       })
       .catch((e) => {
@@ -221,6 +243,7 @@
                       steam={r.steamId}
                       name={r.name}
                       {nav}
+                      cls={playerCls(r.steamId, r.name)}
                       title="Open player profile"
                     />
                   </td>
@@ -300,11 +323,23 @@
                 </span>
               </td>
               <td>
-                <ProfileLink steam={e.aSteam} name={e.aName || '—'} {nav} title="Open profile — {e.aName}" />
+                <ProfileLink
+                  steam={e.aSteam}
+                  name={e.aName || '—'}
+                  {nav}
+                  cls={playerCls(e.aSteam, e.aName)}
+                  title="Open profile — {e.aName}"
+                />
               </td>
               <td class="muted">vs</td>
               <td>
-                <ProfileLink steam={e.bSteam} name={e.bName || '—'} {nav} title="Open profile — {e.bName}" />
+                <ProfileLink
+                  steam={e.bSteam}
+                  name={e.bName || '—'}
+                  {nav}
+                  cls={playerCls(e.bSteam, e.bName)}
+                  title="Open profile — {e.bName}"
+                />
               </td>
               <td class="num">{e.distance ? Math.round(e.distance) : '—'}</td>
               <td class="muted">{wonByName(e)}</td>
@@ -361,7 +396,13 @@
                 </td>
                 <td><strong>1v{c.size}</strong></td>
                 <td>
-                  <ProfileLink steam={c.steamId} name={c.name || '—'} {nav} title="Open player profile" />
+                  <ProfileLink
+                    steam={c.steamId}
+                    name={c.name || '—'}
+                    {nav}
+                    cls={playerCls(c.steamId, c.name)}
+                    title="Open player profile"
+                  />
                 </td>
                 <td>
                   <span class="chip status {c.won ? 'ok' : 'bad'}">{c.won ? 'won' : 'lost'}</span>
@@ -386,7 +427,7 @@
 
   <Dialog open={!!kastSteam} label="KAST rounds for {kastName}" panelClass="wide" onClose={closeKast}>
     <div class="row-between">
-      <h2>KAST rounds — {kastName}</h2>
+      <h2>KAST rounds — <span class={playerCls(kastSteam, kastName)}>{kastName}</span></h2>
       <button class="btn small" aria-label="Close" onclick={closeKast}><span class="codicon codicon-close"></span></button>
     </div>
     <p class="muted" title={KAST_DEF}>

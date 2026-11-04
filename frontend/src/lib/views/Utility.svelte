@@ -7,6 +7,7 @@
   } from '../services.js';
   import { fmtClock, tickSeconds, fmtMs } from '../fmt.js';
   import { replayHash } from '../nav.js';
+  import { playerStartClass } from '../teams.js';
 
   // Match renders <Utility {id} /> — nav is optional, fall back to the hash
   // router directly so the drill-downs still work.
@@ -23,8 +24,16 @@
   let throwerF = $state('');
   let closed = $state({}); // round -> true = collapsed
   // Match tickrate for the tick → clock conversion (unknown until the
-  // match metadata lands; 64 is CS2's standard fallback).
+  // match metadata lands; 64 is CS2's standard fallback). sideSwitches is
+  // the other half of the team-identity name colors (changes.txt #20).
   let tickRate = $state(64);
+  let sideSwitches = $state(0);
+
+  // Team-identity color class for a name surface — '' when the player or
+  // their side can't be resolved (never a guessed color).
+  function playerCls(steamId, name) {
+    return playerStartClass(players, sideSwitches, steamId, name);
+  }
 
   $effect(() => {
     let live = true;
@@ -38,6 +47,7 @@
         rows = u || [];
         players = sb || [];
         if (m && m.tickRate > 0) tickRate = m.tickRate;
+        if (m) sideSwitches = m.sideSwitches || 0;
         loading = false;
         error = '';
       })
@@ -290,7 +300,7 @@
                 {#each list as r, i (r.tick + ':' + i)}
                   <li class="util-nade">
                     <span class="chip util-kind {r.kind}">{r.kind}</span>
-                    <span class="util-thrower"
+                    <span class="util-thrower {playerCls(r.thrower, r.throwerName)}"
                       >{r.throwerName || r.thrower || '—'}</span
                     >
                     <span

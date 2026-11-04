@@ -78,6 +78,15 @@
   /* Game-domain semantics */
   --ct: #5aa9e6;
   --t: #e6a35a;
+  /* Team identity colors (changes.txt #10/#20): a TEAM is colored by the
+     side it played in the FIRST half — started CT → indigo, started T →
+     orange — independent of the live side (sides swap at halftime).
+     Indigo shares the brand hue (228°) of --brand/#28397f; both read on
+     the dark surface at ≥ 6.8:1. Distinct from --ct/--t, which stay SIDE
+     colors (round chips, econ columns, side chips). Light values live in
+     style-m3b.css under [data-theme="light"]. */
+  --team-start-ct: #93a4ec;
+  --team-start-t: #ff904d;
   --success: #4caf7d;
   --danger: #e05b5b;
   --mono:
@@ -186,6 +195,23 @@ select {
 
 .t {
   color: var(--t);
+}
+
+/* Team identity colors for NAMES (changes.txt #10/#20): the team that
+   started the first half on CT is indigo (.team-start-ct), on T orange
+   (.team-start-t) — derived by lib/teams.js teamStartClass /
+   playerStartClass from lib/sideparity.js startSideFor, so never paint
+   these by hand from the live side. The :root prefix raises specificity
+   over same-class component rules that also set color (.stat-sub here,
+   .name-link / .comb-name-btn in style-m3b.css) exactly like the codicon
+   block above outranks the package stylesheet — hover states still win
+   (they add a pseudo-class). For SIDE semantics keep .ct/.t/.side-*. */
+:root .team-start-ct {
+  color: var(--team-start-ct);
+}
+
+:root .team-start-t {
+  color: var(--team-start-t);
 }
 
 .error {

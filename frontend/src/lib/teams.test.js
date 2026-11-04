@@ -7,7 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { synthTeamName, teamNames } from './teams.js';
+import { synthTeamName, teamNames, teamStartClass, playerStartClass } from './teams.js';
 
 // Same scoreboard as TestSynthTeamNames (models.PlayerStatsRow → the JS
 // row shape: steamId/name/side), including the sideless player that must
@@ -62,4 +62,30 @@ test('teamNames: clan name wins, then synthesized, then the bare side', () => {
   });
   // no-argument call stays total (both labels non-empty)
   assert.deepEqual(teamNames(), { ct: 'CT', t: 'T' });
+});
+
+test('teamStartClass: start-side identity colors (changes #10/#20)', () => {
+  // Regulation (one switch): the team that FINISHED CT started the first
+  // half on T → orange; the team that finished T started on CT → indigo.
+  assert.equal(teamStartClass('ct', 1), 'team-start-t');
+  assert.equal(teamStartClass('t', 1), 'team-start-ct');
+  // No switch recorded → they started on the side they ended on.
+  assert.equal(teamStartClass('ct', 0), 'team-start-ct');
+  assert.equal(teamStartClass('t', 0), 'team-start-t');
+  // Unknown side → no color (never a guessed fallback).
+  assert.equal(teamStartClass('', 1), '');
+  assert.equal(teamStartClass('ct2', 1), '');
+});
+
+test('playerStartClass: steam-id lookup first, exact-name fallback, else no color', () => {
+  // Steam id wins when the row carries one (scoreboard/round rows).
+  assert.equal(playerStartClass(SB, 1, 'A00', 'zed'), 'team-start-t'); // A00 finished ct
+  assert.equal(playerStartClass(SB, 1, 'B00', 'kRaSnaL'), 'team-start-ct'); // B00 finished t
+  // Exact-name fallback when the id is unknown or absent (kill feed,
+  // chat, first-blood names).
+  assert.equal(playerStartClass(SB, 1, '', 'lowix'), 'team-start-t');
+  // Unresolvable player or a player with no recorded side → ''.
+  assert.equal(playerStartClass(SB, 1, 'missing', 'nobody'), '');
+  assert.equal(playerStartClass(SB, 1, 'missing', 'sideless'), '');
+  assert.equal(playerStartClass(null, 1, 'A00', 'kRaSnaL'), '');
 });

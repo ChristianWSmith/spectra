@@ -1,4 +1,4 @@
-// Team display names. Pure functions — no services.
+// Team display names + team identity colors. Pure functions — no services.
 //
 // Sides ("ct"/"t") switch at halftime, so a side never names a TEAM: show
 // the demo's clan name when the extract recorded one (MatchSummary
@@ -14,6 +14,8 @@
 // fixture is TestSynthTeamNames (internal/report/report_test.go); this
 // file's fixture is src/lib/teams.test.js — same inputs/outputs, same
 // tie-break. Keep the three in sync or the labels diverge per surface.
+
+import { startSideFor } from './sideparity.js';
 
 // pickPlayer chooses the player used to name one side's team: the lowest
 // SteamID on that side (then name). Deterministic by design — callers pass
@@ -50,4 +52,38 @@ export function teamNames({ ctName = '', tName = '', players = [] } = {}) {
     ct: ctName || synthTeamName(players, 'ct') || 'CT',
     t: tName || synthTeamName(players, 't') || 'T',
   };
+}
+
+// --- Team identity colors (changes.txt #10/#20) ----------------------------
+// A TEAM's color comes from the side it played in the FIRST half: started
+// CT → indigo (.team-start-ct), started T → orange (.team-start-t) —
+// never the live side, which swaps at halftime. The start side comes from
+// the canonical side-parity helper (sideparity.startSideFor), so the
+// colors can't drift from the strip's own side derivation; the classes
+// live in public/style.css next to the side colors they complement.
+
+// teamStartClass maps a team's FINAL side ('ct' | 't') to its identity
+// color class; an unknown side yields '' — missing data never gets a
+// guessed color.
+export function teamStartClass(finalSide, sideSwitches) {
+  const start = startSideFor(finalSide, sideSwitches);
+  return start === 'ct' ? 'team-start-ct' : start === 't' ? 'team-start-t' : '';
+}
+
+// playerStartClass resolves ONE name surface (a scoreboard row, a round's
+// MVP/first-blood, a kill-feed killer…) to its team's color class: the
+// player's FINAL side, looked up by steam id first and exact display name
+// as the fallback (round/chat rows may carry only a name). Unresolvable →
+// '' — best effort, no guessing.
+export function playerStartClass(players, sideSwitches, steamId, name) {
+  let side = '';
+  if (steamId) {
+    const byId = (players || []).find((p) => p && p.steamId === steamId);
+    if (byId) side = byId.side || '';
+  }
+  if (!side && name) {
+    const byName = (players || []).find((p) => p && p.name === name);
+    if (byName) side = byName.side || '';
+  }
+  return teamStartClass(side, sideSwitches);
 }

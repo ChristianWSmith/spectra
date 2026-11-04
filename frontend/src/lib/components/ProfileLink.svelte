@@ -2,19 +2,24 @@
   // The one comb-name-btn profile link: name → #/player/:steamid for a
   // well-formed Steam id, plain text otherwise (the openProfile guard made
   // structural — bots and malformed ids were never linkable, they just
-  // used to render as inert buttons). Used by RoundDetail's kill feed,
-  // Combat's engagement/stats tables and ClutchCard.
+  // used to render as inert buttons). Used by Combat's stats/engagements/
+  // clutches tables and Replay's event detail pane.
+  //
+  // `cls` is an optional pass-through for the caller's own classes — the
+  // match view passes the team-identity color (lib/teams.js
+  // playerStartClass, changes.txt #20). Default '' keeps every existing
+  // call site rendering exactly as before.
   import { isSteam, openProfile } from '../nav.js';
 
-  let { steam = '', name = '', nav = () => {}, title = '' } = $props();
+  let { steam = '', name = '', nav = () => {}, title = '', cls = '' } = $props();
 </script>
 
 {#if isSteam(steam)}
   <button
-    class="comb-name-btn"
+    class="comb-name-btn {cls}"
     title={title || `Open ${name} profile`}
     onclick={() => openProfile(nav, steam)}>{name || '—'}</button
   >
 {:else}
-  {name || '—'}
+  <span class={cls}>{name || '—'}</span>
 {/if}

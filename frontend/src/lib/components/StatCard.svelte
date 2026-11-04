@@ -4,12 +4,16 @@
   // slot), value, sub. The view owns the data, the tooltip and whether
   // the cell drills anywhere: an `onclick` renders the cell as a button,
   // otherwise it stays a plain div.
+  // `subCls` is an additive pass-through for the sub line (Match's top
+  // stats pass the team-identity color, changes.txt #20); default '' and
+  // the other call sites are unchanged.
   let {
     label,
     value,
     sub = '',
     title = undefined,
     cls = '',
+    subCls = '',
     onclick = null,
     badge = null,
   } = $props();
@@ -18,7 +22,7 @@
 {#snippet body()}
   <span class="field-label">{label}{#if badge}{@render badge()}{/if}</span>
   <span class="stat-value">{value}</span>
-  <span class="stat-sub">{sub}</span>
+  <span class="stat-sub {subCls}">{sub}</span>
 {/snippet}
 
 {#if onclick}

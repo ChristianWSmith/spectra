@@ -8,12 +8,15 @@
 // order (the team that finished CT on top, the team that finished T
 // below); both labels are centered horizontally over the range of round
 // buttons (the wrap hugs the strip — .round-strip-wrap / .round-strip-team
-// in public/style.css). Each cell points an arrow toward the team that WON that round —
-// ▲ toward the team above, ▼ toward the team below — so the arrow follows
-// the TEAM across the halftime side switch while the cell tint keeps
-// following the SIDE. A marker splits the row after the 12th real round
-// (the MR12 halftime).
-import { flipIndexes, eraOf } from '../sideparity.js';
+// in public/style.css) and colored by the side each team played in the
+// FIRST half (the team-identity classes from lib/teams.js — changes.txt
+// #10/#20), while each cell points an arrow toward the team that WON that
+// round — ▲ toward the team above, ▼ toward the team below — so the arrow
+// follows the TEAM across the halftime side switch while the cell tint
+// keeps following the SIDE. A marker splits the row after the 12th real
+// round (the MR12 halftime).
+import { flipIndexes, eraOf, sideInEra } from '../sideparity.js';
+import { teamStartClass } from '../teams.js';
 import { isCounted } from '../rounds.js';
 import { buildHash } from '../router.js';
 
@@ -47,9 +50,10 @@ const cells = $derived.by(() => {
   return rounds.map((r) => {
     const isReal = isCounted(r);
     const era = isReal ? Math.min(eras - 1, eraOf(seen, flips)) : 0;
-    // The team above finished CT, so it plays CT in the LAST era; each
-    // earlier era flips it.
-    const aboveSide = (eras - 1 - era) % 2 === 0 ? 'ct' : 't';
+    // The team above FINISHED CT, so its side in this era is the
+    // canonical derivation (../sideparity.js sideInEra — the same one
+    // startSideFor feeds the team-identity name colors with).
+    const aboveSide = sideInEra('ct', sideSwitches, era);
     const after = isReal && ++seen === HALFTIME_AFTER;
     return { r, after, aboveSide };
   });
@@ -58,7 +62,11 @@ const cells = $derived.by(() => {
 
 <div class="round-strip-wrap">
   {#if teamAbove}
-    <div class="round-strip-team above ct">{teamAbove}</div>
+    <!-- Label colors follow the FIRST-half side (changes #10/#20): both
+         call sites (Match header, RoundDetail) pass teams.ct above and
+         teams.t below — the teams' final sides — and teamStartClass
+         flips them to their start sides. -->
+    <div class="round-strip-team above {teamStartClass('ct', sideSwitches)}">{teamAbove}</div>
   {/if}
   <div class="round-strip" aria-label="Round progression">
     {#each cells as { r, after, aboveSide } (r.number)}
@@ -83,6 +91,6 @@ const cells = $derived.by(() => {
     {/each}
   </div>
   {#if teamBelow}
-    <div class="round-strip-team below t">{teamBelow}</div>
+    <div class="round-strip-team below {teamStartClass('t', sideSwitches)}">{teamBelow}</div>
   {/if}
 </div>

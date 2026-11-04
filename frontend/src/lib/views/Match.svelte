@@ -28,7 +28,7 @@
     fmtInt,
     fmtMetric,
   } from '../fmt.js';
-  import { teamNames } from '../teams.js';
+  import { teamNames, teamStartClass, playerStartClass } from '../teams.js';
   import { isCounted } from '../rounds.js';
   import { MATCH_TABS, matchTabSlug, buildHash } from '../router.js';
   import RoundStrip from '../components/RoundStrip.svelte';
@@ -526,6 +526,22 @@
     return { ct, t, other };
   });
 
+  // Team-identity color for a NAME (changes.txt #10/#20): a team is
+  // indigo if it started the first half on CT, orange if on T — derived
+  // from the canonical side-parity helper (lib/teams.js →
+  // sideparity.startSideFor), never from the live side. Unknown side →
+  // '' (no color, no guess).
+  function teamCls(finalSide) {
+    return teamStartClass(finalSide, match?.sideSwitches || 0);
+  }
+
+  // Same color for a player NAME surfaced as steam id + display name
+  // (round MVP / first-blood rows): scoreboard lookup by id, then by
+  // exact name; unresolved → ''.
+  function playerCls(steamId, name) {
+    return playerStartClass(scoreboard, match?.sideSwitches || 0, steamId, name);
+  }
+
   const topStats = $derived.by(() => {
     if (!scoreboard.length) return [];
     const maxBy = (fn) => scoreboard.reduce((a, b) => (fn(b) > fn(a) ? b : a));
@@ -543,9 +559,20 @@
     ];
   });
 
+  // First blood of the first round that recorded one — kept as parts (not
+  // one formatted string) so both names can carry their team's color
+  // (changes.txt #20).
   const firstBlood = $derived.by(() => {
     const r = rounds.find((x) => x.firstKillName && x.firstDeathName);
-    return r ? `${r.firstKillName} killed ${r.firstDeathName} (R${r.number})` : null;
+    return r
+      ? {
+          kill: r.firstKillName,
+          killSteam: r.firstKillSteam,
+          death: r.firstDeathName,
+          deathSteam: r.firstDeathSteam,
+          number: r.number,
+        }
+      : null;
   });
 </script>
 
@@ -558,9 +585,9 @@
     <header class="view-header match-header">
       <div>
         <h1>
-          <span class="ct">{teams.ct}</span>
+          <span class={teamCls('ct')}>{teams.ct}</span>
           <span class="score">{match.scoreCT}–{match.scoreT}</span>
-          <span class="t">{teams.t}</span>
+          <span class={teamCls('t')}>{teams.t}</span>
         </h1>
         <!-- Tickrate, voice presence and parser version moved to the
              Details tab (Key facts); only the encrypted-chat key state
@@ -633,6 +660,7 @@
             label={s.label}
             value={s.value}
             sub={s.p.name}
+            subCls={teamCls(s.p.side)}
             title="Open Replay events filtered to {s.p.name}"
             onclick={() => openPlayerEvents(s.p.steamId)}
           />
@@ -641,7 +669,7 @@
 
       <div class="roster-grid">
         <section class="panel">
-          <h2 class="side-ct">{teams.ct} roster</h2>
+          <h2 class={teamCls('ct')}>{teams.ct} roster</h2>
           <table class="data-table">
             <thead>
               <tr>
@@ -660,7 +688,7 @@
                     : ''}
                   onclick={() => openPlayerEvents(p.steamId, { follow: true })}
                 >
-                  <td>
+                  <td class={teamCls(p.side)}>
                     {p.name}
                     {#if p.finalStatePresent === false}
                       <span class="chip provenance" title="not in final snapshot — stats derived from events">derived</span>
@@ -674,7 +702,7 @@
           </table>
         </section>
         <section class="panel">
-          <h2 class="side-t">{teams.t} roster</h2>
+          <h2 class={teamCls('t')}>{teams.t} roster</h2>
           <table class="data-table">
             <thead>
               <tr>
@@ -693,7 +721,7 @@
                     : ''}
                   onclick={() => openPlayerEvents(p.steamId, { follow: true })}
                 >
-                  <td>
+                  <td class={teamCls(p.side)}>
                     {p.name}
                     {#if p.finalStatePresent === false}
                       <span class="chip provenance" title="not in final snapshot — stats derived from events">derived</span>
@@ -757,7 +785,19 @@
           </div>
           <div><dt>Warnings</dt><dd>{match.warningsCount}</dd></div>
           {#if firstBlood}
-            <div><dt>First blood</dt><dd>{firstBlood}</dd></div>
+            <div>
+              <dt>First blood</dt>
+              <dd>
+                <span class={playerCls(firstBlood.killSteam, firstBlood.kill)}
+                  >{firstBlood.kill}</span
+                >
+                killed
+                <span class={playerCls(firstBlood.deathSteam, firstBlood.death)}
+                  >{firstBlood.death}</span
+                >
+                (R{firstBlood.number})
+              </dd>
+            </div>
           {/if}
           <div class="fact-wide"><dt>Source</dt><dd class="mono">{match.path}</dd></div>
         </dl>
@@ -812,6 +852,7 @@
           </thead>
           <tbody>
             {#each viewRows as p (p.steamId)}
+              {@const nameCls = teamCls(p.side)}
               <tr
                 class="clickable"
                 onclick={(e) => {
@@ -837,10 +878,10 @@
                 </td>
                 {#each SCORE_COLS as col (col.key)}
                   {#if col.key === 'name'}
-                    <td class="num name-cell"
+                    <td class="num name-cell {nameCls}"
                       >{#if isSteam(p.steamId)}
                         <button
-                          class="btn ghost small name-link"
+                          class="btn ghost small name-link {nameCls}"
                           title="Open {p.name}'s profile"
                           onclick={(e) => {
                             e.stopPropagation();
@@ -1007,12 +1048,24 @@
                 <td>{r.reason || '—'}</td>
                 <td class="num">{fmtDuration(r.durationS)}</td>
                 <td>{r.bombSite || '—'}</td>
-                <td>{r.mvpName || '—'}</td>
+                <td>
+                  {#if r.mvpName}
+                    <span class={playerCls(r.mvp, r.mvpName)}>{r.mvpName}</span>
+                  {:else}
+                    —
+                  {/if}
+                </td>
                 <td class="num"><span class="chip side ct">{r.equipCT}</span></td>
                 <td class="num"><span class="chip side t">{r.equipT}</span></td>
                 <td>
                   {#if r.firstKillName && r.firstDeathName}
-                    {r.firstKillName} killed {r.firstDeathName}
+                    <span class={playerCls(r.firstKillSteam, r.firstKillName)}
+                      >{r.firstKillName}</span
+                    >
+                    killed
+                    <span class={playerCls(r.firstDeathSteam, r.firstDeathName)}
+                      >{r.firstDeathName}</span
+                    >
                   {:else}
                     —
                   {/if}

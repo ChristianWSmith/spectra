@@ -3,12 +3,14 @@
     getRoundDetail,
     getRounds,
     getMatch,
+    getScoreboard,
     getRoundClasses,
     getTeamNames,
     errText,
   } from '../services.js';
   import { fmtDuration, fmtTickSeconds, fmtInt, fmtClock, tickSeconds, chatClock } from '../fmt.js';
   import { isCounted } from '../rounds.js';
+  import { playerStartClass } from '../teams.js';
   import { replayHash } from '../nav.js';
   import { buildHash } from '../router.js';
   import { roundsByNumber } from '../replay/landmarks.js';
@@ -25,8 +27,18 @@
   let rounds = $state([]);
   let tickRate = $state(64);
   let sideSwitches = $state(0);
+  // Scoreboard rows: the final side per player, for the team-identity
+  // colors on names (changes.txt #20) — steam-id lookup first, exact
+  // name as the fallback (kill/chat rows may carry only a name).
+  let players = $state([]);
   let error = $state('');
   let cls = $state(null); // models.RoundClassification for this round (may be null)
+
+  // Team-identity color class for a name surface — '' when the player or
+  // their side can't be resolved (never a guessed color).
+  function playerCls(steamId, name) {
+    return playerStartClass(players, sideSwitches, steamId, name);
+  }
 
   // Team display names for the round strip's above/below labels — the
   // same resolution the Match header uses (demo clan names → derived
@@ -36,11 +48,17 @@
 
   $effect(() => {
     let live = true;
-    Promise.all([getRoundDetail(id, round), getRounds(id), getMatch(id)])
-      .then(([d, r, m]) => {
+    Promise.all([
+      getRoundDetail(id, round),
+      getRounds(id),
+      getMatch(id),
+      getScoreboard(id, 'kills', true).catch(() => []),
+    ])
+      .then(([d, r, m, sb]) => {
         if (!live) return;
         detail = d;
         rounds = r || [];
+        players = sb || [];
         if (m && m.tickRate > 0) tickRate = m.tickRate;
         if (m) sideSwitches = m.sideSwitches || 0;
         error = d ? '' : 'Round not found.';
@@ -201,7 +219,14 @@
           class="t">{detail.round.equipT}</span
         >
         · {detail.round.kills} kills
-        · MVP {detail.round.mvpName || '—'}
+        · MVP
+        {#if detail.round.mvpName}
+          <span class={playerCls(detail.round.mvp, detail.round.mvpName)}
+            >{detail.round.mvpName}</span
+          >
+        {:else}
+          —
+        {/if}
         {#if detail.round.mvpReason}({detail.round.mvpReason}){/if}
         · {fmtTickSeconds(detail.round.startTick, tickRate)}–{fmtTickSeconds(
           detail.round.endTick,
@@ -257,9 +282,19 @@
             <div>
               <dt>First kill</dt>
               <dd>
-                {detail.round.firstKillName || '—'}{detail.round.firstDeathName
-                  ? ` → ${detail.round.firstDeathName}`
-                  : ''}
+                {#if detail.round.firstKillName}
+                  <span class={playerCls(detail.round.firstKillSteam, detail.round.firstKillName)}
+                    >{detail.round.firstKillName}</span
+                  >
+                {:else}
+                  —
+                {/if}
+                {#if detail.round.firstDeathName}
+                  {' → '}
+                  <span class={playerCls(detail.round.firstDeathSteam, detail.round.firstDeathName)}
+                    >{detail.round.firstDeathName}</span
+                  >
+                {/if}
               </dd>
             </div>
           </dl>
@@ -286,8 +321,12 @@
                   {#each kills as k (k.id)}
                     <tr>
                       <td class="mono" title="tick {k.tick}">{roundClock(k.tick)}</td>
-                      <td>{k.attackerName || k.attacker || '—'}</td>
-                      <td>{k.victimName || k.victim || '—'}</td>
+                      <td class={playerCls(k.attacker, k.attackerName)}
+                        >{k.attackerName || k.attacker || '—'}</td
+                      >
+                      <td class={playerCls(k.victim, k.victimName)}
+                        >{k.victimName || k.victim || '—'}</td
+                      >
                       <td class="mono">{k.weapon || '—'}</td>
                       <td><EventFlags event={k} none /></td>
                       <td>
@@ -328,7 +367,9 @@
                     <tr>
                       <td class="mono" title="tick {e.tick}">{roundClock(e.tick)}</td>
                       <td>{bombLabel(e.kind)}</td>
-                      <td>{e.attackerName || e.attacker || '—'}</td>
+                      <td class={playerCls(e.attacker, e.attackerName)}
+                        >{e.attackerName || e.attacker || '—'}</td
+                      >
                       <td>{e.site || '—'}</td>
                       <td>
                         <button
@@ -386,7 +427,7 @@
               {#each chat as c (c.id)}
                 <li>
                   <span class="mono muted" title="tick {c.tick}">{chatClock(c, rbn, tickRate)}</span>
-                  <strong>{c.name || '—'}</strong>
+                  <strong class={playerCls(c.steamId, c.name)}>{c.name || '—'}</strong>
                   <span>{c.text}</span>
                 </li>
               {/each}

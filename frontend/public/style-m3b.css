@@ -1,5 +1,5 @@
 /* M3 wave B — Combat/Profiles/FilterBar/Compare/Settings (agent-owned) — appended styles for Milestone 3.
-   Prefixes: comb- (Combat + ClutchCard), prof- (PlayerProfile),
+   Prefixes: comb- (Combat), prof- (PlayerProfile),
    cmp- (compare/round-class chips), filt- (FilterBar + Timeline row
    actions), sett- (Settings), voice-/clip-/kv-/rep-/cp-/plugin-/spat-/
    expl- (its owning component).
@@ -80,50 +80,6 @@
 
 .comb-sec {
   gap: 10px;
-}
-
-.comb-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 10px;
-}
-
-.comb-card {
-  background: var(--inset);
-  border: 1px solid var(--border);
-  border-left-width: 3px;
-  border-radius: var(--radius);
-  padding: 10px 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.comb-card.won {
-  border-left-color: var(--success);
-}
-
-.comb-card.lost {
-  border-left-color: var(--danger);
-}
-
-.comb-sum {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-wrap: wrap;
-  font-size: 0.95em;
-}
-
-.comb-ticks {
-  display: flex;
-  gap: 4px;
-  flex-wrap: wrap;
-}
-
-/* Local delta: tighter gap than .toolbar. */
-.comb-actions {
-  gap: 6px;
 }
 
 .comb-kinds {
@@ -1275,6 +1231,11 @@
   --tab-inactive-fg: #616161;
   --ct: #2f7bbd;
   --t: #b9722f;
+  /* Team identity colors (changes.txt #10/#20) — the light-theme pair
+     behind .team-start-ct/.team-start-t in style.css, darkened for a
+     white surface (≥ 5:1 contrast; the dark values are ~7:1). */
+  --team-start-ct: #3d4dbf;
+  --team-start-t: #b04f12;
   --success: #2f8558;
   --danger: #c94040;
 }
