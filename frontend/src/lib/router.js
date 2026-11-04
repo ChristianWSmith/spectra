@@ -44,15 +44,19 @@
 // that exist: slug = tab.toLowerCase(). The Raw tab was removed earlier
 // (its inspectors live in the Explorer view) and Timeline/Chat/Context
 // were folded into Replay's landmark feed — their legacy slugs redirect
-// to #/replay/:id above instead of parsing as tabs.
+// to #/replay/:id above instead of parsing as tabs. Details (the Explorer
+// diagnostics) and Reports are tabs of the match view now; their
+// standalone #/explorer, #/reports routes still parse below unchanged.
 export const MATCH_TABS = [
   'Overview',
+  'Details',
   'Scoreboard',
   'Rounds',
   'Economy',
   'Utility',
   'Heatmaps',
   'Combat',
+  'Reports',
 ];
 
 // matchTabSlug is the URL segment for a tab; matchTabFromSlug is its

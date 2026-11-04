@@ -19,7 +19,7 @@
   import MatchPicker from '../components/MatchPicker.svelte';
   import PlayerPicker from '../components/PlayerPicker.svelte';
 
-  let { nav = () => {}, routeId = 0 } = $props();
+  let { nav = () => {}, routeId = 0, embedded = false } = $props();
 
   let templates = $state([]);
   let tplError = $state('');
@@ -28,11 +28,12 @@
   let matches = $state([]);
   let matchId = $state(0);
 
-  // Route context (#/reports/:id): preselects the target match (and
-  // re-seeds if the route id changes while mounted — App's if-branch
-  // only remounts on a route NAME change). The list effect below only
-  // defaults to the newest match while nothing is selected, so a context
-  // id wins over the default.
+  // Route context (#/reports/:id, or the host view's match id when
+  // embedded): preselects the target match (and re-seeds if the route id
+  // changes while mounted — App's if-branch only remounts on a route
+  // NAME change). The list effect below only defaults to the newest match
+  // while nothing is selected, so a context id wins over the default;
+  // embedded never defaults at all — the passed id is authoritative.
   $effect(() => {
     const rid = routeId;
     if (rid) matchId = rid;
@@ -65,8 +66,9 @@
         matches = (rows || []).filter((m) => m.status === 'ready' || m.status === '');
         if (!matches.length) matches = rows || [];
         // Default to the newest match only while nothing is selected —
-        // a route context id (seeded above) wins over it.
-        if (!matchId && matches.length) matchId = matches[0].id;
+        // a route context id (seeded above) wins over it, and embedded
+        // (the Reports tab) never defaults: the passed id is authoritative.
+        if (!embedded && !matchId && matches.length) matchId = matches[0].id;
       })
       .catch((e) => (tplError = tplError || errText(e)));
     listMetrics()
@@ -332,10 +334,12 @@
 </script>
 
 <div class="view">
-  <header class="view-header">
-    <h1>Reports</h1>
-    <span class="muted">Templated match / player / round reports.</span>
-  </header>
+  {#if !embedded}
+    <header class="view-header">
+      <h1>Reports</h1>
+      <span class="muted">Templated match / player / round reports.</span>
+    </header>
+  {/if}
 
   {#if tplError}
     <p class="error" role="alert">{tplError}</p>
@@ -371,18 +375,23 @@
     <section class="panel">
       <h2>Target</h2>
       <div class="rep-targets">
-        {#if matches.length === 0}
+        {#if !embedded && matches.length === 0}
           <p class="muted" role="status">No matches in the library yet.</p>
         {/if}
-        <div class="rep-field">
-          <label class="field-label" for="rep-match">Match</label>
-          <MatchPicker
-            {matches}
-            value={matchId}
-            id="rep-match"
-            onselect={(mid) => (matchId = mid)}
-          />
-        </div>
+        {#if embedded}
+          <p class="muted" role="status">Report target: this match.</p>
+        {/if}
+        {#if !embedded}
+          <div class="rep-field">
+            <label class="field-label" for="rep-match">Match</label>
+            <MatchPicker
+              {matches}
+              value={matchId}
+              id="rep-match"
+              onselect={(mid) => (matchId = mid)}
+            />
+          </div>
+        {/if}
         {#if tpl.scope === 'player'}
           <div class="rep-field">
             <label class="field-label" for="rep-player">Player</label>

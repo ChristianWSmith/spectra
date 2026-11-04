@@ -4,26 +4,27 @@
   // browsing panels (generic payload browser, histogram, ConVars,
   // warnings) retired into the landmark consolidation: event records are
   // browsed in Replay's landmark feed (game_events/convars categories),
-  // warnings live on the Match header, and the one ConVar parser is
-  // eventlabels.go on the Go side. The Match header's "Open in Explorer
-  // view →" carries this match over as the route context
-  // (#/explorer/:id); without one the picker follows the newest match.
+  // warnings live on the Match view, and the one ConVar parser is
+  // eventlabels.go on the Go side. Standalone (#/explorer/:id) the picker
+  // picks the match; embedded (the match view's Details tab) the passed
+  // routeId is authoritative — no picker, no newest-match default.
   import { listMatches, getProvenance, getEntitySummary, errText } from '../services.js';
   import { fmtDate, fmtInt } from '../fmt.js';
   import MatchPicker from '../components/MatchPicker.svelte';
   import StatusChip from '../components/StatusChip.svelte';
 
-  let { nav = () => {}, routeId = 0 } = $props();
+  let { nav = () => {}, routeId = 0, embedded = false } = $props();
 
   let matches = $state([]);
   let matchId = $state(0);
   let loadError = $state('');
 
-  // Route context (#/explorer/:id): authoritative — it seeds the picker
-  // (and re-seeds if the route id changes while this view stays mounted;
-  // App's if-branch only remounts on a route NAME change). The list
-  // effect below only defaults to the newest match while nothing is
-  // selected, so a context id is never swapped out.
+  // Route context (#/explorer/:id, or the host view's match id when
+  // embedded): authoritative — it seeds the picker (and re-seeds if the
+  // route id changes while this view stays mounted; App's if-branch only
+  // remounts on a route NAME change). The list effect below only defaults
+  // to the newest match while nothing is selected, so a context id is
+  // never swapped out; embedded never defaults at all.
   $effect(() => {
     const rid = routeId;
     if (rid) matchId = rid;
@@ -50,8 +51,9 @@
       .then((rows) => {
         matches = rows || [];
         // Default to the newest match only while nothing is selected —
-        // a route context id (seeded above) wins over it.
-        if (!matchId && matches.length) matchId = matches[0].id;
+        // a route context id (seeded above) wins over it, and embedded
+        // (the Details tab) never defaults: the passed id is authoritative.
+        if (!embedded && !matchId && matches.length) matchId = matches[0].id;
       })
       .catch((e) => {
         loadError = errText(e);
@@ -98,16 +100,18 @@
 </script>
 
 <div class="view">
-  <header class="view-header">
-    <h1>Explorer</h1>
-    <MatchPicker
-      id="expl-match"
-      matches={matches}
-      value={matchId}
-      onselect={(id) => (matchId = id)}
-    />
-    <span class="muted">Demo-file diagnostics over the stored corpus.</span>
-  </header>
+  {#if !embedded}
+    <header class="view-header">
+      <h1>Explorer</h1>
+      <MatchPicker
+        id="expl-match"
+        matches={matches}
+        value={matchId}
+        onselect={(id) => (matchId = id)}
+      />
+      <span class="muted">Demo-file diagnostics over the stored corpus.</span>
+    </header>
+  {/if}
 
   {#if loadError}
     <p class="error" role="alert">{loadError}</p>

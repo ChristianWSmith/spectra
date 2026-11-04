@@ -931,16 +931,23 @@ input[type='checkbox']:focus-visible {
 /* Round strip */
 
 /* Diverging layout: the team above the row, the cells (with a split
-   marker after the 12th real round), the team below. */
+   marker after the 12th real round), the team below. The wrap is
+   fit-content: it hugs its widest child, so when the cells fit on one
+   line the box is exactly the strip's range (and when they wrap, both
+   share the full available width) — that is the range the team labels
+   center over. */
 .round-strip-wrap {
   display: flex;
   flex-direction: column;
   gap: 2px;
+  width: fit-content;
 }
 
+/* Team names centered over the range of round buttons (see the wrap). */
 .round-strip-team {
   font-size: 0.78em;
   font-weight: 600;
+  text-align: center;
 }
 
 .round-strip {
@@ -1601,4 +1608,14 @@ button.lm-cat-chip.on {
   .weapon-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* Scoreboard expanded row: the utility-usage table joins the two weapon
+   tables as a third panel. Appended (not edited into .weapon-grid above)
+   because that block is the shared two-panel spelling — this variant is
+   match-scoreboard-only; auto-fit collapses the columns on narrow widths
+   instead of relying on the shared media query. */
+.weapon-grid.util-grid {
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  max-width: 960px;
 }
