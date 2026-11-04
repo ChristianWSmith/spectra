@@ -76,6 +76,12 @@
 
 <div class="shell">
   <nav class="sidebar" aria-label="Main">
+    <!-- App mark: branding, not a nav action — it never takes the rail's
+         hover/active treatment and is inert to the pointer (see
+         .sidebar-mark), so it can never be mistaken for a button. The
+         asset is the favicon (/wails.png): the same bracket mark as the
+         window icon (build/appicon.png). -->
+    <img class="sidebar-mark" src="/wails.png" alt="spectra" width="30" height="30" />
     <!-- One action list, shared with CommandPalette's Actions section
          (lib/nav.js NAV_ACTIONS) — membership, order, labels and icons
          live there; active(route) drives the highlight here. The button
