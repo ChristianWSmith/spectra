@@ -10,6 +10,7 @@
   import SqlConsole from './lib/views/SqlConsole.svelte';
   import Explorer from './lib/views/Explorer.svelte';
   import Reports from './lib/views/Reports.svelte';
+  import Profiles from './lib/views/Profiles.svelte';
   import CommandPalette from './lib/components/CommandPalette.svelte';
   import MapPackPrompt from './lib/components/MapPackPrompt.svelte';
   import PlayerProfile from './lib/views/PlayerProfile.svelte';
@@ -22,6 +23,13 @@
   // wiring and the view switch.
   let route = $state(parseHash(location.hash));
   let mapPackPrompt = $state(null); // MapPackPrompt instance (bind:this)
+
+  // Sidebar layout partitions the shared action list (lib/nav.js):
+  // `bottom` entries (Settings) pin to the rail's foot as a gear; every
+  // other action renders in the main icon list. Membership itself stays
+  // in NAV_ACTIONS — the command palette renders the same list.
+  const mainActions = NAV_ACTIONS.filter((a) => !a.bottom);
+  const bottomActions = NAV_ACTIONS.filter((a) => a.bottom);
 
   onMount(() => {
     const onChange = () => {
@@ -59,20 +67,40 @@
 </script>
 
 <div class="shell">
-  <nav class="sidebar">
-    <div class="brand">
-      <img src="/wails.png" alt="" width="22" height="22" />
-      <span class="brand-name">spectra</span>
-    </div>
+  <nav class="sidebar" aria-label="Main">
     <!-- One action list, shared with CommandPalette's Actions section
-         (lib/nav.js NAV_ACTIONS) — membership, order and labels live
-         there; active(route) drives the highlight here. -->
-    {#each NAV_ACTIONS as a (a.label)}
-      <button class="nav-item" class:active={a.active(route)} onclick={() => nav(a.hash)}>
-        {a.label}
+         (lib/nav.js NAV_ACTIONS) — membership, order, labels and icons
+         live there; active(route) drives the highlight here. The button
+         is icon-only: the label rides title/aria-label (hover tooltip). -->
+    {#each mainActions as a (a.label)}
+      <button
+        class="nav-item"
+        class:active={a.active(route)}
+        type="button"
+        title={a.label}
+        aria-label={a.label}
+        aria-current={a.active(route) ? 'page' : undefined}
+        onclick={() => nav(a.hash)}
+      >
+        <span class="codicon {a.icon}" aria-hidden="true"></span>
       </button>
     {/each}
     <div class="spacer"></div>
+    <!-- Pinned bottom entries (Settings) — same list, split by the
+         `bottom` flag; see mainActions above. -->
+    {#each bottomActions as a (a.label)}
+      <button
+        class="nav-item"
+        class:active={a.active(route)}
+        type="button"
+        title={a.label}
+        aria-label={a.label}
+        aria-current={a.active(route) ? 'page' : undefined}
+        onclick={() => nav(a.hash)}
+      >
+        <span class="codicon {a.icon}" aria-hidden="true"></span>
+      </button>
+    {/each}
   </nav>
   <main class="content">
     {#if route.name === 'library'}
@@ -91,6 +119,8 @@
       <Builder {nav} />
     {:else if route.name === 'sql'}
       <SqlConsole {nav} />
+    {:else if route.name === 'profiles'}
+      <Profiles {nav} />
     {:else if route.name === 'explorer'}
       <Explorer {nav} routeId={route.id || 0} />
     {:else if route.name === 'reports'}

@@ -162,6 +162,16 @@ test('#/reports/:id carries an optional match context id', () => {
   assert.equal('id' in parseHash('#/reports'), false);
 });
 
+test('#/profiles is a prefix route (the player directory)', () => {
+  assert.deepEqual(parseHash('#/profiles'), { name: 'profiles' });
+  assert.deepEqual(parseHash('#/profiles/foo'), { name: 'profiles' });
+  // no params, and no query key on the plain hash
+  assert.equal('id' in parseHash('#/profiles'), false);
+  assert.equal('query' in parseHash('#/profiles'), false);
+  // a #/profiles query still rides along (prefix + withQuery)
+  assert.deepEqual(parseHash('#/profiles?q=donk'), { name: 'profiles', query: { q: 'donk' } });
+});
+
 test('a palette jump between match tabs keeps route.name stable (no remount)', () => {
   // App.svelte switches views on route.name only, and re-seeds Match's
   // active tab from route.tab — so "#/match/A/combat" → "#/match/B/
@@ -231,6 +241,7 @@ test('prefix routes match with startsWith (extra path stays on the route)', () =
   assert.deepEqual(parseHash('#/builder/x/y'), { name: 'builder' });
   assert.deepEqual(parseHash('#/explorer'), { name: 'explorer' });
   assert.deepEqual(parseHash('#/reports'), { name: 'reports' });
+  assert.deepEqual(parseHash('#/profiles'), { name: 'profiles' });
   assert.deepEqual(parseHash('#/sql'), { name: 'sql' });
 });
 

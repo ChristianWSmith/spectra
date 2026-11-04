@@ -27,7 +27,9 @@
   let gen = 0; // search generation — drops stale async results
 
   // The sidebar's action list (lib/nav.js) rendered for the palette:
-  // same membership, order and labels as App.svelte's sidebar buttons.
+  // same membership, order and labels as App.svelte's sidebar buttons
+  // (the rail pins `bottom` entries such as Settings at its foot — the
+  // palette lists them inline like everything else).
   function navActions() {
     return NAV_ACTIONS.map((a) => ({ label: a.label, run: () => nav(a.hash) }));
   }
