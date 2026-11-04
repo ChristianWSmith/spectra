@@ -7,7 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { synthTeamName, teamNames, teamStartClass, playerStartClass } from './teams.js';
+import { synthTeamName, teamNames, teamStartClass, playerStartClass, displayHalfScore } from './teams.js';
 
 // Same scoreboard as TestSynthTeamNames (models.PlayerStatsRow → the JS
 // row shape: steamId/name/side), including the sideless player that must
@@ -88,4 +88,32 @@ test('playerStartClass: steam-id lookup first, exact-name fallback, else no colo
   assert.equal(playerStartClass(SB, 1, 'missing', 'nobody'), '');
   assert.equal(playerStartClass(SB, 1, 'missing', 'sideless'), '');
   assert.equal(playerStartClass(null, 1, 'A00', 'kRaSnaL'), '');
+});
+
+test('displayHalfScore orders the half score by the teams’ display order', () => {
+  // Golden demo (donk.dem): halfCT 8 / halfT 4 with one side switch — the
+  // team shown FIRST finished CT, so it played T in the first half and the
+  // header must read "half 4–8", not the stored 8–4.
+  assert.deepEqual(displayHalfScore({ halfCT: 8, halfT: 4, sideSwitches: 1 }), {
+    first: 4,
+    second: 8,
+  });
+  // No side switch recorded: first-half sides ARE final sides, so the
+  // stored order already matches the display order.
+  assert.deepEqual(displayHalfScore({ halfCT: 8, halfT: 4, sideSwitches: 0 }), {
+    first: 8,
+    second: 4,
+  });
+  // Two switches (overtime): parity brings the sides back around.
+  assert.deepEqual(displayHalfScore({ halfCT: 8, halfT: 4, sideSwitches: 2 }), {
+    first: 8,
+    second: 4,
+  });
+  // Missing/garbage fields read as 0 — total, never throws.
+  assert.deepEqual(displayHalfScore(), { first: 0, second: 0 });
+  assert.deepEqual(displayHalfScore(null), { first: 0, second: 0 });
+  assert.deepEqual(displayHalfScore({ halfCT: 'x', halfT: null, sideSwitches: undefined }), {
+    first: 0,
+    second: 0,
+  });
 });

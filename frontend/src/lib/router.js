@@ -49,14 +49,14 @@
 // standalone #/explorer, #/reports routes still parse below unchanged.
 export const MATCH_TABS = [
   'Overview',
-  'Details',
   'Scoreboard',
   'Rounds',
   'Economy',
   'Utility',
-  'Heatmaps',
   'Combat',
+  'Heatmaps',
   'Reports',
+  'Details',
 ];
 
 // matchTabSlug is the URL segment for a tab; matchTabFromSlug is its

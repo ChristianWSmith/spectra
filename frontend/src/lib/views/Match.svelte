@@ -28,7 +28,7 @@
     fmtInt,
     fmtMetric,
   } from '../fmt.js';
-  import { teamNames, teamStartClass, playerStartClass } from '../teams.js';
+  import { teamNames, teamStartClass, playerStartClass, displayHalfScore } from '../teams.js';
   import { isCounted } from '../rounds.js';
   import { MATCH_TABS, matchTabSlug, buildHash } from '../router.js';
   import RoundStrip from '../components/RoundStrip.svelte';
@@ -61,7 +61,10 @@
   // scoreboard store — its sort is applied client-side (see viewRows).
   const SCORE_COLS = [
     { key: 'name', label: 'Name' },
-    { key: 'side', label: 'Side' },
+    // "Team" column: the key stays `side` (the store's sort whitelist is
+    // keyed by it) but the cell shows the TEAM's display name — see the
+    // body branch below.
+    { key: 'side', label: 'Team' },
     { key: 'kills', label: 'K' },
     { key: 'deaths', label: 'D' },
     { key: 'assists', label: 'A' },
@@ -519,6 +522,12 @@
     }),
   );
 
+  // The header's half score in the teams' DISPLAY order (the scoreline's
+  // order): displayHalfScore (lib/teams.js) re-maps the stored first-half-
+  // side numbers through the side-switch parity, so the golden demo reads
+  // "half 4–8" instead of the stored 8–4.
+  const halfScore = $derived(displayHalfScore(match));
+
   const rosters = $derived.by(() => {
     const ct = scoreboard.filter((p) => p.side === 'ct');
     const t = scoreboard.filter((p) => p.side === 't');
@@ -594,7 +603,7 @@
              stays up here. -->
         <p class="muted match-sub">
           {match.map || '—'}
-          · half {match.halfCT}–{match.halfT}
+          · half {halfScore.first}–{halfScore.second}
           · {fmtDuration(match.playbackTimeS)}
           · patch {match.patchVersion}
           · <StatusChip status={match.status || 'ready'} title={match.error || ''} />
@@ -606,9 +615,17 @@
             >
           {/if}
         </p>
+        <!-- The view's primary action: it sits with the scoreline, carries
+             the play codicon and a size bump (.match-replay), so it reads
+             as the primary action. It navigates via openReplay below. -->
+        <button
+          class="btn primary match-replay"
+          title="Watch this match from tick 0 in the replay view"
+          onclick={openReplay}
+        >
+          <span class="codicon codicon-play"></span> Watch replay
+        </button>
       </div>
-      <div class="spacer"></div>
-      <button class="btn primary" onclick={openReplay}>Replay</button>
     </header>
 
     <!-- Warnings: no button — the panel is present iff the match has
@@ -749,60 +766,6 @@
           {/if}
         </section>
       </div>
-
-      <!-- Key facts first, then Explorer's diagnostics panels below
-           (embedded — fixed to THIS match). Map/Duration live in the
-           match header; Provenance/Entity/census come from Explorer. -->
-      <section class="panel">
-        <h2>Key facts</h2>
-        <dl class="facts">
-          <div><dt>Server</dt><dd>{match.serverName || '—'}</dd></div>
-          <div><dt>Tickrate</dt><dd>{fmt1(match.tickRate)} Hz</dd></div>
-          <div><dt>Frames</dt><dd class="num">{fmtInt(match.frames)}</dd></div>
-          <div><dt>Size</dt><dd>{fmtBytes(match.size)}</dd></div>
-          <div><dt>Extracted</dt><dd>{fmtDate(match.extractedAt)}</dd></div>
-          <div><dt>Parser</dt><dd class="mono">{match.parserVersion || '—'}</dd></div>
-          <div>
-            <dt>Voice</dt>
-            <dd>
-              {#if !voice}
-                <span class="muted">—</span>
-              {:else if voice.hasVoice}
-                <span
-                  class="chip voice-badge busy"
-                  title="Voice: {fmtInt(voice.chunkCount)} chunks across {voice.playerCount} players — Opus, decoded on demand"
-                  ><span class="codicon codicon-unmute"></span>
-                  {(voice.chunkCount / 1000).toFixed(1)}k chunks · {voice.playerCount} players</span
-                >
-              {:else}
-                <span
-                  class="chip voice-badge idle"
-                  title="This demo source does not record voice (e.g. Valve MM) — normal, not broken"
-                  >no voice</span
-                >
-              {/if}
-            </dd>
-          </div>
-          <div><dt>Warnings</dt><dd>{match.warningsCount}</dd></div>
-          {#if firstBlood}
-            <div>
-              <dt>First blood</dt>
-              <dd>
-                <span class={playerCls(firstBlood.killSteam, firstBlood.kill)}
-                  >{firstBlood.kill}</span
-                >
-                killed
-                <span class={playerCls(firstBlood.deathSteam, firstBlood.death)}
-                  >{firstBlood.death}</span
-                >
-                (R{firstBlood.number})
-              </dd>
-            </div>
-          {/if}
-          <div class="fact-wide"><dt>Source</dt><dd class="mono">{match.path}</dd></div>
-        </dl>
-      </section>
-      <Explorer embedded routeId={id} {nav} />
     {:else if tab === 'Scoreboard'}
       {#if combatError}
         <p class="error" role="alert">KAST% unavailable: {combatError}</p>
@@ -893,9 +856,15 @@
                       {/if}{#if p.isBot}<span class="chip">bot</span>{/if}</td
                     >
                   {:else if col.key === 'side'}
+                    <!-- Team cell: the display name for this row's final
+                         side (teamNames in lib/teams.js — clan name, else
+                         team_<player>, else the bare side), colored by the
+                         team's START side like every other team name
+                         (teamCls). A row with no recorded side gets no
+                         name and no color. -->
                     <td class="num"
-                      ><span class="chip side {p.side}"
-                        >{p.side ? p.side.toUpperCase() : '—'}</span
+                      ><span class="chip {teamCls(p.side)}"
+                        >{p.side === 'ct' ? teams.ct : p.side === 't' ? teams.t : '—'}</span
                       ></td
                     >
                   {:else}
@@ -1096,6 +1065,60 @@
       <Combat {id} {nav} />
     {:else if tab === 'Reports'}
       <Reports embedded routeId={id} {nav} />
+    {:else if tab === 'Details'}
+      <!-- Details = Key facts + Explorer's diagnostics (Provenance,
+           Entity summary, Network message census), embedded and fixed to
+           THIS match. Map/Duration live in the match header. -->
+      <section class="panel">
+        <h2>Key facts</h2>
+        <dl class="facts">
+          <div><dt>Server</dt><dd>{match.serverName || '—'}</dd></div>
+          <div><dt>Tickrate</dt><dd>{fmt1(match.tickRate)} Hz</dd></div>
+          <div><dt>Frames</dt><dd class="num">{fmtInt(match.frames)}</dd></div>
+          <div><dt>Size</dt><dd>{fmtBytes(match.size)}</dd></div>
+          <div><dt>Extracted</dt><dd>{fmtDate(match.extractedAt)}</dd></div>
+          <div><dt>Parser</dt><dd class="mono">{match.parserVersion || '—'}</dd></div>
+          <div>
+            <dt>Voice</dt>
+            <dd>
+              {#if !voice}
+                <span class="muted">—</span>
+              {:else if voice.hasVoice}
+                <span
+                  class="chip voice-badge busy"
+                  title="Voice: {fmtInt(voice.chunkCount)} chunks across {voice.playerCount} players — Opus, decoded on demand"
+                  ><span class="codicon codicon-unmute"></span>
+                  {(voice.chunkCount / 1000).toFixed(1)}k chunks · {voice.playerCount} players</span
+                >
+              {:else}
+                <span
+                  class="chip voice-badge idle"
+                  title="This demo source does not record voice (e.g. Valve MM) — normal, not broken"
+                  >no voice</span
+                >
+              {/if}
+            </dd>
+          </div>
+          <div><dt>Warnings</dt><dd>{match.warningsCount}</dd></div>
+          {#if firstBlood}
+            <div>
+              <dt>First blood</dt>
+              <dd>
+                <span class={playerCls(firstBlood.killSteam, firstBlood.kill)}
+                  >{firstBlood.kill}</span
+                >
+                killed
+                <span class={playerCls(firstBlood.deathSteam, firstBlood.death)}
+                  >{firstBlood.death}</span
+                >
+                (R{firstBlood.number})
+              </dd>
+            </div>
+          {/if}
+          <div class="fact-wide"><dt>Source</dt><dd class="mono">{match.path}</dd></div>
+        </dl>
+      </section>
+      <Explorer embedded routeId={id} {nav} />
     {/if}
   {:else if !error}
     <p class="muted" role="status">Loading…</p>

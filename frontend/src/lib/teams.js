@@ -1,4 +1,5 @@
-// Team display names + team identity colors. Pure functions — no services.
+// Team display names, team identity colors and display-order helpers.
+// Pure functions — no services.
 //
 // Sides ("ct"/"t") switch at halftime, so a side never names a TEAM: show
 // the demo's clan name when the extract recorded one (MatchSummary
@@ -52,6 +53,27 @@ export function teamNames({ ctName = '', tName = '', players = [] } = {}) {
     ct: ctName || synthTeamName(players, 'ct') || 'CT',
     t: tName || synthTeamName(players, 't') || 'T',
   };
+}
+
+// displayHalfScore orders a match's halftime score the way the match view
+// shows its teams: the scoreline, the round-strip labels and the roster
+// headings all put the team that FINISHED CT first, while halfCT/halfT are
+// stored in FIRST-half side terms (extract flips the halftime score back to
+// the sides it was played on — internal/extract/agg.go halfPending). After
+// an odd number of side switches the two orders disagree and the numbers
+// must swap: the golden demo is 8/4 as stored and reads "half 4–8" in
+// display order. Returns { first, second } for the team shown first/second;
+// missing or non-numeric fields read as 0 — total, never throws.
+export function displayHalfScore(match) {
+  const halfCT = Number(match?.halfCT) || 0;
+  const halfT = Number(match?.halfT) || 0;
+  const sideSwitches = Number(match?.sideSwitches) || 0;
+  // startSideFor('ct') is the canonical final-side → first-half-side
+  // derivation (lib/sideparity.js): 't' means the team shown first played
+  // T in the first half, so its half score is the stored halfT.
+  return startSideFor('ct', sideSwitches) === 't'
+    ? { first: halfT, second: halfCT }
+    : { first: halfCT, second: halfT };
 }
 
 // --- Team identity colors (changes.txt #10/#20) ----------------------------

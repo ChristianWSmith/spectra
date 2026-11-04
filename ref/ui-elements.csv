@@ -57,6 +57,8 @@ Match table sort header,Library,"Clickable column header in the matches table th
 No results message,Library,"Message under the matches table when it is empty — either ""No matches match query"" after a search or ""No matches yet — imports will appear here.""",Library.svelte:dropzone
 Recent import problems panel,Library,"Panel above the drop zone listing recent failed/cancelled imports (last 7 days, max 10) with status, filename and error.",Library.svelte:problemJobs
 Reprocess button,Library,Small button in a match row's Actions column that re-parses the original demo.,Library.svelte:onReprocess
+Details tab content,Match — Details tab,"Embedded Explorer diagnostics (Provenance, Entity summary, Network message census) rendered when the Details tab is active, with the Key facts list above them.",Match.svelte:Explorer
+Key facts list,Match — Details tab,"Definition list at the top of the Details tab: Server, Tickrate, Frames, Size, Extracted, Parser, Voice, Warnings, First blood and Source path.",Match.svelte:facts
 Combat tab content,Match — Overview & header,Embedded combat-stats view rendered when the Combat tab is active.,Match.svelte:Combat
 CT roster table,Match — Overview & header,"Overview panel table of the team that finished CT, headed by that team's display name (demo clan name, else team_<player>, else ""CT"") with Player, K/D/A and ADR columns; clicking a row opens that player's events in the Replay landmark feed.",Match.svelte:side-ct
 Current round highlight,Match — Overview & header,Highlight styling on the round cell matching the round currently open in Round Detail.,RoundStrip.svelte:current
@@ -66,18 +68,17 @@ Encrypted chat lock badge,Match — Overview & header,🔒 chip in the subtitle 
 Extraction warnings panel,Match — Overview & header,"Expandable panel under the match header listing parser warnings, with a dismiss ✕ and loading/empty states.",Match.svelte:warnings-panel
 First blood fact,Match — Overview & header,"Key-facts row naming the match's first kill (killer, victim and round).",Match.svelte:firstBlood
 Heatmaps tab content,Match — Overview & header,Embedded heatmap view rendered when the Heatmaps tab is active.,Match.svelte:Heatmaps
-Key facts list,Match — Overview & header,"Definition list on the Overview tab: Server, Map, Tickrate, Frames, Duration, Size, Extracted, Warnings, First blood and Source path.",Match.svelte:facts
 Match loading text,Match — Overview & header,"""Loading…"" placeholder shown while the match view is still fetching its data.",Match.svelte:match
 Match not found message,Match — Overview & header,"Error alert ""Match not found."" when the match id has no matching record.",Match.svelte:error
 Match scoreline header,Match — Overview & header,"Large team name – score – team name title at the top of the match view (team names, never the sides)",Match.svelte:score
-Match section tab bar,Match — Overview & header,"Nav of tabs (Overview, Scoreboard, Rounds, Economy, Utility, Heatmaps, Combat) — Timeline/Chat/Context retired into the Replay landmark feed; tabs switch in-page panels.",Match.svelte:tabs
-Match subtitle line,Match — Overview & header,"Muted meta line under the scoreline: map, half score, duration, tickrate, patch, status chip, voice badges and parser version.",Match.svelte:match-sub
+Match section tab bar,Match — Overview & header,"Nav of tabs (Overview, Scoreboard, Rounds, Economy, Utility, Combat, Heatmaps, Reports, Details) — Timeline/Chat/Context retired into the Replay landmark feed; tabs switch in-page panels.",Match.svelte:tabs
+Match subtitle line,Match — Overview & header,"Muted meta line under the scoreline: map, half score (numbered the way the two teams are displayed), duration, patch, status chip and the encrypted-chat key badge.",Match.svelte:match-sub
 Other players table,Match — Overview & header,"Small table under the second roster for players outside both sides, showing name, K/D/A and ADR.",Match.svelte:rosters
 Overview stat card,Match — Overview & header,"One of five clickable cards on the Overview tab (Top fragger, Best ADR, Most util, Entry opens, Most MVPs) that opens the Replay landmark feed filtered to that player.",Match.svelte:stat-cell
-Replay button,Match — Overview & header,Primary header button opening the replay view for the whole match from tick 0.,Match.svelte:openReplay
+Replay button,Match — Overview & header,"Primary action directly under the scoreline (play codicon, ""Watch replay"") opening the replay view for the whole match from tick 0.",Match.svelte:openReplay
 Roster ADR chip,Match — Overview & header,Small chip showing a player's ADR value in the Overview roster tables.,Match.svelte:adr
 Round cell button,Match — Overview & header,"Winner-tinted (CT blue / T yellow) round-number button that opens that round's detail view and carries an arrow pointing toward the team that won it (▲ above, ▼ below); warmup/knife or no-winner rounds are muted.",RoundStrip.svelte:round-cell
-Round strip,Match — Overview & header,"Horizontal row of numbered round cells showing round-by-round winners with the two teams labelled above and below, arrows pointing at each round's winning team, and a split after real round 12 (MR12 halftime); displayed above the match and round detail views.",RoundStrip.svelte:round-strip
+Round strip,Match — Overview & header,"Horizontal row of numbered round cells showing round-by-round winners with the two teams labelled above and below, arrows pointing at each round's winning team, and a split after real round 12 (MR12 halftime); centered in the match header and also displayed above round detail views.",RoundStrip.svelte:round-strip
 T roster table,Match — Overview & header,"Overview panel table of the team that finished T, headed by that team's display name (demo clan name, else team_<player>, else ""T"") with the same Player, K/D/A and ADR columns.",Match.svelte:side-t
 Utility tab content,Match — Overview & header,Embedded utility-analysis view rendered when the Utility tab is active.,Match.svelte:Utility
 Voice presence badge,Match — Overview & header,"🔊 chip in the subtitle showing voice chunk count and player count, or a ""no voice"" variant when the demo has no voice track.",Match.svelte:voice
@@ -100,8 +101,8 @@ Player name link,Match — Scoreboard tab,Name-cell button in the scoreboard tha
 Scoreboard row click,Match — Scoreboard tab,Clicking a scoreboard row (away from buttons) opens the Replay landmark feed filtered to that player; rows are Enter-key focusable.,Match.svelte:openPlayerEvents
 Scoreboard sort header,Match — Scoreboard tab,Clickable column header that sorts the scoreboard (shows ↑/↓ when active); KAST% and pinned metric columns sort in the browser.,Match.svelte:th-sort
 Scoreboard stat cell,Match — Scoreboard tab,"One numeric scoreboard cell (kills, ADR, HS%, K/D, etc.) formatted per column.",Match.svelte:cellText
-Scoreboard table,Match — Scoreboard tab,"Full per-player stats table on the Scoreboard tab with Name, Side, K, D, A, ADR, KAST%, HS%, K/D, KDA, DMG, Rnds, 5K, 4K, 3K, Entry, Trade, Opening K/D, Streak, Util, MVPs and Score columns, plus any pinned metric columns.",Match.svelte:viewRows
-Side chip,Match — Scoreboard tab,"CT/T side chip used in the scoreboard Side column, roster tables, round winner cells, equip columns, and the player profile's sides and history tables.",Match.svelte:side
+Scoreboard table,Match — Scoreboard tab,"Full per-player stats table on the Scoreboard tab with Name, Team, K, D, A, ADR, KAST%, HS%, K/D, KDA, DMG, Rnds, 5K, 4K, 3K, Entry, Trade, Opening K/D, Streak, Util, MVPs and Score columns, plus any pinned metric columns.",Match.svelte:viewRows
+Side chip,Match — Rounds tab,"CT/T side chip used in the round winner cells, equip columns, and the player profile's sides and history tables (the scoreboard's Team column shows the team's display name instead).",Match.svelte:side
 Unpin metric button,Match — Scoreboard tab,✕ on a pinned metric header that removes the column from the scoreboard and updates localStorage.,Match.svelte:unpin
 Weapon breakdown expand button,Match — Scoreboard tab,▸/▾ toggle at the start of each scoreboard row that expands that player's weapon breakdown.,Match.svelte:expanded
 Weapon breakdown expand row,Match — Scoreboard tab,Full-width row under an expanded scoreboard player showing Kills by weapon and Damage by weapon mini-tables.,Match.svelte:expand-row

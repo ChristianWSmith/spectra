@@ -59,16 +59,18 @@ test('every match tab deep-links as #/match/:id/<slug> (slug = lowercase tab)', 
   // One canonical list: MATCH_TABS is what Match.svelte renders, so a
   // deep link can never drift from a tab that exists. Timeline/Chat/
   // Context are NOT tabs — they resolve to the Replay landmark feed.
+  // Display order: Details (the diagnostics) closes the list, Combat
+  // sits in front of Heatmaps; everything else keeps its relative order.
   assert.deepEqual(MATCH_TABS, [
     'Overview',
-    'Details',
     'Scoreboard',
     'Rounds',
     'Economy',
     'Utility',
-    'Heatmaps',
     'Combat',
+    'Heatmaps',
     'Reports',
+    'Details',
   ]);
   assert.equal(new Set(MATCH_TABS.map(matchTabSlug)).size, MATCH_TABS.length);
   for (const tab of MATCH_TABS) {

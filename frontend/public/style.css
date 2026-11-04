@@ -905,6 +905,15 @@ input[type='checkbox']:focus-visible {
   margin-top: 4px;
 }
 
+/* Replay entry point: sits directly under the scoreline, carries the
+   play codicon and is bumped off the base .btn size so the view's
+   primary action reads as one. */
+.match-replay {
+  margin-top: 8px;
+  padding: 5px 14px;
+  font-size: 1rem;
+}
+
 .warnings-panel {
   border-color: var(--accent-40);
 }
@@ -937,6 +946,14 @@ input[type='checkbox']:focus-visible {
   flex-direction: column;
   gap: 2px;
   width: fit-content;
+}
+
+/* Centered when the strip stands alone in a view (the match header's
+   round row): the wrap hugs its content, so auto margins center that
+   range on screen. Scoped to a direct .view child — RoundDetail lays the
+   strip out inside its .round-nav row between the prev/next buttons. */
+.view > .round-strip-wrap {
+  margin-inline: auto;
 }
 
 /* Team names centered over the range of round buttons (see the wrap). */
