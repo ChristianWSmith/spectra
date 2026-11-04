@@ -291,8 +291,10 @@ func TestGetEconomyLossBonus(t *testing.T) {
 }
 
 // TestGetEconomySpent pins the round-trip of round_economy.spent into
-// EconomyRow.SpentCT/SpentT (the "Winner spend advantage" card's input),
-// including the COALESCE to 0 for a round with no economy row.
+// EconomyRow.SpentCT/SpentT — the per-round side spend the Compare
+// rounds table plots (the Economy tab's own surfaces read equipment value
+// and net worth instead) — including the COALESCE to 0 for a round with
+// no economy row.
 func TestGetEconomySpent(t *testing.T) {
 	s := openMem(t)
 	id := saveTestMatch(t, s, "/d/spent.dem", "sha-spent", time.Now())

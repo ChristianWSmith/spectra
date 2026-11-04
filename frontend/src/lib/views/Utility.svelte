@@ -3,11 +3,12 @@
     getUtility,
     getScoreboard,
     getMatch,
+    getTeamNames,
     errText,
   } from '../services.js';
   import { fmtClock, tickSeconds, fmtMs } from '../fmt.js';
   import { replayHash } from '../nav.js';
-  import { playerStartClass } from '../teams.js';
+  import { playerStartClass, teamNames, teamStartClass } from '../teams.js';
 
   // Match renders <Utility {id} /> — nav is optional, fall back to the hash
   // router directly so the drill-downs still work.
@@ -18,6 +19,7 @@
 
   let rows = $state([]);
   let players = $state([]);
+  let names = $state({ ct: 'CT', t: 'T' }); // team names, final-side keyed
   let loading = $state(true);
   let error = $state('');
   let kindF = $state('');
@@ -41,13 +43,21 @@
       getUtility(id),
       getScoreboard(id, 'kills', true).catch(() => []),
       getMatch(id).catch(() => null),
+      getTeamNames(id).catch(() => null),
     ])
-      .then(([u, sb, m]) => {
+      .then(([u, sb, m, tn]) => {
         if (!live) return;
         rows = u || [];
         players = sb || [];
         if (m && m.tickRate > 0) tickRate = m.tickRate;
         if (m) sideSwitches = m.sideSwitches || 0;
+        // Team display names, keyed by each team's FINAL side — demo clan
+        // name → synthesized team_<player> → bare side (lib/teams.js).
+        names = teamNames({
+          ctName: tn?.ct || '',
+          tName: tn?.t || '',
+          players: sb || [],
+        });
         loading = false;
         error = '';
       })
@@ -60,11 +70,21 @@
     return () => (live = false);
   });
 
-  const sideBySteam = $derived.by(() => {
+  // A player's TEAM never changes — only its side does at halftime — so a
+  // thrower's final side (the scoreboard's `side`, keyed the way
+  // lib/teams.js names and colors teams) identifies the team behind every
+  // rollup here: tabulated per TEAM, never per side. An unresolvable
+  // thrower maps to '' and contributes to neither team (no guessed team).
+  const teamBySteam = $derived.by(() => {
     const m = new Map();
     for (const p of players) m.set(p.steamId, p.side || '');
     return m;
   });
+
+  // Identity colors of the two teams (final-side keyed), for the bars,
+  // the legend dots and the flash cells.
+  const clsCT = $derived(teamStartClass('ct', sideSwitches));
+  const clsT = $derived(teamStartClass('t', sideSwitches));
 
   const kindOptions = $derived(
     [...new Set(rows.map((r) => r.kind).filter(Boolean))].sort(),
@@ -87,14 +107,17 @@
     return [...m.entries()].sort((a, b) => a[0] - b[0]);
   });
 
+  // Per-round utility damage by THROWER TEAM (team_XYZ's damage in round
+  // N) — pure sums over the filtered rows, keyed by the teams' final
+  // sides, so the two bars stay the same two teams after halftime.
   const damageBars = $derived.by(() => {
     const per = groups.map(([round, list]) => {
       let ct = 0;
       let t = 0;
       for (const r of list) {
-        const s = sideBySteam.get(r.thrower) || '';
-        if (s === 'ct') ct += r.damage || 0;
-        else if (s === 't') t += r.damage || 0;
+        const team = teamBySteam.get(r.thrower) || '';
+        if (team === 'ct') ct += r.damage || 0;
+        else if (team === 't') t += r.damage || 0;
       }
       return { round, ct, t };
     });
@@ -103,7 +126,7 @@
     return { per, max: max || 1 };
   });
 
-  // Flash effectiveness per throwing team: total blind milliseconds + count
+  // Flash effectiveness per throwing TEAM: total blind milliseconds + count
   // of affected players. Blinds are recorded events, but "effectiveness"
   // aggregates them → heuristic label per PRD §6.1.
   const flash = $derived.by(() => {
@@ -113,12 +136,12 @@
     let tAff = 0;
     for (const r of filtered) {
       if (r.kind !== 'flash') continue;
-      const s = sideBySteam.get(r.thrower) || '';
+      const team = teamBySteam.get(r.thrower) || '';
       const aff = affectedCount(r.affected);
-      if (s === 'ct') {
+      if (team === 'ct') {
         ctMs += r.flashMsTotal || 0;
         ctAff += aff;
-      } else if (s === 't') {
+      } else if (team === 't') {
         tMs += r.flashMsTotal || 0;
         tAff += aff;
       }
@@ -210,31 +233,31 @@
               {@const x = i * slot}
               {@const bw = Math.max(2, slot * 0.32)}
               <rect
-                class="util-bar-ct"
+                class="util-bar {clsCT}"
                 x={x + slot * 0.08}
                 y={barH - (p.ct / damageBars.max) * (barH - 4)}
                 width={bw}
                 height={(p.ct / damageBars.max) * (barH - 4)}
               >
-                <title>Round {p.round} — CT {p.ct} damage</title>
+                <title>Round {p.round} — {names.ct} {p.ct} damage</title>
               </rect>
               <rect
-                class="util-bar-t"
+                class="util-bar {clsT}"
                 x={x + slot * 0.08 + bw + 2}
                 y={barH - (p.t / damageBars.max) * (barH - 4)}
                 width={bw}
                 height={(p.t / damageBars.max) * (barH - 4)}
               >
-                <title>Round {p.round} — T {p.t} damage</title>
+                <title>Round {p.round} — {names.t} {p.t} damage</title>
               </rect>
             {/each}
           </svg>
           <div class="util-legend">
             <span
-              ><span class="util-dot ct"></span>CT
+              ><span class="util-dot {clsCT}"></span>{names.ct}
               <span class="chip badge-computed">computed</span></span
             >
-            <span><span class="util-dot t"></span>T</span>
+            <span><span class="util-dot {clsT}"></span>{names.t}</span>
             <span class="muted"
               title="sum of damage rows in the current filter, grouped by thrower team"
               >max {damageBars.max} dmg/round · sums of recorded damage</span
@@ -247,12 +270,12 @@
         <h2>Flash effectiveness</h2>
         <div class="util-flash-grid">
           <div class="util-flash-cell">
-            <span class="field-label ct">CT blinds</span>
+            <span class="field-label {clsCT}">{names.ct} blinds</span>
             <span class="util-flash-value">{fmtMs(flash.ctMs)}</span>
             <span class="muted">{flash.ctAff} affected</span>
           </div>
           <div class="util-flash-cell">
-            <span class="field-label t">T blinds</span>
+            <span class="field-label {clsT}">{names.t} blinds</span>
             <span class="util-flash-value">{fmtMs(flash.tMs)}</span>
             <span class="muted">{flash.tAff} affected</span>
           </div>
@@ -276,11 +299,11 @@
       <div class="util-groups">
         {#each groups as [round, list] (round)}
           {@const ctDmg = list.reduce(
-            (a, r) => a + (sideBySteam.get(r.thrower) === 'ct' ? r.damage || 0 : 0),
+            (a, r) => a + (teamBySteam.get(r.thrower) === 'ct' ? r.damage || 0 : 0),
             0,
           )}
           {@const tDmg = list.reduce(
-            (a, r) => a + (sideBySteam.get(r.thrower) === 't' ? r.damage || 0 : 0),
+            (a, r) => a + (teamBySteam.get(r.thrower) === 't' ? r.damage || 0 : 0),
             0,
           )}
           <section class="util-group">
@@ -291,7 +314,7 @@
             >
               <span class="util-group-title">Round {round}</span>
               <span class="chip round-chip">{list.length}</span>
-              <span class="muted mono">CT {ctDmg} · T {tDmg} dmg</span>
+              <span class="muted mono">{names.ct} {ctDmg} · {names.t} {tDmg} dmg</span>
               <span class="spacer"></span>
               <span class="muted"><span class="codicon {closed[round] ? 'codicon-chevron-right' : 'codicon-chevron-down'}"></span></span>
             </button>

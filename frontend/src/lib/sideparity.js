@@ -13,7 +13,8 @@
 // sideparity.json — from internal/rules/sideparity_test.go (Go) and
 // frontend/src/lib/sideparity.test.js (node --test src/lib/sideparity.test.js).
 // RoundStrip consumes eraOf()/sideInEra() per cell; startSideFor (era 0)
-// feeds the team-identity name colors through lib/teams.js.
+// feeds the team-identity name colors through lib/teams.js; teamKeyAt
+// maps a round's side onto the TEAM behind it for per-team rollups.
 
 // flipIndexes returns the counted-round indexes (0-based, ascending) where
 // side switches happen. Boundaries outside (0, n) are dropped — a match too
@@ -68,4 +69,21 @@ export function sideInEra(finalSide, sideSwitches, era) {
   const flips = Math.abs(eras - 1 - e) % 2;
   if (flips === 0) return finalSide;
   return finalSide === 'ct' ? 't' : 'ct';
+}
+
+// teamKeyAt maps the SIDE a team played in the counted round at `index`
+// to that TEAM, keyed by the team's FINAL side — the key lib/teams.js
+// uses for display names and identity colors. Sides swap at every half,
+// so 'ct' names one team before the switch and the other after it: any
+// per-TEAM rollup (never per-side) resolves each round through this
+// instead of treating a side as a team. `counted` is the number of
+// counted rounds in the match — the same length RoundStrip feeds
+// flipIndexes — and `sideSwitches` the match's recorded side switches.
+// An unknown side maps to null: missing data never gets a guessed team.
+// Frontend-only composition over the primitives above (the Go rollups
+// read the exact round_player_sides samples rather than parity).
+export function teamKeyAt(side, index, counted, switches) {
+  if (side !== 'ct' && side !== 't') return null;
+  const era = eraOf(index, flipIndexes(counted, switches));
+  return sideInEra('ct', switches, era) === side ? 'ct' : 't';
 }

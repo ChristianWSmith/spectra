@@ -311,3 +311,27 @@ at the end of the section.
   money the player has spent across the whole match")
   (https://cs2opendev.github.io/CS2OpenDev-Docs/schemas/server/CCSPlayerController_InGameMoneyServices/)
   (2026-11-04).
+
+- **Freeze-time-end equipment value (`m_unFreezetimeEndEquipmentValue`)** —
+  is a side's "equipment value" the gear it holds or the money it spent?
+  The game records a PER-PLAYER pawn property
+  `m_unFreezetimeEndEquipmentValue` — demoinfocs v6
+  `Player.EquipmentValueFreezeTimeEnd()` = "the value of equipment in the
+  player's inventory at the end of the freeze time";
+  `TeamState.FreezeTimeEndEquipmentValue()` sums it over the team. It is
+  INVENTORY value: every weapon in the player's inventory — including
+  weapons picked up and carried over from earlier rounds — plus armor,
+  grenades and the defuse kit; it is neither this round's spend nor
+  unspent money (a stolen AK survives on the carrying player's next
+  freeze-end sample). Siblings: `m_unRoundStartEquipmentValue` (before the
+  freeze-time buys) and `m_unCurrentEquipmentValue` (live). Verified on
+  the golden demo: round 3's CT side spent $4200 yet holds $8350 of gear,
+  its T opponent spent $5000 for $23800 (pinned by
+  `extract.TestParseGolden`; spectra stores the value as
+  `rounds.equip_ct/equip_t` + `round_economy.equip_value`, with the spend
+  kept separately in `round_economy.spent`).
+  **Source** — demoinfocs v6 `Player.EquipmentValueFreezeTimeEnd` doc
+  comment + source
+  (https://pkg.go.dev/github.com/markus-wa/demoinfocs-golang/v6/pkg/demoinfocs/common#Player.EquipmentValueFreezeTimeEnd,
+  https://github.com/markus-wa/demoinfocs-golang/blob/master/pkg/demoinfocs/common/player.go);
+  golden-demo round-economy dump (2026-11-04).

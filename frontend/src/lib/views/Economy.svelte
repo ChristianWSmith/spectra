@@ -2,10 +2,16 @@
   import {
     getEconomy,
     getRounds,
+    getMatch,
+    getTeamNames,
+    getScoreboard,
     errText,
   } from '../services.js';
   import { fmtInt, fmtMoney } from '../fmt.js';
   import { replayHash } from '../nav.js';
+  import { teamKeyAt } from '../sideparity.js';
+  import { teamNames } from '../teams.js';
+  import { EQUIP_DEF } from '../definitions.js';
   import EconCurve from '../components/EconCurve.svelte';
   import StatCard from '../components/StatCard.svelte';
 
@@ -13,17 +19,33 @@
 
   let rows = $state([]); // non-warmup models.EconomyRow[]
   let rounds = $state([]); // RoundRow[] (warmup counts / context)
+  let match = $state(null); // models.Match — side switches + final score
+  let names = $state({ ct: 'CT', t: 'T' }); // team names, final-side keyed
   let loading = $state(true);
   let error = $state('');
   let whyOpen = $state(''); // `${round}:${side}` — expanded classWhy cell
 
   $effect(() => {
     let live = true;
-    Promise.all([getEconomy(id), getRounds(id)])
-      .then(([eco, rs]) => {
+    Promise.all([
+      getEconomy(id),
+      getRounds(id),
+      getMatch(id).catch(() => null),
+      getTeamNames(id).catch(() => null),
+      getScoreboard(id, 'kills', true).catch(() => []),
+    ])
+      .then(([eco, rs, m, tn, sb]) => {
         if (!live) return;
         rows = (eco || []).filter((r) => !r.warmup);
         rounds = rs || [];
+        match = m;
+        // Team display names, keyed by each team's FINAL side — demo clan
+        // name → synthesized team_<player> → bare side (lib/teams.js).
+        names = teamNames({
+          ctName: tn?.ct || '',
+          tName: tn?.t || '',
+          players: sb || [],
+        });
         loading = false;
         error = '';
       })
@@ -38,9 +60,27 @@
 
   const warmupSkipped = $derived(rounds.filter((r) => r.warmup).length);
 
+  // Sides swap at halftime, so a side never names a team: every per-team
+  // rollup below resolves each round's side through the canonical
+  // side-parity helper (teamKeyAt), keyed by the team's final side —
+  // the same key the display names and identity colors use.
+  const sideSwitches = $derived(match?.sideSwitches || 0);
+
+  // Winner of the WHOLE match, keyed by final side (the final score is
+  // already keyed by final side); a tie or unfinished match has none.
+  const matchWinner = $derived.by(() => {
+    if (!match) return '';
+    const ct = match.scoreCT || 0;
+    const t = match.scoreT || 0;
+    return ct === t ? '' : ct > t ? 'ct' : 't';
+  });
+
   // Summary math (all deterministic sums/ratios over the stored rows —
   // badges per PRD §6.1; formulas live in each card's title).
   const summary = $derived.by(() => {
+    const counted = rows.length;
+    const sw = sideSwitches;
+
     let pistolWon = 0;
     let held = 0;
     let firstPistol = 0;
@@ -55,54 +95,48 @@
       if (next && (side === 'ct' ? next.wonCT : next.wonT)) held++;
     }
 
-    let forceTotal = 0;
-    let forceWon = 0;
-    let forceCT = 0;
-    let forceCTT = 0;
-    let forceT = 0;
-    let forceTT = 0;
+    // Force buys, per TEAM: a side's force-buy round is a force-buy round
+    // of whichever team played that side in that round (a round both
+    // teams force-bought counts for each of them).
+    const force = { ct: { won: 0, total: 0 }, t: { won: 0, total: 0 } };
     let firstForce = 0;
-    for (const r of rows) {
-      if (r.classCT === 'force') {
-        forceTotal++;
-        forceCTT++;
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
+      const forceSides = [];
+      if (r.classCT === 'force') forceSides.push('ct');
+      if (r.classT === 'force') forceSides.push('t');
+      for (const side of forceSides) {
+        const key = teamKeyAt(side, i, counted, sw);
+        if (!key) continue; // unknown side → no guessed team
+        force[key].total++;
+        if (side === 'ct' ? r.wonCT : r.wonT) force[key].won++;
         if (!firstForce) firstForce = r.round;
-        if (r.wonCT) {
-          forceWon++;
-          forceCT++;
-        }
-      }
-      if (r.classT === 'force') {
-        forceTotal++;
-        forceTT++;
-        if (!firstForce) firstForce = r.round;
-        if (r.wonT) {
-          forceWon++;
-          forceT++;
-        }
       }
     }
 
+    // Winner advantage + lost equipment: both compare the round's two
+    // SIDES (winner vs loser that round), while the lost equipment is
+    // credited to the TEAM that lost it.
     let gapSum = 0;
     let gapN = 0;
     let gapRound = 0;
     let gapBest = -Infinity;
-    let lostCT = 0;
-    let lostT = 0;
+    const lost = { ct: 0, t: 0 };
     let lostRound = 0;
     let lostBest = -Infinity;
-    for (const r of rows) {
+    for (let i = 0; i < rows.length; i++) {
+      const r = rows[i];
       let win;
       let lose;
-      let loserIsCT;
+      let loserSide;
       if (r.winner === 'ct') {
-        win = r.spentCT;
-        lose = r.spentT;
-        loserIsCT = false;
+        win = r.equipCT;
+        lose = r.equipT;
+        loserSide = 't';
       } else if (r.winner === 't') {
-        win = r.spentT;
-        lose = r.spentCT;
-        loserIsCT = true;
+        win = r.equipT;
+        lose = r.equipCT;
+        loserSide = 'ct';
       } else {
         continue;
       }
@@ -113,9 +147,9 @@
         gapBest = gap;
         gapRound = r.round;
       }
-      const loserEquip = loserIsCT ? r.equipCT || 0 : r.equipT || 0;
-      if (loserIsCT) lostCT += loserEquip;
-      else lostT += loserEquip;
+      const loserEquip = loserSide === 'ct' ? r.equipCT || 0 : r.equipT || 0;
+      const loserKey = teamKeyAt(loserSide, i, counted, sw);
+      if (loserKey) lost[loserKey] += loserEquip;
       if (loserEquip > lostBest) {
         lostBest = loserEquip;
         lostRound = r.round;
@@ -126,18 +160,14 @@
       pistolWon,
       held,
       firstPistol,
-      forceTotal,
-      forceWon,
-      forceCT,
-      forceCTT,
-      forceT,
-      forceTT,
+      force,
+      forceTotal: force.ct.total + force.t.total,
+      forceWon: force.ct.won + force.t.won,
       firstForce,
       avgGap: gapN ? Math.round(gapSum / gapN) : null,
       gapRound,
-      lostCT,
-      lostT,
-      lostTotal: lostCT + lostT,
+      lost,
+      lostTotal: lost.ct + lost.t,
       lostRound,
     };
   });
@@ -190,7 +220,7 @@
       >
     </div>
 
-    <EconCurve {rows} {id} {nav} />
+    <EconCurve {rows} {id} {nav} {sideSwitches} matchWinner={matchWinner} {names} />
 
     <div class="econ-summary stat-grid">
       <StatCard
@@ -210,21 +240,21 @@
           ? Math.round((100 * summary.forceWon) / summary.forceTotal) + '%'
           : '—'}
         sub={summary.forceTotal
-          ? `${summary.forceWon}/${summary.forceTotal} · CT ${summary.forceCT}/${summary.forceCTT} · T ${summary.forceT}/${summary.forceTT}`
+          ? `${names.ct} ${summary.force.ct.won}/${summary.force.ct.total} · ${names.t} ${summary.force.t.won}/${summary.force.t.total}`
           : 'no force buys'}
         cls={!summary.firstForce ? 'no-drill' : ''}
-        title="Formula: force-buy rounds won by the force-buying side ÷ all force-buy rounds (per side). Click: open Replay events for round {summary.firstForce || '—'}."
+        title="Formula: force-buy rounds won by the force-buying TEAM ÷ that team's own force-buy rounds, attributed per team across the halftime side switch (a round both teams force-bought counts once for each). Click: open Replay events for round {summary.firstForce || '—'}."
         onclick={() => drill(summary.firstForce)}
       >
         {#snippet badge()}<span class="chip badge-computed">computed</span>{/snippet}
       </StatCard>
 
       <StatCard
-        label="Winner spend advantage"
+        label="Winner equipment value advantage"
         value={summary.avgGap == null ? '—' : fmtMoney(summary.avgGap)}
-        sub="avg winner − loser spend per round"
+        sub="avg winner − loser equip per round"
         cls={!summary.gapRound ? 'no-drill' : ''}
-        title="Formula: mean over decided rounds of (winner spent − loser spent), where a side's per-round spend is real buy money — the sum of its players' cumulative money-spent deltas between freeze-time ends (round_economy.spent), not equipment value. Click: open Replay events for round {summary.gapRound || '—'} (largest gap)."
+        title="Formula: mean over decided rounds of (winner equipment value − loser equipment value) at freeze time end — the value of the gear each side actually holds (weapons carried over from earlier rounds included), never this round's spend. Click: open Replay events for round {summary.gapRound || '—'} (largest gap)."
         onclick={() => drill(summary.gapRound)}
       >
         {#snippet badge()}<span class="chip badge-computed">computed</span>{/snippet}
@@ -233,9 +263,9 @@
       <StatCard
         label="Lost equipment"
         value={fmtMoney(summary.lostTotal)}
-        sub={`CT ${fmtMoney(summary.lostCT)} · T ${fmtMoney(summary.lostT)}`}
+        sub={`${names.ct} ${fmtMoney(summary.lost.ct)} · ${names.t} ${fmtMoney(summary.lost.t)}`}
         cls={!summary.lostRound ? 'no-drill' : ''}
-        title="Formula: Σ losing side's freeze-end equipment value over decided rounds — inferred: assumes all losing-side equipment is destroyed (PRD §6.1). Click: open Replay events for round {summary.lostRound || '—'} (largest loss)."
+        title="Formula: Σ over decided rounds of the losing TEAM's freeze-end equipment value, credited to the team that lost it rather than the side it played — inferred: assumes all losing-side equipment is destroyed (PRD §6.1). Click: open Replay events for round {summary.lostRound || '—'} (largest loss)."
         onclick={() => drill(summary.lostRound)}
       >
         {#snippet badge()}<span class="chip badge-inferred">inferred</span>{/snippet}
@@ -255,8 +285,8 @@
                 <th scope="col">Winner</th>
                 <th scope="col">CT buy</th>
                 <th scope="col">T buy</th>
-                <th scope="col" class="num">Spent CT</th>
-                <th scope="col" class="num">Spent T</th>
+                <th scope="col" class="num" title={EQUIP_DEF}>Equip CT</th>
+                <th scope="col" class="num" title={EQUIP_DEF}>Equip T</th>
                 <th scope="col" class="num">Loss CT</th>
                 <th scope="col" class="num">Loss T</th>
               </tr>
@@ -300,8 +330,8 @@
                       onclick={() => toggleWhy(r, 't')}>{tc.cls}</button
                     >
                   </td>
-                  <td class="num">{fmtMoney(r.spentCT)}</td>
-                  <td class="num">{fmtMoney(r.spentT)}</td>
+                  <td class="num">{fmtMoney(r.equipCT)}</td>
+                  <td class="num">{fmtMoney(r.equipT)}</td>
                   <td class="num econ-loss">
                     {fmtInt(r.lossBonusCT)}
                     {#if r.inferredCT}
@@ -351,8 +381,11 @@
           </table>
         </div>
         <p class="econ-table-note muted">
-          Spent CT/T = that side's real buy spend this round (Σ its players'
-          cumulative money-spent delta between freeze-time ends); Loss CT/T =
+          Equip CT/T = that side's equipment value at freeze time end — the
+          value of the gear its players actually hold (weapons picked up and
+          carried over from earlier rounds included), never this round's
+          spend; the chart's Net worth = equipment value + unspent money at
+          the same instant; Loss CT/T =
           the round loss bonus that side would collect by losing
           this round — CS2's ladder runs $1400 → $3400 in $500 steps: a loss
           steps it up, a win steps it down (never a full reset), and every

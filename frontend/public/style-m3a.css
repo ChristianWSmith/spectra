@@ -84,19 +84,55 @@
   vector-effect: non-scaling-stroke;
 }
 
-.econ-line-ct,
-.econ-line-t {
+/* One line per TEAM (keyed by the team's final side), colored by the
+   side it opened the match on — the team-identity classes from
+   lib/teams.js, never the live side, which swaps at halftime. The match
+   loser's line is dashed; both stay solid when no winner is decided. */
+.econ-line {
   fill: none;
   stroke-width: 2;
   vector-effect: non-scaling-stroke;
 }
 
-.econ-line-ct {
-  stroke: var(--ct);
+.econ-line.team-start-ct {
+  stroke: var(--team-start-ct);
 }
 
-.econ-line-t {
-  stroke: var(--t);
+.econ-line.team-start-t {
+  stroke: var(--team-start-t);
+}
+
+.econ-line.loser {
+  stroke-dasharray: 7 5;
+}
+
+/* Legend above the chart: line swatch + team name (identity-colored),
+   plus the solid/dashed reading of the match outcome. */
+.econ-legend {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  flex-wrap: wrap;
+  font-size: 0.8em;
+  color: var(--muted);
+}
+
+.econ-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.econ-legend-line {
+  display: inline-block;
+  width: 20px;
+  height: 0;
+  border-top: 2px solid currentColor;
+}
+
+.econ-legend-line.loser {
+  border-top-style: dashed;
 }
 
 .econ-guide {
@@ -140,10 +176,41 @@
   margin-bottom: 2px;
 }
 
+/* Hover tooltip columns: equip value + net worth per team, right-aligned
+   under a small header row; the metric the chart plots is emphasised.
+   Header and value cells share one fixed column width so the two lines
+   up regardless of the header's smaller font size. */
+.econ-tip-cols {
+  display: flex;
+  justify-content: flex-end;
+  gap: 14px;
+  font-size: 0.72em;
+  color: var(--muted);
+}
+
+.econ-tip-cols span {
+  width: 56px;
+  text-align: right;
+}
+
+.econ-tip-cols span.active {
+  color: var(--text);
+  font-weight: 600;
+}
+
 .econ-tip-row {
   display: flex;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 14px;
+}
+
+.econ-tip-row > span:first-child {
+  flex: 1 1 auto;
+}
+
+.econ-tip-row .mono {
+  width: 56px;
+  text-align: right;
 }
 
 .econ-tooltip .econ-cls {
@@ -394,12 +461,20 @@
   display: block;
 }
 
-.util-bar-ct {
-  fill: var(--ct);
+/* Bars and legend dots are keyed by TEAM — the identity colors of the
+   sides the teams opened the match on (lib/teams.js), so the two series
+   stay the same two teams after halftime. The plain class is the neutral
+   fallback for an unresolvable side (never a guessed color). */
+.util-bar {
+  fill: var(--muted);
 }
 
-.util-bar-t {
-  fill: var(--t);
+.util-bar.team-start-ct {
+  fill: var(--team-start-ct);
+}
+
+.util-bar.team-start-t {
+  fill: var(--team-start-t);
 }
 
 .util-legend {
@@ -417,14 +492,15 @@
   height: 9px;
   border-radius: var(--radius);
   margin-right: 4px;
+  background: var(--muted);
 }
 
-.util-dot.ct {
-  background: var(--ct);
+.util-dot.team-start-ct {
+  background: var(--team-start-ct);
 }
 
-.util-dot.t {
-  background: var(--t);
+.util-dot.team-start-t {
+  background: var(--team-start-t);
 }
 
 .util-flash-grid {
@@ -473,6 +549,8 @@
 .util-group-head {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
+  row-gap: 4px;
   gap: 10px;
   width: 100%;
   background: none;
