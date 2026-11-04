@@ -9,7 +9,8 @@
 // (missing pack) one is derived from sample extents so a blank
 // coordinate grid still frames the players.
 import { makeTransform } from '../components/mapxform.js';
-import { classifyLandmark } from './landmarks.js';
+// (bucketing/classification lives in ./landmarks.js — rows arrive
+// pre-bucketed from normalizeEvent; see setLandmarks.)
 
 const CT_COLOR = '#5aa9e6';
 const T_COLOR = '#e6a35a';
@@ -149,6 +150,11 @@ export function createRenderer(canvas, { engine, data, players }) {
   }
 
   function setLandmarks(list) {
+    // Rows arrive PRE-BUCKLETED (lib/replay/landmarks.js normalizeEvent
+    // stamps `bucket`) — no classification happens in the render path.
+    // Two passes: bucket everything, then pair throws against the
+    // COMPLETE detonation set (the old single pass scanned the raw list
+    // mid-population and re-classified every row per throw).
     landmarks = list || [];
     polylines = [];
     dets = [];
@@ -157,39 +163,48 @@ export function createRenderer(canvas, { engine, data, players }) {
     plants = [];
     explodes = [];
     defuses = [];
+    const throws = [];
     for (const l of landmarks) {
-      const bucket = classifyLandmark(l.kind);
-      if (bucket === 'throw') {
-        // pair with the nearest detonation of same round+thrower+weapon
-        // (the partner filter is the detonation bucket — 'grenade').
-        let best = null;
-        let bestDelta = Infinity;
-        for (const d of landmarks) {
-          if (classifyLandmark(d.kind) !== 'detonation') continue;
-          if (d.round !== l.round) continue;
-          if (l.steamId && d.steamId !== l.steamId) continue;
-          if (l.weapon && d.weapon && d.weapon !== l.weapon) continue;
-          if (d.tick < l.tick) continue;
-          const delta = d.tick - l.tick;
-          if (delta < bestDelta) {
-            bestDelta = delta;
-            best = d;
-          }
-        }
-        polylines.push({ from: l, to: best });
-      } else if (bucket === 'detonation') {
-        dets.push(l);
-      } else if (bucket === 'smoke') {
-        smokes.push(l);
-      } else if (bucket === 'fire') {
-        fires.push(l);
-      } else if (bucket === 'plant') {
-        plants.push(l);
-      } else if (bucket === 'explode') {
-        explodes.push(l);
-      } else if (bucket === 'defuse') {
-        defuses.push(l);
+      switch (l.bucket) {
+        case 'throw':
+          throws.push(l);
+          break;
+        case 'detonation':
+          dets.push(l);
+          break;
+        case 'smoke':
+          smokes.push(l);
+          break;
+        case 'fire':
+          fires.push(l);
+          break;
+        case 'plant':
+          plants.push(l);
+          break;
+        case 'explode':
+          explodes.push(l);
+          break;
+        case 'defuse':
+          defuses.push(l);
+          break;
       }
+    }
+    for (const l of throws) {
+      // pair with the nearest detonation of same round+thrower+weapon
+      let best = null;
+      let bestDelta = Infinity;
+      for (const d of dets) {
+        if (d.round !== l.round) continue;
+        if (l.steamId && d.steamId !== l.steamId) continue;
+        if (l.weapon && d.weapon && d.weapon !== l.weapon) continue;
+        if (d.tick < l.tick) continue;
+        const delta = d.tick - l.tick;
+        if (delta < bestDelta) {
+          bestDelta = delta;
+          best = d;
+        }
+      }
+      polylines.push({ from: l, to: best });
     }
   }
 

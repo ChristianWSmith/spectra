@@ -1,12 +1,14 @@
 <script>
   // ClutchCard — one detected 1vN (clutch v2) summary + deep links.
-  // Replay ▶ uses the pendingSeek contract ({tick}); Timeline uses the
-  // pending-filter contract ({round}).
-  import { setPendingSeek, setPendingTimelineFilter } from '../services.js';
+  // Both actions open THE event browser (Replay's landmark feed): Replay
+  // at the clutch's anchor tick, Events scoped to the clutch's round.
+  import { replayHash } from '../nav.js';
   import { fmtDuration } from '../fmt.js';
   import ProfileLink from './ProfileLink.svelte';
 
   let { clutch, id = 0, nav = () => {}, tickRate = 64 } = $props();
+
+  const back = $derived(`match/${id}/combat`);
 
   function parseTicks(json) {
     if (!json) return [];
@@ -24,13 +26,11 @@
   );
 
   function replay() {
-    setPendingSeek({ tick: clutch.replayAnchorTick || clutch.startTick });
-    nav(`/replay/${id}`);
+    nav(replayHash(id, {}, { tick: clutch.replayAnchorTick || clutch.startTick, back }));
   }
 
-  function openTimeline() {
-    setPendingTimelineFilter({ round: clutch.round });
-    nav(`/match/${id}/timeline`);
+  function openEvents() {
+    nav(replayHash(id, { round: clutch.round }, { back }));
   }
 
 </script>
@@ -75,8 +75,8 @@
     <button class="btn small" title="Watch the clutch in the replay" onclick={replay}>
       <span class="codicon codicon-play"></span> Replay
     </button>
-    <button class="btn small" title="Open this round in the timeline" onclick={openTimeline}>
-      Timeline
+    <button class="btn small" title="Open this round's events in the replay landmark feed" onclick={openEvents}>
+      Events
     </button>
   </div>
 </article>

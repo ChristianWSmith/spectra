@@ -18,7 +18,11 @@ import (
 // position bytes do NOT go through here — they ride the asset-server HTTP
 // route /api/sidecar/<matchID>/positions (Range-capable, decompressed
 // server-side) because bound []byte calls are base64-inflated.
-// This service carries the small control-plane data: meta + landmarks.
+// This service carries the small control-plane data: meta. (The landmark
+// feed itself is composed client-side from the source-specific reads —
+// MatchService.GetEvents / GetChat / LibraryService.GetGenericEvents —
+// see frontend lib/replay/landmarks.js; there is no separate landmark
+// query.)
 
 // ReplayMeta describes one match's position sidecar for the renderer.
 type ReplayMeta struct {
@@ -38,22 +42,7 @@ type ReplayPlayer struct {
 	Side    string `json:"side"`
 }
 
-// Landmark is one position-stamped event anchor (grenade throw/detonation,
-// bomb plant/defuse/explode, kill) used for scrubber markers, site
-// highlighting, and grenade polylines.
-type Landmark struct {
-	Kind    string   `json:"kind"`
-	Tick    int      `json:"tick"`
-	Round   int      `json:"round"`
-	X       *float64 `json:"x,omitempty"`
-	Y       *float64 `json:"y,omitempty"`
-	Z       *float64 `json:"z,omitempty"`
-	SteamID string   `json:"steamId,omitempty"`
-	Weapon  string   `json:"weapon,omitempty"`
-	Site    string   `json:"site,omitempty"`
-}
-
-// ReplayService serves replay meta + landmarks.
+// ReplayService serves replay meta.
 type ReplayService struct {
 	st  *store.Store
 	app *application.App
@@ -130,37 +119,4 @@ func (s *ReplayService) GetReplayMeta(matchID int64) (ReplayMeta, error) {
 	})
 	meta.Players = append(meta.Players, rest...)
 	return meta, nil
-}
-
-// GetLandmarks returns position-stamped anchors for a match:
-// events carrying a position plus the bomb/grenade/kill landmark kinds,
-// ordered by tick, capped at store.LandmarkLimit rows. SteamID attributes
-// the actor — attacker for kills/damage, thrower for grenades, empty for
-// bomb events (the bomb entity is the subject, not a player).
-func (s *ReplayService) GetLandmarks(matchID int64) ([]Landmark, error) {
-	rows, err := s.st.GetLandmarks(matchID, store.LandmarkLimit)
-	if err != nil {
-		return nil, err
-	}
-	out := make([]Landmark, 0, len(rows))
-	for _, e := range rows {
-		lm := Landmark{
-			Kind:   e.Kind,
-			Tick:   e.Tick,
-			Round:  e.Round,
-			X:      e.PosX,
-			Y:      e.PosY,
-			Z:      e.PosZ,
-			Weapon: e.Weapon,
-			Site:   e.Site,
-		}
-		switch e.Kind {
-		case models.EventBombPlant, models.EventBombDefuse, models.EventBombExplode:
-			// no player attribution
-		default:
-			lm.SteamID = e.Attacker
-		}
-		out = append(out, lm)
-	}
-	return out, nil
 }

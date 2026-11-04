@@ -1,27 +1,71 @@
 <script>
+  // Replay — the tactical replay AND the app's ONE canonical raw-event
+  // browser per match (the landmark consolidation): event discovery,
+  // filtering, inspection and navigation all happen here, in the side
+  // panel's landmark feed. The feed composes the backend's three
+  // source-specific reads (typed events / chat / generic events) through
+  // lib/replay/landmarks.js — there is no separate event query, no
+  // second categorization, and no competing event browser.
+  //
+  // State model: the durable event-navigation context (category set,
+  // round/player/weapon/tick/dmg/bbox scope, generic name, initial tick,
+  // selected landmark, origin path) lives in the ROUTE QUERY
+  // (#/replay/:id?cat=…&round=…&back=…) — deep links, refresh and
+  // back/forward preserve it by construction. Playback state (engine
+  // tick, selection after entry) is local.
   import { onMount, tick as svelteTick } from 'svelte';
   import {
     getReplayMeta,
-    getLandmarks,
+    getEvents,
+    getEvent,
+    getChat,
+    getGenericEvents,
+    getGenericHistogram,
     getMatch,
     getRounds,
     getVoicePresence,
     getVoicePlayers,
     voiceWavURL,
-    setPendingTimelineFilter,
-    takePendingSeek,
+    listSavedFilters,
+    saveFilter,
+    deleteSavedFilter,
     errText,
   } from '../services.js';
   import { createEngine, parsePositions, SPEEDS } from '../replay/engine.js';
   import { createRenderer } from '../replay/renderer.js';
-  import { classifyLandmark } from '../replay/landmarks.js';
+  import {
+    CATEGORIES,
+    DRAW_KINDS,
+    categoryById,
+    typedKindsFor,
+    enabledSources,
+    normalizeEvent,
+    normalizeChat,
+    normalizeGeneric,
+    mergeFeed,
+    roundsByNumber,
+    parseLandmarkFilter,
+    serializeLandmarkFilter,
+    defaultFilter,
+    landmarkExportRows,
+  } from '../replay/landmarks.js';
   import { attachReplayInput, snapshot } from '../replay/input.js';
   import { createVoiceEngine, fetchVoicePCM } from '../replay/audio.js';
   import { loadMapPack } from '../components/mapxform.js';
   import { saveExportURL } from '../save.js';
-  import { downloadBlob } from '../download.js';
+  import { downloadBlob, downloadText } from '../download.js';
+  import { toCSV } from '../csv.js';
+  import { chatClock, prettyJson } from '../fmt.js';
+  import { isCounted } from '../rounds.js';
+  import { buildHash } from '../router.js';
+  import FilterBar from '../components/FilterBar.svelte';
+  import LandmarkRow from '../components/LandmarkRow.svelte';
+  import VoiceLanes from '../components/VoiceLanes.svelte';
+  import EventFlags from '../components/EventFlags.svelte';
+  import ProfileLink from '../components/ProfileLink.svelte';
+  import PayloadTree from '../components/PayloadTree.svelte';
 
-  let { id = 0, nav = () => {} } = $props();
+  let { id = 0, query = {}, nav = () => {} } = $props();
 
   let meta = $state(null);
   let matchMap = $state('');
@@ -29,7 +73,6 @@
   let packTf = null; // makeTransform(meta) from loadMapPack — passed to
   //                    the renderer instead of re-deriving pack fields
   let data = $state(null); // parsed position store
-  let landmarks = $state([]);
   let rounds = $state([]);
   let loading = $state(true);
   let loadError = $state('');
@@ -56,7 +99,12 @@
   let uiLoopFrom = $state(-1);
   let uiLoopTo = $state(-1);
   let uiLoopOn = $state(false);
-  let eventsOpen = $state(false);
+  let eventsOpen = $state(true); // the canonical feed is visible by default
+  // The voice-lanes strip needs ~190px of vertical space — show it by
+  // default only when the window has room for it (short windows would
+  // otherwise leave the landmark list with a single visible row); the
+  // voice bar's Lanes toggle always overrides.
+  let lanesOpen = $state(typeof window === 'undefined' || window.innerHeight >= 820);
   let jumpRound = $state('');
 
   let stageEl = $state(null);
@@ -79,22 +127,175 @@
     return '';
   });
 
-  // Scrubber event markers: kills = small gray, plants/defuses = amber,
-  // detonations = red; positioned by tick over the whole-match tick span.
-  // Buckets come from the shared classifyLandmark (lib/replay/landmarks.js)
-  // — the same normalization the renderer's layers use.
+  // --- Landmark feed ---------------------------------------------------------
+  // The route query IS the filter state (single source of truth — the
+  // controls navigate, they never keep a second copy).
+  const filter = $derived(parseLandmarkFilter(query));
+  const filterKey = $derived(JSON.stringify(serializeLandmarkFilter(filter)));
+  const backPath = $derived(query.back || '');
+
+  const PAGE = 500; // per-source page size; PAGE+1 probes "there is more"
+
+  let drawRows = $state([]); // drawable-kind anchors, fetched once per match
+  let typedRows = $state([]); // accumulated raw EventRows (paged)
+  let chatRows = $state([]);
+  let genPages = $state({}); // generic name → {rows, hasMore, cat}
+  let typedHasMore = $state(false);
+  let feedLoading = $state(false);
+  let feedSettled = $state(false);
+  let feedError = $state('');
+  let hist = $state([]); // generic-event histogram (game_events scoping)
+  let gen = 0; // feed generation — drops stale async results
+
+  let feedF = null; // the filter the loaded feed belongs to (load-more)
+
+  const rbn = $derived(roundsByNumber(rounds));
+
+  // Fetch effect: re-runs only when the SERIALIZED filter changes (the
+  // query object identity changes on every route write — the string key
+  // keeps unrelated query churn, e.g. sel dropping, from refetching).
+  $effect(() => {
+    const key = filterKey;
+    const f = parseLandmarkFilter(JSON.parse(key));
+    const my = ++gen;
+    feedF = f;
+    typedRows = [];
+    chatRows = [];
+    genPages = {};
+    typedHasMore = false;
+    feedError = '';
+    feedSettled = false;
+    const src = enabledSources(f.cats);
+    const jobs = [];
+    const fail = (e) => {
+      if (my === gen) feedError = errText(e);
+    };
+    if (src.event) {
+      jobs.push(fetchTyped(f, 0, my, false));
+    }
+    if (src.chat) {
+      jobs.push(
+        getChat(id, f.round, f.steamId)
+          .then((rows) => {
+            if (my === gen) chatRows = rows || [];
+          })
+          .catch(fail),
+      );
+    }
+    // One fetch per distinct generic name (convars + game_events with the
+    // same name dedupe to a single source read).
+    const names = new Map();
+    for (const g of src.generic) {
+      const name = g.nameFrom ? f.gname : g.name;
+      if (name && !names.has(name)) names.set(name, g.id);
+    }
+    for (const [name, catId] of names) jobs.push(fetchGeneric(f, name, catId, 0, my, false));
+    feedLoading = jobs.length > 0;
+    Promise.allSettled(jobs).then(() => {
+      if (my === gen) {
+        feedLoading = false;
+        feedSettled = true;
+      }
+    });
+  });
+
+  function fetchTyped(f, offset, my, append) {
+    return getEvents({
+      matchId: id,
+      kinds: typedKindsFor(f.cats),
+      round: f.round,
+      steamId: f.steamId,
+      weapon: f.weapon,
+      tickFrom: f.tickFrom,
+      tickTo: f.tickTo,
+      dmgMin: f.dmgMin,
+      dmgMax: f.dmgMax,
+      distanceMax: f.distanceMax,
+      headshotOnly: f.headshotOnly,
+      bbox: f.bbox || undefined,
+      offset,
+      limit: PAGE + 1, // probe row → "load more" without silent truncation
+    })
+      .then((rows) => {
+        if (my !== gen) return;
+        const page = rows || [];
+        typedHasMore = page.length > PAGE;
+        typedRows = append ? [...typedRows, ...page.slice(0, PAGE)] : page.slice(0, PAGE);
+      })
+      .catch((e) => {
+        if (my === gen) feedError = errText(e);
+      });
+  }
+
+  function fetchGeneric(f, name, catId, offset, my, append) {
+    return getGenericEvents(id, name, f.round, PAGE + 1, offset)
+      .then((rows) => {
+        if (my !== gen) return;
+        const page = rows || [];
+        const prev = genPages[name] || { rows: [], hasMore: false, cat: catId };
+        genPages[name] = {
+          rows: append ? [...prev.rows, ...page.slice(0, PAGE)] : page.slice(0, PAGE),
+          hasMore: page.length > PAGE,
+          cat: catId,
+        };
+      })
+      .catch((e) => {
+        if (my === gen) feedError = errText(e);
+      });
+  }
+
+  function loadMore() {
+    const f = feedF;
+    if (!f) return;
+    const my = gen;
+    if (typedHasMore) fetchTyped(f, typedRows.length, my, true);
+    for (const [name, p] of Object.entries(genPages)) {
+      if (p.hasMore) fetchGeneric(f, name, p.cat, p.rows.length, my, true);
+    }
+  }
+
+  const hasMore = $derived(typedHasMore || Object.values(genPages).some((p) => p.hasMore));
+
+  // The merged, categorized, chronological feed (counted-round policy
+  // applied for the sparse round categories).
+  const feedRows = $derived.by(() =>
+    mergeFeed([
+      typedRows.map((r) => normalizeEvent(r, { roundsByNumber: rbn })).filter(Boolean),
+      chatRows.map((c) => normalizeChat(c)),
+      Object.values(genPages).flatMap((p) => p.rows.map((g) => normalizeGeneric(g, p.cat))),
+    ]),
+  );
+
+  // Draw feed: the drawable-kind anchors, fetched ONCE per match in
+  // load() and handed to the renderer — category chips never rebuild the
+  // world layers (spec §8).
+  const drawNorm = $derived(drawRows.map((r) => normalizeEvent(r, {})).filter(Boolean));
+
+  // Scrubber markers: the draw feed gated by the ACTIVE category set +
+  // round/player scope (the scrubber mirrors the feed's overview;
+  // dmg/weapon/distance filters are list concerns and do not move
+  // markers). Precomputed buckets — no classification at runtime.
   const markers = $derived.by(() => {
-    if (!data || !data.frames || !landmarks.length) return [];
+    if (!data || !data.frames || !drawNorm.length) return [];
     const t0 = data.ticks[0];
     const t1 = data.ticks[data.frames - 1];
     const span = Math.max(1, t1 - t0);
+    const cats = new Set(filter.cats);
     const out = [];
-    for (const l of landmarks) {
-      const bucket = classifyLandmark(l.kind);
+    for (const l of drawNorm) {
+      if (!cats.has(l.category)) continue;
+      const cat = categoryById(l.category);
+      if (cat && cat.countedOnly) {
+        const r = rbn.get(l.round);
+        if (r && !isCounted(r)) continue;
+      }
+      if (filter.round >= 0 && l.round !== filter.round) continue;
+      if (filter.steamId && l.steamId !== filter.steamId) continue;
       let cls = '';
-      if (bucket === 'kill') cls = 'kill';
-      else if (bucket === 'plant' || bucket === 'defuse') cls = 'plant';
-      else if (bucket === 'explode' || bucket === 'detonation') cls = 'det';
+      if (l.bucket === 'kill') cls = 'kill';
+      else if (l.bucket === 'plant' || l.bucket === 'defuse') cls = 'plant';
+      else if (l.bucket === 'explode' || l.bucket === 'detonation') cls = 'det';
+      else if (l.bucket === 'round') cls = 'round';
       else continue;
       if (l.tick < t0 || l.tick > t1) continue;
       out.push({ cls, pct: ((l.tick - t0) / span) * 100 });
@@ -102,9 +303,251 @@
     return out;
   });
 
-  const eventList = $derived(
-    [...landmarks].sort((a, b) => b.tick - a.tick).slice(0, 50),
-  );
+  // Generic-event histogram — only the game_events category needs name
+  // scoping (high-volume sources are never fetched unrestricted).
+  const needHist = $derived(filter.cats.includes('game_events'));
+  $effect(() => {
+    if (!needHist) return;
+    let off = true;
+    getGenericHistogram(id)
+      .then((h) => {
+        if (off) hist = h || [];
+      })
+      .catch(() => {
+        /* the select just stays empty */
+      });
+    return () => (off = false);
+  });
+
+  // --- Selection + detail ----------------------------------------------------
+  let selected = $state(null); // normalized landmark row
+  let detail = $state(null); // EventDetail payloads (event source only)
+  let detailError = $state('');
+  let payloadRaw = $state(false);
+  let payloadQuery = $state('');
+  let copied = $state(false);
+  let entrySel = ''; // ?sel= from the entry URL (applied once)
+  let selApplied = false;
+
+  async function select(row) {
+    detailError = '';
+    copied = false;
+    payloadRaw = false;
+    payloadQuery = '';
+    selected = row;
+    detail = null;
+    if (row.source === 'event') {
+      try {
+        detail = await getEvent(row.id);
+      } catch (e) {
+        detailError = errText(e);
+      }
+    }
+  }
+
+  function closeDetail() {
+    selected = null;
+    detail = null;
+    detailError = '';
+  }
+
+  // Entry selection: a deep link's ?sel= opens the landmark (typed
+  // events resolve by id even beyond the loaded pages) and seeks the
+  // replay to its tick — "open the intended position AND selection".
+  // Selection during the session never seeks (the user's playback
+  // context is preserved); ▶ is the explicit seek action.
+  $effect(() => {
+    if (!entrySel || selApplied) return;
+    feedRows;
+    if (feedRows.some((r) => r.key === entrySel)) {
+      selApplied = true;
+      const row = feedRows.find((r) => r.key === entrySel);
+      select(row);
+      engine?.seekTick(row.tick);
+      return;
+    }
+    if (!feedSettled) return;
+    selApplied = true;
+    if (entrySel.startsWith('e:')) {
+      const n = Number(entrySel.slice(2));
+      if (Number.isFinite(n) && n > 0) {
+        getEvent(n)
+          .then((d) => {
+            if (!d) return;
+            const row = normalizeEvent(d, {});
+            if (row) {
+              selected = row;
+              detail = d;
+              engine?.seekTick(d.tick);
+            }
+          })
+          .catch(() => {});
+      }
+    }
+  });
+
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      copied = true;
+      setTimeout(() => (copied = false), 1500);
+    } catch (e) {
+      detailError = errText(e);
+    }
+  }
+
+  function copyDetail() {
+    if (!detail) return;
+    copyText((detail.detailJson || '') + (detail.rawJson ? '\n' + detail.rawJson : ''));
+  }
+
+  function copyPayload() {
+    if (selected) copyText(selected.payloadJson || '');
+  }
+
+  // --- Navigation (URL-backed) ----------------------------------------------
+  // Every filter change navigates: serialize + preserve the entry
+  // context (tick/back) + write the hash. sel is entry-only — it is not
+  // re-pinned on later filter changes (selection stays local).
+  function navigateFilter(next) {
+    const q = serializeLandmarkFilter(next);
+    if (query.tick) q.tick = query.tick;
+    if (query.back) q.back = query.back;
+    const target = buildHash(`/replay/${id}`, q);
+    if (location.hash !== '#' + target) nav(target);
+  }
+
+  function toggleCat(catId) {
+    const cats = filter.cats.includes(catId)
+      ? filter.cats.filter((c) => c !== catId)
+      : [...filter.cats, catId];
+    navigateFilter({ ...filter, cats });
+  }
+
+  function setGname(name) {
+    navigateFilter({ ...filter, gname: name });
+  }
+
+  function resetFilters() {
+    navigateFilter(defaultFilter());
+  }
+
+  // FilterBar commits its own (typed/scope) subset — cats/gname ride
+  // along untouched.
+  function onBarFilter(next) {
+    navigateFilter({ ...filter, ...next });
+  }
+
+  // Filter the feed to ±5s around the playhead (the retired header
+  // button's promise, now canonical feed behavior).
+  function eventsAtTick() {
+    const tr = meta && meta.tickRate > 0 ? meta.tickRate : 64;
+    const half = Math.round(5 * tr);
+    eventsOpen = true;
+    navigateFilter({ ...filter, tickFrom: Math.max(0, uiTick - half), tickTo: uiTick + half });
+  }
+
+  function goBack() {
+    nav(backPath ? '/' + backPath : `/match/${id}`);
+  }
+
+  // --- Export (native save dialog — lib/save.js) -----------------------------
+  // Cancel is a silent no-op by contract; real failures land in console.
+  async function download(filename, mime, text) {
+    try {
+      await downloadText(filename, mime, text);
+    } catch (e) {
+      console.error('landmark export failed:', e);
+    }
+  }
+
+  function exportCSV() {
+    return download(
+      `match-${id}-events.csv`,
+      'text/csv;charset=utf-8',
+      toCSV(landmarkExportRows(feedRows)),
+    );
+  }
+
+  function exportJSON() {
+    return download(`match-${id}-events.json`, 'application/json', JSON.stringify(feedRows, null, 2));
+  }
+
+  // --- Saved filter presets (scope "match") ----------------------------------
+  let saved = $state([]);
+  let savedSel = $state('');
+  let savedError = $state('');
+
+  async function refreshSaved() {
+    try {
+      const rows = await listSavedFilters();
+      saved = (rows || []).filter((s) => s.scope === 'match');
+      if (savedSel && !saved.some((s) => String(s.id) === savedSel)) savedSel = '';
+    } catch (e) {
+      savedError = errText(e);
+    }
+  }
+
+  $effect(() => {
+    refreshSaved();
+  });
+
+  function applySaved() {
+    const s = saved.find((x) => String(x.id) === savedSel);
+    if (!s) return;
+    try {
+      const parsed = JSON.parse(s.filterJson || '{}');
+      savedError = '';
+      navigateFilter(parseLandmarkFilter(parsed));
+    } catch (e) {
+      savedError = 'Saved filter is not valid JSON: ' + errText(e);
+    }
+  }
+
+  async function saveCurrent() {
+    const name = prompt('Save current filter as:');
+    if (!name) return;
+    try {
+      const row = await saveFilter(name, 'match', JSON.stringify(serializeLandmarkFilter(filter)));
+      await refreshSaved();
+      if (row) savedSel = String(row.id);
+      savedError = '';
+    } catch (e) {
+      savedError = errText(e);
+    }
+  }
+
+  async function removeSaved() {
+    const s = saved.find((x) => String(x.id) === savedSel);
+    if (!s) return;
+    try {
+      await deleteSavedFilter(s.id);
+      savedSel = '';
+      savedError = '';
+      await refreshSaved();
+    } catch (e) {
+      savedError = errText(e);
+    }
+  }
+
+  // Scrubber/list seek — in-place, no navigation.
+  function seekTo(tick) {
+    engine?.seekTick(tick);
+  }
+
+  // M4 comms-around: seek TO the event with playback + voice on — the
+  // audio engine starts from there (the old Timeline Hear ±10s contract,
+  // now in-panel).
+  function hearTick(tick) {
+    engine?.seekTick(tick);
+    if (voiceEngine) voiceEngine.setEnabled(true).catch(() => {});
+    engine?.play();
+  }
+
+  // Voice-lanes click → same exit path (index-only, audio follows).
+  function laneSeek(tick) {
+    hearTick(tick);
+  }
 
   const players = $derived(meta?.players || []);
 
@@ -135,8 +578,10 @@
 
   async function loadPack(map) {
     if (!map) return { pack: null, transform: null, img: null };
-    // Shared loader: extracted pack (local CS2) wins over bundled. The
-    // makeTransform() output rides along — the renderer consumes it
+    // Shared loader: extracted pack (local CS2) wins over the bundled
+    // metadata-only fallback at /maps/ (no art ships — see
+    // frontend/public/maps/README.md; a missing pack = plain grid).
+    // The makeTransform() output rides along — the renderer consumes it
     // instead of re-deriving the pack's transform fields.
     const p = await loadMapPack(map);
     if (!p || !p.meta) return { pack: null, transform: null, img: null };
@@ -156,6 +601,7 @@
   async function load() {
     loading = true;
     loadError = '';
+    entrySel = query.sel || '';
     try {
       const m = await getReplayMeta(id);
       meta = m;
@@ -187,7 +633,17 @@
       const buf = await res.arrayBuffer();
       if (!live) return;
       data = parsePositions(buf, players.length || 10);
-      landmarks = (await getLandmarks(id).catch(() => [])) || [];
+      // The drawable anchor set (kills/grenades/bomb/round_end) — one
+      // unfiltered source read, awaited before the engine starts so the
+      // world layers and scrubber markers are ready on first paint.
+      drawRows =
+        (await getEvents({
+          matchId: id,
+          kinds: DRAW_KINDS,
+          round: -1,
+          offset: 0,
+          limit: 0,
+        }).catch(() => [])) || [];
       // loading must be false BEFORE the tick, else {#if loading} still hides
       // the {#if data} branch and bind:this never resolves (canvasEl null).
       if (live) loading = false;
@@ -207,7 +663,7 @@
     engine = createEngine(data, meta.tickRate);
     renderer = createRenderer(canvasEl, { engine, data, players });
     renderer.setPack(pack, radarImg, packTf);
-    renderer.setLandmarks(landmarks);
+    renderer.setLandmarks(drawNorm);
     renderer.resize();
     offChange = engine.onChange((st) => {
       uiFrame = st.frame;
@@ -230,8 +686,7 @@
     });
     ro = new ResizeObserver(() => renderer.resize());
     ro.observe(stageEl);
-    // M4: wire voice before the pendingSeek hand-off so {play, voice}
-    // flags from Timeline's Hear ±10s / lane click can act on it.
+    // M4: wire voice so the lanes strip and Hear ±10s can drive it.
     if (voicePresence && voicePresence.hasVoice) {
       voiceEngine = createVoiceEngine({
         engine,
@@ -254,15 +709,11 @@
         if (uiVoiceSolo[p.steamId]) voiceEngine.setSolo(p.steamId, true);
       }
     }
-    // Cross-view hand-off: pendingSeek {tick, play?, voice?} from
-    // Match/RoundDetail/Timeline. play/voice are new in M4: Replay starts
-    // playback and (gesture-permitting) audio so "Hear ±10s" is audible.
-    const seek = takePendingSeek();
-    if (seek && Number.isFinite(seek.tick)) engine.seekTick(seek.tick);
-    if (seek && seek.voice && voiceEngine) {
-      voiceEngine.setEnabled(true).catch(() => {});
-    }
-    if (seek && seek.play) engine.play();
+    // Entry position rides the URL (?tick=) — the durable replacement
+    // for the retired replay-seek hand-off. No autoplay: contextual
+    // links seek, they never hijack playback.
+    const tick0 = Number(query.tick) || 0;
+    if (tick0) engine.seekTick(tick0);
     renderer.draw();
     ready = true;
   }
@@ -495,12 +946,6 @@
     }
   }
 
-  function openTimeline() {
-    if (!engine) return;
-    setPendingTimelineFilter({ tick: engine.state.tick });
-    nav(`/match/${id}/timeline`);
-  }
-
   // --- M4 voice controls ------------------------------------------------------
   async function toggleVoice() {
     if (!voiceEngine) return;
@@ -525,7 +970,7 @@
 
 <div class="view replay-view">
   <header class="view-header">
-    <button class="btn" onclick={() => nav(`/match/${id}`)}><span class="codicon codicon-arrow-left"></span> Match</button>
+    <button class="btn" onclick={goBack}><span class="codicon codicon-arrow-left"></span> Back</button>
     <h1>Replay</h1>
     {#if matchMap}<span class="chip">{matchMap}</span>{/if}
     {#if meta && !noSidecar}
@@ -534,7 +979,12 @@
     <div class="spacer"></div>
     {#if ready && data}
       <span class="mono muted replay-readout">tick {uiTick}</span>
-      <button class="btn" onclick={openTimeline}>Open timeline at tick</button>
+      <button
+        class="btn"
+        onclick={eventsAtTick}
+        title="Filter the landmark feed to ±5s around the playhead"
+        >Events at tick</button
+      >
       <button class="btn" onclick={doSnapshot}>Snapshot</button>
       <button
         class="btn clip-btn"
@@ -609,31 +1059,267 @@
         >
           <h2>Landmarks</h2>
           <span class="spacer"></span>
-          <span class="muted num">{landmarks.length}</span>
+          <span class="muted num">{feedRows.length}{hasMore ? '+' : ''}</span>
           <span class="muted"><span class="codicon {eventsOpen ? 'codicon-chevron-down' : 'codicon-chevron-right'}"></span></span>
         </button>
         {#if eventsOpen}
-          <ul class="landmark-list">
-            {#each eventList as l, i (i)}
-              <li>
-                <span class="mono muted">{l.tick}</span>
-                <span class="chip kind">{l.kind}</span>
-                {#if l.weapon}<span class="mono muted">{l.weapon}</span>{/if}
-                <span class="spacer"></span>
-                <button
-                  class="btn small ghost"
-                  title="Seek replay to tick {l.tick}"
-                  aria-label="Seek to tick {l.tick}"
-                  onclick={() => engine?.seekTick(l.tick)}><span class="codicon codicon-play"></span></button
-                >
-              </li>
+          <!-- The middle of the panel scrolls as a unit (cats → filters →
+               toolbar → list); the detail pane pins below it, so a long
+               feed can never clip the selected event. -->
+          <div class="lm-scroll">
+          <!-- Category chips: the sparse default (kills + round wins) is
+               what a fresh URL carries; everything else is opt-in. -->
+          <div class="lm-cats" role="group" aria-label="Event categories">
+            {#each CATEGORIES as c (c.id)}
+              <button
+                class="chip lm-cat-chip"
+                class:on={filter.cats.includes(c.id)}
+                aria-pressed={filter.cats.includes(c.id)}
+                title={c.default ? `${c.label} (on by default)` : `Show ${c.label.toLowerCase()} in the feed`}
+                onclick={() => toggleCat(c.id)}>{c.label}</button
+              >
+            {/each}
+          </div>
+
+          {#if needHist}
+            <label class="lm-gname" for="lm-gname">
+              Game events
+              <select
+                class="input"
+                id="lm-gname"
+                value={filter.gname}
+                onchange={(e) => setGname(e.currentTarget.value)}
+              >
+                <option value="">Pick an event name…</option>
+                {#each hist as h (h.name)}
+                  <option value={h.name}>{h.name} ({h.count})</option>
+                {/each}
+                {#if filter.gname && !hist.some((h) => h.name === filter.gname)}
+                  <option value={filter.gname}>{filter.gname}</option>
+                {/if}
+              </select>
+            </label>
+            {#if !filter.gname}
+              <p class="muted lm-hint">High-volume sources load by name only — pick one above.</p>
+            {/if}
+          {/if}
+
+          <details class="lm-filters" open={filter.round !== -1 || !!filter.steamId || !!filter.weapon || !!filter.bbox || !!filter.tickFrom || !!filter.tickTo}>
+            <summary>Filters</summary>
+            <FilterBar {id} filter={filter} onchange={onBarFilter} showReset={false} />
+          </details>
+
+          <div class="lm-toolbar" role="group" aria-label="Feed actions">
+            <select class="input lm-saved" aria-label="Saved filters" value={savedSel} onchange={(e) => (savedSel = e.currentTarget.value)}>
+              <option value="">Saved filters…</option>
+              {#each saved as s (s.id)}
+                <option value={String(s.id)}>{s.name}</option>
+              {/each}
+            </select>
+            <button class="btn small" disabled={!savedSel} onclick={applySaved}>Apply</button>
+            <button class="btn small" onclick={saveCurrent} title="Save the current filter as a preset">Save</button>
+            <button class="btn small" disabled={!savedSel} title="Delete the selected saved filter" onclick={removeSaved}><span class="codicon codicon-close"></span></button>
+            <span class="spacer"></span>
+            <button class="btn small" onclick={exportCSV} disabled={!feedRows.length} title="Export the loaded feed as CSV">CSV</button>
+            <button class="btn small" onclick={exportJSON} disabled={!feedRows.length} title="Export the loaded feed as JSON">JSON</button>
+            <button class="btn small" onclick={resetFilters} title="Reset every filter to the sparse default">Reset</button>
+          </div>
+          {#if savedError}
+            <p class="error" role="alert">{savedError}</p>
+          {/if}
+          {#if feedError}
+            <p class="error" role="alert">{feedError}</p>
+          {/if}
+
+          {#if !selected}
+          <ul class="landmark-list" aria-label="Events">
+            {#each feedRows as row (row.key)}
+              <LandmarkRow
+                {row}
+                selected={selected?.key === row.key}
+                onselect={select}
+                onseek={(r) => seekTo(r.tick)}
+              />
             {:else}
-              <li class="muted">No landmarks recorded.</li>
+              <li class="muted lm-empty" role="status">
+                {#if filter.cats.length === 0}
+                  No categories enabled — turn some on above.
+                {:else if feedLoading}
+                  Loading events…
+                {:else}
+                  No events match these filters.
+                {/if}
+              </li>
             {/each}
           </ul>
+          {#if hasMore}
+            <button class="btn small lm-more" onclick={loadMore} disabled={feedLoading}>
+              {feedLoading ? 'Loading…' : 'Load more…'}
+            </button>
+          {/if}
+          {#if feedLoading && feedRows.length > 0}
+            <p class="muted lm-hint" role="status">Loading…</p>
+          {/if}
+          {/if}
+          {#if selected}
+            <div class="lm-detail" aria-label="Selected landmark">
+              <div class="lm-detail-head">
+                <span class="chip kind">{categoryById(selected.category)?.label || selected.category}</span>
+                {#if selected.source === 'event'}
+                  <span class="mono">#{selected.seq}</span>
+                {/if}
+                <span class="mono muted">tick {selected.tick}</span>
+                <span class="chip round-chip">R{selected.round}</span>
+                <div class="spacer"></div>
+                {#if voicePresence && voicePresence.hasVoice}
+                  <button
+                    class="btn small"
+                    title="Open playback at this event with voice on — hear comms around it"
+                    onclick={() => hearTick(selected.tick)}>Hear ±10s <span class="codicon codicon-play"></span></button
+                  >
+                {/if}
+                <button class="btn small ghost" aria-label="Close detail" title="Close detail — back to the list" onclick={closeDetail}><span class="codicon codicon-close"></span></button>
+              </div>
+              {#if detailError}
+                <p class="error" role="alert">{detailError}</p>
+              {/if}
+              {#if selected.source === 'event'}
+                <dl class="facts lm-facts">
+                  <div>
+                    <dt>Attacker</dt>
+                    <dd><ProfileLink steam={selected.attacker} name={selected.attackerName || '—'} {nav} title="Open {selected.attackerName} profile" /></dd>
+                  </div>
+                  <div>
+                    <dt>Victim</dt>
+                    <dd><ProfileLink steam={selected.victim} name={selected.victimName || '—'} {nav} title="Open {selected.victimName} profile" /></dd>
+                  </div>
+                  <div>
+                    <dt>Assister</dt>
+                    <dd>{selected.assisterName || '—'}</dd>
+                  </div>
+                  <div>
+                    <dt>Weapon</dt>
+                    <dd class="mono">{selected.weapon || '—'}</dd>
+                  </div>
+                  <div>
+                    <dt>Damage</dt>
+                    <dd class="num">{selected.dmg}</dd>
+                  </div>
+                  <div>
+                    <dt>Distance</dt>
+                    <dd class="num">{selected.distance ? Math.round(selected.distance) : '—'}</dd>
+                  </div>
+                  <div>
+                    <dt>Hitgroup</dt>
+                    <dd>{selected.hitgroup || '—'}</dd>
+                  </div>
+                  <div>
+                    <dt>Site</dt>
+                    <dd>{selected.site || '—'}</dd>
+                  </div>
+                  <div class="fact-wide">
+                    <dt>Flags</dt>
+                    <dd><EventFlags event={selected} none /></dd>
+                  </div>
+                </dl>
+                {#if detail}
+                  <details class="json-block" open>
+                    <summary>detail.json</summary>
+                    <pre class="mono">{prettyJson(detail.detailJson)}</pre>
+                  </details>
+                  <details class="json-block">
+                    <summary>raw.json</summary>
+                    <pre class="mono">{prettyJson(detail.rawJson)}</pre>
+                  </details>
+                  <button class="btn small" onclick={copyDetail}>{copied ? 'Copied' : 'Copy payloads'}</button>
+                {:else if !detailError}
+                  <p class="muted" role="status">Loading payloads…</p>
+                {/if}
+              {:else if selected.source === 'chat'}
+                <dl class="facts lm-facts">
+                  <div>
+                    <dt>Time</dt>
+                    <dd title="tick {selected.tick}">{chatClock(selected, rbn, meta?.tickRate)}</dd>
+                  </div>
+                  <div>
+                    <dt>From</dt>
+                    <dd><ProfileLink steam={selected.steamId} name={selected.who || '—'} {nav} title="Open {selected.who} profile" /></dd>
+                  </div>
+                  <div>
+                    <dt>Kind</dt>
+                    <dd>{selected.kind || 'chat'}{selected.decrypted ? ' · decrypted' : ''}</dd>
+                  </div>
+                </dl>
+                <p class="lm-chat-text">{selected.text}</p>
+              {:else}
+                <dl class="facts lm-facts">
+                  <div>
+                    <dt>Event</dt>
+                    <dd class="mono">{selected.name}</dd>
+                  </div>
+                  <div>
+                    <dt>Tick</dt>
+                    <dd class="num mono">{selected.tick}</dd>
+                  </div>
+                  <div>
+                    <dt>Round</dt>
+                    <dd class="num">{selected.round}</dd>
+                  </div>
+                  {#if selected.who}
+                    <div>
+                      <dt>Player</dt>
+                      <dd>{selected.who}</dd>
+                    </div>
+                  {/if}
+                  {#if selected.label}
+                    <div class="fact-wide">
+                      <dt>Detail</dt>
+                      <dd>{selected.label}</dd>
+                    </div>
+                  {/if}
+                </dl>
+                <div class="lm-payload">
+                  <div class="row-between">
+                    <span class="spacer"></span>
+                    <input
+                      class="input"
+                      placeholder="Filter keys…"
+                      bind:value={payloadQuery}
+                      aria-label="Filter payload keys"
+                    />
+                    <button
+                      class="btn small ghost"
+                      aria-pressed={payloadRaw}
+                      title="Toggle raw JSON"
+                      onclick={() => (payloadRaw = !payloadRaw)}>{payloadRaw ? 'tree' : 'raw'}</button
+                    >
+                  </div>
+                  {#if payloadRaw}
+                    <pre class="mono">{selected.payloadJson}</pre>
+                  {:else}
+                    <PayloadTree json={selected.payloadJson} query={payloadQuery.trim()} />
+                  {/if}
+                  <button class="btn small" onclick={copyPayload}>{copied ? 'Copied' : 'Copy'}</button>
+                </div>
+              {/if}
+              <div class="lm-detail-actions">
+                <button class="btn small primary" onclick={() => seekTo(selected.tick)}>
+                  <span class="codicon codicon-play"></span> Seek to event
+                </button>
+              </div>
+            </div>
+          {/if}
+          </div>
+          <!-- /lm-scroll -->
         {/if}
       </aside>
     </div>
+
+    {#if lanesOpen && voicePresence && voicePresence.hasVoice}
+      <div class="voice-lanes-wrap">
+        <VoiceLanes matchId={id} onSeek={laneSeek} />
+      </div>
+    {/if}
 
     <div class="toolbar replay-transport" role="group" aria-label="Replay transport">
       <button
@@ -728,6 +1414,13 @@
 
     {#if voicePresence && voicePresence.hasVoice}
       <div class="toolbar voice-bar" role="group" aria-label="Voice controls">
+        <button
+          class="btn"
+          class:primary={lanesOpen}
+          aria-pressed={lanesOpen}
+          title="Show/hide the per-player voice density lanes (click a lane to play from there)"
+          onclick={() => (lanesOpen = !lanesOpen)}
+        >Lanes</button>
         <button
           class="btn"
           class:primary={!uiVoiceOn}

@@ -265,7 +265,9 @@ func runImport(path string) {
 //
 // Paths are strictly validated (map = [a-z0-9_]+, file = meta.json or
 // radar.png) so a crafted URL can't escape the data dir. 404 when the
-// pack is absent — the frontend falls back to the bundled /maps/ copy.
+// pack is absent — the frontend falls back to the bundled /maps/ copy
+// (metadata only, no radar art ships; a map with neither renders a
+// plain grid — see frontend/public/maps/README.md).
 func handleMapPack(w http.ResponseWriter, r *http.Request, p string) {
 	if r.Method != http.MethodGet {
 		http.NotFound(w, r)

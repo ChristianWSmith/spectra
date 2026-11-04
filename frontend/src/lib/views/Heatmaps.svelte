@@ -5,13 +5,13 @@
     getRounds,
     getHeatmap,
     getSpatialSeries,
-    setPendingTimelineFilter,
     errText,
   } from '../services.js';
   import { loadMapPack } from '../components/mapxform.js';
   import HeatmapLayer from '../components/HeatmapLayer.svelte';
   import { fmt1, fmtInt } from '../fmt.js';
   import { isCounted } from '../rounds.js';
+  import { replayHash } from '../nav.js';
 
   let { id = 0, nav = () => {} } = $props();
 
@@ -82,10 +82,10 @@
     if (!map) return 'map name unknown — heatmap overlay unavailable';
     if (!pack)
       return packTried
-        ? `map pack missing for ${map} — overlay unavailable`
+        ? `map not found for ${map} — plain grid, no radar art`
         : 'loading map pack…';
     if (!pack.transform)
-      return `map pack for ${map} has no transform — overlay unavailable`;
+      return `map pack for ${map} has no transform — plain grid, no radar art`;
     if (!pack.meta.radar)
       return `map pack for ${map} has no radar image — overlay on dark grid only`;
     return '';
@@ -133,16 +133,21 @@
     }
   }
 
-  // Region drill: cell-sized bbox around the click → pending timeline
-  // filter (contract in services.js) → navigate. The note renders first so
-  // "filtered by region" is visible before the route switch.
+  // Region drill: cell-sized bbox around the click → the canonical event
+  // browser (Replay's landmark feed) scoped to that region. The note
+  // renders first so "filtered by region" is visible before the route
+  // switch.
   function onRegion(bbox) {
-    setPendingTimelineFilter({ bbox });
     regionNote = `filtered by region — bbox (${Math.round(bbox.minX)}, ${Math.round(bbox.minY)}) → (${Math.round(bbox.maxX)}, ${Math.round(bbox.maxY)})`;
+    // Mirror the viewed heatmap kind: a damage region drill enables the
+    // damage category too (kills/deaths are kill events; presence has no
+    // event category).
+    const cats = kind === 'damage' ? ['kills', 'damage'] : undefined;
+    const target = replayHash(id, { bbox, ...(cats ? { cats } : {}) }, { back: `match/${id}/heatmaps` });
     if (navTimer) clearTimeout(navTimer);
     navTimer = setTimeout(() => {
       navTimer = null;
-      nav(`/match/${id}/timeline`);
+      nav(target);
     }, 400);
   }
   // --- Spatial series (series only; pattern detection descoped pending -----
@@ -303,7 +308,7 @@
 
   {#if grid}
     <p class="heat-hint muted">
-      Click the map to filter the timeline by region (cell-sized bbox).
+      Click the map to open the replay events for that region (cell-sized bbox).
     </p>
   {:else if !loading}
     <p class="heat-empty muted" role="status">

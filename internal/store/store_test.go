@@ -3,6 +3,7 @@ package store
 import (
 	"errors"
 	"path/filepath"
+	"sort"
 	"testing"
 	"time"
 
@@ -516,22 +517,33 @@ func TestSaveExtractedRoundtrip(t *testing.T) {
 		t.Errorf("GetRoundDetail event positions = %v, want 123.5", detail.Events[0].PosX)
 	}
 
-	// Landmarks: positioned events plus the landmark-kind fallbacks,
-	// ordered by tick. Damage without a position is not a landmark.
-	marks, err := s.GetLandmarks(id, 0)
+	// Landmarks (the Replay draw feed): the canonical drawable-kind set —
+	// positioned events plus the bomb/grenade/kill fallbacks and round_end
+	// (scrubber round-win markers) — through the ONE event query
+	// (queryEvents Kinds). Damage without a position is not drawable.
+	// Ordering is the caller's concern (the feed merges by tick
+	// client-side), so this sorts by tick before asserting.
+	drawKinds := []string{
+		models.EventKill, models.EventGrenade, models.EventGrenadeThrow,
+		models.EventBombPlant, models.EventBombDefuse, models.EventBombExplode,
+		models.EventRoundEnd,
+	}
+	marks, err := s.GetEvents(models.EventFilter{MatchID: id, Round: -1, Kinds: drawKinds})
 	if err != nil {
-		t.Fatalf("GetLandmarks: %v", err)
+		t.Fatalf("GetEvents(drawKinds): %v", err)
 	}
-	if len(marks) != 3 {
-		t.Fatalf("GetLandmarks len = %d, want 3 (%+v)", len(marks), marks)
+	if len(marks) != 4 {
+		t.Fatalf("draw feed len = %d, want 4 (%+v)", len(marks), marks)
 	}
+	sort.Slice(marks, func(i, j int) bool { return marks[i].Tick < marks[j].Tick })
 	if marks[0].Tick != 100 || marks[0].Kind != models.EventKill ||
 		marks[1].Tick != 150 || marks[1].Kind != models.EventBombPlant ||
-		marks[2].Tick != 200 || marks[2].Kind != models.EventKill {
-		t.Errorf("GetLandmarks order = %+v, want kill@100, plant@150, kill@200", marks)
+		marks[2].Tick != 200 || marks[2].Kind != models.EventKill ||
+		marks[3].Tick != 300 || marks[3].Kind != models.EventRoundEnd {
+		t.Errorf("draw feed order = %+v, want kill@100, plant@150, kill@200, round_end@300", marks)
 	}
 	if marks[0].PosX == nil || *marks[0].PosX != 123.5 {
-		t.Errorf("landmark 0 pos = %v, want 123.5", marks[0].PosX)
+		t.Errorf("draw feed 0 pos = %v, want 123.5", marks[0].PosX)
 	}
 	if marks[1].Site != "A" || marks[1].PosX == nil {
 		t.Errorf("plant landmark mismatch: %+v", marks[1])
@@ -543,7 +555,7 @@ func TestSaveExtractedRoundtrip(t *testing.T) {
 		t.Errorf("GetEvent(999999) err = %v, want ErrNotFound", err)
 	}
 
-	chat, err := s.GetChat(id, -1)
+	chat, err := s.GetChat(id, -1, "")
 	if err != nil {
 		t.Fatalf("GetChat: %v", err)
 	}
@@ -991,7 +1003,7 @@ func mustEvents(t *testing.T, s *Store, f models.EventFilter) []models.EventRow 
 
 func mustChat(t *testing.T, s *Store, id int64, round int) []models.ChatRow {
 	t.Helper()
-	c, err := s.GetChat(id, round)
+	c, err := s.GetChat(id, round, "")
 	if err != nil {
 		t.Fatalf("GetChat: %v", err)
 	}

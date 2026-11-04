@@ -165,12 +165,19 @@ instead of forking it.
   unknown/skipped rows — never a guessed parity/recovery fallback. Do not
   reintroduce `RecoverSides`, a side-parity guess, or a backfill.
 - **Frontend helpers:** errors `errText` → `lib/services.js`; Steam
-  profiles/nav actions → `lib/nav.js`; formatting → `lib/fmt.js`; CSV and
+  profiles/nav actions → `lib/nav.js` (incl. `replayHash`, the one entry
+  point into the canonical event browser); formatting → `lib/fmt.js`
+  (incl. `chatClock`, the one chat time formatter); CSV and
   downloads → `lib/csv.js` / `lib/download.js` (native save dialogs via
-  `lib/save.js`); one-shot sessionStorage hand-offs → `lib/handoff.js`
-  (never touch `sessionStorage` directly); metric/definition tooltip
+  `lib/save.js`); durable navigation state → the route query
+  (`lib/router.js` `buildHash` + `parseHash`) — the one-shot
+  sessionStorage hand-offs were retired with the landmark
+  consolidation; metric/definition tooltip
   strings → `lib/definitions.js` (Settings' glossary is rendered from the
-  same array); event landmark kinds → `lib/replay/landmarks.js`.
+  same array); event landmark categories/normalization →
+  `lib/replay/landmarks.js` (the ONE categorization — the feed list, the
+  scrubber markers and the renderer's world layers all consume its
+  pre-bucketed rows).
 - **CSS:** one unique prefix per component (`mp-` MatchPicker, `pk-`
   MapPackPrompt, `pp-` PlayerPicker, …); concept classes have one spelling
   in `style.css` — `.chip.badge-computed/.badge-inferred`, `.def`,

@@ -34,7 +34,7 @@ func TestGetGenericEventsFilterEquivalence(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := s.GetGenericEvents(id, tc.arg, tc.limit)
+			got, err := s.GetGenericEvents(id, tc.arg, -1, tc.limit, 0)
 			if err != nil {
 				t.Fatalf("GetGenericEvents: %v", err)
 			}
@@ -113,6 +113,24 @@ func TestGetEventsFilterMatrix(t *testing.T) {
 		{"exact round 0 (absent)", func() models.EventFilter { f := base(); f.Round = 0; return f }(), 0},
 		{"limit 2", func() models.EventFilter { f := base(); f.Limit = 2; return f }(), 2},
 		{"offset 3", func() models.EventFilter { f := base(); f.Offset = 3; return f }(), 2},
+		// Kinds: the multi-kind form the Replay landmark feed's categories
+		// use. Non-empty Kinds takes precedence over the single Kind.
+		{"kinds kill+bomb", func() models.EventFilter {
+			f := base()
+			f.Kinds = []string{models.EventKill, models.EventBombPlant}
+			return f
+		}(), 3},
+		{"kinds overrides kind", func() models.EventFilter {
+			f := base()
+			f.Kind = models.EventKill
+			f.Kinds = []string{models.EventRoundEnd}
+			return f
+		}(), 1},
+		{"kinds empty = no clause", func() models.EventFilter {
+			f := base()
+			f.Kinds = []string{}
+			return f
+		}(), 5},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -124,5 +142,64 @@ func TestGetEventsFilterMatrix(t *testing.T) {
 				t.Fatalf("rows = %d, want %d", len(got), tc.want)
 			}
 		})
+	}
+}
+
+// TestGetGenericEventsRoundOffset pins the landmark feed's generic-source
+// contract: round < 0 = every round (the shared sentinel), round >= 0 is
+// an exact match (negative knife/warmup rounds are real rounds), and
+// limit/offset page in rowid order without silent truncation. RowID —
+// the record identity the feed selects on — is returned on every row.
+func TestGetGenericEventsRoundOffset(t *testing.T) {
+	s := openMem(t)
+	id := saveTestMatch(t, s, "/d/ge-page.dem", "sha-generic-page", time.Now())
+	em := &models.ExtractedMatch{
+		Match: models.Match{Path: "/d/ge-page.dem", SHA256: "sha-generic-page", ExtractedAt: time.Now()},
+		GenericEvents: []models.GenericEvent{
+			{Name: "weapon_fire", Tick: 10, Round: 1, PayloadJSON: `{"userid":1}`},
+			{Name: "weapon_fire", Tick: 20, Round: 1, PayloadJSON: `{"userid":2}`},
+			{Name: "weapon_fire", Tick: 30, Round: -1, PayloadJSON: `{"userid":3}`},
+			{Name: "weapon_fire", Tick: 40, Round: 2, PayloadJSON: `{"userid":4}`},
+			{Name: "weapon_fire", Tick: 50, Round: 2, PayloadJSON: `{"userid":5}`},
+		},
+	}
+	if err := s.SaveExtracted(id, em); err != nil {
+		t.Fatalf("SaveExtracted: %v", err)
+	}
+
+	all, err := s.GetGenericEvents(id, "weapon_fire", -1, 100, 0)
+	if err != nil {
+		t.Fatalf("GetGenericEvents(all): %v", err)
+	}
+	if len(all) != 5 {
+		t.Fatalf("all rows = %d, want 5", len(all))
+	}
+	for i, g := range all {
+		if g.RowID == 0 {
+			t.Errorf("row %d RowID = 0, want the SQLite rowid", i)
+		}
+		if g.MatchID != id {
+			t.Errorf("row %d matchId = %d, want %d", i, g.MatchID, id)
+		}
+	}
+
+	// Exact round (round 1), and the negative knife/warmup sentinel works
+	// as a REAL round number when the caller passes it explicitly.
+	r2, err := s.GetGenericEvents(id, "weapon_fire", 2, 100, 0)
+	if err != nil || len(r2) != 2 || r2[0].Tick != 40 || r2[1].Tick != 50 {
+		t.Errorf("round 2 rows = %+v (err %v), want ticks 40,50", r2, err)
+	}
+	rneg, err := s.GetGenericEvents(id, "weapon_fire", -1, 100, 0)
+	if err != nil || len(rneg) != 5 {
+		t.Errorf("round -1 rows = %d (err %v), want 5 (all rounds)", len(rneg), err)
+	}
+
+	// Paging: offset 2 → rows 3..5 of the rowid order.
+	page, err := s.GetGenericEvents(id, "weapon_fire", -1, 2, 2)
+	if err != nil {
+		t.Fatalf("GetGenericEvents(page): %v", err)
+	}
+	if len(page) != 2 || page[0].Tick != 30 || page[1].Tick != 40 {
+		t.Errorf("page rows = %+v, want ticks 30,40", page)
 	}
 }

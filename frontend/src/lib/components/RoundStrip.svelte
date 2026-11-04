@@ -13,6 +13,7 @@
 // (the MR12 halftime).
 import { flipIndexes, eraOf } from '../sideparity.js';
 import { isCounted } from '../rounds.js';
+import { buildHash } from '../router.js';
 
 let {
   rounds = [],
@@ -21,6 +22,7 @@ let {
   teamAbove = '',
   teamBelow = '',
   sideSwitches = 0,
+  back = '',
   nav = () => {},
 } = $props();
 
@@ -69,7 +71,7 @@ const cells = $derived.by(() => {
         title={`Round ${r.number} — ${r.winner ? r.winner.toUpperCase() : '—'}${r.reason ? ' · ' + r.reason : ''}`}
         aria-label="Round {r.number}"
         aria-current={current === r.number ? 'true' : undefined}
-        onclick={() => nav(`/match/${matchId}/round/${r.number}`)}
+        onclick={() => nav(buildHash(`/match/${matchId}/round/${r.number}`, { back }))}
       >
         {r.number}
       </button>

@@ -11,14 +11,29 @@
 //   #/match/:id/round/:n     round numbers can be negative (knife /
 //                            warmup rounds carry negative indices — see
 //                            extract's renumber), so the round segment
-//                            allows "-?"
+//                            allows "-?"; ?back=<path> remembers the
+//                            originating view for the return trip
 //   #/player/:steamid        17-digit Steam id
-//   #/compare/:id
-//   #/replay/:id
+//   #/compare/:id            ?rounds=3,5,7 selects the compared rounds,
+//                            ?back=<path> the origin
+//   #/replay/:id             the Replay landmark feed — its durable
+//                            event-navigation context rides the query
+//                            (parseLandmarkFilter in lib/replay/
+//                            landmarks.js): cat/round/player/weapon/
+//                            tick*/dmg*/dist/hs/bbox/gname plus tick
+//                            (initial seek), sel (selected landmark) and
+//                            back (origin path)
 //   #/explorer/:id           optional context id: the match Explorer's
 //                            inspectors preselect (absent = newest match)
 //   #/reports/:id            optional context id: Reports' match preselect
 //   #/builder | #/sql | #/explorer | #/reports | #/settings
+//
+// Legacy raw-event routes from the pre-consolidation app resolve to the
+// canonical Replay landmark feed with the equivalent scope (the old
+// Timeline tab, the Match Chat tab and the Context tab are retired):
+//   #/match/:id/timeline           → #/replay/:id
+//   #/match/:id/chat               → #/replay/:id?cat=chat
+//   #/match/:id/context            → #/replay/:id?cat=chat,connects,convars,team_changes
 //
 // Prefix routes (builder/sql/explorer/reports/settings) match with
 // startsWith, so "#/settings/foo" is still Settings; every other shape
@@ -26,9 +41,10 @@
 
 // Canonical match-tab list (display order). Shared by Match.svelte's tab
 // bar and the route table so a deep link can never drift from the tabs
-// that exist: slug = tab.toLowerCase(). The Raw tab is gone (its
-// inspectors live in the Explorer view — #/explorer/:id), so "#/match/:id/
-// raw" parses to the library default like any unknown segment.
+// that exist: slug = tab.toLowerCase(). The Raw tab was removed earlier
+// (its inspectors live in the Explorer view) and Timeline/Chat/Context
+// were folded into Replay's landmark feed — their legacy slugs redirect
+// to #/replay/:id above instead of parsing as tabs.
 export const MATCH_TABS = [
   'Overview',
   'Scoreboard',
@@ -37,9 +53,6 @@ export const MATCH_TABS = [
   'Utility',
   'Heatmaps',
   'Combat',
-  'Timeline',
-  'Chat',
-  'Context',
 ];
 
 // matchTabSlug is the URL segment for a tab; matchTabFromSlug is its
@@ -52,42 +65,89 @@ export function matchTabFromSlug(slug) {
   return MATCH_TABS.find((t) => matchTabSlug(t) === slug) || null;
 }
 
+// buildHash renders a path + query object back into a hash string
+// ("path?k=v"). Values are URL-encoded except "/" (the ?back= origin
+// paths stay readable: back=match/5/rounds). Keys with undefined/null
+// values are dropped (unset); an explicit "" survives — "?cat=" is the
+// meaningful "no categories" state.
+export function buildHash(path, query) {
+  const parts = [];
+  for (const [k, v] of Object.entries(query || {})) {
+    if (v == null) continue;
+    // Readable URLs: "/" (back= origin paths) and "," (cat lists) are
+    // legal in query values and stay raw; everything else encodes.
+    const val = encodeURIComponent(String(v)).replace(/%2F/g, '/').replace(/%2C/g, ',');
+    parts.push(`${k}=${val}`);
+  }
+  return parts.length ? `${path}?${parts.join('&')}` : path;
+}
+
 export function parseHash(hash) {
-  const h = hash.replace(/^#/, '') || '/library';
+  const raw = hash.replace(/^#/, '') || '/library';
+  // Split "path?query": only the query-carrying routes attach a `query`
+  // key (query-less hashes keep the exact shape their tests pin).
+  const qi = raw.indexOf('?');
+  const path = qi >= 0 ? raw.slice(0, qi) : raw;
+  const query =
+    qi >= 0 ? Object.fromEntries(new URLSearchParams(raw.slice(qi + 1))) : null;
+  // Merges the parsed query onto the route (a route-supplied default,
+  // e.g. the legacy chat/context redirects' cat, is overridden by real
+  // query params); routes without params keep their exact shape.
+  const withQuery = (route) => {
+    if (!query || Object.keys(query).length === 0) return route;
+    return { ...route, query: { ...(route.query || {}), ...query } };
+  };
+
   // Round numbers can be negative (knife/warmup rounds carry negative
   // indices — see extract's renumber), so the round segment allows "-?".
   // Checked before the generic tab segment so "round" never reads as a
   // tab slug.
-  let m = h.match(/^\/match\/(\d+)\/round\/(-?\d+)$/);
-  if (m) return { name: 'round', id: Number(m[1]), round: Number(m[2]) };
+  let m = path.match(/^\/match\/(\d+)\/round\/(-?\d+)$/);
+  if (m) return withQuery({ name: 'round', id: Number(m[1]), round: Number(m[2]) });
+
+  // Legacy raw-event tabs → the canonical Replay landmark feed with the
+  // equivalent scope (checked before the tab segment: they are no longer
+  // tabs). A query on the legacy URL wins over the mapped default.
+  m = path.match(/^\/match\/(\d+)\/timeline$/);
+  if (m) return withQuery({ name: 'replay', id: Number(m[1]) });
+  m = path.match(/^\/match\/(\d+)\/chat$/);
+  if (m) return withQuery({ name: 'replay', id: Number(m[1]), query: { cat: 'chat', ...(query || {}) } });
+  m = path.match(/^\/match\/(\d+)\/context$/);
+  if (m)
+    return withQuery({
+      name: 'replay',
+      id: Number(m[1]),
+      query: { cat: 'chat,connects,convars,team_changes', ...(query || {}) },
+    });
+
   // Any match tab: #/match/:id/<tab-slug>. An unknown segment (or a
   // removed tab such as "raw") is not a route — it falls through to the
   // library default, same as any other unmatched shape.
-  m = h.match(/^\/match\/(\d+)\/([a-z]+)$/);
+  m = path.match(/^\/match\/(\d+)\/([a-z]+)$/);
   if (m) {
     const tab = matchTabFromSlug(m[2]);
-    if (tab) return { name: 'match', id: Number(m[1]), tab };
+    if (tab) return withQuery({ name: 'match', id: Number(m[1]), tab });
   }
-  m = h.match(/^\/match\/(\d+)$/);
-  if (m) return { name: 'match', id: Number(m[1]) };
-  m = h.match(/^\/player\/(\d{17})$/);
-  if (m) return { name: 'player', steamId: m[1] };
-  m = h.match(/^\/compare\/(\d+)$/);
-  if (m) return { name: 'compare', id: Number(m[1]) };
-  m = h.match(/^\/replay\/(\d+)$/);
-  if (m) return { name: 'replay', id: Number(m[1]) };
-  if (h.startsWith('/builder')) return { name: 'builder' };
-  if (h.startsWith('/sql')) return { name: 'sql' };
+  m = path.match(/^\/match\/(\d+)$/);
+  if (m) return withQuery({ name: 'match', id: Number(m[1]) });
+  m = path.match(/^\/player\/(\d{17})$/);
+  if (m) return withQuery({ name: 'player', steamId: m[1] });
+  m = path.match(/^\/compare\/(\d+)$/);
+  if (m) return withQuery({ name: 'compare', id: Number(m[1]) });
+  m = path.match(/^\/replay\/(\d+)$/);
+  if (m) return withQuery({ name: 'replay', id: Number(m[1]) });
+  if (path.startsWith('/builder')) return withQuery({ name: 'builder' });
+  if (path.startsWith('/sql')) return withQuery({ name: 'sql' });
   // Context ids are optional: absent → no id key (the view keeps its own
   // default), present → {id}. Prefix semantics stay startsWith.
-  if (h.startsWith('/explorer')) {
-    const ex = h.match(/^\/explorer\/(\d+)/);
-    return ex ? { name: 'explorer', id: Number(ex[1]) } : { name: 'explorer' };
+  if (path.startsWith('/explorer')) {
+    const ex = path.match(/^\/explorer\/(\d+)/);
+    return withQuery(ex ? { name: 'explorer', id: Number(ex[1]) } : { name: 'explorer' });
   }
-  if (h.startsWith('/reports')) {
-    const rp = h.match(/^\/reports\/(\d+)/);
-    return rp ? { name: 'reports', id: Number(rp[1]) } : { name: 'reports' };
+  if (path.startsWith('/reports')) {
+    const rp = path.match(/^\/reports\/(\d+)/);
+    return withQuery(rp ? { name: 'reports', id: Number(rp[1]) } : { name: 'reports' });
   }
-  if (h.startsWith('/settings')) return { name: 'settings' };
-  return { name: 'library' };
+  if (path.startsWith('/settings')) return withQuery({ name: 'settings' });
+  return withQuery({ name: 'library' });
 }

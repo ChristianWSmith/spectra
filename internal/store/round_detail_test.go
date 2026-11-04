@@ -72,7 +72,7 @@ func TestGetRoundDetailNegativeRounds(t *testing.T) {
 	if len(all) != 3 {
 		t.Errorf("GetEvents(Round: -1) = %d rows, want 3 (all rounds)", len(all))
 	}
-	chat, err := s.GetChat(id, -1)
+	chat, err := s.GetChat(id, -1, "")
 	if err != nil {
 		t.Fatalf("GetChat(-1): %v", err)
 	}
@@ -86,5 +86,44 @@ func TestGetRoundDetailNegativeRounds(t *testing.T) {
 	}
 	if len(empty.Events) != 1 || len(empty.Chat) != 1 {
 		t.Errorf("warmup detail = %d events / %d chat, want 1/1", len(empty.Events), len(empty.Chat))
+	}
+}
+
+// TestGetChatPlayerScope pins the landmark feed's chat source contract:
+// player "" = every sender, otherwise an exact steam_id match, combinable
+// with the round filter (round < 0 still means all rounds).
+func TestGetChatPlayerScope(t *testing.T) {
+	s := openMem(t)
+	id := saveTestMatch(t, s, "/d/chat-scope.dem", "sha-chat-scope", time.Now())
+	em := testExtracted("sha-chat-scope", time.Now())
+	em.Rounds = []models.Round{
+		{Number: 1, Winner: "ct", StartTick: 50, EndTick: 100},
+		{Number: 2, Winner: "t", StartTick: 100, EndTick: 150},
+	}
+	em.Chat = []models.Chat{
+		{Tick: 60, Round: 1, SteamID: "100", Name: "alice", Text: "a1", Kind: "chat"},
+		{Tick: 70, Round: 1, SteamID: "200", Name: "bob", Text: "b1", Kind: "chat"},
+		{Tick: 110, Round: 2, SteamID: "100", Name: "alice", Text: "a2", Kind: "chat"},
+	}
+	if err := s.SaveExtracted(id, em); err != nil {
+		t.Fatalf("SaveExtracted: %v", err)
+	}
+
+	all, err := s.GetChat(id, -1, "")
+	if err != nil || len(all) != 3 {
+		t.Fatalf("GetChat(all) = %d rows (err %v), want 3", len(all), err)
+	}
+	alice, err := s.GetChat(id, -1, "100")
+	if err != nil || len(alice) != 2 || alice[0].Text != "a1" || alice[1].Text != "a2" {
+		t.Errorf("GetChat(alice) = %+v (err %v), want a1,a2", alice, err)
+	}
+	// Round + player combined (exact round — negative rounds stay real).
+	both, err := s.GetChat(id, 2, "100")
+	if err != nil || len(both) != 1 || both[0].Text != "a2" {
+		t.Errorf("GetChat(round 2, alice) = %+v (err %v), want a2", both, err)
+	}
+	none, err := s.GetChat(id, 2, "999")
+	if err != nil || len(none) != 0 {
+		t.Errorf("GetChat(round 2, stranger) = %+v (err %v), want empty", none, err)
 	}
 }

@@ -259,13 +259,20 @@ type Event struct {
 }
 
 // GenericEvent is one raw game-event (generic_events table) — the histogram
-// + payload viewer source.
+// + payload viewer source. RowID is the SQLite rowid (generic_events has no
+// primary key; it is the stable record identity for landmark selection).
+// Who/Label are service-side display fields built by the ONE generic-event
+// labeler (eventlabels.go) — the ConVar/team payload parsing lives there,
+// never in a second copy.
 type GenericEvent struct {
 	MatchID     int64  `json:"matchId"`
+	RowID       int64  `json:"rowId"`
 	Name        string `json:"name"`
 	Tick        int    `json:"tick"`
 	Round       int    `json:"round"`
 	PayloadJSON string `json:"payloadJson"`
+	Who         string `json:"who,omitempty"`
+	Label       string `json:"label,omitempty"`
 }
 
 // Chat is one chat/system line (chat table).

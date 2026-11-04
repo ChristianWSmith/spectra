@@ -37,10 +37,6 @@ var matchOwnedElsewhere = map[string]bool{
 	"position_format": true, "sample_rate": true, "position_frames": true,
 }
 
-// LandmarkLimit is the hard row cap for GetLandmarks (replayservice's
-// scrubber markers ride it).
-const LandmarkLimit = 5000
-
 // Event limits: DefaultEventLimit is what GetEvents applies when the caller
 // asks for <= 0 rows; MaxEventLimit is the largest limit any caller passes
 // (the analytics pass — it is a NAMED CEILING, not an enforced clamp:
@@ -446,7 +442,7 @@ func (s *Store) GetRoundDetail(id int64, round int) (*models.RoundDetail, error)
 	if err != nil {
 		return nil, fmt.Errorf("store: get round detail: %w", err)
 	}
-	chat, err := s.queryChat(id, round, true)
+	chat, err := s.queryChat(id, round, true, "")
 	if err != nil {
 		return nil, fmt.Errorf("store: get round detail: %w", err)
 	}
@@ -496,12 +492,21 @@ func (w *whereClause) sql() string {
 // bound returns the filter arguments in clause order.
 func (w *whereClause) bound() []any { return w.args }
 
+// kindsToAny lifts a []string to []any for whereClause arg binding.
+func kindsToAny(kinds []string) []any {
+	out := make([]any, len(kinds))
+	for i, k := range kinds {
+		out[i] = k
+	}
+	return out
+}
+
 // GetEvents returns typed timeline rows for a filter, ordered by seq.
-// Round < 0 selects all rounds (the sentinel the timeline, heatmaps and
-// analytics pass over the whole match); Kind "" all kinds; SteamID matches
-// attacker or victim. Limit <= 0 means the hard cap of DefaultEventLimit.
-// Round detail needs exact matching for the negative knife/warmup round
-// numbers instead — see queryEvents.
+// Round < 0 selects all rounds (the sentinel the Replay landmark feed,
+// heatmaps and analytics pass over the whole match); Kind ""/Kinds nil
+// all kinds; SteamID matches attacker or victim. Limit <= 0 means the
+// hard cap of DefaultEventLimit. Round detail needs exact matching for
+// the negative knife/warmup round numbers instead — see queryEvents.
 func (s *Store) GetEvents(f models.EventFilter) ([]models.EventRow, error) {
 	return s.queryEvents(f, false)
 }
@@ -516,8 +521,14 @@ func (s *Store) queryEvents(f models.EventFilter, exactRound bool) ([]models.Eve
 	if f.Round >= 0 || exactRound {
 		w.add("e.round = ?", f.Round)
 	}
-	if k := scrub(f.Kind); k != "" {
+	if k := scrub(f.Kind); k != "" && len(f.Kinds) == 0 {
 		w.add("e.kind = ?", k)
+	}
+	// Multi-kind form (the Replay landmark feed's category sets): an IN
+	// filter that takes precedence over the single Kind clause above.
+	if kinds := f.Kinds; len(kinds) > 0 {
+		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(kinds)), ",")
+		w.add("e.kind IN ("+placeholders+")", kindsToAny(kinds)...)
 	}
 	if sid := scrub(f.SteamID); sid != "" {
 		w.add("(e.attacker = ? OR e.victim = ?)", sid, sid)
@@ -639,71 +650,27 @@ func (s *Store) GetBlindFlashDetails(matchID int64) (map[int]string, error) {
 	return out, nil
 }
 
-// landmarkKinds are event kinds that surface as replay anchors even when
-// their position columns are NULL (a missing bomb entity must
-// not hide the plant/defuse/explode marker from the scrubber).
-var landmarkKinds = []string{
-	models.EventKill,
-	models.EventGrenade,
-	models.EventGrenadeThrow,
-	models.EventBombPlant,
-	models.EventBombDefuse,
-	models.EventBombExplode,
-}
-
-// GetLandmarks returns position-stamped anchor events for one match —
-// every event carrying a position plus the landmark kinds above — ordered
-// by tick/seq. limit <= 0 means the hard cap of LandmarkLimit.
-func (s *Store) GetLandmarks(matchID int64, limit int) ([]models.EventRow, error) {
-	if limit <= 0 || limit > LandmarkLimit {
-		limit = LandmarkLimit
-	}
-	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(landmarkKinds)), ",")
-	q := `SELECT ` + eventRowCols + eventRowFrom +
-		` WHERE e.match_id = ? AND (e.pos_x IS NOT NULL OR e.kind IN (` + placeholders + `))` +
-		` ORDER BY e.tick, e.seq LIMIT ?`
-	args := make([]any, 0, len(landmarkKinds)+2)
-	args = append(args, matchID)
-	for _, k := range landmarkKinds {
-		args = append(args, k)
-	}
-	args = append(args, limit)
-
-	rows, err := s.db.Query(q, args...)
-	if err != nil {
-		return nil, fmt.Errorf("store: get landmarks: %w", err)
-	}
-	defer rows.Close()
-	var out []models.EventRow
-	for rows.Next() {
-		er, err := scanEventRow(rows)
-		if err != nil {
-			return nil, fmt.Errorf("store: get landmarks: %w", err)
-		}
-		out = append(out, er)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("store: get landmarks: %w", err)
-	}
-	return out, nil
-}
-
 // GetChat returns a match's chat lines ordered by tick, id. Round < 0
-// selects all rounds (same sentinel as GetEvents — the Context view's
-// match-wide chat feed passes -1); round detail reads exact rounds instead,
-// see queryChat.
-func (s *Store) GetChat(matchID int64, round int) ([]models.ChatRow, error) {
-	return s.queryChat(matchID, round, false)
+// selects all rounds (same sentinel as GetEvents — the landmark feed's
+// match-wide chat read passes -1); round detail reads exact rounds
+// instead, see queryChat. player "" = every sender, otherwise an exact
+// steam_id match (the landmark feed's player scope).
+func (s *Store) GetChat(matchID int64, round int, player string) ([]models.ChatRow, error) {
+	return s.queryChat(matchID, round, false, player)
 }
 
 // queryChat is GetChat with an exactRound switch — mirror of
 // queryEvents (negative knife/warmup round numbers are real rounds here).
-func (s *Store) queryChat(matchID int64, round int, exactRound bool) ([]models.ChatRow, error) {
+func (s *Store) queryChat(matchID int64, round int, exactRound bool, player string) ([]models.ChatRow, error) {
 	q := `SELECT id, ` + chatCols + `, decrypted FROM chat WHERE match_id = ?`
 	args := []any{matchID}
 	if round >= 0 || exactRound {
 		q += ` AND round = ?`
 		args = append(args, round)
+	}
+	if player != "" {
+		q += ` AND steam_id = ?`
+		args = append(args, player)
 	}
 	q += ` ORDER BY tick, id`
 	rows, err := s.db.Query(q, args...)
@@ -787,13 +754,17 @@ func scanEventRow(row interface{ Scan(...any) error }) (models.EventRow, error) 
 	return er, err
 }
 
-// GetGenericEvents returns raw game-event rows for one event name ("" = all
-// names), in insertion order — the payload viewer's data source. limit <= 0
-// defaults to 500 (hard cap 5000): payloads are JSON blobs, so callers page
-// rather than pull a whole match's worth. The optional name filter goes
+// GetGenericEvents returns raw game-event rows for one event name ("" =
+// all names), in insertion order — the landmark feed's generic-event
+// source and the payload inspector's data source. Round < 0 selects all
+// rounds (the shared sentinel); limit <= 0 defaults to 500 (hard cap
+// 5000): payloads are JSON blobs, so callers page (limit + offset) rather
+// than pull a whole match's worth. The optional name/round filters go
 // through the shared whereClause (the old form bound a dead
 // optional-placeholder parameter — see TestGetGenericEventsFilterEquivalence).
-func (s *Store) GetGenericEvents(id int64, name string, limit int) ([]models.GenericEvent, error) {
+// RowID (the table has no primary key) is the record identity the
+// landmark feed selects on.
+func (s *Store) GetGenericEvents(id int64, name string, round int, limit int, offset int) ([]models.GenericEvent, error) {
 	if limit <= 0 {
 		limit = 500
 	}
@@ -804,12 +775,19 @@ func (s *Store) GetGenericEvents(id int64, name string, limit int) ([]models.Gen
 	if name != "" {
 		w.add("name = ?", name)
 	}
-	q := `SELECT name, tick, round, payload_json FROM generic_events
+	if round >= 0 {
+		w.add("round = ?", round)
+	}
+	q := `SELECT rowid, name, tick, round, payload_json FROM generic_events
 		WHERE match_id = ?` + w.sql() + ` ORDER BY rowid LIMIT ?`
 	args := make([]any, 0, 1+len(w.args)+1)
 	args = append(args, id)
 	args = append(args, w.bound()...)
 	args = append(args, limit)
+	if offset > 0 {
+		q += ` OFFSET ?`
+		args = append(args, offset)
+	}
 	rows, err := s.db.Query(q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("store: get generic events: %w", err)
@@ -819,7 +797,7 @@ func (s *Store) GetGenericEvents(id int64, name string, limit int) ([]models.Gen
 	for rows.Next() {
 		var ge models.GenericEvent
 		ge.MatchID = id
-		if err := rows.Scan(&ge.Name, &ge.Tick, &ge.Round, &ge.PayloadJSON); err != nil {
+		if err := rows.Scan(&ge.RowID, &ge.Name, &ge.Tick, &ge.Round, &ge.PayloadJSON); err != nil {
 			return nil, fmt.Errorf("store: get generic events: %w", err)
 		}
 		out = append(out, ge)

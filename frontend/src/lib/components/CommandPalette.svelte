@@ -8,11 +8,11 @@
     listSavedFilters,
     listMetrics,
     listSavedQueries,
-    setPendingTimelineFilter,
   } from '../services.js';
   import { toggleTheme } from '../theme.js';
   import { fmtDate } from '../fmt.js';
-  import { NAV_ACTIONS } from '../nav.js';
+  import { NAV_ACTIONS, replayHash } from '../nav.js';
+  import { parseLandmarkFilter } from '../replay/landmarks.js';
   import Dialog from './Dialog.svelte';
 
   let { nav = () => {} } = $props();
@@ -282,8 +282,10 @@
             nav('/library');
             return;
           }
-          setPendingTimelineFilter(f);
-          nav(`/match/${mid}/timeline`);
+          // Saved filters ride the URL into the canonical event browser —
+          // parse normalizes the shape (the old Timeline hand-off is gone,
+          // so there is no unread-handoff state left behind).
+          nav(replayHash(mid, parseLandmarkFilter(f)));
         },
       })),
     );

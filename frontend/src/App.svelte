@@ -80,13 +80,13 @@
     {:else if route.name === 'match'}
       <Match id={route.id} routeTab={route.tab || ''} {nav} />
     {:else if route.name === 'round'}
-      <RoundDetail id={route.id} round={route.round} {nav} />
+      <RoundDetail id={route.id} round={route.round} query={route.query || {}} {nav} />
     {:else if route.name === 'player'}
       <PlayerProfile steamId={route.steamId} {nav} />
     {:else if route.name === 'compare'}
-      <CompareRounds id={route.id} {nav} />
+      <CompareRounds id={route.id} query={route.query || {}} {nav} />
     {:else if route.name === 'replay'}
-      <Replay id={route.id} {nav} />
+      <Replay id={route.id} query={route.query || {}} {nav} />
     {:else if route.name === 'builder'}
       <Builder {nav} />
     {:else if route.name === 'sql'}

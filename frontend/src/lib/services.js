@@ -20,7 +20,6 @@ import {
   DialogService,
 } from '../../bindings/github.com/ChristianWSmith/spectra';
 import { KVStoreService } from '../../bindings/github.com/wailsapp/wails/v3/pkg/services/kvstore';
-import { HANDOFF_KEYS, setHandoff, takeHandoff } from './handoff.js';
 
 // --- Error text ---------------------------------------------------------------
 // The one errText: normalizes a Go/binding rejection (Error, string, null)
@@ -165,8 +164,11 @@ export function getWarnings(id) {
   return LibraryService.GetWarnings(id);
 }
 
-export function getGenericEvents(id, name, limit) {
-  return LibraryService.GetGenericEvents(id, name, limit);
+// round < 0 = all rounds, offset pages in rowid order (limit + 1 detects
+// "more rows" without silent truncation). Rows come back with Who/Label
+// pre-parsed by the one Go labeler (eventlabels.go).
+export function getGenericEvents(id, name, round, limit, offset) {
+  return LibraryService.GetGenericEvents(id, name, round, limit, offset || 0);
 }
 
 export function getDataInfo() {
@@ -209,7 +211,8 @@ export function getRoundDetail(id, round) {
 }
 
 // round must be -1 for "all rounds" (0 means round zero); kind/steamId ""
-// = all; limit 0 = up to the store's 50k hard cap.
+// = all; kinds (optional) is the multi-kind IN form the landmark feed's
+// categories use; limit 0 = up to the store's 50k hard cap.
 export function getEvents(filter) {
   return MatchService.GetEvents(filter);
 }
@@ -218,9 +221,9 @@ export function getEvent(id) {
   return MatchService.GetEvent(id);
 }
 
-// round -1 = all rounds.
-export function getChat(matchId, round) {
-  return MatchService.GetChat(matchId, round);
+// round -1 = all rounds; player "" = all senders (exact steam_id match).
+export function getChat(matchId, round, player) {
+  return MatchService.GetChat(matchId, round, player || '');
 }
 
 // --- ReplayService ------------------------------------------------------------
@@ -229,10 +232,6 @@ export function getChat(matchId, round) {
 
 export function getReplayMeta(id) {
   return ReplayService.GetReplayMeta(id);
-}
-
-export function getLandmarks(id) {
-  return ReplayService.GetLandmarks(id);
 }
 
 // --- Events -------------------------------------------------------------------
@@ -300,40 +299,14 @@ export function onFilesDropped(callback) {
   return onEvent('spectra:files-dropped', callback);
 }
 
-// --- Cross-view hand-off ------------------------------------------------------
-// The one-shot sessionStorage contract lives in lib/handoff.js (key table,
-// read-once semantics and every writer/reader). These are the named
-// wrappers the views call; both swallow storage failures — a hand-off that
-// could not be written simply arrives empty at the receiver.
-
-export function setPendingTimelineFilter(filter) {
-  try {
-    setHandoff(HANDOFF_KEYS.timelineFilter, filter);
-  } catch (e) {
-    console.error(e);
-  }
-}
-
-export function takePendingTimelineFilter() {
-  return takeHandoff(HANDOFF_KEYS.timelineFilter);
-}
-
-// Replay-seek hand-off: {tick} (Replay also honours optional play/voice
-// booleans; the other readers ignore what they don't know). Writers set it
-// just before navigating to #/replay/:id; Replay reads + clears it on
-// mount and seeks to that tick. null clears any stale value without
-// writing one.
-export function setPendingSeek(seek) {
-  try {
-    setHandoff(HANDOFF_KEYS.replaySeek, seek);
-  } catch (e) {
-    console.error(e);
-  }
-}
-
-export function takePendingSeek() {
-  return takeHandoff(HANDOFF_KEYS.replaySeek);
-}
+// --- Cross-view navigation ---------------------------------------------------
+// Durable event-navigation context (filters, scope, selected landmark,
+// initial tick) rides the ROUTE QUERY — see lib/router.js and
+// lib/replay/landmarks.js parseLandmarkFilter/serializeLandmarkFilter.
+// The one-shot sessionStorage handoffs (timeline-filter, replay-seek,
+// compare-rounds) were retired with the landmark consolidation: every
+// writer now navigates with query params, so deep links, refresh and
+// back/forward all preserve context by construction.
 
 // --- AnalyticsService (M3) ---------------------------------------------------
 
@@ -378,10 +351,11 @@ export function getProfile(steamId) { return ProfileService.GetProfile(steamId);
 export function listPlayers(query) { return ProfileService.ListPlayers(query || ''); }
 export function getCareerTrend(steamId, metric) { return ProfileService.GetCareerTrend(steamId, metric); }
 
-// M3 pending-filter contract: setPendingTimelineFilter() accepts the extended
-// EventFilter shape too — {kind, steamId, round, weapon, tickFrom, tickTo,
-// dmgMin, dmgMax, distanceMax, headshotOnly, bbox:{minX,minY,maxX,maxY}} —
-// Timeline applies any subset. Heatmap click → setPendingTimelineFilter({bbox}).
+// M3 pending-filter contract → retired: the landmark feed's filter state
+// lives in the route query (lib/replay/landmarks.js parseLandmarkFilter —
+// {cats, round, steamId, weapon, tickFrom, tickTo, dmgMin, dmgMax,
+// distanceMax, headshotOnly, bbox, gname}). Heatmap click →
+// nav(buildHash('/replay/'+id, serializeLandmarkFilter({bbox}))).
 
 // --- MetricsService (M5) -----------------------------------------------------
 

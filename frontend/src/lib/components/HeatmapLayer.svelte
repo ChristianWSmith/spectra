@@ -1,7 +1,11 @@
 <script>
+  import { makeTransform } from './mapxform.js';
+
   // Canvas heatmap layer: map-pack radar as base, HeatmapGrid raster as
   // overlay. All world→image math goes through mapxform's transform — the
-  // formula is never duplicated here.
+  // formula is never duplicated here. With no pack transform, a fallback
+  // transform built from the heatmap's own world bounds gives one generic
+  // presentation: a plain coordinate grid (the app ships no radar art).
   //
   // Grid mapping contract: cells[] is row-major (r*w+c) with row 0 at
   // grid.minY, so cell (r,c) covers world
@@ -15,8 +19,33 @@
   let radar = $state(null); // decoded radar image | null
 
   const xf = $derived(pack && pack.transform ? pack.transform : null);
-  const W = $derived(xf ? xf.width : 1024);
-  const H = $derived(xf ? xf.height : 1024);
+  // No-pack fallback: derive the world→image mapping from the heatmap's own
+  // world bounds — the same honest presentation as the replay renderer's
+  // no-pack grid (plain world-coordinate grid, never invented map art).
+  // Built through makeTransform (mapxform), so the formula stays canonical:
+  // image space = padded bounds at ~900 px, mirroring renderer.reproject().
+  const fb = $derived.by(() => {
+    // A radar image without a transform stays the old path (image only) —
+    // never position data over pixels we can't align.
+    if (xf || radar || !grid || !grid.w || !grid.h) return null;
+    const spanX = Math.max(1, grid.maxX - grid.minX);
+    const spanY = Math.max(1, grid.maxY - grid.minY);
+    const scale = Math.max(spanX, spanY) / 900;
+    return makeTransform({
+      transform: {
+        pos_x: grid.minX - spanX * 0.05,
+        pos_y: grid.maxY + spanY * 0.05,
+        scale,
+      },
+      radar: {
+        width: Math.max(64, (spanX * 1.1) / scale),
+        height: Math.max(64, (spanY * 1.1) / scale),
+      },
+    });
+  });
+  const eff = $derived(xf || fb);
+  const W = $derived(eff ? eff.width : 1024);
+  const H = $derived(eff ? eff.height : 1024);
 
   $effect(() => {
     const meta = pack && pack.meta;
@@ -27,7 +56,8 @@
     let live = true;
     const img = new Image();
     // pack.base: /api/mappack/<map> for extracted packs, /maps/<map> for
-    // bundled (loadMapPack resolves the source).
+    // the bundled meta (loadMapPack resolves the source; the bundle ships
+    // metadata only, never radar art — maps/README.md).
     img.src = `${pack.base || '/maps/' + encodeURIComponent(map)}/${meta.radar.file}`;
     img
       .decode()
@@ -59,15 +89,39 @@
     if (radar) {
       ctx.drawImage(radar, 0, 0, W, H);
     } else {
+      // No radar art (missing pack, or a pack without an image): one
+      // generic presentation — dark surface + plain coordinate grid,
+      // same line colors as the replay renderer's grid.
       ctx.fillStyle = '#0a0d12';
       ctx.fillRect(0, 0, W, H);
+      drawPlainGrid(ctx);
     }
     drawOverlay(ctx);
   }
 
+  function drawPlainGrid(ctx) {
+    ctx.strokeStyle = 'rgba(215, 221, 232, 0.06)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    const step = 64; // image px — renderer.drawGrid()'s step
+    for (let x = step; x < W; x += step) {
+      ctx.moveTo(x + 0.5, 0);
+      ctx.lineTo(x + 0.5, H);
+    }
+    for (let y = step; y < H; y += step) {
+      ctx.moveTo(0, y + 0.5);
+      ctx.lineTo(W, y + 0.5);
+    }
+    ctx.stroke();
+    // extent border
+    ctx.strokeStyle = 'rgba(58, 67, 86, 0.9)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(1, 1, W - 2, H - 2);
+  }
+
   function drawOverlay(ctx) {
     const g = grid;
-    if (!xf || !g || !g.w || !g.h) return;
+    if (!eff || !g || !g.w || !g.h) return;
     const cells = g.cells;
     if (!cells || cells.length < g.w * g.h) return;
     const cw = (g.maxX - g.minX) / g.w;
@@ -108,8 +162,8 @@
 
     // World-bounds rect → image pixels: top-left is (minX, maxY) because
     // toImage flips Y. Cells whose bounds run past the radar simply clip.
-    const p0 = xf.toImage(g.minX, g.maxY);
-    const p1 = xf.toImage(g.maxX, g.minY);
+    const p0 = eff.toImage(g.minX, g.maxY);
+    const p1 = eff.toImage(g.maxX, g.minY);
     ctx.save();
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'high';
@@ -118,10 +172,10 @@
   }
 
   // Click → world coords → the grid cell containing the point (snapped to
-  // cell size) → bbox drill into the timeline.
+  // cell size) → bbox drill into the replay landmark feed.
   function onClick(e) {
     const c = canvas;
-    if (!xf || !c || !grid || !grid.w || !grid.h) return;
+    if (!eff || !c || !grid || !grid.w || !grid.h) return;
     const cw = (grid.maxX - grid.minX) / grid.w;
     const ch = (grid.maxY - grid.minY) / grid.h;
     if (!(cw > 0) || !(ch > 0)) return;
@@ -129,7 +183,7 @@
     if (rect.width <= 0 || rect.height <= 0) return;
     const px = ((e.clientX - rect.left) / rect.width) * c.width;
     const py = ((e.clientY - rect.top) / rect.height) * c.height;
-    const world = xf.toWorld(px, py);
+    const world = eff.toWorld(px, py);
     const ci = Math.floor((world.x - grid.minX) / cw);
     const ri = Math.floor((world.y - grid.minY) / ch);
     onRegion({
@@ -147,8 +201,8 @@
     class="heat-canvas"
     width={W}
     height={H}
-    title="Click a region to filter the timeline by position"
+    title="Click a region to open the replay events for that position"
     onclick={onClick}
-    aria-label="Heatmap over the map radar"
+    aria-label="Heatmap over the map grid"
   ></canvas>
 </div>

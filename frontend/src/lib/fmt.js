@@ -1,4 +1,23 @@
 // Formatting helpers for the M1 views. Pure functions — no services.
+import { isCounted } from './rounds.js';
+
+// chatClock renders a chat line's time cell: "R12 1:23" — how far INTO
+// its round the message was said: (tick − round.startTick) / tickRate,
+// rendered with fmtClock. Messages with no containing round, in a
+// counted-out round (knife/warmup — lib/rounds.js) or with a negative
+// offset fall back to a match-relative clock (tick / tickRate) — plain
+// "m:ss", never a negative; keep it simple. The raw tick stays in the
+// cell's title tooltip. This is THE chat clock (it lived in the retired
+// Match Chat tab before the landmark consolidation; the Replay feed's
+// chat rows and RoundDetail's round chat both render it).
+export function chatClock(c, roundByNumber, tickRate) {
+  const r = (roundByNumber || new Map()).get(c.round);
+  if (r && isCounted(r)) {
+    const intoRound = tickSeconds(c.tick - r.startTick, tickRate);
+    if (intoRound >= 0) return `R${r.number} ${fmtClock(intoRound)}`;
+  }
+  return fmtClock(tickSeconds(c.tick, tickRate));
+}
 
 // fmtDuration renders seconds as "35m39s" (or "42s" / "1h02m03s").
 export function fmtDuration(seconds) {

@@ -1,8 +1,9 @@
 <script>
-  // M4 voice density lanes: index-only per-player bucket bars
-  // on a slim strip above the event list — no decode, one fetch per mount.
-  // Click anywhere on the strip → map x to a tick → onSeek(tick), which the
-  // parent turns into setPendingSeek + nav('/replay/…') (exit walkthrough).
+  // M4 voice density lanes: index-only per-player bucket bars on a slim
+  // strip (they ride above the transport in Replay — the canonical event
+  // browser's home) — no decode, one fetch per mount. Click anywhere on
+  // the strip → map x to a tick → onSeek(tick), which Replay turns into
+  // an in-place seek with voice enabled.
   import { getVoiceLanes, getScoreboard } from '../services.js';
 
   let { matchId = 0, fromTick = 0, toTick = 0, onSeek = () => {} } = $props();

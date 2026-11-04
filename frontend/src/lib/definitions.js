@@ -115,10 +115,11 @@ export const OPENING_DEF =
 export const ADR_SIGMA_DEF =
   'ADR ± σ — average damage per round plus the standard deviation of per-match ADR across the player’s history: σ is the consistency measure (lower = steadier), not an error bar.';
 
-// Engagement-kind chips (Combat's engagement deep-dive).
+// Engagement-kind chips (Combat's engagement deep-dive). Only the kinds
+// analytics/engagements.go produces live here — "entry" is deferred
+// (models.go), so it is deliberately absent.
 export const ENG_KIND_TITLES = {
   opening: 'opening duel — first kill of the round',
-  entry: 'entry kill — first kill onto the site by the attacking side',
   trade: 'trade — kill inside the trade window after a teammate died',
   untraded: 'untraded death — neither side answered inside the trade window',
 };

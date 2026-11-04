@@ -1,40 +1,57 @@
 <script>
-  // Side-by-side round comparison. Reads the hand-off Match's Rounds tab
-  // writes (lib/handoff.js: HANDOFF_KEYS.compareRounds =
-  // {matchId: number, rounds: number[]}) — read + cleared once on init;
-  // anything else → hint + back.
+  // Side-by-side round comparison — a distinct analytical view (not an
+  // event browser): its bounded event sequence renders through the shared
+  // LandmarkRow and links into Replay's landmark feed at that tick. The
+  // selected rounds ride the URL (?rounds=3,5,7 — the old one-shot
+  // sessionStorage hand-off lost the selection on every return), as does
+  // the origin path (?back=).
   //
   // Ghost overlay (two trail sets over the M2 sidecar) is intentionally NOT
   // implemented here — it needs sidecar streaming + mapxform wiring and is
   // deferred (documented in the wave report).
   import {
     getRoundDetail,
-    getEvents,
     getEconomy,
     getUtility,
     getRoundClasses,
     getMatch,
-    setPendingSeek,
     errText,
   } from '../services.js';
   import { fmtDuration, fmtInt, fmtTickSeconds, fmtMs } from '../fmt.js';
-  import { HANDOFF_KEYS, takeHandoff } from '../handoff.js';
+  import { replayHash } from '../nav.js';
+  import { buildHash } from '../router.js';
+  import { normalizeEvent } from '../replay/landmarks.js';
+  import LandmarkRow from '../components/LandmarkRow.svelte';
 
-  let { id = 0, nav = () => {} } = $props();
+  let { id = 0, query = {}, nav = () => {} } = $props();
 
   const SEQ_LIMIT = 30;
 
-  // Read-once hand-off from Match's Rounds tab (lib/handoff.js): a
-  // missing, foreign-match or malformed payload all land on the hint + back
-  // path below.
-  function readSelection() {
-    const p = takeHandoff(HANDOFF_KEYS.compareRounds);
-    if (!p || p.matchId !== id || !Array.isArray(p.rounds)) return null;
-    const rounds = p.rounds.filter((n) => Number.isInteger(n)).slice(0, 4);
+  // ?rounds=3,5,7 — validated like the old hand-off reader (same match,
+  // integers, ≤ 4, ≥ 2); anything else → the hint + back path below.
+  const sel = $derived.by(() => {
+    const raw = query.rounds || '';
+    const rounds = raw
+      .split(',')
+      .map((n) => Number(n))
+      .filter((n) => Number.isInteger(n))
+      .slice(0, 4);
     return rounds.length >= 2 ? { matchId: id, rounds } : null;
+  });
+
+  // The origin path (which match tab opened the comparison).
+  const backPath = $derived(query.back || '');
+
+  // Return trip back into THIS selection (rounds ride along so coming
+  // back never lands on the empty-selection hint).
+  const backToCompare = $derived(
+    sel ? `compare/${id}?rounds=${sel.rounds.join(',')}` : `compare/${id}`,
+  );
+
+  function backHash() {
+    return backPath ? '/' + backPath : `/match/${id}`;
   }
 
-  let sel = $state(readSelection());
   let cols = $state([]);
   let tickRate = $state(64);
   let error = $state('');
@@ -49,23 +66,24 @@
       getUtility(id),
       getRoundClasses(id),
       ...wanted.map((r) => getRoundDetail(id, r)),
-      ...wanted.map((r) => getEvents({ matchId: id, round: r, offset: 0, limit: SEQ_LIMIT })),
     ])
       .then((all) => {
         if (!live) return;
-        const [m, econRows, utilRows, classRows, ...rest] = all;
+        const [m, econRows, utilRows, classRows, ...details] = all;
         if (m && m.tickRate > 0) tickRate = m.tickRate;
-        const details = rest.slice(0, wanted.length);
-        const seqs = rest.slice(wanted.length);
         const econBy = new Map((econRows || []).map((e) => [e.round, e]));
         const classBy = new Map((classRows || []).map((c) => [c.round, c]));
         const utils = utilRows || [];
         cols = wanted.map((r, i) => {
           const detail = details[i];
+          // The bounded sequence comes straight from the round-detail
+          // response — the old separate getEvents per round fetched the
+          // SAME rows a second time (and its result was all that rendered).
+          const seq = (detail?.events || []).slice(0, SEQ_LIMIT);
           return {
             round: r,
             detail,
-            seq: (seqs[i] || []).slice(0, SEQ_LIMIT),
+            seq,
             econ: econBy.get(r) || null,
             cls: classBy.get(r) || null,
             utils: utils.filter((u) => u.round === r),
@@ -82,14 +100,23 @@
     return () => (live = false);
   });
 
+  // The shared row presentation: rows are normalized with policy:false
+  // (the user explicitly selected these rounds — show every row) and
+  // both click and ▶ open the canonical feed at that tick.
+  function toLandmark(e) {
+    return normalizeEvent(e, { policy: false });
+  }
+
+  function openEvent(row) {
+    nav(replayHash(id, {}, { tick: row.tick, sel: row.key, back: backToCompare }));
+  }
+
   function replayStart(col) {
-    const tick = col.detail?.round?.startTick || 0;
-    setPendingSeek({ tick });
-    nav(`/replay/${id}`);
+    nav(replayHash(id, {}, { tick: col.detail?.round?.startTick || 0, back: backToCompare }));
   }
 
   function openRound(col) {
-    nav(`/match/${id}/round/${col.round}`);
+    nav(buildHash(`/match/${id}/round/${col.round}`, { back: backToCompare }));
   }
 
   function utilSummary(col) {
@@ -106,7 +133,7 @@
 
 <div class="view">
   <header class="view-header">
-    <button class="btn" onclick={() => nav(`/match/${id}`)}><span class="codicon codicon-arrow-left"></span> Match</button>
+    <button class="btn" onclick={() => nav(backHash())}><span class="codicon codicon-arrow-left"></span> Back</button>
     <h1>Compare rounds</h1>
     <div class="spacer"></div>
     {#if sel}
@@ -125,7 +152,7 @@
         two to four rounds (max 4), then press <strong>Compare</strong>.
       </p>
       <div>
-        <button class="btn primary" onclick={() => nav(`/match/${id}`)}><span class="codicon codicon-arrow-left"></span> Back to match</button>
+        <button class="btn primary" onclick={() => nav(backHash())}><span class="codicon codicon-arrow-left"></span> Back to match</button>
       </div>
     </section>
   {:else}
@@ -229,18 +256,13 @@
             <div>
               <p class="section-title cmp-sec-t">Event sequence {col.seq.length >= SEQ_LIMIT ? `(first ${SEQ_LIMIT})` : ''}</p>
               <ol class="cmp-events">
-                {#each col.seq as e (e.id)}
-                  <li>
-                    <span class="mono muted">{e.tick}</span>
-                    <span class="chip kind">{e.kind}</span>
-                    <span class="cmp-ev-names">
-                      {#if e.kind === 'kill'}
-                        {e.attackerName || '—'} → {e.victimName || '—'}
-                      {:else}
-                        {e.attackerName || e.victimName || ''}
-                      {/if}
-                    </span>
-                  </li>
+                {#each col.seq.map(toLandmark).filter(Boolean) as row (row.key)}
+                  <LandmarkRow
+                    {row}
+                    compact={true}
+                    onselect={openEvent}
+                    onseek={openEvent}
+                  />
                 {:else}
                   <li class="muted">No events.</li>
                 {/each}

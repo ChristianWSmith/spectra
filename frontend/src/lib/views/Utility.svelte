@@ -3,17 +3,17 @@
     getUtility,
     getScoreboard,
     getMatch,
-    setPendingTimelineFilter,
-    setPendingSeek,
     errText,
   } from '../services.js';
   import { fmtClock, tickSeconds, fmtMs } from '../fmt.js';
+  import { replayHash } from '../nav.js';
 
   // Match renders <Utility {id} /> — nav is optional, fall back to the hash
   // router directly so the drill-downs still work.
   let { id = 0, nav = null } = $props();
 
   const go = (hash) => (nav ? nav(hash) : (location.hash = hash));
+  const back = $derived(`match/${id}/utility`);
 
   let rows = $state([]);
   let players = $state([]);
@@ -130,14 +130,14 @@
     closed = { ...closed, [round]: !closed[round] };
   }
 
-  function openTimeline(r) {
-    setPendingTimelineFilter({ round: r.round, kind: 'grenade' });
-    go(`/match/${id}/timeline`);
+  // Round drill → THE event browser with the grenade categories enabled
+  // (the old Timeline hand-off carried kind:'grenade').
+  function openEvents(r) {
+    go(replayHash(id, { round: r.round, cats: ['grenade_throws', 'grenade_dets'] }, { back }));
   }
 
   function openReplay(r) {
-    setPendingSeek({ tick: r.tick });
-    go(`/replay/${id}`);
+    go(replayHash(id, {}, { tick: r.tick, back }));
   }
 
   const barW = 1000;
@@ -178,8 +178,8 @@
       >
       <span class="spacer"></span>
       <span class="muted util-hint"
-        >timeline filters to the round's grenade events · replay seeks to the
-        throw</span
+        >events scopes the replay landmark feed to the round · replay seeks
+        to the throw</span
       >
     </div>
 
@@ -317,8 +317,8 @@
                     <span class="util-actions">
                       <button
                         class="btn small ghost"
-                        title="Open timeline filtered to round {r.round}'s grenade events"
-                        onclick={() => openTimeline(r)}>timeline</button
+                        title="Open this round's grenade events in the replay landmark feed"
+                        onclick={() => openEvents(r)}>events</button
                       >
                       <button
                         class="btn small ghost"

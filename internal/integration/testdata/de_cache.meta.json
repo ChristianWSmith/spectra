@@ -1,0 +1,10 @@
+{
+  "schema_version": 1,
+  "transform": { "pos_x": -2000.0, "pos_y": 3250.0, "scale": 5.5 },
+  "radar": { "width": 1024, "height": 1024 },
+  "sites": {},
+  "spawns": {},
+  "source": {
+    "note": "de_cache overview extent (transform constants from community tabulation) — test fixture for TestReplaySidecar's world-bounds checks only. No radar image ships with the app; width/height are the reference radar pixel dimensions used to derive coverage."
+  }
+}

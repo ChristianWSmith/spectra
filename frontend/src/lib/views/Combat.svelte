@@ -8,11 +8,10 @@
     getEngagements,
     getPlayerRounds,
     getMatch,
-    setPendingSeek,
-    setPendingTimelineFilter,
     errText,
   } from '../services.js';
   import { fmtInt, fmtPercent } from '../fmt.js';
+  import { replayHash } from '../nav.js';
   import {
     KAST_DEF,
     DMG_CONV_DEF,
@@ -69,7 +68,9 @@
     { key: 'kastPct', label: 'KAST%', fmt: (r) => fmtPercent(r.kastPct), title: KAST_DEF },
   ];
 
-  const ENG_KINDS = ['', 'opening', 'entry', 'trade', 'untraded'];
+  // The engagement kinds the backend produces (analytics/engagements.go:
+  // opening | trade | untraded — "entry" is deferred, see models.go).
+  const ENG_KINDS = ['', 'opening', 'trade', 'untraded'];
 
   let clutches = $state([]);
   let engagements = $state([]);
@@ -137,13 +138,13 @@
   }
 
   function replay(tick) {
-    setPendingSeek({ tick });
-    nav(`/replay/${id}`);
+    nav(replayHash(id, {}, { tick, back: `match/${id}/combat` }));
   }
 
-  function openRoundTimeline(round) {
-    setPendingTimelineFilter({ round });
-    nav(`/match/${id}/timeline`);
+  // Round chip → THE event browser scoped to that round (the drill-down
+  // used to be dead code pointing at the retired Timeline tab).
+  function openRoundEvents(round) {
+    nav(replayHash(id, { round }, { back: `match/${id}/combat` }));
   }
 
   function wonByName(e) {
@@ -250,7 +251,13 @@
                 />
               </td>
               <td class="num mono">{e.tick}</td>
-              <td class="num"><span class="chip round-chip">R{e.round}</span></td>
+              <td class="num">
+                <button
+                  class="btn small ghost"
+                  title="Open round {e.round} in the replay landmark feed"
+                  onclick={() => openRoundEvents(e.round)}
+                >R{e.round}</button>
+              </td>
               <td>
                 <span class="chip comb-kind-chip {e.kind}" title={ENG_KIND_TITLES[e.kind] || e.kind}>
                   {e.kind}

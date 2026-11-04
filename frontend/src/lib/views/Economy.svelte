@@ -2,10 +2,10 @@
   import {
     getEconomy,
     getRounds,
-    setPendingTimelineFilter,
     errText,
   } from '../services.js';
   import { fmtInt, fmtMoney } from '../fmt.js';
+  import { replayHash } from '../nav.js';
   import EconCurve from '../components/EconCurve.svelte';
   import StatCard from '../components/StatCard.svelte';
 
@@ -144,8 +144,7 @@
 
   function drill(round) {
     if (!round) return;
-    setPendingTimelineFilter({ round });
-    nav(`/match/${id}/timeline`);
+    nav(replayHash(id, { round }, { back: `match/${id}/economy` }));
   }
 
   function toggleWhy(r, side) {
@@ -199,7 +198,7 @@
         value={summary.pistolWon ? `${summary.held}/${summary.pistolWon}` : '—'}
         sub="pistol wins held next round"
         cls={!summary.firstPistol ? 'no-drill' : ''}
-        title="Formula: pistol rounds won by a side where that side also won the immediately following round ÷ pistol rounds won. Click: open timeline filtered to round {summary.firstPistol || '—'}."
+        title="Formula: pistol rounds won by a side where that side also won the immediately following round ÷ pistol rounds won. Click: open Replay events for round {summary.firstPistol || '—'}."
         onclick={() => drill(summary.firstPistol)}
       >
         {#snippet badge()}<span class="chip badge-computed">computed</span>{/snippet}
@@ -214,7 +213,7 @@
           ? `${summary.forceWon}/${summary.forceTotal} · CT ${summary.forceCT}/${summary.forceCTT} · T ${summary.forceT}/${summary.forceTT}`
           : 'no force buys'}
         cls={!summary.firstForce ? 'no-drill' : ''}
-        title="Formula: force-buy rounds won by the force-buying side ÷ all force-buy rounds (per side). Click: open timeline filtered to round {summary.firstForce || '—'}."
+        title="Formula: force-buy rounds won by the force-buying side ÷ all force-buy rounds (per side). Click: open Replay events for round {summary.firstForce || '—'}."
         onclick={() => drill(summary.firstForce)}
       >
         {#snippet badge()}<span class="chip badge-computed">computed</span>{/snippet}
@@ -225,7 +224,7 @@
         value={summary.avgGap == null ? '—' : fmtMoney(summary.avgGap)}
         sub="avg winner − loser spend per round"
         cls={!summary.gapRound ? 'no-drill' : ''}
-        title="Formula: mean over decided rounds of (winner spent − loser spent). Click: open timeline filtered to round {summary.gapRound || '—'} (largest gap)."
+        title="Formula: mean over decided rounds of (winner spent − loser spent). Click: open Replay events for round {summary.gapRound || '—'} (largest gap)."
         onclick={() => drill(summary.gapRound)}
       >
         {#snippet badge()}<span class="chip badge-computed">computed</span>{/snippet}
@@ -236,7 +235,7 @@
         value={fmtMoney(summary.lostTotal)}
         sub={`CT ${fmtMoney(summary.lostCT)} · T ${fmtMoney(summary.lostT)}`}
         cls={!summary.lostRound ? 'no-drill' : ''}
-        title="Formula: Σ losing side's freeze-end equipment value over decided rounds — inferred: assumes all losing-side equipment is destroyed (PRD §6.1). Click: open timeline filtered to round {summary.lostRound || '—'} (largest loss)."
+        title="Formula: Σ losing side's freeze-end equipment value over decided rounds — inferred: assumes all losing-side equipment is destroyed (PRD §6.1). Click: open Replay events for round {summary.lostRound || '—'} (largest loss)."
         onclick={() => drill(summary.lostRound)}
       >
         {#snippet badge()}<span class="chip badge-inferred">inferred</span>{/snippet}

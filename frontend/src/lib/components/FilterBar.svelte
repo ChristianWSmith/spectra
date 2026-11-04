@@ -1,23 +1,23 @@
 <script>
-  // FilterBar — composable advanced event filter for Timeline.
+  // FilterBar — composable advanced event filter for the Replay
+  // landmark feed (it outlived Timeline: the kind select is gone —
+  // event categories are the feed's filter model, see lib/replay/
+  // landmarks.js CATEGORIES).
   //
   // Props:
-  //   filter   — {kind, steamId, round, weapon, tickFrom, tickTo, dmgMin,
+  //   filter   — {round, steamId, weapon, tickFrom, tickTo, dmgMin,
   //               dmgMax, distanceMax, headshotOnly, bbox:{minX,minY,maxX,maxY}}
+  //              (the typed/scope subset — cats/gname live on the parent)
   //   onchange — called with a fresh normalized copy of the whole filter
   //              object on every control commit (parent replaces its state,
   //              which drives the refetch).
   //   id       — match id (> 0 loads the round/player options and the
   //              scoreboard's killsByWeapon union for the weapon select).
+  //   showReset — false hides the local Reset (the parent owns a full
+  //              reset that also clears the category selection).
   import { getRounds, getScoreboard } from '../services.js';
-  import { isCounted } from '../rounds.js';
-  import { LANDMARK_KINDS } from '../replay/landmarks.js';
 
-  let { filter = {}, onchange = () => {}, id = 0 } = $props();
-
-  // The kind list lives in lib/replay/landmarks.js — the one mirror of
-  // models.EventKind (Go side), shared with the replay surfaces.
-  const KINDS = LANDMARK_KINDS;
+  let { filter = {}, onchange = () => {}, id = 0, showReset = true } = $props();
 
   // Fallback weapon list — the live union of scoreboard killsByWeapon keys
   // is merged on top (see weapons below).
@@ -62,7 +62,6 @@
 
   const DEFAULTS = {
     round: -1, // -1 = all rounds (0 would mean round zero!)
-    kind: '',
     steamId: '',
     weapon: '',
     tickFrom: 0, // 0/"" = unconstrained (Go: <= 0 open-ended on tickTo)
@@ -90,14 +89,13 @@
     return Number.isFinite(n) && n > 0 ? n : 0;
   }
 
-  // Coerce anything the parent hands us (pending-filter hand-off, saved
-  // preset JSON, partial objects) into a complete filter.
+  // Coerce anything the parent hands us (route query, saved preset JSON,
+  // partial objects) into a complete filter.
   function normalize(src) {
     const s = src || {};
     return {
       round: typeof s.round === 'number' ? s.round : DEFAULTS.round,
-      kind: s.kind || '',
-      steamId: s.steamId || '',
+      steamId: s.steamId || s.player || '',
       weapon: s.weapon || '',
       tickFrom: num(s.tickFrom),
       tickTo: num(s.tickTo),
@@ -195,21 +193,13 @@
     Round
     <select class="input" id="filt-round" value={f.round} onchange={(e) => set('round', Number(e.currentTarget.value))}>
       <option value={-1}>All</option>
-      <!-- Counted rounds only (lib/rounds.js): knife/warmup rounds are
-           numbered negatively, and -1 is this filter's "all rounds"
-           sentinel. -->
-      {#each rounds.filter(isCounted) as r (r.number)}
-        <option value={r.number}>R{r.number}</option>
-      {/each}
-    </select>
-  </label>
-
-  <label class="filt-grp" for="filt-kind">
-    Kind
-    <select class="input" id="filt-kind" value={f.kind} onchange={(e) => set('kind', e.currentTarget.value)}>
-      <option value="">All</option>
-      {#each KINDS as k (k)}
-        <option value={k}>{k}</option>
+      <!-- Every round, including knife/warmup (negative numbers — the
+           feed's round filter matches exactly, so they are selectable;
+           labels mark the non-counted ones). -->
+      {#each rounds as r (r.number)}
+        <option value={r.number}>
+          R{r.number}{r.warmup ? ' (wu)' : r.pregame ? ' (knife)' : ''}
+        </option>
       {/each}
     </select>
   </label>
@@ -314,5 +304,7 @@
     </span>
   {/if}
 
-  <button class="btn" onclick={reset}>Reset</button>
+  {#if showReset}
+    <button class="btn" onclick={reset}>Reset</button>
+  {/if}
 </div>

@@ -1,12 +1,10 @@
 <script>
-  import { isSteam } from '../nav.js';
-  import { HANDOFF_KEYS, setHandoff } from '../handoff.js';
+  import { isSteam, replayHash } from '../nav.js';
   import { KAST_DEF } from '../definitions.js';
   import {
     getMatch,
     getScoreboard,
     getRounds,
-    getChat,
     getWarnings,
     getCombatStats,
     getRoundClasses,
@@ -14,8 +12,6 @@
     getMatchSummary,
     listMetrics,
     previewMetric,
-    setPendingTimelineFilter,
-    setPendingSeek,
     errText,
   } from '../services.js';
   // Preference keys (prefs.go) are read straight through the generated
@@ -30,20 +26,16 @@
     fmt2,
     fmtPercent,
     fmtInt,
-    fmtClock,
-    tickSeconds,
     fmtMetric,
   } from '../fmt.js';
   import { teamNames } from '../teams.js';
   import { isCounted } from '../rounds.js';
-  import { MATCH_TABS, matchTabSlug } from '../router.js';
+  import { MATCH_TABS, matchTabSlug, buildHash } from '../router.js';
   import RoundStrip from '../components/RoundStrip.svelte';
   import Economy from './Economy.svelte';
   import Utility from './Utility.svelte';
   import Heatmaps from './Heatmaps.svelte';
   import Combat from './Combat.svelte';
-  import Context from './Context.svelte';
-  import Timeline from './Timeline.svelte';
   import StatusChip from '../components/StatusChip.svelte';
   import SortTh from '../components/SortTh.svelte';
   import StatCard from '../components/StatCard.svelte';
@@ -116,8 +108,6 @@
   let expanded = $state(0); // steamId of the expanded scoreboard row
   let warnings = $state(null); // null = not loaded
   let warningsOpen = $state(false);
-  let chat = $state([]);
-  let chatRound = $state(-1);
   let error = $state('');
   // M4 header badges: voice presence + chat-decrypt key state.
   let voice = $state(null);
@@ -390,40 +380,6 @@
     return `${mc.def.title || mc.def.name} — sample size n=${r.n}`;
   }
 
-  $effect(() => {
-    if (tab !== 'Chat') return;
-    let live = true;
-    getChat(id, chatRound)
-      .then((rows) => {
-        if (live) chat = rows || [];
-      })
-      .catch((e) => {
-        if (live) error = errText(e);
-      });
-    return () => (live = false);
-  });
-
-  // Round objects the view already loads on mount (header effect) — reused
-  // by the Chat tab, no extra backend call.
-  const roundByNumber = $derived(new Map(rounds.map((r) => [r.number, r])));
-
-  // Chat time cell: "R12 1:23" — how far INTO its round the message was
-  // said: (tick − round.startTick) / tickRate, rendered with fmtClock.
-  // Messages with no containing round, in a counted-out round
-  // (knife/warmup — lib/rounds.js) or with a negative offset fall back to
-  // a match-relative clock (tick / tickRate) — plain "m:ss", never a
-  // negative; keep it simple. The raw tick stays in the cell's title
-  // tooltip.
-  function chatTime(c) {
-    const rate = match ? match.tickRate : 0;
-    const r = roundByNumber.get(c.round);
-    if (r && isCounted(r)) {
-      const intoRound = tickSeconds(c.tick - r.startTick, rate);
-      if (intoRound >= 0) return `R${r.number} ${fmtClock(intoRound)}`;
-    }
-    return fmtClock(tickSeconds(c.tick, rate));
-  }
-
   function toggleSort(key) {
     if (sortKey === key) desc = !desc;
     else {
@@ -456,14 +412,25 @@
     }
   }
 
-  function openPlayerTimeline(steamId) {
-    setPendingTimelineFilter({ steamId });
-    nav(`/match/${id}/timeline`);
+  // The origin path for drill-down return trips (?back=…) — RoundDetail,
+  // CompareRounds and Replay's Back button resolve it to this tab (plain
+  // #/match/:id for Overview).
+  function backPath() {
+    return tab === 'Overview' ? `match/${id}` : `match/${id}/${matchTabSlug(tab)}`;
+  }
+
+  // Every event drill-down goes to THE event browser: Replay's landmark
+  // feed, scoped by the entry point (the old Timeline hand-off).
+  function openPlayerEvents(steamId) {
+    nav(replayHash(id, { steamId }, { back: backPath() }));
+  }
+
+  function openChat() {
+    nav(replayHash(id, { cats: ['chat'] }, { back: backPath() }));
   }
 
   function openReplay() {
-    setPendingSeek(null); // clear any stale seek; the whole match plays from 0
-    nav(`/replay/${id}`);
+    nav(replayHash(id, {}, { back: backPath() }));
   }
 
   // SteamID64 guard — bots/short ids never match #/player/(\d{17}).
@@ -473,20 +440,16 @@
     else if (compareSel.length < 4) compareSel = [...compareSel, n];
   }
 
-  // Hand-off contract (M3 WAVE B): {matchId: number, rounds: number[]}
-  // under HANDOFF_KEYS.compareRounds, written right before navigating to
-  // #/compare/:id; CompareRounds reads + clears it once on init (see
-  // lib/handoff.js for the whole writer/reader table).
+  // The compared rounds ride the URL (the old one-shot sessionStorage
+  // hand-off lost the selection on every return) — CompareRounds reads
+  // ?rounds= and ?back=.
   function goCompare() {
-    try {
-      setHandoff(HANDOFF_KEYS.compareRounds, {
-        matchId: id,
-        rounds: [...compareSel],
-      });
-      nav(`/compare/${id}`);
-    } catch (e) {
-      error = errText(e);
-    }
+    nav(
+      buildHash(`/compare/${id}`, {
+        rounds: compareSel.join(','),
+        back: backPath(),
+      }),
+    );
   }
 
   // Tab switch: the active tab mirrors itself in the URL so every tab is
@@ -494,7 +457,7 @@
   // lib/router.js). The default Overview tab keeps the plain #/match/:id
   // form (that is the URL-cleanup case — plain parses back to Overview),
   // and writing the segment always produces a hashchange, so drill-downs
-  // that target another tab (nav('/match/:id/timeline')) are never a
+  // that target another tab (nav('/match/:id/economy')) are never a
   // no-op while a different tab is visible. The hashchange re-parses to
   // the same route.name, so this view never remounts — only routeTab
   // changes, which the effect above applies.
@@ -622,12 +585,16 @@
       {:else}
         <button class="btn" onclick={toggleWarnings}>Warnings</button>
       {/if}
-      <!-- The old Raw tab's inspectors (provenance, ConVars, payload
-           browser, census) live in the Explorer view; carry this match
-           over as its context instead of defaulting to the newest. -->
+      <!-- The old Raw tab's inspectors (provenance, census) live in the
+           Explorer view; carry this match over as its context instead of
+           defaulting to the newest. -->
       <button class="btn" onclick={() => nav('/explorer/' + id)}>
         Open in Explorer view →
       </button>
+      <!-- Chat is a shortcut into THE event browser with the chat
+           category pre-enabled (the old Chat tab's list retired into
+           Replay's landmark feed). -->
+      <button class="btn" onclick={openChat}>Chat</button>
       <button class="btn primary" onclick={openReplay}>Replay</button>
     </header>
 
@@ -659,6 +626,7 @@
       teamAbove={teams.ct}
       teamBelow={teams.t}
       sideSwitches={match.sideSwitches || 0}
+      back={backPath()}
       {nav}
     />
 
@@ -677,8 +645,8 @@
             label={s.label}
             value={s.value}
             sub={s.p.name}
-            title="Open timeline filtered to {s.p.name}"
-            onclick={() => openPlayerTimeline(s.p.steamId)}
+            title="Open Replay events filtered to {s.p.name}"
+            onclick={() => openPlayerEvents(s.p.steamId)}
           />
         {/each}
       </div>
@@ -702,7 +670,7 @@
                   title={p.finalStatePresent === false
                     ? 'not in final snapshot — stats derived from events'
                     : ''}
-                  onclick={() => openPlayerTimeline(p.steamId)}
+                  onclick={() => openPlayerEvents(p.steamId)}
                 >
                   <td>
                     {p.name}
@@ -735,7 +703,7 @@
                   title={p.finalStatePresent === false
                     ? 'not in final snapshot — stats derived from events'
                     : ''}
-                  onclick={() => openPlayerTimeline(p.steamId)}
+                  onclick={() => openPlayerEvents(p.steamId)}
                 >
                   <td>
                     {p.name}
@@ -754,7 +722,7 @@
             <table class="data-table">
               <tbody>
                 {#each rosters.other as p (p.steamId)}
-                  <tr class="clickable" onclick={() => openPlayerTimeline(p.steamId)}>
+                  <tr class="clickable" onclick={() => openPlayerEvents(p.steamId)}>
                     <td>{p.name}</td>
                     <td class="num">{p.kills}/{p.deaths}/{p.assists}</td>
                     <td class="num"><span class="chip adr">{fmt1(p.adr)}</span></td>
@@ -839,9 +807,9 @@
                   // reliably stop this row handler — guard on target instead.
                   if (e.target instanceof Element && e.target.closest('button, input, a'))
                     return;
-                  openPlayerTimeline(p.steamId);
+                  openPlayerEvents(p.steamId);
                 }}
-                onkeydown={(e) => e.key === 'Enter' && openPlayerTimeline(p.steamId)}
+                onkeydown={(e) => e.key === 'Enter' && openPlayerEvents(p.steamId)}
                 tabindex="0"
               >
                 <td class="expand-cell" onclick={(e) => e.stopPropagation()}>
@@ -966,9 +934,10 @@
                 onclick={(e) => {
                   if (e.target instanceof Element && e.target.closest('input, button, a'))
                     return;
-                  nav(`/match/${id}/round/${r.number}`);
+                  nav(buildHash(`/match/${id}/round/${r.number}`, { back: backPath() }));
                 }}
-                onkeydown={(e) => e.key === 'Enter' && nav(`/match/${id}/round/${r.number}`)}
+                onkeydown={(e) =>
+                  e.key === 'Enter' && nav(buildHash(`/match/${id}/round/${r.number}`, { back: backPath() }))}
                 tabindex="0"
               >
                 <td class="num cmp-cmp-col" onclick={(e) => e.stopPropagation()}>
@@ -1043,59 +1012,8 @@
       <Heatmaps {id} {nav} />
     {:else if tab === 'Combat'}
       <Combat {id} {nav} />
-    {:else if tab === 'Timeline'}
-      <Timeline {id} {nav} />
-    {:else if tab === 'Chat'}
-      <div class="toolbar">
-        <label for="chat-round">Round</label>
-        <select class="input" id="chat-round" bind:value={chatRound}>
-          <option value={-1}>All rounds</option>
-          <!-- Counted rounds only (lib/rounds.js): knife/warmup rounds
-               are numbered negatively, and -1 is this filter's "all
-               rounds" sentinel. -->
-          {#each rounds.filter(isCounted) as r (r.number)}
-            <option value={r.number}>Round {r.number}</option>
-          {/each}
-        </select>
-      </div>
-      <div class="table-scroll">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th scope="col" class="num">Time</th>
-              <th scope="col" class="num">Round</th>
-              <th scope="col">Name</th>
-              <th scope="col">Text</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each chat as c (c.id)}
-              <tr>
-                <td class="num mono chat-time" title="tick {c.tick}">{chatTime(c)}</td>
-                <td class="num"
-                  ><span class="chip round-chip">{c.round}</span></td
-                >
-                <td>{c.name || '—'}</td>
-                <td>{c.text}</td>
-              </tr>
-            {:else}
-              <tr><td colspan="4" class="muted">No chat in this selection.</td></tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
-    {:else if tab === 'Context'}
-      <Context {id} {nav} />
     {/if}
   {:else if !error}
     <p class="muted" role="status">Loading…</p>
   {/if}
 </div>
-
-<style>
-  /* Chat time cell ("R12 1:23"): keep the round+clock label on one line —
-     round numbers are short, so the column can stay narrow and tidy. */
-  .chat-time {
-    white-space: nowrap;
-  }
-</style>

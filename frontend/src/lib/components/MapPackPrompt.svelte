@@ -1,8 +1,11 @@
 <script>
-  // One-time prompt: "Found Counter-Strike 2 — extract radar images?"
-  // Shown by App on first launch after detection; Yes runs the local
-  // extraction (Valve IP never ships — see internal/mappack), "Not now"
-  // declines permanently, "Choose folder…" covers non-Steam installs.
+  // One-time prompt, two variants: "Found Counter-Strike 2 — extract
+  // radar images?" when detection succeeds, and "Counter-Strike 2 not
+  // found" when it doesn't (plain-grid fallback explained; "Choose
+  // folder…" validates a manual install and moves straight into the
+  // extract flow). Shown by App on first launch after detection; "Not
+  // now" declines permanently in either variant, "Choose folder…"
+  // covers non-Steam installs. Valve IP never ships — internal/mappack.
   import {
     getMapPackStatus,
     extractMapPacks,
@@ -13,6 +16,7 @@
   import Dialog from './Dialog.svelte';
 
   let open = $state(false);
+  let notFound = $state(false); // CS2 missing → the not-found variant
   let status = $state(null); // MapPackStatus once loaded
   let busy = $state(false);
   let error = $state('');
@@ -22,11 +26,12 @@
   export async function maybePrompt() {
     try {
       const st = await getMapPackStatus();
-      if (!st || !st.found || st.promptState === 'declined' || st.promptState === 'done') {
+      if (!st || st.promptState === 'declined' || st.promptState === 'done') {
         return;
       }
       status = st;
       pickedDir = st.path || '';
+      notFound = !st.found;
       error = '';
       result = null;
       open = true;
@@ -74,6 +79,10 @@
         // Persist so future detection/status calls use it.
         await setMapPackPromptState('', dir);
         status = { ...(status || {}), path: dir, manual: true, found: true };
+        // A validated folder ends the not-found variant: the dialog flips
+        // into the normal "Found Counter-Strike 2 — extract radar?" flow.
+        notFound = false;
+        error = '';
       }
     } catch (e) {
       error = errText(e);
@@ -85,35 +94,52 @@
   open={open}
   backClass="top"
   panelClass="pk-prompt"
-  label="Extract radar images"
+  label={notFound ? 'Counter-Strike 2 not found' : 'Extract radar images'}
   dismissable={!busy}
   onClose={close}
 >
   <div class="pk-body">
-    <h2 class="pk-title">Found Counter-Strike 2</h2>
-    <p class="muted">
-      Spectra can extract the official radar images and map transforms
-      from your local CS2 installation for authentic map backgrounds in
-      replay and heatmaps.
-    </p>
-    <p class="muted pk-path mono">{pickedDir || status?.path || 'CS2 install'}</p>
-    <p class="muted pk-fine">
-      Images are read from your game files and stored in Spectra's data
-      folder on this machine. Nothing is uploaded, and nothing from
-      Counter-Strike ships with the app.
-    </p>
-    {#if result}
-      <p class="pk-result" role="status">
-        {#if result.maps && result.maps.length}
-          Extracted {result.maps.length} map pack{result.maps.length === 1 ? '' : 's'}.
-        {/if}
-        {#if result.errors && result.errors.length}
-          <span class="pk-err">{result.errors.length} failed: {result.errors[0]}</span>
-        {/if}
+    {#if notFound}
+      <h2 class="pk-title">Counter-Strike 2 not found</h2>
+      <p class="muted">
+        Spectra extracts radar images and map transforms from a local
+        Counter-Strike 2 installation for authentic map backgrounds in
+        replay and heatmaps. Without one, maps render as a plain grid.
       </p>
-    {/if}
-    {#if error}
-      <p class="error" role="alert">{error}</p>
+      <p class="muted pk-fine">
+        Nothing from Counter-Strike ships with the app, and nothing is
+        uploaded — your game files are read locally and the extracted packs
+        are stored in Spectra's data folder on this machine.
+      </p>
+      {#if error}
+        <p class="error" role="alert">{error}</p>
+      {/if}
+    {:else}
+      <h2 class="pk-title">Found Counter-Strike 2</h2>
+      <p class="muted">
+        Spectra can extract the official radar images and map transforms
+        from your local CS2 installation for authentic map backgrounds in
+        replay and heatmaps.
+      </p>
+      <p class="muted pk-path mono">{pickedDir || status?.path || 'CS2 install'}</p>
+      <p class="muted pk-fine">
+        Images are read from your game files and stored in Spectra's data
+        folder on this machine. Nothing is uploaded, and nothing from
+        Counter-Strike ships with the app.
+      </p>
+      {#if result}
+        <p class="pk-result" role="status">
+          {#if result.maps && result.maps.length}
+            Extracted {result.maps.length} map pack{result.maps.length === 1 ? '' : 's'}.
+          {/if}
+          {#if result.errors && result.errors.length}
+            <span class="pk-err">{result.errors.length} failed: {result.errors[0]}</span>
+          {/if}
+        </p>
+      {/if}
+      {#if error}
+        <p class="error" role="alert">{error}</p>
+      {/if}
     {/if}
   </div>
   <div class="toolbar pk-actions">
@@ -122,9 +148,11 @@
     </button>
     <span class="spacer"></span>
     <button class="btn" disabled={busy} onclick={decline}>Not now</button>
-    <button class="btn primary" disabled={busy} onclick={accept}>
-      {busy ? 'Extracting…' : 'Extract radar images'}
-    </button>
+    {#if !notFound}
+      <button class="btn primary" disabled={busy} onclick={accept}>
+        {busy ? 'Extracting…' : 'Extract radar images'}
+      </button>
+    {/if}
   </div>
 </Dialog>
 

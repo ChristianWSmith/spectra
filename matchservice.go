@@ -45,9 +45,10 @@ func (s *MatchService) GetEvent(id int64) (*models.EventDetail, error) {
 	return s.st.GetEvent(id)
 }
 
-// GetChat returns a match's chat lines; round < 0 selects all rounds.
-func (s *MatchService) GetChat(matchID int64, round int) ([]models.ChatRow, error) {
-	return s.st.GetChat(matchID, round)
+// GetChat returns a match's chat lines; round < 0 selects all rounds,
+// player "" all senders (the landmark feed passes the active scope).
+func (s *MatchService) GetChat(matchID int64, round int, player string) ([]models.ChatRow, error) {
+	return s.st.GetChat(matchID, round, player)
 }
 
 // GetMatchSummary returns ONE match's library-list row (the ListMatches

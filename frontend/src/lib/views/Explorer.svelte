@@ -1,23 +1,16 @@
 <script>
-  // M5 data explorer / developer mode: per-match provenance,
-  // entity summary, ConVars, generic-event payload browser (key/value tree)
-  // and parser warnings — the raw inspectors the Match view's removed Raw
-  // tab used to own. The Match header's "Open in Explorer view →" carries
-  // this match over as the route context (#/explorer/:id); without one the
-  // picker follows the newest match. Acceptance walkthrough #3.
-  import {
-    listMatches,
-    getProvenance,
-    getConVars,
-    getEntitySummary,
-    getGenericHistogram,
-    getGenericEvents,
-    getWarnings,
-    errText,
-  } from '../services.js';
+  // Explorer — the demo-file DIAGNOSTICS surface: per-match provenance,
+  // entity summary and the static network-census reference. Its raw-event
+  // browsing panels (generic payload browser, histogram, ConVars,
+  // warnings) retired into the landmark consolidation: event records are
+  // browsed in Replay's landmark feed (game_events/convars categories),
+  // warnings live on the Match header, and the one ConVar parser is
+  // eventlabels.go on the Go side. The Match header's "Open in Explorer
+  // view →" carries this match over as the route context
+  // (#/explorer/:id); without one the picker follows the newest match.
+  import { listMatches, getProvenance, getEntitySummary, errText } from '../services.js';
   import { fmtDate, fmtInt } from '../fmt.js';
   import MatchPicker from '../components/MatchPicker.svelte';
-  import PayloadTree from '../components/PayloadTree.svelte';
   import StatusChip from '../components/StatusChip.svelte';
 
   let { nav = () => {}, routeId = 0 } = $props();
@@ -40,20 +33,6 @@
   let provError = $state('');
   let entities = $state(null);
   let entError = $state('');
-  let convars = $state([]);
-  let convarsError = $state('');
-  let convarFilter = $state('');
-  let hist = $state([]);
-  let histError = $state('');
-  let events = $state([]);
-  let eventsError = $state('');
-  let eventsLoading = $state(false);
-  let eventLimit = $state(100);
-  let selectedName = $state('');
-  let payloadFilter = $state('');
-  let rawOpen = $state({}); // index → bool (raw JSON vs tree)
-  let warnings = $state([]);
-  let warnError = $state('');
 
   let gen = 0; // match-switch generation — drops stale async results
 
@@ -86,14 +65,7 @@
     const my = ++gen;
     prov = null;
     entities = null;
-    convars = [];
-    hist = [];
-    events = [];
-    warnings = [];
-    selectedName = '';
-    rawOpen = {};
-    eventLimit = 100;
-    provError = entError = convarsError = histError = eventsError = warnError = '';
+    provError = entError = '';
 
     getProvenance(id)
       .then((p) => {
@@ -109,75 +81,7 @@
       .catch((e) => {
         if (my === gen) entError = errText(e);
       });
-    getConVars(id)
-      .then((rows) => {
-        if (my === gen) convars = rows || [];
-      })
-      .catch((e) => {
-        if (my === gen) convarsError = errText(e);
-      });
-    getGenericHistogram(id)
-      .then((h) => {
-        if (my === gen) hist = h || [];
-      })
-      .catch((e) => {
-        if (my === gen) histError = errText(e);
-      });
-    getWarnings(id)
-      .then((w) => {
-        if (my === gen) warnings = w || [];
-      })
-      .catch((e) => {
-        if (my === gen) warnError = errText(e);
-      });
   });
-
-  function selectEventName(name) {
-    selectedName = name;
-    events = [];
-    rawOpen = {};
-    eventLimit = 100;
-    loadEvents(100);
-  }
-
-  async function loadEvents(limit) {
-    const id = matchId;
-    const name = selectedName;
-    eventsLoading = true;
-    eventsError = '';
-    try {
-      const rows = await getGenericEvents(id, name, limit);
-      if (id !== matchId || name !== selectedName) return;
-      events = rows || [];
-      eventLimit = limit;
-    } catch (e) {
-      if (id === matchId && name === selectedName) eventsError = errText(e);
-    } finally {
-      if (id === matchId && name === selectedName) eventsLoading = false;
-    }
-  }
-
-  const filteredConvars = $derived.by(() => {
-    const q = convarFilter.trim().toLowerCase();
-    if (!q) return convars;
-    return convars.filter(
-      (c) =>
-        c.name.toLowerCase().includes(q) ||
-        String(c.value).toLowerCase().includes(q),
-    );
-  });
-
-  let histFilter = $state('');
-  const filteredHistRows = $derived.by(() => {
-    const q = histFilter.trim().toLowerCase();
-    if (!q) return hist;
-    return hist.filter((h) => h.name.toLowerCase().includes(q));
-  });
-
-  // Key/value tree rendering (parse, leaf formatting, filter matching,
-  // lazy expansion) lives in components/PayloadTree.svelte + the pure
-  // payloadTree.js module — see there. Explorer only feeds it the raw
-  // payload JSON and the filter text.
 
   // Encrypted-message note (presence, never content).
   const encNote = $derived.by(() => {
@@ -202,7 +106,7 @@
       value={matchId}
       onselect={(id) => (matchId = id)}
     />
-    <span class="muted">Developer-mode inspectors over the stored corpus.</span>
+    <span class="muted">Demo-file diagnostics over the stored corpus.</span>
   </header>
 
   {#if loadError}
@@ -307,144 +211,6 @@
         {#if entities.notes}
           <p class="muted expl-ent-note">{entities.notes}</p>
         {/if}
-      {/if}
-    </section>
-
-    <!-- ConVars -->
-    <section class="panel">
-      <h2>ConVars <span class="muted num">{filteredConvars.length}/{convars.length}</span></h2>
-      {#if convarsError}
-        <p class="error" role="alert">{convarsError}</p>
-      {:else}
-        <input
-          class="input"
-          placeholder="Filter by name or value…"
-          bind:value={convarFilter}
-          aria-label="Filter ConVars"
-        />
-        {#if convars.length === 0}
-          <p class="muted" role="status">No server_cvar events recorded for this match.</p>
-        {:else if filteredConvars.length === 0}
-          <p class="muted" role="status">No ConVars match the filter.</p>
-        {:else}
-          <div class="table-scroll expl-convars">
-            <table class="data-table mini">
-              <thead>
-                <tr><th>Name</th><th>Value</th><th class="num">Round</th><th class="num">Tick</th></tr>
-              </thead>
-              <tbody>
-                {#each filteredConvars as c, i (i)}
-                  <tr>
-                    <td class="mono name-cell">{c.name}</td>
-                    <td class="mono">{c.value}</td>
-                    <td class="num muted">{c.round}</td>
-                    <td class="num muted">{c.tick}</td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          </div>
-        {/if}
-      {/if}
-    </section>
-
-    <!-- Generic payload browser -->
-    <section class="panel">
-      <h2>Generic payload browser</h2>
-      {#if histError}
-        <p class="error" role="alert">{histError}</p>
-      {/if}
-      <div class="expl-grid">
-        <div class="expl-hist">
-          <input
-            class="input"
-            placeholder="Filter event names…"
-            bind:value={histFilter}
-            aria-label="Filter event names"
-          />
-          <div class="expl-hist-list">
-            {#each filteredHistRows as h (h.name)}
-              <button
-                class="expl-hist-row"
-                class:active={selectedName === h.name}
-                onclick={() => selectEventName(h.name)}
-              >
-                <span class="mono expl-hist-name">{h.name}</span>
-                <span class="spacer"></span>
-                <span class="num muted">{fmtInt(h.count)}</span>
-              </button>
-            {:else}
-              <p class="muted" role="status">No generic events stored for this match.</p>
-            {/each}
-          </div>
-        </div>
-        <div class="expl-payloads">
-          {#if !selectedName}
-            <p class="muted" role="status">Pick an event name on the left to browse payloads.</p>
-          {:else}
-            <div class="row-between">
-              <span class="chip kind">{selectedName}</span>
-              <span class="muted num">{fmtInt(events.length)} loaded</span>
-              <input
-                class="input"
-                placeholder="Filter keys…"
-                bind:value={payloadFilter}
-                aria-label="Filter payload keys"
-              />
-            </div>
-            {#if eventsError}
-              <p class="error" role="alert">{eventsError}</p>
-            {/if}
-            <!-- Keyed by event name + index: switching events remounts the
-                 payload trees (fresh expansion state) while "load 100
-                 more" keeps existing rows' state (stable indices). -->
-            {#each events as ev, i (selectedName + ':' + i)}
-              <div class="payload expl-ev">
-                <div class="payload-head">
-                  <span class="mono muted">#{i + 1}</span>
-                  <span class="chip round-chip">R{ev.round}</span>
-                  <span class="mono muted">tick {ev.tick}</span>
-                  <span class="spacer"></span>
-                  <button
-                    class="btn small ghost"
-                    aria-pressed={!!rawOpen[i]}
-                    onclick={() => (rawOpen = { ...rawOpen, [i]: !rawOpen[i] })}
-                    title="Toggle raw JSON"
-                    >{rawOpen[i] ? 'tree' : 'raw'}</button
-                  >
-                </div>
-                {#if rawOpen[i]}
-                  <pre class="mono">{ev.payloadJson}</pre>
-                {:else}
-                  <PayloadTree json={ev.payloadJson} query={payloadFilter.trim()} />
-                {/if}
-              </div>
-            {/each}
-            {#if eventsLoading}
-              <p class="muted" role="status">Loading…</p>
-            {:else if events.length >= eventLimit}
-              <button class="btn" onclick={() => loadEvents(eventLimit + 100)}
-                >Load 100 more…</button
-              >
-            {/if}
-          {/if}
-        </div>
-      </div>
-    </section>
-
-    <!-- Warnings -->
-    <section class="panel">
-      <h2>Warnings <span class="muted num">{warnings.length}</span></h2>
-      {#if warnError}
-        <p class="error" role="alert">{warnError}</p>
-      {:else if warnings.length === 0}
-        <p class="muted" role="status">No extraction warnings for this match.</p>
-      {:else}
-        <ul class="warning-list">
-          {#each warnings as w, i (i)}
-            <li class="mono">{w}</li>
-          {/each}
-        </ul>
       {/if}
     </section>
 

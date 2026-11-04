@@ -1,7 +1,7 @@
 <script>
-  // The kill-event flag chips — the one markup shared by Timeline's
-  // virtualized rows, Timeline's detail pane and RoundDetail's kill feed
-  // (they used to carry byte-identical copies of this sequence). The
+  // The kill-event flag chips — the one markup the raw-event surfaces
+  // share (Replay's landmark detail pane; the retired Timeline/RoundDetail
+  // feeds used to carry byte-identical copies of this sequence). The
   // canonical flag list + code/title pairs live here; `none` renders the
   // detail pane's "no flags" fallback when no chip applies.
   let { event: e = {}, none = false } = $props();

@@ -1,8 +1,8 @@
 short human name,category,description,code reference
 Builder nav button,App shell,Sidebar button that navigates to the metric Builder view and highlights when the builder route is active.,App.svelte:nav('/builder')
 Explorer nav button,App shell,Sidebar button that navigates to the Explorer view and highlights when the explorer route is active.,App.svelte:nav('/explorer')
-Library nav button,App shell,"Sidebar button that navigates to the match Library view and highlights whenever any library-related route (library, match, round, timeline, replay, player, compare) is active.",App.svelte:nav('/library')
-Main content area,App shell,"Right-hand pane beside the sidebar where the current routed view (Library, Match, Timeline, Settings, etc.) renders.",App.svelte:content
+Library nav button,App shell,"Sidebar button that navigates to the match Library view and highlights whenever any library-related route (library, match, round, replay, player, compare) is active.",App.svelte:nav('/library')
+Main content area,App shell,"Right-hand pane beside the sidebar where the current routed view (Library, Match, Settings, etc.) renders.",App.svelte:content
 Reports nav button,App shell,Sidebar button that navigates to the Reports view and highlights when the reports route is active.,App.svelte:nav('/reports')
 Settings nav button,App shell,Sidebar button that navigates to the Settings view and highlights when the settings route is active.,App.svelte:nav('/settings')
 Sidebar,App shell,"Left-hand navigation rail listing the app's six top-level views, always visible along the left edge of the window.",App.svelte:sidebar
@@ -58,8 +58,7 @@ No results message,Library,"Message under the matches table when it is empty —
 Recent import problems panel,Library,"Panel above the drop zone listing recent failed/cancelled imports (last 7 days, max 10) with status, filename and error.",Library.svelte:problemJobs
 Reprocess button,Library,Small button in a match row's Actions column that re-parses the original demo.,Library.svelte:onReprocess
 Combat tab content,Match — Overview & header,Embedded combat-stats view rendered when the Combat tab is active.,Match.svelte:Combat
-Context tab content,Match — Overview & header,Embedded demo-context view rendered when the Context tab is active.,Match.svelte:Context
-CT roster table,Match — Overview & header,"Overview panel table of the team that finished CT, headed by that team's display name (demo clan name, else team_<player>, else ""CT"") with Player, K/D/A and ADR columns; clicking a row opens that player's timeline.",Match.svelte:side-ct
+CT roster table,Match — Overview & header,"Overview panel table of the team that finished CT, headed by that team's display name (demo clan name, else team_<player>, else ""CT"") with Player, K/D/A and ADR columns; clicking a row opens that player's events in the Replay landmark feed.",Match.svelte:side-ct
 Current round highlight,Match — Overview & header,Highlight styling on the round cell matching the round currently open in Round Detail.,RoundStrip.svelte:current
 Derived stats badge,Match — Overview & header,"""derived"" chip next to a player name in the roster tables when they were absent from the final snapshot and stats came from events.",Match.svelte:provenance
 Economy tab content,Match — Overview & header,Embedded Economy analysis view rendered in the match body when the Economy tab is active.,Match.svelte:Economy
@@ -71,21 +70,20 @@ Key facts list,Match — Overview & header,"Definition list on the Overview tab:
 Match loading text,Match — Overview & header,"""Loading…"" placeholder shown while the match view is still fetching its data.",Match.svelte:match
 Match not found message,Match — Overview & header,"Error alert ""Match not found."" when the match id has no matching record.",Match.svelte:error
 Match scoreline header,Match — Overview & header,"Large team name – score – team name title at the top of the match view (team names, never the sides)",Match.svelte:score
-Match section tab bar,Match — Overview & header,"Nav of tabs (Overview, Scoreboard, Rounds, Economy, Utility, Heatmaps, Combat, Timeline, Chat, Context, Raw); Timeline navigates away, the rest switch in-page panels.",Match.svelte:tabs
+Match section tab bar,Match — Overview & header,"Nav of tabs (Overview, Scoreboard, Rounds, Economy, Utility, Heatmaps, Combat) — Timeline/Chat/Context retired into the Replay landmark feed; tabs switch in-page panels.",Match.svelte:tabs
 Match subtitle line,Match — Overview & header,"Muted meta line under the scoreline: map, half score, duration, tickrate, patch, status chip, voice badges and parser version.",Match.svelte:match-sub
 Other players table,Match — Overview & header,"Small table under the second roster for players outside both sides, showing name, K/D/A and ADR.",Match.svelte:rosters
-Overview stat card,Match — Overview & header,"One of five clickable cards on the Overview tab (Top fragger, Best ADR, Most util, Entry opens, Most MVPs) that opens the timeline filtered to that player.",Match.svelte:stat-cell
+Overview stat card,Match — Overview & header,"One of five clickable cards on the Overview tab (Top fragger, Best ADR, Most util, Entry opens, Most MVPs) that opens the Replay landmark feed filtered to that player.",Match.svelte:stat-cell
 Replay button,Match — Overview & header,Primary header button opening the replay view for the whole match from tick 0.,Match.svelte:openReplay
 Roster ADR chip,Match — Overview & header,Small chip showing a player's ADR value in the Overview roster tables.,Match.svelte:adr
 Round cell button,Match — Overview & header,"Winner-tinted (CT blue / T yellow) round-number button that opens that round's detail view and carries an arrow pointing toward the team that won it (▲ above, ▼ below); warmup/knife or no-winner rounds are muted.",RoundStrip.svelte:round-cell
 Round strip,Match — Overview & header,"Horizontal row of numbered round cells showing round-by-round winners with the two teams labelled above and below, arrows pointing at each round's winning team, and a split after real round 12 (MR12 halftime); displayed above the match and round detail views.",RoundStrip.svelte:round-strip
 T roster table,Match — Overview & header,"Overview panel table of the team that finished T, headed by that team's display name (demo clan name, else team_<player>, else ""T"") with the same Player, K/D/A and ADR columns.",Match.svelte:side-t
-Timeline button,Match — Overview & header,Primary header button opening the timeline view for this match.,Match.svelte:match-header
 Utility tab content,Match — Overview & header,Embedded utility-analysis view rendered when the Utility tab is active.,Match.svelte:Utility
 Voice presence badge,Match — Overview & header,"🔊 chip in the subtitle showing voice chunk count and player count, or a ""no voice"" variant when the demo has no voice track.",Match.svelte:voice
 Warning list item,Match — Overview & header,One bulleted parser warning string in the extraction warnings panel.,Match.svelte:warning-list
 Warnings dismiss button,Match — Overview & header,Small ✕ button in the warnings panel header that closes it.,Match.svelte:warningsOpen
-Warnings empty message,Match — Overview & header,"""None — the parser ran clean."" in the match header's warnings panel, or ""No extraction warnings for this match."" in the Explorer warnings panel.",Match.svelte:warnings; Explorer.svelte:warnings
+Warnings empty message,Match — Overview & header,"""None — the parser ran clean."" in the match header's warnings panel.",Match.svelte:warnings
 Warnings loading text,Match — Overview & header,"""Loading…"" placeholder inside the warnings panel before warnings are fetched.",Match.svelte:warnings
 Warnings toggle button,Match — Overview & header,"Header button labeled ""N warnings"" (warn-styled when non-zero) or ""Warnings"" that opens the extraction warnings panel.",Match.svelte:toggleWarnings
 Bot chip,Match — Scoreboard tab,"""bot"" badge next to a bot's name in the scoreboard Name column.",Match.svelte:isBot
@@ -99,7 +97,7 @@ Pinned metric cell,Match — Scoreboard tab,"Scoreboard cell for a pinned metric
 Pinned metric column header,Match — Scoreboard tab,"Extra scoreboard header for a metric pinned in Builder: sortable title, ⓘ tooltip, sample-size count and ✕ unpin.",Match.svelte:m5-def
 Pinned metrics error alert,Match — Scoreboard tab,Red alert at the top of the Scoreboard tab when pinned custom metric columns fail to load.,Match.svelte:metricError
 Player name link,Match — Scoreboard tab,Name-cell button in the scoreboard that opens that player's profile page (bots render as plain text).,Match.svelte:name-link
-Scoreboard row click,Match — Scoreboard tab,Clicking a scoreboard row (away from buttons) opens the timeline filtered to that player; rows are Enter-key focusable.,Match.svelte:openPlayerTimeline
+Scoreboard row click,Match — Scoreboard tab,Clicking a scoreboard row (away from buttons) opens the Replay landmark feed filtered to that player; rows are Enter-key focusable.,Match.svelte:openPlayerEvents
 Scoreboard sort header,Match — Scoreboard tab,Clickable column header that sorts the scoreboard (shows ↑/↓ when active); KAST% and pinned metric columns sort in the browser.,Match.svelte:th-sort
 Scoreboard stat cell,Match — Scoreboard tab,"One numeric scoreboard cell (kills, ADR, HS%, K/D, etc.) formatted per column.",Match.svelte:cellText
 Scoreboard table,Match — Scoreboard tab,"Full per-player stats table on the Scoreboard tab with Name, Side, K, D, A, ADR, KAST%, HS%, K/D, KDA, DMG, Rnds, 5K, 4K, 3K, Entry, Trade, Opening K/D, Streak, Util, MVPs and Score columns, plus any pinned metric columns.",Match.svelte:viewRows
@@ -116,35 +114,11 @@ Round compare checkbox,Match — Rounds tab,Checkbox in the Cmp column selecting
 Rounds table,Match — Rounds tab,"Per-round table on the Rounds tab with Cmp checkbox, № (negative for knife/warmup rounds, first-half pistol = 1), Winner, Class, Reason (human-readable: Elimination, Bomb exploded, Bomb defused, …), Duration, Site, MVP, Equip CT, Equip T, First blood and Kills columns; rows open the round detail.",Match.svelte:cmp-cmp-col
 Warmup badge,Match — Rounds tab,"""wu"" chip next to a warmup round's negative number in the Rounds table.",Match.svelte:warmup
 Knife round badge,Match — Rounds tab,"""knife"" chip next to a pre-match knife round's negative number in the Rounds table (also shown beside the round title in Round detail).",Match.svelte:pregame
-Chat round chip,Match — Chat & Raw tabs,Round-number chip in the Chat table's Round column (also used in the Raw tab's ConVars table and payload headers).,Match.svelte:round-chip
-Chat round filter dropdown,Match — Chat & Raw tabs,"""Round"" select on the Chat tab filtering messages to All rounds or a single counted round (knife/warmup rounds are numbered negatively and are not offered).",Match.svelte:chat-round
-Chat table,Match — Chat & Raw tabs,"Chat tab table with Tick, Round, Name and Text columns; shows ""No chat in this selection."" when empty.",Match.svelte:chat
-ConVars card,Match — Chat & Raw tabs,"Raw-tab card with a filter box and scrollable table of ConVar changes (Tick, Round, Name, Value).",Match.svelte:m5-cv-card
-ConVars count chip,Match — Chat & Raw tabs,"""filtered/total"" chip in the ConVars card header reflecting the active filter.",Match.svelte:convarRows
-ConVars filter input,Match — Chat & Raw tabs,Text box in the ConVars card filtering the table by ConVar name or value (same filter exists on the Explorer view's ConVars panel).,Match.svelte:cvFilter
-ConVars table,Match — Chat & Raw tabs,"Mini table of ConVar records (Tick, Round, Name, Value) inside the ConVars card; shows ""No ConVars recorded in this demo."" when empty.",Match.svelte:convars
-Entities card,Match — Chat & Raw tabs,"Raw-tab card with server class, end entity, generic type and generic event counts (plus optional note line).",Match.svelte:ents
-Entities loading text,Match — Chat & Raw tabs,"""Loading entity summary…"" placeholder before entity counts arrive.",Match.svelte:ents
-Event payload card,Match — Chat & Raw tabs,"One payload block in the viewer: round chip, tick text and pretty-printed JSON in a monospace pre.",Match.svelte:payload
-Event payload viewer,Match — Chat & Raw tabs,"Right-hand Raw-tab panel headed by the selected event name (or a pick prompt) listing each event's round chip, tick and JSON payload.",Match.svelte:rawEvents
-Generic event histogram,Match — Chat & Raw tabs,Raw-tab table of generic event names and counts; clicking a row (highlighted when active) loads that event's payloads.,Match.svelte:histogram
-Load more events button,Match — Chat & Raw tabs,"""+ N more"" button under the payloads that fetches the next 100 raw events.",Match.svelte:loadMoreRaw
-Open in Explorer button,Match — Chat & Raw tabs,Button in the Raw panel header that opens the standalone Explorer view.,Match.svelte:nav
-Provenance card,Match — Chat & Raw tabs,"Raw-tab card listing parser version, extraction date, parse time, warnings, encrypted messages, position format, voice chunks, rules, map and status.",Match.svelte:prov
-Provenance loading text,Match — Chat & Raw tabs,"""Loading…"" placeholder inside the Explorer view provenance panel before data arrives.",Match.svelte:prov; Explorer.svelte:prov
-Provenance notes list,Match — Chat & Raw tabs,Bullet list of extra parser notes inside the provenance card.,Match.svelte:m5-notes
-Raw event pick prompt,Match — Chat & Raw tabs,"""Pick an event name"" heading in the payload panel until an event row is selected in the histogram.",Match.svelte:rawName
-Raw provenance panel,Match — Chat & Raw tabs,"Top panel on the Raw tab summarizing parser provenance, entity counts and ConVars, with a link to the Explorer view.",Match.svelte:m5-raw
-Raw tab error messages,Match — Chat & Raw tabs,"Red alerts on the Raw tab when Provenance, Entity summary or ConVars fail to load.",Match.svelte:provError
-Attacker name button,Round detail,Clickable attacker name in the kill feed that opens that player's profile (Steam-ID players only).,RoundDetail.svelte:comb-name-btn
-Back to Match button,Round detail,"""← Match"" button returning to the match view: at the top of the round detail view, and inside the Compare rounds no-selection hint.",RoundDetail.svelte:nav; CompareRounds.svelte:readSelection
+Open in Explorer view button,Match — Overview & header,Header button that opens the standalone Explorer diagnostics view for this match.,Match.svelte:nav
+Back to Match button,Round detail,"""← Back"" button returning to the origin recorded in ?back= (the tab or view that opened this round), falling back to the match overview; also in the Compare rounds no-selection hint.",RoundDetail.svelte:nav; CompareRounds.svelte:readSelection
 Economy empty state,Round detail,"""No economy samples."" placeholder row in the round's economy table.",RoundDetail.svelte:economy
 Economy panel,Round detail,"Right-side panel table with per-side CT/T chip, Equip value and sampled average Money for the round.",RoundDetail.svelte:economy
-Kill feed panel,Round detail,"Left panel table of the round's kills with replay button, Tick, Attacker, Weapon, Victim and Flags columns; shows ""No kills recorded in this round."" when empty.",RoundDetail.svelte:kills
-Kill flag chips,Round detail,"HS/WB/NS/SMK/BLD chips in the Flags column marking headshot, wallbang, no-scope, through-smoke and attacker-blind kills.",RoundDetail.svelte:flag
-Kill replay jump button,Round detail,▶ button on a kill row that opens the replay at that kill's tick.,RoundDetail.svelte:watchTick
 Next round button,Round detail,"""Round N →"" button in the bottom round navigation, shown when a later round exists (the label names the actual next round, which is negative for pre-match rounds).",RoundDetail.svelte:round-nav
-No kills row,Round detail,"""No kills recorded in this round."" placeholder row in an empty kill feed.",RoundDetail.svelte:kills
 Previous round button,Round detail,"""← Round N"" button in the bottom round navigation, shown when an earlier round exists (rounds count up from the first-half pistol, with negative knife/warmup rounds before it).",RoundDetail.svelte:round-nav
 Round chat message item,Round detail,"One chat line in the round chat panel: muted tick, bold speaker name and message text.",RoundDetail.svelte:chat-list
 Round chat panel,Round detail,"Right-side panel listing this round's chat messages, or ""No chat this round."" when none.",RoundDetail.svelte:chat
@@ -153,7 +127,6 @@ Round not found error,Round detail,Error alert shown when the requested round do
 Round number title,Round detail,"""Round N"" heading at the top of the round detail view.",RoundDetail.svelte:detail
 Round summary line,Round detail,"Muted meta paragraph under the title: round reason, duration, bomb site, equip values, kill count, MVP (with reason) and round start/end times in seconds.",RoundDetail.svelte:detail
 Round winner chip,Round detail,"CT/T side chip beside the round title (and in round tables and comparison columns) showing the winning side (""—"" if none).",RoundDetail.svelte:side; CompareRounds.svelte:cmp-col
-Victim name button,Round detail,Clickable victim name in the kill feed that opens that player's profile (Steam-ID players only).,RoundDetail.svelte:comb-name-btn
 Warmup chip,Round detail,"""warmup"" badge beside the round title on warmup rounds.",RoundDetail.svelte:warmup
 Watch round button,Round detail,"Primary ""▶ Watch round"" button in the round detail header opening the replay at the round's start tick.",RoundDetail.svelte:watchTick
 ADR consistency stat card,Player profile,Header card with career ADR ± σ (standard deviation as consistency measure).,PlayerProfile.svelte:stat-cell
@@ -194,7 +167,7 @@ Win rate stat card,Player profile,Header card showing share of matches won (Win%
 Win/loss chip,Player profile,W or L badge in a match history row (reuses green/red status styling).,PlayerProfile.svelte:history
 Buy type note,Compare rounds,Muted note under the economy table with CT/T buy-class chips and round duration.,CompareRounds.svelte:cmp-note
 Compare load error,Compare rounds,Alert shown when round comparison data fails to load.,CompareRounds.svelte:error
-Compare rounds back button,Compare rounds,Returns to the match page; top-left of the Compare rounds header.,CompareRounds.svelte:view-header
+Compare rounds back button,Compare rounds,Returns to the origin recorded in ?back= (falls back to the match overview); top-left of the Compare rounds header.,CompareRounds.svelte:view-header
 Compare rounds page title,Compare rounds,"""Compare rounds"" heading in the view header.",CompareRounds.svelte:view-header
 Comparison grid,Compare rounds,Side-by-side grid with one column per selected round (min 240px each).,CompareRounds.svelte:cmp-grid
 Comparison round column,Compare rounds,"One vertical card per compared round, headed ""Round N"" with winner and class chips.",CompareRounds.svelte:cmp-col
@@ -203,73 +176,15 @@ No selection hint panel,Compare rounds,"Panel telling testers to open the match'
 Replay start button,Compare rounds,Per-round button that opens the Replay view seeked to that round's start tick.,CompareRounds.svelte:replayStart
 Round detail button,Compare rounds,Per-round button that opens the full round detail page.,CompareRounds.svelte:openRound
 Round economy table,Compare rounds,"Mini table per round showing CT/T equipment value, money and amount spent.",CompareRounds.svelte:econ
-Round event sequence list,Compare rounds,"Ordered list of the first 30 events in the round: tick, kind chip and player names.",CompareRounds.svelte:cmp-events
+Round event sequence list,Compare rounds,"Ordered list of the first 30 events in the round rendered with the shared LandmarkRow (compact): ▶, tick, round chip, category chip and primary text — ▶/click open the Replay landmark feed at that tick.",CompareRounds.svelte:cmp-events
 Round missing note,Compare rounds,"""Round not found."" placeholder inside a column whose detail failed to load.",CompareRounds.svelte:cmp-col
 Round summary list,Compare rounds,"List per round with kills, first blood, bomb site and MVP.",CompareRounds.svelte:cmp-list
 Selected rounds count,Compare rounds,Muted header text showing how many rounds were selected for comparison.,CompareRounds.svelte:sel
 Utility grenade list,Compare rounds,"List of individual grenades per round with kind chip, thrower name, damage and flash time.",CompareRounds.svelte:col.utils
 Utility summary note,Compare rounds,"One-line grenade summary per round: count, total damage and total flash seconds.",CompareRounds.svelte:utilSummary
-Apply saved filter button,Timeline,Applies the chosen saved preset to the event filters.,Timeline.svelte:applySaved
-Attacker name cell,Timeline,"Attacker's name on an event row, with a profile icon when the Steam ID is known.",Timeline.svelte:atk
-Clear position filter button,Timeline,Small ✕ button inside the position filter chip that removes the bounding-box filter.,FilterBar.svelte:clearBbox
-Copy event JSON button,Timeline,"Copies the event's detail and raw JSON to the clipboard; label flips to ""Copied"".",Timeline.svelte:copyDetail
-Damage cell,Timeline,Damage value toward the right end of each event row.,Timeline.svelte:vrow
-Delete saved filter button,Timeline,"Removes the selected saved preset (✕, disabled until a preset is chosen).",Timeline.svelte:removeSaved
-Detail flag chips,Timeline,"HS/WB/NS/SMK/BLD/AFL chips (or ""none"") inside the detail facts list.",Timeline.svelte:facts
-Detail JSON block,Timeline,"Collapsible pretty-printed detail.json for the event, open by default.",Timeline.svelte:json-block
-Distance cell,Timeline,Rounded distance value at the far right of each event row.,Timeline.svelte:vrow
-Empty detail placeholder,Timeline,"""Select an event to inspect its payload."" shown in the detail pane before any selection.",Timeline.svelte:detail-pane
-Empty events message,Timeline,"""No events match these filters."" shown inside the list when nothing matches.",Timeline.svelte:events
-Event count readout,Timeline,Muted header text showing how many events match the current filters.,Timeline.svelte:events
-Event detail error message,Timeline,Alert inside the detail pane when the event detail request fails.,Timeline.svelte:detailError
-Event detail header row,Timeline,"Detail-pane header with kind chip, sequence number, tick, round chip and action buttons.",Timeline.svelte:detail-head
-Event detail pane,Timeline,Right-hand sidebar showing the full payload of the selected event.,Timeline.svelte:detail-pane
-Event facts list,Timeline,"Definition list in the detail pane: attacker, victim, assister, weapon, damage, distance, hitgroup, site, flags.",Timeline.svelte:facts
-Event filter bar,Timeline,"Horizontal group of filter controls labeled ""Event filters"" shown above the Timeline event list.",FilterBar.svelte:filt-bar
-Event kind chip,Timeline,"Chip with the event kind (kill, bomb_plant, etc.) on event rows and in the detail pane.",Timeline.svelte:kind
-Event kind dropdown,Timeline,"Select filtering events by kind (All, kill, damage, blind, bomb_plant, round_end, etc.).",FilterBar.svelte:filt-kind
-Event list error message,Timeline,Alert shown when the event query fails.,Timeline.svelte:listError
-Event round chip,Timeline,"""R{n}"" chip on each event row indicating the round (also appears on Explorer payload cards).",Timeline.svelte:round-chip
-Event row,Timeline,Single clickable row in the event list; selecting it loads that event in the detail pane.,Timeline.svelte:vrow
-Event sequence cell,Timeline,Sequence number shown near the start of each event row.,Timeline.svelte:vrow
-Event tick cell,Timeline,Monospace demo tick value shown on each event row.,Timeline.svelte:vrow
-Event weapon cell,Timeline,Weapon name shown in the middle of each event row.,Timeline.svelte:vrow
-From tick input,Timeline,"Number input with ""from"" placeholder setting the start tick of the event time window.",FilterBar.svelte:onNum('tickFrom')
-Headshots only checkbox,Timeline,Checkbox in the filter bar that restricts results to headshot kills.,FilterBar.svelte:filt-check
-Hear ±10s button,Timeline,Detail-pane button that opens Replay at the event with playback and voice comms enabled.,Timeline.svelte:hearTick
-Maximum damage input,Timeline,Number input setting the maximum damage threshold for damage and kill events.,FilterBar.svelte:onNum('dmgMax')
-Maximum distance input,Timeline,"Number input beside the ""Dist ≤"" label filtering events by maximum distance in world units.",FilterBar.svelte:filt-dist
-Minimum damage input,Timeline,Number input setting the minimum damage threshold for damage and kill events.,FilterBar.svelte:onNum('dmgMin')
-Player filter dropdown,Timeline,"Select limiting events to one player by Steam ID, populated from the match scoreboard.",FilterBar.svelte:filt-player
-Player name label,Timeline,"Truncated player name at the left of a voice lane, colored by team side, with the full Steam ID as its hover title.",VoiceLanes.svelte:voice-lane-label
-Player profile icon,Timeline,◉ button beside attacker or victim names that opens that player's cross-match profile.,Timeline.svelte:watchProfile
-Player voice lane row,Timeline,One horizontal lane per player with a side-colored name label and that player's bucketed voice activity bars.,VoiceLanes.svelte:voice-lane-row
-Position filter chip,Timeline,Chip showing the active map-region bounding box coordinates with a ✕ to clear it; appears only when a heatmap region filter is set.,FilterBar.svelte:filt-bbox
-Raw JSON block,Timeline,Collapsible pretty-printed raw.json (original demo data) for the event.,Timeline.svelte:json-block
-Reset filters button,Timeline,"""Reset"" button that clears every control in the filter bar back to defaults.",FilterBar.svelte:reset
-Round filter dropdown,Timeline,"Select narrowing events to a single counted round, with All plus R1…Rn options loaded for the match (knife/warmup rounds are numbered negatively and are not offered).",FilterBar.svelte:filt-round
-Row flag chips,Timeline,Small HS/WB/NS/SMK/BLD/AFL chips on an event row for special kill attributes.,Timeline.svelte:flagsOf
-Save filter button,Timeline,Saves the current filter settings as a named preset.,Timeline.svelte:saveCurrent
-Save filter name prompt,Timeline,Native dialog asking for the preset name when saving a filter.,Timeline.svelte:saveCurrent
-Saved filter error message,Timeline,Alert shown when loading or applying a saved filter fails.,Timeline.svelte:savedError
-Saved filters dropdown,Timeline,Select of saved match-scope filter presets in the Timeline header.,Timeline.svelte:tl-saved
-Timeline back button,Timeline,Returns to the match page; top-left of the Timeline header.,Timeline.svelte:view-header
-Timeline page title,Timeline,"""Timeline"" heading in the view header.",Timeline.svelte:view-header
-To tick input,Timeline,"Number input with ""to"" placeholder setting the end tick of the event time window.",FilterBar.svelte:onNum('tickTo')
-Victim name cell,Timeline,"Victim's name on an event row, with a profile icon when the Steam ID is known.",Timeline.svelte:vic
-Virtualized event list,Timeline,"Scrollable, windowed list of matching events in the left column of the timeline body.",Timeline.svelte:vlist
-Voice activity bar,Timeline,Small vertical bar in a lane whose height reflects how many voice chunks occurred in that time bucket.,VoiceLanes.svelte:voice-lane-bar
-Voice lanes empty message,Timeline,"""No voice activity."" placeholder shown when the match has no recorded voice data.",VoiceLanes.svelte:rows
-Voice lanes error message,Timeline,"Red ""Voice lanes unavailable: …"" alert shown when the voice data fetch fails.",VoiceLanes.svelte:error
-Voice lanes header,Timeline,"Header row with the ""🔊 Voice"" title and a hint such as ""N players · click to play from there"".",VoiceLanes.svelte:voice-lanes-head
-Voice lanes loading message,Timeline,"""Loading voice lanes…"" placeholder shown while voice data is being fetched.",VoiceLanes.svelte:loading
-Voice lanes panel,Timeline,Per-player voice-activity strip shown above the event list in the Timeline view.,VoiceLanes.svelte:voice-lanes
-Voice lanes seek strip,Timeline,"Clickable, keyboard-operable strip covering all lanes; clicking maps the x-position to a tick and starts replay from there.",VoiceLanes.svelte:voice-lanes-strip
-Watch in replay button,Timeline,▶ button on an event row that opens the Replay view seeked to that event's tick.,Timeline.svelte:watchTick
-Weapon filter dropdown,Timeline,"Select filtering events by weapon, combining a common weapon list with weapons seen in the match scoreboard.",FilterBar.svelte:filt-weapon
 Clip dismiss button,Replay,✕ button that clears a saved or errored clip status chip.,Replay.svelte:discardClip
 Clip status chip,Replay,Header chip showing recording/encoding/saved/error state with details in its tooltip.,Replay.svelte:recState
-Empty landmarks note,Replay,"""No landmarks recorded."" placeholder inside an empty landmark list.",Replay.svelte:eventList
+Empty landmarks note,Replay,"""No categories enabled…"" / ""Loading events…"" / ""No events match these filters."" states inside the landmark feed list.",Replay.svelte:lm-empty
 Follow player select,Replay,Dropdown choosing free camera or a specific player slot to follow.,Replay.svelte:onFollow
 Frame and tick readout,Replay,"Monospace ""f{frame}/{frames} · {tick}"" text beside the scrubber.",Replay.svelte:uiFrame
 Frame mismatch note,Replay,Warning note if the position stream's frame count disagrees with metadata.,Replay.svelte:data
@@ -277,30 +192,30 @@ Go to Library button,Replay,Primary button in the missing-replay panel that retu
 Header tick readout,Replay,"Monospace ""tick N"" text in the header showing the current demo tick.",Replay.svelte:uiTick
 Jump to round select,Replay,Dropdown that seeks the replay to the start of a chosen round (warmups and bomb site noted).,Replay.svelte:onJumpRound
 Keyboard hints tooltip,Replay,"""⌨ hints"" text whose tooltip lists playback shortcuts (Space, , . , arrows, L, F, 1-9, S).",Replay.svelte:attachReplayInput
-Landmark list,Replay,Expanded list of up to 50 most recent landmark events with tick and kind chip.,Replay.svelte:eventList
-Landmark seek button,Replay,▶ button on a landmark row that seeks the replay to that tick.,Replay.svelte:seekTick
-Landmarks toggle,Replay,"Collapsible ""Landmarks"" sidebar header showing the event count and expand/collapse arrow.",Replay.svelte:eventsOpen
+Landmark list,Replay,The canonical event feed: typed events + chat + generic rows merged chronologically (category chips select the sources; paged with Load more).,Replay.svelte:feedRows
+Landmark seek button,Replay,▶ button on a landmark row that seeks the replay in place to that tick (no navigation).,Replay.svelte:seekTo
+Landmarks toggle,Replay,"Collapsible ""Landmarks"" sidebar header showing the loaded feed count (""+"" while more pages exist) and expand/collapse arrow.",Replay.svelte:eventsOpen
 Loop from frame input,Replay,Numeric input setting the loop start frame.,Replay.svelte:rp-loop-from
 Loop to frame input,Replay,Numeric input setting the loop end frame.,Replay.svelte:rp-loop-to
 Loop toggle button,Replay,Button (L) that enables/disables looping between the from/to frames.,Replay.svelte:toggleLoop
 Map name chip,Replay,Header chip showing the match's map name.,Replay.svelte:matchMap
 Map pack note,Replay,Status note when the map pack or radar image is missing and a world-coordinate grid is used.,Replay.svelte:packNote
 Missing replay data panel,Replay,"Empty-state panel explaining the match has no recorded positions, shown when no sidecar exists.",Replay.svelte:noSidecar
-Open timeline at tick button,Replay,Header button that jumps to the Timeline view seeded with the current replay tick.,Replay.svelte:openTimeline
+Events at tick button,Replay,"Header button that filters the landmark feed to ±5s around the playhead (the retired jump-to-Timeline promise, now canonical feed behavior).",Replay.svelte:eventsAtTick
 Play/pause button,Replay,Main transport toggle (Space) that starts or pauses playback.,Replay.svelte:togglePlay
 Playback speed select,Replay,Dropdown of playback speed multipliers (e.g. 0.25×–4×) beside play/pause.,Replay.svelte:onSpeed
 Player slots chip,Replay,Header chip showing how many player slots the replay has.,Replay.svelte:players
 Record clip button,Replay,"Toggles WebM clip recording of the canvas (loop range if set, else 10 s from the playhead).",Replay.svelte:toggleRecord
-Replay back button,Replay,Returns to the match page; top-left of the Replay header.,Replay.svelte:view-header
+Replay back button,Replay,"Returns to the origin recorded in ?back= (the view that opened this replay), falling back to the match overview; top-left of the Replay header.",Replay.svelte:view-header
 Replay load error,Replay,"Alert shown when replay metadata, sidecar or position data fails to load.",Replay.svelte:loadError
 Replay loading state,Replay,"""Loading replay…"" text shown until position data is parsed.",Replay.svelte:loading
 Replay map canvas,Replay,"Top-down 2D canvas drawing player positions, radar image and landmark markers.",Replay.svelte:canvas
 Replay page title,Replay,"""Replay"" heading in the view header.",Replay.svelte:view-header
 Replay stage,Replay,Container that holds and auto-resizes the replay canvas.,Replay.svelte:replay-stage
 Replay transport bar,Replay,"Bottom control strip with play/pause, speed, scrubber, loop, round jump, follow and keyboard hints.",Replay.svelte:replay-transport
-Scrubber event markers,Replay,"Colored ticks overlaid on the scrubber: gray kills, amber plants/defuses, red detonations/grenades.",Replay.svelte:markers
+Scrubber event markers,Replay,"Colored ticks overlaid on the scrubber following the enabled landmark categories + round/player scope: gray kills, amber plants/defuses, red detonations, white round-win ticks (the map world layers always show the drawable set).",Replay.svelte:markers
 Snapshot button,Replay,Saves a PNG screenshot of the replay canvas.,Replay.svelte:doSnapshot
-Timeline scrubber,Replay,Range slider that seeks the replay to any frame of the match.,Replay.svelte:onScrub
+Replay scrubber,Replay,Range slider that seeks the replay to any frame of the match.,Replay.svelte:onScrub
 Voice control bar,Replay,"Strip below the transport with voice toggle, state, volume and per-player chips (voice matches only).",Replay.svelte:voice-bar
 Voice error hint,Replay,Alert hint about audio failures suggesting installing gst-plugins-good.,Replay.svelte:uiVoiceErr
 Voice export disclosure,Replay,"Small ""▾"" expander next to a player revealing the WAV download link.",Replay.svelte:voice-export
@@ -416,18 +331,8 @@ Series loading state,Heatmaps tab,"""Computing series…"" text while the spatia
 Spatial series chart,Heatmaps tab,SVG polyline charting spacing or spread over match time in the Spatial series panel.,Heatmaps.svelte:spat-svg
 Spatial series panel,Heatmaps tab,"Panel on the Heatmaps tab with the spacing/spread toggle, series chart, and descoped-pattern note.",Heatmaps.svelte:spat-panel
 Stale controls warning,Heatmaps tab,"""controls changed — press Regenerate to apply them to the raster"" message when filters differ from the displayed heatmap.",Heatmaps.svelte:heat-stale
-Context empty state,Context tab,"""No context rows in this selection."" row when the active source filters hide everything.",Context.svelte:visible
-Context footnote,Context tab,Note under the table with total row count and a reminder that ▶ opens the replay.,Context.svelte:ctx-note
-Context load errors,Context tab,"Red alerts naming each failed source (chat, connects, etc.) without blanking the rest of the Context tab.",Context.svelte:errors
-Context loading state,Context tab,"""Loading context…"" placeholder shown on the Context tab while sources merge.",Context.svelte:loading
-Context round chip,Context tab,Round number chip in the Round column of the context stream table.,Context.svelte:round-chip
-Context source chip,Context tab,"Colored source chip (chat, connect, disconnect, team, convar) in the Source column.",Context.svelte:ctx-src
-Context stream table,Context tab,"Tick-sorted table of chat and match-administration rows with Tick, Round, Source, Name, Detail, and Watch columns.",Context.svelte:ctx-table
-Context toolbar,Context tab,"Toolbar on the Context tab with Sources label, filter chips, visible row count, and export buttons.",Context.svelte:ctx-toolbar
-Context watch button,Context tab,"""▶"" button on a context row that opens the replay at that row's tick.",Context.svelte:watchTick
-Export CSV button,Context tab,"""Export CSV"" button downloading currently visible rows as a CSV file (Context tab and SQL console results).",Context.svelte:exportCSV
-Export JSON button,Context tab,"""Export JSON"" button downloading currently visible rows as a JSON file (Context tab and SQL console results).",Context.svelte:exportJSON
-Source filter chips,Context tab,"Chat, Connects, Disconnects, Team changes, and ConVars toggle chips filtering the context stream.",Context.svelte:ctx-chip
+Export CSV button,Replay — landmark feed,"""CSV"" button in the feed toolbar downloading the loaded rows as CSV (canonical columns: tick, round, source, category, kind, who, label, weapon, dmg) through the native save dialog; the SQL console has its own export.",Replay.svelte:exportCSV
+Export JSON button,Replay — landmark feed,"""JSON"" button in the feed toolbar downloading the loaded rows (full row objects) through the native save dialog.",Replay.svelte:exportJSON
 CT blinds stat cell,Utility tab,Cell showing total CT-caused blind seconds and number of affected players.,Utility.svelte:ctMs
 Flash effectiveness panel,Utility tab,"Panel headed ""Flash effectiveness"" showing CT and T blind totals with an inferred badge.",Utility.svelte:flash
 Flash inferred badge,Utility tab,"""inferred"" chip in the Flash effectiveness panel noting the metric is derived from blind events.",Utility.svelte:util-badge-inferred
@@ -546,10 +451,6 @@ Statement defaults text,SQL console,"Muted ""rows cap 5,000 · timeout 5 s"" tex
 Table note info icon,SQL console,Circled-i icon on a SQL console schema table row showing the table's descriptive note on hover.,SqlConsole.svelte:sql-table-head
 Truncated results chip,SQL console,"""showing first N (truncated)"" chip in the SQL console results header when the server row cap was hit.",SqlConsole.svelte:sql-trunc
 Census reference bullet list,Explorer,"Bullet list of census highlights (UserCommands, voice data, sound events, ballistics-adjacent messages) in the Explorer view reference panel.",Explorer.svelte:expl-ref-list
-ConVars empty message,Explorer,"""No server_cvar events recorded for this match."" message in the Explorer view ConVars panel.",Explorer.svelte:convars
-ConVars error message,Explorer,Red alert in the Explorer view ConVars panel shown when loading ConVars fails.,Explorer.svelte:convarsError
-ConVars no-match message,Explorer,"""No ConVars match the filter."" message in the Explorer view ConVars panel.",Explorer.svelte:filteredConvars
-ConVars panel,Explorer,Third inspector panel in the Explorer view listing server cvar events for the match.,Explorer.svelte:convars
 Encrypted census note,Explorer,"Note in the Explorer view reference panel about encrypted-message presence with an ""enc"" chip, clarifying content is never stored.",Explorer.svelte:expl-ref
 Encrypted messages note,Explorer,"Paragraph in the Explorer view provenance panel stating how many encrypted network messages are present, presence only, never content.",Explorer.svelte:expl-enc
 Entity notes text,Explorer,Muted note line under the Explorer view entity summary facts.,Explorer.svelte:expl-ent-note
@@ -557,42 +458,22 @@ Entity summary error message,Explorer,Red alert inside the Explorer view entity 
 Entity summary facts list,Explorer,"Fact list in the Explorer view entity panel: Server classes, End entities, Generic event types, Generic events total.",Explorer.svelte:entities
 Entity summary loading text,Explorer,"""Loading…"" placeholder inside the Explorer view entity summary panel.",Explorer.svelte:entities
 Entity summary panel,Explorer,Second inspector panel in the Explorer view summarizing entity and generic-event census counts.,Explorer.svelte:entities
-Event name filter input,Explorer,"""Filter event names…"" text field in the Explorer view payload browser left column.",Explorer.svelte:histFilter
-Event name list,Explorer,Scrollable list of generic event names with counts in the Explorer view payload browser.,Explorer.svelte:expl-hist-list
-Event name row button,Explorer,Clickable event-name row in the Explorer view that selects the event and loads its payloads.,Explorer.svelte:selectEventName
-Events loaded counter,Explorer,"""N loaded"" counter beside the selected event chip in the Explorer view payload pane.",Explorer.svelte:events
-Expandable object node,Explorer,Collapsible object/array node (key + type + child count) in the Explorer view payload tree.,Explorer.svelte:kv-obj
-Explorer ConVars filter input,Explorer,Text field in the Explorer view ConVars panel filtering rows by name or value.,Explorer.svelte:convarFilter
-Explorer ConVars table,Explorer,Name/Value/Round/Tick data table of ConVars in the Explorer view.,Explorer.svelte:expl-convars
+Expandable object node,Replay — landmark feed,Collapsible object/array node (key + type + child count) in the selected generic event's payload tree.,PayloadTree.svelte:kv-obj
 Explorer empty state panel,Explorer,"""No matches — Import a demo in the Library first"" empty panel in the Explorer view when no matches exist.",Explorer.svelte:matchId
-Explorer event payload card,Explorer,"Per-event block in the Explorer view payload pane showing index, round chip, tick, and the payload body.",Explorer.svelte:expl-ev
-Explorer event round chip,Explorer,"""R#:"" round chip on each Explorer view event payload card.",Explorer.svelte:expl-ev
-Explorer events error message,Explorer,Red alert in the Explorer view payload pane shown when loading generic events fails.,Explorer.svelte:eventsError
-Explorer header note,Explorer,"""Developer-mode inspectors over the stored corpus."" subtitle in the Explorer view header.",Explorer.svelte:view-header
+Explorer header note,Explorer,"""Demo-file diagnostics over the stored corpus."" subtitle in the Explorer view header.",Explorer.svelte:view-header
 Explorer load error message,Explorer,Red alert in the Explorer view shown when the match list fails to load.,Explorer.svelte:loadError
-Explorer load more events button,Explorer,"""Load 100 more…"" button under the Explorer view payload list to page in more events.",Explorer.svelte:loadEvents
 Explorer match selector,Explorer,Header dropdown in the Explorer view choosing which stored match all inspectors load for.,Explorer.svelte:expl-match
-Explorer warning list item,Explorer,Mono list line of one extraction warning in the Explorer view warnings panel.,Explorer.svelte:warning-list
-Generic payload browser panel,Explorer,Fourth inspector panel in the Explorer view for browsing generic-event names and their JSON payloads.,Explorer.svelte:expl-grid
-Key/value row,Explorer,Single key-and-value line in the Explorer view payload tree with type-based coloring.,Explorer.svelte:kv-row
+Key/value row,Replay — landmark feed,Single key-and-value line in the selected generic event's payload tree with type-based coloring.,PayloadTree.svelte:kv-row
 Network census reference panel,Explorer,Bottom reference panel in the Explorer view summarizing the golden demo's protobuf network-message census.,Explorer.svelte:expl-ref
-No generic events message,Explorer,"""No generic events stored for this match."" message in the Explorer view event name list.",Explorer.svelte:expl-hist-list
-Payload key filter input,Explorer,"""Filter keys…"" text field in the Explorer view payload pane filtering tree keys.",Explorer.svelte:payloadFilter
-Payload key no-match message,Explorer,"""No keys match …"" message in the Explorer view payload tree when the key filter matches nothing.",Explorer.svelte:expl-kv
-Payload key/value tree,Explorer,Expandable key/value tree rendering a parsed generic-event payload in the Explorer view.,Explorer.svelte:expl-kv
-Payload loading text,Explorer,"""Loading…"" status text at the bottom of the Explorer view payload list while events load.",Explorer.svelte:eventsLoading
-Pick event prompt,Explorer,"""Pick an event name on the left to browse payloads."" placeholder in the Explorer view payload pane.",Explorer.svelte:expl-payloads
+Payload key filter input,Replay — landmark feed,"""Filter keys…"" text field in the selected generic event detail filtering tree keys.",PayloadTree.svelte:payloadFilter
+Payload key no-match message,Replay — landmark feed,"""No keys match …"" message in the selected generic event's payload tree when the key filter matches nothing.",PayloadTree.svelte:expl-kv
+Payload key/value tree,Replay — landmark feed,Expandable key/value tree rendering a parsed generic-event payload in the Explorer view.,PayloadTree.svelte:expl-kv
 Provenance error message,Explorer,Red alert inside the Explorer view provenance panel shown when provenance loading fails.,Explorer.svelte:provError
 Provenance facts list,Explorer,"Two-column fact list in the Explorer view provenance panel (Parser version, Extracted at, Parse time, Rule version, Trade window, Position format, Voice sample rate, Voice chunks, Warnings, Status).",Explorer.svelte:prov
 Provenance note chips,Explorer,Hoverable caveat chips under the Explorer view provenance facts listing provenance notes.,Explorer.svelte:expl-note-chip
 Provenance panel,Explorer,"First inspector panel in the Explorer view showing per-match reproducibility facts (parser version, timestamps, rule version, etc.).",Explorer.svelte:prov
 Provenance status chip,Explorer,Colored status chip (e.g. ready) in the Explorer view provenance facts list.,Explorer.svelte:prov
-Raw JSON pre block,Explorer,Mono preformatted payload JSON shown on an Explorer view event card in raw mode.,Explorer.svelte:rawOpen
-Raw JSON toggle button,Explorer,raw/tree button on an Explorer view event payload card switching between raw JSON and the key/value tree.,Explorer.svelte:rawOpen
-Selected event chip,Explorer,Chip showing the currently selected generic event name above the Explorer view payload list.,Explorer.svelte:selectedName
-Unparseable payload message,Explorer,"""unparseable payload JSON — use the raw toggle"" fallback in an Explorer view event card.",Explorer.svelte:expl-kv-err
-Warnings error message,Explorer,Red alert in the Explorer view warnings panel shown when loading warnings fails.,Explorer.svelte:warnError
-Warnings panel,Explorer,Fifth inspector panel in the Explorer view listing extraction warnings for the match.,Explorer.svelte:warnings
+Unparseable payload message,Replay — landmark feed,"""unparseable payload JSON — use the raw toggle"" fallback in an Explorer view event card.",PayloadTree.svelte:expl-kv-err
 Appendix guidance text,Reports,"Explanation text in the Reports view appendix panel about checking metrics, composite Download, and Open raw behavior.",Reports.svelte:appendix
 Composite summary text,Reports,"""template · scope · format (+ appendix)"" summary line above the Reports view preview actions.",Reports.svelte:tpl
 Copy library DB link,Reports,Link in the Reports view preview panel that downloads the library SQLite database file.,Reports.svelte:rep-actions
@@ -700,3 +581,58 @@ Settings matches error message,Settings — Analysis rules,Red alert in the Sett
 Settings rules error message,Settings — Analysis rules,Red alert in the Settings view analysis rules panel shown when loading or saving config fails.,Settings.svelte:cfgError
 Trade window hint,Settings — Analysis rules,Muted hint under the Settings view trade window input explaining the default of 5 seconds.,Settings.svelte:sett-hint
 Trade window input,Settings — Analysis rules,"Number field in the Settings view analysis rules panel setting the trade window in seconds (1–30, 0.5 steps).",Settings.svelte:sett-trade
+Landmark category chips,Replay — landmark feed,"Filter chips above the feed (Kills, Round wins, Round starts, Bomb, Grenade throws, Grenade detonations, Damage, Flashes & blinds, Joins & leaves, Chat, Team changes, ConVar changes, Game events) — only Kills and Round wins are enabled by default; toggling a chip adds/removes its category from the list and the scrubber markers.",Replay.svelte:CATEGORIES
+Game events name select,Replay — landmark feed,"Event-name dropdown (with histogram counts) shown when the Game events category is enabled — high-volume generic sources load by name only, never unrestricted.",Replay.svelte:needHist
+Game events name hint,Replay — landmark feed,"""High-volume sources load by name only — pick one above."" shown while the Game events category has no name selected.",Replay.svelte:filter.gname
+Filters disclosure,Replay — landmark feed,"Collapsible Filters panel holding the shared FilterBar (round, player, weapon, tick range, damage, distance, headshots, position chip); auto-opens when a scope filter is active.",Replay.svelte:lm-filters
+Feed action toolbar,Replay — landmark feed,"Toolbar row with the saved-filter select, Apply/Save/✕, CSV and JSON export, and a Reset that restores the sparse default.",Replay.svelte:lm-toolbar
+Load more button,Replay — landmark feed,"Button under the list paging in the next 500 rows per source (a probe row detects more — no silent truncation).",Replay.svelte:loadMore
+Event count readout,Replay — landmark feed,"Muted header count of loaded feed rows, with a ""+"" suffix while more pages exist.",Replay.svelte:feedRows
+Event filter bar,Replay — landmark feed,"Horizontal group of filter controls labeled ""Event filters"" inside the feed""s Filters disclosure (the shared FilterBar, kind select removed — categories are the filter model).",FilterBar.svelte:filt-bar
+Round filter dropdown,Replay — landmark feed,"Select narrowing the feed to a single round — every round is offered, including negative knife/warmup numbers (exact-round match supports them).",FilterBar.svelte:filt-round
+Player filter dropdown,Replay — landmark feed,"Select limiting the feed to one player by Steam ID (typed events match attacker or victim; chat matches the sender).",FilterBar.svelte:filt-player
+Weapon filter dropdown,Replay — landmark feed,"Select filtering typed events by weapon, combining a common weapon list with weapons seen in the match scoreboard.",FilterBar.svelte:filt-weapon
+From tick input,Replay — landmark feed,"Number input with ""from"" placeholder setting the start tick of the event time window.",FilterBar.svelte:onNum('tickFrom')
+To tick input,Replay — landmark feed,"Number input with ""to"" placeholder setting the end tick of the event time window.",FilterBar.svelte:onNum('tickTo')
+Damage range inputs,Replay — landmark feed,"Min/max number pair filtering typed events by damage amount.",FilterBar.svelte:onNum('dmgMin')
+Maximum distance input,Replay — landmark feed,"Number input beside the ""Dist ≤"" label filtering typed events by maximum distance in world units.",FilterBar.svelte:filt-dist
+Headshots only checkbox,Replay — landmark feed,Checkbox in the filter bar that restricts results to headshot kills.,FilterBar.svelte:filt-check
+Position filter chip,Replay — landmark feed,Chip showing the active map-region bounding box coordinates with a ✕ to clear it; appears when a heatmap region filter is set.,FilterBar.svelte:filt-bbox
+Clear position filter button,Replay — landmark feed,Small ✕ button inside the position filter chip that removes the bounding-box filter.,FilterBar.svelte:clearBbox
+Saved filters dropdown,Replay — landmark feed,Select of saved match-scope filter presets in the feed toolbar (stored in the serialized query shape).,Replay.svelte:savedSel
+Apply saved filter button,Replay — landmark feed,Applies the chosen saved preset to the landmark feed (parsed through parseLandmarkFilter).,Replay.svelte:applySaved
+Save filter button,Replay — landmark feed,Saves the current feed filter (categories + scope) as a named preset.,Replay.svelte:saveCurrent
+Save filter name prompt,Replay — landmark feed,Native dialog asking for the preset name when saving a filter.,Replay.svelte:saveCurrent
+Delete saved filter button,Replay — landmark feed,"Removes the selected saved preset (✕, disabled until a preset is chosen).",Replay.svelte:removeSaved
+Saved filter error message,Replay — landmark feed,"Alert shown when loading, applying or saving a saved filter fails.",Replay.svelte:savedError
+Event row,Replay — landmark feed,"Single landmark row (shared LandmarkRow): ▶ seek button, tick, round chip, short category chip, primary text (attacker → victim / sender: message / event label) and secondary text (weapon · damage · distance).",LandmarkRow.svelte:lm-row
+Event tick cell,Replay — landmark feed,Monospace demo tick value shown on each landmark row.,LandmarkRow.svelte:lm-tick
+Event round chip,Replay — landmark feed,"""R{n}"" chip on each landmark row indicating the round.",LandmarkRow.svelte:round-chip
+Event category chip,Replay — landmark feed,"Short category chip (kill, win, bomb, chat, cvar, …) on each landmark row with the full category name as its title.",LandmarkRow.svelte:lm-cat
+Event primary text,Replay — landmark feed,"Source-aware row text: ""attacker → victim"" for kills/damage, the actor for other typed events, ""sender: message"" for chat, and the event label/name for generic rows.",LandmarkRow.svelte:primary
+Event secondary text,Replay — landmark feed,"Muted row tail: weapon and damage/distance for typed events, the parsed label for generic rows.",LandmarkRow.svelte:secondary
+Event detail,Replay — landmark feed,"Detail shown in place of the list while a landmark is selected (close ✕ returns to the list): typed facts + detail.json/raw.json, chat clock/sender/kind/text, or generic payload tree + raw JSON.",Replay.svelte:lm-detail
+Event detail header row,Replay — landmark feed,"Detail header with category chip, sequence number (typed), tick, round chip, Hear ±10s (when voice exists) and the close button.",Replay.svelte:lm-detail-head
+Event facts list,Replay — landmark feed,"Definition list in the typed detail: attacker/victim (profile links), assister, weapon, damage, distance, hitgroup, site, flags.",Replay.svelte:lm-facts
+Detail JSON block,Replay — landmark feed,"Collapsible pretty-printed detail.json for the selected typed event, open by default.",Replay.svelte:json-block
+Raw JSON block,Replay — landmark feed,Collapsible pretty-printed raw.json (original demo payload) for the selected typed event.,Replay.svelte:json-block
+Detail flag chips,Replay — landmark feed,"HS/WB/NS/SMK/BLD/AFL chips (or ""none"") inside the typed detail facts list.",EventFlags.svelte:event
+Copy payloads button,Replay — landmark feed,Copies the selected typed event’s detail.json and raw.json to the clipboard; label flips to ""Copied"".,Replay.svelte:copyDetail
+Hear ±10s button,Replay — landmark feed,Detail action that seeks to the event and starts playback with voice enabled (comms-around context).,Replay.svelte:hearTick
+Seek to event button,Replay — landmark feed,Primary detail action that seeks the replay to the selected event’s tick.,Replay.svelte:seekTo
+Chat detail,Replay — landmark feed,"Chat detail block: round-relative clock (""R12 1:23"" with the match-clock fallback — fmt.js chatClock), sender profile link, kind/decrypted and the message text.",Replay.svelte:chatClock
+Generic event detail,Replay — landmark feed,"Generic detail block: event name, tick, round, parsed label, expandable payload tree with key filter, raw toggle and copy.",Replay.svelte:lm-payload
+Empty feed message,Replay — landmark feed,"""No categories enabled — turn some on above."" / ""Loading events…"" / ""No events match these filters."" states inside the feed list.",Replay.svelte:lm-empty
+Feed error message,Replay — landmark feed,Alert shown when a feed source query (typed/chat/generic) fails.,Replay.svelte:feedError
+Chat shortcut button,Match — Overview & header,Header button opening the Replay landmark feed with the Chat category enabled (the retired Chat tab’s shortcut).,Match.svelte:openChat
+Events in Replay button,Round detail,Header button opening the Replay landmark feed scoped to this round (the retired kill feed’s entry point).,RoundDetail.svelte:openEvents
+Lanes toggle button,Replay — voice lanes,"""Lanes"" toggle in the voice bar showing/hiding the per-player voice density strip (hidden by default below an 820px viewport).",Replay.svelte:lanesOpen
+Voice lanes panel,Replay — voice lanes,Per-player voice-activity strip above the transport; click maps x to a tick and plays from there with voice enabled.,VoiceLanes.svelte:voice-lanes
+Voice lanes header,Replay — voice lanes,"Header row with the ""Voice"" title and a hint such as ""N players · click to play from there"".",VoiceLanes.svelte:voice-lanes-head
+Voice lanes seek strip,Replay — voice lanes,"Clickable, keyboard-operable strip covering all lanes; clicking maps the x-position to a tick and starts replay from there.",VoiceLanes.svelte:voice-lanes-strip
+Player voice lane row,Replay — voice lanes,One horizontal lane per player with a side-colored name label and that player’s bucketed voice activity bars.,VoiceLanes.svelte:voice-lane-row
+Player name label,Replay — voice lanes,"Truncated player name at the left of a voice lane, colored by team side, with the full Steam ID as its hover title.",VoiceLanes.svelte:voice-lane-label
+Voice activity bar,Replay — voice lanes,Small vertical bar in a lane whose height reflects how many voice chunks occurred in that time bucket.,VoiceLanes.svelte:voice-lane-bar
+Voice lanes loading message,Replay — voice lanes,"""Loading voice lanes…"" placeholder shown while voice data is being fetched.",VoiceLanes.svelte:loading
+Voice lanes empty message,Replay — voice lanes,"""No voice activity."" placeholder shown when the match has no recorded voice data.",VoiceLanes.svelte:rows
+Voice lanes error message,Replay — voice lanes,Red ""Voice lanes unavailable: …"" alert shown when the voice data fetch fails.,VoiceLanes.svelte:error

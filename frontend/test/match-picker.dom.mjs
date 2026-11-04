@@ -57,8 +57,10 @@ const svelteCompile = (src, filename, out) => {
   return out;
 };
 
-// fmt.js (plain ESM) → local copy.
+// fmt.js (plain ESM) → local copy (+ its rounds.js dependency — fmt's
+// chatClock applies the canonical isCounted rule from lib/rounds.js).
 writeFileSync(join(dir, 'fmt.js'), readFileSync('src/lib/fmt.js', 'utf8'));
+writeFileSync(join(dir, 'rounds.js'), readFileSync('src/lib/rounds.js', 'utf8'));
 
 // StatusChip (no imports) → local bundle.
 svelteCompile(

@@ -74,7 +74,7 @@ func seedPlatformMatch(t *testing.T, st *store.Store) int64 {
 	return id
 }
 
-func TestGetProvenanceAndConVarsAndEntitySummary(t *testing.T) {
+func TestGetProvenanceAndEntitySummary(t *testing.T) {
 	useTempXDG(t)
 	st, err := store.Open(":memory:")
 	if err != nil {
@@ -103,26 +103,6 @@ func TestGetProvenanceAndConVarsAndEntitySummary(t *testing.T) {
 	}
 	if !strings.Contains(joined, "position sidecar format: none") {
 		t.Errorf("notes missing sidecar none note: %v", p.Notes)
-	}
-
-	cvs, err := svc.GetConVars(id)
-	if err != nil {
-		t.Fatalf("GetConVars: %v", err)
-	}
-	got := map[string]string{}
-	for _, c := range cvs {
-		got[c.Name] = c.Value
-	}
-	for k, want := range map[string]string{
-		"sv_alltalk": "true", "mp_roundtime_defuse": "1.92", "fps_max": "400",
-		"sv_cheats": "0", "mp_freezetime": "15",
-	} {
-		if got[k] != want {
-			t.Errorf("convar %s = %q, want %q (rows: %+v)", k, got[k], want, cvs)
-		}
-	}
-	if len(cvs) != 5 { // 1+1+1 flat rows + 2 convars-map entries
-		t.Errorf("convar rows = %d, want 5: %+v", len(cvs), cvs)
 	}
 
 	es, err := svc.GetEntitySummary(id)

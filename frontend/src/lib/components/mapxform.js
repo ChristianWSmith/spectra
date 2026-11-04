@@ -23,9 +23,12 @@ export function makeTransform(meta) {
 }
 
 // Load a map pack: the user-extracted pack (from the local CS2 install,
-// served at /api/mappack/) wins over the bundled placeholder at /maps/.
+// served at /api/mappack/) wins over the bundled copy at /maps/. The
+// bundle ships numeric metadata only (a transform-only meta.json, e.g.
+// de_mirage) — no radar art ever ships (frontend/public/maps/README.md).
 // Returns { meta, transform, base } or null when neither source has the
-// map. base is the URL prefix for meta.radar.file.
+// map; callers then fall back to a plain world-coordinate grid.
+// base is the URL prefix for meta.radar.file.
 export async function loadMapPack(map) {
   if (!map) return null;
   const enc = encodeURIComponent(map);

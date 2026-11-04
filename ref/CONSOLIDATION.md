@@ -25,15 +25,19 @@ way".
 | Single-match lookups | `store.GetMatchSummary` / `GetTeamNames` + `MatchService.*` | never fetch the whole library for one row; `replayservice` uses `GetPlayerRefs` |
 | EventRow → Event conversion | `models.EventFromRow` | payload-free by design; blind-event payloads reach analytics via `store.GetBlindFlashDetails` (keyed by `events.seq`) |
 | Read-side caching | `services.js` `cachedRead` | keyed `(method, args)`, flushed on every `spectra:*` event and on mutating wrappers (delete/reprocess emit no event); explicit `invalidate()` |
-| Router | `lib/router.js` (`parseHash`, `MATCH_TABS`) | characterization-tested; all Match tabs deep-linkable |
-| Hand-offs | `lib/handoff.js` | the only module that touches `sessionStorage` |
+| Router | `lib/router.js` (`parseHash`, `buildHash`, `MATCH_TABS`) | characterization-tested; all Match tabs deep-linkable; query-carrying routes (`?cat=…&round=…`) parse onto the route object |
+| Durable cross-view state | the route query (`buildHash` + `parseHash`) | the one-shot sessionStorage hand-offs (`lib/handoff.js`: timeline-filter, replay-seek, compare-rounds) were retired with the landmark consolidation — every writer now navigates with query params, so deep links/refresh/back-forward preserve context by construction |
+| Raw-event browsing (one per match) | Replay's landmark feed + `lib/replay/landmarks.js` | THE categorization (CATEGORIES registry, sparse default kills+round_wins, normalization, feed merge, filter↔query serialization); the feed list, scrubber markers and renderer world layers all consume its pre-bucketed rows — no second classifier anywhere |
+| Event retrieval (source paths) | `store.queryEvents` (typed, incl. `Kinds`) / `store.queryChat` / `store.GetGenericEvents` | three paths because there are three tables — no universal event query; generic-event payload labels parse in ONE place: `eventlabels.go` (the JS copy died with Context) |
+| Chat time formatting | `fmt.js` `chatClock` | the retired Match Chat tab's clock moved here (round-relative with the match-clock fallback); Replay's feed and RoundDetail's round chat both render it |
+| Landmark row presentation | `components/LandmarkRow.svelte` | one row renderer for the feed AND CompareRounds' compact event sequence (source-aware text, category chip, select/seek actions) |
 | Definition/tooltip strings | `lib/definitions.js` | Settings' glossary renders the same `GLOSSARY` array the tooltips import |
 | Errors / nav / formatting / CSV / download | `lib/services.js` `errText`; `lib/nav.js` (`isSteam`, `openProfile`, `NAV_ACTIONS`); `lib/fmt.js`; `lib/csv.js`; `lib/download.js` + `lib/save.js` | sidebar and command palette share `NAV_ACTIONS` |
 | Dialogs & popovers | `components/Dialog.svelte`, `components/Popover.svelte` | Escape/outside-click/focus-return; busy-gating stays with the consumer (MapPackPrompt) |
 | Sortable headers / stat cells | `components/SortTh.svelte`, `components/StatCard.svelte` | components own markup only — each view keeps its own sort state and backend |
-| Event row bits | `components/EventFlags/EventPlay/ProfileLink.svelte` | scopes stay per-view (Timeline is the canonical *filter*) |
+| Event row bits | `components/LandmarkRow.svelte` (the row), `EventFlags/EventPlay/ProfileLink.svelte` | one row renderer for the Replay feed AND CompareRounds' compact sequence; flags/▶/profile stay shared bits |
 | Match pickers | `components/MatchPicker.svelte` | Explorer, Reports, Builder all use it |
-| Landmark kinds | `lib/replay/landmarks.js` (`LANDMARK_KINDS`, `classifyLandmark`) | renderer, Replay scrubber, FilterBar |
+| Landmark categories | `lib/replay/landmarks.js` (`CATEGORIES`, `LANDMARK_KINDS`, `drawBucket`, `normalize*`) | the ONE categorization: feed list, scrubber markers and renderer world layers consume its pre-bucketed rows |
 | Coordinate transform | `lib/mapxform.js` `makeTransform` | renderer consumes it; camera and no-pack bounds fallback remain renderer-only |
 | Glossary of rules for agents | AGENTS.md → "One canonical way" | this file is the deeper reference |
 
@@ -42,8 +46,9 @@ way".
 Heatmaps vs Replay (aggregate vs live); Builder vs SqlConsole vs Reports;
 CompareRounds vs RoundDetail vs Rounds tab; PlayerProfile vs Scoreboard;
 Scoreboard vs Combat (summary vs deep-dive — share definitions, not
-tables); RoundDetail feed / Combat engagements / Utility list / Context
-stream (different scopes — share row bits only); per-match vs career
+tables); Combat engagements / Utility list (derived analytics — they link
+into the landmark feed, they do not browse events; share row bits only);
+per-match vs career
 rollups (share SQL consts, keep variants); renderer camera/fallback;
 `fmtClock` tick vs second units; palette vs sidebar nav (share the list,
 different modality); `internal/plugin.MetricDef` / `store.PluginMetricDef`
@@ -87,6 +92,75 @@ different modality); `internal/plugin.MetricDef` / `store.PluginMetricDef`
     additive fields (`label`, `explanation`, `matchId`, `ruleVersion`,
     `seq`, metric `createdAt`/`denominator`, RFC3339 `extractedAt`) — no
     key renamed or removed.
+
+## Landmark consolidation pass (Replay owns the raw-event experience)
+
+Third pass: **one canonical raw-event browser per match, owned by
+Replay's landmark feed.** The PRD §5.5 universal event explorer now lives
+inside the tactical replay instead of as separate destinations.
+
+**What consolidated into the feed** (`lib/replay/landmarks.js` +
+`Replay.svelte`'s side panel):
+
+- The feed composes the three source-specific reads (typed
+  `MatchService.GetEvents` with the new `EventFilter.Kinds` IN-filter,
+  `MatchService.GetChat`, `LibraryService.GetGenericEvents`) — no
+  universal event query; source tables keep their own retrieval paths.
+- Category registry `CATEGORIES` with the **sparse default: kills +
+  round wins only**; every other category (bomb, grenades, damage,
+  blinds, connects, chat, team changes, ConVars, name-scoped game
+  events) is opt-in. Generic high-volume sources load by name only
+  (histogram-gated) — never unrestricted.
+- `normalizeEvent/Chat/Generic` stamp every row with `source`,
+  `category` and a precomputed `bucket`; the list, the scrubber markers
+  and the renderer's world layers all read those fields (the renderer no
+  longer classifies anything, and `classifyLandmark` is gone).
+- Chat merges chronologically with typed events (tick → source →
+  sequence tie-break); chat rows render `fmt.js chatClock` in the detail.
+- Detail inspection: typed facts + `detail.json`/`raw.json` (via
+  `GetEvent`), chat sender/clock/kind, generic `PayloadTree` + raw —
+  the detail replaces the list in the narrow panel and closes back to it.
+- Generic-event payload labels parse in Go only (`eventlabels.go` —
+  `parseConVarPayload` moved out of `platformservice.go`); the retired
+  Context view's JavaScript copy was deleted.
+
+**Retired views/routes** (legacy hashes redirect to the feed):
+`Timeline.svelte` and `Context.svelte` deleted; the Match Chat tab
+removed (header **Chat** button → `?cat=chat`); `#/match/:id/timeline`,
+`#/match/:id/chat` and `#/match/:id/context` resolve to
+`#/replay/:id` with the equivalent scope; Explorer lost its generic
+payload browser, histogram, ConVar table and warnings panel (warnings
+consolidate to the Match header; Explorer keeps provenance, entity
+summary and the census reference as the diagnostics surface).
+
+**Removed backend surface:** `ReplayService.GetLandmarks`,
+`store.GetLandmarks` + `landmarkKinds` + `LandmarkLimit` (the feed's
+draw set is `queryEvents` with `kinds: DRAW_KINDS`),
+`PlatformService.GetConVars` (its data is the labelled server_cvar feed).
+
+**Removed frontend surface:** `lib/handoff.js` and all three
+sessionStorage hand-offs (timeline-filter, replay-seek, compare-rounds —
+replaced by the route query), `services.js` pending-* wrappers,
+`RoundDetail`'s kill feed (economy/chat stay; **Events in Replay**
+entry point added), CompareRounds' per-round `getEvents` (its
+`GetRoundDetail` response already carries the sequence).
+
+**Navigation model:** `replayHash(matchId, filter, extras)` (`lib/nav.js`)
+is the one way into the browser; `?cat/?round/?player/?weapon/?tick*/
+?dmg*/?dist/?hs/?bbox/?gname` carry the durable filter, `?tick/?sel` the
+entry position/selection and `?back` the origin path (used by
+RoundDetail/Compare/Replay Back buttons so drill-downs return to their
+source). `?rounds=` on `#/compare/:id` replaced the one-shot compare
+hand-off (selection now survives refresh/back). Saved filter presets are
+stored in the serialized query shape.
+
+**Layout/behavior notes:** the lanes strip is height-aware (hidden by
+default below an 820px viewport, toggle in the voice bar); the detail
+pane replaces the list while open (the panel is one scroll region);
+scrubber markers follow the enabled categories + round/player scope
+(the map's world layers always show the drawable set); Timeline's knife/
+warmup round selection, export, saved presets, voice "Hear ±10s" and
+payload inspection all moved into the feed.
 
 ## Legacy-fallback / migration removal pass (pre-release)
 

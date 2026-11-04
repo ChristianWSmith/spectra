@@ -21,8 +21,9 @@ it rather than archive it.
   did not fire on donk) — all visible in the Explorer's message census.
   Valve MM demos untested; settle by parsing one.
 - **Sound-event layer** (PRD §5.14) — `CMsgSosStartSoundEvent` fires 25,266
-  times per golden demo and is captured as generic events, but has no
-  timeline track, filters, or spatial visualization.
+  times per golden demo and is captured as generic events; the Replay
+  landmark feed browses them by name (game-events category), but there is
+  no dedicated scrubber track or spatial visualization.
 - **Per-grenade trajectory reconstruction** beyond the recorded throw/det
   samples (PRD §5.4 utility visualization) — research-grade.
 - **Chat decryption is implemented but dormant** — needs a Valve MM demo
@@ -32,14 +33,14 @@ it rather than archive it.
 
 ### Replay
 
-- **Follow modes** (PRD §5.4 "Advanced Replay"): follow a player, the bomb,
-  a grenade, a killer/victim.
+- **Follow modes** (PRD §5.4 "Advanced Replay"): follow the bomb, a
+  grenade, a killer/victim.
 - **Split-screen + ghost replay** — overlay two rounds/matches; also the
   CompareRounds ghost overlay.
 - **Custom replay annotations** (draw on the replay) — needs the
   notes/tags annotations tables (below).
 - **Exportable 2D replay video** beyond the WebM clip recorder (GIF/PNG
-  sequence), snapshot capture.
+  sequence).
 - **Spectator POV.**
 
 ### Analytics
@@ -59,8 +60,8 @@ it rather than archive it.
   annotated), utility effectiveness metrics, utility coordination.
 - **Advanced clutch review** (PRD §5.12 P2): success by size/map/side,
   clutch duration/weapon, replay mode, last-known positions.
-- **Behavioral archetypes + anomaly detection + performance trends**
-  (PRD §5.13) — needs cross-match volume beyond the single golden demo.
+- **Behavioral archetypes + anomaly detection** (PRD §5.13) — needs
+  cross-match volume beyond the single golden demo.
 - **Entry engagement kind** — deferred; extractor `entry_kills` column
   covers attribution only.
 
@@ -91,24 +92,22 @@ it rather than archive it.
 
 ## 2. Data & asset gaps
 
-- **Radar art**: `de_cache/radar.svg` is an original schematic, not Valve
-  art; real pixels come from the in-app extractor (Settings → Map packs →
-  extracts from the user's local CS2 into the data dir — Valve IP never
-  ships in releases; `internal/mappack`). Bundled placeholders remain
-  user-suppliable (acquisition posture in
-  `frontend/public/maps/README.md`).
-- **Map packs**: bundled packs are still only `de_cache` (transform +
-  schematic) and `de_mirage` (transform); the extractor covers every
-  official map at runtime from `resource/overviews/<map>.txt` in the
-  user's install.
+- **Radar art**: none ships with the app — official pixels are Valve IP,
+  and the schematic placeholder shipped earlier has been removed too
+  (`frontend/public/maps/README.md`). Real pixels come from the in-app
+  extractor (Settings → Map packs → extracts from the user's local CS2
+  into the data dir — Valve IP never ships in releases;
+  `internal/mappack`); until a pack is extracted, maps render a plain
+  grid ("map not found").
+- **Map packs**: the only bundled pack is `de_mirage` (transform only,
+  no image); the extractor covers every official map at runtime from
+  `resource/overviews/<map>.txt` in the user's install.
 - **Bomb-site region polygons** — extractable from nav/vmap; unblocks
   pattern detection, better heatmaps, and clutch/site analytics.
 - **Per-round money columns are 0** — `item_equip` payloads carry no
   prices, so `player_round_stats.money/equip/spent` and the winner-spend
   card show $0. Needs a price table (game items schema) or a
   `CCSPlayerResource`-based read.
-- **Flash blind duration = 0.0s** — blind payload lacks duration; needs a
-  different source event or reconstruction.
 - **R1 (pistol) money samples = 0** — freeze-end money sampling misses
   round 1.
 - **Profile per-side K/D 0.00 / weapon-HS zeros** — single-match data

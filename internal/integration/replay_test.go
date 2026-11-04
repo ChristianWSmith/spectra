@@ -58,8 +58,10 @@ func TestReplaySidecar(t *testing.T) {
 		t.Skip(reason)
 	}
 
-	// Map pack transform (de_cache — committed fixture).
-	metaBytes, err := os.ReadFile(filepath.Join("..", "..", "frontend", "public", "maps", "de_cache", "meta.json"))
+	// Map pack transform (de_cache — committed fixture in testdata; the
+	// app bundles no map packs/art anymore, so the golden demo's overview
+	// extent lives here: transform + reference radar pixel size only).
+	metaBytes, err := os.ReadFile(filepath.Join("testdata", "de_cache.meta.json"))
 	if err != nil {
 		t.Fatalf("read map pack meta: %v", err)
 	}

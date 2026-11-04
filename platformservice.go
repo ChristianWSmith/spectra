@@ -1,11 +1,9 @@
 package main
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"path/filepath"
-	"sort"
 	"strconv"
 	"time"
 
@@ -42,14 +40,6 @@ type ProvenancePanel struct {
 	Map            string   `json:"map"`
 	Status         string   `json:"status"`
 	Notes          []string `json:"notes"` // descoped/caveat annotations (e.g. chat.decrypted provenance)
-}
-
-// ConVarRow is one server convar snapshot line (parsed from generic events).
-type ConVarRow struct {
-	Tick  int    `json:"tick"`
-	Round int    `json:"round"`
-	Name  string `json:"name"`
-	Value string `json:"value"`
 }
 
 // EntitySummary describes what the parser saw (schema-browser-lite; full
@@ -169,80 +159,6 @@ func (s *PlatformService) GetProvenance(matchID int64) (ProvenancePanel, error) 
 		Status:         m.Status,
 		Notes:          notes,
 	}, nil
-}
-
-// GetConVars parses server_cvar generic events into name/value rows. The
-// M1 extractor records payload shapes that vary by game build — the
-// parser below handles the shapes observed in real libraries:
-// {"cvarname","cvarvalue"} (what CS2 emits today), {"name","value"},
-// {"cvar"[,"value"]}, and {"convars":{name:value,…}} maps.
-func (s *PlatformService) GetConVars(matchID int64) ([]ConVarRow, error) {
-	events, err := s.st.GetGenericEvents(matchID, "server_cvar", 2000)
-	if err != nil {
-		return nil, err
-	}
-	out := []ConVarRow{}
-	for _, ev := range events {
-		for _, kv := range parseConVarPayload(ev.PayloadJSON) {
-			out = append(out, ConVarRow{Tick: ev.Tick, Round: ev.Round, Name: kv[0], Value: kv[1]})
-		}
-	}
-	return out, nil
-}
-
-// parseConVarPayload extracts (name, value) pairs from one server_cvar
-// payload blob; unparsable payloads contribute nothing (the raw blob
-// remains available in the generic-events inspector).
-func parseConVarPayload(payload string) [][2]string {
-	var m map[string]any
-	if err := json.Unmarshal([]byte(payload), &m); err != nil {
-		return nil
-	}
-	if sub, ok := m["convars"].(map[string]any); ok {
-		out := make([][2]string, 0, len(sub))
-		for k, v := range sub {
-			out = append(out, [2]string{k, conVarValueString(v)})
-		}
-		// Stable order for equal ticks (map iteration is random).
-		sort.Slice(out, func(i, j int) bool { return out[i][0] < out[j][0] })
-		return out
-	}
-	name := conVarFirstString(m, "cvarname", "name", "cvar")
-	if name == "" {
-		return nil
-	}
-	return [][2]string{{name, conVarFirstString(m, "cvarvalue", "value")}}
-}
-
-// conVarFirstString returns the first present string-ish value among keys.
-func conVarFirstString(m map[string]any, keys ...string) string {
-	for _, k := range keys {
-		if v, ok := m[k]; ok {
-			return conVarValueString(v)
-		}
-	}
-	return ""
-}
-
-// conVarValueString stringifies a JSON scalar (convar values are strings
-// in CS2 payloads, but numbers/bools are tolerated).
-func conVarValueString(v any) string {
-	switch t := v.(type) {
-	case string:
-		return t
-	case nil:
-		return ""
-	case float64:
-		return strconv.FormatFloat(t, 'f', -1, 64)
-	case bool:
-		return strconv.FormatBool(t)
-	default:
-		b, err := json.Marshal(t)
-		if err != nil {
-			return fmt.Sprint(t)
-		}
-		return string(b)
-	}
 }
 
 // GetEntitySummary returns parser-scope counts + notes (schema-browser-

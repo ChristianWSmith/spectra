@@ -177,6 +177,11 @@ type EventFilter struct {
 	SteamID string `json:"steamId"`
 	Offset  int    `json:"offset"`
 	Limit   int    `json:"limit"`
+	// Kinds is the multi-kind form of Kind — an IN filter over several
+	// event kinds at once (the Replay landmark feed fetches a category's
+	// whole kind set in one query). Non-empty Kinds takes precedence over
+	// Kind; empty = fall through to the single-Kind clause.
+	Kinds []string `json:"kinds,omitempty"`
 	// M3 advanced filters. Zero/""/nil = unconstrained.
 	// TickTo/DmgMax/DistanceMax: <= 0 means open-ended (never clamp to 0).
 	Weapon       string  `json:"weapon,omitempty"`

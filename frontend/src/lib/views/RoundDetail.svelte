@@ -5,16 +5,19 @@
     getMatch,
     getRoundClasses,
     getTeamNames,
-    setPendingSeek,
     errText,
   } from '../services.js';
-  import { fmtDuration, fmtTickSeconds, fmtInt } from '../fmt.js';
+  import { fmtDuration, fmtTickSeconds, fmtInt, chatClock } from '../fmt.js';
+  import { replayHash } from '../nav.js';
+  import { buildHash } from '../router.js';
+  import { roundsByNumber } from '../replay/landmarks.js';
   import RoundStrip from '../components/RoundStrip.svelte';
-  import EventFlags from '../components/EventFlags.svelte';
-  import EventPlay from '../components/EventPlay.svelte';
-  import ProfileLink from '../components/ProfileLink.svelte';
 
-  let { id = 0, round = 0, nav = () => {} } = $props();
+  let { id = 0, round = 0, query = {}, nav = () => {} } = $props();
+
+  // The origin path for the return trip (?back= on the route — the Match
+  // tab or view that opened this round; absent = Overview).
+  const backPath = $derived(query.back || '');
 
   let detail = $state(null);
   let rounds = $state([]);
@@ -77,11 +80,9 @@
     return () => (live = false);
   });
 
-  const kills = $derived(
-    (detail?.events || []).filter((e) => e.kind === 'kill'),
-  );
   const economy = $derived(detail?.economy || []);
   const chat = $derived(detail?.chat || []);
+  const rbn = $derived(roundsByNumber(rounds));
 
   // Prev/next by INDEX into the numbered list, not number arithmetic: the
   // first real round is 1 with negative knife/warmup rounds before it, so
@@ -93,17 +94,27 @@
     roundIdx >= 0 && roundIdx < rounds.length - 1 ? rounds[roundIdx + 1] : null,
   );
 
-  // Jump to the replay at a tick (per-kill ▶ uses the kill's own tick; the
-  // header button uses the round start).
+  // Round nav preserves the origin (the return trip from RoundDetail
+  // goes back to where the user came from, not always Overview).
+  function roundNav(n) {
+    return buildHash(`/match/${id}/round/${n}`, { back: backPath });
+  }
+
+  // Contextual entries into THE event browser: this round, scoped.
+  function openEvents() {
+    nav(replayHash(id, { round }, { back: `match/${id}/round/${round}` }));
+  }
+
+  // Jump to the replay at a tick (the header button uses the round start;
+  // per-event seeks live in the canonical feed now).
   function watchTick(tick) {
-    setPendingSeek({ tick });
-    nav(`/replay/${id}`);
+    nav(replayHash(id, {}, { tick, back: `match/${id}/round/${round}` }));
   }
 </script>
 
 <div class="view">
   <header class="view-header">
-    <button class="btn" onclick={() => nav(`/match/${id}`)}><span class="codicon codicon-arrow-left"></span> Match</button>
+    <button class="btn" onclick={() => nav(backPath ? '/' + backPath : `/match/${id}`)}><span class="codicon codicon-arrow-left"></span> Back</button>
     {#if detail}
       <button
         class="btn primary"
@@ -111,6 +122,13 @@
         onclick={() => watchTick(detail.round.startTick || 0)}
       >
         <span class="codicon codicon-play"></span> Watch round
+      </button>
+      <button
+        class="btn"
+        title="Open this round's events in the replay landmark feed"
+        onclick={openEvents}
+      >
+        Events in Replay →
       </button>
       <h1>
         Round {detail.round.number}
@@ -152,109 +170,58 @@
   {/if}
 
   {#if detail}
+    <!-- Round analysis: economy + this round's chat (the kill feed
+         retired into the canonical event browser — see openEvents). -->
     <div class="round-grid">
       <section class="panel">
-        <h2>Kill feed</h2>
+        <h2>Economy</h2>
         <table class="data-table">
           <thead>
             <tr>
-              <th scope="col"><span class="sr-only">Replay</span></th>
-              <th scope="col" class="num">Tick</th>
-              <th scope="col">Attacker</th>
-              <th scope="col">Weapon</th>
-              <th scope="col">Victim</th>
-              <th scope="col">Flags</th>
+              <th scope="col">Side</th>
+              <th scope="col" class="num">Equip</th>
+              <th scope="col" class="num">Money</th>
             </tr>
           </thead>
           <tbody>
-            {#each kills as e (e.id)}
+            {#each economy as e (e.side)}
               <tr>
-                <td>
-                  <EventPlay
-                    tick={e.tick}
-                    title="Jump to this kill in the replay"
-                    label="Jump to kill at tick {e.tick} in the replay"
-                    onclick={() => watchTick(e.tick)}
-                  />
+                <td><span class="chip side {e.side}">{e.side.toUpperCase()}</span></td>
+                <td class="num">{e.equipValue}</td>
+                <td class="num">
+                  {e.moneySamples > 0
+                    ? fmtInt(Math.round(e.moneySampledSum / e.moneySamples))
+                    : '—'}
                 </td>
-                <td class="num mono">{e.tick}</td>
-                <td class="ct">
-                  <ProfileLink
-                    steam={e.attacker}
-                    name={e.attackerName || '—'}
-                    {nav}
-                    title="Open {e.attackerName} profile"
-                  />
-                </td>
-                <td class="mono">{e.weapon || '—'}</td>
-                <td class="t">
-                  <ProfileLink
-                    steam={e.victim}
-                    name={e.victimName || '—'}
-                    {nav}
-                    title="Open {e.victimName} profile"
-                  />
-                </td>
-                <td><EventFlags event={e} /></td>
               </tr>
             {:else}
-              <tr><td colspan="6" class="muted">No kills recorded in this round.</td></tr>
+              <tr><td colspan="3" class="muted">No economy samples.</td></tr>
             {/each}
           </tbody>
         </table>
       </section>
 
-      <div class="round-side">
-        <section class="panel">
-          <h2>Economy</h2>
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th scope="col">Side</th>
-                <th scope="col" class="num">Equip</th>
-                <th scope="col" class="num">Money</th>
-              </tr>
-            </thead>
-            <tbody>
-              {#each economy as e (e.side)}
-                <tr>
-                  <td><span class="chip side {e.side}">{e.side.toUpperCase()}</span></td>
-                  <td class="num">{e.equipValue}</td>
-                  <td class="num">
-                    {e.moneySamples > 0
-                      ? fmtInt(Math.round(e.moneySampledSum / e.moneySamples))
-                      : '—'}
-                  </td>
-                </tr>
-              {:else}
-                <tr><td colspan="3" class="muted">No economy samples.</td></tr>
-              {/each}
-            </tbody>
-          </table>
-        </section>
-
-        <section class="panel">
-          <h2>Round chat</h2>
-          {#if chat.length === 0}
-            <p class="muted" role="status">No chat this round.</p>
-          {:else}
-            <ul class="chat-list">
-              {#each chat as c (c.id)}
-                <li>
-                  <span class="mono muted">{c.tick}</span>
-                  <strong>{c.name || '—'}</strong>
-                  <span>{c.text}</span>
-                </li>
-              {/each}
-            </ul>
-          {/if}
-        </section>
-      </div>
+      <section class="panel">
+        <h2>Round chat</h2>
+        {#if chat.length === 0}
+          <p class="muted" role="status">No chat this round.</p>
+        {:else}
+          <ul class="chat-list">
+            {#each chat as c (c.id)}
+              <li>
+                <span class="mono muted" title="tick {c.tick}">{chatClock(c, rbn, tickRate)}</span>
+                <strong>{c.name || '—'}</strong>
+                <span>{c.text}</span>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      </section>
     </div>
 
     <div class="round-nav">
       {#if prevRound}
-        <button class="btn" onclick={() => nav(`/match/${id}/round/${prevRound.number}`)}>
+        <button class="btn" onclick={() => nav(roundNav(prevRound.number))}>
           <span class="codicon codicon-arrow-left"></span> Round {prevRound.number}
         </button>
       {/if}
@@ -265,10 +232,11 @@
         teamAbove={teams.ct}
         teamBelow={teams.t}
         {sideSwitches}
+        back={backPath}
         {nav}
       />
       {#if nextRound}
-        <button class="btn" onclick={() => nav(`/match/${id}/round/${nextRound.number}`)}>
+        <button class="btn" onclick={() => nav(roundNav(nextRound.number))}>
           Round {nextRound.number} →
         </button>
       {/if}

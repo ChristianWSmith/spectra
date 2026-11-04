@@ -116,8 +116,18 @@ func (s *LibraryService) GetDataInfo() DataInfo {
 	}
 }
 
-// GetGenericEvents returns raw game-event payloads for one name ("" = all),
-// insertion order, for the raw inspector's payload viewer.
-func (s *LibraryService) GetGenericEvents(id int64, name string, limit int) ([]models.GenericEvent, error) {
-	return s.st.GetGenericEvents(id, name, limit)
+// GetGenericEvents returns raw game-event rows for one name ("" = all),
+// round < 0 = all rounds, insertion order, paged by limit/offset — the
+// Replay landmark feed's generic-event source. Every row is labelled by
+// the ONE labeler (eventlabels.go): server_cvar/team payloads are parsed
+// there so no second parser exists in the frontend.
+func (s *LibraryService) GetGenericEvents(id int64, name string, round int, limit int, offset int) ([]models.GenericEvent, error) {
+	rows, err := s.st.GetGenericEvents(id, name, round, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	for i := range rows {
+		rows[i].Who, rows[i].Label = labelGenericEvent(rows[i].Name, rows[i].PayloadJSON)
+	}
+	return rows, nil
 }

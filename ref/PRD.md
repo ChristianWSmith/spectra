@@ -126,14 +126,15 @@ The application should be organized around the following primary sections:
 1. **Library** — Demo management and match discovery.
 2. **Match Overview** — Match summary, scoreboard, and performance.
 3. **Rounds** — Round browser and individual round analysis.
-4. **Tactical Replay** — Interactive 2D match reconstruction.
-5. **Timeline** — Universal event explorer.
-6. **Players** — Individual player profiles and statistics.
-7. **Analytics** — Advanced statistical and tactical analysis.
-8. **Utility** — Grenade and equipment analysis.
-9. **Communications** — Voice and chat review.
-10. **Data Explorer** — Raw demo inspection and custom queries.
-11. **Settings** — Application configuration and data management.
+4. **Tactical Replay** — Interactive 2D match reconstruction AND the
+   universal event explorer (its landmark feed — §5.5; one canonical
+   event-navigation and inspection experience per match, owned by Replay).
+5. **Players** — Individual player profiles and statistics.
+6. **Analytics** — Advanced statistical and tactical analysis.
+7. **Utility** — Grenade and equipment analysis.
+8. **Communications** — Voice and chat review.
+9. **Data Explorer** — Raw demo inspection and custom queries.
+10. **Settings** — Application configuration and data management.
 
 These should be logical destinations rather than rigidly isolated modules. Contextual links should allow users to navigate directly from one area to another without losing their current match, round, player, or tick selection.
 
@@ -349,11 +350,11 @@ This is one of Spectra's defining features and should receive significant engine
 - Frame/tick stepping.
 - Jump to round start.
 - Jump to kills, deaths, plants, defuses, and other events.
-- Timeline scrubbing.
+- Landmark scrubbing (event markers on the replay scrubber).
 - Reverse playback where supported by stored data.
 - Loop selected intervals.
 - Select custom playback ranges.
-- Synchronize replay with the event timeline.
+- Synchronize playback with the landmark feed (in Replay).
 
 ### Player Visualization — P0/P1
 
@@ -405,11 +406,18 @@ Display:
 
 The application should distinguish actual recorded trajectories and effects from reconstructed approximations.
 
-## 5.5 Universal Event Explorer and Timeline
+## 5.5 Universal Event Explorer
 
 **Objective:** Make every meaningful recorded match event searchable and inspectable.
 
-The timeline should be a central application component, not merely a visual kill feed.
+The event explorer lives in the **Replay landmark feed**: Replay is the
+central application component for match events, not merely a visual kill
+feed. One canonical event-navigation and inspection experience per match,
+owned by Replay — discovery (configurable landmark categories, sparse by
+default), filtering, inspection (payloads, chat, generic events) and
+navigation (seek, round/player/tick context) all happen there; the other
+analytical views link into it with their context instead of browsing
+events themselves.
 
 ### Event Categories — P0/P1
 
@@ -1258,7 +1266,7 @@ Responsible for storing:
 - Match overview.
 - Round browser.
 - Tactical replay.
-- Event timeline.
+- Event landmark feed (in Replay).
 - Analytics.
 - Voice.
 - Data explorer.
@@ -1454,7 +1462,7 @@ All quality metrics should be tested against known reference cases, not judged s
 Spectra should distinguish itself through the combination of:
 
 1. **Comprehensive 2D tactical replay** — Detailed historical match reconstruction without requiring a 3D game installation.
-2. **Universal event timeline** — One searchable interface for the match's recorded activity.
+2. **Universal event timeline** — One searchable interface for the match's recorded activity (Replay's landmark feed).
 3. **Integrated voice analysis** — Communications synchronized with gameplay.
 4. **Deep positional analytics** — Historical player movement, spatial relationships, and heatmaps.
 5. **Round-level analysis** — Detailed investigation of individual tactical situations.
