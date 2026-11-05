@@ -29,11 +29,17 @@
   import { GLOSSARY } from '../definitions.js';
   import { getTheme, applyTheme } from '../theme.js';
   import { getFontSize, applyFontSize, reconcileFontSize, FONT_SIZES } from '../fontsize.js';
+  import ConfirmDialog from '../components/ConfirmDialog.svelte';
 
   let version = $state('…');
   let info = $state(null);
   let error = $state('');
   let updateBusy = $state(false);
+
+  // The one confirmation modal (ConfirmDialog.svelte) shared by the
+  // plugin-removal and recompute prompts below — a bare window.confirm()
+  // would take its title from the page ("JavaScript - wails://…").
+  let confirmDlg = $state(null);
 
   // Settings → About → Check for Updates: hands off to the framework's
   // update window (it reports "up to date" and failures itself), so this
@@ -85,11 +91,12 @@
     return v === true;
   }
 
-  // Watched demo folders ("where to look for demos"): the Library lists
-  // .dem / .dem.zst files found under them, each with a one-click
-  // Import. The backend owns the pref — an unset pref means "defaults in
-  // effect" (Downloads + the CS2 replay folder, recomputed on every
-  // read), so the list below always shows the effective folders.
+  // Import dirs (the Settings panel of the same name): the Library lists
+  // .dem / .dem.zst files found under them that are not in the library
+  // yet, each with a one-click Import. The backend owns the pref — an
+  // unset pref means "defaults in effect" (Downloads + the CS2 replay
+  // folder, recomputed on every read), so the list below always shows the
+  // effective import dirs.
   let demoDirs = $state([]);
   let demoDirsCustom = $state(false);
   let demoDirError = $state('');
@@ -241,7 +248,12 @@
 
   async function doRemove(p) {
     const pid = p.manifest.id;
-    if (!confirm(`Remove plugin "${p.manifest.name || pid}" (${pid})? Its bundle is deleted from disk.`)) {
+    const ok = await confirmDlg?.ask({
+      title: 'Remove plugin?',
+      message: `Removes "${p.manifest.name || pid}" (${pid}) and deletes its bundle from disk.`,
+      confirmLabel: 'Remove',
+    });
+    if (!ok) {
       return;
     }
     pluginOp = { ...pluginOp, [pid]: 'busy' };
@@ -348,12 +360,15 @@
   }
 
   async function recompute(m) {
-    if (
-      !confirm(
+    const ok = await confirmDlg?.ask({
+      title: 'Recompute analysis?',
+      message:
         `Recompute analysis for ${m.map || 'match #' + m.id} (${fmtDate(m.extractedAt)}) ` +
-          'under the current rules? Stored derived rows for this match are rebuilt.',
-      )
-    ) {
+        'under the current rules? Stored derived rows for this match are rebuilt.',
+      confirmLabel: 'Recompute',
+      danger: false,
+    });
+    if (!ok) {
       return;
     }
     recomputeState = { ...recomputeState, [m.id]: 'busy' };
@@ -421,17 +436,18 @@
   </section>
 
   <section class="panel">
-    <h2>Where to look for demos</h2>
+    <h2>Import dirs</h2>
     <p class="muted">
       The Library lists <span class="mono">.dem</span> /
-      <span class="mono">.dem.zst</span> files found in these folders and imports
+      <span class="mono">.dem.zst</span> files found in these import dirs and imports
       them with one click — each import copies the demo into Spectra’s data
       folder, so your original files are never moved, modified or deleted.
       Subfolders are scanned up to four levels deep; hidden folders are skipped.
+      Demos already in the Library are left out of the list.
     </p>
     {#if demoDirs.length === 0}
       <p class="muted" role="status">
-        No folders — the Library won’t offer any demos to import.
+        No import dirs — the Library won’t offer any demos to import.
       </p>
     {:else}
       <div class="sett-dirs">
@@ -825,4 +841,6 @@
       {/each}
     </div>
   </section>
+
+  <ConfirmDialog bind:this={confirmDlg} />
 </div>

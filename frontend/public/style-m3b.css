@@ -483,7 +483,7 @@
   font-size: 0.9em;
 }
 
-/* Watched demo folders (Settings → Where to look for demos). */
+/* Import dirs (Settings → Import dirs). */
 .sett-dirs {
   display: flex;
   flex-direction: column;

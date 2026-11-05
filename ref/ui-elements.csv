@@ -34,7 +34,9 @@ Cancel import button,Library,Small red button at the end of an active job row th
 Chip percent label,Library,"Percentage text such as ""42%"" shown beside the progress bar inside a status chip while progress is between 0 and 100.",StatusChip.svelte:chip-pct
 Chip progress bar,Library,Mini inline bar inside a parsing or running status chip showing import progress; renders indeterminate at 0%.,StatusChip.svelte:chip-bar
 Delete button,Library,Small red button in a match row's Actions column that deletes the match's extracted data.,Library.svelte:onDelete
-Delete confirmation dialogs,Library,"Two native confirm pop-ups after clicking Delete: ""Delete extracted data?"" then ""Also delete the demo file from disk?"".",Library.svelte:onDelete
+Delete confirmation dialogs,Library,"Two in-app confirmation modals (ConfirmDialog.svelte over Dialog.svelte) after clicking Delete: ""Delete extracted data?"" then ""Also delete the demo file?"" — Cancel, Escape and a backdrop click all mean no.",Library.svelte:onDelete
+Delete from disk button,Library,"Small red button on an import-dir row that deletes the demo file itself after an in-app confirmation modal; the backend refuses anything that is not a demo file under a configured import dir.",Library.svelte:onDeleteFile
+Demos from your import dirs panel,Library,"Panel below the matches table listing .dem/.dem.zst files under the configured import dirs that are not in the library yet (recognised imports are omitted), newest first, each with Import and Delete from disk.",Library.svelte:demoFiles
 Drop files hint text,Library,"Muted ""or drop .dem / .dem.zst files"" hint beside the Import button in the Library header.",Library.svelte:view-header
 Empty library state,Library,"""No matches yet"" message with import instructions and an Import button, shown when there are no matches and no jobs.",Library.svelte:empty-title
 Empty state Import button,Library,Import… button inside the empty library state that opens the same file picker as the header button.,Library.svelte:doImport
@@ -533,6 +535,11 @@ CS2 install facts,Settings — Map packs,"Fact list in the Settings map-packs pa
 Extract radar images button,Settings — Map packs,"Primary Extracting…/Extract radar images button in the Settings map-packs panel that (re-)extracts all official-map radars idempotently.",Settings.svelte:doExtract
 Extraction status message,Settings — Map packs,Status line in the Settings map-packs panel reporting how many packs were extracted or what failed.,Settings.svelte:mpMsg
 Map packs panel,Settings — Map packs,"Panel in the Settings view explaining local radar extraction and showing detection status plus the extract controls.",Settings.svelte:mpStatus
+Add folder button,Settings — Import dirs,"""Add folder…"" button in the Settings import-dirs panel opening the native folder picker to append a directory.",Settings.svelte:addDemoDir
+Import dir row,Settings — Import dirs,"One configured import dir showing its full path (monospace, full path as the hover title) with a Remove button that drops it from the list.",Settings.svelte:sett-dir-row
+Import dirs intro text,Settings — Import dirs,"Muted paragraph under the ""Import dirs"" heading: one-click import, copy-on-import (originals untouched), four-level scan depth, hidden folders skipped, library imports left out of the list.",Settings.svelte:demoDirs
+Import dirs panel,Settings — Import dirs,"Panel in the Settings view (renamed from ""Where to look for demos"") holding the folder list the Library scans for not-yet-imported demos.",Settings.svelte:demoDirs
+Reset to defaults button,Settings — Import dirs,"""Reset to defaults"" button dropping the stored list (enabled only while a custom list is stored) so Downloads and the CS2 replay folder apply again.",Settings.svelte:onResetDemoDirs
 Install from path button,Settings — Plugins,Primary Installing…/Install from path button in the Settings view plugins panel that installs the entered plugin path.,Settings.svelte:doInstall
 No plugins message,Settings — Plugins,"""No plugins installed yet."" empty message in the Settings view plugins panel.",Settings.svelte:plugins
 Plugin error detail text,Settings — Plugins,Full validation error text shown under an invalid Settings view plugin row.,Settings.svelte:plugin-err
@@ -543,7 +550,7 @@ Plugin metrics count chip,Settings — Plugins,"""N metrics"" chip on a Settings
 Plugin name and version,Settings — Plugins,Plugin display name plus mono id and version shown on each Settings view plugin row.,Settings.svelte:plugin-name
 Plugin operation failed badge,Settings — Plugins,"""failed"" label on a Settings view plugin row when its last enable/disable/remove operation errored.",Settings.svelte:pluginOp
 Plugin path input,Settings — Plugins,Text field in the Settings view plugins panel for entering a plugin directory or manifest.json path.,Settings.svelte:sett-plugin-path
-Plugin removal confirm dialog,Settings — Plugins,Native confirmation dialog shown in the Settings view before removing a plugin.,Settings.svelte:doRemove
+Plugin removal confirm dialog,Settings — Plugins,In-app confirmation modal shown in the Settings view before removing a plugin.,Settings.svelte:doRemove
 Plugin remove button,Settings — Plugins,Red Remove button on a Settings view plugin row that deletes the plugin bundle from disk.,Settings.svelte:doRemove
 Plugin row,Settings — Plugins,"Row for one installed plugin in the Settings view, dimmed when the plugin is disabled.",Settings.svelte:plugin-row
 Plugin templates count chip,Settings — Plugins,"""N templates"" chip on a Settings view plugin row showing contributed report templates.",Settings.svelte:plugin-row
@@ -565,7 +572,7 @@ Metric definitions intro text,Settings — Analysis rules,Intro text in the Sett
 Metric definitions panel,Settings — Analysis rules,Bottom panel in the Settings view listing every derived or heuristic metric with its rule.,Settings.svelte:DEFINITIONS
 No matches to recompute message,Settings — Analysis rules,"""No ready matches to recompute yet."" empty message in the Settings view recompute list.",Settings.svelte:readyMatches
 Recompute button,Settings — Analysis rules,Small Recompute button on a Settings view match row that rebuilds that match's derived rows under current rules.,Settings.svelte:recompute
-Recompute confirmation dialog,Settings — Analysis rules,Native confirmation dialog shown in the Settings view before recomputing a match.,Settings.svelte:recompute
+Recompute confirmation dialog,Settings — Analysis rules,In-app confirmation modal shown in the Settings view before recomputing a match.,Settings.svelte:recompute
 Recompute done chip,Settings — Analysis rules,"Green ""done"" chip on a Settings view match row after a successful recompute.",Settings.svelte:recomputeState
 Recompute explanation text,Settings — Analysis rules,"Text under the Settings view recompute subheading explaining per-match rebuilds of classification, KAST, clutches, engagements, and career rollups.",Settings.svelte:recompute
 Recompute failed label,Settings — Analysis rules,"""failed"" error label on a Settings view match row whose recompute errored.",Settings.svelte:recomputeState
