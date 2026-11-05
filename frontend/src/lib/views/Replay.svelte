@@ -101,11 +101,11 @@
   let uiLoopTo = $state(-1);
   let uiLoopOn = $state(false);
   let eventsOpen = $state(true); // the canonical feed is visible by default
-  // The voice-lanes strip needs ~190px of vertical space — show it by
-  // default only when the window has room for it (short windows would
-  // otherwise leave the landmark list with a single visible row); the
-  // voice bar's Lanes toggle always overrides.
-  let lanesOpen = $state(typeof window === 'undefined' || window.innerHeight >= 820);
+  // The voice-lanes strip needs ~190px of vertical space, so it is HIDDEN
+  // by default at every viewport size (short windows would otherwise leave
+  // the landmark list with a single visible row); the voice bar's Lanes
+  // toggle shows it for the session.
+  let lanesOpen = $state(false);
   let jumpRound = $state('');
 
   let stageEl = $state(null);
