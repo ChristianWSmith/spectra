@@ -75,6 +75,10 @@ func newProfileFixture(t *testing.T) *ProfileService {
 				{SteamID: "100", Side: side, Name: "alice",
 					Kills: kills, Deaths: deaths, Headshots: creditedHS,
 					ADR: 80, HSPct: 60, RoundsPlayed: 24,
+					// Trade kills feed career.Trades → the profile's Trade
+					// rate card (TestGetProfileTradeRatePercent pins the
+					// percent scale of that card).
+					TradeKills:    2,
 					KillsByWeapon: byWeapon, DamageByWeapon: `{"ak47":900}`},
 			},
 			Rounds: []models.Round{
@@ -123,6 +127,24 @@ func TestGetProfileSidesKD(t *testing.T) {
 	// Zero-death side: the denominator floors at 1 (kdCareerSQL's shape).
 	if kd := bySide["t"]; kd < 3.99 || kd > 4.01 {
 		t.Errorf("t KD = %v, want 4.0 (4 kills / max(0 deaths, 1))", kd)
+	}
+}
+
+// TestGetProfileTradeRatePercent pins the SCALE of the profile's career
+// Trade rate card: 0..100 percent, like every other *Pct/*Rate field on
+// the Profile DTO (WinPct, KASTPct, OpeningRate, ClutchWinPct are all
+// ×100 right beside it) — the scale fmtPercent renders directly. The
+// fixture's alice has 2 career trades per match (4 total) over 5 career
+// deaths, so the card must show 80%, not a 0..1 fraction rendered as
+// "0.8%" (the pre-fix value).
+func TestGetProfileTradeRatePercent(t *testing.T) {
+	svc := newProfileFixture(t)
+	p, err := svc.GetProfile("100")
+	if err != nil {
+		t.Fatalf("GetProfile: %v", err)
+	}
+	if p.TradeRate < 79.9 || p.TradeRate > 80.1 {
+		t.Errorf("tradeRate = %v, want 80 (4 career trades / 5 deaths ×100)", p.TradeRate)
 	}
 }
 

@@ -159,7 +159,7 @@ Single-point trend note,Player profile,Message shown inside the Trend panel when
 Sparkline caption,Player profile,"Muted text under the chart with match count, min/max, axis meaning and click hint.",PlayerProfile.svelte:prof-spark-cap
 Sparkline data dot,Player profile,Clickable dot on the trend chart that opens that match's page.,PlayerProfile.svelte:spark.dots
 Steam ID text,Player profile,Monospace Steam ID shown beside the player name in the header.,PlayerProfile.svelte:prof-head
-Trade rate stat card,Player profile,Header card showing share of teammate deaths answered inside the trade window.,PlayerProfile.svelte:stat-cell
+Trade rate stat card,Player profile,"Header card showing trade kills ÷ deaths as a percent — a trade kill answers a teammate’s death inside the trade window, the denominator is the player’s own deaths (a ratio, so it can exceed 100%).",PlayerProfile.svelte:stat-cell
 Trend error message,Player profile,Alert shown inside the Trend panel when the career trend request fails.,PlayerProfile.svelte:trendError
 Trend metric toggle,Player profile,"Buttons (ADR, KAST%, K/D, HS%) that switch which metric the sparkline plots.",PlayerProfile.svelte:prof-metric
 Trend panel,Player profile,"Panel titled ""Trend"" holding the metric toggles and the career sparkline chart.",PlayerProfile.svelte:trend
