@@ -281,7 +281,7 @@ Economy curve panel,Economy tab,"Panel on the match's Economy tab showing the pe
 Economy empty state message,Economy tab,"""No economy rows for this match."" placeholder shown inside the panel when the chart has no data.",EconCurve.svelte:n
 Economy header row,Economy tab,"Line above the economy chart showing round count, warmup rounds skipped, and a hint to click buy chips.",Economy.svelte:econ-head
 Economy hover tooltip,Economy tab,"Floating tooltip over the hovered round showing round number, winner side chip, optional pistol badge, and per-team equip / net worth columns.",EconCurve.svelte:econ-tooltip
-Economy legend note,Economy tab,"Muted caption under the strip explaining the pistol swatch, ✓ favorite held, ✗ upset, and click-to-open behavior.",EconCurve.svelte:econ-strip-note
+Economy legend note,Economy tab,"Muted caption under the strip explaining the pistol swatch, ✓ favorite held, ✗ upset, grabber even buy (toss-up), circle no-verdict, and click-to-open behavior.",EconCurve.svelte:econ-strip-note
 Economy load error,Economy tab,Red alert at the top of the Economy tab when economy or round data fails to load.,Economy.svelte:error
 Economy loading state,Economy tab,"""Loading economy…"" placeholder shown on the Economy tab until data arrives.",Economy.svelte:loading
 Economy metric toggle,Economy tab,"""Equip value"" and ""Net worth"" buttons switching the economy chart between equipment value and net worth (equipment value + unspent money − free spawn-issued default pistols).",EconCurve.svelte:econ-toggle
@@ -302,7 +302,7 @@ Stat card formula tooltip,Economy tab,Hover text on each economy summary card ex
 Summary inferred badge,Economy tab,"""inferred"" chip on the Lost equipment summary card flagging the destroyed-equipment assumption.",Economy.svelte:econ-badge-inferred
 T economy line,Economy tab,"Polyline of the team that finished T across the chart — team-identity color, dashed when that team lost the match.",EconCurve.svelte:econ-line
 Team line legend,Economy tab,"Legend above the chart naming both teams with their line swatch (identity-colored; dashed = match loser) and the solid/dashed reading.",EconCurve.svelte:econ-legend
-Upset favorite mark,Economy tab,"Codicon glyph in a strip cell marking the buy-class verdict: ✓ favorite held, ✗ upset (cheaper buys won), circle for an even buy (toss-up).",EconCurve.svelte:econ-strip-mark
+Upset favorite mark,Economy tab,"Codicon glyph in a strip cell marking the buy-class verdict: ✓ favorite held, ✗ upset (cheaper buys won), grabber for an even buy (toss-up), circle when there is no verdict.",EconCurve.svelte:econ-strip-mark
 Winner equipment value advantage card,Economy tab,"""Winner equipment value advantage"" card showing average winner-minus-loser equipment value; click drills to the largest-gap round.",Economy.svelte:avgGap
 Winner side chip,Economy tab,CT/T/— chip in the Winner column of the buy table.,Economy.svelte:side
 Generate heatmap button,Heatmaps tab,"""Generate"" or ""Regenerate"" button that computes the heatmap raster; shows ""Generating…"" while running.",Heatmaps.svelte:generate

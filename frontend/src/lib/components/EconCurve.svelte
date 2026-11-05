@@ -121,11 +121,12 @@
   // equal — the label set mirrors internal/analytics/classify.go:
   // pistol|full|force|save|eco, unknown → null); missing/unknown on
   // either side stays neutral. ✓ = the winner bought the stronger class
-  // (favorite held), ✗ = the cheaper-buys side won (upset), a codicon
-  // circle = even buy (toss-up). Class, not the toggled metric, so the
+  // (favorite held), ✗ = the cheaper-buys side won (upset), = (grabber
+  // codicon) = even buy (toss-up), a codicon circle = no verdict
+  // (unknown class or no winner). Class, not the toggled metric, so the
   // mark is stable across the toggle. The ✓/✗ values double as the
-  // class:hold / class:upset sentinels below — only the RENDERED neutral
-  // glyph differs from them.
+  // class:hold / class:upset sentinels below — only the RENDERED glyphs
+  // differ from them.
   const CLASS_RANK = { full: 2, force: 1 };
 
   function classRank(c) {
@@ -149,7 +150,7 @@
     if (!rr || rr[0] === null || rr[1] === null) return '·';
     if (rr[0] > rr[1]) return '✓';
     if (rr[0] < rr[1]) return '✗';
-    return '·';
+    return '=';
   }
 
   // verdict spells mark() out for the tooltip title (the legend carries
@@ -323,7 +324,7 @@
             class="econ-strip-mark"
             class:hold={mark(r) === '✓'}
             class:upset={mark(r) === '✗'}
-            >{#if mark(r) === '✓'}<span class="codicon codicon-check"></span>{:else if mark(r) === '✗'}<span class="codicon codicon-error"></span>{:else}<span class="codicon codicon-circle-small"></span>{/if}</span
+            >{#if mark(r) === '✓'}<span class="codicon codicon-check"></span>{:else if mark(r) === '✗'}<span class="codicon codicon-error"></span>{:else if mark(r) === '='}<span class="codicon codicon-grabber"></span>{:else}<span class="codicon codicon-circle-small"></span>{/if}</span
           >
         </button>
       {/each}
@@ -332,7 +333,9 @@
       <span class="econ-strip-swatch pistol" aria-hidden="true"></span>
       pistol round · <span class="codicon codicon-check"></span> favorite (higher buy
       class) held · <span class="codicon codicon-error"></span> upset (lower buy class
-      won) · even buy = toss-up · click a round to open it
+      won) · <span class="codicon codicon-grabber"></span> even buy (toss-up) · <span
+        class="codicon codicon-circle-small"></span> no verdict · click a round to open
+      it
     </p>
   {/if}
 </section>
