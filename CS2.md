@@ -374,3 +374,43 @@ at the end of the section.
   https://docs.rs/cs2-nav/latest/src/cs2_nav/constants.rs.html
   (2026-11-04); meters observation from this repo's golden-demo events
   (2026-11-04).
+
+- **Starting money (`mp_startmoney`) on pistol rounds** — how much cash does
+  each side start a half with? Competitive/Premier/Wingman start every
+  player at **$800** (`mp_startmoney` default 800; Casual starts at $1000),
+  so a team's pistol-round money is **5 × $800 = $4000** — and halftime
+  resets everyone back to $800 for the second pistol round. Verified on the
+  golden demo: on rounds 1 and 13 each side's freeze-end
+  `money_sampled_sum + spent` equals exactly 4000 (CT 600+3400 / T 1400+2600
+  in round 1; 600+3400 on both sides in round 13), i.e. all starting cash is
+  accounted for by unspent money + buys.
+  **Source** — csdb.gg mp-startmoney ("Default Value 800"),
+  https://csdb.gg/command/mp-startmoney/; totalcsgo mpstartmoney
+  ("Default is 800 … each half"), https://totalcsgo.com/commands/mpstartmoney;
+  Counter-Strike Wiki "Money" (Premier/Competitive/Wingman $800, Casual
+  $1000), https://counterstrike.fandom.com/wiki/Money (2026-11-05);
+  golden-demo round-economy dump (2026-11-05).
+
+- **Free spawn-issued default pistol inside equipment value (net worth
+  caveat)** — is every dollar of freeze-end equipment value money the side
+  paid? No: each player is **issued their default sidearm free** (USP-S or
+  P2000 for CT, Glock-18 for T — buy price $200), and
+  `m_unFreezetimeEndEquipmentValue` counts it at **$200** although nobody
+  spent anything on it (verified on the golden demo: a player with only a
+  default pistol reads `equipFTEnd = 200`; USP-S + kevlar reads 850). The
+  moment a player upgrades their sidearm (P250, dualies, …) the free pistol
+  drops out of inventory — and therefore out of equipment value — so two
+  sides that both hold exactly $4000 of money show different
+  `equipment + cash` totals on a pistol round. Golden demo: round 1 CT holds
+  3 free USP-S ($600) vs T 5 free Glocks ($1000) → raw equip+cash 4600 vs
+  5000; round 13 CT 5 USP-S ($1000) vs T 4 Glocks ($800) → 5000 vs 4800.
+  Net worth must therefore subtract free default pistols held
+  (spectra: `round_economy.free_pistol_value`), which makes both sides read
+  exactly $4000 (= 5 × $800) on both golden-demo pistol rounds. Caveat: a
+  rebought default ($200 buy-back) is also counted as free here — the demo
+  data cannot distinguish it. **Source** — spectra golden-demo freeze-end
+  inventory dump (2026-11-05); Counter-Strike Wiki USP-S ("free spawn
+  pistol", repurchase for $200),
+  https://counterstrike.fandom.com/wiki/USP-S; csbepro Glock-18 guide
+  ("$200 buy-back"), https://csbepro.com/cs2-weapon/glock-18-guide-for-counter-strike-2/
+  (2026-11-05).

@@ -34,20 +34,25 @@
   const n = $derived(rows.length);
 
   // Per-team value for one round: equipment value, or net worth =
-  // equipment value + the team's unspent money at the same freeze end.
+  // equipment value + the team's unspent money at the same freeze end,
+  // minus the free spawn-issued default pistols it still holds (granted,
+  // not bought — CS2.md "Free spawn-issued default pistol"; without the
+  // subtraction the two pistol rounds read 4600/5000 and 5000/4800 on
+  // the golden demo instead of 4000 on both sides).
   function valueOf(r, key) {
     const equip = Number(key === 'ct' ? r.equipCT : r.equipT) || 0;
     if (metric === 'equip') return equip;
-    const cash = Number(key === 'ct' ? r.moneyCT : r.moneyT) || 0;
-    return equip + cash;
+    return columns(r, key).net;
   }
 
   // Both columns of the hover tooltip, per team (net worth always =
-  // equip + unspent money; the chart plots one of them at a time).
+  // equip + unspent money − free spawn pistols; the chart plots one of
+  // them at a time).
   function columns(r, key) {
     const equip = Number(key === 'ct' ? r.equipCT : r.equipT) || 0;
     const cash = Number(key === 'ct' ? r.moneyCT : r.moneyT) || 0;
-    return { equip, net: equip + cash };
+    const free = Number(key === 'ct' ? r.freePistolCT : r.freePistolT) || 0;
+    return { equip, net: equip + cash - free };
   }
 
   const series = $derived.by(() => {
@@ -116,11 +121,12 @@
   // equal — the label set mirrors internal/analytics/classify.go:
   // pistol|full|force|save|eco, unknown → null); missing/unknown on
   // either side stays neutral. ✓ = the winner bought the stronger class
-  // (favorite held), ✗ = the cheaper-buys side won (upset), a codicon
-  // circle = even buy (toss-up). Class, not the toggled metric, so the
+  // (favorite held), ✗ = the cheaper-buys side won (upset), = (grabber
+  // codicon) = even buy (toss-up), a codicon circle = no verdict
+  // (unknown class or no winner). Class, not the toggled metric, so the
   // mark is stable across the toggle. The ✓/✗ values double as the
-  // class:hold / class:upset sentinels below — only the RENDERED neutral
-  // glyph differs from them.
+  // class:hold / class:upset sentinels below — only the RENDERED glyphs
+  // differ from them.
   const CLASS_RANK = { full: 2, force: 1 };
 
   function classRank(c) {
@@ -144,7 +150,7 @@
     if (!rr || rr[0] === null || rr[1] === null) return '·';
     if (rr[0] > rr[1]) return '✓';
     if (rr[0] < rr[1]) return '✗';
-    return '·';
+    return '=';
   }
 
   // verdict spells mark() out for the tooltip title (the legend carries
@@ -318,7 +324,7 @@
             class="econ-strip-mark"
             class:hold={mark(r) === '✓'}
             class:upset={mark(r) === '✗'}
-            >{#if mark(r) === '✓'}<span class="codicon codicon-check"></span>{:else if mark(r) === '✗'}<span class="codicon codicon-error"></span>{:else}<span class="codicon codicon-circle-small"></span>{/if}</span
+            >{#if mark(r) === '✓'}<span class="codicon codicon-check"></span>{:else if mark(r) === '✗'}<span class="codicon codicon-error"></span>{:else if mark(r) === '='}<span class="codicon codicon-grabber"></span>{:else}<span class="codicon codicon-circle-small"></span>{/if}</span
           >
         </button>
       {/each}
@@ -327,7 +333,9 @@
       <span class="econ-strip-swatch pistol" aria-hidden="true"></span>
       pistol round · <span class="codicon codicon-check"></span> favorite (higher buy
       class) held · <span class="codicon codicon-error"></span> upset (lower buy class
-      won) · even buy = toss-up · click a round to open it
+      won) · <span class="codicon codicon-grabber"></span> even buy (toss-up) · <span
+        class="codicon codicon-circle-small"></span> no verdict · click a round to open
+      it
     </p>
   {/if}
 </section>

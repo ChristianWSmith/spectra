@@ -215,6 +215,10 @@ type Round struct {
 // (m_pInGameMoneyServices.m_iTotalCashSpent) between this round's
 // freeze time end and the previous one (extract.agg.freezeEnd) — money
 // spent on buys, not equipment value.
+// FreePistolValue is the side's held free spawn-issued default-pistol
+// value at the same freeze end (extract.freeSpawnPistolValue): granted,
+// not bought, so net worth subtracts it (CS2.md "Free spawn-issued
+// default pistol").
 type RoundEconomy struct {
 	MatchID         int64  `json:"matchId"`
 	Round           int    `json:"round"`
@@ -223,6 +227,7 @@ type RoundEconomy struct {
 	MoneySampledSum int    `json:"moneySampledSum"`
 	MoneySamples    int    `json:"moneySamples"`
 	Spent           int    `json:"spent"`
+	FreePistolValue int    `json:"freePistolValue"`
 }
 
 // Event is one normalized typed event (events table). Seq is insertion

@@ -337,6 +337,60 @@ func TestGetEconomySpent(t *testing.T) {
 	}
 }
 
+// TestGetEconomyFreePistol pins the round-trip of
+// round_economy.free_pistol_value (the side's held free spawn-issued
+// default-pistol value at freeze end — net worth subtracts it) into
+// EconomyRow.FreePistolCT/FreePistolT and the round-detail read,
+// including the COALESCE-to-0 path for a round with no economy row.
+func TestGetEconomyFreePistol(t *testing.T) {
+	s := openMem(t)
+	id := saveTestMatch(t, s, "/d/freep.dem", "sha-freep", time.Now())
+	em := testExtracted("sha-freep", time.Now())
+	em.Match.RealRounds = 2
+	em.Rounds = []models.Round{
+		{Number: 1, Winner: "ct", EquipCT: 4000, EquipT: 3600, StartTick: 100, EndTick: 2000},
+		{Number: 2, Winner: "t", EquipCT: 5000, EquipT: 1500, StartTick: 2001, EndTick: 4000},
+	}
+	// Round 2 has no round_economy rows on purpose (COALESCE path).
+	em.RoundEconomy = []models.RoundEconomy{
+		{Round: 1, Side: "ct", EquipValue: 4000, MoneySampledSum: 600, MoneySamples: 5, Spent: 3400, FreePistolValue: 600},
+		{Round: 1, Side: "t", EquipValue: 3600, MoneySampledSum: 1400, MoneySamples: 5, Spent: 2600, FreePistolValue: 1000},
+	}
+	if err := s.SaveExtracted(id, em); err != nil {
+		t.Fatalf("SaveExtracted: %v", err)
+	}
+	rows, err := s.GetEconomy(id)
+	if err != nil {
+		t.Fatalf("GetEconomy: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("rows = %d, want 2", len(rows))
+	}
+	if rows[0].FreePistolCT != 600 || rows[0].FreePistolT != 1000 {
+		t.Errorf("round 1 free pistols = CT %d / T %d, want 600/1000 (stored round_economy.free_pistol_value)",
+			rows[0].FreePistolCT, rows[0].FreePistolT)
+	}
+	// Net worth the chart plots: equip + cash − free pistols → both
+	// sides read the $4000 starting money on this pistol round.
+	if got := rows[0].EquipCT + rows[0].MoneyCT - rows[0].FreePistolCT; got != 4000 {
+		t.Errorf("round 1 CT net worth = %d, want 4000", got)
+	}
+	if got := rows[0].EquipT + rows[0].MoneyT - rows[0].FreePistolT; got != 4000 {
+		t.Errorf("round 1 T net worth = %d, want 4000", got)
+	}
+	if rows[1].FreePistolCT != 0 || rows[1].FreePistolT != 0 {
+		t.Errorf("round 2 free pistols = CT %d / T %d, want 0/0 (no economy row)",
+			rows[1].FreePistolCT, rows[1].FreePistolT)
+	}
+	det, err := s.GetRoundDetail(id, 1)
+	if err != nil {
+		t.Fatalf("GetRoundDetail: %v", err)
+	}
+	if len(det.Economy) != 2 || det.Economy[0].FreePistolValue != 600 || det.Economy[1].FreePistolValue != 1000 {
+		t.Errorf("round detail economy = %+v, want free pistol 600/1000", det.Economy)
+	}
+}
+
 func TestCareerRebuildMath(t *testing.T) {
 	s := openMem(t)
 	id := saveTestMatch(t, s, "/d/career.dem", "sha-career", time.Now())

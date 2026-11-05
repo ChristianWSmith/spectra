@@ -143,6 +143,39 @@ func wepName(w *common.Equipment) string {
 	return w.Type.String()
 }
 
+// defaultPistolFreeValue is what the game's equipment value assigns to a
+// free spawn-issued default sidearm (USP-S/P2000 for CT, Glock-18 for T)
+// that a player still holds at freeze time end: $200, although nobody paid
+// for it (CS2.md "Free spawn-issued default pistol" — verified on the
+// golden demo: a player with only a knife + default pistol reads
+// equipFTEnd = 200).
+const defaultPistolFreeValue = 200
+
+// freeSpawnPistolValue sums the free spawn-issued default pistols in a
+// player's freeze-time-end inventory at their equipment-value price. Net
+// worth subtracts the per-side total (round_economy.free_pistol_value)
+// because these pistols are granted, not bought: two pistol-round sides
+// that both hold $4000 of money must read the same net worth even though
+// one side upgraded its sidearms and dropped the free pistols (CS2.md
+// "Free spawn-issued default pistol").
+//
+// Caveat (same CS2.md entry): demo data cannot tell a spawn-issued
+// default apart from a rebought ($200 buy-back) or picked-up one, so all
+// held USP-S/P2000/Glock-18 count as free here.
+func freeSpawnPistolValue(weapons []*common.Equipment) int {
+	v := 0
+	for _, w := range weapons {
+		if w == nil {
+			continue
+		}
+		switch w.Type {
+		case common.EqUSP, common.EqP2000, common.EqGlock:
+			v += defaultPistolFreeValue
+		}
+	}
+	return v
+}
+
 // utilEquipmentTypes is extract's copy of the utility set: the equipment
 // types whose PLAYER_HURT damage counts as utility damage (h.isUtility →
 // the util_dmg column). The parser gate sees equipment TYPES, not the
