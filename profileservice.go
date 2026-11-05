@@ -68,8 +68,8 @@ type Profile struct {
 	KD           float64                    `json:"kd"`
 	HSPct        float64                    `json:"hsPct"`
 	KASTPct      float64                    `json:"kastPct"`
-	OpeningRate  float64                    `json:"openingRate"` // duel win rate
-	TradeRate    float64                    `json:"tradeRate"`
+	OpeningRate  float64                    `json:"openingRate"` // duel win rate, 0..100
+	TradeRate    float64                    `json:"tradeRate"`   // 0..100 percent (see GetProfile)
 	Clutches     int                        `json:"clutches"`
 	ClutchWinPct float64                    `json:"clutchWinPct"`
 	Sides        []ProfileSide              `json:"sides"`
@@ -129,9 +129,12 @@ func (s *ProfileService) GetProfile(steamID string) (Profile, error) {
 	if err != nil {
 		return Profile{}, err
 	}
-	// TradeRate over the career: trades / max(deaths, 1) from history sums
-	// (career has no death column; history covers ≤100 matches — fine at
-	// this library scale).
+	// TradeRate over the career: 100 × trades / max(deaths, 1) from history
+	// sums (career has no death column; history covers ≤100 matches — fine
+	// at this library scale). Percent scale: 0..100 like OpeningRate above
+	// and every other *Pct/*Rate field on this DTO — the value fmtPercent
+	// renders directly (the Combat tab's Trade% follows the same rule in
+	// store.GetCombatStats; pinned by TestGetProfileTradeRatePercent).
 	deaths := 0
 	sideAgg := map[string]*ProfileSide{}
 	// Per-side kill/death pools for ProfileSide.KD — the same rows the
@@ -167,7 +170,7 @@ func (s *ProfileService) GetProfile(steamID string) (Profile, error) {
 	}
 	p.History = history
 	if deaths > 0 {
-		p.TradeRate = float64(career.Trades) / float64(deaths)
+		p.TradeRate = 100 * float64(career.Trades) / float64(deaths)
 	}
 	for _, side := range sideAgg {
 		if side.Matches > 0 {

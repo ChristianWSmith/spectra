@@ -103,18 +103,23 @@ export const NETWORTH_DEF = `Net worth — ${lowerFirst(glossaryText('Net worth'
 // --- Tooltips with no glossary entry ----------------------------------------
 
 // Entry% (Combat scoreboard column). Verified: EntryRate =
-// player_stats.entry_kills / rounds_played — entry_kills is the extractor's
-// first-blood attribution (internal/extract/agg.go), NOT the engagement
-// detector (internal/analytics/analytics.go defers the entry kind).
+// 100 × player_stats.entry_kills / rounds_played — entry_kills is the
+// extractor's first-blood attribution (internal/extract/agg.go: at most
+// one first blood exists per round, so the percent stays within 0..100),
+// NOT the engagement detector (internal/analytics/analytics.go defers the
+// entry kind). Percent scale: 0..100, like every other *Pct/*Rate field
+// the views hand to fmtPercent (store.GetCombatStats).
 export const ENTRY_DEF =
-  'Entry rate — entry kills ÷ rounds played (player_stats.entry_kills: the extractor’s first-blood attribution for the round).';
+  'Entry rate — entry kills ÷ rounds played, as a percent of rounds played (0–100): the share of rounds in which the player drew first blood (player_stats.entry_kills: the extractor’s first-blood attribution for the round).';
 
-// Trade% (Combat) and the profile's career trade rate — same formula on
-// both sides: player_stats.trade_kills / deaths (a trade kill answers a
-// teammate’s death inside the trade window; the denominator is the
-// player’s own deaths, so the rate is not a share of teammate deaths).
+// Trade% (Combat) and the profile's career trade rate — same formula AND
+// scale on both sides: 100 × player_stats.trade_kills / deaths (a trade
+// kill answers a teammate's death inside the trade window; the
+// denominator is the player's own deaths, so the rate is not a share of
+// teammate deaths). It is a ratio rather than a share, so it may exceed
+// 100 — rendered by fmtPercent like every other percent field.
 export const TRADE_DEF =
-  'Trade rate — trade kills ÷ deaths (player_stats: a trade kill answers a teammate’s death inside the trade window; the denominator is the player’s own deaths).';
+  'Trade rate — trade kills ÷ deaths, as a percent: a trade kill answers a teammate’s death inside the trade window and the denominator is the player’s own deaths (player_stats), so this is a ratio rather than a share and can exceed 100%.';
 
 // Untraded deaths (Combat): engagement rows of kind=untraded with the
 // player as victim — no teammate of the victim killed the victim’s killer
