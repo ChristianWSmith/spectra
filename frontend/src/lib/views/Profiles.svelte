@@ -4,11 +4,14 @@
   // canonical player profile. Rows come from the one player-list service
   // (listPlayers('') — the same source PlayerProfile's picker and the
   // command palette use); the search is a client-side filter over that
-  // fetched list. A row only navigates when its id is a well-formed
+  // fetched list AND offers the same suggestion rows (SuggestInput) the
+  // profile finder does — picking one opens the profile straight away.
+  // A row only navigates when its id is a well-formed
   // 17-digit Steam id (isSteam — bots/rows without one are inert).
   import { listPlayers, errText } from '../services.js';
   import { isSteam, openProfile } from '../nav.js';
   import { fmt1 } from '../fmt.js';
+  import SuggestInput from '../components/SuggestInput.svelte';
 
   let { nav = () => {} } = $props();
 
@@ -53,12 +56,18 @@
   </header>
 
   <div class="toolbar pf-toolbar">
-    <input
-      class="input pf-search"
-      type="search"
-      bind:value={query}
+    <SuggestInput
+      id="pf-search"
+      wrapClass="pf-search"
       placeholder="Search players…"
-      aria-label="Search players"
+      ariaLabel="Search players"
+      items={players}
+      kind="player"
+      align="start"
+      bind:value={query}
+      onselect={(p) => {
+        if (isSteam(p.steamId)) openProfile(nav, p.steamId);
+      }}
     />
     <span class="muted pf-count" role="status">
       {filtered.length} of {players.length} player{players.length === 1 ? '' : 's'}

@@ -127,13 +127,24 @@ export function importPaths(paths) {
 
 // filter is the structured facet object ({map, player}) the store's
 // MatchListFilter takes — ANDed with each other and with the free-text
-// query server-side. Normalized to both keys so equivalent filters share
-// one cache entry; callers that only want the plain list pass nothing.
+// query server-side. The Library UI exposes ONLY the facets now (the
+// free-text box was removed), so the view passes query '' — the
+// parameter stays here so the binding/API keeps its shape. Normalized to
+// both keys so equivalent filters share one cache entry; callers that
+// only want the plain list pass nothing.
 export function listMatches(query, sortKey, desc, filter) {
   const f = { map: (filter && filter.map) || '', player: (filter && filter.player) || '' };
   return cachedRead('ListMatches', [query, sortKey, desc, f], () =>
     LibraryService.ListMatches(query, sortKey, desc, f),
   );
+}
+
+// listMapNames returns the distinct map names present in the library
+// (A→Z, blanks omitted) — the suggestion source for the Library's map
+// facet (store.ListMapNames). Read-cached like listMatches: a fresh
+// import flushes the cache through the spectra:* listeners above.
+export function listMapNames() {
+  return cachedRead('ListMapNames', [], () => LibraryService.ListMapNames());
 }
 
 // deleteMatch removes a match's extracted data; deleteDemo also removes

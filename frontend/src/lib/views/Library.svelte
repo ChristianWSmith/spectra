@@ -3,6 +3,8 @@
     importDialog,
     importPaths,
     listMatches,
+    listMapNames,
+    listPlayers,
     listJobs,
     deleteMatch,
     reprocess,
@@ -21,6 +23,7 @@
   import StatusChip from '../components/StatusChip.svelte';
   import SortTh from '../components/SortTh.svelte';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
+  import SuggestInput from '../components/SuggestInput.svelte';
 
   // query is the route query: #/library?map=<MapName>&player=<steamid>
   // presets the structured filters below (the profile → library deep
@@ -50,16 +53,24 @@
   let matches = $state([]);
   let jobs = $state([]);
   let jobProgress = $state(new Map()); // jobId -> latest progress payload
-  let query = $state('');
-  // Structured list facets (ANDed with each other and with `query` —
-  // store.MatchListFilter, forwarded by services.js listMatches): a map
-  // substring and "has player X" (exact 17-digit SteamID or name
-  // substring — one input covers both). Seeded from the route query so a
-  // deep link (#/library?map=&player=) lands pre-filtered; the preset
-  // effect below re-applies them if the route query changes while this
-  // view stays mounted.
+  // Structured list facets (ANDed with each other — store.MatchListFilter,
+  // forwarded by services.js listMatches): a map substring and "has player
+  // X" (exact 17-digit SteamID or name substring — one input covers both).
+  // These two inputs are the Library's ONLY search: the free-text box is
+  // gone (listMatches' query parameter stays in the binding/API, and every
+  // fetch below simply passes ''). Seeded from the route query so a deep
+  // link (#/library?map=&player=) lands pre-filtered; the preset effect
+  // below re-applies them if the route query changes while this view stays
+  // mounted.
   let mapFilter = $state(String(routeQuery.map || ''));
   let playerFilter = $state(String(routeQuery.player || ''));
+  // Suggestion sources for the two facets, fetched once on mount: the
+  // distinct maps in the library (store.ListMapNames) and every player in
+  // it (listPlayers — the same library-wide career list the Profiles view
+  // and the profile finder use). Both reads are invalidated with the rest
+  // of the read cache on spectra:library-changed.
+  let mapNames = $state([]);
+  let libPlayers = $state([]);
   let sortKey = $state('extracted_at');
   let desc = $state(true);
   let error = $state('');
@@ -95,30 +106,30 @@
     playerFilter = String(routeQuery.player || '');
   });
 
-  // Debounced list fetch: re-arms on every query/sort/filter change and
-  // fires 250 ms later, so typing doesn't hammer the store. First run is
+  // Debounced list fetch: re-arms on every sort/filter change and fires
+  // 250 ms later, so typing doesn't hammer the store. First run is
   // immediate so the library loads without the debounce delay (the filter
   // state is seeded from the route query at init, so that first fetch
-  // already carries any deep-link preset).
+  // already carries any deep-link preset). The free-text query is always
+  // '' — the facets are the search now.
   let firstList = true;
   $effect(() => {
-    const q = query;
     const sk = sortKey;
     const d = desc;
     const mf = mapFilter;
     const pf = playerFilter;
     if (firstList) {
       firstList = false;
-      refreshList(q, sk, d, mf, pf);
+      refreshList(sk, d, mf, pf);
       return;
     }
-    const timer = setTimeout(() => refreshList(q, sk, d, mf, pf), 250);
+    const timer = setTimeout(() => refreshList(sk, d, mf, pf), 250);
     return () => clearTimeout(timer);
   });
 
-  async function refreshList(q = query, sk = sortKey, d = desc, mf = mapFilter, pf = playerFilter) {
+  async function refreshList(sk = sortKey, d = desc, mf = mapFilter, pf = playerFilter) {
     try {
-      matches = await listMatches(q, sk, d, { map: mf, player: pf });
+      matches = await listMatches('', sk, d, { map: mf, player: pf });
       error = '';
     } catch (e) {
       error = errText(e);
@@ -147,11 +158,25 @@
     }
   }
 
-  // Mount: jobs + import-dir scan + event subscriptions. The initial
-  // list load comes from the debounced effect above (fires once on mount).
+  // Mount: jobs + import-dir scan + the facet suggestion sources + event
+  // subscriptions. The initial list load comes from the debounced effect
+  // above (fires once on mount). Suggestion failures are swallowed — a
+  // missing suggestion list degrades to "no dropdown", never to an error
+  // banner, because the facets themselves still work as LIKE filters.
   $effect(() => {
+    let live = true;
     refreshJobs();
     refreshDemoFiles();
+    listMapNames()
+      .then((names) => {
+        if (live) mapNames = names || [];
+      })
+      .catch(() => {});
+    listPlayers('')
+      .then((rows) => {
+        if (live) libPlayers = rows || [];
+      })
+      .catch(() => {});
     const offs = [
       subscribeJobProgress((snap) => (jobProgress = snap)),
       onJobDone(() => {
@@ -171,20 +196,20 @@
         if (files && files.length) doImportPaths(files);
       }),
     ];
-    return () => offs.forEach((off) => off());
+    return () => {
+      live = false;
+      offs.forEach((off) => off());
+    };
   });
 
-  // Any narrowing beyond "the whole library": the free-text query or a
-  // structured facet. Drives the empty state — a filtered-out library
-  // must offer the "no match" message, never "No matches yet" — and its
-  // text (see filterSummary).
-  const searching = $derived(
-    !!(query.trim() || mapFilter.trim() || playerFilter.trim()),
-  );
+  // Any narrowing beyond "the whole library": a structured facet (the
+  // Library's only search now). Drives the empty state — a filtered-out
+  // library must offer the "no match" message, never "No matches yet" —
+  // and its text (see filterSummary).
+  const searching = $derived(!!(mapFilter.trim() || playerFilter.trim()));
 
   const filterSummary = $derived.by(() => {
     const parts = [];
-    if (query.trim()) parts.push(`“${query.trim()}”`);
     if (mapFilter.trim()) parts.push(`map “${mapFilter.trim()}”`);
     if (playerFilter.trim()) parts.push(`player “${playerFilter.trim()}”`);
     return parts.join(' + ');
@@ -434,53 +459,50 @@
     <button class="btn primary" onclick={doImport}>Import…</button>
     <span class="muted">or drop .dem / .dem.zst files</span>
     <div class="spacer"></div>
-    <input
-      class="input"
-      type="search"
-      placeholder="Search map, path, team…"
-      aria-label="Search matches"
-      bind:value={query}
-    />
+    <!-- The Library's ONLY search controls, sitting where the free-text
+         box used to be: the map + player facets, ANDed with each other
+         (store.MatchListFilter). A filled input is an ACTIVE filter
+         (accent border); each input's native × clears it, the button
+         clears both. Values also arrive pre-set from the route query
+         (#/library?map=&player= — the profile → library deep link), and
+         each input offers suggestions drawn from the library itself
+         (distinct maps / the profile list) without ever constraining
+         what may be typed. -->
+    <div class="lib-filters" role="group" aria-label="Library filters">
+      <span class="lib-filter-field">
+        <label class="field-label" for="lib-filter-map">Map</label>
+        <SuggestInput
+          id="lib-filter-map"
+          inputClass="lib-filter"
+          placeholder="e.g. de_mirage"
+          ariaLabel="Filter by map"
+          items={mapNames}
+          bind:value={mapFilter}
+          onselect={(m) => (mapFilter = m)}
+        />
+      </span>
+      <span class="lib-filter-field">
+        <label class="field-label" for="lib-filter-player">Player</label>
+        <SuggestInput
+          id="lib-filter-player"
+          inputClass="lib-filter"
+          kind="player"
+          placeholder="Player name or SteamID"
+          ariaLabel="Filter by player"
+          items={libPlayers}
+          bind:value={playerFilter}
+          onselect={(p) => (playerFilter = p.steamId || p.name)}
+        />
+      </span>
+      {#if mapFilter || playerFilter}
+        <button
+          class="btn small ghost"
+          title="Clear the map and player filters"
+          onclick={clearFilters}>Clear filters</button
+        >
+      {/if}
+    </div>
   </header>
-
-  <!-- Structured search facets — ANDed with each other and with the
-       free-text box above (store.MatchListFilter). A filled input is an
-       ACTIVE filter (accent border); each input's native × clears it,
-       the button clears both. Values also arrive pre-set from the route
-       query (#/library?map=&player= — the profile → library deep link). -->
-  <div class="lib-filters" role="group" aria-label="Library filters">
-    <span class="lib-filter-field">
-      <label class="field-label" for="lib-filter-map">Map</label>
-      <input
-        id="lib-filter-map"
-        class="input lib-filter"
-        class:active={!!mapFilter.trim()}
-        type="search"
-        placeholder="e.g. de_mirage"
-        aria-label="Filter by map"
-        bind:value={mapFilter}
-      />
-    </span>
-    <span class="lib-filter-field">
-      <label class="field-label" for="lib-filter-player">Player</label>
-      <input
-        id="lib-filter-player"
-        class="input lib-filter"
-        class:active={!!playerFilter.trim()}
-        type="search"
-        placeholder="Player name or SteamID"
-        aria-label="Filter by player"
-        bind:value={playerFilter}
-      />
-    </span>
-    {#if mapFilter || playerFilter}
-      <button
-        class="btn small ghost"
-        title="Clear the map and player filters"
-        onclick={clearFilters}>Clear filters</button
-      >
-    {/if}
-  </div>
 
   <!-- Sortable header cells (SortTh): label + active-direction arrow; the
        button is the whole header target (same styling as the scoreboard's). -->

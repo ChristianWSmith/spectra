@@ -611,20 +611,14 @@
           <span class="score">{match.scoreCT}–{match.scoreT}</span>
           <span class={teamCls('t')}>{teams.t}</span>
         </h1>
-        <!-- The view's primary action: it comes IMMEDIATELY after the
-             team names/scoreline (above the meta line), carries the play
-             codicon and a size bump (.match-replay), so it reads as the
-             primary action. It navigates via openReplay below. -->
-        <button
-          class="btn primary match-replay"
-          title="Watch this match from tick 0 in the replay view"
-          onclick={openReplay}
-        >
-          <span class="codicon codicon-play"></span> Watch replay
-        </button>
-        <!-- Tickrate, voice presence and parser version live in the
-             Details tab (Key facts); only the encrypted-chat key state
-             stays up here. -->
+        <!-- The view's primary action: it rides the meta line below the
+             team names/scoreline (right-aligned, so a long matchup
+             wraps the line rather than crowding the title), carries the
+             play codicon and a size bump (.match-replay), so it still
+             reads as the primary action without costing a line of its
+             own. It navigates via openReplay below. Tickrate, voice
+             presence and parser version live in the Details tab (Key
+             facts); only the encrypted-chat key state stays up here. -->
         <p class="muted match-sub">
           {match.map || '—'}
           · half {halfScore.first}–{halfScore.second}
@@ -638,6 +632,13 @@
               ><span class="codicon codicon-lock"></span></span
             >
           {/if}
+          <button
+            class="btn primary match-replay"
+            title="Watch this match from tick 0 in the replay view"
+            onclick={openReplay}
+          >
+            <span class="codicon codicon-play"></span> Watch replay
+          </button>
         </p>
       </div>
     </header>
