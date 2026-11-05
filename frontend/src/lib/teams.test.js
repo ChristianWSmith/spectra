@@ -72,7 +72,7 @@ test('teamNames: clan name wins, then synthesized, then the bare side', () => {
   assert.deepEqual(teamNames(), { ct: 'CT', t: 'T' });
 });
 
-test('teamStartClass: start-side identity colors (changes #10/#20)', () => {
+test('teamStartClass: start-side identity colors', () => {
   // Regulation (one switch): the team that FINISHED CT started the first
   // half on T → orange; the team that finished T started on CT → indigo.
   assert.equal(teamStartClass('ct', 1), 'team-start-t');
