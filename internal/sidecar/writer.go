@@ -35,6 +35,11 @@ type Writer struct {
 	slotsLocked bool // slot table assigned by the first non-empty frame
 	skipped     map[uint64]bool
 
+	// st is the sparse player-state stream (state.go); its files are
+	// created lazily by the first AddState — a parse without a State
+	// sink ships no state.bin/idx at all.
+	st stateStream
+
 	created time.Time
 	closed  bool
 }
@@ -65,6 +70,11 @@ func NewWriter(dir string, tickRate float64) (*Writer, error) {
 		_ = bin.Close()
 		return nil, fmt.Errorf("sidecar: zstd writer: %w", err)
 	}
+	// Remove any stale state files: reprocessing replaces the sidecar in
+	// place, and the state stream is recreated lazily (a reprocess whose
+	// parse fails before AddState must not keep the old state.bin).
+	_ = os.Remove(filepath.Join(dir, StateBinName))
+	_ = os.Remove(filepath.Join(dir, StateIdxName))
 	return &Writer{
 		dir:      dir,
 		bin:      bin,
@@ -73,7 +83,14 @@ func NewWriter(dir string, tickRate float64) (*Writer, error) {
 		buf:      make([]byte, 0, BlockFrames*96),
 		slotOf:   make(map[uint64]int),
 		skipped:  make(map[uint64]bool),
-		created:  time.Now().UTC(),
+		st: stateStream{
+			dir:     dir,
+			enc:     enc,
+			intern:  map[string]uint8{unknownWeaponName: 0},
+			names:   []string{unknownWeaponName},
+			skipped: make(map[uint64]bool),
+		},
+		created: time.Now().UTC(),
 	}, nil
 }
 
@@ -169,8 +186,19 @@ func (w *Writer) Close(tickRate float64) (Meta, error) {
 	if err := w.flushBlock(); err != nil {
 		return meta, err
 	}
+	// State stream: flush its final block before the shared encoder
+	// closes, then close state.bin (close is a no-op when the stream was
+	// never used — no state files ship).
+	if err := w.st.close(); err != nil {
+		return meta, err
+	}
 	if err := w.bin.Close(); err != nil {
 		return meta, fmt.Errorf("sidecar: close %s: %w", BinName, err)
+	}
+	if w.st.bin != nil {
+		if err := w.st.bin.Close(); err != nil {
+			return meta, fmt.Errorf("sidecar: close %s: %w", StateBinName, err)
+		}
 	}
 	if err := w.enc.Close(); err != nil {
 		return meta, fmt.Errorf("sidecar: close encoder: %w", err)
@@ -196,6 +224,13 @@ func (w *Writer) Close(tickRate float64) (Meta, error) {
 		Encoding:      Encoding,
 		Players:       w.slots,
 		CreatedAt:     w.created,
+	}
+	// State stream capability (absent fields = no stream, which is how
+	// pre-stream imports read): version + the interned weapon-name table
+	// records live against.
+	if w.st.bin != nil {
+		meta.StateFormatVersion = StateFormatVersion
+		meta.WeaponNames = w.st.names
 	}
 	raw, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {

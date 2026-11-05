@@ -442,3 +442,31 @@ at the end of the section.
   https://counterstrike.fandom.com/wiki/USP-S; csbepro Glock-18 guide
   ("$200 buy-back"), https://csbepro.com/cs2-weapon/glock-18-guide-for-counter-strike-2/
   (2026-11-05).
+
+- **`weapon_fire` game-event payload (CS2)** — what each shot event
+  carries (acceptance cross-check for sampled attack-button state):
+  `userid` (player_controller — who fired), `weapon` (string, weapon name
+  used), `silenced` (bool), `userid_pawn` (strict ehandle). Fires on every
+  client weapon fire (knife attacks included). The event has NO position
+  and no ammo fields — ammo/trigger state must come from entity/usercmd
+  sampling, not from this event. **Source** — SteamDatabase
+  GameTracking-CS2 `resource/mod.gameevents`,
+  https://github.com/SteamDatabase/GameTracking-CS2/blob/master/game/csgo/pak01_dir/resource/mod.gameevents;
+  cs2.poggu.me dumped game events,
+  https://cs2.poggu.me/dumped-data/game-events (2026-11-05).
+
+- **Reserve ammo unit changed to reserve MAGAZINES (March 2026 patch)** —
+  what does `AmmoReserve()` / `m_pReserveAmmo` mean on a given demo? The
+  "Guns, Guides, and Games" update (2026-03-18) replaced leftover-round
+  reserves with a magazine count: reloading dumps the used magazine and
+  takes a full one from a finite reserve (post-patch: AK-47 = 3 reserve
+  magazines, MP9 = 2; pre-patch demos still report rounds). The stored
+  VALUE is correct in both eras — only its interpretation differs — so any
+  future ammo UI must label the unit by demo era (demoinfocs documents
+  exactly this on `Equipment.AmmoReserve`). **Source** — Valve
+  announcement "Counter-Strike 2 :: Guns, Guides, and Games",
+  https://steamcommunity.com/games/CSGO/announcements/detail/532126482488623354
+  (2026-03-18); HLTV "Valve overhaul reloading mechanics in CS2 update",
+  https://www.hltv.org/news/44128/valve-overhaul-reloading-mechanics-in-cs2-update
+  (2026-03-19); demoinfocs-golang v6 `Equipment.AmmoReserve` doc comment
+  (retrieved 2026-11-05).

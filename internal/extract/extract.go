@@ -13,6 +13,7 @@ import (
 	"time"
 
 	demoinfocs "github.com/markus-wa/demoinfocs-golang/v6/pkg/demoinfocs"
+	"github.com/markus-wa/demoinfocs-golang/v6/pkg/demoinfocs/common"
 	"github.com/markus-wa/demoinfocs-golang/v6/pkg/demoinfocs/events"
 	"github.com/markus-wa/demoinfocs-golang/v6/pkg/demoinfocs/msg"
 	"github.com/markus-wa/demoinfocs-golang/v6/pkg/demoinfocs/option"
@@ -49,11 +50,53 @@ type PositionSink interface {
 	AddFrame(tick int32, players []PositionPlayer) error
 }
 
+// StatePlayer is one participant's authoritative state sample at one frame —
+// the unit the sidecar state stream (internal/sidecar) encodes as sparse
+// change records. Every field is READ from the parser per frame (never
+// arithmetically reconstructed): HP/Armor are pl.Health()/pl.Armor(), the
+// weapon fields are pl.ActiveWeapon()/pl.Weapons() (canonical wepName
+// vocabulary — the same strings events.weapon carries), and Attack is
+// pl.IsPressingButton(common.ButtonAttack).
+//
+// Death is a sample, not an inference: Alive=false forces HP to 0, and the
+// weapon/inventory/ammo fields are only sampled while alive (their entity
+// props are gone when the pawn dies) — after death the sidecar keeps the
+// last-known weapon/ammo as documented there, while HP stays a fresh 0
+// every frame. Armor is the exception: it is read as-is even when dead (the
+// stored value is whatever the demo carries; consumers gate on Alive).
+// SteamID is the raw SteamID64 (0 for bots).
+type StatePlayer struct {
+	SteamID     uint64
+	HP          int // 0..255, forced 0 when !Alive
+	Armor       int // 0..255 as read
+	Weapon      string
+	Inventory   []string // canonical names; nil when !Alive
+	MagAmmo     int      // active weapon magazine; 0 when !Alive
+	ReserveAmmo int      // active weapon reserve; 0 when !Alive
+	Attack      bool
+	Alive       bool
+}
+
+// StateSink receives one call per parsed frame with every playing
+// participant's state sample (dead included — hp 0 is evidence). seed is
+// true on the first frame after each round-counter change: sinks emit a
+// full seed record for every sample then, so no reader ever guesses a
+// starting value. Implementations must not retain players (the slice and
+// its inventory lists are reused across frames). An error returned from
+// AddState aborts the parse.
+type StateSink interface {
+	AddState(seed bool, players []StatePlayer) error
+}
+
 // ParseOptions configures one Parse call. Progress, if non-nil, is called
 // with (framesDone, framesTotal) throttled to ~every 1000 frames plus one
 // final call; framesTotal is 0 until the playback values are known (they
 // only arrive at the end of a Source 2 demo). Positions, if non-nil,
-// receives the per-frame alive-player sample stream. Voice,
+// receives the per-frame alive-player sample stream. State, if non-nil,
+// receives the per-frame authoritative player-state sample stream (see
+// StateSink); it rides alongside Positions — both are called once per
+// FrameDone, Positions first (the state stream reuses the position
+// stream's slot table, so the position sample assigns slots). Voice,
 // if non-nil, receives every CSVCMsg_VoiceData chunk.
 // NetKey, when non-empty, is the chat decryption key extracted from a
 // <demo>.info companion (demoinfocs.MatchInfoDecryptionKey) and enables
@@ -61,6 +104,7 @@ type PositionSink interface {
 type ParseOptions struct {
 	Progress  func(done, total int)
 	Positions PositionSink
+	State     StateSink
 	Voice     VoiceSink
 	NetKey    []byte
 }
@@ -132,8 +176,12 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 
 	pt := &progressTracker{cb: opts.Progress}
 	frames := 0
-	// Reused across frames: the sink consumes AddFrame synchronously.
+	// Reused across frames: the sinks consume their slices synchronously.
 	frameBuf := make([]PositionPlayer, 0, 10)
+	stateBuf := make([]StatePlayer, 0, 10)
+	// Round-start seeds for the state stream: the first frame after each
+	// round-counter change carries seed=true (see StateSink).
+	seeds := roundSeeds{}
 	p.RegisterEventHandler(func(events.FrameDone) {
 		frames++
 		a.flushRaw()
@@ -166,6 +214,24 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 			}
 			if err := sink.AddFrame(int32(gs.IngameTick()), frameBuf); err != nil {
 				sinkErr = fmt.Errorf("extract: position sink: %w", err)
+				cancel()
+			}
+		}
+		// State stream (see StateSink): every playing participant, dead
+		// included (hp 0 is a sample, not an inference). Runs AFTER the
+		// position sink so the shared slot table locks on position
+		// samples first.
+		if sink := opts.State; sink != nil && sinkErr == nil {
+			gs := p.GameState()
+			stateBuf = stateBuf[:0]
+			for _, pl := range gs.Participants().Playing() {
+				if pl == nil {
+					continue
+				}
+				stateBuf = append(stateBuf, sampleStatePlayer(pl))
+			}
+			if err := sink.AddState(seeds.take(a.currentRound), stateBuf); err != nil {
+				sinkErr = fmt.Errorf("extract: state sink: %w", err)
 				cancel()
 			}
 		}
@@ -285,4 +351,101 @@ func (pt *progressTracker) finish(done, total int) {
 	pt.last = done
 	pt.reported = true
 	pt.cb(done, total)
+}
+
+// roundSeeds decides when a state frame is a round-start seed: the first
+// frame after each round-counter change seeds once, every later frame in
+// the round does not. The zero value is armed for the very first frame it
+// sees (the demo's first frame seeds too) — a starting value is never
+// guessed downstream (see StateSink).
+type roundSeeds struct {
+	last  int
+	armed bool
+}
+
+// take reports whether the frame at round must emit seed records.
+func (rs *roundSeeds) take(round int) bool {
+	if rs.armed && round == rs.last {
+		return false
+	}
+	rs.armed = true
+	rs.last = round
+	return true
+}
+
+// sampleStatePlayer reads one participant's authoritative per-frame state
+// (cheap prop reads, once per frame per player — see StatePlayer). The
+// weapon/ammo fields are only read while the pawn is alive.
+func sampleStatePlayer(pl *common.Player) StatePlayer {
+	alive := pl.IsAlive()
+	var inventory []string
+	weapon, mag, reserve := "", 0, 0
+	if alive {
+		active := pl.ActiveWeapon()
+		weapon = wepName(active)
+		for _, w := range pl.Weapons() {
+			if w == nil {
+				continue
+			}
+			inventory = append(inventory, wepName(w))
+		}
+		if active != nil {
+			mag = active.AmmoInMagazine()
+			reserve = active.AmmoReserve()
+		}
+	}
+	return buildStateSample(pl.SteamID64, alive, pl.Health(), pl.Armor(), weapon, inventory, mag, reserve, pl.IsPressingButton(common.ButtonAttack))
+}
+
+// buildStateSample is the pure shaping rule the sidecar stream depends on
+// (kept separate from the parser reads so it is unit-testable): HP is
+// always stored — forced to 0 when dead — armor and the attack button are
+// stored as read, and the weapon/inventory/ammo fields only exist while
+// alive (dead pawns have no entity props to read; the stream documents the
+// last emitted value as last-known). Values are clamped onto the stored
+// wire widths here (u8 HP/armor, u16 ammo) so the writer never truncates.
+func buildStateSample(steamID uint64, alive bool, health, armor int, weapon string, inventory []string, mag, reserve int, attack bool) StatePlayer {
+	s := StatePlayer{
+		SteamID: steamID,
+		HP:      clampState8(health),
+		Armor:   clampState8(armor),
+		Attack:  attack,
+		Alive:   alive,
+	}
+	if !alive {
+		s.HP = 0 // death is authoritative evidence, not an inference
+		return s
+	}
+	s.Weapon = weapon
+	s.MagAmmo = clampState16(mag)
+	s.ReserveAmmo = clampState16(reserve)
+	if len(inventory) > 0 {
+		s.Inventory = make([]string, len(inventory))
+		copy(s.Inventory, inventory)
+	}
+	return s
+}
+
+// clampState8/16 bound an int onto the stored unsigned wire widths
+// (negative reads — AmmoInMagazine's -1 sentinel — clamp to 0).
+func clampState8(v int) int {
+	switch {
+	case v < 0:
+		return 0
+	case v > 255:
+		return 255
+	default:
+		return v
+	}
+}
+
+func clampState16(v int) int {
+	switch {
+	case v < 0:
+		return 0
+	case v > 65535:
+		return 65535
+	default:
+		return v
+	}
 }

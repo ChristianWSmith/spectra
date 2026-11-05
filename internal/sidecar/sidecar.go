@@ -34,7 +34,12 @@
 //	positions.idx  fixed 16-byte entries per block: firstFrame uint32,
 //	               byteOffset uint64, frameCount uint16, pad uint16
 //	meta.json      Meta (format version, tick rate, sample rate, counts,
-//	               slot table)
+//	               slot table, plus the state stream's stateFormatVersion
+//	               + weaponNames when present — see state.go)
+//
+// A second, independent stream (state.bin/state.idx, stateFormatVersion
+// 1) carries sparse per-change player state — see state.go for its
+// layout, rationale and measurement.
 package sidecar
 
 import (
@@ -99,6 +104,14 @@ type Meta struct {
 	Encoding      string    `json:"encoding"` // "q16-v2"
 	Players       []uint64  `json:"players"`  // slot table, first-seen order
 	CreatedAt     time.Time `json:"createdAt"`
+
+	// State stream capability (state.go): absent/0 = no state stream
+	// (matches imported before it, or a parse that never wired the State
+	// sink) — readers fail soft, exactly like a missing sidecar. The
+	// state record's weapon/inventory bytes are indices into WeaponNames
+	// (interned first-seen order, [0] = "Unknown").
+	StateFormatVersion int      `json:"stateFormatVersion,omitempty"`
+	WeaponNames        []string `json:"weaponNames,omitempty"`
 }
 
 // Slot returns the slot-table index for steamID, or -1 when the player is

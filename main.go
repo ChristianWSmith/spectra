@@ -319,6 +319,12 @@ func validPackName(s string) bool {
 //	/api/sidecar/<matchID>/positions?from=&to=   decompressed q16-v1 frame
 //	                                             stream (from/to frame
 //	                                             indexes; 0/0 = whole match)
+//	/api/sidecar/<matchID>/state?from=&to=       decompressed sparse
+//	                                             player-state record
+//	                                             stream (frame-indexed
+//	                                             changes; 0/0 = whole
+//	                                             match; 404 when the
+//	                                             match predates it)
 //	/api/sidecar/<matchID>/meta                  meta.json as JSON
 //	/api/sidecar/<matchID>/voice/pcm?steamId=&fromTick=&toTick=
 //	                                             s16le mono @16 kHz window
@@ -338,7 +344,7 @@ func handleSidecar(st *store.Store, w http.ResponseWriter, r *http.Request, p st
 		return
 	}
 	sub, tail, hasTail := strings.Cut(rem, "/")
-	if sub != "positions" && sub != "meta" && sub != "voice" {
+	if sub != "positions" && sub != "meta" && sub != "voice" && sub != "state" {
 		http.NotFound(w, r)
 		return
 	}
@@ -386,6 +392,27 @@ func handleSidecar(st *store.Store, w http.ResponseWriter, r *http.Request, p st
 		w.Header().Set("Content-Length", strconv.Itoa(len(buf)))
 		if _, err := w.Write(buf); err != nil {
 			log.Printf("sidecar: write positions: %v", err)
+		}
+	case "state":
+		// Sparse player-state records (state.go). A match imported
+		// before the stream has no state.bin — ErrNoState is absence,
+		// not a failure (404, same as a missing sidecar; capability
+		// itself is detected via meta.json's stateFormatVersion).
+		from, _ := strconv.Atoi(r.URL.Query().Get("from"))
+		to, _ := strconv.Atoi(r.URL.Query().Get("to"))
+		buf, err := rd.ReadStateRange(from, to)
+		if errors.Is(err, sidecar.ErrNoState) {
+			http.NotFound(w, r)
+			return
+		}
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/octet-stream")
+		w.Header().Set("Content-Length", strconv.Itoa(len(buf)))
+		if _, err := w.Write(buf); err != nil {
+			log.Printf("sidecar: write state: %v", err)
 		}
 	}
 }
