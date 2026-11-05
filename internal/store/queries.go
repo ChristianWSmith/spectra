@@ -295,6 +295,34 @@ func (s *Store) ListMatches(query, sortKey string, desc bool, filters ...MatchLi
 	return out, nil
 }
 
+// ListMapNames returns the distinct map names present in the library,
+// A→Z — the source for the Library map facet's suggestion dropdown. Only
+// non-empty names qualify (a row created before extraction, or a demo
+// whose map the parser could not read, is never a suggestion), and the
+// DISTINCT collapses the per-match rows to one entry each. Names come
+// back exactly as stored (no case folding on read — the facet's LIKE is
+// the case-insensitive side).
+func (s *Store) ListMapNames() ([]string, error) {
+	rows, err := s.db.Query(`SELECT DISTINCT map FROM matches
+		WHERE TRIM(map) <> '' ORDER BY map`)
+	if err != nil {
+		return nil, fmt.Errorf("store: list map names: %w", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var m string
+		if err := rows.Scan(&m); err != nil {
+			return nil, fmt.Errorf("store: list map names: %w", err)
+		}
+		out = append(out, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: list map names: %w", err)
+	}
+	return out, nil
+}
+
 // GetMatchSummary returns ONE match's library-list row (the ListMatches
 // projection, no search/sort) — the single-match read for callers that
 // would otherwise list the whole library and filter (ErrNotFound when

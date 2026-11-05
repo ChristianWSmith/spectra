@@ -752,6 +752,54 @@ func TestListMatches(t *testing.T) {
 	}
 }
 
+// TestListMapNames pins the distinct-maps read behind the Library map
+// facet's suggestions: one entry per stored name (duplicates collapse),
+// A→Z in storage order (no case folding — the facet's LIKE is the
+// case-insensitive side), and blank/whitespace-only maps never offered.
+func TestListMapNames(t *testing.T) {
+	s := openMem(t)
+
+	// Empty library → no suggestions at all.
+	if got, err := s.ListMapNames(); err != nil || len(got) != 0 {
+		t.Fatalf("ListMapNames(empty) = %v, %v; want no rows", got, err)
+	}
+
+	base := time.Now().Truncate(time.Second)
+	saveTestMatch(t, s, "/d/a.dem", "sha-a", base) // De_MiRaGe (testExtracted's map)
+
+	// saveMap writes one more extracted match with the given map name.
+	saveMap := func(path, sha, mapName string) {
+		t.Helper()
+		em := testExtracted(sha, base)
+		em.Match.Map = mapName
+		id, err := s.CreateMatchRow(path, sha, 1234)
+		if err != nil {
+			t.Fatalf("CreateMatchRow: %v", err)
+		}
+		if err := s.SaveExtracted(id, em); err != nil {
+			t.Fatalf("SaveExtracted: %v", err)
+		}
+	}
+	saveMap("/d/b.dem", "sha-b", "de_cache")
+	saveMap("/d/d.dem", "sha-d", "de_cache") // same map again — DISTINCT collapses
+	saveMap("/d/c.dem", "sha-c", "")         // the schema default: not a suggestion
+	saveMap("/d/w.dem", "sha-w", "   ")      // padded blank: not a suggestion either
+
+	got, err := s.ListMapNames()
+	if err != nil {
+		t.Fatalf("ListMapNames: %v", err)
+	}
+	want := []string{"De_MiRaGe", "de_cache"}
+	if len(got) != len(want) {
+		t.Fatalf("ListMapNames = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("ListMapNames = %v, want %v", got, want)
+		}
+	}
+}
+
 func TestGetScoreboardSorting(t *testing.T) {
 	s := openMem(t)
 	id := saveTestMatch(t, s, "/d/a.dem", "sha-sort", time.Now())
