@@ -311,6 +311,21 @@
   align-items: start;
 }
 
+/* Sides card: its table carries SIX columns (SIDE | ROUNDS | WIN% | ADR |
+   KAST | K/D) inside that 320px-min grid cell, so this one card tightens
+   the shared table chrome — smaller type and cell padding — to keep the
+   table within the card instead of spilling past its border (sized for
+   the large end of the font-size setting, body 17px ≈ 276px of content
+   against ~290px available). All six columns and their data stay. */
+.prof-sides .data-table {
+  font-size: 0.82em;
+}
+
+.prof-sides .data-table th,
+.prof-sides .data-table td {
+  padding: 4px 5px;
+}
+
 /* --- Compare rounds (cmp-) ----------------------------------------------- */
 
 .cmp-grid {

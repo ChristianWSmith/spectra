@@ -306,16 +306,16 @@
     </section>
 
     <div class="prof-splits">
-      <section class="panel">
-        <h2>Sides <span class="muted">(per round — sides switch at halftime)</span></h2>
+      <section class="panel prof-sides">
+        <h2>Sides</h2>
         <table class="data-table">
           <thead>
             <tr>
               <th scope="col">Side</th>
               <th scope="col" class="num">Rounds</th>
-              <th scope="col" class="num">Round win%</th>
+              <th scope="col" class="num">Win%</th>
               <th scope="col" class="num">ADR</th>
-              <th scope="col" class="num">KAST%</th>
+              <th scope="col" class="num">KAST</th>
               <th scope="col" class="num">K/D</th>
             </tr>
           </thead>
