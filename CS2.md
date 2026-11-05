@@ -128,6 +128,20 @@ at the end of the section.
   https://www.hltv.org/news/34796/using-flashbang-statistics-effectively;
   https://leetify.com/blog/leetify-stats-glossary/ (2026-11-01).
 
+- **Enemies flashed** — one credit per ENEMY player blinded by a
+  player's flash. The CS2 `player_blind` game event fires per blinded
+  player (fields `userid`, `attacker`, `entityid`, `blind_duration`; no
+  repeat events for one victim+flash observed — golden demo: 206 events
+  = 206 distinct flash-victim runs), so counting the events whose
+  attacker is cross-team reproduces the scoreboard stat; team and self
+  blinds don't count. Leetify's per-flashbang variant additionally drops
+  half-blinds shorter than 1.1 s — spectra counts every enemy blind (no
+  heuristic threshold). Distinct from `flashed_times` (victim side, any
+  blind) and from flashbang detonations. **Source** —
+  https://cs2.poggu.me/dumped-data/game-events/ (player_blind fields);
+  https://leetify.com/blog/leetify-stats-glossary/ (Enemies Flashed per
+  Flashbang); spectra golden-demo diag (2026-11-04).
+
 - **Trade kill = kill the opponent who killed your teammate, within 5 s**
   (HLTV: "an opponent who had killed their teammate within five
   seconds"; KAST "T" = your death answered the same way). Windows in

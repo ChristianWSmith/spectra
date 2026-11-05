@@ -64,7 +64,7 @@ func testExtracted(sha string, extractedAt time.Time) *models.ExtractedMatch {
 			{SteamID: "100", Side: "ct", Name: "al\x00ice", Kills: 10, Deaths: 0, Assists: 2,
 				FlashAssists: 1, Headshots: 4, MVPs: 1, Score: 22, TotalDamage: 1200, DamageTaken: 400, Shots: 50,
 				Hits: 20, ADR: 60, HSPct: 40, RoundsPlayed: 2, EntryKills: 1, OpeningKills: 1,
-				TradeKills: 2, BestStreak: 5, TwoK: 3, ThreeK: 1, UtilityDamage: 50, FlashesPopped: 3,
+				TradeKills: 2, BestStreak: 5, TwoK: 3, ThreeK: 1, UtilityDamage: 50, EnemiesFlashed: 3,
 				BombPlants: 1, MoneySpentTotal: 7500,
 				KillsByWeapon: `{"ak47":10}`, DamageByWeapon: `{"ak47":1200}`},
 			{SteamID: "200", Side: "t", Name: "bob", Kills: 5, Deaths: 2, Assists: 1,

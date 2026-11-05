@@ -215,11 +215,13 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 			real:       realPeriod(gs),
 			playerKey:  playerKey(e.Player),
 			playerName: e.Player.Name,
+			playerSide: sideString(e.Player.Team),
 			flashMs:    int(e.FlashDuration().Milliseconds()),
 		}
 		if e.Attacker != nil {
 			b.attackerKey = playerKey(e.Attacker)
 			b.attackerName = e.Attacker.Name
+			b.attackerSide = sideString(e.Attacker.Team)
 		}
 		a.blind(b)
 	})
@@ -276,23 +278,23 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 	// ---- grenades ----
 
 	p.RegisterEventHandler(func(e events.HeExplode) {
-		a.grenadeBlast(blastFor(e.GrenadeEvent, "hegrenade_detonate", p, false))
+		a.grenadeBlast(blastFor(e.GrenadeEvent, "hegrenade_detonate", p))
 	})
 
 	p.RegisterEventHandler(func(e events.FlashExplode) {
-		a.grenadeBlast(blastFor(e.GrenadeEvent, "flashbang_detonate", p, true))
+		a.grenadeBlast(blastFor(e.GrenadeEvent, "flashbang_detonate", p))
 	})
 
 	p.RegisterEventHandler(func(e events.SmokeStart) {
-		a.grenadeBlast(blastFor(e.GrenadeEvent, "smokegrenade_detonate", p, false))
+		a.grenadeBlast(blastFor(e.GrenadeEvent, "smokegrenade_detonate", p))
 	})
 
 	p.RegisterEventHandler(func(e events.FireGrenadeStart) {
-		a.grenadeBlast(blastFor(e.GrenadeEvent, "inferno_startburn", p, false))
+		a.grenadeBlast(blastFor(e.GrenadeEvent, "inferno_startburn", p))
 	})
 
 	p.RegisterEventHandler(func(e events.DecoyStart) {
-		a.grenadeBlast(blastFor(e.GrenadeEvent, "decoy_started", p, false))
+		a.grenadeBlast(blastFor(e.GrenadeEvent, "decoy_started", p))
 	})
 
 	p.RegisterEventHandler(func(e events.GrenadeProjectileThrow) {
@@ -359,20 +361,16 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 	})
 }
 
-// blastFor converts a grenade detonation event into blastInfo. isFlash marks
-// flashbang detonations (they attribute pops to the thrower); real gates the
-// flash-pop stat counter.
-func blastFor(ge events.GrenadeEvent, source string, p *demoinfocs.Parser, isFlash bool) blastInfo {
+// blastFor converts a grenade detonation event into blastInfo.
+func blastFor(ge events.GrenadeEvent, source string, p *demoinfocs.Parser) blastInfo {
 	g := blastInfo{
 		tick:   p.GameState().IngameTick(),
-		real:   realPeriod(p.GameState()),
 		weapon: ge.GrenadeType.String(),
 		source: source,
 		x:      ge.Position.X,
 		y:      ge.Position.Y,
 		z:      ge.Position.Z,
 	}
-	g.isFlash = isFlash
 	if ge.Thrower != nil {
 		g.throwerKey = playerKey(ge.Thrower)
 		g.throwerName = ge.Thrower.Name

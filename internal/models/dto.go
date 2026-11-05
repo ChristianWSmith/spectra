@@ -54,7 +54,7 @@ type PlayerStatsRow struct {
 	FourK             int     `json:"fourK"`
 	FiveK             int     `json:"fiveK"`
 	UtilityDamage     int     `json:"utilityDamage"`
-	FlashesPopped     int     `json:"flashesPopped"`
+	EnemiesFlashed    int     `json:"enemiesFlashed"`
 	FlashedTimes      int     `json:"flashedTimes"`
 	BombPlants        int     `json:"bombPlants"`
 	BombDefuses       int     `json:"bombDefuses"`

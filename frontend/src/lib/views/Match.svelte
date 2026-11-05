@@ -976,7 +976,7 @@
                           </thead>
                           <tbody>
                             <tr><td>Utility damage</td><td class="num">{p.utilityDamage}</td></tr>
-                            <tr><td>Flashes popped</td><td class="num">{p.flashesPopped}</td></tr>
+                            <tr><td>Enemies flashed</td><td class="num">{p.enemiesFlashed}</td></tr>
                             <tr><td>Flash assists</td><td class="num">{p.flashAssists}</td></tr>
                             <tr><td>Times flashed</td><td class="num">{p.flashedTimes}</td></tr>
                           </tbody>

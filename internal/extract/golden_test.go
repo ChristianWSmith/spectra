@@ -298,6 +298,18 @@ func TestParseGolden(t *testing.T) {
 		}
 	}
 
+	// Enemies-flashed credits must all trace back to player_blind events,
+	// and the real pipeline must produce some — guards the blind handler's
+	// side attribution feeding the cross-team gate (see TestEnemiesFlashed).
+	enemyFlashed := 0
+	for _, ps := range m.PlayerStats {
+		enemyFlashed += ps.EnemiesFlashed
+	}
+	if enemyFlashed <= 0 || enemyFlashed > counts[models.EventBlind] {
+		t.Errorf("enemies flashed total = %d, want within 1..%d (blind events)",
+			enemyFlashed, counts[models.EventBlind])
+	}
+
 	// ---- progress ----
 	if len(progress) == 0 {
 		t.Fatal("progress callback never invoked")
