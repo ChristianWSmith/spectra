@@ -2,15 +2,18 @@
 //
 // Layers, bottom → top: radar (or world grid) → movement trails → grenade
 // landmarks → bomb → players → HUD. Camera is a pan/zoom view over the
-// radar's image-pixel space; world→image uses the map pack's transform —
-// the canonical pack→transform reader is makeTransform (lib/components/
-// mapxform.js, shared with HeatmapLayer): px=(wx-pos_x)/scale,
-// py=(pos_y-wy)/scale (Z-up world, inverted Y). With no transform
-// (missing pack) one is derived from sample extents so a blank
-// coordinate grid still frames the players.
+// radar's image-pixel space with two modes: 'smart' (the default — eased
+// fit that keeps every alive player + the active bomb on screen; see
+// smartCamTarget/stepSmart below) and 'free' (manual pan/zoom); world→image
+// uses the map pack's transform — the canonical pack→transform reader is
+// makeTransform (lib/components/mapxform.js, shared with HeatmapLayer):
+// px=(wx-pos_x)/scale, py=(pos_y-wy)/scale (Z-up world, inverted Y).
+// With no transform (missing pack) one is derived from sample extents so
+// a blank coordinate grid still frames the players.
 import { makeTransform } from '../components/mapxform.js';
 // (bucketing/classification lives in ./landmarks.js — rows arrive
 // pre-bucketed from normalizeEvent; see setLandmarks.)
+import { bombEndTick, bombEvidenceAt, hasBombPos } from './bomb.js';
 
 const CT_COLOR = '#5aa9e6';
 const T_COLOR = '#e6a35a';
@@ -27,6 +30,21 @@ const TRAIL_MAX_TICK_GAP = 8; // ticks — anything larger is a discontinuity
 const TRAIL_MAX_STEP2 = 256 * 256; // world units² — human movement is ~8/frame
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 8;
+// --- Smart camera (the DEFAULT mode) -----------------------------------------
+// Keeps every alive player + the active bomb on screen at all times,
+// easing toward a fitted target each frame (never snapping).
+const SMART_MARGIN = 56; // CSS px of breathing room around the entities
+const SMART_TAU_CENTER = 0.18; // s — center ease time constant
+const SMART_TAU_ZOOM = 0.26; // s — zoom ease (slower = calmer)
+const SMART_DT_CLAMP = 0.033; // s — max eased step per draw: after a
+//                             stall/seek the first frame glides (~17%)
+//                             instead of lurching toward the target
+const SMART_ZOOM_MIN = 0.08; // floor — a full-map spread must still fit;
+//                            // deliberately BELOW ZOOM_MIN (the manual
+//                            // zoom floor): on-screen beats tight here
+const SMART_ZOOM_MAX = 4; // cap — never tunnel-vision tighter than ~1/4 map
+const SMART_EPS_CENTER = 0.25; // img px — "converged" for the settle loop
+const SMART_EPS_ZOOM = 0.002; // relative zoom tolerance
 const SMOKE_LIFETIME_S = 18;
 const FIRE_LIFETIME_S = 7;
 const FIRE_RADIUS = 130; // world units
@@ -61,7 +79,58 @@ export function trailConnects(ticks, pos, f) {
   return dx * dx + dy * dy <= TRAIL_MAX_STEP2;
 }
 
-export function createRenderer(canvas, { engine, data, players }) {
+// smartCamTarget — the smart camera's FIT algorithm (pure; head-tested
+// in renderer.test.js). `box` is the entity bounding box in IMAGE px,
+// cssW/cssH the canvas size, cfg { margin, minZoom, maxZoom, extW, extH }.
+// Returns the target camera state { cx, cy, s } where s is the ABSOLUTE
+// scale (screen px per image px = cam.fit * cam.zoom): the box is padded
+// by `margin` on every side and scaled to fit the canvas (clamped to the
+// smart zoom band), then the center is clamped so a view that FITS
+// INSIDE the image extent never shows void outside it — a view wider
+// than the image centers on the image instead (the entities are inside
+// the image either way, so they stay on screen).
+export function smartCamTarget(box, cssW, cssH, cfg = {}) {
+  const margin = cfg.margin ?? SMART_MARGIN;
+  const minS = cfg.minZoom ?? SMART_ZOOM_MIN;
+  const maxS = cfg.maxZoom ?? SMART_ZOOM_MAX;
+  const w = Math.max(1e-6, box.maxX - box.minX);
+  const h = Math.max(1e-6, box.maxY - box.minY);
+  const availW = Math.max(1, cssW - 2 * margin);
+  const availH = Math.max(1, cssH - 2 * margin);
+  const s = Math.min(maxS, Math.max(minS, Math.min(availW / w, availH / h)));
+  let cx = (box.minX + box.maxX) / 2;
+  let cy = (box.minY + box.maxY) / 2;
+  const halfW = cssW / (2 * s);
+  const halfH = cssH / (2 * s);
+  if (Number.isFinite(cfg.extW)) {
+    cx = 2 * halfW <= cfg.extW ? Math.min(Math.max(cx, halfW), cfg.extW - halfW) : cfg.extW / 2;
+  }
+  if (Number.isFinite(cfg.extH)) {
+    cy = 2 * halfH <= cfg.extH ? Math.min(Math.max(cy, halfH), cfg.extH - halfH) : cfg.extH / 2;
+  }
+  return { cx, cy, s };
+}
+
+// easeValue — one exponential-approach step toward target: the smoothing
+// that keeps smart pan/zoom from ever snapping (the caller clamps dt).
+export function easeValue(cur, target, dt, tau) {
+  if (!(dt > 0) || !(tau > 0)) return cur;
+  const k = 1 - Math.exp(-dt / tau);
+  return cur + (target - cur) * k;
+}
+
+// camConverged — has the eased camera reached its target within the
+// center/zoom tolerances? Drives the renderer's settle loop (the ease
+// keeps running after a paused seek, where nothing else redraws).
+export function camConverged(cur, target) {
+  return (
+    Math.abs(cur.cx - target.cx) < SMART_EPS_CENTER &&
+    Math.abs(cur.cy - target.cy) < SMART_EPS_CENTER &&
+    Math.abs(cur.s - target.s) <= SMART_EPS_ZOOM * Math.max(target.s, 1e-9)
+  );
+}
+
+export function createRenderer(canvas, { engine, data, players, onUserCamera = null }) {
   const ctx = canvas.getContext('2d');
   let dpr = 1;
   let cssW = 0;
@@ -82,6 +151,12 @@ export function createRenderer(canvas, { engine, data, players }) {
   let plants = [];
   let explodes = [];
   let defuses = [];
+  let drops = []; // bomb_drop evidence rows (carrier position — bomb.js)
+  let pickups = []; // bomb_pickup evidence rows
+  let roundEnds = []; // round_end rows — the round-end bomb terminator
+  // The dropped-C4 evidence bundle consumed by bomb.js bombEvidenceAt
+  // (the smart camera's bomb point and drawBomb's dropped marker).
+  let bombEv = { drops: [], pickups: [], plants: [], roundEnds: [] };
   let packNote = ''; // HUD hint (missing radar / missing pack)
 
   // Camera: center of view in image-pixel space + zoom multiplier over the
@@ -92,6 +167,16 @@ export function createRenderer(canvas, { engine, data, players }) {
   let followFor = -1;
   let followX = null;
   let followY = null;
+  // Camera mode: 'smart' (the default — eases the view to keep every
+  // alive player + the active bomb framed) or 'free' (manual pan/zoom).
+  // Follow overrides both (explicit user intent) and smart resumes when
+  // follow releases. Panning/zooming while smart takes over to free and
+  // notifies the caller (onUserCamera) so its selector follows — the
+  // pref keeps whatever the user picked there explicitly.
+  let camMode = 'free';
+  let easeRaf = 0; // the smart settle loop's pending frame (0 = idle)
+  let lastEaseT = 0; // last eased draw, for the dt of the next step
+  let smartConverged = true;
   // Effective world→image transform + image extent, rebuilt by reproject()
   // from packTf (makeTransform's canonical derivation) or sample bounds.
   // The numeric fields — not an allocating toImage() call — keep the
@@ -196,6 +281,9 @@ export function createRenderer(canvas, { engine, data, players }) {
     plants = [];
     explodes = [];
     defuses = [];
+    drops = [];
+    pickups = [];
+    roundEnds = [];
     const throws = [];
     for (const l of landmarks) {
       switch (l.bucket) {
@@ -220,8 +308,21 @@ export function createRenderer(canvas, { engine, data, players }) {
         case 'defuse':
           defuses.push(l);
           break;
+        case 'drop':
+          drops.push(l);
+          break;
+        case 'pickup':
+          pickups.push(l);
+          break;
+        case 'round':
+          roundEnds.push(l);
+          break;
       }
     }
+    // The bomb evidence bundle for bomb.js (dropped reconstruction +
+    // planted round-end cleanup). One rebuild per setLandmarks call —
+    // the per-frame paths only scan these small arrays.
+    bombEv = { drops, pickups, plants, roundEnds };
     for (const l of throws) {
       // pair with the nearest detonation of same round+thrower+weapon
       let best = null;
@@ -247,12 +348,14 @@ export function createRenderer(canvas, { engine, data, players }) {
   }
 
   function panBy(dx, dy) {
+    if (camMode === 'smart') takeOver(); // manual drag → free camera
     const s = cam.fit * cam.zoom;
     cam.cx -= dx / s;
     cam.cy -= dy / s;
   }
 
   function zoomAt(factor, sx, sy) {
+    if (camMode === 'smart') takeOver(); // manual wheel → free camera
     screenToImage(sx, sy);
     const bx = imgPt.x;
     const by = imgPt.y;
@@ -260,6 +363,117 @@ export function createRenderer(canvas, { engine, data, players }) {
     const s = cam.fit * cam.zoom;
     cam.cx = bx - (sx - cssW / 2) / s;
     cam.cy = by - (sy - cssH / 2) / s;
+  }
+
+  // --- smart camera ---------------------------------------------------------
+
+  // takeOver: user panned/zoomed while smart — drop to free for the
+  // session and tell the caller (Replay updates its selector; the pref
+  // keeps the explicit choice, so the next entry starts smart again).
+  function takeOver() {
+    camMode = 'free';
+    cancelEase();
+    if (onUserCamera) onUserCamera();
+  }
+
+  function cancelEase() {
+    if (easeRaf) cancelAnimationFrame(easeRaf);
+    easeRaf = 0;
+  }
+
+  // setCameraMode: 'smart' | 'free' (anything else reads as free).
+  // Switching to smart re-arms the ease from wherever the camera is —
+  // the target is computed on the next draw, never snapped to.
+  function setCameraMode(mode) {
+    const next = mode === 'smart' ? 'smart' : 'free';
+    if (next === camMode) return;
+    camMode = next;
+    lastEaseT = 0;
+    if (next === 'smart') smartConverged = false;
+    else cancelEase();
+    draw();
+  }
+
+  // smartTarget: the bounding box of everything that must stay on
+  // screen — ALIVE players (the store only samples alive slots; a dead
+  // player has no current position and their last spot would pin the
+  // view to a ghost) plus the ACTIVE bomb: planted (the bombEndTick
+  // window) or dropped (bomb.js evidence). A carried bomb needs no
+  // point of its own — its carrier is an alive player. Returns null
+  // when there is nobody to frame (hold the current view).
+  function smartTarget() {
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+    const img = { x: 0, y: 0 };
+    const add = (wx, wy) => {
+      worldToImage(wx, wy, img);
+      if (img.x < minX) minX = img.x;
+      if (img.x > maxX) maxX = img.x;
+      if (img.y < minY) minY = img.y;
+      if (img.y > maxY) maxY = img.y;
+    };
+    for (let slot = 0; slot < store.slots.length; slot++) {
+      engine.lerpAt(slot, tmp);
+      if (tmp.alive && Number.isFinite(tmp.x)) add(tmp.x, tmp.y);
+    }
+    const tr = engine.tickRate;
+    const tick = engine.state.tick;
+    for (const l of plants) {
+      if (!hasPos(l)) continue;
+      if (tick >= l.tick && tick <= bombEndTick(l, tr, explodes, defuses, roundEnds)) {
+        add(l.x, l.y);
+      }
+    }
+    const ev = bombEvidenceAt(bombEv, tick);
+    if (ev && ev.state === 'dropped' && hasBombPos(ev)) add(ev.x, ev.y);
+    if (!(minX <= maxX)) return null;
+    return smartCamTarget({ minX, minY, maxX, maxY }, cssW, cssH, { extW, extH });
+  }
+
+  // stepSmart eases cam one step toward the fitted target (log-space
+  // zoom so in/out feel symmetric) and records convergence.
+  function stepSmart(now) {
+    const target = smartTarget();
+    if (!target) {
+      smartConverged = true; // nothing to frame — hold the view
+      lastEaseT = now;
+      return;
+    }
+    let dt = lastEaseT ? (now - lastEaseT) / 1000 : SMART_DT_CLAMP;
+    lastEaseT = now;
+    dt = Math.max(0, Math.min(SMART_DT_CLAMP, dt));
+    cam.cx = easeValue(cam.cx, target.cx, dt, SMART_TAU_CENTER);
+    cam.cy = easeValue(cam.cy, target.cy, dt, SMART_TAU_CENTER);
+    const sCur = cam.fit * cam.zoom;
+    const s = Math.exp(easeValue(Math.log(sCur), Math.log(target.s), dt, SMART_TAU_ZOOM));
+    cam.zoom = Math.max(SMART_ZOOM_MIN, Math.min(ZOOM_MAX, s / cam.fit));
+    smartConverged = camConverged(
+      { cx: cam.cx, cy: cam.cy, s: cam.fit * cam.zoom },
+      target,
+    );
+  }
+
+  // The settle loop: draw() arms it while the smart camera has not
+  // converged (a paused seek, a mode switch — anywhere nothing else
+  // redraws). While the engine is PLAYING its own per-frame draw() has
+  // already eased, so the loop just stays armed instead of double-
+  // drawing. It stops on convergence, on 'free', or on follow.
+  function easeTick() {
+    easeRaf = 0;
+    if (camMode !== 'smart') return;
+    const st = engine.state;
+    if (st.followSlot != null) return; // follow owns the camera
+    if (st.playing) {
+      if (!smartConverged) easeRaf = requestAnimationFrame(easeTick);
+      return;
+    }
+    draw();
+  }
+
+  function destroy() {
+    cancelEase();
   }
 
   // --- layers ----------------------------------------------------------------
@@ -427,14 +641,12 @@ export function createRenderer(canvas, { engine, data, players }) {
     const tr = engine.tickRate;
     for (const l of plants) {
       if (!hasPos(l)) continue;
-      // visible from plant until the matching explode (same round), else 40 s
-      let endTick = l.tick + 40 * tr;
-      for (const e of explodes) {
-        if (e.round === l.round && e.tick >= l.tick) {
-          endTick = e.tick;
-          break;
-        }
-      }
+      // Visible from plant until the first same-round terminator —
+      // detonation, defuse, or the ROUND END (the planted-C4 cleanup:
+      // a round that ends before the bomb resolves no longer keeps the
+      // marker on screen). bomb.js bombEndTick owns the rule; the 40 s
+      // C4 timer is its no-terminator fallback.
+      const endTick = bombEndTick(l, tr, explodes, defuses, roundEnds);
       if (tick < l.tick || tick > endTick) continue;
       const c = worldToScreen(l.x, l.y);
       const pulse = 10 + 4 * Math.sin(now / 200);
@@ -445,6 +657,29 @@ export function createRenderer(canvas, { engine, data, players }) {
       ctx.arc(c.x, c.y, pulse, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
+      ctx.fillStyle = '#fbac18';
+      ctx.font = 'bold 10px ui-monospace, monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText('C4', c.x, c.y + 3);
+    }
+    // Dropped C4 — drawn only while the reconstruction says it is ON
+    // THE GROUND (bomb.js bombEvidenceAt state 'dropped'; the position
+    // is the carrier's evidence position from bomb_drop). A picked-up
+    // bomb follows its carrier's player row and a planted one is the
+    // loop above — neither draws here. Dashed ring = not armed.
+    const ev = bombEvidenceAt(bombEv, tick);
+    if (ev && ev.state === 'dropped' && hasBombPos(ev)) {
+      const c = worldToScreen(ev.x, ev.y);
+      const pulse = 9 + 3 * Math.sin(now / 240);
+      ctx.strokeStyle = 'rgba(251, 172, 24, 0.9)';
+      ctx.fillStyle = 'rgba(251, 172, 24, 0.16)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 3]);
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, pulse, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+      ctx.setLineDash([]);
       ctx.fillStyle = '#fbac18';
       ctx.font = 'bold 10px ui-monospace, monospace';
       ctx.textAlign = 'center';
@@ -575,6 +810,13 @@ export function createRenderer(canvas, { engine, data, players }) {
     if (!cssW || !cssH) return;
     const now = performance.now();
     const st = engine.state;
+    // Smart mode eases toward its fitted target BEFORE the frame renders
+    // (an explicit follow overrides it — follow is user intent, smart
+    // resumes the moment follow releases).
+    if (camMode === 'smart') {
+      if (st.followSlot == null && store && store.frames > 0) stepSmart(now);
+      else smartConverged = true; // follow owns it / nothing to frame
+    }
     ctx.clearRect(0, 0, cssW, cssH);
     if (!drawRadar()) drawGrid();
     if (store && store.frames > 0) {
@@ -607,6 +849,13 @@ export function createRenderer(canvas, { engine, data, players }) {
       drawPlayers();
     }
     drawHUD();
+    // Arm the settle loop when smart is still short of its target — a
+    // paused seek (or a mode switch) has no other redraw driver. draw()
+    // is the single arming point and it checks !easeRaf, so the engine's
+    // per-frame draws while playing never double up with the loop.
+    if (camMode === 'smart' && st.followSlot == null && !smartConverged && !easeRaf) {
+      easeRaf = requestAnimationFrame(easeTick);
+    }
   }
 
   return {
@@ -618,6 +867,8 @@ export function createRenderer(canvas, { engine, data, players }) {
     setData,
     panBy,
     zoomAt,
+    setCameraMode,
+    destroy,
     worldToScreen,
     getCam: () => cam,
   };

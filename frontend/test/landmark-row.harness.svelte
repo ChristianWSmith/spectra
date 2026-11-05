@@ -68,11 +68,28 @@
   // never sees generic rows; Replay always passes one) — stays plain text.
   const genericUnresolved = { ...generic, key: 'g:2', who: 'dave', label: 'round start' };
   const resolveSteam = (name) => (name === 'alice' ? '76561198012345678' : '');
+
+  // Round lookup (Replay passes roundsByNumber + tickRate): rows then
+  // show the ROUND + TIME-IN-ROUND columns instead of the legacy tick
+  // cell. Round 5 starts at tick 1920; round -2 is the knife round.
+  const rounds = [
+    { number: 5, startTick: 1920, warmup: false, pregame: false },
+    { number: -2, startTick: 100, warmup: false, pregame: true },
+  ];
+  const rbn = new Map(rounds.map((r) => [r.number, r]));
+  const timed = { ...kill, key: 'e:3', tick: 3000, round: 5 };
+  const knife = { ...kill, key: 'e:4', tick: 2100, round: -2 };
 </script>
 
 <div>
   <div data-testid="kill-row">
     <LandmarkRow row={kill} {nav} {onselect} {onseek} />
+  </div>
+  <div data-testid="timed-row">
+    <LandmarkRow row={timed} roundByNumber={rbn} tickRate={64} {nav} {onselect} {onseek} />
+  </div>
+  <div data-testid="knife-row">
+    <LandmarkRow row={knife} roundByNumber={rbn} tickRate={64} {nav} {onselect} {onseek} />
   </div>
   <div data-testid="bot-row">
     <LandmarkRow row={botKill} {nav} {onselect} {onseek} />

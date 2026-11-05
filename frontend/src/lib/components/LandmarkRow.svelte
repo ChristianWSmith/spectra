@@ -15,9 +15,17 @@
   //   resolveSteam — optional name → SteamId resolver for generic rows
   //                  (Replay resolves `who` against the sidecar slot
   //                  table; without it a generic name stays plain text)
+  //   roundByNumber — optional round lookup (Replay's roundsByNumber):
+  //                  with it the row shows the ROUND + TIME-IN-ROUND
+  //                  columns (roundIndexLabel / roundClock); without it
+  //                  (CompareRounds' compact sequence) the legacy tick
+  //                  cell renders unchanged
+  //   tickRate     — match tick rate for the time cell (0 → 64 via fmt)
   //   onselect     — click the row (Replay's detail pane)
   //   onseek       — click ▶ (seek to the row's tick)
   import { categoryById } from '../replay/landmarks.js';
+  import { roundIndexLabel } from '../rounds.js';
+  import { roundClock } from '../fmt.js';
   import ProfileLink from './ProfileLink.svelte';
 
   let {
@@ -26,11 +34,18 @@
     selected = false,
     nav = () => {},
     resolveSteam = null,
+    roundByNumber = null,
+    tickRate = 0,
     onselect = () => {},
     onseek = () => {},
   } = $props();
 
   const cat = $derived(categoryById(row.category));
+
+  // The round ROW behind this row's round number (null when the lookup
+  // has no row — roundClock falls back to the match-relative clock then,
+  // never a negative readout).
+  const roundRow = $derived(roundByNumber ? roundByNumber.get(row.round) ?? null : null);
 
   // Secondary text: the event's weapon / damage / distance bits, or a
   // generic row's label when its name already took the primary slot.
@@ -120,8 +135,20 @@
     onclick={onMainClick}
     onkeydown={onMainKey}
   >
-    <span class="mono lm-tick">{row.tick}</span>
-    <span class="chip round-chip">R{row.round}</span>
+    {#if roundByNumber}
+      <!-- Round + time-into-round (the feed's canonical readout): the
+           round label via lib/rounds.js roundIndexLabel (12 / K / W),
+           the time cell via lib/fmt.js roundClock — event tick − its
+           round's start tick (unknown round → match-relative fallback).
+           The raw tick stays in the tooltip. -->
+      <span class="chip round-chip lm-round" title="Round {row.round}">{roundIndexLabel(roundRow ?? row.round)}</span>
+      <span class="mono lm-time" title="tick {row.tick}">{roundClock(row.tick, roundRow, tickRate)}</span>
+    {:else}
+      <!-- Legacy cell (CompareRounds' compact sequence — no round
+           lookup passed): tick + raw round chip, unchanged. -->
+      <span class="mono lm-tick">{row.tick}</span>
+      <span class="chip round-chip">R{row.round}</span>
+    {/if}
     <span class="chip kind lm-cat" class:lm-cat-generic={row.source !== 'event'} title={cat?.label}>{cat?.short || cat?.label || row.category}</span>
     <span class="lm-text">{@render primaryText()}</span>
     {#if secondary}<span class="muted lm-sec">{secondary}</span>{/if}

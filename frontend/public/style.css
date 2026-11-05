@@ -119,10 +119,10 @@
    closed, chevron-down when [open], with the browser's default ▸ triangle
    / list marker suppressed. Applied to every disclosure that would
    otherwise show that raw UA triangle or no affordance at all: Replay's
-   filter and payload blocks, Builder's compiled SQL, Settings' glossary.
+   payload blocks, Builder's compiled SQL, Settings' glossary.
    Per-component summary typography (size, case, hover) stays with each
-   component's own rule. */
-.lm-filters > summary::before,
+   component's own rule. (Replay's filter panel is a button toggle now —
+   its export menu's summary carries its own rule in the lm- section.) */
 .json-block > summary::before,
 .bld-sql > summary::before,
 .sett-defs summary::before,
@@ -134,7 +134,6 @@
   font-size: 0.8em;
 }
 
-.lm-filters[open] > summary::before,
 .json-block[open] > summary::before,
 .bld-sql[open] > summary::before,
 .sett-defs details[open] summary::before,
@@ -142,7 +141,6 @@
   content: '\eab4';
 }
 
-.lm-filters > summary,
 .json-block > summary,
 .bld-sql > summary,
 .sett-defs summary,
@@ -150,7 +148,6 @@
   list-style: none;
 }
 
-.lm-filters > summary::-webkit-details-marker,
 .json-block > summary::-webkit-details-marker,
 .bld-sql > summary::-webkit-details-marker,
 .sett-defs summary::-webkit-details-marker,
@@ -1348,6 +1345,19 @@ input[type='checkbox']:focus-visible {
   overflow: hidden;
 }
 
+/* Collapsed panel: the aside shrinks to its header rail (full height
+   kept — it still stretches with .replay-body) so the stage takes the
+   width back. */
+.replay-side.collapsed {
+  flex: 0 0 auto;
+  width: auto;
+  padding: 6px 8px;
+}
+
+.replay-side.collapsed .side-toggle {
+  white-space: nowrap;
+}
+
 .side-toggle {
   display: flex;
   align-items: center;
@@ -1483,20 +1493,79 @@ button.lm-cat-chip.on {
   font-size: 0.8em;
 }
 
-.lm-filters {
+/* Filter dropdown panel — everything the ONE Filters toggle governs:
+   category chips, the game-events name picker, the scope bar and the
+   saved-preset row. Shown/hidden as a unit (Replay's filtersOpen). */
+.lm-filter-panel {
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  padding: 4px 8px;
+  padding: 6px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.lm-filter-panel .filt-bar {
+  padding: 2px 0 0;
+}
+
+/* Enabled-category count on the Filters toggle — the chips are hidden
+   while the panel is closed, so the count is their affordance. */
+.lm-filter-count {
   font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
 }
 
-.lm-filters summary {
+/* Export menu — the single codicon button's CSV/JSON choice (canonical
+   csv.js → download.js → save.js path behind both). Anchored popover
+   under the summary; the details/summary pattern matches voice-export. */
+.lm-export {
+  position: relative;
+}
+
+.lm-export > summary {
+  list-style: none;
   cursor: pointer;
-  color: var(--muted);
 }
 
-.lm-filters .filt-bar {
-  padding: 6px 0 2px;
+.lm-export > summary::-webkit-details-marker {
+  display: none;
+}
+
+.lm-export-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 2px);
+  z-index: 6;
+  min-width: 92px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.lm-export-item {
+  background: none;
+  border: none;
+  border-radius: var(--radius);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+
+.lm-export-item:hover:not(:disabled) {
+  background: var(--list-hover);
+}
+
+.lm-export-item:disabled {
+  color: var(--muted);
+  cursor: default;
 }
 
 .lm-toolbar {
@@ -1575,6 +1644,22 @@ button.lm-cat-chip.on {
   flex: 0 0 auto;
   min-width: 5ch;
   color: var(--muted);
+}
+
+/* Round + time-into-round columns (the feed rows with a round lookup —
+   see LandmarkRow): the roundIndexLabel chip and the roundClock cell
+   (time since the round's start tick), raw tick in the tooltip. */
+.lm-round {
+  flex: 0 0 auto;
+  min-width: 2.5ch;
+  justify-content: center;
+}
+
+.lm-time {
+  flex: 0 0 auto;
+  min-width: 4ch;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .lm-cat {

@@ -15,7 +15,10 @@
 //   4. mergeFeed       — chronological merge of the source-specific
 //                        reads (the backend keeps its three retrieval
 //                        paths; there is no universal event query).
-//   5. filter <-> URL  — the landmark filter model serialized to the
+//   5. applyRoundPref  — the show_knife_warmup_rounds visibility rule
+//                        (an ADDITIONAL feed filter on top of the
+//                        category opt-ins and ?round= scoping).
+//   6. filter <-> URL  — the landmark filter model serialized to the
 //                        route query (deep links, refresh, back/forward).
 //
 // Unit-tested by src/lib/landmarks.test.js (the lib test glob is
@@ -43,10 +46,11 @@ export const LANDMARK_KINDS = [
 ];
 
 // DRAW_KINDS: the typed kinds the replay world layers and scrubber
-// markers draw — positioned anchors (kills, grenades, bomb) plus
-// round_end (round-win markers). Fetched once per match, unfiltered by
-// category chips: the map always shows the full spatial context, while
-// the LIST and scrubber markers follow the enabled categories.
+// markers draw — positioned anchors (kills, grenades, bomb incl. the
+// dropped-C4 evidence rows) plus round_end (round-win markers). Fetched
+// once per match, unfiltered by category chips: the map always shows
+// the full spatial context, while the LIST and scrubber markers follow
+// the enabled categories.
 export const DRAW_KINDS = [
   'kill',
   'grenade',
@@ -54,6 +58,8 @@ export const DRAW_KINDS = [
   'bomb_plant',
   'bomb_defuse',
   'bomb_explode',
+  'bomb_drop',
+  'bomb_pickup',
   'round_end',
 ];
 
@@ -101,6 +107,10 @@ export function categoryOfKind(kind) {
 // normalization time — neither the renderer nor the scrubber classifies
 // anything at runtime (PRD §5.5). The substring branches (smoke/fire)
 // bucket the extended kind spellings, not only the exact kinds above.
+// bomb_drop/bomb_pickup bucket into 'drop'/'pickup' — the DROPPED-C4
+// evidence rows the renderer's reconstruction (lib/replay/bomb.js)
+// consumes; the scrubber's marker loop only maps kill/plant/defuse/
+// explode/round buckets, so these add no scrubber markers.
 export function drawBucket(kind) {
   const k = String(kind || '').toLowerCase();
   if (k === 'kill') return 'kill';
@@ -111,6 +121,8 @@ export function drawBucket(kind) {
   if (k === 'bomb_plant') return 'plant';
   if (k === 'bomb_explode') return 'explode';
   if (k === 'bomb_defuse') return 'defuse';
+  if (k === 'bomb_drop') return 'drop';
+  if (k === 'bomb_pickup') return 'pickup';
   if (k === 'round_end') return 'round';
   return '';
 }
@@ -235,6 +247,26 @@ export function mergeFeed(arrays) {
       (seqOf(a) || 0) - (seqOf(b) || 0),
   );
   return out;
+}
+
+// applyRoundPref — the show_knife_warmup_rounds visibility rule (the
+// kvstore pref Settings writes; default OFF = hide knife/warmup rows):
+// with the pref off, every row of a NON-COUNTED round (negative ingest
+// indices — knife/warmup, lib/rounds.js isCounted) is dropped. It is an
+// ADDITIONAL filter on top of the category opt-in rules
+// (normalizeEvent's countedOnly) and the ?round= scoping — never a
+// replacement for either; a row must pass all of them. A round the
+// lookup does not know (or a row with no round stamp) is KEPT —
+// defensive, never invented, the same convention as normalizeEvent.
+// Pref on → the input array comes back untouched (same reference).
+// Consumed by Replay's feed and scrubber markers (Replay.svelte).
+export function applyRoundPref(rows, roundsByNumber, showKnifeWarmup) {
+  if (showKnifeWarmup) return rows;
+  const by = roundsByNumber || new Map();
+  return rows.filter((r) => {
+    const round = by.get(r.round);
+    return !round || isCounted(round);
+  });
 }
 
 // --- Filter model <-> route query -------------------------------------------

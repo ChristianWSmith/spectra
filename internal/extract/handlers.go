@@ -262,21 +262,47 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 	})
 
 	p.RegisterEventHandler(func(e events.BombDropped) {
+		gs := p.GameState()
 		key, name := uint64(0), ""
 		if e.Player != nil {
 			key = playerKey(e.Player)
 			name = e.Player.Name
 		}
-		a.bombDropped(p.GameState().IngameTick(), key, name)
+		// Evidence (dropped-C4 positions): the CARRIER's position at
+		// this instant is the drop site — BombDropped fires when the C4
+		// loses its owner (release time; death drops included — see the
+		// CS2.md entry), so the pawn marks where it left their hands.
+		// The bomb entity's own position rides along as corroborating
+		// DetailJSON evidence when it has one (bombPos — free, same
+		// zero-vector convention as posPtrs).
+		var px, py, pz *float64
+		if e.Player != nil {
+			px, py, pz = posPtrs(e.Player.Position())
+		}
+		bx, by, bz := bombPos(gs)
+		a.bombDropped(gs.IngameTick(), key, name, px, py, pz, bx, by, bz)
 	})
 
 	p.RegisterEventHandler(func(e events.BombPickup) {
+		gs := p.GameState()
 		key, name := uint64(0), ""
 		if e.Player != nil {
 			key = playerKey(e.Player)
 			name = e.Player.Name
 		}
-		a.bombPickedUp(p.GameState().IngameTick(), key, name)
+		// Evidence: where the pickup happened — the bomb entity's
+		// position, falling back to the pickup player's pawn when the
+		// entity has no known location; DetailJSON `source` records
+		// which one the columns carry.
+		px, py, pz := bombPos(gs)
+		source := "bomb"
+		if px == nil {
+			source = "player"
+			if e.Player != nil {
+				px, py, pz = posPtrs(e.Player.Position())
+			}
+		}
+		a.bombPickedUp(gs.IngameTick(), key, name, px, py, pz, source)
 	})
 
 	// ---- grenades ----

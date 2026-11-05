@@ -33,8 +33,11 @@ it rather than archive it.
 
 ### Replay
 
-- **Follow modes** (PRD §5.4 "Advanced Replay"): follow the bomb, a
-  grenade, a killer/victim.
+- **Follow modes** (PRD §5.4 "Advanced Replay"): follow a grenade, a
+  killer/victim. Follow-a-player ships, and the default **smart camera**
+  keeps the planted/dropped bomb framed automatically (dropped-C4
+  evidence + reconstruction) — an explicit "follow the bomb" target is
+  the remaining bomb item.
 - **Split-screen + ghost replay** — overlay two rounds/matches; also the
   CompareRounds ghost overlay.
 - **Custom replay annotations** (draw on the replay) — needs the

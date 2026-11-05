@@ -96,19 +96,27 @@ test('drawBucket buckets every drawable kind (renderer/scrubber contract)', () =
   assert.equal(drawBucket('bomb_plant'), 'plant');
   assert.equal(drawBucket('bomb_explode'), 'explode');
   assert.equal(drawBucket('bomb_defuse'), 'defuse');
+  // Dropped-C4 evidence rows (the reconstruction in lib/replay/bomb.js
+  // consumes them; the scrubber's marker loop still ignores them — no
+  // new scrubber marker classes).
+  assert.equal(drawBucket('bomb_drop'), 'drop');
+  assert.equal(drawBucket('bomb_pickup'), 'pickup');
   assert.equal(drawBucket('round_end'), 'round');
   // Not drawable / no marker:
-  for (const k of ['damage', 'blind', 'round_start', 'player_connect', 'bomb_drop', '']) {
+  for (const k of ['damage', 'blind', 'round_start', 'player_connect', '']) {
     assert.equal(drawBucket(k), '', k);
   }
   // Extended spellings keep their substring buckets.
   assert.equal(drawBucket('smoke'), 'smoke');
   assert.equal(drawBucket('molotov'), 'fire');
   // DRAW_KINDS is exactly the drawable set (round_end rides it for the
-  // scrubber's round-win markers; it never draws on the map).
+  // scrubber's round-win markers; it never draws on the map; drop/
+  // pickup ride it for the bomb evidence, no marker).
   assert.deepEqual([...DRAW_KINDS].sort(), [
     'bomb_defuse',
+    'bomb_drop',
     'bomb_explode',
+    'bomb_pickup',
     'bomb_plant',
     'grenade',
     'grenade_throw',

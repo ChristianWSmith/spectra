@@ -29,6 +29,8 @@
     listSavedFilters,
     saveFilter,
     deleteSavedFilter,
+    getPref,
+    setPref,
     errText,
   } from '../services.js';
   import { createEngine, parsePositions, SPEEDS } from '../replay/engine.js';
@@ -47,6 +49,7 @@
     parseLandmarkFilter,
     serializeLandmarkFilter,
     defaultFilter,
+    applyRoundPref,
     landmarkExportRows,
   } from '../replay/landmarks.js';
   import { attachReplayInput, snapshot } from '../replay/input.js';
@@ -101,6 +104,13 @@
   let uiLoopTo = $state(-1);
   let uiLoopOn = $state(false);
   let eventsOpen = $state(true); // the canonical feed is visible by default
+  // ONE toggle governs every filter surface in the panel (the Filters
+  // button): the category chips, the game-events name picker, the
+  // FilterBar scope, the saved-preset controls and Reset all show/hide
+  // TOGETHER — none of it is piled in the open. Export is not a filter
+  // and stays in the toolbar row above the panel.
+  let filtersOpen = $state(false);
+  let exportEl = $state(null); // the export <details> — menu close target
   // The voice-lanes strip needs ~190px of vertical space, so it is HIDDEN
   // by default at every viewport size (short windows would otherwise leave
   // the landmark list with a single visible row); the voice bar's Lanes
@@ -151,6 +161,38 @@
   let feedF = null; // the filter the loaded feed belongs to (load-more)
 
   const rbn = $derived(roundsByNumber(rounds));
+
+  // Knife/warmup visibility pref (key: show_knife_warmup_rounds,
+  // prefs.go) — read the way Match.svelte reads it (kvstore, default OFF
+  // = hide). Applied as an ADDITIONAL feed filter (applyRoundPref in
+  // lib/replay/landmarks.js) on top of the category opt-in rules and
+  // the ?round= scoping — it never overrides them; Settings writes the
+  // key directly and there is no cross-view change event, so the view
+  // re-reads it on mount (returning to Replay remounts it).
+  let showKnifeWarmup = $state(false);
+
+  $effect(() => {
+    let live = true;
+    getPref('show_knife_warmup_rounds')
+      .then((v) => {
+        // kvstore round-trips JSON — Settings writes a real boolean;
+        // anything else (unset, null, corrupt) reads as hidden.
+        if (live) showKnifeWarmup = v === true;
+      })
+      .catch(() => {
+        if (live) showKnifeWarmup = false; // unreadable store → hidden
+      });
+    return () => (live = false);
+  });
+
+  // The pref can empty an EXPLICITLY round-scoped feed (a deep link to
+  // ?round=-2 while the pref hides knife/warmup rounds matches nothing)
+  // — the empty state says so instead of the generic "no events" line.
+  const prefHidesScope = $derived.by(() => {
+    if (showKnifeWarmup || filter.round === -1) return false;
+    const r = rbn.get(filter.round);
+    return !!r && !isCounted(r);
+  });
 
   // Fetch effect: re-runs only when the SERIALIZED filter changes (the
   // query object identity changes on every route write — the string key
@@ -257,14 +299,20 @@
 
   const hasMore = $derived(typedHasMore || Object.values(genPages).some((p) => p.hasMore));
 
-  // The merged, categorized, chronological feed (counted-round policy
-  // applied for the sparse round categories).
+  // The merged, categorized, chronological feed, then the round-
+  // visibility pref (knife/warmup rows hidden unless the user opted in)
+  // applied as an ADDITIONAL filter — the category opt-in rules and
+  // ?round= scoping above it are untouched (applyRoundPref).
   const feedRows = $derived.by(() =>
-    mergeFeed([
-      typedRows.map((r) => normalizeEvent(r, { roundsByNumber: rbn })).filter(Boolean),
-      chatRows.map((c) => normalizeChat(c)),
-      Object.values(genPages).flatMap((p) => p.rows.map((g) => normalizeGeneric(g, p.cat))),
-    ]),
+    applyRoundPref(
+      mergeFeed([
+        typedRows.map((r) => normalizeEvent(r, { roundsByNumber: rbn })).filter(Boolean),
+        chatRows.map((c) => normalizeChat(c)),
+        Object.values(genPages).flatMap((p) => p.rows.map((g) => normalizeGeneric(g, p.cat))),
+      ]),
+      rbn,
+      showKnifeWarmup,
+    ),
   );
 
   // Draw feed: the drawable-kind anchors, fetched ONCE per match in
@@ -283,7 +331,12 @@
     const span = Math.max(1, t1 - t0);
     const cats = new Set(filter.cats);
     const out = [];
-    for (const l of drawNorm) {
+    // Same round-visibility pref as the feed — the scrubber mirrors the
+    // feed's overview, so hidden rounds carry no markers either. (The
+    // renderer's WORLD layers stay unfiltered: the map always shows the
+    // full spatial context — see the drawNorm comment.)
+    const norm = applyRoundPref(drawNorm, rbn, showKnifeWarmup);
+    for (const l of norm) {
       if (!cats.has(l.category)) continue;
       const cat = categoryById(l.category);
       if (cat && cat.countedOnly) {
@@ -458,6 +511,7 @@
     const tr = meta && meta.tickRate > 0 ? meta.tickRate : 64;
     const half = Math.round(5 * tr);
     eventsOpen = true;
+    filtersOpen = true; // the tick window it sets is filter state — show it
     navigateFilter({ ...filter, tickFrom: Math.max(0, uiTick - half), tickTo: uiTick + half });
   }
 
@@ -475,7 +529,15 @@
     }
   }
 
+  // The single export button's menu (CSV/JSON) closes itself after a
+  // pick — canonical path either way: csv.js toCSV → download.js
+  // downloadText → save.js native dialog.
+  function closeExport() {
+    if (exportEl) exportEl.open = false;
+  }
+
   function exportCSV() {
+    closeExport();
     return download(
       `match-${id}-events.csv`,
       'text/csv;charset=utf-8',
@@ -484,7 +546,18 @@
   }
 
   function exportJSON() {
+    closeExport();
     return download(`match-${id}-events.json`, 'application/json', JSON.stringify(feedRows, null, 2));
+  }
+
+  // Open the filter panel on ENTRY when the deep link already carries a
+  // scope filter (round/player/weapon/bbox/tick window) — a scoped link
+  // should show the scope it arrived with. In-session changes never
+  // force it open (the Filters button owns that).
+  function syncFiltersOpen(f) {
+    if (f.round !== -1 || f.steamId || f.weapon || f.bbox || f.tickFrom || f.tickTo) {
+      filtersOpen = true;
+    }
   }
 
   // --- Saved filter presets (scope "match") ----------------------------------
@@ -575,6 +648,41 @@
     return hit && isSteam(hit.steamId) ? hit.steamId : '';
   }
 
+  // --- Camera mode (pref-backed 'smart' | 'free') ---------------------------
+  // 'smart' (the DEFAULT) keeps every alive player + the active bomb on
+  // screen with eased pan/zoom (renderer.js smart camera); 'free' is
+  // manual drag/wheel. Stored in the frontend-owned kvstore pref
+  // `camera_mode` (the same pattern as font_size /
+  // show_knife_warmup_rounds): unset or unknown reads as 'smart', a
+  // stored 'free' is respected as-is. A manual pan/zoom while smart
+  // drops to free for the SESSION only (the renderer's onUserCamera) —
+  // the pref keeps whatever the user picked in the selector.
+  let camMode = $state('smart');
+
+  $effect(() => {
+    let live = true;
+    getPref('camera_mode')
+      .then((v) => {
+        if (!live) return;
+        if (v === 'free' || v === 'smart') {
+          camMode = v;
+          renderer?.setCameraMode(camMode); // the engine may be up already
+        }
+        // unset / unknown → the 'smart' default stands
+      })
+      .catch(() => {
+        /* unreadable store → smart */
+      });
+    return () => (live = false);
+  });
+
+  function onCamMode(e) {
+    const v = e.currentTarget.value === 'free' ? 'free' : 'smart';
+    camMode = v;
+    renderer?.setCameraMode(v);
+    setPref('camera_mode', v).catch(() => {}); // durable explicit choice
+  }
+
   // --- Follow camera (?follow=<steamid17>) -----------------------------------
   // The Match view's "open the replay on this player" hand-off: the
   // contract is a 17-digit steam id in the route query. Resolved against
@@ -625,6 +733,7 @@
     if (ro) ro.disconnect();
     if (offChange) offChange();
     if (engine) engine.destroy();
+    if (renderer) renderer.destroy(); // cancels the smart settle loop
     input = ro = offChange = engine = renderer = null;
   }
 
@@ -660,6 +769,7 @@
     loadError = '';
     entrySel = query.sel || '';
     entrySelTick = 0;
+    syncFiltersOpen(filter); // a scoped deep link opens the filter panel
     try {
       const m = await getReplayMeta(id);
       meta = m;
@@ -719,10 +829,18 @@
     teardown();
     if (!canvasEl || !data || !data.frames) return;
     engine = createEngine(data, meta.tickRate);
-    renderer = createRenderer(canvasEl, { engine, data, players });
+    renderer = createRenderer(canvasEl, {
+      engine,
+      data,
+      players,
+      // Manual pan/zoom while smart → session-free (the pref keeps its
+      // explicit value; only the selector follows).
+      onUserCamera: () => (camMode = 'free'),
+    });
     renderer.setPack(pack, radarImg, packTf);
     renderer.setLandmarks(drawNorm);
     renderer.resize();
+    renderer.setCameraMode(camMode); // default 'smart' unless the pref says free
     offChange = engine.onChange((st) => {
       uiFrame = st.frame;
       uiTick = st.tick;
@@ -1133,7 +1251,7 @@
           </span>
         {/if}
       </div>
-      <aside class="replay-side" aria-label="Landmark events">
+      <aside class="replay-side" class:collapsed={!eventsOpen} aria-label="Landmark events">
         <button
           class="side-toggle"
           aria-expanded={eventsOpen}
@@ -1145,67 +1263,110 @@
           <span class="muted"><span class="codicon {eventsOpen ? 'codicon-chevron-down' : 'codicon-chevron-right'}"></span></span>
         </button>
         {#if eventsOpen}
-          <!-- The middle of the panel scrolls as a unit (cats → filters →
-               toolbar → list); the detail pane pins below it, so a long
-               feed can never clip the selected event. -->
+          <!-- The middle of the panel scrolls as a unit (controls →
+               filter panel → list); the detail pane pins below it, so a
+               long feed can never clip the selected event. -->
           <div class="lm-scroll">
-          <!-- Category chips: the sparse default (kills + round wins) is
-               what a fresh URL carries; everything else is opt-in. -->
-          <div class="lm-cats" role="group" aria-label="Event categories">
-            {#each CATEGORIES as c (c.id)}
-              <button
-                class="chip lm-cat-chip"
-                class:on={filter.cats.includes(c.id)}
-                aria-pressed={filter.cats.includes(c.id)}
-                title={c.default ? `${c.label} (on by default)` : `Show ${c.label.toLowerCase()} in the feed`}
-                onclick={() => toggleCat(c.id)}>{c.label}</button
-              >
-            {/each}
-          </div>
-
-          {#if needHist}
-            <label class="lm-gname" for="lm-gname">
-              Game events
-              <select
-                class="input"
-                id="lm-gname"
-                value={filter.gname}
-                onchange={(e) => setGname(e.currentTarget.value)}
-              >
-                <option value="">Pick an event name…</option>
-                {#each hist as h (h.name)}
-                  <option value={h.name}>{h.name} ({h.count})</option>
-                {/each}
-                {#if filter.gname && !hist.some((h) => h.name === filter.gname)}
-                  <option value={filter.gname}>{filter.gname}</option>
-                {/if}
-              </select>
-            </label>
-            {#if !filter.gname}
-              <p class="muted lm-hint">High-volume sources load by name only — pick one above.</p>
-            {/if}
-          {/if}
-
-          <details class="lm-filters" open={filter.round !== -1 || !!filter.steamId || !!filter.weapon || !!filter.bbox || !!filter.tickFrom || !!filter.tickTo}>
-            <summary>Filters</summary>
-            <FilterBar {id} filter={filter} onchange={onBarFilter} showReset={false} />
-          </details>
-
-          <div class="lm-toolbar" role="group" aria-label="Feed actions">
-            <select class="input lm-saved" aria-label="Saved filters" value={savedSel} onchange={(e) => (savedSel = e.currentTarget.value)}>
-              <option value="">Saved filters…</option>
-              {#each saved as s (s.id)}
-                <option value={String(s.id)}>{s.name}</option>
-              {/each}
-            </select>
-            <button class="btn small" disabled={!savedSel} onclick={applySaved}>Apply</button>
-            <button class="btn small" onclick={saveCurrent} title="Save the current filter as a preset">Save</button>
-            <button class="btn small" disabled={!savedSel} title="Delete the selected saved filter" onclick={removeSaved}><span class="codicon codicon-close"></span></button>
+          <!-- Controls row: ONE Filters toggle governs every filter
+               surface below it — the chips, name picker, scope bar and
+               presets/Reset all show/hide TOGETHER (filtersOpen); export
+               is not a filter and stays in this row. -->
+          <div class="lm-toolbar" role="group" aria-label="Feed controls">
+            <button
+              class="btn small"
+              class:primary={filtersOpen}
+              aria-expanded={filtersOpen}
+              onclick={() => (filtersOpen = !filtersOpen)}
+              title="Show/hide the category chips and every filter control"
+            >
+              <span class="codicon codicon-filter" aria-hidden="true"></span> Filters
+              <span class="muted lm-filter-count">{filter.cats.length}</span>
+            </button>
             <span class="spacer"></span>
-            <button class="btn small" onclick={exportCSV} disabled={!feedRows.length} title="Export the loaded feed as CSV">CSV</button>
-            <button class="btn small" onclick={exportJSON} disabled={!feedRows.length} title="Export the loaded feed as JSON">JSON</button>
-            <button class="btn small" onclick={resetFilters} title="Reset every filter to the sparse default">Reset</button>
+            <details class="lm-export" bind:this={exportEl}>
+              <summary
+                class="btn small"
+                aria-label="Export the loaded feed"
+                title="Export the loaded feed — CSV or JSON"
+                ><span class="codicon codicon-export" aria-hidden="true"></span></summary
+              >
+              <div class="lm-export-menu" role="menu">
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="lm-export-item"
+                  disabled={!feedRows.length}
+                  onclick={exportCSV}>CSV</button
+                >
+                <button
+                  type="button"
+                  role="menuitem"
+                  class="lm-export-item"
+                  disabled={!feedRows.length}
+                  onclick={exportJSON}>JSON</button
+                >
+              </div>
+            </details>
           </div>
+
+          {#if filtersOpen}
+            <!-- The whole filter surface: category chips → game-events
+                 name picker → scope bar → saved presets + Reset. -->
+            <div class="lm-filter-panel">
+              <!-- Category chips: the sparse default (kills + round wins) is
+                   what a fresh URL carries; everything else is opt-in. -->
+              <div class="lm-cats" role="group" aria-label="Event categories">
+                {#each CATEGORIES as c (c.id)}
+                  <button
+                    class="chip lm-cat-chip"
+                    class:on={filter.cats.includes(c.id)}
+                    aria-pressed={filter.cats.includes(c.id)}
+                    title={c.default ? `${c.label} (on by default)` : `Show ${c.label.toLowerCase()} in the feed`}
+                    onclick={() => toggleCat(c.id)}>{c.label}</button
+                  >
+                {/each}
+              </div>
+
+              {#if needHist}
+                <label class="lm-gname" for="lm-gname">
+                  Game events
+                  <select
+                    class="input"
+                    id="lm-gname"
+                    value={filter.gname}
+                    onchange={(e) => setGname(e.currentTarget.value)}
+                  >
+                    <option value="">Pick an event name…</option>
+                    {#each hist as h (h.name)}
+                      <option value={h.name}>{h.name} ({h.count})</option>
+                    {/each}
+                    {#if filter.gname && !hist.some((h) => h.name === filter.gname)}
+                      <option value={filter.gname}>{filter.gname}</option>
+                    {/if}
+                  </select>
+                </label>
+                {#if !filter.gname}
+                  <p class="muted lm-hint">High-volume sources load by name only — pick one above.</p>
+                {/if}
+              {/if}
+
+              <FilterBar {id} filter={filter} onchange={onBarFilter} showReset={false} />
+
+              <div class="lm-toolbar" role="group" aria-label="Saved filter presets">
+                <select class="input lm-saved" aria-label="Saved filters" value={savedSel} onchange={(e) => (savedSel = e.currentTarget.value)}>
+                  <option value="">Saved filters…</option>
+                  {#each saved as s (s.id)}
+                    <option value={String(s.id)}>{s.name}</option>
+                  {/each}
+                </select>
+                <button class="btn small" disabled={!savedSel} onclick={applySaved}>Apply</button>
+                <button class="btn small" onclick={saveCurrent} title="Save the current filter as a preset">Save</button>
+                <button class="btn small" disabled={!savedSel} title="Delete the selected saved filter" onclick={removeSaved}><span class="codicon codicon-close"></span></button>
+                <span class="spacer"></span>
+                <button class="btn small" onclick={resetFilters} title="Reset every filter to the sparse default">Reset</button>
+              </div>
+            </div>
+          {/if}
           {#if savedError}
             <p class="error" role="alert">{savedError}</p>
           {/if}
@@ -1220,6 +1381,8 @@
                 {row}
                 {nav}
                 resolveSteam={resolveWho}
+                roundByNumber={rbn}
+                tickRate={meta?.tickRate}
                 selected={selected?.key === row.key}
                 onselect={select}
                 onseek={(r) => seekTo(r.tick)}
@@ -1227,9 +1390,11 @@
             {:else}
               <li class="muted lm-empty" role="status">
                 {#if filter.cats.length === 0}
-                  No categories enabled — turn some on above.
+                  No categories enabled — turn some on in Filters.
                 {:else if feedLoading}
                   Loading events…
+                {:else if prefHidesScope}
+                  Knife/warmup rounds are hidden — show them in Settings, or clear the round filter.
                 {:else}
                   No events match these filters.
                 {/if}
@@ -1500,6 +1665,18 @@
             R{r.number}{r.warmup ? ' (wu)' : ''}{r.pregame ? ' (knife)' : ''}{r.bombSite ? ` · ${r.bombSite}` : ''}
           </option>
         {/each}
+      </select>
+
+      <label class="sr-only" for="rp-cam">Camera mode</label>
+      <select
+        class="input"
+        id="rp-cam"
+        value={camMode}
+        onchange={onCamMode}
+        title="Smart keeps every player and the bomb on screen with smooth pan/zoom (drag or wheel takes over → Free); Free is manual"
+      >
+        <option value="smart">Smart</option>
+        <option value="free">Free</option>
       </select>
 
       <label class="sr-only" for="rp-follow">Follow player</label>
