@@ -59,6 +59,20 @@ func Compute(st *store.Store, matchID int64, cfg Config) error {
 	if err != nil {
 		return fmt.Errorf("analytics: load blind details: %w", err)
 	}
+	// player_hurt payloads are the second narrow read (same reason, same
+	// boundary): the clutch HPLeft reconstruction needs the game's
+	// sampled victim health (detail_json.health) — stamped onto the
+	// typed copies below so Clutches reads one shape (detail_json) in
+	// production and in tests alike.
+	hurtDetails, err := st.GetHurtHealthDetails(matchID)
+	if err != nil {
+		return fmt.Errorf("analytics: load hurt details: %w", err)
+	}
+	for i, er := range events {
+		if det, ok := hurtDetails[er.Seq]; ok {
+			evs[i].DetailJSON = det
+		}
+	}
 	// Exact per-round sides from the extractor's freeze-end samples; a
 	// round without stored sides produces no side-derived rows.
 	sides, err := st.GetRoundPlayerSides(matchID)

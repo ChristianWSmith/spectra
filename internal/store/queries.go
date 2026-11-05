@@ -698,6 +698,37 @@ func (s *Store) GetBlindFlashDetails(matchID int64) (map[int]string, error) {
 	return out, nil
 }
 
+// GetHurtHealthDetails returns detail_json for every player_hurt event
+// of a match, keyed by events.seq (UNIQUE (match_id, seq)). Same narrow
+// read as GetBlindFlashDetails: analytics.Compute stamps these onto the
+// typed event copies so the clutch HPLeft reconstruction can use the
+// game's sampled victim health (detail_json.health) instead of damage
+// arithmetic — without widening eventRowCols (the typed-columns
+// boundary — models.EventRow — stays payload-free).
+func (s *Store) GetHurtHealthDetails(matchID int64) (map[int]string, error) {
+	rows, err := s.db.Query(
+		`SELECT seq, detail_json FROM events WHERE match_id = ? AND kind = ?`,
+		matchID, models.EventDamage,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("store: get hurt details: %w", err)
+	}
+	defer rows.Close()
+	out := map[int]string{}
+	for rows.Next() {
+		var seq int
+		var det string
+		if err := rows.Scan(&seq, &det); err != nil {
+			return nil, fmt.Errorf("store: get hurt details: %w", err)
+		}
+		out[seq] = det
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: get hurt details: %w", err)
+	}
+	return out, nil
+}
+
 // GetChat returns a match's chat lines ordered by tick, id. Round < 0
 // selects all rounds (same sentinel as GetEvents — the landmark feed's
 // match-wide chat read passes -1); round detail reads exact rounds

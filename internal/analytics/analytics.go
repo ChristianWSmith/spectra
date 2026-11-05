@@ -27,9 +27,13 @@
 //     once at extract — must fall within [0, tradeOppDistance]
 //     (config, default 1000u; the gate itself lives in
 //     store.GetCombatStats).
-//   - Clutch HPLeft reconstructs from damage events after the clutch
-//     start (100 - sum(dmg taken), clamped ≥ 1; 100 when no damage after
-//     start) — a reconstruction, not a sampled HP value.
+//   - Clutch HPLeft is the game-sampled victim-health of the last
+//     player_hurt at/before the resolve tick (HP changes only through
+//     player_hurt; detail_json is stamped onto the typed copies by
+//     Compute via store.GetHurtHealthDetails), falling back to damage
+//     arithmetic for rows without that detail, with a dead solo reading
+//     0 — a reconstruction rather than an HP sample at the resolve
+//     event (no such event exists).
 //   - Friendly fire uses each player's FINAL side (events carry no team).
 //
 // Round eligibility: CountedRounds drops warmup AND pregame (knife)

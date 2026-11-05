@@ -183,9 +183,9 @@
 
   // The Clutches card lists WON clutches only (the card's scope decision):
   // a lost 1vN is dropped here rather than shown with an outcome chip, so
-  // this derived filter is the one place that rule lives — lost rows would
-  // otherwise pad the card with the dead solo's reconstructed HP-left
-  // (analytics/clutches.go clamps a finished life at 1 HP).
+  // this derived filter is the one place that rule lives — lost rows are
+  // simply not interesting here (their dead solos read 0 HP in
+  // analytics/clutches.go, never the old clamped 1).
   const wonClutches = $derived(clutches.filter((c) => c.won));
 
   // KAST% cell click → per-round K/A/T/S grid for that player. The modal
@@ -395,7 +395,7 @@
               <th scope="col">Player</th>
               <th scope="col">Outcome</th>
               <th scope="col">Bomb</th>
-              <th scope="col" class="num def" title="Reconstructed remaining HP of the solo player when the clutch resolved: 100 minus the damage the solo took AFTER the clutch started, clamped to at least 1 (analytics/clutches.go) — a reconstruction, not a sampled HP read: damage taken before the clutch started is not counted, so the figure can overstate the real HP">HP left</th>
+              <th scope="col" class="num def" title="Remaining HP of the solo player when the clutch resolved: the game-sampled health of the last player_hurt at or before that moment (HP changes only through player_hurt, so the value is exact); rows without that detail fall back to damage arithmetic, and a dead solo reads 0 (analytics/clutches.go)">HP left</th>
             </tr>
           </thead>
           <tbody>

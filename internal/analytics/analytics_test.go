@@ -2,6 +2,7 @@ package analytics
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -41,6 +42,15 @@ func withWeapon(w string) func(*models.Event) {
 
 func withDmg(d int) func(*models.Event) {
 	return func(e *models.Event) { e.Dmg = d }
+}
+
+// withHurt is a player_hurt carrying both the damage dealt and the
+// game-sampled victim health the extractor stores in detail_json.health.
+func withHurt(dmg, health int) func(*models.Event) {
+	return func(e *models.Event) {
+		e.Dmg = dmg
+		e.DetailJSON = `{"health":` + strconv.Itoa(health) + `}`
+	}
 }
 
 func withAssister(a string) func(*models.Event) {
@@ -294,12 +304,78 @@ func TestClutchesLostWithBombPlanted(t *testing.T) {
 		if c.BombState != "planted" {
 			t.Errorf("clutch %+v bombState = %q, want planted", c, c.BombState)
 		}
-		if c.SteamID == "B" && (c.Won || c.Size != 1 || c.HPLeft != 100) {
-			t.Errorf("B clutch = %+v, want lost 1v1 with hpLeft 100", c)
+		if c.SteamID == "B" && (c.Won || c.Size != 1 || c.HPLeft != 0) {
+			t.Errorf("B clutch = %+v, want lost 1v1 with hpLeft 0 (B died — a dead solo is never clamped up to 1)", c)
 		}
 		if c.SteamID == "X" && !c.Won {
 			t.Errorf("X clutch = %+v, want won", c)
 		}
+	}
+}
+
+// TestClutchHPSeedsFromPreStartDamage pins the HPLeft fix: the seed is
+// the sampled victim-health at the clutch start (detail_json.health), so
+// damage taken BEFORE the solo became solo counts — including a hit AT
+// the start tick (counted by the seed, never by dmgTook). The old
+// 100-based reconstruction displayed 90 here.
+func TestClutchHPSeedsFromPreStartDamage(t *testing.T) {
+	players := []PlayerRef{
+		{SteamID: "A", Side: "ct"}, {SteamID: "B", Side: "ct"},
+		{SteamID: "X", Side: "t"}, {SteamID: "Y", Side: "t"},
+	}
+	rounds := []RoundInfo{{Number: 1, Winner: "ct", EndTick: 900}}
+	events := []models.Event{
+		ev(0, 150, 1, models.EventDamage, "X", "B", withHurt(60, 40)), // pre-start: 40 left
+		ev(1, 200, 1, models.EventKill, "X", "A"),                     // B solo 1v2, start=200
+		ev(2, 200, 1, models.EventDamage, "X", "B", withHurt(5, 35)),  // same tick → seed, not dmgTook
+		ev(3, 300, 1, models.EventDamage, "Y", "B", withDmg(10)),      // post-start → dmgTook
+		ev(4, 400, 1, models.EventKill, "B", "X"),
+		ev(5, 500, 1, models.EventKill, "B", "Y"), // opponents wiped → won
+	}
+	got := Clutches(events, rounds, players, exactSides(rounds, players))
+	var b *Clutch
+	for i := range got {
+		if got[i].SteamID == "B" {
+			b = &got[i]
+		}
+	}
+	if b == nil {
+		t.Fatalf("clutches = %+v, want a record for B", got)
+	}
+	if !b.Won || b.HPLeft != 25 {
+		t.Errorf("B clutch = %+v, want won with hpLeft 25 (35 sampled at start − 10 after)", b)
+	}
+}
+
+// TestClutchHPSeedFallsBackToPreStartDamage: a pre-start hit with no
+// detail_json.health (synthetic fixture / legacy row) seeds the
+// reconstruction arithmetically (100 − pre-start damage) instead of
+// silently assuming full health.
+func TestClutchHPSeedFallsBackToPreStartDamage(t *testing.T) {
+	players := []PlayerRef{
+		{SteamID: "A", Side: "ct"}, {SteamID: "B", Side: "ct"},
+		{SteamID: "X", Side: "t"}, {SteamID: "Y", Side: "t"},
+	}
+	rounds := []RoundInfo{{Number: 1, Winner: "ct", EndTick: 900}}
+	events := []models.Event{
+		ev(0, 150, 1, models.EventDamage, "X", "B", withDmg(30)), // no detail row
+		ev(1, 200, 1, models.EventKill, "X", "A"),                // B solo 1v2, start=200
+		ev(2, 300, 1, models.EventDamage, "Y", "B", withDmg(10)),
+		ev(3, 400, 1, models.EventKill, "B", "X"),
+		ev(4, 500, 1, models.EventKill, "B", "Y"), // opponents wiped → won
+	}
+	got := Clutches(events, rounds, players, exactSides(rounds, players))
+	var b *Clutch
+	for i := range got {
+		if got[i].SteamID == "B" {
+			b = &got[i]
+		}
+	}
+	if b == nil {
+		t.Fatalf("clutches = %+v, want a record for B", got)
+	}
+	if !b.Won || b.HPLeft != 60 {
+		t.Errorf("B clutch = %+v, want won with hpLeft 60 (100 − 30 pre-start − 10 after)", b)
 	}
 }
 
