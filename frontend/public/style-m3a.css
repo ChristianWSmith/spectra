@@ -727,6 +727,10 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* Static fallback for the legend gradient — Heatmaps sets the exact
+   stops inline from lib/heatramp.js (rampCss/signedRampCss, complete
+   `background:` declarations), so this only renders if that style is
+   ever missing. It mirrors HEAT_STOPS: transparent amber → red. */
 .heat-ramp {
   display: inline-block;
   width: 180px;
@@ -738,6 +742,23 @@
     rgba(251, 172, 24, 0) 0%,
     rgba(251, 172, 24, 0.9) 45%,
     rgba(224, 91, 91, 1) 100%
+  );
+}
+
+/* K/D legend fallback: the opaque diverging shape signedRampCss paints —
+   solid blue deaths half | amber→red kills half meeting at zero — so a
+   dropped inline style can never show the amber-only ramp on the
+   signed legend (the "black to orange to red" report). Static
+   approximation; lib/heatramp.js owns the exact stops. */
+.heat-ramp.signed {
+  background: linear-gradient(
+    90deg,
+    rgba(26, 80, 237, 1) 0%,
+    rgba(86, 144, 255, 1) 27.5%,
+    rgba(130, 180, 255, 1) 50%,
+    rgba(251, 172, 24, 1) 50%,
+    rgba(224, 91, 91, 1) 85%,
+    rgba(255, 242, 214, 1) 100%
   );
 }
 

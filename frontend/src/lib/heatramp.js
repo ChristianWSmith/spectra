@@ -1,13 +1,23 @@
 // Heatmap rendering math for the canvas overlay (HeatmapLayer) and its
-// legend (Heatmaps paints the .heat-ramp gradient from the same stops
-// via rampCss/signedRampCss, so the legend can never drift from the
-// renderer): the ONE stop table, the intensity curves, and the
-// field→pixels raster pass (renderHeatField).
+// legend (Heatmaps binds style={rampCss/signedRampCss(...)} on
+// .heat-ramp — a complete `background:` declaration built from the SAME
+// stop tables the canvas renders, so the legend can never drift from the
+// renderer): the ONE stop table, the intensity curves, the legend
+// gradients, and the field→pixels raster pass (renderHeatField).
 //
 // Intensity curve: t = sqrt(v / max) — nonlinear, so a lone sample
 // stays faint while clusters read clearly hotter. The signed kd kind
 // maps t = sign(v)·sqrt(|v| / maxAbs): positive (kills) rides
 // HEAT_STOPS, negative (deaths) rides DEATH_STOPS, zero transparent.
+//
+// Renderer vs legend: hue and stop POSITIONS are shared; ALPHA belongs
+// to the renderer alone. The canvas blends the translucent stops over
+// the map (transparent at zero, see above), while the legend bar sits
+// on the page — stop alpha there reads as the page color, which is how
+// the kd legend's deaths half ended up painted black. The signed
+// legend therefore renders the very same stops fully opaque
+// (signedRampCss); the plain legend keeps alpha because its 0 end means
+// "no signal" and is supposed to read as the background.
 //
 // Rendering model: cells are VALUES; color is resolved per OUTPUT pixel
 // (sampleField → intensity → ramp LUT). Coloring cells and letting the
@@ -26,13 +36,18 @@ export const HEAT_STOPS = [
 ];
 
 // Deaths side of the signed kd ramp (magnitude 0..1): transparent →
-// blue → icy white — the mirror of HEAT_STOPS' white-hot core.
+// blue → a SOLID deep-blue core — the hue deepens monotonically (r, g,
+// b never rise) from the pale-blue t=0 stop; the last stop continues the
+// previous segment's delta (−30, −32, −9) exactly. Deliberately NOT a
+// mirrored icy-white core: both kd poles then went near-white at high
+// intensity — indistinguishable on the overlay and ambiguous as legend
+// ends — so the deaths pole stays blue and the legend reads blue → red.
 export const DEATH_STOPS = [
   [0.0, 130, 180, 255, 0],
   [0.2, 120, 172, 255, 0.3],
   [0.45, 86, 144, 255, 0.62],
   [0.7, 56, 112, 246, 0.9],
-  [1.0, 206, 231, 255, 1],
+  [1.0, 26, 80, 237, 1],
 ];
 
 // intensity maps a non-negative value onto 0..1 (sqrt curve; anything
@@ -71,31 +86,42 @@ export function rampColor(stops, t) {
   ];
 }
 
-// rampCss renders the stop table as the legend's CSS gradient (set as
-// the inline background of .heat-ramp — the stylesheet's static
-// gradient is only the fallback).
+// rampCss renders the stop table as the legend's background — a
+// COMPLETE style declaration (`background: linear-gradient(…)`) because
+// Heatmaps hands it straight to a style attribute (style={…}). A bare
+// gradient there is not a declaration: the CSSOM drops the entire style
+// and the stylesheet's static fallback renders instead — the bug that
+// made the kd legend read "black to orange to red". The plain ramp keeps
+// the stops' alpha: its 0 end is "no signal" and should read as the
+// page background (contrast signedRampCss, which must be opaque).
 export function rampCss(stops) {
   const parts = stops.map(
     ([t, r, g, b, a]) => `rgba(${r}, ${g}, ${b}, ${a}) ${(t * 100).toFixed(1)}%`,
   );
-  return `linear-gradient(90deg, ${parts.join(', ')})`;
+  return `background: linear-gradient(90deg, ${parts.join(', ')})`;
 }
 
-// signedRampCss is the diverging legend gradient: negStops (death
-// magnitudes) laid out right-to-left across the −1..0 half, posStops
-// across 0..+1, transparent at the shared center.
+// signedRampCss is the diverging legend gradient, also one complete
+// `background:` declaration (see rampCss): negStops (death magnitudes)
+// laid out right-to-left across the −1..0 half as SOLID blues, posStops
+// across 0..+1, the two halves meeting at their zero stops on 50%.
+//
+// Every stop is emitted at alpha 1 — the legend is opaque by design.
+// The stop tables' alpha is the canvas renderer's blending channel; over
+// the page background alpha<1 reads as the page color, which painted the
+// deaths half black instead of blue. Hue and positions still come from
+// the same stop tables the renderer samples, so legend and overlay
+// cannot drift.
 export function signedRampCss(negStops, posStops) {
   const neg = [...negStops]
     .reverse()
     .map(
-      ([m, r, g, b, a]) =>
-        `rgba(${r}, ${g}, ${b}, ${a}) ${(((1 - m) / 2) * 100).toFixed(1)}%`,
+      ([m, r, g, b]) => `rgba(${r}, ${g}, ${b}, 1) ${(((1 - m) / 2) * 100).toFixed(1)}%`,
     );
   const pos = posStops.map(
-    ([t, r, g, b, a]) =>
-      `rgba(${r}, ${g}, ${b}, ${a}) ${(((1 + t) / 2) * 100).toFixed(1)}%`,
+    ([t, r, g, b]) => `rgba(${r}, ${g}, ${b}, 1) ${(((1 + t) / 2) * 100).toFixed(1)}%`,
   );
-  return `linear-gradient(90deg, ${[...neg, ...pos].join(', ')})`;
+  return `background: linear-gradient(90deg, ${[...neg, ...pos].join(', ')})`;
 }
 
 // --- Field → pixels (the canvas overlay's raster pass) --------------------

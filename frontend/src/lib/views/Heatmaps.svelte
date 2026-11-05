@@ -305,14 +305,18 @@
 
   {#if grid}
     <div class="heat-legend">
-      <!-- The ramp gradient is painted from lib/heatramp.js — the same
-           stops the canvas renders — so legend and overlay cannot
-           diverge. The kd legend is diverging: deaths (−) blue on the
-           left, kills (+) amber→white-hot on the right, 0 transparent
-           in the middle. -->
+      <!-- The ramp gradient is a complete background declaration built
+           from lib/heatramp.js — the same stop tables the canvas
+           renders — so legend and overlay cannot diverge (a bare
+           gradient in style={…} would be invalid CSS and silently fall
+           back to the stylesheet's static gradient). The kd legend is
+           an opaque diverging bar: deaths (−) solid blue on the left,
+           kills (+) amber→red→white-hot on the right, the two halves
+           meeting at zero in the middle; the plain legend keeps the
+           stops' alpha so its 0 end reads as "no signal". -->
       {#if unitKind === 'kd'}
         <span class="mono heat-legend-label heat-legend-neg">−{maxLabel}</span>
-        <span class="heat-ramp" aria-hidden="true" style={signedRampCss(DEATH_STOPS, HEAT_STOPS)}></span>
+        <span class="heat-ramp signed" aria-hidden="true" style={signedRampCss(DEATH_STOPS, HEAT_STOPS)}></span>
         <span class="mono heat-legend-label heat-legend-pos">+{maxLabel}</span>
       {:else}
         <span class="mono heat-legend-label">0</span>

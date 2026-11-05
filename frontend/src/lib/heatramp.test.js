@@ -15,7 +15,7 @@ import {
   renderHeatField,
 } from './heatramp.js';
 
-test('stop tables are well-formed and start transparent', () => {
+test('stop tables are well-formed, start transparent, and end on unambiguous poles', () => {
   for (const stops of [HEAT_STOPS, DEATH_STOPS]) {
     assert.ok(stops.length >= 2);
     let prev = -1;
@@ -25,13 +25,20 @@ test('stop tables are well-formed and start transparent', () => {
       assert.ok(r >= 0 && r <= 255 && g >= 0 && g <= 255 && b >= 0 && b <= 255);
       assert.ok(a >= 0 && a <= 1);
     }
-    // The ramp must fade in from nothing (both the plain legend and the
-    // shared transparent center of the diverging legend depend on it).
+    // The ramp must fade in from nothing (the renderer's transparent
+    // zero-crossing and the plain legend's 0 end depend on it).
     assert.equal(stops[0][4], 0, 'first stop is fully transparent');
     // …and reach full intensity at the extreme.
     assert.equal(stops[stops.length - 1][4], 1, 'last stop is opaque');
   }
   assert.equal(HEAT_STOPS.length, DEATH_STOPS.length, 'legend symmetry');
+  // The two extremes must be unmistakable cool vs warm: the deaths pole
+  // is solid blue (not a mirrored icy-white that went near-white like
+  // the kills pole), the kills pole white-hot warm.
+  const dEnd = DEATH_STOPS.at(-1);
+  assert.ok(dEnd[3] > dEnd[1] + 100, `deaths extreme rgb(${dEnd[1]},${dEnd[2]},${dEnd[3]}) is blue-dominant`);
+  const hEnd = HEAT_STOPS.at(-1);
+  assert.ok(hEnd[1] > hEnd[3], `kills extreme rgb(${hEnd[1]},${hEnd[2]},${hEnd[3]}) is warm`);
 });
 
 test('intensity is a clamped sqrt curve', () => {
@@ -72,13 +79,18 @@ test('rampColor samples bracketing stops and clamps t', () => {
   // Midpoint between the 0.2 and 0.45 stops lerps every channel.
   const mid = rampColor(HEAT_STOPS, 0.325);
   assert.deepEqual(mid, [(251 + 244) / 2, (172 + 132) / 2, (24 + 30) / 2, (0.32 + 0.66) / 2]);
-  // The death ramp is transparent at t=0 (the diverging center).
+  // The death stop table is transparent at t=0 — the renderer's zero
+  // crossing (the legend drops alpha; see signedRampCss).
   assert.equal(rampColor(DEATH_STOPS, 0)[3], 0);
 });
 
-test('rampCss renders the stops as a 0..100% legend gradient', () => {
+test('rampCss renders the stops as a complete inline background declaration', () => {
   const css = rampCss(HEAT_STOPS);
-  assert.ok(css.startsWith('linear-gradient(90deg, '));
+  // Root-cause pin: Heatmaps binds style={rampCss(...)}, and a style
+  // attribute must contain declarations — a bare "linear-gradient(…)"
+  // there is dropped by the CSSOM and the stylesheet's static fallback
+  // renders instead (the reported "black to orange to red" kd legend).
+  assert.ok(css.startsWith('background: linear-gradient(90deg, '));
   assert.ok(css.includes('rgba(251, 172, 24, 0) 0.0%'), 'transparent low end');
   assert.ok(css.includes('255, 242, 214, 1) 100.0%'), 'white-hot high end');
   assert.equal(
@@ -88,20 +100,41 @@ test('rampCss renders the stops as a 0..100% legend gradient', () => {
   );
 });
 
-test('signedRampCss lays deaths left of the transparent center', () => {
+test('signedRampCss is an opaque blue→red diverging background declaration', () => {
   const css = signedRampCss(DEATH_STOPS, HEAT_STOPS);
-  const entries = css.match(/rgba\([^)]+\) [\d.]+%/g);
+  // Same declaration contract as rampCss (style={…} would silently drop
+  // a bare gradient — see the rampCss test for the root cause).
+  assert.ok(css.startsWith('background: linear-gradient(90deg, '));
+  const entries = [
+    ...css.matchAll(/rgba\((\d+), (\d+), (\d+), ([\d.]+)\) ([\d.]+)%/g),
+  ].map((m) => m.slice(1));
   assert.equal(entries.length, DEATH_STOPS.length + HEAT_STOPS.length);
-  // Left edge = full deaths extreme; right edge = full kills extreme;
-  // both ramps meet transparent at 50%.
-  assert.ok(css.startsWith('linear-gradient(90deg, '));
-  assert.ok(css.includes('206, 231, 255, 1) 0.0%'), 'deaths extreme at left');
-  assert.ok(css.includes('255, 242, 214, 1) 100.0%'), 'kills extreme at right');
-  assert.equal(
-    (css.match(/ 50\.0%/g) || []).length,
-    2,
-    'both transparent stops meet at the center',
-  );
+  // OPAQUE everywhere: alpha is the canvas renderer's blending channel;
+  // an alpha<1 stop over the page background reads as the page color —
+  // exactly how the deaths half ended up black. In particular no stop on
+  // the deaths (−) half — down to the death end itself — is transparent.
+  for (const [r, g, b, a, pos] of entries) {
+    assert.equal(a, '1', `stop at ${pos}% is opaque`);
+  }
+  // Blue pole at the left edge, warm pole at the right; both halves meet
+  // at their zero stops on 50%.
+  const [fr, , fb, , fpos] = entries[0];
+  assert.equal(fpos, '0.0', 'deaths extreme at the left edge');
+  assert.ok(+fb > +fr + 100, `left end rgb(${fr},…,${fb}) is solid blue`);
+  const [lr, , lb, , lpos] = entries.at(-1);
+  assert.equal(lpos, '100.0', 'kills extreme at the right edge');
+  assert.ok(+lr > +lb, `right end rgb(${lr},…,${lb}) is warm`);
+  assert.equal((css.match(/ 50\.0%/g) || []).length, 2, 'halves meet at the center');
+  // Every deaths-half stop is blue-dominant and every kills-half stop
+  // warm-dominant — the bar reads blue → red left to right, passing
+  // through the kills half's real red stop.
+  for (const [r, , b] of entries.slice(0, DEATH_STOPS.length)) {
+    assert.ok(+b > +r, `death stop rgb(${r},…,${b}) is blue`);
+  }
+  for (const [r, , b] of entries.slice(DEATH_STOPS.length)) {
+    assert.ok(+r > +b, `kill stop rgb(${r},…,${b}) is warm`);
+  }
+  assert.ok(css.includes('224, 91, 91, 1) 85.0%'), 'red on the kills half');
 });
 
 test('smoothstepWeight is the C1 between-centers curve', () => {
@@ -197,13 +230,13 @@ test('renderHeatField resolves colors per output pixel and flips row 0 to the bo
   );
 });
 
-test('renderHeatField renders the signed kd kind per pixel: white-hot kills, icy deaths, transparent at zero', () => {
+test('renderHeatField renders the signed kd kind per pixel: white-hot kills, solid-blue deaths, transparent at zero', () => {
   // 2 cells [kills, deaths] at max 1 → outW 3 puts the middle pixel
   // exactly on the zero crossing (u = 1.0 = the midpoint).
   const out = renderHeatField([1, -1], 2, 1, 1, true, 3, 1);
   assert.deepEqual([...out.subarray(0, 4)], [255, 242, 214, 255], 'kills side');
   assert.equal(out[7], 0, 'zero crossing fully transparent (no sign bleed)');
-  assert.deepEqual([...out.subarray(8, 12)], [206, 231, 255, 255], 'deaths side');
+  assert.deepEqual([...out.subarray(8, 12)], [26, 80, 237, 255], 'deaths side');
 });
 
 test('renderHeatField with no signal is fully transparent', () => {

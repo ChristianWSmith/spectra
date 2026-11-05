@@ -307,11 +307,11 @@ Winner equipment value advantage card,Economy tab,"""Winner equipment value adva
 Winner side chip,Economy tab,CT/T/— chip in the Winner column of the buy table.,Economy.svelte:side
 Generate heatmap button,Heatmaps tab,"""Generate"" or ""Regenerate"" button that computes the heatmap raster; shows ""Generating…"" while running.",Heatmaps.svelte:generate
 Heatmap click hint,Heatmaps tab,"""Click the map to filter the timeline by region"" hint under the map on the Heatmaps tab.",Heatmaps.svelte:heat-hint
-Heatmap color ramp,Heatmaps tab,Amber-to-red gradient bar in the heatmap legend.,Heatmaps.svelte:heat-ramp
+Heatmap color ramp,Heatmaps tab,"Gradient bar in the heatmap legend — amber-to-red (0→max) for the plain kinds; the K/D legend is an opaque diverging bar, solid blue (−max) through zero to amber-red (+max).",Heatmaps.svelte:heat-ramp
 Heatmap empty state,Heatmaps tab,"""Choose filters and press Generate — heatmaps are computed on demand."" message before any heatmap is generated.",Heatmaps.svelte:heat-empty
 Heatmap filter controls,Heatmaps tab,"Bar of Kind, Player, Team, and round-range selects plus the Generate button above the map.",Heatmaps.svelte:heat-controls
 Heatmap kind select,Heatmaps tab,"Dropdown choosing the heatmap metric: presence, kills, deaths, or damage — kills plot where the KILLER was, deaths/damage where the victim was hit.",Heatmaps.svelte:heat-kind
-Heatmap legend,Heatmaps tab,"Legend row showing 0-to-max scale, color ramp, unit chip, sample count, and grid size under the controls.",Heatmaps.svelte:heat-legend
+Heatmap legend,Heatmaps tab,"Legend row showing the scale (0-to-max, or −max-to-max for K/D), color ramp, unit chip, sample count, and grid size under the controls.",Heatmaps.svelte:heat-legend
 Heatmap load error,Heatmaps tab,Red alert at the top of the Heatmaps tab when match data fails to load.,Heatmaps.svelte:error
 Heatmap player select,Heatmaps tab,Dropdown limiting the heatmap to one player or all players.,Heatmaps.svelte:heat-player
 Heatmap rounds-from select,Heatmaps tab,Dropdown setting the first counted round of the heatmap range (knife/warmup rounds are numbered negatively and are not offered).,Heatmaps.svelte:heat-from
