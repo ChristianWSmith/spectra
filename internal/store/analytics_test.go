@@ -339,7 +339,7 @@ func TestGetEconomySpent(t *testing.T) {
 
 // TestGetEconomyFreePistol pins the round-trip of
 // round_economy.free_pistol_value (the side's held free spawn-issued
-// default-pistol value at freeze end — net worth subtracts it) into
+// default-pistol value at freeze end) into
 // EconomyRow.FreePistolCT/FreePistolT and the round-detail read,
 // including the COALESCE-to-0 path for a round with no economy row.
 func TestGetEconomyFreePistol(t *testing.T) {
@@ -370,13 +370,22 @@ func TestGetEconomyFreePistol(t *testing.T) {
 		t.Errorf("round 1 free pistols = CT %d / T %d, want 600/1000 (stored round_economy.free_pistol_value)",
 			rows[0].FreePistolCT, rows[0].FreePistolT)
 	}
-	// Net worth the chart plots: equip + cash − free pistols → both
-	// sides read the $4000 starting money on this pistol round.
+	// Net worth the chart plots (frontend lib/econ.js): equip + cash,
+	// NEVER the free pistols — subtracting them dropped net worth below
+	// equipment value on any side holding less cash than the granted
+	// pistols it still had. Both sides here still read their $4000 of
+	// cash-flow (equip + cash − free pistols), the column's own round-trip.
+	if got := rows[0].EquipCT + rows[0].MoneyCT; got != 4600 {
+		t.Errorf("round 1 CT net worth = %d, want 4600 (equip 4000 + cash 600)", got)
+	}
+	if got := rows[0].EquipT + rows[0].MoneyT; got != 5000 {
+		t.Errorf("round 1 T net worth = %d, want 5000 (equip 3600 + cash 1400)", got)
+	}
 	if got := rows[0].EquipCT + rows[0].MoneyCT - rows[0].FreePistolCT; got != 4000 {
-		t.Errorf("round 1 CT net worth = %d, want 4000", got)
+		t.Errorf("round 1 CT equip+cash−free pistols = %d, want 4000 (free_pistol_value round-trip)", got)
 	}
 	if got := rows[0].EquipT + rows[0].MoneyT - rows[0].FreePistolT; got != 4000 {
-		t.Errorf("round 1 T net worth = %d, want 4000", got)
+		t.Errorf("round 1 T equip+cash−free pistols = %d, want 4000 (free_pistol_value round-trip)", got)
 	}
 	if rows[1].FreePistolCT != 0 || rows[1].FreePistolT != 0 {
 		t.Errorf("round 2 free pistols = CT %d / T %d, want 0/0 (no economy row)",
@@ -388,6 +397,69 @@ func TestGetEconomyFreePistol(t *testing.T) {
 	}
 	if len(det.Economy) != 2 || det.Economy[0].FreePistolValue != 600 || det.Economy[1].FreePistolValue != 1000 {
 		t.Errorf("round detail economy = %+v, want free pistol 600/1000", det.Economy)
+	}
+}
+
+// TestGetEconomyNetWorthInvariant pins the store-side contract the
+// chart's net worth rests on (frontend lib/econ.js: net worth =
+// Equip* + Money*): Money* is the freeze-end cash sample and is never
+// negative, so net worth can never fall below equipment value — even on
+// the golden-demo-shaped rows where a side holds far more free
+// spawn-issued default pistols than cash (round 13 CT: $600 of cash
+// against $1000 of USP-S). The last assertion documents WHY
+// free_pistol_value must not be subtracted: on those rows
+// equip + cash − free pistols lands BELOW the equipment value.
+func TestGetEconomyNetWorthInvariant(t *testing.T) {
+	s := openMem(t)
+	id := saveTestMatch(t, s, "/d/netinv.dem", "sha-netinv", time.Now())
+	em := testExtracted("sha-netinv", time.Now())
+	em.Match.RealRounds = 2
+	em.Rounds = []models.Round{
+		{Number: 1, Winner: "ct", EquipCT: 4400, EquipT: 20300, StartTick: 100, EndTick: 2000},
+		{Number: 2, Winner: "t", EquipCT: 12000, EquipT: 1500, StartTick: 2001, EndTick: 4000},
+	}
+	// Round 2 has no round_economy rows on purpose (COALESCE path).
+	em.RoundEconomy = []models.RoundEconomy{
+		{Round: 1, Side: "ct", EquipValue: 4400, MoneySampledSum: 600, MoneySamples: 5, Spent: 3400, FreePistolValue: 1000},
+		{Round: 1, Side: "t", EquipValue: 20300, MoneySampledSum: 100, MoneySamples: 5, Spent: 5000, FreePistolValue: 1000},
+		{Round: 2, Side: "ct", EquipValue: 12000, MoneySampledSum: 0, MoneySamples: 5, FreePistolValue: 600},
+	}
+	if err := s.SaveExtracted(id, em); err != nil {
+		t.Fatalf("SaveExtracted: %v", err)
+	}
+	rows, err := s.GetEconomy(id)
+	if err != nil {
+		t.Fatalf("GetEconomy: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("rows = %d, want 2", len(rows))
+	}
+	for _, r := range rows {
+		for _, side := range []struct {
+			name        string
+			equip, cash int
+		}{
+			{"CT", r.EquipCT, r.MoneyCT},
+			{"T", r.EquipT, r.MoneyT},
+		} {
+			if side.cash < 0 {
+				t.Errorf("round %d %s cash = %d, want >= 0 (negative cash would break the net-worth invariant)",
+					r.Round, side.name, side.cash)
+			}
+			if net := side.equip + side.cash; net < side.equip {
+				t.Errorf("round %d %s net worth %d < equipment value %d", r.Round, side.name, net, side.equip)
+			}
+		}
+	}
+	// Characterization of the inversion this guards: round 1 CT holds
+	// $1000 of free spawn pistols against $600 of cash, so subtracting
+	// them reads $4000 — below its $4400 of equipment value.
+	r := rows[0]
+	if r.MoneyCT >= r.FreePistolCT {
+		t.Fatalf("fixture: round 1 CT cash %d must be below free pistols %d", r.MoneyCT, r.FreePistolCT)
+	}
+	if withSub := r.EquipCT + r.MoneyCT - r.FreePistolCT; withSub >= r.EquipCT {
+		t.Errorf("fixture: equip+cash−free pistols = %d, want < equip %d", withSub, r.EquipCT)
 	}
 }
 

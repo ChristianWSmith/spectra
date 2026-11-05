@@ -432,11 +432,18 @@ at the end of the section.
   `equipment + cash` totals on a pistol round. Golden demo: round 1 CT holds
   3 free USP-S ($600) vs T 5 free Glocks ($1000) → raw equip+cash 4600 vs
   5000; round 13 CT 5 USP-S ($1000) vs T 4 Glocks ($800) → 5000 vs 4800.
-  Net worth must therefore subtract free default pistols held
-  (spectra: `round_economy.free_pistol_value`), which makes both sides read
-  exactly $4000 (= 5 × $800) on both golden-demo pistol rounds. Caveat: a
-  rebought default ($200 buy-back) is also counted as free here — the demo
-  data cannot distinguish it. **Source** — spectra golden-demo freeze-end
+  Two readings follow and spectra uses the first: net worth = equipment +
+  cash counts the granted pistols (a genuine asset gap — a side that
+  dropped or upgraded its free sidearms really holds less), while net
+  worth = equipment + cash − free default pistols makes both pistol-round
+  sides read exactly $4000 (= 5 × $800) but can fall BELOW equipment
+  value whenever a side holds less cash than the granted pistols it still
+  has (golden demo round 13 CT: $600 of cash against $1000 of USP-S →
+  4000 < 4400), which the Economy chart forbids — so the chart plots
+  equipment + cash and `round_economy.free_pistol_value` records the
+  granted-pistol value per side for reference. Caveat: a rebought default
+  ($200 buy-back) is also counted as free here — the demo data cannot
+  distinguish it. **Source** — spectra golden-demo freeze-end
   inventory dump (2026-11-05); Counter-Strike Wiki USP-S ("free spawn
   pistol", repurchase for $200),
   https://counterstrike.fandom.com/wiki/USP-S; csbepro Glock-18 guide

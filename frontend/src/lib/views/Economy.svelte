@@ -60,6 +60,13 @@
 
   const warmupSkipped = $derived(rounds.filter((r) => r.warmup).length);
 
+  // Loss-bonus values are never read from the demo — the store
+  // reconstructs them from round results (store.GetEconomy →
+  // applyLossBonuses), so EVERY row is inferred. The fact/inference badge
+  // therefore sits once per loss-bonus column header, not once per cell.
+  const lossInferredCT = $derived(rows.some((r) => r.inferredCT));
+  const lossInferredT = $derived(rows.some((r) => r.inferredT));
+
   // Sides swap at halftime, so a side never names a team: every per-team
   // rollup below resolves each round's side through the canonical
   // side-parity helper (teamKeyAt), keyed by the team's final side —
@@ -265,7 +272,7 @@
         value={fmtMoney(summary.lostTotal)}
         sub={`${names.ct} ${fmtMoney(summary.lost.ct)} · ${names.t} ${fmtMoney(summary.lost.t)}`}
         cls={!summary.lostRound ? 'no-drill' : ''}
-        title="Formula: Σ over decided rounds of the losing TEAM's freeze-end equipment value, credited to the team that lost it rather than the side it played — inferred: assumes all losing-side equipment is destroyed (PRD §6.1). Click: open Replay events for round {summary.lostRound || '—'} (largest loss)."
+        title="Formula: Σ over decided rounds of the losing TEAM's freeze-end equipment value, credited to the team that lost it rather than the side it played — inferred: assumes all losing-side equipment is destroyed. Click: open Replay events for round {summary.lostRound || '—'} (largest loss)."
         onclick={() => drill(summary.lostRound)}
       >
         {#snippet badge()}<span class="chip badge-inferred">inferred</span>{/snippet}
@@ -287,8 +294,26 @@
                 <th scope="col">T buy</th>
                 <th scope="col" class="num" title={EQUIP_DEF}>Equip CT</th>
                 <th scope="col" class="num" title={EQUIP_DEF}>Equip T</th>
-                <th scope="col" class="num">Loss CT</th>
-                <th scope="col" class="num">Loss T</th>
+                <th scope="col" class="num">
+                  Loss CT
+                  {#if lossInferredCT}
+                    <span
+                      class="chip badge-inferred"
+                      title="reconstructed from round results — inferred"
+                      >inferred</span
+                    >
+                  {/if}
+                </th>
+                <th scope="col" class="num">
+                  Loss T
+                  {#if lossInferredT}
+                    <span
+                      class="chip badge-inferred"
+                      title="reconstructed from round results — inferred"
+                      >inferred</span
+                    >
+                  {/if}
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -332,26 +357,8 @@
                   </td>
                   <td class="num">{fmtMoney(r.equipCT)}</td>
                   <td class="num">{fmtMoney(r.equipT)}</td>
-                  <td class="num econ-loss">
-                    {fmtInt(r.lossBonusCT)}
-                    {#if r.inferredCT}
-                      <span
-                        class="chip badge-inferred"
-                        title="reconstructed from round results — inferred"
-                        >inferred</span
-                      >
-                    {/if}
-                  </td>
-                  <td class="num econ-loss">
-                    {fmtInt(r.lossBonusT)}
-                    {#if r.inferredT}
-                      <span
-                        class="chip badge-inferred"
-                        title="reconstructed from round results — inferred"
-                        >inferred</span
-                      >
-                    {/if}
-                  </td>
+                  <td class="num econ-loss">{fmtInt(r.lossBonusCT)}</td>
+                  <td class="num econ-loss">{fmtInt(r.lossBonusT)}</td>
                 </tr>
                 {#if whyOpen.startsWith(`${r.round}:`)}
                   <tr class="econ-why-row">
@@ -384,15 +391,16 @@
           Equip CT/T = that side's equipment value at freeze time end — the
           value of the gear its players actually hold (weapons picked up and
           carried over from earlier rounds included), never this round's
-          spend; the chart's Net worth = equipment value + unspent money −
-          the free spawn-issued default pistols held at the same instant
-          (the glossary's Net worth entry has the full rule); Loss CT/T =
+          spend; the chart's Net worth = that equipment value + the side's
+          unspent money at the same instant, so it is never below equipment
+          value (the glossary's Net worth entry has the full rule); Loss CT/T =
           the round loss bonus that side would collect by losing
           this round — CS2's ladder runs $1400 → $3400 in $500 steps: a loss
           steps it up, a win steps it down (never a full reset), and every
           half starts one level up (a pistol loss pays $1900);
-          <span class="chip badge-inferred">inferred</span> marks rows
-          reconstructed from round results rather than recorded.
+          <span class="chip badge-inferred">inferred</span> on the Loss headers
+          marks those values as reconstructed from round results rather than
+          recorded.
         </p>
       {/if}
     </section>

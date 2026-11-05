@@ -12,6 +12,7 @@
   import { fmtMoney } from '../fmt.js';
   import { teamKeyAt } from '../sideparity.js';
   import { teamStartClass } from '../teams.js';
+  import { econColumns, econValue } from '../econ.js';
   import { EQUIP_DEF, NETWORTH_DEF } from '../definitions.js';
 
   let {
@@ -33,26 +34,18 @@
 
   const n = $derived(rows.length);
 
-  // Per-team value for one round: equipment value, or net worth =
-  // equipment value + the team's unspent money at the same freeze end,
-  // minus the free spawn-issued default pistols it still holds (granted,
-  // not bought — CS2.md "Free spawn-issued default pistol"; without the
-  // subtraction the two pistol rounds read 4600/5000 and 5000/4800 on
-  // the golden demo instead of 4000 on both sides).
+  // Per-team value for one round, for the metric the toggle selects —
+  // both series come from the canonical formulas in ../econ.js (equipment
+  // value; net worth = equipment value + the side's unspent money at the
+  // same freeze end, so net worth is never below equipment value).
   function valueOf(r, key) {
-    const equip = Number(key === 'ct' ? r.equipCT : r.equipT) || 0;
-    if (metric === 'equip') return equip;
-    return columns(r, key).net;
+    return econValue(r, key, metric);
   }
 
-  // Both columns of the hover tooltip, per team (net worth always =
-  // equip + unspent money − free spawn pistols; the chart plots one of
-  // them at a time).
+  // Both columns of the hover tooltip, per team — the chart plots one of
+  // them at a time.
   function columns(r, key) {
-    const equip = Number(key === 'ct' ? r.equipCT : r.equipT) || 0;
-    const cash = Number(key === 'ct' ? r.moneyCT : r.moneyT) || 0;
-    const free = Number(key === 'ct' ? r.freePistolCT : r.freePistolT) || 0;
-    return { equip, net: equip + cash - free };
+    return econColumns(r, key);
   }
 
   const series = $derived.by(() => {
