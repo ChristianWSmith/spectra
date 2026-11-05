@@ -117,8 +117,8 @@ test('entrySeekTick: a ?round= link resolves to that round\'s start tick', () =>
   // never the first frame (the reported "lands at the first tick" bug).
   assert.equal(entrySeekTick({ round: '7' }, ROUNDS), 24500);
   assert.equal(entrySeekTick({ round: 1 }, ROUNDS), 1200);
-  // Negative-numbered rounds are real rounds too (knife/warmup) — the
-  // knife (-2) resolves; see the sentinel case below for -1.
+  // Negative-numbered rounds are real rounds too (knife/warmup) — both
+  // resolve to their own start tick (see the raw-param case below).
   assert.equal(entrySeekTick({ round: '-2' }, ROUNDS), 100);
 });
 
@@ -130,8 +130,10 @@ test('entrySeekTick: no usable time target → 0 (first frame), never a guess', 
   assert.equal(entrySeekTick({ round: 'x' }, ROUNDS), 0); // malformed
   assert.equal(entrySeekTick({ round: '1' }, []), 0); // rounds not loaded
   assert.equal(entrySeekTick({ round: '1' }, null), 0);
-  // Parsed -1 is the "all rounds" sentinel (parseLandmarkFilter): an
-  // absent round and the warmup round's number are indistinguishable
-  // post-parse, so -1 never seeks — a pre-existing filter quirk.
-  assert.equal(entrySeekTick({ round: '-1' }, ROUNDS), 0);
+  // Absent ?round= = no time promise at all → the first frame, even
+  // though parseLandmarkFilter folds "absent" onto the same -1 the
+  // warmup round carries: entrySeekTick reads the RAW param, so an
+  // absent round and the warmup round's "-1" stay distinguishable.
+  assert.equal(entrySeekTick({ round: '-1' }, ROUNDS), 400); // warmup round start
+  assert.equal(entrySeekTick({ cat: 'kills' }, ROUNDS), 0); // no round param
 });

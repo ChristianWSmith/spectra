@@ -4,19 +4,11 @@ Audit of every place in the app that links to a point in time in the
 replay (round links, tick links, landmark/event links): `replayHash`,
 `go(`, `nav(`, `tick:`/`round:` usages across `frontend/src/lib/views/*`
 and `components/*`, verified against how `Replay.svelte` +
-`lib/router.js`/`lib/nav.js` honor the target.
+`lib/router.js`/`lib/nav.js` honor the target. Every finding below was
+either fixed or recorded as a known issue; re-run the same sweep when a
+new link-to-replay surface is added.
 
-Scope rule applied: sites in files owned by this agent
-(`Replay.svelte`, `VoiceLanes.svelte`, `Economy.svelte`,
-`Utility.svelte`, `nav.js`, `router.js`, `rounds.js`,
-`ref/ui-elements.csv`) were **fixed here**; sites in other agents' files
-(`Match.svelte`, `EconCurve.svelte`, `Combat.svelte`,
-`Library.svelte`/`Settings.svelte`, `heatramp.js`/`Heatmaps.svelte`) and
-in files owned by nobody (`CompareRounds.svelte`, `RoundDetail.svelte`,
-`CommandPalette.svelte`) are **recorded only** — do not edit them from
-this branch.
-
-## The contract (fixed in this branch, `Replay.svelte` + `nav.js`)
+## The contract (`Replay.svelte` + `nav.js`)
 
 An entry URL's time target is resolved **once**, after the position data
 loads, by the new canonical resolver `nav.entrySeekTick(query, rounds)`
@@ -36,7 +28,7 @@ preserve the params but never re-seek, so the user's playback position
 stays theirs. `?tick=` never seeks *before* loading (there is no engine
 to seek); it seeks in `startEngine` immediately after `load()` finishes.
 
-### Bugs this fixed (in owned files)
+### Bugs this fixed
 
 - **`Economy.svelte:177` `drill(round)`** — the "Winner equipment value
   advantage" card (and the three sibling summary cards) promised
@@ -71,50 +63,47 @@ to seek); it seeks in `startEngine` immediately after `load()` finishes.
 | `Replay.svelte` in-Replay seeks (feed ▶, "Seek to event", voice-lane click, `Hear ±10s`) | current row's tick | Honored — in-place `engine.seekTick`, no navigation |
 | `Replay.svelte` `?tick=` entry (any producer) | exact tick | Honored — applied once in `startEngine`, after loading |
 | `Replay.svelte` `?sel=` entry | landmark tick | **Fixed here** (loader race) |
-| `Match.svelte:460-467` `openPlayerEvents` / `openReplay` | none (steam scope + optional `?follow=` camera) | No time target by design — first frame is correct for a non-time link (the camera hand-off is changes.txt item 6, another agent's) |
+| `Match.svelte:460-467` `openPlayerEvents` / `openReplay` | none (steam scope + optional `?follow=` camera) | No time target by design — first frame is correct for a non-time link; the `?follow=` camera hand-off is implemented (Overview stat cards and roster/scoreboard rows all pass it) |
 | `Heatmaps.svelte:158` | bbox scope only | No time target — OK |
 | `EconCurve.svelte:264/267/314`, `RoundStrip.svelte:80`, `Match.svelte:1035` | `#/match/:id/round/:n` (RoundDetail) | Not replay links — OK |
 | `Library.svelte`, `Settings.svelte`, `heatramp.js` | — | No replay time links at all (grep-verified) — nothing to fix |
 
-## Findings — files NOT edited by this agent
+## Findings
 
-### `frontend/src/lib/views/CompareRounds.svelte`
+### `frontend/src/lib/views/CompareRounds.svelte` — FIXED
 
-- **`:141-143` `replayStart(col)`** — current:
-  `nav(replayHash(id, {}, { tick: col.detail?.round?.startTick || 0, back: ... }))`.
-  If that column's round-detail fetch failed (`detail` null) the link
-  still renders and navigates with `tick=0`, which `entrySeekTick`
-  treats as "no promise" → the replay silently lands on the **first
-  frame** while the button implies the round start. Correct: resolve the
-  start from the rounds list instead of `|| 0`, or don't navigate when
-  the start is unknown. Suggested one-line fix:
-  `tick: col.detail?.round?.startTick ?? roundStartTick(rounds, col.round)`
-  (import `roundStartTick` from `../rounds.js`; skip navigation when the
-  result is null).
+- **`:141-143` `replayStart(col)`** — it stamped
+  `tick: col.detail?.round?.startTick || 0`: if the column's round-detail
+  fetch had failed the link still rendered and navigated with `tick=0`,
+  which `entrySeekTick` treats as "no promise" → the replay silently
+  landed on the **first frame** while the button implied the round
+  start. Now resolves the start from the detail row and falls back to
+  `roundStartTick(rounds, col.round)`; with no known start the button
+  does not navigate (no time promise, no lying link).
 - `:137-139` `openEvent(row)` — `tick` + `sel` both present: honored
   (tick wins; sel selects the row) — OK.
 
-### `frontend/src/lib/views/Combat.svelte`
+### `frontend/src/lib/views/Combat.svelte` — FIXED
 
 - Main links are honored: `:165-167` `replay(tick)` stamps an exact
-  `?tick=` (engagement ▶ `:319-324`, clutch ▶ `:397-402`) — OK;
-  `:169-172` `openRoundEvents(round)` (round chips `:328-332`,
-  `:405-409`) is a round link — **now honored via the entry contract
-  (rule 2), no Combat edit needed**.
-- **`:397-402` clutch ▶** — current:
-  `tick={c.replayAnchorTick || c.startTick}` with both fields possibly
-  `0` (`ClutchRow.ReplayAnchor` is only set when the anchor could be
-  identified — `analyticservice.go:33-37`), producing `tick=0` → first
-  frame silently. Correct: only offer the ▶ when an anchor exists.
-  Suggested one-line fix: `onclick={() => c.replayAnchorTick && replay(c.replayAnchorTick || c.startTick)}`.
+  `?tick=` (engagement ▶ `:319-324`); `:169-172`
+  `openRoundEvents(round)` (round chips `:328-332`, `:405-409`) is a
+  round link — honored via the entry contract (rule 2).
+- **`:397-402` clutch ▶** — `tick={c.replayAnchorTick || c.startTick}`
+  could produce `tick=0` → first frame silently. The anchor is the
+  clutch's start tick (`analytics/clutches.go`, pinned equal in
+  `analytics_test.go`), so the `|| startTick` fallback was dead weight
+  that only masked the zero case. The button now renders only when
+  `replayAnchorTick > 0` — a clutch with no anchor offers no watch
+  button instead of a link that promises a time it cannot keep.
 
 ### `frontend/src/lib/views/Match.svelte`
 
 - `:460-463` `openPlayerEvents` (roster/scoreboard/overview-card rows)
   and `:465-467` `openReplay` carry **no time target** — first frame is
   the correct behavior for them; `?follow=` only moves the camera. No
-  fix required. (If the overview cards should also open *at a time* —
-  changes.txt item 6 — stamp `tick` in the `replayHash` extras there.)
+  fix required (the Overview stat cards pass `follow` too, matching the
+  roster rows).
 
 ### `frontend/src/lib/components/EconCurve.svelte`, `Library.svelte`,
 ### `Settings.svelte`, `heatramp.js`, `Heatmaps.svelte`
@@ -126,47 +115,52 @@ to seek); it seeks in `startEngine` immediately after `load()` finishes.
 - `heatramp.js` is a pure color ramp; `Heatmaps.svelte:158` links with a
   `bbox` filter and `back`, no tick/round — no time target, OK.
 
-### `frontend/src/lib/components/CommandPalette.svelte` (unowned)
+### `frontend/src/lib/components/CommandPalette.svelte`
 
 - `:260-293` saved-filter entry — `replayHash(mid,
   parseLandmarkFilter(f))`. Saved filters carry no `tick`
   (`serializeLandmarkFilter` has no tick key), but may carry a `round`,
   which now resolves to that round's start on entry (rule 2) — correct.
 
-### `frontend/src/lib/views/RoundDetail.svelte` (unowned)
+### `frontend/src/lib/views/RoundDetail.svelte`
 
 - `:179-181` + `:191` `watchTick(detail.round.startTick || 0)` — the
   button only renders under `{#if detail}`, and round rows always carry
   `startTick`, so `|| 0` is unreachable in practice — OK (minor: could
   use `roundStartTick` for consistency).
-- `:172-175` `openEvents()` — round link, **now honored via rule 2**.
+- `:172-175` `openEvents()` — round link, honored via rule 2.
 
-## Design-level finding (pre-existing, not fixed here)
+## Known issue — the `-1` round sentinel collision (scope, not time)
 
-- **The `-1` round sentinel collision**: `parseLandmarkFilter`'s
-  "all rounds" sentinel is `-1`, and extract's renumber makes the
-  *warmup round* number `-1` too (`-2` knife, `-1` warmup —
-  `internal/extract/build.go` renumber). Consequences: a warmup round's
-  "Events in Replay" link serializes to **no** `round=` at all
-  (`serializeLandmarkFilter` omits `-1`), so the feed shows every round,
-  and `entrySeekTick` deliberately never seeks on parsed `-1`
-  (absent-vs-warmup is indistinguishable post-parse — pinned by
-  `nav.test.js`). Knife (`-2`) links scope and seek correctly. Proper
-  fix (any owner of `lib/replay/landmarks.js`): move the sentinel to a
-  value that collides with no real round number (e.g. `null`/absent =
-  all rounds), which would also let warmup links scope and seek.
+`parseLandmarkFilter`'s "all rounds" sentinel is `-1`, and extract's
+renumber makes the *warmup round* number `-1` too (`-2` knife, `-1`
+warmup — `internal/extract/build.go` renumber). Split verdict:
 
-## Out-of-scope observation (own file, deliberately NOT fixed)
+- **Time: fixed.** `entrySeekTick` reads the RAW `?round=` param instead
+  of the parsed filter, so a URL that names the warmup round still seeks
+  to its start tick while an absent param stays "no promise" (pinned by
+  `nav.test.js`).
+- **Feed scope: still broken for negative rounds.** `serializeLandmarkFilter`
+  omits `-1`, so a warmup link's URL carries no round at all, and the Go
+  contract is `EventFilter.Round < 0 = all rounds`
+  (`internal/store/queries.go queryEvents`), so even a `-2` knife round
+  never scopes `GetEvents`/`GetChat`/`GetGenericEvents` — while
+  `FilterBar.svelte` offers warmup/knife options claiming "the feed's
+  round filter matches exactly" (it does not; only `GetRoundDetail`'s
+  `exactRound` path matches exactly). Fixing this needs a contract
+  change across `lib/replay/landmarks.js`, `FilterBar.svelte` and the
+  three Go reads (e.g. an exact-round flag, or a sentinel that collides
+  with no real round number).
 
-- **Replay does not reload when the route id changes without unmount**:
-  `App.svelte:130-131` renders `<Replay id={route.id} ...>` inside a
-  plain `{#if route.name === 'replay'}` (no `{#key}`), and `Replay`
-  loads only in `onMount`. Navigating replay → replay (reachable via
-  CommandPalette: a saved filter for a *different* match while already
-  in the Replay) changes `id` without re-running `load()`: the landmark
-  feed refetches (its effect reads `id`) but meta/positions/engine stay
-  on the previous match — so no time target (or match) is honored at all.
-  Suggested fix (needs care with `load()`'s liveness flags, hence not
-  done in this branch): either wrap the component in
-  `{#key route.id}` in `App.svelte`, or replace `onMount(load)` with an
-  `$effect` on `id` plus a load-generation guard in `Replay.svelte`.
+## FIXED — Replay did not reload when the route id changed without unmount
+
+`App.svelte` rendered `<Replay id={route.id} ...>` inside a plain
+`{:else if route.name === 'replay'}` (no `{#key}`), and `Replay` loads
+only in `onMount`. Navigating replay → replay (reachable via
+CommandPalette: a saved filter for a *different* match while already in
+the Replay) changed `id` without re-running `load()`: the landmark feed
+refetched (its effect reads `id`) but meta/positions/engine stayed on
+the previous match — so no time target (or match) was honored at all.
+Fixed by wrapping the component in `{#key route.id}`: an id change
+remounts (full reload), query-only changes keep the component and its
+playback position.

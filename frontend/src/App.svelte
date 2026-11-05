@@ -128,7 +128,13 @@
     {:else if route.name === 'compare'}
       <CompareRounds id={route.id} query={route.query || {}} {nav} />
     {:else if route.name === 'replay'}
-      <Replay id={route.id} query={route.query || {}} {nav} />
+      <!-- {#key}: Replay loads in onMount only, so a replay → replay
+           jump (same route, different id — a saved filter for another
+           match) must remount it or meta/positions/engine stay on the
+           previous match. Query-only changes keep the component. -->
+      {#key route.id}
+        <Replay id={route.id} query={route.query || {}} {nav} />
+      {/key}
     {:else if route.name === 'builder'}
       <Builder {nav} />
     {:else if route.name === 'sql'}

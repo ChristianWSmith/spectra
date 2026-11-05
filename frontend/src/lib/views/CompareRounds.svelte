@@ -20,6 +20,7 @@
   } from '../services.js';
   import { fmtDuration, fmtInt, fmtTickSeconds, fmtMs } from '../fmt.js';
   import { replayHash } from '../nav.js';
+  import { roundStartTick } from '../rounds.js';
   import { buildHash } from '../router.js';
   import { normalizeEvent } from '../replay/landmarks.js';
   import { playerSideClassAt } from '../teams.js';
@@ -139,7 +140,14 @@
   }
 
   function replayStart(col) {
-    nav(replayHash(id, {}, { tick: col.detail?.round?.startTick || 0, back: backToCompare }));
+    // The round's start is the promised time: the detail row when it
+    // loaded, otherwise the rounds list. Never stamp tick 0 — that reads
+    // as "first frame" to entrySeekTick and would silently land the
+    // replay before the round; with no known start there is no time
+    // promise to keep, so the button does nothing rather than lie.
+    const start = col.detail?.round?.startTick ?? roundStartTick(rounds, col.round);
+    if (start == null) return;
+    nav(replayHash(id, {}, { tick: start, back: backToCompare }));
   }
 
   function openRound(col) {

@@ -1,7 +1,7 @@
 // Player-profile navigation helpers, shared by every view that links a
 // name/chip to #/player/:steamid. One Steam-id test, one navigation.
 import { buildHash, parseHash } from './router.js';
-import { parseLandmarkFilter, serializeLandmarkFilter } from './replay/landmarks.js';
+import { serializeLandmarkFilter } from './replay/landmarks.js';
 import { roundStartTick } from './rounds.js';
 
 // isSteam reports whether a name/id field holds a 17-digit Steam id
@@ -48,17 +48,18 @@ export function replayHash(matchId, filter, extras) {
 //   3. else 0  — the engine starts on its first frame (a ?sel=
 //               landmark's own seek applies on top, in Replay).
 // `rounds` is the GetRounds array; an unknown round or an unusable tick
-// falls through to the next source — never a guessed time. Parsed round
-// -1 is the "all rounds" filter sentinel (parseLandmarkFilter — absent
-// and the warmup round's number both parse to it), so it is never a
-// seek target; negative knife/warmup rounds -2 and below do resolve.
+// falls through to the next source — never a guessed time. The round is
+// read from the RAW param rather than parseLandmarkFilter: that parser
+// must collapse "no round filter" onto the -1 sentinel, which is also
+// the warmup round's NUMBER, so a parsed -1 cannot say whether the URL
+// named a round — while the raw param can (absent = no time promise,
+// "-1" = the warmup round, which is a real round with a real start).
 export function entrySeekTick(query, rounds) {
   const q = query || {};
   const tick = Number(q.tick);
   if (Number.isFinite(tick) && tick > 0) return tick;
-  const round = parseLandmarkFilter(q).round;
-  if (round !== -1) {
-    const start = roundStartTick(rounds, round);
+  if (q.round != null && q.round !== '' && Number.isFinite(Number(q.round))) {
+    const start = roundStartTick(rounds, Number(q.round));
     if (start != null) return start;
   }
   return 0;

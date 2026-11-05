@@ -384,8 +384,9 @@
           Equip CT/T = that side's equipment value at freeze time end — the
           value of the gear its players actually hold (weapons picked up and
           carried over from earlier rounds included), never this round's
-          spend; the chart's Net worth = equipment value + unspent money at
-          the same instant; Loss CT/T =
+          spend; the chart's Net worth = equipment value + unspent money −
+          the free spawn-issued default pistols held at the same instant
+          (the glossary's Net worth entry has the full rule); Loss CT/T =
           the round loss bonus that side would collect by losing
           this round — CS2's ladder runs $1400 → $3400 in $500 steps: a loss
           steps it up, a win steps it down (never a full reset), and every

@@ -394,12 +394,14 @@
             {#each clutches as c (c.id)}
               <tr>
                 <td>
-                  <EventPlay
-                    tick={c.replayAnchorTick || c.startTick}
-                    title="Watch this clutch in the replay"
-                    label="Watch the clutch in round {c.round} in the replay"
-                    onclick={() => replay(c.replayAnchorTick || c.startTick)}
-                  />
+                  {#if c.replayAnchorTick > 0}
+                    <EventPlay
+                      tick={c.replayAnchorTick}
+                      title="Watch this clutch in the replay"
+                      label="Watch the clutch in round {c.round} in the replay"
+                      onclick={() => replay(c.replayAnchorTick)}
+                    />
+                  {/if}
                 </td>
                 <td class="num">
                   <button
