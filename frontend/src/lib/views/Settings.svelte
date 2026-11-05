@@ -263,7 +263,7 @@
     tradeWindowS: 5,
     ecoFullBuy: 20000,
     ecoForce: 10000,
-    tradeOppDistance: 200,
+    tradeOppDistance: 1000,
     ruleVersion: 0,
   });
   let cfgError = $state('');
@@ -735,7 +735,7 @@
           bind:value={cfg.tradeOppDistance}
         />
         <span class="muted sett-hint"
-          >“Trade opp missed” counts an untraded death only when a living teammate of the victim was within this distance of the killer (default 200).</span
+          >“Trade opp missed” counts an untraded death only when a living teammate of the victim was within this distance of the killer (default 1000).</span
         >
       </div>
       <div class="sett-field">
