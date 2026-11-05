@@ -1360,6 +1360,19 @@ input[type='checkbox']:focus-visible {
 .replay-view {
   height: calc(100vh - 32px);
   display: flex;
+  flex-direction: row;
+  gap: 12px;
+  min-height: 0;
+}
+
+/* Left column of the replay layout: everything the view stacks — banner,
+   notes, the stage (.replay-body), voice lanes, transport, voice bar —
+   beside the landmark rail, which is the view's full-height RIGHT column. */
+.replay-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
   flex-direction: column;
   gap: 10px;
 }
@@ -1428,16 +1441,24 @@ input[type='checkbox']:focus-visible {
   overflow: hidden;
 }
 
-/* Collapsed panel: the aside shrinks to its header rail (full height
-   kept — it still stretches with .replay-body) so the stage takes the
-   width back. */
+/* Collapsed rail: an icon-width strip using the SAME metric as the app's
+   left .sidebar (52px), spanning the full view height in BOTH states —
+   only the WIDTH swings back to the stage, so the layout never jumps
+   vertically. The toggle renders the feed glyph over the count badge
+   (.lm-rail-count); expanded keeps the ~340px panel above. */
 .replay-side.collapsed {
-  flex: 0 0 auto;
-  width: auto;
-  padding: 6px 8px;
+  flex: 0 0 52px;
+  width: 52px;
+  padding: 8px 6px;
 }
 
 .replay-side.collapsed .side-toggle {
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  width: 100%;
+  text-align: center;
   white-space: nowrap;
 }
 
@@ -1451,6 +1472,13 @@ input[type='checkbox']:focus-visible {
   cursor: pointer;
   padding: 0;
   text-align: left;
+}
+
+/* Event-count badge under the rail glyph (collapsed state) — a .chip
+   tightened to fit the 52px strip. */
+.lm-rail-count {
+  font-size: 0.7em;
+  padding: 0 5px;
 }
 
 .landmark-list {
@@ -1837,11 +1865,15 @@ button.lm-cat-chip.on {
 }
 
 @media (max-width: 1000px) {
-  .replay-body {
+  /* The landmark rail is a RIGHT column above the fold — on narrow
+     windows it stacks under the main column, bounded so the stage keeps
+     the height (the collapsed strip follows suit as a full-width bar). */
+  .replay-view {
     flex-direction: column;
   }
 
-  .replay-side {
+  .replay-side,
+  .replay-side.collapsed {
     width: auto;
     flex: 0 0 auto;
     max-height: 30%;

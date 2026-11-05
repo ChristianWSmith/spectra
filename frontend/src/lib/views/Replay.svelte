@@ -82,6 +82,12 @@
   let loadError = $state('');
   let noSidecar = $state(false);
 
+  // The landmark rail spans the view beside the main column whenever
+  // a replay is on screen — the SAME visibility chain as the stage
+  // ({#if loadError} → loading → noSidecar → data), so it appears
+  // exactly when the canvas does.
+  const railVisible = $derived(!loadError && !loading && !noSidecar && !!data);
+
   // M4 voice: presence gates the whole controls block; players feed mute/
   // solo chips; the voice engine mirrors live in ui* state via callbacks.
   let voicePresence = $state(null);
@@ -1153,613 +1159,628 @@
 </script>
 
 <div class="view replay-view">
-  <header class="view-header">
-    <button class="btn" onclick={goBack}><span class="codicon codicon-arrow-left"></span> Back</button>
-    <h1>Replay</h1>
-    {#if matchMap}<span class="chip">{matchMap}</span>{/if}
-    {#if meta && !noSidecar}
-      <span class="chip round-chip">{players.length} slots</span>
-    {/if}
-    <div class="spacer"></div>
-    {#if ready && data}
-      <span class="mono muted replay-readout">tick {uiTick}</span>
-      <button
-        class="btn"
-        onclick={eventsAtTick}
-        title="Filter the landmark feed to ±5s around the playhead"
-        >Events at tick</button
-      >
-      <button class="btn" onclick={doSnapshot}>Snapshot</button>
-      <button
-        class="btn clip-btn"
-        class:primary={recState === 'recording'}
-        disabled={recState === 'encoding'}
-        onclick={toggleRecord}
-        title="Record a WebM clip — loop range if set, else 10s from the playhead (video only)"
-        ><span class="codicon {recState === 'recording' ? 'codicon-debug-stop' : 'codicon-record'}"></span>
-          {recState === 'recording' ? 'Stop clip' : 'Record clip'}</button
-      >
-      {#if recState !== 'idle'}
-        <span
-          class="chip clip-state {recState === 'recording'
-            ? 'recording'
-            : recState === 'encoding'
-              ? 'busy'
-              : recState === 'saved'
-                ? 'ok'
-                : 'bad'}"
-          title={recNote}
-          role="status"
-          >{recState === 'recording'
-            ? `recording · ${recNote}`
-            : recState === 'encoding'
-              ? 'encoding…'
-              : recState === 'saved'
-                ? `saved · ${recNote}`
-                : recNote}</span
+  <!-- Main column: banner, notes, stage, lanes, transport, voice.
+       The landmark rail below stands beside it, full height. -->
+  <div class="replay-main">
+    <header class="view-header">
+      <button class="btn" onclick={goBack}><span class="codicon codicon-arrow-left"></span> Back</button>
+      <h1>Replay</h1>
+      {#if matchMap}<span class="chip">{matchMap}</span>{/if}
+      {#if meta && !noSidecar}
+        <span class="chip round-chip">{players.length} slots</span>
+      {/if}
+      <div class="spacer"></div>
+      {#if ready && data}
+        <span class="mono muted replay-readout">tick {uiTick}</span>
+        <button
+          class="btn"
+          onclick={eventsAtTick}
+          title="Filter the landmark feed to ±5s around the playhead"
+          >Events at tick</button
         >
-        {#if recState === 'saved' || recState === 'error'}
-          <button class="btn small ghost" onclick={discardClip} title="Dismiss"><span class="codicon codicon-close"></span></button>
+        <button class="btn" onclick={doSnapshot}>Snapshot</button>
+        <button
+          class="btn clip-btn"
+          class:primary={recState === 'recording'}
+          disabled={recState === 'encoding'}
+          onclick={toggleRecord}
+          title="Record a WebM clip — loop range if set, else 10s from the playhead (video only)"
+          ><span class="codicon {recState === 'recording' ? 'codicon-debug-stop' : 'codicon-record'}"></span>
+            {recState === 'recording' ? 'Stop clip' : 'Record clip'}</button
+        >
+        {#if recState !== 'idle'}
+          <span
+            class="chip clip-state {recState === 'recording'
+              ? 'recording'
+              : recState === 'encoding'
+                ? 'busy'
+                : recState === 'saved'
+                  ? 'ok'
+                  : 'bad'}"
+            title={recNote}
+            role="status"
+            >{recState === 'recording'
+              ? `recording · ${recNote}`
+              : recState === 'encoding'
+                ? 'encoding…'
+                : recState === 'saved'
+                  ? `saved · ${recNote}`
+                  : recNote}</span
+          >
+          {#if recState === 'saved' || recState === 'error'}
+            <button class="btn small ghost" onclick={discardClip} title="Dismiss"><span class="codicon codicon-close"></span></button>
+          {/if}
         {/if}
       {/if}
-    {/if}
-  </header>
+    </header>
 
-  {#if loadError}
-    <p class="error" role="alert">{loadError}</p>
-  {/if}
+    {#if loadError}
+      <p class="error" role="alert">{loadError}</p>
+    {/if}
 
-  {#if loading}
-    <p class="muted" role="status">Loading replay…</p>
-  {:else if noSidecar}
-    <div class="panel empty">
-      <p class="empty-title" role="status">No replay data for this match</p>
-      <p class="muted">
-        Positions are recorded during parsing — reprocess to record them, then
-        reopen the replay.
-      </p>
-      <button class="btn primary" onclick={() => nav('/library')}>
-        Go to Library
-      </button>
-    </div>
-  {:else if data}
-    {#if packNote}
-      <p class="note-amber" role="status">{packNote}</p>
-    {/if}
-    {#if meta && data.frames !== meta.frames}
-      <p class="note-amber" role="status">
-        frame count mismatch: stream has {data.frames}, meta says {meta.frames}
-      </p>
-    {/if}
-    <div class="replay-body">
-      <div class="replay-stage" bind:this={stageEl}>
-        <canvas bind:this={canvasEl} aria-label="Replay canvas"></canvas>
-        {#if uiFollow != null && players[uiFollow]}
-          <!-- Follow chip: the dismiss surface for the camera-follow
-               state (?follow= entry, the transport select and the F/1-9
-               keys all land here). -->
-          <span class="chip follow-chip" role="status">
-            <span class="codicon codicon-eye" aria-hidden="true"></span>
-            Following {players[uiFollow].name || `slot ${uiFollow}`}
-            <button
-              class="btn small ghost"
-              aria-label="Stop following {players[uiFollow].name || 'player'}"
-              title="Release the follow camera"
-              onclick={releaseFollow}
-              ><span class="codicon codicon-close"></span></button
-            >
-          </span>
-        {/if}
-      </div>
-      <aside class="replay-side" class:collapsed={!eventsOpen} aria-label="Landmark events">
-        <button
-          class="side-toggle"
-          aria-expanded={eventsOpen}
-          onclick={() => (eventsOpen = !eventsOpen)}
-        >
-          <h2>Landmarks</h2>
-          <span class="spacer"></span>
-          <span class="muted num">{feedRows.length}{hasMore ? '+' : ''}</span>
-          <span class="muted"><span class="codicon {eventsOpen ? 'codicon-chevron-down' : 'codicon-chevron-right'}"></span></span>
+    {#if loading}
+      <p class="muted" role="status">Loading replay…</p>
+    {:else if noSidecar}
+      <div class="panel empty">
+        <p class="empty-title" role="status">No replay data for this match</p>
+        <p class="muted">
+          Positions are recorded during parsing — reprocess to record them, then
+          reopen the replay.
+        </p>
+        <button class="btn primary" onclick={() => nav('/library')}>
+          Go to Library
         </button>
-        {#if eventsOpen}
-          <!-- The middle of the panel scrolls as a unit (controls →
-               filter panel → list); the detail pane pins below it, so a
-               long feed can never clip the selected event. -->
-          <div class="lm-scroll">
-          <!-- Controls row: ONE Filters toggle governs every filter
-               surface below it — the chips, name picker, scope bar and
-               presets/Reset all show/hide TOGETHER (filtersOpen); export
-               is not a filter and stays in this row. -->
-          <div class="lm-toolbar" role="group" aria-label="Feed controls">
-            <button
-              class="btn small"
-              class:primary={filtersOpen}
-              aria-expanded={filtersOpen}
-              onclick={() => (filtersOpen = !filtersOpen)}
-              title="Show/hide the category chips and every filter control"
-            >
-              <span class="codicon codicon-filter" aria-hidden="true"></span> Filters
-              <span class="muted lm-filter-count">{filter.cats.length}</span>
-            </button>
-            <span class="spacer"></span>
-            <details class="lm-export" bind:this={exportEl}>
-              <summary
-                class="btn small"
-                aria-label="Export the loaded feed"
-                title="Export the loaded feed — CSV or JSON"
-                ><span class="codicon codicon-export" aria-hidden="true"></span></summary
+      </div>
+    {:else if data}
+      {#if packNote}
+        <p class="note-amber" role="status">{packNote}</p>
+      {/if}
+      {#if meta && data.frames !== meta.frames}
+        <p class="note-amber" role="status">
+          frame count mismatch: stream has {data.frames}, meta says {meta.frames}
+        </p>
+      {/if}
+      <div class="replay-body">
+        <div class="replay-stage" bind:this={stageEl}>
+          <canvas bind:this={canvasEl} aria-label="Replay canvas"></canvas>
+          {#if uiFollow != null && players[uiFollow]}
+            <!-- Follow chip: the dismiss surface for the camera-follow
+                 state (?follow= entry, the transport select and the F/1-9
+                 keys all land here). -->
+            <span class="chip follow-chip" role="status">
+              <span class="codicon codicon-eye" aria-hidden="true"></span>
+              Following {players[uiFollow].name || `slot ${uiFollow}`}
+              <button
+                class="btn small ghost"
+                aria-label="Stop following {players[uiFollow].name || 'player'}"
+                title="Release the follow camera"
+                onclick={releaseFollow}
+                ><span class="codicon codicon-close"></span></button
               >
-              <div class="lm-export-menu" role="menu">
-                <button
-                  type="button"
-                  role="menuitem"
-                  class="lm-export-item"
-                  disabled={!feedRows.length}
-                  onclick={exportCSV}>CSV</button
-                >
-                <button
-                  type="button"
-                  role="menuitem"
-                  class="lm-export-item"
-                  disabled={!feedRows.length}
-                  onclick={exportJSON}>JSON</button
-                >
-              </div>
-            </details>
-          </div>
+            </span>
+          {/if}
+        </div>
+      </div>
 
-          {#if filtersOpen}
-            <!-- The whole filter surface: category chips → game-events
-                 name picker → scope bar → saved presets + Reset. -->
-            <div class="lm-filter-panel">
-              <!-- Category chips: the sparse default (kills + round wins) is
-                   what a fresh URL carries; everything else is opt-in. -->
-              <div class="lm-cats" role="group" aria-label="Event categories">
-                {#each CATEGORIES as c (c.id)}
+      {#if lanesOpen && voicePresence && voicePresence.hasVoice}
+        <div class="voice-lanes-wrap">
+          <VoiceLanes matchId={id} {nav} onSeek={laneSeek} />
+        </div>
+      {/if}
+
+      <div class="toolbar replay-transport" role="group" aria-label="Replay transport">
+        <button
+          class="btn primary"
+          aria-label={uiPlaying ? 'Pause' : 'Play'}
+          title={uiPlaying ? 'Pause (Space)' : 'Play (Space)'}
+          onclick={togglePlay}><span class="codicon {uiPlaying ? 'codicon-debug-pause' : 'codicon-play'}"></span></button
+        >
+        <label class="sr-only" for="rp-speed">Speed</label>
+        <select class="input" id="rp-speed" value={uiSpeed} onchange={onSpeed}>
+          {#each SPEEDS as s (s)}
+            <option value={s}>{s}×</option>
+          {/each}
+        </select>
+
+        <div class="scrubber-wrap">
+          <input
+            class="scrubber"
+            type="range"
+            min="0"
+            max={Math.max(0, frames - 1)}
+            value={uiFrame}
+            oninput={onScrub}
+            aria-label="Frame"
+          />
+          {#each markers as m, i (i)}
+            <span class="scrub-marker {m.cls}" style="left:{m.pct}%"></span>
+          {/each}
+        </div>
+        <span class="mono replay-readout"
+          >f{uiFrame + 1}/{frames} · {uiTick}</span
+        >
+
+        <span class="loop-group">
+          <label class="sr-only" for="rp-loop-from">Loop from frame</label>
+          <input
+            class="input mono loop-input"
+            id="rp-loop-from"
+            type="number"
+            min="0"
+            max={Math.max(0, frames - 1)}
+            placeholder="from"
+            value={uiLoopFrom >= 0 ? uiLoopFrom : ''}
+            onchange={(e) => {
+              uiLoopFrom = e.currentTarget.value === '' ? -1 : Number(e.currentTarget.value);
+              onLoopInput();
+            }}
+          />
+          <span class="muted">–</span>
+          <label class="sr-only" for="rp-loop-to">Loop to frame</label>
+          <input
+            class="input mono loop-input"
+            id="rp-loop-to"
+            type="number"
+            min="0"
+            max={Math.max(0, frames - 1)}
+            placeholder="to"
+            value={uiLoopTo >= 0 ? uiLoopTo : ''}
+            onchange={(e) => {
+              uiLoopTo = e.currentTarget.value === '' ? -1 : Number(e.currentTarget.value);
+              onLoopInput();
+            }}
+          />
+          <button
+            class="btn small"
+            class:warn={uiLoopOn}
+            title="Toggle loop (L)"
+            onclick={toggleLoop}>Loop</button
+          >
+        </span>
+
+        <label class="sr-only" for="rp-round">Jump to round</label>
+        <select class="input" id="rp-round" value={jumpRound} onchange={onJumpRound}>
+          <option value="">Jump to round…</option>
+          {#each rounds as r (r.number)}
+            <option value={r.number}>
+              {r.number >= 1 ? `R${r.number}` : roundIndexLabel(r)}{r.bombSite ? ` · ${r.bombSite}` : ''}
+            </option>
+          {/each}
+        </select>
+
+        <label class="sr-only" for="rp-cam">Camera mode</label>
+        <select
+          class="input"
+          id="rp-cam"
+          value={camMode}
+          onchange={onCamMode}
+          title="Smart keeps every player and the bomb on screen with smooth pan/zoom (drag or wheel takes over → Free); Free is manual"
+        >
+          <option value="smart">Smart</option>
+          <option value="free">Free</option>
+        </select>
+
+        <label class="sr-only" for="rp-follow">Follow player</label>
+        <select class="input" id="rp-follow" value={uiFollow ?? ''} onchange={onFollow}>
+          <option value="">Free camera</option>
+          {#each players as p, i (i)}
+            <option value={i}>{i + 1}. {p.name || `slot ${i}`}</option>
+          {/each}
+        </select>
+
+        <span class="muted" title="Space play/pause · , . speed · ←/→ step · Shift ±64 · L loop · F follow · 1-9 select · S snapshot"><span class="codicon codicon-keyboard"></span> hints</span>
+      </div>
+
+      {#if voicePresence && voicePresence.hasVoice}
+        <div class="toolbar voice-bar" role="group" aria-label="Voice controls">
+          <button
+            class="btn"
+            class:primary={lanesOpen}
+            aria-pressed={lanesOpen}
+            title="Show/hide the per-player voice density lanes (click a lane to play from there)"
+            onclick={() => (lanesOpen = !lanesOpen)}
+          >Lanes</button>
+          <button
+            class="btn"
+            class:primary={!uiVoiceOn}
+            onclick={toggleVoice}
+            title={uiVoiceErr || (uiVoiceOn ? 'Stop voice playback' : 'Start voice playback (needs one click — browser gesture rule)')}
+          >{#if uiVoiceOn}<span class="codicon codicon-unmute"></span> Voice on{:else}Enable voice{/if}</button
+          >
+          <span
+            class="chip voice-state {uiVoiceErr ? 'bad' : uiVoiceOn ? 'ok' : 'idle'}"
+            title={uiVoiceErr ? `AudioContext: ${uiVoiceCtx} — ${uiVoiceErr}` : `AudioContext: ${uiVoiceCtx}`}
+          >{uiVoiceErr ? 'error' : uiVoiceOn ? `on · ${uiVoiceCtx}` : 'off'}</span>
+          {#if uiVoiceErr}
+            <span class="voice-hint" role="alert"
+              >{uiVoiceErr} — install <span class="mono">gst-plugins-good</span> (GStreamer) if audio fails to start.</span
+            >
+          {/if}
+          <label class="sr-only" for="rp-vol">Voice volume</label>
+          <input
+            class="voice-vol"
+            id="rp-vol"
+            type="range"
+            min="0"
+            max="1"
+            step="0.05"
+            value={uiVoiceVol}
+            oninput={onVoiceVol}
+          />
+          <span class="voice-players">
+            {#each voicePlayers as p (p.steamId)}
+              <span class="voice-player" title="{p.name} — {p.chunks.toLocaleString()} chunks, {Math.round(p.seconds)}s of voice">
+                <span class="voice-name">{p.name}</span>
+                <button
+                  class="btn small ghost voice-ms"
+                  class:warn={!!uiVoiceMute[p.steamId]}
+                  aria-pressed={!!uiVoiceMute[p.steamId]}
+                  aria-label="Mute {p.name}"
+                  title="Mute {p.name}"
+                  onclick={() => toggleVoiceMute(p.steamId)}>M</button
+                >
+                <button
+                  class="btn small ghost voice-ms"
+                  class:warn={!!uiVoiceSolo[p.steamId]}
+                  aria-pressed={!!uiVoiceSolo[p.steamId]}
+                  aria-label="Solo {p.name}"
+                  title="Solo {p.name} (overrides mutes)"
+                  onclick={() => toggleVoiceSolo(p.steamId)}>S</button
+                >
+                <details class="voice-export">
+                  <summary class="btn small ghost" aria-label="Export {p.name} voice" title="Export {p.name}'s track"><span class="codicon codicon-chevron-down"></span></summary>
                   <button
-                    class="chip lm-cat-chip"
-                    class:on={filter.cats.includes(c.id)}
-                    aria-pressed={filter.cats.includes(c.id)}
-                    title={c.default ? `${c.label} (on by default)` : `Show ${c.label.toLowerCase()} in the feed`}
-                    onclick={() => toggleCat(c.id)}>{c.label}</button
+                    type="button"
+                    class="voice-dl"
+                    title="Download full-track WAV for {p.name}"
+                    onclick={() => exportWav(p)}>WAV</button
                   >
-                {/each}
-              </div>
-
-              {#if needHist}
-                <label class="lm-gname" for="lm-gname">
-                  Game events
-                  <select
-                    class="input"
-                    id="lm-gname"
-                    value={filter.gname}
-                    onchange={(e) => setGname(e.currentTarget.value)}
-                  >
-                    <option value="">Pick an event name…</option>
-                    {#each hist as h (h.name)}
-                      <option value={h.name}>{h.name} ({h.count})</option>
-                    {/each}
-                    {#if filter.gname && !hist.some((h) => h.name === filter.gname)}
-                      <option value={filter.gname}>{filter.gname}</option>
-                    {/if}
-                  </select>
-                </label>
-                {#if !filter.gname}
-                  <p class="muted lm-hint">High-volume sources load by name only — pick one above.</p>
-                {/if}
-              {/if}
-
-              <FilterBar {id} filter={filter} onchange={onBarFilter} showReset={false} />
-
-              <div class="lm-toolbar" role="group" aria-label="Saved filter presets">
-                <select class="input lm-saved" aria-label="Saved filters" value={savedSel} onchange={(e) => (savedSel = e.currentTarget.value)}>
-                  <option value="">Saved filters…</option>
-                  {#each saved as s (s.id)}
-                    <option value={String(s.id)}>{s.name}</option>
-                  {/each}
-                </select>
-                <button class="btn small" disabled={!savedSel} onclick={applySaved}>Apply</button>
-                <button class="btn small" onclick={saveCurrent} title="Save the current filter as a preset">Save</button>
-                <button class="btn small" disabled={!savedSel} title="Delete the selected saved filter" onclick={removeSaved}><span class="codicon codicon-close"></span></button>
-                <span class="spacer"></span>
-                <button class="btn small" onclick={resetFilters} title="Reset every filter to the sparse default">Reset</button>
-              </div>
-            </div>
-          {/if}
-          {#if savedError}
-            <p class="error" role="alert">{savedError}</p>
-          {/if}
-          {#if feedError}
-            <p class="error" role="alert">{feedError}</p>
-          {/if}
-
-          {#if !selected}
-          <ul class="landmark-list" aria-label="Events">
-            {#each feedRows as row (row.key)}
-              <LandmarkRow
-                {row}
-                {nav}
-                resolveSteam={resolveWho}
-                roundByNumber={rbn}
-                tickRate={meta?.tickRate}
-                selected={selected?.key === row.key}
-                onselect={select}
-                onseek={(r) => seekTo(r.tick)}
-              />
-            {:else}
-              <li class="muted lm-empty" role="status">
-                {#if filter.cats.length === 0}
-                  No categories enabled — turn some on in Filters.
-                {:else if feedLoading}
-                  Loading events…
-                {:else if prefHidesScope}
-                  Knife/warmup rounds are hidden — show them in Settings, or clear the round filter.
-                {:else}
-                  No events match these filters.
-                {/if}
-              </li>
+                </details>
+              </span>
             {/each}
-          </ul>
-          {#if hasMore}
-            <button class="btn small lm-more" onclick={loadMore} disabled={feedLoading}>
-              {feedLoading ? 'Loading…' : 'Load more…'}
-            </button>
-          {/if}
-          {#if feedLoading && feedRows.length > 0}
-            <p class="muted lm-hint" role="status">Loading…</p>
-          {/if}
-          {/if}
-          {#if selected}
-            <div class="lm-detail" aria-label="Selected landmark">
-              <div class="lm-detail-head">
-                <span class="chip kind">{categoryById(selected.category)?.label || selected.category}</span>
-                {#if selected.source === 'event'}
-                  <span class="mono">#{selected.seq}</span>
-                {/if}
-                <span class="mono muted">tick {selected.tick}</span>
-                <span class="chip round-chip">R{selected.round}</span>
-                <div class="spacer"></div>
-                {#if voicePresence && voicePresence.hasVoice}
-                  <button
-                    class="btn small"
-                    title="Open playback at this event with voice on — hear comms around it"
-                    onclick={() => hearTick(selected.tick)}>Hear ±10s <span class="codicon codicon-play"></span></button
-                  >
-                {/if}
-                <button class="btn small ghost" aria-label="Close detail" title="Close detail — back to the list" onclick={closeDetail}><span class="codicon codicon-close"></span></button>
-              </div>
-              {#if detailError}
-                <p class="error" role="alert">{detailError}</p>
-              {/if}
-              {#if selected.source === 'event'}
-                <dl class="facts lm-facts">
-                  <div>
-                    <dt>Attacker</dt>
-                    <dd><ProfileLink steam={selected.attacker} name={selected.attackerName || '—'} {nav} title="Open {selected.attackerName} profile" /></dd>
-                  </div>
-                  <div>
-                    <dt>Victim</dt>
-                    <dd><ProfileLink steam={selected.victim} name={selected.victimName || '—'} {nav} title="Open {selected.victimName} profile" /></dd>
-                  </div>
-                  <div>
-                    <dt>Assister</dt>
-                    <dd>
-                      <ProfileLink
-                        steam={selected.assister}
-                        name={selected.assisterName || '—'}
-                        {nav}
-                        title="Open {selected.assisterName} profile"
-                      />
-                    </dd>
-                  </div>
-                  <div>
-                    <dt>Weapon</dt>
-                    <dd class="mono">{selected.weapon || '—'}</dd>
-                  </div>
-                  <div>
-                    <dt>Damage</dt>
-                    <dd class="num">{selected.dmg}</dd>
-                  </div>
-                  <div>
-                    <dt>Distance</dt>
-                    <dd class="num">{selected.distance ? Math.round(selected.distance) : '—'}</dd>
-                  </div>
-                  <div>
-                    <dt>Hitgroup</dt>
-                    <dd>{selected.hitgroup || '—'}</dd>
-                  </div>
-                  <div>
-                    <dt>Site</dt>
-                    <dd>{selected.site || '—'}</dd>
-                  </div>
-                  <div class="fact-wide">
-                    <dt>Flags</dt>
-                    <dd><EventFlags event={selected} none /></dd>
-                  </div>
-                </dl>
-                {#if detail}
-                  <details class="json-block" open>
-                    <summary>detail.json</summary>
-                    <pre class="mono">{prettyJson(detail.detailJson)}</pre>
-                  </details>
-                  <details class="json-block">
-                    <summary>raw.json</summary>
-                    <pre class="mono">{prettyJson(detail.rawJson)}</pre>
-                  </details>
-                  <button class="btn small" onclick={copyDetail}>{copied ? 'Copied' : 'Copy payloads'}</button>
-                {:else if !detailError}
-                  <p class="muted" role="status">Loading payloads…</p>
-                {/if}
-              {:else if selected.source === 'chat'}
-                <dl class="facts lm-facts">
-                  <div>
-                    <dt>Time</dt>
-                    <dd title="tick {selected.tick}">{chatClock(selected, rbn, meta?.tickRate)}</dd>
-                  </div>
-                  <div>
-                    <dt>From</dt>
-                    <dd><ProfileLink steam={selected.steamId} name={selected.who || '—'} {nav} title="Open {selected.who} profile" /></dd>
-                  </div>
-                  <div>
-                    <dt>Kind</dt>
-                    <dd>{selected.kind || 'chat'}{selected.decrypted ? ' · decrypted' : ''}</dd>
-                  </div>
-                </dl>
-                <p class="lm-chat-text">{selected.text}</p>
-              {:else}
-                <dl class="facts lm-facts">
-                  <div>
-                    <dt>Event</dt>
-                    <dd class="mono">{selected.name}</dd>
-                  </div>
-                  <div>
-                    <dt>Tick</dt>
-                    <dd class="num mono">{selected.tick}</dd>
-                  </div>
-                  <div>
-                    <dt>Round</dt>
-                    <dd class="num">{selected.round}</dd>
-                  </div>
-                  {#if selected.who}
-                    <div>
-                      <dt>Player</dt>
-                      <dd>
-                        <!-- Generic rows carry only a display name — resolve
-                             it through the replay meta's player list on an
-                             EXACT match only; unresolvable stays plain text. -->
-                        <ProfileLink
-                          steam={resolveWho(selected.who)}
-                          name={selected.who}
-                          {nav}
-                          title="Open {selected.who} profile"
-                        />
-                      </dd>
-                    </div>
-                  {/if}
-                  {#if selected.label}
-                    <div class="fact-wide">
-                      <dt>Detail</dt>
-                      <dd>{selected.label}</dd>
-                    </div>
-                  {/if}
-                </dl>
-                <div class="lm-payload">
-                  <div class="row-between">
-                    <span class="spacer"></span>
-                    <input
-                      class="input"
-                      placeholder="Filter keys…"
-                      bind:value={payloadQuery}
-                      aria-label="Filter payload keys"
-                    />
-                    <button
-                      class="btn small ghost"
-                      aria-pressed={payloadRaw}
-                      title="Toggle raw JSON"
-                      onclick={() => (payloadRaw = !payloadRaw)}>{payloadRaw ? 'tree' : 'raw'}</button
-                    >
-                  </div>
-                  {#if payloadRaw}
-                    <pre class="mono">{selected.payloadJson}</pre>
-                  {:else}
-                    <PayloadTree json={selected.payloadJson} query={payloadQuery.trim()} />
-                  {/if}
-                  <button class="btn small" onclick={copyPayload}>{copied ? 'Copied' : 'Copy'}</button>
-                </div>
-              {/if}
-              <div class="lm-detail-actions">
-                <button class="btn small primary" onclick={() => seekTo(selected.tick)}>
-                  <span class="codicon codicon-play"></span> Seek to event
-                </button>
-              </div>
-            </div>
-          {/if}
-          </div>
-          <!-- /lm-scroll -->
-        {/if}
-      </aside>
-    </div>
-
-    {#if lanesOpen && voicePresence && voicePresence.hasVoice}
-      <div class="voice-lanes-wrap">
-        <VoiceLanes matchId={id} {nav} onSeek={laneSeek} />
-      </div>
+          </span>
+        </div>
+      {/if}
     {/if}
-
-    <div class="toolbar replay-transport" role="group" aria-label="Replay transport">
-      <button
-        class="btn primary"
-        aria-label={uiPlaying ? 'Pause' : 'Play'}
-        title={uiPlaying ? 'Pause (Space)' : 'Play (Space)'}
-        onclick={togglePlay}><span class="codicon {uiPlaying ? 'codicon-debug-pause' : 'codicon-play'}"></span></button
-      >
-      <label class="sr-only" for="rp-speed">Speed</label>
-      <select class="input" id="rp-speed" value={uiSpeed} onchange={onSpeed}>
-        {#each SPEEDS as s (s)}
-          <option value={s}>{s}×</option>
-        {/each}
-      </select>
-
-      <div class="scrubber-wrap">
-        <input
-          class="scrubber"
-          type="range"
-          min="0"
-          max={Math.max(0, frames - 1)}
-          value={uiFrame}
-          oninput={onScrub}
-          aria-label="Frame"
-        />
-        {#each markers as m, i (i)}
-          <span class="scrub-marker {m.cls}" style="left:{m.pct}%"></span>
-        {/each}
-      </div>
-      <span class="mono replay-readout"
-        >f{uiFrame + 1}/{frames} · {uiTick}</span
-      >
-
-      <span class="loop-group">
-        <label class="sr-only" for="rp-loop-from">Loop from frame</label>
-        <input
-          class="input mono loop-input"
-          id="rp-loop-from"
-          type="number"
-          min="0"
-          max={Math.max(0, frames - 1)}
-          placeholder="from"
-          value={uiLoopFrom >= 0 ? uiLoopFrom : ''}
-          onchange={(e) => {
-            uiLoopFrom = e.currentTarget.value === '' ? -1 : Number(e.currentTarget.value);
-            onLoopInput();
-          }}
-        />
-        <span class="muted">–</span>
-        <label class="sr-only" for="rp-loop-to">Loop to frame</label>
-        <input
-          class="input mono loop-input"
-          id="rp-loop-to"
-          type="number"
-          min="0"
-          max={Math.max(0, frames - 1)}
-          placeholder="to"
-          value={uiLoopTo >= 0 ? uiLoopTo : ''}
-          onchange={(e) => {
-            uiLoopTo = e.currentTarget.value === '' ? -1 : Number(e.currentTarget.value);
-            onLoopInput();
-          }}
-        />
+  </div>
+  {#if railVisible}
+  <aside class="replay-side" class:collapsed={!eventsOpen} aria-label="Landmark events">
+    <button
+      class="side-toggle"
+      aria-expanded={eventsOpen}
+      aria-label="Landmarks"
+      title="Landmarks"
+      onclick={() => (eventsOpen = !eventsOpen)}
+    >
+      {#if eventsOpen}
+        <h2>Landmarks</h2>
+        <span class="spacer"></span>
+        <span class="muted num">{feedRows.length}{hasMore ? '+' : ''}</span>
+        <span class="muted"><span class="codicon codicon-chevron-down"></span></span>
+      {:else}
+        <!-- Collapsed rail: feed glyph over the count badge — the
+             icon-rail pattern (title/aria-label carry the word). -->
+        <span class="codicon codicon-list-flat" aria-hidden="true"></span>
+        <span class="chip lm-rail-count">{feedRows.length}{hasMore ? '+' : ''}</span>
+      {/if}
+    </button>
+    {#if eventsOpen}
+      <!-- The middle of the panel scrolls as a unit (controls →
+           filter panel → list); the detail pane pins below it, so a
+           long feed can never clip the selected event. -->
+      <div class="lm-scroll">
+      <!-- Controls row: ONE Filters toggle governs every filter
+           surface below it — the chips, name picker, scope bar and
+           presets/Reset all show/hide TOGETHER (filtersOpen); export
+           is not a filter and stays in this row. -->
+      <div class="lm-toolbar" role="group" aria-label="Feed controls">
         <button
           class="btn small"
-          class:warn={uiLoopOn}
-          title="Toggle loop (L)"
-          onclick={toggleLoop}>Loop</button
+          class:primary={filtersOpen}
+          aria-expanded={filtersOpen}
+          onclick={() => (filtersOpen = !filtersOpen)}
+          title="Show/hide the category chips and every filter control"
         >
-      </span>
-
-      <label class="sr-only" for="rp-round">Jump to round</label>
-      <select class="input" id="rp-round" value={jumpRound} onchange={onJumpRound}>
-        <option value="">Jump to round…</option>
-        {#each rounds as r (r.number)}
-          <option value={r.number}>
-            {r.number >= 1 ? `R${r.number}` : roundIndexLabel(r)}{r.bombSite ? ` · ${r.bombSite}` : ''}
-          </option>
-        {/each}
-      </select>
-
-      <label class="sr-only" for="rp-cam">Camera mode</label>
-      <select
-        class="input"
-        id="rp-cam"
-        value={camMode}
-        onchange={onCamMode}
-        title="Smart keeps every player and the bomb on screen with smooth pan/zoom (drag or wheel takes over → Free); Free is manual"
-      >
-        <option value="smart">Smart</option>
-        <option value="free">Free</option>
-      </select>
-
-      <label class="sr-only" for="rp-follow">Follow player</label>
-      <select class="input" id="rp-follow" value={uiFollow ?? ''} onchange={onFollow}>
-        <option value="">Free camera</option>
-        {#each players as p, i (i)}
-          <option value={i}>{i + 1}. {p.name || `slot ${i}`}</option>
-        {/each}
-      </select>
-
-      <span class="muted" title="Space play/pause · , . speed · ←/→ step · Shift ±64 · L loop · F follow · 1-9 select · S snapshot"><span class="codicon codicon-keyboard"></span> hints</span>
-    </div>
-
-    {#if voicePresence && voicePresence.hasVoice}
-      <div class="toolbar voice-bar" role="group" aria-label="Voice controls">
-        <button
-          class="btn"
-          class:primary={lanesOpen}
-          aria-pressed={lanesOpen}
-          title="Show/hide the per-player voice density lanes (click a lane to play from there)"
-          onclick={() => (lanesOpen = !lanesOpen)}
-        >Lanes</button>
-        <button
-          class="btn"
-          class:primary={!uiVoiceOn}
-          onclick={toggleVoice}
-          title={uiVoiceErr || (uiVoiceOn ? 'Stop voice playback' : 'Start voice playback (needs one click — browser gesture rule)')}
-        >{#if uiVoiceOn}<span class="codicon codicon-unmute"></span> Voice on{:else}Enable voice{/if}</button
-        >
-        <span
-          class="chip voice-state {uiVoiceErr ? 'bad' : uiVoiceOn ? 'ok' : 'idle'}"
-          title={uiVoiceErr ? `AudioContext: ${uiVoiceCtx} — ${uiVoiceErr}` : `AudioContext: ${uiVoiceCtx}`}
-        >{uiVoiceErr ? 'error' : uiVoiceOn ? `on · ${uiVoiceCtx}` : 'off'}</span>
-        {#if uiVoiceErr}
-          <span class="voice-hint" role="alert"
-            >{uiVoiceErr} — install <span class="mono">gst-plugins-good</span> (GStreamer) if audio fails to start.</span
+          <span class="codicon codicon-filter" aria-hidden="true"></span> Filters
+          <span class="muted lm-filter-count">{filter.cats.length}</span>
+        </button>
+        <span class="spacer"></span>
+        <details class="lm-export" bind:this={exportEl}>
+          <summary
+            class="btn small"
+            aria-label="Export the loaded feed"
+            title="Export the loaded feed — CSV or JSON"
+            ><span class="codicon codicon-export" aria-hidden="true"></span></summary
           >
-        {/if}
-        <label class="sr-only" for="rp-vol">Voice volume</label>
-        <input
-          class="voice-vol"
-          id="rp-vol"
-          type="range"
-          min="0"
-          max="1"
-          step="0.05"
-          value={uiVoiceVol}
-          oninput={onVoiceVol}
-        />
-        <span class="voice-players">
-          {#each voicePlayers as p (p.steamId)}
-            <span class="voice-player" title="{p.name} — {p.chunks.toLocaleString()} chunks, {Math.round(p.seconds)}s of voice">
-              <span class="voice-name">{p.name}</span>
-              <button
-                class="btn small ghost voice-ms"
-                class:warn={!!uiVoiceMute[p.steamId]}
-                aria-pressed={!!uiVoiceMute[p.steamId]}
-                aria-label="Mute {p.name}"
-                title="Mute {p.name}"
-                onclick={() => toggleVoiceMute(p.steamId)}>M</button
-              >
-              <button
-                class="btn small ghost voice-ms"
-                class:warn={!!uiVoiceSolo[p.steamId]}
-                aria-pressed={!!uiVoiceSolo[p.steamId]}
-                aria-label="Solo {p.name}"
-                title="Solo {p.name} (overrides mutes)"
-                onclick={() => toggleVoiceSolo(p.steamId)}>S</button
-              >
-              <details class="voice-export">
-                <summary class="btn small ghost" aria-label="Export {p.name} voice" title="Export {p.name}'s track"><span class="codicon codicon-chevron-down"></span></summary>
-                <button
-                  type="button"
-                  class="voice-dl"
-                  title="Download full-track WAV for {p.name}"
-                  onclick={() => exportWav(p)}>WAV</button
-                >
-              </details>
-            </span>
-          {/each}
-        </span>
+          <div class="lm-export-menu" role="menu">
+            <button
+              type="button"
+              role="menuitem"
+              class="lm-export-item"
+              disabled={!feedRows.length}
+              onclick={exportCSV}>CSV</button
+            >
+            <button
+              type="button"
+              role="menuitem"
+              class="lm-export-item"
+              disabled={!feedRows.length}
+              onclick={exportJSON}>JSON</button
+            >
+          </div>
+        </details>
       </div>
+
+      {#if filtersOpen}
+        <!-- The whole filter surface: category chips → game-events
+             name picker → scope bar → saved presets + Reset. -->
+        <div class="lm-filter-panel">
+          <!-- Category chips: the sparse default (kills + round wins) is
+               what a fresh URL carries; everything else is opt-in. -->
+          <div class="lm-cats" role="group" aria-label="Event categories">
+            {#each CATEGORIES as c (c.id)}
+              <button
+                class="chip lm-cat-chip"
+                class:on={filter.cats.includes(c.id)}
+                aria-pressed={filter.cats.includes(c.id)}
+                title={c.default ? `${c.label} (on by default)` : `Show ${c.label.toLowerCase()} in the feed`}
+                onclick={() => toggleCat(c.id)}>{c.label}</button
+              >
+            {/each}
+          </div>
+
+          {#if needHist}
+            <label class="lm-gname" for="lm-gname">
+              Game events
+              <select
+                class="input"
+                id="lm-gname"
+                value={filter.gname}
+                onchange={(e) => setGname(e.currentTarget.value)}
+              >
+                <option value="">Pick an event name…</option>
+                {#each hist as h (h.name)}
+                  <option value={h.name}>{h.name} ({h.count})</option>
+                {/each}
+                {#if filter.gname && !hist.some((h) => h.name === filter.gname)}
+                  <option value={filter.gname}>{filter.gname}</option>
+                {/if}
+              </select>
+            </label>
+            {#if !filter.gname}
+              <p class="muted lm-hint">High-volume sources load by name only — pick one above.</p>
+            {/if}
+          {/if}
+
+          <FilterBar {id} filter={filter} onchange={onBarFilter} showReset={false} />
+
+          <div class="lm-toolbar" role="group" aria-label="Saved filter presets">
+            <select class="input lm-saved" aria-label="Saved filters" value={savedSel} onchange={(e) => (savedSel = e.currentTarget.value)}>
+              <option value="">Saved filters…</option>
+              {#each saved as s (s.id)}
+                <option value={String(s.id)}>{s.name}</option>
+              {/each}
+            </select>
+            <button class="btn small" disabled={!savedSel} onclick={applySaved}>Apply</button>
+            <button class="btn small" onclick={saveCurrent} title="Save the current filter as a preset">Save</button>
+            <button class="btn small" disabled={!savedSel} title="Delete the selected saved filter" onclick={removeSaved}><span class="codicon codicon-close"></span></button>
+            <span class="spacer"></span>
+            <button class="btn small" onclick={resetFilters} title="Reset every filter to the sparse default">Reset</button>
+          </div>
+        </div>
+      {/if}
+      {#if savedError}
+        <p class="error" role="alert">{savedError}</p>
+      {/if}
+      {#if feedError}
+        <p class="error" role="alert">{feedError}</p>
+      {/if}
+
+      {#if !selected}
+      <ul class="landmark-list" aria-label="Events">
+        {#each feedRows as row (row.key)}
+          <LandmarkRow
+            {row}
+            {nav}
+            resolveSteam={resolveWho}
+            roundByNumber={rbn}
+            tickRate={meta?.tickRate}
+            selected={selected?.key === row.key}
+            onselect={select}
+            onseek={(r) => seekTo(r.tick)}
+          />
+        {:else}
+          <li class="muted lm-empty" role="status">
+            {#if filter.cats.length === 0}
+              No categories enabled — turn some on in Filters.
+            {:else if feedLoading}
+              Loading events…
+            {:else if prefHidesScope}
+              Knife/warmup rounds are hidden — show them in Settings, or clear the round filter.
+            {:else}
+              No events match these filters.
+            {/if}
+          </li>
+        {/each}
+      </ul>
+      {#if hasMore}
+        <button class="btn small lm-more" onclick={loadMore} disabled={feedLoading}>
+          {feedLoading ? 'Loading…' : 'Load more…'}
+        </button>
+      {/if}
+      {#if feedLoading && feedRows.length > 0}
+        <p class="muted lm-hint" role="status">Loading…</p>
+      {/if}
+      {/if}
+      {#if selected}
+        <div class="lm-detail" aria-label="Selected landmark">
+          <div class="lm-detail-head">
+            <span class="chip kind">{categoryById(selected.category)?.label || selected.category}</span>
+            {#if selected.source === 'event'}
+              <span class="mono">#{selected.seq}</span>
+            {/if}
+            <span class="mono muted">tick {selected.tick}</span>
+            <span class="chip round-chip">R{selected.round}</span>
+            <div class="spacer"></div>
+            {#if voicePresence && voicePresence.hasVoice}
+              <button
+                class="btn small"
+                title="Open playback at this event with voice on — hear comms around it"
+                onclick={() => hearTick(selected.tick)}>Hear ±10s <span class="codicon codicon-play"></span></button
+              >
+            {/if}
+            <button class="btn small ghost" aria-label="Close detail" title="Close detail — back to the list" onclick={closeDetail}><span class="codicon codicon-close"></span></button>
+          </div>
+          {#if detailError}
+            <p class="error" role="alert">{detailError}</p>
+          {/if}
+          {#if selected.source === 'event'}
+            <dl class="facts lm-facts">
+              <div>
+                <dt>Attacker</dt>
+                <dd><ProfileLink steam={selected.attacker} name={selected.attackerName || '—'} {nav} title="Open {selected.attackerName} profile" /></dd>
+              </div>
+              <div>
+                <dt>Victim</dt>
+                <dd><ProfileLink steam={selected.victim} name={selected.victimName || '—'} {nav} title="Open {selected.victimName} profile" /></dd>
+              </div>
+              <div>
+                <dt>Assister</dt>
+                <dd>
+                  <ProfileLink
+                    steam={selected.assister}
+                    name={selected.assisterName || '—'}
+                    {nav}
+                    title="Open {selected.assisterName} profile"
+                  />
+                </dd>
+              </div>
+              <div>
+                <dt>Weapon</dt>
+                <dd class="mono">{selected.weapon || '—'}</dd>
+              </div>
+              <div>
+                <dt>Damage</dt>
+                <dd class="num">{selected.dmg}</dd>
+              </div>
+              <div>
+                <dt>Distance</dt>
+                <dd class="num">{selected.distance ? Math.round(selected.distance) : '—'}</dd>
+              </div>
+              <div>
+                <dt>Hitgroup</dt>
+                <dd>{selected.hitgroup || '—'}</dd>
+              </div>
+              <div>
+                <dt>Site</dt>
+                <dd>{selected.site || '—'}</dd>
+              </div>
+              <div class="fact-wide">
+                <dt>Flags</dt>
+                <dd><EventFlags event={selected} none /></dd>
+              </div>
+            </dl>
+            {#if detail}
+              <details class="json-block" open>
+                <summary>detail.json</summary>
+                <pre class="mono">{prettyJson(detail.detailJson)}</pre>
+              </details>
+              <details class="json-block">
+                <summary>raw.json</summary>
+                <pre class="mono">{prettyJson(detail.rawJson)}</pre>
+              </details>
+              <button class="btn small" onclick={copyDetail}>{copied ? 'Copied' : 'Copy payloads'}</button>
+            {:else if !detailError}
+              <p class="muted" role="status">Loading payloads…</p>
+            {/if}
+          {:else if selected.source === 'chat'}
+            <dl class="facts lm-facts">
+              <div>
+                <dt>Time</dt>
+                <dd title="tick {selected.tick}">{chatClock(selected, rbn, meta?.tickRate)}</dd>
+              </div>
+              <div>
+                <dt>From</dt>
+                <dd><ProfileLink steam={selected.steamId} name={selected.who || '—'} {nav} title="Open {selected.who} profile" /></dd>
+              </div>
+              <div>
+                <dt>Kind</dt>
+                <dd>{selected.kind || 'chat'}{selected.decrypted ? ' · decrypted' : ''}</dd>
+              </div>
+            </dl>
+            <p class="lm-chat-text">{selected.text}</p>
+          {:else}
+            <dl class="facts lm-facts">
+              <div>
+                <dt>Event</dt>
+                <dd class="mono">{selected.name}</dd>
+              </div>
+              <div>
+                <dt>Tick</dt>
+                <dd class="num mono">{selected.tick}</dd>
+              </div>
+              <div>
+                <dt>Round</dt>
+                <dd class="num">{selected.round}</dd>
+              </div>
+              {#if selected.who}
+                <div>
+                  <dt>Player</dt>
+                  <dd>
+                    <!-- Generic rows carry only a display name — resolve
+                         it through the replay meta's player list on an
+                         EXACT match only; unresolvable stays plain text. -->
+                    <ProfileLink
+                      steam={resolveWho(selected.who)}
+                      name={selected.who}
+                      {nav}
+                      title="Open {selected.who} profile"
+                    />
+                  </dd>
+                </div>
+              {/if}
+              {#if selected.label}
+                <div class="fact-wide">
+                  <dt>Detail</dt>
+                  <dd>{selected.label}</dd>
+                </div>
+              {/if}
+            </dl>
+            <div class="lm-payload">
+              <div class="row-between">
+                <span class="spacer"></span>
+                <input
+                  class="input"
+                  placeholder="Filter keys…"
+                  bind:value={payloadQuery}
+                  aria-label="Filter payload keys"
+                />
+                <button
+                  class="btn small ghost"
+                  aria-pressed={payloadRaw}
+                  title="Toggle raw JSON"
+                  onclick={() => (payloadRaw = !payloadRaw)}>{payloadRaw ? 'tree' : 'raw'}</button
+                >
+              </div>
+              {#if payloadRaw}
+                <pre class="mono">{selected.payloadJson}</pre>
+              {:else}
+                <PayloadTree json={selected.payloadJson} query={payloadQuery.trim()} />
+              {/if}
+              <button class="btn small" onclick={copyPayload}>{copied ? 'Copied' : 'Copy'}</button>
+            </div>
+          {/if}
+          <div class="lm-detail-actions">
+            <button class="btn small primary" onclick={() => seekTo(selected.tick)}>
+              <span class="codicon codicon-play"></span> Seek to event
+            </button>
+          </div>
+        </div>
+      {/if}
+      </div>
+      <!-- /lm-scroll -->
     {/if}
+  </aside>
   {/if}
 </div>
 
