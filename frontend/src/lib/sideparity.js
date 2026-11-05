@@ -6,8 +6,8 @@
 //
 // so the counted rounds split into (switches + 1) as-equal-as-possible eras.
 // Regulation (switches = 1) is a plain midpoint split; overtime adds more
-// boundaries, which is where a uniform `ceil(n / eras)` era length used to
-// diverge from the backend (n = 25, switches = 2 → 9 and 17, not 9 and 18).
+// boundaries, where a uniform `ceil(n / eras)` era length gets them wrong
+// (n = 25, switches = 2 → 9 and 17, not 9 and 18).
 //
 // Both languages assert the same fixture — internal/rules/testdata/
 // sideparity.json — from internal/rules/sideparity_test.go (Go) and
@@ -50,9 +50,9 @@ export function eraOf(index, flips) {
 // startSideFor returns the side the team that ENDED on `finalSide` played
 // in the FIRST half — 'ct' | 't', or null when finalSide is not a side
 // (missing data never gets a guessed side). This is the input for the
-// team-identity colors (changes.txt #10/#20: started CT → indigo, T →
-// orange), independent of the live side, which swaps at halftime. It is
-// the era-0 form of sideInEra below.
+// team-identity colors (started CT → indigo, started T → orange),
+// independent of the live side, which swaps at halftime. It is the
+// era-0 form of sideInEra below.
 export function startSideFor(finalSide, sideSwitches) {
   return sideInEra(finalSide, sideSwitches, 0);
 }

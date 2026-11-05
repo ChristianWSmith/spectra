@@ -2,11 +2,7 @@
 // normalization, merging and filter serialization live for the Replay
 // landmark feed (the app's single raw-event browser per match).
 //
-// Three consumers used to each hold a copy of event categorization:
-// Timeline's Kind select, the renderer's setLandmarks bucketing and
-// Replay's scrubber markers (classifyLandmark). The landmark
-// consolidation folded every raw-event list into Replay, so this module
-// now owns:
+// This module owns:
 //
 //   1. CATEGORIES      — the filterable category registry (with the
 //                       sparse default: kills + round wins only).
@@ -83,8 +79,8 @@ export const CATEGORIES = [
   { id: 'game_events', label: 'Game events', short: 'game', source: 'generic', nameFrom: 'gname' },
 ];
 
-// The sparse default: kills + round wins only (spec §2 — every other
-// category is opt-in, even when its data exists).
+// The sparse default: kills + round wins only — every other category is
+// opt-in (PRD §5.5), even when its data exists.
 export const DEFAULT_CATEGORIES = CATEGORIES.filter((c) => c.default).map((c) => c.id);
 
 export function categoryById(id) {
@@ -103,9 +99,8 @@ export function categoryOfKind(kind) {
 // drawBucket maps a typed kind onto the drawable bucket the renderer and
 // scrubber markers consume ('' = not drawn / no marker). Precomputed at
 // normalization time — neither the renderer nor the scrubber classifies
-// anything at runtime (spec §8). The substring branches (smoke/fire)
-// predate this module and stay: they bucket extended kind spellings the
-// same way the old classifyLandmark did.
+// anything at runtime (PRD §5.5). The substring branches (smoke/fire)
+// bucket the extended kind spellings, not only the exact kinds above.
 export function drawBucket(kind) {
   const k = String(kind || '').toLowerCase();
   if (k === 'kill') return 'kill';
@@ -180,7 +175,7 @@ export function normalizeEvent(ev, opts = {}) {
     // Landmark position/attribution aliases the renderer's world layers
     // consume (the shared landmark representation — EventRow keeps its
     // posX/posY/posZ for everything else). Bomb events attribute to the
-    // bomb entity, not a player (parity with the retired Go Landmark).
+    // bomb entity, not a player.
     x: ev.posX ?? null,
     y: ev.posY ?? null,
     z: ev.posZ ?? null,
@@ -336,8 +331,8 @@ export function filtersEqual(a, b) {
 // --- Export ------------------------------------------------------------------
 
 // landmarkExportRows flattens the loaded feed into canonical CSV/JSON
-// export columns (the retired Context view's export parity: tick, round,
-// source, name/who, text/label — plus category and typed extras).
+// export columns (tick, round, source, name/who, text/label — plus
+// category and typed extras).
 export function landmarkExportRows(rows) {
   const out = [['tick', 'round', 'source', 'category', 'kind', 'who', 'label', 'weapon', 'dmg']];
   for (const r of rows) {

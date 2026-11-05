@@ -1,16 +1,11 @@
-// Characterization + canonical tests for CSV export (B3 consolidation).
+// Characterization + canonical tests for CSV export (B3).
 //
-// Phase 0 pinned the two divergent inline implementations before they were
-// folded into lib/csv.js:
-//   - Context.svelte    — regex /[",\n]/ (no \r → a CR inside a cell was
-//                         NOT quoted: a real escaping bug), String(v ?? ''),
-//                         objects → "[object Object]", "\n" row endings and
-//                         no trailing newline.
-//   - SqlConsole.svelte — regex /[",\r\n]/ (RFC 4180), null/undefined → '',
-//                         objects → JSON.stringify, "\r\n" row endings with
-//                         a trailing newline.
-// The canonical csvCell/toCSV below use SqlConsole's stricter semantics;
-// every consumer now shares them (see the migration note in csv.js).
+// The canonical csvCell/toCSV below are SqlConsole.svelte's stricter RFC
+// 4180 semantics (see csv.js). `contextCsvCell` pins the laxer inline
+// spelling it replaced:
+//   - regex /[",\n]/ (no \r → a CR inside a cell was NOT quoted: a real
+//     escaping bug), String(v ?? ''), objects → "[object Object]",
+//     "\n" row endings and no trailing newline.
 // Run: node --test src/lib/csv.test.js   (from frontend/)
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -86,11 +81,11 @@ test('toCSV: a single row is one record', () => {
   assert.equal(toCSV([['a', 'b']]), 'a,b\r\n');
 });
 
-// --- Phase 0 characterization: Context.svelte's pre-B3 csvCell ---------------
-// Verbatim copy of the inline helper Context.svelte shipped, kept as the
-// record of the two drifts the consolidation fixed there (Context has
-// since migrated to csv.js): CR was not quoted (escaping bug) and rows
-// were "\n"-joined without a trailing newline.
+// --- Characterization fixture: the laxer inline csvCell ---------------
+// Verbatim copy of the inline helper that drifted from SqlConsole's
+// semantics, kept as the record of the two drifts the canonical form
+// fixed: CR was not quoted (escaping bug) and rows were "\n"-joined
+// without a trailing newline.
 function contextCsvCell(v) {
   const s = String(v ?? '');
   return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;

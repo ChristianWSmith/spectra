@@ -1,6 +1,5 @@
 // Player-profile navigation helpers, shared by every view that links a
-// name/chip to #/player/:steamid. One Steam-id test, one navigation —
-// the views used to each carry a byte-identical copy.
+// name/chip to #/player/:steamid. One Steam-id test, one navigation.
 import { buildHash, parseHash } from './router.js';
 import { serializeLandmarkFilter } from './replay/landmarks.js';
 
@@ -21,7 +20,7 @@ export function openProfile(nav, steam) {
 // entry point into THE event browser: a partial landmark filter (the
 // defaults fill every gap — serializeLandmarkFilter only emits non-
 // default keys) plus the entry context extras:
-//   tick   — initial replay position (the old replay-seek hand-off)
+//   tick   — initial replay position
 //   sel    — selected landmark key (e:123 / c:4 / g:9)
 //   back   — origin path for the return trip ("match/5/rounds",
 //            "compare/5?rounds=3,5", …) — rendered as-is by buildHash

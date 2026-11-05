@@ -76,7 +76,7 @@ export function displayHalfScore(match) {
     : { first: halfCT, second: halfT };
 }
 
-// --- Team identity colors (changes.txt #10/#20) ----------------------------
+// --- Team identity colors ----------------------------------------------------
 // A TEAM's color comes from the side it played in the FIRST half: started
 // CT → indigo (.team-start-ct), started T → orange (.team-start-t) —
 // never the live side, which swaps at halftime. The start side comes from

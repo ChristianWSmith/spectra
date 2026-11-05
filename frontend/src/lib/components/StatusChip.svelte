@@ -14,8 +14,7 @@ const LABELS = {
 };
 
 // Lifecycle state → the shared .chip palette modifier (style.css). An
-// unknown state falls back to `idle`, which is exactly the base .chip
-// look an unmatched status colour rule used to leave behind.
+// unknown state falls back to `idle` — the base .chip look.
 const PALETTE = {
   ready: 'ok',
   done: 'ok',

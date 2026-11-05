@@ -26,9 +26,9 @@ test('extFromName falls back when there is no extension', () => {
   assert.equal(extFromName('', 'csv'), 'csv');
   assert.equal(extFromName(undefined, 'bin'), 'bin');
   assert.equal(extFromName('noext', 'csv'), 'csv'); // explicit fallback
-  // Leading dot is not an extension (same `dot > 0` rule the views used).
+  // Leading dot is not an extension (`dot > 0`).
   assert.equal(extFromName('.hidden'), 'txt');
-  // A trailing dot yields the empty suffix, as before.
+  // A trailing dot yields the empty suffix.
   assert.equal(extFromName('archive.', 'txt'), '');
 });
 

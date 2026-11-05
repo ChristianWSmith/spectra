@@ -179,8 +179,8 @@ test('renderHeatField resolves colors per output pixel and flips row 0 to the bo
   assert.equal(px(3, 3)[3], 0, 'row 0 rendered at the bottom');
   assert.equal(px(0, 3)[3], 0, 'zero cells stay transparent');
   // Resolution: pixels BETWEEN cell centers take interpolated values, so
-  // a 2-cell row at 16 px yields many distinct alphas — coloring cells
-  // (the old path) would give exactly two.
+  // a 2-cell row at 16 px yields many distinct alphas — flat cell
+  // coloring would give exactly two.
   const row = renderHeatField([0, 1], 2, 1, 1, false, 16, 1);
   const alphas = [];
   for (let i = 3; i < row.length; i += 4) alphas.push(row[i]);

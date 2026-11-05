@@ -36,8 +36,9 @@ test('regulation MR12 splits at the 12th counted round', () => {
 });
 
 test('overtime (switches >= 2) uses per-boundary floor division, not a uniform era length', () => {
-  // The old RoundStrip math (eraLen = ceil(n / eras)) put the second
-  // overtime boundary at 18 for this match; the backend formula says 17.
+  // A uniform eraLen = ceil(n / eras) would put the second
+  // overtime boundary at 18 for this match; the per-boundary floor
+  // division says 17.
   assert.deepEqual(flipIndexes(25, 2), [9, 17]);
   assert.deepEqual(flipIndexes(23, 2), [8, 16]);
   // A match too short for the second switch keeps only the first boundary.
@@ -52,7 +53,7 @@ test('startSideFor: first-half side of the team that ended on a side', () => {
   assert.equal(startSideFor('t', 0), 't');
   // Regulation MR12 (one switch): the team that FINISHED CT played T in
   // the first half — the input for the team-identity name colors
-  // (changes.txt #10/#20: started CT → indigo, started T → orange).
+  // (started CT → indigo, started T → orange).
   assert.equal(startSideFor('ct', 1), 't');
   assert.equal(startSideFor('t', 1), 'ct');
   // Each further switch flips it again (OT halves).

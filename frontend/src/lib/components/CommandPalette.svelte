@@ -285,8 +285,7 @@
             return;
           }
           // Saved filters ride the URL into the canonical event browser —
-          // parse normalizes the shape (the old Timeline hand-off is gone,
-          // so there is no unread-handoff state left behind).
+          // parse normalizes the shape.
           nav(replayHash(mid, parseLandmarkFilter(f)));
         },
       })),

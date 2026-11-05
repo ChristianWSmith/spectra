@@ -1,7 +1,7 @@
 <script>
   // The one landmark row — the Replay feed's list row AND CompareRounds'
-  // compact event-sequence row (the consolidation's shared event
-  // presentation). Rows arrive pre-categorized from lib/replay/
+  // compact event-sequence row (the shared event presentation).
+  // Rows arrive pre-categorized from lib/replay/
   // landmarks.js normalize*; this component owns only DISPLAY: the
   // source-aware primary text, the category chip, and the row actions
   // (seek ▶, select). Profile/payload detail lives in the caller's

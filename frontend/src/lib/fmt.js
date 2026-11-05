@@ -7,8 +7,7 @@ import { isCounted } from './rounds.js';
 // counted-out round (knife/warmup — lib/rounds.js) or with a negative
 // offset fall back to a match-relative clock (tick / tickRate) — plain
 // "m:ss", never a negative; keep it simple. The raw tick stays in the
-// cell's title tooltip. This is THE chat clock (it lived in the retired
-// Match Chat tab before the landmark consolidation; the Replay feed's
+// cell's title tooltip. This is THE chat clock (the Replay feed's
 // chat rows and RoundDetail's round chat both render it).
 export function chatClock(c, roundByNumber, tickRate) {
   const r = (roundByNumber || new Map()).get(c.round);
@@ -52,9 +51,9 @@ export function tickSeconds(ticks, tickRate) {
 }
 
 // normTickRate normalizes a match tick rate: anything absent, non-numeric
-// or <= 0 falls back to 64 (CS2's fixed simulation rate). This was the
-// `> 0 ? : 64` fallback copied around fmt.js, replay/engine.js,
-// replay/audio.js and Replay.svelte.
+// or <= 0 falls back to 64 (CS2's fixed simulation rate). The single home
+// of the `> 0 ? : 64` rule — replay/engine.js (createEngine) and
+// replay/audio.js call it.
 export function normTickRate(tickRate) {
   return Number(tickRate) > 0 ? Number(tickRate) : 64;
 }

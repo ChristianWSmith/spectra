@@ -26,8 +26,7 @@ const LOOKAHEAD = 1.5;    // schedule this far ahead of the clock
 const CACHE_MAX = 40;     // decoded-window cache entries, LRU
 const DRIFT_S = 0.05;     // resync threshold
 // Shared tail of both AudioContext-failed messages: WebKitGTK's audio
-// output needs the GStreamer plugin set (probeAudio + the runtime start
-// path used to spell this out twice).
+// output needs the GStreamer plugin set.
 const GST_AUDIO_HINT =
   'On Linux install gst-plugins-good (GStreamer) — WebKitGTK needs it for audio output.';
 

@@ -1,6 +1,6 @@
 <script>
-  // Profiles (changes.txt #21): the sidebar's player directory — every
-  // player in the library, searchable by name, one click away from the
+  // Profiles: the sidebar's player directory — every player in the
+  // library, searchable by name, one click away from the
   // canonical player profile. Rows come from the one player-list service
   // (listPlayers('') — the same source PlayerProfile's picker and the
   // command palette use); the search is a client-side filter over that

@@ -5,14 +5,9 @@
 // double embedded quotes), null/undefined → empty field, objects →
 // JSON text, "\r\n" record endings with a trailing newline.
 //
-// This replaced three drifting copies (the Context view has since retired
-// into Replay's landmark feed; its CSV export moved with it):
-//   - SqlConsole.svelte — source of these semantics (\r\n, /["\r\n]/)
-//   - Context.svelte    — /["\n]/ (a bare CR was NOT quoted: a real
-//                         escaping bug), "\n" endings, no trailing
-//                         newline, objects → "[object Object]"
-//   - Reports.svelte    — builds markdown/HTML, not CSV (unchanged)
-// Row building is `toCSV([[...header], [...row], ...])`.
+// Consumers: SqlConsole.svelte (the source of these semantics) and
+// Replay's landmark export. Reports.svelte builds markdown/HTML, not
+// CSV. Row building is `toCSV([[...header], [...row], ...])`.
 
 // csvCell renders one field as a CSV cell.
 export function csvCell(v) {

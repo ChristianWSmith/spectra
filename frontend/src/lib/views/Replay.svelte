@@ -1,7 +1,7 @@
 <script>
   // Replay — the tactical replay AND the app's ONE canonical raw-event
-  // browser per match (the landmark consolidation): event discovery,
-  // filtering, inspection and navigation all happen here, in the side
+  // browser per match: event discovery, filtering, inspection and
+  // navigation all happen here, in the side
   // panel's landmark feed. The feed composes the backend's three
   // source-specific reads (typed events / chat / generic events) through
   // lib/replay/landmarks.js — there is no separate event query, no
@@ -269,7 +269,7 @@
 
   // Draw feed: the drawable-kind anchors, fetched ONCE per match in
   // load() and handed to the renderer — category chips never rebuild the
-  // world layers (spec §8).
+  // world layers.
   const drawNorm = $derived(drawRows.map((r) => normalizeEvent(r, {})).filter(Boolean));
 
   // Scrubber markers: the draw feed gated by the ACTIVE category set +
@@ -442,8 +442,7 @@
     navigateFilter({ ...filter, ...next });
   }
 
-  // Filter the feed to ±5s around the playhead (the retired header
-  // button's promise, now canonical feed behavior).
+  // Filter the feed to ±5s around the playhead — canonical feed behavior.
   function eventsAtTick() {
     const tr = meta && meta.tickRate > 0 ? meta.tickRate : 64;
     const half = Math.round(5 * tr);
@@ -540,8 +539,7 @@
   }
 
   // M4 comms-around: seek TO the event with playback + voice on — the
-  // audio engine starts from there (the old Timeline Hear ±10s contract,
-  // now in-panel).
+  // audio engine starts from there (in-panel).
   function hearTick(tick) {
     engine?.seekTick(tick);
     if (voiceEngine) voiceEngine.setEnabled(true).catch(() => {});
@@ -757,9 +755,8 @@
         if (uiVoiceSolo[p.steamId]) voiceEngine.setSolo(p.steamId, true);
       }
     }
-    // Entry position rides the URL (?tick=) — the durable replacement
-    // for the retired replay-seek hand-off. No autoplay: contextual
-    // links seek, they never hijack playback.
+    // Entry position rides the URL (?tick=) — durable and deep-linkable.
+    // No autoplay: contextual links seek, they never hijack playback.
     const tick0 = Number(query.tick) || 0;
     if (tick0) engine.seekTick(tick0);
     renderer.draw();
@@ -1569,9 +1566,8 @@
 </div>
 
 <style>
-  /* The WAV control is a real button now (it opens the native save dialog
-     rather than navigating), so it needs the pointer cursor the old anchor
-     got from the UA stylesheet. */
+  /* The WAV control is a button (it opens the native save dialog
+     rather than navigating), so it needs the pointer cursor explicitly. */
   .voice-dl {
     cursor: pointer;
   }

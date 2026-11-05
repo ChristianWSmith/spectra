@@ -1,8 +1,7 @@
 <script>
   // FilterBar — composable advanced event filter for the Replay
-  // landmark feed (it outlived Timeline: the kind select is gone —
-  // event categories are the feed's filter model, see lib/replay/
-  // landmarks.js CATEGORIES).
+  // landmark feed: event categories are the feed's filter model (there is
+  // no kind select here) — see lib/replay/landmarks.js CATEGORIES.
   //
   // Props:
   //   filter   — {round, steamId, weapon, tickFrom, tickTo, dmgMin,

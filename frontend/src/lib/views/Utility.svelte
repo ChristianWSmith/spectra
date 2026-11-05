@@ -31,7 +31,7 @@
   let closed = $state({}); // round -> true = collapsed
   // Match tickrate for the tick → clock conversion (unknown until the
   // match metadata lands; 64 is CS2's standard fallback). sideSwitches is
-  // the other half of the per-round name colors (changes.txt #20).
+  // the other half of the per-round name colors.
   let tickRate = $state(64);
   let sideSwitches = $state(0);
 
@@ -171,8 +171,7 @@
     closed = { ...closed, [round]: !closed[round] };
   }
 
-  // Round drill → THE event browser with the grenade categories enabled
-  // (the old Timeline hand-off carried kind:'grenade').
+  // Round drill → THE event browser with the grenade categories enabled.
   function openEvents(r) {
     go(replayHash(id, { round: r.round, cats: ['grenade_throws', 'grenade_dets'] }, { back }));
   }

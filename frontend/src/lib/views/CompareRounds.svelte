@@ -2,13 +2,12 @@
   // Side-by-side round comparison — a distinct analytical view (not an
   // event browser): its bounded event sequence renders through the shared
   // LandmarkRow and links into Replay's landmark feed at that tick. The
-  // selected rounds ride the URL (?rounds=3,5,7 — the old one-shot
-  // sessionStorage hand-off lost the selection on every return), as does
-  // the origin path (?back=).
+  // selected rounds ride the URL (?rounds=3,5,7), as does the origin path
+  // (?back=).
   //
   // Ghost overlay (two trail sets over the M2 sidecar) is intentionally NOT
   // implemented here — it needs sidecar streaming + mapxform wiring and is
-  // deferred (documented in the wave report).
+  // deferred.
   import {
     getRoundDetail,
     getRounds,
@@ -31,8 +30,8 @@
 
   const SEQ_LIMIT = 30;
 
-  // ?rounds=3,5,7 — validated like the old hand-off reader (same match,
-  // integers, ≤ 4, ≥ 2); anything else → the hint + back path below.
+  // ?rounds=3,5,7 — validated (same match, integers, ≤ 4, ≥ 2); anything
+  // else → the hint + back path below.
   const sel = $derived.by(() => {
     const raw = query.rounds || '';
     const rounds = raw
@@ -99,8 +98,7 @@
         cols = wanted.map((r, i) => {
           const detail = details[i];
           // The bounded sequence comes straight from the round-detail
-          // response — the old separate getEvents per round fetched the
-          // SAME rows a second time (and its result was all that rendered).
+          // response — no separate per-round event fetch.
           const seq = (detail?.events || []).slice(0, SEQ_LIMIT);
           return {
             round: r,

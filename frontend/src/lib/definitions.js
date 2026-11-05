@@ -1,15 +1,13 @@
 // Canonical metric definitions (D5): ONE source for the Settings →
 // Metric definitions glossary and for every hover tooltip the match views
 // render. Views import from here instead of each keeping its own
-// paraphrase — Combat even used to carry a "keep in sync with Settings"
-// comment, which this file replaces with the actual sync.
+// paraphrase.
 //
-// Wording rules (from Settings' original header): generic where the exact
+// Wording rules (Settings' glossary header): generic where the exact
 // rule is configurable; every rule set is versioned via
 // analysis_config/rule_version.
 //
-// Verified against the Go side before this consolidation:
-//   - internal/analytics/combat.go  — the CombatStats definition table
+// Verified against the Go side:
 //   - internal/store/analytics.go   — GetCombatStats / RebuildCareer SQL
 //   - profileservice.go             — career opening/trade rates
 //   - internal/extract/agg.go       — entry/opening/trade attribution

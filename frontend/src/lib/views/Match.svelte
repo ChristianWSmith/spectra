@@ -453,7 +453,7 @@
   }
 
   // Every event drill-down goes to THE event browser: Replay's landmark
-  // feed, scoped by the entry point (the old Timeline hand-off).
+  // feed, scoped by the entry point.
   // opts.follow (player-line clicks: roster rows, scoreboard rows) also
   // asks Replay to set the camera to that player — StatCard clicks keep
   // the plain event view.
@@ -473,9 +473,8 @@
     else if (compareSel.length < 4) compareSel = [...compareSel, n];
   }
 
-  // The compared rounds ride the URL (the old one-shot sessionStorage
-  // hand-off lost the selection on every return) — CompareRounds reads
-  // ?rounds= and ?back=.
+  // The compared rounds ride the URL — CompareRounds reads ?rounds= and
+  // ?back=.
   function goCompare() {
     nav(
       buildHash(`/compare/${id}`, {
@@ -536,11 +535,10 @@
     return { ct, t, other };
   });
 
-  // Team-identity color for a NAME (changes.txt #10/#20): a team is
-  // indigo if it started the first half on CT, orange if on T — derived
-  // from the canonical side-parity helper (lib/teams.js →
-  // sideparity.startSideFor), never from the live side. Unknown side →
-  // '' (no color, no guess).
+  // Team-identity color for a NAME: a team is indigo if it started the
+  // first half on CT, orange if on T — derived from the canonical
+  // side-parity helper (lib/teams.js → sideparity.startSideFor), never
+  // from the live side. Unknown side → '' (no color, no guess).
   function teamCls(finalSide) {
     return teamStartClass(finalSide, match?.sideSwitches || 0);
   }
@@ -609,7 +607,7 @@
           <span class="score">{match.scoreCT}–{match.scoreT}</span>
           <span class={teamCls('t')}>{teams.t}</span>
         </h1>
-        <!-- Tickrate, voice presence and parser version moved to the
+        <!-- Tickrate, voice presence and parser version live in the
              Details tab (Key facts); only the encrypted-chat key state
              stays up here. -->
         <p class="muted match-sub">

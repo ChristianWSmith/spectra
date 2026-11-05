@@ -22,13 +22,12 @@
 
   let { nav = () => {} } = $props();
 
-  // Sortable column headers replace the old "Sort by" dropdown + direction
-  // button: clicking a header sorts the list by that column (the store
-  // whitelists the keys — see matchListSort), a second click on the active
-  // header flips the direction. The first click applies the column's
-  // natural default — newest/largest first for dates and sizes, A→Z for
-  // names. Matchup is synthesized client-side and Actions is not data, so
-  // those headers stay plain.
+  // Sortable column headers: clicking a header sorts the list by that
+  // column (the store whitelists the keys — see matchListSort), a second
+  // click on the active header flips the direction. The first click
+  // applies the column's natural default — newest/largest first for dates
+  // and sizes, A→Z for names. Matchup is synthesized client-side and
+  // Actions is not data, so those headers stay plain.
   const SORT_DEFAULT_DESC = {
     extracted_at: true,
     map: false,

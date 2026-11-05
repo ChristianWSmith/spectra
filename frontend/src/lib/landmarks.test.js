@@ -101,7 +101,7 @@ test('drawBucket buckets every drawable kind (renderer/scrubber contract)', () =
   for (const k of ['damage', 'blind', 'round_start', 'player_connect', 'bomb_drop', '']) {
     assert.equal(drawBucket(k), '', k);
   }
-  // Extended spellings keep their historical buckets.
+  // Extended spellings keep their substring buckets.
   assert.equal(drawBucket('smoke'), 'smoke');
   assert.equal(drawBucket('molotov'), 'fire');
   // DRAW_KINDS is exactly the drawable set (round_end rides it for the

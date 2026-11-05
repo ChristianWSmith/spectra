@@ -23,8 +23,8 @@ import { KVStoreService } from '../../bindings/github.com/wailsapp/wails/v3/pkg/
 
 // --- Error text ---------------------------------------------------------------
 // The one errText: normalizes a Go/binding rejection (Error, string, null)
-// into the short message every view shows in its error slot. Views used to
-// each carry a byte-identical copy — import this instead.
+// into the short message every view shows in its error slot. Import this
+// instead of writing a local copy.
 
 export function errText(e) {
   if (e == null) return 'unknown error';
@@ -35,7 +35,7 @@ export function errText(e) {
 // --- Read-through cache (transparent) ---------------------------------------
 // One canonical cache for the repeated single-match/library reads:
 // getMatch, getRounds, getScoreboard, listMatches, getMatchSummary,
-// getTeamNames. Views call the exported functions exactly as before —
+// getTeamNames. Views call the exported functions as usual —
 // the cache lives inside them, keyed by (method, args), so per-argument
 // freshness falls out of the key (Match's sort-driven GetScoreboard
 // refetches pass different args -> different entries) and fetch-on-
@@ -329,9 +329,7 @@ export function onFilesDropped(callback) {
 // Durable event-navigation context (filters, scope, selected landmark,
 // initial tick) rides the ROUTE QUERY — see lib/router.js and
 // lib/replay/landmarks.js parseLandmarkFilter/serializeLandmarkFilter.
-// The one-shot sessionStorage handoffs (timeline-filter, replay-seek,
-// compare-rounds) were retired with the landmark consolidation: every
-// writer now navigates with query params, so deep links, refresh and
+// Every writer navigates with query params, so deep links, refresh and
 // back/forward all preserve context by construction.
 
 // --- AnalyticsService (M3) ---------------------------------------------------
@@ -377,10 +375,10 @@ export function getProfile(steamId) { return ProfileService.GetProfile(steamId);
 export function listPlayers(query) { return ProfileService.ListPlayers(query || ''); }
 export function getCareerTrend(steamId, metric) { return ProfileService.GetCareerTrend(steamId, metric); }
 
-// M3 pending-filter contract → retired: the landmark feed's filter state
-// lives in the route query (lib/replay/landmarks.js parseLandmarkFilter —
-// {cats, round, steamId, weapon, tickFrom, tickTo, dmgMin, dmgMax,
-// distanceMax, headshotOnly, bbox, gname}). Heatmap click →
+// The landmark feed's filter state lives in the route query
+// (lib/replay/landmarks.js parseLandmarkFilter — {cats, round, steamId,
+// weapon, tickFrom, tickTo, dmgMin, dmgMax, distanceMax, headshotOnly,
+// bbox, gname}). Heatmap click →
 // nav(buildHash('/replay/'+id, serializeLandmarkFilter({bbox}))).
 
 // --- MetricsService (M5) -----------------------------------------------------

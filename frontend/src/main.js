@@ -10,7 +10,7 @@ import { applyFontSize, getFontSize, reconcileFontSize } from './lib/fontsize.js
 // default never flashes when light is persisted.
 applyTheme(getTheme())
 
-// Font-size boot (changes.txt #6): same pre-paint localStorage cache as the
+// Font-size boot: same pre-paint localStorage cache as the
 // theme — the persisted small/medium/large size paints immediately. The
 // kvstore pref is the durable source of truth and reconciles right after
 // mount (never-set / corrupt → "medium").

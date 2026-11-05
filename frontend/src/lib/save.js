@@ -1,6 +1,6 @@
-// Native save plumbing for every download/export/render-to-file path
-// (changes.txt #5). The webview's silent anchor downloads are replaced by
-// OS file dialogs through the DialogService bindings:
+// Native save plumbing for every download/export/render-to-file path.
+// The webview's silent anchor downloads are replaced by OS file dialogs
+// through the DialogService bindings:
 //
 //   saveText / saveBlob → SaveFile (pick a path) + WriteFile (land bytes;
 //                         data crosses the bindings as base64)

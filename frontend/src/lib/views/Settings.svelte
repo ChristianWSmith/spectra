@@ -56,7 +56,7 @@
     theme = applyTheme(t);
   }
 
-  // Font size (changes.txt #6): small/medium/large segmented control.
+  // Font size: small/medium/large segmented control.
   // applyFontSize paints immediately (localStorage cache — main.js applied
   // the same value pre-paint) and the kvstore pref font_size is the durable
   // record, reconciled on every boot by reconcileFontSize().
@@ -69,7 +69,7 @@
 
   const FONT_LABELS = { small: 'Small', medium: 'Medium', large: 'Large' };
 
-  // Show knife & warmup rounds (changes.txt #8): pure kvstore pref
+  // Show knife & warmup rounds: pure kvstore pref
   // `show_knife_warmup_rounds`, default off; the Match view consumes it.
   let showKnife = $state(false);
 

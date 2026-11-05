@@ -1,9 +1,8 @@
 <script>
   // The kill-event flag chips — the one markup the raw-event surfaces
-  // share (Replay's landmark detail pane; the retired Timeline/RoundDetail
-  // feeds used to carry byte-identical copies of this sequence). The
-  // canonical flag list + code/title pairs live here; `none` renders the
-  // detail pane's "no flags" fallback when no chip applies.
+  // share (Replay's landmark detail pane). The canonical flag list +
+  // code/title pairs live here; `none` renders the detail pane's "no
+  // flags" fallback when no chip applies.
   let { event: e = {}, none = false } = $props();
 
   // [event field, chip code, tooltip title] — keep the codes/titles in

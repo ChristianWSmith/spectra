@@ -57,28 +57,27 @@ test('existing duration formatting is untouched', () => {
   assert.equal(fmtDuration(42), '42s');
 });
 
-// --- B2 characterization: pre-migration formatter variants -------------------
-// Verbatim copies of the inline formatters the views shipped, kept as the
-// record of what the consolidation changed (each call site has since
-// migrated to the canonical fmt.js exports asserted below): Economy's
-// signed money() became fmtMoney, and Match/Builder's fmtMetricValue,
-// Utility's flashSec, CompareRounds' inline ms math and the `> 0 ? : 64`
-// tick-rate fallback became fmtMetric / fmtMs / normTickRate.
+// --- B2 characterization: inline formatter variants -----------------------
+// Verbatim copies of the inline formatters the views shipped, pinned
+// against the canonical exports asserted below: the signed, rounded money
+// style ↔ fmtMoney, the metric format-matrix style ↔ fmtMetric, the
+// "x.xs" ms style ↔ fmtMs, and the `> 0 ? : 64` tick-rate rule ↔
+// normTickRate.
 // Run: node --test src/lib/fmt.test.js   (from frontend/)
 const group = (n) => n.toLocaleString(); // locale grouping, as the views call it
 
-// Economy.svelte `money()` — the canonical fmtMoney style (signed, rounded).
+// The signed, rounded money style — the canonical fmtMoney format.
 function economyMoney(v) {
   const n = Math.round(Number(v) || 0);
   return (n < 0 ? '−$' : '$') + Math.abs(n).toLocaleString();
 }
 
-// EconCurve.svelte `money()` — no negative/NaN handling.
+// The "$" + rounded money style — no negative/NaN handling.
 function econCurveMoney(v) {
   return '$' + Math.round(v).toLocaleString();
 }
 
-// Match.svelte / Builder.svelte `fmtMetricValue()` (byte-identical copies).
+// The metric format-matrix style (int / float1 / percent / currency).
 function metricValue(v, format) {
   if (!Number.isFinite(v)) return '—';
   switch (format) {
@@ -95,13 +94,12 @@ function metricValue(v, format) {
   }
 }
 
-// Utility.svelte `flashSec()` / CompareRounds.svelte's inline ms → seconds.
+// The "x.xs" ms → seconds style.
 function msVariant(ms) {
   return (ms / 1000).toFixed(1) + 's';
 }
 
-// The `> 0 ? : 64` tick-rate fallback shared by fmt.js, replay/engine.js,
-// replay/audio.js and Replay.svelte.
+// The `> 0 ? : 64` tick-rate rule — normTickRate's home.
 function tickRateVariant(v) {
   return Number(v) > 0 ? Number(v) : 64;
 }
@@ -163,10 +161,10 @@ test('characterization: the >0 ? :64 tick-rate fallback', () => {
 
 // --- canonical formatters (B2) ----------------------------------------------
 // fmtMoney is Economy's signed style; fmtMetric's currency branch and the
-// ms/tick-rate helpers follow it. The divergences the migration removed are
-// asserted against the old variants above: EconCurve's "$-5"/"$NaN", the
-// currency branch's kept fractions and ASCII minus, and CompareRounds'
-// inline ms math.
+// ms/tick-rate helpers follow it. The divergences from the inline variants
+// above are asserted here: EconCurve's "$-5"/"$NaN", the currency
+// branch's kept fractions and ASCII minus, and CompareRounds' inline ms
+// math.
 
 test('fmtMoney renders the signed, rounded, grouped Economy style', () => {
   assert.equal(fmtMoney(0), '$0');
@@ -183,8 +181,8 @@ test('fmtMetric drives every format tag, currency through fmtMoney', () => {
   assert.equal(fmtMetric(1234.56, 'int'), fmtInt(1234.56));
   assert.equal(fmtMetric(1234.56, 'float1'), fmt1(1234.56));
   assert.equal(fmtMetric(0.523, 'percent'), fmtPercent(52.3));
-  assert.equal(fmtMetric(1234.56, 'currency'), fmtMoney(1234.56)); // was '$1,234.56'
-  assert.equal(fmtMetric(-5, 'currency'), '−$5'); // was '$-5'
+  assert.equal(fmtMetric(1234.56, 'currency'), fmtMoney(1234.56));
+  assert.equal(fmtMetric(-5, 'currency'), '−$5');
   assert.equal(fmtMetric(12, undefined), fmtInt(12));
   assert.equal(fmtMetric(12.345, undefined), fmt2(12.345));
   assert.equal(fmtMetric(NaN, 'int'), '—');
@@ -209,6 +207,6 @@ test('normTickRate is the shared >0 ? :64 fallback', () => {
   assert.equal(normTickRate(undefined), 64);
   assert.equal(normTickRate(NaN), 64);
   assert.equal(normTickRate('128'), 128);
-  assert.equal(tickRateVariant(128), normTickRate(128)); // identical to the copies
+  assert.equal(tickRateVariant(128), normTickRate(128)); // identical to the variant above
   assert.equal(tickRateVariant(0), normTickRate(0));
 });

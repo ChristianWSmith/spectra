@@ -1,9 +1,7 @@
-// Tests for the hash router (parseHash + buildHash). The first block was
-// extracted verbatim from App.svelte in Phase 0 of the consolidation wave —
-// it pins the original route table; the later blocks cover the
-// consolidation additions (every match tab deep-linkable, optional
-// #/explorer/:id + #/reports/:id context ids, query-carrying routes, and
-// the legacy raw-event routes resolving to Replay's landmark feed).
+// Tests for the hash router (parseHash + buildHash): the base route
+// table, every match tab deep-linkable, optional
+// #/explorer/:id + #/reports/:id context ids, query-carrying routes,
+// and the legacy raw-event routes resolving to Replay's landmark feed.
 // Run: node --test src/lib/router.test.js   (from frontend/)
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -82,7 +80,7 @@ test('every match tab deep-links as #/match/:id/<slug> (slug = lowercase tab)', 
 });
 
 test('legacy raw-event routes resolve to the canonical Replay feed', () => {
-  // The old Timeline tab → Replay with no filter (the sparse default
+  // The timeline URL → Replay with no filter (the sparse default
   // applies); a query on the legacy URL is preserved.
   assert.deepEqual(parseHash('#/match/42/timeline'), { name: 'replay', id: 42 });
   assert.deepEqual(parseHash('#/match/42/timeline?player=76561198012345678'), {
@@ -90,13 +88,14 @@ test('legacy raw-event routes resolve to the canonical Replay feed', () => {
     id: 42,
     query: { player: '76561198012345678' },
   });
-  // The old Chat tab → Replay with the chat category enabled.
+  // The chat URL → Replay with the chat category enabled.
   assert.deepEqual(parseHash('#/match/42/chat'), {
     name: 'replay',
     id: 42,
     query: { cat: 'chat' },
   });
-  // The old Context tab → Replay with Context's five sources.
+  // The context URL → Replay with chat, connects, convars and team
+  // changes enabled.
   assert.deepEqual(parseHash('#/match/42/context'), {
     name: 'replay',
     id: 42,
@@ -120,7 +119,7 @@ test('plain #/match/:id still defaults to Overview (no tab key)', () => {
 
 test('an unknown or removed match-tab segment falls through to the library', () => {
   assert.deepEqual(parseHash('#/match/42/bogus'), { name: 'library' });
-  // The Raw tab was removed (its inspectors live in the Explorer view).
+  // "raw" is not a tab (its inspectors live in the Explorer view).
   assert.deepEqual(parseHash('#/match/42/raw'), { name: 'library' });
   assert.deepEqual(parseHash('#/match/42/Overview'), { name: 'library' }); // slugs are lowercase
 });
@@ -188,7 +187,7 @@ test('a palette jump between match tabs keeps route.name stable (no remount)', (
   // and a tab jump inside one match is still name: 'match' (same view)
   assert.equal(parseHash('#/match/42/utility').name, 'match');
   // A legacy-tab jump lands on replay on BOTH sides (name stays stable,
-  // the view simply is not Match's anymore).
+  // the view is Replay, not Match).
   assert.equal(parseHash('#/match/42/chat').name, 'replay');
 });
 

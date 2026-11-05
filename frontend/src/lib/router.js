@@ -28,9 +28,9 @@
 //   #/reports/:id            optional context id: Reports' match preselect
 //   #/builder | #/sql | #/profiles | #/explorer | #/reports | #/settings
 //
-// Legacy raw-event routes from the pre-consolidation app resolve to the
-// canonical Replay landmark feed with the equivalent scope (the old
-// Timeline tab, the Match Chat tab and the Context tab are retired):
+// Legacy raw-event routes resolve to the canonical Replay landmark feed
+// with the equivalent scope (the Timeline tab, the Match Chat tab and the
+// Context tab no longer exist as tabs):
 //   #/match/:id/timeline           → #/replay/:id
 //   #/match/:id/chat               → #/replay/:id?cat=chat
 //   #/match/:id/context            → #/replay/:id?cat=chat,connects,convars,team_changes
@@ -41,12 +41,12 @@
 
 // Canonical match-tab list (display order). Shared by Match.svelte's tab
 // bar and the route table so a deep link can never drift from the tabs
-// that exist: slug = tab.toLowerCase(). The Raw tab was removed earlier
-// (its inspectors live in the Explorer view) and Timeline/Chat/Context
-// were folded into Replay's landmark feed — their legacy slugs redirect
-// to #/replay/:id above instead of parsing as tabs. Details (the Explorer
-// diagnostics) and Reports are tabs of the match view now; their
-// standalone #/explorer, #/reports routes still parse below unchanged.
+// that exist: slug = tab.toLowerCase(). Raw/Timeline/Chat/Context are not
+// tabs — their content lives in the Explorer view and Replay's landmark
+// feed, and their legacy slugs redirect to #/replay/:id above instead of
+// parsing as tabs. Details (the Explorer diagnostics) and Reports are
+// tabs of the match view; their standalone #/explorer, #/reports routes
+// still parse below unchanged.
 export const MATCH_TABS = [
   'Overview',
   'Scoreboard',
@@ -110,8 +110,8 @@ export function parseHash(hash) {
   if (m) return withQuery({ name: 'round', id: Number(m[1]), round: Number(m[2]) });
 
   // Legacy raw-event tabs → the canonical Replay landmark feed with the
-  // equivalent scope (checked before the tab segment: they are no longer
-  // tabs). A query on the legacy URL wins over the mapped default.
+  // equivalent scope (checked before the tab segment: they are not tabs).
+  // A query on the legacy URL wins over the mapped default.
   m = path.match(/^\/match\/(\d+)\/timeline$/);
   if (m) return withQuery({ name: 'replay', id: Number(m[1]) });
   m = path.match(/^\/match\/(\d+)\/chat$/);
@@ -125,7 +125,7 @@ export function parseHash(hash) {
     });
 
   // Any match tab: #/match/:id/<tab-slug>. An unknown segment (or a
-  // removed tab such as "raw") is not a route — it falls through to the
+  // non-tab such as "raw") is not a route — it falls through to the
   // library default, same as any other unmatched shape.
   m = path.match(/^\/match\/(\d+)\/([a-z]+)$/);
   if (m) {

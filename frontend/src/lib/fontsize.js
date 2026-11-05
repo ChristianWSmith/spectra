@@ -1,4 +1,4 @@
-// Font-size setting: small / medium / large (changes.txt #6). Mirrors the
+// Font-size setting: small / medium / large. Mirrors the
 // theme.js split of duties:
 //
 //   * localStorage ('spectra:font-size') is the synchronous pre-paint cache
@@ -6,8 +6,7 @@
 //     one with no flash of the default.
 //   * the kvstore pref `font_size` (prefs.go, AutoSave = durable) is the
 //     source of truth: reconcileFontSize() re-reads it on boot and fixes
-//     any drift. Never-set and corrupt values normalize to "medium" —
-//     "small" is what the app shipped with before the setting existed.
+//     any drift. Never-set and corrupt values normalize to "medium".
 //
 // The sizes live on :root (the font-size rule at the top of
 // public/style.css); the rest of the stylesheet is em/rem-based, so that

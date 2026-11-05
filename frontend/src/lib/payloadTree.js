@@ -56,8 +56,8 @@ export function kvClass(v) {
 //
 // Returns null when the query is empty ("show everything, walk nothing").
 // One traversal per payload per keystroke: the template then does O(1)
-// Set lookups per node instead of re-walking subtrees at every level
-// (the old per-node keyMatches was O(subtree) *per node*).
+// Set lookups per node instead of re-walking subtrees at every level (a
+// per-node keyMatches would be O(subtree) *per node*).
 export function matchPaths(payload, query) {
   const q = String(query ?? '').trim().toLowerCase();
   if (!q) return null;

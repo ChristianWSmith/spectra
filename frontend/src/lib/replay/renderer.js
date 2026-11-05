@@ -186,8 +186,8 @@ export function createRenderer(canvas, { engine, data, players }) {
     // Rows arrive PRE-BUCKLETED (lib/replay/landmarks.js normalizeEvent
     // stamps `bucket`) — no classification happens in the render path.
     // Two passes: bucket everything, then pair throws against the
-    // COMPLETE detonation set (the old single pass scanned the raw list
-    // mid-population and re-classified every row per throw).
+    // COMPLETE detonation set (a single pass would scan a half-populated
+    // raw list and re-classify every row per throw).
     landmarks = list || [];
     polylines = [];
     dets = [];

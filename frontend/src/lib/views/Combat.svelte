@@ -79,8 +79,8 @@
   let stats = $state([]);
   let error = $state('');
   // Final side per player + the match's side-switch count: the inputs for
-  // the team-identity colors on names (changes.txt #20). Scoreboard rows
-  // also carry the exact-name fallback for rows without a steam id.
+  // the team-identity colors on names. Scoreboard rows also carry the
+  // exact-name fallback for rows without a steam id.
   let players = $state([]);
   let sideSwitches = $state(0);
   // Round list: the counted-round index behind the per-round side colors
@@ -166,8 +166,7 @@
     nav(replayHash(id, {}, { tick, back: `match/${id}/combat` }));
   }
 
-  // Round chip → THE event browser scoped to that round (the drill-down
-  // used to be dead code pointing at the retired Timeline tab).
+  // Round chip → THE event browser scoped to that round.
   function openRoundEvents(round) {
     nav(replayHash(id, { round }, { back: `match/${id}/combat` }));
   }

@@ -14,7 +14,7 @@
 //
 // Used by every round <select> (FilterBar's round filter, Heatmaps'
 // from/to ranges, Match's chat round picker) and the Match Rounds tab's
-// hide-warmup pref — the predicate was copy-pasted at each site.
+// hide-warmup pref.
 
 // isCounted reports whether a round row is counted play (number >= 1).
 export function isCounted(r) {
