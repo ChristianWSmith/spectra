@@ -454,9 +454,10 @@
 
   // Every event drill-down goes to THE event browser: Replay's landmark
   // feed, scoped by the entry point.
-  // opts.follow (player-line clicks: roster rows, scoreboard rows) also
-  // asks Replay to set the camera to that player — StatCard clicks keep
-  // the plain event view.
+  // opts.follow asks Replay to set the camera to that player; EVERY
+  // player entry point passes it — roster rows, scoreboard rows and the
+  // Overview stat cards — so a click on any of them opens Replay focused
+  // on the player it belongs to.
   function openPlayerEvents(steamId, opts) {
     const follow = opts && opts.follow ? { follow: steamId } : {};
     nav(replayHash(id, { steamId }, { back: backPath(), ...follow }));
@@ -687,12 +688,13 @@
             value={s.value}
             sub={s.p.name}
             subCls={teamCls(s.p.side)}
-            title="Open Replay events filtered to {s.p.name}"
-            onclick={() => openPlayerEvents(s.p.steamId)}
+            title="Open Replay events filtered to {s.p.name} — camera follows {s.p.name}"
+            onclick={() => openPlayerEvents(s.p.steamId, { follow: true })}
           >
             <!-- Aggregate (per-match) surface: the name keeps the TEAM
                  identity color, but the text itself is the profile link —
-                 the card's own click still opens Replay events. -->
+                 the card's own click opens Replay events with the camera
+                 on that player (same as the roster/scoreboard rows). -->
             {#snippet subSlot()}
               <ProfileLink
                 steam={s.p.steamId}
@@ -706,6 +708,14 @@
         {/each}
       </div>
 
+      <!-- Roster rows: K/D/A and ADR are event-derived for EVERY player
+           (extract's applyFinal never overwrites them — one convention per
+           player, see internal/extract/agg.go), so there is no
+           snapshot-vs-events distinction left to mark on this tab. The old
+           "derived" chip + row dim keyed on finalStatePresent advertised a
+           retired M1 assumption and mislabeled exact event counts as
+           guesses; finalStatePresent stays in the data model as provenance
+           for the snapshot-only identity fields (score, ping, crosshair…). -->
       <div class="roster-grid">
         <section class="panel">
           <h2 class={teamCls('ct')}>{teams.ct} roster</h2>
@@ -721,10 +731,6 @@
               {#each rosters.ct as p (p.steamId)}
                 <tr
                   class="clickable"
-                  class:dim={p.finalStatePresent === false}
-                  title={p.finalStatePresent === false
-                    ? 'not in final snapshot — stats derived from events'
-                    : ''}
                   onclick={(e) => {
                     // The name cell carries ProfileLink: a click on the
                     // link belongs to the profile, not to this row's
@@ -743,9 +749,6 @@
                       cls={teamCls(p.side)}
                       title="Open {p.name} profile"
                     />
-                    {#if p.finalStatePresent === false}
-                      <span class="chip provenance" title="not in final snapshot — stats derived from events">derived</span>
-                    {/if}
                   </td>
                   <td class="num">{p.kills}/{p.deaths}/{p.assists}</td>
                   <td class="num"><span class="chip adr">{fmt1(p.adr)}</span></td>
@@ -768,10 +771,6 @@
               {#each rosters.t as p (p.steamId)}
                 <tr
                   class="clickable"
-                  class:dim={p.finalStatePresent === false}
-                  title={p.finalStatePresent === false
-                    ? 'not in final snapshot — stats derived from events'
-                    : ''}
                   onclick={(e) => {
                     // The name cell carries ProfileLink: a click on the
                     // link belongs to the profile, not to this row's
@@ -790,9 +789,6 @@
                       cls={teamCls(p.side)}
                       title="Open {p.name} profile"
                     />
-                    {#if p.finalStatePresent === false}
-                      <span class="chip provenance" title="not in final snapshot — stats derived from events">derived</span>
-                    {/if}
                   </td>
                   <td class="num">{p.kills}/{p.deaths}/{p.assists}</td>
                   <td class="num"><span class="chip adr">{fmt1(p.adr)}</span></td>
@@ -980,7 +976,7 @@
                           </thead>
                           <tbody>
                             <tr><td>Utility damage</td><td class="num">{p.utilityDamage}</td></tr>
-                            <tr><td>Flashes popped</td><td class="num">{p.flashesPopped}</td></tr>
+                            <tr><td>Enemies flashed</td><td class="num">{p.enemiesFlashed}</td></tr>
                             <tr><td>Flash assists</td><td class="num">{p.flashAssists}</td></tr>
                             <tr><td>Times flashed</td><td class="num">{p.flashedTimes}</td></tr>
                           </tbody>

@@ -151,7 +151,7 @@ func (a *agg) build() *models.ExtractedMatch {
 			FourK:           p.fourK,
 			FiveK:           p.fiveK,
 			UtilityDamage:   p.utilityDamage,
-			FlashesPopped:   p.flashesPopped,
+			EnemiesFlashed:  p.enemiesFlashed,
 			FlashedTimes:    p.flashedTimes,
 			BombPlants:      p.bombPlants,
 			BombDefuses:     p.bombDefuses,

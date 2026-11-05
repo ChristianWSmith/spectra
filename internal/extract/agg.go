@@ -147,7 +147,7 @@ type playerAgg struct {
 	fourK           int
 	fiveK           int
 	utilityDamage   int
-	flashesPopped   int
+	enemiesFlashed  int
 	flashedTimes    int
 	bombPlants      int
 	bombDefuses     int
@@ -313,11 +313,10 @@ func (a *agg) warn(typeID int, message string) {
 // applyFinal folds the end-of-demo roster snapshot into the accumulators:
 // present players get their identity/scoreboard-only fields overwritten
 // from live entity state and are marked FinalStatePresent (provenance).
-// K/D/A/MVPs are deliberately NOT overwritten: event-derived stats now
-// follow one convention for every player (warmup/pregame excluded, flash
-// assists split out) while the game's own counters disagree (m_iAssists
-// includes flash assists; m_iMVPs included the golden demo's knife-round
-// MVP) and only covered 3/10 players here anyway.
+// K/D/A/MVPs are deliberately NOT overwritten: event-derived stats follow
+// one convention for every player (warmup/pregame excluded, flash assists
+// split out) while the game's own counters disagree (m_iAssists includes
+// flash assists; m_iMVPs included the golden demo's knife-round MVP).
 func (a *agg) applyFinal(finals []finalPlayer) {
 	for _, f := range finals {
 		p := a.ensure(f.key, f.name)
@@ -447,9 +446,11 @@ func (a *agg) freezeEnd(tick, equipCT, equipT, scoreCT, scoreT int, samples []mo
 		}
 		a.lastSpent[s.key] = s.spent
 		if s.side == "ct" || s.side == "t" {
-			// Last-observed side: the final-side source for players the
-			// end-of-demo snapshot misses (3/10 on the golden demo), plus
-			// exact per-round rows for analytics/replay consumers.
+			// Last-observed side: the final-side source for the players the
+			// end-of-demo snapshot genuinely lacks (controller entity gone
+			// before the demo's last tick — post-match leavers are kept, see
+			// finalRoster), plus exact per-round rows for analytics/replay
+			// consumers.
 			if p := a.players[s.key]; p != nil {
 				p.side = s.side
 			}
@@ -852,13 +853,17 @@ func (a *agg) shot(key uint64, name string) {
 }
 
 // blindInfo carries the plain values a PlayerFlashed handler extracts.
+// playerSide/attackerSide are the live entity sides at handler time — the
+// enemy check for the thrower's credit (see blind).
 type blindInfo struct {
 	tick         int
 	real         bool
 	playerKey    uint64
 	playerName   string
+	playerSide   string
 	attackerKey  uint64
 	attackerName string
+	attackerSide string
 	flashMs      int
 }
 
@@ -880,21 +885,27 @@ func (a *agg) blind(b blindInfo) {
 	if b.playerKey != 0 {
 		a.ensure(b.playerKey, b.playerName).flashedTimes++
 	}
+	// Enemies flashed: credit the THROWER once per blinded enemy player
+	// (player_blind fires per player blinded by the flash — CS2.md
+	// "Enemies flashed"). Teammates and self-blinds credit nothing: same
+	// cross-team rule as assists/damage (sameSide — an unknown side never
+	// matches). Warmup/pregame blinds are already gated by b.real.
+	if b.attackerKey != 0 && b.attackerKey != b.playerKey &&
+		!sameSide(b.attackerSide, b.playerSide) {
+		a.ensure(b.attackerKey, b.attackerName).enemiesFlashed++
+	}
 }
 
 // ---- utility & objective ----
 
 // blastInfo carries a grenade detonation (EventGrenade); source is the game
-// event the raw payload will be paired from. real gates the flash-pop
-// counter (warmup/pregame grenade spam must not pollute stats).
+// event the raw payload will be paired from.
 type blastInfo struct {
 	tick        int
-	real        bool
 	weapon      string
 	source      string
 	throwerKey  uint64
 	throwerName string
-	isFlash     bool
 	x, y, z     float64
 }
 
@@ -916,9 +927,6 @@ func (a *agg) grenadeBlast(g blastInfo) {
 			"z":       g.z,
 		}),
 	}, g.source)
-	if g.isFlash && g.real && g.throwerKey != 0 {
-		a.ensure(g.throwerKey, g.throwerName).flashesPopped++
-	}
 }
 
 // grenadeThrown is entity-derived (projectile created), so it has no raw

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"math"
 	"os"
+	"slices"
+	"sort"
 	"testing"
 
 	"github.com/ChristianWSmith/spectra/internal/models"
@@ -269,14 +271,35 @@ func TestParseGolden(t *testing.T) {
 	if len(m.Players) != 10 || len(m.PlayerStats) != 10 {
 		t.Fatalf("players = %d, stats = %d, want 10/10", len(m.Players), len(m.PlayerStats))
 	}
-	present := 0
+	// ---- final-state snapshot (end-of-demo roster) ----
+	// The snapshot is finalRoster (every CT/T participant, including the
+	// seven players who disconnect inside the GOTV tail after match point —
+	// their controller entity state survives to the demo's last tick), so
+	// all ten players carry FinalStatePresent and their snapshot-only Score.
+	// (It used to be Participants().Playing(), which drops IsConnected=false
+	// players: 3/10 present and Score 0 for the seven leavers.)
+	wantSnapshot := []string{
+		"-meg2k", "FREELOOK", "Magnojezzz", "Zuedsta", "adamS",
+		"donk666", "forever2kELO", "hades--", "kRaSnaL", "llorente",
+	}
+	present := make([]string, 0, 10)
 	for _, p := range m.Players {
 		if p.FinalStatePresent {
-			present++
+			present = append(present, p.Name)
 		}
 	}
-	if present != 3 {
-		t.Errorf("FinalStatePresent = %d of 10, want exactly 3", present)
+	sort.Strings(present)
+	if !slices.Equal(present, wantSnapshot) {
+		t.Errorf("final snapshot covers %v, want all %v", present, wantSnapshot)
+	}
+	zeroScore := []string{}
+	for _, ps := range m.PlayerStats {
+		if ps.Score == 0 {
+			zeroScore = append(zeroScore, ps.Name)
+		}
+	}
+	if len(zeroScore) != 0 {
+		t.Errorf("players with snapshot-only Score 0 = %v, want none", zeroScore)
 	}
 
 	var forever *models.PlayerStats
@@ -310,6 +333,18 @@ func TestParseGolden(t *testing.T) {
 		if err := json.Unmarshal([]byte(s.DamageByWeapon), &db); err != nil {
 			t.Errorf("%s DamageByWeapon invalid JSON %q: %v", s.SteamID, s.DamageByWeapon, err)
 		}
+	}
+
+	// Enemies-flashed credits must all trace back to player_blind events,
+	// and the real pipeline must produce some — guards the blind handler's
+	// side attribution feeding the cross-team gate (see TestEnemiesFlashed).
+	enemyFlashed := 0
+	for _, ps := range m.PlayerStats {
+		enemyFlashed += ps.EnemiesFlashed
+	}
+	if enemyFlashed <= 0 || enemyFlashed > counts[models.EventBlind] {
+		t.Errorf("enemies flashed total = %d, want within 1..%d (blind events)",
+			enemyFlashed, counts[models.EventBlind])
 	}
 
 	// ---- progress ----

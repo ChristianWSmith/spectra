@@ -31,6 +31,36 @@ func sideString(t common.Team) string {
 // unassigned players).
 func sameSide(a, b string) bool { return a != "" && a == b }
 
+// finalRoster selects the end-of-demo roster rows that applyFinal folds
+// into the accumulators: every participant whose final team state is CT or
+// T, including players who disconnected before the demo's last tick.
+//
+// Participants().Playing() must NOT be used for the snapshot: it iterates
+// ByUserID(), which requires IsConnected, so it silently drops every player
+// who left the server between the last round and the end of the demo
+// stream. That window is routinely non-empty — the golden demo's GOTV tail
+// runs ~300 ticks past match point and 7 of its 10 players disconnect
+// inside it (ticks 136598..136885 vs the final tick 136896), even though
+// their player controller entities and every property applyFinal reads
+// (name, side, score, ping, money, crosshair) are still intact. The CT/T
+// filter is what made Playing() safe for this snapshot: it drops GOTV's
+// own DemoRecorder participant (no team, SteamID 0) and any spectator, and
+// a player whose team state is gone is genuinely absent from the snapshot
+// (its rows keep their event-derived provenance).
+func finalRoster(participants []*common.Player) []*common.Player {
+	roster := make([]*common.Player, 0, len(participants))
+	for _, pl := range participants {
+		if pl == nil {
+			continue
+		}
+		if pl.Team != common.TeamCounterTerrorists && pl.Team != common.TeamTerrorists {
+			continue
+		}
+		roster = append(roster, pl)
+	}
+	return roster
+}
+
 // realPeriod reports whether stats-eligible (real) play is underway: the
 // match has started, warmup is over, and the game phase has advanced past
 // Pregame. IsWarmupPeriod() alone misses two polluters observed in real

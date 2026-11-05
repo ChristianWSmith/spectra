@@ -909,3 +909,98 @@ func TestGameEventPayloadJSON(t *testing.T) {
 		t.Errorf("empty payload = %q, want {}", got)
 	}
 }
+
+// TestEnemiesFlashed pins the thrower-side flash stat: one credit per
+// ENEMY player blinded by the thrower's flash during counted play, and
+// nothing for teammate/self blinds, an unknown thrower, or non-counted
+// rounds. The victim-side flashedTimes counter still counts every blind it
+// always counted. (This replaced flashesPopped, which counted flashbang
+// DETONATIONS — any flash that popped — and could not answer "enemies
+// flashed".)
+func TestEnemiesFlashed(t *testing.T) {
+	a := newAgg()
+
+	// An enemy blind credits the thrower AND the victim's times-flashed.
+	a.blind(blindInfo{
+		tick: 10, real: true,
+		playerKey: 2, playerName: "enemy-v", playerSide: "ct",
+		attackerKey: 1, attackerName: "flasher", attackerSide: "t",
+		flashMs: 1200,
+	})
+	if p := a.players[1]; p == nil || p.enemiesFlashed != 1 {
+		t.Fatalf("enemy blind = %+v, want enemiesFlashed 1 for the thrower", p)
+	}
+	if p := a.players[2]; p == nil || p.flashedTimes != 1 {
+		t.Fatalf("victim flashedTimes = %+v, want 1", p)
+	}
+
+	// A teammate blind credits no enemy-flashed row…
+	a.blind(blindInfo{
+		tick: 20, real: true,
+		playerKey: 3, playerName: "mate", playerSide: "t",
+		attackerKey: 1, attackerName: "flasher", attackerSide: "t",
+		flashMs: 900,
+	})
+	// …a self-blind neither…
+	a.blind(blindInfo{
+		tick: 30, real: true,
+		playerKey: 1, playerName: "flasher", playerSide: "t",
+		attackerKey: 1, attackerName: "flasher", attackerSide: "t",
+		flashMs: 400,
+	})
+	// …and neither does a blind with no resolved thrower.
+	a.blind(blindInfo{
+		tick: 40, real: true,
+		playerKey: 4, playerName: "attackerless", playerSide: "ct",
+		flashMs: 700,
+	})
+	if p := a.players[1]; p == nil || p.enemiesFlashed != 1 {
+		t.Fatalf("after team/self/attackerless blinds = %+v, want enemiesFlashed still 1", p)
+	}
+	// Every blind still lands on the victim — flashed_times is the
+	// victim-side counter and is untouched by the enemy gate.
+	for _, key := range []uint64{3, 4} {
+		if p := a.players[key]; p == nil || p.flashedTimes != 1 {
+			t.Fatalf("victim %d flashedTimes = %+v, want 1", key, p)
+		}
+	}
+
+	// Warmup/pregame blinds credit neither counter (real gate)…
+	a.blind(blindInfo{
+		tick: 50, real: false,
+		playerKey: 5, playerName: "warmup-v", playerSide: "ct",
+		attackerKey: 1, attackerName: "flasher", attackerSide: "t",
+		flashMs: 1500,
+	})
+	if p := a.players[1]; p == nil || p.enemiesFlashed != 1 {
+		t.Fatalf("non-real blind credited: %+v, want enemiesFlashed still 1", p)
+	}
+	if p := a.players[5]; p != nil && p.flashedTimes != 0 {
+		t.Fatalf("non-real blind reached flashedTimes: %+v", p)
+	}
+
+	// Each further blinded enemy counts again — the unit is the blinded
+	// enemy player, not the flashbang.
+	a.blind(blindInfo{
+		tick: 60, real: true,
+		playerKey: 6, playerName: "enemy2", playerSide: "ct",
+		attackerKey: 1, attackerName: "flasher", attackerSide: "t",
+		flashMs: 2000,
+	})
+	if p := a.players[1]; p == nil || p.enemiesFlashed != 2 {
+		t.Fatalf("second enemy blind = %+v, want enemiesFlashed 2", p)
+	}
+
+	// Unknown sides follow the canonical permissive rule shared with
+	// damage/assists attribution (sameSide never matches an unknown side,
+	// so an unknown pair reads as cross-team).
+	a.blind(blindInfo{
+		tick: 70, real: true,
+		playerKey: 7, playerName: "noside-v",
+		attackerKey: 8, attackerName: "noside-thrower",
+		flashMs: 800,
+	})
+	if p := a.players[8]; p == nil || p.enemiesFlashed != 1 {
+		t.Fatalf("unknown-side blind = %+v, want enemiesFlashed 1 (permissive attribution)", p)
+	}
+}

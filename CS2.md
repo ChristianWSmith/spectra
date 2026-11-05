@@ -128,6 +128,20 @@ at the end of the section.
   https://www.hltv.org/news/34796/using-flashbang-statistics-effectively;
   https://leetify.com/blog/leetify-stats-glossary/ (2026-11-01).
 
+- **Enemies flashed** — one credit per ENEMY player blinded by a
+  player's flash. The CS2 `player_blind` game event fires per blinded
+  player (fields `userid`, `attacker`, `entityid`, `blind_duration`; no
+  repeat events for one victim+flash observed — golden demo: 206 events
+  = 206 distinct flash-victim runs), so counting the events whose
+  attacker is cross-team reproduces the scoreboard stat; team and self
+  blinds don't count. Leetify's per-flashbang variant additionally drops
+  half-blinds shorter than 1.1 s — spectra counts every enemy blind (no
+  heuristic threshold). Distinct from `flashed_times` (victim side, any
+  blind) and from flashbang detonations. **Source** —
+  https://cs2.poggu.me/dumped-data/game-events/ (player_blind fields);
+  https://leetify.com/blog/leetify-stats-glossary/ (Enemies Flashed per
+  Flashbang); spectra golden-demo diag (2026-11-04).
+
 - **Trade kill = kill the opponent who killed your teammate, within 5 s**
   (HLTV: "an opponent who had killed their teammate within five
   seconds"; KAST "T" = your death answered the same way). Windows in
@@ -193,11 +207,25 @@ at the end of the section.
 
 - **Side is a per-round fact, not a player identity** — `m_iTeamNum`
   (2=T, 3=CT) flips at halftime, at the knife→pistol side pick, and
-  every OT half; GOTV end-of-demo rosters are unreliable (golden demo:
-  3/10 players present). Sample sides at freeze-end each round (and per
-  frame); never source teams solely from the final roster. **Source** —
+  every OT half; the end-of-demo roster only carries the FINAL side, and
+  a `Participants().Playing()` read drops post-match leavers (see
+  "End-of-demo roster vs. post-match disconnects"). Sample sides at
+  freeze-end each round (and per frame); never source teams solely from
+  the final roster. **Source** —
   https://awpy.readthedocs.io/en/stable/reference.html; golden-demo
-  diag (2026-11-01).
+  diag (2026-11-01); roster claim re-verified 2026-11-04.
+
+- **End-of-demo roster vs. post-match disconnects** — players leave the
+  server between match point and the demo's last tick, so an end-of-demo
+  roster read through demoinfocs' `Participants().Playing()` (it iterates
+  `ByUserID()`, which requires `IsConnected && Entity != nil`) silently
+  drops them: golden demo 3/10 — 7 players disconnect at ticks
+  136598..136885 while the stream ends at 136896. Their player-controller
+  entity, team, score, ping, money and crosshair state are all still
+  intact, so the snapshot must read `Participants().All()` filtered to
+  CT/T instead (spectra `extract.finalRoster` → 10/10). **Source** —
+  demoinfocs v6 game_state.go `ByUserID` connected filter;
+  spectra golden-demo diag dump (2026-11-04).
 
 - **Radar transform convention** — `px=(worldX−pos_x)/scale`,
   `py=(pos_y−worldY)/scale` where `pos_x/pos_y` = world coords of the
