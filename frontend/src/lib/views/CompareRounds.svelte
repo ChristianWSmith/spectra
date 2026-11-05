@@ -200,6 +200,12 @@
               <span class="chip side {col.detail.round.winner || 'none'}">
                 {col.detail.round.winner ? col.detail.round.winner.toUpperCase() : '—'}
               </span>
+              <!-- Win reason: models.RoundRow.reason (the roundRowSelect
+                   projection — the same raw value the Rounds tab's
+                   Reason column and Round detail show). -->
+              <span class="muted" title="Round win reason"
+                >{col.detail.round.reason || '—'}</span
+              >
             {/if}
             {#if col.cls}
               <span
