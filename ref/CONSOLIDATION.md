@@ -34,6 +34,7 @@ way".
 | Definition/tooltip strings | `lib/definitions.js` | Settings' glossary renders the same `GLOSSARY` array the tooltips import |
 | Errors / nav / formatting / CSV / download | `lib/services.js` `errText`; `lib/nav.js` (`isSteam`, `openProfile`, `NAV_ACTIONS`); `lib/fmt.js`; `lib/csv.js`; `lib/download.js` + `lib/save.js` | sidebar and command palette share `NAV_ACTIONS` |
 | Dialogs & popovers | `components/Dialog.svelte`, `components/Popover.svelte` | Escape/outside-click/focus-return; busy-gating stays with the consumer (MapPackPrompt) |
+| Search suggestions | `components/SuggestInput.svelte` | the ONE suggestion dropdown (input + anchored panel, ↑↓/Enter/Esc, substring filter capped at 10): the Library's map & player facets, the Profiles search and the profile finder all render through it instead of keeping their own popovers; sources are `store.ListMapNames` (distinct library maps) and `ProfileService.ListPlayers` (library-wide) |
 | Sortable headers / stat cells | `components/SortTh.svelte`, `components/StatCard.svelte` | components own markup only — each view keeps its own sort state and backend |
 | Event row bits | `components/LandmarkRow.svelte` (the row), `EventFlags/EventPlay/ProfileLink.svelte` | one row renderer for the Replay feed AND CompareRounds' compact sequence; flags/▶/profile stay shared bits |
 | Match pickers | `components/MatchPicker.svelte` | Explorer, Reports, Builder all use it |

@@ -13,8 +13,8 @@
   } from '../definitions.js';
   import { fmt1, fmt2, fmtPercent, fmtDate, fmtInt } from '../fmt.js';
   import { buildHash } from '../router.js';
-  import Popover from '../components/Popover.svelte';
   import StatCard from '../components/StatCard.svelte';
+  import SuggestInput from '../components/SuggestInput.svelte';
   import { profileBackTarget } from '../nav.js';
 
   // query is the route's own (?back= origin for the return trip);
@@ -35,18 +35,23 @@
   let trend = $state([]);
   let trendError = $state('');
 
-  // Player picker (listPlayers).
+  // Player picker: every player in the library (listPlayers('') — the
+  // same source the Profiles view and the Library's player facet use),
+  // fetched once and filtered client-side by SuggestInput, which owns the
+  // dropdown, the keyboard and the dismissal. Picking navigates to the
+  // canonical /player/:steamid view.
   let q = $state('');
-  let results = $state([]);
-  let searchTok = 0;
-  let pickerEl = $state(null);
+  let players = $state([]);
 
-  // Escape / click-outside dismissal. Bumping searchTok drops an in-flight
-  // search so it cannot reopen the list we just closed.
-  function dismissResults() {
-    searchTok++;
-    results = [];
-  }
+  $effect(() => {
+    let live = true;
+    listPlayers('')
+      .then((rows) => {
+        if (live) players = rows || [];
+      })
+      .catch(() => {});
+    return () => (live = false);
+  });
 
   $effect(() => {
     const sid = steamId;
@@ -84,26 +89,8 @@
     return () => (live = false);
   });
 
-  $effect(() => {
-    const query = q;
-    const tok = ++searchTok;
-    if (!query.trim()) {
-      results = [];
-      return;
-    }
-    const t = setTimeout(() => {
-      listPlayers(query)
-        .then((rows) => {
-          if (tok === searchTok) results = rows || [];
-        })
-        .catch(() => {});
-    }, 250);
-    return () => clearTimeout(t);
-  });
-
   function pick(steam) {
     q = '';
-    results = [];
     nav(`/player/${steam}`);
   }
 
@@ -191,28 +178,18 @@
       <h1>Player</h1>
     {/if}
     <div class="spacer"></div>
-    <div class="prof-picker" bind:this={pickerEl}>
-      <label class="sr-only" for="prof-q">Find players</label>
-      <input
-        class="input"
-        id="prof-q"
-        type="search"
-        placeholder="Find players…"
-        bind:value={q}
-      />
-      <Popover open={results.length > 0} anchor={pickerEl} onClose={dismissResults}>
-        <div class="prof-results" role="listbox" aria-label="Player results">
-          {#each results as r (r.steamId)}
-            <button class="prof-result" onclick={() => pick(r.steamId)}>
-              <strong>{r.name}</strong>
-              <span class="muted">{r.matches} match{r.matches === 1 ? '' : 'es'}</span>
-              <span class="spacer"></span>
-              <span class="num muted">ADR {fmt1(r.adrAvg)}</span>
-            </button>
-          {/each}
-        </div>
-      </Popover>
-    </div>
+    <label class="sr-only" for="prof-q">Find players</label>
+    <SuggestInput
+      id="prof-q"
+      wrapClass="prof-picker"
+      placeholder="Find players…"
+      ariaLabel="Find players"
+      items={players}
+      kind="player"
+      align="end"
+      bind:value={q}
+      onselect={(p) => pick(p.steamId)}
+    />
   </header>
 
   {#if profileError}
@@ -337,7 +314,7 @@
       </section>
 
       <section class="panel">
-        <h2>Maps <span class="muted">(click a row to open it in the Library)</span></h2>
+        <h2>Maps</h2>
         <table class="data-table">
           <thead>
             <tr>

@@ -963,18 +963,19 @@ input[type='checkbox']:focus-visible {
 
 /* --- Library search filters (lib-) ----------------------------------------- */
 
-/* Structured facets under the Library header — map + "has player X",
-   ANDed with each other and with the free-text search (store.MatchListFilter).
-   A filled input is an ACTIVE filter: the accent border distinguishes a
-   preset facet from an empty box (each input's native × and the button
-   clear it). Values also arrive pre-set from the route query
-   (#/library?map=&player= — the profile → library deep link). */
+/* The Library's only search controls, INSIDE the view header (they moved
+   up from their own row when the free-text box was removed): map + "has
+   player X", ANDed with each other (store.MatchListFilter) and rendered
+   through SuggestInput (sg-), which draws its suggestions from the
+   library itself. A filled input is an ACTIVE filter: the accent border
+   distinguishes a preset facet from an empty box (each input's native ×
+   and the button clear it). Values also arrive pre-set from the route
+   query (#/library?map=&player= — the profile → library deep link). */
 .lib-filters {
   display: flex;
   align-items: center;
   gap: 12px;
   flex-wrap: wrap;
-  margin-bottom: 8px;
 }
 
 .lib-filter-field {
@@ -1033,11 +1034,15 @@ input[type='checkbox']:focus-visible {
   margin-top: 4px;
 }
 
-/* Replay entry point: sits immediately under the team names/scoreline
-   (above the match meta line), carries the play codicon and is bumped
-   off the base .btn size so the view's primary action reads as one. */
+/* Replay entry point: rides the END of the meta line (the map · half ·
+   duration · patch · status row) instead of a line of its own, so the
+   header costs no extra vertical space. The auto margin parks it on the
+   right when the line has room and lets it wrap to its own line (still
+   right-aligned, never overlapping the meta text) when it does not; the
+   size bump (.match-replay) keeps it reading as the primary action. */
 .match-replay {
-  margin-top: 8px;
+  margin-left: auto;
+  flex: none;
   padding: 5px 14px;
   font-size: 1rem;
 }
@@ -1965,9 +1970,15 @@ button.lm-cat-chip.on {
   gap: 12px;
 }
 
+/* The search widget is the shared SuggestInput (sg-): the toolbar gives
+   IT the flex slot and its input fills the widget. */
 .pf-search {
   flex: 0 1 320px;
   min-width: 180px;
+}
+
+.pf-search .input {
+  width: 100%;
 }
 
 .pf-count {

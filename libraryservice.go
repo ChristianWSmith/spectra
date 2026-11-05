@@ -122,6 +122,14 @@ func (s *LibraryService) ListMatches(query, sortKey string, desc bool, filter st
 	return s.st.ListMatches(query, sortKey, desc, filter)
 }
 
+// ListMapNames returns the distinct, non-empty map names in the library
+// (A→Z) — the suggestion source for the Library's map facet. The facet
+// itself stays a substring LIKE (store.MatchListFilter): a suggestion is
+// a shortcut to an exact name, never a constraint on what can be typed.
+func (s *LibraryService) ListMapNames() ([]string, error) {
+	return s.st.ListMapNames()
+}
+
 // DeleteMatch removes a match and its extracted data, including the
 // per-match position sidecar directory (best-effort — the delete
 // cascade removes the directory). When deleteDemo is set, spectra's OWN
