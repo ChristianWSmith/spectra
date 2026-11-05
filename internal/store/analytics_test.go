@@ -676,8 +676,15 @@ func TestGetCombatStatsFromStoredRows(t *testing.T) {
 	if alice.FFDamage != 10 {
 		t.Errorf("ffDamage = %d, want 10", alice.FFDamage)
 	}
-	if alice.EntryRate != 0.5 || alice.TradeRate != 2.0 {
-		t.Errorf("entry/trade rate = %v/%v, want 0.5/2.0", alice.EntryRate, alice.TradeRate)
+	// Percent scale decision: every percent field of a CombatStat row is
+	// 0..100 (DMGConvPct ~54.55 above, KASTPct 100 below), so EntryRate =
+	// 100 × 1 entry kill / 2 rounds = 50 and TradeRate = 100 × 2 trades /
+	// 1 death = 200 (a ratio over own deaths — allowed above 100). These
+	// were 0..1 fractions before (0.5/2.0), which the Combat tab's
+	// fmtPercent rendered as "0.5%"/"2%" instead of "50%"/"200%".
+	if alice.EntryRate != 50 || alice.TradeRate != 200 {
+		t.Errorf("entry/trade rate = %v/%v, want 50/200 (0..100 percent scale, like dmgConvPct/kastPct)",
+			alice.EntryRate, alice.TradeRate)
 	}
 	if alice.KASTPct != 100 {
 		t.Errorf("kastPct = %v, want 100", alice.KASTPct)

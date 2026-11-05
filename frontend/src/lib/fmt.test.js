@@ -190,6 +190,20 @@ test('fmtMetric drives every format tag, currency through fmtMoney', () => {
   assert.equal(fmtMetric(NaN, 'currency'), '—');
 });
 
+test('fmtPercent renders an already-0..100 value (the read-DTO percent scale)', () => {
+  // The contract every *Pct/*Rate read field follows (KASTPct,
+  // DMGConvPct, EntryRate/TradeRate, profile WinPct/OpeningRate/…): the
+  // input is already a percent. fmtPercent does NOT scale fractions —
+  // 0.05 renders "0.1%", never "5%" — which is why a 0..1 rate passed
+  // here (the Combat tab's Entry%/Trade% regression) shows near-zero.
+  assert.equal(fmtPercent(52.3), '52.3%');
+  assert.equal(fmtPercent(0), '0%');
+  assert.equal(fmtPercent(30.4348), '30.4%');
+  assert.equal(fmtPercent(0.05), '0.1%'); // unscaled fraction, by design
+  assert.equal(fmtPercent(NaN), '—');
+  assert.equal(fmtPercent(undefined), '—');
+});
+
 test('fmtMs renders ms as seconds with one decimal', () => {
   assert.equal(fmtMs(1500), '1.5s');
   assert.equal(fmtMs(0), '0.0s');

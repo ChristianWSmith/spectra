@@ -534,7 +534,12 @@ func sideFlips(rounds []models.EconomyRow, exact map[int]map[string]string) []bo
 // GetCombatStats computes per-player combat deep-dive rows from stored data
 // — damage conversion and friendly fire from the events
 // table, entry/trade rates from player_stats, untraded deaths from
-// engagements, KAST% from player_round_stats. Team attribution (FF, and the
+// engagements, KAST% from player_round_stats. All four percent fields of
+// the returned row (DMGConvPct, EntryRate, TradeRate, KASTPct) share one
+// scale: 0..100 percents — the read-DTO convention every consumer renders
+// with frontend fmtPercent directly (a 0..1 fraction there renders as
+// "0.05%", not "5%"); the scale note at the assignments is pinned by
+// TestGetCombatStatsFromStoredRows. Team attribution (FF, and the
 // trade-opportunity heuristic) uses each player's FINAL side — events carry
 // no team column, so this is an approximation (documented; badge in UI).
 // UntradedDeaths is the raw engagement count (timing only);
@@ -713,11 +718,17 @@ func (s *Store) GetCombatStats(matchID int64) ([]models.CombatStat, error) {
 			r.DMGConvPct = 100 * float64(d.onKill) / float64(d.total)
 		}
 		r.FFDamage = d.ff
+		// Percent scale (pinned by TestGetCombatStatsFromStoredRows): all
+		// four percent fields of this row are 0..100, like KASTPct and
+		// DMGConvPct above — NOT 0..1 fractions. Entry% is bounded within
+		// 0..100 by construction (the extractor credits at most one first
+		// blood per round — extract/agg.go); Trade% is a ratio over the
+		// player's own deaths and may legitimately exceed 100.
 		if roundsPlayed > 0 {
-			r.EntryRate = float64(entryKills) / float64(roundsPlayed)
+			r.EntryRate = 100 * float64(entryKills) / float64(roundsPlayed)
 		}
 		if deaths > 0 {
-			r.TradeRate = float64(tradeKills) / float64(deaths)
+			r.TradeRate = 100 * float64(tradeKills) / float64(deaths)
 		}
 		r.UntradedDeaths = untraded[r.SteamID]
 		r.TradeOppMissed = tradeOpp[r.SteamID] // distance-gated subset (UI badge)

@@ -109,7 +109,12 @@ export function fmtBytes(bytes) {
   return `${(bytes / 1024).toFixed(1)} KB`;
 }
 
-// fmtPercent renders an already-0..100 value ("52%").
+// fmtPercent renders an already-0..100 value ("52%"). That is the scale
+// every read-DTO percent field carries (KASTPct, DMGConvPct, EntryRate,
+// TradeRate, the profile's WinPct/OpeningRate/…): passing a 0..1 fraction
+// here renders "0.05%" instead of "5%". The metric Builder's `percent`
+// format tag is the deliberate exception — those values ARE 0..1 and
+// fmtMetric scales them ×100 before calling this (never pass them raw).
 export function fmtPercent(x) {
   if (!Number.isFinite(x)) return '—';
   return `${round1(x)}%`;
