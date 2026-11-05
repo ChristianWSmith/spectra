@@ -82,7 +82,7 @@ type HeatmapFilter struct {
 // (world units → grid cells; streamed from the sidecar, never fully loaded
 // client-side).
 type HeatmapGrid struct {
-	Kind    string    `json:"kind"` // presence|kills|deaths|damage|kd (kd: the signed combine, GetHeatmapKD)
+	Kind    string    `json:"kind"` // presence|kills|deaths|damage|<util>_<thrown|det>|kd (kd: the signed combine, GetHeatmapKD)
 	W       int       `json:"w"`
 	H       int       `json:"h"`
 	MinX    float64   `json:"minX"`
@@ -221,14 +221,19 @@ func (s *AnalyticsService) GetCombatStats(matchID int64) ([]models.CombatStat, e
 	return s.st.GetCombatStats(matchID)
 }
 
-// GetHeatmap computes a raster for kind presence|kills|deaths|damage (the
-// signed kills−deaths combine is GetHeatmapKD). presence streams the M2
-// sidecar; kills use the attacker's position (where
-// the killer was), deaths/damage the victim's/hit position. Filters are
+// GetHeatmap computes a raster for kind presence|kills|deaths|damage or
+// one of the per-grenade kinds "<util>_thrown" / "<util>_det"
+// (grenadeHeatmapKinds in heatmap.go; the signed kills−deaths combine is
+// GetHeatmapKD). presence streams the M2 sidecar; kills use the
+// attacker's position (where the killer was), deaths/damage the victim's/
+// hit position; the grenade kinds plot the throw origin (grenade_throw
+// pos_*) or the blast position (grenade pos_*) of ONE utility kind
+// (models.UtilityWeaponKind — Molotov ≡ Incendiary). Filters are
 // applied server-side:
 // presence by round range via the tick↔round spans + steam/team via the
-// slot table; events by round, attacker (kills) or victim
-// (deaths/damage) and their side in that round (exact freeze-end samples —
+// slot table; events by round, attacker (kills, and both grenade flavors —
+// the thrower) or victim (deaths/damage) and their side in that round
+// (exact freeze-end samples —
 // a round without them resolves no side, so a team filter drops it). Bounds
 // come from the sampled extents ± heatmapPad — 450u, the 3σ reach of the
 // Gaussian splat (sigma 150u), so an edge sample paints a whole blob
@@ -239,7 +244,9 @@ func (s *AnalyticsService) GetHeatmap(matchID int64, kind string, f HeatmapFilte
 	switch kind {
 	case "presence", "kills", "deaths", "damage":
 	default:
-		return HeatmapGrid{}, fmt.Errorf("analytics: unknown heatmap kind %q", kind)
+		if _, ok := grenadeHeatmapKinds[kind]; !ok {
+			return HeatmapGrid{}, fmt.Errorf("analytics: unknown heatmap kind %q", kind)
+		}
 	}
 	// ONE round read feeds both shapes the heatmap needs: the canonical
 	// store.GetRoundInfos (warmup/pregame included — callers filter) plus
@@ -352,17 +359,27 @@ func (s *AnalyticsService) heatmapPresence(matchID int64, f HeatmapFilter, round
 	return g.grid("presence", samples), nil
 }
 
-// heatmapEvents rasterizes kill/death/damage event positions: kills plot
-// the ATTACKER's position (where the killer was — events.apos_*), deaths
-// and damage plot the VICTIM's position (where the player fell / the
-// hitpoint — events.pos_*). The SteamID filter applies to the attacker on
-// kills and to the victim on deaths/damage; a kill with no stored attacker
+// heatmapEvents rasterizes kill/death/damage and per-grenade event
+// positions: kills plot the ATTACKER's position (where the killer was —
+// events.apos_*), deaths and damage plot the VICTIM's position (where the
+// player fell / the hitpoint — events.pos_*), and the grenade kinds plot
+// events.pos_* for ONE utility kind — the throw origin for "<util>_thrown"
+// (grenade_throw) or the blast position for "<util>_det" (grenade), see
+// grenadeHeatmapKinds. The SteamID filter applies to the attacker on
+// kills, to the victim on deaths/damage, and to the THROWER on both
+// grenade flavors (a team filter likewise resolves the thrower's side);
+// a kill with no stored attacker
 // position falls back to the victim position (world kills have no killer
 // entity and a vanished pawn reads {0,0,0} — both keep apos_* NULL even in
 // current imports; see extract's posPtrs — the schema keeps events.apos_*
-// nullable).
+// nullable). Grenade rows carry no attacker position and never fall back:
+// a throw/blast with a NULL pos_* is skipped.
 func (s *AnalyticsService) heatmapEvents(matchID int64, kind string, f HeatmapFilter, sideAt func(string, int) string) (HeatmapGrid, error) {
 	eventKind := map[string]string{"kills": models.EventKill, "deaths": models.EventKill, "damage": models.EventDamage}[kind]
+	utilKind := ""
+	if g, ok := grenadeHeatmapKinds[kind]; ok {
+		eventKind, utilKind = g.eventKind, g.utilKind
+	}
 	rows, err := s.st.GetEvents(models.EventFilter{MatchID: matchID, Kind: eventKind, Round: -1, Limit: store.DefaultEventLimit})
 	if err != nil {
 		return HeatmapGrid{}, err
@@ -376,9 +393,16 @@ func (s *AnalyticsService) heatmapEvents(matchID int64, kind string, f HeatmapFi
 		if f.RoundTo >= 0 && e.Round > f.RoundTo {
 			continue
 		}
+		// Grenade kinds: the weapon must normalize to this heatmap's
+		// stored utility kind — through models.UtilityWeaponKind, the
+		// canonical Molotov ≡ Incendiary projection (models.weapons.go),
+		// never a second weapon-name table here.
+		if utilKind != "" && models.UtilityWeaponKind(e.Weapon) != utilKind {
+			continue
+		}
 		party := e.Victim // deaths/damage: victim; kills: attacker position, filter on attacker
-		if kind == "kills" {
-			party = e.Attacker
+		if kind == "kills" || utilKind != "" {
+			party = e.Attacker // grenades: both flavors filter on the thrower
 		}
 		if f.SteamID != "" && party != f.SteamID {
 			continue

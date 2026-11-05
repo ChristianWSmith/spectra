@@ -1,9 +1,14 @@
 package main
 
-import "math"
+import (
+	"math"
+
+	"github.com/ChristianWSmith/spectra/internal/models"
+)
 
 // Heatmap rastering: every heatmap kind (presence, the kill/death/damage
-// events, and the signed kd combine) plots world points into the SAME
+// events, the per-grenade throw/detonation events, and the signed kd
+// combine) plots world points into the SAME
 // fixed grid, so the shared arithmetic lives here — sampled extents →
 // ±heatmapPad bounds → per-axis cell sizes → per-sample delta splat →
 // separable Gaussian convolution → max cell. Each sample deposits its
@@ -46,6 +51,43 @@ const heatmapKernelReach = heatmapKernelSigmas * heatmapSigmaWorld // 450
 // heatmapPad is the world-unit padding added around the sampled extents
 // (= the kernel reach, so blobs never clip at the raster border).
 const heatmapPad = heatmapKernelReach
+
+// grenadeHeatmapSpec binds one per-grenade heatmap kind to its
+// population: the events.kind every sample comes from and the stored
+// utility kind the event's weapon must normalize to.
+type grenadeHeatmapSpec struct {
+	eventKind string // models.EventGrenadeThrow | models.EventGrenade
+	utilKind  string // models.UtilityWeaponKind output — the stored kind
+}
+
+// grenadeHeatmapKinds is THE registry of the per-grenade heatmap kinds,
+// one pair per grenade type: "<util>_thrown" plots where grenades were
+// thrown (events.grenade_throw — pos_* is the projectile's position when
+// it spawned, i.e. the throw origin) and "<util>_det" plots where they
+// detonated (events.grenade — pos_* is the blast position). Both flavors
+// read the SAME stored columns (events.pos_x/pos_y), so this adds no
+// schema and no extract change; a row with a NULL position is skipped
+// like every other event kind (no guessed fallback).
+//
+// The util half is the stored utility vocabulary — the image of
+// models.utilityWeaponKinds (internal/models/weapons.go), the ONE
+// weapon→kind projection every layer shares: "molotov" covers Molotov AND
+// Incendiary Grenade (both teams' flames pair as one kind), so those two
+// grenade types share ONE heatmap pair and no second normalization table
+// exists here. The set is pinned to that canonical map by
+// TestGrenadeHeatmapKindsMatchCanonicalUtilitySet.
+var grenadeHeatmapKinds = map[string]grenadeHeatmapSpec{
+	"he_thrown":      {eventKind: models.EventGrenadeThrow, utilKind: "he"},
+	"he_det":         {eventKind: models.EventGrenade, utilKind: "he"},
+	"flash_thrown":   {eventKind: models.EventGrenadeThrow, utilKind: "flash"},
+	"flash_det":      {eventKind: models.EventGrenade, utilKind: "flash"},
+	"smoke_thrown":   {eventKind: models.EventGrenadeThrow, utilKind: "smoke"},
+	"smoke_det":      {eventKind: models.EventGrenade, utilKind: "smoke"},
+	"molotov_thrown": {eventKind: models.EventGrenadeThrow, utilKind: "molotov"},
+	"molotov_det":    {eventKind: models.EventGrenade, utilKind: "molotov"},
+	"decoy_thrown":   {eventKind: models.EventGrenadeThrow, utilKind: "decoy"},
+	"decoy_det":      {eventKind: models.EventGrenade, utilKind: "decoy"},
+}
 
 // heatmapRaster is one bounds→cells mapping: the padded bounds, the cell
 // sizes (floored at one world unit so a tiny extent still fills the

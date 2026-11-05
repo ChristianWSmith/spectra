@@ -11,6 +11,7 @@
   // GetHeatmapKD) — called on the binding directly; every other kind
   // shares getHeatmap.
   import { AnalyticsService } from '../../../bindings/github.com/ChristianWSmith/spectra';
+  import { HEAT_CORE_KINDS, HEAT_GRENADE_THROW_KINDS, HEAT_GRENADE_DET_KINDS, heatKindLabel, heatRegionCats } from '../heatkinds.js';
   import { HEAT_STOPS, DEATH_STOPS, rampCss, signedRampCss } from '../heatramp.js';
   import { loadMapPack } from '../components/mapxform.js';
   import HeatmapLayer from '../components/HeatmapLayer.svelte';
@@ -20,9 +21,14 @@
 
   let { id = 0, nav = () => {} } = $props();
 
-  const KINDS = ['presence', 'kills', 'deaths', 'damage', 'kd'];
-  // Selector label for the raw kind id (the option text shows "K/D").
-  const kindLabel = (k) => (k === 'kd' ? 'K/D' : k);
+  // The kind registry lives in lib/heatkinds.js (pinned to Go's
+  // grenadeHeatmapKinds by its test) — core kinds, then one option per
+  // grenade type in each flavor (thrown origins / detonations).
+  const KIND_GROUPS = [
+    { label: 'Overview', kinds: HEAT_CORE_KINDS },
+    { label: 'Grenade thrown', kinds: HEAT_GRENADE_THROW_KINDS },
+    { label: 'Grenade detonation', kinds: HEAT_GRENADE_DET_KINDS },
+  ];
 
   let kind = $state('presence');
   let player = $state(''); // steamId, '' = all
@@ -153,8 +159,10 @@
     regionNote = `filtered by region — bbox (${Math.round(bbox.minX)}, ${Math.round(bbox.minY)}) → (${Math.round(bbox.maxX)}, ${Math.round(bbox.maxY)})`;
     // Mirror the viewed heatmap kind: a damage region drill enables the
     // damage category too (kills/deaths are kill events; presence has no
-    // event category).
-    const cats = kind === 'damage' ? ['kills', 'damage'] : undefined;
+    // event category), a grenade drill opens exactly that flavor's
+    // events — throws (grenade_throws) or detonations (grenade_dets) —
+    // via heatRegionCats (lib/heatkinds.js).
+    const cats = heatRegionCats(kind);
     const target = replayHash(id, { bbox, ...(cats ? { cats } : {}) }, { back: `match/${id}/heatmaps` });
     if (navTimer) clearTimeout(navTimer);
     navTimer = setTimeout(() => {
@@ -243,8 +251,12 @@
     <div class="heat-field">
       <label class="field-label" for="heat-kind">Kind</label>
       <select class="input" id="heat-kind" bind:value={kind}>
-        {#each KINDS as k (k)}
-          <option value={k}>{kindLabel(k)}</option>
+        {#each KIND_GROUPS as group (group.label)}
+          <optgroup label={group.label}>
+            {#each group.kinds as k (k)}
+              <option value={k}>{heatKindLabel(k)}</option>
+            {/each}
+          </optgroup>
         {/each}
       </select>
     </div>

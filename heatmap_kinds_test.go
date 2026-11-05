@@ -3,6 +3,7 @@ package main
 import (
 	"math"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -304,6 +305,233 @@ func TestHeatmapConvolveMatchesDirectSplat(t *testing.T) {
 			t.Fatalf("cell %d: convolved %v, direct splat %v (diff %v)",
 				i, got[i], want[i], diff)
 		}
+	}
+}
+
+// grenadeEvents is the grenade fixture: one throw of every canonical
+// weapon name (Molotov ≡ Incendiary — both must land in the same
+// molotov heatmap) plus two detonations, a smoke throw in round 2, and a
+// kill at a far corner the grenade kinds must never plot.
+//
+//	100 (ct) throws HE → (10,10), Molotov → (30,30), smoke r2 → (60,60)
+//	200 (t)  throws flash → (20,20), Incendiary → (40,40)
+//	100 detonates HE → (110,110); 200 detonates flash → (120,120)
+func grenadeEvents() []models.Event {
+	return []models.Event{
+		{Tick: 10, Round: 1, Kind: models.EventGrenadeThrow, Attacker: "100", Weapon: "HE Grenade",
+			PosX: pf(10), PosY: pf(10)},
+		{Tick: 11, Round: 1, Kind: models.EventGrenadeThrow, Attacker: "200", Weapon: "Flashbang",
+			PosX: pf(20), PosY: pf(20)},
+		{Tick: 12, Round: 1, Kind: models.EventGrenadeThrow, Attacker: "100", Weapon: "Molotov",
+			PosX: pf(30), PosY: pf(30)},
+		{Tick: 13, Round: 1, Kind: models.EventGrenadeThrow, Attacker: "200", Weapon: "Incendiary Grenade",
+			PosX: pf(40), PosY: pf(40)},
+		{Tick: 14, Round: 2, Kind: models.EventGrenadeThrow, Attacker: "100", Weapon: "Smoke Grenade",
+			PosX: pf(60), PosY: pf(60)},
+		{Tick: 20, Round: 1, Kind: models.EventGrenade, Attacker: "100", Weapon: "HE Grenade",
+			PosX: pf(110), PosY: pf(110)},
+		{Tick: 21, Round: 1, Kind: models.EventGrenade, Attacker: "200", Weapon: "Flashbang",
+			PosX: pf(120), PosY: pf(120)},
+		// A kill far away: a grenade kind must never plot it (different
+		// events.kind), and the throw/detonation positions must not leak
+		// into the kills raster either.
+		{Tick: 30, Round: 1, Kind: models.EventKill, Attacker: "200", Victim: "100",
+			PosX: pf(999), PosY: pf(999), AttackerPosX: pf(998), AttackerPosY: pf(998)},
+	}
+}
+
+// TestGrenadeHeatmapKindsMatchCanonicalUtilitySet pins the registry to
+// models' canonical utility set (models.weapons.go — the ONE weapon→kind
+// projection every layer shares): every canonical weapon name must
+// normalize into a utilKind the registry plots, the registry must carry
+// no utilKind no weapon produces, and each id must be "<util>_<flavor>"
+// with the flavor's events.kind (thrown → grenade_throw, det → grenade).
+// A new grenade type (or a Molotov/Incendiary split) fails here until the
+// heatmap pair and the frontend list (lib/heatkinds.js) agree.
+func TestGrenadeHeatmapKindsMatchCanonicalUtilitySet(t *testing.T) {
+	// The canonical names models.IsUtilityWeapon keys on — pinned to the
+	// parser's equipment enum by extract.TestUtilityWeaponSetsIdentical.
+	canonical := []string{"HE Grenade", "Flashbang", "Smoke Grenade",
+		"Molotov", "Incendiary Grenade", "Decoy Grenade"}
+	wantUtil := map[string]bool{}
+	for _, w := range canonical {
+		k := models.UtilityWeaponKind(w)
+		if k == "" {
+			t.Fatalf("models.UtilityWeaponKind(%q) = \"\", want the stored utility kind", w)
+		}
+		wantUtil[k] = true
+	}
+	gotUtil := map[string]bool{}
+	for id, spec := range grenadeHeatmapKinds {
+		flavor, util, found := cutKind(id)
+		if !found || util != spec.utilKind {
+			t.Errorf("kind %q: id must be <util>_<flavor> with util == spec.utilKind %q", id, spec.utilKind)
+			continue
+		}
+		wantEvent := models.EventGrenadeThrow
+		if flavor == "det" {
+			wantEvent = models.EventGrenade
+		} else if flavor != "thrown" {
+			t.Errorf("kind %q: flavor %q, want thrown|det", id, flavor)
+		}
+		if spec.eventKind != wantEvent {
+			t.Errorf("kind %q: eventKind %q, want %q", id, spec.eventKind, wantEvent)
+		}
+		gotUtil[spec.utilKind] = true
+	}
+	for u := range wantUtil {
+		if !gotUtil[u] {
+			t.Errorf("registry has no heatmap kind for canonical utility kind %q", u)
+		}
+	}
+	for u := range gotUtil {
+		if !wantUtil[u] {
+			t.Errorf("registry plots utility kind %q no canonical weapon produces", u)
+		}
+	}
+	// Molotov ≡ Incendiary must share ONE pair (the parenthetical rule of
+	// the per-grenade heatmaps): both names project to "molotov".
+	if models.UtilityWeaponKind("Molotov") != models.UtilityWeaponKind("Incendiary Grenade") {
+		t.Fatal("Molotov and Incendiary Grenade no longer share a stored kind")
+	}
+}
+
+// cutKind splits a grenade heatmap id into (flavor, util, ok).
+func cutKind(id string) (flavor, util string, ok bool) {
+	i := strings.LastIndex(id, "_")
+	if i <= 0 || i == len(id)-1 {
+		return "", "", false
+	}
+	return id[i+1:], id[:i], true
+}
+
+// TestHeatmapGrenadeKinds guards the two flavors' populations: "_thrown"
+// plots the throw origins (grenade_throw pos_*), "_det" the blast
+// positions (grenade pos_*), each restricted to ONE utility kind — with
+// Molotov and Incendiary sharing the molotov pair — and never another
+// event kind's position.
+func TestHeatmapGrenadeKinds(t *testing.T) {
+	st, id := seedHeatmapMatch(t, grenadeEvents())
+	as := &AnalyticsService{st: st}
+	none := HeatmapFilter{RoundFrom: -1, RoundTo: -1}
+	samplesOf := func(kind string) HeatmapGrid {
+		t.Helper()
+		g, err := as.GetHeatmap(id, kind, none)
+		if err != nil {
+			t.Fatalf("GetHeatmap(%s): %v", kind, err)
+		}
+		if g.Kind != kind {
+			t.Errorf("kind = %q, want %q", g.Kind, kind)
+		}
+		return g
+	}
+
+	// Thrown: one HE at (10,10) — the bounds are that sample ± heatmapPad,
+	// so a flash throw (20,20) or a detonation (110,110) cannot be in it.
+	he := samplesOf("he_thrown")
+	if he.Samples != 1 {
+		t.Errorf("he_thrown samples = %d, want 1", he.Samples)
+	}
+	if he.MinX != 10-heatmapPad || he.MaxX != 10+heatmapPad || he.MinY != 10-heatmapPad || he.MaxY != 10+heatmapPad {
+		t.Errorf("he_thrown bounds = [%v,%v]×[%v,%v], want (10,10) ± pad",
+			he.MinX, he.MaxX, he.MinY, he.MaxY)
+	}
+	// Molotov ≡ Incendiary: BOTH throws (30,30) and (40,40) land here.
+	mol := samplesOf("molotov_thrown")
+	if mol.Samples != 2 {
+		t.Errorf("molotov_thrown samples = %d, want 2 (Molotov + Incendiary Grenade)", mol.Samples)
+	}
+	if mol.MinX != 30-heatmapPad || mol.MaxX != 40+heatmapPad {
+		t.Errorf("molotov_thrown bounds x = [%v,%v], want the Molotov/Incendiary span ± pad",
+			mol.MinX, mol.MaxX)
+	}
+	// Detonations: HE blast at (110,110) only — no throw positions, no
+	// kill position (999,999) from the kill event.
+	det := samplesOf("he_det")
+	if det.Samples != 1 || det.MinX != 110-heatmapPad || det.MaxX != 110+heatmapPad {
+		t.Errorf("he_det = %d samples bounds x [%v,%v], want 1 sample at (110,110) ± pad",
+			det.Samples, det.MinX, det.MaxX)
+	}
+	// Round range: the round-2 smoke throw drops out of rounds 1–1.
+	if g := samplesOf("smoke_thrown"); g.Samples != 1 {
+		t.Errorf("smoke_thrown samples = %d, want 1 (the round-2 throw)", g.Samples)
+	}
+	r1, err := as.GetHeatmap(id, "smoke_thrown", HeatmapFilter{RoundFrom: 1, RoundTo: 1})
+	if err != nil {
+		t.Fatalf("GetHeatmap(smoke_thrown, r1): %v", err)
+	}
+	if r1.Samples != 0 {
+		t.Errorf("smoke_thrown in rounds 1–1 = %d samples, want 0 (its throw is round 2)", r1.Samples)
+	}
+	// No decoy events: an empty raster, not an error.
+	dec := samplesOf("decoy_thrown")
+	if dec.Samples != 0 || dec.Max != 0 || len(dec.Cells) != heatmapGridSide*heatmapGridSide {
+		t.Errorf("decoy_thrown = %d samples / max %v / %d cells, want an empty raster",
+			dec.Samples, dec.Max, len(dec.Cells))
+	}
+	// The bare grenade type is not a kind id — only the two flavors are.
+	if _, err := as.GetHeatmap(id, "he", none); err == nil {
+		t.Error(`GetHeatmap("he") succeeded, want an unknown-kind error`)
+	}
+	// And the grenade populations never feed the kill kinds.
+	kills, err := as.GetHeatmap(id, "kills", none)
+	if err != nil {
+		t.Fatalf("GetHeatmap(kills): %v", err)
+	}
+	if kills.Samples != 1 {
+		t.Errorf("kills samples = %d, want 1 (grenade events are not kills)", kills.Samples)
+	}
+}
+
+// TestHeatmapGrenadeThrowerFilter guards the filter party: both grenade
+// flavors filter on the THROWER (thrown: who threw; detonated: whose
+// grenade landed), by SteamID and by that player's exact per-round side.
+func TestHeatmapGrenadeThrowerFilter(t *testing.T) {
+	st, id := seedHeatmapMatch(t, grenadeEvents())
+	as := &AnalyticsService{st: st}
+
+	byPlayer := func(kind, steamID string) HeatmapGrid {
+		t.Helper()
+		g, err := as.GetHeatmap(id, kind, HeatmapFilter{RoundFrom: -1, RoundTo: -1, SteamID: steamID})
+		if err != nil {
+			t.Fatalf("GetHeatmap(%s, %s): %v", kind, steamID, err)
+		}
+		return g
+	}
+	// Player 100 (ct): HE throw (10,10) + Molotov throw (30,30) + HE det
+	// (110,110); the flash/Incendiary/smoke rows belong to 200/round 2.
+	if g := byPlayer("he_thrown", "100"); g.Samples != 1 {
+		t.Errorf("he_thrown for 100 = %d samples, want 1", g.Samples)
+	}
+	if g := byPlayer("molotov_thrown", "100"); g.Samples != 1 {
+		t.Errorf("molotov_thrown for 100 = %d samples, want 1 (the Molotov, not the incendiary)", g.Samples)
+	}
+	if g := byPlayer("flash_det", "100"); g.Samples != 0 {
+		t.Errorf("flash_det for 100 = %d samples, want 0 (200 threw it)", g.Samples)
+	}
+	if g := byPlayer("flash_det", "200"); g.Samples != 1 {
+		t.Errorf("flash_det for 200 = %d samples, want 1", g.Samples)
+	}
+
+	// Team filter resolves the thrower's side from the exact freeze-end
+	// samples (100 = ct, 200 = t): CT sees HE + Molotov throws, T the
+	// flash + incendiary throws.
+	byTeam := func(kind, team string) HeatmapGrid {
+		t.Helper()
+		g, err := as.GetHeatmap(id, kind, HeatmapFilter{RoundFrom: -1, RoundTo: -1, Team: team})
+		if err != nil {
+			t.Fatalf("GetHeatmap(%s, team %s): %v", kind, team, err)
+		}
+		return g
+	}
+	if g := byTeam("molotov_thrown", "ct"); g.Samples != 1 {
+		t.Errorf("molotov_thrown for ct = %d samples, want 1", g.Samples)
+	}
+	if g := byTeam("molotov_thrown", "t"); g.Samples != 1 {
+		t.Errorf("molotov_thrown for t = %d samples, want 1 (the incendiary throw)", g.Samples)
+	}
+	if g := byTeam("he_det", "t"); g.Samples != 0 {
+		t.Errorf("he_det for t = %d samples, want 0 (100 threw it)", g.Samples)
 	}
 }
 

@@ -442,3 +442,19 @@ at the end of the section.
   https://counterstrike.fandom.com/wiki/USP-S; csbepro Glock-18 guide
   ("$200 buy-back"), https://csbepro.com/cs2-weapon/glock-18-guide-for-counter-strike-2/
   (2026-11-05).
+
+- **A flashbang detonation fires TWICE in demoinfocs-golang v6** — why one
+  flashbang yields two `grenade` events (flash detonation counts read ~2×).
+  `events.FlashExplode` is dispatched from BOTH the `flashbang_detonate`
+  game event (`game_events.go` `flashBangDetonate`) and the flash
+  projectile's entity on-destroy handler (`datatables.go` `stOnDestroy`),
+  each gated on `!disableMimicSource1GameEvents` (zero value → both run);
+  HE/smoke/fire/decoy detonations dispatch once. Golden demo: 91 flashbang
+  throws → 182 `grenade` rows at 91 distinct ticks (the pair's positions
+  differ by ~0.01u — entity position vs game-event position). Code that
+  assumes one row per detonation must dedupe flashes by tick+thrower;
+  spectra stores the rows as-is (golden-fixture-pinned). **Source** —
+  demoinfocs-golang v6.0.0-rc.1 `pkg/demoinfocs/game_events.go` +
+  `pkg/demoinfocs/datatables.go`
+  (github.com/markus-wa/demoinfocs-golang); golden-demo/dev-DB event
+  counts (2026-11-05).
