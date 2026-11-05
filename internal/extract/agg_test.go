@@ -814,8 +814,9 @@ func TestFreezeEndSpentDeltas(t *testing.T) {
 // TestFreezeEndFreePistolValue: round_economy.free_pistol_value is the
 // per-side sum of the participants' held FREE spawn-issued default
 // pistols at that freeze end (extract.freeSpawnPistolValue) — granted,
-// not bought, so net worth can subtract it and both pistol-round sides
-// read their starting money. Samples without a side contribute nothing.
+// not bought; they count inside equipment value, and the column is
+// recorded for reference (CS2.md "Free spawn-issued default pistol").
+// Samples without a side contribute nothing.
 func TestFreezeEndFreePistolValue(t *testing.T) {
 	a := newAgg()
 	a.roundStart(0, false, false, 115, "BOMB TARGET")

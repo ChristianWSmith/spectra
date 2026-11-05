@@ -182,12 +182,12 @@ func wepName(w *common.Equipment) string {
 const defaultPistolFreeValue = 200
 
 // freeSpawnPistolValue sums the free spawn-issued default pistols in a
-// player's freeze-time-end inventory at their equipment-value price. Net
-// worth subtracts the per-side total (round_economy.free_pistol_value)
-// because these pistols are granted, not bought: two pistol-round sides
-// that both hold $4000 of money must read the same net worth even though
-// one side upgraded its sidearms and dropped the free pistols (CS2.md
-// "Free spawn-issued default pistol").
+// player's freeze-time-end inventory at their equipment-value price.
+// The per-side total (round_economy.free_pistol_value) is recorded for
+// reference: these pistols are granted, not bought, and they count
+// INSIDE equipment value, so the chart's net worth (equip + cash)
+// includes them and can never fall below equipment value (CS2.md "Free
+// spawn-issued default pistol").
 //
 // Caveat (same CS2.md entry): demo data cannot tell a spawn-issued
 // default apart from a rebought ($200 buy-back) or picked-up one, so all

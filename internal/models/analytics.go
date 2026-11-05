@@ -176,9 +176,10 @@ type CombatStat struct {
 // the delta in the cumulative money-spent counter between freeze-time
 // ends; see extract.agg.freezeEnd). FreePistol* carries
 // round_economy.free_pistol_value — the side's held free spawn-issued
-// default-pistol value at that freeze end (granted, not bought): net
-// worth = Equip* + Money* − FreePistol* (CS2.md "Free spawn-issued
-// default pistol"). Per-player player_round_stats.spent stays 0 in v1
+// default-pistol value at that freeze end (granted, not bought): they
+// count INSIDE Equip*, so net worth = Equip* + Money* (frontend
+// lib/econ.js; CS2.md "Free spawn-issued default pistol"). Per-player
+// player_round_stats.spent stays 0 in v1
 // (item_equip payloads carry no spend — analytics notes).
 type EconomyRow struct {
 	Round        int    `json:"round"`

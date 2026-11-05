@@ -394,8 +394,9 @@ func (a *agg) roundEnd(tick int, winner, reason, message string, tickRate float6
 // per-side Spent on a RoundEconomy row is the sum of the participants'
 // cumulative-spent deltas since the previous freeze end (see the loop
 // below); the per-side FreePistolValue is the sum of their held free
-// default pistols (round_economy.free_pistol_value — net worth subtracts
-// it, see extract.freeSpawnPistolValue).
+// default pistols (round_economy.free_pistol_value — recorded for
+// reference; they count inside equipment value, see
+// extract.freeSpawnPistolValue).
 //
 // It also resolves the pending halftime score. GameHalfEnded fires BEFORE
 // the final round of the half increments the team score (golden demo:

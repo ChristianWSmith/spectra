@@ -156,8 +156,10 @@ func TestParseGolden(t *testing.T) {
 	// although nobody paid for them, and the two sides hold DIFFERENT
 	// numbers of them (round 1: CT dropped 2 USP-S for upgrades, T still
 	// holds all 5 Glocks; round 13: CT 5 USP-S, T 4 Glocks — Magnojezzz
-	// bought a P250). net worth = equip + money − free pistols is what
-	// makes both sides read exactly $4000 (5 × $800 starting money).
+	// bought a P250). equip + money − free pistols — the free-pistol
+	// COLUMN's round-trip property, not the chart's net worth (the chart
+	// plots equip + cash) — makes both sides read exactly $4000 (5 × $800
+	// starting money).
 	for _, want := range []struct {
 		round int
 		side  string
@@ -183,7 +185,7 @@ func TestParseGolden(t *testing.T) {
 		}
 		net := got.EquipValue + got.MoneySampledSum - got.FreePistolValue
 		if net != 4000 {
-			t.Errorf("round %d %s net worth = %d, want 4000 (equip+money−free pistols)",
+			t.Errorf("round %d %s equip+money−free pistols = %d, want 4000 (free-pistol column round-trip)",
 				want.round, want.side, net)
 		}
 	}

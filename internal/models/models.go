@@ -217,8 +217,8 @@ type Round struct {
 // spent on buys, not equipment value.
 // FreePistolValue is the side's held free spawn-issued default-pistol
 // value at the same freeze end (extract.freeSpawnPistolValue): granted,
-// not bought, so net worth subtracts it (CS2.md "Free spawn-issued
-// default pistol").
+// not bought — they count inside equipment value, so net worth includes
+// them (CS2.md "Free spawn-issued default pistol").
 type RoundEconomy struct {
 	MatchID         int64  `json:"matchId"`
 	Round           int    `json:"round"`

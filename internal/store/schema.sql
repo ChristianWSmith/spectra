@@ -169,8 +169,9 @@ CREATE TABLE IF NOT EXISTS round_economy (
 	money_samples INTEGER NOT NULL DEFAULT 0,
 	spent INTEGER NOT NULL DEFAULT 0,
 	-- Held free spawn-issued default-pistol value at this freeze end
-	-- ($200 each — granted, not bought; net worth subtracts it, CS2.md
-	-- "Free spawn-issued default pistol").
+	-- ($200 each — granted, not bought; they count inside equipment
+	-- value, so net worth includes them — CS2.md "Free spawn-issued
+	-- default pistol").
 	free_pistol_value INTEGER NOT NULL DEFAULT 0,
 	PRIMARY KEY (match_id, round, side)
 );

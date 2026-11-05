@@ -465,13 +465,13 @@ func runGoldenAnalytics(t *testing.T, m *models.ExtractedMatch) analyticsFixture
 		t.Fatalf("GetEconomy: %v", err)
 	}
 
-	// Item-11 pin: net worth (equip + unspent money − free spawn-issued
-	// default pistols, CS2.md "Free spawn-issued default pistol") must
-	// read EXACTLY the starting money ($4000 = 5 × $800) for both sides
-	// of every pistol round. Without the free-pistol subtraction the
-	// golden demo's pistol rounds read 4600/5000 (round 1) and
-	// 5000/4800 (round 13) — sides hold a different number of free
-	// spawn pistols at freeze end.
+	// Item-11 pin: equip + unspent money − free spawn-issued default
+	// pistols (the free_pistol_value COLUMN's round-trip property, not
+	// the chart's net worth — the chart plots equip + cash and reads
+	// 4600/5000 on round 1, 5000/4800 on round 13; CS2.md "Free
+	// spawn-issued default pistol") must read EXACTLY the starting money
+	// ($4000 = 5 × $800) for both sides of every pistol round: sides
+	// hold a different number of free spawn pistols at freeze end.
 	pistolRounds := 0
 	for _, r := range economy {
 		if r.Label != "pistol" {
@@ -481,7 +481,7 @@ func runGoldenAnalytics(t *testing.T, m *models.ExtractedMatch) analyticsFixture
 		netCT := r.EquipCT + r.MoneyCT - r.FreePistolCT
 		netT := r.EquipT + r.MoneyT - r.FreePistolT
 		if netCT != 4000 || netT != 4000 {
-			t.Errorf("pistol round %d net worth = CT %d / T %d, want 4000/4000 (equip+money−free pistols)",
+			t.Errorf("pistol round %d equip+money−free = CT %d / T %d, want 4000/4000 (free-pistol column round-trip)",
 				r.Round, netCT, netT)
 		}
 	}
