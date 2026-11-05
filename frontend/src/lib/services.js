@@ -125,9 +125,14 @@ export function importPaths(paths) {
   });
 }
 
-export function listMatches(query, sortKey, desc) {
-  return cachedRead('ListMatches', [query, sortKey, desc], () =>
-    LibraryService.ListMatches(query, sortKey, desc),
+// filter is the structured facet object ({map, player}) the store's
+// MatchListFilter takes — ANDed with each other and with the free-text
+// query server-side. Normalized to both keys so equivalent filters share
+// one cache entry; callers that only want the plain list pass nothing.
+export function listMatches(query, sortKey, desc, filter) {
+  const f = { map: (filter && filter.map) || '', player: (filter && filter.player) || '' };
+  return cachedRead('ListMatches', [query, sortKey, desc, f], () =>
+    LibraryService.ListMatches(query, sortKey, desc, f),
   );
 }
 

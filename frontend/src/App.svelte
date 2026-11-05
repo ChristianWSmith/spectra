@@ -118,7 +118,7 @@
   </nav>
   <main class="content">
     {#if route.name === 'library'}
-      <Library {nav} />
+      <Library {nav} query={route.query || {}} />
     {:else if route.name === 'match'}
       <Match id={route.id} routeTab={route.tab || ''} {nav} />
     {:else if route.name === 'round'}

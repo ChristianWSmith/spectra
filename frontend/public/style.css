@@ -939,6 +939,62 @@ input[type='checkbox']:focus-visible {
   color: var(--muted);
 }
 
+/* --- Library search filters (lib-) ----------------------------------------- */
+
+/* Structured facets under the Library header — map + "has player X",
+   ANDed with each other and with the free-text search (store.MatchListFilter).
+   A filled input is an ACTIVE filter: the accent border distinguishes a
+   preset facet from an empty box (each input's native × and the button
+   clear it). Values also arrive pre-set from the route query
+   (#/library?map=&player= — the profile → library deep link). */
+.lib-filters {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+}
+
+.lib-filter-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.lib-filter {
+  min-width: 170px;
+}
+
+.lib-filter.active {
+  border-color: var(--accent);
+}
+
+/* Focus must still show on an ACTIVE facet (the accent border would
+   otherwise be both the resting and the focused state — .input:focus-visible
+   paints the border, and this rule outranks .lib-filter.active by order). */
+.lib-filter:focus-visible {
+  border-color: var(--focus);
+}
+
+/* Row-action separators, both library tables: the actions <td> must STAY
+   a table-cell. .row-actions (Tables section) is display:flex — correct
+   for Settings' span use, but a flex box is NOT a table-cell box: the
+   table wraps it in an anonymous cell, so the td's own border-bottom
+   stops participating in border-collapse and is painted at the flex
+   box's own bottom (button height + padding ≈ 2px above the row's shared
+   separator — the raised line under Reprocess/Delete). Force the cell
+   back to table-cell and lay the buttons out inline instead: they are
+   inline-block, the cell's vertical-align: middle centers them, and the
+   flex gap becomes a margin (the flex properties are inert here). */
+.view .data-table td.row-actions {
+  display: table-cell;
+  text-align: right;
+}
+
+.view .data-table td.row-actions .btn + .btn {
+  margin-left: 6px;
+}
+
 /* --- Match view ------------------------------------------------------------ */
 
 .match-header h1 .score {

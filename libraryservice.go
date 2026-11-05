@@ -113,9 +113,13 @@ func (s *LibraryService) DeleteDemoFile(path string) error {
 	return s.sc.RemoveDemoFile(s.GetDemoDirs().Dirs, path)
 }
 
-// ListMatches returns the searchable, sortable library list.
-func (s *LibraryService) ListMatches(query, sortKey string, desc bool) ([]models.MatchSummary, error) {
-	return s.st.ListMatches(query, sortKey, desc)
+// ListMatches returns the searchable, sortable library list, narrowed by
+// the structured filter (map facet + "has player X" — see
+// store.MatchListFilter): the facets AND with each other and with the
+// free-text query. This is the one ListMatches binding that forwards a
+// filter (other callers use the unconstrained store method).
+func (s *LibraryService) ListMatches(query, sortKey string, desc bool, filter store.MatchListFilter) ([]models.MatchSummary, error) {
+	return s.st.ListMatches(query, sortKey, desc, filter)
 }
 
 // DeleteMatch removes a match and its extracted data, including the
