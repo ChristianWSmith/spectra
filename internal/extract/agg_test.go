@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/ChristianWSmith/spectra/internal/models"
+	"github.com/markus-wa/demoinfocs-golang/v6/pkg/demoinfocs/common"
 	"github.com/markus-wa/demoinfocs-golang/v6/pkg/demoinfocs/msg"
 )
 
@@ -807,6 +808,71 @@ func TestFreezeEndSpentDeltas(t *testing.T) {
 	m := a.build()
 	if len(m.RoundEconomy) != 6 || m.RoundEconomy[4].Spent != 801 {
 		t.Fatalf("built round economy = %+v", m.RoundEconomy)
+	}
+}
+
+// TestFreezeEndFreePistolValue: round_economy.free_pistol_value is the
+// per-side sum of the participants' held FREE spawn-issued default
+// pistols at that freeze end (extract.freeSpawnPistolValue) — granted,
+// not bought, so net worth can subtract it and both pistol-round sides
+// read their starting money. Samples without a side contribute nothing.
+func TestFreezeEndFreePistolValue(t *testing.T) {
+	a := newAgg()
+	a.roundStart(0, false, false, 115, "BOMB TARGET")
+	a.freezeEnd(10, 4000, 3600, 0, 0, []moneySample{
+		{key: 1, name: "a", side: "ct", money: 600, freePistol: 600},  // 3 USP-S held
+		{key: 2, name: "b", side: "ct", money: 200, freePistol: 0},    // upgraded sidearm
+		{key: 3, name: "c", side: "t", money: 1400, freePistol: 1000}, // 5 Glocks held
+		{key: 4, name: "d", side: "", money: 0, freePistol: 400},      // no side: dropped
+	})
+
+	if len(a.economy) != 2 {
+		t.Fatalf("economy rows = %d, want 2", len(a.economy))
+	}
+	ct, tr := a.economy[0], a.economy[1]
+	if ct.Side != "ct" || ct.FreePistolValue != 600 {
+		t.Errorf("ct row = %+v, want free_pistol_value 600", ct)
+	}
+	if tr.Side != "t" || tr.FreePistolValue != 1000 {
+		t.Errorf("t row = %+v, want free_pistol_value 1000", tr)
+	}
+	m := a.build()
+	if len(m.RoundEconomy) != 2 || m.RoundEconomy[0].FreePistolValue != 600 || m.RoundEconomy[1].FreePistolValue != 1000 {
+		t.Fatalf("built round economy = %+v, want 600/1000", m.RoundEconomy)
+	}
+}
+
+// TestFreeSpawnPistolValue: only the free spawn-issued default sidearms
+// (USP-S, P2000, Glock-18) count, at $200 each (the value the game's
+// equipment value assigns them — CS2.md "Free spawn-issued default
+// pistol"); every other weapon — knife, bought pistol, rifle, nil entry
+// — is worth 0 here.
+func TestFreeSpawnPistolValue(t *testing.T) {
+	weaps := func(types ...common.EquipmentType) []*common.Equipment {
+		out := make([]*common.Equipment, 0, len(types))
+		for _, ty := range types {
+			out = append(out, &common.Equipment{Type: ty})
+		}
+		return out
+	}
+	cases := []struct {
+		name string
+		weps []*common.Equipment
+		want int
+	}{
+		{"empty", nil, 0},
+		{"knife only", weaps(common.EqKnife), 0},
+		{"one USP-S", weaps(common.EqKnife, common.EqUSP), 200},
+		{"P2000", weaps(common.EqP2000), 200},
+		{"Glock", weaps(common.EqGlock, common.EqKnife), 200},
+		{"bought pistol not free", weaps(common.EqP250, common.EqDeagle), 0},
+		{"rifle + free Glock", weaps(common.EqAK47, common.EqGlock), 200},
+		{"nil entry skipped", append(weaps(common.EqUSP), nil), 200},
+	}
+	for _, c := range cases {
+		if got := freeSpawnPistolValue(c.weps); got != c.want {
+			t.Errorf("%s: freeSpawnPistolValue = %d, want %d", c.name, got, c.want)
+		}
 	}
 }
 

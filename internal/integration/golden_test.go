@@ -465,6 +465,30 @@ func runGoldenAnalytics(t *testing.T, m *models.ExtractedMatch) analyticsFixture
 		t.Fatalf("GetEconomy: %v", err)
 	}
 
+	// Item-11 pin: net worth (equip + unspent money − free spawn-issued
+	// default pistols, CS2.md "Free spawn-issued default pistol") must
+	// read EXACTLY the starting money ($4000 = 5 × $800) for both sides
+	// of every pistol round. Without the free-pistol subtraction the
+	// golden demo's pistol rounds read 4600/5000 (round 1) and
+	// 5000/4800 (round 13) — sides hold a different number of free
+	// spawn pistols at freeze end.
+	pistolRounds := 0
+	for _, r := range economy {
+		if r.Label != "pistol" {
+			continue
+		}
+		pistolRounds++
+		netCT := r.EquipCT + r.MoneyCT - r.FreePistolCT
+		netT := r.EquipT + r.MoneyT - r.FreePistolT
+		if netCT != 4000 || netT != 4000 {
+			t.Errorf("pistol round %d net worth = CT %d / T %d, want 4000/4000 (equip+money−free pistols)",
+				r.Round, netCT, netT)
+		}
+	}
+	if pistolRounds != 2 {
+		t.Errorf("pistol rounds in economy view = %d, want 2 (rounds 1 and 13)", pistolRounds)
+	}
+
 	// Hard safety nets: ALWAYS, even with -update.
 	if len(clutches) == 0 {
 		t.Error("safety: clutches = 0, want > 0 (clutch v2 must find 1vN records)")

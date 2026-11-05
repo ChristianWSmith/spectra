@@ -174,30 +174,36 @@ type CombatStat struct {
 // Money* is the sampled freeze-end money sum; Spent* is the side's real
 // per-round buy spend (round_economy.spent — Σ over the side's players of
 // the delta in the cumulative money-spent counter between freeze-time
-// ends; see extract.agg.freezeEnd). Per-player player_round_stats.spent
-// stays 0 in v1 (item_equip payloads carry no spend — analytics notes).
+// ends; see extract.agg.freezeEnd). FreePistol* carries
+// round_economy.free_pistol_value — the side's held free spawn-issued
+// default-pistol value at that freeze end (granted, not bought): net
+// worth = Equip* + Money* − FreePistol* (CS2.md "Free spawn-issued
+// default pistol"). Per-player player_round_stats.spent stays 0 in v1
+// (item_equip payloads carry no spend — analytics notes).
 type EconomyRow struct {
-	Round       int    `json:"round"`
-	Winner      string `json:"winner"`
-	Warmup      bool   `json:"warmup"`
-	EquipCT     int    `json:"equipCT"`
-	EquipT      int    `json:"equipT"`
-	MoneyCT     int    `json:"moneyCT"`
-	MoneyT      int    `json:"moneyT"`
-	SpentCT     int    `json:"spentCT"`
-	SpentT      int    `json:"spentT"`
-	ClassCT     string `json:"classCT"`
-	ClassT      string `json:"classT"`
-	ClassWhyCT  string `json:"classWhyCT"`
-	ClassWhyT   string `json:"classWhyT"`
-	LossBonusCT int    `json:"lossBonusCT"`
-	LossBonusT  int    `json:"lossBonusT"`
-	InferredCT  bool   `json:"inferredCT"`
-	InferredT   bool   `json:"inferredT"`
-	WonCT       bool   `json:"wonCT"`
-	WonT        bool   `json:"wonT"`
-	PistolRound bool   `json:"pistolRound"`
-	RuleVersion int    `json:"ruleVersion"`
+	Round        int    `json:"round"`
+	Winner       string `json:"winner"`
+	Warmup       bool   `json:"warmup"`
+	EquipCT      int    `json:"equipCT"`
+	EquipT       int    `json:"equipT"`
+	MoneyCT      int    `json:"moneyCT"`
+	MoneyT       int    `json:"moneyT"`
+	SpentCT      int    `json:"spentCT"`
+	SpentT       int    `json:"spentT"`
+	FreePistolCT int    `json:"freePistolCT"`
+	FreePistolT  int    `json:"freePistolT"`
+	ClassCT      string `json:"classCT"`
+	ClassT       string `json:"classT"`
+	ClassWhyCT   string `json:"classWhyCT"`
+	ClassWhyT    string `json:"classWhyT"`
+	LossBonusCT  int    `json:"lossBonusCT"`
+	LossBonusT   int    `json:"lossBonusT"`
+	InferredCT   bool   `json:"inferredCT"`
+	InferredT    bool   `json:"inferredT"`
+	WonCT        bool   `json:"wonCT"`
+	WonT         bool   `json:"wonT"`
+	PistolRound  bool   `json:"pistolRound"`
+	RuleVersion  int    `json:"ruleVersion"`
 	// Label/Explanation are the stored round-level classification
 	// (round_classifications), "" when the round has no stored row.
 	Label       string `json:"label"`

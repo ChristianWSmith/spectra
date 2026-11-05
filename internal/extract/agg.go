@@ -65,12 +65,17 @@ type finalPlayer struct {
 // spent is the live cumulative cash-spent counter (entity property
 // m_pInGameMoneyServices.m_iTotalCashSpent) at this freeze end — freezeEnd
 // diffs consecutive samples into the per-round side spend.
+// freePistol is the equipment value of the free spawn-issued default
+// pistols this participant still holds at the same instant
+// (extract.freeSpawnPistolValue) — freezeEnd sums it per side into
+// round_economy.free_pistol_value.
 type moneySample struct {
-	key   uint64
-	name  string
-	side  string
-	money int
-	spent int
+	key        uint64
+	name       string
+	side       string
+	money      int
+	spent      int
+	freePistol int
 }
 
 // roundInfo is one round's running state (models.Round at build time).
@@ -384,11 +389,14 @@ func (a *agg) roundEnd(tick int, winner, reason, message string, tickRate float6
 
 // freezeEnd records freeze-time-end ticks/equip values on the current round
 // and samples each playing participant's money, cumulative money-spent
-// counter and side per side (the extractor's sampling method, re-targeted
-// at per-round-per-side RoundEconomy rows + per-round-per-player
-// RoundPlayerSide rows). The per-side Spent on a RoundEconomy row is the
-// sum of the participants' cumulative-spent deltas since the previous
-// freeze end (see the loop below).
+// counter, free spawn-issued default-pistol value and side per side (the
+// extractor's sampling method, re-targeted at per-round-per-side
+// RoundEconomy rows + per-round-per-player RoundPlayerSide rows). The
+// per-side Spent on a RoundEconomy row is the sum of the participants'
+// cumulative-spent deltas since the previous freeze end (see the loop
+// below); the per-side FreePistolValue is the sum of their held free
+// default pistols (round_economy.free_pistol_value — net worth subtracts
+// it, see extract.freeSpawnPistolValue).
 //
 // It also resolves the pending halftime score. GameHalfEnded fires BEFORE
 // the final round of the half increments the team score (golden demo:
@@ -421,6 +429,7 @@ func (a *agg) freezeEnd(tick, equipCT, equipT, scoreCT, scoreT int, samples []mo
 	sum := map[string]int{}
 	cnt := map[string]int{}
 	spent := map[string]int{}
+	freeP := map[string]int{}
 	for _, s := range samples {
 		if s.key == 0 {
 			continue
@@ -450,6 +459,7 @@ func (a *agg) freezeEnd(tick, equipCT, equipT, scoreCT, scoreT int, samples []mo
 			sum[s.side] += s.money
 			cnt[s.side]++
 			spent[s.side] += delta
+			freeP[s.side] += s.freePistol
 		}
 		if counted {
 			rounds := a.participation[s.key]
@@ -461,8 +471,8 @@ func (a *agg) freezeEnd(tick, equipCT, equipT, scoreCT, scoreT int, samples []mo
 		}
 	}
 	a.economy = append(a.economy,
-		models.RoundEconomy{Round: r.number, Side: "ct", EquipValue: equipCT, MoneySampledSum: sum["ct"], MoneySamples: cnt["ct"], Spent: spent["ct"]},
-		models.RoundEconomy{Round: r.number, Side: "t", EquipValue: equipT, MoneySampledSum: sum["t"], MoneySamples: cnt["t"], Spent: spent["t"]},
+		models.RoundEconomy{Round: r.number, Side: "ct", EquipValue: equipCT, MoneySampledSum: sum["ct"], MoneySamples: cnt["ct"], Spent: spent["ct"], FreePistolValue: freeP["ct"]},
+		models.RoundEconomy{Round: r.number, Side: "t", EquipValue: equipT, MoneySampledSum: sum["t"], MoneySamples: cnt["t"], Spent: spent["t"], FreePistolValue: freeP["t"]},
 	)
 
 	if a.halfPending {

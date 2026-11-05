@@ -149,6 +149,43 @@ func TestParseGolden(t *testing.T) {
 			econ["ct"].EquipValue, econ["t"].EquipValue)
 	}
 
+	// Free spawn-issued default pistols held at freeze end (item-11 root
+	// cause): the game counts them at $200 each inside equipment value
+	// although nobody paid for them, and the two sides hold DIFFERENT
+	// numbers of them (round 1: CT dropped 2 USP-S for upgrades, T still
+	// holds all 5 Glocks; round 13: CT 5 USP-S, T 4 Glocks — Magnojezzz
+	// bought a P250). net worth = equip + money − free pistols is what
+	// makes both sides read exactly $4000 (5 × $800 starting money).
+	for _, want := range []struct {
+		round int
+		side  string
+		free  int
+	}{
+		{1, "ct", 600}, {1, "t", 1000},
+		{13, "ct", 1000}, {13, "t", 800},
+	} {
+		var got models.RoundEconomy
+		found := false
+		for _, e := range m.RoundEconomy {
+			if e.Round == want.round && e.Side == want.side {
+				got, found = e, true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("round %d %s economy row missing", want.round, want.side)
+		}
+		if got.FreePistolValue != want.free {
+			t.Errorf("round %d %s free_pistol_value = %d, want %d",
+				want.round, want.side, got.FreePistolValue, want.free)
+		}
+		net := got.EquipValue + got.MoneySampledSum - got.FreePistolValue
+		if net != 4000 {
+			t.Errorf("round %d %s net worth = %d, want 4000 (equip+money−free pistols)",
+				want.round, want.side, net)
+		}
+	}
+
 	// Equipment value is INVENTORY value at freeze time end — the gear a
 	// side actually holds — never this round's spend: round 3's CT side
 	// spent 4200 yet holds 8350 of gear (rifles carried over from earlier

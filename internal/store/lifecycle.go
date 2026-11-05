@@ -210,7 +210,7 @@ const (
 		warmup, pregame, mvp, mvp_reason, equip_ct, equip_t, bomb_site, freeze_end_tick,
 		first_kill_steam, first_death_steam`
 
-	roundEconomyCols = `round, side, equip_value, money_sampled_sum, money_samples, spent`
+	roundEconomyCols = `round, side, equip_value, money_sampled_sum, money_samples, spent, free_pistol_value`
 
 	eventCols = `seq, tick, round, kind, attacker, victim, assister, weapon,
 		headshot, wallbang, noscope, through_smoke, attacker_blind, assisted_flash, distance,
@@ -326,14 +326,14 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 
 	econStmt, err := tx.Prepare(
 		`INSERT INTO round_economy (match_id, ` + roundEconomyCols + `)
-		 VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
 		return fmt.Errorf("store: save extracted: %w", err)
 	}
 	defer econStmt.Close()
 	for _, e := range em.RoundEconomy {
-		if _, err := econStmt.Exec(matchID, e.Round, scrub(e.Side), e.EquipValue, e.MoneySampledSum, e.MoneySamples, e.Spent); err != nil {
+		if _, err := econStmt.Exec(matchID, e.Round, scrub(e.Side), e.EquipValue, e.MoneySampledSum, e.MoneySamples, e.Spent, e.FreePistolValue); err != nil {
 			return fmt.Errorf("store: save extracted: round_economy: %w", err)
 		}
 	}

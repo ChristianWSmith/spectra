@@ -44,7 +44,7 @@ export const GLOSSARY = [
   {
     term: 'Net worth',
     inferred: false,
-    text: 'Team equipment value plus that team’s unspent money at freeze time end: what the team already holds in gear plus the cash it can still spend. The economy chart’s Net worth metric plots this per team per round.',
+    text: 'Team equipment value plus that team’s unspent money at freeze time end, minus the free spawn-issued default pistols its players still hold (issued free at spawn, never paid for, yet counted in equipment value at $200 each): what the team holds in gear it actually bought plus the cash it can still spend. The economy chart’s Net worth metric plots this per team per round — on a pistol round both sides read exactly their starting money ($4000 = 5 × $800).',
   },
   {
     term: 'Trade opportunities missed (inferred)',
@@ -95,7 +95,10 @@ export const TRADE_OPP_MISSED_DEF = `Trade opportunities missed — ${lowerFirst
 // Team.FreezeTimeEndEquipmentValue, stored in rounds.equip_ct/equip_t and
 // round_economy.equip_value); net worth is computed frontend-side as that
 // equipment value plus the sampled freeze-end unspent money
-// (round_economy.money_sampled_sum → EconomyRow.Money*).
+// (round_economy.money_sampled_sum → EconomyRow.Money*) minus the side's
+// free spawn-issued default-pistol value
+// (round_economy.free_pistol_value → EconomyRow.FreePistol*) — granted,
+// not bought, see CS2.md "Free spawn-issued default pistol".
 export const EQUIP_DEF = `Equipment value — ${lowerFirst(glossaryText('Equipment value'))}`;
 
 export const NETWORTH_DEF = `Net worth — ${lowerFirst(glossaryText('Net worth'))}`;

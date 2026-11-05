@@ -284,7 +284,7 @@ Economy hover tooltip,Economy tab,"Floating tooltip over the hovered round showi
 Economy legend note,Economy tab,"Muted caption under the strip explaining the pistol swatch, ✓ favorite held, ✗ upset, and click-to-open behavior.",EconCurve.svelte:econ-strip-note
 Economy load error,Economy tab,Red alert at the top of the Economy tab when economy or round data fails to load.,Economy.svelte:error
 Economy loading state,Economy tab,"""Loading economy…"" placeholder shown on the Economy tab until data arrives.",Economy.svelte:loading
-Economy metric toggle,Economy tab,"""Equip value"" and ""Net worth"" buttons switching the economy chart between equipment value and net worth (equipment value + unspent money).",EconCurve.svelte:econ-toggle
+Economy metric toggle,Economy tab,"""Equip value"" and ""Net worth"" buttons switching the economy chart between equipment value and net worth (equipment value + unspent money − free spawn-issued default pistols).",EconCurve.svelte:econ-toggle
 Economy round column,Economy tab,"Invisible clickable, keyboard-focusable per-round column over the chart that opens that round's detail view.",EconCurve.svelte:econ-hit
 Economy round strip cell,Economy tab,One round cell in the winner strip that opens that round's detail page and shows a hover tooltip.,EconCurve.svelte:econ-strip-cell
 Economy summary cards,Economy tab,"Four stat cards (pistol hold, force-buy win rate per team, winner equipment value advantage, lost equipment per team) with computed/inferred badges and click-through to the timeline.",Economy.svelte:econ-summary
@@ -293,7 +293,7 @@ Equip value toggle button,Economy tab,Left segment of the economy metric toggle 
 Force-buy win rate card,Economy tab,"""Force-buy win rate"" card with a per-team breakdown of force buys and force-buy wins; click opens the timeline filtered to the first force buy.",Economy.svelte:forceTotal
 Loss inferred badge,Economy tab,"""inferred"" chip on reconstructed CT/T loss bonus values in the buy table.",Economy.svelte:econ-loss
 Lost equipment card,Economy tab,"""Lost equipment"" card totalling the losing team's freeze-end equipment value with a per-team breakdown and an inferred badge; click drills to the biggest loss round.",Economy.svelte:lostTotal
-Net worth toggle button,Economy tab,Right segment of the economy metric toggle that plots team net worth (equipment value + unspent money) per round.,EconCurve.svelte:metric='networth'
+Net worth toggle button,Economy tab,Right segment of the economy metric toggle that plots team net worth (equipment value + unspent money − free spawn-issued default pistols) per round.,EconCurve.svelte:metric='networth'
 Pistol hold stat card,Economy tab,"""Pistol → next round"" card showing pistol wins held; click opens the timeline filtered to the first pistol round.",Economy.svelte:firstPistol
 Pistol round band,Economy tab,Shaded vertical band marking pistol rounds behind the economy chart lines.,EconCurve.svelte:econ-pistol-band
 Pistol round pip,Economy tab,Small dot next to a round number in the buy table marking pistol rounds.,Economy.svelte:econ-pip

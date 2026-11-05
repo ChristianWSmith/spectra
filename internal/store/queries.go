@@ -417,7 +417,7 @@ func (s *Store) GetRoundDetail(id int64, round int) (*models.RoundDetail, error)
 	}
 
 	econRows, err := s.db.Query(
-		`SELECT side, equip_value, money_sampled_sum, money_samples, spent
+		`SELECT side, equip_value, money_sampled_sum, money_samples, spent, free_pistol_value
 		 FROM round_economy WHERE match_id = ? AND round = ? ORDER BY side`,
 		id, round,
 	)
@@ -428,7 +428,7 @@ func (s *Store) GetRoundDetail(id int64, round int) (*models.RoundDetail, error)
 	var economy []models.RoundEconomy
 	for econRows.Next() {
 		var e models.RoundEconomy
-		if err := econRows.Scan(&e.Side, &e.EquipValue, &e.MoneySampledSum, &e.MoneySamples, &e.Spent); err != nil {
+		if err := econRows.Scan(&e.Side, &e.EquipValue, &e.MoneySampledSum, &e.MoneySamples, &e.Spent, &e.FreePistolValue); err != nil {
 			return nil, fmt.Errorf("store: get round detail: %w", err)
 		}
 		e.MatchID, e.Round = id, round

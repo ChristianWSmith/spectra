@@ -384,12 +384,17 @@ func (s *Store) GetUtility(matchID int64) ([]models.UtilityEvent, error) {
 // cannot import analytics anyway — documented cycle deviation). SpentCT/
 // SpentT carry round_economy.spent — the side's real per-round buy spend
 // (sum of the players' cumulative money-spent deltas between freeze-time
-// ends, see extract.agg.freezeEnd).
+// ends, see extract.agg.freezeEnd). FreePistolCT/FreePistolT carry
+// round_economy.free_pistol_value — the side's held free spawn-issued
+// default-pistol value at the same freeze end (net worth subtracts it:
+// Equip* + Money* − FreePistol*; CS2.md "Free spawn-issued default
+// pistol").
 func (s *Store) GetEconomy(matchID int64) ([]models.EconomyRow, error) {
 	rows, err := s.db.Query(
 		`SELECT r.number, r.winner, r.warmup, r.equip_ct, r.equip_t,
 			COALESCE(ct.money_sampled_sum, 0), COALESCE(t.money_sampled_sum, 0),
 			COALESCE(ct.spent, 0), COALESCE(t.spent, 0),
+			COALESCE(ct.free_pistol_value, 0), COALESCE(t.free_pistol_value, 0),
 			COALESCE(rc.label, ''), COALESCE(rc.explanation, ''),
 			COALESCE(rc.rule_version, 0)
 		 FROM rounds r
@@ -407,7 +412,8 @@ func (s *Store) GetEconomy(matchID int64) ([]models.EconomyRow, error) {
 	for rows.Next() {
 		var r models.EconomyRow
 		if err := rows.Scan(&r.Round, &r.Winner, &r.Warmup, &r.EquipCT, &r.EquipT,
-			&r.MoneyCT, &r.MoneyT, &r.SpentCT, &r.SpentT, &r.Label, &r.Explanation, &r.RuleVersion); err != nil {
+			&r.MoneyCT, &r.MoneyT, &r.SpentCT, &r.SpentT, &r.FreePistolCT, &r.FreePistolT,
+			&r.Label, &r.Explanation, &r.RuleVersion); err != nil {
 			return nil, fmt.Errorf("store: get economy: %w", err)
 		}
 		out = append(out, r)
@@ -756,9 +762,9 @@ func (s *Store) GetPlayerRefs(matchID int64) ([]models.PlayerRef, error) {
 // GetRoundEconomyViews returns the raw per-side economy samples for one
 // match (round ASC, side). The SELECT is hand-listed rather than
 // roundEconomyCols on purpose: the analytics view stops at the v1 fields
-// (models.RoundEconomyView) while the table also carries `spent` (the
-// writer's list, round_economyCols) — widen the view type first if the
-// classification pass ever needs it.
+// (models.RoundEconomyView) while the table also carries `spent` and
+// `free_pistol_value` (the writer's list, roundEconomyCols) — widen the
+// view type first if the classification pass ever needs them.
 func (s *Store) GetRoundEconomyViews(matchID int64) ([]models.RoundEconomyView, error) {
 	rows, err := s.db.Query(
 		`SELECT round, side, equip_value, money_sampled_sum, money_samples

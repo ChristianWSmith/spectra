@@ -90,6 +90,10 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 				// diffs it against the previous freeze end for the
 				// per-round side spend (round_economy.spent).
 				spent: pl.MoneySpentTotal(),
+				// Free spawn-issued default pistols still held at this
+				// instant — never paid for, yet counted at $200 each in
+				// the game's equipment value (see freeSpawnPistolValue).
+				freePistol: freeSpawnPistolValue(pl.Weapons()),
 			})
 		}
 		a.freezeEnd(gs.IngameTick(), equipCT, equipT, scoreCT, scoreT, samples)

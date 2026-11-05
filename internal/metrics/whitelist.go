@@ -55,7 +55,7 @@ var sourceColumns = map[string]map[string]bool{
 	),
 	"round_economy": colSet(
 		"match_id", "round", "side", "equip_value", "money_sampled_sum",
-		"money_samples", "spent",
+		"money_samples", "spent", "free_pistol_value",
 	),
 	"clutches": colSet(
 		"match_id", "round", "size", "steam_id", "name", "start_tick",
