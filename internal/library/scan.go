@@ -3,6 +3,7 @@ package library
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -16,14 +17,15 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/store"
 )
 
-// Demo discovery for the Library's "demos in your folders" list: walk the
-// user's configured roots for .dem / .dem.zst files, say which ones are
-// already in the library, and keep the walk bounded (see the limits
-// below). The walk itself only stats; files are hashed to recognise
-// imports that arrived under a different path, behind a per-(path,size,
-// mtime) cache so a repeat scan is stat-only.
+// Demo discovery for the Library's "demos from your import dirs" list:
+// walk the user's configured roots for .dem / .dem.zst files, drop the
+// ones already in the library (the list only carries rows the user can
+// still act on), and keep the walk bounded (see the limits below). The
+// walk itself only stats; files are hashed to recognise imports that
+// arrived under a different path, behind a per-(path,size, mtime) cache
+// so a repeat scan is stat-only.
 
-// Scan limits — the "bounded and cheap" contract of the watched-folder
+// Scan limits — the "bounded and cheap" contract of the import-dirs
 // list. Everything below is per Scan call.
 const (
 	// scanMaxDepth is how deep below a root the walk descends (a file
@@ -31,7 +33,8 @@ const (
 	// and Downloads is flat in practice; four covers organized folders
 	// without ever walking a whole Steam library or home directory.
 	scanMaxDepth = 4
-	// scanMaxFiles caps how many demos one scan returns.
+	// scanMaxFiles caps how many demos one scan collects (already-imported
+	// files are skipped while walking, so the cap counts listable rows).
 	scanMaxFiles = 500
 	// scanMaxNewHashes / scanMaxNewHashBytes cap the bytes one scan may
 	// hash that its cache has not seen (demos are hundreds of MB). Files
@@ -44,18 +47,19 @@ const (
 	hashCacheMax = 4096
 )
 
-// DemoFile is one file found under a configured root. MatchID != 0 means
-// the demo is already in the library (linked match). Hashed reports
-// whether the file's sha256 was checked against the library this scan —
-// when false, MatchID == 0 means "not checked yet", not "definitely not
-// imported".
+// DemoFile is one file found under a configured root that is not (as far
+// as this scan could tell) already in the library — files recognised as
+// imported are omitted from Scan's result entirely, so the list only ever
+// carries rows the user can still act on. Hashed reports whether the
+// file's sha256 was checked against the library this scan; when false the
+// row is listed unverified (it may still turn out to be a duplicate,
+// which the import pipeline's sha256 dedupe catches on import).
 type DemoFile struct {
 	Path    string    `json:"path"`
 	Root    string    `json:"root"` // configured dir the file was found under
 	Size    int64     `json:"size"`
 	ModTime time.Time `json:"modTime"`
 	Hashed  bool      `json:"hashed"`
-	MatchID int64     `json:"matchId"`
 }
 
 // ScannerOptions configures a Scanner. Store is the match index (import
@@ -99,83 +103,103 @@ func NewScanner(o ScannerOptions) *Scanner {
 	}
 }
 
-// Scan returns the demo files under roots, unimported ones first, then
-// newest-first. Roots are normalized (NormalizeDirs); missing or
-// unreadable roots/dirs are skipped, not errors — a folder the user
-// removed or that is currently unmounted simply yields nothing.
+// importIndex is the library lookup the scan is built on: one pass over
+// the matches table yields the two sets that decide whether a file is
+// already imported — its stored path (absolute) and its content hash.
+type importIndex struct {
+	byPath map[string]bool // matches.path, absolute
+	bySHA  map[string]bool // matches.sha256
+}
+
+// importIndex reads the index from the store. A store error fails the
+// scan: a list that silently lost its own import recognition would show
+// already-imported demos as new.
+func (sc *Scanner) importIndex() (importIndex, error) {
+	summary, err := sc.st.ListMatches("", "extracted_at", false)
+	if err != nil {
+		return importIndex{}, err
+	}
+	idx := importIndex{
+		byPath: make(map[string]bool, len(summary)),
+		bySHA:  make(map[string]bool, len(summary)),
+	}
+	for _, m := range summary {
+		if p, err := filepath.Abs(m.Path); err == nil {
+			idx.byPath[p] = true
+		}
+		if m.SHA256 != "" {
+			idx.bySHA[m.SHA256] = true
+		}
+	}
+	return idx, nil
+}
+
+// Scan returns the demo files under roots that are not already in the
+// library, newest-first (path breaks ties). Roots are normalized
+// (NormalizeDirs); missing or unreadable roots/dirs are skipped, not
+// errors — a folder the user removed or that is currently unmounted
+// simply yields nothing.
 //
 // Skip rules: hidden directories (dot-prefixed), anything under the app's
-// own data root, symlinks (WalkDir never follows them), and non-regular
-// files. Only .dem / .dem.zst names qualify (the same rule the import
-// pipeline validates with).
+// own data root, symlinks (WalkDir never follows them), non-regular
+// files, and files already imported. Only .dem / .dem.zst names qualify
+// (the same rule the import pipeline validates with). Recognition runs
+// twice: by stored path during the walk — no hashing needed, and
+// skipping there keeps the file budget for rows that are listable — and
+// by content hash after it, which is what recognises an imported demo
+// sitting under a different path. Deleting the match therefore makes the
+// file reappear on the next scan.
 func (sc *Scanner) Scan(roots []string) ([]DemoFile, error) {
 	sc.mu.Lock()
 	defer sc.mu.Unlock()
 
-	// Import index: one pass over the library gives both lookup maps.
-	summary, err := sc.st.ListMatches("", "extracted_at", false)
+	idx, err := sc.importIndex()
 	if err != nil {
 		return nil, err
 	}
-	byPath := make(map[string]int64, len(summary))
-	bySHA := make(map[string]int64, len(summary))
-	for _, m := range summary {
-		if p, err := filepath.Abs(m.Path); err == nil {
-			byPath[p] = m.ID
-		}
-		if m.SHA256 != "" {
-			bySHA[m.SHA256] = m.ID
-		}
-	}
 
-	files, err := sc.collect(NormalizeDirs(roots))
+	files, err := sc.collect(NormalizeDirs(roots), idx.byPath)
 	if err != nil {
 		return nil, err
 	}
 
 	hashesLeft, bytesLeft := scanMaxNewHashes, scanMaxNewHashBytes
-	for i := range files {
-		f := &files[i]
-		if id, ok := byPath[f.Path]; ok {
-			// Imported from this very path — no hashing needed.
-			f.MatchID = id
-			f.Hashed = true
-			continue
-		}
-		sha, hashed := sc.cachedSHA(f)
+	listed := make([]DemoFile, 0, len(files))
+	for _, f := range files {
+		sha, hashed := sc.cachedSHA(&f)
 		if !hashed {
 			if hashesLeft <= 0 || f.Size > bytesLeft {
-				continue // budget spent: listed, but unverified
+				listed = append(listed, f) // budget spent: listed, unverified
+				continue
 			}
 			if sha, err = hashFile(f.Path); err != nil {
-				continue // vanished/unreadable between walk and hash
+				listed = append(listed, f) // vanished/unreadable: listed unverified
+				continue
 			}
 			hashesLeft--
 			bytesLeft -= f.Size
-			sc.rememberSHA(f, sha)
+			sc.rememberSHA(&f, sha)
+		}
+		if idx.bySHA[sha] {
+			continue // content-identical to a match imported elsewhere
 		}
 		f.Hashed = true
-		if id, ok := bySHA[sha]; ok {
-			f.MatchID = id
-		}
+		listed = append(listed, f)
 	}
 
-	sort.SliceStable(files, func(i, j int) bool {
-		bi, bj := files[i].MatchID == 0, files[j].MatchID == 0
-		if bi != bj {
-			return bi // not (verifiably) imported first
+	sort.SliceStable(listed, func(i, j int) bool {
+		if !listed[i].ModTime.Equal(listed[j].ModTime) {
+			return listed[i].ModTime.After(listed[j].ModTime)
 		}
-		if !files[i].ModTime.Equal(files[j].ModTime) {
-			return files[i].ModTime.After(files[j].ModTime)
-		}
-		return files[i].Path < files[j].Path
+		return listed[i].Path < listed[j].Path
 	})
-	return files, nil
+	return listed, nil
 }
 
-// collect walks the roots and returns the demo files found (path-deduped
-// across roots, capped at scanMaxFiles). See Scan for the skip rules.
-func (sc *Scanner) collect(roots []string) ([]DemoFile, error) {
+// collect walks the roots and returns the demo files found that are not
+// already in the library (path-deduped across roots, capped at
+// scanMaxFiles). See Scan for the skip rules.
+func (sc *Scanner) collect(roots []string, imported map[string]bool) ([]DemoFile, error) {
 	seen := make(map[string]bool)
 	var out []DemoFile
 	for _, root := range roots {
@@ -214,6 +238,12 @@ func (sc *Scanner) collect(roots []string) ([]DemoFile, error) {
 			if err != nil || seen[abs] {
 				return nil
 			}
+			if imported[abs] {
+				// Already in the library from this very path: not
+				// listable, and skipped before it can consume the
+				// scanMaxFiles budget.
+				return nil
+			}
 			seen[abs] = true
 			info, err := d.Info()
 			if err != nil {
@@ -237,6 +267,62 @@ func (sc *Scanner) collect(roots []string) ([]DemoFile, error) {
 	return out, nil
 }
 
+// RemoveDemoFile permanently deletes the demo file at path — the
+// "Delete from disk" action on a Library import-dir row. Nothing is
+// removed unless every invariant holds: a non-empty path that is a
+// regular .dem/.dem.zst file sitting under one of roots, outside the
+// app's own data dir, and not the stored path of a match already in the
+// library (that demo belongs to the match — for rows imported before
+// copy-on-import it is the only copy, so delete the match instead).
+// Every failed check returns an error naming the reason; the frontend's
+// confirmation dialog precedes this call, it never replaces these checks.
+func (sc *Scanner) RemoveDemoFile(roots []string, path string) error {
+	if strings.TrimSpace(path) == "" {
+		return fmt.Errorf("delete demo file: empty path")
+	}
+	abs, err := filepath.Abs(strings.TrimSpace(path))
+	if err != nil {
+		return fmt.Errorf("delete demo file: %w", err)
+	}
+	if !isDemoFilename(filepath.Base(abs)) {
+		return fmt.Errorf("delete demo file: %q is not a .dem/.dem.zst file", path)
+	}
+	underRoot := false
+	for _, root := range NormalizeDirs(roots) {
+		if isUnder(root, abs) {
+			underRoot = true
+			break
+		}
+	}
+	if !underRoot {
+		return fmt.Errorf("delete demo file: %q is not under a configured import dir", path)
+	}
+	if isUnder(sc.dataRoot, abs) {
+		return fmt.Errorf("delete demo file: %q is inside Spectra's data folder", path)
+	}
+	idx, err := sc.importIndex()
+	if err != nil {
+		return fmt.Errorf("delete demo file: %w", err)
+	}
+	if idx.byPath[abs] {
+		return fmt.Errorf("delete demo file: %q is already in the library — delete the match instead", path)
+	}
+	info, err := os.Lstat(abs)
+	if err != nil {
+		return fmt.Errorf("delete demo file: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("delete demo file: %q is not a regular file", path)
+	}
+	sc.mu.Lock()
+	defer sc.mu.Unlock()
+	if err := os.Remove(abs); err != nil {
+		return fmt.Errorf("delete demo file: %w", err)
+	}
+	sc.forgetSHA(abs)
+	return nil
+}
+
 // cachedSHA returns the cached hash for f when the path, size and mtime
 // still match what was hashed before — the whole point of the cache is
 // that a rescan of unchanged demos costs one stat each.
@@ -258,6 +344,23 @@ func (sc *Scanner) rememberSHA(f *DemoFile, sha string) {
 	for len(sc.order) > hashCacheMax {
 		delete(sc.hashes, sc.order[0])
 		sc.order = sc.order[1:]
+	}
+}
+
+// forgetSHA drops the cached hash of path together with its FIFO slot —
+// the file is gone, so a later file at the same path must not inherit
+// its hash, and leaving the slot behind would let eviction delete a live
+// entry twice. Callers hold sc.mu.
+func (sc *Scanner) forgetSHA(path string) {
+	if _, ok := sc.hashes[path]; !ok {
+		return
+	}
+	delete(sc.hashes, path)
+	for i, p := range sc.order {
+		if p == path {
+			sc.order = append(sc.order[:i], sc.order[i+1:]...)
+			return
+		}
 	}
 }
 

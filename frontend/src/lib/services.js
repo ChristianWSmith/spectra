@@ -152,9 +152,9 @@ export function listJobs() {
   return LibraryService.ListJobs();
 }
 
-// --- Watched demo folders (Settings → "where to look for demos") ----------
-// The Library lists .dem/.dem.zst files under these folders with a
-// one-click Import. Deliberately NOT read-cached: a folder list edit in
+// --- Import dirs (Settings → "Import dirs") --------------------------------
+// The Library lists .dem/.dem.zst files under these import dirs with a
+// one-click Import. Deliberately NOT read-cached: an import-dir edit in
 // Settings must show up on the next scan (the expensive part — hashing
 // demo files — is cached Go-side by path+size+mtime, so a repeat scan
 // costs a walk of stats).
@@ -176,10 +176,20 @@ export function chooseDemoDir() {
   return LibraryService.ChooseDemoDir();
 }
 
-// listDemoFiles scans the configured folders; rows carry matchId != 0
-// when the demo is already in the library (unimported rows sort first).
+// listDemoFiles scans the configured import dirs; rows are demos NOT
+// already in the library (recognised imports are omitted, newest first),
+// so deleting the match brings its file back on the next scan.
 export function listDemoFiles() {
   return LibraryService.ListDemoFiles();
+}
+
+// deleteDemoFile removes a demo file from disk — the import-dir row's
+// "Delete from disk" action, always behind a confirmation dialog. The
+// backend refuses anything that is not a .dem/.dem.zst file under a
+// configured import dir (never the app's data dir, never a match's stored
+// path), so this cannot delete an arbitrary path.
+export function deleteDemoFile(path) {
+  return LibraryService.DeleteDemoFile(path);
 }
 
 export function getGenericHistogram(id) {

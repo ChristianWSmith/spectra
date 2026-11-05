@@ -12,6 +12,7 @@
     onLibraryChanged,
     onFilesDropped,
     listDemoFiles,
+    deleteDemoFile,
     invalidate,
     errText,
   } from '../services.js';
@@ -19,6 +20,7 @@
   import { teamNames } from '../teams.js';
   import StatusChip from '../components/StatusChip.svelte';
   import SortTh from '../components/SortTh.svelte';
+  import ConfirmDialog from '../components/ConfirmDialog.svelte';
 
   let { nav = () => {} } = $props();
 
@@ -51,9 +53,10 @@
   let error = $state('');
   let importError = $state('');
 
-  // Demos sitting in the configured folders (Settings → "where to look
-  // for demos"), not yet in the library first — each with a one-click
-  // Import that runs through the same pipeline as drag-and-drop.
+  // Demos sitting in the configured import dirs (Settings → "Import
+  // dirs") that are not in the library yet — each with a one-click
+  // Import that runs through the same pipeline as drag-and-drop, plus a
+  // confirmed delete-from-disk for the file itself.
   let demoFiles = $state([]);
   let demoScanning = $state(false); // UI: refresh button + "Scanning…"
   // Non-reactive in-flight guard: refreshDemoFiles runs inside the mount
@@ -64,6 +67,9 @@
   let demoScanAgain = false;
   let demoError = $state('');
   let notice = $state('');
+  // The one confirmation modal (ConfirmDialog.svelte) — see onDelete /
+  // onDeleteFile for the two prompts this view opens.
+  let confirmDlg = $state(null);
 
   // Debounced list fetch: re-arms on every query/sort change and fires
   // 250 ms later, so typing doesn't hammer the store. First run is
@@ -107,7 +113,7 @@
     }
   }
 
-  // Mount: jobs + watched-folder scan + event subscriptions. The initial
+  // Mount: jobs + import-dir scan + event subscriptions. The initial
   // list load comes from the debounced effect above (fires once on mount).
   $effect(() => {
     refreshJobs();
@@ -186,12 +192,12 @@
     }
   }
 
-  // Rescan the configured folders (Settings → "where to look for
-  // demos"). The backend hashes only files it has never seen (bounded
-  // per scan) and caches every hash by path+size+mtime, so repeat scans
-  // are stat-only; force drops the frontend read cache first (the
-  // Refresh button — a demo downloaded while the app was open is not
-  // announced by any event).
+  // Rescan the configured import dirs (Settings → "Import dirs"). The
+  // backend hashes only files it has never seen (bounded per scan) and
+  // caches every hash by path+size+mtime, so repeat scans are stat-only;
+  // force drops the frontend read cache first (the Refresh button — a
+  // demo downloaded while the app was open is not announced by any
+  // event).
   async function refreshDemoFiles(force = false) {
     if (force) invalidate();
     if (demoScanInFlight) {
@@ -219,12 +225,34 @@
     }
   }
 
-  // Import one demo straight from the watched-folder list: the same
+  // Import one demo straight from the import-dir list: the same
   // pipeline as the Import… dialog and drag-and-drop (hash dedupe decides
   // duplicates, the row indicator shows progress).
   async function doImportFile(f, ev) {
     ev.stopPropagation();
     await doImportPaths([f.path]);
+  }
+
+  // Delete an import-dir demo from disk — always behind a confirmation,
+  // and the backend re-checks the path (a demo file under a configured
+  // import dir, never the data dir, never a library match's stored path)
+  // before removing anything.
+  async function onDeleteFile(f, ev) {
+    ev.stopPropagation();
+    notice = '';
+    const ok = await confirmDlg?.ask({
+      title: 'Delete from disk?',
+      message: `Permanently deletes ${basename(f.path)} from ${f.root}. This cannot be undone.`,
+      confirmLabel: 'Delete from disk',
+    });
+    if (!ok) return;
+    try {
+      await deleteDemoFile(f.path);
+      await refreshDemoFiles();
+      notice = `Deleted ${basename(f.path)} from disk.`;
+    } catch (e) {
+      demoError = errText(e);
+    }
   }
 
   async function onReprocess(id, ev) {
@@ -241,12 +269,28 @@
   async function onDelete(id, ev) {
     ev.stopPropagation();
     notice = '';
-    if (!confirm('Delete extracted data?')) return;
+    if (
+      !(await confirmDlg?.ask({
+        title: 'Delete extracted data?',
+        message:
+          'Removes this match’s extracted data (rounds, events, sidecars) from Spectra. ' +
+          'The demo file itself is not touched.',
+        confirmLabel: 'Delete',
+      }))
+    ) {
+      return;
+    }
     // Only Spectra's OWN copy of the demo file is ever removed — the
     // backend reports removedDemo=false when there is no managed copy
     // (a row imported before copy-on-import points at the user's
     // original file, which stays untouched).
-    const alsoFile = confirm('Also delete the imported copy of the demo file from disk?');
+    const alsoFile = !!(await confirmDlg?.ask({
+      title: 'Also delete the demo file?',
+      message:
+        'Deletes Spectra’s own imported copy of the demo from disk. ' +
+        'Your original file is never touched.',
+      confirmLabel: 'Delete demo file',
+    }));
     try {
       const removedDemo = await deleteMatch(id, alsoFile);
       if (alsoFile && !removedDemo) {
@@ -440,23 +484,24 @@
     {/if}
   </div>
 
-  <!-- Watched folders: .dem / .dem.zst files under the dirs configured in
-       Settings → "where to look for demos", not-yet-imported rows first.
-       One Import button per row runs the ordinary pipeline (hash dedupe,
-       row status chip); already-imported files link to their match
-       instead of being re-importable. -->
-  <section class="panel" aria-label="Demos in your folders">
+  <!-- Import dirs: .dem / .dem.zst files under the dirs configured in
+       Settings → "Import dirs" that are not in the library yet — the
+       backend omits recognised imports, so deleting a match brings its
+       demo back here. One Import button per row runs the ordinary
+       pipeline (hash dedupe, row status chip); Delete from disk removes
+       the file itself, behind a confirmation. -->
+  <section class="panel" aria-label="Demos from your import dirs">
     <div class="row-between">
-      <h2>Demos in your folders</h2>
+      <h2>Demos from your import dirs</h2>
       <button
         class="btn small"
         disabled={demoScanning}
-        title="Rescan the configured folders"
+        title="Rescan the configured import dirs"
         onclick={() => refreshDemoFiles(true)}>Refresh</button
       >
     </div>
     <p class="muted">
-      Found under the folders in Settings → Where to look for demos — subfolders up to
+      Found under your import dirs (Settings → Import dirs) — subfolders up to
       four levels deep, hidden folders skipped. Importing copies the demo into
       Spectra’s data folder; your original file is never touched.
     </p>
@@ -467,7 +512,7 @@
       <p class="muted" role="status">Scanning folders…</p>
     {:else if demoFiles.length === 0}
       <p class="muted" role="status">
-        No demos found — add folders in Settings, or use Import… / drop files on this
+        No demos found — add import dirs in Settings, or use Import… / drop files on this
         panel.
       </p>
     {:else}
@@ -496,28 +541,23 @@
               <td class="num">{fmtBytes(f.size)}</td>
               <td>{fmtDate(f.modTime)}</td>
               <td>
-                {#if f.matchId}
-                  <span class="chip ok" title="Already in the library">imported</span>
-                {:else}
-                  <span
-                    class="chip idle"
-                    title={f.hashed
-                      ? 'Not in the library yet'
-                      : 'Not content-checked yet — importing is safe, duplicates are detected by hash'}
-                    >not imported</span
-                  >
-                {/if}
+                <span
+                  class="chip idle"
+                  title={f.hashed
+                    ? 'Not in the library yet'
+                    : 'Not content-checked yet — importing is safe, duplicates are detected by hash'}
+                  >not imported</span
+                >
               </td>
               <td class="row-actions" onclick={(e) => e.stopPropagation()}>
-                {#if f.matchId}
-                  <button class="btn small" onclick={() => nav(`/match/${f.matchId}`)}
-                    >Open</button
-                  >
-                {:else}
-                  <button class="btn small primary" onclick={(e) => doImportFile(f, e)}
-                    >Import</button
-                  >
-                {/if}
+                <button class="btn small primary" onclick={(e) => doImportFile(f, e)}
+                  >Import</button
+                >
+                <button
+                  class="btn small danger"
+                  title="Delete this demo file from disk"
+                  onclick={(e) => onDeleteFile(f, e)}>Delete from disk</button
+                >
               </td>
             </tr>
           {/each}
@@ -525,4 +565,6 @@
       </table>
     {/if}
   </section>
+
+  <ConfirmDialog bind:this={confirmDlg} />
 </div>

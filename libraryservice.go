@@ -16,7 +16,7 @@ import (
 )
 
 // LibraryService is the frontend-facing library surface: import (dialog +
-// paths), the watched-folder demo list, the match list, delete/reprocess,
+// paths), the import-dir demo list, the match list, delete/reprocess,
 // job control, and the raw-data inspectors. Thin delegate over
 // internal/store and the import pipeline.
 type LibraryService struct {
@@ -46,17 +46,17 @@ func (s *LibraryService) ImportPaths(paths []string) []int64 {
 	return s.imp.Enqueue(paths)
 }
 
-// --- Watched demo folders (Settings → "where to look for demos") ----------
+// --- Import dirs (Settings → "Import dirs") ----------------------------------
 
-// DemoDirsResult is Settings' folder list: Dirs is the effective list —
-// the stored pref, or the defaults when Custom is false.
+// DemoDirsResult is Settings' import-dirs list: Dirs is the effective
+// list — the stored pref, or the defaults when Custom is false.
 type DemoDirsResult struct {
 	Dirs   []string `json:"dirs"`
 	Custom bool     `json:"custom"` // false = defaults, nothing persisted
 }
 
-// GetDemoDirs returns the folders the Library scans for demos. An unset
-// (or corrupt) pref means "defaults in effect": the user's Downloads
+// GetDemoDirs returns the import dirs the Library scans for demos. An
+// unset (or corrupt) pref means "defaults in effect": the user's Downloads
 // folder plus CS2's replay folder, recomputed on every read.
 func (s *LibraryService) GetDemoDirs() DemoDirsResult {
 	dirs, ok := prefStrings(s.kvs.Get(prefsDemoDirsKey))
@@ -66,10 +66,10 @@ func (s *LibraryService) GetDemoDirs() DemoDirsResult {
 	return DemoDirsResult{Dirs: dirs, Custom: true}
 }
 
-// SetDemoDirs replaces the folder list — normalized (absolute, cleaned,
-// deduped, empties dropped) — and persists it. From then on the stored
-// list, not the defaults, is what the scanner uses; an empty list means
-// "watch nothing" (ResetDemoDirs restores the defaults).
+// SetDemoDirs replaces the import-dir list — normalized (absolute,
+// cleaned, deduped, empties dropped) — and persists it. From then on the
+// stored list, not the defaults, is what the scanner uses; an empty list
+// means "scan nothing" (ResetDemoDirs restores the defaults).
 func (s *LibraryService) SetDemoDirs(dirs []string) error {
 	return s.kvs.Set(prefsDemoDirsKey, library.NormalizeDirs(dirs))
 }
@@ -80,23 +80,37 @@ func (s *LibraryService) ResetDemoDirs() error {
 	return s.kvs.Delete(prefsDemoDirsKey)
 }
 
-// ChooseDemoDir opens the native folder picker for the watched list; an
-// empty string means cancel. The caller persists the choice (the picker
-// itself is dialogs.go's chooseDirectory, shared with MapPackService).
+// ChooseDemoDir opens the native folder picker for the import-dir list;
+// an empty string means cancel. The caller persists the choice (the
+// picker itself is dialogs.go's chooseDirectory, shared with
+// MapPackService).
 func (s *LibraryService) ChooseDemoDir() string {
-	dir, err := chooseDirectory(s.app, "Choose a folder to look for demos in")
+	dir, err := chooseDirectory(s.app, "Choose an import directory")
 	if err != nil || dir == "" {
 		return ""
 	}
 	return dir
 }
 
-// ListDemoFiles scans the configured folders for .dem / .dem.zst files
-// and reports which are already in the library (unimported first). The
-// walk is bounded — see internal/library Scan for depth/skip/hash rules.
-// Missing or unmounted folders simply yield no rows.
+// ListDemoFiles scans the configured import dirs for .dem / .dem.zst
+// files that are NOT already in the library — recognised imports (by
+// path, or by content hash when the demo was imported from elsewhere)
+// are omitted, and deleting the match brings the file back on the next
+// scan. The walk is bounded — see internal/library Scan for depth/skip/
+// hash rules. Missing or unmounted folders simply yield no rows.
 func (s *LibraryService) ListDemoFiles() ([]library.DemoFile, error) {
 	return s.sc.Scan(s.GetDemoDirs().Dirs)
+}
+
+// DeleteDemoFile removes the demo file at path from disk — the "Delete
+// from disk" action on an import-dir row in the Library. The scanner
+// validates the path before anything is removed (a .dem/.dem.zst file
+// under a configured import dir, outside the app's data dir, not a
+// match's stored path), so an arbitrary path can never be deleted here;
+// every refusal surfaces as an error. The frontend asks for confirmation
+// first — this method never deletes silently.
+func (s *LibraryService) DeleteDemoFile(path string) error {
+	return s.sc.RemoveDemoFile(s.GetDemoDirs().Dirs, path)
 }
 
 // ListMatches returns the searchable, sortable library list.

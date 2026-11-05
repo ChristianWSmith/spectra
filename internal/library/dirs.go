@@ -9,14 +9,14 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/mappack"
 )
 
-// Watched-folder defaults and normalization for the "where to look for
-// demos" list — edited in Settings, consumed by the Library's scan. The
+// Import-dir defaults and normalization for the "import dirs" list —
+// edited in Settings, consumed by the Library's scan. The
 // list itself is a kvstore pref (prefsDemoDirsKey in prefs.go); an unset
 // pref means "use the defaults below", which are recomputed on every read
 // so a newly installed CS2 or a relocated Downloads folder shows up
 // without a settings edit.
 
-// DefaultDemoDirs returns the folders to watch when the user has never
+// DefaultDemoDirs returns the import dirs to use when the user has never
 // configured any: the user's Downloads folder plus the CS2 client's
 // replay folder — the directory in-game match downloads (Premier etc.)
 // land in, `<CS2 install>/game/csgo/replays`, which varies per OS only
