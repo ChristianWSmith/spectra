@@ -9,7 +9,7 @@
     errText,
   } from '../services.js';
   import { fmtDuration, fmtTickSeconds, fmtInt, fmtClock, tickSeconds, chatClock } from '../fmt.js';
-  import { isCounted } from '../rounds.js';
+  import { isCounted, roundIndexLabel } from '../rounds.js';
   import { playerSideClassAt } from '../teams.js';
   import { replayHash } from '../nav.js';
   import { buildHash } from '../router.js';
@@ -163,6 +163,15 @@
     roundIdx >= 0 && roundIdx < rounds.length - 1 ? rounds[roundIdx + 1] : null,
   );
 
+  // Non-counted rounds display their KIND word ("Warmup"/"Knife") — the
+  // ribbon's W/K letters spelled out (lib/rounds.js roundIndexLabel) —
+  // so no surface shows a raw negative index; counted rounds keep the
+  // plain "Round N" phrasing.
+  const roundKind = (r) => {
+    const l = roundIndexLabel(r);
+    return l === 'K' ? 'Knife' : l === 'W' ? 'Warmup' : null;
+  };
+
   // Round nav preserves the origin (the return trip from RoundDetail
   // goes back to where the user came from, not always Overview).
   function roundNav(n) {
@@ -200,14 +209,19 @@
         Events in Replay <span class="codicon codicon-chevron-right"></span>
       </button>
       <h1>
-        Round {detail.round.number}
+        {#if roundKind(detail.round)}
+          <span
+            title={detail.round.pregame
+              ? 'pre-match knife round — not counted play'
+              : 'warmup round — not counted play'}
+            >{roundKind(detail.round)} round</span
+          >
+        {:else}
+          Round {detail.round.number}
+        {/if}
         <span class="chip side {detail.round.winner || 'none'}">
           {detail.round.winner ? detail.round.winner.toUpperCase() : '—'}
         </span>
-        {#if detail.round.warmup}<span class="chip">warmup</span>{/if}
-        {#if detail.round.pregame}
-          <span class="chip" title="pre-match knife round — not counted play">knife</span>
-        {/if}
         {#if cls}
           <span
             class="chip cmp-class"
@@ -483,7 +497,8 @@
     <div class="round-nav">
       {#if prevRound}
         <button class="btn" onclick={() => nav(roundNav(prevRound.number))}>
-          <span class="codicon codicon-arrow-left"></span> Round {prevRound.number}
+          <span class="codicon codicon-arrow-left"></span>
+          {roundKind(prevRound) ?? `Round ${prevRound.number}`}
         </button>
       {/if}
       <RoundStrip
@@ -498,7 +513,8 @@
       />
       {#if nextRound}
         <button class="btn" onclick={() => nav(roundNav(nextRound.number))}>
-          Round {nextRound.number} <span class="codicon codicon-arrow-right"></span>
+          {roundKind(nextRound) ?? `Round ${nextRound.number}`}
+          <span class="codicon codicon-arrow-right"></span>
         </button>
       {/if}
     </div>

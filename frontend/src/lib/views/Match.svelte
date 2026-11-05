@@ -29,7 +29,7 @@
     fmtMetric,
   } from '../fmt.js';
   import { teamNames, teamStartClass, playerSideClassAt, displayHalfScore } from '../teams.js';
-  import { isCounted } from '../rounds.js';
+  import { isCounted, roundIndexLabel } from '../rounds.js';
   import { MATCH_TABS, matchTabSlug, buildHash } from '../router.js';
   import RoundStrip from '../components/RoundStrip.svelte';
   import Economy from './Economy.svelte';
@@ -1045,13 +1045,13 @@
                       class="cmp-cb"
                       checked={compareSel.includes(r.number)}
                       disabled={compareSel.length >= 4 && !compareSel.includes(r.number)}
-                      aria-label="Compare round {r.number}"
+                      aria-label="Compare round {roundIndexLabel(r)}"
                       onchange={() => toggleCompare(r.number)}
                     />
                   {/if}
                 </td>
                 <td class="num"
-                  >{r.number}{#if r.warmup}<span class="chip">wu</span>{:else if r.pregame}<span
+                  >{roundIndexLabel(r)}{#if r.warmup}<span class="chip">wu</span>{:else if r.pregame}<span
                       class="chip"
                       title="pre-match knife round — not counted play"
                       >knife</span

@@ -15,6 +15,7 @@
   //   showReset — false hides the local Reset (the parent owns a full
   //              reset that also clears the category selection).
   import { getRounds, getScoreboard } from '../services.js';
+  import { roundIndexLabel } from '../rounds.js';
 
   let { filter = {}, onchange = () => {}, id = 0, showReset = true } = $props();
 
@@ -194,10 +195,11 @@
       <option value={-1}>All</option>
       <!-- Every round, including knife/warmup (negative numbers — the
            feed's round filter matches exactly, so they are selectable;
-           labels mark the non-counted ones). -->
+           labels show counted rounds as R<n> and non-counted ones as the
+           canonical W/K letters — lib/rounds.js roundIndexLabel). -->
       {#each rounds as r (r.number)}
         <option value={r.number}>
-          R{r.number}{r.warmup ? ' (wu)' : r.pregame ? ' (knife)' : ''}
+          {r.number >= 1 ? `R${r.number}` : roundIndexLabel(r)}
         </option>
       {/each}
     </select>

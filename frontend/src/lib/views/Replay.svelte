@@ -59,7 +59,7 @@
   import { downloadBlob, downloadText } from '../download.js';
   import { toCSV } from '../csv.js';
   import { chatClock, prettyJson } from '../fmt.js';
-  import { isCounted, roundStartTick } from '../rounds.js';
+  import { isCounted, roundStartTick, roundIndexLabel } from '../rounds.js';
   import { isSteam, entrySeekTick } from '../nav.js';
   import { buildHash } from '../router.js';
   import FilterBar from '../components/FilterBar.svelte';
@@ -1662,7 +1662,7 @@
         <option value="">Jump to round…</option>
         {#each rounds as r (r.number)}
           <option value={r.number}>
-            R{r.number}{r.warmup ? ' (wu)' : ''}{r.pregame ? ' (knife)' : ''}{r.bombSite ? ` · ${r.bombSite}` : ''}
+            {r.number >= 1 ? `R${r.number}` : roundIndexLabel(r)}{r.bombSite ? ` · ${r.bombSite}` : ''}
           </option>
         {/each}
       </select>
