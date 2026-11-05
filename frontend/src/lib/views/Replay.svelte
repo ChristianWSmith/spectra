@@ -82,10 +82,10 @@
   let loadError = $state('');
   let noSidecar = $state(false);
 
-  // The landmark rail spans the view beside the main column whenever
-  // a replay is on screen — the SAME visibility chain as the stage
-  // ({#if loadError} → loading → noSidecar → data), so it appears
-  // exactly when the canvas does.
+  // The landmark rail's visibility chain is the SAME as the stage's
+  // ({#if loadError} → loading → noSidecar → data), so the collapsed
+  // floating handle appears exactly when the canvas does; the EXPANDED
+  // panel stands beside the main column, full height.
   const railVisible = $derived(!loadError && !loading && !noSidecar && !!data);
 
   // M4 voice: presence gates the whole controls block; players feed mute/
@@ -109,7 +109,7 @@
   let uiLoopFrom = $state(-1);
   let uiLoopTo = $state(-1);
   let uiLoopOn = $state(false);
-  let eventsOpen = $state(true); // the canonical feed is visible by default
+  let eventsOpen = $state(false); // a fresh replay opens with the feed collapsed
   // ONE toggle governs every filter surface in the panel (the Filters
   // button): the category chips, the game-events name picker, the
   // FilterBar scope, the saved-preset controls and Reset all show/hide
@@ -323,7 +323,7 @@
 
   // The feed count as the rail toggle prints it ("185", "185+" while a
   // page is still loading) — the ONE spelling: the expanded header's
-  // number and the collapsed notch's title/aria-label both use it.
+  // number and the collapsed handle's title/aria-label both use it.
   const feedCountLabel = $derived(String(feedRows.length) + (hasMore ? '+' : ''));
 
   // Draw feed: the drawable-kind anchors, fetched ONCE per match in
@@ -564,10 +564,13 @@
   // Open the filter panel on ENTRY when the deep link already carries a
   // scope filter (round/player/weapon/bbox/tick window) — a scoped link
   // should show the scope it arrived with. In-session changes never
-  // force it open (the Filters button owns that).
+  // force it open (the Filters button owns that). The feed opens WITH it:
+  // the panel lives inside the expanded rail, so a collapsed feed would
+  // hide the very scope the link promises to show.
   function syncFiltersOpen(f) {
     if (f.round !== -1 || f.steamId || f.weapon || f.bbox || f.tickFrom || f.tickTo) {
       filtersOpen = true;
+      eventsOpen = true;
     }
   }
 
@@ -780,6 +783,9 @@
     loadError = '';
     entrySel = query.sel || '';
     entrySelTick = 0;
+    // A linked landmark must be visible on entry — the selection lives in
+    // the feed/detail pane, which the collapsed default would hide.
+    if (entrySel) eventsOpen = true;
     syncFiltersOpen(filter); // a scoped deep link opens the filter panel
     try {
       const m = await getReplayMeta(id);
@@ -1273,107 +1279,114 @@
         </div>
       {/if}
 
-      <div class="toolbar replay-transport" role="group" aria-label="Replay transport">
-        <button
-          class="btn primary"
-          aria-label={uiPlaying ? 'Pause' : 'Play'}
-          title={uiPlaying ? 'Pause (Space)' : 'Play (Space)'}
-          onclick={togglePlay}><span class="codicon {uiPlaying ? 'codicon-debug-pause' : 'codicon-play'}"></span></button
-        >
-        <label class="sr-only" for="rp-speed">Speed</label>
-        <select class="input" id="rp-speed" value={uiSpeed} onchange={onSpeed}>
-          {#each SPEEDS as s (s)}
-            <option value={s}>{s}×</option>
-          {/each}
-        </select>
-
-        <div class="scrubber-wrap">
-          <input
-            class="scrubber"
-            type="range"
-            min="0"
-            max={Math.max(0, frames - 1)}
-            value={uiFrame}
-            oninput={onScrub}
-            aria-label="Frame"
-          />
-          {#each markers as m, i (i)}
-            <span class="scrub-marker {m.cls}" style="left:{m.pct}%"></span>
-          {/each}
-        </div>
-        <span class="mono replay-readout"
-          >f{uiFrame + 1}/{frames} · {uiTick}</span
-        >
-
-        <span class="loop-group">
-          <label class="sr-only" for="rp-loop-from">Loop from frame</label>
-          <input
-            class="input mono loop-input"
-            id="rp-loop-from"
-            type="number"
-            min="0"
-            max={Math.max(0, frames - 1)}
-            placeholder="from"
-            value={uiLoopFrom >= 0 ? uiLoopFrom : ''}
-            onchange={(e) => {
-              uiLoopFrom = e.currentTarget.value === '' ? -1 : Number(e.currentTarget.value);
-              onLoopInput();
-            }}
-          />
-          <span class="muted">–</span>
-          <label class="sr-only" for="rp-loop-to">Loop to frame</label>
-          <input
-            class="input mono loop-input"
-            id="rp-loop-to"
-            type="number"
-            min="0"
-            max={Math.max(0, frames - 1)}
-            placeholder="to"
-            value={uiLoopTo >= 0 ? uiLoopTo : ''}
-            onchange={(e) => {
-              uiLoopTo = e.currentTarget.value === '' ? -1 : Number(e.currentTarget.value);
-              onLoopInput();
-            }}
-          />
-          <button
-            class="btn small"
-            class:warn={uiLoopOn}
-            title="Toggle loop (L)"
-            onclick={toggleLoop}>Loop</button
+      <!-- Two lines: the scrubber owns the FULL-WIDTH line (round
+           markers + the frame/tick readout ride with it), the button/
+           control cluster keeps the ONE .toolbar row below it. -->
+      <div class="replay-transport" role="group" aria-label="Replay transport">
+        <div class="replay-scrub">
+          <div class="scrubber-wrap">
+            <input
+              class="scrubber"
+              type="range"
+              min="0"
+              max={Math.max(0, frames - 1)}
+              value={uiFrame}
+              oninput={onScrub}
+              aria-label="Frame"
+            />
+            {#each markers as m, i (i)}
+              <span class="scrub-marker {m.cls}" style="left:{m.pct}%"></span>
+            {/each}
+          </div>
+          <span class="mono replay-readout"
+            >f{uiFrame + 1}/{frames} · {uiTick}</span
           >
-        </span>
+        </div>
 
-        <label class="sr-only" for="rp-round">Jump to round</label>
-        <select class="input" id="rp-round" value={jumpRound} onchange={onJumpRound}>
-          <option value="">Jump to round…</option>
-          {#each rounds as r (r.number)}
-            <option value={r.number}>
-              {r.number >= 1 ? `R${r.number}` : roundIndexLabel(r)}{r.bombSite ? ` · ${r.bombSite}` : ''}
-            </option>
-          {/each}
-        </select>
+        <div class="toolbar">
+          <button
+            class="btn primary"
+            aria-label={uiPlaying ? 'Pause' : 'Play'}
+            title={uiPlaying ? 'Pause (Space)' : 'Play (Space)'}
+            onclick={togglePlay}><span class="codicon {uiPlaying ? 'codicon-debug-pause' : 'codicon-play'}"></span></button
+          >
+          <label class="sr-only" for="rp-speed">Speed</label>
+          <select class="input" id="rp-speed" value={uiSpeed} onchange={onSpeed}>
+            {#each SPEEDS as s (s)}
+              <option value={s}>{s}×</option>
+            {/each}
+          </select>
 
-        <label class="sr-only" for="rp-cam">Camera mode</label>
-        <select
-          class="input"
-          id="rp-cam"
-          value={camMode}
-          onchange={onCamMode}
-          title="Smart keeps every player and the bomb on screen with smooth pan/zoom (drag or wheel takes over → Free); Free is manual"
-        >
-          <option value="smart">Smart</option>
-          <option value="free">Free</option>
-        </select>
+          <span class="loop-group">
+            <label class="sr-only" for="rp-loop-from">Loop from frame</label>
+            <input
+              class="input mono loop-input"
+              id="rp-loop-from"
+              type="number"
+              min="0"
+              max={Math.max(0, frames - 1)}
+              placeholder="from"
+              value={uiLoopFrom >= 0 ? uiLoopFrom : ''}
+              onchange={(e) => {
+                uiLoopFrom = e.currentTarget.value === '' ? -1 : Number(e.currentTarget.value);
+                onLoopInput();
+              }}
+            />
+            <span class="muted">–</span>
+            <label class="sr-only" for="rp-loop-to">Loop to frame</label>
+            <input
+              class="input mono loop-input"
+              id="rp-loop-to"
+              type="number"
+              min="0"
+              max={Math.max(0, frames - 1)}
+              placeholder="to"
+              value={uiLoopTo >= 0 ? uiLoopTo : ''}
+              onchange={(e) => {
+                uiLoopTo = e.currentTarget.value === '' ? -1 : Number(e.currentTarget.value);
+                onLoopInput();
+              }}
+            />
+            <button
+              class="btn small"
+              class:warn={uiLoopOn}
+              title="Toggle loop (L)"
+              onclick={toggleLoop}>Loop</button
+            >
+          </span>
 
-        <label class="sr-only" for="rp-follow">Follow player</label>
-        <select class="input" id="rp-follow" value={uiFollow ?? ''} onchange={onFollow}>
-          <option value="">Free camera</option>
-          {#each players as p, i (i)}
-            <option value={i}>{i + 1}. {p.name || `slot ${i}`}</option>
-          {/each}
-        </select>
+          <label class="sr-only" for="rp-round">Jump to round</label>
+          <select class="input" id="rp-round" value={jumpRound} onchange={onJumpRound}>
+            <option value="">Jump to round…</option>
+            {#each rounds as r (r.number)}
+              <option value={r.number}>
+                {r.number >= 1 ? `R${r.number}` : roundIndexLabel(r)}{r.bombSite ? ` · ${r.bombSite}` : ''}
+              </option>
+            {/each}
+          </select>
 
-        <span class="muted" title="Space play/pause · , . speed · ←/→ step · Shift ±64 · L loop · F follow · 1-9 select · S snapshot"><span class="codicon codicon-keyboard"></span> hints</span>
+          <label class="sr-only" for="rp-cam">Camera mode</label>
+          <select
+            class="input"
+            id="rp-cam"
+            value={camMode}
+            onchange={onCamMode}
+            title="Smart keeps every player and the bomb on screen with smooth pan/zoom (drag or wheel takes over → Free); Free is manual"
+          >
+            <option value="smart">Smart</option>
+            <option value="free">Free</option>
+          </select>
+
+          <label class="sr-only" for="rp-follow">Follow player</label>
+          <select class="input" id="rp-follow" value={uiFollow ?? ''} onchange={onFollow}>
+            <option value="">Free camera</option>
+            {#each players as p, i (i)}
+              <option value={i}>{i + 1}. {p.name || `slot ${i}`}</option>
+            {/each}
+          </select>
+
+          <span class="muted" title="Space play/pause · , . speed · ←/→ step · Shift ±64 · L loop · F follow · 1-9 select · S snapshot"><span class="codicon codicon-keyboard"></span> hints</span>
+        </div>
       </div>
 
       {#if voicePresence && voicePresence.hasVoice}
@@ -1462,12 +1475,14 @@
         <span class="spacer"></span>
         <span class="muted num">{feedCountLabel}</span>
         <!-- Hiding the panel points right — matching the collapsed
-             notch's left-pointing chevron (click to expand). -->
+             handle's left-pointing chevron (click to expand). -->
         <span class="muted"><span class="codicon codicon-chevron-right"></span></span>
       {:else}
-        <!-- Collapsed notch: the strip's ONLY visual is the left-pointing
-             chevron ("click to expand"); no word, no badge — the count
-             lives in the button's title/aria-label above. -->
+        <!-- Collapsed state: a FLOATING handle over the right edge (the
+             CSS positions .replay-side.collapsed absolutely — no layout
+             width, no reserved space). Its ONLY visual is the
+             left-pointing chevron ("click to expand"); no word, no badge
+             — the count lives in the button's title/aria-label above. -->
         <span class="codicon codicon-chevron-left" aria-hidden="true"></span>
       {/if}
     </button>

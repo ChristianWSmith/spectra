@@ -1358,6 +1358,7 @@ input[type='checkbox']:focus-visible {
 /* --- Replay (M2) ------------------------------------------------------------ */
 
 .replay-view {
+  position: relative; /* anchors the collapsed rail's floating handle */
   height: calc(100vh - 32px);
   display: flex;
   flex-direction: row;
@@ -1441,31 +1442,50 @@ input[type='checkbox']:focus-visible {
   overflow: hidden;
 }
 
-/* Collapsed rail: a slim full-height NOTCH on the right edge — a
-   ~22px strip whose only visual is the left-pointing chevron ("click to
-   expand"); no word, no badge (the count lives in the toggle's
-   title/aria-label). The aside keeps the panel chrome and spans the
-   full view height in BOTH states — only the WIDTH swings back to the
-   stage, so the layout never jumps vertically; expanded keeps the
-   ~340px panel above. */
+/* Collapsed rail: a small FLOATING HANDLE over the right edge of the
+   replay area — absolutely positioned, so it takes NO layout width (the
+   main column keeps the full view width) and reserves NO space, and it
+   does NOT span the vertical height: a compact notch/pill, vertically
+   centered on the right edge (clear of the transport/voice rows at the
+   bottom and the follow chip at top-right). The aside is only the
+   positioning shell; the toggle button is the pill (chevron-left = "click
+   to expand"; the count lives in its title/aria-label). The EXPANDED
+   panel is unchanged: in-flow above, ~340px, full height, reserving its
+   space. */
 .replay-side.collapsed {
-  flex: 0 0 22px;
-  width: 22px;
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 5;
+  width: auto;
+  max-height: none;
   padding: 0;
+  background: none;
+  border: none;
+  border-radius: 0;
+  overflow: visible;
 }
 
-/* The notch's hit area: the button fills the strip (the padding buys a
-   comfortable target without widening the visual) and stretches to the
-   full window height, chevron centered on it. */
+/* The handle itself: a comfortable click target around the chevron,
+   with panel chrome + shadow so it reads as floating over the stage. */
 .replay-side.collapsed .side-toggle {
-  flex: 1 1 auto;
   align-items: center;
   justify-content: center;
   gap: 0;
-  width: 100%;
-  padding: 12px 0;
+  width: auto;
+  padding: 10px 6px;
   text-align: center;
   white-space: nowrap;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.replay-side.collapsed .side-toggle:hover {
+  color: var(--accent);
+  border-color: var(--accent-40);
 }
 
 .side-toggle {
@@ -1500,7 +1520,10 @@ input[type='checkbox']:focus-visible {
   border-bottom: 1px solid var(--divider);
 }
 
-/* Sticky transport chrome on top of .toolbar. */
+/* Sticky transport chrome — TWO lines: the full-width scrubber line
+   (.replay-scrub: seek bar + round markers + frame/tick readout) above
+   the control cluster (the ONE .toolbar row: play/speed, Loop, jump,
+   camera, follow, hints). */
 .replay-transport {
   position: sticky;
   bottom: 0;
@@ -1508,6 +1531,17 @@ input[type='checkbox']:focus-visible {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* The seek bar's own line: the scrubber stretches across the full
+   width of the replay main column, the readout trails on the right. */
+.replay-scrub {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .replay-readout {
@@ -1865,8 +1899,11 @@ button.lm-cat-chip.on {
 
 @media (max-width: 1000px) {
   /* The landmark rail is a RIGHT column above the fold — on narrow
-     windows it stacks under the main column, bounded so the stage keeps
-     the height (the collapsed strip follows suit as a full-width bar). */
+     windows the EXPANDED panel stacks under the main column, bounded so
+     the stage keeps the height. The collapsed state stays the FLOATING
+     right-edge handle: it is absolutely positioned by the base rule
+     above, so it is not a stacked item at all (never a full-width bar)
+     and the main column keeps the full height. */
   .replay-view {
     flex-direction: column;
   }
@@ -1878,23 +1915,13 @@ button.lm-cat-chip.on {
     max-height: 30%;
   }
 
-  /* Notch when stacked: the rail sits BELOW the stage, so the collapsed
-     strip reads as a slim full-width handle whose chevron points DOWN
-     (the feed expands under it) instead of the right-edge left chevron —
-     the same glyph rotated, the whole strip still the hit area.
-     max-height: none keeps the short bar from clipping in a very short
-     window (the 30% bound above is the EXPANDED panel's). */
+  /* The 30% height bound belongs to the EXPANDED panel only — the
+     floating handle must not inherit it. Its placement needs no stacked
+     variant: centered on the right edge it lands over the stage, clear
+     of the transport/voice rows that stack below it, and the
+     left-pointing chevron keeps its "expand" meaning. */
   .replay-side.collapsed {
     max-height: none;
-  }
-
-  .replay-side.collapsed .side-toggle {
-    flex: 0 0 auto;
-    padding: 4px 8px;
-  }
-
-  .replay-side.collapsed .side-toggle .codicon {
-    transform: rotate(-90deg);
   }
 
   .roster-grid,
