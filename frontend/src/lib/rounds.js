@@ -23,6 +23,28 @@ export function isCounted(r) {
   return !!r && r.number >= 1;
 }
 
+// roundIndexLabel renders a round's DISPLAY label: counted rounds show
+// their number ("12"), while negative ingest indices (extract's renumber)
+// show a single letter — the knife round shows "K" and every other
+// negative index shows "W" (warmup). A demo can carry more than one
+// warmup (they number backwards from round 1: -3 warmup, -2 knife,
+// -1 warmup), so the letter is decided by the round ROW's flags when a
+// row is available (pregame → K, warmup → W); a bare number falls back
+// to the number rule (-2 → K, any other negative → W). Used by the Match
+// ribbon (RoundStrip) and the Replay landmark feed's round column.
+export function roundIndexLabel(r) {
+  if (r && typeof r === 'object') {
+    if (r.pregame) return 'K';
+    if (r.warmup) return 'W';
+    return roundIndexLabel(r.number);
+  }
+  if (r == null || r === '') return '';
+  const n = Number(r);
+  if (!Number.isFinite(n)) return '';
+  if (n >= 1) return String(n);
+  return n === -2 ? 'K' : 'W';
+}
+
 // roundStartTick resolves a round NUMBER to its start tick — the time a
 // "jump to round N" link targets (Replay's ?round= entry seek via
 // nav.entrySeekTick, and the transport's jump-to-round selector). The
