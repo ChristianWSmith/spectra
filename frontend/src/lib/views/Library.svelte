@@ -22,7 +22,10 @@
   import SortTh from '../components/SortTh.svelte';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
 
-  let { nav = () => {} } = $props();
+  // query is the route query: #/library?map=<MapName>&player=<steamid>
+  // presets the structured filters below (the profile → library deep
+  // link — App passes route.query through).
+  let { nav = () => {}, query: routeQuery = {} } = $props();
 
   // Sortable column headers: clicking a header sorts the list by that
   // column (the store whitelists the keys — see matchListSort), a second
@@ -48,6 +51,15 @@
   let jobs = $state([]);
   let jobProgress = $state(new Map()); // jobId -> latest progress payload
   let query = $state('');
+  // Structured list facets (ANDed with each other and with `query` —
+  // store.MatchListFilter, forwarded by services.js listMatches): a map
+  // substring and "has player X" (exact 17-digit SteamID or name
+  // substring — one input covers both). Seeded from the route query so a
+  // deep link (#/library?map=&player=) lands pre-filtered; the preset
+  // effect below re-applies them if the route query changes while this
+  // view stays mounted.
+  let mapFilter = $state(String(routeQuery.map || ''));
+  let playerFilter = $state(String(routeQuery.player || ''));
   let sortKey = $state('extracted_at');
   let desc = $state(true);
   let error = $state('');
@@ -71,30 +83,52 @@
   // onDeleteFile for the two prompts this view opens.
   let confirmDlg = $state(null);
 
-  // Debounced list fetch: re-arms on every query/sort change and fires
-  // 250 ms later, so typing doesn't hammer the store. First run is
-  // immediate so the library loads without the debounce delay.
+  // Route-query presets (#/library?map=&player=): (re)apply the deep-link
+  // facets when the query changes while this view stays mounted (a fresh
+  // mount is already seeded by the $state initializers above). Depends on
+  // the STRING values only — App hands over a fresh {query} object for
+  // every query-less hash, and that identity churn must not clobber
+  // filters the user typed. Writing an unchanged value is a no-op
+  // (primitive equality), so the mount-time run disturbs nothing.
+  $effect(() => {
+    mapFilter = String(routeQuery.map || '');
+    playerFilter = String(routeQuery.player || '');
+  });
+
+  // Debounced list fetch: re-arms on every query/sort/filter change and
+  // fires 250 ms later, so typing doesn't hammer the store. First run is
+  // immediate so the library loads without the debounce delay (the filter
+  // state is seeded from the route query at init, so that first fetch
+  // already carries any deep-link preset).
   let firstList = true;
   $effect(() => {
     const q = query;
     const sk = sortKey;
     const d = desc;
+    const mf = mapFilter;
+    const pf = playerFilter;
     if (firstList) {
       firstList = false;
-      refreshList(q, sk, d);
+      refreshList(q, sk, d, mf, pf);
       return;
     }
-    const timer = setTimeout(() => refreshList(q, sk, d), 250);
+    const timer = setTimeout(() => refreshList(q, sk, d, mf, pf), 250);
     return () => clearTimeout(timer);
   });
 
-  async function refreshList(q = query, sk = sortKey, d = desc) {
+  async function refreshList(q = query, sk = sortKey, d = desc, mf = mapFilter, pf = playerFilter) {
     try {
-      matches = await listMatches(q, sk, d);
+      matches = await listMatches(q, sk, d, { map: mf, player: pf });
       error = '';
     } catch (e) {
       error = errText(e);
     }
+  }
+
+  // Both facets off (also the Clear-filters button's reset).
+  function clearFilters() {
+    mapFilter = '';
+    playerFilter = '';
   }
 
   function toggleSort(key) {
@@ -138,6 +172,22 @@
       }),
     ];
     return () => offs.forEach((off) => off());
+  });
+
+  // Any narrowing beyond "the whole library": the free-text query or a
+  // structured facet. Drives the empty state — a filtered-out library
+  // must offer the "no match" message, never "No matches yet" — and its
+  // text (see filterSummary).
+  const searching = $derived(
+    !!(query.trim() || mapFilter.trim() || playerFilter.trim()),
+  );
+
+  const filterSummary = $derived.by(() => {
+    const parts = [];
+    if (query.trim()) parts.push(`“${query.trim()}”`);
+    if (mapFilter.trim()) parts.push(`map “${mapFilter.trim()}”`);
+    if (playerFilter.trim()) parts.push(`player “${playerFilter.trim()}”`);
+    return parts.join(' + ');
   });
 
   const activeJobs = $derived(
@@ -373,6 +423,45 @@
     />
   </header>
 
+  <!-- Structured search facets — ANDed with each other and with the
+       free-text box above (store.MatchListFilter). A filled input is an
+       ACTIVE filter (accent border); each input's native × clears it,
+       the button clears both. Values also arrive pre-set from the route
+       query (#/library?map=&player= — the profile → library deep link). -->
+  <div class="lib-filters" role="group" aria-label="Library filters">
+    <span class="lib-filter-field">
+      <label class="field-label" for="lib-filter-map">Map</label>
+      <input
+        id="lib-filter-map"
+        class="input lib-filter"
+        class:active={!!mapFilter.trim()}
+        type="search"
+        placeholder="e.g. de_mirage"
+        aria-label="Filter by map"
+        bind:value={mapFilter}
+      />
+    </span>
+    <span class="lib-filter-field">
+      <label class="field-label" for="lib-filter-player">Player</label>
+      <input
+        id="lib-filter-player"
+        class="input lib-filter"
+        class:active={!!playerFilter.trim()}
+        type="search"
+        placeholder="Player name or SteamID"
+        aria-label="Filter by player"
+        bind:value={playerFilter}
+      />
+    </span>
+    {#if mapFilter || playerFilter}
+      <button
+        class="btn small ghost"
+        title="Clear the map and player filters"
+        onclick={clearFilters}>Clear filters</button
+      >
+    {/if}
+  </div>
+
   <!-- Sortable header cells (SortTh): label + active-direction arrow; the
        button is the whole header target (same styling as the scoreboard's). -->
 
@@ -400,7 +489,7 @@
   {/if}
 
   <div class="dropzone">
-    {#if matches.length === 0 && jobs.length === 0}
+    {#if matches.length === 0 && jobs.length === 0 && !searching}
       <div class="empty">
         <p class="empty-title" role="status">No matches yet</p>
         <p class="muted">
@@ -475,8 +564,8 @@
       {#if matches.length === 0}
         <div class="empty">
           <p class="muted" role="status">
-            {query
-              ? `No matches match “${query}”.`
+            {searching
+              ? `No matches match ${filterSummary}.`
               : 'No matches yet — imports will appear here.'}
           </p>
         </div>

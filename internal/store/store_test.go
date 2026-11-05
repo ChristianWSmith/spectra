@@ -635,13 +635,16 @@ func TestListMatches(t *testing.T) {
 	id1 := saveTestMatch(t, s, "/d/a.dem", "sha1", base)
 	id2 := saveTestMatch(t, s, "/d/b.dem", "sha2", base.Add(time.Hour))
 
-	// Retarget match 2's map + teams for the LIKE checks.
+	// Retarget match 2's map + teams for the LIKE checks, and give it a
+	// roster player match 1 does not have (carol) so the "has player X"
+	// facet can exclude a match.
 	em := testExtracted("sha2", base.Add(time.Hour))
 	em.Match.Map = "de_cache"
 	em.Teams = []models.Team{
 		{Side: "ct", Name: "gamma", Flag: "pl"},
 		{Side: "t", Name: "delta", Flag: "dk"},
 	}
+	em.Players = append(em.Players, models.Player{SteamID: "300", Name: "carol", Side: "ct"})
 	if err := s.SaveExtracted(id2, em); err != nil {
 		t.Fatalf("SaveExtracted: %v", err)
 	}
@@ -688,6 +691,52 @@ func TestListMatches(t *testing.T) {
 		for i := range ids {
 			if ids[i] != c.want[i] {
 				t.Errorf("ListMatches(%q) ids = %v, want %v", c.query, ids, c.want)
+				break
+			}
+		}
+	}
+
+	// Structured filters: the map facet and "has player X" (exact SteamID
+	// or name substring) — each ANDed with the free-text query and with
+	// each other (store.MatchListFilter).
+	filterCases := []struct {
+		name   string
+		query  string
+		filter MatchListFilter
+		want   []int64
+	}{
+		{"map facet", "", MatchListFilter{Map: "cache"}, []int64{id2}},
+		{"map facet case-insensitive", "", MatchListFilter{Map: "CACHE"}, []int64{id2}},
+		{"map facet substring of the other map", "", MatchListFilter{Map: "mira"}, []int64{id1}},
+		{"map facet matches both", "", MatchListFilter{Map: "de_"}, []int64{id1, id2}},
+		{"map facet no match", "", MatchListFilter{Map: "ancient"}, nil},
+		{"blank map facet is no constraint", "", MatchListFilter{Map: "   "}, []int64{id1, id2}},
+		{"player by name", "", MatchListFilter{Player: "carol"}, []int64{id2}},
+		{"player by name case-insensitive", "", MatchListFilter{Player: "CAROL"}, []int64{id2}},
+		{"player by exact steamid", "", MatchListFilter{Player: "300"}, []int64{id2}},
+		{"player on both rosters", "", MatchListFilter{Player: "100"}, []int64{id1, id2}},
+		{"player no match", "", MatchListFilter{Player: "nobody"}, nil},
+		{"filters combine", "", MatchListFilter{Map: "cache", Player: "carol"}, []int64{id2}},
+		{"filters combine to the empty set", "", MatchListFilter{Map: "mira", Player: "carol"}, nil},
+		{"free-text AND map", "gamma", MatchListFilter{Map: "cache"}, []int64{id2}},
+		{"free-text AND map excludes", "alpha", MatchListFilter{Map: "cache"}, nil},
+	}
+	for _, c := range filterCases {
+		got, err := s.ListMatches(c.query, "", false, c.filter)
+		if err != nil {
+			t.Fatalf("ListMatches(%s): %v", c.name, err)
+		}
+		var ids []int64
+		for _, g := range got {
+			ids = append(ids, g.ID)
+		}
+		if len(ids) != len(c.want) {
+			t.Errorf("ListMatches(%s) ids = %v, want %v", c.name, ids, c.want)
+			continue
+		}
+		for i := range ids {
+			if ids[i] != c.want[i] {
+				t.Errorf("ListMatches(%s) ids = %v, want %v", c.name, ids, c.want)
 				break
 			}
 		}

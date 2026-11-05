@@ -214,10 +214,31 @@ const matchSummaryFrom = ` FROM matches m
 	LEFT JOIN teams ct ON ct.match_id = m.id AND ct.side = 'ct'
 	LEFT JOIN teams t ON t.match_id = m.id AND t.side = 't'`
 
+// MatchListFilter narrows ListMatches: the library row's structured
+// facets, ANDed with each other and with the free-text query. The zero
+// value leaves the list unconstrained. Map is a case-insensitive
+// substring match on the map name; Player is the "has player X" facet —
+// ONE value matches a roster row by exact SteamID (the 17-digit profile
+// deep link, #/library?player=) OR by case-insensitive name substring
+// (typing a name), so the frontend needs no exact-vs-name mode switch.
+type MatchListFilter struct {
+	Map    string `json:"map"`
+	Player string `json:"player"`
+}
+
 // ListMatches returns the library list: matches matching query (a
 // case-insensitive LIKE across map, path and both team names; "" matches
-// all), sorted by a whitelisted sortKey (default extracted_at).
-func (s *Store) ListMatches(query, sortKey string, desc bool) ([]models.MatchSummary, error) {
+// all), narrowed by any filters (each ANDed with the query and with the
+// other filters — see MatchListFilter), sorted by a whitelisted sortKey
+// (default extracted_at).
+//
+// The filters ride a variadic tail rather than a fixed parameter: the
+// zero filter is "no constraint", and every existing call site (import
+// scan, single-row readers' tests) passes none — adding a parameter
+// would touch callers across the read surface for no gain. The one
+// binding that forwards a filter (LibraryService.ListMatches) always
+// passes exactly one.
+func (s *Store) ListMatches(query, sortKey string, desc bool, filters ...MatchListFilter) ([]models.MatchSummary, error) {
 	order, ok := matchListSort[sortKey]
 	if !ok {
 		order = matchListSort["extracted_at"]
@@ -228,11 +249,30 @@ func (s *Store) ListMatches(query, sortKey string, desc bool) ([]models.MatchSum
 	}
 	var b strings.Builder
 	b.WriteString(`SELECT ` + matchSummaryCols + matchSummaryFrom)
+	// Conditions join with AND, so the free-text OR group needs its own
+	// parentheses (AND binds tighter than OR).
+	var conds []string
 	var args []any
 	if q := scrub(query); q != "" {
 		like := "%" + q + "%"
-		b.WriteString(` WHERE m.map LIKE ? OR m.path LIKE ? OR ct.name LIKE ? OR t.name LIKE ?`)
+		conds = append(conds, `(m.map LIKE ? OR m.path LIKE ? OR ct.name LIKE ? OR t.name LIKE ?)`)
 		args = append(args, like, like, like, like)
+	}
+	for _, f := range filters {
+		if m := strings.TrimSpace(scrub(f.Map)); m != "" {
+			conds = append(conds, `m.map LIKE ?`)
+			args = append(args, "%"+m+"%")
+		}
+		if p := strings.TrimSpace(scrub(f.Player)); p != "" {
+			// Roster membership: exact SteamID OR name substring. The
+			// players PK (match_id, steam_id) makes the EXISTS a lookup.
+			conds = append(conds, `EXISTS (SELECT 1 FROM players p
+				WHERE p.match_id = m.id AND (p.steam_id = ? OR p.name LIKE ?))`)
+			args = append(args, p, "%"+p+"%")
+		}
+	}
+	if len(conds) > 0 {
+		b.WriteString(" WHERE " + strings.Join(conds, " AND "))
 	}
 	fmt.Fprintf(&b, " ORDER BY %s %s, m.id DESC", order, dir)
 
