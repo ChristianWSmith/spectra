@@ -140,6 +140,9 @@
   // directly and there is no cross-view change event, so re-reading on
   // activation is the refresh mechanism (returning from Settings
   // remounts this view; switching to the Rounds tab re-runs the effect).
+  // The header ribbon obeys the SAME key but reads it itself inside
+  // RoundStrip, so RoundDetail's copy of the strip agrees too — see the
+  // comment there.
   let showKnifeWarmup = $state(false);
 
   // kvstore values round-trip as JSON — a bool stays a bool (Settings
@@ -608,6 +611,17 @@
           <span class="score">{match.scoreCT}–{match.scoreT}</span>
           <span class={teamCls('t')}>{teams.t}</span>
         </h1>
+        <!-- The view's primary action: it comes IMMEDIATELY after the
+             team names/scoreline (above the meta line), carries the play
+             codicon and a size bump (.match-replay), so it reads as the
+             primary action. It navigates via openReplay below. -->
+        <button
+          class="btn primary match-replay"
+          title="Watch this match from tick 0 in the replay view"
+          onclick={openReplay}
+        >
+          <span class="codicon codicon-play"></span> Watch replay
+        </button>
         <!-- Tickrate, voice presence and parser version live in the
              Details tab (Key facts); only the encrypted-chat key state
              stays up here. -->
@@ -625,16 +639,6 @@
             >
           {/if}
         </p>
-        <!-- The view's primary action: it sits with the scoreline, carries
-             the play codicon and a size bump (.match-replay), so it reads
-             as the primary action. It navigates via openReplay below. -->
-        <button
-          class="btn primary match-replay"
-          title="Watch this match from tick 0 in the replay view"
-          onclick={openReplay}
-        >
-          <span class="codicon codicon-play"></span> Watch replay
-        </button>
       </div>
     </header>
 

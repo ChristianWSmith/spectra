@@ -98,6 +98,10 @@ var matchListSort = map[string]string{
 }
 
 // scoreboardSort whitelists GetScoreboard sort keys (identifiers only).
+// `kd`/`kda` are GetScoreboard's SELECT aliases for the two computed
+// ratio expressions — ORDER BY reaches them only through the alias (see
+// the GetScoreboard doc comment; without it SQLite reports "no such
+// column: kd").
 var scoreboardSort = map[string]string{
 	"name":            "p.name",
 	"side":            "ps.side",
@@ -328,6 +332,11 @@ func (s *Store) GetMatch(id int64) (*models.Match, error) {
 // GetScoreboard returns one player's-aggregate rows for a match, joined
 // with identity, sorted by a whitelisted sortKey (default kills DESC).
 // KD = kdPerMatchSQL (kills/max(deaths,1)); KDA = (kills+assists)/max(deaths,1).
+// Both ratio expressions are aliased `kd`/`kda` in the SELECT: the
+// scoreboardSort map orders by those bare identifiers, and ORDER BY can
+// only reach a computed expression through its result-column alias (the
+// aliases are applied here, at the use site — kdPerMatchSQL itself stays
+// unaliased for GetTrend). Pinned by TestGetScoreboardKDAndKDASorting.
 func (s *Store) GetScoreboard(id int64, sortKey string, desc bool) ([]models.PlayerStatsRow, error) {
 	order, ok := scoreboardSort[sortKey]
 	dir := "ASC"
@@ -342,8 +351,8 @@ func (s *Store) GetScoreboard(id int64, sortKey string, desc bool) ([]models.Pla
 		`SELECT ps.steam_id, p.name, p.is_bot, p.side, p.final_state_present,
 			ps.rounds_played, ps.kills, ps.deaths,
 			ps.assists, ps.flash_assists, ps.headshots, ps.hs_pct, ps.adr,
-			`+kdPerMatchSQL+`,
-			CAST(ps.kills + ps.assists AS REAL) / MAX(ps.deaths, 1),
+			`+kdPerMatchSQL+` AS kd,
+			CAST(ps.kills + ps.assists AS REAL) / MAX(ps.deaths, 1) AS kda,
 			ps.total_damage, ps.damage_taken, ps.entry_kills, ps.entry_deaths,
 			ps.opening_kills, ps.opening_deaths, ps.trade_kills, ps.best_streak,
 			ps.two_k, ps.three_k, ps.four_k, ps.five_k, ps.utility_damage, ps.enemies_flashed,

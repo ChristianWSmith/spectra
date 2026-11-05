@@ -382,6 +382,20 @@ select {
   gap: 16px;
 }
 
+/* A NESTED .view (Match's tabs embed Explorer/Economy/Utility/Heatmaps/
+   Combat/Reports, each rooted in its own .view) must not keep the
+   block-level `margin: 0 auto` centering above: inside a flex column,
+   auto cross-axis margins suppress the default stretch, so the wrapper
+   shrinks to fit-content and its cards render narrower than the view —
+   "occasionally" because it only shows while the content's natural width
+   is below the available width. The outer .view is already capped at
+   1400px and centered, so a nested one just stretches (this is why the
+   Details tab's Explorer cards came out short of full width while Key
+   facts — a direct child of the outer .view — never did). */
+.view > .view {
+  margin-inline: 0;
+}
+
 .view-header {
   display: flex;
   align-items: center;
@@ -955,9 +969,9 @@ input[type='checkbox']:focus-visible {
   margin-top: 4px;
 }
 
-/* Replay entry point: sits directly under the scoreline, carries the
-   play codicon and is bumped off the base .btn size so the view's
-   primary action reads as one. */
+/* Replay entry point: sits immediately under the team names/scoreline
+   (above the match meta line), carries the play codicon and is bumped
+   off the base .btn size so the view's primary action reads as one. */
 .match-replay {
   margin-top: 8px;
   padding: 5px 14px;
@@ -1101,6 +1115,8 @@ input[type='checkbox']:focus-visible {
   border-bottom: 1px solid var(--border);
   background: var(--tab-strip);
   padding: 0 4px;
+  /* The match view's tab bar is centered (the one consumer of .tabs). */
+  justify-content: center;
 }
 
 .tab {
@@ -1690,10 +1706,13 @@ button.lm-cat-chip.on {
    tables as a third panel. Appended (not edited into .weapon-grid above)
    because that block is the shared two-panel spelling — this variant is
    match-scoreboard-only; auto-fit collapses the columns on narrow widths
-   instead of relying on the shared media query. */
+   instead of relying on the shared media query. margin-inline: auto
+   centers the (capped-width) panel group in the expand row instead of
+   leaving it hugging the left edge. */
 .weapon-grid.util-grid {
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
   max-width: 960px;
+  margin-inline: auto;
 }
 
 /* --- Heatmap legend (appended block) --------------------------------------
