@@ -8,8 +8,11 @@
 // analysis_config/rule_version.
 //
 // Verified against the Go side:
-//   - internal/store/analytics.go   — GetCombatStats / RebuildCareer SQL
-//   - profileservice.go             — career opening/trade rates
+//   - internal/store/analytics.go   — GetCombatStats / RebuildCareer SQL,
+//     plus the profile queries (CountPlayerTradeOpportunities,
+//     GetPlayerSideSplits, GetPlayerMatchAverages)
+//   - profileservice.go             — career opening rate, profile Trade
+//     rate (trades ÷ trade opportunities) and the per-match averages
 //   - internal/extract/agg.go       — entry/opening/trade attribution
 //   - internal/analytics/engagements.go — opening|trade|untraded kinds
 
@@ -115,14 +118,37 @@ export const NETWORTH_DEF = `Net worth — ${lowerFirst(glossaryText('Net worth'
 export const ENTRY_DEF =
   'Entry rate — entry kills ÷ rounds played, as a percent of rounds played (0–100): the share of rounds in which the player drew first blood (player_stats.entry_kills: the extractor’s first-blood attribution for the round).';
 
-// Trade% (Combat) and the profile's career trade rate — same formula AND
-// scale on both sides: 100 × player_stats.trade_kills / deaths (a trade
-// kill answers a teammate's death inside the trade window; the
-// denominator is the player's own deaths, so the rate is not a share of
-// teammate deaths). It is a ratio rather than a share, so it may exceed
-// 100 — rendered by fmtPercent like every other percent field.
+// Trade% (Combat scoreboard column) — same formula AND scale as the
+// store.GetCombatStats row it renders: 100 × player_stats.trade_kills /
+// the player's OWN deaths (a trade kill answers a teammate's death inside
+// the trade window; the denominator is the player's own deaths, so the
+// rate is not a share of teammate deaths). It is a ratio rather than a
+// share, so it may exceed 100 — rendered by fmtPercent like every other
+// percent field. The player profile's Trade rate uses a DIFFERENT
+// denominator (trade opportunities, not own deaths) — see
+// PROFILE_TRADE_DEF; the two are deliberately no longer the same card.
 export const TRADE_DEF =
   'Trade rate — trade kills ÷ deaths, as a percent: a trade kill answers a teammate’s death inside the trade window and the denominator is the player’s own deaths (player_stats), so this is a ratio rather than a share and can exceed 100%.';
+
+// Trade rate (profile card) — trades ÷ TRADE OPPORTUNITIES, career-wide.
+// The denominator is store.CountPlayerTradeOpportunities: a teammate
+// death the player was still alive for (no death event of his own in that
+// round at or before the tick) whose kill event's nearDist — the nearest
+// living teammate of the victim to the killer at the death tick, measured
+// once at import by extract.nearTeammateDist (-1 = nobody measurable) —
+// falls within the configured trade-opportunity distance. Both sides are
+// career-wide (numerator: player_stats.trade_kills via the career
+// rollup), and the rate is a ratio, not a share.
+export const PROFILE_TRADE_DEF =
+  'Trade rate — successful trades ÷ trade opportunities, as a percent: a trade kill answers a teammate’s death inside the trade window (player_stats.trade_kills). A trade opportunity is a teammate’s death you could have answered — you were still alive in that round, and at the death tick a living teammate of the victim stood within the trade-opportunity distance of the killer (the proximity is measured to the nearest living teammate, so the gate is team-level). Counted across every match in the library; a ratio rather than a share, so it can exceed 100%.';
+
+// Per-match averages (profile cards) — player_stats counters averaged over
+// the player's matches (one player_stats row per match), not career sums.
+export const AVG_FLASHED_DEF =
+  'Average enemies flashed per match — player_stats.enemies_flashed averaged across this player’s matches: one credit per enemy player blinded by their flash (team and self blinds excluded).';
+
+export const AVG_UTIL_DEF =
+  'Average utility damage per match — player_stats.utility_damage averaged across this player’s matches: damage credited to the player from CS2’s utility set (HE, flashbang, smoke, molotov/incendiary, decoy).';
 
 // Untraded deaths (Combat): engagement rows of kind=untraded with the
 // player as victim — no teammate of the victim killed the victim’s killer

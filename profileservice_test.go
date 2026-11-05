@@ -19,7 +19,9 @@ func oppositeSide(side string) string {
 // newProfileFixture opens an in-memory store with TWO extracted matches
 // for the same player (alice: ct in match 1 with 10k/5d, t in match 2
 // with 4k/0d) plus the credited/teamkill/warmup kill events behind the
-// weapon breakdowns, and returns a ProfileService over it.
+// weapon breakdowns, three tradeable teammate deaths per match behind the
+// trade-opportunity denominator, and one player_round_stats row per match
+// behind the Sides card, then returns a ProfileService over it.
 func newProfileFixture(t *testing.T) *ProfileService {
 	t.Helper()
 	st, err := store.Open(":memory:")
@@ -49,6 +51,19 @@ func newProfileFixture(t *testing.T) *ProfileService {
 				Attacker: "100", Victim: "200", Weapon: "ak47", Headshot: true,
 			})
 		}
+		// Trade opportunities: bob kills alice's teammates carl/dave/eve
+		// in the counted round with a measurable nearDist inside the
+		// default 1000u trade-opportunity distance — three opportunities
+		// for alice per match (she is alive and on the victim's side in
+		// round 1). store.CountPlayerTradeOpportunities is what counts
+		// them; see TestGetProfileTradeRatePercent for the total.
+		for i, victim := range []string{"300", "400", "500"} {
+			events = append(events, models.Event{
+				Tick: 150 + 10*i, Round: 1, Kind: models.EventKill,
+				Attacker: "200", Victim: victim,
+				DetailJSON: `{"killer":"bob","victim":"victim","nearDist":500}`,
+			})
+		}
 		events = append(events,
 			models.Event{ // teamkill headshot — no credit anywhere
 				Tick: 200, Round: 1, Kind: models.EventKill,
@@ -70,6 +85,8 @@ func newProfileFixture(t *testing.T) *ProfileService {
 				{SteamID: "100", Name: "alice", Side: side},
 				{SteamID: "200", Name: "bob", Side: oppositeSide(side)},
 				{SteamID: "300", Name: "carl", Side: side},
+				{SteamID: "400", Name: "dave", Side: side},
+				{SteamID: "500", Name: "eve", Side: side},
 			},
 			PlayerStats: []models.PlayerStats{
 				{SteamID: "100", Side: side, Name: "alice",
@@ -78,8 +95,12 @@ func newProfileFixture(t *testing.T) *ProfileService {
 					// Trade kills feed career.Trades → the profile's Trade
 					// rate card (TestGetProfileTradeRatePercent pins the
 					// percent scale of that card).
-					TradeKills:    2,
-					KillsByWeapon: byWeapon, DamageByWeapon: `{"ak47":900}`},
+					TradeKills: 2,
+					// The two per-match averages (TestGetProfileAverages):
+					// match 1 reads 8 flashed / 120 util, match 2 4 / 60.
+					EnemiesFlashed: 8 - 4*(n-1),
+					UtilityDamage:  120 - 60*(n-1),
+					KillsByWeapon:  byWeapon, DamageByWeapon: `{"ak47":900}`},
 			},
 			Rounds: []models.Round{
 				{Number: 0, Warmup: true},
@@ -89,11 +110,28 @@ func newProfileFixture(t *testing.T) *ProfileService {
 				{Round: 1, SteamID: "100", Side: side},
 				{Round: 1, SteamID: "200", Side: oppositeSide(side)},
 				{Round: 1, SteamID: "300", Side: side},
+				{Round: 1, SteamID: "400", Side: side},
+				{Round: 1, SteamID: "500", Side: side},
 			},
 			Events: events,
 		}
 		if err := st.SaveExtracted(id, em); err != nil {
 			t.Fatalf("SaveExtracted: %v", err)
+		}
+		// One counted round of per-round stats — the Sides card's rows
+		// (store.GetPlayerSideSplits). Alice plays it on `side`: match 1
+		// is the CT round (won — rounds[1].winner = "ct"), match 2 the T
+		// round (lost).
+		roundStats := models.PlayerRoundStat{
+			Round: 1, SteamID: "100", Name: "alice", KAST: n == 1, RuleVersion: 1,
+		}
+		if n == 1 {
+			roundStats.Kills, roundStats.Deaths, roundStats.DMG = 5, 2, 600
+		} else {
+			roundStats.Kills, roundStats.Deaths, roundStats.DMG = 4, 0, 300
+		}
+		if err := st.ReplacePlayerRounds(id, []models.PlayerRoundStat{roundStats}); err != nil {
+			t.Fatalf("ReplacePlayerRounds: %v", err)
 		}
 	}
 	save(1, "ct", 10, 5, 3, `{"ak47":10}`)
@@ -104,10 +142,13 @@ func newProfileFixture(t *testing.T) *ProfileService {
 	return &ProfileService{st: st}
 }
 
-// TestGetProfileSidesKD: the Sides table's K/D column comes from the same
-// history rows as its Matches/Wins/ADR — pooled kills / deaths per side
-// with the career rollup's floor (kdCareerSQL: SUM(kills) /
-// MAX(SUM(deaths), 1)), never a division-by-zero/empty-side 0.
+// TestGetProfileSidesKD: the Sides table is a PER-ROUND split (players
+// switch sides at halftime, so one row per match side would mix both
+// halves): alice plays counted round 1 on ct in match 1 (won, 5k/2d)
+// and on t in match 2 (lost, 4k/0d) — one round per side. K/D comes from
+// the same player_round_stats rows as Rounds/ADR/KAST with the career
+// rollup's floor (kdCareerSQL: SUM(kills) / MAX(SUM(deaths), 1)), never
+// a division-by-zero/empty-side 0.
 func TestGetProfileSidesKD(t *testing.T) {
 	svc := newProfileFixture(t)
 	p, err := svc.GetProfile("100")
@@ -117,34 +158,95 @@ func TestGetProfileSidesKD(t *testing.T) {
 	if len(p.Sides) != 2 {
 		t.Fatalf("sides = %+v, want ct and t rows", p.Sides)
 	}
-	bySide := map[string]float64{}
+	bySide := map[string]ProfileSide{}
 	for _, s := range p.Sides {
-		bySide[s.Side] = s.KD
+		bySide[s.Side] = s
 	}
-	if kd := bySide["ct"]; kd < 1.99 || kd > 2.01 {
-		t.Errorf("ct KD = %v, want 2.0 (10 kills / 5 deaths)", kd)
+	ct, tside := bySide["ct"], bySide["t"]
+	if ct.Rounds != 1 || tside.Rounds != 1 {
+		t.Errorf("rounds = %d/%d, want 1/1 (one counted round per side)", ct.Rounds, tside.Rounds)
+	}
+	// Round wins: round 1's winner is "ct", so the CT row won its round
+	// and the T row did not — per-round, not per match.
+	if ct.RoundWinPct < 99.9 || ct.RoundWinPct > 100.1 || tside.RoundWinPct != 0 {
+		t.Errorf("roundWinPct ct/t = %v/%v, want 100/0", ct.RoundWinPct, tside.RoundWinPct)
+	}
+	if kd := ct.KD; kd < 2.49 || kd > 2.51 {
+		t.Errorf("ct KD = %v, want 2.5 (5 kills / 2 deaths)", kd)
 	}
 	// Zero-death side: the denominator floors at 1 (kdCareerSQL's shape).
-	if kd := bySide["t"]; kd < 3.99 || kd > 4.01 {
+	if kd := tside.KD; kd < 3.99 || kd > 4.01 {
 		t.Errorf("t KD = %v, want 4.0 (4 kills / max(0 deaths, 1))", kd)
+	}
+	if ct.ADR < 599.9 || ct.ADR > 600.1 || tside.ADR < 299.9 || tside.ADR > 300.1 {
+		t.Errorf("ADR ct/t = %v/%v, want 600/300 (player_round_stats.dmg ÷ rounds)", ct.ADR, tside.ADR)
+	}
+	if ct.KASTPct < 99.9 || ct.KASTPct > 100.1 || tside.KASTPct != 0 {
+		t.Errorf("kastPct ct/t = %v/%v, want 100/0 (kast 0/1 → ×100)", ct.KASTPct, tside.KASTPct)
 	}
 }
 
-// TestGetProfileTradeRatePercent pins the SCALE of the profile's career
-// Trade rate card: 0..100 percent, like every other *Pct/*Rate field on
-// the Profile DTO (WinPct, KASTPct, OpeningRate, ClutchWinPct are all
-// ×100 right beside it) — the scale fmtPercent renders directly. The
-// fixture's alice has 2 career trades per match (4 total) over 5 career
-// deaths, so the card must show 80%, not a 0..1 fraction rendered as
-// "0.8%" (the pre-fix value).
+// TestGetProfileTradeRatePercent pins the SCALE and the FORMULA of the
+// profile's Trade rate card: 100 × successful trades ÷ trade
+// opportunities (0..100 percent, like every other *Pct/*Rate field on
+// the Profile DTO — the value fmtPercent renders directly). The fixture's
+// alice has 2 career trades per match (4 total) over 3 tradeable
+// teammate deaths per match (6 opportunities), so the card must show
+// 66.7%, NOT the old 4 trades ÷ 5 own deaths (80%).
 func TestGetProfileTradeRatePercent(t *testing.T) {
 	svc := newProfileFixture(t)
 	p, err := svc.GetProfile("100")
 	if err != nil {
 		t.Fatalf("GetProfile: %v", err)
 	}
-	if p.TradeRate < 79.9 || p.TradeRate > 80.1 {
-		t.Errorf("tradeRate = %v, want 80 (4 career trades / 5 deaths ×100)", p.TradeRate)
+	if p.Trades != 4 || p.TradeOpps != 6 {
+		t.Errorf("trades/opportunities = %d/%d, want 4/6 (2 trades × 2 matches, 3 teammate deaths × 2 matches)",
+			p.Trades, p.TradeOpps)
+	}
+	if p.TradeRate < 66.6 || p.TradeRate > 66.7 {
+		t.Errorf("tradeRate = %v, want ~66.67 (4 ÷ 6 ×100)", p.TradeRate)
+	}
+}
+
+// TestGetProfileAverages: the two per-match average cards read
+// player_stats.enemies_flashed / utility_damage averaged over the
+// player's matches — match 1 stores 8/120, match 2 stores 4/60, so the
+// cards must show 6 and 90 (per match, not career sums).
+func TestGetProfileAverages(t *testing.T) {
+	svc := newProfileFixture(t)
+	p, err := svc.GetProfile("100")
+	if err != nil {
+		t.Fatalf("GetProfile: %v", err)
+	}
+	if p.AvgEnemiesFlashed < 5.99 || p.AvgEnemiesFlashed > 6.01 {
+		t.Errorf("avgEnemiesFlashed = %v, want 6 ((8+4)/2)", p.AvgEnemiesFlashed)
+	}
+	if p.AvgUtilDamage < 89.9 || p.AvgUtilDamage > 90.1 {
+		t.Errorf("avgUtilDamage = %v, want 90 ((120+60)/2)", p.AvgUtilDamage)
+	}
+}
+
+// TestGetProfileHistoryStartingSide: the match history's side cell is the
+// side the player STARTED the match on (the first counted round's
+// freeze-end sample), while Win still derives from the final side
+// (models.WinFor over player_stats.side) — different facts after
+// halftime: alice opens match 1 on ct (win) and match 2 on t (loss), and
+// the most recent match comes first.
+func TestGetProfileHistoryStartingSide(t *testing.T) {
+	svc := newProfileFixture(t)
+	p, err := svc.GetProfile("100")
+	if err != nil {
+		t.Fatalf("GetProfile: %v", err)
+	}
+	if len(p.History) != 2 {
+		t.Fatalf("history = %+v, want 2 rows", p.History)
+	}
+	if p.History[0].StartSide != "t" || p.History[1].StartSide != "ct" {
+		t.Errorf("startSide = %q/%q, want t (match 2) then ct (match 1)",
+			p.History[0].StartSide, p.History[1].StartSide)
+	}
+	if p.History[0].Win || !p.History[1].Win {
+		t.Errorf("win = %v/%v, want false/true (final side vs 13–10)", p.History[0].Win, p.History[1].Win)
 	}
 }
 
