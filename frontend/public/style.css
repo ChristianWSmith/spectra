@@ -393,6 +393,17 @@ select {
   margin-inline: 0;
 }
 
+/* Heatmaps keeps the centered presentation it had before the rule above:
+   its tab content is a canvas block (controls, legend, map), not the
+   full-width tables the other embedded tabs render, so ITS root restores
+   the `margin-inline: auto` centering — auto cross-axis margins inside
+   the flex column shrink it to fit-content and center it, exactly the
+   pre-regression behavior. Scoped by Heatmaps' own .heat-view class, so
+   the Details tab's embedded .view stays stretched full width. */
+.view > .view.heat-view {
+  margin-inline: auto;
+}
+
 .view-header {
   display: flex;
   align-items: center;
