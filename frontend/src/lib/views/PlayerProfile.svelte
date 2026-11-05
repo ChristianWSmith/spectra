@@ -3,8 +3,16 @@
   // hand-rolled SVG sparklines (no chart lib), splits and
   // match history. Inline player picker (listPlayers) lives at the top.
   import { getProfile, listPlayers, getCareerTrend, errText } from '../services.js';
-  import { ADR_SIGMA_DEF, OPENING_DEF, TRADE_DEF, KAST_DEF } from '../definitions.js';
+  import {
+    ADR_SIGMA_DEF,
+    OPENING_DEF,
+    PROFILE_TRADE_DEF,
+    AVG_FLASHED_DEF,
+    AVG_UTIL_DEF,
+    KAST_DEF,
+  } from '../definitions.js';
   import { fmt1, fmt2, fmtPercent, fmtDate, fmtInt } from '../fmt.js';
+  import { buildHash } from '../router.js';
   import Popover from '../components/Popover.svelte';
   import StatCard from '../components/StatCard.svelte';
   import { profileBackTarget } from '../nav.js';
@@ -97,6 +105,14 @@
     q = '';
     results = [];
     nav(`/player/${steam}`);
+  }
+
+  // Maps card → the Library filtered to this player's matches on that map.
+  // The route query is the contract with the Library's receiving side:
+  // #/library?map=<MapName>&player=<17-digit SteamID64>.
+  function openMapInLibrary(map) {
+    if (!map || !profile?.steamId) return;
+    nav(buildHash('/library', { map, player: profile.steamId }));
   }
 
   function fmtProfileMetric(v, m) {
@@ -212,12 +228,29 @@
       <StatCard label="HS%" value={fmtPercent(profile.hsPct)} sub="headshots" title="Headshot share of kills" />
       <StatCard label="KAST%" value={fmtPercent(profile.kastPct)} sub="kill/assist/trade/survive" title={KAST_DEF} />
       <StatCard label="Opening duels" value={fmtPercent(profile.openingRate)} sub="win rate" title={OPENING_DEF} />
-      <StatCard label="Trade rate" value={fmtPercent(profile.tradeRate)} sub="kills ÷ deaths" title={TRADE_DEF} />
+      <StatCard
+        label="Trade rate"
+        value={fmtPercent(profile.tradeRate)}
+        sub={profile.tradeOpps > 0 ? `${profile.trades} of ${profile.tradeOpps} opportunities` : 'trades ÷ opportunities'}
+        title={PROFILE_TRADE_DEF}
+      />
       <StatCard
         label="Clutches"
         value={profile.clutches}
         sub={`${fmtPercent(profile.clutchWinPct)} won`}
         title="Detected clutches (1vN) and the share won (clutch v2)"
+      />
+      <StatCard
+        label="Avg enemies flashed"
+        value={fmt1(profile.avgEnemiesFlashed)}
+        sub="per match"
+        title={AVG_FLASHED_DEF}
+      />
+      <StatCard
+        label="Avg util damage"
+        value={fmt1(profile.avgUtilDamage)}
+        sub="per match"
+        title={AVG_UTIL_DEF}
       />
     </div>
 
@@ -274,13 +307,13 @@
 
     <div class="prof-splits">
       <section class="panel">
-        <h2>Sides</h2>
+        <h2>Sides <span class="muted">(per round — sides switch at halftime)</span></h2>
         <table class="data-table">
           <thead>
             <tr>
               <th scope="col">Side</th>
-              <th scope="col" class="num">Matches</th>
-              <th scope="col" class="num">Wins</th>
+              <th scope="col" class="num">Rounds</th>
+              <th scope="col" class="num">Round win%</th>
               <th scope="col" class="num">ADR</th>
               <th scope="col" class="num">KAST%</th>
               <th scope="col" class="num">K/D</th>
@@ -290,8 +323,8 @@
             {#each sides as s (s.side)}
               <tr>
                 <td><span class="chip side {s.side}">{(s.side || '—').toUpperCase()}</span></td>
-                <td class="num">{s.matches}</td>
-                <td class="num">{s.wins}</td>
+                <td class="num">{s.rounds}</td>
+                <td class="num">{fmtPercent(s.roundWinPct)}</td>
                 <td class="num">{fmt1(s.adr)}</td>
                 <td class="num">{fmtPercent(s.kastPct)}</td>
                 <td class="num">{fmt2(s.kd)}</td>
@@ -304,7 +337,7 @@
       </section>
 
       <section class="panel">
-        <h2>Maps</h2>
+        <h2>Maps <span class="muted">(click a row to open it in the Library)</span></h2>
         <table class="data-table">
           <thead>
             <tr>
@@ -316,7 +349,15 @@
           </thead>
           <tbody>
             {#each maps as m (m.map)}
-              <tr>
+              <tr
+                class="clickable"
+                tabindex="0"
+                title="Open {m.map || '—'} matches for this player in the Library"
+                onclick={() => openMapInLibrary(m.map)}
+                onkeydown={(e) =>
+                  (e.key === 'Enter' || e.key === ' ') &&
+                  (e.preventDefault(), openMapInLibrary(m.map))}
+              >
                 <td>{m.map || '—'}</td>
                 <td class="num">{m.matches}</td>
                 <td class="num">{m.wins}</td>
@@ -366,7 +407,7 @@
               <th scope="col">Map</th>
               <th scope="col">Result</th>
               <th scope="col" class="num">Score</th>
-              <th scope="col">Side</th>
+              <th scope="col">Starting side</th>
               <th scope="col" class="num">K/D/A</th>
               <th scope="col" class="num">ADR</th>
               <th scope="col" class="num">KAST%</th>
@@ -389,7 +430,11 @@
                   </span>
                 </td>
                 <td class="num">{h.scoreCT}–{h.scoreT}</td>
-                <td><span class="chip side {h.side}">{(h.side || '—').toUpperCase()}</span></td>
+                <td>
+                  <span class="chip side {h.startSide}" title="Side the player started the match on">
+                    {(h.startSide || '—').toUpperCase()}
+                  </span>
+                </td>
                 <td class="num">{h.kills}/{h.deaths}/{h.assists}</td>
                 <td class="num">{fmt1(h.adr)}</td>
                 <td class="num">{fmtPercent(h.kastPct)}</td>

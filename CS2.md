@@ -465,3 +465,18 @@ at the end of the section.
   `pkg/demoinfocs/datatables.go`
   (github.com/markus-wa/demoinfocs-golang); golden-demo/dev-DB event
   counts (2026-11-05).
+- **Trade kill opportunity (per player) — what a trade rate's
+  denominator is** — Leetify's glossary splits trading into "Trade Kill
+  Opportunities: how many times did you have the chance to trade a
+  teammate", "Trade Kill Attempts" (you actually tried when given that
+  chance) and "Trade Kill Successes" (you got the kill and traded them),
+  so a per-player trade rate is successes ÷ opportunities — NOT trades ÷
+  the player's own deaths (a different, also-used ratio). The
+  opportunity belongs to the PLAYER whose teammate died while he was alive
+  and in position; the mirror concept "Traded Deaths" measures the
+  reverse direction (your own death answered by a teammate). spectra:
+  "in position" is the extract-time proximity measure on the kill event
+  (`detail_json.nearDist`, the nearest living teammate of the victim to
+  the killer, −1 = nobody measurable) gated by the configured
+  trade-opportunity distance — see `store.CountPlayerTradeOpportunities`.
+  **Source** — https://leetify.com/blog/leetify-stats-glossary (2026-11-05).

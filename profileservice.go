@@ -30,14 +30,16 @@ type ProfileSummary struct {
 	ADRAvg   float64 `json:"adrAvg"`
 }
 
-// ProfileSide is the per-side split.
+// ProfileSide is the player's per-ROUND split by side (players switch
+// sides at halftime, so this is rounds played on CT vs T — never a
+// per-match side; see store.GetPlayerSideSplits).
 type ProfileSide struct {
-	Side    string  `json:"side"` // ct|t
-	Matches int     `json:"matches"`
-	Wins    int     `json:"wins"`
-	ADR     float64 `json:"adr"`
-	KASTPct float64 `json:"kastPct"`
-	KD      float64 `json:"kd"`
+	Side        string  `json:"side"` // ct|t
+	Rounds      int     `json:"rounds"`
+	RoundWinPct float64 `json:"roundWinPct"` // rounds won on this side, 0..100
+	ADR         float64 `json:"adr"`
+	KASTPct     float64 `json:"kastPct"`
+	KD          float64 `json:"kd"`
 }
 
 // ProfileMap is the per-map split.
@@ -58,24 +60,28 @@ type ProfileWeapon struct {
 
 // Profile is the full cross-match read model.
 type Profile struct {
-	SteamID      string                     `json:"steamId"`
-	Name         string                     `json:"name"`
-	Matches      int                        `json:"matches"`
-	Wins         int                        `json:"wins"`
-	WinPct       float64                    `json:"winPct"`
-	ADRAvg       float64                    `json:"adrAvg"`
-	ADRStd       float64                    `json:"adrStd"` // consistency (PRD §5.13)
-	KD           float64                    `json:"kd"`
-	HSPct        float64                    `json:"hsPct"`
-	KASTPct      float64                    `json:"kastPct"`
-	OpeningRate  float64                    `json:"openingRate"` // duel win rate, 0..100
-	TradeRate    float64                    `json:"tradeRate"`   // 0..100 percent (see GetProfile)
-	Clutches     int                        `json:"clutches"`
-	ClutchWinPct float64                    `json:"clutchWinPct"`
-	Sides        []ProfileSide              `json:"sides"`
-	Maps         []ProfileMap               `json:"maps"`
-	Weapons      []ProfileWeapon            `json:"weapons"` // top by kills
-	History      []models.ProfileHistoryRow `json:"history"` // most recent first, ≤100
+	SteamID           string                     `json:"steamId"`
+	Name              string                     `json:"name"`
+	Matches           int                        `json:"matches"`
+	Wins              int                        `json:"wins"`
+	WinPct            float64                    `json:"winPct"`
+	ADRAvg            float64                    `json:"adrAvg"`
+	ADRStd            float64                    `json:"adrStd"` // consistency (PRD §5.13)
+	KD                float64                    `json:"kd"`
+	HSPct             float64                    `json:"hsPct"`
+	KASTPct           float64                    `json:"kastPct"`
+	OpeningRate       float64                    `json:"openingRate"` // duel win rate, 0..100
+	TradeRate         float64                    `json:"tradeRate"`   // 0..100 percent (see GetProfile)
+	Trades            int                        `json:"trades"`      // successful trades (player_stats.trade_kills)
+	TradeOpps         int                        `json:"tradeOpps"`   // trade opportunities — TradeRate's denominator
+	Clutches          int                        `json:"clutches"`
+	ClutchWinPct      float64                    `json:"clutchWinPct"`
+	AvgEnemiesFlashed float64                    `json:"avgEnemiesFlashed"` // per-match mean enemies flashed
+	AvgUtilDamage     float64                    `json:"avgUtilDamage"`     // per-match mean utility damage
+	Sides             []ProfileSide              `json:"sides"`
+	Maps              []ProfileMap               `json:"maps"`
+	Weapons           []ProfileWeapon            `json:"weapons"` // top by kills
+	History           []models.ProfileHistoryRow `json:"history"` // most recent first, ≤100
 }
 
 // weaponTopLimit caps the profile's weapon proficiency list.
@@ -91,7 +97,9 @@ type ProfileService struct {
 // career row yields an empty profile (SteamID filled) rather than an error
 // — the frontend shows an empty state. Per-weapon headshots come from the
 // stored kill events (store.GetPlayerWeaponJSONs), folded per weapon by
-// mergeWeapons alongside kills and damage.
+// mergeWeapons alongside kills and damage; the Trade rate denominator,
+// the per-ROUND side splits and the per-match counter means come from the
+// three profile queries at the bottom of internal/store/analytics.go.
 func (s *ProfileService) GetProfile(steamID string) (Profile, error) {
 	p := Profile{SteamID: steamID}
 
@@ -129,34 +137,64 @@ func (s *ProfileService) GetProfile(steamID string) (Profile, error) {
 	if err != nil {
 		return Profile{}, err
 	}
-	// TradeRate over the career: 100 × trades / max(deaths, 1) from history
-	// sums (career has no death column; history covers ≤100 matches — fine
-	// at this library scale). Percent scale: 0..100 like OpeningRate above
-	// and every other *Pct/*Rate field on this DTO — the value fmtPercent
-	// renders directly (the Combat tab's Trade% follows the same rule in
-	// store.GetCombatStats; pinned by TestGetProfileTradeRatePercent).
-	deaths := 0
-	sideAgg := map[string]*ProfileSide{}
-	// Per-side kill/death pools for ProfileSide.KD — the same rows the
-	// side's Matches/Wins/ADR/KAST aggregates come from.
-	sideKills := map[string]int{}
-	sideDeaths := map[string]int{}
+	p.History = history
+
+	// TradeRate over the whole career: 100 × successful trades ÷ total
+	// trade opportunities. The numerator is player_stats.trade_kills via
+	// the career rollup (recomputed by analytics.Compute, so it follows
+	// the configured trade window); the denominator is
+	// store.CountPlayerTradeOpportunities — both sides span every match
+	// in the library, unlike the ≤100-row history (the old denominator,
+	// the player's own deaths). Percent scale: 0..100 like OpeningRate
+	// above and every other *Pct/*Rate field on this DTO — the value
+	// fmtPercent renders directly. It is a ratio, not a share, so it may
+	// exceed 100 when a trade lands on a death the proximity gate did not
+	// count (pinned by TestGetProfileTradeRatePercent).
+	opps, err := s.st.CountPlayerTradeOpportunities(steamID)
+	if err != nil {
+		return Profile{}, err
+	}
+	p.Trades = career.Trades
+	p.TradeOpps = opps
+	if opps > 0 {
+		p.TradeRate = 100 * float64(career.Trades) / float64(opps)
+	}
+
+	// Per-match means of the stored counters with no career column.
+	avg, err := s.st.GetPlayerMatchAverages(steamID)
+	if err != nil {
+		return Profile{}, err
+	}
+	p.AvgEnemiesFlashed = avg.EnemiesFlashed
+	p.AvgUtilDamage = avg.UtilDamage
+
+	// Per-ROUND side splits: players switch sides at halftime, so the
+	// Sides card compares rounds played on CT vs T (never one row per
+	// match side — that mixed both halves into a single label).
+	splits, err := s.st.GetPlayerSideSplits(steamID)
+	if err != nil {
+		return Profile{}, err
+	}
+	for _, sp := range splits {
+		winPct := 0.0
+		if sp.Rounds > 0 {
+			winPct = 100 * float64(sp.Wins) / float64(sp.Rounds)
+		}
+		p.Sides = append(p.Sides, ProfileSide{
+			Side:        sp.Side,
+			Rounds:      sp.Rounds,
+			RoundWinPct: winPct,
+			ADR:         sp.ADR,
+			KASTPct:     sp.KASTPct,
+			// KD uses the career rollup's pooled shape (kdCareerSQL):
+			// SUM(kills) / MAX(SUM(deaths), 1) over these rounds — a
+			// zero-death side counts every kill (same floor, no NaN).
+			KD: float64(sp.Kills) / float64(max(sp.Deaths, 1)),
+		})
+	}
+
 	mapAgg := map[string]*ProfileMap{}
 	for _, h := range history {
-		deaths += h.Deaths
-		side := sideAgg[h.Side]
-		if side == nil {
-			side = &ProfileSide{Side: h.Side}
-			sideAgg[h.Side] = side
-		}
-		side.Matches++
-		sideKills[h.Side] += h.Kills
-		sideDeaths[h.Side] += h.Deaths
-		if h.Win {
-			side.Wins++
-		}
-		side.ADR += h.ADR
-		side.KASTPct += h.KASTPct
 		m := mapAgg[h.Map]
 		if m == nil {
 			m = &ProfileMap{Map: h.Map}
@@ -168,22 +206,6 @@ func (s *ProfileService) GetProfile(steamID string) (Profile, error) {
 		}
 		m.ADR += h.ADR
 	}
-	p.History = history
-	if deaths > 0 {
-		p.TradeRate = 100 * float64(career.Trades) / float64(deaths)
-	}
-	for _, side := range sideAgg {
-		if side.Matches > 0 {
-			side.ADR /= float64(side.Matches)
-			side.KASTPct /= float64(side.Matches)
-		}
-		// KD uses the career rollup's pooled shape (kdCareerSQL):
-		// SUM(kills) / MAX(SUM(deaths), 1) over these history rows — a
-		// zero-death side counts every kill (same floor, no NaN).
-		side.KD = float64(sideKills[side.Side]) / float64(max(sideDeaths[side.Side], 1))
-		p.Sides = append(p.Sides, *side)
-	}
-	sort.Slice(p.Sides, func(i, j int) bool { return p.Sides[i].Side < p.Sides[j].Side })
 	for _, m := range mapAgg {
 		if m.Matches > 0 {
 			m.ADR /= float64(m.Matches)

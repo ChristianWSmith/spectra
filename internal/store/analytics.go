@@ -1108,10 +1108,19 @@ func (s *Store) GetTrend(steamID, metric string) ([]models.ProfileTrendPoint, er
 
 // GetPlayerHistory returns one player's per-match history (most recent
 // first, ≤100) with KAST% averaged from player_round_stats per match (0
-// when the match has no analytics rows).
+// when the match has no analytics rows) and StartSide — the freeze-end
+// side sample of the player's first COUNTED round (warmup/pregame rounds
+// are not the side a match opens on; a match with no stored sample yields
+// "" rather than a guess). Side stays player_stats.side (final side) —
+// the input models.WinFor uses below.
 func (s *Store) GetPlayerHistory(steamID string) ([]models.ProfileHistoryRow, error) {
 	rows, err := s.db.Query(
 		`SELECT m.id, m.extracted_at, m.map, m.score_ct, m.score_t, ps.side,
+			(SELECT rps.side FROM round_player_sides rps
+			 JOIN rounds r ON r.match_id = rps.match_id AND r.number = rps.round
+			 WHERE rps.match_id = ps.match_id AND rps.steam_id = ps.steam_id
+			   AND r.warmup = 0 AND r.pregame = 0 AND rps.side IN ('ct','t')
+			 ORDER BY r.number ASC LIMIT 1),
 			ps.kills, ps.deaths, ps.assists, ps.adr,
 			`+kastPerMatchSQL+`
 		 FROM player_stats ps
@@ -1128,13 +1137,15 @@ func (s *Store) GetPlayerHistory(steamID string) ([]models.ProfileHistoryRow, er
 	for rows.Next() {
 		var r models.ProfileHistoryRow
 		var extracted sql.NullTime
+		var startSide sql.NullString
 		if err := rows.Scan(
-			&r.MatchID, &extracted, &r.Map, &r.ScoreCT, &r.ScoreT, &r.Side,
+			&r.MatchID, &extracted, &r.Map, &r.ScoreCT, &r.ScoreT, &r.Side, &startSide,
 			&r.Kills, &r.Deaths, &r.Assists, &r.ADR, &r.KASTPct,
 		); err != nil {
 			return nil, fmt.Errorf("store: get player history: %w", err)
 		}
 		r.ExtractedAt = nullTime(extracted)
+		r.StartSide = startSide.String
 		r.Win = models.WinFor(r.Side, r.ScoreCT, r.ScoreT)
 		out = append(out, r)
 	}
@@ -1212,4 +1223,136 @@ func (s *Store) GetPlayerWeaponJSONs(steamID string) ([]models.ProfileWeaponJSON
 		return nil, fmt.Errorf("store: get player weapon jsons: %w", err)
 	}
 	return out, nil
+}
+
+// ---- profile read models (side splits, trade opportunities, averages) ----
+
+// GetPlayerSideSplits rolls a player's per-round stats up by the side
+// they played each round — the profile's Sides card. Every counted round
+// contributes to exactly ONE row (teams switch at halftime, which is why
+// a per-match side column is meaningless): player_round_stats (one row
+// per player per counted round — analytics.PlayerRounds) joined to that
+// round's freeze-end side sample (round_player_sides — the extractor's
+// exact per-round sides, never a guess) and to the round's winner
+// (rounds.winner) for the round-win count. A round without a stored side
+// sample for the player yields no row (unknown side → skipped). ADR =
+// SUM(player_round_stats.dmg) / rounds — the same HP-capped damage basis
+// player_stats.adr uses; KASTPct = 100 × AVG(player_round_stats.kast).
+// Returned ordered by side (ct, t).
+func (s *Store) GetPlayerSideSplits(steamID string) ([]models.ProfileSideSplit, error) {
+	rows, err := s.db.Query(
+		`SELECT rps.side, COUNT(*),
+			SUM(CASE WHEN rd.winner = rps.side THEN 1 ELSE 0 END),
+			SUM(prs.kills), SUM(prs.deaths),
+			1.0 * SUM(prs.dmg) / COUNT(*),
+			100.0 * AVG(prs.kast)
+		 FROM player_round_stats prs
+		 JOIN round_player_sides rps
+		   ON rps.match_id = prs.match_id AND rps.round = prs.round AND rps.steam_id = prs.steam_id
+		 JOIN rounds rd ON rd.match_id = prs.match_id AND rd.number = prs.round
+		 WHERE prs.steam_id = ? AND rps.side IN ('ct','t')
+		   AND rd.warmup = 0 AND rd.pregame = 0
+		 GROUP BY rps.side
+		 ORDER BY rps.side ASC`, scrub(steamID),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("store: get player side splits: %w", err)
+	}
+	defer rows.Close()
+	var out []models.ProfileSideSplit
+	for rows.Next() {
+		var r models.ProfileSideSplit
+		if err := rows.Scan(&r.Side, &r.Rounds, &r.Wins, &r.Kills, &r.Deaths, &r.ADR, &r.KASTPct); err != nil {
+			return nil, fmt.Errorf("store: get player side splits: %w", err)
+		}
+		out = append(out, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: get player side splits: %w", err)
+	}
+	return out, nil
+}
+
+// CountPlayerTradeOpportunities returns how many trade opportunities a
+// player had across every match in the library — the denominator of the
+// profile's Trade rate (profileservice.GetProfile). Nothing stores this
+// count, so THIS query is the definition; it is pinned by
+// TestCountPlayerTradeOpportunities.
+//
+// One opportunity = one ENEMY kill in a counted round (warmup/pregame
+// excluded; both sides known from that round's freeze-end samples and
+// different — the same gates analytics.Engagements applies) whose VICTIM
+// is this player's teammate in that round, where BOTH:
+//
+//   - the player was ALIVE at the death tick: no death event for them in
+//     that round at or before it — a dead player cannot answer; and
+//   - the death was tradeable in principle: the kill event's
+//     detail_json.nearDist (extract.nearTeammateDist — the nearest living
+//     teammate of the victim to the killer at that tick; -1 when nobody
+//     is measurable) falls within [0, analysis_config.trade_opp_distance].
+//     This is the SAME proximity predicate store.GetCombatStats gates
+//     "Trade opportunities missed" on, applied to every teammate death
+//     rather than only the untraded ones (that metric is this set's
+//     untraded subset).
+//
+// The proximity is measured to the NEAREST living teammate of the victim,
+// not to this player specifically (per-player distances are not stored),
+// so the gate is team-level: a teammate death counts for every player
+// still alive on the victim's side, which can credit someone who was
+// himself out of range — the same class of documented approximation as
+// GetCombatStats' final-side friendly fire. The numerator (successful
+// trades) is player_stats.trade_kills via the career rollup, recomputed
+// by analytics.Compute, so both sides follow the configured trade window.
+func (s *Store) CountPlayerTradeOpportunities(steamID string) (int, error) {
+	cfg, err := s.GetConfig()
+	if err != nil {
+		return 0, err
+	}
+	sid := scrub(steamID)
+	var n int
+	err = s.db.QueryRow(
+		`SELECT COUNT(*)
+		 FROM events d
+		 JOIN rounds rd ON rd.match_id = d.match_id AND rd.number = d.round
+		 JOIN round_player_sides ks
+		   ON ks.match_id = d.match_id AND ks.round = d.round AND ks.steam_id = d.attacker
+		 JOIN round_player_sides vs
+		   ON vs.match_id = d.match_id AND vs.round = d.round AND vs.steam_id = d.victim
+		 WHERE d.kind = 'kill'
+		   AND d.attacker <> '' AND d.attacker <> d.victim AND d.victim <> ?
+		   AND rd.warmup = 0 AND rd.pregame = 0
+		   AND ks.side IN ('ct','t') AND vs.side IN ('ct','t') AND ks.side <> vs.side
+		   AND EXISTS (SELECT 1 FROM round_player_sides ps
+		               WHERE ps.match_id = d.match_id AND ps.round = d.round
+		                 AND ps.steam_id = ? AND ps.side = vs.side)
+		   AND NOT EXISTS (SELECT 1 FROM events pd
+		                   WHERE pd.match_id = d.match_id AND pd.round = d.round
+		                     AND pd.kind = 'kill' AND pd.victim = ? AND pd.tick <= d.tick)
+		   AND CASE WHEN json_valid(d.detail_json)
+		            THEN json_extract(d.detail_json, '$.nearDist') END
+		       BETWEEN 0 AND ?`,
+		sid, sid, sid, cfg.TradeOppDistance,
+	).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("store: count player trade opportunities: %w", err)
+	}
+	return n, nil
+}
+
+// GetPlayerMatchAverages returns per-match means over the player's
+// player_stats rows (one row per match played): enemies flashed and
+// utility damage. AVG over rows IS the per-match average here — no
+// player_career column exists for them and the baseline schema has no
+// migration path (a new career column would break an existing database),
+// so the mean is taken at read time instead of at rollup time.
+func (s *Store) GetPlayerMatchAverages(steamID string) (models.ProfileAverages, error) {
+	var a models.ProfileAverages
+	err := s.db.QueryRow(
+		`SELECT COALESCE(AVG(enemies_flashed), 0), COALESCE(AVG(utility_damage), 0)
+		 FROM player_stats WHERE steam_id = ?`, scrub(steamID),
+	).Scan(&a.EnemiesFlashed, &a.UtilDamage)
+	if err != nil {
+		return models.ProfileAverages{}, fmt.Errorf("store: get player match averages: %w", err)
+	}
+	return a, nil
 }

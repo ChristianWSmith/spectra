@@ -241,6 +241,14 @@ type CareerSummary struct {
 // ProfileHistoryRow is one match-history entry for a player profile.
 // KASTPct is the average over player_round_stats for the match (0 when the
 // match has no stored player_round_stats rows).
+//
+// Side is the player's FINAL side (player_stats.side — the side the
+// end-of-demo roster shows, and the input WinFor needs: the final score
+// names each side's team, so only the final side maps score → result).
+// StartSide is the side the player OPENED the match on — the freeze-end
+// sample of their first counted round (round_player_sides ⋈ rounds with
+// warmup = 0 AND pregame = 0, lowest number); "" when the match carries
+// no sample (never guessed — the profile renders it as "—").
 type ProfileHistoryRow struct {
 	MatchID     int64     `json:"matchId"`
 	ExtractedAt time.Time `json:"extractedAt"`
@@ -248,12 +256,38 @@ type ProfileHistoryRow struct {
 	Win         bool      `json:"win"`
 	ScoreCT     int       `json:"scoreCT"`
 	ScoreT      int       `json:"scoreT"`
-	Side        string    `json:"side"`
+	Side        string    `json:"side"`      // final side (drives Win)
+	StartSide   string    `json:"startSide"` // starting side ("" = unknown)
 	Kills       int       `json:"kills"`
 	Deaths      int       `json:"deaths"`
 	Assists     int       `json:"assists"`
 	ADR         float64   `json:"adr"`
 	KASTPct     float64   `json:"kastPct"`
+}
+
+// ProfileSideSplit is one side's per-ROUND rollup across a player's
+// matches (store.GetPlayerSideSplits) — the profile's Sides card. It is
+// a per-round split, not per match: players switch sides at halftime, so
+// every counted round contributes to exactly one side's row (unlike
+// ProfileHistoryRow.Side, which is one final side per match). ADR is the
+// HP-capped per-round damage summed and divided by rounds
+// (player_round_stats.dmg); KASTPct is 100 × mean(player_round_stats.kast)
+// over these rounds; Wins counts rounds this side's team won.
+type ProfileSideSplit struct {
+	Side    string  `json:"side"` // ct|t
+	Rounds  int     `json:"rounds"`
+	Wins    int     `json:"wins"`
+	Kills   int     `json:"kills"`
+	Deaths  int     `json:"deaths"`
+	ADR     float64 `json:"adr"`
+	KASTPct float64 `json:"kastPct"`
+}
+
+// ProfileAverages are per-match means over a player's player_stats rows
+// (one row per match played) — the profile's "per match" stat cards.
+type ProfileAverages struct {
+	EnemiesFlashed float64 `json:"enemiesFlashed"`
+	UtilDamage     float64 `json:"utilDamage"`
 }
 
 // WinFor reports whether side won the match with the given final score —
