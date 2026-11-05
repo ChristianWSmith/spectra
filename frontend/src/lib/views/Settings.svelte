@@ -398,10 +398,6 @@
       CS2 demo viewer and match analysis toolkit. Demos are parsed on your
       machine; nothing is uploaded anywhere.
     </p>
-    <p class="muted">
-      Product requirements live in <span class="mono">ref/PRD.md</span> in the
-      repository.
-    </p>
     <div class="row-between">
       <span class="muted"
         >Checks GitHub Releases for a newer version and runs the update flow

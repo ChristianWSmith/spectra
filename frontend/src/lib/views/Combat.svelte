@@ -395,7 +395,7 @@
               <th scope="col">Player</th>
               <th scope="col">Outcome</th>
               <th scope="col">Bomb</th>
-              <th scope="col" class="num def" title="Remaining HP of the solo player when the clutch resolved: the game-sampled health of the last player_hurt at or before that moment (HP changes only through player_hurt, so the value is exact); rows without that detail fall back to damage arithmetic, and a dead solo reads 0 (analytics/clutches.go)">HP left</th>
+              <th scope="col" class="num def" title="Remaining HP of the solo player when the clutch resolved: the game-sampled health of the last player_hurt at or before that moment (HP changes only through player_hurt, so the value is exact); rows without that detail fall back to damage arithmetic, and a dead solo reads 0">HP left</th>
             </tr>
           </thead>
           <tbody>

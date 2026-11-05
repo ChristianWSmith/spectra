@@ -408,7 +408,7 @@
     {/if}
     <p class="muted spat-desc">
       Pattern detection (executes/setups) descoped — needs bomb-site region
-      polygons (see ref/MISSING.md).
+      polygons.
     </p>
   </section>
 </div>

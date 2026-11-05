@@ -215,7 +215,7 @@
       return;
     }
     if (!form.doc.trim()) {
-      saveError = 'Doc is required for user metrics — document the formula (PRD §5.16).';
+      saveError = 'Doc is required for user metrics — document the formula.';
       return;
     }
     if (exprCheck.state === 'error') {
@@ -544,7 +544,7 @@
                     <th scope="col">Group</th>
                     <th scope="col">Label</th>
                     <th scope="col" class="num">Value</th>
-                    <th scope="col" class="num" title="Sample size behind the value (PRD §5.16)">N</th>
+                    <th scope="col" class="num" title="Sample size behind the value">N</th>
                   </tr>
                 </thead>
                 <tbody>

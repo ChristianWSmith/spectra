@@ -15,7 +15,7 @@ var tableNotes = map[string]string{
 	"player_stats":       "per-match scoreboard rollup per player (K/D/A, ADR, openings, trades, weapon JSON)",
 	"rounds":             "per-round outcome + timing (winner, reason, ticks, first kill, MVP, warmup/pregame flags)",
 	"round_player_sides": "per-round player sides from freeze-end samples (exact side per round — halftime switches)",
-	"round_economy":      "per-round per-side equipment value + money samples + spend (spent = Σ over the side's players of the freeze-time-end delta in the cumulative cash-spent counter; buy classification input) + free spawn-issued default-pistol value held at freeze end (free_pistol_value — net worth subtracts it)",
+	"round_economy":      "per-round per-side equipment value + money samples + spend (spent = Σ over the side's players of the freeze-time-end delta in the cumulative cash-spent counter; buy classification input) + free spawn-issued default-pistol value held at freeze end (free_pistol_value — granted pistols count inside equipment value, so net worth includes them)",
 	"events":             "normalized game events (kill/damage/blind/bomb/…) with tick, actors, weapon flags, positions",
 	"generic_events":     "raw parser events not in the normalized taxonomy (name/tick/payload JSON)",
 	"chat":               "in-game chat/user messages (+ M4 decryption provenance columns)",
@@ -40,7 +40,7 @@ var tableNotes = map[string]string{
 	"metrics":       "custom metric definitions (origin builtin|user|plugin; grammar in internal/metrics)",
 	"saved_queries": "named SQL console queries (unique names)",
 	"query_history": "SQL console run history (sql/ms/rows/ok, capped at 100 newest)",
-	"plugins":       "declarative plugin registry (M5 §2.7)",
+	"plugins":       "declarative plugin registry",
 }
 
 // columnNotes maps table → column → note.
@@ -92,7 +92,7 @@ var columnNotes = map[string]map[string]string{
 		"kills_by_weapon": "JSON object (excluded from the metrics expression whitelist)",
 	},
 	"metrics": {
-		"origin":      "builtin|user|plugin — builtin rows are schema-seeded PRD §5.16 fixtures",
+		"origin":      "builtin|user|plugin — builtin rows ship seeded with the app",
 		"expr":        "metric grammar: from <table>: <aggregations> (internal/metrics package doc)",
 		"denominator": "scalar subquery source: ''|rounds|matches|player_rounds",
 	},
