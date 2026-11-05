@@ -1,21 +1,43 @@
 // Formatting helpers for the M1 views. Pure functions — no services.
 import { isCounted } from './rounds.js';
 
+// intoRoundSeconds is THE round-relative time arithmetic: seconds from
+// the round's start tick to `tick` at the match rate — null when the
+// round is unknown or the tick precedes its start (callers fall back to
+// the match-relative clock, never a negative readout). Shared by
+// chatClock below and roundClock, so the two clocks stay one rule.
+function intoRoundSeconds(tick, round, tickRate) {
+  if (!round) return null;
+  const into = tickSeconds(tick - round.startTick, tickRate);
+  return into >= 0 ? into : null;
+}
+
 // chatClock renders a chat line's time cell: "R12 1:23" — how far INTO
-// its round the message was said: (tick − round.startTick) / tickRate,
-// rendered with fmtClock. Messages with no containing round, in a
-// counted-out round (knife/warmup — lib/rounds.js) or with a negative
-// offset fall back to a match-relative clock (tick / tickRate) — plain
-// "m:ss", never a negative; keep it simple. The raw tick stays in the
-// cell's title tooltip. This is THE chat clock (the Replay feed's
-// chat rows and RoundDetail's round chat both render it).
+// its round the message was said, rendered with fmtClock. Messages with
+// no containing round, in a counted-out round (knife/warmup —
+// lib/rounds.js) or with a negative offset fall back to a match-relative
+// clock (tick / tickRate) — plain "m:ss", never a negative; keep it
+// simple. The raw tick stays in the cell's title tooltip. This is THE
+// chat clock (the Replay feed's chat rows and RoundDetail's round chat
+// both render it).
 export function chatClock(c, roundByNumber, tickRate) {
   const r = (roundByNumber || new Map()).get(c.round);
   if (r && isCounted(r)) {
-    const intoRound = tickSeconds(c.tick - r.startTick, tickRate);
-    if (intoRound >= 0) return `R${r.number} ${fmtClock(intoRound)}`;
+    const into = intoRoundSeconds(c.tick, r, tickRate);
+    if (into != null) return `R${r.number} ${fmtClock(into)}`;
   }
   return fmtClock(tickSeconds(c.tick, tickRate));
+}
+
+// roundClock renders a tick as time INTO its round ("m:ss") — the
+// round-relative row clock every per-round row shows (the Utility rows:
+// how far into that round the throw happened). Same arithmetic and
+// fallback as chatClock via intoRoundSeconds — an unknown round or a
+// tick before its start renders the match-relative clock; the raw tick
+// stays in the cell's title tooltip.
+export function roundClock(tick, round, tickRate) {
+  const into = intoRoundSeconds(tick, round, tickRate);
+  return fmtClock(into != null ? into : tickSeconds(tick, tickRate));
 }
 
 // fmtDuration renders seconds as "35m39s" (or "42s" / "1h02m03s").

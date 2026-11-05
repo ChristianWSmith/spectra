@@ -339,7 +339,7 @@ CT blinds stat cell,Utility tab,Cell showing the team that finished CT's total b
 Flash effectiveness panel,Utility tab,"Panel headed ""Flash effectiveness"" showing per-team blind totals with an inferred badge.",Utility.svelte:flash
 Flash inferred badge,Utility tab,"""inferred"" chip in the Flash effectiveness panel noting the metric is derived from blind events.",Utility.svelte:util-badge-inferred
 Flash note text,Utility tab,"""total blind time + affected players, by thrower team"" caption under the flash cells.",Utility.svelte:util-flash-note
-Grenade event row,Utility tab,"One grenade entry listing kind, thrower (a profile link), tick, damage, blind time, affected players, site, actions, and detonation coordinates.",Utility.svelte:util-nade
+Grenade event row,Utility tab,"One grenade entry listing kind, thrower (a profile link), time into that round (raw tick in the tooltip), damage, blind time, affected players, site, actions, and detonation coordinates.",Utility.svelte:util-nade
 Grenade kind chip,Utility tab,"Kind chip (flash, smoke, he, molotov…) at the start of each grenade row.",Utility.svelte:util-kind
 Grenade replay button,Utility tab,"""replay ▶"" button on a grenade row opening the replay at that throw's tick.",Utility.svelte:openReplay
 Grenade timeline button,Utility tab,"""timeline"" button on a grenade row opening the timeline filtered to that round's grenade events.",Utility.svelte:openTimeline
@@ -633,7 +633,7 @@ Empty feed message,Replay — landmark feed,"""No categories enabled — turn so
 Feed error message,Replay — landmark feed,Alert shown when a feed source query (typed/chat/generic) fails.,Replay.svelte:feedError
 Chat shortcut button,Match — Overview & header,Header button opening the Replay landmark feed with the Chat category enabled (the retired Chat tab’s shortcut).,Match.svelte:openChat
 Events in Replay button,Round detail,Header button opening the Replay landmark feed scoped to this round (the retired kill feed’s entry point).,RoundDetail.svelte:openEvents
-Lanes toggle button,Replay — voice lanes,"""Lanes"" toggle in the voice bar showing/hiding the per-player voice density strip (hidden by default below an 820px viewport).",Replay.svelte:lanesOpen
+Lanes toggle button,Replay — voice lanes,"""Lanes"" toggle in the voice bar showing/hiding the per-player voice density strip (hidden by default at every viewport size; toggling shows it for the session).",Replay.svelte:lanesOpen
 Voice lanes panel,Replay — voice lanes,Per-player voice-activity strip above the transport; click maps x to a tick and plays from there with voice enabled.,VoiceLanes.svelte:voice-lanes
 Voice lanes header,Replay — voice lanes,"Header row with the ""Voice"" title and a hint such as ""N players · click to play from there"".",VoiceLanes.svelte:voice-lanes-head
 Voice lanes seek strip,Replay — voice lanes,"Clickable, keyboard-operable strip covering all lanes; clicking maps the x-position to a tick and starts replay from there.",VoiceLanes.svelte:voice-lanes-strip

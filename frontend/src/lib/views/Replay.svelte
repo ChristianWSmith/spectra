@@ -56,8 +56,8 @@
   import { downloadBlob, downloadText } from '../download.js';
   import { toCSV } from '../csv.js';
   import { chatClock, prettyJson } from '../fmt.js';
-  import { isCounted } from '../rounds.js';
-  import { isSteam } from '../nav.js';
+  import { isCounted, roundStartTick } from '../rounds.js';
+  import { isSteam, entrySeekTick } from '../nav.js';
   import { buildHash } from '../router.js';
   import FilterBar from '../components/FilterBar.svelte';
   import LandmarkRow from '../components/LandmarkRow.svelte';
@@ -101,11 +101,11 @@
   let uiLoopTo = $state(-1);
   let uiLoopOn = $state(false);
   let eventsOpen = $state(true); // the canonical feed is visible by default
-  // The voice-lanes strip needs ~190px of vertical space — show it by
-  // default only when the window has room for it (short windows would
-  // otherwise leave the landmark list with a single visible row); the
-  // voice bar's Lanes toggle always overrides.
-  let lanesOpen = $state(typeof window === 'undefined' || window.innerHeight >= 820);
+  // The voice-lanes strip needs ~190px of vertical space, so it is HIDDEN
+  // by default at every viewport size (short windows would otherwise leave
+  // the landmark list with a single visible row); the voice bar's Lanes
+  // toggle shows it for the session.
+  let lanesOpen = $state(false);
   let jumpRound = $state('');
 
   let stageEl = $state(null);
@@ -328,6 +328,7 @@
   let payloadQuery = $state('');
   let copied = $state(false);
   let entrySel = ''; // ?sel= from the entry URL (applied once)
+  let entrySelTick = 0; // its tick when it resolves before the engine is up
   let selApplied = false;
 
   async function select(row) {
@@ -364,7 +365,7 @@
       selApplied = true;
       const row = feedRows.find((r) => r.key === entrySel);
       select(row);
-      engine?.seekTick(row.tick);
+      seekEntry(row.tick);
       return;
     }
     if (!feedSettled) return;
@@ -379,13 +380,23 @@
             if (row) {
               selected = row;
               detail = d;
-              engine?.seekTick(d.tick);
+              seekEntry(d.tick);
             }
           })
           .catch(() => {});
       }
     }
   });
+
+  // seekEntry applies the entry ?sel= seek now when the engine is up,
+  // else remembers it for startEngine: the feed routinely settles BEFORE
+  // the position data loads, and an unguarded `engine?.seekTick` would
+  // silently no-op there — leaving the replay on the first frame instead
+  // of the linked landmark.
+  function seekEntry(tick) {
+    if (engine) engine.seekTick(tick);
+    else entrySelTick = tick;
+  }
 
   async function copyText(text) {
     try {
@@ -648,6 +659,7 @@
     loading = true;
     loadError = '';
     entrySel = query.sel || '';
+    entrySelTick = 0;
     try {
       const m = await getReplayMeta(id);
       meta = m;
@@ -755,10 +767,17 @@
         if (uiVoiceSolo[p.steamId]) voiceEngine.setSolo(p.steamId, true);
       }
     }
-    // Entry position rides the URL (?tick=) — durable and deep-linkable.
-    // No autoplay: contextual links seek, they never hijack playback.
-    const tick0 = Number(query.tick) || 0;
+    // Entry position rides the URL — durable and deep-linkable.
+    // entrySeekTick is the ONE resolver: an exact ?tick= wins, else the
+    // ?round= feed scope resolves to that round's START tick (a round
+    // link is a link to a point in time — never the first frame), else
+    // 0; a ?sel= landmark that resolved before the engine was up applies
+    // on top. Applied once here, after loading — in-session filter
+    // changes keep the playback position. No autoplay: contextual links
+    // seek, they never hijack playback.
+    const tick0 = entrySeekTick(query, rounds);
     if (tick0) engine.seekTick(tick0);
+    else if (entrySelTick) engine.seekTick(entrySelTick);
     renderer.draw();
     ready = true;
   }
@@ -786,8 +805,10 @@
   function onJumpRound(e) {
     const n = Number(e.currentTarget.value);
     jumpRound = '';
-    const r = rounds.find((x) => x.number === n);
-    if (r && engine) engine.seekTick(r.startTick || 0);
+    // Canonical round → start-tick lookup (lib/rounds.js): an unknown
+    // round keeps the position instead of jumping to the first frame.
+    const start = roundStartTick(rounds, n);
+    if (start != null && engine) engine.seekTick(start);
   }
 
   function onFollow(e) {

@@ -1,12 +1,14 @@
 // Tests for lib/nav.js: the profile return trip (profileBackTarget — the
 // resolution behind PlayerProfile's top-left back button), the navigation
-// guards the profile links share (isSteam/openProfile) and the sidebar
-// action highlighters (NAV_ACTIONS active()).
+// guards the profile links share (isSteam/openProfile), the sidebar
+// action highlighters (NAV_ACTIONS active()) and the replay entry time
+// resolver (entrySeekTick — the ?tick=/?round= contract every link into
+// THE event browser relies on).
 // Run: node --test src/lib/nav.test.js   (from frontend/)
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { isSteam, openProfile, profileBackTarget, NAV_ACTIONS } from './nav.js';
+import { isSteam, openProfile, profileBackTarget, NAV_ACTIONS, entrySeekTick } from './nav.js';
 
 test('an explicit ?back= origin wins (durable, deep-linkable)', () => {
   assert.equal(
@@ -90,4 +92,46 @@ test('sidebar active(): exactly one action lights up per route', () => {
     const on = NAV_ACTIONS.filter((a) => a.active({ name })).map((a) => a.label);
     assert.equal(on.length, 1, `${name} → ${on.join(', ')}`);
   }
+});
+
+// --- entrySeekTick: the replay entry time target --------------------------
+const ROUNDS = [
+  { number: -2, startTick: 100 }, // knife
+  { number: -1, startTick: 400 }, // warmup
+  { number: 1, startTick: 1200 },
+  { number: 7, startTick: 24500 },
+];
+
+test('entrySeekTick: an exact ?tick= link wins over everything', () => {
+  // RoundDetail's "Watch round" / Combat's EventPlay / Utility's
+  // "replay" buttons all stamp an exact tick.
+  assert.equal(entrySeekTick({ tick: '9999' }, ROUNDS), 9999);
+  assert.equal(entrySeekTick({ tick: '9999', round: '7' }, ROUNDS), 9999);
+  assert.equal(entrySeekTick({ tick: 9999 }, ROUNDS), 9999);
+  assert.equal(entrySeekTick({ tick: '0' }, ROUNDS), 0); // tick 0 = first frame
+});
+
+test('entrySeekTick: a ?round= link resolves to that round\'s start tick', () => {
+  // The Economy gap-round card, Combat's round chips and every "events"
+  // button promise round N — the replay must land on N's start tick,
+  // never the first frame (the reported "lands at the first tick" bug).
+  assert.equal(entrySeekTick({ round: '7' }, ROUNDS), 24500);
+  assert.equal(entrySeekTick({ round: 1 }, ROUNDS), 1200);
+  // Negative-numbered rounds are real rounds too (knife/warmup) — the
+  // knife (-2) resolves; see the sentinel case below for -1.
+  assert.equal(entrySeekTick({ round: '-2' }, ROUNDS), 100);
+});
+
+test('entrySeekTick: no usable time target → 0 (first frame), never a guess', () => {
+  assert.equal(entrySeekTick({}, ROUNDS), 0);
+  assert.equal(entrySeekTick(undefined, ROUNDS), 0);
+  assert.equal(entrySeekTick({ round: '12' }, ROUNDS), 0); // unknown round
+  assert.equal(entrySeekTick({ round: '0' }, ROUNDS), 0); // round 0 never exists
+  assert.equal(entrySeekTick({ round: 'x' }, ROUNDS), 0); // malformed
+  assert.equal(entrySeekTick({ round: '1' }, []), 0); // rounds not loaded
+  assert.equal(entrySeekTick({ round: '1' }, null), 0);
+  // Parsed -1 is the "all rounds" sentinel (parseLandmarkFilter): an
+  // absent round and the warmup round's number are indistinguishable
+  // post-parse, so -1 never seeks — a pre-existing filter quirk.
+  assert.equal(entrySeekTick({ round: '-1' }, ROUNDS), 0);
 });
