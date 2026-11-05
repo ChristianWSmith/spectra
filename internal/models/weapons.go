@@ -7,20 +7,18 @@ package models
 // (utility_events.kind). Molotov ≡ Incendiary: the detonation event records
 // "Incendiary Grenade" for both teams' flames, so they pair as one kind.
 //
-// This map is the ONE definition of the utility set. The three copies that
-// used to exist were:
+// This map is the ONE definition of the utility set, read by:
 //
-//	analytics.rounds  utilWeapons map        → now models.IsUtilityWeapon
-//	analytics.utility utilKind switch        → now models.UtilityWeaponKind
-//	extract.handlers  common.Eq* enum gate   → kept (the parser cannot see
+//	analytics.rounds  DMG/UtilDmg aggregation → models.IsUtilityWeapon
+//	analytics.utility utilKind                → models.UtilityWeaponKind
+//	extract.handlers  common.Eq* enum gate    (the parser cannot see
 //	                                           names before demoinfocs
-//	                                           resolves them) but pinned to
+//	                                           resolves them; pinned to
 //	                                           this map by
-//	                                           extract.TestUtilityWeaponSetsIdentical
+//	                                           extract.TestUtilityWeaponSetsIdentical)
 //
-// Behavior-neutral consolidation: every producer of events.weapon emits
-// EquipmentType.String(), so the exact-match lookup sees the same inputs the
-// three copies did.
+// Every producer of events.weapon emits EquipmentType.String(), so the
+// exact-match lookup sees the same inputs in every layer.
 var utilityWeaponKinds = map[string]string{
 	"HE Grenade":         "he",
 	"Flashbang":          "flash",

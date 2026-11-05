@@ -29,8 +29,8 @@ import (
 // copy loop to drift. Two twins are deliberately kept below, each for a
 // shape the models type does not have.
 
-// ClutchRow is a detected 1vN (clutch v2 — alive-count analysis, replaces
-// the M1 survivor approximation). ReplayAnchorTick = start_tick for deep
+// ClutchRow is a detected 1vN (clutch v2 — alive-count analysis).
+// ReplayAnchorTick = start_tick for deep
 // link. KEPT (not models.Clutch): the synthetic per-row ID the frontend
 // keys its list on (models.Clutch has no id — rows are stored, not
 // identified) and the replayAnchorTick tag the UI reads (models tags it

@@ -703,9 +703,8 @@ func TestGetCombatStatsFromStoredRows(t *testing.T) {
 	}
 }
 
-// TestGetCombatStatsSQLDecisions pins the three decisions where the deleted
-// in-memory twin (analytics.CombatStats) had drifted from this SQL. The SQL
-// is authoritative — see the GetCombatStats doc comment.
+// TestGetCombatStatsSQLDecisions pins the decisions in the
+// GetCombatStats doc comment — the single implementation of these rules.
 func TestGetCombatStatsSQLDecisions(t *testing.T) {
 	s := openMem(t)
 	id := saveTestMatch(t, s, "/d/combat2.dem", "sha-combat2", time.Now())
@@ -727,11 +726,11 @@ func TestGetCombatStatsSQLDecisions(t *testing.T) {
 	}
 	em.Events = []models.Event{
 		// (1) Friendly fire with BOTH sides unknown: ap.side = vp.side
-		// matches '' = '' → counted (the Go twin required non-empty sides).
+		// matches '' = '' → counted.
 		{Tick: 100, Round: 1, Kind: models.EventDamage, Attacker: "400", Victim: "500", Dmg: 10},
 		// (2) Damage whose victim dies the same tick from a DIFFERENT
 		// attacker: the kill must match attacker+victim+tick, so this stays
-		// damage-without-kill (the Go twin credited any death that tick).
+		// damage-without-kill.
 		{Tick: 200, Round: 1, Kind: models.EventDamage, Attacker: "100", Victim: "200", Dmg: 50},
 		{Tick: 200, Round: 1, Kind: models.EventKill, Attacker: "300", Victim: "200"},
 		// (3) Same attacker+victim+tick → on-kill damage.

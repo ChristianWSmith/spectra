@@ -464,11 +464,10 @@ func scanRoundRow(row interface{ Scan(...any) error }) (models.RoundRow, error) 
 // whereClause accumulates the optional AND'ed filters of a read whose base
 // WHERE clause is fixed (match-scoped): add each fragment with its bound
 // values, render with sql() ("" when nothing was added), bind bound() in
-// order after the base parameters. This is the ONE optional-filter idiom —
-// it replaces both the append-the-AND loop and the optional-placeholder
-// trick (a bound empty-string parameter ORed with the real filter — dead
-// weight whenever the filter is off), which tied the placeholder count to
-// the filter state.
+// order after the base parameters. This is the ONE optional-filter idiom:
+// no bound empty-string parameter is ORed with the real filter (dead
+// weight whenever the filter is off) and the placeholder count never
+// depends on the filter state.
 type whereClause struct {
 	parts []string
 	args  []any
@@ -760,8 +759,8 @@ func scanEventRow(row interface{ Scan(...any) error }) (models.EventRow, error) 
 // rounds (the shared sentinel); limit <= 0 defaults to 500 (hard cap
 // 5000): payloads are JSON blobs, so callers page (limit + offset) rather
 // than pull a whole match's worth. The optional name/round filters go
-// through the shared whereClause (the old form bound a dead
-// optional-placeholder parameter — see TestGetGenericEventsFilterEquivalence).
+// through the shared whereClause (no optional-placeholder parameter —
+// see TestGetGenericEventsFilterEquivalence).
 // RowID (the table has no primary key) is the record identity the
 // landmark feed selects on.
 func (s *Store) GetGenericEvents(id int64, name string, round int, limit int, offset int) ([]models.GenericEvent, error) {

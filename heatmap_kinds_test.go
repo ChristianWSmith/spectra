@@ -67,8 +67,8 @@ func twoKills() []models.Event {
 
 // TestHeatmapKindsUseAttackerPosition guards the kills-vs-deaths split: the
 // kills raster plots where the KILLER was (events.apos_*), deaths where the
-// victim fell (events.pos_*). Both kinds used to rasterize the same victim
-// positions, so the two heatmaps came out identical.
+// victim fell (events.pos_*). A shared-position bug would make the two
+// heatmaps come out identical.
 func TestHeatmapKindsUseAttackerPosition(t *testing.T) {
 	st, id := seedHeatmapMatch(t, twoKills())
 	as := &AnalyticsService{st: st}

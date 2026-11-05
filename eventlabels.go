@@ -12,11 +12,8 @@ import (
 //
 // Generic events (generic_events table) arrive as untyped payload blobs.
 // The Replay landmark feed shows them as one-line labels; this file is
-// the only place those payloads are parsed for display. It used to live
-// in two copies (Go's parseConVarPayload for the Explorer's ConVar table
-// and a JavaScript flatter in the retired Context view) — when the
-// landmark consolidation folded both surfaces into Replay, the JS copy
-// was deleted and everything moved here.
+// the only place those payloads are parsed for display — never in a
+// second copy (see also models.GenericEvent).
 
 // labelGenericEvent builds the display fields for one generic event:
 // who = the payload's player name when it has one ("" otherwise), label =

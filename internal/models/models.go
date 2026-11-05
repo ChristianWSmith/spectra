@@ -296,7 +296,7 @@ type Chat struct {
 	// chat events with no origin provenance), so the extractor cannot
 	// honestly distinguish decrypted rows from plaintext ones — see
 	// presence.key_found + Match.EncryptedMessages for the real state.
-	// Set when an extractor-side provenance signal exists (TODO M4+).
+	// Set only if an extractor-side provenance signal ever exists.
 	Decrypted bool `json:"decrypted"`
 }
 

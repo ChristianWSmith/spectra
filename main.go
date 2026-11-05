@@ -195,9 +195,9 @@ func main() {
 		}
 	})
 
-	// No native application menu: the Help submenu and its "Check for
-	// Updates" item were removed — the action lives in Settings → About
-	// (Settings.svelte), which calls AppService.CheckForUpdateNow.
+	// No native application menu: the update-check action lives in
+	// Settings → About (Settings.svelte), which calls
+	// AppService.CheckForUpdateNow.
 
 	svc.maybeCheckForUpdates()
 

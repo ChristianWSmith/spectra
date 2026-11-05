@@ -103,7 +103,7 @@ func newProfileFixture(t *testing.T) *ProfileService {
 // TestGetProfileSidesKD: the Sides table's K/D column comes from the same
 // history rows as its Matches/Wins/ADR — pooled kills / deaths per side
 // with the career rollup's floor (kdCareerSQL: SUM(kills) /
-// MAX(SUM(deaths), 1)), never the unset zero it used to render.
+// MAX(SUM(deaths), 1)), never a division-by-zero/empty-side 0.
 func TestGetProfileSidesKD(t *testing.T) {
 	svc := newProfileFixture(t)
 	p, err := svc.GetProfile("100")

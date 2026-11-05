@@ -546,19 +546,17 @@ func sideFlips(rounds []models.EconomyRow, exact map[int]map[string]string) []bo
 // ≤ the stored analysis_config.trade_opp_distance (default 1000 units,
 // calibrated to the range trades actually happen in — see DefaultConfig).
 //
-// This SQL is AUTHORITATIVE: the in-memory twin that once duplicated these
-// rules in Go (analytics.CombatStats) was deleted — it had drifted in three
-// decisions, each pinned by TestGetCombatStatsSQLDecisions:
+// This SQL is AUTHORITATIVE: it is the single implementation of these
+// rules (there is no second in-memory copy to drift from), and every
+// decision below is pinned by TestGetCombatStatsSQLDecisions:
 //
 //  1. Friendly fire is `ap.side = vp.side`: an absent player row (LEFT JOIN
 //     NULL) never matches, but two players whose stored side is "" (unknown)
-//     DO match (empty == empty). The Go twin required both sides to be
-//     known.
+//     DO match (empty == empty).
 //  2. Damage-on-kill needs a kill row with the SAME attacker, victim AND
-//     tick; the Go twin credited any death of the victim on that tick, so a
-//     trade kill on the same tick credited the wrong attacker.
-//  3. Rows come back ordered by player NAME (ORDER BY p.name ASC); the Go
-//     twin sorted by SteamID.
+//     tick — a same-tick trade kill credits the actual killer, never any
+//     other death of the victim on that tick.
+//  3. Rows come back ordered by player NAME (ORDER BY p.name ASC).
 //  4. TradeOppMissed is proximity-gated against analysis_config.
 //     trade_opp_distance: the untraded row must join to its kill event's
 //     detail_json.nearDist within [0, distance]. No matching kill event,
@@ -567,8 +565,8 @@ func sideFlips(rounds []models.EconomyRow, exact map[int]map[string]string) []bo
 //     claim). UntradedDeaths stays the ungated count — the two columns are
 //     deliberately different metrics.
 //
-// Do not "fix" these from the Go side — change the SQL (and this comment)
-// deliberately instead.
+// Change these decisions (and this comment) deliberately — they are
+// pinned by TestGetCombatStatsSQLDecisions.
 func (s *Store) GetCombatStats(matchID int64) ([]models.CombatStat, error) {
 	cfg, err := s.GetConfig()
 	if err != nil {
@@ -973,11 +971,6 @@ func (s *Store) RebuildCareer() error {
 	}
 	return nil
 }
-
-// UpsertCareerFromMatch used to refresh the player_career rollup after one
-// match's rows changed; it was a thin wrapper over RebuildCareer (see the
-// RebuildCareer doc) and had no callers, so it was removed — RebuildCareer
-// is the only writer of the table.
 
 // GetCareer returns one player's career rollup (ErrNotFound when absent).
 func (s *Store) GetCareer(steamID string) (*models.CareerRow, error) {

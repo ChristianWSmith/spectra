@@ -442,8 +442,8 @@ func TestUtilityDetWithoutThrow(t *testing.T) {
 	}
 }
 
-// TestUtilKindUsesModelsUtilitySet pins analytics' third copy of the utility
-// set: utilKind and the util-dmg attribution both go through models now, so
+// TestUtilKindUsesModelsUtilitySet pins analytics' side of the utility
+// set: utilKind and the util-dmg attribution both go through models, so
 // every canonical grenade normalizes to the stored kind and nothing else
 // does (the set itself is pinned in extract.TestUtilityWeaponSetsIdentical).
 func TestUtilKindUsesModelsUtilitySet(t *testing.T) {
@@ -473,11 +473,9 @@ func TestUtilKindUsesModelsUtilitySet(t *testing.T) {
 	}
 }
 
-// TestCombatStats moved: the in-memory twin (analytics.CombatStats) was
-// deleted — store.GetCombatStats is the only implementation and its
-// semantics (including the three documented SQL-vs-Go drift decisions) are
-// pinned in internal/store/analytics_test.go (TestGetCombatStatsFromStoredRows
-// and TestGetCombatStatsSQLDecisions).
+// Combat-stats semantics (including the documented SQL decisions) are
+// pinned in internal/store/analytics_test.go: TestGetCombatStatsFromStoredRows
+// and TestGetCombatStatsSQLDecisions.
 
 func TestEconomyRowsFillsClasses(t *testing.T) {
 	rows := []models.EconomyRow{

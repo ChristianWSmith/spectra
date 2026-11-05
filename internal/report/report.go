@@ -113,9 +113,9 @@ func BuildMatchData(st *store.Store, matchID int64) (*MatchReport, error) {
 
 // teamNames resolves display names for a match's two teams (the score line
 // names teams, never sides — sides switch at halftime): the demo's clan
-// names via store.GetTeamNames (one targeted read — it replaced listing the
-// WHOLE library through ListMatches and filtering down to this match) when
-// the extract recorded them, else a synthesized `team_<playerName>` from
+// names via store.GetTeamNames (one targeted read for this match, not a
+// whole-library listing) when the extract recorded them, else a
+// synthesized `team_<playerName>` from
 // each final side's scoreboard rows (lowest SteamID — deterministic), else
 // the bare side when no player records one at all. A GetTeamNames failure
 // only costs the real names.
@@ -143,11 +143,11 @@ func teamNames(st *store.Store, matchID int64, sb []models.PlayerStatsRow) (ctNa
 // doesn't depend on the store's sort order. Sides without a player yield
 // "" (teamNames falls back to the bare side).
 //
-// CROSS-LAYER TWIN: frontend/lib/teams.js implements the same
+// CROSS-LAYER TWIN: frontend/src/lib/teams.js implements the same
 // `team_<player>` synthesis for display-only surfaces (no store access).
 // Different layers, deliberately both kept — the fixture is
-// TestSynthTeamNames here; the matching JS fixture is a follow-up for the
-// frontend owner (same inputs/outputs, see that comment).
+// TestSynthTeamNames here; the matching JS fixture is
+// frontend/src/lib/teams.test.js (same inputs/outputs, same tie-break).
 func synthTeamNames(sb []models.PlayerStatsRow) (ctName, tName string) {
 	pick := func(side string) string {
 		name, steamID := "", ""

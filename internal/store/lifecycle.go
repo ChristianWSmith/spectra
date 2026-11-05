@@ -109,7 +109,7 @@ func (s *Store) UpdateJob(id int64, status, stage string, progress float64, errM
 
 // jobExists reports whether the jobs row is present: false for an unknown
 // id, the raw driver error otherwise (callers wrap it with their own op
-// label — the two blocks this replaces wrapped differently).
+// label).
 func (s *Store) jobExists(id int64) (bool, error) {
 	var one int
 	err := s.db.QueryRow(`SELECT 1 FROM jobs WHERE id = ?`, id).Scan(&one)
@@ -494,7 +494,7 @@ func affectedOrNotFound(res sql.Result, op string) error {
 // match's child table: BEGIN, DELETE FROM <table> WHERE match_id = ?,
 // prepare INSERT INTO <table> (<cols>) VALUES (?, …) — placeholders derived
 // from the column list — fill n rows in slice order, COMMIT (the deferred
-// rollback swallows every failure path, as before). op wraps the begin/
+// rollback swallows every failure path). op wraps the begin/
 // delete/prepare/commit failures with the caller's label; fill returns its
 // per-row error ALREADY labeled (row errors carry context the helper cannot
 // know, e.g. a row index), so they pass through unwrapped. Transaction shape

@@ -128,9 +128,9 @@ func saveTestMatch(t *testing.T, s *Store, path, sha string, at time.Time) int64
 
 // TestOpenBaselineSchemaIdempotent opens a file database, reopens it (the
 // baseline re-applies as a no-op) and checks the schema is complete: a
-// representative table from every schema surface, every column folded into
-// the core tables with its original definition, and NO schema_version
-// tracking table (the baseline carries no per-file state).
+// representative table from every schema surface, the core tables' column
+// definitions, and NO schema_version tracking table (the baseline carries
+// no per-file state).
 func TestOpenBaselineSchemaIdempotent(t *testing.T) {
 	s, path := openFileStore(t)
 	if err := s.Close(); err != nil {
@@ -161,8 +161,7 @@ func TestOpenBaselineSchemaIdempotent(t *testing.T) {
 		}
 	}
 
-	// Columns folded into the core tables keep their original definitions
-	// (type, NOT NULL, default / NULL-ability).
+	// Core-table column definitions: type, NOT NULL, default / NULL-ability.
 	cols := []struct {
 		table, column, typ string
 		notnull            int

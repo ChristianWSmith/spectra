@@ -9,9 +9,8 @@ import (
 // TestGenericEventLabels pins THE generic-event labeler (eventlabels.go):
 // the server_cvar payload shapes observed across game builds, the
 // player_team shape, the who extraction, and the compact fallback. This
-// is the single implementation — the retired Context view's JavaScript
-// copy is gone, so these assertions are the only place convar/team
-// parsing semantics are pinned.
+// is the single implementation, so these assertions are the only place
+// convar/team parsing semantics are pinned.
 func TestGenericEventLabels(t *testing.T) {
 	st, err := store.Open(":memory:")
 	if err != nil {

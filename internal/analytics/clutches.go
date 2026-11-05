@@ -18,8 +18,7 @@ type clutchInst struct {
 }
 
 // Clutches detects 1vN clutches by walking each counted round's events
-// and maintaining per-team alive sets (clutch v2, replacing
-// the M1 sole-survivor approximation). sides carries the extractor's
+// and maintaining per-team alive sets (clutch v2). sides carries the extractor's
 // exact per-round side samples; a round without them has no player with a
 // known side, so no clutch instance starts there.
 //

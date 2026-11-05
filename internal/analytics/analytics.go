@@ -5,8 +5,8 @@
 // config. Every function is unit-testable with synthetic event sets;
 // Compute is the store orchestration (read → derive → replace → career
 // rebuild). The combat deep-dive rows (models.CombatStat) are NOT derived
-// here: store.GetCombatStats is their single implementation (see the drift
-// notes there).
+// here: store.GetCombatStats is their single implementation (see the
+// authoritative-SQL notes there).
 //
 // # Documented v1 limitations (heuristics need UI badges)
 //

@@ -10,11 +10,11 @@
 // (testdata/sideparity.json — see sideparity_test.go and
 // frontend/src/lib/sideparity.test.js).
 //
-// Production callers today: rules.OtherSide (analytics.Clutches). The
-// parity *guess* for data lacking exact per-round sides was removed with
-// the legacy-fallback pass (every import stores round_player_sides), so
-// FlipIndexes/SideAt are fixture-pinned references the frontend twin is
-// tested against — do not reintroduce a fallback that re-expresses them.
+// Production callers today: rules.OtherSide (analytics.Clutches). Every
+// import stores round_player_sides, so data lacking exact per-round sides
+// gets NO parity guess — there is no fallback pass. FlipIndexes/SideAt are
+// fixture-pinned references the frontend twin is tested against; do not
+// reintroduce a fallback that re-expresses them.
 package rules
 
 // FlipIndexes returns the 0-based indexes into a slice of n COUNTED rounds

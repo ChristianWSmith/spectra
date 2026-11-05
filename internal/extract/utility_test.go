@@ -6,14 +6,14 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/models"
 )
 
-// TestUtilityWeaponSetsIdentical pins the utility-weapon set that used to
-// exist as three hand-maintained copies:
+// TestUtilityWeaponSetsIdentical pins the three-way agreement of the
+// utility-weapon set:
 //
 //  1. models.utilityWeaponKinds — canonical NAMES (analytics' util-dmg
-//     attribution and grenade pairing both call into it now);
+//     attribution and grenade pairing both call into it);
 //  2. utilEquipmentTypes (this package) — EQUIPMENT TYPES for the
-//     PlayerHurt gate, since the parser sees types before demoinfocs'
-//     name resolution is re-derivable;
+//     PlayerHurt gate, since the parser sees equipment types before
+//     demoinfocs resolves canonical names;
 //  3. the canonical names themselves — demoinfocs' EquipmentType.String(),
 //     which is what wepName writes into events.weapon.
 //

@@ -31,7 +31,7 @@ const heatmapGridSide = 128
 // handful of nearby events merge into one glow while lone samples stay
 // faint. The sigma is honored in world units at every extent — it is
 // scaled into cell space uncapped (the convolution cost is per grid, not
-// per sample, so a tiny extent no longer needs a tap-count cap).
+// per sample, so a tiny extent needs no tap-count cap).
 const heatmapSigmaWorld = 150.0
 
 // heatmapKernelSigmas is the kernel radius in standard deviations.

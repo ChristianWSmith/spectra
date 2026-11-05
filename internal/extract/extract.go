@@ -2,9 +2,8 @@
 // raw CS2 .dem stream (the caller handles .zstd decompression) and emits a
 // normalized models.ExtractedMatch — no report/markdown generation, and no
 // demoinfocs type ever appears in the output. Parser options, handler
-// families, warmup gating, and aggregation math were ported from the proven
-// research extractor (since removed — in git history) and re-targeted onto
-// the models contract.
+// families, warmup gating, and aggregation math all target the models
+// contract.
 package extract
 
 import (

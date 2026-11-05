@@ -7,12 +7,11 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/models"
 )
 
-// TestGetGenericEventsFilterEquivalence pins the optional-filter rewrite
-// (G5): GetGenericEvents moved from the optional-placeholder filter (a
-// bound empty-string parameter ORed with the real name) to the shared
-// whereClause builder. Both spellings must return the IDENTICAL result set
-// (row order included) — asserted here against the old query text, for the
-// empty name (no filter) and for a real name.
+// TestGetGenericEventsFilterEquivalence pins GetGenericEvents' optional
+// filter semantics (G5): the shared whereClause builder must return the
+// IDENTICAL result set (row order included) as the direct
+// optional-placeholder spelling in const oldIDiom — asserted for the empty
+// name (no filter) and for a real name.
 func TestGetGenericEventsFilterEquivalence(t *testing.T) {
 	s := openMem(t)
 	id := saveTestMatch(t, s, "/d/ge.dem", "sha-generic-events", time.Now())
@@ -85,9 +84,9 @@ func TestGetGenericEventsFilterEquivalence(t *testing.T) {
 	}
 }
 
-// TestGetEventsFilterMatrix: queryEvents moved to the shared whereClause
-// builder (it was already the append-the-AND idiom) — every optional
-// filter must still AND in exactly as before, with the same result sets.
+// TestGetEventsFilterMatrix: every optional filter ANDs into the shared
+// whereClause builder — each narrows the base result set to the expected
+// rows, and an empty one adds no clause.
 func TestGetEventsFilterMatrix(t *testing.T) {
 	s := openMem(t)
 	id := saveTestMatch(t, s, "/d/ev.dem", "sha-event-filters", time.Now())
