@@ -7,8 +7,9 @@
     getTeamNames,
     errText,
   } from '../services.js';
-  import { fmtClock, tickSeconds, fmtMs } from '../fmt.js';
+  import { fmtMs, roundClock } from '../fmt.js';
   import { replayHash } from '../nav.js';
+  import { roundsByNumber } from '../replay/landmarks.js';
   import { playerSideClassAt, teamNames, teamStartClass } from '../teams.js';
   import ProfileLink from '../components/ProfileLink.svelte';
 
@@ -114,6 +115,12 @@
     }
     return [...m.entries()].sort((a, b) => a[0] - b[0]);
   });
+
+  // Round lookup behind the row clock: each row's time is how far INTO
+  // that round the throw happened (roundClock + the canonical
+  // number→row map builder, lib/replay/landmarks.js roundsByNumber) —
+  // never time into the overall game.
+  const rbn = $derived(roundsByNumber(rounds));
 
   // Per-round utility damage by THROWER TEAM (team_XYZ's damage in round
   // N) — pure sums over the filtered rows, keyed by the teams' final
@@ -339,8 +346,8 @@
                     />
                     <span
                       class="mono muted util-tick"
-                      title="tick {r.tick}"
-                      >{fmtClock(tickSeconds(r.tick, tickRate))}</span
+                      title="tick {r.tick} — time into round {r.round}"
+                      >{roundClock(r.tick, rbn.get(r.round), tickRate)}</span
                     >
                     <span class="util-num" title="damage dealt"
                       >{r.damage || 0} dmg</span

@@ -17,6 +17,8 @@ import {
   fmtMetric,
   fmtMs,
   normTickRate,
+  chatClock,
+  roundClock,
 } from './fmt.js';
 
 test('fmtClock renders m:ss with a zero-padded seconds part', () => {
@@ -209,4 +211,56 @@ test('normTickRate is the shared >0 ? :64 fallback', () => {
   assert.equal(normTickRate('128'), 128);
   assert.equal(tickRateVariant(128), normTickRate(128)); // identical to the variant above
   assert.equal(tickRateVariant(0), normTickRate(0));
+});
+
+// --- round-relative clocks (chatClock / roundClock) -----------------------
+// Both go through the one round-relative arithmetic (intoRoundSeconds):
+// (tick − round.startTick) at the match rate with the match-relative
+// fallback — never a negative readout. The chat clock is pinned here as
+// characterization (its cells render in the Replay feed and RoundDetail);
+// roundClock is the Utility rows' round-relative time (the row time is
+// into THAT round, not into the overall game).
+
+const ROUND_MAP = new Map([
+  [-1, { number: -1, startTick: 400 }], // warmup — not counted play
+  [1, { number: 1, startTick: 1200 }],
+  [7, { number: 7, startTick: 24500 }],
+  [9, { number: 9 }], // row without a startTick
+]);
+
+test('chatClock: "R{n} m:ss" — time into a counted round', () => {
+  // 64 tick: (6960 − 1200) = 5760 ticks = 90 s into round 1.
+  assert.equal(chatClock({ round: 1, tick: 6960 }, ROUND_MAP, 64), 'R1 1:30');
+  // Unknown tickrate falls back to 64 (tickSeconds contract).
+  assert.equal(chatClock({ round: 7, tick: 24500 + 64 * 61 }, ROUND_MAP, 0), 'R7 1:01');
+});
+
+test('chatClock: falls back to the match-relative clock (never negative)', () => {
+  // No containing round → plain match clock: 6960 / 64 = 108.75 → 1:49.
+  assert.equal(chatClock({ round: 5, tick: 6960 }, ROUND_MAP, 64), '1:49');
+  // Counted-out round (warmup, lib/rounds.js isCounted): 1040 / 64 → 0:16.
+  assert.equal(chatClock({ round: -1, tick: 1040 }, ROUND_MAP, 64), '0:16');
+  // Tick before the round's start → negative offset → match clock.
+  assert.equal(chatClock({ round: 7, tick: 1000 }, ROUND_MAP, 64), '0:16');
+  // A round row without a startTick (NaN offset) → match clock.
+  assert.equal(chatClock({ round: 9, tick: 640 }, ROUND_MAP, 64), '0:10');
+  // Missing round lookup entirely.
+  assert.equal(chatClock({ round: 1, tick: 6960 }, undefined, 64), '1:49');
+});
+
+test('roundClock: renders time into the given round', () => {
+  // 64 tick: (6960 − 1200) / 64 = 90 s → 1:30 — NOT the match clock.
+  assert.equal(roundClock(6960, { number: 1, startTick: 1200 }, 64), '1:30');
+  assert.equal(roundClock(24500 + 64 * 30, ROUND_MAP.get(7), 64), '0:30');
+  // Unknown tickrate falls back to 64: (2020 − 100) / 64 = 30 s.
+  assert.equal(roundClock(2020, { number: 1, startTick: 100 }, 0), '0:30');
+  // A round starting at tick 0 is still a valid start.
+  assert.equal(roundClock(320, { number: 1, startTick: 0 }, 64), '0:05');
+});
+
+test('roundClock: unknown round / negative offset → match-relative, never negative', () => {
+  assert.equal(roundClock(6960, null, 64), '1:49'); // rounds data missing
+  assert.equal(roundClock(6960, undefined, 64), '1:49');
+  assert.equal(roundClock(1000, { number: 7, startTick: 24500 }, 64), '0:16');
+  assert.equal(roundClock(NaN, { number: 1, startTick: 1200 }, 64), '—');
 });

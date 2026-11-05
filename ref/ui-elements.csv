@@ -337,7 +337,7 @@ CT blinds stat cell,Utility tab,Cell showing the team that finished CT's total b
 Flash effectiveness panel,Utility tab,"Panel headed ""Flash effectiveness"" showing per-team blind totals with an inferred badge.",Utility.svelte:flash
 Flash inferred badge,Utility tab,"""inferred"" chip in the Flash effectiveness panel noting the metric is derived from blind events.",Utility.svelte:util-badge-inferred
 Flash note text,Utility tab,"""total blind time + affected players, by thrower team"" caption under the flash cells.",Utility.svelte:util-flash-note
-Grenade event row,Utility tab,"One grenade entry listing kind, thrower (a profile link), tick, damage, blind time, affected players, site, actions, and detonation coordinates.",Utility.svelte:util-nade
+Grenade event row,Utility tab,"One grenade entry listing kind, thrower (a profile link), time into that round (raw tick in the tooltip), damage, blind time, affected players, site, actions, and detonation coordinates.",Utility.svelte:util-nade
 Grenade kind chip,Utility tab,"Kind chip (flash, smoke, he, molotov…) at the start of each grenade row.",Utility.svelte:util-kind
 Grenade replay button,Utility tab,"""replay ▶"" button on a grenade row opening the replay at that throw's tick.",Utility.svelte:openReplay
 Grenade timeline button,Utility tab,"""timeline"" button on a grenade row opening the timeline filtered to that round's grenade events.",Utility.svelte:openTimeline
