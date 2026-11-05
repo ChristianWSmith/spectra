@@ -418,7 +418,11 @@ func (im *Importer) process(item queueItem) {
 	// directory while the parse runs. Tick rate is unknown until the parse
 	// returns, so Close receives it afterwards; any failure from here on
 	// removes the half-written sidecar (a failed match never serves stale
-	// or partial frames).
+	// or partial frames). The sparse player-state stream (state.bin/idx)
+	// is written by the same Writer — created lazily on the first state
+	// sample, removed with the directory on failure, and never migrated:
+	// matches imported before it simply lack the files (readers fail
+	// soft; Reprocess re-parses to gain them).
 	//
 	// Voice sidecar mirrors the positions lifecycle exactly:
 	// wiped + created before the parse, payloads stream into per-player
@@ -473,8 +477,12 @@ func (im *Importer) process(item queueItem) {
 			im.emitEvent(EventJobProgress, JobProgressEvent{JobID: jobID, Stage: models.StageParse, Progress: pct, MatchID: matchID})
 		},
 		Positions: sw,
-		Voice:     vw,
-		NetKey:    netKey,
+		// State stream rides the same Writer: it reuses the position
+		// stream's slot table and shares its lifecycle (cleanupSidecar
+		// removes state.bin/idx with the rest on any failure below).
+		State:  sw,
+		Voice:  vw,
+		NetKey: netKey,
 	})
 	if err != nil {
 		cleanupSidecar()

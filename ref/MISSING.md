@@ -42,6 +42,14 @@ it rather than archive it.
 - **Exportable 2D replay video** beyond the WebM clip recorder (GIF/PNG
   sequence).
 - **Spectator POV.**
+- **Player-state HUD on the replay** (PRD §5.4 "Player Visualization":
+  player health and armor, current weapon "where available", ammo,
+  firing state) — the DATA layer is shipped and unhooked: the sidecar
+  state stream (state.bin/state.idx, `stateFormatVersion` in meta.json),
+  the `/api/sidecar/<matchID>/state` route, and the exported-but-unwired
+  `lib/replay/state.js` loader (per-slot binary-search indexes; fail-soft
+  `null` on matches imported before the stream — Reprocess re-parses one
+  to gain it). What's missing is the HUD UI that consumes it.
 
 ### Analytics
 
