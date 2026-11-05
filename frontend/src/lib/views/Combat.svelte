@@ -1,6 +1,7 @@
 <script>
   // Combat tab: per-player damage/trade stats, the engagement deep-dive
-  // and detected clutches. Every inferred metric carries the badge with
+  // (round → time-into-round → killer vs victim → distance in metres) and
+  // the WON clutches. Every inferred metric carries the badge with
   // its definition in the title attribute.
   import {
     getCombatStats,
@@ -12,8 +13,9 @@
     getMatch,
     errText,
   } from '../services.js';
-  import { fmtInt, fmtPercent } from '../fmt.js';
+  import { fmtInt, fmtPercent, roundClock } from '../fmt.js';
   import { replayHash } from '../nav.js';
+  import { roundsByNumber } from '../replay/landmarks.js';
   import { playerStartClass, playerSideClassAt } from '../teams.js';
   import {
     KAST_DEF,
@@ -22,6 +24,7 @@
     TRADE_DEF,
     UNTRADED_DEF,
     TRADE_OPP_MISSED_DEF,
+    ENG_DIST_DEF,
     ENG_KIND_TITLES,
   } from '../definitions.js';
   import Dialog from '../components/Dialog.svelte';
@@ -84,8 +87,14 @@
   let players = $state([]);
   let sideSwitches = $state(0);
   // Round list: the counted-round index behind the per-round side colors
-  // on the engagement/clutch rows (lib/teams.js playerSideClassAt).
+  // on the engagement/clutch rows (lib/teams.js playerSideClassAt) and
+  // the engagement row clock (roundClock: time INTO the round).
   let rounds = $state([]);
+  let tickRate = $state(64);
+
+  // number→row lookup behind the engagement row clock — the canonical
+  // builder lib/replay/landmarks.js roundsByNumber (same as Utility's).
+  const rbn = $derived(roundsByNumber(rounds));
 
   // Per-MATCH color for a name surface (the stats table, the KAST modal
   // header) — the team's start side, which never changes mid-match.
@@ -128,6 +137,7 @@
         players = sb || [];
         rounds = rd || [];
         sideSwitches = (m && m.sideSwitches) || 0;
+        if (m && m.tickRate > 0) tickRate = m.tickRate;
         error = '';
       })
       .catch((e) => {
@@ -171,14 +181,12 @@
     nav(replayHash(id, { round }, { back: `match/${id}/combat` }));
   }
 
-  // Won-by cell text: models.Engagement.wonBy carries the winning SIDE
-  // ("ct"|"t" — the killer's team, internal/analytics/engagements.go),
-  // never a player id, so this cell holds no name to link: the killer,
-  // who always wins the engagement, is already profile-linked in column A,
-  // and the side token is the row's only hint at which team won it.
-  function wonByName(e) {
-    return e.wonBy || '—';
-  }
+  // The Clutches card lists WON clutches only (the card's scope decision):
+  // a lost 1vN is dropped here rather than shown with an outcome chip, so
+  // this derived filter is the one place that rule lives — lost rows would
+  // otherwise pad the card with the dead solo's reconstructed HP-left
+  // (analytics/clutches.go clamps a finished life at 1 HP).
+  const wonClutches = $derived(clutches.filter((c) => c.won));
 
   // KAST% cell click → per-round K/A/T/S grid for that player. The modal
   // header shows THIS row's kastPct — the exact value the column renders —
@@ -302,14 +310,13 @@
         <thead>
           <tr>
             <th scope="col"><span class="sr-only">Replay</span></th>
-            <th scope="col" class="num">Tick</th>
             <th scope="col" class="num">Round</th>
+            <th scope="col" class="num def" title="Time into the round — how far past the round's start tick the engagement happened (raw tick in the cell tooltip)">Time</th>
             <th scope="col">Kind</th>
-            <th scope="col">A</th>
+            <th scope="col">Killer</th>
             <th scope="col"><span class="sr-only">versus</span></th>
-            <th scope="col">B</th>
-            <th scope="col" class="num">Dist</th>
-            <th scope="col">Won by</th>
+            <th scope="col">Victim</th>
+            <th scope="col" class="num def" title={ENG_DIST_DEF}>Dist (m)</th>
           </tr>
         </thead>
         <tbody>
@@ -323,7 +330,6 @@
                   onclick={() => replay(e.tick)}
                 />
               </td>
-              <td class="num mono">{e.tick}</td>
               <td class="num">
                 <button
                   class="btn small ghost"
@@ -331,6 +337,7 @@
                   onclick={() => openRoundEvents(e.round)}
                 >R{e.round}</button>
               </td>
+              <td class="num mono" title="tick {e.tick}">{roundClock(e.tick, rbn.get(e.round), tickRate)}</td>
               <td>
                 <span class="chip comb-kind-chip {e.kind}" title={ENG_KIND_TITLES[e.kind] || e.kind}>
                   {e.kind}
@@ -355,12 +362,11 @@
                   title="Open profile — {e.bName}"
                 />
               </td>
-              <td class="num">{e.distance ? Math.round(e.distance) : '—'}</td>
-              <td class="muted">{wonByName(e)}</td>
+              <td class="num" title={ENG_DIST_DEF}>{e.distance ? Math.round(e.distance) : '—'}</td>
             </tr>
           {:else}
             <tr>
-              <td colspan="9" class="muted">
+              <td colspan="8" class="muted">
                 {error ? 'Engagements unavailable.' : 'No engagements match this filter.'}
               </td>
             </tr>
@@ -372,10 +378,12 @@
 
   <section class="panel comb-sec">
     <h2>
-      Clutches <span class="chip provenance" title="Detected by alive-count analysis over the stored events: a 1vN starts when a side drops to one alive player while the opponents still have ≥ 1, and ends when the solo dies or the last opponent falls">alive-count</span>
+      Clutches <span class="chip provenance" title="Detected by alive-count analysis over the stored events: a 1vN starts when a side drops to one alive player while the opponents still have ≥ 1, and ends when the solo dies or the last opponent falls. WON clutches only — a lost 1vN is not listed.">alive-count · won only</span>
     </h2>
     {#if clutches.length === 0 && !error}
       <p class="muted" role="status">No clutches detected in this match.</p>
+    {:else if wonClutches.length === 0}
+      <p class="muted" role="status">No won clutches in this match.</p>
     {:else}
       <div class="table-scroll">
         <table class="data-table">
@@ -387,11 +395,11 @@
               <th scope="col">Player</th>
               <th scope="col">Outcome</th>
               <th scope="col">Bomb</th>
-              <th scope="col" class="num">HP left</th>
+              <th scope="col" class="num def" title="Reconstructed remaining HP of the solo player when the clutch resolved: 100 minus the damage the solo took AFTER the clutch started, clamped to at least 1 (analytics/clutches.go) — a reconstruction, not a sampled HP read: damage taken before the clutch started is not counted, so the figure can overstate the real HP">HP left</th>
             </tr>
           </thead>
           <tbody>
-            {#each clutches as c (c.id)}
+            {#each wonClutches as c (c.id)}
               <tr>
                 <td>
                   {#if c.replayAnchorTick > 0}
@@ -433,7 +441,7 @@
                 <td class="num">{c.hpLeft}</td>
               </tr>
             {:else}
-              <tr><td colspan="7" class="muted">No clutches detected in this match.</td></tr>
+              <tr><td colspan="7" class="muted">No won clutches in this match.</td></tr>
             {/each}
           </tbody>
         </table>

@@ -147,6 +147,16 @@ export const OPENING_DEF =
 export const ADR_SIGMA_DEF =
   'ADR ± σ — average damage per round plus the standard deviation of per-match ADR across the player’s history: σ is the consistency measure (lower = steadier), not an error bar.';
 
+// Engagement distance (Combat's engagement deep-dive "Dist (m)" column).
+// The value is the game's own player_death `distance` field (demoinfocs
+// events.Kill.Distance → stored events.distance → engagements.distance),
+// which measures the killer↔victim distance in METRES, not world units:
+// on the golden demo |attackerPos − victimPos| ÷ distance averages 39.45
+// and is exactly 39.37 at the median — the 39.37 world units per metre
+// conversion (CS2.md "World units ↔ meters, and player movement speeds").
+export const ENG_DIST_DEF =
+  'Engagement distance — how far the killer stood from the victim when the kill happened, in metres (the game’s own player_death distance field; 1 m ≈ 39.37 world units).';
+
 // Engagement-kind chips (Combat's engagement deep-dive). Only the kinds
 // analytics/engagements.go produces live here — "entry" is deferred
 // (models.go), so it is deliberately absent.
