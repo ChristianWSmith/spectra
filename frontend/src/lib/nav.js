@@ -1,7 +1,8 @@
 // Player-profile navigation helpers, shared by every view that links a
 // name/chip to #/player/:steamid. One Steam-id test, one navigation.
 import { buildHash, parseHash } from './router.js';
-import { serializeLandmarkFilter } from './replay/landmarks.js';
+import { parseLandmarkFilter, serializeLandmarkFilter } from './replay/landmarks.js';
+import { roundStartTick } from './rounds.js';
 
 // isSteam reports whether a name/id field holds a 17-digit Steam id
 // (bots, empty and malformed names are not linkable).
@@ -31,6 +32,36 @@ export function replayHash(matchId, filter, extras) {
     ...serializeLandmarkFilter(filter || {}),
     ...(extras || {}),
   });
+}
+
+// entrySeekTick resolves the INITIAL TIME TARGET of a Replay entry URL —
+// the counterpart to replayHash: the one place a link's time promise
+// becomes a tick (Replay applies it once the position data is loaded,
+// then never again — in-session filter changes keep the playback
+// position). Priority:
+//   1. ?tick=  — an exact tick link (event/round-start "watch" buttons)
+//               wins as-is;
+//   2. else the ?round= feed scope resolves to that round's START tick
+//               — a round link is a link to a point in time (Economy's
+//               gap-round card, Combat's round chips, the "events"
+//               buttons), never the first frame;
+//   3. else 0  — the engine starts on its first frame (a ?sel=
+//               landmark's own seek applies on top, in Replay).
+// `rounds` is the GetRounds array; an unknown round or an unusable tick
+// falls through to the next source — never a guessed time. Parsed round
+// -1 is the "all rounds" filter sentinel (parseLandmarkFilter — absent
+// and the warmup round's number both parse to it), so it is never a
+// seek target; negative knife/warmup rounds -2 and below do resolve.
+export function entrySeekTick(query, rounds) {
+  const q = query || {};
+  const tick = Number(q.tick);
+  if (Number.isFinite(tick) && tick > 0) return tick;
+  const round = parseLandmarkFilter(q).round;
+  if (round !== -1) {
+    const start = roundStartTick(rounds, round);
+    if (start != null) return start;
+  }
+  return 0;
 }
 
 // profileBackTarget resolves the player profile's top-left back button —

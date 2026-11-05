@@ -22,7 +22,11 @@
 //                            landmarks.js): cat/round/player/weapon/
 //                            tick*/dmg*/dist/hs/bbox/gname plus tick
 //                            (initial seek), sel (selected landmark) and
-//                            back (origin path)
+//                            back (origin path). The initial time target
+//                            is resolved ONCE on entry by
+//                            nav.entrySeekTick: ?tick= wins, else the
+//                            ?round= scope resolves to that round's
+//                            start tick, else the first frame.
 //   #/explorer/:id           optional context id: the match Explorer's
 //                            inspectors preselect (absent = newest match)
 //   #/reports/:id            optional context id: Reports' match preselect

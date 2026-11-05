@@ -218,8 +218,8 @@
       >
       <span class="spacer"></span>
       <span class="muted util-hint"
-        >events scopes the replay landmark feed to the round · replay seeks
-        to the throw</span
+        >events opens the replay at the round's start with its feed scoped
+        to the round · replay seeks to the throw</span
       >
     </div>
 
