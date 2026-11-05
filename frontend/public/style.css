@@ -1441,23 +1441,29 @@ input[type='checkbox']:focus-visible {
   overflow: hidden;
 }
 
-/* Collapsed rail: an icon-width strip using the SAME metric as the app's
-   left .sidebar (52px), spanning the full view height in BOTH states —
-   only the WIDTH swings back to the stage, so the layout never jumps
-   vertically. The toggle renders the feed glyph over the count badge
-   (.lm-rail-count); expanded keeps the ~340px panel above. */
+/* Collapsed rail: a slim full-height NOTCH on the right edge — a
+   ~22px strip whose only visual is the left-pointing chevron ("click to
+   expand"); no word, no badge (the count lives in the toggle's
+   title/aria-label). The aside keeps the panel chrome and spans the
+   full view height in BOTH states — only the WIDTH swings back to the
+   stage, so the layout never jumps vertically; expanded keeps the
+   ~340px panel above. */
 .replay-side.collapsed {
-  flex: 0 0 52px;
-  width: 52px;
-  padding: 8px 6px;
+  flex: 0 0 22px;
+  width: 22px;
+  padding: 0;
 }
 
+/* The notch's hit area: the button fills the strip (the padding buys a
+   comfortable target without widening the visual) and stretches to the
+   full window height, chevron centered on it. */
 .replay-side.collapsed .side-toggle {
-  flex-direction: column;
+  flex: 1 1 auto;
   align-items: center;
-  justify-content: flex-start;
-  gap: 4px;
+  justify-content: center;
+  gap: 0;
   width: 100%;
+  padding: 12px 0;
   text-align: center;
   white-space: nowrap;
 }
@@ -1472,13 +1478,6 @@ input[type='checkbox']:focus-visible {
   cursor: pointer;
   padding: 0;
   text-align: left;
-}
-
-/* Event-count badge under the rail glyph (collapsed state) — a .chip
-   tightened to fit the 52px strip. */
-.lm-rail-count {
-  font-size: 0.7em;
-  padding: 0 5px;
 }
 
 .landmark-list {
@@ -1877,6 +1876,25 @@ button.lm-cat-chip.on {
     width: auto;
     flex: 0 0 auto;
     max-height: 30%;
+  }
+
+  /* Notch when stacked: the rail sits BELOW the stage, so the collapsed
+     strip reads as a slim full-width handle whose chevron points DOWN
+     (the feed expands under it) instead of the right-edge left chevron —
+     the same glyph rotated, the whole strip still the hit area.
+     max-height: none keeps the short bar from clipping in a very short
+     window (the 30% bound above is the EXPANDED panel's). */
+  .replay-side.collapsed {
+    max-height: none;
+  }
+
+  .replay-side.collapsed .side-toggle {
+    flex: 0 0 auto;
+    padding: 4px 8px;
+  }
+
+  .replay-side.collapsed .side-toggle .codicon {
+    transform: rotate(-90deg);
   }
 
   .roster-grid,

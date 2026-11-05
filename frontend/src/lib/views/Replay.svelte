@@ -321,6 +321,11 @@
     ),
   );
 
+  // The feed count as the rail toggle prints it ("185", "185+" while a
+  // page is still loading) — the ONE spelling: the expanded header's
+  // number and the collapsed notch's title/aria-label both use it.
+  const feedCountLabel = $derived(String(feedRows.length) + (hasMore ? '+' : ''));
+
   // Draw feed: the drawable-kind anchors, fetched ONCE per match in
   // load() and handed to the renderer — category chips never rebuild the
   // world layers.
@@ -1448,20 +1453,22 @@
     <button
       class="side-toggle"
       aria-expanded={eventsOpen}
-      aria-label="Landmarks"
-      title="Landmarks"
+      aria-label="Landmarks ({feedCountLabel} events)"
+      title="Landmarks ({feedCountLabel} events)"
       onclick={() => (eventsOpen = !eventsOpen)}
     >
       {#if eventsOpen}
         <h2>Landmarks</h2>
         <span class="spacer"></span>
-        <span class="muted num">{feedRows.length}{hasMore ? '+' : ''}</span>
-        <span class="muted"><span class="codicon codicon-chevron-down"></span></span>
+        <span class="muted num">{feedCountLabel}</span>
+        <!-- Hiding the panel points right — matching the collapsed
+             notch's left-pointing chevron (click to expand). -->
+        <span class="muted"><span class="codicon codicon-chevron-right"></span></span>
       {:else}
-        <!-- Collapsed rail: feed glyph over the count badge — the
-             icon-rail pattern (title/aria-label carry the word). -->
-        <span class="codicon codicon-list-flat" aria-hidden="true"></span>
-        <span class="chip lm-rail-count">{feedRows.length}{hasMore ? '+' : ''}</span>
+        <!-- Collapsed notch: the strip's ONLY visual is the left-pointing
+             chevron ("click to expand"); no word, no badge — the count
+             lives in the button's title/aria-label above. -->
+        <span class="codicon codicon-chevron-left" aria-hidden="true"></span>
       {/if}
     </button>
     {#if eventsOpen}

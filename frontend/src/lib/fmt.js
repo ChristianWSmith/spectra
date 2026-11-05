@@ -142,10 +142,15 @@ export function fmtPercent(x) {
   return `${round1(x)}%`;
 }
 
-// fmtDate renders a Date/ISO string as a locale date-time.
+// fmtDate renders a Date/ISO string as a locale date-time. A timestamp
+// the backend never wrote — the Go zero time.Time behind a NULL
+// matches.extracted_at, serialized as "0001-01-01T00:00:00Z" — is "not
+// extracted yet", not a date: it takes the placeholder instead of
+// rendering a year-0001 oddity on a still-parsing/queued/failed row.
 export function fmtDate(d) {
   const date = d instanceof Date ? d : new Date(d);
   if (Number.isNaN(date.getTime())) return '—';
+  if (date.getUTCFullYear() <= 1) return '—'; // the Go zero time (never stamped)
   return date.toLocaleString(undefined, {
     year: 'numeric',
     month: 'short',

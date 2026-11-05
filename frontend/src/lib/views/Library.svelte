@@ -354,6 +354,26 @@
     }
   }
 
+  // A match row opens /match/:id — but only when there is a match view
+  // to open. A queued/parsing row has no rounds/events yet, so the match
+  // view would be an empty shell: those rows are NOT interactive — no
+  // navigation on click/Enter, no focus stop (tabindex) and no pointer
+  // affordance (.clickable). `failed` stays openable: the view shows the
+  // failure state (the failed StatusChip carries match.error in its
+  // title), and a reprocess failure keeps any previously extracted rows
+  // on screen. The row's own Reprocess/Delete buttons stopPropagation on
+  // click and work on every status; Enter on them must not navigate the
+  // row either (the keydown bubbles up to the <tr>), hence the target
+  // check in the keydown handler.
+  function isOpenable(m) {
+    return m.status !== 'parsing' && m.status !== 'queued';
+  }
+
+  function openMatch(m) {
+    if (!isOpenable(m)) return;
+    nav(`/match/${m.id}`);
+  }
+
   // Team names for rows whose extract recorded no clan name: the list
   // carries no player rows, so fetch each such match's scoreboard once,
   // derive the per-side `team_<player>` names (shared with Match — see
@@ -517,10 +537,11 @@
         <tbody>
           {#each matches as m (m.id)}
             <tr
-              class="clickable"
-              onclick={() => nav(`/match/${m.id}`)}
-              onkeydown={(e) => e.key === 'Enter' && nav(`/match/${m.id}`)}
-              tabindex="0"
+              class:clickable={isOpenable(m)}
+              onclick={() => openMatch(m)}
+              onkeydown={(e) =>
+                e.key === 'Enter' && e.target === e.currentTarget && openMatch(m)}
+              tabindex={isOpenable(m) ? 0 : undefined}
             >
               <td>{m.map || '—'}</td>
               <td>{matchup(m)}</td>
@@ -531,6 +552,9 @@
               <td class="num">{m.realRounds}</td>
               <td class="num">{fmtDuration(m.durationS)}</td>
               <td class="num">{fmtBytes(m.size)}</td>
+              <!-- fmtDate owns the placeholder: a row that has not been
+                   extracted yet (NULL extracted_at → Go zero time) renders
+                   "—", never a year-0001 date. -->
               <td>{fmtDate(m.extractedAt)}</td>
               <td>
                 {#if m.status === 'parsing' || m.status === 'queued'}

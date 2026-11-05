@@ -3,6 +3,9 @@
 // list fetch, typing re-arms the debounced fetch with the facets ANDed
 // with each other and with the free-text query, and Clear filters resets
 // both (returning the empty state to the plain "No matches yet" prompt).
+// Section D covers row navigation: a ready row opens /match/:id on click
+// and Enter, while a still-parsing row does neither (no click cursor, no
+// focus stop) and renders the never-extracted placeholder date.
 // Backend semantics of the facets live in store.TestListMatches; this
 // covers the view wiring only.
 //
@@ -84,9 +87,11 @@ const bindings = await import('./stubs/bindings.mjs');
 bindings.LibraryService.ListJobs = () => Promise.resolve([]);
 bindings.LibraryService.ListDemoFiles = () => Promise.resolve([]);
 
-// Scripted match list: rows only for the `cache` facet, so the test can
-// tell "the facet reached the backend" apart from "the backend returned
-// rows" (the deep-link preset itself must find nothing yet).
+// Scripted match list: rows only for the `cache` facet (the deep-link
+// preset itself must find nothing yet), plus a `parsing` facet that
+// returns a still-parsing row — the not-yet-extracted case (NULL
+// extracted_at arrives as the Go zero time "0001-01-01T00:00:00Z") the
+// view must neither date nor navigate.
 const row = {
   id: 1,
   path: '/d/a.dem',
@@ -102,7 +107,23 @@ const row = {
   status: 'ready',
   error: '',
 };
-bindings.handlers.ListMatches = (q, sk, d, f) => (f && f.map === 'cache' ? [row] : []);
+const parsingRow = {
+  id: 2,
+  path: '/d/b.dem',
+  map: 'de_dust2',
+  size: 2097152,
+  scoreCT: 0,
+  scoreT: 0,
+  ctName: 'Gamma',
+  tName: 'Delta',
+  realRounds: 0,
+  durationS: 0,
+  extractedAt: '0001-01-01T00:00:00Z', // NULL extracted_at → Go zero time
+  status: 'parsing',
+  error: '',
+};
+bindings.handlers.ListMatches = (q, sk, d, f) =>
+  f && f.map === 'cache' ? [row] : f && f.map === 'parsing' ? [parsingRow] : [];
 
 const dir = join('node_modules', '.cache', 'spectra-dom-tests', 'library');
 mkdirSync(dir, { recursive: true });
@@ -145,12 +166,14 @@ const libSrc = readFileSync('src/lib/views/Library.svelte', 'utf8')
   .replace("from '../components/ConfirmDialog.svelte'", "from './confirmdialog.js'");
 svelteCompile(libSrc, 'Library.svelte', join(dir, 'library-bundle.js'));
 
-// Harness: the Library with the profile → library deep-link query.
+// Harness: the Library with the profile → library deep-link query. nav
+// records every target on globalThis.__nav so the checks below can tell
+// "the row navigated" from "the row did nothing".
 const harnessSrc = `<script>
   import Library from './library-bundle.js';
   let { query = {} } = $props();
 </script>
-<Library nav={() => {}} {query} />
+<Library nav={(p) => (globalThis.__nav = [...(globalThis.__nav || []), p])} {query} />
 `;
 writeFileSync(join(dir, 'harness.svelte'), harnessSrc);
 svelteCompile(harnessSrc, 'harness.svelte', join(dir, 'harness.js'));
@@ -179,7 +202,10 @@ const playerInput = () => document.getElementById('lib-filter-player');
 const facetButtons = () => $('.lib-filters button');
 const listCalls = () => bindings.calls.filter((c) => c.method === 'ListMatches');
 const lastCall = () => listCalls()[listCalls().length - 1];
+const navCalls = () => globalThis.__nav || [];
 const click = (el) => el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+const enter = (el) =>
+  el.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
 const type = (el, value) => {
   el.value = value;
   el.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
@@ -223,6 +249,38 @@ await sleep(350); // past the 250 ms debounce
   check('fetch fired with the new map facet', f && f.map === 'cache', JSON.stringify(c && c.args));
   check('player facet preserved', f && f.player === '76561198000000001');
   check('scripted rows render', $('tbody tr').length === 1, String($('tbody tr').length));
+  // An extracted (ready) row stays the openable kind: pointer cursor +
+  // focus stop + navigation on click AND on Enter.
+  {
+    const tr = $('tbody tr')[0];
+    check(
+      'ready row is openable (clickable + focus stop)',
+      tr.classList.contains('clickable') && tr.getAttribute('tabindex') === '0',
+      tr.outerHTML.slice(0, 120),
+    );
+    const before = navCalls().length;
+    click(tr);
+    check(
+      'ready row click navigates to its match view',
+      navCalls().length === before + 1 && navCalls().at(-1) === '/match/1',
+      JSON.stringify(navCalls()),
+    );
+    enter(tr);
+    check(
+      'ready row Enter navigates',
+      navCalls().length === before + 2 && navCalls().at(-1) === '/match/1',
+      JSON.stringify(navCalls()),
+    );
+    // Enter pressed on a row BUTTON bubbles its keydown up to the <tr> —
+    // it must not navigate the row out from under the button.
+    const beforeBtn = navCalls().length;
+    enter(tr.querySelector('.row-actions button'));
+    check(
+      'Enter on a row button does not navigate the row',
+      navCalls().length === beforeBtn,
+      JSON.stringify(navCalls()),
+    );
+  }
 }
 {
   const search = $('[aria-label="Search matches"]')[0];
@@ -261,6 +319,43 @@ check('clear button gone', facetButtons().length === 0, String(facetButtons().le
     JSON.stringify(c && c.args),
   );
   check('back to the plain import prompt', document.body.textContent.includes('No matches yet'));
+}
+
+console.log('D. a parsing row: honest placeholder date, no navigation');
+type(mapInput(), 'parsing');
+await sleep(350); // past the 250 ms debounce
+{
+  const rows = $('tbody tr');
+  check('one parsing row renders', rows.length === 1, String(rows.length));
+  const tr = rows[0];
+  const cells = [...tr.children].map((td) => td.textContent.trim());
+  check(
+    'EXTRACTED cell shows the placeholder, not a year-0001 date',
+    cells[6] === '—',
+    JSON.stringify(cells[6]),
+  );
+  check('row carries no pointer affordance', !tr.classList.contains('clickable'));
+  check(
+    'row is not a keyboard focus stop',
+    !tr.hasAttribute('tabindex'),
+    String(tr.getAttribute('tabindex')),
+  );
+  const before = navCalls().length;
+  click(tr);
+  check('parsing row click does not navigate', navCalls().length === before, JSON.stringify(navCalls()));
+  enter(tr);
+  check('parsing row Enter does not navigate', navCalls().length === before, JSON.stringify(navCalls()));
+  const chip = tr.querySelector('.chip.status');
+  check(
+    'status chip still renders on the row',
+    !!chip && chip.textContent.includes('parsing'),
+    chip ? chip.textContent.trim() : 'missing',
+  );
+  check(
+    'row action buttons still present',
+    tr.querySelectorAll('.row-actions button').length === 2,
+    String(tr.querySelectorAll('.row-actions button').length),
+  );
 }
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

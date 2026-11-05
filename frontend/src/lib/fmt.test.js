@@ -16,6 +16,7 @@ import {
   fmtMoney,
   fmtMetric,
   fmtMs,
+  fmtDate,
   normTickRate,
   chatClock,
   roundClock,
@@ -277,4 +278,26 @@ test('roundClock: unknown round / negative offset → match-relative, never nega
   assert.equal(roundClock(6960, undefined, 64), '1:49');
   assert.equal(roundClock(1000, { number: 7, startTick: 24500 }, 64), '0:16');
   assert.equal(roundClock(NaN, { number: 1, startTick: 1200 }, 64), '—');
+});
+
+// --- fmtDate (the Library "Extracted" column / match Details) --------------
+// matches.extracted_at is NULL until SaveExtracted writes it (status
+// ready), and store.nullTime turns that NULL into the Go zero time.Time,
+// which JSON serializes as "0001-01-01T00:00:00Z". A queued/parsing/failed
+// row therefore carries that value — fmtDate must render the placeholder
+// rather than a year-0001 "extraction time".
+test('fmtDate: the never-extracted zero timestamp renders the placeholder', () => {
+  assert.equal(fmtDate('0001-01-01T00:00:00Z'), '—');
+  assert.equal(fmtDate('0001-01-01T00:00:00+00:00'), '—');
+  assert.equal(fmtDate(new Date('0001-01-01T00:00:00Z')), '—');
+  assert.equal(fmtDate(undefined), '—'); // missing value, same placeholder
+  assert.equal(fmtDate('not a date'), '—'); // unparseable input
+});
+
+test('fmtDate renders a stamped extraction time as a locale date-time', () => {
+  // Mid-year UTC: no timezone offset can roll the year back.
+  const out = fmtDate('2026-06-15T12:00:00Z');
+  assert.notEqual(out, '—');
+  assert.match(out, /2026/);
+  assert.notEqual(fmtDate(new Date('2026-06-15T09:30:00Z')), '—');
 });
