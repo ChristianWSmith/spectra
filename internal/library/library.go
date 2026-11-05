@@ -6,8 +6,9 @@
 // Progress and terminal transitions are announced as
 // Wails events (spectra:job-progress / spectra:job-done /
 // spectra:library-changed) through an injected Emit hook; originals are
-// never written. The same package owns watched-folder discovery (Scan,
-// DefaultDemoDirs) for the Library's not-yet-imported list.
+// never written. The same package owns import-dir discovery (Scan,
+// DefaultDemoDirs, RemoveDemoFile) for the Library's not-yet-imported
+// list.
 package library
 
 import (
@@ -593,7 +594,7 @@ func (im *Importer) emitEvent(name string, data any) {
 
 // isDemoFilename reports whether a file NAME is an importable demo:
 // .dem or .dem.zst, case-insensitive. The one extension rule — both
-// validateImportPath (dialog/drop/typed paths) and the watched-folder
+// validateImportPath (dialog/drop/typed paths) and the import-dir
 // scanner apply it.
 func isDemoFilename(name string) bool {
 	lower := strings.ToLower(name)

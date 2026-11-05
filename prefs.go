@@ -34,10 +34,10 @@ const (
 	// directly through the kvstore service — Go never consumes it.
 	prefsShowKnifeWarmupRoundsKey = "show_knife_warmup_rounds"
 
-	// prefsDemoDirsKey holds the "where to look for demos" folder list the
+	// prefsDemoDirsKey holds the "import dirs" folder list the
 	// Library scans (absolute paths, normalized by library.NormalizeDirs).
 	// Unset = the defaults (library.DefaultDemoDirs: Downloads + CS2's
-	// replay folder), recomputed on every read; an empty list = watch
+	// replay folder), recomputed on every read; an empty list = scan
 	// nothing. Written and read by LibraryService — the frontend goes
 	// through GetDemoDirs/SetDemoDirs/ResetDemoDirs, never the raw key.
 	prefsDemoDirsKey = "demo_dirs"

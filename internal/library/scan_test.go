@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -124,15 +125,18 @@ func TestScanDedupesNestedRoots(t *testing.T) {
 	}
 }
 
-// TestScanRecognizesImportedFiles covers both recognition paths: an exact
-// matches.path match (no hashing needed) and a content-hash match for a
-// copy of the demo under a different path.
-func TestScanRecognizesImportedFiles(t *testing.T) {
+// TestScanOmitsImportedFiles pins the list contract (the characterization
+// of the old flagging behaviour lives in this test's history: imported
+// rows used to be returned with a MatchID): a demo already in the library
+// never reaches the list — neither the exact matches.path match (no
+// hashing needed) nor a content-hash match for a copy of the demo under a
+// different path. Fresh files still come back, marked verified.
+func TestScanOmitsImportedFiles(t *testing.T) {
 	root := t.TempDir()
 	sameContent := "identical demo bytes"
 	pathMatched := writeScanFile(t, filepath.Join(root, "already.dem"), "original bytes")
 	hashMatched := writeScanFile(t, filepath.Join(root, "elsewhere", "copy.dem"), sameContent)
-	writeScanFile(t, filepath.Join(root, "fresh.dem"), "brand new bytes")
+	fresh := writeScanFile(t, filepath.Join(root, "fresh.dem"), "brand new bytes")
 
 	sc, st := newTestScanner(t, filepath.Join(t.TempDir(), "data"))
 	if _, err := st.CreateMatchRow(pathMatched, "sha-of-something-else", 1); err != nil {
@@ -149,37 +153,34 @@ func TestScanRecognizesImportedFiles(t *testing.T) {
 		t.Fatalf("Scan: %v", err)
 	}
 	got := foundPaths(files)
-	if id := got[pathMatched].MatchID; id == 0 {
-		t.Error("path-matched file not recognised as imported")
+	if _, ok := got[pathMatched]; ok {
+		t.Error("path-matched file still listed — it is already imported")
 	}
-	if !got[pathMatched].Hashed {
-		t.Error("path-matched file should be marked verified")
+	if _, ok := got[hashMatched]; ok {
+		t.Error("content-identical copy still listed — it is already imported")
 	}
-	if id := got[hashMatched].MatchID; id == 0 {
-		t.Error("content-identical copy not recognised via sha256")
+	f, ok := got[fresh]
+	if !ok {
+		t.Fatalf("fresh file missing from the list (got %d rows)", len(files))
 	}
-	if !got[hashMatched].Hashed {
-		t.Error("hashed file should be marked verified")
-	}
-	if id := got[filepath.Join(root, "fresh.dem")].MatchID; id != 0 {
-		t.Errorf("fresh file reported as import %d, want 0", id)
+	if !f.Hashed {
+		t.Error("listed fresh file should be marked verified")
 	}
 }
 
-// TestScanSortsUnimportedFirst: the Library shows actionable rows on top.
-func TestScanSortsUnimportedFirst(t *testing.T) {
+// TestScanSortsNewestFirst: the list is newest-first with the path as
+// the tiebreak — everything it returns is unimported, so there is no
+// longer an "unimported first" group to order by.
+func TestScanSortsNewestFirst(t *testing.T) {
 	root := t.TempDir()
-	old := writeScanFile(t, filepath.Join(root, "imported.dem"), "imported bytes")
-	fresh := writeScanFile(t, filepath.Join(root, "new.dem"), "new bytes")
+	older := writeScanFile(t, filepath.Join(root, "older.dem"), "older bytes")
+	newer := writeScanFile(t, filepath.Join(root, "newer.dem"), "newer bytes")
 	oldTime := time.Now().Add(-48 * time.Hour)
-	if err := os.Chtimes(old, oldTime, oldTime); err != nil {
+	if err := os.Chtimes(older, oldTime, oldTime); err != nil {
 		t.Fatalf("chtimes: %v", err)
 	}
 
-	sc, st := newTestScanner(t, filepath.Join(t.TempDir(), "data"))
-	if _, err := st.CreateMatchRow(old, shaOf("imported bytes"), 14); err != nil {
-		t.Fatalf("create match: %v", err)
-	}
+	sc, _ := newTestScanner(t, filepath.Join(t.TempDir(), "data"))
 	files, err := sc.Scan([]string{root})
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
@@ -187,8 +188,88 @@ func TestScanSortsUnimportedFirst(t *testing.T) {
 	if len(files) != 2 {
 		t.Fatalf("Scan returned %d files, want 2", len(files))
 	}
-	if files[0].Path != fresh || files[1].Path != old {
-		t.Errorf("order = [%s %s], want unimported %s first", files[0].Path, files[1].Path, fresh)
+	if files[0].Path != newer || files[1].Path != older {
+		t.Errorf("order = [%s %s], want newest %s first", files[0].Path, files[1].Path, newer)
+	}
+}
+
+// TestScanListsAgainAfterMatchDelete: keeping imported demos out of the
+// list is a view of the matches table — deleting the match must bring
+// both flavours of recognition back (imported from this path, and
+// imported from elsewhere but copied into the folder).
+func TestScanListsAgainAfterMatchDelete(t *testing.T) {
+	root := t.TempDir()
+	sameContent := "shared demo bytes"
+	ownPath := writeScanFile(t, filepath.Join(root, "own.dem"), sameContent)
+	elsewhere := writeScanFile(t, filepath.Join(root, "sub", "copy.dem"), sameContent)
+
+	sc, st := newTestScanner(t, filepath.Join(t.TempDir(), "data"))
+	fromOwnPath, err := st.CreateMatchRow(ownPath, "sha-of-something-else", 1)
+	if err != nil {
+		t.Fatalf("create match (path): %v", err)
+	}
+	fromElsewhere, err := st.CreateMatchRow("/elsewhere/original.dem", shaOf(sameContent), int64(len(sameContent)))
+	if err != nil {
+		t.Fatalf("create match (hash): %v", err)
+	}
+
+	files, err := sc.Scan([]string{root})
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if len(files) != 0 {
+		t.Fatalf("Scan returned %d rows for imported demos, want 0", len(files))
+	}
+
+	for _, id := range []int64{fromOwnPath, fromElsewhere} {
+		if err := st.DeleteMatchData(id); err != nil {
+			t.Fatalf("DeleteMatchData(%d): %v", id, err)
+		}
+	}
+	files, err = sc.Scan([]string{root})
+	if err != nil {
+		t.Fatalf("Scan after delete: %v", err)
+	}
+	got := foundPaths(files)
+	for _, want := range []string{ownPath, elsewhere} {
+		if _, ok := got[want]; !ok {
+			t.Errorf("demo %s did not reappear after its match was deleted", want)
+		}
+	}
+}
+
+// TestScanCapCountsUnimported: scanMaxFiles bounds the list, not the
+// walk — already-imported files are skipped while walking, so a folder
+// whose imported files sort first still yields every fresh one instead
+// of spending the whole budget on rows that will be dropped.
+func TestScanCapCountsUnimported(t *testing.T) {
+	root := t.TempDir()
+	const importedCount = scanMaxFiles + 2
+	const freshCount = 3
+	sc, st := newTestScanner(t, filepath.Join(t.TempDir(), "data"))
+	for i := 0; i < importedCount; i++ {
+		p := writeScanFile(t, filepath.Join(root, fmt.Sprintf("aaa-%03d.dem", i)), fmt.Sprintf("imported-%d", i))
+		// Path recognition only — a placeholder hash is enough (the walk
+		// never hashes a file it recognises by path).
+		if _, err := st.CreateMatchRow(p, fmt.Sprintf("sha-%03d", i), 1); err != nil {
+			t.Fatalf("create match: %v", err)
+		}
+	}
+	for i := 0; i < freshCount; i++ {
+		writeScanFile(t, filepath.Join(root, fmt.Sprintf("zzz-%03d.dem", i)), fmt.Sprintf("fresh-%d", i))
+	}
+
+	files, err := sc.Scan([]string{root})
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if len(files) != freshCount {
+		t.Fatalf("Scan returned %d rows, want the %d fresh ones", len(files), freshCount)
+	}
+	for _, f := range files {
+		if strings.HasPrefix(filepath.Base(f.Path), "aaa") {
+			t.Errorf("already-imported file listed: %s", f.Path)
+		}
 	}
 }
 
@@ -287,5 +368,109 @@ func TestScannerHashCache(t *testing.T) {
 	sized.Size = f.Size + 1
 	if _, ok := sc.cachedSHA(&sized); ok {
 		t.Error("cachedSHA ignored a changed size")
+	}
+}
+
+// TestRemoveDemoFile deletes a demo the scanner would list: a regular
+// .dem file under a configured import dir goes away, the cached hash
+// goes with it, and the next scan reports nothing.
+func TestRemoveDemoFile(t *testing.T) {
+	root := t.TempDir()
+	path := writeScanFile(t, filepath.Join(root, "sub", "gone.dem"), "gone bytes")
+	sc, _ := newTestScanner(t, filepath.Join(t.TempDir(), "data"))
+
+	// First scan populates the hash cache for this path.
+	if _, err := sc.Scan([]string{root}); err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if err := sc.RemoveDemoFile([]string{root}, path); err != nil {
+		t.Fatalf("RemoveDemoFile: %v", err)
+	}
+	if _, err := os.Lstat(path); !os.IsNotExist(err) {
+		t.Errorf("file still present after RemoveDemoFile (err=%v)", err)
+	}
+	sc.mu.Lock()
+	_, cached := sc.hashes[path]
+	slot := false
+	for _, p := range sc.order {
+		slot = slot || p == path
+	}
+	sc.mu.Unlock()
+	if cached || slot {
+		t.Errorf("deleted file kept its hash cache entry (cached=%v, slot=%v)", cached, slot)
+	}
+	files, err := sc.Scan([]string{root})
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if len(files) != 0 {
+		t.Errorf("Scan still lists %d rows after the delete", len(files))
+	}
+}
+
+// TestRemoveDemoFileRefusals pins every invariant that keeps "delete from
+// disk" from ever being an arbitrary-file delete: nothing outside a
+// configured import dir, nothing inside the app's own data folder,
+// nothing that is not a demo file, and nothing the library still points
+// at. Every refusal must leave the file in place.
+func TestRemoveDemoFileRefusals(t *testing.T) {
+	outer := t.TempDir()
+	root := filepath.Join(outer, "import-dir")
+	// The data folder deliberately nested under the import dir: the user
+	// configured a parent of it, which the walk skips and the delete must
+	// refuse too.
+	dataRoot := filepath.Join(root, "spectra-data")
+	sc, st := newTestScanner(t, dataRoot)
+	roots := []string{root}
+
+	exists := func(path string) bool {
+		_, err := os.Lstat(path)
+		return err == nil
+	}
+	refuse := func(name, path, want string) {
+		t.Helper()
+		err := sc.RemoveDemoFile(roots, path)
+		if err == nil {
+			t.Errorf("%s: RemoveDemoFile succeeded, want refusal", name)
+			return
+		}
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: error %q does not mention %q", name, err, want)
+		}
+	}
+
+	outside := writeScanFile(t, filepath.Join(outer, "outside.dem"), "outside")
+	managed := writeScanFile(t, filepath.Join(dataRoot, "managed.dem"), "managed")
+	inLibrary := writeScanFile(t, filepath.Join(root, "in-library.dem"), "in library")
+	notes := writeScanFile(t, filepath.Join(root, "notes.txt"), "not a demo")
+	if err := os.MkdirAll(filepath.Join(root, "folder.dem"), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if _, err := st.CreateMatchRow(inLibrary, "sha-in-library", 12); err != nil {
+		t.Fatalf("create match: %v", err)
+	}
+
+	refuse("empty path", "", "empty path")
+	refuse("outside every import dir", outside, "not under a configured import dir")
+	refuse("inside the data folder", managed, "data folder")
+	refuse("library match's stored path", inLibrary, "already in the library")
+	refuse("non-demo extension", notes, "not a .dem/.dem.zst file")
+	refuse("directory", filepath.Join(root, "folder.dem"), "not a regular file")
+	refuse("missing file", filepath.Join(root, "never.dem"), "no such file")
+
+	// Every refused file must still be on disk.
+	for _, p := range []string{outside, managed, inLibrary, notes, filepath.Join(root, "folder.dem")} {
+		if !exists(p) {
+			t.Errorf("%s was deleted despite the refusal", p)
+		}
+	}
+
+	// A file the checks pass through is actually removed.
+	good := writeScanFile(t, filepath.Join(root, "keep-me-not.dem"), "deletable")
+	if err := sc.RemoveDemoFile(roots, good); err != nil {
+		t.Fatalf("RemoveDemoFile(good): %v", err)
+	}
+	if exists(good) {
+		t.Error("valid file survived RemoveDemoFile")
 	}
 }

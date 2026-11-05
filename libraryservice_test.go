@@ -1,12 +1,14 @@
 package main
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/wailsapp/wails/v3/pkg/services/kvstore"
 
 	"github.com/ChristianWSmith/spectra/internal/library"
+	"github.com/ChristianWSmith/spectra/internal/store"
 )
 
 // newDemoDirsService builds the slice of LibraryService the demo-dir
@@ -131,5 +133,49 @@ func TestPrefStrings(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestDeleteDemoFileGatesOnConfiguredDirs pins the service wiring behind
+// the Library's "Delete from disk" button: the effective import dirs
+// (the pref) are what gate the delete — a demo under a configured dir is
+// removed, a demo anywhere else is refused with an error and left alone.
+func TestDeleteDemoFileGatesOnConfiguredDirs(t *testing.T) {
+	svc := newDemoDirsService(t)
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	svc.sc = library.NewScanner(library.ScannerOptions{
+		Store:    st,
+		DataRoot: filepath.Join(t.TempDir(), "spectra-data"),
+	})
+
+	configured := t.TempDir()
+	elsewhere := t.TempDir()
+	if err := svc.SetDemoDirs([]string{configured}); err != nil {
+		t.Fatalf("SetDemoDirs: %v", err)
+	}
+	inside := filepath.Join(configured, "demo.dem")
+	outside := filepath.Join(elsewhere, "demo.dem")
+	for _, p := range []string{inside, outside} {
+		if err := os.WriteFile(p, []byte("demo bytes"), 0o644); err != nil {
+			t.Fatalf("write %s: %v", p, err)
+		}
+	}
+
+	if err := svc.DeleteDemoFile(inside); err != nil {
+		t.Fatalf("DeleteDemoFile(configured dir): %v", err)
+	}
+	if _, err := os.Lstat(inside); !os.IsNotExist(err) {
+		t.Errorf("configured-dir demo survived (err=%v)", err)
+	}
+
+	if err := svc.DeleteDemoFile(outside); err == nil {
+		t.Error("DeleteDemoFile outside every import dir succeeded")
+	}
+	if _, err := os.Lstat(outside); err != nil {
+		t.Errorf("outside demo removed despite the refusal: %v", err)
 	}
 }
