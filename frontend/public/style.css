@@ -78,9 +78,9 @@
   /* Game-domain semantics */
   --ct: #5aa9e6;
   --t: #e6a35a;
-  /* Team identity colors (changes.txt #10/#20): a TEAM is colored by the
-     side it played in the FIRST half — started CT → indigo, started T →
-     orange — independent of the live side (sides swap at halftime).
+  /* Team identity colors: a TEAM is colored by the side it played in
+     the FIRST half — started CT → indigo, started T → orange —
+     independent of the live side (sides swap at halftime).
      Indigo shares the brand hue (228°) of --brand/#28397f; both read on
      the dark surface at ≥ 6.8:1. Distinct from --ct/--t, which stay SIDE
      colors (round chips, econ columns, side chips). Light values live in
@@ -241,7 +241,7 @@ select {
   color: var(--t);
 }
 
-/* Team identity colors for NAMES (changes.txt #10/#20): the team that
+/* Team identity colors for NAMES: the team that
    started the first half on CT is indigo (.team-start-ct), on T orange
    (.team-start-t) — derived by lib/teams.js teamStartClass /
    playerStartClass from lib/sideparity.js startSideFor, so never paint
@@ -568,8 +568,7 @@ input[type='checkbox']:focus-visible {
    `.section-title` is the same heading for markup that is not an <h2>
    inside a .panel. Headings whose size carries a real hierarchy step
    (.bld-group h3), a dense overlay's density (.cp-section)
-   or table chrome (.data-table th) keep their own font-size — see the
-   consolidation report. */
+   or table chrome (.data-table th) keep their own font-size. */
 .panel h2,
 .section-title {
   font-size: var(--fs-section);
@@ -580,8 +579,8 @@ input[type='checkbox']:focus-visible {
 }
 
 /* --- Dialog (Dialog.svelte) ------------------------------------------------
-   The one modal backdrop/panel pair: Combat's KAST modal and the command
-   palette / map-pack prompt each used to spell it out for themselves.
+   The one modal backdrop/panel pair, shared by Combat's KAST modal, the
+   command palette and the map-pack prompt.
    Variants are named classes the component applies:
    `.dlg-back.top` (hangs under the top edge) and `.dlg-panel.wide`
    (modal-width scrolling body). */
@@ -1716,8 +1715,8 @@ button.lm-cat-chip.on {
 }
 
 /* --- Profiles view (pf-) ---------------------------------------------------
-   The sidebar's player directory (changes.txt #21): search row above the
-   player table; the table itself reuses the shared .data-table primitives. */
+   The sidebar's player directory: search row above the player table; the
+   table itself reuses the shared .data-table primitives. */
 .pf-toolbar {
   gap: 12px;
 }

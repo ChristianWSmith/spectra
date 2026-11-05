@@ -1,6 +1,6 @@
 /* M3 wave A — Economy/Utility/Heatmaps (agent-owned) — appended styles for Milestone 3.
    Prefixes: econ- (Economy + EconCurve), util- (Utility), heat- (Heatmaps),
-   m5- (plan §5 summary cards), sql- (SqlConsole), bld- (Builder).
+   m5- (M5 §5 summary cards), sql- (SqlConsole), bld- (Builder).
    Layering: loaded second by index.html — after style.css (tokens,
    utilities, shared components) and before style-m3b.css; may override
    equal-specificity base rules (later file wins). Rules are not moved
