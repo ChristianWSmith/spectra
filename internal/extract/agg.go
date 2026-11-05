@@ -308,11 +308,10 @@ func (a *agg) warn(typeID int, message string) {
 // applyFinal folds the end-of-demo roster snapshot into the accumulators:
 // present players get their identity/scoreboard-only fields overwritten
 // from live entity state and are marked FinalStatePresent (provenance).
-// K/D/A/MVPs are deliberately NOT overwritten: event-derived stats now
-// follow one convention for every player (warmup/pregame excluded, flash
-// assists split out) while the game's own counters disagree (m_iAssists
-// includes flash assists; m_iMVPs included the golden demo's knife-round
-// MVP) and only covered 3/10 players here anyway.
+// K/D/A/MVPs are deliberately NOT overwritten: event-derived stats follow
+// one convention for every player (warmup/pregame excluded, flash assists
+// split out) while the game's own counters disagree (m_iAssists includes
+// flash assists; m_iMVPs included the golden demo's knife-round MVP).
 func (a *agg) applyFinal(finals []finalPlayer) {
 	for _, f := range finals {
 		p := a.ensure(f.key, f.name)
@@ -438,9 +437,11 @@ func (a *agg) freezeEnd(tick, equipCT, equipT, scoreCT, scoreT int, samples []mo
 		}
 		a.lastSpent[s.key] = s.spent
 		if s.side == "ct" || s.side == "t" {
-			// Last-observed side: the final-side source for players the
-			// end-of-demo snapshot misses (3/10 on the golden demo), plus
-			// exact per-round rows for analytics/replay consumers.
+			// Last-observed side: the final-side source for the players the
+			// end-of-demo snapshot genuinely lacks (controller entity gone
+			// before the demo's last tick — post-match leavers are kept, see
+			// finalRoster), plus exact per-round rows for analytics/replay
+			// consumers.
 			if p := a.players[s.key]; p != nil {
 				p.side = s.side
 			}

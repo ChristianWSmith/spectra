@@ -187,14 +187,14 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 	a.flushRaw()
 
 	// Final-state snapshot: end-of-demo roster (provenance flag + scoreboard
-	// overwrites), teams, and header-derived match metadata.
+	// overwrites), teams, and header-derived match metadata. The roster is
+	// every participant still on CT/T — including the players who left the
+	// server after match point (see finalRoster): their controller entity
+	// state survives to the demo's last tick.
 	gs := p.GameState()
-	playing := gs.Participants().Playing()
+	playing := finalRoster(gs.Participants().All())
 	finals := make([]finalPlayer, 0, len(playing))
 	for _, pl := range playing {
-		if pl == nil {
-			continue
-		}
 		finals = append(finals, finalPlayer{
 			key:             playerKey(pl),
 			name:            pl.Name,

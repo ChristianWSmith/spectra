@@ -811,10 +811,6 @@ input[type='checkbox']:focus-visible {
   background: var(--accent-tint);
 }
 
-.data-table tbody tr.dim td {
-  opacity: 0.6;
-}
-
 .data-table .name-cell {
   white-space: nowrap;
 }

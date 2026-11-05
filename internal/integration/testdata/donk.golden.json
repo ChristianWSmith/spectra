@@ -39,7 +39,7 @@
   "chat": 34,
   "warnings": 0,
   "players": 10,
-  "finalStatePlayers": 3,
+  "finalStatePlayers": 10,
   "voice": {
     "chunks": 123507,
     "xuids": 10,
