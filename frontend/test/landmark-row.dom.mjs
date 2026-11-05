@@ -61,8 +61,9 @@ const svelteCompile = (src, filename, out) => {
 
 // Plain-ESM deps copied verbatim so their relative imports keep working
 // at their new location: landmarks.js → rounds.js, nav.js → router.js +
-// replay/landmarks.js.
-for (const rel of ['rounds.js', 'router.js', 'nav.js']) {
+// replay/landmarks.js, fmt.js → rounds.js (the roundClock the round +
+// time columns render).
+for (const rel of ['rounds.js', 'router.js', 'nav.js', 'fmt.js']) {
   writeFileSync(join(dir, rel), readFileSync(join('src/lib', rel), 'utf8'));
 }
 writeFileSync(
@@ -163,6 +164,41 @@ check('resolved generic name is a link', genericSlot.querySelectorAll('.lm-text 
 const unresolvedSlot = slot('generic-unresolved-row');
 check('unresolved generic name is plain text', unresolvedSlot.querySelectorAll('.lm-text .comb-name-btn').length === 0);
 check('unresolved generic name still renders', text(unresolvedSlot.querySelector('.lm-text')).includes('dave'), text(unresolvedSlot.querySelector('.lm-text')));
+
+console.log('F. round + time-into-round columns (roundByNumber lookup)');
+const timedSlot = slot('timed-row');
+check(
+  'round chip shows the roundIndexLabel for the round row',
+  text(timedSlot.querySelector('.lm-round')) === '5',
+  text(timedSlot.querySelector('.lm-round')),
+);
+check(
+  'time cell shows time INTO the round (tick − startTick via roundClock)',
+  text(timedSlot.querySelector('.lm-time')) === '0:17',
+  text(timedSlot.querySelector('.lm-time')),
+);
+check(
+  'the raw tick stays in the tooltip',
+  timedSlot.querySelector('.lm-time').getAttribute('title') === 'tick 3000',
+  timedSlot.querySelector('.lm-time').getAttribute('title'),
+);
+check('no legacy tick cell alongside the new columns', timedSlot.querySelector('.lm-tick') === null);
+const knifeSlot = slot('knife-row');
+check(
+  'knife round labels K (roundIndexLabel flags)',
+  text(knifeSlot.querySelector('.lm-round')) === 'K',
+  text(knifeSlot.querySelector('.lm-round')),
+);
+check(
+  'knife round time cell renders (2100 − 100) / 64 = 0:31',
+  text(knifeSlot.querySelector('.lm-time')) === '0:31',
+  text(knifeSlot.querySelector('.lm-time')),
+);
+check(
+  'rows without the lookup keep the legacy tick cell (CompareRounds)',
+  killSlot.querySelector('.lm-tick') !== null && text(killSlot.querySelector('.lm-tick')) === '1024',
+  text(killSlot.querySelector('.lm-tick')),
+);
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');

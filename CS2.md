@@ -507,3 +507,36 @@ at the end of the section.
   https://www.hltv.org/news/44128/valve-overhaul-reloading-mechanics-in-cs2-update
   (2026-03-19); demoinfocs-golang v6 `Equipment.AmmoReserve` doc comment
   (retrieved 2026-11-05).
+- **Bomb `bomb_dropped` / `bomb_pickup` semantics (death drops, release
+  vs landing)** — how trustworthy is carrier-position evidence on a
+  drop? `BombDropped` fires when the C4 **loses its owner**
+  (`m_hOwnerEntity` → invalid handle), i.e. at **RELEASE**, for ANY
+  reason that clears the owner: manual drop AND death drop (demoinfocs
+  dispatches it from the entity property update, not the game event;
+  `BombPickup` fires when the owner changes to a new carrier — and also
+  on the round-start bomb hand-out to the first holder). Empirically on
+  the golden demo (`extract.TestDiagBombEvidence`, 42 drops / 10
+  carriers): 16 drops land within ±3 ticks of the carrier's death (7
+  with the carrier already dead at the event) — **death drops DO fire
+  it**; the carrier's position equals the bomb entity's position at the
+  event in 42/42 (within 64u, x/y identical in samples), but the bomb
+  entity then keeps moving until it settles (rest observed ≤ 80 ticks,
+  mean 46 ≈ 0.7 s — the event is release, NOT landing, so the stored
+  drop position can be a slide short of the final resting spot).
+  `bomb_pickup` (57 drops… pickups): bomb entity position present
+  56/57 but often STALE (one snapshot behind — round-start hand-outs
+  report the previous ground spot), player position present 57/57 and
+  current — so spectra stores bomb-entity-first with player fallback
+  and flags the source in DetailJSON (ground pickups: both within
+  ~60u). Related: `mp_death_drop_c4` (C4 droppable on death, default
+  true) and `mp_c4timer` default 40 in CS2 Competitive/Premier (45
+  Casual) — the renderer's no-terminator bomb fallback.
+  **Source** — demoinfocs v6 `datatables.go` `m_hOwnerEntity` binding
+  + `events.BombDropped`/`BombPickup` docs
+  (https://pkg.go.dev/github.com/markus-wa/demoinfocs-golang/v6/pkg/demoinfocs/events,
+  2026-11-05); CS2 game-event dump `bomb_dropped`/`bomb_pickup`/
+  `player_given_c4` fields (https://cs2.poggu.me/dumped-data/game-events/,
+  2026-11-05); golden-demo diag `TestDiagBombEvidence` (2026-11-05);
+  mp_c4timer/mp_death_drop_c4 defaults
+  (https://developer.valvesoftware.com/wiki/List_of_Counter-Strike_2_console_commands_and_variables,
+  https://slashplay.gg/commands/cs2/mp_c4timer, 2026-11-05).

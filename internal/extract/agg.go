@@ -995,21 +995,40 @@ func (a *agg) bombExploded(tick int, site string, px, py, pz *float64) {
 	}, "bomb_exploded")
 }
 
-func (a *agg) bombDropped(tick int, key uint64, name string) {
+// bombDropped records a bomb_drop WITH position evidence: pos* is the
+// carrier's position at the drop tick (the drop site — see the handler
+// for the death-drop reasoning), and bx/by/bz the bomb entity's own
+// position when known (extra DetailJSON evidence, omitted otherwise).
+// DetailJSON tags source "carrier" so consumers know which position the
+// columns carry without guessing provenance.
+func (a *agg) bombDropped(tick int, key uint64, name string, px, py, pz *float64, bx, by, bz *float64) {
+	detail := map[string]any{"player": name, "source": "carrier"}
+	if bx != nil && by != nil && bz != nil {
+		detail["bombPos"] = []float64{*bx, *by, *bz}
+	}
 	a.addEvent(models.Event{
 		Tick:       tick,
 		Kind:       models.EventBombDrop,
 		Attacker:   keyStr(key),
-		DetailJSON: detailJSON(map[string]any{"player": name}),
+		PosX:       px,
+		PosY:       py,
+		PosZ:       pz,
+		DetailJSON: detailJSON(detail),
 	}, "bomb_dropped")
 }
 
-func (a *agg) bombPickedUp(tick int, key uint64, name string) {
+// bombPickedUp records a bomb_pickup WITH position evidence: where the
+// pickup happened (bomb entity position, falling back to the pickup
+// player's position — the handler resolves and flags the source).
+func (a *agg) bombPickedUp(tick int, key uint64, name string, px, py, pz *float64, source string) {
 	a.addEvent(models.Event{
 		Tick:       tick,
 		Kind:       models.EventBombPickup,
 		Attacker:   keyStr(key),
-		DetailJSON: detailJSON(map[string]any{"player": name}),
+		PosX:       px,
+		PosY:       py,
+		PosZ:       pz,
+		DetailJSON: detailJSON(map[string]any{"player": name, "source": source}),
 	}, "bomb_pickup")
 }
 

@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { trailConnects } from './replay/renderer.js';
+import { trailConnects, smartCamTarget, easeValue, camConverged } from './replay/renderer.js';
 
 // slotPos builds one slot's interleaved Float32Array [x, y, z, yaw] from
 // a list of per-frame world positions.
@@ -93,4 +93,78 @@ test('the segment off either end of the window does not connect', () => {
   ]);
   assert.equal(trailConnects(ticks, pos, -1), false);
   assert.equal(trailConnects(ticks, pos, 1), false); // f+1 past the end
+});
+
+// --- smart camera (the default camera mode) ---------------------------------
+
+test('smartCamTarget fits the box + margin into the canvas', () => {
+  // 100x50 box at (0,0)-(100,50), 800x600 canvas, 50px margin: the
+  // horizontal fit is exactly the available width (800 - 2*50).
+  const t = smartCamTarget({ minX: 0, minY: 0, maxX: 100, maxY: 50 }, 800, 600, {
+    margin: 50,
+    maxZoom: 10, // widen the band so the raw fit (7x) is observable
+  });
+  assert.equal(t.s, 7); // 700px of box in 700px of available width
+  assert.equal(t.cx, 50); // box center
+  assert.equal(t.cy, 25);
+  // On screen: the padded box (box ± margin) covers the canvas width.
+  const boxW = 100 * t.s;
+  assert.ok(boxW <= 800 - 2 * 50 + 1e-9);
+});
+
+test('smartCamTarget clamps to the zoom band (never tunnel-vision, never off-map)', () => {
+  // A single point → the max-zoom cap (4), not infinity.
+  const tight = smartCamTarget({ minX: 400, minY: 400, maxX: 400, maxY: 400 }, 800, 600, {});
+  assert.equal(tight.s, 4);
+  // A full-map spread → the min-zoom floor (0.08), below the manual
+  // ZOOM_MIN on purpose: on-screen beats tight.
+  const wide = smartCamTarget({ minX: 0, minY: 0, maxX: 10000, maxY: 10000 }, 800, 600, {});
+  assert.equal(wide.s, 0.08);
+});
+
+test('smartCamTarget clamps the center into the image extent', () => {
+  // A tiny box near the left edge: the view (400px at zoom 4 = 50 img px
+  // half-width) must not show void left of the image — cx pins to halfW.
+  const t = smartCamTarget({ minX: 0, minY: 400, maxX: 10, maxY: 410 }, 400, 300, {
+    extW: 1024,
+    extH: 1024,
+  });
+  assert.equal(t.s, 4);
+  assert.equal(t.cx, 400 / (2 * 4)); // 50 — clamped to the left edge
+  assert.equal(t.cy, 405); // fits vertically, stays on the box
+  // A view WIDER than the image centers on the image instead (the
+  // entities are inside it either way).
+  const big = smartCamTarget({ minX: 500, minY: 500, maxX: 510, maxY: 510 }, 6000, 6000, {
+    extW: 1024,
+    extH: 1024,
+  });
+  assert.equal(big.s, 4); // zoom cap
+  assert.equal(big.cx, 1024 / 2); // view (1500) wider than the image → centered
+  assert.equal(big.cy, 1024 / 2);
+});
+
+test('easeValue: exponential approach — smooth, bounded, never a snap', () => {
+  // One tau of time covers ~63.2% of the distance.
+  const step = easeValue(0, 10, 0.18, 0.18);
+  assert.ok(Math.abs(step - 10 * (1 - Math.exp(-1))) < 1e-9, String(step));
+  // dt = 0 (or a stalled clock) leaves the value alone.
+  assert.equal(easeValue(3, 10, 0, 0.18), 3);
+  // Every step lands strictly between current and target (monotonic,
+  // no overshoot), so a large seek eases across frames instead of jumping.
+  let cur = 0;
+  for (let i = 0; i < 300; i++) {
+    const next = easeValue(cur, 100, 0.016, 0.18);
+    assert.ok(next > cur && next <= 100, `step ${i}: ${next}`);
+    cur = next;
+  }
+  assert.ok(Math.abs(cur - 100) < 1e-6, String(cur)); // converges
+});
+
+test('camConverged: within the center/zoom tolerances only', () => {
+  const target = { cx: 100, cy: 200, s: 2 };
+  assert.equal(camConverged({ cx: 100, cy: 200, s: 2 }, target), true);
+  assert.equal(camConverged({ cx: 100.2, cy: 200, s: 2 }, target), true); // < 0.25 img px
+  assert.equal(camConverged({ cx: 100.4, cy: 200, s: 2 }, target), false);
+  assert.equal(camConverged({ cx: 100, cy: 200, s: 2.01 }, target), false); // > 0.2% rel
+  assert.equal(camConverged({ cx: 100, cy: 200, s: 2.0039 }, target), true); // within 0.2%
 });
