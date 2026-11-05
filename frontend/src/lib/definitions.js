@@ -44,7 +44,7 @@ export const GLOSSARY = [
   {
     term: 'Net worth',
     inferred: false,
-    text: 'Team equipment value plus that team’s unspent money at freeze time end, minus the free spawn-issued default pistols its players still hold (issued free at spawn, never paid for, yet counted in equipment value at $200 each): what the team holds in gear it actually bought plus the cash it can still spend. The economy chart’s Net worth metric plots this per team per round — on a pistol round both sides read exactly their starting money ($4000 = 5 × $800).',
+    text: 'Equipment value plus that team’s unspent money at freeze time end: the total value the team holds at that instant — every weapon, armor, grenade and defuse kit its players carry (the free spawn-issued default sidearms included, since the game counts them at $200 each — see Equipment value) plus the cash it can still spend. It can never be below equipment value, because unspent money is never negative. The economy chart’s Net worth metric plots this per team per round — on a pistol round each side reads its starting money ($4000 = 5 × $800) plus the free default sidearms it still holds, so a side that dropped or upgraded some of them reads less than an opponent that kept all five.',
   },
   {
     term: 'Trade opportunities missed (inferred)',
@@ -64,7 +64,7 @@ export const GLOSSARY = [
   {
     term: 'Consistency σ',
     inferred: false,
-    text: 'Standard deviation of per-match ADR across a player’s match history, shown as “ADR ± σ” on profiles: a spread, not an error bar. Lower σ = steadier performance (PRD §5.13).',
+    text: 'Standard deviation of per-match ADR across a player’s match history, shown as “ADR ± σ” on profiles: a spread, not an error bar. Lower σ = steadier performance.',
   },
 ];
 
@@ -95,10 +95,15 @@ export const TRADE_OPP_MISSED_DEF = `Trade opportunities missed — ${lowerFirst
 // Team.FreezeTimeEndEquipmentValue, stored in rounds.equip_ct/equip_t and
 // round_economy.equip_value); net worth is computed frontend-side as that
 // equipment value plus the sampled freeze-end unspent money
-// (round_economy.money_sampled_sum → EconomyRow.Money*) minus the side's
-// free spawn-issued default-pistol value
-// (round_economy.free_pistol_value → EconomyRow.FreePistol*) — granted,
-// not bought, see CS2.md "Free spawn-issued default pistol".
+// (round_economy.money_sampled_sum → EconomyRow.Money*). The canonical
+// formulas live in lib/econ.js and are pinned by lib/econ.test.js — net
+// worth can never fall below equipment value. round_economy.free_pistol_value
+// → EconomyRow.FreePistol* records the free spawn-issued default-pistol
+// value held at that same freeze end (granted, not bought, see CS2.md
+// "Free spawn-issued default pistol"); it is stored for reference and is
+// deliberately NOT subtracted — subtracting it pushed net worth below
+// equipment value on every side holding less cash than the granted
+// pistols it still had.
 export const EQUIP_DEF = `Equipment value — ${lowerFirst(glossaryText('Equipment value'))}`;
 
 export const NETWORTH_DEF = `Net worth — ${lowerFirst(glossaryText('Net worth'))}`;

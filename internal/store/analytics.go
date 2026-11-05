@@ -386,9 +386,12 @@ func (s *Store) GetUtility(matchID int64) ([]models.UtilityEvent, error) {
 // (sum of the players' cumulative money-spent deltas between freeze-time
 // ends, see extract.agg.freezeEnd). FreePistolCT/FreePistolT carry
 // round_economy.free_pistol_value — the side's held free spawn-issued
-// default-pistol value at the same freeze end (net worth subtracts it:
-// Equip* + Money* − FreePistol*; CS2.md "Free spawn-issued default
-// pistol").
+// default-pistol value at the same freeze end (CS2.md "Free spawn-issued
+// default pistol"). It is stored, NOT subtracted anywhere: the chart's
+// net worth is Equip* + Money* (frontend lib/econ.js, pinned by
+// lib/econ.test.js) and can therefore never fall below the equipment
+// value — subtracting the granted pistols dropped it below equipment
+// value on every side holding less cash than the pistols it still had.
 func (s *Store) GetEconomy(matchID int64) ([]models.EconomyRow, error) {
 	rows, err := s.db.Query(
 		`SELECT r.number, r.winner, r.warmup, r.equip_ct, r.equip_t,
