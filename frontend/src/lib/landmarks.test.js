@@ -12,8 +12,13 @@ import {
   CATEGORIES,
   DEFAULT_CATEGORIES,
   DEFAULT_FILTER,
+  DETONATION_BUCKETS,
   categoryOfKind,
   drawBucket,
+  detonationStyle,
+  detonationStyleOf,
+  sameUtilityWeapon,
+  scrubberMarkerClass,
   typedKindsFor,
   enabledSources,
   normalizeEvent,
@@ -92,7 +97,17 @@ test('categoryOfKind maps every kind and rejects unknown input', () => {
 test('drawBucket buckets every drawable kind (renderer/scrubber contract)', () => {
   assert.equal(drawBucket('kill'), 'kill');
   assert.equal(drawBucket('grenade_throw'), 'throw');
+  // A grenade detonation routes by WEAPON (the typed buckets the
+  // renderer's lingering smoke/fire arrays and per-type visuals read);
+  // an unknown/absent weapon stays the generic detonation bucket.
   assert.equal(drawBucket('grenade'), 'detonation');
+  assert.equal(drawBucket('grenade', 'HE Grenade'), 'he');
+  assert.equal(drawBucket('grenade', 'Flashbang'), 'flash');
+  assert.equal(drawBucket('grenade', 'Smoke Grenade'), 'smoke');
+  assert.equal(drawBucket('grenade', 'Molotov'), 'fire');
+  assert.equal(drawBucket('grenade', 'Incendiary Grenade'), 'fire');
+  assert.equal(drawBucket('grenade', 'Decoy Grenade'), 'decoy');
+  assert.equal(drawBucket('grenade', 'AK-47'), 'detonation');
   assert.equal(drawBucket('bomb_plant'), 'plant');
   assert.equal(drawBucket('bomb_explode'), 'explode');
   assert.equal(drawBucket('bomb_defuse'), 'defuse');
@@ -102,8 +117,9 @@ test('drawBucket buckets every drawable kind (renderer/scrubber contract)', () =
   assert.equal(drawBucket('bomb_drop'), 'drop');
   assert.equal(drawBucket('bomb_pickup'), 'pickup');
   assert.equal(drawBucket('round_end'), 'round');
-  // Not drawable / no marker:
-  for (const k of ['damage', 'blind', 'round_start', 'player_connect', '']) {
+  // damage rides the draw feed for the victim-hit flash (no scrubber
+  // marker — see scrubberMarkerClass); the rest stay non-drawable:
+  for (const k of ['blind', 'round_start', 'player_connect', '']) {
     assert.equal(drawBucket(k), '', k);
   }
   // Extended spellings keep their substring buckets.
@@ -111,18 +127,72 @@ test('drawBucket buckets every drawable kind (renderer/scrubber contract)', () =
   assert.equal(drawBucket('molotov'), 'fire');
   // DRAW_KINDS is exactly the drawable set (round_end rides it for the
   // scrubber's round-win markers; it never draws on the map; drop/
-  // pickup ride it for the bomb evidence, no marker).
+  // pickup ride it for the bomb evidence, damage for the map flash —
+  // neither adds a scrubber marker).
   assert.deepEqual([...DRAW_KINDS].sort(), [
     'bomb_defuse',
     'bomb_drop',
     'bomb_explode',
     'bomb_pickup',
     'bomb_plant',
+    'damage',
     'grenade',
     'grenade_throw',
     'kill',
     'round_end',
   ].sort());
+});
+
+test('detonationStyle / detonationStyleOf: the one weapon → visual decision', () => {
+  assert.equal(detonationStyle('Smoke Grenade'), 'smoke');
+  assert.equal(detonationStyle('Molotov'), 'fire');
+  assert.equal(detonationStyle('Incendiary Grenade'), 'fire');
+  assert.equal(detonationStyle('Decoy Grenade'), 'decoy');
+  assert.equal(detonationStyle('Flashbang'), 'flash');
+  assert.equal(detonationStyle('HE Grenade'), 'he');
+  // Unknown / absent weapon — the generic ring, never a guess:
+  assert.equal(detonationStyle('AK-47'), 'detonation');
+  assert.equal(detonationStyle(''), 'detonation');
+  assert.equal(detonationStyle(undefined), 'detonation');
+  // detonationStyleOf prefers the row's PRE-COMPUTED bucket (it already
+  // went through detonationStyle) and falls back to the weapon for a
+  // generic bucket / a defensive kind spelling with no weapon.
+  assert.equal(detonationStyleOf({ bucket: 'smoke', weapon: '' }), 'smoke');
+  assert.equal(detonationStyleOf({ bucket: 'detonation', weapon: 'Flashbang' }), 'flash');
+  assert.equal(detonationStyleOf({ bucket: 'detonation', weapon: undefined }), 'detonation');
+  assert.equal(detonationStyleOf({ bucket: '', weapon: 'Molotov' }), 'fire');
+  assert.equal(detonationStyleOf(null), 'detonation');
+});
+
+test('sameUtilityWeapon: exact match, Molotov ≡ Incendiary, absent never blocks', () => {
+  assert.equal(sameUtilityWeapon('Smoke Grenade', 'Smoke Grenade'), true);
+  assert.equal(sameUtilityWeapon('HE Grenade', 'Flashbang'), false);
+  // The pairing rule: the throw records "Molotov" while the burn
+  // detonation records "Incendiary Grenade" (models/weapons.go) — the
+  // molotov flight must still pair.
+  assert.equal(sameUtilityWeapon('Molotov', 'Incendiary Grenade'), true);
+  assert.equal(sameUtilityWeapon('Incendiary Grenade', 'Molotov'), true);
+  assert.equal(sameUtilityWeapon('Molotov', 'Smoke Grenade'), false);
+  // Unknown on either side never vetoes a pair (the pairing's own rule).
+  assert.equal(sameUtilityWeapon('', 'HE Grenade'), true);
+  assert.equal(sameUtilityWeapon('HE Grenade', undefined), true);
+});
+
+test('scrubberMarkerClass maps every drawable bucket (the markers contract)', () => {
+  assert.equal(scrubberMarkerClass('kill'), 'kill');
+  assert.equal(scrubberMarkerClass('plant'), 'plant');
+  assert.equal(scrubberMarkerClass('defuse'), 'plant');
+  assert.equal(scrubberMarkerClass('explode'), 'det');
+  assert.equal(scrubberMarkerClass('round'), 'round');
+  // Every typed grenade bucket keeps a scrubber marker (they used to
+  // all be the one 'detonation' bucket)…
+  for (const b of DETONATION_BUCKETS) assert.equal(scrubberMarkerClass(b), 'det', b);
+  // …while bomb evidence and damage stay marker-less:
+  assert.equal(scrubberMarkerClass('drop'), '');
+  assert.equal(scrubberMarkerClass('pickup'), '');
+  assert.equal(scrubberMarkerClass('damage'), '');
+  assert.equal(scrubberMarkerClass(''), '');
+  assert.equal(scrubberMarkerClass(null), '');
 });
 
 test('typedKindsFor unions enabled categories; enabledSources splits paths', () => {
@@ -155,6 +225,11 @@ test('normalizeEvent tags the row, keeps source fields and drops unknown kinds',
   assert.equal(row.bucket, 'kill');
   assert.equal(row.attackerName, 'a'); // source fields preserved
   assert.equal(row.posX, 1.5);
+  // The bucket follows the KIND and the weapon (grenade routing reaches
+  // the renderer through this one stamping point).
+  assert.equal(normalizeEvent({ ...ev, kind: 'grenade', weapon: 'Smoke Grenade' }, {}).bucket, 'smoke');
+  assert.equal(normalizeEvent({ ...ev, kind: 'grenade', weapon: 'HE Grenade' }, {}).bucket, 'he');
+  assert.equal(normalizeEvent({ ...ev, kind: 'damage' }, {}).bucket, 'damage');
   assert.equal(normalizeEvent({ ...ev, kind: 'teleport' }), null);
 });
 
