@@ -8,9 +8,10 @@
 // round ribbon rides the top line too (its .rp-ribbon cell), and the
 // transport splits into the full-width game-time scrubber line ABOVE the
 // centered control-cluster line (round transport, ±15s, play, speed,
-// loop popover, camera Smart/Free/Follow — the codicon paints INSIDE the
-// select via its .rp-cam class, mute-all, snapshot/record, and the
-// hints-only codicon LAST). A fresh replay also AUTOPLAYS (startEngine
+// loop popover, camera Smart/Free/Follow, mute-all, snapshot/record, and
+// the hints-only codicon LAST — three .toolbar-sep rules split those
+// groups: after the loop control, after mute-all, before the hints). A
+// fresh replay also AUTOPLAYS (startEngine
 // calls engine.play() once the position data is up).
 //
 // The view's data source, engine, renderer and input are scripted stubs —
@@ -583,10 +584,12 @@ check(
 const camOpts = [...(controls.querySelector('#rp-cam')?.options || [])].map((o) => o.value);
 check('camera select offers Smart/Free/Follow', JSON.stringify(camOpts) === '["smart","free","follow"]', JSON.stringify(camOpts));
 check(
-  'camera select carries the icon INSIDE its own box (.rp-cam class — no codicon span next to it)',
-  !!controls.querySelector('select.rp-cam#rp-cam') &&
+  'camera select is a PLAIN native dropdown (no icon class, no codicon beside it)',
+  !!controls.querySelector('select#rp-cam') &&
+    !controls.querySelector('.rp-cam') &&
     !controls.querySelector('.rp-cam-wrap') &&
-    !controls.querySelector('#rp-cam ~ .codicon-device-camera-video'),
+    !controls.querySelector('#rp-cam ~ .codicon-device-camera-video') &&
+    !controls.querySelector('#rp-cam .codicon'),
 );
 check('no follow-player select until Follow is chosen', !controls.querySelector('#rp-follow'));
 check('no leftover voice bar / lanes', !target.querySelector('.voice-bar') && !target.querySelector('.voice-lanes-wrap'));
@@ -612,6 +615,32 @@ check(
     const hints = controls.querySelector('.codicon-keyboard')?.parentElement;
     return !!hints && !controls.textContent.includes('hints') &&
       children(controls)[children(controls).length - 1] === hints;
+  })(),
+);
+// Exactly THREE separators split the cluster into groups — each pinned at
+// its exact position: after the loop control, after mute-all, and
+// immediately before the keyboard hints (which stay the LAST cell).
+const seps = children(controls).filter((el) => el.classList.contains('toolbar-sep'));
+check('exactly three separators in the control cluster', seps.length === 3, String(seps.length));
+const after = (el) => {
+  const k = children(controls).indexOf(el);
+  return k >= 0 ? children(controls)[k + 1] : null;
+};
+check(
+  'separator 1 sits directly after the loop control (before the camera select)',
+  !!seps[0] && seps[0] === after(controls.querySelector('.rp-loop')) &&
+    children(controls).indexOf(seps[0]) < children(controls).indexOf(controls.querySelector('#rp-cam')),
+  children(controls).map((el) => el.className || el.id || el.getAttribute('aria-label')).join(' | '),
+);
+check('separator 2 sits directly after the mute-all button', !!seps[1] && seps[1] === after(muteAll));
+check(
+  'separator 3 sits immediately before the keyboard hints (still LAST)',
+  (() => {
+    const hints = controls.querySelector('.codicon-keyboard')?.parentElement;
+    const kids = children(controls);
+    return !!seps[2] && !!hints &&
+      kids.indexOf(seps[2]) === kids.indexOf(hints) - 1 &&
+      kids[kids.length - 1] === hints;
   })(),
 );
 check('play controls are NOT on the scrub line', !scrub.querySelector('button'));
