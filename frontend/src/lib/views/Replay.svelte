@@ -234,6 +234,11 @@
   // startEngine reads it, no rendering depends on it). Empty = no
   // overlay; any fetch failure lands here as [].
   let blindRows = [];
+  // In-game chat lines for the canvas readout (fetch: round -1 = ALL
+  // rounds; the renderer scopes them per round at the playhead). Plain
+  // let like blindRows: only startEngine reads it — empty = no chat,
+  // any fetch failure lands here as [] (fail-soft, never a load error).
+  let chatLines = [];
   let typedRows = $state([]); // accumulated raw EventRows (paged)
   let chatRows = $state([]);
   let genPages = $state({}); // generic name → {rows, hasMore, cat}
@@ -1402,6 +1407,17 @@
       } catch {
         blindRows = []; // fail-soft — no overlay, never a load error
       }
+      // In-game chat for the canvas readout (drawChat): ALL rounds —
+      // round -1, the same match-wide read the landmark feed's chat
+      // source uses — fetched raw ({tick, round, steamId, name, text};
+      // the renderer resolves each speaker's side itself). Fail-soft by
+      // contract like the blind overlay: any failure just leaves the
+      // chat off, never a load error.
+      try {
+        chatLines = (await getChat(id, -1, '')) || [];
+      } catch {
+        chatLines = [];
+      }
       // loading must be false BEFORE the tick, else {#if loading} still hides
       // the {#if data} branch and bind:this never resolves (canvasEl null).
       if (live) loading = false;
@@ -1440,6 +1456,7 @@
     renderer.setPack(pack, radarImg, packTf);
     renderer.setLandmarks(drawNorm);
     renderer.setBlinds(blindRows); // flash-white overlay rows from load()
+    renderer.setChat(chatLines); // raw chat rows from load() (round -1)
     // Player-card phase inputs (handoff E): push whatever load() already
     // has alongside pack/landmarks — icons and the voice lanes (the
     // SPEAKING half of setVoices; the colors are the player colors, ready
