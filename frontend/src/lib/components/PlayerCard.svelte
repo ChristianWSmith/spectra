@@ -1,8 +1,9 @@
 <script>
   // PlayerCard — ONE player's live card beside the replay render area:
-  // name, HP + bar, armor with helmet indicator, the equipped weapon
-  // with mag/reserve ammo, unspent money, utility (+ the C4 when this
-  // player carries the bomb) and the live K/D/A + ADR row — tinted by the
+  // name (+ the voice live dot), HP + bar with the armor/helmet chip at
+  // the row's right edge, the equipped weapon with mag/reserve ammo on
+  // its own line, unspent money, utility (+ the C4 when this player
+  // carries the bomb) and the live K/D/A + ADR row — tinted by the
   // player's CURRENT side, ringed by the player's TEAMMATE COLOR, with a
   // per-player voice mute. TeamColumn stacks five of these under one team
   // name; the caller (Replay) owns all data and all fetching.
@@ -19,8 +20,10 @@
   //               color ring is drawn only when set; null means the
   //               sidecar never said (old sidecar / no color) → no ring,
   //               never a guessed one
-  //   speaking    talking right now (voiceindex.speakingAt) → the extra
-  //               outer outline with a gap (spec 26)
+  //   speaking    talking right now (voiceindex.speakingAt) → the red
+  //               live dot beside the name (a recording indicator).
+  //               Voice activity never draws a ring — the player-color
+  //               box-shadow is the card's ONLY outline.
   //   muted       voice muted (replay/audio setMuted) → mute button state
   //   alive/dead  either may be passed; dead wins → dimmed card + DEAD
   //               marker. `alive: null` = the data never said (unknown):
@@ -133,12 +136,16 @@
   class:pc-dead={isDead}
   class:pc-follow={follow}
   class:pc-color={!!playerColor}
-  class:pc-speaking={speaking}
   style:--pc-color={playerColor || null}
   title={hasState ? undefined : 'No player state for this match'}
 >
   <div class="pc-head">
     <span class="pc-name" title={name}>{name}</span>
+    {#if speaking}
+      <!-- Voice activity as a recording dot — pure paint, sized under
+           the head's fixed height so it can never move the row. -->
+      <span class="pc-live" aria-hidden="true"></span>
+    {/if}
     {#if follow}
       <span class="pc-mark codicon codicon-person-follow" title="Camera follows this player" aria-hidden="true"></span>
     {/if}
@@ -163,9 +170,9 @@
     <span class="pc-bar" class:pc-unknown={band === 'unknown'} aria-hidden="true">
       {#if pct != null}<span class="pc-bar-fill pc-fill-{band}" style="width: {pct}%"></span>{/if}
     </span>
-  </div>
-
-  <div class="pc-gear">
+    <!-- The armor/helmet chip rides the far RIGHT of the HP row: the bar
+         keeps its flex and the chip's auto margin pins it to the row's
+         right edge. -->
     <span class="pc-chip pc-armor" title={armorTitle}>
       {#if armorIconSrc}
         <img class="pc-ico" src={armorIconSrc} alt={chip.text} />
@@ -174,6 +181,11 @@
       {/if}
       <span class="pc-num pc-armor-val">{armor ?? '—'}</span>
     </span>
+  </div>
+
+  <!-- The equipped weapon on its OWN fixed-height line: icon, name
+       (ellipsized inside the row) and mag/reserve ammo. -->
+  <div class="pc-weapon-row">
     <span class="pc-chip pc-weapon" title={weaponTitle}>
       {#if weaponIconSrc}
         <img class="pc-ico" src={weaponIconSrc} alt="" />
@@ -247,7 +259,6 @@
     line-height: 1.3;
     background: color-mix(in srgb, var(--pc-side, var(--panel)) 14%, var(--panel));
     border: 1px solid var(--border);
-    border-left: 3px solid var(--pc-side, var(--border));
     border-radius: var(--radius-md);
   }
 
@@ -259,46 +270,48 @@
      grenade row, the ticking stats row. Heights are em-of-card (the card
      is 0.86em of the app font) so the font-size setting scales them;
      values are padded for the chip/button's px borders at every setting.
-     Rings (box-shadow/outline) stay paint on .pc-card — never layout. */
+     Rings (box-shadow) stay paint on .pc-card — never layout. */
 
-  /* Spec 21/26 — two rings that must never touch. The teammate-color
-     ring hugs the card (box-shadow 0–2px) behind a dark casing so pale
-     colors (#ECDF41) still read on the light theme's near-white panel;
-     the speaking ring is a real `outline` OUTSIDE it — offset 5px puts
-     its inner edge past the casing (2px of visible gap) — and it mixes
-     toward --text so it keeps contrast in whichever theme is active.
-     Both are pure paint (box-shadow / outline never enter layout), and
-     the ring only appears for a KNOWN player color (playerColor) — an
-     unknown color draws nothing rather than a guessed ring. The card
-     lifts over its neighbours while speaking because the rings reach
-     into the stack gap. */
+  /* Spec 21/26 — the card's ONE ring: the teammate-color ring hugs the
+     card (box-shadow 0–2px) behind a dark casing so pale colors
+     (#ECDF41) still read on the light theme's near-white panel. Pure
+     paint (box-shadow never enters layout), and it only appears for a
+     KNOWN player color (playerColor) — an unknown color draws nothing
+     rather than a guessed ring. The SIDE is read from the tinted
+     background alone (pc-ct/pc-t) — never from a left-edge strip — and
+     voice activity is the live dot in the head — never a second ring.
+     There is deliberately NO speaking outline: the player's own color
+     is the only outline a card wears. */
   .pc-card.pc-color {
     box-shadow: 0 0 0 2px var(--pc-color), 0 0 0 3px rgba(0, 0, 0, 0.55);
   }
 
-  .pc-card.pc-speaking {
-    z-index: 2;
-    outline: 3px solid color-mix(in srgb, var(--pc-color, var(--accent)) 65%, var(--text));
-    outline-offset: 5px;
-    animation: pc-speak-pulse 1.6s ease-in-out infinite;
+  /* Voice activity — a recording-style dot right after the name. Sized
+     (7px) well under the head's fixed height and flex:none, so it can
+     never squeeze the name or move the row; the pulse animates opacity
+     only (paint, never layout) and is dropped entirely for users who
+     asked for reduced motion. */
+  .pc-live {
+    flex: none;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--danger);
+    animation: pc-live-pulse 1.6s ease-in-out infinite;
   }
 
-  /* Subtle pulse on the ring's width only (outline is outside layout,
-     so this never reflows the card); one property, one element — cheap
-     enough for the ≤10 cards, and dropped entirely for users who asked
-     for reduced motion. */
-  @keyframes pc-speak-pulse {
+  @keyframes pc-live-pulse {
     0%,
     100% {
-      outline-width: 3px;
+      opacity: 1;
     }
     50% {
-      outline-width: 4.5px;
+      opacity: 0.45;
     }
   }
 
   @media (prefers-reduced-motion: reduce) {
-    .pc-card.pc-speaking {
+    .pc-live {
       animation: none;
     }
   }
@@ -310,8 +323,9 @@
 
   /* The head's STATUS SLOT is its height: reserved for the tallest state
      it can mount (the DEAD chip ≈ 1.55em + its 4px border/padding) so the
-     DEAD badge, the "no state" text and the follow marker appearing or
-     disappearing can never grow the row — the card must not jitter. */
+     DEAD badge, the "no state" text, the follow marker and the 7px live
+     dot appearing or disappearing can never grow the row — the card must
+     not jitter. */
   .pc-head {
     display: flex;
     align-items: center;
@@ -366,8 +380,9 @@
     align-items: center;
     gap: 6px;
     min-width: 0;
-    /* One line of value + the 5px bar — fixed so a 3-digit → 2-digit
-       change (or the unknown hatched track) never moves the rows. */
+    /* One line of value + the 5px bar + the armor chip (15px icon) —
+       fixed so a 3-digit → 2-digit change (or the unknown hatched
+       track) never moves the rows. */
     height: 1.5em;
     overflow: hidden;
   }
@@ -375,6 +390,14 @@
   .pc-hp {
     min-width: 3ch;
     text-align: right;
+  }
+
+  /* The armor/helmet chip rides the far RIGHT of the HP row: the bar
+     keeps its flex (it fills the middle) and the chip's auto margin
+     pins it to the row's right edge at any column width. */
+  .pc-armor {
+    flex: none;
+    margin-left: auto;
   }
 
   .pc-bar {
@@ -417,17 +440,15 @@
     background: var(--danger);
   }
 
-  .pc-gear {
+  /* The equipped weapon's OWN fixed-height line (icon + name + ammo).
+     The name ellipsizes inside the row and the ammo keeps its 9ch
+     floor, so a longer weapon name can never wrap a second line or
+     resize the card. */
+  .pc-weapon-row {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
-    gap: 2px 8px;
     min-width: 0;
-    /* Two lines RESERVED (armor chip + weapon chip can wrap on a narrow
-       column): wrapping may fill the second line but can never add a
-       third — the row's height is fixed, so a bought/thrown item never
-       resizes the card. */
-    height: 3em;
+    height: 1.5em;
     overflow: hidden;
   }
 
