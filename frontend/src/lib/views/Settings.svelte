@@ -13,6 +13,8 @@
     removePlugin,
     getMapPackStatus,
     extractMapPacks,
+    getIconManifest,
+    extractIcons,
     setMapPackPromptState,
     chooseCS2Dir,
     checkForUpdateNow,
@@ -153,10 +155,12 @@
   let pluginMsg = $state('');
   let pluginOp = $state({}); // plugin id → 'busy' | error text
 
-  // Map packs: radar extraction from a local CS2 install (Valve IP stays
-  // local — internal/mappack). Status loads on mount; extract re-runs
-  // idempotently after game updates.
+  // CS2 assets: the TWO asset families the app consumes from a local CS2
+  // install — radar map packs (internal/mappack) and equipment-icon SVG
+  // silhouettes (iconservice). Valve IP stays local; status loads on
+  // mount; the extract below re-runs idempotently after game updates.
   let mpStatus = $state(null); // MapPackStatus
+  let iconManifest = $state(null); // IconManifest
   let mpBusy = $state(false);
   let mpMsg = $state('');
   let mpError = $state('');
@@ -169,21 +173,63 @@
     }
   }
 
+  async function refreshIcons() {
+    try {
+      iconManifest = await getIconManifest();
+    } catch (e) {
+      mpError = errText(e);
+    }
+  }
+
+  // The manifest's note is only worth showing when it says MORE than the
+  // generic placeholder GetIconManifest stamps on every empty manifest
+  // ("icons not extracted yet" — pure duplication next to "none extracted
+  // yet"); a real note names the cause (no CS2 install, a VPK error).
+  const iconNote = $derived(
+    iconManifest && iconManifest.note && iconManifest.note !== 'icons not extracted yet'
+      ? iconManifest.note
+      : '',
+  );
+
+  // One action, both families: extract the map packs and the equipment
+  // icons sequentially under the single mpBusy state, then aggregate the
+  // two outcomes — mpMsg names what succeeded, mpError names what failed
+  // (both parts are attempted even when the first one fails).
   async function doExtract() {
     mpBusy = true;
     mpMsg = '';
     mpError = '';
+    const dir = mpStatus?.path || '';
+    const done = [];
+    const failed = [];
     try {
-      const out = await extractMapPacks(mpStatus?.path || '');
-      const n = (out.maps || []).length;
-      const errs = out.errors || [];
-      if (n > 0 && !errs.length) mpMsg = `Extracted ${n} map pack${n === 1 ? '' : 's'}.`;
-      else if (n > 0) mpMsg = `Extracted ${n}, ${errs.length} failed: ${errs[0]}`;
-      else mpError = errs[0] || 'nothing extracted';
-      await refreshMapPacks();
-    } catch (e) {
-      mpError = errText(e);
+      try {
+        const out = await extractMapPacks(dir);
+        const n = (out.maps || []).length;
+        const errs = out.errors || [];
+        if (n > 0) done.push(`${n} map pack${n === 1 ? '' : 's'}`);
+        if (errs.length) failed.push(`map packs: ${errs[0]}`);
+        else if (n === 0) failed.push('map packs: nothing extracted');
+      } catch (e) {
+        failed.push(`map packs: ${errText(e)}`);
+      }
+      try {
+        const m = await extractIcons(dir);
+        if (m && m.count > 0) {
+          done.push(`${m.count} icon${m.count === 1 ? '' : 's'}`);
+          if (m.note) failed.push(`icons: ${m.note}`);
+        } else {
+          failed.push(`icons: ${(m && m.note) || 'nothing extracted'}`);
+        }
+      } catch (e) {
+        failed.push(`icons: ${errText(e)}`);
+      }
+      if (done.length) mpMsg = `Extracted ${done.join(' and ')}.`;
+      if (failed.length) mpError = `${failed.join('; ')}.`;
+      if (!done.length && !failed.length) mpError = 'Nothing extracted.';
     } finally {
+      await refreshMapPacks();
+      await refreshIcons();
       mpBusy = false;
     }
   }
@@ -307,6 +353,7 @@
       .then((d) => (info = d))
       .catch((e) => (error = errText(e)));
     refreshMapPacks();
+    refreshIcons();
     getAnalysisConfig()
       .then((c) => {
         // Merge (not replace) so a missing key falls back to the default
@@ -478,11 +525,11 @@
   </section>
 
   <section class="panel">
-    <h2>Map packs</h2>
+    <h2>CS2 assets</h2>
     <p class="muted">
-      Radar images and map transforms are extracted from your local
-      Counter-Strike 2 installation on this machine — nothing is uploaded,
-      and no Valve assets ship with the app.
+      Radar map transforms and equipment-icon silhouettes are both extracted
+      locally from your own Counter-Strike 2 installation on this machine —
+      nothing is uploaded, and no Valve assets ship with the app.
     </p>
     {#if mpStatus}
       <dl class="facts">
@@ -501,6 +548,18 @@
               : 'none'}
           </dd>
         </div>
+        <div>
+          <dt>Equipment icons</dt>
+          <dd class="mono">
+            {#if !iconManifest}
+              …
+            {:else if iconManifest.count > 0}
+              {iconManifest.count}
+            {:else}
+              none extracted yet{#if iconNote} — {iconNote}{/if}
+            {/if}
+          </dd>
+        </div>
       </dl>
     {:else}
       <p class="muted" role="status">Loading…</p>
@@ -509,15 +568,15 @@
     {#if mpError}<p class="error" role="alert">{mpError}</p>{/if}
     <div class="row-between">
       <span class="muted"
-        >Extract all official-map radars (idempotent — re-run after a CS2
-        update to refresh).</span
+        >Extracts every official-map radar and every equipment icon
+        (idempotent — re-run after a CS2 update to refresh).</span
       >
       <div class="sett-seg">
         <button class="btn" disabled={mpBusy} onclick={mpChooseFolder}>
           Choose folder…
         </button>
         <button class="btn primary" disabled={mpBusy || !mpStatus?.found} onclick={doExtract}>
-          {mpBusy ? 'Extracting…' : 'Extract radar images'}
+          {mpBusy ? 'Extracting…' : 'Extract all CS2 assets'}
         </button>
       </div>
     </div>
