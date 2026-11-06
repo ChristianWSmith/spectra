@@ -482,8 +482,10 @@ func (s *Store) GetRounds(id int64) ([]models.RoundRow, error) {
 // GetRoundDetail returns one round with its economy, typed events and chat
 // lines (ErrNotFound when the round is absent). Negative round numbers are
 // real rounds here — knife/warmup rounds take them (extract.agg.renumber:
-// -2 knife, -1 warmup) — so events and chat are matched EXACTLY, never
-// through the GetEvents/GetChat "Round < 0 = all rounds" sentinel.
+// -2 knife, -1 warmup) — so events are matched EXACTLY through
+// queryEvents' exactRound (never through the range, whose 0 = open
+// sentinel cannot express a round 0) and chat through queryChat's
+// exactRound switch.
 func (s *Store) GetRoundDetail(id int64, round int) (*models.RoundDetail, error) {
 	rr, err := scanRoundRow(s.db.QueryRow(roundRowSelect+` AND r.number = ?`, id, round))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -515,7 +517,7 @@ func (s *Store) GetRoundDetail(id int64, round int) (*models.RoundDetail, error)
 		return nil, fmt.Errorf("store: get round detail: %w", err)
 	}
 
-	events, err := s.queryEvents(models.EventFilter{MatchID: id, Round: round}, true)
+	events, err := s.queryEvents(models.EventFilter{MatchID: id}, &round)
 	if err != nil {
 		return nil, fmt.Errorf("store: get round detail: %w", err)
 	}
@@ -578,24 +580,40 @@ func kindsToAny(kinds []string) []any {
 }
 
 // GetEvents returns typed timeline rows for a filter, ordered by seq.
-// Round < 0 selects all rounds (the sentinel the Replay landmark feed,
-// heatmaps and analytics pass over the whole match); Kind ""/Kinds nil
-// all kinds; SteamID matches attacker or victim. Limit <= 0 means the
-// hard cap of DefaultEventLimit. Round detail needs exact matching for
-// the negative knife/warmup round numbers instead — see queryEvents.
+// The round bounds are a PARTIAL inclusive range (RoundFrom/RoundTo, 0 =
+// open on that side — round 0 never exists, so 0 is the "unset"
+// sentinel): both unset selects every round of the match (the read the
+// Replay landmark feed, heatmaps and analytics pass make); Kind ""/Kinds
+// nil all kinds; SteamID matches attacker or victim. Limit <= 0 means
+// the hard cap of DefaultEventLimit. Round detail needs EXACT matching
+// for its round instead (the range cannot express round 0 — 0 is the
+// open sentinel) — see queryEvents' exactRound.
 func (s *Store) GetEvents(f models.EventFilter) ([]models.EventRow, error) {
-	return s.queryEvents(f, false)
+	return s.queryEvents(f, nil)
 }
 
-// queryEvents is GetEvents with an exactRound switch: true forces
-// `e.round = ?` for EVERY round number, including the negative ones knife/
-// warmup rounds carry (a round-detail read of round -1 must return that
-// round's rows, not the whole match). false keeps the documented
-// EventFilter contract (Round < 0 = all rounds).
-func (s *Store) queryEvents(f models.EventFilter, exactRound bool) ([]models.EventRow, error) {
+// queryEvents is the one typed-event read: every optional filter ANDs
+// into the shared whereClause builder (no bound empty-string parameter,
+// no placeholder-count drift).
+//
+// exactRound, when non-nil, replaces the round range with `e.round = ?`
+// for THAT number — the round-detail read must match its (possibly
+// negative knife/warmup, possibly 0) round exactly. nil = the documented
+// EventFilter contract: an INCLUSIVE, PARTIAL range where each bound
+// adds its own clause only when non-zero, so a knife/warmup round number
+// (-1, -2) filters exactly like a positive one and 0 on a side means
+// "no bound on that side".
+func (s *Store) queryEvents(f models.EventFilter, exactRound *int) ([]models.EventRow, error) {
 	var w whereClause
-	if f.Round >= 0 || exactRound {
-		w.add("e.round = ?", f.Round)
+	if exactRound != nil {
+		w.add("e.round = ?", *exactRound)
+	} else {
+		if f.RoundFrom != 0 {
+			w.add("e.round >= ?", f.RoundFrom)
+		}
+		if f.RoundTo != 0 {
+			w.add("e.round <= ?", f.RoundTo)
+		}
 	}
 	if k := scrub(f.Kind); k != "" && len(f.Kinds) == 0 {
 		w.add("e.kind = ?", k)
@@ -610,21 +628,13 @@ func (s *Store) queryEvents(f models.EventFilter, exactRound bool) ([]models.Eve
 		w.add("(e.attacker = ? OR e.victim = ?)", sid, sid)
 	}
 	// M3 advanced filters: every clause is an AND'ed bound
-	// parameter; zero/""/nil means unconstrained.
+	// parameter; zero/""/nil means unconstrained. The distance bounds are
+	// a partial range (either side may be open).
 	if ww := scrub(f.Weapon); ww != "" {
 		w.add("e.weapon = ?", ww)
 	}
-	if f.TickFrom > 0 {
-		w.add("e.tick >= ?", f.TickFrom)
-	}
-	if f.TickTo > 0 {
-		w.add("e.tick <= ?", f.TickTo)
-	}
-	if f.DmgMin > 0 {
-		w.add("e.dmg >= ?", f.DmgMin)
-	}
-	if f.DmgMax > 0 {
-		w.add("e.dmg <= ?", f.DmgMax)
+	if f.DistanceMin > 0 {
+		w.add("e.distance >= ?", f.DistanceMin)
 	}
 	if f.DistanceMax > 0 {
 		w.add("e.distance <= ?", f.DistanceMax)
@@ -805,8 +815,11 @@ func (s *Store) GetChat(matchID int64, round int, player string) ([]models.ChatR
 	return s.queryChat(matchID, round, false, player)
 }
 
-// queryChat is GetChat with an exactRound switch — mirror of
-// queryEvents (negative knife/warmup round numbers are real rounds here).
+// queryChat is GetChat with an exactRound switch: round detail reads
+// must match a possibly negative knife/warmup round exactly, while the
+// public GetChat sentinel (round < 0 = all rounds) feeds the landmark
+// chat source. The typed-event read no longer shares this switch — it
+// uses EventFilter's inclusive, partial round range (queryEvents).
 func (s *Store) queryChat(matchID int64, round int, exactRound bool, player string) ([]models.ChatRow, error) {
 	q := `SELECT id, ` + chatCols + `, decrypted FROM chat WHERE match_id = ?`
 	args := []any{matchID}

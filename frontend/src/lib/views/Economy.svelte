@@ -181,7 +181,7 @@
 
   function drill(round) {
     if (!round) return;
-    nav(replayHash(id, { round }, { back: `match/${id}/economy` }));
+    nav(replayHash(id, { roundFrom: round, roundTo: round }, { back: `match/${id}/economy` }));
   }
 
   function toggleWhy(r, side) {

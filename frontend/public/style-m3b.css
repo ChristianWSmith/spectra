@@ -36,6 +36,13 @@
   color: var(--text);
 }
 
+/* Own-line group: the player and weapon selects each take a full row of
+   the filter toolbar (they must not share a line with the range
+   inputs). */
+.filt-grp.filt-line {
+  flex: 0 0 100%;
+}
+
 .filt-num {
   width: 86px;
 }

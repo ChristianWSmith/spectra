@@ -170,9 +170,10 @@
     return buildHash(`/match/${id}/round/${n}`, { back: backPath });
   }
 
-  // Contextual entries into THE event browser: this round, scoped.
+  // Contextual entries into THE event browser: this round, scoped (both
+  // inclusive round bounds set to the same number).
   function openEvents() {
-    nav(replayHash(id, { round }, { back: `match/${id}/round/${round}` }));
+    nav(replayHash(id, { roundFrom: round, roundTo: round }, { back: `match/${id}/round/${round}` }));
   }
 
   // Jump to the replay at a tick (the header button uses the round start;

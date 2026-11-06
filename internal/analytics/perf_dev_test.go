@@ -31,7 +31,7 @@ func TestPerfDevDB(t *testing.T) {
 
 	// FilterBar server side: advanced event query.
 	t0 := time.Now()
-	rows, err := st.GetEvents(models.EventFilter{MatchID: matchID, Round: -1, Kind: "kill", Limit: store.DefaultEventLimit})
+	rows, err := st.GetEvents(models.EventFilter{MatchID: matchID, Kind: "kill", Limit: store.DefaultEventLimit})
 	if err != nil {
 		t.Fatalf("GetEvents: %v", err)
 	}

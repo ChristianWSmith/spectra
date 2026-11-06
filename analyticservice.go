@@ -380,7 +380,7 @@ func (s *AnalyticsService) heatmapEvents(matchID int64, kind string, f HeatmapFi
 	if g, ok := grenadeHeatmapKinds[kind]; ok {
 		eventKind, utilKind = g.eventKind, g.utilKind
 	}
-	rows, err := s.st.GetEvents(models.EventFilter{MatchID: matchID, Kind: eventKind, Round: -1, Limit: store.DefaultEventLimit})
+	rows, err := s.st.GetEvents(models.EventFilter{MatchID: matchID, Kind: eventKind, Limit: store.DefaultEventLimit})
 	if err != nil {
 		return HeatmapGrid{}, err
 	}

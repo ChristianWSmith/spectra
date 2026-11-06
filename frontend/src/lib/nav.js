@@ -41,10 +41,13 @@ export function replayHash(matchId, filter, extras) {
 // position). Priority:
 //   1. ?tick=  — an exact tick link (event/round-start "watch" buttons)
 //               wins as-is;
-//   2. else the ?round= feed scope resolves to that round's START tick
-//               — a round link is a link to a point in time (Economy's
-//               gap-round card, Combat's round chips, the "events"
-//               buttons), never the first frame;
+//   2. else the round scope — ?roundFrom= when it names a round, else
+//               ?roundTo= — resolves to that round's START tick (a
+//               round-scoped link stamps BOTH bounds to the same
+//               number, so a range opens at its first round): a round
+//               link is a link to a point in time (Economy's gap-round
+//               card, Combat's round chips, the "events" buttons),
+//               never the first frame;
 //   3. else null — the URL makes NO time promise, so there is nothing to
 //               resolve here: Replay applies the user's DEFAULT start
 //               position (the knife/warmup hiding pref decides between
@@ -54,11 +57,11 @@ export function replayHash(matchId, filter, extras) {
 //               point of the pref-aware default.
 // `rounds` is the GetRounds array; an unknown round or an unusable tick
 // falls through to the next source — never a guessed time. The round is
-// read from the RAW param rather than parseLandmarkFilter: that parser
-// must collapse "no round filter" onto the -1 sentinel, which is also
-// the warmup round's NUMBER, so a parsed -1 cannot say whether the URL
-// named a round — while the raw param can (absent = no time promise,
-// "-1" = the warmup round, which is a real round with a real start).
+// read from the RAW params rather than parseLandmarkFilter: that parser
+// folds "no bound" onto 0 (the unset sentinel), which cannot say
+// whether the URL named a round — while the raw param can (absent/0 =
+// no time promise, "-1" = the warmup round, which is a real round with
+// a real start). Round 0 never exists, so a 0 bound is never a target.
 export function entrySeekTick(query, rounds) {
   const q = query || {};
   // ?tick= is explicit whenever it names a real non-negative tick —
@@ -68,9 +71,16 @@ export function entrySeekTick(query, rounds) {
     const tick = Number(q.tick);
     if (Number.isFinite(tick) && tick >= 0) return tick;
   }
-  if (q.round != null && q.round !== '' && Number.isFinite(Number(q.round))) {
-    const start = roundStartTick(rounds, Number(q.round));
-    if (start != null) return start;
+  // The round scope: the first bound that actually names a round wins
+  // (roundFrom, else roundTo). Absent, empty, 0 (the unset sentinel) and
+  // malformed values are not round names; a named-but-unknown round
+  // resolves to nothing rather than to a guess.
+  for (const raw of [q.roundFrom, q.roundTo]) {
+    if (raw == null || raw === '') continue;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n === 0) continue;
+    const start = roundStartTick(rounds, n);
+    return start != null ? start : null;
   }
   return null;
 }

@@ -15,9 +15,9 @@
 //     0 never exists).
 //   - Go: store.GetEconomy's SQL twin (`warmup = 0 AND pregame = 0`).
 //
-// Used by every round <select> (FilterBar's round filter, Heatmaps'
-// from/to ranges, Match's chat round picker) and the Match Rounds tab's
-// hide-warmup pref.
+// Used by every round range/select (Heatmaps' from/to ranges, Match's
+// chat round picker, FilterBar's round from/to bounds) and the Match
+// Rounds tab's hide-warmup pref.
 
 // isCounted reports whether a round row is counted play (number >= 1).
 export function isCounted(r) {
@@ -47,7 +47,7 @@ export function roundIndexLabel(r) {
 }
 
 // roundStartTick resolves a round NUMBER to its start tick — the time a
-// "jump to round N" link targets (Replay's ?round= entry seek via
+// "jump to round N" link targets (Replay's round-scope entry seek via
 // nav.entrySeekTick, and Replay's round ribbon). The
 // GetRounds rows carry the number/startTick pair; a missing round or a
 // row without a usable start tick returns null so callers keep their

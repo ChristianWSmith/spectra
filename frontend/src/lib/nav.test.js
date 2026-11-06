@@ -2,8 +2,8 @@
 // resolution behind PlayerProfile's top-left back button), the navigation
 // guards the profile links share (isSteam/openProfile), the sidebar
 // action highlighters (NAV_ACTIONS active()) and the replay entry time
-// resolver (entrySeekTick — the ?tick=/?round= contract every link into
-// THE event browser relies on).
+// resolver (entrySeekTick — the ?tick=/?roundFrom=/?roundTo= contract
+// every link into THE event browser relies on).
 // Run: node --test src/lib/nav.test.js   (from frontend/)
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -106,20 +106,26 @@ test('entrySeekTick: an exact ?tick= link wins over everything', () => {
   // RoundDetail's "Watch round" / Combat's EventPlay / Utility's
   // "replay" buttons all stamp an exact tick.
   assert.equal(entrySeekTick({ tick: '9999' }, ROUNDS), 9999);
-  assert.equal(entrySeekTick({ tick: '9999', round: '7' }, ROUNDS), 9999);
+  assert.equal(entrySeekTick({ tick: '9999', roundFrom: '7', roundTo: '7' }, ROUNDS), 9999);
   assert.equal(entrySeekTick({ tick: 9999 }, ROUNDS), 9999);
   assert.equal(entrySeekTick({ tick: '0' }, ROUNDS), 0); // tick 0 = first frame
 });
 
-test('entrySeekTick: a ?round= link resolves to that round\'s start tick', () => {
+test('entrySeekTick: a round-scoped link resolves to that round\'s start tick', () => {
   // The Economy gap-round card, Combat's round chips and every "events"
   // button promise round N — the replay must land on N's start tick,
   // never the first frame (the reported "lands at the first tick" bug).
-  assert.equal(entrySeekTick({ round: '7' }, ROUNDS), 24500);
-  assert.equal(entrySeekTick({ round: 1 }, ROUNDS), 1200);
+  // Every round-scoped link stamps BOTH inclusive bounds to the same
+  // number; roundFrom is the primary target, roundTo covers a max-only
+  // range, and a wider range opens at its FIRST round.
+  assert.equal(entrySeekTick({ roundFrom: '7', roundTo: '7' }, ROUNDS), 24500);
+  assert.equal(entrySeekTick({ roundFrom: 1 }, ROUNDS), 1200);
+  assert.equal(entrySeekTick({ roundTo: 7 }, ROUNDS), 24500);
+  assert.equal(entrySeekTick({ roundFrom: 1, roundTo: 7 }, ROUNDS), 1200);
   // Negative-numbered rounds are real rounds too (knife/warmup) — both
-  // resolve to their own start tick (see the raw-param case below).
-  assert.equal(entrySeekTick({ round: '-2' }, ROUNDS), 100);
+  // resolve to their own start tick.
+  assert.equal(entrySeekTick({ roundFrom: '-2', roundTo: '-2' }, ROUNDS), 100);
+  assert.equal(entrySeekTick({ roundFrom: '-1' }, ROUNDS), 400);
 });
 
 test('entrySeekTick: no explicit time target → null (Replay applies the pref-based default)', () => {
@@ -131,17 +137,21 @@ test('entrySeekTick: no explicit time target → null (Replay applies the pref-b
   // first-frame target (?tick=0 → 0, asserted above).
   assert.equal(entrySeekTick({}, ROUNDS), null);
   assert.equal(entrySeekTick(undefined, ROUNDS), null);
-  assert.equal(entrySeekTick({ round: '12' }, ROUNDS), null); // unknown round — never a guess
-  assert.equal(entrySeekTick({ round: '0' }, ROUNDS), null); // round 0 never exists
-  assert.equal(entrySeekTick({ round: 'x' }, ROUNDS), null); // malformed
-  assert.equal(entrySeekTick({ round: '1' }, []), null); // rounds not loaded
-  assert.equal(entrySeekTick({ round: '1' }, null), null);
-  // Absent ?round= = no time promise at all, even though
-  // parseLandmarkFilter folds "absent" onto the same -1 the warmup round
-  // carries: entrySeekTick reads the RAW param, so an absent round and
-  // the warmup round's "-1" stay distinguishable — the warmup round
-  // still resolves to its own start tick below.
-  assert.equal(entrySeekTick({ round: '-1' }, ROUNDS), 400); // warmup round start
+  assert.equal(entrySeekTick({ roundFrom: '12' }, ROUNDS), null); // unknown round — never a guess
+  // Round 0 never exists: 0 is the UNSET bound, so it is never a target.
+  assert.equal(entrySeekTick({ roundFrom: '0', roundTo: '0' }, ROUNDS), null);
+  // Malformed is not a promise either — but an unusable bound simply
+  // falls through to the other bound of the same range.
+  assert.equal(entrySeekTick({ roundFrom: 'x' }, ROUNDS), null);
+  assert.equal(entrySeekTick({ roundFrom: 'x', roundTo: '7' }, ROUNDS), 24500);
+  assert.equal(entrySeekTick({ roundFrom: '1' }, []), null); // rounds not loaded
+  assert.equal(entrySeekTick({ roundFrom: '1' }, null), null);
+  // Absent bounds = no time promise at all: entrySeekTick reads the RAW
+  // params (parseLandmarkFilter folds "absent" onto the same 0 the unset
+  // sentinel uses), so an absent range and the warmup round's "-1" stay
+  // distinguishable — the warmup round still resolves below.
+  assert.equal(entrySeekTick({ roundFrom: '-1' }, ROUNDS), 400); // warmup round start
+  assert.equal(entrySeekTick({ roundTo: '-1' }, ROUNDS), 400); // warmup via the max bound
   assert.equal(entrySeekTick({ cat: 'kills' }, ROUNDS), null); // no round param
   assert.equal(entrySeekTick({ tick: 'x' }, ROUNDS), null); // malformed tick, no round
 });

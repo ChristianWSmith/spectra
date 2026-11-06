@@ -53,11 +53,16 @@ test('LANDMARK_KINDS is the models.EventKind mirror (order included)', () => {
   assert.equal(new Set(LANDMARK_KINDS).size, LANDMARK_KINDS.length);
 });
 
-test('the default selection is exactly kills + round wins (sparse default)', () => {
-  assert.deepEqual(DEFAULT_CATEGORIES, ['kills', 'round_wins']);
-  // …and the default filter carries only those two categories.
-  assert.deepEqual(defaultFilter().cats, ['kills', 'round_wins']);
-  assert.deepEqual(DEFAULT_FILTER.cats, ['kills', 'round_wins']);
+test('the default selection is exactly round starts (sparse default)', () => {
+  assert.deepEqual(DEFAULT_CATEGORIES, ['round_starts']);
+  // …and the default filter carries only that category.
+  assert.deepEqual(defaultFilter().cats, ['round_starts']);
+  assert.deepEqual(DEFAULT_FILTER.cats, ['round_starts']);
+  // Kills and round wins are opt-in, not default (the user-visible rule:
+  // only round starts are toggled on out of the box).
+  assert.equal(CATEGORIES.find((c) => c.id === 'kills').default, undefined);
+  assert.equal(CATEGORIES.find((c) => c.id === 'round_wins').default, undefined);
+  assert.equal(CATEGORIES.find((c) => c.id === 'round_starts').default, true);
 });
 
 test('every category is well-formed and typed kinds are covered exactly once', () => {
@@ -118,8 +123,8 @@ test('drawBucket buckets every drawable kind (renderer/scrubber contract)', () =
   assert.equal(drawBucket('bomb_pickup'), 'pickup');
   assert.equal(drawBucket('round_end'), 'round');
   // round_start buckets to 'start': STORED as the death-X next-round
-  // cutoff (killEndTick) — never drawn as a world marker, never a
-  // scrubber marker (see scrubberMarkerClass below).
+  // cutoff (killEndTick) — never drawn as a world marker, but it DOES
+  // carry the tall scrubber tick (see scrubberMarkerClass below).
   assert.equal(drawBucket('round_start'), 'start');
   // damage rides the draw feed for the victim-hit flash (no scrubber
   // marker — see scrubberMarkerClass); the rest stay non-drawable:
@@ -129,11 +134,11 @@ test('drawBucket buckets every drawable kind (renderer/scrubber contract)', () =
   // Extended spellings keep their substring buckets.
   assert.equal(drawBucket('smoke'), 'smoke');
   assert.equal(drawBucket('molotov'), 'fire');
-  // DRAW_KINDS is exactly the drawable set (round_end rides it for the
-  // scrubber's round-win markers; round_start rides it ONLY as the
-  // renderer's death-X cutoff — it never draws on the map and adds no
-  // scrubber marker; drop/pickup ride it for the bomb evidence, damage
-  // for the map flash — neither adds a scrubber marker).
+  // DRAW_KINDS is exactly the drawable set (round_end and round_start
+  // both ride it for the scrubber's tall round ticks; round_start also
+  // rides it as the renderer's death-X cutoff — it never draws on the
+  // map; drop/pickup ride it for the bomb evidence, damage for the map
+  // flash — neither adds a scrubber marker).
   assert.deepEqual([...DRAW_KINDS].sort(), [
     'bomb_defuse',
     'bomb_drop',
@@ -189,15 +194,18 @@ test('scrubberMarkerClass maps every drawable bucket (the markers contract)', ()
   assert.equal(scrubberMarkerClass('plant'), 'plant');
   assert.equal(scrubberMarkerClass('defuse'), 'plant');
   assert.equal(scrubberMarkerClass('explode'), 'det');
-  assert.equal(scrubberMarkerClass('round'), 'round');
+  // 'tall' is THE vertical tick: round starts take it (the default
+  // category) and so do round wins — both buckets return the SAME class,
+  // so the mark is never named after one of them.
+  assert.equal(scrubberMarkerClass('round'), 'tall');
+  assert.equal(scrubberMarkerClass('start'), 'tall');
   // Every typed grenade bucket keeps a scrubber marker (they used to
   // all be the one 'detonation' bucket)…
   for (const b of DETONATION_BUCKETS) assert.equal(scrubberMarkerClass(b), 'det', b);
-  // …while bomb evidence, damage and the death-X cutoff stay marker-less:
+  // …while bomb evidence and damage stay marker-less:
   assert.equal(scrubberMarkerClass('drop'), '');
   assert.equal(scrubberMarkerClass('pickup'), '');
   assert.equal(scrubberMarkerClass('damage'), '');
-  assert.equal(scrubberMarkerClass('start'), ''); // round_start (DRAW_KINDS only)
   assert.equal(scrubberMarkerClass(''), '');
   assert.equal(scrubberMarkerClass(null), '');
 });
@@ -312,41 +320,118 @@ test('filter <-> query round-trip: defaults serialize to nothing', () => {
   const f = {
     ...defaultFilter(),
     cats: ['kills', 'chat'],
-    round: 7,
+    roundFrom: 3,
+    roundTo: 7,
     steamId: '76561198012345678',
-    weapon: 'awp',
-    tickFrom: 100,
-    tickTo: 200,
-    dmgMin: 30,
-    dmgMax: 100,
-    distanceMax: 50,
+    weapon: 'AWP',
+    distMin: 10,
+    distMax: 50,
     headshotOnly: true,
     bbox: { minX: -1, minY: -2, maxX: 3, maxY: 4 },
     gname: 'weapon_fire',
   };
   const q = serializeLandmarkFilter(f);
+  assert.deepEqual(q, {
+    cat: 'kills,chat',
+    roundFrom: '3',
+    roundTo: '7',
+    player: '76561198012345678',
+    weapon: 'AWP',
+    distMin: '10',
+    distMax: '50',
+    hs: '1',
+    bbox: '-1,-2,3,4',
+    gname: 'weapon_fire',
+  });
   const back = parseLandmarkFilter(q);
   assert.ok(filtersEqual(f, back), JSON.stringify([q, back]));
   assert.deepEqual(back.cats, ['kills', 'chat']);
-  assert.equal(back.round, 7);
+  assert.equal(back.roundFrom, 3);
+  assert.equal(back.roundTo, 7);
   assert.equal(back.steamId, '76561198012345678');
   assert.deepEqual(back.bbox, { minX: -1, minY: -2, maxX: 3, maxY: 4 });
+});
+
+test('round range: inclusive, partial, 0 = unset (round 0 never exists)', () => {
+  // Both bounds travel together…
+  const both = parseLandmarkFilter({ roundFrom: '3', roundTo: '5' });
+  assert.deepEqual([both.roundFrom, both.roundTo], [3, 5]);
+  assert.deepEqual(serializeLandmarkFilter(both), { roundFrom: '3', roundTo: '5' });
+  // …while a one-sided range stays one-sided through the URL: the unset
+  // side serializes to nothing (min only = no max, max only = no min).
+  const minOnly = parseLandmarkFilter({ roundFrom: '3' });
+  assert.equal(minOnly.roundTo, 0);
+  assert.deepEqual(serializeLandmarkFilter(minOnly), { roundFrom: '3' });
+  const maxOnly = parseLandmarkFilter({ roundTo: '3' });
+  assert.equal(maxOnly.roundFrom, 0);
+  assert.deepEqual(serializeLandmarkFilter(maxOnly), { roundTo: '3' });
+  // Negative bounds are real rounds (knife -2 / warmup -1).
+  const knife = parseLandmarkFilter({ roundFrom: '-2', roundTo: '-1' });
+  assert.deepEqual([knife.roundFrom, knife.roundTo], [-2, -1]);
+  // 0 and absent both mean "unset" — never a bound to clamp to.
+  assert.deepEqual(serializeLandmarkFilter(parseLandmarkFilter({ roundFrom: '0', roundTo: '0' })), {});
+  assert.equal(parseLandmarkFilter({}).roundFrom, 0);
+  assert.equal(parseLandmarkFilter({}).roundTo, 0);
+  // Malformed bounds fall back to unset (never guessed); partial values
+  // truncate to integers.
+  assert.equal(parseLandmarkFilter({ roundFrom: 'x' }).roundFrom, 0);
+  assert.equal(parseLandmarkFilter({ roundFrom: '2.7' }).roundFrom, 2);
+});
+
+test('distance range: inclusive, partial, 0 = open', () => {
+  const both = parseLandmarkFilter({ distMin: '10', distMax: '50' });
+  assert.deepEqual([both.distMin, both.distMax], [10, 50]);
+  assert.deepEqual(serializeLandmarkFilter(both), { distMin: '10', distMax: '50' });
+  const minOnly = parseLandmarkFilter({ distMin: '10' });
+  assert.equal(minOnly.distMax, 0);
+  assert.deepEqual(serializeLandmarkFilter(minOnly), { distMin: '10' });
+  const maxOnly = parseLandmarkFilter({ distMax: '50' });
+  assert.equal(maxOnly.distMin, 0);
+  assert.deepEqual(serializeLandmarkFilter(maxOnly), { distMax: '50' });
+  // 0 / absent / junk = open on that side.
+  assert.equal(parseLandmarkFilter({ distMin: '0', distMax: '0' }).distMax, 0);
+  assert.equal(parseLandmarkFilter({ distMin: 'x' }).distMin, 0);
+  assert.deepEqual(serializeLandmarkFilter(defaultFilter()), {});
+});
+
+test('removed filter fields are gone: exact round, tick window, damage range', () => {
+  // Pre-release policy: no legacy param fallbacks — the old params are
+  // not read, not kept and never serialized back out.
+  const f = parseLandmarkFilter({
+    round: '7',
+    tickFrom: '1',
+    tickTo: '2',
+    dmgMin: '3',
+    dmgMax: '4',
+    dist: '9',
+  });
+  for (const k of ['round', 'tickFrom', 'tickTo', 'dmgMin', 'dmgMax', 'distanceMax']) {
+    assert.equal(f[k], undefined, k);
+    assert.equal(DEFAULT_FILTER[k], undefined, `DEFAULT_FILTER.${k}`);
+  }
+  assert.deepEqual(serializeLandmarkFilter(f), {});
+  assert.deepEqual(
+    serializeLandmarkFilter({ ...defaultFilter(), round: 7, tickFrom: 1, dmgMin: 3, dist: 9 }),
+    {},
+  );
 });
 
 test('parse edge cases: empty cat = none, junk falls back, no shared arrays', () => {
   assert.deepEqual(parseLandmarkFilter({ cat: '' }).cats, []);
   // Unknown category ids are dropped, not invented.
   assert.deepEqual(parseLandmarkFilter({ cat: 'kills,bogus' }).cats, ['kills']);
-  // A missing/invalid round means "all rounds", never round 0.
-  assert.equal(parseLandmarkFilter({ round: 'x' }).round, -1);
-  assert.equal(parseLandmarkFilter({}).round, -1);
+  // A missing/invalid round bound means "unset" (open), never round 0.
+  assert.equal(parseLandmarkFilter({ roundFrom: 'x' }).roundFrom, 0);
+  assert.equal(parseLandmarkFilter({ roundTo: 'x' }).roundTo, 0);
+  assert.equal(parseLandmarkFilter({}).roundFrom, 0);
+  assert.equal(parseLandmarkFilter({}).roundTo, 0);
   // A malformed bbox is ignored rather than half-applied.
   assert.equal(parseLandmarkFilter({ bbox: '1,2,3' }).bbox, null);
   // Each parse gets fresh arrays (callers may mutate freely).
   const a = parseLandmarkFilter({});
   const b = parseLandmarkFilter({});
   a.cats.push('chat');
-  assert.deepEqual(b.cats, ['kills', 'round_wins']);
+  assert.deepEqual(b.cats, ['round_starts']);
 });
 
 test('landmarkExportRows flattens the feed into canonical columns', () => {
