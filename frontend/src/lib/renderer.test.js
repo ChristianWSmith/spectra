@@ -11,8 +11,11 @@
 // round_start boundary seek, the C4 icon and its aspect-preserving
 // draw, the muzzle line, the flash-white overlay and the white talking
 // bloom, the death-X-under-C4 layer order; a crouch-size check; and the
-// HUD — the centered team-score box, the C4/0:00 clock, the
-// tick/frame-free playback readout — plus the round-scoped kill feed).
+// HUD — the centered team-score box whose content is centered in colored
+// segments (CT/T names in their side colors, white score), the codicon
+// freeze clock (document.fonts.check stubbed both ways), the C4/0:00
+// clock, the tick/frame-free playback readout — plus the round-scoped
+// kill feed with its rounded entry boxes and 8 px weapon-icon margins).
 // Run: node --test src/lib/renderer.test.js (from frontend/; the lib test
 // glob src/lib/*.test.js picks it up too).
 import test from 'node:test';
@@ -438,8 +441,8 @@ test("killEndTick: a post-round_end kill (the C4 detonation) dies with the next 
 
 // recordingCanvas: { log, getContext, clientWidth/Height } — a stand-in
 // canvas whose 2D context records stroke/fill/arc/drawImage/fillText/
-// moveTo/lineTo ops together with the stroke/fill style, lineCap,
-// lineWidth and globalAlpha in force.
+// roundRect/moveTo/lineTo ops together with the stroke/fill style,
+// lineCap, lineWidth, globalAlpha, font and textAlign in force.
 function recordingCanvas(cssW = 800, cssH = 600) {
   const log = [];
   const styles = {
@@ -455,7 +458,16 @@ function recordingCanvas(cssW = 800, cssH = 600) {
     shadowBlur: 0,
     imageSmoothingEnabled: true,
   };
-  const RECORD = new Set(['stroke', 'fill', 'arc', 'drawImage', 'fillText', 'moveTo', 'lineTo']);
+  const RECORD = new Set([
+    'stroke',
+    'fill',
+    'arc',
+    'drawImage',
+    'fillText',
+    'roundRect',
+    'moveTo',
+    'lineTo',
+  ]);
   const ctx = new Proxy(styles, {
     get(t, prop) {
       if (typeof prop !== 'string') return undefined;
@@ -469,6 +481,8 @@ function recordingCanvas(cssW = 800, cssH = 600) {
             lineCap: t.lineCap,
             lineWidth: t.lineWidth,
             alpha: t.globalAlpha,
+            font: t.font,
+            textAlign: t.textAlign,
             args,
           });
         }
@@ -1036,9 +1050,15 @@ test('dots keep a constant radius while crouching (duck never shrinks them)', ()
 // recordings capture the canvas and nothing else), so they are pinned the
 // same way as the world layers: drive draw() and read the recorded ops.
 // measureText always reports 40px in this harness, which makes every box
-// geometry assertion exact.
+// geometry assertion exact. headlessGlobals() stubs the browser globals;
+// document.fonts is stubbed per-test to steer the codicon-clock branch.
 
 const HUD_PAD = 8; // mirrors renderer.js — box padding / stage offset
+const KILL_FEED_LH = 18; // mirrors renderer.js — one entry line
+const KILL_FEED_R = 4; // mirrors renderer.js — entry corner radius
+// .codicon-clock's glyph (codicon.css line 145: content "\ea82") — built
+// from the codepoint so this file never carries the raw PUA character.
+const CLOCK_GLYPH = String.fromCharCode(0xea82);
 const opsSince = (log, op, from = 0) => log.slice(from).filter((e) => e.op === op);
 const textsSince = (log, from = 0) => opsSince(log, 'fillText', from).map((e) => e.args[0]);
 // The kill feed's box is the ONLY fill of the un-spaced dark surface
@@ -1051,7 +1071,7 @@ const HUD_PLAYERS = [
   { steamId: '2', name: 'bob', side: 't' },
 ];
 
-test('HUD: centered team score line, label-free clock, no tick/frame counter', () => {
+test('HUD: score line centered in colored segments, label-free clock, no tick/frame counter', () => {
   headlessGlobals();
   const data = synthStore(1300, 2);
   const engine = createEngine(data, 64);
@@ -1061,16 +1081,36 @@ test('HUD: centered team score line, label-free clock, no tick/frame counter', (
   r.setHud({ score: { ct: 3, t: 2 }, teamNames: { ct: 'NAVY', t: 'FURY' }, round, tickRate: 64 });
   r.resize();
 
-  const score = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === 'NAVY 3 – 2 FURY');
-  assert.ok(score, 'the score line names the TEAMS, not the sides');
-  // CENTERED, not top-left: both lines measure 40px, so the box is
-  // 40 + 2×8 = 56 wide → x = (800 − 56) / 2 = 372, its text 8px in.
-  // (The old top-left box started at HUD_TOP_X = 52.)
-  assert.equal(score.args[1], 372 + HUD_PAD);
-  assert.equal(score.args[2], HUD_PAD + HUD_PAD); // box top + first line
+  // The score line is THREE segments laid out around the box's center:
+  // 3 × 40 (harness measureText) = 120 → box 120 + 2×8 = 136 wide →
+  // x = (800 − 136) / 2 = 332, content starts at 332 + 8 = 340 and each
+  // segment steps by its own measured width (40 here).
+  const seg = (t) =>
+    canvas.log.find((e) => e.op === 'fillText' && e.args[0] === t && e.args[2] === HUD_PAD + HUD_PAD);
+  const ctName = seg('NAVY');
+  assert.ok(ctName, 'the score line names the TEAMS, not the sides');
+  // CENTERED CONTENT, not left-inset (the old box drew one left-aligned
+  // string at x + HUD_PAD; the old top-left box started at HUD_TOP_X = 52)
+  assert.equal(ctName.args[1], 332 + HUD_PAD);
+  assert.equal(ctName.args[2], HUD_PAD + HUD_PAD); // box top + first line
+  assert.equal(ctName.fillStyle, '#5aa9e6', 'the CT team name draws in the CT side color');
+  const scorePart = seg(' 3 – 2 ');
+  assert.ok(scorePart, 'the score + its – separator is its own segment');
+  assert.equal(scorePart.args[1], 332 + HUD_PAD + 40, 'segments step by their measured widths');
+  assert.equal(scorePart.fillStyle, '#ffffff', 'the score (and separator) is white');
+  const tName = seg('FURY');
+  assert.ok(tName, 'the T team name follows the score');
+  assert.equal(tName.args[1], 332 + HUD_PAD + 80);
+  assert.equal(tName.fillStyle, '#e6a35a', 'the T team name draws in the T side color');
 
   const texts = textsSince(canvas.log);
-  assert.ok(texts.includes('freeze 0:10'), 'line 2 is the bare clock (freeze time at tick 0)');
+  const freeze = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === 'freeze 0:10');
+  assert.ok(freeze, 'line 2 is the bare clock (freeze time at tick 0)');
+  // …and the NARROW clock line centers inside the wider score box:
+  // 332 + (136 − 40) / 2 = 380, on the second line (8 + 8 + 15)
+  assert.equal(freeze.args[1], 332 + 48);
+  assert.equal(freeze.args[2], HUD_PAD + HUD_PAD + 15);
+  assert.equal(freeze.fillStyle, '#8b94a7', 'the clock keeps the gray non-first-line color');
   assert.ok(!texts.some((t) => String(t).includes('·')), 'the round label is gone');
   assert.ok(!texts.some((t) => String(t).startsWith('R1')), 'no round number in the HUD');
 
@@ -1078,10 +1118,16 @@ test('HUD: centered team score line, label-free clock, no tick/frame counter', (
   assert.ok(!texts.some((t) => String(t).startsWith('tick ')), 'the tick counter is gone');
   assert.ok(!texts.some((t) => String(t).includes('frame ')), 'the frame counter is gone');
   assert.ok(texts.includes('1×'), 'speed× stays');
+  // the bottom playback box is NOT centered: its widest line starts at
+  // the box's own left inset (x = HUD_PAD, content 8px in)
+  const speed = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === '1×');
+  assert.equal(speed.args[1], HUD_PAD + HUD_PAD, 'the playback readout keeps its left-aligned style');
 
-  // an empty team name falls back to the bare side
+  // an empty team name falls back to the bare side, in the SAME colors
   r.setHud({ score: { ct: 3, t: 2 }, teamNames: { ct: '', t: '' }, round, tickRate: 64 });
-  assert.ok(textsSince(canvas.log).includes('CT 3 – 2 T'));
+  const fbCT = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === 'CT' && e.fillStyle === '#5aa9e6');
+  const fbT = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === 'T' && e.fillStyle === '#e6a35a');
+  assert.ok(fbCT && fbT, "'CT' / 'T' fallbacks are side-colored too");
 
   // a mid-round playhead: the 115 s round clock, still label-free
   engine.seekTick(800); // freeze ended at 640 → 7360 − 160 = 7200 t = 112 s
@@ -1169,6 +1215,62 @@ test('HUD clock: C4 icon line with text fallback, 0:00 after the detonation', ()
   r.destroy();
 });
 
+test('HUD freeze line: codicon clock glyph when the font is loaded, word otherwise', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: HUD_PLAYERS });
+  const round = { number: 1, label: 'R1', startTick: 0, freezeEndTick: 640, endTick: 1200, bombSite: '' };
+
+  // stubbed document.fonts.check → FALSE: exactly today's text line
+  const probes = [];
+  globalThis.document.fonts = {
+    check: (f) => {
+      probes.push(f);
+      return false;
+    },
+  };
+  r.setHud({ score: null, teamNames: { ct: '', t: '' }, round, tickRate: 64 });
+  r.resize(); // first draw (setHud ran before the canvas had a size)
+  let mark = canvas.log.length;
+  r.draw();
+  let texts = textsSince(canvas.log, mark);
+  assert.ok(texts.includes('freeze 0:10'), 'check() false → the literal word stays');
+  assert.ok(!texts.includes(CLOCK_GLYPH), 'no glyph without the loaded font');
+  assert.ok(
+    probes.includes('16px codicon'),
+    "availability is probed with document.fonts.check('16px codicon')",
+  );
+
+  // stubbed document.fonts.check → TRUE: the codicon clock REPLACES the word
+  globalThis.document.fonts = {
+    check: (f) => f === '16px codicon',
+  };
+  mark = canvas.log.length;
+  r.draw();
+  texts = textsSince(canvas.log, mark);
+  assert.ok(!texts.includes('freeze 0:10'), 'the word is gone once the glyph can draw');
+  const glyph = canvas.log.slice(mark).find((e) => e.op === 'fillText' && e.args[0] === CLOCK_GLYPH);
+  assert.ok(glyph, 'the codicon clock glyph (\\uea82) leads the line');
+  assert.equal(glyph.font, '12px codicon', 'drawn in the codicon family');
+  assert.equal(glyph.fillStyle, '#fbac18', "line 1 keeps the first line's amber styling");
+  // Geometry with the harness's 40 px measureText: glyph 40 + gap 4 +
+  // time 40 = 84 → box 84 + 2×8 = 100 → x = (800 − 100) / 2 = 350;
+  // centered content starts at 350 + 8 and the re-measured time follows
+  // the glyph width + gap.
+  assert.equal(glyph.args[1], 350 + HUD_PAD);
+  const time = canvas.log.slice(mark).find((e) => e.op === 'fillText' && e.args[0] === '0:10');
+  assert.ok(time, 'the countdown text follows the glyph');
+  assert.equal(time.args[1], 350 + HUD_PAD + 40 + 4);
+  assert.equal(
+    time.font,
+    '12px ui-monospace, SFMono-Regular, Menlo, monospace',
+    'the time text keeps the plain HUD font',
+  );
+  r.destroy();
+});
+
 test('kill feed: round-scoped entries, killer-team outline, weapon image/arrow, side names', () => {
   headlessGlobals();
   const data = synthStore(1300, 2);
@@ -1193,15 +1295,30 @@ test('kill feed: round-scoped entries, killer-team outline, weapon image/arrow, 
   r.draw();
 
   // two entries, NEWEST ON TOP (tick 60 above tick 50), right-aligned:
-  // measureText is 40 → the arrow line is 12 + 40 + 4 + 40 + 4 + 40 =
-  // 140 wide (x = 800 − 8 − 140 = 652) and the icon line 114 (x = 678).
+  // measureText is 40 and each name↔mark gap is 8 → the arrow line is
+  // 12 + 40 + 8 + 40 + 8 + 40 = 148 wide (x = 800 − 8 − 148 = 644) and
+  // the icon line 12 + 40 + 8 + 14 + 8 + 40 = 122 (x = 800 − 8 − 122 = 670).
   const boxes = feedBoxesSince(canvas.log, mark);
   assert.equal(boxes.length, 2, 'both round-1 kills up to the playhead');
+  // ROUNDED corners: each entry is ONE roundRect path (r = 4) shared by
+  // its fill and stroke — the HUD boxes' roundRects use r = 6 / other
+  // heights, so filtering on height + radius is feed-only.
+  const rounded = opsSince(canvas.log, 'roundRect', mark).filter(
+    (e) => e.args[3] === KILL_FEED_LH && e.args[4] === KILL_FEED_R,
+  );
+  assert.equal(rounded.length, 2, 'both entry boxes are rounded, one shared path each');
+  assert.deepEqual(
+    rounded.map((e) => [e.args[0], e.args[2]]),
+    [
+      [644, 148], // [x, w] — the arrow entry, right-aligned at cssW − 8
+      [670, 122], // the icon entry
+    ],
+  );
   const top = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === 'bob' && e.args[2] === 12);
-  assert.equal(top.args[1], 652 + 6, 'the newest entry is right-aligned at cssW − 8');
+  assert.equal(top.args[1], 644 + 6, 'the newest entry is right-aligned at cssW − 8');
   assert.equal(top.fillStyle, '#e6a35a', "the KILLER's outline/name use the killer's side (T)");
   const lower = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === 'alice' && e.args[2] === 30);
-  assert.equal(lower.args[1], 678 + 6);
+  assert.equal(lower.args[1], 670 + 6);
   assert.equal(lower.fillStyle, '#5aa9e6', 'the CT killer is CT-colored');
 
   // outline = the killer's team color, 1px, full alpha (nothing else in
@@ -1213,7 +1330,8 @@ test('kill feed: round-scoped entries, killer-team outline, weapon image/arrow, 
   assert.equal(lines('#e6a35a').length, 1, 'the T killer’s box is outlined in T');
   assert.equal(lines('#5aa9e6').length, 1, 'the CT killer’s box is outlined in CT');
 
-  // victim names are tinted by the VICTIM's side (both at x = 746)
+  // victim names are tinted by the VICTIM's side — RIGHT-aligned, so the
+  // wider icon gaps don't move them: 800 − 8 − 6 − 40 = 746 on both rows
   const victimT = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === 'bob' && e.args[2] === 30);
   assert.equal(victimT.args[1], 746);
   assert.equal(victimT.fillStyle, '#e6a35a');
@@ -1222,7 +1340,11 @@ test('kill feed: round-scoped entries, killer-team outline, weapon image/arrow, 
   assert.equal(victimCT.fillStyle, '#5aa9e6');
 
   // weapon: the canonical name's image when the manifest has one…
-  assert.equal(opsSince(canvas.log, 'drawImage', mark).filter((e) => e.args[3] === 14).length, 1, 'one weapon image (KILL_FEED_ICON)');
+  const weaponImgs = opsSince(canvas.log, 'drawImage', mark).filter((e) => e.args[3] === 14);
+  assert.equal(weaponImgs.length, 1, 'one weapon image (KILL_FEED_ICON)');
+  // …sitting 8 px right of the killer name (box x + inset + name width),
+  // with the victim's 8 px left gap closing the icon's other side
+  assert.equal(weaponImgs[0].args[1], 670 + 6 + 40 + 8, 'an 8 px gap on EACH side of the icon');
   // …and a plain arrow when it does not
   assert.ok(
     canvas.log.some((e) => e.op === 'fillText' && e.args[0] === '→' && e.args[2] === 12),

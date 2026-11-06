@@ -83,8 +83,11 @@ const KILL_FEED_MAX = 6; // entries shown, newest on top
 const KILL_FEED_LH = 18; // px per entry line
 const KILL_FEED_EDGE = 8; // px from the stage's top/right edge
 const KILL_FEED_INSET = 6; // px of padding inside an entry
-const KILL_FEED_GAP = 4; // px between a name and the weapon mark
+const KILL_FEED_GAP = 8; // px of breathing room between a name and the
+//                        weapon mark (image or →) on EACH side — the
+//                        icon needed more visual room than the old 4 px
 const KILL_FEED_ICON = 14; // px — the weapon image's size on a line
+const KILL_FEED_R = 4; // px — entry corner radius (hudBox uses 6)
 
 function teamColor(side) {
   if (side === 'ct') return CT_COLOR;
@@ -1538,9 +1541,13 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // Two boxes, both pure functions of the engine state + the setHud
   // payload:
   //   top-center   — team score + round clock, CENTERED on the stage
-  //                  (x = (cssW − boxWidth) / 2, HUD_PAD from the top):
-  //                  the stage's top corners belong to the overlays, so
-  //                  the readout no longer dodges a back button;
+  //                  (x = (cssW − boxWidth) / 2, HUD_PAD from the top)
+  //                  with each line's CONTENT centered in the box too:
+  //                  the score line lays its segments (CT name in CT
+  //                  color, white score + separator, T name in T color)
+  //                  around the box's center; the stage's top corners
+  //                  belong to the overlays, so the readout no longer
+  //                  dodges a back button;
   //   bottom-left  — the playback readout (speed×, follow, loop,
   //                  packNote), 8px off the BOTTOM-left corner so it can
   //                  never fight the top-center box or the top-right
@@ -1570,6 +1577,34 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   const HUD_PAD = 8; // px inside/around a HUD box
   const HUD_ICON_PX = 12; // px — an icon's size on an icon+text line
   const HUD_ICON_GAP = 4; // px — icon → text gap on an icon+text line
+  // Codicon clock for the freeze-time line: the codicon font ships with
+  // the app (@vscode/codicons/dist/codicon.css, imported app-wide in
+  // main.js) and .codicon-clock:before { content: "\ea82" } — codepoint
+  // confirmed in frontend/node_modules/@vscode/codicons/dist/codicon.css
+  // line 145. Canvas can only draw the glyph once the font is LOADED,
+  // so codiconFont() probes document.fonts.check('16px codicon') and
+  // returns null (→ the literal 'freeze 0:10' word) when it cannot.
+  const CODICON_CLOCK = '\uea82'; // .codicon-clock glyph
+  const CODICON_CLOCK_FONT = '12px codicon'; // draw at the HUD line size
+
+  // codiconFont — the codicon font spec for canvas when the codicon font
+  // is loaded, else null (the caller falls back to text). Guards every
+  // browser global node's headless test harness lacks: no document, no
+  // document.fonts, no FontFaceSet.check.
+  function codiconFont() {
+    try {
+      if (
+        typeof document === 'undefined' ||
+        !document.fonts ||
+        typeof document.fonts.check !== 'function'
+      ) {
+        return null;
+      }
+      return document.fonts.check('16px codicon') ? CODICON_CLOCK_FONT : null;
+    } catch {
+      return null;
+    }
+  }
 
   function fmtClock(tick) {
     const sec = Math.max(0, Math.floor(tick / engine.tickRate));
@@ -1618,11 +1653,14 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // this round's plant has DETONATED and the next round has not started
   // yet (the round is over but its 115 s clock would keep counting down
   // to the next round — there is no countdown left to show), else the
-  // freeze-time countdown before freeze end, else the remaining round
-  // time (clamped at 0). With no usable freeze end
+  // freeze-time countdown before freeze end — the codicon CLOCK glyph +
+  // time when canvas can use the codicon font, the literal 'freeze …'
+  // word otherwise — else the remaining round time (clamped at 0). With
+  // no usable freeze end
   // (startTick/freezeEndTick missing) the honest fallback is the time
   // ELAPSED into the round — a countdown we cannot know is never
-  // invented. Returns a plain string, or {img, text} for the icon line.
+  // invented. Returns a plain string, or {img, text} / {segs} pairs for
+  // the icon/glyph lines.
   function roundClockLine(tick, round, tr) {
     const planted = plantedEndAt(tick, tr, round.number);
     if (planted != null) {
@@ -1635,7 +1673,19 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     if (detonatedAt(tick, tr, round.number)) return '0:00';
     const fe = round.freezeEndTick;
     if (Number.isFinite(fe) && Number.isFinite(round.startTick) && fe > round.startTick) {
-      if (tick < fe) return `freeze ${fmtClock(fe - tick)}`;
+      if (tick < fe) {
+        const time = fmtClock(fe - tick);
+        // The codicon clock glyph INSTEAD of the word "freeze" when the
+        // codicon font is loaded for canvas (codiconFont); hudBox
+        // re-measures the glyph so the box centering stays exact. Text
+        // fallback keeps today's line character-for-character.
+        const font = codiconFont();
+        if (font) {
+          // gap: the glyph's em alone sits too tight against the digits
+          return { segs: [{ text: CODICON_CLOCK, font, gap: HUD_ICON_GAP }, { text: time }] };
+        }
+        return `freeze ${time}`;
+      }
       const budget = Math.round(ROUND_TIME_S * tr);
       return fmtClock(Math.max(0, budget - (tick - fe)));
     }
@@ -1646,11 +1696,29 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     return n * HUD_LH + HUD_PAD * 2 - 3;
   }
 
+  // measureHudSeg — one line segment measured in ITS font: a codicon
+  // glyph has to be measured in the codicon family so its advance
+  // matches what the centered layout actually draws. Restores ctx.font.
+  function measureHudSeg(seg) {
+    const prev = ctx.font;
+    if (seg.font) ctx.font = seg.font;
+    const w = ctx.measureText(seg.text).width;
+    ctx.font = prev;
+    return w;
+  }
+
   // hudLineWidth — one line's drawn width: a plain string is its text;
-  // an {img, text} line reserves the icon slot ahead of its text (the
+  // a {segs} run is the sum of its segments (each in its own font, plus
+  // an optional explicit gap after a segment); an
+  // {img, text} line reserves the icon slot ahead of its text (the
   // caller resolved the image — an icon line always has one).
   function hudLineWidth(ln) {
     if (typeof ln === 'string') return ctx.measureText(ln).width;
+    if (ln.segs) {
+      let w = 0;
+      for (const s of ln.segs) w += measureHudSeg(s) + (s.gap || 0);
+      return w;
+    }
     return HUD_ICON_PX + HUD_ICON_GAP + ctx.measureText(ln.text).width;
   }
 
@@ -1663,8 +1731,14 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   }
 
   // hudBox draws one HUD box with its lines (first line amber) at (x, y).
-  // A line may be a string or an {img, text} pair drawn as icon + text.
-  function hudBox(lines, x, y, w = hudBoxWidth(lines)) {
+  // A line may be a string, an {img, text} pair drawn as icon + text, or
+  // a {segs: [{text, color?, font?, gap?}]} run of colored segments (the
+  // score line — a segment without a color takes the line's usual one,
+  // `gap` is extra space after the segment, shared by measure + draw).
+  // align 'center' centers each line's CONTENT in the box (the top
+  // score/timer box — segments are laid out around the box's center);
+  // the default 'left' keeps the bottom playback readout's inset.
+  function hudBox(lines, x, y, w = hudBoxWidth(lines), align = 'left') {
     const bh = hudBoxHeight(lines.length);
     ctx.fillStyle = 'rgba(14, 17, 22, 0.78)';
     ctx.strokeStyle = 'rgba(35, 42, 55, 0.9)';
@@ -1681,18 +1755,37 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     }
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
+    const baseFont = ctx.font;
     lines.forEach((ln, i) => {
       const y0 = y + HUD_PAD + i * HUD_LH;
-      ctx.fillStyle = i === 0 ? '#fbac18' : '#8b94a7';
+      const color = i === 0 ? '#fbac18' : '#8b94a7';
+      ctx.fillStyle = color;
+      // content start: the centered box centers every line's measured
+      // content (segments then step from here by their own widths); the
+      // left box keeps its HUD_PAD inset.
+      let cx = x + HUD_PAD;
+      if (align === 'center') cx = x + (w - hudLineWidth(ln)) / 2;
       if (typeof ln === 'string') {
-        ctx.fillText(ln, x + HUD_PAD, y0);
+        ctx.fillText(ln, cx, y0);
+        return;
+      }
+      if (ln.segs) {
+        for (const s of ln.segs) {
+          ctx.font = s.font || baseFont;
+          ctx.fillStyle = s.color || color;
+          ctx.fillText(s.text, cx, y0);
+          // same step the width was measured with (incl. an explicit gap)
+          cx += ctx.measureText(s.text).width + (s.gap || 0);
+        }
+        ctx.font = baseFont;
         return;
       }
       // icon + text: the image leads (drawIcon keeps its dark halo so it
       // stays legible on the light theme too), the text follows.
-      if (ln.img) drawIcon(ln.img, x + HUD_PAD + HUD_ICON_PX / 2, y0 + HUD_LH / 2, HUD_ICON_PX);
-      ctx.fillText(ln.text, x + HUD_PAD + HUD_ICON_PX + HUD_ICON_GAP, y0);
+      if (ln.img) drawIcon(ln.img, cx + HUD_ICON_PX / 2, y0 + HUD_LH / 2, HUD_ICON_PX);
+      ctx.fillText(ln.text, cx + HUD_ICON_PX + HUD_ICON_GAP, y0);
     });
+    ctx.font = baseFont;
     ctx.textBaseline = 'alphabetic';
   }
 
@@ -1713,19 +1806,26 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     // top-center: team score + round clock, centered on the stage (only
     // once a view supplied the HUD payload — without it there is no
     // score line). Teams, not sides: the names come from the payload's
-    // teamNames with the bare CT / T as the empty-name fallback, and the
-    // clock line carries no round label — the ribbon above the stage
-    // owns the round number.
+    // teamNames with the bare CT / T as the empty-name fallback — each
+    // in ITS side color, the score + separator between them in white —
+    // and the clock line carries no round label: the ribbon above the
+    // stage owns the round number.
     if (hud) {
       const top = [];
       if (hud.score) {
         const tn = hud.teamNames || {};
-        top.push(`${tn.ct || 'CT'} ${hud.score.ct} – ${hud.score.t} ${tn.t || 'T'}`);
+        top.push({
+          segs: [
+            { text: tn.ct || 'CT', color: CT_COLOR },
+            { text: ` ${hud.score.ct} – ${hud.score.t} `, color: '#ffffff' },
+            { text: tn.t || 'T', color: T_COLOR },
+          ],
+        });
       }
       if (hud.round) top.push(roundClockLine(st.tick, hud.round, tr));
       if (top.length) {
         const w = hudBoxWidth(top);
-        hudBox(top, (cssW - w) / 2, HUD_PAD, w);
+        hudBox(top, (cssW - w) / 2, HUD_PAD, w, 'center');
       }
     }
 
@@ -1794,11 +1894,17 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       const x = cssW - KILL_FEED_EDGE - w;
       const y = KILL_FEED_EDGE + i * KILL_FEED_LH;
 
-      // box: dark transparent fill + the killer's team-color hairline
+      // box: dark transparent fill + the killer's team-color hairline on
+      // ONE rounded path — roundRect mirrors hudBox's corners (plain rect
+      // fallback), so the fill and the stroke share the exact outline.
       ctx.fillStyle = 'rgba(14,17,22,0.78)';
       ctx.strokeStyle = teamColor(kSide);
       ctx.beginPath();
-      ctx.rect(x, y, w, KILL_FEED_LH);
+      if (typeof ctx.roundRect === 'function') {
+        ctx.roundRect(x, y, w, KILL_FEED_LH, KILL_FEED_R);
+      } else {
+        ctx.rect(x, y, w, KILL_FEED_LH);
+      }
       ctx.fill();
       ctx.stroke();
 
