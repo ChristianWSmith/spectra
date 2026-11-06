@@ -9,7 +9,10 @@
 // prompt).
 // Section E covers row navigation: a ready row opens /match/:id on click
 // and Enter, while a still-parsing row does neither (no click cursor, no
-// focus stop) and renders the never-extracted placeholder date.
+// focus stop) and renders the never-extracted placeholder date — and its
+// Reprocess/Delete buttons are disabled with an "available once parsing
+// finishes" hint (the ready row's are live). Section D also pins the
+// empty state's copy: no import button of its own, the header owns it.
 // Backend semantics of the facets live in store.TestListMatches; the
 // suggestion source is store.TestListMapNames; this covers the view
 // wiring only.
@@ -333,6 +336,17 @@ await sleep(350); // past the 250 ms debounce
       navCalls().length === beforeBtn,
       JSON.stringify(navCalls()),
     );
+    // A ready row's Reprocess/Delete are live (they only lock while the
+    // row is parsing/queued — see the isOpenable comment).
+    const readyBtns = [...tr.querySelectorAll('.row-actions button')];
+    check(
+      'ready row action buttons enabled with their own titles',
+      readyBtns.length === 2 &&
+        readyBtns.every((b) => !b.disabled) &&
+        readyBtns.some((b) => b.title.includes('Re-parse')) &&
+        readyBtns.some((b) => b.title.includes('Delete extracted')),
+      JSON.stringify(readyBtns.map((b) => [b.textContent.trim(), b.disabled, b.title])),
+    );
   }
 }
 {
@@ -486,6 +500,20 @@ check('clear button gone', clearBtn().length === 0, String(clearBtn().length));
     JSON.stringify(c && c.args),
   );
   check('back to the plain import prompt', document.body.textContent.includes('No matches yet'));
+  // The empty state carries NO import button of its own — the header
+  // (top-left) owns the view's single Import… action and the copy points
+  // at it ("with the button above").
+  check(
+    'empty state has no import button (header owns it)',
+    $('.dropzone .empty .btn').length === 0,
+    ($('.dropzone .empty')[0]?.innerHTML || 'no .empty').slice(0, 200),
+  );
+  check(
+    'header Import… still present',
+    [...document.querySelectorAll('.view-header .btn')].some(
+      (b) => b.textContent.trim() === 'Import…',
+    ),
+  );
 }
 
 console.log('E. a parsing row: honest placeholder date, no navigation');
@@ -522,6 +550,16 @@ await sleep(350); // past the 250 ms debounce
     'row action buttons still present',
     tr.querySelectorAll('.row-actions button').length === 2,
     String(tr.querySelectorAll('.row-actions button').length),
+  );
+  // …but disabled while the row is parsing/queued, with a title hint that
+  // says when they come back.
+  const actBtns = [...tr.querySelectorAll('.row-actions button')];
+  check(
+    'parsing row action buttons disabled with the hint title',
+    actBtns.length === 2 &&
+      actBtns.every((b) => b.disabled) &&
+      actBtns.every((b) => b.title === 'Available once parsing finishes'),
+    JSON.stringify(actBtns.map((b) => [b.textContent.trim(), b.disabled, b.title])),
   );
 }
 
