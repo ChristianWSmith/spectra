@@ -4,9 +4,9 @@
 // landmarks (lingering smoke/fire areas → utility flight with the
 // extracted icon → per-type detonation pops) → bomb (pulse ring + the
 // extracted C4 icon) → death markers (the victim's team-color X, until
-// the round ends) → players (view chevron, body, voice-color rim, white
+// the round ends) → players (view chevron, body, player-color rim, white
 // talking pulse, flash-white overlay, muzzle line, damage flash, follow
-// ring, name) → HUD.
+// ring, name) → HUD + kill feed.
 // The camera is a pan/zoom view over the radar's image-pixel space with
 // two modes: 'smart' (the default — eased
 // fit that keeps every alive player + the active bomb on screen; see
@@ -75,6 +75,13 @@ const KILL_MARKER_FALLBACK_S = 180; // s — death-X cleanup when the round's
 //                                    round_end row was never loaded
 //                                    (longer than any round: it can
 //                                    never cut a live round short)
+// --- Kill feed (drawKillFeed — the top-right overlay) ------------------------
+const KILL_FEED_MAX = 6; // entries shown, newest on top
+const KILL_FEED_LH = 18; // px per entry line
+const KILL_FEED_EDGE = 8; // px from the stage's top/right edge
+const KILL_FEED_INSET = 6; // px of padding inside an entry
+const KILL_FEED_GAP = 4; // px between a name and the weapon mark
+const KILL_FEED_ICON = 14; // px — the weapon image's size on a line
 
 function teamColor(side) {
   if (side === 'ct') return CT_COLOR;
@@ -1482,24 +1489,27 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // --- HUD -------------------------------------------------------------------
   // Two boxes, both pure functions of the engine state + the setHud
   // payload:
-  //   top-left     — score + round number + round clock, drawn clear of
-  //                  the floating back button (HUD_TOP_X);
-  //   bottom-left  — the tick/frame timer (the original HUD content:
-  //                  tick, match clock, speed×, frame x/y, follow, loop,
+  //   top-center   — team score + round clock, CENTERED on the stage
+  //                  (x = (cssW − boxWidth) / 2, HUD_PAD from the top):
+  //                  the stage's top corners belong to the overlays, so
+  //                  the readout no longer dodges a back button;
+  //   bottom-left  — the playback readout (speed×, follow, loop,
   //                  packNote), 8px off the BOTTOM-left corner so it can
-  //                  never fight the back button (top-left) or the
-  //                  landmark toggle (top-right).
+  //                  never fight the top-center box or the top-right
+  //                  kill feed (drawKillFeed).
   // setHud payload (view-supplied, plain data): {
   //   score: {ct, t} | null,          // cumulative counted wins at the
   //                                   // playhead (lib/rounds.js scoreThrough)
+  //   teamNames: {ct, t},             // the two sides' team names; an
+  //                                   // empty name falls back to CT / T
   //   round: {                        // round containing the playhead, or
   //     number, label,                //   null before the first round
   //     startTick, freezeEndTick, endTick, bombSite
   //   } | null,
   //   tickRate: number | undefined
   // }
-  // Before the first setHud call the renderer degrades to the tick/frame
-  // box alone (no score line) — the other createRenderer callers (node
+  // Before the first setHud call the renderer draws the playback box
+  // alone (no score line) — the other createRenderer callers (node
   // tests, stubs) never supply one.
   let hud = null;
 
@@ -1510,6 +1520,8 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   const ROUND_TIME_S = 115;
   const HUD_LH = 15; // px per HUD line
   const HUD_PAD = 8; // px inside/around a HUD box
+  const HUD_ICON_PX = 12; // px — an icon's size on an icon+text line
+  const HUD_ICON_GAP = 4; // px — icon → text gap on an icon+text line
 
   function fmtClock(tick) {
     const sec = Math.max(0, Math.floor(tick / engine.tickRate));
@@ -1532,15 +1544,47 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     return null;
   }
 
-  // roundClockLine — the top-left round clock: the C4 countdown while
-  // the bomb is planted, else the freeze-time countdown before freeze
-  // end, else the remaining round time (clamped at 0). With no usable
-  // freeze end (startTick/freezeEndTick missing) the honest fallback is
-  // the time ELAPSED into the round — a countdown we cannot know is
-  // never invented.
+  // detonatedAt — true once a plant of this round has EXPLODED at
+  // `tick`: the plant's bombEndTick terminator IS a bomb_explode row
+  // (bomb.js owns the terminator rule; a defused / round-ended plant is
+  // NOT a detonation and keeps today's behavior). Keys off the plant's
+  // explode tick — never the round's recorded endTick, which can precede
+  // the detonation — so the window between the explosion and the next
+  // round's start reads 0:00 instead of the 115 s round clock.
+  function detonatedAt(tick, tr, roundNumber) {
+    for (const l of plants) {
+      if (!l || l.round !== roundNumber || !Number.isFinite(l.tick)) continue;
+      if (tick < l.tick) continue;
+      const end = bombEndTick(l, tr, explodes, defuses, roundEnds);
+      if (tick <= end) continue; // still ticking — plantedEndAt covers it
+      for (const e of explodes) {
+        if (e && e.round === l.round && e.tick >= l.tick && e.tick === end) return true;
+      }
+    }
+    return false;
+  }
+
+  // roundClockLine — the top-center round clock: the C4 countdown while
+  // the bomb is planted (the extracted C4 image leads the line when the
+  // icon pipeline has one — 'C4 0:35' text otherwise), else 0:00 once
+  // this round's plant has DETONATED and the next round has not started
+  // yet (the round is over but its 115 s clock would keep counting down
+  // to the next round — there is no countdown left to show), else the
+  // freeze-time countdown before freeze end, else the remaining round
+  // time (clamped at 0). With no usable freeze end
+  // (startTick/freezeEndTick missing) the honest fallback is the time
+  // ELAPSED into the round — a countdown we cannot know is never
+  // invented. Returns a plain string, or {img, text} for the icon line.
   function roundClockLine(tick, round, tr) {
     const planted = plantedEndAt(tick, tr, round.number);
-    if (planted != null) return `C4 ${fmtClock(planted - tick)}`;
+    if (planted != null) {
+      const text = fmtClock(planted - tick);
+      // Same image resolution as drawBombIcon (planted_c4 → the shared
+      // C4 image), resolved HERE so hudBox only renders what it is given.
+      const img = iconFor('planted_c4') || iconFor('C4');
+      return img ? { img, text } : `C4 ${text}`;
+    }
+    if (detonatedAt(tick, tr, round.number)) return '0:00';
     const fe = round.freezeEndTick;
     if (Number.isFinite(fe) && Number.isFinite(round.startTick) && fe > round.startTick) {
       if (tick < fe) return `freeze ${fmtClock(fe - tick)}`;
@@ -1554,9 +1598,25 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     return n * HUD_LH + HUD_PAD * 2 - 3;
   }
 
+  // hudLineWidth — one line's drawn width: a plain string is its text;
+  // an {img, text} line reserves the icon slot ahead of its text (the
+  // caller resolved the image — an icon line always has one).
+  function hudLineWidth(ln) {
+    if (typeof ln === 'string') return ctx.measureText(ln).width;
+    return HUD_ICON_PX + HUD_ICON_GAP + ctx.measureText(ln.text).width;
+  }
+
+  // hudBoxWidth — the full box width (widest line + padding). The top
+  // box centers itself on this, so it is measured once, not twice.
+  function hudBoxWidth(lines) {
+    let w = 0;
+    for (const ln of lines) w = Math.max(w, hudLineWidth(ln));
+    return w + HUD_PAD * 2;
+  }
+
   // hudBox draws one HUD box with its lines (first line amber) at (x, y).
-  function hudBox(lines, x, y) {
-    const w0 = lines.reduce((w, ln) => Math.max(w, ctx.measureText(ln).width), 0);
+  // A line may be a string or an {img, text} pair drawn as icon + text.
+  function hudBox(lines, x, y, w = hudBoxWidth(lines)) {
     const bh = hudBoxHeight(lines.length);
     ctx.fillStyle = 'rgba(14, 17, 22, 0.78)';
     ctx.strokeStyle = 'rgba(35, 42, 55, 0.9)';
@@ -1564,30 +1624,34 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     ctx.beginPath();
     // roundRect is baseline in modern WebKit; fall back for older builds
     if (typeof ctx.roundRect === 'function') {
-      ctx.roundRect(x, y, w0 + HUD_PAD * 2, bh, 6);
+      ctx.roundRect(x, y, w, bh, 6);
       ctx.fill();
       ctx.stroke();
     } else {
-      ctx.fillRect(x, y, w0 + HUD_PAD * 2, bh);
-      ctx.strokeRect(x, y, w0 + HUD_PAD * 2, bh);
+      ctx.fillRect(x, y, w, bh);
+      ctx.strokeRect(x, y, w, bh);
     }
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     lines.forEach((ln, i) => {
+      const y0 = y + HUD_PAD + i * HUD_LH;
       ctx.fillStyle = i === 0 ? '#fbac18' : '#8b94a7';
-      ctx.fillText(ln, x + HUD_PAD, y + HUD_PAD + i * HUD_LH);
+      if (typeof ln === 'string') {
+        ctx.fillText(ln, x + HUD_PAD, y0);
+        return;
+      }
+      // icon + text: the image leads (drawIcon keeps its dark halo so it
+      // stays legible on the light theme too), the text follows.
+      if (ln.img) drawIcon(ln.img, x + HUD_PAD + HUD_ICON_PX / 2, y0 + HUD_LH / 2, HUD_ICON_PX);
+      ctx.fillText(ln.text, x + HUD_PAD + HUD_ICON_PX + HUD_ICON_GAP, y0);
     });
     ctx.textBaseline = 'alphabetic';
   }
 
-  // The floating back button owns the stage's top-left corner (8px in,
-  // ~36px wide) — the score box starts to its right of it.
-  const HUD_TOP_X = 52;
-
-  // setHud(payload): score/round context for the top-left HUD box —
+  // setHud(payload): score/round context for the top-center HUD box —
   // additive like the other setters (redraws on set). A null/absent
-  // payload clears it: the renderer then draws the tick/frame box alone
-  // (the state before any view supplied a score line).
+  // payload clears it: the renderer then draws the playback box (and no
+  // kill feed) alone — the state before any view supplied a score line.
   function setHud(payload) {
     hud = payload || null;
     draw();
@@ -1598,25 +1662,29 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     const tr = engine.tickRate;
     ctx.font = '12px ui-monospace, SFMono-Regular, Menlo, monospace';
 
-    // top-left: score + round number + round clock (only once a view
-    // supplied the HUD payload — without it there is no score line).
+    // top-center: team score + round clock, centered on the stage (only
+    // once a view supplied the HUD payload — without it there is no
+    // score line). Teams, not sides: the names come from the payload's
+    // teamNames with the bare CT / T as the empty-name fallback, and the
+    // clock line carries no round label — the ribbon above the stage
+    // owns the round number.
     if (hud) {
       const top = [];
-      if (hud.score) top.push(`CT ${hud.score.ct} – ${hud.score.t} T`);
-      if (hud.round) {
-        const r = hud.round;
-        const label = r.label || String(r.number);
-        top.push(`${r.number >= 1 ? 'R' : ''}${label} · ${roundClockLine(st.tick, r, tr)}`);
+      if (hud.score) {
+        const tn = hud.teamNames || {};
+        top.push(`${tn.ct || 'CT'} ${hud.score.ct} – ${hud.score.t} ${tn.t || 'T'}`);
       }
-      if (top.length) hudBox(top, HUD_TOP_X, HUD_PAD);
+      if (hud.round) top.push(roundClockLine(st.tick, hud.round, tr));
+      if (top.length) {
+        const w = hudBoxWidth(top);
+        hudBox(top, (cssW - w) / 2, HUD_PAD, w);
+      }
     }
 
-    // bottom-left: the tick/frame timer (today's HUD content), clear of
-    // the top-left back button and the top-right landmark toggle.
-    const lines = [
-      `tick ${st.tick}   ${fmtClock(st.tick)}`,
-      `${st.speed}×   frame ${st.frame + 1}/${engine.frames}`,
-    ];
+    // bottom-left: the playback readout (speed / follow / loop /
+    // packNote), 8px off the corner — clear of the top-center score box
+    // and the top-right kill feed.
+    const lines = [`${st.speed}×`];
     if (st.followSlot != null) {
       lines.push(`follow: ${slotNames[st.followSlot] || '#' + st.followSlot}`);
     }
@@ -1626,6 +1694,82 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     if (packNote) lines.push(packNote);
     const y = Math.max(HUD_PAD, cssH - hudBoxHeight(lines.length) - HUD_PAD);
     hudBox(lines, HUD_PAD, y);
+  }
+
+  // --- Kill feed -------------------------------------------------------------
+  // Top-right, canvas-drawn (snapshots and clip recordings capture ONLY
+  // the canvas): the kills of the ROUND CONTAINING the playhead that have
+  // already happened — round-scoped AND tick ≤ playhead, so a round
+  // change clears the feed and a backwards scrub re-derives it (nothing
+  // sticky, nothing remembered). Newest on top, capped. One line each:
+  // killer name → weapon → victim name over a dark transparent box
+  // outlined in the KILLER's team color (neutral when unknown); names
+  // are tinted by their own side AT THE KILL TICK (sideAtFrame — the
+  // same rule the death markers use).
+  function drawKillFeed() {
+    if (!hud || !hud.round || !Number.isFinite(hud.round.number)) return;
+    const st = engine.state;
+    const rn = hud.round.number;
+    const rows = [];
+    for (const k of kills) {
+      if (!k || k.round !== rn || !Number.isFinite(k.tick) || k.tick > st.tick) continue;
+      rows.push(k);
+    }
+    if (!rows.length) return;
+    rows.sort((a, b) => b.tick - a.tick); // newest first
+    const shown = rows.slice(0, KILL_FEED_MAX);
+    // No position store (a caller that never fed data) → no side to
+    // resolve: every name/border degrades to the neutral color instead
+    // of throwing — sideAtFrame needs the store.
+    const nSlots = (store && store.slots && store.slots.length) || 0;
+
+    ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < shown.length; i++) {
+      const k = shown[i];
+      // Side at the kill tick (frame BEFORE the kill — the victim may
+      // already be unalived on the kill frame; drawDeaths' reasoning).
+      const frame = engine.frameForTick(Math.max(engine.firstTick, k.tick - 1));
+      const ks = slotOfSteam.get(String(k.attacker || ''));
+      const vs = slotOfSteam.get(String(k.victim || ''));
+      const kSide = ks != null && ks < nSlots ? sideAtFrame(ks, frame) : '';
+      const vSide = vs != null && vs < nSlots ? sideAtFrame(vs, frame) : '';
+      const killer = k.attackerName || k.attacker || '?';
+      const victim = k.victimName || k.victim || '?';
+      const img = iconFor(k.weapon); // canonical name → manifest image
+      const kw = ctx.measureText(killer).width;
+      const vw = ctx.measureText(victim).width;
+      const ww = img ? KILL_FEED_ICON : ctx.measureText('→').width;
+      const w = KILL_FEED_INSET * 2 + kw + KILL_FEED_GAP + ww + KILL_FEED_GAP + vw;
+      const x = cssW - KILL_FEED_EDGE - w;
+      const y = KILL_FEED_EDGE + i * KILL_FEED_LH;
+
+      // box: dark transparent fill + the killer's team-color hairline
+      ctx.fillStyle = 'rgba(14,17,22,0.78)';
+      ctx.strokeStyle = teamColor(kSide);
+      ctx.beginPath();
+      ctx.rect(x, y, w, KILL_FEED_LH);
+      ctx.fill();
+      ctx.stroke();
+
+      let tx = x + KILL_FEED_INSET;
+      ctx.fillStyle = teamColor(kSide);
+      ctx.fillText(killer, tx, y + 4);
+      tx += kw + KILL_FEED_GAP;
+      if (img) {
+        drawIcon(img, tx + KILL_FEED_ICON / 2, y + KILL_FEED_LH / 2, KILL_FEED_ICON);
+      } else {
+        // no image for this weapon — a simple arrow, never an error
+        ctx.fillStyle = '#8b94a7';
+        ctx.fillText('→', tx, y + 4);
+      }
+      tx += ww + KILL_FEED_GAP;
+      ctx.fillStyle = teamColor(vSide);
+      ctx.fillText(victim, tx, y + 4);
+    }
+    ctx.textBaseline = 'alphabetic';
   }
 
   function draw() {
@@ -1673,6 +1817,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       drawPlayers();
     }
     drawHUD();
+    drawKillFeed();
     // Arm the settle loop when smart is still short of its target — a
     // paused seek (or a mode switch) has no other redraw driver. draw()
     // is the single arming point and it checks !easeRaf, so the engine's

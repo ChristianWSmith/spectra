@@ -778,6 +778,9 @@
   //           ENDED at the playhead (mid-round the current round's result
   //           is not shown: never display a win the round hasn't
   //           produced); rounds.js scoreThrough is the ONE rule.
+  //   teamNames — the two sides' team names (getTeamNames' clan/
+  //           synthesized names) for the HUD's score line; the renderer
+  //           falls back to CT / T when a name is empty.
   //   round — the round containing the playhead (label from the ONE
   //           roundIndexLabel formatter), or null before round 1.
   // The bomb/planted evidence is NOT passed: the renderer already holds
@@ -793,6 +796,7 @@
     }
     return {
       score: rounds.length ? scoreThrough(rounds, ended) : null,
+      teamNames: { ct: teamNames?.ct || '', t: teamNames?.t || '' },
       round: r
         ? {
             number: r.number,

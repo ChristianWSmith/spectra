@@ -4,12 +4,16 @@
 // death→respawn teleport), the smart camera's fit/ease (smartCamTarget,
 // easeValue, camConverged), the world-layer geometry (chevronPath,
 // crossPath, muzzleRays), the tick-window effects (windowAlpha,
+// easeValue, camConverged), the world-layer geometry (chevronPath,
+// crossPath, muzzleRays), the tick-window effects (windowAlpha,
 // blindAlpha, voicePulseAlpha, fireJump), the death-marker lifetime
-// (killEndTick) — plus one end-to-end draw over a recording 2D context
+// (killEndTick) — plus end-to-end draws over a recording 2D context
 // (the world layers follow the tick: lingering smoke/fire, the death
 // X's round cleanup incl. the post-round C4 kill, the C4 icon and its
 // aspect-preserving draw, the muzzle line, the flash-white overlay and
-// the white talking pulse).
+// the white talking pulse; a crouch-size check; and the HUD — the
+// centered team-score box, the C4/0:00 clock, the tick/frame-free
+// playback readout — plus the round-scoped kill feed).
 // Run: node --test src/lib/renderer.test.js (from frontend/; the lib test
 // glob src/lib/*.test.js picks it up too).
 import test from 'node:test';
@@ -470,6 +474,28 @@ function recordingCanvas(cssW = 800, cssH = 600) {
   };
 }
 
+// headlessGlobals — the browser globals createRenderer touches that node
+// has neither: a 1-dpr window, no-op rAF, and a canvas factory for the
+// icon tint cache (offscreen canvas → 'source-in' recolor). Idempotent,
+// so every end-to-end draw test installs it before driving the renderer.
+function headlessGlobals() {
+  globalThis.window = { devicePixelRatio: 1 };
+  globalThis.requestAnimationFrame = () => 0;
+  globalThis.cancelAnimationFrame = () => {};
+  globalThis.document = {
+    createElement: () => ({
+      width: 0,
+      height: 0,
+      getContext: () => ({
+        drawImage() {},
+        fillRect() {},
+        globalCompositeOperation: '',
+        fillStyle: '',
+      }),
+    }),
+  };
+}
+
 // synthStore: `frames` one-tick-apart frames (the sidecar samples 1:1
 // with demo frames) with both slots alive; slot 0 is CT, slot 1 T
 // (per-frame side bits), standing at a fixed spot, yaw east.
@@ -495,24 +521,7 @@ function synthStore(frames, slotCount) {
 
 test('world layers follow the tick: smoke/fire, death X, C4 icon, muzzle line, hits, voice, blind', () => {
   // the renderer's browser globals (node has neither)
-  globalThis.window = { devicePixelRatio: 1 };
-  globalThis.requestAnimationFrame = () => 0;
-  globalThis.cancelAnimationFrame = () => {};
-  // …including a canvas factory for the icon tint cache (offscreen
-  // canvas → 'source-in' recolor); drawImage below is the real call on
-  // the recording context.
-  globalThis.document = {
-    createElement: () => ({
-      width: 0,
-      height: 0,
-      getContext: () => ({
-        drawImage() {},
-        fillRect() {},
-        globalCompositeOperation: '',
-        fillStyle: '',
-      }),
-    }),
-  };
+  headlessGlobals();
 
   const data = synthStore(1300, 2);
   const players = [
@@ -862,5 +871,284 @@ test('dots keep a constant radius while crouching (duck never shrinks them)', ()
     !arcs.some((e) => e.args[2] === 6.5),
     'a crouching player keeps the same dot size (no 6.5 px duck radius)',
   );
+  r.destroy();
+});
+
+// --- HUD + kill feed over the recording context ------------------------------
+//
+// The HUD boxes and the kill feed live ON the canvas (snapshots and clip
+// recordings capture the canvas and nothing else), so they are pinned the
+// same way as the world layers: drive draw() and read the recorded ops.
+// measureText always reports 40px in this harness, which makes every box
+// geometry assertion exact.
+
+const HUD_PAD = 8; // mirrors renderer.js — box padding / stage offset
+const opsSince = (log, op, from = 0) => log.slice(from).filter((e) => e.op === op);
+const textsSince = (log, from = 0) => opsSince(log, 'fillText', from).map((e) => e.args[0]);
+// The kill feed's box is the ONLY fill of the un-spaced dark surface
+// (the HUD boxes use 'rgba(14, 17, 22, 0.78)' — a different string).
+const feedBoxesSince = (log, from = 0) =>
+  opsSince(log, 'fill', from).filter((e) => e.fillStyle === 'rgba(14,17,22,0.78)');
+
+const HUD_PLAYERS = [
+  { steamId: '1', name: 'alice', side: 'ct' },
+  { steamId: '2', name: 'bob', side: 't' },
+];
+
+test('HUD: centered team score line, label-free clock, no tick/frame counter', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: HUD_PLAYERS });
+  const round = { number: 1, label: 'R1', startTick: 0, freezeEndTick: 640, endTick: 1200, bombSite: '' };
+  r.setHud({ score: { ct: 3, t: 2 }, teamNames: { ct: 'NAVY', t: 'FURY' }, round, tickRate: 64 });
+  r.resize();
+
+  const score = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === 'NAVY 3 – 2 FURY');
+  assert.ok(score, 'the score line names the TEAMS, not the sides');
+  // CENTERED, not top-left: both lines measure 40px, so the box is
+  // 40 + 2×8 = 56 wide → x = (800 − 56) / 2 = 372, its text 8px in.
+  // (The old top-left box started at HUD_TOP_X = 52.)
+  assert.equal(score.args[1], 372 + HUD_PAD);
+  assert.equal(score.args[2], HUD_PAD + HUD_PAD); // box top + first line
+
+  const texts = textsSince(canvas.log);
+  assert.ok(texts.includes('freeze 0:10'), 'line 2 is the bare clock (freeze time at tick 0)');
+  assert.ok(!texts.some((t) => String(t).includes('·')), 'the round label is gone');
+  assert.ok(!texts.some((t) => String(t).startsWith('R1')), 'no round number in the HUD');
+
+  // the bottom box lost its tick/frame counter but keeps the readout
+  assert.ok(!texts.some((t) => String(t).startsWith('tick ')), 'the tick counter is gone');
+  assert.ok(!texts.some((t) => String(t).includes('frame ')), 'the frame counter is gone');
+  assert.ok(texts.includes('1×'), 'speed× stays');
+
+  // an empty team name falls back to the bare side
+  r.setHud({ score: { ct: 3, t: 2 }, teamNames: { ct: '', t: '' }, round, tickRate: 64 });
+  assert.ok(textsSince(canvas.log).includes('CT 3 – 2 T'));
+
+  // a mid-round playhead: the 115 s round clock, still label-free
+  engine.seekTick(800); // freeze ended at 640 → 7360 − 160 = 7200 t = 112 s
+  r.draw();
+  assert.ok(textsSince(canvas.log).includes('1:52'), 'the round clock counts the 115 s round time');
+  r.destroy();
+});
+
+test('HUD clock: C4 icon line with text fallback, 0:00 after the detonation', () => {
+  headlessGlobals();
+  const data = synthStore(1600, 2); // frames at ticks 0…1599
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: HUD_PLAYERS });
+  const mk = (ev) => normalizeEvent(ev, {});
+  // Round 1 plants at 1000 and DETONATES at 1400, while the round's
+  // recorded endTick (1300) PRECEDES the explosion — the 0:00 has to key
+  // off the plant's explode tick, never endTick. Round 2 is a DEFUSE
+  // (not a detonation) and must keep today's clock behavior.
+  r.setLandmarks([
+    mk({ id: 1, seq: 1, tick: 1000, round: 1, kind: 'bomb_plant' }), // no position → no world marker
+    mk({ id: 2, seq: 2, tick: 1400, round: 1, kind: 'bomb_explode' }),
+    mk({ id: 3, seq: 3, tick: 1100, round: 2, kind: 'bomb_plant' }),
+    mk({ id: 4, seq: 4, tick: 1300, round: 2, kind: 'bomb_defuse' }),
+  ]);
+  const c4 = { width: 32, height: 32, src: 'c4.svg' };
+  r.setIcons({ C4: c4 });
+  const round1 = { number: 1, label: 'R1', startTick: 0, freezeEndTick: 640, endTick: 1300, bombSite: 'A' };
+  r.setHud({ score: null, teamNames: { ct: '', t: '' }, round: round1, tickRate: 64 });
+  r.resize();
+
+  // --- planted: the countdown line leads with the extracted C4 image -----
+  engine.seekTick(1200); // detonation at 1400 → 200 ticks left
+  let mark = canvas.log.length;
+  r.draw();
+  assert.ok(textsSince(canvas.log, mark).includes('0:03'), 'the planted countdown is the clock line');
+  assert.ok(
+    opsSince(canvas.log, 'drawImage', mark).some((e) => e.args[3] === 12),
+    'the C4 image (HUD_ICON_PX) leads the line',
+  );
+  assert.ok(
+    !textsSince(canvas.log, mark).includes('C4 0:03'),
+    'no text fallback while the image is available',
+  );
+  // the icon slot counts toward the measured width: 12 + 4 + 40 + 2×8
+  // = 72 → box x = (800 − 72) / 2 = 364, its text 8 + 12 + 4 further in
+  const iconLine = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === '0:03');
+  assert.equal(iconLine.args[1], 364 + HUD_PAD + 12 + 4);
+
+  // --- no icon at all → the 'C4 0:03' text fallback ----------------------
+  r.setIcons({});
+  mark = canvas.log.length;
+  r.draw();
+  assert.ok(
+    textsSince(canvas.log, mark).includes('C4 0:03'),
+    "without icons the 'C4 …' text is the fallback",
+  );
+
+  // --- detonated: 0:00 until the next round starts -----------------------
+  r.setIcons({ C4: c4 });
+  engine.seekTick(1500); // past the 1400 explosion
+  mark = canvas.log.length;
+  r.draw();
+  const after = textsSince(canvas.log, mark);
+  assert.ok(after.includes('0:00'), 'after the detonation the clock reads 0:00');
+  assert.ok(!after.includes('1:41'), 'never the 115 s round clock after the blast (6500 t)');
+  assert.ok(!after.some((t) => String(t).startsWith('C4 ')), 'not planted anymore → no C4 line');
+
+  // --- a DEFUSED plant keeps the normal clock ----------------------------
+  r.setHud({
+    score: null,
+    teamNames: { ct: '', t: '' },
+    round: { number: 2, label: 'R2', startTick: 1000, freezeEndTick: 1600, endTick: 1500, bombSite: 'B' },
+    tickRate: 64,
+  });
+  engine.seekTick(1400); // planted 1100, defused at 1300 — not a detonation
+  mark = canvas.log.length;
+  r.draw();
+  const defused = textsSince(canvas.log, mark);
+  assert.ok(
+    defused.some((t) => String(t).startsWith('freeze ')),
+    'a defused plant falls through to the ordinary round clock',
+  );
+  assert.ok(!defused.includes('0:00'), 'a defuse is NOT a detonation');
+  r.destroy();
+});
+
+test('kill feed: round-scoped entries, killer-team outline, weapon image/arrow, side names', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: HUD_PLAYERS });
+  const mk = (ev) => normalizeEvent(ev, {});
+  const round1 = { number: 1, label: 'R1', startTick: 0, freezeEndTick: 640, endTick: 1200, bombSite: '' };
+  r.setLandmarks([
+    // no positions → the world layers (death X) stay out of the way
+    mk({ id: 1, seq: 1, tick: 50, round: 1, kind: 'kill', attacker: '1', attackerName: 'alice', victim: '2', victimName: 'bob', weapon: 'AK-47' }),
+    mk({ id: 2, seq: 2, tick: 60, round: 1, kind: 'kill', attacker: '2', attackerName: 'bob', victim: '1', victimName: 'alice', weapon: 'awp' }),
+    mk({ id: 3, seq: 3, tick: 700, round: 2, kind: 'kill', attacker: '1', attackerName: 'alice', victim: '2', victimName: 'bob', weapon: 'AK-47' }),
+  ]);
+  const ak = { width: 32, height: 32, src: 'ak.svg' };
+  r.setIcons({ 'AK-47': ak }); // 'awp' deliberately has no image
+  r.setHud({ score: { ct: 0, t: 0 }, teamNames: { ct: '', t: '' }, round: round1, tickRate: 64 });
+  r.resize();
+
+  engine.seekTick(100);
+  let mark = canvas.log.length;
+  r.draw();
+
+  // two entries, NEWEST ON TOP (tick 60 above tick 50), right-aligned:
+  // measureText is 40 → the arrow line is 12 + 40 + 4 + 40 + 4 + 40 =
+  // 140 wide (x = 800 − 8 − 140 = 652) and the icon line 114 (x = 678).
+  const boxes = feedBoxesSince(canvas.log, mark);
+  assert.equal(boxes.length, 2, 'both round-1 kills up to the playhead');
+  const top = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === 'bob' && e.args[2] === 12);
+  assert.equal(top.args[1], 652 + 6, 'the newest entry is right-aligned at cssW − 8');
+  assert.equal(top.fillStyle, '#e6a35a', "the KILLER's outline/name use the killer's side (T)");
+  const lower = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === 'alice' && e.args[2] === 30);
+  assert.equal(lower.args[1], 678 + 6);
+  assert.equal(lower.fillStyle, '#5aa9e6', 'the CT killer is CT-colored');
+
+  // outline = the killer's team color, 1px, full alpha (nothing else in
+  // the frame strokes that combination: trails/arrow draw at alpha ≤ 0.5)
+  const lines = (color) =>
+    opsSince(canvas.log, 'stroke', mark).filter(
+      (e) => e.strokeStyle === color && e.lineWidth === 1 && e.alpha === 1,
+    );
+  assert.equal(lines('#e6a35a').length, 1, 'the T killer’s box is outlined in T');
+  assert.equal(lines('#5aa9e6').length, 1, 'the CT killer’s box is outlined in CT');
+
+  // victim names are tinted by the VICTIM's side (both at x = 746)
+  const victimT = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === 'bob' && e.args[2] === 30);
+  assert.equal(victimT.args[1], 746);
+  assert.equal(victimT.fillStyle, '#e6a35a');
+  const victimCT = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === 'alice' && e.args[2] === 12);
+  assert.equal(victimCT.args[1], 746);
+  assert.equal(victimCT.fillStyle, '#5aa9e6');
+
+  // weapon: the canonical name's image when the manifest has one…
+  assert.equal(opsSince(canvas.log, 'drawImage', mark).filter((e) => e.args[3] === 14).length, 1, 'one weapon image (KILL_FEED_ICON)');
+  // …and a plain arrow when it does not
+  assert.ok(
+    canvas.log.some((e) => e.op === 'fillText' && e.args[0] === '→' && e.args[2] === 12),
+    'a weapon with no image falls back to →',
+  );
+
+  // --- round change clears the feed ---------------------------------------
+  r.setHud({
+    score: { ct: 0, t: 0 },
+    teamNames: { ct: '', t: '' },
+    round: { number: 2, label: 'R2', startTick: 0, freezeEndTick: 640, endTick: 1200, bombSite: '' },
+    tickRate: 64,
+  });
+  engine.seekTick(800); // round-2 kill at 700 is now in scope
+  mark = canvas.log.length;
+  r.draw();
+  assert.equal(feedBoxesSince(canvas.log, mark).length, 1, 'the feed clears to the new round');
+  assert.equal(
+    opsSince(canvas.log, 'drawImage', mark).filter((e) => e.args[3] === 14).length,
+    1,
+    'only the round-2 kill remains',
+  );
+  assert.ok(
+    !textsSince(canvas.log, mark).includes('→'),
+    "the round-1 'awp' entry is gone with its round",
+  );
+
+  // --- a backwards scrub re-derives the old round's feed -------------------
+  r.setHud({ score: { ct: 0, t: 0 }, teamNames: { ct: '', t: '' }, round: round1, tickRate: 64 });
+  engine.seekTick(100);
+  mark = canvas.log.length;
+  r.draw();
+  assert.equal(feedBoxesSince(canvas.log, mark).length, 2, 'scrubbing back redraws the feed');
+  r.destroy();
+});
+
+test('kill feed: capped at 6 entries, newest on top', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: HUD_PLAYERS });
+  const mk = (ev) => normalizeEvent(ev, {});
+  r.setLandmarks(
+    Array.from({ length: 8 }, (_, i) =>
+      mk({
+        id: i + 1,
+        seq: i + 1,
+        tick: (i + 1) * 10,
+        round: 1,
+        kind: 'kill',
+        attacker: '1',
+        attackerName: `p${i + 1}`,
+        victim: '2',
+        victimName: `v${i + 1}`,
+        weapon: 'AK-47',
+      }),
+    ),
+  );
+  r.setIcons({ 'AK-47': { width: 32, height: 32, src: 'ak.svg' } });
+  r.setHud({
+    score: { ct: 0, t: 0 },
+    teamNames: { ct: '', t: '' },
+    round: { number: 1, label: 'R1', startTick: 0, freezeEndTick: 640, endTick: 1200, bombSite: '' },
+    tickRate: 64,
+  });
+  r.resize();
+
+  engine.seekTick(100); // all 8 kills are in the past
+  const mark = canvas.log.length;
+  r.draw();
+  assert.equal(feedBoxesSince(canvas.log, mark).length, 6, 'the feed shows at most KILL_FEED_MAX');
+  assert.equal(
+    opsSince(canvas.log, 'drawImage', mark).filter((e) => e.args[3] === 14).length,
+    6,
+    'one line per surviving entry',
+  );
+  const texts = textsSince(canvas.log, mark);
+  assert.ok(
+    canvas.log.some((e) => e.op === 'fillText' && e.args[0] === 'p8' && e.args[2] === 12),
+    'the newest kill sits on TOP',
+  );
+  assert.ok(!texts.includes('p1') && !texts.includes('p2'), 'the two oldest entries are dropped');
   r.destroy();
 });

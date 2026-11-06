@@ -1485,13 +1485,14 @@ input[type='checkbox']:focus-visible {
 /* Follow chip — the "Following <player>" overlay on the replay stage.
    It mirrors the engine's follow state (the ?follow= entry, the camera
    dropdown's Follow and the F/1-9 keys all land here) and is the dismiss
-   surface for it. Top-right of the STAGE — the landmark toggle lives in
-   the top bar above now, so the corner is free; clear of the HUD
-   readout at top-left. */
+   surface for it. TOP-LEFT: the canvas kill feed owns the stage's
+   top-right (right-aligned, up to 6 × 18px from the top edge), so the
+   chip no longer sits under the landmark toggle there; the top-center
+   score box is clear of this corner too. */
 .follow-chip {
   position: absolute;
   top: 8px;
-  right: 8px;
+  left: 8px;
   z-index: 2;
   gap: 4px;
   padding: 2px 4px 2px 8px;
