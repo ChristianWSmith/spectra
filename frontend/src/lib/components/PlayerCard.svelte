@@ -270,6 +270,8 @@
      grenade row, the ticking stats row. Heights are em-of-card (the card
      is 0.86em of the app font) so the font-size setting scales them;
      values are padded for the chip/button's px borders at every setting.
+     Exception: .pc-econ's two-line wrap reserve is px, because its driver
+     (the 15px util icons) is px — see the rule below.
      Rings (box-shadow) stay paint on .pc-card — never layout. */
 
   /* Spec 21/26 — the card's ONE ring: the teammate-color ring hugs the
@@ -503,11 +505,24 @@
     align-items: center;
     gap: 6px;
     min-width: 0;
-    /* Two lines RESERVED for the util's own wrap (up to five nade icons
-       with counts): the row keeps its height whether the util fits on
-       one line or wraps — grenades bought/thrown mid-playback can never
-       resize the card. */
-    height: 3em;
+    /* The util's TRUE maximum content height — the tightest reserve
+       that still holds the never-resize / never-clip invariant: TWO
+       wrapped icon lines = 2 × 15px (.pc-ico) + the 2px row-gap of
+       .pc-util = 32px. It is px, not em, on purpose: the icons are
+       fixed px so the max does not scale — and 32px still covers the
+       taller one-line text at the 17px root setting (1.3 × 0.86 × 17
+       ≈ 19px). The old `3em` was a loose estimate (33.5 / 38.7 /
+       43.9px at the 13 / 15 / 17px root): with util on ONE line — the
+       common case — that slack showed as fat margins above and below
+       this row compared with its 1.5em neighbours. Now a wrapped
+       two-line util fits with zero slack, a one-line util centres in
+       the row, and the height never changes: grenades bought or thrown
+       mid-playback can neither resize the card nor be clipped. A
+       guaranteed single line would be tighter still but cannot be
+       PROVEN to fit — money 7ch + C4 + five nade icons + count badges
+       ≈ 184px > the card's ~165–180px content box — so the wrap stays
+       reserved. */
+    height: calc(2 * 15px + 2px);
     overflow: hidden;
   }
 
