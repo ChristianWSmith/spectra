@@ -46,13 +46,15 @@ export const LANDMARK_KINDS = [
 ];
 
 // DRAW_KINDS: the typed kinds the replay world layers and scrubber
-// markers draw — positioned anchors (kills, grenades, bomb incl. the
-// dropped-C4 evidence rows) plus round_end (round-win markers). Fetched
-// once per match, unfiltered by category chips: the map always shows
-// the full spatial context, while the LIST and scrubber markers follow
-// the enabled categories.
+// markers draw — positioned anchors (kills, damage, grenades, bomb incl.
+// the dropped-C4 evidence rows) plus round_end (round-win markers).
+// Fetched once per match, unfiltered by category chips: the map always
+// shows the full spatial context, while the LIST and scrubber markers
+// follow the enabled categories. `damage` rides here for the victim-hit
+// flash only — it carries no scrubber marker (see scrubberMarkerClass).
 export const DRAW_KINDS = [
   'kill',
+  'damage',
   'grenade',
   'grenade_throw',
   'bomb_plant',
@@ -102,20 +104,97 @@ export function categoryOfKind(kind) {
   return cat ? cat.id : null;
 }
 
+// detonationStyle — THE weapon → detonation-visual decision (pure; the
+// renderer's world layer and drawBucket both read it, so a grenade's
+// bucket and its on-map detonation visual can never disagree). Input is
+// the canonical demoinfocs EquipmentType.String() spelling every
+// events.weapon writer emits (internal/models/weapons.go
+// utilityWeaponKinds pins the same set on the Go side; Molotov ≡
+// Incendiary). Unknown/absent weapon → 'detonation' (the generic
+// expanding ring — never guessed, never thrown).
+export function detonationStyle(weapon) {
+  switch (String(weapon || '')) {
+    case 'Smoke Grenade':
+      return 'smoke';
+    case 'Molotov':
+    case 'Incendiary Grenade':
+      return 'fire';
+    case 'Decoy Grenade':
+      return 'decoy';
+    case 'Flashbang':
+      return 'flash';
+    case 'HE Grenade':
+      return 'he';
+    default:
+      return 'detonation';
+  }
+}
+
+// DETONATION_BUCKETS — every drawable grenade bucket drawBucket can
+// produce (the generic 'detonation' plus the five typed ones). The
+// renderer's setLandmarks routes all of them through its detonation
+// loop; 'smoke'/'fire' rows additionally feed the lingering-area arrays.
+export const DETONATION_BUCKETS = ['detonation', 'smoke', 'fire', 'flash', 'he', 'decoy'];
+
+// detonationStyleOf — the style of one PRE-BUCKETED row: the bucket
+// already carries it (drawBucket routed the row through detonationStyle),
+// so prefer the bucket and fall back to the weapon decision for a row
+// whose bucket is the generic 'detonation' (or a defensive kind spelling
+// with no weapon). Pure — unit-tested by src/lib/landmarks.test.js.
+export function detonationStyleOf(row) {
+  const b = String((row && row.bucket) || '');
+  if (b !== 'detonation' && DETONATION_BUCKETS.includes(b)) return b;
+  return detonationStyle(row && row.weapon);
+}
+
+// sameUtilityWeapon — throw→detonate weapon equality for the renderer's
+// pairing (JS twin of the Molotov ≡ Incendiary rule in
+// internal/models/weapons.go utilityWeaponKinds): the throw records the
+// projectile's weapon ("Molotov") while the burn detonation records
+// "Incendiary Grenade" for BOTH teams' flames, so exact matching never
+// pairs a molotov and its flight never animates. Exact match otherwise;
+// an unknown side on either row never blocks a pair (the pairing's own
+// rule — absent data must not veto a match). Pure — unit-tested by
+// src/lib/landmarks.test.js.
+export function sameUtilityWeapon(a, b) {
+  if (!a || !b) return true;
+  if (a === b) return true;
+  const molotov = (w) => w === 'Molotov' || w === 'Incendiary Grenade';
+  return molotov(a) && molotov(b);
+}
+
+// scrubberMarkerClass — the bucket → scrubber-marker class mapping the
+// feed's markers derivation (Replay.svelte) consumes; '' = no marker.
+// Kept here so the one categorization module owns the whole bucket
+// contract: every drawable bucket the world layers draw stays meaningful
+// on the scrubber, including the typed grenade buckets. Pure —
+// unit-tested by src/lib/landmarks.test.js.
+export function scrubberMarkerClass(bucket) {
+  const b = String(bucket || '');
+  if (b === 'kill') return 'kill';
+  if (b === 'plant' || b === 'defuse') return 'plant';
+  if (b === 'explode' || DETONATION_BUCKETS.includes(b)) return 'det';
+  if (b === 'round') return 'round';
+  return ''; // 'drop'/'pickup' (bomb evidence) and 'damage' — no marker
+}
+
 // drawBucket maps a typed kind onto the drawable bucket the renderer and
 // scrubber markers consume ('' = not drawn / no marker). Precomputed at
 // normalization time — neither the renderer nor the scrubber classifies
-// anything at runtime (PRD §5.5). The substring branches (smoke/fire)
-// bucket the extended kind spellings, not only the exact kinds above.
-// bomb_drop/bomb_pickup bucket into 'drop'/'pickup' — the DROPPED-C4
-// evidence rows the renderer's reconstruction (lib/replay/bomb.js)
-// consumes; the scrubber's marker loop only maps kill/plant/defuse/
-// explode/round buckets, so these add no scrubber markers.
-export function drawBucket(kind) {
+// anything at runtime (PRD §5.5). `grenade` rows route by WEAPON
+// (detonationStyle) so the renderer's lingering smoke/fire arrays and
+// per-type detonation visuals reach it — the substring branches below
+// keep the extended kind spellings bucketing the same way. damage →
+// 'damage' (the victim-hit flash). bomb_drop/bomb_pickup bucket into
+// 'drop'/'pickup' — the DROPPED-C4 evidence rows the renderer's
+// reconstruction (lib/replay/bomb.js) consumes; they and 'damage' carry
+// no scrubber marker (scrubberMarkerClass returns '' for them).
+export function drawBucket(kind, weapon) {
   const k = String(kind || '').toLowerCase();
   if (k === 'kill') return 'kill';
   if (k === 'grenade_throw') return 'throw';
-  if (k === 'grenade') return 'detonation';
+  if (k === 'grenade') return detonationStyle(weapon);
+  if (k === 'damage') return 'damage';
   if (k.includes('smoke')) return 'smoke';
   if (k.includes('fire') || k.includes('molotov')) return 'fire';
   if (k === 'bomb_plant') return 'plant';
@@ -183,7 +262,7 @@ export function normalizeEvent(ev, opts = {}) {
     key: 'e:' + ev.id,
     source: 'event',
     category,
-    bucket: drawBucket(ev.kind),
+    bucket: drawBucket(ev.kind, ev.weapon),
     // Landmark position/attribution aliases the renderer's world layers
     // consume (the shared landmark representation — EventRow keeps its
     // posX/posY/posZ for everything else). Bomb events attribute to the
