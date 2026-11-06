@@ -9,7 +9,7 @@
     errText,
   } from '../services.js';
   import { fmtDuration, fmtTickSeconds, fmtInt, fmtClock, tickSeconds, chatClock } from '../fmt.js';
-  import { isCounted, roundIndexLabel } from '../rounds.js';
+  import { roundIndexLabel, scoreThrough } from '../rounds.js';
   import { playerSideClassAt } from '../teams.js';
   import { replayHash } from '../nav.js';
   import { buildHash } from '../router.js';
@@ -121,20 +121,12 @@
     ),
   );
 
-  // Scoreline at this round: cumulative counted-round wins by side — a
-  // pure view aggregate over the already-fetched rounds rows
-  // (lib/rounds.js isCounted drops the knife/warmup winners; rounds are
-  // numbered in time order, so number <= round is "through this round").
-  const scoreAt = $derived.by(() => {
-    let ct = 0;
-    let t = 0;
-    for (const r of rounds) {
-      if (!isCounted(r) || r.number > round) continue;
-      if (r.winner === 'ct') ct++;
-      else if (r.winner === 't') t++;
-    }
-    return { ct, t };
-  });
+  // Scoreline at this round: cumulative counted-round wins through this
+  // round — the ONE aggregate in lib/rounds.js scoreThrough (view-level
+  // over the already-fetched rounds rows; isCounted drops the
+  // knife/warmup winners, rounds are numbered in time order so
+  // "number <= round" is "through this round").
+  const scoreAt = $derived(scoreThrough(rounds, round));
 
   // Into-round clock for an event row ("0:47" = that far past the round
   // start) — fmt.js fmtClock over tickSeconds; the raw tick rides the

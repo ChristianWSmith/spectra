@@ -516,6 +516,24 @@ at the end of the section.
   https://www.hltv.org/news/44128/valve-overhaul-reloading-mechanics-in-cs2-update
   (2026-03-19); demoinfocs-golang v6 `Equipment.AmmoReserve` doc comment
   (retrieved 2026-11-05).
+- **Competitive round clock (freeze time, round time, C4 timer)** — what
+  a round-clock readout counts. The round splits into FREEZE TIME (buy
+  phase, `mp_freezetime`: 15 s on casual/many servers, 20 s on Valve
+  competitive/Premier) then the ROUND TIME (`mp_roundtime_defuse`
+  default **1.92 min = 1:55 = 115 s**; when it expires with no plant CTs
+  win). A planted C4 counts **40 s** (`mp_c4timer`, already recorded
+  under the bomb entry). spectra stores each round's ACTUAL
+  `startTick`/`freezeEndTick`/`endTick`, so a clock reads the freeze
+  countdown from `freezeEndTick` (never an assumed duration), then 115 s
+  minus the time since freeze end, and a planted C4 as the time to
+  `bombEndTick` (`lib/replay/bomb.js` — canonical terminator rule, 40 s
+  hard fallback). **Source** — https://totalcsgo.com/commands/mproundtime
+  (default 1.92, "1.92 = 1m55s"); https://csdb.gg/command/mp-roundtime
+  (default 1.92); https://cybrancee.com/learn/knowledge-base/how-to-configure-your-cs-2-server
+  (`mp_roundtime_defuse` 1.92 = 1:55, `mp_freezetime` 15,
+  `mp_c4timer` 40); https://wiki.csgoluck.com/cs2-freeze-time/
+  (20 s competitive freeze default) (2026-11-06).
+
 - **Bomb `bomb_dropped` / `bomb_pickup` semantics (death drops, release
   vs landing)** — how trustworthy is carrier-position evidence on a
   drop? `BombDropped` fires when the C4 **loses its owner**

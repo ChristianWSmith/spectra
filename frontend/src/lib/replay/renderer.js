@@ -1325,6 +1325,38 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     }
   }
 
+  // --- HUD -------------------------------------------------------------------
+  // Two boxes, both pure functions of the engine state + the setHud
+  // payload:
+  //   top-left     — score + round number + round clock, drawn clear of
+  //                  the floating back button (HUD_TOP_X);
+  //   bottom-left  — the tick/frame timer (the original HUD content:
+  //                  tick, match clock, speed×, frame x/y, follow, loop,
+  //                  packNote), 8px off the BOTTOM-left corner so it can
+  //                  never fight the back button (top-left) or the
+  //                  landmark toggle (top-right).
+  // setHud payload (view-supplied, plain data): {
+  //   score: {ct, t} | null,          // cumulative counted wins at the
+  //                                   // playhead (lib/rounds.js scoreThrough)
+  //   round: {                        // round containing the playhead, or
+  //     number, label,                //   null before the first round
+  //     startTick, freezeEndTick, endTick, bombSite
+  //   } | null,
+  //   tickRate: number | undefined
+  // }
+  // Before the first setHud call the renderer degrades to the tick/frame
+  // box alone (no score line) — the other createRenderer callers (node
+  // tests, stubs) never supply one.
+  let hud = null;
+
+  // CS2 competitive round clock (CS2.md "Competitive round clock"):
+  // 115 s of round time (mp_roundtime_defuse 1.92 min) counted from
+  // freeze-time end. The C4's 40 s belongs to bombEndTick
+  // (lib/replay/bomb.js) — this constant is ONLY the round-time length.
+  const ROUND_TIME_S = 115;
+  const HUD_LH = 15; // px per HUD line
+  const HUD_PAD = 8; // px inside/around a HUD box
+
   function fmtClock(tick) {
     const sec = Math.max(0, Math.floor(tick / engine.tickRate));
     const m = Math.floor(sec / 60);
@@ -1332,8 +1364,101 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     return `${m}:${String(s2).padStart(2, '0')}`;
   }
 
+  // plantedEndAt — the tick a PLANTED C4's countdown reaches at `tick`,
+  // or null when the bomb is not planted: the same plant evidence +
+  // bomb.js terminator rule the world layer (drawBomb) and the smart
+  // camera already use — never a second bomb rule.
+  function plantedEndAt(tick, tr, roundNumber) {
+    for (const l of plants) {
+      if (!l || l.round !== roundNumber || !Number.isFinite(l.tick)) continue;
+      if (tick < l.tick) continue;
+      const end = bombEndTick(l, tr, explodes, defuses, roundEnds);
+      if (tick <= end) return end;
+    }
+    return null;
+  }
+
+  // roundClockLine — the top-left round clock: the C4 countdown while
+  // the bomb is planted, else the freeze-time countdown before freeze
+  // end, else the remaining round time (clamped at 0). With no usable
+  // freeze end (startTick/freezeEndTick missing) the honest fallback is
+  // the time ELAPSED into the round — a countdown we cannot know is
+  // never invented.
+  function roundClockLine(tick, round, tr) {
+    const planted = plantedEndAt(tick, tr, round.number);
+    if (planted != null) return `C4 ${fmtClock(planted - tick)}`;
+    const fe = round.freezeEndTick;
+    if (Number.isFinite(fe) && Number.isFinite(round.startTick) && fe > round.startTick) {
+      if (tick < fe) return `freeze ${fmtClock(fe - tick)}`;
+      const budget = Math.round(ROUND_TIME_S * tr);
+      return fmtClock(Math.max(0, budget - (tick - fe)));
+    }
+    return `+${fmtClock(Math.max(0, tick - (round.startTick || 0)))}`;
+  }
+
+  function hudBoxHeight(n) {
+    return n * HUD_LH + HUD_PAD * 2 - 3;
+  }
+
+  // hudBox draws one HUD box with its lines (first line amber) at (x, y).
+  function hudBox(lines, x, y) {
+    const w0 = lines.reduce((w, ln) => Math.max(w, ctx.measureText(ln).width), 0);
+    const bh = hudBoxHeight(lines.length);
+    ctx.fillStyle = 'rgba(14, 17, 22, 0.78)';
+    ctx.strokeStyle = 'rgba(35, 42, 55, 0.9)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    // roundRect is baseline in modern WebKit; fall back for older builds
+    if (typeof ctx.roundRect === 'function') {
+      ctx.roundRect(x, y, w0 + HUD_PAD * 2, bh, 6);
+      ctx.fill();
+      ctx.stroke();
+    } else {
+      ctx.fillRect(x, y, w0 + HUD_PAD * 2, bh);
+      ctx.strokeRect(x, y, w0 + HUD_PAD * 2, bh);
+    }
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    lines.forEach((ln, i) => {
+      ctx.fillStyle = i === 0 ? '#fbac18' : '#8b94a7';
+      ctx.fillText(ln, x + HUD_PAD, y + HUD_PAD + i * HUD_LH);
+    });
+    ctx.textBaseline = 'alphabetic';
+  }
+
+  // The floating back button owns the stage's top-left corner (8px in,
+  // ~36px wide) — the score box starts to its right of it.
+  const HUD_TOP_X = 52;
+
+  // setHud(payload): score/round context for the top-left HUD box —
+  // additive like the other setters (redraws on set). A null/absent
+  // payload clears it: the renderer then draws the tick/frame box alone
+  // (the state before any view supplied a score line).
+  function setHud(payload) {
+    hud = payload || null;
+    draw();
+  }
+
   function drawHUD() {
     const st = engine.state;
+    const tr = engine.tickRate;
+    ctx.font = '12px ui-monospace, SFMono-Regular, Menlo, monospace';
+
+    // top-left: score + round number + round clock (only once a view
+    // supplied the HUD payload — without it there is no score line).
+    if (hud) {
+      const top = [];
+      if (hud.score) top.push(`CT ${hud.score.ct} – ${hud.score.t} T`);
+      if (hud.round) {
+        const r = hud.round;
+        const label = r.label || String(r.number);
+        top.push(`${r.number >= 1 ? 'R' : ''}${label} · ${roundClockLine(st.tick, r, tr)}`);
+      }
+      if (top.length) hudBox(top, HUD_TOP_X, HUD_PAD);
+    }
+
+    // bottom-left: the tick/frame timer (today's HUD content), clear of
+    // the top-left back button and the top-right landmark toggle.
     const lines = [
       `tick ${st.tick}   ${fmtClock(st.tick)}`,
       `${st.speed}×   frame ${st.frame + 1}/${engine.frames}`,
@@ -1345,33 +1470,8 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       lines.push(`loop: f${st.loopFrom}–${st.loopTo}`);
     }
     if (packNote) lines.push(packNote);
-    const pad = 8;
-    const lh = 15;
-    ctx.font = '12px ui-monospace, SFMono-Regular, Menlo, monospace';
-    let w = 0;
-    for (const ln of lines) w = Math.max(w, ctx.measureText(ln).width);
-    ctx.fillStyle = 'rgba(14, 17, 22, 0.78)';
-    ctx.strokeStyle = 'rgba(35, 42, 55, 0.9)';
-    ctx.lineWidth = 1;
-    const bh = lines.length * lh + pad * 2 - 3;
-    ctx.beginPath();
-    // roundRect is baseline in modern WebKit; fall back for older builds
-    if (typeof ctx.roundRect === 'function') {
-      ctx.roundRect(8, 8, w + pad * 2, bh, 6);
-      ctx.fill();
-      ctx.stroke();
-    } else {
-      ctx.fillRect(8, 8, w + pad * 2, bh);
-      ctx.strokeRect(8, 8, w + pad * 2, bh);
-    }
-    ctx.fillStyle = '#d7dde8';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    lines.forEach((ln, i) => {
-      ctx.fillStyle = i === 0 ? '#fbac18' : '#8b94a7';
-      ctx.fillText(ln, 8 + pad, 8 + pad + i * lh);
-    });
-    ctx.textBaseline = 'alphabetic';
+    const y = Math.max(HUD_PAD, cssH - hudBoxHeight(lines.length) - HUD_PAD);
+    hudBox(lines, HUD_PAD, y);
   }
 
   function draw() {
@@ -1434,6 +1534,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     fit,
     setPack,
     setLandmarks,
+    setHud,
     setIcons,
     setVoices,
     setStateIndex,

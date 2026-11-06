@@ -1,12 +1,13 @@
 // Tests for lib/rounds.js — the canonical round helpers: the
-// counted-round predicate (the analytics CountedRounds twin) and
+// counted-round predicate (the analytics CountedRounds twin),
 // roundStartTick, the round-number → start-tick lookup behind every
-// "jump to round N" link (nav.entrySeekTick, Replay's jump selector).
+// "jump to round N" link (nav.entrySeekTick, Replay's round ribbon),
+// and scoreThrough (the scoreline-at-a-round aggregate).
 // Run: node --test src/lib/rounds.test.js   (from frontend/)
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { isCounted, roundStartTick, roundIndexLabel } from './rounds.js';
+import { isCounted, roundStartTick, roundIndexLabel, scoreThrough } from './rounds.js';
 
 const ROUNDS = [
   { number: -2, startTick: 100 }, // knife
@@ -66,4 +67,37 @@ test('roundIndexLabel: negative indices map to K/W letters', () => {
   assert.equal(roundIndexLabel('-2'), 'K');
   assert.equal(roundIndexLabel('x'), '');
   assert.equal(roundIndexLabel(null), '');
+});
+
+// scoreThrough — the scoreline-at-a-round aggregate (RoundDetail's
+// scoreline, Replay's HUD score). Characterized against the inline
+// formula RoundDetail used before it moved here: cumulative counted
+// wins with `number <= round`.
+const SCORE_ROUNDS = [
+  { number: -2, winner: 'ct' }, // knife — never counted
+  { number: -1, winner: 't' }, // warmup — never counted
+  { number: 1, winner: 'ct' },
+  { number: 2, winner: 't' },
+  { number: 3, winner: 'ct' },
+  { number: 4, winner: '' }, // decided row with no winner — counts for nobody
+];
+
+test('scoreThrough: cumulative counted wins through the given round', () => {
+  assert.deepEqual(scoreThrough(SCORE_ROUNDS, 4), { ct: 2, t: 1 });
+  assert.deepEqual(scoreThrough(SCORE_ROUNDS, 3), { ct: 2, t: 1 });
+  assert.deepEqual(scoreThrough(SCORE_ROUNDS, 2), { ct: 1, t: 1 });
+  assert.deepEqual(scoreThrough(SCORE_ROUNDS, 1), { ct: 1, t: 0 });
+  // Before every counted round (0, or a pre-match round's negative
+  // number): 0-0 — knife/warmup wins never reach the scoreline.
+  assert.deepEqual(scoreThrough(SCORE_ROUNDS, 0), { ct: 0, t: 0 });
+  assert.deepEqual(scoreThrough(SCORE_ROUNDS, -1), { ct: 0, t: 0 });
+});
+
+test('scoreThrough: degrades to 0-0 instead of guessing', () => {
+  assert.deepEqual(scoreThrough([], 5), { ct: 0, t: 0 });
+  assert.deepEqual(scoreThrough(null, 5), { ct: 0, t: 0 });
+  assert.deepEqual(scoreThrough(SCORE_ROUNDS, NaN), { ct: 0, t: 0 });
+  assert.deepEqual(scoreThrough(SCORE_ROUNDS, 'x'), { ct: 0, t: 0 });
+  // A numeric string coerces — a route query round param.
+  assert.deepEqual(scoreThrough(SCORE_ROUNDS, '2'), { ct: 1, t: 1 });
 });
