@@ -387,9 +387,11 @@
   // failure state (the failed StatusChip carries match.error in its
   // title), and a reprocess failure keeps any previously extracted rows
   // on screen. The row's own Reprocess/Delete buttons stopPropagation on
-  // click and work on every status; Enter on them must not navigate the
-  // row either (the keydown bubbles up to the <tr>), hence the target
-  // check in the keydown handler.
+  // click and are disabled while the row is NOT openable (parsing/queued
+  // — re-running either against a row mid-parse would race the job), with
+  // a title hint saying why; Enter on them must not navigate the row
+  // either (the keydown bubbles up to the <tr>), hence the target check
+  // in the keydown handler.
   function isOpenable(m) {
     return m.status !== 'parsing' && m.status !== 'queued';
   }
@@ -534,12 +536,14 @@
     {#if matches.length === 0 && jobs.length === 0 && !searching}
       <div class="empty">
         <p class="empty-title" role="status">No matches yet</p>
+        <!-- No Import… button here: the header already owns the one
+             import action (top-left of this view) — the copy points at
+             it instead of duplicating it. -->
         <p class="muted">
           Import a CS2 demo with the button above, or drop <span class="mono"
             >.dem</span
           > / <span class="mono">.dem.zst</span> files anywhere in this panel.
         </p>
-        <button class="btn primary" onclick={doImport}>Import…</button>
       </div>
     {:else}
       <table class="data-table">
@@ -594,12 +598,18 @@
               <td class="row-actions" onclick={(e) => e.stopPropagation()}>
                 <button
                   class="btn small"
-                  title="Re-parse the demo — from Spectra's copy when one exists"
+                  disabled={!isOpenable(m)}
+                  title={!isOpenable(m)
+                    ? 'Available once parsing finishes'
+                    : "Re-parse the demo — from Spectra's copy when one exists"}
                   onclick={(e) => onReprocess(m.id, e)}>Reprocess</button
                 >
                 <button
                   class="btn small danger"
-                  title="Delete extracted data"
+                  disabled={!isOpenable(m)}
+                  title={!isOpenable(m)
+                    ? 'Available once parsing finishes'
+                    : 'Delete extracted data'}
                   onclick={(e) => onDelete(m.id, e)}>Delete</button
                 >
               </td>
