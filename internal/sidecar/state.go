@@ -2,8 +2,9 @@ package sidecar
 
 // The sparse player-state stream — state.bin/state.idx — rides alongside
 // the position stream inside the same match directory. Player state
-// (HP, armor, active weapon, inventory, mag/reserve ammo, trigger) is a
-// step function: it changes a few times a second, so a PER-CHANGE record
+// (HP, armor, unspent money, helmet, active weapon, inventory,
+// mag/reserve ammo, trigger) is a step function: it changes a few times
+// a second, so a PER-CHANGE record
 // anchored to frame indices loses zero accuracy versus a fatter per-frame
 // payload (+8 B/player/frame would roughly double both the sidecar and
 // what the frontend fetches). Everything is SAMPLED from the parser each
@@ -12,7 +13,7 @@ package sidecar
 // reconstructed player datum is the C4 carrier (analytics.bombStateAt),
 // which this stream does not cover.
 //
-// # Raw stream layout (stateFormatVersion 1)
+// # Raw stream layout (stateFormatVersion 2)
 //
 // state.bin decompresses to a concatenation of independent zstd frames
 // (≤256 records each), each holding records:
@@ -26,14 +27,39 @@ package sidecar
 //	                              per record than deltas, measured below.
 //	slot        uint8  — the POSITIONS sidecar slot table (meta.players),
 //	                     reused verbatim; no second slot table
-//	mask        uint8  — bit per present field (values follow in bit order)
-//	  0x01 hp          uint8   0 = death (sampled, not inferred)
-//	  0x02 armor       uint8   read as-is even when dead
-//	  0x04 weapon      uint8   index into meta.weaponNames
-//	  0x08 inventory   uint8 count, then count × uint8 name index
-//	  0x10 magAmmo     uint16 LE (active weapon; Negev's 150 rounds rules
-//	  0x20 reserveAmmo   out u8)
-//	  0x40 attack      uint8 0/1 (ButtonAttack held)
+//	mask        uvarint (LEB128) — bit per present field (values follow in
+//	                     bit order). uvarint (v2 change; v1 was a single
+//	                     uint8) because the mask ran out of bits: the seven
+//	                     low bits (0x01..0x40) were all taken, money +
+//	                     helmet need bits 7 and 8, and bit 8 (0x100) does
+//	                     not fit a uint8 at all. A uvarint keeps every
+//	                     mask below 0x80 a single byte — i.e. any record
+//	                     without the new fields is byte-identical to its
+//	                     v1 encoding — while a fixed uint16 would tax
+//	                     every record +1 B. Masks ≥ 0x80 cost exactly
+//	                     1 B extra.
+//	  0x001 hp          uint8   0 = death (sampled, not inferred)
+//	  0x002 armor       uint8   read as-is even when dead
+//	  0x004 weapon      uint8   index into meta.weaponNames
+//	  0x008 inventory   uint8 count, then count × uint8 name index
+//	  0x010 magAmmo     uint16 LE (active weapon; Negev's 150 rounds rules
+//	  0x020 reserveAmmo   out u8)
+//	  0x040 attack      uint8 0/1 (ButtonAttack held)
+//	  0x080 money       uint16 LE — unspent account, 0..16000 in CS2
+//	                     (clamped to u16). Like armor: read as-is even when
+//	                     dead — the account lives on the player controller
+//	                     and round-end cash lands while players are dead,
+//	                     so it is diffed and emitted alive-or-dead.
+//	  0x100 helmet      uint8 0/1 (m_bHasHelmet, pawn item services) —
+//	                     like armor, read as-is even when dead (0/false on
+//	                     a dead pawn is the sampled value, not a guess);
+//	                     consumers gate on Alive.
+//
+// NOTE helmet deliberately rides its own bit: it CANNOT be derived from
+// inventory — armor/helmet are pawn item-service props, not equipment
+// entities, so pl.Weapons() never carries them (measured on the golden
+// demo: 22 distinct inventory names, no "Kevlar Vest"/"Kevlar + Helmet",
+// while 707,352 alive samples had helmet=true).
 //
 // A record is emitted only when a sampled field CHANGED (or on a seed),
 // so a field absent from a record keeps its previous value — piecewise
@@ -42,7 +68,14 @@ package sidecar
 // every round start, so nothing downstream ever guesses a starting value.
 // Weapon/ammo fields are only present while the sample is alive; after
 // death they are the last-known values (documented as such), while HP is
-// a fresh 0 every dead frame.
+// a fresh 0 every dead frame. Money/helmet follow the armor rule, not the
+// weapon rule: fresh as-read values on every frame, alive or dead.
+//
+// VERSION POLICY (pre-release, AGENTS.md "No versioned migrations, no
+// legacy-data fallbacks"): v1 sidecars are NOT upgraded and NOT decoded —
+// a reader seeing stateFormatVersion != 2 reports "no state stream"
+// (Go: reader.openState fail-soft; frontend: stateCapable === 2), and the
+// cards show unknown. The decoder handles ONLY the layout above.
 //
 // # Files (added to the positions layout; both streams version
 // independently — q16-v2 is untouched)
@@ -55,15 +88,17 @@ package sidecar
 //	           fail soft) + weaponNames[] (the interned name table)
 //
 // MEASURED on the golden demo (TestGoldenStateStream, 136,948 frames /
-// 23 rounds): 18,456 records — 150,286 B raw / 90,005 B zstd (~147 KB /
-// ~88 KB), against 9,102,512 B raw / 2,559,642 B zstd for the positions
-// stream — i.e. ~1.6% raw / ~3.5% zstd of the sidecar, inside the
-// 100–400 KB raw per-match estimate. Absolute frame uvarints cost
-// 53,369 B of that raw total; a frameDelta encoding would be 18,509 B —
-// the 34,860 B raw saving (less after zstd) buys nothing: absolute
-// frames keep every block and every range-filtered subsequence
-// independently decodable (see the layout above), while deltas would
-// need the baseline record a range read never fetched.
+// 23 rounds): 18,834 records — 157,686 B raw / 95,744 B zstd (~154 KB /
+// ~94 KB), against 9,102,512 B raw / 2,559,642 B zstd for the positions
+// stream — i.e. ~1.7% raw / ~3.7% zstd of the sidecar, inside the
+// 100–400 KB raw per-match estimate. (v2 money/helmet cost on that demo:
+// +378 records, +7,400 B raw over v1's 18,456 / 150,286 B — money deltas
+// from buys/kills/round-end rewards plus the extra seed bytes.) Absolute
+// frame uvarints cost 54,467 B of that raw total; a frameDelta encoding
+// would be 18,886 B — the 35,581 B raw saving (less after zstd) buys
+// nothing: absolute frames keep every block and every range-filtered
+// subsequence independently decodable (see the layout above), while
+// deltas would need the baseline record a range read never fetched.
 import (
 	"encoding/binary"
 	"errors"
@@ -82,23 +117,28 @@ const (
 	// StateFormatVersion identifies the state record layout above; bump
 	// when it changes. Matches imported before this stream carry no
 	// stateFormatVersion (and no state.bin/idx) — capability detection
-	// is the meta field, never a schema column.
-	StateFormatVersion = 1
+	// is the meta field, never a schema column. v1 (mask as uint8, no
+	// money/helmet) is retired, not upgraded: openState treats any
+	// version other than the current one as "no state stream" (pre-
+	// release no-migrations policy — see the layout doc).
+	StateFormatVersion = 2
 	// StateBlockRecords is the maximum number of records per zstd block.
 	StateBlockRecords = 256
 
-	// State field-mask bits (mask byte of every record).
-	StateHP          uint8 = 1 << 0
-	StateArmor       uint8 = 1 << 1
-	StateWeapon      uint8 = 1 << 2
-	StateInventory   uint8 = 1 << 3
-	StateMagAmmo     uint8 = 1 << 4
-	StateReserveAmmo uint8 = 1 << 5
-	StateAttack      uint8 = 1 << 6
+	// State field-mask bits (mask uvarint of every record).
+	StateHP          uint16 = 1 << 0
+	StateArmor       uint16 = 1 << 1
+	StateWeapon      uint16 = 1 << 2
+	StateInventory   uint16 = 1 << 3
+	StateMagAmmo     uint16 = 1 << 4
+	StateReserveAmmo uint16 = 1 << 5
+	StateAttack      uint16 = 1 << 6
+	StateMoney       uint16 = 1 << 7
+	StateHelmet      uint16 = 1 << 8
 	// stateFields is the mask of every defined field bit; unknown bits
 	// are corruption (forward-compatible readers must fail loudly).
 	stateFields = StateHP | StateArmor | StateWeapon | StateInventory |
-		StateMagAmmo | StateReserveAmmo | StateAttack
+		StateMagAmmo | StateReserveAmmo | StateAttack | StateMoney | StateHelmet
 )
 
 // State sidecar file names inside a match directory.
@@ -124,7 +164,7 @@ var ErrNoState = errors.New("sidecar: no state stream")
 type StateRecord struct {
 	Frame       int     // frame index (positions stream frame numbering)
 	Slot        int     // positions sidecar slot
-	Mask        uint8   // present fields
+	Mask        uint16  // present fields
 	HP          uint8   // present iff Mask&StateHP
 	Armor       uint8   // present iff Mask&StateArmor
 	Weapon      uint8   // meta.weaponNames index; present iff Mask&StateWeapon
@@ -132,10 +172,12 @@ type StateRecord struct {
 	MagAmmo     uint16  // present iff Mask&StateMagAmmo
 	ReserveAmmo uint16  // present iff Mask&StateReserveAmmo
 	Attack      bool    // present iff Mask&StateAttack
+	Money       uint16  // unspent $; present iff Mask&StateMoney
+	Helmet      bool    // present iff Mask&StateHelmet
 }
 
 // Has reports whether the record carries field (a State* bit).
-func (r StateRecord) Has(field uint8) bool { return r.Mask&field != 0 }
+func (r StateRecord) Has(field uint16) bool { return r.Mask&field != 0 }
 
 // stateSample is the clamped, comparable form of one extract.StatePlayer
 // for the current frame. inventory aliases the sample's slice until the
@@ -145,17 +187,26 @@ type stateSample struct {
 	weapon       string
 	inventory    []string
 	mag, reserve uint16
+	money        uint16
 	attack       bool
+	helmet       bool
 	alive        bool
 }
 
 // newSampleState clamps one frame's sample onto the wire widths. The
 // death rule: HP0 and no weapon/ammo fields while dead (they are only
-// emitted for alive samples — last-known semantics live here).
+// emitted for alive samples — last-known semantics live here). Money and
+// helmet deliberately do NOT follow that rule: they are as-read values
+// that persist through death (money lives on the player controller and
+// round-end cash lands while players are dead; helmet is the pawn
+// item-service flag, 0/false on a dead pawn is the sampled value), so
+// they are clamped and kept exactly like armor.
 func newSampleState(p extract.StatePlayer) stateSample {
 	s := stateSample{
 		hp:     u8Clamp(p.HP),
 		armor:  u8Clamp(p.Armor),
+		money:  u16Clamp(p.Money),
+		helmet: p.Helmet,
 		attack: p.Attack,
 		alive:  p.Alive,
 	}
@@ -188,12 +239,13 @@ func (s stateSample) clone() stateSample {
 
 // maskFor returns the field bits to emit for this sample: seed/first
 // sighting emits everything the sample carries; otherwise only changed
-// fields. Weapon/ammo/inventory diffs are suppressed while dead (the
-// sample carries no fresh values there — emitting them would overwrite
-// last-known with a guess).
-func (prev stateSlot) maskFor(s stateSample, seed bool) uint8 {
+// fields. Money/helmet diff before the death gate (they are fresh as-read
+// values while dead — see newSampleState); weapon/ammo/inventory diffs are
+// suppressed while dead (the sample carries no fresh values there —
+// emitting them would overwrite last-known with a guess).
+func (prev stateSlot) maskFor(s stateSample, seed bool) uint16 {
 	full := seed || !prev.valid
-	var m uint8
+	var m uint16
 	if full || s.hp != prev.hp {
 		m |= StateHP
 	}
@@ -202,6 +254,12 @@ func (prev stateSlot) maskFor(s stateSample, seed bool) uint8 {
 	}
 	if full || s.attack != prev.attack {
 		m |= StateAttack
+	}
+	if full || s.money != prev.money {
+		m |= StateMoney
+	}
+	if full || s.helmet != prev.helmet {
+		m |= StateHelmet
 	}
 	if !s.alive {
 		return m
@@ -351,6 +409,8 @@ func (w *Writer) AddState(seed bool, players []extract.StatePlayer) error {
 			// last-known values in the stored state so it stays
 			// byte-for-byte what a reader reconstructs (and the next
 			// alive sample diffs against them, not against zeros).
+			// Money/helmet are NOT restored — their death-frame
+			// samples are fresh as-read values (see newSampleState).
 			prev := st.last[slot]
 			next.weapon, next.inventory = prev.weapon, prev.inventory
 			next.mag, next.reserve = prev.mag, prev.reserve
@@ -395,12 +455,14 @@ func (st *stateStream) internName(name string) uint8 {
 }
 
 // appendStateRecord encodes one record (layout in the file doc); frame is
-// the absolute frame index.
-func appendStateRecord(dst []byte, frame int, slot, mask uint8, s stateSample, intern func(string) uint8) []byte {
+// the absolute frame index, mask the uvarint field bitmask.
+func appendStateRecord(dst []byte, frame int, slot uint8, mask uint16, s stateSample, intern func(string) uint8) []byte {
 	var varint [binary.MaxVarintLen64]byte
 	n := binary.PutUvarint(varint[:], uint64(frame))
 	dst = append(dst, varint[:n]...)
-	dst = append(dst, slot, mask)
+	dst = append(dst, slot)
+	n = binary.PutUvarint(varint[:], uint64(mask))
+	dst = append(dst, varint[:n]...)
 	if mask&StateHP != 0 {
 		dst = append(dst, s.hp)
 	}
@@ -424,6 +486,16 @@ func appendStateRecord(dst []byte, frame int, slot, mask uint8, s stateSample, i
 	}
 	if mask&StateAttack != 0 {
 		if s.attack {
+			dst = append(dst, 1)
+		} else {
+			dst = append(dst, 0)
+		}
+	}
+	if mask&StateMoney != 0 {
+		dst = binary.LittleEndian.AppendUint16(dst, s.money)
+	}
+	if mask&StateHelmet != 0 {
+		if s.helmet {
 			dst = append(dst, 1)
 		} else {
 			dst = append(dst, 0)
@@ -477,8 +549,8 @@ func (st *stateStream) close() error {
 	return nil
 }
 
-// decodeStateRecordAt decodes the record starting at off (frame is the
-// absolute uvarint), returning the decoded record and the byte after it.
+// decodeStateRecordAt decodes the record starting at off (frame and mask
+// are uvarints), returning the decoded record and the byte after it.
 // Shared by DecodeStateRecords and Reader.ReadStateRange (which needs the
 // byte span to filter by frame).
 func decodeStateRecordAt(b []byte, off int) (StateRecord, int, error) {
@@ -489,16 +561,21 @@ func decodeStateRecordAt(b []byte, off int) (StateRecord, int, error) {
 	}
 	off += n
 	r.Frame = int(frame)
-	if off+2 > len(b) {
+	if off+1 > len(b) {
 		return r, 0, errCorrupt("truncated state record header")
 	}
 	r.Slot = int(b[off])
-	r.Mask = b[off+1]
-	off += 2
+	off++
 	if r.Slot >= maxSlots {
 		return r, 0, errCorrupt("state slot out of range")
 	}
-	if r.Mask & ^stateFields != 0 {
+	mask, n := binary.Uvarint(b[off:])
+	if n <= 0 {
+		return r, 0, errCorrupt("bad state mask")
+	}
+	off += n
+	r.Mask = uint16(mask)
+	if uint64(r.Mask) != mask || r.Mask & ^stateFields != 0 {
 		return r, 0, errCorrupt("unknown state field bits")
 	}
 	u8 := func() (uint8, error) {
@@ -563,6 +640,21 @@ func decodeStateRecordAt(b []byte, off int) (StateRecord, int, error) {
 			return r, 0, errCorrupt("bad attack flag")
 		}
 		r.Attack = v == 1
+	}
+	if r.Has(StateMoney) {
+		if r.Money, err = u16(); err != nil {
+			return r, 0, err
+		}
+	}
+	if r.Has(StateHelmet) {
+		v, e := u8()
+		if e != nil {
+			return r, 0, e
+		}
+		if v > 1 {
+			return r, 0, errCorrupt("bad helmet flag")
+		}
+		r.Helmet = v == 1
 	}
 	return r, off, nil
 }

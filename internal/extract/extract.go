@@ -64,11 +64,18 @@ type PositionSink interface {
 // last-known weapon/ammo as documented there, while HP stays a fresh 0
 // every frame. Armor is the exception: it is read as-is even when dead (the
 // stored value is whatever the demo carries; consumers gate on Alive).
+// Money and Helmet join Armor in that as-read-while-dead group: Money lives
+// on the player controller (m_iAccount — it survives death, and round-end
+// cash lands while the player is still dead, which is exactly when a card
+// needs it) and Helmet is the pawn's item-service flag read through the
+// same entity path Armor uses (same lifetime, same sample-as-read rule).
 // SteamID is the raw SteamID64 (0 for bots).
 type StatePlayer struct {
 	SteamID     uint64
-	HP          int // 0..255, forced 0 when !Alive
-	Armor       int // 0..255 as read
+	HP          int  // 0..255, forced 0 when !Alive
+	Armor       int  // 0..255 as read (even when !Alive)
+	Money       int  // unspent account $, 0..65535 as read (even when !Alive)
+	Helmet      bool // wearing head armor, as read (even when !Alive)
 	Weapon      string
 	Inventory   []string // canonical names; nil when !Alive
 	MagAmmo     int      // active weapon magazine; 0 when !Alive
@@ -375,7 +382,8 @@ func (rs *roundSeeds) take(round int) bool {
 
 // sampleStatePlayer reads one participant's authoritative per-frame state
 // (cheap prop reads, once per frame per player — see StatePlayer). The
-// weapon/ammo fields are only read while the pawn is alive.
+// weapon/ammo fields are only read while the pawn is alive; Money/Helmet
+// are read on every frame like HP/Armor (they persist through death).
 func sampleStatePlayer(pl *common.Player) StatePlayer {
 	alive := pl.IsAlive()
 	var inventory []string
@@ -394,21 +402,27 @@ func sampleStatePlayer(pl *common.Player) StatePlayer {
 			reserve = active.AmmoReserve()
 		}
 	}
-	return buildStateSample(pl.SteamID64, alive, pl.Health(), pl.Armor(), weapon, inventory, mag, reserve, pl.IsPressingButton(common.ButtonAttack))
+	return buildStateSample(pl.SteamID64, alive, pl.Health(), pl.Armor(), pl.Money(), pl.HasHelmet(),
+		weapon, inventory, mag, reserve, pl.IsPressingButton(common.ButtonAttack))
 }
 
 // buildStateSample is the pure shaping rule the sidecar stream depends on
 // (kept separate from the parser reads so it is unit-testable): HP is
-// always stored — forced to 0 when dead — armor and the attack button are
-// stored as read, and the weapon/inventory/ammo fields only exist while
-// alive (dead pawns have no entity props to read; the stream documents the
-// last emitted value as last-known). Values are clamped onto the stored
-// wire widths here (u8 HP/armor, u16 ammo) so the writer never truncates.
-func buildStateSample(steamID uint64, alive bool, health, armor int, weapon string, inventory []string, mag, reserve int, attack bool) StatePlayer {
+// always stored — forced to 0 when dead — armor, the unspent account and
+// the helmet flag are stored as read (alive or not, deliberately: money
+// lives on the player controller and round-end cash lands while dead;
+// helmet rides the pawn's item services like armor), and the
+// weapon/inventory/ammo fields only exist while alive (dead pawns have no
+// entity props to read; the stream documents the last emitted value as
+// last-known). Values are clamped onto the stored wire widths here (u8
+// HP/armor, u16 money/ammo) so the writer never truncates.
+func buildStateSample(steamID uint64, alive bool, health, armor, money int, helmet bool, weapon string, inventory []string, mag, reserve int, attack bool) StatePlayer {
 	s := StatePlayer{
 		SteamID: steamID,
 		HP:      clampState8(health),
 		Armor:   clampState8(armor),
+		Money:   clampState16(money),
+		Helmet:  helmet,
 		Attack:  attack,
 		Alive:   alive,
 	}

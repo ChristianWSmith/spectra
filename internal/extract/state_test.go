@@ -33,14 +33,22 @@ func TestRoundSeeds(t *testing.T) {
 }
 
 // TestBuildStateSampleDeath: death is a sample — HP forced to 0 and no
-// weapon/inventory/ammo carried — while armor/attack stay as read.
+// weapon/inventory/ammo carried — while armor/attack stay as read, and
+// money/helmet stay as read too (deliberate: both persist through death —
+// money lives on the player controller, round-end cash lands while dead).
 func TestBuildStateSampleDeath(t *testing.T) {
-	dead := buildStateSample(42, false, 0, 100, "AK-47", []string{"AK-47"}, 30, 90, true)
+	dead := buildStateSample(42, false, 0, 100, 3700, true, "AK-47", []string{"AK-47"}, 30, 90, true)
 	if dead.HP != 0 {
 		t.Errorf("dead HP = %d, want 0 (sampled, not inferred)", dead.HP)
 	}
 	if dead.Armor != 100 {
 		t.Errorf("dead Armor = %d, want the as-read 100", dead.Armor)
+	}
+	if dead.Money != 3700 {
+		t.Errorf("dead Money = %d, want the as-read 3700 (account persists through death)", dead.Money)
+	}
+	if !dead.Helmet {
+		t.Error("dead Helmet = false, want the as-read true")
 	}
 	if !dead.Attack {
 		t.Error("dead Attack = false, want as-read true")
@@ -54,9 +62,12 @@ func TestBuildStateSampleDeath(t *testing.T) {
 	}
 
 	inv := []string{"AK-47", "USP-S"}
-	alive := buildStateSample(42, true, 87, 100, "AK-47", inv, 30, 90, false)
+	alive := buildStateSample(42, true, 87, 100, 4300, false, "AK-47", inv, 30, 90, false)
 	if alive.HP != 87 || alive.Weapon != "AK-47" || alive.MagAmmo != 30 || alive.ReserveAmmo != 90 {
 		t.Errorf("alive sample = %+v", alive)
+	}
+	if alive.Money != 4300 || alive.Helmet {
+		t.Errorf("alive money/helmet = %d/%v, want 4300/false", alive.Money, alive.Helmet)
 	}
 	if len(alive.Inventory) != 2 {
 		t.Fatalf("alive inventory = %v", alive.Inventory)
@@ -73,12 +84,15 @@ func TestBuildStateSampleDeath(t *testing.T) {
 // negative sentinel (AmmoInMagazine -1) and over-range values never reach
 // the writer unclamped.
 func TestBuildStateSampleClamps(t *testing.T) {
-	s := buildStateSample(1, true, 300, -5, "Negev", nil, -1, 70000, false)
+	s := buildStateSample(1, true, 300, -5, 70000, false, "Negev", nil, -1, 70000, false)
 	if s.HP != 255 {
 		t.Errorf("HP = %d, want 255", s.HP)
 	}
 	if s.Armor != 0 {
 		t.Errorf("Armor = %d, want 0", s.Armor)
+	}
+	if s.Money != 65535 {
+		t.Errorf("Money = %d, want 65535 (u16 wire clamp)", s.Money)
 	}
 	if s.MagAmmo != 0 {
 		t.Errorf("MagAmmo = %d, want 0 (-1 sentinel)", s.MagAmmo)

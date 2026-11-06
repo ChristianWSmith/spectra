@@ -8,6 +8,7 @@ import assert from 'node:assert/strict';
 
 import {
   STATE_FIELDS,
+  STATE_FORMAT_VERSION,
   parseState,
   buildStateIndex,
   stateAt,
@@ -19,19 +20,22 @@ import {
 } from './replay/state.js';
 
 // encodeRecords mirrors the Go writer (test-local encoder — the pinned
-// byte fixtures below are the real format guard).
+// byte fixtures below are the real format guard). Frame and mask are
+// uvarints (LEB128), values little-endian.
 function encodeRecords(records) {
   const out = [];
-  for (const r of records) {
-    // absolute frame uvarint (LEB128)
-    let v = r.frame;
+  const pushVarint = (v) => {
     do {
       let b = v & 0x7f;
       v = Math.floor(v / 128);
       if (v > 0) b |= 0x80;
       out.push(b);
     } while (v > 0);
-    out.push(r.slot, r.mask);
+  };
+  for (const r of records) {
+    pushVarint(r.frame); // absolute frame
+    out.push(r.slot);
+    pushVarint(r.mask);
     const push8 = (x) => out.push(x & 0xff);
     const push16 = (x) => {
       out.push(x & 0xff, (x >> 8) & 0xff);
@@ -46,24 +50,30 @@ function encodeRecords(records) {
     if (r.mask & STATE_FIELDS.MAG_AMMO) push16(r.magAmmo);
     if (r.mask & STATE_FIELDS.RESERVE_AMMO) push16(r.reserveAmmo);
     if (r.mask & STATE_FIELDS.ATTACK) push8(r.attack ? 1 : 0);
+    if (r.mask & STATE_FIELDS.MONEY) push16(r.money);
+    if (r.mask & STATE_FIELDS.HELMET) push8(r.helmet ? 1 : 0);
   }
   return new Uint8Array(out).buffer;
 }
 
 const NAMES = ['Unknown', 'AK-47', 'USP-S', 'M4A4', 'AWP', 'Glock-18', 'SSG 08', 'MP9'];
 
-test('pinned record bytes decode (format pin — a change needs stateFormatVersion 2)', () => {
+test('pinned record bytes decode (format pin — a change needs stateFormatVersion 3)', () => {
   // Record A: frame 300 (uvarint AC 02), slot 1, mask hp|armor|attack
-  // (0x43), hp 57, armor 100, attack true.
+  // (0x43, single-byte uvarint), hp 57, armor 100, attack true.
   // Record B: frame 301 (AD 02), slot 0, mask
   // weapon|inventory|mag|reserve (0x3C), weapon idx 3, inventory [3, 7],
   // mag 150 (Negev — u16, not u8), reserve 200.
+  // Record C (the v2 money/helmet case): frame 300, slot 1, mask
+  // hp|money|helmet (0x181 → two-byte uvarint 81 03), hp 57,
+  // money 16000 (u16 LE 80 3E), helmet 1.
   const bytes = new Uint8Array([
     0xac, 0x02, 0x01, 0x43, 57, 100, 1,
     0xad, 0x02, 0x00, 0x3c, 0x03, 0x02, 0x03, 0x07, 0x96, 0x00, 0xc8, 0x00,
+    0xac, 0x02, 0x01, 0x81, 0x03, 57, 0x80, 0x3e, 0x01,
   ]);
   const { records } = parseState(bytes.buffer, NAMES);
-  assert.equal(records.length, 2);
+  assert.equal(records.length, 3);
 
   assert.deepEqual(records[0], {
     frame: 300,
@@ -81,14 +91,24 @@ test('pinned record bytes decode (format pin — a change needs stateFormatVersi
   assert.equal(records[1].magAmmo, 150);
   assert.equal(records[1].reserveAmmo, 200);
   assert.equal('attack' in records[1], false, 'absent field must not materialize');
+
+  assert.deepEqual(records[2], {
+    frame: 300,
+    slot: 1,
+    mask: 0x181,
+    hp: 57,
+    money: 16000,
+    helmet: true,
+  });
 });
 
 test('round-trip through the test encoder', () => {
   const wire = [
-    { frame: 0, slot: 0, mask: 0x7f, hp: 100, armor: 100, weaponIndex: 1, inventory: [1, 2], magAmmo: 30, reserveAmmo: 90, attack: false },
+    { frame: 0, slot: 0, mask: 0x1ff, hp: 100, armor: 100, weaponIndex: 1, inventory: [1, 2], magAmmo: 30, reserveAmmo: 90, attack: false, money: 3400, helmet: true },
     { frame: 10, slot: 0, mask: STATE_FIELDS.HP, hp: 90 },
     { frame: 11, slot: 1, mask: STATE_FIELDS.ATTACK, attack: true },
     { frame: 65536, slot: 3, mask: STATE_FIELDS.MAG_AMMO | STATE_FIELDS.RESERVE_AMMO, magAmmo: 65535, reserveAmmo: 0 },
+    { frame: 65537, slot: 0, mask: STATE_FIELDS.MONEY | STATE_FIELDS.HELMET, money: 16000, helmet: false },
   ];
   // The decoder resolves interned indices to names (weapon + inventory);
   // everything else round-trips byte-identically.
@@ -97,6 +117,7 @@ test('round-trip through the test encoder', () => {
     wire[1],
     wire[2],
     wire[3],
+    wire[4],
   ];
   const { records } = parseState(encodeRecords(wire), NAMES);
   assert.deepEqual(records, expected);
@@ -105,8 +126,17 @@ test('round-trip through the test encoder', () => {
 test('malformed streams throw instead of decoding garbage', () => {
   // Truncated hp value.
   assert.throws(() => parseState(new Uint8Array([0x01, 0x00, STATE_FIELDS.HP]).buffer), /truncated record/);
-  // Unknown field bit (forward-compat must fail loudly, not skip).
-  assert.throws(() => parseState(new Uint8Array([0x01, 0x00, 0x80]).buffer), /unknown field bits/);
+  // Unknown field bit (mask 0x200, uvarint 80 04 — forward-compat must
+  // fail loudly, not skip; old bit 0x80 is the legal money field now).
+  assert.throws(() => parseState(new Uint8Array([0x01, 0x00, 0x80, 0x04]).buffer), /unknown field bits/);
+  // Truncated mask uvarint (mask byte says "more bytes follow").
+  assert.throws(() => parseState(new Uint8Array([0x01, 0x00, 0x80]).buffer), /truncated mask varint/);
+  // Truncated money value (money mask, stream ends before the u16).
+  assert.throws(() => parseState(new Uint8Array([0x01, 0x00, 0x80, 0x01]).buffer), /truncated record/);
+  // Money cut in half (first u16 byte only).
+  assert.throws(() => parseState(new Uint8Array([0x01, 0x00, 0x80, 0x01, 0x80]).buffer), /truncated record/);
+  // Helmet flag not 0/1 (helmet mask 0x100 = uvarint 80 02).
+  assert.throws(() => parseState(new Uint8Array([0x01, 0x00, 0x80, 0x02, 5]).buffer), /helmet flag/);
   // Unterminated frame varint.
   assert.throws(() => parseState(new Uint8Array(Array(12).fill(0x80)).buffer), /unterminated frame varint/);
   // Attack flag not 0/1.
@@ -131,6 +161,8 @@ test('buildStateIndex + stateAt: seeds unknown, deltas last-wins, binary search'
       { frame: 40, slot: 0, mask: STATE_FIELDS.HP, hp: 80 },
       { frame: 41, slot: 0, mask: STATE_FIELDS.ATTACK, attack: true },
       { frame: 42, slot: 0, mask: STATE_FIELDS.ATTACK, attack: false },
+      { frame: 50, slot: 0, mask: STATE_FIELDS.MONEY, money: 4200 },
+      { frame: 60, slot: 0, mask: STATE_FIELDS.HELMET, helmet: false },
     ]),
     NAMES,
   );
@@ -154,6 +186,14 @@ test('buildStateIndex + stateAt: seeds unknown, deltas last-wins, binary search'
   assert.equal(stateAt(attack, 41), true);
   assert.equal(stateAt(attack, 42), false);
 
+  // Money/helmet behave like every other series: null before their first
+  // record (unknown, never a guess), last value after it.
+  assert.equal(stateAt(index.slots[0].money, 49), null);
+  assert.equal(stateAt(index.slots[0].money, 50), 4200);
+  assert.equal(stateAt(index.slots[0].money, 1e9), 4200);
+  assert.equal(stateAt(index.slots[0].helmet, 59), null);
+  assert.equal(stateAt(index.slots[0].helmet, 60), false);
+
   // A slot with no records: everything unknown.
   assert.deepEqual(slotStateAt(index, 2, 50), {
     hp: null,
@@ -163,6 +203,8 @@ test('buildStateIndex + stateAt: seeds unknown, deltas last-wins, binary search'
     magAmmo: null,
     reserveAmmo: null,
     attack: null,
+    money: null,
+    helmet: null,
   });
   // Out-of-range slot: all null, no throw.
   assert.equal(slotStateAt(index, 99, 50).hp, null);
@@ -172,12 +214,18 @@ test('buildStateIndex + stateAt: seeds unknown, deltas last-wins, binary search'
   assert.equal(view.hp, 80);
   assert.equal(view.attack, true);
   assert.equal(view.weapon, null); // never carried a weapon record
+  assert.equal(view.money, null); // money first appears at frame 50
+  assert.equal(slotStateAt(index, 0, 55).money, 4200);
 });
 
-test('stateCapable reads stateFormatVersion from meta.json only', () => {
-  assert.equal(stateCapable({ stateFormatVersion: 1 }), true);
-  assert.equal(stateCapable({}), false); // old import
-  assert.equal(stateCapable({ stateFormatVersion: 2 }), false); // future version
+test('stateCapable reads stateFormatVersion from meta.json only (current = v2)', () => {
+  assert.equal(STATE_FORMAT_VERSION, 2);
+  assert.equal(stateCapable({ stateFormatVersion: 2 }), true);
+  assert.equal(stateCapable({}), false); // pre-stream import
+  // v1 sidecars predate money/helmet, are NOT upgraded (pre-release
+  // no-migrations policy) → they report NO capability, fail soft.
+  assert.equal(stateCapable({ stateFormatVersion: 1 }), false);
+  assert.equal(stateCapable({ stateFormatVersion: 3 }), false); // future version
   assert.equal(stateCapable(null), false);
 });
 
@@ -185,10 +233,6 @@ test('loadState fails soft: no capability → null without fetching; 404 → nul
   const realFetch = globalThis.fetch;
   try {
     let calls = 0;
-    globalThis.fetch = async () => {
-      calls++;
-      return { ok: false, status: 404 };
-    };
     // No stateFormatVersion: capability short-circuits before any fetch.
     globalThis.fetch = async () => {
       calls++;
@@ -201,19 +245,14 @@ test('loadState fails soft: no capability → null without fetching; 404 → nul
     calls = 0;
     globalThis.fetch = async (url) => {
       calls++;
-      assert.match(String(url), /\/state\?from=0&to=0$/);
-      return { ok: false, status: 404 };
-    };
-    // Bypass the meta fetch by stubbing fetchStateMeta's URL instead:
-    globalThis.fetch = async (url) => {
-      calls++;
       if (String(url).endsWith('/meta')) {
         return {
           ok: true,
           status: 200,
-          json: async () => ({ stateFormatVersion: 1, players: [111, 222], weaponNames: NAMES }),
+          json: async () => ({ stateFormatVersion: 2, players: [111, 222], weaponNames: NAMES }),
         };
       }
+      assert.match(String(url), /\/state\?from=0&to=0$/);
       return { ok: false, status: 404 };
     };
     assert.equal(await loadState(7), null);
@@ -223,19 +262,38 @@ test('loadState fails soft: no capability → null without fetching; 404 → nul
   }
 });
 
+test('loadState: a v1 sidecar reports no capability — meta only, stream never fetched', async () => {
+  const realFetch = globalThis.fetch;
+  try {
+    let calls = 0;
+    globalThis.fetch = async () => {
+      calls++;
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ stateFormatVersion: 1, players: [111, 222], weaponNames: NAMES }),
+      };
+    };
+    assert.equal(await loadState(7), null, 'v1 (pre-money/helmet) sidecar must fail soft');
+    assert.equal(calls, 1, 'never fetches the v1 stream — no dual-version decoding');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
 test('loadState happy path: fetch → decode → per-slot index', async () => {
   const realFetch = globalThis.fetch;
   try {
     const body = encodeRecords([
-      { frame: 0, slot: 0, mask: STATE_FIELDS.HP | STATE_FIELDS.WEAPON, hp: 100, weaponIndex: 1 },
-      { frame: 64, slot: 1, mask: STATE_FIELDS.HP, hp: 42 },
+      { frame: 0, slot: 0, mask: STATE_FIELDS.HP | STATE_FIELDS.WEAPON | STATE_FIELDS.MONEY, hp: 100, weaponIndex: 1, money: 3500 },
+      { frame: 64, slot: 1, mask: STATE_FIELDS.HP | STATE_FIELDS.HELMET, hp: 42, helmet: true },
     ]);
     globalThis.fetch = async (url) => {
       if (String(url).endsWith('/meta')) {
         return {
           ok: true,
           status: 200,
-          json: async () => ({ stateFormatVersion: 1, players: [111, 222], weaponNames: NAMES }),
+          json: async () => ({ stateFormatVersion: 2, players: [111, 222], weaponNames: NAMES }),
         };
       }
       return { ok: true, status: 200, arrayBuffer: async () => body };
@@ -244,10 +302,13 @@ test('loadState happy path: fetch → decode → per-slot index', async () => {
     assert.ok(index, 'capable match with a stream must load');
     assert.equal(index.slots.length, 2, 'one index per slot-table entry');
     assert.equal(index.recordCount, 2);
-    assert.equal(index.meta.stateFormatVersion, 1);
+    assert.equal(index.meta.stateFormatVersion, 2);
     assert.equal(slotStateAt(index, 0, 0).hp, 100);
     assert.equal(slotStateAt(index, 0, 0).weapon, 'AK-47');
+    assert.equal(slotStateAt(index, 0, 0).money, 3500, 'money rides the seed');
     assert.equal(slotStateAt(index, 1, 64).hp, 42);
+    assert.equal(slotStateAt(index, 1, 64).helmet, true);
+    assert.equal(slotStateAt(index, 1, 64).money, null, 'never carried → unknown, not 0');
     assert.equal(slotStateAt(index, 1, 0).hp, null, 'no seed yet at frame 0 → unknown');
   } finally {
     globalThis.fetch = realFetch;

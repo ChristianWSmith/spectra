@@ -206,6 +206,32 @@ func TestGoldenStateStream(t *testing.T) {
 		}
 	}
 
+	// ---- money/helmet sanity (the v2 fields) ----
+	var moneyRecs, helmetTrue int
+	var maxMoney uint16
+	for _, rec := range recs {
+		if rec.Has(StateMoney) {
+			moneyRecs++
+			if rec.Money > maxMoney {
+				maxMoney = rec.Money
+			}
+		}
+		if rec.Has(StateHelmet) && rec.Helmet {
+			helmetTrue++
+		}
+	}
+	if moneyRecs < 100 {
+		t.Errorf("money records = %d, want ≥100 (every buy/kill/round-end reward moves an account)",
+			moneyRecs)
+	}
+	if maxMoney == 0 || maxMoney > 16000 {
+		t.Errorf("max sampled money = %d, want 1..16000 (CS2 account cap, u16 wire)", maxMoney)
+	}
+	if helmetTrue < 100 {
+		t.Errorf("helmet=true records = %d, want ≥100 (armor+helm is the default buy)",
+			helmetTrue)
+	}
+
 	// ---- weapon_fire ↔ attackButton acceptance cross-check ----
 	ticks := make([]int, len(frames))
 	for i, fr := range frames {

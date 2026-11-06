@@ -3,12 +3,12 @@
 // state.go is the format authority; this decoder must stay byte-compatible
 // with it).
 //
-// The stream carries per-CHANGE samples of HP, armor, active weapon,
-// inventory, magazine/reserve ammo and the attack trigger, anchored to
-// position-stream frame indices. Records only contain fields that
-// CHANGED (or a round-start seed), so reads reconstruct by keeping the
-// last value at or before a frame — never zero defaults: a field with no
-// record yet is UNKNOWN (null).
+// The stream carries per-CHANGE samples of HP, armor, unspent money,
+// helmet, active weapon, inventory, magazine/reserve ammo and the attack
+// trigger, anchored to position-stream frame indices. Records only
+// contain fields that CHANGED (or a round-start seed), so reads
+// reconstruct by keeping the last value at or before a frame — never zero
+// defaults: a field with no record yet is UNKNOWN (null).
 //
 // This module is deliberately UNWIRED: Replay.svelte does not import it,
 // so opening a replay fetches nothing extra until a UI actually renders
@@ -16,30 +16,48 @@
 // `stateFormatVersion` (matches imported before the stream simply return
 // null — fail soft, never an error).
 //
+// Version policy: this decoder handles ONLY stateFormatVersion 2 (the
+// money/helmet layout below); v1 sidecars (pre-date the fields) are not
+// decoded and not upgraded — stateCapable reports false, loadState
+// returns null, cards show unknown (pre-release no-migrations policy).
+//
 // Layout per record (little-endian):
 //   uvarint  frame (absolute frame index, LEB128)
 //   uint8    slot        — the positions sidecar slot table (meta.players)
-//   uint8    mask        — bit per present field, values in bit order:
-//     0x01 hp          uint8
-//     0x02 armor       uint8
-//     0x04 weapon      uint8 index into meta.weaponNames
-//     0x08 inventory   uint8 count, then count × uint8 name index
-//     0x10 magAmmo     uint16
-//     0x20 reserveAmmo uint16
-//     0x40 attack      uint8 0/1
+//   uvarint  mask        — bit per present field, values in bit order:
+//     0x001 hp          uint8
+//     0x002 armor       uint8 (read as-is even when dead)
+//     0x004 weapon      uint8 index into meta.weaponNames
+//     0x008 inventory   uint8 count, then count × uint8 name index
+//     0x010 magAmmo     uint16
+//     0x020 reserveAmmo uint16
+//     0x040 attack      uint8 0/1
+//     0x080 money       uint16  unspent account (as-read even when dead)
+//     0x100 helmet      uint8 0/1 (as-read even when dead)
+//   mask is a uvarint (v2 change from v1's fixed uint8): masks < 0x80
+//   stay one byte (records without money/helmet are byte-identical to
+//   their v1 encoding), money/helmet masks cost one extra byte.
 
 // Field-mask bits (mirror internal/sidecar's State* constants).
 export const STATE_FIELDS = {
-  HP: 0x01,
-  ARMOR: 0x02,
-  WEAPON: 0x04,
-  INVENTORY: 0x08,
-  MAG_AMMO: 0x10,
-  RESERVE_AMMO: 0x20,
-  ATTACK: 0x40,
+  HP: 0x001,
+  ARMOR: 0x002,
+  WEAPON: 0x004,
+  INVENTORY: 0x008,
+  MAG_AMMO: 0x010,
+  RESERVE_AMMO: 0x020,
+  ATTACK: 0x040,
+  MONEY: 0x080,
+  HELMET: 0x100,
 };
 
-// The series every slot index keeps (record key → mask bit).
+// The current state-record layout version (mirror sidecar.StateFormatVersion).
+export const STATE_FORMAT_VERSION = 2;
+
+// All defined field bits — anything outside is corruption.
+const STATE_ALL_FIELDS = 0x1ff;
+
+// The series every slot index keeps (record key → mask bit), in bit order.
 const SERIES = [
   ['hp', STATE_FIELDS.HP],
   ['armor', STATE_FIELDS.ARMOR],
@@ -48,6 +66,8 @@ const SERIES = [
   ['magAmmo', STATE_FIELDS.MAG_AMMO],
   ['reserveAmmo', STATE_FIELDS.RESERVE_AMMO],
   ['attack', STATE_FIELDS.ATTACK],
+  ['money', STATE_FIELDS.MONEY],
+  ['helmet', STATE_FIELDS.HELMET],
 ];
 
 // parseState decodes an ArrayBuffer of concatenated state records.
@@ -62,22 +82,30 @@ export function parseState(buffer, weaponNames = []) {
   const bad = (why) => {
     throw new Error(`state: ${why} at byte ${off}`);
   };
-  while (off < end) {
-    // Absolute frame (LEB128) — accumulated in float-safe steps.
-    let frame = 0;
+  // LEB128 uvarint reader (frame and mask share it), accumulated in
+  // float-safe steps.
+  const varint = (what) => {
+    let v = 0;
     let shift = 0;
     for (;;) {
-      if (off >= end) bad('truncated frame varint');
+      if (off >= end) bad(`truncated ${what} varint`);
       const b = dv.getUint8(off++);
-      frame += (b & 0x7f) * 2 ** shift;
+      v += (b & 0x7f) * 2 ** shift;
       if (!(b & 0x80)) break;
       shift += 7;
-      if (shift > 56) bad('unterminated frame varint');
+      if (shift > 56) bad(`unterminated ${what} varint`);
     }
-    if (off + 2 > end) bad('truncated record header');
+    return v;
+  };
+  while (off < end) {
+    // Absolute frame (LEB128).
+    const frame = varint('frame');
+    if (off + 1 > end) bad('truncated record header');
     const slot = dv.getUint8(off++);
-    const mask = dv.getUint8(off++);
-    if (mask & ~0x7f) bad('unknown field bits');
+    const mask = varint('mask');
+    // Arithmetic (not bitwise) check: masks wider than 32 bits must not
+    // truncate into the valid field set.
+    if (mask >= STATE_ALL_FIELDS + 1) bad('unknown field bits');
     const rec = { frame, slot, mask };
 
     const u8 = () => {
@@ -112,6 +140,12 @@ export function parseState(buffer, weaponNames = []) {
       const v = u8();
       if (v > 1) bad('attack flag not 0/1');
       rec.attack = v === 1;
+    }
+    if (mask & STATE_FIELDS.MONEY) rec.money = u16();
+    if (mask & STATE_FIELDS.HELMET) {
+      const v = u8();
+      if (v > 1) bad('helmet flag not 0/1');
+      rec.helmet = v === 1;
     }
     records.push(rec);
   }
@@ -168,10 +202,13 @@ export function slotStateAt(index, slot, frame) {
   return out;
 }
 
-// stateCapable: meta.json says the match carries the stream (the meta
-// route — never a schema column, so old dev DBs stay untouched).
+// stateCapable: meta.json says the match carries the stream in the
+// CURRENT layout (the meta route — never a schema column, so old dev DBs
+// stay untouched). A v1 sidecar predates money/helmet and is not
+// upgraded (pre-release no-migrations policy): it reports no capability
+// and callers fail soft to "no state".
 export function stateCapable(meta) {
-  return !!meta && meta.stateFormatVersion === 1;
+  return !!meta && meta.stateFormatVersion === STATE_FORMAT_VERSION;
 }
 
 // fetchStateMeta reads the sidecar's meta.json (null when unreadable).

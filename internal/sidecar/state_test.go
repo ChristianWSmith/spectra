@@ -24,6 +24,8 @@ func aliveSample(id uint64, hp int) extract.StatePlayer {
 		SteamID:     id,
 		HP:          hp,
 		Armor:       100,
+		Money:       3700,
+		Helmet:      true,
 		Weapon:      "AK-47",
 		Inventory:   []string{"AK-47", "USP-S"},
 		MagAmmo:     30,
@@ -32,9 +34,11 @@ func aliveSample(id uint64, hp int) extract.StatePlayer {
 	}
 }
 
-// deadSample is the extractor's death shape: hp 0, no weapon/ammo fields.
+// deadSample is the extractor's death shape: hp 0, no weapon/ammo fields,
+// armor/helmet as-read 0/false on a dead pawn, money intact (the account
+// lives on the player controller — it survives death).
 func deadSample(id uint64) extract.StatePlayer {
-	return extract.StatePlayer{SteamID: id, HP: 0, Alive: false}
+	return extract.StatePlayer{SteamID: id, HP: 0, Money: 3700, Alive: false}
 }
 
 // stateFrameWriter drives lockstep AddFrame+AddState calls (production
@@ -101,8 +105,9 @@ func slotOfSteam(meta Meta, slot int) uint64 {
 
 // TestStateStreamExplicit pins the record-level behavior: seeds emit
 // everything, deltas carry only what changed, unchanged frames emit
-// nothing, death is a sampled hp:0 with no weapon/ammo bits, and the
-// last-known weapon/ammo survive the death for the reader.
+// nothing, death is a sampled hp:0 with no weapon/ammo bits (while
+// armor/helmet/money stay as-read), money streams even while dead, and
+// the last-known weapon/ammo survive the death for the reader.
 func TestStateStreamExplicit(t *testing.T) {
 	dir := t.TempDir()
 	fw := newFrameWriter(t, dir)
@@ -117,15 +122,22 @@ func TestStateStreamExplicit(t *testing.T) {
 	a := aliveSample(stateA, 90)
 	a.Attack = true
 	fw.step(t, false, a, aliveSample(stateB, 100))
-	// f4: B dies — sampled hp:0 (+armor as read), no weapon/ammo bits;
-	// A still holds the trigger (last-known must survive).
+	// f4: B dies — sampled hp:0 (+armor/helmet as read: 100→0, true→false),
+	// no weapon/ammo bits; money unchanged (it survives death), A still
+	// holds the trigger (last-known must survive).
 	fw.step(t, false, a, deadSample(stateB))
-	// f5: B stays dead, unchanged — no records.
-	fw.step(t, false, a, deadSample(stateB))
-	// f6: B respawns with the same loadout — only the changed HP/armor.
-	fw.step(t, false, a, aliveSample(stateB, 100))
-	// f7: A releases the trigger — attack-only record (0).
-	fw.step(t, false, aliveSample(stateA, 90), aliveSample(stateB, 100))
+	// f5: B's account grows while dead (round-end cash lands while players
+	// are still dead) — a money-only record: money is diffed alive-or-dead.
+	b5 := deadSample(stateB)
+	b5.Money = 4100
+	fw.step(t, false, a, b5)
+	// f6: B respawns with the same loadout and its money intact — only the
+	// changed HP/armor/helmet (money did NOT change 4100 → 4100).
+	b6 := aliveSample(stateB, 100)
+	b6.Money = 4100
+	fw.step(t, false, a, b6)
+	// f7: A releases the trigger — attack-only record (0); B unchanged.
+	fw.step(t, false, aliveSample(stateA, 90), b6)
 
 	if _, err := fw.w.Close(64); err != nil {
 		t.Fatalf("Close: %v", err)
@@ -150,18 +162,21 @@ func TestStateStreamExplicit(t *testing.T) {
 
 	type want struct {
 		frame, slot int
-		mask        uint8
+		mask        uint16
 		hp, armor   uint8
+		money       uint16
+		helmet      bool
 		attack      bool
 	}
 	wants := []want{
-		{0, 0, stateFields, 100, 100, false},
-		{0, 1, stateFields, 100, 100, false},
-		{1, 0, StateHP, 90, 0, false},
-		{3, 0, StateAttack, 0, 0, true},
-		{4, 1, StateHP | StateArmor, 0, 0, false},
-		{6, 1, StateHP | StateArmor, 100, 100, false},
-		{7, 0, StateAttack, 0, 0, false},
+		{0, 0, stateFields, 100, 100, 3700, true, false},
+		{0, 1, stateFields, 100, 100, 3700, true, false},
+		{1, 0, StateHP, 90, 0, 0, false, false},
+		{3, 0, StateAttack, 0, 0, 0, false, true},
+		{4, 1, StateHP | StateArmor | StateHelmet, 0, 0, 0, false, false},
+		{5, 1, StateMoney, 0, 0, 4100, false, false},
+		{6, 1, StateHP | StateArmor | StateHelmet, 100, 100, 0, true, false},
+		{7, 0, StateAttack, 0, 0, 0, false, false},
 	}
 	if len(recs) != len(wants) {
 		t.Fatalf("records = %d, want %d: %+v", len(recs), len(wants), recs)
@@ -181,19 +196,28 @@ func TestStateStreamExplicit(t *testing.T) {
 		if w.mask&StateArmor != 0 && got.Armor != w.armor {
 			t.Errorf("rec %d armor = %d, want %d", i, got.Armor, w.armor)
 		}
+		if w.mask&StateMoney != 0 && got.Money != w.money {
+			t.Errorf("rec %d money = %d, want %d", i, got.Money, w.money)
+		}
+		if w.mask&StateHelmet != 0 && got.Helmet != w.helmet {
+			t.Errorf("rec %d helmet = %v, want %v", i, got.Helmet, w.helmet)
+		}
 		if w.mask&StateAttack != 0 && got.Attack != w.attack {
 			t.Errorf("rec %d attack = %v, want %v", i, got.Attack, w.attack)
 		}
 	}
 
 	// Reconstruction (apply records in order): A ends hp 90 with the
-	// trigger released; B ends hp 100 with the last-known loadout — the
-	// death record never carried weapon/ammo bits.
+	// trigger released and $3700; B ends hp 100 with the last-known
+	// loadout (the death record never carried weapon/ammo bits), helmet
+	// back on, and the $4100 that streamed while it was dead.
 	type recon struct {
 		hp, armor    uint8
 		weapon       string
 		inv          []uint8
 		mag, reserve uint16
+		money        uint16
+		helmet       bool
 		attack       bool
 		weaponSeen   bool
 	}
@@ -225,15 +249,23 @@ func TestStateStreamExplicit(t *testing.T) {
 		if r.Has(StateAttack) {
 			dst.attack = r.Attack
 		}
+		if r.Has(StateMoney) {
+			dst.money = r.Money
+		}
+		if r.Has(StateHelmet) {
+			dst.helmet = r.Helmet
+		}
 	}
-	if ra.hp != 90 || ra.attack || ra.weapon != "AK-47" || ra.mag != 30 || ra.reserve != 90 {
-		t.Errorf("A reconstructed = %+v, want hp90/no trigger/AK-47/30/90", ra)
+	if ra.hp != 90 || ra.attack || ra.weapon != "AK-47" || ra.mag != 30 || ra.reserve != 90 ||
+		ra.money != 3700 || !ra.helmet {
+		t.Errorf("A reconstructed = %+v, want hp90/no trigger/AK-47/30/90/$3700/helmet", ra)
 	}
 	if len(ra.inv) != 2 {
 		t.Errorf("A inventory = %v, want 2 entries", ra.inv)
 	}
-	if rb.hp != 100 || rb.attack || rb.weapon != "AK-47" || !rb.weaponSeen {
-		t.Errorf("B reconstructed = %+v, want hp100/no trigger/last-known AK-47", rb)
+	if rb.hp != 100 || rb.attack || rb.weapon != "AK-47" || !rb.weaponSeen ||
+		rb.money != 4100 || !rb.helmet {
+		t.Errorf("B reconstructed = %+v, want hp100/no trigger/last-known AK-47/$4100 (streamed while dead)/helmet", rb)
 	}
 }
 
@@ -495,13 +527,15 @@ func TestStateAbsentFailsSoft(t *testing.T) {
 	}
 }
 
-// TestStateRecordPinnedBytes pins the wire format: any change to the
-// layout must be a stateFormatVersion bump, so encode/decode against
-// hard-coded bytes.
+// TestStateRecordPinnedBytes pins the wire format (stateFormatVersion 2):
+// any change to the layout must be a version bump, so encode/decode
+// against hard-coded bytes. Masks below 0x80 stay single-byte uvarints;
+// the money/helmet mask (0x181) is the two-byte case.
 func TestStateRecordPinnedBytes(t *testing.T) {
 	s := stateSample{hp: 57, armor: 100, attack: true}
 	got := appendStateRecord(nil, 300, 1, StateHP|StateArmor|StateAttack, s, func(string) uint8 { return 0 })
-	// 300 → uvarint AC 02; slot 1; mask 0x43; hp 57; armor 100; attack 1.
+	// 300 → uvarint AC 02; slot 1; mask 0x43 (uvarint, 1 B); hp 57;
+	// armor 100; attack 1.
 	want := []byte{0xAC, 0x02, 0x01, 0x43, 57, 100, 1}
 	if !bytes.Equal(got, want) {
 		t.Fatalf("record = %x, want %x", got, want)
@@ -526,25 +560,59 @@ func TestStateRecordPinnedBytes(t *testing.T) {
 	if !bytes.Equal(got2, want2) {
 		t.Fatalf("record2 = %x, want %x", got2, want2)
 	}
+
+	// Money + helmet + hp record: mask 0x01|0x80|0x100 = 0x181 →
+	// uvarint 81 03 (the first mask that needs two bytes), hp 57,
+	// money 16000 → u16 LE 80 3E, helmet 1.
+	s3 := stateSample{hp: 57, money: 16000, helmet: true}
+	got3 := appendStateRecord(nil, 300, 1, StateHP|StateMoney|StateHelmet, s3, func(string) uint8 { return 0 })
+	want3 := []byte{0xAC, 0x02, 0x01, 0x81, 0x03, 57, 0x80, 0x3E, 0x01}
+	if !bytes.Equal(got3, want3) {
+		t.Fatalf("record3 = %x, want %x", got3, want3)
+	}
+	recs3, err := DecodeStateRecords(want3)
+	if err != nil {
+		t.Fatalf("DecodeStateRecords(record3): %v", err)
+	}
+	if len(recs3) != 1 || recs3[0].Money != 16000 || !recs3[0].Helmet || recs3[0].HP != 57 {
+		t.Fatalf("decoded record3 = %+v, want hp57/$16000/helmet", recs3)
+	}
 }
 
 // TestStateCorrupt: truncated/invalid streams fail loudly with errors
 // (never partial output).
 func TestStateCorrupt(t *testing.T) {
 	// Truncated record (hp byte missing).
-	if _, err := DecodeStateRecords([]byte{0x01, 0x00, StateHP}); !errCorrupts(err) {
+	if _, err := DecodeStateRecords([]byte{0x01, 0x00, byte(StateHP)}); !errCorrupts(err) {
 		t.Errorf("truncated hp: err = %v, want corrupt", err)
 	}
-	// Unknown field bit.
-	if _, err := DecodeStateRecords([]byte{0x01, 0x00, 0x80}); !errCorrupts(err) {
+	// Unknown field bit (mask 0x200 — one past StateHelmet, uvarint
+	// 80 04); old bit 0x80 is now the legal money field.
+	if _, err := DecodeStateRecords([]byte{0x01, 0x00, 0x80, 0x04}); !errCorrupts(err) {
 		t.Errorf("unknown bit: err = %v, want corrupt", err)
+	}
+	// Mask wider than u16 (65536 — must not truncate into valid bits).
+	if _, err := DecodeStateRecords([]byte{0x01, 0x00, 0x80, 0x80, 0x04}); !errCorrupts(err) {
+		t.Errorf("mask 65536: err = %v, want corrupt", err)
+	}
+	// Truncated money bytes (money mask, stream ends before u16).
+	if _, err := DecodeStateRecords([]byte{0x01, 0x00, 0x80, 0x01}); !errCorrupts(err) {
+		t.Errorf("truncated money: err = %v, want corrupt", err)
+	}
+	// Money present but cut in half (first u16 byte only).
+	if _, err := DecodeStateRecords([]byte{0x01, 0x00, 0x80, 0x01, 0x80}); !errCorrupts(err) {
+		t.Errorf("half money: err = %v, want corrupt", err)
+	}
+	// Helmet flag not 0/1 (helmet mask 0x100 = uvarint 80 02).
+	if _, err := DecodeStateRecords([]byte{0x01, 0x00, 0x80, 0x02, 5}); !errCorrupts(err) {
+		t.Errorf("helmet=5: err = %v, want corrupt", err)
 	}
 	// Slot out of range.
 	if _, err := DecodeStateRecords([]byte{0x01, maxSlots, 0}); !errCorrupts(err) {
 		t.Errorf("slot 16: err = %v, want corrupt", err)
 	}
 	// Attack flag not 0/1.
-	if _, err := DecodeStateRecords([]byte{0x01, 0x00, StateAttack, 5}); !errCorrupts(err) {
+	if _, err := DecodeStateRecords([]byte{0x01, 0x00, byte(StateAttack), 5}); !errCorrupts(err) {
 		t.Errorf("attack=5: err = %v, want corrupt", err)
 	}
 	// Non-monotonic frames (absolute frames must ascend).
@@ -556,12 +624,13 @@ func TestStateCorrupt(t *testing.T) {
 		t.Errorf("unterminated varint: err = %v, want corrupt", err)
 	}
 	// Inventory count past the end.
-	if _, err := DecodeStateRecords([]byte{0x01, 0x00, StateInventory, 0x03, 0x01}); !errCorrupts(err) {
+	if _, err := DecodeStateRecords([]byte{0x01, 0x00, byte(StateInventory), 0x03, 0x01}); !errCorrupts(err) {
 		t.Errorf("short inventory: err = %v, want corrupt", err)
 	}
-	// A valid stream still round-trips.
-	ok, err := DecodeStateRecords([]byte{0x00, 0x00, StateHP, 42})
-	if err != nil || len(ok) != 1 || ok[0].HP != 42 {
+	// A valid stream still round-trips (incl. the new fields: mask
+	// money = uvarint 80 01, money 16000 = u16 LE 80 3E).
+	ok, err := DecodeStateRecords([]byte{0x00, 0x00, byte(StateHP), 42, 0x01, 0x00, 0x80, 0x01, 0x80, 0x3E})
+	if err != nil || len(ok) != 2 || ok[0].HP != 42 || ok[1].Money != 16000 {
 		t.Errorf("valid stream: %v, %+v", err, ok)
 	}
 }
@@ -575,7 +644,7 @@ func sameStateRecord(a, b StateRecord) bool {
 	if a.Frame != b.Frame || a.Slot != b.Slot || a.Mask != b.Mask ||
 		a.HP != b.HP || a.Armor != b.Armor || a.Weapon != b.Weapon ||
 		a.MagAmmo != b.MagAmmo || a.ReserveAmmo != b.ReserveAmmo ||
-		a.Attack != b.Attack {
+		a.Attack != b.Attack || a.Money != b.Money || a.Helmet != b.Helmet {
 		return false
 	}
 	return bytes.Equal(a.Inventory, b.Inventory)
