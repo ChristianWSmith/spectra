@@ -5,9 +5,10 @@
 // extracted icon → per-type detonation pops) → death markers (the victim's
 // team-color X, until the round ends) → bomb (pulse ring + the extracted
 // C4 icon — the dropped/planted C4 renders ABOVE the death markers, so an
-// X can never overlap it) → players (view chevron, body, player-color rim,
-// white talking bloom, flash-white overlay, muzzle line, damage flash,
-// follow ring, name) → HUD + kill feed.
+// X can never overlap it) → players (white talking bloom UNDER the dot →
+// view chevron, body, player-color rim, flash-white overlay, damage
+// flash, muzzle tracer, follow ring, carried-C4 badge, name) → HUD +
+// kill feed.
 // The camera is a pan/zoom view over the radar's image-pixel space with
 // two modes: 'smart' (the default — eased
 // fit that keeps every alive player + the active bomb on screen; see
@@ -61,18 +62,33 @@ const SMOKE_RADIUS = 144;
 // --- World-layer effect windows (all TICK-derived — seek-correct) -----------
 const FIRE_FLASH_S = 0.22; // muzzle-flash window after an attack bit edge
 const DAMAGE_FLASH_S = 0.35; // victim-hit flash window after a damage event
+// Firing TRACER (the muzzle flash): a WHITE dashed line along the aim
+// direction from r+2 to r+MUZZLE_REACH — the dashes MARCH OUTWARD with
+// the tick (lineDashOffset derived from the flash's own age), so it
+// reads as bullets leaving the dot instead of a static ray. Dash phase
+// is tick math only → scrub-safe and frozen while paused, exactly like
+// the windowAlpha envelope that fades it out.
+const MUZZLE_REACH = 20; // px past the dot center (the old ray stopped at r+14)
+const MUZZLE_DASH = [6, 5]; // px — tracer segment / gap along the aim line
+const MUZZLE_DASH_SPEED = 0.8; // px per tick — how fast the dashes travel out
 // Talking bloom (voiceBloom): a white ring expanding OUTWARD FROM THE
 // DOT'S CENTER and fading, looping while the player speaks — the
 // flashbang-detonation style, anchored at the dot. All tick-derived.
+// It is painted FIRST in drawPlayers — BENEATH the chevron, fill and
+// rim — so the dot sits on top of its own bloom.
 const VOICE_BLOOM_PERIOD_S = 0.85; // s — one bloom loop (pure tick math)
 const VOICE_BLOOM_MIN_R = 3; // px — the ring's start radius (inside the dot)
-const VOICE_BLOOM_MAX_R = 14; // px — growth past the dot edge (→ r + 14)
+const VOICE_BLOOM_MAX_R = 10; // px — growth past the dot edge (→ r + 10)
 const VOICE_BLOOM_MAX_A = 0.9; // the bloom's start alpha (fades to 0)
-const BLIND_SOLID_FRACTION = 0.25; // share of a blind's window the dot
-//                                  stays SOLID white before it fades
-//                                  back to its team color
+const BLIND_SOLID_FRACTION = 0.25; // share of a blind's window the overlay
+//                                  HOLDS at its peak before it fades
+//                                  back to the team color
+const BLIND_PEAK_ALPHA = 0.6; // the flash overlay's PEAK alpha: the dot
+//                              gets LIGHTER (the team color still shows
+//                              through) — never a solid white disc
 const DEATH_X_HALF = 7; // px — half-diagonal of a death marker
 const BOMB_ICON_PX = 12; // px — the extracted C4 icon's screen size
+const DOT_C4_ICON_PX = 10; // px — the carried-C4 badge on a player dot
 const NADE_ICON_PX = 16; // px — the extracted utility icon's screen size
 const KILL_MARKER_FALLBACK_S = 180; // s — death-X cleanup when the round's
 //                                    round_end row was never loaded
@@ -222,8 +238,9 @@ export function crossPath(cx, cy, half) {
 // `outer` screen px out from the dot's center (outer > inner; a
 // degenerate size yields no rays). Returns count [x1, y1, x2, y2]
 // segments. Pure — head-tested in src/lib/renderer.test.js; drawn by
-// drawPlayers with a windowAlpha-driven alpha, as ONE straight line
-// (count=1, spread=0 — a single ray along the aim direction).
+// drawPlayers with a windowAlpha-driven alpha as ONE straight line
+// (count=1, spread=0 — the tracer along the aim direction, r+2 →
+// r+MUZZLE_REACH, dashed by MUZZLE_DASH).
 export function muzzleRays(cx, cy, angleRad, inner, outer, count = 5, spreadRad = 0.7) {
   const n = Math.max(0, Math.floor(count));
   const out = [];
@@ -252,21 +269,24 @@ export function windowAlpha(tick, startTick, tickRate, durS) {
   return 1 - age / durS;
 }
 
-// blindAlpha — THE flash-white envelope for a blinded player's dot: 1
-// (solid white over the team color) for the first BLIND_SOLID_FRACTION
-// of the blind's `ms` window, then a linear fade back to the normal
-// color until the window closes. Pure and tick-derived exactly like
-// windowAlpha — seek-correct in both directions (scrubbing backwards
-// into the window re-renders the same overlay, nothing is sticky).
-// `tickRate <= 0`, a non-finite start or a non-positive ms → 0.
+// blindAlpha — THE flash-overlay envelope for a blinded player's dot:
+// the overlay reaches BLIND_PEAK_ALPHA (0.6 — the dot gets LIGHTER, the
+// team color still reads through, never a solid white disc) and HOLDS
+// there for the first BLIND_SOLID_FRACTION of the blind's `ms` window,
+// then fades linearly back to the normal color until the window closes.
+// Pure and tick-derived exactly like windowAlpha — seek-correct in both
+// directions (scrubbing backwards into the window re-renders the same
+// overlay, nothing is sticky). Returns an alpha in
+// [0, BLIND_PEAK_ALPHA]; `tickRate <= 0`, a non-finite start or a
+// non-positive ms → 0.
 export function blindAlpha(tick, startTick, tickRate, ms) {
   if (!Number.isFinite(tick) || !Number.isFinite(startTick)) return 0;
   if (!(tickRate > 0) || !(ms > 0)) return 0;
   const ageMs = ((tick - startTick) / tickRate) * 1000;
   if (ageMs < 0 || ageMs >= ms) return 0;
   const k = ageMs / ms;
-  if (k <= BLIND_SOLID_FRACTION) return 1;
-  return 1 - (k - BLIND_SOLID_FRACTION) / (1 - BLIND_SOLID_FRACTION);
+  if (k <= BLIND_SOLID_FRACTION) return BLIND_PEAK_ALPHA;
+  return BLIND_PEAK_ALPHA * (1 - (k - BLIND_SOLID_FRACTION) / (1 - BLIND_SOLID_FRACTION));
 }
 
 // voiceBloom — THE talking indicator: a WHITE bloom expanding outward
@@ -280,7 +300,8 @@ export function blindAlpha(tick, startTick, tickRate, ms) {
 // VOICE_BLOOM_MIN_R → dotR + VOICE_BLOOM_MAX_R, alpha fading
 // VOICE_BLOOM_MAX_A → 0 — or null on bad input (a broken clock never
 // draws). Pure — head-tested in src/lib/renderer.test.js; drawn by
-// drawPlayers while voiceSpeaking says this slot talks.
+// drawPlayers BENEATH the dot (it paints the bloom first, before the
+// chevron/fill/rim — the dot sits on top of its bloom).
 export function voiceBloom(tick, tickRate, dotR) {
   if (!Number.isFinite(tick) || !(tickRate > 0)) return null;
   if (!Number.isFinite(dotR) || !(dotR > 0)) return null;
@@ -915,6 +936,20 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     return sideFromFlags(store.slots[slot].flags[f], slotSides[slot]);
   }
 
+  // throwerSideAt — the util-flight tint source: the THROWER's side at
+  // the throw tick, resolved through the SAME machinery the death X and
+  // the kill feed use (slotOfSteam → sideAtFrame at the row's tick).
+  // Returns '' when the attacker is missing, unresolvable or the tick is
+  // unusable — the caller then keeps the neutral trail color; a side is
+  // NEVER guessed for a thrower we cannot place. Pure.
+  function throwerSideAt(steamId, tick) {
+    if (!steamId || !Number.isFinite(tick)) return '';
+    const slot = slotOfSteam.get(String(steamId));
+    if (slot == null || slot >= store.slots.length) return '';
+    const frame = engine.frameForTick(Math.max(engine.firstTick, tick));
+    return sideAtFrame(slot, frame);
+  }
+
   function drawTrails(frame) {
     const n = store.frames;
     const from = Math.max(0, frame - TRAIL_FRAMES);
@@ -961,9 +996,10 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // drawGrenades — the utility layer: lingering smoke/fire areas first,
   // then each grenade's flight (the extracted icon interpolated linearly
   // between the pair's ticks — progress is pure tick math, so a scrub
-  // lands on the right spot), then ONE distinct detonation visual per
-  // type (detonationStyleOf): HE expanding ring, flash white pop, smoke
-  // bloom, fire ring, decoy pulse.
+  // lands on the right spot; the line and the icon carry the THROWER's
+  // team color, see throwerSideAt), then ONE distinct detonation visual
+  // per type (detonationStyleOf): HE expanding ring, flash white pop,
+  // smoke bloom, fire ring, decoy pulse.
   function drawGrenades(tick) {
     const tr = engine.tickRate;
     // smoke / fire areas first (under the lines)
@@ -1001,6 +1037,12 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     // throw→detonate: the grenade's flight, visible while it is "in the
     // air" (from throw tick to detonation tick). Progress = pure tick
     // interpolation; equal/unknown pair ticks keep the origin dot only.
+    // The trail (and the icon riding it) is tinted by the THROWER's side
+    // at the throw tick (throwerSideAt — slotOfSteam + sideAtFrame, the
+    // canonical rule): CT blue / T orange, and the NEUTRAL orange line
+    // with the untinted icon when the thrower cannot be resolved — a
+    // side is never guessed. Lingering smoke/fire areas and detonation
+    // rings stay type-colored (drawn above).
     for (const pl of polylines) {
       if (!hasPos(pl.from)) continue;
       if (tick < pl.from.tick) continue;
@@ -1014,7 +1056,10 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
         pl.to.tick > pl.from.tick;
       if (flight) {
         const b = worldToScreen(pl.to.x, pl.to.y);
-        ctx.strokeStyle = 'rgba(251, 172, 24, 0.4)';
+        const side = throwerSideAt(pl.from.steamId, pl.from.tick);
+        const team = side === 'ct' || side === 't' ? teamColor(side) : null;
+        ctx.strokeStyle = team || 'rgba(251, 172, 24, 0.4)';
+        if (team) ctx.globalAlpha = 0.55; // same subtlety as the movement trails
         ctx.lineWidth = 1.5;
         ctx.setLineDash([4, 4]);
         ctx.beginPath();
@@ -1022,6 +1067,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
         ctx.lineTo(b.x, b.y);
         ctx.stroke();
         ctx.setLineDash([]);
+        if (team) ctx.globalAlpha = 1;
         const p = Math.max(0, Math.min(1, (tick - pl.from.tick) / (pl.to.tick - pl.from.tick)));
         const img = iconFor(pl.from.weapon) || iconFor(pl.to.weapon);
         let drawn = false;
@@ -1030,7 +1076,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
             pl.from.x + (pl.to.x - pl.from.x) * p,
             pl.from.y + (pl.to.y - pl.from.y) * p,
           );
-          drawn = drawIcon(img, c.x, c.y, NADE_ICON_PX);
+          drawn = drawIcon(img, c.x, c.y, NADE_ICON_PX, team);
         }
         if (!drawn) {
           // no icon for this weapon — today's vector drawing (the orange
@@ -1202,6 +1248,33 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     ctx.font = 'bold 10px ui-monospace, monospace';
     ctx.textAlign = 'center';
     ctx.fillText('C4', c.x, c.y + 3);
+  }
+
+  // drawCarrierBadge — the carried-C4 marker on a player's DOT: the
+  // small white C4 image (same 'C4' lookup + text fallback as
+  // drawBombIcon) anchored by its TOP-RIGHT corner at the dot bounding
+  // box's top-right + 1 px — (c.x + r + 1, c.y − r − 1) — and growing
+  // left/down from there, ~10 px, so it hugs the dot's shoulder outside
+  // the circle. Purely presentational: the CALLER decides from the state
+  // stream's inventory whether this slot carries the bomb (drawPlayers),
+  // which is also why a dropped/planted bomb — nobody's inventory has
+  // 'C4' — shows no badge while drawBomb renders the world bomb.
+  function drawCarrierBadge(c, r) {
+    const size = DOT_C4_ICON_PX;
+    const right = c.x + r + 1;
+    const top = c.y - r - 1;
+    const src = iconFor('C4');
+    if (src) {
+      const w = size * iconAspect(src);
+      // drawIcon centers on (cx, cy) — derive the center from the anchor
+      if (drawIcon(src, right - w / 2, top + size / 2, size, '#ffffff')) return;
+    }
+    // no image (or no tintable canvas) → a tiny 'C4' label in the same
+    // box, exactly drawBombIcon's fallback convention.
+    ctx.fillStyle = '#fbac18';
+    ctx.font = 'bold 8px ui-monospace, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('C4', right - size / 2, top + 8);
   }
 
   function drawBomb(tick, now) {
@@ -1384,6 +1457,34 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       const r = 9;
       const angle = (-tmp.yaw) * Math.PI / 180; // engine yaw → screen
 
+      // 26 — talking BLOOM: a WHITE ring expanding OUTWARD FROM THE
+      // DOT'S CENTER and fading, looping as long as this slot speaks —
+      // the flashbang detonation style anchored at (c.x, c.y), plus a
+      // small fading white core. Pure tick math (voiceBloom), so a scrub
+      // re-renders the same phase and nothing is sticky; drawn ONLY
+      // while voiceSpeaking says this slot talks. This is the FIRST
+      // thing painted for the slot: the bloom sits BENEATH the dot —
+      // the chevron, fill, rim and every overlay draw on top of it, so
+      // only the part outside the dot's edge (up to r + 10) reads as a
+      // halo blooming from behind the dot.
+      if (voiceSpeaking && voiceSpeaking(slot, tick)) {
+        const bloom = voiceBloom(tick, tr, r);
+        if (bloom) {
+          ctx.strokeStyle = '#ffffff';
+          ctx.globalAlpha = bloom.alpha;
+          ctx.lineWidth = 2.5 * (1 - bloom.k) + 1; // shrinks as it expands
+          ctx.beginPath();
+          ctx.arc(c.x, c.y, bloom.radius, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.fillStyle = '#ffffff';
+          ctx.globalAlpha = 0.7 * (1 - bloom.k);
+          ctx.beginPath();
+          ctx.arc(c.x, c.y, 3 * (1 - bloom.k) + 1, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.globalAlpha = 1;
+        }
+      }
+
       // 27 — view CHEVRON: an open ">" of two arms meeting at the apex
       // pointing along the look direction (no shaft), CENTERED on the
       // dot. Sized at r · 1.8 so the arm ends sit just outside the dot
@@ -1412,10 +1513,13 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       ctx.beginPath();
       ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
       ctx.fill();
-      // Flash-white: while a blind window is open the dot turns WHITE —
-      // solid for the first quarter of the window, then a linear fade
-      // back to the team color (blindAlpha — a pure function of tick, so
-      // scrubbing backwards re-renders it and nothing is sticky).
+      // Flash overlay: while a blind window is open a WHITE layer lifts
+      // the dot toward white — PEAK alpha 0.6 (BLIND_PEAK_ALPHA: the
+      // team color still reads through, the dot gets lighter rather
+      // than turning solid), held for the first quarter of the window,
+      // then a linear fade back to the team color (blindAlpha — a pure
+      // function of tick, so scrubbing backwards re-renders it and
+      // nothing is sticky).
       const blindsFor = blinds[slot];
       if (blindsFor) {
         let flash = 0;
@@ -1461,15 +1565,22 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
         }
       }
 
-      // 24 — muzzle burst: ONE straight line along the look direction
-      // (r+2 → r+14, slightly longer than the old fan), alpha decaying
-      // over the tick window armed by stepFiring (frozen at a constant
-      // age while paused — it never flickers on its own).
+      // 24 — firing TRACER: a WHITE dashed line along the look
+      // direction (r+2 → r+20 — longer than the old r+14 ray) whose
+      // dashes MARCH OUTWARD with the tick (lineDashOffset from the
+      // flash's own age — pure tick math, so a scrub re-renders the same
+      // phase and a paused draw freezes), reading as bullets leaving the
+      // dot instead of a static ray. Alpha decays over the tick window
+      // armed by stepFiring (frozen at a constant age while paused — it
+      // never flickers on its own); the dark underlay shares the dash so
+      // the tracer stays legible on the light theme too.
       const fire = windowAlpha(tick, fireAt[slot], tr, FIRE_FLASH_S);
       if (fire > 0) {
-        const rays = muzzleRays(c.x, c.y, angle, r + 2, r + 14, 1, 0);
+        const rays = muzzleRays(c.x, c.y, angle, r + 2, r + MUZZLE_REACH, 1, 0);
         if (rays.length) {
           ctx.globalAlpha = fire;
+          ctx.setLineDash(MUZZLE_DASH);
+          ctx.lineDashOffset = -(tick - fireAt[slot]) * MUZZLE_DASH_SPEED;
           ctx.strokeStyle = 'rgba(0,0,0,0.45)';
           ctx.lineWidth = 4;
           ctx.beginPath();
@@ -1478,7 +1589,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
             ctx.lineTo(x2, y2);
           }
           ctx.stroke();
-          ctx.strokeStyle = '#ffd982';
+          ctx.strokeStyle = '#ffffff';
           ctx.lineWidth = 2;
           ctx.beginPath();
           for (const [x1, y1, x2, y2] of rays) {
@@ -1486,33 +1597,8 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
             ctx.lineTo(x2, y2);
           }
           ctx.stroke();
-          ctx.globalAlpha = 1;
-        }
-      }
-
-      // 26 — talking BLOOM: a WHITE ring expanding OUTWARD FROM THE
-      // DOT'S CENTER and fading, looping as long as this slot speaks —
-      // the flashbang detonation style anchored at (c.x, c.y), plus a
-      // small fading white core over the fill. Pure tick math
-      // (voiceBloom), so a scrub re-renders the same phase and nothing
-      // is sticky; drawn ONLY while voiceSpeaking says this slot talks.
-      // It is an OVERLAY, not a blocker: the ring starts inside the dot,
-      // the core never exceeds it, and the fill + rim + chevron are
-      // already painted underneath.
-      if (voiceSpeaking && voiceSpeaking(slot, tick)) {
-        const bloom = voiceBloom(tick, tr, r);
-        if (bloom) {
-          ctx.strokeStyle = '#ffffff';
-          ctx.globalAlpha = bloom.alpha;
-          ctx.lineWidth = 2.5 * (1 - bloom.k) + 1; // shrinks as it expands
-          ctx.beginPath();
-          ctx.arc(c.x, c.y, bloom.radius, 0, Math.PI * 2);
-          ctx.stroke();
-          ctx.fillStyle = '#ffffff';
-          ctx.globalAlpha = 0.7 * (1 - bloom.k);
-          ctx.beginPath();
-          ctx.arc(c.x, c.y, 4 * (1 - bloom.k) + 1.5, 0, Math.PI * 2);
-          ctx.fill();
+          ctx.setLineDash([]);
+          ctx.lineDashOffset = 0;
           ctx.globalAlpha = 1;
         }
       }
@@ -1525,6 +1611,19 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
         ctx.arc(c.x, c.y, r + 5, 0, Math.PI * 2);
         ctx.stroke();
       }
+
+      // 30 — carried-C4 BADGE: this slot's INVENTORY at the playhead
+      // (state.js slotStateAt — the same per-slot series the attack
+      // edge reads) still lists 'C4', so this is the bomb carrier: a
+      // small white C4 at the dot's top-right, readable without opening
+      // the player card. Dead players never reach here (drawPlayers
+      // skips them) and a dropped/planted bomb leaves every inventory,
+      // so the badge clears itself; drawBomb owns the world bomb.
+      if (stateIndex) {
+        const inv = slotStateAt(stateIndex, slot, st.frame).inventory;
+        if (Array.isArray(inv) && inv.includes('C4')) drawCarrierBadge(c, r);
+      }
+
       // name label
       const name = slotNames[slot] || `#${slot}`;
       ctx.font = '11px system-ui, sans-serif';
