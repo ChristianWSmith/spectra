@@ -1193,7 +1193,7 @@
                   cls={playerRoundCls(firstBlood.number, firstBlood.deathSteam, firstBlood.death)}
                   title="Open {firstBlood.death} profile"
                 />
-                (R{firstBlood.number})
+                ({firstBlood.number >= 1 ? `R${firstBlood.number}` : roundIndexLabel(firstBlood.number)})
               </dd>
             </div>
           {/if}

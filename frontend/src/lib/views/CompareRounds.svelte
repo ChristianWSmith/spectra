@@ -20,7 +20,7 @@
   } from '../services.js';
   import { fmtDuration, fmtInt, fmtTickSeconds, fmtMs } from '../fmt.js';
   import { replayHash } from '../nav.js';
-  import { roundStartTick } from '../rounds.js';
+  import { roundStartTick, roundIndexLabel } from '../rounds.js';
   import { buildHash } from '../router.js';
   import { normalizeEvent } from '../replay/landmarks.js';
   import { playerSideClassAt } from '../teams.js';
@@ -195,7 +195,7 @@
       {#each cols as col (col.round)}
         <section class="cmp-col">
           <h3>
-            Round {col.round}
+            Round {roundIndexLabel(col.detail ? col.detail.round : col.round)}
             {#if col.detail}
               <span class="chip side {col.detail.round.winner || 'none'}">
                 {col.detail.round.winner ? col.detail.round.winner.toUpperCase() : '—'}

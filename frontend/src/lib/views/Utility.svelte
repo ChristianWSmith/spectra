@@ -8,6 +8,7 @@
     errText,
   } from '../services.js';
   import { fmtMs, roundClock } from '../fmt.js';
+  import { roundIndexLabel } from '../rounds.js';
   import { replayHash } from '../nav.js';
   import { roundsByNumber } from '../replay/landmarks.js';
   import { playerSideClassAt, teamNames, teamStartClass } from '../teams.js';
@@ -253,7 +254,7 @@
                 width={bw}
                 height={(p.ct / damageBars.max) * (barH - 4)}
               >
-                <title>Round {p.round} — {names.ct} {p.ct} damage</title>
+                <title>Round {roundIndexLabel(rbn.get(p.round) ?? p.round)} — {names.ct} {p.ct} damage</title>
               </rect>
               <rect
                 class="util-bar {clsT}"
@@ -262,7 +263,7 @@
                 width={bw}
                 height={(p.t / damageBars.max) * (barH - 4)}
               >
-                <title>Round {p.round} — {names.t} {p.t} damage</title>
+                <title>Round {roundIndexLabel(rbn.get(p.round) ?? p.round)} — {names.t} {p.t} damage</title>
               </rect>
             {/each}
           </svg>
@@ -326,7 +327,7 @@
               aria-expanded={!closed[round]}
               onclick={() => toggleRound(round)}
             >
-              <span class="util-group-title">Round {round}</span>
+              <span class="util-group-title">Round {roundIndexLabel(rbn.get(round) ?? round)}</span>
               <span class="chip round-chip">{list.length}</span>
               <span class="muted mono">{names.ct} {ctDmg} · {names.t} {tDmg} dmg</span>
               <span class="spacer"></span>
@@ -346,7 +347,7 @@
                     />
                     <span
                       class="mono muted util-tick"
-                      title="tick {r.tick} — time into round {r.round}"
+                      title="tick {r.tick} — time into round {roundIndexLabel(rbn.get(r.round) ?? r.round)}"
                       >{roundClock(r.tick, rbn.get(r.round), tickRate)}</span
                     >
                     <span class="util-num" title="damage dealt"

@@ -102,7 +102,7 @@
     {:else if row.victimName || row.victim}
       {@render person(row.victim, row.victimName || row.victim)}
     {:else if row.kind === 'round_end' || row.kind === 'round_start'}
-      Round {row.round}
+      Round {roundIndexLabel(roundRow ?? row.round)}
     {:else if row.site}
       {row.kind} · site {row.site}
     {:else}
@@ -141,13 +141,13 @@
            the time cell via lib/fmt.js roundClock — event tick − its
            round's start tick (unknown round → match-relative fallback).
            The raw tick stays in the tooltip. -->
-      <span class="chip round-chip lm-round" title="Round {row.round}">{roundIndexLabel(roundRow ?? row.round)}</span>
+      <span class="chip round-chip lm-round" title="Round {roundIndexLabel(roundRow ?? row.round)}">{roundIndexLabel(roundRow ?? row.round)}</span>
       <span class="mono lm-time" title="tick {row.tick}">{roundClock(row.tick, roundRow, tickRate)}</span>
     {:else}
       <!-- Legacy cell (CompareRounds' compact sequence — no round
            lookup passed): tick + raw round chip, unchanged. -->
       <span class="mono lm-tick">{row.tick}</span>
-      <span class="chip round-chip">R{row.round}</span>
+      <span class="chip round-chip">{row.round >= 1 ? `R${row.round}` : roundIndexLabel(row.round)}</span>
     {/if}
     <span class="chip kind lm-cat" class:lm-cat-generic={row.source !== 'event'} title={cat?.label}>{cat?.short || cat?.label || row.category}</span>
     <span class="lm-text">{@render primaryText()}</span>

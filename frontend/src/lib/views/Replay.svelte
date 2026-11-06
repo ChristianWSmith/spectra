@@ -2097,7 +2097,7 @@
               <span class="mono">#{selected.seq}</span>
             {/if}
             <span class="mono muted">tick {selected.tick}</span>
-            <span class="chip round-chip">R{selected.round}</span>
+            <span class="chip round-chip">{selected.round >= 1 ? `R${selected.round}` : roundIndexLabel(rbn.get(selected.round) ?? selected.round)}</span>
             <div class="spacer"></div>
             {#if voicePresence && voicePresence.hasVoice}
               <button
@@ -2198,7 +2198,7 @@
               </div>
               <div>
                 <dt>Round</dt>
-                <dd class="num">{selected.round}</dd>
+                <dd class="num">{roundIndexLabel(rbn.get(selected.round) ?? selected.round)}</dd>
               </div>
               {#if selected.who}
                 <div>
