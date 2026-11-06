@@ -8,7 +8,7 @@
 // X can never overlap it) → players (white talking bloom UNDER the dot →
 // view chevron, body, player-color rim, flash-white overlay, damage
 // flash, muzzle tracer, follow ring, carried-C4 badge, name) → HUD +
-// kill feed.
+// kill feed (top-right) + in-game chat (bottom-left).
 // The camera is a pan/zoom view over the radar's image-pixel space with
 // two modes: 'smart' (the default — eased
 // fit that keeps every alive player + the active bomb on screen; see
@@ -28,6 +28,10 @@ import { bombEndTick, bombEvidenceAt, hasBombPos } from './bomb.js';
 const CT_COLOR = '#5aa9e6';
 const T_COLOR = '#e6a35a';
 const OTHER_COLOR = '#9aa4b5';
+// SECONDARY_TEXT — the canvas's neutral secondary-text tone: every HUD
+// line after the first (hudBox), the kill feed's arrow fallback and the
+// chat's message text all draw it — one spelling for the same color.
+const SECONDARY_TEXT = '#8b94a7';
 const TRAIL_FRAMES = 192; // ~3 s at 64 Hz
 // Trail continuity: a trail segment is only drawn between two ADJACENT
 // frames that are continuous — a bounded tick gap AND a bounded step.
@@ -99,7 +103,8 @@ const KILL_FEED_MAX = 6; // entries shown, newest on top
 const KILL_FEED_LH = 18; // px per entry line (the box's HEIGHT)
 const KILL_FEED_PITCH = 22; // px between entry TOPS: the 18 px box + a
 //                            4 px gap — entries must not stack touching
-const KILL_FEED_EDGE = 8; // px from the stage's top/right edge
+const KILL_FEED_EDGE = 8; // px from the stage's edge: top/right for the
+//                          feed, bottom/left for the chat (drawChat)
 const KILL_FEED_INSET = 6; // px of padding inside an entry
 const KILL_FEED_GAP = 12; // px of breathing room between a name and the
 //                        weapon mark (image or →) on EACH side — 8 px
@@ -107,6 +112,17 @@ const KILL_FEED_GAP = 12; // px of breathing room between a name and the
 //                        the mark got its own beat on both sides
 const KILL_FEED_ICON = 14; // px — the weapon image's size on a line
 const KILL_FEED_R = 4; // px — entry corner radius (hudBox uses 6)
+// --- Chat (drawChat — the bottom-left overlay) --------------------------------
+// The chat REUSES the kill feed's entry geometry (KILL_FEED_MAX/LH/
+// PITCH/EDGE/INSET/R): it must look exactly like the feed — same box
+// height, pitch, inset, corner radius, dark fill and hairline border —
+// only the anchoring differs (the stage's BOTTOM-left corner, the
+// NEWEST message at the bottom, growing upward).
+const CHAT_MAX = KILL_FEED_MAX; // visible messages — one stack cap for both entry overlays
+// message text draws SECONDARY_TEXT (the HUD's neutral secondary tone —
+// the kill feed's fallback arrow already uses it on this same background)
+const CHAT_MAX_W = 0.4; // share of cssW one entry may span before the
+//                        message text is cut with an ellipsis
 
 function teamColor(side) {
   if (side === 'ct') return CT_COLOR;
@@ -487,6 +503,12 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // setBlinds, rendered as a pure function of tick (drawPlayers' white
   // overlay via blindAlpha), so any scrub is correct.
   let blinds = [];
+  // In-game text chat (setChat): the RAW ChatRow rows ({tick, round,
+  // steamId, name, text} — MatchService.GetChat with round -1 = all
+  // rounds), stored verbatim like `blinds` (pure data, redraw on set):
+  // drawChat scopes them to the round containing the playhead and
+  // resolves each speaker's side itself at the message tick.
+  let chats = [];
   // steamId → slot, from the sidecar slot table (meta.players, slot
   // order) — resolves a kill/damage row's victim to the dot it marks.
   const slotOfSteam = new Map();
@@ -778,6 +800,17 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       if (!Number.isInteger(b.slot) || b.slot < 0) continue;
       (blinds[b.slot] || (blinds[b.slot] = [])).push({ tick: b.tick, ms: b.ms });
     }
+    draw();
+  }
+
+  // setChat(rows): the in-game chat input — raw ChatRow rows (the view
+  // fetched ALL rounds with round -1; the renderer scopes them to the
+  // round containing the playhead, the same clearing/scrub rule the kill
+  // feed uses). Pure data like setBlinds/setLandmarks: stored verbatim —
+  // no side, no normalization, no filtering happens here (drawChat
+  // resolves each speaker's side at the message tick) — and redraws.
+  function setChat(rows) {
+    chats = rows || [];
     draw();
   }
 
@@ -1703,10 +1736,13 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   //                  clock line centers as a block. The stage's top
   //                  corners belong to the overlays, so the readout no
   //                  longer dodges a back button;
-  //   bottom-left  — the playback readout (speed×, follow, loop,
-  //                  packNote), 8px off the BOTTOM-left corner so it can
-  //                  never fight the top-center box or the top-right
-  //                  kill feed (drawKillFeed).
+  //   bottom-left  — the playback readout (follow, loop, packNote — the
+  //                  speed× line is gone: the toolbar select owns speed),
+  //                  8px off the BOTTOM-left corner, stacked directly
+  //                  ABOVE the in-game chat (drawChat) when the round has
+  //                  chat lines — never overlapping it, never fighting
+  //                  the top-center box or the top-right kill feed
+  //                  (drawKillFeed).
   // setHud payload (view-supplied, plain data): {
   //   score: {ct, t} | null,          // cumulative counted wins at the
   //                                   // playhead (lib/rounds.js scoreThrough)
@@ -1721,9 +1757,10 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   //   } | null,
   //   tickRate: number | undefined
   // }
-  // Before the first setHud call the renderer draws the playback box
-  // alone (no score line) — the other createRenderer callers (node
-  // tests, stubs) never supply one.
+  // Before the first setHud call the renderer draws the playback
+  // readout alone (no score line, no kill feed, no chat — those three
+  // need hud.round) — the other createRenderer callers (node tests,
+  // stubs) never supply one.
   let hud = null;
 
   // CS2 competitive round clock (CS2.md "Competitive round clock"):
@@ -1933,7 +1970,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     const baseFont = ctx.font;
     lines.forEach((ln, i) => {
       const y0 = y + HUD_PAD + i * HUD_LH;
-      const color = i === 0 ? '#fbac18' : '#8b94a7';
+      const color = i === 0 ? '#fbac18' : SECONDARY_TEXT;
       ctx.fillStyle = color;
       // content start: the centered box centers every line's measured
       // content (segments then step from here by their own widths); the
@@ -2021,10 +2058,14 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       }
     }
 
-    // bottom-left: the playback readout (speed / follow / loop /
-    // packNote), 8px off the corner — clear of the top-center score box
-    // and the top-right kill feed.
-    const lines = [`${st.speed}×`];
+    // bottom-left: the playback readout (follow / loop / packNote — no
+    // speed line anymore), 8px off the corner and stacked 8px ABOVE the
+    // chat stack (chatLayout — cssH when the round has no chat, which
+    // leaves the box exactly at the corner). With none of the three
+    // lines there is NO box at all: the empty readout used to be hidden
+    // behind its own speed× line, and an empty box on the corner would
+    // only cover the chat.
+    const lines = [];
     if (st.followSlot != null) {
       lines.push(`follow: ${slotNames[st.followSlot] || '#' + st.followSlot}`);
     }
@@ -2032,8 +2073,32 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       lines.push(`loop: f${st.loopFrom}–${st.loopTo}`);
     }
     if (packNote) lines.push(packNote);
-    const y = Math.max(HUD_PAD, cssH - hudBoxHeight(lines.length) - HUD_PAD);
+    if (!lines.length) return;
+    const chatTop = chatLayout().top;
+    const y = Math.max(HUD_PAD, chatTop - HUD_PAD - hudBoxHeight(lines.length));
     hudBox(lines, HUD_PAD, y);
+  }
+
+  // --- Entry boxes (the shared kill-feed / chat surface) ----------------------
+  // entryBox — the ONE entry-box painter both dark overlays share: the
+  // kill feed and the chat (drawChat) are the SAME surface (dark
+  // transparent fill, KILL_FEED_R rounded corners, 1 px hairline border
+  // in the caller's color — the killer's / speaker's team color), so
+  // the paint lives here once instead of twice. Fill and stroke run on
+  // ONE path (roundRect, plain-rect fallback), so they always share the
+  // exact outline. Returns nothing; the caller draws its text after.
+  function entryBox(x, y, w, h, border) {
+    ctx.fillStyle = 'rgba(14,17,22,0.78)';
+    ctx.strokeStyle = border;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    if (typeof ctx.roundRect === 'function') {
+      ctx.roundRect(x, y, w, h, KILL_FEED_R);
+    } else {
+      ctx.rect(x, y, w, h);
+    }
+    ctx.fill();
+    ctx.stroke();
   }
 
   // --- Kill feed -------------------------------------------------------------
@@ -2043,9 +2108,9 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // change clears the feed and a backwards scrub re-derives it (nothing
   // sticky, nothing remembered). Newest on top, capped. One line each:
   // killer name → weapon → victim name over a dark transparent box
-  // outlined in the KILLER's team color (neutral when unknown); names
-  // are tinted by their own side AT THE KILL TICK (sideAtFrame — the
-  // same rule the death markers use).
+  // (entryBox) outlined in the KILLER's team color (neutral when
+  // unknown); names are tinted by their own side AT THE KILL TICK
+  // (sideAtFrame — the same rule the death markers use).
   function drawKillFeed() {
     if (!hud || !hud.round || !Number.isFinite(hud.round.number)) return;
     const st = engine.state;
@@ -2066,7 +2131,6 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, monospace';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    ctx.lineWidth = 1;
     for (let i = 0; i < shown.length; i++) {
       const k = shown[i];
       // Side at the kill tick (frame BEFORE the kill — the victim may
@@ -2088,19 +2152,8 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       // read as separate lines instead of one touching stack
       const y = KILL_FEED_EDGE + i * KILL_FEED_PITCH;
 
-      // box: dark transparent fill + the killer's team-color hairline on
-      // ONE rounded path — roundRect mirrors hudBox's corners (plain rect
-      // fallback), so the fill and the stroke share the exact outline.
-      ctx.fillStyle = 'rgba(14,17,22,0.78)';
-      ctx.strokeStyle = teamColor(kSide);
-      ctx.beginPath();
-      if (typeof ctx.roundRect === 'function') {
-        ctx.roundRect(x, y, w, KILL_FEED_LH, KILL_FEED_R);
-      } else {
-        ctx.rect(x, y, w, KILL_FEED_LH);
-      }
-      ctx.fill();
-      ctx.stroke();
+      // box: the shared dark surface outlined in the killer's team color
+      entryBox(x, y, w, KILL_FEED_LH, teamColor(kSide));
 
       let tx = x + KILL_FEED_INSET;
       ctx.fillStyle = teamColor(kSide);
@@ -2110,12 +2163,105 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
         drawIcon(img, tx + KILL_FEED_ICON / 2, y + KILL_FEED_LH / 2, KILL_FEED_ICON);
       } else {
         // no image for this weapon — a simple arrow, never an error
-        ctx.fillStyle = '#8b94a7';
+        ctx.fillStyle = SECONDARY_TEXT;
         ctx.fillText('→', tx, y + 4);
       }
       tx += ww + KILL_FEED_GAP;
       ctx.fillStyle = teamColor(vSide);
       ctx.fillText(victim, tx, y + 4);
+    }
+    ctx.textBaseline = 'alphabetic';
+  }
+
+  // --- In-game chat (drawChat — the bottom-left overlay) ----------------------
+  // Bottom-left, canvas-drawn exactly like the kill feed (snapshots and
+  // clip recordings capture ONLY the canvas): the chat lines of the
+  // ROUND CONTAINING the playhead that have already happened —
+  // round-scoped AND tick ≤ playhead, the same clearing/scrub rule as
+  // drawKillFeed, which is also the "clear chat between rounds" rule
+  // (pure tick math: a round change empties the stack, a backwards scrub
+  // re-derives it). One entry per message over the feed's dark surface
+  // (entryBox — the SHARED painter), outlined in the SPEAKER's team
+  // color AT THE MESSAGE TICK (slotOfSteam → sideAtFrame, exactly how
+  // the feed resolves the killer; an unresolvable speaker gets the
+  // neutral outline — a side is never guessed).
+
+  // chatLayout — the chat's scope + stack geometry, the ONE rule both
+  // drawHUD (stacking the playback readout 8 px above the stack) and
+  // drawChat (painting it) step by. Rows are sorted chronologically and
+  // capped at CHAT_MAX with the OLDEST dropped, so the NEWEST message
+  // sits at the bottom-left corner (adjacent to the edge) and the stack
+  // grows upward on the feed's PITCH. Returns { rows, top } where `top`
+  // is the stack's top edge — cssH when nothing is in scope, which puts
+  // the readout at the corner (its position before the chat existed).
+  function chatLayout() {
+    if (!hud || !hud.round || !Number.isFinite(hud.round.number)) return { rows: [], top: cssH };
+    const st = engine.state;
+    const rn = hud.round.number;
+    const rows = [];
+    for (const c of chats) {
+      if (!c || c.round !== rn || !Number.isFinite(c.tick) || c.tick > st.tick) continue;
+      rows.push(c);
+    }
+    rows.sort((a, b) => a.tick - b.tick); // chronological — oldest first
+    if (rows.length > CHAT_MAX) rows.splice(0, rows.length - CHAT_MAX); // drop the oldest above
+    if (!rows.length) return { rows, top: cssH };
+    return {
+      rows,
+      top: cssH - KILL_FEED_EDGE - KILL_FEED_LH - (rows.length - 1) * KILL_FEED_PITCH,
+    };
+  }
+
+  function drawChat() {
+    const { rows, top } = chatLayout();
+    if (!rows.length) return;
+    // No position store (a caller that never fed data) → no side to
+    // resolve: every name/border degrades to the neutral color instead
+    // of throwing — sideAtFrame needs the store (same as drawKillFeed).
+    const nSlots = (store && store.slots && store.slots.length) || 0;
+
+    ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    for (let i = 0; i < rows.length; i++) {
+      const c = rows[i];
+      // The speaker's side AT THE MESSAGE TICK — no kill-frame −1 here:
+      // nothing dies on a chat line (the feed's −1 exists because the
+      // victim may already be unalived on the kill frame).
+      const frame = engine.frameForTick(Math.max(engine.firstTick, c.tick));
+      const slot = slotOfSteam.get(String(c.steamId || ''));
+      const side = slot != null && slot < nSlots ? sideAtFrame(slot, frame) : '';
+      const name = c.name || '?';
+      // `name: message` — the name in the speaker's side color (kill-
+      // feed convention), the message in SECONDARY_TEXT. A long message
+      // is cut (with an ellipsis) so one entry never spans more than
+      // CHAT_MAX_W of the stage: the stack hugs the corner either way.
+      const msg = c.text == null ? '' : String(c.text);
+      let body = msg ? `: ${msg}` : '';
+      const nameW = ctx.measureText(name).width;
+      const fits = () =>
+        KILL_FEED_INSET * 2 + nameW + ctx.measureText(body).width <= cssW * CHAT_MAX_W;
+      if (msg && !fits()) {
+        let k = msg.length;
+        do {
+          k--;
+          body = `: ${msg.slice(0, k)}…`;
+        } while (k > 0 && !fits());
+      }
+      const w = KILL_FEED_INSET * 2 + nameW + ctx.measureText(body).width;
+      const y = top + i * KILL_FEED_PITCH;
+
+      // box: the shared dark surface outlined in the speaker's color
+      entryBox(KILL_FEED_EDGE, y, w, KILL_FEED_LH, teamColor(side));
+
+      let tx = KILL_FEED_EDGE + KILL_FEED_INSET;
+      ctx.fillStyle = teamColor(side);
+      ctx.fillText(name, tx, y + 4);
+      tx += nameW;
+      if (body) {
+        ctx.fillStyle = SECONDARY_TEXT;
+        ctx.fillText(body, tx, y + 4);
+      }
     }
     ctx.textBaseline = 'alphabetic';
   }
@@ -2169,6 +2315,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     }
     drawHUD();
     drawKillFeed();
+    drawChat(); // in-game chat — the same overlay group as the kill feed
     // Arm the settle loop when smart is still short of its target — a
     // paused seek (or a mode switch) has no other redraw driver. draw()
     // is the single arming point and it checks !easeRaf, so the engine's
@@ -2188,6 +2335,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     setIcons,
     setVoices,
     setBlinds,
+    setChat,
     setStateIndex,
     setData,
     panBy,

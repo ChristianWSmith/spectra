@@ -301,6 +301,7 @@ writeFileSync(
     setPack() {},
     setLandmarks() {},
     setBlinds() {},
+    setChat() {},
     setHud() {},
     setIcons() {},
     setVoices() {},

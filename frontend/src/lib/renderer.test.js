@@ -20,9 +20,13 @@
 // CT/T names in their side colors, white score), the team-side pairing
 // rule (hudTeamNames — the ct slot holds the team on CT at the playhead),
 // the codicon freeze clock (document.fonts.check stubbed both ways), the
-// C4/0:00 clock, the tick/frame-free playback readout — plus the
+// C4/0:00 clock, the tick/frame-free playback readout (and the speed×
+// line's removal: no speed text, no empty readout box) — plus the
 // round-scoped kill feed with its rounded entry boxes, 12 px weapon-mark
-// margins and the 22 px entry pitch).
+// margins and the 22 px entry pitch, the round-scoped bottom-left chat
+// (round/round-change/scrub scoping, speaker colors, the 6-cap stack
+// newest-at-bottom, message truncation, the readout stacked above it)
+// and the ONE entry-box painter both overlays share).
 // Run: node --test src/lib/renderer.test.js (from frontend/; the lib test
 // glob src/lib/*.test.js picks it up too).
 import test from 'node:test';
@@ -463,8 +467,11 @@ test("killEndTick: a post-round_end kill (the C4 detonation) dies with the next 
 // canvas whose 2D context records stroke/fill/arc/drawImage/fillText/
 // roundRect/moveTo/lineTo/setLineDash ops together with the stroke/fill
 // style, lineCap, lineWidth, lineDash, lineDashOffset, globalAlpha, font
-// and textAlign in force.
-function recordingCanvas(cssW = 800, cssH = 600) {
+// and textAlign in force. measureText reports the FLAT 40 px by default
+// (every box-geometry assertion stays exact); pass `measure` to make it
+// length-aware — only the chat's truncation test needs real widths
+// (a flat width can never exceed any budget, so nothing would ever cut).
+function recordingCanvas(cssW = 800, cssH = 600, measure = () => 40) {
   const log = [];
   const styles = {
     strokeStyle: '',
@@ -517,7 +524,7 @@ function recordingCanvas(cssW = 800, cssH = 600) {
             args,
           });
         }
-        if (prop === 'measureText') return { width: 40 };
+        if (prop === 'measureText') return { width: measure(String(args[0] ?? '')) };
         return undefined;
       };
     },
@@ -1348,14 +1355,17 @@ test('util flight: trail + icon take the thrower team color, neutral when unknow
   r.destroy();
 });
 
-// --- HUD + kill feed over the recording context ------------------------------
+// --- HUD, kill feed and chat over the recording context -----------------------
 //
-// The HUD boxes and the kill feed live ON the canvas (snapshots and clip
-// recordings capture the canvas and nothing else), so they are pinned the
-// same way as the world layers: drive draw() and read the recorded ops.
-// measureText always reports 40px in this harness, which makes every box
-// geometry assertion exact. headlessGlobals() stubs the browser globals;
-// document.fonts is stubbed per-test to steer the codicon-clock branch.
+// The HUD boxes, the kill feed and the in-game chat live ON the canvas
+// (snapshots and clip recordings capture the canvas and nothing else),
+// so they are pinned the same way as the world layers: drive draw() and
+// read the recorded ops. measureText reports a FLAT 40px by default,
+// which makes every box geometry assertion exact; the chat's
+// truncation test passes a length-aware measure instead (a flat width
+// can never exceed a budget, so nothing would ever be cut).
+// headlessGlobals() stubs the browser globals; document.fonts is
+// stubbed per-test to steer the codicon-clock branch.
 
 const HUD_PAD = 8; // mirrors renderer.js — box padding / stage offset
 const KILL_FEED_LH = 18; // mirrors renderer.js — one entry line
@@ -1365,10 +1375,46 @@ const KILL_FEED_R = 4; // mirrors renderer.js — entry corner radius
 const CLOCK_GLYPH = String.fromCharCode(0xea82);
 const opsSince = (log, op, from = 0) => log.slice(from).filter((e) => e.op === op);
 const textsSince = (log, from = 0) => opsSince(log, 'fillText', from).map((e) => e.args[0]);
-// The kill feed's box is the ONLY fill of the un-spaced dark surface
-// (the HUD boxes use 'rgba(14, 17, 22, 0.78)' — a different string).
+// The kill feed's and the chat's boxes fill the ONE un-spaced dark
+// surface (entryBox — they share the painter by design); the HUD boxes
+// use 'rgba(14, 17, 22, 0.78)' — a different string — and hudBox's
+// radius 6 separates them from the entry overlays' radius 4.
 const feedBoxesSince = (log, from = 0) =>
   opsSince(log, 'fill', from).filter((e) => e.fillStyle === 'rgba(14,17,22,0.78)');
+// hudBoxesSince — hudBox's own boxes (radius 6): the top-center score/
+// clock box and the bottom-left readout.
+const hudBoxesSince = (log, from = 0) =>
+  opsSince(log, 'roundRect', from).filter((e) => e.args[4] === 6);
+// chatBoxesSince — the chat's entry boxes among the shared radius-4
+// boxes: the chat anchors at the BOTTOM-left, so its roundRects sit in
+// the stage's lower half (the kill feed's sit at the top).
+const chatBoxesSince = (log, from = 0) =>
+  opsSince(log, 'roundRect', from).filter((e) => e.args[4] === KILL_FEED_R && e.args[1] >= 300);
+
+// entryBoxOps — the shared painter's signature, one record per radius-4
+// entry box (kill feed AND chat): the [x, y, w] of its roundRect plus
+// the fill and stroke that follow it (entryBox runs roundRect → fill →
+// stroke on ONE path). Comparing the feed's and the chat's records is
+// how the "one canonical entry-box helper" is pinned: identical fill,
+// radius and 1 px border stroke, only the border color differs.
+function entryBoxOps(log, from = 0) {
+  const out = [];
+  for (let i = from; i < log.length; i++) {
+    const e = log[i];
+    if (e.op !== 'roundRect' || e.args[4] !== KILL_FEED_R) continue;
+    const fill = log.slice(i + 1).find((o) => o.op === 'fill');
+    const stroke = log.slice(i + 1).find((o) => o.op === 'stroke');
+    out.push({
+      x: e.args[0],
+      y: e.args[1],
+      w: e.args[2],
+      fill: fill && fill.fillStyle,
+      stroke: stroke && stroke.strokeStyle,
+      lineWidth: stroke && stroke.lineWidth,
+    });
+  }
+  return out;
+}
 
 const HUD_PLAYERS = [
   { steamId: '1', name: 'alice', side: 'ct' },
@@ -1436,7 +1482,7 @@ test('hudTeamNames: the ct slot holds the team currently on CT at the playhead',
   assert.deepEqual(hudTeamNames(null, 't', 'ct'), { ct: '', t: '' });
 });
 
-test('HUD: score-anchored line in colored segments, label-free clock, no tick/frame counter', () => {
+test('HUD: score-anchored line in colored segments, label-free clock, no tick/frame counter, no speed line', () => {
   headlessGlobals();
   const data = synthStore(1300, 2);
   const engine = createEngine(data, 64);
@@ -1485,14 +1531,24 @@ test('HUD: score-anchored line in colored segments, label-free clock, no tick/fr
   assert.ok(!texts.some((t) => String(t).includes('·')), 'the round label is gone');
   assert.ok(!texts.some((t) => String(t).startsWith('R1')), 'no round number in the HUD');
 
-  // the bottom box lost its tick/frame counter but keeps the readout
+  // the bottom box lost its tick/frame counter AND the speed× line — the
+  // toolbar select owns speed, the canvas readout never shows it
   assert.ok(!texts.some((t) => String(t).startsWith('tick ')), 'the tick counter is gone');
   assert.ok(!texts.some((t) => String(t).includes('frame ')), 'the frame counter is gone');
-  assert.ok(texts.includes('1×'), 'speed× stays');
-  // the bottom playback box is NOT centered: its widest line starts at
-  // the box's own left inset (x = HUD_PAD, content 8px in)
-  const speed = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === '1×');
-  assert.equal(speed.args[1], HUD_PAD + HUD_PAD, 'the playback readout keeps its left-aligned style');
+  assert.ok(!texts.some((t) => String(t) === '1×'), 'the speed× line is gone');
+  assert.ok(
+    !texts.some((t) => /^\d+(?:\.\d+)?×$/.test(String(t))),
+    'no speed readout at ANY speed (not just 1×)',
+  );
+  // …but the readout box itself survives on its conditional lines: this
+  // renderer never got a map pack, so reproject() set packNote — the box
+  // is NOT centered, its line starts at the box's own left inset
+  // (x = HUD_PAD, content 8px in)
+  const note = canvas.log.find(
+    (e) => e.op === 'fillText' && String(e.args[0]).startsWith('map pack missing'),
+  );
+  assert.ok(note, 'the readout keeps its conditional lines (packNote)');
+  assert.equal(note.args[1], HUD_PAD + HUD_PAD, 'the playback readout keeps its left-aligned style');
 
   // an empty team name falls back to the bare side, in the SAME colors
   r.setHud({ score: { ct: 3, t: 2 }, teamNames: { ct: '', t: '' }, round, tickRate: 64 });
@@ -1809,5 +1865,380 @@ test('kill feed: capped at 6 entries, newest on top', () => {
     'the newest kill sits on TOP',
   );
   assert.ok(!texts.includes('p1') && !texts.includes('p2'), 'the two oldest entries are dropped');
+  r.destroy();
+});
+
+// --- Readout box (speed line removed) + in-game chat -------------------------
+//
+// The bottom-left corner: the playback readout (follow/loop/packNote —
+// NO speed× line any more) and the in-game chat (drawChat) share it, so
+// these pin both the readout's draw-only-when-it-has-lines rule and the
+// chat's round/tick scoping, colors, stack order, truncation and its
+// geometry relative to the readout.
+
+test('readout box: drawn only when it has a follow/loop/packNote line (no speed line)', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: HUD_PLAYERS });
+  const round = { number: 1, label: 'R1', startTick: 0, freezeEndTick: 640, endTick: 1200, bombSite: '' };
+  // A pack WITH its radar image: reproject's happy path clears packNote,
+  // so with no follow and no loop the readout has NOTHING to say — and
+  // the speed line is gone, so there is no line to hide the emptiness.
+  r.setPack({ transform: { pos_x: 0, pos_y: 0, scale: 1 } }, { width: 64, height: 64 });
+  r.setHud({ score: { ct: 0, t: 0 }, teamNames: { ct: '', t: '' }, round, tickRate: 64 });
+  r.resize();
+
+  const texts = textsSince(canvas.log);
+  assert.ok(!texts.some((t) => String(t) === '1×'), 'no speed line');
+  assert.equal(
+    hudBoxesSince(canvas.log).length,
+    1,
+    'only the top-center box — an empty readout draws NO box',
+  );
+  assert.equal(hudBoxesSince(canvas.log)[0].args[1], HUD_PAD, '…and that one box is the top one');
+
+  // a follow line brings the readout back — at the corner (no chat)
+  engine.setFollow(0);
+  let mark = canvas.log.length;
+  r.draw();
+  let hb = hudBoxesSince(canvas.log, mark); // the top box + the readout
+  assert.equal(
+    hb.filter((b) => b.args[0] === HUD_PAD).length,
+    1,
+    'exactly ONE left-aligned readout box (the top box is centered)',
+  );
+  const readout = hb.find((b) => b.args[0] === HUD_PAD);
+  assert.equal(readout.args[1], 600 - 8 - 28, '8 px off the bottom (one line = 28 px tall)');
+  assert.equal(readout.args[3], 28, 'the box is exactly one line tall');
+  const follow = canvas.log
+    .slice(mark)
+    .find((e) => e.op === 'fillText' && String(e.args[0]).startsWith('follow:'));
+  assert.ok(follow, 'the follow line draws');
+  assert.equal(follow.args[1], HUD_PAD + HUD_PAD, "the readout's left-inset content");
+
+  // the loop line joins it → one box, two lines tall
+  engine.setLoop(0, 10);
+  engine.toggleLoop();
+  mark = canvas.log.length;
+  r.draw();
+  hb = hudBoxesSince(canvas.log, mark).filter((b) => b.args[0] === HUD_PAD);
+  assert.equal(hb.length, 1, 'still ONE readout box');
+  assert.equal(hb[0].args[1], 600 - 8 - 43, '43 px tall (2 lines), still 8 px off the bottom');
+  assert.equal(hb[0].args[3], 43, 'two lines now');
+  const tt = textsSince(canvas.log, mark);
+  assert.ok(tt.some((t) => String(t) === 'loop: f0–10'), 'the loop line joins the readout');
+  r.destroy();
+});
+
+test('chat: round-scoped to the playhead, cleared on a round change, re-derived on a backwards scrub', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: HUD_PLAYERS });
+  const round1 = { number: 1, label: 'R1', startTick: 0, freezeEndTick: 640, endTick: 1200, bombSite: '' };
+  const round2 = { number: 2, label: 'R2', startTick: 1200, freezeEndTick: 1840, endTick: 2400, bombSite: '' };
+  r.setHud({ score: null, teamNames: { ct: '', t: '' }, round: round1, tickRate: 64 });
+  r.resize();
+
+  // mid-round-1: only round-1 lines at/before the playhead — and the
+  // setter itself redraws (no explicit r.draw() here)
+  engine.seekTick(100);
+  let mark = canvas.log.length;
+  r.setChat([
+    { id: 1, tick: 50, round: 1, steamId: '1', name: 'alice', text: 'one' },
+    { id: 2, tick: 60, round: 1, steamId: '2', name: 'bob', text: 'two' },
+    { id: 3, tick: 500, round: 1, steamId: '1', name: 'alice', text: 'later' },
+    { id: 4, tick: 700, round: 2, steamId: '2', name: 'bob', text: 'other round' },
+  ]);
+  let boxes = chatBoxesSince(canvas.log, mark);
+  assert.equal(boxes.length, 2, 'round 1, tick ≤ playhead — setChat redraws on set');
+  let tt = textsSince(canvas.log, mark);
+  assert.ok(tt.includes(': one') && tt.includes(': two'), 'both past round-1 lines draw');
+  assert.ok(!tt.includes(': later'), "a line past the playhead is not shown yet");
+  assert.ok(!tt.includes(': other round'), 'another round never leaks in');
+  // chronological stack: the older line is ABOVE, the newer at the bottom
+  assert.equal(boxes[0].args[1], 552, 'the older message sits higher');
+  assert.equal(boxes[1].args[1], 574, 'the newer message is at the bottom-left corner');
+
+  // the playhead passes the third line → it appears (pure tick math)
+  engine.seekTick(600);
+  mark = canvas.log.length;
+  r.draw();
+  assert.equal(chatBoxesSince(canvas.log, mark).length, 3, 'scrubbing forward adds the new line');
+  assert.ok(textsSince(canvas.log, mark).includes(': later'), '…and it draws');
+
+  // a round change CLEARS the stack (the "clear between rounds" rule)
+  r.setHud({ score: null, teamNames: { ct: '', t: '' }, round: round2, tickRate: 64 });
+  engine.seekTick(800);
+  mark = canvas.log.length;
+  r.draw();
+  boxes = chatBoxesSince(canvas.log, mark);
+  assert.equal(boxes.length, 1, 'only the new round’s chat remains');
+  tt = textsSince(canvas.log, mark);
+  assert.ok(tt.includes(': other round'), 'the round-2 line is in scope');
+  assert.ok(!tt.includes(': one') && !tt.includes(': later'), 'round 1’s lines are gone');
+
+  // a backwards scrub re-derives round 1's chat (nothing sticky)
+  r.setHud({ score: null, teamNames: { ct: '', t: '' }, round: round1, tickRate: 64 });
+  engine.seekTick(100);
+  mark = canvas.log.length;
+  r.draw();
+  assert.equal(chatBoxesSince(canvas.log, mark).length, 2, 'scrubbing back restores the old round');
+  assert.ok(!textsSince(canvas.log, mark).includes(': other round'), '…and drops round 2 again');
+  r.destroy();
+});
+
+test('chat: speaker colors name and border at the message tick, neutral when unknown', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: HUD_PLAYERS });
+  r.setHud({
+    score: null,
+    teamNames: { ct: '', t: '' },
+    round: { number: 1, label: 'R1', startTick: 0, freezeEndTick: 640, endTick: 1200, bombSite: '' },
+    tickRate: 64,
+  });
+  r.setChat([
+    { id: 1, tick: 50, round: 1, steamId: '1', name: 'alice', text: 'gg' }, // alice = CT slot 0
+    { id: 2, tick: 60, round: 1, steamId: '2', name: 'bob', text: 'wp' }, // bob = T slot 1
+    { id: 3, tick: 70, round: 1, steamId: '999', name: 'mystery', text: 'hi' }, // no slot at all
+  ]);
+  r.resize();
+  engine.seekTick(100);
+  const mark = canvas.log.length;
+  r.draw();
+
+  const boxes = entryBoxOps(canvas.log, mark);
+  assert.equal(boxes.length, 3, 'one entry box per message');
+  assert.equal(boxes[0].stroke, '#5aa9e6', 'the CT speaker’s border is CT');
+  assert.equal(boxes[1].stroke, '#e6a35a', 'the T speaker’s border is T');
+  assert.equal(boxes[2].stroke, '#9aa4b5', 'an unresolvable speaker gets the NEUTRAL border');
+  assert.equal(boxes[2].lineWidth, 1, 'the hairline border is 1 px');
+  assert.ok(
+    boxes.every((b) => b.fill === 'rgba(14,17,22,0.78)'),
+    'every entry sits on the shared dark surface',
+  );
+
+  // names are drawn in the SAME side colors, at the box's left inset
+  const nameAt = (n, y) =>
+    canvas.log.find((e) => e.op === 'fillText' && e.args[0] === n && e.args[1] === 14 && e.args[2] === y + 4);
+  assert.equal(nameAt('alice', boxes[0].y).fillStyle, '#5aa9e6', 'CT name in CT');
+  assert.equal(nameAt('bob', boxes[1].y).fillStyle, '#e6a35a', 'T name in T');
+  assert.equal(nameAt('mystery', boxes[2].y).fillStyle, '#9aa4b5', 'unknown name neutral — never guessed');
+
+  // the message text is the HUD's secondary tone, right after the name
+  const body = canvas.log.find(
+    (e) => e.op === 'fillText' && e.args[0] === ': gg' && e.args[2] === boxes[0].y + 4,
+  );
+  assert.ok(body, 'the `: message` part draws after the name');
+  assert.equal(body.args[1], 14 + 40, 'immediately after the measured name width');
+  assert.equal(body.fillStyle, '#8b94a7', 'message text = the HUD secondary-text tone');
+  r.destroy();
+});
+
+test('chat: newest at the BOTTOM, capped at 6 with the oldest dropped above', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: HUD_PLAYERS });
+  r.setHud({
+    score: null,
+    teamNames: { ct: '', t: '' },
+    round: { number: 1, label: 'R1', startTick: 0, freezeEndTick: 640, endTick: 1200, bombSite: '' },
+    tickRate: 64,
+  });
+  r.setChat(
+    Array.from({ length: 8 }, (_, i) => ({
+      id: i + 1,
+      tick: (i + 1) * 10, // m1 oldest … m8 newest
+      round: 1,
+      steamId: '1',
+      name: 'alice',
+      text: `m${i + 1}`,
+    })),
+  );
+  r.resize();
+  engine.seekTick(100); // all 8 messages are in the past
+  const mark = canvas.log.length;
+  r.draw();
+
+  const boxes = chatBoxesSince(canvas.log, mark);
+  assert.equal(boxes.length, 6, 'the stack shows at most CHAT_MAX messages');
+  // 600 − 8 − 18 − 5·22 = 464 at the top, 574 (the corner) at the bottom
+  assert.deepEqual(
+    boxes.map((b) => b.args[1]),
+    [464, 486, 508, 530, 552, 574],
+    'entries sit on the feed’s 22 px pitch, growing up from the corner',
+  );
+  const at = (n) => textsSince(canvas.log, mark).includes(`: m${n}`);
+  const textAtY = (y) =>
+    canvas.log.find((e) => e.op === 'fillText' && e.args[2] === y + 4 && String(e.args[0]).startsWith(': '));
+  assert.equal(textAtY(574).args[0], ': m8', 'the NEWEST message is at the bottom edge');
+  assert.equal(textAtY(464).args[0], ': m3', 'the 6th-newest is on top — m1/m2 dropped');
+  assert.ok(!at(1) && !at(2), 'the two oldest messages are gone');
+  assert.ok(at(4) && at(5) && at(6) && at(7), 'the rest of the window stays');
+  r.destroy();
+});
+
+test('chat: a long message is cut to 40% of the stage with an ellipsis', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  // A LENGTH-AWARE measureText (8 px per character): the harness's flat
+  // 40 px can never exceed any budget, so nothing would ever be cut.
+  const canvas = recordingCanvas(800, 600, (s) => s.length * 8);
+  const r = createRenderer(canvas, { engine, data, players: HUD_PLAYERS });
+  r.setHud({
+    score: null,
+    teamNames: { ct: '', t: '' },
+    round: { number: 1, label: 'R1', startTick: 0, freezeEndTick: 640, endTick: 1200, bombSite: '' },
+    tickRate: 64,
+  });
+  r.setChat([
+    { id: 1, tick: 50, round: 1, steamId: '1', name: 'alice', text: 'this chat line is far too long to fit' }, // 37 chars
+    { id: 2, tick: 60, round: 1, steamId: '2', name: 'bob', text: 'hi' },
+  ]);
+  r.resize();
+  engine.seekTick(100);
+  const mark = canvas.log.length;
+  r.draw();
+
+  const boxes = entryBoxOps(canvas.log, mark);
+  // budget: 0.4 × 800 = 320 px − 2×6 inset − the 40 px name ('alice' =
+  // 5 chars) = 268 px for the body → ': ' + 30 chars + '…' = 33 chars ×
+  // 8 = 264 fits, one character more (272) does not
+  assert.equal(boxes[0].w, 12 + 40 + 33 * 8, 'the long entry is cut to ≤ 40% of cssW');
+  assert.ok(boxes[0].w <= 800 * 0.4, 'never wider than CHAT_MAX_W');
+  const cut = canvas.log.find((e) => e.op === 'fillText' && String(e.args[0]).endsWith('…'));
+  assert.ok(cut, 'the message is cut with an ellipsis');
+  assert.equal(
+    cut.args[0],
+    ': this chat line is far too long…',
+    'cut at the last char that fits, the ellipsis appended',
+  );
+  assert.equal(cut.fillStyle, '#8b94a7', 'the cut message keeps the neutral tone');
+  // the short message is untouched: inset 12 + 'bob' 24 + ': hi' 32 = 68
+  assert.equal(boxes[1].w, 12 + 24 + ': hi'.length * 8, 'a short entry is inset + name + body');
+  assert.ok(
+    canvas.log.some((e) => e.op === 'fillText' && e.args[0] === ': hi'),
+    'no ellipsis where nothing was cut',
+  );
+  r.destroy();
+});
+
+test('readout stacks 8 px above the chat; alone at the corner without chat', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: HUD_PLAYERS });
+  const round = { number: 1, label: 'R1', startTick: 0, freezeEndTick: 640, endTick: 1200, bombSite: '' };
+  // no setPack → packNote gives the readout one line (28 px tall)
+  r.setHud({ score: null, teamNames: { ct: '', t: '' }, round, tickRate: 64 });
+  const chatRow = (tick, text) => ({ id: tick, tick, round: 1, steamId: '1', name: 'alice', text });
+
+  // ONE chat line: stack top = 600 − 8 − 18 = 574 → readout bottom 566
+  r.setChat([chatRow(50, 'one')]);
+  r.resize();
+  engine.seekTick(100); // the playhead must have passed the message
+  let mark = canvas.log.length;
+  r.draw();
+  let readout = hudBoxesSince(canvas.log, mark).find((b) => b.args[0] === HUD_PAD);
+  let chat = chatBoxesSince(canvas.log, mark);
+  assert.equal(chat.length, 1, 'the chat draws');
+  assert.equal(chat[0].args[1], 574, 'the message sits at the bottom-left corner');
+  assert.ok(readout, 'the readout has a line (packNote) so it draws');
+  assert.equal(
+    readout.args[1] + 28,
+    chat[0].args[1] - 8,
+    "the readout's bottom edge is 8 px above the chat's top edge",
+  );
+
+  // TWO chat lines → the stack grows up, the readout follows it
+  r.setChat([chatRow(50, 'one'), chatRow(60, 'two')]);
+  mark = canvas.log.length;
+  r.draw();
+  chat = chatBoxesSince(canvas.log, mark);
+  assert.equal(chat[0].args[1], 552, 'the second message pushes the stack up');
+  readout = hudBoxesSince(canvas.log, mark).find((b) => b.args[0] === HUD_PAD);
+  assert.equal(readout.args[1], 552 - 8 - 28, 'the readout moves up with the chat top');
+
+  // NO chat → the readout returns to the corner (its old position)
+  r.setChat([]);
+  mark = canvas.log.length;
+  r.draw();
+  assert.equal(chatBoxesSince(canvas.log, mark).length, 0, 'the stack clears');
+  readout = hudBoxesSince(canvas.log, mark).find((b) => b.args[0] === HUD_PAD);
+  assert.equal(readout.args[1], 600 - 8 - 28, 'the readout sits at the corner again');
+
+  // NO readout lines (a pack with its radar clears packNote) → the chat
+  // alone owns the corner
+  r.setPack({ transform: { pos_x: 0, pos_y: 0, scale: 1 } }, { width: 64, height: 64 });
+  r.setChat([chatRow(50, 'one')]);
+  mark = canvas.log.length;
+  r.draw();
+  assert.equal(
+    hudBoxesSince(canvas.log, mark).filter((b) => b.args[0] === HUD_PAD).length,
+    0,
+    'no readout lines → no readout box, not even an empty one',
+  );
+  chat = chatBoxesSince(canvas.log, mark);
+  assert.equal(chat.length, 1, 'the chat draws alone');
+  assert.equal(chat[0].args[1], 574, '…right at the corner');
+  r.destroy();
+});
+
+test('kill feed and chat: ONE shared entry-box painter (fill, radius, 1 px border)', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: HUD_PLAYERS });
+  const mk = (ev) => normalizeEvent(ev, {});
+  r.setLandmarks([
+    // no positions → the world layers (death X) stay out of the way
+    mk({ id: 1, seq: 1, tick: 50, round: 1, kind: 'kill', attacker: '1', attackerName: 'alice', victim: '2', victimName: 'bob', weapon: 'AK-47' }),
+  ]);
+  r.setHud({
+    score: null,
+    teamNames: { ct: '', t: '' },
+    round: { number: 1, label: 'R1', startTick: 0, freezeEndTick: 640, endTick: 1200, bombSite: '' },
+    tickRate: 64,
+  });
+  r.setChat([
+    { id: 1, tick: 40, round: 1, steamId: '1', name: 'alice', text: 'gg' },
+    { id: 2, tick: 60, round: 1, steamId: '2', name: 'bob', text: 'wp' },
+  ]);
+  r.resize();
+  engine.seekTick(100);
+  const mark = canvas.log.length;
+  r.draw();
+
+  const boxes = entryBoxOps(canvas.log, mark);
+  assert.equal(boxes.length, 3, 'one record per entry box: 1 kill + 2 chat');
+  for (const b of boxes) {
+    assert.equal(b.fill, 'rgba(14,17,22,0.78)', 'both overlays fill the SAME dark surface');
+    assert.equal(b.lineWidth, 1, 'both stroke the same 1 px hairline');
+  }
+  // same painter, different anchors: the feed top-right, the chat bottom-left
+  assert.equal(boxes[0].x, 800 - 8 - 156, 'the kill feed entry is right-aligned (no icon → 156 wide)');
+  assert.ok(boxes[0].y < 100, '…at the top edge');
+  assert.deepEqual(
+    boxes.slice(1).map((b) => b.x),
+    [8, 8],
+    'the chat entries are left-anchored at the stage edge',
+  );
+  // borders carry the speaker/killer side on both overlays (CT kill, CT+T chat)
+  assert.deepEqual(
+    boxes.map((b) => b.stroke),
+    ['#5aa9e6', '#5aa9e6', '#e6a35a'],
+    'the feed’s killer border and the chat’s speaker borders come from the same teamColor rule',
+  );
   r.destroy();
 });
