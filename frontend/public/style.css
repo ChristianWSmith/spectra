@@ -1082,10 +1082,13 @@ input[type='checkbox']:focus-visible {
 }
 
 /* Centered when the strip stands alone in a view (the match header's
-   round row): the wrap hugs its content, so auto margins center that
-   range on screen. Scoped to a direct .view child — RoundDetail lays the
-   strip out inside its .round-nav row between the prev/next buttons. */
-.view > .round-strip-wrap {
+   round row, and Replay's ribbon inside its main column): the wrap
+   hugs its content, so auto margins center that range on screen.
+   Scoped to a direct .view child / .replay-main child — RoundDetail
+   lays the strip out inside its .round-nav row between the prev/next
+   buttons, where neither selector matches. */
+.view > .round-strip-wrap,
+.replay-main > .round-strip-wrap {
   margin-inline: auto;
 }
 
@@ -1363,7 +1366,7 @@ input[type='checkbox']:focus-visible {
 /* --- Replay (M2) ------------------------------------------------------------ */
 
 .replay-view {
-  position: relative; /* anchors the collapsed rail's floating handle */
+  position: relative; /* the layout shell (the stage anchors its own overlays) */
   height: calc(100vh - 32px);
   display: flex;
   flex-direction: row;
@@ -1371,9 +1374,10 @@ input[type='checkbox']:focus-visible {
   min-height: 0;
 }
 
-/* Left column of the replay layout: everything the view stacks — banner,
-   notes, the stage (.replay-body), voice lanes, transport, voice bar —
-   beside the landmark rail, which is the view's full-height RIGHT column. */
+/* Left column of the replay layout: everything the view stacks — notes,
+   the round ribbon, the stage (.replay-body), the transport — beside the
+   landmark rail, which is the view's full-height RIGHT column when
+   expanded (collapsed: its toggle floats inside the stage, top-right). */
 .replay-main {
   flex: 1;
   min-width: 0;
@@ -1412,13 +1416,58 @@ input[type='checkbox']:focus-visible {
   cursor: grabbing;
 }
 
-/* Follow chip — the "Following <player>" overlay on the replay stage.
-   It mirrors the engine's follow state (the ?follow= entry, the
-   transport select and the F/1-9 keys all land here) and is the dismiss
-   surface for it. Top-right, clear of the HUD readout at top-left. */
-.follow-chip {
+/* --- Stage overlays: everything that floats INSIDE .replay-stage ---------- */
+
+/* Back button (spec 7): a small icon-only pill at the stage's TOP-LEFT.
+   The canvas HUD's score box starts to its right (renderer HUD_TOP_X),
+   so the two never overlap. Scoped with .replay-stage so it outranks
+   the shared .btn chrome whatever the source order is. */
+.replay-stage .rp-back {
   position: absolute;
   top: 8px;
+  left: 8px;
+  z-index: 3;
+  padding: 3px 8px;
+  background: rgba(14, 17, 22, 0.85);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+/* Collapsed landmark rail (spec 14): the toggle floats at the stage's
+   TOP-RIGHT — a compact chevron pill with panel chrome + shadow so it
+   reads as floating over the render area (it no longer sits vertically
+   centered on the view). Expanded, the aside's own header owns the
+   toggle in flow instead (the base .side-toggle rule below) — the
+   .replay-stage scope makes this rule outrank that base whatever the
+   source order is. */
+.replay-stage .rp-rail-toggle {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  padding: 6px 8px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+.replay-stage .rp-rail-toggle:hover {
+  color: var(--accent);
+  border-color: var(--accent-40);
+}
+
+/* Follow chip — the "Following <player>" overlay on the replay stage.
+   It mirrors the engine's follow state (the ?follow= entry, the camera
+   dropdown's Follow and the F/1-9 keys all land here) and is the dismiss
+   surface for it. Top-right, BELOW the landmark toggle (top: 8px, ~30px
+   tall) so the two overlays never collide; clear of the HUD readout at
+   top-left. */
+.follow-chip {
+  position: absolute;
+  top: 44px;
   right: 8px;
   z-index: 2;
   gap: 4px;
@@ -1447,51 +1496,10 @@ input[type='checkbox']:focus-visible {
   overflow: hidden;
 }
 
-/* Collapsed rail: a small FLOATING HANDLE over the right edge of the
-   replay area — absolutely positioned, so it takes NO layout width (the
-   main column keeps the full view width) and reserves NO space, and it
-   does NOT span the vertical height: a compact notch/pill, vertically
-   centered on the right edge (clear of the transport/voice rows at the
-   bottom and the follow chip at top-right). The aside is only the
-   positioning shell; the toggle button is the pill (chevron-left = "click
-   to expand"; the count lives in its title/aria-label). The EXPANDED
-   panel is unchanged: in-flow above, ~340px, full height, reserving its
+/* The collapsed rail is no longer a .replay-side variant: its toggle
+   floats INSIDE the stage (.rp-rail-toggle above), so the aside only
+   ever renders EXPANDED — in-flow, ~340px, full height, reserving its
    space. */
-.replay-side.collapsed {
-  position: absolute;
-  right: 6px;
-  top: 50%;
-  transform: translateY(-50%);
-  z-index: 5;
-  width: auto;
-  max-height: none;
-  padding: 0;
-  background: none;
-  border: none;
-  border-radius: 0;
-  overflow: visible;
-}
-
-/* The handle itself: a comfortable click target around the chevron,
-   with panel chrome + shadow so it reads as floating over the stage. */
-.replay-side.collapsed .side-toggle {
-  align-items: center;
-  justify-content: center;
-  gap: 0;
-  width: auto;
-  padding: 10px 6px;
-  text-align: center;
-  white-space: nowrap;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
-}
-
-.replay-side.collapsed .side-toggle:hover {
-  color: var(--accent);
-  border-color: var(--accent-40);
-}
 
 .side-toggle {
   display: flex;
@@ -1526,9 +1534,9 @@ input[type='checkbox']:focus-visible {
 }
 
 /* Sticky transport chrome — TWO lines: the full-width scrubber line
-   (.replay-scrub: seek bar + round markers + frame/tick readout) above
-   the control cluster (the ONE .toolbar row: play/speed, Loop, jump,
-   camera, follow, hints). */
+   (.replay-scrub: seek bar + round markers + the game-time readout)
+   above the control cluster (the ONE .toolbar row: play/speed, loop
+   popover, camera, mute-all, hints, snapshot/record). */
 .replay-transport {
   position: sticky;
   bottom: 0;
@@ -1539,6 +1547,12 @@ input[type='checkbox']:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+/* The controls below the scrubber are CENTERED (spec 18) — scoped to
+   this transport so no other .toolbar in the app changes. */
+.replay-transport .toolbar {
+  justify-content: center;
 }
 
 /* The seek bar's own line: the scrubber stretches across the full
@@ -1667,7 +1681,8 @@ button.lm-cat-chip.on {
 
 /* Export menu — the single codicon button's CSV/JSON choice (canonical
    csv.js → download.js → save.js path behind both). Anchored popover
-   under the summary; the details/summary pattern matches voice-export. */
+   under the summary (the details/summary pattern; Escape/outside-click
+   popovers use components/Popover.svelte instead). */
 .lm-export {
   position: relative;
 }
@@ -1902,31 +1917,55 @@ button.lm-cat-chip.on {
   padding: 4px 6px;
 }
 
+/* Loop popover (spec 12): the trigger span is the canonical Popover's
+   anchor (position: relative so the panel can attach to it); the panel
+   holds the from/to inputs + the toggle — the .loop-group/.loop-input
+   spellings above, now scoped inside the popover instead of sitting
+   bare in the toolbar. It opens UPWARD because the transport sits at
+   the bottom of the replay column (over the stage, never off-screen). */
+.rp-loop {
+  position: relative;
+  display: inline-flex;
+}
+
+.rp-loop-pop {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 8px;
+  background: var(--widget-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  white-space: nowrap;
+}
+
+/* Voice status hint next to the transport controls (voice is on by
+   default; pending/error ride one small line). */
+.rp-voice-hint {
+  font-size: 0.86em;
+}
+
 @media (max-width: 1000px) {
   /* The landmark rail is a RIGHT column above the fold — on narrow
      windows the EXPANDED panel stacks under the main column, bounded so
-     the stage keeps the height. The collapsed state stays the FLOATING
-     right-edge handle: it is absolutely positioned by the base rule
-     above, so it is not a stacked item at all (never a full-width bar)
-     and the main column keeps the full height. */
+     the stage keeps the height. The collapsed state needs no stacked
+     variant at all: its toggle floats INSIDE the stage (.rp-rail-toggle,
+     base rule above), so it is never a stacked item (never a full-width
+     bar) and the main column keeps the full height. The round ribbon and
+     the transport stack with the main column unchanged. */
   .replay-view {
     flex-direction: column;
   }
 
-  .replay-side,
-  .replay-side.collapsed {
+  .replay-side {
     width: auto;
     flex: 0 0 auto;
     max-height: 30%;
-  }
-
-  /* The 30% height bound belongs to the EXPANDED panel only — the
-     floating handle must not inherit it. Its placement needs no stacked
-     variant: centered on the right edge it lands over the stage, clear
-     of the transport/voice rows that stack below it, and the
-     left-pointing chevron keeps its "expand" meaning. */
-  .replay-side.collapsed {
-    max-height: none;
   }
 
   .roster-grid,

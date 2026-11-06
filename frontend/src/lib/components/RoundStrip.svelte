@@ -41,6 +41,12 @@ let {
   sideSwitches = 0,
   back = '',
   nav = () => {},
+  // Optional IN-PLACE round picker (Replay's round ribbon): when set, a
+  // cell click calls onselect(r.number) instead of navigating to the
+  // round page — the host decides what "open round N" means there (a
+  // seek, a filter, …). Null (Match header, RoundDetail) keeps the
+  // canonical nav(buildHash('/match/…/round/…')) behavior.
+  onselect = null,
 } = $props();
 
 // MR12: the first half is real rounds 1..12, so the split sits after the
@@ -128,7 +134,10 @@ const cells = $derived.by(() => {
         title={`${kind} — ${r.winner ? r.winner.toUpperCase() : '—'}${r.reason ? ' · ' + r.reason : ''}`}
         aria-label={kind}
         aria-current={current === r.number ? 'true' : undefined}
-        onclick={() => nav(buildHash(`/match/${matchId}/round/${r.number}`, { back }))}
+        onclick={() =>
+          onselect
+            ? onselect(r.number)
+            : nav(buildHash(`/match/${matchId}/round/${r.number}`, { back }))}
       >
         {label}
       </button>

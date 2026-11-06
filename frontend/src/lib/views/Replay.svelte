@@ -23,9 +23,9 @@
     getGenericHistogram,
     getMatch,
     getRounds,
+    getTeamNames,
     getVoicePresence,
     getVoicePlayers,
-    voiceWavURL,
     listSavedFilters,
     saveFilter,
     deleteSavedFilter,
@@ -55,24 +55,29 @@
   import { attachReplayInput, snapshot } from '../replay/input.js';
   import { createVoiceEngine, fetchVoicePCM } from '../replay/audio.js';
   import { loadMapPack } from '../components/mapxform.js';
-  import { saveExportURL } from '../save.js';
   import { downloadBlob, downloadText } from '../download.js';
   import { toCSV } from '../csv.js';
-  import { chatClock, prettyJson } from '../fmt.js';
-  import { isCounted, roundStartTick, roundIndexLabel } from '../rounds.js';
+  import { chatClock, prettyJson, fmtClock, tickSeconds, normTickRate } from '../fmt.js';
+  import { isCounted, roundStartTick, roundIndexLabel, scoreThrough } from '../rounds.js';
   import { isSteam, entrySeekTick } from '../nav.js';
   import { buildHash } from '../router.js';
   import FilterBar from '../components/FilterBar.svelte';
   import LandmarkRow from '../components/LandmarkRow.svelte';
-  import VoiceLanes from '../components/VoiceLanes.svelte';
   import EventFlags from '../components/EventFlags.svelte';
   import ProfileLink from '../components/ProfileLink.svelte';
   import PayloadTree from '../components/PayloadTree.svelte';
+  import Popover from '../components/Popover.svelte';
+  import RoundStrip from '../components/RoundStrip.svelte';
 
   let { id = 0, query = {}, nav = () => {} } = $props();
 
   let meta = $state(null);
   let matchMap = $state('');
+  // Round ribbon inputs (spec 13): the match's team names (final sides —
+  // RoundStrip colors them by first-half side) and the halftime switch
+  // count, both read once in load() alongside the rounds rows.
+  let teamNames = $state(null);
+  let sideSwitches = $state(0);
   let pack = $state(null); // map pack meta.json or null
   let packTf = null; // makeTransform(meta) from loadMapPack — passed to
   //                    the renderer instead of re-deriving pack fields
@@ -84,21 +89,29 @@
 
   // The landmark rail's visibility chain is the SAME as the stage's
   // ({#if loadError} → loading → noSidecar → data), so the collapsed
-  // floating handle appears exactly when the canvas does; the EXPANDED
-  // panel stands beside the main column, full height.
+  // toggle (rendered INSIDE the stage) appears exactly when the canvas
+  // does; the EXPANDED panel stands beside the main column, full height.
   const railVisible = $derived(!loadError && !loading && !noSidecar && !!data);
 
-  // M4 voice: presence gates the whole controls block; players feed mute/
-  // solo chips; the voice engine mirrors live in ui* state via callbacks.
+  // M4 voice: presence gates the voice controls; the engine mirrors live
+  // in ui* state via its onStateChange callback. KEPT IN PLACE FOR THE
+  // PLAYER-CARD PHASE (the next one mounts per-player mute chips on the
+  // cards): voicePresence / voicePlayers (loaded in load()), voiceEngine
+  // (built in startEngine), uiVoiceOn, uiVoiceErr + uiVoicePending (the
+  // "click anywhere to start voice" gesture hint), the per-player mute
+  // map uiVoiceMute + toggleVoiceMute, and uiVoiceMutedAll (the mute-all
+  // button below the scrubber). What is GONE with spec 10 (voice lanes +
+  // the old voice bar): lanesOpen/laneSeek, uiVoiceCtx, the volume
+  // slider, solo, and the WAV export link.
   let voicePresence = $state(null);
   let voicePlayers = $state([]);
   let voiceEngine = null;
   let uiVoiceOn = $state(false);
-  let uiVoiceCtx = $state('none');
   let uiVoiceErr = $state('');
-  let uiVoiceVol = $state(0.8);
-  const uiVoiceMute = $state({}); // steamId → bool
-  const uiVoiceSolo = $state({}); // steamId → bool
+  let uiVoicePending = $state(false); // engine parked its one-shot gesture listener
+  let uiVoiceMutedAll = $state(false);
+  const uiVoiceMute = $state({}); // steamId → bool (per-player mute — card phase)
+  const VOICE_MASTER_VOL = 0.8; // the old volume slider's position (no UI now)
 
   // Transport-bar mirror of the engine state (updated via onChange).
   let uiFrame = $state(0);
@@ -117,12 +130,10 @@
   // and stays in the toolbar row above the panel.
   let filtersOpen = $state(false);
   let exportEl = $state(null); // the export <details> — menu close target
-  // The voice-lanes strip needs ~190px of vertical space, so it is HIDDEN
-  // by default at every viewport size (short windows would otherwise leave
-  // the landmark list with a single visible row); the voice bar's Lanes
-  // toggle shows it for the session.
-  let lanesOpen = $state(false);
-  let jumpRound = $state('');
+  // Loop popover (spec 12): the from/to inputs + the loop toggle live in
+  // one Popover anchored to the loop-codicon button.
+  let loopOpen = $state(false);
+  let loopAnchor = $state(null);
 
   let stageEl = $state(null);
   let canvasEl = $state(null);
@@ -136,6 +147,20 @@
   let radarImg = null;
 
   const frames = $derived(data ? data.frames : (meta?.frames || 0));
+
+  // Scrubber timer (spec 15): OVERALL GAME TIME — elapsed / total,
+  // computed from the position stream (data.ticks[0] →
+  // data.ticks[frames-1]) at the match tick rate and rendered m:ss /
+  // m:ss by the canonical fmt.js fmtClock. The frame/tick detail rides
+  // the readout's title tooltip only.
+  const scrubTime = $derived.by(() => {
+    if (!data || !data.frames || !data.ticks) return '—';
+    const tr = normTickRate(meta?.tickRate);
+    const t0 = data.ticks[0];
+    const t1 = data.ticks[data.frames - 1];
+    const cur = data.ticks[Math.min(Math.max(0, uiFrame), data.frames - 1)];
+    return `${fmtClock(tickSeconds(cur - t0, tr))} / ${fmtClock(tickSeconds(t1 - t0, tr))}`;
+  });
 
   const packNote = $derived.by(() => {
     if (!matchMap) return 'map name unknown — world-coordinate grid';
@@ -517,15 +542,6 @@
     navigateFilter({ ...filter, ...next });
   }
 
-  // Filter the feed to ±5s around the playhead — canonical feed behavior.
-  function eventsAtTick() {
-    const tr = meta && meta.tickRate > 0 ? meta.tickRate : 64;
-    const half = Math.round(5 * tr);
-    eventsOpen = true;
-    filtersOpen = true; // the tick window it sets is filter state — show it
-    navigateFilter({ ...filter, tickFrom: Math.max(0, uiTick - half), tickTo: uiTick + half });
-  }
-
   function goBack() {
     nav(backPath ? '/' + backPath : `/match/${id}`);
   }
@@ -644,9 +660,61 @@
     engine?.play();
   }
 
-  // Voice-lanes click → same exit path (index-only, audio follows).
-  function laneSeek(tick) {
-    hearTick(tick);
+  // --- Round ribbon (spec 13) + HUD score/round context ---------------------
+  // The round CONTAINING a tick: rounds arrive in chronological order
+  // (= number order), so the last row whose startTick is at/before the
+  // tick is the current one; null before the first round.
+  function roundContaining(tick) {
+    let hit = null;
+    for (const r of rounds) {
+      if (r && Number.isFinite(r.startTick) && r.startTick <= tick) hit = r;
+    }
+    return hit;
+  }
+
+  const roundAtPlayhead = $derived(roundContaining(uiTick));
+
+  // The ribbon's click: the canonical round → start-tick lookup
+  // (lib/rounds.js roundStartTick) — an unknown round keeps the current
+  // position instead of jumping to the first frame.
+  function onRibbonRound(n) {
+    const start = roundStartTick(rounds, n);
+    if (start != null && engine) engine.seekTick(start);
+  }
+
+  // hudFor builds the renderer's setHud payload for a playhead tick —
+  // plain data, recomputed on every engine change (setHud redraws).
+  //   score — cumulative counted wins through the last round that had
+  //           ENDED at the playhead (mid-round the current round's result
+  //           is not shown: never display a win the round hasn't
+  //           produced); rounds.js scoreThrough is the ONE rule.
+  //   round — the round containing the playhead (label from the ONE
+  //           roundIndexLabel formatter), or null before round 1.
+  // The bomb/planted evidence is NOT passed: the renderer already holds
+  // it from setLandmarks and applies bomb.js bombEndTick there (no
+  // duplicated rule).
+  function hudFor(tick) {
+    const r = roundContaining(tick);
+    let ended = 0;
+    for (const x of rounds) {
+      if (x && Number.isFinite(x.endTick) && x.endTick > 0 && x.endTick <= tick) {
+        ended = x.number; // rows are chronological — the last match wins
+      }
+    }
+    return {
+      score: rounds.length ? scoreThrough(rounds, ended) : null,
+      round: r
+        ? {
+            number: r.number,
+            label: roundIndexLabel(r),
+            startTick: r.startTick,
+            freezeEndTick: r.freezeEndTick,
+            endTick: r.endTick,
+            bombSite: r.bombSite || '',
+          }
+        : null,
+      tickRate: meta?.tickRate,
+    };
   }
 
   const players = $derived(meta?.players || []);
@@ -662,25 +730,46 @@
     return hit && isSteam(hit.steamId) ? hit.steamId : '';
   }
 
-  // --- Camera mode (pref-backed 'smart' | 'free') ---------------------------
+  // --- Camera mode (ONE dropdown: 'smart' | 'free' | 'follow') --------------
   // 'smart' (the DEFAULT) keeps every alive player + the active bomb on
   // screen with eased pan/zoom (renderer.js smart camera); 'free' is
-  // manual drag/wheel. Stored in the frontend-owned kvstore pref
-  // `camera_mode` (the same pattern as font_size /
-  // show_knife_warmup_rounds): unset or unknown reads as 'smart', a
-  // stored 'free' is respected as-is. A manual pan/zoom while smart
-  // drops to free for the SESSION only (the renderer's onUserCamera) —
-  // the pref keeps whatever the user picked in the selector.
+  // manual drag/wheel; 'follow' locks onto a player — a SECOND dropdown
+  // appears with the player list — and keeps the camera SMOOTH (smart)
+  // underneath, because follow is user intent and overrides it (the
+  // renderer recenters every frame; smart resumes the moment follow
+  // releases).
+  //
+  // Pref `camera_mode` (frontend-owned kvstore, the same pattern as
+  // font_size / show_knife_warmup_rounds) stores ONLY 'smart' | 'free':
+  // Follow is NOT persisted — it needs a player and is entry/route state
+  // (it rides ?follow=), so the pref keeps the last explicit Smart/Free
+  // choice and a session's Follow can never stick across entries. Unset
+  // or unknown reads as 'smart'; a stored 'free' is respected as-is.
+  //
+  // Reconciliation rule (never leave followSlot set with a mode that
+  // fights it): whenever the ENGINE's follow state and this dropdown
+  // disagree — the F / 1-9 keys and the canvas drag drive follow
+  // directly — the dropdown follows the engine (see the onChange mirror
+  // in startEngine): following renders 'follow' over the smart camera, a
+  // release returns to 'smart'. A manual pan/zoom (renderer onUserCamera)
+  // releases follow and drops to 'free' for the SESSION only (the pref
+  // keeps whatever the user picked explicitly).
   let camMode = $state('smart');
+
+  // The renderer's own mode: 'follow' is a dropdown concept — the
+  // renderer only knows 'smart' | 'free', and follow always rides smart.
+  const rendererCam = () => (camMode === 'follow' ? 'smart' : camMode);
 
   $effect(() => {
     let live = true;
     getPref('camera_mode')
       .then((v) => {
         if (!live) return;
-        if (v === 'free' || v === 'smart') {
+        // Never clobber an active Follow (the pref resolves late on a
+        // ?follow= entry; follow wins, the pref applies to the next one).
+        if ((v === 'free' || v === 'smart') && camMode !== 'follow') {
           camMode = v;
-          renderer?.setCameraMode(camMode); // the engine may be up already
+          renderer?.setCameraMode(v); // the engine may be up already
         }
         // unset / unknown → the 'smart' default stands
       })
@@ -691,10 +780,21 @@
   });
 
   function onCamMode(e) {
-    const v = e.currentTarget.value === 'free' ? 'free' : 'smart';
-    camMode = v;
-    renderer?.setCameraMode(v);
-    setPref('camera_mode', v).catch(() => {}); // durable explicit choice
+    const v = e.currentTarget.value;
+    if (v === 'follow') {
+      // Follow: the player already being followed wins, else the ?follow=
+      // entry, else the first player. The camera stays smooth (smart).
+      camMode = 'follow';
+      renderer?.setCameraMode('smart');
+      const want = uiFollow >= 0 ? uiFollow : followSlot >= 0 ? followSlot : 0;
+      if (players[want]) engine?.setFollow(want);
+      return; // the pref keeps its last explicit smart/free choice
+    }
+    const m = v === 'free' ? 'free' : 'smart';
+    camMode = m;
+    engine?.setFollow(null); // Smart/Free releases follow
+    renderer?.setCameraMode(m);
+    setPref('camera_mode', m).catch(() => {}); // durable explicit choice
   }
 
   // --- Follow camera (?follow=<steamid17>) -----------------------------------
@@ -704,8 +804,8 @@
   // match resolves to -1 and the param is ignored (free camera, no
   // error). Follow itself is engine state (engine.setFollow): the
   // renderer recenters the camera on that slot every frame, across
-  // rounds, and the transport select / F and 1-9 keys drive the same
-  // state.
+  // rounds, and the camera dropdown's Follow option / F and 1-9 keys
+  // drive the same state.
   const followSlot = $derived.by(() => {
     const sid = String(query.follow || '');
     if (!sid) return -1;
@@ -743,6 +843,9 @@
     if (voiceEngine) voiceEngine.destroy();
     voiceEngine = null;
     uiVoiceOn = false;
+    uiVoiceErr = '';
+    uiVoicePending = false;
+    uiVoiceMutedAll = false; // the new engine starts unmuted
     if (input) input.detach();
     if (ro) ro.disconnect();
     if (offChange) offChange();
@@ -794,11 +897,14 @@
         noSidecar = true;
         return;
       }
-      const [match, rs] = await Promise.all([
+      const [match, rs, tn] = await Promise.all([
         getMatch(id).catch(() => null),
         getRounds(id).catch(() => []),
+        getTeamNames(id).catch(() => null), // round ribbon team labels
       ]);
       matchMap = (match && match.map) || '';
+      sideSwitches = (match && match.sideSwitches) || 0;
+      teamNames = tn || null;
       rounds = rs || [];
       // Voice presence gates the controls block; players ride alongside.
       voicePresence = await getVoicePresence(id).catch(() => null);
@@ -850,14 +956,24 @@
       engine,
       data,
       players,
-      // Manual pan/zoom while smart → session-free (the pref keeps its
-      // explicit value; only the selector follows).
-      onUserCamera: () => (camMode = 'free'),
+      // Manual pan/zoom: drop to Free for the session (the pref keeps
+      // its explicit value; only the selector follows) — and, per spec
+      // 17, a drag/zoom while FOLLOWING releases follow too, so the
+      // engine can never keep a followSlot under a camera mode that
+      // fights it. camMode is written BEFORE setFollow: the onChange
+      // mirror below must not read a stale 'follow' and bounce back to
+      // smart. A ?follow= entry is dropped as well (releaseFollow's
+      // contract), or the next route write would re-arm it.
+      onUserCamera: () => {
+        camMode = 'free';
+        if (engine && engine.state.followSlot != null) engine.setFollow(null);
+        if (query.follow) navigateFilter(filter, { keepFollow: false });
+      },
     });
     renderer.setPack(pack, radarImg, packTf);
     renderer.setLandmarks(drawNorm);
     renderer.resize();
-    renderer.setCameraMode(camMode); // default 'smart' unless the pref says free
+    renderer.setCameraMode(rendererCam()); // default 'smart' unless the pref says free
     offChange = engine.onChange((st) => {
       uiFrame = st.frame;
       uiTick = st.tick;
@@ -867,7 +983,19 @@
       uiLoopFrom = st.loopFrom;
       uiLoopTo = st.loopTo;
       uiLoopOn = st.loopEnabled;
-      renderer.draw();
+      // Camera reconciliation (spec 17): the F / 1-9 keys and the canvas
+      // drag drive engine follow directly, so the dropdown follows the
+      // ENGINE — following renders 'follow' over the smooth smart camera,
+      // a release returns to smart. Guarded so the explicit Smart/Free
+      // choices (which release follow first) never bounce.
+      const following = st.followSlot != null;
+      if (following !== (camMode === 'follow')) {
+        camMode = following ? 'follow' : 'smart';
+        renderer.setCameraMode('smart');
+      }
+      // setHud carries the score/round payload AND redraws (one draw per
+      // engine change — it replaces the plain draw() that lived here).
+      renderer.setHud(hudFor(st.tick));
       if (recState === 'recording' && recEndFrame >= 0 && st.frame >= recEndFrame) stopClip();
     });
     input = attachReplayInput({
@@ -879,7 +1007,11 @@
     });
     ro = new ResizeObserver(() => renderer.resize());
     ro.observe(stageEl);
-    // M4: wire voice so the lanes strip and Hear ±10s can drive it.
+    // M4: voice is ON BY DEFAULT (spec 11). setEnabled(true) parks a
+    // one-shot gesture listener until the first user interaction — the
+    // engine reports state.pending and the transport shows the "click
+    // anywhere to start voice" hint; nothing else is needed. hearTick
+    // re-arms the same call from the landmark detail.
     if (voicePresence && voicePresence.hasVoice) {
       voiceEngine = createVoiceEngine({
         engine,
@@ -891,16 +1023,19 @@
         },
         onStateChange: (s) => {
           uiVoiceOn = s.enabled;
-          uiVoiceCtx = s.ctxState;
           uiVoiceErr = s.error;
+          uiVoicePending = s.pending;
+          uiVoiceMutedAll = s.mutedAll;
         },
       });
       voiceEngine.setPlayers(voicePlayers);
-      voiceEngine.setMasterVolume(uiVoiceVol);
+      voiceEngine.setMasterVolume(VOICE_MASTER_VOL);
+      // The per-player mute map survives engine rebuilds (the player
+      // cards own its UI in the next phase).
       for (const p of voicePlayers) {
         if (uiVoiceMute[p.steamId]) voiceEngine.setMuted(p.steamId, true);
-        if (uiVoiceSolo[p.steamId]) voiceEngine.setSolo(p.steamId, true);
       }
+      voiceEngine.setEnabled(true).catch(() => {});
     }
     // Entry position rides the URL — durable and deep-linkable.
     // entrySeekTick is the ONE resolver: an exact ?tick= wins, else the
@@ -913,7 +1048,7 @@
     const tick0 = entrySeekTick(query, rounds);
     if (tick0) engine.seekTick(tick0);
     else if (entrySelTick) engine.seekTick(entrySelTick);
-    renderer.draw();
+    renderer.setHud(hudFor(engine.state.tick)); // first HUD paint (redraws)
     ready = true;
   }
 
@@ -937,18 +1072,14 @@
     engine?.toggleLoop();
   }
 
-  function onJumpRound(e) {
-    const n = Number(e.currentTarget.value);
-    jumpRound = '';
-    // Canonical round → start-tick lookup (lib/rounds.js): an unknown
-    // round keeps the position instead of jumping to the first frame.
-    const start = roundStartTick(rounds, n);
-    if (start != null && engine) engine.seekTick(start);
-  }
-
-  function onFollow(e) {
+  // The Follow player dropdown (spec 17) — only rendered while camMode
+  // is 'follow'. Selecting a player keeps the camera smooth (smart);
+  // releasing follow itself happens through the chip, the F/1-9 keys or
+  // a manual drag (never an empty option that would strand camMode on
+  // 'follow' with no followSlot).
+  function onFollowPlayer(e) {
     const v = e.currentTarget.value;
-    engine?.setFollow(v === '' ? null : Number(v));
+    if (v !== '') engine?.setFollow(Number(v));
   }
 
   function doSnapshot() {
@@ -1136,95 +1267,29 @@
     recNote = '';
   }
 
-  // Per-player full-track WAV: rides SaveExport — the native dialog picks
-  // the path, then Go serves the sidecar route straight to the file (full
-  // matches are tens of MB, so they never cross the bindings). Cancel = "".
-  async function exportWav(p) {
-    try {
-      await saveExportURL(voiceWavURL(id, p.steamId), `${p.name || p.steamId}.wav`, 'wav');
-    } catch (e) {
-      console.error('voice WAV save failed:', e);
-    }
-  }
-
-  // --- M4 voice controls ------------------------------------------------------
-  async function toggleVoice() {
-    if (!voiceEngine) return;
-    await voiceEngine.setEnabled(!uiVoiceOn);
-  }
-
-  function onVoiceVol(e) {
-    uiVoiceVol = Number(e.currentTarget.value);
-    voiceEngine?.setMasterVolume(uiVoiceVol);
-  }
-
+  // --- M4 voice controls (kept for the player-card phase) -------------------
+  // Per-player mute: the state + handler survive the voice-bar removal —
+  // the next phase mounts the chips on the player cards and reuses these.
   function toggleVoiceMute(steamId) {
     uiVoiceMute[steamId] = !uiVoiceMute[steamId];
     voiceEngine?.setMuted(steamId, !!uiVoiceMute[steamId]);
   }
 
-  function toggleVoiceSolo(steamId) {
-    uiVoiceSolo[steamId] = !uiVoiceSolo[steamId];
-    voiceEngine?.setSolo(steamId, !!uiVoiceSolo[steamId]);
+  // Mute all (spec 18): silences every player's voice under the
+  // scrubber. The engine owns the flag — setMutedAll emits and the
+  // onStateChange mirror updates uiVoiceMutedAll (aria-pressed/styling),
+  // so the button and the engine can never disagree. No voice in this
+  // match → the button is disabled (voiceEngine stays null, no-op).
+  function toggleVoiceMuteAll() {
+    voiceEngine?.setMutedAll(!uiVoiceMutedAll);
   }
 </script>
 
 <div class="view replay-view">
-  <!-- Main column: banner, notes, stage, lanes, transport, voice.
-       The landmark rail below stands beside it, full height. -->
+  <!-- Main column: notes, round ribbon, stage, transport. The landmark
+       rail below stands beside it when expanded (its collapsed toggle
+       floats INSIDE the stage, top-right). -->
   <div class="replay-main">
-    <header class="view-header">
-      <button class="btn" onclick={goBack}><span class="codicon codicon-arrow-left"></span> Back</button>
-      <h1>Replay</h1>
-      {#if matchMap}<span class="chip">{matchMap}</span>{/if}
-      {#if meta && !noSidecar}
-        <span class="chip round-chip">{players.length} slots</span>
-      {/if}
-      <div class="spacer"></div>
-      {#if ready && data}
-        <span class="mono muted replay-readout">tick {uiTick}</span>
-        <button
-          class="btn"
-          onclick={eventsAtTick}
-          title="Filter the landmark feed to ±5s around the playhead"
-          >Events at tick</button
-        >
-        <button class="btn" onclick={doSnapshot}>Snapshot</button>
-        <button
-          class="btn clip-btn"
-          class:primary={recState === 'recording'}
-          disabled={recState === 'encoding'}
-          onclick={toggleRecord}
-          title="Record a WebM clip — loop range if set, else 10s from the playhead (video only)"
-          ><span class="codicon {recState === 'recording' ? 'codicon-debug-stop' : 'codicon-record'}"></span>
-            {recState === 'recording' ? 'Stop clip' : 'Record clip'}</button
-        >
-        {#if recState !== 'idle'}
-          <span
-            class="chip clip-state {recState === 'recording'
-              ? 'recording'
-              : recState === 'encoding'
-                ? 'busy'
-                : recState === 'saved'
-                  ? 'ok'
-                  : 'bad'}"
-            title={recNote}
-            role="status"
-            >{recState === 'recording'
-              ? `recording · ${recNote}`
-              : recState === 'encoding'
-                ? 'encoding…'
-                : recState === 'saved'
-                  ? `saved · ${recNote}`
-                  : recNote}</span
-          >
-          {#if recState === 'saved' || recState === 'error'}
-            <button class="btn small ghost" onclick={discardClip} title="Dismiss"><span class="codicon codicon-close"></span></button>
-          {/if}
-        {/if}
-      {/if}
-    </header>
-
     {#if loadError}
       <p class="error" role="alert">{loadError}</p>
     {/if}
@@ -1251,13 +1316,53 @@
           frame count mismatch: stream has {data.frames}, meta says {meta.frames}
         </p>
       {/if}
+      <!-- Round ribbon (spec 13): its OWN centered line above the stage
+           — the canonical RoundStrip (Match header / RoundDetail keep
+           their navigation behavior; here onselect seeks the replay to
+           the round's start tick through the round→tick rule). -->
+      {#if rounds.length}
+        <RoundStrip
+          {rounds}
+          current={roundAtPlayhead ? roundAtPlayhead.number : 0}
+          matchId={id}
+          teamAbove={teamNames ? teamNames.ct : ''}
+          teamBelow={teamNames ? teamNames.t : ''}
+          {sideSwitches}
+          back={backPath}
+          {nav}
+          onselect={onRibbonRound}
+        />
+      {/if}
       <div class="replay-body">
         <div class="replay-stage" bind:this={stageEl}>
           <canvas bind:this={canvasEl} aria-label="Replay canvas"></canvas>
+          <!-- Back button (spec 7): a small icon-only pill floating at
+               the TOP-LEFT inside the render area (the stage is the
+               position context); the HUD score box starts to its right. -->
+          <button class="btn rp-back" aria-label="Back" title="Back" onclick={goBack}>
+            <span class="codicon codicon-arrow-left" aria-hidden="true"></span>
+          </button>
+          {#if !eventsOpen}
+            <!-- Landmark rail toggle (spec 14): collapsed, it floats at
+                 the TOP-RIGHT of the render area (inside the stage, not
+                 vertically centered on the view); the follow chip below
+                 it is offset so the two can never collide. Expanded, the
+                 aside's own header owns the toggle instead. -->
+            <button
+              class="side-toggle rp-rail-toggle"
+              aria-expanded="false"
+              aria-label="Landmarks ({feedCountLabel} events)"
+              title="Landmarks ({feedCountLabel} events)"
+              onclick={() => (eventsOpen = true)}
+            >
+              <span class="codicon codicon-chevron-left" aria-hidden="true"></span>
+            </button>
+          {/if}
           {#if uiFollow != null && players[uiFollow]}
             <!-- Follow chip: the dismiss surface for the camera-follow
-                 state (?follow= entry, the transport select and the F/1-9
-                 keys all land here). -->
+                 state (?follow= entry, the camera dropdown's Follow and
+                 the F/1-9 keys all land here). Sits BELOW the landmark
+                 toggle (top-right) so the two overlays never overlap. -->
             <span class="chip follow-chip" role="status">
               <span class="codicon codicon-eye" aria-hidden="true"></span>
               Following {players[uiFollow].name || `slot ${uiFollow}`}
@@ -1273,15 +1378,9 @@
         </div>
       </div>
 
-      {#if lanesOpen && voicePresence && voicePresence.hasVoice}
-        <div class="voice-lanes-wrap">
-          <VoiceLanes matchId={id} {nav} onSeek={laneSeek} />
-        </div>
-      {/if}
-
       <!-- Two lines: the scrubber owns the FULL-WIDTH line (round
-           markers + the frame/tick readout ride with it), the button/
-           control cluster keeps the ONE .toolbar row below it. -->
+           markers + the game-time readout ride with it), the centered
+           button/control cluster keeps the ONE .toolbar row below it. -->
       <div class="replay-transport" role="group" aria-label="Replay transport">
         <div class="replay-scrub">
           <div class="scrubber-wrap">
@@ -1298,8 +1397,8 @@
               <span class="scrub-marker {m.cls}" style="left:{m.pct}%"></span>
             {/each}
           </div>
-          <span class="mono replay-readout"
-            >f{uiFrame + 1}/{frames} · {uiTick}</span
+          <span class="mono replay-readout" title="frame {uiFrame + 1}/{frames} · tick {uiTick}"
+            >{scrubTime}</span
           >
         </div>
 
@@ -1317,176 +1416,177 @@
             {/each}
           </select>
 
-          <span class="loop-group">
-            <label class="sr-only" for="rp-loop-from">Loop from frame</label>
-            <input
-              class="input mono loop-input"
-              id="rp-loop-from"
-              type="number"
-              min="0"
-              max={Math.max(0, frames - 1)}
-              placeholder="from"
-              value={uiLoopFrom >= 0 ? uiLoopFrom : ''}
-              onchange={(e) => {
-                uiLoopFrom = e.currentTarget.value === '' ? -1 : Number(e.currentTarget.value);
-                onLoopInput();
-              }}
-            />
-            <span class="muted">–</span>
-            <label class="sr-only" for="rp-loop-to">Loop to frame</label>
-            <input
-              class="input mono loop-input"
-              id="rp-loop-to"
-              type="number"
-              min="0"
-              max={Math.max(0, frames - 1)}
-              placeholder="to"
-              value={uiLoopTo >= 0 ? uiLoopTo : ''}
-              onchange={(e) => {
-                uiLoopTo = e.currentTarget.value === '' ? -1 : Number(e.currentTarget.value);
-                onLoopInput();
-              }}
-            />
+          <!-- Loop (spec 12): the from/to inputs + the toggle grouped in
+               ONE popover behind a loop-like codicon (sync). Popover is
+               the canonical dismissal component (Escape + outside
+               click); the panel anchors ABOVE the button because the
+               transport sits at the bottom of the column. -->
+          <span class="rp-loop" bind:this={loopAnchor}>
             <button
-              class="btn small"
+              class="btn"
               class:warn={uiLoopOn}
-              title="Toggle loop (L)"
-              onclick={toggleLoop}>Loop</button
+              aria-pressed={uiLoopOn}
+              aria-expanded={loopOpen}
+              aria-label="Loop range"
+              title="Loop range (L) — set the from/to frames and toggle the loop"
+              onclick={() => (loopOpen = !loopOpen)}
+              ><span class="codicon codicon-sync" aria-hidden="true"></span></button
             >
+            <Popover open={loopOpen} anchor={loopAnchor} onClose={() => (loopOpen = false)}>
+              <div class="rp-loop-pop loop-group" role="group" aria-label="Loop range">
+                <label class="sr-only" for="rp-loop-from">Loop from frame</label>
+                <input
+                  class="input mono loop-input"
+                  id="rp-loop-from"
+                  type="number"
+                  min="0"
+                  max={Math.max(0, frames - 1)}
+                  placeholder="from"
+                  value={uiLoopFrom >= 0 ? uiLoopFrom : ''}
+                  onchange={(e) => {
+                    uiLoopFrom = e.currentTarget.value === '' ? -1 : Number(e.currentTarget.value);
+                    onLoopInput();
+                  }}
+                />
+                <span class="muted">–</span>
+                <label class="sr-only" for="rp-loop-to">Loop to frame</label>
+                <input
+                  class="input mono loop-input"
+                  id="rp-loop-to"
+                  type="number"
+                  min="0"
+                  max={Math.max(0, frames - 1)}
+                  placeholder="to"
+                  value={uiLoopTo >= 0 ? uiLoopTo : ''}
+                  onchange={(e) => {
+                    uiLoopTo = e.currentTarget.value === '' ? -1 : Number(e.currentTarget.value);
+                    onLoopInput();
+                  }}
+                />
+                <button
+                  class="btn small"
+                  class:warn={uiLoopOn}
+                  title="Toggle loop (L)"
+                  onclick={toggleLoop}>Loop</button
+                >
+              </div>
+            </Popover>
           </span>
 
-          <label class="sr-only" for="rp-round">Jump to round</label>
-          <select class="input" id="rp-round" value={jumpRound} onchange={onJumpRound}>
-            <option value="">Jump to round…</option>
-            {#each rounds as r (r.number)}
-              <option value={r.number}>
-                {r.number >= 1 ? `R${r.number}` : roundIndexLabel(r)}{r.bombSite ? ` · ${r.bombSite}` : ''}
-              </option>
-            {/each}
-          </select>
-
+          <!-- Camera (spec 17): ONE dropdown for Smart/Free/Follow; the
+               player list appears as a second dropdown only while
+               Follow is selected. -->
           <label class="sr-only" for="rp-cam">Camera mode</label>
           <select
             class="input"
             id="rp-cam"
             value={camMode}
             onchange={onCamMode}
-            title="Smart keeps every player and the bomb on screen with smooth pan/zoom (drag or wheel takes over → Free); Free is manual"
+            title="Smart keeps every player and the bomb on screen with smooth pan/zoom (drag or wheel takes over → Free); Free is manual; Follow locks the camera onto a player (pick them below) — dragging releases it"
           >
             <option value="smart">Smart</option>
             <option value="free">Free</option>
+            <option value="follow">Follow</option>
           </select>
 
-          <label class="sr-only" for="rp-follow">Follow player</label>
-          <select class="input" id="rp-follow" value={uiFollow ?? ''} onchange={onFollow}>
-            <option value="">Free camera</option>
-            {#each players as p, i (i)}
-              <option value={i}>{i + 1}. {p.name || `slot ${i}`}</option>
-            {/each}
-          </select>
+          {#if camMode === 'follow'}
+            <label class="sr-only" for="rp-follow">Follow player</label>
+            <select
+              class="input"
+              id="rp-follow"
+              value={uiFollow ?? ''}
+              onchange={onFollowPlayer}
+              title="The player the camera follows — release it from the stage chip, with F, or by dragging"
+            >
+              <option value="" disabled>Follow player…</option>
+              {#each players as p, i (i)}
+                <option value={i}>{i + 1}. {p.name || `slot ${i}`}</option>
+              {/each}
+            </select>
+          {/if}
 
-          <span class="muted" title="Space play/pause · , . speed · ←/→ step · Shift ±64 · L loop · F follow · 1-9 select · S snapshot"><span class="codicon codicon-keyboard"></span> hints</span>
-        </div>
-      </div>
-
-      {#if voicePresence && voicePresence.hasVoice}
-        <div class="toolbar voice-bar" role="group" aria-label="Voice controls">
+          <!-- Mute all (spec 18): silences every player's voice; the
+               engine owns the flag and mirrors it back through
+               onStateChange (aria-pressed). Disabled when this match
+               has no voice at all. -->
           <button
             class="btn"
-            class:primary={lanesOpen}
-            aria-pressed={lanesOpen}
-            title="Show/hide the per-player voice density lanes (click a lane to play from there)"
-            onclick={() => (lanesOpen = !lanesOpen)}
-          >Lanes</button>
-          <button
-            class="btn"
-            class:primary={!uiVoiceOn}
-            onclick={toggleVoice}
-            title={uiVoiceErr || (uiVoiceOn ? 'Stop voice playback' : 'Start voice playback (needs one click — browser gesture rule)')}
-          >{#if uiVoiceOn}<span class="codicon codicon-unmute"></span> Voice on{:else}Enable voice{/if}</button
+            class:warn={uiVoiceMutedAll}
+            aria-pressed={uiVoiceMutedAll}
+            aria-label="Mute all"
+            disabled={!voicePresence || !voicePresence.hasVoice}
+            title={uiVoiceMutedAll ? 'Unmute all players' : 'Mute all players'}
+            onclick={toggleVoiceMuteAll}
+            ><span class="codicon {uiVoiceMutedAll ? 'codicon-mute' : 'codicon-unmute'}" aria-hidden="true"></span></button
           >
-          <span
-            class="chip voice-state {uiVoiceErr ? 'bad' : uiVoiceOn ? 'ok' : 'idle'}"
-            title={uiVoiceErr ? `AudioContext: ${uiVoiceCtx} — ${uiVoiceErr}` : `AudioContext: ${uiVoiceCtx}`}
-          >{uiVoiceErr ? 'error' : uiVoiceOn ? `on · ${uiVoiceCtx}` : 'off'}</span>
+
+          <span class="muted" title="Space play/pause · , . speed · ←/→ step · Shift ±64 · L loop · F follow · 1-9 select · S snapshot"><span class="codicon codicon-keyboard" aria-hidden="true"></span></span>
+
           {#if uiVoiceErr}
-            <span class="voice-hint" role="alert"
+            <span class="error rp-voice-hint" role="alert"
               >{uiVoiceErr} — install <span class="mono">gst-plugins-good</span> (GStreamer) if audio fails to start.</span
             >
+          {:else if uiVoicePending}
+            <!-- The engine parked its one-shot gesture listener: voice is
+                 ON, it just needs the first click to start the context. -->
+            <span class="muted rp-voice-hint" role="status">click anywhere to start voice</span>
           {/if}
-          <label class="sr-only" for="rp-vol">Voice volume</label>
-          <input
-            class="voice-vol"
-            id="rp-vol"
-            type="range"
-            min="0"
-            max="1"
-            step="0.05"
-            value={uiVoiceVol}
-            oninput={onVoiceVol}
-          />
-          <span class="voice-players">
-            {#each voicePlayers as p (p.steamId)}
-              <span class="voice-player" title="{p.name} — {p.chunks.toLocaleString()} chunks, {Math.round(p.seconds)}s of voice">
-                <span class="voice-name">{p.name}</span>
-                <button
-                  class="btn small ghost voice-ms"
-                  class:warn={!!uiVoiceMute[p.steamId]}
-                  aria-pressed={!!uiVoiceMute[p.steamId]}
-                  aria-label="Mute {p.name}"
-                  title="Mute {p.name}"
-                  onclick={() => toggleVoiceMute(p.steamId)}>M</button
-                >
-                <button
-                  class="btn small ghost voice-ms"
-                  class:warn={!!uiVoiceSolo[p.steamId]}
-                  aria-pressed={!!uiVoiceSolo[p.steamId]}
-                  aria-label="Solo {p.name}"
-                  title="Solo {p.name} (overrides mutes)"
-                  onclick={() => toggleVoiceSolo(p.steamId)}>S</button
-                >
-                <details class="voice-export">
-                  <summary class="btn small ghost" aria-label="Export {p.name} voice" title="Export {p.name}'s track"><span class="codicon codicon-chevron-down"></span></summary>
-                  <button
-                    type="button"
-                    class="voice-dl"
-                    title="Download full-track WAV for {p.name}"
-                    onclick={() => exportWav(p)}>WAV</button
-                  >
-                </details>
-              </span>
-            {/each}
-          </span>
+
+          {#if ready && data}
+            <button class="btn" onclick={doSnapshot}>Snapshot</button>
+            <button
+              class="btn clip-btn"
+              class:primary={recState === 'recording'}
+              disabled={recState === 'encoding'}
+              onclick={toggleRecord}
+              title="Record a WebM clip — loop range if set, else 10s from the playhead (video only)"
+              ><span class="codicon {recState === 'recording' ? 'codicon-debug-stop' : 'codicon-record'}"></span>
+                {recState === 'recording' ? 'Stop clip' : 'Record clip'}</button
+            >
+            {#if recState !== 'idle'}
+              <span
+                class="chip clip-state {recState === 'recording'
+                  ? 'recording'
+                  : recState === 'encoding'
+                    ? 'busy'
+                    : recState === 'saved'
+                      ? 'ok'
+                      : 'bad'}"
+                title={recNote}
+                role="status"
+                >{recState === 'recording'
+                  ? `recording · ${recNote}`
+                  : recState === 'encoding'
+                    ? 'encoding…'
+                    : recState === 'saved'
+                      ? `saved · ${recNote}`
+                      : recNote}</span
+              >
+              {#if recState === 'saved' || recState === 'error'}
+                <button class="btn small ghost" onclick={discardClip} title="Dismiss"><span class="codicon codicon-close"></span></button>
+              {/if}
+            {/if}
+          {/if}
         </div>
-      {/if}
+      </div>
     {/if}
   </div>
-  {#if railVisible}
-  <aside class="replay-side" class:collapsed={!eventsOpen} aria-label="Landmark events">
+  {#if railVisible && eventsOpen}
+  <aside class="replay-side" aria-label="Landmark events">
     <button
       class="side-toggle"
-      aria-expanded={eventsOpen}
+      aria-expanded="true"
       aria-label="Landmarks ({feedCountLabel} events)"
       title="Landmarks ({feedCountLabel} events)"
-      onclick={() => (eventsOpen = !eventsOpen)}
+      onclick={() => (eventsOpen = false)}
     >
-      {#if eventsOpen}
-        <h2>Landmarks</h2>
-        <span class="spacer"></span>
-        <span class="muted num">{feedCountLabel}</span>
-        <!-- Hiding the panel points right — matching the collapsed
-             handle's left-pointing chevron (click to expand). -->
-        <span class="muted"><span class="codicon codicon-chevron-right"></span></span>
-      {:else}
-        <!-- Collapsed state: a FLOATING handle over the right edge (the
-             CSS positions .replay-side.collapsed absolutely — no layout
-             width, no reserved space). Its ONLY visual is the
-             left-pointing chevron ("click to expand"); no word, no badge
-             — the count lives in the button's title/aria-label above. -->
-        <span class="codicon codicon-chevron-left" aria-hidden="true"></span>
-      {/if}
+      <h2>Landmarks</h2>
+      <span class="spacer"></span>
+      <span class="muted num">{feedCountLabel}</span>
+      <!-- Hiding the panel points right — matching the collapsed
+           stage handle's left-pointing chevron (click to expand). -->
+      <span class="muted"><span class="codicon codicon-chevron-right"></span></span>
     </button>
-    {#if eventsOpen}
       <!-- The middle of the panel scrolls as a unit (controls →
            filter panel → list); the detail pane pins below it, so a
            long feed can never clip the selected event. -->
@@ -1801,15 +1901,7 @@
       {/if}
       </div>
       <!-- /lm-scroll -->
-    {/if}
   </aside>
   {/if}
 </div>
 
-<style>
-  /* The WAV control is a button (it opens the native save dialog
-     rather than navigating), so it needs the pointer cursor explicitly. */
-  .voice-dl {
-    cursor: pointer;
-  }
-</style>

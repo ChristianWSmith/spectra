@@ -1,12 +1,15 @@
 // jsdom driver for Replay: a FRESH replay opens with the landmark feed
-// COLLAPSED behind the floating handle (toggle present with the event
-// count, feed toolbar/list absent until it expands — the existing
-// eventsOpen toggle still flips it), and the transport splits into the
-// full-width scrubber line ABOVE the control-cluster line.
+// COLLAPSED — its toggle now floats INSIDE the render stage (top-right,
+// spec 14) next to the floating back button, with no .replay-side at all
+// until it expands — the round ribbon sits on its own centered line
+// above the stage, and the transport splits into the full-width
+// game-time scrubber line ABOVE the centered control-cluster line
+// (loop popover, camera Smart/Free/Follow, mute-all, hints-only
+// codicon, snapshot/record).
 //
 // The view's data source, engine, renderer and input are scripted stubs —
 // this driver pins STRUCTURE, not rendering (CSS placement of the
-// floating handle is verified by the human, not jsdom).
+// floating overlays is verified by the human, not jsdom).
 //
 // jsdom is intentionally not a project dependency; from frontend/ run:
 //   npm i --no-save jsdom
@@ -97,11 +100,21 @@ const svelteCompile = (src, filename, out) => {
 
 // Plain-ESM deps copied verbatim with their relative layout intact
 // (fmt → rounds, nav → router + replay/landmarks → rounds — the same copy
-// the landmark-row / combat drivers do); csv.js and payloadTree.js are
-// import-free.
-for (const rel of ['rounds.js', 'router.js', 'nav.js', 'fmt.js', 'csv.js', 'payloadTree.js']) {
+// the landmark-row / combat drivers do); sideparity/teams/rounds/router
+// are RoundStrip's own copy set (its kvstore binding is stubbed below);
+// csv.js and payloadTree.js are import-free.
+for (const rel of [
+  'rounds.js', 'router.js', 'nav.js', 'fmt.js', 'csv.js', 'payloadTree.js',
+  'sideparity.js', 'teams.js',
+]) {
   writeFileSync(join(dir, rel), readFileSync(join('src/lib', rel), 'utf8'));
 }
+// RoundStrip reads show_knife_warmup_rounds through the kvstore binding
+// — a fresh-profile stub (key unset → warmup/knife cells hidden).
+writeFileSync(
+  join(dir, 'components', 'kvstore.js'),
+  'export const KVStoreService = { Get: () => Promise.resolve(undefined) };\n',
+);
 writeFileSync(
   join(dir, 'replay', 'landmarks.js'),
   readFileSync('src/lib/replay/landmarks.js', 'utf8'),
@@ -119,8 +132,13 @@ export const getEvent = () => Promise.resolve(null);
 export const getChat = () => Promise.resolve([]);
 export const getGenericEvents = () => Promise.resolve([]);
 export const getGenericHistogram = () => Promise.resolve([]);
-export const getMatch = () => Promise.resolve({ map: '' });
-export const getRounds = () => Promise.resolve([]);
+export const getMatch = () => Promise.resolve({ map: '', sideSwitches: 1 });
+export const getRounds = () =>
+  Promise.resolve([
+    { number: 1, winner: 'ct', reason: 'CTWin', startTick: 0, endTick: 576, freezeEndTick: 64, warmup: false, pregame: false, bombSite: '' },
+    { number: 2, winner: 't', reason: 'BombDefused', startTick: 640, endTick: 1216, freezeEndTick: 704, warmup: false, pregame: false, bombSite: 'A' },
+  ]);
+export const getTeamNames = () => Promise.resolve({ ct: 'Alpha', t: 'Bravo' });
 export const getScoreboard = () => Promise.resolve([]);
 export const getVoicePresence = () => Promise.resolve(null);
 export const getVoicePlayers = () => Promise.resolve([]);
@@ -203,6 +221,7 @@ writeFileSync(
   return {
     setPack() {},
     setLandmarks() {},
+    setHud() {},
     resize() {},
     draw() {},
     setCameraMode() {},
@@ -240,13 +259,21 @@ export const downloadText = async () => '';
 `,
 );
 
-// The six child components — only their ./X.svelte imports need rewriting
-// to the compiled .js (ProfileLink is shared by LandmarkRow/VoiceLanes).
-for (const name of ['ProfileLink', 'FilterBar', 'EventFlags', 'PayloadTree', 'LandmarkRow', 'VoiceLanes']) {
-  const src = readFileSync(`src/lib/components/${name}.svelte`, 'utf8').replace(
+// The child components — only their ./X.svelte imports need rewriting
+// to the compiled .js (ProfileLink is shared by LandmarkRow). RoundStrip
+// additionally reads the kvstore binding (the knife/warmup pref), whose
+// import is rewritten to the components/kvstore.js stub above.
+for (const name of ['ProfileLink', 'FilterBar', 'EventFlags', 'PayloadTree', 'LandmarkRow', 'Popover', 'RoundStrip']) {
+  let src = readFileSync(`src/lib/components/${name}.svelte`, 'utf8').replace(
     /from '\.\/(\w+)\.svelte'/g,
     "from './$1.js'",
   );
+  if (name === 'RoundStrip') {
+    src = src.replace(
+      "from '../../../bindings/github.com/wailsapp/wails/v3/pkg/services/kvstore'",
+      "from './kvstore.js'",
+    );
+  }
   svelteCompile(src, `${name}.svelte`, join(dir, 'components', `${name}.js`));
 }
 
@@ -294,12 +321,20 @@ function check(name, cond, detail = '') {
 const click = (el) => el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
 const children = (el) => [...el.children];
 
-console.log('A. fresh replay: the landmark feed starts COLLAPSED');
-const aside = target.querySelector('.replay-side');
-check('rail rendered', !!aside);
-check('aside is collapsed by default', aside?.classList.contains('collapsed'));
-const toggle = aside?.querySelector('.side-toggle');
-check('toggle present', !!toggle);
+console.log('A. fresh replay: no header/title; back + the collapsed rail toggle float INSIDE the stage');
+const stage = target.querySelector('.replay-stage');
+check('stage rendered', !!stage);
+check('no view header and no Replay title', !target.querySelector('.view-header') && !target.querySelector('h1'));
+const back = stage?.querySelector('.rp-back');
+check('floating back button inside the stage', !!back, 'missing .rp-back');
+check(
+  'back button is icon-only with the Back label',
+  back?.getAttribute('aria-label') === 'Back' && back?.getAttribute('title') === 'Back' &&
+    !!back?.querySelector('.codicon-arrow-left') && !back.textContent.trim(),
+);
+const toggle = stage?.querySelector('.side-toggle');
+check('collapsed rail toggle inside the stage', !!toggle, 'missing stage .side-toggle');
+check('no .replay-side while collapsed', !target.querySelector('.replay-side'));
 check('toggle aria-expanded=false', toggle?.getAttribute('aria-expanded') === 'false', toggle?.getAttribute('aria-expanded'));
 check(
   'toggle title/aria-label carry the event count',
@@ -308,20 +343,55 @@ check(
   toggle?.getAttribute('aria-label'),
 );
 check('collapsed handle shows the chevron-left glyph', !!toggle?.querySelector('.codicon-chevron-left'));
-check('feed toolbar absent while collapsed', !aside?.querySelector('.lm-toolbar'));
-check('landmark list absent while collapsed', !aside?.querySelector('.landmark-list'));
+check('feed toolbar absent while collapsed', !target.querySelector('.lm-toolbar'));
+check('landmark list absent while collapsed', !target.querySelector('.landmark-list'));
 
-console.log('B. the handle expands the panel (existing eventsOpen toggle)');
+console.log('B. the stage handle expands the panel (existing eventsOpen toggle)');
 click(toggle);
 await sleep();
-check('aside expanded', !aside.classList.contains('collapsed'));
-check('toggle aria-expanded=true', toggle.getAttribute('aria-expanded') === 'true', toggle.getAttribute('aria-expanded'));
-check('expanded header renders the count', aside.querySelector('.side-toggle .num')?.textContent === '0', aside.querySelector('.side-toggle .num')?.textContent);
-check('feed toolbar present', !!aside.querySelector('.lm-toolbar'));
-check('landmark list present (empty state)', !!aside.querySelector('.landmark-list'));
-check('expanded panel keeps its scroll body', !!aside.querySelector('.lm-scroll'));
+const aside = target.querySelector('.replay-side');
+check('aside expanded', !!aside && !aside.classList.contains('collapsed'));
+check('stage toggle gone while expanded', !stage.querySelector('.side-toggle'));
+const head = aside?.querySelector('.side-toggle');
+check('expanded header owns the toggle', !!head);
+check('header aria-expanded=true', head?.getAttribute('aria-expanded') === 'true', head?.getAttribute('aria-expanded'));
+check('expanded header renders the count', head?.querySelector('.num')?.textContent === '0', head?.querySelector('.num')?.textContent);
+check('feed toolbar present', !!aside?.querySelector('.lm-toolbar'));
+check('landmark list present (empty state)', !!aside?.querySelector('.landmark-list'));
+check('expanded panel keeps its scroll body', !!aside?.querySelector('.lm-scroll'));
+click(head);
+await sleep();
+check('header chevron collapses the rail again', !target.querySelector('.replay-side') && !!stage.querySelector('.side-toggle'));
 
-console.log('C. transport: scrubber on its own full-width line above the controls');
+console.log('C. round ribbon: its own centered line above the stage');
+const main = target.querySelector('.replay-main');
+const ribbon = main?.querySelector(':scope > .round-strip-wrap');
+check('ribbon mounted as a direct child of .replay-main', !!ribbon, 'missing .round-strip-wrap');
+const ribbonCells = ribbon ? [...ribbon.querySelectorAll('.round-cell')] : [];
+check(
+  'ribbon cells render the counted rounds (knife/warmup hidden by default)',
+  JSON.stringify(ribbonCells.map((c) => c.textContent.trim())) === '["1","2"]',
+  JSON.stringify(ribbonCells.map((c) => c.textContent.trim())),
+);
+check(
+  'team labels ride the ribbon (getTeamNames)',
+  ribbon?.querySelector('.round-strip-team.above')?.textContent.trim() === 'Alpha' &&
+    ribbon?.querySelector('.round-strip-team.below')?.textContent.trim() === 'Bravo',
+);
+check('the playhead round is marked current', !!ribbon?.querySelector('.round-cell.current'));
+const body = main?.querySelector('.replay-body');
+check('the ribbon sits ABOVE the stage in the column', !!body && !!(ribbon.compareDocumentPosition(body) & 4), 'wrong order'); // DOCUMENT_POSITION_FOLLOWING
+const navBefore = (globalThis.__nav || []).length;
+click(ribbonCells.find((c) => c.textContent.trim() === '2'));
+await sleep();
+const readout0 = main.querySelector('.replay-readout');
+check(
+  'ribbon click seeks the replay to that round start tick (no nav)',
+  readout0?.getAttribute('title')?.includes('tick 640') && (globalThis.__nav || []).length === navBefore,
+  readout0?.getAttribute('title'),
+);
+
+console.log('D. transport: scrubber on its own full-width line above the CENTERED controls');
 const transport = target.querySelector('.replay-transport');
 check('transport block rendered', !!transport);
 const lines = children(transport);
@@ -332,7 +402,19 @@ check(
 );
 const scrub = lines[0];
 check('scrubber sits on the scrub line', !!scrub.querySelector('.scrubber-wrap > input.scrubber'));
-check('frame/tick readout rides with the scrubber', !!scrub.querySelector('.replay-readout'));
+const readout = scrub.querySelector('.replay-readout');
+check('game-time readout rides with the scrubber', !!readout);
+check(
+  'visible text is overall game time (m:ss / m:ss), never ticks',
+  /^\d+:\d\d \/ \d+:\d\d$/.test(readout?.textContent.trim() || ''),
+  readout?.textContent,
+);
+check(
+  'frame/tick detail kept in the title tooltip',
+  (readout?.getAttribute('title') || '').includes('frame 1/10') &&
+    (readout?.getAttribute('title') || '').includes('tick 640'),
+  readout?.getAttribute('title'),
+);
 check(
   'scrub line holds only the scrubber wrap + readout (full-width, no controls)',
   children(scrub).length === 2 && children(scrub)[0].classList.contains('scrubber-wrap') &&
@@ -342,17 +424,44 @@ check(
 const controls = lines[1];
 check('play button in the control cluster', !!controls.querySelector('button[aria-label="Play"]'));
 check(
-  'speed/round/camera/follow selects in the cluster',
-  !!controls.querySelector('#rp-speed') && !!controls.querySelector('#rp-round') &&
-    !!controls.querySelector('#rp-cam') && !!controls.querySelector('#rp-follow'),
+  'speed + camera selects in the cluster (NO jump-to-round)',
+  !!controls.querySelector('#rp-speed') && !!controls.querySelector('#rp-cam') &&
+    !controls.querySelector('#rp-round'),
+);
+const camOpts = [...(controls.querySelector('#rp-cam')?.options || [])].map((o) => o.value);
+check('camera select offers Smart/Free/Follow', JSON.stringify(camOpts) === '["smart","free","follow"]', JSON.stringify(camOpts));
+check('no follow-player select until Follow is chosen', !controls.querySelector('#rp-follow'));
+check('no leftover voice bar / lanes', !target.querySelector('.voice-bar') && !target.querySelector('.voice-lanes-wrap'));
+const muteAll = controls.querySelector('button[aria-label="Mute all"]');
+check('mute-all button in the cluster', !!muteAll);
+check('mute-all disabled when the match has no voice', muteAll?.disabled === true, String(muteAll?.disabled));
+check(
+  'hints: codicon only, the word "hints" is gone',
+  !!controls.querySelector('.codicon-keyboard') && !controls.textContent.includes('hints'),
 );
 check(
-  'loop inputs + Loop button in the cluster',
+  'snapshot + record/clip moved into the cluster',
+  controls.textContent.includes('Snapshot') && !!controls.querySelector('.clip-btn'),
+);
+check('play controls are NOT on the scrub line', !scrub.querySelector('button[aria-label="Play"]'));
+
+console.log('E. loop popover + the Follow player dropdown');
+const loopBtn = controls.querySelector('button[aria-label="Loop range"]');
+check('loop trigger is an icon-only loop-codicon button', !!loopBtn && !!loopBtn.querySelector('.codicon-sync') && !loopBtn.textContent.trim());
+check('loop inputs hidden until the popover opens', !controls.querySelector('#rp-loop-from'));
+click(loopBtn);
+await sleep();
+check(
+  'popover exposes the from/to inputs + the Loop toggle',
   !!controls.querySelector('#rp-loop-from') && !!controls.querySelector('#rp-loop-to') &&
     !!controls.querySelector('button[title="Toggle loop (L)"]'),
 );
-check('hints stay in the cluster', controls.textContent.includes('hints'));
-check('play controls are NOT on the scrub line', !scrub.querySelector('button[aria-label="Play"]'));
+const cam = controls.querySelector('#rp-cam');
+cam.value = 'follow';
+cam.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+await sleep();
+check('choosing Follow reveals the player dropdown', !!controls.querySelector('#rp-follow'));
+check('camera select still reads follow', cam.value === 'follow', cam.value);
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');
