@@ -8,23 +8,35 @@
 //   start, seek (>50 ms), speed change, pause/stop. A PCM block starting
 //   at replaySec B plays at AudioContext time
 //     when = anchor.ctxNow + (B − anchor.replaySec) / anchor.speed
-//   and its AudioBufferSourceNode runs at playbackRate = speed so a block
-//   of N replay-seconds occupies N/speed wall-seconds — blocks land
-//   edge-to-edge at any speed. Between anchors, drift is checked every
-//   onChange: if |replaySec − (anchor.replaySec + (ctx.currentTime −
+//   and its AudioBufferSourceNode runs at playbackRate = 1 over a buffer
+//   PRE-STRETCHED to 1/speed its original duration (pitch-corrected
+//   time-stretch, replay/stretch.js) — so a block of N replay-seconds
+//   still occupies N/speed wall-seconds, now at the ORIGINAL pitch
+//   (plain playbackRate = speed would bend it an octave at 2×/0.5×) —
+//   and blocks land edge-to-edge at any speed. Between anchors, drift is
+//   checked every onChange: if |replaySec − (anchor.replaySec + (ctx.currentTime −
 //   anchor.ctxNow)·speed)| > 50 ms → cancel every scheduled source and
 //   re-anchor from the current tick (seek, loop wrap, clock drift).
+//   Speed lives in the window-cache key too: a buffer stretched for 2×
+//   is never served to another speed (cancelAll/gen bumps on every
+//   anchor change, so a buffer's speed always equals anchor.speed when
+//   it starts).
 //
 // HTTP PCM window layout (fixed by the Go writer, little-endian):
 //   int32 fromTick | int32 sampleRate (16000) | s16le mono PCM
 
 import { errText } from '../services.js';
 import { normTickRate } from '../fmt.js';
+import { stretchPCM } from './stretch.js';
 
 const WIN_SEC = 1.0;      // fetch window, replay seconds (≤2 s contract)
 const LOOKAHEAD = 1.5;    // schedule this far ahead of the clock
 const CACHE_MAX = 40;     // decoded-window cache entries, LRU
 const DRIFT_S = 0.05;     // resync threshold
+// A browser without a user gesture may keep ctx.resume()'s promise
+// pending forever; race it against this timeout before concluding the
+// context is gesture-blocked (see setEnabled).
+const RESUME_MS = 750;
 // Shared tail of both AudioContext-failed messages: WebKitGTK's audio
 // output needs the GStreamer plugin set.
 const GST_AUDIO_HINT =
@@ -82,9 +94,16 @@ export async function probeAudio() {
 }
 
 // createVoiceEngine wires the voice mixer to the replay engine. The audio
-// context is created lazily on the first setEnabled(true) (user gesture);
-// if it is not running after resume() the error string is reported through
-// onError and state so the UI can show its Enable-voice fallback chip.
+// context is created on the first setEnabled(true); browsers gate
+// start-up behind a user gesture, so if the context is still suspended
+// after an immediate resume() the engine parks a one-time document-level
+// pointerdown/keydown listener (capture) that resumes on the first
+// interaction and removes itself — state.pending is true until then (the
+// UI shows its "click to start voice" hint), and a gesture that does NOT
+// start the context surfaces the error string through onError/state (the
+// Enable-voice fallback chip). setEnabled(true) never throws and never
+// hangs (resume() is raced against RESUME_MS); destroy() removes any
+// parked listener.
 export function createVoiceEngine({ engine, matchId, fetchPCM, onError, onStateChange }) {
   const tr = normTickRate(engine.tickRate);
   const windowTicks = Math.max(1, Math.round(WIN_SEC * tr));
@@ -95,6 +114,18 @@ export function createVoiceEngine({ engine, matchId, fetchPCM, onError, onStateC
   let error = '';
   let wasPlaying = false;
   let volume = 0.8;
+  // Mute-all (line 18): silences every player and overrides solo until
+  // cleared; each player's own muted/solo sets are left intact so
+  // un-muting restores exactly their previous audibility.
+  let mutedAll = false;
+  // Gesture-pending: setEnabled(true) ran but the context needs a user
+  // gesture before it can start (voice is enabled by default at load).
+  let gesturePending = false;
+  let gestureOff = null; // tears down the parked one-time listeners
+  // enableWanted latches the LAST setEnabled request so an in-flight
+  // resume (awaited in setEnabled, or inside a gesture handler) cannot
+  // flip the engine back on after setEnabled(false)/destroy().
+  let enableWanted = false;
   // Anchor of the current schedule epoch (see header contract).
   let anchor = { ctxNow: 0, replaySec: 0, speed: 1 };
   let gen = 0; // bumped on every cancel — in-flight window callbacks check it
@@ -105,7 +136,7 @@ export function createVoiceEngine({ engine, matchId, fetchPCM, onError, onStateC
   const solo = new Set();
   const gains = new Map(); // steamId → GainNode (per-player mute/solo)
   const schedEnd = new Map(); // steamId → replay-tick cursor of scheduled audio
-  const cache = new Map(); // `${steamId}:${fromTick}` → {promise, buffer} LRU
+  const cache = new Map(); // `${speed}:${steamId}:${fromTick}` → {promise, buffer} LRU
   const active = new Set(); // live AudioBufferSourceNodes
 
   function emit() {
@@ -113,12 +144,19 @@ export function createVoiceEngine({ engine, matchId, fetchPCM, onError, onStateC
   }
 
   function currentState() {
-    return { enabled, ctxState: ctx ? ctx.state : 'none', error };
+    return {
+      enabled,
+      ctxState: ctx ? ctx.state : 'none',
+      error,
+      pending: gesturePending, // awaiting the first user gesture
+      mutedAll,
+    };
   }
 
-  // Solo overrides mutes: while any solo is active only soloed players are
-  // audible; otherwise mutes decide.
+  // Solo overrides mutes: while any solo is active only soloed players
+  // are audible; otherwise mutes decide. Mute-all beats both.
   function audible(sid) {
+    if (mutedAll) return false;
     if (solo.size) return solo.has(sid);
     return !muted.has(sid);
   }
@@ -181,15 +219,19 @@ export function createVoiceEngine({ engine, matchId, fetchPCM, onError, onStateC
           end = to;
           continue;
         }
-        fetchWindow(p.steamId, from);
+        fetchWindow(p.steamId, from, speed);
         end = to;
       }
       schedEnd.set(p.steamId, end);
     }
   }
 
-  function fetchWindow(sid, from) {
-    const key = sid + ':' + from;
+  function fetchWindow(sid, from, speed) {
+    // Speed in the key: the entry's buffer is stretched FOR that speed
+    // (pitch correction — see stretchPCM), so it must never be served
+    // to another one. Within an epoch speed is constant (any anchor
+    // change bumps gen), and stale-epoch callbacks are dropped below.
+    const key = `${speed}:${sid}:${from}`;
     // Capture the schedule epoch per call — a cache hit from an older epoch
     // must still be droppable if a seek lands while it is in flight.
     const myGen = gen;
@@ -217,8 +259,14 @@ export function createVoiceEngine({ engine, matchId, fetchPCM, onError, onStateC
           }
           const f32 = new Float32Array(n);
           for (let i = 0; i < n; i++) f32[i] = res.samples[i] / 32768;
-          const buf = ctx.createBuffer(1, f32.length, res.sampleRate || 16000);
-          buf.copyToChannel(f32, 0);
+          // Pitch correction: at speed ≠ 1 pre-stretch the window to
+          // 1/speed its duration (original pitch) and play it back at
+          // playbackRate = 1. speed === 1 skips the stretch entirely —
+          // byte-for-byte the old path, no extra latency.
+          const stretched = speed === 1 ? f32 : stretchPCM(f32, res.sampleRate || 16000, 1 / speed);
+          if (stretched.length === 0) return null;
+          const buf = ctx.createBuffer(1, stretched.length, res.sampleRate || 16000);
+          buf.copyToChannel(stretched, 0);
           entry.buffer = buf;
           return buf;
         },
@@ -249,13 +297,17 @@ export function createVoiceEngine({ engine, matchId, fetchPCM, onError, onStateC
     if (!g) return;
     const src = ctx.createBufferSource();
     src.buffer = buf;
-    src.playbackRate.value = anchor.speed;
+    // The buffer was pre-stretched for this epoch's speed (pitch
+    // correction), so it plays at rate 1 — wall/buffer time are the
+    // same scale and the `when` math above stays valid.
+    src.playbackRate.value = 1;
     src.connect(g);
     let startAt = when;
     let offset = 0;
     if (when < ctx.currentTime) {
-      // Late fetch: start now, skip the elapsed part of the window.
-      offset = (ctx.currentTime - when) * anchor.speed;
+      // Late fetch: start now, skip the elapsed part of the window
+      // (wall seconds == buffer seconds at playbackRate 1).
+      offset = ctx.currentTime - when;
       if (offset >= buf.duration) return;
       startAt = ctx.currentTime;
     }
@@ -312,15 +364,94 @@ export function createVoiceEngine({ engine, matchId, fetchPCM, onError, onStateC
     }
   }
 
+  // tryResume calls ctx.resume() SYNCHRONOUSLY (callers must invoke it
+  // directly inside a user gesture) and resolves to whether the context
+  // ended up running. resume()'s own promise may stay pending forever
+  // when autoplay is blocked, so it is raced against RESUME_MS — the
+  // loser is already subscribed by Promise.race (no hang, no unhandled
+  // rejection).
+  function tryResume() {
+    if (!ctx) return Promise.resolve(false);
+    if (ctx.state === 'running') return Promise.resolve(true);
+    let p;
+    try {
+      p = Promise.resolve(ctx.resume());
+    } catch {
+      return Promise.resolve(false);
+    }
+    const timeout = new Promise((r) => setTimeout(() => r(undefined), RESUME_MS));
+    return Promise.race([p, timeout]).then(
+      () => !!ctx && ctx.state === 'running',
+      () => !!ctx && ctx.state === 'running',
+    );
+  }
+
+  function clearGesture() {
+    if (gestureOff) {
+      gestureOff();
+      gestureOff = null;
+    }
+  }
+
+  // installGesture parks a ONE-TIME document-level pointerdown/keydown
+  // listener (capture) that resumes the context and removes itself —
+  // the browser's autoplay policy needs the interaction to happen inside
+  // a real gesture, so resume() is issued synchronously from the handler.
+  function installGesture() {
+    if (gestureOff || typeof document === 'undefined' || !document.addEventListener) return;
+    const handler = () => {
+      clearGesture(); // one interaction, one attempt
+      tryResume().then((ok) => {
+        if (!enableWanted) return; // turned off while the gesture ran
+        if (ok) {
+          startRunning();
+        } else {
+          // A real gesture still didn't start it: that IS the device
+          // failure (broken GStreamer etc.) — report it now.
+          gesturePending = false;
+          enabled = false;
+          error =
+            `Failed to start the audio device (AudioContext state "${ctx ? ctx.state : 'none'}"). ` +
+            GST_AUDIO_HINT;
+          if (onError) onError(error);
+        }
+        emit();
+      });
+    };
+    document.addEventListener('pointerdown', handler, true);
+    document.addEventListener('keydown', handler, true);
+    gestureOff = () => {
+      document.removeEventListener('pointerdown', handler, true);
+      document.removeEventListener('keydown', handler, true);
+    };
+  }
+
+  // startRunning: the context is running — flip the switch and (if the
+  // replay is already playing) re-anchor + schedule from the current tick.
+  function startRunning() {
+    gesturePending = false;
+    error = '';
+    enabled = true;
+    wasPlaying = false; // next onChange re-anchors and schedules
+    if (engine.state.playing) onEngineChange(engine.state);
+  }
+
+  function failEnable(msg) {
+    enabled = false;
+    gesturePending = false;
+    error = msg;
+    if (onError) onError(error);
+  }
+
   async function setEnabled(on) {
+    enableWanted = on;
     if (on) {
       if (!ctx) {
         try {
           const Ctx = window.AudioContext || window.webkitAudioContext;
           ctx = new Ctx();
         } catch (e) {
-          error = errText(e);
-          if (onError) onError(error);
+          failEnable(errText(e));
           emit();
           return;
         }
@@ -329,28 +460,41 @@ export function createVoiceEngine({ engine, matchId, fetchPCM, onError, onStateC
         master.connect(ctx.destination);
         gains.clear(); // stale nodes from a previous context
       }
-      try {
-        await ctx.resume();
-      } catch {
-        /* state check below reports it */
-      }
-      if (ctx.state !== 'running') {
-        enabled = false;
-        error =
-          `Failed to start the audio device (AudioContext state "${ctx.state}"). ` +
-          GST_AUDIO_HINT;
-        if (onError) onError(error);
+      if (await tryResume()) {
+        if (!enableWanted) {
+          emit(); // setEnabled(false)/destroy() won the race
+          return;
+        }
+        clearGesture();
+        startRunning();
         emit();
         return;
       }
-      error = '';
-      enabled = true;
-      wasPlaying = false; // next onChange re-anchors and schedules
-      if (engine.state.playing) onEngineChange(engine.state);
-    } else {
+      if (ctx.state === 'closed') {
+        clearGesture();
+        failEnable(
+          `Failed to start the audio device (AudioContext is closed). ` + GST_AUDIO_HINT,
+        );
+        emit();
+        return;
+      }
+      // Suspended after resume(): either autoplay-blocked (voice is
+      // enabled by default at load — the first click/keypress starts it)
+      // or a broken device (the gesture below will expose it). Park the
+      // one-time gesture listener and report `pending`, NOT an error —
+      // nothing has failed yet. No scheduling happens until running.
+      clearGesture();
+      gesturePending = true;
       enabled = false;
-      cancelAll();
+      error = '';
+      installGesture();
+      emit();
+      return;
     }
+    enabled = false;
+    gesturePending = false;
+    clearGesture();
+    cancelAll();
     emit();
   }
 
@@ -381,6 +525,25 @@ export function createVoiceEngine({ engine, matchId, fetchPCM, onError, onStateC
       applyAudible(sid);
       emit();
     },
+    // setMutedMany applies one mute flag to a set of players (per-team
+    // mute) in a single audible recompute + emit.
+    setMutedMany(sids, m) {
+      const list = sids || [];
+      for (const sid of list) {
+        if (m) muted.add(sid);
+        else muted.delete(sid);
+      }
+      for (const sid of list) applyAudible(sid);
+      emit();
+    },
+    // setMutedAll (mute-all button below the scrubber): silences every
+    // player and overrides solo; un-muting recomputes each player's
+    // audibility from their own mute/solo sets (nothing is cleared).
+    setMutedAll(m) {
+      mutedAll = !!m;
+      for (const p of players) applyAudible(p.steamId);
+      emit();
+    },
     setSolo(sid, s) {
       if (s) solo.add(sid);
       else solo.delete(sid);
@@ -389,6 +552,9 @@ export function createVoiceEngine({ engine, matchId, fetchPCM, onError, onStateC
     },
     destroy() {
       enabled = false;
+      enableWanted = false;
+      gesturePending = false;
+      clearGesture(); // never leak the parked gesture listeners
       offChange();
       cancelAll();
       const c = ctx;
