@@ -6,7 +6,9 @@
 // component's own injected CSS: no second/outline ring may reappear)
 // and the voice live dot beside the name (speaking only), the row order
 // (armor at the right of the HP row, the weapon on its own line), the
-// fixed-height row geometry (nothing may resize the card),
+// fixed-height row geometry (nothing may resize the card — including
+// the econ row's exact two-line util reserve, pinned below the old
+// 3em slack),
 // the live stats row, the carried C4, and the honest "—" placeholders when
 // slotStateAt state is null (never a zero presented as a fact).
 //
@@ -157,8 +159,12 @@ const sheetText = () =>
   [...document.querySelectorAll('style')].map((s) => s.textContent || '').join('\n');
 // Svelte scopes each selector with its component hash
 // (.pc-card.pc-color.svelte-xxxx), so match up to the rule's brace.
+// CSS comments are stripped first — the fixed-height block's prose
+// names .pc-econ, and a comment match would swallow the text up to the
+// NEXT rule's brace (the same trick the outline scan below uses).
 const ruleFor = (sel) => {
-  const m = sheetText().match(new RegExp(`\\.${sel}[^{}]*\\{[^}]*\\}`));
+  const sheet = sheetText().replace(/\/\*[\s\S]*?\*\//g, '');
+  const m = sheet.match(new RegExp(`\\.${sel}[^{}]*\\{[^}]*\\}`));
   return m ? m[0] : '';
 };
 const px = (s) => parseFloat(s);
@@ -402,6 +408,37 @@ check(
   'the color ring stays pure paint (box-shadow only, never width/height)',
   !/width|height|padding|margin/.test(colorRule) && /box-shadow/.test(colorRule),
   colorRule,
+);
+
+// The econ row's height PIN — the fix for "more margin above/below than
+// any other line on the card". .pc-econ must reserve the util's TRUE
+// two-line maximum (2 × 15px icons + the 2px row-gap = 32px), never the
+// old loose `3em` (3 × 0.86 × root = 33.5 / 38.7 / 43.9px at the
+// 13 / 15 / 17px root — up to ~12px of dead space that, with util on
+// one line, the common case, read as fat margins above and below the
+// row). The value is pinned EXACTLY: it may not drift back up (the
+// fat margins return) nor shrink below the two-line max (a wrapped
+// grenade row would then be silently clipped — the never-resize /
+// never-clip invariant).
+const econRule = ruleFor('pc-econ');
+const econHeight = ((econRule.match(/height:\s*([^;]+);/) || [])[1] || '').trim();
+const econPx = /^calc\(2 \* 15px \+ 2px\)$/.test(econHeight) ? 32 : NaN;
+check(
+  'pc-econ height is the exact two-line util max (2 × 15px icons + 2px row-gap)',
+  econPx === 32,
+  econHeight,
+);
+check(
+  'pc-econ is strictly tighter than the old 3em reserve at EVERY root setting',
+  Number.isFinite(econPx) && [13, 15, 17].every((root) => econPx < 3 * 0.86 * root),
+  `${econPx}px vs old 3em ${[13, 15, 17]
+    .map((root) => (3 * 0.86 * root).toFixed(1))
+    .join('/')}px`,
+);
+check(
+  'pc-econ content stays vertically centred (the slack is even, never biased)',
+  /align-items:\s*center/.test(econRule),
+  econRule,
 );
 
 console.log('D. state === null: honest placeholders, never zeros');
