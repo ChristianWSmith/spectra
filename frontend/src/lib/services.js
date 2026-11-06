@@ -275,6 +275,16 @@ export function getEvent(id) {
   return MatchService.GetEvent(id);
 }
 
+// getBlindDurations returns [{seq, ms}] — the extractor's flash length
+// per blind event (the payload-side channel: models.EventRow stays
+// payload-free, so the duration needs this narrow read — the same rule
+// as store.GetBlindFlashDetails). The replay's flash-white overlay
+// joins it with the blind rows by seq; an empty array just means no
+// overlay.
+export function getBlindDurations(matchId) {
+  return MatchService.GetBlindDurations(matchId);
+}
+
 // round -1 = all rounds; player "" = all senders (exact steam_id match).
 export function getChat(matchId, round, player) {
   return MatchService.GetChat(matchId, round, player || '');

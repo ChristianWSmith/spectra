@@ -1164,3 +1164,47 @@ func TestGetBlindFlashDetails(t *testing.T) {
 		t.Errorf("empty match = %v, %v; want empty map, nil", d, err)
 	}
 }
+
+// TestGetBlindFlashDurations pins the replay's flash-white side channel:
+// only THIS match's blind rows contribute, keyed by match-scoped seq;
+// a blind row without flashDurationMs — and one with a malformed
+// payload — map to 0 instead of erroring (json_valid guards the
+// json_extract), and other kinds stay out.
+func TestGetBlindFlashDurations(t *testing.T) {
+	s := openMem(t)
+	id, err := s.CreateMatchRow("/demos/flash-dur.dem", "sha-blind-durations", 0)
+	if err != nil {
+		t.Fatalf("CreateMatchRow: %v", err)
+	}
+	if err := s.SaveExtracted(id, &models.ExtractedMatch{Events: []models.Event{
+		{Tick: 100, Round: 1, Kind: models.EventBlind, Victim: "200",
+			DetailJSON: `{"player":"bob","flashDurationMs":3200}`},
+		{Tick: 101, Round: 1, Kind: models.EventBlind, Victim: "300"}, // no detail → 0
+		{Tick: 102, Round: 1, Kind: models.EventBlind, Victim: "400",
+			DetailJSON: `{not json`}, // malformed → json_valid guards → 0
+		{Tick: 103, Round: 1, Kind: models.EventKill, Victim: "200",
+			DetailJSON: `{"flashDurationMs":999}`}, // not a blind row
+	}}); err != nil {
+		t.Fatalf("SaveExtracted: %v", err)
+	}
+	ms, err := s.GetBlindFlashDurations(id)
+	if err != nil {
+		t.Fatalf("GetBlindFlashDurations: %v", err)
+	}
+	if len(ms) != 3 {
+		t.Fatalf("GetBlindFlashDurations len = %d (%v), want 3 blind rows only", len(ms), ms)
+	}
+	if ms[0] != 3200 {
+		t.Errorf("seq 0 ms = %d, want the stored flashDurationMs (3200)", ms[0])
+	}
+	if ms[1] != 0 || ms[2] != 0 {
+		t.Errorf("seq 1/2 ms = %d/%d, want 0/0 (missing or malformed payload)", ms[1], ms[2])
+	}
+	other, err := s.CreateMatchRow("/demos/other.dem", "sha-other-durations", 0)
+	if err != nil {
+		t.Fatalf("CreateMatchRow(other): %v", err)
+	}
+	if m, err := s.GetBlindFlashDurations(other); err != nil || len(m) != 0 {
+		t.Errorf("empty match = %v, %v; want empty map, nil", m, err)
+	}
+}

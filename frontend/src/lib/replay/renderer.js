@@ -4,8 +4,9 @@
 // landmarks (lingering smoke/fire areas → utility flight with the
 // extracted icon → per-type detonation pops) → bomb (pulse ring + the
 // extracted C4 icon) → death markers (the victim's team-color X, until
-// the round ends) → players (view arrow, body, voice-color outline,
-// talking ring, muzzle flash, damage flash, follow ring, name) → HUD.
+// the round ends) → players (view chevron, body, voice-color rim, white
+// talking pulse, flash-white overlay, muzzle line, damage flash, follow
+// ring, name) → HUD.
 // The camera is a pan/zoom view over the radar's image-pixel space with
 // two modes: 'smart' (the default — eased
 // fit that keeps every alive player + the active bomb on screen; see
@@ -61,6 +62,12 @@ const FIRE_FLASH_S = 0.22; // muzzle-flash window after an attack bit edge
 const DAMAGE_FLASH_S = 0.35; // victim-hit flash window after a damage event
 const VOICE_RING_GAP = 9; // px — dot edge → talking ring (clear of the
 //                          amber follow ring at r+5: r+8..r+10 vs r+4..r+6)
+const VOICE_PULSE_PERIOD_S = 0.8; // s — one cycle of the talking ring's
+//                                 white pulse (pure tick math)
+const VOICE_PULSE_MIN_A = 0.45; // the pulse's floor alpha (spans 0.45..1)
+const BLIND_SOLID_FRACTION = 0.25; // share of a blind's window the dot
+//                                  stays SOLID white before it fades
+//                                  back to its team color
 const DEATH_X_HALF = 7; // px — half-diagonal of a death marker
 const BOMB_ICON_PX = 12; // px — the extracted C4 icon's screen size
 const NADE_ICON_PX = 16; // px — the extracted utility icon's screen size
@@ -162,31 +169,26 @@ export function camConverged(cur, target) {
   );
 }
 
-// arrowPath — the view-direction ARROW (spec 27; replaces the ±22°
-// filled wedge): a shaft with a triangular head pointing along
-// `angleRad` (screen radians — the engine yaw convention, -yaw), from
-// the dot's center outward. `size` is the tip distance from (cx, cy) in
-// SCREEN px (callers scale it with the dot radius so it stays legible
-// at any camera zoom). Returns 7 [x, y] points, tip last-but-two:
-// base-left → head-base-left → head-left → TIP (index 3) → head-right →
-// head-base-right → base-right (closed by the caller). Pure — head-
+// chevronPath — the view-direction CHEVRON (spec 27): an open ">" of
+// two arms meeting at the apex pointing along `angleRad` (screen
+// radians — the engine yaw convention, -yaw), from the dot's center
+// outward — NO shaft, unlike the old filled arrowPath it replaces.
+// `size` is the apex distance from (cx, cy) in SCREEN px (callers scale
+// it with the dot radius so it stays legible at any camera zoom).
+// Returns 3 [x, y] points, apex in the middle: arm-end-left → APEX →
+// arm-end-right — stroked (never filled) by drawPlayers. Pure — head-
 // tested in src/lib/renderer.test.js; drawn by drawPlayers.
-export function arrowPath(cx, cy, angleRad, size) {
+export function chevronPath(cx, cy, angleRad, size) {
   const s = Math.max(0, Number(size) || 0);
-  const shaftHalf = s * 0.16;
-  const headBase = s * 0.55;
-  const headHalf = s * 0.34;
+  const back = s * 0.4; // how far the arm ends sit back from the apex
+  const spread = s * 0.5; // their perpendicular half-spread
   const cos = Math.cos(angleRad);
   const sin = Math.sin(angleRad);
   // local frame: +x along the look direction, +y to its right
   const local = [
-    [0, -shaftHalf],
-    [headBase, -shaftHalf],
-    [headBase, -headHalf],
+    [s - back, -spread],
     [s, 0],
-    [headBase, headHalf],
-    [headBase, shaftHalf],
-    [0, shaftHalf],
+    [s - back, spread],
   ];
   return local.map(([lx, ly]) => [cx + lx * cos - ly * sin, cy + lx * sin + ly * cos]);
 }
@@ -207,7 +209,8 @@ export function crossPath(cx, cy, half) {
 // `outer` screen px out from the dot's center (outer > inner; a
 // degenerate size yields no rays). Returns count [x1, y1, x2, y2]
 // segments. Pure — head-tested in src/lib/renderer.test.js; drawn by
-// drawPlayers with a windowAlpha-driven alpha.
+// drawPlayers with a windowAlpha-driven alpha, as ONE straight line
+// (count=1, spread=0 — a single ray along the aim direction).
 export function muzzleRays(cx, cy, angleRad, inner, outer, count = 5, spreadRad = 0.7) {
   const n = Math.max(0, Math.floor(count));
   const out = [];
@@ -236,6 +239,33 @@ export function windowAlpha(tick, startTick, tickRate, durS) {
   return 1 - age / durS;
 }
 
+// blindAlpha — THE flash-white envelope for a blinded player's dot: 1
+// (solid white over the team color) for the first BLIND_SOLID_FRACTION
+// of the blind's `ms` window, then a linear fade back to the normal
+// color until the window closes. Pure and tick-derived exactly like
+// windowAlpha — seek-correct in both directions (scrubbing backwards
+// into the window re-renders the same overlay, nothing is sticky).
+// `tickRate <= 0`, a non-finite start or a non-positive ms → 0.
+export function blindAlpha(tick, startTick, tickRate, ms) {
+  if (!Number.isFinite(tick) || !Number.isFinite(startTick)) return 0;
+  if (!(tickRate > 0) || !(ms > 0)) return 0;
+  const ageMs = ((tick - startTick) / tickRate) * 1000;
+  if (ageMs < 0 || ageMs >= ms) return 0;
+  const k = ageMs / ms;
+  if (k <= BLIND_SOLID_FRACTION) return 1;
+  return 1 - (k - BLIND_SOLID_FRACTION) / (1 - BLIND_SOLID_FRACTION);
+}
+
+// voicePulseAlpha — THE talking ring's WHITE pulse: a sine over a ~0.8 s
+// period spanning alpha 0.45..1, purely a function of the tick (a scrub
+// lands on the same phase; nothing depends on wall-clock time). Bad
+// input → 0 (the ring never draws on a broken clock).
+export function voicePulseAlpha(tick, tickRate) {
+  if (!Number.isFinite(tick) || !(tickRate > 0)) return 0;
+  const phase = 0.5 + 0.5 * Math.sin((2 * Math.PI * (tick / tickRate)) / VOICE_PULSE_PERIOD_S);
+  return VOICE_PULSE_MIN_A + (1 - VOICE_PULSE_MIN_A) * phase;
+}
+
 // fireJump — the seek/frame-jump detector for the firing edge state
 // (spec 24): true when the playhead moved somewhere the previous attack
 // bit cannot be compared across, so the per-slot edge state must RE-SEED
@@ -260,17 +290,22 @@ export function fireJump(tick, lastTick, speed, tickRate) {
 }
 
 // killEndTick — the death-marker lifetime (spec 28): the bomb.js
-// bombEndTick rule over `roundEnds` (bucket 'round') rows — an X drawn
-// for a kill in round N stays while the playhead is inside round N and
-// clears at that round's FIRST round_end at/after the kill (a pure
-// function of tick, so scrubbing backwards into round N shows it again
-// — nothing sticky). Terminators from another round or before the kill
-// are ignored; with no same-round round_end in the loaded rows (the
-// truncated final round) the fallback — deliberately LONGER than any
-// round — keeps the marker from outliving the demo without ever cutting
-// a live round short. Pure — head-tested in src/lib/renderer.test.js;
-// drawn by drawDeaths.
-export function killEndTick(row, tickRate, roundEnds) {
+// bombEndTick rule over `roundEnds` (bucket 'round') and `roundStarts`
+// (bucket 'start') rows — an X drawn for a kill in round N stays while
+// the playhead is inside round N and clears at the EARLIER of that
+// round's FIRST round_end at/after the kill and the NEXT round's first
+// round_start after it (a pure function of tick, so scrubbing backwards
+// into round N shows it again — nothing sticky). The round_start
+// terminator matters for kills stamped round N that land AFTER round
+// N's round_end (the C4-detonation kill: round 2's round_end at 14930,
+// the kill at 14963) — without it the X would survive on its own round's
+// end alone into the next round. Terminators from before the kill are
+// ignored; with NEITHER a same-round round_end nor a later round_start
+// in the loaded rows (the truncated final round) the fallback —
+// deliberately LONGER than any round — keeps the marker from outliving
+// the demo without ever cutting a live round short. Pure — head-tested
+// in src/lib/renderer.test.js; drawn by drawDeaths.
+export function killEndTick(row, tickRate, roundEnds, roundStarts) {
   if (!row || !Number.isFinite(row.tick)) return 0;
   const tr = tickRate > 0 ? tickRate : 64;
   let end = null;
@@ -279,7 +314,14 @@ export function killEndTick(row, tickRate, roundEnds) {
       end = e.tick;
     }
   }
-  return end !== null ? end : row.tick + KILL_MARKER_FALLBACK_S * tr;
+  let next = null;
+  for (const s of roundStarts || []) {
+    if (s && Number.isFinite(s.tick) && s.tick > row.tick && (next === null || s.tick < next)) {
+      next = s.tick;
+    }
+  }
+  if (end !== null) return next !== null ? Math.min(end, next) : end;
+  return next !== null ? next : row.tick + KILL_MARKER_FALLBACK_S * tr;
 }
 
 export function createRenderer(canvas, { engine, data, players, onUserCamera = null }) {
@@ -306,6 +348,9 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   let drops = []; // bomb_drop evidence rows (carrier position — bomb.js)
   let pickups = []; // bomb_pickup evidence rows
   let roundEnds = []; // round_end rows — the round-end bomb terminator
+  // round_start rows (bucket 'start') — the death-X NEXT-round
+  // terminator killEndTick reads (never drawn as a world marker).
+  let roundStarts = [];
   // The dropped-C4 evidence bundle consumed by bomb.js bombEvidenceAt
   // (the smart camera's bomb point and drawBomb's dropped marker).
   let bombEv = { drops: [], pickups: [], plants: [], roundEnds: [] };
@@ -332,6 +377,11 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // tick (see drawDeaths / drawPlayers' hit flash).
   let kills = [];
   let damages = []; // damages[slot] = [tick, …]
+  // Flash-white overlay (setBlinds): blinds[slot] = [{tick, ms}] — the
+  // blind windows bucketed per victim slot, like `damages`. Rebuilt by
+  // setBlinds, rendered as a pure function of tick (drawPlayers' white
+  // overlay via blindAlpha), so any scrub is correct.
+  let blinds = [];
   // steamId → slot, from the sidecar slot table (meta.players, slot
   // order) — resolves a kill/damage row's victim to the dot it marks.
   const slotOfSteam = new Map();
@@ -484,6 +534,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     drops = [];
     pickups = [];
     roundEnds = [];
+    roundStarts = [];
     kills = [];
     damages = [];
     const throws = [];
@@ -544,6 +595,12 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
         case 'round':
           roundEnds.push(l);
           break;
+        case 'start':
+          // Stored ONLY for killEndTick's next-round cutoff — a
+          // round_start row is never drawn as a world marker and never
+          // becomes a scrubber marker (landmarks.scrubberMarkerClass).
+          roundStarts.push(l);
+          break;
       }
     }
     // The bomb evidence bundle for bomb.js (dropped reconstruction +
@@ -600,6 +657,22 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   function setVoices(v) {
     voiceColors = (v && v.colors) || [];
     voiceSpeaking = (v && v.speaking) || null;
+    draw();
+  }
+
+  // setBlinds(rows): the flash-white overlay input — [{slot, tick, ms}]
+  // rows (the view joined the blind events with the narrow flash-duration
+  // read by seq and resolved each victim to its slot). Bucketed per slot
+  // exactly like `damages` in setLandmarks; a row without a usable slot,
+  // tick or positive duration is dropped here too (defensive — the view
+  // already filters). Absent/null clears the overlay.
+  function setBlinds(rows) {
+    blinds = [];
+    for (const b of rows || []) {
+      if (!b || !Number.isFinite(b.tick) || !(b.ms > 0)) continue;
+      if (!Number.isInteger(b.slot) || b.slot < 0) continue;
+      (blinds[b.slot] || (blinds[b.slot] = [])).push({ tick: b.tick, ms: b.ms });
+    }
     draw();
   }
 
@@ -871,8 +944,8 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       const c = worldToScreen(l.x, l.y);
       const r = (SMOKE_RADIUS / tf.scale) * cam.fit * cam.zoom;
       const fade = age > SMOKE_LIFETIME_S - 2 ? (SMOKE_LIFETIME_S - age) / 2 : 1;
-      ctx.fillStyle = `rgba(180, 190, 205, ${0.18 * fade})`;
-      ctx.strokeStyle = `rgba(180, 190, 205, ${0.35 * fade})`;
+      ctx.fillStyle = `rgba(180, 190, 205, ${0.3 * fade})`;
+      ctx.strokeStyle = `rgba(180, 190, 205, ${0.55 * fade})`;
       ctx.lineWidth = 1.5;
       ctx.beginPath();
       ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
@@ -885,8 +958,10 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       if (age < 0 || age > FIRE_LIFETIME_S) continue;
       const c = worldToScreen(l.x, l.y);
       const r = (FIRE_RADIUS / tf.scale) * cam.fit * cam.zoom;
-      ctx.fillStyle = 'rgba(230, 120, 60, 0.22)';
-      ctx.strokeStyle = 'rgba(230, 140, 60, 0.45)';
+      // Molotov/incendiary areas read RED (not orange) — see the
+      // detonation ring below for the same hue family.
+      ctx.fillStyle = 'rgba(235, 70, 55, 0.3)';
+      ctx.strokeStyle = 'rgba(245, 90, 70, 0.55)';
       ctx.lineWidth = 1;
       ctx.beginPath();
       ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
@@ -967,17 +1042,20 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
         if (age > dur) continue;
         const k = age / dur;
         const r = 6 + k * (FIRE_RADIUS / tf.scale) * cam.fit * cam.zoom;
-        ctx.strokeStyle = `rgba(235, 130, 60, ${0.9 * (1 - k)})`;
+        // RED ring + hot-red core (the old orange read as a different
+        // utility than the lingering area it hands off to).
+        ctx.strokeStyle = `rgba(240, 75, 60, ${0.92 * (1 - k)})`;
         ctx.lineWidth = 3 * (1 - k) + 1;
         ctx.beginPath();
         ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
         ctx.stroke();
-        ctx.fillStyle = `rgba(255, 200, 130, ${0.55 * (1 - k)})`;
+        ctx.fillStyle = `rgba(255, 110, 90, ${0.6 * (1 - k)})`;
         ctx.beginPath();
         ctx.arc(c.x, c.y, 7 * (1 - k) + 2, 0, Math.PI * 2);
         ctx.fill();
       } else if (style === 'flash') {
-        const dur = 0.7; // s — the bang: white pop + core
+        const dur = 0.5; // s — the bang: white pop + core (slightly
+        //                 faster than the old 0.7 s)
         if (age > dur) continue;
         const k = age / dur;
         ctx.strokeStyle = `rgba(255, 255, 255, ${0.95 * (1 - k)})`;
@@ -1000,9 +1078,12 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
         ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
         ctx.stroke();
       } else {
-        // HE (and any unknown weapon): the classic expanding ring (~2 s)
-        if (age > 2) continue;
-        const r = 4 + age * 10;
+        // HE (and any unknown weapon): the classic expanding ring —
+        // ~1.3 s total (slightly faster than the old ~2 s), growth
+        // scaled so the ring still reaches the same maximum radius.
+        const dur = 1.3;
+        if (age > dur) continue;
+        const r = 4 + age * (20 / dur);
         ctx.strokeStyle = `rgba(224, 91, 91, ${0.9 - age * 0.4})`;
         ctx.lineWidth = 2;
         ctx.beginPath();
@@ -1012,15 +1093,29 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     }
   }
 
+  // iconAspect — an icon's natural width per unit height (img.width /
+  // img.height): every icon draw keeps the HEIGHT at `size` and derives
+  // the width from it, so the extracted utility/bomb art renders in its
+  // ORIGINAL aspect ratio instead of being squashed to 1:1. A missing
+  // or degenerate image falls back to 1 (square — the old behavior).
+  function iconAspect(img) {
+    const h = img && Number(img.height);
+    const w = img && Number(img.width);
+    return h > 0 && w > 0 ? w / h : 1;
+  }
+
   // tintedIcon — the C4 silhouette recolored for its state through an
   // offscreen canvas (draw the image, then a 'source-in' fill with the
   // target color — drawImage alone cannot recolor an SVG silhouette).
-  // Cached per color|size|source (setIcons clears it), so the per-frame
-  // path is one Map lookup; never rebuilt per frame. Returns null when
-  // no canvas context is available — the caller falls back to the text
-  // label rather than throwing.
+  // The canvas is (size · aspect) × size — the icon's own proportions
+  // (iconAspect), never a 1:1 squash. Cached per color|size|source
+  // (setIcons clears it), so the per-frame path is one Map lookup; never
+  // rebuilt per frame. Returns null when no canvas context is available —
+  // the caller falls back to the text label rather than throwing.
   function tintedIcon(img, color, size) {
-    const key = `${color}|${size}|${img.src || img.width + 'x' + img.height}`;
+    const w = Math.max(1, Math.round(size * iconAspect(img)));
+    const h = Math.max(1, Math.round(size));
+    const key = `${color}|${w}x${h}|${img.src || img.width + 'x' + img.height}`;
     const hit = tintCache.get(key);
     if (hit) return hit;
     let cv = null;
@@ -1028,17 +1123,17 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       if (typeof document !== 'undefined' && document.createElement) {
         cv = document.createElement('canvas');
       } else if (typeof OffscreenCanvas === 'function') {
-        cv = new OffscreenCanvas(size, size);
+        cv = new OffscreenCanvas(w, h);
       }
       if (!cv) return null;
-      cv.width = size;
-      cv.height = size;
+      cv.width = w;
+      cv.height = h;
       const c2 = cv.getContext('2d');
       if (!c2) return null;
-      c2.drawImage(img, 0, 0, size, size);
+      c2.drawImage(img, 0, 0, w, h);
       c2.globalCompositeOperation = 'source-in';
       c2.fillStyle = color;
-      c2.fillRect(0, 0, size, size);
+      c2.fillRect(0, 0, w, h);
       c2.globalCompositeOperation = 'source-over';
     } catch {
       return null;
@@ -1047,17 +1142,21 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     return cv;
   }
 
-  // drawIcon — one equipment icon at (cx, cy), optionally recolored
-  // (`tint` via the tintedIcon cache) and always over a thin dark
-  // silhouette (also cached) so it stays legible on the LIGHT theme as
-  // well as the dark radar. Returns false when nothing could be drawn —
-  // the caller falls back to its text/vector mark, never an error.
+  // drawIcon — one equipment icon at (cx, cy) in its ORIGINAL aspect
+  // ratio (height = size, width = size · iconAspect — the util/bomb art
+  // keeps its proportions), optionally recolored (`tint` via the
+  // tintedIcon cache) and always over a thin dark silhouette (also
+  // cached, drawn 1 px larger on every side for a uniform outline) so it
+  // stays legible on the LIGHT theme as well as the dark radar. Returns
+  // false when nothing could be drawn — the caller falls back to its
+  // text/vector mark, never an error.
   function drawIcon(img, cx, cy, size, tint = null) {
-    const halo = tintedIcon(img, 'rgba(8, 10, 14, 0.85)', size + 2);
-    if (halo) ctx.drawImage(halo, cx - size / 2 - 1, cy - size / 2 - 1, size + 2, size + 2);
+    const w = size * iconAspect(img);
+    const halo = tintedIcon(img, 'rgba(8, 10, 14, 0.85)', size);
+    if (halo) ctx.drawImage(halo, cx - w / 2 - 1, cy - size / 2 - 1, w + 2, size + 2);
     const body = tint ? tintedIcon(img, tint, size) : img;
     if (!body) return false;
-    ctx.drawImage(body, cx - size / 2, cy - size / 2, size, size);
+    ctx.drawImage(body, cx - w / 2, cy - size / 2, w, size);
     return true;
   }
 
@@ -1199,7 +1298,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     for (const k of kills) {
       if (!hasPos(k)) continue;
       if (tick < k.tick) continue;
-      if (tick > killEndTick(k, tr, roundEnds)) continue;
+      if (tick > killEndTick(k, tr, roundEnds, roundStarts)) continue;
       const slot = slotOfSteam.get(String(k.victim || ''));
       if (slot == null || slot >= store.slots.length) continue; // no dot to mark
       const c = worldToScreen(k.x, k.y);
@@ -1238,43 +1337,59 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       const c = worldToScreen(tmp.x, tmp.y);
       if (c.x < -60 || c.y < -60 || c.x > cssW + 60 || c.y > cssH + 60) continue;
       const color = teamColor(sideAtFrame(slot, st.frame));
-      const r = tmp.duck ? 6.5 : 9;
+      // Constant radius: a crouching player's dot is the same size as a
+      // standing one (the duck flag stays on `tmp` for every other
+      // consumer — it only ever shrank the dot here).
+      const r = 9;
       const angle = (-tmp.yaw) * Math.PI / 180; // engine yaw → screen
 
-      // 27 — view ARROW: a shaft with a head pointing along the look
-      // direction (replaces the ±22° wedge). Screen-space sized from
-      // the dot radius, so it stays legible at any camera zoom; low
-      // alpha + team color keeps it subtle.
-      const pts = arrowPath(c.x, c.y, angle, r * 2.8);
+      // 27 — view CHEVRON: an open ">" of two arms meeting at the apex
+      // pointing along the look direction (no shaft). Screen-space sized
+      // from the dot radius, so it stays legible at any camera zoom;
+      // near-opaque team color + a thicker stroke keep it clearly
+      // visible without competing with the dot itself.
+      const pts = chevronPath(c.x, c.y, angle, r * 2.8);
+      ctx.globalAlpha = 0.9;
+      ctx.lineWidth = 1.75;
+      ctx.strokeStyle = color;
       ctx.beginPath();
       ctx.moveTo(pts[0][0], pts[0][1]);
-      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
-      ctx.closePath();
-      ctx.fillStyle = color;
-      ctx.globalAlpha = 0.2;
-      ctx.fill();
-      ctx.globalAlpha = 0.5;
-      ctx.lineWidth = 1;
-      ctx.strokeStyle = color;
+      ctx.lineTo(pts[1][0], pts[1][1]);
+      ctx.lineTo(pts[2][0], pts[2][1]);
       ctx.stroke();
       ctx.globalAlpha = 1;
 
       // body — the team/side fill stays (side must stay readable); the
       // RIM is the assigned voice color when there is one (21), the
-      // plain white rim otherwise (no voice / no assigned color).
+      // plain white rim otherwise (no voice / no assigned color). Both
+      // are MINIMAL: a 1 px stroke over a thin dark underlay so they
+      // read on the dark radar and the light theme alike.
       const voice = voiceColors[slot] || null;
       ctx.fillStyle = color;
       ctx.beginPath();
       ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
       ctx.fill();
-      if (voice) haloRing(c.x, c.y, r, voice, 3);
-      else {
-        ctx.strokeStyle = 'rgba(255,255,255,0.85)';
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
-        ctx.stroke();
+      // Flash-white: while a blind window is open the dot turns WHITE —
+      // solid for the first quarter of the window, then a linear fade
+      // back to the team color (blindAlpha — a pure function of tick, so
+      // scrubbing backwards re-renders it and nothing is sticky).
+      const blindsFor = blinds[slot];
+      if (blindsFor) {
+        let flash = 0;
+        for (let i = 0; i < blindsFor.length; i++) {
+          const a = blindAlpha(tick, blindsFor[i].tick, tr, blindsFor[i].ms);
+          if (a > flash) flash = a;
+        }
+        if (flash > 0) {
+          ctx.globalAlpha = flash;
+          ctx.fillStyle = '#ffffff';
+          ctx.beginPath();
+          ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.globalAlpha = 1;
+        }
       }
+      haloRing(c.x, c.y, r, voice || 'rgba(255,255,255,0.85)', 1);
 
       // 25 — damage flash: a white pop over the dot plus a red ring
       // that eases outward, purely from the damage tick window (never
@@ -1303,12 +1418,13 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
         }
       }
 
-      // 24 — muzzle burst: radial ticks in the look direction, alpha
-      // decaying over the tick window armed by stepFiring (frozen at a
-      // constant age while paused — it never flickers on its own).
+      // 24 — muzzle burst: ONE straight line along the look direction
+      // (r+2 → r+14, slightly longer than the old fan), alpha decaying
+      // over the tick window armed by stepFiring (frozen at a constant
+      // age while paused — it never flickers on its own).
       const fire = windowAlpha(tick, fireAt[slot], tr, FIRE_FLASH_S);
       if (fire > 0) {
-        const rays = muzzleRays(c.x, c.y, angle, r + 2, r + 11, 5, 0.6);
+        const rays = muzzleRays(c.x, c.y, angle, r + 2, r + 14, 1, 0);
         if (rays.length) {
           ctx.globalAlpha = fire;
           ctx.strokeStyle = 'rgba(0,0,0,0.45)';
@@ -1331,12 +1447,16 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
         }
       }
 
-      // 26 — talking ring: an extra ring AROUND the dot with a visible
+      // 26 — talking ring: a WHITE pulse AROUND the dot with a visible
       // gap (r+VOICE_RING_GAP spans r+8..r+10 — clear of both the dot
-      // and the amber follow ring at r+4..r+6). A pure function of
-      // (slot, tick), so it is correct after any scrub.
+      // and the amber follow ring at r+4..r+6), regardless of the
+      // player's color. The alpha is a pure function of (slot, tick)
+      // (voicePulseAlpha — sine over a ~0.8 s period), so it is correct
+      // after any scrub.
       if (voiceSpeaking && voiceSpeaking(slot, tick)) {
-        haloRing(c.x, c.y, r + VOICE_RING_GAP, voice || 'rgba(255,255,255,0.95)', 2);
+        ctx.globalAlpha = voicePulseAlpha(tick, tr);
+        haloRing(c.x, c.y, r + VOICE_RING_GAP, '#ffffff', 2);
+        ctx.globalAlpha = 1;
       }
 
       // follow ring
@@ -1571,6 +1691,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     setHud,
     setIcons,
     setVoices,
+    setBlinds,
     setStateIndex,
     setData,
     panBy,

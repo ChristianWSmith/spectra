@@ -101,3 +101,51 @@ func TestGetTeamNames(t *testing.T) {
 			names.CT, names.T, list[0].CTName, list[0].TName)
 	}
 }
+
+// TestGetBlindDurations: the replay flash-white overlay's narrow read —
+// blind rows only (a kill carrying the same payload field stays out),
+// events.seq order, a missing duration maps to 0 (the frontend drops
+// those), and a match with no blinds yields an empty slice, never an
+// error.
+func TestGetBlindDurations(t *testing.T) {
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	id, err := st.CreateMatchRow("/d/blind.dem", "sha-blind-durations", 7)
+	if err != nil {
+		t.Fatalf("CreateMatchRow: %v", err)
+	}
+	if err := st.SaveExtracted(id, &models.ExtractedMatch{Events: []models.Event{
+		{Tick: 10, Round: 1, Kind: models.EventBlind, Victim: "1",
+			DetailJSON: `{"flashDurationMs":1200}`},
+		{Tick: 20, Round: 1, Kind: models.EventBlind, Victim: "2"}, // no duration → 0
+		{Tick: 30, Round: 1, Kind: models.EventKill, Victim: "1",
+			DetailJSON: `{"flashDurationMs":999}`}, // not a blind row
+	}}); err != nil {
+		t.Fatalf("SaveExtracted: %v", err)
+	}
+	svc := &MatchService{st: st}
+	got, err := svc.GetBlindDurations(id)
+	if err != nil {
+		t.Fatalf("GetBlindDurations: %v", err)
+	}
+	want := []BlindDuration{{Seq: 0, Ms: 1200}, {Seq: 1, Ms: 0}}
+	if len(got) != len(want) {
+		t.Fatalf("GetBlindDurations = %+v, want %+v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("GetBlindDurations[%d] = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+	// A match with no blinds: empty slice, nil error (fail-soft input).
+	other, err := st.CreateMatchRow("/d/none.dem", "sha-no-blinds", 0)
+	if err != nil {
+		t.Fatalf("CreateMatchRow(other): %v", err)
+	}
+	if got, err := svc.GetBlindDurations(other); err != nil || len(got) != 0 {
+		t.Errorf("no-blind match = %+v, %v; want empty slice, nil", got, err)
+	}
+}

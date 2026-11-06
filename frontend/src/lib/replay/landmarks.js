@@ -47,11 +47,17 @@ export const LANDMARK_KINDS = [
 
 // DRAW_KINDS: the typed kinds the replay world layers and scrubber
 // markers draw — positioned anchors (kills, damage, grenades, bomb incl.
-// the dropped-C4 evidence rows) plus round_end (round-win markers).
-// Fetched once per match, unfiltered by category chips: the map always
-// shows the full spatial context, while the LIST and scrubber markers
-// follow the enabled categories. `damage` rides here for the victim-hit
-// flash only — it carries no scrubber marker (see scrubberMarkerClass).
+// the dropped-C4 evidence rows) plus round_end (round-win markers) and
+// round_start (the death-X cutoff — a kill stamped round N can land
+// AFTER round N's round_end, e.g. the C4 detonation kill, so the NEXT
+// round's start terminates it; the row itself is STORED as a round
+// start and never drawn as a world marker). Fetched once per match,
+// unfiltered by category chips: the map always shows the full spatial
+// context, while the LIST and scrubber markers follow the enabled
+// categories. `damage` rides here for the victim-hit flash only — it
+// carries no scrubber marker (see scrubberMarkerClass); `round_start`
+// likewise carries none (the LIST/scrubber rows come from the
+// category-filtered feed read, not from this set).
 export const DRAW_KINDS = [
   'kill',
   'damage',
@@ -63,6 +69,7 @@ export const DRAW_KINDS = [
   'bomb_drop',
   'bomb_pickup',
   'round_end',
+  'round_start',
 ];
 
 // CATEGORIES — the filterable landmark categories. `source` picks the
@@ -189,6 +196,9 @@ export function scrubberMarkerClass(bucket) {
 // 'drop'/'pickup' — the DROPPED-C4 evidence rows the renderer's
 // reconstruction (lib/replay/bomb.js) consumes; they and 'damage' carry
 // no scrubber marker (scrubberMarkerClass returns '' for them).
+// round_start buckets to 'start' — the death-X cutoff row the renderer
+// STORES as a round start (killEndTick's next-round terminator); it is
+// never drawn as a world marker and carries no scrubber marker either.
 export function drawBucket(kind, weapon) {
   const k = String(kind || '').toLowerCase();
   if (k === 'kill') return 'kill';
@@ -203,6 +213,7 @@ export function drawBucket(kind, weapon) {
   if (k === 'bomb_drop') return 'drop';
   if (k === 'bomb_pickup') return 'pickup';
   if (k === 'round_end') return 'round';
+  if (k === 'round_start') return 'start';
   return '';
 }
 

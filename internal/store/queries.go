@@ -726,6 +726,45 @@ func (s *Store) GetBlindFlashDetails(matchID int64) (map[int]string, error) {
 	return out, nil
 }
 
+// GetBlindFlashDurations returns the extractor's flashDurationMs for
+// every blind event of a match, keyed by events.seq (UNIQUE (match_id,
+// seq) — one entry per blind row). The SAME narrow payload side channel
+// as GetBlindFlashDetails — models.EventRow stays payload-free and
+// eventRowCols is not widened — but it pulls only the one integer the
+// replay's flash-white overlay needs instead of the whole detail_json.
+// json_valid guards malformed payloads (json_extract would error — the
+// guard the nearDist reads in analytics.go use); a blind row without the
+// field, or a non-integer value, maps to 0 (the caller drops those).
+func (s *Store) GetBlindFlashDurations(matchID int64) (map[int]int, error) {
+	rows, err := s.db.Query(
+		`SELECT seq,
+		   CASE WHEN json_valid(detail_json)
+		        THEN COALESCE(CAST(json_extract(detail_json, '$.flashDurationMs') AS INTEGER), 0)
+		        ELSE 0 END
+		  FROM events
+		  WHERE match_id = ? AND kind = ?
+		  ORDER BY seq`,
+		matchID, models.EventBlind,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("store: get blind durations: %w", err)
+	}
+	defer rows.Close()
+	out := map[int]int{}
+	for rows.Next() {
+		var seq int
+		var ms int
+		if err := rows.Scan(&seq, &ms); err != nil {
+			return nil, fmt.Errorf("store: get blind durations: %w", err)
+		}
+		out[seq] = ms
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: get blind durations: %w", err)
+	}
+	return out, nil
+}
+
 // GetHurtHealthDetails returns detail_json for every player_hurt event
 // of a match, keyed by events.seq (UNIQUE (match_id, seq)). Same narrow
 // read as GetBlindFlashDetails: analytics.Compute stamps these onto the

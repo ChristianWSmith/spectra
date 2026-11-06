@@ -194,6 +194,9 @@ writeFileSync(
   });
 export const getEvents = () => Promise.resolve([]);
 export const getEvent = () => Promise.resolve(null);
+// Flash-white overlay durations (matched to blind rows by seq) — none
+// in the stub: the view's join yields [] and setBlinds receives it.
+export const getBlindDurations = () => Promise.resolve([]);
 export const getChat = () => Promise.resolve([]);
 export const getGenericEvents = () => Promise.resolve([]);
 export const getGenericHistogram = () => Promise.resolve([]);
@@ -287,6 +290,7 @@ writeFileSync(
   return {
     setPack() {},
     setLandmarks() {},
+    setBlinds() {},
     setHud() {},
     setIcons() {},
     setVoices() {},
