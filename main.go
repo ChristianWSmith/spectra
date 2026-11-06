@@ -29,6 +29,7 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/data"
 	"github.com/ChristianWSmith/spectra/internal/extract"
 	"github.com/ChristianWSmith/spectra/internal/library"
+	"github.com/ChristianWSmith/spectra/internal/mappack"
 	"github.com/ChristianWSmith/spectra/internal/models"
 	"github.com/ChristianWSmith/spectra/internal/report"
 	"github.com/ChristianWSmith/spectra/internal/sidecar"
@@ -124,6 +125,10 @@ func main() {
 			handleMapPack(w, r, p)
 			return
 		}
+		if p := strings.TrimPrefix(r.URL.Path, "/api/icons/"); p != r.URL.Path {
+			handleIcons(w, r, p)
+			return
+		}
 		bundled.ServeHTTP(w, r)
 	})
 
@@ -170,6 +175,7 @@ func main() {
 	app.RegisterService(application.NewService(&QueryService{st: st, app: app}))
 	app.RegisterService(application.NewService(&PlatformService{st: st, app: app}))
 	app.RegisterService(application.NewService(&MapPackService{kvs: kvs, app: app}))
+	app.RegisterService(application.NewService(&IconService{kvs: kvs}))
 	// DialogService: native save dialogs + writes. SaveExport serves the
 	// app's own HTTP export/sidecar routes internally (buffered) so large
 	// downloads (library.db, voice WAVs) never ride the bindings.
@@ -311,6 +317,51 @@ func validPackName(s string) bool {
 		}
 	}
 	return true
+}
+
+// handleIcons serves the extracted equipment icons over the asset server
+// (written by IconService.ExtractIcons):
+//
+//	/api/icons/manifest.json    the IconManifest, rebuilt from the icons
+//	                             dir on every request (never stale)
+//	/api/icons/<file>.svg       one silhouette (image/svg+xml)
+//
+// Filenames pass a strict whitelist (mappack.ValidIconFileBase: lowercase
+// digits/_ + .svg, no path segments — mirrors handleMapPack's rejection
+// style), so a crafted URL can't escape the data dir. 404 when an icon is
+// absent — the frontend falls back to a text label with the canonical
+// equipment name (never an error: no CS2 install / no extraction is a
+// fallback state).
+func handleIcons(w http.ResponseWriter, r *http.Request, p string) {
+	if r.Method != http.MethodGet {
+		http.NotFound(w, r)
+		return
+	}
+	if p == "manifest.json" {
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(buildIconManifest(data.IconsDir())); err != nil {
+			log.Printf("icons: write manifest: %v", err)
+		}
+		return
+	}
+	serveIconFile(w, r, data.IconsDir(), p)
+}
+
+// serveIconFile validates name against the icon whitelist and serves the
+// file from dir as image/svg+xml (dir is a parameter for tests; the
+// route passes data.IconsDir()).
+func serveIconFile(w http.ResponseWriter, r *http.Request, dir, name string) {
+	if !mappack.ValidIconFileBase(name) {
+		http.NotFound(w, r)
+		return
+	}
+	path := filepath.Join(dir, name)
+	if _, err := os.Stat(path); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	w.Header().Set("Content-Type", "image/svg+xml")
+	http.ServeFile(w, r, path)
 }
 
 // handleSidecar serves a match's sidecars over the asset server (HTTP

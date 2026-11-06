@@ -17,9 +17,11 @@ import {
   ProfileService,
   VoiceService,
   MapPackService,
+  IconService,
   DialogService,
 } from '../../bindings/github.com/ChristianWSmith/spectra';
 import { KVStoreService } from '../../bindings/github.com/wailsapp/wails/v3/pkg/services/kvstore';
+import { resetIconManifest } from './replay/icons.js';
 
 // --- Error text ---------------------------------------------------------------
 // The one errText: normalizes a Go/binding rejection (Error, string, null)
@@ -454,6 +456,23 @@ export function setMapPackPromptState(state, path) {
   return MapPackService.SetMapPackPromptState(state || '', path || '');
 }
 export function chooseCS2Dir() { return MapPackService.ChooseCS2Dir(); }
+
+// --- IconService ---------------------------------------------------------------
+// Equipment-icon extraction from the same local CS2 install (weapons,
+// utility, armor, bomb → SVG silhouettes in the app data dir, served at
+// /api/icons/…). Lookups go through lib/replay/icons.js (loadIconManifest
+// + iconURL); the manifest routes those reads, so a successful extraction
+// resets the frontend's session memo — like the mutating wrappers above,
+// invalidating inside the wrapper closes the refetch race.
+// NOTE: bindings must be regenerated for IconService to exist (build step).
+
+export function getIconManifest() { return IconService.GetIconManifest(); }
+export function extractIcons(cs2Dir) {
+  return IconService.ExtractIcons(cs2Dir || '').then((r) => {
+    resetIconManifest();
+    return r;
+  });
+}
 
 // --- DialogService (native file dialogs) --------------------------------------
 // The webview can't open OS dialogs or write files; save.js wraps these into

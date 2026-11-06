@@ -264,11 +264,20 @@ at the end of the section.
   render images at
   `panorama/images/econ/weapons/base_weapons/weapon_<name>_png.vtex_c`
   (68 files, 512×384 BGRA8888) — these decode with spectra's existing
-  `decodeVTex` unchanged (verified: 68/68 → 512×384 PNG). Per-skin
-  variants live in `panorama/images/econ/default_generated/`
+  `decodeVTex` unchanged (verified: 68/68 → 512×384 PNG), but there is
+  NO armor/helmet PNG, so spectra extracts the SVG set only (it covers
+  armor, defuser and the bomb too). spectra's extractor is
+  `internal/mappack/icons.go` (shared block-table parser with
+  `decodeVTex`); manifest keys are demoinfocs'
+  `EquipmentType.String()` names — note the exact armor strings are
+  **"Kevlar Vest"** (`kevlar.vsvg_c`) and **"Kevlar + Helmet"**
+  (`armor_helmet.vsvg_c`), and VPK basename `sg556` = display name
+  "SG 553". Per-skin variants live in
+  `panorama/images/econ/default_generated/`
   (6,804 files, 1.2 GB — opt-in only).
   **Source** — local probe of pak01_dir.vpk + decode of all entries
-  (2026-11-03).
+  (2026-11-03); full-pipeline re-verify + all 46 mapped CRC checks
+  (2026-11-05).
 
 - **Sound assets (`.vsnd_c`) in a CS2 install** — where gun/footstep/
   grenade audio lives and how to turn it into playable files. In

@@ -32,6 +32,39 @@ const (
 	mipCompressZstd = 2
 )
 
+// resourceDataBlock parses a Source 2 resource container (16-byte header:
+// fileSize, headerVersion, version, blockOffset, blockCount) and returns
+// the offset and size of its DATA block. The block index is a run of
+// 12-byte entries {FourCC, rel offset, size} where the offset is relative
+// to the position of the offset field itself (s2v.app read-resource
+// guide). The ONE block-table parser: decodeVTex (textures) and
+// decodeVSVG (equipment silhouettes) share it.
+// kind prefixes error messages with the caller's resource name.
+func resourceDataBlock(data []byte, kind string) (off, size int, err error) {
+	const resHeaderSize = 16
+	if len(data) < resHeaderSize {
+		return 0, 0, fmt.Errorf("%s: %d bytes is too short for a header", kind, len(data))
+	}
+	blockCount := int(binary.LittleEndian.Uint32(data[12:16]))
+	tablePos := int(8 + binary.LittleEndian.Uint32(data[8:12]))
+	found := false
+	for i := 0; i < blockCount; i++ {
+		p := tablePos + i*12
+		if p+12 > len(data) {
+			return 0, 0, fmt.Errorf("%s: block table overruns file", kind)
+		}
+		if string(data[p:p+4]) == "DATA" {
+			off = p + 4 + int(binary.LittleEndian.Uint32(data[p+4:p+8]))
+			size = int(binary.LittleEndian.Uint32(data[p+8 : p+12]))
+			found = true
+		}
+	}
+	if !found || off < 0 || size < 0 || off+size > len(data) {
+		return 0, 0, fmt.Errorf("%s: missing or truncated DATA block", kind)
+	}
+	return off, size, nil
+}
+
 // decodeVTex parses a Source 2 texture resource and returns mip 0 (the
 // full-resolution image) as NRGBA.
 func decodeVTex(data []byte) (*image.NRGBA, error) {
@@ -44,23 +77,11 @@ func decodeVTex(data []byte) (*image.NRGBA, error) {
 	if headerVersion := binary.LittleEndian.Uint16(data[4:6]); headerVersion != 12 {
 		return nil, fmt.Errorf("vtex: header version %d (want 12)", headerVersion)
 	}
-	blockCount := int(binary.LittleEndian.Uint32(data[12:16]))
-	tablePos := int(8 + binary.LittleEndian.Uint32(data[8:12]))
-
-	// --- block index: 12-byte entries {FourCC, rel offset, size}; the
-	// offset is relative to the position of the offset field itself ---
-	dataOff, dataSize := 0, 0
-	for i := 0; i < blockCount; i++ {
-		p := tablePos + i*12
-		if p+12 > len(data) {
-			return nil, fmt.Errorf("vtex: block table overruns file")
-		}
-		if string(data[p:p+4]) == "DATA" {
-			dataOff = p + 4 + int(binary.LittleEndian.Uint32(data[p+4:p+8]))
-			dataSize = int(binary.LittleEndian.Uint32(data[p+8 : p+12]))
-		}
+	dataOff, dataSize, err := resourceDataBlock(data, "vtex")
+	if err != nil {
+		return nil, err
 	}
-	if dataOff == 0 || dataOff+dataSize > len(data) || dataSize < 40 {
+	if dataSize < 40 {
 		return nil, fmt.Errorf("vtex: missing or truncated DATA block")
 	}
 
