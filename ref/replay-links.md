@@ -19,7 +19,11 @@ loads, by the new canonical resolver `nav.entrySeekTick(query, rounds)`
    start tick** (`rounds.roundStartTick`, canonical home
    `lib/rounds.js`) — a round link is a link to a point in time, never
    the first frame;
-3. else `0` → the first frame (no time promise was made);
+3. else `null` → no time promise was made, so Replay applies the
+   user's DEFAULT start position (the knife/warmup hiding pref picks
+   between the first counted round's start and the first frame) —
+   `null` instead of `0` keeps "no promise" distinguishable from an
+   explicit `tick=0` first-frame target;
 4. a `?sel=` landmark's own seek applies if no explicit tick/round
    resolved it — and it no longer races the loader (see below).
 
@@ -75,8 +79,9 @@ to seek); it seeks in `startEngine` immediately after `load()` finishes.
 - **`:141-143` `replayStart(col)`** — it stamped
   `tick: col.detail?.round?.startTick || 0`: if the column's round-detail
   fetch had failed the link still rendered and navigated with `tick=0`,
-  which `entrySeekTick` treats as "no promise" → the replay silently
-  landed on the **first frame** while the button implied the round
+  a lying first-frame target (`entrySeekTick` reads an explicit `tick=0`
+  as a real promise now) → the replay silently landed on the **first
+  frame** while the button implied the round
   start. Now resolves the start from the detail row and falls back to
   `roundStartTick(rounds, col.round)`; with no known start the button
   does not navigate (no time promise, no lying link).

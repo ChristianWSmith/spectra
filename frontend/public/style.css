@@ -1457,8 +1457,8 @@ input[type='checkbox']:focus-visible {
 
 /* Back button (spec 7): the view's TOP-LEFT corner — first cell of the
    .replay-topbar row above the columns. It no longer floats over the
-   radar, so the plain .btn chrome applies (the renderer's HUD score box
-   owns the stage's top-left now); only the compact pill padding is
+   radar, so the plain .btn chrome applies (the renderer's score box
+   sits top-CENTER of the stage now); only the compact pill padding is
    kept here. */
 .replay-topbar .rp-back {
   padding: 3px 8px;

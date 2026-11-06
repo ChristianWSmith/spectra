@@ -1903,13 +1903,14 @@
           <!-- The back button and the collapsed landmark-rail toggle
                used to float here (top-left / top-right of the stage);
                both now live in the view's .replay-topbar above — the
-               stage's top corners stay clear for the HUD score box. -->
+               stage's corners are left to the canvas overlays (the
+               score box sits top-center, the kill feed top-right). -->
           {#if uiFollow != null && players[uiFollow]}
             <!-- Follow chip: the dismiss surface for the camera-follow
                  state (?follow= entry, the camera dropdown's Follow and
-                 the F/1-9 keys all land here). Top-right of the stage —
-                 the rail toggle is no longer a stage overlay, so nothing
-                 else claims that corner. -->
+                 the F/1-9 keys all land here). Top-LEFT of the stage —
+                 the kill feed owns the top-right, so nothing else
+                 claims this corner. -->
             <span class="chip follow-chip" role="status">
               <span class="codicon codicon-eye" aria-hidden="true"></span>
               Following {players[uiFollow].name || `slot ${uiFollow}`}
