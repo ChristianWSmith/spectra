@@ -9,11 +9,13 @@
 // (the world layers follow the tick: lingering smoke/fire, the death
 // X's round cleanup incl. the post-round C4 kill and the EXACT
 // round_start boundary seek, the C4 icon and its aspect-preserving
-// draw, the WHITE dashed muzzle tracer (r+2 → r+20, dash phase advanced
+// draw, the WHITE dashed muzzle tracer (r+2 → r+38, dash phase advanced
 // from the tick), the LIGHTER flash overlay (peak 0.6, never solid
 // white) and the white talking bloom drawn BENEATH its dot, the
 // death-X-under-C4 layer order, the carried-C4 badge on the carrier's
-// dot and the thrower-side tint of the util flight line + icon; a
+// dot and the thrower-side tint of the util flight line + icon, the
+// thrower-team tint of the lingering smoke area + its detonation bloom
+// ring (neutral gray when the thrower is unknown); a
 // crouch-size check; and the
 // HUD — the SCORE-ANCHORED team-score box (the '‹ct› – ‹t›' segment
 // dead-center of the box, unequal name widths padding the shorter side,
@@ -268,7 +270,7 @@ test('muzzleRays: count segments from inner to outer, fanned around the angle', 
   assert.deepEqual(muzzleRays(0, 0, 0, 5, 12, 0), []); // no rays
   // count = 1 (the spread never applies): ONE straight ray along the aim
   // direction — the geometry of the firing tracer the renderer draws
-  // dashed (r+2 → r+20).
+  // dashed (r+2 → r+38).
   const line = muzzleRays(10, 20, 0.5, 11, 23, 1, 0);
   assert.equal(line.length, 1);
   const [x1, y1, x2, y2] = line[0];
@@ -663,8 +665,10 @@ test('world layers follow the tick: smoke/fire, death X, C4 icon, muzzle tracer,
   // the death X is the ONLY thing that strokes with lineCap 'round'
   const deathX = (from = 0) =>
     strokes(from).filter((e) => e.lineCap === 'round' && e.strokeStyle === '#e6a35a');
+  // the lingering smoke (the thrower '1' is CT → the 50/50 CT tint;
+  // see SMOKE_CT in renderer.js)
   const smokeCloud = (from = 0) =>
-    fills(from).filter((e) => String(e.fillStyle).startsWith('rgba(180, 190, 205'));
+    fills(from).filter((e) => String(e.fillStyle).startsWith('rgba(135, 180, 218'));
 
   // --- inside round 1, smoke lingering, bomb on the ground -----------------
   let mark = canvas.log.length;
@@ -672,8 +676,8 @@ test('world layers follow the tick: smoke/fire, death X, C4 icon, muzzle tracer,
   r.draw();
   assert.ok(smokeCloud(mark).length > 0, 'the smoke cloud reaches the renderer (typed bucket)');
   assert.ok(
-    since(mark).some((e) => e.fillStyle === 'rgba(180, 190, 205, 0.3)'),
-    'the lingering smoke is clearly visible (fill 0.3, was 0.18)',
+    since(mark).some((e) => e.fillStyle === 'rgba(135, 180, 218, 0.3)'),
+    'the lingering smoke is clearly visible (fill 0.3, was 0.18) and CT-tinted by its thrower',
   );
   assert.ok(deathX(mark).length > 0, 'the death X marks where bob died');
   assert.ok(
@@ -895,15 +899,16 @@ test('world layers follow the tick: smoke/fire, death X, C4 icon, muzzle tracer,
     1,
     'ONE straight line along the aim direction (not a 5-ray fan)',
   );
-  // …and it is LONGER than the old r+14 ray: the far end sits r+20 = 29
-  // px out from the dot's center (the CT dot fill is the reference).
+  // …and it is TWICE as long as the old r+2 → r+20 ray: the far end sits
+  // r+38 = 47 px out from the dot's center (the CT dot fill is the
+  // reference).
   {
     const dot = since(mark).find(
       (e) => e.op === 'arc' && e.fillStyle === '#5aa9e6' && e.args[2] === 9,
     );
     const end = since(mark).find((e) => e.op === 'lineTo' && e.strokeStyle === '#ffffff');
     const reach = Math.hypot(end.args[0] - dot.args[0], end.args[1] - dot.args[1]);
-    assert.ok(Math.abs(reach - 29) < 1e-9, `the tracer reaches r + 20 = 29 px (got ${reach})`);
+    assert.ok(Math.abs(reach - 47) < 1e-9, `the tracer reaches r + 38 = 47 px (got ${reach})`);
   }
   // dashed [6,5] with the phase pinned to the flash tick: at the edge
   // tick itself the dashes have not travelled yet…
@@ -1267,7 +1272,9 @@ test('C4 badge: inventory-driven carrier, top-right anchor, alive only, text fal
 // at the throw tick (throwerSideAt: slotOfSteam + sideAtFrame — the SAME
 // canonical rule the death X and the kill feed use). An unresolvable
 // thrower keeps the neutral orange line and the untinted icon — a side is
-// never guessed. Lingering areas and detonation rings stay type-colored.
+// never guessed. Lingering FIRE areas and the fire/HE/decoy detonations
+// stay type-colored — the lingering SMOKE area and its bloom now take the
+// thrower's team tint too (pinned in the next test).
 
 test('util flight: trail + icon take the thrower team color, neutral when unknown', () => {
   headlessGlobals();
@@ -1345,6 +1352,100 @@ test('util flight: trail + icon take the thrower team color, neutral when unknow
   mark = canvas.log.length;
   r.draw();
   assert.equal(flight(mark).length, 0, 'no trail once the grenade has detonated');
+  r.destroy();
+});
+
+// --- detonated smoke tinted by the throwing team ----------------------------
+//
+// The lingering smoke area AND its detonation bloom ring carry the
+// THROWER's side at the smoke's tick (smokeColorRGB → throwerSideAt — the
+// SAME canonical rule as the util flight line): the team color blended
+// 50/50 with the neutral smoke gray (SMOKE_CT/SMOKE_T in renderer.js) at
+// the UNCHANGED 0.3/0.55 area alphas and the bloom's 0.8·(1−k). An
+// unresolvable thrower keeps the old neutral gray VERBATIM — a side is
+// never guessed (the no-guessed-fallback rule).
+
+test('smoke tint: lingering area + bloom ring take the thrower team color, neutral when unknown', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, {
+    engine,
+    data,
+    players: [
+      { steamId: '1', name: 'alice', side: 'ct' },
+      { steamId: '2', name: 'bob', side: 't' },
+    ],
+  });
+  const mk = (ev) => normalizeEvent(ev, {});
+  // one lone smoke detonation (no throw pair → no flight line to filter)
+  const smokeRow = (attacker) =>
+    mk({ id: 1, seq: 1, tick: 128, round: 1, kind: 'grenade', attacker, weapon: 'Smoke Grenade', posX: 50, posY: 50 });
+  const AREA_FILL = 'rgba(135, 180, 218, 0.3)'; // the CT 50/50 blend, fill alpha 0.3
+  const AREA_STROKE = 'rgba(135, 180, 218, 0.55)'; // …and the outline alpha 0.55
+  const T_FILL = 'rgba(205, 177, 148, 0.3)';
+  const T_STROKE = 'rgba(205, 177, 148, 0.55)';
+  const NEUTRAL_FILL = 'rgba(180, 190, 205, 0.3)'; // the pre-tint gray, verbatim
+  const NEUTRAL_STROKE = 'rgba(180, 190, 205, 0.55)';
+  // the lingering area at the playhead: fill + stroke with a given color
+  const area = (from, fill, stroke) =>
+    canvas.log.slice(from).some((e) => e.op === 'fill' && e.fillStyle === fill) &&
+    canvas.log.slice(from).some((e) => e.op === 'stroke' && e.strokeStyle === stroke);
+  // the bloom ring: a NON-1.5 px stroke (the area outline is always 1.5)
+  // in the tint color, within the 0.9 s bloom window
+  const bloomRing = (from, prefix) =>
+    canvas.log
+      .slice(from)
+      .some((e) => e.op === 'stroke' && String(e.strokeStyle).startsWith(prefix) && e.lineWidth !== 1.5);
+  const BLOOM_DUR = 0.9; // mirrors renderer.js — the smoke bloom window
+
+  // --- a CT thrower (alice, slot 0) → the CT blue-gray tint ---------------
+  r.setLandmarks([smokeRow('1')]);
+  r.resize();
+  engine.seekTick(200); // 1.125 s old: lingering area at full alpha, bloom done
+  let mark = canvas.log.length;
+  r.draw();
+  assert.ok(area(mark, AREA_FILL, AREA_STROKE), 'the CT thrower tints the lingering smoke CT blue-gray at the SAME 0.3/0.55 alphas');
+  assert.ok(
+    !canvas.log.slice(mark).some((e) => String(e.fillStyle).startsWith('rgba(180, 190, 205')),
+    'a KNOWN side never falls back to the neutral gray (non-vacuous pin)',
+  );
+  // the bloom ring on the same smoke (0.1875 s after detonation, k = t/0.9)
+  mark = canvas.log.length;
+  engine.seekTick(140);
+  r.draw();
+  const ctRing = canvas.log
+    .slice(mark)
+    .find((e) => e.op === 'stroke' && String(e.strokeStyle).startsWith('rgba(135, 180, 218') && e.lineWidth !== 1.5);
+  assert.ok(ctRing, 'the smoke detonation bloom ring takes the CT tint too');
+  const ringAlpha = Number(String(ctRing.strokeStyle).match(/[\d.]+\)$/)[0].slice(0, -1));
+  assert.ok(
+    Math.abs(ringAlpha - 0.8 * (1 - ((140 - 128) / 64) / BLOOM_DUR)) < 1e-9,
+    'the bloom keeps its 0.8·(1−k) age fade (only the hue changed)',
+  );
+
+  // --- a T thrower (bob, slot 1) → the warm gray-orange tint --------------
+  r.setLandmarks([smokeRow('2')]);
+  mark = canvas.log.length;
+  engine.seekTick(200);
+  r.draw();
+  assert.ok(area(mark, T_FILL, T_STROKE), 'the T thrower tints the lingering smoke warm gray-orange');
+  mark = canvas.log.length;
+  engine.seekTick(140);
+  r.draw();
+  assert.ok(bloomRing(mark, 'rgba(205, 177, 148'), 'the bloom ring takes the T tint too');
+
+  // --- an unresolvable thrower → the neutral gray, exactly -----------------
+  r.setLandmarks([smokeRow('999')]);
+  mark = canvas.log.length;
+  engine.seekTick(200);
+  r.draw();
+  assert.ok(area(mark, NEUTRAL_FILL, NEUTRAL_STROKE), 'an unknown thrower keeps the neutral gray area (no guessed side)');
+  mark = canvas.log.length;
+  engine.seekTick(140);
+  r.draw();
+  assert.ok(bloomRing(mark, 'rgba(180, 190, 205'), 'the bloom ring stays neutral gray too');
   r.destroy();
 });
 

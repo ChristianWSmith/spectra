@@ -59,6 +59,18 @@ const SMOKE_LIFETIME_S = 18;
 const FIRE_LIFETIME_S = 7;
 const FIRE_RADIUS = 130; // world units
 const SMOKE_RADIUS = 144;
+// Detonated-smoke TINT — the lingering area AND its detonation bloom ring
+// read the THROWER's side (smokeColorRGB below) instead of neutral gray:
+// the team color blended 50/50 with the existing smoke gray, so a known
+// side is clearly CT/T while still reading as smoke (desaturated blue-gray
+// / warm gray-orange), at the SAME alphas as before. Concrete blends:
+//   CT  (90,169,230) #5aa9e6 ⊕ (180,190,205) → (135,180,218)
+//   T   (230,163,90) #e6a35a ⊕ (180,190,205) → (205,177,148)
+// An UNRESOLVABLE thrower keeps SMOKE_GRAY exactly — a side is never
+// guessed (the repo's no-guessed-fallback rule).
+const SMOKE_GRAY = '180, 190, 205'; // rgba base — the neutral/unknown tint
+const SMOKE_CT = '135, 180, 218'; // 50% CT color + 50% smoke gray
+const SMOKE_T = '205, 177, 148'; // 50% T color + 50% smoke gray
 // --- World-layer effect windows (all TICK-derived — seek-correct) -----------
 const FIRE_FLASH_S = 0.22; // muzzle-flash window after an attack bit edge
 const DAMAGE_FLASH_S = 0.35; // victim-hit flash window after a damage event
@@ -67,8 +79,11 @@ const DAMAGE_FLASH_S = 0.35; // victim-hit flash window after a damage event
 // the tick (lineDashOffset derived from the flash's own age), so it
 // reads as bullets leaving the dot instead of a static ray. Dash phase
 // is tick math only → scrub-safe and frozen while paused, exactly like
-// the windowAlpha envelope that fades it out.
-const MUZZLE_REACH = 20; // px past the dot center (the old ray stopped at r+14)
+// the windowAlpha envelope that fades it out. The segment is 36 px long
+// (r+2 → r+38 — twice the old 18 px r+2 → r+20 reach); the dash pattern
+// and its march speed deliberately did NOT scale with it, so a longer
+// tracer still reads as the same motion (just more of it).
+const MUZZLE_REACH = 38; // px past the dot center (was 20; the original ray stopped at r+14)
 const MUZZLE_DASH = [6, 5]; // px — tracer segment / gap along the aim line
 const MUZZLE_DASH_SPEED = 0.8; // px per tick — how fast the dashes travel out
 // Talking bloom (voiceBloom): a white ring expanding OUTWARD FROM THE
@@ -1004,6 +1019,19 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     return sideAtFrame(slot, frame);
   }
 
+  // smokeColorRGB — the tint of ONE detonated smoke (its lingering area
+  // AND its detonation bloom ring — same row, same visual): the THROWER's
+  // side at the smoke's tick through throwerSideAt, blended 50/50 with the
+  // neutral smoke gray (SMOKE_CT / SMOKE_T constants above). Unknown or
+  // unresolvable thrower → SMOKE_GRAY verbatim (the pre-tint color): a
+  // side is NEVER guessed. Pure — unit-tested by renderer.test.js.
+  function smokeColorRGB(l) {
+    const side = throwerSideAt(l.attacker, l.tick);
+    if (side === 'ct') return SMOKE_CT;
+    if (side === 't') return SMOKE_T;
+    return SMOKE_GRAY;
+  }
+
   function drawTrails(frame) {
     const n = store.frames;
     const from = Math.max(0, frame - TRAIL_FRAMES);
@@ -1053,7 +1081,8 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // lands on the right spot; the line and the icon carry the THROWER's
   // team color, see throwerSideAt), then ONE distinct detonation visual
   // per type (detonationStyleOf): HE expanding ring, flash white pop,
-  // smoke bloom, fire ring, decoy pulse.
+  // team-tinted smoke bloom (the same thrower tint as the lingering
+  // smoke area it hands off to), fire ring, decoy pulse.
   function drawGrenades(tick) {
     const tr = engine.tickRate;
     // smoke / fire areas first (under the lines)
@@ -1064,8 +1093,12 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       const c = worldToScreen(l.x, l.y);
       const r = (SMOKE_RADIUS / tf.scale) * cam.fit * cam.zoom;
       const fade = age > SMOKE_LIFETIME_S - 2 ? (SMOKE_LIFETIME_S - age) / 2 : 1;
-      ctx.fillStyle = `rgba(180, 190, 205, ${0.3 * fade})`;
-      ctx.strokeStyle = `rgba(180, 190, 205, ${0.55 * fade})`;
+      // team-tinted (the thrower's side, 50/50 with the smoke gray — see
+      // SMOKE_CT/SMOKE_T) at the SAME 0.3/0.55 alphas as the old neutral;
+      // an unresolvable thrower keeps that neutral gray verbatim.
+      const rgb = smokeColorRGB(l);
+      ctx.fillStyle = `rgba(${rgb}, ${0.3 * fade})`;
+      ctx.strokeStyle = `rgba(${rgb}, ${0.55 * fade})`;
       ctx.lineWidth = 1.5;
       ctx.beginPath();
       ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
@@ -1095,8 +1128,10 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     // at the throw tick (throwerSideAt — slotOfSteam + sideAtFrame, the
     // canonical rule): CT blue / T orange, and the NEUTRAL orange line
     // with the untinted icon when the thrower cannot be resolved — a
-    // side is never guessed. Lingering smoke/fire areas and detonation
-    // rings stay type-colored (drawn above).
+    // side is never guessed. Lingering FIRE areas and the fire/HE/decoy
+    // detonation visuals stay type-colored (drawn above); the lingering
+    // SMOKE area and its bloom take the thrower's tint too (the SAME
+    // rule — smokeColorRGB), neutral gray when the side is unknown.
     for (const pl of polylines) {
       if (!hasPos(pl.from)) continue;
       if (tick < pl.from.tick) continue;
@@ -1162,7 +1197,9 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
         if (age > dur) continue;
         const k = age / dur;
         const r = 6 + k * (SMOKE_RADIUS / tf.scale) * cam.fit * cam.zoom;
-        ctx.strokeStyle = `rgba(180, 190, 205, ${0.8 * (1 - k)})`;
+        // the same thrower-team tint as the lingering area it hands off
+        // to (neutral gray when the side is unknown — never guessed)
+        ctx.strokeStyle = `rgba(${smokeColorRGB(l)}, ${0.8 * (1 - k)})`;
         ctx.lineWidth = 3 * (1 - k) + 1;
         ctx.beginPath();
         ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
@@ -1620,7 +1657,8 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       }
 
       // 24 — firing TRACER: a WHITE dashed line along the look
-      // direction (r+2 → r+20 — longer than the old r+14 ray) whose
+      // direction (r+2 → r+38 — the 36 px segment, twice the old 18 px
+      // r+2 → r+20 reach) whose
       // dashes MARCH OUTWARD with the tick (lineDashOffset from the
       // flash's own age — pure tick math, so a scrub re-renders the same
       // phase and a paused draw freezes), reading as bullets leaving the
