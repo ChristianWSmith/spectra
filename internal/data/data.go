@@ -85,6 +85,19 @@ func MapsDir() string {
 	return dir
 }
 
+// IconsDir returns the extracted game-icon root
+// ($XDG_DATA_HOME/spectra/icons), creating it if needed. Flat directory
+// of <name>.svg files (one per canonical equipment name) written by the
+// in-app CS2 extractor and never committed — the same acquisition
+// posture as the map packs (Valve IP stays local; see internal/mappack).
+func IconsDir() string {
+	dir := filepath.Join(xdg.DataHome, appName, "icons")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return dir
+	}
+	return dir
+}
+
 // EnsureDirs creates every directory the app writes to. Called once at
 // startup so later call sites can assume paths exist.
 func EnsureDirs() error {
