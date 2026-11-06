@@ -865,6 +865,32 @@
     return !!(masks[frame] & (1 << slot));
   }
 
+  // The first frame each slot EVER carries a payload for — the line
+  // between "no data yet" and "the stream is sampling this player".
+  // The position stream samples ALIVE slots only (sidecar format doc), so
+  // an absent payload means dead… but only once the slot has been seen at
+  // least once: the demo's opening frames carry no payload at all, and
+  // calling those DEAD would report a death the data never showed. One
+  // pass per load (data changes only when a match is parsed).
+  const firstPayloadFrame = $derived.by(() => {
+    const masks = data && data.masks;
+    const n = (data && data.slots && data.slots.length) || 0;
+    const first = new Array(n).fill(-1);
+    if (!masks) return first;
+    let left = n;
+    for (let f = 0; f < masks.length && left > 0; f++) {
+      const m = masks[f];
+      if (!m) continue;
+      for (let s = 0; s < n; s++) {
+        if (first[s] < 0 && m & (1 << s)) {
+          first[s] = f;
+          left--;
+        }
+      }
+    }
+    return first;
+  });
+
   // Per-player mute handlers with STABLE identity per steamId — a fresh
   // closure every frame would churn every button's onclick for nothing.
   const muteHandlerFor = (() => {
@@ -902,14 +928,19 @@
       slots.map((slot) => {
         const p = players[slot] || {};
         const alive = aliveAtFrame(frame, slot);
+        // Status is only CLAIMED once the stream has sampled this slot
+        // (firstPayloadFrame); before that it is unknown — `alive: null`
+        // is PlayerCard's "no data" state, which renders neither alive
+        // nor DEAD.
+        const sampled = (firstPayloadFrame[slot] ?? -1) >= 0 && frame >= firstPayloadFrame[slot];
         const sid = p.steamId != null ? String(p.steamId) : '';
         return {
           player: players[slot] || {},
           voiceColor: sid ? voiceColorMap[sid] ?? null : null,
           speaking: sid && speakIdx ? speakingAt(speakIdx, sid, tick) : false,
           muted: uiVoiceMutedAll || teamMuted[col] || !!(sid && uiVoiceMute[sid]),
-          alive,
-          dead: !alive,
+          alive: sampled ? alive : null,
+          dead: sampled && !alive,
           follow: uiFollow === slot,
           state: stateIndex ? slotStateAt(stateIndex, slot, frame) : null,
           icons: iconMap,

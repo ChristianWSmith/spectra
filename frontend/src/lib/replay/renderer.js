@@ -433,6 +433,16 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     cam.zoom = 1;
     cam.cx = extW / 2;
     cam.cy = extH / 2;
+    // cam.fit is the canvas→image scale, i.e. what "1× zoom" MEANS:
+    // the largest scale at which the whole image still fits the canvas.
+    // Without it, 1× was one screen px per image px — on a stage smaller
+    // than the 1024 px radar (the player-card columns now take that
+    // space) free mode opened on a centre crop and the off-screen cull
+    // dropped every player outside the slice, so the map looked empty.
+    // Guarded: fit() also runs before the first resize (canvas not sized
+    // yet) and after a degenerate transform — fall back to raw pixels.
+    const s = Math.min(cssW / extW, cssH / extH);
+    cam.fit = Number.isFinite(s) && s > 0 ? s : 1;
   }
 
   function resize() {
@@ -617,7 +627,11 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     screenToImage(sx, sy);
     const bx = imgPt.x;
     const by = imgPt.y;
-    cam.zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, cam.zoom * factor));
+    // Clamp the on-screen scale (fit-relative zoom × fit), not the raw
+    // ratio: ZOOM_MIN/MAX are about how much map is visible, so they
+    // must mean the same thing whatever the canvas/image size is.
+    const eff = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, cam.fit * cam.zoom * factor));
+    cam.zoom = eff / cam.fit;
     const s = cam.fit * cam.zoom;
     cam.cx = bx - (sx - cssW / 2) / s;
     cam.cy = by - (sy - cssH / 2) / s;
@@ -705,8 +719,18 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     cam.cx = easeValue(cam.cx, target.cx, dt, SMART_TAU_CENTER);
     cam.cy = easeValue(cam.cy, target.cy, dt, SMART_TAU_CENTER);
     const sCur = cam.fit * cam.zoom;
-    const s = Math.exp(easeValue(Math.log(sCur), Math.log(target.s), dt, SMART_TAU_ZOOM));
-    cam.zoom = Math.max(SMART_ZOOM_MIN, Math.min(ZOOM_MAX, s / cam.fit));
+    // Ease in SCREEN scale — that is what target.s is — and clamp there
+    // too: the smart bounds (and the manual zoom band) are about how much
+    // map fits the CANVAS, not about the fit-relative zoom ratio. Storing
+    // s/fit keeps every consumer (wheel, pan, smoke radii) on one scale.
+    const s = Math.max(
+      SMART_ZOOM_MIN,
+      Math.min(
+        ZOOM_MAX,
+        Math.exp(easeValue(Math.log(sCur), Math.log(target.s), dt, SMART_TAU_ZOOM)),
+      ),
+    );
+    cam.zoom = s / cam.fit;
     smartConverged = camConverged(
       { cx: cam.cx, cy: cam.cy, s: cam.fit * cam.zoom },
       target,

@@ -20,6 +20,8 @@
   //               outer outline with a gap (spec 26)
   //   muted       voice muted (replay/audio setMuted) → mute button state
   //   alive/dead  either may be passed; dead wins → dimmed card + DEAD
+  //               marker. `alive: null` = the data never said (unknown):
+  //               the card renders as a plain card, never DEAD.
   //               marker while the last-known values stay visible
   //   follow      camera follows this player → marker icon
   //   state       slotStateAt(...) object or null — null means this

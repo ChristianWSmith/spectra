@@ -1436,8 +1436,20 @@ input[type='checkbox']:focus-visible {
   left: 8px;
   z-index: 3;
   padding: 3px 8px;
+  /* The pill always floats over the radar, so it keeps HUD-surface
+     chrome in BOTH themes — and therefore needs its own glyph color:
+     .btn's var(--text) is dark in the light theme, which vanished on
+     this dark pill (reported by the visual pass). */
   background: rgba(14, 17, 22, 0.85);
+  border-color: rgba(35, 42, 55, 0.9);
+  color: #d7dde8;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+}
+
+.replay-stage .rp-back:hover {
+  background: rgba(30, 35, 44, 0.95);
+  border-color: rgba(251, 172, 24, 0.45);
+  color: #ffffff;
 }
 
 /* Collapsed landmark rail (spec 14): the toggle floats at the stage's
