@@ -7,10 +7,24 @@ import (
 	"os"
 	"slices"
 	"sort"
+	"strconv"
 	"testing"
 
 	"github.com/ChristianWSmith/spectra/internal/models"
 )
+
+// rosterColorSink is a PositionSink that only cares about the optional
+// RosterSink delivery: AddFrame is a no-op (frames are irrelevant to the
+// golden assertions) and SetPlayerColors records the end-of-demo
+// teammate-color map exactly as sidecar.Writer would fold it into
+// meta.json's slot table.
+type rosterColorSink struct {
+	colors map[uint64]int
+}
+
+func (s *rosterColorSink) AddFrame(int32, []PositionPlayer) error { return nil }
+
+func (s *rosterColorSink) SetPlayerColors(colors map[uint64]int) { s.colors = colors }
 
 // TestParseGolden is the dev-only acceptance check against the golden demo
 // (donk.dem). It points at a RAW, already-decompressed .dem stream — extract
@@ -33,7 +47,12 @@ func TestParseGolden(t *testing.T) {
 
 	type prog struct{ done, total int }
 	var progress []prog
+	// The RosterSink capability rides the position sink — the same
+	// capability sidecar.Writer implements (this test asserts the color
+	// values that would land in meta.json's playerColors).
+	sink := &rosterColorSink{}
 	m, err := Parse(context.Background(), f, ParseOptions{
+		Positions: sink,
 		Progress: func(done, total int) {
 			progress = append(progress, prog{done, total})
 		},
@@ -323,6 +342,56 @@ func TestParseGolden(t *testing.T) {
 	// it for all ten players.
 	if math.Abs(forever.ADR-116.9) > 0.05 {
 		t.Errorf("forever2kELO ADR = %.4f, want ≈116.9", forever.ADR)
+	}
+
+	// ---- end-of-demo teammate colors (m_iCompTeammateColor) ----
+	// Ground truth: the ten colors exactly as they read IN-GAME on this
+	// demo (manually verified 2026-11-06), as the raw int CS2.md "Player
+	// scoreboard/radar colors" pins (0 blue, 1 green, 2 yellow, 3 orange,
+	// 4 purple). The demo spells the orange player "llorente" (lowercase
+	// L) — the assertion follows the stored spelling. This is the same
+	// map the RosterSink folds into meta.json's playerColors slot row.
+	wantColors := map[string]int{
+		"Magnojezzz":   3, // orange
+		"donk666":      4, // purple
+		"Zuedsta":      1, // green
+		"forever2kELO": 2, // yellow
+		"-meg2k":       0, // blue
+		"FREELOOK":     0, // blue
+		"llorente":     3, // orange
+		"kRaSnaL":      1, // green
+		"hades--":      2, // yellow
+		"adamS":        4, // purple
+	}
+	if len(sink.colors) != len(wantColors) {
+		t.Errorf("teammate colors delivered for %d players, want %d", len(sink.colors), len(wantColors))
+	}
+	seen := map[string]bool{}
+	for _, ps := range m.PlayerStats {
+		want, ok := wantColors[ps.Name]
+		if !ok {
+			t.Errorf("player %q not in the expected color table", ps.Name)
+			continue
+		}
+		seen[ps.Name] = true
+		steamID, err := strconv.ParseUint(ps.SteamID, 10, 64)
+		if err != nil {
+			t.Errorf("player %q steamId %q: %v", ps.Name, ps.SteamID, err)
+			continue
+		}
+		got, delivered := sink.colors[steamID]
+		if !delivered {
+			t.Errorf("%s: no teammate color delivered (steamId %s)", ps.Name, ps.SteamID)
+			continue
+		}
+		if got != want {
+			t.Errorf("%s teammate color = %d, want %d", ps.Name, got, want)
+		}
+	}
+	for name := range wantColors {
+		if !seen[name] {
+			t.Errorf("expected player %q missing from the snapshot", name)
+		}
 	}
 
 	// Weapon maps must be valid JSON objects.

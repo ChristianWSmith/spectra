@@ -61,6 +61,40 @@ func finalRoster(participants []*common.Player) []*common.Player {
 	return roster
 }
 
+// teammateColor reads one participant's CS2 teammate color — the raw
+// int of the player controller property m_iCompTeammateColor (CS2.md
+// "Player scoreboard/radar colors"): 0 blue, 1 green, 2 yellow, 3 orange,
+// 4 purple, -1 none/GOTV. The value is read RAW: demoinfocs'
+// common.Color enum names mislabel CS2 colors (it says 0=Yellow — that is
+// the CS:GO ordering), so only the int is ever carried.
+//
+// Missing entity (a participant whose controller is gone) or a missing /
+// unexpected property type yields -1 ("no color") — never a guessed value.
+func teammateColor(pl *common.Player) int {
+	const noColor = -1
+	if pl == nil || pl.Entity == nil {
+		return noColor
+	}
+	v, ok := pl.Entity.PropertyValue("m_iCompTeammateColor")
+	if !ok {
+		return noColor
+	}
+	switch n := v.Any.(type) {
+	case int32:
+		return int(n)
+	case int64:
+		return int(n)
+	case int:
+		return n
+	case uint32:
+		return int(n)
+	case uint64:
+		return int(n)
+	default:
+		return noColor
+	}
+}
+
 // realPeriod reports whether stats-eligible (real) play is underway: the
 // match has started, warmup is over, and the game phase has advanced past
 // Pregame. IsWarmupPeriod() alone misses two polluters observed in real

@@ -40,6 +40,13 @@ type ReplayPlayer struct {
 	SteamID string `json:"steamId"`
 	Name    string `json:"name"`
 	Side    string `json:"side"`
+	// Color is the player's CS2 teammate color as the RAW
+	// m_iCompTeammateColor int (0 blue, 1 green, 2 yellow, 3 orange,
+	// 4 purple, -1 none/GOTV — CS2.md "Player scoreboard/radar colors").
+	// It rides the sidecar's slot table, so it is absent (null) for a
+	// match whose sidecar predates the field — the frontend then draws
+	// no color ring instead of guessing one.
+	Color *int `json:"color,omitempty"`
 }
 
 // ReplayService serves replay meta.
@@ -53,7 +60,8 @@ type ReplayService struct {
 // false and the match row's mirrored columns (0 for pre-M2 imports)
 // describe the absence. When the sidecar is present it is the source of
 // truth for frames/format/slots and the players array follows the slot
-// table order; without one, players are ordered by name.
+// table order (carrying that slot's teammate color when the sidecar has
+// one); without one, players are ordered by name.
 func (s *ReplayService) GetReplayMeta(matchID int64) (ReplayMeta, error) {
 	m, err := s.st.GetMatch(matchID)
 	if err != nil {
@@ -89,15 +97,22 @@ func (s *ReplayService) GetReplayMeta(matchID int64) (ReplayMeta, error) {
 		if sm.TickRate > 0 {
 			meta.TickRate = sm.TickRate
 		}
-		for _, id := range sm.Players {
+		for i, id := range sm.Players {
 			sid := strconv.FormatUint(id, 10)
-			row, ok := bySteam[sid]
-			if ok {
+			// Teammate color rides the slot table by the same index
+			// (sidecar.Meta.ColorAt): a sidecar written before the
+			// field leaves Color nil — no ring, never a guess.
+			color, hasColor := sm.ColorAt(i)
+			p := ReplayPlayer{SteamID: sid}
+			if row, ok := bySteam[sid]; ok {
 				delete(bySteam, sid)
-				meta.Players = append(meta.Players, ReplayPlayer{SteamID: sid, Name: row.Name, Side: row.Side})
-			} else {
-				meta.Players = append(meta.Players, ReplayPlayer{SteamID: sid})
+				p.Name, p.Side = row.Name, row.Side
 			}
+			if hasColor {
+				c := color
+				p.Color = &c
+			}
+			meta.Players = append(meta.Players, p)
 		}
 	case errors.Is(err, sidecar.ErrNoSidecar):
 		// HasSidecar stays false; nothing else to report.

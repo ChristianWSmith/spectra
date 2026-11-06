@@ -567,3 +567,19 @@ at the end of the section.
   mp_c4timer/mp_death_drop_c4 defaults
   (https://developer.valvesoftware.com/wiki/List_of_Counter-Strike_2_console_commands_and_variables,
   https://slashplay.gg/commands/cs2/mp_c4timer, 2026-11-05).
+
+- **Player scoreboard/radar colors from a demo** — read
+  `CCSPlayerController.m_iCompTeammateColor` (int32, per controller
+  entity — NOT on CCSPlayerResource in CS2; −1 = none/GOTV). Mapping:
+  0=blue, 1=green, 2=yellow, 3=orange, 4=purple — verified 10/10 vs
+  in-game ground truth on `donk.dem.zst` (the ten assignments are pinned
+  by `extract.TestParseGolden`), identical to LaihoE demoparser's
+  `PLAYER_COLOR`. demoinfocs v6 `Player.ColorOrErr()` returns the right
+  raw value but its `Color` enum *names* mislabel CS2 colors (it says
+  0=Yellow — that is the CS:GO ordering), so use the raw int only.
+  **Source** — github.com/SteamTracking/GameTracking-CS2 DumpSource2
+  schemas (`CCSPlayerController.h`);
+  github.com/LaihoE/demoparser `src/parser/src/maps.rs`;
+  github.com/markus-wa/demoinfocs-golang v6 `common/player.go` +
+  `common/common.go` (Color enum); local probe of donk.dem.zst
+  (2026-11-06).

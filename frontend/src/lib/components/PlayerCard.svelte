@@ -1,11 +1,11 @@
 <script>
   // PlayerCard — ONE player's live card beside the replay render area:
-  // name, HP + bar, armor with helmet
-  // indicator, the equipped weapon with mag/reserve ammo, unspent money
-  // and utility — tinted by the player's CURRENT side, outlined by their
-  // voice color, with a per-player voice mute. TeamColumn stacks five of
-  // these under one team name; the caller (Replay) owns all data and
-  // all fetching.
+  // name, HP + bar, armor with helmet indicator, the equipped weapon
+  // with mag/reserve ammo, unspent money, utility (+ the C4 when this
+  // player carries the bomb) and the live K/D/A + ADR row — tinted by the
+  // player's CURRENT side, ringed by the player's TEAMMATE COLOR, with a
+  // per-player voice mute. TeamColumn stacks five of these under one team
+  // name; the caller (Replay) owns all data and all fetching.
   //
   // Prop contract — everything is PRE-COMPUTED, this component never
   // fetches and never guesses a missing value:
@@ -14,8 +14,11 @@
   //   side        'ct' | 't' | '' — the side the player is on AT THE
   //               PLAYHEAD (halftime swaps change it) → card tint +
   //               accent; '' = unknown → neutral card, no guessed color
-  //   voiceColor  one of voiceindex.VOICE_COLORS, or null → the
-  //               voice-color outline is drawn only when set
+  //   playerColor hex or null — the player's CS2 teammate color
+  //               (playercolor.colorHexOf of meta.players[].color). The
+  //               color ring is drawn only when set; null means the
+  //               sidecar never said (old sidecar / no color) → no ring,
+  //               never a guessed one
   //   speaking    talking right now (voiceindex.speakingAt) → the extra
   //               outer outline with a gap (spec 26)
   //   muted       voice muted (replay/audio setMuted) → mute button state
@@ -27,6 +30,10 @@
   //   state       slotStateAt(...) object or null — null means this
   //               replay has NO state stream (pre-state import): every
   //               value renders "—", never a zero presented as a fact
+  //   stats       {k, d, a, adr} from replay/livestats.js at the
+  //               playhead, or null before the fold runs → the stats row
+  //               renders "—", never a fabricated 0 (adr null = no
+  //               counted round started yet → "—")
   //   icons       preloadIcons(...) Map<name, HTMLImageElement|null>
   //   iconURLs    manifest URLs ({name: url}, icons.js iconURL); either
   //               may be null — iconURLs wins, then icons' image src; a
@@ -34,13 +41,18 @@
   //   onToggleMute()  mute button click (caller flips audio + `muted`)
   //
   // Per-frame values are $derived (the playhead re-renders ~60×/s); the
-  // card itself does no work beyond reading props.
+  // card itself does no work beyond reading props. Every row has a FIXED
+  // height in the CSS below — nothing (DEAD chip, a wrapping grenade row,
+  // the stats row) may resize the card while it plays.
   import {
     ammoText,
     armorChip,
+    carriesC4,
     hpBand,
     hpPct,
     moneyText,
+    STATS_TITLE,
+    statsText,
     utilityOf,
     weaponName as weaponNameOf,
   } from '../replay/playercard.js';
@@ -48,13 +60,14 @@
   let {
     player = {},
     side = '',
-    voiceColor = null,
+    playerColor = null,
     speaking = false,
     muted = false,
     alive = true,
     dead = false,
     follow = false,
     state = null,
+    stats = null,
     icons = null,
     iconURLs = null,
     onToggleMute = () => {},
@@ -75,6 +88,10 @@
   const ammo = $derived(weapon ? ammoText(state) : '—');
   const money = $derived(moneyText(state));
   const util = $derived(utilityOf(state ? state.inventory : null));
+  // The bomb is checked INDEPENDENTLY of utilityOf (which deliberately
+  // drops 'C4'): carrying it is a fact of its own, shown beside the util.
+  const hasC4 = $derived(carriesC4(state ? state.inventory : null));
+  const statsLine = $derived(statsText(stats));
 
   // iconSrc resolves a canonical equipment name to an <img> source —
   // manifest URLs first, else the src of a preloaded image; null means
@@ -115,9 +132,9 @@
   class:pc-t={side === 't'}
   class:pc-dead={isDead}
   class:pc-follow={follow}
-  class:pc-voice={!!voiceColor}
+  class:pc-color={!!playerColor}
   class:pc-speaking={speaking}
-  style:--pc-voice={voiceColor || null}
+  style:--pc-color={playerColor || null}
   title={hasState ? undefined : 'No player state for this match'}
 >
   <div class="pc-head">
@@ -188,7 +205,22 @@
         {/each}
       {/if}
     </span>
+    <!-- The bomb rides beside the util (checked separately — utilityOf
+         deliberately excludes 'C4', see carriesC4). -->
+    {#if hasC4}
+      <span class="pc-c4" title="C4 bomb">
+        {#if iconSrc('C4')}
+          <img class="pc-ico" src={iconSrc('C4')} alt="C4" />
+        {:else}
+          <span class="pc-fallback">C4</span>
+        {/if}
+      </span>
+    {/if}
   </div>
+
+  <!-- Live K/D/A + ADR at the playhead (replay/livestats.js) — a FIXED
+       height row, so its values ticking never moves the stack. -->
+  <div class="pc-stats" title={STATS_TITLE}>{statsLine}</div>
 </div>
 
 <style>
@@ -219,21 +251,34 @@
     border-radius: var(--radius-md);
   }
 
-  /* Spec 21/26 — two rings that must never touch. The voice-color ring
-     hugs the card (box-shadow 0–2px) behind a dark casing so pale voice
+  /* --- Fixed-height rows (no card may ever resize) ----------------------
+     Every row below carries an explicit height + overflow:hidden, sized
+     for the TALLEST state it can show, so nothing that mounts, unmounts
+     or wraps mid-playback can move the stack: the DEAD chip (taller than
+     the mute button), the "no state"/follow markers, a wrapping
+     grenade row, the ticking stats row. Heights are em-of-card (the card
+     is 0.86em of the app font) so the font-size setting scales them;
+     values are padded for the chip/button's px borders at every setting.
+     Rings (box-shadow/outline) stay paint on .pc-card — never layout. */
+
+  /* Spec 21/26 — two rings that must never touch. The teammate-color
+     ring hugs the card (box-shadow 0–2px) behind a dark casing so pale
      colors (#ECDF41) still read on the light theme's near-white panel;
      the speaking ring is a real `outline` OUTSIDE it — offset 5px puts
      its inner edge past the casing (2px of visible gap) — and it mixes
      toward --text so it keeps contrast in whichever theme is active.
-     The card lifts over its neighbours while speaking because the rings
-     reach into the stack gap. */
-  .pc-card.pc-voice {
-    box-shadow: 0 0 0 2px var(--pc-voice), 0 0 0 3px rgba(0, 0, 0, 0.55);
+     Both are pure paint (box-shadow / outline never enter layout), and
+     the ring only appears for a KNOWN player color (playerColor) — an
+     unknown color draws nothing rather than a guessed ring. The card
+     lifts over its neighbours while speaking because the rings reach
+     into the stack gap. */
+  .pc-card.pc-color {
+    box-shadow: 0 0 0 2px var(--pc-color), 0 0 0 3px rgba(0, 0, 0, 0.55);
   }
 
   .pc-card.pc-speaking {
     z-index: 2;
-    outline: 3px solid color-mix(in srgb, var(--pc-voice, var(--accent)) 65%, var(--text));
+    outline: 3px solid color-mix(in srgb, var(--pc-color, var(--accent)) 65%, var(--text));
     outline-offset: 5px;
     animation: pc-speak-pulse 1.6s ease-in-out infinite;
   }
@@ -263,11 +308,17 @@
     opacity: 0.72;
   }
 
+  /* The head's STATUS SLOT is its height: reserved for the tallest state
+     it can mount (the DEAD chip ≈ 1.55em + its 4px border/padding) so the
+     DEAD badge, the "no state" text and the follow marker appearing or
+     disappearing can never grow the row — the card must not jitter. */
   .pc-head {
     display: flex;
     align-items: center;
     gap: 4px;
     min-width: 0;
+    height: calc(1.6em + 4px);
+    overflow: hidden;
   }
 
   .pc-name {
@@ -315,6 +366,10 @@
     align-items: center;
     gap: 6px;
     min-width: 0;
+    /* One line of value + the 5px bar — fixed so a 3-digit → 2-digit
+       change (or the unknown hatched track) never moves the rows. */
+    height: 1.5em;
+    overflow: hidden;
   }
 
   .pc-hp {
@@ -368,6 +423,12 @@
     align-items: center;
     gap: 2px 8px;
     min-width: 0;
+    /* Two lines RESERVED (armor chip + weapon chip can wrap on a narrow
+       column): wrapping may fill the second line but can never add a
+       third — the row's height is fixed, so a bought/thrown item never
+       resizes the card. */
+    height: 3em;
+    overflow: hidden;
   }
 
   .pc-chip {
@@ -421,6 +482,12 @@
     align-items: center;
     gap: 6px;
     min-width: 0;
+    /* Two lines RESERVED for the util's own wrap (up to five nade icons
+       with counts): the row keeps its height whether the util fits on
+       one line or wraps — grenades bought/thrown mid-playback can never
+       resize the card. */
+    height: 3em;
+    overflow: hidden;
   }
 
   /* 7ch reserves the account ceiling ("$16,000") — same no-reflow rule. */
@@ -437,6 +504,14 @@
     min-width: 0;
   }
 
+  /* The carried bomb — a fixed-size cell beside the util so mounting it
+     shifts nothing. */
+  .pc-c4 {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+  }
+
   .pc-nade {
     display: inline-flex;
     align-items: center;
@@ -447,5 +522,19 @@
     font-size: 0.72em;
     font-variant-numeric: tabular-nums;
     color: var(--muted);
+  }
+
+  /* Live K/D/A + ADR at the playhead (replay/livestats.js, folded by
+     Replay): ONE fixed line with tabular figures — the numbers tick at
+     ~60×/s but the row's height never changes; a too-long line ellipsizes
+     INSIDE the box instead of wrapping out of it. */
+  .pc-stats {
+    height: 1.4em;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+    font-size: 0.86em;
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
   }
 </style>

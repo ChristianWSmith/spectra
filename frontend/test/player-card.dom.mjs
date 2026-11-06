@@ -2,10 +2,11 @@
 // contract (icon present renders <img>, a miss renders the readable
 // canonical label), helmet vs armor labels, money/ammo formatting, the
 // mute buttons' aria-pressed + callbacks, the side color classes, the
-// voice-color outline vs the separate speaking outline (asserted from
-// the component's own injected CSS — the two rings' geometry must not
-// overlap), and the honest "—" placeholders when slotStateAt state is
-// null (never a zero presented as a fact).
+// PLAYER-COLOR ring vs the separate speaking outline (asserted from the
+// component's own injected CSS — the two rings' geometry must not
+// overlap), the fixed-height row geometry (nothing may resize the card),
+// the live stats row, the carried C4, and the honest "—" placeholders when
+// slotStateAt state is null (never a zero presented as a fact).
 //
 // jsdom is intentionally not a project dependency; from frontend/ run:
 //   npm i --no-save jsdom
@@ -146,11 +147,11 @@ const qa = (root, sel) => [...root.querySelectorAll(sel)];
 const click = (el) => el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
 
 // The component's own injected CSS (css:'injected' above) — the ring
-// geometry lives there, so the non-overlap check reads it.
+// geometry and the fixed row heights live there, so those checks read it.
 const sheetText = () =>
   [...document.querySelectorAll('style')].map((s) => s.textContent || '').join('\n');
 // Svelte scopes each selector with its component hash
-// (.pc-card.pc-voice.svelte-xxxx), so match up to the rule's brace.
+// (.pc-card.pc-color.svelte-xxxx), so match up to the rule's brace.
 const ruleFor = (sel) => {
   const m = sheetText().match(new RegExp(`\\.${sel}[^{}]*\\{[^}]*\\}`));
   return m ? m[0] : '';
@@ -161,11 +162,12 @@ const px = (s) => parseFloat(s);
 const fullCard = {
   player: { steamId: '76561198000000001', name: 'donk' },
   side: 'ct',
-  voiceColor: '#84C8ED',
+  playerColor: '#84C8ED',
   speaking: false,
   muted: false,
   dead: false,
   follow: true,
+  stats: { k: 12, d: 5, a: 3, adr: 87.4375 },
   state: {
     hp: 87,
     armor: 65,
@@ -184,16 +186,16 @@ const fullCard = {
   },
 };
 
-console.log('A. full card: name, HP, armor+helmet, weapon+ammo, money, utility');
+console.log('A. full card: name, HP, armor+helmet, weapon+ammo, money, utility, stats');
 const root = await show({
   card: { ...fullCard, onToggleMute: () => globalThis.__cardMutes.push('donk') },
 });
 check('root is one card', !!q(root, '.pc-card'));
 check('side class from prop (ct)', q(root, '.pc-card').classList.contains('pc-ct'));
 check(
-  'voice outline armed only by voiceColor (inline custom prop + class)',
-  q(root, '.pc-card').classList.contains('pc-voice') &&
-    q(root, '.pc-card').style.getPropertyValue('--pc-voice') === '#84C8ED',
+  'color ring armed only by playerColor (inline custom prop + class)',
+  q(root, '.pc-card').classList.contains('pc-color') &&
+    q(root, '.pc-card').style.getPropertyValue('--pc-color') === '#84C8ED',
   q(root, '.pc-card').getAttribute('style'),
 );
 check('name + full-name title', q(root, '.pc-name').textContent === 'donk' && q(root, '.pc-name').getAttribute('title') === 'donk');
@@ -211,9 +213,62 @@ check('utility: grenade icons, no weapon icons', imgs.filter((i) => i.getAttribu
 check('duplicated grenade shows its count', !!qa(root, '.pc-count').find((c) => c.textContent === '×2'), qa(root, '.pc-count').map((c) => c.textContent).join(','));
 check('utility title says carried', q(root, '.pc-util').getAttribute('title') === 'Utility carried');
 check('no DEAD / no-state markers', !q(root, '.pc-dead-mark') && !q(root, '.pc-nostate'));
+check(
+  'stats row renders the live fold (K/D/A + ADR, one decimal)',
+  q(root, '.pc-stats')?.textContent === 'K/D/A 12/5/3 · ADR 87.4',
+  q(root, '.pc-stats')?.textContent,
+);
+check(
+  'stats row title documents the exact formula',
+  /counted rounds started/.test(q(root, '.pc-stats')?.getAttribute('title') || '') &&
+    /friendly fire/.test(q(root, '.pc-stats')?.getAttribute('title') || ''),
+  q(root, '.pc-stats')?.getAttribute('title'),
+);
+check('no C4 cell when the inventory carries no bomb', !q(root, '.pc-c4'));
+
+console.log('A2. carried C4: its own cell beside the util, icon or text fallback');
+const c4Card = {
+  ...fullCard,
+  playerColor: null, // an unknown color draws NO ring
+  stats: null,
+  state: { ...fullCard.state, inventory: ['AK-47', 'C4', 'Smoke Grenade'] },
+  iconURLs: { ...fullCard.iconURLs, C4: '/api/icons/c4.svg' },
+};
+const rootC4 = await show({ card: { ...c4Card, onToggleMute: () => {} } });
+const c4Cell = q(rootC4, '.pc-c4');
+check('C4 cell mounts next to the util', !!c4Cell && !!q(rootC4, '.pc-econ .pc-c4'));
+check('C4 cell titled "C4 bomb"', c4Cell?.getAttribute('title') === 'C4 bomb', c4Cell?.getAttribute('title'));
+check(
+  'C4 renders its icon when one resolves',
+  !!q(c4Cell, 'img') && q(c4Cell, 'img').getAttribute('src') === '/api/icons/c4.svg',
+);
+check(
+  'utility still excludes the C4 (only the smoke icon is utility)',
+  qa(rootC4, '.pc-util img').length === 1 &&
+    q(rootC4, '.pc-util img')?.getAttribute('alt') === 'Smoke Grenade',
+  qa(rootC4, '.pc-util img').map((i) => i.getAttribute('alt')).join(','),
+);
+check('unknown color → no ring', !q(rootC4, '.pc-card').classList.contains('pc-color'));
+check(
+  'stats row without a fold renders honest placeholders',
+  q(rootC4, '.pc-stats')?.textContent === 'K/D/A — · ADR —',
+  q(rootC4, '.pc-stats')?.textContent,
+);
+const rootC4b = await show({
+  card: { ...c4Card, iconURLs: null, icons: null, onToggleMute: () => {} },
+});
+check(
+  'C4 falls back to its text label when no icon exists',
+  q(rootC4b, '.pc-c4')?.textContent.trim() === 'C4',
+  q(rootC4b, '.pc-c4')?.textContent,
+);
+check('no <img> on the no-icon card', qa(rootC4b, 'img').length === 0);
 
 console.log('B. mute button: aria + callback + pressed state');
-const mute = q(root, '.pc-mute');
+// A2 re-mounted the harness above, so show the full card once more —
+// the button this section drives must be the LIVE one, not a detached node.
+const rootMute = await show({ card: { ...fullCard, onToggleMute: () => globalThis.__cardMutes.push('donk') } });
+const mute = q(rootMute, '.pc-mute');
 check('real button with the mute label', mute.tagName === 'BUTTON' && mute.getAttribute('aria-label') === 'Mute donk');
 check('unmuted: aria-pressed false, no warn', mute.getAttribute('aria-pressed') === 'false' && !mute.classList.contains('warn'));
 click(mute);
@@ -224,28 +279,47 @@ check('muted: aria-pressed true + warn class', muteB.getAttribute('aria-pressed'
 check('muted icon flips to codicon-mute', !!q(muteB, '.codicon-mute'));
 check('muted title says Unmute', muteB.getAttribute('title') === "Unmute donk's voice", muteB.getAttribute('title'));
 
-console.log('C. speaking: a SECOND outline outside the voice ring, with a gap');
+console.log('C. speaking: a SECOND outline outside the color ring, with a gap');
 const rootC = await show({ card: { ...fullCard, speaking: true, onToggleMute: () => {} } });
 const cardC = q(rootC, '.pc-card');
-check('speaking class set alongside the voice class', cardC.classList.contains('pc-speaking') && cardC.classList.contains('pc-voice'));
-const voiceRule = ruleFor('pc-card\\.pc-voice');
+check(
+  'speaking class set alongside the color class',
+  cardC.classList.contains('pc-speaking') && cardC.classList.contains('pc-color'),
+);
+const colorRule = ruleFor('pc-card\\.pc-color');
 const speakRule = ruleFor('pc-card\\.pc-speaking');
-check('voice ring rule exists and draws box-shadow', /box-shadow/.test(voiceRule), voiceRule);
+check('color ring rule exists and draws box-shadow', /box-shadow/.test(colorRule), colorRule);
 check('speaking ring rule exists and draws an outline', /outline:\s*3px/.test(speakRule), speakRule);
 check(
   'the two rings use different properties (no shared style)',
-  /box-shadow/.test(voiceRule) && !/outline:/.test(voiceRule) && /outline:/.test(speakRule) && !/box-shadow/.test(speakRule),
-  `voice=[${voiceRule}] speak=[${speakRule}]`,
+  /box-shadow/.test(colorRule) && !/outline:/.test(colorRule) && /outline:/.test(speakRule) && !/box-shadow/.test(speakRule),
+  `color=[${colorRule}] speak=[${speakRule}]`,
 );
-const voiceSpread = Math.max(0, ...(voiceRule.match(/0 0 0 ([\d.]+)px/g) || []).map((m) => px(m.slice(6))));
+const voiceSpread = Math.max(0, ...(colorRule.match(/0 0 0 ([\d.]+)px/g) || []).map((m) => px(m.slice(6))));
 const speakOffset = px((speakRule.match(/outline-offset:\s*([\d.]+)px/) || [0, 0])[1]);
 check(
-  `speaking outline starts past the voice ring (offset ${speakOffset}px > ${voiceSpread}px)`,
+  `speaking outline starts past the color ring (offset ${speakOffset}px > ${voiceSpread}px)`,
   voiceSpread > 0 && speakOffset > voiceSpread,
   `voiceSpread=${voiceSpread} speakOffset=${speakOffset}`,
 );
 check('speaking ring keeps a visible gap (≥1px)', speakOffset - voiceSpread >= 1, String(speakOffset - voiceSpread));
-check('speaking color mixes toward the theme text color', /color-mix/.test(speakRule) && /var\(--text\)/.test(speakRule), speakRule);
+check('speaking ring mixes toward the theme text color', /color-mix/.test(speakRule) && /var\(--text\)/.test(speakRule), speakRule);
+check('speaking outline falls back to the accent when the color is unknown', /var\(--pc-color,\s*var\(--accent\)\)/.test(speakRule), speakRule);
+
+console.log('C2. fixed-height geometry: NOTHING may resize the card');
+// The jitter contract: every row reserves its tallest possible height in
+// the component's own CSS, so a mounting DEAD chip, a wrapping grenade
+// row or a ticking stat can never change the stack's layout.
+for (const sel of ['pc-head', 'pc-hp-row', 'pc-gear', 'pc-econ', 'pc-stats']) {
+  const rule = ruleFor(sel);
+  check(`${sel} declares a FIXED height`, /height:\s*[^;]+;/.test(rule), rule);
+  check(`${sel} clips what does not fit (no spill into the stack)`, /overflow:\s*hidden/.test(rule), rule);
+}
+check(
+  'the rings stay pure paint (box-shadow/outline only, never width/height)',
+  !/width|height|padding|margin/.test(colorRule) && /box-shadow/.test(colorRule),
+  colorRule,
+);
 
 console.log('D. state === null: honest placeholders, never zeros');
 const rootD = await show({ card: { ...fullCard, state: null, iconURLs: null, onToggleMute: () => {} } });
@@ -283,7 +357,8 @@ console.log('G. TeamColumn: name color, team mute, five cards, side propagation'
 const players = [1, 2, 3, 4, 5].map((n) => ({
   player: { steamId: `id${n}`, name: `p${n}` },
   state: { hp: 100 - n, armor: 100, helmet: false, weapon: 'AK-47', magAmmo: 30, reserveAmmo: 90, inventory: ['AK-47'], money: 800 * n },
-  voiceColor: n === 2 ? '#ECDF41' : null,
+  playerColor: n === 2 ? '#ECDF41' : null,
+  stats: n === 2 ? { k: 1, d: 0, a: 0, adr: 50 } : null,
   muted: n === 3,
   onToggleMute: () => globalThis.__cardMutes.push(`p${n}`),
 }));
@@ -308,7 +383,18 @@ check(
   cards.map((c) => q(c, '.pc-name').textContent).join(','),
 );
 check('column side propagates to every card', cards.every((c) => c.classList.contains('pc-ct')));
-check('per-player voice colors pass through', cards[1].classList.contains('pc-voice') && cards[1].style.getPropertyValue('--pc-voice') === '#ECDF41' && !cards[0].classList.contains('pc-voice'));
+check(
+  'per-player color rings pass through',
+  cards[1].classList.contains('pc-color') &&
+    cards[1].style.getPropertyValue('--pc-color') === '#ECDF41' &&
+    !cards[0].classList.contains('pc-color'),
+);
+check(
+  'per-player stats pass through (and the no-fold placeholder stays)',
+  cards[1].querySelector('.pc-stats')?.textContent === 'K/D/A 1/0/0 · ADR 50.0' &&
+    cards[0].querySelector('.pc-stats')?.textContent === 'K/D/A — · ADR —',
+  cards.map((c) => c.querySelector('.pc-stats')?.textContent).join(' | '),
+);
 check('per-player muted state passes through', qa(rootG, '.pc-mute')[2].getAttribute('aria-pressed') === 'true');
 click(qa(rootG, '.pc-mute')[4]);
 check('card mute callbacks stay per-player', JSON.stringify(globalThis.__cardMutes) === '["p5"]', JSON.stringify(globalThis.__cardMutes));
