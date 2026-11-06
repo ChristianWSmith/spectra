@@ -1,11 +1,14 @@
 // jsdom driver for Replay: a FRESH replay opens with the landmark feed
-// COLLAPSED — its toggle now floats INSIDE the render stage (top-right,
-// spec 14) next to the floating back button, with no .replay-side at all
-// until it expands — the round ribbon sits on its own centered line
-// above the stage, and the transport splits into the full-width
+// COLLAPSED — its toggle now sits in the VIEW's top bar (.replay-topbar:
+// back button top-left, rail toggle top-right, spec 7/14) with no
+// .replay-side at all until it expands, and .replay-cols wraps the main
+// column beside the rail — the round ribbon sits on its own centered
+// line above the stage, and the transport splits into the full-width
 // game-time scrubber line ABOVE the centered control-cluster line
-// (loop popover, camera Smart/Free/Follow, mute-all, hints-only
-// codicon, snapshot/record).
+// (round transport, ±15s, play, speed, loop popover, camera
+// Smart/Free/Follow with its codicon, mute-all, snapshot/record, and the
+// hints-only codicon LAST). A fresh replay also AUTOPLAYS (startEngine
+// calls engine.play() once the position data is up).
 //
 // The view's data source, engine, renderer and input are scripted stubs —
 // this driver pins STRUCTURE, not rendering (CSS placement of the
@@ -401,19 +404,37 @@ function check(name, cond, detail = '') {
 const click = (el) => el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
 const children = (el) => [...el.children];
 
-console.log('A. fresh replay: no header/title; back + the collapsed rail toggle float INSIDE the stage');
+console.log('A. fresh replay: no header/title; back + the collapsed rail toggle sit in the VIEW top bar');
 const stage = target.querySelector('.replay-stage');
 check('stage rendered', !!stage);
 check('no view header and no Replay title', !target.querySelector('.view-header') && !target.querySelector('h1'));
-const back = stage?.querySelector('.rp-back');
-check('floating back button inside the stage', !!back, 'missing .rp-back');
+const view = target.querySelector('.replay-view');
+const topbar = view?.querySelector(':scope > .replay-topbar');
+check('top bar is a direct child of the view', !!topbar, 'missing .replay-topbar');
+const cols = view?.querySelector(':scope > .replay-cols');
+check('columns row wraps the main column (rail joins it when open)', !!cols?.querySelector(':scope > .replay-main'), 'missing .replay-cols');
+const back = topbar?.querySelector('.rp-back');
+check(
+  'back button lives in the top bar, NOT inside the stage',
+  !!back && !stage.querySelector('.rp-back'),
+  'missing top-bar .rp-back',
+);
 check(
   'back button is icon-only with the Back label',
   back?.getAttribute('aria-label') === 'Back' && back?.getAttribute('title') === 'Back' &&
     !!back?.querySelector('.codicon-arrow-left') && !back.textContent.trim(),
 );
-const toggle = stage?.querySelector('.side-toggle');
-check('collapsed rail toggle inside the stage', !!toggle, 'missing stage .side-toggle');
+const toggle = topbar?.querySelector('.side-toggle');
+check(
+  'collapsed rail toggle lives in the top bar, NOT inside the stage',
+  !!toggle && !stage.querySelector('.side-toggle'),
+  'missing top-bar .side-toggle',
+);
+check(
+  'back first, rail toggle last in the bar (spacer between)',
+  topbar && children(topbar)[0] === back && children(topbar)[children(topbar).length - 1] === toggle,
+  (topbar ? children(topbar).map((el) => el.className || el.tagName).join(' | ') : 'no topbar'),
+);
 check('no .replay-side while collapsed', !target.querySelector('.replay-side'));
 check('toggle aria-expanded=false', toggle?.getAttribute('aria-expanded') === 'false', toggle?.getAttribute('aria-expanded'));
 check(
@@ -426,12 +447,13 @@ check('collapsed handle shows the chevron-left glyph', !!toggle?.querySelector('
 check('feed toolbar absent while collapsed', !target.querySelector('.lm-toolbar'));
 check('landmark list absent while collapsed', !target.querySelector('.landmark-list'));
 
-console.log('B. the stage handle expands the panel (existing eventsOpen toggle)');
+console.log('B. the top-bar handle expands the panel (existing eventsOpen toggle)');
 click(toggle);
 await sleep();
 const aside = target.querySelector('.replay-side');
 check('aside expanded', !!aside && !aside.classList.contains('collapsed'));
-check('stage toggle gone while expanded', !stage.querySelector('.side-toggle'));
+check('top-bar toggle gone while expanded', !topbar.querySelector('.side-toggle'));
+check('expanded aside joins the columns row', !!cols?.querySelector(':scope > .replay-side'), 'aside not inside .replay-cols');
 const head = aside?.querySelector('.side-toggle');
 check('expanded header owns the toggle', !!head);
 check('header aria-expanded=true', head?.getAttribute('aria-expanded') === 'true', head?.getAttribute('aria-expanded'));
@@ -441,7 +463,7 @@ check('landmark list present (empty state)', !!aside?.querySelector('.landmark-l
 check('expanded panel keeps its scroll body', !!aside?.querySelector('.lm-scroll'));
 click(head);
 await sleep();
-check('header chevron collapses the rail again', !target.querySelector('.replay-side') && !!stage.querySelector('.side-toggle'));
+check('header chevron collapses the rail again', !target.querySelector('.replay-side') && !!topbar.querySelector('.side-toggle'));
 
 console.log('C. round ribbon: its own centered line above the stage');
 const main = target.querySelector('.replay-main');
@@ -502,28 +524,94 @@ check(
   children(scrub).map((el) => el.className).join(' | '),
 );
 const controls = lines[1];
-check('play button in the control cluster', !!controls.querySelector('button[aria-label="Play"]'));
+// Autoplay (spec: "start playing immediately once ready"): startEngine
+// calls engine.play() once the position data is up, so the toggle
+// mirrors the PLAYING state and reads Pause.
+check('replay autoplays on launch — play button reads Pause', !!controls.querySelector('button[aria-label="Pause"]'));
 check(
-  'speed + camera selects in the cluster (NO jump-to-round)',
+  'transport cluster order: prev round, −15s, play, +15s, next round, speed…',
+  (() => {
+    const ids = ['rp-round-prev', 'rp-seek-back', null, 'rp-seek-fwd', 'rp-round-next'];
+    const kids = children(controls);
+    // the play cell reads Pause (the replay autoplays on launch)
+    const idx = (sel) => kids.findIndex((el) => (sel ? el.id === sel : el.getAttribute('aria-label') === 'Pause'));
+    const pos = ids.map(idx);
+    return pos.every((p) => p >= 0) && pos[0] < pos[1] && pos[1] < pos[2] && pos[2] < pos[3] && pos[3] < pos[4];
+  })(),
+  children(controls).map((el) => el.id || el.getAttribute('aria-label') || el.className).join(' | '),
+);
+check(
+  '±15s buttons are icon-only with their second-count titles',
+  controls.querySelector('#rp-seek-back[title="Seek −15 seconds"] .codicon-arrow-small-left') &&
+    controls.querySelector('#rp-seek-fwd[title="Seek +15 seconds"] .codicon-arrow-small-right') &&
+    !controls.querySelector('#rp-seek-back').textContent.trim() &&
+    !controls.querySelector('#rp-seek-fwd').textContent.trim(),
+);
+check(
+  'round transport buttons are icon-only, disabled at the round we are on (last round → no next)',
+  controls.querySelector('#rp-round-prev[title="Previous round"] .codicon-chevron-left') &&
+    controls.querySelector('#rp-round-next[title="Next round"] .codicon-chevron-right') &&
+    !controls.querySelector('#rp-round-prev').disabled &&
+    controls.querySelector('#rp-round-next').disabled === true,
+  `prev=${controls.querySelector('#rp-round-prev')?.disabled} next=${controls.querySelector('#rp-round-next')?.disabled}`,
+);
+check(
+  'speed + camera selects in the cluster (NO jump-to-round select)',
   !!controls.querySelector('#rp-speed') && !!controls.querySelector('#rp-cam') &&
     !controls.querySelector('#rp-round'),
 );
 const camOpts = [...(controls.querySelector('#rp-cam')?.options || [])].map((o) => o.value);
 check('camera select offers Smart/Free/Follow', JSON.stringify(camOpts) === '["smart","free","follow"]', JSON.stringify(camOpts));
+check(
+  'camera select carries its codicon in the same wrapper cell',
+  !!controls.querySelector('.rp-cam-wrap .codicon-device-camera-video') &&
+    !!controls.querySelector('.rp-cam-wrap #rp-cam'),
+);
 check('no follow-player select until Follow is chosen', !controls.querySelector('#rp-follow'));
 check('no leftover voice bar / lanes', !target.querySelector('.voice-bar') && !target.querySelector('.voice-lanes-wrap'));
 const muteAll = controls.querySelector('button[aria-label="Mute all"]');
 check('mute-all button in the cluster', !!muteAll);
 check('mute-all disabled when the match has no voice', muteAll?.disabled === true, String(muteAll?.disabled));
+const snap = controls.querySelector('button[aria-label="Snapshot"]');
 check(
-  'hints: codicon only, the word "hints" is gone',
-  !!controls.querySelector('.codicon-keyboard') && !controls.textContent.includes('hints'),
+  'snapshot is icon-only in the cluster (no text label)',
+  !!snap && !!snap.querySelector('.codicon-device-camera') && !snap.textContent.trim(),
+  snap ? JSON.stringify(snap.textContent) : 'missing',
+);
+const clip = controls.querySelector('.clip-btn');
+check(
+  'record is icon-only in the cluster (no text label)',
+  !!clip && !!clip.querySelector('.codicon-record') && !clip.textContent.trim() &&
+    clip.getAttribute('aria-label') === 'Record clip',
+  clip ? JSON.stringify(clip.textContent) : 'missing',
 );
 check(
-  'snapshot + record/clip moved into the cluster',
-  controls.textContent.includes('Snapshot') && !!controls.querySelector('.clip-btn'),
+  'hints: codicon only, the word "hints" is gone, and it is the LAST cell',
+  (() => {
+    const hints = controls.querySelector('.codicon-keyboard')?.parentElement;
+    return !!hints && !controls.textContent.includes('hints') &&
+      children(controls)[children(controls).length - 1] === hints;
+  })(),
 );
-check('play controls are NOT on the scrub line', !scrub.querySelector('button[aria-label="Play"]'));
+check('play controls are NOT on the scrub line', !scrub.querySelector('button'));
+
+// The transport buttons drive the engine (stubbed): ±15s at the match
+// tick rate (64), then the round transport through the round→tick rule.
+const readoutTick = () => target.querySelector('.replay-readout')?.getAttribute('title') || '';
+click(controls.querySelector('#rp-seek-fwd'));
+await sleep();
+check('+15s seeks 15 × tickRate ahead (640 → 1600)', readoutTick().includes('tick 1600'), readoutTick());
+click(controls.querySelector('#rp-seek-back'));
+await sleep();
+check('−15s seeks 15 × tickRate back (1600 → 640)', readoutTick().includes('tick 640'), readoutTick());
+click(controls.querySelector('#rp-round-prev'));
+await sleep();
+check('previous round seeks to round 1 start', readoutTick().includes('tick 0'), readoutTick());
+check('prev round disabled at the first round', controls.querySelector('#rp-round-prev').disabled === true);
+click(controls.querySelector('#rp-round-next'));
+await sleep();
+check('next round seeks to round 2 start (640)', readoutTick().includes('tick 640'), readoutTick());
+check('next round disabled at the last round', controls.querySelector('#rp-round-next').disabled === true);
 
 console.log('E. loop popover + the Follow player dropdown');
 const loopBtn = controls.querySelector('button[aria-label="Loop range"]');
@@ -542,6 +630,31 @@ cam.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
 await sleep();
 check('choosing Follow reveals the player dropdown', !!controls.querySelector('#rp-follow'));
 check('camera select still reads follow', cam.value === 'follow', cam.value);
+// Follow must never rest on the "Follow player…" placeholder: with no
+// ?follow= in the route it lands on a real player (slot 0), and a
+// detour through Free comes back to the player that was being followed.
+check(
+  'Follow lands on a real player, never the placeholder',
+  controls.querySelector('#rp-follow')?.value === '0',
+  controls.querySelector('#rp-follow')?.value,
+);
+const followSel = controls.querySelector('#rp-follow');
+followSel.value = '2';
+followSel.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+await sleep();
+check('the dropdown drives the follow slot', controls.querySelector('#rp-follow')?.value === '2', controls.querySelector('#rp-follow')?.value);
+cam.value = 'free';
+cam.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+await sleep();
+check('switching to Free releases follow (player dropdown gone)', !controls.querySelector('#rp-follow'));
+cam.value = 'follow';
+cam.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+await sleep();
+check(
+  'switching back to Follow resumes the player that was being followed',
+  controls.querySelector('#rp-follow')?.value === '2',
+  controls.querySelector('#rp-follow')?.value,
+);
 
 console.log('F. player-card columns: grouping, team names, mute wiring, v1 state note');
 const rbody = main.querySelector('.replay-body');

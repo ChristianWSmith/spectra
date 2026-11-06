@@ -122,18 +122,26 @@ test('entrySeekTick: a ?round= link resolves to that round\'s start tick', () =>
   assert.equal(entrySeekTick({ round: '-2' }, ROUNDS), 100);
 });
 
-test('entrySeekTick: no usable time target → 0 (first frame), never a guess', () => {
-  assert.equal(entrySeekTick({}, ROUNDS), 0);
-  assert.equal(entrySeekTick(undefined, ROUNDS), 0);
-  assert.equal(entrySeekTick({ round: '12' }, ROUNDS), 0); // unknown round
-  assert.equal(entrySeekTick({ round: '0' }, ROUNDS), 0); // round 0 never exists
-  assert.equal(entrySeekTick({ round: 'x' }, ROUNDS), 0); // malformed
-  assert.equal(entrySeekTick({ round: '1' }, []), 0); // rounds not loaded
-  assert.equal(entrySeekTick({ round: '1' }, null), 0);
-  // Absent ?round= = no time promise at all → the first frame, even
-  // though parseLandmarkFilter folds "absent" onto the same -1 the
-  // warmup round carries: entrySeekTick reads the RAW param, so an
-  // absent round and the warmup round's "-1" stay distinguishable.
+test('entrySeekTick: no explicit time target → null (Replay applies the pref-based default)', () => {
+  // DELIBERATE CHANGE: the fallback used to be 0 ("start on the first
+  // frame"), but Replay now starts at the knife/warmup-hiding pref's
+  // default (first COUNTED round's start when the pref hides them, frame
+  // 0 when it shows them). nav.js must therefore distinguish "the URL
+  // promised nothing" (null → Replay picks the default) from an explicit
+  // first-frame target (?tick=0 → 0, asserted above).
+  assert.equal(entrySeekTick({}, ROUNDS), null);
+  assert.equal(entrySeekTick(undefined, ROUNDS), null);
+  assert.equal(entrySeekTick({ round: '12' }, ROUNDS), null); // unknown round — never a guess
+  assert.equal(entrySeekTick({ round: '0' }, ROUNDS), null); // round 0 never exists
+  assert.equal(entrySeekTick({ round: 'x' }, ROUNDS), null); // malformed
+  assert.equal(entrySeekTick({ round: '1' }, []), null); // rounds not loaded
+  assert.equal(entrySeekTick({ round: '1' }, null), null);
+  // Absent ?round= = no time promise at all, even though
+  // parseLandmarkFilter folds "absent" onto the same -1 the warmup round
+  // carries: entrySeekTick reads the RAW param, so an absent round and
+  // the warmup round's "-1" stay distinguishable — the warmup round
+  // still resolves to its own start tick below.
   assert.equal(entrySeekTick({ round: '-1' }, ROUNDS), 400); // warmup round start
-  assert.equal(entrySeekTick({ cat: 'kills' }, ROUNDS), 0); // no round param
+  assert.equal(entrySeekTick({ cat: 'kills' }, ROUNDS), null); // no round param
+  assert.equal(entrySeekTick({ tick: 'x' }, ROUNDS), null); // malformed tick, no round
 });

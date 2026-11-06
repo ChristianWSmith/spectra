@@ -1365,19 +1365,46 @@ input[type='checkbox']:focus-visible {
 
 /* --- Replay (M2) ------------------------------------------------------------ */
 
+/* The view is a COLUMN: the .replay-topbar row (back at the view's top
+   LEFT, the collapsed landmark toggle at its top RIGHT) above the
+   .replay-cols row (main column + landmark rail). */
 .replay-view {
-  position: relative; /* the layout shell (the stage anchors its own overlays) */
+  position: relative; /* the layout shell */
   height: calc(100vh - 32px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+/* The view's top corners: back button left, spacer, collapsed rail
+   toggle right (both used to float inside the render stage). The toggle
+   only renders while the rail is collapsed — expanded, the aside's
+   header owns it (see .replay-side). */
+.replay-topbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+/* The columns row under the top bar: everything the view stacks in its
+   LEFT column (notes, round ribbon, stage, transport) beside the
+   landmark rail, which is the view's full-height RIGHT column when
+   expanded (collapsed: its toggle sits in the top bar). This carries
+   the row layout the view itself used to have. */
+.replay-cols {
+  flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: row;
   gap: 12px;
-  min-height: 0;
 }
 
 /* Left column of the replay layout: everything the view stacks — notes,
    the round ribbon, the stage (.replay-body), the transport — beside the
    landmark rail, which is the view's full-height RIGHT column when
-   expanded (collapsed: its toggle floats inside the stage, top-right). */
+   expanded (collapsed: its toggle sits in the top bar above). */
 .replay-main {
   flex: 1;
   min-width: 0;
@@ -1424,49 +1451,25 @@ input[type='checkbox']:focus-visible {
   cursor: grabbing;
 }
 
-/* --- Stage overlays: everything that floats INSIDE .replay-stage ---------- */
+/* --- Stage overlays: only the follow chip still floats INSIDE the stage ---
+   (the back button and the collapsed rail toggle moved OUT to the view's
+   .replay-topbar — top-left / top-right of the OVERALL view, spec 7/14.) */
 
-/* Back button (spec 7): a small icon-only pill at the stage's TOP-LEFT.
-   The canvas HUD's score box starts to its right (renderer HUD_TOP_X),
-   so the two never overlap. Scoped with .replay-stage so it outranks
-   the shared .btn chrome whatever the source order is. */
-.replay-stage .rp-back {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  z-index: 3;
+/* Back button (spec 7): the view's TOP-LEFT corner — first cell of the
+   .replay-topbar row above the columns. It no longer floats over the
+   radar, so the plain .btn chrome applies (the renderer's HUD score box
+   owns the stage's top-left now); only the compact pill padding is
+   kept here. */
+.replay-topbar .rp-back {
   padding: 3px 8px;
-  /* The pill always floats over the radar, so it keeps HUD-surface
-     chrome in BOTH themes — and therefore needs its own glyph color:
-     .btn's var(--text) is dark in the light theme, which vanished on
-     this dark pill (reported by the visual pass). */
-  background: rgba(14, 17, 22, 0.85);
-  border-color: rgba(35, 42, 55, 0.9);
-  color: #d7dde8;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
 }
 
-.replay-stage .rp-back:hover {
-  background: rgba(30, 35, 44, 0.95);
-  border-color: rgba(251, 172, 24, 0.45);
-  color: #ffffff;
-}
-
-/* Collapsed landmark rail (spec 14): the toggle floats at the stage's
-   TOP-RIGHT — a compact chevron pill with panel chrome + shadow so it
-   reads as floating over the render area (it no longer sits vertically
-   centered on the view). Expanded, the aside's own header owns the
-   toggle in flow instead (the base .side-toggle rule below) — the
-   .replay-stage scope makes this rule outrank that base whatever the
-   source order is. */
-.replay-stage .rp-rail-toggle {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  z-index: 3;
-  align-items: center;
-  justify-content: center;
-  gap: 0;
+/* Collapsed landmark rail (spec 14): the toggle sits at the view's
+   TOP-RIGHT — last cell of the .replay-topbar row. Expanded, the aside's
+   own header owns the toggle in flow instead (the base .side-toggle
+   rule below); this scope keeps the panel-chrome pill on the collapsed
+   one whatever the source order is. */
+.replay-topbar .rp-rail-toggle {
   padding: 6px 8px;
   background: var(--panel);
   border: 1px solid var(--border);
@@ -1474,7 +1477,7 @@ input[type='checkbox']:focus-visible {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
 }
 
-.replay-stage .rp-rail-toggle:hover {
+.replay-topbar .rp-rail-toggle:hover {
   color: var(--accent);
   border-color: var(--accent-40);
 }
@@ -1482,12 +1485,12 @@ input[type='checkbox']:focus-visible {
 /* Follow chip — the "Following <player>" overlay on the replay stage.
    It mirrors the engine's follow state (the ?follow= entry, the camera
    dropdown's Follow and the F/1-9 keys all land here) and is the dismiss
-   surface for it. Top-right, BELOW the landmark toggle (top: 8px, ~30px
-   tall) so the two overlays never collide; clear of the HUD readout at
-   top-left. */
+   surface for it. Top-right of the STAGE — the landmark toggle lives in
+   the top bar above now, so the corner is free; clear of the HUD
+   readout at top-left. */
 .follow-chip {
   position: absolute;
-  top: 44px;
+  top: 8px;
   right: 8px;
   z-index: 2;
   gap: 4px;
@@ -1517,7 +1520,7 @@ input[type='checkbox']:focus-visible {
 }
 
 /* The collapsed rail is no longer a .replay-side variant: its toggle
-   floats INSIDE the stage (.rp-rail-toggle above), so the aside only
+   lives in the view's top bar (.rp-rail-toggle above), so the aside only
    ever renders EXPANDED — in-flow, ~340px, full height, reserving its
    space. */
 
@@ -1555,8 +1558,9 @@ input[type='checkbox']:focus-visible {
 
 /* Sticky transport chrome — TWO lines: the full-width scrubber line
    (.replay-scrub: seek bar + round markers + the game-time readout)
-   above the control cluster (the ONE .toolbar row: play/speed, loop
-   popover, camera, mute-all, hints, snapshot/record). */
+   above the control cluster (the ONE .toolbar row: round transport,
+   ±15s, play, speed, loop popover, camera, mute-all, snapshot/record,
+   keyboard hints last). */
 .replay-transport {
   position: sticky;
   bottom: 0;
@@ -1964,6 +1968,15 @@ button.lm-cat-chip.on {
   white-space: nowrap;
 }
 
+/* Camera selector (spec 17): the mode codicon rides beside the select
+   inside ONE wrapper cell, so the toolbar's gap treats the pair as a
+   single control (the select keeps #rp-cam). */
+.rp-cam-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
 /* Voice status hint next to the transport controls (voice is on by
    default; pending/error ride one small line). */
 .rp-voice-hint {
@@ -1974,11 +1987,13 @@ button.lm-cat-chip.on {
   /* The landmark rail is a RIGHT column above the fold — on narrow
      windows the EXPANDED panel stacks under the main column, bounded so
      the stage keeps the height. The collapsed state needs no stacked
-     variant at all: its toggle floats INSIDE the stage (.rp-rail-toggle,
-     base rule above), so it is never a stacked item (never a full-width
-     bar) and the main column keeps the full height. The round ribbon and
-     the transport stack with the main column unchanged. */
-  .replay-view {
+     variant at all: its toggle lives in the view's top bar
+     (.rp-rail-toggle, base rule above), so it is never a stacked item
+     (never a full-width bar) and the main column keeps the full height.
+     The top bar stays a row; the columns pair stacks beneath it.
+     The round ribbon and the transport stack with the main column
+     unchanged. */
+  .replay-cols {
     flex-direction: column;
   }
 
