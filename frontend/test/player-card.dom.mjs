@@ -2,9 +2,11 @@
 // contract (icon present renders <img>, a miss renders the readable
 // canonical label), helmet vs armor labels, money/ammo formatting, the
 // mute buttons' aria-pressed + callbacks, the side color classes, the
-// PLAYER-COLOR ring vs the separate speaking outline (asserted from the
-// component's own injected CSS — the two rings' geometry must not
-// overlap), the fixed-height row geometry (nothing may resize the card),
+// PLAYER-COLOR ring as the card's ONE outline (asserted from the
+// component's own injected CSS: no second/outline ring may reappear)
+// and the voice live dot beside the name (speaking only), the row order
+// (armor at the right of the HP row, the weapon on its own line), the
+// fixed-height row geometry (nothing may resize the card),
 // the live stats row, the carried C4, and the honest "—" placeholders when
 // slotStateAt state is null (never a zero presented as a fact).
 //
@@ -144,6 +146,9 @@ function check(name, cond, detail = '') {
 
 const q = (root, sel) => root.querySelector(sel);
 const qa = (root, sel) => [...root.querySelectorAll(sel)];
+// The pc- classes of an element (Svelte's scope hash excluded) — pins
+// row/child ORDER in the card's fixed stack.
+const pcClass = (el) => [...el.classList].filter((c) => c.startsWith('pc-')).join(' ');
 const click = (el) => el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
 
 // The component's own injected CSS (css:'injected' above) — the ring
@@ -226,6 +231,34 @@ check(
 );
 check('no C4 cell when the inventory carries no bomb', !q(root, '.pc-c4'));
 
+// Row structure — the fixed stack the C2 geometry checks pin: head →
+// HP row (armor chip at its RIGHT edge) → weapon on its own line →
+// money/util → stats.
+const cardKids = [...q(root, '.pc-card').children].map(pcClass);
+check(
+  'row order: head → HP → weapon line → money/util → stats',
+  JSON.stringify(cardKids) ===
+    JSON.stringify(['pc-head', 'pc-hp-row', 'pc-weapon-row', 'pc-econ', 'pc-stats']),
+  JSON.stringify(cardKids),
+);
+const hpKids = [...q(root, '.pc-hp-row').children].map(pcClass);
+check(
+  'armor/helmet chip rides the RIGHT end of the HP row (after the bar)',
+  hpKids.some((c) => c === 'pc-bar') && hpKids[hpKids.length - 1].includes('pc-armor'),
+  JSON.stringify(hpKids),
+);
+check(
+  'armor pinned to the row edge by an auto margin',
+  /margin-left:\s*auto/.test(ruleFor('pc-armor(?![\\w-])')),
+  ruleFor('pc-armor(?![\\w-])'),
+);
+check(
+  'weapon chip on its own row — out of the HP row, armor out of the weapon row',
+  !!q(root, '.pc-weapon-row .pc-weapon') &&
+    !q(root, '.pc-hp-row .pc-weapon') &&
+    !q(root, '.pc-weapon-row .pc-armor'),
+);
+
 console.log('A2. carried C4: its own cell beside the util, icon or text fallback');
 const c4Card = {
   ...fullCard,
@@ -279,44 +312,94 @@ check('muted: aria-pressed true + warn class', muteB.getAttribute('aria-pressed'
 check('muted icon flips to codicon-mute', !!q(muteB, '.codicon-mute'));
 check('muted title says Unmute', muteB.getAttribute('title') === "Unmute donk's voice", muteB.getAttribute('title'));
 
-console.log('C. speaking: a SECOND outline outside the color ring, with a gap');
+console.log('C. voice: a red live dot beside the name — the player-color ring is the ONLY ring');
 const rootC = await show({ card: { ...fullCard, speaking: true, onToggleMute: () => {} } });
 const cardC = q(rootC, '.pc-card');
 check(
-  'speaking class set alongside the color class',
-  cardC.classList.contains('pc-speaking') && cardC.classList.contains('pc-color'),
+  'color ring still armed by playerColor while speaking (class + custom prop)',
+  cardC.classList.contains('pc-color') &&
+    cardC.style.getPropertyValue('--pc-color') === '#84C8ED',
+  cardC.getAttribute('style'),
 );
+check('no pc-speaking ring class on the card', !cardC.classList.contains('pc-speaking'));
+check('live dot renders in the head while speaking', !!q(cardC, '.pc-head .pc-live'));
+check(
+  'live dot is a decorative aria-hidden span',
+  q(cardC, '.pc-live')?.tagName === 'SPAN' &&
+    q(cardC, '.pc-live')?.getAttribute('aria-hidden') === 'true',
+);
+const headKids = [...q(cardC, '.pc-head').children].map(pcClass);
+check(
+  'head order: name → live dot → follow marker → mute',
+  JSON.stringify(headKids) === JSON.stringify(['pc-name', 'pc-live', 'pc-mark', 'pc-mute']),
+  JSON.stringify(headKids),
+);
+
+// The dot's own rule: a 7px filled circle in the app's recording red,
+// flex:none so it can never squeeze the name or move the head's
+// fixed-height row.
+const liveRule = ruleFor('pc-live(?![\\w-])');
+check(
+  'live dot rule: 7px circle, danger red, flex:none',
+  /width:\s*7px/.test(liveRule) &&
+    /height:\s*7px/.test(liveRule) &&
+    /border-radius:\s*50%/.test(liveRule) &&
+    /background:\s*var\(--danger\)/.test(liveRule) &&
+    /flex:\s*none/.test(liveRule),
+  liveRule,
+);
+check(
+  'dot pulse exists and goes static under prefers-reduced-motion',
+  // svelte namespaces keyframes (svelte-<hash>-pc-live-pulse) — match
+  // the name, not the @keyframes prefix.
+  /@keyframes\s+[\w-]*pc-live-pulse/.test(sheetText()) &&
+    /prefers-reduced-motion[^{]*\{[^}]*\.pc-live(?![\w-])[^{}]*\{[^}]*animation:\s*none/.test(
+      sheetText(),
+    ),
+);
+
+// The silent card must show NO dot — the `speaking` prop is the only
+// trigger (re-mounts the harness, so the injected CSS stays in place).
+const rootQuiet = await show({ card: { ...fullCard, speaking: false, onToggleMute: () => {} } });
+check('no live dot while silent', !q(rootQuiet, '.pc-live'));
+
+// --- The rings: ONE ring, the player's own color -----------------------
 const colorRule = ruleFor('pc-card\\.pc-color');
-const speakRule = ruleFor('pc-card\\.pc-speaking');
-check('color ring rule exists and draws box-shadow', /box-shadow/.test(colorRule), colorRule);
-check('speaking ring rule exists and draws an outline', /outline:\s*3px/.test(speakRule), speakRule);
+check('color ring rule exists and draws a box-shadow', /box-shadow/.test(colorRule), colorRule);
+const spreads = (colorRule.match(/0 0 0 ([\d.]+)px/g) || []).map((m) => px(m.slice(6)));
 check(
-  'the two rings use different properties (no shared style)',
-  /box-shadow/.test(colorRule) && !/outline:/.test(colorRule) && /outline:/.test(speakRule) && !/box-shadow/.test(speakRule),
-  `color=[${colorRule}] speak=[${speakRule}]`,
+  'the ring hugs the card (a 2px color spread behind a 3px dark casing)',
+  spreads.length === 2 && spreads[0] === 2 && spreads[1] === 3,
+  JSON.stringify(spreads),
 );
-const voiceSpread = Math.max(0, ...(colorRule.match(/0 0 0 ([\d.]+)px/g) || []).map((m) => px(m.slice(6))));
-const speakOffset = px((speakRule.match(/outline-offset:\s*([\d.]+)px/) || [0, 0])[1]);
+// Every rule targeting .pc-card must be outline-free: the speaking
+// outline (outline + outline-offset + pulse) is gone for good — the
+// player-color box-shadow is the only thing that rings a card. CSS
+// comments are stripped first so prose mentioning "outline" can never
+// poison the scan.
+const cardRules =
+  sheetText()
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .match(/\.pc-card[^{}]*\{[^}]*\}/g) || [];
 check(
-  `speaking outline starts past the color ring (offset ${speakOffset}px > ${voiceSpread}px)`,
-  voiceSpread > 0 && speakOffset > voiceSpread,
-  `voiceSpread=${voiceSpread} speakOffset=${speakOffset}`,
+  'NO outline ring: no .pc-speaking rule and no outline in any .pc-card rule',
+  cardRules.length > 0 &&
+    cardRules.every((r) => !/outline/.test(r)) &&
+    !cardRules.some((r) => /\.pc-speaking/.test(r)),
+  cardRules.join(' | '),
 );
-check('speaking ring keeps a visible gap (≥1px)', speakOffset - voiceSpread >= 1, String(speakOffset - voiceSpread));
-check('speaking ring mixes toward the theme text color', /color-mix/.test(speakRule) && /var\(--text\)/.test(speakRule), speakRule);
-check('speaking outline falls back to the accent when the color is unknown', /var\(--pc-color,\s*var\(--accent\)\)/.test(speakRule), speakRule);
 
 console.log('C2. fixed-height geometry: NOTHING may resize the card');
 // The jitter contract: every row reserves its tallest possible height in
 // the component's own CSS, so a mounting DEAD chip, a wrapping grenade
 // row or a ticking stat can never change the stack's layout.
-for (const sel of ['pc-head', 'pc-hp-row', 'pc-gear', 'pc-econ', 'pc-stats']) {
+for (const sel of ['pc-head', 'pc-hp-row', 'pc-weapon-row', 'pc-econ', 'pc-stats']) {
   const rule = ruleFor(sel);
   check(`${sel} declares a FIXED height`, /height:\s*[^;]+;/.test(rule), rule);
   check(`${sel} clips what does not fit (no spill into the stack)`, /overflow:\s*hidden/.test(rule), rule);
 }
 check(
-  'the rings stay pure paint (box-shadow/outline only, never width/height)',
+  'the color ring stays pure paint (box-shadow only, never width/height)',
   !/width|height|padding|margin/.test(colorRule) && /box-shadow/.test(colorRule),
   colorRule,
 );
