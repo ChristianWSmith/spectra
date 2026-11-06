@@ -26,6 +26,8 @@
     getTeamNames,
     getVoicePresence,
     getVoicePlayers,
+    getVoiceLanes,
+    extractIcons,
     listSavedFilters,
     saveFilter,
     deleteSavedFilter,
@@ -34,7 +36,7 @@
     errText,
   } from '../services.js';
   import { createEngine, parsePositions, SPEEDS } from '../replay/engine.js';
-  import { createRenderer } from '../replay/renderer.js';
+  import { createRenderer, sideFromFlags } from '../replay/renderer.js';
   import {
     CATEGORIES,
     DRAW_KINDS,
@@ -51,9 +53,22 @@
     defaultFilter,
     applyRoundPref,
     landmarkExportRows,
+    scrubberMarkerClass,
   } from '../replay/landmarks.js';
   import { attachReplayInput, snapshot } from '../replay/input.js';
   import { createVoiceEngine, fetchVoicePCM } from '../replay/audio.js';
+  import {
+    fetchStateMeta,
+    loadState,
+    slotStateAt,
+    stateCapable,
+  } from '../replay/state.js';
+  import { loadIconManifest, preloadIcons } from '../replay/icons.js';
+  import {
+    assignVoiceColors,
+    buildSpeakingIndex,
+    speakingAt,
+  } from '../replay/voiceindex.js';
   import { loadMapPack } from '../components/mapxform.js';
   import { downloadBlob, downloadText } from '../download.js';
   import { toCSV } from '../csv.js';
@@ -68,6 +83,7 @@
   import PayloadTree from '../components/PayloadTree.svelte';
   import Popover from '../components/Popover.svelte';
   import RoundStrip from '../components/RoundStrip.svelte';
+  import TeamColumn from '../components/TeamColumn.svelte';
 
   let { id = 0, query = {}, nav = () => {} } = $props();
 
@@ -112,6 +128,34 @@
   let uiVoiceMutedAll = $state(false);
   const uiVoiceMute = $state({}); // steamId → bool (per-player mute — card phase)
   const VOICE_MASTER_VOL = 0.8; // the old volume slider's position (no UI now)
+
+  // --- Player-card phase (spec 19–22, 26) -----------------------------------
+  // State stream (handoff B): null until load() proves capability. A
+  // sidecar that HAS a stateFormatVersion but not the current one (v1,
+  // pre-money/helmet) yields stateNote — ONE honest .note-amber telling
+  // the user a reprocess gains the card fields; a match that never had
+  // the stream (no version key) stays silent and the cards just render
+  // their "no state" placeholders.
+  let stateIndex = $state(null);
+  let stateNote = $state('');
+  // Icons (handoff C): the manifest URL map the cards render <img> from
+  // directly, plus the preloaded images (cards' `icons` Map and the
+  // renderer's setIcons object). iconNote only when extraction failed —
+  // cards then fall back to text labels automatically.
+  let iconUrls = $state(null);
+  let iconMap = $state(null);
+  let iconNote = $state('');
+  // The renderer wants { name: image } (iconFor does property lookups);
+  // the preload gives a Map — one conversion at the push site, derived so
+  // a late extraction re-pushes through the same expression.
+  const iconObj = $derived(iconMap ? Object.fromEntries(iconMap) : null);
+  // Voice metadata (handoff D): colors are a pure map over roster +
+  // voice players; the speaking index arrives from getVoiceLanes (~1
+  // bucket per second) and fails soft to null (no rings, no crash).
+  let speakIdx = $state(null);
+  // Per-column voice mute (spec 22) — view-owned like uiVoiceMute: it
+  // survives engine rebuilds and is re-applied in startEngine.
+  const teamMuted = $state({ left: false, right: false });
 
   // Transport-bar mirror of the engine state (updated via onChange).
   let uiFrame = $state(0);
@@ -381,12 +425,12 @@
       }
       if (filter.round >= 0 && l.round !== filter.round) continue;
       if (filter.steamId && l.steamId !== filter.steamId) continue;
-      let cls = '';
-      if (l.bucket === 'kill') cls = 'kill';
-      else if (l.bucket === 'plant' || l.bucket === 'defuse') cls = 'plant';
-      else if (l.bucket === 'explode' || l.bucket === 'detonation') cls = 'det';
-      else if (l.bucket === 'round') cls = 'round';
-      else continue;
+      // The ONE bucket → marker mapping (landmarks.scrubberMarkerClass —
+      // the contract src/lib/landmarks.test.js pins): the typed grenade
+      // buckets (smoke/fire/flash/he/decoy) count as 'det' alongside
+      // explode/detonation; drop/pickup/damage carry no marker ('').
+      const cls = scrubberMarkerClass(l.bucket);
+      if (!cls) continue;
       if (l.tick < t0 || l.tick > t1) continue;
       out.push({ cls, pct: ((l.tick - t0) / span) * 100 });
     }
@@ -730,6 +774,152 @@
     return hit && isSteam(hit.steamId) ? hit.steamId : '';
   }
 
+  // --- Player-card columns (spec 19–22, 26) --------------------------------
+  // Grouping (a stable team identity across halftime — players never
+  // change teams): the team that FINISHED ct sits LEFT, the finished-t
+  // team RIGHT. A player whose final side is empty falls back to the
+  // side their payload carried at its LAST recorded frame (recorded
+  // data, never a guess); if that is unknown too they go LEFT — no side
+  // is invented for them, and the card renders with the column's side,
+  // which is '' (neutral) whenever the column's own side is unknown
+  // (TeamColumn's contract: the column side wins over any card value).
+  function sideAtLastPayload(slot) {
+    const masks = data && data.masks;
+    const slotData = data && data.slots && data.slots[slot];
+    if (!masks || !slotData || !slotData.flags) return '';
+    for (let f = masks.length - 1; f >= 0; f--) {
+      if (masks[f] & (1 << slot)) {
+        // Exactly ONE frame — the last one carrying payload for this
+        // slot; an absent side bit there is "unknown", not a licence to
+        // keep scanning for a side we liked better.
+        return sideFromFlags(slotData.flags[f]);
+      }
+    }
+    return '';
+  }
+
+  const cardGroups = $derived.by(() => {
+    const left = [];
+    const right = [];
+    players.forEach((p, slot) => {
+      const side = (p && p.side) || sideAtLastPayload(slot);
+      (side === 't' ? right : left).push(slot); // 'ct' AND unknown → left
+    });
+    return { left, right };
+  });
+
+  // Column side = that team's side AT THE PLAYHEAD (it flips at
+  // halftime, spec 20/21): any member's CURRENT side from the canonical
+  // per-frame rule (renderer sideFromFlags — frame bits first), falling
+  // back to the final side only when NO member's frame carries side
+  // bits — the renderer's documented fallback (dead frames / unassigned
+  // teams report 0, and the final-side table is all there is).
+  function columnSideAt(slots, frame) {
+    for (const s of slots) {
+      const slotData = data && data.slots && data.slots[s];
+      if (slotData && slotData.flags && frame >= 0 && frame < slotData.flags.length) {
+        const cur = sideFromFlags(slotData.flags[frame]); // bits only
+        if (cur) return cur; // a member with payload this frame speaks for the team
+      }
+    }
+    for (const s of slots) {
+      const fin = players[s] && players[s].side;
+      if (fin) return fin;
+    }
+    return '';
+  }
+
+  const leftSide = $derived(columnSideAt(cardGroups.left, uiFrame));
+  const rightSide = $derived(columnSideAt(cardGroups.right, uiFrame));
+  // Team names: getTeamNames' clan/synthesized names; a missing name
+  // falls back to the bare side (TeamColumn's documented fallback).
+  const leftTeamName = $derived((teamNames && teamNames.ct) || 'CT');
+  const rightTeamName = $derived((teamNames && teamNames.t) || 'T');
+
+  // Voice colors (spec 21): steamId → hex for the players that actually
+  // voiced the match; voiceColorSlots is the slot-indexed array the
+  // renderer's setVoices consumes (handoff E).
+  const voiceColorMap = $derived(assignVoiceColors(players, voicePlayers));
+  const voiceColorSlots = $derived(
+    players.map((p) => (p && p.steamId != null ? voiceColorMap[String(p.steamId)] ?? null : null)),
+  );
+
+  // The renderer's speaking callback — STABLE identity (the renderer
+  // holds it for its lifetime) that reads the live $state speakIdx and
+  // roster, so a late lanes arrival never needs the closure re-pushed.
+  // Null-safe by construction: no index / no roster row → false.
+  function speakingFor(slot, tick) {
+    const p = players[slot];
+    if (!speakIdx || !p || p.steamId == null) return false;
+    return speakingAt(speakIdx, String(p.steamId), tick);
+  }
+
+  // Aliveness — the engine's lerpAt rule EXACTLY (engine.js: out.alive =
+  // !!(data.masks[f] & (1 << slot))): the position store's per-frame
+  // mask is the canonical aliveness, so cards and dots can never
+  // disagree; never re-derived any other way. An unloaded mask (no
+  // position store yet) → alive: DEAD is never shown without evidence.
+  function aliveAtFrame(frame, slot) {
+    const masks = data && data.masks;
+    if (!masks || frame < 0 || frame >= masks.length) return true;
+    return !!(masks[frame] & (1 << slot));
+  }
+
+  // Per-player mute handlers with STABLE identity per steamId — a fresh
+  // closure every frame would churn every button's onclick for nothing.
+  const muteHandlerFor = (() => {
+    const noop = () => {};
+    const cache = new Map([['', noop]]);
+    return (sid) => {
+      const key = sid == null ? '' : String(sid);
+      let h = cache.get(key);
+      if (!h) {
+        h = () => toggleVoiceMute(key);
+        cache.set(key, h);
+      }
+      return h;
+    };
+  })();
+
+  // The steam ids a column's team mute applies to (roster order, one
+  // spelling shared by the toggle and startEngine's rebuild re-apply).
+  function teamSteamIds(col) {
+    return (col === 'left' ? cardGroups.left : cardGroups.right)
+      .map((s) => (players[s] && players[s].steamId != null ? String(players[s].steamId) : ''))
+      .filter((x) => x);
+  }
+
+  // The card prop arrays — ONE derived that reads the playhead (uiFrame
+  // / uiTick): every per-frame value (state, alive/dead, follow,
+  // speaking, muted) recomputes here, while stable refs (the roster
+  // object itself, the icon maps, the memoized mute handlers) keep prop
+  // churn to the values that actually changed — Svelte then writes only
+  // the text/classes that differ.
+  const cardColumns = $derived.by(() => {
+    const frame = uiFrame;
+    const tick = uiTick;
+    const build = (slots, col) =>
+      slots.map((slot) => {
+        const p = players[slot] || {};
+        const alive = aliveAtFrame(frame, slot);
+        const sid = p.steamId != null ? String(p.steamId) : '';
+        return {
+          player: players[slot] || {},
+          voiceColor: sid ? voiceColorMap[sid] ?? null : null,
+          speaking: sid && speakIdx ? speakingAt(speakIdx, sid, tick) : false,
+          muted: uiVoiceMutedAll || teamMuted[col] || !!(sid && uiVoiceMute[sid]),
+          alive,
+          dead: !alive,
+          follow: uiFollow === slot,
+          state: stateIndex ? slotStateAt(stateIndex, slot, frame) : null,
+          icons: iconMap,
+          iconURLs: iconUrls,
+          onToggleMute: muteHandlerFor(sid),
+        };
+      });
+    return { left: build(cardGroups.left, 'left'), right: build(cardGroups.right, 'right') };
+  });
+
   // --- Camera mode (ONE dropdown: 'smart' | 'free' | 'follow') --------------
   // 'smart' (the DEFAULT) keeps every alive player + the active bomb on
   // screen with eased pan/zoom (renderer.js smart camera); 'free' is
@@ -881,6 +1071,37 @@
     return { pack: p.meta, transform: p.transform, img: null };
   }
 
+  // Icon pipeline (handoff C): read the manifest; when it reports no
+  // extraction YET, ask services.extractIcons('') ONCE (it auto-detects
+  // the local CS2 install / saved pref and takes a moment), then re-read
+  // — the wrapper reset the session memo. On failure every card falls
+  // back to text labels automatically (iconUrls stays null) and the
+  // manifest's note surfaces ONCE as a .note-amber, same spirit as
+  // packNote. Guarded by `live` after every await: a late extraction
+  // must not write into an unmounted view.
+  async function loadIcons() {
+    let m = await loadIconManifest(); // resolves to a manifest on every path
+    if (!live) return;
+    if (!m.extracted) {
+      try {
+        await extractIcons('');
+      } catch {
+        /* auto-detection failed — the re-read below reports the outcome */
+      }
+      if (!live) return;
+      m = await loadIconManifest(); // extractIcons reset the memo → fresh read
+    }
+    if (m.count > 0) {
+      iconUrls = m.icons;
+      iconMap = await preloadIcons(Object.keys(m.icons)); // per-name nulls, never rejects
+      if (!live) return;
+      renderer?.setIcons(iconObj); // late arrival — startEngine pushes it when pre-engine
+    }
+    if (!m.extracted) {
+      iconNote = m.note || 'equipment icons unavailable — player cards fall back to text labels';
+    }
+  }
+
   async function load() {
     loading = true;
     loadError = '';
@@ -890,6 +1111,11 @@
     // the feed/detail pane, which the collapsed default would hide.
     if (entrySel) eventsOpen = true;
     syncFiltersOpen(filter); // a scoped deep link opens the filter panel
+    // Icon pipeline (handoff C) in the BACKGROUND: manifest read, one
+    // extractIcons('') attempt when it reports no extraction yet, then
+    // preload — a slow CS2 scan must never delay first paint, and the
+    // cards stay reactive to the late iconMap either way.
+    loadIcons().catch(() => {});
     try {
       const m = await getReplayMeta(id);
       meta = m;
@@ -897,15 +1123,31 @@
         noSidecar = true;
         return;
       }
-      const [match, rs, tn] = await Promise.all([
+      const [match, rs, tn, smeta] = await Promise.all([
         getMatch(id).catch(() => null),
         getRounds(id).catch(() => []),
         getTeamNames(id).catch(() => null), // round ribbon team labels
+        fetchStateMeta(id).catch(() => null), // player-state capability (handoff B)
       ]);
       matchMap = (match && match.map) || '';
       sideSwitches = (match && match.sideSwitches) || 0;
       teamNames = tn || null;
       rounds = rs || [];
+      // Player-state stream (handoff B): capability lives in the sidecar's
+      // meta.json. A sidecar that HAS a stateFormatVersion but not the
+      // current one (v1, pre-money/helmet) gets the ONE honest note —
+      // reprocessing re-records the stream in the current layout. A match
+      // that never had the stream (no version key) stays silent: the
+      // cards render "no state" with no reprocess nag. loadState re-reads
+      // meta.json itself (the canonical one-stop loader — never forked
+      // here); the duplicate read is one tiny local JSON.
+      if (stateCapable(smeta)) {
+        stateIndex = await loadState(id).catch(() => null);
+        renderer?.setStateIndex(stateIndex); // normally pre-engine: startEngine pushes it
+      } else if (smeta && smeta.stateFormatVersion != null) {
+        stateNote =
+          'player state unavailable — reprocess this match to gain HP/weapon/money on the cards';
+      }
       // Voice presence gates the controls block; players ride alongside.
       voicePresence = await getVoicePresence(id).catch(() => null);
       if (voicePresence && voicePresence.hasVoice) {
@@ -924,6 +1166,26 @@
       const buf = await res.arrayBuffer();
       if (!live) return;
       data = parsePositions(buf, players.length || 10);
+      // Voice speaking index (handoff D): ~1 bucket per second of match
+      // time (spec 26's talking ring/card outline). BACKGROUND fetch — it
+      // must not hold up first paint; whether it lands before or after
+      // startEngine, the cards re-derive from the $state and the
+      // renderer's setVoices is re-pushed at the assignment. A null lanes
+      // result (no voice rows / stubbed service) fails soft to "no rings".
+      if (voicePresence && voicePresence.hasVoice) {
+        const tr = normTickRate(meta?.tickRate);
+        const span = data.ticks[data.frames - 1] - data.ticks[0];
+        getVoiceLanes(id, Math.max(1, Math.ceil(span / tr)))
+          .then((lanes) => {
+            if (!live) return;
+            speakIdx = lanes ? buildSpeakingIndex(lanes) : null;
+            renderer?.setVoices({
+              colors: voiceColorSlots,
+              speaking: speakIdx ? speakingFor : null,
+            });
+          })
+          .catch(() => {});
+      }
       // The drawable anchor set (kills/grenades/bomb/round_end) — one
       // unfiltered source read, awaited before the engine starts so the
       // world layers and scrubber markers are ready on first paint.
@@ -972,6 +1234,13 @@
     });
     renderer.setPack(pack, radarImg, packTf);
     renderer.setLandmarks(drawNorm);
+    // Player-card phase inputs (handoff E): push whatever load() already
+    // has alongside pack/landmarks — icons and the voice lanes may still
+    // arrive later and re-push at their assignment sites; every one of
+    // these setters is additive and tolerates a repeat call.
+    renderer.setIcons(iconObj);
+    renderer.setVoices({ colors: voiceColorSlots, speaking: speakIdx ? speakingFor : null });
+    renderer.setStateIndex(stateIndex);
     renderer.resize();
     renderer.setCameraMode(rendererCam()); // default 'smart' unless the pref says free
     offChange = engine.onChange((st) => {
@@ -1031,9 +1300,14 @@
       voiceEngine.setPlayers(voicePlayers);
       voiceEngine.setMasterVolume(VOICE_MASTER_VOL);
       // The per-player mute map survives engine rebuilds (the player
-      // cards own its UI in the next phase).
+      // cards own its UI); the per-column team mutes survive the same
+      // way — re-apply each muted column as a set so a rebuilt engine
+      // can never disagree with what the cards show.
       for (const p of voicePlayers) {
         if (uiVoiceMute[p.steamId]) voiceEngine.setMuted(p.steamId, true);
+      }
+      for (const col of ['left', 'right']) {
+        if (teamMuted[col]) voiceEngine.setMutedMany(teamSteamIds(col), true);
       }
       voiceEngine.setEnabled(true).catch(() => {});
     }
@@ -1275,6 +1549,26 @@
     voiceEngine?.setMuted(steamId, !!uiVoiceMute[steamId]);
   }
 
+  // Per-team mute (spec 22): flip the column's flag — the cards derive
+  // `muted` from it — and drive the voice engine in ONE setMutedMany.
+  // On UNMUTE the individually-muted players are re-applied:
+  // setMutedMany(false) cleared their engine flags too, and the card
+  // formula (muteAll || team || per-player) must never disagree with
+  // what is actually audible.
+  function toggleTeamMute(col) {
+    const v = !teamMuted[col];
+    teamMuted[col] = v;
+    const ids = teamSteamIds(col);
+    voiceEngine?.setMutedMany(ids, v);
+    if (!v) {
+      for (const sid of ids) if (uiVoiceMute[sid]) voiceEngine?.setMuted(sid, true);
+    }
+  }
+  // Stable handlers for the two column buttons — a new closure per frame
+  // would rewrite both onclick handlers on every playhead tick.
+  const toggleLeftTeamMute = () => toggleTeamMute('left');
+  const toggleRightTeamMute = () => toggleTeamMute('right');
+
   // Mute all (spec 18): silences every player's voice under the
   // scrubber. The engine owns the flag — setMutedAll emits and the
   // onStateChange mirror updates uiVoiceMutedAll (aria-pressed/styling),
@@ -1311,6 +1605,17 @@
       {#if packNote}
         <p class="note-amber" role="status">{packNote}</p>
       {/if}
+      {#if stateNote}
+        <!-- v1 sidecar: the ONE reprocess note (handoff B) — shown only
+             when the sidecar HAS a stateFormatVersion that isn't the
+             current one; a match that never had the stream stays silent. -->
+        <p class="note-amber" role="status">{stateNote}</p>
+      {/if}
+      {#if iconNote}
+        <!-- Icon extraction failed after one attempt (handoff C): cards
+             already fell back to text labels; this says why, once. -->
+        <p class="note-amber" role="status">{iconNote}</p>
+      {/if}
       {#if meta && data.frames !== meta.frames}
         <p class="note-amber" role="status">
           frame count mismatch: stream has {data.frames}, meta says {meta.frames}
@@ -1334,6 +1639,18 @@
         />
       {/if}
       <div class="replay-body">
+        <!-- Player-card columns (spec 19): finished-CT LEFT, finished-T
+             RIGHT (the grouping is stable across halftime); each column's
+             side — and with it the team name color AND every card tint —
+             is that team's side AT THE PLAYHEAD (leftSide/rightSide flip
+             at halftime, see columnSideAt). -->
+        <TeamColumn
+          teamName={leftTeamName}
+          side={leftSide}
+          players={cardColumns.left}
+          teamMuted={teamMuted.left}
+          onToggleTeamMute={toggleLeftTeamMute}
+        />
         <div class="replay-stage" bind:this={stageEl}>
           <canvas bind:this={canvasEl} aria-label="Replay canvas"></canvas>
           <!-- Back button (spec 7): a small icon-only pill floating at
@@ -1376,6 +1693,13 @@
             </span>
           {/if}
         </div>
+        <TeamColumn
+          teamName={rightTeamName}
+          side={rightSide}
+          players={cardColumns.right}
+          teamMuted={teamMuted.right}
+          onToggleTeamMute={toggleRightTeamMute}
+        />
       </div>
 
       <!-- Two lines: the scrubber owns the FULL-WIDTH line (round

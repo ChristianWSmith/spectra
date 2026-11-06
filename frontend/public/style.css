@@ -1394,6 +1394,14 @@ input[type='checkbox']:focus-visible {
   min-height: 0;
 }
 
+/* Player-card columns (spec 19): the two TeamColumns hold their card
+   width — flex slack belongs to the stage, never to the cards (their
+   fixed-width cells would otherwise overflow into their neighbours when
+   the window tightens). */
+.replay-body > .tc-col {
+  flex: 0 0 auto;
+}
+
 .replay-stage {
   flex: 1;
   min-width: 0;
@@ -1966,6 +1974,24 @@ button.lm-cat-chip.on {
     width: auto;
     flex: 0 0 auto;
     max-height: 30%;
+  }
+
+  /* Player-card columns (spec 19): the stage takes the top line at full
+     width (order: -1) and the two card columns wrap beneath it side by
+     side — they keep their card width (flex: 0 0 auto, base rule) and the
+     body scrolls vertically instead of clipping or overlapping anything.
+     align-content packs the lines to the top so the columns' internal
+     card scroll (tc-cards) stays reachable. */
+  .replay-body {
+    flex-wrap: wrap;
+    align-content: flex-start;
+    overflow-y: auto;
+  }
+
+  .replay-stage {
+    order: -1;
+    flex: 1 1 100%;
+    min-height: 300px;
   }
 
   .roster-grid,

@@ -75,6 +75,19 @@ function teamColor(side) {
   return OTHER_COLOR;
 }
 
+// sideFromFlags — THE canonical per-frame side rule (changes.txt 20/21):
+// the q16-v2 side bits (flags bits 2-3: 1 = t, 2 = ct) with a
+// caller-supplied fallback for frames whose bits are 0 — a dead player's
+// frame or an unassigned team, where the slot's final side
+// (meta.players[].side) is all the data there is. Exported so Replay's
+// player-card columns resolve the SAME side at the playhead:
+// createRenderer's sideAtFrame and the Replay columns both go through
+// it — there is no second copy of the bit arithmetic anywhere.
+export function sideFromFlags(flagsByte, finalSide = '') {
+  const b = (flagsByte >> 2) & 3;
+  return (b === 1 ? 't' : b === 2 ? 'ct' : '') || finalSide || '';
+}
+
 function hasPos(l) {
   return l && Number.isFinite(l.x) && Number.isFinite(l.y);
 }
@@ -764,18 +777,15 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     return true;
   }
 
-  // sideAtFrame resolves a slot's side at frame f: the per-frame side
-  // bits (q16-v2 — sides flip at halftime), falling back to the slot's
-  // final side from meta. The fallback is not an old-format shim: v2
-  // side bits are 0 (unknown) whenever the slot carries no payload that
-  // frame (dead player) or the extractor saw an unassigned team, and the
-  // final-side table is all we have for those frames.
-  function sideBits(flagsByte) {
-    const b = (flagsByte >> 2) & 3;
-    return b === 1 ? 't' : b === 2 ? 'ct' : '';
-  }
+  // sideAtFrame resolves a slot's side at frame f through the ONE
+  // canonical rule (module-level sideFromFlags): the per-frame side bits
+  // (q16-v2 — sides flip at halftime), falling back to the slot's final
+  // side from meta. The fallback is not an old-format shim: v2 side bits
+  // are 0 (unknown) whenever the slot carries no payload that frame (dead
+  // player) or the extractor saw an unassigned team, and the final-side
+  // table is all we have for those frames.
   function sideAtFrame(slot, f) {
-    return sideBits(store.slots[slot].flags[f]) || slotSides[slot] || '';
+    return sideFromFlags(store.slots[slot].flags[f], slotSides[slot]);
   }
 
   function drawTrails(frame) {

@@ -119,6 +119,55 @@ writeFileSync(
   join(dir, 'replay', 'landmarks.js'),
   readFileSync('src/lib/replay/landmarks.js', 'utf8'),
 );
+// Pure (no I/O) replay deps copied verbatim, like landmarks: the card
+// formatter set (PlayerCard imports it) and the voice metadata module
+// (colors/speaking index — deterministic with the stubbed voice services
+// above: no voice players → no colors, null lanes → no speaking).
+for (const rel of ['playercard.js', 'voiceindex.js']) {
+  writeFileSync(join(dir, 'replay', rel), readFileSync(join('src/lib/replay', rel), 'utf8'));
+}
+
+// The player-state loader is fetch-based: stub it so the suite pins the
+// VIEW's capability contract deterministically — the mounted replay (id 1)
+// mounts against a V1 sidecar (it HAS a stateFormatVersion, not the
+// current one) → the one honest reprocess note, no state loaded.
+writeFileSync(
+  join(dir, 'replay', 'state.js'),
+  `export const STATE_FORMAT_VERSION = 2;
+export function stateCapable(meta) {
+  return !!meta && meta.stateFormatVersion === STATE_FORMAT_VERSION;
+}
+export async function fetchStateMeta() {
+  return { stateFormatVersion: 1, players: [], weaponNames: [] };
+}
+export async function loadState() {
+  return null;
+}
+export function slotStateAt() {
+  return null;
+}
+`,
+);
+
+// Icon manifest/preload are fetch/DOM-based: a small extracted manifest
+// (so no extractIcons retry runs) whose preloaded values are null — the
+// cards' text-fallback path stays deterministic either way.
+writeFileSync(
+  join(dir, 'replay', 'icons.js'),
+  `export const loadIconManifest = () =>
+  Promise.resolve({
+    extracted: true,
+    count: 1,
+    icons: { 'AK-47': '/api/icons/ak47.svg' },
+    note: '',
+  });
+export const preloadIcons = async (names) =>
+  new Map((names || []).map((n) => [n, null]));
+export const resetIconManifest = () => {};
+export const iconURL = (name, manifest) =>
+  (manifest && manifest.icons && manifest.icons[name]) || null;
+`,
+);
 
 // The view's data source and platform glue are scripted, never a live
 // Wails backend or a real render loop: sidecar meta resolves, every feed
@@ -126,7 +175,23 @@ writeFileSync(
 writeFileSync(
   join(dir, 'services.js'),
   `export const getReplayMeta = () =>
-  Promise.resolve({ hasSidecar: true, tickRate: 64, frames: 10, players: [] });
+  Promise.resolve({
+    hasSidecar: true,
+    tickRate: 64,
+    frames: 10,
+    // Roster for the card columns: 3 finished-ct, 2 finished-t, plus one
+    // player with NO final side — grouping must place them left (last-
+    // payload fallback finds nothing: the stubbed positions have no mask)
+    // without inventing a side for them.
+    players: [
+      { steamId: '76561198000000001', name: 'Alpha1', side: 'ct' },
+      { steamId: '76561198000000002', name: 'Alpha2', side: 'ct' },
+      { steamId: '76561198000000003', name: 'Alpha3', side: 'ct' },
+      { steamId: '76561198000000004', name: 'Bravo1', side: 't' },
+      { steamId: '76561198000000005', name: 'Bravo2', side: 't' },
+      { steamId: '76561198000000006', name: 'Lone', side: '' },
+    ],
+  });
 export const getEvents = () => Promise.resolve([]);
 export const getEvent = () => Promise.resolve(null);
 export const getChat = () => Promise.resolve([]);
@@ -144,6 +209,7 @@ export const getVoicePresence = () => Promise.resolve(null);
 export const getVoicePlayers = () => Promise.resolve([]);
 export const getVoiceLanes = () => Promise.resolve(null);
 export const voiceWavURL = () => '';
+export const extractIcons = () => Promise.resolve({ ok: false });
 export const listSavedFilters = () => Promise.resolve([]);
 export const saveFilter = () => Promise.resolve(null);
 export const deleteSavedFilter = () => Promise.resolve(null);
@@ -222,11 +288,21 @@ writeFileSync(
     setPack() {},
     setLandmarks() {},
     setHud() {},
+    setIcons() {},
+    setVoices() {},
+    setStateIndex() {},
     resize() {},
     draw() {},
     setCameraMode() {},
     destroy() {},
   };
+}
+// The canonical side rule the view imports (the real renderer.js exports
+// the same function — the bit arithmetic is duplicated here only because
+// the harness replaces the whole canvas module).
+export function sideFromFlags(flagsByte, finalSide = '') {
+  const b = (flagsByte >> 2) & 3;
+  return (b === 1 ? 't' : b === 2 ? 'ct' : '') || finalSide || '';
 }
 `,
 );
@@ -260,10 +336,14 @@ export const downloadText = async () => '';
 );
 
 // The child components — only their ./X.svelte imports need rewriting
-// to the compiled .js (ProfileLink is shared by LandmarkRow). RoundStrip
+// to the compiled .js (ProfileLink is shared by LandmarkRow; TeamColumn
+// imports PlayerCard, so both card components join the list). RoundStrip
 // additionally reads the kvstore binding (the knife/warmup pref), whose
 // import is rewritten to the components/kvstore.js stub above.
-for (const name of ['ProfileLink', 'FilterBar', 'EventFlags', 'PayloadTree', 'LandmarkRow', 'Popover', 'RoundStrip']) {
+for (const name of [
+  'ProfileLink', 'FilterBar', 'EventFlags', 'PayloadTree', 'LandmarkRow', 'Popover', 'RoundStrip',
+  'PlayerCard', 'TeamColumn',
+]) {
   let src = readFileSync(`src/lib/components/${name}.svelte`, 'utf8').replace(
     /from '\.\/(\w+)\.svelte'/g,
     "from './$1.js'",
@@ -462,6 +542,95 @@ cam.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
 await sleep();
 check('choosing Follow reveals the player dropdown', !!controls.querySelector('#rp-follow'));
 check('camera select still reads follow', cam.value === 'follow', cam.value);
+
+console.log('F. player-card columns: grouping, team names, mute wiring, v1 state note');
+const rbody = main.querySelector('.replay-body');
+const kids = children(rbody);
+check(
+  'two TeamColumns flank the stage as siblings (left, stage, right)',
+  kids.length === 3 && kids[0].classList.contains('tc-col') &&
+    kids[1].classList.contains('replay-stage') && kids[2].classList.contains('tc-col'),
+  kids.map((el) => el.className).join(' | '),
+);
+const leftCol = kids[0];
+const rightCol = kids[2];
+check(
+  'team names ride the columns (getTeamNames: finished-ct left, finished-t right)',
+  leftCol.querySelector('.tc-name')?.textContent === 'Alpha' &&
+    rightCol.querySelector('.tc-name')?.textContent === 'Bravo',
+  leftCol.querySelector('.tc-name')?.textContent + ' / ' + rightCol.querySelector('.tc-name')?.textContent,
+);
+check(
+  'team names tinted by the side at the playhead (final-side fallback: the stub store carries no frame bits)',
+  leftCol.querySelector('.tc-name')?.classList.contains('side-ct') &&
+    rightCol.querySelector('.tc-name')?.classList.contains('side-t'),
+);
+check(
+  'per-team mute button beside each team name',
+  !!leftCol.querySelector('.tc-mute') && !!rightCol.querySelector('.tc-mute'),
+);
+const leftCards = [...leftCol.querySelectorAll('.pc-card')];
+const rightCards = [...rightCol.querySelectorAll('.pc-card')];
+check(
+  'grouping: finished-ct team + the side-unknown player LEFT, finished-t RIGHT',
+  leftCards.length === 4 && rightCards.length === 2,
+  `left=${leftCards.length} right=${rightCards.length}`,
+);
+check(
+  'cards keep roster order',
+  leftCards.map((c) => c.querySelector('.pc-name').textContent).join(',') === 'Alpha1,Alpha2,Alpha3,Lone' &&
+    rightCards.map((c) => c.querySelector('.pc-name').textContent).join(',') === 'Bravo1,Bravo2',
+  leftCards.map((c) => c.querySelector('.pc-name').textContent).join(','),
+);
+check(
+  'every card takes its column side tint and the honest no-state marker (v1 → no index)',
+  leftCards.every((c) => c.classList.contains('pc-ct')) &&
+    rightCards.every((c) => c.classList.contains('pc-t')) &&
+    leftCards.every((c) => !!c.querySelector('.pc-nostate')),
+);
+// Per-player mute (spec 22): the card button flips exactly that player.
+const cardMute = () => leftCards[0].querySelector('.pc-mute');
+check('card mute starts unmuted', cardMute()?.getAttribute('aria-pressed') === 'false');
+click(cardMute());
+await sleep();
+check(
+  'per-player mute wires to that card only',
+  cardMute()?.getAttribute('aria-pressed') === 'true' &&
+    leftCards[1].querySelector('.pc-mute')?.getAttribute('aria-pressed') === 'false' &&
+    rightCards[0].querySelector('.pc-mute')?.getAttribute('aria-pressed') === 'false',
+);
+click(cardMute());
+await sleep();
+check('per-player unmute restores', cardMute()?.getAttribute('aria-pressed') === 'false');
+// Per-team mute (spec 22): the column button mutes every card in it.
+const teamBtn = () => leftCol.querySelector('.tc-mute');
+check('team mute starts unpressed', teamBtn()?.getAttribute('aria-pressed') === 'false');
+click(teamBtn());
+await sleep();
+check(
+  'team mute presses the team button + every left card, right column untouched',
+  teamBtn()?.getAttribute('aria-pressed') === 'true' &&
+    leftCol.querySelectorAll('.pc-mute[aria-pressed="true"]').length === 4 &&
+    rightCol.querySelectorAll('.pc-mute[aria-pressed="true"]').length === 0,
+  String(leftCol.querySelectorAll('.pc-mute[aria-pressed="true"]').length),
+);
+click(teamBtn());
+await sleep();
+check(
+  'team unmute restores every card',
+  teamBtn()?.getAttribute('aria-pressed') === 'false' &&
+    target.querySelectorAll('.pc-mute[aria-pressed="true"]').length === 0,
+);
+// The v1 sidecar note (handoff B): present exactly once, truthful wording.
+const stateNotes = [...target.querySelectorAll('.note-amber')].filter((n) =>
+  n.textContent.includes('player state unavailable'),
+);
+check('v1 sidecar shows the ONE state-unavailable note', stateNotes.length === 1, String(stateNotes.length));
+check(
+  'note tells the user a reprocess gains the card fields',
+  !!stateNotes[0] && /reprocess this match to gain HP\/weapon\/money/.test(stateNotes[0].textContent),
+  stateNotes[0]?.textContent,
+);
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');
