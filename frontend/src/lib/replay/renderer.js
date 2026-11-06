@@ -2,11 +2,12 @@
 //
 // Layers, bottom → top: radar (or world grid) → movement trails → grenade
 // landmarks (lingering smoke/fire areas → utility flight with the
-// extracted icon → per-type detonation pops) → bomb (pulse ring + the
-// extracted C4 icon) → death markers (the victim's team-color X, until
-// the round ends) → players (view chevron, body, player-color rim, white
-// talking pulse, flash-white overlay, muzzle line, damage flash, follow
-// ring, name) → HUD + kill feed.
+// extracted icon → per-type detonation pops) → death markers (the victim's
+// team-color X, until the round ends) → bomb (pulse ring + the extracted
+// C4 icon — the dropped/planted C4 renders ABOVE the death markers, so an
+// X can never overlap it) → players (view chevron, body, player-color rim,
+// white talking bloom, flash-white overlay, muzzle line, damage flash,
+// follow ring, name) → HUD + kill feed.
 // The camera is a pan/zoom view over the radar's image-pixel space with
 // two modes: 'smart' (the default — eased
 // fit that keeps every alive player + the active bomb on screen; see
@@ -60,11 +61,13 @@ const SMOKE_RADIUS = 144;
 // --- World-layer effect windows (all TICK-derived — seek-correct) -----------
 const FIRE_FLASH_S = 0.22; // muzzle-flash window after an attack bit edge
 const DAMAGE_FLASH_S = 0.35; // victim-hit flash window after a damage event
-const VOICE_RING_GAP = 9; // px — dot edge → talking ring (clear of the
-//                          amber follow ring at r+5: r+8..r+10 vs r+4..r+6)
-const VOICE_PULSE_PERIOD_S = 0.8; // s — one cycle of the talking ring's
-//                                 white pulse (pure tick math)
-const VOICE_PULSE_MIN_A = 0.45; // the pulse's floor alpha (spans 0.45..1)
+// Talking bloom (voiceBloom): a white ring expanding OUTWARD FROM THE
+// DOT'S CENTER and fading, looping while the player speaks — the
+// flashbang-detonation style, anchored at the dot. All tick-derived.
+const VOICE_BLOOM_PERIOD_S = 0.85; // s — one bloom loop (pure tick math)
+const VOICE_BLOOM_MIN_R = 3; // px — the ring's start radius (inside the dot)
+const VOICE_BLOOM_MAX_R = 14; // px — growth past the dot edge (→ r + 14)
+const VOICE_BLOOM_MAX_A = 0.9; // the bloom's start alpha (fades to 0)
 const BLIND_SOLID_FRACTION = 0.25; // share of a blind's window the dot
 //                                  stays SOLID white before it fades
 //                                  back to its team color
@@ -263,14 +266,31 @@ export function blindAlpha(tick, startTick, tickRate, ms) {
   return 1 - (k - BLIND_SOLID_FRACTION) / (1 - BLIND_SOLID_FRACTION);
 }
 
-// voicePulseAlpha — THE talking ring's WHITE pulse: a sine over a ~0.8 s
-// period spanning alpha 0.45..1, purely a function of the tick (a scrub
-// lands on the same phase; nothing depends on wall-clock time). Bad
-// input → 0 (the ring never draws on a broken clock).
-export function voicePulseAlpha(tick, tickRate) {
-  if (!Number.isFinite(tick) || !(tickRate > 0)) return 0;
-  const phase = 0.5 + 0.5 * Math.sin((2 * Math.PI * (tick / tickRate)) / VOICE_PULSE_PERIOD_S);
-  return VOICE_PULSE_MIN_A + (1 - VOICE_PULSE_MIN_A) * phase;
+// voiceBloom — THE talking indicator: a WHITE bloom expanding outward
+// FROM THE DOT'S CENTER and fading, looping for as long as the player
+// speaks — the flashbang-detonation style (drawGrenades' expanding
+// stroked ring + fading core) anchored at the dot. Pure tick math, like
+// the voicePulseAlpha sine it replaces: phase = ((tick/tr) mod P)/P, so
+// a scrub lands on the same expansion and nothing depends on wall-clock
+// time. Returns { k, radius, alpha } — k the loop progress in [0, 1)
+// (the caller shrinks the stroke with it), radius in screen px growing
+// VOICE_BLOOM_MIN_R → dotR + VOICE_BLOOM_MAX_R, alpha fading
+// VOICE_BLOOM_MAX_A → 0 — or null on bad input (a broken clock never
+// draws). Pure — head-tested in src/lib/renderer.test.js; drawn by
+// drawPlayers while voiceSpeaking says this slot talks.
+export function voiceBloom(tick, tickRate, dotR) {
+  if (!Number.isFinite(tick) || !(tickRate > 0)) return null;
+  if (!Number.isFinite(dotR) || !(dotR > 0)) return null;
+  const period = VOICE_BLOOM_PERIOD_S;
+  const secs = tick / tickRate;
+  const raw = secs % period; // in (-P, P)
+  const phase = raw < 0 ? raw + period : raw; // in [0, P)
+  const k = phase / period;
+  return {
+    k,
+    radius: VOICE_BLOOM_MIN_R + k * (dotR + VOICE_BLOOM_MAX_R - VOICE_BLOOM_MIN_R),
+    alpha: VOICE_BLOOM_MAX_A * (1 - k),
+  };
 }
 
 // fireJump — the seek/frame-jump detector for the firing edge state
@@ -1305,7 +1325,18 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     for (const k of kills) {
       if (!hasPos(k)) continue;
       if (tick < k.tick) continue;
-      if (tick > killEndTick(k, tr, roundEnds, roundStarts)) continue;
+      // The marker is gone AT its cutoff, not one tick after it: the
+      // round ribbon seeks to EXACTLY the next round's startTick, and
+      // killEndTick returns that very tick for the post-round C4 kill —
+      // with the old `tick > end` test the boundary X still drew and,
+      // paused, never cleared (the stuck blue X repro). The kill's OWN
+      // tick always draws even when the cutoff lands on it: a kill
+      // stamped on the round_end tick (golden demo round 1, tick 7626
+      // — kill and round_end share the tick) must still mark the spot
+      // for that one tick. `tick !== k.tick` also keeps a NaN-tick row
+      // (killEndTick → 0) from ever drawing.
+      const end = killEndTick(k, tr, roundEnds, roundStarts);
+      if (tick >= end && tick !== k.tick) continue;
       const slot = slotOfSteam.get(String(k.victim || ''));
       if (slot == null || slot >= store.slots.length) continue; // no dot to mark
       const c = worldToScreen(k.x, k.y);
@@ -1351,13 +1382,15 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       const angle = (-tmp.yaw) * Math.PI / 180; // engine yaw → screen
 
       // 27 — view CHEVRON: an open ">" of two arms meeting at the apex
-      // pointing along the look direction (no shaft). Screen-space sized
-      // from the dot radius, so it stays legible at any camera zoom;
-      // near-opaque team color + a thicker stroke keep it clearly
-      // visible without competing with the dot itself.
-      const pts = chevronPath(c.x, c.y, angle, r * 2.8);
+      // pointing along the look direction (no shaft), CENTERED on the
+      // dot. Sized at r · 1.8 so the arm ends sit just outside the dot
+      // edge (0.6·size along the look ≈ r + 0.7, ±0.5·size across —
+      // radius ≈ 0.78·size ≈ 12.6 px at r = 9) instead of floating far
+      // away; a 2.75 px stroke at near-opaque team color keeps it
+      // clearly visible without competing with the dot itself.
+      const pts = chevronPath(c.x, c.y, angle, r * 1.8);
       ctx.globalAlpha = 0.9;
-      ctx.lineWidth = 1.75;
+      ctx.lineWidth = 2.75;
       ctx.strokeStyle = color;
       ctx.beginPath();
       ctx.moveTo(pts[0][0], pts[0][1]);
@@ -1454,16 +1487,31 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
         }
       }
 
-      // 26 — talking ring: a WHITE pulse AROUND the dot with a visible
-      // gap (r+VOICE_RING_GAP spans r+8..r+10 — clear of both the dot
-      // and the amber follow ring at r+4..r+6), regardless of the
-      // player's color. The alpha is a pure function of (slot, tick)
-      // (voicePulseAlpha — sine over a ~0.8 s period), so it is correct
-      // after any scrub.
+      // 26 — talking BLOOM: a WHITE ring expanding OUTWARD FROM THE
+      // DOT'S CENTER and fading, looping as long as this slot speaks —
+      // the flashbang detonation style anchored at (c.x, c.y), plus a
+      // small fading white core over the fill. Pure tick math
+      // (voiceBloom), so a scrub re-renders the same phase and nothing
+      // is sticky; drawn ONLY while voiceSpeaking says this slot talks.
+      // It is an OVERLAY, not a blocker: the ring starts inside the dot,
+      // the core never exceeds it, and the fill + rim + chevron are
+      // already painted underneath.
       if (voiceSpeaking && voiceSpeaking(slot, tick)) {
-        ctx.globalAlpha = voicePulseAlpha(tick, tr);
-        haloRing(c.x, c.y, r + VOICE_RING_GAP, '#ffffff', 2);
-        ctx.globalAlpha = 1;
+        const bloom = voiceBloom(tick, tr, r);
+        if (bloom) {
+          ctx.strokeStyle = '#ffffff';
+          ctx.globalAlpha = bloom.alpha;
+          ctx.lineWidth = 2.5 * (1 - bloom.k) + 1; // shrinks as it expands
+          ctx.beginPath();
+          ctx.arc(c.x, c.y, bloom.radius, 0, Math.PI * 2);
+          ctx.stroke();
+          ctx.fillStyle = '#ffffff';
+          ctx.globalAlpha = 0.7 * (1 - bloom.k);
+          ctx.beginPath();
+          ctx.arc(c.x, c.y, 4 * (1 - bloom.k) + 1.5, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.globalAlpha = 1;
+        }
       }
 
       // follow ring
@@ -1812,8 +1860,11 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       stepFiring(st.tick); // arms the muzzle flashes (spec 24)
       drawTrails(st.frame);
       drawGrenades(st.tick);
-      drawBomb(st.tick, now);
+      // Death X UNDER the bomb layer: the dropped/planted C4 icon and
+      // its rings must render ABOVE a victim's X (an X overlapping the
+      // bomb read as a stray mark on it).
       drawDeaths(st.tick); // the victim's team-color X (spec 28)
+      drawBomb(st.tick, now);
       drawPlayers();
     }
     drawHUD();
