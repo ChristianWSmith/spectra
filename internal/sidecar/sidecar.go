@@ -34,8 +34,9 @@
 //	positions.idx  fixed 16-byte entries per block: firstFrame uint32,
 //	               byteOffset uint64, frameCount uint16, pad uint16
 //	meta.json      Meta (format version, tick rate, sample rate, counts,
-//	               slot table, plus the state stream's stateFormatVersion
-//	               + weaponNames when present — see state.go)
+//	               slot table + its teammate colors, plus the state
+//	               stream's stateFormatVersion + weaponNames when
+//	               present — see state.go)
 //
 // A second, independent stream (state.bin/state.idx, stateFormatVersion
 // 1) carries sparse per-change player state — see state.go for its
@@ -112,6 +113,15 @@ type Meta struct {
 	// (interned first-seen order, [0] = "Unknown").
 	StateFormatVersion int      `json:"stateFormatVersion,omitempty"`
 	WeaponNames        []string `json:"weaponNames,omitempty"`
+
+	// PlayerColors parallels Players BY SLOT INDEX: the raw
+	// m_iCompTeammateColor of each slot-table player (CS2.md "Player
+	// scoreboard/radar colors": 0 blue, 1 green, 2 yellow, 3 orange,
+	// 4 purple, -1 none/GOTV), delivered by extract's RosterSink at the
+	// end of the parse. Absent (nil) in sidecars written before the
+	// field or in parses that carried no roster — consumers report "no
+	// color" for a missing or short entry, never a guessed one.
+	PlayerColors []int `json:"playerColors,omitempty"`
 }
 
 // Slot returns the slot-table index for steamID, or -1 when the player is
@@ -123,6 +133,18 @@ func (m Meta) Slot(steamID uint64) int {
 		}
 	}
 	return -1
+}
+
+// ColorAt returns the raw m_iCompTeammateColor recorded for a slot (CS2.md
+// "Player scoreboard/radar colors": 0 blue … 4 purple, -1 none) and
+// whether the sidecar carries a color row for it at all — a sidecar
+// written before PlayerColors reports ok=false, so callers render "no
+// color" instead of reading an absent entry as 0 (blue).
+func (m Meta) ColorAt(slot int) (int, bool) {
+	if slot < 0 || slot >= len(m.PlayerColors) {
+		return 0, false
+	}
+	return m.PlayerColors[slot], true
 }
 
 // idxEntry mirrors one 16-byte positions.idx record.

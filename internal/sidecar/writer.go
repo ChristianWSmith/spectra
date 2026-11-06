@@ -16,7 +16,9 @@ import (
 
 // Writer appends sampled frames to a match's positions.bin in ≤256-frame
 // zstd blocks, then writes positions.idx and meta.json on Close. It
-// implements extract.PositionSink. One Writer owns one match directory.
+// implements extract.PositionSink (plus extract.RosterSink's teammate
+// colors, folded into meta.json's slot table at Close). One Writer owns
+// one match directory.
 type Writer struct {
 	dir      string
 	bin      *os.File
@@ -34,6 +36,12 @@ type Writer struct {
 	slotOf      map[uint64]int
 	slotsLocked bool // slot table assigned by the first non-empty frame
 	skipped     map[uint64]bool
+
+	// colors is the end-of-demo roster's raw m_iCompTeammateColor per
+	// SteamID (extract.RosterSink — set once at the end of the parse,
+	// well after the slot table locked), resolved onto slot order at
+	// Close.
+	colors map[uint64]int
 
 	// st is the sparse player-state stream (state.go); its files are
 	// created lazily by the first AddState — a parse without a State
@@ -142,6 +150,24 @@ func (w *Writer) AddFrame(tick int32, players []extract.PositionPlayer) error {
 	return nil
 }
 
+// SetPlayerColors records the end-of-demo roster's raw
+// m_iCompTeammateColor per SteamID (extract.RosterSink — CS2.md "Player
+// scoreboard/radar colors"). Called once after the parse, before Close;
+// Close resolves the map onto the locked slot order (a SteamID outside
+// the slot table is ignored, a slot whose SteamID never reported a color
+// records -1). Copying is deliberate: the caller's map must not be
+// retained.
+func (w *Writer) SetPlayerColors(colors map[uint64]int) {
+	if len(colors) == 0 {
+		w.colors = nil
+		return
+	}
+	w.colors = make(map[uint64]int, len(colors))
+	for id, c := range colors {
+		w.colors[id] = c
+	}
+}
+
 // logSkip records an unusable SteamID once per Writer.
 func (w *Writer) logSkip(steamID uint64, why string) {
 	if w.skipped[steamID] {
@@ -224,6 +250,21 @@ func (w *Writer) Close(tickRate float64) (Meta, error) {
 		Encoding:      Encoding,
 		Players:       w.slots,
 		CreatedAt:     w.created,
+	}
+	// Teammate colors (extract.RosterSink) resolved onto slot order: a
+	// slot outside the delivered roster (or a parse that delivered none)
+	// leaves the row nil — meta.json then carries no playerColors key and
+	// readers fail soft to "no color".
+	if len(w.colors) > 0 {
+		row := make([]int, len(w.slots))
+		for i, id := range w.slots {
+			c, ok := w.colors[id]
+			if !ok {
+				c = -1 // the demo reported no color for this slot
+			}
+			row[i] = c
+		}
+		meta.PlayerColors = row
 	}
 	// State stream capability (absent fields = no stream, which is how
 	// pre-stream imports read): version + the interned weapon-name table

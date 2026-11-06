@@ -84,6 +84,21 @@ type StatePlayer struct {
 	Alive       bool
 }
 
+// RosterSink is an OPTIONAL capability of a PositionSink: after the parse
+// ends, Parse delivers the end-of-demo roster's teammate colors through a
+// Positions sink that implements it — map[SteamID64]raw
+// m_iCompTeammateColor (CS2.md "Player scoreboard/radar colors": 0 blue,
+// 1 green, 2 yellow, 3 orange, 4 purple, -1 none/GOTV).
+//
+// It rides the position sink because that is the sink whose slot table
+// keys the sidecar's meta.json (sidecar.Writer implements this interface
+// and stores the colors against the slots); a sink that does not
+// implement it simply carries no colors — Parse never fails over it.
+type RosterSink interface {
+	PositionSink
+	SetPlayerColors(colors map[uint64]int)
+}
+
 // StateSink receives one call per parsed frame with every playing
 // participant's state sample (dead included — hp 0 is evidence). seed is
 // true on the first frame after each round-counter change: sinks emit a
@@ -267,7 +282,12 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 	gs := p.GameState()
 	playing := finalRoster(gs.Participants().All())
 	finals := make([]finalPlayer, 0, len(playing))
+	// Teammate colors for the RosterSink capability: keyed by SteamID64,
+	// the same key the position sink's slot table is built from (bots
+	// share SteamID 0 and are never slot-table players).
+	rosterColors := make(map[uint64]int, len(playing))
 	for _, pl := range playing {
+		rosterColors[pl.SteamID64] = teammateColor(pl)
 		finals = append(finals, finalPlayer{
 			key:             playerKey(pl),
 			name:            pl.Name,
@@ -285,6 +305,11 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 		})
 	}
 	a.applyFinal(finals)
+	// Delivered AFTER the snapshot (the sink is only read before its
+	// Close, which the caller performs once Parse has returned).
+	if rs, ok := opts.Positions.(RosterSink); ok {
+		rs.SetPlayerColors(rosterColors)
+	}
 
 	// Empty rows keep both team entries present even if a state is missing.
 	ctTeam, tTeam := teamFinal{}, teamFinal{}
