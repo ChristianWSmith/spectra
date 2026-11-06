@@ -153,7 +153,7 @@ Player profile back button,Player profile,Returns to the library view; top-left 
 Player profile fallback title,Player profile,"Shows the placeholder heading ""Player"" when no profile is loaded yet.",PlayerProfile.svelte:prof-head
 Player search box,Player profile,"""Find players…"" search input in the profile header; type-ahead searches the library.",PlayerProfile.svelte:prof-q
 Player search result row,Player profile,"Clickable result showing name, match count and average ADR; navigates to that player's profile.",PlayerProfile.svelte:pick
-Player search results dropdown,Player profile,Listbox of matching players that appears under the search box while typing (click, or ↑↓ + Enter to pick) — the shared SuggestInput widget also used by the Profiles search and the Library facets.,SuggestInput.svelte:sg-pop
+Player search results dropdown,Player profile,"Listbox of matching players that appears under the search box while typing (click, or ↑↓ + Enter to pick) — the shared SuggestInput widget also used by the Profiles search and the Library facets.",SuggestInput.svelte:sg-pop
 Profile error message,Player profile,Alert shown in the view when the profile fails to load or is not found.,PlayerProfile.svelte:profileError
 Profile loading state,Player profile,"""Loading…"" text shown while the profile request is in flight.",PlayerProfile.svelte:profile
 Sides table,Player profile,"Panel with per-side (CT/T) splits: matches, wins, ADR, KAST%, K/D.",PlayerProfile.svelte:sides
@@ -186,50 +186,47 @@ Round summary list,Compare rounds,"List per round with kills, first blood, bomb 
 Selected rounds count,Compare rounds,Muted header text showing how many rounds were selected for comparison.,CompareRounds.svelte:sel
 Utility grenade list,Compare rounds,"List of individual grenades per round with kind chip, thrower name (a profile link), damage and flash time.",CompareRounds.svelte:col.utils
 Utility summary note,Compare rounds,"One-line grenade summary per round: count, total damage and total flash seconds.",CompareRounds.svelte:utilSummary
+Back button,Replay,"Icon-only pill floating at the top-left of the render area; returns to ?back= (the view that opened this replay), falling back to the match overview.",Replay.svelte:goBack
+Camera mode select,Replay,"Single Smart/Free/Follow dropdown; choosing Follow reveals a second player dropdown that locks the camera onto them (dragging or wheeling the map releases it).",Replay.svelte:onCamMode
 Clip dismiss button,Replay,✕ button that clears a saved or errored clip status chip.,Replay.svelte:discardClip
-Clip status chip,Replay,Header chip showing recording/encoding/saved/error state with details in its tooltip.,Replay.svelte:recState
+Clip status chip,Replay,Transport chip showing recording/encoding/saved/error state with details in its tooltip.,Replay.svelte:recState
 Empty landmarks note,Replay,"""No categories enabled…"" / ""Loading events…"" / ""No events match these filters."" states inside the landmark feed list.",Replay.svelte:lm-empty
-Follow player select,Replay,Dropdown choosing free camera or a specific player slot to follow.,Replay.svelte:onFollow
-Frame and tick readout,Replay,"Monospace ""f{frame}/{frames} · {tick}"" text beside the scrubber.",Replay.svelte:uiFrame
+Follow player select,Replay,Player dropdown that appears only in Follow mode and picks who the camera follows.,Replay.svelte:onFollow
 Frame mismatch note,Replay,Warning note if the position stream's frame count disagrees with metadata.,Replay.svelte:data
+Game-time readout,Replay,"Monospace ""m:ss / m:ss"" (elapsed of total match game time) beside the scrubber; frame and tick detail stays in its tooltip.",Replay.svelte:scrubTime
 Go to Library button,Replay,Primary button in the missing-replay panel that returns to the library.,Replay.svelte:noSidecar
-Header tick readout,Replay,"Monospace ""tick N"" text in the header showing the current demo tick.",Replay.svelte:uiTick
-Jump to round select,Replay,Dropdown that seeks the replay to the start of a chosen round (warmups and bomb site noted).,Replay.svelte:onJumpRound
-Keyboard hints tooltip,Replay,"""⌨ hints"" text whose tooltip lists playback shortcuts (Space, , . , arrows, L, F, 1-9, S).",Replay.svelte:attachReplayInput
+Icon extraction note,Replay,Amber note when equipment icons could not be extracted from the local CS2 install (the cards then fall back to text labels).,Replay.svelte:iconNote
+Keyboard hints tooltip,Replay,"Keyboard codicon (no text label) whose tooltip lists playback shortcuts (Space, , . , arrows, L, F, 1-9, S).",Replay.svelte:attachReplayInput
 Landmark list,Replay,The canonical event feed: typed events + chat + generic rows merged chronologically (category chips select the sources; paged with Load more).,Replay.svelte:feedRows
 Landmark seek button,Replay,▶ button on a landmark row that seeks the replay in place to that tick (no navigation).,Replay.svelte:seekTo
-Landmarks toggle,Replay,"Collapsible ""Landmarks"" sidebar header showing the loaded feed count (""+"" while more pages exist) and expand/collapse arrow.",Replay.svelte:eventsOpen
-Loop from frame input,Replay,Numeric input setting the loop start frame.,Replay.svelte:rp-loop-from
-Loop to frame input,Replay,Numeric input setting the loop end frame.,Replay.svelte:rp-loop-to
-Loop toggle button,Replay,Button (L) that enables/disables looping between the from/to frames.,Replay.svelte:toggleLoop
-Map name chip,Replay,Header chip showing the match's map name.,Replay.svelte:matchMap
+Landmarks toggle,Replay,"Collapsed: chevron pill floating at the top-right of the render area; expanded: the rail header with the loaded feed count (""+"" while more pages exist).",Replay.svelte:eventsOpen
+Loop from frame input,Replay,Numeric input setting the loop start frame (inside the loop popover).,Replay.svelte:rp-loop-from
+Loop popover button,Replay,Icon-only sync-codicon button that opens the one popover holding the loop from/to inputs and the loop toggle.,Replay.svelte:rp-loop
+Loop to frame input,Replay,Numeric input setting the loop end frame (inside the loop popover).,Replay.svelte:rp-loop-to
+Loop toggle button,Replay,Button (L) inside the loop popover that enables/disables looping between the from/to frames.,Replay.svelte:toggleLoop
 Map pack note,Replay,Status note when the map pack or radar image is missing and a world-coordinate grid is used.,Replay.svelte:packNote
 Missing replay data panel,Replay,"Empty-state panel explaining the match has no recorded positions, shown when no sidecar exists.",Replay.svelte:noSidecar
-Events at tick button,Replay,"Header button that filters the landmark feed to ±5s around the playhead (the retired jump-to-Timeline promise, now canonical feed behavior).",Replay.svelte:eventsAtTick
+Mute all button,Replay,Transport toggle that silences every player's voice at once (it overrides the per-player and per-team mutes).,Replay.svelte:toggleVoiceMuteAll
 Play/pause button,Replay,Main transport toggle (Space) that starts or pauses playback.,Replay.svelte:togglePlay
 Playback speed select,Replay,Dropdown of playback speed multipliers (e.g. 0.25×–4×) beside play/pause.,Replay.svelte:onSpeed
-Player slots chip,Replay,Header chip showing how many player slots the replay has.,Replay.svelte:players
+Player card,Replay,"One card per player either side of the render area: name, HP, armor and helmet, current weapon with magazine/reserve ammo, unspent money, utility icons and a per-player voice mute; side-colored for the side that team holds at the playhead, outlined in the player's voice color, with a second ring outside it while they talk.",PlayerCard.svelte
+Player state note,Replay,"Amber note telling the user to reprocess an older match to gain HP/weapon/money on the cards (the state stream is format v2).",Replay.svelte:stateNote
 Record clip button,Replay,"Toggles WebM clip recording of the canvas (loop range if set, else 10 s from the playhead).",Replay.svelte:toggleRecord
-Replay back button,Replay,"Returns to the origin recorded in ?back= (the view that opened this replay), falling back to the match overview; top-left of the Replay header.",Replay.svelte:view-header
 Replay load error,Replay,"Alert shown when replay metadata, sidecar or position data fails to load.",Replay.svelte:loadError
 Replay loading state,Replay,"""Loading replay…"" text shown until position data is parsed.",Replay.svelte:loading
-Replay map canvas,Replay,"Top-down 2D canvas drawing player positions, radar image and landmark markers.",Replay.svelte:canvas
-Replay page title,Replay,"""Replay"" heading in the view header.",Replay.svelte:view-header
-Replay stage,Replay,Container that holds and auto-resizes the replay canvas.,Replay.svelte:replay-stage
-Replay transport bar,Replay,"Bottom control strip with play/pause, speed, scrubber, loop, round jump, follow and keyboard hints.",Replay.svelte:replay-transport
+Replay map canvas,Replay,"Top-down 2D canvas drawing the radar, player dots with look arrows and voice rings, movement trails, animated utility with lingering smoke/fire, bomb markers, death Xs, damage/firing flashes and the HUD boxes.",Replay.svelte:canvas
+Replay round ribbon,Replay,"Centered round ribbon on its own line above the render area — the Match overview's RoundStrip; clicking a round seeks the playhead in place instead of navigating.",Replay.svelte:onRibbonRound
+Replay stage,Replay,Container that holds and auto-resizes the replay canvas plus its floating back/landmark/follow overlays.,Replay.svelte:replay-stage
+Replay transport bar,Replay,"Bottom strip: the full-width scrubber with the game-time readout, then a centered cluster (play/pause, speed, loop popover, camera mode, mute all, hints, snapshot, record).",Replay.svelte:replay-transport
+Round clock HUD,Replay,"Canvas box at the top-left of the render area: the CT–T score, the round label and its clock (freeze countdown, the 115 s round clock, or the C4 timer once planted).",renderer.js drawHUD
 Scrubber event markers,Replay,"Colored ticks overlaid on the scrubber following the enabled landmark categories + round/player scope: gray kills, amber plants/defuses, red detonations, white round-win ticks (the map world layers always show the drawable set).",Replay.svelte:markers
+Scrubber seek,Replay,Range slider that seeks the replay to any frame of the match.,Replay.svelte:onScrub
 Snapshot button,Replay,Saves a PNG screenshot of the replay canvas.,Replay.svelte:doSnapshot
-Replay scrubber,Replay,Range slider that seeks the replay to any frame of the match.,Replay.svelte:onScrub
-Voice control bar,Replay,"Strip below the transport with voice toggle, state, volume and per-player chips (voice matches only).",Replay.svelte:voice-bar
+Team column,Replay,"One column of five player cards either side of the render area: the side-colored team name with a per-team voice mute button above the stack.",TeamColumn.svelte
+Tick/frame HUD,Replay,"Canvas box at the bottom-left of the render area: tick, match clock, speed×, frame x/y and the follow/loop notes.",renderer.js drawHUD
 Voice error hint,Replay,Alert hint about audio failures suggesting installing gst-plugins-good.,Replay.svelte:uiVoiceErr
-Voice export disclosure,Replay,"Small ""▾"" expander next to a player revealing the WAV download link.",Replay.svelte:voice-export
-Voice mute button,Replay,"""M"" toggle that mutes one player's voice track.",Replay.svelte:toggleVoiceMute
-Voice player chip,Replay,"Per-player group showing the speaker name plus mute, solo and export controls.",Replay.svelte:voice-player
-Voice solo button,Replay,"""S"" toggle that solos one player's voice track (overrides mutes).",Replay.svelte:toggleVoiceSolo
-Voice state chip,Replay,"Chip showing voice off/on with the AudioContext state, or ""error"".",Replay.svelte:voice-state
-Voice toggle button,Replay,"Enables/disables voice playback (""Enable voice"" / ""🔊 Voice on"").",Replay.svelte:toggleVoice
-Voice volume slider,Replay,Range slider (0–1) controlling master voice volume.,Replay.svelte:onVoiceVol
-Voice WAV download link,Replay,Link that downloads that player's full voice track as a WAV file.,Replay.svelte:voiceWavURL
+Voice start hint,Replay,Hint shown while the audio context waits for the first click/keypress — voice is on by default and the browser still needs one gesture.,Replay.svelte:uiVoicePending
+Voice mute button,Replay,Speaker toggle on a player card that mutes that player's voice comms.,Replay.svelte:toggleVoiceMute
 Clutch bomb state chip,Combat tab,"""bomb planted/defused/…"" chip in a clutches-table row shown when the bomb was active during the clutch (a muted ""—"" otherwise).",Combat.svelte:c.bombState
 Clutch HP left cell,Combat tab,Numeric cell in a clutches-table row showing the clutcher's remaining HP when the clutch resolved.,Combat.svelte:c.hpLeft
 Clutch player name button,Combat tab,Clickable player name in a clutches-table row that opens that player's profile page.,Combat.svelte:comb-name-btn
@@ -633,13 +630,3 @@ Empty feed message,Replay — landmark feed,"""No categories enabled — turn so
 Feed error message,Replay — landmark feed,Alert shown when a feed source query (typed/chat/generic) fails.,Replay.svelte:feedError
 Chat shortcut button,Match — Overview & header,Header button opening the Replay landmark feed with the Chat category enabled (the retired Chat tab’s shortcut).,Match.svelte:openChat
 Events in Replay button,Round detail,Header button opening the Replay landmark feed scoped to this round (the retired kill feed’s entry point).,RoundDetail.svelte:openEvents
-Lanes toggle button,Replay — voice lanes,"""Lanes"" toggle in the voice bar showing/hiding the per-player voice density strip (hidden by default at every viewport size; toggling shows it for the session).",Replay.svelte:lanesOpen
-Voice lanes panel,Replay — voice lanes,Per-player voice-activity strip above the transport; click maps x to a tick and plays from there with voice enabled.,VoiceLanes.svelte:voice-lanes
-Voice lanes header,Replay — voice lanes,"Header row with the ""Voice"" title and a hint such as ""N players · click to play from there"".",VoiceLanes.svelte:voice-lanes-head
-Voice lanes seek strip,Replay — voice lanes,"Clickable, keyboard-operable strip covering all lanes; clicking maps the x-position to a tick and starts replay from there.",VoiceLanes.svelte:voice-lanes-strip
-Player voice lane row,Replay — voice lanes,One horizontal lane per player with a side-colored name label and that player’s bucketed voice activity bars.,VoiceLanes.svelte:voice-lane-row
-Player name label,Replay — voice lanes,"Truncated player name at the left of a voice lane, colored by team side, with the full Steam ID as its hover title.",VoiceLanes.svelte:voice-lane-label
-Voice activity bar,Replay — voice lanes,Small vertical bar in a lane whose height reflects how many voice chunks occurred in that time bucket.,VoiceLanes.svelte:voice-lane-bar
-Voice lanes loading message,Replay — voice lanes,"""Loading voice lanes…"" placeholder shown while voice data is being fetched.",VoiceLanes.svelte:loading
-Voice lanes empty message,Replay — voice lanes,"""No voice activity."" placeholder shown when the match has no recorded voice data.",VoiceLanes.svelte:rows
-Voice lanes error message,Replay — voice lanes,Red ""Voice lanes unavailable: …"" alert shown when the voice data fetch fails.,VoiceLanes.svelte:error
