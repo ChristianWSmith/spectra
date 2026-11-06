@@ -4,16 +4,15 @@
 // death→respawn teleport), the smart camera's fit/ease (smartCamTarget,
 // easeValue, camConverged), the world-layer geometry (chevronPath,
 // crossPath, muzzleRays), the tick-window effects (windowAlpha,
-// easeValue, camConverged), the world-layer geometry (chevronPath,
-// crossPath, muzzleRays), the tick-window effects (windowAlpha,
-// blindAlpha, voicePulseAlpha, fireJump), the death-marker lifetime
+// blindAlpha, voiceBloom, fireJump), the death-marker lifetime
 // (killEndTick) — plus end-to-end draws over a recording 2D context
 // (the world layers follow the tick: lingering smoke/fire, the death
-// X's round cleanup incl. the post-round C4 kill, the C4 icon and its
-// aspect-preserving draw, the muzzle line, the flash-white overlay and
-// the white talking pulse; a crouch-size check; and the HUD — the
-// centered team-score box, the C4/0:00 clock, the tick/frame-free
-// playback readout — plus the round-scoped kill feed).
+// X's round cleanup incl. the post-round C4 kill and the EXACT
+// round_start boundary seek, the C4 icon and its aspect-preserving
+// draw, the muzzle line, the flash-white overlay and the white talking
+// bloom, the death-X-under-C4 layer order; a crouch-size check; and the
+// HUD — the centered team-score box, the C4/0:00 clock, the
+// tick/frame-free playback readout — plus the round-scoped kill feed).
 // Run: node --test src/lib/renderer.test.js (from frontend/; the lib test
 // glob src/lib/*.test.js picks it up too).
 import test from 'node:test';
@@ -29,7 +28,7 @@ import {
   muzzleRays,
   windowAlpha,
   blindAlpha,
-  voicePulseAlpha,
+  voiceBloom,
   fireJump,
   killEndTick,
   createRenderer,
@@ -304,26 +303,44 @@ test('blindAlpha: solid white for the first quarter, linear fade to 0', () => {
   assert.equal(blindAlpha(1000, 1000, tr, -5), 0);
 });
 
-test('voicePulseAlpha: white ring pulse — bounded, periodic, tick-pure', () => {
+test('voiceBloom: white bloom from the dot center — bounded, periodic, tick-pure', () => {
   const tr = 64;
-  // the pulse spans 0.45..1 and is never fully invisible
+  const dotR = 9;
+  const P = 0.85; // mirrors renderer.js VOICE_BLOOM_PERIOD_S
+  // bounded: the ring grows from ~3 px to dotR + 14 (r + 14 at r = 9)
+  // and the alpha fades 0.9 → 0 — never negative, never a solid flash,
+  // and the loop progress stays inside [0, 1)
   for (let t = 0; t < 8 * tr; t += 1) {
-    const a = voicePulseAlpha(t, tr);
-    assert.ok(a >= 0.45 - 1e-12 && a <= 1 + 1e-12, `t=${t} a=${a}`);
+    const b = voiceBloom(t, tr, dotR);
+    assert.ok(b, `t=${t}`);
+    assert.ok(b.k >= 0 && b.k < 1, `t=${t} k=${b.k}`);
+    assert.ok(b.radius >= 3 - 1e-12 && b.radius <= dotR + 14 + 1e-12, `t=${t} r=${b.radius}`);
+    assert.ok(b.alpha >= -1e-12 && b.alpha <= 0.9 + 1e-12, `t=${t} a=${b.alpha}`);
   }
-  // ~0.8 s period: the phase repeats (a scrub back re-renders the same
-  // alpha — nothing wall-clock, nothing sticky)
-  const period = 0.8 * tr;
+  // periodic: one loop (P·tr ticks) re-renders the SAME expansion — a
+  // scrub lands on the same phase (nothing wall-clock, nothing sticky)
+  const period = P * tr;
   for (let t = 0; t < 5 * period; t += 7) {
-    assert.ok(
-      Math.abs(voicePulseAlpha(t + period, tr) - voicePulseAlpha(t, tr)) < 1e-12,
-      `t=${t}`,
-    );
+    const a = voiceBloom(t, tr, dotR);
+    const b = voiceBloom(t + period, tr, dotR);
+    assert.ok(Math.abs(a.k - b.k) < 1e-9, `k t=${t}`);
+    assert.ok(Math.abs(a.radius - b.radius) < 1e-9, `r t=${t}`);
+    assert.ok(Math.abs(a.alpha - b.alpha) < 1e-9, `a t=${t}`);
   }
-  // determinism + the bad-clock guard
-  assert.equal(voicePulseAlpha(1234, tr), voicePulseAlpha(1234, tr));
-  assert.equal(voicePulseAlpha(1000, 0), 0);
-  assert.equal(voicePulseAlpha(NaN, tr), 0);
+  // the loop restarts bright and small (inside the dot)…
+  const start = voiceBloom(0, tr, dotR);
+  assert.ok(Math.abs(start.radius - 3) < 1e-12, String(start.radius));
+  assert.ok(Math.abs(start.alpha - 0.9) < 1e-12, String(start.alpha));
+  // …and ends faint and wide (the ring reaches r + 14 as alpha → 0)
+  const end = voiceBloom(period - 1, tr, dotR);
+  assert.ok(end.radius > start.radius && end.alpha < start.alpha);
+  // determinism (tick-pure) + the bad-input guards (never draw garbage)
+  assert.deepEqual(voiceBloom(1234, tr, dotR), voiceBloom(1234, tr, dotR));
+  assert.equal(voiceBloom(1000, 0, dotR), null);
+  assert.equal(voiceBloom(NaN, tr, dotR), null);
+  assert.equal(voiceBloom(Infinity, tr, dotR), null);
+  assert.equal(voiceBloom(1000, tr, NaN), null);
+  assert.equal(voiceBloom(1000, tr, -1), null);
 });
 
 test('fireJump: seeds across seeks, freezes on a paused redraw', () => {
@@ -416,7 +433,7 @@ test("killEndTick: a post-round_end kill (the C4 detonation) dies with the next 
 // through the typed bucket, the death X lives exactly as long as its
 // round (and comes back on a backwards scrub), the extracted C4 icon
 // replaces the 'C4' label (text fallback without icons), the muzzle
-// burst arms on an attack edge, the damage flash and the talking ring
+// burst arms on an attack edge, the damage flash and the talking bloom
 // are pure functions of tick.
 
 // recordingCanvas: { log, getContext, clientWidth/Height } — a stand-in
@@ -587,22 +604,60 @@ test('world layers follow the tick: smoke/fire, death X, C4 icon, muzzle line, h
     ),
     'the extracted C4 icon keeps its ORIGINAL aspect ratio (48×24 → 24×12 at BOMB_ICON_PX)',
   );
-  // the talking ring: a WHITE pulse at r+9 (r=9 standing → an 8 px gap:
-  // it must not touch the dot, nor the amber follow ring), alpha purely
-  // a function of the tick
+  // layer order: the death X draws UNDER the dropped C4 — an X must
+  // never overlap the bomb icon/rings (draw() draws deaths before bomb)
+  {
+    const seq = since(mark);
+    const xi = seq.findIndex(
+      (e) => e.op === 'stroke' && e.lineCap === 'round' && e.strokeStyle === '#e6a35a',
+    );
+    const bomb = seq.findIndex((e) => e.op === 'drawImage' && e.args[3] === 24 && e.args[4] === 12);
+    assert.ok(xi >= 0, 'the death X draws in this frame');
+    assert.ok(bomb > xi, 'the dropped C4 renders ABOVE the death X (layer order)');
+  }
+  // the talking BLOOM: a WHITE ring expanding from the dot's CENTER,
+  // radius + alpha a pure function of the tick (voiceBloom) — drawn only
+  // for the speaking slot, never tinted by the player color
+  const bloom = voiceBloom(200, 64, 9);
+  assert.ok(bloom, 'the bloom helper resolves at this tick');
   assert.ok(
     since(mark).some(
       (e) =>
         e.op === 'arc' &&
         e.strokeStyle === '#ffffff' &&
-        e.args[2] === 18 &&
-        Math.abs(e.alpha - voicePulseAlpha(200, 64)) < 1e-12,
+        Math.abs(e.args[2] - bloom.radius) < 1e-9 &&
+        Math.abs(e.alpha - bloom.alpha) < 1e-12,
     ),
-    'the talking ring is a WHITE pulsing ring with a gap',
+    'the talking bloom is a WHITE expanding ring (tick-pure radius/alpha)',
+  );
+  // anchored at the dot's CENTER — the CT dot's fill arc (r = 9) is the
+  // reference point the bloom ring must sit on
+  const ctDot = since(mark).find(
+    (e) => e.op === 'arc' && e.fillStyle === '#5aa9e6' && e.args[2] === 9,
+  );
+  assert.ok(ctDot, 'the CT dot draws at the standing radius r = 9');
+  assert.ok(
+    since(mark).some(
+      (e) =>
+        e.op === 'arc' &&
+        e.strokeStyle === '#ffffff' &&
+        e.args[0] === ctDot.args[0] &&
+        e.args[1] === ctDot.args[1],
+    ),
+    'the bloom is anchored at the dot center, not offset from it',
+  );
+  assert.ok(
+    since(mark).some(
+      (e) =>
+        e.op === 'arc' &&
+        e.fillStyle === '#ffffff' &&
+        Math.abs(e.args[2] - (4 * (1 - bloom.k) + 1.5)) < 1e-9,
+    ),
+    'the bloom keeps a small fading white core over the fill',
   );
   assert.ok(
     !since(mark).some((e) => e.op === 'arc' && e.strokeStyle === '#84C8ED' && e.args[2] === 18),
-    'the talking ring is no longer tinted by the player color',
+    'the old fixed-gap talking ring is gone (tinted or not)',
   );
   // the rim: the assigned voice color on alice's dot (radius r = 9) as a
   // MINIMAL 1 px stroke over a thin dark underlay (was a 3 px stroke),
@@ -623,15 +678,28 @@ test('world layers follow the tick: smoke/fire, death X, C4 icon, muzzle line, h
     ),
     'a slot with no voice color falls back to a 1 px white rim',
   );
-  // the view chevron: near-opaque, clearly visible, team-colored — and
-  // the old low-alpha FILLED arrow is gone.
-  for (const teamColor of ['#5aa9e6', '#e6a35a']) {
+  // the view chevron: near-opaque, clearly visible, team-colored —
+  // SMALLER and THICKER than before (r · 1.8 instead of r · 2.8, a
+  // 2.75 px stroke instead of 1.75) — and the old low-alpha FILLED
+  // arrow is gone.
+  for (const col of ['#5aa9e6', '#e6a35a']) {
     assert.ok(
       since(mark).some(
-        (e) => e.op === 'stroke' && e.strokeStyle === teamColor && e.alpha === 0.9 && e.lineWidth === 1.75,
+        (e) => e.op === 'stroke' && e.strokeStyle === col && e.alpha === 0.9 && e.lineWidth === 2.75,
       ),
-      `the ${teamColor} chevron draws at alpha 0.9 / 1.75 px`,
+      `the ${col} chevron draws at alpha 0.9 / 2.75 px`,
     );
+  }
+  // …and it really is closer to the dot: every drawn chevron point sits
+  // just outside the dot edge (r = 9), never far away like the old
+  // r · 2.8 sizing (apex at 25.2 px from the center)
+  const chevronPts = since(mark).filter(
+    (e) => e.op === 'lineTo' && e.strokeStyle === '#5aa9e6' && e.alpha === 0.9,
+  );
+  assert.equal(chevronPts.length, 2, 'the CT chevron is a 2-arm open ">"');
+  for (const p of chevronPts) {
+    const d = Math.hypot(p.args[0] - ctDot.args[0], p.args[1] - ctDot.args[1]);
+    assert.ok(d > 9 && d < 18, `chevron point ${d} px from the dot center — just outside the dot`);
   }
   assert.ok(
     !since(mark).some((e) => e.op === 'fill' && e.alpha === 0.2),
@@ -667,8 +735,11 @@ test('world layers follow the tick: smoke/fire, death X, C4 icon, muzzle line, h
   mark = canvas.log.length;
   engine.seekTick(164); // 1000 ms after the blind — window closed
   r.draw();
+  // Scoped to the DOT-sized white fill (r = 9): the talking bloom's
+  // core is a separate, much smaller white circle and keeps drawing
+  // while alice speaks.
   assert.equal(
-    fills(mark).filter((e) => e.fillStyle === '#ffffff' && e.alpha > 0).length,
+    fills(mark).filter((e) => e.fillStyle === '#ffffff' && e.args[2] === 9 && e.alpha > 0).length,
     0,
     'the flash-white overlay self-clears',
   );
@@ -696,6 +767,20 @@ test('world layers follow the tick: smoke/fire, death X, C4 icon, muzzle line, h
     0,
     'the next round_start clears the X (no +180 s leak into the round)',
   );
+  // …and the ribbon seek lands EXACTLY on that startTick (the repro:
+  // click round 2 then round 3 in the ribbon — the seek lands on round
+  // 3's startTick, which IS this post-round kill's cutoff): the marker
+  // must be gone AT the boundary, not one tick after it — with the old
+  // `tick > end` test the X still drew here and, paused, never cleared
+  // (the stuck blue X). This miniature is rounds 1 → 2, same shape.
+  mark = canvas.log.length;
+  engine.seekTick(450); // EXACTLY round 2's round_start — the cutoff
+  r.draw();
+  assert.equal(deathX(mark).length, 0, 'zero death-X draws AT the next round_start tick');
+  mark = canvas.log.length;
+  engine.seekTick(451); // one tick into the new round
+  r.draw();
+  assert.equal(deathX(mark).length, 0, 'still gone one tick into the new round');
 
   // --- the smoke lifetime (18 s) ends it, nothing is sticky ----------------
   mark = canvas.log.length;
@@ -820,6 +905,77 @@ test('world layers follow the tick: smoke/fire, death X, C4 icon, muzzle line, h
     "without icons the 'C4' text label is the fallback",
   );
 
+  r.destroy();
+});
+
+test('death X: gone AT the next round_start (the ribbon seek), a kill on the round_end tick still marks', () => {
+  // Regression for the stuck-blue-X repro (golden demo): pause, click
+  // round 2 in the ribbon, then round 3 → round 3's startTick IS round
+  // 2's post-round C4 kill's killEndTick, so the marker must be gone AT
+  // that exact tick. The old `tick > end` test drew it there and, paused,
+  // it never cleared. The existing tests seek PAST the boundary — hence
+  // they passed. Also pins the flip side: a kill stamped ON the
+  // round_end tick (golden demo round 1: kill and round_end share tick
+  // 7626) still marks its spot for that one tick.
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, {
+    engine,
+    data,
+    players: [
+      { steamId: '1', name: 'alice', side: 'ct' },
+      { steamId: '2', name: 'bob', side: 't' },
+    ],
+  });
+  const mk = (ev) => normalizeEvent(ev, {});
+  r.setLandmarks([
+    // an ordinary in-round kill (live until round 1's round_end at 400)
+    mk({ id: 1, seq: 1, tick: 192, round: 1, kind: 'kill', attacker: '1', victim: '2', weapon: 'ak47', posX: 50, posY: 50 }),
+    // a kill at the SAME tick as round 1's round_end (both at 400)
+    mk({ id: 2, seq: 2, tick: 400, round: 1, kind: 'kill', attacker: '1', victim: '2', weapon: 'ak47', posX: 50, posY: 50 }),
+    // the post-round C4 kill: past round 1's round_end (400), terminated
+    // by round 2's round_start (450) — its cutoff IS the ribbon seek
+    mk({ id: 3, seq: 3, tick: 420, round: 1, kind: 'kill', attacker: '1', victim: '2', weapon: 'c4', posX: 50, posY: 50 }),
+    mk({ id: 4, seq: 4, tick: 400, round: 1, kind: 'round_end' }),
+    mk({ id: 5, seq: 5, tick: 450, round: 2, kind: 'round_start' }),
+  ]);
+  r.resize();
+  const deathX = (from) =>
+    canvas.log
+      .slice(from)
+      .filter((e) => e.op === 'stroke' && e.lineCap === 'round' && e.strokeStyle === '#e6a35a');
+
+  // the ribbon seek lands EXACTLY on the cutoff tick — zero X's
+  let mark = canvas.log.length;
+  engine.seekTick(450);
+  r.draw();
+  assert.equal(deathX(mark).length, 0, 'zero death-X draws AT the next round_start tick');
+  mark = canvas.log.length;
+  engine.seekTick(451);
+  r.draw();
+  assert.equal(deathX(mark).length, 0, 'still gone one tick into the new round');
+  // …while the tick BEFORE the boundary still marks (live through the round)
+  mark = canvas.log.length;
+  engine.seekTick(420);
+  r.draw();
+  assert.ok(deathX(mark).length > 0, 'the post-round kill marks before the boundary');
+  // a backwards scrub re-derives the marker (nothing sticky, either way)
+  mark = canvas.log.length;
+  engine.seekTick(300);
+  r.draw();
+  assert.ok(deathX(mark).length > 0, 'scrubbing back redraws the in-round X');
+  // the kill stamped ON the round_end tick: shown AT the kill moment…
+  mark = canvas.log.length;
+  engine.seekTick(400);
+  r.draw();
+  assert.ok(deathX(mark).length > 0, 'a kill on the round_end tick still marks its spot');
+  // …and gone the very next tick (the round ended on that tick)
+  mark = canvas.log.length;
+  engine.seekTick(401);
+  r.draw();
+  assert.equal(deathX(mark).length, 0, 'the round_end-tick kill is gone after its one tick');
   r.destroy();
 });
 
