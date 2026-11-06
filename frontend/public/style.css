@@ -574,6 +574,17 @@ input[type='checkbox']:focus-visible {
   flex-wrap: wrap;
 }
 
+/* Vertical rule between groups of controls inside a .toolbar — the ONE
+   separator spelling (generic, any toolbar may drop it in; the replay
+   transport uses three). `var(--divider)` keeps it theme-correct (the
+   light palette redefines it in style-m3b.css). */
+.toolbar-sep {
+  width: 1px;
+  height: 18px;
+  flex: none;
+  background: var(--divider);
+}
+
 /* --- Panels ---------------------------------------------------------------- */
 
 .panel {
@@ -1974,25 +1985,6 @@ button.lm-cat-chip.on {
   border-radius: var(--radius);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
   white-space: nowrap;
-}
-
-/* Camera selector (spec 17): the mode codicon paints INSIDE the select's
-   own box — a native <select> cannot contain elements, so the glyph is
-   a background-image layered over .input's background-color (that
-   shorthand sets the color and image:none; this later longhand of equal
-   specificity wins for the image only, so the color stays visible),
-   sitting left of the selected value while the native arrow at the
-   right stays untouched. The path is the codicon sprite's
-   `device-camera-video` symbol (@vscode/codicons/dist/codicon.svg),
-   URL-encoded, tinted to --text; padding-left clears the 14px glyph at
-   left 5px. The select keeps #rp-cam; there is no wrapper cell anymore
-   — the toolbar's gap sees one control. */
-.rp-cam {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%23cccccc' d='M3.5 3A2.5 2.5 0 0 0 1 5.5v5A2.5 2.5 0 0 0 3.5 13h5a2.5 2.5 0 0 0 2.5-2.5v-.127l2.035 1.405a1.25 1.25 0 0 0 1.96-1.028V5.252a1.25 1.25 0 0 0-1.96-1.028L11 5.629V5.5A2.5 2.5 0 0 0 8.5 3h-5ZM11 6.844l2.604-1.798a.25.25 0 0 1 .392.206v5.498a.25.25 0 0 1-.392.205L11 9.158V6.844ZM2 5.5A1.5 1.5 0 0 1 3.5 4h5A1.5 1.5 0 0 1 10 5.5v5A1.5 1.5 0 0 1 8.5 12h-5A1.5 1.5 0 0 1 2 10.5v-5Z'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: left 5px center;
-  background-size: 14px 14px;
-  padding-left: 24px;
 }
 
 /* Voice status hint next to the transport controls (voice is on by

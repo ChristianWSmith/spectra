@@ -2065,14 +2065,14 @@
             </Popover>
           </span>
 
-          <!-- Camera (spec 17): ONE dropdown for Smart/Free/Follow —
-               its mode codicon paints INSIDE the select's own box
-               (.rp-cam background-image; a native <select> cannot
-               contain elements) — the player list appears as a second
-               dropdown only while Follow is selected. -->
+          <span class="toolbar-sep" aria-hidden="true"></span>
+
+          <!-- Camera (spec 17): ONE plain dropdown for Smart/Free/Follow
+               — the player list appears as a second dropdown only while
+               Follow is selected. -->
           <label class="sr-only" for="rp-cam">Camera mode</label>
           <select
-            class="input rp-cam"
+            class="input"
             id="rp-cam"
             value={camMode}
             onchange={onCamMode}
@@ -2113,6 +2113,8 @@
             onclick={toggleVoiceMuteAll}
             ><span class="codicon {uiVoiceMutedAll ? 'codicon-mute' : 'codicon-unmute'}" aria-hidden="true"></span></button
           >
+
+          <span class="toolbar-sep" aria-hidden="true"></span>
 
           {#if uiVoiceErr}
             <span class="error rp-voice-hint" role="alert"
@@ -2165,6 +2167,8 @@
               {/if}
             {/if}
           {/if}
+
+          <span class="toolbar-sep" aria-hidden="true"></span>
 
           <!-- Keyboard hints — the toolbar's LAST cell (rightmost): one
                codicon, no label, the shortcuts ride the title. Outside
