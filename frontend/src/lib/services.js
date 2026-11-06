@@ -264,9 +264,13 @@ export function getRoundDetail(id, round) {
   return MatchService.GetRoundDetail(id, round);
 }
 
-// round must be -1 for "all rounds" (0 means round zero); kind/steamId ""
-// = all; kinds (optional) is the multi-kind IN form the landmark feed's
-// categories use; limit 0 = up to the store's 50k hard cap.
+// The round bounds (roundFrom/roundTo) are an inclusive, PARTIAL range
+// over the round number: 0/absent = open on that side (both unset = all
+// rounds; round 0 never exists, so 0 can only mean "unset"); kind/
+// steamId "" = all; kinds (optional) is the multi-kind IN form the
+// landmark feed's categories use; limit 0 = up to the store's 50k hard
+// cap. The distance bounds (distanceMin/distanceMax) follow the same
+// partial-range rule.
 export function getEvents(filter) {
   return MatchService.GetEvents(filter);
 }
@@ -414,9 +418,9 @@ export function listPlayers(query) { return ProfileService.ListPlayers(query || 
 export function getCareerTrend(steamId, metric) { return ProfileService.GetCareerTrend(steamId, metric); }
 
 // The landmark feed's filter state lives in the route query
-// (lib/replay/landmarks.js parseLandmarkFilter — {cats, round, steamId,
-// weapon, tickFrom, tickTo, dmgMin, dmgMax, distanceMax, headshotOnly,
-// bbox, gname}). Heatmap click →
+// (lib/replay/landmarks.js parseLandmarkFilter — {cats, roundFrom,
+// roundTo, steamId, weapon, distMin, distMax, headshotOnly, bbox,
+// gname}). Heatmap click →
 // nav(buildHash('/replay/'+id, serializeLandmarkFilter({bbox}))).
 
 // --- MetricsService (M5) -----------------------------------------------------

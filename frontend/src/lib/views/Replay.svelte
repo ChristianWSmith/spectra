@@ -8,9 +8,9 @@
   // second categorization, and no competing event browser.
   //
   // State model: the durable event-navigation context (category set,
-  // round/player/weapon/tick/dmg/bbox scope, generic name, initial tick,
-  // selected landmark, origin path) lives in the ROUTE QUERY
-  // (#/replay/:id?cat=…&round=…&back=…) — deep links, refresh and
+  // round-range/player/weapon/distance/bbox scope, generic name, initial
+  // tick, selected landmark, origin path) lives in the ROUTE QUERY
+  // (#/replay/:id?cat=…&roundFrom=…&back=…) — deep links, refresh and
   // back/forward preserve it by construction. Playback state (engine
   // tick, selection after entry) is local.
   import { onMount, tick as svelteTick } from 'svelte';
@@ -174,12 +174,16 @@
   let uiLoopOn = $state(false);
   let eventsOpen = $state(false); // a fresh replay opens with the feed collapsed
   // ONE toggle governs every filter surface in the panel (the Filters
-  // button): the category chips, the game-events name picker, the
+  // button): the category dropdown, the game-events name picker, the
   // FilterBar scope, the saved-preset controls and Reset all show/hide
   // TOGETHER — none of it is piled in the open. Export is not a filter
   // and stays in the toolbar row above the panel.
   let filtersOpen = $state(false);
   let exportEl = $state(null); // the export <details> — menu close target
+  // Category multi-select: the ONE dropdown in the filter panel (its
+  // trigger is the Popover anchor, like the loop control below).
+  let catsOpen = $state(false);
+  let catsAnchor = $state(null);
   // Loop popover (spec 12): the from/to inputs + the loop toggle live in
   // one Popover anchored to the loop-codicon button.
   let loopOpen = $state(false);
@@ -252,9 +256,9 @@
   // prefs.go) — read the way Match.svelte reads it (kvstore, default OFF
   // = hide). Applied as an ADDITIONAL feed filter (applyRoundPref in
   // lib/replay/landmarks.js) on top of the category opt-in rules and
-  // the ?round= scoping — it never overrides them; Settings writes the
-  // key directly and there is no cross-view change event, so the view
-  // re-reads it on mount (returning to Replay remounts it).
+  // the ?roundFrom/?roundTo scoping — it never overrides them; Settings
+  // writes the key directly and there is no cross-view change event, so
+  // the view re-reads it on mount (returning to Replay remounts it).
   let showKnifeWarmup = $state(false);
 
   $effect(() => {
@@ -272,13 +276,31 @@
   });
 
   // The pref can empty an EXPLICITLY round-scoped feed (a deep link to
-  // ?round=-2 while the pref hides knife/warmup rounds matches nothing)
-  // — the empty state says so instead of the generic "no events" line.
+  // ?roundFrom=-2&roundTo=-1 while the pref hides knife/warmup rounds
+  // matches nothing) — the empty state says so instead of the generic
+  // "no events" line. Only a scope whose KNOWN rounds are all hidden is
+  // blamed on the pref: a range that reaches a counted round, or names
+  // rounds the lookup does not know, is never the explanation (defensive,
+  // never invented — the same convention as normalizeEvent).
   const prefHidesScope = $derived.by(() => {
-    if (showKnifeWarmup || filter.round === -1) return false;
-    const r = rbn.get(filter.round);
-    return !!r && !isCounted(r);
+    if (showKnifeWarmup) return false;
+    const { roundFrom, roundTo } = filter;
+    if (roundFrom === 0 && roundTo === 0) return false;
+    const inScope = [];
+    for (const r of rbn.values()) {
+      if (roundFrom !== 0 && r.number < roundFrom) continue;
+      if (roundTo !== 0 && r.number > roundTo) continue;
+      inScope.push(r);
+    }
+    return inScope.length > 0 && inScope.every((r) => !isCounted(r));
   });
+
+  // The chat and generic sources read ONE exact round (their Go
+  // signatures — MatchService.GetChat / LibraryService.GetGenericEvents —
+  // are unchanged), so they scope when the range names exactly one round
+  // and stay match-wide for any wider range; the typed events carry the
+  // inclusive range (fetchTyped below).
+  const srcRound = (f) => (f.roundFrom !== 0 && f.roundFrom === f.roundTo ? f.roundFrom : -1);
 
   // Fetch effect: re-runs only when the SERIALIZED filter changes (the
   // query object identity changes on every route write — the string key
@@ -304,7 +326,7 @@
     }
     if (src.chat) {
       jobs.push(
-        getChat(id, f.round, f.steamId)
+        getChat(id, srcRound(f), f.steamId)
           .then((rows) => {
             if (my === gen) chatRows = rows || [];
           })
@@ -332,14 +354,14 @@
     return getEvents({
       matchId: id,
       kinds: typedKindsFor(f.cats),
-      round: f.round,
+      roundFrom: f.roundFrom,
+      roundTo: f.roundTo,
       steamId: f.steamId,
       weapon: f.weapon,
-      tickFrom: f.tickFrom,
-      tickTo: f.tickTo,
-      dmgMin: f.dmgMin,
-      dmgMax: f.dmgMax,
-      distanceMax: f.distanceMax,
+      // The filter's distMin/distMax map onto the Go EventFilter's
+      // distanceMin/distanceMax JSON fields (models.EventFilter).
+      distanceMin: f.distMin,
+      distanceMax: f.distMax,
       headshotOnly: f.headshotOnly,
       bbox: f.bbox || undefined,
       offset,
@@ -357,7 +379,7 @@
   }
 
   function fetchGeneric(f, name, catId, offset, my, append) {
-    return getGenericEvents(id, name, f.round, PAGE + 1, offset)
+    return getGenericEvents(id, name, srcRound(f), PAGE + 1, offset)
       .then((rows) => {
         if (my !== gen) return;
         const page = rows || [];
@@ -388,7 +410,7 @@
   // The merged, categorized, chronological feed, then the round-
   // visibility pref (knife/warmup rows hidden unless the user opted in)
   // applied as an ADDITIONAL filter — the category opt-in rules and
-  // ?round= scoping above it are untouched (applyRoundPref).
+  // the round-range scoping above it are untouched (applyRoundPref).
   const feedRows = $derived.by(() =>
     applyRoundPref(
       mergeFeed([
@@ -407,13 +429,13 @@
   const feedCountLabel = $derived(String(feedRows.length) + (hasMore ? '+' : ''));
 
   // Draw feed: the drawable-kind anchors, fetched ONCE per match in
-  // load() and handed to the renderer — category chips never rebuild the
-  // world layers.
+  // load() and handed to the renderer — the category selection never
+  // rebuilds the world layers.
   const drawNorm = $derived(drawRows.map((r) => normalizeEvent(r, {})).filter(Boolean));
 
   // Scrubber markers: the draw feed gated by the ACTIVE category set +
   // round/player scope (the scrubber mirrors the feed's overview;
-  // dmg/weapon/distance filters are list concerns and do not move
+  // weapon/distance filters are list concerns and do not move
   // markers). Precomputed buckets — no classification at runtime.
   const markers = $derived.by(() => {
     if (!data || !data.frames || !drawNorm.length) return [];
@@ -434,7 +456,8 @@
         const r = rbn.get(l.round);
         if (r && !isCounted(r)) continue;
       }
-      if (filter.round >= 0 && l.round !== filter.round) continue;
+      if (filter.roundFrom !== 0 && l.round < filter.roundFrom) continue;
+      if (filter.roundTo !== 0 && l.round > filter.roundTo) continue;
       if (filter.steamId && l.steamId !== filter.steamId) continue;
       // The ONE bucket → marker mapping (landmarks.scrubberMarkerClass —
       // the contract src/lib/landmarks.test.js pins): the typed grenade
@@ -474,7 +497,7 @@
   let entrySel = ''; // ?sel= from the entry URL (applied once)
   let entrySelTick = 0; // its tick when it resolves before the engine is up
   // The DEFAULT entry tick when the URL makes no time promise (no ?tick=
-  // / no usable ?round=): load() resolves it once, AWAITING the
+  // / no usable round scope): load() resolves it once, AWAITING the
   // knife/warmup hiding pref (show_knife_warmup_rounds) — pref OFF → the
   // first COUNTED round's start, pref ON → frame 0. It is not reactive
   // on purpose: the pref decides where a replay LAUNCHES, not where an
@@ -640,13 +663,13 @@
   }
 
   // Open the filter panel on ENTRY when the deep link already carries a
-  // scope filter (round/player/weapon/bbox/tick window) — a scoped link
-  // should show the scope it arrived with. In-session changes never
-  // force it open (the Filters button owns that). The feed opens WITH it:
-  // the panel lives inside the expanded rail, so a collapsed feed would
-  // hide the very scope the link promises to show.
+  // scope filter (round range/player/weapon/bbox/distance window) — a
+  // scoped link should show the scope it arrived with. In-session changes
+  // never force it open (the Filters button owns that). The feed opens
+  // WITH it: the panel lives inside the expanded rail, so a collapsed
+  // feed would hide the very scope the link promises to show.
   function syncFiltersOpen(f) {
-    if (f.round !== -1 || f.steamId || f.weapon || f.bbox || f.tickFrom || f.tickTo) {
+    if (f.roundFrom || f.roundTo || f.steamId || f.weapon || f.bbox || f.distMin || f.distMax) {
       filtersOpen = true;
       eventsOpen = true;
     }
@@ -1360,13 +1383,12 @@
         (await getEvents({
           matchId: id,
           kinds: DRAW_KINDS,
-          round: -1,
           offset: 0,
           limit: 0,
         }).catch(() => [])) || [];
-      // The DEFAULT entry tick (no explicit ?tick=/?round=): resolve it
-      // here with an awaited getPref — the showKnifeWarmup $effect reads
-      // the same key asynchronously and could land AFTER startEngine
+      // The DEFAULT entry tick (no explicit ?tick= / round scope): resolve
+      // it here with an awaited getPref — the showKnifeWarmup $effect
+      // reads the same key asynchronously and could land AFTER startEngine
       // applies the entry seek, which would start the replay on the
       // wrong side of the knife/warmup-hiding pref.
       entryDefaultTick = defaultEntryTick(
@@ -1383,7 +1405,7 @@
       // positive, are dropped here.
       try {
         const [blinds, durs] = await Promise.all([
-          getEvents({ matchId: id, kinds: ['blind'], round: -1, offset: 0, limit: 0 }),
+          getEvents({ matchId: id, kinds: ['blind'], offset: 0, limit: 0 }),
           getBlindDurations(id),
         ]);
         const msBySeq = new Map((durs || []).map((d) => [d.seq, d.ms]));
@@ -1525,14 +1547,14 @@
     }
     // Entry position rides the URL — durable and deep-linkable.
     // entrySeekTick is the ONE resolver: an exact ?tick= wins, else the
-    // ?round= feed scope resolves to that round's START tick (a round
-    // link is a link to a point in time — never the first frame); it
-    // returns null when the URL made NO time promise, and then the
-    // pref-decided default (load() awaited the knife/warmup pref: first
-    // counted round's start while it hides them, frame 0 while it shows
-    // them) applies; a ?sel= landmark that resolved before the engine was
-    // up applies in between. Applied once here, after loading — in-session
-    // filter changes keep the playback position.
+    // round scope (?roundFrom=, else ?roundTo=) resolves to that round's
+    // START tick (a round link is a link to a point in time — never the
+    // first frame); it returns null when the URL made NO time promise,
+    // and then the pref-decided default (load() awaited the knife/warmup
+    // pref: first counted round's start while it hides them, frame 0
+    // while it shows them) applies; a ?sel= landmark that resolved before
+    // the engine was up applies in between. Applied once here, after
+    // loading — in-session filter changes keep the playback position.
     const tick0 = entrySeekTick(query, rounds);
     if (tick0 != null) engine.seekTick(tick0);
     else if (entrySelTick) engine.seekTick(entrySelTick);
@@ -2203,16 +2225,16 @@
            long feed can never clip the selected event. -->
       <div class="lm-scroll">
       <!-- Controls row: ONE Filters toggle governs every filter
-           surface below it — the chips, name picker, scope bar and
-           presets/Reset all show/hide TOGETHER (filtersOpen); export
-           is not a filter and stays in this row. -->
+           surface below it — the category dropdown, name picker, scope
+           bar and presets/Reset all show/hide TOGETHER (filtersOpen);
+           export is not a filter and stays in this row. -->
       <div class="lm-toolbar" role="group" aria-label="Feed controls">
         <button
           class="btn small"
           class:primary={filtersOpen}
           aria-expanded={filtersOpen}
           onclick={() => (filtersOpen = !filtersOpen)}
-          title="Show/hide the category chips and every filter control"
+          title="Show/hide the category dropdown and every filter control"
         >
           <span class="codicon codicon-filter" aria-hidden="true"></span> Filters
           <span class="muted lm-filter-count">{filter.cats.length}</span>
@@ -2245,22 +2267,43 @@
       </div>
 
       {#if filtersOpen}
-        <!-- The whole filter surface: category chips → game-events
-             name picker → scope bar → saved presets + Reset. -->
+        <!-- The whole filter surface: the category multi-select →
+             game-events name picker → scope bar → saved presets + Reset. -->
         <div class="lm-filter-panel">
-          <!-- Category chips: the sparse default (kills + round wins) is
-               what a fresh URL carries; everything else is opt-in. -->
-          <div class="lm-cats" role="group" aria-label="Event categories">
-            {#each CATEGORIES as c (c.id)}
-              <button
-                class="chip lm-cat-chip"
-                class:on={filter.cats.includes(c.id)}
-                aria-pressed={filter.cats.includes(c.id)}
-                title={c.default ? `${c.label} (on by default)` : `Show ${c.label.toLowerCase()} in the feed`}
-                onclick={() => toggleCat(c.id)}>{c.label}</button
-              >
-            {/each}
-          </div>
+          <!-- Categories: ONE dropdown whose panel is a checkbox list
+               (multi-select) instead of a wall of pills. The sparse
+               default (round starts) is what a fresh URL carries;
+               everything else is opt-in. -->
+          <span class="lm-cats" bind:this={catsAnchor}>
+            <button
+              class="btn small"
+              aria-expanded={catsOpen}
+              aria-haspopup="true"
+              title="Choose which event categories the feed shows"
+              onclick={() => (catsOpen = !catsOpen)}
+            >
+              Categories
+              <span class="muted lm-filter-count">{filter.cats.length}</span>
+              <span class="codicon codicon-chevron-down" aria-hidden="true"></span>
+            </button>
+            <Popover open={catsOpen} anchor={catsAnchor} onClose={() => (catsOpen = false)}>
+              <div class="lm-cat-menu" role="group" aria-label="Event categories">
+                {#each CATEGORIES as c (c.id)}
+                  <label
+                    class="lm-cat-item"
+                    title={c.default ? `${c.label} (on by default)` : `Show ${c.label.toLowerCase()} in the feed`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={filter.cats.includes(c.id)}
+                      onchange={() => toggleCat(c.id)}
+                    />
+                    {c.label}
+                  </label>
+                {/each}
+              </div>
+            </Popover>
+          </span>
 
           {#if needHist}
             <label class="lm-gname" for="lm-gname">
@@ -2329,7 +2372,7 @@
             {:else if feedLoading}
               Loading events…
             {:else if prefHidesScope}
-              Knife/warmup rounds are hidden — show them in Settings, or clear the round filter.
+              Knife/warmup rounds are hidden — show them in Settings, or clear the round range.
             {:else}
               No events match these filters.
             {/if}

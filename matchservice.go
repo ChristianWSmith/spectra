@@ -36,8 +36,8 @@ func (s *MatchService) GetRoundDetail(id int64, round int) (*models.RoundDetail,
 	return s.st.GetRoundDetail(id, round)
 }
 
-// GetEvents returns timeline rows for a filter (EventFilter.Round < 0 =
-// all rounds).
+// GetEvents returns timeline rows for a filter (the round range open on
+// both sides = all rounds).
 func (s *MatchService) GetEvents(f models.EventFilter) ([]models.EventRow, error) {
 	return s.st.GetEvents(f)
 }

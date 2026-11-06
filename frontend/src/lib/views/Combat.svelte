@@ -176,9 +176,10 @@
     nav(replayHash(id, {}, { tick, back: `match/${id}/combat` }));
   }
 
-  // Round chip → THE event browser scoped to that round.
+  // Round chip → THE event browser scoped to that round (both inclusive
+  // round bounds set to the same number).
   function openRoundEvents(round) {
-    nav(replayHash(id, { round }, { back: `match/${id}/combat` }));
+    nav(replayHash(id, { roundFrom: round, roundTo: round }, { back: `match/${id}/combat` }));
   }
 
   // The Clutches card lists WON clutches only (the card's scope decision):

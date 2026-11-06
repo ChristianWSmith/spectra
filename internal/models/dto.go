@@ -164,31 +164,35 @@ func EventFromRow(r EventRow) Event {
 	}
 }
 
-// EventFilter selects timeline rows. Round < 0 = all rounds (the sentinel
-// the timeline and match-wide feeds pass); round detail reads are NOT a
-// filter — store.GetRoundDetail matches its (possibly negative knife/
-// warmup) round exactly, see store.queryEvents. Kind "" = all
-// kinds; SteamID matches attacker OR victim. Offset/Limit paginate (Limit
-// <= 0 means "no limit" — the store still applies a hard cap).
+// EventFilter selects timeline rows. RoundFrom/RoundTo bound e.round
+// INCLUSIVELY and are a PARTIAL range: 0 = open on that side (round 0
+// never exists — extract's renumber gives real rounds 1.. and negative
+// knife/warmup numbers, so 0 is the only correct "unset" sentinel), both
+// unset = every round of the match. Round detail reads are NOT a filter
+// — store.GetRoundDetail matches its (possibly negative knife/warmup,
+// possibly 0) round EXACTLY through store.queryEvents' exactRound, see
+// that function. Kind "" = all kinds; SteamID matches attacker OR
+// victim. Offset/Limit paginate (Limit <= 0 means "no limit" — the store
+// still applies a hard cap).
 type EventFilter struct {
-	MatchID int64  `json:"matchId"`
-	Round   int    `json:"round"`
-	Kind    string `json:"kind"`
-	SteamID string `json:"steamId"`
-	Offset  int    `json:"offset"`
-	Limit   int    `json:"limit"`
+	MatchID int64 `json:"matchId"`
+	// RoundFrom/RoundTo: inclusive round bounds, 0 = open on that side.
+	RoundFrom int    `json:"roundFrom,omitempty"`
+	RoundTo   int    `json:"roundTo,omitempty"`
+	Kind      string `json:"kind"`
+	SteamID   string `json:"steamId"`
+	Offset    int    `json:"offset"`
+	Limit     int    `json:"limit"`
 	// Kinds is the multi-kind form of Kind — an IN filter over several
 	// event kinds at once (the Replay landmark feed fetches a category's
 	// whole kind set in one query). Non-empty Kinds takes precedence over
 	// Kind; empty = fall through to the single-Kind clause.
 	Kinds []string `json:"kinds,omitempty"`
-	// M3 advanced filters. Zero/""/nil = unconstrained.
-	// TickTo/DmgMax/DistanceMax: <= 0 means open-ended (never clamp to 0).
+	// M3 advanced filters. Zero/""/nil = unconstrained; the distance
+	// bounds are a PARTIAL range over e.distance (units of the event's
+	// own distance column) — either side may be open, <= 0 = open.
 	Weapon       string  `json:"weapon,omitempty"`
-	TickFrom     int     `json:"tickFrom,omitempty"`
-	TickTo       int     `json:"tickTo,omitempty"`
-	DmgMin       int     `json:"dmgMin,omitempty"`
-	DmgMax       int     `json:"dmgMax,omitempty"`
+	DistanceMin  float64 `json:"distanceMin,omitempty"`
 	DistanceMax  float64 `json:"distanceMax,omitempty"`
 	HeadshotOnly bool    `json:"headshotOnly,omitempty"`
 	BBox         *BBox   `json:"bbox,omitempty"` // world-space position filter

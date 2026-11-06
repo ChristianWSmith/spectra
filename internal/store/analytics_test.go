@@ -689,7 +689,6 @@ func TestGetEventsAdvancedFilters(t *testing.T) {
 	get := func(f models.EventFilter) []models.EventRow {
 		t.Helper()
 		f.MatchID = id
-		f.Round = -1
 		rows, err := s.GetEvents(f)
 		if err != nil {
 			t.Fatalf("GetEvents(%+v): %v", f, err)
@@ -699,17 +698,23 @@ func TestGetEventsAdvancedFilters(t *testing.T) {
 	if got := get(models.EventFilter{Weapon: "AWP"}); len(got) != 1 || got[0].Tick != 200 {
 		t.Errorf("weapon=AWP → %+v", got)
 	}
-	if got := get(models.EventFilter{TickFrom: 150, TickTo: 250}); len(got) != 1 || got[0].Tick != 200 {
-		t.Errorf("tick 150..250 → %+v", got)
-	}
-	if got := get(models.EventFilter{DmgMin: 30}); len(got) != 2 {
-		t.Errorf("dmg>=30 → %+v", got)
-	}
-	if got := get(models.EventFilter{DmgMin: 30, DmgMax: 30}); len(got) != 1 || got[0].Dmg != 30 {
-		t.Errorf("dmg 30..30 → %+v", got)
-	}
+	// Distance is a PARTIAL range over the event's own distance column
+	// (units of the hit): either side may be open, 0 = open, and the two
+	// bounds AND together. Distances in the fixture: 10, 50, 5.
 	if got := get(models.EventFilter{DistanceMax: 12}); len(got) != 2 {
 		t.Errorf("distance<=12 → %+v", got)
+	}
+	if got := get(models.EventFilter{DistanceMin: 10}); len(got) != 2 {
+		t.Errorf("distance>=10 (open max) → %+v", got)
+	}
+	if got := get(models.EventFilter{DistanceMin: 6, DistanceMax: 40}); len(got) != 1 || got[0].Tick != 100 {
+		t.Errorf("distance 6..40 → %+v", got)
+	}
+	if got := get(models.EventFilter{DistanceMin: 60}); len(got) != 0 {
+		t.Errorf("distance>=60 (open max) → %+v", got)
+	}
+	if got := get(models.EventFilter{DistanceMin: 0, DistanceMax: 0}); len(got) != 3 {
+		t.Errorf("distance 0/0 = both sides open → %+v", got)
 	}
 	if got := get(models.EventFilter{HeadshotOnly: true}); len(got) != 1 || !got[0].Headshot {
 		t.Errorf("headshot only → %+v", got)

@@ -233,7 +233,7 @@ func TestReplayColumnsFreshOpen(t *testing.T) {
 			m.PositionFormat, m.SampleRate, m.PositionFrames)
 	}
 
-	rows, err := s.GetEvents(models.EventFilter{MatchID: id, Round: -1})
+	rows, err := s.GetEvents(models.EventFilter{MatchID: id})
 	if err != nil {
 		t.Fatalf("GetEvents: %v", err)
 	}
@@ -468,7 +468,7 @@ func TestSaveExtractedRoundtrip(t *testing.T) {
 		t.Errorf("round player sides = %v, want round 1: 100→ct 200→t", sides)
 	}
 
-	all, err := s.GetEvents(models.EventFilter{MatchID: id, Round: -1})
+	all, err := s.GetEvents(models.EventFilter{MatchID: id})
 	if err != nil {
 		t.Fatalf("GetEvents: %v", err)
 	}
@@ -527,7 +527,7 @@ func TestSaveExtractedRoundtrip(t *testing.T) {
 		models.EventBombPlant, models.EventBombDefuse, models.EventBombExplode,
 		models.EventRoundEnd,
 	}
-	marks, err := s.GetEvents(models.EventFilter{MatchID: id, Round: -1, Kinds: drawKinds})
+	marks, err := s.GetEvents(models.EventFilter{MatchID: id, Kinds: drawKinds})
 	if err != nil {
 		t.Fatalf("GetEvents(drawKinds): %v", err)
 	}
@@ -602,7 +602,7 @@ func TestSaveExtractedReplaces(t *testing.T) {
 	}{
 		{"board", len(mustBoard(t, s, id))},
 		{"rounds", len(mustRounds(t, s, id))},
-		{"events", len(mustEvents(t, s, models.EventFilter{MatchID: id, Round: -1}))},
+		{"events", len(mustEvents(t, s, models.EventFilter{MatchID: id}))},
 		{"chat", len(mustChat(t, s, id, -1))},
 		{"warnings", len(mustWarnings(t, s, id))},
 		{"histogram", len(mustHist(t, s, id))},
@@ -874,34 +874,114 @@ func TestGetEventsFilters(t *testing.T) {
 		return rows
 	}
 
-	if got := get(models.EventFilter{Kind: models.EventKill, Round: -1}); len(got) != 2 ||
+	// Both round bounds open = every round of the match (the read the
+	// landmark feed, heatmaps and analytics make).
+	if got := get(models.EventFilter{}); len(got) != 5 {
+		t.Errorf("open round range → len %d, want 5 (hard cap path)", len(got))
+	}
+	if got := get(models.EventFilter{Kind: models.EventKill}); len(got) != 2 ||
 		got[0].Seq != 0 || got[1].Seq != 2 {
 		t.Errorf("kind=kill → %+v", got)
 	}
-	if got := get(models.EventFilter{Round: 0}); len(got) != 0 {
-		t.Errorf("round=0 → %+v", got)
+	// The round range is INCLUSIVE and PARTIAL: every fixture event sits
+	// in round 1, so a bound excluding it yields empty, while 0 on either
+	// side is the OPEN sentinel (round 0 is never a bound to clamp to).
+	if got := get(models.EventFilter{RoundFrom: 1, RoundTo: 1}); len(got) != 5 {
+		t.Errorf("round 1..1 len = %d, want 5", len(got))
 	}
-	if got := get(models.EventFilter{Round: 1}); len(got) != 5 {
-		t.Errorf("round=1 len = %d, want 5", len(got))
+	if got := get(models.EventFilter{RoundFrom: 2}); len(got) != 0 {
+		t.Errorf("round >= 2 (open max) → %+v", got)
+	}
+	if got := get(models.EventFilter{RoundTo: 1}); len(got) != 5 {
+		t.Errorf("round <= 1 (open min) len = %d, want 5", len(got))
+	}
+	if got := get(models.EventFilter{RoundFrom: 0, RoundTo: 0}); len(got) != 5 {
+		t.Errorf("0/0 = both sides open → len %d, want 5", len(got))
 	}
 	// SteamID matches attacker OR victim: 200 is victim of seq 0,1 and
 	// attacker of seq 2,3; 100 is attacker of 0,1 and victim of 2.
-	if got := get(models.EventFilter{SteamID: "200", Round: -1}); len(got) != 4 {
+	if got := get(models.EventFilter{SteamID: "200"}); len(got) != 4 {
 		t.Errorf("steam=200 len = %d, want 4 (%+v)", len(got), got)
 	}
-	if got := get(models.EventFilter{SteamID: "100", Round: -1}); len(got) != 3 {
+	if got := get(models.EventFilter{SteamID: "100"}); len(got) != 3 {
 		t.Errorf("steam=100 len = %d, want 3", len(got))
 	}
-	if got := get(models.EventFilter{Limit: 2, Round: -1}); len(got) != 2 || got[0].Seq != 0 || got[1].Seq != 1 {
+	if got := get(models.EventFilter{Limit: 2}); len(got) != 2 || got[0].Seq != 0 || got[1].Seq != 1 {
 		t.Errorf("limit=2 → %+v", got)
 	}
-	if got := get(models.EventFilter{Round: -1}); len(got) != 5 {
-		t.Errorf("zero limit → len %d, want 5 (hard cap path)", len(got))
-	}
-	if got := get(models.EventFilter{Kind: models.EventKill, Round: 1, SteamID: "100"}); len(got) != 2 ||
+	if got := get(models.EventFilter{Kind: models.EventKill, RoundFrom: 1, RoundTo: 1, SteamID: "100"}); len(got) != 2 ||
 		got[0].Seq != 0 || got[1].Seq != 2 {
 		t.Errorf("combined filter → %+v", got)
 	}
+}
+
+// TestGetEventsRoundRange pins the EventFilter round bounds: an
+// INCLUSIVE, PARTIAL range where 0 = open on that side (round 0 never
+// exists, so 0 can only mean "unset"), negative knife/warmup numbers are
+// ordinary bounds (the old "Round < 0 = all rounds" sentinel is gone),
+// and both bounds open = every round of the match.
+func TestGetEventsRoundRange(t *testing.T) {
+	s := openMem(t)
+	id := saveTestMatch(t, s, "/d/rr.dem", "sha-round-range", time.Now())
+	em := testExtracted("sha-round-range", time.Now())
+	em.Rounds = []models.Round{
+		{Number: -2, Pregame: true, StartTick: 10, EndTick: 20}, // knife
+		{Number: -1, Warmup: true, StartTick: 30, EndTick: 40},  // warmup
+		{Number: 1, Winner: "ct", StartTick: 50, EndTick: 100},
+		{Number: 2, Winner: "t", StartTick: 100, EndTick: 150},
+	}
+	em.Events = []models.Event{
+		{Seq: 0, Tick: 15, Round: -2, Kind: models.EventKill, Attacker: "100", Victim: "200"},
+		{Seq: 1, Tick: 35, Round: -1, Kind: models.EventKill, Attacker: "200", Victim: "100"},
+		{Seq: 2, Tick: 60, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "200"},
+		{Seq: 3, Tick: 110, Round: 2, Kind: models.EventKill, Attacker: "200", Victim: "100"},
+	}
+	if err := s.SaveExtracted(id, em); err != nil {
+		t.Fatalf("SaveExtracted: %v", err)
+	}
+
+	ticks := func(f models.EventFilter) []int {
+		t.Helper()
+		f.MatchID = id
+		rows, err := s.GetEvents(f)
+		if err != nil {
+			t.Fatalf("GetEvents(%+v): %v", f, err)
+		}
+		out := make([]int, len(rows))
+		for i, r := range rows {
+			out[i] = r.Tick
+		}
+		return out
+	}
+	want := func(name string, got, exp []int) {
+		t.Helper()
+		if len(got) != len(exp) {
+			t.Fatalf("%s = %v, want %v", name, got, exp)
+		}
+		for i := range exp {
+			if got[i] != exp[i] {
+				t.Fatalf("%s = %v, want %v", name, got, exp)
+			}
+		}
+	}
+
+	want("both bounds open", ticks(models.EventFilter{}), []int{15, 35, 60, 110})
+	want("0/0 = unset", ticks(models.EventFilter{RoundFrom: 0, RoundTo: 0}), []int{15, 35, 60, 110})
+	want("min only", ticks(models.EventFilter{RoundFrom: 1}), []int{60, 110})
+	want("max only", ticks(models.EventFilter{RoundTo: 1}), []int{15, 35, 60})
+	want("inclusive both ends", ticks(models.EventFilter{RoundFrom: 1, RoundTo: 2}), []int{60, 110})
+	want("negative bounds are real rounds", ticks(models.EventFilter{RoundFrom: -2, RoundTo: -1}), []int{15, 35})
+	want("negative min only", ticks(models.EventFilter{RoundFrom: -1}), []int{35, 60, 110})
+	want("negative max only", ticks(models.EventFilter{RoundTo: -1}), []int{15, 35})
+	want("warmup point range", ticks(models.EventFilter{RoundFrom: -1, RoundTo: -1}), []int{35})
+	want("empty range", ticks(models.EventFilter{RoundFrom: 3}), []int{})
+	want("empty negative range", ticks(models.EventFilter{RoundFrom: -3, RoundTo: -3}), []int{})
+	// Partial range + another filter AND together (the shared whereClause).
+	want(
+		"range AND attacker",
+		ticks(models.EventFilter{RoundFrom: 1, RoundTo: 1, SteamID: "100"}),
+		[]int{60},
+	)
 }
 
 func TestJobsLifecycle(t *testing.T) {

@@ -9,11 +9,17 @@ import (
 
 // TestGetRoundDetailNegativeRounds pins the sentinel contract split:
 //
-//   - GetEvents/GetChat keep "Round < 0 = every round of the match" (the
-//     timeline, Context view and the analytics pass rely on it);
-//   - GetRoundDetail matches its round EXACTLY, because extract.agg.renumber
-//     gives knife/warmup rounds NEGATIVE numbers (-2 knife, -1 warmup) that
-//     are real rounds with their own events and chat.
+//   - GetEvents now takes an INCLUSIVE, PARTIAL round range (0 = open on
+//     that side); both bounds open means every round of the match, which
+//     is what the timeline, Context view and the analytics pass read.
+//     The old "Round < 0 = all rounds" sentinel is gone — a negative
+//     bound is just a knife/warmup round number.
+//   - GetChat keeps its own "round < 0 = every round" sentinel;
+//   - GetRoundDetail matches its round EXACTLY through queryEvents'
+//     exactRound (the range's 0 = open sentinel cannot express a round
+//     0), because extract.agg.renumber gives knife/warmup rounds
+//     NEGATIVE numbers (-2 knife, -1 warmup) that are real rounds with
+//     their own events and chat.
 //
 // Before the fix, detail for round -1 forwarded the negative number into
 // GetEvents/GetChat, whose `round >= 0` guard silently dropped the clause —
@@ -64,13 +70,13 @@ func TestGetRoundDetailNegativeRounds(t *testing.T) {
 		}
 	}
 
-	// The public sentinel still means "all rounds".
-	all, err := s.GetEvents(models.EventFilter{MatchID: id, Round: -1})
+	// Both round bounds open still means "all rounds".
+	all, err := s.GetEvents(models.EventFilter{MatchID: id})
 	if err != nil {
-		t.Fatalf("GetEvents(-1): %v", err)
+		t.Fatalf("GetEvents(all): %v", err)
 	}
 	if len(all) != 3 {
-		t.Errorf("GetEvents(Round: -1) = %d rows, want 3 (all rounds)", len(all))
+		t.Errorf("GetEvents(open range) = %d rows, want 3 (all rounds)", len(all))
 	}
 	chat, err := s.GetChat(id, -1, "")
 	if err != nil {

@@ -92,7 +92,7 @@ func TestGetEventsFilterMatrix(t *testing.T) {
 	id := saveTestMatch(t, s, "/d/ev.dem", "sha-event-filters", time.Now())
 
 	base := func() models.EventFilter {
-		return models.EventFilter{MatchID: id, Round: -1, Limit: 0}
+		return models.EventFilter{MatchID: id, Limit: 0}
 	}
 	// Fixture: kill(ak47, hs, dmg 100), damage(ak47, 30), kill(awp, hs),
 	// bomb_planted, round_end — all round 1.
@@ -101,15 +101,24 @@ func TestGetEventsFilterMatrix(t *testing.T) {
 		f    models.EventFilter
 		want int
 	}{
-		{"all rounds", base(), 5},
+		{"all rounds (both bounds open)", base(), 5},
 		{"kind kill", func() models.EventFilter { f := base(); f.Kind = "kill"; return f }(), 2},
 		{"weapon ak47", func() models.EventFilter { f := base(); f.Weapon = "ak47"; return f }(), 2},
 		{"steam id attacker/victim", func() models.EventFilter { f := base(); f.SteamID = "100"; return f }(), 3},
 		{"headshot only", func() models.EventFilter { f := base(); f.HeadshotOnly = true; return f }(), 2},
-		{"dmg min 50", func() models.EventFilter { f := base(); f.DmgMin = 50; return f }(), 1},
-		{"tick range", func() models.EventFilter { f := base(); f.TickFrom = 100; f.TickTo = 200; return f }(), 3},
-		{"exact round 1", func() models.EventFilter { f := base(); f.Round = 1; return f }(), 5},
-		{"exact round 0 (absent)", func() models.EventFilter { f := base(); f.Round = 0; return f }(), 0},
+		// Round range: inclusive, partial, 0 = open on that side (round 0
+		// is never a bound to clamp to — see TestGetEventsRoundRange for
+		// the negative/partial behavior over multi-round data).
+		{"round 1..1", func() models.EventFilter { f := base(); f.RoundFrom, f.RoundTo = 1, 1; return f }(), 5},
+		{"round min only", func() models.EventFilter { f := base(); f.RoundFrom = 1; return f }(), 5},
+		{"round max only", func() models.EventFilter { f := base(); f.RoundTo = 1; return f }(), 5},
+		{"round bounds open (0/0)", func() models.EventFilter { f := base(); f.RoundFrom, f.RoundTo = 0, 0; return f }(), 5},
+		{"round range past the data", func() models.EventFilter { f := base(); f.RoundFrom = 2; return f }(), 0},
+		// Distance range: same partial-range rule over the event's own
+		// distance column (fixture distances: 12.5, 0, 0, 0, 0).
+		{"distance min only", func() models.EventFilter { f := base(); f.DistanceMin = 12.5; return f }(), 1},
+		{"distance max only", func() models.EventFilter { f := base(); f.DistanceMax = 12; return f }(), 4},
+		{"distance both bounds", func() models.EventFilter { f := base(); f.DistanceMin = 1; f.DistanceMax = 20; return f }(), 1},
 		{"limit 2", func() models.EventFilter { f := base(); f.Limit = 2; return f }(), 2},
 		{"offset 3", func() models.EventFilter { f := base(); f.Offset = 3; return f }(), 2},
 		// Kinds: the multi-kind form the Replay landmark feed's categories

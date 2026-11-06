@@ -52,7 +52,7 @@ const dom = new JSDOM('<!doctype html><html><body></body></html>', {
   url: 'http://localhost/',
 });
 for (const k of [
-  'window', 'document', 'navigator', 'HTMLElement', 'HTMLInputElement',
+  'window', 'document', 'navigator', 'location', 'history', 'HTMLElement', 'HTMLInputElement',
   'HTMLButtonElement', 'HTMLMediaElement', 'HTMLVideoElement', 'HTMLAnchorElement',
   'SVGElement', 'Element', 'Node', 'Text', 'Comment', 'DocumentFragment',
   'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame',
@@ -832,6 +832,99 @@ check(
   !!stateNotes[0] && /reprocess this match to gain HP\/weapon\/money/.test(stateNotes[0].textContent),
   stateNotes[0]?.textContent,
 );
+
+console.log('G. filter surface: the category multi-select dropdown + the FilterBar rows');
+// Section B collapsed the rail again — re-expand it, then open the ONE
+// Filters toggle that governs the whole filter surface.
+click(topbar.querySelector('.side-toggle'));
+await sleep();
+const rail = target.querySelector('.replay-side');
+check('rail re-expanded for the filter surface', !!rail);
+const filtersBtn = rail?.querySelector('.lm-toolbar button[aria-expanded]');
+check('Filters toggle present', !!filtersBtn);
+click(filtersBtn);
+await sleep();
+const panel = rail?.querySelector('.lm-filter-panel');
+check('filter panel opens', !!panel);
+check(
+  'no category pill buttons — .lm-cats is ONE dropdown now',
+  !!panel && !panel.querySelector('.lm-cat-chip') && !panel.querySelector('button.lm-cat-chip'),
+);
+const catsWrap = panel?.querySelector('.lm-cats');
+const catsBtn = catsWrap?.querySelector('button');
+check('category dropdown trigger with its enabled count', !!catsBtn &&
+  catsBtn.getAttribute('aria-expanded') === 'false' &&
+  catsBtn.querySelector('.lm-filter-count')?.textContent.trim() === '1',
+  catsBtn ? catsBtn.textContent.trim() : 'missing trigger');
+check('no checkbox list until the dropdown opens', !panel?.querySelector('.lm-cat-menu'));
+click(catsBtn);
+await sleep();
+const catMenu = panel?.querySelector('.lm-cat-menu');
+check('dropdown opens a checkbox list (multi-select)', !!catMenu);
+const catBoxes = catMenu ? [...catMenu.querySelectorAll('input[type="checkbox"]')] : [];
+check('one checkbox per category', catBoxes.length === 13, String(catBoxes.length));
+const catLabel = (cb) => (cb.closest('label')?.textContent || '').trim();
+check(
+  'default selection: round starts ON, kills and round wins OFF',
+  catBoxes.filter((cb) => cb.checked).map(catLabel).join(',') === 'Round starts',
+  catBoxes.filter((cb) => cb.checked).map(catLabel).join(','),
+);
+// Checking another category navigates with the new set — the route query
+// IS the filter (toggleCat → navigateFilter → serializeLandmarkFilter).
+const navBeforeCats = (globalThis.__nav || []).length;
+const killsBox = catBoxes.find((cb) => catLabel(cb) === 'Kills');
+killsBox?.click();
+await sleep();
+const navCats = globalThis.__nav || [];
+check(
+  'toggling a category writes the new cat= list',
+  navCats.length > navBeforeCats && navCats[navCats.length - 1].includes('cat=round_starts,kills'),
+  navCats[navCats.length - 1] || 'no navigation',
+);
+
+const bar = panel?.querySelector('.filt-bar');
+check('FilterBar present in the panel', !!bar);
+check('the exact-round select is gone', !!bar && !bar.querySelector('#filt-round'));
+check(
+  'round from/to number inputs (step 1, negatives allowed)',
+  !!bar?.querySelector('#filt-round-from[type="number"]') &&
+    !!bar?.querySelector('#filt-round-to[type="number"]') &&
+    !bar.querySelector('#filt-round-from').hasAttribute('min'),
+);
+check(
+  'dist min/max inputs replace the single max field',
+  !!bar?.querySelector('#filt-dist-min') && !!bar?.querySelector('#filt-dist-max'),
+);
+check(
+  'no tick window and no damage range',
+  !!bar &&
+    !bar.querySelector('[aria-label="From tick"]') &&
+    !bar.querySelector('[aria-label="To tick"]') &&
+    !bar.querySelector('[aria-label="Minimum damage"]') &&
+    !bar.querySelector('[aria-label="Maximum damage"]') &&
+    !bar.querySelector('#filt-dist'),
+);
+const playerGrp = bar?.querySelector('#filt-player')?.closest('.filt-grp');
+const weaponGrp = bar?.querySelector('#filt-weapon')?.closest('.filt-grp');
+check(
+  'player and weapon selects each own their own row (.filt-line)',
+  !!playerGrp && !!weaponGrp && playerGrp !== weaponGrp &&
+    playerGrp.classList.contains('filt-line') && weaponGrp.classList.contains('filt-line'),
+  `${playerGrp?.className} | ${weaponGrp?.className}`,
+);
+const weaponOpts = [...(bar?.querySelector('#filt-weapon')?.options || [])].map((o) => o.value);
+check(
+  'weapon options list each weapon ONCE, by display name (events.weapon spelling)',
+  weaponOpts.includes('Desert Eagle') && weaponOpts.includes('AK-47') &&
+    !weaponOpts.includes('deagle') && !weaponOpts.includes('ak47'),
+  weaponOpts.slice(0, 8).join(','),
+);
+check(
+  'weapon option values are unique (no double counting)',
+  new Set(weaponOpts).size === weaponOpts.length,
+  `${new Set(weaponOpts).size} vs ${weaponOpts.length}`,
+);
+check('headshot toggle kept', !!bar?.querySelector('.filt-check'));
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');

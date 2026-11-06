@@ -5,7 +5,7 @@
 // This module owns:
 //
 //   1. CATEGORIES      — the filterable category registry (with the
-//                       sparse default: kills + round wins only).
+//                       sparse default: round starts only).
 //   2. drawBucket      — the kind → drawable bucket mapping the RENDERER
 //                        and the scrubber markers consume (rows arrive
 //                        pre-bucketed; neither classifies at runtime).
@@ -17,7 +17,8 @@
 //                        paths; there is no universal event query).
 //   5. applyRoundPref  — the show_knife_warmup_rounds visibility rule
 //                        (an ADDITIONAL feed filter on top of the
-//                        category opt-ins and ?round= scoping).
+//                        category opt-ins and ?roundFrom/?roundTo
+//                        scoping).
 //   6. filter <-> URL  — the landmark filter model serialized to the
 //                        route query (deep links, refresh, back/forward).
 //
@@ -56,8 +57,9 @@ export const LANDMARK_KINDS = [
 // context, while the LIST and scrubber markers follow the enabled
 // categories. `damage` rides here for the victim-hit flash only — it
 // carries no scrubber marker (see scrubberMarkerClass); `round_start`
-// likewise carries none (the LIST/scrubber rows come from the
-// category-filtered feed read, not from this set).
+// carries the TALL tick marker when the round_starts category is on
+// (the scrubber's marker loop gates this set by the enabled
+// categories).
 export const DRAW_KINDS = [
   'kill',
   'damage',
@@ -79,9 +81,9 @@ export const DRAW_KINDS = [
 // restricts the category to counted rounds (lib/rounds.js isCounted —
 // knife/warmup rounds are not part of the default narrative).
 export const CATEGORIES = [
-  { id: 'kills', label: 'Kills', short: 'kill', source: 'event', kinds: ['kill'], default: true },
-  { id: 'round_wins', label: 'Round wins', short: 'win', source: 'event', kinds: ['round_end'], default: true, countedOnly: true },
-  { id: 'round_starts', label: 'Round starts', short: 'start', source: 'event', kinds: ['round_start'], countedOnly: true },
+  { id: 'kills', label: 'Kills', short: 'kill', source: 'event', kinds: ['kill'] },
+  { id: 'round_wins', label: 'Round wins', short: 'win', source: 'event', kinds: ['round_end'], countedOnly: true },
+  { id: 'round_starts', label: 'Round starts', short: 'start', source: 'event', kinds: ['round_start'], default: true, countedOnly: true },
   { id: 'bomb', label: 'Bomb', short: 'bomb', source: 'event', kinds: ['bomb_plant', 'bomb_defuse', 'bomb_explode', 'bomb_drop', 'bomb_pickup'] },
   { id: 'grenade_throws', label: 'Grenade throws', short: 'throw', source: 'event', kinds: ['grenade_throw'] },
   { id: 'grenade_dets', label: 'Grenade detonations', short: 'det', source: 'event', kinds: ['grenade'] },
@@ -94,7 +96,7 @@ export const CATEGORIES = [
   { id: 'game_events', label: 'Game events', short: 'game', source: 'generic', nameFrom: 'gname' },
 ];
 
-// The sparse default: kills + round wins only — every other category is
+// The sparse default: round starts only — every other category is
 // opt-in (PRD §5.5), even when its data exists.
 export const DEFAULT_CATEGORIES = CATEGORIES.filter((c) => c.default).map((c) => c.id);
 
@@ -174,14 +176,18 @@ export function sameUtilityWeapon(a, b) {
 // feed's markers derivation (Replay.svelte) consumes; '' = no marker.
 // Kept here so the one categorization module owns the whole bucket
 // contract: every drawable bucket the world layers draw stays meaningful
-// on the scrubber, including the typed grenade buckets. Pure —
-// unit-tested by src/lib/landmarks.test.js.
+// on the scrubber, including the typed grenade buckets. 'tall' is THE
+// tall tick mark (style.css .scrub-marker.tall): round starts take it —
+// and so do round wins, which is why the class is not bucket-named
+// (the two overlap on the scrubber when both categories are on; a
+// future pass may want to differentiate them). Pure — unit-tested by
+// src/lib/landmarks.test.js.
 export function scrubberMarkerClass(bucket) {
   const b = String(bucket || '');
   if (b === 'kill') return 'kill';
   if (b === 'plant' || b === 'defuse') return 'plant';
   if (b === 'explode' || DETONATION_BUCKETS.includes(b)) return 'det';
-  if (b === 'round') return 'round';
+  if (b === 'round' || b === 'start') return 'tall';
   return ''; // 'drop'/'pickup' (bomb evidence) and 'damage' — no marker
 }
 
@@ -198,7 +204,9 @@ export function scrubberMarkerClass(bucket) {
 // no scrubber marker (scrubberMarkerClass returns '' for them).
 // round_start buckets to 'start' — the death-X cutoff row the renderer
 // STORES as a round start (killEndTick's next-round terminator); it is
-// never drawn as a world marker and carries no scrubber marker either.
+// never drawn as a world marker, but it DOES carry the tall scrubber
+// tick (scrubberMarkerClass 'tall') so the default round-start feed
+// reads on the timeline.
 export function drawBucket(kind, weapon) {
   const k = String(kind || '').toLowerCase();
   if (k === 'kill') return 'kill';
@@ -344,9 +352,9 @@ export function mergeFeed(arrays) {
 // with the pref off, every row of a NON-COUNTED round (negative ingest
 // indices — knife/warmup, lib/rounds.js isCounted) is dropped. It is an
 // ADDITIONAL filter on top of the category opt-in rules
-// (normalizeEvent's countedOnly) and the ?round= scoping — never a
-// replacement for either; a row must pass all of them. A round the
-// lookup does not know (or a row with no round stamp) is KEPT —
+// (normalizeEvent's countedOnly) and the ?roundFrom/?roundTo scoping —
+// never a replacement for either; a row must pass all of them. A round
+// the lookup does not know (or a row with no round stamp) is KEPT —
 // defensive, never invented, the same convention as normalizeEvent.
 // Pref on → the input array comes back untouched (same reference).
 // Consumed by Replay's feed and scrubber markers (Replay.svelte).
@@ -362,19 +370,24 @@ export function applyRoundPref(rows, roundsByNumber, showKnifeWarmup) {
 // --- Filter model <-> route query -------------------------------------------
 
 // The landmark filter — the durable state that lives in the URL
-// (#/replay/:id?cat=…&round=…). Everything here survives navigation,
-// refresh and deep links; transient playback state (engine tick,
-// selection) rides the same query as tick/sel but is not "the filter".
+// (#/replay/:id?cat=…&roundFrom=…&roundTo=…). Everything here survives
+// navigation, refresh and deep links; transient playback state (engine
+// tick, selection) rides the same query as tick/sel but is not "the
+// filter".
+//
+// Range fields (roundFrom/roundTo, distMin/distMax) are INCLUSIVE and
+// PARTIAL: 0/absent = open on that side (min only = no max, max only =
+// no min, both 0 = unconstrained). Round values are round NUMBERS —
+// negative = knife/warmup rounds — and 0 is the "unset" sentinel (round
+// 0 never exists), never a bound to clamp to.
 export const DEFAULT_FILTER = {
-  cats: DEFAULT_CATEGORIES, // ['kills', 'round_wins']
-  round: -1, // -1 = all rounds (0 would mean round zero)
+  cats: DEFAULT_CATEGORIES, // ['round_starts']
+  roundFrom: 0, // 0 = open (round 0 never exists → 0 can only mean unset)
+  roundTo: 0,
   steamId: '',
   weapon: '',
-  tickFrom: 0, // 0 = open-ended
-  tickTo: 0,
-  dmgMin: 0,
-  dmgMax: 0,
-  distanceMax: 0,
+  distMin: 0, // 0 = open; the event's own distance units
+  distMax: 0,
   headshotOnly: false,
   bbox: null, // {minX,minY,maxX,maxY}
   gname: '', // generic event name for the game_events category
@@ -391,22 +404,28 @@ function num(v) {
   return Number.isFinite(n) && n > 0 ? n : 0;
 }
 
+// Round bounds keep NEGATIVE values (knife/warmup rounds are real
+// rounds) and truncate to an integer; 0 and anything unusable mean
+// "unset" — never a bound.
+function roundNum(v) {
+  const n = Math.trunc(Number(v));
+  return Number.isFinite(n) && n !== 0 ? n : 0;
+}
+
 // parseLandmarkFilter builds a complete filter from a parsed route
 // query. Unknown/absent keys fall back to DEFAULT_FILTER — a deep link
-// with no params is the sparse default (kills + round wins), never
+// with no params is the sparse default (round starts), never
 // "everything on".
 export function parseLandmarkFilter(query) {
   const q = query || {};
   const f = { ...DEFAULT_FILTER, cats: [...DEFAULT_CATEGORIES] };
   if ('cat' in q) f.cats = q.cat === '' ? [] : q.cat.split(',').filter((id) => categoryById(id));
-  if (q.round != null && q.round !== '' && Number.isFinite(Number(q.round))) f.round = Number(q.round);
+  f.roundFrom = roundNum(q.roundFrom);
+  f.roundTo = roundNum(q.roundTo);
   f.steamId = q.player || q.steamId || '';
   f.weapon = q.weapon || '';
-  f.tickFrom = num(q.tickFrom);
-  f.tickTo = num(q.tickTo);
-  f.dmgMin = num(q.dmgMin);
-  f.dmgMax = num(q.dmgMax);
-  f.distanceMax = num(q.dist);
+  f.distMin = num(q.distMin);
+  f.distMax = num(q.distMax);
   f.headshotOnly = q.hs === '1';
   if (q.bbox) {
     const p = String(q.bbox).split(',').map(Number);
@@ -420,9 +439,10 @@ export function parseLandmarkFilter(query) {
 
 // serializeLandmarkFilter emits ONLY the non-default keys — default
 // state serializes to an empty object so "#/replay/5" and
-// "#/replay/5?cat=kills,round_wins" never both exist for the same
-// state. Values are URLSearchParams-friendly (comma lists, numbers,
-// steam ids, and the bbox rect).
+// "#/replay/5?cat=round_starts" never both exist for the same state.
+// Values are URLSearchParams-friendly (comma lists, numbers, steam ids,
+// and the bbox rect); a range bound serializes only when it is set (0 =
+// open → nothing emitted, so a min-only range stays min-only).
 export function serializeLandmarkFilter(filter) {
   const f = { ...DEFAULT_FILTER, ...(filter || {}) };
   const q = {};
@@ -430,14 +450,12 @@ export function serializeLandmarkFilter(filter) {
     f.cats.length === DEFAULT_CATEGORIES.length &&
     DEFAULT_CATEGORIES.every((c) => f.cats.includes(c));
   if (!sameCats) q.cat = f.cats.join(',');
-  if (f.round !== -1) q.round = String(f.round);
+  if (f.roundFrom) q.roundFrom = String(f.roundFrom);
+  if (f.roundTo) q.roundTo = String(f.roundTo);
   if (f.steamId) q.player = f.steamId;
   if (f.weapon) q.weapon = f.weapon;
-  if (f.tickFrom) q.tickFrom = String(f.tickFrom);
-  if (f.tickTo) q.tickTo = String(f.tickTo);
-  if (f.dmgMin) q.dmgMin = String(f.dmgMin);
-  if (f.dmgMax) q.dmgMax = String(f.dmgMax);
-  if (f.distanceMax) q.dist = String(f.distanceMax);
+  if (f.distMin) q.distMin = String(f.distMin);
+  if (f.distMax) q.distMax = String(f.distMax);
   if (f.headshotOnly) q.hs = '1';
   if (f.bbox) q.bbox = `${f.bbox.minX},${f.bbox.minY},${f.bbox.maxX},${f.bbox.maxY}`;
   if (f.gname) q.gname = f.gname;

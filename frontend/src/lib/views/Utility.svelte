@@ -179,9 +179,17 @@
     closed = { ...closed, [round]: !closed[round] };
   }
 
-  // Round drill → THE event browser with the grenade categories enabled.
+  // Round drill → THE event browser with the grenade categories enabled
+  // (the round range pins BOTH bounds to the same number: inclusive,
+  // exactly that round).
   function openEvents(r) {
-    go(replayHash(id, { round: r.round, cats: ['grenade_throws', 'grenade_dets'] }, { back }));
+    go(
+      replayHash(
+        id,
+        { roundFrom: r.round, roundTo: r.round, cats: ['grenade_throws', 'grenade_dets'] },
+        { back },
+      ),
+    );
   }
 
   function openReplay(r) {
