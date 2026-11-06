@@ -75,7 +75,7 @@ function teamColor(side) {
   return OTHER_COLOR;
 }
 
-// sideFromFlags — THE canonical per-frame side rule (changes.txt 20/21):
+// sideFromFlags — THE canonical per-frame side rule:
 // the q16-v2 side bits (flags bits 2-3: 1 = t, 2 = ct) with a
 // caller-supplied fallback for frames whose bits are 0 — a dead player's
 // frame or an unassigned team, where the slot's final side

@@ -178,7 +178,7 @@ func groupExpr(source, groupBy string) (string, *ParseError) {
 	m := groupColumns[source]
 	col, ok := m[g]
 	if !ok {
-		return "", errf(0, "groupBy %q is not supported for source %s in v1 (fixed mapping table — see metrics package doc)", g, source)
+		return "", errf(0, "groupBy %q is not supported for source %s (fixed mapping table)", g, source)
 	}
 	return col, nil
 }

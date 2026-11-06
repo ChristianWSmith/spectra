@@ -39,7 +39,7 @@
   // network-message census, not a dump.
   const REF_BULLETS = [
     'UserCommands dominate: 1,367,690 of 1,965,413 total messages (POV input history).',
-    'CSVCMsg_VoiceData fires 123,507 times — the Opus chunks M4 voice playback decodes.',
+    'CSVCMsg_VoiceData fires 123,507 times — the Opus chunks voice playback decodes.',
     'CMsgSosStartSoundEvent 25,266 / legacy game events 21,029 — sound + pre-S2 event layers.',
     'Ballistics-adjacent: CMsgTEFireBullets 3,302 + CMsgPlaceDecalEvent 1,514.',
   ];

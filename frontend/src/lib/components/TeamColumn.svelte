@@ -1,8 +1,7 @@
 <script>
   // TeamColumn — one team's card stack beside the replay render area:
   // the team name (colored by the side that team is ON AT THE PLAYHEAD)
-  // with the per-team voice mute beside it, then five PlayerCards
-  // (spec changes.txt 19, 22).
+  // with the per-team voice mute beside it, then five PlayerCards.
   //
   // Prop contract — the caller precomputes everything; this component
   // only lays it out:

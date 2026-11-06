@@ -101,7 +101,7 @@ func ValidateManifest(data []byte) (Manifest, error) {
 		}
 		for k := range caps {
 			if !allowedCapabilities[k] {
-				return Manifest{}, fmt.Errorf("plugin: unknown capability %q (v1 allows metrics, report_templates)", k)
+				return Manifest{}, fmt.Errorf("plugin: unknown capability %q (only metrics and report_templates are supported)", k)
 			}
 		}
 	}

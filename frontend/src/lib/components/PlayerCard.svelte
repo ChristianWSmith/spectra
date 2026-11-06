@@ -1,6 +1,6 @@
 <script>
-  // PlayerCard — ONE player's live card beside the replay render area
-  // (spec changes.txt 20–22, 26): name, HP + bar, armor with helmet
+  // PlayerCard — ONE player's live card beside the replay render area:
+  // name, HP + bar, armor with helmet
   // indicator, the equipped weapon with mag/reserve ammo, unspent money
   // and utility — tinted by the player's CURRENT side, outlined by their
   // voice color, with a per-player voice mute. TeamColumn stacks five of

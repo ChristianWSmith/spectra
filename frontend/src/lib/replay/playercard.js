@@ -1,6 +1,5 @@
 // playercard.js — pure presentation rules behind the replay PLAYER CARD
-// components (components/PlayerCard.svelte + TeamColumn.svelte; spec
-// changes.txt 20–22, 26).
+// components (components/PlayerCard.svelte + TeamColumn.svelte).
 //
 // The cards re-render at the replay playhead rate (~60×/s), so every
 // per-frame decision is a plain function over slotStateAt's output here

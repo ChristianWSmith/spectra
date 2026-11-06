@@ -73,7 +73,7 @@ func Compile(expr, groupBy, denominator, scope string) (Plan, *ParseError) {
 	for i := range spec.Aggs {
 		a := &spec.Aggs[i]
 		if a.Op == "percentile" && gexpr != "" {
-			return Plan{}, errf(a.Pos, "percentile() requires groupBy \"\" (v1 computes it in Go over all rows; grouped percentiles are not supported)")
+			return Plan{}, errf(a.Pos, "percentile() requires groupBy \"\" (computed in Go over all rows; grouped percentiles are not supported)")
 		}
 		if perr := validateAggIdents(a, spec.Source, cols); perr != nil {
 			return Plan{}, perr

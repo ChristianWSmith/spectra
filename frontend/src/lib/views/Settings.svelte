@@ -527,8 +527,8 @@
     <h2>Appearance</h2>
     <div class="row-between">
       <span class="muted"
-        >Theme — dark ships as the default; light tokens are new in M5 (plan
-        §2.6). The choice is remembered and applied at startup.</span
+        >Theme — dark ships as the default. The choice is remembered and
+        applied at startup.</span
       >
       <div class="sett-seg" role="group" aria-label="Theme">
         <button
@@ -692,9 +692,8 @@
       mono and mixed live with the replay clock.
     </p>
     <p class="muted">
-      Transcription (local whisper) is <strong>explicitly deferred from
-      v1</strong> — no whisper UI in this release; the
-      storage and export contracts stay reserved for a later milestone.
+      Transcription (local whisper) is not included — no whisper UI in this
+      app; the storage and export fields stay reserved for future use.
     </p>
   </section>
 
