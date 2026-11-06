@@ -11,11 +11,14 @@
 // round_start boundary seek, the C4 icon and its aspect-preserving
 // draw, the muzzle line, the flash-white overlay and the white talking
 // bloom, the death-X-under-C4 layer order; a crouch-size check; and the
-// HUD — the centered team-score box whose content is centered in colored
-// segments (CT/T names in their side colors, white score), the codicon
-// freeze clock (document.fonts.check stubbed both ways), the C4/0:00
-// clock, the tick/frame-free playback readout — plus the round-scoped
-// kill feed with its rounded entry boxes and 8 px weapon-icon margins).
+// HUD — the SCORE-ANCHORED team-score box (the '‹ct› – ‹t›' segment
+// dead-center of the box, unequal name widths padding the shorter side,
+// CT/T names in their side colors, white score), the team-side pairing
+// rule (hudTeamNames — the ct slot holds the team on CT at the playhead),
+// the codicon freeze clock (document.fonts.check stubbed both ways), the
+// C4/0:00 clock, the tick/frame-free playback readout — plus the
+// round-scoped kill feed with its rounded entry boxes, 12 px weapon-mark
+// margins and the 22 px entry pitch).
 // Run: node --test src/lib/renderer.test.js (from frontend/; the lib test
 // glob src/lib/*.test.js picks it up too).
 import test from 'node:test';
@@ -34,6 +37,9 @@ import {
   voiceBloom,
   fireJump,
   killEndTick,
+  scoreLineWidth,
+  scoreLineLayout,
+  hudTeamNames,
   createRenderer,
 } from './replay/renderer.js';
 import { createEngine } from './replay/engine.js';
@@ -1071,7 +1077,68 @@ const HUD_PLAYERS = [
   { steamId: '2', name: 'bob', side: 't' },
 ];
 
-test('HUD: score line centered in colored segments, label-free clock, no tick/frame counter', () => {
+// --- HUD pure layout: score anchoring + team-side pairing -------------------
+//
+// The recording harness's measureText is a flat 40 px, so the UNEQUAL-name
+// score layout (the whole point of the fix) and the halftime name swap are
+// pinned on the pure helpers with injected widths/sides instead.
+
+test('score line: the score segment is dead-center, the shorter-name side pads', () => {
+  // left 90, score 60, right 40 in a box centered at 400.
+  const lay = scoreLineLayout(90, 60, 40, 400);
+  assert.equal(lay.scoreX, 370, 'the score starts at center − scoreW/2');
+  assert.equal(lay.scoreX + 60 / 2, 400, '…so the score midpoint IS the box center');
+  assert.equal(lay.leftX, 280, 'the long name sits ADJACENT to the score (no stretch)');
+  assert.equal(lay.rightX, 430, 'the short name sits adjacent on the other side');
+
+  // The box grows toward the LONGER side: 2·90 + 60 = 240 content, so the
+  // box (240 + 2×8 = 256, x = (800 − 256)/2 = 272) reaches exactly
+  // HUD_PAD past the long name — while the short side ends 58 px shy of
+  // its edge (8 padding + the 50 px name difference = absorbed slack).
+  const w = scoreLineWidth(90, 60, 40);
+  assert.equal(w, 240, '2·max(left, right) + score — never the plain sum (190)');
+  const x = (800 - (w + 16)) / 2;
+  assert.equal(lay.leftX - x, 8, "the longer side defines the box's inset edge");
+  assert.equal(x + w + 16 - (lay.rightX + 40), 58, 'the shorter side absorbs the slack');
+
+  // mirrored: the RIGHT name is the long one now — same width, padding
+  // flips to the left side.
+  const mirrored = scoreLineLayout(40, 60, 90, 400);
+  assert.equal(scoreLineWidth(40, 60, 90), w, 'the width does not care which side is long');
+  assert.equal(mirrored.rightX + 90 - (x + w + 16), -8, 'now the right side hugs the edge');
+  assert.equal(mirrored.leftX - x, 58, '…and the left side holds the slack');
+
+  // equal names: the anchor and the old block centering agree exactly
+  // (2·40 + 60 = 140 = the plain sum) — the existing equal-width HUD
+  // pins below still hold character-for-character.
+  assert.equal(scoreLineWidth(40, 60, 40), 140);
+  const eq = scoreLineLayout(40, 60, 40, 400);
+  assert.equal(eq.scoreX, 370);
+  assert.equal(eq.leftX, 330);
+  assert.equal(eq.rightX, 430);
+});
+
+test('hudTeamNames: the ct slot holds the team currently on CT at the playhead', () => {
+  // getTeamNames is keyed by the teams' FINAL side: left = the team that
+  // FINISHED ct (Replay's cardGroups), right = the one that finished t.
+  const names = { ct: 'FINISHED-CT', t: 'FINISHED-T' };
+  // first half: the stored pairing already matches the current sides
+  assert.deepEqual(hudTeamNames(names, 'ct', 't'), { ct: 'FINISHED-CT', t: 'FINISHED-T' });
+  // after the halftime switch both columns flipped → the names swap slots
+  // so the renderer's per-slot CT/T colors paint the RIGHT team
+  assert.deepEqual(hudTeamNames(names, 't', 'ct'), { ct: 'FINISHED-T', t: 'FINISHED-CT' });
+  // one column's side is enough to decide (the other carries no payload
+  // this frame — dead frames / unassigned teams report 0)
+  assert.deepEqual(hudTeamNames(names, 't', ''), { ct: 'FINISHED-T', t: 'FINISHED-CT' });
+  assert.deepEqual(hudTeamNames(names, '', 'ct'), { ct: 'FINISHED-T', t: 'FINISHED-CT' });
+  // NO side information at all → the stored pairing, never a guessed swap
+  assert.deepEqual(hudTeamNames(names, '', ''), { ct: 'FINISHED-CT', t: 'FINISHED-T' });
+  // empty names survive the swap as empty (drawHUD falls back to CT / T)
+  assert.deepEqual(hudTeamNames({ ct: '', t: '' }, 't', 'ct'), { ct: '', t: '' });
+  assert.deepEqual(hudTeamNames(null, 't', 'ct'), { ct: '', t: '' });
+});
+
+test('HUD: score-anchored line in colored segments, label-free clock, no tick/frame counter', () => {
   headlessGlobals();
   const data = synthStore(1300, 2);
   const engine = createEngine(data, 64);
@@ -1081,10 +1148,12 @@ test('HUD: score line centered in colored segments, label-free clock, no tick/fr
   r.setHud({ score: { ct: 3, t: 2 }, teamNames: { ct: 'NAVY', t: 'FURY' }, round, tickRate: 64 });
   r.resize();
 
-  // The score line is THREE segments laid out around the box's center:
-  // 3 × 40 (harness measureText) = 120 → box 120 + 2×8 = 136 wide →
-  // x = (800 − 136) / 2 = 332, content starts at 332 + 8 = 340 and each
-  // segment steps by its own measured width (40 here).
+  // The score line is THREE segments laid out around the SCORE segment
+  // (scoreAnchor → scoreLineLayout): 3 × 40 (harness measureText) = 120
+  // → 2·40 + 40 = 120 content (equal names: the anchor and the old block
+  // centering agree) → box 120 + 2×8 = 136 wide → x = (800 − 136) / 2 =
+  // 332, the score starts at 332 + 68 − 20 = 340 + 40 and each name hugs
+  // it (the unequal-name case is pinned on scoreLineLayout above).
   const seg = (t) =>
     canvas.log.find((e) => e.op === 'fillText' && e.args[0] === t && e.args[2] === HUD_PAD + HUD_PAD);
   const ctName = seg('NAVY');
@@ -1098,6 +1167,10 @@ test('HUD: score line centered in colored segments, label-free clock, no tick/fr
   assert.ok(scorePart, 'the score + its – separator is its own segment');
   assert.equal(scorePart.args[1], 332 + HUD_PAD + 40, 'segments step by their measured widths');
   assert.equal(scorePart.fillStyle, '#ffffff', 'the score (and separator) is white');
+  // …and the SCORE segment is dead-center of the box (its midpoint is
+  // 380 + 20 = 400 = 332 + 136/2) — with equal names that coincides with
+  // the block center; unequal names are the pure-helper test above.
+  assert.equal(scorePart.args[1] + 20, 332 + 136 / 2, 'the score midpoint is the box center');
   const tName = seg('FURY');
   assert.ok(tName, 'the T team name follows the score');
   assert.equal(tName.args[1], 332 + HUD_PAD + 80);
@@ -1128,6 +1201,14 @@ test('HUD: score line centered in colored segments, label-free clock, no tick/fr
   const fbCT = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === 'CT' && e.fillStyle === '#5aa9e6');
   const fbT = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === 'T' && e.fillStyle === '#e6a35a');
   assert.ok(fbCT && fbT, "'CT' / 'T' fallbacks are side-colored too");
+
+  // after hudFor's halftime re-pairing (hudTeamNames) the payload's ct
+  // slot carries the OTHER team: the renderer paints whatever name sits
+  // in the slot with that slot's color, so pairing is all it takes
+  r.setHud({ score: { ct: 3, t: 2 }, teamNames: { ct: 'FURY', t: 'NAVY' }, round, tickRate: 64 });
+  const swapCT = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === 'FURY' && e.fillStyle === '#5aa9e6');
+  const swapT = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === 'NAVY' && e.fillStyle === '#e6a35a');
+  assert.ok(swapCT && swapT, 'the swapped payload keeps the slot colors trivially correct');
 
   // a mid-round playhead: the 115 s round clock, still label-free
   engine.seekTick(800); // freeze ended at 640 → 7360 − 160 = 7200 t = 112 s
@@ -1295,9 +1376,11 @@ test('kill feed: round-scoped entries, killer-team outline, weapon image/arrow, 
   r.draw();
 
   // two entries, NEWEST ON TOP (tick 60 above tick 50), right-aligned:
-  // measureText is 40 and each name↔mark gap is 8 → the arrow line is
-  // 12 + 40 + 8 + 40 + 8 + 40 = 148 wide (x = 800 − 8 − 148 = 644) and
-  // the icon line 12 + 40 + 8 + 14 + 8 + 40 = 122 (x = 800 − 8 − 122 = 670).
+  // measureText is 40 and each name↔mark gap is 12 → the arrow line is
+  // 12 + 40 + 12 + 40 + 12 + 40 = 156 wide (x = 800 − 8 − 156 = 636) and
+  // the icon line 12 + 40 + 12 + 14 + 12 + 40 = 130 (x = 800 − 8 − 130 =
+  // 662); the rows sit on the 22 px PITCH (18 px box + 4 px gap), so the
+  // boxes never touch.
   const boxes = feedBoxesSince(canvas.log, mark);
   assert.equal(boxes.length, 2, 'both round-1 kills up to the playhead');
   // ROUNDED corners: each entry is ONE roundRect path (r = 4) shared by
@@ -1308,17 +1391,17 @@ test('kill feed: round-scoped entries, killer-team outline, weapon image/arrow, 
   );
   assert.equal(rounded.length, 2, 'both entry boxes are rounded, one shared path each');
   assert.deepEqual(
-    rounded.map((e) => [e.args[0], e.args[2]]),
+    rounded.map((e) => [e.args[0], e.args[1], e.args[2]]),
     [
-      [644, 148], // [x, w] — the arrow entry, right-aligned at cssW − 8
-      [670, 122], // the icon entry
+      [636, 8, 156], // [x, y, w] — the arrow entry, right-aligned at cssW − 8
+      [662, 30, 130], // the icon entry, one PITCH (18 + 4) below
     ],
   );
   const top = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === 'bob' && e.args[2] === 12);
-  assert.equal(top.args[1], 644 + 6, 'the newest entry is right-aligned at cssW − 8');
+  assert.equal(top.args[1], 636 + 6, 'the newest entry is right-aligned at cssW − 8');
   assert.equal(top.fillStyle, '#e6a35a', "the KILLER's outline/name use the killer's side (T)");
-  const lower = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === 'alice' && e.args[2] === 30);
-  assert.equal(lower.args[1], 670 + 6);
+  const lower = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === 'alice' && e.args[2] === 34);
+  assert.equal(lower.args[1], 662 + 6);
   assert.equal(lower.fillStyle, '#5aa9e6', 'the CT killer is CT-colored');
 
   // outline = the killer's team color, 1px, full alpha (nothing else in
@@ -1332,7 +1415,8 @@ test('kill feed: round-scoped entries, killer-team outline, weapon image/arrow, 
 
   // victim names are tinted by the VICTIM's side — RIGHT-aligned, so the
   // wider icon gaps don't move them: 800 − 8 − 6 − 40 = 746 on both rows
-  const victimT = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === 'bob' && e.args[2] === 30);
+  // (the rows themselves moved to y = 12 / 34 on the new pitch)
+  const victimT = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === 'bob' && e.args[2] === 34);
   assert.equal(victimT.args[1], 746);
   assert.equal(victimT.fillStyle, '#e6a35a');
   const victimCT = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === 'alice' && e.args[2] === 12);
@@ -1342,14 +1426,13 @@ test('kill feed: round-scoped entries, killer-team outline, weapon image/arrow, 
   // weapon: the canonical name's image when the manifest has one…
   const weaponImgs = opsSince(canvas.log, 'drawImage', mark).filter((e) => e.args[3] === 14);
   assert.equal(weaponImgs.length, 1, 'one weapon image (KILL_FEED_ICON)');
-  // …sitting 8 px right of the killer name (box x + inset + name width),
-  // with the victim's 8 px left gap closing the icon's other side
-  assert.equal(weaponImgs[0].args[1], 670 + 6 + 40 + 8, 'an 8 px gap on EACH side of the icon');
-  // …and a plain arrow when it does not
-  assert.ok(
-    canvas.log.some((e) => e.op === 'fillText' && e.args[0] === '→' && e.args[2] === 12),
-    'a weapon with no image falls back to →',
-  );
+  // …sitting 12 px right of the killer name (box x + inset + name width),
+  // with the victim's 12 px left gap closing the icon's other side
+  assert.equal(weaponImgs[0].args[1], 662 + 6 + 40 + 12, 'a 12 px gap on EACH side of the icon');
+  // …and a plain arrow when it does not — on the same 12 px footing
+  const arrow = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === '→' && e.args[2] === 12);
+  assert.ok(arrow, 'a weapon with no image falls back to →');
+  assert.equal(arrow.args[1], 636 + 6 + 40 + 12, 'the arrow gets the same 12 px lead-in gap');
 
   // --- round change clears the feed ---------------------------------------
   r.setHud({
