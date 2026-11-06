@@ -2,12 +2,14 @@
 // the trail-continuity rule (trailConnects — the break that keeps player
 // movement trails from streaking across a round reset or a
 // death→respawn teleport), the smart camera's fit/ease (smartCamTarget,
-// easeValue, camConverged), the world-layer geometry (arrowPath,
+// easeValue, camConverged), the world-layer geometry (chevronPath,
 // crossPath, muzzleRays), the tick-window effects (windowAlpha,
-// fireJump), the death-marker lifetime (killEndTick) — plus one
-// end-to-end draw over a recording 2D context (the world layers follow
-// the tick: lingering smoke, the death X's round cleanup, the C4 icon
-// and its text fallback, the muzzle burst).
+// blindAlpha, voicePulseAlpha, fireJump), the death-marker lifetime
+// (killEndTick) — plus one end-to-end draw over a recording 2D context
+// (the world layers follow the tick: lingering smoke/fire, the death
+// X's round cleanup incl. the post-round C4 kill, the C4 icon and its
+// aspect-preserving draw, the muzzle line, the flash-white overlay and
+// the white talking pulse).
 // Run: node --test src/lib/renderer.test.js (from frontend/; the lib test
 // glob src/lib/*.test.js picks it up too).
 import test from 'node:test';
@@ -18,10 +20,12 @@ import {
   smartCamTarget,
   easeValue,
   camConverged,
-  arrowPath,
+  chevronPath,
   crossPath,
   muzzleRays,
   windowAlpha,
+  blindAlpha,
+  voicePulseAlpha,
   fireJump,
   killEndTick,
   createRenderer,
@@ -193,31 +197,26 @@ test('camConverged: within the center/zoom tolerances only', () => {
 
 // --- world-layer geometry (view arrow, death X, muzzle burst) ---------------
 
-test('arrowPath: 7 points, tip along the angle, symmetric about the axis', () => {
+test('chevronPath: 3 points, apex along the angle, symmetric about the axis', () => {
   const size = 25;
-  const p = arrowPath(100, 50, 0, size);
-  assert.equal(p.length, 7);
-  assert.deepEqual(p[3], [100 + size, 50]); // the TIP points east at angle 0
-  // base sits on the dot, head base at 0.55·size, head wider than shaft
-  assert.equal(p[0][0], 100);
-  assert.ok(Math.abs(p[1][0] - (100 + size * 0.55)) < 1e-9);
-  assert.ok(Math.abs(p[2][1] - (50 - size * 0.34)) < 1e-9);
-  assert.ok(Math.abs(p[1][1] - (50 - size * 0.16)) < 1e-9);
-  // mirror symmetry about the look axis (index i ↔ 6-i)
-  for (let i = 0; i < 7; i++) {
-    const a = p[i];
-    const b = p[6 - i];
-    assert.ok(Math.abs(a[0] - b[0]) < 1e-9, `x mirror ${i}`);
-    assert.ok(Math.abs(a[1] + b[1] - 100) < 1e-9, `y mirror ${i}`); // 2·cy
-  }
+  const p = chevronPath(100, 50, 0, size);
+  assert.equal(p.length, 3);
+  assert.deepEqual(p[1], [100 + size, 50]); // the APEX points east at angle 0
+  // open ">" — the arm ends sit BACK from the apex (0.6·size along the
+  // look direction, ±0.5·size across it), never a closed polygon/shaft
+  assert.ok(Math.abs(p[0][0] - (100 + size * 0.6)) < 1e-9);
+  assert.ok(Math.abs(p[0][1] - (50 - size * 0.5)) < 1e-9);
+  // mirror symmetry about the look axis (index 0 ↔ 2)
+  assert.ok(Math.abs(p[0][0] - p[2][0]) < 1e-9);
+  assert.ok(Math.abs(p[0][1] + p[2][1] - 100) < 1e-9); // 2·cy
   // half a turn points the other way (screen y is down: +90° is south)
-  const q = arrowPath(100, 50, Math.PI / 2, size);
-  assert.ok(Math.abs(q[3][0] - 100) < 1e-9);
-  assert.ok(Math.abs(q[3][1] - (50 + size)) < 1e-9);
+  const q = chevronPath(100, 50, Math.PI / 2, size);
+  assert.ok(Math.abs(q[1][0] - 100) < 1e-9);
+  assert.ok(Math.abs(q[1][1] - (50 + size)) < 1e-9);
   // degenerate size collapses onto the dot (never NaN, never a spike)
-  const z = arrowPath(10, 20, 1.1, 0);
-  assert.deepEqual(z, Array.from({ length: 7 }, () => [10, 20]));
-  assert.deepEqual(arrowPath(10, 20, 0, NaN), z);
+  const z = chevronPath(10, 20, 1.1, 0);
+  assert.deepEqual(z, Array.from({ length: 3 }, () => [10, 20]));
+  assert.deepEqual(chevronPath(10, 20, 0, NaN), z);
 });
 
 test('crossPath: two segments crossing at the marker, ±half on both axes', () => {
@@ -251,6 +250,18 @@ test('muzzleRays: count segments from inner to outer, fanned around the angle', 
   }
   assert.deepEqual(muzzleRays(0, 0, 0, 12, 5), []); // outer ≤ inner
   assert.deepEqual(muzzleRays(0, 0, 0, 5, 12, 0), []); // no rays
+  // count = 1 (the spread never applies): ONE straight ray along the aim
+  // direction — the firing indicator the renderer draws (r+2 → r+14).
+  const line = muzzleRays(10, 20, 0.5, 11, 23, 1, 0);
+  assert.equal(line.length, 1);
+  const [x1, y1, x2, y2] = line[0];
+  assert.ok(Math.abs(Math.hypot(x1 - 10, y1 - 20) - 11) < 1e-9, 'starts on the inner circle');
+  assert.ok(Math.abs(Math.hypot(x2 - 10, y2 - 20) - 23) < 1e-9, 'ends on the outer circle');
+  // …and both ends sit exactly on the look axis (straight, not fanned)
+  const ux = Math.cos(0.5);
+  const uy = Math.sin(0.5);
+  assert.ok(Math.abs((x1 - 10) * uy - (y1 - 20) * ux) < 1e-9, 'inner end collinear');
+  assert.ok(Math.abs((x2 - 10) * uy - (y2 - 20) * ux) < 1e-9, 'outer end collinear');
 });
 
 // --- tick-window effects (damage flash, muzzle flash) -----------------------
@@ -267,6 +278,48 @@ test('windowAlpha: 1 at the event, linear decay, 0 outside the window', () => {
   assert.equal(windowAlpha(1000, null, tr, dur), 0);
   assert.equal(windowAlpha(1000, 1000, 0, dur), 0);
   assert.equal(windowAlpha(1000, 1000, tr, -1), 0);
+});
+
+test('blindAlpha: solid white for the first quarter, linear fade to 0', () => {
+  const tr = 64;
+  const ms = 1000; // 1 s blind = 64 ticks
+  assert.equal(blindAlpha(1000, 1000, tr, ms), 1); // solid at the blind tick
+  // the whole first quarter of the window stays SOLID white
+  assert.equal(blindAlpha(1000 + tr * 0.2, 1000, tr, ms), 1); // k = 0.2
+  // …then a linear fade: k = (1 - age share) / 0.75 — at the midpoint
+  // of the window 2/3 remains, at k=0.9 only 2/15 — and the overlay is
+  // gone once the window closes.
+  assert.ok(Math.abs(blindAlpha(1000 + tr * 0.5, 1000, tr, ms) - 2 / 3) < 1e-9);
+  assert.ok(Math.abs(blindAlpha(1000 + tr * 0.9, 1000, tr, ms) - 2 / 15) < 1e-9);
+  assert.equal(blindAlpha(1000 + Math.ceil(tr * ms / 1000), 1000, tr, ms), 0); // closed
+  assert.equal(blindAlpha(999, 1000, tr, ms), 0); // scrubbed BEFORE it
+  // never a stuck overlay: bad inputs all read "off"
+  assert.equal(blindAlpha(1000, null, tr, ms), 0);
+  assert.equal(blindAlpha(1000, 1000, 0, ms), 0);
+  assert.equal(blindAlpha(1000, 1000, tr, 0), 0);
+  assert.equal(blindAlpha(1000, 1000, tr, -5), 0);
+});
+
+test('voicePulseAlpha: white ring pulse — bounded, periodic, tick-pure', () => {
+  const tr = 64;
+  // the pulse spans 0.45..1 and is never fully invisible
+  for (let t = 0; t < 8 * tr; t += 1) {
+    const a = voicePulseAlpha(t, tr);
+    assert.ok(a >= 0.45 - 1e-12 && a <= 1 + 1e-12, `t=${t} a=${a}`);
+  }
+  // ~0.8 s period: the phase repeats (a scrub back re-renders the same
+  // alpha — nothing wall-clock, nothing sticky)
+  const period = 0.8 * tr;
+  for (let t = 0; t < 5 * period; t += 7) {
+    assert.ok(
+      Math.abs(voicePulseAlpha(t + period, tr) - voicePulseAlpha(t, tr)) < 1e-12,
+      `t=${t}`,
+    );
+  }
+  // determinism + the bad-clock guard
+  assert.equal(voicePulseAlpha(1234, tr), voicePulseAlpha(1234, tr));
+  assert.equal(voicePulseAlpha(1000, 0), 0);
+  assert.equal(voicePulseAlpha(NaN, tr), 0);
 });
 
 test('fireJump: seeds across seeks, freezes on a paused redraw', () => {
@@ -298,15 +351,56 @@ test('killEndTick: the death X lives exactly as long as its round', () => {
     { round: 3, tick: 5000 }, // THE round end
     { round: 4, tick: 9000 }, // a later round's end — ignored
   ];
+  const starts = [
+    { round: 2, tick: 950 }, // before the kill — ignored
+    { round: 4, tick: 6000 }, // the NEXT round's start
+  ];
+  // no round_starts handed in → exactly the round_end rule (callers
+  // without them, and the pre-fix behavior, are unchanged)
   assert.equal(killEndTick(kill, tr, ends), 5000);
-  // only earlier/other-round terminators → the no-round_end fallback
+  assert.equal(killEndTick(kill, tr, ends, []), 5000);
+  // with round_starts the cutoff is MIN(round_end, next round_start):
+  // 5000 < 6000 → the round end still wins…
+  assert.equal(killEndTick(kill, tr, ends, starts), 5000);
+  // …and a same-round round_end AFTER the next round's start never
+  // wins (the only same-round end left here is 7000 > the 6000 start)
+  assert.equal(
+    killEndTick(kill, tr, [ends[0], ends[1], ends[3], { round: 3, tick: 7000 }], starts),
+    6000,
+  );
+  // only earlier/other-round round_ends → the next round_start (else the
+  // deliberately-long no-terminator fallback)
   const fallback = 1000 + 180 * tr;
+  assert.equal(killEndTick(kill, tr, [ends[0], ends[1], ends[3]], starts), 6000);
+  assert.equal(killEndTick(kill, tr, [ends[0], ends[1], ends[3]], [{ round: 9, tick: 999 }]), fallback);
   assert.equal(killEndTick(kill, tr, [ends[0], ends[1], ends[3]]), fallback);
-  assert.equal(killEndTick(kill, tr, []), fallback);
-  assert.equal(killEndTick(kill, tr, null), fallback);
+  assert.equal(killEndTick(kill, tr, [], []), fallback);
+  assert.equal(killEndTick(kill, tr, null, null), fallback);
   // invalid row → 0 (draw nothing)
-  assert.equal(killEndTick(null, tr, ends), 0);
-  assert.equal(killEndTick({ round: 3 }, tr, ends), 0);
+  assert.equal(killEndTick(null, tr, ends, starts), 0);
+  assert.equal(killEndTick({ round: 3 }, tr, ends, starts), 0);
+});
+
+test("killEndTick: a post-round_end kill (the C4 detonation) dies with the next round_start", () => {
+  const tr = 64;
+  // The golden demo's verified leak: the C4-detonation kill at tick
+  // 14963 is stamped round 2 but happens AFTER round 2's round_end
+  // (14930), so no same-round round_end could terminate it and the X
+  // survived on the +180 s fallback — visible through round 3.
+  const kill = { round: 2, tick: 14963 };
+  const ends = [
+    { round: 1, tick: 12000 },
+    { round: 2, tick: 14930 }, // BEFORE the kill — cannot terminate it
+  ];
+  const starts = [
+    { round: 2, tick: 13000 }, // round 2's own start — before the kill
+    { round: 3, tick: 15200 }, // THE next round's start
+  ];
+  const fallback = 14963 + 180 * tr;
+  assert.equal(killEndTick(kill, tr, ends), fallback); // the leak, unpinned
+  assert.equal(killEndTick(kill, tr, ends, starts), 15200); // fixed
+  // no round_starts loaded either (truncated feed) → still the fallback
+  assert.equal(killEndTick(kill, tr, ends, []), fallback);
 });
 
 // --- end-to-end draw over a recording 2D context ----------------------------
@@ -322,8 +416,9 @@ test('killEndTick: the death X lives exactly as long as its round', () => {
 // are pure functions of tick.
 
 // recordingCanvas: { log, getContext, clientWidth/Height } — a stand-in
-// canvas whose 2D context records stroke/fill/arc/drawImage/fillText
-// ops together with the stroke/fill style and lineCap in force.
+// canvas whose 2D context records stroke/fill/arc/drawImage/fillText/
+// moveTo/lineTo ops together with the stroke/fill style, lineCap,
+// lineWidth and globalAlpha in force.
 function recordingCanvas(cssW = 800, cssH = 600) {
   const log = [];
   const styles = {
@@ -339,7 +434,7 @@ function recordingCanvas(cssW = 800, cssH = 600) {
     shadowBlur: 0,
     imageSmoothingEnabled: true,
   };
-  const RECORD = new Set(['stroke', 'fill', 'arc', 'drawImage', 'fillText']);
+  const RECORD = new Set(['stroke', 'fill', 'arc', 'drawImage', 'fillText', 'moveTo', 'lineTo']);
   const ctx = new Proxy(styles, {
     get(t, prop) {
       if (typeof prop !== 'string') return undefined;
@@ -351,6 +446,7 @@ function recordingCanvas(cssW = 800, cssH = 600) {
             strokeStyle: t.strokeStyle,
             fillStyle: t.fillStyle,
             lineCap: t.lineCap,
+            lineWidth: t.lineWidth,
             alpha: t.globalAlpha,
             args,
           });
@@ -397,7 +493,7 @@ function synthStore(frames, slotCount) {
   return { frames, ticks, masks, slots, bounds: { minX: 0, maxX: 100, minY: 0, maxY: 100 } };
 }
 
-test('world layers follow the tick: smoke, death X, C4 icon, muzzle, hits, voice', () => {
+test('world layers follow the tick: smoke/fire, death X, C4 icon, muzzle line, hits, voice, blind', () => {
   // the renderer's browser globals (node has neither)
   globalThis.window = { devicePixelRatio: 1 };
   globalThis.requestAnimationFrame = () => 0;
@@ -434,11 +530,25 @@ test('world layers follow the tick: smoke, death X, C4 icon, muzzle, hits, voice
     mk({ id: 4, seq: 4, tick: 192, round: 1, kind: 'kill', attacker: '1', victim: '2', weapon: 'ak47', posX: 50, posY: 50 }),
     mk({ id: 5, seq: 5, tick: 193, round: 1, kind: 'damage', attacker: '1', victim: '2', weapon: 'ak47', dmg: 30, posX: 50, posY: 50 }),
     mk({ id: 6, seq: 6, tick: 400, round: 1, kind: 'round_end' }),
+    // The C4-detonation leak in miniature: a kill stamped round 1 that
+    // lands AFTER round 1's round_end — it must die with round 2's
+    // round_start (450), not on the +180 s fallback.
+    mk({ id: 7, seq: 7, tick: 420, round: 1, kind: 'kill', attacker: '1', victim: '2', weapon: 'c4', posX: 50, posY: 50 }),
+    mk({ id: 8, seq: 8, tick: 450, round: 2, kind: 'round_start' }),
+    // Grenade detonation pins: molotov (RED lingering area + ring),
+    // flashbang (0.5 s white pop), HE (1.3 s expanding ring).
+    mk({ id: 9, seq: 9, tick: 300, round: 1, kind: 'grenade', attacker: '1', weapon: 'Molotov', posX: 50, posY: 50 }),
+    mk({ id: 10, seq: 10, tick: 600, round: 1, kind: 'grenade', attacker: '1', weapon: 'Flashbang', posX: 50, posY: 50 }),
+    mk({ id: 11, seq: 11, tick: 700, round: 1, kind: 'grenade', attacker: '1', weapon: 'HE Grenade', posX: 50, posY: 50 }),
   ]);
   const smokeIcon = { width: 32, height: 32, src: 'smoke.svg' };
-  const c4Icon = { width: 32, height: 32, src: 'c4.svg' };
+  // Deliberately NON-square: the C4 art must draw at its own aspect
+  // ratio (48×24 → 24×12 at BOMB_ICON_PX = 12), never squashed to 1:1.
+  const c4Icon = { width: 48, height: 24, src: 'c4.svg' };
   r.setIcons({ C4: c4Icon, 'Smoke Grenade': smokeIcon });
   r.setVoices({ colors: ['#84C8ED', null], speaking: (slot) => slot === 0 });
+  // The flash-white overlay: alice is blinded at tick 100 for 1 s.
+  r.setBlinds([{ slot: 0, tick: 100, ms: 1000 }]);
   r.setStateIndex(buildStateIndex([{ frame: 192, slot: 0, mask: 0x40, attack: true }], 2));
   r.resize(); // first draw at tick 0 (nothing of ours is live yet)
 
@@ -456,25 +566,102 @@ test('world layers follow the tick: smoke, death X, C4 icon, muzzle, hits, voice
   engine.seekTick(200);
   r.draw();
   assert.ok(smokeCloud(mark).length > 0, 'the smoke cloud reaches the renderer (typed bucket)');
+  assert.ok(
+    since(mark).some((e) => e.fillStyle === 'rgba(180, 190, 205, 0.3)'),
+    'the lingering smoke is clearly visible (fill 0.3, was 0.18)',
+  );
   assert.ok(deathX(mark).length > 0, 'the death X marks where bob died');
   assert.ok(
-    since(mark).some((e) => e.op === 'drawImage' && e.args[3] === 12),
-    'the extracted C4 icon is drawn for the dropped bomb (BOMB_ICON_PX)',
+    since(mark).some(
+      // drawImage(image, dx, dy, dw, dh) — args[3]/args[4] are the box
+      (e) => e.op === 'drawImage' && e.args[3] === 24 && e.args[4] === 12,
+    ),
+    'the extracted C4 icon keeps its ORIGINAL aspect ratio (48×24 → 24×12 at BOMB_ICON_PX)',
   );
-  // the talking ring: the assigned voice color at r+9 (r=9 standing →
-  // an 8 px gap: it must not touch the dot, nor the amber follow ring)
+  // the talking ring: a WHITE pulse at r+9 (r=9 standing → an 8 px gap:
+  // it must not touch the dot, nor the amber follow ring), alpha purely
+  // a function of the tick
   assert.ok(
     since(mark).some(
-      (e) => e.op === 'arc' && e.strokeStyle === '#84C8ED' && e.args[2] === 18,
+      (e) =>
+        e.op === 'arc' &&
+        e.strokeStyle === '#ffffff' &&
+        e.args[2] === 18 &&
+        Math.abs(e.alpha - voicePulseAlpha(200, 64)) < 1e-12,
     ),
-    'the talking ring is drawn in the voice color with a gap',
+    'the talking ring is a WHITE pulsing ring with a gap',
   );
-  // the voice-colored rim on bob-less alice's dot (radius r = 9)
+  assert.ok(
+    !since(mark).some((e) => e.op === 'arc' && e.strokeStyle === '#84C8ED' && e.args[2] === 18),
+    'the talking ring is no longer tinted by the player color',
+  );
+  // the rim: the assigned voice color on alice's dot (radius r = 9) as a
+  // MINIMAL 1 px stroke over a thin dark underlay (was a 3 px stroke),
+  // and a 1 px white fallback where no color is assigned (bob).
+  const rim = since(mark).find((e) => e.op === 'stroke' && e.strokeStyle === '#84C8ED');
+  assert.ok(rim, 'the assigned voice color still outlines the dot');
+  assert.equal(rim.lineWidth, 1, 'the rim is minimal — a 1 px stroke (was 3 px)');
   assert.ok(
     since(mark).some(
-      (e) => e.op === 'arc' && e.strokeStyle === '#84C8ED' && e.args[2] === 9,
+      (e) => e.op === 'stroke' && e.strokeStyle === 'rgba(0,0,0,0.5)' && e.lineWidth === 3,
     ),
-    'the assigned voice color outlines the dot',
+    'the rim sits on a thin dark underlay for contrast',
+  );
+  assert.ok(
+    since(mark).some(
+      (e) =>
+        e.op === 'stroke' && e.strokeStyle === 'rgba(255,255,255,0.85)' && e.lineWidth === 1,
+    ),
+    'a slot with no voice color falls back to a 1 px white rim',
+  );
+  // the view chevron: near-opaque, clearly visible, team-colored — and
+  // the old low-alpha FILLED arrow is gone.
+  for (const teamColor of ['#5aa9e6', '#e6a35a']) {
+    assert.ok(
+      since(mark).some(
+        (e) => e.op === 'stroke' && e.strokeStyle === teamColor && e.alpha === 0.9 && e.lineWidth === 1.75,
+      ),
+      `the ${teamColor} chevron draws at alpha 0.9 / 1.75 px`,
+    );
+  }
+  assert.ok(
+    !since(mark).some((e) => e.op === 'fill' && e.alpha === 0.2),
+    'the old low-alpha filled arrow is gone',
+  );
+
+  // --- flash-white overlay + the chevron's open shape -----------------------
+  mark = canvas.log.length;
+  engine.seekTick(100); // inside the SOLID quarter of the 1 s blind window
+  r.draw();
+  assert.ok(
+    fills(mark).some((e) => e.fillStyle === '#ffffff' && e.alpha === 1),
+    'the blinded dot turns SOLID white',
+  );
+  // …and the chevron really is an open ">": exactly two arms per player
+  // (the old filled arrow walked 6 lineTo points around its outline).
+  // Filtered on the chevron's own alpha — the movement trails share the
+  // team colors but draw at ≤ 0.5.
+  const chevronArms = (color) =>
+    since(mark).filter(
+      (e) => e.op === 'lineTo' && e.strokeStyle === color && e.alpha === 0.9,
+    );
+  assert.equal(chevronArms('#5aa9e6').length, 2, 'the CT chevron is a 2-arm open ">"');
+  assert.equal(chevronArms('#e6a35a').length, 2, 'the T chevron is a 2-arm open ">"');
+
+  mark = canvas.log.length;
+  engine.seekTick(132); // k = 0.5 → the overlay fades to ~2/3
+  r.draw();
+  const fading = fills(mark).find((e) => e.fillStyle === '#ffffff' && e.alpha < 1);
+  assert.ok(fading, 'the white overlay fades as the blind ages');
+  assert.ok(Math.abs(fading.alpha - 2 / 3) < 1e-9, `fade alpha ${fading.alpha}`);
+
+  mark = canvas.log.length;
+  engine.seekTick(164); // 1000 ms after the blind — window closed
+  r.draw();
+  assert.equal(
+    fills(mark).filter((e) => e.fillStyle === '#ffffff' && e.alpha > 0).length,
+    0,
+    'the flash-white overlay self-clears',
   );
 
   // --- past round_end: the X is gone, scrubbing back brings it back --------
@@ -487,13 +674,27 @@ test('world layers follow the tick: smoke, death X, C4 icon, muzzle, hits, voice
   r.draw();
   assert.ok(deathX(mark).length > 0, 'scrubbing back into the round redraws the X');
 
+  // --- the post-round C4 kill dies with the NEXT round's start -------------
+  mark = canvas.log.length;
+  engine.seekTick(420); // after round 1's round_end (400), round 2 not yet
+  r.draw();
+  assert.ok(deathX(mark).length > 0, "the kill past round_end still marks bob's spot");
+  mark = canvas.log.length;
+  engine.seekTick(460); // round 2's round_start (450) has passed
+  r.draw();
+  assert.equal(
+    deathX(mark).length,
+    0,
+    'the next round_start clears the X (no +180 s leak into the round)',
+  );
+
   // --- the smoke lifetime (18 s) ends it, nothing is sticky ----------------
   mark = canvas.log.length;
   engine.seekTick(1299); // age = (1299-128)/64 ≈ 18.3 s
   r.draw();
   assert.equal(smokeCloud(mark).length, 0, 'the smoke cloud fades out after its lifetime');
 
-  // --- firing: the attack edge arms the muzzle burst -----------------------
+  // --- firing: the attack edge arms the muzzle LINE ------------------------
   mark = canvas.log.length;
   engine.seekTick(191); // attack bit still false here → re-seed
   r.draw();
@@ -502,7 +703,12 @@ test('world layers follow the tick: smoke, death X, C4 icon, muzzle, hits, voice
   r.draw();
   assert.ok(
     strokes(mark).some((e) => e.strokeStyle === '#ffd982'),
-    'the muzzle burst draws on the attack edge',
+    'the muzzle line draws on the attack edge',
+  );
+  assert.equal(
+    since(mark).filter((e) => e.op === 'lineTo' && e.strokeStyle === '#ffd982').length,
+    1,
+    'ONE straight line along the aim direction (not a 5-ray fan)',
   );
   // …and is gone once its window (0.22 s) has passed
   mark = canvas.log.length;
@@ -511,7 +717,7 @@ test('world layers follow the tick: smoke, death X, C4 icon, muzzle, hits, voice
   assert.equal(
     strokes(mark).filter((e) => e.strokeStyle === '#ffd982').length,
     0,
-    'the muzzle burst self-clears',
+    'the muzzle line self-clears',
   );
 
   // --- damage flash: a red ring inside its 0.35 s window only --------------
@@ -531,6 +737,70 @@ test('world layers follow the tick: smoke, death X, C4 icon, muzzle, hits, voice
     'the damage flash self-clears',
   );
 
+  // --- molotov/incendiary: RED lingering area + detonation ------------------
+  mark = canvas.log.length;
+  engine.seekTick(320); // 0.31 s after the molotov (det 0.6 s window)
+  r.draw();
+  assert.ok(
+    since(mark).some((e) => e.op === 'fill' && e.fillStyle === 'rgba(235, 70, 55, 0.3)'),
+    'the lingering fire area reads RED (was orange)',
+  );
+  assert.ok(
+    since(mark).some((e) => e.op === 'stroke' && e.strokeStyle === 'rgba(245, 90, 70, 0.55)'),
+    'the lingering fire outline reads RED (was orange)',
+  );
+  assert.ok(
+    since(mark).some((e) => e.op === 'stroke' && String(e.strokeStyle).startsWith('rgba(240, 75, 60')),
+    'the fire detonation ring is RED (was orange)',
+  );
+  assert.ok(
+    since(mark).some((e) => e.op === 'fill' && String(e.fillStyle).startsWith('rgba(255, 110, 90')),
+    'the fire detonation core is hot-red (was light orange)',
+  );
+  assert.ok(
+    !since(mark).some(
+      (e) =>
+        String(e.strokeStyle).includes('230, 120, 60') ||
+        String(e.strokeStyle).includes('235, 130, 60') ||
+        String(e.fillStyle).includes('230, 120, 60') ||
+        String(e.fillStyle).includes('255, 200, 130'),
+    ),
+    'no orange fire color survives anywhere',
+  );
+
+  // --- flashbang + HE detonations are slightly faster -----------------------
+  mark = canvas.log.length;
+  engine.seekTick(600); // the flashbang's own tick
+  r.draw();
+  assert.ok(
+    since(mark).some((e) => e.op === 'stroke' && String(e.strokeStyle).startsWith('rgba(255, 255, 255')),
+    'the flashbang pops white on its tick',
+  );
+  mark = canvas.log.length;
+  engine.seekTick(640); // 0.625 s later — past the shortened 0.5 s bang
+  r.draw();
+  assert.equal(
+    since(mark).filter((e) => e.op === 'stroke' && String(e.strokeStyle).startsWith('rgba(255, 255, 255')).length,
+    0,
+    'the flashbang pop is gone after ~0.5 s (was 0.7 s)',
+  );
+
+  mark = canvas.log.length;
+  engine.seekTick(777); // age = 1.203 s — still inside the HE ring
+  r.draw();
+  assert.ok(
+    since(mark).some((e) => e.op === 'stroke' && String(e.strokeStyle).startsWith('rgba(224, 91, 91')),
+    'the HE ring expands for ~1.2 s',
+  );
+  mark = canvas.log.length;
+  engine.seekTick(790); // age = 1.406 s — past the shortened 1.3 s ring
+  r.draw();
+  assert.equal(
+    since(mark).filter((e) => e.op === 'stroke' && String(e.strokeStyle).startsWith('rgba(224, 91, 91')).length,
+    0,
+    'the HE ring is gone after ~1.3 s (was 2 s)',
+  );
+
   // --- no icons at all → today's text label, exactly -----------------------
   r.setIcons({});
   mark = canvas.log.length;
@@ -541,5 +811,56 @@ test('world layers follow the tick: smoke, death X, C4 icon, muzzle, hits, voice
     "without icons the 'C4' text label is the fallback",
   );
 
+  r.destroy();
+});
+
+test('dots keep a constant radius while crouching (duck never shrinks them)', () => {
+  // Same browser globals the draw test installs (node has neither).
+  globalThis.window = { devicePixelRatio: 1 };
+  globalThis.requestAnimationFrame = () => 0;
+  globalThis.cancelAnimationFrame = () => {};
+  globalThis.document = {
+    createElement: () => ({
+      width: 0,
+      height: 0,
+      getContext: () => ({ drawImage() {}, fillRect() {}, globalCompositeOperation: '', fillStyle: '' }),
+    }),
+  };
+
+  const frames = 4;
+  const ticks = new Int32Array(frames);
+  for (let i = 0; i < frames; i++) ticks[i] = i;
+  const masks = new Uint8Array(frames).fill(1); // slot 0 alive on every frame
+  const pos = new Float32Array(frames * 4);
+  const flags = new Uint8Array(frames);
+  for (let f = 0; f < frames; f++) {
+    pos[f * 4] = 10;
+    pos[f * 4 + 1] = 10;
+    flags[f] = 8 | 2; // ct side bits (>>2 = 2) AND the duck bit (0x02)
+  }
+  const data = {
+    frames,
+    ticks,
+    masks,
+    slots: [{ pos, flags }],
+    bounds: { minX: 0, maxX: 100, minY: 0, maxY: 100 },
+  };
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, {
+    engine,
+    data,
+    players: [{ steamId: '1', name: 'duck', side: 'ct' }],
+  });
+  r.resize();
+  const mark = canvas.log.length;
+  engine.seekTick(2); // a frame whose flags carry the duck bit
+  r.draw();
+  const arcs = canvas.log.slice(mark).filter((e) => e.op === 'arc');
+  assert.ok(arcs.some((e) => e.args[2] === 9), 'the dot is drawn at the standing radius');
+  assert.ok(
+    !arcs.some((e) => e.args[2] === 6.5),
+    'a crouching player keeps the same dot size (no 6.5 px duck radius)',
+  );
   r.destroy();
 });

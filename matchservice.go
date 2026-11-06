@@ -1,6 +1,8 @@
 package main
 
 import (
+	"sort"
+
 	"github.com/ChristianWSmith/spectra/internal/models"
 	"github.com/ChristianWSmith/spectra/internal/store"
 )
@@ -43,6 +45,34 @@ func (s *MatchService) GetEvents(f models.EventFilter) ([]models.EventRow, error
 // GetEvent returns one event with its detail/raw JSON payloads.
 func (s *MatchService) GetEvent(id int64) (*models.EventDetail, error) {
 	return s.st.GetEvent(id)
+}
+
+// BlindDuration is one blind event's flash length for the replay's
+// flash-white overlay: Seq is the events.seq key the frontend joins the
+// blind row on, Ms the flashDurationMs the extractor recorded on
+// detail_json (models.EventRow stays payload-free — the narrow payload
+// side channel store.GetBlindFlashDurations reads).
+type BlindDuration struct {
+	Seq int `json:"seq"`
+	Ms  int `json:"ms"`
+}
+
+// GetBlindDurations returns every blind event's flash duration for a
+// match in events.seq order (thin delegate over
+// store.GetBlindFlashDurations). A match with no blind rows — or an
+// unknown match — returns an empty slice, never an error (unlike the
+// header reads): the overlay is optional by contract.
+func (s *MatchService) GetBlindDurations(matchID int64) ([]BlindDuration, error) {
+	bySeq, err := s.st.GetBlindFlashDurations(matchID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]BlindDuration, 0, len(bySeq))
+	for seq, ms := range bySeq {
+		out = append(out, BlindDuration{Seq: seq, Ms: ms})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].Seq < out[j].Seq })
+	return out, nil
 }
 
 // GetChat returns a match's chat lines; round < 0 selects all rounds,

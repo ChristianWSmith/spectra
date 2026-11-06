@@ -38,16 +38,18 @@ the Makefile prepends `$(go env GOPATH)/bin` to PATH.
 
 ### Visual smoke tests (Linux/KDE)
 
-**Subagents must NEVER run the GUI.** Several agents typically work on
-this repo in parallel (worktrees on one machine); a launched app steals
-focus, and `xdotool`/`spectacle` will click and screenshot whichever
-window is frontmost — usually another agent's. Subagents verify with
-builds and unit tests only (`npm run build`, `node --test`, `make
-test`/`vet`/`lint`); leave live-app checks to the human or to a final
-solo pass after all agents have finished.
+**GUI testing is only done on request — never by default.** The human
+runs live-app checks; agents verify with builds and unit tests only
+(`npm run build`, `node --test`, `make test`/`vet`/`lint`) unless the
+user explicitly asks them to drive the GUI. The reason: several agents
+typically work on this repo in parallel (worktrees on one machine); a
+launched app steals focus, and `xdotool`/`spectacle` will click and
+screenshot whichever window is frontmost — usually another agent's. So
+even when asked, only run GUI checks in a solo pass after any parallel
+agents have finished.
 
-Interactive UI checks (for that final solo pass) drive the live app with
-`xdotool` and screenshot with `spectacle`. On KDE the app must run on
+Interactive UI checks (on request) drive the live app with `xdotool`
+and screenshot with `spectacle`. On KDE the app must run on
 **X11** (native Wayland windows are invisible to xdotool), detached
 (tool runners kill background process groups when a command times out):
 

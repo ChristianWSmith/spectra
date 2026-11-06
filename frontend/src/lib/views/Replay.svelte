@@ -18,6 +18,7 @@
     getReplayMeta,
     getEvents,
     getEvent,
+    getBlindDurations,
     getChat,
     getGenericEvents,
     getGenericHistogram,
@@ -227,6 +228,11 @@
   const PAGE = 500; // per-source page size; PAGE+1 probes "there is more"
 
   let drawRows = $state([]); // drawable-kind anchors, fetched once per match
+  // Flash-white overlay rows {slot, tick, ms} — the blind events joined
+  // with their narrow flash-duration read in load() (plain let: only
+  // startEngine reads it, no rendering depends on it). Empty = no
+  // overlay; any fetch failure lands here as [].
+  let blindRows = [];
   let typedRows = $state([]); // accumulated raw EventRows (paged)
   let chatRows = $state([]);
   let genPages = $state({}); // generic name → {rows, hasMore, cat}
@@ -1359,6 +1365,34 @@
           .then((v) => v === true)
           .catch(() => false), // unreadable store → hidden (the default)
       );
+      // Flash-white overlay: the blind events joined with their narrow
+      // flash-duration read — the duration lives on detail_json
+      // (EventRow stays payload-free, so it needs its own query; the
+      // same side-channel rule as store.GetBlindFlashDetails). Fail-soft
+      // by contract: any failure just leaves the overlay off, and rows
+      // whose victim resolves to no slot, or whose duration is not
+      // positive, are dropped here.
+      try {
+        const [blinds, durs] = await Promise.all([
+          getEvents({ matchId: id, kinds: ['blind'], round: -1, offset: 0, limit: 0 }),
+          getBlindDurations(id),
+        ]);
+        const msBySeq = new Map((durs || []).map((d) => [d.seq, d.ms]));
+        const slotBySteam = new Map();
+        players.forEach((p, i) => {
+          if (p && p.steamId) slotBySteam.set(String(p.steamId), i);
+        });
+        const rows = [];
+        for (const ev of blinds || []) {
+          const ms = Number(msBySeq.get(ev.seq));
+          const slot = slotBySteam.get(String(ev.victim || ''));
+          if (slot == null || !(ms > 0) || !Number.isFinite(ev.tick)) continue;
+          rows.push({ slot, tick: ev.tick, ms });
+        }
+        blindRows = rows;
+      } catch {
+        blindRows = []; // fail-soft — no overlay, never a load error
+      }
       // loading must be false BEFORE the tick, else {#if loading} still hides
       // the {#if data} branch and bind:this never resolves (canvasEl null).
       if (live) loading = false;
@@ -1396,6 +1430,7 @@
     });
     renderer.setPack(pack, radarImg, packTf);
     renderer.setLandmarks(drawNorm);
+    renderer.setBlinds(blindRows); // flash-white overlay rows from load()
     // Player-card phase inputs (handoff E): push whatever load() already
     // has alongside pack/landmarks — icons and the voice lanes (the
     // SPEAKING half of setVoices; the colors are the player colors, ready

@@ -117,18 +117,23 @@ test('drawBucket buckets every drawable kind (renderer/scrubber contract)', () =
   assert.equal(drawBucket('bomb_drop'), 'drop');
   assert.equal(drawBucket('bomb_pickup'), 'pickup');
   assert.equal(drawBucket('round_end'), 'round');
+  // round_start buckets to 'start': STORED as the death-X next-round
+  // cutoff (killEndTick) — never drawn as a world marker, never a
+  // scrubber marker (see scrubberMarkerClass below).
+  assert.equal(drawBucket('round_start'), 'start');
   // damage rides the draw feed for the victim-hit flash (no scrubber
   // marker — see scrubberMarkerClass); the rest stay non-drawable:
-  for (const k of ['blind', 'round_start', 'player_connect', '']) {
+  for (const k of ['blind', 'player_connect', '']) {
     assert.equal(drawBucket(k), '', k);
   }
   // Extended spellings keep their substring buckets.
   assert.equal(drawBucket('smoke'), 'smoke');
   assert.equal(drawBucket('molotov'), 'fire');
   // DRAW_KINDS is exactly the drawable set (round_end rides it for the
-  // scrubber's round-win markers; it never draws on the map; drop/
-  // pickup ride it for the bomb evidence, damage for the map flash —
-  // neither adds a scrubber marker).
+  // scrubber's round-win markers; round_start rides it ONLY as the
+  // renderer's death-X cutoff — it never draws on the map and adds no
+  // scrubber marker; drop/pickup ride it for the bomb evidence, damage
+  // for the map flash — neither adds a scrubber marker).
   assert.deepEqual([...DRAW_KINDS].sort(), [
     'bomb_defuse',
     'bomb_drop',
@@ -140,6 +145,7 @@ test('drawBucket buckets every drawable kind (renderer/scrubber contract)', () =
     'grenade_throw',
     'kill',
     'round_end',
+    'round_start',
   ].sort());
 });
 
@@ -187,10 +193,11 @@ test('scrubberMarkerClass maps every drawable bucket (the markers contract)', ()
   // Every typed grenade bucket keeps a scrubber marker (they used to
   // all be the one 'detonation' bucket)…
   for (const b of DETONATION_BUCKETS) assert.equal(scrubberMarkerClass(b), 'det', b);
-  // …while bomb evidence and damage stay marker-less:
+  // …while bomb evidence, damage and the death-X cutoff stay marker-less:
   assert.equal(scrubberMarkerClass('drop'), '');
   assert.equal(scrubberMarkerClass('pickup'), '');
   assert.equal(scrubberMarkerClass('damage'), '');
+  assert.equal(scrubberMarkerClass('start'), ''); // round_start (DRAW_KINDS only)
   assert.equal(scrubberMarkerClass(''), '');
   assert.equal(scrubberMarkerClass(null), '');
 });
