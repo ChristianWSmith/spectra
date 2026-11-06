@@ -96,12 +96,15 @@ const KILL_MARKER_FALLBACK_S = 180; // s — death-X cleanup when the round's
 //                                    never cut a live round short)
 // --- Kill feed (drawKillFeed — the top-right overlay) ------------------------
 const KILL_FEED_MAX = 6; // entries shown, newest on top
-const KILL_FEED_LH = 18; // px per entry line
+const KILL_FEED_LH = 18; // px per entry line (the box's HEIGHT)
+const KILL_FEED_PITCH = 22; // px between entry TOPS: the 18 px box + a
+//                            4 px gap — entries must not stack touching
 const KILL_FEED_EDGE = 8; // px from the stage's top/right edge
 const KILL_FEED_INSET = 6; // px of padding inside an entry
-const KILL_FEED_GAP = 8; // px of breathing room between a name and the
-//                        weapon mark (image or →) on EACH side — the
-//                        icon needed more visual room than the old 4 px
+const KILL_FEED_GAP = 12; // px of breathing room between a name and the
+//                        weapon mark (image or →) on EACH side — 8 px
+//                        still read as the mark hugging the names, so
+//                        the mark got its own beat on both sides
 const KILL_FEED_ICON = 14; // px — the weapon image's size on a line
 const KILL_FEED_R = 4; // px — entry corner radius (hudBox uses 6)
 
@@ -373,6 +376,57 @@ export function killEndTick(row, tickRate, roundEnds, roundStarts) {
   }
   if (end !== null) return next !== null ? Math.min(end, next) : end;
   return next !== null ? next : row.tick + KILL_MARKER_FALLBACK_S * tr;
+}
+
+// --- Top-box HUD layout (pure) -----------------------------------------------
+//
+// The top-center box's SCORE line is laid out around the SCORE segment,
+// not around the block: with unequal team names the old block centering
+// pushed '‹ct› – ‹t›' off the box's center. The score segment sits
+// dead-center of the box, the longer-name side defines the box's extent
+// on its side, and the shorter side absorbs the slack as padding — the
+// names stay ADJACENT to the score (never stretched apart). Pure with
+// injected widths — the test harness's measureText is a flat 40 px, so
+// the unequal-name case is pinned here (renderer.test.js). The clock
+// line keeps the plain block centering (hudBox's default).
+
+// scoreLineWidth — the score line's CONTENT width for the box: twice the
+// longer name (both sides must reach from the centered score to the box
+// edge with the shorter side padding) plus the score segment. Equal to
+// the plain sum only when the names match; wider otherwise, which is the
+// point — the box grows toward the longer name instead of letting the
+// score drift.
+export function scoreLineWidth(leftW, scoreW, rightW) {
+  return 2 * Math.max(leftW, rightW) + scoreW;
+}
+
+// scoreLineLayout — the score line's segment x positions in a box whose
+// center is at boxCenterX: the score starts at center − scoreW/2 (its
+// midpoint lands exactly on the center) and each name hugs the score.
+export function scoreLineLayout(leftW, scoreW, rightW, boxCenterX) {
+  const scoreX = boxCenterX - scoreW / 2;
+  return { leftX: scoreX - leftW, scoreX, rightX: scoreX + scoreW };
+}
+
+// hudTeamNames — the setHud teamNames PAIRING (exported for tests; the
+// only caller is Replay's hudFor — the dom harness stubs setHud and never
+// reaches it). getTeamNames returns the teams keyed by their FINAL side
+// (the extract's end-of-demo snapshot; teams.name is keyed by final side
+// — see lib/teams.js), but the HUD colors its slots by the side each team
+// is on AT THE PLAYHEAD, which flips at halftime. Given the two card
+// columns' current sides (Replay's columnSideAt at uiFrame: the left
+// column is the team that FINISHED ct), return {ct, t} with the team
+// currently on CT in the ct slot — so the renderer's per-slot CT/T colors
+// are trivially correct. Unknown sides ('') keep the stored pairing: no
+// side information, no guessed swap. Empty names stay empty (drawHUD
+// falls back to the bare CT / T).
+export function hudTeamNames(names, leftSide, rightSide) {
+  const left = (names && names.ct) || '';
+  const right = (names && names.t) || '';
+  // the finished-ct team is on T now when its own column says so, or when
+  // only the OTHER column carries a side (two teams: right ct ⇒ left t)
+  const leftOnT = leftSide === 't' || rightSide === 'ct';
+  return leftOnT ? { ct: right, t: left } : { ct: left, t: right };
 }
 
 export function createRenderer(canvas, { engine, data, players, onUserCamera = null }) {
@@ -1640,13 +1694,15 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // Two boxes, both pure functions of the engine state + the setHud
   // payload:
   //   top-center   — team score + round clock, CENTERED on the stage
-  //                  (x = (cssW − boxWidth) / 2, HUD_PAD from the top)
-  //                  with each line's CONTENT centered in the box too:
-  //                  the score line lays its segments (CT name in CT
-  //                  color, white score + separator, T name in T color)
-  //                  around the box's center; the stage's top corners
-  //                  belong to the overlays, so the readout no longer
-  //                  dodges a back button;
+  //                  (x = (cssW − boxWidth) / 2, HUD_PAD from the top).
+  //                  The score line is SCORE-ANCHORED (scoreLineLayout):
+  //                  the '‹ct› – ‹t›' segment sits dead-center of the
+  //                  box, the longer-name side defines the box's extent
+  //                  on its side and the shorter side absorbs the slack
+  //                  as padding (names stay adjacent to the score); the
+  //                  clock line centers as a block. The stage's top
+  //                  corners belong to the overlays, so the readout no
+  //                  longer dodges a back button;
   //   bottom-left  — the playback readout (speed×, follow, loop,
   //                  packNote), 8px off the BOTTOM-left corner so it can
   //                  never fight the top-center box or the top-right
@@ -1654,8 +1710,11 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // setHud payload (view-supplied, plain data): {
   //   score: {ct, t} | null,          // cumulative counted wins at the
   //                                   // playhead (lib/rounds.js scoreThrough)
-  //   teamNames: {ct, t},             // the two sides' team names; an
-  //                                   // empty name falls back to CT / T
+  //   teamNames: {ct, t},             // the two SIDES' names AT THE
+  //                                   // PLAYHEAD — hudFor resolves them
+  //                                   // through hudTeamNames (the teams
+  //                                   // table is keyed by FINAL side);
+  //                                   // an empty name falls back to CT / T
   //   round: {                        // round containing the playhead, or
   //     number, label,                //   null before the first round
   //     startTick, freezeEndTick, endTick, bombSite
@@ -1806,16 +1865,30 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     return w;
   }
 
+  // segWidths — every segment's drawn width (its own font + an optional
+  // explicit gap): the ONE measure hudLineWidth (box width) and hudBox
+  // (segment positions) both step by.
+  function segWidths(ln) {
+    return ln.segs.map((s) => measureHudSeg(s) + (s.gap || 0));
+  }
+
   // hudLineWidth — one line's drawn width: a plain string is its text;
   // a {segs} run is the sum of its segments (each in its own font, plus
   // an optional explicit gap after a segment); an
   // {img, text} line reserves the icon slot ahead of its text (the
-  // caller resolved the image — an icon line always has one).
+  // caller resolved the image — an icon line always has one). The
+  // SCORE-ANCHORED line ({segs, scoreAnchor}) measures scoreLineWidth
+  // instead of the plain sum: the box has to reach past the LONGER name
+  // (see scoreLineWidth), never just hug the block.
   function hudLineWidth(ln) {
     if (typeof ln === 'string') return ctx.measureText(ln).width;
     if (ln.segs) {
+      if (ln.scoreAnchor && ln.segs.length === 3) {
+        const [leftW, scoreW, rightW] = segWidths(ln);
+        return scoreLineWidth(leftW, scoreW, rightW);
+      }
       let w = 0;
-      for (const s of ln.segs) w += measureHudSeg(s) + (s.gap || 0);
+      for (const sw of segWidths(ln)) w += sw;
       return w;
     }
     return HUD_ICON_PX + HUD_ICON_GAP + ctx.measureText(ln.text).width;
@@ -1834,9 +1907,12 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // a {segs: [{text, color?, font?, gap?}]} run of colored segments (the
   // score line — a segment without a color takes the line's usual one,
   // `gap` is extra space after the segment, shared by measure + draw).
-  // align 'center' centers each line's CONTENT in the box (the top
-  // score/timer box — segments are laid out around the box's center);
-  // the default 'left' keeps the bottom playback readout's inset.
+  // align 'center' centers each line's CONTENT in the box: a plain line
+  // centers as a BLOCK, while a {scoreAnchor} line (the score line) lays
+  // its segments out around the SCORE segment — scoreLineLayout pins it
+  // dead-center of the box so unequal team names pad the shorter side
+  // instead of pushing the score off-center; the default 'left' keeps the
+  // bottom playback readout's inset.
   function hudBox(lines, x, y, w = hudBoxWidth(lines), align = 'left') {
     const bh = hudBoxHeight(lines.length);
     ctx.fillStyle = 'rgba(14, 17, 22, 0.78)';
@@ -1869,13 +1945,25 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
         return;
       }
       if (ln.segs) {
-        for (const s of ln.segs) {
+        // score-anchored: absolute positions from the box's center (the
+        // score midpoint IS the center); every other segs line keeps the
+        // block-centered step from cx.
+        let xs = null;
+        if (ln.scoreAnchor && ln.segs.length === 3 && align === 'center') {
+          const [leftW, scoreW, rightW] = segWidths(ln);
+          const lay = scoreLineLayout(leftW, scoreW, rightW, x + w / 2);
+          xs = [lay.leftX, lay.scoreX, lay.rightX];
+        }
+        ln.segs.forEach((s, si) => {
           ctx.font = s.font || baseFont;
           ctx.fillStyle = s.color || color;
-          ctx.fillText(s.text, cx, y0);
-          // same step the width was measured with (incl. an explicit gap)
-          cx += ctx.measureText(s.text).width + (s.gap || 0);
-        }
+          const sx = xs ? xs[si] : cx;
+          ctx.fillText(s.text, sx, y0);
+          if (!xs) {
+            // same step the width was measured with (incl. an explicit gap)
+            cx += ctx.measureText(s.text).width + (s.gap || 0);
+          }
+        });
         ctx.font = baseFont;
         return;
       }
@@ -1904,16 +1992,21 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
 
     // top-center: team score + round clock, centered on the stage (only
     // once a view supplied the HUD payload — without it there is no
-    // score line). Teams, not sides: the names come from the payload's
-    // teamNames with the bare CT / T as the empty-name fallback — each
-    // in ITS side color, the score + separator between them in white —
-    // and the clock line carries no round label: the ribbon above the
-    // stage owns the round number.
+    // score line). The payload's teamNames are ALREADY resolved to the
+    // sides at the playhead (hudFor → hudTeamNames), so the renderer
+    // colors each slot with ITS side color — the bare CT / T is the
+    // empty-name fallback — with the score + separator between them in
+    // white, SCORE-ANCHORED (scoreAnchor): the score segment sits
+    // dead-center of the box and unequal names pad the shorter side, so
+    // the score never drifts off the box's center. The clock line keeps
+    // the block centering, and carries no round label: the ribbon above
+    // the stage owns the round number.
     if (hud) {
       const top = [];
       if (hud.score) {
         const tn = hud.teamNames || {};
         top.push({
+          scoreAnchor: true, // center the SCORE segment, not the block
           segs: [
             { text: tn.ct || 'CT', color: CT_COLOR },
             { text: ` ${hud.score.ct} – ${hud.score.t} `, color: '#ffffff' },
@@ -1991,7 +2084,9 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       const ww = img ? KILL_FEED_ICON : ctx.measureText('→').width;
       const w = KILL_FEED_INSET * 2 + kw + KILL_FEED_GAP + ww + KILL_FEED_GAP + vw;
       const x = cssW - KILL_FEED_EDGE - w;
-      const y = KILL_FEED_EDGE + i * KILL_FEED_LH;
+      // newest on top, entries on the PITCH (box height + gap) so they
+      // read as separate lines instead of one touching stack
+      const y = KILL_FEED_EDGE + i * KILL_FEED_PITCH;
 
       // box: dark transparent fill + the killer's team-color hairline on
       // ONE rounded path — roundRect mirrors hudBox's corners (plain rect

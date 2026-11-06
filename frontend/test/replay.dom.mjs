@@ -318,6 +318,16 @@ export function sideFromFlags(flagsByte, finalSide = '') {
   const b = (flagsByte >> 2) & 3;
   return (b === 1 ? 't' : b === 2 ? 'ct' : '') || finalSide || '';
 }
+// …and the HUD team-name pairing Replay's hudFor calls (same caveat: the
+// real implementation lives in renderer.js, unit-tested in
+// src/lib/renderer.test.js; this copy exists only so the replaced module
+// still exports every name the view links against).
+export function hudTeamNames(names, leftSide, rightSide) {
+  const left = (names && names.ct) || '';
+  const right = (names && names.t) || '';
+  const leftOnT = leftSide === 't' || rightSide === 'ct';
+  return leftOnT ? { ct: right, t: left } : { ct: left, t: right };
+}
 `,
 );
 
