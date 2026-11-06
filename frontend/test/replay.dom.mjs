@@ -1,12 +1,15 @@
 // jsdom driver for Replay: a FRESH replay opens with the landmark feed
-// COLLAPSED — its toggle now sits in the VIEW's top bar (.replay-topbar:
-// back button top-left, rail toggle top-right, spec 7/14) with no
-// .replay-side at all until it expands, and .replay-cols wraps the main
-// column beside the rail — the round ribbon sits on its own centered
-// line above the stage, and the transport splits into the full-width
-// game-time scrubber line ABOVE the centered control-cluster line
-// (round transport, ±15s, play, speed, loop popover, camera
-// Smart/Free/Follow with its codicon, mute-all, snapshot/record, and the
+// COLLAPSED — its toggle sits on the main column's ONE top line
+// (.replay-topbar, first child of .replay-main: back button left, round
+// ribbon in the flex-grow middle, rail toggle right, spec 7/13/14) with
+// no .replay-side at all until it expands; the view itself is the ROW
+// (main column + rail beside it when open, no .replay-cols wrapper), so
+// the expanded aside's header shares the top line with that bar. The
+// round ribbon rides the top line too (its .rp-ribbon cell), and the
+// transport splits into the full-width game-time scrubber line ABOVE the
+// centered control-cluster line (round transport, ±15s, play, speed,
+// loop popover, camera Smart/Free/Follow — the codicon paints INSIDE the
+// select via its .rp-cam class, mute-all, snapshot/record, and the
 // hints-only codicon LAST). A fresh replay also AUTOPLAYS (startEngine
 // calls engine.play() once the position data is up).
 //
@@ -411,15 +414,16 @@ function check(name, cond, detail = '') {
 const click = (el) => el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
 const children = (el) => [...el.children];
 
-console.log('A. fresh replay: no header/title; back + the collapsed rail toggle sit in the VIEW top bar');
+console.log('A. fresh replay: no header/title; back + ribbon + rail toggle share ONE top line of the main column');
 const stage = target.querySelector('.replay-stage');
 check('stage rendered', !!stage);
 check('no view header and no Replay title', !target.querySelector('.view-header') && !target.querySelector('h1'));
 const view = target.querySelector('.replay-view');
-const topbar = view?.querySelector(':scope > .replay-topbar');
-check('top bar is a direct child of the view', !!topbar, 'missing .replay-topbar');
-const cols = view?.querySelector(':scope > .replay-cols');
-check('columns row wraps the main column (rail joins it when open)', !!cols?.querySelector(':scope > .replay-main'), 'missing .replay-cols');
+const main = view?.querySelector(':scope > .replay-main');
+check('main column is a direct child of the view (the view is the row)', !!main, 'missing .replay-main');
+check('no .replay-cols wrapper anymore', !view?.querySelector('.replay-cols'));
+const topbar = main?.querySelector(':scope > .replay-topbar');
+check('top bar is the FIRST child of the main column', !!topbar && children(main)[0] === topbar, 'missing .replay-topbar first');
 const back = topbar?.querySelector('.rp-back');
 check(
   'back button lives in the top bar, NOT inside the stage',
@@ -427,9 +431,10 @@ check(
   'missing top-bar .rp-back',
 );
 check(
-  'back button is icon-only with the Back label',
+  'back button is the arrow-left codicon PLUS the Back text (like other views)',
   back?.getAttribute('aria-label') === 'Back' && back?.getAttribute('title') === 'Back' &&
-    !!back?.querySelector('.codicon-arrow-left') && !back.textContent.trim(),
+    !!back?.querySelector('.codicon-arrow-left') && back?.textContent.trim() === 'Back',
+  back ? JSON.stringify(back.textContent) : 'missing',
 );
 const toggle = topbar?.querySelector('.side-toggle');
 check(
@@ -438,8 +443,9 @@ check(
   'missing top-bar .side-toggle',
 );
 check(
-  'back first, rail toggle last in the bar (spacer between)',
-  topbar && children(topbar)[0] === back && children(topbar)[children(topbar).length - 1] === toggle,
+  'bar order: back first, ribbon cell in the middle, rail toggle last',
+  topbar && children(topbar)[0] === back && children(topbar)[1]?.classList.contains('rp-ribbon') &&
+    children(topbar)[children(topbar).length - 1] === toggle,
   (topbar ? children(topbar).map((el) => el.className || el.tagName).join(' | ') : 'no topbar'),
 );
 check('no .replay-side while collapsed', !target.querySelector('.replay-side'));
@@ -460,7 +466,11 @@ await sleep();
 const aside = target.querySelector('.replay-side');
 check('aside expanded', !!aside && !aside.classList.contains('collapsed'));
 check('top-bar toggle gone while expanded', !topbar.querySelector('.side-toggle'));
-check('expanded aside joins the columns row', !!cols?.querySelector(':scope > .replay-side'), 'aside not inside .replay-cols');
+check(
+  'expanded aside joins the view row beside the main column',
+  view?.querySelector(':scope > .replay-side') === aside,
+  'aside not a direct child of .replay-view',
+);
 const head = aside?.querySelector('.side-toggle');
 check('expanded header owns the toggle', !!head);
 check('header aria-expanded=true', head?.getAttribute('aria-expanded') === 'true', head?.getAttribute('aria-expanded'));
@@ -472,10 +482,13 @@ click(head);
 await sleep();
 check('header chevron collapses the rail again', !target.querySelector('.replay-side') && !!topbar.querySelector('.side-toggle'));
 
-console.log('C. round ribbon: its own centered line above the stage');
-const main = target.querySelector('.replay-main');
-const ribbon = main?.querySelector(':scope > .round-strip-wrap');
-check('ribbon mounted as a direct child of .replay-main', !!ribbon, 'missing .round-strip-wrap');
+console.log('C. round ribbon: rides the top line (the .rp-ribbon cell), centered above the stage');
+const ribbon = topbar?.querySelector(':scope > .rp-ribbon > .round-strip-wrap');
+check(
+  'ribbon mounted in the top bar\'s .rp-ribbon cell (not a loose .replay-main child)',
+  !!topbar?.querySelector(':scope > .rp-ribbon') && !!ribbon,
+  'missing .rp-ribbon / .round-strip-wrap',
+);
 const ribbonCells = ribbon ? [...ribbon.querySelectorAll('.round-cell')] : [];
 check(
   'ribbon cells render the counted rounds (knife/warmup hidden by default)',
@@ -570,9 +583,10 @@ check(
 const camOpts = [...(controls.querySelector('#rp-cam')?.options || [])].map((o) => o.value);
 check('camera select offers Smart/Free/Follow', JSON.stringify(camOpts) === '["smart","free","follow"]', JSON.stringify(camOpts));
 check(
-  'camera select carries its codicon in the same wrapper cell',
-  !!controls.querySelector('.rp-cam-wrap .codicon-device-camera-video') &&
-    !!controls.querySelector('.rp-cam-wrap #rp-cam'),
+  'camera select carries the icon INSIDE its own box (.rp-cam class — no codicon span next to it)',
+  !!controls.querySelector('select.rp-cam#rp-cam') &&
+    !controls.querySelector('.rp-cam-wrap') &&
+    !controls.querySelector('#rp-cam ~ .codicon-device-camera-video'),
 );
 check('no follow-player select until Follow is chosen', !controls.querySelector('#rp-follow'));
 check('no leftover voice bar / lanes', !target.querySelector('.voice-bar') && !target.querySelector('.voice-lanes-wrap'));

@@ -1082,13 +1082,13 @@ input[type='checkbox']:focus-visible {
 }
 
 /* Centered when the strip stands alone in a view (the match header's
-   round row, and Replay's ribbon inside its main column): the wrap
-   hugs its content, so auto margins center that range on screen.
-   Scoped to a direct .view child / .replay-main child — RoundDetail
-   lays the strip out inside its .round-nav row between the prev/next
-   buttons, where neither selector matches. */
+   round row, and Replay's ribbon cell in its top bar): the wrap hugs
+   its content, so auto margins center that range in the available
+   width. Scoped to a direct .view child / the top bar's .rp-ribbon
+   cell — RoundDetail lays the strip out inside its .round-nav row
+   between the prev/next buttons, where neither selector matches. */
 .view > .round-strip-wrap,
-.replay-main > .round-strip-wrap {
+.rp-ribbon > .round-strip-wrap {
   margin-inline: auto;
 }
 
@@ -1365,46 +1365,49 @@ input[type='checkbox']:focus-visible {
 
 /* --- Replay (M2) ------------------------------------------------------------ */
 
-/* The view is a COLUMN: the .replay-topbar row (back at the view's top
-   LEFT, the collapsed landmark toggle at its top RIGHT) above the
-   .replay-cols row (main column + landmark rail). */
+/* The view is a ROW: the main column (its FIRST line is the top bar —
+   back left, round ribbon center, collapsed landmark toggle right)
+   beside the landmark rail when it expands, so both columns' headers
+   share the same top line. On narrow windows (media query below) the
+   pair stacks: main above the aside. */
 .replay-view {
   position: relative; /* the layout shell */
   height: calc(100vh - 32px);
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  flex-direction: row;
+  gap: 12px;
   min-height: 0;
 }
 
-/* The view's top corners: back button left, spacer, collapsed rail
-   toggle right (both used to float inside the render stage). The toggle
-   only renders while the rail is collapsed — expanded, the aside's
-   header owns it (see .replay-side). */
+/* The main column's TOP LINE: back button left, the round ribbon in
+   the one flex-grow cell, the collapsed rail toggle right (both used
+   to float inside the render stage). The toggle only renders while the
+   rail is collapsed — expanded, the aside's header owns it at the same
+   height (see .replay-side). Buttons stay flex: none so the ribbon
+   absorbs the squeeze; min-width: 0 lets it shrink with the column. */
 .replay-topbar {
   display: flex;
   align-items: center;
   gap: 8px;
   flex: 0 0 auto;
+  min-width: 0;
 }
 
-/* The columns row under the top bar: everything the view stacks in its
-   LEFT column (notes, round ribbon, stage, transport) beside the
-   landmark rail, which is the view's full-height RIGHT column when
-   expanded (collapsed: its toggle sits in the top bar). This carries
-   the row layout the view itself used to have. */
-.replay-cols {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: row;
-  gap: 12px;
+/* The round ribbon's cell in the top bar: it takes every spare pixel
+   between the back button and the rail toggle (and keeps the toggle
+   pinned right while the ribbon is empty/loading), shrinking before
+   either button does — min-width: 0 lifts the automatic minimum so a
+   narrow window squeezes the strip instead of overflowing the bar. */
+.rp-ribbon {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
-/* Left column of the replay layout: everything the view stacks — notes,
-   the round ribbon, the stage (.replay-body), the transport — beside the
-   landmark rail, which is the view's full-height RIGHT column when
-   expanded (collapsed: its toggle sits in the top bar above). */
+/* Left column of the replay layout: the top bar line first, then
+   everything the view stacks — notes, the stage (.replay-body), the
+   transport — beside the landmark rail, which is the view's full-height
+   RIGHT column when expanded (collapsed: its toggle sits in this
+   column's top bar). */
 .replay-main {
   flex: 1;
   min-width: 0;
@@ -1452,25 +1455,28 @@ input[type='checkbox']:focus-visible {
 }
 
 /* --- Stage overlays: only the follow chip still floats INSIDE the stage ---
-   (the back button and the collapsed rail toggle moved OUT to the view's
-   .replay-topbar — top-left / top-right of the OVERALL view, spec 7/14.) */
+   (the back button and the collapsed rail toggle moved OUT to the main
+   column's .replay-topbar — its top-left / top-right, spec 7/14.) */
 
-/* Back button (spec 7): the view's TOP-LEFT corner — first cell of the
-   .replay-topbar row above the columns. It no longer floats over the
-   radar, so the plain .btn chrome applies (the renderer's score box
-   sits top-CENTER of the stage now); only the compact pill padding is
-   kept here. */
+/* Back button (spec 7): the top bar's FIRST cell — left of the round
+   ribbon. It no longer floats over the radar, so the plain .btn chrome
+   applies (the renderer's score box sits top-CENTER of the stage now);
+   the compact pill padding is kept so the labelled button stays tidy
+   in the one-line bar, and flex: none keeps the ribbon from squashing
+   it. */
 .replay-topbar .rp-back {
   padding: 3px 8px;
+  flex: none;
 }
 
-/* Collapsed landmark rail (spec 14): the toggle sits at the view's
-   TOP-RIGHT — last cell of the .replay-topbar row. Expanded, the aside's
-   own header owns the toggle in flow instead (the base .side-toggle
-   rule below); this scope keeps the panel-chrome pill on the collapsed
-   one whatever the source order is. */
+/* Collapsed landmark rail (spec 14): the toggle sits at the top bar's
+   RIGHT — last cell of that line. Expanded, the aside's own header
+   owns the toggle at the SAME height (the base .side-toggle rule
+   below); this scope keeps the panel-chrome pill on the collapsed one
+   whatever the source order is. flex: none keeps it from shrinking. */
 .replay-topbar .rp-rail-toggle {
   padding: 6px 8px;
+  flex: none;
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: var(--radius);
@@ -1521,9 +1527,10 @@ input[type='checkbox']:focus-visible {
 }
 
 /* The collapsed rail is no longer a .replay-side variant: its toggle
-   lives in the view's top bar (.rp-rail-toggle above), so the aside only
-   ever renders EXPANDED — in-flow, ~340px, full height, reserving its
-   space. */
+   lives in the main column's top bar (.rp-rail-toggle above), so the
+   aside only ever renders EXPANDED — in-flow beside the main column,
+   ~340px, full height, reserving its space; its header sits on the
+   same top line as that bar. */
 
 .side-toggle {
   display: flex;
@@ -1969,13 +1976,23 @@ button.lm-cat-chip.on {
   white-space: nowrap;
 }
 
-/* Camera selector (spec 17): the mode codicon rides beside the select
-   inside ONE wrapper cell, so the toolbar's gap treats the pair as a
-   single control (the select keeps #rp-cam). */
-.rp-cam-wrap {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+/* Camera selector (spec 17): the mode codicon paints INSIDE the select's
+   own box — a native <select> cannot contain elements, so the glyph is
+   a background-image layered over .input's background-color (that
+   shorthand sets the color and image:none; this later longhand of equal
+   specificity wins for the image only, so the color stays visible),
+   sitting left of the selected value while the native arrow at the
+   right stays untouched. The path is the codicon sprite's
+   `device-camera-video` symbol (@vscode/codicons/dist/codicon.svg),
+   URL-encoded, tinted to --text; padding-left clears the 14px glyph at
+   left 5px. The select keeps #rp-cam; there is no wrapper cell anymore
+   — the toolbar's gap sees one control. */
+.rp-cam {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='%23cccccc' d='M3.5 3A2.5 2.5 0 0 0 1 5.5v5A2.5 2.5 0 0 0 3.5 13h5a2.5 2.5 0 0 0 2.5-2.5v-.127l2.035 1.405a1.25 1.25 0 0 0 1.96-1.028V5.252a1.25 1.25 0 0 0-1.96-1.028L11 5.629V5.5A2.5 2.5 0 0 0 8.5 3h-5ZM11 6.844l2.604-1.798a.25.25 0 0 1 .392.206v5.498a.25.25 0 0 1-.392.205L11 9.158V6.844ZM2 5.5A1.5 1.5 0 0 1 3.5 4h5A1.5 1.5 0 0 1 10 5.5v5A1.5 1.5 0 0 1 8.5 12h-5A1.5 1.5 0 0 1 2 10.5v-5Z'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: left 5px center;
+  background-size: 14px 14px;
+  padding-left: 24px;
 }
 
 /* Voice status hint next to the transport controls (voice is on by
@@ -1988,13 +2005,13 @@ button.lm-cat-chip.on {
   /* The landmark rail is a RIGHT column above the fold — on narrow
      windows the EXPANDED panel stacks under the main column, bounded so
      the stage keeps the height. The collapsed state needs no stacked
-     variant at all: its toggle lives in the view's top bar
+     variant at all: its toggle lives in the main column's top bar
      (.rp-rail-toggle, base rule above), so it is never a stacked item
      (never a full-width bar) and the main column keeps the full height.
-     The top bar stays a row; the columns pair stacks beneath it.
-     The round ribbon and the transport stack with the main column
-     unchanged. */
-  .replay-cols {
+     The view itself flips from row to column here (the top bar stays
+     the main column's first line); the round ribbon and the transport
+     stack with the main column unchanged. */
+  .replay-view {
     flex-direction: column;
   }
 

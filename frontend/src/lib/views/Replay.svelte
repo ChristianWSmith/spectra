@@ -110,8 +110,9 @@
 
   // The landmark rail's visibility chain is the SAME as the stage's
   // ({#if loadError} → loading → noSidecar → data), so the collapsed
-  // toggle (rendered INSIDE the stage) appears exactly when the canvas
-  // does; the EXPANDED panel stands beside the main column, full height.
+  // toggle (first line of the main column's top bar) appears exactly
+  // when the canvas does; the EXPANDED panel stands beside the main
+  // column, full height.
   const railVisible = $derived(!loadError && !loading && !noSidecar && !!data);
 
   // M4 voice: presence gates the voice controls; the engine mirrors live
@@ -1799,38 +1800,52 @@
 </script>
 
 <div class="view replay-view">
-  <!-- Top bar: the VIEW's top corners — back button at the top-left,
-       the collapsed landmark-rail toggle at the top-right (spec 7/14:
-       both used to float inside the render stage; the stage's corners
-       belong to the HUD/canvas now). The toggle keeps the rail-visible
-       gate the stage-floated one had (it appears exactly when the canvas
-       does) plus the {#if !eventsOpen} gate: when the rail is open its
-       aside header owns the toggle instead, and this bar keeps only the
-       back button. -->
-  <div class="replay-topbar">
-    <button class="btn rp-back" aria-label="Back" title="Back" onclick={goBack}>
-      <span class="codicon codicon-arrow-left" aria-hidden="true"></span>
-    </button>
-    <span class="spacer"></span>
-    {#if !eventsOpen && railVisible}
-      <button
-        class="side-toggle rp-rail-toggle"
-        aria-expanded="false"
-        aria-label="Landmarks ({feedCountLabel} events)"
-        title="Landmarks ({feedCountLabel} events)"
-        onclick={() => (eventsOpen = true)}
-      >
-        <span class="codicon codicon-chevron-left" aria-hidden="true"></span>
-      </button>
-    {/if}
-  </div>
-  <!-- Columns row: the main column beside the landmark rail (its row
-       layout is the one the view used to carry directly). -->
-  <div class="replay-cols">
-  <!-- Main column: notes, round ribbon, stage, transport. The landmark
-       rail below stands beside it when expanded (its collapsed toggle
-       lives in the top bar above). -->
+  <!-- Main column — the FIRST child of the view (the landmark rail
+       joins as its sibling when expanded, so both columns' headers
+       share the same top line). Its first line is the top bar: back
+       button left (spec 7), the round ribbon in the middle (spec 13,
+       the one flex-grow cell — it shrinks before the buttons do), the
+       collapsed landmark-rail toggle right (spec 14). Both used to
+       float inside the render stage; the stage's corners belong to the
+       HUD/canvas now. The toggle keeps the rail-visible gate the
+       stage-floated one had (it appears exactly when the canvas does)
+       plus the {#if !eventsOpen} gate: when the rail is open its aside
+       header owns the toggle instead, at the same height as this bar. -->
   <div class="replay-main">
+    <div class="replay-topbar">
+      <button class="btn rp-back" aria-label="Back" title="Back" onclick={goBack}>
+        <span class="codicon codicon-arrow-left" aria-hidden="true"></span> Back
+      </button>
+      <div class="rp-ribbon">
+        {#if rounds.length}
+          <!-- The canonical RoundStrip (Match header / RoundDetail keep
+               their navigation behavior; here onselect seeks the replay
+               to the round's start tick through the round→tick rule). -->
+          <RoundStrip
+            {rounds}
+            current={roundAtPlayhead ? roundAtPlayhead.number : 0}
+            matchId={id}
+            teamAbove={teamNames ? teamNames.ct : ''}
+            teamBelow={teamNames ? teamNames.t : ''}
+            {sideSwitches}
+            back={backPath}
+            {nav}
+            onselect={onRibbonRound}
+          />
+        {/if}
+      </div>
+      {#if !eventsOpen && railVisible}
+        <button
+          class="side-toggle rp-rail-toggle"
+          aria-expanded="false"
+          aria-label="Landmarks ({feedCountLabel} events)"
+          title="Landmarks ({feedCountLabel} events)"
+          onclick={() => (eventsOpen = true)}
+        >
+          <span class="codicon codicon-chevron-left" aria-hidden="true"></span>
+        </button>
+      {/if}
+    </div>
     {#if loadError}
       <p class="error" role="alert">{loadError}</p>
     {/if}
@@ -1868,23 +1883,6 @@
           frame count mismatch: stream has {data.frames}, meta says {meta.frames}
         </p>
       {/if}
-      <!-- Round ribbon (spec 13): its OWN centered line above the stage
-           — the canonical RoundStrip (Match header / RoundDetail keep
-           their navigation behavior; here onselect seeks the replay to
-           the round's start tick through the round→tick rule). -->
-      {#if rounds.length}
-        <RoundStrip
-          {rounds}
-          current={roundAtPlayhead ? roundAtPlayhead.number : 0}
-          matchId={id}
-          teamAbove={teamNames ? teamNames.ct : ''}
-          teamBelow={teamNames ? teamNames.t : ''}
-          {sideSwitches}
-          back={backPath}
-          {nav}
-          onselect={onRibbonRound}
-        />
-      {/if}
       <div class="replay-body">
         <!-- Player-card columns (spec 19): finished-CT LEFT, finished-T
              RIGHT (the grouping is stable across halftime); each column's
@@ -1902,8 +1900,8 @@
           <canvas bind:this={canvasEl} aria-label="Replay canvas"></canvas>
           <!-- The back button and the collapsed landmark-rail toggle
                used to float here (top-left / top-right of the stage);
-               both now live in the view's .replay-topbar above — the
-               stage's corners are left to the canvas overlays (the
+               both now live in the main column's .replay-topbar above —
+               the stage's corners are left to the canvas overlays (the
                score box sits top-center, the kill feed top-right). -->
           {#if uiFollow != null && players[uiFollow]}
             <!-- Follow chip: the dismiss surface for the camera-follow
@@ -2067,25 +2065,23 @@
             </Popover>
           </span>
 
-          <!-- Camera (spec 17): ONE dropdown for Smart/Free/Follow with
-               its mode codicon in the same wrapper cell; the player
-               list appears as a second dropdown only while Follow is
-               selected. -->
+          <!-- Camera (spec 17): ONE dropdown for Smart/Free/Follow —
+               its mode codicon paints INSIDE the select's own box
+               (.rp-cam background-image; a native <select> cannot
+               contain elements) — the player list appears as a second
+               dropdown only while Follow is selected. -->
           <label class="sr-only" for="rp-cam">Camera mode</label>
-          <span class="rp-cam-wrap">
-            <span class="codicon codicon-device-camera-video" aria-hidden="true"></span>
-            <select
-              class="input"
-              id="rp-cam"
-              value={camMode}
-              onchange={onCamMode}
-              title="Smart keeps every player and the bomb on screen with smooth pan/zoom (drag or wheel takes over → Free); Free is manual; Follow locks the camera onto a player (pick them below) — dragging releases it"
-            >
-              <option value="smart">Smart</option>
-              <option value="free">Free</option>
-              <option value="follow">Follow</option>
-            </select>
-          </span>
+          <select
+            class="input rp-cam"
+            id="rp-cam"
+            value={camMode}
+            onchange={onCamMode}
+            title="Smart keeps every player and the bomb on screen with smooth pan/zoom (drag or wheel takes over → Free); Free is manual; Follow locks the camera onto a player (pick them below) — dragging releases it"
+          >
+            <option value="smart">Smart</option>
+            <option value="free">Free</option>
+            <option value="follow">Follow</option>
+          </select>
 
           {#if camMode === 'follow'}
             <label class="sr-only" for="rp-follow">Follow player</label>
@@ -2510,7 +2506,5 @@
       <!-- /lm-scroll -->
   </aside>
   {/if}
-  </div>
-  <!-- /replay-cols -->
 </div>
 
