@@ -45,8 +45,13 @@ export function replayHash(matchId, filter, extras) {
 //               — a round link is a link to a point in time (Economy's
 //               gap-round card, Combat's round chips, the "events"
 //               buttons), never the first frame;
-//   3. else 0  — the engine starts on its first frame (a ?sel=
-//               landmark's own seek applies on top, in Replay).
+//   3. else null — the URL makes NO time promise, so there is nothing to
+//               resolve here: Replay applies the user's DEFAULT start
+//               position (the knife/warmup hiding pref decides between
+//               the first counted round's start and frame 0). Returning
+//               null instead of 0 keeps "no promise" distinguishable
+//               from an explicit first-frame target, which is the whole
+//               point of the pref-aware default.
 // `rounds` is the GetRounds array; an unknown round or an unusable tick
 // falls through to the next source — never a guessed time. The round is
 // read from the RAW param rather than parseLandmarkFilter: that parser
@@ -56,13 +61,18 @@ export function replayHash(matchId, filter, extras) {
 // "-1" = the warmup round, which is a real round with a real start).
 export function entrySeekTick(query, rounds) {
   const q = query || {};
-  const tick = Number(q.tick);
-  if (Number.isFinite(tick) && tick > 0) return tick;
+  // ?tick= is explicit whenever it names a real non-negative tick —
+  // 0 included (a round-1 start link stamps tick 0, and an explicit
+  // first frame must not be reinterpreted as "no promise").
+  if (q.tick != null && q.tick !== '') {
+    const tick = Number(q.tick);
+    if (Number.isFinite(tick) && tick >= 0) return tick;
+  }
   if (q.round != null && q.round !== '' && Number.isFinite(Number(q.round))) {
     const start = roundStartTick(rounds, Number(q.round));
     if (start != null) return start;
   }
-  return 0;
+  return null;
 }
 
 // profileBackTarget resolves the player profile's top-left back button —

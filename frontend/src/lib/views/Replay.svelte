@@ -462,6 +462,13 @@
   let copied = $state(false);
   let entrySel = ''; // ?sel= from the entry URL (applied once)
   let entrySelTick = 0; // its tick when it resolves before the engine is up
+  // The DEFAULT entry tick when the URL makes no time promise (no ?tick=
+  // / no usable ?round=): load() resolves it once, AWAITING the
+  // knife/warmup hiding pref (show_knife_warmup_rounds) — pref OFF → the
+  // first COUNTED round's start, pref ON → frame 0. It is not reactive
+  // on purpose: the pref decides where a replay LAUNCHES, not where an
+  // in-session filter change lands (those never re-run startEngine).
+  let entryDefaultTick = 0;
   let selApplied = false;
 
   async function select(row) {
@@ -726,6 +733,35 @@
     if (start != null && engine) engine.seekTick(start);
   }
 
+  // Round transport (prev/next round buttons): the neighbouring round
+  // NUMBER around the playhead. Rounds arrive in chronological (=
+  // number) order, so the LAST row below the current number is the
+  // previous round and the FIRST row above it is the next one. Null
+  // before the first round or at either end disables the button; the
+  // seek reuses the ribbon's round→tick rule (roundStartTick), so an
+  // unknown number can never jump anywhere.
+  const roundNav = $derived.by(() => {
+    const cur = roundAtPlayhead ? roundAtPlayhead.number : null;
+    let prev = null;
+    let next = null;
+    if (cur != null) {
+      for (const r of rounds) {
+        if (!r || !Number.isFinite(r.number)) continue;
+        if (r.number < cur) prev = r.number;
+        else if (r.number > cur && next == null) next = r.number;
+      }
+    }
+    return { prev, next };
+  });
+
+  // Fixed-step transport: ±15 seconds at the match's tick rate —
+  // seekTick clamps to the stream, so the buttons can never overshoot
+  // (or seek to a negative tick).
+  function seekBySeconds(sign) {
+    if (!engine) return;
+    engine.seekTick(uiTick + sign * 15 * engine.tickRate);
+  }
+
   // hudFor builds the renderer's setHud payload for a playhead tick —
   // plain data, recomputed on every engine change (setHud redraws).
   //   score — cumulative counted wins through the last round that had
@@ -977,6 +1013,16 @@
   // keeps whatever the user picked explicitly).
   let camMode = $state('smart');
 
+  // The player Follow last had: the dropdown must never enter Follow
+  // with NO player (an empty "Follow player…" selection is an unclear
+  // state), so switching back to Follow resumes the player the user was
+  // already following. Plain (non-reactive) view state — it is only read
+  // inside event handlers, never rendered. Free/Smart release the engine
+  // follow but must NOT clear this; the mirror below records every
+  // non-null follow the engine reports (F/1-9 keys, canvas drag, the
+  // ?follow= entry and the player dropdown all land there).
+  let lastFollowed = null;
+
   // The renderer's own mode: 'follow' is a dropdown concept — the
   // renderer only knows 'smart' | 'free', and follow always rides smart.
   const rendererCam = () => (camMode === 'follow' ? 'smart' : camMode);
@@ -1003,17 +1049,25 @@
   function onCamMode(e) {
     const v = e.currentTarget.value;
     if (v === 'follow') {
-      // Follow: the player already being followed wins, else the ?follow=
-      // entry, else the first player. The camera stays smooth (smart).
+      // Follow always needs a player: the one last followed wins (it
+      // survives a detour through Free/Smart), else the ?follow= entry,
+      // else the first player — so the "Follow player…" placeholder can
+      // never end up as the selected state. The camera stays smooth
+      // (smart).
       camMode = 'follow';
       renderer?.setCameraMode('smart');
-      const want = uiFollow >= 0 ? uiFollow : followSlot >= 0 ? followSlot : 0;
+      const want =
+        lastFollowed != null && players[lastFollowed]
+          ? lastFollowed
+          : followSlot >= 0
+            ? followSlot
+            : 0;
       if (players[want]) engine?.setFollow(want);
       return; // the pref keeps its last explicit smart/free choice
     }
     const m = v === 'free' ? 'free' : 'smart';
     camMode = m;
-    engine?.setFollow(null); // Smart/Free releases follow
+    engine?.setFollow(null); // Smart/Free releases follow (lastFollowed stays)
     renderer?.setCameraMode(m);
     setPref('camera_mode', m).catch(() => {}); // durable explicit choice
   }
@@ -1133,11 +1187,26 @@
     }
   }
 
+  // defaultEntryTick — where a replay starts when the entry URL makes
+  // NO time promise (nav.entrySeekTick returned null): the knife/warmup
+  // hiding pref decides — OFF (hidden, the default) lands on the FIRST
+  // COUNTED round's start so a hidden warmup/knife round is never the
+  // opening frame, ON (shown) lands on frame 0. No counted round (or no
+  // rounds loaded at all) → frame 0, never a guessed time.
+  function defaultEntryTick(showKW) {
+    if (showKW) return 0;
+    for (const r of rounds) {
+      if (isCounted(r) && Number.isFinite(r.startTick)) return r.startTick;
+    }
+    return 0;
+  }
+
   async function load() {
     loading = true;
     loadError = '';
     entrySel = query.sel || '';
     entrySelTick = 0;
+    entryDefaultTick = 0;
     // A linked landmark must be visible on entry — the selection lives in
     // the feed/detail pane, which the collapsed default would hide.
     if (entrySel) eventsOpen = true;
@@ -1228,6 +1297,16 @@
           offset: 0,
           limit: 0,
         }).catch(() => [])) || [];
+      // The DEFAULT entry tick (no explicit ?tick=/?round=): resolve it
+      // here with an awaited getPref — the showKnifeWarmup $effect reads
+      // the same key asynchronously and could land AFTER startEngine
+      // applies the entry seek, which would start the replay on the
+      // wrong side of the knife/warmup-hiding pref.
+      entryDefaultTick = defaultEntryTick(
+        await getPref('show_knife_warmup_rounds')
+          .then((v) => v === true)
+          .catch(() => false), // unreadable store → hidden (the default)
+      );
       // loading must be false BEFORE the tick, else {#if loading} still hides
       // the {#if data} branch and bind:this never resolves (canvasEl null).
       if (live) loading = false;
@@ -1280,6 +1359,10 @@
       uiPlaying = st.playing;
       uiSpeed = st.speed;
       uiFollow = st.followSlot;
+      // Remember the followed player for the camera dropdown: switching
+      // away to Free/Smart releases follow (uiFollow → null) but a later
+      // switch back to Follow must resume THIS player (see lastFollowed).
+      if (st.followSlot != null) lastFollowed = st.followSlot;
       uiLoopFrom = st.loopFrom;
       uiLoopTo = st.loopTo;
       uiLoopOn = st.loopEnabled;
@@ -1345,16 +1428,24 @@
     // Entry position rides the URL — durable and deep-linkable.
     // entrySeekTick is the ONE resolver: an exact ?tick= wins, else the
     // ?round= feed scope resolves to that round's START tick (a round
-    // link is a link to a point in time — never the first frame), else
-    // 0; a ?sel= landmark that resolved before the engine was up applies
-    // on top. Applied once here, after loading — in-session filter
-    // changes keep the playback position. No autoplay: contextual links
-    // seek, they never hijack playback.
+    // link is a link to a point in time — never the first frame); it
+    // returns null when the URL made NO time promise, and then the
+    // pref-decided default (load() awaited the knife/warmup pref: first
+    // counted round's start while it hides them, frame 0 while it shows
+    // them) applies; a ?sel= landmark that resolved before the engine was
+    // up applies in between. Applied once here, after loading — in-session
+    // filter changes keep the playback position.
     const tick0 = entrySeekTick(query, rounds);
-    if (tick0) engine.seekTick(tick0);
+    if (tick0 != null) engine.seekTick(tick0);
     else if (entrySelTick) engine.seekTick(entrySelTick);
+    else if (entryDefaultTick) engine.seekTick(entryDefaultTick);
     renderer.setHud(hudFor(engine.state.tick)); // first HUD paint (redraws)
     ready = true;
+    // A replay starts playing as soon as it is ready — startEngine runs
+    // ONCE per launch (in-session filter changes never re-run it), so
+    // this fires on first launch only; every later seek/filter keeps the
+    // playback position.
+    engine.play();
   }
 
   function togglePlay() {
@@ -1384,7 +1475,11 @@
   // 'follow' with no followSlot).
   function onFollowPlayer(e) {
     const v = e.currentTarget.value;
-    if (v !== '') engine?.setFollow(Number(v));
+    if (v !== '') {
+      const slot = Number(v);
+      engine?.setFollow(slot);
+      lastFollowed = slot; // resume target for the next Follow selection
+    }
   }
 
   function doSnapshot() {
@@ -1611,9 +1706,37 @@
 </script>
 
 <div class="view replay-view">
+  <!-- Top bar: the VIEW's top corners — back button at the top-left,
+       the collapsed landmark-rail toggle at the top-right (spec 7/14:
+       both used to float inside the render stage; the stage's corners
+       belong to the HUD/canvas now). The toggle keeps the rail-visible
+       gate the stage-floated one had (it appears exactly when the canvas
+       does) plus the {#if !eventsOpen} gate: when the rail is open its
+       aside header owns the toggle instead, and this bar keeps only the
+       back button. -->
+  <div class="replay-topbar">
+    <button class="btn rp-back" aria-label="Back" title="Back" onclick={goBack}>
+      <span class="codicon codicon-arrow-left" aria-hidden="true"></span>
+    </button>
+    <span class="spacer"></span>
+    {#if !eventsOpen && railVisible}
+      <button
+        class="side-toggle rp-rail-toggle"
+        aria-expanded="false"
+        aria-label="Landmarks ({feedCountLabel} events)"
+        title="Landmarks ({feedCountLabel} events)"
+        onclick={() => (eventsOpen = true)}
+      >
+        <span class="codicon codicon-chevron-left" aria-hidden="true"></span>
+      </button>
+    {/if}
+  </div>
+  <!-- Columns row: the main column beside the landmark rail (its row
+       layout is the one the view used to carry directly). -->
+  <div class="replay-cols">
   <!-- Main column: notes, round ribbon, stage, transport. The landmark
        rail below stands beside it when expanded (its collapsed toggle
-       floats INSIDE the stage, top-right). -->
+       lives in the top bar above). -->
   <div class="replay-main">
     {#if loadError}
       <p class="error" role="alert">{loadError}</p>
@@ -1684,33 +1807,16 @@
         />
         <div class="replay-stage" bind:this={stageEl}>
           <canvas bind:this={canvasEl} aria-label="Replay canvas"></canvas>
-          <!-- Back button (spec 7): a small icon-only pill floating at
-               the TOP-LEFT inside the render area (the stage is the
-               position context); the HUD score box starts to its right. -->
-          <button class="btn rp-back" aria-label="Back" title="Back" onclick={goBack}>
-            <span class="codicon codicon-arrow-left" aria-hidden="true"></span>
-          </button>
-          {#if !eventsOpen}
-            <!-- Landmark rail toggle (spec 14): collapsed, it floats at
-                 the TOP-RIGHT of the render area (inside the stage, not
-                 vertically centered on the view); the follow chip below
-                 it is offset so the two can never collide. Expanded, the
-                 aside's own header owns the toggle instead. -->
-            <button
-              class="side-toggle rp-rail-toggle"
-              aria-expanded="false"
-              aria-label="Landmarks ({feedCountLabel} events)"
-              title="Landmarks ({feedCountLabel} events)"
-              onclick={() => (eventsOpen = true)}
-            >
-              <span class="codicon codicon-chevron-left" aria-hidden="true"></span>
-            </button>
-          {/if}
+          <!-- The back button and the collapsed landmark-rail toggle
+               used to float here (top-left / top-right of the stage);
+               both now live in the view's .replay-topbar above — the
+               stage's top corners stay clear for the HUD score box. -->
           {#if uiFollow != null && players[uiFollow]}
             <!-- Follow chip: the dismiss surface for the camera-follow
                  state (?follow= entry, the camera dropdown's Follow and
-                 the F/1-9 keys all land here). Sits BELOW the landmark
-                 toggle (top-right) so the two overlays never overlap. -->
+                 the F/1-9 keys all land here). Top-right of the stage —
+                 the rail toggle is no longer a stage overlay, so nothing
+                 else claims that corner. -->
             <span class="chip follow-chip" role="status">
               <span class="codicon codicon-eye" aria-hidden="true"></span>
               Following {players[uiFollow].name || `slot ${uiFollow}`}
@@ -1758,11 +1864,50 @@
         </div>
 
         <div class="toolbar">
+          <!-- Round transport (prev/next round): flank the play
+               cluster — disabled at either end or while the playhead
+               round is unknown (before the first round). -->
+          <button
+            class="btn"
+            id="rp-round-prev"
+            aria-label="Previous round"
+            title="Previous round"
+            disabled={!ready || roundNav.prev == null}
+            onclick={() => onRibbonRound(roundNav.prev)}
+            ><span class="codicon codicon-chevron-left" aria-hidden="true"></span></button
+          >
+          <button
+            class="btn"
+            id="rp-seek-back"
+            aria-label="Seek −15 seconds"
+            title="Seek −15 seconds"
+            disabled={!ready}
+            onclick={() => seekBySeconds(-1)}
+            ><span class="codicon codicon-arrow-small-left" aria-hidden="true"></span></button
+          >
           <button
             class="btn primary"
             aria-label={uiPlaying ? 'Pause' : 'Play'}
             title={uiPlaying ? 'Pause (Space)' : 'Play (Space)'}
             onclick={togglePlay}><span class="codicon {uiPlaying ? 'codicon-debug-pause' : 'codicon-play'}"></span></button
+          >
+          <button
+            class="btn"
+            id="rp-seek-fwd"
+            aria-label="Seek +15 seconds"
+            title="Seek +15 seconds"
+            disabled={!ready}
+            onclick={() => seekBySeconds(1)}
+            ><span class="codicon codicon-arrow-small-right" aria-hidden="true"></span></button
+          >
+          <button
+            class="btn"
+            id="rp-round-next"
+            aria-label="Next round"
+            title="Next round"
+            disabled={!ready || roundNav.next == null}
+            onclick={() => onRibbonRound(roundNav.next)}
+            ><span class="codicon codicon-chevron-right" aria-hidden="true"></span></button
           >
           <label class="sr-only" for="rp-speed">Speed</label>
           <select class="input" id="rp-speed" value={uiSpeed} onchange={onSpeed}>
@@ -1828,21 +1973,25 @@
             </Popover>
           </span>
 
-          <!-- Camera (spec 17): ONE dropdown for Smart/Free/Follow; the
-               player list appears as a second dropdown only while
-               Follow is selected. -->
+          <!-- Camera (spec 17): ONE dropdown for Smart/Free/Follow with
+               its mode codicon in the same wrapper cell; the player
+               list appears as a second dropdown only while Follow is
+               selected. -->
           <label class="sr-only" for="rp-cam">Camera mode</label>
-          <select
-            class="input"
-            id="rp-cam"
-            value={camMode}
-            onchange={onCamMode}
-            title="Smart keeps every player and the bomb on screen with smooth pan/zoom (drag or wheel takes over → Free); Free is manual; Follow locks the camera onto a player (pick them below) — dragging releases it"
-          >
-            <option value="smart">Smart</option>
-            <option value="free">Free</option>
-            <option value="follow">Follow</option>
-          </select>
+          <span class="rp-cam-wrap">
+            <span class="codicon codicon-device-camera-video" aria-hidden="true"></span>
+            <select
+              class="input"
+              id="rp-cam"
+              value={camMode}
+              onchange={onCamMode}
+              title="Smart keeps every player and the bomb on screen with smooth pan/zoom (drag or wheel takes over → Free); Free is manual; Follow locks the camera onto a player (pick them below) — dragging releases it"
+            >
+              <option value="smart">Smart</option>
+              <option value="free">Free</option>
+              <option value="follow">Follow</option>
+            </select>
+          </span>
 
           {#if camMode === 'follow'}
             <label class="sr-only" for="rp-follow">Follow player</label>
@@ -1875,8 +2024,6 @@
             ><span class="codicon {uiVoiceMutedAll ? 'codicon-mute' : 'codicon-unmute'}" aria-hidden="true"></span></button
           >
 
-          <span class="muted" title="Space play/pause · , . speed · ←/→ step · Shift ±64 · L loop · F follow · 1-9 select · S snapshot"><span class="codicon codicon-keyboard" aria-hidden="true"></span></span>
-
           {#if uiVoiceErr}
             <span class="error rp-voice-hint" role="alert"
               >{uiVoiceErr} — install <span class="mono">gst-plugins-good</span> (GStreamer) if audio fails to start.</span
@@ -1888,15 +2035,21 @@
           {/if}
 
           {#if ready && data}
-            <button class="btn" onclick={doSnapshot}>Snapshot</button>
+            <button
+              class="btn"
+              aria-label="Snapshot"
+              title="Save a PNG snapshot of the current frame (S)"
+              onclick={doSnapshot}
+              ><span class="codicon codicon-device-camera" aria-hidden="true"></span></button
+            >
             <button
               class="btn clip-btn"
               class:primary={recState === 'recording'}
               disabled={recState === 'encoding'}
               onclick={toggleRecord}
+              aria-label={recState === 'recording' ? 'Stop clip' : 'Record clip'}
               title="Record a WebM clip — loop range if set, else 10s from the playhead (video only)"
-              ><span class="codicon {recState === 'recording' ? 'codicon-debug-stop' : 'codicon-record'}"></span>
-                {recState === 'recording' ? 'Stop clip' : 'Record clip'}</button
+              ><span class="codicon {recState === 'recording' ? 'codicon-debug-stop' : 'codicon-record'}" aria-hidden="true"></span></button
             >
             {#if recState !== 'idle'}
               <span
@@ -1922,6 +2075,11 @@
               {/if}
             {/if}
           {/if}
+
+          <!-- Keyboard hints — the toolbar's LAST cell (rightmost): one
+               codicon, no label, the shortcuts ride the title. Outside
+               the ready/data gate so it always shows. -->
+          <span class="muted" title="Space play/pause · , . speed · ←/→ step · Shift ±64 · L loop · F follow · 1-9 select · S snapshot"><span class="codicon codicon-keyboard" aria-hidden="true"></span></span>
         </div>
       </div>
     {/if}
@@ -2258,5 +2416,7 @@
       <!-- /lm-scroll -->
   </aside>
   {/if}
+  </div>
+  <!-- /replay-cols -->
 </div>
 
