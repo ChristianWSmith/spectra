@@ -1,128 +1,13 @@
-// Tests for lib/replay/voiceindex.js — voice color assignment (player
-// card / dot outlines) and the speaking-bucket index behind the live
-// "talking" ring.
+// Tests for lib/replay/voiceindex.js — the speaking-bucket index behind
+// the live "talking" ring (data only). The per-player COLORS are NOT
+// voice facts anymore: they moved to playercolor.js (the one palette
+// home) and are tested in src/lib/playercolor.test.js — this file keeps
+// only the speaking contract.
 // Run: node --test src/lib/voiceindex.test.js   (from frontend/)
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {
-  VOICE_COLORS,
-  assignVoiceColors,
-  buildSpeakingIndex,
-  speakingAt,
-} from './replay/voiceindex.js';
-
-test('VOICE_COLORS is the exact spec palette, in spec order', () => {
-  // blue, yellow, purple, green, orange (spec line 21).
-  assert.deepEqual(VOICE_COLORS, [
-    '#84C8ED',
-    '#ECDF41',
-    '#A56FB2',
-    '#009A7D',
-    '#DF7D29',
-  ]);
-  for (const hex of VOICE_COLORS) assert.match(hex, /^#[0-9A-F]{6}$/);
-});
-
-test('assignVoiceColors: empty inputs give an empty map', () => {
-  assert.deepEqual(assignVoiceColors([], []), {});
-  assert.deepEqual(assignVoiceColors(null, null), {});
-  assert.deepEqual(assignVoiceColors(undefined, undefined), {});
-});
-
-test('assignVoiceColors: no voice players → no colors', () => {
-  const roster = [{ steamId: 'A' }, { steamId: 'B' }];
-  assert.deepEqual(assignVoiceColors(roster, []), {});
-  assert.deepEqual(assignVoiceColors(roster, null), {});
-});
-
-test('assignVoiceColors: only players WITH voice get a color, in firstTick order', () => {
-  const roster = [
-    { steamId: 'A' },
-    { steamId: 'B' },
-    { steamId: 'C' }, // never spoke → no color
-  ];
-  const voice = [
-    { steamId: 'A', firstTick: 900 },
-    { steamId: 'B', firstTick: 100 },
-  ];
-  const out = assignVoiceColors(roster, voice);
-  assert.deepEqual(out, { B: VOICE_COLORS[0], A: VOICE_COLORS[1] });
-  assert.equal(out.C, undefined);
-});
-
-test('assignVoiceColors: firstTick ties break by roster/slot order, then steamId', () => {
-  const roster = [{ steamId: 'B' }, { steamId: 'A' }]; // B is slot 0
-  const voice = [
-    { steamId: 'A', firstTick: 50 },
-    { steamId: 'B', firstTick: 50 },
-  ];
-  // Roster order wins the tie regardless of voicePlayers input order.
-  assert.deepEqual(assignVoiceColors(roster, voice), {
-    B: VOICE_COLORS[0],
-    A: VOICE_COLORS[1],
-  });
-  assert.deepEqual(assignVoiceColors(roster, [...voice].reverse()), {
-    B: VOICE_COLORS[0],
-    A: VOICE_COLORS[1],
-  });
-
-  // Roster-absent players (casters) tie-break after every roster player…
-  const withCaster = [...voice, { steamId: 'Z', firstTick: 50 }];
-  const out = assignVoiceColors(roster, withCaster);
-  assert.deepEqual(out, { B: VOICE_COLORS[0], A: VOICE_COLORS[1], Z: VOICE_COLORS[2] });
-
-  // …and two roster-absent players fall through to steamId order.
-  const casters = [
-    { steamId: 'Z', firstTick: 50 },
-    { steamId: 'M', firstTick: 50 },
-  ];
-  assert.deepEqual(assignVoiceColors([], casters), {
-    M: VOICE_COLORS[0],
-    Z: VOICE_COLORS[1],
-  });
-});
-
-test('assignVoiceColors: more than 5 voice players cycle the palette', () => {
-  const voice = Array.from({ length: 7 }, (_, i) => ({
-    steamId: `p${i}`,
-    firstTick: (i + 1) * 100,
-  }));
-  const out = assignVoiceColors([], voice);
-  voice.forEach((p, i) => {
-    assert.equal(out[p.steamId], VOICE_COLORS[i % 5], `player ${i}`);
-  });
-  assert.equal(out.p5, VOICE_COLORS[0]);
-  assert.equal(out.p6, VOICE_COLORS[1]);
-});
-
-test('assignVoiceColors: deterministic for any input order, invalid firstTick last', () => {
-  const roster = [{ steamId: 'A' }, { steamId: 'B' }, { steamId: 'C' }];
-  const voice = [
-    { steamId: 'A', firstTick: 300 },
-    { steamId: 'B', firstTick: 300 },
-    { steamId: 'C', firstTick: 100 },
-  ];
-  const base = assignVoiceColors(roster, voice);
-  const shuffled = assignVoiceColors(roster, [voice[1], voice[2], voice[0]]);
-  assert.deepEqual(shuffled, base);
-  assert.deepEqual(base, { C: VOICE_COLORS[0], A: VOICE_COLORS[1], B: VOICE_COLORS[2] });
-
-  // Missing/invalid firstTick sorts after every known tick (defensive).
-  const late = assignVoiceColors(roster, [
-    { steamId: 'A' },
-    { steamId: 'B', firstTick: 10 },
-  ]);
-  assert.deepEqual(late, { B: VOICE_COLORS[0], A: VOICE_COLORS[1] });
-
-  // Duplicate steamIds keep their earliest row and don't burn a color.
-  const dup = assignVoiceColors([], [
-    { steamId: 'A', firstTick: 500 },
-    { steamId: 'A', firstTick: 100 },
-    { steamId: 'B', firstTick: 900 },
-  ]);
-  assert.deepEqual(dup, { A: VOICE_COLORS[0], B: VOICE_COLORS[1] });
-});
+import { buildSpeakingIndex, speakingAt } from './replay/voiceindex.js';
 
 // The bucket mapping under test mirrors voiceservice.go:
 //   b = int(float64(tick-from) / (to-from) * float64(buckets)), clamped

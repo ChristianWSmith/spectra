@@ -11,9 +11,9 @@
   //                   the name's color and every card's tint; '' = //                   unknown → neutral, never a guessed color
   //   players         one entry per player = PlayerCard's props EXCEPT
   //                   `side` (the column owns it and overrides), e.g.
-  //                   {player, voiceColor, speaking, muted, dead, follow,
-  //                   state, icons, iconURLs, onToggleMute}; order is the
-  //                   caller's (roster slot order by default)
+  //                   {player, playerColor, speaking, muted, dead, follow,
+  //                   state, stats, icons, iconURLs, onToggleMute}; order
+  //                   is the caller's (roster slot order by default)
   //   teamMuted       every player on the team voice-muted → the team
   //                   mute button's state
   //   onToggleTeamMute()  team mute click (caller applies setMutedMany
@@ -23,7 +23,10 @@
   // reach into (~10px past their card) as padding, and a 12px stack gap
   // keeps a pulsing ring from touching its neighbour; when the parent
   // gives the column a definite height the stack scrolls instead of
-  // breaking the replay layout.
+  // breaking the replay layout. scrollbar-gutter: stable reserves the
+  // scrollbar's track up front, so a scrollbar appearing/disappearing can
+  // never change the column's content width (a rewrap cascade is exactly
+  // the card jitter this stack must not have).
   import PlayerCard from './PlayerCard.svelte';
 
   let {
@@ -115,6 +118,11 @@
        edge. Top padding keeps the first ring clear of the team name. */
     padding: 10px;
     overflow-y: auto;
+    /* Reserve the scrollbar track whether or not it is showing: a
+       scrollbar appearing mid-playback must not narrow the cards (a
+       width change would rewrap their rows — the jitter the fixed card
+       heights are there to prevent). */
+    scrollbar-gutter: stable;
     min-height: 0;
   }
 </style>

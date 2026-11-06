@@ -1,64 +1,13 @@
 // voiceindex.js — pure, node-testable voice metadata for the replay
-// views: per-player voice colors (player-card / dot outlines) and the
-// speaking-bucket index behind the live "talking" ring (data only —
-// rendering belongs to the views).
+// views: the speaking-bucket index behind the live "talking" ring (data
+// only — rendering belongs to the views).
+//
+// The per-player COLORS are NOT voice facts and do not live here anymore:
+// they are the player's CS2 teammate color, owned by
+// replay/playercolor.js (the one palette home).
 //
 // No DOM, no services: everything here is a plain function over the
-// payloads already fetched from GetVoicePlayers / GetVoiceLanes.
-
-// VOICE_COLORS are the five exact colors from the spec (line 21), in
-// spec order: blue, yellow, purple, green, orange. Players who voice a
-// match are assigned one in first-voice-tick order, cycling if there
-// are more voice players than colors. UI consumers outline the player
-// card and the render-area dot with this hex.
-export const VOICE_COLORS = ['#84C8ED', '#ECDF41', '#A56FB2', '#009A7D', '#DF7D29'];
-
-// assignVoiceColors maps steamId → hex for the players that actually
-// have voice data ("players are assigned a color when they voice a
-// match" — a roster player with no voice rows gets NO color).
-//
-//   players      roster (meta.players / PlayerRef[]): only used for
-//                TIE-BREAKING — array index is the slot/roster order.
-//   voicePlayers GetVoicePlayers rows ({steamId, firstTick, …}).
-//
-// Ordering: ascending firstTick (VoicePlayer.firstTick), ties broken by
-// roster/slot order, then steamId (roster-absent players — casters —
-// sort after every roster player, then by steamId). Deterministic for
-// any input order; duplicates keep their earliest row. Colors cycle
-// through VOICE_COLORS (index i → VOICE_COLORS[i % 5]).
-export function assignVoiceColors(players, voicePlayers) {
-  const out = {};
-  const roster = Array.isArray(players) ? players : [];
-  const slotOf = new Map();
-  roster.forEach((p, i) => {
-    const id = p && p.steamId != null ? String(p.steamId) : '';
-    if (id && !slotOf.has(id)) slotOf.set(id, i);
-  });
-  const seen = new Set();
-  const rows = [];
-  for (const p of Array.isArray(voicePlayers) ? voicePlayers : []) {
-    if (!p || p.steamId == null) continue;
-    const id = String(p.steamId);
-    if (!id || seen.has(id)) continue;
-    seen.add(id);
-    const ft = Number(p.firstTick);
-    rows.push({ id, firstTick: Number.isFinite(ft) ? ft : Number.MAX_SAFE_INTEGER });
-  }
-  rows.sort(
-    (a, b) =>
-      a.firstTick - b.firstTick ||
-      slotIndex(slotOf, a.id) - slotIndex(slotOf, b.id) ||
-      (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
-  );
-  rows.forEach((r, i) => {
-    out[r.id] = VOICE_COLORS[i % VOICE_COLORS.length];
-  });
-  return out;
-}
-
-function slotIndex(slotOf, id) {
-  return slotOf.has(id) ? slotOf.get(id) : Number.MAX_SAFE_INTEGER;
-}
+// payloads already fetched from GetVoiceLanes.
 
 // buildSpeakingIndex turns a GetVoiceLanes result ({fromTick, toTick,
 // buckets, players:[{steamId, counts[]}]}) into a per-player bucket

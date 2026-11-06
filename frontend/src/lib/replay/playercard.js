@@ -100,3 +100,32 @@ export function weaponName(state) {
   const w = state ? state.weapon : null;
   return w && w !== 'Unknown' ? w : null;
 }
+
+// carriesC4 reports whether the stream's inventory carries the bomb.
+// Deliberately SEPARATE from utilityOf: utilityOf drops 'C4' on purpose
+// (it is the objective, not a grenade — pinned by playercard.test.js),
+// and the card shows the bomb as its own icon next to the util row.
+// An unknown (non-array) inventory never claims a C4 the stream did not
+// say — false, not "maybe".
+export function carriesC4(inventory) {
+  return Array.isArray(inventory) && inventory.includes('C4');
+}
+
+// STATS_TITLE documents the live stats row's exact formula — the card's
+// title attribute, so a tooltip always carries what the numbers mean
+// (they are a playhead fold of the typed events, not the match's stored
+// scoreboard: internal/analytics/rounds.go's rules, replay/livestats.js
+// the fold).
+export const STATS_TITLE =
+  'at the playhead: counted rounds started so far; damage includes friendly fire ' +
+  '(ADR = Σdamage ÷ counted rounds started)';
+
+// statsText renders the compact live stats row: "K/D/A 12/5/3 · ADR 87.4".
+// A missing row (no fold yet) renders honest placeholders, and an ADR
+// with no counted round started is "—" — never a 0 presented as a fact.
+export function statsText(stats) {
+  if (!stats) return 'K/D/A — · ADR —';
+  const n = (v) => (Number.isInteger(v) && v >= 0 ? String(v) : '—');
+  const adr = Number.isFinite(stats.adr) ? stats.adr.toFixed(1) : '—';
+  return `K/D/A ${n(stats.k)}/${n(stats.d)}/${n(stats.a)} · ADR ${adr}`;
+}

@@ -7,9 +7,12 @@ import assert from 'node:assert/strict';
 import {
   ammoText,
   armorChip,
+  carriesC4,
   hpBand,
   hpPct,
   moneyText,
+  STATS_TITLE,
+  statsText,
   utilityOf,
   weaponName,
 } from './replay/playercard.js';
@@ -98,4 +101,41 @@ test('weaponName hides the sidecar "Unknown" sentinel', () => {
   assert.equal(weaponName(st({ weapon: 'Unknown' })), null, 'unnamed weapon renders as unknown');
   assert.equal(weaponName(st({ weapon: null })), null);
   assert.equal(weaponName(null), null);
+});
+
+test('carriesC4 reads the inventory SEPARATELY from utilityOf', () => {
+  // The bomb rides the card next to the util, but utilityOf still drops
+  // 'C4' on purpose (the test above pins that) — the two answers differ
+  // by design.
+  assert.equal(carriesC4(['AK-47', 'C4', 'Flashbang']), true);
+  assert.equal(carriesC4(['C4']), true);
+  assert.equal(carriesC4(['AK-47', 'Flashbang']), false);
+  assert.deepEqual(utilityOf(['C4']), [], 'C4 is not utility');
+  // Unknown inventory never claims a bomb the stream did not say.
+  assert.equal(carriesC4(null), false);
+  assert.equal(carriesC4(undefined), false);
+  assert.equal(carriesC4('C4'), false);
+});
+
+test('statsText renders the live row and never fakes an unknown ADR', () => {
+  assert.equal(statsText({ k: 12, d: 5, a: 3, adr: 87.4375 }), 'K/D/A 12/5/3 · ADR 87.4');
+  assert.equal(
+    statsText({ k: 0, d: 0, a: 0, adr: null }),
+    'K/D/A 0/0/0 · ADR —',
+    '0 counted rounds started → honest "—", never 0',
+  );
+  assert.equal(
+    statsText({ k: 0, d: 0, a: 0, adr: 0 }),
+    'K/D/A 0/0/0 · ADR 0.0',
+    '0 damage over started rounds IS a fact',
+  );
+  assert.equal(statsText(null), 'K/D/A — · ADR —');
+  assert.equal(statsText(undefined), 'K/D/A — · ADR —');
+  assert.equal(statsText({ k: 'x', d: null, a: NaN, adr: NaN }), 'K/D/A —/—/— · ADR —');
+});
+
+test('STATS_TITLE documents the exact formula the row shows', () => {
+  assert.match(STATS_TITLE, /counted rounds started/);
+  assert.match(STATS_TITLE, /friendly fire/);
+  assert.match(STATS_TITLE, /ADR = Σdamage/);
 });

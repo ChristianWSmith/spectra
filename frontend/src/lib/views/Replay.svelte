@@ -65,10 +65,14 @@
   } from '../replay/state.js';
   import { loadIconManifest, preloadIcons } from '../replay/icons.js';
   import {
-    assignVoiceColors,
     buildSpeakingIndex,
     speakingAt,
   } from '../replay/voiceindex.js';
+  // Player colors (the card ring + the renderer's dot rim) are the raw
+  // m_iCompTeammateColor the sidecar carries, mapped once here; the live
+  // K/D/A + ADR fold feeds the cards' stats row.
+  import { colorHexOf, colorSlotsOf } from '../replay/playercolor.js';
+  import { liveStats } from '../replay/livestats.js';
   import { loadMapPack } from '../components/mapxform.js';
   import { downloadBlob, downloadText } from '../download.js';
   import { toCSV } from '../csv.js';
@@ -836,12 +840,57 @@
   const leftTeamName = $derived((teamNames && teamNames.ct) || 'CT');
   const rightTeamName = $derived((teamNames && teamNames.t) || 'T');
 
-  // Voice colors (spec 21): steamId → hex for the players that actually
-  // voiced the match; voiceColorSlots is the slot-indexed array the
-  // renderer's setVoices consumes (handoff E).
-  const voiceColorMap = $derived(assignVoiceColors(players, voicePlayers));
-  const voiceColorSlots = $derived(
-    players.map((p) => (p && p.steamId != null ? voiceColorMap[String(p.steamId)] ?? null : null)),
+  // Player colors (spec 21, corrected): the CS2 TEAMMATE color out of
+  // the sidecar's slot table (meta.players[].color → playercolor.colorHexOf),
+  // not a voice fact — every player with a known color gets the ring, a
+  // player without one gets none (never a guess). playerColorSlots is the
+  // slot-indexed hex array the renderer's setVoices({colors}) consumes
+  // (handoff E — the dot's rim); the card columns read the same hex.
+  const playerColorSlots = $derived(colorSlotsOf(players));
+
+  // Live K/D/A + ADR at the playhead: ONE $derived that folds the
+  // already-fetched drawable events (drawNorm: kill + damage rows) at
+  // uiTick through replay/livestats.js — the rules live there, mirroring
+  // internal/analytics/rounds.go's fold (counted rounds only, enemy-only
+  // kills, cross-team non-flash assists, every death, ALL damage incl.
+  // friendly fire) — and hands each card its row.
+  // sideAtTick resolves a side from the position store's per-frame flags
+  // AT THE EVENT'S TICK (renderer sideFromFlags — the frame's bits only,
+  // never the final side: that is post-halftime and would misfile an
+  // early-round event); no bits → '' → unknown → permissive, exactly like
+  // Go's sameSide.
+  function sideAtTick(steamId, tick) {
+    const id = String(steamId);
+    const slot = players.findIndex((p) => p && p.steamId != null && String(p.steamId) === id);
+    const slotData = slot >= 0 && data && data.slots ? data.slots[slot] : null;
+    const ticks = data && data.ticks;
+    const t = Number(tick);
+    if (!slotData || !slotData.flags || !ticks || !ticks.length || !Number.isFinite(t)) return '';
+    // Frame at/before the event's tick (ticks are strictly increasing);
+    // an event before the first frame has no side evidence → unknown.
+    let lo = 0;
+    let hi = ticks.length - 1;
+    let frame = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (ticks[mid] <= t) {
+        frame = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    if (frame < 0 || frame >= slotData.flags.length) return '';
+    return sideFromFlags(slotData.flags[frame]);
+  }
+
+  const statsBySteam = $derived(
+    liveStats(drawNorm, {
+      rounds,
+      tick: uiTick,
+      sideAt: sideAtTick,
+      steamIds: players.map((p) => (p && p.steamId != null ? String(p.steamId) : '')),
+    }),
   );
 
   // The renderer's speaking callback — STABLE identity (the renderer
@@ -936,13 +985,14 @@
         const sid = p.steamId != null ? String(p.steamId) : '';
         return {
           player: players[slot] || {},
-          voiceColor: sid ? voiceColorMap[sid] ?? null : null,
+          playerColor: colorHexOf(p.color),
           speaking: sid && speakIdx ? speakingAt(speakIdx, sid, tick) : false,
           muted: uiVoiceMutedAll || teamMuted[col] || !!(sid && uiVoiceMute[sid]),
           alive: sampled ? alive : null,
           dead: sampled && !alive,
           follow: uiFollow === slot,
           state: stateIndex ? slotStateAt(stateIndex, slot, frame) : null,
+          stats: sid ? statsBySteam.get(sid) ?? null : null,
           icons: iconMap,
           iconURLs: iconUrls,
           onToggleMute: muteHandlerFor(sid),
@@ -1202,7 +1252,9 @@
       // must not hold up first paint; whether it lands before or after
       // startEngine, the cards re-derive from the $state and the
       // renderer's setVoices is re-pushed at the assignment. A null lanes
-      // result (no voice rows / stubbed service) fails soft to "no rings".
+      // result (no voice rows / stubbed service) fails soft to "no
+      // speaking ring" — the colors payload is the PLAYER colors either
+      // way (startEngine pushed them; they are not a voice fact).
       if (voicePresence && voicePresence.hasVoice) {
         const tr = normTickRate(meta?.tickRate);
         const span = data.ticks[data.frames - 1] - data.ticks[0];
@@ -1211,7 +1263,7 @@
             if (!live) return;
             speakIdx = lanes ? buildSpeakingIndex(lanes) : null;
             renderer?.setVoices({
-              colors: voiceColorSlots,
+              colors: playerColorSlots,
               speaking: speakIdx ? speakingFor : null,
             });
           })
@@ -1266,11 +1318,13 @@
     renderer.setPack(pack, radarImg, packTf);
     renderer.setLandmarks(drawNorm);
     // Player-card phase inputs (handoff E): push whatever load() already
-    // has alongside pack/landmarks — icons and the voice lanes may still
-    // arrive later and re-push at their assignment sites; every one of
-    // these setters is additive and tolerates a repeat call.
+    // has alongside pack/landmarks — icons and the voice lanes (the
+    // SPEAKING half of setVoices; the colors are the player colors, ready
+    // with the meta) may still arrive later and re-push at their
+    // assignment sites; every one of these setters is additive and
+    // tolerates a repeat call.
     renderer.setIcons(iconObj);
-    renderer.setVoices({ colors: voiceColorSlots, speaking: speakIdx ? speakingFor : null });
+    renderer.setVoices({ colors: playerColorSlots, speaking: speakIdx ? speakingFor : null });
     renderer.setStateIndex(stateIndex);
     renderer.resize();
     renderer.setCameraMode(rendererCam()); // default 'smart' unless the pref says free

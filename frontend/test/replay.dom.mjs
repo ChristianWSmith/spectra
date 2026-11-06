@@ -120,10 +120,11 @@ writeFileSync(
   readFileSync('src/lib/replay/landmarks.js', 'utf8'),
 );
 // Pure (no I/O) replay deps copied verbatim, like landmarks: the card
-// formatter set (PlayerCard imports it) and the voice metadata module
-// (colors/speaking index — deterministic with the stubbed voice services
-// above: no voice players → no colors, null lanes → no speaking).
-for (const rel of ['playercard.js', 'voiceindex.js']) {
+// formatter set (PlayerCard imports it), the teammate-color mapping and
+// the live-stats fold (Replay.svelte imports those two), and the voice
+// metadata module (speaking index — deterministic with the stubbed voice
+// services above: null lanes → no speaking).
+for (const rel of ['playercard.js', 'playercolor.js', 'livestats.js', 'voiceindex.js']) {
   writeFileSync(join(dir, 'replay', rel), readFileSync(join('src/lib/replay', rel), 'utf8'));
 }
 
@@ -182,12 +183,14 @@ writeFileSync(
     // Roster for the card columns: 3 finished-ct, 2 finished-t, plus one
     // player with NO final side — grouping must place them left (last-
     // payload fallback finds nothing: the stubbed positions have no mask)
-    // without inventing a side for them.
+    // without inventing a side for them. Two players carry a teammate
+    // COLOR (the raw m_iCompTeammateColor the sidecar carries — 0 blue,
+    // 4 purple); the rest carry none, which must render NO ring.
     players: [
-      { steamId: '76561198000000001', name: 'Alpha1', side: 'ct' },
+      { steamId: '76561198000000001', name: 'Alpha1', side: 'ct', color: 0 },
       { steamId: '76561198000000002', name: 'Alpha2', side: 'ct' },
       { steamId: '76561198000000003', name: 'Alpha3', side: 'ct' },
-      { steamId: '76561198000000004', name: 'Bravo1', side: 't' },
+      { steamId: '76561198000000004', name: 'Bravo1', side: 't', color: 4 },
       { steamId: '76561198000000005', name: 'Bravo2', side: 't' },
       { steamId: '76561198000000006', name: 'Lone', side: '' },
     ],
@@ -587,6 +590,34 @@ check(
   leftCards.every((c) => c.classList.contains('pc-ct')) &&
     rightCards.every((c) => c.classList.contains('pc-t')) &&
     leftCards.every((c) => !!c.querySelector('.pc-nostate')),
+);
+// Card props: the teammate color rides meta.players → the card ring, and
+// the live K/D/A + ADR fold reaches every card (no events in this stub,
+// counted round 1 started at the playhead → a real 0 ADR, never "—").
+check(
+  'teammate color from meta.players rings the card (raw 0 → blue)',
+  leftCards[0].classList.contains('pc-color') &&
+    leftCards[0].style.getPropertyValue('--pc-color') === '#84C8ED',
+  leftCards[0].getAttribute('style'),
+);
+check(
+  'the color follows its player across columns (Bravo1, raw 4 → purple)',
+  rightCards[0].classList.contains('pc-color') &&
+    rightCards[0].style.getPropertyValue('--pc-color') === '#A56FB2',
+  rightCards[0].getAttribute('style'),
+);
+check(
+  'a player without a color gets NO ring (never a guessed one)',
+  !leftCards[1].classList.contains('pc-color') &&
+    !leftCards[3].classList.contains('pc-color') &&
+    !rightCards[1].classList.contains('pc-color'),
+);
+check(
+  'every card renders the live stats row from the fold',
+  [...leftCards, ...rightCards].every(
+    (c) => c.querySelector('.pc-stats')?.textContent === 'K/D/A 0/0/0 · ADR 0.0',
+  ),
+  [...leftCards, ...rightCards].map((c) => c.querySelector('.pc-stats')?.textContent).join(' | '),
 );
 // Per-player mute (spec 22): the card button flips exactly that player.
 const cardMute = () => leftCards[0].querySelector('.pc-mute');
