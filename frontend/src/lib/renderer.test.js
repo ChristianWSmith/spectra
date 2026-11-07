@@ -4,15 +4,16 @@
 // death→respawn teleport), the smart camera's fit/ease (smartCamTarget,
 // easeValue, camConverged), the world-layer geometry (chevronPath,
 // crossPath, muzzleRays), the tick-window effects (windowAlpha,
-// blindAlpha, voiceBloom, fireJump), the death-marker lifetime
+// blindAlpha, voiceBloom), the death-marker lifetime
 // (killEndTick) — plus end-to-end draws over a recording 2D context
 // (the world layers follow the tick: lingering smoke/fire, the death
 // X's round cleanup incl. the post-round C4 kill and the EXACT
 // round_start boundary seek, the C4 icon and its aspect-preserving
-// draw, the WHITE dashed muzzle tracer (r+2 → r+76, dash phase advanced
-// from the tick), the hit-shot tracer (the shooter→victim segment over
-// the same 0.22 s window — its skips, pellet dedupe and layer order),
-// the LIGHTER flash overlay (peak 0.6, never solid
+// draw, the SOLID bullet tracer (one line per `draw` row, from the fire
+// position out r+MUZZLE_REACH, windowed + mask-guarded + under the
+// dots), the hit-shot tracer (the shooter→victim segment over the same
+// 0.22 s window — its skips, pellet dedupe and layer order), the
+// LIGHTER flash overlay (peak 0.6, never solid
 // white) and the white talking bloom drawn BENEATH its dot, the
 // death-X-under-C4 layer order, the carried-C4 badge on the carrier's
 // dot and the thrower-side tint of the util flight line + icon, the
@@ -49,7 +50,6 @@ import {
   windowAlpha,
   blindAlpha,
   voiceBloom,
-  fireJump,
   killEndTick,
   scoreLineWidth,
   scoreLineLayout,
@@ -221,7 +221,7 @@ test('camConverged: within the center/zoom tolerances only', () => {
   assert.equal(camConverged({ cx: 100, cy: 200, s: 2.0039 }, target), true); // within 0.2%
 });
 
-// --- world-layer geometry (view arrow, death X, muzzle burst) ---------------
+// --- world-layer geometry (view arrow, death X, tracer rays) ----------------
 
 test('chevronPath: 3 points, apex along the angle, symmetric about the axis', () => {
   const size = 25;
@@ -277,12 +277,13 @@ test('muzzleRays: count segments from inner to outer, fanned around the angle', 
   assert.deepEqual(muzzleRays(0, 0, 0, 12, 5), []); // outer ≤ inner
   assert.deepEqual(muzzleRays(0, 0, 0, 5, 12, 0), []); // no rays
   // count = 1 (the spread never applies): ONE straight ray along the aim
-  // direction — the geometry of the firing tracer the renderer draws
-  // dashed (r+2 → r+76).
-  const line = muzzleRays(10, 20, 0.5, 11, 23, 1, 0);
+  // direction — the geometry of the bullet tracer the renderer draws
+  // solid (from the fire position, reach r+MUZZLE_REACH; inner 0 in
+  // drawBulletTracers — the trace starts AT the origin, not at a dot).
+  const line = muzzleRays(10, 20, 0.5, 0, 23, 1, 0);
   assert.equal(line.length, 1);
   const [x1, y1, x2, y2] = line[0];
-  assert.ok(Math.abs(Math.hypot(x1 - 10, y1 - 20) - 11) < 1e-9, 'starts on the inner circle');
+  assert.ok(Math.abs(Math.hypot(x1 - 10, y1 - 20) - 0) < 1e-9, 'starts at the origin');
   assert.ok(Math.abs(Math.hypot(x2 - 10, y2 - 20) - 23) < 1e-9, 'ends on the outer circle');
   // …and both ends sit exactly on the look axis (straight, not fanned)
   const ux = Math.cos(0.5);
@@ -291,7 +292,7 @@ test('muzzleRays: count segments from inner to outer, fanned around the angle', 
   assert.ok(Math.abs((x2 - 10) * uy - (y2 - 20) * ux) < 1e-9, 'outer end collinear');
 });
 
-// --- tick-window effects (damage flash, muzzle flash) -----------------------
+// --- tick-window effects (damage flash, tracer) -----------------------------
 
 test('windowAlpha: 1 at the event, linear decay, 0 outside the window', () => {
   const tr = 64;
@@ -375,25 +376,12 @@ test('voiceBloom: white bloom from the dot center — bounded, periodic, tick-pu
   assert.equal(voiceBloom(1000, tr, -1), null);
 });
 
-test('fireJump: seeds across seeks, freezes on a paused redraw', () => {
-  const tr = 64;
-  // first draw / no previous tick → seed (never flash on startup)
-  assert.equal(fireJump(0, null, 1, tr), true);
-  // a paused redraw (same tick) is NOT a jump: the flash freezes
-  assert.equal(fireJump(1000, 1000, 1, tr), false);
-  // backwards: loop restart / reverse scrub → re-seed
-  assert.equal(fireJump(900, 1000, 1, tr), true);
-  // ordinary playback steps are never jumps (speed-scaled limit)
-  assert.equal(fireJump(1001, 1000, 1, tr), false);
-  assert.equal(fireJump(1010, 1000, 1, tr), false);
-  assert.equal(fireJump(1100, 1000, 8, tr), false); // 8× keeps up with 100
-  // a real forward seek (far beyond one playback step) re-seeds
-  assert.equal(fireJump(5000, 1000, 1, tr), true);
-  assert.equal(fireJump(1300, 1000, 1, tr), true); // > 27.2 ticks at 1×
-  // nonsense inputs seed rather than compare
-  assert.equal(fireJump(NaN, 1000, 1, tr), true);
-  assert.equal(fireJump(1000, NaN, 1, tr), true);
-});
+// The fireJump test (seek/frame-jump detector for the attack-edge firing
+// indicator) was DELETED with that machinery: tracers no longer arm from
+// state edges, so there is no edge state to re-seed across a seek —
+// bullets.js's rows are seek-correct by construction (a pure function of
+// tick over pre-derived rows). Shot derivation (magAmmo steps, gun/freeze
+// filtering, the `draw` selection) is pinned by frontend/src/lib/bullets.test.js.
 
 test('killEndTick: the death X lives exactly as long as its round', () => {
   const tr = 64;
@@ -464,10 +452,10 @@ test("killEndTick: a post-round_end kill (the C4 detonation) dies with the next 
 // behavior the specs ask for: the lingering smoke reaches the renderer
 // through the typed bucket, the death X lives exactly as long as its
 // round (and comes back on a backwards scrub), the extracted C4 icon
-// replaces the 'C4' label (text fallback without icons), the WHITE
-// dashed muzzle tracer arms on an attack edge, the damage flash, the
-// lighter flash overlay and the under-dot talking bloom are pure
-// functions of tick.
+// replaces the 'C4' label (text fallback without icons), the SOLID
+// bullet tracer draws one line per `draw` row over its window, the
+// damage flash, the lighter flash overlay and the under-dot talking
+// bloom are pure functions of tick.
 
 // recordingCanvas: { log, getContext, clientWidth/Height } — a stand-in
 // canvas whose 2D context records stroke/fill/arc/drawImage/fillText/
@@ -604,7 +592,7 @@ function synthStore(frames, slotCount) {
   return { frames, ticks, masks, slots, bounds: { minX: 0, maxX: 100, minY: 0, maxY: 100 } };
 }
 
-test('world layers follow the tick: smoke/fire, death X, C4 icon, muzzle tracer, hits, voice, blind', () => {
+test('world layers follow the tick: smoke/fire, death X, C4 icon, bullet tracer, hits, voice, blind', () => {
   // the renderer's browser globals (node has neither)
   headlessGlobals();
 
@@ -643,7 +631,11 @@ test('world layers follow the tick: smoke/fire, death X, C4 icon, muzzle tracer,
   r.setVoices({ colors: ['#84C8ED', null], speaking: (slot) => slot === 0 });
   // The flash-white overlay: alice is blinded at tick 100 for 1 s.
   r.setBlinds([{ slot: 0, tick: 100, ms: 1000 }]);
-  r.setStateIndex(buildStateIndex([{ frame: 192, slot: 0, mask: 0x40, attack: true }], 2));
+  // The tracer rows: pre-derived exactly as Replay.svelte pushes them
+  // (lib/replay/bullets.js is the ONE filter — gun/freeze/`draw`
+  // selection are its tests' job, src/lib/bullets.test.js; the renderer
+  // only windows and paints). One auto-burst shot at alice's frame 192.
+  r.setBullets([{ tick: 192, frame: 192, slot: 0, weapon: 'AK-47', draw: true }]);
   r.resize(); // first draw at tick 0 (nothing of ours is live yet)
 
   const since = (mark) => canvas.log.slice(mark);
@@ -680,6 +672,26 @@ test('world layers follow the tick: smoke/fire, death X, C4 icon, muzzle tracer,
   // see SMOKE_CT in renderer.js)
   const smokeCloud = (from = 0) =>
     fills(from).filter((e) => String(e.fillStyle).startsWith('rgba(135, 180, 218'));
+  // the tracer paint recipe (strokeTracer): a WHITE 2 px lineTo over a
+  // dark 4 px underlay, SOLID (no dash) — shared by the bullet tracer
+  // and the hit-shot tracer, so these filters see BOTH whenever their
+  // windows overlap; `bulletWhite` picks the bullet line out by its
+  // geometry (it ends r + MUZZLE_REACH due east of alice's fire
+  // position — the hit line ends at the victim instead).
+  const tracerWhites = (from = 0) =>
+    since(from).filter(
+      (e) => e.op === 'lineTo' && e.strokeStyle === '#ffffff' && e.lineWidth === 2,
+    );
+  const tracerDarks = (from = 0) =>
+    since(from).filter(
+      (e) => e.op === 'lineTo' && e.strokeStyle === 'rgba(0,0,0,0.45)' && e.lineWidth === 4,
+    );
+  const ORIGIN = r.worldToScreen(10, 10); // alice's fire position (free camera — stable)
+  const bulletWhite = (from = 0) =>
+    tracerWhites(from).find(
+      (e) =>
+        Math.abs(e.args[0] - (ORIGIN.x + 85)) < 1e-9 && Math.abs(e.args[1] - ORIGIN.y) < 1e-9,
+    );
 
   // --- inside round 1, smoke lingering, bomb on the ground -----------------
   let mark = canvas.log.length;
@@ -889,58 +901,104 @@ test('world layers follow the tick: smoke/fire, death X, C4 icon, muzzle tracer,
   r.draw();
   assert.equal(smokeCloud(mark).length, 0, 'the smoke cloud fades out after its lifetime');
 
-  // --- firing: the attack edge arms the WHITE dashed TRACER ---------------
+  // --- bullet tracers: ONE solid line per `draw` row over its window -------
+  // (rows pushed via setBullets exactly as Replay.svelte derives them —
+  // gun/freeze/`draw` selection is bullets.js's contract, tested in
+  // src/lib/bullets.test.js; the renderer only windows and paints.)
+  // The fixture's damage row (tick 193) also carries a LIVE hit tracer
+  // over 193..207, so bullet assertions filter by geometry (bulletWhite).
   mark = canvas.log.length;
-  engine.seekTick(191); // attack bit still false here → re-seed
+  engine.seekTick(191); // one tick BEFORE the row's tick
   r.draw();
+  assert.equal(tracerWhites(mark).length, 0, 'nothing draws before the shot tick');
   mark = canvas.log.length;
-  engine.seekTick(192); // …rising edge on this frame
+  engine.seekTick(192); // the shot's own tick
   r.draw();
-  const tracers = (from) =>
-    strokes(from).filter(
-      (e) => e.strokeStyle === '#ffffff' && e.lineWidth === 2 && e.lineDash.length > 0,
-    );
-  assert.ok(tracers(mark).length > 0, 'the muzzle tracer draws on the attack edge');
+  assert.ok(bulletWhite(mark), 'ONE white line for the bullet row (not a fan)');
+  assert.equal(tracerDarks(mark).length, 1, '…over its dark 4 px underlay');
   assert.ok(
     !strokes(mark).some((e) => e.strokeStyle === '#ffd982'),
     'the tracer is WHITE — the old amber muzzle ray is gone',
   );
-  assert.equal(
-    since(mark).filter((e) => e.op === 'lineTo' && e.strokeStyle === '#ffffff').length,
-    1,
-    'ONE straight line along the aim direction (not a 5-ray fan)',
-  );
-  // …and FOUR times the original r+2 → r+20 ray: the reach was doubled
-  // (r+38) and doubled again on request — the far end now sits r+76 =
-  // 85 px out from the dot's center (the CT dot fill is the reference).
+  // SOLID: both of the tracer's passes record an EMPTY dash and zero
+  // offset in their lineTo snapshot (the marching [6,5] pattern and its
+  // age-driven phase are gone), and strokeTracer sets no dash between
+  // the two passes. The frame's one non-empty setLineDash belongs to
+  // the dropped-C4 ring — a different effect that resets after itself.
   {
-    const dot = since(mark).find(
+    const seq = since(mark);
+    const dark0 = seq.findIndex(
+      (e) => e.op === 'lineTo' && e.strokeStyle === 'rgba(0,0,0,0.45)' && e.lineWidth === 4,
+    );
+    const white0 = seq.indexOf(bulletWhite(mark));
+    assert.ok(dark0 >= 0 && white0 > dark0, 'the dark underlay precedes the white pass');
+    let move0 = dark0;
+    while (move0 >= 0 && seq[move0].op !== 'moveTo') move0--;
+    assert.equal(
+      seq.slice(move0, white0).filter((e) => e.op === 'setLineDash').length,
+      0,
+      'strokeTracer never sets a dash while painting (the tracer is solid)',
+    );
+    assert.ok(
+      [seq[dark0], seq[white0]].every((e) => e.lineDash.length === 0 && e.lineDashOffset === 0),
+      'both tracer passes are solid (empty dash, offset 0)',
+    );
+  }
+  // Geometry: from the FIRE POSITION at row.frame (alice stands at
+  // (10,10) there — yaw 0 = east), reach r + MUZZLE_REACH = 9 + 76 = 85
+  // screen px out from that ORIGIN (not from a dot).
+  {
+    const end = bulletWhite(mark);
+    const start = since(mark)
+      .slice(0, since(mark).indexOf(end))
+      .reverse()
+      .find((e) => e.op === 'moveTo');
+    assert.ok(start, 'the segment starts with a moveTo');
+    assert.ok(
+      Math.abs(start.args[0] - ORIGIN.x) < 1e-9 && Math.abs(start.args[1] - ORIGIN.y) < 1e-9,
+      `starts at the fire position (got ${start.args})`,
+    );
+    assert.ok(
+      Math.abs(end.args[0] - (ORIGIN.x + 85)) < 1e-9 && Math.abs(end.args[1] - ORIGIN.y) < 1e-9,
+      `reaches r + MUZZLE_REACH = 85 px due east of the origin (got ${end.args})`,
+    );
+    // Layer order: the tracer strokes UNDER the player dots — the dots
+    // paint on top of its endpoints (draw() calls drawBulletTracers
+    // before drawPlayers).
+    const dotIdx = since(mark).findIndex(
       (e) => e.op === 'arc' && e.fillStyle === '#5aa9e6' && e.args[2] === 9,
     );
-    const end = since(mark).find((e) => e.op === 'lineTo' && e.strokeStyle === '#ffffff');
-    const reach = Math.hypot(end.args[0] - dot.args[0], end.args[1] - dot.args[1]);
-    assert.ok(Math.abs(reach - 85) < 1e-9, `the tracer reaches r + 76 = 85 px (got ${reach})`);
+    assert.ok(dotIdx >= 0, 'the CT dot draws in this frame');
+    assert.ok(
+      since(mark).indexOf(end) < dotIdx,
+      'the bullet tracer draws BEFORE the player dots (layer order)',
+    );
   }
-  // dashed [6,5] with the phase pinned to the flash tick: at the edge
-  // tick itself the dashes have not travelled yet…
-  assert.ok(
-    tracers(mark).some((e) => e.lineDash.join(',') === '6,5' && e.lineDashOffset === 0),
-    'the tracer is dashed [6,5], phase 0 on the flash tick',
-  );
-  // …and 7 ticks later they have marched outward — a pure function of
-  // the tick, so a scrub re-renders the same phase (nothing sticky).
+  // …and the envelope fades over the window, frozen while paused (pure
+  // tick math): at the row's tick alpha is 1…
+  assert.equal(bulletWhite(mark).alpha, 1, 'full alpha on the shot tick');
   mark = canvas.log.length;
-  engine.seekTick(199);
+  engine.seekTick(199); // 7 ticks in — mid-window
   r.draw();
-  assert.ok(
-    tracers(mark).some((e) => Math.abs(e.lineDashOffset - -5.6) < 1e-9),
-    'the dash phase advances from the tick — the tracers march outward',
-  );
-  // …and is gone once its window (0.22 s) has passed
+  const mid = bulletWhite(mark);
+  assert.ok(mid, 'still drawn mid-window');
+  assert.ok(mid.alpha > 0 && mid.alpha < 1, `the envelope decays (got ${mid.alpha})`);
+  // …and is gone once its window (0.22 s ≈ 14.08 ticks) has passed
   mark = canvas.log.length;
   engine.seekTick(260);
   r.draw();
-  assert.equal(tracers(mark).length, 0, 'the muzzle tracer self-clears');
+  assert.equal(tracerWhites(mark).length, 0, 'the bullet tracer self-clears');
+  // frozen while paused: a redraw at the SAME tick records identical ops
+  mark = canvas.log.length;
+  engine.seekTick(199);
+  r.draw();
+  const frozenA = bulletWhite(mark);
+  mark = canvas.log.length;
+  engine.seekTick(199);
+  r.draw();
+  const frozenB = bulletWhite(mark);
+  assert.ok(frozenA, 'still live at 199 on the redraw');
+  assert.deepEqual(frozenB, frozenA, 'a paused redraw is byte-identical (frozen)');
 
   // --- damage flash: a red ring inside its 0.35 s window only --------------
   mark = canvas.log.length;
@@ -1173,14 +1231,15 @@ test('planted C4: drawn before its cutoff, gone AT round_end / bomb_explode / th
   r.destroy();
 });
 
-test('hit shots: a shooter→victim tracer over the hit window (muzzle-styled, deduped)', () => {
+test('hit shots: a shooter→victim tracer over the hit window (solid, deduped)', () => {
   // Spec: "if the shot is a hit, it should draw that shot's tracer from
-  // the shooter to the opponent" — IN ADDITION to the muzzle stub, over
-  // the same 0.22 s flash window (windowAlpha, so it is seek-correct and
-  // frozen while paused) and painted muzzle-style by the shared
-  // strokeTracer (dark 4 px underlay + white 2 px MUZZLE_DASH line).
-  // The victim's hit position rides the row (extract stamps PlayerHurt's
-  // victim position); the SHOOTER has no stored apos on damage rows
+  // the shooter to the opponent" — IN ADDITION to the bullet tracer, over
+  // the same 0.22 s tracer window (windowAlpha, so it is seek-correct
+  // and frozen while paused) and painted by the shared strokeTracer —
+  // the ONE SOLID recipe (dark 4 px underlay + white 2 px line; the
+  // marching dashes left with the muzzle flash). The victim's hit
+  // position rides the row (extract stamps PlayerHurt's victim
+  // position); the SHOOTER has no stored apos on damage rows
   // (events.apos_* is kill-only), so its position comes from the
   // position stream at the hit's tick.
   headlessGlobals();
@@ -1222,15 +1281,15 @@ test('hit shots: a shooter→victim tracer over the hit window (muzzle-styled, d
   r.setCameraMode('free');
 
   // The tracer's two passes: the white 2 px line over its dark 4 px
-  // underlay, both dashed [6,5] (no muzzle stub in this fixture — no
-  // stateIndex, so stepFiring never arms one).
+  // underlay, both SOLID (no bullet rows in this fixture — setBullets
+  // was never called, so only the hit tracers draw).
   const segs = (seq, strokeStyle, lineWidth) =>
     seq.filter(
       (e) =>
         e.op === 'lineTo' &&
         e.strokeStyle === strokeStyle &&
         e.lineWidth === lineWidth &&
-        e.lineDash.join(',') === '6,5',
+        e.lineDash.length === 0,
     );
   const at = (tick) => {
     const mark = canvas.log.length;
@@ -1241,12 +1300,12 @@ test('hit shots: a shooter→victim tracer over the hit window (muzzle-styled, d
   const whiteIn = (shot) => segs(shot.seq, '#ffffff', 2);
   const darkIn = (shot) => segs(shot.seq, 'rgba(0,0,0,0.45)', 4);
 
-  // --- the line: shooter → victim, muzzle-styled -------------------------
+  // --- the line: shooter → victim, solid tracer recipe -------------------
   const hit = at(192);
   const white = whiteIn(hit);
   const dark = darkIn(hit);
   assert.equal(white.length, 1, 'ONE white segment on the hit tick');
-  assert.equal(dark.length, 1, '…over its dark 4 px underlay (the muzzle recipe)');
+  assert.equal(dark.length, 1, '…over its dark 4 px underlay (the shared recipe)');
   const from = r.worldToScreen(10, 10); // alice's sampled position (slot 0)
   const to = r.worldToScreen(50, 50); // the row's stored victim position
   const wIdx = hit.seq.indexOf(white[0]);
@@ -1261,10 +1320,8 @@ test('hit shots: a shooter→victim tracer over the hit window (muzzle-styled, d
     `ends at the victim's screen position (got ${white[0].args})`,
   );
   assert.equal(white[0].alpha, 1, 'full alpha at the hit tick');
-  assert.ok(
-    Math.abs(white[0].lineDashOffset) < 1e-12,
-    `the dashes have not travelled yet (got ${white[0].lineDashOffset})`,
-  );
+  assert.equal(white[0].lineDash.length, 0, 'SOLID — the marching dashes are gone');
+  assert.equal(white[0].lineDashOffset, 0, 'no dash phase to advance');
   // Layer order: the tracer paints UNDER the player dots (draw() calls
   // drawHitTracers before drawPlayers) so it reads as emerging from the
   // shooter's dot and can never cover a dot or a name label.
@@ -1276,23 +1333,23 @@ test('hit shots: a shooter→victim tracer over the hit window (muzzle-styled, d
     assert.ok(wIdx < dotIdx, 'the hit tracer draws BEFORE the player dots');
   }
 
-  // --- timing: the muzzle flash's window, tick-derived -------------------
+  // --- timing: the tracer window, tick-derived ---------------------------
   assert.equal(whiteIn(at(191)).length, 0, 'nothing before the hit tick');
   const late = at(192 + 14); // 14/64 s = 0.219 s < 0.22 s → still live
   assert.equal(whiteIn(late).length, 1, 'still drawn a tick before the window closes');
-  assert.ok(
-    Math.abs(whiteIn(late)[0].lineDashOffset - -14 * 0.8) < 1e-9,
-    'the dashes march with the age (−age × MUZZLE_DASH_SPEED)',
+  assert.equal(
+    whiteIn(late)[0].lineDashOffset,
+    0,
+    'still solid at the window edge (no phase to march)',
   );
   const faded = whiteIn(late)[0].alpha;
   assert.ok(faded > 0 && faded < 1, `the envelope decays over the window (got ${faded})`);
   assert.equal(whiteIn(at(192 + 15)).length, 0, 'gone once 0.22 s of demo time passed');
-  // Paused redraws are frozen: the same tick re-renders the same phase.
+  // Paused redraws are frozen: the same tick re-renders the same ops.
   const p1 = whiteIn(at(199));
   const p2 = whiteIn(at(199));
   assert.equal(p1.length, 1, 'still live mid-window');
-  assert.equal(p2[0].lineDashOffset, p1[0].lineDashOffset, 'a paused redraw is byte-identical');
-  assert.ok(Math.abs(p1[0].lineDashOffset - -7 * 0.8) < 1e-9, 'phase = −age × MUZZLE_DASH_SPEED');
+  assert.deepEqual(p2[0], p1[0], 'a paused redraw is byte-identical (frozen)');
 
   // --- rows that must never draw (no guessed fallback) -------------------
   assert.equal(whiteIn(at(400)).length, 0, 'world/fall damage (no attacker) draws no line');
@@ -1307,6 +1364,92 @@ test('hit shots: a shooter→victim tracer over the hit window (muzzle-styled, d
   assert.ok(
     Math.abs(pellets[0].args[0] - to.x) < 1e-9 && Math.abs(pellets[1].args[0] - r.worldToScreen(90, 90).x) < 1e-9,
     'the two lines land on their own victims',
+  );
+  r.destroy();
+});
+
+// bulletTracerWhites — the bullet tracer's WHITE pass: solid 2 px lineTo
+// strokes that end r + MUZZLE_REACH due east of the fire position (the
+// fixture's yaw 0), which separates them from any hit-shot tracer sharing
+// the frame.
+function bulletTracerWhites(seq, origin) {
+  return seq.filter(
+    (e) =>
+      e.op === 'lineTo' &&
+      e.strokeStyle === '#ffffff' &&
+      e.lineWidth === 2 &&
+      Math.abs(e.args[0] - (origin.x + 85)) < 1e-9 &&
+      Math.abs(e.args[1] - origin.y) < 1e-9,
+  );
+}
+
+test('bullet tracers: draw:false rows and mask-cleared frames draw nothing', () => {
+  // The `draw` flag is bullets.js's selection (semi every shot, auto
+  // burst 1/4/7 — its own tests pin the rule): the renderer must paint
+  // ONLY rows where draw === true and trust the rest. A frame with no
+  // position sample for the slot (store.masks — the store only samples
+  // ALIVE slots) draws NOTHING, same no-guess rule as drawHitTracers.
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, {
+    engine,
+    data,
+    players: [
+      { steamId: '1', name: 'alice', side: 'ct' },
+      { steamId: '2', name: 'bob', side: 't' },
+    ],
+  });
+  r.setBullets([
+    { tick: 192, frame: 192, slot: 0, weapon: 'AK-47', draw: true },
+    { tick: 300, frame: 300, slot: 0, weapon: 'AK-47', draw: false },
+  ]);
+  r.resize();
+  r.setCameraMode('free');
+  const origin = r.worldToScreen(10, 10);
+  const at = (tick) => {
+    const mark = canvas.log.length;
+    engine.seekTick(tick);
+    r.draw();
+    return canvas.log.slice(mark);
+  };
+
+  // draw:true paints (the reference frame for the rest of the test)…
+  assert.equal(bulletTracerWhites(at(192), origin).length, 1, 'the draw:true row paints');
+  // …and the draw:false row at ITS tick — window fully live, no other
+  // row anywhere near — paints nothing: `draw` is bullets.js's call.
+  assert.equal(bulletTracerWhites(at(300), origin).length, 0, 'draw:false never draws');
+
+  // mask guard: clear alice's sample bit at HER frame → no line, even
+  // though the row is draw:true and inside its window.
+  data.masks[192] &= ~1;
+  assert.equal(bulletTracerWhites(at(192), origin).length, 0, 'mask-cleared frame draws nothing');
+  data.masks[192] |= 1; // restore — the row draws again (nothing sticky)
+  assert.equal(
+    bulletTracerWhites(at(192), origin).length,
+    1,
+    'the sample returns and the tracer draws again',
+  );
+
+  // Direction comes from the frame's yaw (the −yaw canvas convention,
+  // same as drawPlayers' chevron): turn alice's head NORTH at her fire
+  // frame and the segment follows — 85 px UP the screen from the origin.
+  data.slots[0].pos[192 * 4 + 3] = 90; // yaw 90 → screen angle −90°
+  const north = at(192);
+  const northWhites = north.filter(
+    (e) => e.op === 'lineTo' && e.strokeStyle === '#ffffff' && e.lineWidth === 2,
+  );
+  assert.equal(northWhites.length, 1, 'still ONE white line');
+  assert.ok(
+    Math.abs(northWhites[0].args[0] - origin.x) < 1e-9 &&
+      Math.abs(northWhites[0].args[1] - (origin.y - 85)) < 1e-9,
+    `the segment points along the frame's yaw (got ${northWhites[0].args}, want [${origin.x}, ${origin.y - 85}])`,
+  );
+  assert.equal(
+    bulletTracerWhites(north, origin).length,
+    0,
+    '…and no longer due east (the east filter must not match)',
   );
   r.destroy();
 });
