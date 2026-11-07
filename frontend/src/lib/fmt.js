@@ -66,6 +66,41 @@ export function fmtClock(seconds) {
   return `${m}:${String(sec).padStart(2, '0')}`;
 }
 
+// parseClock — THE inverse of fmtClock (same file, same grammar): it
+// accepts the clock shapes fmtClock renders — "m:ss" ("1:00", "1:05"),
+// "h:mm:ss" from one hour on ("1:02:03") — plus what a user may TYPE
+// into a clock field: zero-padded fields ("01:05") and the bare
+// whole-seconds shorthand ("90"). It returns whole SECONDS. Anything
+// else (empty, letters, a sign, a fractional or an over-range field
+// such as "1:60" — fmtClock never emits one) is NaN: callers restore
+// the value they displayed instead of writing NaN into state. Round-trip
+// is the contract: fmtClock(parseClock(fmtClock(s))) === s for every
+// whole second s ≥ 0 (unit-tested in fmt.test.js), which is what keeps a
+// re-rendered time input from drifting while the user edits it.
+export function parseClock(str) {
+  if (typeof str !== 'string') return NaN;
+  const s = str.trim();
+  if (!s) return NaN;
+  const parts = s.split(':');
+  if (parts.length > 3) return NaN;
+  const nums = parts.map((p) => (/^\d+$/.test(p) ? Number(p) : NaN));
+  if (nums.some((n) => !Number.isFinite(n))) return NaN;
+  if (parts.length === 1) return nums[0]; // bare seconds ("90")
+  // Field ranges: the seconds (and the minutes of a h:mm:ss clock) are
+  // 0–59 — a value outside them is not a clock fmtClock could have
+  // produced ("1:60" is rejected, never silently folded to 2:00). The
+  // leading m of "m:ss" and the bare seconds count are unbounded, so a
+  // typed "75:30" still parses and re-displays canonically as "1:15:30".
+  if (parts.length === 2) {
+    const [m, sec] = nums;
+    if (sec > 59) return NaN;
+    return m * 60 + sec;
+  }
+  const [h, m, sec] = nums;
+  if (m > 59 || sec > 59) return NaN;
+  return h * 3600 + m * 60 + sec;
+}
+
 // tickSeconds converts demo ticks to seconds at the match tickrate
 // (tickrate <= 0 falls back to 64 — CS2's standard).
 export function tickSeconds(ticks, tickRate) {
