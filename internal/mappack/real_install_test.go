@@ -83,13 +83,16 @@ func TestExtractRealCS2Icons(t *testing.T) {
 	if len(errs) > 0 {
 		t.Errorf("per-icon errors: %v", errs)
 	}
-	if len(names) != len(iconTable) {
-		t.Errorf("extracted %d icons, want %d (the whole table)", len(names), len(iconTable))
+	// Both families extract: the equipment table AND the death-notice
+	// glyphs (extractTable = the merged set ExtractIcons walks).
+	if len(names) != len(extractTable) {
+		t.Errorf("extracted %d icons, want %d (the whole table)", len(names), len(extractTable))
 	}
 
-	// Manifest keys other agents are coding against.
+	// Manifest keys other agents are coding against (incl. the renderer's
+	// kill-feed indicators).
 	files := IconFiles(out)
-	for _, key := range []string{"AK-47", "Smoke Grenade", "C4", "Kevlar + Helmet"} {
+	for _, key := range []string{"AK-47", "Smoke Grenade", "C4", "Kevlar + Helmet", "headshot", "blind_kill"} {
 		if files[key] == "" {
 			t.Errorf("manifest key %q missing (have %d keys)", key, len(files))
 		}

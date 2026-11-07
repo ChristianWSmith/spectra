@@ -11,22 +11,29 @@ import (
 	"strings"
 )
 
-// Equipment-icon extraction: the killfeed/HUD SVG silhouettes in
+// Icon extraction: the killfeed/HUD SVG silhouettes in
 // panorama/images/icons/equipment/<name>.vsvg_c → plain <name>.svg files
 // in the app data dir (data.IconsDir()). One icon per canonical
 // equipment name, keyed the way the rest of spectra spells equipment:
 // demoinfocs' common.EquipmentType.String() — the same strings the
 // replay state stream's weapon/inventory fields and
-// models.IsUtilityWeapon use. Assets the UI needs but has no canonical
-// name for (planted_c4, knife variants) are NOT extracted: the frontend
-// tints/chooses per render site. Valve IP never ships — extraction runs
-// locally on demand (frontend/public/maps/README.md acquisition posture).
-// Format facts: CS2.md "Weapon/inventory icons in a CS2 install".
+// models.IsUtilityWeapon use. A SECOND family rides the same pipeline:
+// the game's own death-notice glyphs under panorama/images/hud/deathnotice/
+// (noticeIconTable), keyed the way renderer.js drawKillFeed asks for them
+// ('blind_kill'/'headshot') — non-equipment keys, so they live in their
+// own table and never join iconTable (TestIconTableCanonicalNames pins
+// that one to the demoinfocs enum). Assets the UI needs but has no
+// canonical name for (planted_c4, knife variants) are NOT extracted: the
+// frontend tints/chooses per render site. Valve IP never ships —
+// extraction runs locally on demand (frontend/public/maps/README.md
+// acquisition posture). Format facts: CS2.md "Weapon/inventory icons in
+// a CS2 install".
 
 const (
-	iconPrefix = "panorama/images/icons/equipment/"
-	iconSuffix = ".vsvg_c"
-	iconExt    = ".svg"
+	iconPrefix   = "panorama/images/icons/equipment/"
+	noticePrefix = "panorama/images/hud/deathnotice/"
+	iconSuffix   = ".vsvg_c"
+	iconExt      = ".svg"
 )
 
 // iconTable is the ONE canonical-name → VPK-basename table (keys are
@@ -99,11 +106,47 @@ var iconTable = map[string]string{
 	"HE Grenade":         "hegrenade",
 }
 
-// iconTableNames is iconTable's keys in sorted order, so extraction
+// noticeIconTable is the SECOND extraction family: the game's own
+// death-notice glyphs, keyed the way renderer.js drawKillFeed asks for
+// them (iconFor('blind_kill') before the killer's name, iconFor('headshot')
+// after the weapon). The values are the .vsvg_c basenames under
+// noticePrefix — same container format as the equipment set, verified to
+// decode with decodeVSVG on a real install (2026-11-07).
+//
+// These keys are NOT EquipmentType.String() outputs, so they must never
+// join iconTable — that table is pinned to the demoinfocs enum by
+// TestIconTableCanonicalNames; TestNoticeIconTable pins THIS one.
+//
+// Existing extracted installs gain these two glyphs only by re-extracting
+// (Settings → "Extract all CS2 assets"): until then IconFiles omits them
+// and the kill feed draws its rows without the indicators (the renderer
+// skips a missing glyph without reserving any space).
+var noticeIconTable = map[string]string{
+	"headshot":   "icon_headshot", // panorama/images/hud/deathnotice/icon_headshot.vsvg_c
+	"blind_kill": "blind_kill",    // panorama/images/hud/deathnotice/blind_kill.vsvg_c
+}
+
+// extractTable is BOTH families merged — the one map ExtractIcons walks
+// and the one reverse index builds from. The tables stay separate
+// (canonical-name vocabulary vs. renderer glyph keys) but extract as one
+// set so a single extraction pass and a single manifest serve both.
+// TestNoticeIconTable proves the two never collide on key or basename.
+var extractTable = func() map[string]string {
+	m := make(map[string]string, len(iconTable)+len(noticeIconTable))
+	for name, base := range iconTable {
+		m[name] = base
+	}
+	for name, base := range noticeIconTable {
+		m[name] = base
+	}
+	return m
+}()
+
+// extractTableNames is extractTable's keys in sorted order, so extraction
 // (and the error lists it produces) is deterministic.
-var iconTableNames = func() []string {
-	keys := make([]string, 0, len(iconTable))
-	for name := range iconTable {
+var extractTableNames = func() []string {
+	keys := make([]string, 0, len(extractTable))
+	for name := range extractTable {
 		keys = append(keys, name)
 	}
 	sort.Strings(keys)
@@ -111,22 +154,36 @@ var iconTableNames = func() []string {
 }()
 
 // iconFileToName is the reverse index for manifest building: extracted
-// filename ("ak47.svg") → canonical name ("AK-47"). Built once from
-// iconTable; the table is 1:1 by TestIconTableCanonicalNames.
+// filename ("ak47.svg") → manifest key ("AK-47"; "blind_kill.svg" →
+// "blind_kill"). Built once from extractTable so BOTH families resolve
+// through IconFiles; the tables are 1:1 by TestIconTableCanonicalNames /
+// TestNoticeIconTable.
 var iconFileToName = func() map[string]string {
-	m := make(map[string]string, len(iconTable))
-	for name, base := range iconTable {
+	m := make(map[string]string, len(extractTable))
+	for name, base := range extractTable {
 		m[base+iconExt] = name
 	}
 	return m
 }()
 
-// ExtractIcons extracts every icon in iconTable from the CS2 install at
-// cs2Dir into outDir (created if needed) as <basename>.svg files.
-// Idempotent — re-running after a game update refreshes the icons. A
-// canonical name whose file is missing from the VPK lands in errs (the
-// manifest simply omits it); only a failure to open the VPK itself is
-// fatal. Returns the canonical names written, sorted for determinism.
+// iconVPKPath — the full VPK path of a manifest key: the FAMILY prefix
+// (equipment silhouettes vs death-notice glyphs) + the table's basename.
+// extractTable merges both tables, so the prefix must follow the family
+// the key belongs to instead of assuming iconPrefix.
+func iconVPKPath(name string) string {
+	if base, ok := noticeIconTable[name]; ok {
+		return noticePrefix + base + iconSuffix
+	}
+	return iconPrefix + iconTable[name] + iconSuffix
+}
+
+// ExtractIcons extracts every icon in extractTable (both families) from
+// the CS2 install at cs2Dir into outDir (created if needed) as
+// <basename>.svg files. Idempotent — re-running after a game update
+// refreshes the icons. A canonical name whose file is missing from the
+// VPK lands in errs (the manifest simply omits it); only a failure to
+// open the VPK itself is fatal. Returns the canonical names written,
+// sorted for determinism.
 func ExtractIcons(cs2Dir, outDir string) (names []string, errs []string, err error) {
 	pak := resolvePak(cs2Dir)
 	if pak == "" {
@@ -141,9 +198,9 @@ func ExtractIcons(cs2Dir, outDir string) (names []string, errs []string, err err
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return nil, nil, err
 	}
-	for _, name := range iconTableNames {
-		base := iconTable[name]
-		raw, found, rerr := v.read(iconPrefix + base + iconSuffix)
+	for _, name := range extractTableNames {
+		base := extractTable[name]
+		raw, found, rerr := v.read(iconVPKPath(name))
 		if rerr != nil {
 			errs = append(errs, fmt.Sprintf("%s: %v", name, rerr))
 			continue
@@ -169,10 +226,11 @@ func ExtractIcons(cs2Dir, outDir string) (names []string, errs []string, err err
 	return names, errs, nil
 }
 
-// IconFiles lists the extracted icons in dir: canonical name → filename
-// ("ak47.svg"), rebuilt from a fresh directory listing on every call so
-// the served manifest never goes stale. Files that aren't in the reverse
-// table (strays, older game versions) are ignored.
+// IconFiles lists the extracted icons in dir: manifest key → filename
+// ("ak47.svg", "blind_kill.svg" — BOTH icon families resolve through the
+// one reverse index), rebuilt from a fresh directory listing on every call
+// so the served manifest never goes stale. Files that aren't in the
+// reverse table (strays, older game versions) are ignored.
 func IconFiles(dir string) map[string]string {
 	entries, err := os.ReadDir(dir)
 	if err != nil {

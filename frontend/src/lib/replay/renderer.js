@@ -114,18 +114,26 @@ const KILL_MARKER_FALLBACK_S = 180; // s — death-X cleanup when the round's
 //                                    (longer than any round: it can
 //                                    never cut a live round short)
 // --- Kill feed (drawKillFeed — the top-right overlay) ------------------------
-const KILL_FEED_MAX = 6; // entries shown, newest on top
+const KILL_FEED_MAX = 6; // entries shown — the NEWEST 6 (the cap drops the
+//                          OLDEST, so a new kill never evicts a fresh row)
 const KILL_FEED_LH = 18; // px per entry line (the box's HEIGHT)
 const KILL_FEED_PITCH = 22; // px between entry TOPS: the 18 px box + a
 //                            4 px gap — entries must not stack touching
 const KILL_FEED_EDGE = 8; // px from the stage's edge: top/right for the
 //                          feed, bottom/left for the chat (drawChat)
 const KILL_FEED_INSET = 6; // px of padding inside an entry
-const KILL_FEED_GAP = 12; // px of breathing room between a name and the
-//                        weapon mark (image or →) on EACH side — 8 px
-//                        still read as the mark hugging the names, so
-//                        the mark got its own beat on both sides
-const KILL_FEED_ICON = 14; // px — the weapon image's size on a line
+const KILL_FEED_GAP = 12; // px of breathing room between EVERY pair of cells
+//                        on a row (name ↔ glyph ↔ name). An image cell
+//                        reserves its PAINTED width (KILL_FEED_ICON ·
+//                        iconAspect + the 1 px halo drawIcon adds each
+//                        side — iconAspect/drawIcon), so a wide sprite
+//                        (AWP, aspect 3.4) gets the same 12 px margin on
+//                        BOTH sides instead of punching through into the
+//                        names; 8 px still read as the mark hugging the
+//                        names, so the mark got its own beat on both sides
+const KILL_FEED_ICON = 14; // px — a feed image's HEIGHT on a line (the
+//                          weapon/indicator art); its width follows
+//                          iconAspect, never a 1:1 squash
 const KILL_FEED_R = 4; // px — entry corner radius (hudBox uses 6)
 // --- Chat (drawChat — the bottom-left overlay) --------------------------------
 // The chat REUSES the kill feed's entry geometry (KILL_FEED_MAX/LH/
@@ -2144,11 +2152,21 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // the canvas): the kills of the ROUND CONTAINING the playhead that have
   // already happened — round-scoped AND tick ≤ playhead, so a round
   // change clears the feed and a backwards scrub re-derives it (nothing
-  // sticky, nothing remembered). Newest on top, capped. One line each:
-  // killer name → weapon → victim name over a dark transparent box
-  // (entryBox) outlined in the KILLER's team color (neutral when
-  // unknown); names are tinted by their own side AT THE KILL TICK
-  // (sideAtFrame — the same rule the death markers use).
+  // sticky, nothing remembered). Rows run OLDEST → NEWEST top-anchored on
+  // the edge: a fresh kill APPENDS at the BOTTOM and the rows already on
+  // screen never move (the cap keeps the NEWEST KILL_FEED_MAX — the
+  // oldest falls off the top, exactly chatLayout's rule for the chat).
+  // One line each, cells left → right:
+  //   (blind) killer (+ assister) weapon/→ (headshot) victim
+  // over a dark transparent box (entryBox) outlined in the KILLER's team
+  // color (neutral when unknown); names are tinted by their own side AT
+  // THE KILL TICK (sideAtFrame — the same rule the death markers use).
+  // The parenthesized indicators are IMAGES from the icon manifest
+  // (iconFor('blind_kill') before the killer, iconFor('headshot') after
+  // the weapon — internal/mappack/icons.go extracts them from
+  // panorama/images/hud/deathnotice/); a row whose glyph isn't extracted
+  // yet draws WITHOUT it — no space reserved, so the other cells never
+  // shift (degradation must not move what's on screen).
   function drawKillFeed() {
     if (!hud || !hud.round || !Number.isFinite(hud.round.number)) return;
     const st = engine.state;
@@ -2159,8 +2177,11 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       rows.push(k);
     }
     if (!rows.length) return;
-    rows.sort((a, b) => b.tick - a.tick); // newest first
-    const shown = rows.slice(0, KILL_FEED_MAX);
+    // oldest first: a new kill appends BELOW the rows already shown
+    // (the old newest-first order pushed the whole stack down on every
+    // kill), and the cap below drops the oldest — the NEWEST 6 stay.
+    rows.sort((a, b) => a.tick - b.tick);
+    const shown = rows.slice(-KILL_FEED_MAX);
     // No position store (a caller that never fed data) → no side to
     // resolve: every name/border degrades to the neutral color instead
     // of throwing — sideAtFrame needs the store.
@@ -2181,12 +2202,39 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       const killer = k.attackerName || k.attacker || '?';
       const victim = k.victimName || k.victim || '?';
       const img = iconFor(k.weapon); // canonical name → manifest image
-      const kw = ctx.measureText(killer).width;
-      const vw = ctx.measureText(victim).width;
-      const ww = img ? KILL_FEED_ICON : ctx.measureText('→').width;
-      const w = KILL_FEED_INSET * 2 + kw + KILL_FEED_GAP + ww + KILL_FEED_GAP + vw;
+      // The indicators: only when the ROW asks for them AND the manifest
+      // has them (a pre-re-extraction install lacks both glyphs). A
+      // missing image contributes NO cell — not even a gap — so a row
+      // without the glyph is pixel-identical to a row that never had the
+      // flag (the feed's degradation rule).
+      const blindImg = k.attackerBlind ? iconFor('blind_kill') : null;
+      const hsImg = k.headshot ? iconFor('headshot') : null;
+      // spec's "killer (+ assister)": the addition FOLLOWS the killer in
+      // ONE fillText, so the whole cell keeps the killer-side color.
+      const killerCell = k.assisterName ? `${killer} + ${k.assisterName}` : killer;
+      // cellWidth — an image cell reserves its ACTUAL painted width
+      // (KILL_FEED_ICON · iconAspect + 2: drawIcon paints the body
+      // size·aspect wide plus a 1 px halo each side — iconAspect/drawIcon),
+      // and a text cell its measured width. The image is then centered in
+      // that slot, which is what makes the margin on EACH side exactly
+      // KILL_FEED_GAP — the old fixed 14 px slot let wide sprites (AWP,
+      // aspect 3.42 → ~48 px) punch through both gaps into the names.
+      const cellWidth = (cell) =>
+        cell.img ? KILL_FEED_ICON * iconAspect(cell.img) + 2 : ctx.measureText(cell.text).width;
+      const cells = [];
+      if (blindImg) cells.push({ img: blindImg }); // before the killer's name
+      cells.push({ text: killerCell, fill: teamColor(kSide) });
+      // no image for this weapon — a simple arrow, never an error
+      cells.push(img ? { img } : { text: '→', fill: SECONDARY_TEXT });
+      if (hsImg) cells.push({ img: hsImg }); // after the weapon icon
+      cells.push({ text: victim, fill: teamColor(vSide) });
+      const widths = cells.map(cellWidth);
+      const w =
+        KILL_FEED_INSET * 2 +
+        widths.reduce((a, b) => a + b, 0) +
+        KILL_FEED_GAP * (cells.length - 1);
       const x = cssW - KILL_FEED_EDGE - w;
-      // newest on top, entries on the PITCH (box height + gap) so they
+      // oldest at the top, entries on the PITCH (box height + gap) so they
       // read as separate lines instead of one touching stack
       const y = KILL_FEED_EDGE + i * KILL_FEED_PITCH;
 
@@ -2194,19 +2242,18 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       entryBox(x, y, w, KILL_FEED_LH, teamColor(kSide));
 
       let tx = x + KILL_FEED_INSET;
-      ctx.fillStyle = teamColor(kSide);
-      ctx.fillText(killer, tx, y + 4);
-      tx += kw + KILL_FEED_GAP;
-      if (img) {
-        drawIcon(img, tx + KILL_FEED_ICON / 2, y + KILL_FEED_LH / 2, KILL_FEED_ICON);
-      } else {
-        // no image for this weapon — a simple arrow, never an error
-        ctx.fillStyle = SECONDARY_TEXT;
-        ctx.fillText('→', tx, y + 4);
+      for (let c = 0; c < cells.length; c++) {
+        const cell = cells[c];
+        if (cell.img) {
+          // centered in the reserved slot: the halo fills [tx, tx+width]
+          // exactly, so BOTH gaps come out to KILL_FEED_GAP
+          drawIcon(cell.img, tx + widths[c] / 2, y + KILL_FEED_LH / 2, KILL_FEED_ICON);
+        } else {
+          ctx.fillStyle = cell.fill;
+          ctx.fillText(cell.text, tx, y + 4);
+        }
+        tx += widths[c] + KILL_FEED_GAP;
       }
-      tx += ww + KILL_FEED_GAP;
-      ctx.fillStyle = teamColor(vSide);
-      ctx.fillText(victim, tx, y + 4);
     }
     ctx.textBaseline = 'alphabetic';
   }

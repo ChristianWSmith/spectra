@@ -24,8 +24,10 @@
 // the codicon freeze clock (document.fonts.check stubbed both ways), the
 // C4/0:00 clock, the tick/frame-free playback readout (and the speed×
 // line's removal: no speed text, no empty readout box) — plus the
-// round-scoped kill feed with its rounded entry boxes, 12 px weapon-mark
-// margins and the 22 px entry pitch, the round-scoped bottom-left chat
+// round-scoped kill feed with its rounded entry boxes, image cells that
+// reserve their PAINTED width (a 12 px gap on each side of every cell),
+// the append-at-bottom stack (oldest on top) and the 22 px entry pitch,
+// the round-scoped bottom-left chat
 // (round/round-change/scrub scoping, speaker colors, the 6-cap stack
 // newest-at-bottom, message truncation, the readout stacked above it)
 // and the ONE entry-box painter both overlays share).
@@ -1471,6 +1473,9 @@ test('smoke tint: lingering area + bloom ring take the thrower team color, neutr
 const HUD_PAD = 8; // mirrors renderer.js — box padding / stage offset
 const KILL_FEED_LH = 18; // mirrors renderer.js — one entry line
 const KILL_FEED_R = 4; // mirrors renderer.js — entry corner radius
+const KILL_FEED_GAP = 12; // mirrors renderer.js — the gap between EVERY pair
+//                        of cells on a feed row (an image cell reserves
+//                        its painted width so both of its gaps are this)
 // .codicon-clock's glyph (codicon.css line 145: content "\ea82") — built
 // from the codepoint so this file never carries the raw PUA character.
 const CLOCK_GLYPH = String.fromCharCode(0xea82);
@@ -1830,12 +1835,15 @@ test('kill feed: round-scoped entries, killer-team outline, weapon image/arrow, 
   let mark = canvas.log.length;
   r.draw();
 
-  // two entries, NEWEST ON TOP (tick 60 above tick 50), right-aligned:
-  // measureText is 40 and each name↔mark gap is 12 → the arrow line is
-  // 12 + 40 + 12 + 40 + 12 + 40 = 156 wide (x = 800 − 8 − 156 = 636) and
-  // the icon line 12 + 40 + 12 + 14 + 12 + 40 = 130 (x = 800 − 8 − 130 =
-  // 662); the rows sit on the 22 px PITCH (18 px box + 4 px gap), so the
-  // boxes never touch.
+  // two entries, OLDEST ON TOP (tick 50 above tick 60 — a new kill
+  // APPENDS at the bottom of the stack and never moves the rows already
+  // shown), right-aligned: measureText is 40, every gap is 12, and an
+  // image cell reserves its PAINTED width (KILL_FEED_ICON · iconAspect +
+  // 2 = 14 · 1 + 2 = 16 for the square test icon, was a fixed 14) → the
+  // icon line is 12 + 40 + 16 + 40 + 12 + 12 = 132 wide (x = 800 − 8 −
+  // 132 = 660, grew by the 2 halo px) and the arrow line
+  // 12 + 40 + 40 + 40 + 12 + 12 = 156 (x = 636, unchanged); the rows sit
+  // on the 22 px PITCH (18 px box + 4 px gap), so the boxes never touch.
   const boxes = feedBoxesSince(canvas.log, mark);
   assert.equal(boxes.length, 2, 'both round-1 kills up to the playhead');
   // ROUNDED corners: each entry is ONE roundRect path (r = 4) shared by
@@ -1848,16 +1856,17 @@ test('kill feed: round-scoped entries, killer-team outline, weapon image/arrow, 
   assert.deepEqual(
     rounded.map((e) => [e.args[0], e.args[1], e.args[2]]),
     [
-      [636, 8, 156], // [x, y, w] — the arrow entry, right-aligned at cssW − 8
-      [662, 30, 130], // the icon entry, one PITCH (18 + 4) below
+      [660, 8, 132], // [x, y, w] — the icon entry, OLDEST on top (was [662, 30, 130]: the fixed 14 px slot became the 16 px painted width, and the ordering flipped with append-at-bottom)
+      [636, 30, 156], // the arrow entry BELOW it (was [636, 8, 156]: newest-on-top used to push it up)
     ],
   );
-  const top = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === 'bob' && e.args[2] === 12);
-  assert.equal(top.args[1], 636 + 6, 'the newest entry is right-aligned at cssW − 8');
-  assert.equal(top.fillStyle, '#e6a35a', "the KILLER's outline/name use the killer's side (T)");
-  const lower = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === 'alice' && e.args[2] === 34);
-  assert.equal(lower.args[1], 662 + 6);
-  assert.equal(lower.fillStyle, '#5aa9e6', 'the CT killer is CT-colored');
+  // the OLDEST row on top: alice (CT) killing bob at tick 50
+  const topKiller = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === 'alice' && e.args[2] === 12);
+  assert.equal(topKiller.args[1], 660 + 6, 'the top entry is right-aligned at cssW − 8 (its own box)');
+  assert.equal(topKiller.fillStyle, '#5aa9e6', "the KILLER's outline/name use the killer's side (CT)");
+  const lowerKiller = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === 'bob' && e.args[2] === 34);
+  assert.equal(lowerKiller.args[1], 636 + 6);
+  assert.equal(lowerKiller.fillStyle, '#e6a35a', 'the T killer is T-colored');
 
   // outline = the killer's team color, 1px, full alpha (nothing else in
   // the frame strokes that combination: trails/arrow draw at alpha ≤ 0.5)
@@ -1868,24 +1877,34 @@ test('kill feed: round-scoped entries, killer-team outline, weapon image/arrow, 
   assert.equal(lines('#e6a35a').length, 1, 'the T killer’s box is outlined in T');
   assert.equal(lines('#5aa9e6').length, 1, 'the CT killer’s box is outlined in CT');
 
-  // victim names are tinted by the VICTIM's side — RIGHT-aligned, so the
-  // wider icon gaps don't move them: 800 − 8 − 6 − 40 = 746 on both rows
-  // (the rows themselves moved to y = 12 / 34 on the new pitch)
-  const victimT = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === 'bob' && e.args[2] === 34);
+  // victim names are tinted by the VICTIM's side — the rows flipped with
+  // the ordering: bob (T) is the OLDER row's victim at y = 12, alice
+  // (CT) the newer row's victim at y = 34; both right-aligned at
+  // 800 − 8 − 6 − 40 = 746 (the box is anchored by its RIGHT edge, so
+  // the wider icon slot never moves them).
+  const victimT = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === 'bob' && e.args[2] === 12);
   assert.equal(victimT.args[1], 746);
   assert.equal(victimT.fillStyle, '#e6a35a');
-  const victimCT = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === 'alice' && e.args[2] === 12);
+  const victimCT = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === 'alice' && e.args[2] === 34);
   assert.equal(victimCT.args[1], 746);
   assert.equal(victimCT.fillStyle, '#5aa9e6');
 
-  // weapon: the canonical name's image when the manifest has one…
+  // weapon: the canonical name's image when the manifest has one… — the
+  // cell reserves the PAINTED width (14 · aspect + 2 halo px = 16), so
+  // the HALO (the outermost paint: body + 1 px each side) starts exactly
+  // one gap past the killer's name (666 + 40 = 706 → 718) and ends one
+  // gap before the victim (718 + 16 = 734 → 746).
   const weaponImgs = opsSince(canvas.log, 'drawImage', mark).filter((e) => e.args[3] === 14);
-  assert.equal(weaponImgs.length, 1, 'one weapon image (KILL_FEED_ICON)');
-  // …sitting 12 px right of the killer name (box x + inset + name width),
-  // with the victim's 12 px left gap closing the icon's other side
-  assert.equal(weaponImgs[0].args[1], 662 + 6 + 40 + 12, 'a 12 px gap on EACH side of the icon');
+  assert.equal(weaponImgs.length, 1, 'one weapon image (KILL_FEED_ICON body)');
+  const halos = opsSince(canvas.log, 'drawImage', mark).filter(
+    (e) => e.args[3] === 16 && e.args[4] === 16, // the halo draws 1 px larger on every side
+  );
+  assert.equal(halos.length, 1, 'the icon draws over its dark halo');
+  assert.equal(halos[0].args[1], 660 + 6 + 40 + 12, 'a 12 px gap on EACH side of the icon');
+  assert.equal(halos[0].args[1] + 16 + KILL_FEED_GAP, 746, '…and the victim starts one gap past the halo');
   // …and a plain arrow when it does not — on the same 12 px footing
-  const arrow = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === '→' && e.args[2] === 12);
+  // (the arrow row is the NEWER one now, so its text line is y = 34)
+  const arrow = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === '→' && e.args[2] === 34);
   assert.ok(arrow, 'a weapon with no image falls back to →');
   assert.equal(arrow.args[1], 636 + 6 + 40 + 12, 'the arrow gets the same 12 px lead-in gap');
 
@@ -1919,7 +1938,7 @@ test('kill feed: round-scoped entries, killer-team outline, weapon image/arrow, 
   r.destroy();
 });
 
-test('kill feed: capped at 6 entries, newest on top', () => {
+test('kill feed: capped at 6 entries — the NEWEST 6 kept, oldest dropped, newest at the bottom', () => {
   headlessGlobals();
   const data = synthStore(1300, 2);
   const engine = createEngine(data, 64);
@@ -1961,11 +1980,249 @@ test('kill feed: capped at 6 entries, newest on top', () => {
     'one line per surviving entry',
   );
   const texts = textsSince(canvas.log, mark);
+  // oldest at the TOP: the cap keeps the NEWEST 6 (p3…p8), so p3 — not
+  // p1 — heads the stack (row 0 → box y = 8, text line y = 12)…
   assert.ok(
-    canvas.log.some((e) => e.op === 'fillText' && e.args[0] === 'p8' && e.args[2] === 12),
-    'the newest kill sits on TOP',
+    canvas.log.some((e) => e.op === 'fillText' && e.args[0] === 'p3' && e.args[2] === 12),
+    'the oldest SURVIVOR sits on top',
+  );
+  // …and the newest kill (p8) sits at the BOTTOM row (row 5 → box
+  // y = 8 + 5 · 22 = 118, text line 122): kills APPEND, never push down
+  assert.ok(
+    canvas.log.some((e) => e.op === 'fillText' && e.args[0] === 'p8' && e.args[2] === 122),
+    'the newest kill sits at the BOTTOM',
   );
   assert.ok(!texts.includes('p1') && !texts.includes('p2'), 'the two oldest entries are dropped');
+  r.destroy();
+});
+
+// --- kill-feed row composition (indicators, margins, append) ------------------
+//
+// The feed's row contract: (blind) killer (+ assister) weapon (headshot)
+// victim, every ADJACENT pair separated by exactly KILL_FEED_GAP (an
+// image cell reserves its painted width — KILL_FEED_ICON · iconAspect +
+// 2 — so wide sprites get the same margin on both sides), rows appending
+// at the bottom, and a glyph missing from the manifest reserving NO
+// space (degradation must not move what's on screen).
+
+test('kill feed: an image cell reserves its PAINTED width — equal 12 px gaps around a wide sprite', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: HUD_PLAYERS });
+  const mk = (ev) => normalizeEvent(ev, {});
+  r.setLandmarks([
+    mk({ id: 1, seq: 1, tick: 50, round: 1, kind: 'kill', attacker: '1', attackerName: 'alice', victim: '2', victimName: 'bob', weapon: 'AWP' }),
+  ]);
+  // aspect 3: the body paints 14 · 3 = 42 px and the halo adds 1 px per
+  // side → 44 px reserved. The OLD fixed 14 px slot let this sprite
+  // punch ~30 px through both gaps into the names (the research case:
+  // AWP overflows −6 px, AK −1.35 px, a P250 leaves ~10 px).
+  r.setIcons({ AWP: { width: 96, height: 32, src: 'awp.svg' } });
+  r.setHud({
+    score: { ct: 0, t: 0 },
+    teamNames: { ct: '', t: '' },
+    round: { number: 1, label: 'R1', startTick: 0, freezeEndTick: 640, endTick: 1200, bombSite: '' },
+    tickRate: 64,
+  });
+  r.resize();
+
+  engine.seekTick(100);
+  const mark = canvas.log.length;
+  r.draw();
+
+  // w = 12 (inset·2) + 40 + 44 + 40 + 2 · 12 = 160 → x = 800 − 8 − 160
+  const box = opsSince(canvas.log, 'roundRect', mark).find(
+    (e) => e.args[3] === KILL_FEED_LH && e.args[4] === KILL_FEED_R,
+  );
+  assert.ok(box, 'the feed draws its entry box');
+  assert.deepEqual([box.args[0], box.args[1], box.args[2]], [632, 8, 160]);
+
+  const killer = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === 'alice' && e.args[2] === 12);
+  const victim = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === 'bob' && e.args[2] === 12);
+  const halo = opsSince(canvas.log, 'drawImage', mark).find((e) => e.args[3] === 44);
+  assert.ok(halo, 'the halo is the outermost paint (14 · 3 + 2)');
+  assert.equal(halo.args[1] - (killer.args[1] + 40), KILL_FEED_GAP, 'icon left edge − killer name end = 12');
+  assert.equal(victim.args[1] - (halo.args[1] + halo.args[3]), KILL_FEED_GAP, 'victim x − icon right edge = 12');
+  // centered in the reserved slot: the body (42 px) sits 1 px inside the
+  // halo on each side, i.e. the cell's paint fills [tx, tx + 44] exactly
+  const body = opsSince(canvas.log, 'drawImage', mark).find((e) => e.args[3] === 42);
+  assert.ok(body, 'the body paints at the icon’s own aspect (no 1:1 squash)');
+  assert.equal(body.args[1], halo.args[1] + 1, 'the body is centered in the halo, not left-anchored');
+  r.destroy();
+});
+
+test('kill feed: a new kill APPENDS at the bottom (the rows already shown never move)', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: HUD_PLAYERS });
+  const mk = (ev) => normalizeEvent(ev, {});
+  const kill = (id, tick, who) =>
+    mk({ id, seq: id, tick, round: 1, kind: 'kill', attacker: '1', attackerName: who, victim: '2', victimName: 'bob', weapon: 'AK-47' });
+  r.setIcons({ 'AK-47': { width: 32, height: 32, src: 'ak.svg' } });
+  r.setHud({
+    score: { ct: 0, t: 0 },
+    teamNames: { ct: '', t: '' },
+    round: { number: 1, label: 'R1', startTick: 0, freezeEndTick: 640, endTick: 1200, bombSite: '' },
+    tickRate: 64,
+  });
+  r.resize();
+  const boxRows = (from) =>
+    opsSince(canvas.log, 'roundRect', from)
+      .filter((e) => e.args[3] === KILL_FEED_LH && e.args[4] === KILL_FEED_R)
+      .map((e) => [e.args[0], e.args[1], e.args[2]]);
+
+  r.setLandmarks([kill(1, 50, 'p1'), kill(2, 60, 'p2'), kill(3, 70, 'p3')]);
+  engine.seekTick(100);
+  let mark = canvas.log.length;
+  r.draw();
+  // identical names → identical widths → every box is [660, y, 132];
+  // the OLDEST heads the stack (the old newest-first order pushed the
+  // whole stack down from the top on every kill)
+  assert.deepEqual(
+    boxRows(mark),
+    [
+      [660, 8, 132], // p1 (tick 50) — top
+      [660, 30, 132], // p2 — one PITCH down
+      [660, 52, 132], // p3 — the current bottom
+    ],
+    'oldest at the top, newest at the bottom',
+  );
+  const before = boxRows(mark);
+
+  // a FOURTH kill: the first three boxes stay byte-identical and the new
+  // row lands one PITCH below the previous bottom — nothing shifts up
+  r.setLandmarks([kill(1, 50, 'p1'), kill(2, 60, 'p2'), kill(3, 70, 'p3'), kill(4, 80, 'p4')]);
+  mark = canvas.log.length;
+  r.draw();
+  const after = boxRows(mark);
+  assert.deepEqual(after.slice(0, 3), before, 'the existing rows do not move');
+  assert.deepEqual(after[3], [660, 74, 132], 'the new kill appends one PITCH below the stack');
+  r.destroy();
+});
+
+test('kill feed: (blind) killer + assister weapon (headshot) victim — glyph slots and degradation', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: HUD_PLAYERS });
+  const mk = (ev) => normalizeEvent(ev, {});
+  const kill = (id, tick, flags) =>
+    mk({
+      id,
+      seq: id,
+      tick,
+      round: 1,
+      kind: 'kill',
+      attacker: '1',
+      attackerName: 'alice',
+      victim: '2',
+      victimName: 'bob',
+      weapon: 'AK-47',
+      ...flags,
+    });
+  r.setLandmarks([
+    kill(1, 50, {}), // plain
+    kill(2, 60, { attackerBlind: true }), // the kill-row flag from EventRow.attackerBlind
+    kill(3, 70, { headshot: true, assisterName: 'carol' }),
+  ]);
+  // distinct aspects so each glyph's slot is unambiguous: the square
+  // weapon/blind paint 16 px (14 · 1 + 2), the wide headshot 30 px
+  // (14 · 2 + 2)
+  r.setIcons({
+    'AK-47': { width: 32, height: 32, src: 'ak.svg' },
+    blind_kill: { width: 32, height: 32, src: 'blind.svg' },
+    headshot: { width: 64, height: 32, src: 'hs.svg' },
+  });
+  r.setHud({
+    score: { ct: 0, t: 0 },
+    teamNames: { ct: '', t: '' },
+    round: { number: 1, label: 'R1', startTick: 0, freezeEndTick: 640, endTick: 1200, bombSite: '' },
+    tickRate: 64,
+  });
+  r.resize();
+
+  engine.seekTick(100);
+  let mark = canvas.log.length;
+  r.draw();
+  const boxRows = (from) =>
+    opsSince(canvas.log, 'roundRect', from)
+      .filter((e) => e.args[3] === KILL_FEED_LH && e.args[4] === KILL_FEED_R)
+      .map((e) => [e.args[0], e.args[1], e.args[2]]);
+
+  // Right-aligned boxes, so the victim always lands at 800 − 8 − 6 − 40
+  // = 746; each extra cell adds its width + ONE gap (cells − 1 gaps):
+  // plain 132 → x 660; blind 160 → x 632; headshot 174 → x 618
+  assert.deepEqual(
+    boxRows(mark),
+    [
+      [660, 8, 132], // plain row — the baseline layout
+      [632, 30, 160], // + the 16 px blind cell before the killer
+      [618, 52, 174], // + the 30 px headshot cell after the weapon
+    ],
+  );
+
+  const imgs = opsSince(canvas.log, 'drawImage', mark);
+  const killerRow2 = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === 'alice' && e.args[2] === 34);
+  const killerRow3 = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === 'alice + carol' && e.args[2] === 56);
+
+  // (d) blind BEFORE the killer's name: the glyph occupies [638, 654]
+  // (box x + inset), the killer follows one gap later at 666
+  const blind = imgs.find((e) => e.args[1] === 638 && e.args[2] === 31 && e.args[3] === 16);
+  assert.ok(blind, 'the blind image is drawn in the row that asked for it');
+  assert.ok(blind.args[1] < killerRow2.args[1], 'the blind image comes BEFORE the killer name x');
+  assert.equal(killerRow2.args[1] - (blind.args[1] + blind.args[3]), KILL_FEED_GAP, 'gap after the blind glyph');
+  assert.equal(blind.args[1], 632 + 6, 'the first cell starts at the box inset (no gap before it)');
+
+  // (e) headshot AFTER the weapon icon: weapon halo [676, 692], glyph
+  // [704, 734], victim at 746 — one gap around the glyph either way
+  const weaponRow3 = imgs.find((e) => e.args[1] === 676 && e.args[2] === 53 && e.args[3] === 16);
+  const hs = imgs.find((e) => e.args[1] === 704 && e.args[2] === 53 && e.args[3] === 30);
+  assert.ok(weaponRow3, 'the weapon icon still leads the weapon cell');
+  assert.ok(hs, 'the headshot image is drawn between weapon and victim');
+  assert.equal(hs.args[1] - (weaponRow3.args[1] + weaponRow3.args[3]), KILL_FEED_GAP, 'gap after the weapon icon');
+  assert.equal(746 - (hs.args[1] + hs.args[3]), KILL_FEED_GAP, 'gap before the victim');
+
+  // (g) the assister rides the KILLER's cell as ONE fillText, in the
+  // killer's side color (alice is CT here); no standalone 'carol' text
+  assert.ok(killerRow3, 'killer + assister renders as one text run');
+  assert.equal(killerRow3.args[1], 624, 'the combined cell starts at the box inset');
+  assert.equal(killerRow3.fillStyle, '#5aa9e6', "the cell keeps the KILLER's side color");
+  assert.ok(!textsSince(canvas.log, mark).includes('carol'), 'no separate assister run');
+
+  // (f) the SAME rows with the glyphs absent from the manifest: the
+  // blind/headshot cells vanish WITH their gap — rows 2/3 collapse onto
+  // the plain row's geometry (only y differs), so a pre-re-extraction
+  // install renders without shifting anything
+  r.setIcons({ 'AK-47': { width: 32, height: 32, src: 'ak.svg' } });
+  mark = canvas.log.length;
+  r.draw();
+  assert.deepEqual(
+    boxRows(mark),
+    [
+      [660, 8, 132],
+      [660, 30, 132], // blind row: no glyph → no reserved cell
+      [660, 52, 132], // headshot row: same
+    ],
+    'missing indicator images reserve NO space',
+  );
+  const plainKiller = canvas.log.find((e) => e.op === 'fillText' && e.args[0] === 'alice' && e.args[2] === 12);
+  const degradedBlind = opsSince(canvas.log, 'fillText', mark).find(
+    (e) => e.args[0] === 'alice' && e.args[2] === 34,
+  );
+  const degradedHs = opsSince(canvas.log, 'fillText', mark).find(
+    (e) => e.args[0] === 'alice + carol' && e.args[2] === 56,
+  );
+  assert.equal(degradedBlind.args[1], plainKiller.args[1], 'the blind row collapses onto the plain row’s layout');
+  assert.equal(degradedHs.args[1], plainKiller.args[1], '…and so does the headshot row');
+  assert.ok(
+    !opsSince(canvas.log, 'drawImage', mark).some((e) => e.args[1] === 638 || e.args[1] === 704),
+    'no glyph pixels are drawn',
+  );
   r.destroy();
 });
 
