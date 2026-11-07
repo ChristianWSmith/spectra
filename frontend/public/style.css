@@ -1992,26 +1992,50 @@ input[type='checkbox']:focus-visible {
   padding: 4px 6px;
 }
 
-/* Loop popover (spec 12): the trigger span is the canonical Popover's
-   anchor (position: relative so the panel can attach to it); the panel
-   holds the from/to inputs + the toggle — the .loop-group/.loop-input
-   spellings above, now scoped inside the popover instead of sitting
-   bare in the toolbar. It opens UPWARD because the transport sits at
-   the bottom of the replay column (over the stage, never off-screen). */
+/* --- Transport popovers (rp-pop-host / rp-pop) ----------------------------
+   The SHARED anchoring every floating control in the replay transport
+   uses — the loop, speed and camera controls (and the voice volume
+   popover): the host span is the canonical Popover's anchor (position:
+   relative so the panel can attach to it) and the panel floats ABOVE
+   its trigger because the transport sits at the bottom of the replay
+   column (over the stage, never off-screen). The values are the
+   original .rp-loop / .rp-loop-pop pair's, extracted verbatim; each
+   panel keeps its own CONTENT spelling (.rp-loop-pop's inline input
+   row, .rp-speed-pop / .rp-cam-pop's option stacks). */
+.rp-pop-host,
 .rp-loop {
   position: relative;
   display: inline-flex;
 }
 
-.rp-loop-pop {
+.rp-pop {
   position: absolute;
   bottom: calc(100% + 6px);
   left: 0;
   z-index: 30;
+}
+
+.rp-loop-pop {
   display: flex;
   align-items: center;
   gap: 4px;
   padding: 8px;
+  background: var(--widget-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  white-space: nowrap;
+}
+
+/* Speed / camera popover panels: the same widget chrome as
+   .rp-loop-pop, but a vertical stack of option buttons (the active one
+   rides .btn.primary) instead of the inline from/to input row. */
+.rp-speed-pop,
+.rp-cam-pop {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 6px;
   background: var(--widget-bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);

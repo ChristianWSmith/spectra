@@ -7,8 +7,9 @@
 // the expanded aside's header shares the top line with that bar. The
 // round ribbon rides the top line too (its .rp-ribbon cell), and the
 // transport splits into the full-width game-time scrubber line ABOVE the
-// centered control-cluster line (round transport, ±15s, play, speed,
-// loop popover, camera Smart/Free/Follow, mute-all, snapshot/record, and
+// centered control-cluster line (round transport, ±15s, play, speed
+// popover, loop popover, camera Smart/Free/Follow popover, mute-all,
+// snapshot/record, and
 // the hints-only codicon LAST — three .toolbar-sep rules split those
 // groups: after the loop control, after mute-all, before the hints). A
 // fresh replay also AUTOPLAYS (startEngine
@@ -282,6 +283,14 @@ export function createEngine(data, tickRate) {
     },
     setLoop() {},
     toggleLoop() {},
+    // The loop popover resolves typed TIMES through the engine's
+    // exact-frame search (Replay's onLoopTime) — same rule as the real
+    // engine: the first frame whose tick is >= t, clamped to the stream
+    // (the stub's ticks are 0, 64, … 576).
+    frameForTick(t) {
+      const f = Number.isFinite(t) ? Math.floor(t / 64) : 0;
+      return Math.max(0, Math.min(9, f));
+    },
     setFollow(s) {
       state.followSlot = s;
       emit?.(state);
@@ -587,17 +596,37 @@ check(
     controls.querySelector('#rp-round-next').disabled === true,
   `prev=${controls.querySelector('#rp-round-prev')?.disabled} next=${controls.querySelector('#rp-round-next')?.disabled}`,
 );
+// Characterization → new contract: speed and camera WERE native
+// <select>s ("PLAIN native dropdown"); they are now POPOVERS — the loop
+// control's pattern, a trigger button inside an .rp-pop-host span with
+// the options only in the panel (spec: the selects looked disjointed
+// from the icon buttons around them). The ids stay on the host SPANS so
+// the cluster-order and separator checks below keep addressing the same
+// cells.
 check(
-  'speed + camera selects in the cluster (NO jump-to-round select)',
-  !!controls.querySelector('#rp-speed') && !!controls.querySelector('#rp-cam') &&
+  'speed + camera popover triggers in the cluster (NO jump-to-round select)',
+  !!controls.querySelector('#rp-speed button') && !!controls.querySelector('#rp-cam button') &&
     !controls.querySelector('#rp-round'),
 );
-const camOpts = [...(controls.querySelector('#rp-cam')?.options || [])].map((o) => o.value);
-check('camera select offers Smart/Free/Follow', JSON.stringify(camOpts) === '["smart","free","follow"]', JSON.stringify(camOpts));
 check(
-  'camera select is a PLAIN native dropdown (no icon class, no codicon beside it)',
-  !!controls.querySelector('select#rp-cam') &&
-    !controls.querySelector('.rp-cam') &&
+  'no native select left for speed/camera (only Follow player still uses one)',
+  !controls.querySelector('select#rp-speed') && !controls.querySelector('select#rp-cam') &&
+    !controls.querySelector('#rp-speed select') && !controls.querySelector('#rp-cam select'),
+);
+check(
+  'camera trigger reads the ACTIVE mode (Smart) and reports collapsed',
+  controls.querySelector('#rp-cam button')?.textContent.trim() === 'Smart' &&
+    controls.querySelector('#rp-cam button')?.getAttribute('aria-expanded') === 'false',
+  controls.querySelector('#rp-cam button')?.textContent,
+);
+check(
+  'speed trigger reads the current step in the select\'s own "1×" format',
+  controls.querySelector('#rp-speed button')?.textContent.trim() === '1×',
+  controls.querySelector('#rp-speed button')?.textContent,
+);
+check(
+  'camera trigger keeps the select\'s title, with no icon class/codicon beside it',
+  !!controls.querySelector('#rp-cam button[title^="Smart keeps every player"]') &&
     !controls.querySelector('.rp-cam-wrap') &&
     !controls.querySelector('#rp-cam ~ .codicon-device-camera-video') &&
     !controls.querySelector('#rp-cam .codicon'),
@@ -638,7 +667,7 @@ const after = (el) => {
   return k >= 0 ? children(controls)[k + 1] : null;
 };
 check(
-  'separator 1 sits directly after the loop control (before the camera select)',
+  'separator 1 sits directly after the loop control (before the camera control)',
   !!seps[0] && seps[0] === after(controls.querySelector('.rp-loop')) &&
     children(controls).indexOf(seps[0]) < children(controls).indexOf(controls.querySelector('#rp-cam')),
   children(controls).map((el) => el.className || el.id || el.getAttribute('aria-label')).join(' | '),
@@ -674,23 +703,128 @@ await sleep();
 check('next round seeks to round 2 start (640)', readoutTick().includes('tick 640'), readoutTick());
 check('next round disabled at the last round', controls.querySelector('#rp-round-next').disabled === true);
 
-console.log('E. loop popover + the Follow player dropdown');
+console.log('E. loop popover (TIMES, not frames) + the speed/camera popovers');
 const loopBtn = controls.querySelector('button[aria-label="Loop range"]');
 check('loop trigger is an icon-only loop-codicon button', !!loopBtn && !!loopBtn.querySelector('.codicon-sync') && !loopBtn.textContent.trim());
 check('loop inputs hidden until the popover opens', !controls.querySelector('#rp-loop-from'));
 click(loopBtn);
 await sleep();
+const loopFrom = controls.querySelector('#rp-loop-from');
+const loopTo = controls.querySelector('#rp-loop-to');
 check(
   'popover exposes the from/to inputs + the Loop toggle',
-  !!controls.querySelector('#rp-loop-from') && !!controls.querySelector('#rp-loop-to') &&
-    !!controls.querySelector('button[title="Toggle loop (L)"]'),
+  !!loopFrom && !!loopTo && !!controls.querySelector('button[title="Toggle loop (L)"]'),
 );
-const cam = controls.querySelector('#rp-cam');
-cam.value = 'follow';
-cam.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+// The bounds are TEXT clocks speaking overall match time ("0:02" = 2 s
+// from the stream's first tick — the scrubber's basis), not frame
+// numbers; unset bounds render empty over their placeholders.
+check(
+  'the loop bounds are text clocks, never frame numbers',
+  loopFrom?.type === 'text' && loopTo?.type === 'text' &&
+    loopFrom?.value === '' && loopTo?.value === '' &&
+    loopFrom?.classList.contains('mono') && loopFrom?.classList.contains('loop-input'),
+  loopFrom ? `${loopFrom.type} ${JSON.stringify(loopFrom.value)}` : 'missing',
+);
+check(
+  'the loop trigger title says times now',
+  !!loopBtn.title.match(/from\/to times/),
+  loopBtn.title,
+);
+// Round trip: type a time → the change handler parses it (fmt.js
+// parseClock) to a frame → the derived display re-renders THE SAME
+// string (frame → tick → seconds → fmtClock), so re-opening the
+// popover never drifts.
+loopFrom.value = '0:02';
+loopFrom.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
 await sleep();
+check(
+  'a typed time parses to a frame and re-displays identically',
+  controls.querySelector('#rp-loop-from')?.value === '0:02',
+  controls.querySelector('#rp-loop-from')?.value,
+);
+const loopToEl = controls.querySelector('#rp-loop-to');
+loopToEl.value = '2'; // the bare-seconds shorthand canonicalises to the clock
+loopToEl.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+await sleep();
+check(
+  'bare seconds canonicalise ("2" → "0:02")',
+  controls.querySelector('#rp-loop-to')?.value === '0:02',
+  controls.querySelector('#rp-loop-to')?.value,
+);
+// Garbage must NOT reach the engine: the field restores what it showed.
+loopFrom.value = 'abc';
+loopFrom.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+await sleep();
+check(
+  'invalid input restores the displayed value (no state change)',
+  controls.querySelector('#rp-loop-from')?.value === '0:02',
+  controls.querySelector('#rp-loop-from')?.value,
+);
+
+// Speed: the ladder as a popover (same pattern) — the option button
+// drives the SAME onSpeed handler the select used and closes the panel.
+const speedBtn = controls.querySelector('#rp-speed button');
+click(speedBtn);
+await sleep();
+const speedOpts = [...controls.querySelectorAll('#rp-speed .rp-speed-pop button')].map(
+  (b) => b.textContent.trim(),
+);
+// The harness's stub engine ships SPEEDS without 8× — the assertion is
+// about the POPOVER contract (one option per ladder step, in order).
+check(
+  'speed popover offers the ladder in the select\'s label format',
+  JSON.stringify(speedOpts) === '["0.25×","0.5×","1×","2×","4×"]',
+  JSON.stringify(speedOpts),
+);
+check(
+  'the current step is highlighted (.btn.primary)',
+  controls.querySelector('#rp-speed .rp-speed-pop button.primary')?.textContent.trim() === '1×',
+);
+const speed2 = [...controls.querySelectorAll('#rp-speed .rp-speed-pop button')].find(
+  (b) => b.textContent.trim() === '2×',
+);
+click(speed2);
+await sleep();
+check(
+  'choosing a step sets the speed and closes the popover',
+  controls.querySelector('#rp-speed button')?.textContent.trim() === '2×' &&
+    !controls.querySelector('#rp-speed .rp-speed-pop'),
+  controls.querySelector('#rp-speed button')?.textContent,
+);
+
+// Camera: drive the SAME onCamMode handler through the popover's option
+// buttons (the old select's .value + change dispatch has no equivalent
+// on a panel that only mounts when open).
+const camBtn = controls.querySelector('#rp-cam button');
+const camOpt = (label) =>
+  [...controls.querySelectorAll('#rp-cam .rp-cam-pop button')].find(
+    (b) => b.textContent.trim() === label,
+  );
+const chooseCam = async (label) => {
+  click(controls.querySelector('#rp-cam button'));
+  await sleep();
+  click(camOpt(label));
+  await sleep();
+};
+click(camBtn);
+await sleep();
+const camOpts = [...controls.querySelectorAll('#rp-cam .rp-cam-pop button')].map((b) =>
+  b.textContent.trim(),
+);
+check('camera popover offers Smart/Free/Follow', JSON.stringify(camOpts) === '["Smart","Free","Follow"]', JSON.stringify(camOpts));
+check(
+  'the active mode is highlighted (.btn.primary)',
+  controls.querySelector('#rp-cam .rp-cam-pop button.primary')?.textContent.trim() === 'Smart',
+);
+click(camOpt('Follow'));
+await sleep();
+check('the camera popover closes after choosing', !controls.querySelector('#rp-cam .rp-cam-pop'));
 check('choosing Follow reveals the player dropdown', !!controls.querySelector('#rp-follow'));
-check('camera select still reads follow', cam.value === 'follow', cam.value);
+check(
+  'camera trigger still reads the chosen mode',
+  controls.querySelector('#rp-cam button')?.textContent.trim() === 'Follow',
+  controls.querySelector('#rp-cam button')?.textContent,
+);
 // Follow must never rest on the "Follow player…" placeholder: with no
 // ?follow= in the route it lands on a real player (slot 0), and a
 // detour through Free comes back to the player that was being followed.
@@ -704,13 +838,9 @@ followSel.value = '2';
 followSel.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
 await sleep();
 check('the dropdown drives the follow slot', controls.querySelector('#rp-follow')?.value === '2', controls.querySelector('#rp-follow')?.value);
-cam.value = 'free';
-cam.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
-await sleep();
+await chooseCam('Free');
 check('switching to Free releases follow (player dropdown gone)', !controls.querySelector('#rp-follow'));
-cam.value = 'follow';
-cam.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
-await sleep();
+await chooseCam('Follow');
 check(
   'switching back to Follow resumes the player that was being followed',
   controls.querySelector('#rp-follow')?.value === '2',

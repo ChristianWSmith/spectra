@@ -55,8 +55,8 @@ const (
 	// resizes the window, and whenever a saved size is missing or corrupt.
 	// Data-dense tables need room; the window never opens smaller than the
 	// minimums below.
-	defaultWindowWidth  = 1280
-	defaultWindowHeight = 800
+	defaultWindowWidth  = 1250
+	defaultWindowHeight = 1000
 
 	// minWindowWidth / minWindowHeight keep tables/panes usable; the user
 	// can grow the window freely beyond these.
