@@ -7,7 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { isCounted, roundStartTick, roundIndexLabel, scoreThrough } from './rounds.js';
+import { isCounted, roundStartTick, roundIndexLabel, scoreThrough, inFreezeTime } from './rounds.js';
 
 const ROUNDS = [
   { number: -2, startTick: 100 }, // knife
@@ -100,4 +100,31 @@ test('scoreThrough: degrades to 0-0 instead of guessing', () => {
   assert.deepEqual(scoreThrough(SCORE_ROUNDS, 'x'), { ct: 0, t: 0 });
   // A numeric string coerces — a route query round param.
   assert.deepEqual(scoreThrough(SCORE_ROUNDS, '2'), { ct: 1, t: 1 });
+});
+
+test('inFreezeTime: true only inside a round with a usable freeze window', () => {
+  const rounds = [
+    { number: -2, startTick: 100, freezeEndTick: 100 }, // knife round: no window
+    { number: -1, startTick: 200, freezeEndTick: 0 }, // warmup row ships 0
+    { number: 1, startTick: 1000, freezeEndTick: 1160, endTick: 5000 },
+  ];
+  assert.equal(inFreezeTime(rounds, 999), false, 'before the round there is no freeze');
+  assert.equal(inFreezeTime(rounds, 1000), true, 'round start is inside freeze');
+  assert.equal(inFreezeTime(rounds, 1159), true);
+  assert.equal(inFreezeTime(rounds, 1160), false, 'freeze END is exclusive — live play');
+  assert.equal(inFreezeTime(rounds, 3000), false);
+  assert.equal(inFreezeTime(rounds, 250), false, 'warmup fe=0 must never silence anything');
+  assert.equal(inFreezeTime(rounds, 150), false, 'knife fe=start must not gate');
+  assert.equal(inFreezeTime([], 100), false);
+  assert.equal(inFreezeTime(null, 100), false);
+  assert.equal(inFreezeTime(rounds, NaN), false);
+});
+
+test('inFreezeTime takes the round reaching tick regardless of row order', () => {
+  const rounds = [
+    { number: 1, startTick: 1000, freezeEndTick: 1160 },
+    { number: 2, startTick: 5000, freezeEndTick: 5160 },
+  ];
+  assert.equal(inFreezeTime([...rounds].reverse(), 1050), true, 'shuffled rows still resolve');
+  assert.equal(inFreezeTime([...rounds].reverse(), 5100), true);
 });
