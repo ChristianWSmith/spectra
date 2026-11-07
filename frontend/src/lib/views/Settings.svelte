@@ -15,6 +15,8 @@
     extractMapPacks,
     getIconManifest,
     extractIcons,
+    getSoundManifest,
+    extractSounds,
     setMapPackPromptState,
     chooseCS2Dir,
     checkForUpdateNow,
@@ -27,6 +29,7 @@
     errText,
   } from '../services.js';
   import { probeAudio } from '../replay/audio.js';
+  import { AUDIO_VOL_DEFAULT, prefVolume } from '../replay/sfx.js';
   import { fmtDate } from '../fmt.js';
   import { GLOSSARY } from '../definitions.js';
   import { getTheme, applyTheme } from '../theme.js';
@@ -76,6 +79,24 @@
   }
 
   const FONT_LABELS = { small: 'Small', medium: 'Medium', large: 'Large' };
+
+  // Replay-audio faders (Audio & voice): the SAME kvstore keys and
+  // default as Replay's volume popover (voice_volume / guns_volume /
+  // utility_volume — prefs.go) — optimistic local state on every input,
+  // durable via setPref, read back in onMount (the font-size pattern).
+  let volVoice = $state(AUDIO_VOL_DEFAULT);
+  let volGuns = $state(AUDIO_VOL_DEFAULT);
+  let volUtil = $state(AUDIO_VOL_DEFAULT);
+
+  function setVol(bucket, raw) {
+    const level = prefVolume(Number(raw) / 100);
+    if (bucket === 'voice') volVoice = level;
+    else if (bucket === 'guns') volGuns = level;
+    else volUtil = level;
+    const key =
+      bucket === 'voice' ? 'voice_volume' : bucket === 'guns' ? 'guns_volume' : 'utility_volume';
+    setPref(key, level).catch((e) => (error = errText(e)));
+  }
 
   // Show knife & warmup rounds: pure kvstore pref
   // `show_knife_warmup_rounds`, default off; the Match view consumes it.
@@ -155,12 +176,14 @@
   let pluginMsg = $state('');
   let pluginOp = $state({}); // plugin id → 'busy' | error text
 
-  // CS2 assets: the TWO asset families the app consumes from a local CS2
-  // install — radar map packs (internal/mappack) and equipment-icon SVG
-  // silhouettes (iconservice). Valve IP stays local; status loads on
-  // mount; the extract below re-runs idempotently after game updates.
+  // CS2 assets: the THREE asset families the app consumes from a local CS2
+  // install — radar map packs (internal/mappack), equipment-icon SVG
+  // silhouettes (iconservice) and weapon/utility sounds (soundservice).
+  // Valve IP stays local; status loads on mount; the extract below
+  // re-runs idempotently after game updates.
   let mpStatus = $state(null); // MapPackStatus
   let iconManifest = $state(null); // IconManifest
+  let soundManifest = $state(null); // SoundManifest
   let mpBusy = $state(false);
   let mpMsg = $state('');
   let mpError = $state('');
@@ -181,6 +204,14 @@
     }
   }
 
+  async function refreshSounds() {
+    try {
+      soundManifest = await getSoundManifest();
+    } catch (e) {
+      mpError = errText(e);
+    }
+  }
+
   // The manifest's note is only worth showing when it says MORE than the
   // generic placeholder GetIconManifest stamps on every empty manifest
   // ("icons not extracted yet" — pure duplication next to "none extracted
@@ -191,10 +222,22 @@
       : '',
   );
 
-  // One action, both families: extract the map packs and the equipment
-  // icons sequentially under the single mpBusy state, then aggregate the
-  // two outcomes — mpMsg names what succeeded, mpError names what failed
-  // (both parts are attempted even when the first one fails).
+  // The manifest's note is only worth showing when it says MORE than the
+  // generic placeholder GetSoundManifest stamps on every empty manifest
+  // ("sounds not extracted yet" — pure duplication next to "none extracted
+  // yet"); a real note names the cause (no CS2 install, a VPK error) or a
+  // partial-extraction failure. Same rule as iconNote above.
+  const soundNote = $derived(
+    soundManifest && soundManifest.note && soundManifest.note !== 'sounds not extracted yet'
+      ? soundManifest.note
+      : '',
+  );
+
+  // One action, all three families: extract the map packs, the equipment
+  // icons and the replay sounds sequentially under the single mpBusy
+  // state, then aggregate the outcomes — mpMsg names what succeeded
+  // ("…N map packs, M icons, K sounds"), mpError names what failed (every
+  // part is attempted even when the first one fails).
   async function doExtract() {
     mpBusy = true;
     mpMsg = '';
@@ -224,12 +267,24 @@
       } catch (e) {
         failed.push(`icons: ${errText(e)}`);
       }
-      if (done.length) mpMsg = `Extracted ${done.join(' and ')}.`;
+      try {
+        const s = await extractSounds(dir);
+        if (s && s.count > 0) {
+          done.push(`${s.count} sound${s.count === 1 ? '' : 's'}`);
+          if (s.note) failed.push(`sounds: ${s.note}`);
+        } else {
+          failed.push(`sounds: ${(s && s.note) || 'nothing extracted'}`);
+        }
+      } catch (e) {
+        failed.push(`sounds: ${errText(e)}`);
+      }
+      if (done.length) mpMsg = `Extracted ${done.join(', ')}.`;
       if (failed.length) mpError = `${failed.join('; ')}.`;
       if (!done.length && !failed.length) mpError = 'Nothing extracted.';
     } finally {
       await refreshMapPacks();
       await refreshIcons();
+      await refreshSounds();
       mpBusy = false;
     }
   }
@@ -354,6 +409,7 @@
       .catch((e) => (error = errText(e)));
     refreshMapPacks();
     refreshIcons();
+    refreshSounds();
     getAnalysisConfig()
       .then((c) => {
         // Merge (not replace) so a missing key falls back to the default
@@ -383,6 +439,23 @@
       .then((v) => (showKnife = prefBool(v)))
       .catch(() => {
         /* keep the default (off) */
+      });
+    // Replay-audio faders: read the three persisted levels back (the
+    // boot-time pass may still be in flight for a deep-linked Settings);
+    // never-set/corrupt falls to the shared 0.8 default so a broken pref
+    // can never bind a 0-fader slider.
+    Promise.all([
+      getPref('voice_volume').catch(() => null),
+      getPref('guns_volume').catch(() => null),
+      getPref('utility_volume').catch(() => null),
+    ])
+      .then(([v, g, u]) => {
+        volVoice = prefVolume(v);
+        volGuns = prefVolume(g);
+        volUtil = prefVolume(u);
+      })
+      .catch(() => {
+        /* keep the defaults */
       });
     refreshDemoDirs();
   });
@@ -527,9 +600,10 @@
   <section class="panel">
     <h2>CS2 assets</h2>
     <p class="muted">
-      Radar map transforms and equipment-icon silhouettes are both extracted
-      locally from your own Counter-Strike 2 installation on this machine —
-      nothing is uploaded, and no Valve assets ship with the app.
+      Radar map transforms, equipment-icon silhouettes and replay sounds are
+      all extracted locally from your own Counter-Strike 2 installation on
+      this machine — nothing is uploaded, and no Valve assets ship with the
+      app.
     </p>
     {#if mpStatus}
       <dl class="facts">
@@ -560,6 +634,18 @@
             {/if}
           </dd>
         </div>
+        <div>
+          <dt>Replay sounds</dt>
+          <dd class="mono">
+            {#if !soundManifest}
+              …
+            {:else if soundManifest.count > 0}
+              {soundManifest.count}{soundNote ? ` — ${soundNote}` : ''}
+            {:else}
+              none extracted yet{#if soundNote} — {soundNote}{/if}
+            {/if}
+          </dd>
+        </div>
       </dl>
     {:else}
       <p class="muted" role="status">Loading…</p>
@@ -568,8 +654,9 @@
     {#if mpError}<p class="error" role="alert">{mpError}</p>{/if}
     <div class="row-between">
       <span class="muted"
-        >Extracts every official-map radar and every equipment icon
-        (idempotent — re-run after a CS2 update to refresh).</span
+        >Extracts every official-map radar, every equipment icon and the
+        replay's gun/utility sounds (idempotent — re-run after a CS2 update
+        to refresh).</span
       >
       <div class="sett-seg">
         <button class="btn" disabled={mpBusy} onclick={mpChooseFolder}>
@@ -745,6 +832,50 @@
         {/if}
       {/if}
     {/if}
+    <!-- The three replay-audio faders: same kvstore keys (and default)
+         as the transport's Volume popover — moving one here moves the
+         other, and both survive restarts. -->
+    <div class="row-between">
+      <span class="muted">Voice volume — the players' radio chatter in the replay.</span>
+      <input
+        class="sett-vol"
+        type="range"
+        min="0"
+        max="100"
+        value={Math.round(volVoice * 100)}
+        aria-label="Voice volume"
+        oninput={(e) => setVol('voice', e.currentTarget.value)}
+      />
+    </div>
+    <div class="row-between">
+      <span class="muted">Guns volume — weapon fire in the replay.</span>
+      <input
+        class="sett-vol"
+        type="range"
+        min="0"
+        max="100"
+        value={Math.round(volGuns * 100)}
+        aria-label="Guns volume"
+        oninput={(e) => setVol('guns', e.currentTarget.value)}
+      />
+    </div>
+    <div class="row-between">
+      <span class="muted">Utility volume — grenade and C4 detonations in the replay.</span>
+      <input
+        class="sett-vol"
+        type="range"
+        min="0"
+        max="100"
+        value={Math.round(volUtil * 100)}
+        aria-label="Utility volume"
+        oninput={(e) => setVol('utility', e.currentTarget.value)}
+      />
+    </div>
+    <p class="muted">
+      Sound effects are extracted from your local CS2 install (CS2 assets
+      above); the replay plays gun and utility sounds when they are
+      available.
+    </p>
     <p class="muted">
       Voice decode: on-demand Opus decode (pure-Go pion/opus) — no cache
       directory in v1. PCM is served over HTTP per playback window at 16 kHz

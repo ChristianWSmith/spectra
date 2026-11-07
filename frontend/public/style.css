@@ -2019,6 +2019,61 @@ input[type='checkbox']:focus-visible {
   white-space: nowrap;
 }
 
+/* Shared popover positioning — the trigger span is the canonical
+   Popover's anchor and the panel attaches ABOVE it (the transport sits
+   at the bottom of the replay column). Consumers add only CONTENT
+   styles in their own *-pop class; the loop panel keeps its original
+   .rp-loop-pop rules above. */
+.rp-pop-host {
+  position: relative;
+}
+
+.rp-pop {
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 0;
+  z-index: 30;
+}
+
+/* Volume popover (the transport's Voice/Guns/Utility faders — the old
+   mute-all button, repurposed): the host only hugs its trigger button
+   (positioning is the shared .rp-pop-host/.rp-pop pair); everything
+   below is CONTENT — the three fader rows. */
+.rp-vol {
+  display: inline-flex;
+}
+
+.rp-vol-pop {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 236px;
+  padding: 8px;
+  background: var(--widget-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  white-space: nowrap;
+}
+
+.rp-vol-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Row labels share the field-label concept (uppercase small caps); the
+   fixed column keeps the three faders aligned. */
+.rp-vol-pop .field-label {
+  flex: 0 0 58px;
+}
+
+.rp-vol-range {
+  flex: 1 1 auto;
+  min-width: 96px;
+  accent-color: var(--accent);
+}
+
 /* Voice status hint next to the transport controls (voice is on by
    default; pending/error ride one small line). */
 .rp-voice-hint {

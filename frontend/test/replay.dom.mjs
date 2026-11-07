@@ -8,10 +8,10 @@
 // round ribbon rides the top line too (its .rp-ribbon cell), and the
 // transport splits into the full-width game-time scrubber line ABOVE the
 // centered control-cluster line (round transport, ±15s, play, speed,
-// loop popover, camera Smart/Free/Follow, mute-all, snapshot/record, and
-// the hints-only codicon LAST — three .toolbar-sep rules split those
-// groups: after the loop control, after mute-all, before the hints). A
-// fresh replay also AUTOPLAYS (startEngine
+// loop popover, camera Smart/Free/Follow, the volume popover, snapshot/
+// record, and the hints-only codicon LAST — three .toolbar-sep rules
+// split those groups: after the loop control, after the volume host,
+// before the hints). A fresh replay also AUTOPLAYS (startEngine
 // calls engine.play() once the position data is up).
 //
 // The view's data source, engine, renderer and input are scripted stubs —
@@ -130,8 +130,12 @@ writeFileSync(
 // formatter set (PlayerCard imports it), the teammate-color mapping and
 // the live-stats fold (Replay.svelte imports those two), and the voice
 // metadata module (speaking index — deterministic with the stubbed voice
-// services above: null lanes → no speaking).
-for (const rel of ['playercard.js', 'playercolor.js', 'livestats.js', 'voiceindex.js']) {
+// services above: null lanes → no speaking). sfx.js is the sound-effect
+// engine Replay mounts (its manifest fetch resolves to the EMPTY
+// manifest under the stubbed fetch → the engine is never constructed);
+// it imports audio.js for the shared GST_AUDIO_HINT string, and
+// audio.js pulls the pure stretch DSP.
+for (const rel of ['playercard.js', 'playercolor.js', 'livestats.js', 'voiceindex.js', 'sfx.js', 'stretch.js']) {
   writeFileSync(join(dir, 'replay', rel), readFileSync(join('src/lib/replay', rel), 'utf8'));
 }
 
@@ -339,9 +343,20 @@ export const snapshot = () => {};
 `,
 );
 
+// The voice engine stays INERT (this harness never constructs it — the
+// stubbed getVoicePresence resolves null), but replay/sfx.js imports the
+// SHARED GST_AUDIO_HINT string from audio.js: re-export it from a
+// verbatim copy of the real module (one spelling of the message; the
+// copy's own imports resolve against this cache's stubs) while the
+// engine itself stays stubbed.
+writeFileSync(
+  join(dir, 'replay', 'audio-real.js'),
+  readFileSync('src/lib/replay/audio.js', 'utf8'),
+);
 writeFileSync(
   join(dir, 'replay', 'audio.js'),
-  `export const createVoiceEngine = () => null;
+  `export { GST_AUDIO_HINT } from './audio-real.js';
+export const createVoiceEngine = () => null;
 export const fetchVoicePCM = async () => new Float32Array(0);
 `,
 );
@@ -604,9 +619,23 @@ check(
 );
 check('no follow-player select until Follow is chosen', !controls.querySelector('#rp-follow'));
 check('no leftover voice bar / lanes', !target.querySelector('.voice-bar') && !target.querySelector('.voice-lanes-wrap'));
-const muteAll = controls.querySelector('button[aria-label="Mute all"]');
-check('mute-all button in the cluster', !!muteAll);
-check('mute-all disabled when the match has no voice', muteAll?.disabled === true, String(muteAll?.disabled));
+// CHARACTERIZATION: these three checks pinned the old mute-all button —
+// a direct-child button[aria-label="Mute all"], disabled because this
+// fixture has NO voice, with separator 2 immediately behind it. Delta:
+// that button is now the VOLUME POPOVER's trigger inside a host span
+// (same cluster slot), it is NEVER disabled (voice is one row of three —
+// only the popover's Voice row disables), and separator 2 still follows
+// the host. The new popover coverage sits below the separator checks.
+const volHost = controls.querySelector('.rp-pop-host.rp-vol');
+const volBtn = controls.querySelector('button[aria-label="Volume"]');
+check('volume popover trigger in the cluster (replaces mute-all)', !!volHost && !!volBtn);
+check(
+  'volume trigger is icon-only and NOT disabled without voice',
+  !!volBtn && !!volBtn.querySelector('.codicon-unmute') && !volBtn.textContent.trim() &&
+    volBtn.disabled === false,
+  String(volBtn?.disabled),
+);
+check('no leftover mute-all button in the cluster', !controls.querySelector('button[aria-label="Mute all"]'));
 const snap = controls.querySelector('button[aria-label="Snapshot"]');
 check(
   'snapshot is icon-only in the cluster (no text label)',
@@ -629,8 +658,9 @@ check(
   })(),
 );
 // Exactly THREE separators split the cluster into groups — each pinned at
-// its exact position: after the loop control, after mute-all, and
-// immediately before the keyboard hints (which stay the LAST cell).
+// its exact position: after the loop control, after the volume host
+// (where mute-all used to sit), and immediately before the keyboard hints
+// (which stay the LAST cell).
 const seps = children(controls).filter((el) => el.classList.contains('toolbar-sep'));
 check('exactly three separators in the control cluster', seps.length === 3, String(seps.length));
 const after = (el) => {
@@ -643,7 +673,7 @@ check(
     children(controls).indexOf(seps[0]) < children(controls).indexOf(controls.querySelector('#rp-cam')),
   children(controls).map((el) => el.className || el.id || el.getAttribute('aria-label')).join(' | '),
 );
-check('separator 2 sits directly after the mute-all button', !!seps[1] && seps[1] === after(muteAll));
+check('separator 2 sits directly after the volume host (ex-mute-all slot)', !!seps[1] && seps[1] === after(volHost));
 check(
   'separator 3 sits immediately before the keyboard hints (still LAST)',
   (() => {
@@ -655,6 +685,53 @@ check(
   })(),
 );
 check('play controls are NOT on the scrub line', !scrub.querySelector('button'));
+
+// Volume popover (the old mute-all button's slot): it opens in place
+// above the trigger, exposes the three fader rows, and the VOICE row is
+// disabled in this no-voice fixture while guns/utility stay live (they
+// never need the match to have voice).
+check('volume popover closed on entry', !controls.querySelector('#rp-vol-voice'));
+click(volBtn);
+await sleep();
+const volRows = [...controls.querySelectorAll('.rp-vol-pop .rp-vol-row')];
+check(
+  'volume popover has three rows: Voice, Guns, Utility',
+  volRows.length === 3 &&
+    volRows.map((r) => (r.querySelector('.field-label')?.textContent || '').trim()).join(',') ===
+      'Voice,Guns,Utility',
+  volRows.map((r) => (r.querySelector('.field-label')?.textContent || '?').trim()).join(','),
+);
+check(
+  'each row has a 0..100 range fader and a mute toggle button',
+  volRows.length === 3 &&
+    volRows.every((r) => {
+      const slider = r.querySelector('input[type="range"]');
+      return (
+        slider &&
+        slider.getAttribute('min') === '0' &&
+        slider.getAttribute('max') === '100' &&
+        r.querySelector('button[aria-label^="Mute "]')
+      );
+    }),
+);
+const voiceSlider = controls.querySelector('#rp-vol-voice');
+const voiceMute = controls.querySelector('button[aria-label="Mute voice"]');
+check(
+  'voice row disabled without voice (slider + mute toggle)',
+  !!voiceSlider && voiceSlider.disabled === true && !!voiceMute && voiceMute.disabled === true,
+  `slider=${voiceSlider?.disabled} mute=${voiceMute?.disabled}`,
+);
+check(
+  'guns/utility rows stay ENABLED without voice',
+  controls.querySelector('#rp-vol-guns')?.disabled === false &&
+    controls.querySelector('button[aria-label="Mute guns"]')?.disabled === false &&
+    controls.querySelector('#rp-vol-utility')?.disabled === false &&
+    controls.querySelector('button[aria-label="Mute utility"]')?.disabled === false,
+);
+check('trigger reports the popover open (aria-expanded)', volBtn.getAttribute('aria-expanded') === 'true');
+click(volBtn); // close again — later checks see the original cluster
+await sleep();
+check('volume popover closes on a second trigger click', !controls.querySelector('#rp-vol-voice'));
 
 // The transport buttons drive the engine (stubbed): ±15s at the match
 // tick rate (64), then the round transport through the round→tick rule.
