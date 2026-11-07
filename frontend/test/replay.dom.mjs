@@ -135,10 +135,13 @@ writeFileSync(
 // engine Replay mounts (its manifest fetch resolves to the EMPTY
 // manifest under the stubbed fetch → the engine is never constructed);
 // it imports audio.js for the shared GST_AUDIO_HINT string, and
-// audio.js pulls the pure stretch DSP. bullets.js is the tracer-row
-// derivation Replay.svelte feeds to renderer.setBullets (pure; with the
-// stubbed state.js it yields [] here, which is all the view needs).
-for (const rel of ['playercard.js', 'playercolor.js', 'livestats.js', 'voiceindex.js', 'sfx.js', 'stretch.js', 'bullets.js']) {
+// audio.js pulls the pure stretch DSP. bullets.js is the shot derivation
+// Replay pushes to BOTH the renderer and the sfx engine (deriveBullets
+// fails soft to [] against this harness's null state index).
+for (const rel of [
+  'playercard.js', 'playercolor.js', 'livestats.js', 'voiceindex.js',
+  'sfx.js', 'stretch.js', 'bullets.js',
+]) {
   writeFileSync(join(dir, 'replay', rel), readFileSync(join('src/lib/replay', rel), 'utf8'));
 }
 
@@ -146,9 +149,8 @@ for (const rel of ['playercard.js', 'playercolor.js', 'livestats.js', 'voiceinde
 // VIEW's capability contract deterministically — the mounted replay (id 1)
 // mounts against a V1 sidecar (it HAS a stateFormatVersion, not the
 // current one) → the one honest reprocess note, no state loaded.
-// stateAt is here because replay/bullets.js (copied verbatim below — the
-// view derives tracer rows from it) imports it; it never runs in this
-// harness (no state stream → deriveBullets returns [] first).
+// stateAt is the bullets.js import (its magAmmo walk): the real one
+// lives in replay/state.js; null index → deriveBullets never reaches it.
 writeFileSync(
   join(dir, 'replay', 'state.js'),
   `export const STATE_FORMAT_VERSION = 2;

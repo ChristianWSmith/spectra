@@ -1,10 +1,11 @@
 // jsdom driver for the M4 voice ENGINE (replay/audio.js) — pins the
 // behaviors the replay UI builds on:
-//   • default-on enable (line 11): setEnabled(true) at load with
-//     autoplay blocked parks a ONE-TIME document gesture listener,
-//     reports state.pending (no error), and the first gesture resumes
-//     the context and removes the listener; destroy() cleans up,
-//   • a gesture that fails to start the device surfaces the
+//   • default-on enable (line 11): setEnabled(true) at load flips
+//     `enabled` immediately (want-on) and, while autoplay keeps the
+//     context suspended, arms SILENT document retry listeners — the
+//     first interaction starts the engine with NO pending field and no
+//     error; destroy() removes the listeners (no leaks),
+//   • a resume() that REJECTS is a device failure and surfaces the
 //     GStreamer hint through onError/state,
 //   • mute-all (line 18) overrides solo: while mutedAll, NO player
 //     schedules new windows (soloed or not); un-muting restores each
@@ -61,7 +62,8 @@ globalThis.window = dom.window;
 globalThis.document = dom.window.document;
 
 // Scripted AudioContext: resume() flips to 'running' unless the test
-// parks it in 'blocked' (pending promise) or 'broken' (stays suspended).
+// parks it in 'blocked' (pending promise — autoplay policy) or
+// 'broken' (REJECTS — a dead audio device).
 let resumeMode = 'running';
 class FakeAudioContext {
   constructor() {
@@ -74,7 +76,7 @@ class FakeAudioContext {
       this.state = 'running';
       return Promise.resolve();
     }
-    if (resumeMode === 'broken') return Promise.resolve(); // stays suspended
+    if (resumeMode === 'broken') return Promise.reject(new Error('audio device failed'));
     return new Promise(() => {}); // blocked: pending forever
   }
   createGain() {
@@ -143,70 +145,103 @@ function makeVoice(engine) {
   return { ve, fetched, errors };
 }
 
-test('default-on: blocked autoplay parks a one-time gesture listener, no error', async () => {
+test('default-on: a blocked resume starts the engine SILENTLY on the first interaction', async () => {
   resumeMode = 'blocked';
   const engine = makeEngine();
-  const { ve, errors } = makeVoice(engine);
+  const { ve, fetched, errors } = makeVoice(engine);
   await ve.setEnabled(true);
 
-  assert.equal(ve.state.pending, true, 'pending is surfaced for the UI hint');
-  assert.equal(ve.state.enabled, false);
-  assert.equal(ve.state.error, '', 'nothing has failed yet');
+  // Want-on flips immediately: `enabled` is the USER's request, not the
+  // context's state — and there is no pending field anymore (the
+  // gesture UX is gone). Merely suspended is never an error.
+  assert.ok(!('pending' in ve.state), 'state carries no pending flag');
+  assert.equal(ve.state.enabled, true, 'enabled is want-on, not running-state');
+  assert.equal(ve.state.ctxState, 'suspended');
+  assert.equal(ve.state.error, '', 'autoplay-blocked is not a failure');
   assert.equal(errors.length, 0);
 
-  // Nothing is scheduled while pending.
+  // Nothing is scheduled while suspended (the ctx gate holds).
   engine.state.playing = true;
   engine.state.tick = 640;
   engine.emit();
   await flush();
+  assert.equal(ve.state.ctxState, 'suspended');
+  assert.equal(fetched.A + fetched.B, 0, 'no windows fetched while suspended');
 
-  // The first gesture resumes and removes BOTH listeners.
+  // The FIRST interaction starts it — silently: no error, no hint, no
+  // state beyond the context itself flipping to running.
   resumeMode = 'running';
   document.dispatchEvent(new window.Event('pointerdown'));
   await flush();
+  assert.equal(ve.state.ctxState, 'running');
   assert.equal(ve.state.enabled, true);
-  assert.equal(ve.state.pending, false);
   assert.equal(ve.state.error, '');
+  assert.equal(errors.length, 0);
 
-  // One-time: a second gesture must not throw or re-park.
-  document.dispatchEvent(new window.Event('keydown'));
+  // …and voice actually flows from the next engine change on.
+  engine.state.tick += 64;
+  engine.emit();
   await flush();
-  assert.equal(ve.state.enabled, true);
-  assert.equal(ve.state.pending, false);
-
+  assert.ok(fetched.A > 0 && fetched.B > 0, 'voice started by itself');
   ve.destroy();
 });
 
-test('destroy() removes the parked gesture listeners (no leaks)', async () => {
+test('destroy() removes the retry listeners (no leaks)', async () => {
   resumeMode = 'blocked';
-  const engine = makeEngine();
-  const { ve } = makeVoice(engine);
-  await ve.setEnabled(true);
-  assert.equal(ve.state.pending, true);
-  ve.destroy();
-  assert.equal(ve.state.pending, false);
+  // Count the capture listeners the engine registers so the leak check
+  // is direct (not inferred from state the engine could simply stop
+  // reporting).
+  const live = new Set();
+  const origAdd = document.addEventListener;
+  const origRemove = document.removeEventListener;
+  document.addEventListener = function (type, fn, opts) {
+    if (type === 'pointerdown' || type === 'keydown') live.add(fn);
+    return origAdd.call(this, type, fn, opts);
+  };
+  document.removeEventListener = function (type, fn, opts) {
+    live.delete(fn);
+    return origRemove.call(this, type, fn, opts);
+  };
+  try {
+    const engine = makeEngine();
+    const { ve } = makeVoice(engine);
+    await ve.setEnabled(true);
+    assert.ok(live.size > 0, 'retry listeners are armed while suspended');
+    ve.destroy();
+    assert.equal(live.size, 0, 'every retry listener removed on destroy');
 
-  // A gesture after destroy must be a no-op (listener gone, no throw).
-  resumeMode = 'running';
-  document.dispatchEvent(new window.Event('pointerdown'));
-  await flush();
-  assert.equal(ve.state.enabled, false);
+    // A gesture after destroy must be a no-op (listener gone, no throw,
+    // nothing resurrected).
+    resumeMode = 'running';
+    document.dispatchEvent(new window.Event('pointerdown'));
+    await flush();
+    assert.equal(ve.state.enabled, false);
+    assert.equal(ve.state.ctxState, 'none');
+  } finally {
+    document.addEventListener = origAdd;
+    document.removeEventListener = origRemove;
+  }
 });
 
-test('a gesture that fails to start the device surfaces the GStreamer hint', async () => {
+test('a REJECTED resume surfaces the GStreamer hint (device failure still reported)', async () => {
   resumeMode = 'blocked';
   const engine = makeEngine();
   const { ve, errors } = makeVoice(engine);
   await ve.setEnabled(true);
-  assert.equal(ve.state.pending, true);
+  assert.equal(ve.state.error, '', 'blocked-but-working: nothing has failed yet');
 
-  resumeMode = 'broken'; // a real gesture, but the device never starts
+  resumeMode = 'broken'; // a real interaction, but the device rejects resume()
   document.dispatchEvent(new window.Event('pointerdown'));
   await flush();
-  assert.equal(ve.state.pending, false);
-  assert.equal(ve.state.enabled, false);
   assert.match(ve.state.error, /gst-plugins-good|GStreamer/);
+  assert.equal(ve.state.enabled, false, 'a device failure disables voice');
   assert.equal(errors.length, 1);
+  // The failure is terminal for THIS enable request: a stale attempt or
+  // another interaction must not re-arm the retry listeners.
+  resumeMode = 'running';
+  document.dispatchEvent(new window.Event('pointerdown'));
+  await flush();
+  assert.equal(errors.length, 1, 'no second report, no silent resurrection');
   ve.destroy();
 });
 

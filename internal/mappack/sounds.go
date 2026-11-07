@@ -169,7 +169,42 @@ var soundTable = map[string][]string{
 	},
 	"Sawed-Off": {"sounds/weapons/sawedoff/sawedoff-1.vsnd_c"},
 	// Equipment
-	"Knife":    {"sounds/weapons/knife/knife_slash1.vsnd_c", "sounds/weapons/knife/knife_slash2.vsnd_c"}, // PCM16 mono
+	// The knife cue arrives ONLY from DAMAGE rows (sfx.js knifeCues — a
+	// swing makes no sound at all), and the demo only ever networks the
+	// HIT: these are the game's Weapon_Knife.Hit.*.Flesh soundevents —
+	// what every client hears when the blade lands (verified against the
+	// local install's event→file map, 2026-11-07; slash/Stab/HitWall are
+	// CLIENT-LOCAL foley the demo never carries, so they would play only
+	// for the local player and are deliberately absent). All 20 are
+	// resource-v5 MP3 44,100 stereo — the manifest's FIRST MP3s: the
+	// browser decodes them natively, and preload fails soft per file if
+	// a decoder ever rejects one (the group then plays fewer variants).
+	"Knife": {
+		// Weapon_Knife.Hit.Flesh / .Hit.Light.Flesh (light slash hits —
+		// note the game ships no _05)
+		"sounds/weapons/knife/knife_hit_light_flesh_01.vsnd_c",
+		"sounds/weapons/knife/knife_hit_light_flesh_02.vsnd_c",
+		"sounds/weapons/knife/knife_hit_light_flesh_03.vsnd_c",
+		"sounds/weapons/knife/knife_hit_light_flesh_04.vsnd_c",
+		"sounds/weapons/knife/knife_hit_light_flesh_06.vsnd_c",
+		"sounds/weapons/knife/knife_hit_light_flesh_07.vsnd_c",
+		"sounds/weapons/knife/knife_hit_light_flesh_08.vsnd_c",
+		"sounds/weapons/knife/knife_hit_light_flesh_09.vsnd_c",
+		"sounds/weapons/knife/knife_hit_light_flesh_10.vsnd_c",
+		// Weapon_Knife.Hit.Heavy.Flesh (heavy slash hits)
+		"sounds/weapons/knife/heavy_hit_flesh_01.vsnd_c",
+		"sounds/weapons/knife/heavy_hit_flesh_04.vsnd_c",
+		"sounds/weapons/knife/heavy_hit_flesh_08.vsnd_c",
+		"sounds/weapons/knife/heavy_hit_flesh_09.vsnd_c",
+		"sounds/weapons/knife/heavy_hit_flesh_10.vsnd_c",
+		// Weapon_Knife.Hit.Light.Backstab.Flesh (backstabs)
+		"sounds/weapons/knife/knife_hit_light_backstab_flesh_01.vsnd_c",
+		"sounds/weapons/knife/knife_hit_light_backstab_flesh_02.vsnd_c",
+		"sounds/weapons/knife/knife_hit_light_backstab_flesh_03.vsnd_c",
+		"sounds/weapons/knife/knife_hit_light_backstab_flesh_04.vsnd_c",
+		"sounds/weapons/knife/knife_hit_light_backstab_flesh_05.vsnd_c",
+		"sounds/weapons/knife/knife_hit_light_backstab_flesh_06.vsnd_c",
+	},
 	"Zeus x27": {"sounds/weapons/taser/taser_shoot.vsnd_c"},
 	"C4":       {"sounds/weapons/c4/c4_explode1.vsnd_c"}, // played on bomb_explode
 	// Grenades (detonation sounds — the replay's utility cues)

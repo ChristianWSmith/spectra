@@ -262,7 +262,30 @@ func TestSoundTableKeysInIconTable(t *testing.T) {
 		"HE Grenade":    {"sounds/weapons/hegrenade/hegrenade_detonate_02.vsnd_c", "sounds/weapons/hegrenade/hegrenade_detonate_03.vsnd_c"},
 		"Smoke Grenade": {"sounds/weapons/smokegrenade/smoke_emit.vsnd_c"},
 		"Zeus x27":      {"sounds/weapons/taser/taser_shoot.vsnd_c"},
-		"Knife":         {"sounds/weapons/knife/knife_slash1.vsnd_c", "sounds/weapons/knife/knife_slash2.vsnd_c"},
+		// The knife group is the networked flesh-hit set (MP3) — swings
+		// are client-local foley and never cue (sfx.js knifeCues).
+		"Knife": {
+			"sounds/weapons/knife/knife_hit_light_flesh_01.vsnd_c",
+			"sounds/weapons/knife/knife_hit_light_flesh_02.vsnd_c",
+			"sounds/weapons/knife/knife_hit_light_flesh_03.vsnd_c",
+			"sounds/weapons/knife/knife_hit_light_flesh_04.vsnd_c",
+			"sounds/weapons/knife/knife_hit_light_flesh_06.vsnd_c",
+			"sounds/weapons/knife/knife_hit_light_flesh_07.vsnd_c",
+			"sounds/weapons/knife/knife_hit_light_flesh_08.vsnd_c",
+			"sounds/weapons/knife/knife_hit_light_flesh_09.vsnd_c",
+			"sounds/weapons/knife/knife_hit_light_flesh_10.vsnd_c",
+			"sounds/weapons/knife/heavy_hit_flesh_01.vsnd_c",
+			"sounds/weapons/knife/heavy_hit_flesh_04.vsnd_c",
+			"sounds/weapons/knife/heavy_hit_flesh_08.vsnd_c",
+			"sounds/weapons/knife/heavy_hit_flesh_09.vsnd_c",
+			"sounds/weapons/knife/heavy_hit_flesh_10.vsnd_c",
+			"sounds/weapons/knife/knife_hit_light_backstab_flesh_01.vsnd_c",
+			"sounds/weapons/knife/knife_hit_light_backstab_flesh_02.vsnd_c",
+			"sounds/weapons/knife/knife_hit_light_backstab_flesh_03.vsnd_c",
+			"sounds/weapons/knife/knife_hit_light_backstab_flesh_04.vsnd_c",
+			"sounds/weapons/knife/knife_hit_light_backstab_flesh_05.vsnd_c",
+			"sounds/weapons/knife/knife_hit_light_backstab_flesh_06.vsnd_c",
+		},
 	}
 	for name, paths := range want {
 		got := soundTable[name]
@@ -318,11 +341,12 @@ func TestValidSoundFileBase(t *testing.T) {
 
 // TestExtractRealCS2Sounds runs the shipped-bytes half of the acceptance
 // suite against a real local Counter-Strike 2 install (FindCS2
-// auto-detects): the three resource shapes the table spans — a v5
+// auto-detects): the four resource shapes the table spans — a v5
 // CTRL/KV3 file (ak47_01), a v4 DATA file with a stereo payload
-// (deagle_01) and a v4 grenade detonation (hegrenade_detonate_02) — then
-// the whole ExtractSounds pipeline. Skipped when CS2 isn't installed (CI
-// never has it; the synthetic fixtures above carry the portable coverage).
+// (deagle_01), a v4 grenade detonation (hegrenade_detonate_02) and a v5
+// MP3 (the knife flesh set's knife_hit_light_flesh_01) — then the whole
+// ExtractSounds pipeline. Skipped when CS2 isn't installed (CI never has
+// it; the synthetic fixtures above carry the portable coverage).
 // Output goes to a temp dir; nothing Valve-derived is kept.
 func TestExtractRealCS2Sounds(t *testing.T) {
 	cs2Dir := FindCS2("")
@@ -343,6 +367,11 @@ func TestExtractRealCS2Sounds(t *testing.T) {
 		{"ak47_01", "sounds/weapons/ak47/ak47_01.vsnd_c", soundExtWAV, 44100, 2},                                  // v5
 		{"deagle_01", "sounds/weapons/deagle/deagle_01.vsnd_c", soundExtWAV, 44100, 2},                            // v4
 		{"hegrenade_detonate_02", "sounds/weapons/hegrenade/hegrenade_detonate_02.vsnd_c", soundExtWAV, 44100, 2}, // v4
+		// The knife group's MP3: decodeVSnd hands back the raw stream
+		// (no WAV header), so rate/channels stay unchecked here — they
+		// are container facts (ffprobe: MP3 44,100 stereo) and the frame
+		// header below proves the payload is playable audio.
+		{"knife_hit_light_flesh_01", "sounds/weapons/knife/knife_hit_light_flesh_01.vsnd_c", soundExtMP3, 0, 0},
 	}
 	for _, tc := range want {
 		raw, found, rerr := v.read(tc.vpk)
@@ -373,6 +402,14 @@ func TestExtractRealCS2Sounds(t *testing.T) {
 			dataLen := binary.LittleEndian.Uint32(data[40:44])
 			if int(dataLen) != len(data)-44 {
 				t.Errorf("%s: data chunk %d != %d trailing bytes", tc.stem, dataLen, len(data)-44)
+			}
+		}
+		if ext == soundExtMP3 {
+			// Raw MP3 stream: a frame-sync byte or an ID3 tag — anything
+			// else would mean the payload handed to the browser is not
+			// playable audio.
+			if data[0] != 0xFF && string(data[:3]) != "ID3" {
+				t.Errorf("%s: payload is not an MP3 stream (head % x)", tc.stem, data[:4])
 			}
 		}
 	}
