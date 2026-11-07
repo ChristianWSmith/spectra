@@ -98,6 +98,20 @@ func IconsDir() string {
 	return dir
 }
 
+// SoundsDir returns the extracted sound-file root
+// ($XDG_DATA_HOME/spectra/sounds), creating it if needed. Flat directory
+// of <name>.wav / <name>.mp3 files (one per extracted sound variant)
+// written by the in-app CS2 extractor and never committed — the same
+// acquisition posture as the map packs and equipment icons (Valve IP stays
+// local; see internal/mappack).
+func SoundsDir() string {
+	dir := filepath.Join(xdg.DataHome, appName, "sounds")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return dir
+	}
+	return dir
+}
+
 // EnsureDirs creates every directory the app writes to. Called once at
 // startup so later call sites can assume paths exist.
 func EnsureDirs() error {

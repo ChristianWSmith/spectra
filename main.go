@@ -129,6 +129,10 @@ func main() {
 			handleIcons(w, r, p)
 			return
 		}
+		if p := strings.TrimPrefix(r.URL.Path, "/api/sounds/"); p != r.URL.Path {
+			handleSounds(w, r, p)
+			return
+		}
 		bundled.ServeHTTP(w, r)
 	})
 
@@ -176,6 +180,7 @@ func main() {
 	app.RegisterService(application.NewService(&PlatformService{st: st, app: app}))
 	app.RegisterService(application.NewService(&MapPackService{kvs: kvs, app: app}))
 	app.RegisterService(application.NewService(&IconService{kvs: kvs}))
+	app.RegisterService(application.NewService(&SoundService{kvs: kvs}))
 	// DialogService: native save dialogs + writes. SaveExport serves the
 	// app's own HTTP export/sidecar routes internally (buffered) so large
 	// downloads (library.db, voice WAVs) never ride the bindings.
@@ -361,6 +366,55 @@ func serveIconFile(w http.ResponseWriter, r *http.Request, dir, name string) {
 		return
 	}
 	w.Header().Set("Content-Type", "image/svg+xml")
+	http.ServeFile(w, r, path)
+}
+
+// handleSounds serves the extracted weapon/utility audio over the asset
+// server (written by SoundService.ExtractSounds):
+//
+//	/api/sounds/manifest.json    the SoundManifest, rebuilt from the
+//	                             sounds dir on every request (never stale)
+//	/api/sounds/<file>.wav       one decoded sound (audio/wav)
+//	/api/sounds/<file>.mp3       one raw MP3 stream (audio/mpeg)
+//
+// Filenames pass a strict whitelist (mappack.ValidSoundFileBase: lowercase
+// digits/_/- + .wav/.mp3, no path segments — mirrors handleIcons), so a
+// crafted URL can't escape the data dir. 404 when a sound is absent —
+// the replay simply stays silent for that cue (never an error: no CS2
+// install / no extraction is a fallback state).
+func handleSounds(w http.ResponseWriter, r *http.Request, p string) {
+	if r.Method != http.MethodGet {
+		http.NotFound(w, r)
+		return
+	}
+	if p == "manifest.json" {
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(buildSoundManifest(data.SoundsDir())); err != nil {
+			log.Printf("sounds: write manifest: %v", err)
+		}
+		return
+	}
+	serveSoundFile(w, r, data.SoundsDir(), p)
+}
+
+// serveSoundFile validates name against the sound whitelist and serves
+// the file from dir with its audio content type (dir is a parameter for
+// tests; the route passes data.SoundsDir()).
+func serveSoundFile(w http.ResponseWriter, r *http.Request, dir, name string) {
+	if !mappack.ValidSoundFileBase(name) {
+		http.NotFound(w, r)
+		return
+	}
+	path := filepath.Join(dir, name)
+	if _, err := os.Stat(path); err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if strings.HasSuffix(name, ".mp3") {
+		w.Header().Set("Content-Type", "audio/mpeg")
+	} else {
+		w.Header().Set("Content-Type", "audio/wav")
+	}
 	http.ServeFile(w, r, path)
 }
 

@@ -41,6 +41,15 @@ const (
 	// nothing. Written and read by LibraryService — the frontend goes
 	// through GetDemoDirs/SetDemoDirs/ResetDemoDirs, never the raw key.
 	prefsDemoDirsKey = "demo_dirs"
+
+	// prefsVoiceVolumeKey / prefsGunsVolumeKey / prefsUtilityVolumeKey
+	// persist the three replay-audio fader levels (0..1; default 0.8) —
+	// the volume popover under the scrubber and Settings' Audio & voice
+	// section write the same keys. The frontend reads/writes them
+	// directly through the kvstore service — Go never consumes them.
+	prefsVoiceVolumeKey   = "voice_volume"
+	prefsGunsVolumeKey    = "guns_volume"
+	prefsUtilityVolumeKey = "utility_volume"
 )
 
 // prefsFilename returns the path of the on-disk prefs file, creating the
