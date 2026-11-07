@@ -1,7 +1,9 @@
 // Sound-effect cue math tests (lib/replay/sfx.js): the utility-cue
-// derivation (flashbang double-dispatch dedupe, decoy skip, C4), the
-// range/seek guards, the random variant pick, the weapon-name resolver
-// and the rising-edge gun cues. Run: node --test src/lib/sfx.test.js
+// derivation (flashbang double-dispatch dedupe, decoy skip, C4, the
+// equip/throw skip, the freeze gate), the knife damage cues, the bullet
+// cue window, the range/seek guards, the random variant pick, the
+// internal gain scales and the weapon-name-less manifest boundary.
+// Run: node --test src/lib/sfx.test.js
 // (from frontend/; the lib test glob src/lib/*.test.js picks it up too).
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -26,13 +28,15 @@ registerHooks({
 
 const {
   AUDIO_VOL_DEFAULT,
+  GUNS_GAIN_SCALE,
+  UTILITY_GAIN_SCALE,
   SOUND_DETONATION_BUCKETS,
   grenadeCues,
+  knifeCues,
   utilCuesInRange,
+  bulletCuesInRange,
   cueGapJump,
   pickVariant,
-  weaponNameOf,
-  gunCues,
   prefVolume,
   normalizeSoundManifest,
 } = await import('./replay/sfx.js');
@@ -40,6 +44,13 @@ const {
 // --- utility cues ----------------------------------------------------------
 
 const row = (over) => ({ kind: 'grenade', bucket: 'he', weapon: 'HE Grenade', tick: 100, ...over });
+
+// The freeze window the gate tests use (rounds.js inFreezeTime's shape):
+// round 1 freezes ticks [0, 64), round 2 [500, 560).
+const FREEZE_ROUNDS = [
+  { number: 1, startTick: 0, freezeEndTick: 64 },
+  { number: 2, startTick: 500, freezeEndTick: 560 },
+];
 
 test('grenadeCues keeps only detonation buckets (decoy and throws skipped)', () => {
   const cues = grenadeCues([
@@ -55,6 +66,23 @@ test('grenadeCues keeps only detonation buckets (decoy and throws skipped)', () 
   assert.deepEqual(
     cues.map((c) => `${c.tick}:${c.name}`),
     ['10:HE Grenade', '20:Flashbang', '40:Smoke Grenade', '50:Molotov', '60:Weird Nade'],
+  );
+});
+
+test('grenadeCues: equip/throw-shaped landmarks make NO cue (detonation only)', () => {
+  // The util-sound bug this pins: the old attack-edge gun path played
+  // the manifest's DETONATION sample on every grenade equip and throw.
+  // The cue list must come from detonation rows alone — a throw or
+  // equip-shaped landmark is silence, no matter how the game labels it.
+  const cues = grenadeCues([
+    { kind: 'grenade', bucket: 'throw', weapon: 'HE Grenade', tick: 10 }, // the throw event
+    { kind: 'grenade', bucket: 'equip', weapon: 'HE Grenade', tick: 20 }, // equipping it
+    { kind: 'grenade_throw', bucket: 'throw', weapon: 'Flashbang', tick: 30 },
+    row({ tick: 40, bucket: 'he' }),
+  ]);
+  assert.deepEqual(
+    cues.map((c) => `${c.tick}:${c.name}`),
+    ['40:HE Grenade'],
   );
 });
 
@@ -90,6 +118,54 @@ test('grenadeCues includes the C4 explosion via bomb_explode and sorts by tick',
   );
 });
 
+test('grenadeCues: utility and bomb cues inside FREEZE time are dropped', () => {
+  // Freeze gate (rounds.js inFreezeTime — the ONE predicate): the game
+  // forbids utility during freeze, so no detonation sound may play there.
+  const cues = grenadeCues(
+    [
+      row({ tick: 32, bucket: 'he' }), // round-1 freeze → dropped
+      row({ tick: 100, bucket: 'he' }), // live → kept
+      { kind: 'bomb_explode', bucket: 'explode', weapon: 'C4', tick: 520 }, // round-2 freeze → dropped
+      row({ tick: 600, bucket: 'flash', weapon: 'Flashbang' }), // live → kept
+    ],
+    FREEZE_ROUNDS,
+  );
+  assert.deepEqual(
+    cues.map((c) => `${c.tick}:${c.name}`),
+    ['100:HE Grenade', '600:Flashbang'],
+  );
+  // No rounds pushed → nothing is gated (the gate fails open, it never
+  // invents a freeze window).
+  assert.equal(grenadeCues([row({ tick: 32 })]).length, 1);
+});
+
+// --- knife cues ------------------------------------------------------------
+
+test('knifeCues: damage rows are the knife\u2019s ONLY sound source', () => {
+  const cues = knifeCues([
+    { kind: 'damage', weapon: 'Knife', tick: 100 },
+    { kind: 'kill', weapon: 'Knife', tick: 200 }, // a knife KILL without a damage row → no cue
+    { kind: 'damage', weapon: 'AK-47', tick: 300 }, // bullet damage is not a knife hit
+    { kind: 'grenade', bucket: 'he', weapon: 'HE Grenade', tick: 400 },
+    null, // hostile input never throws
+  ]);
+  assert.deepEqual(cues, [{ tick: 100, name: 'Knife' }]);
+  // Swings are client-local foley — they are not damage rows at all, so
+  // they can never reach this list (a swing plays NOTHING).
+  assert.equal(knifeCues([{ kind: 'kill', weapon: 'Knife', tick: 50 }]).length, 0);
+});
+
+test('knifeCues: freeze time gates the hit sound (rounds.js)', () => {
+  const cues = knifeCues(
+    [
+      { kind: 'damage', weapon: 'Knife', tick: 32 }, // round-1 freeze → dropped
+      { kind: 'damage', weapon: 'Knife', tick: 100 }, // live → kept
+    ],
+    FREEZE_ROUNDS,
+  );
+  assert.deepEqual(cues, [{ tick: 100, name: 'Knife' }]);
+});
+
 test('utilCuesInRange is open at the left and closed at the right', () => {
   const cues = [
     { tick: 100, name: 'A' },
@@ -102,6 +178,71 @@ test('utilCuesInRange is open at the left and closed at the right', () => {
   assert.deepEqual(utilCuesInRange(cues, 0, 50).map((c) => c.name), []); // before the start
   assert.deepEqual(utilCuesInRange([], 0, 50), []);
   assert.deepEqual(utilCuesInRange(cues, NaN, 500), []);
+});
+
+// --- gun cues (bullets.js rows) --------------------------------------------
+
+// The attack-edge gun path is GONE: its rising edges played the
+// manifest's DETONATION sample under the guns bucket on every grenade
+// equip/throw/hold (the util-sound bug). Gun sounds now come from
+// bullets.js rows — one per shot. bullets.test.js pins the row
+// DERIVATION (guns-only, freeze-filtered, globally tick-sorted, `draw`
+// = tracer selection); this file pins the sfx side: the (prevTick,
+// curTick] window selection.
+const shot = (tick, weapon = 'AK-47', over = {}) => ({
+  tick,
+  frame: 0,
+  slot: 0,
+  weapon,
+  draw: true,
+  ...over,
+});
+
+test('bulletCuesInRange: EVERY row in the window plays — draw is tracer-only', () => {
+  const rows = [
+    shot(100),
+    shot(104, 'AWP', { draw: false }), // draw:false still makes a sound
+    shot(110, 'MP9'),
+    shot(111, 'MP9', { slot: 1 }), // two players, adjacent ticks
+    shot(120, 'AWP', { draw: false }),
+    shot(200),
+  ];
+  const ticksOf = (from, to) => bulletCuesInRange(rows, from, to).map((r) => `${r.tick}:${r.weapon}`);
+  // Open at the left (100 already played), closed at the right (120
+  // reached this draw) — every row in between sounds, at any cadence.
+  assert.deepEqual(ticksOf(100, 120), [
+    '104:AWP',
+    '110:MP9',
+    '111:MP9',
+    '120:AWP',
+  ]);
+  assert.deepEqual(ticksOf(0, 100), ['100:AK-47']); // closed right: tick 100 plays once
+  assert.deepEqual(ticksOf(111, 111), []); // the compare point itself never re-plays
+  assert.deepEqual(ticksOf(110, 111), ['111:MP9']);
+  assert.deepEqual(ticksOf(199, 1000), ['200:AK-47']);
+});
+
+test('bulletCuesInRange: empty/NaN inputs and unsorted-tolerance never throw', () => {
+  assert.deepEqual(bulletCuesInRange([], 0, 10), []);
+  assert.deepEqual(bulletCuesInRange(null, 0, 10), []);
+  assert.deepEqual(bulletCuesInRange([shot(5)], NaN, 10), []);
+  assert.deepEqual(bulletCuesInRange([shot(5)], 0, NaN), []);
+  // Rows are tick-sorted by deriveBullets' contract; the engine relies
+  // on it (the binary search), so no unsorted input is exercised here.
+});
+
+test('bulletCuesInRange: a seek jump never plays the crossed rows (cueGapJump re-seeds)', () => {
+  const rows = [shot(100), shot(104), shot(1000)];
+  // A 15 s seek is a jump: the engine does NOT call the range selector
+  // across it (onEngineChange gates on !cueGapJump), so the crossed rows
+  // stay silent and the compare point re-seeds.
+  assert.equal(cueGapJump(1000, 100, 1, 64), true);
+  // Ordinary playback steps are not jumps — the crossed rows sound.
+  assert.equal(cueGapJump(108, 100, 1, 64), false);
+  assert.deepEqual(
+    bulletCuesInRange(rows, 100, 108).map((r) => r.tick),
+    [104],
+  );
 });
 
 // --- seek / pause guard ----------------------------------------------------
@@ -141,102 +282,17 @@ test('pickVariant picks uniformly in range and never leaves the list', () => {
   assert.equal(pickVariant(null, () => 0.5), null);
 });
 
-// --- weapon name resolution ------------------------------------------------
+// --- internal mix calibration ----------------------------------------------
 
-test('weaponNameOf: the stream carries names, indices resolve through the vocabulary', () => {
-  const names = ['AK-47', 'M4A4', 'HE Grenade'];
-  assert.equal(weaponNameOf('AK-47', names), 'AK-47'); // state.js interns names
-  assert.equal(weaponNameOf(1, names), 'M4A4'); // raw index form
-  assert.equal(weaponNameOf(9, names), null); // outside the vocabulary
-  assert.equal(weaponNameOf(null, names), null);
-  assert.equal(weaponNameOf('', names), null);
-  assert.equal(weaponNameOf(undefined, names), null);
-});
-
-// --- gun cues --------------------------------------------------------------
-
-// A hand-built state index in buildStateIndex's shape: per slot, per
-// field, {frames, values} — every SERIES key present (absent series are
-// empty, exactly as buildStateIndex leaves them).
-const SERIES_KEYS = [
-  'hp',
-  'armor',
-  'weapon',
-  'inventory',
-  'magAmmo',
-  'reserveAmmo',
-  'attack',
-  'money',
-  'helmet',
-];
-function indexWith(slotSeries) {
-  return {
-    slots: slotSeries.map((slot) => {
-      const out = {};
-      for (const key of SERIES_KEYS) out[key] = slot[key] || { frames: [], values: [] };
-      return out;
-    }),
-    recordCount: 0,
-  };
-}
-
-test('gunCues fires once per RISING attack edge and names the weapon', () => {
-  const index = indexWith([
-    {
-      attack: { frames: [0, 10, 15, 25], values: [false, true, false, true] },
-      weapon: { frames: [0, 20], values: ['AK-47', 'AWP'] },
-    },
-  ]);
-  // (0, 30]: edge at 10 (AK-47), release at 15, edge at 25 (AWP at frame 20).
-  const cues = gunCues(index, [], 0, 0, 30);
-  assert.deepEqual(cues, [
-    { frame: 10, name: 'AK-47' },
-    { frame: 25, name: 'AWP' },
-  ]);
-});
-
-test('gunCues seeds from the previous frame (a held trigger is not a new edge)', () => {
-  const index = indexWith([
-    {
-      attack: { frames: [0, 10], values: [false, true] },
-      weapon: { frames: [0], values: ['AK-47'] },
-    },
-  ]);
-  // Starting INSIDE the hold (10 → 30): attack is already true at 10, so
-  // no edge — only a fresh false→true inside the range would fire.
-  assert.deepEqual(gunCues(index, [], 0, 10, 30), []);
-  // A release + re-hold inside the range fires the second edge only.
-  assert.deepEqual(gunCues(index, [], 0, 5, 30), [{ frame: 10, name: 'AK-47' }]);
-});
-
-test('gunCues visits EVERY skipped frame (8× passes several frames per draw)', () => {
-  const index = indexWith([
-    {
-      // false at 0, true at 3, false at 5, true at 8 — three frames
-      // between two rAFs at 8×; only the frame-8 edge is NEW here.
-      attack: { frames: [0, 3, 5, 8], values: [false, true, false, true] },
-      weapon: { frames: [0], values: ['MP9'] },
-    },
-  ]);
-  assert.deepEqual(gunCues(index, [], 0, 0, 10), [
-    { frame: 3, name: 'MP9' },
-    { frame: 8, name: 'MP9' },
-  ]);
-});
-
-test('gunCues: paused redraws, missing slots and unknown weapons never throw', () => {
-  const index = indexWith([
-    { attack: { frames: [0], values: [true] }, weapon: { frames: [0], values: ['AK-47'] } },
-  ]);
-  assert.deepEqual(gunCues(index, [], 0, 5, 5), []); // toFrame === fromFrame
-  assert.deepEqual(gunCues(index, [], 0, 9, 4), []); // backwards never iterates
-  assert.deepEqual(gunCues(index, [], 7, 0, 10), []); // slot does not exist
-  assert.deepEqual(gunCues(null, [], 0, 0, 10), []); // no state stream
-  // weapon null (never carried) → the edge fires no cue.
-  const noWeapon = indexWith([
-    { attack: { frames: [0, 5], values: [false, true] }, weapon: { frames: [], values: [] } },
-  ]);
-  assert.deepEqual(gunCues(noWeapon, [], 0, 0, 10), []);
+test('gain scales: guns cut to 1/3, utility to 2/3, both internal to the mixer', () => {
+  // applyGains() multiplies the fader level by these — the pref default,
+  // the sliders and prefs.go never move (a user-facing 80% still reads
+  // 80%), so pinning the constants here pins the mix. Voice is
+  // deliberately unscaled (no constant exists for it — its master gain
+  // IS the fader value, see sfx.js).
+  assert.equal(GUNS_GAIN_SCALE, 1 / 3); // default weapon volume cut by 2/3
+  assert.equal(UTILITY_GAIN_SCALE, 2 / 3); // default utility volume cut by 1/3
+  assert.equal(AUDIO_VOL_DEFAULT, 0.8); // the user-facing default is untouched
 });
 
 // --- prefs + manifest boundary ---------------------------------------------

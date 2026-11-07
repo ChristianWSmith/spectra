@@ -71,6 +71,7 @@
     loadSoundManifest,
     prefVolume,
   } from '../replay/sfx.js';
+  import { deriveBullets } from '../replay/bullets.js';
   import {
     buildSpeakingIndex,
     speakingAt,
@@ -125,19 +126,18 @@
   // in ui* state via its onStateChange callback. KEPT IN PLACE FOR THE
   // PLAYER-CARD PHASE (the next one mounts per-player mute chips on the
   // cards): voicePresence / voicePlayers (loaded in load()), voiceEngine
-  // (built in startEngine), uiVoiceOn, uiVoiceErr + uiVoicePending (the
-  // "click anywhere to start voice" gesture hint), the per-player mute
+  // (built in startEngine), uiVoiceOn, uiVoiceErr, the per-player mute
   // map uiVoiceMute + toggleVoiceMute, and uiVoiceMutedAll (the Voice
   // row's mute in the volume popover under the scrubber — the player
   // cards' `muted` formula consumes it). What is GONE with spec 10
   // (voice lanes + the old voice bar): lanesOpen/laneSeek, uiVoiceCtx,
-  // solo, and the WAV export link.
+  // solo, and the WAV export link. Voice starts BY ITSELF (audio.js
+  // silent-retry contract — no gesture-pending hint anymore).
   let voicePresence = $state(null);
   let voicePlayers = $state([]);
   let voiceEngine = null;
   let uiVoiceOn = $state(false);
   let uiVoiceErr = $state('');
-  let uiVoicePending = $state(false); // engine parked its one-shot gesture listener
   let uiVoiceMutedAll = $state(false);
   const uiVoiceMute = $state({}); // steamId → bool (per-player mute — card phase)
 
@@ -1280,7 +1280,6 @@
     sfx = null;
     uiVoiceOn = false;
     uiVoiceErr = '';
-    uiVoicePending = false;
     uiVoiceMutedAll = false; // the new engine starts unmuted
     uiGunsMuted = false; // …including the sfx bucket mutes (session-only)
     uiUtilMuted = false;
@@ -1408,10 +1407,15 @@
       if (stateCapable(smeta)) {
         stateIndex = await loadState(id).catch(() => null);
         renderer?.setStateIndex(stateIndex); // normally pre-engine: startEngine pushes it
-        // …and so does the sound-effect engine (its gun cues read the
-        // same attack/weapon stream); both tolerate the repeat push.
-        sfx?.setStateIndex(stateIndex);
-        sfx?.setWeaponNames(stateIndex?.meta?.weaponNames || []);
+        // …and so does the sound-effect engine (its gun cues come from
+        // the same stream through bullets.js — one derivation, both
+        // consumers; the rows are freeze-filtered there); both tolerate
+        // the repeat push. `data` may not be parsed yet on a fresh load
+        // (deriveBullets fails soft to [] without ticks).
+        sfx?.setBullets(
+          deriveBullets(stateIndex, { ticks: data?.ticks, rounds, tickRate: meta?.tickRate }),
+        );
+        sfx?.setRounds(rounds);
       } else if (smeta && smeta.stateFormatVersion != null) {
         stateNote =
           'player state unavailable — reprocess this match to gain HP/weapon/money on the cards';
@@ -1617,11 +1621,11 @@
     });
     ro = new ResizeObserver(() => renderer.resize());
     ro.observe(stageEl);
-    // M4: voice is ON BY DEFAULT (spec 11). setEnabled(true) parks a
-    // one-shot gesture listener until the first user interaction — the
-    // engine reports state.pending and the transport shows the "click
-    // anywhere to start voice" hint; nothing else is needed. hearTick
-    // re-arms the same call from the landmark detail.
+    // M4: voice is ON BY DEFAULT (spec 11). setEnabled(true) starts it
+    // by itself — where the platform allows it immediately, otherwise
+    // silently on the first interaction (audio.js's retry listeners);
+    // there is no gesture hint. hearTick re-arms the same call from the
+    // landmark detail.
     if (voicePresence && voicePresence.hasVoice) {
       voiceEngine = createVoiceEngine({
         engine,
@@ -1634,7 +1638,6 @@
         onStateChange: (s) => {
           uiVoiceOn = s.enabled;
           uiVoiceErr = s.error;
-          uiVoicePending = s.pending;
           uiVoiceMutedAll = s.mutedAll;
         },
       });
@@ -1655,12 +1658,12 @@
     // Sound effects (guns + utility — the sound half of the replay): the
     // manifest read is MEMOIZED (one fetch per page load; load() ran it
     // first), and an EMPTY manifest — sounds never extracted — skips
-    // creation entirely: no AudioContext, no gesture listener, silent
+    // creation entirely: no AudioContext, no retry listener, silent
     // cues. The engine then takes the same inputs the renderer gets
-    // (drawNorm, the state index + weapon vocabulary) and the popover's
-    // persisted fader levels. Construction is deferred to the microtask,
-    // so the entry seek below has already happened and the engine's
-    // first change seeds instead of replaying it.
+    // (drawNorm, the bullets.js rows + the rounds freeze gate) and the
+    // popover's persisted fader levels. Construction is deferred to the
+    // microtask, so the entry seek below has already happened and the
+    // engine's first change seeds instead of replaying it.
     const startedEngine = engine;
     loadSoundManifest().then((sm) => {
       if (!live || engine !== startedEngine || sfx || !sm || !sm.count) return;
@@ -1671,9 +1674,14 @@
           sfxErr = msg;
         },
       });
-      sfx.setLandmarks(drawNorm);
-      sfx.setStateIndex(stateIndex);
-      sfx.setWeaponNames(stateIndex?.meta?.weaponNames || []);
+      sfx.setRounds(rounds); // freeze gate for the util/knife cue lists
+      sfx.setLandmarks(drawNorm); // rebuilds them under it
+      // Gun cues: bullets.js' ONE derivation of the state stream (the
+      // renderer's tracers read the same rows) — guns-only and
+      // freeze-filtered upstream, so the sound engine just plays them.
+      sfx.setBullets(
+        deriveBullets(stateIndex, { ticks: data.ticks, rounds, tickRate: meta?.tickRate }),
+      );
       sfx.setVolume(uiGunsVol);
       sfx.setUtilityVolume(uiUtilVol);
       sfx.setMuted('guns', uiGunsMuted);
@@ -2478,10 +2486,6 @@
             <!-- The sound-effect engine's own device failure (its message
                  already carries the GStreamer hint — no doubling). -->
             <span class="error rp-voice-hint" role="alert">{sfxErr}</span>
-          {:else if uiVoicePending}
-            <!-- The engine parked its one-shot gesture listener: voice is
-                 ON, it just needs the first click to start the context. -->
-            <span class="muted rp-voice-hint" role="status">click anywhere to start voice</span>
           {/if}
 
           {#if ready && data}
