@@ -64,6 +64,7 @@
     slotStateAt,
     stateCapable,
   } from '../replay/state.js';
+  import { deriveBullets } from '../replay/bullets.js';
   import { loadIconManifest, preloadIcons } from '../replay/icons.js';
   import {
     AUDIO_VOL_DEFAULT,
@@ -1408,6 +1409,14 @@
       if (stateCapable(smeta)) {
         stateIndex = await loadState(id).catch(() => null);
         renderer?.setStateIndex(stateIndex); // normally pre-engine: startEngine pushes it
+        // Tracer rows for the same state stream (mirror of the
+        // setStateIndex push — same null-guard): deriveBullets needs the
+        // position ticks, which load() fetches below, so a renderer that
+        // somehow exists here gets [] (fail soft) and startEngine pushes
+        // the real rows once data is in.
+        renderer?.setBullets(
+          deriveBullets(stateIndex, { ticks: data?.ticks, rounds, tickRate: meta?.tickRate }),
+        );
         // …and so does the sound-effect engine (its gun cues read the
         // same attack/weapon stream); both tolerate the repeat push.
         sfx?.setStateIndex(stateIndex);
@@ -1578,6 +1587,14 @@
     renderer.setIcons(iconObj);
     renderer.setVoices({ colors: playerColorSlots, speaking: speakIdx ? speakingFor : null });
     renderer.setStateIndex(stateIndex);
+    // Tracer rows: the ONE bullet derivation (lib/replay/bullets.js —
+    // gun-only, freeze-filtered, `draw` picks the lines) over the
+    // position ticks + rounds already loaded. deriveBullets(null, …)
+    // yields [] — always push, so a match without a state stream clears
+    // any rows from a previous push. The sfx engine gets the SAME rows.
+    renderer.setBullets(
+      deriveBullets(stateIndex, { ticks: data.ticks, rounds, tickRate: meta?.tickRate }),
+    );
     renderer.resize();
     renderer.setCameraMode(rendererCam()); // default 'smart' unless the pref says free
     offChange = engine.onChange((st) => {
