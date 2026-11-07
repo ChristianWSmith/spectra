@@ -583,3 +583,60 @@ at the end of the section.
   github.com/markus-wa/demoinfocs-golang v6 `common/player.go` +
   `common/common.go` (Color enum); local probe of donk.dem.zst
   (2026-11-06).
+
+- **Which `.vsnd_c` files are the weapon-fire / detonation sounds** —
+  picking the right assets for replay SFX. Name patterns are WRONG:
+  resolve through `soundevents/*.vsndevts_c` DATA blocks (root keys ARE
+  the event names — `Weapon_AK47.Single`, `BaseGrenade.Explode`,
+  `Flashbang.Explode`, `Molotov.Start`, `IncGrenade.Start`,
+  `BaseSmokeEffect.Sound`, `c4.explode` — each value carries
+  `vsnd_files_track_01[]` `.vsnd` paths; 183 files → 21,035 events →
+  19,986 distinct files) or pin a static table. Pitfalls: orphans exist
+  (`ak47_03`, `ak47-1`, `glock_01`, `m4a1_us_01..04` are referenced by
+  no event), `*_distant*` files are a separate far layer, and basenames
+  repeat across grenade dirs. Conventions: near fire = `<gun>_01.._04`
+  or legacy `<gun>-1`; detonations = `<x>_detonate_NN` / `<x>_explodeN`.
+  The near layer is PCM16 44,100 stereo everywhere (v4 resource except
+  ak47 fire = v5). Utility map: HE `hegrenade_detonate_02/03`, flash
+  `flashbang_explode1/2`, smoke = `smoke_emit` (the 14 s bloom — there
+  is NO `smoke_explode*` file), molotov `molotov_detonate_1`,
+  incendiary `inc_grenade_detonate_1..3`, C4 `c4_explode1`;
+  **decoy has NO detonation/activation sound** (only draw/throw/pinpull).
+  No fire file is shared between weapons, but one dir can hold two
+  weapons: `m4a1/` = M4A4 `m4a1_01..04` + M4A1-S `m4a1_silencer_01`,
+  `usp/` = USP-S `usp_01..03` (suppressed = default) + unsilenced
+  `usp_unsilenced_01..03`. spectra extracts a pinned static table
+  (`internal/mappack/sounds.go` `soundTable`, keys = `iconTable`'s
+  canonical names).
+  **Source** — local probe of pak01_dir.vpk + vsndevts parse (2026-11-07);
+  VRF `Sound.cs` (2026-11-03, "Sound assets" entry above).
+
+- **`.vsnd_c` v5 CTRL block decode (binary KV3, LZ4)** — v5 resources
+  keep their header in a `CTRL` block instead of DATA. Layout (validated
+  against ALL 2,224 KV3-v5 files in the install, 0 errors): 120-byte
+  header starting `KV3\x05` + 16-byte GUID + `u32 compression=1` (LZ4),
+  LZ4 sizes at offsets 72/76/80/84; buffer1 = the NUL string table
+  (`_class | CVoiceContainerDefault | m_vSound | m_nRate | m_nFormat |
+  PCM16 | m_nChannels | m_nStreamingSize | …`), buffer2 = `[2×u32
+  header][key/value pairs][f64 lane][type bytes][00 dd ee ff trailer]`;
+  a key whose next u32 is the next property name has no stored value
+  (absent properties + inline objects). `m_nFormat` is a STRING
+  (`PCM16`/`MP3`), not an int; `m_nChannels` may be absent (recover as
+  `payload/(sampleCount×bps)`, integral-or-error, never guessed);
+  `m_nStreamingSize` must equal the payload length. Audio payload starts
+  at the resource header's `FileSize` offset either way. A magic-`0x04`
+  KV3 variant exists only under `sounds/ambient/train` (no table entry)
+  and is rejected with a named error. spectra's decoder:
+  `internal/mappack/sounds.go` `decodeVSnd`.
+  **Source** — local from-scratch reader validated against the whole
+  install (2026-11-07); VRF `BinaryKV3.cs` / `Sound.cs`.
+
+- **Kill-feed indicator glyphs in a CS2 install** — the game's own
+  headshot/blind-kill markers live at `panorama/images/hud/deathnotice/`
+  (`icon_headshot.vsvg_c`, `blind_kill.vsvg_c`, alongside `noscope`,
+  `penetrate`, `revenge`, …). They are `.vsvg_c` resources that decode
+  with spectra's existing `decodeVSVG` (6-byte CRC32 prefix + raw SVG),
+  same as the equipment set — so they ride the icon extractor as
+  manifest keys `headshot`/`blind_kill` (existing installs re-extract to
+  gain them; the feed skips them meanwhile).
+  **Source** — local probe + decode of pak01_dir.vpk (2026-11-07).
