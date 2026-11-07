@@ -9,8 +9,10 @@
 // (the world layers follow the tick: lingering smoke/fire, the death
 // X's round cleanup incl. the post-round C4 kill and the EXACT
 // round_start boundary seek, the C4 icon and its aspect-preserving
-// draw, the WHITE dashed muzzle tracer (r+2 → r+38, dash phase advanced
-// from the tick), the LIGHTER flash overlay (peak 0.6, never solid
+// draw, the WHITE dashed muzzle tracer (r+2 → r+76, dash phase advanced
+// from the tick), the hit-shot tracer (the shooter→victim segment over
+// the same 0.22 s window — its skips, pellet dedupe and layer order),
+// the LIGHTER flash overlay (peak 0.6, never solid
 // white) and the white talking bloom drawn BENEATH its dot, the
 // death-X-under-C4 layer order, the carried-C4 badge on the carrier's
 // dot and the thrower-side tint of the util flight line + icon, the
@@ -276,7 +278,7 @@ test('muzzleRays: count segments from inner to outer, fanned around the angle', 
   assert.deepEqual(muzzleRays(0, 0, 0, 5, 12, 0), []); // no rays
   // count = 1 (the spread never applies): ONE straight ray along the aim
   // direction — the geometry of the firing tracer the renderer draws
-  // dashed (r+2 → r+38).
+  // dashed (r+2 → r+76).
   const line = muzzleRays(10, 20, 0.5, 11, 23, 1, 0);
   assert.equal(line.length, 1);
   const [x1, y1, x2, y2] = line[0];
@@ -908,16 +910,16 @@ test('world layers follow the tick: smoke/fire, death X, C4 icon, muzzle tracer,
     1,
     'ONE straight line along the aim direction (not a 5-ray fan)',
   );
-  // …and it is TWICE as long as the old r+2 → r+20 ray: the far end sits
-  // r+38 = 47 px out from the dot's center (the CT dot fill is the
-  // reference).
+  // …and FOUR times the original r+2 → r+20 ray: the reach was doubled
+  // (r+38) and doubled again on request — the far end now sits r+76 =
+  // 85 px out from the dot's center (the CT dot fill is the reference).
   {
     const dot = since(mark).find(
       (e) => e.op === 'arc' && e.fillStyle === '#5aa9e6' && e.args[2] === 9,
     );
     const end = since(mark).find((e) => e.op === 'lineTo' && e.strokeStyle === '#ffffff');
     const reach = Math.hypot(end.args[0] - dot.args[0], end.args[1] - dot.args[1]);
-    assert.ok(Math.abs(reach - 47) < 1e-9, `the tracer reaches r + 38 = 47 px (got ${reach})`);
+    assert.ok(Math.abs(reach - 85) < 1e-9, `the tracer reaches r + 76 = 85 px (got ${reach})`);
   }
   // dashed [6,5] with the phase pinned to the flash tick: at the edge
   // tick itself the dashes have not travelled yet…
@@ -1102,6 +1104,210 @@ test('death X: gone AT the next round_start (the ribbon seek), a kill on the rou
   engine.seekTick(401);
   r.draw();
   assert.equal(deathX(mark).length, 0, 'the round_end-tick kill is gone after its one tick');
+  r.destroy();
+});
+
+test('planted C4: drawn before its cutoff, gone AT round_end / bomb_explode / the next round_start', () => {
+  // The planted-marker mirror of the death-X regression above (drawDeaths
+  // got both fixes first: the round_start terminator, commit 5b21c4f, and
+  // the gone-AT-the-boundary test, commit 5dc0f93). The old drawBomb
+  // `tick > endTick` drew the marker AT its cutoff, so a paused seek to
+  // the boundary tick never cleared it, and a plant past its own
+  // round_end rode the 40 s fallback into the next round. Every plant
+  // here carries a POSITION — the HUD-clock fixture's plant deliberately
+  // has none and never draws a world marker.
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, {
+    engine,
+    data,
+    players: [
+      { steamId: '1', name: 'alice', side: 'ct' },
+      { steamId: '2', name: 'bob', side: 't' },
+    ],
+  });
+  const mk = (ev) => normalizeEvent(ev, {});
+  r.setLandmarks([
+    // round 1: planted at 192, terminated by round 1's round_end (400)
+    mk({ id: 1, seq: 1, tick: 192, round: 1, kind: 'bomb_plant', posX: 50, posY: 50 }),
+    mk({ id: 2, seq: 2, tick: 400, round: 1, kind: 'round_end' }),
+    mk({ id: 3, seq: 3, tick: 450, round: 2, kind: 'round_start' }),
+    // round 2: planted at 500, terminated by its own bomb_explode (600)
+    mk({ id: 4, seq: 4, tick: 500, round: 2, kind: 'bomb_plant', posX: 60, posY: 60 }),
+    mk({ id: 5, seq: 5, tick: 600, round: 2, kind: 'bomb_explode' }),
+    mk({ id: 6, seq: 6, tick: 650, round: 3, kind: 'round_start' }),
+    // round 3: planted at 700 with NO round_end loaded — the next
+    // round's round_start (800) is its only cutoff (the leak case)
+    mk({ id: 7, seq: 7, tick: 700, round: 3, kind: 'bomb_plant', posX: 70, posY: 70 }),
+    mk({ id: 8, seq: 8, tick: 800, round: 4, kind: 'round_start' }),
+  ]);
+  r.resize();
+  // The planted marker's SOLID orange pulse ring (the dropped C4's ring
+  // is the 0.9-alpha DASHED one — no bomb_drop in this fixture).
+  const plantedRing = (from) =>
+    canvas.log
+      .slice(from)
+      .filter((e) => e.op === 'stroke' && e.strokeStyle === 'rgba(251, 172, 24, 0.95)');
+  const at = (tick) => {
+    const m = canvas.log.length;
+    engine.seekTick(tick);
+    r.draw();
+    return plantedRing(m).length;
+  };
+
+  // --- the round_end cutoff ---------------------------------------------
+  assert.ok(at(200) > 0, 'drawn after the plant, before the round_end');
+  assert.ok(at(399) > 0, 'still drawn the tick before the round_end');
+  assert.equal(at(400), 0, 'gone AT round_end — not one tick after it');
+  assert.equal(at(401), 0, 'and still gone a tick into the next frame');
+  // --- the bomb_explode cutoff ------------------------------------------
+  assert.ok(at(550) > 0, "round 2's plant draws before its explosion");
+  assert.equal(at(600), 0, 'gone AT the bomb_explode tick');
+  // --- the next round_start cutoff (no round_end loaded) -----------------
+  assert.ok(at(750) > 0, 'the no-round_end plant draws (the leak case)');
+  assert.equal(at(800), 0, 'gone AT the next round_start — never the 40 s fallback');
+  // scrubbing back re-derives it (nothing sticky, like the death X)
+  assert.ok(at(760) > 0, 'a backwards scrub redraws the marker');
+  r.destroy();
+});
+
+test('hit shots: a shooter→victim tracer over the hit window (muzzle-styled, deduped)', () => {
+  // Spec: "if the shot is a hit, it should draw that shot's tracer from
+  // the shooter to the opponent" — IN ADDITION to the muzzle stub, over
+  // the same 0.22 s flash window (windowAlpha, so it is seek-correct and
+  // frozen while paused) and painted muzzle-style by the shared
+  // strokeTracer (dark 4 px underlay + white 2 px MUZZLE_DASH line).
+  // The victim's hit position rides the row (extract stamps PlayerHurt's
+  // victim position); the SHOOTER has no stored apos on damage rows
+  // (events.apos_* is kill-only), so its position comes from the
+  // position stream at the hit's tick.
+  headlessGlobals();
+  const data = synthStore(1300, 3); // slots 0/1/2 stand at (10,10)/(50,50)/(90,90)
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, {
+    engine,
+    data,
+    players: [
+      { steamId: '1', name: 'alice', side: 'ct' },
+      { steamId: '2', name: 'bob', side: 't' },
+      { steamId: '3', name: 'carol', side: 'ct' },
+    ],
+  });
+  const mk = (ev) => normalizeEvent(ev, {});
+  r.setLandmarks([
+    // THE basic hit: alice (slot 0) → bob, the hit position stored on the row
+    mk({ id: 1, seq: 1, tick: 192, round: 1, kind: 'damage', attacker: '1', victim: '2', weapon: 'ak47', dmg: 30, posX: 50, posY: 50 }),
+    // world/fall damage: extract's keyStr(0) → NO attacker → no shooter
+    mk({ id: 2, seq: 2, tick: 400, round: 1, kind: 'damage', attacker: '', victim: '2', weapon: '', dmg: 10, posX: 40, posY: 40 }),
+    // no stored hit position → no line (never a guessed one)
+    mk({ id: 3, seq: 3, tick: 600, round: 1, kind: 'damage', attacker: '1', victim: '2', weapon: 'ak47', dmg: 10, posX: null, posY: null }),
+    // shooter outside the roster → no stream sample → no line
+    mk({ id: 4, seq: 4, tick: 800, round: 1, kind: 'damage', attacker: '999', victim: '2', weapon: 'ak47', dmg: 10, posX: 50, posY: 50 }),
+    // pellet rows: two IDENTICAL rows (same tick/attacker/victim) are ONE
+    // line; a second victim at the same tick gets her own line
+    mk({ id: 5, seq: 5, tick: 1100, round: 2, kind: 'damage', attacker: '1', victim: '2', weapon: 'xm1014', dmg: 6, posX: 50, posY: 50 }),
+    mk({ id: 6, seq: 6, tick: 1100, round: 2, kind: 'damage', attacker: '1', victim: '2', weapon: 'xm1014', dmg: 6, posX: 50, posY: 50 }),
+    mk({ id: 7, seq: 7, tick: 1100, round: 2, kind: 'damage', attacker: '1', victim: '3', weapon: 'xm1014', dmg: 6, posX: 90, posY: 90 }),
+    // the shooter has NO sample in the store at the hit's frame (the
+    // stream only samples alive slots) → no line
+    mk({ id: 8, seq: 8, tick: 1250, round: 2, kind: 'damage', attacker: '1', victim: '2', weapon: 'ak47', dmg: 30, posX: 50, posY: 50 }),
+  ]);
+  r.resize();
+  // FREE camera: the smart camera eases once per draw, which would move
+  // the screen coords out from under an assertion — free freezes the
+  // transform so worldToScreen below is stable across every draw.
+  r.setCameraMode('free');
+
+  // The tracer's two passes: the white 2 px line over its dark 4 px
+  // underlay, both dashed [6,5] (no muzzle stub in this fixture — no
+  // stateIndex, so stepFiring never arms one).
+  const segs = (seq, strokeStyle, lineWidth) =>
+    seq.filter(
+      (e) =>
+        e.op === 'lineTo' &&
+        e.strokeStyle === strokeStyle &&
+        e.lineWidth === lineWidth &&
+        e.lineDash.join(',') === '6,5',
+    );
+  const at = (tick) => {
+    const mark = canvas.log.length;
+    engine.seekTick(tick);
+    r.draw();
+    return { mark, seq: canvas.log.slice(mark) };
+  };
+  const whiteIn = (shot) => segs(shot.seq, '#ffffff', 2);
+  const darkIn = (shot) => segs(shot.seq, 'rgba(0,0,0,0.45)', 4);
+
+  // --- the line: shooter → victim, muzzle-styled -------------------------
+  const hit = at(192);
+  const white = whiteIn(hit);
+  const dark = darkIn(hit);
+  assert.equal(white.length, 1, 'ONE white segment on the hit tick');
+  assert.equal(dark.length, 1, '…over its dark 4 px underlay (the muzzle recipe)');
+  const from = r.worldToScreen(10, 10); // alice's sampled position (slot 0)
+  const to = r.worldToScreen(50, 50); // the row's stored victim position
+  const wIdx = hit.seq.indexOf(white[0]);
+  const start = hit.seq.slice(0, wIdx).reverse().find((e) => e.op === 'moveTo');
+  assert.ok(start, 'the segment starts with a moveTo');
+  assert.ok(
+    Math.abs(start.args[0] - from.x) < 1e-9 && Math.abs(start.args[1] - from.y) < 1e-9,
+    `starts at the shooter's screen position (got ${start.args})`,
+  );
+  assert.ok(
+    Math.abs(white[0].args[0] - to.x) < 1e-9 && Math.abs(white[0].args[1] - to.y) < 1e-9,
+    `ends at the victim's screen position (got ${white[0].args})`,
+  );
+  assert.equal(white[0].alpha, 1, 'full alpha at the hit tick');
+  assert.ok(
+    Math.abs(white[0].lineDashOffset) < 1e-12,
+    `the dashes have not travelled yet (got ${white[0].lineDashOffset})`,
+  );
+  // Layer order: the tracer paints UNDER the player dots (draw() calls
+  // drawHitTracers before drawPlayers) so it reads as emerging from the
+  // shooter's dot and can never cover a dot or a name label.
+  {
+    const dotIdx = hit.seq.findIndex(
+      (e) => e.op === 'arc' && e.fillStyle === '#5aa9e6' && e.args[2] === 9,
+    );
+    assert.ok(dotIdx >= 0, 'the CT dot draws in this frame');
+    assert.ok(wIdx < dotIdx, 'the hit tracer draws BEFORE the player dots');
+  }
+
+  // --- timing: the muzzle flash's window, tick-derived -------------------
+  assert.equal(whiteIn(at(191)).length, 0, 'nothing before the hit tick');
+  const late = at(192 + 14); // 14/64 s = 0.219 s < 0.22 s → still live
+  assert.equal(whiteIn(late).length, 1, 'still drawn a tick before the window closes');
+  assert.ok(
+    Math.abs(whiteIn(late)[0].lineDashOffset - -14 * 0.8) < 1e-9,
+    'the dashes march with the age (−age × MUZZLE_DASH_SPEED)',
+  );
+  const faded = whiteIn(late)[0].alpha;
+  assert.ok(faded > 0 && faded < 1, `the envelope decays over the window (got ${faded})`);
+  assert.equal(whiteIn(at(192 + 15)).length, 0, 'gone once 0.22 s of demo time passed');
+  // Paused redraws are frozen: the same tick re-renders the same phase.
+  const p1 = whiteIn(at(199));
+  const p2 = whiteIn(at(199));
+  assert.equal(p1.length, 1, 'still live mid-window');
+  assert.equal(p2[0].lineDashOffset, p1[0].lineDashOffset, 'a paused redraw is byte-identical');
+  assert.ok(Math.abs(p1[0].lineDashOffset - -7 * 0.8) < 1e-9, 'phase = −age × MUZZLE_DASH_SPEED');
+
+  // --- rows that must never draw (no guessed fallback) -------------------
+  assert.equal(whiteIn(at(400)).length, 0, 'world/fall damage (no attacker) draws no line');
+  assert.equal(whiteIn(at(600)).length, 0, 'a hit with no stored position draws no line');
+  assert.equal(whiteIn(at(800)).length, 0, 'a shooter outside the roster draws no line');
+  data.masks[1250] &= ~1; // alice has no sample at that frame (dead slot)
+  assert.equal(whiteIn(at(1250)).length, 0, 'a shooter with no sampled position draws no line');
+
+  // --- dedupe: pellet rows to one victim = one line ----------------------
+  const pellets = whiteIn(at(1100));
+  assert.equal(pellets.length, 2, 'two identical rows → ONE line; the second victim gets her own');
+  assert.ok(
+    Math.abs(pellets[0].args[0] - to.x) < 1e-9 && Math.abs(pellets[1].args[0] - r.worldToScreen(90, 90).x) < 1e-9,
+    'the two lines land on their own victims',
+  );
   r.destroy();
 });
 
@@ -2277,7 +2483,11 @@ test('readout box: drawn only when it has a follow/loop/packNote line (no speed 
   assert.equal(follow.args[1], HUD_PAD + HUD_PAD, "the readout's left-inset content");
 
   // the loop line joins it → one box, two lines tall
-  engine.setLoop(0, 10);
+  // The bounds are FRAMES internally (0 → 640) but the readout speaks
+  // OVERALL MATCH TIME (fmt.js fmtClock over tickSeconds from the
+  // stream's first tick — the same basis as the scrubber), so frame 640
+  // at 64 tick reads 0:10, not "f640".
+  engine.setLoop(0, 640);
   engine.toggleLoop();
   mark = canvas.log.length;
   r.draw();
@@ -2286,7 +2496,7 @@ test('readout box: drawn only when it has a follow/loop/packNote line (no speed 
   assert.equal(hb[0].args[1], 600 - 8 - 43, '43 px tall (2 lines), still 8 px off the bottom');
   assert.equal(hb[0].args[3], 43, 'two lines now');
   const tt = textsSince(canvas.log, mark);
-  assert.ok(tt.some((t) => String(t) === 'loop: f0–10'), 'the loop line joins the readout');
+  assert.ok(tt.some((t) => String(t) === 'loop: 0:00–0:10'), 'the loop line joins the readout, in match time');
   r.destroy();
 });
 

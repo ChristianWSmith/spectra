@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 
 import {
   fmtClock,
+  parseClock,
   tickSeconds,
   fmtDuration,
   fmtInt,
@@ -53,6 +54,41 @@ test('fmtClock composes with tickSeconds at the match tickrate', () => {
   assert.equal(fmtClock(tickSeconds(19200, 128)), '2:30');
   // Unknown/invalid tickrate falls back to 64 (tickSeconds contract).
   assert.equal(fmtClock(tickSeconds(64, 0)), '0:01');
+});
+
+test('parseClock reads back exactly what fmtClock renders (round trip)', () => {
+  // THE inverse: every canonical clock string parses to the seconds it
+  // was formatted from, so a time input re-rendering after a parse can
+  // never drift (the loop popover's frame↔time round trip).
+  for (const s of [
+    '0:00', '0:45', '1:00', '2:34', '9:59', '10:00', '10:59',
+    '59:59', '1:00:00', '1:02:03', '10:00:00', '2:03:04', '100:00:00',
+  ]) {
+    assert.equal(fmtClock(parseClock(s)), s, s);
+  }
+  // …and at scale, over every whole second fmtClock's shapes cover.
+  for (const sec of [0, 1, 59, 60, 61, 3599, 3600, 3661, 7384, 36000]) {
+    assert.equal(fmtClock(parseClock(fmtClock(sec))), fmtClock(sec), String(sec));
+  }
+  // Bare seconds are the shorthand a text field naturally holds.
+  assert.equal(parseClock('90'), 90);
+  assert.equal(parseClock(' 64 '), 64); // surrounding whitespace is not garbage
+  assert.equal(parseClock('01:05'), 65);
+  assert.equal(fmtClock(parseClock('01:05')), '1:05'); // padded input re-displays canonically
+  assert.equal(parseClock('1:02:03'), 3723);
+  // A non-canonical but unambiguous entry still parses and re-displays
+  // canonically ("75:30" → 4530 s → "1:15:30").
+  assert.equal(fmtClock(parseClock('75:30')), '1:15:30');
+});
+
+test('parseClock rejects everything fmtClock would never have produced', () => {
+  for (const bad of [
+    '', '   ', 'abc', '1:60', '1:00:60', '1:2:3:4', '-1:00', '1.5', '1:5.5',
+    'NaN', '—',
+    null, undefined, 90, NaN, Infinity,
+  ]) {
+    assert.ok(Number.isNaN(parseClock(bad)), String(bad));
+  }
 });
 
 test('existing duration formatting is untouched', () => {

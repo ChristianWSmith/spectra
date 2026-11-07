@@ -3,13 +3,15 @@
 //
 //   1. bombEndTick    — how long a PLANTED C4 marker stays on the map:
 //                      plant → first same-round terminator (detonation,
-//                      defuse, or the ROUND END itself), with the 40 s
-//                      C4 timer as the hard fallback. The round-end
-//                      terminator is the cleanup for rounds that end
-//                      before the bomb resolves (a defuse, or a round
-//                      decided while the bomb still ticks) — without it
-//                      the marker stuck until the timer ran out even
-//                      though the round was over.
+//                      defuse, or the ROUND END itself) or the NEXT
+//                      round's start (the death-X fix's second cutoff —
+//                      see killEndTick), with the 40 s C4 timer as the
+//                      hard fallback. The round-end terminator is the
+//                      cleanup for rounds that end before the bomb
+//                      resolves (a defuse, or a round decided while the
+//                      bomb still ticks) — without it the marker stuck
+//                      until the timer ran out even though the round
+//                      was over.
 //
 //   2. bombEvidenceAt — the DROPPED-C4 reconstruction rule (below).
 //
@@ -40,16 +42,23 @@ export function hasBombPos(row) {
 }
 
 // bombEndTick — the planted-C4 visibility rule: the marker is drawn
-// from plant.tick until the FIRST same-round terminator at/after the
-// plant — bomb_explode, bomb_defuse, or round_end (the round is over,
-// the entity is gone — this is the round-end cleanup). With no
+// from plant.tick until the FIRST terminator at/after the plant —
+// bomb_explode, bomb_defuse, or round_end (the round is over, the entity
+// is gone — this is the round-end cleanup) — plus the NEXT round's first
+// round_start after it, which is the death-marker fix's second cutoff
+// (renderer.js killEndTick, commits 5b21c4f + 5dc0f93) carried over:
+// a plant stamped AFTER its round's round_end (the C4-detonation
+// window) has no same-round end left to terminate it, and without the
+// round_start it survived into the next round on the fallback. With no
 // terminator in the loaded rows the C4 timer (40 s) is the hard
-// fallback, so the marker can never stick forever. Terminators from
-// ANOTHER round or before the plant are ignored (a later round's
-// round_end must never cut an earlier plant short). Pure — head-tested
-// in src/lib/bomb.test.js; drawn by renderer.js drawBomb and reused by
-// the smart camera's bomb point.
-export function bombEndTick(plant, tr, explodes, defuses, roundEnds) {
+// fallback — a ceiling every terminator must beat, so the marker can
+// never stick forever NOR outlive the bomb. Terminators from ANOTHER
+// round, before the plant, or a round_start at/before the plant are
+// ignored (a later round's round_end must never cut an earlier plant
+// short; the plant round's own round_start precedes its plant). Pure —
+// head-tested in src/lib/bomb.test.js; drawn by renderer.js drawBomb
+// and reused by the smart camera's bomb point and the HUD clock.
+export function bombEndTick(plant, tr, explodes, defuses, roundEnds, roundStarts) {
   if (!plant || !Number.isFinite(plant.tick)) return 0;
   let end = plant.tick + 40 * tr;
   const consider = (list) => {
@@ -63,6 +72,15 @@ export function bombEndTick(plant, tr, explodes, defuses, roundEnds) {
   consider(explodes);
   consider(defuses);
   consider(roundEnds);
+  // The next round's start (rows are chronological, so the earliest
+  // start strictly after the plant IS the next round's). Strictly after,
+  // like killEndTick: a round_start on the plant's own tick is the
+  // plant round's start and cannot terminate a bomb it contains.
+  for (const s of roundStarts || []) {
+    if (s && Number.isFinite(s.tick) && s.tick > plant.tick && s.tick < end) {
+      end = s.tick;
+    }
+  }
   return end;
 }
 

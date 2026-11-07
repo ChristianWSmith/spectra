@@ -5,7 +5,10 @@
 // extracted icon → per-type detonation pops) → death markers (the victim's
 // team-color X, until the round ends) → bomb (pulse ring + the extracted
 // C4 icon — the dropped/planted C4 renders ABOVE the death markers, so an
-// X can never overlap it) → players (white talking bloom UNDER the dot →
+// X can never overlap it) → hit-shot tracer (the shooter→victim segment
+// while its 0.22 s flash window is live — UNDER the dots, so it reads as
+// coming out of the shooter's dot and never covers a name) → players
+// (white talking bloom UNDER the dot →
 // view chevron, body, player-color rim, flash-white overlay, damage
 // flash, muzzle tracer, follow ring, carried-C4 badge, name) → HUD +
 // kill feed (top-right) + in-game chat (bottom-left).
@@ -24,6 +27,11 @@ import { makeTransform } from '../components/mapxform.js';
 import { detonationStyleOf, sameUtilityWeapon } from './landmarks.js';
 import { slotStateAt } from './state.js';
 import { bombEndTick, bombEvidenceAt, hasBombPos } from './bomb.js';
+// fmt.js is THE seconds clock (fmtClock over tickSeconds — the same
+// basis as the scrubber readout). createRenderer has its own tick-based
+// HUD helper named fmtClock below, so the import is aliased: the two
+// must never blur into one another.
+import { fmtClock as fmtClockSecs, tickSeconds } from '../fmt.js';
 
 const CT_COLOR = '#5aa9e6';
 const T_COLOR = '#e6a35a';
@@ -83,11 +91,14 @@ const DAMAGE_FLASH_S = 0.35; // victim-hit flash window after a damage event
 // the tick (lineDashOffset derived from the flash's own age), so it
 // reads as bullets leaving the dot instead of a static ray. Dash phase
 // is tick math only → scrub-safe and frozen while paused, exactly like
-// the windowAlpha envelope that fades it out. The segment is 36 px long
-// (r+2 → r+38 — twice the old 18 px r+2 → r+20 reach); the dash pattern
-// and its march speed deliberately did NOT scale with it, so a longer
-// tracer still reads as the same motion (just more of it).
-const MUZZLE_REACH = 38; // px past the dot center (was 20; the original ray stopped at r+14)
+// the windowAlpha envelope that fades it out. The segment's REACH was
+// doubled with the tracer (r+2 → r+38, i.e. 36 px, twice the original
+// 18 px r+2 → r+20) and then doubled AGAIN on request — it now runs
+// r+2 → r+76 (74 px of line, four times the original); the dash pattern
+// and its march speed deliberately did NOT scale with it (same motion,
+// more of it), so the longer tracer still reads as the same bullets
+// travelling further instead of a faster or busier effect.
+const MUZZLE_REACH = 76; // px past the dot center (was 38, before that 20; the original ray stopped at r+14)
 const MUZZLE_DASH = [6, 5]; // px — tracer segment / gap along the aim line
 const MUZZLE_DASH_SPEED = 0.8; // px per tick — how fast the dashes travel out
 // Talking bloom (voiceBloom): a white ring expanding OUTWARD FROM THE
@@ -521,6 +532,14 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // tick (see drawDeaths / drawPlayers' hit flash).
   let kills = [];
   let damages = []; // damages[slot] = [tick, …]
+  // Hit-shot tracers (bucket 'damage'): the rows that can show a
+  // shooter→victim segment — {tick, attacker, victim, x, y} with x/y the
+  // row's stored VICTIM hit position (the shooter's position is read
+  // from the stream at draw time, see drawHitTracers). Deduped on
+  // (tick, attacker, victim) when built: a shotgun's pellet rows to the
+  // SAME victim at the SAME tick are one line, a second victim gets her
+  // own. Rebuilt by setLandmarks, rendered as a pure function of tick.
+  let hitTracers = [];
   // Flash-white overlay (setBlinds): blinds[slot] = [{tick, ms}] — the
   // blind windows bucketed per victim slot, like `damages`. Rebuilt by
   // setBlinds, rendered as a pure function of tick (drawPlayers' white
@@ -687,6 +706,8 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     roundStarts = [];
     kills = [];
     damages = [];
+    hitTracers = [];
+    const hitSeen = new Set();
     const throws = [];
     for (const l of landmarks) {
       switch (l.bucket) {
@@ -707,6 +728,34 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
             const vs = slotOfSteam.get(String(l.victim || ''));
             if (vs != null && Number.isFinite(l.tick)) {
               (damages[vs] || (damages[vs] = [])).push(l.tick);
+            }
+            // …and the hit-SHOT tracer (the shooter→victim segment): the
+            // row carries the victim's hit position (extract stamps
+            // PlayerHurt's victim position → normalizeEvent x/y) but NO
+            // attacker position (events.apos_* is kill-only —
+            // models/dto.go + store/queries.go), so the shooter's side
+            // is resolved from the position stream at draw time. No
+            // attacker key (world/fall/self damage — extract's
+            // keyStr(0) = '') or no stored hit position → no line, never
+            // a guessed one. Dedupe on (tick, attacker, victim): pellet
+            // rows of one shot at one victim are ONE line.
+            if (
+              l.attacker &&
+              Number.isFinite(l.tick) &&
+              Number.isFinite(l.x) &&
+              Number.isFinite(l.y)
+            ) {
+              const key = `${l.tick}|${l.attacker}|${l.victim || ''}`;
+              if (!hitSeen.has(key)) {
+                hitSeen.add(key);
+                hitTracers.push({
+                  tick: l.tick,
+                  attacker: l.attacker,
+                  victim: l.victim || '',
+                  x: l.x,
+                  y: l.y,
+                });
+              }
             }
           }
           break;
@@ -746,9 +795,10 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
           roundEnds.push(l);
           break;
         case 'start':
-          // Stored ONLY for killEndTick's next-round cutoff — a
-          // round_start row is never drawn as a world marker and never
-          // becomes a scrubber marker (landmarks.scrubberMarkerClass).
+          // Stored ONLY for the next-round cutoffs — killEndTick (death
+          // X) and bombEndTick (planted C4) — a round_start row is never
+          // drawn as a world marker and never becomes a scrubber marker
+          // (landmarks.scrubberMarkerClass).
           roundStarts.push(l);
           break;
       }
@@ -928,7 +978,14 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     const tick = engine.state.tick;
     for (const l of plants) {
       if (!hasPos(l)) continue;
-      if (tick >= l.tick && tick <= bombEndTick(l, tr, explodes, defuses, roundEnds)) {
+      // INCLUSIVE of the cutoff tick, deliberately: at the cutoff (the
+      // explosion, or the round's end) the bomb is still the thing the
+      // frame must frame — the blast is what the viewer needs to see —
+      // and one tick later the next round's players own the view. No
+      // boundary-stuck risk here (unlike drawBomb): easing a camera
+      // point is not a painted marker, so the death-X `>=` rule does not
+      // apply — see drawBomb for the drawing boundary.
+      if (tick >= l.tick && tick <= bombEndTick(l, tr, explodes, defuses, roundEnds, roundStarts)) {
         add(l.x, l.y);
       }
     }
@@ -1413,13 +1470,21 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     const tr = engine.tickRate;
     for (const l of plants) {
       if (!hasPos(l)) continue;
-      // Visible from plant until the first same-round terminator —
-      // detonation, defuse, or the ROUND END (the planted-C4 cleanup:
-      // a round that ends before the bomb resolves no longer keeps the
-      // marker on screen). bomb.js bombEndTick owns the rule; the 40 s
-      // C4 timer is its no-terminator fallback.
-      const endTick = bombEndTick(l, tr, explodes, defuses, roundEnds);
-      if (tick < l.tick || tick > endTick) continue;
+      // Visible from plant until the first terminator — detonation,
+      // defuse, the ROUND END, or the next round's start (the planted-C4
+      // cleanup: a round that ends before the bomb resolves no longer
+      // keeps the marker on screen, and a plant past its round's end
+      // dies with the next round). bomb.js bombEndTick owns the rule; the
+      // 40 s C4 timer is its no-terminator fallback.
+      const endTick = bombEndTick(l, tr, explodes, defuses, roundEnds, roundStarts);
+      // The boundary is the DEATH-X fix's (drawDeaths, commit 5dc0f93):
+      // gone AT the cutoff, not one tick after it — a paused seek to the
+      // ribbon's next-round startTick must clear the marker, and the
+      // plant's OWN tick always draws even when the cutoff lands on it
+      // (a plant stamped on its round_end/bomb_explode tick still marks
+      // the spot for that one tick; `tick !== l.tick` also keeps a
+      // NaN-tick row — bombEndTick → 0 — from ever drawing).
+      if (tick < l.tick || (tick >= endTick && tick !== l.tick)) continue;
       const c = worldToScreen(l.x, l.y);
       const pulse = 10 + 4 * Math.sin(now / 200);
       ctx.strokeStyle = 'rgba(251, 172, 24, 0.95)';
@@ -1573,6 +1638,81 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     }
   }
 
+  // strokeTracer — THE tracer paint: the dark 4 px underlay path first,
+  // then the white 2 px MUZZLE_DASH line on top, dashes marching outward
+  // with the event's age (lineDashOffset = −age × MUZZLE_DASH_SPEED —
+  // pure tick math, so a scrub re-renders the same phase and a paused
+  // draw freezes). Takes [x1, y1, x2, y2] segments so BOTH tracer
+  // consumers share one recipe: drawPlayers' muzzle stub (spec 24) and
+  // the hit-shot tracer (drawHitTracers) can never drift apart, and the
+  // dash deliberately does not scale per consumer (same motion, more of
+  // it). The caller owns globalAlpha — the window envelope — and resets
+  // it.
+  function strokeTracer(segs, ageTicks) {
+    ctx.setLineDash(MUZZLE_DASH);
+    ctx.lineDashOffset = -ageTicks * MUZZLE_DASH_SPEED;
+    ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    for (const [x1, y1, x2, y2] of segs) {
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+    }
+    ctx.stroke();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (const [x1, y1, x2, y2] of segs) {
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.lineDashOffset = 0;
+  }
+
+  // drawHitTracers — the hit-shot tracer: a straight segment from the
+  // SHOOTER's sampled position to the VICTIM's stored hit position for
+  // every damage row whose flash window is live — the muzzle stub's
+  // counterpart that shows WHO hit WHOM (the stub still draws at the
+  // shooter's dot; this is the shot's line to its target).
+  //
+  // Positions: the row carries the VICTIM's hit position (extract stamps
+  // PlayerHurt's victim position → normalizeEvent x/y); the shooter has
+  // NO stored apos on damage rows (events.apos_* is kill-only —
+  // models/dto.go, store/queries.go), so its position is read from the
+  // position stream at the hit's tick — the same authoritative samples
+  // the dots draw from. A row with no attacker key (world/fall damage),
+  // an attacker outside the roster, no stored victim position, or no
+  // stream sample for the shooter at that frame (the store only samples
+  // ALIVE slots) draws NOTHING: no guessed fallback.
+  //
+  // Timing is the muzzle flash's envelope — windowAlpha over
+  // FIRE_FLASH_S (0.22 s) — so the line is seek-correct and frozen while
+  // paused; a row outside the window costs one windowAlpha call and no
+  // lookups or transforms. Painted BEFORE drawPlayers (see draw()): the
+  // dots and name labels stay on top, so the segment reads as emerging
+  // from under the shooter's dot instead of crossing a face.
+  function drawHitTracers(tick) {
+    const tr = engine.tickRate;
+    for (const h of hitTracers) {
+      const alpha = windowAlpha(tick, h.tick, tr, FIRE_FLASH_S);
+      if (alpha <= 0) continue; // outside the flash window — the cheap gate
+      const age = tick - h.tick;
+      const slot = slotOfSteam.get(String(h.attacker));
+      if (slot == null || slot >= store.slots.length) continue;
+      const f = engine.frameForTick(Math.max(engine.firstTick, h.tick));
+      if (!(store.masks[f] & (1 << slot))) continue; // no sample → no line
+      const p = store.slots[slot].pos;
+      const b = f * 4;
+      const a = worldToScreen(p[b], p[b + 1]);
+      const v = worldToScreen(h.x, h.y);
+      ctx.globalAlpha = alpha;
+      strokeTracer([[a.x, a.y, v.x, v.y]], age);
+      ctx.globalAlpha = 1;
+    }
+  }
+
   function drawPlayers() {
     const st = engine.state;
     const tick = st.tick;
@@ -1698,40 +1838,23 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       }
 
       // 24 — firing TRACER: a WHITE dashed line along the look
-      // direction (r+2 → r+38 — the 36 px segment, twice the old 18 px
-      // r+2 → r+20 reach) whose
+      // direction (r+2 → r+76 — the 74 px segment, four times the
+      // original 18 px r+2 → r+20 reach) whose
       // dashes MARCH OUTWARD with the tick (lineDashOffset from the
       // flash's own age — pure tick math, so a scrub re-renders the same
       // phase and a paused draw freezes), reading as bullets leaving the
       // dot instead of a static ray. Alpha decays over the tick window
       // armed by stepFiring (frozen at a constant age while paused — it
       // never flickers on its own); the dark underlay shares the dash so
-      // the tracer stays legible on the light theme too.
+      // the tracer stays legible on the light theme too. Painted by
+      // strokeTracer — the ONE tracer recipe, shared with the hit-shot
+      // tracer (drawHitTracers), so the two can never drift apart.
       const fire = windowAlpha(tick, fireAt[slot], tr, FIRE_FLASH_S);
       if (fire > 0) {
         const rays = muzzleRays(c.x, c.y, angle, r + 2, r + MUZZLE_REACH, 1, 0);
         if (rays.length) {
           ctx.globalAlpha = fire;
-          ctx.setLineDash(MUZZLE_DASH);
-          ctx.lineDashOffset = -(tick - fireAt[slot]) * MUZZLE_DASH_SPEED;
-          ctx.strokeStyle = 'rgba(0,0,0,0.45)';
-          ctx.lineWidth = 4;
-          ctx.beginPath();
-          for (const [x1, y1, x2, y2] of rays) {
-            ctx.moveTo(x1, y1);
-            ctx.lineTo(x2, y2);
-          }
-          ctx.stroke();
-          ctx.strokeStyle = '#ffffff';
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          for (const [x1, y1, x2, y2] of rays) {
-            ctx.moveTo(x1, y1);
-            ctx.lineTo(x2, y2);
-          }
-          ctx.stroke();
-          ctx.setLineDash([]);
-          ctx.lineDashOffset = 0;
+          strokeTracer(rays, tick - fireAt[slot]); // the shared tracer recipe
           ctx.globalAlpha = 1;
         }
       }
@@ -1857,12 +1980,16 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // plantedEndAt — the tick a PLANTED C4's countdown reaches at `tick`,
   // or null when the bomb is not planted: the same plant evidence +
   // bomb.js terminator rule the world layer (drawBomb) and the smart
-  // camera already use — never a second bomb rule.
+  // camera already use — never a second bomb rule. INCLUSIVE at the
+  // cutoff on purpose: AT the terminator tick the line must still be
+  // the C4 countdown reading 0:00 (the blast moment) — the death-X
+  // `>=` would drop it a tick early and let the 115 s round clock flash
+  // back before detonatedAt takes over.
   function plantedEndAt(tick, tr, roundNumber) {
     for (const l of plants) {
       if (!l || l.round !== roundNumber || !Number.isFinite(l.tick)) continue;
       if (tick < l.tick) continue;
-      const end = bombEndTick(l, tr, explodes, defuses, roundEnds);
+      const end = bombEndTick(l, tr, explodes, defuses, roundEnds, roundStarts);
       if (tick <= end) return end;
     }
     return null;
@@ -1870,16 +1997,20 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
 
   // detonatedAt — true once a plant of this round has EXPLODED at
   // `tick`: the plant's bombEndTick terminator IS a bomb_explode row
-  // (bomb.js owns the terminator rule; a defused / round-ended plant is
-  // NOT a detonation and keeps today's behavior). Keys off the plant's
-  // explode tick — never the round's recorded endTick, which can precede
-  // the detonation — so the window between the explosion and the next
-  // round's start reads 0:00 instead of the 115 s round clock.
+  // (bomb.js owns the terminator rule; a defused / round-ended /
+  // next-round-start-terminated plant is NOT a detonation and keeps
+  // today's behavior — a round_start cutoff can only ever make `end`
+  // EARLIER, and the explode-row equality below still gates the flag).
+  // Keys off the plant's explode tick — never the round's recorded
+  // endTick, which can precede the detonation — so the window between
+  // the explosion and the next round's start reads 0:00 instead of the
+  // 115 s round clock. Inclusive at `tick === end` like plantedEndAt:
+  // the explosion tick itself still counts as the detonation.
   function detonatedAt(tick, tr, roundNumber) {
     for (const l of plants) {
       if (!l || l.round !== roundNumber || !Number.isFinite(l.tick)) continue;
       if (tick < l.tick) continue;
-      const end = bombEndTick(l, tr, explodes, defuses, roundEnds);
+      const end = bombEndTick(l, tr, explodes, defuses, roundEnds, roundStarts);
       if (tick <= end) continue; // still ticking — plantedEndAt covers it
       for (const e of explodes) {
         if (e && e.round === l.round && e.tick >= l.tick && e.tick === end) return true;
@@ -2116,7 +2247,17 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       lines.push(`follow: ${slotNames[st.followSlot] || '#' + st.followSlot}`);
     }
     if (st.loopEnabled && st.loopFrom >= 0) {
-      lines.push(`loop: f${st.loopFrom}–${st.loopTo}`);
+      // The loop bounds are FRAMES internally (engine.state.loopFrom /
+      // loopTo); the readout speaks OVERALL MATCH TIME — fmt.js fmtClock
+      // over tickSeconds from the stream's first tick, the SAME basis as
+      // the scrubber's "m:ss / m:ss" and the loop popover's inputs, so
+      // the line reads exactly what the user typed in.
+      const t0 = store.ticks[0];
+      const loopClock = (f) =>
+        fmtClockSecs(
+          tickSeconds(store.ticks[Math.min(Math.max(0, f), store.frames - 1)] - t0, engine.tickRate),
+        );
+      lines.push(`loop: ${loopClock(st.loopFrom)}–${loopClock(st.loopTo)}`);
     }
     if (packNote) lines.push(packNote);
     if (!lines.length) return;
@@ -2396,6 +2537,12 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       // bomb read as a stray mark on it).
       drawDeaths(st.tick); // the victim's team-color X (spec 28)
       drawBomb(st.tick, now);
+      // Hit-shot tracer UNDER the players: the segment must read as
+      // coming out of the shooter's dot, and a line painted over the
+      // dots would cross both faces and their name labels — so the dots
+      // paint on top of its endpoints (the muzzle stub still paints OVER
+      // its own dot: it lives inside drawPlayers, one layer up).
+      drawHitTracers(st.tick);
       drawPlayers();
     }
     drawHUD();

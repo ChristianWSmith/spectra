@@ -14,6 +14,7 @@ const plant = (tick, round = 7, x = 100, y = 200) => ({ kind: 'bomb_plant', tick
 const drop = (tick, round = 7, x = 300, y = 400) => ({ kind: 'bomb_drop', tick, round, x, y, z: 12 });
 const pickup = (tick, round = 7, x = 500, y = 600) => ({ kind: 'bomb_pickup', tick, round, x, y, z: 8 });
 const roundEnd = (tick, round = 7) => ({ kind: 'round_end', tick, round, x: null, y: null });
+const roundStart = (tick, round = 8) => ({ kind: 'round_start', tick, round, x: null, y: null });
 
 // --- bombEndTick: planted-C4 visibility -------------------------------------
 
@@ -56,6 +57,55 @@ test('the EARLIEST same-round terminator wins', () => {
   const defuse = { kind: 'bomb_defuse', tick: 1400, round: 7 };
   const end = roundEnd(1402);
   assert.equal(bombEndTick(p, 64, [boom], [defuse], [end]), 1400);
+});
+
+// --- the round_start terminator (the death-X fix's second cutoff) -----------
+// Commit 5b21c4f gave the death markers a round_start terminator and
+// 5dc0f93 made the X vanish AT it; the planted C4 had the same leak
+// through its own missing terminator.
+
+test('the NEXT round\'s start ends the marker — even with NO round_end loaded', () => {
+  // The leak: a plant with no same-round round_end in the loaded rows
+  // (truncated feed, or the round_end that PRECEDES the plant) used to
+  // ride the 40 s fallback into the next round's frames.
+  const p = plant(1000);
+  assert.equal(bombEndTick(p, 64, [], [], [], [roundStart(1500)]), 1500);
+  // The same rule beside a round_end: the EARLIER cutoff wins (the
+  // round ends first here)…
+  assert.equal(bombEndTick(p, 64, [], [], [roundEnd(1400)], [roundStart(1500)]), 1400);
+  // …and a round_end AFTER the next round's start (a round stamped past
+  // its own end) never wins over the earlier start.
+  assert.equal(bombEndTick(p, 64, [], [], [roundEnd(1700)], [roundStart(1500)]), 1500);
+});
+
+test('a plant stamped AT/AFTER its own round_end dies with the next round_start', () => {
+  // The golden-demo shape the death-X fix verified: the round's round_end
+  // lands BEFORE the plant tick, so it is no terminator at all (the
+  // "before the plant — ignored" rule) and only the next round's start
+  // can clean the marker up.
+  const late = plant(1600); // round_end at 1504 is before the plant
+  assert.equal(
+    bombEndTick(late, 64, [], [], [roundEnd(1504)], [roundStart(1700)]),
+    1700,
+  );
+  // A plant stamped ON its round_end tick is terminated AT that very tick
+  // (the marker still draws on the plant's own tick — the draw path's
+  // `tick !== l.tick` — and is gone from the next tick on).
+  const onEnd = plant(1504);
+  assert.equal(bombEndTick(onEnd, 64, [], [], [roundEnd(1504)], [roundStart(1700)]), 1504);
+});
+
+test('round_start cutoffs respect the 40 s fallback ceiling', () => {
+  const p = plant(1000);
+  const ceiling = 1000 + 40 * 64;
+  // A round start EARLIER than the fallback wins — it is a real cutoff.
+  assert.equal(bombEndTick(p, 64, [], [], [], [roundStart(1200)]), 1200);
+  // A round start BEYOND the fallback never LENGTHENS the window: the
+  // 40 s C4 timer is the hard fallback, in both directions.
+  assert.equal(bombEndTick(p, 64, [], [], [], [roundStart(4000)]), ceiling);
+  // Same rule as the other terminator lists: starts at/before the plant
+  // (the plant round's own start) are ignored.
+  assert.equal(bombEndTick(p, 64, [], [], [], [roundStart(1000, 7), roundStart(900, 6)]), ceiling);
 });
 
 // --- bombEvidenceAt: the dropped-C4 reconstruction rule ----------------------

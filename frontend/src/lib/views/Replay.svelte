@@ -77,7 +77,7 @@
   import { loadMapPack } from '../components/mapxform.js';
   import { downloadBlob, downloadText } from '../download.js';
   import { toCSV } from '../csv.js';
-  import { chatClock, prettyJson, fmtClock, tickSeconds, normTickRate } from '../fmt.js';
+  import { chatClock, prettyJson, fmtClock, parseClock, tickSeconds, normTickRate } from '../fmt.js';
   import { isCounted, roundStartTick, roundIndexLabel, scoreThrough } from '../rounds.js';
   import { isSteam, entrySeekTick } from '../nav.js';
   import { buildHash } from '../router.js';
@@ -188,6 +188,15 @@
   // one Popover anchored to the loop-codicon button.
   let loopOpen = $state(false);
   let loopAnchor = $state(null);
+  // Speed + camera popovers: the SAME floating-popover pattern as the
+  // loop control — the native <select>s read as foreign objects among
+  // the icon buttons, so both became a trigger button + Popover with the
+  // option buttons inside (they call the very same onSpeed / onCamMode
+  // handlers the selects did).
+  let speedOpen = $state(false);
+  let speedAnchor = $state(null);
+  let camOpen = $state(false);
+  let camAnchor = $state(null);
 
   let stageEl = $state(null);
   let canvasEl = $state(null);
@@ -215,6 +224,24 @@
     const cur = data.ticks[Math.min(Math.max(0, uiFrame), data.frames - 1)];
     return `${fmtClock(tickSeconds(cur - t0, tr))} / ${fmtClock(tickSeconds(t1 - t0, tr))}`;
   });
+
+  // Loop bounds are typed as TIME, not frames: the popover's inputs and
+  // the renderer's `loop:` readout both speak OVERALL MATCH TIME — fmt.js
+  // fmtClock over tickSeconds measured from the stream's first tick, the
+  // SAME basis as scrubTime above (a "1:00" here is the minute the
+  // scrubber shows "1:00"). The engine keeps FRAMES (uiLoopFrom/uiLoopTo
+  // stay the mirror of engine.state.loopFrom/loopTo — the clip recorder
+  // and the wrap logic consume those); these two derive the DISPLAYED
+  // strings from that mirror, so any engine-side change (toggleLoop's
+  // default interval, a setLoop from elsewhere) re-renders them.
+  const loopClockOf = (frame) => {
+    if (!data || !data.frames || !data.ticks || frame < 0) return '';
+    const t0 = data.ticks[0];
+    const i = Math.min(Math.max(0, frame), data.frames - 1);
+    return fmtClock(tickSeconds(data.ticks[i] - t0, normTickRate(meta?.tickRate)));
+  };
+  const loopFromText = $derived(loopClockOf(uiLoopFrom));
+  const loopToText = $derived(loopClockOf(uiLoopTo));
 
   const packNote = $derived.by(() => {
     if (!matchMap) return 'map name unknown — world-coordinate grid';
@@ -817,8 +844,10 @@
   //   round — the round containing the playhead (label from the ONE
   //           roundIndexLabel formatter), or null before round 1.
   // The bomb/planted evidence is NOT passed: the renderer already holds
-  // it from setLandmarks and applies bomb.js bombEndTick there (no
-  // duplicated rule).
+  // it from setLandmarks and applies bomb.js bombEndTick there — the
+  // same terminators as the death markers (round_end, plus the next
+  // round's round_start — the killEndTick fix) — so no rule is ever
+  // duplicated here.
   function hudFor(tick) {
     const r = roundContaining(tick);
     let ended = 0;
@@ -1105,6 +1134,16 @@
   // releases follow and drops to 'free' for the SESSION only (the pref
   // keeps whatever the user picked explicitly).
   let camMode = $state('smart');
+  // The camera popover's option list — the old <select>'s three entries
+  // (labels included; the trigger button renders the ACTIVE one).
+  const CAM_MODES = [
+    { value: 'smart', label: 'Smart' },
+    { value: 'free', label: 'Free' },
+    { value: 'follow', label: 'Follow' },
+  ];
+  const camLabel = $derived(
+    (CAM_MODES.find((m) => m.value === camMode) || CAM_MODES[0]).label,
+  );
 
   // The player Follow last had: the dropdown must never enter Follow
   // with NO player (an empty "Follow player…" selection is an unclear
@@ -1601,6 +1640,40 @@
     engine?.setLoop(uiLoopFrom, uiLoopTo);
   }
 
+  // onLoopTime resolves a typed TIME to a frame: parseClock (fmt.js —
+  // the inverse of the displayed fmtClock, same grammar), clamp the
+  // seconds to the match range (0 → the stream's last tick), then the
+  // engine's exact-frame binary search (frameForTick) lands on the first
+  // frame at/after that instant, clamped to the stream. An empty field
+  // CLEARS the bound (−1 — the engine's "unset"); anything unparseable
+  // restores the displayed value instead, so no state changes and the
+  // field snaps back to what it showed rather than a NaN reaching the
+  // loop.
+  function onLoopTime(which, e) {
+    const input = e.currentTarget;
+    const shown = which === 'from' ? loopFromText : loopToText;
+    const raw = String(input.value ?? '').trim();
+    if (raw === '') {
+      if (which === 'from') uiLoopFrom = -1;
+      else uiLoopTo = -1;
+      onLoopInput();
+      return;
+    }
+    const sec = parseClock(raw);
+    const tr = normTickRate(meta?.tickRate); // the same basis loopClockOf displays
+    if (Number.isNaN(sec) || !data || !data.frames || !data.ticks || !engine) {
+      input.value = shown;
+      return;
+    }
+    const t0 = data.ticks[0];
+    const total = tickSeconds(data.ticks[data.frames - 1] - t0, tr);
+    const at = t0 + Math.min(Math.max(0, sec), total) * tr;
+    const frame = Math.min(engine.frameForTick(at), data.frames - 1);
+    if (which === 'from') uiLoopFrom = frame;
+    else uiLoopTo = frame;
+    onLoopInput();
+  }
+
   function toggleLoop() {
     engine?.toggleLoop();
   }
@@ -2044,59 +2117,76 @@
             onclick={() => onRibbonRound(roundNav.next)}
             ><span class="codicon codicon-chevron-right" aria-hidden="true"></span></button
           >
-          <label class="sr-only" for="rp-speed">Speed</label>
-          <select class="input" id="rp-speed" value={uiSpeed} onchange={onSpeed}>
-            {#each SPEEDS as s (s)}
-              <option value={s}>{s}×</option>
-            {/each}
-          </select>
+          <!-- Speed: the transport ladder as a floating popover (the
+               same pattern as the loop control below — a native
+               <select> read as a foreign object among the icon
+               buttons). The option button carries `value`, so the SAME
+               onSpeed handler the select used runs unchanged; the
+               trigger shows the current step in the select's own
+               "1×" label format. -->
+          <span class="rp-pop-host" id="rp-speed" bind:this={speedAnchor}>
+            <button
+              class="btn"
+              aria-label={`Speed ${uiSpeed}×`}
+              title="Playback speed"
+              aria-expanded={speedOpen}
+              onclick={() => (speedOpen = !speedOpen)}>{uiSpeed}×</button
+            >
+            <Popover open={speedOpen} anchor={speedAnchor} onClose={() => (speedOpen = false)}>
+              <div class="rp-pop rp-speed-pop" role="group" aria-label="Playback speed">
+                {#each SPEEDS as s (s)}
+                  <button
+                    class="btn small"
+                    class:primary={uiSpeed === s}
+                    value={s}
+                    onclick={(e) => {
+                      onSpeed(e);
+                      speedOpen = false;
+                    }}>{s}×</button
+                  >
+                {/each}
+              </div>
+            </Popover>
+          </span>
 
-          <!-- Loop (spec 12): the from/to inputs + the toggle grouped in
-               ONE popover behind a loop-like codicon (sync). Popover is
-               the canonical dismissal component (Escape + outside
+          <!-- Loop (spec 12): the from/to TIME inputs + the toggle grouped
+               in ONE popover behind a loop-like codicon (sync). Popover
+               is the canonical dismissal component (Escape + outside
                click); the panel anchors ABOVE the button because the
-               transport sits at the bottom of the column. -->
-          <span class="rp-loop" bind:this={loopAnchor}>
+               transport sits at the bottom of the column. The inputs are
+               text and speak overall match time ("1:00"), not frames —
+               onLoopTime parses them back (fmt.js parseClock). -->
+          <span class="rp-loop rp-pop-host" bind:this={loopAnchor}>
             <button
               class="btn"
               class:warn={uiLoopOn}
               aria-pressed={uiLoopOn}
               aria-expanded={loopOpen}
               aria-label="Loop range"
-              title="Loop range (L) — set the from/to frames and toggle the loop"
+              title="Loop range (L) — set the from/to times and toggle the loop"
               onclick={() => (loopOpen = !loopOpen)}
               ><span class="codicon codicon-sync" aria-hidden="true"></span></button
             >
             <Popover open={loopOpen} anchor={loopAnchor} onClose={() => (loopOpen = false)}>
-              <div class="rp-loop-pop loop-group" role="group" aria-label="Loop range">
-                <label class="sr-only" for="rp-loop-from">Loop from frame</label>
+              <div class="rp-pop rp-loop-pop loop-group" role="group" aria-label="Loop range">
+                <label class="sr-only" for="rp-loop-from">Loop from time</label>
                 <input
                   class="input mono loop-input"
                   id="rp-loop-from"
-                  type="number"
-                  min="0"
-                  max={Math.max(0, frames - 1)}
+                  type="text"
                   placeholder="from"
-                  value={uiLoopFrom >= 0 ? uiLoopFrom : ''}
-                  onchange={(e) => {
-                    uiLoopFrom = e.currentTarget.value === '' ? -1 : Number(e.currentTarget.value);
-                    onLoopInput();
-                  }}
+                  value={loopFromText}
+                  onchange={(e) => onLoopTime('from', e)}
                 />
                 <span class="muted">–</span>
-                <label class="sr-only" for="rp-loop-to">Loop to frame</label>
+                <label class="sr-only" for="rp-loop-to">Loop to time</label>
                 <input
                   class="input mono loop-input"
                   id="rp-loop-to"
-                  type="number"
-                  min="0"
-                  max={Math.max(0, frames - 1)}
+                  type="text"
                   placeholder="to"
-                  value={uiLoopTo >= 0 ? uiLoopTo : ''}
-                  onchange={(e) => {
-                    uiLoopTo = e.currentTarget.value === '' ? -1 : Number(e.currentTarget.value);
-                    onLoopInput();
-                  }}
+                  value={loopToText}
+                  onchange={(e) => onLoopTime('to', e)}
                 />
                 <button
                   class="btn small"
@@ -2110,21 +2200,36 @@
 
           <span class="toolbar-sep" aria-hidden="true"></span>
 
-          <!-- Camera (spec 17): ONE plain dropdown for Smart/Free/Follow
-               — the player list appears as a second dropdown only while
-               Follow is selected. -->
-          <label class="sr-only" for="rp-cam">Camera mode</label>
-          <select
-            class="input"
-            id="rp-cam"
-            value={camMode}
-            onchange={onCamMode}
-            title="Smart keeps every player and the bomb on screen with smooth pan/zoom (drag or wheel takes over → Free); Free is manual; Follow locks the camera onto a player (pick them below) — dragging releases it"
-          >
-            <option value="smart">Smart</option>
-            <option value="free">Free</option>
-            <option value="follow">Follow</option>
-          </select>
+          <!-- Camera (spec 17): Smart/Free/Follow as a popover — the
+               player list appears as a second (native) dropdown only
+               while Follow is selected. The option button carries
+               `value`, so the SAME onCamMode handler the select used
+               runs unchanged (it persists the camera_mode pref for
+               Smart/Free; Follow stays session state). -->
+          <span class="rp-pop-host" id="rp-cam" bind:this={camAnchor}>
+            <button
+              class="btn"
+              aria-label={`Camera mode: ${camLabel}`}
+              aria-expanded={camOpen}
+              title="Smart keeps every player and the bomb on screen with smooth pan/zoom (drag or wheel takes over → Free); Free is manual; Follow locks the camera onto a player (pick them below) — dragging releases it"
+              onclick={() => (camOpen = !camOpen)}>{camLabel}</button
+            >
+            <Popover open={camOpen} anchor={camAnchor} onClose={() => (camOpen = false)}>
+              <div class="rp-pop rp-cam-pop" role="group" aria-label="Camera mode">
+                {#each CAM_MODES as m (m.value)}
+                  <button
+                    class="btn small"
+                    class:primary={camMode === m.value}
+                    value={m.value}
+                    onclick={(e) => {
+                      onCamMode(e);
+                      camOpen = false;
+                    }}>{m.label}</button
+                  >
+                {/each}
+              </div>
+            </Popover>
+          </span>
 
           {#if camMode === 'follow'}
             <label class="sr-only" for="rp-follow">Follow player</label>
