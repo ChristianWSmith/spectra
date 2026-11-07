@@ -35,12 +35,13 @@ const CACHE_MAX = 40;     // decoded-window cache entries, LRU
 const DRIFT_S = 0.05;     // resync threshold
 // A browser without a user gesture may keep ctx.resume()'s promise
 // pending forever; race it against this timeout before concluding the
-// context is gesture-blocked (see setEnabled).
+// context is still suspended (merely suspended is NOT a failure — see
+// setEnabled's silent-retry contract).
 const RESUME_MS = 750;
 // Shared tail of both AudioContext-failed messages: WebKitGTK's audio
 // output needs the GStreamer plugin set. Exported for replay/sfx.js —
-// the sound-effect engine parks the same gesture hint (one spelling of
-// the string, per the consolidation rules).
+// the sound-effect engine reports the same device failure (one spelling
+// of the string, per the consolidation rules).
 export const GST_AUDIO_HINT =
   'On Linux install gst-plugins-good (GStreamer) — WebKitGTK needs it for audio output.';
 
@@ -95,17 +96,20 @@ export async function probeAudio() {
   }
 }
 
-// createVoiceEngine wires the voice mixer to the replay engine. The audio
-// context is created on the first setEnabled(true); browsers gate
-// start-up behind a user gesture, so if the context is still suspended
-// after an immediate resume() the engine parks a one-time document-level
-// pointerdown/keydown listener (capture) that resumes on the first
-// interaction and removes itself — state.pending is true until then (the
-// UI shows its "click to start voice" hint), and a gesture that does NOT
-// start the context surfaces the error string through onError/state (the
-// Enable-voice fallback chip). setEnabled(true) never throws and never
-// hangs (resume() is raced against RESUME_MS); destroy() removes any
-// parked listener.
+// createVoiceEngine wires the voice mixer to the replay engine. The
+// audio context is created on the first setEnabled(true), which flips
+// `enabled` IMMEDIATELY (want-on: voice starts by itself) and issues a
+// resume() raced against RESUME_MS: where the platform allows it the
+// context runs at once; while it stays suspended the engine retries
+// SILENTLY — from a persistent document-level pointerdown/keydown
+// capture listener (registered while enabled && not running, removed on
+// running/disable/destroy) and on the next play start. There is no
+// pending state and no "click to start voice" hint: a suspended context
+// is the browser's autoplay policy, not a failure. A resume() that
+// REJECTS is a DEVICE failure and surfaces through onError/state with
+// the GStreamer hint (failEnable). setEnabled(true) never throws and
+// never hangs (resume() is raced against RESUME_MS); destroy() removes
+// any parked listener.
 export function createVoiceEngine({ engine, matchId, fetchPCM, onError, onStateChange }) {
   const tr = normTickRate(engine.tickRate);
   const windowTicks = Math.max(1, Math.round(WIN_SEC * tr));
@@ -120,18 +124,19 @@ export function createVoiceEngine({ engine, matchId, fetchPCM, onError, onStateC
   // cleared; each player's own muted/solo sets are left intact so
   // un-muting restores exactly their previous audibility.
   let mutedAll = false;
-  // Gesture-pending: setEnabled(true) ran but the context needs a user
-  // gesture before it can start (voice is enabled by default at load).
-  let gesturePending = false;
-  let gestureOff = null; // tears down the parked one-time listeners
+  // Retry listeners: parked while the context is suspended and the
+  // engine is enabled (see installRetry) — silent autoplay retry, never
+  // a pending UI state.
+  let retryOff = null;
   // enableWanted latches the LAST setEnabled request so an in-flight
-  // resume (awaited in setEnabled, or inside a gesture handler) cannot
-  // flip the engine back on after setEnabled(false)/destroy().
+  // resume (issued by setEnabled or a retry listener) cannot flip the
+  // engine back on after setEnabled(false)/destroy().
   let enableWanted = false;
   // Anchor of the current schedule epoch (see header contract).
   let anchor = { ctxNow: 0, replaySec: 0, speed: 1 };
   let gen = 0; // bumped on every cancel — in-flight window callbacks check it
   let lastReplay = 0;
+  let lastPlayState = false; // play-START edge → one silent resume retry
 
   let players = []; // VoicePlayer rows: {steamId, firstTick, lastTick, …}
   const muted = new Set();
@@ -150,7 +155,6 @@ export function createVoiceEngine({ engine, matchId, fetchPCM, onError, onStateC
       enabled,
       ctxState: ctx ? ctx.state : 'none',
       error,
-      pending: gesturePending, // awaiting the first user gesture
       mutedAll,
     };
   }
@@ -329,9 +333,16 @@ export function createVoiceEngine({ engine, matchId, fetchPCM, onError, onStateC
     const replaySec = st.tick / tr;
     lastReplay = replaySec;
     if (!enabled || !ctx || ctx.state !== 'running') {
+      // Silent resume retry on the play-START edge: the platform may
+      // grant the context by now — no hint and no error while merely
+      // suspended (a rejected resume surfaces through attemptResume).
+      // Only while suspended, so startRunning's re-entry can never loop.
+      if (enabled && ctx && st.playing && !lastPlayState) attemptResume();
+      lastPlayState = st.playing;
       wasPlaying = false;
       return;
     }
+    lastPlayState = st.playing;
     if (!st.playing) {
       // Pause/stop → silence; a seek while paused schedules nothing.
       if (wasPlaying) cancelAll();
@@ -366,72 +377,100 @@ export function createVoiceEngine({ engine, matchId, fetchPCM, onError, onStateC
     }
   }
 
-  // tryResume calls ctx.resume() SYNCHRONOUSLY (callers must invoke it
-  // directly inside a user gesture) and resolves to whether the context
-  // ended up running. resume()'s own promise may stay pending forever
-  // when autoplay is blocked, so it is raced against RESUME_MS — the
-  // loser is already subscribed by Promise.race (no hang, no unhandled
-  // rejection).
+  // tryResume calls ctx.resume() SYNCHRONOUSLY (a retry listener must
+  // invoke it inside the user gesture) and resolves to whether the
+  // context ended up running. resume()'s own promise may stay pending
+  // forever when autoplay is blocked, so it is raced against RESUME_MS —
+  // the loser is already subscribed by Promise.race (no hang, no
+  // unhandled rejection). A resume() that REJECTS propagates: a
+  // rejecting resume IS the device failure, and attemptResume reports it
+  // with the GStreamer hint. A lost race resolves to the running check —
+  // "still suspended", which is NOT an error.
   function tryResume() {
     if (!ctx) return Promise.resolve(false);
     if (ctx.state === 'running') return Promise.resolve(true);
     let p;
     try {
       p = Promise.resolve(ctx.resume());
-    } catch {
-      return Promise.resolve(false);
+    } catch (e) {
+      return Promise.reject(e);
     }
     const timeout = new Promise((r) => setTimeout(() => r(undefined), RESUME_MS));
-    return Promise.race([p, timeout]).then(
-      () => !!ctx && ctx.state === 'running',
-      () => !!ctx && ctx.state === 'running',
-    );
+    return Promise.race([p, timeout]).then(() => !!ctx && ctx.state === 'running');
   }
 
-  function clearGesture() {
-    if (gestureOff) {
-      gestureOff();
-      gestureOff = null;
+  function clearRetry() {
+    if (retryOff) {
+      retryOff();
+      retryOff = null;
     }
   }
 
-  // installGesture parks a ONE-TIME document-level pointerdown/keydown
-  // listener (capture) that resumes the context and removes itself —
-  // the browser's autoplay policy needs the interaction to happen inside
-  // a real gesture, so resume() is issued synchronously from the handler.
-  function installGesture() {
-    if (gestureOff || typeof document === 'undefined' || !document.addEventListener) return;
-    const handler = () => {
-      clearGesture(); // one interaction, one attempt
-      tryResume().then((ok) => {
-        if (!enableWanted) return; // turned off while the gesture ran
-        if (ok) {
-          startRunning();
-        } else {
-          // A real gesture still didn't start it: that IS the device
-          // failure (broken GStreamer etc.) — report it now.
-          gesturePending = false;
-          enabled = false;
-          error =
-            `Failed to start the audio device (AudioContext state "${ctx ? ctx.state : 'none'}"). ` +
-            GST_AUDIO_HINT;
-          if (onError) onError(error);
-        }
-        emit();
-      });
-    };
+  // installRetry parks document-level pointerdown/keydown capture
+  // listeners that retry the resume on EVERY interaction while the
+  // context is suspended — persistent, not one-time: they stay until the
+  // context runs, the enable is withdrawn, the engine fails, or
+  // destroy() runs. No pending flag, no UI and no error while merely
+  // suspended — the autoplay policy is not a failure, voice simply
+  // starts on the first interaction (or by itself where the platform
+  // allows it).
+  function installRetry() {
+    if (retryOff || typeof document === 'undefined' || !document.addEventListener) return;
+    const handler = () => attemptResume();
     document.addEventListener('pointerdown', handler, true);
     document.addEventListener('keydown', handler, true);
-    gestureOff = () => {
+    retryOff = () => {
       document.removeEventListener('pointerdown', handler, true);
       document.removeEventListener('keydown', handler, true);
     };
   }
 
+  // attemptResume — ONE silent resume attempt: running → the retry
+  // listeners come down and the engine starts; still suspended → keep
+  // them and stay SILENT; a REJECTED resume() → the device is broken,
+  // report it through failEnable (onError/state — the GStreamer hint).
+  function attemptResume() {
+    if (!enableWanted || !ctx) return;
+    if (ctx.state === 'running') {
+      clearRetry();
+      startRunning();
+      emit();
+      return;
+    }
+    tryResume().then(
+      (ok) => {
+        if (!enableWanted || !ctx) return; // turned off while the attempt ran
+        if (ok) {
+          clearRetry();
+          // A stale attempt landing after another one already brought
+          // the engine up (enabled, no error) must not re-anchor a
+          // second time — the schedulers gate on ctx.state alone and
+          // the next onChange re-anchors off wasPlaying.
+          if (!enabled || error !== '') startRunning();
+          emit();
+        } else if (ctx.state === 'closed') {
+          clearRetry();
+          failEnable(`Failed to start the audio device (AudioContext is closed). ` + GST_AUDIO_HINT);
+          emit();
+        } else {
+          installRetry(); // merely suspended — silent, the retry stays armed
+        }
+      },
+      () => {
+        if (!enableWanted || !ctx) return;
+        clearRetry();
+        failEnable(
+          `Failed to start the audio device (AudioContext state "${ctx ? ctx.state : 'none'}"). ` +
+            GST_AUDIO_HINT,
+        );
+        emit();
+      },
+    );
+  }
+
   // startRunning: the context is running — flip the switch and (if the
   // replay is already playing) re-anchor + schedule from the current tick.
   function startRunning() {
-    gesturePending = false;
     error = '';
     enabled = true;
     wasPlaying = false; // next onChange re-anchors and schedules
@@ -440,7 +479,10 @@ export function createVoiceEngine({ engine, matchId, fetchPCM, onError, onStateC
 
   function failEnable(msg) {
     enabled = false;
-    gesturePending = false;
+    // The enable request is dead with the failure: in-flight/stale
+    // attempts and the retry listeners must not resurrect it (the next
+    // setEnabled(true) latches a fresh request).
+    enableWanted = false;
     error = msg;
     if (onError) onError(error);
   }
@@ -462,40 +504,24 @@ export function createVoiceEngine({ engine, matchId, fetchPCM, onError, onStateC
         master.connect(ctx.destination);
         gains.clear(); // stale nodes from a previous context
       }
-      if (await tryResume()) {
-        if (!enableWanted) {
-          emit(); // setEnabled(false)/destroy() won the race
-          return;
-        }
-        clearGesture();
-        startRunning();
-        emit();
-        return;
-      }
-      if (ctx.state === 'closed') {
-        clearGesture();
-        failEnable(
-          `Failed to start the audio device (AudioContext is closed). ` + GST_AUDIO_HINT,
-        );
-        emit();
-        return;
-      }
-      // Suspended after resume(): either autoplay-blocked (voice is
-      // enabled by default at load — the first click/keypress starts it)
-      // or a broken device (the gesture below will expose it). Park the
-      // one-time gesture listener and report `pending`, NOT an error —
-      // nothing has failed yet. No scheduling happens until running.
-      clearGesture();
-      gesturePending = true;
-      enabled = false;
+      // Want-on FIRST: voice starts by itself. `enabled` flips now and
+      // every scheduler gates on ctx.state === 'running' (they already
+      // do), so a suspended context only delays playback — there is no
+      // pending state, no hint and no error while merely suspended.
+      enabled = true;
       error = '';
-      installGesture();
+      wasPlaying = false;
       emit();
+      // The retry listeners are armed from this moment (cleared on
+      // running/failure/disable/destroy) so an interaction during the
+      // attempt window is never missed; attemptResume is fire-and-forget:
+      // it races RESUME_MS, is never awaited, and never throws.
+      installRetry();
+      attemptResume();
       return;
     }
     enabled = false;
-    gesturePending = false;
-    clearGesture();
+    clearRetry();
     cancelAll();
     emit();
   }
@@ -555,8 +581,7 @@ export function createVoiceEngine({ engine, matchId, fetchPCM, onError, onStateC
     destroy() {
       enabled = false;
       enableWanted = false;
-      gesturePending = false;
-      clearGesture(); // never leak the parked gesture listeners
+      clearRetry(); // never leak the parked retry listeners
       offChange();
       cancelAll();
       const c = ctx;
