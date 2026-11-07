@@ -39,7 +39,7 @@ func TestDiagBombEvidence(t *testing.T) {
 	if os.Getenv("SPECTRA_DIAG") == "" {
 		t.Skip("set SPECTRA_DIAG=1")
 	}
-	path := "../../donk.dem.zst"
+	path := "../../golden/de_cache.dem.zst"
 	f, err := os.Open(path)
 	if err != nil {
 		t.Fatalf("open: %v", err)

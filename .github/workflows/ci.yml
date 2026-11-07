@@ -31,7 +31,7 @@ jobs:
 
       - name: Fetch golden demo (Git LFS)
         shell: bash
-        # donk.dem.zst is LFS-backed; internal/integration skips cleanly
+        # golden/*.dem.zst is LFS-backed; internal/integration skips cleanly
         # when it's a pointer file, but CI runs the golden assertions
         # so pull the real bytes.
         run: |

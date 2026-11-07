@@ -67,7 +67,7 @@ func TestPerfServiceDevDB(t *testing.T) {
 // TestPerfVoiceDevDB measures the M4 voice routes against the developer's
 // real data: a 2 s PCM window must decode in <20 ms and the full
 // WAV generation time is recorded. Requires an imported voice-bearing
-// match (run `spectra -import donk.dem.zst` first). CI skips
+// match (run `spectra -import golden/de_cache.dem.zst` first). CI skips
 // (SPECTRA_DEV_DB unset).
 func TestPerfVoiceDevDB(t *testing.T) {
 	dbPath := os.Getenv("SPECTRA_DEV_DB")

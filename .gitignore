@@ -52,8 +52,8 @@ go.work.sum
 # CS2 Demos
 *.zst
 *.dem
-# …except the golden acceptance demo, tracked via Git LFS
-!donk.dem.zst
+# …except the golden demo selection in golden/, tracked via Git LFS
+!golden/*.dem.zst
 
 # stray `go build .` output (root package binary)
 /spectra

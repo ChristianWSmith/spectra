@@ -1,5 +1,5 @@
 // Package integration_test is the M1 acceptance harness: it parses the
-// golden demo (donk.dem.zst at the repo root) through internal/extract and
+// golden demo (golden/de_cache.dem.zst) through internal/extract and
 // asserts a committed fixture of golden numbers (baseline captured
 // 2026-10-30). The directory holds only test files and
 // testdata/, so it never joins production builds.
@@ -36,7 +36,7 @@ import (
 const (
 	// demoPath is relative to this package dir (go test sets the cwd to the
 	// package directory); ../../ is the repo root.
-	demoPath = "../../donk.dem.zst"
+	demoPath = "../../golden/de_cache.dem.zst"
 	// fixturePath is the committed golden numbers this test enforces.
 	fixturePath = "testdata/donk.golden.json"
 	// analyticsFixturePath is the M3 analytics fixture (clutches, KAST,
@@ -293,7 +293,7 @@ func TestGolden(t *testing.T) {
 	if m == nil {
 		t.Fatal("extract.Parse returned nil ExtractedMatch")
 	}
-	t.Logf("parsed donk.dem.zst in %.1fs (%d voice chunks)", parseSeconds, voice.chunks)
+	t.Logf("parsed golden/de_cache.dem.zst in %.1fs (%d voice chunks)", parseSeconds, voice.chunks)
 
 	// Both known demos carry 0 svc_EncryptedData messages —
 	// the encrypted-chat path stays synthetic-only until a Valve MM demo

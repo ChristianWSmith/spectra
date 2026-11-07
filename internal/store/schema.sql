@@ -119,7 +119,7 @@ CREATE TABLE IF NOT EXISTS player_stats (
 	-- two_k: a round with EXACTLY 2 kills counts as one 2K (exclusive
 	-- tier, same rule as 3K/4K/5K — see extract buildMultiKills and the
 	-- CS2.md "Multi-kill columns" entry, verified against the golden
-	-- demo's external scoreboard donk.png).
+	-- demo's external scoreboard screenshot, removed from the repo).
 	two_k INTEGER NOT NULL DEFAULT 0,
 	PRIMARY KEY (match_id, steam_id)
 );

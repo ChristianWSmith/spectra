@@ -2,5 +2,6 @@
 
 *.png binary
 
-# Golden acceptance demo (see ref/PLAN_MILESTONE_1.md §6)
+# Golden demo selection (golden/*.dem.zst — the acceptance demo plus the
+# archived demo pool); demos never ship raw, LFS only
 *.dem.zst filter=lfs diff=lfs merge=lfs -text

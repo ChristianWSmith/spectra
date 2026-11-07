@@ -25,7 +25,7 @@ test('PLAYER_COLORS is the exact five CS2 teammate colors', () => {
 test('colorHexOf: the raw ints 0..4 map blue/green/yellow/orange/purple', () => {
   // CS2.md "Player scoreboard/radar colors": 0 blue, 1 green, 2 yellow,
   // 3 orange, 4 purple — the mapping demoparser's PLAYER_COLOR and the
-  // in-game ground truth on donk.dem.zst agree on.
+  // in-game ground truth on the golden demo agree on.
   assert.equal(colorHexOf(0), '#84C8ED');
   assert.equal(colorHexOf(1), '#009A7D');
   assert.equal(colorHexOf(2), '#ECDF41');
@@ -58,7 +58,7 @@ test('colorSlotsOf: slot-aligned hex array, null where there is no color', () =>
   assert.deepEqual(colorSlotsOf('nope'), []);
 });
 
-test('the donk.dem.zst ground-truth assignments resolve to their hexes', () => {
+test('the golden demo ground-truth assignments resolve to their hexes', () => {
   // The ten raw values verified in-game against this demo (pinned in
   // internal/extract/golden_test.go): each color appears exactly once per
   // team. The card shows the ring; nothing here re-derives the rule.

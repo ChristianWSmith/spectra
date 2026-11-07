@@ -15,7 +15,7 @@ import (
 )
 
 // goldenStateDemo is the repo-root golden acceptance demo (Git LFS).
-const goldenStateDemo = "../../donk.dem.zst"
+const goldenStateDemo = "../../golden/de_cache.dem.zst"
 
 // lfsStatePointerPrefix/MaxSize detect an un-smudged LFS pointer (the
 // demo is skipped rather than parsed) — same policy as the integration

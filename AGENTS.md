@@ -91,7 +91,7 @@ spectacle -b -n -o /tmp/shot.png         # then Read the PNG
 | `internal/extract` | demoinfocs v6 engine: handlers → `models.ExtractedMatch`; `Parse(ctx, r, progress)`; unit-tested accumulator |
 | `internal/library` | import pipeline: hash/dedupe, zstd sniff, single-worker job queue, cancellation, `spectra:*` events |
 | `internal/data` | XDG data-dir paths (db, per-match sidecars, tmp) |
-| `internal/integration` | golden-demo acceptance test (`donk.dem.zst`, skip-if-absent/pointer, `-update` fixture regen) |
+| `internal/integration` | golden-demo acceptance test (`golden/de_cache.dem.zst`, skip-if-absent/pointer, `-update` fixture regen) |
 | `internal/mappack` | CS2 radar extraction: Steam install detection → VPK v2 reader → vtex_c decode → map packs in the data dir (Valve IP never ships — see `mappackservice.go` + `frontend/public/maps/README.md`) |
 | `prefs.go` | preference keys + window-size helpers (backed by the v3 `kvstore` service) |
 | `version.go` | **stamp-only**: `var version = "dev"` — CI overwrites the whole file on release builds; never put logic here |
@@ -101,7 +101,7 @@ spectacle -b -n -o /tmp/shot.png         # then Read the PNG
 | `Makefile` | the single source of build/package commands, shared with CI |
 | `ref/` | project reference docs: `PRD.md` (product spec) and `MISSING.md` (the open backlog — everything not yet in the app) |
 | `CS2.md` | domain-knowledge cache for CS2 facts (formats, mechanics, rules, events); see "CS2 domain knowledge" |
-| `donk.dem.zst` | the golden acceptance demo, tracked via **Git LFS** (`.gitattributes`); acceptance tests parse it and skip if absent; regenerate golden fixtures deliberately when extraction changes |
+| `golden/` | the demo pool, all tracked via **Git LFS** (`.gitattributes`): `de_cache.dem.zst` is the golden acceptance demo (formerly `donk.dem.zst`), the other `de_*.dem.zst` files are archived map demos not yet onboarded to tests; acceptance tests parse the golden one and skip if absent; regenerate golden fixtures deliberately when extraction changes |
 
 After cloning, run `git lfs pull` if the golden demo is needed.
 

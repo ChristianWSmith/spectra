@@ -199,7 +199,7 @@ migrations, no legacy-data fallbacks".
 ## Verification gates used
 
 `make vet && make test && make lint`; full non-short `go test ./...`
-(including `TestGolden` against `donk.dem.zst` — fixtures were never
+(including `TestGolden` against `golden/de_cache.dem.zst` — fixtures were never
 regenerated without an explained diff); `node --test src/lib/*.test.js`
 (93 tests); jsdom DOM suites in `frontend/test/`; svelte-compiler pass
 over all components; EXPLAIN QUERY PLAN before/after for 15 hot

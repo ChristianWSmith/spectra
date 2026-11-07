@@ -99,7 +99,7 @@ at the end of the section.
   non-warmup round with `GamePhase() < StartGame || !IsMatchStarted()`
   → pregame; gate stats on `IsMatchStarted() && !IsWarmupPeriod() &&
   GamePhase() >= StartGame`. **Source** — spectra golden demo
-  (donk.dem.zst round 1: phase=1, score resets 0/1 → 0/0);
+  (golden/de_cache.dem.zst round 1: phase=1, score resets 0/1 → 0/0);
   MatchZy lifecycle (github.com/shobhit-pathak/MatchZy Utility.cs);
   roundtable docs/round-eligibility.md (2026-11-01).
 
@@ -165,9 +165,10 @@ at the end of the section.
   `before − dmg` simulation drifts on world/team damage the extractor does
   not attribute the same way). demoinfocs' `HealthDamageTaken` is the same
   quantity when the server build emits it. Verified against the golden
-  demo's external scoreboard (donk.png): all ten players match to ±0.05
+  demo's external scoreboard screenshot: all ten players match to ±0.05
   (forever2kELO 116.9, was 144.3 on the raw-damage basis).
-  **Source** — donk.png (external scoreboard, repo root); demoinfocs v6
+  **Source** — the external scoreboard screenshot (formerly donk.png,
+  removed from the repo 2026-11-07); demoinfocs v6
   `events.PlayerHurt` doc comments;
   https://awpy.readthedocs.io,
   https://prosettings.net/blog/cs2-scoreboard/ (2026-11-02).
@@ -193,7 +194,8 @@ at the end of the section.
   round with exactly 2 kills is one 2K (same exclusivity — a 3-kill round
   is a 3K, not a 2K). Counted per round over stats-eligible enemy kills
   only.
-  **Source** — golden demo's external scoreboard (donk.png: adamS 1×3K +
+  **Source** — golden demo's external scoreboard screenshot (formerly
+  donk.png, removed from the repo 2026-11-07: adamS 1×3K +
   2×4K not 3×3K; FREELOOK 1×4K + 0×3K; 2K column: adamS 2, llorente 3,
   kRaSnaL 3, hades 3, FREELOOK 2, forever2kELO 6, Zuedsta 4, donk666 2,
   Magnojezzz 2, -meg2k 3 — all ten reproduced by the extractor)
@@ -572,7 +574,7 @@ at the end of the section.
   `CCSPlayerController.m_iCompTeammateColor` (int32, per controller
   entity — NOT on CCSPlayerResource in CS2; −1 = none/GOTV). Mapping:
   0=blue, 1=green, 2=yellow, 3=orange, 4=purple — verified 10/10 vs
-  in-game ground truth on `donk.dem.zst` (the ten assignments are pinned
+  in-game ground truth on `golden/de_cache.dem.zst` (the ten assignments are pinned
   by `extract.TestParseGolden`), identical to LaihoE demoparser's
   `PLAYER_COLOR`. demoinfocs v6 `Player.ColorOrErr()` returns the right
   raw value but its `Color` enum *names* mislabel CS2 colors (it says
@@ -581,7 +583,7 @@ at the end of the section.
   schemas (`CCSPlayerController.h`);
   github.com/LaihoE/demoparser `src/parser/src/maps.rs`;
   github.com/markus-wa/demoinfocs-golang v6 `common/player.go` +
-  `common/common.go` (Color enum); local probe of donk.dem.zst
+  `common/common.go` (Color enum); local probe of golden/de_cache.dem.zst
   (2026-11-06).
 
 - **Which `.vsnd_c` files are the weapon-fire / detonation sounds** —
