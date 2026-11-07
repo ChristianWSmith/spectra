@@ -18,10 +18,12 @@ import {
   VoiceService,
   MapPackService,
   IconService,
+  SoundService,
   DialogService,
 } from '../../bindings/github.com/ChristianWSmith/spectra';
 import { KVStoreService } from '../../bindings/github.com/wailsapp/wails/v3/pkg/services/kvstore';
 import { resetIconManifest } from './replay/icons.js';
+import { resetSoundManifest } from './replay/sfx.js';
 
 // --- Error text ---------------------------------------------------------------
 // The one errText: normalizes a Go/binding rejection (Error, string, null)
@@ -484,6 +486,23 @@ export function getIconManifest() { return IconService.GetIconManifest(); }
 export function extractIcons(cs2Dir) {
   return IconService.ExtractIcons(cs2Dir || '').then((r) => {
     resetIconManifest();
+    return r;
+  });
+}
+
+// --- SoundService ------------------------------------------------------------
+// Weapon/utility sound extraction from the same local CS2 install (fire +
+// detonation samples → .wav/.mp3 in the app data dir, served at
+// /api/sounds/…). Lookups go through lib/replay/sfx.js
+// (loadSoundManifest); a successful extraction resets the frontend's
+// session memo inside the wrapper — like the mutating wrappers above,
+// invalidating inside the wrapper closes the refetch race.
+// NOTE: bindings must be regenerated for SoundService to exist (build step).
+
+export function getSoundManifest() { return SoundService.GetSoundManifest(); }
+export function extractSounds(cs2Dir) {
+  return SoundService.ExtractSounds(cs2Dir || '').then((r) => {
+    resetSoundManifest();
     return r;
   });
 }

@@ -38,8 +38,10 @@ const DRIFT_S = 0.05;     // resync threshold
 // context is gesture-blocked (see setEnabled).
 const RESUME_MS = 750;
 // Shared tail of both AudioContext-failed messages: WebKitGTK's audio
-// output needs the GStreamer plugin set.
-const GST_AUDIO_HINT =
+// output needs the GStreamer plugin set. Exported for replay/sfx.js —
+// the sound-effect engine parks the same gesture hint (one spelling of
+// the string, per the consolidation rules).
+export const GST_AUDIO_HINT =
   'On Linux install gst-plugins-good (GStreamer) — WebKitGTK needs it for audio output.';
 
 // fetchVoicePCM pulls one aligned PCM window over HTTP and parses the

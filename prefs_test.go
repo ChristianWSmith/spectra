@@ -52,4 +52,15 @@ func TestFrontendPrefKeyStrings(t *testing.T) {
 		t.Errorf("knife/warmup key = %q, want %q",
 			prefsShowKnifeWarmupRoundsKey, "show_knife_warmup_rounds")
 	}
+	// The replay volume popover and Settings' Audio & voice section share
+	// these — one key rename would silently split the two surfaces.
+	if prefsVoiceVolumeKey != "voice_volume" {
+		t.Errorf("voice volume key = %q, want %q", prefsVoiceVolumeKey, "voice_volume")
+	}
+	if prefsGunsVolumeKey != "guns_volume" {
+		t.Errorf("guns volume key = %q, want %q", prefsGunsVolumeKey, "guns_volume")
+	}
+	if prefsUtilityVolumeKey != "utility_volume" {
+		t.Errorf("utility volume key = %q, want %q", prefsUtilityVolumeKey, "utility_volume")
+	}
 }

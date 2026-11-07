@@ -66,6 +66,12 @@
   } from '../replay/state.js';
   import { loadIconManifest, preloadIcons } from '../replay/icons.js';
   import {
+    AUDIO_VOL_DEFAULT,
+    createSfxEngine,
+    loadSoundManifest,
+    prefVolume,
+  } from '../replay/sfx.js';
+  import {
     buildSpeakingIndex,
     speakingAt,
   } from '../replay/voiceindex.js';
@@ -121,10 +127,11 @@
   // cards): voicePresence / voicePlayers (loaded in load()), voiceEngine
   // (built in startEngine), uiVoiceOn, uiVoiceErr + uiVoicePending (the
   // "click anywhere to start voice" gesture hint), the per-player mute
-  // map uiVoiceMute + toggleVoiceMute, and uiVoiceMutedAll (the mute-all
-  // button below the scrubber). What is GONE with spec 10 (voice lanes +
-  // the old voice bar): lanesOpen/laneSeek, uiVoiceCtx, the volume
-  // slider, solo, and the WAV export link.
+  // map uiVoiceMute + toggleVoiceMute, and uiVoiceMutedAll (the Voice
+  // row's mute in the volume popover under the scrubber — the player
+  // cards' `muted` formula consumes it). What is GONE with spec 10
+  // (voice lanes + the old voice bar): lanesOpen/laneSeek, uiVoiceCtx,
+  // solo, and the WAV export link.
   let voicePresence = $state(null);
   let voicePlayers = $state([]);
   let voiceEngine = null;
@@ -133,7 +140,27 @@
   let uiVoicePending = $state(false); // engine parked its one-shot gesture listener
   let uiVoiceMutedAll = $state(false);
   const uiVoiceMute = $state({}); // steamId → bool (per-player mute — card phase)
-  const VOICE_MASTER_VOL = 0.8; // the old volume slider's position (no UI now)
+
+  // --- Replay audio (voice + guns + utility) --------------------------------
+  // The volume popover under the scrubber drives three INDEPENDENT
+  // faders: voice (the voice engine's master), guns and utility (the sfx
+  // engine's two gain buckets). The levels persist in the kvstore
+  // (voice_volume / guns_volume / utility_volume — prefs.go; frontend-only
+  // keys), read in load() and applied on every input; the VOICE mute is
+  // uiVoiceMutedAll (engine-owned, cards consume it) while the guns /
+  // utility mutes are session-only on the sfx engine. sfx itself is null
+  // until startEngine proves the sounds manifest is non-empty.
+  let uiVoiceVol = $state(AUDIO_VOL_DEFAULT);
+  let uiGunsVol = $state(AUDIO_VOL_DEFAULT);
+  let uiUtilVol = $state(AUDIO_VOL_DEFAULT);
+  let uiGunsMuted = $state(false);
+  let uiUtilMuted = $state(false);
+  let sfx = null;
+  let sfxErr = $state('');
+  // The volume popover: one Popover anchored to the unmute-codicon
+  // button, exactly like the loop control below.
+  let volOpen = $state(false);
+  let volAnchor = $state(null);
 
   // --- Player-card phase (spec 19–22, 26) -----------------------------------
   // State stream (handoff B): null until load() proves capability. A
@@ -1249,10 +1276,15 @@
     discardClip();
     if (voiceEngine) voiceEngine.destroy();
     voiceEngine = null;
+    if (sfx) sfx.destroy();
+    sfx = null;
     uiVoiceOn = false;
     uiVoiceErr = '';
     uiVoicePending = false;
     uiVoiceMutedAll = false; // the new engine starts unmuted
+    uiGunsMuted = false; // …including the sfx bucket mutes (session-only)
+    uiUtilMuted = false;
+    sfxErr = '';
     if (input) input.detach();
     if (ro) ro.disconnect();
     if (offChange) offChange();
@@ -1376,6 +1408,10 @@
       if (stateCapable(smeta)) {
         stateIndex = await loadState(id).catch(() => null);
         renderer?.setStateIndex(stateIndex); // normally pre-engine: startEngine pushes it
+        // …and so does the sound-effect engine (its gun cues read the
+        // same attack/weapon stream); both tolerate the repeat push.
+        sfx?.setStateIndex(stateIndex);
+        sfx?.setWeaponNames(stateIndex?.meta?.weaponNames || []);
       } else if (smeta && smeta.stateFormatVersion != null) {
         stateNote =
           'player state unavailable — reprocess this match to gain HP/weapon/money on the cards';
@@ -1440,6 +1476,21 @@
           .then((v) => v === true)
           .catch(() => false), // unreadable store → hidden (the default)
       );
+      // Replay-audio faders: the three persisted levels (voice/guns/
+      // utility) are read here — before startEngine applies them to the
+      // voice master and (once the sounds manifest proves non-empty) the
+      // sfx engine. One Promise.all, fail-soft to the 0.8 default like
+      // every other pref read in load().
+      {
+        const [vv, gv, uv] = await Promise.all([
+          getPref('voice_volume').catch(() => null),
+          getPref('guns_volume').catch(() => null),
+          getPref('utility_volume').catch(() => null),
+        ]);
+        uiVoiceVol = prefVolume(vv);
+        uiGunsVol = prefVolume(gv);
+        uiUtilVol = prefVolume(uv);
+      }
       // Flash-white overlay: the blind events joined with their narrow
       // flash-duration read — the duration lives on detail_json
       // (EventRow stays payload-free, so it needs its own query; the
@@ -1588,7 +1639,7 @@
         },
       });
       voiceEngine.setPlayers(voicePlayers);
-      voiceEngine.setMasterVolume(VOICE_MASTER_VOL);
+      voiceEngine.setMasterVolume(uiVoiceVol); // the popover's Voice fader
       // The per-player mute map survives engine rebuilds (the player
       // cards own its UI); the per-column team mutes survive the same
       // way — re-apply each muted column as a set so a rebuilt engine
@@ -1601,6 +1652,33 @@
       }
       voiceEngine.setEnabled(true).catch(() => {});
     }
+    // Sound effects (guns + utility — the sound half of the replay): the
+    // manifest read is MEMOIZED (one fetch per page load; load() ran it
+    // first), and an EMPTY manifest — sounds never extracted — skips
+    // creation entirely: no AudioContext, no gesture listener, silent
+    // cues. The engine then takes the same inputs the renderer gets
+    // (drawNorm, the state index + weapon vocabulary) and the popover's
+    // persisted fader levels. Construction is deferred to the microtask,
+    // so the entry seek below has already happened and the engine's
+    // first change seeds instead of replaying it.
+    const startedEngine = engine;
+    loadSoundManifest().then((sm) => {
+      if (!live || engine !== startedEngine || sfx || !sm || !sm.count) return;
+      sfx = createSfxEngine({
+        engine: startedEngine,
+        matchId: id,
+        onError: (msg) => {
+          sfxErr = msg;
+        },
+      });
+      sfx.setLandmarks(drawNorm);
+      sfx.setStateIndex(stateIndex);
+      sfx.setWeaponNames(stateIndex?.meta?.weaponNames || []);
+      sfx.setVolume(uiGunsVol);
+      sfx.setUtilityVolume(uiUtilVol);
+      sfx.setMuted('guns', uiGunsMuted);
+      sfx.setMuted('utility', uiUtilMuted);
+    });
     // Entry position rides the URL — durable and deep-linkable.
     // entrySeekTick is the ONE resolver: an exact ?tick= wins, else the
     // round scope (?roundFrom=, else ?roundTo=) resolves to that round's
@@ -1905,14 +1983,63 @@
   const toggleLeftTeamMute = () => toggleTeamMute('left');
   const toggleRightTeamMute = () => toggleTeamMute('right');
 
-  // Mute all (spec 18): silences every player's voice under the
-  // scrubber. The engine owns the flag — setMutedAll emits and the
+  // Mute all (spec 18) — now the VOICE row's mute inside the volume
+  // popover. The engine owns the flag — setMutedAll emits and the
   // onStateChange mirror updates uiVoiceMutedAll (aria-pressed/styling),
-  // so the button and the engine can never disagree. No voice in this
-  // match → the button is disabled (voiceEngine stays null, no-op).
+  // so the control and the engine can never disagree. No voice in this
+  // match → the row's controls are disabled (voiceEngine stays null,
+  // no-op); the guns/utility rows keep working either way.
   function toggleVoiceMuteAll() {
     voiceEngine?.setMutedAll(!uiVoiceMutedAll);
   }
+
+  // Volume popover faders: `input` applies live (the engine gains follow
+  // immediately), `change` persists the level to the kvstore key the
+  // Settings tab reads back — one key per category, shared default.
+  const VOL_KEYS = {
+    voice: 'voice_volume',
+    guns: 'guns_volume',
+    utility: 'utility_volume',
+  };
+
+  function onVolInput(bucket, e) {
+    const v = Math.max(0, Math.min(1, Number(e.currentTarget.value) / 100));
+    if (bucket === 'voice') {
+      uiVoiceVol = v;
+      voiceEngine?.setMasterVolume(v);
+    } else if (bucket === 'guns') {
+      uiGunsVol = v;
+      sfx?.setVolume(v);
+    } else {
+      uiUtilVol = v;
+      sfx?.setUtilityVolume(v);
+    }
+  }
+
+  function onVolChange(bucket) {
+    const level = bucket === 'voice' ? uiVoiceVol : bucket === 'guns' ? uiGunsVol : uiUtilVol;
+    setPref(VOL_KEYS[bucket], level).catch((e) => (sfxErr = errText(e)));
+  }
+
+  // Guns/utility mutes are session-only (unlike the faders): they live on
+  // the sfx engine and reset with it.
+  function toggleGunsMute() {
+    uiGunsMuted = !uiGunsMuted;
+    sfx?.setMuted('guns', uiGunsMuted);
+  }
+
+  function toggleUtilMute() {
+    uiUtilMuted = !uiUtilMuted;
+    sfx?.setMuted('utility', uiUtilMuted);
+  }
+
+  // The trigger reads "warn" only when EVERY audible category is muted —
+  // without voice in the match the audible set is just guns + utility.
+  const audioAllMuted = $derived(
+    (!voicePresence || !voicePresence.hasVoice || uiVoiceMutedAll) &&
+      uiGunsMuted &&
+      uiUtilMuted,
+  );
 </script>
 
 <div class="view replay-view">
@@ -2247,20 +2374,99 @@
             </select>
           {/if}
 
-          <!-- Mute all (spec 18): silences every player's voice; the
-               engine owns the flag and mirrors it back through
-               onStateChange (aria-pressed). Disabled when this match
-               has no voice at all. -->
-          <button
-            class="btn"
-            class:warn={uiVoiceMutedAll}
-            aria-pressed={uiVoiceMutedAll}
-            aria-label="Mute all"
-            disabled={!voicePresence || !voicePresence.hasVoice}
-            title={uiVoiceMutedAll ? 'Unmute all players' : 'Mute all players'}
-            onclick={toggleVoiceMuteAll}
-            ><span class="codicon {uiVoiceMutedAll ? 'codicon-mute' : 'codicon-unmute'}" aria-hidden="true"></span></button
-          >
+          <!-- Volume (the old mute-all button, repurposed): ONE popover
+               with the three replay-audio faders — Voice / Guns /
+               Utility — anchored exactly like the loop control above.
+               The trigger is NEVER disabled: voice is just one row of
+               three (its row goes disabled when the match has no voice,
+               while guns/utility always work). The engine owns the voice
+               mute flag and mirrors it through onStateChange. -->
+          <span class="rp-pop-host rp-vol" bind:this={volAnchor}>
+            <button
+              class="btn"
+              class:warn={audioAllMuted}
+              aria-expanded={volOpen}
+              aria-label="Volume"
+              title="Volume — voice, guns and utility"
+              onclick={() => (volOpen = !volOpen)}
+              ><span class="codicon codicon-unmute" aria-hidden="true"></span></button
+            >
+            <Popover open={volOpen} anchor={volAnchor} onClose={() => (volOpen = false)}>
+              <div class="rp-pop rp-vol-pop" role="group" aria-label="Volume">
+                <div class="rp-vol-row">
+                  <label class="field-label" for="rp-vol-voice">Voice</label>
+                  <input
+                    class="rp-vol-range"
+                    id="rp-vol-voice"
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={Math.round(uiVoiceVol * 100)}
+                    disabled={!voicePresence || !voicePresence.hasVoice}
+                    oninput={(e) => onVolInput('voice', e)}
+                    onchange={() => onVolChange('voice')}
+                    aria-label="Voice volume"
+                  />
+                  <button
+                    class="btn small"
+                    class:warn={uiVoiceMutedAll}
+                    aria-pressed={uiVoiceMutedAll}
+                    aria-label="Mute voice"
+                    title={uiVoiceMutedAll ? 'Unmute voice' : 'Mute voice'}
+                    disabled={!voicePresence || !voicePresence.hasVoice}
+                    onclick={toggleVoiceMuteAll}
+                    ><span class="codicon {uiVoiceMutedAll ? 'codicon-mute' : 'codicon-unmute'}" aria-hidden="true"></span></button
+                  >
+                </div>
+                <div class="rp-vol-row">
+                  <label class="field-label" for="rp-vol-guns">Guns</label>
+                  <input
+                    class="rp-vol-range"
+                    id="rp-vol-guns"
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={Math.round(uiGunsVol * 100)}
+                    oninput={(e) => onVolInput('guns', e)}
+                    onchange={() => onVolChange('guns')}
+                    aria-label="Guns volume"
+                  />
+                  <button
+                    class="btn small"
+                    class:warn={uiGunsMuted}
+                    aria-pressed={uiGunsMuted}
+                    aria-label="Mute guns"
+                    title={uiGunsMuted ? 'Unmute guns' : 'Mute guns'}
+                    onclick={toggleGunsMute}
+                    ><span class="codicon {uiGunsMuted ? 'codicon-mute' : 'codicon-unmute'}" aria-hidden="true"></span></button
+                  >
+                </div>
+                <div class="rp-vol-row">
+                  <label class="field-label" for="rp-vol-utility">Utility</label>
+                  <input
+                    class="rp-vol-range"
+                    id="rp-vol-utility"
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={Math.round(uiUtilVol * 100)}
+                    oninput={(e) => onVolInput('utility', e)}
+                    onchange={() => onVolChange('utility')}
+                    aria-label="Utility volume"
+                  />
+                  <button
+                    class="btn small"
+                    class:warn={uiUtilMuted}
+                    aria-pressed={uiUtilMuted}
+                    aria-label="Mute utility"
+                    title={uiUtilMuted ? 'Unmute utility' : 'Mute utility'}
+                    onclick={toggleUtilMute}
+                    ><span class="codicon {uiUtilMuted ? 'codicon-mute' : 'codicon-unmute'}" aria-hidden="true"></span></button
+                  >
+                </div>
+              </div>
+            </Popover>
+          </span>
 
           <span class="toolbar-sep" aria-hidden="true"></span>
 
@@ -2268,6 +2474,10 @@
             <span class="error rp-voice-hint" role="alert"
               >{uiVoiceErr} — install <span class="mono">gst-plugins-good</span> (GStreamer) if audio fails to start.</span
             >
+          {:else if sfxErr}
+            <!-- The sound-effect engine's own device failure (its message
+                 already carries the GStreamer hint — no doubling). -->
+            <span class="error rp-voice-hint" role="alert">{sfxErr}</span>
           {:else if uiVoicePending}
             <!-- The engine parked its one-shot gesture listener: voice is
                  ON, it just needs the first click to start the context. -->

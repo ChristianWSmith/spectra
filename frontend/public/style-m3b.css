@@ -544,6 +544,13 @@
   margin-top: 6px;
 }
 
+/* The three replay-audio faders in Audio & voice — same 0..100 range
+   markup as the transport's Volume popover, sized for the panel row. */
+.sett-vol {
+  width: 180px;
+  accent-color: var(--accent);
+}
+
 /* M5 platform — Explorer/Reports/CommandPalette/Settings (plugins+theme)/
    Replay clip recorder/Heatmaps spatial series + light-theme tokens.
    Prefixes: cp- (command palette), expl-/kv- (explorer), rep- (reports),

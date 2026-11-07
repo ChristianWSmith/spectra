@@ -49,5 +49,6 @@ export const ProfileService = {};
 export const VoiceService = {};
 export const MapPackService = {};
 export const IconService = {};
+export const SoundService = {};
 export const DialogService = {};
 export const KVStoreService = { Get: rec('GetPref'), Set: rec('SetPref') };
