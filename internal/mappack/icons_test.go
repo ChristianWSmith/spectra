@@ -113,6 +113,69 @@ func TestIconTableCanonicalNames(t *testing.T) {
 	}
 }
 
+// TestNoticeIconTable pins the SECOND extraction family: the death-notice
+// glyphs renderer.js drawKillFeed consumes (iconFor('blind_kill') before
+// the killer's name, iconFor('headshot') after the weapon). Both entries
+// must decode-ready through the shared pipeline (their exact VPK paths
+// under noticePrefix → <base>.svg written and re-manifested by
+// TestExtractIconsSynthetic), keep safe file stems for the /api/icons
+// whitelist, and never collide with the equipment table — iconFileToName
+// is ONE map over both families, so a collision would silently drop a
+// manifest key.
+func TestNoticeIconTable(t *testing.T) {
+	// Exact VPK paths (verified against a real install 2026-11-07: both
+	// files decode with decodeVSVG).
+	wantPaths := map[string]string{
+		"headshot":   noticePrefix + "icon_headshot" + iconSuffix,
+		"blind_kill": noticePrefix + "blind_kill" + iconSuffix,
+	}
+	if len(noticeIconTable) != len(wantPaths) {
+		t.Errorf("noticeIconTable has %d entries, want %d", len(noticeIconTable), len(wantPaths))
+	}
+	for key, path := range wantPaths {
+		base, ok := noticeIconTable[key]
+		if !ok {
+			t.Errorf("noticeIconTable has no %q entry (the feed asks iconFor(%q))", key, key)
+			continue
+		}
+		if got := noticePrefix + base + iconSuffix; got != path {
+			t.Errorf("noticeIconTable[%q] path = %q, want %q", key, got, path)
+		}
+		// Lowercase + underscore only — the same whitelist rule the
+		// equipment stems pass (icon_headshot.svg, blind_kill.svg).
+		if !ValidIconFileBase(base + iconExt) {
+			t.Errorf("noticeIconTable[%q] = %q is not a safe file stem", key, base)
+		}
+	}
+
+	// One merged extraction set: no key or basename overlap with the
+	// equipment table (a basename clash would overwrite a manifest entry).
+	equipBases := map[string]string{}
+	for n, b := range iconTable {
+		equipBases[b] = n
+	}
+	for key, base := range noticeIconTable {
+		if _, dup := iconTable[key]; dup {
+			t.Errorf("key %q collides between the icon tables", key)
+		}
+		if prev, dup := equipBases[base]; dup {
+			t.Errorf("basename %q shared by noticeIconTable[%q] and iconTable[%q]", base, key, prev)
+		}
+	}
+	if got, want := len(iconFileToName), len(extractTable); got != want {
+		t.Errorf("iconFileToName has %d entries, want %d (a collision dropped one)", got, want)
+	}
+
+	// The reverse index the manifest builds from must resolve both
+	// families — this is the contract iconservice.buildIconManifest rides.
+	if got := iconFileToName["icon_headshot.svg"]; got != "headshot" {
+		t.Errorf(`iconFileToName["icon_headshot.svg"] = %q, want "headshot"`, got)
+	}
+	if got := iconFileToName["blind_kill.svg"]; got != "blind_kill" {
+		t.Errorf(`iconFileToName["blind_kill.svg"] = %q, want "blind_kill"`, got)
+	}
+}
+
 func TestDecodeVSVG(t *testing.T) {
 	const svg = `<?xml version="1.0" encoding="utf-8"?>` + "\n" +
 		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 26 32"><path d="M0 0"/></svg>` + "\n"
@@ -158,9 +221,9 @@ func TestDecodeVSVG(t *testing.T) {
 }
 
 // TestExtractIconsSynthetic runs the pipeline against a synthetic CS2
-// install: one mapped icon present (extracted + manifested), one absent
-// (reported in errs, omitted from the manifest — the frontend's
-// text-label fallback path).
+// install: two equipment + both death-notice icons present (extracted +
+// manifested), the rest absent (reported in errs, omitted from the
+// manifest — the frontend's text-label fallback path).
 func TestExtractIconsSynthetic(t *testing.T) {
 	install := t.TempDir()
 	csgo := filepath.Join(install, "game", "csgo")
@@ -168,8 +231,14 @@ func TestExtractIconsSynthetic(t *testing.T) {
 		t.Fatal(err)
 	}
 	const akSVG = `<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"><path d="M1 1"/></svg>` + "\n"
+	const hsSVG = `<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"><path d="M2 2"/></svg>` + "\n"
+	const blindSVG = `<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"><path d="M3 3"/></svg>` + "\n"
 	buildVPK(t, csgo, map[string][]byte{
 		iconPrefix + "ak47" + iconSuffix: buildVSVG(t, akSVG),
+		// the second family: the death-notice glyphs ride the same
+		// extraction pass (noticePrefix), decode-ready through decodeVSVG
+		noticePrefix + "icon_headshot" + iconSuffix: buildVSVG(t, hsSVG),
+		noticePrefix + "blind_kill" + iconSuffix:    buildVSVG(t, blindSVG),
 	})
 
 	out := t.TempDir()
@@ -177,36 +246,61 @@ func TestExtractIconsSynthetic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExtractIcons: %v", err)
 	}
-	if len(names) != 1 || names[0] != "AK-47" {
-		t.Fatalf("names = %v, want [AK-47]", names)
+	// Sorted: "AK-47" < "blind_kill" < "headshot" — both families in ONE
+	// extraction pass.
+	want := []string{"AK-47", "blind_kill", "headshot"}
+	if len(names) != len(want) {
+		t.Fatalf("names = %v, want %v", names, want)
+	}
+	for i, n := range want {
+		if names[i] != n {
+			t.Errorf("names[%d] = %q, want %q", i, names[i], n)
+		}
 	}
 	// Every other mapped icon is absent from this fixture VPK: each must
 	// surface as a per-name error, not a fatal one.
-	if len(errs) != len(iconTable)-1 {
-		t.Errorf("errs = %d entries, want %d", len(errs), len(iconTable)-1)
+	if len(errs) != len(extractTable)-len(want) {
+		t.Errorf("errs = %d entries, want %d", len(errs), len(extractTable)-len(want))
 	}
 	if !strings.Contains(strings.Join(errs, "\n"), "Smoke Grenade") {
 		t.Errorf("errs should name missing icons: %v", errs)
 	}
 
-	data, err := os.ReadFile(filepath.Join(out, "ak47.svg"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if string(data) != akSVG {
-		t.Errorf("ak47.svg = %q, want %q", data, akSVG)
+	// The three written files round-trip their exact payload.
+	for file, wantSVG := range map[string]string{
+		"ak47.svg":          akSVG,
+		"icon_headshot.svg": hsSVG,
+		"blind_kill.svg":    blindSVG,
+	} {
+		data, err := os.ReadFile(filepath.Join(out, file))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(data) != wantSVG {
+			t.Errorf("%s = %q, want %q", file, data, wantSVG)
+		}
 	}
 
-	// Manifest from the dir listing: only extracted, table-known files.
+	// Manifest from the dir listing: only extracted, table-known files —
+	// BOTH families resolve to their manifest keys (iconFileToName).
 	files := IconFiles(out)
-	if len(files) != 1 || files["AK-47"] != "ak47.svg" {
-		t.Errorf("IconFiles = %v", files)
+	if len(files) != len(want) {
+		t.Fatalf("IconFiles = %v", files)
+	}
+	if files["AK-47"] != "ak47.svg" {
+		t.Errorf(`IconFiles["AK-47"] = %q, want "ak47.svg"`, files["AK-47"])
+	}
+	if files["headshot"] != "icon_headshot.svg" {
+		t.Errorf(`IconFiles["headshot"] = %q, want "icon_headshot.svg"`, files["headshot"])
+	}
+	if files["blind_kill"] != "blind_kill.svg" {
+		t.Errorf(`IconFiles["blind_kill"] = %q, want "blind_kill.svg"`, files["blind_kill"])
 	}
 	// Strays (older game versions, hand-dropped files) are never listed.
 	if err := os.WriteFile(filepath.Join(out, "flair0.svg"), []byte("<svg/>"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if files := IconFiles(out); len(files) != 1 {
+	if files := IconFiles(out); len(files) != len(want) {
 		t.Errorf("IconFiles with stray = %v", files)
 	}
 	// A missing dir reads as an empty manifest, not an error.
@@ -223,7 +317,11 @@ func TestExtractIconsNoInstall(t *testing.T) {
 }
 
 func TestValidIconFileBase(t *testing.T) {
-	good := []string{"ak47.svg", "armor_helmet.svg", "c4.svg", "usp_silencer.svg", "a.svg"}
+	good := []string{
+		"ak47.svg", "armor_helmet.svg", "c4.svg", "usp_silencer.svg", "a.svg",
+		// the death-notice glyphs: lowercase + underscore only
+		"icon_headshot.svg", "blind_kill.svg",
+	}
 	for _, s := range good {
 		if !ValidIconFileBase(s) {
 			t.Errorf("ValidIconFileBase(%q) = false, want true", s)
