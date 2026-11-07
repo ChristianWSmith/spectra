@@ -5,7 +5,10 @@
 // extracted icon → per-type detonation pops) → death markers (the victim's
 // team-color X, until the round ends) → bomb (pulse ring + the extracted
 // C4 icon — the dropped/planted C4 renders ABOVE the death markers, so an
-// X can never overlap it) → players (white talking bloom UNDER the dot →
+// X can never overlap it) → hit-shot tracer (the shooter→victim segment
+// while its 0.22 s flash window is live — UNDER the dots, so it reads as
+// coming out of the shooter's dot and never covers a name) → players
+// (white talking bloom UNDER the dot →
 // view chevron, body, player-color rim, flash-white overlay, damage
 // flash, muzzle tracer, follow ring, carried-C4 badge, name) → HUD +
 // kill feed (top-right) + in-game chat (bottom-left).
@@ -521,6 +524,14 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // tick (see drawDeaths / drawPlayers' hit flash).
   let kills = [];
   let damages = []; // damages[slot] = [tick, …]
+  // Hit-shot tracers (bucket 'damage'): the rows that can show a
+  // shooter→victim segment — {tick, attacker, victim, x, y} with x/y the
+  // row's stored VICTIM hit position (the shooter's position is read
+  // from the stream at draw time, see drawHitTracers). Deduped on
+  // (tick, attacker, victim) when built: a shotgun's pellet rows to the
+  // SAME victim at the SAME tick are one line, a second victim gets her
+  // own. Rebuilt by setLandmarks, rendered as a pure function of tick.
+  let hitTracers = [];
   // Flash-white overlay (setBlinds): blinds[slot] = [{tick, ms}] — the
   // blind windows bucketed per victim slot, like `damages`. Rebuilt by
   // setBlinds, rendered as a pure function of tick (drawPlayers' white
@@ -687,6 +698,8 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     roundStarts = [];
     kills = [];
     damages = [];
+    hitTracers = [];
+    const hitSeen = new Set();
     const throws = [];
     for (const l of landmarks) {
       switch (l.bucket) {
@@ -707,6 +720,34 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
             const vs = slotOfSteam.get(String(l.victim || ''));
             if (vs != null && Number.isFinite(l.tick)) {
               (damages[vs] || (damages[vs] = [])).push(l.tick);
+            }
+            // …and the hit-SHOT tracer (the shooter→victim segment): the
+            // row carries the victim's hit position (extract stamps
+            // PlayerHurt's victim position → normalizeEvent x/y) but NO
+            // attacker position (events.apos_* is kill-only —
+            // models/dto.go + store/queries.go), so the shooter's side
+            // is resolved from the position stream at draw time. No
+            // attacker key (world/fall/self damage — extract's
+            // keyStr(0) = '') or no stored hit position → no line, never
+            // a guessed one. Dedupe on (tick, attacker, victim): pellet
+            // rows of one shot at one victim are ONE line.
+            if (
+              l.attacker &&
+              Number.isFinite(l.tick) &&
+              Number.isFinite(l.x) &&
+              Number.isFinite(l.y)
+            ) {
+              const key = `${l.tick}|${l.attacker}|${l.victim || ''}`;
+              if (!hitSeen.has(key)) {
+                hitSeen.add(key);
+                hitTracers.push({
+                  tick: l.tick,
+                  attacker: l.attacker,
+                  victim: l.victim || '',
+                  x: l.x,
+                  y: l.y,
+                });
+              }
             }
           }
           break;
@@ -1589,6 +1630,81 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     }
   }
 
+  // strokeTracer — THE tracer paint: the dark 4 px underlay path first,
+  // then the white 2 px MUZZLE_DASH line on top, dashes marching outward
+  // with the event's age (lineDashOffset = −age × MUZZLE_DASH_SPEED —
+  // pure tick math, so a scrub re-renders the same phase and a paused
+  // draw freezes). Takes [x1, y1, x2, y2] segments so BOTH tracer
+  // consumers share one recipe: drawPlayers' muzzle stub (spec 24) and
+  // the hit-shot tracer (drawHitTracers) can never drift apart, and the
+  // dash deliberately does not scale per consumer (same motion, more of
+  // it). The caller owns globalAlpha — the window envelope — and resets
+  // it.
+  function strokeTracer(segs, ageTicks) {
+    ctx.setLineDash(MUZZLE_DASH);
+    ctx.lineDashOffset = -ageTicks * MUZZLE_DASH_SPEED;
+    ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    for (const [x1, y1, x2, y2] of segs) {
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+    }
+    ctx.stroke();
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (const [x1, y1, x2, y2] of segs) {
+      ctx.moveTo(x1, y1);
+      ctx.lineTo(x2, y2);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.lineDashOffset = 0;
+  }
+
+  // drawHitTracers — the hit-shot tracer: a straight segment from the
+  // SHOOTER's sampled position to the VICTIM's stored hit position for
+  // every damage row whose flash window is live — the muzzle stub's
+  // counterpart that shows WHO hit WHOM (the stub still draws at the
+  // shooter's dot; this is the shot's line to its target).
+  //
+  // Positions: the row carries the VICTIM's hit position (extract stamps
+  // PlayerHurt's victim position → normalizeEvent x/y); the shooter has
+  // NO stored apos on damage rows (events.apos_* is kill-only —
+  // models/dto.go, store/queries.go), so its position is read from the
+  // position stream at the hit's tick — the same authoritative samples
+  // the dots draw from. A row with no attacker key (world/fall damage),
+  // an attacker outside the roster, no stored victim position, or no
+  // stream sample for the shooter at that frame (the store only samples
+  // ALIVE slots) draws NOTHING: no guessed fallback.
+  //
+  // Timing is the muzzle flash's envelope — windowAlpha over
+  // FIRE_FLASH_S (0.22 s) — so the line is seek-correct and frozen while
+  // paused; a row outside the window costs one windowAlpha call and no
+  // lookups or transforms. Painted BEFORE drawPlayers (see draw()): the
+  // dots and name labels stay on top, so the segment reads as emerging
+  // from under the shooter's dot instead of crossing a face.
+  function drawHitTracers(tick) {
+    const tr = engine.tickRate;
+    for (const h of hitTracers) {
+      const alpha = windowAlpha(tick, h.tick, tr, FIRE_FLASH_S);
+      if (alpha <= 0) continue; // outside the flash window — the cheap gate
+      const age = tick - h.tick;
+      const slot = slotOfSteam.get(String(h.attacker));
+      if (slot == null || slot >= store.slots.length) continue;
+      const f = engine.frameForTick(Math.max(engine.firstTick, h.tick));
+      if (!(store.masks[f] & (1 << slot))) continue; // no sample → no line
+      const p = store.slots[slot].pos;
+      const b = f * 4;
+      const a = worldToScreen(p[b], p[b + 1]);
+      const v = worldToScreen(h.x, h.y);
+      ctx.globalAlpha = alpha;
+      strokeTracer([[a.x, a.y, v.x, v.y]], age);
+      ctx.globalAlpha = 1;
+    }
+  }
+
   function drawPlayers() {
     const st = engine.state;
     const tick = st.tick;
@@ -1722,32 +1838,15 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       // dot instead of a static ray. Alpha decays over the tick window
       // armed by stepFiring (frozen at a constant age while paused — it
       // never flickers on its own); the dark underlay shares the dash so
-      // the tracer stays legible on the light theme too.
+      // the tracer stays legible on the light theme too. Painted by
+      // strokeTracer — the ONE tracer recipe, shared with the hit-shot
+      // tracer (drawHitTracers), so the two can never drift apart.
       const fire = windowAlpha(tick, fireAt[slot], tr, FIRE_FLASH_S);
       if (fire > 0) {
         const rays = muzzleRays(c.x, c.y, angle, r + 2, r + MUZZLE_REACH, 1, 0);
         if (rays.length) {
           ctx.globalAlpha = fire;
-          ctx.setLineDash(MUZZLE_DASH);
-          ctx.lineDashOffset = -(tick - fireAt[slot]) * MUZZLE_DASH_SPEED;
-          ctx.strokeStyle = 'rgba(0,0,0,0.45)';
-          ctx.lineWidth = 4;
-          ctx.beginPath();
-          for (const [x1, y1, x2, y2] of rays) {
-            ctx.moveTo(x1, y1);
-            ctx.lineTo(x2, y2);
-          }
-          ctx.stroke();
-          ctx.strokeStyle = '#ffffff';
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          for (const [x1, y1, x2, y2] of rays) {
-            ctx.moveTo(x1, y1);
-            ctx.lineTo(x2, y2);
-          }
-          ctx.stroke();
-          ctx.setLineDash([]);
-          ctx.lineDashOffset = 0;
+          strokeTracer(rays, tick - fireAt[slot]); // the shared tracer recipe
           ctx.globalAlpha = 1;
         }
       }
@@ -2391,6 +2490,12 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       // bomb read as a stray mark on it).
       drawDeaths(st.tick); // the victim's team-color X (spec 28)
       drawBomb(st.tick, now);
+      // Hit-shot tracer UNDER the players: the segment must read as
+      // coming out of the shooter's dot, and a line painted over the
+      // dots would cross both faces and their name labels — so the dots
+      // paint on top of its endpoints (the muzzle stub still paints OVER
+      // its own dot: it lives inside drawPlayers, one layer up).
+      drawHitTracers(st.tick);
       drawPlayers();
     }
     drawHUD();
