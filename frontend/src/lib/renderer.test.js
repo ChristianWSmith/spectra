@@ -9,7 +9,7 @@
 // (the world layers follow the tick: lingering smoke/fire, the death
 // X's round cleanup incl. the post-round C4 kill and the EXACT
 // round_start boundary seek, the C4 icon and its aspect-preserving
-// draw, the WHITE dashed muzzle tracer (r+2 → r+38, dash phase advanced
+// draw, the WHITE dashed muzzle tracer (r+2 → r+76, dash phase advanced
 // from the tick), the LIGHTER flash overlay (peak 0.6, never solid
 // white) and the white talking bloom drawn BENEATH its dot, the
 // death-X-under-C4 layer order, the carried-C4 badge on the carrier's
@@ -274,7 +274,7 @@ test('muzzleRays: count segments from inner to outer, fanned around the angle', 
   assert.deepEqual(muzzleRays(0, 0, 0, 5, 12, 0), []); // no rays
   // count = 1 (the spread never applies): ONE straight ray along the aim
   // direction — the geometry of the firing tracer the renderer draws
-  // dashed (r+2 → r+38).
+  // dashed (r+2 → r+76).
   const line = muzzleRays(10, 20, 0.5, 11, 23, 1, 0);
   assert.equal(line.length, 1);
   const [x1, y1, x2, y2] = line[0];
@@ -906,16 +906,16 @@ test('world layers follow the tick: smoke/fire, death X, C4 icon, muzzle tracer,
     1,
     'ONE straight line along the aim direction (not a 5-ray fan)',
   );
-  // …and it is TWICE as long as the old r+2 → r+20 ray: the far end sits
-  // r+38 = 47 px out from the dot's center (the CT dot fill is the
-  // reference).
+  // …and FOUR times the original r+2 → r+20 ray: the reach was doubled
+  // (r+38) and doubled again on request — the far end now sits r+76 =
+  // 85 px out from the dot's center (the CT dot fill is the reference).
   {
     const dot = since(mark).find(
       (e) => e.op === 'arc' && e.fillStyle === '#5aa9e6' && e.args[2] === 9,
     );
     const end = since(mark).find((e) => e.op === 'lineTo' && e.strokeStyle === '#ffffff');
     const reach = Math.hypot(end.args[0] - dot.args[0], end.args[1] - dot.args[1]);
-    assert.ok(Math.abs(reach - 47) < 1e-9, `the tracer reaches r + 38 = 47 px (got ${reach})`);
+    assert.ok(Math.abs(reach - 85) < 1e-9, `the tracer reaches r + 76 = 85 px (got ${reach})`);
   }
   // dashed [6,5] with the phase pinned to the flash tick: at the edge
   // tick itself the dashes have not travelled yet…
@@ -1100,6 +1100,72 @@ test('death X: gone AT the next round_start (the ribbon seek), a kill on the rou
   engine.seekTick(401);
   r.draw();
   assert.equal(deathX(mark).length, 0, 'the round_end-tick kill is gone after its one tick');
+  r.destroy();
+});
+
+test('planted C4: drawn before its cutoff, gone AT round_end / bomb_explode / the next round_start', () => {
+  // The planted-marker mirror of the death-X regression above (drawDeaths
+  // got both fixes first: the round_start terminator, commit 5b21c4f, and
+  // the gone-AT-the-boundary test, commit 5dc0f93). The old drawBomb
+  // `tick > endTick` drew the marker AT its cutoff, so a paused seek to
+  // the boundary tick never cleared it, and a plant past its own
+  // round_end rode the 40 s fallback into the next round. Every plant
+  // here carries a POSITION — the HUD-clock fixture's plant deliberately
+  // has none and never draws a world marker.
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, {
+    engine,
+    data,
+    players: [
+      { steamId: '1', name: 'alice', side: 'ct' },
+      { steamId: '2', name: 'bob', side: 't' },
+    ],
+  });
+  const mk = (ev) => normalizeEvent(ev, {});
+  r.setLandmarks([
+    // round 1: planted at 192, terminated by round 1's round_end (400)
+    mk({ id: 1, seq: 1, tick: 192, round: 1, kind: 'bomb_plant', posX: 50, posY: 50 }),
+    mk({ id: 2, seq: 2, tick: 400, round: 1, kind: 'round_end' }),
+    mk({ id: 3, seq: 3, tick: 450, round: 2, kind: 'round_start' }),
+    // round 2: planted at 500, terminated by its own bomb_explode (600)
+    mk({ id: 4, seq: 4, tick: 500, round: 2, kind: 'bomb_plant', posX: 60, posY: 60 }),
+    mk({ id: 5, seq: 5, tick: 600, round: 2, kind: 'bomb_explode' }),
+    mk({ id: 6, seq: 6, tick: 650, round: 3, kind: 'round_start' }),
+    // round 3: planted at 700 with NO round_end loaded — the next
+    // round's round_start (800) is its only cutoff (the leak case)
+    mk({ id: 7, seq: 7, tick: 700, round: 3, kind: 'bomb_plant', posX: 70, posY: 70 }),
+    mk({ id: 8, seq: 8, tick: 800, round: 4, kind: 'round_start' }),
+  ]);
+  r.resize();
+  // The planted marker's SOLID orange pulse ring (the dropped C4's ring
+  // is the 0.9-alpha DASHED one — no bomb_drop in this fixture).
+  const plantedRing = (from) =>
+    canvas.log
+      .slice(from)
+      .filter((e) => e.op === 'stroke' && e.strokeStyle === 'rgba(251, 172, 24, 0.95)');
+  const at = (tick) => {
+    const m = canvas.log.length;
+    engine.seekTick(tick);
+    r.draw();
+    return plantedRing(m).length;
+  };
+
+  // --- the round_end cutoff ---------------------------------------------
+  assert.ok(at(200) > 0, 'drawn after the plant, before the round_end');
+  assert.ok(at(399) > 0, 'still drawn the tick before the round_end');
+  assert.equal(at(400), 0, 'gone AT round_end — not one tick after it');
+  assert.equal(at(401), 0, 'and still gone a tick into the next frame');
+  // --- the bomb_explode cutoff ------------------------------------------
+  assert.ok(at(550) > 0, "round 2's plant draws before its explosion");
+  assert.equal(at(600), 0, 'gone AT the bomb_explode tick');
+  // --- the next round_start cutoff (no round_end loaded) -----------------
+  assert.ok(at(750) > 0, 'the no-round_end plant draws (the leak case)');
+  assert.equal(at(800), 0, 'gone AT the next round_start — never the 40 s fallback');
+  // scrubbing back re-derives it (nothing sticky, like the death X)
+  assert.ok(at(760) > 0, 'a backwards scrub redraws the marker');
   r.destroy();
 });
 
@@ -2020,7 +2086,11 @@ test('readout box: drawn only when it has a follow/loop/packNote line (no speed 
   assert.equal(follow.args[1], HUD_PAD + HUD_PAD, "the readout's left-inset content");
 
   // the loop line joins it → one box, two lines tall
-  engine.setLoop(0, 10);
+  // The bounds are FRAMES internally (0 → 640) but the readout speaks
+  // OVERALL MATCH TIME (fmt.js fmtClock over tickSeconds from the
+  // stream's first tick — the same basis as the scrubber), so frame 640
+  // at 64 tick reads 0:10, not "f640".
+  engine.setLoop(0, 640);
   engine.toggleLoop();
   mark = canvas.log.length;
   r.draw();
@@ -2029,7 +2099,7 @@ test('readout box: drawn only when it has a follow/loop/packNote line (no speed 
   assert.equal(hb[0].args[1], 600 - 8 - 43, '43 px tall (2 lines), still 8 px off the bottom');
   assert.equal(hb[0].args[3], 43, 'two lines now');
   const tt = textsSince(canvas.log, mark);
-  assert.ok(tt.some((t) => String(t) === 'loop: f0–10'), 'the loop line joins the readout');
+  assert.ok(tt.some((t) => String(t) === 'loop: 0:00–0:10'), 'the loop line joins the readout, in match time');
   r.destroy();
 });
 
