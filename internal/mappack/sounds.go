@@ -16,10 +16,12 @@ import (
 // pak01_dir.vpk (sounds/weapons/…​.vsnd_c) → playable .wav/.mp3 files in
 // the app data dir (data.SoundsDir()). One entry per logical item — the
 // canonical demoinfocs equipment names iconTable keys on ("AK-47",
-// "HE Grenade", …) — and EVERY sound variant of that item is extracted:
-// the replay picks one at random per play so repeated shots don't loop the
-// exact same sample. Valve IP never ships — extraction runs locally on
-// demand (frontend/public/maps/README.md acquisition posture).
+// "HE Grenade", …), plus THROW groups keyed `<name> throw` ("HE Grenade
+// throw" — the replay's throw cues, sfx.js throwCues) — and EVERY sound
+// variant of that item is extracted: the replay picks one at random per
+// play so repeated shots don't loop the exact same sample. Valve IP never
+// ships — extraction runs locally on demand (frontend/public/maps/README.md
+// acquisition posture).
 //
 // Format facts: CS2.md "Sound assets (.vsnd_c)" (v4 fixed DATA header,
 // v5 CTRL/binary-KV3, PCM → the standard 44-byte RIFF header Valve
@@ -42,16 +44,21 @@ const (
 
 // soundTable is the ONE canonical-name → VPK-path table for audio (keys
 // are exact EquipmentType.String() outputs — the same vocabulary as
-// iconTable, which is why every key here exists there too; values are the
+// iconTable, which is why every key here exists there too — or one of
+// those names + " throw" for a utility's throw group; values are the
 // .vsnd_c paths relative to the VPK root). Near-layer fire/detonation
 // files only (no *_detonation*_distant / *_distant variants — the far
 // layer would sound wrong on the close camera), all PCM16 44100 unless
 // noted. ak47_03 and glock_01 are deliberately skipped: they are orphans
 // (no soundevent references them) and probe duplicates of the kept set.
 //
-// Decoy Grenade has NO entry on purpose: CS2 ships no decoy DETONATION
-// sound (its ticks/bounces are the only audio it makes), so there is
-// nothing to extract — the renderer's decoy visuals stay silent.
+// "Decoy Grenade" has NO detonation entry on purpose: the game gives a
+// exploding decoy no soundevent of its own — its explosion plays
+// BaseGrenade.Explode, i.e. the HE files already in soundTable["HE
+// Grenade"] (sfx.js remaps the decoy detonation cue to "HE Grenade"; the
+// tick/bounce noise is simulated by the replay's decoy plan, spec
+// 2026-11-07). The decoy's THROW group below is a different thing and
+// DOES ship (Decoy.Throw → decoy_throw_06).
 var soundTable = map[string][]string{
 	// Rifles
 	"AK-47": {
@@ -224,7 +231,41 @@ var soundTable = map[string][]string{
 		"sounds/weapons/incgrenade/inc_grenade_detonate_2.vsnd_c",
 		"sounds/weapons/incgrenade/inc_grenade_detonate_3.vsnd_c",
 	},
-	// "Decoy Grenade" omitted: no detonation sound exists in the game.
+	// Utility THROW sounds (Feature A): the replay's throw cues
+	// (sfx.js throwCues) key these off the grenade_throw rows as
+	// `<weapon> throw`, so the keys are the canonical weapon name + the
+	// " throw" suffix — flat entries in this ONE table (one extraction
+	// loop, one reverse index, one manifest, unchanged playGroup). The
+	// paths are each grenade's throw SOUND EVENT's file (the canonical
+	// event→file technique — CS2.md "Sound-event names ↔ demo
+	// soundevent_hash"); the per-dir grenade_throw.vsnd_c copies are
+	// byte-identical orphans referenced by nothing and are deliberately
+	// NOT used. All resource-v5 MP3 44,100 mono (decodeVSnd handles
+	// v5 + MP3); lengths: HE 0.268 s, flash 0.459 s, smoke 0.397 s,
+	// decoy 0.418 s, molotov/incendiary ~0.4 s each.
+	"HE Grenade throw": {
+		"sounds/items/weapon_hegrenade_throw.vsnd_c", // the HE throw lives under sounds/items/
+	},
+	"Flashbang throw":     {"sounds/weapons/flashbang/flashbang_throw_03.vsnd_c"},
+	"Smoke Grenade throw": {"sounds/weapons/smokegrenade/smoke_grenade_throw_04.vsnd_c"},
+	"Molotov throw": {
+		"sounds/weapons/molotov/molotov_throw_01.vsnd_c",
+		"sounds/weapons/molotov/molotov_throw_02.vsnd_c",
+		"sounds/weapons/molotov/molotov_throw_03.vsnd_c",
+		"sounds/weapons/molotov/molotov_throw_04.vsnd_c",
+		"sounds/weapons/molotov/molotov_throw_05.vsnd_c",
+		"sounds/weapons/molotov/molotov_throw_06.vsnd_c",
+	},
+	"Incendiary Grenade throw": {
+		"sounds/weapons/incgrenade/inc_grenade_throw_fire_01.vsnd_c",
+		"sounds/weapons/incgrenade/inc_grenade_throw_fire_02.vsnd_c",
+		"sounds/weapons/incgrenade/inc_grenade_throw_fire_03.vsnd_c",
+	},
+	"Decoy Grenade throw": {"sounds/weapons/decoy/decoy_throw_06.vsnd_c"},
+	// "Decoy Grenade" (detonation) omitted: the exploding decoy plays
+	// BaseGrenade.Explode — the HE files above — so its cue is remapped
+	// to "HE Grenade" at cue build (sfx.js grenadeCues); there is no
+	// decoy-specific detonation file to extract (CS2.md "Sound assets").
 }
 
 // soundTableNames is soundTable's keys in sorted order, so extraction
