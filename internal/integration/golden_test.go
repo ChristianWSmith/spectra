@@ -78,6 +78,10 @@ var modelEventKinds = []string{
 	models.EventBombPickup,
 	models.EventGrenadeThrow,
 	models.EventGrenade,
+	// grenade_land is the decoy ACTIVATION (models.EventGrenadeLand):
+	// the golden demo has no decoys, so its fixture entry is exactly 0
+	// — the one expected diff when this kind was added.
+	models.EventGrenadeLand,
 	models.EventRoundStart,
 	models.EventRoundEnd,
 	models.EventConnect,

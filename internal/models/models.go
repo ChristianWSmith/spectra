@@ -49,10 +49,18 @@ const (
 	EventBombPickup   = "bomb_pickup"
 	EventGrenadeThrow = "grenade_throw"
 	EventGrenade      = "grenade"
-	EventRoundStart   = "round_start"
-	EventRoundEnd     = "round_end"
-	EventConnect      = "player_connect"
-	EventDisconnect   = "player_disconnect"
+	// EventGrenadeLand marks a grenade COMING TO REST (the decoy's
+	// activation — decoy_started): the flight ends here and the noise
+	// window starts; the EXPLOSION stays an EventGrenade row
+	// (decoy_detonate → BaseGrenade.Explode, sfx remaps it to the HE
+	// group). Deliberately NOT an EventGrenade: no stat counts a landing
+	// (analytics/heatmap match EventGrenade exactly), and the replay's
+	// scrubber must not put a det-marker on an activation.
+	EventGrenadeLand = "grenade_land"
+	EventRoundStart  = "round_start"
+	EventRoundEnd    = "round_end"
+	EventConnect     = "player_connect"
+	EventDisconnect  = "player_disconnect"
 )
 
 // Match is the header/lifecycle row for one imported demo (matches table).

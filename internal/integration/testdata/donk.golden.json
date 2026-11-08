@@ -25,6 +25,7 @@
     "bomb_plant": 14,
     "damage": 662,
     "grenade": 478,
+    "grenade_land": 0,
     "grenade_throw": 393,
     "kill": 170,
     "player_connect": 11,
