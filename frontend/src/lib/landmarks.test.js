@@ -45,6 +45,7 @@ test('LANDMARK_KINDS is the models.EventKind mirror (order included)', () => {
     'bomb_pickup',
     'grenade_throw',
     'grenade',
+    'grenade_land',
     'round_start',
     'round_end',
     'player_connect',
@@ -82,7 +83,7 @@ test('every category is well-formed and typed kinds are covered exactly once', (
       assert.equal(c.source, 'chat');
     }
   }
-  // All 14 stored kinds land in a category — no recorded activity is
+  // All stored kinds land in a category — no recorded activity is
   // unreachable from the feed.
   for (const k of LANDMARK_KINDS) assert.ok(seen.has(k), `unclaimed kind ${k}`);
 });
@@ -94,6 +95,10 @@ test('categoryOfKind maps every kind and rejects unknown input', () => {
   assert.equal(categoryOfKind('bomb_defuse'), 'bomb');
   assert.equal(categoryOfKind('player_disconnect'), 'connects');
   assert.equal(categoryOfKind('grenade'), 'grenade_dets');
+  // The decoy ACTIVATION normalizes under its own category — it is not a
+  // detonation (no det scrubber marker, no stat), and an unclaimed kind
+  // would be dropped from the feed/draw set entirely.
+  assert.equal(categoryOfKind('grenade_land'), 'grenade_lands');
   assert.equal(categoryOfKind('teleport'), null);
   assert.equal(categoryOfKind(''), null);
   assert.equal(categoryOfKind(null), null);
@@ -111,8 +116,20 @@ test('drawBucket buckets every drawable kind (renderer/scrubber contract)', () =
   assert.equal(drawBucket('grenade', 'Smoke Grenade'), 'smoke');
   assert.equal(drawBucket('grenade', 'Molotov'), 'fire');
   assert.equal(drawBucket('grenade', 'Incendiary Grenade'), 'fire');
-  assert.equal(drawBucket('grenade', 'Decoy Grenade'), 'decoy');
+  // WHY 'he', not 'decoy': an exploding decoy plays BaseGrenade.Explode —
+  // the HE files (spec research 2026-11-07, verified 5/5 demos; CS2.md
+  // "Sound assets": the decoy has NO detonation sound of its own), so its
+  // detonation renders and sounds through the HE path. The old 'decoy'
+  // bucket has no producer left.
+  assert.equal(drawBucket('grenade', 'Decoy Grenade'), 'he');
   assert.equal(drawBucket('grenade', 'AK-47'), 'detonation');
+  // The decoy ACTIVATION (a grenade coming to rest) buckets 'land' — its
+  // own bucket, NOT in DETONATION_BUCKETS: no detonation visual, no
+  // scrubber det-marker (the real explosion carries that one), but the
+  // renderer pairs the throw arc to it and draws the rest icon from the
+  // plan.
+  assert.equal(drawBucket('grenade_land', 'Decoy Grenade'), 'land');
+  assert.equal(drawBucket('grenade_land'), 'land');
   assert.equal(drawBucket('bomb_plant'), 'plant');
   assert.equal(drawBucket('bomb_explode'), 'explode');
   assert.equal(drawBucket('bomb_defuse'), 'defuse');
@@ -147,6 +164,7 @@ test('drawBucket buckets every drawable kind (renderer/scrubber contract)', () =
     'bomb_plant',
     'damage',
     'grenade',
+    'grenade_land',
     'grenade_throw',
     'kill',
     'round_end',
@@ -158,7 +176,13 @@ test('detonationStyle / detonationStyleOf: the one weapon → visual decision', 
   assert.equal(detonationStyle('Smoke Grenade'), 'smoke');
   assert.equal(detonationStyle('Molotov'), 'fire');
   assert.equal(detonationStyle('Incendiary Grenade'), 'fire');
-  assert.equal(detonationStyle('Decoy Grenade'), 'decoy');
+  // WHY 'he' (rewritten deliberately — this used to be 'decoy'): the
+  // exploding decoy plays BaseGrenade.Explode = the HE files (spec
+  // research 2026-11-07, verified 5/5 demos; CS2.md "Sound assets"
+  // records the decoy has no detonation sound of its own), so one
+  // animation + one sound covers both — the renderer's HE ring and
+  // sfx.js's 'Decoy Grenade' → 'HE Grenade' cue remap both read this.
+  assert.equal(detonationStyle('Decoy Grenade'), 'he');
   assert.equal(detonationStyle('Flashbang'), 'flash');
   assert.equal(detonationStyle('HE Grenade'), 'he');
   // Unknown / absent weapon — the generic ring, never a guess:
@@ -206,8 +230,17 @@ test('scrubberMarkerClass maps every drawable bucket (the markers contract)', ()
   assert.equal(scrubberMarkerClass('drop'), '');
   assert.equal(scrubberMarkerClass('pickup'), '');
   assert.equal(scrubberMarkerClass('damage'), '');
+  // …and so does 'land': a grenade ACTIVATION (decoy rest) gets NO det
+  // marker — the scrubber marks the REAL explosion (bucket 'he' now that
+  // decoy detonations share the HE path), not the moment the decoy
+  // started making noise.
+  assert.equal(scrubberMarkerClass('land'), '');
   assert.equal(scrubberMarkerClass(''), '');
   assert.equal(scrubberMarkerClass(null), '');
+  // 'decoy' is no longer a bucket ANYWHERE: detonationStyle('Decoy
+  // Grenade') is 'he', so DETONATION_BUCKETS lost it (the old sound-gate
+  // exclusion in sfx.js died with it).
+  assert.equal(DETONATION_BUCKETS.includes('decoy'), false);
 });
 
 test('typedKindsFor unions enabled categories; enabledSources splits paths', () => {
@@ -244,6 +277,12 @@ test('normalizeEvent tags the row, keeps source fields and drops unknown kinds',
   // the renderer through this one stamping point).
   assert.equal(normalizeEvent({ ...ev, kind: 'grenade', weapon: 'Smoke Grenade' }, {}).bucket, 'smoke');
   assert.equal(normalizeEvent({ ...ev, kind: 'grenade', weapon: 'HE Grenade' }, {}).bucket, 'he');
+  // The decoy ACTIVATION normalizes under grenade_lands → bucket 'land'
+  // (an unclaimed kind would be dropped — normalizeEvent returns null).
+  const land = normalizeEvent({ ...ev, kind: 'grenade_land', weapon: 'Decoy Grenade' }, {});
+  assert.ok(land, 'grenade_land rows survive normalization');
+  assert.equal(land.category, 'grenade_lands');
+  assert.equal(land.bucket, 'land');
   assert.equal(normalizeEvent({ ...ev, kind: 'damage' }, {}).bucket, 'damage');
   assert.equal(normalizeEvent({ ...ev, kind: 'teleport' }), null);
 });

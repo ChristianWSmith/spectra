@@ -137,10 +137,13 @@ writeFileSync(
 // it imports audio.js for the shared GST_AUDIO_HINT string, and
 // audio.js pulls the pure stretch DSP. bullets.js is the shot derivation
 // Replay pushes to BOTH the renderer and the sfx engine (deriveBullets
-// fails soft to [] against this harness's null state index).
+// fails soft to [] against this harness's null state index). decoy.js is
+// the decoy rest/noise plan Replay derives once per push site
+// (buildDecoyPlan — pure over the draw rows; no state index here →
+// shots: [], icon/explosion rows only).
 for (const rel of [
   'playercard.js', 'playercolor.js', 'livestats.js', 'voiceindex.js',
-  'sfx.js', 'stretch.js', 'bullets.js',
+  'sfx.js', 'stretch.js', 'bullets.js', 'decoy.js',
   // playercard.js now resolves its held-item prefix through
   // replay/loadout.js (the one loadout vocabulary) — copy it too, or the
   // card graph fails to link (its own deps, landmarks.js + bullets.js,
@@ -331,6 +334,7 @@ writeFileSync(
     setBlinds() {},
     setChat() {},
     setBullets() {},
+    setDecoyPlan() {},
     setHud() {},
     setIcons() {},
     setVoices() {},
@@ -1086,7 +1090,10 @@ await sleep();
 const catMenu = panel?.querySelector('.lm-cat-menu');
 check('dropdown opens a checkbox list (multi-select)', !!catMenu);
 const catBoxes = catMenu ? [...catMenu.querySelectorAll('input[type="checkbox"]')] : [];
-check('one checkbox per category', catBoxes.length === 13, String(catBoxes.length));
+// 14 = 13 + the grenade_lands category (the decoy ACTIVATION —
+// lib/replay/landmarks.js CATEGORIES gained one opt-in entry with the
+// decoy lifecycle split; default selection is unchanged).
+check('one checkbox per category', catBoxes.length === 14, String(catBoxes.length));
 const catLabel = (cb) => (cb.closest('label')?.textContent || '').trim();
 check(
   'default selection: round starts ON, kills and round wins OFF',

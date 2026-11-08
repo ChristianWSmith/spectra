@@ -1,8 +1,10 @@
 // Sound-effect cue math tests (lib/replay/sfx.js): the utility-cue
-// derivation (flashbang double-dispatch dedupe, decoy skip, C4, the
-// equip/throw skip, the freeze gate), the knife damage cues, the bullet
-// cue window, the range/seek guards, the random variant pick, the
-// internal gain scales and the weapon-name-less manifest boundary.
+// derivation (flashbang double-dispatch dedupe, the decoy→HE detonation
+// remap, C4, the equip skip, the freeze gate), the NEW throw cues
+// (`<weapon> throw` manifest keys), the knife damage cues, the bullet
+// cue window, the decoy fake-gunshot plan window, the range/seek
+// guards, the random variant pick, the internal gain scales and the
+// weapon-name-less manifest boundary.
 // Run: node --test src/lib/sfx.test.js
 // (from frontend/; the lib test glob src/lib/*.test.js picks it up too).
 import test from 'node:test';
@@ -32,9 +34,12 @@ const {
   UTILITY_GAIN_SCALE,
   SOUND_DETONATION_BUCKETS,
   grenadeCues,
+  throwCues,
   knifeCues,
   utilCuesInRange,
   bulletCuesInRange,
+  decoyCues,
+  decoyCuesInRange,
   cueGapJump,
   pickVariant,
   prefVolume,
@@ -52,20 +57,43 @@ const FREEZE_ROUNDS = [
   { number: 2, startTick: 500, freezeEndTick: 560 },
 ];
 
-test('grenadeCues keeps only detonation buckets (decoy and throws skipped)', () => {
+test('grenadeCues keeps only detonation buckets (equips and throws skipped)', () => {
   const cues = grenadeCues([
     row({ tick: 10, bucket: 'he' }),
     row({ tick: 20, bucket: 'flash', weapon: 'Flashbang' }),
-    row({ tick: 30, bucket: 'decoy', weapon: 'Decoy Grenade' }), // no such sound in CS2
+    // The DECOY detonation buckets 'he' now (landmarks.detonationStyle —
+    // BaseGrenade.Explode) and cues the HE GROUP via the remap: the
+    // manifest has no "Decoy Grenade" key (CS2.md: the decoy has no
+    // detonation sound of its own), so without it the cue would be silent.
+    row({ tick: 30, bucket: 'he', weapon: 'Decoy Grenade' }),
     row({ tick: 40, bucket: 'smoke', weapon: 'Smoke Grenade' }),
     row({ tick: 50, bucket: 'fire', weapon: 'Molotov' }),
     row({ tick: 60, bucket: 'detonation', weapon: 'Weird Nade' }),
-    { kind: 'grenade_throw', bucket: 'throw', weapon: 'HE Grenade', tick: 70 }, // not a detonation
+    { kind: 'grenade_throw', bucket: 'throw', weapon: 'HE Grenade', tick: 70 }, // a throw, not a detonation
     { kind: 'kill', bucket: 'kill', weapon: 'AK-47', tick: 80 },
   ]);
   assert.deepEqual(
     cues.map((c) => `${c.tick}:${c.name}`),
-    ['10:HE Grenade', '20:Flashbang', '40:Smoke Grenade', '50:Molotov', '60:Weird Nade'],
+    ['10:HE Grenade', '20:Flashbang', '30:HE Grenade', '40:Smoke Grenade', '50:Molotov', '60:Weird Nade'],
+  );
+  // Every drawable detonation bucket has a sound path: the old 'decoy'
+  // exclusion died with the bucket (there is no 'decoy' bucket anymore).
+  assert.deepEqual([...SOUND_DETONATION_BUCKETS], ['detonation', 'smoke', 'fire', 'flash', 'he']);
+});
+
+test('grenadeCues: the decoy→HE remap keys off the WEAPON (two grenades, two sounds)', () => {
+  const cues = grenadeCues([
+    row({ tick: 100, bucket: 'he', weapon: 'Decoy Grenade' }),
+    row({ tick: 100, bucket: 'he', weapon: 'Decoy Grenade' }), // duplicate dispatch → one cue
+    row({ tick: 100, bucket: 'he', weapon: 'HE Grenade' }), // same tick, OTHER grenade → kept
+    row({ tick: 120, bucket: 'he', weapon: 'Decoy Grenade' }),
+  ]);
+  // The dedupe runs on the row's WEAPON (before the remap), so an HE and
+  // a decoy exploding on the same tick still make TWO sounds — they are
+  // two grenades; the remap only picks the manifest key.
+  assert.deepEqual(
+    cues.map((c) => `${c.tick}:${c.name}`),
+    ['100:HE Grenade', '100:HE Grenade', '120:HE Grenade'],
   );
 });
 
@@ -73,7 +101,8 @@ test('grenadeCues: equip/throw-shaped landmarks make NO cue (detonation only)', 
   // The util-sound bug this pins: the old attack-edge gun path played
   // the manifest's DETONATION sample on every grenade equip and throw.
   // The cue list must come from detonation rows alone — a throw or
-  // equip-shaped landmark is silence, no matter how the game labels it.
+  // equip-shaped landmark is silence HERE (the throw's own sound is the
+  // separate throwCues list below).
   const cues = grenadeCues([
     { kind: 'grenade', bucket: 'throw', weapon: 'HE Grenade', tick: 10 }, // the throw event
     { kind: 'grenade', bucket: 'equip', weapon: 'HE Grenade', tick: 20 }, // equipping it
@@ -137,6 +166,58 @@ test('grenadeCues: utility and bomb cues inside FREEZE time are dropped', () => 
   // No rounds pushed → nothing is gated (the gate fails open, it never
   // invents a freeze window).
   assert.equal(grenadeCues([row({ tick: 32 })]).length, 1);
+});
+
+// --- throw cues (Feature A) -------------------------------------------------
+
+test('throwCues: grenade_throw rows cue `<weapon> throw` — one group per grenade', () => {
+  const cues = throwCues([
+    { kind: 'grenade_throw', bucket: 'throw', weapon: 'HE Grenade', tick: 10 },
+    { kind: 'grenade_throw', bucket: 'throw', weapon: 'Flashbang', tick: 20 },
+    { kind: 'grenade_throw', bucket: 'throw', weapon: 'Smoke Grenade', tick: 30 },
+    { kind: 'grenade_throw', bucket: 'throw', weapon: 'Molotov', tick: 40 },
+    { kind: 'grenade_throw', bucket: 'throw', weapon: 'Incendiary Grenade', tick: 50 },
+    { kind: 'grenade_throw', bucket: 'throw', weapon: 'Decoy Grenade', tick: 60 },
+    // NOT a grenade_throw row → no throw cue (equip-shaped and
+    // detonation-shaped landmarks stay silent here):
+    { kind: 'grenade', bucket: 'equip', weapon: 'HE Grenade', tick: 70 },
+    { kind: 'grenade', bucket: 'he', weapon: 'HE Grenade', tick: 80 },
+    // No weapon → no cue (the manifest key is never invented).
+    { kind: 'grenade_throw', bucket: 'throw', weapon: '', tick: 90 },
+    null, // hostile input never throws
+  ]);
+  assert.deepEqual(
+    cues.map((c) => `${c.tick}:${c.name}`),
+    [
+      '10:HE Grenade throw',
+      '20:Flashbang throw',
+      '30:Smoke Grenade throw',
+      '40:Molotov throw',
+      '50:Incendiary Grenade throw',
+      '60:Decoy Grenade throw',
+    ],
+  );
+  // Sorted by tick (the engine's range window relies on it).
+  assert.ok(cues.every((c, i) => i === 0 || cues[i - 1].tick <= c.tick));
+});
+
+test('throwCues: FREEZE time gates the throw, (tick|name) dedupes', () => {
+  const cues = throwCues(
+    [
+      { kind: 'grenade_throw', weapon: 'HE Grenade', tick: 32 }, // round-1 freeze → dropped
+      { kind: 'grenade_throw', weapon: 'HE Grenade', tick: 100 }, // live → kept
+      { kind: 'grenade_throw', weapon: 'HE Grenade', tick: 100 }, // duplicate → one cue
+      { kind: 'grenade_throw', weapon: 'Flashbang', tick: 100 }, // same tick, OTHER grenade → kept
+    ],
+    FREEZE_ROUNDS,
+  );
+  assert.deepEqual(
+    cues.map((c) => `${c.tick}:${c.name}`),
+    ['100:HE Grenade throw', '100:Flashbang throw'],
+  );
+  // No rounds pushed → nothing gated (the gate fails open, it never
+  // invents a freeze window).
+  assert.equal(throwCues([{ kind: 'grenade_throw', weapon: 'HE Grenade', tick: 32 }]).length, 1);
 });
 
 // --- knife cues ------------------------------------------------------------
@@ -245,6 +326,34 @@ test('bulletCuesInRange: a seek jump never plays the crossed rows (cueGapJump re
   );
 });
 
+// --- decoy fake-gunshot cues (Feature C) ------------------------------------
+
+test('decoyCues flattens the plan: one weapon per decoy, unresolved rows contribute nothing', () => {
+  const plan = [
+    { landTick: 100, detTick: 500, weapon: 'AK-47', shots: [{ tick: 140 }, { tick: 300 }] },
+    { landTick: 200, detTick: 600, weapon: 'AWP', shots: [{ tick: 260 }] },
+    // No resolved main weapon (no state stream / no inventory / no side)
+    // → its scheduled shots are DROPPED, never played with a guessed gun.
+    { landTick: 300, detTick: 700, weapon: null, shots: [{ tick: 360 }] },
+  ];
+  const cues = decoyCues(plan);
+  assert.deepEqual(
+    cues.map((c) => `${c.tick}:${c.weapon}`),
+    ['140:AK-47', '260:AWP', '300:AK-47'],
+  );
+  // The same open/closed window as every other cue list: the compare
+  // point that just played its tick never replays it.
+  assert.deepEqual(decoyCuesInRange(cues, 140, 300).map((c) => c.tick), [260, 300]);
+  assert.deepEqual(decoyCuesInRange(cues, 0, 139).map((c) => c.tick), []); // before the first shot
+  assert.deepEqual(decoyCuesInRange(cues, 139, 140).map((c) => c.tick), [140]); // closed right
+  assert.deepEqual(decoyCuesInRange(cues, 300, 999).map((c) => c.tick), []); // open left: 300 already played
+  // Fail-soft inputs.
+  assert.deepEqual(decoyCues(null), []);
+  assert.deepEqual(decoyCues([]), []);
+  assert.deepEqual(decoyCuesInRange([], 0, 10), []);
+  assert.deepEqual(decoyCuesInRange(cues, NaN, 10), []);
+});
+
 // --- seek / pause guard ----------------------------------------------------
 
 test('cueGapJump: ordinary playback steps are not jumps, seeks are', () => {
@@ -284,14 +393,17 @@ test('pickVariant picks uniformly in range and never leaves the list', () => {
 
 // --- internal mix calibration ----------------------------------------------
 
-test('gain scales: guns cut to 1/3, utility to 2/3, both internal to the mixer', () => {
+test('gain scales: guns and utility both run at 1/3 of the fader, internal to the mixer', () => {
   // applyGains() multiplies the fader level by these — the pref default,
   // the sliders and prefs.go never move (a user-facing 80% still reads
   // 80%), so pinning the constants here pins the mix. Voice is
   // deliberately unscaled (no constant exists for it — its master gain
   // IS the fader value, see sfx.js).
   assert.equal(GUNS_GAIN_SCALE, 1 / 3); // default weapon volume cut by 2/3
-  assert.equal(UTILITY_GAIN_SCALE, 2 / 3); // default utility volume cut by 1/3
+  // Utility: the old 2/3 halved once more, spec 2026-11-07 ("half the
+  // volume of util once more (again, internally)" → 1/3 of the original)
+  // — still INTERNAL: only this constant moved, never the pref default.
+  assert.equal(UTILITY_GAIN_SCALE, 1 / 3);
   assert.equal(AUDIO_VOL_DEFAULT, 0.8); // the user-facing default is untouched
 });
 

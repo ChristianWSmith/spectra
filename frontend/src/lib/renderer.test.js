@@ -52,6 +52,7 @@ import {
   windowAlpha,
   blindAlpha,
   voiceBloom,
+  shotBloom,
   killEndTick,
   scoreLineWidth,
   scoreLineLayout,
@@ -3202,5 +3203,242 @@ test('kill feed and chat: ONE shared entry-box painter (fill, radius, 1 px borde
     ['#5aa9e6', '#5aa9e6', '#e6a35a'],
     'the feed’s killer border and the chat’s speaker borders come from the same teamColor rule',
   );
+  r.destroy();
+});
+
+// --- decoy rest icon + noise pulses (setDecoyPlan) ---------------------------
+//
+// The plan rows (lib/replay/decoy.js buildDecoyPlan) carry the REST
+// position, the explosion tick, the thrower's side and the scheduled
+// fake gunshots: the icon shows for [landTick, detTick), ONE white
+// mic-talk bloom per shot (shotBloom — the event-anchored voiceBloom
+// recipe), and at the blast the UNPAIRED detonation row draws the HE
+// ring (a decoy explosion renders as HE — BaseGrenade.Explode).
+
+test('shotBloom: event-anchored, single-cycle twin of voiceBloom', () => {
+  const tr = 64;
+  // The SAME recipe as voiceBloom: at age 0 the bloom starts at
+  // VOICE_BLOOM_MIN_R with VOICE_BLOOM_MAX_A, growing toward
+  // anchorR + VOICE_BLOOM_MAX_R over VOICE_BLOOM_PERIOD_S.
+  const b0 = shotBloom(1000, 1000, tr, 8);
+  assert.ok(b0, 'the bloom resolves exactly at the shot');
+  assert.equal(b0.k, 0);
+  assert.ok(Math.abs(b0.radius - 3) < 1e-12, 'starts at VOICE_BLOOM_MIN_R');
+  assert.ok(Math.abs(b0.alpha - 0.9) < 1e-12, 'starts at VOICE_BLOOM_MAX_A');
+  const late = shotBloom(1000 + 54, 1000, tr, 8); // 0.84375 s < 0.85 s
+  assert.ok(late.k > 0.99 && late.radius > 17.5, 'approaches anchorR + 10');
+  assert.ok(late.alpha < 0.05, 'fades toward 0');
+  // SINGLE-CYCLE (the relationship to voiceBloom: same constants, but
+  // the phase is event-anchored and never loops): null before the shot
+  // and after one period — voiceBloom by contrast wraps back to phase 0
+  // (tick 1088 = 17 s = exactly 20 × 0.85 s periods).
+  assert.equal(shotBloom(999, 1000, tr, 8), null, 'nothing before the sound');
+  assert.equal(shotBloom(1055, 1000, tr, 8), null, 'one cycle is all a shot gets');
+  assert.ok(Math.abs(voiceBloom(1088, tr, 9).k) < 1e-12, 'voiceBloom wraps back to phase 0 (it loops)');
+  assert.ok(voiceBloom(1087, tr, 9).k > 0.98, '…just before, it is at the end of the previous cycle');
+  // Tick-pure: a scrub into the window re-renders the same phase, and
+  // the phase advances only with the tick (frozen while paused).
+  assert.deepEqual(shotBloom(1032, 1000, tr, 8), shotBloom(1032, 1000, tr, 8));
+  assert.ok(shotBloom(1032, 1000, tr, 8).k < shotBloom(1048, 1000, tr, 8).k);
+  // Broken clock / anchor → null (never a stuck bloom).
+  assert.equal(shotBloom(NaN, 1000, tr, 8), null);
+  assert.equal(shotBloom(1000, NaN, tr, 8), null);
+  assert.equal(shotBloom(1000, 1000, 0, 8), null);
+  assert.equal(shotBloom(1000, 1000, tr, NaN), null);
+  assert.equal(shotBloom(1000, 1000, tr, 0), null);
+});
+
+test('decoy plan: rest icon land→det with side tint, one white pulse per shot, hidden after', () => {
+  headlessGlobals();
+  const data = synthStore(4000, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, {
+    engine,
+    data,
+    players: [
+      { steamId: '1', name: 'alice', side: 'ct' },
+      { steamId: '2', name: 'bob', side: 't' },
+    ],
+  });
+  r.setIcons({ 'Decoy Grenade': { width: 32, height: 32, src: 'decoy.svg' } });
+  r.setDecoyPlan([
+    {
+      landTick: 1000,
+      detTick: 3000,
+      x: 50,
+      y: 60,
+      side: 'ct',
+      weapon: 'AK-47',
+      shots: [{ tick: 1100 }, { tick: 2500 }],
+    },
+  ]);
+  r.resize();
+  // the decoy body icon (NADE_ICON_PX = 16 — the halo is 18)
+  const icon = (from) => canvas.log.slice(from).filter((e) => e.op === 'drawImage' && e.args[4] === 16);
+  const whiteRing = (from) =>
+    canvas.log.slice(from).find((e) => e.op === 'arc' && e.strokeStyle === '#ffffff' && e.lineWidth > 1);
+
+  // --- BEFORE the rest: nothing ----------------------------------------------
+  engine.seekTick(900);
+  let mark = canvas.log.length;
+  r.draw();
+  assert.equal(icon(mark).length, 0, 'no icon before the decoy comes to rest');
+
+  // --- inside [landTick, detTick): the icon, CT-tinted (the flight        ---
+  // --- line's tint rule — teamColor for a resolvable side)                 ---
+  engine.seekTick(1200);
+  let tints = iconTints.length;
+  mark = canvas.log.length;
+  r.draw();
+  const icons = icon(mark);
+  assert.equal(icons.length, 1, 'the rest icon draws while the decoy is noisy');
+  assert.ok(
+    tintsSince(tints).some((t) => t.color === '#5aa9e6'),
+    'the icon takes the thrower side tint (CT blue, same path as the flight line)',
+  );
+  assert.equal(icons[0].args[4], 16, 'NADE_ICON_PX sizing');
+
+  // --- the noise pulse: ONE white mic-talk bloom per scheduled shot,   ---
+  // --- event-anchored (shotBloom at the shot's tick), nothing in between ---
+  engine.seekTick(1120); // 20 ticks (0.3125 s) after shot@1100 — inside its cycle
+  mark = canvas.log.length;
+  r.draw();
+  const expected = shotBloom(1120, 1100, 64, 8);
+  const ring = whiteRing(mark);
+  assert.ok(ring, 'the fake gunshot blooms a WHITE ring');
+  assert.ok(Math.abs(ring.args[2] - expected.radius) < 1e-9, 'radius is the event-anchored phase');
+  assert.ok(Math.abs(ring.alpha - expected.alpha) < 1e-12, 'alpha fades with the same phase');
+  // the bloom is anchored at the decoy's REST position (the icon's center)
+  const body = icons[0];
+  assert.ok(Math.abs(ring.args[0] - (body.args[1] + 8)) < 1e-9, 'anchored at the rest x');
+  assert.ok(Math.abs(ring.args[1] - (body.args[2] + 8)) < 1e-9, 'anchored at the rest y');
+  // paused at the SAME tick → the identical phase (nothing sticky, the
+  // ring is a pure function of the tick)
+  mark = canvas.log.length;
+  r.draw();
+  const again = whiteRing(mark);
+  assert.ok(again && Math.abs(again.args[2] - ring.args[2]) < 1e-9, 'paused redraw re-renders the same bloom');
+
+  // between shots (and past the first shot's single cycle): no pulse
+  engine.seekTick(1400); // 4.7 s after shot@1100, 1.1 s before shot@2500
+  mark = canvas.log.length;
+  r.draw();
+  assert.equal(whiteRing(mark), undefined, 'no bloom between scheduled shots');
+  assert.equal(icon(mark).length, 1, '…but the icon keeps showing');
+
+  // --- at/after the explosion: the icon is GONE and the HE ring plays   ---
+  engine.seekTick(3000);
+  r.setLandmarks([
+    normalizeEvent(
+      { id: 9, seq: 9, tick: 3000, round: 1, kind: 'grenade', attacker: '1', weapon: 'Decoy Grenade', posX: 50, posY: 60 },
+      {},
+    ),
+  ]);
+  mark = canvas.log.length;
+  r.draw();
+  assert.equal(icon(mark).length, 0, 'the icon hides at detTick (the window is [land, det))');
+  const heRing = canvas.log
+    .slice(mark)
+    .find((e) => e.op === 'arc' && String(e.strokeStyle).startsWith('rgba(224, 91, 91'));
+  assert.ok(heRing, 'the decoy explosion renders through the SHARED HE block (BaseGrenade.Explode)');
+  assert.ok(Math.abs(heRing.args[2] - 4) < 1e-9, 'the HE ring at age 0 (its classic start radius)');
+  engine.seekTick(3600); // past the 1.3 s HE window
+  mark = canvas.log.length;
+  r.draw();
+  assert.equal(icon(mark).length, 0, 'still hidden after the blast');
+  assert.equal(
+    canvas.log.slice(mark).find((e) => e.op === 'arc' && String(e.strokeStyle).startsWith('rgba(224, 91, 91')),
+    undefined,
+    'the HE ring runs its ~1.3 s and stops',
+  );
+  r.destroy();
+});
+
+test('decoy plan: an unresolvable side falls back to the amber tint (never guessed)', () => {
+  headlessGlobals();
+  const data = synthStore(2000, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, {
+    engine,
+    data,
+    players: [{ steamId: '1', name: 'alice', side: 'ct' }],
+  });
+  r.setIcons({ 'Decoy Grenade': { width: 32, height: 32, src: 'decoy.svg' } });
+  r.setDecoyPlan([
+    { landTick: 500, detTick: 1500, x: 40, y: 40, side: '', weapon: null, shots: [] },
+  ]);
+  r.resize();
+  engine.seekTick(800);
+  const tints = iconTints.length;
+  const mark = canvas.log.length;
+  r.draw();
+  assert.equal(
+    canvas.log.slice(mark).filter((e) => e.op === 'drawImage' && e.args[4] === 16).length,
+    1,
+    'the icon shows even when no weapon resolved (icon + explosion still work)',
+  );
+  const colors = tintsSince(tints).map((t) => t.color);
+  assert.ok(colors.includes('rgba(251, 172, 24, 0.85)'), 'amber fallback tint for an unknown side');
+  assert.equal(colors.includes('#5aa9e6'), false, 'no side is ever guessed into CT blue');
+  r.destroy();
+});
+
+test('decoy throw arc ends at the REST position; the blast animates from the unpaired detonation row', () => {
+  headlessGlobals();
+  const data = synthStore(4000, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, {
+    engine,
+    data,
+    players: [
+      { steamId: '1', name: 'alice', side: 'ct' },
+      { steamId: '2', name: 'bob', side: 't' },
+    ],
+  });
+  const mk = (ev) => normalizeEvent(ev, {});
+  const throwRow = mk({
+    id: 1, seq: 1, tick: 64, round: 1, kind: 'grenade_throw',
+    attacker: '1', weapon: 'Decoy Grenade', posX: 10, posY: 10,
+  });
+  const landRow = mk({
+    id: 2, seq: 2, tick: 200, round: 1, kind: 'grenade_land',
+    attacker: '1', weapon: 'Decoy Grenade', posX: 50, posY: 50,
+  });
+  const detRow = mk({
+    id: 3, seq: 3, tick: 1500, round: 1, kind: 'grenade',
+    attacker: '1', weapon: 'Decoy Grenade', posX: 50, posY: 50,
+  });
+  r.setLandmarks([throwRow, landRow, detRow]);
+  r.setIcons({ 'Decoy Grenade': { width: 32, height: 32, src: 'decoy.svg' } });
+  r.resize();
+  const flight = (from) =>
+    canvas.log.slice(from).filter((e) => e.op === 'stroke' && e.lineDash.join(',') === '4,4');
+
+  // In the air: the arc draws (throw → paired target).
+  engine.seekTick(100);
+  let mark = canvas.log.length;
+  r.draw();
+  assert.equal(flight(mark).length, 1, 'the decoy flight draws');
+
+  // PAST THE REST (200) but long before the blast (1500): the arc is
+  // gone — non-vacuous: pairing with the DETONATION row would still be
+  // drawing here.
+  engine.seekTick(250);
+  mark = canvas.log.length;
+  r.draw();
+  assert.equal(flight(mark).length, 0, 'the arc ENDED at the rest position, not at the explosion');
+
+  // The explosion still animates from its own (unpaired) detonation row:
+  // the HE-style ring inside its ~1.3 s window.
+  engine.seekTick(1520);
+  mark = canvas.log.length;
+  r.draw();
+  const heRing = canvas.log
+    .slice(mark)
+    .find((e) => e.op === 'arc' && String(e.strokeStyle).startsWith('rgba(224, 91, 91'));
+  assert.ok(heRing, 'the decoy blast still plays the HE animation (the pairing never consumed it)');
   r.destroy();
 });

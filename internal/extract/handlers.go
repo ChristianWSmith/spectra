@@ -5,6 +5,8 @@ import (
 	"github.com/markus-wa/demoinfocs-golang/v6/pkg/demoinfocs/common"
 	"github.com/markus-wa/demoinfocs-golang/v6/pkg/demoinfocs/events"
 	"github.com/markus-wa/demoinfocs-golang/v6/pkg/demoinfocs/msg"
+
+	"github.com/ChristianWSmith/spectra/internal/models"
 )
 
 // registerHandlers wires every demoinfocs callback to the accumulator.
@@ -324,7 +326,25 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 	})
 
 	p.RegisterEventHandler(func(e events.DecoyStart) {
-		a.grenadeBlast(blastFor(e.GrenadeEvent, "decoy_started", p))
+		// ACTIVATION ≈ rest: the decoy lands ~2 s after the throw and
+		// then makes noise for 15–18 s — this row is the flight's END
+		// (the replay pairs the throw arc to it) and the noise window's
+		// start (the renderer's rest icon), NOT a detonation: it gets
+		// its own kind (models.EventGrenadeLand) so no stat or scrubber
+		// marker mistakes it for an explosion.
+		a.decoyLanded(blastFor(e.GrenadeEvent, "decoy_started", p))
+	})
+
+	p.RegisterEventHandler(func(e events.DecoyExpired) {
+		// decoy_detonate → the EXPLOSION (the game plays
+		// BaseGrenade.Explode — the HE files, so the row stays an
+		// ordinary EventGrenade and sfx.js remaps the cue name to "HE
+		// Grenade"). demoinfocs dispatches DecoyExpired from it
+		// (game_events.go) — verified on golden/de_dust2.dem.zst: the
+		// payload carries x/y/z (the rest position — identical to the
+		// activation's) plus the thrower, so blastFor stores the real
+		// coordinates; no pairing guess is needed.
+		a.grenadeBlast(blastFor(e.GrenadeEvent, "decoy_detonate", p))
 	})
 
 	p.RegisterEventHandler(func(e events.GrenadeProjectileThrow) {
@@ -406,4 +426,35 @@ func blastFor(ge events.GrenadeEvent, source string, p *demoinfocs.Parser) blast
 		g.throwerName = ge.Thrower.Name
 	}
 	return g
+}
+
+// decoyLanded emits the decoy ACTIVATION row (models.EventGrenadeLand —
+// the game's decoy_started event ≈ the projectile coming to rest).
+// The row is the SAME payload agg.grenadeBlast builds (same tick /
+// weapon / thrower / x,y,z / raw-payload pairing via g.source) with only
+// the KIND differing — that one difference is the whole point: no
+// analytics rule, heatmap or scrubber marker may count an ACTIVATION as
+// a detonation, while the replay pairs the throw arc to it as the rest
+// position (lib/replay/decoy.js pairs it with the decoy_detonate row for
+// the noise window). It lives here rather than in agg.go because only
+// this handler needs the alternate kind; cross-reference:
+// models.EventGrenadeLand.
+func (a *agg) decoyLanded(g blastInfo) {
+	px, py, pz := pos3(g.x, g.y, g.z)
+	a.addEvent(models.Event{
+		Tick:     g.tick,
+		Kind:     models.EventGrenadeLand,
+		Attacker: keyStr(g.throwerKey),
+		Weapon:   g.weapon,
+		PosX:     px,
+		PosY:     py,
+		PosZ:     pz,
+		DetailJSON: detailJSON(map[string]any{
+			"thrower": g.throwerName,
+			"grenade": g.weapon,
+			"x":       g.x,
+			"y":       g.y,
+			"z":       g.z,
+		}),
+	}, g.source)
 }

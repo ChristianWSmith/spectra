@@ -221,16 +221,25 @@ func TestDecodeVSndV5Synthetic(t *testing.T) {
 // TestSoundTableKeysInIconTable pins the frontend lookup vocabulary: the
 // replay keys sounds off the SAME canonical equipment names the icon
 // manifest uses (iconTable), so a soundTable key that drifts from the
-// enum spelling would silently never play. Also pins the per-name VPK
-// paths' shape and the output-filename uniqueness the reverse index needs.
+// enum spelling would silently never play. THROW groups are the one
+// extension: a key may also be an iconTable name + " throw" (Feature A —
+// sfx.js throwCues builds cue names as `${weapon} throw`, so the
+// manifest must carry exactly that key). Also pins the per-name VPK
+// paths' shape and the output-filename uniqueness the reverse index
+// needs.
 func TestSoundTableKeysInIconTable(t *testing.T) {
 	if len(soundTable) == 0 {
 		t.Fatal("soundTable is empty")
 	}
 	seen := map[string]string{}
 	for name, paths := range soundTable {
-		if _, ok := iconTable[name]; !ok {
-			t.Errorf("soundTable key %q is not in iconTable (the frontend's canonical names)", name)
+		// Key rule: an iconTable canonical name, or one + " throw".
+		base, isThrow := strings.CutSuffix(name, " throw")
+		if _, ok := iconTable[base]; !ok {
+			t.Errorf("soundTable key %q is not an iconTable name (or one + \" throw\")", name)
+		}
+		if isThrow && base == "" {
+			t.Errorf("soundTable key %q has an empty base name", name)
 		}
 		if len(paths) == 0 {
 			t.Errorf("soundTable[%q] has no paths", name)
@@ -239,11 +248,20 @@ func TestSoundTableKeysInIconTable(t *testing.T) {
 			if !strings.HasSuffix(vp, soundSuffix) {
 				t.Errorf("soundTable[%q] path %q lacks %s", name, vp, soundSuffix)
 			}
-			if !strings.HasPrefix(vp, "sounds/weapons/") {
-				t.Errorf("soundTable[%q] path %q is outside sounds/weapons/", name, vp)
+			// The extractor walks the sounds/ tree — the HE throw lives
+			// under sounds/items/ (weapon_hegrenade_throw.vsnd_c), so the
+			// old sounds/weapons/ pin had to widen to sounds/ for Feature
+			// A; anything outside sounds/ is still a drift.
+			if !strings.HasPrefix(vp, "sounds/") {
+				t.Errorf("soundTable[%q] path %q is outside sounds/", name, vp)
 			}
 			// Extracted filenames collide across names only if two VPK
 			// paths share a basename — the reverse index would merge them.
+			// The throw groups ride this same loop, so their stems
+			// (weapon_hegrenade_throw, flashbang_throw_03,
+			// smoke_grenade_throw_04, molotov_throw_01..06,
+			// inc_grenade_throw_fire_01..03, decoy_throw_06) are checked
+			// against every detonation/fire stem too — no collision.
 			stem := soundStem(vp)
 			if prev, dup := seen[stem]; dup {
 				t.Errorf("output filename %q shared by %q and %q", stem, prev, name)
@@ -255,13 +273,16 @@ func TestSoundTableKeysInIconTable(t *testing.T) {
 	// Spot pins on the mappings other layers key on (verified against a
 	// real install by TestExtractRealCS2Sounds).
 	want := map[string][]string{
-		"AK-47":         {"sounds/weapons/ak47/ak47_01.vsnd_c", "sounds/weapons/ak47/ak47_02.vsnd_c", "sounds/weapons/ak47/ak47_04.vsnd_c"},
-		"M4A1":          {"sounds/weapons/m4a1/m4a1_silencer_01.vsnd_c"},
-		"Desert Eagle":  {"sounds/weapons/deagle/deagle_01.vsnd_c", "sounds/weapons/deagle/deagle_02.vsnd_c"},
-		"C4":            {"sounds/weapons/c4/c4_explode1.vsnd_c"},
-		"HE Grenade":    {"sounds/weapons/hegrenade/hegrenade_detonate_02.vsnd_c", "sounds/weapons/hegrenade/hegrenade_detonate_03.vsnd_c"},
-		"Smoke Grenade": {"sounds/weapons/smokegrenade/smoke_emit.vsnd_c"},
-		"Zeus x27":      {"sounds/weapons/taser/taser_shoot.vsnd_c"},
+		"AK-47":        {"sounds/weapons/ak47/ak47_01.vsnd_c", "sounds/weapons/ak47/ak47_02.vsnd_c", "sounds/weapons/ak47/ak47_04.vsnd_c"},
+		"M4A1":         {"sounds/weapons/m4a1/m4a1_silencer_01.vsnd_c"},
+		"Desert Eagle": {"sounds/weapons/deagle/deagle_01.vsnd_c", "sounds/weapons/deagle/deagle_02.vsnd_c"},
+		"C4":           {"sounds/weapons/c4/c4_explode1.vsnd_c"},
+		"HE Grenade":   {"sounds/weapons/hegrenade/hegrenade_detonate_02.vsnd_c", "sounds/weapons/hegrenade/hegrenade_detonate_03.vsnd_c"},
+		// The HE THROW group pins the sounds/items/ path — the one entry
+		// outside sounds/weapons/ (Feature A).
+		"HE Grenade throw": {"sounds/items/weapon_hegrenade_throw.vsnd_c"},
+		"Smoke Grenade":    {"sounds/weapons/smokegrenade/smoke_emit.vsnd_c"},
+		"Zeus x27":         {"sounds/weapons/taser/taser_shoot.vsnd_c"},
 		// The knife group is the networked flesh-hit set (MP3) — swings
 		// are client-local foley and never cue (sfx.js knifeCues).
 		"Knife": {
@@ -293,10 +314,16 @@ func TestSoundTableKeysInIconTable(t *testing.T) {
 			t.Errorf("soundTable[%q] = %v, want %v", name, got, paths)
 		}
 	}
-	// The decoy has no detonation sound in the game — its absence is the
-	// contract (the replay's decoy visuals stay silent).
+	// The decoy has no DETONATION sound in the game — its absence is the
+	// contract (the exploding decoy plays BaseGrenade.Explode, so sfx.js
+	// remaps its cue to the "HE Grenade" group; CS2.md "Sound assets").
+	// Its THROW group IS legal and ships (Feature A): Decoy.Throw →
+	// decoy_throw_06 — pinned here so neither side drifts alone.
 	if _, ok := soundTable["Decoy Grenade"]; ok {
-		t.Error("Decoy Grenade must have no soundTable entry (no such sound exists)")
+		t.Error("Decoy Grenade must have no soundTable entry (no such detonation sound exists)")
+	}
+	if got := soundTable["Decoy Grenade throw"]; strings.Join(got, ",") != "sounds/weapons/decoy/decoy_throw_06.vsnd_c" {
+		t.Errorf("Decoy Grenade throw = %v, want [sounds/weapons/decoy/decoy_throw_06.vsnd_c]", got)
 	}
 	// Sorted extraction order is deterministic.
 	if len(soundTableNames) != len(soundTable) {
@@ -367,6 +394,11 @@ func TestExtractRealCS2Sounds(t *testing.T) {
 		{"ak47_01", "sounds/weapons/ak47/ak47_01.vsnd_c", soundExtWAV, 44100, 2},                                  // v5
 		{"deagle_01", "sounds/weapons/deagle/deagle_01.vsnd_c", soundExtWAV, 44100, 2},                            // v4
 		{"hegrenade_detonate_02", "sounds/weapons/hegrenade/hegrenade_detonate_02.vsnd_c", soundExtWAV, 44100, 2}, // v4
+		// Feature A's HE throw: the ONE table path under sounds/items/
+		// and a resource-v5 MP3 (raw stream like the knife set — rate /
+		// channels are container facts, the frame header below proves
+		// the payload is playable audio).
+		{"weapon_hegrenade_throw", "sounds/items/weapon_hegrenade_throw.vsnd_c", soundExtMP3, 0, 0},
 		// The knife group's MP3: decodeVSnd hands back the raw stream
 		// (no WAV header), so rate/channels stay unchecked here — they
 		// are container facts (ffprobe: MP3 44,100 stereo) and the frame
@@ -427,7 +459,7 @@ func TestExtractRealCS2Sounds(t *testing.T) {
 		t.Errorf("extracted %d names, want %d (the whole table)", len(names), len(soundTable))
 	}
 	files := SoundFiles(out)
-	for _, key := range []string{"AK-47", "Desert Eagle", "C4", "HE Grenade", "Smoke Grenade"} {
+	for _, key := range []string{"AK-47", "Desert Eagle", "C4", "HE Grenade", "Smoke Grenade", "HE Grenade throw"} {
 		if len(files[key]) == 0 {
 			t.Errorf("manifest key %q missing (have %d keys)", key, len(files))
 		}
