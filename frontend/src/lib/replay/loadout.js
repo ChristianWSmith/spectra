@@ -12,7 +12,6 @@
 // the two must classify identically, cf. the sideparity Go/JS twins).
 
 import { detonationStyle } from './landmarks.js';
-import { GUN_WEAPONS } from './bullets.js';
 
 // PRIMARY_WEAPONS — long guns: rifles, SMGs, shotguns, LMGs, snipers.
 export const PRIMARY_WEAPONS = new Set([

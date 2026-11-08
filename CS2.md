@@ -603,7 +603,10 @@ at the end of the section.
   `flashbang_explode1/2`, smoke = `smoke_emit` (the 14 s bloom — there
   is NO `smoke_explode*` file), molotov `molotov_detonate_1`,
   incendiary `inc_grenade_detonate_1..3`, C4 `c4_explode1`;
-  **decoy has NO detonation/activation sound** (only draw/throw/pinpull).
+  **decoy has NO decoy-specific sound**: the explosion plays the HE boom
+  (`BaseGrenade.Explode` → the HE files above) and its noise mimics
+  guns — only draw/throw/pinpull files exist under `decoy/` (see the
+  decoy lifecycle entry).
   No fire file is shared between weapons, but one dir can hold two
   weapons: `m4a1/` = M4A4 `m4a1_01..04` + M4A1-S `m4a1_silencer_01`,
   `usp/` = USP-S `usp_01..03` (suppressed = default) + unsilenced
@@ -634,11 +637,87 @@ at the end of the section.
   install (2026-11-07); VRF `BinaryKV3.cs` / `Sound.cs`.
 
 - **Kill-feed indicator glyphs in a CS2 install** — the game's own
-  headshot/blind-kill markers live at `panorama/images/hud/deathnotice/`
-  (`icon_headshot.vsvg_c`, `blind_kill.vsvg_c`, alongside `noscope`,
-  `penetrate`, `revenge`, …). They are `.vsvg_c` resources that decode
-  with spectra's existing `decodeVSVG` (6-byte CRC32 prefix + raw SVG),
-  same as the equipment set — so they ride the icon extractor as
-  manifest keys `headshot`/`blind_kill` (existing installs re-extract to
-  gain them; the feed skips them meanwhile).
-  **Source** — local probe + decode of pak01_dir.vpk (2026-11-07).
+  death-notice markers live at `panorama/images/hud/deathnotice/`, and
+  `huddeathnotice.vxml_c` binds them to conditions verbatim:
+  HeadShot→`icon_headshot`, Penetrate→`penetrate`, NoScope→`noscope`,
+  ThroughSmoke→`smoke_kill`, AttackerBlind→`blind_kill`,
+  InAir→`inairkill`, Suicide→`icon_suicide` (plus `revenge`,
+  `domination` — not used by spectra). They are `.vsvg_c` resources that
+  decode with spectra's existing `decodeVSVG` (6-byte CRC32 prefix + raw
+  SVG), same as the equipment set — they ride the icon extractor as
+  manifest keys `headshot`, `blind_kill`, `noscope`, `wallbang`,
+  `throughsmoke`, `airborne`, `suicide`. There is NO explosion glyph in
+  the deathnotice dir (the layout shows bomb deaths as Suicide + the
+  weapon slot) — spectra uses `panorama/images/hud/kill_pip_blast.vsvg_c`
+  as key `explosion` (the hud kill-context "blast" pip; swap point
+  documented in `internal/mappack/icons.go`). Existing installs
+  re-extract to gain the keys; the feed skips any that are missing.
+  **Source** — local probe + decode of pak01_dir.vpk + layout strings
+  from `huddeathnotice.vxml_c` (2026-11-07).
+
+- **`player_death` kill flags (what the death notice can show)** —
+  every indicator the feed needs is game-computed on the event:
+  `noscope` ("kill happened without a scope, used for death notice
+  icon"), `thrusmoke`, `attackerblind`, `assistedflash`, `penetrated`
+  (short — "number of objects shot penetrated before killing target";
+  **`penetrated > 0` IS the game's wallbang notion**, = demoinfocs
+  `Kill.IsWallBang()` — no level geometry involved), and
+  **`attackerinair`** (bool, "attacker was in midair" — the exact field
+  name; there is NO `midair` field). Non-normal deaths: a C4-explosion
+  death reports `weapon:"planted_c4"` with `attacker:65535` (ABSENT —
+  never the planter; attribution only via `bomb_planted`); world/self
+  deaths report `attacker == userid` with `weapon:"world"`; fall deaths
+  map through demoinfocs' `attackerWeaponType` to `EqWorld` ("World")
+  when a same-frame `player_falldamage` fired. demoinfocs' `events.Kill`
+  exposes every flag EXCEPT `attackerinair`, and the typed handler
+  dispatches BEFORE `GenericGameEvent` (`game_events.go` dispatches the
+  typed event, then the generic) — so the raw payload must be paired
+  onto the row at flush time (spectra derives `attackerInAir` in
+  `agg.pairRaw` from the same string stored as `raw_json`; all 170
+  golden kills carry every key).
+  **Source** — SteamDatabase GameTracking-CS2 `resource/mod.gameevents`
+  + https://cs2.poggu.me/dumped-data/game-events/ (field comments,
+  2026-11-07); demoinfocs v6 `events/events.go` Kill + `game_events.go`;
+  dev-DB raw-payload census (2026-11-07).
+
+- **Decoy grenade lifecycle (replay simulation facts)** — thrown →
+  comes to rest → makes noise → explodes. `decoy_started` fires ≈2 s
+  after the throw = ACTIVATION at the rest position; `decoy_detonate`
+  fires ≈15 s later and its payload CARRIES x/y/z (verified at tick
+  7536 of the pool's de_dust2 demo — equal to the activation position,
+  so the decoy never moves after rest). The explosion plays
+  `BaseGrenade.Explode` → the HE files (5/5 detonations across the pool
+  demos; no decoy-specific boom). While resting it fires fake gunshots
+  mimicking the thrower's MAIN weapon (primary → secondary → side
+  starter pistol: Glock-18 for T, USP-S for CT), **1–3 shots every 3–5
+  s for 15–18 s, SSG 08/AWP mains exactly 1 per interval** — and
+  `decoy_firing` fires in NONE of the7 pool demos, so the noise is
+  CLIENT-SIMULATED (nothing in the demo carries it; the networked
+  `Weapon_*` mimic soundevents come from the decoy entity but are not
+  player-attributable). spectra: activation = the `grenade_land` event
+  kind, explosion = the normal `grenade` kind; the shot schedule is
+  seeded by the land tick so seeks replay the same pattern.
+  **Source** — product spec (user, 2026-11-07: cadence, durations,
+  mimic rule) + local parse of `golden/*.dem.zst` + demoinfocs
+  `DecoyStart`/`DecoyExpired` (2026-11-07).
+
+- **Grenade THROW sounds (which files, and why name patterns fail)** —
+  resolved through the soundevents map: `HEGrenade.Throw` →
+  `sounds/items/weapon_hegrenade_throw.vsnd_c` (note: NOT under
+  `sounds/weapons/`), `Flashbang.Throw` → `flashbang_throw_03`,
+  `SmokeGrenade.Throw` → `smoke_grenade_throw_04`, `Molotov.Throw` →
+  `molotov_throw_01..06` (6 variants), `IncGrenade.Throw` →
+  `inc_grenade_throw_fire_01..03` (3), `Decoy.Throw` → `decoy_throw_06`
+  — DISTINCT per grenade (all v5 MP3 44,100 mono). The six per-dir
+  `sounds/weapons/<nade>/grenade_throw.vsnd_c` copies are byte-identical
+  (RED2 metadata aside) ORPHANS referenced by NO event — never extract
+  them. All `.Throw` events are thrower-LOCAL foley: 0 networked SOS
+  across the7 pool demos (only `Molotov/IncGrenade Throw.Loop` are
+  networked, at throw tick) — so the replay cues them from extracted
+  files, keyed `"<name> throw"`. The shipped game event is
+  `grenade_thrown` (not `grenade_throw`) and fires 0 times in every
+  demo; spectra's throw rows come from the projectile-throw entity
+  event.
+  **Source** — soundevents map parse (21,542 rows, hash-validated
+  against 126/127 golden SOS messages) + per-file CRC/byte diff +
+  7-demo SOS scan (2026-11-07).
