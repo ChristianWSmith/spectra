@@ -2,6 +2,7 @@ package mappack
 
 import (
 	"fmt"
+	"sort"
 	"strconv"
 )
 
@@ -22,6 +23,21 @@ type Overview struct {
 	TSpawn    [2]float64
 	HasSites  bool // whether bombA/bombB were present
 	HasSpawns bool // whether CT/T spawn fractions were present
+	// Sections: the optional verticalsections block — one entry per
+	// radar floor (default / lower / …) with its world-Z band. Empty
+	// for single-floor maps. The section names map to radar textures:
+	// default → <map>_radar, <section> → <map>_<section>_radar
+	// (CS2.md "verticalsections"). Order preserved as parsed; the
+	// frontend keys off these bands to assign entities to layers.
+	Sections []Section
+}
+
+// Section is one verticalsections entry: a named radar floor with the
+// world-Z altitude band that selects it in game.
+type Section struct {
+	Name string
+	ZMin float64
+	ZMax float64
 }
 
 // parseOverview parses an overview txt. Missing transform values are an
@@ -65,7 +81,43 @@ func parseOverview(data []byte) (*Overview, error) {
 	t, tOK := kvPair(obj, "TSpawn_x", "TSpawn_y")
 	o.CTSpawn, o.TSpawn = ct, t
 	o.HasSpawns = ctOK && tOK
+
+	// verticalsections is optional (single-floor maps omit it); a
+	// malformed block degrades to no sections rather than failing the
+	// whole overview (the transform above is what must stay valid).
+	if vs, ok := obj["verticalsections"].(map[string]kvValue); ok {
+		for name, v := range vs {
+			sec, ok := v.(map[string]kvValue)
+			if !ok {
+				continue
+			}
+			zMax, err1 := kvFloat(sec, "AltitudeMax")
+			zMin, err2 := kvFloat(sec, "AltitudeMin")
+			if err1 != nil || err2 != nil {
+				continue
+			}
+			o.Sections = append(o.Sections, Section{Name: name, ZMin: zMin, ZMax: zMax})
+		}
+		// Stable order: default first, then alphabetical — map iteration
+		// order is random and the frontend's layer layout must be
+		// deterministic (tests pin it).
+		sortSections(o.Sections)
+	}
 	return o, nil
+}
+
+// sortSections orders sections for the pack: the "default" section
+// (the upper/main radar) first, everything else alphabetically.
+func sortSections(s []Section) {
+	sort.SliceStable(s, func(i, j int) bool {
+		if s[i].Name == "default" {
+			return true
+		}
+		if s[j].Name == "default" {
+			return false
+		}
+		return s[i].Name < s[j].Name
+	})
 }
 
 // kvFloat parses a numeric leaf.

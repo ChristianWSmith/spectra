@@ -278,10 +278,11 @@ func runImport(path string) {
 //
 //	/api/mappack/<map>/meta.json    pack manifest (schema_version 1)
 //	/api/mappack/<map>/radar.png    decoded radar image
+//	/api/mappack/<map>/radar_*.png  multi-floor layer images (layers[])
 //
-// Paths are strictly validated (map = [a-z0-9_]+, file = meta.json or
-// radar.png) so a crafted URL can't escape the data dir. 404 when the
-// pack is absent — the frontend falls back to the bundled /maps/ copy
+// Paths are strictly validated (map = [a-z0-9_]+, file = validPackFile)
+// so a crafted URL can't escape the data dir. 404 when the pack is
+// absent — the frontend falls back to the bundled /maps/ copy
 // (metadata only, no radar art ships; a map with neither renders a
 // plain grid — see frontend/public/maps/README.md).
 func handleMapPack(w http.ResponseWriter, r *http.Request, p string) {
@@ -298,7 +299,7 @@ func handleMapPack(w http.ResponseWriter, r *http.Request, p string) {
 		http.NotFound(w, r)
 		return
 	}
-	if file != "meta.json" && file != "radar.png" {
+	if !validPackFile(file) {
 		http.NotFound(w, r)
 		return
 	}
@@ -317,6 +318,32 @@ func validPackName(s string) bool {
 		return false
 	}
 	for _, c := range s {
+		if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '_' {
+			return false
+		}
+	}
+	return true
+}
+
+// validPackFile reports whether file is a safe pack filename: meta.json
+// or a radar image (radar.png / radar_<section>.png — the extractor's
+// packLayerFile spelling). Anchored to the radar prefix with only
+// lowercase letters/digits/_ before .png, so no path segment can pass
+// ("..", "radar/../x.png", an uppercase or dotted variant all fail) —
+// stricter than the earlier exact two-name whitelist, which would have
+// 404'd the multi-floor layer images.
+func validPackFile(file string) bool {
+	if file == "meta.json" {
+		return true
+	}
+	if len(file) < len("radar.png") || len(file) > 64 || !strings.HasSuffix(file, ".png") {
+		return false
+	}
+	name := strings.TrimSuffix(file, ".png")
+	if !strings.HasPrefix(name, "radar") {
+		return false
+	}
+	for _, c := range name {
 		if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '_' {
 			return false
 		}

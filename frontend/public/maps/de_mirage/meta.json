@@ -1,9 +1,33 @@
 {
   "schema_version": 1,
-  "transform": { "pos_x": -3230.0, "pos_y": 1713.0, "scale": 5.0 },
+  "transform": {
+    "pos_x": -3230,
+    "pos_y": 1713,
+    "scale": 5
+  },
   "sites": {},
   "spawns": {},
   "source": {
-    "note": "transform constants from community tabulation (ref/findings/findings-mappack.md §2, de_mirage overview txt); no radar shipped — exercises the partial map-pack UX path"
-  }
+    "note": "transform constants from community tabulation (ref/findings/findings-mappack.md §2, de_mirage overview txt); no radar shipped — exercises the partial map-pack UX path; elevation_regions: derived from in-game getpos_exact samples (2026-11-08) — each box reference sits BETWEEN the two sampled surfaces so both always mark (⊥ above, T below) — see frontend/public/maps/README.md"
+  },
+  "elevation_regions": [
+    {
+      "x": -75.4,
+      "y": -2188,
+      "w": 259.3,
+      "h": 392.6,
+      "reference_z": -75,
+      "above": 27,
+      "below": 27
+    },
+    {
+      "x": -1120,
+      "y": -168,
+      "w": 397,
+      "h": 480,
+      "reference_z": -222,
+      "above": 45,
+      "below": 45
+    }
+  ]
 }

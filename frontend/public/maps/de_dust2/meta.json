@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "transform": {
+    "pos_x": -2476,
+    "pos_y": 3239,
+    "scale": 4.4
+  },
+  "sites": {
+    "a": {
+      "x": 0.8,
+      "y": 0.16
+    },
+    "b": {
+      "x": 0.21,
+      "y": 0.12
+    }
+  },
+  "spawns": {
+    "ct": {
+      "x": 0.62,
+      "y": 0.21
+    },
+    "t": {
+      "x": 0.39,
+      "y": 0.91
+    }
+  },
+  "elevation_regions": [
+    {
+      "x": 246.1,
+      "y": 2028.5,
+      "w": 319,
+      "h": 426.8,
+      "reference_z": -5,
+      "above": 94,
+      "below": 94
+    }
+  ],
+  "source": {
+    "note": "transform/sites/spawns/layers: extracted from the local CS2 install (resource/overviews txt — numeric metadata only, no radar art ships); elevation_regions: derived from in-game getpos_exact samples (2026-11-08) — each box reference sits BETWEEN the two sampled surfaces so both always mark (⊥ above, T below) — see frontend/public/maps/README.md"
+  }
+}

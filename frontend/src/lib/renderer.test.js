@@ -46,6 +46,7 @@ import {
   smartCamTarget,
   easeValue,
   camConverged,
+  flightSplits,
   chevronPath,
   crossPath,
   muzzleRays,
@@ -2082,6 +2083,38 @@ const KILL_FEED_GAP = 12; // mirrors renderer.js — the gap between EVERY pair
 const CLOCK_GLYPH = String.fromCharCode(0xea82);
 const opsSince = (log, op, from = 0) => log.slice(from).filter((e) => e.op === op);
 const textsSince = (log, from = 0) => opsSince(log, 'fillText', from).map((e) => e.args[0]);
+// elevMarks — the canvas-drawn T/⊥ indicators in `log` (from `from`),
+// each as { x, y, barY, dir, barW }: the tinted body stroke paints its
+// STEM as the pair moveTo(entity centre) → lineTo(bar centre line) with
+// the monoline weight, then the flat BAR as a second pair spanning
+// barW = ELEV_IND_BAR_W. `dir` is which side the bar landed on
+// ('above' → ⊥ below the marker, 'below' → T above it). Mirrors
+// renderer.js ELEV_IND_TINT / ELEV_IND_BAR_T.
+const ELEV_TINT = '#d0d6e0';
+const ELEV_W = 2; // mirrors renderer.js ELEV_IND_BAR_T (the monoline weight)
+const elevMarks = (log, from = 0) => {
+  const ops = log.slice(from);
+  const out = [];
+  for (let i = 0; i < ops.length - 3; i++) {
+    const [stem0, stem1, bar0, bar1] = ops.slice(i, i + 4);
+    const body = (e) => e.strokeStyle === ELEV_TINT && e.lineWidth === ELEV_W;
+    if (
+      stem0.op !== 'moveTo' || stem1.op !== 'lineTo' || bar0.op !== 'moveTo' || bar1.op !== 'lineTo' ||
+      !body(stem0) || !body(stem1) || !body(bar0) || !body(bar1)
+    )
+      continue;
+    if (Math.abs(stem1.args[0] - stem0.args[0]) > 1e-6) continue; // stem is vertical
+    if (Math.abs(bar0.args[1] - stem1.args[1]) > 1e-6) continue; // bar sits at the stem's end
+    out.push({
+      x: stem0.args[0],
+      y: stem0.args[1],
+      barY: stem1.args[1],
+      dir: stem1.args[1] > stem0.args[1] ? 'above' : 'below',
+      barW: bar1.args[0] - bar0.args[0],
+    });
+  }
+  return out;
+};
 // The kill feed's and the chat's boxes fill the ONE un-spaced dark
 // surface (entryBox — they share the painter by design); the HUD boxes
 // use 'rgba(14, 17, 22, 0.78)' — a different string — and hudBox's
@@ -3868,5 +3901,488 @@ test('decoy throw arc ends at the REST position; the blast animates from the unp
     .slice(mark)
     .find((e) => e.op === 'arc' && String(e.strokeStyle).startsWith('rgba(224, 91, 91'));
   assert.ok(heRing, 'the decoy blast still plays the HE animation (the pairing never consumed it)');
+  r.destroy();
+});
+
+// --- Radar layers (side-by-side panels) + elevation indicators ---------------
+//
+// Multi-floor packs (meta.layers) lay their layer images side by side in
+// this one canvas; every world-positioned element must project through
+// ITS OWN layer's panel, the layer labels only appear on multi-panel
+// packs, and the CS2 T/⊥ elevation marks (orientation SETTLED 2026-11-08:
+// above → ⊥ BELOW the marker, below → T ABOVE it) draw behind the entity
+// ONLY when an elevation_regions box claims its XY (region-only — there
+// is no per-floor threshold anymore). The single-layer path keeps
+// its exact pre-layers geometry.
+
+// layerMeta — a nuke-shaped two-layer pack (real bands: default
+// [-495, 10000) upper, lower [-10000, -495); shared transform).
+function layerMeta() {
+  return {
+    radar: { file: 'radar.png', width: 1024, height: 1024 },
+    transform: { pos_x: 0, pos_y: 0, scale: 1 },
+    layers: [
+      {
+        id: 'default',
+        name: 'Upper',
+        file: 'radar.png',
+        width: 1024,
+        height: 1024,
+        z_min: -495,
+        z_max: 10000,
+      },
+      {
+        id: 'lower',
+        name: 'Lower',
+        file: 'radar_lower.png',
+        width: 1024,
+        height: 1024,
+        z_min: -10000,
+        z_max: -495,
+      },
+    ],
+  };
+}
+
+const LAYER_PLAYERS = [
+  { steamId: '1', name: 'alice', side: 'ct' },
+  { steamId: '2', name: 'bob', side: 't' },
+];
+
+test('multi-layer pack: side-by-side panels, layer labels, per-layer projection', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  // slot0 walks the LOWER floor (z = -600 ∈ [-10000, -495)); slot1 stays
+  // on the upper floor (z = 0).
+  for (let f = 0; f < data.frames; f++) data.slots[0].pos[f * 4 + 2] = -600;
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas(); // 800×600
+  const r = createRenderer(canvas, { engine, data, players: LAYER_PLAYERS });
+  const upper = { width: 1024, height: 1024, src: 'radar.png' };
+  const lower = { width: 1024, height: 1024, src: 'radar_lower.png' };
+  r.setPack(layerMeta(), upper, null, [upper, lower]);
+  r.resize();
+
+  // BOTH panels drawn, default (upper) first, lower to its right.
+  const radars = opsSince(canvas.log, 'drawImage').filter(
+    (e) => e.args[0] && (e.args[0].src === 'radar.png' || e.args[0].src === 'radar_lower.png'),
+  );
+  assert.equal(radars.length, 2, 'both layer images draw');
+  assert.equal(radars[0].args[0].src, 'radar.png', 'default layer first');
+  assert.equal(radars[1].args[0].src, 'radar_lower.png', 'then the lower layer');
+  const s = radars[0].args[3] / 1024; // drawn px per image px (fit scale)
+  const gapX = radars[1].args[1] - radars[0].args[1];
+  assert.ok(
+    Math.abs(gapX - (1024 + 32) * s) < 1e-6,
+    `panel offset = (width + LAYER_GAP)·s, got ${gapX} vs ${(1024 + 32) * s}`,
+  );
+  assert.equal(radars[0].args[2], radars[1].args[2], 'panels share the top edge');
+
+  // Layer labels — only on the multi-panel pack.
+  const texts = textsSince(canvas.log);
+  assert.ok(texts.includes('Upper'), 'the default layer is labelled');
+  assert.ok(texts.includes('Lower'), 'the lower layer is labelled');
+
+  // Per-layer projection: the SAME world point lands on its own panel —
+  // z on the lower band shifts by exactly one panel pitch, unknown z
+  // falls back to the default panel, and the shared transform keeps y
+  // identical across panels.
+  const up = r.worldToScreen(10, 10);
+  const lo = r.worldToScreen(10, 10, -600);
+  assert.ok(Math.abs(lo.x - up.x - gapX) < 1e-6, 'lower-band z shifts by the panel pitch');
+  assert.equal(lo.y, up.y, 'shared transform → same y on both panels');
+  assert.equal(r.worldToScreen(10, 10, null).x, up.x, 'unknown z → the default panel');
+  assert.equal(r.worldToScreen(10, 10, -495).x, up.x, 'the shared bound -495 → default (its zMin)');
+  assert.notEqual(r.worldToScreen(10, 10, -495.0001).x, up.x, 'one ulp below → the lower panel');
+
+  // The DRAWN dots land on those projections: slot0 (z=-600) on the
+  // lower panel, slot1 (z=0) on the default one. (Each dot paints three
+  // r=9 arcs — haloRing's dark underlay + color ring and the fill — so
+  // compare DISTINCT centers.)
+  const dots = opsSince(canvas.log, 'arc').filter((e) => e.args[2] === 9);
+  const xs = [...new Set(dots.map((d) => d.args[0]))];
+  const slot1 = r.worldToScreen(50, 50); // bob's world spot on the default panel
+  assert.equal(xs.length, 2, 'both player dots draw (distinct centers)');
+  assert.ok(xs.some((x) => Math.abs(x - lo.x) < 1e-6), 'slot0 draws on the lower panel');
+  assert.ok(xs.some((x) => Math.abs(x - slot1.x) < 1e-6), 'slot1 draws on the default panel');
+  r.destroy();
+});
+
+test('elevation indicators: ⊥ below the marker when above, T above when below — region boxes only', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: LAYER_PLAYERS });
+  const img = { width: 1024, height: 1024, src: 'radar.png' };
+  const c = () => r.worldToScreen(10, 10); // alice's dot center (10,10)
+
+  // Configured 'above': a region box over alice's spot, reference_z −1
+  // (strict bounds — the exact-threshold case is layers.test.js's). The
+  // mark is ⊥ drawn BELOW the marker, clearing the name label below the
+  // dot.
+  r.setPack(
+    {
+      radar: { file: 'radar.png', width: 1024, height: 1024 },
+      transform: { pos_x: 0, pos_y: 0, scale: 1 },
+      elevation_regions: [
+        { x: 0, y: 0, w: 100, h: 100, reference_z: -1, above: 0, below: 0 },
+      ],
+    },
+    img,
+  );
+  r.resize();
+  let mark = canvas.log.length;
+  r.draw();
+  let marks = elevMarks(canvas.log, mark);
+  const above = marks.find((m) => Math.abs(m.x - c().x) < 1e-6);
+  assert.ok(above, 'an entity above the level draws ⊥');
+  assert.equal(above.dir, 'above', 'above → the flat bar lands BELOW the marker (⊥)');
+  assert.equal(above.y, c().y, 'the stem ORIGINATES at the entity centre — never a detached mark');
+  assert.equal(above.barY, c().y + 27, '⊥ bar centred at centre+27 (stem centre → bar)');
+  assert.equal(above.barW, 13, 'the flat bar is 13 px wide — half the first iteration');
+  assert.ok(
+    above.barY + ELEV_W / 2 > c().y + 22,
+    `⊥ bar bottom lands past the name label (baseline cy+22): ${above.barY + ELEV_W / 2 - c().y} below centre`,
+  );
+
+  // Configured 'below': the same box with reference_z 1 → z=0 is below
+  // it → T ABOVE the marker (bar on top), clear of the dot's edge.
+  r.setPack(
+    {
+      radar: { file: 'radar.png', width: 1024, height: 1024 },
+      transform: { pos_x: 0, pos_y: 0, scale: 1 },
+      elevation_regions: [
+        { x: 0, y: 0, w: 100, h: 100, reference_z: 1, above: 0, below: 0 },
+      ],
+    },
+    img,
+  );
+  mark = canvas.log.length;
+  r.draw();
+  marks = elevMarks(canvas.log, mark);
+  const below = marks.find((m) => Math.abs(m.x - c().x) < 1e-6);
+  assert.ok(below, 'an entity below the level draws T');
+  assert.equal(below.dir, 'below', 'below → the flat bar lands ABOVE the marker (T)');
+  assert.equal(below.y, c().y, 'the T stem also originates at the entity centre');
+  assert.equal(below.barY, c().y - 27, 'T bar centred at centre−27 (stem centre → bar)');
+  assert.equal(below.barW, 13, 'same flat bar, mirrored above the dot');
+  assert.ok(
+    below.barY - ELEV_W / 2 < c().y - 9,
+    `T bar clear above the dot's edge: ${c().y - below.barY + ELEV_W / 2} above centre`,
+  );
+
+  // NOT configured → no marks at all (region-only: no box, no indicator
+  // — also the single-layer default).
+  r.setPack(
+    {
+      radar: { file: 'radar.png', width: 1024, height: 1024 },
+      transform: { pos_x: 0, pos_y: 0, scale: 1 },
+    },
+    img,
+  );
+  mark = canvas.log.length;
+  r.draw();
+  assert.equal(elevMarks(canvas.log, mark).length, 0, 'no region boxes → no indicators');
+
+  // A STALE top-level `elevation` key (dropped from the contract) is
+  // ignored — it must never resurrect per-floor thresholds.
+  r.setPack(
+    {
+      radar: { file: 'radar.png', width: 1024, height: 1024 },
+      transform: { pos_x: 0, pos_y: 0, scale: 1 },
+      elevation: { reference_z: -1, above: 0, below: 0 },
+    },
+    img,
+  );
+  mark = canvas.log.length;
+  r.draw();
+  assert.equal(elevMarks(canvas.log, mark).length, 0, 'a stale elevation key draws nothing (region-only contract)');
+  r.destroy();
+});
+
+test('elevation indicators: elevation_regions flow through the pack config as the only threshold source', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: LAYER_PLAYERS });
+  const img = { width: 1024, height: 1024, src: 'radar.png' };
+  // NO layer/top-level elevation exists anymore — only a region box
+  // covering alice's spot (10,10): the region alone must produce the
+  // mark, proving the meta.elevation_regions → makeTransform → panels →
+  // draw path.
+  r.setPack(
+    {
+      radar: { file: 'radar.png', width: 1024, height: 1024 },
+      transform: { pos_x: 0, pos_y: 0, scale: 1 },
+      elevation_regions: [
+        { x: 0, y: 0, w: 100, h: 100, reference_z: -1, above: 0, below: 0 },
+      ],
+    },
+    img,
+  );
+  r.resize();
+  const mark = canvas.log.length;
+  r.draw();
+  const c = r.worldToScreen(10, 10);
+  const marks = elevMarks(canvas.log, mark);
+  const inBox = marks.find((m) => Math.abs(m.x - c.x) < 1e-6);
+  assert.ok(inBox, 'a region box with thresholds produces the mark');
+  assert.equal(inBox.dir, 'above', "the region's reference_z decides the direction");
+  // bob at (50,50) is ALSO inside the box (0..100) → also marked; the
+  // box's thresholds, the only thresholds there are.
+  const c2 = r.worldToScreen(50, 50);
+  assert.ok(marks.some((m) => Math.abs(m.x - c2.x) < 1e-6), 'every entity in the box is marked');
+  r.destroy();
+});
+
+test('single-layer pack: one panel at the legacy geometry, no labels, no indicator noise', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: LAYER_PLAYERS });
+  const img = { width: 1024, height: 1024, src: 'radar.png' };
+  r.setPack(
+    {
+      radar: { file: 'radar.png', width: 1024, height: 1024 },
+      transform: { pos_x: 0, pos_y: 0, scale: 1 },
+    },
+    img,
+  );
+  r.resize();
+
+  // Exactly ONE radar drawImage at the pre-layers position/size:
+  // fit = min(800,600)/1024 = 0.5859375 → x = 400 − 512·fit = 100,
+  // y = 300 − 512·fit = 0, w = h = 600. (Exact binary values — the
+  // assertion pins the LEGACY geometry to the pixel.)
+  const radars = opsSince(canvas.log, 'drawImage').filter((e) => e.args[0] && e.args[0].src === 'radar.png');
+  assert.equal(radars.length, 1, 'a single-layer pack draws ONE panel');
+  assert.deepEqual(
+    radars[0].args.slice(1),
+    [100, 0, 600, 600],
+    'the exact pre-layers drawImage box (no offsets, no gutters)',
+  );
+
+  const mark = canvas.log.length;
+  r.draw();
+  const texts = textsSince(canvas.log, mark);
+  assert.ok(!texts.includes('Upper') && !texts.includes('Lower'), 'no layer labels without layers');
+  assert.ok(
+    !texts.includes('⊥') && !texts.includes('T') && elevMarks(canvas.log, mark).length === 0, // unconfigured → no marks
+    'no elevation config → no indicators on a single-layer pack',
+  );
+  r.destroy();
+});
+
+test('elevation indicators: drawn as canvas strokes — extracted glyphs and text are never used', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: LAYER_PLAYERS });
+  const img = { width: 1024, height: 1024, src: 'radar.png' };
+  r.setPack(
+    {
+      radar: { file: 'radar.png', width: 1024, height: 1024 },
+      transform: { pos_x: 0, pos_y: 0, scale: 1 },
+      elevation_regions: [
+        { x: 0, y: 0, w: 100, h: 100, reference_z: -1, above: 0, below: 0 },
+      ],
+    },
+    img,
+  );
+  // A pack extracted when mappack still had elevIconTable ships these
+  // two glyphs in its icon manifest — the renderer must ignore them:
+  // the mark is drawn from canvas paths (user decision 2026-11-08, the
+  // extracted glyphs rendered poorly).
+  r.setIcons({
+    elev_above: { width: 13, height: 7, src: 'map_bomb_above.svg' },
+    elev_below: { width: 13, height: 7, src: 'map_bomb_below.svg' },
+  });
+  r.resize(); // the first draw builds the tint cache for the real icons
+  const mark = canvas.log.length;
+  r.draw();
+  const c = r.worldToScreen(10, 10);
+  const marks = elevMarks(canvas.log, mark);
+  assert.ok(
+    marks.some((m) => Math.abs(m.x - c.x) < 1e-6 && Math.abs(m.y - c.y) < 1e-6),
+    'the mark is canvas-drawn, stem anchored at the dot centre',
+  );
+  // the two passes: the dark halo (the monoline weight +2, +1px past
+  // each bar end) under the tinted body — one stroke each.
+  assert.ok(
+    opsSince(canvas.log, 'stroke', mark).some(
+      (e) => e.strokeStyle === 'rgba(8, 10, 14, 0.85)' && e.lineWidth === ELEV_W + 2,
+    ),
+    'the dark halo pass paints the glyph 1px larger all round',
+  );
+  assert.ok(
+    opsSince(canvas.log, 'stroke', mark).some((e) => e.strokeStyle === ELEV_TINT && e.lineWidth === ELEV_W),
+    'the tinted body pass paints it (neutral wash, never a team color)',
+  );
+  const imgs = opsSince(canvas.log, 'drawImage', mark).map((e) => e.args[0] && e.args[0].src);
+  assert.ok(
+    !imgs.includes('map_bomb_above.svg') && !imgs.includes('map_bomb_below.svg'),
+    'the extracted glyph is never drawn',
+  );
+  const texts = opsSince(canvas.log, 'fillText', mark).map((e) => e.args[0]);
+  assert.ok(!texts.includes('⊥') && !texts.includes('T'), 'no text glyph either');
+  r.destroy();
+});
+
+test('flightSplits: per-layer spans for a floor-crossing nade flight (and the degenerate cases)', () => {
+  // Nuke's real bands (CS2.md "verticalsections"): default [-495, 10000),
+  // lower [-10000, -495). Plain band objects — layerIndexForZ and
+  // flightSplits only read zMin/zMax.
+  const bands = [
+    { zMin: -495, zMax: 10000 },
+    { zMin: -10000, zMax: -495 },
+  ];
+  // Same floor → ONE span, i.e. exactly the old single-segment line.
+  assert.deepEqual(flightSplits(-600, -700, bands), [{ t0: 0, t1: 1, layer: 1 }]);
+  assert.deepEqual(flightSplits(10, 20, bands), [{ t0: 0, t1: 1, layer: 0 }]);
+  // bottom ramp (-600, lower) → top ramp (+50, upper): split exactly at
+  // the shared band edge z = -495 → t = 105/650 (integer math — exact).
+  const up = flightSplits(-600, 50, bands);
+  assert.equal(up.length, 2, 'one span per floor');
+  assert.deepEqual(up.map((s) => s.layer), [1, 0], 'lower first, then upper');
+  assert.equal(up[0].t0, 0);
+  assert.equal(up[0].t1, 105 / 650, 'the crossing lands on the band edge');
+  assert.equal(up[1].t0, up[0].t1, 'spans tile without a gap');
+  assert.equal(up[1].t1, 1);
+  // Descending the other way splits at the same edge (t = 545/650).
+  const down = flightSplits(50, -600, bands);
+  assert.equal(down.length, 2);
+  assert.deepEqual(down.map((s) => s.layer), [0, 1]);
+  assert.equal(down[0].t1, 545 / 650);
+  // Unknown z on either end → ONE span on the KNOWN end's layer (the
+  // same rule the flight icon rides); both unknown → default layer.
+  assert.deepEqual(flightSplits(null, 50, bands), [{ t0: 0, t1: 1, layer: 0 }]);
+  assert.deepEqual(flightSplits(-600, undefined, bands), [{ t0: 0, t1: 1, layer: 1 }]);
+  assert.deepEqual(flightSplits(NaN, NaN, bands), [{ t0: 0, t1: 1, layer: 0 }]);
+  // Equal z (or no panels at all) → one span, no crash.
+  assert.deepEqual(flightSplits(-600, -600, bands), [{ t0: 0, t1: 1, layer: 1 }]);
+  assert.deepEqual(flightSplits(10, 20, null), [{ t0: 0, t1: 1, layer: 0 }]);
+});
+
+test('cross-layer nade flight: the line splits at the band edge instead of crossing the gutter', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: LAYER_PLAYERS });
+  const upper = { width: 1024, height: 1024, src: 'radar.png' };
+  const lower = { width: 1024, height: 1024, src: 'radar_lower.png' };
+  r.setPack(layerMeta(), upper, null, [upper, lower]);
+  const mk = (ev) => normalizeEvent(ev, {});
+  // bottom ramp (lower floor, z=-600) → top ramp (upper floor, z=+50):
+  // the throw crosses the -495 band edge mid-flight — the case a
+  // panel-to-panel line would lie about.
+  r.setLandmarks([
+    mk({ id: 1, seq: 1, tick: 50, round: 1, kind: 'grenade_throw', attacker: '1', weapon: 'Smoke Grenade', posX: 70, posY: 70, posZ: -600 }),
+    mk({ id: 2, seq: 2, tick: 200, round: 1, kind: 'grenade', attacker: '1', weapon: 'Smoke Grenade', posX: 90, posY: 90, posZ: 50 }),
+  ]);
+  r.resize();
+  engine.seekTick(100); // mid-flight (throw 50 ≤ 100 ≤ detonation 200)
+  const mark = canvas.log.length;
+  r.draw();
+
+  // The flight path: moveTo/lineTo pairs carrying the flight's dash
+  // (lineDash [4,4], lineWidth 1.5) — TWO segments for a crossing
+  // flight (a same-floor flight draws one — see flightSplits' unit
+  // test; a single panel-to-panel line would be ONE segment).
+  const dashed = canvas.log
+    .slice(mark)
+    .filter(
+      (e) =>
+        (e.op === 'moveTo' || e.op === 'lineTo') &&
+        e.lineDash[0] === 4 &&
+        e.lineDash[1] === 4 &&
+        e.lineWidth === 1.5,
+    );
+  assert.equal(dashed.length, 4, `two moveTo/lineTo segments, got ${dashed.length}`);
+
+  // Segment 1 starts at the throw point on the LOWER panel (its own
+  // floor — the same projection worldToScreen gives the origin dot).
+  const lo = r.worldToScreen(70, 70, -600);
+  assert.ok(Math.abs(dashed[0].args[0] - lo.x) < 1e-6, 'segment 1 starts at the throw point');
+  assert.ok(Math.abs(dashed[0].args[1] - lo.y) < 1e-6, '…on the lower panel');
+
+  // The crossing point repeats on the OTHER panel: identical world XY,
+  // projected through the other panel, shifts by exactly the panel
+  // pitch — never a line drawn THROUGH the gutter.
+  const radarDraw = opsSince(canvas.log, 'drawImage').find(
+    (e) => e.args[0] && e.args[0].src === 'radar.png',
+  );
+  const s = radarDraw.args[3] / 1024; // fit scale
+  const pitch = (1024 + 32) * s;
+  const seg0End = dashed[1]; // lineTo — end of the lower span
+  const seg1Start = dashed[2]; // moveTo — same point, upper span
+  // The LOWER panel is the second layer (offset right by one pitch), so
+  // the upper-panel copy of the crossing sits exactly one pitch LEFT of
+  // it — same world XY, other panel, never a line through the gutter.
+  assert.ok(
+    Math.abs(seg0End.args[0] - seg1Start.args[0] - pitch) < 1e-6,
+    `the spans meet at the same XY on the two panels (off by ${seg0End.args[0] - seg1Start.args[0]}, pitch ${pitch})`,
+  );
+  assert.equal(seg1Start.args[1], seg0End.args[1], 'shared transform → identical y');
+
+  // …and the flight ENDS on the upper panel at the detonation point.
+  const hi = r.worldToScreen(90, 90, 50);
+  assert.ok(Math.abs(dashed[3].args[0] - hi.x) < 1e-6, 'segment 2 ends at the detonation');
+  assert.ok(Math.abs(dashed[3].args[1] - hi.y) < 1e-6, '…on the upper panel');
+  r.destroy();
+});
+
+test('util elevation marks: only the LANDED decoy is marked — never the in-flight nade', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: LAYER_PLAYERS });
+  const img = { width: 1024, height: 1024, src: 'radar.png' };
+  // A region box covering ONLY the decoy's corner ((70,70)→(90,90) ⊂
+  // 60..120): the players at (10,10)/(50,50) stay outside it, so any
+  // ⊥/T in the log belongs to the util and nothing else.
+  r.setPack(
+    {
+      radar: { file: 'radar.png', width: 1024, height: 1024 },
+      transform: { pos_x: 0, pos_y: 0, scale: 1 },
+      elevation_regions: [{ x: 60, y: 60, w: 60, h: 60, reference_z: -1, above: 0, below: 0 }],
+    },
+    img,
+  );
+  const mk = (ev) => normalizeEvent(ev, {});
+  r.setLandmarks([
+    mk({ id: 1, seq: 1, tick: 50, round: 1, kind: 'grenade_throw', attacker: '1', weapon: 'Decoy Grenade', posX: 70, posY: 70, posZ: 0 }),
+    mk({ id: 2, seq: 2, tick: 100, round: 1, kind: 'grenade_land', attacker: '1', weapon: 'Decoy Grenade', posX: 70, posY: 70, posZ: 0 }),
+  ]);
+  r.setDecoyPlan([
+    { landTick: 100, detTick: 500, x: 70, y: 70, z: 0, side: 'ct', weapon: 'Decoy Grenade', shots: [] },
+  ]);
+  r.resize();
+
+  const marks = (from) => elevMarks(canvas.log, from);
+
+  // IN FLIGHT (throw 50 → rest 100): the arc draws, but util in the air
+  // is never marked — a nade's altitude mid-arc means nothing.
+  engine.seekTick(75);
+  let mark = canvas.log.length;
+  r.draw();
+  assert.equal(marks(mark).length, 0, 'the in-flight nade draws NO indicator');
+
+  // LANDED (rest window [100, 500)): the rest icon is marked — ⊥ below
+  // it (z=0 is strictly above the region's reference −1).
+  engine.seekTick(200);
+  mark = canvas.log.length;
+  r.draw();
+  const landed = marks(mark);
+  assert.equal(landed.length, 1, 'exactly the landed decoy is marked');
+  const c = r.worldToScreen(70, 70);
+  assert.equal(landed[0].dir, 'above', '⊥ — the flat bar below the marker (entity above the level)');
+  assert.ok(Math.abs(landed[0].x - c.x) < 1e-6, 'anchored to the decoy');
+  assert.ok(landed[0].barY > c.y, '⊥ below the marker (entity above the level)');
   r.destroy();
 });

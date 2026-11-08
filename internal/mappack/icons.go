@@ -26,7 +26,9 @@ import (
 // own table and never join iconTable (TestIconTableCanonicalNames pins
 // that one to the demoinfocs enum). Assets the UI needs but has no
 // canonical name for (planted_c4, knife variants) are NOT extracted: the
-// frontend tints/chooses per render site. Valve IP never ships —
+// frontend tints/chooses per render site — that includes the radar
+// elevation marks (T / ⊥), which renderer.js draws from canvas paths
+// rather than shipping Valve's glyphs. Valve IP never ships —
 // extraction runs locally on demand (frontend/public/maps/README.md
 // acquisition posture). Format facts: CS2.md "Weapon/inventory icons in
 // a CS2 install".
@@ -193,7 +195,7 @@ var iconFileToName = func() map[string]string {
 
 // iconVPKPath — the full VPK path of a manifest key: the FAMILY prefix
 // (equipment silhouettes vs death-notice glyphs) + the table's basename.
-// extractTable merges both tables, so the prefix must follow the family
+// extractTable merges every table, so the prefix must follow the family
 // the key belongs to instead of assuming iconPrefix.
 func iconVPKPath(name string) string {
 	if base, ok := noticeIconTable[name]; ok {
@@ -206,7 +208,7 @@ func iconVPKPath(name string) string {
 	return iconPrefix + iconTable[name] + iconSuffix
 }
 
-// ExtractIcons extracts every icon in extractTable (both families) from
+// ExtractIcons extracts every icon in extractTable (all families) from
 // the CS2 install at cs2Dir into outDir (created if needed) as
 // <basename>.svg files. Idempotent — re-running after a game update
 // refreshes the icons. A canonical name whose file is missing from the
@@ -256,10 +258,12 @@ func ExtractIcons(cs2Dir, outDir string) (names []string, errs []string, err err
 }
 
 // IconFiles lists the extracted icons in dir: manifest key → filename
-// ("ak47.svg", "blind_kill.svg" — BOTH icon families resolve through the
-// one reverse index), rebuilt from a fresh directory listing on every call
+// ("ak47.svg", "blind_kill.svg" — both families resolve through the one
+// reverse index), rebuilt from a fresh
+// directory listing on every call
 // so the served manifest never goes stale. Files that aren't in the
-// reverse table (strays, older game versions) are ignored.
+// reverse table (strays, older game versions, the retired elevation
+// glyphs) are ignored.
 func IconFiles(dir string) map[string]string {
 	entries, err := os.ReadDir(dir)
 	if err != nil {

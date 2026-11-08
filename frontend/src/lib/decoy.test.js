@@ -233,6 +233,19 @@ test('buildDecoyPlan: pairs the landing with the NEXT same-round detonation', ()
   );
 });
 
+test('buildDecoyPlan: the rest position’s z rides along (its radar layer), null when unknown', () => {
+  // The normalized alias wins (drawNorm rows carry z from posZ).
+  const [norm] = buildDecoyPlan([landRow({ z: -600 }), detRow()], [], OPTS());
+  assert.equal(norm.z, -600);
+  // Raw EventRow fallback when the alias is absent.
+  const [raw] = buildDecoyPlan([{ ...landRow(), z: undefined, posZ: -512 }, detRow()], [], OPTS());
+  assert.equal(raw.z, -512);
+  // Unknown → null: the renderer then places the icon on the default
+  // radar layer (layers.js) — never a guessed floor.
+  const [none] = buildDecoyPlan([landRow(), detRow()], [], OPTS());
+  assert.equal(none.z, null);
+});
+
 test('buildDecoyPlan: NO detonation row → NO plan entry (documented fail-soft)', () => {
   // Without the explosion the noise window cannot be bounded — an icon
   // that outlives the demo would be a lie, so the honest simple choice

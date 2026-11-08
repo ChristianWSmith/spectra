@@ -193,6 +193,35 @@ func TestNoticeIconTable(t *testing.T) {
 	}
 }
 
+// TestNoElevIconTable pins the DELIBERATE ABSENCE of a third icon
+// family: the radar elevation marks (T / ⊥) are drawn from canvas paths
+// in renderer.js (drawElevationIndicator), and the extracted Valve
+// glyphs (map_bomb_above/below.vsvg_c) rendered poorly anyway — so the
+// extractor must never ship them and iconVPKPath must not resolve them.
+// Re-adding them is a regression, not a feature.
+func TestNoElevIconTable(t *testing.T) {
+	if _, ok := iconTable["elev_above"]; ok {
+		t.Error(`iconTable grew "elev_above" — elevation marks are canvas-drawn, not extracted`)
+	}
+	if _, ok := noticeIconTable["elev_above"]; ok {
+		t.Error(`noticeIconTable grew "elev_above" — elevation marks are canvas-drawn, not extracted`)
+	}
+	if _, ok := iconFileToName["map_bomb_above.svg"]; ok {
+		t.Error(`iconFileToName resolves "map_bomb_above.svg" — stale extracted glyph in the manifest index`)
+	}
+	if _, ok := iconFileToName["map_bomb_below.svg"]; ok {
+		t.Error(`iconFileToName resolves "map_bomb_below.svg" — stale extracted glyph in the manifest index`)
+	}
+	for k := range extractTable {
+		if strings.HasPrefix(k, "elev_") {
+			t.Errorf("extractTable grew %q — elevation marks are canvas-drawn, not extracted", k)
+		}
+	}
+	if got, want := len(iconFileToName), len(extractTable); got != want {
+		t.Errorf("iconFileToName has %d entries, want %d (a collision dropped one)", got, want)
+	}
+}
+
 func TestDecodeVSVG(t *testing.T) {
 	const svg = `<?xml version="1.0" encoding="utf-8"?>` + "\n" +
 		`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 26 32"><path d="M0 0"/></svg>` + "\n"

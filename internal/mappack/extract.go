@@ -31,7 +31,10 @@ type ExtractResult struct {
 }
 
 // packMeta is the meta.json written next to radar.png — schema_version 1,
-// matching frontend/public/maps/README.md.
+// matching frontend/public/maps/README.md. The Layers field is an
+// ADDITIVE optional key (schema_version stays 1): a pack without it is
+// the single-layer contract that predates it, byte-identical to before
+// when the overview declares no verticalsections.
 type packMeta struct {
 	SchemaVersion int         `json:"schema_version"`
 	Radar         *packRadar  `json:"radar,omitempty"`
@@ -39,6 +42,54 @@ type packMeta struct {
 	Sites         packMarkers `json:"sites"`
 	Spawns        packMarkers `json:"spawns"`
 	Source        packSource  `json:"source"`
+	// Layers: one entry per verticalsections radar floor (default first),
+	// each with its own image + world-Z band. Absent for single-floor
+	// maps.
+	Layers []packLayer `json:"layers,omitempty"`
+	// ElevationRegions are world-space boxes with their own thresholds —
+	// the ONLY source of T/⊥ indicator thresholds (region-only design;
+	// per-floor `elevation` keys were dropped from the contract). The
+	// extractor writes none — they are user-supplied in-game data,
+	// carried across re-extraction by preserveElevation (which also
+	// silently DROPS any stale elevation key on refresh).
+	ElevationRegions []packRegion `json:"elevation_regions,omitempty"`
+}
+
+// packLayer is one radar layer (panel) in a multi-floor pack.
+type packLayer struct {
+	ID   string `json:"id"`   // the verticalsections name ("default", "lower")
+	Name string `json:"name"` // display label ("Upper", "Lower")
+	File string `json:"file"` // radar.png / radar_<section>.png
+	// Width/Height: real pixel size of that layer's image.
+	Width  int `json:"width"`
+	Height int `json:"height"`
+	// ZMin/ZMax: the section's AltitudeMin/AltitudeMax world-Z band —
+	// REAL extracted values (CS2.md "verticalsections").
+	ZMin float64 `json:"z_min"`
+	ZMax float64 `json:"z_max"`
+	// Transform: optional per-layer override of the pack's shared
+	// transform (rare — both Nuke radars share one transform, verified).
+	// The extractor never writes it; hand-authored packs may.
+	Transform *packXform `json:"transform,omitempty"`
+}
+
+// packRegion is a world-space bounding box (X/Y, MIN-CORNER + size) with
+// its own elevation thresholds — THE threshold source for entities
+// inside the box (the layer they're drawn on carries none). Optional
+// ZMin/ZMax scope the box to one floor (half-open [ZMin, ZMax), the
+// band convention — e.g. Nuke's catwalk ring ends where the upper band
+// begins); nil = unconstrained. User-supplied (never written by the
+// extractor; carried across re-extraction by preserveElevation).
+type packRegion struct {
+	X          float64  `json:"x"`
+	Y          float64  `json:"y"`
+	W          float64  `json:"w"`
+	H          float64  `json:"h"`
+	ReferenceZ float64  `json:"reference_z"`
+	Above      float64  `json:"above"`
+	Below      float64  `json:"below"`
+	ZMin       *float64 `json:"z_min,omitempty"`
+	ZMax       *float64 `json:"z_max,omitempty"`
 }
 
 type packRadar struct {
@@ -87,10 +138,19 @@ func ExtractMapPacks(cs2Dir, outDir string) (maps []ExtractResult, errs []string
 	defer v.close()
 
 	for _, radarPath := range v.names(radarPrefix, radarSuffix) {
-		mapName := mapNameFromRadar(radarPath)
-		if mapName == "" {
+		base := radarBase(radarPath)
+		if base == "" {
 			continue
 		}
+		// Section radars (<map>_<section>_radar) are LAYERS of another
+		// map's pack, extracted by extractOne from that map's
+		// verticalsections — never packs of their own. The check is
+		// data-driven (the overview declares which suffixes are
+		// sections), so a section name is never hardcoded here.
+		if _, _, isSection := sectionRadar(v, base); isSection {
+			continue
+		}
+		mapName := base
 		if err := extractOne(v, mapName, radarPath, outDir); err != nil {
 			errs = append(errs, fmt.Sprintf("%s: %v", mapName, err))
 			continue
@@ -106,22 +166,69 @@ func ExtractMapPacks(cs2Dir, outDir string) (maps []ExtractResult, errs []string
 	return maps, errs, nil
 }
 
-// mapNameFromRadar derives the map name from a radar path:
+// radarBase derives a map/section name from a radar path:
 // panorama/images/overheadmaps/de_mirage_radar_psd.vtex_c → de_mirage.
-func mapNameFromRadar(path string) string {
+// Returns "" for a path that does not sit directly under radarPrefix or
+// whose stem is empty (defensive — a VPK path with extra directories
+// would otherwise smuggle separators into the pack dir name).
+func radarBase(path string) string {
 	base := strings.TrimPrefix(path, radarPrefix)
-	name := strings.TrimSuffix(base, radarSuffix)
-	// Skip lower-level radars (de_nuke_lower…) — one pack per map for now.
-	if strings.HasSuffix(name, "_lower") {
+	if base == path {
 		return ""
 	}
-	if name == "" || strings.ContainsAny(name, "/\\") {
+	name := strings.TrimSuffix(base, radarSuffix)
+	if name == "" || name == base || strings.ContainsAny(name, "/\\") {
 		return ""
 	}
 	return name
 }
 
+// readOverview loads and parses resource/overviews/<map>.txt. A read
+// error comes back as err (the caller decides whether that is fatal); a
+// MISSING or UNPARSABLE overview is (nil, nil) — both degrade to "no
+// overview" (the transform is optional in the pack contract).
+func readOverview(v *vpk, mapName string) (*Overview, error) {
+	data, found, err := v.read(overviewPfx + mapName + ".txt")
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return nil, nil
+	}
+	ov, err := parseOverview(data)
+	if err != nil {
+		return nil, nil // malformed → degrade, never fatal
+	}
+	return ov, nil
+}
+
+// sectionRadar reports whether base ("<map>_<section>") names a section
+// radar of an existing overview: some prefix of base must be a map whose
+// verticalsections declares the remaining suffix. Longest prefix first
+// ("de_ancient_night" checks de_ancient/night before de/ancient_night),
+// so a real map name wins over an accidental split. Data-driven — no
+// section name is ever hardcoded (CS2.md "verticalsections": the overview
+// is the authority for which suffixes are floors).
+func sectionRadar(v *vpk, base string) (mapName, section string, ok bool) {
+	for i := strings.LastIndex(base, "_"); i > 0; i = strings.LastIndex(base[:i], "_") {
+		m, sec := base[:i], base[i+1:]
+		ov, err := readOverview(v, m)
+		if err != nil || ov == nil {
+			continue
+		}
+		for _, s := range ov.Sections {
+			if s.Name == sec {
+				return m, sec, true
+			}
+		}
+	}
+	return "", "", false
+}
+
 // extractOne decodes one map's radar + overview into outDir/<map>/.
+// When the overview declares verticalsections, each section's radar
+// texture is decoded as an extra layer image (radar.png for the default
+// section, radar_<section>.png for the rest) and recorded in meta.Layers.
 func extractOne(v *vpk, mapName, radarPath, outDir string) error {
 	raw, found, err := v.read(radarPath)
 	if err != nil {
@@ -147,25 +254,28 @@ func extractOne(v *vpk, mapName, radarPath, outDir string) error {
 		},
 	}
 
-	// Overview txt supplies the transform + icon anchors; optional (some
-	// community/workshop maps lack one) — without it the pack still ships
-	// radar pixels, and the frontend falls back to a world grid.
-	if data, found, err := v.read(overviewPfx + mapName + ".txt"); err != nil {
+	// Overview txt supplies the transform + icon anchors + the
+	// verticalsections layers; optional (some community/workshop maps
+	// lack one) — without it the pack still ships radar pixels, and the
+	// frontend falls back to a world grid.
+	ov, err := readOverview(v, mapName)
+	if err != nil {
 		return fmt.Errorf("overview: %w", err)
-	} else if found {
-		if ov, err := parseOverview(data); err == nil {
-			meta.Transform = &packXform{PosX: ov.PosX, PosY: ov.PosY, Scale: ov.Scale}
-			if ov.HasSites {
-				meta.Sites.A = &fracPoint{X: ov.BombA[0], Y: ov.BombA[1]}
-				meta.Sites.B = &fracPoint{X: ov.BombB[0], Y: ov.BombB[1]}
-			}
-			if ov.HasSpawns {
-				meta.Spawns.CT = &fracPoint{X: ov.CTSpawn[0], Y: ov.CTSpawn[1]}
-				meta.Spawns.T = &fracPoint{X: ov.TSpawn[0], Y: ov.TSpawn[1]}
-			}
+	}
+	var layerImgs []layerImage
+	if ov != nil {
+		meta.Transform = &packXform{PosX: ov.PosX, PosY: ov.PosY, Scale: ov.Scale}
+		if ov.HasSites {
+			meta.Sites.A = &fracPoint{X: ov.BombA[0], Y: ov.BombA[1]}
+			meta.Sites.B = &fracPoint{X: ov.BombB[0], Y: ov.BombB[1]}
 		}
-		// A malformed overview degrades to radar-only; the transform is
-		// optional in the contract.
+		if ov.HasSpawns {
+			meta.Spawns.CT = &fracPoint{X: ov.CTSpawn[0], Y: ov.CTSpawn[1]}
+			meta.Spawns.T = &fracPoint{X: ov.TSpawn[0], Y: ov.TSpawn[1]}
+		}
+		if len(ov.Sections) > 0 {
+			meta.Layers, layerImgs = extractLayers(v, mapName, ov, img)
+		}
 	}
 
 	dir := filepath.Join(outDir, mapName)
@@ -175,11 +285,141 @@ func extractOne(v *vpk, mapName, radarPath, outDir string) error {
 	if err := writePNGAtomic(filepath.Join(dir, packRadarPNG), img); err != nil {
 		return err
 	}
+	for _, li := range layerImgs {
+		if err := writePNGAtomic(filepath.Join(dir, li.file), li.img); err != nil {
+			return err
+		}
+	}
+	// The user's hand-authored elevation_regions live only in meta.json —
+	// re-extraction must not wipe them (stale per-floor elevation keys
+	// from the old contract are dropped by the unmarshal/rewrite).
+	preserveElevation(dir, &meta)
 	metaJSON, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
 		return err
 	}
 	return os.WriteFile(filepath.Join(dir, packMetaJSON), append(metaJSON, '\n'), 0o644)
+}
+
+// layerImage is one decoded non-default layer radar awaiting its write.
+type layerImage struct {
+	file string
+	img  *image.NRGBA
+}
+
+// packLayerFile is the on-disk image name for a section: the default
+// section IS the pack's radar.png, every other section gets
+// radar_<section>.png. ok=false for a section name that cannot be a
+// valid pack file (the /api/mappack whitelist is [a-z0-9_] only — a name
+// outside it would produce an unservable file, so the section is skipped
+// rather than written into a dead path).
+func packLayerFile(section string) (file string, ok bool) {
+	if section == "default" {
+		return packRadarPNG, true
+	}
+	if section == "" || len(section) > 32 {
+		return "", false
+	}
+	for _, c := range section {
+		if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '_' {
+			return "", false
+		}
+	}
+	return "radar_" + section + ".png", true
+}
+
+// extractLayers turns the overview's verticalsections into meta.Layers
+// (default first — parseOverview's sortSections order) plus the decoded
+// images of every non-default section. A section whose radar texture is
+// absent from the VPK — or fails to decode — is skipped, not fatal: the
+// pack still extracts with the remaining layers.
+func extractLayers(v *vpk, mapName string, ov *Overview, defaultImg *image.NRGBA) ([]packLayer, []layerImage) {
+	var layers []packLayer
+	var imgs []layerImage
+	for _, sec := range ov.Sections {
+		file, ok := packLayerFile(sec.Name)
+		if !ok {
+			continue
+		}
+		layerImg := defaultImg
+		if file != packRadarPNG {
+			raw, found, rerr := v.read(radarPrefix + mapName + "_" + sec.Name + radarSuffix)
+			if rerr != nil || !found {
+				continue // texture absent → skip this layer, keep the pack
+			}
+			decoded, derr := decodeVTex(raw)
+			if derr != nil {
+				continue // undecodable texture treated as absent
+			}
+			layerImg = decoded
+			imgs = append(imgs, layerImage{file: file, img: decoded})
+		}
+		layers = append(layers, packLayer{
+			ID:     sec.Name,
+			Name:   sectionLabel(sec, ov.Sections),
+			File:   file,
+			Width:  layerImg.Bounds().Dx(),
+			Height: layerImg.Bounds().Dy(),
+			ZMin:   sec.ZMin,
+			ZMax:   sec.ZMax,
+		})
+	}
+	return layers, imgs
+}
+
+// sectionLabel is a layer's display name. Only ever VISIBLE on packs
+// with more than one layer (the renderer labels multi-panel layouts
+// only), and there the bands say which is which: highest ZMin → "Upper",
+// lowest → "Lower" (the default section is the upper radar in every
+// verified multi-section map — CS2.md "verticalsections"), anything else
+// title-cases the section name. Never hardcoded per map.
+func sectionLabel(s Section, all []Section) string {
+	if len(all) < 2 {
+		return s.Name // single section — no label is ever drawn
+	}
+	hi, lo := all[0], all[0]
+	for _, o := range all {
+		if o.ZMin > hi.ZMin {
+			hi = o
+		}
+		if o.ZMin < lo.ZMin {
+			lo = o
+		}
+	}
+	switch {
+	case s.Name == hi.Name && hi.ZMin != lo.ZMin:
+		return "Upper"
+	case s.Name == lo.Name && hi.ZMin != lo.ZMin:
+		return "Lower"
+	}
+	r := []rune(s.Name)
+	if len(r) > 0 && r[0] >= 'a' && r[0] <= 'z' {
+		r[0] = r[0] - 'a' + 'A'
+	}
+	return string(r)
+}
+
+// preserveElevation carries the user-SUPPLIED elevation_regions (the
+// in-game measurements: ambiguous-XY boxes with their thresholds) from
+// the pack's existing meta.json into the fresh one. Re-extraction
+// rewrites the radar pixels and Z bands but must never wipe numbers the
+// user typed in — meta.json is their only home
+// (frontend/public/maps/README.md). Per-floor `elevation` keys are NOT
+// carried (dropped from the contract — the unmarshal/rewrite removes any
+// stale ones). Absent or unparseable old meta → nothing to carry (first
+// extract).
+func preserveElevation(dir string, meta *packMeta) {
+	oldRaw, err := os.ReadFile(filepath.Join(dir, packMetaJSON))
+	if err != nil {
+		return
+	}
+	var old packMeta
+	if err := json.Unmarshal(oldRaw, &old); err != nil {
+		return
+	}
+	if len(old.ElevationRegions) > 0 {
+		meta.ElevationRegions = old.ElevationRegions
+	}
 }
 
 // writePNGAtomic writes via a temp file + rename so a crash mid-write

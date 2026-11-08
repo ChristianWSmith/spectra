@@ -11,11 +11,26 @@
 // shooter to victim, held at full alpha until it arrives), both over
 // their ~0.1 s travel — UNDER the dots, so they read as coming out of
 // the shooter's dot and never cover a name; both moved OUT of the
-// players layer with the tracer rework) → players (white talking bloom UNDER the dot →
+// players layer with the tracer rework) → players (elevation indicator T/⊥
+// UNDER the dot → white talking bloom UNDER the dot →
 // view chevron, body, player-color rim, flash-white overlay, damage
 // flash, follow ring, carried-C4 badge, name) → HUD +
 // kill feed (top-right) + in-game chat (bottom-left).
-// The camera is a pan/zoom view over the radar's image-pixel space with
+//
+// Multi-floor packs (meta.layers — e.g. Nuke's upper + lower radars)
+// draw their layer images SIDE BY SIDE inside this one canvas: every
+// world-positioned element projects through the panel of ITS OWN layer
+// (layerIndexForZ over the layer's world-Z band; see lib/replay/layers.js),
+// so players, C4, grenades, trails, tracers, landmarks and death markers
+// all land on the correct floor's panel. A pack without `layers` builds
+// exactly one panel at offset 0 — the pre-layers geometry, unchanged.
+// Elevation indicators (CS2's ⊥/T marks) draw behind their entity when
+// an `elevation_regions` box claims its XY — the region thresholds are
+// the ONLY source (an unboxed XY is unambiguous → never marked; see
+// lib/replay/layers.js).
+//
+// The camera is a pan/zoom view over the radar's image-pixel space (for
+// layered packs: the COMBINED side-by-side extent) with
 // two modes: 'smart' (the default — eased
 // fit that keeps every alive player + the active bomb on screen; see
 // smartCamTarget/stepSmart below) and 'free' (manual pan/zoom); world→image
@@ -28,6 +43,9 @@ import { makeTransform } from '../components/mapxform.js';
 // (bucketing/classification lives in ./landmarks.js — rows arrive
 // pre-bucketed from normalizeEvent; see setLandmarks.)
 import { detonationStyleOf, sameUtilityWeapon } from './landmarks.js';
+// Layer assignment + the T/⊥ elevation rules (pure — node-tested in
+// src/lib/layers.test.js).
+import { elevationFor, layerIndexForZ } from './layers.js';
 import { slotStateAt } from './state.js';
 import { bombEndTick, bombEvidenceAt, hasBombPos } from './bomb.js';
 // fmt.js is THE seconds clock (fmtClock over tickSeconds — the same
@@ -145,6 +163,37 @@ const DEATH_X_HALF = 7; // px — half-diagonal of a death marker
 const BOMB_ICON_PX = 12; // px — the extracted C4 icon's screen size
 const DOT_C4_ICON_PX = 10; // px — the carried-C4 badge on a player dot
 const NADE_ICON_PX = 16; // px — the extracted utility icon's screen size
+// --- Radar layers (multi-floor packs — meta.layers) ---------------------------
+const LAYER_GAP = 32; // image px between side-by-side layer panels: the
+//                     // camera space spans the combined extent, so the
+//                     // gutter scales with zoom like the panels do
+// --- Elevation indicators (T / ⊥ — CS2.md "Radar elevation indicators") -------
+// Fixed CSS-px geometry: the marks never scale with zoom, so they stay
+// legible at every camera level. Orientation is the SETTLED CS2 rule:
+// entity ABOVE the level → ⊥ (bar at the bottom, stem up) drawn BELOW
+// the marker; entity BELOW → T (bar on top, stem down) drawn ABOVE it —
+// the flat bar reads as the LEVEL relative to the entity (the game's own
+// .PI_Above y:8px / .PI_Below y:−8px placement), scaled up for our
+// fixed-size dots.
+// Geometry (user-defined 2026-11-08): the mark is drawn BY HAND on the
+// canvas — the extracted Valve glyph (map_bomb_above/below) looked poor
+// and the ⊥/T text glyphs are font-dependent — as two monoline strokes:
+// a STEM from the entity's CENTER outward ELEV_IND_STEM px, terminated
+// by the flat BAR. The caller paints this BEFORE the entity, so the dot
+// covers the stem's first DOT_R px (a lower canvas level than the entity
+// it belongs to). Size (user-tuned 2026-11-08): roughly HALF the first
+// iteration — a 13 px bar on a 2 px monoline — while the OFFSET stays
+// (ELEV_IND_STEM = 27), so the ⊥ bar lands ~cy+26..28 — below the name
+// label (baseline cy+r+13 ≈ cy+22) — and the T bar ~cy−28..−26, clear
+// above the dot. Never shorten the stem to "compact" the mark: it would
+// drop the ⊥ bar straight through the player's name.
+const ELEV_IND_STEM = 27; // px — entity CENTER → the bar's centre line
+const ELEV_IND_BAR_W = 13; // px — the flat BAR's width (the "level" line)
+const ELEV_IND_BAR_T = 2; // px — monoline weight: the bar's thickness AND
+//                        // the stem's width (the dark halo is +2 on both)
+const ELEV_IND_TINT = '#d0d6e0'; // neutral light body (the game's #CCC) —
+//                                // never a team color; the dark halo pass
+//                                // gives it contrast on radar + light theme
 const KILL_MARKER_FALLBACK_S = 180; // s — death-X cleanup when the round's
 //                                    round_end row was never loaded
 //                                    (longer than any round: it can
@@ -278,6 +327,60 @@ export function camConverged(cur, target) {
     Math.abs(cur.cy - target.cy) < SMART_EPS_CENTER &&
     Math.abs(cur.s - target.s) <= SMART_EPS_ZOOM * Math.max(target.s, 1e-9)
   );
+}
+
+// flightSplits — where a grenade THROW→DETONATE flight changes radar
+// LAYERS, as [{t0, t1, layer}] spans over the flight parameter t ∈ [0,1]
+// (t0/t1 inclusive ends, ascending; spans tile the whole flight). A nade
+// CAN cross floors — a player at Nuke's bottom ramp throws to top ramp —
+// and one dashed line drawn panel-to-panel would cross the gutter and lie
+// about where the nade is, so the renderer draws ONE segment per span,
+// each on the floor it belongs to (a same-floor flight is a single span
+// = exactly the old one-segment line).
+//
+// The math: z interpolates linearly (the same zFlight the flight icon
+// rides) and the bands are intervals, so the layer can only change at a
+// band edge — solve z(t)=edge for every panel edge, keep the interior
+// solutions, then merge consecutive spans whose midpoint-evaluated layer
+// agrees. A release exactly ON an edge is an instant crossing: the
+// origin dot keeps the entity's own layer (its z), the flight spans start
+// on the side the flight travels to. Unknown z on either end → ONE span
+// on the known end's layer (default when both are unknown) — the same
+// rule the flight icon uses, never a guessed split. Pure — node-tested.
+export function flightSplits(z0, z1, panels) {
+  const list = Array.isArray(panels) && panels.length ? panels : [null];
+  const both = Number.isFinite(z0) && Number.isFinite(z1);
+  if (!both) {
+    const layer = layerIndexForZ(Number.isFinite(z0) ? z0 : z1, list);
+    return [{ t0: 0, t1: 1, layer }];
+  }
+  const bounds = [0];
+  if (z0 !== z1) {
+    for (const p of list) {
+      if (!p) continue;
+      for (const edge of [p.zMin, p.zMax]) {
+        if (!Number.isFinite(edge)) continue;
+        const t = (edge - z0) / (z1 - z0);
+        if (t > 0 && t < 1) bounds.push(t);
+      }
+    }
+    bounds.sort((a, b) => a - b);
+  }
+  bounds.push(1);
+  const spans = [];
+  let start = 0;
+  let startLayer = layerIndexForZ(z0, list); // the throw's own layer — the dot's panel
+  for (let i = 0; i < bounds.length - 1; i++) {
+    const tm = (bounds[i] + bounds[i + 1]) / 2;
+    const layer = layerIndexForZ(z0 + (z1 - z0) * tm, list);
+    if (layer !== startLayer) {
+      spans.push({ t0: bounds[start], t1: bounds[i], layer: startLayer });
+      start = i;
+      startLayer = layer;
+    }
+  }
+  spans.push({ t0: bounds[start], t1: bounds[bounds.length - 1], layer: startLayer });
+  return spans;
 }
 
 // chevronPath — the view-direction CHEVRON (spec 27): an open ">" of
@@ -520,6 +623,26 @@ export function hudTeamNames(names, leftSide, rightSide) {
   return leftOnT ? { ct: right, t: left } : { ct: left, t: right };
 }
 
+// defaultPanel — one radar PANEL (see the panels state in
+// createRenderer): the default layer with no Z band (indicators come
+// from elevation_regions only — a panel never carries thresholds) and
+// offset 0. Used for the pre-layers initial state, the
+// single-panel pack, and the no-pack grid fallback; reproject() rebuilds
+// richer panels from packTf.layers when the pack has them.
+function defaultPanel(offsetX, width, height, tf, img) {
+  return {
+    id: 'default',
+    name: null,
+    zMin: null,
+    zMax: null,
+    img: img || null,
+    tf: tf || { pos_x: 0, pos_y: 0, scale: 1 },
+    offsetX,
+    width,
+    height,
+  };
+}
+
 export function createRenderer(canvas, { engine, data, players, onUserCamera = null }) {
   const ctx = canvas.getContext('2d');
   let dpr = 1;
@@ -531,8 +654,22 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   let slotNames = (players || []).map((p) => p.name || '');
   let pack = null; // map pack meta.json or null
   let packTf = null; // makeTransform(meta) output — the canonical
-  //                    pack→{posX,posY,scale,width,height} derivation
+  //                    pack→{posX,posY,scale,width,height,layers,…} derivation
   let radar = null; // Image, when the pack ships one
+  let layerImgs = []; // per-layer Images parallel to packTf.layers (index 0
+  //                    // is the default layer's radar.png); [] when the
+  //                    // caller passes none (setPack falls back to `radar`)
+  // Radar PANELS — one per layer, laid side by side inside this one
+  // canvas (multi-floor packs), rebuilt by reproject() from packTf.
+  // Single-layer packs build exactly ONE panel at offsetX 0, so every
+  // combined-space number below equals the pre-layers geometry.
+  // Shape: {id, name, zMin, zMax, img, tf:{pos_x,pos_y,scale},
+  //         offsetX, width, height}.
+  let panels = [
+    defaultPanel(0, 1024, 1024),
+  ];
+  let regions = []; // pack elevation_regions (world-space boxes) — see
+  //                  // lib/replay/layers.js elevationFor; [] when absent
   let landmarks = [];
   let polylines = []; // grenade throw→detonate (or throw→rest) pairs
   let dets = []; // grenade detonations
@@ -629,6 +766,8 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   let followFor = -1;
   let followX = null;
   let followY = null;
+  let followZ = null; // their Z at that position — the panel the camera
+  //                    // centers on for a multi-floor pack
   // Camera mode: 'smart' (the default — eases the view to keep every
   // alive player + the active bomb framed) or 'free' (manual pan/zoom).
   // Follow overrides both (explicit user intent) and smart resumes when
@@ -641,25 +780,58 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   let smartConverged = true;
   // Effective world→image transform + image extent, rebuilt by reproject()
   // from packTf (makeTransform's canonical derivation) or sample bounds.
-  // The numeric fields — not an allocating toImage() call — keep the
-  // per-frame paths (drawTrails) allocation-free.
+  // `tf` is the SHARED map transform (the grid fallback's, and the value
+  // every panel inherits unless a pack overrides one layer's transform);
+  // extW/extH are the CAMERA'S extent — for a layered pack the COMBINED
+  // side-by-side span (panels own their offsets). The numeric fields —
+  // not an allocating toImage() call — keep the per-frame paths
+  // (drawTrails) allocation-free.
   const tf = { pos_x: 0, pos_y: 0, scale: 1 };
   let extW = 1024;
   let extH = 1024;
 
   const tmp = {};
 
-  function worldToImage(wx, wy, out) {
-    out.x = (wx - tf.pos_x) / tf.scale;
-    out.y = (tf.pos_y - wy) / tf.scale;
+  // panelForZ — the panel an entity at world Z belongs to (layers.js
+  // layerIndexForZ: half-open bands, default layer for unknown Z). z
+  // omitted/unknown → panels[0] — for a single-layer pack that is THE
+  // panel, so every pre-layers call site behaves exactly as before.
+  function panelForZ(z) {
+    return panels[layerIndexForZ(z, panels)] || panels[0];
+  }
+
+  // scaleForZ — world units per image px on the entity's panel (the
+  // smoke/fire area radii): the shared transform unless a pack overrides
+  // that layer's transform.
+  function scaleForZ(z) {
+    return panelForZ(z).tf.scale;
+  }
+
+  // worldToImage — world → the camera's COMBINED image space: the point
+  // projects through ITS OWN layer's panel (per-layer transform when the
+  // pack overrides one, else the shared map transform) plus that panel's
+  // side-by-side offsetX. Optional `z` picks the panel; without it (or
+  // with an unknown Z) the default panel claims the point.
+  function worldToImage(wx, wy, out, z) {
+    const p = panelForZ(z);
+    out.x = (wx - p.tf.pos_x) / p.tf.scale + p.offsetX;
+    out.y = (p.tf.pos_y - wy) / p.tf.scale;
     return out;
   }
 
   const imgPt = { x: 0, y: 0 };
-  function worldToScreen(wx, wy) {
-    worldToImage(wx, wy, imgPt);
+  // panelToScreen — one panel's projection of a world point into screen
+  // space: THE canonical world→screen step, shared by worldToScreen and
+  // the per-panel flight segments (never a second copy of the formula).
+  function panelToScreen(p, wx, wy) {
     const s = cam.fit * cam.zoom;
-    return { x: cssW / 2 + (imgPt.x - cam.cx) * s, y: cssH / 2 + (imgPt.y - cam.cy) * s };
+    const ix = (wx - p.tf.pos_x) / p.tf.scale + p.offsetX;
+    const iy = (p.tf.pos_y - wy) / p.tf.scale;
+    return { x: cssW / 2 + (ix - cam.cx) * s, y: cssH / 2 + (iy - cam.cy) * s };
+  }
+
+  function worldToScreen(wx, wy, z) {
+    return panelToScreen(panelForZ(z), wx, wy);
   }
 
   function screenToImage(sx, sy) {
@@ -671,7 +843,9 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
 
   // reproject derives the effective transform + extent from whatever we have:
   // the pack transform (via makeTransform — packTf) ± radar size, else
-  // sample bounds (the no-pack fallback stays renderer-only).
+  // sample bounds (the no-pack fallback stays renderer-only). It also
+  // rebuilds the PANELS — the side-by-side layout offsets, per-panel
+  // transforms and images (buildPanels).
   function reproject() {
     const b = store ? store.bounds : { minX: 0, maxX: 1024, minY: 0, maxY: 1024 };
     const spanX = Math.max(1, b.maxX - b.minX);
@@ -682,9 +856,8 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       // makeTransform copies scale verbatim; keep the renderer's
       // degenerate-scale guard (0/negative would divide to NaN/infinity).
       tf.scale = packTf.scale > 0 ? packTf.scale : 1;
-      extW = packTf.width;
-      extH = packTf.height;
-      if (radar) packNote = '';
+      buildPanels();
+      if (panels.some((p) => p.img)) packNote = '';
       else packNote = 'map pack has no radar image — grid only';
     } else {
       // Blank coordinate grid: invent an image space from sample extents.
@@ -694,10 +867,63 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       tf.scale = scale > 0 ? scale : 1;
       extW = Math.max(64, (spanX * 1.1) / tf.scale);
       extH = Math.max(64, (spanY * 1.1) / tf.scale);
+      // No pack → no layers: one default panel over the invented space
+      // (a copy of tf, so panel math and tf stay identical here).
+      panels = [
+        defaultPanel(0, extW, extH, { pos_x: tf.pos_x, pos_y: tf.pos_y, scale: tf.scale }),
+      ];
+      regions = [];
       packNote = pack
         ? 'map pack missing radar — world-coordinate grid'
         : 'map pack missing — world-coordinate grid (transform unknown)';
     }
+  }
+
+  // buildPanels — one panel per packTf.layers entry (default first — the
+  // extractor's sortSections order), laid out LEFT→RIGHT with LAYER_GAP
+  // between them; extW/extH become the COMBINED extent the camera pans/
+  // fits over. A pack WITHOUT layers builds the single default panel —
+  // offset 0, the radar's own size — so single-layer geometry is
+  // byte-identical to the pre-layers code. Images come from setPack's
+  // layerImages (panel 0 falls back to `radar`); a layer whose image is
+  // absent still gets its panel (entities place correctly; drawRadar
+  // skips the missing pixels and the grid shows through).
+  function buildPanels() {
+    regions = Array.isArray(packTf.regions) ? packTf.regions : [];
+    const defs = Array.isArray(packTf.layers) && packTf.layers.length ? packTf.layers : [null];
+    const next = [];
+    let x = 0;
+    for (let i = 0; i < defs.length; i++) {
+      const d = defs[i];
+      const width = (d && d.width) || packTf.width;
+      const height = (d && d.height) || packTf.height;
+      const src = (d && d.tf) || packTf;
+      const p = defaultPanel(
+        x,
+        width,
+        height,
+        {
+          pos_x: src.posX,
+          pos_y: src.posY,
+          // the same degenerate-scale guard as tf above
+          scale: src.scale > 0 ? src.scale : 1,
+        },
+        layerImgs[i] || (i === 0 ? radar : null),
+      );
+      if (d) {
+        p.id = d.id || 'default';
+        p.name = d.name || null;
+        p.zMin = d.zMin; // makeTransform already normalized to number|null
+        p.zMax = d.zMax;
+      }
+      // (No per-panel thresholds: elevation is region-only — regions
+      // were loaded above and apply across every panel.)
+      next.push(p);
+      x += width + LAYER_GAP;
+    }
+    panels = next;
+    extW = Math.max(1, x - LAYER_GAP);
+    extH = Math.max(...next.map((p) => p.height));
   }
 
   function fit() {
@@ -728,14 +954,18 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     draw();
   }
 
-  // setPack(meta, image, transform): transform is the makeTransform()
-  // output loadMapPack already built (Replay passes it through); a caller
-  // handing us a bare meta gets it derived here — either way makeTransform
-  // is the single pack→transform reader.
-  function setPack(newPack, image, transform) {
+  // setPack(meta, image, transform, layerImages): transform is the
+  // makeTransform() output loadMapPack already built (Replay passes it
+  // through); a caller handing us a bare meta gets it derived here —
+  // either way makeTransform is the single pack→transform reader.
+  // layerImages: the decoded per-layer images parallel to meta.layers
+  // (optional — panel 0 falls back to `image`, the radar.png decode;
+  // older callers passing three args behave as before).
+  function setPack(newPack, image, transform, layerImages) {
     pack = newPack || null;
     radar = image || null;
     packTf = transform || (pack ? makeTransform(pack) : null);
+    layerImgs = Array.isArray(layerImages) ? layerImages : [];
     fit();
   }
 
@@ -808,6 +1038,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
                   victim: l.victim || '',
                   x: l.x,
                   y: l.y,
+                  z: l.z, // the victim's hit-position Z — their panel
                 });
               }
             }
@@ -1054,8 +1285,8 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     let maxX = -Infinity;
     let maxY = -Infinity;
     const img = { x: 0, y: 0 };
-    const add = (wx, wy) => {
-      worldToImage(wx, wy, img);
+    const add = (wx, wy, z) => {
+      worldToImage(wx, wy, img, z); // the entity's OWN panel (multi-floor)
       if (img.x < minX) minX = img.x;
       if (img.x > maxX) maxX = img.x;
       if (img.y < minY) minY = img.y;
@@ -1063,7 +1294,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     };
     for (let slot = 0; slot < store.slots.length; slot++) {
       engine.lerpAt(slot, tmp);
-      if (tmp.alive && Number.isFinite(tmp.x)) add(tmp.x, tmp.y);
+      if (tmp.alive && Number.isFinite(tmp.x)) add(tmp.x, tmp.y, tmp.z);
     }
     const tr = engine.tickRate;
     const tick = engine.state.tick;
@@ -1077,11 +1308,11 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       // point is not a painted marker, so the death-X `>=` rule does not
       // apply — see drawBomb for the drawing boundary.
       if (tick >= l.tick && tick <= bombEndTick(l, tr, explodes, defuses, roundEnds, roundStarts)) {
-        add(l.x, l.y);
+        add(l.x, l.y, l.z);
       }
     }
     const ev = bombEvidenceAt(bombEv, tick);
-    if (ev && ev.state === 'dropped' && hasBombPos(ev)) add(ev.x, ev.y);
+    if (ev && ev.state === 'dropped' && hasBombPos(ev)) add(ev.x, ev.y, ev.z);
     if (!(minX <= maxX)) return null;
     return smartCamTarget({ minX, minY, maxX, maxY }, cssW, cssH, { extW, extH });
   }
@@ -1166,21 +1397,57 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       ctx.lineTo(cssW, sy);
     }
     ctx.stroke();
-    // extent border
+    // extent border — ONE per panel (a layered pack outlines each radar;
+    // a single panel draws exactly the old rect).
     ctx.strokeStyle = 'rgba(58, 67, 86, 0.9)';
     ctx.lineWidth = 2;
-    const c0 = worldToScreen(0, 0);
-    ctx.strokeRect(c0.x, c0.y, extW * s, extH * s);
+    const oy = cssH / 2 - cam.cy * s;
+    for (const p of panels) {
+      const ox = cssW / 2 + (p.offsetX - cam.cx) * s;
+      ctx.strokeRect(ox, oy, p.width * s, p.height * s);
+    }
   }
 
+  // drawRadar — every panel's image at its side-by-side offset, then the
+  // layer LABELS (multi-panel packs only — a single-layer map must look
+  // exactly as it did before layers existed). Returns whether any panel
+  // pixels were drawn (false → the caller draws the grid instead).
   function drawRadar() {
-    if (!radar) return false;
+    if (!panels.length) return false;
     const s = cam.fit * cam.zoom;
-    const x = cssW / 2 - cam.cx * s;
     const y = cssH / 2 - cam.cy * s;
     ctx.imageSmoothingEnabled = true;
-    ctx.drawImage(radar, x, y, extW * s, extH * s);
-    return true;
+    let drew = false;
+    for (const p of panels) {
+      if (!p.img) continue;
+      const x = cssW / 2 + (p.offsetX - cam.cx) * s;
+      ctx.drawImage(p.img, x, y, p.width * s, p.height * s);
+      drew = true;
+    }
+    if (panels.length > 1) drawLayerLabels(s);
+    return drew;
+  }
+
+  // drawLayerLabels — "Upper"/"Lower" over each panel's top edge, canvas-
+  // drawn (no DOM). Clamped to the viewport top so zooming INTO a panel
+  // (its top edge off-screen) still shows which floor is in view; culled
+  // horizontally when the panel is out of sight. Dark-shadowed like the
+  // name labels so it reads on radar and light theme alike.
+  function drawLayerLabels(s) {
+    ctx.font = 'bold 11px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    for (const p of panels) {
+      if (!p.name) continue;
+      const sx = cssW / 2 + (p.offsetX + p.width / 2 - cam.cx) * s;
+      if (sx < -60 || sx > cssW + 60) continue;
+      const sy = Math.max(14, cssH / 2 - cam.cy * s - 6);
+      ctx.shadowColor = 'rgba(0,0,0,0.9)';
+      ctx.shadowBlur = 3;
+      ctx.fillStyle = '#d7dde8';
+      ctx.fillText(p.name, sx, sy);
+      ctx.shadowBlur = 0;
+    }
   }
 
   // sideAtFrame resolves a slot's side at frame f through the ONE
@@ -1229,18 +1496,30 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       const p = store.slots[slot].pos;
       const color = teamColor(sideAtFrame(slot, frame));
       let prev = null;
+      let prevPanel = null;
       for (let f = frame; f >= from; f--) {
         if (!(store.masks[f] & (1 << slot))) {
           prev = null;
+          prevPanel = null;
           continue;
         }
         const b = f * 4;
-        const sx = cssW / 2 + ((p[b] - tf.pos_x) / tf.scale - cam.cx) * s;
-        const sy = cssH / 2 + ((tf.pos_y - p[b + 1]) / tf.scale - cam.cy) * s;
+        // Layer-aware: each frame's Z picks ITS panel (multi-floor), so
+        // a trail follows its owner across floors instead of pinning to
+        // the default radar. Single-layer packs resolve to the one panel
+        // — the exact pre-layers arithmetic.
+        const panel = panelForZ(p[b + 2]);
+        const ix = (p[b] - panel.tf.pos_x) / panel.tf.scale + panel.offsetX;
+        const iy = (panel.tf.pos_y - p[b + 1]) / panel.tf.scale;
+        const sx = cssW / 2 + (ix - cam.cx) * s;
+        const sy = cssH / 2 + (iy - cam.cy) * s;
         // prev is frame f+1 (the loop is contiguous and only alive frames
         // set it); trailConnects breaks the chain across a round reset /
-        // respawn teleport instead of drawing the streaking line.
-        if (prev && trailConnects(store.ticks, p, f)) {
+        // respawn teleport instead of drawing the streaking line. A
+        // PANEL change (floor transition) breaks it too: the two points
+        // live in different panels and a line across the gutter would
+        // be a lie.
+        if (prev && prevPanel === panel && trailConnects(store.ticks, p, f)) {
           const age = (frame - f) / TRAIL_FRAMES;
           ctx.strokeStyle = color;
           ctx.globalAlpha = (1 - age) * 0.5;
@@ -1251,6 +1530,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
           ctx.stroke();
         }
         prev = [sx, sy];
+        prevPanel = panel;
       }
     }
     ctx.globalAlpha = 1;
@@ -1283,8 +1563,8 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       if (!hasPos(l)) continue;
       const age = (tick - l.tick) / tr;
       if (age < 0 || age > SMOKE_LIFETIME_S) continue;
-      const c = worldToScreen(l.x, l.y);
-      const r = (SMOKE_RADIUS / tf.scale) * cam.fit * cam.zoom;
+      const c = worldToScreen(l.x, l.y, l.z);
+      const r = (SMOKE_RADIUS / scaleForZ(l.z)) * cam.fit * cam.zoom;
       const fade = age > SMOKE_LIFETIME_S - 2 ? (SMOKE_LIFETIME_S - age) / 2 : 1;
       // team-tinted (the thrower's side, 50/50 with the smoke gray — see
       // SMOKE_CT/SMOKE_T) at the SAME 0.3/0.55 alphas as the old neutral;
@@ -1302,8 +1582,8 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       if (!hasPos(l)) continue;
       const age = (tick - l.tick) / tr;
       if (age < 0 || age > FIRE_LIFETIME_S) continue;
-      const c = worldToScreen(l.x, l.y);
-      const r = (FIRE_RADIUS / tf.scale) * cam.fit * cam.zoom;
+      const c = worldToScreen(l.x, l.y, l.z);
+      const r = (FIRE_RADIUS / scaleForZ(l.z)) * cam.fit * cam.zoom;
       // Molotov/incendiary areas read RED (not orange) — see the
       // detonation ring below for the same hue family.
       ctx.fillStyle = 'rgba(235, 70, 55, 0.3)';
@@ -1329,7 +1609,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       if (!hasPos(pl.from)) continue;
       if (tick < pl.from.tick) continue;
       if (pl.to && tick > pl.to.tick) continue;
-      const a = worldToScreen(pl.from.x, pl.from.y);
+      const a = worldToScreen(pl.from.x, pl.from.y, pl.from.z);
       const flight =
         pl.to &&
         hasPos(pl.to) &&
@@ -1337,7 +1617,6 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
         Number.isFinite(pl.to.tick) &&
         pl.to.tick > pl.from.tick;
       if (flight) {
-        const b = worldToScreen(pl.to.x, pl.to.y);
         const side = throwerSideAt(pl.from.steamId, pl.from.tick);
         const team = side === 'ct' || side === 't' ? teamColor(side) : null;
         ctx.strokeStyle = team || 'rgba(251, 172, 24, 0.4)';
@@ -1345,8 +1624,28 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
         ctx.lineWidth = 1.5;
         ctx.setLineDash([4, 4]);
         ctx.beginPath();
-        ctx.moveTo(a.x, a.y);
-        ctx.lineTo(b.x, b.y);
+        // Per-LAYER segments (flightSplits): a nade CAN cross floors —
+        // bottom ramp → top ramp on Nuke — and one line drawn from one
+        // panel to the other would cross the gutter and lie about where
+        // the nade is. The flight is cut at the band edges (linear z —
+        // the same interpolation the icon rides) and each span draws on
+        // its own floor's panel; a same-floor flight is ONE span, i.e.
+        // exactly the old single segment.
+        for (const seg of flightSplits(pl.from.z, pl.to.z, panels)) {
+          const pa = panels[seg.layer] || panels[0];
+          const s0 = panelToScreen(
+            pa,
+            pl.from.x + (pl.to.x - pl.from.x) * seg.t0,
+            pl.from.y + (pl.to.y - pl.from.y) * seg.t0,
+          );
+          const s1 = panelToScreen(
+            pa,
+            pl.from.x + (pl.to.x - pl.from.x) * seg.t1,
+            pl.from.y + (pl.to.y - pl.from.y) * seg.t1,
+          );
+          ctx.moveTo(s0.x, s0.y);
+          ctx.lineTo(s1.x, s1.y);
+        }
         ctx.stroke();
         ctx.setLineDash([]);
         if (team) ctx.globalAlpha = 1;
@@ -1354,9 +1653,21 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
         const img = iconFor(pl.from.weapon) || iconFor(pl.to.weapon);
         let drawn = false;
         if (img) {
+          // The icon rides the interpolated position; its Z lerps too
+          // when both ends know it (a floor-crossing arc), else the one
+          // end that does — unknown → the default panel, never a guess.
+          const zFrom = pl.from.z;
+          const zTo = pl.to.z;
+          const zFlight =
+            Number.isFinite(zFrom) && Number.isFinite(zTo)
+              ? zFrom + (zTo - zFrom) * p
+              : Number.isFinite(zFrom)
+                ? zFrom
+                : zTo;
           const c = worldToScreen(
             pl.from.x + (pl.to.x - pl.from.x) * p,
             pl.from.y + (pl.to.y - pl.from.y) * p,
+            zFlight,
           );
           drawn = drawIcon(img, c.x, c.y, NADE_ICON_PX, team);
         }
@@ -1393,7 +1704,15 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       if (!Number.isFinite(p.landTick) || !Number.isFinite(p.detTick)) continue;
       if (tick < p.landTick || tick >= p.detTick) continue;
       if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
-      const c = worldToScreen(p.x, p.y);
+      const c = worldToScreen(p.x, p.y, p.z); // p.z → its radar layer
+      // Elevation indicator for the LANDED decoy — this loop is the REST
+      // window (landTick ≤ tick < detTick); the in-flight arc/icon above
+      // draws no mark, so util is only ever marked at rest. Same rules
+      // as the dots/bomb: behind the icon, a region box only
+      // (elevationFor — a decoy with unknown z or an XY outside every
+      // region draws nothing).
+      const elev = elevationFor(p.x, p.y, p.z, regions);
+      if (elev) drawElevationIndicator(c.x, c.y, elev);
       const team = p.side === 'ct' || p.side === 't' ? teamColor(p.side) : null;
       const img = iconFor('Decoy Grenade');
       const drawn = img ? drawIcon(img, c.x, c.y, NADE_ICON_PX, team || 'rgba(251, 172, 24, 0.85)') : false;
@@ -1427,13 +1746,13 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       if (!hasPos(l)) continue;
       const age = (tick - l.tick) / tr;
       if (age < 0) continue;
-      const c = worldToScreen(l.x, l.y);
+      const c = worldToScreen(l.x, l.y, l.z);
       const style = detonationStyleOf(l);
       if (style === 'smoke') {
         const dur = 0.9; // s — the bloom racing out to the smoke radius
         if (age > dur) continue;
         const k = age / dur;
-        const r = 6 + k * (SMOKE_RADIUS / tf.scale) * cam.fit * cam.zoom;
+        const r = 6 + k * (SMOKE_RADIUS / scaleForZ(l.z)) * cam.fit * cam.zoom;
         // the same thrower-team tint as the lingering area it hands off
         // to (neutral gray when the side is unknown — never guessed)
         ctx.strokeStyle = `rgba(${smokeColorRGB(l)}, ${0.8 * (1 - k)})`;
@@ -1445,7 +1764,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
         const dur = 0.6; // s — molotov/incendiary spread
         if (age > dur) continue;
         const k = age / dur;
-        const r = 6 + k * (FIRE_RADIUS / tf.scale) * cam.fit * cam.zoom;
+        const r = 6 + k * (FIRE_RADIUS / scaleForZ(l.z)) * cam.fit * cam.zoom;
         // RED ring + hot-red core (the old orange read as a different
         // utility than the lingering area it hands off to).
         ctx.strokeStyle = `rgba(240, 75, 60, ${0.92 * (1 - k)})`;
@@ -1597,6 +1916,52 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     ctx.fillText('C4', right - size / 2, top + 8);
   }
 
+  // drawElevationIndicator — CS2's radar elevation marks (T / ⊥ — CS2.md
+  // "Radar elevation indicators") painted BEHIND the entity it belongs
+  // to (the caller draws this first — the marker covers the stem's first
+  // DOT_R px, so the mark sits on a lower canvas level than the entity).
+  // The stem runs from the entity's CENTER (cx, cy) outward
+  // ELEV_IND_STEM px into the flat bar — drawn entirely from canvas
+  // paths (see the constants block: no extracted image, no text glyph),
+  // at half the first iteration's visual weight — the bar lands clear of
+  // the marker, below the name label for players (⊥), well above the dot
+  // (T).
+  // The FLAT BAR reads as the LEVEL relative to the entity — the SETTLED
+  // orientation (2026-11-08): entity ABOVE the level → ⊥ (bar at the
+  // bottom, stem rising) drawn BELOW the marker; entity BELOW → T (bar
+  // on top, stem descending) drawn ABOVE it — matching the game's own
+  // .PI_Above (y: 8px, below) / .PI_Below (y: −8px, above) placement.
+  // Size is FIXED in CSS px — never scaled by zoom, so it stays legible
+  // at every camera level. Callers gate on elevationFor (no region box
+  // at the XY → no draw).
+  function drawElevationIndicator(cx, cy, dir) {
+    const above = dir === 'above';
+    // The bar's centre line ELEV_IND_STEM px from the entity's centre:
+    // the stem ORIGINATES at (cx, cy), as specified — never a detached
+    // mark floating by the name label.
+    const barY = above ? cy + ELEV_IND_STEM : cy - ELEV_IND_STEM;
+    // Two strokes make the whole glyph — no image, no text:
+    //   STEM  (cx, cy) → (cx, barY)      grows out of the entity;
+    //   BAR   (cx ± W/2, barY)           the flat "level" line.
+    // The first pass is the dark halo (+2 on the monoline weight, +1px
+    // past each bar end — the same contrast convention drawIcon uses, so
+    // it reads on the dark radar and the light theme); the second is the
+    // tinted body. Both in one path per pass: the stem/bar junction
+    // composites as a single op — no double-blended seam.
+    const mark = (color, width, pad) => {
+      ctx.strokeStyle = color;
+      ctx.lineWidth = width;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      ctx.lineTo(cx, barY);
+      ctx.moveTo(cx - ELEV_IND_BAR_W / 2 - pad, barY);
+      ctx.lineTo(cx + ELEV_IND_BAR_W / 2 + pad, barY);
+      ctx.stroke();
+    };
+    mark('rgba(8, 10, 14, 0.85)', ELEV_IND_BAR_T + 2, 1); // halo
+    mark(ELEV_IND_TINT, ELEV_IND_BAR_T, 0); // body
+  }
+
   function drawBomb(tick, now) {
     const tr = engine.tickRate;
     for (const l of plants) {
@@ -1616,7 +1981,12 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       // the spot for that one tick; `tick !== l.tick` also keeps a
       // NaN-tick row — bombEndTick → 0 — from ever drawing).
       if (tick < l.tick || (tick >= endTick && tick !== l.tick)) continue;
-      const c = worldToScreen(l.x, l.y);
+      const c = worldToScreen(l.x, l.y, l.z);
+      // Elevation indicator BEHIND the bomb (drawn before its ring/icon
+      // — same behind-the-entity rule as the player dots); only when a
+      // region box claims the XY (never a guessed Z — see layers.js).
+      const elev = elevationFor(l.x, l.y, l.z, regions);
+      if (elev) drawElevationIndicator(c.x, c.y, elev);
       const pulse = 10 + 4 * Math.sin(now / 200);
       ctx.strokeStyle = 'rgba(251, 172, 24, 0.95)';
       ctx.fillStyle = 'rgba(251, 172, 24, 0.25)';
@@ -1634,7 +2004,9 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     // loop above — neither draws here. Dashed ring = not armed.
     const ev = bombEvidenceAt(bombEv, tick);
     if (ev && ev.state === 'dropped' && hasBombPos(ev)) {
-      const c = worldToScreen(ev.x, ev.y);
+      const c = worldToScreen(ev.x, ev.y, ev.z);
+      const elev = elevationFor(ev.x, ev.y, ev.z, regions);
+      if (elev) drawElevationIndicator(c.x, c.y, elev);
       const pulse = 9 + 3 * Math.sin(now / 240);
       ctx.strokeStyle = 'rgba(251, 172, 24, 0.9)';
       ctx.fillStyle = 'rgba(251, 172, 24, 0.16)';
@@ -1651,7 +2023,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       if (!hasPos(l)) continue;
       const age = (tick - l.tick) / tr;
       if (age < 0 || age > 3) continue;
-      const c = worldToScreen(l.x, l.y);
+      const c = worldToScreen(l.x, l.y, l.z);
       const r = 12 + age * 28;
       ctx.strokeStyle = `rgba(224, 91, 91, ${0.9 - age * 0.3})`;
       ctx.lineWidth = 3;
@@ -1663,7 +2035,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       if (!hasPos(l)) continue;
       const age = (tick - l.tick) / tr;
       if (age < 0 || age > 2) continue;
-      const c = worldToScreen(l.x, l.y);
+      const c = worldToScreen(l.x, l.y, l.z);
       ctx.fillStyle = `rgba(90, 169, 230, ${0.8 - age * 0.4})`;
       ctx.beginPath();
       ctx.arc(c.x, c.y, 6, 0, Math.PI * 2);
@@ -1719,7 +2091,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       if (tick >= end && tick !== k.tick) continue;
       const slot = slotOfSteam.get(String(k.victim || ''));
       if (slot == null || slot >= store.slots.length) continue; // no dot to mark
-      const c = worldToScreen(k.x, k.y);
+      const c = worldToScreen(k.x, k.y, k.z);
       if (c.x < -60 || c.y < -60 || c.x > cssW + 60 || c.y > cssH + 60) continue;
       const frame = engine.frameForTick(Math.max(engine.firstTick, k.tick - 1));
       const color = teamColor(sideAtFrame(slot, frame));
@@ -1856,7 +2228,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       if (!(store.masks[f] & (1 << slot))) continue; // no sample → no line
       const ppos = store.slots[slot].pos;
       const o = f * 4;
-      const a = worldToScreen(ppos[o], ppos[o + 1]);
+      const a = worldToScreen(ppos[o], ppos[o + 1], ppos[o + 2]);
       const angle = (-ppos[o + 3]) * Math.PI / 180; // engine yaw → screen (drawPlayers' convention)
       // The PATH runs from the ORIGIN (inner 0), reach r + MUZZLE_REACH
       // along the frame's aim — the dash rides it (strokeTracer).
@@ -1906,8 +2278,8 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       if (!(store.masks[f] & (1 << slot))) continue; // no sample → no line
       const ppos = store.slots[slot].pos;
       const b = f * 4;
-      const a = worldToScreen(ppos[b], ppos[b + 1]);
-      const v = worldToScreen(h.x, h.y);
+      const a = worldToScreen(ppos[b], ppos[b + 1], ppos[b + 2]);
+      const v = worldToScreen(h.x, h.y, h.z);
       ctx.globalAlpha = 1; // HIT — no fade, full alpha until arrival
       strokeTracer(a.x, a.y, v.x, v.y, p, tracerColor(throwerSideAt(h.attacker, h.tick)));
       ctx.globalAlpha = 1;
@@ -1921,8 +2293,19 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     for (let slot = 0; slot < store.slots.length; slot++) {
       engine.lerpAt(slot, tmp);
       if (!tmp.alive) continue;
-      const c = worldToScreen(tmp.x, tmp.y);
+      const c = worldToScreen(tmp.x, tmp.y, tmp.z);
       if (c.x < -60 || c.y < -60 || c.x > cssW + 60 || c.y > cssH + 60) continue;
+      // Elevation indicator (T / ⊥) — the FIRST thing painted for this
+      // slot, so every part of the dot (bloom, chevron, fill, rim,
+      // overlays, name) draws ON TOP of it: the mark can never obscure
+      // the identity/team color. Its stem starts at the dot's CENTER and
+      // runs outward (the dot covers the first DOT_R px — a lower canvas
+      // level than the entity); for ⊥ the bar lands below the name
+      // label, whose text paints after and over the stem. Only when a
+      // region box claims this entity's XY, and never for an unknown Z
+      // (layers.js elevationFor returns null — no guessed indicator).
+      const elev = elevationFor(tmp.x, tmp.y, tmp.z, regions);
+      if (elev) drawElevationIndicator(c.x, c.y, elev);
       const color = teamColor(sideAtFrame(slot, st.frame));
       // Constant radius (DOT_R): a crouching player's dot is the same
       // size as a standing one (the duck flag stays on `tmp` for every
@@ -2742,7 +3125,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       if (st.followSlot != null) {
         if (st.followSlot !== followFor) {
           followFor = st.followSlot;
-          followX = followY = null;
+          followX = followY = followZ = null;
         }
         engine.lerpAt(st.followSlot, tmp);
         // Hold the last ALIVE position while they are dead (respawn /
@@ -2752,9 +3135,10 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
         if (tmp.alive && Number.isFinite(tmp.x)) {
           followX = tmp.x;
           followY = tmp.y;
+          followZ = tmp.z; // their panel — the camera follows the FLOOR too
         }
         if (followX != null) {
-          worldToImage(followX, followY, imgPt);
+          worldToImage(followX, followY, imgPt, followZ);
           cam.cx = imgPt.x;
           cam.cy = imgPt.y;
         }

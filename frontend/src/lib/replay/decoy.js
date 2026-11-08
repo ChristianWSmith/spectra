@@ -98,17 +98,20 @@ function slotOfSteam(players, steamId) {
   return -1;
 }
 
-// rowPos — a landmark row's position: the normalized `x`/`y` aliases
-// (drawNorm) or the raw EventRow's posX/posY, null when absent (the
-// renderer then skips position-dependent drawing — never a guess).
+// rowPos — a landmark row's position: the normalized `x`/`y`/`z`
+// aliases (drawNorm) or the raw EventRow's posX/posY/posZ, null when
+// absent (the renderer then skips position-dependent drawing — never a
+// guess; an unknown z makes the renderer place the icon on the default
+// radar layer — see lib/replay/layers.js).
+const RAW_POS = { x: 'posX', y: 'posY', z: 'posZ' };
 function rowPos(row, key) {
   if (Number.isFinite(row[key])) return row[key];
-  const raw = key === 'x' ? row.posX : row.posY;
+  const raw = row[RAW_POS[key]];
   return Number.isFinite(raw) ? raw : null;
 }
 
 // buildDecoyPlan(rows, rounds, opts) → the plan array
-//   [{landTick, detTick, x, y, side, weapon, shots:[{tick}]}]
+//   [{landTick, detTick, x, y, z, side, weapon, shots:[{tick}]}]
 // over the Replay's drawNorm rows (kind 'grenade_land' + the matching
 // kind 'grenade' detonation, both weapon 'Decoy Grenade'):
 //
@@ -191,6 +194,7 @@ export function buildDecoyPlan(rows, rounds, opts = {}) {
       detTick: det.tick,
       x: rowPos(land, 'x'),
       y: rowPos(land, 'y'),
+      z: rowPos(land, 'z'), // the rest position's Z — its radar layer
       side,
       weapon,
       shots,

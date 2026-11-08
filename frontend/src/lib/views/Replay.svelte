@@ -236,6 +236,11 @@
   let ro = null;
   let offChange = null;
   let radarImg = null;
+  // Decoded per-layer images (multi-floor packs), parallel to
+  // meta.layers — []/null for a single-layer pack (setPack falls back
+  // to radarImg for panel 0). Plain let, like radarImg: only the
+  // renderer reads it.
+  let layerImgs = null;
 
   const frames = $derived(data ? data.frames : (meta?.frames || 0));
 
@@ -1333,25 +1338,43 @@
   }
 
   async function loadPack(map) {
-    if (!map) return { pack: null, transform: null, img: null };
+    if (!map) return { pack: null, transform: null, img: null, layerImgs: null };
     // Shared loader: extracted pack (local CS2) wins over the bundled
     // metadata-only fallback at /maps/ (no art ships — see
     // frontend/public/maps/README.md; a missing pack = plain grid).
     // The makeTransform() output rides along — the renderer consumes it
     // instead of re-deriving the pack's transform fields.
     const p = await loadMapPack(map);
-    if (!p || !p.meta) return { pack: null, transform: null, img: null };
-    if (p.meta.radar && p.meta.radar.file) {
-      const img = new Image();
-      img.src = `${p.base}/${p.meta.radar.file}`;
-      try {
-        await img.decode();
-        return { pack: p.meta, transform: p.transform, img };
-      } catch {
-        return { pack: p.meta, transform: p.transform, img: null };
-      }
+    if (!p || !p.meta) return { pack: null, transform: null, img: null, layerImgs: null };
+    // One image per radar file: every meta.layers[i].file for a
+    // multi-floor pack (side-by-side panels), else the single
+    // meta.radar.file (today's one image). A file that fails to decode
+    // resolves to null — the renderer skips that panel's pixels (the
+    // grid shows through), never an error.
+    const files = [];
+    if (Array.isArray(p.meta.layers) && p.meta.layers.length) {
+      for (const l of p.meta.layers) if (l && l.file) files.push(l.file);
+    } else if (p.meta.radar && p.meta.radar.file) {
+      files.push(p.meta.radar.file);
     }
-    return { pack: p.meta, transform: p.transform, img: null };
+    const imgs = await Promise.all(
+      files.map(async (file) => {
+        const im = new Image();
+        im.src = `${p.base}/${file}`;
+        try {
+          await im.decode();
+          return im;
+        } catch {
+          return null;
+        }
+      }),
+    );
+    return {
+      pack: p.meta,
+      transform: p.transform,
+      img: imgs.length ? imgs[0] : null,
+      layerImgs: imgs,
+    };
   }
 
   // Icon pipeline (handoff C): read the manifest; when it reports no
@@ -1471,10 +1494,11 @@
       } else {
         voicePlayers = [];
       }
-      const { pack: p, transform: tf, img } = await loadPack(matchMap);
+      const { pack: p, transform: tf, img, layerImgs: lims } = await loadPack(matchMap);
       pack = p;
       packTf = tf;
       radarImg = img;
+      layerImgs = lims;
       const res = await fetch(`/api/sidecar/${id}/positions`);
       if (!res.ok) {
         throw new Error(`position data unavailable (HTTP ${res.status})`);
@@ -1613,7 +1637,7 @@
         if (query.follow) navigateFilter(filter, { keepFollow: false });
       },
     });
-    renderer.setPack(pack, radarImg, packTf);
+    renderer.setPack(pack, radarImg, packTf, layerImgs);
     renderer.setLandmarks(drawNorm);
     renderer.setBlinds(blindRows); // flash-white overlay rows from load()
     renderer.setChat(chatLines); // raw chat rows from load() (round -1)

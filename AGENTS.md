@@ -187,7 +187,12 @@ instead of forking it.
   same array); event landmark categories/normalization →
   `lib/replay/landmarks.js` (the ONE categorization — the feed list, the
   scrubber markers and the renderer's world layers all consume its
-  pre-bucketed rows).
+  pre-bucketed rows); radar layer assignment + elevation-indicator rules →
+  `lib/replay/layers.js` (band convention + the REGION-ONLY threshold
+  rules with the optional per-box `z_min`/`z_max` floor scope —
+  indicators come only from `elevation_regions` boxes, never a
+  per-floor default — the renderer's `flightSplits` owns floor-crossing
+  flight splits).
 - **CSS:** one unique prefix per component (`mp-` MatchPicker, `pk-`
   MapPackPrompt, `pp-` PlayerPicker, …); concept classes have one spelling
   in `style.css` — `.chip.badge-computed/.badge-inferred`, `.def`,

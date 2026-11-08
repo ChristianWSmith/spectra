@@ -721,3 +721,60 @@ at the end of the section.
   **Source** — soundevents map parse (21,542 rows, hash-validated
   against 126/127 golden SOS messages) + per-file CRC/byte diff +
   7-demo SOS scan (2026-11-07).
+
+- **Radar elevation indicators (T / ⊥ symbols)** — how CS2/CS:GO mark a
+  radar entity as above/below the reference level. Game assets (current
+  CS2 build): `panorama/images/hud/radar/icon-radar-bomb-above_png.vtex_c`
+  = **⊥** (horizontal bar at the bottom, stem rising from it),
+  `..._below_png.vtex_c` = **T** (bar at top, stem descending);
+  vector twins `panorama/images/icons/ui/map_bomb_above.vsvg_c` /
+  `map_bomb_below.vsvg_c`. Layout
+  (`panorama/layout/hud/hudradar.xml`): `AbovePlayer`/`BombAbove` use
+  class `.PI_Above`, `BelowPlayer`/`BombBelow` use `.PI_Below`;
+  CSS (`hudradar.css`): `.PI_Above { y: 8px }` places it 8px **below**
+  the marker, `.PI_Below { y: -8px }` 8px **above** (both ~13×7px,
+  wash `#CCC`, opacity 0.65). **Settled semantics** (final decision
+  2026-11-08): entity **above** the level → **⊥ below the marker**;
+  entity **below** → **T above the marker**; the flat bar is the
+  "level" line relative to the entity (stem connects marker toward
+  the level). Thresholds in Source-era `hud_radar.cpp` were ±128 world
+  units vs. the local player; no equivalent constant found in CS2's
+  panorama code, so treat thresholds as configurable. Note: the CS2
+  limited test replaced *player* elevation indicators with look
+  direction arrows (patch note 2023-11-16 "Added direction indicators
+  to players in the square radar"), but the Above/Below markup, CSS,
+  and both texture sets still ship in the current build.
+  **spectra rendering** (decision 2026-11-08): the glyph is DRAWN, not
+  shipped — `renderer.js` `drawElevationIndicator` strokes two canvas
+  paths (a stem from the entity's centre, terminated by the flat bar)
+  with a dark halo under a tinted body. The extracted `map_bomb_*.vsvg_c`
+  rendered poorly and are NOT extracted anymore (`TestNoElevIconTable`
+  pins their absence); ⊥/T text glyphs are not used either
+  (font-dependent).
+  **Source** — decoded locally from pak01_dir.vpk (2026-11-08);
+  GameTracking-CS2 `hudradar.xml`/`hudradar.css`
+  (github.com/SteamDatabase/GameTracking-CS2, 2026-11-08);
+  Source `game/client/cstrike/hud_radar.cpp`
+  (git.h3cjp.net/H3cJP/source-engine mirror).
+
+- **`verticalsections` in `resource/overviews/<map>.txt`** — the
+  game's own per-floor radar selection config. Each section names a
+  radar image (`default` → `<map>_radar`, `<section>` →
+  `<map>_<section>_radar`) and bounds it with `AltitudeMax` /
+  `AltitudeMin` world-Z; the game shows the section whose range
+  contains the local player's Z. Sections must not overlap on the
+  same bound value (equal pairs crash the game). Values in the
+  2026-06 build: **de_nuke** `default` [-495, 10000] (upper),
+  `lower` [-10000, -495]; **de_train** `default` [-50, 20000],
+  `lower` [-5000, -50]; **de_vertigo** `default` [11700, 20000],
+  `lower` [-10000, 11700]; **ar_baggage** `default` [-5, 10000],
+  `lower` [-10000, -5]. Maps without the block are single-level.
+  This is the authoritative source for layer-assignment Z thresholds
+  (community tools hardcode e.g. -480/-575 for nuke and got corrected
+  to -495 from this file). Paired radar textures live at
+  `panorama/images/overheadmaps/<map>_lower_radar_psd.vtex_c`.
+  **Source** — local probe of pak01_dir.vpk `resource/overviews/*.txt`
+  (2026-11-08); MurkyYT/cs2-map-icons `data/available.csv` parse of the
+  same files (2026-11-08);
+  https://github.com/zenojunior/cs2d/discussions/57 (2026-11-08);
+  https://www.reddit.com/r/csmapmakers/comments/46dpws/ (2016-02-18).
