@@ -65,6 +65,7 @@
     stateCapable,
   } from '../replay/state.js';
   import { deriveBullets } from '../replay/bullets.js';
+  import { buildDecoyPlan } from '../replay/decoy.js';
   import { loadIconManifest, preloadIcons } from '../replay/icons.js';
   import {
     AUDIO_VOL_DEFAULT,
@@ -520,8 +521,10 @@
       if (filter.steamId && l.steamId !== filter.steamId) continue;
       // The ONE bucket → marker mapping (landmarks.scrubberMarkerClass —
       // the contract src/lib/landmarks.test.js pins): the typed grenade
-      // buckets (smoke/fire/flash/he/decoy) count as 'det' alongside
-      // explode/detonation; drop/pickup/damage carry no marker ('').
+      // buckets (smoke/fire/flash/he) count as 'det' alongside
+      // explode/detonation; drop/pickup/damage and 'land' (a grenade
+      // ACTIVATION — its explosion carries the det marker) carry no
+      // marker ('').
       const cls = scrubberMarkerClass(l.bucket);
       if (!cls) continue;
       if (l.tick < t0 || l.tick > t1) continue;
@@ -1019,6 +1022,38 @@
     return sideFromFlags(slotData.flags[frame]);
   }
 
+  // decoyPlanFor — THE one decoy-plan derivation (lib/replay/decoy.js):
+  // the drawable rows (drawNorm — same source the renderer's landmark
+  // layers and the sfx cues get) + rounds + the state stream → the
+  // decoy's rest-to-explosion rows ({landTick, detTick, x, y, side,
+  // weapon, shots}) that BOTH the renderer (rest icon + noise pulses)
+  // and the sfx engine (the same shots as fake gunshots) consume — the
+  // bullets.js one-derivation-two-consumers pattern, pushed at the same
+  // three sites deriveBullets is.
+  //   - resolveFrame: the ENGINE's frame search (engine exists by the
+  //     startEngine pushes; the load-time push has none → null → the
+  //     plan carries no shots, never a guessed weapon — startEngine
+  //     re-pushes the real one);
+  //   - sideAt: sideAtTick's frame bits, then the final-side table — the
+  //     SAME fallback the renderer's throwerSideAt/sideAtFrame applies
+  //     (sideFromFlags(bits, finalSide)), so the icon tint and the
+  //     flight tint can never disagree.
+  function decoyPlanFor() {
+    return buildDecoyPlan(drawNorm, rounds, {
+      stateIndex,
+      resolveFrame: engine ? (t) => engine.frameForTick(Math.max(engine.firstTick, t)) : null,
+      sideAt: (steamId, tick) => {
+        const bits = sideAtTick(steamId, tick);
+        if (bits) return bits;
+        const id = String(steamId || '');
+        const p = players.find((q) => q && q.steamId != null && String(q.steamId) === id);
+        return (p && p.side) || '';
+      },
+      players,
+      tickRate: meta?.tickRate,
+    });
+  }
+
   const statsBySteam = $derived(
     liveStats(drawNorm, {
       rounds,
@@ -1418,6 +1453,12 @@
         sfx?.setBullets(
           deriveBullets(stateIndex, { ticks: data?.ticks, rounds, tickRate: meta?.tickRate }),
         );
+        // Decoy plan: same guard/push shape as the bullets above (the
+        // rows may not be fetched yet — startEngine re-pushes the real
+        // plan once drawRows/data are in; a null engine here means no
+        // resolveFrame → shots: [], never a guessed weapon).
+        renderer?.setDecoyPlan(decoyPlanFor());
+        sfx?.setDecoyPlan(decoyPlanFor());
         sfx?.setRounds(rounds); // freeze gate for the util/knife cue lists
       } else if (smeta && smeta.stateFormatVersion != null) {
         stateNote =
@@ -1593,6 +1634,12 @@
     renderer.setBullets(
       deriveBullets(stateIndex, { ticks: data.ticks, rounds, tickRate: meta?.tickRate }),
     );
+    // Decoy plan: the SAME derivation for both consumers (the renderer's
+    // rest icon + noise pulses, the sfx engine's fake gunshots) — the
+    // engine exists now, so resolveFrame resolves and the schedule is
+    // generated. Always push: like deriveBullets(null, …) → [], a match
+    // without decoys/state clears any rows from a previous push.
+    renderer.setDecoyPlan(decoyPlanFor());
     renderer.resize();
     renderer.setCameraMode(rendererCam()); // default 'smart' unless the pref says free
     offChange = engine.onChange((st) => {
@@ -1693,6 +1740,10 @@
       sfx.setBullets(
         deriveBullets(stateIndex, { ticks: data.ticks, rounds, tickRate: meta?.tickRate }),
       );
+      // Decoy plan — the SAME rows the renderer just got: one
+      // derivation, both consumers (a pulse and its gunshot can never
+      // disagree).
+      sfx.setDecoyPlan(decoyPlanFor());
       sfx.setVolume(uiGunsVol);
       sfx.setUtilityVolume(uiUtilVol);
       sfx.setMuted('guns', uiGunsMuted);

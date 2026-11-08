@@ -375,6 +375,33 @@ export function voiceBloom(tick, tickRate, dotR) {
   };
 }
 
+// shotBloom — the EVENT-ANCHORED twin of voiceBloom (exported next to
+// it on purpose): the SAME white-bloom recipe — identical
+// VOICE_BLOOM_* constants, identical { k, radius, alpha } shape — but
+// the phase runs from an EVENT tick (age = (tick − shotTick)/tr) instead
+// of the clock-global loop, and it is SINGLE-CYCLE: one bloom per sound,
+// returning null before the shot and once VOICE_BLOOM_PERIOD_S of demo
+// time has passed (nothing loops after the sound, nothing is sticky
+// across a scrub — a scrub into the window re-renders the same phase).
+// `anchorR` is the anchor's radius (the dot's r for a player, half the
+// decoy icon for a fake gunshot — the decoy plan draws these). Pure —
+// head-tested in src/lib/renderer.test.js; drawn by drawGrenades.
+export function shotBloom(tick, startTick, tickRate, anchorR) {
+  if (!Number.isFinite(tick) || !Number.isFinite(startTick) || !(tickRate > 0)) return null;
+  if (!Number.isFinite(anchorR) || !(anchorR > 0)) return null;
+  const age = tick - startTick;
+  if (age < 0) return null; // before the sound — nothing to bloom
+  const period = VOICE_BLOOM_PERIOD_S;
+  const secs = age / tickRate;
+  if (secs >= period) return null; // the one cycle is over
+  const k = secs / period;
+  return {
+    k,
+    radius: VOICE_BLOOM_MIN_R + k * (anchorR + VOICE_BLOOM_MAX_R - VOICE_BLOOM_MIN_R),
+    alpha: VOICE_BLOOM_MAX_A * (1 - k),
+  };
+}
+
 // fireJump — the seek/frame-jump detector — was removed with the
 // attack-edge firing indicator: tracers no longer arm from state edges
 // (bullets.js's pre-derived rows are seek-correct by construction —
@@ -481,8 +508,11 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   //                    pack→{posX,posY,scale,width,height} derivation
   let radar = null; // Image, when the pack ships one
   let landmarks = [];
-  let polylines = []; // grenade throw→detonate pairs
+  let polylines = []; // grenade throw→detonate (or throw→rest) pairs
   let dets = []; // grenade detonations
+  let lands = []; // grenade LANDINGS (bucket 'land' — the decoy's rest
+  //                // activation row; a throw pairing candidate, NEVER a
+  //                // detonation: it feeds no visual of its own)
   let smokes = [];
   let fires = [];
   let plants = [];
@@ -522,6 +552,12 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // tick (see drawDeaths / drawPlayers' hit flash).
   let kills = [];
   let damages = []; // damages[slot] = [tick, …]
+  // Decoy plan (setDecoyPlan — lib/replay/decoy.js buildDecoyPlan): the
+  // rest-to-explosion rows ({landTick, detTick, x, y, side, weapon,
+  // shots}) stored verbatim like `bullets` — pure data, redraw on set;
+  // drawGrenades renders the rest icon + one white noise pulse per shot
+  // as pure functions of tick (seek-correct, nothing sticky).
+  let decoyPlan = [];
   // Hit-shot tracers (bucket 'damage'): the rows that can show a
   // shooter→victim segment — {tick, attacker, victim, x, y} with x/y the
   // row's stored VICTIM hit position (the shooter's position is read
@@ -681,11 +717,12 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     // Rows arrive PRE-BUCKLETED (lib/replay/landmarks.js normalizeEvent
     // stamps `bucket`) — no classification happens in the render path.
     // Two passes: bucket everything, then pair throws against the
-    // COMPLETE detonation set (a single pass would scan a half-populated
+    // COMPLETE pairing pool (a single pass would scan a half-populated
     // raw list and re-classify every row per throw).
     landmarks = list || [];
     polylines = [];
     dets = [];
+    lands = [];
     smokes = [];
     fires = [];
     plants = [];
@@ -753,8 +790,15 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
         case 'detonation':
         case 'flash':
         case 'he':
-        case 'decoy':
           dets.push(l);
+          break;
+        case 'land':
+          // A grenade coming to REST (the decoy's activation — bucket
+          // 'land', NOT in DETONATION_BUCKETS): it draws nothing itself
+          // (the rest icon + noise pulses come from the decoy PLAN), it
+          // only joins the throw-pairing pool below so a decoy's arc
+          // ends at the rest position instead of at the explosion.
+          lands.push(l);
           break;
         case 'smoke':
           // Typed detonations land in their OWN bucket (drawBucket routes
@@ -798,13 +842,20 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     // planted round-end cleanup). One rebuild per setLandmarks call —
     // the per-frame paths only scan these small arrays.
     bombEv = { drops, pickups, plants, roundEnds };
+    // Pairing pool: detonations AND landings. A landing row's weapon is
+    // "Decoy Grenade", so sameUtilityWeapon only ever pairs it with a
+    // DECOY throw (every other grenade's nearest candidate stays its own
+    // detonation — unchanged); the decoy's arc then ends at the REST
+    // position while the explosion still animates from the UNPAIRED
+    // detonation row (the HE-style ring at decoy_detonate).
+    const pairPool = lands.length ? dets.concat(lands) : dets;
     for (const l of throws) {
-      // pair with the nearest detonation of same round+thrower+weapon
-      // (weapon equality is sameUtilityWeapon — Molotov ≡ Incendiary,
-      // see landmarks.js)
+      // pair with the nearest detonation/landing of same
+      // round+thrower+weapon (weapon equality is sameUtilityWeapon —
+      // Molotov ≡ Incendiary, see landmarks.js)
       let best = null;
       let bestDelta = Infinity;
-      for (const d of dets) {
+      for (const d of pairPool) {
         if (d.round !== l.round) continue;
         if (l.steamId && d.steamId !== l.steamId) continue;
         if (!sameUtilityWeapon(l.weapon, d.weapon)) continue;
@@ -888,6 +939,19 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // `draw` marks. Absent/null clears the tracers.
   function setBullets(rows) {
     bullets = rows || [];
+    draw();
+  }
+
+  // setDecoyPlan(plan): the decoy rest/noise rows from lib/replay/decoy.js
+  // buildDecoyPlan ({landTick, detTick, x, y, side, weapon, shots} — world
+  // coords, one entry per decoy that came to rest AND whose explosion the
+  // demo recorded). Stored verbatim like setBullets (pure data, redraw on
+  // set): the renderer re-derives NOTHING — drawGrenades windows the rows
+  // by tick (rest icon while landTick ≤ tick < detTick, one white
+  // shotBloom per shot) and the sfx engine plays the SAME shots (the
+  // bullets.js one-plan-two-consumers pattern). Absent/null clears.
+  function setDecoyPlan(plan) {
+    decoyPlan = plan || [];
     draw();
   }
 
@@ -1178,10 +1242,14 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // then each grenade's flight (the extracted icon interpolated linearly
   // between the pair's ticks — progress is pure tick math, so a scrub
   // lands on the right spot; the line and the icon carry the THROWER's
-  // team color, see throwerSideAt), then ONE distinct detonation visual
-  // per type (detonationStyleOf): HE expanding ring, flash white pop,
-  // team-tinted smoke bloom (the same thrower tint as the lingering
-  // smoke area it hands off to), fire ring, decoy pulse.
+  // team color, see throwerSideAt — a decoy's arc ENDS at its REST
+  // position, paired to the grenade_land row), then the decoy PLAN's
+  // rest icon + one white noise pulse per fake gunshot (setDecoyPlan —
+  // the same shots the sfx engine plays), then ONE distinct detonation
+  // visual per type (detonationStyleOf): HE expanding ring (the type a
+  // decoy explosion also renders as — BaseGrenade.Explode), flash white
+  // pop, team-tinted smoke bloom (the same thrower tint as the lingering
+  // smoke area it hands off to), fire ring.
   function drawGrenades(tick) {
     const tr = engine.tickRate;
     // smoke / fire areas first (under the lines)
@@ -1227,7 +1295,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     // at the throw tick (throwerSideAt — slotOfSteam + sideAtFrame, the
     // canonical rule): CT blue / T orange, and the NEUTRAL orange line
     // with the untinted icon when the thrower cannot be resolved — a
-    // side is never guessed. Lingering FIRE areas and the fire/HE/decoy
+    // side is never guessed. Lingering FIRE areas and the fire/HE
     // detonation visuals stay type-colored (drawn above); the lingering
     // SMOKE area and its bloom take the thrower's tint too (the SAME
     // rule — smokeColorRGB), neutral gray when the side is unknown.
@@ -1282,6 +1350,50 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
         ctx.fill();
       }
     }
+    // Decoy plan (setDecoyPlan — lib/replay/decoy.js): the REST icon
+    // while landTick ≤ tick < detTick, tinted by the thrower's side
+    // through the SAME rule as the flight line above (teamColor for
+    // 'ct'/'t', the amber thrower-side tint as the unresolvable-side
+    // fallback — a side is never guessed), plus ONE white mic-talk bloom
+    // per scheduled fake gunshot (shotBloom — the event-anchored
+    // voiceBloom recipe, exactly one cycle per sound). Drawn INSIDE
+    // drawGrenades, BEFORE the detonation loop below (the HE-style
+    // explosion at detTick paints over the icon's last frame) and
+    // therefore beneath the dots (draw() calls drawGrenades before
+    // drawPlayers). A position-less plan row draws nothing (hasPos —
+    // never a guessed spot); the icon falls back to the same amber origin
+    // dot the flight path uses when the icon pipeline has no art.
+    for (const p of decoyPlan) {
+      if (!Number.isFinite(p.landTick) || !Number.isFinite(p.detTick)) continue;
+      if (tick < p.landTick || tick >= p.detTick) continue;
+      if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
+      const c = worldToScreen(p.x, p.y);
+      const team = p.side === 'ct' || p.side === 't' ? teamColor(p.side) : null;
+      const img = iconFor('Decoy Grenade');
+      const drawn = img ? drawIcon(img, c.x, c.y, NADE_ICON_PX, team || 'rgba(251, 172, 24, 0.85)') : false;
+      if (!drawn) {
+        ctx.fillStyle = 'rgba(251, 172, 24, 0.8)';
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      for (const s of p.shots || []) {
+        const bloom = shotBloom(tick, s.tick, tr, NADE_ICON_PX / 2);
+        if (!bloom) continue; // outside this sound's single cycle
+        ctx.strokeStyle = '#ffffff';
+        ctx.globalAlpha = bloom.alpha;
+        ctx.lineWidth = 2.5 * (1 - bloom.k) + 1; // shrinks as it expands
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, bloom.radius, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.fillStyle = '#ffffff';
+        ctx.globalAlpha = 0.7 * (1 - bloom.k);
+        ctx.beginPath();
+        ctx.arc(c.x, c.y, 3 * (1 - bloom.k) + 1, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.globalAlpha = 1;
+      }
+    }
     // Detonations — one visual per type (smoke/fire also linger above;
     // their bloom hands the area off to it). Every branch is a function
     // of the event tick: scrubbing replays it, nothing is sticky.
@@ -1333,18 +1445,10 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
         ctx.beginPath();
         ctx.arc(c.x, c.y, 6 * (1 - k) + 1.5, 0, Math.PI * 2);
         ctx.fill();
-      } else if (style === 'decoy') {
-        const dur = 2.4; // s — three soft pulses while it fakes fire
-        if (age > dur) continue;
-        const k = age / dur;
-        const r = 6 + 4 * (0.5 + 0.5 * Math.sin(k * Math.PI * 6));
-        ctx.strokeStyle = `rgba(140, 205, 255, ${0.85 * (1 - k)})`;
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.arc(c.x, c.y, r, 0, Math.PI * 2);
-        ctx.stroke();
       } else {
-        // HE (and any unknown weapon): the classic expanding ring —
+        // HE (and any unknown weapon — INCLUDING a decoy detonation:
+        // detonationStyle('Decoy Grenade') = 'he', the game plays
+        // BaseGrenade.Explode): the classic expanding ring —
         // ~1.3 s total (slightly faster than the old ~2 s), growth
         // scaled so the ring still reaches the same maximum radius.
         const dur = 1.3;
@@ -2576,6 +2680,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     setBlinds,
     setChat,
     setBullets,
+    setDecoyPlan,
     setStateIndex,
     setData,
     panBy,

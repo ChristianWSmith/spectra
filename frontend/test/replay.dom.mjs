@@ -137,10 +137,13 @@ writeFileSync(
 // it imports audio.js for the shared GST_AUDIO_HINT string, and
 // audio.js pulls the pure stretch DSP. bullets.js is the shot derivation
 // Replay pushes to BOTH the renderer and the sfx engine (deriveBullets
-// fails soft to [] against this harness's null state index).
+// fails soft to [] against this harness's null state index). decoy.js is
+// the decoy rest/noise plan Replay derives once per push site
+// (buildDecoyPlan — pure over the draw rows; no state index here →
+// shots: [], icon/explosion rows only).
 for (const rel of [
   'playercard.js', 'playercolor.js', 'livestats.js', 'voiceindex.js',
-  'sfx.js', 'stretch.js', 'bullets.js',
+  'sfx.js', 'stretch.js', 'bullets.js', 'decoy.js',
 ]) {
   writeFileSync(join(dir, 'replay', rel), readFileSync(join('src/lib/replay', rel), 'utf8'));
 }
@@ -326,6 +329,7 @@ writeFileSync(
     setBlinds() {},
     setChat() {},
     setBullets() {},
+    setDecoyPlan() {},
     setHud() {},
     setIcons() {},
     setVoices() {},
