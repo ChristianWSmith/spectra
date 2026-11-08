@@ -20,7 +20,9 @@ import (
 // models.IsUtilityWeapon use. A SECOND family rides the same pipeline:
 // the game's own death-notice glyphs under panorama/images/hud/deathnotice/
 // (noticeIconTable), keyed the way renderer.js drawKillFeed asks for them
-// ('blind_kill'/'headshot') — non-equipment keys, so they live in their
+// ('blind_kill'/'headshot' plus the round-4 indicator keys 'noscope',
+// 'throughsmoke', 'wallbang', 'airborne', 'suicide', 'explosion') —
+// non-equipment keys, so they live in their
 // own table and never join iconTable (TestIconTableCanonicalNames pins
 // that one to the demoinfocs enum). Assets the UI needs but has no
 // canonical name for (planted_c4, knife variants) are NOT extracted: the
@@ -32,8 +34,12 @@ import (
 const (
 	iconPrefix   = "panorama/images/icons/equipment/"
 	noticePrefix = "panorama/images/hud/deathnotice/"
-	iconSuffix   = ".vsvg_c"
-	iconExt      = ".svg"
+	// hudPrefix is the death-notice glyphs' PARENT dir — one glyph
+	// (kill_pip_blast) lives there instead of inside deathnotice/; see
+	// noticePrefixes.
+	hudPrefix  = "panorama/images/hud/"
+	iconSuffix = ".vsvg_c"
+	iconExt    = ".svg"
 )
 
 // iconTable is the ONE canonical-name → VPK-basename table (keys are
@@ -109,21 +115,40 @@ var iconTable = map[string]string{
 // noticeIconTable is the SECOND extraction family: the game's own
 // death-notice glyphs, keyed the way renderer.js drawKillFeed asks for
 // them (iconFor('blind_kill') before the killer's name, iconFor('headshot')
-// after the weapon). The values are the .vsvg_c basenames under
-// noticePrefix — same container format as the equipment set, verified to
-// decode with decodeVSVG on a real install (2026-11-07).
+// after the weapon — the other keys are the feed's round-4 indicators:
+// 'noscope'/'throughsmoke'/'wallbang' after the weapon, 'airborne' after
+// the killer, 'suicide'/'explosion' on the icon-only rows). The values are
+// the .vsvg_c basenames — same container format as the equipment set,
+// verified to decode with decodeVSVG on a real install (2026-11-07).
 //
 // These keys are NOT EquipmentType.String() outputs, so they must never
 // join iconTable — that table is pinned to the demoinfocs enum by
 // TestIconTableCanonicalNames; TestNoticeIconTable pins THIS one.
 //
-// Existing extracted installs gain these two glyphs only by re-extracting
+// Existing extracted installs gain the new glyphs only by re-extracting
 // (Settings → "Extract all CS2 assets"): until then IconFiles omits them
 // and the kill feed draws its rows without the indicators (the renderer
 // skips a missing glyph without reserving any space).
 var noticeIconTable = map[string]string{
-	"headshot":   "icon_headshot", // panorama/images/hud/deathnotice/icon_headshot.vsvg_c
-	"blind_kill": "blind_kill",    // panorama/images/hud/deathnotice/blind_kill.vsvg_c
+	"headshot":     "icon_headshot",  // panorama/images/hud/deathnotice/icon_headshot.vsvg_c
+	"blind_kill":   "blind_kill",     // panorama/images/hud/deathnotice/blind_kill.vsvg_c
+	"noscope":      "noscope",        // panorama/images/hud/deathnotice/noscope.vsvg_c
+	"throughsmoke": "smoke_kill",     // panorama/images/hud/deathnotice/smoke_kill.vsvg_c
+	"wallbang":     "penetrate",      // panorama/images/hud/deathnotice/penetrate.vsvg_c
+	"airborne":     "inairkill",      // panorama/images/hud/deathnotice/inairkill.vsvg_c
+	"suicide":      "icon_suicide",   // panorama/images/hud/deathnotice/icon_suicide.vsvg_c
+	"explosion":    "kill_pip_blast", // panorama/images/hud/kill_pip_blast.vsvg_c (see noticePrefixes)
+}
+
+// noticePrefixes overrides the VPK directory for noticeIconTable keys that
+// do NOT live under noticePrefix. Only 'explosion': the deathnotice dir has
+// no explosion glyph (huddeathnotice.vxml_c binds bomb deaths to Suicide +
+// the weapon slot), so the feed's C4 row uses the hud kill-context "blast"
+// pip — panorama/images/hud/kill_pip_blast.vsvg_c (decodes with decodeVSVG,
+// verified 2026-11-07). Swap point: put a true deathnotice explosion
+// glyph in noticeIconTable and drop this entry.
+var noticePrefixes = map[string]string{
+	"explosion": hudPrefix,
 }
 
 // extractTable is BOTH families merged — the one map ExtractIcons walks
@@ -172,7 +197,11 @@ var iconFileToName = func() map[string]string {
 // the key belongs to instead of assuming iconPrefix.
 func iconVPKPath(name string) string {
 	if base, ok := noticeIconTable[name]; ok {
-		return noticePrefix + base + iconSuffix
+		dir := noticePrefix
+		if d, ok := noticePrefixes[name]; ok {
+			dir = d
+		}
+		return dir + base + iconSuffix
 	}
 	return iconPrefix + iconTable[name] + iconSuffix
 }

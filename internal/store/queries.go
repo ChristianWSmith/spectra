@@ -182,7 +182,7 @@ const eventRowCols = `e.id, e.seq, e.tick, e.round, e.kind,
 	e.attacker, COALESCE(ap.name, ''), e.victim, COALESCE(vp.name, ''),
 	e.assister, COALESCE(asp.name, ''),
 	e.weapon, e.headshot, e.wallbang, e.noscope, e.through_smoke,
-	e.attacker_blind, e.assisted_flash, e.distance, e.hitgroup, e.dmg, e.site,
+	e.attacker_blind, e.attacker_inair, e.assisted_flash, e.distance, e.hitgroup, e.dmg, e.site,
 	e.pos_x, e.pos_y, e.pos_z, e.apos_x, e.apos_y, e.apos_z`
 
 var eventRowFrom = ` FROM events e
@@ -691,7 +691,7 @@ func (s *Store) GetEvent(id int64) (*models.EventDetail, error) {
 	).Scan(
 		&er.ID, &er.Seq, &er.Tick, &er.Round, &er.Kind, &er.Attacker, &er.AttackerName,
 		&er.Victim, &er.VictimName, &er.Assister, &er.AssisterName, &er.Weapon, &er.Headshot,
-		&er.Wallbang, &er.Noscope, &er.ThroughSmoke, &er.AttackerBlind, &er.AssistedFlash,
+		&er.Wallbang, &er.Noscope, &er.ThroughSmoke, &er.AttackerBlind, &er.AttackerInAir, &er.AssistedFlash,
 		&er.Distance, &er.Hitgroup, &er.Dmg, &er.Site, &er.PosX, &er.PosY, &er.PosZ,
 		&er.AttackerPosX, &er.AttackerPosY, &er.AttackerPosZ,
 		&det, &raw,
@@ -906,7 +906,7 @@ func scanEventRow(row interface{ Scan(...any) error }) (models.EventRow, error) 
 	err := row.Scan(
 		&er.ID, &er.Seq, &er.Tick, &er.Round, &er.Kind, &er.Attacker, &er.AttackerName,
 		&er.Victim, &er.VictimName, &er.Assister, &er.AssisterName, &er.Weapon, &er.Headshot,
-		&er.Wallbang, &er.Noscope, &er.ThroughSmoke, &er.AttackerBlind, &er.AssistedFlash,
+		&er.Wallbang, &er.Noscope, &er.ThroughSmoke, &er.AttackerBlind, &er.AttackerInAir, &er.AssistedFlash,
 		&er.Distance, &er.Hitgroup, &er.Dmg, &er.Site, &er.PosX, &er.PosY, &er.PosZ,
 		&er.AttackerPosX, &er.AttackerPosY, &er.AttackerPosZ,
 	)

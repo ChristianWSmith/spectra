@@ -275,6 +275,12 @@ type Event struct {
 	AttackerPosX  *float64 `json:"attackerPosX,omitempty"`
 	AttackerPosY  *float64 `json:"attackerPosY,omitempty"`
 	AttackerPosZ  *float64 `json:"attackerPosZ,omitempty"`
+	// AttackerInAir is the player_death payload's `attackerinair` (the
+	// attacker was midair). demoinfocs' events.Kill has NO MidAir field
+	// and dispatches BEFORE the raw GenericGameEvent, so the extractor
+	// derives it from the paired payload at flush time (agg.flushRaw) —
+	// absent payload ⇒ false, never guessed.
+	AttackerInAir bool `json:"attackerInAir"`
 }
 
 // GenericEvent is one raw game-event (generic_events table) — the histogram

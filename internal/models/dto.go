@@ -136,6 +136,9 @@ type EventRow struct {
 	AttackerPosX *float64 `json:"attackerPosX,omitempty"`
 	AttackerPosY *float64 `json:"attackerPosY,omitempty"`
 	AttackerPosZ *float64 `json:"attackerPosZ,omitempty"`
+	// AttackerInAir mirrors events.attacker_inair — the payload-only
+	// kill flag (see models.Event.AttackerInAir).
+	AttackerInAir bool `json:"attackerInAir"`
 }
 
 // EventDetail is one event with its JSON payloads (detail pane).
@@ -157,8 +160,9 @@ func EventFromRow(r EventRow) Event {
 		Attacker: r.Attacker, Victim: r.Victim, Assister: r.Assister,
 		Weapon: r.Weapon, Headshot: r.Headshot, Wallbang: r.Wallbang,
 		Noscope: r.Noscope, ThroughSmoke: r.ThroughSmoke,
-		AttackerBlind: r.AttackerBlind, AssistedFlash: r.AssistedFlash,
-		Distance: r.Distance, Hitgroup: r.Hitgroup, Dmg: r.Dmg, Site: r.Site,
+		AttackerBlind: r.AttackerBlind, AttackerInAir: r.AttackerInAir,
+		AssistedFlash: r.AssistedFlash,
+		Distance:      r.Distance, Hitgroup: r.Hitgroup, Dmg: r.Dmg, Site: r.Site,
 		PosX: r.PosX, PosY: r.PosY, PosZ: r.PosZ,
 		AttackerPosX: r.AttackerPosX, AttackerPosY: r.AttackerPosY, AttackerPosZ: r.AttackerPosZ,
 	}

@@ -89,7 +89,7 @@ func testExtracted(sha string, extractedAt time.Time) *models.ExtractedMatch {
 		},
 		Events: []models.Event{
 			{Tick: 100, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "200",
-				Weapon: "ak47", Headshot: true, Distance: 12.5, Dmg: 100,
+				Weapon: "ak47", Headshot: true, AttackerInAir: true, Distance: 12.5, Dmg: 100,
 				PosX: pf(123.5), PosY: pf(-456.25), PosZ: pf(12.0),
 				AttackerPosX: pf(10.0), AttackerPosY: pf(20.0), AttackerPosZ: pf(30.0),
 				DetailJSON: `{"k":1}`, RawJSON: `{"r":1}`},
@@ -441,8 +441,14 @@ func TestSaveExtractedRoundtrip(t *testing.T) {
 	e0 := detail.Events[0]
 	if e0.Seq != 0 || e0.Kind != models.EventKill || e0.Attacker != "100" || e0.AttackerName != "alice" ||
 		e0.Victim != "200" || e0.VictimName != "bob" || e0.Weapon != "ak47" || !e0.Headshot ||
+		!e0.AttackerInAir || // the raw-payload-only kill flag round-trips its column
 		e0.Distance != 12.5 || e0.Dmg != 100 || e0.ID == 0 {
 		t.Errorf("first event mismatch: %+v", e0)
+	}
+	// …and a kill WITHOUT the flag stays false (the column default is 0 —
+	// no payload ⇒ never guessed).
+	if detail.Events[2].AttackerInAir {
+		t.Errorf("third event attackerInAir = true, want false: %+v", detail.Events[2])
 	}
 	if len(detail.Chat) != 1 || detail.Chat[0].Text != "glhf" || detail.Chat[0].Name != "alice" ||
 		detail.Chat[0].Kind != "chat" {
@@ -474,6 +480,11 @@ func TestSaveExtractedRoundtrip(t *testing.T) {
 	}
 	if len(all) != 5 {
 		t.Fatalf("GetEvents len = %d, want 5", len(all))
+	}
+	// The timeline read path (eventRowCols → scanEventRow) carries the
+	// flag too — same column, second scan site.
+	if !all[0].AttackerInAir {
+		t.Errorf("GetEvents[0].AttackerInAir = false, want true (column in eventRowCols/scanEventRow)")
 	}
 	det, err := s.GetEvent(all[0].ID)
 	if err != nil {

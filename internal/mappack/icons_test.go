@@ -115,19 +115,28 @@ func TestIconTableCanonicalNames(t *testing.T) {
 
 // TestNoticeIconTable pins the SECOND extraction family: the death-notice
 // glyphs renderer.js drawKillFeed consumes (iconFor('blind_kill') before
-// the killer's name, iconFor('headshot') after the weapon). Both entries
-// must decode-ready through the shared pipeline (their exact VPK paths
-// under noticePrefix → <base>.svg written and re-manifested by
+// the killer's name, iconFor('headshot') after the weapon — plus the
+// round-4 indicators 'noscope'/'throughsmoke'/'wallbang' after the
+// weapon, 'airborne' after the killer, and the icon-only 'suicide'/
+// 'explosion' rows). Every entry must decode-ready through the shared
+// pipeline (its exact VPK path → <base>.svg written and re-manifested by
 // TestExtractIconsSynthetic), keep safe file stems for the /api/icons
 // whitelist, and never collide with the equipment table — iconFileToName
 // is ONE map over both families, so a collision would silently drop a
 // manifest key.
 func TestNoticeIconTable(t *testing.T) {
-	// Exact VPK paths (verified against a real install 2026-11-07: both
-	// files decode with decodeVSVG).
+	// Exact VPK paths (verified against a real install 2026-11-07: every
+	// file decodes with decodeVSVG). 'explosion' is the one key outside
+	// the deathnotice dir (hud kill-context blast pip — noticePrefixes).
 	wantPaths := map[string]string{
-		"headshot":   noticePrefix + "icon_headshot" + iconSuffix,
-		"blind_kill": noticePrefix + "blind_kill" + iconSuffix,
+		"headshot":     noticePrefix + "icon_headshot" + iconSuffix,
+		"blind_kill":   noticePrefix + "blind_kill" + iconSuffix,
+		"noscope":      noticePrefix + "noscope" + iconSuffix,
+		"throughsmoke": noticePrefix + "smoke_kill" + iconSuffix,
+		"wallbang":     noticePrefix + "penetrate" + iconSuffix,
+		"airborne":     noticePrefix + "inairkill" + iconSuffix,
+		"suicide":      noticePrefix + "icon_suicide" + iconSuffix,
+		"explosion":    hudPrefix + "kill_pip_blast" + iconSuffix,
 	}
 	if len(noticeIconTable) != len(wantPaths) {
 		t.Errorf("noticeIconTable has %d entries, want %d", len(noticeIconTable), len(wantPaths))
@@ -138,11 +147,14 @@ func TestNoticeIconTable(t *testing.T) {
 			t.Errorf("noticeIconTable has no %q entry (the feed asks iconFor(%q))", key, key)
 			continue
 		}
-		if got := noticePrefix + base + iconSuffix; got != path {
-			t.Errorf("noticeIconTable[%q] path = %q, want %q", key, got, path)
+		// iconVPKPath is the resolver extraction walks — pinning the FULL
+		// path through it catches a wrong family prefix (the explosion
+		// override) as well as a wrong basename.
+		if got := iconVPKPath(key); got != path {
+			t.Errorf("iconVPKPath(%q) = %q, want %q", key, got, path)
 		}
 		// Lowercase + underscore only — the same whitelist rule the
-		// equipment stems pass (icon_headshot.svg, blind_kill.svg).
+		// equipment stems pass (icon_headshot.svg, kill_pip_blast.svg).
 		if !ValidIconFileBase(base + iconExt) {
 			t.Errorf("noticeIconTable[%q] = %q is not a safe file stem", key, base)
 		}
@@ -173,6 +185,11 @@ func TestNoticeIconTable(t *testing.T) {
 	}
 	if got := iconFileToName["blind_kill.svg"]; got != "blind_kill" {
 		t.Errorf(`iconFileToName["blind_kill.svg"] = %q, want "blind_kill"`, got)
+	}
+	// the one glyph OUTSIDE the deathnotice dir resolves through the same
+	// single reverse map (noticePrefixes override).
+	if got := iconFileToName["kill_pip_blast.svg"]; got != "explosion" {
+		t.Errorf(`iconFileToName["kill_pip_blast.svg"] = %q, want "explosion"`, got)
 	}
 }
 
@@ -233,12 +250,16 @@ func TestExtractIconsSynthetic(t *testing.T) {
 	const akSVG = `<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"><path d="M1 1"/></svg>` + "\n"
 	const hsSVG = `<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"><path d="M2 2"/></svg>` + "\n"
 	const blindSVG = `<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"><path d="M3 3"/></svg>` + "\n"
+	const blastSVG = `<?xml version="1.0"?><svg xmlns="http://www.w3.org/2000/svg"><path d="M4 4"/></svg>` + "\n"
 	buildVPK(t, csgo, map[string][]byte{
 		iconPrefix + "ak47" + iconSuffix: buildVSVG(t, akSVG),
 		// the second family: the death-notice glyphs ride the same
 		// extraction pass (noticePrefix), decode-ready through decodeVSVG
 		noticePrefix + "icon_headshot" + iconSuffix: buildVSVG(t, hsSVG),
 		noticePrefix + "blind_kill" + iconSuffix:    buildVSVG(t, blindSVG),
+		// …and the ONE glyph outside it (noticePrefixes → hudPrefix):
+		// the C4 row's explosion pip.
+		hudPrefix + "kill_pip_blast" + iconSuffix: buildVSVG(t, blastSVG),
 	})
 
 	out := t.TempDir()
@@ -246,9 +267,9 @@ func TestExtractIconsSynthetic(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ExtractIcons: %v", err)
 	}
-	// Sorted: "AK-47" < "blind_kill" < "headshot" — both families in ONE
-	// extraction pass.
-	want := []string{"AK-47", "blind_kill", "headshot"}
+	// Sorted: "AK-47" < "blind_kill" < "explosion" < "headshot" — both
+	// families in ONE extraction pass.
+	want := []string{"AK-47", "blind_kill", "explosion", "headshot"}
 	if len(names) != len(want) {
 		t.Fatalf("names = %v, want %v", names, want)
 	}
@@ -266,11 +287,12 @@ func TestExtractIconsSynthetic(t *testing.T) {
 		t.Errorf("errs should name missing icons: %v", errs)
 	}
 
-	// The three written files round-trip their exact payload.
+	// The written files round-trip their exact payload.
 	for file, wantSVG := range map[string]string{
-		"ak47.svg":          akSVG,
-		"icon_headshot.svg": hsSVG,
-		"blind_kill.svg":    blindSVG,
+		"ak47.svg":           akSVG,
+		"icon_headshot.svg":  hsSVG,
+		"blind_kill.svg":     blindSVG,
+		"kill_pip_blast.svg": blastSVG,
 	} {
 		data, err := os.ReadFile(filepath.Join(out, file))
 		if err != nil {
@@ -295,6 +317,9 @@ func TestExtractIconsSynthetic(t *testing.T) {
 	}
 	if files["blind_kill"] != "blind_kill.svg" {
 		t.Errorf(`IconFiles["blind_kill"] = %q, want "blind_kill.svg"`, files["blind_kill"])
+	}
+	if files["explosion"] != "kill_pip_blast.svg" {
+		t.Errorf(`IconFiles["explosion"] = %q, want "kill_pip_blast.svg"`, files["explosion"])
 	}
 	// Strays (older game versions, hand-dropped files) are never listed.
 	if err := os.WriteFile(filepath.Join(out, "flair0.svg"), []byte("<svg/>"), 0o644); err != nil {

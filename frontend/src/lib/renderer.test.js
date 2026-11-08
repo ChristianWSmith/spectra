@@ -2827,6 +2827,434 @@ test('kill feed: (blind) killer + assister weapon (headshot) victim — glyph sl
   r.destroy();
 });
 
+// bodyBySrc — one feed glyph's BODY paint (the halo is a derived canvas
+// with no src; the body carries the manifest image object, so src is the
+// only reliable way to tell eight square 14 px glyphs apart).
+const bodyBySrc = (log, from, src) =>
+  opsSince(log, 'drawImage', from).find((e) => e.args[0] && e.args[0].src === src);
+
+test('kill feed: a fully-flagged row orders blind < killer < airborne < weapon < ns < smoke < wb < hs < victim', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: HUD_PLAYERS });
+  const mk = (ev) => normalizeEvent(ev, {});
+  r.setLandmarks([
+    mk({
+      id: 1,
+      seq: 1,
+      tick: 50,
+      round: 1,
+      kind: 'kill',
+      attacker: '1',
+      attackerName: 'alice',
+      assisterName: 'carol',
+      victim: '2',
+      victimName: 'bob',
+      // a SNIPER: the noscope indicator is gated to NOSCOPE_WEAPONS, so
+      // the fully-flagged row has to be one of the four
+      weapon: 'AWP',
+      attackerBlind: true,
+      attackerInAir: true,
+      noscope: true,
+      throughSmoke: true,
+      wallbang: true,
+      headshot: true,
+    }),
+  ]);
+  // Every glyph present, all square (aspect 1 → 14 px body / 16 px cell)
+  // so the x-position order is the ONLY thing identifying each cell.
+  r.setIcons({
+    AWP: { width: 32, height: 32, src: 'awp.svg' },
+    blind_kill: { width: 32, height: 32, src: 'blind.svg' },
+    airborne: { width: 32, height: 32, src: 'air.svg' },
+    noscope: { width: 32, height: 32, src: 'ns.svg' },
+    throughsmoke: { width: 32, height: 32, src: 'smk.svg' },
+    wallbang: { width: 32, height: 32, src: 'wb.svg' },
+    headshot: { width: 32, height: 32, src: 'hs.svg' },
+  });
+  r.setHud({
+    score: { ct: 0, t: 0 },
+    teamNames: { ct: '', t: '' },
+    round: { number: 1, label: 'R1', startTick: 0, freezeEndTick: 640, endTick: 1200, bombSite: '' },
+    tickRate: 64,
+  });
+  r.resize();
+
+  engine.seekTick(100);
+  const mark = canvas.log.length;
+  r.draw();
+
+  // spec order verbatim, one cell per flag: blind(16) killer(40)
+  // airborne(16) weapon(16) ns(16) smoke(16) wb(16) hs(16) victim(40) =
+  // 192 px of cells + 8 · 12 gaps + 2 · 6 inset = 300 → x = 800 − 8 − 300
+  const box = opsSince(canvas.log, 'roundRect', mark).find(
+    (e) => e.args[3] === KILL_FEED_LH && e.args[4] === KILL_FEED_R,
+  );
+  assert.deepEqual([box.args[0], box.args[1], box.args[2]], [492, 8, 300]);
+
+  // x of every cell (bodies sit 1 px inside their 16 px cell; text starts
+  // at the cell's left edge) — the ordering contract, asserted as data.
+  // Text is scoped to the feed line's y (box y 8 + 4): the world layers
+  // print player names too.
+  const atFeedLine = (txt) =>
+    opsSince(canvas.log, 'fillText', mark).find((e) => e.args[0] === txt && e.args[2] === 12);
+  const killer = atFeedLine('alice + carol');
+  const victim = atFeedLine('bob');
+  const xs = [
+    ['blind', bodyBySrc(canvas.log, mark, 'blind.svg').args[1]],
+    ['killer', killer.args[1]],
+    ['airborne', bodyBySrc(canvas.log, mark, 'air.svg').args[1]],
+    ['weapon', bodyBySrc(canvas.log, mark, 'awp.svg').args[1]],
+    ['noscope', bodyBySrc(canvas.log, mark, 'ns.svg').args[1]],
+    ['smoke', bodyBySrc(canvas.log, mark, 'smk.svg').args[1]],
+    ['wallbang', bodyBySrc(canvas.log, mark, 'wb.svg').args[1]],
+    ['headshot', bodyBySrc(canvas.log, mark, 'hs.svg').args[1]],
+    ['victim', victim.args[1]],
+  ];
+  for (let i = 1; i < xs.length; i++) {
+    assert.ok(
+      xs[i][1] > xs[i - 1][1],
+      `${xs[i][0]} (${xs[i][1]}) must sit right of ${xs[i - 1][0]} (${xs[i - 1][1]})`,
+    );
+  }
+  // every ADJACENT pair is exactly one KILL_FEED_GAP apart (the halo
+  // fills each image cell's [tx, tx+16] exactly, text cells are the flat
+  // 40 px measure): first cell at the inset, victim last at 746.
+  assert.equal(xs[0][1], 492 + 6 + 1, 'the first cell starts at the box inset (+1 for the halo)');
+  assert.equal(killer.args[1], 492 + 6 + 16 + KILL_FEED_GAP, 'the killer follows the blind glyph by one gap');
+  assert.equal(victim.args[1], 746, 'the victim lands at the right-aligned 746');
+  assert.equal(746 - (xs[7][1] - 1 + 16), KILL_FEED_GAP, 'the headshot glyph ends one gap before the victim');
+  // the assister rides the KILLER's cell (no standalone 'carol' run), and
+  // the airborne glyph sits BETWEEN that cell and the weapon: compare the
+  // cell's LEFT edge (the halo), i.e. the body minus its 1 px inset.
+  assert.ok(!textsSince(canvas.log, mark).includes('carol'), 'no separate assister run');
+  assert.equal(xs[2][1] - 1 - (killer.args[1] + 40), KILL_FEED_GAP, 'airborne follows the killer cell');
+  r.destroy();
+});
+
+test('kill feed: noscope is gated to the four scoped snipers', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: HUD_PLAYERS });
+  const mk = (ev) => normalizeEvent(ev, {});
+  const kill = (id, tick, weapon) =>
+    mk({
+      id,
+      seq: id,
+      tick,
+      round: 1,
+      kind: 'kill',
+      attacker: '1',
+      attackerName: 'alice',
+      victim: '2',
+      victimName: 'bob',
+      weapon,
+      noscope: true,
+    });
+  r.setLandmarks([kill(1, 50, 'AWP'), kill(2, 60, 'AK-47')]);
+  r.setIcons({
+    AWP: { width: 32, height: 32, src: 'awp.svg' },
+    'AK-47': { width: 32, height: 32, src: 'ak.svg' },
+    noscope: { width: 32, height: 32, src: 'ns.svg' },
+  });
+  r.setHud({
+    score: { ct: 0, t: 0 },
+    teamNames: { ct: '', t: '' },
+    round: { number: 1, label: 'R1', startTick: 0, freezeEndTick: 640, endTick: 1200, bombSite: '' },
+    tickRate: 64,
+  });
+  r.resize();
+
+  engine.seekTick(100);
+  const mark = canvas.log.length;
+  r.draw();
+
+  // The sniper row carries the glyph; the AK row with the SAME flag does
+  // not — and without the cell its geometry is the plain row's (132 px,
+  // x = 660): no cell, no gap. The noscope glyph is drawn once, in the
+  // AWP row (y = 8 → body y = 10).
+  const ns = opsSince(canvas.log, 'drawImage', mark).filter((e) => e.args[0] && e.args[0].src === 'ns.svg');
+  assert.equal(ns.length, 1, 'exactly one noscope glyph — only the sniper row');
+  assert.equal(ns[0].args[2], 10, '…in the top (AWP) row');
+  const boxes = opsSince(canvas.log, 'roundRect', mark).filter(
+    (e) => e.args[3] === KILL_FEED_LH && e.args[4] === KILL_FEED_R,
+  );
+  assert.deepEqual(
+    boxes.map((e) => [e.args[0], e.args[1], e.args[2]]),
+    [
+      [632, 8, 160], // AWP: killer + weapon + noscope + victim
+      [660, 30, 132], // AK-47: plain-row geometry (flag ignored)
+    ],
+    'the gated flag reserves no cell on a non-sniper weapon',
+  );
+  r.destroy();
+});
+
+test('kill feed: C4 death — explosion glyph + victim only, T-orange outline, no attacker-side flags', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: HUD_PLAYERS });
+  const mk = (ev) => normalizeEvent(ev, {});
+  r.setLandmarks([
+    // Sides chosen so ONLY the rule can produce the outline: the killer
+    // is T (killer-side outline would be orange) and the victim is CT
+    // (victim-side outline would be blue) — yet a bomb death must stroke
+    // T orange. Attacker set (and named) on purpose: the row must also
+    // suppress the killer name/assister. Real C4 rows carry an empty
+    // attacker — the same code path.
+    mk({
+      id: 1,
+      seq: 1,
+      tick: 50,
+      round: 1,
+      kind: 'kill',
+      attacker: '2',
+      attackerName: 'bob',
+      assisterName: 'carol',
+      victim: '1',
+      victimName: 'alice',
+      weapon: 'C4',
+      // every flag that must NOT paint on this row
+      attackerBlind: true,
+      attackerInAir: true,
+      noscope: true,
+      throughSmoke: true,
+      wallbang: true,
+      headshot: true,
+    }),
+  ]);
+  r.setIcons({
+    C4: { width: 32, height: 32, src: 'c4.svg' }, // the weapon glyph must stay out
+    explosion: { width: 32, height: 32, src: 'blast.svg' },
+    blind_kill: { width: 32, height: 32, src: 'blind.svg' },
+    airborne: { width: 32, height: 32, src: 'air.svg' },
+    noscope: { width: 32, height: 32, src: 'ns.svg' },
+    throughsmoke: { width: 32, height: 32, src: 'smk.svg' },
+    wallbang: { width: 32, height: 32, src: 'wb.svg' },
+    headshot: { width: 32, height: 32, src: 'hs.svg' },
+  });
+  r.setHud({
+    score: { ct: 0, t: 0 },
+    teamNames: { ct: '', t: '' },
+    round: { number: 1, label: 'R1', startTick: 0, freezeEndTick: 640, endTick: 1200, bombSite: '' },
+    tickRate: 64,
+  });
+  r.resize();
+
+  engine.seekTick(100);
+  const mark = canvas.log.length;
+  r.draw();
+
+  // Text is scoped to the feed line (box y 8 + 4): the world layers
+  // print player names too, and 'carol' would only ever come from the
+  // feed.
+  const feedText = (txt, y) =>
+    opsSince(canvas.log, 'fillText', mark).some((e) => e.args[0] === txt && e.args[2] === y);
+  assert.ok(!feedText('bob', 12), 'no killer name on a bomb death');
+  assert.ok(!feedText('carol', 12), 'no assister either');
+  assert.ok(feedText('alice', 12), 'the victim cell survives');
+
+  // [explosion(16)][victim(40)] + 1 gap + 2 inset = 80 → x = 712; the
+  // glyph starts at the inset (718), the victim one gap past it (746).
+  const box = opsSince(canvas.log, 'roundRect', mark).find(
+    (e) => e.args[3] === KILL_FEED_LH && e.args[4] === KILL_FEED_R,
+  );
+  assert.deepEqual([box.args[0], box.args[1], box.args[2]], [712, 8, 80]);
+  const boom = bodyBySrc(canvas.log, mark, 'blast.svg');
+  assert.ok(boom, 'the explosion glyph is drawn at the killer cell’s x');
+  assert.equal(boom.args[1], 719, '…at the box inset (712 + 6 + 1)');
+  const victim = opsSince(canvas.log, 'fillText', mark).find((e) => e.args[0] === 'alice' && e.args[2] === 12);
+  assert.equal(victim.args[1], 746, 'the victim is right-aligned as always');
+  assert.equal(victim.fillStyle, '#5aa9e6', 'the victim name keeps the VICTIM’s side tint (CT)');
+
+  // Not ONE other glyph paints: no weapon image, no attacker-side flag.
+  const srcs = opsSince(canvas.log, 'drawImage', mark)
+    .filter((e) => e.args[0] && e.args[0].src)
+    .map((e) => e.args[0].src);
+  assert.deepEqual(srcs, ['blast.svg'], 'the row is explosion + victim, nothing else');
+
+  // Outline in T orange — the bomb belongs to the T side, NOT to either
+  // player: the killer is T (a killer-side outline would be orange) and
+  // the victim is CT (a victim-side outline would be blue), so only the
+  // rule can stroke orange here.
+  const strokes = (color) =>
+    opsSince(canvas.log, 'stroke', mark).filter(
+      (e) => e.strokeStyle === color && e.lineWidth === 1 && e.alpha === 1,
+    );
+  assert.equal(strokes('#e6a35a').length, 1, 'the C4 row is outlined in T orange');
+  assert.equal(
+    strokes('#5aa9e6').length,
+    0,
+    'neither player’s side (killer T, victim CT) reaches the outline',
+  );
+  r.destroy();
+});
+
+test('kill feed: suicide rows — self-kill and empty attacker drop the killer for the suicide glyph', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: HUD_PLAYERS });
+  const mk = (ev) => normalizeEvent(ev, {});
+  r.setLandmarks([
+    // self-kill: attacker === victim (own knife/own utility)
+    mk({
+      id: 1,
+      seq: 1,
+      tick: 50,
+      round: 1,
+      kind: 'kill',
+      attacker: '1',
+      attackerName: 'alice',
+      victim: '1',
+      victimName: 'alice',
+      weapon: 'Knife',
+      headshot: true,
+    }),
+    // empty attacker: world/fall death (weapon 'World')
+    mk({
+      id: 2,
+      seq: 2,
+      tick: 60,
+      round: 1,
+      kind: 'kill',
+      attacker: '',
+      victim: '2',
+      victimName: 'bob',
+      weapon: 'World',
+      attackerInAir: true,
+    }),
+  ]);
+  r.setIcons({
+    Knife: { width: 32, height: 32, src: 'knife.svg' }, // weapon glyph stays out
+    World: { width: 32, height: 32, src: 'world.svg' },
+    suicide: { width: 32, height: 32, src: 'suicide.svg' },
+    airborne: { width: 32, height: 32, src: 'air.svg' },
+    headshot: { width: 32, height: 32, src: 'hs.svg' },
+  });
+  r.setHud({
+    score: { ct: 0, t: 0 },
+    teamNames: { ct: '', t: '' },
+    round: { number: 1, label: 'R1', startTick: 0, freezeEndTick: 640, endTick: 1200, bombSite: '' },
+    tickRate: 64,
+  });
+  r.resize();
+
+  engine.seekTick(100);
+  const mark = canvas.log.length;
+  r.draw();
+
+  // Both rows: [suicide(16)][victim(40)] = 80 px at x = 712, one glyph
+  // each, no weapon/flag cells (the flags on row 2 are attacker-side and
+  // a self/world death has no attacker to hang them on).
+  const boxes = opsSince(canvas.log, 'roundRect', mark).filter(
+    (e) => e.args[3] === KILL_FEED_LH && e.args[4] === KILL_FEED_R,
+  );
+  assert.deepEqual(
+    boxes.map((e) => [e.args[0], e.args[1], e.args[2]]),
+    [
+      [712, 8, 80],
+      [712, 30, 80],
+    ],
+  );
+  const srcs = opsSince(canvas.log, 'drawImage', mark)
+    .filter((e) => e.args[0] && e.args[0].src)
+    .map((e) => e.args[0].src);
+  assert.deepEqual(srcs, ['suicide.svg', 'suicide.svg'], 'only the suicide glyph paints, once per row');
+
+  // No killer name: row 1's 'alice' appears exactly ONCE on its feed line
+  // (box y 8 + 4 — the world layers print player names too): the
+  // self-kill does not print the name twice.
+  const aliceRuns = opsSince(canvas.log, 'fillText', mark).filter(
+    (e) => e.args[0] === 'alice' && e.args[2] === 12,
+  );
+  assert.equal(aliceRuns.length, 1, 'the self-kill shows the name only as the victim');
+  assert.ok(
+    opsSince(canvas.log, 'fillText', mark).some((e) => e.args[0] === 'bob' && e.args[2] === 34),
+    'the world-death victim renders on line 2',
+  );
+
+  // Outlines take the VICTIM's side (the killer IS the victim / there is
+  // none): row 1 victim = alice (CT) → CT blue; row 2 victim = bob (T) →
+  // T orange. entryBoxOps reads the stroke that follows each radius-4
+  // roundRect — the shared painter's own fill/stroke pair.
+  assert.deepEqual(
+    entryBoxOps(canvas.log, mark).map((b) => b.stroke),
+    ['#5aa9e6', '#e6a35a'],
+    'victim-side outlines: CT self-kill, T world death',
+  );
+  r.destroy();
+});
+
+test('kill feed: missing round-4 indicator images reserve NO cell (no gap either)', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: HUD_PLAYERS });
+  const mk = (ev) => normalizeEvent(ev, {});
+  r.setLandmarks([
+    mk({
+      id: 1,
+      seq: 1,
+      tick: 50,
+      round: 1,
+      kind: 'kill',
+      attacker: '1',
+      attackerName: 'alice',
+      victim: '2',
+      victimName: 'bob',
+      weapon: 'AWP',
+      attackerInAir: true,
+      noscope: true,
+      throughSmoke: true,
+      wallbang: true,
+    }),
+  ]);
+  // Manifest WITHOUT any of the four glyphs (a pre-re-extraction install):
+  // only the weapon image exists.
+  r.setIcons({ AWP: { width: 32, height: 32, src: 'awp.svg' } });
+  r.setHud({
+    score: { ct: 0, t: 0 },
+    teamNames: { ct: '', t: '' },
+    round: { number: 1, label: 'R1', startTick: 0, freezeEndTick: 640, endTick: 1200, bombSite: '' },
+    tickRate: 64,
+  });
+  r.resize();
+
+  engine.seekTick(100);
+  const mark = canvas.log.length;
+  r.draw();
+
+  // Plain-row geometry (killer + weapon + victim = 132 px, x = 660): the
+  // four missing glyphs contribute neither cell nor gap, exactly like the
+  // round-1 blind/headshot degradation.
+  const box = opsSince(canvas.log, 'roundRect', mark).find(
+    (e) => e.args[3] === KILL_FEED_LH && e.args[4] === KILL_FEED_R,
+  );
+  assert.deepEqual([box.args[0], box.args[1], box.args[2]], [660, 8, 132]);
+  const killer = opsSince(canvas.log, 'fillText', mark).find((e) => e.args[0] === 'alice' && e.args[2] === 12);
+  const victim = opsSince(canvas.log, 'fillText', mark).find((e) => e.args[0] === 'bob' && e.args[2] === 12);
+  const awp = bodyBySrc(canvas.log, mark, 'awp.svg');
+  assert.ok(awp, 'the weapon image still draws');
+  assert.equal(killer.args[1], 666, 'the killer sits at the box inset');
+  // bodies sit 1 px inside their cell (the halo fills [tx, tx+16])
+  assert.equal(awp.args[1], killer.args[1] + 40 + KILL_FEED_GAP + 1, '…the weapon one gap later');
+  assert.equal(victim.args[1], awp.args[1] - 1 + 16 + KILL_FEED_GAP, '…the victim one gap after it');
+  const srcs = opsSince(canvas.log, 'drawImage', mark)
+    .filter((e) => e.args[0] && e.args[0].src)
+    .map((e) => e.args[0].src);
+  assert.deepEqual(srcs, ['awp.svg'], 'no indicator glyph pixels are drawn');
+  r.destroy();
+});
+
 // --- Readout box (speed line removed) + in-game chat -------------------------
 //
 // The bottom-left corner: the playback readout (follow/loop/packNote —

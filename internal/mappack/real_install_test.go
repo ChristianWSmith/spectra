@@ -90,9 +90,14 @@ func TestExtractRealCS2Icons(t *testing.T) {
 	}
 
 	// Manifest keys other agents are coding against (incl. the renderer's
-	// kill-feed indicators).
+	// kill-feed indicators — every file verified present + decodable on a
+	// real install 2026-11-07).
 	files := IconFiles(out)
-	for _, key := range []string{"AK-47", "Smoke Grenade", "C4", "Kevlar + Helmet", "headshot", "blind_kill"} {
+	for _, key := range []string{
+		"AK-47", "Smoke Grenade", "C4", "Kevlar + Helmet",
+		"headshot", "blind_kill", "noscope", "throughsmoke", "wallbang",
+		"airborne", "suicide", "explosion",
+	} {
 		if files[key] == "" {
 			t.Errorf("manifest key %q missing (have %d keys)", key, len(files))
 		}
