@@ -2,7 +2,9 @@
   // PlayerCard — ONE player's live card beside the replay render area:
   // name (+ the voice live dot), HP + bar with the armor/helmet chip at
   // the row's right edge, the equipped weapon with mag/reserve ammo on
-  // its own line, unspent money, utility (+ the C4 when this player
+  // its own line (or the held-item prefix: a knife/util/C4 in hand shows
+  // its icon | the MAIN weapon's block — see the three modes in the
+  // weapon row below), unspent money, utility (+ the C4 when this player
   // carries the bomb) and the live K/D/A + ADR row — tinted by the
   // player's CURRENT side, ringed by the player's TEAMMATE COLOR, with a
   // per-player voice mute. TeamColumn stacks five of these under one team
@@ -51,8 +53,11 @@
     ammoText,
     armorChip,
     carriesC4,
+    heldItemOf,
     hpBand,
     hpPct,
+    mainAmmoText,
+    mainOf,
     moneyText,
     STATS_TITLE,
     statsText,
@@ -113,6 +118,19 @@
   const armorIconSrc = $derived(chip.icon ? iconSrc(chip.icon) : null);
   const weaponIconSrc = $derived(weapon ? iconSrc(weapon) : null);
 
+  // The weapon row's three display modes (the markup below): a firearm
+  // active (or no state) → the ordinary weapon block; a knife/util/C4 IN
+  // HAND → the held item's icon (no text label) | separator | the MAIN
+  // weapon's block with the MAIN weapon's ammo (mainMag/mainReserve —
+  // never the held item's artifact ammo); held with NO firearm carried
+  // (knife round / dropped sidearm) → the bare held icon only. The row's
+  // height and position never change between modes.
+  const held = $derived(heldItemOf(state));
+  const main = $derived(held ? mainOf(state) : null);
+  const mainAmmo = $derived(held ? mainAmmoText(state) : '—');
+  const heldIconSrc = $derived(held ? iconSrc(held) : null);
+  const mainIconSrc = $derived(main ? iconSrc(main) : null);
+
   // Tooltips carry the full semantics the compact cells truncate.
   const hpTitle = $derived(hp == null ? 'Health unknown' : `Health ${hp}`);
   const armorTitle = $derived.by(() => {
@@ -124,6 +142,19 @@
   const weaponTitle = $derived(
     weapon ? `${weapon} — ${ammo}` : 'Weapon unknown',
   );
+  // The held row's tooltip carries what the icon-only prefix truncates:
+  // the held item's name (it has NO text label) plus the main weapon and
+  // ITS ammo; with no main, the honest reason — a bare held icon must
+  // never assert an empty loadout the stream did not say.
+  const heldTitle = $derived.by(() => {
+    if (!held) return '';
+    if (main) return `${held} + ${main} — ${mainAmmo}`;
+    const inv = state ? state.inventory : null;
+    return Array.isArray(inv)
+      ? `${held} in hand — no firearm carried`
+      : `${held} in hand — loadout unknown`;
+  });
+  const mainTitle = $derived(main ? `${main} — ${mainAmmo}` : '');
   const utilTitle = $derived(
     util == null ? 'Utility unknown' : util.length ? 'Utility carried' : 'No utility',
   );
@@ -183,16 +214,47 @@
     </span>
   </div>
 
-  <!-- The equipped weapon on its OWN fixed-height line: icon, name
-       (ellipsized inside the row) and mag/reserve ammo. -->
+  <!-- The equipped weapon on its OWN fixed-height line — three modes
+       (row height/position identical in all three):
+         1. a firearm active (or no state): the ordinary icon + name +
+            mag/reserve block;
+         2. knife/util/C4 IN HAND with a main firearm carried: the held
+            item's icon (no text label) | thin separator | the MAIN
+            weapon's icon + name + the MAIN weapon's ammo (the stream's
+            mainMag/mainReserve — not the held item's artifact ammo);
+         3. held item and NO firearm (knife round / dropped sidearm):
+            the bare held icon — no separator, no name, no ammo (the
+            row's fixed height keeps the stack stable; a held icon
+            missing from the manifest degrades to nothing, like a missing
+            weapon icon, since the prefix has no text label by design). -->
   <div class="pc-weapon-row">
-    <span class="pc-chip pc-weapon" title={weaponTitle}>
-      {#if weaponIconSrc}
-        <img class="pc-ico" src={weaponIconSrc} alt="" />
+    {#if held}
+      {#if heldIconSrc}
+        <span class="pc-chip pc-held" title={heldTitle}>
+          <img class="pc-ico" src={heldIconSrc} alt="" />
+        </span>
       {/if}
-      <span class="pc-wname">{weapon ?? '—'}</span>
-      <span class="pc-num pc-ammo">{ammo}</span>
-    </span>
+      {#if main && heldIconSrc}
+        <span class="pc-hsep" aria-hidden="true"></span>
+      {/if}
+      {#if main}
+        <span class="pc-chip pc-weapon" title={mainTitle}>
+          {#if mainIconSrc}
+            <img class="pc-ico" src={mainIconSrc} alt="" />
+          {/if}
+          <span class="pc-wname">{main}</span>
+          <span class="pc-num pc-ammo">{mainAmmo}</span>
+        </span>
+      {/if}
+    {:else}
+      <span class="pc-chip pc-weapon" title={weaponTitle}>
+        {#if weaponIconSrc}
+          <img class="pc-ico" src={weaponIconSrc} alt="" />
+        {/if}
+        <span class="pc-wname">{weapon ?? '—'}</span>
+        <span class="pc-num pc-ammo">{ammo}</span>
+      </span>
+    {/if}
   </div>
 
   <div class="pc-econ">
@@ -498,6 +560,27 @@
     min-width: 9ch;
     margin-left: auto;
     text-align: right;
+  }
+
+  /* The held-item prefix (knife/util/C4 in hand): a BARE icon — no text
+     label (its name rides the row's title) — and the thin divider that
+     separates it from the main weapon's block. Both are flex:none so
+     they can never squeeze the name/ammo or move the ammo's auto margin.
+     The divider is a 1px line of the muted text colour at half alpha
+     (the --divider token is an 8% white table line — invisible on a
+     tinted card at 1px) with 4px margins either side, painted inside the
+     row's fixed height. */
+  .pc-held {
+    flex: none;
+  }
+
+  .pc-hsep {
+    flex: none;
+    width: 1px;
+    height: 1em;
+    margin: 0 4px;
+    background: var(--muted);
+    opacity: 0.5;
   }
 
   .pc-econ {
