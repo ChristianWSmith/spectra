@@ -1,8 +1,10 @@
 // Bullet derivation (lib/replay/bullets.js) — the ONE frontend home for
 // turning the sidecar STATE stream into per-shot rows: what fired, when,
-// for whom — and which shots draw a tracer. Pure functions; both the
-// renderer (`setBullets`) and the sfx engine (`setBullets`) consume the
-// same rows, so a tracer and its gunshot can never disagree.
+// for whom. Pure functions; both the renderer (`setBullets`) and the sfx
+// engine (`setBullets`) consume the same rows, so a tracer and its
+// gunshot can never disagree. EVERY derived row animates a tracer (the
+// old "every 3rd auto bullet" selection is retired — the renderer
+// travels a dash for every row, see strokeTracer in renderer.js).
 //
 // Why magAmmo, not the attack bit: `attack` is the raw trigger BUTTON
 // (extract.go samples ButtonAttack at 64 Hz) — held through an entire
@@ -34,13 +36,10 @@
 //   - Freeze time is filtered out (rounds.js inFreezeTime — the game
 //     forbids firing during freeze, so neither tracers nor sounds may
 //     fire there).
-//   - `draw` marks WHICH bullets render a tracer: semi/bolt/pump
-//     weapons draw every shot; full-auto draws the FIRST bullet of a
-//     burst then every 3rd (a lone bullet always draws exactly one
-//     tracer; a 30-round spray draws 1,4,7,… — ten lines, not thirty).
-//     A burst breaks on a weapon change or a gap > half a second, so
-//     each new burst restarts the count. Sounds are NOT selective: sfx
-//     plays EVERY row (the real fire cadence).
+//   - Every row is a shot: sfx plays EVERY row (the real fire cadence)
+//     and the renderer animates a traveling tracer for EVERY row —
+//     there is no per-row `draw` selection anymore (the semi/auto,
+//     burst-counting rule was retired by spec: "animate all tracers").
 
 import { inFreezeTime } from '../rounds.js';
 import { stateAt } from './state.js';
@@ -48,10 +47,11 @@ import { stateAt } from './state.js';
 // GUN_WEAPONS — exactly the iconTable's (internal/mappack/icons.go)
 // firearms + Zeus, canonical spellings. Anything not listed here is not
 // a gun for shot purposes (utility/knife/C4/armor are deliberately
-// absent — never "recover" them into this set). AUTO_WEAPONS ⊆
-// GUN_WEAPONS: full-auto weapons and the two auto-snipers; everything
-// else in GUN_WEAPONS is semi/bolt/pump — one trigger pull, one shot —
-// so every shot draws.
+// absent — never "recover" them into this set). The set is consumed by
+// loadout.js (main-weapon rules) too, so it stays the ONE membership
+// list; the old auto/semi SPLIT of this set went away with the tracer
+// selection rule (every bullet animates now — cadence comments below
+// are descriptive only, nothing branches on them).
 export const GUN_WEAPONS = new Set([
   // Pistols (semi: one press = one shot; CZ is the full-auto exception)
   'P2000', 'Glock-18', 'P250', 'Desert Eagle', 'Five-SeveN',
@@ -67,39 +67,25 @@ export const GUN_WEAPONS = new Set([
   'Zeus x27',
 ]);
 
-export const AUTO_WEAPONS = new Set([
-  'AK-47', 'M4A4', 'M4A1', 'Galil AR', 'FAMAS', 'AUG', 'SG 553',
-  'MP7', 'MP9', 'PP-Bizon', 'MAC-10', 'UMP-45', 'P90', 'MP5-SD',
-  'M249', 'Negev', 'CZ75 Auto', 'SCAR-20', 'G3SG1',
-]);
-
-// isGunWeapon / isAutoWeapon — the membership predicates. An unknown
-// name is NOT a gun (never widen the set by guess) and therefore never
-// auto: classification only matters inside GUN_WEAPONS.
+// isGunWeapon — THE gun membership predicate (also consumed by
+// loadout.js). An unknown name is NOT a gun: never widen the set by
+// guess.
 export function isGunWeapon(name) {
   return GUN_WEAPONS.has(name);
 }
 
-export function isAutoWeapon(name) {
-  return AUTO_WEAPONS.has(name);
-}
-
-// Burst grouping gap: a pause longer than this starts a NEW burst (the
-// auto-spray tracer count restarts, so each isolated shot burst draws
-// its first line). Half a second of match time at the match tickrate.
-const BURST_GAP_S = 0.5;
-
 // deriveBullets walks each slot's `weapon` + `magAmmo` series (record-
 // ordered, so one merge pass per slot — O(records), no per-frame
-// lookups) and returns rows {tick, frame, slot, weapon, draw} sorted by
-// tick, freeze-filtered, guns only. `ticks` is the position stream's
+// lookups) and returns rows {tick, frame, slot, weapon} sorted by tick,
+// freeze-filtered, guns only. `ticks` is the position stream's
 // frame→tick table (data.ticks); `rounds` is GetRounds' rows; null/absent
 // index (a match without the state stream) yields [] — fail soft, never
-// an error.
-export function deriveBullets(index, { ticks, rounds, tickRate = 64 } = {}) {
+// an error. (The options bag may carry `tickRate` from Replay.svelte —
+// it is ignored: burst/tracer selection no longer exists, so nothing
+// needs the tickrate anymore.)
+export function deriveBullets(index, { ticks, rounds } = {}) {
   if (!index || !Array.isArray(index.slots) || !index.slots.length) return [];
   if (!ticks || !ticks.length) return [];
-  const gap = Math.max(1, Math.round((Number(tickRate) > 0 ? Number(tickRate) : 64) * BURST_GAP_S));
   const rows = [];
 
   for (let slot = 0; slot < index.slots.length; slot++) {
@@ -163,22 +149,8 @@ export function deriveBullets(index, { ticks, rounds, tickRate = 64 } = {}) {
     }
   }
 
-  // Tracer selection. Global tick order, per-slot burst state: a burst
-  // continues while the SAME weapon keeps firing with no gap beyond
-  // `gap`; semi weapons draw every shot, auto weapons draw burst index
-  // 1, 4, 7, … (first bullet + every 3rd).
+  // Global tick order (sfx relies on it — the ONE sort); no per-row
+  // selection anymore: every bullet row animates a tracer.
   rows.sort((a, b) => a.tick - b.tick || a.slot - b.slot);
-  const bursts = new Map(); // slot → {weapon, prevTick, idx}
-  for (const row of rows) {
-    let s = bursts.get(row.slot);
-    if (!s || s.weapon !== row.weapon || row.tick - s.prevTick > gap) {
-      s = { weapon: row.weapon, prevTick: row.tick, idx: 1 };
-      bursts.set(row.slot, s);
-    } else {
-      s.idx += 1;
-      s.prevTick = row.tick;
-    }
-    row.draw = !isAutoWeapon(row.weapon) || (s.idx - 1) % 3 === 0;
-  }
   return rows;
 }

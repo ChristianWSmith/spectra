@@ -5,12 +5,13 @@
 // extracted icon → per-type detonation pops) → death markers (the victim's
 // team-color X, until the round ends) → bomb (pulse ring + the extracted
 // C4 icon — the dropped/planted C4 renders ABOVE the death markers, so an
-// X can never overlap it) → tracers (the bullet tracer — ONE solid line
-// per selected shot from where it was fired — and the hit-shot tracer
-// (the shooter→victim segment), both over their 0.22 s window — UNDER
-// the dots, so they read as coming out of the shooter's dot and never
-// cover a name; both moved OUT of the players layer with the tracer
-// rework) → players (white talking bloom UNDER the dot →
+// X can never overlap it) → tracers (the bullet tracer — a short
+// side-colored DASH sliding from where it was fired out r+MUZZLE_REACH,
+// fading as it travels — and the hit-shot tracer (the same dash from
+// shooter to victim, held at full alpha until it arrives), both over
+// their ~0.1 s travel — UNDER the dots, so they read as coming out of
+// the shooter's dot and never cover a name; both moved OUT of the
+// players layer with the tracer rework) → players (white talking bloom UNDER the dot →
 // view chevron, body, player-color rim, flash-white overlay, damage
 // flash, follow ring, carried-C4 badge, name) → HUD +
 // kill feed (top-right) + in-game chat (bottom-left).
@@ -86,19 +87,38 @@ const SMOKE_GRAY = '180, 190, 205'; // rgba base — the neutral/unknown tint
 const SMOKE_CT = '135, 180, 218'; // 50% CT color + 50% smoke gray
 const SMOKE_T = '205, 177, 148'; // 50% T color + 50% smoke gray
 // --- World-layer effect windows (all TICK-derived — seek-correct) -----------
-const TRACER_S = 0.22; // tracer window after a shot/hit — the bullet tracer
-//                       // and the hit-shot tracer share it
+const TRAVEL_S = 0.1; // tracer TRAVEL — demo seconds for the dash to slide
+//                     // origin → destination. Chosen "very quick" (the
+//                     // spec's 0.08–0.15 s band): 6.4 ticks at 64 Hz ≈
+//                     // 6 demo frames — reads as a shot streak, every
+//                     // frame shows a distinct head position (no
+//                     // teleport, no slow crawl), and it is the tracer's
+//                     // WHOLE lifetime: a miss fades to 0 exactly at
+//                     // arrival, a hit stops drawing at progress ≥ 1.
+//                     // (The old 0.22 s static window retired with the
+//                     // solid line.)
+const TRACER_DASH_PX = 14; // px — the dash's LENGTH along its path: inside
+//                         // the 10–16 px "short dash" band, ~1/6 of the
+//                         // 85 px bullet reach, so the head/tail motion
+//                         // reads as movement rather than a stub.
+const TRACER_UNKNOWN = '#ffffff'; // stroke when the shooter's side is
+//                                 // unresolvable — WHITE, a side is
+//                                 // NEVER guessed (the old neutral
+//                                 // tracer color)
 const DAMAGE_FLASH_S = 0.35; // victim-hit flash window after a damage event
-// Bullet TRACER: ONE solid white line along the shot's direction from
-// the FIRE POSITION (dark 4 px underlay + white 2 px top, strokeTracer),
-// static for its TRACER_S window — a trace of where the shot was fired,
-// not a moving dash (the marching-dash muzzle flash it replaces is
-// gone). Alpha decays over the window (windowAlpha), so it is
-// seek-correct and frozen while paused like every other world effect.
-// WHICH bullets draw at all is lib/replay/bullets.js's `draw` flag (semi
-// draws every shot, auto draws the first of a burst then every 3rd;
-// gun-only and freeze-time filtering happen there too) — the renderer
-// must not re-derive or re-gate any of that.
+// Bullet TRACER: a SHORT dash (TRACER_DASH_PX) riding the shot's PATH
+// from the FIRE POSITION (dark 4 px underlay + side-color 2 px top,
+// strokeTracer): its head slides origin → r + MUZZLE_REACH along that
+// frame's yaw over TRAVEL_S of demo time — pure tick math, so the
+// travel is seek-correct and frozen while paused like every other world
+// effect. A MISS fades out on the way to the end point (linear
+// 1 − progress: exactly 0 at arrival); the stroke is the SHOOTER's side
+// color at row.frame (CT blue / T amber via teamColor; an unresolvable
+// side is white — never guessed). WHICH bullets animate: ALL of them —
+// the `draw` selection (semi every shot, auto first + every 3rd) lived
+// in bullets.js and was retired by spec ("every third tracer" rule
+// gone); gun-only and freeze-time filtering still happen there — the
+// renderer re-derives or re-gates none of it.
 const MUZZLE_REACH = 76; // px from the tracer's ORIGIN (the fire position) —
 //                        // the reach was doubled twice over its history
 //                        // (was 38, before that 20; the original ray
@@ -295,10 +315,10 @@ export function crossPath(cx, cy, half) {
 // ±`spreadRad` around the look direction, each from `inner` to `outer`
 // screen px out from the ORIGIN point (outer > inner; a degenerate size
 // yields no rays). Returns count [x1, y1, x2, y2] segments. Pure —
-// head-tested in src/lib/renderer.test.js; the bullet tracer draws it
-// with count=1, spread=0 — ONE solid line from the fire position out
-// r+MUZZLE_REACH along the shot's yaw (drawBulletTracers), painted by
-// strokeTracer with a windowAlpha-driven alpha.
+// head-tested in src/lib/renderer.test.js; the bullet tracer builds its
+// PATH with count=1, spread=0 — from the fire position out
+// r+MUZZLE_REACH along the shot's yaw (drawBulletTracers) — and the
+// traveling dash (strokeTracer) rides that path.
 export function muzzleRays(cx, cy, angleRad, inner, outer, count = 5, spreadRad = 0.7) {
   const n = Math.max(0, Math.floor(count));
   const out = [];
@@ -314,10 +334,12 @@ export function muzzleRays(cx, cy, angleRad, inner, outer, count = 5, spreadRad 
 }
 
 // windowAlpha — THE tick-window envelope for the map's momentary
-// effects (damage flash, tracer): 1 at the event's tick, linear
+// effects (e.g. the damage flash): 1 at the event's tick, linear
 // decay to 0 at `durS` seconds of DEMO time, 0 outside the window
 // (before the event — a scrub past it — and after it). Pure, tick-only:
 // seek-correct by construction and self-clearing (nothing to reset).
+// (The tracers no longer window through it — their lifetime is the
+// TRAVEL_S travel, see strokeTracer/tracerProgress.)
 // `tickRate <= 0` or a non-finite start yields 0 (never a stuck flash).
 export function windowAlpha(tick, startTick, tickRate, durS) {
   if (!Number.isFinite(tick) || !Number.isFinite(startTick)) return 0;
@@ -548,11 +570,11 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     if (p && p.steamId) slotOfSteam.set(String(p.steamId), i);
   });
   // bullets: the tracer rows from setBullets ({tick, frame, slot,
-  // weapon, draw} — lib/replay/bullets.js deriveBullets output, stored
-  // verbatim like `hitTracers`: pre-filtered and pre-selected, rendered
-  // as a pure function of tick in drawBulletTracers). Cleared by setData
-  // (frame indices belong to the old dataset, exactly like the landmark
-  // rows' assumptions about `store`).
+  // weapon} — lib/replay/bullets.js deriveBullets output, stored
+  // verbatim like `hitTracers`: pre-filtered (gun-only, freeze-time),
+  // EVERY row rendered as a traveling dash in drawBulletTracers).
+  // Cleared by setData (frame indices belong to the old dataset,
+  // exactly like the landmark rows' assumptions about `store`).
   let bullets = [];
   // Offscreen tint cache for the equipment icons (draw → 'source-in'
   // fill), keyed color|size|source — a handful of entries, rebuilt only
@@ -877,15 +899,15 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     draw();
   }
 
-  // setBullets(rows): the tracer rows — {tick, frame, slot, weapon,
-  // draw}, globally tick-sorted, gun-only, freeze-filtered and
-  // tracer-selected by lib/replay/bullets.js deriveBullets (the ONE
-  // filter: magAmmo step = a bullet, semi draws every shot, auto draws
-  // burst index 1/4/7 — see bullets.js's header; the sfx engine gets
-  // the SAME rows, so a tracer and its gunshot can never disagree).
-  // Stored verbatim like setLandmarks: pure data, redraw on set; the
-  // renderer re-derives NOTHING here — it only windows and paints what
-  // `draw` marks. Absent/null clears the tracers.
+  // setBullets(rows): the tracer rows — {tick, frame, slot, weapon},
+  // globally tick-sorted, gun-only and freeze-filtered by lib/replay/
+  // bullets.js deriveBullets (the ONE filter: magAmmo step = a bullet —
+  // see bullets.js's header; the sfx engine gets the SAME rows, so a
+  // tracer and its gunshot can never disagree). Every row animates a
+  // tracer now (the `draw` selection was retired by spec). Stored
+  // verbatim like setLandmarks: pure data, redraw on set; the renderer
+  // re-derives NOTHING here — it only travels and paints what arrives.
+  // Absent/null clears the tracers.
   function setBullets(rows) {
     bullets = rows || [];
     draw();
@@ -1615,91 +1637,135 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     }
   }
 
-  // strokeTracer — THE tracer paint: the dark 4 px underlay path first,
-  // then the WHITE 2 px solid line on top (no dashes: the marching
-  // MUZZLE_DASH pattern left with the old muzzle flash — a tracer is
-  // ONE static line per shot). Takes [x1, y1, x2, y2] segments so BOTH
-  // tracer consumers share one recipe: the bullet tracer
-  // (drawBulletTracers) and the hit-shot tracer (drawHitTracers) can
-  // never drift apart. The caller owns globalAlpha — the window envelope
-  // — and resets it. The trailing setLineDash([])/lineDashOffset=0 is a
-  // belt-and-braces reset so no consumer (or future canvas state) can
-  // leave the NEXT stroke dashed.
-  function strokeTracer(segs) {
+  // tracerProgress — the SHARED travel math for both tracer kinds:
+  // progress = (tick − row.tick) / (TRAVEL_S · tickrate), pure tick math
+  // so the dash is seek-correct in both directions and frozen while
+  // paused (repo rule). Returns null when the row is not yet live
+  // (scrubbed BEFORE its shot/hit — nothing draws before the origin) or
+  // the travel is over (progress ≥ 1 — a miss has faded out at the end
+  // point, a hit's dash has arrived and is gone); otherwise the
+  // progress clamped to [0, 1).
+  function tracerProgress(tick, startTick, tr) {
+    if (!Number.isFinite(tick) || !Number.isFinite(startTick)) return null;
+    if (!(tr > 0)) return null;
+    const age = tick - startTick;
+    if (age < 0) return null;
+    const p = age / (TRAVEL_S * tr);
+    return p < 1 ? p : null;
+  }
+
+  // tracerColor — the stroke color BOTH tracer kinds share: the resolved
+  // side through the ONE teamColor rule (CT blue / T amber), WHITE when
+  // the side is unknown — a side is NEVER guessed (white is the old
+  // neutral tracer color, not a stand-in for "probably T").
+  function tracerColor(side) {
+    return side === 'ct' || side === 't' ? teamColor(side) : TRACER_UNKNOWN;
+  }
+
+  // strokeTracer — THE tracer paint, shared by BOTH tracer kinds so they
+  // can never drift apart: it owns the traveling-DASH geometry. The path
+  // runs (ax, ay) → (bx, by); at progress p ∈ [0, 1] the dash is the
+  // fixed-length window [head − TRACER_DASH_PX, head] whose head slides
+  // from the path START (p = 0: the full dash sits at the origin) to the
+  // path END (p → 1: it sits at the destination) — a SEGMENT anchored on
+  // the path, never a growing line. The mapping keeps a full-length
+  // dash at both ends (butt caps paint a zero-length segment as nothing)
+  // and puts the dash's CENTER exactly at the path midpoint at p = 0.5.
+  // Passes: the dark 4 px underlay first, then the caller's STROKE COLOR
+  // 2 px on top (the shooter's side color — tracerColor). The CALLER
+  // owns globalAlpha (the miss-fade / no-fade policy) and resets it; a
+  // degenerate path (zero length) paints nothing. No marching dashes —
+  // the trailing setLineDash([])/lineDashOffset=0 is a belt-and-braces
+  // reset so no consumer (or future canvas state) can leave the NEXT
+  // stroke dashed.
+  function strokeTracer(ax, ay, bx, by, progress, color) {
+    const dx = bx - ax;
+    const dy = by - ay;
+    const len = Math.hypot(dx, dy);
+    if (!(len > 0)) return; // degenerate path — nothing sane to travel
+    const p = progress > 0 ? (progress < 1 ? progress : 1) : 0; // defensive clamp
+    const d = Math.min(TRACER_DASH_PX, len); // a dash never outgrows a short path
+    const head = d + p * (len - d); // head ∈ [d, len]; tail = head − d ≥ 0
+    const ux = dx / len;
+    const uy = dy / len;
+    const x1 = ax + ux * (head - d);
+    const y1 = ay + uy * (head - d);
+    const x2 = ax + ux * head;
+    const y2 = ay + uy * head;
     ctx.strokeStyle = 'rgba(0,0,0,0.45)';
     ctx.lineWidth = 4;
     ctx.beginPath();
-    for (const [x1, y1, x2, y2] of segs) {
-      ctx.moveTo(x1, y1);
-      ctx.lineTo(x2, y2);
-    }
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
     ctx.stroke();
-    ctx.strokeStyle = '#ffffff';
+    ctx.strokeStyle = color;
     ctx.lineWidth = 2;
     ctx.beginPath();
-    for (const [x1, y1, x2, y2] of segs) {
-      ctx.moveTo(x1, y1);
-      ctx.lineTo(x2, y2);
-    }
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(x2, y2);
     ctx.stroke();
     ctx.setLineDash([]);
     ctx.lineDashOffset = 0;
   }
 
-  // drawBulletTracers — the bullet tracers: ONE solid line per row whose
-  // `draw` flag is set and whose window is live — from where the shot
-  // was FIRED (the shooter's sampled position at row.frame) along that
-  // frame's yaw: a trace of the shot's ORIGIN, not of the dot, which has
-  // moved on by the time the window paints. The rows arrive
-  // pre-derived from setBullets (lib/replay/bullets.js is the ONE
-  // filter: gun-only, freeze-time filtered, semi draws every shot and
-  // auto draws burst index 1/4/7 — the renderer re-derives NOTHING,
-  // mirroring the sfx engine that consumes the SAME rows).
+  // drawBulletTracers — the bullet tracers: a traveling dash for EVERY
+  // row (the old `draw` selection — semi every shot, auto first + every
+  // 3rd — was retired by spec: "animate all tracers") — from where the
+  // shot was FIRED (the shooter's sampled position at row.frame) along
+  // that frame's yaw to r + MUZZLE_REACH: a trace of the shot's ORIGIN,
+  // not of the dot, which has moved on by the time the travel paints.
+  // The rows arrive pre-derived from setBullets (lib/replay/bullets.js
+  // is the ONE filter: gun-only, freeze-time filtered — the renderer
+  // re-derives NOTHING, mirroring the sfx engine that consumes the SAME
+  // rows).
   //
   // Positions: row.frame indexes the position stream directly (the row
   // carries its own frame — no frameForTick round-trip). The store only
   // samples ALIVE slots, so a frame with no mask bit for the slot draws
   // NOTHING: no guessed fallback (same rule as drawHitTracers).
   //
-  // Timing is the shared tracer envelope — windowAlpha over TRACER_S
-  // (0.22 s) — seek-correct and frozen while paused like every other
-  // world effect; a row outside the window costs one windowAlpha call.
-  // Painted WITH drawHitTracers, BEFORE drawPlayers (see draw()): the
-  // dots sit on top, so the line reads as emerging from under the
-  // shooter's dot and never covers a name. The caller owns globalAlpha
-  // (windowAlpha's envelope) and resets it.
+  // Timing/alpha: tracerProgress over TRAVEL_S — pure tick math, so the
+  // dash is seek-correct and frozen while paused like every other world
+  // effect; before the shot tick or once the travel has ended it costs
+  // one call and no lookups or transforms. A MISS fades out on its way
+  // to the end point — LINEAR 1 − progress (the house envelope style:
+  // windowAlpha/blindAlpha are linear too), 1 at the shot tick and
+  // exactly 0 at arrival. Stroke = the shooter's side at row.frame
+  // (sideAtFrame → tracerColor). Painted WITH drawHitTracers, BEFORE
+  // drawPlayers (see draw()): the dots sit on top, so the dash reads as
+  // emerging from under the shooter's dot and never covers a name. The
+  // caller owns globalAlpha and resets it.
   function drawBulletTracers(tick) {
     const tr = engine.tickRate;
     const r = DOT_R; // the dot radius — reach = r + MUZZLE_REACH from the origin
     for (const b of bullets) {
-      if (b.draw !== true) continue; // bullets.js's `draw` decides — never re-picked here
-      const alpha = windowAlpha(tick, b.tick, tr, TRACER_S);
-      if (alpha <= 0) continue; // outside the window — the cheap gate
+      const p = tracerProgress(tick, b.tick, tr);
+      if (p == null) continue; // not shot yet / travel over — the cheap gate
       const slot = b.slot;
       if (!Number.isInteger(slot) || slot < 0 || slot >= store.slots.length) continue;
       const f = b.frame;
       if (!Number.isInteger(f) || f < 0 || f >= store.frames) continue;
       if (!(store.masks[f] & (1 << slot))) continue; // no sample → no line
-      const p = store.slots[slot].pos;
+      const ppos = store.slots[slot].pos;
       const o = f * 4;
-      const a = worldToScreen(p[o], p[o + 1]);
-      const angle = (-p[o + 3]) * Math.PI / 180; // engine yaw → screen (drawPlayers' convention)
-      // From the ORIGIN, not from a dot: inner 0, reach r + MUZZLE_REACH
-      // — the segment is the shot's trace at its fire position.
+      const a = worldToScreen(ppos[o], ppos[o + 1]);
+      const angle = (-ppos[o + 3]) * Math.PI / 180; // engine yaw → screen (drawPlayers' convention)
+      // The PATH runs from the ORIGIN (inner 0), reach r + MUZZLE_REACH
+      // along the frame's aim — the dash rides it (strokeTracer).
       const rays = muzzleRays(a.x, a.y, angle, 0, r + MUZZLE_REACH, 1, 0);
       if (!rays.length) continue;
-      ctx.globalAlpha = alpha;
-      strokeTracer(rays);
+      ctx.globalAlpha = 1 - p; // MISS fade — 0 exactly at the end point
+      strokeTracer(a.x, a.y, rays[0][2], rays[0][3], p, tracerColor(sideAtFrame(slot, f)));
       ctx.globalAlpha = 1;
     }
   }
 
-  // drawHitTracers — the hit-shot tracer: a straight segment from the
+  // drawHitTracers — the hit-shot tracer: a traveling dash from the
   // SHOOTER's sampled position to the VICTIM's stored hit position for
-  // every damage row whose tracer window is live — the bullet tracer's
+  // every damage row whose travel is live — the bullet tracer's
   // counterpart that shows WHO hit WHOM (the bullet tracer draws at the
   // shot's origin; this is the shot's line to its target, so a hit
-  // always draws even when bullets.js's `draw` flag skipped that row).
+  // always draws — there is no per-row selection on either kind anymore).
   //
   // Positions: the row carries the VICTIM's hit position (extract stamps
   // PlayerHurt's victim position → normalizeEvent x/y); the shooter has
@@ -1711,27 +1777,31 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // stream sample for the shooter at that frame (the store only samples
   // ALIVE slots) draws NOTHING: no guessed fallback.
   //
-  // Timing is the shared tracer envelope — windowAlpha over TRACER_S
-  // (0.22 s) — so the line is seek-correct and frozen while paused; a
-  // row outside the window costs one windowAlpha call and no lookups or
-  // transforms. Painted BEFORE drawPlayers (see draw()): the dots and
-  // name labels stay on top, so the segment reads as emerging from
-  // under the shooter's dot instead of crossing a face.
+  // Timing/alpha: tracerProgress over TRAVEL_S — so the dash is
+  // seek-correct and frozen while paused; a row outside the travel
+  // costs one call and no lookups or transforms. A HIT never fades:
+  // full alpha until the head arrives, then nothing (progress ≥ 1 stops
+  // drawing — see tracerProgress). Stroke = the attacker's side at the
+  // hit's tick (throwerSideAt: steamId → slot → side; unresolvable →
+  // white, never guessed). Painted BEFORE drawPlayers (see draw()): the
+  // dots and name labels stay on top, so the dash reads as emerging
+  // from under the shooter's dot instead of crossing a face. The caller
+  // owns globalAlpha and resets it.
   function drawHitTracers(tick) {
     const tr = engine.tickRate;
     for (const h of hitTracers) {
-      const alpha = windowAlpha(tick, h.tick, tr, TRACER_S);
-      if (alpha <= 0) continue; // outside the tracer window — the cheap gate
+      const p = tracerProgress(tick, h.tick, tr);
+      if (p == null) continue; // not hit yet / dash arrived and gone
       const slot = slotOfSteam.get(String(h.attacker));
       if (slot == null || slot >= store.slots.length) continue;
       const f = engine.frameForTick(Math.max(engine.firstTick, h.tick));
       if (!(store.masks[f] & (1 << slot))) continue; // no sample → no line
-      const p = store.slots[slot].pos;
+      const ppos = store.slots[slot].pos;
       const b = f * 4;
-      const a = worldToScreen(p[b], p[b + 1]);
+      const a = worldToScreen(ppos[b], ppos[b + 1]);
       const v = worldToScreen(h.x, h.y);
-      ctx.globalAlpha = alpha;
-      strokeTracer([[a.x, a.y, v.x, v.y]]);
+      ctx.globalAlpha = 1; // HIT — no fade, full alpha until arrival
+      strokeTracer(a.x, a.y, v.x, v.y, p, tracerColor(throwerSideAt(h.attacker, h.tick)));
       ctx.globalAlpha = 1;
     }
   }
