@@ -531,6 +531,67 @@ func TestRawPayloadPairing(t *testing.T) {
 	}
 }
 
+// TestAttackerInAirFromPairedPayload pins the flush-time derivation of the
+// one kill flag that ONLY the raw player_death payload carries
+// (demoinfocs' events.Kill has no MidAir field and dispatches BEFORE the
+// GenericGameEvent — verified on the golden parse, so the Kill handler can
+// never read it): the flag comes from the SAME string stored as raw_json.
+// Absent/malformed payloads read false — a flag is never guessed.
+func TestAttackerInAirFromPairedPayload(t *testing.T) {
+	a := newAgg()
+	// Real dispatch order: the typed Kill first, its generic payload right
+	// after (same frame), one pair per death.
+	for i, payload := range []string{
+		`{"userid":9,"attackerinair":true}`,
+		`{"userid":9,"attackerinair":false}`,
+		`{"userid":9}`,                        // key absent → false (fail soft)
+		`not json at all`,                     // unparseable → false (fail soft)
+		`{"userid":9,"attackerinair":"true"}`, // wrong type → false, never coerced
+	} {
+		a.addEvent(models.Event{Tick: i + 1, Kind: models.EventKill}, "player_death")
+		a.genericEvent("player_death", i+1, payload)
+	}
+	a.flushRaw()
+
+	want := []bool{true, false, false, false, false}
+	for i, w := range want {
+		ev := a.events[i]
+		if ev.AttackerInAir != w {
+			t.Errorf("kill %d (payload %q): attackerInAir = %v, want %v",
+				i, ev.RawJSON, ev.AttackerInAir, w)
+		}
+		// The flag is derived from the paired payload itself — the two can
+		// never disagree (the golden equality test checks the same property
+		// on a real parse).
+		if ev.RawJSON == "" {
+			t.Errorf("kill %d lost its paired payload", i)
+		}
+	}
+}
+
+// TestPayloadBoolUnit covers the raw-payload reader directly: only a real
+// JSON `true` reads true; everything else (missing key, non-bool, bad JSON)
+// is false.
+func TestPayloadBoolUnit(t *testing.T) {
+	cases := []struct {
+		payload string
+		field   string
+		want    bool
+	}{
+		{`{"attackerinair":true}`, "attackerinair", true},
+		{`{"attackerinair":false}`, "attackerinair", false},
+		{`{"noscope":true}`, "attackerinair", false},
+		{`{"attackerinair":"true"}`, "attackerinair", false},
+		{`{`, "attackerinair", false},
+		{``, "attackerinair", false},
+	}
+	for _, c := range cases {
+		if got := payloadBool(c.payload, c.field); got != c.want {
+			t.Errorf("payloadBool(%q, %q) = %v, want %v", c.payload, c.field, got, c.want)
+		}
+	}
+}
+
 // TestPregameRoundGating: pregame (knife) rounds never pollute stats —
 // event rows still emit, but kills/damage/assists/participation skip and
 // the round counts as neither warmup nor real.

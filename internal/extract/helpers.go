@@ -462,3 +462,16 @@ func gameEventValue(k *msg.CMsgSource1LegacyGameEventKeyT) any {
 	}
 	return nil
 }
+
+// payloadBool reads one boolean field from a raw game-event payload (the
+// JSON gameEventPayloadJSON produced). Fail soft: an unparseable payload or
+// a missing/non-bool field reads false — a flag is never guessed. Used for
+// player_death's `attackerinair` (see agg.pairRaw).
+func payloadBool(payload, field string) bool {
+	var m map[string]any
+	if err := json.Unmarshal([]byte(payload), &m); err != nil {
+		return false
+	}
+	b, _ := m[field].(bool)
+	return b
+}

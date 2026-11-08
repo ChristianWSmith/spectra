@@ -1120,12 +1120,12 @@ func (a *agg) flushRaw() {
 			q := a.frameQueue[w.name]
 			switch {
 			case n < len(q):
-				a.events[w.idx].RawJSON = q[n]
+				a.pairRaw(w.idx, w.name, q[n])
 			case len(q) == 0:
 				// No payload this frame: fall back to the last one seen
 				// (cross-frame dispatch, e.g. datatables-driven round events).
 				if r := a.rawLatest[w.name]; r != "" {
-					a.events[w.idx].RawJSON = r
+					a.pairRaw(w.idx, w.name, r)
 				}
 			}
 			counts[w.name] = n + 1
@@ -1134,5 +1134,24 @@ func (a *agg) flushRaw() {
 	}
 	for k := range a.frameQueue {
 		delete(a.frameQueue, k)
+	}
+}
+
+// pairRaw stores the paired raw payload on the typed row and derives the ONE
+// kill flag that ONLY the payload carries: player_death's `attackerinair`
+// (the attacker was midair).
+//
+// Seam note: this runs at flush time, NOT in the Kill handler — verified on
+// the golden parse (2026-11-08), demoinfocs dispatches the typed events.Kill
+// BEFORE the events.GenericGameEvent for the same game event (all 170
+// golden deaths: kill-first, generic-first 0), and events.Kill has no MidAir
+// field at all. The raw payload is the ground truth, so the flag is derived
+// from the SAME string stored as raw_json — an absent/unparseable payload
+// reads false (fail soft, never guessed), and only "player_death" is
+// consulted (the source a.kill tags its rows with).
+func (a *agg) pairRaw(idx int, name, payload string) {
+	a.events[idx].RawJSON = payload
+	if name == "player_death" {
+		a.events[idx].AttackerInAir = payloadBool(payload, "attackerinair")
 	}
 }

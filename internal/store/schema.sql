@@ -192,6 +192,11 @@ CREATE TABLE IF NOT EXISTS events (
 	noscope INTEGER NOT NULL DEFAULT 0,
 	through_smoke INTEGER NOT NULL DEFAULT 0,
 	attacker_blind INTEGER NOT NULL DEFAULT 0,
+	-- player_death's `attackerinair`: the attacker was midair. Derived
+	-- from the paired raw payload at extract time (demoinfocs' typed Kill
+	-- has no MidAir field) — no migration: a stale dev DB lacks the
+	-- column and must be re-imported.
+	attacker_inair INTEGER NOT NULL DEFAULT 0,
 	assisted_flash INTEGER NOT NULL DEFAULT 0,
 	distance REAL NOT NULL DEFAULT 0,
 	hitgroup TEXT NOT NULL DEFAULT '',

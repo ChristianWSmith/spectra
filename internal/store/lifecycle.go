@@ -213,7 +213,7 @@ const (
 	roundEconomyCols = `round, side, equip_value, money_sampled_sum, money_samples, spent, free_pistol_value`
 
 	eventCols = `seq, tick, round, kind, attacker, victim, assister, weapon,
-		headshot, wallbang, noscope, through_smoke, attacker_blind, assisted_flash, distance,
+		headshot, wallbang, noscope, through_smoke, attacker_blind, attacker_inair, assisted_flash, distance,
 		hitgroup, dmg, site, detail_json, raw_json, pos_x, pos_y, pos_z, apos_x, apos_y, apos_z`
 
 	// chatCols is the chat row WITHOUT match_id; the reader additionally
@@ -340,7 +340,7 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 
 	eventsStmt, err := tx.Prepare(
 		`INSERT INTO events (match_id, ` + eventCols + `)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
 		return fmt.Errorf("store: save extracted: %w", err)
@@ -350,7 +350,7 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 		if _, err := eventsStmt.Exec(
 			matchID, i, e.Tick, e.Round, scrub(e.Kind), scrub(e.Attacker), scrub(e.Victim),
 			scrub(e.Assister), scrub(e.Weapon), b2i(e.Headshot), b2i(e.Wallbang), b2i(e.Noscope),
-			b2i(e.ThroughSmoke), b2i(e.AttackerBlind), b2i(e.AssistedFlash), e.Distance, scrub(e.Hitgroup),
+			b2i(e.ThroughSmoke), b2i(e.AttackerBlind), b2i(e.AttackerInAir), b2i(e.AssistedFlash), e.Distance, scrub(e.Hitgroup),
 			e.Dmg, scrub(e.Site), scrub(e.DetailJSON), scrub(e.RawJSON),
 			nvl(e.PosX), nvl(e.PosY), nvl(e.PosZ),
 			nvl(e.AttackerPosX), nvl(e.AttackerPosY), nvl(e.AttackerPosZ),
