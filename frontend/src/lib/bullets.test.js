@@ -1,19 +1,14 @@
 // Tests for lib/replay/bullets.js — per-bullet derivation from the
 // state stream: magAmmo steps are shots (guns only, freeze filtered),
-// and `draw` picks the tracer lines (semi draws every shot, auto sprays
-// draw burst index 1, 4, 7, …).
+// every derived row carrying {tick, frame, slot, weapon} (no `draw`
+// field — the tracer selection rule was retired by spec: every bullet
+// animates).
 // Run: node --test src/lib/replay/bullets.test.js   (from frontend/)
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { buildStateIndex, STATE_FIELDS } from './replay/state.js';
-import {
-  deriveBullets,
-  isGunWeapon,
-  isAutoWeapon,
-  GUN_WEAPONS,
-  AUTO_WEAPONS,
-} from './replay/bullets.js';
+import { deriveBullets, isGunWeapon, GUN_WEAPONS } from './replay/bullets.js';
 
 const W = STATE_FIELDS.WEAPON;
 const M = STATE_FIELDS.MAG_AMMO;
@@ -27,7 +22,7 @@ const m = (frame, slot, magAmmo) => ({ frame, slot, mask: M, magAmmo });
 const idx = (records, slotCount = 1) => buildStateIndex(records, slotCount);
 // frame ≡ tick for these fixtures unless a test says otherwise.
 const ticksOf = (n) => Array.from({ length: n + 8 }, (_, i) => i);
-const opts = (rounds = [], tickRate = 64) => ({ ticks: ticksOf(400), rounds, tickRate });
+const opts = (rounds = []) => ({ ticks: ticksOf(400), rounds });
 
 test('a magazine step down is one bullet; a step up is a reload', () => {
   const rows = deriveBullets(
@@ -43,33 +38,31 @@ test('a magazine step down is one bullet; a step up is a reload', () => {
   assert.equal(rows[0].tick, 10, 'ticks come from the position stream table');
 });
 
-test('full-auto sprays draw the first bullet then every 3rd', () => {
+// The four tracer-SELECTION tests deleted from this file in the same
+// pass ("full-auto sprays draw the first bullet then every 3rd",
+// "semi/bolt/pump weapons draw every shot", "a lone auto bullet draws
+// exactly one tracer", "an auto burst restarts after a pause beyond the
+// half-second gap") — all deleted WITH the rule itself: the spec
+// retired the every-3rd-auto selection ("get rid of the 'every third
+// tracer' rule and just animate all tracers"), so
+// AUTO_WEAPONS/isAutoWeapon/BURST_GAP_S and the `row.draw` flag are gone
+// from bullets.js and no row-level draw expectation can exist anymore.
+// Derivation (what IS a bullet) stays pinned below.
+test('every bullet is a row for {tick, frame, slot, weapon} — no `draw` field survives', () => {
+  // A 9-round full-auto spray: derivation still yields ALL nine bullets
+  // (sounds play all of them; tracers now animate all of them too).
   const recs = [wm(0, 0, 'AK-47', 30)];
   for (let i = 1; i <= 9; i++) recs.push(m(10 + i, 0, 30 - i));
   const rows = deriveBullets(idx(recs), opts());
-  assert.equal(rows.length, 9, 'every bullet is a row — sounds play all of them');
-  assert.deepEqual(
-    rows.map((r) => r.draw),
-    [true, false, false, true, false, false, true, false, false],
-    'burst indices 1, 4, 7 draw',
-  );
-});
-
-test('semi/bolt/pump weapons draw every shot', () => {
-  const recs = [wm(0, 0, 'Desert Eagle', 7)];
-  for (let i = 1; i <= 4; i++) recs.push(m(10 + i, 0, 7 - i));
-  const rows = deriveBullets(idx(recs), opts());
-  assert.equal(rows.length, 4);
-  assert.ok(
-    rows.every((r) => r.draw),
-    'one press = one shot = one tracer',
-  );
-});
-
-test('a lone auto bullet draws exactly one tracer', () => {
-  const rows = deriveBullets(idx([wm(0, 0, 'AK-47', 30), m(10, 0, 29)]), opts());
-  assert.equal(rows.length, 1);
-  assert.equal(rows[0].draw, true, 'the first bullet of a burst always draws');
+  assert.equal(rows.length, 9, 'every bullet is a row — sounds and tracers use all of them');
+  for (const r of rows) {
+    assert.deepEqual(
+      Object.keys(r).sort(),
+      ['frame', 'slot', 'tick', 'weapon'],
+      'the row contract is exactly {tick, frame, slot, weapon} — `draw` is retired',
+    );
+    assert.ok(!('draw' in r), 'no row ever carries a draw flag');
+  }
 });
 
 test('a weapon switch resyncs — its new magazine is never a bullet', () => {
@@ -139,18 +132,6 @@ test('freeze-time shots are filtered; rounds without a freeze window are not', (
   );
 });
 
-test('an auto burst restarts after a pause beyond the half-second gap', () => {
-  const rows = deriveBullets(
-    idx([wm(0, 0, 'AK-47', 30), m(10, 0, 29), m(11, 0, 28), m(100, 0, 27)]),
-    opts(),
-  );
-  assert.deepEqual(
-    rows.map((r) => r.draw),
-    [true, false, true],
-    'frames 10/11 are one burst; frame 100 starts a new one whose first shot draws',
-  );
-});
-
 test('multi-slot output is globally tick-sorted', () => {
   const rows = deriveBullets(
     idx([wm(0, 1, 'AWP', 10), wm(0, 0, 'AK-47', 30), m(50, 0, 29), m(10, 1, 9)], 2),
@@ -172,17 +153,14 @@ test('no state stream / no ticks degrade to an empty list', () => {
   assert.deepEqual(deriveBullets(idx([]), opts()), []);
 });
 
-test('weapon membership: guns only, auto subset only', () => {
+// Gun membership only: the auto/semi SPLIT (AUTO_WEAPONS/isAutoWeapon)
+// went with the retired tracer selection (justification above) — this
+// pins what remains, the set loadout.js also imports.
+test('weapon membership: guns only', () => {
   assert.ok(isGunWeapon('AK-47'));
   assert.ok(isGunWeapon('Zeus x27'));
   for (const bad of ['Knife', 'HE Grenade', 'Smoke Grenade', 'C4', 'Kevlar Vest', 'Defuse Kit', 'Decoy Grenade']) {
     assert.ok(!isGunWeapon(bad), `${bad} is not a gun`);
   }
   for (const name of GUN_WEAPONS) assert.ok(isGunWeapon(name));
-  for (const name of AUTO_WEAPONS) assert.ok(GUN_WEAPONS.has(name), `${name} must be a gun too`);
-  assert.ok(isAutoWeapon('CZ75 Auto'));
-  assert.ok(isAutoWeapon('Negev'));
-  assert.ok(!isAutoWeapon('Desert Eagle'), 'pistols are semi');
-  assert.ok(!isAutoWeapon('AWP'), 'bolt action draws every shot');
-  assert.ok(!isAutoWeapon('Nova'), 'pump draws every shot');
 });
