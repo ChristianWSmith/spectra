@@ -74,7 +74,10 @@
     'Zeus x27',
     'C4',
     'Knife',
-    // Grenades
+    // Grenades — canonical events.weapon spellings (the weapon FILTER,
+    // not a detonation bucket): decoy rows keep weapon "Decoy Grenade"
+    // whatever their kind (land/activation or detonation), so this entry
+    // stays valid through the decoy lifecycle split.
     'Decoy Grenade',
     'Molotov',
     'Incendiary Grenade',

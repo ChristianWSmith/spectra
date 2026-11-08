@@ -7,9 +7,10 @@
 // ships) and serves them at /api/sounds/… described by
 // /api/sounds/manifest.json; keys are the CANONICAL equipment names the
 // replay state stream and the landmark rows already carry ("AK-47",
-// "HE Grenade", "C4"), so a cue is one exact-match lookup. A logical item
-// with several variants keeps ALL of them and picks one at RANDOM per
-// play, so a spray doesn't loop one sample.
+// "HE Grenade", "C4") plus `<name> throw` for a utility's throw group
+// ("HE Grenade throw" — throwCues), so a cue is one exact-match lookup.
+// A logical item with several variants keeps ALL of them and picks one
+// at RANDOM per play, so a spray doesn't loop one sample.
 //
 // This engine owns its OWN AudioContext: it must work for matches without
 // voice (the voice engine may not exist at all). Autoplay policy mirrors
@@ -29,10 +30,14 @@
 //     throw and a knife swing are never bullets, so they never make a
 //     gun sound here); the rows' `draw` flag is TRACER selection only —
 //     sfx plays EVERY row (the real fire cadence, see bullets.js);
-//   - utility/bomb cues are the landmark rows' detonations and knife
-//     cues their damage rows, both in (prevTick, curTick] and both
-//     freeze-gated at cue-build time (rounds.js inFreezeTime — the game
-//     forbids firing/utility during freeze);
+//   - utility cues are the landmark rows' DETONATIONS (grenadeCues) and
+//     their THROWS (throwCues — the `${weapon} throw` manifest groups),
+//     knife cues are their damage rows — all three in (prevTick,
+//     curTick] and all freeze-gated at cue-build time (rounds.js
+//     inFreezeTime — the game forbids firing/utility during freeze);
+//   - decoy noise cues are the decoy PLAN's fake shots (setDecoyPlan —
+//     lib/replay/decoy.js), played on the GUNS channel with the mimic
+//     weapon's own samples (see decoyCues);
 //   - a seek / loop wrap / paused scrub advances the compare point
 //     WITHOUT playing (cueGapJump — the renderer's fireJump idea), so
 //     scrubbing never machine-guns the cues it crossed.
@@ -57,12 +62,15 @@ export const AUDIO_VOL_DEFAULT = 0.8;
 // fader. BOTH numbers exist because this is a relative-mix decision, not
 // a default change: the raw extracted samples play far hotter than the
 // voice/announcer bus, so the gun bus runs at a third of its fader level
-// (a 2/3 cut) and utility at two thirds (a 1/3 cut) — retune the balance
-// here, never by moving the pref default. Voice is deliberately NOT
-// scaled: its master gain stays exactly the fader value, so this pair is
-// the whole gun/utility-vs-voice calibration.
+// (a 2/3 cut) and utility at a THIRD of its fader level (the 2/3 value
+// halved once more, spec 2026-11-07: "half the volume of util once more
+// (again, internally)" — the chain is original × 2/3 → halved → × 1/3;
+// the slider/pref/default stay untouched) — retune the balance here,
+// never by moving the pref default. Voice is deliberately NOT scaled:
+// its master gain stays exactly the fader value, so this pair is the
+// whole gun/utility-vs-voice calibration.
 export const GUNS_GAIN_SCALE = 1 / 3;
-export const UTILITY_GAIN_SCALE = 2 / 3;
+export const UTILITY_GAIN_SCALE = 1 / 3;
 
 // Live-source cap: a new AudioBufferSourceNode per play IS the Web Audio
 // contract for unlimited simultaneous instances of one buffer, but a
@@ -78,9 +86,14 @@ const PRELOAD_POOL = 6;
 const RESUME_MS = 750;
 
 // SOUND_DETONATION_BUCKETS — the drawable grenade buckets that MAKE a
-// sound: everything landmarks.js DETONATION_BUCKETS can produce except
-// 'decoy' (CS2 ships no decoy detonation sound — see mappack soundTable).
-export const SOUND_DETONATION_BUCKETS = DETONATION_BUCKETS.filter((b) => b !== 'decoy');
+// detonation sound: every bucket landmarks.js DETONATION_BUCKETS can
+// produce. It used to exclude 'decoy' (CS2 ships no decoy detonation
+// sound — see mappack soundTable); the 'decoy' bucket no longer EXISTS:
+// a decoy detonation buckets 'he' (landmarks.detonationStyle — the game
+// plays BaseGrenade.Explode, the HE files) and grenadeCues remaps the
+// cue name to "HE Grenade", so the exclusion died with the bucket. Kept
+// as the named contract the cue gate reads.
+export const SOUND_DETONATION_BUCKETS = DETONATION_BUCKETS;
 
 // prefVolume coerces a kvstore read into a 0..1 fader level: the store
 // round-trips JSON (an unset key arrives as null), so anything missing,
@@ -96,15 +109,23 @@ export function prefVolume(v, def = AUDIO_VOL_DEFAULT) {
 // grenadeCues — landmark rows → the tick-sorted utility cue list
 // [{tick, name}]. Accepts the Replay's drawNorm rows (pre-bucketed by
 // landmarks.js normalizeEvent — no second classification here):
-//   kind 'grenade'      → the detonation bucket decides; 'decoy' (and
-//                         any non-detonation bucket) is skipped;
+//   kind 'grenade'      → the detonation bucket decides; any non-
+//                         detonation bucket is skipped;
 //   kind 'bomb_explode' → the C4 explosion — the ONE explosive
 //                         detonation the replay renders; row.weapon is
 //                         the canonical key ("C4").
-// Throws, equips and plants make NO cue (only detonations do), and a
-// cue whose tick sits in a round's FREEZE time is dropped (rounds.js
-// inFreezeTime — the freeze gate; `rounds` is the GetRounds rows, absent
-// → nothing is gated).
+// THROWS, equips and plants make NO detonation cue (throws have their
+// own cue list — throwCues below), and a cue whose tick sits in a
+// round's FREEZE time is dropped (rounds.js inFreezeTime — the freeze
+// gate; `rounds` is the GetRounds rows, absent → nothing is gated).
+// DECOY REMAP: a decoy detonation row (bucket 'he', weapon "Decoy
+// Grenade") cues "HE Grenade" — the domain fact (spec research
+// 2026-11-07, verified 5/5 demos) is that the exploding decoy plays
+// BaseGrenade.Explode = the HE files, and CS2.md "Sound assets" records
+// that the decoy has no detonation sound of its own; the manifest has no
+// "Decoy Grenade" key, so without the remap the cue would play nothing.
+// The remap happens AFTER the dedupe so an HE and a decoy detonating on
+// the same tick still make two sounds (they are two grenades).
 // DEDUPE by (tick, weapon): CS2.md documents that demoinfocs v6 dispatches
 // events.FlashExplode TWICE (the game event AND the projectile's
 // entity on-destroy) — 182 grenade rows at 91 distinct ticks in the
@@ -119,14 +140,45 @@ export function grenadeCues(rows, rounds) {
     if (kind === 'grenade') {
       if (!SOUND_DETONATION_BUCKETS.includes(String(row.bucket || ''))) continue;
     } else if (kind !== 'bomb_explode') {
-      continue; // throws, equips, plants, kills, … make no detonation sound
+      continue; // equips, throws, kills, … make no detonation sound
     }
     // The canonical key the manifest uses: the grenade's weapon for a
     // detonation, the C4 row's own weapon ("C4") for the explosion —
     // whatever the row carries, never an invented name.
-    const name = row.weapon == null || row.weapon === '' ? null : String(row.weapon);
-    if (!name) continue;
+    const weapon = row.weapon == null || row.weapon === '' ? null : String(row.weapon);
+    if (!weapon) continue;
     if (inFreezeTime(rounds, row.tick)) continue;
+    const key = `${row.tick}|${weapon}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ tick: row.tick, name: weapon === 'Decoy Grenade' ? 'HE Grenade' : weapon });
+  }
+  out.sort((a, b) => a.tick - b.tick);
+  return out;
+}
+
+// throwCues — the utility THROW cue list: grenade_throw rows →
+// [{tick, name: `<weapon> throw`}] in tick order. The manifest carries
+// one flat `<name> throw` group per grenade (mappack soundTable — the
+// per-grenade throw soundevents' files), so the cue key is built the
+// same way here: the row's canonical weapon + " throw", never an
+// invented name (a row without a weapon makes nothing). Equip-shaped or
+// detonation-shaped rows make NOTHING from this list — only kind
+// 'grenade_throw' qualifies. Freeze-gated with the same rule as
+// grenadeCues (rounds.js inFreezeTime — the game forbids throwing
+// during freeze; belt and braces for a mis-stamped row), deduped by
+// (tick, name) like every other cue list (double dispatch — CS2.md).
+// Pure — unit-tested by src/lib/sfx.test.js.
+export function throwCues(rows, rounds) {
+  const seen = new Set();
+  const out = [];
+  for (const row of rows || []) {
+    if (!row || !Number.isFinite(row.tick)) continue;
+    if (String(row.kind || '') !== 'grenade_throw') continue;
+    const weapon = row.weapon == null || row.weapon === '' ? null : String(row.weapon);
+    if (!weapon) continue;
+    if (inFreezeTime(rounds, row.tick)) continue;
+    const name = `${weapon} throw`;
     const key = `${row.tick}|${name}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -201,6 +253,36 @@ export function bulletCuesInRange(rows, fromTick, toTick) {
   return tickRange(rows, fromTick, toTick);
 }
 
+// decoyCues — the decoy PLAN (lib/replay/decoy.js buildDecoyPlan output)
+// flattened into the fake-gunshot cue list [{tick, weapon}] in tick
+// order. Each plan row's shots carry the thrower's MAIN weapon name
+// (mainWeaponOf resolved at plan build — one weapon per plan row, so
+// every fake shot of one decoy sounds like the same gun); rows without a
+// resolved weapon contribute nothing (never a guessed gun). The noise
+// rides the GUNS channel on purpose: these ARE gunshots (the decoy
+// mimics the thrower's weapon), so they share the gun fader, mute and
+// internal gain with real fire — the utility bus is for utility.
+// Pure — unit-tested by src/lib/sfx.test.js.
+export function decoyCues(plan) {
+  const out = [];
+  for (const p of plan || []) {
+    if (!p || !p.weapon) continue;
+    for (const s of p.shots || []) {
+      if (s && Number.isFinite(s.tick)) out.push({ tick: s.tick, weapon: String(p.weapon) });
+    }
+  }
+  out.sort((a, b) => a.tick - b.tick);
+  return out;
+}
+
+// decoyCuesInRange — the plan's fake gunshots in (fromTick, toTick];
+// same open/closed window as every other cue list (the compare point
+// that just played its tick never replays it). Pure — unit-tested by
+// src/lib/sfx.test.js.
+export function decoyCuesInRange(cues, fromTick, toTick) {
+  return tickRange(cues, fromTick, toTick);
+}
+
 // cueGapJump — the seek/frame-jump detector for the sound cues (the
 // renderer's fireJump idea, renderer.js): true when the playhead moved
 // somewhere the previous compare point cannot be compared across, so the
@@ -265,8 +347,10 @@ export function createSfxEngine({ engine, matchId, onError }) {
   let landmarkRows = []; // drawNorm — the ONE source of util + knife cues
   let rounds = null; // GetRounds rows — the freeze gate (rounds.js)
   let utilCues = []; // grenadeCues(landmarkRows, rounds) — tick-sorted
+  let throwHits = []; // throwCues(landmarkRows, rounds) — tick-sorted
   let knifeHits = []; // knifeCues(landmarkRows, rounds) — tick-sorted
   let bullets = []; // setBullets — bullets.js rows, tick-sorted
+  let decoyShots = []; // setDecoyPlan → decoyCues(plan), tick-sorted
   // Compare point of the last engine change (see the header contract).
   let prevTick = null;
   let lastPlaying = false; // play-START edge → one silent resume retry
@@ -491,6 +575,14 @@ export function createSfxEngine({ engine, matchId, onError }) {
     }
   }
 
+  // playThrowInRange — one throw sound per grenade_throw row in range,
+  // on the UTILITY channel (a throw is utility audio, not a gunshot).
+  function playThrowInRange(fromTick, toTick) {
+    for (const cue of utilCuesInRange(throwHits, fromTick, toTick)) {
+      playGroup(cue.name, 'utility');
+    }
+  }
+
   function playKnifeInRange(fromTick, toTick) {
     for (const cue of utilCuesInRange(knifeHits, fromTick, toTick)) {
       // The guns bucket: a knife hit shares the gun fader/mute, and the
@@ -510,6 +602,18 @@ export function createSfxEngine({ engine, matchId, onError }) {
     }
   }
 
+  // playDecoyInRange — the decoy's FAKE gunshots (the plan's scheduled
+  // shots), on the GUNS channel with the mimic weapon's own samples
+  // (decoyCues' comment): the noise is a gunshot, so it rides the gun
+  // fader/mute. The plan is already the deterministic schedule (seeded
+  // by landTick — same shots every redraw/seek), so a seek re-seeds the
+  // compare point via cueGapJump like every other cue list.
+  function playDecoyInRange(fromTick, toTick) {
+    for (const cue of decoyCuesInRange(decoyShots, fromTick, toTick)) {
+      playGroup(cue.weapon, 'guns');
+    }
+  }
+
   function onEngineChange(st) {
     if (destroyed) return;
     // Silent resume retry when playback (re)starts: the platform may
@@ -521,8 +625,10 @@ export function createSfxEngine({ engine, matchId, onError }) {
     const running = !!ctx && ctx.state === 'running';
     if (st.playing && running && !jump) {
       playUtilInRange(prevTick, st.tick);
+      playThrowInRange(prevTick, st.tick);
       playKnifeInRange(prevTick, st.tick);
       playBulletsInRange(prevTick, st.tick);
+      playDecoyInRange(prevTick, st.tick);
     }
     // EVERY path advances the compare point: a seek, a loop wrap or a
     // paused scrub must not machine-gun the cues it crossed when
@@ -530,11 +636,14 @@ export function createSfxEngine({ engine, matchId, onError }) {
     prevTick = st.tick;
   }
 
-  // rebuildCues re-derives BOTH landmark cue lists from the rows last
-  // pushed — called by setLandmarks and setRounds (either input may
-  // arrive second; the freeze gate needs both).
+  // rebuildCues re-derives the landmark cue lists (detonations, throws,
+  // knife) from the rows last pushed — called by setLandmarks and
+  // setRounds (either input may arrive second; the freeze gate needs
+  // both). The decoy plan is NOT rebuilt here: it arrives pre-derived
+  // through setDecoyPlan (lib/replay/decoy.js).
   function rebuildCues() {
     utilCues = grenadeCues(landmarkRows, rounds);
+    throwHits = throwCues(landmarkRows, rounds);
     knifeHits = knifeCues(landmarkRows, rounds);
   }
 
@@ -565,6 +674,14 @@ export function createSfxEngine({ engine, matchId, onError }) {
     // a repeat push; compare points are engine-side and unaffected.
     setBullets(rows) {
       bullets = rows || [];
+    },
+    // setDecoyPlan pushes the decoy plan (lib/replay/decoy.js
+    // buildDecoyPlan — {landTick, detTick, weapon, shots:[{tick}]} rows,
+    // the SAME plan the renderer draws its rest icon + noise pulses
+    // from). Flattened once into the fake-gunshot cue list; tolerates a
+    // repeat push exactly like setBullets.
+    setDecoyPlan(plan) {
+      decoyShots = decoyCues(plan);
     },
     // playGroup is exported on the engine for one-off cues (and tests).
     playGroup,

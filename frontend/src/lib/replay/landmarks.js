@@ -40,6 +40,7 @@ export const LANDMARK_KINDS = [
   'bomb_pickup',
   'grenade_throw',
   'grenade',
+  'grenade_land',
   'round_start',
   'round_end',
   'player_connect',
@@ -59,12 +60,15 @@ export const LANDMARK_KINDS = [
 // carries no scrubber marker (see scrubberMarkerClass); `round_start`
 // carries the TALL tick marker when the round_starts category is on
 // (the scrubber's marker loop gates this set by the enabled
-// categories).
+// categories); `grenade_land` rides it for the decoy REST marker
+// (bucket 'land' — the renderer's plan pairs the throw arc to it; no
+// scrubber marker either).
 export const DRAW_KINDS = [
   'kill',
   'damage',
   'grenade',
   'grenade_throw',
+  'grenade_land',
   'bomb_plant',
   'bomb_defuse',
   'bomb_explode',
@@ -87,6 +91,13 @@ export const CATEGORIES = [
   { id: 'bomb', label: 'Bomb', short: 'bomb', source: 'event', kinds: ['bomb_plant', 'bomb_defuse', 'bomb_explode', 'bomb_drop', 'bomb_pickup'] },
   { id: 'grenade_throws', label: 'Grenade throws', short: 'throw', source: 'event', kinds: ['grenade_throw'] },
   { id: 'grenade_dets', label: 'Grenade detonations', short: 'det', source: 'event', kinds: ['grenade'] },
+  // The grenade's ACTIVATION (it came to rest — models.EventGrenadeLand,
+  // the decoy's decoy_started). Its OWN category on purpose: it is not a
+  // detonation (it never claims grenade_dets' kinds, so heatkinds' region
+  // drill and the det scrubber markers stay untouched) and it needs SOME
+  // category to normalize under (normalizeEvent drops unclaimed kinds).
+  // Opt-in like every non-sparse category; default OFF.
+  { id: 'grenade_lands', label: 'Grenade landings', short: 'land', source: 'event', kinds: ['grenade_land'] },
   { id: 'damage', label: 'Damage', short: 'dmg', source: 'event', kinds: ['damage'] },
   { id: 'blinds', label: 'Flashes & blinds', short: 'flash', source: 'event', kinds: ['blind'] },
   { id: 'connects', label: 'Joins & leaves', short: 'join/leave', source: 'event', kinds: ['player_connect', 'player_disconnect'] },
@@ -121,6 +132,12 @@ export function categoryOfKind(kind) {
 // utilityWeaponKinds pins the same set on the Go side; Molotov ≡
 // Incendiary). Unknown/absent weapon → 'detonation' (the generic
 // expanding ring — never guessed, never thrown).
+// Decoy Grenade → 'he': the domain fact (spec research 2026-11-07,
+// verified 5/5 demos) is that an exploding decoy plays BaseGrenade.Explode
+// — the SAME sound as an HE grenade (CS2.md "Sound assets": the decoy has
+// no detonation sound of its own) — so its detonation renders and sounds
+// through the HE path (sfx.js remaps the cue to "HE Grenade"). The old
+// 'decoy' pulse bucket is gone with it.
 export function detonationStyle(weapon) {
   switch (String(weapon || '')) {
     case 'Smoke Grenade':
@@ -128,11 +145,10 @@ export function detonationStyle(weapon) {
     case 'Molotov':
     case 'Incendiary Grenade':
       return 'fire';
-    case 'Decoy Grenade':
-      return 'decoy';
     case 'Flashbang':
       return 'flash';
     case 'HE Grenade':
+    case 'Decoy Grenade': // BaseGrenade.Explode — the HE files (see above)
       return 'he';
     default:
       return 'detonation';
@@ -140,10 +156,13 @@ export function detonationStyle(weapon) {
 }
 
 // DETONATION_BUCKETS — every drawable grenade bucket drawBucket can
-// produce (the generic 'detonation' plus the five typed ones). The
+// produce (the generic 'detonation' plus the typed ones). The
 // renderer's setLandmarks routes all of them through its detonation
 // loop; 'smoke'/'fire' rows additionally feed the lingering-area arrays.
-export const DETONATION_BUCKETS = ['detonation', 'smoke', 'fire', 'flash', 'he', 'decoy'];
+// 'decoy' is deliberately ABSENT: a decoy detonation buckets 'he'
+// (detonationStyle — BaseGrenade.Explode), and its ACTIVATION buckets
+// 'land' (drawBucket), which is not a detonation at all.
+export const DETONATION_BUCKETS = ['detonation', 'smoke', 'fire', 'flash', 'he'];
 
 // detonationStyleOf — the style of one PRE-BUCKETED row: the bucket
 // already carries it (drawBucket routed the row through detonationStyle),
@@ -188,7 +207,9 @@ export function scrubberMarkerClass(bucket) {
   if (b === 'plant' || b === 'defuse') return 'plant';
   if (b === 'explode' || DETONATION_BUCKETS.includes(b)) return 'det';
   if (b === 'round' || b === 'start') return 'tall';
-  return ''; // 'drop'/'pickup' (bomb evidence) and 'damage' — no marker
+  return ''; // 'drop'/'pickup' (bomb evidence), 'damage' and 'land' (a
+  //             grenade ACTIVATION — the real explosion carries the det
+  //             marker) — no marker
 }
 
 // drawBucket maps a typed kind onto the drawable bucket the renderer and
@@ -197,11 +218,15 @@ export function scrubberMarkerClass(bucket) {
 // anything at runtime (PRD §5.5). `grenade` rows route by WEAPON
 // (detonationStyle) so the renderer's lingering smoke/fire arrays and
 // per-type detonation visuals reach it — the substring branches below
-// keep the extended kind spellings bucketing the same way. damage →
-// 'damage' (the victim-hit flash). bomb_drop/bomb_pickup bucket into
-// 'drop'/'pickup' — the DROPPED-C4 evidence rows the renderer's
-// reconstruction (lib/replay/bomb.js) consumes; they and 'damage' carry
-// no scrubber marker (scrubberMarkerClass returns '' for them).
+// keep the extended kind spellings bucketing the same way. `grenade_land`
+// buckets 'land' — the REST position marker (a grenade coming to rest is
+// NOT a detonation: no det scrubber marker, no detonation visual; the
+// renderer pairs the throw arc to it and its decoy plan draws the rest
+// icon from there). damage → 'damage' (the victim-hit flash).
+// bomb_drop/bomb_pickup bucket into 'drop'/'pickup' — the DROPPED-C4
+// evidence rows the renderer's reconstruction (lib/replay/bomb.js)
+// consumes; they and 'damage' carry no scrubber marker
+// (scrubberMarkerClass returns '' for them).
 // round_start buckets to 'start' — the death-X cutoff row the renderer
 // STORES as a round start (killEndTick's next-round terminator); it is
 // never drawn as a world marker, but it DOES carry the tall scrubber
@@ -211,6 +236,7 @@ export function drawBucket(kind, weapon) {
   const k = String(kind || '').toLowerCase();
   if (k === 'kill') return 'kill';
   if (k === 'grenade_throw') return 'throw';
+  if (k === 'grenade_land') return 'land';
   if (k === 'grenade') return detonationStyle(weapon);
   if (k === 'damage') return 'damage';
   if (k.includes('smoke')) return 'smoke';

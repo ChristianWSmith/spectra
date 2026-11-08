@@ -74,6 +74,12 @@ test('labels read as the kind on screen', () => {
   // Molotov ≡ Incendiary: the one option says both spellings.
   assert.equal(heatKindLabel('molotov_thrown'), 'Molotov/Incendiary thrown');
   assert.equal(heatKindLabel('molotov_det'), 'Molotov/Incendiary detonation');
+  // 'decoy' here is the STORED utility-kind vocabulary (models.UtilityWeaponKind
+  // → heatmap.go grenadeHeatmapKinds) — a DIFFERENT vocabulary from the
+  // replay's detonation buckets, where 'decoy' was removed (a decoy
+  // detonation buckets 'he' now). Inert w.r.t. that change: decoy rows
+  // still store kind 'grenade' + weapon 'Decoy Grenade', so the decoy_det
+  // heatmaps keep working.
   assert.equal(heatKindLabel('decoy_det'), 'Decoy detonation');
   // Unknown ids pass through instead of rendering blank.
   assert.equal(heatKindLabel('mystery'), 'mystery');
