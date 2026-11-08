@@ -8,8 +8,11 @@ import {
   ammoText,
   armorChip,
   carriesC4,
+  heldItemOf,
   hpBand,
   hpPct,
+  mainAmmoText,
+  mainOf,
   moneyText,
   STATS_TITLE,
   statsText,
@@ -101,6 +104,54 @@ test('weaponName hides the sidecar "Unknown" sentinel', () => {
   assert.equal(weaponName(st({ weapon: 'Unknown' })), null, 'unnamed weapon renders as unknown');
   assert.equal(weaponName(st({ weapon: null })), null);
   assert.equal(weaponName(null), null);
+});
+
+test('heldItemOf: only a held item ACTIVE in hand prefixes the weapon row', () => {
+  // Mode 1 (ordinary block): a firearm active, an unnamed weapon, or no
+  // state at all → null, so the card keeps today's icon+name+ammo row.
+  assert.equal(heldItemOf(st()), null, 'a firearm active is not a held item');
+  assert.equal(heldItemOf(st({ weapon: 'M4A4' })), null);
+  assert.equal(heldItemOf(st({ weapon: 'Unknown' })), null, 'the sentinel never claims a held item');
+  assert.equal(heldItemOf(st({ weapon: null })), null);
+  assert.equal(heldItemOf(null), null);
+  // Modes 2/3 (held prefix): knife, any grenade, C4.
+  assert.equal(heldItemOf(st({ weapon: 'Knife' })), 'Knife');
+  assert.equal(heldItemOf(st({ weapon: 'Flashbang' })), 'Flashbang');
+  assert.equal(heldItemOf(st({ weapon: 'Smoke Grenade' })), 'Smoke Grenade');
+  assert.equal(heldItemOf(st({ weapon: 'Molotov' })), 'Molotov');
+  assert.equal(heldItemOf(st({ weapon: 'C4' })), 'C4');
+});
+
+test('mainOf: primary ?? secondary ?? null — never an invented starter', () => {
+  assert.equal(mainOf(st({ inventory: ['Knife', 'USP-S', 'AK-47'] })), 'AK-47', 'first primary wins');
+  assert.equal(mainOf(st({ inventory: ['USP-S', 'AK-47'] })), 'AK-47', 'the primary beats an earlier sidearm');
+  assert.equal(mainOf(st({ inventory: ['Knife', 'USP-S'] })), 'USP-S', 'secondary is the fallback');
+  assert.equal(mainOf(st({ inventory: ['Knife'] })), null, 'knife round → no main (no starter guess)');
+  assert.equal(mainOf(st({ inventory: [] })), null);
+  assert.equal(mainOf(st({ inventory: null })), null, 'unknown inventory → unknown, never a pistol');
+  assert.equal(mainOf(null), null);
+});
+
+test('mainAmmoText renders the MAIN weapon pair with ammoText honesty', () => {
+  assert.equal(mainAmmoText(st({ mainMag: 30, mainReserve: 90 })), '30 / 90');
+  assert.equal(mainAmmoText(st({ mainMag: 0, mainReserve: 90 })), '0 / 90', 'an empty main magazine is a fact');
+  assert.equal(mainAmmoText(st({ mainMag: null, mainReserve: 90 })), '— / 90', 'one unknown side renders inline');
+  assert.equal(mainAmmoText(st({ mainMag: 30, mainReserve: null })), '30 / —');
+  assert.equal(mainAmmoText(st({ mainMag: null, mainReserve: null })), '—', 'both unknown → plain —');
+  assert.equal(mainAmmoText(null), '—', 'no state is never 0 / 0');
+});
+
+test("the three weapon-row modes' inputs (held / main / neither)", () => {
+  // Mode 1: no held item → the ordinary active-weapon block.
+  assert.equal(heldItemOf(st()), null);
+  // Mode 2: held item + a carried main → prefix + separator + main block.
+  const m2 = st({ weapon: 'Flashbang', inventory: ['AK-47', 'Flashbang'] });
+  assert.equal(heldItemOf(m2), 'Flashbang');
+  assert.equal(mainOf(m2), 'AK-47');
+  // Mode 3: held item, no firearm carried → bare held icon.
+  const m3 = st({ weapon: 'Knife', inventory: ['Knife'] });
+  assert.equal(heldItemOf(m3), 'Knife');
+  assert.equal(mainOf(m3), null);
 });
 
 test('carriesC4 reads the inventory SEPARATELY from utilityOf', () => {

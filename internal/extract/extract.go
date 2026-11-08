@@ -55,7 +55,8 @@ type PositionSink interface {
 // change records. Every field is READ from the parser per frame (never
 // arithmetically reconstructed): HP/Armor are pl.Health()/pl.Armor(), the
 // weapon fields are pl.ActiveWeapon()/pl.Weapons() (canonical wepName
-// vocabulary — the same strings events.weapon carries), and Attack is
+// vocabulary — the same strings events.weapon carries; MainMag/MainReserve
+// are the MAIN — stowed — weapon's ammo, see scanWeapons), and Attack is
 // pl.IsPressingButton(common.ButtonAttack).
 //
 // Death is a sample, not an inference: Alive=false forces HP to 0, and the
@@ -80,6 +81,8 @@ type StatePlayer struct {
 	Inventory   []string // canonical names; nil when !Alive
 	MagAmmo     int      // active weapon magazine; 0 when !Alive
 	ReserveAmmo int      // active weapon reserve; 0 when !Alive
+	MainMag     int      // MAIN (stowed) weapon magazine; 0 when !Alive or no firearm carried
+	MainReserve int      // MAIN (stowed) weapon reserve; 0 when !Alive or no firearm carried
 	Attack      bool
 	Alive       bool
 }
@@ -413,22 +416,55 @@ func sampleStatePlayer(pl *common.Player) StatePlayer {
 	alive := pl.IsAlive()
 	var inventory []string
 	weapon, mag, reserve := "", 0, 0
+	mainMag, mainReserve := 0, 0
 	if alive {
 		active := pl.ActiveWeapon()
 		weapon = wepName(active)
-		for _, w := range pl.Weapons() {
-			if w == nil {
-				continue
-			}
-			inventory = append(inventory, wepName(w))
-		}
+		var main *common.Equipment
+		inventory, main = scanWeapons(pl.Weapons())
 		if active != nil {
 			mag = active.AmmoInMagazine()
 			reserve = active.AmmoReserve()
 		}
+		if main != nil {
+			mainMag = main.AmmoInMagazine()
+			mainReserve = main.AmmoReserve()
+		}
 	}
 	return buildStateSample(pl.SteamID64, alive, pl.Health(), pl.Armor(), pl.Money(), pl.HasHelmet(),
-		weapon, inventory, mag, reserve, pl.IsPressingButton(common.ButtonAttack))
+		weapon, inventory, mag, reserve, mainMag, mainReserve, pl.IsPressingButton(common.ButtonAttack))
+}
+
+// scanWeapons walks one participant's weapon list IN ORDER (pl.Weapons()
+// — the same loop order the frontend's `inventory` array is built from,
+// so both sides see the same first-primary/first-secondary) and returns
+// the canonical inventory names plus the MAIN weapon: the first primary,
+// else the first secondary, else nil (NO firearm carried — a knife round
+// or a dropped sidearm yields no main, so the card shows nothing; there
+// is deliberately no starter-pistol fallback here).
+//
+// Frontend twin: loadout.js mainWeaponOf(inventory, { starter: false })
+// — the sets themselves are models.IsPrimaryWeapon/IsSecondaryWeapon
+// (quoted from loadout.js's PRIMARY_WEAPONS/SECONDARY_WEAPONS).
+func scanWeapons(weapons []*common.Equipment) (inventory []string, main *common.Equipment) {
+	var secondary *common.Equipment
+	for _, w := range weapons {
+		if w == nil {
+			continue
+		}
+		name := wepName(w)
+		inventory = append(inventory, name)
+		if main == nil && models.IsPrimaryWeapon(name) {
+			main = w // first primary wins, wherever it sits in the order
+		}
+		if secondary == nil && models.IsSecondaryWeapon(name) {
+			secondary = w
+		}
+	}
+	if main == nil {
+		main = secondary
+	}
+	return inventory, main
 }
 
 // buildStateSample is the pure shaping rule the sidecar stream depends on
@@ -437,11 +473,11 @@ func sampleStatePlayer(pl *common.Player) StatePlayer {
 // the helmet flag are stored as read (alive or not, deliberately: money
 // lives on the player controller and round-end cash lands while dead;
 // helmet rides the pawn's item services like armor), and the
-// weapon/inventory/ammo fields only exist while alive (dead pawns have no
-// entity props to read; the stream documents the last emitted value as
-// last-known). Values are clamped onto the stored wire widths here (u8
-// HP/armor, u16 money/ammo) so the writer never truncates.
-func buildStateSample(steamID uint64, alive bool, health, armor, money int, helmet bool, weapon string, inventory []string, mag, reserve int, attack bool) StatePlayer {
+// weapon/inventory/ammo fields — active AND main — only exist while alive
+// (dead pawns have no entity props to read; the stream documents the last
+// emitted value as last-known). Values are clamped onto the stored wire
+// widths here (u8 HP/armor, u16 money/ammo) so the writer never truncates.
+func buildStateSample(steamID uint64, alive bool, health, armor, money int, helmet bool, weapon string, inventory []string, mag, reserve, mainMag, mainReserve int, attack bool) StatePlayer {
 	s := StatePlayer{
 		SteamID: steamID,
 		HP:      clampState8(health),
@@ -458,6 +494,8 @@ func buildStateSample(steamID uint64, alive bool, health, armor, money int, helm
 	s.Weapon = weapon
 	s.MagAmmo = clampState16(mag)
 	s.ReserveAmmo = clampState16(reserve)
+	s.MainMag = clampState16(mainMag)
+	s.MainReserve = clampState16(mainReserve)
 	if len(inventory) > 0 {
 		s.Inventory = make([]string, len(inventory))
 		copy(s.Inventory, inventory)

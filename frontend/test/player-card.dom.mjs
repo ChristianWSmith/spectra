@@ -10,7 +10,12 @@
 // the econ row's exact two-line util reserve, pinned below the old
 // 3em slack),
 // the live stats row, the carried C4, and the honest "—" placeholders when
-// slotStateAt state is null (never a zero presented as a fact).
+// slotStateAt state is null (never a zero presented as a fact) — plus the
+// held-item weapon-row modes: a knife/util/C4 ACTIVE in hand renders its
+// icon (no text label) | a thin separator | the MAIN weapon's block with
+// the MAIN weapon's ammo (v3 mainMag/mainReserve), a knife-round
+// inventory renders the bare held icon (no separator, no name), and a
+// firearm active renders no prefix at all.
 //
 // jsdom is intentionally not a project dependency; from frontend/ run:
 //   npm i --no-save jsdom
@@ -86,14 +91,16 @@ const svelteCompile = (src, filename, out, opts = {}) =>
   writeFileSync(out, compile(src, { filename, generate: 'client', ...opts }).js.code);
 
 // Plain-ESM deps copied verbatim with their relative layout intact
-// (fmt → rounds; replay/playercard → replay/landmarks → rounds). The
+// (fmt → rounds; replay/playercard → replay/landmarks → rounds; and the
+// playercard → loadout → bullets → state chain the held-item prefix
+// pulls in — loadout.js also imports bullets.js). The
 // components are compiled with css:'injected' so their <style> blocks
 // land in the document — the outline-geometry checks below read the real
 // rules the browser would apply.
 for (const rel of ['rounds.js', 'fmt.js']) {
   writeFileSync(join(dir, rel), readFileSync(join('src/lib', rel), 'utf8'));
 }
-for (const rel of ['landmarks.js', 'playercard.js']) {
+for (const rel of ['landmarks.js', 'playercard.js', 'loadout.js', 'bullets.js', 'state.js']) {
   writeFileSync(join(dir, 'replay', rel), readFileSync(join('src/lib', 'replay', rel), 'utf8'));
 }
 
@@ -236,6 +243,10 @@ check(
   q(root, '.pc-stats')?.getAttribute('title'),
 );
 check('no C4 cell when the inventory carries no bomb', !q(root, '.pc-c4'));
+check(
+  'firearm active → the ordinary block only: NO held prefix, NO separator',
+  !q(root, '.pc-held') && !q(root, '.pc-hsep'),
+);
 
 // Row structure — the fixed stack the C2 geometry checks pin: head →
 // HP row (armor chip at its RIGHT edge) → weapon on its own line →
@@ -522,6 +533,162 @@ const team2 = { ...team, teamMuted: true };
 const rootG2 = await show({ team: team2 });
 check('teamMuted sets the team button pressed', q(rootG2, '.tc-mute').getAttribute('aria-pressed') === 'true' && q(rootG2, '.tc-mute').classList.contains('warn'));
 check('team column does not inject a side the caller did not give', (await show({ team: { ...team, side: '' } })) && qa(document.body, '.pc-ct').length === 0);
+
+console.log('H. held-item weapon row: knife/util/C4 in hand → held icon | separator | MAIN block (or the bare icon)');
+// The v3 state fields: the MAIN weapon's ammo rides alongside the
+// active one's; with a held item in hand the row must show the MAIN
+// weapon's name and ITS ammo — never the held item's artifact (the
+// knife reads "1 / 0").
+const heldBase = {
+  ...fullCard,
+  playerColor: null,
+  stats: null,
+  state: {
+    ...fullCard.state,
+    weapon: 'Knife',
+    magAmmo: 1, // the knife's artifact ammo — must never be displayed
+    reserveAmmo: 0,
+    inventory: ['AK-47', 'Knife', 'Smoke Grenade', 'Flashbang', 'Flashbang'],
+    mainMag: 30,
+    mainReserve: 90,
+  },
+  iconURLs: { ...fullCard.iconURLs, Knife: '/api/icons/knife.svg' },
+};
+
+// H1 — knife held with an AK carried: <knife icon> | <AK icon> AK-47 … 30 / 90
+const rootH1 = await show({ card: { ...heldBase, onToggleMute: () => {} } });
+const heldImg = q(rootH1, '.pc-held img');
+check(
+  'H1 held knife icon, alt "" and NO text label of its own',
+  !!heldImg &&
+    heldImg.getAttribute('src') === '/api/icons/knife.svg' &&
+    heldImg.getAttribute('alt') === '' &&
+    !q(rootH1, '.pc-held .pc-wname'),
+);
+check(
+  'H1 separator present and decorative (aria-hidden)',
+  !!q(rootH1, '.pc-weapon-row .pc-hsep') && q(rootH1, '.pc-hsep').getAttribute('aria-hidden') === 'true',
+);
+check(
+  'H1 main name is the AK-47 (the held Knife is never named)',
+  q(rootH1, '.pc-weapon-row .pc-wname')?.textContent === 'AK-47',
+  q(rootH1, '.pc-weapon-row .pc-wname')?.textContent,
+);
+check(
+  'H1 ammo shows the MAIN mag/reserve (30 / 90 — not the knife artifact 1 / 0)',
+  q(rootH1, '.pc-ammo')?.textContent === '30 / 90',
+  q(rootH1, '.pc-ammo')?.textContent,
+);
+check(
+  'H1 main block reuses .pc-ico with the AK icon',
+  q(rootH1, '.pc-weapon img')?.getAttribute('src') === '/api/icons/ak47.svg',
+);
+check(
+  'H1 held chip title names both halves + the main ammo',
+  q(rootH1, '.pc-held')?.getAttribute('title') === 'Knife + AK-47 — 30 / 90',
+  q(rootH1, '.pc-held')?.getAttribute('title'),
+);
+const h1Kids = [...q(rootH1, '.pc-weapon-row').children].map(pcClass);
+check(
+  'H1 row children order: held → separator → main',
+  JSON.stringify(h1Kids) === JSON.stringify(['pc-chip pc-held', 'pc-hsep', 'pc-chip pc-weapon']),
+  JSON.stringify(h1Kids),
+);
+const h1CardKids = [...q(rootH1, '.pc-card').children].map(pcClass);
+check(
+  'H1 card row order unchanged (the prefix never moves the stack)',
+  JSON.stringify(h1CardKids) === JSON.stringify(['pc-head', 'pc-hp-row', 'pc-weapon-row', 'pc-econ', 'pc-stats']),
+  JSON.stringify(h1CardKids),
+);
+
+// H2 — the spec's exact example: a flash held with an AK carried.
+const rootH2 = await show({
+  card: {
+    ...heldBase,
+    state: { ...heldBase.state, weapon: 'Flashbang', inventory: ['AK-47', 'Flashbang', 'Knife'] },
+    onToggleMute: () => {},
+  },
+});
+check(
+  'H2 flash icon | separator | AK-47 with the main ammo',
+  q(rootH2, '.pc-held img')?.getAttribute('src') === '/api/icons/flashbang.svg' &&
+    !!q(rootH2, '.pc-hsep') &&
+    q(rootH2, '.pc-wname')?.textContent === 'AK-47' &&
+    q(rootH2, '.pc-ammo')?.textContent === '30 / 90',
+  `${q(rootH2, '.pc-held img')?.getAttribute('src')} | ${q(rootH2, '.pc-wname')?.textContent} | ${q(rootH2, '.pc-ammo')?.textContent}`,
+);
+check(
+  'H2 held chip title = Flashbang + AK-47 pair',
+  q(rootH2, '.pc-held')?.getAttribute('title') === 'Flashbang + AK-47 — 30 / 90',
+  q(rootH2, '.pc-held')?.getAttribute('title'),
+);
+
+// H3 — knife round (inventory is knife-only): the BARE held icon.
+const rootH3 = await show({
+  card: {
+    ...heldBase,
+    state: { ...heldBase.state, inventory: ['Knife'], mainMag: 0, mainReserve: 0 },
+    onToggleMute: () => {},
+  },
+});
+check(
+  'H3 bare held icon renders',
+  !!q(rootH3, '.pc-held img') && q(rootH3, '.pc-held img').getAttribute('src') === '/api/icons/knife.svg',
+);
+check(
+  'H3 NO separator and NO name/ammo in the weapon row',
+  !q(rootH3, '.pc-hsep') && !q(rootH3, '.pc-weapon-row .pc-wname') && !q(rootH3, '.pc-weapon-row .pc-ammo'),
+);
+check(
+  'H3 title is honest about the missing firearm',
+  q(rootH3, '.pc-held')?.getAttribute('title') === 'Knife in hand — no firearm carried',
+  q(rootH3, '.pc-held')?.getAttribute('title'),
+);
+check(
+  'H3 the row keeps its fixed height (nothing collapses)',
+  !!q(rootH3, '.pc-weapon-row') &&
+    /height:\s*[^;]+;/.test(ruleFor('pc-weapon-row')) &&
+    /overflow:\s*hidden/.test(ruleFor('pc-weapon-row')),
+  ruleFor('pc-weapon-row'),
+);
+const h3CardKids = [...q(rootH3, '.pc-card').children].map(pcClass);
+check(
+  'H3 card row order unchanged',
+  JSON.stringify(h3CardKids) === JSON.stringify(['pc-head', 'pc-hp-row', 'pc-weapon-row', 'pc-econ', 'pc-stats']),
+  JSON.stringify(h3CardKids),
+);
+
+// H4 — C4 in hand counts as a third held item.
+const rootH4 = await show({
+  card: {
+    ...heldBase,
+    state: { ...heldBase.state, weapon: 'C4', inventory: ['AK-47', 'C4'] },
+    iconURLs: { ...heldBase.iconURLs, C4: '/api/icons/c4.svg' },
+    onToggleMute: () => {},
+  },
+});
+check(
+  'H4 C4 icon | separator | AK-47 with the main ammo',
+  q(rootH4, '.pc-held img')?.getAttribute('src') === '/api/icons/c4.svg' &&
+    !!q(rootH4, '.pc-hsep') &&
+    q(rootH4, '.pc-wname')?.textContent === 'AK-47' &&
+    q(rootH4, '.pc-ammo')?.textContent === '30 / 90',
+  `${q(rootH4, '.pc-held img')?.getAttribute('src')} | ${q(rootH4, '.pc-wname')?.textContent}`,
+);
+
+// H5 — held icon missing from the manifest: degrade silently (the
+// prefix has no text label by design) — no held chip, no separator, the
+// MAIN block stays fully readable.
+const rootH5 = await show({
+  card: { ...heldBase, iconURLs: fullCard.iconURLs, onToggleMute: () => {} }, // no Knife icon
+});
+check(
+  'H5 no held icon → no prefix, no separator, main block intact',
+  !q(rootH5, '.pc-held') &&
+    !q(rootH5, '.pc-hsep') &&
+    q(rootH5, '.pc-wname')?.textContent === 'AK-47' &&
+    q(rootH5, '.pc-ammo')?.textContent === '30 / 90',
+);
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 if (inst) unmount(inst);

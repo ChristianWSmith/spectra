@@ -141,6 +141,11 @@ writeFileSync(
 for (const rel of [
   'playercard.js', 'playercolor.js', 'livestats.js', 'voiceindex.js',
   'sfx.js', 'stretch.js', 'bullets.js',
+  // playercard.js now resolves its held-item prefix through
+  // replay/loadout.js (the one loadout vocabulary) — copy it too, or the
+  // card graph fails to link (its own deps, landmarks.js + bullets.js,
+  // are already in this list).
+  'loadout.js',
 ]) {
   writeFileSync(join(dir, 'replay', rel), readFileSync(join('src/lib/replay', rel), 'utf8'));
 }

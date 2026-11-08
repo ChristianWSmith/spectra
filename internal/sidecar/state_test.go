@@ -18,7 +18,8 @@ const (
 )
 
 // aliveSample is a fully-loaded living sample (the canonical shape the
-// extractor emits while alive).
+// extractor emits while alive) — incl. the v3 main-weapon ammo (the
+// stowed AK's 30/90, sampled by extract.scanWeapons).
 func aliveSample(id uint64, hp int) extract.StatePlayer {
 	return extract.StatePlayer{
 		SteamID:     id,
@@ -30,6 +31,8 @@ func aliveSample(id uint64, hp int) extract.StatePlayer {
 		Inventory:   []string{"AK-47", "USP-S"},
 		MagAmmo:     30,
 		ReserveAmmo: 90,
+		MainMag:     30,
+		MainReserve: 90,
 		Alive:       true,
 	}
 }
@@ -209,13 +212,16 @@ func TestStateStreamExplicit(t *testing.T) {
 
 	// Reconstruction (apply records in order): A ends hp 90 with the
 	// trigger released and $3700; B ends hp 100 with the last-known
-	// loadout (the death record never carried weapon/ammo bits), helmet
-	// back on, and the $4100 that streamed while it was dead.
+	// loadout (the death record never carried weapon/ammo bits, main
+	// included), helmet back on, and the $4100 that streamed while it
+	// was dead.
 	type recon struct {
 		hp, armor    uint8
 		weapon       string
 		inv          []uint8
 		mag, reserve uint16
+		mainMag      uint16
+		mainReserve  uint16
 		money        uint16
 		helmet       bool
 		attack       bool
@@ -246,6 +252,12 @@ func TestStateStreamExplicit(t *testing.T) {
 		if r.Has(StateReserveAmmo) {
 			dst.reserve = r.ReserveAmmo
 		}
+		if r.Has(StateMainMag) {
+			dst.mainMag = r.MainMag
+		}
+		if r.Has(StateMainReserve) {
+			dst.mainReserve = r.MainReserve
+		}
 		if r.Has(StateAttack) {
 			dst.attack = r.Attack
 		}
@@ -257,15 +269,16 @@ func TestStateStreamExplicit(t *testing.T) {
 		}
 	}
 	if ra.hp != 90 || ra.attack || ra.weapon != "AK-47" || ra.mag != 30 || ra.reserve != 90 ||
-		ra.money != 3700 || !ra.helmet {
-		t.Errorf("A reconstructed = %+v, want hp90/no trigger/AK-47/30/90/$3700/helmet", ra)
+		ra.mainMag != 30 || ra.mainReserve != 90 || ra.money != 3700 || !ra.helmet {
+		t.Errorf("A reconstructed = %+v, want hp90/no trigger/AK-47/30/90/main 30/90/$3700/helmet", ra)
 	}
 	if len(ra.inv) != 2 {
 		t.Errorf("A inventory = %v, want 2 entries", ra.inv)
 	}
 	if rb.hp != 100 || rb.attack || rb.weapon != "AK-47" || !rb.weaponSeen ||
+		rb.mainMag != 30 || rb.mainReserve != 90 ||
 		rb.money != 4100 || !rb.helmet {
-		t.Errorf("B reconstructed = %+v, want hp100/no trigger/last-known AK-47/$4100 (streamed while dead)/helmet", rb)
+		t.Errorf("B reconstructed = %+v, want hp100/no trigger/last-known AK-47 + main 30/90/$4100 (streamed while dead)/helmet", rb)
 	}
 }
 
@@ -527,10 +540,14 @@ func TestStateAbsentFailsSoft(t *testing.T) {
 	}
 }
 
-// TestStateRecordPinnedBytes pins the wire format (stateFormatVersion 2):
+// TestStateRecordPinnedBytes pins the wire format (stateFormatVersion 3):
 // any change to the layout must be a version bump, so encode/decode
 // against hard-coded bytes. Masks below 0x80 stay single-byte uvarints;
-// the money/helmet mask (0x181) is the two-byte case.
+// the money/helmet mask (0x181) and the v3 main mask (0x600) are the
+// two-byte cases. Records 1–3 are v1/v2-era layouts whose bytes the
+// append-after-helmet rule keeps byte-IDENTICAL (the v2 baseline — a
+// change here would mean the v3 fields were encoded BEFORE helmet);
+// record 4 pins the new mainMag/mainReserve bytes.
 func TestStateRecordPinnedBytes(t *testing.T) {
 	s := stateSample{hp: 57, armor: 100, attack: true}
 	got := appendStateRecord(nil, 300, 1, StateHP|StateArmor|StateAttack, s, func(string) uint8 { return 0 })
@@ -577,6 +594,24 @@ func TestStateRecordPinnedBytes(t *testing.T) {
 	if len(recs3) != 1 || recs3[0].Money != 16000 || !recs3[0].Helmet || recs3[0].HP != 57 {
 		t.Fatalf("decoded record3 = %+v, want hp57/$16000/helmet", recs3)
 	}
+
+	// v3 main-weapon record: mask mainMag|mainReserve = 0x200|0x400 =
+	// 0x600 → uvarint 80 0C, mainMag 30 → u16 LE 1E 00, mainReserve 90
+	// → 5A 00. (WHY: the first pin of the stateFormatVersion-3 fields —
+	// they ride AFTER helmet in the value order, see the layout doc.)
+	s4 := stateSample{mainMag: 30, mainReserve: 90}
+	got4 := appendStateRecord(nil, 0, 0, StateMainMag|StateMainReserve, s4, func(string) uint8 { return 0 })
+	want4 := []byte{0x00, 0x00, 0x80, 0x0C, 0x1E, 0x00, 0x5A, 0x00}
+	if !bytes.Equal(got4, want4) {
+		t.Fatalf("record4 = %x, want %x", got4, want4)
+	}
+	recs4, err := DecodeStateRecords(want4)
+	if err != nil {
+		t.Fatalf("DecodeStateRecords(record4): %v", err)
+	}
+	if len(recs4) != 1 || recs4[0].MainMag != 30 || recs4[0].MainReserve != 90 {
+		t.Fatalf("decoded record4 = %+v, want main 30/90", recs4)
+	}
 }
 
 // TestStateCorrupt: truncated/invalid streams fail loudly with errors
@@ -586,9 +621,11 @@ func TestStateCorrupt(t *testing.T) {
 	if _, err := DecodeStateRecords([]byte{0x01, 0x00, byte(StateHP)}); !errCorrupts(err) {
 		t.Errorf("truncated hp: err = %v, want corrupt", err)
 	}
-	// Unknown field bit (mask 0x200 — one past StateHelmet, uvarint
-	// 80 04); old bit 0x80 is now the legal money field.
-	if _, err := DecodeStateRecords([]byte{0x01, 0x00, 0x80, 0x04}); !errCorrupts(err) {
+	// Unknown field bit. (WHY re-pin: 0x200 became the LEGAL mainMag
+	// field at stateFormatVersion 3, so the first illegal bit moved to
+	// 0x800 — one past StateMainReserve — uvarint 80 10; old bit 0x80
+	// is the legal money field.)
+	if _, err := DecodeStateRecords([]byte{0x01, 0x00, 0x80, 0x10}); !errCorrupts(err) {
 		t.Errorf("unknown bit: err = %v, want corrupt", err)
 	}
 	// Mask wider than u16 (65536 — must not truncate into valid bits).
@@ -644,7 +681,8 @@ func sameStateRecord(a, b StateRecord) bool {
 	if a.Frame != b.Frame || a.Slot != b.Slot || a.Mask != b.Mask ||
 		a.HP != b.HP || a.Armor != b.Armor || a.Weapon != b.Weapon ||
 		a.MagAmmo != b.MagAmmo || a.ReserveAmmo != b.ReserveAmmo ||
-		a.Attack != b.Attack || a.Money != b.Money || a.Helmet != b.Helmet {
+		a.Attack != b.Attack || a.Money != b.Money || a.Helmet != b.Helmet ||
+		a.MainMag != b.MainMag || a.MainReserve != b.MainReserve {
 		return false
 	}
 	return bytes.Equal(a.Inventory, b.Inventory)

@@ -7,8 +7,14 @@
 // (the stream's "unknown", state.js) always renders as "—", never as a
 // fact. Pure (no DOM, no services): node-tested by
 // src/lib/playercard.test.js; rendered by test/player-card.dom.mjs.
+//
+// The held-item prefix (knife/util/C4 in hand → icon + separator + the
+// main weapon's block) resolves its VOCABULARY through
+// replay/loadout.js (isHeldItem / mainWeaponOf) — the one loadout rule
+// home shared with the decoy — this module only projects it for display.
 import { detonationStyle } from './landmarks.js';
 import { fmtMoney } from '../fmt.js';
+import { isFirearm, isHeldItem, mainWeaponOf } from './loadout.js';
 
 // utilityOf groups a state-stream inventory into the player's UTILITY:
 // [{name, count}] in first-seen order — or null when the inventory
@@ -99,6 +105,42 @@ export function moneyText(state) {
 export function weaponName(state) {
   const w = state ? state.weapon : null;
   return w && w !== 'Unknown' ? w : null;
+}
+
+// heldItemOf — the ACTIVE weapon's name when it is a held item (knife,
+// grenade or C4 — loadout.js isHeldItem), else null. A firearm in hand
+// (or an unnamed/unknown weapon, or no state at all) means the card
+// shows the ordinary weapon block with no held prefix; the active weapon
+// is the stream's canonical `weapon` field via weaponName, so the
+// "Unknown" sentinel never claims a held item either.
+export function heldItemOf(state) {
+  const active = weaponName(state);
+  if (!active || isFirearm(active)) return null; // the ordinary block
+  return isHeldItem(active) ? active : null;
+}
+
+// mainOf — the player's MAIN weapon behind the held-item prefix:
+// primary ?? secondary ?? null over the stream's inventory, through
+// loadout.js mainWeaponOf with NO starter (the card never invents a
+// pistol the stream did not say is carried — a knife-round inventory
+// resolves to null → the bare held icon, no separator).
+export function mainOf(state) {
+  if (!state) return null;
+  return mainWeaponOf(state.inventory, { starter: false });
+}
+
+// mainAmmoText — the MAIN weapon's "mag / reserve": the stream's v3
+// mainMag/mainReserve fields, sampled from the STOWED weapon (not the
+// active one's artifact ammo — that is what ammoText renders). Same
+// honesty rules as ammoText: no state or both sides unknown → "—", one
+// unknown side renders inline, a real 0 is kept (an empty magazine is a
+// fact).
+export function mainAmmoText(state) {
+  if (!state) return '—';
+  const mag = state.mainMag;
+  const res = state.mainReserve;
+  if (mag == null && res == null) return '—';
+  return `${mag ?? '—'} / ${res ?? '—'}`;
 }
 
 // carriesC4 reports whether the stream's inventory carries the bomb.
