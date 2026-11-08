@@ -151,6 +151,10 @@ const KILL_FEED_ICON = 14; // px — a feed image's HEIGHT on a line (the
 //                          weapon/indicator art); its width follows
 //                          iconAspect, never a 1:1 squash
 const KILL_FEED_R = 4; // px — entry corner radius (hudBox uses 6)
+// The four scoped sniper rifles: the noscope indicator only applies to
+// them. The game's noscope flag may already be gated this way, but the
+// spec names exactly these four — belt and braces, one list here.
+const NOSCOPE_WEAPONS = new Set(['AWP', 'SSG 08', 'SCAR-20', 'G3SG1']);
 // --- Chat (drawChat — the bottom-left overlay) --------------------------------
 // The chat REUSES the kill feed's entry geometry (KILL_FEED_MAX/LH/
 // PITCH/EDGE/INSET/R): it must look exactly like the feed — same box
@@ -2304,14 +2308,26 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // screen never move (the cap keeps the NEWEST KILL_FEED_MAX — the
   // oldest falls off the top, exactly chatLayout's rule for the chat).
   // One line each, cells left → right:
-  //   (blind) killer (+ assister) weapon/→ (headshot) victim
+  //   (blind) attacker (+ assister) (airborne) weapon (noscope)
+  //   (through-smoke) (wallbang) (headshot) victim
   // over a dark transparent box (entryBox) outlined in the KILLER's team
   // color (neutral when unknown); names are tinted by their own side AT
   // THE KILL TICK (sideAtFrame — the same rule the death markers use).
+  // Two icon-only rows replace the whole line (C4 checked FIRST):
+  //   • C4 death:   (explosion) victim — no killer/assister/attacker-side
+  //                 flags at all; outlined in T ORANGE (teamColor('t')):
+  //                 the bomb always belongs to the T side, this is NOT a
+  //                 killer's side (there is none).
+  //   • Suicide:    weapon !== 'C4' AND (attacker empty OR attacker ===
+  //                 victim) — world/fall ('World'), own utility and plain
+  //                 self-kills: (suicide) victim, outlined in the VICTIM's
+  //                 side (the killer IS the victim / there is none).
   // The parenthesized indicators are IMAGES from the icon manifest
-  // (iconFor('blind_kill') before the killer, iconFor('headshot') after
-  // the weapon — internal/mappack/icons.go extracts them from
-  // panorama/images/hud/deathnotice/); a row whose glyph isn't extracted
+  // (iconFor('blind_kill') before the killer, iconFor('airborne') after
+  // it, then the weapon's glyph, iconFor('noscope'/'throughsmoke'/
+  // 'wallbang'/'headshot') after the weapon — internal/mappack/icons.go
+  // extracts them from panorama/images/hud/deathnotice/, except
+  // 'explosion' = the hud blast pip); a row whose glyph isn't extracted
   // yet draws WITHOUT it — no space reserved, so the other cells never
   // shift (degradation must not move what's on screen).
   function drawKillFeed() {
@@ -2346,19 +2362,62 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       const vs = slotOfSteam.get(String(k.victim || ''));
       const kSide = ks != null && ks < nSlots ? sideAtFrame(ks, frame) : '';
       const vSide = vs != null && vs < nSlots ? sideAtFrame(vs, frame) : '';
-      const killer = k.attackerName || k.attacker || '?';
       const victim = k.victimName || k.victim || '?';
       const img = iconFor(k.weapon); // canonical name → manifest image
       // The indicators: only when the ROW asks for them AND the manifest
-      // has them (a pre-re-extraction install lacks both glyphs). A
+      // has them (a pre-re-extraction install lacks the glyphs). A
       // missing image contributes NO cell — not even a gap — so a row
       // without the glyph is pixel-identical to a row that never had the
       // flag (the feed's degradation rule).
       const blindImg = k.attackerBlind ? iconFor('blind_kill') : null;
+      const airborneImg = k.attackerInAir ? iconFor('airborne') : null;
+      // noscope only on the four scoped snipers (NOSCOPE_WEAPONS — the
+      // spec names them; belt and braces against a stray game flag).
+      const nsImg =
+        k.noscope && NOSCOPE_WEAPONS.has(k.weapon) ? iconFor('noscope') : null;
+      const smokeImg = k.throughSmoke ? iconFor('throughsmoke') : null;
+      const wbImg = k.wallbang ? iconFor('wallbang') : null;
       const hsImg = k.headshot ? iconFor('headshot') : null;
-      // spec's "killer (+ assister)": the addition FOLLOWS the killer in
-      // ONE fillText, so the whole cell keeps the killer-side color.
-      const killerCell = k.assisterName ? `${killer} + ${k.assisterName}` : killer;
+      // outlineSide: the box's team color — the KILLER's side normally,
+      // overridden for the two icon-only rows (see the header comment).
+      let outlineSide = kSide;
+      let cells;
+      if (k.weapon === 'C4') {
+        // Bomb death: NO killer name, NO assister, NO attacker-side
+        // flags. Outlined in T ORANGE — the bomb belongs to the T side
+        // (NOT the killer's side: there is none).
+        outlineSide = 't';
+        cells = [];
+        const boom = iconFor('explosion');
+        if (boom) cells.push({ img: boom }); // same skip-a-missing-glyph rule
+        cells.push({ text: victim, fill: teamColor(vSide) });
+      } else if (!k.attacker || k.attacker === k.victim) {
+        // Suicide: world/fall (weapon 'World'), own utility, plain
+        // self-kills — the killer IS the victim or does not exist, so
+        // there is no killer name and the outline takes the VICTIM's
+        // side. (C4 above takes precedence.)
+        outlineSide = vSide;
+        cells = [];
+        const suicide = iconFor('suicide');
+        if (suicide) cells.push({ img: suicide });
+        cells.push({ text: victim, fill: teamColor(vSide) });
+      } else {
+        const killer = k.attackerName || k.attacker || '?';
+        // spec's "killer (+ assister)": the addition FOLLOWS the killer in
+        // ONE fillText, so the whole cell keeps the killer-side color.
+        const killerCell = k.assisterName ? `${killer} + ${k.assisterName}` : killer;
+        cells = [];
+        if (blindImg) cells.push({ img: blindImg }); // before the killer's name
+        cells.push({ text: killerCell, fill: teamColor(kSide) });
+        if (airborneImg) cells.push({ img: airborneImg }); // after the name
+        // no image for this weapon — a simple arrow, never an error
+        cells.push(img ? { img } : { text: '→', fill: SECONDARY_TEXT });
+        if (nsImg) cells.push({ img: nsImg });
+        if (smokeImg) cells.push({ img: smokeImg });
+        if (wbImg) cells.push({ img: wbImg });
+        if (hsImg) cells.push({ img: hsImg }); // after the weapon's flags
+        cells.push({ text: victim, fill: teamColor(vSide) });
+      }
       // cellWidth — an image cell reserves its ACTUAL painted width
       // (KILL_FEED_ICON · iconAspect + 2: drawIcon paints the body
       // size·aspect wide plus a 1 px halo each side — iconAspect/drawIcon),
@@ -2368,13 +2427,6 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       // aspect 3.42 → ~48 px) punch through both gaps into the names.
       const cellWidth = (cell) =>
         cell.img ? KILL_FEED_ICON * iconAspect(cell.img) + 2 : ctx.measureText(cell.text).width;
-      const cells = [];
-      if (blindImg) cells.push({ img: blindImg }); // before the killer's name
-      cells.push({ text: killerCell, fill: teamColor(kSide) });
-      // no image for this weapon — a simple arrow, never an error
-      cells.push(img ? { img } : { text: '→', fill: SECONDARY_TEXT });
-      if (hsImg) cells.push({ img: hsImg }); // after the weapon icon
-      cells.push({ text: victim, fill: teamColor(vSide) });
       const widths = cells.map(cellWidth);
       const w =
         KILL_FEED_INSET * 2 +
@@ -2385,8 +2437,8 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       // read as separate lines instead of one touching stack
       const y = KILL_FEED_EDGE + i * KILL_FEED_PITCH;
 
-      // box: the shared dark surface outlined in the killer's team color
-      entryBox(x, y, w, KILL_FEED_LH, teamColor(kSide));
+      // box: the shared dark surface outlined in the row's team color
+      entryBox(x, y, w, KILL_FEED_LH, teamColor(outlineSide));
 
       let tx = x + KILL_FEED_INSET;
       for (let c = 0; c < cells.length; c++) {
