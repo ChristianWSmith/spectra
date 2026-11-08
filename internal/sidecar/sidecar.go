@@ -38,9 +38,9 @@
 //	               stream's stateFormatVersion + weaponNames when
 //	               present — see state.go)
 //
-// A second, independent stream (state.bin/state.idx, stateFormatVersion
-// 1) carries sparse per-change player state — see state.go for its
-// layout, rationale and measurement.
+// A second, independent stream (state.bin/state.idx, its own
+// stateFormatVersion) carries sparse per-change player state — see
+// state.go for its current version, layout, rationale and measurement.
 package sidecar
 
 import (

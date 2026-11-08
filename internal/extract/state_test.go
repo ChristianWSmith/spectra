@@ -1,6 +1,11 @@
 package extract
 
-import "testing"
+import (
+	"strings"
+	"testing"
+
+	"github.com/markus-wa/demoinfocs-golang/v6/pkg/demoinfocs/common"
+)
 
 // TestRoundSeeds pins the state-stream seed trigger: the very first frame
 // seeds (round 0 before any RoundStart), every later frame in the same
@@ -33,11 +38,12 @@ func TestRoundSeeds(t *testing.T) {
 }
 
 // TestBuildStateSampleDeath: death is a sample — HP forced to 0 and no
-// weapon/inventory/ammo carried — while armor/attack stay as read, and
-// money/helmet stay as read too (deliberate: both persist through death —
-// money lives on the player controller, round-end cash lands while dead).
+// weapon/inventory/ammo (active OR main) carried — while armor/attack stay
+// as read, and money/helmet stay as read too (deliberate: both persist
+// through death — money lives on the player controller, round-end cash
+// lands while dead).
 func TestBuildStateSampleDeath(t *testing.T) {
-	dead := buildStateSample(42, false, 0, 100, 3700, true, "AK-47", []string{"AK-47"}, 30, 90, true)
+	dead := buildStateSample(42, false, 0, 100, 3700, true, "AK-47", []string{"AK-47"}, 30, 90, 30, 90, true)
 	if dead.HP != 0 {
 		t.Errorf("dead HP = %d, want 0 (sampled, not inferred)", dead.HP)
 	}
@@ -53,18 +59,22 @@ func TestBuildStateSampleDeath(t *testing.T) {
 	if !dead.Attack {
 		t.Error("dead Attack = false, want as-read true")
 	}
-	if dead.Weapon != "" || dead.Inventory != nil || dead.MagAmmo != 0 || dead.ReserveAmmo != 0 {
-		t.Errorf("dead weapon fields = %q %v %d %d, want empty (entity props gone)",
-			dead.Weapon, dead.Inventory, dead.MagAmmo, dead.ReserveAmmo)
+	if dead.Weapon != "" || dead.Inventory != nil || dead.MagAmmo != 0 || dead.ReserveAmmo != 0 ||
+		dead.MainMag != 0 || dead.MainReserve != 0 {
+		t.Errorf("dead weapon fields = %q %v %d %d %d %d, want empty (entity props gone)",
+			dead.Weapon, dead.Inventory, dead.MagAmmo, dead.ReserveAmmo, dead.MainMag, dead.MainReserve)
 	}
 	if dead.Alive {
 		t.Error("dead sample must carry Alive=false")
 	}
 
 	inv := []string{"AK-47", "USP-S"}
-	alive := buildStateSample(42, true, 87, 100, 4300, false, "AK-47", inv, 30, 90, false)
+	alive := buildStateSample(42, true, 87, 100, 4300, false, "AK-47", inv, 30, 90, 30, 90, false)
 	if alive.HP != 87 || alive.Weapon != "AK-47" || alive.MagAmmo != 30 || alive.ReserveAmmo != 90 {
 		t.Errorf("alive sample = %+v", alive)
+	}
+	if alive.MainMag != 30 || alive.MainReserve != 90 {
+		t.Errorf("alive main ammo = %d/%d, want 30/90", alive.MainMag, alive.MainReserve)
 	}
 	if alive.Money != 4300 || alive.Helmet {
 		t.Errorf("alive money/helmet = %d/%v, want 4300/false", alive.Money, alive.Helmet)
@@ -82,9 +92,9 @@ func TestBuildStateSampleDeath(t *testing.T) {
 
 // TestBuildStateSampleClamps: raw reads land on the wire widths — the
 // negative sentinel (AmmoInMagazine -1) and over-range values never reach
-// the writer unclamped.
+// the writer unclamped (the MAIN weapon's reads clamp the same way).
 func TestBuildStateSampleClamps(t *testing.T) {
-	s := buildStateSample(1, true, 300, -5, 70000, false, "Negev", nil, -1, 70000, false)
+	s := buildStateSample(1, true, 300, -5, 70000, false, "Negev", nil, -1, 70000, -3, 70001, false)
 	if s.HP != 255 {
 		t.Errorf("HP = %d, want 255", s.HP)
 	}
@@ -100,4 +110,63 @@ func TestBuildStateSampleClamps(t *testing.T) {
 	if s.ReserveAmmo != 65535 {
 		t.Errorf("ReserveAmmo = %d, want 65535", s.ReserveAmmo)
 	}
+	if s.MainMag != 0 {
+		t.Errorf("MainMag = %d, want 0 (negative read clamps to 0)", s.MainMag)
+	}
+	if s.MainReserve != 65535 {
+		t.Errorf("MainReserve = %d, want 65535 (u16 wire clamp)", s.MainReserve)
+	}
 }
+
+// TestScanWeaponsMainWeapon pins the MAIN-weapon resolution the stowed
+// ammo rides on: FIRST primary wins wherever it sits in the order, a
+// secondary is the fallback, and an inventory with no firearm (knife
+// round / dropped sidearm) resolves to NO main — never a starter guess
+// (frontend twin: loadout.js mainWeaponOf with starter:false). The
+// inventory itself keeps pl.Weapons() order, names verbatim.
+func TestScanWeaponsMainWeapon(t *testing.T) {
+	eq := func(ty common.EquipmentType) *common.Equipment { return &common.Equipment{Type: ty} }
+	knife := func() *common.Equipment { return eq(common.EqKnife) }
+
+	// Primary wins over an earlier secondary (order in the list decides
+	// nothing but which FIRST primary/secondary each pass picks).
+	inv, main := scanWeapons([]*common.Equipment{knife(), eq(common.EqUSP), eq(common.EqAK47), eq(common.EqGlock)})
+	if got := namesOf(inv); got != "Knife,USP-S,AK-47,Glock-18" {
+		t.Errorf("inventory = %q, want pl.Weapons() order preserved", got)
+	}
+	if main == nil || main.Type != common.EqAK47 {
+		t.Errorf("main = %v, want the first primary (AK-47)", main)
+	}
+
+	// No primary → first secondary.
+	inv, main = scanWeapons([]*common.Equipment{knife(), eq(common.EqDeagle), eq(common.EqUSP)})
+	if got := namesOf(inv); got != "Knife,Desert Eagle,USP-S" {
+		t.Errorf("inventory = %q", got)
+	}
+	if main == nil || main.Type != common.EqDeagle {
+		t.Errorf("main = %v, want the first secondary (Desert Eagle)", main)
+	}
+
+	// Knife round (or a dropped sidearm): no firearm → no main at all,
+	// so the sample carries 0/0 — only consumed when a main exists.
+	inv, main = scanWeapons([]*common.Equipment{knife()})
+	if got := namesOf(inv); got != "Knife" {
+		t.Errorf("inventory = %q, want [Knife]", got)
+	}
+	if main != nil {
+		t.Errorf("main = %v, want nil (knife-only inventory carries no main)", main)
+	}
+	inv, main = scanWeapons(nil)
+	if len(inv) != 0 || main != nil {
+		t.Errorf("empty weapon list → inventory %v, main %v; want both empty", inv, main)
+	}
+
+	// The resolution feeds buildStateSample: no main → 0/0 on the wire.
+	s := buildStateSample(7, true, 100, 0, 800, false, "Knife", inv, 1, 0, 0, 0, false)
+	if s.MainMag != 0 || s.MainReserve != 0 {
+		t.Errorf("knife-round main ammo = %d/%d, want 0/0", s.MainMag, s.MainReserve)
+	}
+}
+
+// namesOf joins a canonical inventory for compact assertions.
+func namesOf(inv []string) string { return strings.Join(inv, ",") }

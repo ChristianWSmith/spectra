@@ -43,3 +43,45 @@ func IsUtilityWeapon(weapon string) bool {
 func UtilityWeaponKind(weapon string) string {
 	return utilityWeaponKinds[weapon]
 }
+
+// primaryWeapons/secondaryWeapons are the Go TWIN of the frontend's
+// PRIMARY_WEAPONS/SECONDARY_WEAPONS sets in frontend/src/lib/replay/loadout.js
+// — quoted verbatim from there (canonical EquipmentType.String() spellings,
+// the same names the state stream's weapon/inventory fields carry). The two
+// sides must classify identically: extract computes the state stream's
+// stowed main-weapon ammo with these (internal/extract's scanWeapons), the
+// card resolves the displayed main weapon with loadout.js's mainWeaponOf —
+// cf. the sideparity Go/JS twins (internal/rules + lib/sideparity.js) in
+// ref/CONSOLIDATION.md. Loadout.js's header cross-references THIS file.
+var primaryWeapons = map[string]struct{}{
+	"Galil AR": {}, "FAMAS": {}, "AK-47": {}, "M4A4": {}, "M4A1": {}, "SG 553": {},
+	"AUG": {}, "SSG 08": {}, "AWP": {}, "SCAR-20": {}, "G3SG1": {},
+	"MP7": {}, "MP9": {}, "PP-Bizon": {}, "MAC-10": {}, "UMP-45": {},
+	"P90": {}, "MP5-SD": {},
+	"Sawed-Off": {}, "Nova": {}, "MAG-7": {}, "XM1014": {}, "M249": {}, "Negev": {},
+}
+
+// secondaryWeapons — sidearms (the Zeus rides with the pistols), quoted
+// from loadout.js's SECONDARY_WEAPONS (see primaryWeapons).
+var secondaryWeapons = map[string]struct{}{
+	"P2000": {}, "Glock-18": {}, "P250": {}, "Desert Eagle": {}, "Five-SeveN": {},
+	"Dual Berettas": {}, "Tec-9": {}, "CZ75 Auto": {}, "USP-S": {}, "R8 Revolver": {},
+	"Zeus x27": {},
+}
+
+// IsPrimaryWeapon reports whether weapon is a CS2 long gun (rifle, SMG,
+// shotgun, LMG, sniper) — the FIRST choice for a player's main weapon.
+// Exact-match on the canonical name (twin: loadout.js isPrimaryWeapon).
+func IsPrimaryWeapon(weapon string) bool {
+	_, ok := primaryWeapons[weapon]
+	return ok
+}
+
+// IsSecondaryWeapon reports whether weapon is a sidearm — the fallback
+// main weapon when no primary is carried (twin: loadout.js
+// isSecondaryWeapon). NO starter-pistol fallback lives here: a caller that
+// needs one opts in explicitly (loadout.js mainWeaponOf's `starter`).
+func IsSecondaryWeapon(weapon string) bool {
+	_, ok := secondaryWeapons[weapon]
+	return ok
+}
