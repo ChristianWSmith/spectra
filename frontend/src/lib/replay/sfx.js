@@ -11,14 +11,16 @@
 // ("HE Grenade throw" — throwCues), the C4 beep groups the beep
 // scheduler builds (`C4 beep <site>` — c4BeepGroup), the
 // four plant/defuse lifecycle cue groups (bombActionCues — "C4 plant
-// start" … "C4 defuse complete") and the five ANNOUNCER voice lines
+// start" … "C4 defuse complete"), the five ANNOUNCER voice lines
 // (roundEndCues / bombAnnouncerCues — "ctwin", "terwin", "rounddraw",
-// "bombpl", "bombdef"), so a cue is one exact-match lookup.
+// "bombpl", "bombdef") and the match-point freeze stinger
+// (matchPointCues — "matchpoint"), so a cue is one exact-match lookup.
 // A logical item with several variants keeps ALL of them and picks one
 // at RANDOM per play, so a spray doesn't loop one sample — the beep
 // groups are single-sample on purpose (the site must never substitute
-// at random), and so are the four lifecycle cues and the five announcer
-// lines (each is a distinct moment, not a variant).
+// at random), and so are the four lifecycle cues, the five announcer
+// lines and the match-point stinger (each is a distinct moment, not a
+// variant).
 //
 // This engine owns its OWN AudioContext: it must work for matches without
 // voice (the voice engine may not exist at all). Autoplay policy mirrors
@@ -46,12 +48,14 @@
 //   - the plant/defuse ATTEMPT cues (bombActionCues — bomb.js
 //     ACTION_KINDS → the manifest's four lifecycle groups) play in
 //     (prevTick, curTick] on the C4 bus; the abort rows are silent;
-//   - the ANNOUNCER voice lines (roundEndCues + bombAnnouncerCues —
-//     ctwin/terwin/rounddraw from the round_end rows joined to GetRounds'
-//     winner/reason, bombpl/bombdef from the canonical plant/defuse
-//     rows) play in the same window on the announcer bus, ordered by
-//     announcerOrder (a defuse line precedes the round-win line by
-//     ANNOUNCER_ORDER_DELAY_S when both land in one window);
+//   - the ANNOUNCER voice lines (roundEndCues + bombAnnouncerCues +
+//     matchPointCues — ctwin/terwin/rounddraw from the round_end rows
+//     joined to GetRounds' winner/reason, bombpl/bombdef from the
+//     canonical plant/defuse rows, matchpoint at a MATCH-POINT round's
+//     freeze start derived from the scoreline) play in the same window
+//     on the announcer bus, ordered by announcerOrder (a defuse line
+//     precedes the round-win line by ANNOUNCER_ORDER_DELAY_S when both
+//     land in one window);
 //   - decoy noise cues are the decoy PLAN's fake shots (setDecoyPlan —
 //     lib/replay/decoy.js), played on the GUNS channel with the mimic
 //     weapon's own samples (see decoyCues);
@@ -317,6 +321,14 @@ export function bombActionCues(rows, rounds) {
 // announcer VO, distinct from the C4 DEVICE sounds above (bombActionCues
 // — the arm/disarm cues) and from the C4 boom (grenadeCues): they ride
 // their own 'announcer' bus with their own fader (announcer_volume).
+// The SIXTH announcer-group cue is the match-point stinger
+// (matchPointCues — "matchpoint"): NOT owner-provided — cs2find
+// discovered the game's Music.Match.MatchPoint soundevent
+// (sounds/music/cs_stinger.vsnd_c, existence-verified against the local
+// VPK 2026-11-09) when no match-point line exists under
+// sounds/vo/announcer/cs2_classic/. It is a 4.1 s music stinger rather
+// than a VO line, and the product spec routes it onto this same
+// 'announcer' bus (no new gain, no new pref).
 
 // ANNOUNCER_ORDER_DELAY_S — the owner-observed defuse ordering made
 // deterministic: when `bombdef` and a round-end line land in the SAME
@@ -433,6 +445,138 @@ export function bombAnnouncerCues(rows, rounds) {
     if (seen.has(key)) continue;
     seen.add(key);
     out.push({ tick: row.tick, name, bucket: 'announcer' });
+  }
+  out.sort((a, b) => a.tick - b.tick);
+  return out;
+}
+
+// --- match-point freeze cue (matchPointCues) --------------------------------
+// The match-POINT stinger: at the FREEZE START of every counted round
+// in which one more win clinches the match, the game's own match-point
+// sound plays (soundTable "matchpoint" → sounds/music/cs_stinger.vsnd_c
+// — the Music.Match.MatchPoint soundevent, cs2find-discovered and
+// existence-verified 2026-11-09; NOT one of the five owner-provided
+// announcer lines, see internal/mappack/sounds.go). It rides the
+// 'announcer' bus per the product spec (bus choice — no new gain, no
+// new pref, no new event).
+
+// matchPointBefore — THE clinch predicate: given the scoreline BEFORE a
+// counted round ({ct, t} round wins), is either side ONE WIN from
+// taking the match? The CS2 MR12 + MR3-overtime rule (CS2.md "MR12
+// regulation + MR3 overtime"; predicate sources: CS wiki Competitive +
+// Overtime pages and Valve's MR12 statement via HLTV, all retrieved
+// 2026-11-09 — see the CS2.md draft in the work report):
+//   REGULATION — first to 13 round wins, capped at 24 rounds: a side at
+//     12 with the opponent at ≤11 is one win from 13 (so 12-X is a
+//     point for EITHER side). 12-12 is NOT a point: regulation ends
+//     there and the match goes to overtime (or ends tied where there is
+//     none), so no round ever starts at 12-12 needing only a 13th win.
+//   OVERTIME — after 12-12 the match plays MR3 blocks of 6 rounds,
+//     first to 4 block wins takes it: inside the CURRENT block a side at
+//     3 block wins (opponent ≤2) is one win from 4 — the first block's
+//     point scorelines are 15-X (X ≤14, never 15-15), the second block's
+//     18-X after a tied 3-3. A block that reaches 3-3 is COMPLETE:
+//     CS2 Premier ends the match there (draw) and other configurations
+//     start a fresh 0-0 block — so a round starting at block 3-3 is
+//     never a point either way. Completed ties are unwound from the
+//     overall scoreline by subtracting 3 per side per tie (each tied
+//     block awarded both sides exactly 3).
+// Non-MR12 formats (Wingman MR8 first-to-9, legacy MR15 first-to-16)
+// are OUTSIDE this rule: Wingman never reaches these scorelines (always
+// silent), while an MR15 demo could cue falsely at 12-11 / 15-X — the
+// product targets CS2 MR12. An unreachable, negative or non-finite
+// scoreline returns false (never a guess). Pure — unit-tested by
+// src/lib/sfx.test.js.
+export function matchPointBefore(ct, t) {
+  if (!Number.isFinite(ct) || !Number.isFinite(t) || ct < 0 || t < 0) return false;
+  if (ct <= 12 && t <= 12) {
+    if (ct === 12 && t <= 11) return true;
+    if (t === 12 && ct <= 11) return true;
+    return false; // below 12-12, or exactly 12-12 (overtime / tie follows)
+  }
+  if (ct < 12 || t < 12) return false; // unreachable scoreline → no cue
+  let a = ct - 12;
+  let b = t - 12;
+  while (a >= 3 && b >= 3) {
+    a -= 3; // a completed 3-3 OT block: +3 to each side, next block 0-0
+    b -= 3;
+  }
+  return (a === 3 && b <= 2) || (b === 3 && a <= 2);
+}
+
+// scorelineBefore — the scoreline BEFORE counted round `number`
+// ({ct, t}), or null when it cannot be resolved: a match-point decision
+// must never run on a guess (the roundEndCues silence convention).
+// Rounds are numbered in time order (extract's renumber), so
+// "number < n" is "played before this round"; knife/warmup rows drop
+// out through lib/rounds.js isCounted — the SAME counted gate
+// roundEndCues applies. A prior counted round resolves only with a
+// winner ('ct' / 't') or as a SETTLED draw (winner '' + reason 'Draw'
+// + endTick > 0 — roundEndCues' draw evidence, awarding neither side);
+// anything else (unknown winner, a draw with no end tick) makes the
+// whole scoreline unknown → null → silence.
+// Cross-reference: rounds.js scoreThrough is THE display scoreline
+// aggregate (it counts an unknown winner for NEITHER side on purpose —
+// a HUD readout may render partial data); a CLINCH decision may not,
+// hence this walk instead of a scoreThrough call. Pure.
+function scorelineBefore(rounds, number) {
+  let ct = 0;
+  let t = 0;
+  for (const r of rounds || []) {
+    if (!r || !Number.isFinite(r.number) || !isCounted(r) || r.number >= number) continue;
+    const winner = String(r.winner || '');
+    if (winner === 'ct') ct++;
+    else if (winner === 't') t++;
+    else if (
+      winner === '' &&
+      String(r.reason || '') === 'Draw' &&
+      Number.isFinite(r.endTick) &&
+      r.endTick > 0
+    ) {
+      // A settled draw awards neither side a round — resolved, keep counting.
+    } else {
+      return null; // unresolvable round → the scoreline is unknown
+    }
+  }
+  return { ct, t };
+}
+
+// matchPointCues — the match-POINT cue list: drawNorm round_start rows
+// JOINED to the GetRounds rows, the same roundEndCues shape (the
+// round_start event row is stamped at the SAME tick as the round row's
+// startTick — extract.agg.roundStart — and startTick IS the round's
+// FREEZE START: rounds.js inFreezeTime's window is
+// [startTick, freezeEndTick), whose end the freeze-end handler stamps,
+// so the cue fires exactly where freeze begins). One cue per match-point
+// round, so consecutive match-point rounds (12-X stays a point until
+// clinched) each get their own line:
+//   counted round, resolvable pre-round scoreline, one win from
+//     clinching (matchPointBefore) → 'matchpoint', bucket 'announcer'
+//   unknown round / knife/warmup (isCounted) / unresolvable scoreline
+//     (scorelineBefore) → NO cue, never a guess
+//   rows or rounds absent (setRounds has not arrived) → silence
+// NO freeze gate, deliberately: unlike every other cue list here this
+// cue SITS at freeze start, so inFreezeTime (which opens the round's
+// window on this very tick) would always drop it. Deduped by (tick|name)
+// like every other cue list. Pure — unit-tested by src/lib/sfx.test.js.
+export function matchPointCues(rows, rounds) {
+  const byNumber = new Map();
+  for (const r of rounds || []) {
+    if (r && Number.isFinite(r.number)) byNumber.set(r.number, r);
+  }
+  const seen = new Set();
+  const out = [];
+  for (const row of rows || []) {
+    if (!row || !Number.isFinite(row.tick)) continue;
+    if (String(row.kind || '') !== 'round_start') continue;
+    const rnd = byNumber.get(row.round);
+    if (!rnd || !isCounted(rnd)) continue; // unknown or knife/warmup round → silence
+    const score = scorelineBefore(rounds, rnd.number);
+    if (!score || !matchPointBefore(score.ct, score.t)) continue;
+    const key = `${row.tick}|matchpoint`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ tick: row.tick, name: 'matchpoint', bucket: 'announcer' });
   }
   out.sort((a, b) => a.tick - b.tick);
   return out;
@@ -735,7 +879,7 @@ export function createSfxEngine({ engine, matchId, onError }) {
   let throwHits = []; // throwCues(landmarkRows, rounds) — tick-sorted
   let knifeHits = []; // knifeCues(landmarkRows, rounds) — tick-sorted
   let actionCues = []; // bombActionCues(landmarkRows, rounds) — tick-sorted
-  let announcerCues = []; // roundEndCues + bombAnnouncerCues merged, tick-sorted
+  let announcerCues = []; // roundEndCues + bombAnnouncerCues + matchPointCues merged, tick-sorted
   let bullets = []; // setBullets — bullets.js rows, tick-sorted
   let decoyShots = []; // setDecoyPlan → decoyCues(plan), tick-sorted
   let bombRows = c4BeepRows([]); // the C4 beep scheduler's row lists
@@ -1056,14 +1200,15 @@ export function createSfxEngine({ engine, matchId, onError }) {
   }
 
   // playAnnouncerInRange — the announcer voice lines (roundEndCues +
-  // bombAnnouncerCues) in (prevTick, curTick] on the ANNOUNCER bus.
-  // The window's cues go through announcerOrder first: a `bombdef` and a
-  // round-end line in the SAME window start in the owner-observed order
-  // (bombdef now, the win line ANNOUNCER_ORDER_DELAY_S later) — the one
-  // place two cues must not start together. Everything else starts on
-  // arrival, exactly like the other cue lists (same open/closed window,
-  // same seek/pause guards — it is called only inside the guarded
-  // block).
+  // bombAnnouncerCues + matchPointCues) in (prevTick, curTick] on the
+  // ANNOUNCER bus. The window's cues go through announcerOrder first: a
+  // `bombdef` and a round-end line in the SAME window start in the
+  // owner-observed order (bombdef now, the win line ANNOUNCER_ORDER_DELAY_S
+  // later) — the one place two cues must not start together. Everything
+  // else starts on arrival, exactly like the other cue lists (same
+  // open/closed window, same seek/pause guards — it is called only inside
+  // the guarded block), which is what makes the match-point stinger fire
+  // once per match-point round at freeze start and re-seed on a seek.
   function playAnnouncerInRange(fromTick, toTick) {
     const win = utilCuesInRange(announcerCues, fromTick, toTick);
     if (!win.length) return;
@@ -1243,9 +1388,10 @@ export function createSfxEngine({ engine, matchId, onError }) {
   }
 
   // rebuildCues re-derives the landmark cue lists (detonations, throws,
-  // knife) and the C4 beep scheduler's bomb rows from the rows last
-  // pushed — called by setLandmarks and setRounds (either input may
-  // arrive second; the freeze gate needs both). The decoy plan is NOT
+  // knife, the announcer lines) and the C4 beep scheduler's bomb rows
+  // from the rows last pushed — called by setLandmarks and setRounds
+  // (either input may arrive second; the freeze gate and the
+  // match-point scoreline both need the pair). The decoy plan is NOT
   // rebuilt here: it arrives pre-derived through setDecoyPlan
   // (lib/replay/decoy.js).
   function rebuildCues() {
@@ -1253,14 +1399,18 @@ export function createSfxEngine({ engine, matchId, onError }) {
     throwHits = throwCues(landmarkRows, rounds);
     knifeHits = knifeCues(landmarkRows, rounds);
     actionCues = bombActionCues(landmarkRows, rounds);
-    // The announcer list merges the two voice-line builders, bomb lines
+    // The announcer list merges the three voice-line builders, bomb lines
     // FIRST so a same-tick `bombdef`/`ctwin` pair iterates in the
     // owner-observed order (announcerOrder then adds the explicit delay
-    // to the win line). One tick-sorted list → the ONE window selector
+    // to the win line); matchPointCues rides last (its freeze-start tick
+    // marks the next round's start, and it has no ordering rule of its
+    // own). One tick-sorted list → the ONE window selector
     // (utilCuesInRange) serves it like every other cue list.
-    announcerCues = [...bombAnnouncerCues(landmarkRows, rounds), ...roundEndCues(landmarkRows, rounds)].sort(
-      (a, b) => a.tick - b.tick,
-    );
+    announcerCues = [
+      ...bombAnnouncerCues(landmarkRows, rounds),
+      ...roundEndCues(landmarkRows, rounds),
+      ...matchPointCues(landmarkRows, rounds),
+    ].sort((a, b) => a.tick - b.tick);
     bombRows = c4BeepRows(landmarkRows);
   }
 
@@ -1281,7 +1431,9 @@ export function createSfxEngine({ engine, matchId, onError }) {
     },
     // setRounds hands over GetRounds' rows — the freeze gate the util
     // and knife cue lists are built under (rounds.js inFreezeTime;
-    // bullets are freeze-filtered upstream in bullets.js).
+    // bullets are freeze-filtered upstream in bullets.js) and the
+    // scoreline the match-point cue derives its clinch decision from
+    // (silence until this arrives).
     setRounds(rs) {
       rounds = rs || null;
       rebuildCues();

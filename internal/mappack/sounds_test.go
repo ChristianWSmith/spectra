@@ -309,11 +309,17 @@ func TestSoundTableKeysInIconTable(t *testing.T) {
 		// The announcer lines (owner-provided mapping 2026-11-09,
 		// unverified) — the literal keys sfx.js's announcer cue builders
 		// build, so neither side can drift alone.
-		"ctwin":      {"sounds/vo/announcer/cs2_classic/ctwin.vsnd_c"},
-		"terwin":     {"sounds/vo/announcer/cs2_classic/terwin.vsnd_c"},
-		"rounddraw":  {"sounds/vo/announcer/cs2_classic/rounddraw.vsnd_c"},
-		"bombpl":     {"sounds/vo/announcer/cs2_classic/bombpl.vsnd_c"},
-		"bombdef":    {"sounds/vo/announcer/cs2_classic/bombdef.vsnd_c"},
+		"ctwin":     {"sounds/vo/announcer/cs2_classic/ctwin.vsnd_c"},
+		"terwin":    {"sounds/vo/announcer/cs2_classic/terwin.vsnd_c"},
+		"rounddraw": {"sounds/vo/announcer/cs2_classic/rounddraw.vsnd_c"},
+		"bombpl":    {"sounds/vo/announcer/cs2_classic/bombpl.vsnd_c"},
+		"bombdef":   {"sounds/vo/announcer/cs2_classic/bombdef.vsnd_c"},
+		// The match-POINT stinger (sfx.js matchPointCues) — the ONE
+		// cs2find-discovered entry here (2026-11-09): no match-point
+		// line exists under sounds/vo/announcer/cs2_classic/, so the
+		// game's own Music.Match.MatchPoint soundevent's file is the
+		// asset (existence-verified by TestExtractRealCS2Sounds below).
+		"matchpoint": {"sounds/music/cs_stinger.vsnd_c"},
 		"HE Grenade": {"sounds/weapons/hegrenade/hegrenade_detonate_02.vsnd_c", "sounds/weapons/hegrenade/hegrenade_detonate_03.vsnd_c"},
 		// The HE THROW group pins the sounds/items/ path — the one entry
 		// outside sounds/weapons/ (Feature A).
