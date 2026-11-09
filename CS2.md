@@ -229,6 +229,30 @@ at the end of the section.
   demoinfocs v6 game_state.go `ByUserID` connected filter;
   spectra golden-demo diag dump (2026-11-04).
 
+- **When does a CS2 bot appear in a demo, and what is it filling for?** —
+  Bots occupy empty server *slots*, not player identities. `bot_quota` +
+  `bot_quota_mode fill` make the server "adjust bots to keep N players in
+  the game" (official cvar list), so a bot joins as a slot empties and is
+  dropped when it refills; community reports confirm substitute bots are
+  **kicked when the player reconnects** (matches spectra' nuke-demo
+  timeline where the human's reconnect and the bot's disconnect share one
+  tick). In **competitive/Wingman there are no substitutes at all** —
+  Valve removed them in the 2021-01-08 CS:GO update ("unless the entire
+  team leaves the match") — so bots in a demo come from casual/DM/private
+  matches. `bot_join_team` (default `any`) picks the team, but the
+  official list does **not** say "the leaver's team" — same-side pairing
+  is inferred, not sourced. Bots have **no SteamID64**: `player_connect`
+  carries `bool bot`, `player_disconnect` has no bot field, and parsers
+  synthesize an identity (demoinfocs: a `0xFF…` key derived from the
+  entity id — spectra `extract.isBotKey`). **Source** —
+  https://developer.valvesoftware.com/wiki/List_of_Counter-Strike_2_console_commands_and_variables
+  (`bot_quota`, `bot_quota_mode`, `bot_join_team`);
+  https://cs2.poggu.me/dumped-data/game-events/ (`player_connect.bot`);
+  https://theloadout.com/csgo/bots-competitive-removed (2021-01-08);
+  https://www.reddit.com/r/GlobalOffensive/comments/5c8pdk/ (kick on
+  reconnect) and https://www.reddit.com/r/GlobalOffensive/comments/17arh9b/
+  (substitutes removed) (all 2026-11-09).
+
 - **Radar transform convention** — `px=(worldX−pos_x)/scale`,
   `py=(pos_y−worldY)/scale` where `pos_x/pos_y` = world coords of the
   radar image's top-left and scale = world units per image pixel

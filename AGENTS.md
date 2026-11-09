@@ -187,6 +187,10 @@ Canonical homes (extend these, don't fork them):
 | Sort headers / stat cells | `lib/components/SortTh.svelte`, `lib/components/StatCard.svelte` — markup only; each view keeps its own sort state and backend |
 | Match pickers | `lib/components/MatchPicker.svelte` — Explorer, Reports, Builder all use it |
 | Radar coordinate transform | `lib/components/mapxform.js` `makeTransform` — THE pack→transform reader; camera/no-pack bounds fallback stay renderer-only |
+| Bot exclusion (Go) | `store.HumanOnly` / `store.HumanOnlyBySteamID` (`internal/store/queries.go`, beside `playersJoin`) — THE roster/aggregate/selection filter; `playersJoin` itself is NOT a bot filter |
+| Bot exclusion (frontend twin) | `frontend/src/lib/players.js` — `isHuman` / `listedPlayers` (+ `isBotId` backstop for flagless rows: synthetic 0xFF ids are 20 digits, real SteamID64s 17) |
+| Replay bot presence | `lib/replay/playercard.js` `presentAt` — the ONE card-presence rule; the sole place a bot may list (while covering a disconnected same-side human) |
+| Bot identity | `extract.isBotKey` + `players.is_bot` — never the "Bot " name prefix |
 
 - **Domain rules live in one place:** side-parity arithmetic in
   `internal/rules` (frontend twin `lib/sideparity.js`, both pinned to
@@ -199,6 +203,15 @@ Canonical homes (extend these, don't fork them):
   predicate `models.WinFor`; config building `analytics.ConfigFrom`.
   Never re-express a rule in a second layer — add a comment cross-referencing
   the canonical implementation instead.
+- **Bot exclusion lives in one place:** `store.HumanOnly` /
+  `store.HumanOnlyBySteamID` (Go) and `frontend/src/lib/players.js`
+  (`isHuman`/`listedPlayers`, frontend twin) are THE filter; every
+  roster/aggregate/selection read routes through it. Event-shaped reads
+  (round MVP/first-blood rows, kill-feed attacker/victim cells, chat,
+  engagements) deliberately keep bot names — they record what happened.
+  The ONE exception is the replay view: `lib/replay/playercard.js`
+  `presentAt` lists a bot only while it is covering a disconnected
+  same-side human (see the CS2.md bot-substitution entry).
 - **Version nothing until the first release — no versioned migrations,
   no versioned contracts, no legacy-data fallbacks** (pre-release
   policy): until we've cut our first release the repo versions NOTHING

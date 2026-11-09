@@ -16,8 +16,11 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/store"
 )
 
-// appName must stay in sync with build/config.yml's productName and the
-// main.go const of the same name (importing main is not possible here).
+// appName is the lowercase app IDENTIFIER (XDG dirs, prefs path, GTK
+// app id) — must stay in sync with the main.go const of the same name
+// and Taskfile APP_NAME (importing main is not possible here). It is
+// deliberately NOT build/config.yml's productName, which is the
+// display name ("Spectra").
 const appName = "spectra"
 
 // DefaultDir is the XDG plugin root ($XDG_DATA_HOME/spectra/plugins),
