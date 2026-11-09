@@ -1,13 +1,16 @@
 // Canonical CS2 side-parity (half-switch) arithmetic — the JavaScript twin
-// of internal/rules (Go). ONE formula: for a match with n COUNTED rounds and
-// `switches` side switches, switch k (1-based) sits at counted index
+// of internal/rules (Go). ONE rule: for a match with n COUNTED rounds and
+// `switches` recorded side switches, switch k (1-based) lands on counted
+// index (0-based, the first round AFTER the switch)
 //
-//   - floor((n*k + switches) / (switches + 1))   — i.e. ceil(n*k / (switches + 1))
+//   - 12                       — switch 1, after counted round 12
+//   - 27 + 3 * (k - 2)         — switch k >= 2 (after 27, then every 3
+//     rounds while OTs tie; NO switch at overtime start)
 //
-// so the counted rounds split into (switches + 1) as-equal-as-possible eras.
-// Regulation (switches = 1) is a plain midpoint split; overtime adds more
-// boundaries, where a uniform `ceil(n / eras)` era length gets them wrong
-// (n = 25, switches = 2 → 9 and 17, not 9 and 18).
+// so the side-switch rounds are 12, 27, 30, 33, … (CS2.md, "MR12
+// regulation + MR3 overtime"). The counted rounds therefore do NOT split
+// into equal eras — e.g. 28 counted rounds with 2 switches flip at 12 and
+// 27, giving eras of 12 / 15 / 1 rounds.
 //
 // Both languages assert the same fixture — internal/rules/testdata/
 // sideparity.json — from internal/rules/sideparity_test.go (Go) and
@@ -21,15 +24,16 @@
 import { isCounted } from './rounds.js';
 
 // flipIndexes returns the counted-round indexes (0-based, ascending) where
-// side switches happen. Boundaries outside (0, n) are dropped — a match too
-// short to reach the switch yields no flip.
+// side switches happen, per the cadence in the header comment (12, then
+// 27 + 3*(k-2)). Boundaries outside (0, n) are dropped — a match too short
+// to reach the switch yields no flip.
 export function flipIndexes(counted, switches) {
   const n = Number.isFinite(counted) ? Math.trunc(counted) : 0;
   const s = Number.isFinite(switches) ? Math.trunc(switches) : 0;
   if (n <= 0 || s <= 0) return [];
   const flips = [];
   for (let k = 1; k <= s; k++) {
-    const idx = Math.floor((n * k + s) / (s + 1));
+    const idx = k === 1 ? 12 : 27 + 3 * (k - 2);
     if (idx > 0 && idx < n) flips.push(idx);
   }
   return flips;
