@@ -10,13 +10,16 @@
   //
   // Multi-floor timing split (owner decision): the RADAR follows the LIVE
   // floor selection (`layer`) — switch floors and the image under the
-  // cursor changes at once — while the RASTER follows the floor it was
-  // fetched for (`gridLayer`), so a pending raster is never drawn as
-  // another floor's data. The overlay is therefore positioned with the
-  // transform belonging to ITS data (`ovTf`); per-layer transform
-  // overrides are rare and usually identical (Nuke's layers share one
-  // transform), so the normal case is seamless. The canvas image space
-  // (W/H, the image, click mapping) is the LIVE floor's (`baseTf`).
+  // cursor changes at once — while the RASTER draws ONLY while the live
+  // floor is the floor it was fetched for (`layer === gridLayer`). So a
+  // floor switch CLEARS the overlay (the new floor has no data yet) until
+  // Regenerate refetches with the new band; other pending controls (kind,
+  // spacing, region…) keep the stale raster on screen under the dirty
+  // banner — only a FLOOR MISMATCH hides it. Because the gate guarantees
+  // the two indices agree whenever anything is drawn, the overlay is
+  // positioned with the SAME transform as the image (`baseTf`); the
+  // canvas image space (W/H, the image, click mapping) is likewise the
+  // LIVE floor's.
   //
   // The backing store is sized in DEVICE pixels (wrapper width ×
   // devicePixelRatio), so neither the radar nor the overlay is ever
@@ -36,11 +39,10 @@
   const xf = $derived(pack && pack.transform ? pack.transform : null);
   // The pack's radar panels (makeTransform's ONE pack→layers reader):
   // default first, each with its own image/size/transform. Absent = a
-  // single-floor pack, and both deriveds below stay null — every path
-  // then reads xf/fb exactly as before (single-layer behavior unchanged).
+  // single-floor pack, and `layers` stays empty — every path then reads
+  // xf/fb exactly as before (single-layer behavior unchanged).
   const layers = $derived(xf && Array.isArray(xf.layers) ? xf.layers : []);
   const liveLayer = $derived(layers[layer] || null); // floor on screen NOW
-  const fetchedLayer = $derived(layers[gridLayer] || null); // floor the raster is FROM
   // No-pack fallback: derive the world→image mapping from the heatmap's own
   // world bounds — the same honest presentation as the replay renderer's
   // no-pack grid (plain world-coordinate grid, never invented map art).
@@ -67,11 +69,13 @@
   });
   const eff = $derived(xf || fb);
   // Image space (canvas W/H + the image + click mapping) follows the LIVE
-  // floor; the overlay's transform follows the floor the raster came from
-  // (header comment). A pack layer carries its own logical image size, so
-  // the radar is never drawn at a distorted aspect.
+  // floor — and so does the overlay's transform, because drawOverlay only
+  // lets the raster through when the fetched floor IS the live one
+  // (header comment: `layer === gridLayer` is the gate, so there is no
+  // separate fetched-floor transform to position data with). A pack layer
+  // carries its own logical image size, so the radar is never drawn at a
+  // distorted aspect.
   const baseTf = $derived(liveLayer ? liveLayer.tf : eff);
-  const ovTf = $derived(fetchedLayer ? fetchedLayer.tf : eff);
   const W = $derived(liveLayer ? liveLayer.width : eff ? eff.width : 1024);
   const H = $derived(liveLayer ? liveLayer.height : eff ? eff.height : 1024);
 
@@ -95,7 +99,8 @@
     // — a panel's own file when it has one, the pack's radar otherwise
     // (index 0, or a meta that omits per-layer files). Reading liveLayer
     // here is the dependency: flipping the selector reloads the image at
-    // once, while the raster keeps waiting for Regenerate.
+    // once, while the floor-mismatch gate in drawOverlay clears the
+    // raster until Regenerate fetches it for the new floor.
     if (!map || !meta || !meta.radar || !meta.radar.file) {
       radar = null;
       return;
@@ -200,10 +205,18 @@
   }
 
   function drawOverlay(ctx) {
+    // Floor-mismatch gate (owner rule): the raster draws ONLY while the
+    // live floor is the floor it was fetched for — a floor switch clears
+    // the overlay from view (the new floor has no data yet) while the
+    // radar image flips immediately; Regenerate records the selected
+    // index as gridLayer and the raster is drawn again. Before the first
+    // Generate `grid` is null so nothing draws regardless (gridLayer
+    // starts at 0 = layer's initial value); with no pack layers the
+    // selector is hidden so `layer` never leaves 0 — the single-layer /
+    // no-pack / bundled-grid fallbacks always pass this gate, unchanged.
+    if (layer !== gridLayer) return;
     const g = grid;
-    // ovTf, not the on-screen floor's: the raster is positioned with the
-    // transform belonging to the data it was fetched for (header comment).
-    if (!ovTf || !g || !g.w || !g.h) return;
+    if (!baseTf || !g || !g.w || !g.h) return;
     const cells = g.cells;
     if (!cells || cells.length < g.w * g.h) return;
     const cw = (g.maxX - g.minX) / g.w;
@@ -216,10 +229,10 @@
     // the ≤1 device-px edge softness beats a half-pixel world shift).
     // Top-left is (minX, maxY) because toImage flips Y. Cells whose
     // bounds run past the radar simply clip. The image space here is the
-    // FETCHED floor's — identical to the on-screen floor's whenever the
-    // layers share a transform (the normal case, e.g. Nuke).
-    const p0 = ovTf.toImage(g.minX, g.maxY);
-    const p1 = ovTf.toImage(g.maxX, g.minY);
+    // LIVE floor's — the gate above guarantees that is also the floor the
+    // raster was fetched for (same index whenever anything is drawn).
+    const p0 = baseTf.toImage(g.minX, g.maxY);
+    const p1 = baseTf.toImage(g.maxX, g.minY);
     const sx = bw / W;
     const sy = bh / H;
     const ox = p0.x * sx;

@@ -39,9 +39,12 @@
   let grid = $state(null);
   // Layer (floor) selector: `layer` is the LIVE selection — the radar
   // image switches with it immediately — while `gridLayer` is the layer
-  // the displayed raster was FETCHED for, so a pending raster is never
-  // presented as another floor's data (owner decision: hybrid timing —
-  // Regenerate applies the band; the dirty banner below gates it).
+  // the displayed raster was FETCHED for. HeatmapLayer draws the raster
+  // only while the two indices agree (owner decision: hybrid timing), so
+  // a floor switch CLEARS the overlay — the new floor has no data yet —
+  // until Regenerate refetches it with the new band; any other pending
+  // control keeps the stale raster on screen under the dirty banner
+  // (only a floor mismatch hides it).
   let layer = $state(0);
   let gridLayer = $state(0);
   let loading = $state(false);
@@ -150,6 +153,11 @@
   // The layer is part of the key: switching floors changes the band the
   // NEXT raster is fetched with, so the pending raster is stale until
   // Regenerate — the same dirty/stale gate as kind and the other controls.
+  // On top of the banner, a floor mismatch HIDES the raster outright
+  // (HeatmapLayer's `layer === gridLayer` gate): a stale other-floor
+  // raster must not be drawn over the newly selected floor's image —
+  // only a floor mismatch clears the overlay, every other pending
+  // control keeps it visible under this banner.
   const dirty = $derived(
     !!grid && lastKey !== filterKey(kind, player, team, roundFrom, roundTo, layer),
   );
@@ -166,7 +174,8 @@
     regionNote = '';
     // The fetch is FOR the layer selected right now: the band it sends and
     // the gridLayer it records must be that one index, even if the radar
-    // is flipped to another floor while the call is in flight.
+    // is flipped to another floor while the call is in flight — the
+    // overlay gate then compares exactly these two indices.
     const sel = layer;
     const l = layers[sel];
     try {
@@ -246,8 +255,10 @@
     {#if showLayers}
       <!-- Multi-floor pack only (see showLayers): the pack's own panels,
            default first, named as the pack names them. Switching flips the
-           RADAR immediately; the raster follows on Regenerate (layer is in
-           filterKey, so the stale banner covers the pending raster). -->
+           RADAR immediately AND clears the raster (HeatmapLayer's
+           floor-mismatch gate — the new floor has no data yet); it is
+           drawn again on Regenerate, and layer being in filterKey keeps
+           the stale banner on the pending controls. -->
       <div class="heat-field">
         <span class="field-label">Floor</span>
         <div class="sett-seg" role="group" aria-label="Floor">
