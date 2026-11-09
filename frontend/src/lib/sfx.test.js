@@ -4,6 +4,8 @@
 // cues (`<weapon> throw` manifest keys), the knife damage cues, the
 // plant/defuse lifecycle cues (bombActionCues — the four manifest
 // groups, silent cancels, the shared bomb.js ACTION_KINDS taxonomy), the
+// ANNOUNCER lines (roundEndCues winner/draw/counted gating,
+// bombAnnouncerCues, the bombdef→win ordering rule), the
 // bullet cue window, the decoy fake-gunshot plan window, the C4 beep
 // synthesis (bomb rows → schedule → deterministic site group),
 // the range/seek guards, the random variant pick, the internal gain
@@ -41,10 +43,14 @@ const {
   UTILITY_GAIN_SCALE,
   C4_GAIN_SCALE,
   SOUND_DETONATION_BUCKETS,
+  ANNOUNCER_ORDER_DELAY_S,
   grenadeCues,
   throwCues,
   knifeCues,
   bombActionCues,
+  roundEndCues,
+  bombAnnouncerCues,
+  announcerOrder,
   utilCuesInRange,
   bulletCuesInRange,
   decoyCues,
@@ -369,6 +375,196 @@ test('bombActionCues: freeze time gates the cue, (tick|name) dedupes', () => {
   );
 });
 
+// --- announcer lines (ctwin / terwin / rounddraw / bombpl / bombdef) --------
+// Owner-provided mapping 2026-11-09 (NOT verified against primary
+// sources): a counted round end → ctwin (winner ct) / terwin (winner t)
+// / rounddraw (winner '' + reason 'Draw'), a plant event row → bombpl,
+// a defuse event row → bombdef (before the win line — announcerOrder).
+// All five ride the 'announcer' bus (their own fader/mute).
+
+// The rounds the round-end cue tests join against: round 1 CT win,
+// round 2 T win, round 3 a DRAW (empty winner, Draw reason, ended),
+// round -2 a knife round (non-counted — isCounted), round 4 a draw that
+// never ended (endTick 0 — no evidence the round resolved).
+const ANN_ROUNDS = [
+  { number: 1, winner: 'ct', reason: 'Elimination', startTick: 0, freezeEndTick: 0, endTick: 1000 },
+  { number: 2, winner: 't', reason: 'Bomb exploded', startTick: 1100, freezeEndTick: 1110, endTick: 2000 },
+  { number: 3, winner: '', reason: 'Draw', startTick: 2100, freezeEndTick: 2110, endTick: 3000 },
+  { number: -2, winner: 'ct', reason: 'Elimination', startTick: 3100, freezeEndTick: 3110, endTick: 3400 },
+  { number: 4, winner: '', reason: 'Draw', startTick: 3500, freezeEndTick: 3510, endTick: 0 },
+  { number: 5, winner: 'ct', reason: 'Hostages rescued', startTick: 4100, freezeEndTick: 4110, endTick: 5000 },
+];
+
+const annRoundEnd = (over) => ({
+  kind: 'round_end',
+  bucket: 'round',
+  tick: 1000,
+  round: 1,
+  ...over,
+});
+
+test('roundEndCues: winner decides the line — ct → ctwin, t → terwin (reason-independent)', () => {
+  const cues = roundEndCues(
+    [
+      annRoundEnd({ tick: 1000, round: 1 }),
+      annRoundEnd({ tick: 2000, round: 2 }),
+      // Any reason is a win line — the mapping never keys on it.
+      annRoundEnd({ tick: 5000, round: 5 }),
+      annRoundEnd({ tick: 6000, round: 99 }), // a round the lookup does not know → silence
+      { kind: 'round_start', bucket: 'start', tick: 1100, round: 1 }, // not a round_end
+      null, // hostile input never throws
+    ],
+    ANN_ROUNDS,
+  );
+  assert.deepEqual(
+    cues.map((c) => `${c.tick}:${c.name}`),
+    ['1000:ctwin', '2000:terwin', '5000:ctwin'],
+  );
+  // Every line rides the ANNOUNCER bus (its own fader/mute).
+  assert.ok(cues.every((c) => c.bucket === 'announcer'), JSON.stringify(cues));
+  // Sorted by tick (the engine's window selector relies on it).
+  assert.ok(cues.every((c, i) => i === 0 || cues[i - 1].tick <= c.tick));
+});
+
+test('roundEndCues: a DRAW (winner "", reason "Draw", endTick > 0) cues rounddraw', () => {
+  const cues = roundEndCues([annRoundEnd({ tick: 3000, round: 3 })], ANN_ROUNDS);
+  assert.deepEqual(
+    cues.map((c) => `${c.tick}:${c.name}`),
+    ['3000:rounddraw'],
+  );
+  // The gates that make it silence instead: a draw that never ENDED
+  // (endTick 0) and an empty winner that is not a Draw.
+  assert.deepEqual(
+    roundEndCues([annRoundEnd({ tick: 3600, round: 4 })], ANN_ROUNDS).map((c) => c.name),
+    [],
+  );
+  const noEnd = ANN_ROUNDS.map((r) =>
+    r.number === 3 ? { ...r, endTick: 0, reason: 'Draw' } : r,
+  );
+  assert.deepEqual(
+    roundEndCues([annRoundEnd({ tick: 3000, round: 3 })], noEnd).map((c) => c.name),
+    [],
+  );
+  const notDraw = ANN_ROUNDS.map((r) =>
+    r.number === 3 ? { ...r, winner: '', reason: 'Time expired' } : r,
+  );
+  assert.deepEqual(
+    roundEndCues([annRoundEnd({ tick: 3000, round: 3 })], notDraw).map((c) => c.name),
+    [],
+  );
+});
+
+test('roundEndCues: knife/warmup rounds and a missing rounds list are silence', () => {
+  // The counted gate (lib/rounds.js isCounted): a negative-numbered
+  // knife/warmup round never announces, even with a winner.
+  assert.deepEqual(
+    roundEndCues([annRoundEnd({ tick: 3400, round: -2 })], ANN_ROUNDS).map((c) => c.name),
+    [],
+  );
+  // No rounds pushed → the winner is unknown → nothing (never a guess).
+  assert.deepEqual(roundEndCues([annRoundEnd({ tick: 1000, round: 1 })], null), []);
+  assert.deepEqual(roundEndCues([annRoundEnd({ tick: 1000, round: 1 })], []), []);
+  // Deduped by (tick|name): a duplicated round_end row is one line.
+  const dup = roundEndCues(
+    [annRoundEnd({ tick: 1000, round: 1 }), annRoundEnd({ tick: 1000, round: 1 })],
+    ANN_ROUNDS,
+  );
+  assert.equal(dup.length, 1);
+});
+
+test('bombAnnouncerCues: the canonical completion rows cue bombpl/bombdef — attempts stay silent', () => {
+  const cues = bombAnnouncerCues(
+    [
+      { kind: 'bomb_plant', bucket: 'plant', tick: 300, round: 1 },
+      { kind: 'bomb_defuse', bucket: 'defuse', tick: 920, round: 1 },
+      { kind: 'bomb_plant_begin', bucket: 'plant_begin', tick: 100, round: 1 },
+      { kind: 'bomb_defuse_start', bucket: 'defuse_start', tick: 600, round: 1 },
+      { kind: 'bomb_plant_abort', bucket: 'plant_abort', tick: 400, round: 1 },
+      { kind: 'bomb_defuse_abort', bucket: 'defuse_abort', tick: 700, round: 1 },
+      { kind: 'kill', bucket: 'kill', tick: 50, round: 1 }, // any other row: silence
+      null, // hostile input never throws
+    ],
+    ANN_ROUNDS,
+  );
+  assert.deepEqual(
+    cues.map((c) => `${c.tick}:${c.name}`),
+    ['300:bombpl', '920:bombdef'],
+  );
+  assert.ok(cues.every((c) => c.bucket === 'announcer'), JSON.stringify(cues));
+});
+
+test('bombAnnouncerCues: known knife/warmup rounds are silent, unknown rounds are kept, freeze gates', () => {
+  // Knife/warmup round -2 (the canonical "known and not counted →
+  // dropped" convention)…
+  assert.deepEqual(
+    bombAnnouncerCues([{ kind: 'bomb_plant', tick: 3400, round: -2 }], ANN_ROUNDS).map((c) => c.name),
+    [],
+  );
+  // …a round the lookup does not know is kept (normalizeEvent's
+  // convention) — the cue needs no winner to sound…
+  assert.deepEqual(
+    bombAnnouncerCues([{ kind: 'bomb_plant', tick: 5000, round: 99 }], ANN_ROUNDS).map((c) => c.name),
+    ['bombpl'],
+  );
+  // …and no rounds at all fails OPEN (the freeze-gate convention: an
+  // absent list never invents a window to gate by).
+  assert.deepEqual(bombAnnouncerCues([{ kind: 'bomb_plant', tick: 5000, round: 1 }], null).map((c) => c.name), ['bombpl']);
+  // Freeze time (round 2 freezes [1100, 1110)) gates the completion.
+  const frozen = bombAnnouncerCues([{ kind: 'bomb_plant', tick: 1105, round: 2 }], ANN_ROUNDS);
+  assert.deepEqual(frozen.map((c) => c.name), []);
+  // (tick|name) dedupe.
+  const dup = bombAnnouncerCues(
+    [
+      { kind: 'bomb_plant', tick: 300, round: 1 },
+      { kind: 'bomb_plant', tick: 300, round: 1 },
+    ],
+    ANN_ROUNDS,
+  );
+  assert.equal(dup.length, 1);
+});
+
+test('announcerOrder: a defuse in the window delays ONLY the round-end line', () => {
+  // No defuse → every cue starts on arrival (delay 0).
+  const plain = announcerOrder([
+    { tick: 100, name: 'bombpl', bucket: 'announcer' },
+    { tick: 200, name: 'ctwin', bucket: 'announcer' },
+  ]);
+  assert.deepEqual(
+    plain.map((c) => `${c.name}:${c.delay}`),
+    ['bombpl:0', 'ctwin:0'],
+  );
+  // A window sharing a defuse: bombdef now, the win line
+  // ANNOUNCER_ORDER_DELAY_S later — the owner-observed ordering made
+  // deterministic (both rows usually share a tick).
+  const ordered = announcerOrder([
+    { tick: 920, name: 'bombdef', bucket: 'announcer' },
+    { tick: 920, name: 'ctwin', bucket: 'announcer' },
+  ]);
+  assert.deepEqual(
+    ordered.map((c) => `${c.name}:${c.delay}`),
+    [`bombdef:0`, `ctwin:${ANNOUNCER_ORDER_DELAY_S}`],
+  );
+  // The other round-end lines follow the same rule (they cannot co-occur
+  // with a defuse in practice — the rule stays general).
+  assert.deepEqual(
+    announcerOrder([
+      { tick: 1, name: 'bombdef' },
+      { tick: 2, name: 'terwin' },
+      { tick: 3, name: 'rounddraw' },
+      { tick: 4, name: 'bombpl' },
+    ]).map((c) => c.delay),
+    [0, ANNOUNCER_ORDER_DELAY_S, ANNOUNCER_ORDER_DELAY_S, 0],
+  );
+  // COPIES: the stored cue list is never mutated.
+  const stored = [{ tick: 920, name: 'ctwin', bucket: 'announcer' }];
+  const out = announcerOrder([{ tick: 900, name: 'bombdef' }, ...stored]);
+  assert.equal(stored[0].delay, undefined);
+  assert.notEqual(out[1], stored[0]);
+  // Hostile input never throws.
+  assert.deepEqual(announcerOrder(null), []);
+  assert.deepEqual(announcerOrder([]), []);
+});
+
 // --- gun cues (bullets.js rows) --------------------------------------------
 
 // The attack-edge gun path is GONE: its rising edges played the
@@ -674,7 +870,7 @@ class FakeAudioContext {
     this.state = 'running';
     this.currentTime = 0;
     this.destination = { name: 'destination' };
-    this.gains = []; // creation order in sfx.js: guns, utility, C4
+    this.gains = []; // creation order in sfx.js: guns, utility, C4, announcer
     this.sources = [];
     FakeAudioContext.last = this;
   }
@@ -736,6 +932,14 @@ const BEEP_MANIFEST = {
     'C4 plant complete': ['/api/sounds/c4_plant.wav'],
     'C4 defuse start': ['/api/sounds/c4_disarmstart.wav'],
     'C4 defuse complete': ['/api/sounds/c4_disarmfinish.wav'],
+    // The five ANNOUNCER voice lines (soundTable's single-file groups —
+    // extracted from sounds/vo/announcer/cs2_classic/…, the owner-provided
+    // mapping 2026-11-09).
+    ctwin: ['/api/sounds/ctwin.wav'],
+    terwin: ['/api/sounds/terwin.wav'],
+    rounddraw: ['/api/sounds/rounddraw.wav'],
+    bombpl: ['/api/sounds/bombpl.wav'],
+    bombdef: ['/api/sounds/bombdef.wav'],
   },
 };
 
@@ -983,6 +1187,64 @@ test('engine: the plant/defuse lifecycle cues play on the C4 bus, cancels stay s
     engine.emit({ playing: true, speed: 1, tick: ABORT - 10 });
     engine.emit({ playing: true, speed: 1, tick: ABORT + 2 });
     assert.equal(lifecycle().length, before, 'an aborted plant plays nothing');
+    sfx.destroy();
+  } finally {
+    restoreFetch();
+  }
+});
+
+// The ANNOUNCER lines through the REAL play path: rows → rebuildCues →
+// (prevTick, curTick] → announcerOrder → playGroupAt on the announcer
+// bus. Same ordinary-window stepping as the lifecycle test above (the
+// steps stay inside cueGapJump's 0.3 s window, so each crossing is
+// playback rather than a re-seed).
+test('engine: bombdef starts before the round-win line in a shared window, on the announcer bus', async () => {
+  resetSoundManifest();
+  const restoreFetch = stubManifestFetch();
+  try {
+    const { sfx, engine, ctx } = await makeSfx();
+    const DEF = 1200; // the defuse AND its round_end share this tick
+    const WIN = 2600; // a later round ends normally — no defuse in view
+    sfx.setRounds([
+      { number: 5, winner: 'ct', reason: 'Bomb defused', startTick: 1000, freezeEndTick: 1010, endTick: DEF },
+      { number: 6, winner: 't', reason: 'Elimination', startTick: 1300, freezeEndTick: 1310, endTick: WIN },
+    ]);
+    sfx.setLandmarks([
+      { kind: 'bomb_defuse', bucket: 'defuse', tick: DEF, round: 5 },
+      { kind: 'round_end', bucket: 'round', tick: DEF, round: 5 },
+      { kind: 'round_end', bucket: 'round', tick: WIN, round: 6 },
+    ]);
+    // The first frame seeds the compare point (jump → nothing on
+    // arrival)…
+    engine.emit({ playing: true, speed: 1, tick: DEF - 16 });
+    // …an ordinary step crosses the defuse + round end together.
+    ctx.currentTime = 0.25;
+    engine.emit({ playing: true, speed: 1, tick: DEF + 2 });
+    const def = ctx.sources.filter((s) => s.buffer && s.buffer.url === '/api/sounds/bombdef.wav');
+    const win = ctx.sources.filter((s) => s.buffer && s.buffer.url === '/api/sounds/ctwin.wav');
+    assert.equal(def.length, 1, 'the defuse line plays exactly once');
+    assert.equal(win.length, 1, 'the round-win line plays exactly once');
+    // THE ordering: bombdef starts on arrival, the win line
+    // ANNOUNCER_ORDER_DELAY_S later (the owner-observed sequence —
+    // both rows share a tick, so only the explicit delay can order them).
+    assert.equal(def[0].started, 0.25, 'bombdef starts now');
+    assert.equal(
+      win[0].started,
+      def[0].started + ANNOUNCER_ORDER_DELAY_S,
+      'the win line follows after the explicit delay',
+    );
+    // Both ride the 4th gain — the ANNOUNCER bus (guns=0, utility=1,
+    // C4=2, announcer=3) — never the C4 or utility bus.
+    assert.equal(def[0].bus, ctx.gains[3], 'bombdef on the announcer bus');
+    assert.equal(win[0].bus, ctx.gains[3], 'ctwin on the announcer bus');
+    // A window WITHOUT a defuse plays its win line on arrival (no delay).
+    engine.emit({ playing: true, speed: 1, tick: WIN - 16 });
+    ctx.currentTime = 1.5;
+    engine.emit({ playing: true, speed: 1, tick: WIN + 2 });
+    const ter = ctx.sources.filter((s) => s.buffer && s.buffer.url === '/api/sounds/terwin.wav');
+    assert.equal(ter.length, 1, 'the later round-win line plays exactly once');
+    assert.equal(ter[0].started, 1.5, 'no defuse in the window → no delay');
+    assert.equal(ter[0].bus, ctx.gains[3], 'terwin on the announcer bus');
     sfx.destroy();
   } finally {
     restoreFetch();

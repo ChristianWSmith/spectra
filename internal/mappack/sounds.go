@@ -253,6 +253,22 @@ var soundTable = map[string][]string{
 	"C4 plant complete":  {"sounds/weapons/c4/c4_plant.vsnd_c"},
 	"C4 defuse start":    {"sounds/weapons/c4/c4_disarmstart.vsnd_c"},
 	"C4 defuse complete": {"sounds/weapons/c4/c4_disarmfinish.vsnd_c"},
+	// The ANNOUNCER lines (owner-provided mapping 2026-11-09, NOT
+	// verified against primary sources): one .vsnd_c per line under the
+	// game's classic-announcer VO tree, one single-file group each —
+	// these are distinct moments, not variants, so they never share a
+	// key. sfx.js roundEndCues/bombAnnouncerCues address them by their
+	// literal manifest keys: a counted round win → ctwin/terwin
+	// (reason-independent), a draw → rounddraw, a bomb plant → bombpl,
+	// a defuse → bombdef (played FIRST, then ctwin — the owner-observed
+	// ordering, sfx.js ANNOUNCER_ORDER_DELAY_S). Extracted on demand
+	// from the user's own install like every other entry (Valve IP never
+	// ships).
+	"ctwin":     {"sounds/vo/announcer/cs2_classic/ctwin.vsnd_c"},
+	"terwin":    {"sounds/vo/announcer/cs2_classic/terwin.vsnd_c"},
+	"rounddraw": {"sounds/vo/announcer/cs2_classic/rounddraw.vsnd_c"},
+	"bombpl":    {"sounds/vo/announcer/cs2_classic/bombpl.vsnd_c"},
+	"bombdef":   {"sounds/vo/announcer/cs2_classic/bombdef.vsnd_c"},
 	// Grenades (detonation sounds — the replay's utility cues)
 	"HE Grenade": {
 		"sounds/weapons/hegrenade/hegrenade_detonate_02.vsnd_c",
@@ -327,6 +343,15 @@ var internalSoundGroups = map[string]bool{
 	"C4 plant complete":  true, // bomb_plant → c4.plant
 	"C4 defuse start":    true, // bomb_defuse_start → c4.disarmstart
 	"C4 defuse complete": true, // bomb_defuse → c4.disarmfinish
+	// The five ANNOUNCER lines (owner-provided mapping 2026-11-09,
+	// unverified): the keys sfx.js's round-end/plant/defuse announcer
+	// cue builders address by literal name (roundEndCues →
+	// ctwin/terwin/rounddraw, bombAnnouncerCues → bombpl/bombdef).
+	"ctwin":     true,
+	"terwin":    true,
+	"rounddraw": true,
+	"bombpl":    true,
+	"bombdef":   true,
 }
 
 // soundTableNames is soundTable's keys in sorted order, so extraction

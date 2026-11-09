@@ -1083,10 +1083,19 @@ func (a *agg) bombDefuseAborted(tick int, key uint64, name string) {
 	}, "")
 }
 
+// bombExploded records the C4 detonation. Weapon "C4" is THE canonical
+// manifest key for the row (mappack soundTable "C4" → c4_explode1.wav):
+// without it sfx.js grenadeCues drops the weaponless row ("no weapon →
+// dropped, never invent") and the C4 boom never plays — the row's
+// explosion sound is the ONE consumer of this stamp. Side effect for
+// existing libraries: the weapon column is part of the row, so an
+// already-imported match needs ONE re-import to boom (pre-release
+// policy — no backfill).
 func (a *agg) bombExploded(tick int, site string, px, py, pz *float64) {
 	a.addEvent(models.Event{
 		Tick:       tick,
 		Kind:       models.EventBombExplode,
+		Weapon:     "C4",
 		Site:       site,
 		PosX:       px,
 		PosY:       py,

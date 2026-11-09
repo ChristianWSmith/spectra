@@ -306,7 +306,15 @@ func TestSoundTableKeysInIconTable(t *testing.T) {
 		"C4 plant complete":  {"sounds/weapons/c4/c4_plant.vsnd_c"},
 		"C4 defuse start":    {"sounds/weapons/c4/c4_disarmstart.vsnd_c"},
 		"C4 defuse complete": {"sounds/weapons/c4/c4_disarmfinish.vsnd_c"},
-		"HE Grenade":         {"sounds/weapons/hegrenade/hegrenade_detonate_02.vsnd_c", "sounds/weapons/hegrenade/hegrenade_detonate_03.vsnd_c"},
+		// The announcer lines (owner-provided mapping 2026-11-09,
+		// unverified) — the literal keys sfx.js's announcer cue builders
+		// build, so neither side can drift alone.
+		"ctwin":      {"sounds/vo/announcer/cs2_classic/ctwin.vsnd_c"},
+		"terwin":     {"sounds/vo/announcer/cs2_classic/terwin.vsnd_c"},
+		"rounddraw":  {"sounds/vo/announcer/cs2_classic/rounddraw.vsnd_c"},
+		"bombpl":     {"sounds/vo/announcer/cs2_classic/bombpl.vsnd_c"},
+		"bombdef":    {"sounds/vo/announcer/cs2_classic/bombdef.vsnd_c"},
+		"HE Grenade": {"sounds/weapons/hegrenade/hegrenade_detonate_02.vsnd_c", "sounds/weapons/hegrenade/hegrenade_detonate_03.vsnd_c"},
 		// The HE THROW group pins the sounds/items/ path — the one entry
 		// outside sounds/weapons/ (Feature A).
 		"HE Grenade throw": {"sounds/items/weapon_hegrenade_throw.vsnd_c"},

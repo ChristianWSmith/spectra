@@ -9,14 +9,16 @@
 // replay state stream and the landmark rows already carry ("AK-47",
 // "HE Grenade", "C4") plus `<name> throw` for a utility's throw group
 // ("HE Grenade throw" — throwCues), the C4 beep groups the beep
-// scheduler builds (`C4 beep <site>` — c4BeepGroup) and the
+// scheduler builds (`C4 beep <site>` — c4BeepGroup), the
 // four plant/defuse lifecycle cue groups (bombActionCues — "C4 plant
-// start" … "C4 defuse complete"), so a cue is one exact-match lookup.
+// start" … "C4 defuse complete") and the five ANNOUNCER voice lines
+// (roundEndCues / bombAnnouncerCues — "ctwin", "terwin", "rounddraw",
+// "bombpl", "bombdef"), so a cue is one exact-match lookup.
 // A logical item with several variants keeps ALL of them and picks one
 // at RANDOM per play, so a spray doesn't loop one sample — the beep
 // groups are single-sample on purpose (the site must never substitute
-// at random), and so are the four lifecycle cues (each is a distinct
-// moment, not a variant).
+// at random), and so are the four lifecycle cues and the five announcer
+// lines (each is a distinct moment, not a variant).
 //
 // This engine owns its OWN AudioContext: it must work for matches without
 // voice (the voice engine may not exist at all). Autoplay policy mirrors
@@ -44,6 +46,12 @@
 //   - the plant/defuse ATTEMPT cues (bombActionCues — bomb.js
 //     ACTION_KINDS → the manifest's four lifecycle groups) play in
 //     (prevTick, curTick] on the C4 bus; the abort rows are silent;
+//   - the ANNOUNCER voice lines (roundEndCues + bombAnnouncerCues —
+//     ctwin/terwin/rounddraw from the round_end rows joined to GetRounds'
+//     winner/reason, bombpl/bombdef from the canonical plant/defuse
+//     rows) play in the same window on the announcer bus, ordered by
+//     announcerOrder (a defuse line precedes the round-win line by
+//     ANNOUNCER_ORDER_DELAY_S when both land in one window);
 //   - decoy noise cues are the decoy PLAN's fake shots (setDecoyPlan —
 //     lib/replay/decoy.js), played on the GUNS channel with the mimic
 //     weapon's own samples (see decoyCues);
@@ -63,13 +71,14 @@
 // frontend/src/lib/sfx.test.js.
 
 import { errText } from '../services.js';
-import { inFreezeTime } from '../rounds.js';
+import { inFreezeTime, isCounted } from '../rounds.js';
 import { DETONATION_BUCKETS } from './landmarks.js';
 import { bombEndTick, ACTION_KINDS } from './bomb.js';
 import { GST_AUDIO_HINT } from './audio.js';
 
-// Default fader level for all four categories — the kvstore prefs
-// voice_volume/guns_volume/utility_volume/c4_volume (prefs.go) override
+// Default fader level for all five categories — the kvstore prefs
+// voice_volume/guns_volume/utility_volume/c4_volume/announcer_volume
+// (prefs.go) override
 // it; the Settings tab imports this so both surfaces share one default.
 export const AUDIO_VOL_DEFAULT = 0.8;
 
@@ -94,6 +103,10 @@ export const AUDIO_VOL_DEFAULT = 0.8;
 export const GUNS_GAIN_SCALE = 1 / 12;
 export const UTILITY_GAIN_SCALE = 1 / 12;
 export const C4_GAIN_SCALE = 1 / 3;
+// The ANNOUNCER bus has no scale on purpose (applyGains): like the
+// voice master, its gain IS the fader value — it carries the game's own
+// announcer VO, not the raw weapon/utility samples the scales above
+// exist for.
 
 // Live-source cap: a new AudioBufferSourceNode per play IS the Web Audio
 // contract for unlimited simultaneous instances of one buffer, but a
@@ -292,6 +305,134 @@ export function bombActionCues(rows, rounds) {
     if (seen.has(key)) continue;
     seen.add(key);
     out.push({ tick: row.tick, name, bucket: 'c4' });
+  }
+  out.sort((a, b) => a.tick - b.tick);
+  return out;
+}
+
+// --- announcer lines (ctwin / terwin / rounddraw / bombpl / bombdef) --------
+// The five ANNOUNCER voice lines (owner-provided mapping 2026-11-09,
+// NOT verified against primary sources — see internal/mappack/sounds.go
+// soundTable for the asset paths). These are the game's round/bomb
+// announcer VO, distinct from the C4 DEVICE sounds above (bombActionCues
+// — the arm/disarm cues) and from the C4 boom (grenadeCues): they ride
+// their own 'announcer' bus with their own fader (announcer_volume).
+
+// ANNOUNCER_ORDER_DELAY_S — the owner-observed defuse ordering made
+// deterministic: when `bombdef` and a round-end line land in the SAME
+// playback window, the defuse line starts now and the round-win line
+// starts this many wall-seconds later (the game's own "Bomb defused" …
+// "Counter-Terrorists win" sequence). Explicit rather than incidental:
+// both rows usually share a tick, so without the delay the two would
+// start simultaneously and the sequence would be lost.
+export const ANNOUNCER_ORDER_DELAY_S = 0.5;
+
+// The round-END lines — the only cues the ordering rule delays.
+const ROUND_END_LINES = new Set(['ctwin', 'terwin', 'rounddraw']);
+
+// announcerOrder — THE defuse-then-win ordering rule, applied to the
+// window's announcer cues (in tick order) right before playback: a
+// window containing `bombdef` delays its round-end line by
+// ANNOUNCER_ORDER_DELAY_S; every other cue (and every cue in a window
+// with no defuse) keeps delay 0 and plays on arrival. Returns COPIES —
+// the stored cue list is never mutated. Pure — unit-tested by
+// src/lib/sfx.test.js.
+export function announcerOrder(cues) {
+  const list = cues || [];
+  const defused = list.some((c) => c && c.name === 'bombdef');
+  if (!defused) return list.map((c) => ({ ...c, delay: 0 }));
+  return list.map((c) => ({
+    ...c,
+    delay: c && ROUND_END_LINES.has(String(c.name)) ? ANNOUNCER_ORDER_DELAY_S : 0,
+  }));
+}
+
+// roundEndCues — the round-END announcer cue list: drawNorm round_end
+// rows JOINED to the GetRounds rows (roundsByNumber's lookup — the
+// winner/reason live on the ROUND row, never on the payload-free event
+// row, so an unresolvable round makes NOTHING: missing data is silence,
+// never a guessed side). Owner-provided mapping (2026-11-09, unverified):
+//   winner 'ct'                    → 'ctwin'   (reason-independent)
+//   winner 't'                     → 'terwin'  (reason-independent)
+//   winner '' + reason 'Draw'
+//     + round endTick > 0          → 'rounddraw'
+// anything else (unknown winner, a non-draw row without a winner, a
+// knife/warmup round — lib/rounds.js isCounted) makes no cue, so the
+// knife round and warmup stay silent. No freeze gate: a round_end cannot
+// fall inside freeze time by construction (the round is over), unlike
+// the plant/defuse cues below. Deduped by (tick, name) like every other
+// cue list. Pure — unit-tested by src/lib/sfx.test.js.
+export function roundEndCues(rows, rounds) {
+  const byNumber = new Map();
+  for (const r of rounds || []) {
+    if (r && Number.isFinite(r.number)) byNumber.set(r.number, r);
+  }
+  const seen = new Set();
+  const out = [];
+  for (const row of rows || []) {
+    if (!row || !Number.isFinite(row.tick)) continue;
+    if (String(row.kind || '') !== 'round_end') continue;
+    const rnd = byNumber.get(row.round);
+    if (!rnd || !isCounted(rnd)) continue; // unknown or knife/warmup round → silence
+    const winner = String(rnd.winner || '');
+    let name;
+    if (winner === 'ct') name = 'ctwin';
+    else if (winner === 't') name = 'terwin';
+    else if (
+      winner === '' &&
+      String(rnd.reason || '') === 'Draw' &&
+      Number.isFinite(rnd.endTick) &&
+      rnd.endTick > 0
+    ) {
+      name = 'rounddraw';
+    } else {
+      continue; // no winner and no draw evidence → never a guess
+    }
+    const key = `${row.tick}|${name}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ tick: row.tick, name, bucket: 'announcer' });
+  }
+  out.sort((a, b) => a.tick - b.tick);
+  return out;
+}
+
+// bombAnnouncerCues — the plant/defuse ANNOUNCER lines: the SAME
+// canonical completion rows bombActionCues reads (bomb.js ACTION_KINDS —
+// one source, two cue lists: the device arm/disarm cues and the voice
+// line), so the two can never disagree about which row is which.
+//   bomb_plant  → 'bombpl'  (the plant event row)
+//   bomb_defuse → 'bombdef' (the defuse event row — ordered before the
+//                              round-win line by announcerOrder)
+// Begin/abort rows make NOTHING (the game has no announcer line for an
+// attempt). Freeze-gated with the same rule as bombActionCues (a
+// plant/defuse cannot complete inside freeze — belt and braces for a
+// mis-stamped row), and a KNOWN non-counted round (knife/warmup) makes
+// nothing — a round the lookup does not know is kept (the canonical
+// convention in landmarks.js normalizeEvent). Deduped by (tick, name).
+// Pure — unit-tested by src/lib/sfx.test.js.
+export function bombAnnouncerCues(rows, rounds) {
+  const names = {
+    [ACTION_KINDS.plant.complete]: 'bombpl',
+    [ACTION_KINDS.defuse.complete]: 'bombdef',
+  };
+  const byNumber = new Map();
+  for (const r of rounds || []) {
+    if (r && Number.isFinite(r.number)) byNumber.set(r.number, r);
+  }
+  const seen = new Set();
+  const out = [];
+  for (const row of rows || []) {
+    if (!row || !Number.isFinite(row.tick)) continue;
+    const name = names[String(row.kind || '')];
+    if (!name) continue;
+    const rnd = byNumber.get(row.round);
+    if (rnd && !isCounted(rnd)) continue; // knife/warmup round → silent
+    if (inFreezeTime(rounds, row.tick)) continue;
+    const key = `${row.tick}|${name}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ tick: row.tick, name, bucket: 'announcer' });
   }
   out.sort((a, b) => a.tick - b.tick);
   return out;
@@ -563,6 +704,7 @@ export function createSfxEngine({ engine, matchId, onError }) {
   let gunGain = null;
   let utilGain = null;
   let c4Gain = null;
+  let announcerGain = null;
   let destroyed = false;
   let error = '';
   let retryOff = null; // tears down the parked retry listeners
@@ -570,9 +712,11 @@ export function createSfxEngine({ engine, matchId, onError }) {
   let gunVol = AUDIO_VOL_DEFAULT;
   let utilVol = AUDIO_VOL_DEFAULT;
   let c4Vol = AUDIO_VOL_DEFAULT;
+  let annVol = AUDIO_VOL_DEFAULT;
   let gunMuted = false;
   let utilMuted = false;
   let c4Muted = false;
+  let annMuted = false;
 
   const buffers = new Map(); // name → AudioBuffer[] (manifest order)
   let total = 0;
@@ -591,6 +735,7 @@ export function createSfxEngine({ engine, matchId, onError }) {
   let throwHits = []; // throwCues(landmarkRows, rounds) — tick-sorted
   let knifeHits = []; // knifeCues(landmarkRows, rounds) — tick-sorted
   let actionCues = []; // bombActionCues(landmarkRows, rounds) — tick-sorted
+  let announcerCues = []; // roundEndCues + bombAnnouncerCues merged, tick-sorted
   let bullets = []; // setBullets — bullets.js rows, tick-sorted
   let decoyShots = []; // setDecoyPlan → decoyCues(plan), tick-sorted
   let bombRows = c4BeepRows([]); // the C4 beep scheduler's row lists
@@ -619,9 +764,14 @@ export function createSfxEngine({ engine, matchId, onError }) {
   function applyGains() {
     // Internal mix calibration (see GUNS_GAIN_SCALE): the fader keeps
     // its user-facing 0..1 meaning, the bus gain carries the reduction.
+    // The ANNOUNCER bus is deliberately UNSCALED like the voice master:
+    // these are the game's own announcer VO lines (they belong with the
+    // voice level, not with the raw weapon/utility samples the 1/12
+    // scale exists for), so its gain IS the fader value.
     if (gunGain) gunGain.gain.value = gunMuted ? 0 : gunVol * GUNS_GAIN_SCALE;
     if (utilGain) utilGain.gain.value = utilMuted ? 0 : utilVol * UTILITY_GAIN_SCALE;
     if (c4Gain) c4Gain.gain.value = c4Muted ? 0 : c4Vol * C4_GAIN_SCALE;
+    if (announcerGain) announcerGain.gain.value = annMuted ? 0 : annVol;
   }
 
   // tryResume calls ctx.resume() SYNCHRONOUSLY (a listener must invoke
@@ -716,9 +866,13 @@ export function createSfxEngine({ engine, matchId, onError }) {
     gunGain = ctx.createGain();
     utilGain = ctx.createGain();
     c4Gain = ctx.createGain();
+    // 4th bus — the creation order pins the test fixture's gain indexes
+    // (guns=0, utility=1, C4=2, announcer=3) and keeps them stable.
+    announcerGain = ctx.createGain();
     gunGain.connect(ctx.destination);
     utilGain.connect(ctx.destination);
     c4Gain.connect(ctx.destination);
+    announcerGain.connect(ctx.destination);
     applyGains();
   } catch (e) {
     fail(errText(e));
@@ -774,12 +928,14 @@ export function createSfxEngine({ engine, matchId, onError }) {
 
   // --- playback ------------------------------------------------------------
   // busFor — the ONE bucket → GainNode routing: 'guns' → gunGain,
-  // 'c4' → c4Gain (the bomb's own fader/mute), everything else the
-  // historical default, utilGain (throw/detonation/knife cues ride
-  // 'utility').
+  // 'c4' → c4Gain (the bomb's own fader/mute), 'announcer' →
+  // announcerGain (the round/bomb VO lines' fader/mute), everything
+  // else the historical default, utilGain (throw/detonation/knife cues
+  // ride 'utility').
   function busFor(bucket) {
     if (bucket === 'guns') return gunGain;
     if (bucket === 'c4') return c4Gain;
+    if (bucket === 'announcer') return announcerGain;
     return utilGain;
   }
 
@@ -849,11 +1005,20 @@ export function createSfxEngine({ engine, matchId, onError }) {
 
   // playGroup — one cue of a manifest group on a bus, right now (the
   // scheduled-beep path calls spawnSource directly with a future time).
-  function playGroup(name, bucket) {
+  // delay > 0 starts the cue that many wall-seconds from now instead
+  // (the announcer ordering rule — announcerOrder); it still tracks on
+  // the immediate-cue `live` list, which is bounded by LIVE_CAP like any
+  // other cue (a window carries at most a handful of announcer lines).
+  function playGroupAt(name, bucket, delay) {
     if (destroyed || !ctx || ctx.state !== 'running') return false;
     const buf = pickReady(name);
     if (!buf) return false;
-    return !!spawnSource(buf, bucket, null, live, LIVE_CAP);
+    const when = delay > 0 ? ctx.currentTime + delay : null;
+    return !!spawnSource(buf, bucket, when, live, LIVE_CAP);
+  }
+
+  function playGroup(name, bucket) {
+    return playGroupAt(name, bucket, 0);
   }
 
   // --- clock cues ----------------------------------------------------------
@@ -887,6 +1052,23 @@ export function createSfxEngine({ engine, matchId, onError }) {
   function playActionInRange(fromTick, toTick) {
     for (const cue of utilCuesInRange(actionCues, fromTick, toTick)) {
       playGroup(cue.name, 'c4');
+    }
+  }
+
+  // playAnnouncerInRange — the announcer voice lines (roundEndCues +
+  // bombAnnouncerCues) in (prevTick, curTick] on the ANNOUNCER bus.
+  // The window's cues go through announcerOrder first: a `bombdef` and a
+  // round-end line in the SAME window start in the owner-observed order
+  // (bombdef now, the win line ANNOUNCER_ORDER_DELAY_S later) — the one
+  // place two cues must not start together. Everything else starts on
+  // arrival, exactly like the other cue lists (same open/closed window,
+  // same seek/pause guards — it is called only inside the guarded
+  // block).
+  function playAnnouncerInRange(fromTick, toTick) {
+    const win = utilCuesInRange(announcerCues, fromTick, toTick);
+    if (!win.length) return;
+    for (const cue of announcerOrder(win)) {
+      playGroupAt(cue.name, cue.bucket || 'announcer', cue.delay || 0);
     }
   }
 
@@ -1052,6 +1234,7 @@ export function createSfxEngine({ engine, matchId, onError }) {
       playBulletsInRange(prevTick, st.tick);
       playDecoyInRange(prevTick, st.tick);
       playActionInRange(prevTick, st.tick);
+      playAnnouncerInRange(prevTick, st.tick);
     }
     // EVERY path advances the compare point: a seek, a loop wrap or a
     // paused scrub must not machine-gun the cues it crossed when
@@ -1070,6 +1253,14 @@ export function createSfxEngine({ engine, matchId, onError }) {
     throwHits = throwCues(landmarkRows, rounds);
     knifeHits = knifeCues(landmarkRows, rounds);
     actionCues = bombActionCues(landmarkRows, rounds);
+    // The announcer list merges the two voice-line builders, bomb lines
+    // FIRST so a same-tick `bombdef`/`ctwin` pair iterates in the
+    // owner-observed order (announcerOrder then adds the explicit delay
+    // to the win line). One tick-sorted list → the ONE window selector
+    // (utilCuesInRange) serves it like every other cue list.
+    announcerCues = [...bombAnnouncerCues(landmarkRows, rounds), ...roundEndCues(landmarkRows, rounds)].sort(
+      (a, b) => a.tick - b.tick,
+    );
     bombRows = c4BeepRows(landmarkRows);
   }
 
@@ -1125,7 +1316,14 @@ export function createSfxEngine({ engine, matchId, onError }) {
       c4Vol = Math.max(0, Math.min(1, Number(v) || 0));
       applyGains();
     },
-    // setMuted(bucket, m) — 'guns' | 'utility' | 'c4'; session-only (the
+    // setAnnouncerVolume — the announcer fader (the round/bomb voice
+    // lines), the same 0..1 coercion as the other sfx faders.
+    setAnnouncerVolume(v) {
+      annVol = Math.max(0, Math.min(1, Number(v) || 0));
+      applyGains();
+    },
+    // setMuted(bucket, m) — 'guns' | 'utility' | 'c4' | 'announcer';
+    // session-only (the
     // popover's toggles are not persisted, unlike the faders). An
     // unknown bucket is ignored on purpose — it never silently mutes a
     // different bus.
@@ -1133,6 +1331,7 @@ export function createSfxEngine({ engine, matchId, onError }) {
       if (bucket === 'guns') gunMuted = !!m;
       else if (bucket === 'utility') utilMuted = !!m;
       else if (bucket === 'c4') c4Muted = !!m;
+      else if (bucket === 'announcer') annMuted = !!m;
       applyGains();
     },
     destroy() {
