@@ -166,14 +166,24 @@ instead of forking it.
   predicate `models.WinFor`; config building `analytics.ConfigFrom`.
   Never re-express a rule in a second layer — add a comment cross-referencing
   the canonical implementation instead.
-- **No versioned migrations, no legacy-data fallbacks** (pre-release
-  policy): the schema is one baseline `internal/store/schema.sql` applied
-  on every Open — there is no `schema_version` table and no upgrade path,
-  so a stale dev DB is NOT upgraded (delete it and re-import; adding
-  versioned migrations back is a 1.0 decision). Data missing a required input
-  (exact per-round sides, player final side, stored positions) yields
-  unknown/skipped rows — never a guessed parity/recovery fallback. Do not
-  reintroduce `RecoverSides`, a side-parity guess, or a backfill.
+- **Version nothing until the first release — no versioned migrations,
+  no versioned contracts, no legacy-data fallbacks** (pre-release
+  policy): until we've cut our first release the repo versions NOTHING
+  it invented — no format-version constants or keys, no compat gates, no
+  "reprocess on version mismatch" branches, no version-history comments.
+  Every contract (the DB schema, the sidecar streams, map-pack meta) is
+  described ONCE as THE current layout: the schema is one baseline
+  `internal/store/schema.sql` applied on every Open — there is no
+  `schema_version` table and no upgrade path, so stale local data (a dev
+  DB, an old sidecar) is deleted and re-imported, never
+  detected-and-branched. Structural corruption guards (mask-legality,
+  truncation, monotonicity, frame-count consistency) are NOT version
+  machinery — they stay. Reintroducing versioning (migrations, format
+  ladders) is a deliberate first-release decision. Data missing a
+  required input (exact per-round sides, player final side, stored
+  positions) yields unknown/skipped rows — never a guessed
+  parity/recovery fallback. Do not reintroduce `RecoverSides`, a
+  side-parity guess, or a backfill.
 - **Frontend helpers:** errors `errText` → `lib/services.js`; Steam
   profiles/nav actions → `lib/nav.js` (incl. `replayHash`, the one entry
   point into the canonical event browser); formatting → `lib/fmt.js`

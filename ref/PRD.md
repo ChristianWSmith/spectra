@@ -1285,7 +1285,10 @@ Consider:
 - Cached derived analytics.
 - Incremental extraction.
 - Reproducible reprocessing.
-- Schema and parser version tracking.
+- Schema and parser version tracking. *(Pre-release: schema/format
+  version tracking is explicitly OUT until the first release — AGENTS.md
+  "Version nothing until the first release". Parser/patch provenance —
+  `parser_version`, `patch_version` — stays.)*
 
 The exact storage layout should be benchmarked against realistic large demos and multi-match libraries before being finalized.
 
@@ -1383,7 +1386,9 @@ The interface should make advanced functionality discoverable rather than hiding
 
 - Never modify original demos.
 - Preserve raw extracted data where practical.
-- Version parser outputs.
+- Version parser outputs. *(Parser provenance only — `parser_version` /
+  `patch_version`; schema/format versioning is out until the first
+  release per AGENTS.md.)*
 - Track extraction warnings.
 - Validate normalized data.
 - Support reprocessing.
@@ -1396,7 +1401,9 @@ A derived statistic should be reproducible from:
 - Its formula.
 - Its source data.
 - Its configuration.
-- Its parser and schema versions.
+- Its parser and schema versions. *(Schema versions are OUT until the
+  first release per AGENTS.md; the reproducible inputs tracked today are
+  the formula, source data, configuration and parser/patch provenance.)*
 
 Changes to extraction logic or metric definitions should not silently alter historical results without recording the change.
 

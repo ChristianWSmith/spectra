@@ -47,12 +47,14 @@ it rather than archive it.
 - **Spectator POV.**
 - **Player-state HUD on the replay** (PRD §5.4 "Player Visualization":
   player health and armor, current weapon "where available", ammo,
-  firing state) — the DATA layer is shipped and unhooked: the sidecar
-  state stream (state.bin/state.idx, `stateFormatVersion` in meta.json),
-  the `/api/sidecar/<matchID>/state` route, and the exported-but-unwired
-  `lib/replay/state.js` loader (per-slot binary-search indexes; fail-soft
-  `null` on matches imported before the stream — Reprocess re-parses one
-  to gain it). What's missing is the HUD UI that consumes it.
+  firing state) — the DATA layer is shipped: the sidecar state stream
+  (state.bin/state.idx + `weaponNames` in meta.json — the stream's
+  presence IS the capability marker; no version key, per AGENTS'
+  pre-release no-versioning policy), the `/api/sidecar/<matchID>/state`
+  route, and `lib/replay/state.js` (per-slot binary-search indexes;
+  `loadState` fails soft to `null` when the stream is absent — cards
+  render state-less, and only REPARSING a match records a stream for it).
+  What's missing is the HUD UI that consumes it.
 
 ### Analytics
 

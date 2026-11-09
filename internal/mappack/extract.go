@@ -64,28 +64,27 @@ type ExtractResult struct {
 	File string `json:"file"` // radar.png path
 }
 
-// packMeta is the meta.json written next to radar.png — schema_version 1,
-// matching frontend/public/maps/README.md. The Layers field is an
-// ADDITIVE optional key (schema_version stays 1): a pack without it is
-// the single-layer contract that predates it, byte-identical to before
-// when the overview declares no verticalsections.
+// packMeta is the meta.json written next to radar.png — THE current pack
+// contract, documented in frontend/public/maps/README.md. Optional keys
+// (layers, elevation_regions, …) degrade to their defaults when absent:
+// a pack without `layers` is the single-layer layout, which is what the
+// extractor writes when the overview declares no verticalsections.
 type packMeta struct {
-	SchemaVersion int         `json:"schema_version"`
-	Radar         *packRadar  `json:"radar,omitempty"`
-	Transform     *packXform  `json:"transform,omitempty"`
-	Sites         packMarkers `json:"sites"`
-	Spawns        packMarkers `json:"spawns"`
-	Source        packSource  `json:"source"`
+	Radar     *packRadar  `json:"radar,omitempty"`
+	Transform *packXform  `json:"transform,omitempty"`
+	Sites     packMarkers `json:"sites"`
+	Spawns    packMarkers `json:"spawns"`
+	Source    packSource  `json:"source"`
 	// Layers: one entry per verticalsections radar floor (default first),
 	// each with its own image + world-Z band. Absent for single-floor
 	// maps.
 	Layers []packLayer `json:"layers,omitempty"`
 	// ElevationRegions are world-space boxes with their own thresholds —
-	// the ONLY source of T/⊥ indicator thresholds (region-only design;
-	// per-floor `elevation` keys were dropped from the contract). The
-	// extractor writes none — they are user-supplied in-game data,
-	// carried across re-extraction by preserveElevation (which also
-	// silently DROPS any stale elevation key on refresh).
+	// the ONLY source of T/⊥ indicator thresholds (region-only design:
+	// there are no per-floor `elevation` keys). The extractor writes
+	// none — they are user-supplied in-game data, carried across
+	// re-extraction by preserveElevation (which also silently DROPS any
+	// stale elevation key on refresh).
 	ElevationRegions []packRegion `json:"elevation_regions,omitempty"`
 }
 
@@ -277,7 +276,6 @@ func extractOne(v *vpk, mapName, radarPath, outDir string) error {
 	}
 
 	meta := packMeta{
-		SchemaVersion: 1,
 		Radar: &packRadar{
 			File:   packRadarPNG,
 			Width:  img.Bounds().Dx(),
@@ -326,7 +324,7 @@ func extractOne(v *vpk, mapName, radarPath, outDir string) error {
 	}
 	// The user's hand-authored elevation_regions live only in meta.json —
 	// re-extraction must not wipe them (stale per-floor elevation keys
-	// from the old contract are dropped by the unmarshal/rewrite).
+	// are dropped by the unmarshal/rewrite).
 	preserveElevation(dir, &meta)
 	metaJSON, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
@@ -439,8 +437,8 @@ func sectionLabel(s Section, all []Section) string {
 // rewrites the radar pixels and Z bands but must never wipe numbers the
 // user typed in — meta.json is their only home
 // (frontend/public/maps/README.md). Per-floor `elevation` keys are NOT
-// carried (dropped from the contract — the unmarshal/rewrite removes any
-// stale ones). Absent or unparseable old meta → nothing to carry (first
+// carried — the unmarshal/rewrite drops any stale ones (nothing reads
+// them). Absent or unparseable old meta → nothing to carry (first
 // extract).
 func preserveElevation(dir string, meta *packMeta) {
 	oldRaw, err := os.ReadFile(filepath.Join(dir, packMetaJSON))

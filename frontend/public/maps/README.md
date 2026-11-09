@@ -27,11 +27,10 @@ maps/<mapName>/<radar file>  optional in the schema, never committed here:
                              → plain grid fallback.
 ```
 
-### meta.json (schema_version 1)
+### meta.json
 
 ```json
 {
-  "schema_version": 1,
   "radar": { "file": "radar.png", "width": 1024, "height": 1024 },
   "transform": { "pos_x": -2000.0, "pos_y": 3250.0, "scale": 5.5 },
   "layers": [
@@ -127,8 +126,8 @@ maps/<mapName>/<radar file>  optional in the schema, never committed here:
   stand on each of the two surfaces with `getpos_exact`), and
   **preserved across
   re-extraction** (`preserveElevation` in `internal/mappack/extract.go`;
-  a refresh also DROPS stale per-floor `elevation` keys from the old
-  contract — nothing reads them anymore).
+  a refresh also DROPS stale per-floor `elevation` keys — nothing reads
+  them anymore).
   - `z_min`/`z_max` — OPTIONAL floor scope for the box, half-open
     `[z_min, z_max)` — the SAME convention as the layer bands, so a box
     scoped to Nuke's lower band ends exactly where the upper band begins
@@ -149,8 +148,8 @@ maps/<mapName>/<radar file>  optional in the schema, never committed here:
 - `source` — free-form provenance note (which overview txt / tabulation the
   constants came from).
 
-All new keys are additive to `schema_version 1`: a pack without them is
-the pre-layers single-layer contract and behaves exactly as before.
+All new keys are additive: a pack without them is the single-layer
+layout and behaves exactly as before.
 
 A **missing** meta.json → the replay view shows a "map not found" note and
 falls back to a blank grid derived from sample extents. A meta.json
@@ -190,8 +189,8 @@ extracted before that upscale shipped keep their smaller files — and
 `meta.json` keeps whatever it already declared — until you re-extract
 here. The only thing
 it deliberately does NOT overwrite is your hand-authored
-`elevation_regions` (see above); stale per-floor `elevation` keys from
-the old contract are dropped on refresh — nothing reads them anymore.
+`elevation_regions` (see above); stale per-floor `elevation` keys are
+dropped on refresh — nothing reads them anymore.
 Without a re-extract, packs extracted before a feature shipped keep their
 old files: optional metadata does not appear on its own.
 

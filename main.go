@@ -276,7 +276,7 @@ func runImport(path string) {
 // handleMapPack serves user-extracted radar map packs from the app data
 // dir (written by MapPackService.ExtractMapPacks) over the asset server:
 //
-//	/api/mappack/<map>/meta.json    pack manifest (schema_version 1)
+//	/api/mappack/<map>/meta.json    pack manifest
 //	/api/mappack/<map>/radar.png    decoded radar image
 //	/api/mappack/<map>/radar_*.png  multi-floor layer images (layers[])
 //

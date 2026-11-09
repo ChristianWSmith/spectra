@@ -40,7 +40,7 @@ way".
 | Match pickers | `components/MatchPicker.svelte` | Explorer, Reports, Builder all use it |
 | Landmark categories | `lib/replay/landmarks.js` (`CATEGORIES`, `LANDMARK_KINDS`, `drawBucket`, `normalize*`) | the ONE categorization: feed list, scrubber markers and renderer world layers consume its pre-bucketed rows |
 | Coordinate transform | `lib/components/mapxform.js` `makeTransform` | THE pack→transform reader — the renderer consumes it (including the additive `layers`/`elevation_regions` passthrough and per-layer transform overrides; stale `elevation` keys are deliberately NOT read); camera and no-pack bounds fallback remain renderer-only |
-| Radar layer assignment + elevation indicators | `lib/replay/layers.js` (`layerIndexForZ`, `elevationFor`) + `renderer.js` `flightSplits` | half-open `[z_min, z_max)` bands (a shared boundary belongs to the band whose `zMin` it is), default-layer fallback for unknown Z, REGION-ONLY threshold resolution (`elevationFor` reads `elevation_regions` boxes only — the per-floor `elevation` keys were dropped from the pack contract as redundant: the panels already say which floor an entity is on; boxes may carry an optional half-open `z_min`/`z_max` floor scope so a threshold can't misfire across bands — e.g. Nuke's catwalk ring ends at −495); `flightSplits` cuts floor-crossing nade flights into per-panel segments. The T/⊥ glyph itself is CANVAS-DRAWN (`renderer.js` `drawElevationIndicator`: a stem from the entity's centre + the flat bar, dark halo under a tinted body — no extracted icon, no text fallback; `TestNoElevIconTable` pins the extractor's deliberate lack of elevation glyphs). Extractor side: `internal/mappack` (`verticalsections` → `meta.layers`; `preserveElevation` carries `elevation_regions` and drops stale `elevation` keys) |
+| Radar layer assignment + elevation indicators | `lib/replay/layers.js` (`layerIndexForZ`, `elevationFor`) + `renderer.js` `flightSplits` | half-open `[z_min, z_max)` bands (a shared boundary belongs to the band whose `zMin` it is), default-layer fallback for unknown Z, REGION-ONLY threshold resolution (`elevationFor` reads `elevation_regions` boxes only — per-floor `elevation` keys are not part of the pack contract — redundant: the panels already say which floor an entity is on; boxes may carry an optional half-open `z_min`/`z_max` floor scope so a threshold can't misfire across bands — e.g. Nuke's catwalk ring ends at −495); `flightSplits` cuts floor-crossing nade flights into per-panel segments. The T/⊥ glyph itself is CANVAS-DRAWN (`renderer.js` `drawElevationIndicator`: a stem from the entity's centre + the flat bar, dark halo under a tinted body — no extracted icon, no text fallback; `TestNoElevIconTable` pins the extractor's deliberate lack of elevation glyphs). Extractor side: `internal/mappack` (`verticalsections` → `meta.layers`; `preserveElevation` carries `elevation_regions` and drops stale `elevation` keys) |
 | Glossary of rules for agents | AGENTS.md → "One canonical way" | this file is the deeper reference |
 
 ## Deliberate non-consolidations (distinct questions — leave alone)
@@ -168,8 +168,9 @@ payload inspection all moved into the feed.
 
 Second pass: the app is 100% pre-release, so everything whose only job was
 to serve data or links from an older pre-release build was deleted rather
-than maintained. The standing policy is in AGENTS.md → "No versioned
-migrations, no legacy-data fallbacks".
+than maintained. The standing policy is in AGENTS.md → "Version nothing
+until the first release — no versioned migrations, no versioned
+contracts, no legacy-data fallbacks".
 
 - **Versioned schema migrations → one baseline.** `migrate.go`, the
   `schema_version` table, and `migrations/001–010.sql` are gone;
@@ -191,8 +192,18 @@ migrations, no legacy-data fallbacks".
   (`canonicalize()`), string-typed pref coercion (writers verified to emit
   JSON booleans), and the unreachable `he`/`he_explode` event-kind aliases
   (not in `models.EventKind`; the utility-kind `"he"` is a different
-  vocabulary). The renderer's final-side fallback was **kept** — v2 side
-  bits are legitimately absent for dead/unassigned slots.
+  vocabulary). The renderer's final-side fallback was **kept** — the
+  side bits are legitimately absent for dead/unassigned slots.
+- **Versioned contracts flattened (third pass).** The state stream's
+  format ladder (`stateFormatVersion`, `stateCapable`, the
+  "reprocess to regain state" note), the positions sidecar's
+  `formatVersion` field + `q16-v2` encoding name, and the map pack's
+  `schema_version` key were deleted: each contract is described once as
+  THE current layout, absence fails soft (no state stream ⇒ state-less
+  cards; a missing pack ⇒ grid fallback), and stale local data is
+  deleted and re-imported. Structural corruption guards (mask legality,
+  truncation, monotonic frames, record-count/frame-count consistency)
+  stayed — they are not version machinery.
 - Golden fixtures byte-unchanged; only behavior changes are the two
   expected ones (no auto-upgrade of stale DBs; no parity guess for data
   lacking exact sides).

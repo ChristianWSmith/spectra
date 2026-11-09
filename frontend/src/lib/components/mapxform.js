@@ -44,7 +44,7 @@ export function makeTransform(meta) {
     toWorld: shared.toWorld,
   };
   // Additive optional keys — a pack without them is the single-layer
-  // contract (schema_version 1, frontend/public/maps/README.md). Note:
+  // layout (the contract lives in frontend/public/maps/README.md). Note:
   // a stale top-level `elevation` / `layers[].elevation` key (dropped
   // from the contract) is deliberately NOT read — indicators are
   // region-only.

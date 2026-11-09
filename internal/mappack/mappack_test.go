@@ -801,7 +801,7 @@ func TestExtractMapPacks(t *testing.T) {
 	if err := json.Unmarshal(metaRaw, &meta); err != nil {
 		t.Fatal(err)
 	}
-	if meta.SchemaVersion != 1 || meta.Transform == nil {
+	if meta.Transform == nil {
 		t.Fatalf("meta = %+v", meta)
 	}
 	if meta.Transform.PosX != -100 || meta.Transform.Scale != 4 {
@@ -944,8 +944,8 @@ func TestExtractMapPacksLayers(t *testing.T) {
 
 // TestPreserveElevation — re-extraction refreshes pixels and Z bands but
 // must never wipe the user's hand-authored elevation_regions; stale
-// per-floor `elevation` keys from the old contract are dropped on the
-// rewrite (region-only design).
+// per-floor `elevation` keys are dropped on the rewrite (region-only
+// design).
 func TestPreserveElevation(t *testing.T) {
 	install := t.TempDir()
 	csgo := filepath.Join(install, "game", "csgo")
@@ -984,8 +984,8 @@ func TestPreserveElevation(t *testing.T) {
 	metaPath := filepath.Join(out, "de_fixture", "meta.json")
 
 	// The user authors regions in meta.json — plus stale per-floor
-	// `elevation` keys (a pack extracted under the OLD contract), which
-	// the refresh must drop while keeping the regions.
+	// `elevation` keys (a hand-edited pack carrying keys nothing reads),
+	// which the refresh must drop while keeping the regions.
 	raw, err := os.ReadFile(metaPath)
 	if err != nil {
 		t.Fatal(err)
