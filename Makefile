@@ -100,4 +100,4 @@ artifact: package
 
 clean:
 	rm -rf bin .task frontend/dist frontend/bindings \
-	  $(APP)-linux-* $(APP)-windows-*.exe.zip SHA256SUMS
+	  $(APP)-linux-* $(APP)-windows-*.exe SHA256SUMS
