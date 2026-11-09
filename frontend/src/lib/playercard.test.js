@@ -8,9 +8,11 @@ import {
   ammoText,
   armorChip,
   carriesC4,
+  connectedAt,
   heldItemOf,
   hpBand,
   hpPct,
+  indexConnections,
   mainAmmoText,
   mainOf,
   moneyText,
@@ -189,4 +191,95 @@ test('STATS_TITLE documents the exact formula the row shows', () => {
   assert.match(STATS_TITLE, /counted rounds started/);
   assert.match(STATS_TITLE, /friendly fire/);
   assert.match(STATS_TITLE, /ADR = Σdamage/);
+});
+
+// --- Connection (card presence) --------------------------------------------
+// The rows below are the nuke golden demo's ACTUAL player_connect /
+// player_disconnect events (dev DB match 3, notable rows): every human
+// connects at tick 1; Kr3shProSkuf disconnects at 23467 and reconnects
+// at 28801; the bot Crew joins late at 25155 and leaves at 28801 — the
+// roster keeps both slots the whole demo, which is exactly why the rule
+// exists (six CT cards otherwise).
+const K3SH = '76561198067285210';
+const CREW = '18374686479671623692';
+const conn = (kind, tick, attacker) => ({ kind, tick, attacker });
+const nukeConnRows = [
+  conn('player_connect', 1, K3SH),
+  conn('player_disconnect', 23467, K3SH),
+  conn('player_connect', 25155, CREW),
+  conn('player_disconnect', 28801, CREW),
+  conn('player_connect', 28801, K3SH),
+  conn('player_disconnect', 182637, K3SH),
+];
+
+test('indexConnections groups the typed rows per player, in tick order', () => {
+  const idx = indexConnections(nukeConnRows);
+  assert.deepEqual(idx.get(K3SH), [
+    { tick: 1, connected: true },
+    { tick: 23467, connected: false },
+    { tick: 28801, connected: true },
+    { tick: 182637, connected: false },
+  ]);
+  assert.deepEqual(idx.get(CREW), [
+    { tick: 25155, connected: true },
+    { tick: 28801, connected: false },
+  ]);
+  assert.equal(idx.size, 2, 'only the players the rows name are indexed');
+  // The identity is EventRow.attacker — the SAME spelling as
+  // meta.players[].steamId, so a bot id matches its roster slot.
+  assert.equal(idx.get(CREW)[0].tick, 25155);
+});
+
+test('indexConnections drops rows that say nothing about presence', () => {
+  const idx = indexConnections([
+    conn('player_death', 10, K3SH), // another kind
+    conn('player_disconnect', 20, ''), // no identity
+    conn('player_disconnect', NaN, CREW), // no tick
+    null,
+    { kind: 'player_connect' }, // no tick at all
+  ]);
+  assert.equal(idx.size, 0);
+  assert.deepEqual(indexConnections(null), new Map());
+  assert.deepEqual(indexConnections([]), new Map());
+});
+
+test('connectedAt: a disconnect hides the card until the reconnect unhides it', () => {
+  const kr3sh = indexConnections(nukeConnRows).get(K3SH);
+  assert.equal(connectedAt(kr3sh, 1), true);
+  assert.equal(connectedAt(kr3sh, 23466), true, 'last tick before the disconnect');
+  assert.equal(connectedAt(kr3sh, 23467), false, 'the disconnect itself hides it');
+  assert.equal(connectedAt(kr3sh, 28800), false, 'still hidden through the gap');
+  assert.equal(connectedAt(kr3sh, 28801), true, 'the reconnect unhides it');
+  assert.equal(connectedAt(kr3sh, 182636), true);
+  assert.equal(connectedAt(kr3sh, 182637), false, 'the tail disconnect hides it again');
+  // Scrubbing BACK is the same pure function — never a sticky state.
+  assert.equal(connectedAt(kr3sh, 23466), true, 'back before the disconnect → visible again');
+});
+
+test('connectedAt: a late joiner is hidden BEFORE its first connect', () => {
+  const crew = indexConnections(nukeConnRows).get(CREW);
+  assert.equal(connectedAt(crew, 0), false, 'the roster slot exists, the player does not yet');
+  assert.equal(connectedAt(crew, 25154), false, 'still out of the match');
+  assert.equal(connectedAt(crew, 25155), true, 'visible from the connect tick');
+  assert.equal(connectedAt(crew, 28800), true);
+  assert.equal(connectedAt(crew, 28801), false, 'and hidden again from its disconnect');
+});
+
+test('connectedAt: no events is connected — absence is never a disconnect', () => {
+  const idx = indexConnections(nukeConnRows);
+  assert.equal(
+    connectedAt(idx.get('76561198999999999'), 0),
+    true,
+    'a player no row ever names stays visible',
+  );
+  assert.equal(connectedAt(undefined, 999), true, 'an unindexed slot stays visible');
+  assert.equal(connectedAt([], 0), true);
+  // A first event that is a DISCONNECT means they were in the match
+  // before it — visible up to it, never hidden for "no connect seen".
+  const leaver = indexConnections([conn('player_disconnect', 500, 'x')]).get('x');
+  assert.equal(connectedAt(leaver, 0), true);
+  assert.equal(connectedAt(leaver, 499), true);
+  assert.equal(connectedAt(leaver, 500), false);
+  // An unknown playhead hides nothing (no evidence at a non-tick).
+  assert.equal(connectedAt(indexConnections(nukeConnRows).get(CREW), NaN), true);
 });

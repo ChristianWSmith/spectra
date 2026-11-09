@@ -202,7 +202,8 @@ export const iconURL = (name, manifest) =>
 
 // The view's data source and platform glue are scripted, never a live
 // Wails backend or a real render loop: sidecar meta resolves, every feed
-// read is empty, and the engine/renderer/input are inert objects.
+// read is empty except the CONNECTION rows (the card-visibility rule),
+// and the engine/renderer/input are inert objects.
 writeFileSync(
   join(dir, 'services.js'),
   `export const getReplayMeta = () =>
@@ -225,7 +226,32 @@ writeFileSync(
       { steamId: '76561198000000006', name: 'Lone', side: '' },
     ],
   });
-export const getEvents = () => Promise.resolve([]);
+// Connection rows (player_connect / player_disconnect) for the card
+// visibility rule (playercard.js connectedAt): everyone is in the match
+// from tick 0; Alpha3 drops out at 192 and is back at 320 (hidden in
+// between); Lone is a LATE joiner with NO presence before its 448
+// connect (the nuke bot's shape — a roster slot that exists before the
+// player does); Bravo1's first event is a disconnect at 1000 (the tail,
+// only reachable through the +/-15s transport). Every OTHER read
+// (drawRows, the blind join, the feed) stays empty as before.
+const CONN_ROWS = [
+  { kind: 'player_connect', tick: 0, attacker: '76561198000000001' },
+  { kind: 'player_connect', tick: 0, attacker: '76561198000000002' },
+  { kind: 'player_connect', tick: 0, attacker: '76561198000000003' },
+  { kind: 'player_connect', tick: 0, attacker: '76561198000000004' },
+  { kind: 'player_connect', tick: 0, attacker: '76561198000000005' },
+  { kind: 'player_disconnect', tick: 192, attacker: '76561198000000003' },
+  { kind: 'player_connect', tick: 320, attacker: '76561198000000003' },
+  { kind: 'player_connect', tick: 448, attacker: '76561198000000006' },
+  { kind: 'player_disconnect', tick: 1000, attacker: '76561198000000004' },
+];
+export const getEvents = (filter) => {
+  const kinds = (filter && filter.kinds) || [];
+  if (kinds.includes('player_connect') || kinds.includes('player_disconnect')) {
+    return Promise.resolve(CONN_ROWS);
+  }
+  return Promise.resolve([]);
+};
 export const getEvent = () => Promise.resolve(null);
 // Flash-white overlay durations (matched to blind rows by seq) — none
 // in the stub: the view's join yields [] and setBlinds receives it.
@@ -288,7 +314,13 @@ export function createEngine(data, tickRate) {
       emit?.(state);
     },
     seekFrame(f) {
-      state.frame = f;
+      // The REAL engine derives the tick from the frame it lands on
+      // (engine.js seekFrame: state.tick = ticks[clamped]) — the stub
+      // mirrors it so a scrub through the UI advances uiTick too (the
+      // card-visibility rule reads the playhead).
+      const clamped = Math.max(0, Math.min(data.frames - 1, Math.round(f)));
+      state.frame = clamped;
+      state.tick = data.ticks[clamped];
       emit?.(state);
     },
     play() {
@@ -1059,6 +1091,105 @@ check(
   'note tells the user a reprocess gains the card fields',
   !!stateNotes[0] && /reprocess this match to gain HP\/weapon\/money/.test(stateNotes[0].textContent),
   stateNotes[0]?.textContent,
+);
+
+console.log('F2. connection: a disconnect hides the card, a reconnect unhides it');
+// The stubbed getEvents hands the view connect/disconnect rows for every
+// roster slot (services stub): all in the match from tick 0, Alpha3 out
+// in [192, 320), Lone a late joiner with NO presence before 448, Bravo1
+// gone from 1000 (the tail — only reachable with +15s, the frame scrub
+// tops out at the stub's last tick 576). The columns must follow the
+// PLAYHEAD in BOTH directions: scrubbing back re-shows a card, scrubbing
+// forward hides it again (never a sticky state).
+const leftNames = () =>
+  [...leftCol.querySelectorAll('.pc-card')]
+    .map((c) => c.querySelector('.pc-name').textContent)
+    .join(',');
+const rightNames = () =>
+  [...rightCol.querySelectorAll('.pc-card')]
+    .map((c) => c.querySelector('.pc-name').textContent)
+    .join(',');
+const scrubTo = async (frame) => {
+  const s = scrub.querySelector('input.scrubber');
+  s.value = String(frame);
+  s.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+  await sleep();
+};
+check(
+  'baseline at the round-2 playhead: every roster slot is in the match (4 left / 2 right)',
+  leftNames() === 'Alpha1,Alpha2,Alpha3,Lone' && rightNames() === 'Bravo1,Bravo2',
+  leftNames() + ' | ' + rightNames(),
+);
+await scrubTo(3); // tick 192 — inside Alpha3's gap, before Lone's join
+check(
+  "at tick 192 only the two OUT players have no card (Alpha3's gap + Lone pre-join)",
+  leftNames() === 'Alpha1,Alpha2' && rightNames() === 'Bravo1,Bravo2',
+  leftNames() + ' | ' + rightNames(),
+);
+// The follow dropdown must not offer a player the camera cannot track.
+await chooseCam('Follow');
+const followOpts = () =>
+  [...controls.querySelectorAll('#rp-follow option')].map((o) => o.value).filter((v) => v !== '');
+check(
+  'the follow dropdown drops the disconnected (and the not-yet-joined) player',
+  followOpts().join(',') === '0,1,3,4',
+  followOpts().join(','),
+);
+await chooseCam('Free');
+// A team mute is a durable voice setting over the WHOLE team (the view
+// mutes the unfiltered roster), so the card that comes back on a
+// reconnect must read muted — the voice engine and the card never
+// disagree about a player who was out while the toggle flipped.
+click(teamBtn());
+await sleep();
+await scrubTo(5); // tick 320 — Alpha3 reconnected (Lone joins at 448)
+check(
+  'the reconnect at 320 unhides Alpha3 (roster order kept)',
+  leftNames() === 'Alpha1,Alpha2,Alpha3',
+  leftNames(),
+);
+const cardByName = (col, name) =>
+  [...col.querySelectorAll('.pc-card')].find((c) => c.querySelector('.pc-name').textContent === name);
+check(
+  'the team mute missed while out still applies to the returning card',
+  leftCol.querySelectorAll('.pc-mute[aria-pressed="true"]').length === 3 &&
+    cardByName(leftCol, 'Alpha3')?.querySelector('.pc-mute')?.getAttribute('aria-pressed') === 'true',
+  String(leftCol.querySelectorAll('.pc-mute[aria-pressed="true"]').length),
+);
+click(teamBtn());
+await sleep();
+await scrubTo(0); // tick 0 — before Lone's 448 connect
+check(
+  'a late joiner has NO card before its connect (the nuke bot phantom)',
+  leftNames() === 'Alpha1,Alpha2,Alpha3',
+  leftNames(),
+);
+await scrubTo(7); // tick 448 — Lone connects
+check('Lone appears at the very tick it connects', leftNames() === 'Alpha1,Alpha2,Alpha3,Lone', leftNames());
+await scrubTo(3);
+check(
+  "scrubbing back into Alpha3's gap hides it again (Lone is still pre-join there)",
+  leftNames() === 'Alpha1,Alpha2',
+  leftNames(),
+);
+// Back to the round-2 playhead, then the TAIL disconnect through the
+// +15s transport (1000 is past the scrubber's last frame).
+click(controls.querySelector('#rp-round-next'));
+await sleep();
+check('round transport restores the round-2 playhead', readoutTick().includes('tick 640'), readoutTick());
+click(controls.querySelector('#rp-seek-fwd'));
+await sleep();
+check(
+  'the tail disconnect hides Bravo1 (+15s → tick 1600 > 1000)',
+  readoutTick().includes('tick 1600') && rightNames() === 'Bravo2',
+  readoutTick() + ' | ' + rightNames(),
+);
+click(controls.querySelector('#rp-seek-back'));
+await sleep();
+check(
+  'scrubbing back to 640 brings Bravo1 back — every card visible again',
+  leftNames() === 'Alpha1,Alpha2,Alpha3,Lone' && rightNames() === 'Bravo1,Bravo2',
+  leftNames() + ' | ' + rightNames(),
 );
 
 console.log('G. filter surface: the category multi-select dropdown + the FilterBar rows');

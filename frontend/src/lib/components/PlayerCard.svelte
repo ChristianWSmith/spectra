@@ -1,7 +1,8 @@
 <script>
   // PlayerCard — ONE player's live card beside the replay render area:
   // name (+ the voice live dot), HP + bar with the armor/helmet chip at
-  // the row's right edge, the equipped weapon with mag/reserve ammo on
+  // the row's right edge, the equipped weapon (icon + mag/reserve ammo —
+  // no name text: the weapon's name rides the icon's title tooltip) on
   // its own line (or the held-item prefix: a knife/util/C4 in hand shows
   // its icon | the MAIN weapon's block — see the three modes in the
   // weapon row below), unspent money, utility (+ the C4 when this player
@@ -216,11 +217,12 @@
 
   <!-- The equipped weapon on its OWN fixed-height line — three modes
        (row height/position identical in all three):
-         1. a firearm active (or no state): the ordinary icon + name +
-            mag/reserve block;
+         1. a firearm active (or no state): the ordinary icon +
+            mag/reserve block — the weapon name has NO text label, it
+            rides the icon/chip's title tooltip (weaponTitle);
          2. knife/util/C4 IN HAND with a main firearm carried: the held
             item's icon (no text label) | thin separator | the MAIN
-            weapon's icon + name + the MAIN weapon's ammo (the stream's
+            weapon's icon + the MAIN weapon's ammo (the stream's
             mainMag/mainReserve — not the held item's artifact ammo);
          3. held item and NO firearm (knife round / dropped sidearm):
             the bare held icon — no separator, no name, no ammo (the
@@ -242,7 +244,6 @@
           {#if mainIconSrc}
             <img class="pc-ico" src={mainIconSrc} alt="" />
           {/if}
-          <span class="pc-wname">{main}</span>
           <span class="pc-num pc-ammo">{mainAmmo}</span>
         </span>
       {/if}
@@ -251,7 +252,6 @@
         {#if weaponIconSrc}
           <img class="pc-ico" src={weaponIconSrc} alt="" />
         {/if}
-        <span class="pc-wname">{weapon ?? '—'}</span>
         <span class="pc-num pc-ammo">{ammo}</span>
       </span>
     {/if}
@@ -504,10 +504,11 @@
     background: var(--danger);
   }
 
-  /* The equipped weapon's OWN fixed-height line (icon + name + ammo).
-     The name ellipsizes inside the row and the ammo keeps its 9ch
-     floor, so a longer weapon name can never wrap a second line or
-     resize the card. */
+  /* The equipped weapon's OWN fixed-height line (icon + ammo). The
+     firearm icon takes the line's height at its intrinsic aspect ratio
+     (see .pc-weapon .pc-ico below) and the ammo keeps its 9ch floor,
+     right-pinned by its auto margin, so neither can wrap a second line
+     or resize the card. */
   .pc-weapon-row {
     display: flex;
     align-items: center;
@@ -530,6 +531,22 @@
     flex: none;
   }
 
+  /* The FIREARM icons (both modes' main-gun blocks — mode 1's weapon,
+     mode 2's main) keep their INTRINSIC aspect ratio and grow to the
+     line's full height instead of letterboxing inside the shared 15px
+     .pc-ico square (a wide rifle read as a sliver in that box). The
+     height mirrors .pc-weapon-row's 1.5em exactly — keep the two in
+     step — and the row's overflow:hidden is the hard stop: an icon can
+     fill the line, never exceed it; width:auto + object-fit:contain
+     mean the ratio is the image's own, never distorted. Armor, held
+     util and C4 keep the square 15px cell (they are badges, not the
+     line's subject). */
+  .pc-weapon .pc-ico {
+    height: 1.5em;
+    width: auto;
+    object-fit: contain;
+  }
+
   /* The mandatory text fallback: full canonical label, slightly smaller
      than the numbers, readable when no image exists. */
   .pc-fallback {
@@ -547,15 +564,10 @@
     min-width: 0;
   }
 
-  .pc-wname {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
   /* 9ch reserves the widest real pair ("150 / 200") so a magazine drop
-     never reflows the row; the weapon name absorbs the slack. */
+     never reflows the row; margin-left:auto pins the pair to the row's
+     right edge (the weapon name that used to absorb the slack is gone —
+     the icon + tooltip carry the weapon now). */
   .pc-ammo {
     min-width: 9ch;
     margin-left: auto;
@@ -565,7 +577,7 @@
   /* The held-item prefix (knife/util/C4 in hand): a BARE icon — no text
      label (its name rides the row's title) — and the thin divider that
      separates it from the main weapon's block. Both are flex:none so
-     they can never squeeze the name/ammo or move the ammo's auto margin.
+     they can never squeeze the ammo or move the ammo's auto margin.
      The divider is a 1px line of the muted text colour at half alpha
      (the --divider token is an 8% white table line — invisible on a
      tinted card at 1px) with 4px margins either side, painted inside the

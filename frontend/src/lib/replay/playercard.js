@@ -12,6 +12,9 @@
 // main weapon's block) resolves its VOCABULARY through
 // replay/loadout.js (isHeldItem / mainWeaponOf) — the one loadout rule
 // home shared with the decoy — this module only projects it for display.
+// The connection rules (indexConnections / connectedAt) are consumed by
+// Replay's card columns — the caller that owns all data and all fetching
+// (PlayerCard's prop contract) — they decide WHICH cards exist at all.
 import { detonationStyle } from './landmarks.js';
 import { fmtMoney } from '../fmt.js';
 import { isFirearm, isHeldItem, mainWeaponOf } from './loadout.js';
@@ -141,6 +144,63 @@ export function mainAmmoText(state) {
   const res = state.mainReserve;
   if (mag == null && res == null) return '—';
   return `${mag ?? '—'} / ${res ?? '—'}`;
+}
+
+// --- Connection (player_connect / player_disconnect) ------------------------
+// The roster keeps a slot for everyone who ever touched the match — a
+// player who disconnects mid-demo and a bot that joins late both stay in
+// meta.players — so without this rule the columns grow a phantom card
+// (the nuke golden demo's sixth CT card) for the rest of the replay.
+//
+// indexConnections groups a match's typed connect/disconnect rows by the
+// identity EventRow.attacker carries — the SteamID64 for humans, the
+// synthetic bot id — which is EXACTLY meta.players[].steamId's spelling,
+// so the index keys are the roster keys. Rows are kept in tick order per
+// player; any other kind, an empty identity or a non-finite tick says
+// nothing about presence and is dropped.
+export function indexConnections(rows) {
+  const out = new Map();
+  if (!Array.isArray(rows)) return out;
+  for (const r of rows) {
+    if (!r) continue;
+    if (r.kind !== 'player_connect' && r.kind !== 'player_disconnect') continue;
+    const t = Number(r.tick);
+    if (!Number.isFinite(t)) continue;
+    const sid = r.attacker != null ? String(r.attacker) : '';
+    if (!sid) continue;
+    let list = out.get(sid);
+    if (!list) {
+      list = [];
+      out.set(sid, list);
+    }
+    list.push({ tick: t, connected: r.kind === 'player_connect' });
+  }
+  for (const list of out.values()) list.sort((a, b) => a.tick - b.tick);
+  return out;
+}
+
+// connectedAt — is the player in the match at `tick`? (the card-visibility
+// rule; `events` is indexConnections' list for ONE player, or undefined):
+//   - at/after an event: that event's state — a disconnect hides the card
+//     until a reconnect unhides it (scrubbing back re-shows it, because
+//     the answer is a pure function of the playhead, never sticky);
+//   - BEFORE the player's first recorded event: hidden iff that first
+//     event is a connect — the roster slot exists but the player had not
+//     joined yet (the late-joining bot); a first event that is a
+//     disconnect means they were in the match before it, so visible;
+//   - no events at all: connected — absence of evidence is never treated
+//     as a disconnect (the same "no evidence" honesty as alive: null).
+export function connectedAt(events, tick) {
+  if (!events || events.length === 0) return true;
+  const t = Number(tick);
+  if (!Number.isFinite(t)) return true;
+  let state = null;
+  for (const e of events) {
+    if (e.tick > t) break;
+    state = e.connected;
+  }
+  if (state != null) return state;
+  return !events[0].connected;
 }
 
 // carriesC4 reports whether the stream's inventory carries the bomb.
