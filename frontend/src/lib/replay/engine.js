@@ -231,12 +231,31 @@ export function createEngine(data, tickRate) {
   }
 
   // setLoop(a, b): frame-index bounds; either < 0 clears the interval.
+  // Never ENABLES: arming stays toggleLoop's job (pinned by
+  // renderer.test.js), so a bounds write can never start a loop.
   function setLoop(a, b) {
     const fa = a == null || a < 0 ? -1 : Math.min(frames - 1, Math.round(a));
     const fb = b == null || b < 0 ? -1 : Math.min(frames - 1, Math.round(b));
     state.loopFrom = fa;
     state.loopTo = fb;
     if (fa < 0 || fb < 0 || fa > fb) state.loopEnabled = false;
+    emit();
+  }
+
+  // setLoopEnabled(on): the explicit arm/disarm — the one way code
+  // CHANGES the loop state without toggle's ambiguity (toggleLoop while
+  // off would ENABLE, so callers that mean "turn it off" must not
+  // toggle). Used by Replay's range-edit rule (editing a bound turns
+  // the loop off) and by the entry ?loop= apply (bounds first via
+  // setLoop, then arm here). Enabling without a valid interval is a
+  // no-op — the same invalid-bounds rule setLoop applies, so an armed
+  // loop always has from ≤ to and the renderer's loop line can never
+  // show a range that cannot wrap.
+  function setLoopEnabled(on) {
+    const next = !!on;
+    if (next && (state.loopFrom < 0 || state.loopTo < state.loopFrom)) return;
+    if (state.loopEnabled === next) return;
+    state.loopEnabled = next;
     emit();
   }
 
@@ -314,6 +333,7 @@ export function createEngine(data, tickRate) {
     seekFrame,
     step,
     setLoop,
+    setLoopEnabled,
     toggleLoop,
     setFollow,
     onChange,

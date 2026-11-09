@@ -14,7 +14,7 @@
     errText,
   } from '../services.js';
   import { fmtInt, fmtPercent, roundClock } from '../fmt.js';
-  import { replayHash } from '../nav.js';
+  import { replayHash, entryLoopSpan, entryLoopAround } from '../nav.js';
   import { roundsByNumber } from '../replay/landmarks.js';
   import { playerStartClass, playerSideClassAt } from '../teams.js';
   import {
@@ -172,8 +172,11 @@
     else statSort = { key, desc: true };
   }
 
-  function replay(tick) {
-    nav(replayHash(id, {}, { tick, back: `match/${id}/combat` }));
+  // Deep link into the replay at a tick, with an optional entry-only
+  // ?loop= range stamped beside it (undefined = none): ±10 s around an
+  // engagement tick, the clutch's own start→end span for a clutch row.
+  function replay(tick, loop) {
+    nav(replayHash(id, {}, { tick, loop, back: `match/${id}/combat` }));
   }
 
   // Round chip → THE event browser scoped to that round (both inclusive
@@ -328,7 +331,7 @@
                   tick={e.tick}
                   title="Watch this engagement in the replay"
                   label="Watch tick {e.tick} in the replay"
-                  onclick={() => replay(e.tick)}
+                  onclick={() => replay(e.tick, entryLoopAround(e.tick, tickRate))}
                 />
               </td>
               <td class="num">
@@ -408,7 +411,7 @@
                       tick={c.replayAnchorTick}
                       title="Watch this clutch in the replay"
                       label="Watch the clutch in round {c.round} in the replay"
-                      onclick={() => replay(c.replayAnchorTick)}
+                      onclick={() => replay(c.replayAnchorTick, entryLoopSpan(c.startTick, c.endTick))}
                     />
                   {/if}
                 </td>

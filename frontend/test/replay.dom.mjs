@@ -357,8 +357,41 @@ export function createEngine(data, tickRate) {
       state.speed = s;
       emit?.(state);
     },
-    setLoop() {},
-    toggleLoop() {},
+    // Loop state, mirrored from the REAL engine (engine.js) so the
+    // view's range-edit rule and the entry ?loop= apply are observable:
+    // setLoop writes frame bounds (either < 0 clears, invalid bounds
+    // force loopEnabled OFF) and NEVER enables; setLoopEnabled arms/
+    // disarms explicitly (arming without a valid range is a no-op);
+    // toggleLoop keeps the enable-when-off semantics (and its 10 s
+    // default range) the transport's Loop button and the L key drive.
+    setLoop(a, b) {
+      const fa = a == null || a < 0 ? -1 : Math.max(0, Math.min(data.frames - 1, Math.round(a)));
+      const fb = b == null || b < 0 ? -1 : Math.max(0, Math.min(data.frames - 1, Math.round(b)));
+      state.loopFrom = fa;
+      state.loopTo = fb;
+      if (fa < 0 || fb < 0 || fa > fb) state.loopEnabled = false;
+      emit?.(state);
+    },
+    setLoopEnabled(on) {
+      const next = !!on;
+      if (next && (state.loopFrom < 0 || state.loopTo < state.loopFrom)) return;
+      if (state.loopEnabled === next) return;
+      state.loopEnabled = next;
+      emit?.(state);
+    },
+    toggleLoop() {
+      if (!state.loopEnabled) {
+        if (state.loopFrom < 0 || state.loopTo < state.loopFrom) {
+          const from = state.frame;
+          state.loopFrom = from;
+          state.loopTo = Math.min(data.frames - 1, from + Math.round(tickRate * 10));
+        }
+        state.loopEnabled = true;
+      } else {
+        state.loopEnabled = false;
+      }
+      emit?.(state);
+    },
     // The loop popover resolves typed TIMES through the engine's
     // exact-frame search (Replay's onLoopTime) — same rule as the real
     // engine: the first frame whose tick is >= t, clamped to the stream
@@ -920,6 +953,38 @@ check(
   controls.querySelector('#rp-loop-from')?.value,
 );
 
+// (A) RANGE-EDIT RULE: bound edits never ARM the loop (the edits above
+// only wrote bounds) — but once it is ON, an edit that changes a bound
+// turns it OFF, so the user starts the NEW range with one click instead
+// of stop-then-start.
+const loopToggle = controls.querySelector('button[title="Toggle loop (L)"]');
+check(
+  'the range edits left the loop OFF (setLoop never enables)',
+  loopBtn.getAttribute('aria-pressed') === 'false',
+  loopBtn.getAttribute('aria-pressed'),
+);
+click(loopToggle);
+await sleep();
+check(
+  'the Loop toggle arms the edited range (toggleLoop enables when off)',
+  loopBtn.getAttribute('aria-pressed') === 'true',
+  loopBtn.getAttribute('aria-pressed'),
+);
+const fromNow = controls.querySelector('#rp-loop-from');
+fromNow.value = '0:01';
+fromNow.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+await sleep();
+check(
+  'editing a bound while looping turns it off',
+  loopBtn.getAttribute('aria-pressed') === 'false' && !loopBtn.classList.contains('warn'),
+  `${loopBtn.getAttribute('aria-pressed')} warn=${loopBtn.classList.contains('warn')}`,
+);
+check(
+  'the edit itself still landed (from 0:01)',
+  controls.querySelector('#rp-loop-from')?.value === '0:01',
+  controls.querySelector('#rp-loop-from')?.value,
+);
+
 // Speed: the ladder as a popover (same pattern) — the option button
 // drives the SAME onSpeed handler the select used and closes the panel.
 const speedBtn = controls.querySelector('#rp-speed button');
@@ -1429,6 +1494,104 @@ check(
   `${new Set(weaponOpts).size} vs ${weaponOpts.length}`,
 );
 check('headshot toggle kept', !!bar?.querySelector('.filt-check'));
+
+// --- (A) + (B): the range-edit rule and the entry ?loop= promise ----------
+// A SECOND Replay instance mounts against the ENTRY query the link sites
+// stamp (?loop=<from>,<to> — nav.entryLoopRange resolves it once in
+// startEngine). Its nav prop records into __nav2, so the first
+// instance's history (and its later __nav baselines) stay untouched;
+// query is a plain prop, so navigateFilter reads the same loop= a real
+// hashchange would deliver.
+console.log('H. entry ?loop= applies ONCE on mount (bounds + armed); editing a bound turns it off and strips the promise');
+const target2 = document.createElement('div');
+document.body.appendChild(target2);
+const harness2Src = `<script>
+  import Replay from './views/Replay.js';
+</script>
+<Replay id={1} query={{ loop: '0,320' }} nav={(h) => (globalThis.__nav2 = (globalThis.__nav2 || []).concat(h))} />`;
+const harness2Out = join(dir, 'harness2.js');
+svelteCompile(harness2Src, 'harness2.svelte', harness2Out);
+const mod2 = await import(pathToFileURL(harness2Out).href);
+mount(mod2.default, { target: target2 });
+await sleep();
+await sleep(); // load() → startEngine: seek, then the loop apply
+const transport2 = target2.querySelector('.replay-transport');
+const controls2 = transport2?.children[1];
+const loopBtn2 = controls2?.querySelector('button[aria-label="Loop range"]');
+check('entry loop: the instance rendered its transport', !!controls2 && !!loopBtn2);
+check(
+  'mounting with ?loop=… arms the loop on entry',
+  loopBtn2?.getAttribute('aria-pressed') === 'true',
+  loopBtn2?.getAttribute('aria-pressed'),
+);
+click(loopBtn2);
+await sleep();
+check(
+  'mounting with ?loop=0,320 sets the bounds (frames 0–5 → 0:00–0:05 at 64 tick)',
+  controls2.querySelector('#rp-loop-from')?.value === '0:00' &&
+    controls2.querySelector('#rp-loop-to')?.value === '0:05',
+  `${controls2.querySelector('#rp-loop-from')?.value}–${controls2.querySelector('#rp-loop-to')?.value}`,
+);
+// Filter churn PRESERVES the entry loop (exactly like tick/back —
+// navigateFilter re-pins query.loop): the rail's category dropdown is
+// the cheapest filter navigation.
+const top2 = target2.querySelector('.replay-topbar');
+click(top2?.querySelector('.side-toggle'));
+await sleep();
+const rail2 = target2.querySelector('.replay-side');
+const filters2 = rail2?.querySelector('.lm-toolbar button[aria-expanded]');
+click(filters2);
+await sleep();
+const panel2 = rail2?.querySelector('.lm-filter-panel');
+click(panel2?.querySelector('.lm-cats button'));
+await sleep();
+const kills2 = [...(panel2?.querySelectorAll('.lm-cat-menu input[type="checkbox"]') || [])].find(
+  (cb) => (cb.closest('label')?.textContent || '').trim() === 'Kills',
+);
+const nav2Base = (globalThis.__nav2 || []).length;
+kills2?.click();
+await sleep();
+const nav2 = globalThis.__nav2 || [];
+check(
+  'a filter change keeps loop= in the URL (like tick/back)',
+  nav2.length > nav2Base &&
+    (nav2[nav2.length - 1] || '').includes('cat=round_starts,kills') &&
+    (nav2[nav2.length - 1] || '').includes('loop=0,320'),
+  nav2[nav2.length - 1] || 'no navigation',
+);
+// (A) on an ENTRY loop: editing a bound turns the loop off AND strips
+// the promise from the URL — a refresh after the edit must not
+// resurrect the pre-edit range.
+const editBase = nav2.length;
+const from2 = controls2.querySelector('#rp-loop-from');
+from2.value = '0:01';
+from2.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+await sleep();
+check(
+  'editing the entry bound while looping turns it off',
+  loopBtn2.getAttribute('aria-pressed') === 'false',
+  loopBtn2.getAttribute('aria-pressed'),
+);
+check(
+  'the edited bound still applies (from 0:01)',
+  controls2.querySelector('#rp-loop-from')?.value === '0:01',
+  controls2.querySelector('#rp-loop-from')?.value,
+);
+// The harness's nav prop concats into a FRESH array per navigation, so
+// re-read the global after the edit instead of reusing nav2 above.
+// (The harness query is static — it never feeds the toggled cats back
+// — so this navigation serializes the entry filter as-is; what it pins
+// is that the EDIT navigation exists and carries no loop= anymore.)
+const nav2After = globalThis.__nav2 || [];
+const lastNav2 = nav2After[nav2After.length - 1];
+check(
+  'the edit strips loop= from the URL (a replay navigation, no resurrected range)',
+  nav2After.length > editBase &&
+    !!lastNav2 &&
+    lastNav2.startsWith('/replay/1') &&
+    !lastNav2.includes('loop='),
+  lastNav2 || 'no navigation',
+);
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');

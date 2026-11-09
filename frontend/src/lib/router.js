@@ -21,13 +21,19 @@
 //                            (parseLandmarkFilter in lib/replay/
 //                            landmarks.js): cat/roundFrom/roundTo/
 //                            player/weapon/distMin/distMax/hs/bbox/gname
-//                            plus tick (initial seek), sel (selected
-//                            landmark) and back (origin path). The
-//                            initial time target is resolved ONCE on
-//                            entry by nav.entrySeekTick: ?tick= wins,
-//                            else the round scope (?roundFrom=, else
-//                            ?roundTo=) resolves to that round's start
-//                            tick, else the first frame.
+//                            plus tick (initial seek), loop (initial
+//                            loop range "<fromTick>,<toTick>" — ticks,
+//                            entry-only), sel (selected landmark) and
+//                            back (origin path). The initial time target
+//                            is resolved ONCE on entry by
+//                            nav.entrySeekTick: ?tick= wins, else the
+//                            round scope (?roundFrom=, else ?roundTo=)
+//                            resolves to that round's start tick, else
+//                            the first frame. The loop range is the
+//                            SECOND, independent entry promise —
+//                            nav.entryLoopRange → applied once in
+//                            startEngine (bounds, then arm) and dropped
+//                            from the URL when the user edits a bound.
 //   #/explorer/:id           optional context id: the match Explorer's
 //                            inspectors preselect (absent = newest match)
 //   #/reports/:id            optional context id: Reports' match preselect
@@ -83,8 +89,9 @@ export function buildHash(path, query) {
   const parts = [];
   for (const [k, v] of Object.entries(query || {})) {
     if (v == null) continue;
-    // Readable URLs: "/" (back= origin paths) and "," (cat lists) are
-    // legal in query values and stay raw; everything else encodes.
+    // Readable URLs: "/" (back= origin paths) and "," (cat lists and the
+    // ?loop= "<from>,<to>" range) are legal in query values and stay
+    // raw; everything else encodes.
     const val = encodeURIComponent(String(v)).replace(/%2F/g, '/').replace(/%2C/g, ',');
     parts.push(`${k}=${val}`);
   }

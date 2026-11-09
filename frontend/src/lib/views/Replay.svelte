@@ -91,7 +91,7 @@
   import { toCSV } from '../csv.js';
   import { chatClock, prettyJson, fmtClock, parseClock, tickSeconds, normTickRate } from '../fmt.js';
   import { isCounted, roundStartTick, roundIndexLabel, scoreThrough } from '../rounds.js';
-  import { isSteam, entrySeekTick } from '../nav.js';
+  import { isSteam, entrySeekTick, entryLoopRange } from '../nav.js';
   import { buildHash } from '../router.js';
   import FilterBar from '../components/FilterBar.svelte';
   import LandmarkRow from '../components/LandmarkRow.svelte';
@@ -692,13 +692,17 @@
 
   // --- Navigation (URL-backed) ----------------------------------------------
   // Every filter change navigates: serialize + preserve the entry
-  // context (tick/back/follow) + write the hash. sel is entry-only — it is not
+  // context (tick/loop/back/follow) + write the hash. sel is entry-only — it is not
   // re-pinned on later filter changes (selection stays local).
   // keepFollow=false drops the follow param (the chip's dismiss — see
   // releaseFollow), so a preserved entry context cannot re-arm it.
-  function navigateFilter(next, { keepFollow = true } = {}) {
+  // keepLoop=false drops the loop param instead (the range-edit rule —
+  // see onLoopTime): after the user edits a bound the URL must mirror
+  // the ENGINE's loop, never resurrect the pre-edit entry range.
+  function navigateFilter(next, { keepFollow = true, keepLoop = true } = {}) {
     const q = serializeLandmarkFilter(next);
     if (query.tick) q.tick = query.tick;
+    if (keepLoop && query.loop) q.loop = query.loop;
     if (query.back) q.back = query.back;
     if (keepFollow && query.follow) q.follow = query.follow;
     const target = buildHash(`/replay/${id}`, q);
@@ -1923,6 +1927,18 @@
     if (tick0 != null) engine.seekTick(tick0);
     else if (entrySelTick) engine.seekTick(entrySelTick);
     else if (entryDefaultTick) engine.seekTick(entryDefaultTick);
+    // Entry loop — the URL's SECOND entry promise (nav.entryLoopRange;
+    // the seek above is the first): bounds first, then arm (setLoop
+    // never enables, setLoopEnabled never arms an invalid range).
+    // Applied ONCE here, right after the seek: startEngine runs once per
+    // mount, so in-session query churn can neither re-apply nor cancel a
+    // loop — and the range-edit rule (onLoopTime) owns every later
+    // change, stripping ?loop= from the URL as it goes.
+    const loop0 = entryLoopRange(query, rounds);
+    if (loop0) {
+      engine.setLoop(engine.frameForTick(loop0.from), engine.frameForTick(loop0.to));
+      engine.setLoopEnabled(true);
+    }
     renderer.setHud(hudFor(engine.state.tick)); // first HUD paint (redraws)
     ready = true;
     // A replay starts playing as soon as it is ready — startEngine runs
@@ -1957,14 +1973,39 @@
   // restores the displayed value instead, so no state changes and the
   // field snaps back to what it showed rather than a NaN reaching the
   // loop.
+  //
+  // RANGE-EDIT RULE: an edit that actually CHANGES a bound turns the
+  // loop OFF — the user is defining a NEW range and gets one click to
+  // start it (the Loop toggle), not stop-then-start. Hooked ONLY on
+  // this handler's two success paths (clear + parsed commit): a parse
+  // failure changes nothing and must not flip, and an $effect over the
+  // bounds would also fire on the mount-time ?loop= apply (startEngine
+  // below) and cancel it — the EDIT is the trigger, so it lives in the
+  // handler. The entry ?loop= is dropped from the URL with it (URL ≈
+  // engine state): a refresh after an edit must not resurrect the
+  // pre-edit range.
+  function loopBoundEdited(changed) {
+    if (!changed) return;
+    // setLoop (onLoopInput) may already have disabled it — clearing a
+    // bound makes the interval invalid — so this is a guarded no-op
+    // then, and never toggleLoop's enable-while-off trap.
+    engine?.setLoopEnabled(false);
+    // Only URLs that carry the promise rewrite it; a session without
+    // ?loop= keeps its hash byte-identical (sel/tick/back untouched).
+    if (query.loop) navigateFilter(filter, { keepLoop: false });
+  }
+
   function onLoopTime(which, e) {
     const input = e.currentTarget;
     const shown = which === 'from' ? loopFromText : loopToText;
     const raw = String(input.value ?? '').trim();
+    const prev = which === 'from' ? uiLoopFrom : uiLoopTo;
     if (raw === '') {
+      const changed = prev !== -1; // clearing an already-empty bound changes nothing
       if (which === 'from') uiLoopFrom = -1;
       else uiLoopTo = -1;
       onLoopInput();
+      loopBoundEdited(changed);
       return;
     }
     const sec = parseClock(raw);
@@ -1977,9 +2018,11 @@
     const total = tickSeconds(data.ticks[data.frames - 1] - t0, tr);
     const at = t0 + Math.min(Math.max(0, sec), total) * tr;
     const frame = Math.min(engine.frameForTick(at), data.frames - 1);
+    const changed = frame !== prev;
     if (which === 'from') uiLoopFrom = frame;
     else uiLoopTo = frame;
     onLoopInput();
+    loopBoundEdited(changed);
   }
 
   function toggleLoop() {

@@ -1,14 +1,24 @@
 // Tests for lib/nav.js: the profile return trip (profileBackTarget — the
 // resolution behind PlayerProfile's top-left back button), the navigation
 // guards the profile links share (isSteam/openProfile), the sidebar
-// action highlighters (NAV_ACTIONS active()) and the replay entry time
-// resolver (entrySeekTick — the ?tick=/?roundFrom=/?roundTo= contract
-// every link into THE event browser relies on).
+// action highlighters (NAV_ACTIONS active()) and the replay entry
+// resolvers (entrySeekTick — the ?tick=/?roundFrom=/?roundTo= contract
+// every link into THE event browser relies on — plus entryLoopRange and
+// the ?loop= stampers entryLoopSpan / entryLoopAround beside it).
 // Run: node --test src/lib/nav.test.js   (from frontend/)
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { isSteam, openProfile, profileBackTarget, NAV_ACTIONS, entrySeekTick } from './nav.js';
+import {
+  isSteam,
+  openProfile,
+  profileBackTarget,
+  NAV_ACTIONS,
+  entrySeekTick,
+  entryLoopRange,
+  entryLoopSpan,
+  entryLoopAround,
+} from './nav.js';
 
 test('an explicit ?back= origin wins (durable, deep-linkable)', () => {
   assert.equal(
@@ -154,4 +164,114 @@ test('entrySeekTick: no explicit time target → null (Replay applies the pref-b
   assert.equal(entrySeekTick({ roundTo: '-1' }, ROUNDS), 400); // warmup via the max bound
   assert.equal(entrySeekTick({ cat: 'kills' }, ROUNDS), null); // no round param
   assert.equal(entrySeekTick({ tick: 'x' }, ROUNDS), null); // malformed tick, no round
+});
+
+// --- entryLoopRange: the replay entry loop range --------------------------
+// ?loop=<fromTick>,<toTick> is the SECOND, independent entry promise of a
+// Replay URL (the seek target is the first — see entrySeekTick above):
+// Replay applies the resolved range ONCE on entry (bounds, then arm) and
+// drops the param when the user edits a bound. A row set WITH end ticks,
+// because the round-span gate below reads them.
+const LOOP_ROUNDS = [
+  { number: -1, startTick: 400, endTick: 900 }, // warmup
+  { number: 1, startTick: 1200, endTick: 24000 },
+  { number: 7, startTick: 24500, endTick: 30000 },
+];
+
+test('entryLoopRange: absent or empty → null (the URL promises no loop)', () => {
+  assert.equal(entryLoopRange({}, LOOP_ROUNDS), null);
+  assert.equal(entryLoopRange(undefined, LOOP_ROUNDS), null);
+  assert.equal(entryLoopRange(null, LOOP_ROUNDS), null);
+  assert.equal(entryLoopRange({ loop: '' }, LOOP_ROUNDS), null);
+  assert.equal(entryLoopRange({ cat: 'kills' }, LOOP_ROUNDS), null); // other params only
+});
+
+test('entryLoopRange: malformed pairs → null (never a half-parsed range)', () => {
+  assert.equal(entryLoopRange({ loop: 'x' }, LOOP_ROUNDS), null); // not a pair
+  assert.equal(entryLoopRange({ loop: '1200' }, LOOP_ROUNDS), null); // one half
+  assert.equal(entryLoopRange({ loop: '1,2,3' }, LOOP_ROUNDS), null); // three halves
+  assert.equal(entryLoopRange({ loop: 'a,b' }, LOOP_ROUNDS), null); // non-numeric
+  assert.equal(entryLoopRange({ loop: '1200,x' }, LOOP_ROUNDS), null);
+  assert.equal(entryLoopRange({ loop: '1200,' }, LOOP_ROUNDS), null); // empty half
+  assert.equal(entryLoopRange({ loop: ',2400' }, LOOP_ROUNDS), null);
+  // Whitespace AROUND a half trims away (Number() does it) — only an
+  // empty or non-numeric half is malformed.
+  assert.deepEqual(entryLoopRange({ loop: '1200, 2400' }, LOOP_ROUNDS), { from: 1200, to: 2400 });
+});
+
+test('entryLoopRange: a negative or inverted range → null (never a guessed order)', () => {
+  assert.equal(entryLoopRange({ loop: '-1,100' }, LOOP_ROUNDS), null); // negative bound
+  assert.equal(entryLoopRange({ loop: '2400,1200' }, LOOP_ROUNDS), null); // from > to
+  // Equal bounds are a legal (zero-width) range, not an inversion.
+  assert.deepEqual(entryLoopRange({ loop: '1200,1200' }, LOOP_ROUNDS), { from: 1200, to: 1200 });
+});
+
+test('entryLoopRange: a well-formed pair resolves to raw ticks', () => {
+  assert.deepEqual(entryLoopRange({ loop: '1200,2400' }, LOOP_ROUNDS), { from: 1200, to: 2400 });
+  assert.deepEqual(entryLoopRange({ loop: '0,576' }, LOOP_ROUNDS), { from: 0, to: 576 });
+  assert.deepEqual(entryLoopRange({ loop: '1200,2400' }, []), { from: 1200, to: 2400 });
+  assert.deepEqual(entryLoopRange({ loop: '1200,2400' }, null), { from: 1200, to: 2400 });
+});
+
+test('entryLoopRange: a range naming no known round → null (loaded rounds gate it)', () => {
+  // Loaded rounds know their own tick span [400, 30000]: a range lying
+  // ENTIRELY outside it names no known round and is not a promise.
+  assert.equal(entryLoopRange({ loop: '100,200' }, LOOP_ROUNDS), null); // before every round
+  assert.equal(entryLoopRange({ loop: '40000,50000' }, LOOP_ROUNDS), null); // past the last
+  // A range that merely REACHES the span (or overhangs one end) keeps —
+  // event anchors legitimately cross a round's edge.
+  assert.deepEqual(entryLoopRange({ loop: '200,500' }, LOOP_ROUNDS), { from: 200, to: 500 });
+  assert.deepEqual(entryLoopRange({ loop: '24500,40000' }, LOOP_ROUNDS), { from: 24500, to: 40000 });
+  // Rows without a usable start tick contribute no span → no gate.
+  assert.deepEqual(entryLoopRange({ loop: '100,200' }, [{ number: 1 }]), { from: 100, to: 200 });
+});
+
+test('entryLoopRange: independent of the entry seek priority', () => {
+  // ?tick= / ?roundFrom= decide WHERE the replay starts; the loop range
+  // is a separate promise that neither reads nor is read by them — a URL
+  // may carry either or both, and each resolves on its own.
+  assert.deepEqual(entryLoopRange({ tick: '9999', loop: '1200,2400' }, LOOP_ROUNDS), {
+    from: 1200,
+    to: 2400,
+  });
+  assert.equal(entrySeekTick({ tick: '9999', loop: '1200,2400' }, LOOP_ROUNDS), 9999, 'seek unaffected by loop');
+  assert.deepEqual(entryLoopRange({ roundFrom: '7', roundTo: '7', loop: '1200,2400' }, LOOP_ROUNDS), {
+    from: 1200,
+    to: 2400,
+  });
+  // A malformed loop does not borrow the round scope, and a round scope
+  // does not rescue it.
+  assert.equal(entryLoopRange({ roundFrom: '7', roundTo: '7', loop: 'x' }, LOOP_ROUNDS), null);
+  assert.equal(entrySeekTick({ roundFrom: '7', loop: 'x' }, LOOP_ROUNDS), 24500, 'seek unaffected by a bad loop');
+});
+
+// --- the ?loop= stampers (what the link sites put in the URL) ------------
+test('entryLoopSpan stamps a round/clutch span, or nothing when unstatable', () => {
+  assert.equal(entryLoopSpan(0, 576), '0,576');
+  assert.equal(entryLoopSpan(1200, 2400), '1200,2400');
+  // Never a guessed or illegal range: inverted, negative or non-finite
+  // bounds yield undefined, which buildHash drops (the seek still fires).
+  assert.equal(entryLoopSpan(2400, 1200), undefined);
+  assert.equal(entryLoopSpan(-5, 100), undefined);
+  assert.equal(entryLoopSpan(NaN, 100), undefined);
+  assert.equal(entryLoopSpan(100, undefined), undefined);
+  assert.equal(entryLoopSpan(null, null), undefined); // Number(null) is 0 — never a bound
+  assert.equal(entryLoopSpan('', ''), undefined); // Number('') is 0 too
+});
+
+test('entryLoopAround anchors an event at ±10 s (the engine default width)', () => {
+  // 10 s × 64 tick = 640 ticks either side — the width toggleLoop arms.
+  assert.equal(entryLoopAround(10640, 64), '10000,11280');
+  // The lower bound floors at 0 (never negative); the upper keeps full
+  // width — the range is never reshaped to the round.
+  assert.equal(entryLoopAround(100, 64), '0,740');
+  // An absent/invalid tick rate is the engine's own 64 fallback
+  // (fmt.normTickRate), not a zero-width anchor.
+  assert.equal(entryLoopAround(10640, 0), '10000,11280');
+  assert.equal(entryLoopAround(10640, undefined), '10000,11280');
+  // No tick, no promise (null would coerce to 0 — never a bound).
+  assert.equal(entryLoopAround(undefined, 64), undefined);
+  assert.equal(entryLoopAround(null, 64), undefined);
+  assert.equal(entryLoopAround(NaN, 64), undefined);
+  assert.equal(entryLoopAround(-1, 64), undefined);
 });

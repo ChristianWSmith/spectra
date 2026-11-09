@@ -3,6 +3,7 @@
 import { buildHash, parseHash } from './router.js';
 import { serializeLandmarkFilter } from './replay/landmarks.js';
 import { roundStartTick } from './rounds.js';
+import { normTickRate } from './fmt.js';
 
 // isSteam reports whether a name/id field holds a 17-digit Steam id
 // (bots, empty and malformed names are not linkable).
@@ -22,6 +23,11 @@ export function openProfile(nav, steam) {
 // defaults fill every gap — serializeLandmarkFilter only emits non-
 // default keys) plus the entry context extras:
 //   tick   — initial replay position
+//   loop   — initial loop range "<fromTick>,<toTick>" (ticks; the comma
+//            stays raw in buildHash). ENTRY-ONLY: Replay applies it once
+//            on entry (nav.entryLoopRange → engine bounds + arm) and
+//            drops it from the URL as soon as the user edits a bound,
+//            so the URL keeps mirroring the engine's loop state.
 //   sel    — selected landmark key (e:123 / c:4 / g:9)
 //   back   — origin path for the return trip ("match/5/rounds",
 //            "compare/5?rounds=3,5", …) — rendered as-is by buildHash
@@ -32,6 +38,43 @@ export function replayHash(matchId, filter, extras) {
     ...serializeLandmarkFilter(filter || {}),
     ...(extras || {}),
   });
+}
+
+// entryLoopSpan stamps the ?loop= extra for a RANGE link (the closing
+// half of the replayHash contract above): "<fromTick>,<toTick>". Bounds
+// that cannot be stated exactly — absent (null/"" — Number(null) would
+// silently read 0), non-finite, negative or inverted (from > to) —
+// yield undefined, which buildHash drops: a link never promises a loop
+// it cannot state (the seek still happens on its own).
+export function entryLoopSpan(fromTick, toTick) {
+  const from = asTick(fromTick);
+  const to = asTick(toTick);
+  if (!Number.isFinite(from) || !Number.isFinite(to) || from < 0 || from > to) return undefined;
+  return `${from},${to}`;
+}
+
+// asTick reads a link-site tick strictly: null/undefined/"" are ABSENT
+// (never the 0 Number(null)/Number("") would coerce them to) and
+// anything non-numeric is NaN — both resolve to "no promise".
+function asTick(v) {
+  return v == null || v === '' ? NaN : Number(v);
+}
+
+// EVENT_LOOP_SECONDS is the engine's own default loop width (toggleLoop
+// arms "10 s from the current frame" — engine.js): every EVENT anchor
+// link spans ± this around the event tick, so a linked loop feels the
+// same as a manually armed one.
+const EVENT_LOOP_SECONDS = 10;
+
+// entryLoopAround stamps the ?loop= extra for an EVENT link: ±10 s
+// around the event tick at the match tick rate, floored at 0 — a
+// negative bound is never legal and is the ONLY clamp (the range may
+// legitimately run past the round's edge; it is never reshaped to it).
+export function entryLoopAround(tick, tickRate) {
+  const t = asTick(tick);
+  if (!Number.isFinite(t) || t < 0) return undefined;
+  const half = Math.round(EVENT_LOOP_SECONDS * normTickRate(tickRate));
+  return entryLoopSpan(Math.max(0, Math.round(t - half)), Math.round(t + half));
 }
 
 // entrySeekTick resolves the INITIAL TIME TARGET of a Replay entry URL —
@@ -62,6 +105,8 @@ export function replayHash(matchId, filter, extras) {
 // whether the URL named a round — while the raw param can (absent/0 =
 // no time promise, "-1" = the warmup round, which is a real round with
 // a real start). Round 0 never exists, so a 0 bound is never a target.
+// The loop range is a SEPARATE promise resolved by entryLoopRange below
+// — neither resolver reads the other's params.
 export function entrySeekTick(query, rounds) {
   const q = query || {};
   // ?tick= is explicit whenever it names a real non-negative tick —
@@ -83,6 +128,55 @@ export function entrySeekTick(query, rounds) {
     return start != null ? start : null;
   }
   return null;
+}
+
+// entryLoopRange resolves the ENTRY-ONLY ?loop= range of a Replay URL —
+// the counterpart of the loop extras entryLoopSpan / entryLoopAround
+// stamp and the second, independent promise of an entry link (beside
+// entrySeekTick above): "<fromTick>,<toTick>" (the comma stays raw in
+// buildHash) → { from, to }, or null when the URL makes NO usable loop
+// promise. Never guesses — each of these resolves to null:
+//   - absent / empty / a value that is not exactly two comma-separated
+//     numbers (including an empty half: "1," / ",1" / "1,2,3" / "x,9"),
+//   - a non-finite or negative bound, or an inverted range (from > to),
+//   - "an unknown round": when the round list is loaded and knows its
+//     own tick span, a range lying ENTIRELY outside it names no known
+//     round and is not a promise (roundSpan returns null when there is
+//     no span to check against — then the explicit finite bounds stand
+//     on their own).
+// Independent of entrySeekTick's priority: ?tick= / ?roundFrom= /
+// ?roundTo= decide WHERE the replay starts, never what it loops over.
+// Replay applies the resolved range ONCE in startEngine (bounds, then
+// arm), so in-session query churn can neither re-apply nor cancel it.
+export function entryLoopRange(query, rounds) {
+  const raw = query == null ? null : query.loop;
+  if (raw == null || raw === '') return null;
+  const parts = String(raw).split(',');
+  if (parts.length !== 2 || parts.some((p) => p.trim() === '')) return null;
+  const nums = parts.map((p) => Number(p.trim()));
+  if (nums.some((n) => !Number.isFinite(n))) return null;
+  const [from, to] = nums;
+  if (from < 0 || from > to) return null;
+  const span = roundSpan(rounds);
+  if (span && (to < span.first || from > span.last)) return null;
+  return { from, to };
+}
+
+// roundSpan is the loaded rounds' tick span [first start, last end] —
+// the stretch of the demo the round rows actually cover. Rows without a
+// usable end tick contribute their start (an open row still begins
+// where it begins); when NO row has a usable start tick there is no
+// span to check against and null disables the gate above.
+function roundSpan(rounds) {
+  let first = null;
+  let last = null;
+  for (const r of rounds || []) {
+    if (!r || !Number.isFinite(r.startTick)) continue;
+    if (first == null || r.startTick < first) first = r.startTick;
+    const end = Number.isFinite(r.endTick) ? r.endTick : r.startTick;
+    if (last == null || end > last) last = end;
+  }
+  return first == null ? null : { first, last };
 }
 
 // profileBackTarget resolves the player profile's top-left back button —

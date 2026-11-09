@@ -19,8 +19,8 @@
     errText,
   } from '../services.js';
   import { fmtDuration, fmtInt, fmtTickSeconds, fmtMs } from '../fmt.js';
-  import { replayHash } from '../nav.js';
-  import { roundStartTick, roundIndexLabel } from '../rounds.js';
+  import { replayHash, entryLoopSpan, entryLoopAround } from '../nav.js';
+  import { roundStartTick, roundEndTick, roundIndexLabel } from '../rounds.js';
   import { buildHash } from '../router.js';
   import { normalizeEvent } from '../replay/landmarks.js';
   import { playerSideClassAt } from '../teams.js';
@@ -135,8 +135,11 @@
     return normalizeEvent(e, { policy: false });
   }
 
+  // …and both click and ▶ land in it through this handler — with a ±10 s
+  // entry loop around the tick (nav.entryLoopAround), the same anchor
+  // every event ▶ link stamps.
   function openEvent(row) {
-    nav(replayHash(id, {}, { tick: row.tick, sel: row.key, back: backToCompare }));
+    nav(replayHash(id, {}, { tick: row.tick, loop: entryLoopAround(row.tick, tickRate), sel: row.key, back: backToCompare }));
   }
 
   function replayStart(col) {
@@ -145,9 +148,13 @@
     // as "first frame" to entrySeekTick and would silently land the
     // replay before the round; with no known start there is no time
     // promise to keep, so the button does nothing rather than lie.
+    // The ?loop= span is the round's own start→end (freeze included,
+    // lib/rounds.js) from the same two sources — an unknown end stamps
+    // NO loop rather than a guessed one.
     const start = col.detail?.round?.startTick ?? roundStartTick(rounds, col.round);
     if (start == null) return;
-    nav(replayHash(id, {}, { tick: start, back: backToCompare }));
+    const end = col.detail?.round?.endTick ?? roundEndTick(rounds, col.round);
+    nav(replayHash(id, {}, { tick: start, loop: entryLoopSpan(start, end), back: backToCompare }));
   }
 
   function openRound(col) {

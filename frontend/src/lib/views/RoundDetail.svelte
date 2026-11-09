@@ -11,7 +11,7 @@
   import { fmtDuration, fmtTickSeconds, fmtInt, fmtClock, tickSeconds, chatClock } from '../fmt.js';
   import { roundIndexLabel, scoreThrough } from '../rounds.js';
   import { playerSideClassAt } from '../teams.js';
-  import { replayHash } from '../nav.js';
+  import { replayHash, entryLoopSpan, entryLoopAround } from '../nav.js';
   import { buildHash } from '../router.js';
   import { roundsByNumber } from '../replay/landmarks.js';
   import RoundStrip from '../components/RoundStrip.svelte';
@@ -177,9 +177,13 @@
   }
 
   // Jump to the replay at a tick (the header button uses the round start;
-  // per-event seeks live in the canonical feed now).
-  function watchTick(tick) {
-    nav(replayHash(id, {}, { tick, back: `match/${id}/round/${round}` }));
+  // per-event seeks live in the canonical feed now). `loop` is the
+  // entry-only ?loop= range stamped BESIDE the seek (undefined = none,
+  // which buildHash drops): the round's start→end span for the header's
+  // "Watch round", ±10 s around the event tick for the kill-feed and
+  // bomb-timeline ▶ buttons (nav.entryLoopSpan / nav.entryLoopAround).
+  function watchTick(tick, loop) {
+    nav(replayHash(id, {}, { tick, loop, back: `match/${id}/round/${round}` }));
   }
 </script>
 
@@ -190,7 +194,8 @@
       <button
         class="btn primary"
         title="Watch this round from its start in the replay"
-        onclick={() => watchTick(detail.round.startTick || 0)}
+        onclick={() =>
+          watchTick(detail.round.startTick || 0, entryLoopSpan(detail.round.startTick, detail.round.endTick))}
       >
         <span class="codicon codicon-play"></span> Watch round
       </button>
@@ -260,7 +265,8 @@
     <!-- Round analysis: the round's result, kill feed and bomb timeline
          (the round-detail read's typed events), with economy and this
          round's chat alongside. Every event row drills into the replay
-         at its tick (watchTick); openEvents keeps the canonical
+         at its tick (watchTick — ▶ rows stamp a ±10 s ?loop= range, the
+         header the round's own span); openEvents keeps the canonical
          landmark-feed entry. -->
     <div class="round-grid">
       <div class="round-side">
@@ -370,7 +376,7 @@
                           class="btn small ghost"
                           title="Watch from this kill in the replay"
                           aria-label="Watch from tick {k.tick} in the replay"
-                          onclick={() => watchTick(k.tick)}
+                          onclick={() => watchTick(k.tick, entryLoopAround(k.tick, tickRate))}
                           ><span class="codicon codicon-play"></span></button
                         >
                       </td>
@@ -418,7 +424,7 @@
                           class="btn small ghost"
                           title="Watch from this event in the replay"
                           aria-label="Watch from tick {e.tick} in the replay"
-                          onclick={() => watchTick(e.tick)}
+                          onclick={() => watchTick(e.tick, entryLoopAround(e.tick, tickRate))}
                           ><span class="codicon codicon-play"></span></button
                         >
                       </td>
