@@ -221,25 +221,31 @@ func TestDecodeVSndV5Synthetic(t *testing.T) {
 // TestSoundTableKeysInIconTable pins the frontend lookup vocabulary: the
 // replay keys sounds off the SAME canonical equipment names the icon
 // manifest uses (iconTable), so a soundTable key that drifts from the
-// enum spelling would silently never play. THROW groups are the one
-// extension: a key may also be an iconTable name + " throw" (Feature A —
+// enum spelling would silently never play. TWO extensions are legal:
+// THROW groups (a key may be an iconTable name + " throw" — Feature A —
 // sfx.js throwCues builds cue names as `${weapon} throw`, so the
-// manifest must carry exactly that key). Also pins the per-name VPK
-// paths' shape and the output-filename uniqueness the reverse index
-// needs.
+// manifest must carry exactly that key) and INTERNAL sound groups
+// (internalSoundGroups — replay-addressed groups with no equipment
+// spelling, e.g. the C4 beeps sfx.js's scheduler addresses as
+// `C4 beep <site>[ 10sec]`; a new group registers there, the rule never
+// widens again). Also pins the per-name VPK paths' shape and the
+// output-filename uniqueness the reverse index needs.
 func TestSoundTableKeysInIconTable(t *testing.T) {
 	if len(soundTable) == 0 {
 		t.Fatal("soundTable is empty")
 	}
 	seen := map[string]string{}
 	for name, paths := range soundTable {
-		// Key rule: an iconTable canonical name, or one + " throw".
+		// Key rule: an internal sound group, an iconTable canonical
+		// name, or one + " throw".
 		base, isThrow := strings.CutSuffix(name, " throw")
-		if _, ok := iconTable[base]; !ok {
-			t.Errorf("soundTable key %q is not an iconTable name (or one + \" throw\")", name)
-		}
-		if isThrow && base == "" {
-			t.Errorf("soundTable key %q has an empty base name", name)
+		if !internalSoundGroups[name] {
+			if _, ok := iconTable[base]; !ok {
+				t.Errorf("soundTable key %q is not an iconTable name, one + \" throw\", or an internal sound group", name)
+			}
+			if isThrow && base == "" {
+				t.Errorf("soundTable key %q has an empty base name", name)
+			}
 		}
 		if len(paths) == 0 {
 			t.Errorf("soundTable[%q] has no paths", name)
@@ -270,6 +276,15 @@ func TestSoundTableKeysInIconTable(t *testing.T) {
 		}
 	}
 
+	// Every registered internal group must actually exist — a stale
+	// registration would silently keep working while the manifest lost
+	// the key the frontend builds its name from.
+	for group := range internalSoundGroups {
+		if _, ok := soundTable[group]; !ok {
+			t.Errorf("internalSoundGroups lists %q, which soundTable does not have", group)
+		}
+	}
+
 	// Spot pins on the mappings other layers key on (verified against a
 	// real install by TestExtractRealCS2Sounds).
 	want := map[string][]string{
@@ -277,7 +292,15 @@ func TestSoundTableKeysInIconTable(t *testing.T) {
 		"M4A1":         {"sounds/weapons/m4a1/m4a1_silencer_01.vsnd_c"},
 		"Desert Eagle": {"sounds/weapons/deagle/deagle_01.vsnd_c", "sounds/weapons/deagle/deagle_02.vsnd_c"},
 		"C4":           {"sounds/weapons/c4/c4_explode1.vsnd_c"},
-		"HE Grenade":   {"sounds/weapons/hegrenade/hegrenade_detonate_02.vsnd_c", "sounds/weapons/hegrenade/hegrenade_detonate_03.vsnd_c"},
+		// The C4 beep groups — one deterministic sample per (site,
+		// phase) key; the pairs are the game's C4.PlantSound /
+		// C4.PlantSoundB events' files (sfx.js's beep scheduler builds
+		// these key names).
+		"C4 beep A":       {"sounds/weapons/c4/c4_beep2.vsnd_c"},
+		"C4 beep B":       {"sounds/weapons/c4/c4_beep3.vsnd_c"},
+		"C4 beep A 10sec": {"sounds/weapons/c4/c4_beep2_10sec.vsnd_c"},
+		"C4 beep B 10sec": {"sounds/weapons/c4/c4_beep3_10sec.vsnd_c"},
+		"HE Grenade":      {"sounds/weapons/hegrenade/hegrenade_detonate_02.vsnd_c", "sounds/weapons/hegrenade/hegrenade_detonate_03.vsnd_c"},
 		// The HE THROW group pins the sounds/items/ path — the one entry
 		// outside sounds/weapons/ (Feature A).
 		"HE Grenade throw": {"sounds/items/weapon_hegrenade_throw.vsnd_c"},
@@ -459,7 +482,11 @@ func TestExtractRealCS2Sounds(t *testing.T) {
 		t.Errorf("extracted %d names, want %d (the whole table)", len(names), len(soundTable))
 	}
 	files := SoundFiles(out)
-	for _, key := range []string{"AK-47", "Desert Eagle", "C4", "HE Grenade", "Smoke Grenade", "HE Grenade throw"} {
+	for _, key := range []string{
+		"AK-47", "Desert Eagle", "C4",
+		"C4 beep A", "C4 beep B", "C4 beep A 10sec", "C4 beep B 10sec",
+		"HE Grenade", "Smoke Grenade", "HE Grenade throw",
+	} {
 		if len(files[key]) == 0 {
 			t.Errorf("manifest key %q missing (have %d keys)", key, len(files))
 		}

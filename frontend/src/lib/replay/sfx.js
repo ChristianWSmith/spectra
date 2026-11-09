@@ -1,6 +1,6 @@
-// Replay sound-effect engine (lib/replay/sfx.js) — gun fire and utility
-// detonation audio locked to the M2 replay clock, the sound half of the
-// voice engine's contract (lib/replay/audio.js).
+// Replay sound-effect engine (lib/replay/sfx.js) — gun fire, utility
+// detonation and C4 audio locked to the M2 replay clock, the sound half
+// of the voice engine's contract (lib/replay/audio.js).
 //
 // Sources: Go extracts the game's firing/detonation sounds from the
 // user's own CS2 install (internal/mappack/sounds.go — Valve IP never
@@ -8,9 +8,12 @@
 // /api/sounds/manifest.json; keys are the CANONICAL equipment names the
 // replay state stream and the landmark rows already carry ("AK-47",
 // "HE Grenade", "C4") plus `<name> throw` for a utility's throw group
-// ("HE Grenade throw" — throwCues), so a cue is one exact-match lookup.
-// A logical item with several variants keeps ALL of them and picks one
-// at RANDOM per play, so a spray doesn't loop one sample.
+// ("HE Grenade throw" — throwCues) and the C4 beep groups the beep
+// scheduler builds (`C4 beep <site>[ 10sec]` — c4BeepGroup), so a cue is
+// one exact-match lookup. A logical item with several variants keeps ALL
+// of them and picks one at RANDOM per play, so a spray doesn't loop one
+// sample — the beep groups are single-sample on purpose (site/phase must
+// never substitute at random).
 //
 // This engine owns its OWN AudioContext: it must work for matches without
 // voice (the voice engine may not exist at all). Autoplay policy mirrors
@@ -38,6 +41,14 @@
 //   - decoy noise cues are the decoy PLAN's fake shots (setDecoyPlan —
 //     lib/replay/decoy.js), played on the GUNS channel with the mimic
 //     weapon's own samples (see decoyCues);
+//   - the planted C4's BEEP is the one sound that is SCHEDULED AHEAD
+//     instead of played on arrival: demos carry no per-beep event, so
+//     updateC4Beeps walks c4BeepTicks' synthesized cadence against an
+//     AudioContext anchor (the voice engine's lookahead pattern —
+//     lib/replay/audio.js), picks each sample deterministically by
+//     (site, time left), re-seeds on a seek/loop wrap (cueGapJump — a
+//     scrub never fast-forwards through missed beeps) and stops while
+//     paused or once the bomb is defused/round's over (bombEndTick);
 //   - a seek / loop wrap / paused scrub advances the compare point
 //     WITHOUT playing (cueGapJump — the renderer's fireJump idea), so
 //     scrubbing never machine-guns the cues it crossed.
@@ -48,29 +59,34 @@
 import { errText } from '../services.js';
 import { inFreezeTime } from '../rounds.js';
 import { DETONATION_BUCKETS } from './landmarks.js';
+import { bombEndTick } from './bomb.js';
 import { GST_AUDIO_HINT } from './audio.js';
 
-// Default fader level for all three categories — the kvstore prefs
-// voice_volume/guns_volume/utility_volume (prefs.go) override it; the
-// Settings tab imports this so both surfaces share one default.
+// Default fader level for all four categories — the kvstore prefs
+// voice_volume/guns_volume/utility_volume/c4_volume (prefs.go) override
+// it; the Settings tab imports this so both surfaces share one default.
 export const AUDIO_VOL_DEFAULT = 0.8;
 
-// Internal mix calibration — GUNS_GAIN_SCALE / UTILITY_GAIN_SCALE are
-// applied to the fader level in applyGains(), so a user-facing 80% still
-// READS 80% (AUDIO_VOL_DEFAULT, the sliders, prefs.go and Settings are
-// all untouched): the reduction lives inside the mixer, invisible to the
-// fader. BOTH numbers exist because this is a relative-mix decision, not
-// a default change: the raw extracted samples play far hotter than the
-// voice/announcer bus, so the gun bus runs at a third of its fader level
-// (a 2/3 cut) and utility at a THIRD of its fader level (the 2/3 value
-// halved once more, spec 2026-11-07: "half the volume of util once more
-// (again, internally)" — the chain is original × 2/3 → halved → × 1/3;
-// the slider/pref/default stay untouched) — retune the balance here,
-// never by moving the pref default. Voice is deliberately NOT scaled:
-// its master gain stays exactly the fader value, so this pair is the
-// whole gun/utility-vs-voice calibration.
+// Internal mix calibration — GUNS_GAIN_SCALE / UTILITY_GAIN_SCALE /
+// C4_GAIN_SCALE are applied to the fader level in applyGains(), so a
+// user-facing 80% still READS 80% (AUDIO_VOL_DEFAULT, the sliders,
+// prefs.go and Settings are all untouched): the reduction lives inside
+// the mixer, invisible to the fader. The numbers exist because this is a
+// relative-mix decision, not a default change: the raw extracted samples
+// play far hotter than the voice/announcer bus, so the gun bus runs at a
+// third of its fader level (a 2/3 cut) and utility at a THIRD of its
+// fader level (the 2/3 value halved once more, spec 2026-11-07: "half
+// the volume of util once more (again, internally)" — the chain is
+// original × 2/3 → halved → × 1/3; the slider/pref/default stay
+// untouched). C4 rides utility's number on purpose: the C4 bus took the
+// explosion over from the utility bus, and its level must not move — the
+// beeps are simply quieter samples than a grenade. Voice is deliberately
+// NOT scaled: its master gain stays exactly the fader value, so this
+// trio is the whole gun/utility/C4-vs-voice calibration. Retune the
+// balance here, never by moving the pref default.
 export const GUNS_GAIN_SCALE = 1 / 3;
 export const UTILITY_GAIN_SCALE = 1 / 3;
+export const C4_GAIN_SCALE = 1 / 3;
 
 // Live-source cap: a new AudioBufferSourceNode per play IS the Web Audio
 // contract for unlimited simultaneous instances of one buffer, but a
@@ -84,6 +100,18 @@ const PRELOAD_POOL = 6;
 // pending forever; race it against this timeout before concluding the
 // context is still suspended (same window as audio.js RESUME_MS).
 const RESUME_MS = 750;
+// C4 beep scheduler constants — the voice engine's lookahead scale
+// (audio.js LOOKAHEAD / DRIFT_S): beeps are queued this far ahead of
+// the replay clock against an anchor, and the anchor is rebuilt when the
+// replay and the AudioContext clocks disagree by more than the drift
+// threshold (replay seconds).
+const BEEP_LOOKAHEAD = 1.5; // wall seconds of queued beeps
+const BEEP_DRIFT_S = 0.05; // re-anchor threshold, replay seconds
+// Fan-out ceiling for the QUEUED-beep track — a whole 40 s fuse is ~110
+// beeps, so this never trips in practice, and it must not: the cap drops
+// the OLDEST entry, which for a queue is the beep due NEXT (at 4×/8× the
+// lookahead legitimately holds dozens of them).
+const BEEP_TRACK_CAP = 256;
 
 // SOUND_DETONATION_BUCKETS — the drawable grenade buckets that MAKE a
 // detonation sound: every bucket landmarks.js DETONATION_BUCKETS can
@@ -106,14 +134,18 @@ export function prefVolume(v, def = AUDIO_VOL_DEFAULT) {
   return Number.isFinite(n) && n >= 0 && n <= 1 ? n : def;
 }
 
-// grenadeCues — landmark rows → the tick-sorted utility cue list
-// [{tick, name}]. Accepts the Replay's drawNorm rows (pre-bucketed by
-// landmarks.js normalizeEvent — no second classification here):
+// grenadeCues — landmark rows → the tick-sorted detonation cue list
+// [{tick, name, bucket}]. Accepts the Replay's drawNorm rows
+// (pre-bucketed by landmarks.js normalizeEvent — no second
+// classification here):
 //   kind 'grenade'      → the detonation bucket decides; any non-
 //                         detonation bucket is skipped;
 //   kind 'bomb_explode' → the C4 explosion — the ONE explosive
 //                         detonation the replay renders; row.weapon is
-//                         the canonical key ("C4").
+//                         the canonical key ("C4"). It cues on the C4
+//                         BUS (bucket 'c4' — the bomb's own fader/mute,
+//                         sfx.js applyGains), every other detonation on
+//                         'utility'.
 // THROWS, equips and plants make NO detonation cue (throws have their
 // own cue list — throwCues below), and a cue whose tick sits in a
 // round's FREEZE time is dropped (rounds.js inFreezeTime — the freeze
@@ -151,7 +183,12 @@ export function grenadeCues(rows, rounds) {
     const key = `${row.tick}|${weapon}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    out.push({ tick: row.tick, name: weapon === 'Decoy Grenade' ? 'HE Grenade' : weapon });
+    out.push({
+      tick: row.tick,
+      name: weapon === 'Decoy Grenade' ? 'HE Grenade' : weapon,
+      // The bus the cue rides: only the C4 explosion leaves utility.
+      bucket: kind === 'bomb_explode' ? 'c4' : 'utility',
+    });
   }
   out.sort((a, b) => a.tick - b.tick);
   return out;
@@ -283,6 +320,154 @@ export function decoyCuesInRange(cues, fromTick, toTick) {
   return tickRange(cues, fromTick, toTick);
 }
 
+// --- C4 beeps ---------------------------------------------------------------
+// The planted C4's beep cadence is SYNTHESIZED from the landmark rows:
+// demos carry no per-beep event at all (demoinfocs has no BombBeep), so
+// the schedule is derived from the plant / detonation ticks the replay
+// already has (setLandmarks' drawNorm rows). All four helpers below are
+// pure — unit-tested by frontend/src/lib/sfx.test.js.
+
+// c4BeepRows — the ONE filter of drawNorm rows into the bomb lifecycle
+// lists the beep scheduler consumes, keyed by the PRE-BUCKETED landmark
+// buckets (landmarks.js drawBucket — no second classification here).
+export function c4BeepRows(rows) {
+  const out = { plants: [], explodes: [], defuses: [], roundEnds: [], roundStarts: [] };
+  for (const r of rows || []) {
+    if (!r || !Number.isFinite(r.tick)) continue;
+    switch (String(r.bucket || '')) {
+      case 'plant':
+        out.plants.push(r);
+        break;
+      case 'explode':
+        out.explodes.push(r);
+        break;
+      case 'defuse':
+        out.defuses.push(r);
+        break;
+      case 'round':
+        out.roundEnds.push(r);
+        break;
+      case 'start':
+        out.roundStarts.push(r);
+        break;
+    }
+  }
+  return out;
+}
+
+// c4BombAt — the bomb that is TICKING at `tick`: the last plant at or
+// before it, plus
+//   stop    — when beeping must STOP (defuse / detonation / round end /
+//             next round start / the 40 s timer): bombEndTick, THE
+//             planted-C4 termination rule from lib/replay/bomb.js — it
+//             is imported, never re-implemented here;
+//   fuseEnd — the detonation timeline the cadence is measured AGAINST:
+//             the plant's own bomb_explode row, else the 40 s C4 timer
+//             (mp_c4timer — CS2.md). Computed through the SAME
+//             bombEndTick call with only the explode list, so "earliest
+//             same-round terminator, 40 s fallback when none is loaded"
+//             has exactly one home. Deliberately NOT cut by a defuse: a
+//             bomb defused at half its fuse beeps at the half-fuse
+//             cadence, not a cadence racing toward a blast that never
+//             happens.
+// Null when nothing is planted or the round already resolved it.
+// Pure — unit-tested by frontend/src/lib/sfx.test.js.
+export function c4BombAt(bombRows, tick, tr) {
+  if (!bombRows || !Number.isFinite(tick) || !Number.isFinite(tr) || tr <= 0) return null;
+  let plant = null;
+  for (const p of bombRows.plants || []) {
+    if (p && Number.isFinite(p.tick) && p.tick <= tick) plant = p;
+  }
+  if (!plant) return null;
+  const stop = bombEndTick(
+    plant,
+    tr,
+    bombRows.explodes,
+    bombRows.defuses,
+    bombRows.roundEnds,
+    bombRows.roundStarts,
+  );
+  if (!(tick < stop)) return null;
+  const fuseEnd = bombEndTick(plant, tr, bombRows.explodes, null, null, null);
+  return { plant, stop, fuseEnd, site: String(plant.site || '') };
+}
+
+// c4BeepRate — beeps per second at fraction p of the fuse (0 at the
+// plant, 1 at the detonation): the CS:GO-measured fit
+// g(p) = 1.04865 · e^(0.24402·p + 1.76380·p²) — ≈1.05/s right after the
+// plant (first beep ~0.95 s in), ≈7.8/s (~128 ms apart) at the blast.
+// APPROXIMATE FOR CS2: the curve was fitted to CS:GO's 45 s fuse
+// (gritter.nl/posts/csgo-bomb-beep-pattern, 2020-07-21) and is evaluated
+// here against CS2's 40 s timer — the shape is right, the exact spacing
+// is not claimed to be CS2-verified. p is clamped to [0,1] so a hostile
+// tick can never produce an absurd rate. Pure.
+export function c4BeepRate(p) {
+  const x = Math.max(0, Math.min(1, p));
+  return 1.04865 * Math.exp(0.24402 * x + 1.7638 * x * x);
+}
+
+// c4BeepTicks — the beep schedule of ONE fuse: every tick a beep fires
+// between the plant and the detonation, integrating c4BeepRate over the
+// tick domain (a beep fires when the accumulated beeps-per-second cross
+// 1). Deterministic — the same (plant, fuse, tickRate) always yields the
+// same ticks — and because the accumulation runs in TICKS, the whole
+// schedule compresses with the replay clock (8× → beeps 8× closer in
+// wall time; deliberate, like every other replay sound). No beep lands
+// ON the plant tick (the first arrives one interval in) or ON the
+// detonation (the explosion cue owns that tick). Pure — unit-tested by
+// frontend/src/lib/sfx.test.js.
+export function c4BeepTicks(plantTick, fuseEndTick, tr) {
+  const out = [];
+  if (
+    !Number.isFinite(plantTick) ||
+    !Number.isFinite(fuseEndTick) ||
+    !Number.isFinite(tr) ||
+    tr <= 0 ||
+    !(fuseEndTick > plantTick)
+  ) {
+    return out;
+  }
+  const fuse = fuseEndTick - plantTick;
+  let acc = 0;
+  for (let t = Math.floor(plantTick) + 1; t < fuseEndTick; t++) {
+    acc += c4BeepRate((t - plantTick) / fuse) / tr;
+    while (acc >= 1) {
+      out.push(t);
+      acc -= 1;
+    }
+  }
+  return out;
+}
+
+// c4BeepGroup — the manifest key of ONE beep, chosen DETERMINISTICALLY:
+// the plant row's site picks the tone (the game's own C4.PlantSound /
+// C4.PlantSoundB sample pairs — mappack soundTable `C4 beep A|B`) and
+// the time left on the fuse picks the phase (the distinct *_10sec
+// sample of the final 10 seconds). A site we cannot name resolves to
+// null — silence, never a guessed tone. Each group holds exactly one
+// sample, so the engine's random pickVariant is the identity here.
+// Pure — unit-tested by frontend/src/lib/sfx.test.js.
+export function c4BeepGroup(site, remainingTicks, tr) {
+  if (site !== 'A' && site !== 'B') return null;
+  const base = `C4 beep ${site}`;
+  return Number.isFinite(remainingTicks) && remainingTicks <= 10 * tr ? `${base} 10sec` : base;
+}
+
+// firstBeepAfter — index of the first beep tick STRICTLY after `tick`
+// (binary search like tickRange — the schedule is tick-sorted). The
+// scheduler's re-seed rule: beeps the playhead already reached are never
+// queued again, and a scrub never plays the ones it crossed.
+function firstBeepAfter(ticks, tick) {
+  let lo = 0;
+  let hi = ticks.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >> 1;
+    if (ticks[mid] <= tick) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
 // cueGapJump — the seek/frame-jump detector for the sound cues (the
 // renderer's fireJump idea, renderer.js): true when the playhead moved
 // somewhere the previous compare point cannot be compared across, so the
@@ -329,19 +514,27 @@ export function createSfxEngine({ engine, matchId, onError }) {
   let ctx = null;
   let gunGain = null;
   let utilGain = null;
+  let c4Gain = null;
   let destroyed = false;
   let error = '';
   let retryOff = null; // tears down the parked retry listeners
   let reported = false; // onError fires at most once (first failure)
   let gunVol = AUDIO_VOL_DEFAULT;
   let utilVol = AUDIO_VOL_DEFAULT;
+  let c4Vol = AUDIO_VOL_DEFAULT;
   let gunMuted = false;
   let utilMuted = false;
+  let c4Muted = false;
 
   const buffers = new Map(); // name → AudioBuffer[] (manifest order)
   let total = 0;
   let loaded = 0;
-  const live = []; // live sources, OLDEST first (the cap drops the head)
+  // Live sources, OLDEST first ({src, when} — the cap drops the head):
+  // `live` holds the cues that started immediately, `beepLive` the C4
+  // beeps queued at a future AudioContext time (the lookahead
+  // scheduler), so a burst of gunfire can never drop a queued beep.
+  const live = [];
+  const beepLive = [];
 
   // Cue inputs (pushed by the Replay at its load/engine push sites).
   let landmarkRows = []; // drawNorm — the ONE source of util + knife cues
@@ -351,6 +544,16 @@ export function createSfxEngine({ engine, matchId, onError }) {
   let knifeHits = []; // knifeCues(landmarkRows, rounds) — tick-sorted
   let bullets = []; // setBullets — bullets.js rows, tick-sorted
   let decoyShots = []; // setDecoyPlan → decoyCues(plan), tick-sorted
+  let bombRows = c4BeepRows([]); // the C4 beep scheduler's row lists
+  // C4 beep scheduler state (see updateC4Beeps): the schedule belongs to
+  // ONE bomb at a time — `beepBombKey` identifies it, `beepTicks` is its
+  // c4BeepTicks output, `beepCursor` the next index to queue, and
+  // `beepAnchor` the {ctxNow, tick, speed} mapping replay ticks onto
+  // AudioContext time (audio.js's anchor idea).
+  let beepBombKey = '';
+  let beepTicks = [];
+  let beepCursor = 0;
+  let beepAnchor = null;
   // Compare point of the last engine change (see the header contract).
   let prevTick = null;
   let lastPlaying = false; // play-START edge → one silent resume retry
@@ -369,6 +572,7 @@ export function createSfxEngine({ engine, matchId, onError }) {
     // its user-facing 0..1 meaning, the bus gain carries the reduction.
     if (gunGain) gunGain.gain.value = gunMuted ? 0 : gunVol * GUNS_GAIN_SCALE;
     if (utilGain) utilGain.gain.value = utilMuted ? 0 : utilVol * UTILITY_GAIN_SCALE;
+    if (c4Gain) c4Gain.gain.value = c4Muted ? 0 : c4Vol * C4_GAIN_SCALE;
   }
 
   // tryResume calls ctx.resume() SYNCHRONOUSLY (a listener must invoke
@@ -462,8 +666,10 @@ export function createSfxEngine({ engine, matchId, onError }) {
     ctx = new Ctx();
     gunGain = ctx.createGain();
     utilGain = ctx.createGain();
+    c4Gain = ctx.createGain();
     gunGain.connect(ctx.destination);
     utilGain.connect(ctx.destination);
+    c4Gain.connect(ctx.destination);
     applyGains();
   } catch (e) {
     fail(errText(e));
@@ -518,60 +724,95 @@ export function createSfxEngine({ engine, matchId, onError }) {
   preload();
 
   // --- playback ------------------------------------------------------------
-  // A NEW AudioBufferSourceNode per play: that is the Web Audio contract
-  // for unlimited simultaneous instances of the same buffer (sources are
-  // one-shot by design) — no pooling, no voice-stealing between cues.
-  function playGroup(name, bucket) {
-    if (destroyed || !ctx || ctx.state !== 'running') return false;
+  // busFor — the ONE bucket → GainNode routing: 'guns' → gunGain,
+  // 'c4' → c4Gain (the bomb's own fader/mute), everything else the
+  // historical default, utilGain (throw/detonation/knife cues ride
+  // 'utility').
+  function busFor(bucket) {
+    if (bucket === 'guns') return gunGain;
+    if (bucket === 'c4') return c4Gain;
+    return utilGain;
+  }
+
+  // pickReady — one RANDOM ready variant of a manifest group (the
+  // "extract ALL variants, pick one at random per play" rule). Only
+  // READY variants are candidates: a file still decoding (or one that
+  // failed) is skipped silently — a sound must never break play. The C4
+  // beep groups hold exactly ONE sample each, so their pick is the
+  // identity (deterministic by construction).
+  function pickReady(name) {
     const variants = buffers.get(name);
-    // Only READY variants are candidates: a file still decoding (or one
-    // that failed) is skipped silently — a sound must never break play.
     const ready = variants ? variants.filter(Boolean) : null;
-    const buf = pickVariant(ready);
-    if (!buf) return false;
+    return pickVariant(ready);
+  }
+
+  // spawnSource — the ONE "new AudioBufferSourceNode onto a bus, cap the
+  // fan-out, track its lifecycle" routine behind every sound here (that
+  // one-node-per-play IS the Web Audio contract for unlimited
+  // simultaneous instances of one buffer — no pooling, no voice-stealing
+  // between cues). `when` null starts immediately (cue playback into
+  // `live`); a future AudioContext time queues it (the C4 beep scheduler
+  // into `beepLive`). `cap` is the fan-out ceiling for THIS track (see
+  // BEEP_TRACK_CAP — a queue's oldest entry is its NEXT beep, so the
+  // immediate-cue ceiling must not be reused there). Returns the tracked
+  // entry, or null when the start was refused.
+  function spawnSource(buf, bucket, when, track, cap) {
     const src = ctx.createBufferSource();
     src.buffer = buf;
-    src.connect(bucket === 'guns' ? gunGain : utilGain);
+    src.connect(busFor(bucket));
     // Cap the fan-out: drop the OLDEST still-playing source so the
     // newest cue always gets through.
-    while (live.length >= LIVE_CAP) {
-      const oldest = live.shift();
+    while (track.length >= cap) {
+      const oldest = track.shift();
       try {
-        oldest.stop();
+        oldest.src.stop();
       } catch {
         /* already ended */
       }
       try {
-        oldest.disconnect();
+        oldest.src.disconnect();
       } catch {
         /* already detached */
       }
     }
+    const entry = { src, when: when == null ? ctx.currentTime : when };
     src.onended = () => {
-      const at = live.indexOf(src);
-      if (at >= 0) live.splice(at, 1);
+      const at = track.indexOf(entry);
+      if (at >= 0) track.splice(at, 1);
       try {
         src.disconnect();
       } catch {
         /* already detached */
       }
     };
-    live.push(src);
+    track.push(entry);
     try {
-      src.start();
+      if (when == null) src.start();
+      else src.start(when);
     } catch (e) {
       fail(errText(e));
-      const at = live.indexOf(src);
-      if (at >= 0) live.splice(at, 1);
-      return false;
+      const at = track.indexOf(entry);
+      if (at >= 0) track.splice(at, 1);
+      return null;
     }
-    return true;
+    return entry;
+  }
+
+  // playGroup — one cue of a manifest group on a bus, right now (the
+  // scheduled-beep path calls spawnSource directly with a future time).
+  function playGroup(name, bucket) {
+    if (destroyed || !ctx || ctx.state !== 'running') return false;
+    const buf = pickReady(name);
+    if (!buf) return false;
+    return !!spawnSource(buf, bucket, null, live, LIVE_CAP);
   }
 
   // --- clock cues ----------------------------------------------------------
   function playUtilInRange(fromTick, toTick) {
     for (const cue of utilCuesInRange(utilCues, fromTick, toTick)) {
-      playGroup(cue.name, 'utility');
+      // The cue carries its bus (grenadeCues): only the C4 explosion
+      // rides 'c4', every grenade detonation stays on 'utility'.
+      playGroup(cue.name, cue.bucket || 'utility');
     }
   }
 
@@ -614,6 +855,128 @@ export function createSfxEngine({ engine, matchId, onError }) {
     }
   }
 
+  // --- C4 beep scheduler ---------------------------------------------------
+  // One bomb's schedule at a time, queued ahead against an
+  // AudioContext anchor (the voice engine's lookahead pattern —
+  // audio.js LOOKAHEAD / DRIFT_S): beeps land at exact Web Audio times
+  // instead of wherever a rAF frame happens to arrive, so the
+  // accelerating cadence stays even. A re-seed (a seek or loop wrap, a
+  // speed change, >BEEP_DRIFT_S of clock drift) drops the QUEUED —
+  // not-yet-started — beeps and re-seeds the cursor, so a scrub NEVER
+  // fast-forwards through the beeps it crossed (cueGapJump's contract)
+  // and a beep that already sounded is never queued twice. While paused,
+  // with the context suspended, or with no bomb ticking it goes silent.
+
+  function stopSourceEntry(entry) {
+    try {
+      entry.src.stop();
+    } catch {
+      /* already ended */
+    }
+    try {
+      entry.src.disconnect();
+    } catch {
+      /* already detached */
+    }
+  }
+
+  // clearBeeps — stop and drop EVERY tracked beep (ringing and queued):
+  // a re-arm belongs to a NEW schedule (a new bomb, or playback finding
+  // the bomb again after a pause) and inherits nothing.
+  function clearBeeps() {
+    for (const entry of beepLive.splice(0)) stopSourceEntry(entry);
+  }
+
+  // cancelQueuedBeeps — drop only the beeps whose AudioContext time has
+  // not arrived; an already-ringing beep plays out (≤180 ms) and removes
+  // itself through onended.
+  function cancelQueuedBeeps() {
+    if (!ctx) return;
+    for (let i = beepLive.length - 1; i >= 0; i--) {
+      if (beepLive[i].when > ctx.currentTime) {
+        stopSourceEntry(beepLive[i]);
+        beepLive.splice(i, 1);
+      }
+    }
+  }
+
+  // armC4Beeps — (re)build the schedule for `bomb` and anchor it at the
+  // playhead: the cursor starts past the playhead (a beep the playhead
+  // already reached is never queued) and the anchor maps its ticks onto
+  // AudioContext time.
+  function armC4Beeps(bomb, st) {
+    clearBeeps();
+    beepBombKey = `${bomb.plant.tick}|${bomb.stop}|${bomb.fuseEnd}|${bomb.site}`;
+    beepTicks = c4BeepTicks(bomb.plant.tick, bomb.fuseEnd, tr);
+    beepCursor = firstBeepAfter(beepTicks, st.tick);
+    beepAnchor = { ctxNow: ctx.currentTime, tick: st.tick, speed: st.speed };
+  }
+
+  // c4BeepDrift — replay seconds between the anchor's mapping of time
+  // and the engine's own clock (audio.js's drift test).
+  function c4BeepDrift(st) {
+    const expected = beepAnchor.tick / tr + (ctx.currentTime - beepAnchor.ctxNow) * beepAnchor.speed;
+    return Math.abs(st.tick / tr - expected);
+  }
+
+  // reseedC4Beeps — the same-bomb re-seed: drop the queued beeps (their
+  // `when` came from the anchor being replaced) and re-anchor here. The
+  // new cursor floors at the LAST BEEP THAT ALREADY SOUNDED —
+  // `wallTick` is where the old anchor says the replay should be right
+  // now (a stalled rAF lets queued beeps fire while the replay clock is
+  // frozen), never past what was actually queued. A BACKWARD seek floors
+  // at the playhead instead: its region replays as playback re-crosses
+  // it, exactly like the gun cues.
+  function reseedC4Beeps(st) {
+    cancelQueuedBeeps();
+    const lastQueued = beepCursor > 0 ? beepTicks[beepCursor - 1] : -Infinity;
+    const wallTick =
+      beepAnchor.tick + (ctx.currentTime - beepAnchor.ctxNow) * tr * beepAnchor.speed;
+    const fired = Math.min(wallTick, lastQueued);
+    const floor = st.tick < prevTick ? st.tick : Math.max(st.tick, fired);
+    beepCursor = firstBeepAfter(beepTicks, floor);
+    beepAnchor = { ctxNow: ctx.currentTime, tick: st.tick, speed: st.speed };
+  }
+
+  function scheduleC4Beep(beatTick, bomb) {
+    // Deterministic sample: the site picks the tone, the time left on
+    // the fuse picks normal vs the final-10-seconds beep (c4BeepGroup).
+    const name = c4BeepGroup(bomb.site, bomb.fuseEnd - beatTick, tr);
+    if (!name) return; // a site we cannot name — silence, never a guess
+    const buf = pickReady(name);
+    if (!buf) return; // not extracted / not decoded yet — silent, no error
+    let when = beepAnchor.ctxNow + (beatTick - beepAnchor.tick) / (tr * beepAnchor.speed);
+    // A re-anchor can leave `when` a hair in the past (drift is bounded
+    // by BEEP_DRIFT_S) — a beep never starts before now.
+    if (when < ctx.currentTime) when = ctx.currentTime;
+    spawnSource(buf, 'c4', when, beepLive, BEEP_TRACK_CAP);
+  }
+
+  function updateC4Beeps(st, jump, running) {
+    if (destroyed || !ctx) return;
+    const bomb = running ? c4BombAt(bombRows, st.tick, tr) : null;
+    if (!st.playing || !bomb) {
+      // Pause, a suspended context or no ticking bomb (not planted yet,
+      // defused, round over): silence the queued beeps and re-arm from
+      // scratch when playback finds the bomb again.
+      cancelQueuedBeeps();
+      beepBombKey = '';
+      beepAnchor = null;
+      return;
+    }
+    const key = `${bomb.plant.tick}|${bomb.stop}|${bomb.fuseEnd}|${bomb.site}`;
+    if (key !== beepBombKey || !beepAnchor) {
+      armC4Beeps(bomb, st);
+    } else if (jump || st.speed !== beepAnchor.speed || c4BeepDrift(st) > BEEP_DRIFT_S) {
+      reseedC4Beeps(st);
+    }
+    const horizon = st.tick + BEEP_LOOKAHEAD * tr * st.speed;
+    while (beepCursor < beepTicks.length && beepTicks[beepCursor] <= horizon) {
+      scheduleC4Beep(beepTicks[beepCursor], bomb);
+      beepCursor++;
+    }
+  }
+
   function onEngineChange(st) {
     if (destroyed) return;
     // Silent resume retry when playback (re)starts: the platform may
@@ -623,6 +986,7 @@ export function createSfxEngine({ engine, matchId, onError }) {
     lastPlaying = st.playing;
     const jump = cueGapJump(st.tick, prevTick, st.speed, tr);
     const running = !!ctx && ctx.state === 'running';
+    updateC4Beeps(st, jump, running);
     if (st.playing && running && !jump) {
       playUtilInRange(prevTick, st.tick);
       playThrowInRange(prevTick, st.tick);
@@ -637,14 +1001,16 @@ export function createSfxEngine({ engine, matchId, onError }) {
   }
 
   // rebuildCues re-derives the landmark cue lists (detonations, throws,
-  // knife) from the rows last pushed — called by setLandmarks and
-  // setRounds (either input may arrive second; the freeze gate needs
-  // both). The decoy plan is NOT rebuilt here: it arrives pre-derived
-  // through setDecoyPlan (lib/replay/decoy.js).
+  // knife) and the C4 beep scheduler's bomb rows from the rows last
+  // pushed — called by setLandmarks and setRounds (either input may
+  // arrive second; the freeze gate needs both). The decoy plan is NOT
+  // rebuilt here: it arrives pre-derived through setDecoyPlan
+  // (lib/replay/decoy.js).
   function rebuildCues() {
     utilCues = grenadeCues(landmarkRows, rounds);
     throwHits = throwCues(landmarkRows, rounds);
     knifeHits = knifeCues(landmarkRows, rounds);
+    bombRows = c4BeepRows(landmarkRows);
   }
 
   return {
@@ -693,28 +1059,30 @@ export function createSfxEngine({ engine, matchId, onError }) {
       utilVol = Math.max(0, Math.min(1, Number(v) || 0));
       applyGains();
     },
-    // setMuted(bucket, m) — 'guns' | 'utility'; session-only (the
-    // popover's two toggles are not persisted, unlike the faders).
+    // setC4Volume — the C4 fader (beeps + the explosion), the same
+    // 0..1 coercion as the other two sfx faders.
+    setC4Volume(v) {
+      c4Vol = Math.max(0, Math.min(1, Number(v) || 0));
+      applyGains();
+    },
+    // setMuted(bucket, m) — 'guns' | 'utility' | 'c4'; session-only (the
+    // popover's toggles are not persisted, unlike the faders). An
+    // unknown bucket is ignored on purpose — it never silently mutes a
+    // different bus.
     setMuted(bucket, m) {
       if (bucket === 'guns') gunMuted = !!m;
       else if (bucket === 'utility') utilMuted = !!m;
+      else if (bucket === 'c4') c4Muted = !!m;
       applyGains();
     },
     destroy() {
       destroyed = true;
       clearRetry(); // never leak the parked retry listeners
       offChange();
-      for (const src of live.splice(0)) {
-        try {
-          src.stop();
-        } catch {
-          /* already ended */
-        }
-        try {
-          src.disconnect();
-        } catch {
-          /* already detached */
-        }
+      // Every tracked source, cue and QUEUED beep alike — a scheduled
+      // beep must not outlive its engine.
+      for (const entry of live.splice(0).concat(beepLive.splice(0))) {
+        stopSourceEntry(entry);
       }
       const c = ctx;
       ctx = null;

@@ -63,4 +63,7 @@ func TestFrontendPrefKeyStrings(t *testing.T) {
 	if prefsUtilityVolumeKey != "utility_volume" {
 		t.Errorf("utility volume key = %q, want %q", prefsUtilityVolumeKey, "utility_volume")
 	}
+	if prefsC4VolumeKey != "c4_volume" {
+		t.Errorf("C4 volume key = %q, want %q", prefsC4VolumeKey, "c4_volume")
+	}
 }

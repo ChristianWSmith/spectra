@@ -82,19 +82,28 @@
 
   // Replay-audio faders (Audio & voice): the SAME kvstore keys and
   // default as Replay's volume popover (voice_volume / guns_volume /
-  // utility_volume — prefs.go) — optimistic local state on every input,
-  // durable via setPref, read back in onMount (the font-size pattern).
+  // utility_volume / c4_volume — prefs.go) — optimistic local state on
+  // every input, durable via setPref, read back in onMount (the
+  // font-size pattern).
   let volVoice = $state(AUDIO_VOL_DEFAULT);
   let volGuns = $state(AUDIO_VOL_DEFAULT);
   let volUtil = $state(AUDIO_VOL_DEFAULT);
+  let volC4 = $state(AUDIO_VOL_DEFAULT);
 
   function setVol(bucket, raw) {
     const level = prefVolume(Number(raw) / 100);
     if (bucket === 'voice') volVoice = level;
     else if (bucket === 'guns') volGuns = level;
+    else if (bucket === 'c4') volC4 = level;
     else volUtil = level;
     const key =
-      bucket === 'voice' ? 'voice_volume' : bucket === 'guns' ? 'guns_volume' : 'utility_volume';
+      bucket === 'voice'
+        ? 'voice_volume'
+        : bucket === 'guns'
+          ? 'guns_volume'
+          : bucket === 'c4'
+            ? 'c4_volume'
+            : 'utility_volume';
     setPref(key, level).catch((e) => (error = errText(e)));
   }
 
@@ -440,7 +449,7 @@
       .catch(() => {
         /* keep the default (off) */
       });
-    // Replay-audio faders: read the three persisted levels back (the
+    // Replay-audio faders: read the four persisted levels back (the
     // boot-time pass may still be in flight for a deep-linked Settings);
     // never-set/corrupt falls to the shared 0.8 default so a broken pref
     // can never bind a 0-fader slider.
@@ -448,11 +457,13 @@
       getPref('voice_volume').catch(() => null),
       getPref('guns_volume').catch(() => null),
       getPref('utility_volume').catch(() => null),
+      getPref('c4_volume').catch(() => null),
     ])
-      .then(([v, g, u]) => {
+      .then(([v, g, u, c]) => {
         volVoice = prefVolume(v);
         volGuns = prefVolume(g);
         volUtil = prefVolume(u);
+        volC4 = prefVolume(c);
       })
       .catch(() => {
         /* keep the defaults */
@@ -832,7 +843,7 @@
         {/if}
       {/if}
     {/if}
-    <!-- The three replay-audio faders: same kvstore keys (and default)
+    <!-- The four replay-audio faders: same kvstore keys (and default)
          as the transport's Volume popover — moving one here moves the
          other, and both survive restarts. -->
     <div class="row-between">
@@ -860,7 +871,7 @@
       />
     </div>
     <div class="row-between">
-      <span class="muted">Utility volume — grenade and C4 detonations in the replay.</span>
+      <span class="muted">Utility volume — grenade detonations in the replay.</span>
       <input
         class="sett-vol"
         type="range"
@@ -871,9 +882,21 @@
         oninput={(e) => setVol('utility', e.currentTarget.value)}
       />
     </div>
+    <div class="row-between">
+      <span class="muted">C4 volume — the planted bomb's beeps and its explosion.</span>
+      <input
+        class="sett-vol"
+        type="range"
+        min="0"
+        max="100"
+        value={Math.round(volC4 * 100)}
+        aria-label="C4 volume"
+        oninput={(e) => setVol('c4', e.currentTarget.value)}
+      />
+    </div>
     <p class="muted">
       Sound effects are extracted from your local CS2 install (CS2 assets
-      above); the replay plays gun and utility sounds when they are
+      above); the replay plays gun, utility and C4 sounds when they are
       available.
     </p>
     <p class="muted">

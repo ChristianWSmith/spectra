@@ -147,20 +147,24 @@
   let uiVoiceMutedAll = $state(false);
   const uiVoiceMute = $state({}); // steamId → bool (per-player mute — card phase)
 
-  // --- Replay audio (voice + guns + utility) --------------------------------
-  // The volume popover under the scrubber drives three INDEPENDENT
-  // faders: voice (the voice engine's master), guns and utility (the sfx
-  // engine's two gain buckets). The levels persist in the kvstore
-  // (voice_volume / guns_volume / utility_volume — prefs.go; frontend-only
-  // keys), read in load() and applied on every input; the VOICE mute is
-  // uiVoiceMutedAll (engine-owned, cards consume it) while the guns /
-  // utility mutes are session-only on the sfx engine. sfx itself is null
-  // until startEngine proves the sounds manifest is non-empty.
+  // --- Replay audio (voice + guns + utility + C4) ---------------------------
+  // The volume popover under the scrubber drives FOUR independent
+  // faders: voice (the voice engine's master), guns, utility and C4 (the
+  // sfx engine's three gain buckets — C4 carries the planted bomb's
+  // beeps and its explosion). The levels persist in the kvstore
+  // (voice_volume / guns_volume / utility_volume / c4_volume — prefs.go;
+  // frontend-only keys), read in load() and applied on every input; the
+  // VOICE mute is uiVoiceMutedAll (engine-owned, cards consume it) while
+  // the guns/utility/C4 mutes are session-only on the sfx engine. sfx
+  // itself is null until startEngine proves the sounds manifest is
+  // non-empty.
   let uiVoiceVol = $state(AUDIO_VOL_DEFAULT);
   let uiGunsVol = $state(AUDIO_VOL_DEFAULT);
   let uiUtilVol = $state(AUDIO_VOL_DEFAULT);
+  let uiC4Vol = $state(AUDIO_VOL_DEFAULT);
   let uiGunsMuted = $state(false);
   let uiUtilMuted = $state(false);
+  let uiC4Muted = $state(false);
   let sfx = null;
   let sfxErr = $state('');
   // The volume popover: one Popover anchored to the unmute-codicon
@@ -1614,20 +1618,22 @@
           .then((v) => v === true)
           .catch(() => false), // unreadable store → hidden (the default)
       );
-      // Replay-audio faders: the three persisted levels (voice/guns/
-      // utility) are read here — before startEngine applies them to the
-      // voice master and (once the sounds manifest proves non-empty) the
-      // sfx engine. One Promise.all, fail-soft to the 0.8 default like
-      // every other pref read in load().
+      // Replay-audio faders: the four persisted levels (voice/guns/
+      // utility/C4) are read here — before startEngine applies them to
+      // the voice master and (once the sounds manifest proves non-empty)
+      // the sfx engine. One Promise.all, fail-soft to the 0.8 default
+      // like every other pref read in load().
       {
-        const [vv, gv, uv] = await Promise.all([
+        const [vv, gv, uv, cv] = await Promise.all([
           getPref('voice_volume').catch(() => null),
           getPref('guns_volume').catch(() => null),
           getPref('utility_volume').catch(() => null),
+          getPref('c4_volume').catch(() => null),
         ]);
         uiVoiceVol = prefVolume(vv);
         uiGunsVol = prefVolume(gv);
         uiUtilVol = prefVolume(uv);
+        uiC4Vol = prefVolume(cv);
       }
       // Flash-white overlay: the blind events joined with their narrow
       // flash-duration read — the duration lives on detail_json
@@ -1803,15 +1809,16 @@
       }
       voiceEngine.setEnabled(true).catch(() => {});
     }
-    // Sound effects (guns + utility — the sound half of the replay): the
-    // manifest read is MEMOIZED (one fetch per page load; load() ran it
-    // first), and an EMPTY manifest — sounds never extracted — skips
-    // creation entirely: no AudioContext, no retry listener, silent
-    // cues. The engine then takes the same inputs the renderer gets
-    // (drawNorm, the bullets.js rows + the rounds freeze gate) and the
-    // popover's persisted fader levels. Construction is deferred to the
-    // microtask, so the entry seek below has already happened and the
-    // engine's first change seeds instead of replaying it.
+    // Sound effects (guns + utility + C4 — the sound half of the
+    // replay): the manifest read is MEMOIZED (one fetch per page load;
+    // load() ran it first), and an EMPTY manifest — sounds never
+    // extracted — skips creation entirely: no AudioContext, no retry
+    // listener, silent cues. The engine then takes the same inputs the
+    // renderer gets (drawNorm, the bullets.js rows + the rounds freeze
+    // gate) and the popover's persisted fader levels. Construction is
+    // deferred to the microtask, so the entry seek below has already
+    // happened and the engine's first change seeds instead of replaying
+    // it.
     const startedEngine = engine;
     loadSoundManifest().then((sm) => {
       if (!live || engine !== startedEngine || sfx || !sm || !sm.count) return;
@@ -1836,8 +1843,10 @@
       sfx.setDecoyPlan(decoyPlanFor());
       sfx.setVolume(uiGunsVol);
       sfx.setUtilityVolume(uiUtilVol);
+      sfx.setC4Volume(uiC4Vol);
       sfx.setMuted('guns', uiGunsMuted);
       sfx.setMuted('utility', uiUtilMuted);
+      sfx.setMuted('c4', uiC4Muted);
     });
     // Entry position rides the URL — durable and deep-linkable.
     // entrySeekTick is the ONE resolver: an exact ?tick= wins, else the
@@ -2148,7 +2157,7 @@
   // onStateChange mirror updates uiVoiceMutedAll (aria-pressed/styling),
   // so the control and the engine can never disagree. No voice in this
   // match → the row's controls are disabled (voiceEngine stays null,
-  // no-op); the guns/utility rows keep working either way.
+  // no-op); the guns/utility/C4 rows keep working either way.
   function toggleVoiceMuteAll() {
     voiceEngine?.setMutedAll(!uiVoiceMutedAll);
   }
@@ -2160,6 +2169,7 @@
     voice: 'voice_volume',
     guns: 'guns_volume',
     utility: 'utility_volume',
+    c4: 'c4_volume',
   };
 
   function onVolInput(bucket, e) {
@@ -2170,6 +2180,12 @@
     } else if (bucket === 'guns') {
       uiGunsVol = v;
       sfx?.setVolume(v);
+    } else if (bucket === 'c4') {
+      // Explicit, never the fall-through: the C4 fader owns its own
+      // bus (beeps + explosion) — routing it to utility would move the
+      // wrong gain.
+      uiC4Vol = v;
+      sfx?.setC4Volume(v);
     } else {
       uiUtilVol = v;
       sfx?.setUtilityVolume(v);
@@ -2177,12 +2193,19 @@
   }
 
   function onVolChange(bucket) {
-    const level = bucket === 'voice' ? uiVoiceVol : bucket === 'guns' ? uiGunsVol : uiUtilVol;
+    const level =
+      bucket === 'voice'
+        ? uiVoiceVol
+        : bucket === 'guns'
+          ? uiGunsVol
+          : bucket === 'c4'
+            ? uiC4Vol
+            : uiUtilVol;
     setPref(VOL_KEYS[bucket], level).catch((e) => (sfxErr = errText(e)));
   }
 
-  // Guns/utility mutes are session-only (unlike the faders): they live on
-  // the sfx engine and reset with it.
+  // Guns/utility/C4 mutes are session-only (unlike the faders): they
+  // live on the sfx engine and reset with it.
   function toggleGunsMute() {
     uiGunsMuted = !uiGunsMuted;
     sfx?.setMuted('guns', uiGunsMuted);
@@ -2193,12 +2216,18 @@
     sfx?.setMuted('utility', uiUtilMuted);
   }
 
+  function toggleC4Mute() {
+    uiC4Muted = !uiC4Muted;
+    sfx?.setMuted('c4', uiC4Muted);
+  }
+
   // The trigger reads "warn" only when EVERY audible category is muted —
-  // without voice in the match the audible set is just guns + utility.
+  // without voice in the match the audible set is guns + utility + C4.
   const audioAllMuted = $derived(
     (!voicePresence || !voicePresence.hasVoice || uiVoiceMutedAll) &&
       uiGunsMuted &&
-      uiUtilMuted,
+      uiUtilMuted &&
+      uiC4Muted,
   );
 </script>
 
@@ -2540,19 +2569,20 @@
           {/if}
 
           <!-- Volume (the old mute-all button, repurposed): ONE popover
-               with the three replay-audio faders — Voice / Guns /
-               Utility — anchored exactly like the loop control above.
-               The trigger is NEVER disabled: voice is just one row of
-               three (its row goes disabled when the match has no voice,
-               while guns/utility always work). The engine owns the voice
-               mute flag and mirrors it through onStateChange. -->
+               with the four replay-audio faders — Voice / Guns /
+               Utility / C4 — anchored exactly like the loop control
+               above. The trigger is NEVER disabled: voice is just one
+               row of four (its row goes disabled when the match has no
+               voice, while guns/utility/C4 always work). The engine
+               owns the voice mute flag and mirrors it through
+               onStateChange. -->
           <span class="rp-pop-host rp-vol" bind:this={volAnchor}>
             <button
               class="btn"
               class:warn={audioAllMuted}
               aria-expanded={volOpen}
               aria-label="Volume"
-              title="Volume — voice, guns and utility"
+              title="Volume — voice, guns, utility and C4"
               onclick={() => (volOpen = !volOpen)}
               ><span class="codicon codicon-unmute" aria-hidden="true"></span></button
             >
@@ -2627,6 +2657,29 @@
                     title={uiUtilMuted ? 'Unmute utility' : 'Mute utility'}
                     onclick={toggleUtilMute}
                     ><span class="codicon {uiUtilMuted ? 'codicon-mute' : 'codicon-unmute'}" aria-hidden="true"></span></button
+                  >
+                </div>
+                <div class="rp-vol-row">
+                  <label class="field-label" for="rp-vol-c4">C4</label>
+                  <input
+                    class="rp-vol-range"
+                    id="rp-vol-c4"
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={Math.round(uiC4Vol * 100)}
+                    oninput={(e) => onVolInput('c4', e)}
+                    onchange={() => onVolChange('c4')}
+                    aria-label="C4 volume"
+                  />
+                  <button
+                    class="btn small"
+                    class:warn={uiC4Muted}
+                    aria-pressed={uiC4Muted}
+                    aria-label="Mute c4"
+                    title={uiC4Muted ? 'Unmute C4' : 'Mute C4'}
+                    onclick={toggleC4Mute}
+                    ><span class="codicon {uiC4Muted ? 'codicon-mute' : 'codicon-unmute'}" aria-hidden="true"></span></button
                   >
                 </div>
               </div>
