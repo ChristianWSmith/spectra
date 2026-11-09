@@ -311,6 +311,36 @@ CREATE TABLE IF NOT EXISTS player_round_stats (
 );
 CREATE INDEX IF NOT EXISTS idx_player_round_stats_player ON player_round_stats(match_id, steam_id);
 
+-- Tier 1 index pass (library-wide reads). Placed here because every table
+-- they target now exists (the baseline script runs top-to-bottom).
+--
+-- The three steam_id-leading indexes kill correlated full-table scans on
+-- library-wide `WHERE steam_id = ?` reads: RebuildCareer's per-group
+-- subqueries (player_stats p2 / clutches c in RebuildCareer, analytics.go)
+-- and ListPlayers' HumanOnlyBySteamID bot check (players). Those are
+-- O(library)-per-import and quadratic over a bulk import — measured 16-34 s
+-- per RebuildCareer at 1,000 matches / 500-1,000 distinct players without
+-- them (linear in the distinct-player count: minutes per import at
+-- realistic overlap). Each index is a leading-column mirror of the
+-- match_id-first primary key.
+--
+-- idx_events_kind_match turns library-wide `kind='kill'` scans
+-- (CountPlayerTradeOpportunities — it used to SCAN every event ever
+-- recorded) into an index seek. Partial relief only: the join order and
+-- the per-row NOT EXISTS stay, and the structural fix is Tier 2.
+--
+-- The jobs indexes cover the pending-job lookups (FindPendingJobByPath /
+-- FindPendingJobByMatch — path/match_id + non-terminal status, newest
+-- first). jobs grows append-forever and these run per listed demo file /
+-- per reprocess, so they must not degrade into table scans as history
+-- accumulates.
+CREATE INDEX IF NOT EXISTS idx_players_steam ON players(steam_id);
+CREATE INDEX IF NOT EXISTS idx_player_stats_steam ON player_stats(steam_id, match_id);
+CREATE INDEX IF NOT EXISTS idx_player_round_stats_steam ON player_round_stats(steam_id, match_id);
+CREATE INDEX IF NOT EXISTS idx_events_kind_match ON events(kind, match_id);
+CREATE INDEX IF NOT EXISTS idx_jobs_path ON jobs(path);
+CREATE INDEX IF NOT EXISTS idx_jobs_match ON jobs(match_id);
+
 CREATE TABLE IF NOT EXISTS clutches (
 	match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
 	round INTEGER NOT NULL,

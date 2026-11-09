@@ -207,10 +207,13 @@ func (s *Store) UpdateJobProgress(id int64, stage string, progress float64) erro
 // lookups), pinned to the DDL by TestColumnListConstsMatchSchema.
 const jobsCols = `id, kind, path, status, progress, stage, error, created_at, started_at, finished_at, match_id`
 
-// ListJobs returns all jobs, newest first (created_at DESC, id DESC).
+// ListJobs returns the most recent jobs, newest first (created_at DESC,
+// id DESC), capped at 200. The cap bounds the display list only: jobs is
+// an append-forever history table and this query never prunes it —
+// trimming the table itself is Tier 2 work.
 func (s *Store) ListJobs() ([]models.Job, error) {
 	rows, err := s.db.Query(
-		`SELECT ` + jobsCols + ` FROM jobs ORDER BY created_at DESC, id DESC`,
+		`SELECT ` + jobsCols + ` FROM jobs ORDER BY created_at DESC, id DESC LIMIT 200`,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("store: list jobs: %w", err)
