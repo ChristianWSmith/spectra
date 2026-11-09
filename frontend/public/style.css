@@ -14,7 +14,7 @@
    styled here (round-, replay-, scrub-, landmark-, lm-, lib-, …).
    style-m3a.css (wave A: econ-/util-/heat-/bld-/sql-/m5-) and
    style-m3b.css (wave B: comb-/prof-/cmp-/filt-/sett-/voice-/clip-/kv-/
-   rep-/cp-/plugin-/spat-/expl-) append component groups; a later file
+   rep-/cp-/plugin-/expl-) append component groups; a later file
    may override an equal-specificity base rule (later wins). Rules are not
    moved between files without proving no cascade overlap.
    Prefix policy: every component/view owns ONE unique hyphenated class

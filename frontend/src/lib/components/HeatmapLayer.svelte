@@ -8,6 +8,16 @@
   // transform built from the heatmap's own world bounds gives one generic
   // presentation: a plain coordinate grid (the app ships no radar art).
   //
+  // Multi-floor timing split (owner decision): the RADAR follows the LIVE
+  // floor selection (`layer`) — switch floors and the image under the
+  // cursor changes at once — while the RASTER follows the floor it was
+  // fetched for (`gridLayer`), so a pending raster is never drawn as
+  // another floor's data. The overlay is therefore positioned with the
+  // transform belonging to ITS data (`ovTf`); per-layer transform
+  // overrides are rare and usually identical (Nuke's layers share one
+  // transform), so the normal case is seamless. The canvas image space
+  // (W/H, the image, click mapping) is the LIVE floor's (`baseTf`).
+  //
   // The backing store is sized in DEVICE pixels (wrapper width ×
   // devicePixelRatio), so neither the radar nor the overlay is ever
   // browser-upscaled from CSS pixels — the classic hiDPI smudge. The
@@ -16,7 +26,7 @@
   // cells never appear as blocks. cells[] is row-major (r*w+c) with row
   // 0 at grid.minY (the BOTTOM of image space — renderHeatField flips
   // rows into image space itself).
-  let { map = '', pack = null, grid = null, onRegion = () => {} } = $props();
+  let { map = '', pack = null, grid = null, layer = 0, gridLayer = 0, onRegion = () => {} } = $props();
 
   let canvas = $state(null);
   let radar = $state(null); // decoded radar image | null
@@ -24,6 +34,13 @@
   let dpr = $state(1); // window devicePixelRatio
 
   const xf = $derived(pack && pack.transform ? pack.transform : null);
+  // The pack's radar panels (makeTransform's ONE pack→layers reader):
+  // default first, each with its own image/size/transform. Absent = a
+  // single-floor pack, and both deriveds below stay null — every path
+  // then reads xf/fb exactly as before (single-layer behavior unchanged).
+  const layers = $derived(xf && Array.isArray(xf.layers) ? xf.layers : []);
+  const liveLayer = $derived(layers[layer] || null); // floor on screen NOW
+  const fetchedLayer = $derived(layers[gridLayer] || null); // floor the raster is FROM
   // No-pack fallback: derive the world→image mapping from the heatmap's own
   // world bounds — the same honest presentation as the replay renderer's
   // no-pack grid (plain world-coordinate grid, never invented map art).
@@ -49,8 +66,14 @@
     });
   });
   const eff = $derived(xf || fb);
-  const W = $derived(eff ? eff.width : 1024);
-  const H = $derived(eff ? eff.height : 1024);
+  // Image space (canvas W/H + the image + click mapping) follows the LIVE
+  // floor; the overlay's transform follows the floor the raster came from
+  // (header comment). A pack layer carries its own logical image size, so
+  // the radar is never drawn at a distorted aspect.
+  const baseTf = $derived(liveLayer ? liveLayer.tf : eff);
+  const ovTf = $derived(fetchedLayer ? fetchedLayer.tf : eff);
+  const W = $derived(liveLayer ? liveLayer.width : eff ? eff.width : 1024);
+  const H = $derived(liveLayer ? liveLayer.height : eff ? eff.height : 1024);
 
   // Device-pixel backing store: displayed CSS width × DPR, aspect-locked
   // to image space. The canvas keeps width:100%/height:auto in CSS, so
@@ -67,16 +90,23 @@
 
   $effect(() => {
     const meta = pack && pack.meta;
+    // The gate stays on the pack's radar metadata (no radar at all = no
+    // image, plain grid); WHICH image is on screen follows the LIVE floor
+    // — a panel's own file when it has one, the pack's radar otherwise
+    // (index 0, or a meta that omits per-layer files). Reading liveLayer
+    // here is the dependency: flipping the selector reloads the image at
+    // once, while the raster keeps waiting for Regenerate.
     if (!map || !meta || !meta.radar || !meta.radar.file) {
       radar = null;
       return;
     }
+    const file = (liveLayer && liveLayer.file) || meta.radar.file;
     let live = true;
     const img = new Image();
     // pack.base: /api/mappack/<map> for extracted packs, /maps/<map> for
     // the bundled meta (loadMapPack resolves the source; the bundle ships
     // metadata only, never radar art — maps/README.md).
-    img.src = `${pack.base || '/maps/' + encodeURIComponent(map)}/${meta.radar.file}`;
+    img.src = `${pack.base || '/maps/' + encodeURIComponent(map)}/${file}`;
     img
       .decode()
       .then(() => {
@@ -171,7 +201,9 @@
 
   function drawOverlay(ctx) {
     const g = grid;
-    if (!eff || !g || !g.w || !g.h) return;
+    // ovTf, not the on-screen floor's: the raster is positioned with the
+    // transform belonging to the data it was fetched for (header comment).
+    if (!ovTf || !g || !g.w || !g.h) return;
     const cells = g.cells;
     if (!cells || cells.length < g.w * g.h) return;
     const cw = (g.maxX - g.minX) / g.w;
@@ -183,9 +215,11 @@
     // and drawn ~1:1 (fractional origin keeps it locked to world space;
     // the ≤1 device-px edge softness beats a half-pixel world shift).
     // Top-left is (minX, maxY) because toImage flips Y. Cells whose
-    // bounds run past the radar simply clip.
-    const p0 = eff.toImage(g.minX, g.maxY);
-    const p1 = eff.toImage(g.maxX, g.minY);
+    // bounds run past the radar simply clip. The image space here is the
+    // FETCHED floor's — identical to the on-screen floor's whenever the
+    // layers share a transform (the normal case, e.g. Nuke).
+    const p0 = ovTf.toImage(g.minX, g.maxY);
+    const p1 = ovTf.toImage(g.maxX, g.minY);
     const sx = bw / W;
     const sy = bh / H;
     const ox = p0.x * sx;
@@ -207,7 +241,10 @@
   // device pixels, so c.width is the wrong scale here).
   function onClick(e) {
     const c = canvas;
-    if (!eff || !c || !grid || !grid.w || !grid.h) return;
+    // baseTf (the LIVE floor's mapping — same space as the image on
+    // screen and the W/H below): a click drills into the world region the
+    // cursor is over on the radar the user is actually looking at.
+    if (!baseTf || !c || !grid || !grid.w || !grid.h) return;
     const cw = (grid.maxX - grid.minX) / grid.w;
     const ch = (grid.maxY - grid.minY) / grid.h;
     if (!(cw > 0) || !(ch > 0)) return;
@@ -215,7 +252,7 @@
     if (rect.width <= 0 || rect.height <= 0) return;
     const ix = ((e.clientX - rect.left) / rect.width) * W;
     const iy = ((e.clientY - rect.top) / rect.height) * H;
-    const world = eff.toWorld(ix, iy);
+    const world = baseTf.toWorld(ix, iy);
     const ci = Math.floor((world.x - grid.minX) / cw);
     const ri = Math.floor((world.y - grid.minY) / ch);
     onRegion({

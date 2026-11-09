@@ -475,9 +475,6 @@ export function clearQueryHistory() { return QueryService.ClearHistory(); }
 
 export function getProvenance(matchId) { return PlatformService.GetProvenance(matchId); }
 export function getEntitySummary(matchId) { return PlatformService.GetEntitySummary(matchId); }
-export function getSpatialSeries(matchId, kind, buckets) {
-  return PlatformService.GetSpatialSeries(matchId, kind, buckets || 120);
-}
 export function listPlugins() { return PlatformService.ListPlugins(); }
 export function installPlugin(path) { return PlatformService.InstallPlugin(path); }
 export function setPluginEnabled(id, enabled) { return PlatformService.SetPluginEnabled(id, enabled); }

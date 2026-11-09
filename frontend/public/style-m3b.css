@@ -1,7 +1,7 @@
 /* M3 wave B — Combat/Profiles/FilterBar/Compare/Settings (agent-owned) — appended styles for Milestone 3.
    Prefixes: comb- (Combat), prof- (PlayerProfile),
    cmp- (compare/round-class chips), filt- (FilterBar
-   actions), sett- (Settings), voice-/clip-/kv-/rep-/cp-/plugin-/spat-/
+   actions), sett- (Settings), voice-/clip-/kv-/rep-/cp-/plugin-/
    expl- (its owning component).
 
    Layering: loaded third by index.html, after style.css (tokens/utilities/
@@ -552,10 +552,9 @@
 }
 
 /* M5 platform — Explorer/Reports/CommandPalette/Settings (plugins+theme)/
-   Replay clip recorder/Heatmaps spatial series + light-theme tokens.
+   Replay clip recorder + light-theme tokens.
    Prefixes: cp- (command palette), expl-/kv- (explorer), rep- (reports),
-   sett- additions (appearance/plugins), clip- (replay recorder),
-   spat- (spatial series). */
+   sett- additions (appearance/plugins), clip- (replay recorder). */
 
 /* --- Command palette (cp-) --------------------------------------------------
    The backdrop/panel pair is Dialog.svelte's (.dlg-back.top /
@@ -959,43 +958,6 @@
   50% {
     opacity: 0.55;
   }
-}
-
-/* --- Heatmaps: spatial series (spat-) --------------------------------------- */
-
-/* Local delta: wider gap than .toolbar. */
-.spat-controls {
-  gap: 10px;
-}
-
-.spat-svg {
-  width: 100%;
-  height: 140px;
-  display: block;
-  background: var(--inset);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-}
-
-.spat-svg polyline {
-  fill: none;
-  stroke: var(--accent);
-  stroke-width: 1.6;
-  stroke-linejoin: round;
-  stroke-linecap: round;
-  vector-effect: non-scaling-stroke;
-}
-
-.spat-axis {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  font-size: 0.8em;
-  padding: 2px 2px 0;
-}
-
-.spat-desc {
-  font-size: 0.85em;
 }
 
 /* --- Light theme (M5 §2.6) --------------------------------------------------
