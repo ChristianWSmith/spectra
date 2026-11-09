@@ -2090,7 +2090,9 @@ input[type='checkbox']:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  min-width: 236px;
+  /* +16 over the old 236: the label column grew 58 → 74 for ANNOUNCER,
+     so the popover grows with it and the sliders keep their length. */
+  min-width: 252px;
   padding: 8px;
   background: var(--widget-bg);
   border: 1px solid var(--border);
@@ -2106,9 +2108,13 @@ input[type='checkbox']:focus-visible {
 }
 
 /* Row labels share the field-label concept (uppercase small caps); the
-   fixed column keeps the four faders aligned. */
+   fixed column keeps the five faders aligned. Sized for ANNOUNCER — the
+   longest label (~69px at 0.75em + 0.05em tracking): a too-narrow basis
+   overflows via min-width:auto and squeezes that row's slider. The
+   popover min-width grows by the same delta so the bars keep their
+   length. */
 .rp-vol-pop .field-label {
-  flex: 0 0 58px;
+  flex: 0 0 74px;
 }
 
 .rp-vol-range {
