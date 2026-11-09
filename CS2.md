@@ -913,3 +913,64 @@ at the end of the section.
   begin/complete) and is NOT independently code-verified.
   **Source** — local probe of pak01_dir.vpk (vsndevts string-table
   adjacency + decoded file durations) (2026-11-08).
+
+- **Death drops (`mp_death_drop_gun` / `mp_death_drop_grenade`) — what
+  CS2 actually drops, and where spectra's rule differs** — the game's
+  own defaults (from `gamemode_competitive.cfg` comments):
+  `mp_death_drop_gun 1 // 0=none, 1=best, 2=current or best` (CS2
+  Competitive/Premier default **1 = most valuable gun**), and
+  `mp_death_drop_grenade 2 // 0=none, 1=best, 2=current or best` (CS2
+  default **2 = the grenade in hand, else the most valuable**) — the
+  CounterStrike Wiki puts the same grenade rule in words: "the player's
+  most recently selected grenade will be dropped when they are killed;
+  if they have never selected one, then the most expensive grenade".
+  ONE gun and ONE grenade drop (never more), never a knife, never the
+  C4/kit. spectra implements the USER's stated rule instead of the
+  cvars' exact semantics — first primary → first secondary → no gun
+  (≈ the game's "best": any primary outsells every sidearm, and the
+  first-primary-in-inventory order matches how CS2 hands out the
+  spawn loadout), and util = last-held-this-round → most expensive,
+  which matches the game rule 1:1. Incendiary price is CS2's $500
+  (cut from CS:GO's $600 in the 2024-05-23 update; a few sites still
+  list $600) — models.UtilityPrice is the pinned table; the choice
+  never flips a tiebreak (a player carries only their side's
+  fire-grenade). Related: `mp_death_drop_taser`/`_defuser`/
+  `_c4` (all default 1 = droppable).
+  **Source** —
+  https://github.com/GhaithA-M/CS2_CFG (gamemode_competitive.cfg
+  cvar comments), https://totalcsgo.com/commands/mpdeathdropgun +
+  /mpdeathdropgrenade,
+  https://counterstrike.fandom.com/wiki/Grenades,
+  https://cs2wiki.jp/weapons/throwables + https://oggo.gg/cs/guides/cs2-grenades-basics-sub-tick +
+  https://gamertagmythras.com/blog/counter-strike-2/cs2-utility-guide
+  (prices, incendiary $600→$500) (2026-11-08).
+
+- **`item_pickup` game event / `events.ItemPickup` (spectra's
+  weapon_pickup source)** — does it mean "picked off the ground"? It
+  fires for EVERY acquisition of an item — ground pickups, BUY menu
+  purchases, and round-start spawn restocks (demoinfocs' own doc says
+  "bought or picked up"; the separate `item_purchase` game event does
+  NOT fire in the golden pool — 0 rows — so buys cannot be filtered
+  there). Fields: `userid, item (classname/def string), silent,
+  defindex` (CS2 game-events dump); demoinfocs resolves `ItemPickup{
+  Player, Weapon}` and dispatches it DELAYED (`delay()` in
+  game_events.go — queued to the end of the tick, because
+  Equipment.UniqueID() is not yet stable in the raw handler). Measured
+  on all seven golden demos (extract.TestDiagDropInventoryAtKill):
+  1473 pickups on de_cache of which only 91 pair with a death drop of
+  the same weapon that round — spectra stores ONLY gun/util rows
+  (dropCat: knife/C4/kit/armour filtered, 434/1473 on golden) and the
+  frontend's evidence rule consumes only same-round AFTER-drop matches
+  (lib/replay/drops.js), so buy/restock rows are stored but never
+  terminate a drop they cannot match. Companion seam, same diag:
+  `events.Kill` dispatches with the victim's inventory INTACT —
+  1174/1174 kills across the pool non-empty, identical to the last
+  frame sample, victim still alive at dispatch — so the kill-time
+  `e.Victim.Weapons()` read is authoritative for death drops.
+  **Source** —
+  https://cs2opendev.github.io/CS2OpenDev-Docs/generated/gameevents.html +
+  https://github.com/SteamDatabase/GameTracking-CS2 (mod.gameevents
+  `item_pickup` fields),
+  https://wiki.alliedmods.net/Counter-Strike:_Global_Offensive_Events,
+  demoinfocs v6 `game_events.go` (delay comment) + `events.ItemPickup`
+  docs; golden-demo diag `TestDiagDropInventoryAtKill` (2026-11-08).

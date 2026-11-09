@@ -63,6 +63,21 @@ const (
 	EventBombDefuseAbort = "bomb_defuse_abort"
 	EventGrenadeThrow    = "grenade_throw"
 	EventGrenade         = "grenade"
+	// weapon_drop / weapon_pickup — dropped-gun and dropped-utility
+	// evidence for the replay map's drop layer (ONE kind pair for guns
+	// and util; detail_json `cat` carries the "gun"|"util" split from
+	// the CANONICAL util set models.IsUtilityWeapon). A weapon_drop row
+	// is inferred at events.Kill (primary → secondary → no gun, plus at
+	// most one util: last-held → most expensive — extract.inferDeathDrops
+	// owns the rule) and stores the victim's position at the kill tick;
+	// a weapon_pickup row is the raw item_pickup event restricted to
+	// gun/util items (the picker's position at that tick) — the
+	// terminator the frontend evidence rule (lib/replay/drops.js) reads.
+	// Raw game events for these kinds ride generic_events like every
+	// other untyped source (the *_drop rows are inference, so they carry
+	// no raw payload of their own).
+	EventWeaponDrop   = "weapon_drop"
+	EventWeaponPickup = "weapon_pickup"
 	// EventGrenadeLand marks a grenade COMING TO REST (the decoy's
 	// activation — decoy_started): the flight ends here and the noise
 	// window starts; the EXPLOSION stays an EventGrenade row

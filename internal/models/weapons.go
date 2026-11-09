@@ -28,6 +28,35 @@ var utilityWeaponKinds = map[string]string{
 	"Decoy Grenade":      "decoy",
 }
 
+// utilityPrices is THE canonical buy-price table for the six utility
+// grenades ($, the game's buy-menu cost; CS2 prices — the Incendiary was
+// cut from CS:GO's $600 to $500 in the 2024-05-23 update, see CS2.md
+// "Death drops (mp_death_drop_gun / mp_death_drop_grenade)"). It exists
+// for ONE consumer today: extract.inferDeathDrops' most-expensive
+// tiebreak when the victim last held no util this round. No other layer
+// may re-derive grenade prices (econ.js prices no gear; there is no
+// second table) — pinned by models.TestUtilityPricesPinned.
+//
+// Molotov (T, $400) vs Incendiary (CT, $500): both spellings map to the
+// stored "molotov" kind elsewhere, but the PRICES differ, so both stay
+// here — a side can only carry its own, so the difference only matters
+// if this table is ever read cross-side.
+var utilityPrices = map[string]int{
+	"HE Grenade":         300,
+	"Flashbang":          200,
+	"Smoke Grenade":      300,
+	"Molotov":            400,
+	"Incendiary Grenade": 500,
+	"Decoy Grenade":      50,
+}
+
+// UtilityPrice returns the canonical buy price ($) of a canonical
+// utility weapon name (0 when the name is not utility — the zero value
+// means "not priced here", never "$0 grenade").
+func UtilityPrice(weapon string) int {
+	return utilityPrices[weapon]
+}
+
 // IsUtilityWeapon reports whether weapon is one of CS2's six utility
 // grenades. Matching is exact on the canonical names (every writer of
 // events.weapon emits EquipmentType.String(); case variants never occur).

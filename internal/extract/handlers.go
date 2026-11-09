@@ -158,6 +158,13 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 			k.victimSide = sideString(e.Victim.Team)
 			k.samePlayer = e.Killer != nil && e.Killer.EntityID == e.Victim.EntityID
 			k.posX, k.posY, k.posZ = posPtrs(e.Victim.Position())
+			// Death-drop evidence: the victim's inventory AT the kill
+			// tick (ammo included). Characterized on all seven golden
+			// demos — drops_diag_test.go TestDiagDropInventoryAtKill:
+			// 1174/1174 kills dispatched with a non-empty, unmutated
+			// inventory identical to the last frame's sample, so this
+			// read is authoritative (no last-known fallback path).
+			k.inv = dropInventory(e.Victim.Weapons())
 		}
 		if e.Assister != nil {
 			k.assisterKey = playerKey(e.Assister)
@@ -419,6 +426,50 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 			px, py, pz = posPtrs(e.Projectile.Position())
 		}
 		a.grenadeThrown(p.GameState().IngameTick(), key, name, weapon, px, py, pz)
+	})
+
+	// ---- drops (weapon_drop / weapon_pickup) ----
+
+	// Per-frame last-held-utility sample (the death-drop util rule's
+	// "last held util this round" input): the ACTIVE weapon of every
+	// alive participant, recorded when it is a grenade. Runs on every
+	// FrameDone regardless of which sinks are wired — the death at frame
+	// N reads the frame N-1 sample (the victim is dead by this frame's
+	// FrameDone, so a held grenade is never overwritten by the death
+	// itself). Reset per round in agg.roundStart (ONE home with the
+	// other per-round resets).
+	p.RegisterEventHandler(func(events.FrameDone) {
+		for _, pl := range p.GameState().Participants().Playing() {
+			if pl == nil || !pl.IsAlive() {
+				continue
+			}
+			if w := pl.ActiveWeapon(); w != nil && isUtilityEquipment(w.Type) {
+				a.noteHeldUtil(playerKey(pl), wepName(w))
+			}
+		}
+	})
+
+	// item_pickup fires for EVERY acquisition — ground pickups AND buys
+	// AND spawn restocks (characterized: drops_diag_test.go saw 1473
+	// events on golden vs 91 that pair with a death drop; raw
+	// item_purchase never fires there). The typed row is restricted to
+	// gun/util items (dropCat — knife/C4/kit/armour have no drop-evidence
+	// counterpart) and the FRONTEND rule consumes only same-round
+	// post-drop matches (lib/replay/drops.js), so buy-restock rows are
+	// harmless there; they stay stored because nothing can tell the two
+	// apart at extract time.
+	p.RegisterEventHandler(func(e events.ItemPickup) {
+		if e.Player == nil {
+			return
+		}
+		name := wepName(e.Weapon)
+		cat := dropCat(name)
+		if cat == "" {
+			return
+		}
+		gs := p.GameState()
+		px, py, pz := posPtrs(e.Player.Position())
+		a.weaponPickedUp(gs.IngameTick(), playerKey(e.Player), e.Player.Name, name, cat, px, py, pz)
 	})
 
 	// ---- people, chat ----

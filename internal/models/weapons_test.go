@@ -2,6 +2,39 @@ package models
 
 import "testing"
 
+// TestUtilityPricesPinned pins THE canonical grenade price table
+// (models.utilityPrices — buy-menu $, see CS2.md "Death drops"): the
+// death-drop most-expensive tiebreak reads it, and no other layer may
+// carry a second table. A price change or a new utility name must land
+// here deliberately.
+func TestUtilityPricesPinned(t *testing.T) {
+	want := map[string]int{
+		"HE Grenade":         300,
+		"Flashbang":          200,
+		"Smoke Grenade":      300,
+		"Molotov":            400,
+		"Incendiary Grenade": 500,
+		"Decoy Grenade":      50,
+	}
+	for name, price := range want {
+		if got := UtilityPrice(name); got != price {
+			t.Errorf("UtilityPrice(%q) = %d, want %d", name, got, price)
+		}
+	}
+	// Every canonical utility weapon (IsUtilityWeapon) is priced — the
+	// utilityWeaponKinds vocabulary and the price table cannot drift
+	// apart silently.
+	for name := range utilityWeaponKinds {
+		if UtilityPrice(name) == 0 {
+			t.Errorf("utility weapon %q has no price in utilityPrices", name)
+		}
+	}
+	// Non-utility reads 0 — "not priced here", never a guessed $0.
+	if UtilityPrice("AK-47") != 0 || UtilityPrice("") != 0 || UtilityPrice("Knife") != 0 {
+		t.Errorf("non-utility name priced — the zero value must mean 'not utility'")
+	}
+}
+
 // TestWeaponSplitsPinned pins the primary/secondary membership sets —
 // quoted from frontend/src/lib/replay/loadout.js's PRIMARY_WEAPONS /
 // SECONDARY_WEAPONS (the Go/JS twins). A rename or a new weapon must be
