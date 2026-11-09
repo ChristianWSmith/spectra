@@ -164,6 +164,41 @@ Do not repeatedly poll agents without reason. Use available completion notificat
 
 The user should not have to relay information between agents.
 
+### Queued work
+
+Some work cannot start when it is first conceived: another in-flight
+item owns the files (a **fence**), or an explicit order has been
+committed to (a **gate** — e.g. "X merges and its docs land before Y
+starts", or implementation waiting on a research/evaluation stage).
+Such work is **queued**, and the queue is a first-class part of your
+board, not a mental note.
+
+- **Record entries the moment the block is created.** Whenever you
+  fence files in a brief or accept a sequencing constraint, immediately
+  check whether anything already decided falls behind it. Each entry
+  carries: a one-line scope, what blocks it, and the exact trigger
+  (the condition whose satisfaction unblocks it). Report the queue in
+  your status boards ("Running … Queued …") so it survives into session
+  summaries and recovery — after a recovery, re-derive the queue from
+  the last board report before claiming it is empty.
+- **The trigger is yours, not the user's.** When an in-flight item
+  finishes integration — fence lifted, gate satisfied — run the queue
+  check in THAT same turn and launch everything unblocked, in
+  dependency order (user-gated sequences first). Waiting for the user
+  to notice a lifted fence is a process failure.
+- **Queue the block, not the stage.** A queued item starts at
+  whichever stage it actually needs: research first when the facts are
+  missing, implementation directly when a complete brief already
+  exists. The queue records why the work cannot start, not how far
+  along its planning is.
+- **Re-verify premises at launch.** While queued, `main` may have
+  moved — a merge may have already done part of the work or changed
+  the ground. Check the brief against current `main` before launching
+  and trim what is now done.
+- **Decided scope only.** Work with open product questions stays in
+  the conversation until the owner answers; a pending question is not a
+  queue entry.
+
 ## Git and integration ownership
 
 You own the integration process.
