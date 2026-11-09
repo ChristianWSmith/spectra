@@ -6,12 +6,14 @@
 //                      defuse, or the ROUND END itself) or the NEXT
 //                      round's start (the death-X fix's second cutoff —
 //                      see killEndTick), with the 40 s C4 timer as the
-//                      hard fallback. The round-end terminator is the
-//                      cleanup for rounds that end before the bomb
-//                      resolves (a defuse, or a round decided while the
-//                      bomb still ticks) — without it the marker stuck
-//                      until the timer ran out even though the round
-//                      was over.
+//                      fallback when NO terminator row is loaded — never
+//                      a cap over a present row (the recorded
+//                      plant → blast interval is 41 s; see bombEndTick).
+//                      The round-end terminator is the cleanup for
+//                      rounds that end before the bomb resolves (a
+//                      defuse, or a round decided while the bomb still
+//                      ticks) — without it the marker stuck until the
+//                      timer ran out even though the round was over.
 //
 //   2. bombEvidenceAt — the DROPPED-C4 reconstruction rule (below).
 //
@@ -51,20 +53,28 @@ export function hasBombPos(row) {
 // window) has no same-round end left to terminate it, and without the
 // round_start it survived into the next round on the fallback. With no
 // terminator in the loaded rows the C4 timer (40 s) is the hard
-// fallback — a ceiling every terminator must beat, so the marker can
-// never stick forever NOR outlive the bomb. Terminators from ANOTHER
-// round, before the plant, or a round_start at/before the plant are
-// ignored (a later round's round_end must never cut an earlier plant
-// short; the plant round's own round_start precedes its plant). Pure —
-// head-tested in src/lib/bomb.test.js; drawn by renderer.js drawBomb
-// and reused by the smart camera's bomb point and the HUD clock.
+// fallback — but only THEN: a terminator row that lands past it is real
+// evidence and must win, never be capped by the estimate. Every
+// detonation in the dev matches records plant → blast at exactly
+// 2624 ticks = 41 s (one second past 40 s), so a 40 s cap truncated
+// `end` BEFORE the real explosion — the marker died a second early and
+// renderer detonatedAt, which gates on this terminator BEING the
+// explode row (`e.tick === end`), never fired, letting the 115 s round
+// clock resurrect during the round-over tail (the freeze-clock bug).
+// Terminators from ANOTHER round, before the plant, or a round_start
+// at/before the plant are ignored (a later round's round_end must never
+// cut an earlier plant short; the plant round's own round_start precedes
+// its plant), and a round_start never LENGTHENS the window past the
+// terminator/fallback it cuts. Pure — head-tested in src/lib/bomb.test.js;
+// drawn by renderer.js drawBomb and reused by the smart camera's bomb
+// point and the HUD clock.
 export function bombEndTick(plant, tr, explodes, defuses, roundEnds, roundStarts) {
   if (!plant || !Number.isFinite(plant.tick)) return 0;
-  let end = plant.tick + 40 * tr;
+  let end = null;
   const consider = (list) => {
     if (!list) return;
     for (const e of list) {
-      if (e && e.round === plant.round && e.tick >= plant.tick && e.tick < end) {
+      if (e && e.round === plant.round && e.tick >= plant.tick && (end === null || e.tick < end)) {
         end = e.tick;
       }
     }
@@ -72,10 +82,17 @@ export function bombEndTick(plant, tr, explodes, defuses, roundEnds, roundStarts
   consider(explodes);
   consider(defuses);
   consider(roundEnds);
+  // No same-round terminator rows loaded → the C4 timer (40 s) is the
+  // hard fallback. Present rows are evidence, never capped: the 41 s
+  // recorded plant → blast (above) would otherwise truncate before the
+  // real explosion.
+  if (end === null) end = plant.tick + 40 * tr;
   // The next round's start (rows are chronological, so the earliest
   // start strictly after the plant IS the next round's). Strictly after,
   // like killEndTick: a round_start on the plant's own tick is the
-  // plant round's start and cannot terminate a bomb it contains.
+  // plant round's start and cannot terminate a bomb it contains. Only
+  // ever shortens (`s.tick < end`), so a distant next-round start never
+  // outlives the terminator or the 40 s fallback either.
   for (const s of roundStarts || []) {
     if (s && Number.isFinite(s.tick) && s.tick > plant.tick && s.tick < end) {
       end = s.tick;

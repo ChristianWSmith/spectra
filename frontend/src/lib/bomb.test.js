@@ -108,23 +108,31 @@ test('round_start cutoffs respect the 40 s fallback ceiling', () => {
   assert.equal(bombEndTick(p, 64, [], [], [], [roundStart(1000, 7), roundStart(900, 6)]), ceiling);
 });
 
-// --- CHARACTERIZATION (written BEFORE the freeze-clock fix) -----------------
-// Pins today's behavior of the 40 s fallback OVER present terminator rows —
-// the root cause of the reported HUD bug. The fix commit flips this
-// expectation to the real terminator; the surrounding tests above stay
-// untouched (every terminator there lands within 40 s of the plant).
+// --- the 40 s fallback vs REAL terminator rows ------------------------------
+// The freeze-clock fix: every detonation in both dev matches records
+// bomb_plant → bomb_explode at exactly 2624 ticks = 41 s — one second
+// PAST plant + 40 s — so the fallback must never cap a PRESENT
+// terminator row (only stand in when none is loaded).
 
-test('CHARACTERIZATION (pre-fix): a terminator beyond the 40 s fallback is capped', () => {
-  // Every detonation in both dev matches records bomb_plant → bomb_explode
-  // at exactly 2624 ticks = 41 s (e.g. nuke match 3 round 2: plant 14268,
-  // explode 16892) — one second PAST plant + 40 s. The ceiling truncates
-  // `end` before the real explosion, so renderer detonatedAt's
-  // `e.tick === end` gate never matches and the HUD's 115 s round clock
-  // resurrects during the round-over tail.
+test('a terminator BEYOND the 40 s fallback wins — the 41 s recorded plant→blast', () => {
+  // Pre-fix this asserted the cap (plant + 40 s): `end` was truncated
+  // before the real explosion, renderer detonatedAt's `e.tick === end`
+  // gate never matched, and the HUD's 115 s round clock resurrected
+  // during the round-over tail (nuke match 3 round 2: plant 14268,
+  // explode 16892).
   const p = plant(1000);
   const boom = { kind: 'bomb_explode', tick: 1000 + 2624, round: 7 };
   const end = roundEnd(1000 + 2624, 7);
-  assert.equal(bombEndTick(p, 64, [boom], [], [end]), 1000 + 40 * 64);
+  assert.equal(bombEndTick(p, 64, [boom], [], [end]), 1000 + 2624);
+  // The next round's start still only SHORTENS (never lengthens) — the
+  // marker dies at the blast, not a tick past it.
+  assert.equal(
+    bombEndTick(p, 64, [boom], [], [end], [roundStart(1000 + 2624 + 64)]),
+    1000 + 2624,
+  );
+  // …and with NO terminator rows loaded the 40 s fallback still bounds
+  // the marker (the rule the cap used to enforce everywhere).
+  assert.equal(bombEndTick(p, 64, [], [], []), 1000 + 40 * 64);
 });
 
 // --- bombEvidenceAt: the dropped-C4 reconstruction rule ----------------------
