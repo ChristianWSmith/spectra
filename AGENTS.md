@@ -190,6 +190,7 @@ Canonical homes (extend these, don't fork them):
 | Radar coordinate transform | `lib/components/mapxform.js` `makeTransform` — THE pack→transform reader; camera/no-pack bounds fallback stay renderer-only |
 | CS2 asset extraction (families, step order, outcome wording) | `frontend/src/lib/assets.js` `extractAllAssets` — Settings and MapPackPrompt both delegate; views own only their busy/progress/refresh rendering |
 | Job progress | `models.Job` — job-wide 0..1 (0 = indeterminate, never "0%") with the stage→range table beside the stage constants in `internal/models`; the emitter is `internal/library`'s progressReporter; render only through `StatusChip` (no second bar) |
+| Library-wide index coverage | `internal/store/schema.sql` — the one baseline index block; new library-wide (`steam_id`/`kind`-leading, pending-job) indexes go in the Tier-1 block with their rationale comment, never beside their table alone |
 | Bot exclusion (Go) | `store.HumanOnly` / `store.HumanOnlyBySteamID` (`internal/store/queries.go`, beside `playersJoin`) — THE roster/aggregate/selection filter; `playersJoin` itself is NOT a bot filter |
 | Bot exclusion (frontend twin) | `frontend/src/lib/players.js` — `isHuman` / `listedPlayers` (+ `isBotId` backstop for flagless rows: synthetic 0xFF ids are 20 digits, real SteamID64s 17) |
 | Replay bot presence | `lib/replay/playercard.js` `presentAt` — the ONE card-presence rule; the sole place a bot may list (while covering a disconnected same-side human) |
@@ -231,7 +232,9 @@ Canonical homes (extend these, don't fork them):
   never strands a row (queued reprocess → prior state, running →
   failed/openable); `store.Open` repairs matches stuck queued/parsing
   with no live job. Jobs stay on `spectra:job-progress` (100 ms
-  throttle) — never a second job event or progress widget.
+  throttle) — never a second job event or progress widget. `ListJobs`
+  returns the **200 most recent** jobs (display cap only; the `jobs`
+  table is never pruned — pruning is Tier 2).
 - **Version nothing until the first release — no versioned migrations,
   no versioned contracts, no legacy-data fallbacks** (pre-release
   policy): until we've cut our first release the repo versions NOTHING
@@ -303,7 +306,10 @@ Canonical homes (extend these, don't fork them):
   rollups (share the SQL consts, stay variants); `fmtClock` tick vs second
   units; palette vs sidebar (share one nav list, different modality);
   `internal/plugin.MetricDef` vs `store.PluginMetricDef` (manifest schema
-  and write input — not service DTOs).
+  and write input — not service DTOs); `MatchSummary.path`/`.sha256` on
+  the list projection (`Scanner.importIndex`'s import dedupe and
+  MatchPicker's search read them off `ListMatches` — single-match
+  `GetMatch` is a separate struct).
 
 ## CS2 domain knowledge
 

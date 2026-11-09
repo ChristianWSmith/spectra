@@ -281,7 +281,9 @@ at the end of the section.
   (12 per half). Overtime at 12-12: MR3 — a block of 6 rounds (two
   3-round halves), first team to 4 round wins takes it (**not**
   win-by-2: our own data shows a match continuing at OT 3-1), $10,000
-  start money; a tied OT block repeats. Round numbering continues
+  start money; a tied OT block repeats in tournament configs — CS2
+  Premier is the exception: it plays OT ONCE and ends the match at a
+  3-3 block tie as a draw (see the match-point entry). Round numbering continues
   monotonically through OT (13, 14, … — no per-half reset; spectra'
   ingest mirrors this, see "Round numbering"). Sides: **no switch at
   OT start** — teams keep their regulation sides for OT rounds 25-27,
@@ -305,6 +307,31 @@ at the end of the section.
   https://github.com/DraculaNCS/DraculaN-Season-4/blob/main/Draculan%20Series%204%20-%20Official%20Tournament%20Rulebook.md
   ("Teams continue on the side they ended regulation. After 3 OT
   rounds, sides are switched") (all 2026-11-08).
+
+- **Match point (the one-win-from-clinching predicate)** — when is a
+  round a MATCH-POINT round under CS2's MR12 + MR3 format, judged on
+  the scoreline BEFORE it starts? REGULATION: first to 13 round wins,
+  capped at 24 rounds (12 per half) — a side at 12 with the opponent
+  at ≤11 is one win from 13, so 12-X is a point for either side;
+  12-12 is NOT a point (regulation ends there: overtime follows, or
+  the match ends tied where a config has no OT — no round ever starts
+  at 12-12 needing only a 13th win). OVERTIME: MR3, a 6-round block,
+  first team to 4 block wins takes it — inside the current block a
+  side at 3 block wins (opponent ≤2) is one win from 4: the first
+  block's point scorelines are 15-X (X ≤14, never 15-15 — 15-15 is a
+  COMPLETED 3-3), the second block's 18-X after a tied 3-3. A round
+  that starts at block 3-3 is never a point under either tie outcome
+  (block repeats / Premier OT-once draw). Formats outside MR12 (Wingman
+  MR8 first-to-9, legacy MR15 first-to-16) do not follow this predicate
+  (Wingman never reaches these scorelines; an MR15 demo could mis-cue
+  at 12-11 / 15-X). Consumed by spectra' replay match-point cue
+  (`frontend/src/lib/replay/sfx.js` `matchPointBefore`).
+  **Source** — CS wiki Competitive
+  (https://counterstrike.fandom.com/wiki/Competitive); CS wiki
+  Overtime (https://counterstrike.fandom.com/wiki/Overtime); Valve via
+  HLTV MR12
+  (https://www.hltv.org/news/36967/the-logic-behind-valves-move-to-mr12)
+  (all retrieved 2026-11-09).
 
 - **Weapon/inventory icons in a CS2 install** — where the gun icons live
   for extraction. In `pak01_dir.vpk`: (1) killfeed/HUD-style SVG
