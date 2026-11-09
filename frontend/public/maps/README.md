@@ -122,12 +122,19 @@ maps/<mapName>/<radar file>  optional in the schema, never committed here:
   draw for **players, the dropped/planted C4, and LANDED decoys**
   (the rest icon) — never for in-flight utility, transient effects
   (detonation pops, lingering smoke/fire), or death markers.
-  Never written by the extractor — hand-authored (walk the corners +
-  stand on each of the two surfaces with `getpos_exact`), and
-  **preserved across
-  re-extraction** (`preserveElevation` in `internal/mappack/extract.go`;
-  a refresh also DROPS stale per-floor `elevation` keys — nothing reads
-  them anymore).
+  Never derived by the extractor — hand-authored (walk the corners +
+  stand on each of the two surfaces with `getpos_exact`). **This bundled
+  copy is their canonical home**: on every extraction the regions flow
+  into the data-dir pack in priority order bundled copy → the pack's
+  existing data-dir `meta.json` → none (`preserveElevation` in
+  `internal/mappack/extract.go`, fed the bundled bytes through
+  `mappack.WithBundledMeta` / `bundledMapMeta` in `mappackservice.go`),
+  so a refresh can never lose them, while a map extracted but never
+  bundled keeps whatever it already had. This key is the ONLY one that
+  flows: everything else in the fresh data-dir meta (radar, transform,
+  layers + Z bands, sites, spawns, `source.note`) is extractor-derived
+  and stays fresh. A refresh also DROPS stale per-floor `elevation`
+  keys — nothing reads them anymore.
   - `z_min`/`z_max` — OPTIONAL floor scope for the box, half-open
     `[z_min, z_max)` — the SAME convention as the layer bands, so a box
     scoped to Nuke's lower band ends exactly where the upper band begins
@@ -165,8 +172,11 @@ Numeric metadata (transform constants) is our own JSON in-repo — facts, not
 artwork. The bundled packs (six maps) also carry the hand-derived
 `elevation_regions` (measured in-game with `getpos_exact`) and Nuke's
 layer Z bands, so end-users get elevation marks on a fresh install
-without extracting anything; extraction adds the pixels and wins
-outright. Radar **pixels** are never bundled: official radars are Valve IP,
+without extracting anything; extraction adds the pixels, keeps its own
+fresh metadata for every extractor-derived key, and carries these
+regions into the data-dir pack it writes — so the copy the app serves
+first (the data-dir one) keeps the marks too. Radar **pixels** are never
+bundled: official radars are Valve IP,
 and no placeholder/schematic art ships either. The only path to authentic
 map backgrounds is the in-app extractor (Settings → Map packs, or the
 first-run prompt): it reads
@@ -187,10 +197,12 @@ size (1024 source → 3072 px file, `radarUpscale` in
 1024, so old 1:1 packs and new 3× packs world-map identically). Packs
 extracted before that upscale shipped keep their smaller files — and
 `meta.json` keeps whatever it already declared — until you re-extract
-here. The only thing
-it deliberately does NOT overwrite is your hand-authored
-`elevation_regions` (see above); stale per-floor `elevation` keys are
-dropped on refresh — nothing reads them anymore.
+here. Every extractor-derived key is overwritten with the current game
+files; the one hand-authored input, your `elevation_regions` (see
+above), is MERGED in instead — the bundled copy's values win, falling
+back to the pack's own previous data-dir values only for maps with no
+bundled copy — and stale per-floor `elevation` keys are dropped on
+refresh: nothing reads them anymore.
 Without a re-extract, packs extracted before a feature shipped keep their
 old files: optional metadata does not appear on its own.
 

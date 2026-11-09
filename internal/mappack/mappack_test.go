@@ -1040,6 +1040,175 @@ func TestPreserveElevation(t *testing.T) {
 	}
 }
 
+// TestExtractBundledElevation — the bundled frontend/public/maps copy is
+// the canonical home of the hand-authored elevation_regions: a run wired
+// with WithBundledMeta (mappackservice.go does this from the embedded
+// frontend) writes those regions into the fresh data-dir meta, and they
+// WIN over whatever a previous data-dir meta carried. With no bundled
+// pack for the map the old data-dir value survives (the behavior
+// TestPreserveElevation pins for an unwired run), with neither the key
+// stays absent. ONLY the regions flow: the bundled copy's
+// extractor-derived keys must never overwrite the fresh ones.
+func TestExtractBundledElevation(t *testing.T) {
+	// Synthetic CS2 install: one radar + one single-floor overview
+	// (multi-floor layer extraction is pinned by TestExtractMapPacksLayers).
+	install := t.TempDir()
+	csgo := filepath.Join(install, "game", "csgo")
+	if err := os.MkdirAll(csgo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const w, h = 8, 8
+	radar := buildVTex(t, w, h, vtexFormatBGRA8888, bgraPix(w, h), true)
+	buildVPK(t, csgo, map[string][]byte{
+		"panorama/images/overheadmaps/de_fixture_radar_psd.vtex_c": radar,
+		"resource/overviews/de_fixture.txt": []byte(`"de_fixture"
+{
+	"pos_x"		"-100"
+	"pos_y"		"200"
+	"scale"		"4.0"
+}
+`),
+	})
+
+	// The bundled fixture: regions PLUS an extractor-derived key whose
+	// value deliberately differs from the overview's — only the regions
+	// may travel from here.
+	bundledRegions := `[{"x":1,"y":2,"w":3,"h":4,"reference_z":5,"above":6,"below":7,"z_min":-10000,"z_max":-495}]`
+	bundledRaw := []byte(`{"transform":{"pos_x":1,"pos_y":2,"scale":3},"elevation_regions":` + bundledRegions + `}`)
+	// A pre-existing data-dir value (different numbers, so the two can
+	// never be confused in an assertion).
+	dataDirRegions := `[{"x":90,"y":91,"w":92,"h":93,"reference_z":94,"above":95,"below":96}]`
+
+	// reader is the WithBundledMeta source: b == nil behaves like a
+	// machine whose bundle carries no pack for this map (stub dist, or a
+	// map extracted but never bundled).
+	reader := func(b []byte) func(string) []byte {
+		return func(mapName string) []byte {
+			if mapName == "de_fixture" {
+				return b
+			}
+			return nil
+		}
+	}
+	// extract runs one full extraction into a fresh outDir and returns
+	// the written data-dir meta.
+	extract := func(t *testing.T, out string, b []byte) packMeta {
+		t.Helper()
+		if _, errs, err := ExtractMapPacks(install, out, WithBundledMeta(reader(b))); err != nil || len(errs) > 0 {
+			t.Fatalf("extract: err=%v errs=%v", err, errs)
+		}
+		raw, err := os.ReadFile(filepath.Join(out, "de_fixture", "meta.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var meta packMeta
+		if err := json.Unmarshal(raw, &meta); err != nil {
+			t.Fatal(err)
+		}
+		return meta
+	}
+	// seedDataDirRegions rewrites an already-extracted pack's meta.json
+	// with data-dir-only regions — a pack whose regions were hand-edited
+	// locally (or extracted before the bundled copy carried any).
+	seedDataDirRegions := func(t *testing.T, out string) {
+		t.Helper()
+		metaPath := filepath.Join(out, "de_fixture", "meta.json")
+		raw, err := os.ReadFile(metaPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var meta map[string]any
+		if err := json.Unmarshal(raw, &meta); err != nil {
+			t.Fatal(err)
+		}
+		var regions any
+		if err := json.Unmarshal([]byte(dataDirRegions), &regions); err != nil {
+			t.Fatal(err)
+		}
+		meta["elevation_regions"] = regions
+		edited, err := json.MarshalIndent(meta, "", "  ")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(metaPath, append(edited, '\n'), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	wantRegions := func(t *testing.T, got []packRegion, want string) {
+		t.Helper()
+		var wnt []packRegion
+		if err := json.Unmarshal([]byte(want), &wnt); err != nil {
+			t.Fatal(err)
+		}
+		// Compare canonical JSON, not the structs: ZMin/ZMax are
+		// *float64, so slices.Equal would compare pointer addresses.
+		// Both sides came from JSON text, so the encoding is a faithful
+		// spelling of the values.
+		gotJSON, err := json.Marshal(got)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantJSON, err := json.Marshal(wnt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(gotJSON) != string(wantJSON) {
+			t.Errorf("elevation_regions = %s, want %s", gotJSON, wantJSON)
+		}
+	}
+
+	t.Run("fresh extract carries the bundled regions", func(t *testing.T) {
+		out := t.TempDir()
+		meta := extract(t, out, bundledRaw)
+		wantRegions(t, meta.ElevationRegions, bundledRegions)
+		// ONLY the regions flow: the bundled copy's transform is
+		// ignored — the fresh overview's values win.
+		if meta.Transform == nil || meta.Transform.PosX != -100 || meta.Transform.PosY != 200 || meta.Transform.Scale != 4 {
+			t.Errorf("transform = %+v, want the fresh overview's (-100,200,4)", meta.Transform)
+		}
+	})
+
+	t.Run("bundled wins over an existing data-dir value", func(t *testing.T) {
+		out := t.TempDir()
+		_ = extract(t, out, nil) // first extract: no bundle wired
+		seedDataDirRegions(t, out)
+		meta := extract(t, out, bundledRaw) // re-extract WITH the bundle
+		wantRegions(t, meta.ElevationRegions, bundledRegions)
+	})
+
+	t.Run("no bundled pack keeps the data-dir value", func(t *testing.T) {
+		out := t.TempDir()
+		_ = extract(t, out, nil)
+		seedDataDirRegions(t, out)
+		meta := extract(t, out, nil) // bundle wired, no pack for this map
+		wantRegions(t, meta.ElevationRegions, dataDirRegions)
+	})
+
+	t.Run("no bundled pack and no existing value stays absent", func(t *testing.T) {
+		out := t.TempDir()
+		meta := extract(t, out, nil)
+		if len(meta.ElevationRegions) != 0 {
+			t.Errorf("elevation_regions = %+v, want absent", meta.ElevationRegions)
+		}
+	})
+
+	t.Run("a bundled pack without regions leaves the data-dir value", func(t *testing.T) {
+		out := t.TempDir()
+		_ = extract(t, out, nil)
+		seedDataDirRegions(t, out)
+		meta := extract(t, out, []byte(`{"transform":{"pos_x":1,"pos_y":2,"scale":3}}`))
+		wantRegions(t, meta.ElevationRegions, dataDirRegions)
+	})
+
+	t.Run("a malformed bundled copy falls back to the data-dir value", func(t *testing.T) {
+		out := t.TempDir()
+		_ = extract(t, out, nil)
+		seedDataDirRegions(t, out)
+		meta := extract(t, out, []byte("{not json"))
+		wantRegions(t, meta.ElevationRegions, dataDirRegions)
+	})
+}
+
 func TestFindCS2FromSteamRoot(t *testing.T) {
 	// Synthetic Steam root: libraryfolders.vdf + appmanifest + install.
 	root := t.TempDir()
