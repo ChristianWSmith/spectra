@@ -14,11 +14,12 @@ const (
 	prefsWindowWidthKey  = "window_width"
 	prefsWindowHeightKey = "window_height"
 
-	// prefsMapPackPromptKey records the CS2 radar-extraction prompt state:
-	// "" (never asked), "declined" (don't ask again), or "done".
-	prefsMapPackPromptKey = "mappack_prompt_state"
 	// prefsMapPackCS2PathKey holds a manually chosen CS2 folder (empty =
-	// auto-detect through Steam).
+	// auto-detect through Steam). Written through
+	// MapPackService.SetCS2Dir — the prompt-state pref that used to sit
+	// beside it is GONE on purpose: the launch prompt is presence-driven
+	// (it re-opens every launch until the assets exist), so there is
+	// nothing to persist but the folder.
 	prefsMapPackCS2PathKey = "mappack_cs2_path"
 
 	// prefsFontSizeKey is the app font-size setting: "small" | "medium" |

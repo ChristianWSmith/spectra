@@ -490,8 +490,12 @@ export function renderReport(templateId, matchId, steamId, round) {
 
 export function getMapPackStatus() { return MapPackService.GetMapPackStatus(); }
 export function extractMapPacks(cs2Dir) { return MapPackService.ExtractMapPacks(cs2Dir || ''); }
-export function setMapPackPromptState(state, path) {
-  return MapPackService.SetMapPackPromptState(state || '', path || '');
+// setCS2Dir validates + persists a manually chosen CS2 folder — the
+// second half of chooseCS2Dir, used by both "Choose folder…" buttons.
+// (The old setMapPackPromptState(state, path) is gone with the retired
+// prompt-state pref: the launch prompt is presence-driven.)
+export function setCS2Dir(path) {
+  return MapPackService.SetCS2Dir(path || '');
 }
 export function chooseCS2Dir() { return MapPackService.ChooseCS2Dir(); }
 

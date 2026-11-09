@@ -1,43 +1,97 @@
 <script>
-  // One-time prompt, two variants: "Found Counter-Strike 2 — extract
-  // radar images?" when detection succeeds, and "Counter-Strike 2 not
+  // Launch prompt, two variants: "Found Counter-Strike 2 — extract all
+  // assets?" when an install is detected, and "Counter-Strike 2 not
   // found" when it doesn't (plain-grid fallback explained; "Choose
   // folder…" validates a manual install and moves straight into the
-  // extract flow). Shown by App on first launch after detection; "Not
-  // now" declines permanently in either variant, "Choose folder…"
-  // covers non-Steam installs. Valve IP never ships — internal/mappack.
+  // extract flow). Shown by App on EVERY launch while any asset family
+  // is missing — the gate is presence-driven (maps + icons + sounds all
+  // extracted → no prompt), so "Not now" only skips this launch; there
+  // is no persisted suppression. Escape/backdrop dismissal is
+  // session-only the same way. "Choose folder…" covers non-Steam
+  // installs. Valve IP never ships — internal/mappack.
   import {
     getMapPackStatus,
-    extractMapPacks,
-    setMapPackPromptState,
+    getIconManifest,
+    getSoundManifest,
+    setCS2Dir,
     chooseCS2Dir,
+    onAssetProgress,
     errText,
   } from '../services.js';
+  import { extractAllAssets } from '../assets.js';
   import Dialog from './Dialog.svelte';
+  import StatusChip from './StatusChip.svelte';
 
   let open = $state(false);
   let notFound = $state(false); // CS2 missing → the not-found variant
   let status = $state(null); // MapPackStatus once loaded
   let busy = $state(false);
   let error = $state('');
-  let result = $state(null); // { maps, errors } after extraction
+  let msg = $state(''); // aggregated result line after extraction
   let pickedDir = $state(''); // manual folder override
+  // Live extraction progress: step names the family currently running
+  // (set by extractAllAssets' onStep before each awaited call), progress
+  // holds the last spectra:asset-progress payload — only map packs emit
+  // one today, so the icon/sound steps render the animated bar from the
+  // step label alone (the Settings pattern).
+  let step = $state('');
+  let progress = $state(null);
+
+  // The per-map payload while the map-pack step is running; null for the
+  // other steps (no emitter) so the bar never pretends to be determinate.
+  const mapProgress = $derived(
+    step === 'radar map packs' && progress && progress.family === 'map-packs'
+      ? progress
+      : null,
+  );
+
+  // 0 = the animated indeterminate bar (StatusChip's class:indeterminate),
+  // a real 0..1 = the determinate bar + its percentage.
+  const pct = $derived(
+    mapProgress && mapProgress.total > 0
+      ? Math.min(1, mapProgress.done / mapProgress.total)
+      : 0,
+  );
+
+  // Subscribe for the whole component lifetime; the unsubscribe is the
+  // $effect cleanup (the pattern documented at services.js onEvent).
+  $effect(() => {
+    const off = onAssetProgress((p) => {
+      if (p) progress = p;
+    });
+    return off;
+  });
 
   export async function maybePrompt() {
     try {
-      const st = await getMapPackStatus();
-      if (!st || st.promptState === 'declined' || st.promptState === 'done') {
+      // Presence signals for ALL THREE families — cheap local listings:
+      // map packs = data-dir pack dirs (bundled packs carry no pixels, so
+      // an empty data dir IS prompt-worthy), icons/sounds = manifests.
+      const [st, icons, sounds] = await Promise.all([
+        getMapPackStatus(),
+        getIconManifest(),
+        getSoundManifest(),
+      ]);
+      const mapsMissing = !st || !st.maps || st.maps.length === 0;
+      const iconsMissing = !icons || !icons.extracted;
+      const soundsMissing = !sounds || !sounds.extracted;
+      // The gate: ANY family missing re-opens the prompt this launch.
+      // Nothing is persisted — once every family exists, the condition
+      // simply stops being true (extraction, not a pref, ends the loop).
+      if (!mapsMissing && !iconsMissing && !soundsMissing) {
         return;
       }
       status = st;
-      pickedDir = st.path || '';
-      notFound = !st.found;
+      pickedDir = (st && st.path) || '';
+      notFound = !st || !st.found;
       error = '';
-      result = null;
+      msg = '';
+      step = '';
+      progress = null;
       open = true;
     } catch (e) {
       // Detection failure must never block app startup.
-      console.error('map pack status', e);
+      console.error('asset status', e);
     }
   }
 
@@ -48,27 +102,31 @@
   async function accept() {
     busy = true;
     error = '';
+    msg = '';
+    step = '';
+    // Drop any progress a previous run left behind — the first
+    // spectra:asset-progress of THIS run replaces it; without this the
+    // bar could open at a stale "18 of 18".
+    progress = null;
     try {
-      const out = await extractMapPacks(pickedDir);
-      result = out;
-      if (out && out.maps && out.maps.length > 0 && !(out.errors || []).length) {
-        // Full success: the prompt state was persisted Go-side too.
+      const out = await extractAllAssets({
+        dir: pickedDir || (status && status.path) || '',
+        onStep: (label) => (step = label),
+      });
+      msg = out.msg;
+      error = out.error;
+      if (msg && !error) {
+        // Full success: every family extracted → presence now holds and
+        // the loop ends; close on the same beat Settings shows its line.
         setTimeout(close, 900);
       }
     } catch (e) {
       error = errText(e);
     } finally {
+      step = '';
+      progress = null;
       busy = false;
     }
-  }
-
-  async function decline() {
-    try {
-      await setMapPackPromptState('declined', '');
-    } catch (e) {
-      console.error('save prompt state', e);
-    }
-    close();
   }
 
   async function pickFolder() {
@@ -77,10 +135,11 @@
       if (dir) {
         pickedDir = dir;
         // Persist so future detection/status calls use it.
-        await setMapPackPromptState('', dir);
+        await setCS2Dir(dir);
         status = { ...(status || {}), path: dir, manual: true, found: true };
         // A validated folder ends the not-found variant: the dialog flips
-        // into the normal "Found Counter-Strike 2 — extract radar?" flow.
+        // into the normal "Found Counter-Strike 2 — extract all assets?"
+        // flow.
         notFound = false;
         error = '';
       }
@@ -94,7 +153,7 @@
   open={open}
   backClass="top"
   panelClass="pk-prompt"
-  label={notFound ? 'Counter-Strike 2 not found' : 'Extract radar images'}
+  label={notFound ? 'Counter-Strike 2 not found' : 'Extract CS2 assets'}
   dismissable={!busy}
   onClose={close}
 >
@@ -117,25 +176,32 @@
     {:else}
       <h2 class="pk-title">Found Counter-Strike 2</h2>
       <p class="muted">
-        Spectra can extract the official radar images and map transforms
-        from your local CS2 installation for authentic map backgrounds in
-        replay and heatmaps.
+        Spectra can extract the official radar images and map transforms,
+        the equipment icons and the replay sounds from your local
+        Counter-Strike 2 installation — authentic map backgrounds,
+        inventory silhouettes and in-replay audio.
       </p>
       <p class="muted pk-path mono">{pickedDir || status?.path || 'CS2 install'}</p>
       <p class="muted pk-fine">
-        Images are read from your game files and stored in Spectra's data
+        Assets are read from your game files and stored in Spectra's data
         folder on this machine. Nothing is uploaded, and nothing from
         Counter-Strike ships with the app.
       </p>
-      {#if result}
-        <p class="pk-result" role="status">
-          {#if result.maps && result.maps.length}
-            Extracted {result.maps.length} map pack{result.maps.length === 1 ? '' : 's'}.
-          {/if}
-          {#if result.errors && result.errors.length}
-            <span class="pk-err">{result.errors.length} failed: {result.errors[0]}</span>
-          {/if}
+      <!-- Live extraction progress: the app's ONE progress widget
+           (StatusChip) beside the step text — the Settings pattern.
+           Map packs drive it with real numbers from
+           spectra:asset-progress; the icon/sound steps have no emitter,
+           so their bar stays the animated indeterminate one. -->
+      {#if busy && step}
+        <p class="muted" role="status">
+          <StatusChip status="running" progress={pct} />
+          Extracting {step}…{mapProgress && mapProgress.done > 0
+            ? ` ${mapProgress.done} of ${mapProgress.total}`
+            : ''}
         </p>
+      {/if}
+      {#if msg}
+        <p class="pk-result" role="status">{msg}</p>
       {/if}
       {#if error}
         <p class="error" role="alert">{error}</p>
@@ -147,10 +213,13 @@
       Choose folder…
     </button>
     <span class="spacer"></span>
-    <button class="btn" disabled={busy} onclick={decline}>Not now</button>
+    <!-- Session-only dismissal: no suppression pref exists any more, so
+         "Not now" closes this launch and the prompt returns on the next
+         one while assets are still missing. -->
+    <button class="btn" disabled={busy} onclick={close}>Not now</button>
     {#if !notFound}
       <button class="btn primary" disabled={busy} onclick={accept}>
-        {busy ? 'Extracting…' : 'Extract radar images'}
+        {busy ? 'Extracting…' : 'Extract all CS2 assets'}
       </button>
     {/if}
   </div>
@@ -183,9 +252,6 @@
   }
   .pk-result {
     font-size: 0.9em;
-  }
-  .pk-err {
-    color: var(--danger);
   }
   .pk-actions {
     margin-top: 14px;

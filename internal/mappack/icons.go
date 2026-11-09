@@ -217,6 +217,8 @@ func iconVPKPath(name string) string {
 // sorted for determinism. opts.Progress, when set, fires once per
 // canonical icon attempted (ExtractOption).
 func ExtractIcons(cs2Dir, outDir string, opts ...ExtractOption) (names []string, errs []string, err error) {
+	extractMu.Lock()
+	defer extractMu.Unlock()
 	var cfg extractConfig
 	for _, opt := range opts {
 		opt(&cfg)

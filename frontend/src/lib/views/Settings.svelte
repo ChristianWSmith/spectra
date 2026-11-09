@@ -12,12 +12,9 @@
     setPluginEnabled,
     removePlugin,
     getMapPackStatus,
-    extractMapPacks,
     getIconManifest,
-    extractIcons,
     getSoundManifest,
-    extractSounds,
-    setMapPackPromptState,
+    setCS2Dir,
     chooseCS2Dir,
     checkForUpdateNow,
     getPref,
@@ -29,6 +26,7 @@
     onAssetProgress,
     errText,
   } from '../services.js';
+  import { extractAllAssets } from '../assets.js';
   import { probeAudio } from '../replay/audio.js';
   import { AUDIO_VOL_DEFAULT, prefVolume } from '../replay/sfx.js';
   import { fmtDate } from '../fmt.js';
@@ -281,11 +279,12 @@
       : '',
   );
 
-  // One action, all three families: extract the map packs, the equipment
-  // icons and the replay sounds sequentially under the single mpBusy
-  // state, then aggregate the outcomes — mpMsg names what succeeded
-  // ("…N map packs, M icons, K sounds"), mpError names what failed (every
-  // part is attempted even when the first one fails).
+  // One action, all three families: delegate to lib/assets.js — THE
+  // shared three-step extraction (map packs → equipment icons → replay
+  // sounds) whose result message names what succeeded ("…N map packs, M
+  // icons, K sounds") and what failed (every part is attempted even when
+  // the first one fails). This view keeps the render: the mpBusy gate,
+  // the mpStep label beside StatusChip, and the refreshes in finally.
   async function doExtract() {
     mpBusy = true;
     mpMsg = '';
@@ -294,48 +293,13 @@
     // left behind — the first spectra:asset-progress of THIS run replaces
     // it; without this the bar could open at a stale "18 of 18".
     mpProgress = null;
-    const dir = mpStatus?.path || '';
-    const done = [];
-    const failed = [];
     try {
-      try {
-        mpStep = 'radar map packs';
-        const out = await extractMapPacks(dir);
-        const n = (out.maps || []).length;
-        const errs = out.errors || [];
-        if (n > 0) done.push(`${n} map pack${n === 1 ? '' : 's'}`);
-        if (errs.length) failed.push(`map packs: ${errs[0]}`);
-        else if (n === 0) failed.push('map packs: nothing extracted');
-      } catch (e) {
-        failed.push(`map packs: ${errText(e)}`);
-      }
-      try {
-        mpStep = 'equipment icons';
-        const m = await extractIcons(dir);
-        if (m && m.count > 0) {
-          done.push(`${m.count} icon${m.count === 1 ? '' : 's'}`);
-          if (m.note) failed.push(`icons: ${m.note}`);
-        } else {
-          failed.push(`icons: ${(m && m.note) || 'nothing extracted'}`);
-        }
-      } catch (e) {
-        failed.push(`icons: ${errText(e)}`);
-      }
-      try {
-        mpStep = 'replay sounds';
-        const s = await extractSounds(dir);
-        if (s && s.count > 0) {
-          done.push(`${s.count} sound${s.count === 1 ? '' : 's'}`);
-          if (s.note) failed.push(`sounds: ${s.note}`);
-        } else {
-          failed.push(`sounds: ${(s && s.note) || 'nothing extracted'}`);
-        }
-      } catch (e) {
-        failed.push(`sounds: ${errText(e)}`);
-      }
-      if (done.length) mpMsg = `Extracted ${done.join(', ')}.`;
-      if (failed.length) mpError = `${failed.join('; ')}.`;
-      if (!done.length && !failed.length) mpError = 'Nothing extracted.';
+      const out = await extractAllAssets({
+        dir: mpStatus?.path || '',
+        onStep: (label) => (mpStep = label),
+      });
+      mpMsg = out.msg;
+      mpError = out.error;
     } finally {
       await refreshMapPacks();
       await refreshIcons();
@@ -352,7 +316,7 @@
     try {
       const dir = await chooseCS2Dir();
       if (dir) {
-        await setMapPackPromptState('', dir);
+        await setCS2Dir(dir);
         await refreshMapPacks();
       }
     } catch (e) {

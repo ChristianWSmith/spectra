@@ -1,6 +1,10 @@
 package main
 
-import "testing"
+import (
+	"os"
+	"strings"
+	"testing"
+)
 
 func TestSavedWindowSize(t *testing.T) {
 	tests := []struct {
@@ -68,5 +72,22 @@ func TestFrontendPrefKeyStrings(t *testing.T) {
 	}
 	if prefsAnnouncerVolumeKey != "announcer_volume" {
 		t.Errorf("announcer volume key = %q, want %q", prefsAnnouncerVolumeKey, "announcer_volume")
+	}
+}
+
+// Removal pin for the retired prompt-suppression pref: the launch prompt
+// is presence-driven (it re-opens on EVERY launch until the assets
+// exist — "Not now" is session-only), so there is deliberately no
+// durable declined/done state to store. If this fails, someone is
+// reintroducing a suppression pref — don't; change the gate instead.
+func TestRetiredPromptSuppressionPrefGone(t *testing.T) {
+	src, err := os.ReadFile("prefs.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, retired := range []string{"mappack_prompt_state", "prefsMapPackPromptKey"} {
+		if strings.Contains(string(src), retired) {
+			t.Errorf("prefs.go mentions %q — the prompt gate is presence-driven; nothing about it may be persisted", retired)
+		}
 	}
 }

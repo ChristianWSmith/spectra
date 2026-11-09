@@ -400,6 +400,8 @@ func soundStem(vpkPath string) string {
 // opts.Progress, when set, fires once per canonical sound attempted
 // (ExtractOption).
 func ExtractSounds(cs2Dir, outDir string, opts ...ExtractOption) (names []string, errs []string, err error) {
+	extractMu.Lock()
+	defer extractMu.Unlock()
 	var cfg extractConfig
 	for _, opt := range opts {
 		opt(&cfg)

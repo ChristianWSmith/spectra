@@ -1,7 +1,6 @@
 package main
 
 import (
-	"log/slog"
 	"os"
 	"path/filepath"
 	"strings"
@@ -45,9 +44,10 @@ type AssetProgressEvent struct {
 
 // MapPackService is the frontend-facing radar map-pack surface: detect a
 // local CS2 install, extract official radar images + transforms from the
-// user's own pak01_dir.vpk into the app data dir, and track the one-time
-// extraction prompt. Valve IP never ships in releases — extraction runs
-// locally on demand (frontend/public/maps/README.md acquisition posture).
+// user's own pak01_dir.vpk into the app data dir, and report the
+// presence signals the launch prompt keys on (which packs are already
+// extracted). Valve IP never ships in releases — extraction runs locally
+// on demand (frontend/public/maps/README.md acquisition posture).
 type MapPackService struct {
 	app *application.App
 	kvs *kvstore.KVStoreService
@@ -55,13 +55,14 @@ type MapPackService struct {
 
 // MapPackStatus reports what the frontend needs to decide whether to
 // prompt: whether CS2 was found, where, which packs are already
-// extracted, and the prompt state.
+// extracted. The prompt gate is presence-driven — it opens whenever any
+// asset family is missing (icons and sounds ride GetIconManifest /
+// GetSoundManifest) — so there is deliberately no prompt-state field.
 type MapPackStatus struct {
-	Found       bool     `json:"found"`
-	Path        string   `json:"path"`   // detected or manually chosen CS2 dir
-	Manual      bool     `json:"manual"` // path came from the folder picker
-	PromptState string   `json:"promptState"`
-	Maps        []string `json:"maps"` // extracted map names
+	Found  bool     `json:"found"`
+	Path   string   `json:"path"`   // detected or manually chosen CS2 dir
+	Manual bool     `json:"manual"` // path came from the folder picker
+	Maps   []string `json:"maps"`   // extracted map names
 }
 
 // ExtractOutcome is returned by ExtractMapPacks: what succeeded, what
@@ -74,16 +75,16 @@ type ExtractOutcome struct {
 
 // GetMapPackStatus detects the CS2 install (manual path wins over
 // auto-detect) and lists already-extracted packs. Detection failures are
-// not errors — Found=false simply means no prompt.
+// not errors — Found=false simply means the frontend shows the
+// "Counter-Strike 2 not found" prompt variant instead.
 func (s *MapPackService) GetMapPackStatus() MapPackStatus {
 	manual, _ := s.kvs.Get(prefsMapPackCS2PathKey).(string)
 	path := mappack.FindCS2(manual)
 	st := MapPackStatus{
-		Found:       path != "",
-		Path:        path,
-		Manual:      manual != "" && path != "",
-		PromptState: prefString(s.kvs.Get(prefsMapPackPromptKey)),
-		Maps:        extractedMaps(data.MapsDir()),
+		Found:  path != "",
+		Path:   path,
+		Manual: manual != "" && path != "",
+		Maps:   extractedMaps(data.MapsDir()),
 	}
 	return st
 }
@@ -97,7 +98,7 @@ func (s *MapPackService) GetMapPackStatus() MapPackStatus {
 // The bundled frontend/public/maps copies ride along (WithBundledMeta +
 // bundledMapMeta below) so the hand-authored elevation_regions land in
 // the data-dir pack too — both extraction entry points (Settings and the
-// first-run prompt) come through here.
+// launch prompt) come through here.
 func (s *MapPackService) ExtractMapPacks(cs2Dir string) ExtractOutcome {
 	if cs2Dir == "" {
 		manual, _ := s.kvs.Get(prefsMapPackCS2PathKey).(string)
@@ -129,12 +130,6 @@ func (s *MapPackService) ExtractMapPacks(cs2Dir string) ExtractOutcome {
 	for _, m := range maps {
 		names = append(names, m.Map)
 	}
-	if len(names) > 0 {
-		// Extraction satisfies the prompt permanently.
-		if setErr := s.kvs.Set(prefsMapPackPromptKey, "done"); setErr != nil {
-			slog.Warn("save map pack prompt state", "error", setErr)
-		}
-	}
 	return ExtractOutcome{Maps: names, Errors: errs, Dir: data.MapsDir()}
 }
 
@@ -161,29 +156,23 @@ func bundledMapMeta(mapName string) []byte {
 	return b
 }
 
-// SetMapPackPromptState records the prompt decision ("declined" = never
-// ask again) and, when path is non-empty, stores a manually chosen CS2
-// folder for future detection.
-func (s *MapPackService) SetMapPackPromptState(state, path string) error {
-	if state != "" {
-		if err := s.kvs.Set(prefsMapPackPromptKey, state); err != nil {
-			return err
-		}
+// SetCS2Dir validates a manually chosen CS2 folder (path) and persists
+// it for future detection (prefsMapPackCS2PathKey). It is the second
+// half of ChooseCS2Dir: the picker opens the dialog, the caller persists
+// the choice. An empty path is a no-op (picker cancel).
+func (s *MapPackService) SetCS2Dir(path string) error {
+	if path == "" {
+		return nil
 	}
-	if path != "" {
-		if err := mappack.ValidateInstall(path); err != nil {
-			return err
-		}
-		if err := s.kvs.Set(prefsMapPackCS2PathKey, path); err != nil {
-			return err
-		}
+	if err := mappack.ValidateInstall(path); err != nil {
+		return err
 	}
-	return nil
+	return s.kvs.Set(prefsMapPackCS2PathKey, path)
 }
 
 // ChooseCS2Dir opens the native folder picker for non-Steam or custom
 // installs; an empty string means cancel. The choice is validated and
-// persisted via SetMapPackPromptState by the caller. The picker itself
+// persisted via SetCS2Dir by the caller. The picker itself
 // lives in dialogs.go (chooseDirectory — one implementation for every
 // folder the user picks).
 func (s *MapPackService) ChooseCS2Dir() string {
@@ -210,10 +199,4 @@ func extractedMaps(dir string) []string {
 		}
 	}
 	return out
-}
-
-// prefString coerces a prefs value to a string ("" when absent).
-func prefString(v any) string {
-	s, _ := v.(string)
-	return s
 }

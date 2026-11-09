@@ -45,8 +45,10 @@
     };
     window.addEventListener('hashchange', onChange);
 
-    // One-time CS2 radar-extraction prompt: detection + decision persist
-    // in Go (MapPackPrompt decides whether to show; never throws).
+    // CS2 asset-extraction prompt: presence-driven — MapPackPrompt
+    // fetches the three asset statuses itself and opens whenever any
+    // family is missing (every launch; "Not now" is session-only).
+    // Never throws, never blocks startup.
     mapPackPrompt?.maybePrompt();
 
     // Report the window size to Go (debounced) whenever the user resizes,

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 
 	"golang.org/x/image/draw"
 )
@@ -212,6 +213,18 @@ func (c *extractConfig) metaFor(mapName string) []byte {
 	return c.bundledMeta(mapName)
 }
 
+// extractMu serializes the THREE public extractors — ExtractMapPacks,
+// ExtractIcons and ExtractSounds. They all write into the shared app
+// data dir, and the app has three concurrent triggers: the launch
+// prompt's accept, Settings' "Extract all CS2 assets", and Replay's
+// background icon auto-extract. Interleaved runs would race on the
+// output directories (a pack dir half-written while another run's
+// manifest reads it); a blocking wait is fine — every run is idempotent,
+// so a queued run simply rewrites the same files. Locks are taken at
+// each public entry (the extractors never call each other, so the lock
+// is never re-entered).
+var extractMu sync.Mutex
+
 // ExtractMapPacks extracts every official-map radar from the CS2 install
 // at cs2Dir into outDir (created if needed), one subdirectory per map.
 // Existing packs are overwritten (idempotent re-extract after game
@@ -221,6 +234,8 @@ func (c *extractConfig) metaFor(mapName string) []byte {
 // makes the committed frontend/public/maps copies the source of the
 // hand-authored elevation_regions that ride into every fresh meta.json.
 func ExtractMapPacks(cs2Dir, outDir string, opts ...ExtractOption) (maps []ExtractResult, errs []string, err error) {
+	extractMu.Lock()
+	defer extractMu.Unlock()
 	var cfg extractConfig
 	for _, opt := range opts {
 		opt(&cfg)

@@ -3,7 +3,12 @@ package main
 import (
 	"encoding/json"
 	"io/fs"
+	"os"
+	"path/filepath"
 	"testing"
+
+	"github.com/adrg/xdg"
+	"github.com/wailsapp/wails/v3/pkg/services/kvstore"
 )
 
 // TestBundledMapMeta pins the extraction wiring for the bundled meta
@@ -56,5 +61,83 @@ func TestBundledMapMeta(t *testing.T) {
 		if b := bundledMapMeta(e.Name()); len(b) == 0 {
 			t.Errorf("bundledMapMeta(%q) = nil, want the embedded meta.json", e.Name())
 		}
+	}
+}
+
+// TestMapPackStatusIsPresenceOnly pins the launch-prompt contract on the
+// Go side: MapPackStatus carries only presence signals (found/path/
+// manual/maps) — NO promptState field. The gate is presence-driven in
+// the frontend (any missing asset family re-opens the prompt every
+// launch), so a durable suppression value has nowhere to live: even a
+// stale mappack_prompt_state pref left in a dev kvstore is simply
+// ignored.
+func TestMapPackStatusIsPresenceOnly(t *testing.T) {
+	kvs := kvstore.New()
+	if err := kvs.Set("mappack_prompt_state", "declined"); err != nil {
+		t.Fatal(err)
+	}
+	s := &MapPackService{kvs: kvs}
+
+	// Point the data dir at a temp dir so MapsDir() lists that instead
+	// of the developer's real extraction output.
+	prevDataHome := xdg.DataHome
+	xdg.DataHome = t.TempDir()
+	t.Cleanup(func() { xdg.DataHome = prevDataHome })
+
+	raw, err := json.Marshal(s.GetMapPackStatus())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"found", "path", "manual", "maps"} {
+		if _, ok := got[key]; !ok {
+			t.Errorf("MapPackStatus JSON missing %q: %s", key, raw)
+		}
+	}
+	if _, ok := got["promptState"]; ok {
+		t.Errorf("MapPackStatus must not carry promptState (presence-driven gate): %s", raw)
+	}
+}
+
+// TestSetCS2DirPersistsOnlyThePath pins the repurposed folder-persist
+// method: SetCS2Dir validates and stores the manual CS2 dir — and never
+// writes the retired prompt-suppression key (the old SetMapPackPromptState
+// wrote "declined"/"done" under it; nothing may bring that back).
+func TestSetCS2DirPersistsOnlyThePath(t *testing.T) {
+	kvs := kvstore.New()
+	s := &MapPackService{kvs: kvs}
+
+	// Cancelled pick (empty path): a no-op, nothing written.
+	if err := s.SetCS2Dir(""); err != nil {
+		t.Fatalf("SetCS2Dir(\"\") = %v, want nil", err)
+	}
+	if v := kvs.Get(prefsMapPackCS2PathKey); v != nil {
+		t.Errorf("empty path wrote %s = %v", prefsMapPackCS2PathKey, v)
+	}
+
+	// A folder without a pak is rejected and stores nothing.
+	if err := s.SetCS2Dir(t.TempDir()); err == nil {
+		t.Fatal("SetCS2Dir(non-install) = nil, want a validation error")
+	}
+	if v := kvs.Get(prefsMapPackCS2PathKey); v != nil {
+		t.Errorf("invalid path wrote %s = %v", prefsMapPackCS2PathKey, v)
+	}
+
+	// A valid install persists under the CS2-path key only.
+	install := t.TempDir()
+	if err := os.WriteFile(filepath.Join(install, "pak01_dir.vpk"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetCS2Dir(install); err != nil {
+		t.Fatalf("SetCS2Dir(valid) = %v", err)
+	}
+	if got := kvs.Get(prefsMapPackCS2PathKey); got != install {
+		t.Errorf("%s = %v, want %q", prefsMapPackCS2PathKey, got, install)
+	}
+	if got := kvs.Get("mappack_prompt_state"); got != nil {
+		t.Errorf("retired prompt-suppression pref was written: %v", got)
 	}
 }
