@@ -55,6 +55,12 @@ type PlayerRef struct {
 	SteamID string `json:"steamId"`
 	Name    string `json:"name"`
 	Side    string `json:"side"` // final side "ct" | "t" ("" unknown)
+	// IsBot is players.is_bot (extract's demoinfocs Player.IsBot). The
+	// analytics pass keeps computing bot rows; the flag rides along so
+	// the REPLAY roster can apply the replay exception (a bot is listed
+	// only while it is filling in for a disconnected human — see
+	// frontend lib/replay/playercard.js presentAt).
+	IsBot bool `json:"isBot"`
 }
 
 // RoundClassification is one round_classifications row: the stored buy-class

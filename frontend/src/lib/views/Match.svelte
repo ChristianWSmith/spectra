@@ -1,6 +1,7 @@
 <script>
   import { isSteam, replayHash } from '../nav.js';
   import { KAST_DEF } from '../definitions.js';
+  import { listedPlayers } from '../players.js';
   import {
     getMatch,
     getScoreboard,
@@ -254,7 +255,12 @@
     let live = true;
     getScoreboard(id, sortKey, desc)
       .then((sb) => {
-        if (live) scoreboard = sb || [];
+        // The ONE place this view's roster rows enter: listedPlayers
+        // (lib/players.js — the canonical client-side bot filter; the
+        // store already filters GetScoreboard, this is its twin) covers
+        // every derivation below — rosters, viewRows, topStats, the
+        // team_<player> names and the per-round side lookups.
+        if (live) scoreboard = listedPlayers(sb) || [];
       })
       .catch((e) => {
         if (live) error = errText(e);
@@ -913,8 +919,14 @@
                         >{p.name}</button>
                       {:else}
                         {p.name}
-                      {/if}{#if p.isBot}<span class="chip">bot</span>{/if}</td
-                    >
+                      {/if}
+                      <!-- No `bot` chip any more: bots never reach this
+                           table (GetScoreboard is humans-only —
+                           store.HumanOnly — and the rows pass through
+                           listedPlayers/lib/players.js on the way in).
+                           The replay view is the only place a bot is
+                           listed (lib/replay/playercard.js presentAt). -->
+                    </td>
                   {:else if col.key === 'side'}
                     <!-- Team cell: the display name for this row's final
                          side (teamNames in lib/teams.js — clan name, else

@@ -12,6 +12,7 @@
   import { toggleTheme } from '../theme.js';
   import { fmtDate } from '../fmt.js';
   import { NAV_ACTIONS, replayHash } from '../nav.js';
+  import { listedPlayers } from '../players.js';
   import { parseLandmarkFilter } from '../replay/landmarks.js';
   import Dialog from './Dialog.svelte';
 
@@ -246,7 +247,7 @@
   }
 
   async function fetchPlayers(q) {
-    const rows = (await listPlayers(q)) || [];
+    const rows = listedPlayers(await listPlayers(q)) || [];
     return scoredItems(
       q,
       rows.map((p) => ({

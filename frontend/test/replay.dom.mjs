@@ -115,6 +115,9 @@ const svelteCompile = (src, filename, out) => {
 for (const rel of [
   'rounds.js', 'router.js', 'nav.js', 'fmt.js', 'csv.js', 'payloadTree.js',
   'sideparity.js', 'teams.js',
+  // players.js is the canonical bot filter — Replay's roster rows and
+  // replay/playercard.js's bot check both import it.
+  'players.js',
 ]) {
   writeFileSync(join(dir, rel), readFileSync(join('src/lib', rel), 'utf8'));
 }

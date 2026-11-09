@@ -148,6 +148,10 @@ var scoreboardSort = map[string]string{
 // point of the guard); the INNER forms stay unguarded because guarding
 // them would FILTER rows out instead of nulling a name, which is a
 // result-set change, not a naming rule.
+//
+// Deliberately NOT a bot filter: the join only names rows. Which reads
+// exclude bots is HumanOnly's call (below) — event-shaped LEFT JOINs
+// (eventRowFrom, roundRowSelect) must keep bot names.
 const (
 	joinLeft  = "LEFT JOIN"
 	joinInner = "JOIN"
@@ -171,6 +175,54 @@ func playersJoin(kind, alias, matchCol, steamCol string, guard bool) string {
 	b.WriteString(alias)
 	b.WriteString(".steam_id = ")
 	b.WriteString(steamCol)
+	return b.String()
+}
+
+// HumanOnly is THE humans-only condition — the ONE place the Go side
+// decides "this roster/aggregate row belongs to a human". Bots
+// (players.is_bot, written from demoinfocs' Player.IsBot at import —
+// extract's synthetic 0xFF-prefixed id, see extract.isBotKey) are
+// excluded from EVERY roster/aggregate/selection read: GetScoreboard,
+// GetCombatStats' base rows, the ListMatches player facet, the career
+// rollup (RebuildCareer) and its list/read (ListPlayers, GetCareer) plus
+// GetTrend (the one profile read reachable without GetCareer's guard),
+// and — through the exported form — the metrics layer's `player` group
+// (internal/metrics/compile.go). Event-shaped reads (round MVP/
+// first-blood names, kill-feed attacker/victim cells, chat, engagements)
+// deliberately do NOT use it — they record what happened. GetPlayerRefs
+// keeps bots WITH the flag (the replay roster needs them).
+//
+// Two shapes, ONE rule; the frontend twin is frontend/src/lib/players.js
+// (isHuman/listedPlayers):
+//
+//   - HumanOnly(alias) — a players row is already joined under alias
+//     (GetScoreboard / GetCombatStats WHERE, the player facet's EXISTS,
+//     RebuildCareer's players join);
+//   - HumanOnlyBySteamID(steamExpr, matchExpr) — the read is keyed by a
+//     steam_id expression with no joined row (player_career). matchExpr
+//     scopes the lookup to one match (the players PK prefix — required
+//     for per-row use); "" is the library-wide form (no match in scope).
+func HumanOnly(alias string) string {
+	return alias + ".is_bot = 0"
+}
+
+// HumanOnlyBySteamID renders the steam-id-keyed form of HumanOnly: no
+// players row for this id is a bot. Bot identities are synthetic
+// (extract.isBotKey: 0xFF00000000000000|entityID) and can never collide
+// with a human SteamID64, so "a bot in ANY match" is "a bot" — which is
+// what lets a library-wide career read (no match_id available) express
+// the rule without a guess.
+func HumanOnlyBySteamID(steamIDExpr, matchExpr string) string {
+	var b strings.Builder
+	b.WriteString("NOT EXISTS (SELECT 1 FROM players p WHERE ")
+	if matchExpr != "" {
+		b.WriteString("p.match_id = ")
+		b.WriteString(matchExpr)
+		b.WriteString(" AND ")
+	}
+	b.WriteString("p.steam_id = ")
+	b.WriteString(steamIDExpr)
+	b.WriteString(" AND p.is_bot = 1)")
 	return b.String()
 }
 
@@ -221,6 +273,8 @@ const matchSummaryFrom = ` FROM matches m
 // ONE value matches a roster row by exact SteamID (the 17-digit profile
 // deep link, #/library?player=) OR by case-insensitive name substring
 // (typing a name), so the frontend needs no exact-vs-name mode switch.
+// The roster side of the facet is humans-only (HumanOnly): a bot's name
+// or id never matches.
 type MatchListFilter struct {
 	Map    string `json:"map"`
 	Player string `json:"player"`
@@ -266,8 +320,10 @@ func (s *Store) ListMatches(query, sortKey string, desc bool, filters ...MatchLi
 		if p := strings.TrimSpace(scrub(f.Player)); p != "" {
 			// Roster membership: exact SteamID OR name substring. The
 			// players PK (match_id, steam_id) makes the EXISTS a lookup.
+			// HumanOnly keeps a BOT's name out of the facet (a bot is
+			// never a "player this match contains").
 			conds = append(conds, `EXISTS (SELECT 1 FROM players p
-				WHERE p.match_id = m.id AND (p.steam_id = ? OR p.name LIKE ?))`)
+				WHERE p.match_id = m.id AND `+HumanOnly("p")+` AND (p.steam_id = ? OR p.name LIKE ?))`)
 			args = append(args, p, "%"+p+"%")
 		}
 	}
@@ -405,6 +461,11 @@ func (s *Store) GetMatch(id int64) (*models.Match, error) {
 // only reach a computed expression through its result-column alias (the
 // aliases are applied here, at the use site — kdPerMatchSQL itself stays
 // unaliased for GetTrend). Pinned by TestGetScoreboardKDAndKDASorting.
+// BOTS ARE EXCLUDED (HumanOnly) — this is THE roster read, so every
+// consumer inherits the exclusion (Match's tables/cards and top-stats,
+// the Combat/Utility/Heatmaps/Economy/CompareRounds/RoundDetail/Reports/
+// FilterBar player lists, the library player facet's roster side, the
+// report export's Scoreboard). Event-shaped reads keep bot names.
 func (s *Store) GetScoreboard(id int64, sortKey string, desc bool) ([]models.PlayerStatsRow, error) {
 	order, ok := scoreboardSort[sortKey]
 	dir := "ASC"
@@ -428,7 +489,7 @@ func (s *Store) GetScoreboard(id int64, sortKey string, desc bool) ([]models.Pla
 			ps.teamkills, ps.suicides, ps.money_spent_total, ps.kills_by_weapon, ps.damage_by_weapon
 		FROM player_stats ps
 		`+playersJoin(joinInner, "p", "ps.match_id", "ps.steam_id", false)+`
-		WHERE ps.match_id = ?
+		WHERE ps.match_id = ? AND `+HumanOnly("p")+`
 		ORDER BY `+order+` `+dir+`, p.name ASC`,
 		id,
 	)

@@ -10,6 +10,7 @@
   import { fmtMs, roundClock } from '../fmt.js';
   import { roundIndexLabel } from '../rounds.js';
   import { replayHash } from '../nav.js';
+  import { listedPlayers } from '../players.js';
   import { roundsByNumber } from '../replay/landmarks.js';
   import { playerSideClassAt, teamNames, teamStartClass } from '../teams.js';
   import ProfileLink from '../components/ProfileLink.svelte';
@@ -58,7 +59,7 @@
         if (!live) return;
         rows = u || [];
         rounds = rd || [];
-        players = sb || [];
+        players = listedPlayers(sb) || [];
         if (m && m.tickRate > 0) tickRate = m.tickRate;
         if (m) sideSwitches = m.sideSwitches || 0;
         // Team display names, keyed by each team's FINAL side — demo clan

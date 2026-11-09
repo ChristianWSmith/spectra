@@ -85,7 +85,7 @@
   // slots are IN the match at the playhead — the ONE rule that decides
   // which player cards exist (the card columns' filter below) — plus the
   // reload ring's fill (the ONE reload-progress formula).
-  import { connectedAt, indexConnections, reloadProgress } from '../replay/playercard.js';
+  import { presentAt, indexConnections, reloadProgress } from '../replay/playercard.js';
   import { loadMapPack } from '../components/mapxform.js';
   import { downloadBlob, downloadText } from '../download.js';
   import { toCSV } from '../csv.js';
@@ -318,11 +318,12 @@
   // Connection rows (player_connect / player_disconnect), fetched once
   // per match beside drawRows: the roster keeps a slot for a player who
   // disconnects mid-demo AND for a bot that joins late, so without them
-  // the columns grow a phantom card (the nuke demo's sixth CT). The
-  // index below groups them per player; the card columns and the follow
-  // dropdown read it through playerConnected(). Fail-soft by contract
-  // like drawRows — any failure lands [] and every card stays visible
-  // (missing data never hides a card).
+  // the columns grow a phantom card (the nuke demo's sixth CT) — and for
+  // a BOT these rows are the only evidence that it is covering a
+  // disconnected human (playercard.js presentAt). Fail-soft like
+  // drawRows: any failure lands [] and every HUMAN card stays visible;
+  // a bot card then stays hidden, because the replay exception needs
+  // positive evidence (bots fail toward NOT listed).
   let connRows = $state([]);
   const connIndex = $derived(indexConnections(connRows));
   // Flash-white overlay rows {slot, tick, ms} — the blind events joined
@@ -984,15 +985,16 @@
   }
 
   // playerConnected(slot, tick) — the ONE card-presence question: is
-  // this roster slot's player IN the match at `tick`? (playercard.js
-  // connectedAt over the indexed connect/disconnect rows; a slot with
-  // no steam id or no rows stays visible — missing data never hides a
-  // card). Reads uiTick through the caller, so scrubbing back before a
-  // disconnect re-shows the card and scrubbing forward hides it again.
+  // this roster slot's player IN the match at `tick`? Delegated entirely
+  // to playercard.js presentAt — humans run connectedAt's rule, a BOT
+  // slot runs the replay exception (a bot is listed only while it covers
+  // a disconnected same-side human, so a missing/empty read hides it —
+  // bots fail toward NOT listed, humans never do). A human slot with no
+  // steam id, no roster row or no rows stays visible. Reads uiTick
+  // through the caller, so scrubbing back before a disconnect re-shows
+  // the card and scrubbing forward hides it again.
   function playerConnected(slot, tick) {
-    const p = players[slot];
-    const sid = p && p.steamId != null ? String(p.steamId) : '';
-    return connectedAt(connIndex.get(sid), tick);
+    return presentAt(connIndex, players, slot, tick);
   }
 
   const cardGroups = $derived.by(() => {

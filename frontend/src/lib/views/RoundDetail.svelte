@@ -11,6 +11,7 @@
   import { fmtDuration, fmtTickSeconds, fmtInt, fmtClock, tickSeconds, chatClock } from '../fmt.js';
   import { roundIndexLabel, scoreThrough } from '../rounds.js';
   import { playerSideClassAt } from '../teams.js';
+  import { listedPlayers } from '../players.js';
   import { replayHash } from '../nav.js';
   import { buildHash } from '../router.js';
   import { roundsByNumber } from '../replay/landmarks.js';
@@ -63,7 +64,7 @@
         if (!live) return;
         detail = d;
         rounds = r || [];
-        players = sb || [];
+        players = listedPlayers(sb) || [];
         if (m && m.tickRate > 0) tickRate = m.tickRate;
         if (m) sideSwitches = m.sideSwitches || 0;
         error = d ? '' : 'Round not found.';

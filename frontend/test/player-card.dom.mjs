@@ -107,7 +107,7 @@ const svelteCompile = (src, filename, out, opts = {}) =>
 // components are compiled with css:'injected' so their <style> blocks
 // land in the document — the outline-geometry checks below read the real
 // rules the browser would apply.
-for (const rel of ['rounds.js', 'fmt.js']) {
+for (const rel of ['rounds.js', 'fmt.js', 'players.js']) {
   writeFileSync(join(dir, rel), readFileSync(join('src/lib', rel), 'utf8'));
 }
 for (const rel of ['landmarks.js', 'playercard.js', 'loadout.js', 'bullets.js', 'state.js']) {

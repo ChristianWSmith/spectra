@@ -18,6 +18,7 @@
   //   showReset — false hides the local Reset (the parent owns a full
   //              reset that also clears the category selection).
   import { getScoreboard } from '../services.js';
+  import { listedPlayers } from '../players.js';
 
   let { filter = {}, onchange = () => {}, id = 0, showReset = true } = $props();
 
@@ -150,7 +151,7 @@
     let live = true;
     getScoreboard(id, 'kills', true)
       .then((sb) => {
-        if (live) players = sb || [];
+        if (live) players = listedPlayers(sb) || [];
       })
       .catch(() => {});
     return () => (live = false);

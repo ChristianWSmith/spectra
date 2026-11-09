@@ -12,11 +12,13 @@
 // the main weapon's icon, inside its chip) resolves its VOCABULARY through
 // replay/loadout.js (isHeldItem / mainWeaponOf) — the one loadout rule
 // home shared with the decoy — this module only projects it for display.
-// The connection rules (indexConnections / connectedAt) are consumed by
-// Replay's card columns — the caller that owns all data and all fetching
-// (PlayerCard's prop contract) — they decide WHICH cards exist at all.
+// The connection rules (indexConnections / connectedAt / presentAt) are
+// consumed by Replay's card columns — the caller that owns all data and
+// all fetching (PlayerCard's prop contract) — they decide WHICH cards
+// exist at all.
 import { detonationStyle } from './landmarks.js';
 import { fmtMoney } from '../fmt.js';
+import { isBot, isBotId } from '../players.js';
 import { isFirearm, isHeldItem, mainWeaponOf } from './loadout.js';
 
 // utilityOf groups a state-stream inventory into the player's UTILITY:
@@ -179,8 +181,25 @@ export function indexConnections(rows) {
   return out;
 }
 
+// stateAt — the LAST connection row at or before `tick` for one player's
+// indexed list ({tick, connected}), or null when no row has been reached
+// yet (no evidence — never read as a disconnect). The single walk both
+// presence rules share (connectedAt and presentAt below).
+function stateAt(events, tick) {
+  if (!events || events.length === 0) return null;
+  const t = Number(tick);
+  if (!Number.isFinite(t)) return null;
+  let hit = null;
+  for (const e of events) {
+    if (e.tick > t) break;
+    hit = e;
+  }
+  return hit;
+}
+
 // connectedAt — is the player in the match at `tick`? (the card-visibility
-// rule; `events` is indexConnections' list for ONE player, or undefined):
+// rule for a HUMAN; `events` is indexConnections' list for ONE player, or
+// undefined):
 //   - at/after an event: that event's state — a disconnect hides the card
 //     until a reconnect unhides it (scrubbing back re-shows it, because
 //     the answer is a pure function of the playhead, never sticky);
@@ -194,13 +213,59 @@ export function connectedAt(events, tick) {
   if (!events || events.length === 0) return true;
   const t = Number(tick);
   if (!Number.isFinite(t)) return true;
-  let state = null;
-  for (const e of events) {
-    if (e.tick > t) break;
-    state = e.connected;
-  }
-  if (state != null) return state;
+  const ev = stateAt(events, t);
+  if (ev) return ev.connected;
   return !events[0].connected;
+}
+
+// presentAt — THE one card-presence question for a roster slot (the
+// columns and the follow dropdown both read it): is this slot's player
+// IN the match at `tick`?
+//
+//   - a HUMAN slot is connectedAt's rule, unchanged;
+//   - a BOT slot is the replay exception — the ONLY place the app lists
+//     a bot — and it is listed ONLY while it is covering for a
+//     disconnected human, i.e. while ALL of these hold:
+//       1. the bot itself is connected at `tick` (its own recorded
+//          player_connect, no later disconnect), AND
+//       2. some SAME-SIDE human is disconnected at `tick` because of a
+//          recorded player_disconnect whose tick is AT OR BEFORE the
+//          connect that put the bot in the match — the human's absence
+//          brackets the bot's presence (the nuke demo: Kr3sh disconnects
+//          23467 → Crew connects 25155 → both end at 28801).
+//     A bot that never disconnects (a DemoRecorder/GOTV-style occupant)
+//     connects before any human has left, so condition 2 can never hold
+//     for it → never listed. Sides come from the roster's FINAL side
+//     (players.side, the same table the column grouping uses) and both
+//     must be known and equal — an unknown side fails the pairing rather
+//     than guessing one (fail toward NOT listing the bot).
+//
+// Bot-ness is lib/players.js isBot (the players.is_bot flag the replay
+// meta now carries, with the synthetic 0xFF id shape as its backstop).
+export function presentAt(index, roster, slot, tick) {
+  const p = Array.isArray(roster) ? roster[slot] : null;
+  const sid = p && p.steamId != null ? String(p.steamId) : '';
+  const events = index && sid ? index.get(sid) : undefined;
+  const t = Number(tick);
+  if (!isBot(p) && !isBotId(sid)) return connectedAt(events, t);
+  // Unknown playhead: same "never hide on missing data" contract as
+  // connectedAt — evaluate what the rows can say and no further.
+  if (!Number.isFinite(t)) return connectedAt(events, t);
+
+  const joined = stateAt(events, t);
+  if (!joined || !joined.connected) return false; // out of the match now
+  const rostered = Array.isArray(roster) ? roster : [];
+  for (const q of rostered) {
+    if (!q) continue;
+    const qid = q.steamId != null ? String(q.steamId) : '';
+    if (qid === sid) continue;
+    if (isBot(q)) continue; // a bot never justifies another bot
+    if (!q.side || !p.side || q.side !== p.side) continue; // same side, known
+    const out = stateAt(index && qid ? index.get(qid) : undefined, t);
+    if (!out || out.connected) continue; // still in (or no evidence)
+    if (out.tick <= joined.tick) return true; // left before the bot joined
+  }
+  return false;
 }
 
 // carriesC4 reports whether the stream's inventory carries the bomb.
