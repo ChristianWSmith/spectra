@@ -363,6 +363,22 @@ at the end of the section.
   VRF `Sound.cs` (github.com/ValveResourceFormat/ValveResourceFormat,
   2026-11-03).
 
+- **Announcer round/bomb voice lines (`ctwin`, `terwin`, `bombpl`,
+  `bombdef`, `rounddraw`)** — **owner-provided (2026-11-09, unverified
+  against primary sources)**. Assets: `sounds/vo/announcer/cs2_classic/
+  {ctwin,terwin,bombpl,bombdef,rounddraw}.vsnd_c` (path existence checked
+  against the local `pak01_dir.vpk`, 2026-11-09). Mapping used by
+  spectra' replay: counted round end winner `ct` → `ctwin`
+  (reason-independent); winner `t` → `terwin`; **defuse round → `bombdef`
+  FIRST, then `ctwin`** (owner-observed ordering — spectra makes it
+  deterministic with an explicit 0.5 s delay when both land in one
+  playback window); counted round end that is a DRAW (winner `''`, reason
+  `Draw`, `endTick > 0`) → `rounddraw`; bomb planted → `bombpl`, the
+  ANNOUNCER line distinct from the C4 device cues and the boom
+  (`c4_explode1`). Knife/warmup stay silent. **Source** — owner-provided
+  spec 2026-11-09 (unverified); asset-path existence check against the
+  local `pak01_dir.vpk`, 2026-11-09.
+
 - **Sound-event names ↔ demo `soundevent_hash`** — resolving which event
   a demo's `CMsgSosStartSoundEvent` refers to. The demo carries only a
   `fixed32 soundevent_hash`; the names live in `soundevents/*.vsndevts_c`
