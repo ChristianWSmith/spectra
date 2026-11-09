@@ -7,7 +7,7 @@ WAILS_VERSION := $(shell go list -m -f '{{.Version}}' github.com/wailsapp/wails/
 # The stock Taskfiles shell out to `wails3`, so the CLI must be on PATH.
 export PATH := $(GOPATH_BIN):$(PATH)
 
-.PHONY: build run dev build-assets test lint fmt vet linux-deps deps package artifact artifact-name clean
+.PHONY: build run dev build-assets test lint fmt vet linux-deps deps package artifact artifact-name cs2find clean
 
 # deps ensures the developer toolchain the build needs: the pinned wails3
 # CLI (auto-installed into GOPATH/bin) and Node.js 22+ (checked — install
@@ -101,3 +101,9 @@ artifact: package
 clean:
 	rm -rf bin .task frontend/dist frontend/bindings \
 	  $(APP)-linux-* $(APP)-windows-*.exe SHA256SUMS
+
+# cs2find runs the in-repo dev tool against the local CS2 install
+# (READ-ONLY search/decode of the VPK; see cs2find --help), e.g.
+# `make cs2find ARGS='find --prefix sounds/weapons/c4/'`.
+cs2find:
+	go run ./cmd/cs2find $(ARGS)
