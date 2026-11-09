@@ -2390,6 +2390,70 @@ test('HUD clock: C4 icon line with text fallback, 0:00 after the detonation', ()
   r.destroy();
 });
 
+// The freeze-clock repro, verbatim from the nuke golden demo (dev DB
+// match 3): round 2 start 7983 / freeze end 11307 / end 16892; the plant
+// at 14268; bomb_explode AND round_end both at 16892; round 3 starts
+// 17340 (freeze end 18620). The recorded plant → blast interval is
+// 2624 ticks = 41 s — one second PAST the 40 s C4 fallback in
+// lib/replay/bomb.js — which truncates detonatedAt's `end` to 16828 and
+// lets the 115 s round clock resurrect during the round-over tail.
+//
+// CHARACTERIZATION (written BEFORE the fix): these pins document the
+// CURRENT (buggy) timeline — the countdown dying at plant + 40 s, the
+// clock jumping back to 0:27 AT the detonation tick and ticking down to
+// 0:20 through the tail. The fix commit flips them to the desired
+// timeline (countdown to the real blast, then 0:00 until round 3).
+test('HUD clock: nuke round-2 tail — characterization of the resurrection bug', () => {
+  headlessGlobals();
+  const data = synthStore(17600, 2); // frames at ticks 0…17599
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: HUD_PLAYERS });
+  const mk = (ev) => normalizeEvent(ev, {});
+  r.setLandmarks([
+    mk({ id: 1, seq: 1, tick: 7983, round: 2, kind: 'round_start' }),
+    mk({ id: 2, seq: 2, tick: 14268, round: 2, kind: 'bomb_plant', site: 'B' }),
+    mk({ id: 3, seq: 3, tick: 16892, round: 2, kind: 'bomb_explode', site: 'B' }),
+    mk({ id: 4, seq: 4, tick: 16892, round: 2, kind: 'round_end', winner: 't' }),
+    mk({ id: 5, seq: 5, tick: 17340, round: 3, kind: 'round_start' }),
+  ]);
+  const round2 = { number: 2, label: 'R2', startTick: 7983, freezeEndTick: 11307, endTick: 16892, bombSite: 'B' };
+  const round3 = { number: 3, label: 'R3', startTick: 17340, freezeEndTick: 18620, endTick: 24704, bombSite: 'B' };
+  r.setHud({ score: null, teamNames: { ct: '', t: '' }, round: round2, tickRate: 64 });
+  r.resize();
+  const at = (tick) => {
+    engine.seekTick(tick);
+    const mark = canvas.log.length;
+    r.draw();
+    return textsSince(canvas.log, mark);
+  };
+
+  // --- pre-fix: the countdown ends at plant + 40 s (16828), NOT the blast -
+  const c4 = at(16500); // 328 t left on the 40 s cap → 0:05
+  assert.ok(c4.includes('C4 0:05'), 'pre-fix: the countdown is capped at plant + 40 s (16828)');
+
+  // --- pre-fix: the 115 s round clock RESURRECTS in the tail --------------
+  // At 16829 (the tick after the cap) the round clock reads
+  // 7360 − (16829 − 11307) = 1838 t = 0:28 — the exact "jumps back up to
+  // 0:28" the bug report observed — and detonatedAt stays false at the
+  // detonation tick itself (its `e.tick === end` gate: 16892 ≠ 16828).
+  const afterCap = at(16829);
+  assert.ok(afterCap.includes('0:28'), 'pre-fix: the clock jumps back to 0:28 one tick after the cap');
+  const blast = at(16892);
+  assert.ok(blast.includes('0:27'), 'pre-fix: even AT the detonation tick the clock ticks (0:27)');
+  assert.ok(!blast.includes('0:00'), 'pre-fix: detonatedAt never fires — no 0:00 at the blast');
+  const tail = at(17000);
+  assert.ok(tail.includes('0:26'), 'pre-fix: the tail keeps ticking the round clock (the reported bug)');
+  assert.ok(!tail.includes('0:00'), 'pre-fix: no 0:00 anywhere in the tail');
+  assert.ok(at(17339).includes('0:20'), 'pre-fix: still ticking on the last tail tick');
+
+  // --- the freeze countdown still starts only WITH round 3 ----------------
+  r.setHud({ score: null, teamNames: { ct: '', t: '' }, round: round3, tickRate: 64 });
+  const freeze = at(17340); // 18620 − 17340 = 1280 t = 20 s
+  assert.ok(freeze.includes('freeze 0:20'), 'the freeze countdown begins at round 3’s start');
+  r.destroy();
+});
+
 test('HUD freeze line: codicon clock glyph when the font is loaded, word otherwise', () => {
   headlessGlobals();
   const data = synthStore(1300, 2);
