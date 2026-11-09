@@ -8,12 +8,15 @@
 // /api/sounds/manifest.json; keys are the CANONICAL equipment names the
 // replay state stream and the landmark rows already carry ("AK-47",
 // "HE Grenade", "C4") plus `<name> throw` for a utility's throw group
-// ("HE Grenade throw" — throwCues) and the C4 beep groups the beep
-// scheduler builds (`C4 beep <site>[ 10sec]` — c4BeepGroup), so a cue is
-// one exact-match lookup. A logical item with several variants keeps ALL
-// of them and picks one at RANDOM per play, so a spray doesn't loop one
-// sample — the beep groups are single-sample on purpose (site/phase must
-// never substitute at random).
+// ("HE Grenade throw" — throwCues), the C4 beep groups the beep
+// scheduler builds (`C4 beep <site>[ 10sec]` — c4BeepGroup) and the
+// four plant/defuse lifecycle cue groups (bombActionCues — "C4 plant
+// start" … "C4 defuse complete"), so a cue is one exact-match lookup.
+// A logical item with several variants keeps ALL of them and picks one
+// at RANDOM per play, so a spray doesn't loop one sample — the beep
+// groups are single-sample on purpose (site/phase must never substitute
+// at random), and so are the four lifecycle cues (each is a distinct
+// moment, not a variant).
 //
 // This engine owns its OWN AudioContext: it must work for matches without
 // voice (the voice engine may not exist at all). Autoplay policy mirrors
@@ -38,6 +41,9 @@
 //     knife cues are their damage rows — all three in (prevTick,
 //     curTick] and all freeze-gated at cue-build time (rounds.js
 //     inFreezeTime — the game forbids firing/utility during freeze);
+//   - the plant/defuse ATTEMPT cues (bombActionCues — bomb.js
+//     ACTION_KINDS → the manifest's four lifecycle groups) play in
+//     (prevTick, curTick] on the C4 bus; the abort rows are silent;
 //   - decoy noise cues are the decoy PLAN's fake shots (setDecoyPlan —
 //     lib/replay/decoy.js), played on the GUNS channel with the mimic
 //     weapon's own samples (see decoyCues);
@@ -59,7 +65,7 @@
 import { errText } from '../services.js';
 import { inFreezeTime } from '../rounds.js';
 import { DETONATION_BUCKETS } from './landmarks.js';
-import { bombEndTick } from './bomb.js';
+import { bombEndTick, ACTION_KINDS } from './bomb.js';
 import { GST_AUDIO_HINT } from './audio.js';
 
 // Default fader level for all four categories — the kvstore prefs
@@ -243,6 +249,48 @@ export function knifeCues(rows, rounds) {
     if (String(row.weapon || '') !== 'Knife') continue;
     if (inFreezeTime(rounds, row.tick)) continue;
     out.push({ tick: row.tick, name: 'Knife' });
+  }
+  out.sort((a, b) => a.tick - b.tick);
+  return out;
+}
+
+// bombActionCues — the plant/defuse ATTEMPT cue list: drawNorm rows →
+// [{tick, name, bucket: 'c4'}] in tick order, one cue per lifecycle
+// moment the game has a sound for:
+//
+//   bomb_plant_begin  → 'C4 plant start'      (c4.initiate → c4_initiate)
+//   bomb_plant        → 'C4 plant complete'   (c4.plant → c4_plant)
+//   bomb_defuse_start → 'C4 defuse start'     (c4.disarmstart → c4_disarmstart)
+//   bomb_defuse       → 'C4 defuse complete'  (c4.disarmfinish → c4_disarmfinish)
+//
+// The kind → cue-name mapping comes from bomb.js ACTION_KINDS (THE
+// lifecycle taxonomy the renderer's rings read too), so the arc and the
+// sound can never disagree about which row is which; the manifest key
+// each name builds is soundTable's (internal/mappack — the four files
+// are single-file groups, one cue each). The ABORT rows make NO cue:
+// the game plays nothing when a plant/defuse is abandoned and spectra
+// ships no cancel sound. Freeze-gated with the same rule as
+// grenadeCues (a plant/defuse cannot begin inside freeze time — belt
+// and braces for a mis-stamped row), deduped by (tick, name) like every
+// other cue list. Pure — unit-tested by src/lib/sfx.test.js.
+export function bombActionCues(rows, rounds) {
+  const names = {
+    [ACTION_KINDS.plant.begin]: 'C4 plant start',
+    [ACTION_KINDS.plant.complete]: 'C4 plant complete',
+    [ACTION_KINDS.defuse.begin]: 'C4 defuse start',
+    [ACTION_KINDS.defuse.complete]: 'C4 defuse complete',
+  };
+  const seen = new Set();
+  const out = [];
+  for (const row of rows || []) {
+    if (!row || !Number.isFinite(row.tick)) continue;
+    const name = names[String(row.kind || '')];
+    if (!name) continue;
+    if (inFreezeTime(rounds, row.tick)) continue;
+    const key = `${row.tick}|${name}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ tick: row.tick, name, bucket: 'c4' });
   }
   out.sort((a, b) => a.tick - b.tick);
   return out;
@@ -542,6 +590,7 @@ export function createSfxEngine({ engine, matchId, onError }) {
   let utilCues = []; // grenadeCues(landmarkRows, rounds) — tick-sorted
   let throwHits = []; // throwCues(landmarkRows, rounds) — tick-sorted
   let knifeHits = []; // knifeCues(landmarkRows, rounds) — tick-sorted
+  let actionCues = []; // bombActionCues(landmarkRows, rounds) — tick-sorted
   let bullets = []; // setBullets — bullets.js rows, tick-sorted
   let decoyShots = []; // setDecoyPlan → decoyCues(plan), tick-sorted
   let bombRows = c4BeepRows([]); // the C4 beep scheduler's row lists
@@ -832,6 +881,15 @@ export function createSfxEngine({ engine, matchId, onError }) {
     }
   }
 
+  // playActionInRange — the four plant/defuse lifecycle cues, all on
+  // the C4 bus (bombActionCues carries bucket 'c4' — the bomb's own
+  // fader/mute, like the explosion and the beeps).
+  function playActionInRange(fromTick, toTick) {
+    for (const cue of utilCuesInRange(actionCues, fromTick, toTick)) {
+      playGroup(cue.name, 'c4');
+    }
+  }
+
   // playBulletsInRange — ONE gun sound per bullets.js row in range.
   // EVERY row plays: `draw` is the renderer's tracer selection, not a
   // sound filter (bullets.js contract — the real fire cadence). The rows
@@ -993,6 +1051,7 @@ export function createSfxEngine({ engine, matchId, onError }) {
       playKnifeInRange(prevTick, st.tick);
       playBulletsInRange(prevTick, st.tick);
       playDecoyInRange(prevTick, st.tick);
+      playActionInRange(prevTick, st.tick);
     }
     // EVERY path advances the compare point: a seek, a loop wrap or a
     // paused scrub must not machine-gun the cues it crossed when
@@ -1010,6 +1069,7 @@ export function createSfxEngine({ engine, matchId, onError }) {
     utilCues = grenadeCues(landmarkRows, rounds);
     throwHits = throwCues(landmarkRows, rounds);
     knifeHits = knifeCues(landmarkRows, rounds);
+    actionCues = bombActionCues(landmarkRows, rounds);
     bombRows = c4BeepRows(landmarkRows);
   }
 

@@ -300,7 +300,15 @@ func TestSoundTableKeysInIconTable(t *testing.T) {
 		"C4 beep B":       {"sounds/weapons/c4/c4_beep3.vsnd_c"},
 		"C4 beep A 10sec": {"sounds/weapons/c4/c4_beep2_10sec.vsnd_c"},
 		"C4 beep B 10sec": {"sounds/weapons/c4/c4_beep3_10sec.vsnd_c"},
-		"HE Grenade":      {"sounds/weapons/hegrenade/hegrenade_detonate_02.vsnd_c", "sounds/weapons/hegrenade/hegrenade_detonate_03.vsnd_c"},
+		// The plant/defuse cue groups — ONE file per cue (each is its
+		// own soundevent — c4.initiate / c4.plant / c4.disarmstart /
+		// c4.disarmfinish — never a variant of another; see the
+		// soundTable comment), keyed by sfx.js bombActionCues.
+		"C4 plant start":     {"sounds/weapons/c4/c4_initiate.vsnd_c"},
+		"C4 plant complete":  {"sounds/weapons/c4/c4_plant.vsnd_c"},
+		"C4 defuse start":    {"sounds/weapons/c4/c4_disarmstart.vsnd_c"},
+		"C4 defuse complete": {"sounds/weapons/c4/c4_disarmfinish.vsnd_c"},
+		"HE Grenade":         {"sounds/weapons/hegrenade/hegrenade_detonate_02.vsnd_c", "sounds/weapons/hegrenade/hegrenade_detonate_03.vsnd_c"},
 		// The HE THROW group pins the sounds/items/ path — the one entry
 		// outside sounds/weapons/ (Feature A).
 		"HE Grenade throw": {"sounds/items/weapon_hegrenade_throw.vsnd_c"},
@@ -427,6 +435,13 @@ func TestExtractRealCS2Sounds(t *testing.T) {
 		// are container facts (ffprobe: MP3 44,100 stereo) and the frame
 		// header below proves the payload is playable audio.
 		{"knife_hit_light_flesh_01", "sounds/weapons/knife/knife_hit_light_flesh_01.vsnd_c", soundExtMP3, 0, 0},
+		// The plant/defuse cue resources: all four decode to PCM WAV —
+		// c4_plant is MONO 44.1 kHz, the other three stereo (the exact
+		// shapes the soundTable comment records).
+		{"c4_initiate", "sounds/weapons/c4/c4_initiate.vsnd_c", soundExtWAV, 44100, 2},
+		{"c4_plant", "sounds/weapons/c4/c4_plant.vsnd_c", soundExtWAV, 44100, 1},
+		{"c4_disarmstart", "sounds/weapons/c4/c4_disarmstart.vsnd_c", soundExtWAV, 44100, 2},
+		{"c4_disarmfinish", "sounds/weapons/c4/c4_disarmfinish.vsnd_c", soundExtWAV, 44100, 2},
 	}
 	for _, tc := range want {
 		raw, found, rerr := v.read(tc.vpk)

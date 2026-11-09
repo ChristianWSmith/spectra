@@ -2,6 +2,8 @@
 // derivation (flashbang double-dispatch dedupe, the decoy→HE detonation
 // remap, C4 on its own bus, the equip skip, the freeze gate), the throw
 // cues (`<weapon> throw` manifest keys), the knife damage cues, the
+// plant/defuse lifecycle cues (bombActionCues — the four manifest
+// groups, silent cancels, the shared bomb.js ACTION_KINDS taxonomy), the
 // bullet cue window, the decoy fake-gunshot plan window, the C4 beep
 // synthesis (bomb rows → schedule → deterministic (site, phase) group),
 // the range/seek guards, the random variant pick, the internal gain
@@ -13,6 +15,10 @@ import assert from 'node:assert/strict';
 
 import { registerHooks } from 'node:module';
 import { installEsmDirHook } from '../../test/esm-dir-hook.mjs';
+// bomb.js is pure (no services/bindings imports), so it loads fine
+// before the hook install below — ACTION_KINDS is the taxonomy
+// bombActionCues keys its cue names from.
+import { ACTION_KINDS } from './replay/bomb.js';
 
 installEsmDirHook();
 
@@ -38,6 +44,7 @@ const {
   grenadeCues,
   throwCues,
   knifeCues,
+  bombActionCues,
   utilCuesInRange,
   bulletCuesInRange,
   decoyCues,
@@ -277,6 +284,89 @@ test('utilCuesInRange is open at the left and closed at the right', () => {
   assert.deepEqual(utilCuesInRange(cues, 0, 50).map((c) => c.name), []); // before the start
   assert.deepEqual(utilCuesInRange([], 0, 50), []);
   assert.deepEqual(utilCuesInRange(cues, NaN, 500), []);
+});
+
+// --- plant/defuse lifecycle cues --------------------------------------------
+
+// The four cues key the manifest groups internal/mappack/sounds.go
+// extracts (one soundevent FILE each: c4.initiate / c4.plant /
+// c4.disarmstart / c4.disarmfinish), and the kind → name table is keyed
+// off bomb.js ACTION_KINDS — the same taxonomy the renderer's progress
+// rings read, so the arc and the sound can never disagree.
+
+test('bombActionCues: the four lifecycle moments key the manifest’s cue groups', () => {
+  const cues = bombActionCues([
+    { kind: 'bomb_plant', bucket: 'plant', tick: 300, round: 7 },
+    { kind: 'bomb_plant_begin', bucket: 'plant_begin', tick: 100, round: 7 },
+    { kind: 'bomb_defuse', bucket: 'defuse', tick: 920, round: 7 },
+    { kind: 'bomb_defuse_start', bucket: 'defuse_start', tick: 600, round: 7 },
+    { kind: 'kill', bucket: 'kill', tick: 50 }, // any other row: silence
+    null, // hostile input never throws
+  ]);
+  assert.deepEqual(
+    cues.map((c) => `${c.tick}:${c.name}`),
+    [
+      '100:C4 plant start',
+      '300:C4 plant complete',
+      '600:C4 defuse start',
+      '920:C4 defuse complete',
+    ],
+  );
+  // All four ride the C4 bus (the bomb's own fader/mute, like the
+  // explosion and the beeps).
+  assert.ok(cues.every((c) => c.bucket === 'c4'), JSON.stringify(cues));
+});
+
+test('bombActionCues: a CANCELLED attempt is silent (abort rows make no cue)', () => {
+  // The START still cues — c4.initiate sounds the moment arming begins —
+  // but the game plays nothing when a plant/defuse is abandoned, and
+  // spectra ships no cancel sound to extract.
+  const cues = bombActionCues([
+    { kind: 'bomb_plant_begin', bucket: 'plant_begin', tick: 100, round: 7 },
+    { kind: 'bomb_plant_abort', bucket: 'plant_abort', tick: 112, round: 7 },
+    { kind: 'bomb_plant', bucket: 'plant', tick: 300, round: 7 },
+    { kind: 'bomb_defuse_start', bucket: 'defuse_start', tick: 500, round: 7 },
+    { kind: 'bomb_defuse_abort', bucket: 'defuse_abort', tick: 515, round: 7 },
+  ]);
+  assert.deepEqual(
+    cues.map((c) => `${c.tick}:${c.name}`),
+    ['100:C4 plant start', '300:C4 plant complete', '500:C4 defuse start'],
+  );
+});
+
+test('bombActionCues: the cue names follow bomb.js ACTION_KINDS (the one taxonomy)', () => {
+  // Renaming a kind in ACTION_KINDS without updating this table would
+  // silently mute the cue — this pins the mapping both sides read.
+  assert.deepEqual(ACTION_KINDS, {
+    plant: { begin: 'bomb_plant_begin', complete: 'bomb_plant', abort: 'bomb_plant_abort' },
+    defuse: { begin: 'bomb_defuse_start', complete: 'bomb_defuse', abort: 'bomb_defuse_abort' },
+  });
+  const cues = bombActionCues([
+    { kind: ACTION_KINDS.plant.begin, tick: 1 },
+    { kind: ACTION_KINDS.plant.complete, tick: 2 },
+    { kind: ACTION_KINDS.defuse.begin, tick: 3 },
+    { kind: ACTION_KINDS.defuse.complete, tick: 4 },
+  ]);
+  assert.deepEqual(
+    cues.map((c) => c.name),
+    ['C4 plant start', 'C4 plant complete', 'C4 defuse start', 'C4 defuse complete'],
+  );
+});
+
+test('bombActionCues: freeze time gates the cue, (tick|name) dedupes', () => {
+  const cues = bombActionCues(
+    [
+      { kind: 'bomb_plant_begin', tick: 32 }, // round-1 freeze → dropped
+      { kind: 'bomb_plant_begin', tick: 100 }, // live → kept
+      { kind: 'bomb_plant_begin', tick: 100 }, // duplicate dispatch → one
+      { kind: 'bomb_plant', tick: 100 }, // same tick, OTHER cue → kept
+    ],
+    FREEZE_ROUNDS,
+  );
+  assert.deepEqual(
+    cues.map((c) => `${c.tick}:${c.name}`),
+    ['100:C4 plant start', '100:C4 plant complete'],
+  );
 });
 
 // --- gun cues (bullets.js rows) --------------------------------------------
@@ -648,6 +738,12 @@ const BEEP_MANIFEST = {
     'C4 beep B 10sec': ['/api/sounds/c4_beep3_10sec.wav'],
     C4: ['/api/sounds/c4_explode1.wav'],
     'HE Grenade': ['/api/sounds/hegrenade_detonate_02.wav'],
+    // The four plant/defuse lifecycle cues (soundTable's single-file
+    // groups — one soundevent file each, see internal/mappack/sounds.go).
+    'C4 plant start': ['/api/sounds/c4_initiate.wav'],
+    'C4 plant complete': ['/api/sounds/c4_plant.wav'],
+    'C4 defuse start': ['/api/sounds/c4_disarmstart.wav'],
+    'C4 defuse complete': ['/api/sounds/c4_disarmfinish.wav'],
   },
 };
 
@@ -849,6 +945,56 @@ test('engine: the explosion cue rides the C4 bus and a resolved bomb never beeps
     assert.equal(ctx.sources.length, after, 'no beep outlives the detonation');
     engine.emit({ playing: false, speed: 1, tick: C4_EXPLODE + C4_TR });
     assert.equal(ctx.sources.length, after, 'and a later pause queues nothing either');
+    sfx.destroy();
+  } finally {
+    restoreFetch();
+  }
+});
+
+// The four plant/defuse lifecycle cues through the REAL play path:
+// rows → rebuildCues → (prevTick, curTick] → playGroup on the C4 bus.
+// The steps stay inside cueGapJump's ordinary-window (≤ 0.3 s at 1×) so
+// each crossing is playback, not a re-seed; a jump only re-positions
+// the compare point (which is exactly how a seek must behave).
+test('engine: the plant/defuse lifecycle cues play on the C4 bus, cancels stay silent', async () => {
+  resetSoundManifest();
+  const restoreFetch = stubManifestFetch();
+  try {
+    const { sfx, engine, ctx } = await makeSfx();
+    const BEGIN = 1000; // arm starts
+    const DONE = 1200; // plant finishes (200 ticks — the measured span)
+    const ABORT = 1400; // a later, cancelled attempt
+    const lifecycle = () =>
+      ctx.sources.filter(
+        (s) =>
+          s.buffer &&
+          /\/api\/sounds\/c4_(initiate|plant|disarmstart|disarmfinish)\.wav$/.test(s.buffer.url),
+      );
+    sfx.setLandmarks([
+      { kind: 'bomb_plant_begin', bucket: 'plant_begin', tick: BEGIN, round: 5 },
+      { kind: 'bomb_plant', bucket: 'plant', tick: DONE, round: 5, site: 'A' },
+      { kind: 'bomb_plant_abort', bucket: 'plant_abort', tick: ABORT, round: 5 },
+    ]);
+    // The first frame seeds the compare point (jump → nothing on arrival)…
+    engine.emit({ playing: true, speed: 1, tick: BEGIN - 16 });
+    // …an ordinary step crosses the arm start.
+    engine.emit({ playing: true, speed: 1, tick: BEGIN + 2 });
+    const arm = ctx.sources.filter((s) => s.buffer && s.buffer.url === '/api/sounds/c4_initiate.wav');
+    assert.equal(arm.length, 1, 'the plant-start cue plays exactly once');
+    assert.equal(arm[0].bus, ctx.gains[2], 'it rides the C4 bus (guns=0, utility=1, C4=2)');
+    // A jump re-seeds without playing (nothing was due in that window),
+    // then an ordinary step crosses the completion.
+    engine.emit({ playing: true, speed: 1, tick: DONE - 10 });
+    engine.emit({ playing: true, speed: 1, tick: DONE + 2 });
+    const done = ctx.sources.filter((s) => s.buffer && s.buffer.url === '/api/sounds/c4_plant.wav');
+    assert.equal(done.length, 1, 'the plant-complete cue plays exactly once');
+    assert.equal(done[0].bus, ctx.gains[2], 'the completion rides the C4 bus too');
+    // …and the CANCEL is silence: bombActionCues builds no cue for an
+    // abort row (there is no cancel sound in the game to extract).
+    const before = lifecycle().length;
+    engine.emit({ playing: true, speed: 1, tick: ABORT - 10 });
+    engine.emit({ playing: true, speed: 1, tick: ABORT + 2 });
+    assert.equal(lifecycle().length, before, 'an aborted plant plays nothing');
     sfx.destroy();
   } finally {
     restoreFetch();

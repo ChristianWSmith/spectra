@@ -887,3 +887,29 @@ at the end of the section.
   demoinfocs-golang v6.0.0-rc.1 `datatables.go`/`game_events.go` +
   `internal/extract/plantdefuse_diag_test.go` over the golden pool
   (2026-11-08).
+
+- **C4 plant/defuse sound events ↔ files (CS2)** — which extracted file
+  cues which lifecycle moment. Read from
+  `soundevents/game_sounds_weapons.vsndevts_c` (its DATA block is the
+  same 120-byte binary-KV3 + 2×LZ4 layout as a v5 `.vsnd` CTRL, and its
+  string table puts an event name immediately followed by its `.vsnd`
+  path — the adjacency the C4-beep groups were pinned with):
+  `c4.initiate` → `sounds/weapons/c4/c4_initiate.vsnd` (1.913 s stereo),
+  `c4.plant` → `c4_plant.vsnd` (0.545 s MONO), `c4.disarmstart` →
+  `c4_disarmstart.vsnd` (1.250 s), `c4.disarmfinish` →
+  `c4_disarmfinish.vsnd` (1.500 s). Those four are spectra's lifecycle
+  cue groups (`internal/mappack/sounds.go`: "C4 plant start" →
+  c4_initiate, "C4 plant complete" → c4_plant, "C4 defuse start" →
+  c4_disarmstart, "C4 defuse complete" → c4_disarmfinish), one FILE per
+  cue because each is a distinct moment, not a variant. Same-cluster
+  neighbours NOT extracted: `c4.keypressquiet` → key_press1..7 (7
+  variants of an event whose place in the lifecycle is unknown),
+  `c4.plantquiet` → c4_plant_quiet.vsnd (a second plant event we cannot
+  place), and **c4_click.vsnd_c, which no soundevent in any
+  `.vsndevts_c` of the install references at all** (an orphan under the
+  ak47_03/glock_01 rule). The event→file mapping is verified from the
+  game files; WHEN each event fires is read off its name (initiate =
+  arming starts, plant = plant finished, disarmstart/finish = defuse
+  begin/complete) and is NOT independently code-verified.
+  **Source** — local probe of pak01_dir.vpk (vsndevts string-table
+  adjacency + decoded file durations) (2026-11-08).

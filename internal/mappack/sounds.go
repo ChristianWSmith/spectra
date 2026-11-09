@@ -233,6 +233,25 @@ var soundTable = map[string][]string{
 	"C4 beep B":       {"sounds/weapons/c4/c4_beep3.vsnd_c"},
 	"C4 beep A 10sec": {"sounds/weapons/c4/c4_beep2_10sec.vsnd_c"},
 	"C4 beep B 10sec": {"sounds/weapons/c4/c4_beep3_10sec.vsnd_c"},
+	// The plant/defuse CUE groups — ONE file per cue, because these are
+	// four DISTINCT moments, not variants of one (the manifest's
+	// pickVariant picks randomly WITHIN a group — a shared key would let
+	// the arm sound stand in for the completion). Each path is the file
+	// its own soundevent names in soundevents/game_sounds_weapons.vsndevts_c
+	// (the event-name → .vsnd adjacency the beep groups above were
+	// verified with): `c4.initiate` → c4_initiate (arming starts, 1.91 s),
+	// `c4.plant` → c4_plant (plant finished, 0.55 s mono),
+	// `c4.disarmstart` → c4_disarmstart (1.25 s), `c4.disarmfinish` →
+	// c4_disarmfinish (1.50 s). Deliberately NOT extracted:
+	// `c4.plantquiet` (a second plant event we cannot place in the
+	// lifecycle), `c4.keypressquiet` → key_press1..7 (an unplaceable
+	// multi-file event) and c4_click.vsnd_c — referenced by NO soundevent
+	// in the install, i.e. an orphan under the ak47_03/glock_01 rule.
+	// sfx.js bombActionCues builds exactly these four keys.
+	"C4 plant start":     {"sounds/weapons/c4/c4_initiate.vsnd_c"},
+	"C4 plant complete":  {"sounds/weapons/c4/c4_plant.vsnd_c"},
+	"C4 defuse start":    {"sounds/weapons/c4/c4_disarmstart.vsnd_c"},
+	"C4 defuse complete": {"sounds/weapons/c4/c4_disarmfinish.vsnd_c"},
 	// Grenades (detonation sounds — the replay's utility cues)
 	"HE Grenade": {
 		"sounds/weapons/hegrenade/hegrenade_detonate_02.vsnd_c",
@@ -302,6 +321,13 @@ var internalSoundGroups = map[string]bool{
 	"C4 beep B":       true, // site B's (the lower-pitched, longer one)
 	"C4 beep A 10sec": true, // the distinct final-10-seconds beep
 	"C4 beep B 10sec": true,
+	// The plant/defuse cue groups — the four lifecycle moments sfx.js's
+	// bombActionCues addresses by literal name (one file each; see the
+	// soundTable entries for the soundevent → file mapping).
+	"C4 plant start":     true, // bomb_plant_begin → c4.initiate
+	"C4 plant complete":  true, // bomb_plant → c4.plant
+	"C4 defuse start":    true, // bomb_defuse_start → c4.disarmstart
+	"C4 defuse complete": true, // bomb_defuse → c4.disarmfinish
 }
 
 // soundTableNames is soundTable's keys in sorted order, so extraction
