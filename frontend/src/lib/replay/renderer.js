@@ -2564,7 +2564,12 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
 
   // detonatedAt — true once a plant of this round has EXPLODED at
   // `tick`: the plant's bombEndTick terminator IS a bomb_explode row
-  // (bomb.js owns the terminator rule; a defused / round-ended /
+  // (bomb.js owns the terminator rule — its 40 s C4 timer is the
+  // fallback for MISSING terminator rows only, never a cap over a
+  // present one: the recorded plant → blast interval is 41 s, and a
+  // 40 s cap truncated `end` before the explosion so this gate never
+  // matched and the 115 s round clock resurrected in the round-over
+  // tail — the freeze-clock bug). A defused / round-ended /
   // next-round-start-terminated plant is NOT a detonation and keeps
   // today's behavior — a round_start cutoff can only ever make `end`
   // EARLIER, and the explode-row equality below still gates the flag).

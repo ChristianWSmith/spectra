@@ -2390,6 +2390,78 @@ test('HUD clock: C4 icon line with text fallback, 0:00 after the detonation', ()
   r.destroy();
 });
 
+// The freeze-clock repro, verbatim from the nuke golden demo (dev DB
+// match 3): round 2 start 7983 / freeze end 11307 / end 16892; the plant
+// at 14268; bomb_explode AND round_end both at 16892; round 3 starts
+// 17340 (freeze end 18620). The recorded plant → blast interval is
+// 2624 ticks = 41 s — one second PAST the 40 s C4 fallback in
+// lib/replay/bomb.js. Pre-fix that cap truncated detonatedAt's `end` to
+// 16828: the countdown died early, detonatedAt's `e.tick === end` gate
+// never matched (16892 ≠ 16828) and the 115 s round clock resurrected
+// in the round-over tail — 0:28 one tick after the cap, still ticking at
+// the detonation tick (pinned by the characterization commit before the
+// fix). Post-fix the countdown runs to the real blast and the tail reads
+// 0:00 until round 3's freeze starts.
+test('HUD clock: nuke round-2 detonation tail reads 0:00, freeze only from round 3', () => {
+  headlessGlobals();
+  const data = synthStore(17600, 2); // frames at ticks 0…17599
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: HUD_PLAYERS });
+  const mk = (ev) => normalizeEvent(ev, {});
+  r.setLandmarks([
+    mk({ id: 1, seq: 1, tick: 7983, round: 2, kind: 'round_start' }),
+    mk({ id: 2, seq: 2, tick: 14268, round: 2, kind: 'bomb_plant', site: 'B' }),
+    mk({ id: 3, seq: 3, tick: 16892, round: 2, kind: 'bomb_explode', site: 'B' }),
+    mk({ id: 4, seq: 4, tick: 16892, round: 2, kind: 'round_end', winner: 't' }),
+    mk({ id: 5, seq: 5, tick: 17340, round: 3, kind: 'round_start' }),
+  ]);
+  const round2 = { number: 2, label: 'R2', startTick: 7983, freezeEndTick: 11307, endTick: 16892, bombSite: 'B' };
+  const round3 = { number: 3, label: 'R3', startTick: 17340, freezeEndTick: 18620, endTick: 24704, bombSite: 'B' };
+  r.setHud({ score: null, teamNames: { ct: '', t: '' }, round: round2, tickRate: 64 });
+  r.resize();
+  const at = (tick) => {
+    engine.seekTick(tick);
+    const mark = canvas.log.length;
+    r.draw();
+    return textsSince(canvas.log, mark);
+  };
+
+  // --- the C4 countdown runs to the REAL blast (plant + 41 s = 16892) ----
+  const c4 = at(16500); // 392 t left → 0:06 (pre-fix the 40 s cap said 0:05)
+  assert.ok(c4.includes('C4 0:06'), 'the countdown covers the full recorded plant→blast interval');
+  // At plant + 40 s the cap used to END the countdown ('C4 0:00' as its
+  // last tick); the real bomb is still ticking there — one second left.
+  assert.ok(at(16828).includes('C4 0:01'), 'one tick-second before the blast the countdown still runs');
+  const blast = at(16892);
+  assert.ok(blast.includes('C4 0:00'), 'the countdown reads 0:00 AT the detonation tick');
+
+  // --- the round-over tail reads 0:00 — the clock never resurrects -------
+  // Pre-fix these ticks showed the 115 s round clock (0:28 at 16829, 0:27
+  // AT the blast, ticking to 0:20 at round 3's start).
+  for (const tick of [16893, 17000, 17339]) {
+    const line = at(tick);
+    assert.ok(line.includes('0:00'), `tick ${tick}: the tail reads 0:00`);
+    assert.ok(
+      !line.some((t) => String(t).startsWith('C4 ')),
+      `tick ${tick}: not planted anymore → no C4 line`,
+    );
+    assert.ok(
+      !line.some((t) => String(t).startsWith('freeze ')),
+      `tick ${tick}: never the freeze countdown while round 2's play tail runs`,
+    );
+    assert.ok(!line.includes('0:28') && !line.includes('0:27'), `tick ${tick}: never the resurrected round clock`);
+  }
+  assert.ok(!at(17339).includes('0:20'), 'and still 0:00 on the last tail tick (pre-fix: 0:20)');
+
+  // --- the freeze countdown starts only WITH round 3 ---------------------
+  r.setHud({ score: null, teamNames: { ct: '', t: '' }, round: round3, tickRate: 64 });
+  const freeze = at(17340); // 18620 − 17340 = 1280 t = 20 s
+  assert.ok(freeze.includes('freeze 0:20'), 'the freeze countdown begins at round 3’s start');
+  assert.ok(!freeze.includes('C4 '), 'no C4 line in round 3 (its plant comes later)');
+  r.destroy();
+});
+
 test('HUD freeze line: codicon clock glyph when the font is loaded, word otherwise', () => {
   headlessGlobals();
   const data = synthStore(1300, 2);
