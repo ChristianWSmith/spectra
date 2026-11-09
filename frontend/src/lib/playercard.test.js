@@ -147,7 +147,7 @@ test('mainAmmoText renders the MAIN weapon pair with ammoText honesty', () => {
 test("the three weapon-row modes' inputs (held / main / neither)", () => {
   // Mode 1: no held item → the ordinary active-weapon block.
   assert.equal(heldItemOf(st()), null);
-  // Mode 2: held item + a carried main → prefix + separator + main block.
+  // Mode 2: held item + a carried main → main block, held icon after the gun.
   const m2 = st({ weapon: 'Flashbang', inventory: ['AK-47', 'Flashbang'] });
   assert.equal(heldItemOf(m2), 'Flashbang');
   assert.equal(mainOf(m2), 'AK-47');

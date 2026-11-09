@@ -974,3 +974,36 @@ at the end of the section.
   https://wiki.alliedmods.net/Counter-Strike:_Global_Offensive_Events,
   demoinfocs v6 `game_events.go` (delay comment) + `events.ItemPickup`
   docs; golden-demo diag `TestDiagDropInventoryAtKill` (2026-11-08).
+
+- **C4 beep sounds — assets, events, cadence, and the final-10-second
+  samples (spectra's replay beeps)** — where the beeps live and how the
+  game paces them. Under `sounds/weapons/c4/` in pak01_dir.vpk:
+  `c4_beep2.vsnd_c` (0.151 s) = site A tone, `c4_beep3.vsnd_c`
+  (0.179 s) = site B's distinct lower/distorted tone, plus
+  `c4_beep2_10sec`/`c4_beep3_10sec` (0.056/0.076 s) for the final 10
+  seconds — all v4 PCM16 44100 mono. Soundevent mapping (read from
+  `soundevents/game_sounds_weapons.vsndevts_c`): `C4.PlantSound` →
+  c4_beep2, `C4.PlantSoundB` → c4_beep3, `C4.PlantSound_10sec` /
+  `C4.PlantSoundB_10sec` → the `_10sec` twins (site B tone since the
+  2024-02-06 update; distinct final-10 s samples added 2023-10-17).
+  Cadence: beeps/second over fraction p of the fuse
+  `g(p) = 1.04865·e^(0.24402·p + 1.76380·p²)` — ≈1.05/s right after the
+  plant → ≈7.8/s (~128 ms apart) at the blast, ~125 ms per beep; fitted
+  to CS:GO's 45 s fuse, NOT CS2-verified (spectra evaluates it against
+  the observed plant→explode interval). Demos carry NO per-beep event
+  (demoinfocs exposes no BombBeep; the `bomb_beep` game event has a nil
+  handler) — replay must synthesize the cadence from plant/detonate
+  ticks. **spectra deliberately does NOT extract or play the `_10sec`
+  samples**: they pair with a different final-10 s cadence the app does
+  not replicate, making them dead assets — one tone per site plays for
+  the whole fuse (user decision, 2026-11-09). Extraction technique: a
+  `.vsndevts_c` DATA block is the same 120-byte binary-KV3 + 2×LZ4
+  layout as a v5 `.vsnd` CTRL block, and in the string table an event
+  name is immediately followed by its `.vsnd` path.
+  **Source** — local probe of pak01_dir.vpk +
+  `soundevents/game_sounds_weapons.vsndevts_c` (2026-11-08);
+  https://gritter.nl/posts/csgo-bomb-beep-pattern (2020-07-21, cadence
+  fit); https://counterstrike.fandom.com/wiki/C4_Explosive + CS2
+  2023-10-17 / 2024-02-06 patch notes via
+  https://counterstrike.fandom.com/wiki/Counter-Strike_2/Updates
+  (site tone + final-10 s samples), all fetched 2026-11-08.

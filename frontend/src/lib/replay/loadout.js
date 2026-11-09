@@ -1,7 +1,7 @@
 // Loadout rules (lib/replay/loadout.js) — the ONE frontend home for
 // "what does this player hold" and "what is their MAIN weapon": the
-// player card's held-item prefix (knife/util/C4 in hand → icon + separator
-// + the main weapon block) and the decoy's mimic weapon both resolve
+// player card's held-item indicator (knife/util/C4 in hand → an icon after
+// the main weapon's icon) and the decoy's mimic weapon both resolve
 // through here, so a card and a decoy can never disagree.
 //
 // Vocabulary is canonical EquipmentType.String() spellings — the same

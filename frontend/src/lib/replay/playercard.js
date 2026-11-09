@@ -8,8 +8,8 @@
 // fact. Pure (no DOM, no services): node-tested by
 // src/lib/playercard.test.js; rendered by test/player-card.dom.mjs.
 //
-// The held-item prefix (knife/util/C4 in hand → icon + separator + the
-// main weapon's block) resolves its VOCABULARY through
+// The held-item indicator (knife/util/C4 in hand → an icon riding after
+// the main weapon's icon, inside its chip) resolves its VOCABULARY through
 // replay/loadout.js (isHeldItem / mainWeaponOf) — the one loadout rule
 // home shared with the decoy — this module only projects it for display.
 // The connection rules (indexConnections / connectedAt) are consumed by

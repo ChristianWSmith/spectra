@@ -2078,10 +2078,10 @@ input[type='checkbox']:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 
-/* Volume popover (the transport's Voice/Guns/Utility faders — the old
+/* Volume popover (the transport's Voice/Guns/Utility/C4 faders — the old
    mute-all button, repurposed): the host only hugs its trigger button
    (positioning is the shared .rp-pop-host/.rp-pop pair); everything
-   below is CONTENT — the three fader rows. */
+   below is CONTENT — the four fader rows. */
 .rp-vol {
   display: inline-flex;
 }
@@ -2106,7 +2106,7 @@ input[type='checkbox']:focus-visible {
 }
 
 /* Row labels share the field-label concept (uppercase small caps); the
-   fixed column keeps the three faders aligned. */
+   fixed column keeps the four faders aligned. */
 .rp-vol-pop .field-label {
   flex: 0 0 58px;
 }

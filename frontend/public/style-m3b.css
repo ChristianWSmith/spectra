@@ -544,7 +544,7 @@
   margin-top: 6px;
 }
 
-/* The three replay-audio faders in Audio & voice — same 0..100 range
+/* The four replay-audio faders in Audio & voice — same 0..100 range
    markup as the transport's Volume popover, sized for the panel row. */
 .sett-vol {
   width: 180px;
