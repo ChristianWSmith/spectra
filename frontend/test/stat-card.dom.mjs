@@ -58,8 +58,9 @@ const svelteCompile = (src, filename, out) => {
 };
 
 // Plain-ESM deps copied verbatim (same layout as the landmark-row driver):
-// ProfileLink → ../nav.js → router.js + replay/landmarks.js → rounds.js.
-for (const rel of ['rounds.js', 'router.js', 'nav.js']) {
+// ProfileLink → ../nav.js → router.js + replay/landmarks.js → rounds.js
+// + fmt.js (nav's entryLoopAround reads fmt.normTickRate).
+for (const rel of ['rounds.js', 'router.js', 'nav.js', 'fmt.js']) {
   writeFileSync(join(dir, rel), readFileSync(join('src/lib', rel), 'utf8'));
 }
 writeFileSync(

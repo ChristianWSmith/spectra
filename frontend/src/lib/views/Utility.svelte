@@ -9,7 +9,7 @@
   } from '../services.js';
   import { fmtMs, roundClock } from '../fmt.js';
   import { roundIndexLabel } from '../rounds.js';
-  import { replayHash } from '../nav.js';
+  import { replayHash, entryLoopAround } from '../nav.js';
   import { listedPlayers } from '../players.js';
   import { roundsByNumber } from '../replay/landmarks.js';
   import { playerSideClassAt, teamNames, teamStartClass } from '../teams.js';
@@ -193,8 +193,10 @@
     );
   }
 
+  // "replay ▶" → the throw's own tick, with a ±10 s entry loop around it
+  // (nav.entryLoopAround — the engine's default loop width).
   function openReplay(r) {
-    go(replayHash(id, {}, { tick: r.tick, back }));
+    go(replayHash(id, {}, { tick: r.tick, loop: entryLoopAround(r.tick, tickRate), back }));
   }
 
   const barW = 1000;

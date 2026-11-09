@@ -1,8 +1,8 @@
 // Round helpers — the ONE frontend home for round rules: the
 // counted-round predicate ("stats-eligible play"), the round-number →
-// start-tick lookup behind every "jump to round N" link, the
-// scoreline-through-a-round aggregate, and the round-ribbon separator
-// rule. Pure functions, no services.
+// start/end-tick lookups behind every "jump to round N" link and every
+// round-span loop range, the scoreline-through-a-round aggregate, and the
+// round-ribbon separator rule. Pure functions, no services.
 //
 // Cross-layer twins that must stay identical (all three are exercised by
 // the golden demo):
@@ -84,6 +84,18 @@ export function roundStartTick(rounds, number) {
   const n = Number(number);
   const r = (rounds || []).find((x) => x && x.number === n);
   return r && Number.isFinite(r.startTick) ? r.startTick : null;
+}
+
+// roundEndTick resolves a round NUMBER to its END tick — the closing
+// bound of a round-span link (the "Watch round" / "Replay start" loop
+// range, nav.entryLoopSpan), the exact twin of roundStartTick above and
+// the same never-a-guess contract: a missing round or a row without a
+// usable end tick returns null, so callers stamp NO loop rather than a
+// bound they do not know.
+export function roundEndTick(rounds, number) {
+  const n = Number(number);
+  const r = (rounds || []).find((x) => x && x.number === n);
+  return r && Number.isFinite(r.endTick) ? r.endTick : null;
 }
 
 // inFreezeTime — the ONE freeze-phase predicate: true while `tick` sits

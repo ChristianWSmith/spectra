@@ -141,6 +141,7 @@ function check(name, cond, detail = '') {
     console.log('  FAIL ' + name + (detail ? ' — ' + detail : ''));
   }
 }
+const click = (el) => el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
 
 // mount renders into a fresh target; scenario C remounts after replacing
 // the scripted data, so each scenario gets its own root.
@@ -178,8 +179,10 @@ const base = {
     { tick: 10704, round: 7, kind: 'untraded', aSteam: 'B', aName: 'bob', bSteam: 'A', bName: 'alice', distance: 0, wonBy: 't' },
   ],
   clutches: [
-    { id: 1, round: 7, size: 2, steamId: 'D', name: 'dave', won: false, hpLeft: 1, bombState: 'none', replayAnchorTick: 10500 },
-    { id: 2, round: 7, size: 1, steamId: 'C', name: 'carol', won: true, hpLeft: 42, bombState: 'planted', replayAnchorTick: 10600 },
+    { id: 1, round: 7, size: 2, steamId: 'D', name: 'dave', won: false, hpLeft: 1, bombState: 'none', replayAnchorTick: 10500, startTick: 10400, endTick: 10700 },
+    // The won clutch carries its own span (analytics ClutchRow) — the ▶
+    // keeps the anchor SEEK and stamps start→end as the entry ?loop=.
+    { id: 2, round: 7, size: 1, steamId: 'C', name: 'carol', won: true, hpLeft: 42, bombState: 'planted', replayAnchorTick: 10600, startTick: 10480, endTick: 10960 },
   ],
 };
 
@@ -212,6 +215,17 @@ check(
   [...eng.querySelectorAll('.comb-kind')].map((b) => b.textContent.trim()).join(','),
 );
 
+// (B) the engagement ▶ keeps its seek tick and stamps the ±10 s entry
+// loop (nav.entryLoopAround — 10 s × 64 tick = 640 either side).
+click(first[0]?.querySelector('button'));
+await sleep();
+const navEng = (globalThis.__nav || [])[(globalThis.__nav || []).length - 1];
+check(
+  'engagement ▶ links tick + a ±10 s loop',
+  !!navEng && navEng.includes('tick=10640') && navEng.includes('loop=10000,11280'),
+  navEng || 'no navigation',
+);
+
 console.log('B. clutches card lists WON clutches only');
 const clutchSec = sections(root, 'Clutches')[0];
 check('provenance chip states the won-only scope', clutchSec?.querySelector('.provenance')?.textContent.includes('won only'), clutchSec?.querySelector('.provenance')?.textContent);
@@ -221,6 +235,17 @@ check('won clutch shown', clutchSec?.textContent.includes('carol'), '');
 check('lost clutch dropped', !clutchSec?.textContent.includes('dave'), '');
 check('lost clutch HP-left (1) gone with it', !clutchRows.some((r) => r.textContent.includes('1v2')), '');
 check('HP left column kept', clutchRows[0]?.textContent.includes('42'), clutchRows[0]?.textContent);
+
+// (B) the clutch ▶ keeps its anchor SEEK (replayAnchorTick) and stamps
+// the clutch's own start→end span as the entry ?loop=.
+click(clutchRows[0]?.querySelector('td button'));
+await sleep();
+const navClutch = (globalThis.__nav || [])[(globalThis.__nav || []).length - 1];
+check(
+  'clutch ▶ links tick + the clutch start→end loop',
+  !!navClutch && navClutch.includes('tick=10600') && navClutch.includes('loop=10480,10960'),
+  navClutch || 'no navigation',
+);
 
 console.log('C. only lost clutches → explicit empty state');
 document.body.removeChild(root);

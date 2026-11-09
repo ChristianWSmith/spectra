@@ -1,14 +1,15 @@
 // Tests for lib/rounds.js — the canonical round helpers: the
 // counted-round predicate (the analytics CountedRounds twin),
-// roundStartTick, the round-number → start-tick lookup behind every
-// "jump to round N" link (nav.entrySeekTick, Replay's round ribbon),
+// roundStartTick / roundEndTick, the round-number → start/end-tick
+// lookups behind every "jump to round N" link and every round-span loop
+// range (nav.entrySeekTick, nav.entryLoopSpan, Replay's round ribbon),
 // scoreThrough (the scoreline-at-a-round aggregate), and separatorAfter
 // (the round-ribbon separator cadence).
 // Run: node --test src/lib/rounds.test.js   (from frontend/)
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { isCounted, roundStartTick, roundIndexLabel, scoreThrough, inFreezeTime, separatorAfter } from './rounds.js';
+import { isCounted, roundStartTick, roundEndTick, roundIndexLabel, scoreThrough, inFreezeTime, separatorAfter } from './rounds.js';
 
 const ROUNDS = [
   { number: -2, startTick: 100 }, // knife
@@ -75,6 +76,34 @@ test('roundStartTick returns null instead of a guessed time', () => {
   assert.equal(roundStartTick(null, 1), null);
   assert.equal(roundStartTick([{ number: 3 }], 3), null); // no startTick
   assert.equal(roundStartTick([{ number: 3, startTick: NaN }], 3), null);
+});
+
+// roundEndTick is the closing twin: the second bound of a round-span
+// link (nav.entryLoopSpan — "Watch round" / "Replay start" loop over the
+// whole round, freeze included). Same never-a-guess contract.
+const END_ROUNDS = [
+  { number: -2, startTick: 100, endTick: 380 }, // knife
+  { number: 1, startTick: 1200, endTick: 24000 },
+  { number: 7, startTick: 24500, endTick: 30000 },
+];
+
+test('roundEndTick resolves a round number to its end tick', () => {
+  assert.equal(roundEndTick(END_ROUNDS, 1), 24000);
+  assert.equal(roundEndTick(END_ROUNDS, 7), 30000);
+  // Negative-numbered rounds resolve too (knife/warmup are real rounds).
+  assert.equal(roundEndTick(END_ROUNDS, -2), 380);
+  // Numeric strings coerce — a <select> value or a route query param.
+  assert.equal(roundEndTick(END_ROUNDS, '7'), 30000);
+});
+
+test('roundEndTick returns null instead of a guessed time', () => {
+  assert.equal(roundEndTick(END_ROUNDS, 0), null); // round 0 never exists
+  assert.equal(roundEndTick(END_ROUNDS, 12), null); // unknown round
+  assert.equal(roundEndTick(END_ROUNDS, 'x'), null); // NaN round
+  assert.equal(roundEndTick([], 1), null); // rounds not loaded
+  assert.equal(roundEndTick(null, 1), null);
+  assert.equal(roundEndTick([{ number: 3, startTick: 100 }], 3), null); // no endTick
+  assert.equal(roundEndTick([{ number: 3, startTick: 100, endTick: NaN }], 3), null);
 });
 
 test('roundIndexLabel: counted rounds show their number', () => {
