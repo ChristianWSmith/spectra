@@ -243,13 +243,12 @@ func (w *Writer) Close(tickRate float64) (Meta, error) {
 		tr = w.tickRate
 	}
 	meta = Meta{
-		FormatVersion: FormatVersion,
-		TickRate:      tr,
-		SampleRate:    SampleRate,
-		Frames:        w.frames,
-		Encoding:      Encoding,
-		Players:       w.slots,
-		CreatedAt:     w.created,
+		TickRate:   tr,
+		SampleRate: SampleRate,
+		Frames:     w.frames,
+		Encoding:   Encoding,
+		Players:    w.slots,
+		CreatedAt:  w.created,
 	}
 	// Teammate colors (extract.RosterSink) resolved onto slot order: a
 	// slot outside the delivered roster (or a parse that delivered none)

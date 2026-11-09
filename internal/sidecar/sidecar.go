@@ -3,7 +3,7 @@
 // extraction, block-compressed so ranges can be fetched and decompressed
 // server-side without the frontend ever owning a zstd decoder.
 //
-// # Raw stream layout (encoding "q16-v2", format version 2)
+// # Raw stream layout (encoding "q16")
 //
 // positions.bin decompresses to a concatenation of frames, each:
 //
@@ -17,9 +17,8 @@
 //		flags  uint8, bit0 = airborne, bit1 = ducking,
 //		       bits2-3 = side (0 unknown, 1 t, 2 ct)
 //
-// v2 (this layout): yaw carries the real view yaw (v1 stored pitch —
-// demoinfocs ViewDirectionY — garbage) and flags gained the per-frame
-// side bits. Readers/rewriters must check Meta.FormatVersion.
+// The yaw byte is the player's real view yaw; the flags byte carries
+// airborne/ducking plus the per-frame side (bits 2-3).
 //
 // The slot table (steamID per slot, first-seen order) lives in meta.json;
 // slots are assigned at the first frame that carries players and later
@@ -33,7 +32,7 @@
 //	               block — EncodeAll, so each block decompresses alone)
 //	positions.idx  fixed 16-byte entries per block: firstFrame uint32,
 //	               byteOffset uint64, frameCount uint16, pad uint16
-//	meta.json      Meta (format version, tick rate, sample rate, counts,
+//	meta.json      Meta (encoding, tick rate, sample rate, counts,
 //	               slot table + its teammate colors, plus the state
 //	               stream's weaponNames when present — see state.go)
 //
@@ -54,14 +53,11 @@ import (
 
 // Format constants recorded in meta.json.
 const (
-	// FormatVersion identifies this layout; bump when it changes so
-	// reprocessing regenerates stale sidecars (v2: real yaw + side bits).
-	FormatVersion = 2
 	// SampleRate is frames per second: samples are 1:1 with demo frames
 	// (full 64 Hz).
 	SampleRate = 64
 	// Encoding names the quantization scheme of the raw stream.
-	Encoding = "q16-v2"
+	Encoding = "q16"
 	// BlockFrames is the maximum number of frames per zstd block.
 	BlockFrames = 256
 	// maxSlots is the alive-mask width (uint16) — the hard slot-table cap.
@@ -97,13 +93,12 @@ type Player struct {
 // source of truth for frame count and the slot table; matches.position_*
 // mirror it.
 type Meta struct {
-	FormatVersion int       `json:"formatVersion"` // 2
-	TickRate      float64   `json:"tickRate"`
-	SampleRate    int       `json:"sampleRate"` // 64
-	Frames        int       `json:"frames"`
-	Encoding      string    `json:"encoding"` // "q16-v2"
-	Players       []uint64  `json:"players"`  // slot table, first-seen order
-	CreatedAt     time.Time `json:"createdAt"`
+	TickRate   float64   `json:"tickRate"`
+	SampleRate int       `json:"sampleRate"` // 64
+	Frames     int       `json:"frames"`
+	Encoding   string    `json:"encoding"` // "q16"
+	Players    []uint64  `json:"players"`  // slot table, first-seen order
+	CreatedAt  time.Time `json:"createdAt"`
 
 	// State stream (state.go): WeaponNames is written iff the stream
 	// exists — its presence IS the capability marker (absent = no state

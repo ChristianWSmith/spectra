@@ -38,9 +38,8 @@ CREATE TABLE IF NOT EXISTS matches (
 	warnings_count INTEGER NOT NULL DEFAULT 0,
 	status TEXT NOT NULL DEFAULT 'queued',
 	error TEXT NOT NULL DEFAULT '',
-	-- Position sidecar mirror (tactical replay): the sidecar's format,
-	-- sample rate and frame count (0 = no sidecar stored).
-	position_format INTEGER NOT NULL DEFAULT 0,
+	-- Position sidecar mirror (tactical replay): the sidecar's sample
+	-- rate and frame count (0 = no sidecar stored).
 	sample_rate INTEGER NOT NULL DEFAULT 0,
 	position_frames INTEGER NOT NULL DEFAULT 0,
 	-- Match header mirror: svc_EncryptedData count seen during the parse.

@@ -31,7 +31,7 @@ const progressEvery = 1000
 // PositionPlayer is one alive participant's sampled state at one frame —
 // the unit the sidecar writer (internal/sidecar) encodes. Coordinates are
 // world units; Yaw is ViewDirectionX (yaw) in degrees, normalized to
-// -180..180 before the sink; Air/Duck map to the q16-v2 flags bits and Side
+// -180..180 before the sink; Air/Duck map to the q16 flags bits and Side
 // ("ct"/"t"/"") to the side bits. SteamID is the raw SteamID64 (0 for bots,
 // which have no SteamID64).
 type PositionPlayer struct {

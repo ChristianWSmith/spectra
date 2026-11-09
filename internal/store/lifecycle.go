@@ -429,13 +429,13 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 }
 
 // SetPositionMeta records the position sidecar's mirror columns on the
-// match row (format version, sample rate, frame count). Callers write it
+// match row (sample rate, frame count). Callers write it
 // from sidecar.Writer.Close's meta after a successful parse; 0 values mean
 // "no sidecar". Unknown ids return ErrNotFound.
-func (s *Store) SetPositionMeta(matchID int64, format, sampleRate, frames int) error {
+func (s *Store) SetPositionMeta(matchID int64, sampleRate, frames int) error {
 	res, err := s.db.Exec(
-		`UPDATE matches SET position_format = ?, sample_rate = ?, position_frames = ? WHERE id = ?`,
-		format, sampleRate, frames, matchID,
+		`UPDATE matches SET sample_rate = ?, position_frames = ? WHERE id = ?`,
+		sampleRate, frames, matchID,
 	)
 	if err != nil {
 		return fmt.Errorf("store: set position meta: %w", err)

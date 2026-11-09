@@ -151,10 +151,6 @@
             <dd class="num">{prov.tradeWindowS}s</dd>
           </div>
           <div>
-            <dt>Position format</dt>
-            <dd class="num">v{prov.positionFormat}</dd>
-          </div>
-          <div>
             <dt>Voice sample rate</dt>
             <dd class="num">{prov.sampleRate ? `${prov.sampleRate} Hz` : '—'}</dd>
           </div>

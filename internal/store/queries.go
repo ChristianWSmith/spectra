@@ -12,7 +12,7 @@ import (
 // matchColumns is the full matches column list in scan order — the ONE
 // matches list: GetMatch selects it verbatim, SaveExtracted's UPDATE walks
 // it (skipping the lifecycle-owned path/sha256/size and the sidecar-owned
-// position_format/sample_rate/position_frames columns) so a column added
+// sample_rate/position_frames columns) so a column added
 // here cannot silently drift from the extract write.
 var matchColumns = []string{
 	"id", "path", "sha256", "size", "map", "patch_version", "tick_rate",
@@ -20,7 +20,7 @@ var matchColumns = []string{
 	"game_dir", "net_proto", "is_pov", "warmup_rounds", "real_rounds",
 	"score_ct", "score_t", "half_ct", "half_t", "side_switches",
 	"entity_classes", "end_entity_count", "parser_version", "extracted_at",
-	"parse_ms", "warnings_count", "status", "error", "position_format",
+	"parse_ms", "warnings_count", "status", "error",
 	"sample_rate", "position_frames", "enc_messages",
 }
 
@@ -34,7 +34,7 @@ var matchColumnsSQL = strings.Join(matchColumns, ", ")
 // sidecar's close meta).
 var matchOwnedElsewhere = map[string]bool{
 	"id": true, "path": true, "sha256": true, "size": true,
-	"position_format": true, "sample_rate": true, "position_frames": true,
+	"sample_rate": true, "position_frames": true,
 }
 
 // Event limits: DefaultEventLimit is what GetEvents applies when the caller
@@ -384,7 +384,7 @@ func (s *Store) GetMatch(id int64) (*models.Match, error) {
 		&m.GameDir, &m.NetProto, &m.IsPOV, &m.WarmupRounds, &m.RealRounds, &m.ScoreCT,
 		&m.ScoreT, &m.HalfCT, &m.HalfT, &m.SideSwitches, &m.EntityClasses,
 		&m.EndEntityCount, &m.ParserVersion, &extracted, &m.ParseMS, &m.WarningsCount,
-		&m.Status, &m.Error, &m.PositionFormat, &m.SampleRate, &m.PositionFrames,
+		&m.Status, &m.Error, &m.SampleRate, &m.PositionFrames,
 		&m.EncryptedMessages,
 	)
 	if errors.Is(err, sql.ErrNoRows) {

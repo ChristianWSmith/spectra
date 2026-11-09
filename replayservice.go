@@ -26,13 +26,12 @@ import (
 
 // ReplayMeta describes one match's position sidecar for the renderer.
 type ReplayMeta struct {
-	MatchID       int64          `json:"matchId"`
-	TickRate      float64        `json:"tickRate"`
-	SampleRate    int            `json:"sampleRate"` // frames per second sampled (64)
-	Frames        int            `json:"frames"`
-	FormatVersion int            `json:"formatVersion"`
-	HasSidecar    bool           `json:"hasSidecar"`
-	Players       []ReplayPlayer `json:"players"`
+	MatchID    int64          `json:"matchId"`
+	TickRate   float64        `json:"tickRate"`
+	SampleRate int            `json:"sampleRate"` // frames per second sampled (64)
+	Frames     int            `json:"frames"`
+	HasSidecar bool           `json:"hasSidecar"`
+	Players    []ReplayPlayer `json:"players"`
 }
 
 // ReplayPlayer is one slot-table entry (index = slot in the raw stream).
@@ -57,22 +56,21 @@ type ReplayService struct {
 
 // GetReplayMeta returns sidecar metadata for a match. ErrNotFound when the
 // match is unknown; a missing sidecar is NOT an error — HasSidecar is
-// false and the match row's mirrored columns (0 for pre-M2 imports)
-// describe the absence. When the sidecar is present it is the source of
-// truth for frames/format/slots and the players array follows the slot
-// table order (carrying that slot's teammate color when the sidecar has
-// one); without one, players are ordered by name.
+// false and the match row's mirrored columns (0 when no sidecar was
+// stored) describe the absence. When the sidecar is present it is the
+// source of truth for frames/sample rate/slots and the players array
+// follows the slot table order (carrying that slot's teammate color when
+// the sidecar has one); without one, players are ordered by name.
 func (s *ReplayService) GetReplayMeta(matchID int64) (ReplayMeta, error) {
 	m, err := s.st.GetMatch(matchID)
 	if err != nil {
 		return ReplayMeta{}, err
 	}
 	meta := ReplayMeta{
-		MatchID:       matchID,
-		TickRate:      m.TickRate,
-		SampleRate:    m.SampleRate,
-		Frames:        m.PositionFrames,
-		FormatVersion: m.PositionFormat,
+		MatchID:    matchID,
+		TickRate:   m.TickRate,
+		SampleRate: m.SampleRate,
+		Frames:     m.PositionFrames,
 	}
 
 	// Roster identity for the slot table (name + final side): the players
@@ -92,7 +90,6 @@ func (s *ReplayService) GetReplayMeta(matchID int64) (ReplayMeta, error) {
 		meta.HasSidecar = true
 		sm := rd.Meta()
 		meta.Frames = sm.Frames
-		meta.FormatVersion = sm.FormatVersion
 		meta.SampleRate = sm.SampleRate
 		if sm.TickRate > 0 {
 			meta.TickRate = sm.TickRate

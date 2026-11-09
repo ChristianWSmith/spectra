@@ -185,7 +185,7 @@ func TestWriteReadRoundtripFull(t *testing.T) {
 	dir := t.TempDir()
 	meta := writeSynthetic(t, dir, 1000)
 
-	if meta.FormatVersion != FormatVersion || meta.SampleRate != SampleRate ||
+	if meta.SampleRate != SampleRate ||
 		meta.Encoding != Encoding || meta.Frames != 1000 || meta.TickRate != 64 {
 		t.Errorf("Close meta mismatch: %+v", meta)
 	}
@@ -529,7 +529,8 @@ func TestBlockIndependentDecode(t *testing.T) {
 }
 
 // TestQuantYawWrap: yaw encodes modulo 360 (real yaw is 0..360; the decode
-// contract is -180..180) — no clamping saturation like v1's pitch input.
+// contract is -180..180) — wrapping beats clamping, so the full circle
+// stays distinct.
 func TestQuantYawWrap(t *testing.T) {
 	if quantYaw(270) != quantYaw(-90) {
 		t.Errorf("quantYaw(270)=%d != quantYaw(-90)=%d (must wrap)", quantYaw(270), quantYaw(-90))

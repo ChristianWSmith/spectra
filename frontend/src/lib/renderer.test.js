@@ -1640,7 +1640,7 @@ test('tracers stroke in the shooter’s side color; an unresolvable side is whit
   const data = synthStore(1300, 4); // slots 0..3, side bits ct/t/t/t
   // Slot 3 carries NO side payload for the whole recording AND no final
   // side in the roster — the unresolvable-side case (a dead player's
-  // frame has the same 0 bits in the real q16-v2 stream).
+  // frame has the same 0 bits in the real q16 stream).
   data.slots[3].flags.fill(0);
   const engine = createEngine(data, 64);
   const canvas = recordingCanvas();

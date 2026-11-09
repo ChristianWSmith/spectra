@@ -26,20 +26,19 @@ import (
 // ProvenancePanel is the per-match reproducibility surface (PRD §9.2):
 // every input that shaped the rows on screen.
 type ProvenancePanel struct {
-	MatchID        int64    `json:"matchId"`
-	ParserVersion  string   `json:"parserVersion"`
-	ExtractedAt    string   `json:"extractedAt"`
-	ParseMS        int64    `json:"parseMs"`
-	Warnings       int      `json:"warnings"`
-	EncMessages    int      `json:"encMessages"`
-	PositionFormat int      `json:"positionFormat"`
-	SampleRate     int      `json:"sampleRate"`
-	VoiceChunks    int      `json:"voiceChunks"`
-	RuleVersion    int      `json:"ruleVersion"`
-	TradeWindowS   float64  `json:"tradeWindowS"`
-	Map            string   `json:"map"`
-	Status         string   `json:"status"`
-	Notes          []string `json:"notes"` // descoped/caveat annotations (e.g. chat.decrypted provenance)
+	MatchID       int64    `json:"matchId"`
+	ParserVersion string   `json:"parserVersion"`
+	ExtractedAt   string   `json:"extractedAt"`
+	ParseMS       int64    `json:"parseMs"`
+	Warnings      int      `json:"warnings"`
+	EncMessages   int      `json:"encMessages"`
+	SampleRate    int      `json:"sampleRate"`
+	VoiceChunks   int      `json:"voiceChunks"`
+	RuleVersion   int      `json:"ruleVersion"`
+	TradeWindowS  float64  `json:"tradeWindowS"`
+	Map           string   `json:"map"`
+	Status        string   `json:"status"`
+	Notes         []string `json:"notes"` // descoped/caveat annotations (e.g. chat.decrypted provenance)
 }
 
 // EntitySummary describes what the parser saw (schema-browser-lite; full
@@ -134,7 +133,7 @@ func (s *PlatformService) GetProvenance(matchID int64) (ProvenancePanel, error) 
 	rd, err := sidecar.Open(filepath.Join(data.MatchesDir(), strconv.FormatInt(matchID, 10)))
 	if err == nil {
 		meta := rd.Meta()
-		notes = append(notes, fmt.Sprintf("position sidecar format: %s v%d", meta.Encoding, meta.FormatVersion))
+		notes = append(notes, fmt.Sprintf("position sidecar format: %s", meta.Encoding))
 	} else {
 		notes = append(notes, "position sidecar format: none")
 	}
@@ -144,20 +143,19 @@ func (s *PlatformService) GetProvenance(matchID int64) (ProvenancePanel, error) 
 		extractedAt = m.ExtractedAt.UTC().Format(time.RFC3339)
 	}
 	return ProvenancePanel{
-		MatchID:        m.ID,
-		ParserVersion:  m.ParserVersion,
-		ExtractedAt:    extractedAt,
-		ParseMS:        m.ParseMS,
-		Warnings:       m.WarningsCount,
-		EncMessages:    m.EncryptedMessages,
-		PositionFormat: m.PositionFormat,
-		SampleRate:     m.SampleRate,
-		VoiceChunks:    voiceChunks,
-		RuleVersion:    cfg.RuleVersion,
-		TradeWindowS:   cfg.TradeWindowS,
-		Map:            m.Map,
-		Status:         m.Status,
-		Notes:          notes,
+		MatchID:       m.ID,
+		ParserVersion: m.ParserVersion,
+		ExtractedAt:   extractedAt,
+		ParseMS:       m.ParseMS,
+		Warnings:      m.WarningsCount,
+		EncMessages:   m.EncryptedMessages,
+		SampleRate:    m.SampleRate,
+		VoiceChunks:   voiceChunks,
+		RuleVersion:   cfg.RuleVersion,
+		TradeWindowS:  cfg.TradeWindowS,
+		Map:           m.Map,
+		Status:        m.Status,
+		Notes:         notes,
 	}, nil
 }
 

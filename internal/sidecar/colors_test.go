@@ -96,21 +96,20 @@ func TestPlayerColorsFailSoft(t *testing.T) {
 	}
 }
 
-// TestPlayerColorsAbsentFromOldMetaJSON is the pre-field sidecar: meta.json
-// written before playerColors existed must still parse and report "no
-// color" (graceful degradation — no schema, no migration).
-func TestPlayerColorsAbsentFromOldMetaJSON(t *testing.T) {
+// TestPlayerColorsAbsentFromMetaJSON: a meta.json written without
+// playerColors must still parse and report "no color" (optional-field
+// degradation — the fixture deliberately omits optional keys).
+func TestPlayerColorsAbsentFromMetaJSON(t *testing.T) {
 	const raw = `{
-  "formatVersion": 2,
   "tickRate": 64,
   "sampleRate": 64,
   "frames": 3,
-  "encoding": "q16-v2",
+  "encoding": "q16",
   "players": [76561198000000001, 76561198000000002]
 }`
 	var m Meta
 	if err := json.Unmarshal([]byte(raw), &m); err != nil {
-		t.Fatalf("parse pre-field meta.json: %v", err)
+		t.Fatalf("parse meta.json without playerColors: %v", err)
 	}
 	if m.PlayerColors != nil {
 		t.Errorf("PlayerColors = %v, want nil", m.PlayerColors)

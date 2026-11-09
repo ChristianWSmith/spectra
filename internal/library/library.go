@@ -513,7 +513,7 @@ func (im *Importer) process(item queueItem) {
 	im.emitEvent(EventJobProgress, JobProgressEvent{JobID: jobID, Stage: models.StageStore, Progress: 1, MatchID: matchID})
 	// Mirror the sidecar meta onto the match row, then save. SaveExtracted
 	// forces match status ready itself — don't double-set.
-	if err := im.st.SetPositionMeta(matchID, meta.FormatVersion, meta.SampleRate, meta.Frames); err != nil {
+	if err := im.st.SetPositionMeta(matchID, meta.SampleRate, meta.Frames); err != nil {
 		cleanupSidecar()
 		im.failJob(jobID, matchID, models.StageStore, err.Error(), false)
 		return

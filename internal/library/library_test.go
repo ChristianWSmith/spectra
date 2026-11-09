@@ -188,9 +188,8 @@ func TestImportWritesSidecar(t *testing.T) {
 		t.Fatalf("sidecar.Open after import: %v", err)
 	}
 	meta := r.Meta()
-	if meta.Frames != 3 || meta.TickRate != 64 ||
-		meta.FormatVersion != sidecar.FormatVersion || meta.SampleRate != sidecar.SampleRate {
-		t.Errorf("sidecar meta = %+v, want frames=3 tickRate=64 format=1 sample=64", meta)
+	if meta.Frames != 3 || meta.TickRate != 64 || meta.SampleRate != sidecar.SampleRate {
+		t.Errorf("sidecar meta = %+v, want frames=3 tickRate=64 sample=64", meta)
 	}
 	if len(meta.Players) != 2 {
 		t.Errorf("slot table = %v, want 2 players", meta.Players)
@@ -207,11 +206,9 @@ func TestImportWritesSidecar(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetMatch: %v", err)
 	}
-	if m.PositionFormat != sidecar.FormatVersion || m.SampleRate != sidecar.SampleRate ||
-		m.PositionFrames != 3 {
-		t.Errorf("match position columns = %d/%d/%d, want %d/%d/3",
-			m.PositionFormat, m.SampleRate, m.PositionFrames,
-			sidecar.FormatVersion, sidecar.SampleRate)
+	if m.SampleRate != sidecar.SampleRate || m.PositionFrames != 3 {
+		t.Errorf("match position columns = %d/%d, want %d/3",
+			m.SampleRate, m.PositionFrames, sidecar.SampleRate)
 	}
 }
 

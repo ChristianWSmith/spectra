@@ -290,7 +290,7 @@ function teamColor(side) {
 }
 
 // sideFromFlags — THE canonical per-frame side rule:
-// the q16-v2 side bits (flags bits 2-3: 1 = t, 2 = ct) with a
+// the q16 side bits (flags bits 2-3: 1 = t, 2 = ct) with a
 // caller-supplied fallback for frames whose bits are 0 — a dead player's
 // frame or an unassigned team, where the slot's final side
 // (meta.players[].side) is all the data there is. Exported so Replay's
@@ -1582,9 +1582,9 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
 
   // sideAtFrame resolves a slot's side at frame f through the ONE
   // canonical rule (module-level sideFromFlags): the per-frame side bits
-  // (q16-v2 — sides flip at halftime), falling back to the slot's final
-  // side from meta. The fallback is not an old-format shim: v2 side bits
-  // are 0 (unknown) whenever the slot carries no payload that frame (dead
+  // (q16 — sides flip at halftime), falling back to the slot's final
+  // side from meta. The fallback is not a legacy shim: the side bits are
+  // 0 (unknown) whenever the slot carries no payload that frame (dead
   // player) or the extractor saw an unassigned team, and the final-side
   // table is all we have for those frames.
   function sideAtFrame(slot, f) {

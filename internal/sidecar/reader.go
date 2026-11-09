@@ -19,7 +19,7 @@ var ErrNoSidecar = errors.New("sidecar: not present")
 
 // Reader serves meta lookups and decompressed frame ranges from a match's
 // sidecar. The frontend never decodes zstd: ranges come back as the raw
-// q16-v2 stream (HTTP asset-server route).
+// q16 stream (HTTP asset-server route).
 type Reader struct {
 	dir     string
 	meta    Meta
@@ -111,7 +111,7 @@ func (r *Reader) Meta() Meta { return r.meta }
 // [fromFrame, toFrame). fromFrame clamps to [0, Frames]; toFrame <=
 // fromFrame or toFrame > Frames means Frames (i.e. "through the end"), so
 // ReadRange(0, 0) is the whole match. Only the zstd blocks intersecting
-// the range are read and decompressed. The result is the q16-v2 stream —
+// the range are read and decompressed. The result is the q16 stream —
 // see the package doc for the frame layout.
 func (r *Reader) ReadRange(fromFrame, toFrame int) ([]byte, error) {
 	frames := r.meta.Frames

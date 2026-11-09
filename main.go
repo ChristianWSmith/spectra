@@ -448,7 +448,7 @@ func serveSoundFile(w http.ResponseWriter, r *http.Request, dir, name string) {
 // handleSidecar serves a match's sidecars over the asset server (HTTP
 // asset-server route, server-side decompress; voice routes):
 //
-//	/api/sidecar/<matchID>/positions?from=&to=   decompressed q16-v1 frame
+//	/api/sidecar/<matchID>/positions?from=&to=   decompressed q16 frame
 //	                                             stream (from/to frame
 //	                                             indexes; 0/0 = whole match)
 //	/api/sidecar/<matchID>/state?from=&to=       decompressed sparse
@@ -456,7 +456,8 @@ func serveSoundFile(w http.ResponseWriter, r *http.Request, dir, name string) {
 //	                                             stream (frame-indexed
 //	                                             changes; 0/0 = whole
 //	                                             match; 404 when the
-//	                                             match predates it)
+//	                                             match has no state
+//	                                             stream)
 //	/api/sidecar/<matchID>/meta                  meta.json as JSON
 //	/api/sidecar/<matchID>/voice/pcm?steamId=&fromTick=&toTick=
 //	                                             s16le mono @16 kHz window

@@ -125,10 +125,9 @@ type Match struct {
 	WarningsCount  int       `json:"warningsCount"`
 	Status         string    `json:"status"`
 	Error          string    `json:"error"`
-	// Position sidecar mirror (matches.position_* / sample_rate): 0 when the
-	// match has no sidecar (pre-M2 imports). The sidecar meta.json is the
-	// source of truth when present.
-	PositionFormat int `json:"positionFormat"`
+	// Position sidecar mirror (matches.sample_rate / position_frames): 0
+	// when the match has no sidecar. The sidecar meta.json is the source
+	// of truth when present.
 	SampleRate     int `json:"sampleRate"`
 	PositionFrames int `json:"positionFrames"`
 	// EncryptedMessages counts svc_EncryptedData net-messages seen during

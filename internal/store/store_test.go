@@ -167,7 +167,6 @@ func TestOpenBaselineSchemaIdempotent(t *testing.T) {
 		notnull            int
 		dflt               string // "" = no default (NULL)
 	}{
-		{"matches", "position_format", "INTEGER", 1, "0"},
 		{"matches", "sample_rate", "INTEGER", 1, "0"},
 		{"matches", "position_frames", "INTEGER", 1, "0"},
 		{"matches", "enc_messages", "INTEGER", 1, "0"},
@@ -228,9 +227,9 @@ func TestReplayColumnsFreshOpen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetMatch: %v", err)
 	}
-	if m.PositionFormat != 0 || m.SampleRate != 0 || m.PositionFrames != 0 {
-		t.Errorf("fresh position columns = %d/%d/%d, want 0/0/0",
-			m.PositionFormat, m.SampleRate, m.PositionFrames)
+	if m.SampleRate != 0 || m.PositionFrames != 0 {
+		t.Errorf("fresh position columns = %d/%d, want 0/0",
+			m.SampleRate, m.PositionFrames)
 	}
 
 	rows, err := s.GetEvents(models.EventFilter{MatchID: id})
@@ -251,16 +250,16 @@ func TestSetPositionMeta(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateMatchRow: %v", err)
 	}
-	if err := s.SetPositionMeta(id, 1, 64, 136948); err != nil {
+	if err := s.SetPositionMeta(id, 64, 136948); err != nil {
 		t.Fatalf("SetPositionMeta: %v", err)
 	}
 	m, err := s.GetMatch(id)
 	if err != nil {
 		t.Fatalf("GetMatch: %v", err)
 	}
-	if m.PositionFormat != 1 || m.SampleRate != 64 || m.PositionFrames != 136948 {
-		t.Errorf("position columns = %d/%d/%d, want 1/64/136948",
-			m.PositionFormat, m.SampleRate, m.PositionFrames)
+	if m.SampleRate != 64 || m.PositionFrames != 136948 {
+		t.Errorf("position columns = %d/%d, want 64/136948",
+			m.SampleRate, m.PositionFrames)
 	}
 	// SaveExtracted must not clobber them (it never touches the columns).
 	em := testExtracted("sha-posmeta", time.Now())
@@ -271,11 +270,11 @@ func TestSetPositionMeta(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetMatch after save: %v", err)
 	}
-	if m.PositionFormat != 1 || m.SampleRate != 64 || m.PositionFrames != 136948 {
-		t.Errorf("position columns after SaveExtracted = %d/%d/%d, want 1/64/136948",
-			m.PositionFormat, m.SampleRate, m.PositionFrames)
+	if m.SampleRate != 64 || m.PositionFrames != 136948 {
+		t.Errorf("position columns after SaveExtracted = %d/%d, want 64/136948",
+			m.SampleRate, m.PositionFrames)
 	}
-	if err := s.SetPositionMeta(999999, 1, 64, 1); !errors.Is(err, ErrNotFound) {
+	if err := s.SetPositionMeta(999999, 64, 1); !errors.Is(err, ErrNotFound) {
 		t.Errorf("SetPositionMeta(999999) err = %v, want ErrNotFound", err)
 	}
 }
