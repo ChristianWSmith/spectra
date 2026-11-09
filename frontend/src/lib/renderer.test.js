@@ -4111,11 +4111,20 @@ test('elevation indicators: ⊥ below the marker when above, T above when below 
   assert.ok(above, 'an entity above the level draws ⊥');
   assert.equal(above.dir, 'above', 'above → the flat bar lands BELOW the marker (⊥)');
   assert.equal(above.y, c().y, 'the stem ORIGINATES at the entity centre — never a detached mark');
-  assert.equal(above.barY, c().y + 27, '⊥ bar centred at centre+27 (stem centre → bar)');
-  assert.equal(above.barW, 13, 'the flat bar is 13 px wide — half the first iteration');
+  // Vertical extent HALVED 2026-11-08: the stem was 27 px (⊥ bar at
+  // centre+27, past the name baseline), now 13.5 px.
+  assert.equal(above.barY, c().y + 13.5, '⊥ bar centred at centre+13.5 (halved stem: was centre+27)');
+  assert.equal(above.barW, 13, 'the flat bar is 13 px wide — half the first iteration (unchanged by the halving)');
+  // Retargeted with the halving: the bar no longer reaches past the
+  // name baseline (cy+22) — it stops inside the name-label band — but
+  // must stay ATTACHED: clear of the dot's edge (cy+9), not floating.
   assert.ok(
-    above.barY + ELEV_W / 2 > c().y + 22,
-    `⊥ bar bottom lands past the name label (baseline cy+22): ${above.barY + ELEV_W / 2 - c().y} below centre`,
+    above.barY + ELEV_W / 2 > c().y + 9,
+    `⊥ bar bottom stays past the dot's edge (attached): ${above.barY + ELEV_W / 2 - c().y} below centre`,
+  );
+  assert.ok(
+    above.barY - ELEV_W / 2 < c().y + 22,
+    `⊥ bar stops short of the name baseline (halved stem): ${above.barY - ELEV_W / 2 - c().y} below centre`,
   );
 
   // Configured 'below': the same box with reference_z 1 → z=0 is below
@@ -4137,8 +4146,8 @@ test('elevation indicators: ⊥ below the marker when above, T above when below 
   assert.ok(below, 'an entity below the level draws T');
   assert.equal(below.dir, 'below', 'below → the flat bar lands ABOVE the marker (T)');
   assert.equal(below.y, c().y, 'the T stem also originates at the entity centre');
-  assert.equal(below.barY, c().y - 27, 'T bar centred at centre−27 (stem centre → bar)');
-  assert.equal(below.barW, 13, 'same flat bar, mirrored above the dot');
+  assert.equal(below.barY, c().y - 13.5, 'T bar centred at centre−13.5 (halved stem: was centre−27)');
+  assert.equal(below.barW, 13, 'same flat bar, mirrored above the dot (unchanged by the halving)');
   assert.ok(
     below.barY - ELEV_W / 2 < c().y - 9,
     `T bar clear above the dot's edge: ${c().y - below.barY + ELEV_W / 2} above centre`,
