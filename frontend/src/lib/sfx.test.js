@@ -1,10 +1,11 @@
 // Sound-effect cue math tests (lib/replay/sfx.js): the utility-cue
 // derivation (flashbang double-dispatch dedupe, the decoy→HE detonation
-// remap, C4, the equip skip, the freeze gate), the NEW throw cues
-// (`<weapon> throw` manifest keys), the knife damage cues, the bullet
-// cue window, the decoy fake-gunshot plan window, the range/seek
-// guards, the random variant pick, the internal gain scales and the
-// weapon-name-less manifest boundary.
+// remap, C4 on its own bus, the equip skip, the freeze gate), the throw
+// cues (`<weapon> throw` manifest keys), the knife damage cues, the
+// bullet cue window, the decoy fake-gunshot plan window, the C4 beep
+// synthesis (bomb rows → schedule → deterministic (site, phase) group),
+// the range/seek guards, the random variant pick, the internal gain
+// scales and the weapon-name-less manifest boundary.
 // Run: node --test src/lib/sfx.test.js
 // (from frontend/; the lib test glob src/lib/*.test.js picks it up too).
 import test from 'node:test';
@@ -32,6 +33,7 @@ const {
   AUDIO_VOL_DEFAULT,
   GUNS_GAIN_SCALE,
   UTILITY_GAIN_SCALE,
+  C4_GAIN_SCALE,
   SOUND_DETONATION_BUCKETS,
   grenadeCues,
   throwCues,
@@ -44,6 +46,13 @@ const {
   pickVariant,
   prefVolume,
   normalizeSoundManifest,
+  c4BeepRows,
+  c4BombAt,
+  c4BeepRate,
+  c4BeepTicks,
+  c4BeepGroup,
+  createSfxEngine,
+  resetSoundManifest,
 } = await import('./replay/sfx.js');
 
 // --- utility cues ----------------------------------------------------------
@@ -76,6 +85,9 @@ test('grenadeCues keeps only detonation buckets (equips and throws skipped)', ()
     cues.map((c) => `${c.tick}:${c.name}`),
     ['10:HE Grenade', '20:Flashbang', '30:HE Grenade', '40:Smoke Grenade', '50:Molotov', '60:Weird Nade'],
   );
+  // Every grenade detonation rides the UTILITY bus (only the C4
+  // explosion leaves it — see the bomb_explode test below).
+  assert.ok(cues.every((c) => c.bucket === 'utility'), JSON.stringify(cues));
   // Every drawable detonation bucket has a sound path: the old 'decoy'
   // exclusion died with the bucket (there is no 'decoy' bucket anymore).
   assert.deepEqual([...SOUND_DETONATION_BUCKETS], ['detonation', 'smoke', 'fire', 'flash', 'he']);
@@ -144,6 +156,12 @@ test('grenadeCues includes the C4 explosion via bomb_explode and sorts by tick',
   assert.deepEqual(
     cues.map((c) => `${c.tick}:${c.name}`),
     ['100:HE Grenade', '900:C4'],
+  );
+  // Bus migration: the explosion left the UTILITY bus for the C4 bus
+  // (its own fader/mute — prefs.go c4_volume), the grenade stays.
+  assert.deepEqual(
+    cues.map((c) => `${c.tick}:${c.bucket}`),
+    ['100:utility', '900:c4'],
   );
 });
 
@@ -393,7 +411,7 @@ test('pickVariant picks uniformly in range and never leaves the list', () => {
 
 // --- internal mix calibration ----------------------------------------------
 
-test('gain scales: guns and utility both run at 1/3 of the fader, internal to the mixer', () => {
+test('gain scales: guns, utility and C4 all run at 1/3 of the fader, internal to the mixer', () => {
   // applyGains() multiplies the fader level by these — the pref default,
   // the sliders and prefs.go never move (a user-facing 80% still reads
   // 80%), so pinning the constants here pins the mix. Voice is
@@ -404,8 +422,455 @@ test('gain scales: guns and utility both run at 1/3 of the fader, internal to th
   // volume of util once more (again, internally)" → 1/3 of the original)
   // — still INTERNAL: only this constant moved, never the pref default.
   assert.equal(UTILITY_GAIN_SCALE, 1 / 3);
+  // C4: the explosion MOVED from the utility bus to the C4 bus, so the
+  // bus keeps utility's number — its level must not change with the
+  // migration (the beeps are simply quieter samples than a grenade).
+  assert.equal(C4_GAIN_SCALE, 1 / 3);
   assert.equal(AUDIO_VOL_DEFAULT, 0.8); // the user-facing default is untouched
 });
+
+// --- C4 beeps ---------------------------------------------------------------
+
+// The landmark rows the beep scheduler consumes (the Replay pushes the
+// SAME drawNorm rows the renderer gets — buckets from landmarks.js
+// drawBucket, site from the stored bomb_plant row).
+const bombRow = (over) => ({
+  kind: 'bomb_plant',
+  bucket: 'plant',
+  tick: 1000,
+  round: 5,
+  site: 'A',
+  ...over,
+});
+
+test('c4BeepRows: the ONE filter of drawNorm into the bomb lifecycle lists', () => {
+  const rows = c4BeepRows([
+    bombRow(),
+    { kind: 'bomb_explode', bucket: 'explode', tick: 3624, round: 5 },
+    { kind: 'bomb_defuse', bucket: 'defuse', tick: 5200, round: 6 },
+    { kind: 'round_end', bucket: 'round', tick: 5300, round: 6 },
+    { kind: 'round_start', bucket: 'start', tick: 6000, round: 7 },
+    { kind: 'kill', bucket: 'kill', tick: 1500 }, // not bomb lifecycle
+    { kind: 'grenade', bucket: 'he', tick: 1600 },
+    bombRow({ tick: undefined }), // no tick → dropped
+    null, // hostile input never throws
+  ]);
+  assert.deepEqual(rows.plants.map((r) => r.tick), [1000]);
+  assert.deepEqual(rows.explodes.map((r) => r.tick), [3624]);
+  assert.deepEqual(rows.defuses.map((r) => r.tick), [5200]);
+  assert.deepEqual(rows.roundEnds.map((r) => r.tick), [5300]);
+  assert.deepEqual(rows.roundStarts.map((r) => r.tick), [6000]);
+  assert.deepEqual(c4BeepRows(null).plants, []);
+  assert.deepEqual(c4BeepRows(undefined).roundStarts, []);
+});
+
+test('c4BombAt: ticking-bomb state through bombEndTick (the ONE termination rule)', () => {
+  const tr = 64;
+  const rows = c4BeepRows([
+    bombRow({ tick: 1000, site: 'A' }),
+    { kind: 'bomb_explode', bucket: 'explode', tick: 1000 + 41 * tr, round: 5 },
+    bombRow({ tick: 5000, round: 6, site: 'B' }),
+    { kind: 'bomb_defuse', bucket: 'defuse', tick: 5200, round: 6 },
+    { kind: 'round_end', bucket: 'round', tick: 5300, round: 6 },
+    bombRow({ tick: 6100, round: 7, site: 'A' }),
+    { kind: 'round_start', bucket: 'start', tick: 7000, round: 8 },
+  ]);
+  // Nothing planted yet.
+  assert.equal(c4BombAt(rows, 999, tr), null);
+  // Mid-fuse: stop and fuseEnd are the detonation (41 s plant → blast,
+  // what the dev matches record), the site comes along.
+  const mid = c4BombAt(rows, 1001, tr);
+  assert.equal(mid.plant.tick, 1000);
+  assert.equal(mid.stop, 1000 + 41 * tr);
+  assert.equal(mid.fuseEnd, 1000 + 41 * tr);
+  assert.equal(mid.site, 'A');
+  // At (and after) the detonation nothing ticks — the explosion cue
+  // owns that tick.
+  assert.equal(c4BombAt(rows, 1000 + 41 * tr, tr), null);
+  assert.equal(c4BombAt(rows, 4000, tr), null);
+  // A DEFUSE stops the beeping but never shortens the FUSE: no explode
+  // row in round 6, so the cadence runs against the 40 s C4 timer
+  // (mp_c4timer) — a bomb defused at half its fuse beeps at the
+  // half-fuse cadence, not one racing toward a blast that never happens.
+  const defusing = c4BombAt(rows, 5100, tr);
+  assert.equal(defusing.stop, 5200);
+  assert.equal(defusing.fuseEnd, 5000 + 40 * tr);
+  assert.equal(defusing.site, 'B');
+  assert.equal(c4BombAt(rows, 5200, tr), null); // defused
+  // The NEXT round's start cuts the window too (bomb.js' second cutoff),
+  // and the last plant at/before the tick is the one that counts.
+  const late = c4BombAt(rows, 6500, tr);
+  assert.equal(late.plant.tick, 6100);
+  assert.equal(late.stop, 7000);
+  assert.equal(late.fuseEnd, 6100 + 40 * tr);
+  assert.equal(c4BombAt(rows, 7000, tr), null);
+  // Hostile inputs.
+  assert.equal(c4BombAt(null, 1000, tr), null);
+  assert.equal(c4BombAt(rows, NaN, tr), null);
+  assert.equal(c4BombAt(rows, 1000, 0), null);
+});
+
+test('c4BeepRate: the CS:GO-measured fit at both ends (approximate for CS2)', () => {
+  assert.equal(c4BeepRate(0), 1.04865); // ≈1 beep/s right after the plant
+  assert.ok(Math.abs(c4BeepRate(1) - 7.8094) < 1e-3, String(c4BeepRate(1))); // ≈7.8/s at the blast
+  assert.ok(Math.abs(c4BeepRate(0.5) - 1.8413) < 1e-3, String(c4BeepRate(0.5)));
+  // Clamped — a hostile p can never produce an absurd rate.
+  assert.equal(c4BeepRate(-3), c4BeepRate(0));
+  assert.equal(c4BeepRate(9), c4BeepRate(1));
+});
+
+test('c4BeepTicks: one deterministic, accelerating schedule per fuse', () => {
+  const tr = 64;
+  const plant = 1000;
+  const fuse = plant + 40 * tr;
+  const ticks = c4BeepTicks(plant, fuse, tr);
+  // The whole schedule pinned: 103 beeps over a 40 s fuse, the first
+  // ~0.95 s after the plant (one g(0) interval — never ON the plant
+  // tick), the last a tick before the detonation (never ON it — the
+  // explosion cue owns that tick), gaps shrinking from 61 ticks to ~8
+  // (≈128 ms at 64 tps — the curve's 7.8/s end).
+  assert.equal(ticks.length, 103);
+  assert.equal(ticks[0] - plant, 61);
+  assert.equal(ticks[ticks.length - 1] - plant, 40 * tr - 1);
+  assert.ok(
+    ticks.every((t, i) => i === 0 || t > ticks[i - 1]),
+    'strictly increasing',
+  );
+  const gaps = ticks.slice(1).map((t, i) => t - ticks[i]);
+  assert.equal(gaps[0], 61);
+  assert.equal(gaps[gaps.length - 1], 9);
+  assert.ok(Math.min(...gaps) >= 8, 'never tighter than the 7.8/s end');
+  assert.ok(gaps[0] > gaps[gaps.length - 1], 'the cadence accelerates');
+  // Deterministic: the same inputs always yield the same schedule (the
+  // engine re-derives it on every re-arm).
+  assert.deepEqual(c4BeepTicks(plant, fuse, tr), ticks);
+  // The 41 s plant → blast the dev matches record carries a few more.
+  assert.equal(c4BeepTicks(plant, plant + 41 * tr, tr).length, 105);
+});
+
+test('c4BeepTicks: hostile inputs yield no schedule (never a throw)', () => {
+  assert.deepEqual(c4BeepTicks(NaN, 100, 64), []);
+  assert.deepEqual(c4BeepTicks(null, undefined, 64), []);
+  assert.deepEqual(c4BeepTicks(0, 0, 64), []);
+  assert.deepEqual(c4BeepTicks(100, 50, 64), []);
+  assert.deepEqual(c4BeepTicks(0, 100, 0), []);
+  assert.deepEqual(c4BeepTicks(0, 100, -64), []);
+});
+
+test('c4BeepGroup: deterministic (site, phase) key — an unknown site is silence', () => {
+  const tr = 64;
+  // The plant row's site picks the tone (the game's C4.PlantSound /
+  // C4.PlantSoundB sample pairs) …
+  assert.equal(c4BeepGroup('A', 40 * tr, tr), 'C4 beep A');
+  assert.equal(c4BeepGroup('B', 40 * tr, tr), 'C4 beep B');
+  // … and the time left on the fuse picks the phase: the final 10
+  // seconds switch to the distinct *_10sec sample.
+  assert.equal(c4BeepGroup('A', 10 * tr + 1, tr), 'C4 beep A');
+  assert.equal(c4BeepGroup('A', 10 * tr, tr), 'C4 beep A 10sec');
+  assert.equal(c4BeepGroup('B', 10 * tr - 1, tr), 'C4 beep B 10sec');
+  assert.equal(c4BeepGroup('A', 1, tr), 'C4 beep A 10sec'); // the last beep before the blast
+  // A site we cannot name never guesses a tone.
+  assert.equal(c4BeepGroup('', 100, tr), null);
+  assert.equal(c4BeepGroup('C', 100, tr), null);
+  assert.equal(c4BeepGroup(null, 100, tr), null);
+  // A non-finite remainder is simply not the 10-seconds phase.
+  assert.equal(c4BeepGroup('A', NaN, tr), 'C4 beep A');
+});
+
+// --- C4 beep scheduler (engine-level) --------------------------------------
+// The scheduler is the one part of sfx.js that is not pure math, so this
+// drives createSfxEngine against a fake AudioContext + a fake replay
+// engine and pins its OBSERVABLE contract: beeps queue AHEAD on the
+// replay clock with the deterministic (site, phase) sample, and a pause,
+// a seek or a resolved bomb silences the queue (re-seeds drop what they
+// crossed, never queue it twice).
+
+class FakeAudioContext {
+  constructor() {
+    this.state = 'running';
+    this.currentTime = 0;
+    this.destination = { name: 'destination' };
+    this.gains = []; // creation order in sfx.js: guns, utility, C4
+    this.sources = [];
+    FakeAudioContext.last = this;
+  }
+  createGain() {
+    const g = { gain: { value: 0 }, bus: null };
+    g.connect = (n) => {
+      g.bus = n;
+    };
+    this.gains.push(g);
+    return g;
+  }
+  createBufferSource() {
+    const ctx = this;
+    const src = {
+      buffer: null,
+      bus: null,
+      started: null,
+      stopped: false,
+      onended: null,
+      connect(n) {
+        src.bus = n;
+      },
+      disconnect() {
+        src.bus = null;
+      },
+      start(when) {
+        src.started = when === undefined ? ctx.currentTime : when;
+      },
+      stop() {
+        src.stopped = true;
+      },
+    };
+    this.sources.push(src);
+    return src;
+  }
+  // The preload tags every decoded buffer with the URL it came from, so
+  // the tests can tell WHICH manifest group each source plays.
+  decodeAudioData(raw) {
+    return Promise.resolve({ url: raw && raw.url });
+  }
+  resume() {
+    return Promise.resolve();
+  }
+  close() {
+    this.state = 'closed';
+    return Promise.resolve();
+  }
+}
+
+const BEEP_MANIFEST = {
+  sounds: {
+    'C4 beep A': ['/api/sounds/c4_beep2.wav'],
+    'C4 beep B': ['/api/sounds/c4_beep3.wav'],
+    'C4 beep A 10sec': ['/api/sounds/c4_beep2_10sec.wav'],
+    'C4 beep B 10sec': ['/api/sounds/c4_beep3_10sec.wav'],
+    C4: ['/api/sounds/c4_explode1.wav'],
+    'HE Grenade': ['/api/sounds/hegrenade_detonate_02.wav'],
+  },
+};
+
+// createSfxEngine builds its own context from window.AudioContext (no
+// window in Node — sfx.js's constructor swallows the failure, so this
+// section installs the fake first).
+globalThis.window = { AudioContext: FakeAudioContext };
+
+const fakeEngine = () => {
+  let cb = null;
+  return {
+    tickRate: 64,
+    onChange(fn) {
+      cb = fn;
+      return () => {
+        cb = null;
+      };
+    },
+    emit(st) {
+      if (cb) cb(st);
+    },
+  };
+};
+
+// makeSfx — one engine with the manifest stubbed in and its preload
+// drained (state.ready), plus the fake AudioContext it was built on.
+async function makeSfx() {
+  const engine = fakeEngine();
+  const errors = [];
+  const sfx = createSfxEngine({ engine, matchId: 1, onError: (m) => errors.push(m) });
+  for (let i = 0; i < 500 && !sfx.state.ready; i++) {
+    await new Promise((r) => setTimeout(r, 1));
+  }
+  assert.equal(errors.length, 0, errors.join('; '));
+  assert.ok(sfx.state.ready, JSON.stringify(sfx.state));
+  return { sfx, engine, ctx: FakeAudioContext.last };
+}
+
+// The fixture bomb: planted at tick 1000, detonating 41 s later (what
+// the dev matches record — see bombEndTick) — a 2624-tick fuse.
+const C4_TR = 64;
+const C4_PLANT = 1000;
+const C4_EXPLODE = C4_PLANT + 41 * C4_TR;
+const c4Rows = (site) => [
+  { kind: 'bomb_plant', bucket: 'plant', tick: C4_PLANT, round: 5, site },
+  { kind: 'bomb_explode', bucket: 'explode', tick: C4_EXPLODE, round: 5, weapon: 'C4' },
+];
+
+test('engine: beeps queue ahead on the replay clock with the site’s own sample', async () => {
+  resetSoundManifest();
+  const restoreFetch = stubManifestFetch();
+  try {
+    const { sfx, engine, ctx } = await makeSfx();
+    sfx.setLandmarks(c4Rows('A'));
+    const speed = 8; // the lookahead holds 12 replay-seconds → dozens of beeps
+    engine.emit({ playing: true, speed, tick: C4_PLANT });
+    // Everything the pure schedule put inside the lookahead window was
+    // queued — at its exact AudioContext time (the anchor maps replay
+    // ticks onto wall seconds ÷ speed) and with site A's own sample
+    // (every remaining beep is >10 s out, so never the _10sec twin).
+    const want = c4BeepTicks(C4_PLANT, C4_EXPLODE, C4_TR).filter(
+      (t) => t <= C4_PLANT + 1.5 * C4_TR * speed,
+    );
+    assert.ok(want.length > 3, `only ${want.length} beeps inside the lookahead`);
+    assert.equal(ctx.sources.length, want.length);
+    want.forEach((t, i) => {
+      assert.equal(ctx.sources[i].started, (t - C4_PLANT) / (C4_TR * speed), `beep ${i}`);
+      assert.equal(ctx.sources[i].buffer.url, '/api/sounds/c4_beep2.wav', `beep ${i} sample`);
+      assert.equal(ctx.sources[i].stopped, false);
+      assert.equal(ctx.sources[i].bus, ctx.gains[2], 'the C4 bus (3rd gain)');
+    });
+    sfx.destroy();
+  } finally {
+    restoreFetch();
+  }
+});
+
+test('engine: the final 10 seconds switch to the _10sec sample mid-queue', async () => {
+  resetSoundManifest();
+  const restoreFetch = stubManifestFetch();
+  try {
+    const { sfx, engine, ctx } = await makeSfx();
+    sfx.setLandmarks(c4Rows('A'));
+    const tick = C4_EXPLODE - 15 * C4_TR; // 15 s before the blast
+    engine.emit({ playing: true, speed: 8, tick });
+    const inWin = c4BeepTicks(C4_PLANT, C4_EXPLODE, C4_TR).filter(
+      (t) => t > tick && t <= tick + 1.5 * C4_TR * 8,
+    );
+    const urls = [...new Set(ctx.sources.map((s) => s.buffer.url))];
+    assert.ok(
+      urls.includes('/api/sounds/c4_beep2.wav') && urls.includes('/api/sounds/c4_beep2_10sec.wav'),
+      JSON.stringify(urls),
+    );
+    // …and the switch line is exactly the 10-seconds-remaining mark.
+    for (const t of inWin) {
+      const want = C4_EXPLODE - t <= 10 * C4_TR ? 'c4_beep2_10sec.wav' : 'c4_beep2.wav';
+      const src = ctx.sources.find((s) => s.started === (t - tick) / (C4_TR * 8));
+      assert.ok(src, `beep at ${t} was never queued`);
+      assert.ok(src.buffer.url.endsWith(want), `${src.buffer.url} for a ${want} beep`);
+    }
+    sfx.destroy();
+  } finally {
+    restoreFetch();
+  }
+});
+
+test('engine: pause silences the whole queue, resume re-arms from the playhead', async () => {
+  resetSoundManifest();
+  const restoreFetch = stubManifestFetch();
+  try {
+    const { sfx, engine, ctx } = await makeSfx();
+    sfx.setLandmarks(c4Rows('B'));
+    engine.emit({ playing: true, speed: 8, tick: C4_PLANT });
+    assert.ok(ctx.sources.length > 0, 'the lookahead queued beeps first');
+    assert.ok(
+      ctx.sources.every((s) => s.buffer.url === '/api/sounds/c4_beep3.wav'),
+      'site B plays the site B sample',
+    );
+    // Pause: every queued beep is in the future → dropped, none added.
+    const queued = ctx.sources.length;
+    engine.emit({ playing: false, speed: 8, tick: C4_PLANT + C4_TR });
+    assert.equal(ctx.sources.length, queued, 'nothing is queued while paused');
+    assert.ok(ctx.sources.every((s) => s.stopped), 'the queue went silent on pause');
+    // Resume: re-armed past the playhead (the pause frame's tick), the
+    // schedule's next beep onward — nothing skipped backwards, nothing
+    // replayed at the plant.
+    engine.emit({ playing: true, speed: 8, tick: C4_PLANT + C4_TR });
+    const want = c4BeepTicks(C4_PLANT, C4_EXPLODE, C4_TR).filter(
+      (t) => t > C4_PLANT + C4_TR && t <= C4_PLANT + C4_TR + 1.5 * C4_TR * 8,
+    );
+    const fresh = ctx.sources.slice(queued);
+    assert.equal(fresh.length, want.length, 'the resume re-queues from the playhead');
+    sfx.destroy();
+  } finally {
+    restoreFetch();
+  }
+});
+
+test('engine: a seek re-seeds — the stale queue is dropped, crossed beeps never play', async () => {
+  resetSoundManifest();
+  const restoreFetch = stubManifestFetch();
+  try {
+    const { sfx, engine, ctx } = await makeSfx();
+    sfx.setLandmarks(c4Rows('A'));
+    engine.emit({ playing: true, speed: 8, tick: C4_PLANT });
+    const before = ctx.sources.length;
+    // A 20 s forward seek: cueGapJump says jump → re-seed.
+    const tick = C4_PLANT + 20 * C4_TR;
+    engine.emit({ playing: true, speed: 8, tick });
+    assert.ok(
+      ctx.sources.slice(0, before).every((s) => s.stopped),
+      'the stale queue was dropped',
+    );
+    const want = c4BeepTicks(C4_PLANT, C4_EXPLODE, C4_TR).filter(
+      (t) => t > tick && t <= tick + 1.5 * C4_TR * 8,
+    );
+    const fresh = ctx.sources.slice(before);
+    assert.equal(fresh.length, want.length, 'only beeps past the playhead are re-queued');
+    fresh.forEach((s, i) => {
+      // The new queue starts at the new anchor — no beep from BEFORE the
+      // seek got a second chance to play.
+      assert.equal(s.started, (want[i] - tick) / (C4_TR * 8));
+      assert.ok(s.started >= 0, 'never scheduled in the past');
+    });
+    sfx.destroy();
+  } finally {
+    restoreFetch();
+  }
+});
+
+test('engine: the explosion cue rides the C4 bus and a resolved bomb never beeps again', async () => {
+  resetSoundManifest();
+  const restoreFetch = stubManifestFetch();
+  try {
+    const { sfx, engine, ctx } = await makeSfx();
+    sfx.setLandmarks([
+      ...c4Rows('A'),
+      { kind: 'grenade', bucket: 'he', weapon: 'HE Grenade', tick: C4_EXPLODE - 10 },
+    ]);
+    // The first frame seeds the schedule (jump → no cues on arrival)…
+    engine.emit({ playing: true, speed: 1, tick: C4_EXPLODE - 16 });
+    // …and an ordinary forward step (16 ticks, inside the 0.3 s window)
+    // crosses the detonation with the clock advanced alongside, so the
+    // cue window plays BOTH blasts.
+    ctx.currentTime = 16 / C4_TR;
+    engine.emit({ playing: true, speed: 1, tick: C4_EXPLODE });
+    const boom = ctx.sources.filter((s) => s.buffer && s.buffer.url === '/api/sounds/c4_explode1.wav');
+    assert.equal(boom.length, 1, 'the C4 explosion cue plays exactly once');
+    assert.equal(boom[0].bus, ctx.gains[2], 'the explosion rides the C4 bus');
+    const he = ctx.sources.filter(
+      (s) => s.buffer && s.buffer.url === '/api/sounds/hegrenade_detonate_02.wav',
+    );
+    assert.equal(he.length, 1, 'the HE detonation in the same window still plays');
+    assert.equal(he[0].bus, ctx.gains[1], 'grenades stay on the utility bus');
+    // The bomb is resolved (c4BombAt: tick ≥ stop) → nothing new is ever
+    // queued again, on any frame.
+    const after = ctx.sources.length;
+    engine.emit({ playing: true, speed: 1, tick: C4_EXPLODE + C4_TR });
+    assert.equal(ctx.sources.length, after, 'no beep outlives the detonation');
+    engine.emit({ playing: false, speed: 1, tick: C4_EXPLODE + C4_TR });
+    assert.equal(ctx.sources.length, after, 'and a later pause queues nothing either');
+    sfx.destroy();
+  } finally {
+    restoreFetch();
+  }
+});
+
+// stubManifestFetch — the engine's preload pulls /api/sounds/manifest.json
+// and the URLs it lists; the decoded buffer is tagged with its URL so the
+// tests can assert WHICH sample a source plays. Returns the un-stub.
+function stubManifestFetch() {
+  const prev = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const u = String(url);
+    if (u.includes('manifest.json')) {
+      return { ok: true, json: async () => BEEP_MANIFEST };
+    }
+    return { ok: true, arrayBuffer: async () => ({ url: u }) };
+  };
+  return () => {
+    globalThis.fetch = prev;
+  };
+}
 
 // --- prefs + manifest boundary ---------------------------------------------
 
