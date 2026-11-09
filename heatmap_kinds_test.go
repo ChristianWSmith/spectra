@@ -3,11 +3,15 @@ package main
 import (
 	"math"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/ChristianWSmith/spectra/internal/data"
+	"github.com/ChristianWSmith/spectra/internal/extract"
 	"github.com/ChristianWSmith/spectra/internal/models"
+	"github.com/ChristianWSmith/spectra/internal/sidecar"
 	"github.com/ChristianWSmith/spectra/internal/store"
 )
 
@@ -56,13 +60,19 @@ func seedHeatmapMatch(t *testing.T, events []models.Event) (*store.Store, int64)
 }
 
 // twoKills is the shared event pair: kill A (victim 0,0 / killer
-// 100,100) and kill B (victim 50,50 / killer 200,200).
+// 100,100) and kill B (victim 50,50 / killer 200,200). Z: A's victim
+// sits at 0, its killer at 100; B's victim at 200, its killer at 50 —
+// chosen so the [0,100) band keeps exactly one sample of each kind and
+// its exclusive top bound (100) falls on A's killer. No band is set by
+// the pre-layer tests, which count every sample whatever its z.
 func twoKills() []models.Event {
 	return []models.Event{
 		{Tick: 10, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "200",
-			PosX: pf(0), PosY: pf(0), AttackerPosX: pf(100), AttackerPosY: pf(100)},
+			PosX: pf(0), PosY: pf(0), PosZ: pf(0),
+			AttackerPosX: pf(100), AttackerPosY: pf(100), AttackerPosZ: pf(100)},
 		{Tick: 20, Round: 1, Kind: models.EventKill, Attacker: "200", Victim: "100",
-			PosX: pf(50), PosY: pf(50), AttackerPosX: pf(200), AttackerPosY: pf(200)},
+			PosX: pf(50), PosY: pf(50), PosZ: pf(200),
+			AttackerPosX: pf(200), AttackerPosY: pf(200), AttackerPosZ: pf(50)},
 	}
 }
 
@@ -583,5 +593,213 @@ func TestSampleHeatmapCellBilinear(t *testing.T) {
 		if got := at(p[0], p[1]); got != 0 {
 			t.Errorf("outside (%v,%v) = %v, want 0", p[0], p[1], got)
 		}
+	}
+}
+
+// --- Layer z band (multi-floor maps) -----------------------------------------
+//
+// The z→layer rule is canonical in the frontend: layerIndexForZ
+// (frontend/src/lib/replay/layers.js, "Band convention") — half-open
+// [zMin, zMax), the shared boundary claimed by the band whose zMin it is,
+// missing Z → the default layer (index 0) — restated for pack authors in
+// frontend/public/maps/README.md. HeatmapFilter.zInBand is its Go twin for
+// the server-side sample pass; these tests pin THAT, so a divergence from
+// the frontend rule fails here.
+
+// TestHeatmapEventBandFilter pins the event-side band: each sample is
+// tested against the z of the SAME position source its x/y comes from
+// (kills → AttackerPosZ, deaths → PosZ), the reported bounds describe the
+// KEPT samples only (the raster is bounds-derived), and the high bound is
+// exclusive — z == zMax belongs to the next band, not this one.
+func TestHeatmapEventBandFilter(t *testing.T) {
+	st, id := seedHeatmapMatch(t, twoKills())
+	as := &AnalyticsService{st: st}
+	killGrid := func(kind string, f HeatmapFilter) HeatmapGrid {
+		t.Helper()
+		g, err := as.GetHeatmap(id, kind, f)
+		if err != nil {
+			t.Fatalf("GetHeatmap(%s): %v", kind, err)
+		}
+		return g
+	}
+	band := func(lo, hi float64) HeatmapFilter {
+		return HeatmapFilter{RoundFrom: -1, RoundTo: -1, ZMin: pf(lo), ZMax: pf(hi)}
+	}
+
+	// [0,100): A's victim (z 0) is in, A's killer (z 100) is out — the
+	// exclusive top drops it — and B is the mirror (killer z 50 in, victim
+	// z 200 out).
+	kills := killGrid("kills", band(0, 100))
+	if kills.Samples != 1 {
+		t.Errorf("kills in [0,100) = %d samples, want 1 (A's killer at z=100 excluded)", kills.Samples)
+	}
+	if kills.MinX != 200-heatmapPad || kills.MaxX != 200+heatmapPad {
+		t.Errorf("kills bounds x = [%v,%v], want B's attacker span ± pad [%v,%v]",
+			kills.MinX, kills.MaxX, 200-heatmapPad, 200+heatmapPad)
+	}
+	deaths := killGrid("deaths", band(0, 100))
+	if deaths.Samples != 1 {
+		t.Errorf("deaths in [0,100) = %d samples, want 1 (A's victim at z=0 included)", deaths.Samples)
+	}
+	if deaths.MinX != -heatmapPad || deaths.MaxX != 0+heatmapPad {
+		t.Errorf("deaths bounds x = [%v,%v], want A's victim span ± pad [%v,%v]",
+			deaths.MinX, deaths.MaxX, -heatmapPad, heatmapPad)
+	}
+	// The z under test is the PLOTTED source's: had the kills pass read
+	// the victim's z (or deaths the attacker's), the surviving sample and
+	// therefore these bounds would swap — caught by the two checks above.
+
+	// A nil bound is open on that side: [0, ∞) keeps both killers (z 100
+	// and 50), so the bounds span them.
+	open := killGrid("kills", HeatmapFilter{RoundFrom: -1, RoundTo: -1, ZMin: pf(0)})
+	if open.Samples != 2 || open.MinX != 100-heatmapPad || open.MaxX != 200+heatmapPad {
+		t.Errorf("kills in [0,∞) = %d samples bounds x [%v,%v], want both attackers ± pad",
+			open.Samples, open.MinX, open.MaxX)
+	}
+	// Both bounds nil = no band = every sample (today's behavior).
+	none := killGrid("kills", HeatmapFilter{RoundFrom: -1, RoundTo: -1})
+	if none.Samples != 2 || none.MinX != 100-heatmapPad || none.MaxX != 200+heatmapPad {
+		t.Errorf("kills with no band = %d samples bounds x [%v,%v], want both attackers ± pad",
+			none.Samples, none.MinX, none.MaxX)
+	}
+	// kd inherits the band through heatmapEvents (kills + deaths populations).
+	kd, err := as.GetHeatmapKD(id, band(0, 100))
+	if err != nil {
+		t.Fatalf("GetHeatmapKD: %v", err)
+	}
+	if kd.Samples != 2 {
+		t.Errorf("kd samples in [0,100) = %d, want 2 (one kill + one death)", kd.Samples)
+	}
+}
+
+// TestHeatmapEventBandUnknownZ pins the missing-Z rule: a sample with no
+// z at all cannot be placed in a band, so it is dropped unless
+// IncludeUnknownZ admits it — the flag the frontend sets for layer 0
+// only, mirroring layerIndexForZ's missing-Z → default-layer rule. With
+// no band every sample counts with or without the flag.
+func TestHeatmapEventBandUnknownZ(t *testing.T) {
+	// Kill 1 carries a known in-band z (50); kill 2 has NO z anywhere —
+	// the NULL-pos shape a world kill / vanished pawn produces.
+	events := []models.Event{
+		{Tick: 10, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "200",
+			PosX: pf(0), PosY: pf(0), PosZ: pf(50),
+			AttackerPosX: pf(100), AttackerPosY: pf(100), AttackerPosZ: pf(50)},
+		{Tick: 20, Round: 1, Kind: models.EventKill, Attacker: "200", Victim: "100",
+			PosX: pf(50), PosY: pf(50),
+			AttackerPosX: pf(200), AttackerPosY: pf(200)},
+	}
+	st, id := seedHeatmapMatch(t, events)
+	as := &AnalyticsService{st: st}
+	gridOf := func(kind string, f HeatmapFilter) HeatmapGrid {
+		t.Helper()
+		g, err := as.GetHeatmap(id, kind, f)
+		if err != nil {
+			t.Fatalf("GetHeatmap(%s): %v", kind, err)
+		}
+		return g
+	}
+	band := HeatmapFilter{RoundFrom: -1, RoundTo: -1, ZMin: pf(0), ZMax: pf(100)}
+	keep := band
+
+	// Band, flag off: only the known in-band kill counts — kill 2's
+	// unknown z is not a pass.
+	g := gridOf("kills", band)
+	if g.Samples != 1 || g.MinX != 100-heatmapPad || g.MaxX != 100+heatmapPad {
+		t.Errorf("kills in [0,100) with unknown z dropped = %d samples bounds x [%v,%v], want 1 at (100,100) ± pad",
+			g.Samples, g.MinX, g.MaxX)
+	}
+	g = gridOf("deaths", band)
+	if g.Samples != 1 || g.MinX != -heatmapPad || g.MaxX != 0+heatmapPad {
+		t.Errorf("deaths in [0,100) with unknown z dropped = %d samples bounds x [%v,%v], want 1 at (0,0) ± pad",
+			g.Samples, g.MinX, g.MaxX)
+	}
+	// Flag on (layer 0): the zless sample is admitted on BOTH populations,
+	// and the bounds grow to cover it.
+	keep.IncludeUnknownZ = true
+	g = gridOf("kills", keep)
+	if g.Samples != 2 || g.MinX != 100-heatmapPad || g.MaxX != 200+heatmapPad {
+		t.Errorf("kills with includeUnknownZ = %d samples bounds x [%v,%v], want 2 spanning (100..200,100) ± pad",
+			g.Samples, g.MinX, g.MaxX)
+	}
+	g = gridOf("deaths", keep)
+	if g.Samples != 2 || g.MinX != -heatmapPad || g.MaxX != 50+heatmapPad {
+		t.Errorf("deaths with includeUnknownZ = %d samples bounds x [%v,%v], want 2 spanning (0..50,0) ± pad",
+			g.Samples, g.MinX, g.MaxX)
+	}
+	// No band: the flag is inert — every sample counts, as before layers.
+	none := HeatmapFilter{RoundFrom: -1, RoundTo: -1, IncludeUnknownZ: false}
+	if g := gridOf("kills", none); g.Samples != 2 {
+		t.Errorf("kills with no band = %d samples, want 2 (no band counts every sample)", g.Samples)
+	}
+}
+
+// TestHeatmapPresenceBandFilter pins the sidecar (presence) side of the
+// band: BOTH passes honor it — the raster's bounds come from the kept
+// samples only (the raster is bounds-derived) and no dropped sample
+// deposits dwell. Sidecar seeding mirrors TestGetSpatialSeries
+// (platformservice_test.go); extract.PositionPlayer carries the Z the
+// band reads.
+func TestHeatmapPresenceBandFilter(t *testing.T) {
+	useTempXDG(t)
+	st, id := seedHeatmapMatch(t, nil)
+	as := &AnalyticsService{st: st}
+
+	// 100 frames @ tick = frame index: player 100 stands at (0,0,z=0),
+	// player 200 at (100,0,z=200) — 200 sits above the [0,100) band.
+	dir := filepath.Join(data.MatchesDir(), strconv.FormatInt(id, 10))
+	w, err := sidecar.NewWriter(dir, 64)
+	if err != nil {
+		t.Fatalf("NewWriter: %v", err)
+	}
+	for i := 0; i < 100; i++ {
+		players := []extract.PositionPlayer{
+			{SteamID: 100, X: 0, Y: 0, Z: 0},
+			{SteamID: 200, X: 100, Y: 0, Z: 200},
+		}
+		if err := w.AddFrame(int32(i), players); err != nil {
+			t.Fatalf("AddFrame: %v", err)
+		}
+	}
+	if _, err := w.Close(64); err != nil {
+		t.Fatalf("Close sidecar: %v", err)
+	}
+
+	presence := func(f HeatmapFilter) HeatmapGrid {
+		t.Helper()
+		g, err := as.GetHeatmap(id, "presence", f)
+		if err != nil {
+			t.Fatalf("GetHeatmap(presence): %v", err)
+		}
+		return g
+	}
+	// No band: both players' dwell, both extents (today's behavior).
+	all := presence(HeatmapFilter{RoundFrom: -1, RoundTo: -1})
+	if all.Samples != 200 {
+		t.Fatalf("presence samples = %d, want 200 (2 players × 100 frames)", all.Samples)
+	}
+	if all.MinX != -heatmapPad || all.MaxX != 100+heatmapPad {
+		t.Errorf("presence bounds x = [%v,%v], want both players ± pad", all.MinX, all.MaxX)
+	}
+	// [0,100): player 200 (z=200) is dropped in the extent pass (bounds
+	// shrink to player 100) AND in the add pass (100 dwell samples).
+	lo := presence(HeatmapFilter{RoundFrom: -1, RoundTo: -1, ZMin: pf(0), ZMax: pf(100)})
+	if lo.Samples != 100 {
+		t.Errorf("presence in [0,100) = %d samples, want 100 (player 200's dwell dropped)", lo.Samples)
+	}
+	if lo.MinX != -heatmapPad || lo.MaxX != 0+heatmapPad || lo.MinY != -heatmapPad || lo.MaxY != 0+heatmapPad {
+		t.Errorf("presence bounds = [%v,%v]×[%v,%v], want player 100's (0,0) ± pad",
+			lo.MinX, lo.MaxX, lo.MinY, lo.MaxY)
+	}
+	// The mirror band: only player 200 survives, so the extents move.
+	hi := presence(HeatmapFilter{RoundFrom: -1, RoundTo: -1, ZMin: pf(100), ZMax: pf(300)})
+	if hi.Samples != 100 || hi.MinX != 100-heatmapPad || hi.MaxX != 100+heatmapPad {
+		t.Errorf("presence in [100,300) = %d samples bounds x [%v,%v], want 100 at (100,0) ± pad",
+			hi.Samples, hi.MinX, hi.MaxX)
+	}
+	// A band claiming nobody: the empty raster (zero bounds), not an error.
+	empty := presence(HeatmapFilter{RoundFrom: -1, RoundTo: -1, ZMin: pf(500), ZMax: pf(600)})
+	if empty.Samples != 0 || empty.Max != 0 || len(empty.Cells) != heatmapGridSide*heatmapGridSide {
+		t.Errorf("presence in [500,600) = %d samples / max %v / %d cells, want an empty raster",
+			empty.Samples, empty.Max, len(empty.Cells))
 	}
 }

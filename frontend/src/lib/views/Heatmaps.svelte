@@ -4,7 +4,6 @@
     getScoreboard,
     getRounds,
     getHeatmap,
-    getSpatialSeries,
     errText,
   } from '../services.js';
   // The signed kd raster has its own Go entry point (heatmap.go
@@ -38,6 +37,13 @@
   let roundTo = $state(-1); // <0 = all
 
   let grid = $state(null);
+  // Layer (floor) selector: `layer` is the LIVE selection — the radar
+  // image switches with it immediately — while `gridLayer` is the layer
+  // the displayed raster was FETCHED for, so a pending raster is never
+  // presented as another floor's data (owner decision: hybrid timing —
+  // Regenerate applies the band; the dirty banner below gates it).
+  let layer = $state(0);
+  let gridLayer = $state(0);
   let loading = $state(false);
   let error = $state('');
   let players = $state([]);
@@ -76,6 +82,10 @@
       pack = null;
       return;
     }
+    // A different map may declare different panels — drop any floor
+    // selection rather than keeping an index the new pack may not have
+    // (index 0 is the canonical default, layers.js "default first").
+    layer = 0;
     let live = true;
     packTried = false;
     loadMapPack(m).then((p) => {
@@ -105,6 +115,22 @@
     return '';
   });
 
+  // The pack's radar panels — makeTransform's ONE pack→layers reader
+  // (lib/components/mapxform.js): default first, each with its world-Z
+  // band (zMin/zMax) and image file. Absent = single-floor pack.
+  const layers = $derived(
+    pack && pack.transform && Array.isArray(pack.transform.layers) ? pack.transform.layers : [],
+  );
+  // The selector shows only for a genuinely multi-floor pack: a no-pack /
+  // plain-grid fallback and a single-layer pack keep the previous
+  // one-raster behavior byte-identical (a bundled pack that declares
+  // layers but ships no pixels still shows the selector — the plain-grid
+  // presentation is packNote's, the band filter still applies).
+  // Deliberately NO "All floors" option: one raster cannot be split — an
+  // unfiltered raster painted on one floor's radar would show cross-floor
+  // samples at the wrong XY.
+  const showLayers = $derived(layers.length >= 2);
+
   // Legend labels must describe the data on screen, not the pending
   // controls (fetch is on-demand, so the two can diverge).
   const unitKind = $derived(grid && grid.kind ? grid.kind : kind);
@@ -119,10 +145,13 @@
     grid ? (unitKind === 'presence' ? fmt1(grid.max) : fmtInt(grid.max)) : '—',
   );
 
-  const filterKey = (k, p, t, from, to) => `${k}|${p}|${t}|${from}|${to}`;
+  const filterKey = (k, p, t, from, to, l) => `${k}|${p}|${t}|${from}|${to}|${l}`;
   let lastKey = $state('');
+  // The layer is part of the key: switching floors changes the band the
+  // NEXT raster is fetched with, so the pending raster is stale until
+  // Regenerate — the same dirty/stale gate as kind and the other controls.
   const dirty = $derived(
-    !!grid && lastKey !== filterKey(kind, player, team, roundFrom, roundTo),
+    !!grid && lastKey !== filterKey(kind, player, team, roundFrom, roundTo, layer),
   );
 
   // The heavy GetHeatmap call fires only on Generate — never on control
@@ -135,15 +164,34 @@
     loading = true;
     error = '';
     regionNote = '';
+    // The fetch is FOR the layer selected right now: the band it sends and
+    // the gridLayer it records must be that one index, even if the radar
+    // is flipped to another floor while the call is in flight.
+    const sel = layer;
+    const l = layers[sel];
     try {
-      const filter = { roundFrom, roundTo, steamId: player, team };
+      // The pack's own z band for the selected floor — half-open
+      // [zMin, zMax), the convention layerIndexForZ applies
+      // (lib/replay/layers.js) — so the raster holds only that floor's
+      // samples. A missing Z belongs to the default layer (index 0) there,
+      // hence includeUnknownZ only for layer 0.
+      const filter = {
+        roundFrom,
+        roundTo,
+        steamId: player,
+        team,
+        zMin: l ? l.zMin : null,
+        zMax: l ? l.zMax : null,
+        includeUnknownZ: sel === 0,
+      };
       // kd is the signed kills−deaths raster (heatmap.go GetHeatmapKD);
       // every other kind shares GetHeatmap.
       grid =
         kind === 'kd'
           ? await AnalyticsService.GetHeatmapKD(id, filter)
           : await getHeatmap(id, kind, filter);
-      lastKey = filterKey(kind, player, team, roundFrom, roundTo);
+      gridLayer = sel;
+      lastKey = filterKey(kind, player, team, roundFrom, roundTo, sel);
     } catch (e) {
       grid = null;
       error = errText(e);
@@ -171,72 +219,6 @@
       nav(target);
     }, 400);
   }
-  // --- Spatial series (series only; pattern detection descoped pending -----
-  // bomb-site region polygons).
-  const SPAT_W = 640;
-  const SPAT_H = 140;
-
-  let spatKind = $state('spacing'); // spacing|spread
-  let series = $state(null); // SpatialSeries
-  let spatLoading = $state(false);
-  let spatError = $state('');
-  let spatGen = 0;
-
-  $effect(() => {
-    const k = spatKind;
-    const rid = id;
-    const my = ++spatGen;
-    spatLoading = true;
-    spatError = '';
-    getSpatialSeries(rid, k, 120)
-      .then((s) => {
-        if (my !== spatGen) return;
-        series = s;
-        spatLoading = false;
-      })
-      .catch((e) => {
-        if (my !== spatGen) return;
-        series = null;
-        spatError = errText(e);
-        spatLoading = false;
-      });
-  });
-
-  // Polyline geometry: x = bucket over match time, y = world units; -1
-  // buckets (no valid sample) break the path into separate segments.
-  const spatPaths = $derived.by(() => {
-    if (!series || !series.values || !series.values.length) {
-      return { segs: [], min: 0, max: 0 };
-    }
-    let min = Infinity;
-    let max = -Infinity;
-    for (const v of series.values) {
-      if (v < 0) continue;
-      if (v < min) min = v;
-      if (v > max) max = v;
-    }
-    if (!Number.isFinite(min)) {
-      min = 0;
-      max = 0;
-    }
-    const span = Math.max(1e-6, max - min);
-    const n = series.values.length;
-    const segs = [];
-    let cur = [];
-    for (let i = 0; i < n; i++) {
-      const v = series.values[i];
-      if (v < 0) {
-        if (cur.length > 1) segs.push(cur);
-        cur = [];
-        continue;
-      }
-      const x = n === 1 ? 0 : (i / (n - 1)) * SPAT_W;
-      const y = SPAT_H - ((v - min) / span) * SPAT_H;
-      cur.push(`${x.toFixed(1)},${y.toFixed(1)}`);
-    }
-    if (cur.length > 1) segs.push(cur);
-    return { segs, min, max };
-  });
 </script>
 
 <div class="view heat-view">
@@ -261,6 +243,25 @@
         {/each}
       </select>
     </div>
+    {#if showLayers}
+      <!-- Multi-floor pack only (see showLayers): the pack's own panels,
+           default first, named as the pack names them. Switching flips the
+           RADAR immediately; the raster follows on Regenerate (layer is in
+           filterKey, so the stale banner covers the pending raster). -->
+      <div class="heat-field">
+        <span class="field-label">Floor</span>
+        <div class="sett-seg" role="group" aria-label="Floor">
+          {#each layers as l, i (i)}
+            <button
+              class="btn"
+              class:primary={layer === i}
+              aria-pressed={layer === i}
+              onclick={() => (layer = i)}>{l.name || l.id}</button
+            >
+          {/each}
+        </div>
+      </div>
+    {/if}
     <div class="heat-field">
       <label class="field-label" for="heat-player">Player</label>
       <select class="input" id="heat-player" bind:value={player}>
@@ -343,7 +344,7 @@
     </div>
   {/if}
 
-  <HeatmapLayer {map} {pack} {grid} {onRegion} />
+  <HeatmapLayer {map} {pack} {grid} {onRegion} {layer} {gridLayer} />
 
   {#if grid}
     <p class="heat-hint muted">
@@ -354,62 +355,4 @@
       Choose filters and press Generate — heatmaps are computed on demand.
     </p>
   {/if}
-
-  <section class="panel spat-panel">
-    <h2>Spatial series</h2>
-    <div class="toolbar spat-controls">
-      <div class="sett-seg" role="group" aria-label="Series kind">
-        <button
-          class="btn"
-          class:primary={spatKind === 'spacing'}
-          aria-pressed={spatKind === 'spacing'}
-          onclick={() => (spatKind = 'spacing')}>spacing</button
-        >
-        <button
-          class="btn"
-          class:primary={spatKind === 'spread'}
-          aria-pressed={spatKind === 'spread'}
-          onclick={() => (spatKind = 'spread')}>spread</button
-        >
-      </div>
-      <span class="muted"
-        >{spatKind === 'spacing'
-          ? 'average distance between alive teammates'
-          : 'mean pairwise distance across all alive players'} —
-        world units over match time</span
-      >
-      {#if series && !spatLoading}
-        <span class="chip" title="Compute time">{series.ms} ms</span>
-      {/if}
-    </div>
-    {#if spatError}
-      <p class="error" role="alert">{spatError}</p>
-    {/if}
-    {#if spatLoading}
-      <p class="muted" role="status">Computing series…</p>
-    {:else if series}
-      <svg
-        class="spat-svg"
-        viewBox="0 0 {SPAT_W} {SPAT_H}"
-        preserveAspectRatio="none"
-        role="img"
-        aria-label="{spatKind} series over match time"
-      >
-        {#each spatPaths.segs as seg, i (i)}
-          <polyline points={seg.join(' ')} />
-        {/each}
-      </svg>
-      <div class="spat-axis muted">
-        <span class="mono">max {fmtInt(spatPaths.max)}</span>
-        <span class="mono"
-          >{series.buckets} buckets · ticks {series.fromTick}–{series.toTick}</span
-        >
-        <span class="mono">min {fmtInt(spatPaths.min)}</span>
-      </div>
-    {/if}
-    <p class="muted spat-desc">
-      Pattern detection (executes/setups) descoped — needs bomb-site region
-      polygons.
-    </p>
-  </section>
 </div>

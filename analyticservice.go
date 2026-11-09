@@ -71,11 +71,58 @@ type UtilityRow struct {
 }
 
 // HeatmapFilter selects the sample population for a heatmap.
+//
+// ZMin/ZMax restrict the population to ONE map-pack layer's world-Z band
+// (the frontend sends the band of the floor its selector is on), so a
+// multi-floor raster never paints another floor's samples on this floor's
+// radar — one raster cannot be split per floor, hence no "all floors"
+// band. The band is HALF-OPEN [ZMin, ZMax): inclusive low bound,
+// exclusive high bound, the shared boundary claimed by the band whose
+// zMin it is. That convention is canonical in
+// frontend/src/lib/replay/layers.js layerIndexForZ ("Band convention" —
+// THE rule for z→layer assignment) and is spelled out for pack authors in
+// frontend/public/maps/README.md (`layers` z_min/z_max); this Go twin
+// exists only because the sample pass runs server-side and must agree
+// with that rule cell for cell. A nil bound is open on that side; both
+// nil = no band = every sample counts (what a single-floor pack sends —
+// today's behavior, unchanged).
+//
+// IncludeUnknownZ admits samples with no usable Z (missing or
+// non-finite — they cannot be placed in any band): the frontend sets it
+// for layer 0 only, mirroring layerIndexForZ's "missing Z → the default
+// layer (index 0)" rule. A finite Z outside the band is dropped whether
+// or not the flag is set.
 type HeatmapFilter struct {
-	RoundFrom int    `json:"roundFrom"` // <0 = all
-	RoundTo   int    `json:"roundTo"`   // <0 = all
-	SteamID   string `json:"steamId"`   // "" = all players
-	Team      string `json:"team"`      // "" | ct | t
+	RoundFrom       int      `json:"roundFrom"`       // <0 = all
+	RoundTo         int      `json:"roundTo"`         // <0 = all
+	SteamID         string   `json:"steamId"`         // "" = all players
+	Team            string   `json:"team"`            // "" | ct | t
+	ZMin            *float64 `json:"zMin"`            // band low bound, inclusive (nil = open)
+	ZMax            *float64 `json:"zMax"`            // band high bound, exclusive (nil = open)
+	IncludeUnknownZ bool     `json:"includeUnknownZ"` // count samples with a missing/non-finite Z
+}
+
+// zInBand reports whether a sample with world Z z belongs to the
+// selected layer's band (hasZ = false when the sample carries no Z at
+// all). The half-open test and the missing-Z→default fallback are
+// layerIndexForZ's rules (frontend/src/lib/replay/layers.js, cited on
+// HeatmapFilter) restated for the server-side sample pass; with no band
+// (both bounds nil) every sample counts, exactly as before layers
+// existed.
+func (f HeatmapFilter) zInBand(z float64, hasZ bool) bool {
+	if f.ZMin == nil && f.ZMax == nil {
+		return true
+	}
+	if !hasZ || math.IsNaN(z) || math.IsInf(z, 0) {
+		return f.IncludeUnknownZ
+	}
+	if f.ZMin != nil && z < *f.ZMin {
+		return false
+	}
+	if f.ZMax != nil && z >= *f.ZMax {
+		return false
+	}
+	return true
 }
 
 // HeatmapGrid is a server-computed raster over the map-pack bounds
@@ -234,7 +281,9 @@ func (s *AnalyticsService) GetCombatStats(matchID int64) ([]models.CombatStat, e
 // slot table; events by round, attacker (kills, and both grenade flavors —
 // the thrower) or victim (deaths/damage) and their side in that round
 // (exact freeze-end samples —
-// a round without them resolves no side, so a team filter drops it). Bounds
+// a round without them resolves no side, so a team filter drops it) and
+// the layer z band (HeatmapFilter's half-open [ZMin,ZMax) — the pack's
+// own layer band, cited there). Bounds
 // come from the sampled extents ± heatmapPad — 450u, the 3σ reach of the
 // Gaussian splat (sigma 150u), so an edge sample paints a whole blob
 // instead of a clipped half; the grid is 128×128 with per-axis cell sizes;
@@ -278,6 +327,11 @@ func (s *AnalyticsService) GetHeatmap(matchID int64, kind string, f HeatmapFilte
 
 // heatmapPresence streams the whole sidecar stream and accumulates
 // time-weighted dwell per cell.
+//
+// The layer z band (f.zInBand) is applied in BOTH passes: the extent
+// pass (so the raster's bounds — the raster is bounds-derived, see
+// newHeatmapRaster — describe only the kept samples) and the add pass
+// (so no dropped sample deposits dwell).
 func (s *AnalyticsService) heatmapPresence(matchID int64, f HeatmapFilter, rounds []models.Round, sideAt func(string, int) string) (HeatmapGrid, error) {
 	// Whole sidecar stream, decoded once (sidecar.Load = Open → ReadRange →
 	// DecodeFrames; the spatial series uses the same helper).
@@ -328,7 +382,7 @@ func (s *AnalyticsService) heatmapPresence(matchID int64, f HeatmapFilter, round
 		}
 		for _, p := range fr.Players {
 			sid := strconv.FormatUint(p.SteamID, 10)
-			if !keep(sid, rn) {
+			if !keep(sid, rn) || !f.zInBand(p.Z, true) {
 				continue
 			}
 			minX, minY = math.Min(minX, p.X), math.Min(minY, p.Y)
@@ -348,7 +402,7 @@ func (s *AnalyticsService) heatmapPresence(matchID int64, f HeatmapFilter, round
 		}
 		for _, p := range fr.Players {
 			sid := strconv.FormatUint(p.SteamID, 10)
-			if !keep(sid, rn) {
+			if !keep(sid, rn) || !f.zInBand(p.Z, true) {
 				continue
 			}
 			if g.add(p.X, p.Y, dt) {
@@ -374,6 +428,14 @@ func (s *AnalyticsService) heatmapPresence(matchID int64, f HeatmapFilter, round
 // current imports; see extract's posPtrs — the schema keeps events.apos_*
 // nullable). Grenade rows carry no attacker position and never fall back:
 // a throw/blast with a NULL pos_* is skipped.
+//
+// The layer z band (f.zInBand) is applied to the z of the SAME position
+// source the sample plots: a kill that plots the attacker's x/y is tested
+// against AttackerPosZ (only when the attacker x/y were taken), a victim
+// position against PosZ — never victim z with attacker x/y, which would
+// band-check a sample against a floor it was not sampled on. The band is
+// applied before the sample is appended, so both the sample count and the
+// bounds the raster is built from describe the kept population only.
 func (s *AnalyticsService) heatmapEvents(matchID int64, kind string, f HeatmapFilter, sideAt func(string, int) string) (HeatmapGrid, error) {
 	eventKind := map[string]string{"kills": models.EventKill, "deaths": models.EventKill, "damage": models.EventDamage}[kind]
 	utilKind := ""
@@ -411,10 +473,19 @@ func (s *AnalyticsService) heatmapEvents(matchID int64, kind string, f HeatmapFi
 			continue
 		}
 		x, y := e.PosX, e.PosY
+		z := e.PosZ
 		if kind == "kills" && e.AttackerPosX != nil && e.AttackerPosY != nil {
-			x, y = e.AttackerPosX, e.AttackerPosY
+			x, y, z = e.AttackerPosX, e.AttackerPosY, e.AttackerPosZ
 		}
 		if x == nil || y == nil {
+			continue
+		}
+		var zv float64
+		hasZ := z != nil
+		if hasZ {
+			zv = *z
+		}
+		if !f.zInBand(zv, hasZ) {
 			continue
 		}
 		samples = append(samples, sample{x: *x, y: *y})
