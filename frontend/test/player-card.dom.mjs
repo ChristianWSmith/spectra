@@ -18,7 +18,10 @@
 // icon (no text label) | a thin separator | the MAIN weapon's block with
 // the MAIN weapon's ammo (v3 mainMag/mainReserve), a knife-round
 // inventory renders the bare held icon (no separator, no name), and a
-// firearm active renders no prefix at all.
+// firearm active renders no prefix at all — and the RELOAD ring: hidden
+// when reloadProgress is null, a grey track + a dasharray-swept arc in
+// the gun chip while reloading, mounted in BOTH weapon-row modes that
+// show a gun, with the row's fixed-height pins untouched.
 //
 // jsdom is intentionally not a project dependency; from frontend/ run:
 //   npm i --no-save jsdom
@@ -747,6 +750,111 @@ check(
     q(rootH5, '.pc-weapon')?.getAttribute('title') === 'AK-47 — 30 / 90' &&
     q(rootH5, '.pc-ammo')?.textContent === '30 / 90',
   q(rootH5, '.pc-weapon')?.getAttribute('title'),
+);
+
+console.log('I. reload ring: hidden when not reloading, a grey arc beside the gun icon while reloading');
+// The fill's geometry comes from the component: r=5 in the 12×12
+// viewBox → the circumference the dasharray/dashoffset sweep.
+const CIRC = 2 * Math.PI * 5;
+
+// I1 — no computed progress (the default: not reloading) → NO ring, and
+// the firearm chip keeps exactly its icon + ammo cells (the A-section
+// pin, re-checked so the ring can never become a permanent cell).
+const rootI1 = await show({ card: { ...fullCard, onToggleMute: () => {} } });
+check('no ring when not reloading (reloadProgress null)', !q(rootI1, '.pc-reload'));
+check(
+  'the firearm chip is still icon + ammo only without progress',
+  JSON.stringify([...q(rootI1, '.pc-weapon').children].map(pcClass)) ===
+    JSON.stringify(['pc-ico', 'pc-num pc-ammo']),
+  JSON.stringify([...q(rootI1, '.pc-weapon').children].map(pcClass)),
+);
+
+// I2 — mid-run: the ring mounts INSIDE the firearm chip (between the
+// icon and the ammo) with the arc swept to exactly the given progress.
+const rootI2 = await show({ card: { ...fullCard, reloadProgress: 0.5, onToggleMute: () => {} } });
+const ring2 = q(rootI2, '.pc-weapon-row .pc-weapon .pc-reload');
+check('ring mounts in the firearm chip while reloading', !!ring2);
+check(
+  'ring is decorative (aria-hidden) and titled "Reloading"',
+  !!ring2 &&
+    ring2.getAttribute('aria-hidden') === 'true' &&
+    ring2.getAttribute('title') === 'Reloading',
+  ring2?.getAttribute('title'),
+);
+const chipKids2 = ring2 ? [...q(rootI2, '.pc-weapon').children].map(pcClass) : [];
+check(
+  'ring sits between the icon and the ammo',
+  JSON.stringify(chipKids2) === JSON.stringify(['pc-ico', 'pc-reload', 'pc-num pc-ammo']),
+  JSON.stringify(chipKids2),
+);
+const fill2 = ring2?.querySelector('.pc-reload-fill');
+const track2 = ring2?.querySelector('.pc-reload-track');
+check('track + fill circles render', !!track2 && !!fill2);
+check(
+  'fill sweeps exactly half the circle at progress 0.5',
+  !!fill2 &&
+    Math.abs(Number((fill2.getAttribute('stroke-dasharray') || '').split(' ')[0]) - CIRC) < 1e-9 &&
+    Math.abs(Number(fill2.getAttribute('stroke-dashoffset')) - CIRC * 0.5) < 1e-9,
+  `${fill2?.getAttribute('stroke-dasharray')} / ${fill2?.getAttribute('stroke-dashoffset')}`,
+);
+check(
+  'the sweep starts at the top (both circles rotated -90° about the centre)',
+  !!track2 &&
+    track2.getAttribute('transform') === 'rotate(-90 6 6)' &&
+    fill2.getAttribute('transform') === 'rotate(-90 6 6)',
+  `${track2?.getAttribute('transform')} / ${fill2?.getAttribute('transform')}`,
+);
+check(
+  'the card row stack is unchanged with the ring mounted',
+  JSON.stringify([...q(rootI2, '.pc-card').children].map(pcClass)) ===
+    JSON.stringify(['pc-head', 'pc-hp-row', 'pc-weapon-row', 'pc-econ', 'pc-stats']),
+);
+
+// The ring's own CSS: grey tokens only, a 1.2px stroke and a fixed 12px
+// box that is paint (flex:none) — the C2 row-height pins must still hold.
+const ringRule = ruleFor('pc-reload(?![\\w-])');
+const trackRule = ruleFor('pc-reload-track');
+const fillRule = ruleFor('pc-reload-fill');
+check(
+  'ring box: fixed 12px, flex:none (paint, never layout)',
+  /width:\s*12px/.test(ringRule) && /height:\s*12px/.test(ringRule) && /flex:\s*none/.test(ringRule),
+  ringRule,
+);
+check(
+  'grey only: --divider track under a --muted fill (no new colour token)',
+  /stroke:\s*var\(--divider\)/.test(trackRule) && /stroke:\s*var\(--muted\)/.test(fillRule),
+  `${trackRule} | ${fillRule}`,
+);
+check(
+  '1.2px stroke with round caps',
+  /stroke-width:\s*1\.2/.test(ruleFor('pc-reload[^{}]*circle')) &&
+    /stroke-linecap:\s*round/.test(fillRule),
+  ruleFor('pc-reload[^{}]*circle'),
+);
+const ringRowH = ((ruleFor('pc-weapon-row').match(/height:\s*([^;]+);/) || [])[1] || '').trim();
+check('the weapon row keeps its exact fixed height with the ring', ringRowH === '1.5em', ringRowH);
+
+// I3 — progress 0 (a run the stream never clears): the ring still says
+// "reloading" via the track — no fill circle, because a zero-length
+// round-capped dash would draw a dot.
+const rootI3 = await show({ card: { ...fullCard, reloadProgress: 0, onToggleMute: () => {} } });
+const ring3 = q(rootI3, '.pc-reload');
+check(
+  'progress 0 → ring with the track only (no fill arc)',
+  !!ring3 && !!ring3.querySelector('.pc-reload-track') && !ring3.querySelector('.pc-reload-fill'),
+);
+
+// I4 — mode 2: the MAIN gun chip gets the same ring; the held prefix
+// never carries one (a reload names the gun being reloaded).
+const rootI4 = await show({ card: { ...heldBase, reloadProgress: 0.25, onToggleMute: () => {} } });
+const mainRing = q(rootI4, '.pc-weapon-row .pc-weapon .pc-reload');
+check('mode 2: the ring rides the MAIN gun chip', !!mainRing);
+check('mode 2: no ring on the held chip', !q(rootI4, '.pc-held .pc-reload'));
+const fill4 = mainRing?.querySelector('.pc-reload-fill');
+check(
+  'mode 2: fill swept to the given progress (0.25 → offset 0.75×circumference)',
+  !!fill4 && Math.abs(Number(fill4.getAttribute('stroke-dashoffset')) - CIRC * 0.75) < 1e-9,
+  fill4?.getAttribute('stroke-dashoffset'),
 );
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

@@ -3,7 +3,8 @@ package sidecar
 // The sparse player-state stream — state.bin/state.idx — rides alongside
 // the position stream inside the same match directory. Player state
 // (HP, armor, unspent money, helmet, active weapon, inventory,
-// mag/reserve ammo, the stowed main weapon's ammo, trigger) is a step function: it changes a few times
+// mag/reserve ammo, the stowed main weapon's ammo, trigger, reload
+// state) is a step function: it changes a few times
 // a second, so a PER-CHANGE record
 // anchored to frame indices loses zero accuracy versus a fatter per-frame
 // payload (+8 B/player/frame would roughly double both the sidecar and
@@ -13,7 +14,7 @@ package sidecar
 // reconstructed player datum is the C4 carrier (analytics.bombStateAt),
 // which this stream does not cover.
 //
-// # Raw stream layout (stateFormatVersion 3)
+// # Raw stream layout (stateFormatVersion 4)
 //
 // state.bin decompresses to a concatenation of independent zstd frames
 // (≤256 records each), each holding records:
@@ -38,8 +39,8 @@ package sidecar
 //	                     v1 encoding — while a fixed uint16 would tax
 //	                     every record +1 B. Masks ≥ 0x80 cost exactly
 //	                     1 B extra. v3 added bits 9/10
-//	                     (mainMag/mainReserve); masks stay two bytes
-//	                     until 0x4000.
+//	                     (mainMag/mainReserve), v4 bit 11 (reloading);
+//	                     masks stay two bytes until 0x4000.
 //	  0x001 hp          uint8   0 = death (sampled, not inferred)
 //	  0x002 armor       uint8   read as-is even when dead
 //	  0x004 weapon      uint8   index into meta.weaponNames
@@ -65,6 +66,18 @@ package sidecar
 //	                     carried (knife round / dropped sidearm).
 //	  0x400 mainReserve uint16 LE — the main weapon's reserve ammo; same
 //	                     rules as mainMag.
+//	  0x800 reloading   uint8 0/1 — the ACTIVE weapon is mid-reload
+//	                     (pl.IsReloading, sampled ALIVE only → false on
+//	                     every dead sample). Unlike the weapon/ammo bits
+//	                     it does NOT keep last-known through death: the
+//	                     death gate does not cover it, so a death
+//	                     mid-reload emits the fresh false and ends the
+//	                     reload (a reload is an action, not equipment
+//	                     state). The flag itself already carries the
+//	                     semantics the card needs — the weapon_reload
+//	                     event sets it, a weapon SWITCH clears it
+//	                     (cancellation) and the clip change clears it
+//	                     (completion) — the stream only samples it.
 //
 // NOTE helmet deliberately rides its own bit: it CANNOT be derived from
 // inventory — armor/helmet are pawn item-service props, not equipment
@@ -72,10 +85,10 @@ package sidecar
 // demo: 22 distinct inventory names, no "Kevlar Vest"/"Kevlar + Helmet",
 // while 707,352 alive samples had helmet=true).
 //
-// Values are written in bit order, so the v3 fields are APPENDED after
-// helmet: every v2 record's bytes are unchanged (its mask simply never
-// sets bits 0x200/0x400) — TestStateRecordPinnedBytes pins that
-// byte-identity.
+// Values are written in bit order, so the v3/v4 fields are APPENDED
+// after helmet: every earlier record's bytes are unchanged (its mask
+// simply never sets bits 0x200/0x400/0x800) — TestStateRecordPinnedBytes
+// pins that byte-identity.
 //
 // A record is emitted only when a sampled field CHANGED (or on a seed),
 // so a field absent from a record keeps its previous value — piecewise
@@ -85,16 +98,20 @@ package sidecar
 // Weapon/ammo fields are only present while the sample is alive; after
 // death they are the last-known values (documented as such), while HP is
 // a fresh 0 every dead frame. Money/helmet follow the armor rule, not the
-// weapon rule: fresh as-read values on every frame, alive or dead.
+// weapon rule: fresh as-read values on every frame, alive or dead — and
+// reloading joins HP: a fresh false on every dead frame (a dead player
+// reloads nothing), so a death mid-reload ends the run in the stream
+// instead of leaving a last-known reload ringing on the card.
 //
 // VERSION POLICY (pre-release, AGENTS.md "No versioned migrations, no
-// legacy-data fallbacks"): v1 AND v2 sidecars are NOT upgraded and NOT
-// decoded — a reader seeing stateFormatVersion != 3 reports "no state
-// stream" (Go: reader.openState fail-soft; frontend: stateCapable === 3),
-// and the cards show unknown + the reprocess note. The decoder handles
-// ONLY the layout above: v1 predates money/helmet, v2 predates the main-
-// weapon fields (mainMag/mainReserve) — regaining state after this bump
-// means REPROCESSING the match.
+// legacy-data fallbacks"): v1, v2 AND v3 sidecars are NOT upgraded and
+// NOT decoded — a reader seeing stateFormatVersion != 4 reports "no
+// state stream" (Go: reader.openState fail-soft; frontend:
+// stateCapable === 4), and the cards show unknown + the reprocess note.
+// The decoder handles ONLY the layout above: v1 predates money/helmet,
+// v2 predates the main-weapon fields (mainMag/mainReserve), v3 predates
+// the reload flag — regaining state after this bump means REPROCESSING
+// the match.
 //
 // # Files (added to the positions layout; both streams version
 // independently — q16-v2 is untouched)
@@ -114,9 +131,10 @@ package sidecar
 // +378 records, +7,400 B raw over v1's 18,456 / 150,286 B — money deltas
 // from buys/kills/round-end rewards plus the extra seed bytes.) The
 // quoted counts/sizes are the v2 BASELINE — they predate the v3 main-
-// weapon fields (mainMag/mainReserve), which the test re-measures on
-// every run (the record-count bounds it asserts still hold: the fields
-// are diffed, so unchanged frames stay record-free). Absolute
+// weapon fields (mainMag/mainReserve) and the v4 reload flag
+// (reloading), which the test re-measures on every run (the record-count
+// bounds it asserts still hold: the fields are diffed, so unchanged
+// frames stay record-free). Absolute
 // frame uvarints cost 54,467 B of that raw total; a frameDelta encoding
 // would be 18,886 B — the 35,581 B raw saving (less after zstd) buys
 // nothing: absolute frames keep every block and every range-filtered
@@ -141,11 +159,12 @@ const (
 	// when it changes. Matches imported before this stream carry no
 	// stateFormatVersion (and no state.bin/idx) — capability detection
 	// is the meta field, never a schema column. v1 (mask as uint8, no
-	// money/helmet) and v2 (no main-weapon ammo) are retired, not
-	// upgraded: openState treats any version other than the current one
-	// as "no state stream" (pre-release no-migrations policy — see the
-	// layout doc; matches must be reprocessed to regain state).
-	StateFormatVersion = 3
+	// money/helmet), v2 (no main-weapon ammo) and v3 (no reload flag)
+	// are retired, not upgraded: openState treats any version other
+	// than the current one as "no state stream" (pre-release
+	// no-migrations policy — see the layout doc; matches must be
+	// reprocessed to regain state).
+	StateFormatVersion = 4
 	// StateBlockRecords is the maximum number of records per zstd block.
 	StateBlockRecords = 256
 
@@ -161,11 +180,12 @@ const (
 	StateHelmet      uint16 = 1 << 8
 	StateMainMag     uint16 = 1 << 9
 	StateMainReserve uint16 = 1 << 10
+	StateReloading   uint16 = 1 << 11
 	// stateFields is the mask of every defined field bit; unknown bits
 	// are corruption (forward-compatible readers must fail loudly).
 	stateFields = StateHP | StateArmor | StateWeapon | StateInventory |
 		StateMagAmmo | StateReserveAmmo | StateAttack | StateMoney | StateHelmet |
-		StateMainMag | StateMainReserve
+		StateMainMag | StateMainReserve | StateReloading
 )
 
 // State sidecar file names inside a match directory.
@@ -203,6 +223,7 @@ type StateRecord struct {
 	Helmet      bool    // present iff Mask&StateHelmet
 	MainMag     uint16  // main (stowed) weapon magazine; present iff Mask&StateMainMag
 	MainReserve uint16  // main (stowed) weapon reserve; present iff Mask&StateMainReserve
+	Reloading   bool    // active weapon mid-reload; present iff Mask&StateReloading
 }
 
 // Has reports whether the record carries field (a State* bit).
@@ -221,6 +242,7 @@ type stateSample struct {
 	money        uint16
 	attack       bool
 	helmet       bool
+	reloading    bool
 	alive        bool
 }
 
@@ -232,14 +254,20 @@ type stateSample struct {
 // player controller and round-end cash lands while players are dead;
 // helmet is the pawn item-service flag, 0/false on a dead pawn is the
 // sampled value), so they are clamped and kept exactly like armor.
+// Reloading is a third rule: forced false when dead (a dead player
+// reloads nothing — extract already samples it alive-only, the && here
+// pins the invariant at the wire boundary) and DIFFED like HP, so the
+// death record carries the fresh false and a death mid-reload ends the
+// reload instead of pinning a stale last-known one.
 func newSampleState(p extract.StatePlayer) stateSample {
 	s := stateSample{
-		hp:     u8Clamp(p.HP),
-		armor:  u8Clamp(p.Armor),
-		money:  u16Clamp(p.Money),
-		helmet: p.Helmet,
-		attack: p.Attack,
-		alive:  p.Alive,
+		hp:        u8Clamp(p.HP),
+		armor:     u8Clamp(p.Armor),
+		money:     u16Clamp(p.Money),
+		helmet:    p.Helmet,
+		attack:    p.Attack,
+		reloading: p.Alive && p.Reloading,
+		alive:     p.Alive,
 	}
 	if !p.Alive {
 		return s
@@ -272,10 +300,12 @@ func (s stateSample) clone() stateSample {
 
 // maskFor returns the field bits to emit for this sample: seed/first
 // sighting emits everything the sample carries; otherwise only changed
-// fields. Money/helmet diff before the death gate (they are fresh as-read
-// values while dead — see newSampleState); weapon/ammo (active and main)/
-// inventory diffs are suppressed while dead (the sample carries no fresh
-// values there — emitting them would overwrite last-known with a guess).
+// fields. Money/helmet/reloading diff before the death gate (money and
+// helmet are fresh as-read values while dead — see newSampleState;
+// reloading is the fresh false a dead sample always carries, so a death
+// mid-reload clears it); weapon/ammo (active and main)/inventory diffs
+// are suppressed while dead (the sample carries no fresh values there —
+// emitting them would overwrite last-known with a guess).
 func (prev stateSlot) maskFor(s stateSample, seed bool) uint16 {
 	full := seed || !prev.valid
 	var m uint16
@@ -287,6 +317,9 @@ func (prev stateSlot) maskFor(s stateSample, seed bool) uint16 {
 	}
 	if full || s.attack != prev.attack {
 		m |= StateAttack
+	}
+	if full || s.reloading != prev.reloading {
+		m |= StateReloading
 	}
 	if full || s.money != prev.money {
 		m |= StateMoney
@@ -449,7 +482,9 @@ func (w *Writer) AddState(seed bool, players []extract.StatePlayer) error {
 			// byte-for-byte what a reader reconstructs (and the next
 			// alive sample diffs against them, not against zeros).
 			// Money/helmet are NOT restored — their death-frame
-			// samples are fresh as-read values (see newSampleState).
+			// samples are fresh as-read values (see newSampleState) —
+			// and neither is reloading: its death-frame sample is the
+			// fresh false, already emitted and stored above.
 			prev := st.last[slot]
 			next.weapon, next.inventory = prev.weapon, prev.inventory
 			next.mag, next.reserve = prev.mag, prev.reserve
@@ -541,13 +576,20 @@ func appendStateRecord(dst []byte, frame int, slot uint8, mask uint16, s stateSa
 			dst = append(dst, 0)
 		}
 	}
-	// v3 fields APPENDED after helmet: a v2 record's bytes are unchanged
-	// (its mask never sets these bits) — see the layout doc.
+	// v3/v4 fields APPENDED after helmet: an earlier record's bytes are
+	// unchanged (its mask never sets these bits) — see the layout doc.
 	if mask&StateMainMag != 0 {
 		dst = binary.LittleEndian.AppendUint16(dst, s.mainMag)
 	}
 	if mask&StateMainReserve != 0 {
 		dst = binary.LittleEndian.AppendUint16(dst, s.mainReserve)
+	}
+	if mask&StateReloading != 0 {
+		if s.reloading {
+			dst = append(dst, 1)
+		} else {
+			dst = append(dst, 0)
+		}
 	}
 	return dst
 }
@@ -713,6 +755,16 @@ func decodeStateRecordAt(b []byte, off int) (StateRecord, int, error) {
 		if r.MainReserve, err = u16(); err != nil {
 			return r, 0, err
 		}
+	}
+	if r.Has(StateReloading) {
+		v, e := u8()
+		if e != nil {
+			return r, 0, e
+		}
+		if v > 1 {
+			return r, 0, errCorrupt("bad reloading flag")
+		}
+		r.Reloading = v == 1
 	}
 	return r, off, nil
 }

@@ -16,6 +16,7 @@ import {
   mainAmmoText,
   mainOf,
   moneyText,
+  reloadProgress,
   STATS_TITLE,
   statsText,
   utilityOf,
@@ -282,4 +283,77 @@ test('connectedAt: no events is connected — absence is never a disconnect', ()
   assert.equal(connectedAt(leaver, 500), false);
   // An unknown playhead hides nothing (no evidence at a non-tick).
   assert.equal(connectedAt(indexConnections(nukeConnRows).get(CREW), NaN), true);
+});
+
+// --- Reload ring (the gun icon's grey progress arc) ----------------------
+// reloadProgress reads ONE slot's `reloading` series — the shape
+// state.js buildStateIndex keeps ({frames, values}, records only at
+// CHANGES, booleans only; "unknown" lives before the first record and
+// therefore outside the series) — and returns the 0..1 fill at a frame,
+// or null = the ring hides. The formula (run start by walking back, the
+// look-ahead end, the clamp) is documented in playercard.js; these cases
+// pin it. The frames are literal position-stream frames.
+const reloadSeries = (frames, values) => ({ frames, values });
+
+test('reloadProgress: hidden unless the field says true at the playhead', () => {
+  // Never reloading (a seed that stays false) → hidden at every frame.
+  const never = reloadSeries([0, 500], [false, false]);
+  assert.equal(reloadProgress(never, 0), null);
+  assert.equal(reloadProgress(never, 250), null);
+  assert.equal(reloadProgress(never, 1e9), null, 'after the last record the last value stands');
+  // Missing field / no series at all → hidden, never a guessed ring.
+  assert.equal(reloadProgress(null, 100), null);
+  assert.equal(reloadProgress(undefined, 100), null);
+  assert.equal(reloadProgress(reloadSeries([], []), 100), null);
+  // A run that has not started yet (playhead before its first record):
+  // the field is unknown there — unknown is NEVER drawn as a fact.
+  const late = reloadSeries([1000, 1200], [true, false]);
+  assert.equal(reloadProgress(late, 999), null);
+});
+
+test('reloadProgress: a completed run fills 0 → 1 across [start, end)', () => {
+  const run = reloadSeries([100, 200], [true, false]); // start 100, end 200
+  assert.equal(reloadProgress(run, 100), 0, 'at the start frame the fill is 0');
+  assert.equal(reloadProgress(run, 150), 0.5);
+  assert.equal(reloadProgress(run, 175), 0.75);
+  assert.ok(reloadProgress(run, 199) >= 0.99 && reloadProgress(run, 199) < 1, 'just under the end');
+  // At/after the end the flag is false → the ring hides, never a stale
+  // arc lingering after the reload finished.
+  assert.equal(reloadProgress(run, 200), null);
+  assert.equal(reloadProgress(run, 5000), null);
+});
+
+test('reloadProgress: the run anchor walks back, run by run', () => {
+  // Two runs in one series: the fill must anchor at the CURRENT run's
+  // first true record, not at the series' start.
+  const two = reloadSeries([0, 100, 200, 300, 400], [false, true, false, true, false]);
+  assert.equal(reloadProgress(two, 150), (150 - 100) / (200 - 100));
+  assert.equal(reloadProgress(two, 350), (350 - 300) / (400 - 300), 'second run anchors at 300');
+  assert.equal(reloadProgress(two, 90), null, 'between the runs → hidden');
+  // A run that opens the series (no preceding false record).
+  const open = reloadSeries([50, 150], [true, false]);
+  assert.equal(reloadProgress(open, 100), 0.5);
+});
+
+test('reloadProgress: a weapon switch cancelling mid-run just ends the run', () => {
+  // true → false on the weapon change IS the cancellation (the stream
+  // only carries demoinfocs' flag): the run closes at the switch frame
+  // and the ring hides from it on — no cancellation special case.
+  const cancelled = reloadSeries([0, 100, 160], [false, true, false]);
+  assert.equal(reloadProgress(cancelled, 130), (130 - 100) / (160 - 100));
+  assert.equal(reloadProgress(cancelled, 160), null, 'the switch frame hides it');
+  assert.equal(reloadProgress(cancelled, 200), null, 'and it stays hidden');
+});
+
+test('reloadProgress: the stream ending mid-reload clamps to 0 (duration unknown)', () => {
+  // The demo itself cuts while the flag is still true: there is no end
+  // record, so the denominator is unknown — the ring shows the reload
+  // RUNNING at fill 0 rather than fabricating a percentage.
+  const cut = reloadSeries([0, 100], [false, true]);
+  assert.equal(reloadProgress(cut, 150), 0);
+  assert.equal(reloadProgress(cut, 1e6), 0, 'even far past the last record (value stands)');
+  // The division is exact, unrounded — the arc is continuous.
+  const odd = reloadSeries([0, 3], [true, false]);
+  assert.equal(reloadProgress(odd, 1), 1 / 3);
+  assert.equal(reloadProgress(odd, 2), 2 / 3);
 });

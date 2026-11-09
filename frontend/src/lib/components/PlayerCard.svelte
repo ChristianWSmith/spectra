@@ -36,6 +36,10 @@
   //   state       slotStateAt(...) object or null — null means this
   //               replay has NO state stream (pre-state import): every
   //               value renders "—", never a zero presented as a fact
+  //   reloadProgress  0..1 reload-ring fill or null — precomputed by
+  //               Replay through replay/playercard.js reloadProgress
+  //               (the ONE formula); null = not reloading / unknown →
+  //               the ring is not rendered at all (never a guessed arc)
   //   stats       {k, d, a, adr} from replay/livestats.js at the
   //               playhead, or null before the fold runs → the stats row
   //               renders "—", never a fabricated 0 (adr null = no
@@ -76,6 +80,7 @@
     dead = false,
     follow = false,
     state = null,
+    reloadProgress = null,
     stats = null,
     icons = null,
     iconURLs = null,
@@ -131,6 +136,10 @@
   const mainAmmo = $derived(held ? mainAmmoText(state) : '—');
   const heldIconSrc = $derived(held ? iconSrc(held) : null);
   const mainIconSrc = $derived(main ? iconSrc(main) : null);
+
+  // The reload ring's geometry: r=5 in the 12×12 viewBox → the dash
+  // length the fill's stroke-dasharray/dashoffset sweep through.
+  const RELOAD_CIRC = 2 * Math.PI * 5;
 
   // Tooltips carry the full semantics the compact cells truncate.
   const hpTitle = $derived(hp == null ? 'Health unknown' : `Health ${hp}`);
@@ -228,7 +237,32 @@
             the bare held icon — no separator, no name, no ammo (the
             row's fixed height keeps the stack stable; a held icon
             missing from the manifest degrades to nothing, like a missing
-            weapon icon, since the prefix has no text label by design). -->
+            weapon icon, since the prefix has no text label by design).
+       Both GUN chips (mode 1's active firearm, mode 2's main) carry the
+       reload ring beside the icon when one is computing; it is pure
+       paint inside the row's fixed height (see .pc-reload below). -->
+  {#snippet reloadRing()}
+    {#if reloadProgress != null}
+      <span class="pc-reload" aria-hidden="true" title="Reloading">
+        <svg viewBox="0 0 12 12" width="12" height="12" focusable="false">
+          <circle class="pc-reload-track" cx="6" cy="6" r="5" transform="rotate(-90 6 6)" />
+          {#if reloadProgress > 0}
+            <!-- Round cap + a zero-length dash would draw a dot, so the
+                 fill exists only once it has something to sweep. -->
+            <circle
+              class="pc-reload-fill"
+              cx="6"
+              cy="6"
+              r="5"
+              transform="rotate(-90 6 6)"
+              stroke-dasharray="{RELOAD_CIRC} {RELOAD_CIRC}"
+              stroke-dashoffset="{RELOAD_CIRC * (1 - reloadProgress)}"
+            />
+          {/if}
+        </svg>
+      </span>
+    {/if}
+  {/snippet}
   <div class="pc-weapon-row">
     {#if held}
       {#if heldIconSrc}
@@ -244,6 +278,7 @@
           {#if mainIconSrc}
             <img class="pc-ico" src={mainIconSrc} alt="" />
           {/if}
+          {@render reloadRing()}
           <span class="pc-num pc-ammo">{mainAmmo}</span>
         </span>
       {/if}
@@ -252,6 +287,7 @@
         {#if weaponIconSrc}
           <img class="pc-ico" src={weaponIconSrc} alt="" />
         {/if}
+        {@render reloadRing()}
         <span class="pc-num pc-ammo">{ammo}</span>
       </span>
     {/if}
@@ -572,6 +608,43 @@
     min-width: 9ch;
     margin-left: auto;
     text-align: right;
+  }
+
+  /* The reload ring beside the gun icon (reloadProgress — the ONE
+     formula lives in replay/playercard.js; Replay computes it, this
+     component only paints it): a grey track in --divider with the fill
+     arc in --muted sweeping 0 → 100% over the run (the dasharray/
+     dashoffset values ride inline per frame). It renders ONLY while
+     reloading — null progress mounts nothing, never a guessed arc — and
+     it is pure paint: a fixed 12px box, flex:none, well under the row's
+     1.5em, so it can never change the row height, squeeze the icon or
+     move the ammo's auto margin; the row's overflow:hidden is the hard
+     stop. The 1.2 stroke and the 12-unit viewBox are 1:1, so the stroke
+     is 1.2px at every font setting. */
+  .pc-reload {
+    flex: none;
+    display: block;
+    width: 12px;
+    height: 12px;
+    line-height: 0;
+  }
+
+  .pc-reload svg {
+    display: block;
+  }
+
+  .pc-reload circle {
+    fill: none;
+    stroke-width: 1.2;
+  }
+
+  .pc-reload-track {
+    stroke: var(--divider);
+  }
+
+  .pc-reload-fill {
+    stroke: var(--muted);
+    stroke-linecap: round;
   }
 
   /* The held-item prefix (knife/util/C4 in hand): a BARE icon — no text

@@ -12,7 +12,8 @@
   //   players         one entry per player = PlayerCard's props EXCEPT
   //                   `side` (the column owns it and overrides), e.g.
   //                   {player, playerColor, speaking, muted, dead, follow,
-  //                   state, stats, icons, iconURLs, onToggleMute}; order
+  //                   state, reloadProgress, stats, icons, iconURLs,
+  //                   onToggleMute}; order
   //                   is the caller's (roster slot order by default)
   //   teamMuted       every player on the team voice-muted → the team
   //                   mute button's state

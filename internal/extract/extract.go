@@ -56,8 +56,11 @@ type PositionSink interface {
 // arithmetically reconstructed): HP/Armor are pl.Health()/pl.Armor(), the
 // weapon fields are pl.ActiveWeapon()/pl.Weapons() (canonical wepName
 // vocabulary — the same strings events.weapon carries; MainMag/MainReserve
-// are the MAIN — stowed — weapon's ammo, see scanWeapons), and Attack is
-// pl.IsPressingButton(common.ButtonAttack).
+// are the MAIN — stowed — weapon's ammo, see scanWeapons), Attack is
+// pl.IsPressingButton(common.ButtonAttack), and Reloading is
+// pl.IsReloading (demoinfocs' live flag: set by the weapon_reload event,
+// cleared when the active weapon changes — a weapon switch CANCELS the
+// reload — and when the clip changes — the reload COMPLETED).
 //
 // Death is a sample, not an inference: Alive=false forces HP to 0, and the
 // weapon/inventory/ammo fields are only sampled while alive (their entity
@@ -71,6 +74,13 @@ type PositionSink interface {
 // needs it) and Helmet is the pawn's item-service flag read through the
 // same entity path Armor uses (same lifetime, same sample-as-read rule).
 // SteamID is the raw SteamID64 (0 for bots).
+//
+// Reloading is the exception that joins the WEAPON group, not the as-read
+// group: it is only read while alive (a dead pawn reloads nothing) and is
+// therefore false on every dead sample — the sidecar emits that fresh
+// false, so a death MID-reload clears the flag instead of pinning a stale
+// last-known reload (unlike weapon/ammo, which keep last-known through
+// death: a reload is an ACTION, not equipment state).
 type StatePlayer struct {
 	SteamID     uint64
 	HP          int  // 0..255, forced 0 when !Alive
@@ -84,6 +94,7 @@ type StatePlayer struct {
 	MainMag     int      // MAIN (stowed) weapon magazine; 0 when !Alive or no firearm carried
 	MainReserve int      // MAIN (stowed) weapon reserve; 0 when !Alive or no firearm carried
 	Attack      bool
+	Reloading   bool // active weapon mid-reload (pl.IsReloading); false when !Alive
 	Alive       bool
 }
 
@@ -410,13 +421,14 @@ func (rs *roundSeeds) take(round int) bool {
 
 // sampleStatePlayer reads one participant's authoritative per-frame state
 // (cheap prop reads, once per frame per player — see StatePlayer). The
-// weapon/ammo fields are only read while the pawn is alive; Money/Helmet
-// are read on every frame like HP/Armor (they persist through death).
+// weapon/ammo fields and the reload flag are only read while the pawn is
+// alive; Money/Helmet are read on every frame like HP/Armor (they persist
+// through death).
 func sampleStatePlayer(pl *common.Player) StatePlayer {
 	alive := pl.IsAlive()
 	var inventory []string
 	weapon, mag, reserve := "", 0, 0
-	mainMag, mainReserve := 0, 0
+	mainMag, mainReserve, reloading := 0, 0, false
 	if alive {
 		active := pl.ActiveWeapon()
 		weapon = wepName(active)
@@ -430,9 +442,10 @@ func sampleStatePlayer(pl *common.Player) StatePlayer {
 			mainMag = main.AmmoInMagazine()
 			mainReserve = main.AmmoReserve()
 		}
+		reloading = pl.IsReloading
 	}
 	return buildStateSample(pl.SteamID64, alive, pl.Health(), pl.Armor(), pl.Money(), pl.HasHelmet(),
-		weapon, inventory, mag, reserve, mainMag, mainReserve, pl.IsPressingButton(common.ButtonAttack))
+		weapon, inventory, mag, reserve, mainMag, mainReserve, pl.IsPressingButton(common.ButtonAttack), reloading)
 }
 
 // scanWeapons walks one participant's weapon list IN ORDER (pl.Weapons()
@@ -475,17 +488,22 @@ func scanWeapons(weapons []*common.Equipment) (inventory []string, main *common.
 // helmet rides the pawn's item services like armor), and the
 // weapon/inventory/ammo fields — active AND main — only exist while alive
 // (dead pawns have no entity props to read; the stream documents the last
-// emitted value as last-known). Values are clamped onto the stored wire
-// widths here (u8 HP/armor, u16 money/ammo) so the writer never truncates.
-func buildStateSample(steamID uint64, alive bool, health, armor, money int, helmet bool, weapon string, inventory []string, mag, reserve, mainMag, mainReserve int, attack bool) StatePlayer {
+// emitted value as last-known). Reloading is also forced false when dead
+// (a dead player reloads nothing — same authoritative-evidence rule as HP
+// 0, NOT the last-known rule: the sidecar emits the fresh false so a
+// death mid-reload ends the reload). Values are clamped onto the stored
+// wire widths here (u8 HP/armor, u16 money/ammo) so the writer never
+// truncates.
+func buildStateSample(steamID uint64, alive bool, health, armor, money int, helmet bool, weapon string, inventory []string, mag, reserve, mainMag, mainReserve int, attack, reloading bool) StatePlayer {
 	s := StatePlayer{
-		SteamID: steamID,
-		HP:      clampState8(health),
-		Armor:   clampState8(armor),
-		Money:   clampState16(money),
-		Helmet:  helmet,
-		Attack:  attack,
-		Alive:   alive,
+		SteamID:   steamID,
+		HP:        clampState8(health),
+		Armor:     clampState8(armor),
+		Money:     clampState16(money),
+		Helmet:    helmet,
+		Attack:    attack,
+		Reloading: alive && reloading,
+		Alive:     alive,
 	}
 	if !alive {
 		s.HP = 0 // death is authoritative evidence, not an inference

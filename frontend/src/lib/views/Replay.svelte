@@ -84,8 +84,9 @@
   import { liveStats } from '../replay/livestats.js';
   // Card presence (player_connect / player_disconnect): which roster
   // slots are IN the match at the playhead — the ONE rule that decides
-  // which player cards exist (the card columns' filter below).
-  import { connectedAt, indexConnections } from '../replay/playercard.js';
+  // which player cards exist (the card columns' filter below) — plus the
+  // reload ring's fill (the ONE reload-progress formula).
+  import { connectedAt, indexConnections, reloadProgress } from '../replay/playercard.js';
   import { loadMapPack } from '../components/mapxform.js';
   import { downloadBlob, downloadText } from '../download.js';
   import { toCSV } from '../csv.js';
@@ -1177,15 +1178,16 @@
   }
 
   // The card prop arrays — ONE derived that reads the playhead (uiFrame
-  // / uiTick): every per-frame value (state, alive/dead, follow,
-  // speaking, muted) recomputes here, while stable refs (the roster
-  // object itself, the icon maps, the memoized mute handlers) keep prop
-  // churn to the values that actually changed — Svelte then writes only
-  // the text/classes that differ. A player who is OUT of the match at
-  // this playhead (disconnected, not yet connected) contributes NO card:
-  // the slot is filtered before the props are built, so TeamColumn's
-  // keyed each-block simply renders one card fewer (and one more on a
-  // reconnect) — no placeholder card, no unmounted-then-remounted row.
+  // / uiTick): every per-frame value (state, reload ring, alive/dead,
+  // follow, speaking, muted) recomputes here, while stable refs (the
+  // roster object itself, the icon maps, the memoized mute handlers) keep
+  // prop churn to the values that actually changed — Svelte then writes
+  // only the text/classes that differ. A player who is OUT of the match
+  // at this playhead (disconnected, not yet connected) contributes NO
+  // card: the slot is filtered before the props are built, so
+  // TeamColumn's keyed each-block simply renders one card fewer (and one
+  // more on a reconnect) — no placeholder card, no unmounted-then-
+  // remounted row.
   const cardColumns = $derived.by(() => {
     const frame = uiFrame;
     const tick = uiTick;
@@ -1210,6 +1212,13 @@
             dead: sampled && !alive,
             follow: uiFollow === slot,
             state: stateIndex ? slotStateAt(stateIndex, slot, frame) : null,
+            // The gun icon's reload ring: 0..1 fill, or null (no state
+            // stream / not reloading / unknown) which hides it. The
+            // formula — run start, look-ahead end, clamp — lives in
+            // playercard.js; here we only fetch the slot's series.
+            reloadProgress: stateIndex
+              ? reloadProgress(stateIndex.slots[slot]?.reloading, frame)
+              : null,
             stats: sid ? statsBySteam.get(sid) ?? null : null,
             icons: iconMap,
             iconURLs: iconUrls,

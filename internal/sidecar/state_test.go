@@ -141,6 +141,31 @@ func TestStateStreamExplicit(t *testing.T) {
 	fw.step(t, false, a, b6)
 	// f7: A releases the trigger — attack-only record (0); B unchanged.
 	fw.step(t, false, aliveSample(stateA, 90), b6)
+	// f8: A AND B start reloading — one StateReloading record each (true):
+	// the flag is diffed alive-or-dead like hp, so it streams like any
+	// other live state.
+	a8 := aliveSample(stateA, 90)
+	a8.Reloading = true
+	b8 := b6
+	b8.Reloading = true
+	fw.step(t, false, a8, b8)
+	// f9: A keeps reloading (unchanged → NO record); B DIES mid-reload —
+	// the death record gains StateReloading=false: a reload is an
+	// action, not equipment state, so death CLEARS it (fresh false)
+	// instead of pinning a last-known reload the way weapon/ammo do.
+	b9 := deadSample(stateB)
+	b9.Money = 4100 // B's account streamed while dead — no money record
+	fw.step(t, false, a8, b9)
+	// f10: A's reload completes (the parser clears the flag on the clip
+	// change) — a StateReloading=false record; B's dead frame is
+	// unchanged (nothing emits for it).
+	fw.step(t, false, aliveSample(stateA, 90), b9)
+	// f11: B respawns (money intact, NOT reloading) — hp/armor/helmet
+	// only: the reload bit stays false, so it must NOT reappear (death
+	// already ended the run at f9).
+	b11 := aliveSample(stateB, 100)
+	b11.Money = 4100
+	fw.step(t, false, aliveSample(stateA, 90), b11)
 
 	if _, err := fw.w.Close(64); err != nil {
 		t.Fatalf("Close: %v", err)
@@ -170,16 +195,22 @@ func TestStateStreamExplicit(t *testing.T) {
 		money       uint16
 		helmet      bool
 		attack      bool
+		reloading   bool
 	}
 	wants := []want{
-		{0, 0, stateFields, 100, 100, 3700, true, false},
-		{0, 1, stateFields, 100, 100, 3700, true, false},
-		{1, 0, StateHP, 90, 0, 0, false, false},
-		{3, 0, StateAttack, 0, 0, 0, false, true},
-		{4, 1, StateHP | StateArmor | StateHelmet, 0, 0, 0, false, false},
-		{5, 1, StateMoney, 0, 0, 4100, false, false},
-		{6, 1, StateHP | StateArmor | StateHelmet, 100, 100, 0, true, false},
-		{7, 0, StateAttack, 0, 0, 0, false, false},
+		{0, 0, stateFields, 100, 100, 3700, true, false, false},
+		{0, 1, stateFields, 100, 100, 3700, true, false, false},
+		{1, 0, StateHP, 90, 0, 0, false, false, false},
+		{3, 0, StateAttack, 0, 0, 0, false, true, false},
+		{4, 1, StateHP | StateArmor | StateHelmet, 0, 0, 0, false, false, false},
+		{5, 1, StateMoney, 0, 0, 4100, false, false, false},
+		{6, 1, StateHP | StateArmor | StateHelmet, 100, 100, 0, true, false, false},
+		{7, 0, StateAttack, 0, 0, 0, false, false, false},
+		{8, 0, StateReloading, 0, 0, 0, false, false, true},
+		{8, 1, StateReloading, 0, 0, 0, false, false, true},
+		{9, 1, StateHP | StateArmor | StateHelmet | StateReloading, 0, 0, 0, false, false, false},
+		{10, 0, StateReloading, 0, 0, 0, false, false, false},
+		{11, 1, StateHP | StateArmor | StateHelmet, 100, 100, 0, true, false, false},
 	}
 	if len(recs) != len(wants) {
 		t.Fatalf("records = %d, want %d: %+v", len(recs), len(wants), recs)
@@ -208,13 +239,17 @@ func TestStateStreamExplicit(t *testing.T) {
 		if w.mask&StateAttack != 0 && got.Attack != w.attack {
 			t.Errorf("rec %d attack = %v, want %v", i, got.Attack, w.attack)
 		}
+		if w.mask&StateReloading != 0 && got.Reloading != w.reloading {
+			t.Errorf("rec %d reloading = %v, want %v", i, got.Reloading, w.reloading)
+		}
 	}
 
 	// Reconstruction (apply records in order): A ends hp 90 with the
 	// trigger released and $3700; B ends hp 100 with the last-known
 	// loadout (the death record never carried weapon/ammo bits, main
 	// included), helmet back on, and the $4100 that streamed while it
-	// was dead.
+	// was dead. Both end NOT reloading: A's run closed on completion
+	// (f10), B's on the death that interrupted it (f9).
 	type recon struct {
 		hp, armor    uint8
 		weapon       string
@@ -225,6 +260,7 @@ func TestStateStreamExplicit(t *testing.T) {
 		money        uint16
 		helmet       bool
 		attack       bool
+		reloading    bool
 		weaponSeen   bool
 	}
 	var ra, rb recon
@@ -267,18 +303,21 @@ func TestStateStreamExplicit(t *testing.T) {
 		if r.Has(StateHelmet) {
 			dst.helmet = r.Helmet
 		}
+		if r.Has(StateReloading) {
+			dst.reloading = r.Reloading
+		}
 	}
 	if ra.hp != 90 || ra.attack || ra.weapon != "AK-47" || ra.mag != 30 || ra.reserve != 90 ||
-		ra.mainMag != 30 || ra.mainReserve != 90 || ra.money != 3700 || !ra.helmet {
-		t.Errorf("A reconstructed = %+v, want hp90/no trigger/AK-47/30/90/main 30/90/$3700/helmet", ra)
+		ra.mainMag != 30 || ra.mainReserve != 90 || ra.money != 3700 || !ra.helmet || ra.reloading {
+		t.Errorf("A reconstructed = %+v, want hp90/no trigger/AK-47/30/90/main 30/90/$3700/helmet/not reloading", ra)
 	}
 	if len(ra.inv) != 2 {
 		t.Errorf("A inventory = %v, want 2 entries", ra.inv)
 	}
 	if rb.hp != 100 || rb.attack || rb.weapon != "AK-47" || !rb.weaponSeen ||
 		rb.mainMag != 30 || rb.mainReserve != 90 ||
-		rb.money != 4100 || !rb.helmet {
-		t.Errorf("B reconstructed = %+v, want hp100/no trigger/last-known AK-47 + main 30/90/$4100 (streamed while dead)/helmet", rb)
+		rb.money != 4100 || !rb.helmet || rb.reloading {
+		t.Errorf("B reconstructed = %+v, want hp100/no trigger/last-known AK-47 + main 30/90/$4100 (streamed while dead)/helmet/not reloading (death ended it)", rb)
 	}
 }
 
@@ -540,14 +579,15 @@ func TestStateAbsentFailsSoft(t *testing.T) {
 	}
 }
 
-// TestStateRecordPinnedBytes pins the wire format (stateFormatVersion 3):
+// TestStateRecordPinnedBytes pins the wire format (stateFormatVersion 4):
 // any change to the layout must be a version bump, so encode/decode
 // against hard-coded bytes. Masks below 0x80 stay single-byte uvarints;
-// the money/helmet mask (0x181) and the v3 main mask (0x600) are the
-// two-byte cases. Records 1–3 are v1/v2-era layouts whose bytes the
-// append-after-helmet rule keeps byte-IDENTICAL (the v2 baseline — a
-// change here would mean the v3 fields were encoded BEFORE helmet);
-// record 4 pins the new mainMag/mainReserve bytes.
+// the money/helmet mask (0x181), the v3 main mask (0x600) and the v4
+// reload mask (0x800) are the two-byte cases. Records 1–4 are v1/v2/v3-
+// era layouts whose bytes the append-after-helmet rule keeps
+// byte-IDENTICAL (the earlier baseline — a change here would mean the
+// newer fields were encoded BEFORE helmet); record 5 pins the new
+// reloading bytes.
 func TestStateRecordPinnedBytes(t *testing.T) {
 	s := stateSample{hp: 57, armor: 100, attack: true}
 	got := appendStateRecord(nil, 300, 1, StateHP|StateArmor|StateAttack, s, func(string) uint8 { return 0 })
@@ -612,6 +652,23 @@ func TestStateRecordPinnedBytes(t *testing.T) {
 	if len(recs4) != 1 || recs4[0].MainMag != 30 || recs4[0].MainReserve != 90 {
 		t.Fatalf("decoded record4 = %+v, want main 30/90", recs4)
 	}
+
+	// v4 reload record: mask reloading = 0x800 → uvarint 80 10, value 1.
+	// (WHY: the first pin of the stateFormatVersion-4 field — it rides
+	// AFTER mainReserve in the value order, see the layout doc.)
+	s5 := stateSample{reloading: true}
+	got5 := appendStateRecord(nil, 301, 2, StateReloading, s5, func(string) uint8 { return 0 })
+	want5 := []byte{0xAD, 0x02, 0x02, 0x80, 0x10, 0x01}
+	if !bytes.Equal(got5, want5) {
+		t.Fatalf("record5 = %x, want %x", got5, want5)
+	}
+	recs5, err := DecodeStateRecords(want5)
+	if err != nil {
+		t.Fatalf("DecodeStateRecords(record5): %v", err)
+	}
+	if len(recs5) != 1 || !recs5[0].Reloading || recs5[0].Frame != 301 || recs5[0].Slot != 2 {
+		t.Fatalf("decoded record5 = %+v, want frame301/slot2/reloading", recs5)
+	}
 }
 
 // TestStateCorrupt: truncated/invalid streams fail loudly with errors
@@ -621,11 +678,11 @@ func TestStateCorrupt(t *testing.T) {
 	if _, err := DecodeStateRecords([]byte{0x01, 0x00, byte(StateHP)}); !errCorrupts(err) {
 		t.Errorf("truncated hp: err = %v, want corrupt", err)
 	}
-	// Unknown field bit. (WHY re-pin: 0x200 became the LEGAL mainMag
-	// field at stateFormatVersion 3, so the first illegal bit moved to
-	// 0x800 — one past StateMainReserve — uvarint 80 10; old bit 0x80
-	// is the legal money field.)
-	if _, err := DecodeStateRecords([]byte{0x01, 0x00, 0x80, 0x10}); !errCorrupts(err) {
+	// Unknown field bit. (WHY re-pin: 0x800 became the LEGAL reloading
+	// field at stateFormatVersion 4, so the first illegal bit moved to
+	// 0x1000 — one past StateReloading — uvarint 80 20; forward-compat
+	// must fail loudly, not skip; old bit 0x80 is the legal money field.)
+	if _, err := DecodeStateRecords([]byte{0x01, 0x00, 0x80, 0x20}); !errCorrupts(err) {
 		t.Errorf("unknown bit: err = %v, want corrupt", err)
 	}
 	// Mask wider than u16 (65536 — must not truncate into valid bits).
@@ -643,6 +700,10 @@ func TestStateCorrupt(t *testing.T) {
 	// Helmet flag not 0/1 (helmet mask 0x100 = uvarint 80 02).
 	if _, err := DecodeStateRecords([]byte{0x01, 0x00, 0x80, 0x02, 5}); !errCorrupts(err) {
 		t.Errorf("helmet=5: err = %v, want corrupt", err)
+	}
+	// Reloading flag not 0/1 (reloading mask 0x800 = uvarint 80 10).
+	if _, err := DecodeStateRecords([]byte{0x01, 0x00, 0x80, 0x10, 5}); !errCorrupts(err) {
+		t.Errorf("reloading=5: err = %v, want corrupt", err)
 	}
 	// Slot out of range.
 	if _, err := DecodeStateRecords([]byte{0x01, maxSlots, 0}); !errCorrupts(err) {
@@ -682,7 +743,8 @@ func sameStateRecord(a, b StateRecord) bool {
 		a.HP != b.HP || a.Armor != b.Armor || a.Weapon != b.Weapon ||
 		a.MagAmmo != b.MagAmmo || a.ReserveAmmo != b.ReserveAmmo ||
 		a.Attack != b.Attack || a.Money != b.Money || a.Helmet != b.Helmet ||
-		a.MainMag != b.MainMag || a.MainReserve != b.MainReserve {
+		a.MainMag != b.MainMag || a.MainReserve != b.MainReserve ||
+		a.Reloading != b.Reloading {
 		return false
 	}
 	return bytes.Equal(a.Inventory, b.Inventory)

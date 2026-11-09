@@ -232,6 +232,28 @@ func TestGoldenStateStream(t *testing.T) {
 			helmetTrue)
 	}
 
+	// ---- reload flag sanity (the v4 field) ----
+	// A full match reloads constantly: the flag must flip BOTH ways —
+	// true records are the weapon_reload events, false records are the
+	// completions (clip change) and cancellations (weapon switch) that
+	// clear demoinfocs' pl.IsReloading.
+	var reloadOn, reloadOff int
+	for _, rec := range recs {
+		if !rec.Has(StateReloading) {
+			continue
+		}
+		if rec.Reloading {
+			reloadOn++
+		} else {
+			reloadOff++
+		}
+	}
+	if reloadOn < 10 || reloadOff < 10 {
+		t.Errorf("reloading transitions = %d on / %d off, want ≥10 each (the flag must stream both ways)",
+			reloadOn, reloadOff)
+	}
+	t.Logf("reloading transitions: %d start, %d end/cancel", reloadOn, reloadOff)
+
 	// ---- weapon_fire ↔ attackButton acceptance cross-check ----
 	ticks := make([]int, len(frames))
 	for i, fr := range frames {
