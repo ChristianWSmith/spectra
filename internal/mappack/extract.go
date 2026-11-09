@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"golang.org/x/image/draw"
 )
 
 // Extraction: from a CS2 install dir, enumerate radar textures in
@@ -22,6 +24,18 @@ const (
 	overviewPfx  = "resource/overviews/"
 	packRadarPNG = "radar.png"
 	packMetaJSON = "meta.json"
+	// radarUpscale is the pixel multiplier every written radar/layer PNG
+	// gets. The source vtex decodes to 1024×1024 with a single mip (see
+	// vtex.go — there is no larger source), which reads grainy at high
+	// zoom; the webview can only sample the pixels the file actually
+	// holds. The resample is classical CatmullRom (golang.org/x/image/
+	// draw) — deterministic, offline, no AI model, so extraction stays
+	// portable. meta.json keeps the LOGICAL size (the decoded source
+	// bounds): the frontend maps world→image in that space and draws the
+	// file destination-size (mapxform.js makeTransform, renderer.js
+	// drawRadar, HeatmapLayer), so 2× pixels only improve sampling at
+	// every zoom without moving anything.
+	radarUpscale = 2
 )
 
 // ExtractResult reports one extracted map pack.
@@ -422,15 +436,32 @@ func preserveElevation(dir string, meta *packMeta) {
 	}
 }
 
-// writePNGAtomic writes via a temp file + rename so a crash mid-write
+// upscaleRadar resamples a decoded radar/layer image to radarUpscale ×
+// its logical size with CatmullRom (golang.org/x/image/draw) — a
+// classical interpolating kernel: deterministic, offline, no model to
+// ship, so extraction stays portable. See radarUpscale for why the
+// extra pixels exist and why meta.json must NOT see them.
+func upscaleRadar(img *image.NRGBA) *image.NRGBA {
+	src := img.Bounds()
+	dst := image.NewNRGBA(image.Rect(0, 0, src.Dx()*radarUpscale, src.Dy()*radarUpscale))
+	draw.CatmullRom.Scale(dst, dst.Bounds(), img, src, draw.Src, nil)
+	return dst
+}
+
+// writePNGAtomic writes a radar/layer image at radarUpscale × its
+// logical (decoded) size, via temp file + rename so a crash mid-write
 // can't leave a truncated PNG that the frontend would happily decode.
+// Its only callers are pack radar pixels (radar.png + section layers),
+// so the upscale lives HERE — one choke point no radar file can escape
+// — while meta.json capture in extractOne/extractLayers keeps reading
+// the decoded bounds before the write and therefore stays logical.
 func writePNGAtomic(path string, img *image.NRGBA) error {
 	tmp := path + ".tmp"
 	f, err := os.Create(tmp)
 	if err != nil {
 		return err
 	}
-	if err := png.Encode(f, img); err != nil {
+	if err := png.Encode(f, upscaleRadar(img)); err != nil {
 		_ = f.Close()
 		_ = os.Remove(tmp)
 		return err

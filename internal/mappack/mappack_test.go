@@ -688,7 +688,9 @@ func TestExtractMapPacks(t *testing.T) {
 		t.Fatalf("maps = %+v", maps)
 	}
 
-	// PNG decodes back to the right size.
+	// PNG decodes at 2× the logical size (radarUpscale — the source
+	// vtex has no larger mip, so the writer resamples ×2 for zoom
+	// quality). meta.json below keeps the LOGICAL size on purpose.
 	f, err := os.Open(filepath.Join(out, "de_fixture", "radar.png"))
 	if err != nil {
 		t.Fatal(err)
@@ -698,8 +700,40 @@ func TestExtractMapPacks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if img.Bounds().Dx() != w || img.Bounds().Dy() != h {
-		t.Errorf("png bounds = %v", img.Bounds())
+	if img.Bounds().Dx() != 2*w || img.Bounds().Dy() != 2*h {
+		t.Errorf("png bounds = %v, want %dx%d", img.Bounds(), 2*w, 2*h)
+	}
+
+	// …and the ×2 file is a real CatmullRom resample of the decoded
+	// source gradient — not a zero-filled dst or garbled output: every
+	// written pixel stays within rounding of the source ramp it scaled
+	// from (linear fixture → the interpolating kernel is near-exact;
+	// measured max deviation 4, tolerance 6).
+	src, err := decodeVTex(radar)
+	if err != nil {
+		t.Fatal(err)
+	}
+	dev := func(a, b uint32) int {
+		d := int(a>>8) - int(b>>8) // both sides are 8-bit values scaled by 0x101
+		if d < 0 {
+			return -d
+		}
+		return d
+	}
+	maxDev := 0
+	for y := 0; y < 2*h; y++ {
+		for x := 0; x < 2*w; x++ {
+			sr, sg, sb, sa := src.At(x/2, y/2).RGBA()
+			dr, dg, db, da := img.At(x, y).RGBA()
+			for _, d := range [4]int{dev(sr, dr), dev(sg, dg), dev(sb, db), dev(sa, da)} {
+				if d > maxDev {
+					maxDev = d
+				}
+			}
+		}
+	}
+	if maxDev > 6 {
+		t.Errorf("upscaled radar.png deviates from the source by %d/255 (want ≤6) — the ×2 resample is not faithful", maxDev)
 	}
 
 	// meta.json has transform + markers.
@@ -717,6 +751,10 @@ func TestExtractMapPacks(t *testing.T) {
 	if meta.Transform.PosX != -100 || meta.Transform.Scale != 4 {
 		t.Errorf("transform = %+v", meta.Transform)
 	}
+	// meta.radar.width/height is the LOGICAL image space (w, not the
+	// file's 2×w): the frontend maps world→image in these dims and draws
+	// the PNG destination-size, so writing the upscaled pixel size here
+	// would break world mapping (and the transform scale above).
 	if meta.Radar == nil || meta.Radar.Width != w || meta.Radar.File != "radar.png" {
 		t.Errorf("radar = %+v", meta.Radar)
 	}
@@ -789,7 +827,9 @@ func TestExtractMapPacksLayers(t *testing.T) {
 		t.Fatalf("maps = %+v, want only de_fixture", maps)
 	}
 
-	// Both layer images exist with their own dimensions.
+	// Both layer images exist, each at 2× its logical size (the writer's
+	// radarUpscale); the sizes differ per layer so the assertion can
+	// tell which image landed where.
 	for _, tc := range []struct {
 		file string
 		w, h int
@@ -806,8 +846,8 @@ func TestExtractMapPacksLayers(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", tc.file, err)
 		}
-		if img.Bounds().Dx() != tc.w || img.Bounds().Dy() != tc.h {
-			t.Errorf("%s bounds = %v, want %dx%d", tc.file, img.Bounds(), tc.w, tc.h)
+		if img.Bounds().Dx() != 2*tc.w || img.Bounds().Dy() != 2*tc.h {
+			t.Errorf("%s bounds = %v, want %dx%d", tc.file, img.Bounds(), 2*tc.w, 2*tc.h)
 		}
 	}
 
@@ -825,6 +865,8 @@ func TestExtractMapPacksLayers(t *testing.T) {
 	if strings.Contains(string(metaRaw), `"elevation`) {
 		t.Errorf("extracted meta.json grew an elevation key:\n%s", metaRaw)
 	}
+	// Layer width/height is the LOGICAL size (w/lw), NOT the 2× file
+	// size asserted above — the renderer sizes panels from these dims.
 	want := []packLayer{
 		{ID: "default", Name: "Upper", File: "radar.png", Width: w, Height: h, ZMin: -495, ZMax: 10000},
 		{ID: "lower", Name: "Lower", File: "radar_lower.png", Width: lw, Height: lh, ZMin: -10000, ZMax: -495},

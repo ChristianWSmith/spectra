@@ -1,6 +1,7 @@
 package mappack
 
 import (
+	"encoding/json"
 	"image/png"
 	"os"
 	"path/filepath"
@@ -34,11 +35,20 @@ func TestExtractRealCS2Install(t *testing.T) {
 		t.Errorf("only %d maps extracted, want ≥10 (official set)", len(maps))
 	}
 
-	// Spot-check one pack end-to-end: PNG decodes at the declared size
-	// and meta.json carries the transform.
+	// Spot-check one pack end-to-end: PNG decodes at the upscaled size,
+	// meta.json still declares the LOGICAL 1024×1024 (world mapping) and
+	// carries the transform.
 	probe := filepath.Join(out, "de_mirage")
-	if _, err := os.Stat(filepath.Join(probe, "meta.json")); err != nil {
+	metaRaw, err := os.ReadFile(filepath.Join(probe, "meta.json"))
+	if err != nil {
 		t.Fatalf("de_mirage pack missing: %v", err)
+	}
+	var meta packMeta
+	if err := json.Unmarshal(metaRaw, &meta); err != nil {
+		t.Fatalf("de_mirage meta.json: %v", err)
+	}
+	if meta.Radar == nil || meta.Radar.Width != 1024 || meta.Radar.Height != 1024 {
+		t.Errorf("meta.radar = %+v, want logical 1024×1024", meta.Radar)
 	}
 	f, err := os.Open(filepath.Join(probe, "radar.png"))
 	if err != nil {
@@ -49,8 +59,10 @@ func TestExtractRealCS2Install(t *testing.T) {
 	if err != nil {
 		t.Fatalf("radar.png decode: %v", err)
 	}
-	if img.Bounds().Dx() != 1024 || img.Bounds().Dy() != 1024 {
-		t.Errorf("radar bounds = %v, want 1024×1024", img.Bounds())
+	// The radar file is upscaled ×2 (2048) while meta.radar stays at the
+	// logical 1024×1024 — asserted above against meta.json.
+	if img.Bounds().Dx() != 2048 || img.Bounds().Dy() != 2048 {
+		t.Errorf("radar bounds = %v, want 2048×2048 (2× the 1024 source)", img.Bounds())
 	}
 
 	// DXT5-format maps (ar_shoots, cs_italy) must decode too — they take

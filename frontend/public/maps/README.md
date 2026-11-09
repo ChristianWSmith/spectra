@@ -75,8 +75,14 @@ maps/<mapName>/<radar file>  optional in the schema, never committed here:
   `pos_x`/`pos_y` are the world coordinates of the image's top-left corner;
   `scale` is world units per image pixel. Coverage:
   `[pos_x, pos_x + width*scale] × [pos_y - height*scale, pos_y]`.
-- `radar.width`/`height` — real pixel size of the radar file (omitted
-  together with `radar` when no image is involved).
+- `radar.width`/`height` — the LOGICAL size of the radar image: the
+  image space the `transform` maps world coordinates into (omitted
+  together with `radar` when no image is involved). The file on disk may
+  be larger — the extractor writes radar/layer PNGs at **2×** this size
+  (a CatmullRom resample of the 1024×1024 source vtex, which has no
+  larger mip) so zoomed-in views stay sharp. Consumers draw the image
+  destination-size from these dims, so a bigger file only adds sampling
+  detail and never shifts world mapping.
 - `layers` — OPTIONAL (absent = the single-layer contract, unchanged from
   before). One entry per radar floor of a multi-floor map, **default
   first** (the extractor's order — the fallback layer for an unknown Z is
@@ -84,8 +90,10 @@ maps/<mapName>/<radar file>  optional in the schema, never committed here:
   canvas:
   - `id` — the section name (`default`, `lower`); `name` — the display
     label drawn over the panel (`Upper`/`Lower`).
-  - `file`/`width`/`height` — that layer's image and its real pixel size
-    (`radar.png` for `default`, `radar_<id>.png` for the rest).
+  - `file`/`width`/`height` — that layer's image and its LOGICAL size
+    (the same convention as `radar.width`/`height`; an extracted file is
+    written at 2× this size — `radar.png` for `default`,
+    `radar_<id>.png` for the rest).
   - `z_min`/`z_max` — the world-Z band the layer claims, from the map's
     own `resource/overviews/<map>.txt` `verticalsections` (real extracted
     values). Convention: **half-open `[z_min, z_max)`** — adjacent bands
@@ -173,7 +181,13 @@ on-disk layout also works. Nothing is uploaded; extraction runs locally.
 **Refreshing an existing installation:** extraction is idempotent —
 Settings → "Extract all CS2 assets" rewrites every pack (new radar/layer
 images, new `layers` metadata) and the icon set from the current game
-files. The only thing
+files. Extracted radar/layer images are written at **2×** their logical
+size (1024 source → 2048 px file, `radarUpscale` in
+`internal/mappack/extract.go`; meta.json always declares the logical
+1024, so old 1:1 packs and new 2× packs world-map identically). Packs
+extracted before that upscale shipped keep their smaller files — and
+`meta.json` keeps whatever it already declared — until you re-extract
+here. The only thing
 it deliberately does NOT overwrite is your hand-authored
 `elevation_regions` (see above); stale per-floor `elevation` keys from
 the old contract are dropped on refresh — nothing reads them anymore.
