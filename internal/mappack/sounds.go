@@ -45,12 +45,14 @@ const (
 // soundTable is the ONE canonical-name → VPK-path table for audio (keys
 // are exact EquipmentType.String() outputs — the same vocabulary as
 // iconTable, which is why every key here exists there too — or one of
-// those names + " throw" for a utility's throw group; values are the
-// .vsnd_c paths relative to the VPK root). Near-layer fire/detonation
-// files only (no *_detonation*_distant / *_distant variants — the far
-// layer would sound wrong on the close camera), all PCM16 44100 unless
-// noted. ak47_03 and glock_01 are deliberately skipped: they are orphans
-// (no soundevent references them) and probe duplicates of the kept set.
+// those names + " throw" for a utility's throw group; the ONE other key
+// class is an internal sound group, listed in internalSoundGroups below;
+// values are the .vsnd_c paths relative to the VPK root). Near-layer
+// fire/detonation files only (no *_detonation*_distant / *_distant
+// variants — the far layer would sound wrong on the close camera), all
+// PCM16 44100 unless noted. ak47_03 and glock_01 are deliberately
+// skipped: they are orphans (no soundevent references them) and probe
+// duplicates of the kept set.
 //
 // "Decoy Grenade" has NO detonation entry on purpose: the game gives a
 // exploding decoy no soundevent of its own — its explosion plays
@@ -214,6 +216,23 @@ var soundTable = map[string][]string{
 	},
 	"Zeus x27": {"sounds/weapons/taser/taser_shoot.vsnd_c"},
 	"C4":       {"sounds/weapons/c4/c4_explode1.vsnd_c"}, // played on bomb_explode
+	// The planted C4's BEEP groups — four SINGLE-file groups keyed by
+	// (site, phase), deliberately NOT variants of one group: sfx.js's
+	// beep scheduler picks the key deterministically (site from the
+	// bomb_plant row, phase from the time left on the fuse) and
+	// pickVariant would randomly substitute one sample for another if
+	// they shared a key (beep ≠ explosion, A ≠ B, normal ≠ _10sec).
+	// The pairs are the game's own events in this build:
+	// C4.PlantSound → c4_beep2 / C4.PlantSoundB → c4_beep3 and their
+	// _10sec twins (soundevents/game_sounds_weapons.vsndevts_c — event
+	// name immediately followed by its .vsnd path, the adjacency the
+	// whole file uses); CS2 gives the B-site plant the lower-pitched,
+	// LONGER beep (179 ms vs 151 ms here) and a distinct sample for the
+	// final 10 seconds (2023-10-17 update).
+	"C4 beep A":       {"sounds/weapons/c4/c4_beep2.vsnd_c"},
+	"C4 beep B":       {"sounds/weapons/c4/c4_beep3.vsnd_c"},
+	"C4 beep A 10sec": {"sounds/weapons/c4/c4_beep2_10sec.vsnd_c"},
+	"C4 beep B 10sec": {"sounds/weapons/c4/c4_beep3_10sec.vsnd_c"},
 	// Grenades (detonation sounds — the replay's utility cues)
 	"HE Grenade": {
 		"sounds/weapons/hegrenade/hegrenade_detonate_02.vsnd_c",
@@ -266,6 +285,23 @@ var soundTable = map[string][]string{
 	// BaseGrenade.Explode — the HE files above — so its cue is remapped
 	// to "HE Grenade" at cue build (sfx.js grenadeCues); there is no
 	// decoy-specific detonation file to extract (CS2.md "Sound assets").
+}
+
+// internalSoundGroups — the ONE list of soundTable keys that are neither
+// an iconTable canonical name nor one + " throw": replay-internal sound
+// groups the frontend addresses by literal name (sfx.js builds those
+// names itself — the C4 beep scheduler's `C4 beep <site>[ 10sec]`).
+// Registering a group HERE is the whole widening:
+// TestSoundTableKeysInIconTable accepts exactly iconTable names,
+// " throw" groups and these, so a future group with no equipment
+// spelling (the plant/defuse cue workstream's, for example) never needs
+// a new rule — and the reverse index's global stem uniqueness plus the
+// sounds/ path rule still apply to every entry.
+var internalSoundGroups = map[string]bool{
+	"C4 beep A":       true, // site A's planted-C4 beep
+	"C4 beep B":       true, // site B's (the lower-pitched, longer one)
+	"C4 beep A 10sec": true, // the distinct final-10-seconds beep
+	"C4 beep B 10sec": true,
 }
 
 // soundTableNames is soundTable's keys in sorted order, so extraction
