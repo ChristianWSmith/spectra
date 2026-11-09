@@ -19,8 +19,7 @@ A powerful, feature-rich CS2 demo viewer and match analysis toolkit.
 - Local-first: demos and extracted data stay on your machine, fully offline
 
 Development status: import, library, statistics, replay, analytics, voice,
-and the platform tools have all shipped. What's still missing is tracked in
-[ref/MISSING.md](ref/MISSING.md).
+and the platform tools have all shipped.
 
 ## Download
 

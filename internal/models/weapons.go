@@ -80,8 +80,8 @@ func UtilityWeaponKind(weapon string) string {
 // sides must classify identically: extract computes the state stream's
 // stowed main-weapon ammo with these (internal/extract's scanWeapons), the
 // card resolves the displayed main weapon with loadout.js's mainWeaponOf —
-// cf. the sideparity Go/JS twins (internal/rules + lib/sideparity.js) in
-// ref/CONSOLIDATION.md. Loadout.js's header cross-references THIS file.
+// cf. the sideparity Go/JS twins (internal/rules + lib/sideparity.js).
+// Loadout.js's header cross-references THIS file.
 var primaryWeapons = map[string]struct{}{
 	"Galil AR": {}, "FAMAS": {}, "AK-47": {}, "M4A4": {}, "M4A1": {}, "SG 553": {},
 	"AUG": {}, "SSG 08": {}, "AWP": {}, "SCAR-20": {}, "G3SG1": {},
