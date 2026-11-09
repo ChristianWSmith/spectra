@@ -4088,6 +4088,13 @@ test('elevation indicators: ⊥ below the marker when above, T above when below 
   const r = createRenderer(canvas, { engine, data, players: LAYER_PLAYERS });
   const img = { width: 1024, height: 1024, src: 'radar.png' };
   const c = () => r.worldToScreen(10, 10); // alice's dot center (10,10)
+  // alice's NAME LABEL as recorded by drawPlayers (fillText at her dot
+  // centre — no HUD / kill feed / chat is set in this test, so an
+  // 'alice' fillText on screen IS the label). args[2] is the baseline.
+  const nameLabel = (from) =>
+    opsSince(canvas.log, 'fillText', from).find(
+      (e) => e.args[0] === 'alice' && Math.abs(e.args[1] - c().x) < 1e-6,
+    );
 
   // Configured 'above': a region box over alice's spot, reference_z −1
   // (strict bounds — the exact-threshold case is layers.test.js's). The
@@ -4126,6 +4133,18 @@ test('elevation indicators: ⊥ below the marker when above, T above when below 
     above.barY - ELEV_W / 2 < c().y + 22,
     `⊥ bar stops short of the name baseline (halved stem): ${above.barY - ELEV_W / 2 - c().y} below centre`,
   );
+  // Name-label NUDGE (only when an indicator is present): the ⊥ bar's
+  // body bottom (barY + ELEV_W/2 = cy+14.5) sits inside the plain label
+  // band, so the label drops ELEV_NAME_DROP (5) — baseline cy+22 →
+  // cy+27 → the 11 px text's top (≈ baseline−11 ≈ cy+16) clears the bar
+  // by ~1.5 px instead of crossing it.
+  const nAbove = nameLabel(mark);
+  assert.ok(nAbove, "the ⊥ entity's name label still draws");
+  assert.equal(nAbove.args[2], c().y + 27, '⊥ → the name baseline drops to centre+27 (cy+22 + ELEV_NAME_DROP 5)');
+  assert.ok(
+    nAbove.args[2] - 11 > above.barY + ELEV_W / 2,
+    'the dropped label’s text top clears the ⊥ bar’s bottom (≥1.5 px of air)',
+  );
 
   // Configured 'below': the same box with reference_z 1 → z=0 is below
   // it → T ABOVE the marker (bar on top), clear of the dot's edge.
@@ -4152,6 +4171,12 @@ test('elevation indicators: ⊥ below the marker when above, T above when below 
     below.barY - ELEV_W / 2 < c().y - 9,
     `T bar clear above the dot's edge: ${c().y - below.barY + ELEV_W / 2} above centre`,
   );
+  // The rule is "a mark is present" — EITHER direction — so T drops the
+  // label too (one simple condition, never re-derived per direction),
+  // even though the T bar itself never reaches the label band.
+  const nBelow = nameLabel(mark);
+  assert.ok(nBelow, "the T entity's name label still draws");
+  assert.equal(nBelow.args[2], c().y + 27, 'T → same drop: baseline centre+27 (the condition is "mark present")');
 
   // NOT configured → no marks at all (region-only: no box, no indicator
   // — also the single-layer default).
@@ -4165,6 +4190,11 @@ test('elevation indicators: ⊥ below the marker when above, T above when below 
   mark = canvas.log.length;
   r.draw();
   assert.equal(elevMarks(canvas.log, mark).length, 0, 'no region boxes → no indicators');
+  // No mark → NO nudge: the label keeps the plain baseline cy+r+13
+  // (DOT_R 9 → cy+22), exactly where it sat before the name nudge.
+  const nNone = nameLabel(mark);
+  assert.ok(nNone, 'the name label still draws without an indicator');
+  assert.equal(nNone.args[2], c().y + 22, 'no indicator → the baseline stays centre+22 (unchanged)');
 
   // A STALE top-level `elevation` key (dropped from the contract) is
   // ignored — it must never resurrect per-floor thresholds.

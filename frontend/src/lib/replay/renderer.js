@@ -186,14 +186,27 @@ const LAYER_GAP = 32; // image px between side-by-side layer panels: the
 // same day (ELEV_IND_STEM 27 → 13.5, user request): the ⊥ bar now lands
 // ~cy+12.5..14.5 — tucked between the dot's edge (cy+9) and the name
 // baseline (cy+r+13 ≈ cy+22), so the name text (painted after, over the
-// stem in drawPlayers) draws across the bar's top — and the T bar lands
-// ~cy−14.5..−12.5, clear above the dot. The BAR WIDTH stays 13: only the
-// stem (the up/down extent that distinguishes ⊥ from T) was halved.
+// stem in drawPlayers) would draw across the bar's top — drawPlayers now
+// drops that label ELEV_NAME_DROP when a mark is drawn — and the T bar
+// lands ~cy−14.5..−12.5, clear above the dot. The BAR WIDTH stays 13:
+// only the stem (the up/down extent that distinguishes ⊥ from T) was
+// halved.
 const ELEV_IND_STEM = 13.5; // px — entity CENTER → the bar's centre line
 //                        // (HALVED from 27 on 2026-11-08 — see above)
 const ELEV_IND_BAR_W = 13; // px — the flat BAR's width (the "level" line)
 const ELEV_IND_BAR_T = 2; // px — monoline weight: the bar's thickness AND
 //                        // the stem's width (the dark halo is +2 on both)
+const ELEV_NAME_DROP = 5; // px — drawPlayers drops the player name label
+//                        // by this much ONLY when the slot's elevation
+//                        // mark is drawn (either direction — the rule is
+//                        // "a mark is present"). Derived from the ⊥ bar:
+//                        // its body bottom is cy + ELEV_IND_STEM +
+//                        // ELEV_IND_BAR_T/2 = cy+14.5 (the dark halo
+//                        // reaches cy+15.5), while the 11 px label's top
+//                        // ≈ baseline − 11 sits at cy+11 at the plain
+//                        // baseline cy+r+13 (DOT_R 9 → cy+22); +5 moves
+//                        // it to ≈ cy+16 — ~1.5 px of air below the bar
+//                        // (and clear of the halo). No mark → no drop.
 const ELEV_IND_TINT = '#d0d6e0'; // neutral light body (the game's #CCC) —
 //                                // never a team color; the dark halo pass
 //                                // gives it contrast on radar + light theme
@@ -2304,10 +2317,13 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       // overlays, name) draws ON TOP of it: the mark can never obscure
       // the identity/team color. Its stem starts at the dot's CENTER and
       // runs outward (the dot covers the first DOT_R px — a lower canvas
-      // level than the entity); for ⊥ the bar lands below the name
-      // label, whose text paints after and over the stem. Only when a
-      // region box claims this entity's XY, and never for an unknown Z
-      // (layers.js elevationFor returns null — no guessed indicator).
+      // level than the entity). For ⊥ the bar lands at cy+14.5, inside
+      // the name-label band (baseline cy+22), so the label at the bottom
+      // of this loop drops ELEV_NAME_DROP whenever `elev` is set — either
+      // direction, the rule is "a mark is present", this same result,
+      // never re-derived — clearing the bar. Only when a region box
+      // claims this entity's XY, and never for an unknown Z (layers.js
+      // elevationFor returns null — no guessed indicator).
       const elev = elevationFor(tmp.x, tmp.y, tmp.z, regions);
       if (elev) drawElevationIndicator(c.x, c.y, elev);
       const color = teamColor(sideAtFrame(slot, st.frame));
@@ -2451,14 +2467,18 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
         if (Array.isArray(inv) && inv.includes('C4')) drawCarrierBadge(c, r);
       }
 
-      // name label
+      // name label — baseline cy+r+13 (cy+22), dropped ELEV_NAME_DROP
+      // (→ cy+27) when THIS slot's elevation mark was drawn (`elev`, the
+      // same result that produced the mark above): the 11 px text's top
+      // ≈ baseline−11 then sits at ≈ cy+16, ~1.5 px clear of the ⊥ bar's
+      // bottom (cy+14.5). No indicator → the label stays at cy+22.
       const name = slotNames[slot] || `#${slot}`;
       ctx.font = '11px system-ui, sans-serif';
       ctx.textAlign = 'center';
       ctx.shadowColor = 'rgba(0,0,0,0.9)';
       ctx.shadowBlur = 3;
       ctx.fillStyle = '#d7dde8';
-      ctx.fillText(name, c.x, c.y + r + 13);
+      ctx.fillText(name, c.x, c.y + r + 13 + (elev ? ELEV_NAME_DROP : 0));
       ctx.shadowBlur = 0;
     }
   }
