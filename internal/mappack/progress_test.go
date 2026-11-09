@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// TestExtractProgress pins ExtractOptions.Progress — the OPTIONAL
+// TestExtractProgress pins WithProgress (extractConfig.progress) — the OPTIONAL
 // trailing option all three extractors share: exactly one call per
 // completed item, done strictly increasing from 1 up to the run's item
 // count (the shape of extract.ParseOptions.Progress; see
@@ -48,9 +48,8 @@ func TestExtractProgress(t *testing.T) {
 		buildVPK(t, csgo, files)
 
 		var calls []call
-		_, errs, err := ExtractMapPacks(install, t.TempDir(), ExtractOptions{
-			Progress: func(done, total int) { calls = append(calls, call{done, total}) },
-		})
+		_, errs, err := ExtractMapPacks(install, t.TempDir(),
+			WithProgress(func(done, total int) { calls = append(calls, call{done, total}) }))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -75,9 +74,8 @@ func TestExtractProgress(t *testing.T) {
 		})
 
 		var calls []call
-		_, _, err := ExtractIcons(install, t.TempDir(), ExtractOptions{
-			Progress: func(done, total int) { calls = append(calls, call{done, total}) },
-		})
+		_, _, err := ExtractIcons(install, t.TempDir(),
+			WithProgress(func(done, total int) { calls = append(calls, call{done, total}) }))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -97,9 +95,8 @@ func TestExtractProgress(t *testing.T) {
 		})
 
 		var calls []call
-		_, _, err := ExtractSounds(install, t.TempDir(), ExtractOptions{
-			Progress: func(done, total int) { calls = append(calls, call{done, total}) },
-		})
+		_, _, err := ExtractSounds(install, t.TempDir(),
+			WithProgress(func(done, total int) { calls = append(calls, call{done, total}) }))
 		if err != nil {
 			t.Fatal(err)
 		}

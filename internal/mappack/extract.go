@@ -82,9 +82,11 @@ type packMeta struct {
 	// ElevationRegions are world-space boxes with their own thresholds —
 	// the ONLY source of T/⊥ indicator thresholds (region-only design:
 	// there are no per-floor `elevation` keys). The extractor writes
-	// none — they are user-supplied in-game data, carried across
-	// re-extraction by preserveElevation (which also silently DROPS any
-	// stale elevation key on refresh).
+	// none — they are user-supplied in-game data whose canonical home is
+	// the bundled frontend/public/maps copy, carried into the fresh
+	// data-dir meta by preserveElevation (bundled > existing data-dir >
+	// none), which also silently DROPS any stale elevation key on
+	// refresh.
 	ElevationRegions []packRegion `json:"elevation_regions,omitempty"`
 }
 
@@ -112,7 +114,9 @@ type packLayer struct {
 // ZMin/ZMax scope the box to one floor (half-open [ZMin, ZMax), the
 // band convention — e.g. Nuke's catwalk ring ends where the upper band
 // begins); nil = unconstrained. User-supplied (never written by the
-// extractor; carried across re-extraction by preserveElevation).
+// extractor; carried into the fresh data-dir meta by preserveElevation —
+// bundled frontend/public/maps copy first, the pack's previous meta.json
+// as fallback).
 type packRegion struct {
 	X          float64  `json:"x"`
 	Y          float64  `json:"y"`
@@ -154,36 +158,68 @@ type packSource struct {
 	Note string `json:"note"`
 }
 
-// ExtractOptions is the OPTIONAL trailing parameter of the three
-// extractors — ExtractMapPacks, ExtractIcons and ExtractSounds. Progress,
-// if non-nil, is called with (itemsDone, itemsTotal) once per COMPLETED
-// item — a failed item counts as completed, so done reaches itemsTotal on
-// every run — where itemsTotal is the run's whole item count (packs /
-// canonical icons / canonical sounds) known before the first item. Same
-// shape as extract.ParseOptions.Progress (the demo-parse precedent); a
-// caller that passes no options gets today's behaviour exactly.
-type ExtractOptions struct {
-	Progress func(done, total int)
+// ExtractOption customizes one extraction run of the three extractors —
+// ExtractMapPacks, ExtractIcons and ExtractSounds. A caller that passes
+// no options gets today's behaviour exactly (zero extractConfig).
+type ExtractOption func(*extractConfig)
+
+// extractConfig is the per-run extraction wiring. Its zero value is the
+// pre-existing behavior: no progress reporting and no bundled meta
+// source, so a data-dir pack only ever learns elevation_regions from its
+// own previous meta.json.
+type extractConfig struct {
+	// progress, if non-nil, is called with (itemsDone, itemsTotal) once
+	// per COMPLETED item — a failed item counts as completed, so done
+	// reaches itemsTotal on every run — where itemsTotal is the run's
+	// whole item count (packs / canonical icons / canonical sounds)
+	// known before the first item. Same shape as
+	// extract.ParseOptions.Progress (the demo-parse precedent).
+	progress func(done, total int)
+	// bundledMeta returns the repo-committed meta.json bytes for a map
+	// name (the bundled frontend/public/maps copy), or nil when the map
+	// ships no bundled pack. Optional by design: a missing bundle (a
+	// stub dist on a fresh clone, a map extracted but never bundled) →
+	// nil → the data-dir copy is the only source — never an error.
+	bundledMeta func(mapName string) []byte
 }
 
-// firstOptions resolves an extractor's variadic options (none passed →
-// the zero value, Progress nil), so the three extractors share one
-// spelling of "read the optional bits".
-func firstOptions(opts []ExtractOptions) ExtractOptions {
-	if len(opts) > 0 {
-		return opts[0]
+// WithProgress supplies the per-item progress callback
+// (extractConfig.progress).
+func WithProgress(fn func(done, total int)) ExtractOption {
+	return func(c *extractConfig) { c.progress = fn }
+}
+
+// WithBundledMeta supplies the reader for the bundled, hand-authored
+// meta.json copies (frontend/public/maps, embedded at build time —
+// wired from bundledMapMeta in mappackservice.go). The bundled copy is
+// THE canonical home of elevation_regions; without this option
+// extraction only knows the data-dir pack's own previous meta.json.
+func WithBundledMeta(fn func(mapName string) []byte) ExtractOption {
+	return func(c *extractConfig) { c.bundledMeta = fn }
+}
+
+// metaFor returns the bundled meta.json bytes for mapName, or nil when
+// no source was wired or the map has no bundled pack.
+func (c *extractConfig) metaFor(mapName string) []byte {
+	if c == nil || c.bundledMeta == nil {
+		return nil
 	}
-	return ExtractOptions{}
+	return c.bundledMeta(mapName)
 }
 
 // ExtractMapPacks extracts every official-map radar from the CS2 install
 // at cs2Dir into outDir (created if needed), one subdirectory per map.
 // Existing packs are overwritten (idempotent re-extract after game
 // updates). Individual map failures are reported in errs but don't abort
-// the rest; a failure to even open the VPK is fatal. opts.Progress, when
-// set, fires once per map attempted (ExtractOptions).
-func ExtractMapPacks(cs2Dir, outDir string, opts ...ExtractOptions) (maps []ExtractResult, errs []string, err error) {
-	o := firstOptions(opts)
+// the rest; a failure to even open the VPK is fatal. Options tune the
+// run: WithProgress fires once per map attempted, and WithBundledMeta
+// makes the committed frontend/public/maps copies the source of the
+// hand-authored elevation_regions that ride into every fresh meta.json.
+func ExtractMapPacks(cs2Dir, outDir string, opts ...ExtractOption) (maps []ExtractResult, errs []string, err error) {
+	var cfg extractConfig
+	for _, opt := range opts {
+		opt(&cfg)
+	}
 	pak := resolvePak(cs2Dir)
 	if pak == "" {
 		return nil, nil, fmt.Errorf("no pak01_dir.vpk under %s", cs2Dir)
@@ -217,7 +253,7 @@ func ExtractMapPacks(cs2Dir, outDir string, opts ...ExtractOptions) (maps []Extr
 	}
 
 	for i, job := range jobs {
-		if err := extractOne(v, job.mapName, job.radarPath, outDir); err != nil {
+		if err := extractOne(v, job.mapName, job.radarPath, outDir, &cfg); err != nil {
 			errs = append(errs, fmt.Sprintf("%s: %v", job.mapName, err))
 		} else {
 			maps = append(maps, ExtractResult{
@@ -225,8 +261,8 @@ func ExtractMapPacks(cs2Dir, outDir string, opts ...ExtractOptions) (maps []Extr
 				File: filepath.Join(outDir, job.mapName, packRadarPNG),
 			})
 		}
-		if o.Progress != nil {
-			o.Progress(i+1, len(jobs))
+		if cfg.progress != nil {
+			cfg.progress(i+1, len(jobs))
 		}
 	}
 	if len(maps) == 0 && len(errs) > 0 {
@@ -298,7 +334,8 @@ func sectionRadar(v *vpk, base string) (mapName, section string, ok bool) {
 // When the overview declares verticalsections, each section's radar
 // texture is decoded as an extra layer image (radar.png for the default
 // section, radar_<section>.png for the rest) and recorded in meta.Layers.
-func extractOne(v *vpk, mapName, radarPath, outDir string) error {
+// cfg carries the optional bundled-meta source (extractConfig).
+func extractOne(v *vpk, mapName, radarPath, outDir string, cfg *extractConfig) error {
 	raw, found, err := v.read(radarPath)
 	if err != nil {
 		return err
@@ -358,10 +395,16 @@ func extractOne(v *vpk, mapName, radarPath, outDir string) error {
 			return err
 		}
 	}
-	// The user's hand-authored elevation_regions live only in meta.json —
-	// re-extraction must not wipe them (stale per-floor elevation keys
-	// are dropped by the unmarshal/rewrite).
-	preserveElevation(dir, &meta)
+	// elevation_regions is the ONE hand-authored key: everything else in
+	// this fresh meta (radar, transform, layers + Z bands, sites,
+	// spawns, source.note) is extractor-derived and stays fresh, while
+	// the regions must never be wiped by a refresh (stale per-floor
+	// `elevation` keys ARE dropped by the unmarshal/rewrite). Their
+	// canonical home is the bundled frontend/public/maps copy — the
+	// data-dir meta.json is regenerated on every extract — so carry them
+	// from there first, falling back to this pack's previous meta.json
+	// only when no bundled pack exists for the map.
+	preserveElevation(dir, &meta, cfg.metaFor(mapName))
 	metaJSON, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
 		return err
@@ -467,16 +510,33 @@ func sectionLabel(s Section, all []Section) string {
 	return string(r)
 }
 
-// preserveElevation carries the user-SUPPLIED elevation_regions (the
-// in-game measurements: ambiguous-XY boxes with their thresholds) from
-// the pack's existing meta.json into the fresh one. Re-extraction
-// rewrites the radar pixels and Z bands but must never wipe numbers the
-// user typed in — meta.json is their only home
-// (frontend/public/maps/README.md). Per-floor `elevation` keys are NOT
-// carried — the unmarshal/rewrite drops any stale ones (nothing reads
-// them). Absent or unparseable old meta → nothing to carry (first
-// extract).
-func preserveElevation(dir string, meta *packMeta) {
+// preserveElevation carries the hand-authored elevation_regions (the
+// in-game getpos_exact measurements: ambiguous-XY boxes with their
+// thresholds) into the fresh meta — the ONE carry rule, with its
+// sources in priority order:
+//
+//  1. the bundled frontend/public/maps copy — version-controlled truth
+//     and the canonical home of the key (the drift test in
+//     frontend/src/lib/nuke-elevation.test.js pins the data-dir copy to
+//     it), read through ExtractMapPacks' WithBundledMeta option;
+//  2. the pack's existing data-dir meta.json — consulted only when the
+//     map has no bundled pack (extracted but never bundled), so those
+//     packs keep their previously-observed behavior.
+//
+// Neither source (or an unparseable bundled file) → nothing to carry
+// (first extract). ONLY elevation_regions flow across: radar, transform,
+// layers + Z bands, sites, spawns and source.note in the fresh meta are
+// extractor-derived and must stay fresh. Per-floor `elevation` keys are
+// NOT carried — the unmarshal/rewrite drops any stale ones (nothing
+// reads them).
+func preserveElevation(dir string, meta *packMeta, bundled []byte) {
+	if len(bundled) > 0 {
+		var b packMeta
+		if err := json.Unmarshal(bundled, &b); err == nil && len(b.ElevationRegions) > 0 {
+			meta.ElevationRegions = b.ElevationRegions
+			return
+		}
+	}
 	oldRaw, err := os.ReadFile(filepath.Join(dir, packMetaJSON))
 	if err != nil {
 		return

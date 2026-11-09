@@ -94,6 +94,10 @@ func (s *MapPackService) GetMapPackStatus() MapPackStatus {
 // idempotent, so re-running after a game update refreshes the packs.
 // Per-map progress is emitted as spectra:asset-progress (throttled) so
 // the frontend can render a determinate bar instead of a bare spinner.
+// The bundled frontend/public/maps copies ride along (WithBundledMeta +
+// bundledMapMeta below) so the hand-authored elevation_regions land in
+// the data-dir pack too — both extraction entry points (Settings and the
+// first-run prompt) come through here.
 func (s *MapPackService) ExtractMapPacks(cs2Dir string) ExtractOutcome {
 	if cs2Dir == "" {
 		manual, _ := s.kvs.Get(prefsMapPackCS2PathKey).(string)
@@ -103,8 +107,8 @@ func (s *MapPackService) ExtractMapPacks(cs2Dir string) ExtractOutcome {
 		return ExtractOutcome{Errors: []string{"Counter-Strike 2 not found"}}
 	}
 	var lastProgress time.Time
-	maps, errs, err := mappack.ExtractMapPacks(cs2Dir, data.MapsDir(), mappack.ExtractOptions{
-		Progress: func(done, total int) {
+	maps, errs, err := mappack.ExtractMapPacks(cs2Dir, data.MapsDir(),
+		mappack.WithProgress(func(done, total int) {
 			now := time.Now()
 			if done < total && now.Sub(lastProgress) < assetProgressMinInterval {
 				return
@@ -116,8 +120,8 @@ func (s *MapPackService) ExtractMapPacks(cs2Dir string) ExtractOutcome {
 				Done:   done,
 				Total:  total,
 			})
-		},
-	})
+		}),
+		mappack.WithBundledMeta(bundledMapMeta))
 	if err != nil {
 		errs = append(errs, err.Error())
 	}
@@ -132,6 +136,29 @@ func (s *MapPackService) ExtractMapPacks(cs2Dir string) ExtractOutcome {
 		}
 	}
 	return ExtractOutcome{Maps: names, Errors: errs, Dir: data.MapsDir()}
+}
+
+// bundledMapMeta returns the repo-committed meta.json for mapName out of
+// the embedded frontend build: frontend/public/maps is copied verbatim
+// into frontend/dist by Vite, and main.go embeds that dist — the very
+// bytes the frontend falls back to at /maps/<map>/meta.json when the
+// data-dir pack is missing. That copy is the canonical home of the
+// hand-authored elevation_regions; extraction merges them into the
+// fresh data-dir meta (mappack.WithBundledMeta → preserveElevation).
+//
+// nil means "no bundled pack for this map": an unsafe/unknown name, or a
+// stub dist without maps (a fresh clone where only make test's index.html
+// stub exists). Extraction then keeps whatever the data-dir copy already
+// has — never an error.
+func bundledMapMeta(mapName string) []byte {
+	if !validPackName(mapName) {
+		return nil
+	}
+	b, err := assets.ReadFile("frontend/dist/maps/" + mapName + "/meta.json")
+	if err != nil {
+		return nil
+	}
+	return b
 }
 
 // SetMapPackPromptState records the prompt decision ("declined" = never

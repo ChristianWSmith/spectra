@@ -215,9 +215,12 @@ func iconVPKPath(name string) string {
 // VPK lands in errs (the manifest simply omits it); only a failure to
 // open the VPK itself is fatal. Returns the canonical names written,
 // sorted for determinism. opts.Progress, when set, fires once per
-// canonical icon attempted (ExtractOptions).
-func ExtractIcons(cs2Dir, outDir string, opts ...ExtractOptions) (names []string, errs []string, err error) {
-	o := firstOptions(opts)
+// canonical icon attempted (ExtractOption).
+func ExtractIcons(cs2Dir, outDir string, opts ...ExtractOption) (names []string, errs []string, err error) {
+	var cfg extractConfig
+	for _, opt := range opts {
+		opt(&cfg)
+	}
 	pak := resolvePak(cs2Dir)
 	if pak == "" {
 		return nil, nil, fmt.Errorf("no pak01_dir.vpk under %s", cs2Dir)
@@ -237,8 +240,8 @@ func ExtractIcons(cs2Dir, outDir string, opts ...ExtractOptions) (names []string
 		} else {
 			names = append(names, name)
 		}
-		if o.Progress != nil {
-			o.Progress(i+1, len(extractTableNames))
+		if cfg.progress != nil {
+			cfg.progress(i+1, len(extractTableNames))
 		}
 	}
 	if len(names) == 0 && len(errs) > 0 {

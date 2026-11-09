@@ -373,9 +373,12 @@ func soundStem(vpkPath string) string {
 // only a failure to open the VPK itself is fatal. Returns the canonical
 // names with at least one extracted variant, sorted for determinism.
 // opts.Progress, when set, fires once per canonical sound attempted
-// (ExtractOptions).
-func ExtractSounds(cs2Dir, outDir string, opts ...ExtractOptions) (names []string, errs []string, err error) {
-	o := firstOptions(opts)
+// (ExtractOption).
+func ExtractSounds(cs2Dir, outDir string, opts ...ExtractOption) (names []string, errs []string, err error) {
+	var cfg extractConfig
+	for _, opt := range opts {
+		opt(&cfg)
+	}
 	pak := resolvePak(cs2Dir)
 	if pak == "" {
 		return nil, nil, fmt.Errorf("no pak01_dir.vpk under %s", cs2Dir)
@@ -418,8 +421,8 @@ func ExtractSounds(cs2Dir, outDir string, opts ...ExtractOptions) (names []strin
 		}
 		// Progress after every canonical name — the variant loop above
 		// only `continue`s itself, so the end of this body always runs.
-		if o.Progress != nil {
-			o.Progress(i+1, len(soundTableNames))
+		if cfg.progress != nil {
+			cfg.progress(i+1, len(soundTableNames))
 		}
 	}
 	if len(names) == 0 && len(errs) > 0 {
