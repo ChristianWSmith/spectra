@@ -31,8 +31,6 @@ func defaultSteamRoots() []string {
 			filepath.Join(home, ".steam", "steam"),
 			filepath.Join(home, ".local", "share", "Steam"),
 		}
-	case "darwin":
-		return []string{filepath.Join(home, "Library", "Application Support", "Steam")}
 	case "windows":
 		var roots []string
 		for _, env := range []string{"PROGRAMFILES(X86)", "PROGRAMFILES"} {

@@ -38,8 +38,8 @@ run: build
 dev: deps
 	wails3 dev
 
-# Regenerates the platform build assets (Info.plist, Windows version
-# resources, .desktop, nfpm metadata) from build/config.yml's info block —
+# Regenerates the platform build assets (Windows version resources,
+# .desktop, nfpm metadata) from build/config.yml's info block —
 # run after editing it. Wraps the task so wails3 is on PATH.
 build-assets: deps
 	wails3 task common:update:build-assets
@@ -74,37 +74,30 @@ linux-deps:
 		libgtk-4-dev \
 		libwebkitgtk-6.0-dev
 
-# package produces the platform's release payload: darwin builds the .app
-# bundle (ad-hoc codesigned); on linux and windows the built binary itself
-# is the payload, so build is enough.
+# package produces the platform's release payload: on linux and windows
+# the built binary itself is the payload, so build is enough.
 package: build
-ifeq ($(shell go env GOOS),darwin)
-	wails3 package
-endif
 
 artifact-name:
 	@case "$$(go env GOOS)" in \
 	linux) echo "$(APP)-linux-$$(go env GOARCH)" ;; \
-	darwin) echo "$(APP)-darwin-$$(go env GOARCH).zip" ;; \
 	windows) echo "$(APP)-windows-$$(go env GOARCH).exe" ;; \
 	*) echo "unsupported GOOS $$(go env GOOS)" >&2; exit 1 ;; \
 	esac
 
 # artifact produces the release asset the in-app updater downloads for this
 # platform. Names must contain GOOS+GOARCH (the GitHub provider's
-# DefaultAssetMatcher picks by substring) and the macOS zip must hold the
-# .app as its sole top-level entry (the updater rejects multi-entry
-# archives). The release skill adds a SHA256SUMS sidecar over all assets.
+# DefaultAssetMatcher picks by substring). The release skill adds a
+# SHA256SUMS sidecar over all assets.
 artifact: package
 	@set -eu; \
 	name="$$($(MAKE) -s artifact-name)"; \
 	case "$$(go env GOOS)" in \
 	linux) cp bin/$(APP) "$$name" ;; \
 	windows) cp bin/$(APP).exe "$$name" ;; \
-	darwin) (cd bin && zip -ry "../$$name" $(APP).app) ;; \
 	esac; \
 	echo "built $$name"
 
 clean:
 	rm -rf bin .task frontend/dist frontend/bindings \
-	  $(APP)-linux-* $(APP)-darwin-*.zip $(APP)-windows-*.exe.zip SHA256SUMS
+	  $(APP)-linux-* $(APP)-windows-*.exe.zip SHA256SUMS

@@ -12,9 +12,6 @@ info:
   copyright: "© 2026, Christian Smith" # Copyright text
   comments: "Spectra" # Comments
   version: "0.1.1" # The application version
-  # cfBundleIconName: "appicon" # The macOS icon name in Assets.car icon bundles (optional)
-  #                               # Should match the name of your .icon file without the extension
-  #                               # If not set and Assets.car exists, defaults to "appicon"
 
 # Dev mode configuration
 dev_mode:

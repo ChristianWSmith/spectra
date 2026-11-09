@@ -154,9 +154,6 @@ func main() {
 		Assets: application.AssetOptions{
 			Handler: assetsHandler,
 		},
-		Mac: application.MacOptions{
-			ApplicationShouldTerminateAfterLastWindowClosed: true,
-		},
 	})
 	svc.app = app
 

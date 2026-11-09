@@ -15,10 +15,10 @@ the in-app updater compares against on other installs.
 There are three confirmation checkpoints (commit, version bump,
 publish). Everything else runs autonomously. `gh` is already
 authenticated; the workflow is `.github/workflows/ci.yml` (single `build`
-job, matrix over ubuntu/windows/macos, one artifact per OS; only
+job, matrix over ubuntu/windows, one artifact per OS; only
 `workflow_dispatch` — with a required `version` input — and
 `pull_request` trigger it, so pushes never build and a release is
-exactly one 3-OS run).
+exactly one 2-OS run).
 
 ## Phase 1 — Docs and checks
 
@@ -56,7 +56,8 @@ exactly one 3-OS run).
      style; `docs:` prefix when the commit is documentation-only)
 4. Update `build/config.yml` `info.version` to the chosen version
    (cosmetic — the CI stamp is authoritative — but keep it in sync; it
-   feeds the macOS Info.plist and Windows version resources), then
+   feeds the Windows version resources and the Linux `.desktop`/nfpm
+   metadata), then
    regenerate the platform assets and include them in the commit:
    ```sh
    make build-assets
@@ -124,8 +125,8 @@ tag, and the release must all sit on this exact commit.
      --jq '.artifacts[] | [.name, .size_in_bytes] | @tsv'
    ```
    Expect exactly: `spectra-linux-amd64`,
-   `spectra-windows-amd64.exe`, `spectra-darwin-arm64.zip`,
-   all with non-zero sizes. Missing artifact on a green run = packaging
+   `spectra-windows-amd64.exe`,
+   both with non-zero sizes. Missing artifact on a green run = packaging
    bug; stop and investigate.
 7. **Tag the built commit.** Tags don't trigger CI anymore — this is a
    pointer, and `gh release create --target` pins the release to the
@@ -151,24 +152,21 @@ tag, and the release must all sit on this exact commit.
      gh api "repos/$REPO/actions/artifacts/${id}/zip" > "${name}.zip"
    done
    ```
-   Verify three non-empty `.zip` files landed in the scratch dir —
+   Verify two non-empty `.zip` files landed in the scratch dir —
    compare sizes against the `size_in_bytes` from the artifact listing
    in Phase 3 (they should match exactly; a short file means a
    truncated/HTML error body, not a zip).
 2. **Unwrap the artifact zips** — each CI artifact zip contains exactly
-   one release asset (the raw linux binary, the raw windows exe, or the
-   macOS zip-of-.app). Note the darwin asset is already a `.zip`, so the
-   artifact-service wrapper around it is `.zip.zip` — delete the wrappers,
-   never the assets (`*.zip` matches the double-suffixed wrapper too):
+   one release asset (the raw linux binary or the raw windows exe).
+   Delete the wrappers, never the assets — `*.zip` matches a
+   double-suffixed `.zip.zip` wrapper too:
    ```sh
    for f in *.zip; do unzip -o "$f"; done
    # → spectra-linux-amd64
    #   spectra-windows-amd64.exe
-   #   spectra-darwin-arm64.zip
    rm -f spectra-linux-amd64.zip \
-         spectra-windows-amd64.exe.zip \
-         spectra-darwin-arm64.zip.zip
-   ls   # exactly the three assets (+ SHA256SUMS after the next step); any
+         spectra-windows-amd64.exe.zip
+   ls   # exactly the two assets (+ SHA256SUMS after the next step); any
         # leftover *.zip here means a wrapper survived — remove it
    ```
    Don't rename or re-compress the release assets — attach them
@@ -178,18 +176,14 @@ tag, and the release must all sit on this exact commit.
    ```sh
    file spectra-linux-amd64   # ELF 64-bit LSB executable, executable bit set
    file spectra-windows-amd64.exe  # PE32+ executable (GUI)
-   unzip -l spectra-darwin-arm64.zip
-   # exactly one top-level entry: spectra.app/ (the updater
-   # rejects multi-entry archives)
    ```
 4. **Generate `SHA256SUMS`** in the scratch dir — the updater fetches
    this sidecar and refuses to install an asset whose hash doesn't match
    (format is `sha256sum` output: `<hash>  <filename>`):
    ```sh
    sha256sum spectra-linux-amd64 \
-             spectra-windows-amd64.exe \
-             spectra-darwin-arm64.zip > SHA256SUMS
-   cat SHA256SUMS   # three lines, bare asset filenames
+             spectra-windows-amd64.exe > SHA256SUMS
+   cat SHA256SUMS   # two lines, bare asset filenames
    ```
 5. **Release notes:** one bullet per commit since the last tag —
    `git log --oneline <last-tag>..<SHA>` condensed to user-facing
@@ -205,7 +199,6 @@ tag, and the release must all sit on this exact commit.
      --notes "<notes>" \
      /tmp/spectra-release/spectra-linux-amd64 \
      /tmp/spectra-release/spectra-windows-amd64.exe \
-     /tmp/spectra-release/spectra-darwin-arm64.zip \
      /tmp/spectra-release/SHA256SUMS
    ```
 7. **Verify:**
@@ -213,7 +206,7 @@ tag, and the release must all sit on this exact commit.
    gh release view <X.Y.Z> --json tagName,isDraft,isPrerelease,url,assets \
      --jq '{tagName, isDraft, isPrerelease, url, assets: [.assets[].name]}'
    ```
-   Expect not-draft, not-prerelease, and all four assets (there is no
+   Expect not-draft, not-prerelease, and all three assets (there is no
    queryable `isLatest` field — GitHub marks the newest semver release
    Latest automatically, see the gh quirks). Clean up the scratch dir.
    Report the release URL to the user.
@@ -235,11 +228,9 @@ see the new tag on their next launch.
   with a version other than the one the tag and release will use — the
   stamped binary and the tag must agree.
 - **Asset layout is the updater contract:** names must contain
-  GOOS+GOARCH (the provider's `DefaultAssetMatcher` picks by substring —
-  that's why macOS assets say `darwin-arm64`, not `macos`), the darwin
-  zip must hold the `.app` as its sole top-level entry, and `SHA256SUMS`
-  must list the exact asset filenames. These are pinned by
-  `make artifact-name`/`make artifact` and the `initUpdater` wiring in
+  GOOS+GOARCH (the provider's `DefaultAssetMatcher` picks by substring),
+  and `SHA256SUMS` must list the exact asset filenames. These are pinned
+  by `make artifact-name`/`make artifact` and the `initUpdater` wiring in
   `main.go` — change them together.
 - `gh run watch` without `--exit-status` exits 0 even on failure —
   always pass it, or a failed build silently becomes a "successful"

@@ -6,7 +6,7 @@ analysis toolkit.*; Go services + Svelte 5 frontend): single Go
 module at the repo root, GitHub Releases distribution, framework in-app
 auto-updater.
 
-Supported platforms: **macOS, Linux, Windows** (desktop only). The stock
+Supported platforms: **Linux, Windows** (desktop only). The stock
 Wails mobile scaffolding (iOS/Android) is removed from `build/` and
 gitignored — `wails3 update build-assets` may re-extract it locally; do
 not commit or wire it up.
@@ -22,7 +22,7 @@ make test           # go test -short ./...   (CI's test command)
 make lint           # golangci-lint via go tool; version lives in go.mod
 make fmt            # gofmt -w .
 make vet            # go vet ./...
-make package        # platform release payload (.app bundle on macOS; binary elsewhere)
+make package        # platform release payload (binary on Linux/Windows — `package` is `build` there; see Makefile)
 make artifact       # produce the release asset the updater downloads for this OS
 make artifact-name  # print that asset's name (CI uses it for the artifact name)
 make deps           # ensure dev toolchain: wails3 CLI at go.mod's pin, Node 22+
@@ -79,8 +79,8 @@ spectacle -b -n -o /tmp/shot.png         # then Read the PNG
 - Known quirk: the KWin titlebar can steal the first click after
   activation; verify effects with a screenshot after each step.
 
-All perf figures and visual smoke runs are Linux/X11 only —
-macOS/Windows timings are unmeasured.
+All perf figures and visual smoke runs are Linux/X11 only — Windows
+timings are unmeasured.
 
 ## Layout
 
@@ -100,7 +100,7 @@ macOS/Windows timings are unmeasured.
 | `version.go` | **stamp-only**: `var version = "dev"` — CI overwrites the whole file on release builds; never put logic here |
 | `frontend/` | Svelte 5 + Vite app; built into `frontend/dist` (embedded, gitignored) and `frontend/bindings` (generated per build, gitignored) |
 | `Taskfile.yml` + `build/` | stock Wails v3 build system (per-OS tasks, packaging, icons, platform metadata). `build/config.yml` holds product name/ID/version; run `make build-assets` after editing it |
-| `build/appicon.png` | the app icon source (512×512 PNG); `wails3 task common:generate:icons` (run automatically by every build) derives `.ico`/`.icns` |
+| `build/appicon.png` | the app icon source (512×512 PNG); `wails3 task common:generate:icons` (run automatically by every build) derives `.ico` |
 | `Makefile` | the single source of build/package commands, shared with CI |
 | `CS2.md` | domain-knowledge cache for CS2 facts (formats, mechanics, rules, events); see "CS2 domain knowledge" |
 | `golden/` | the demo pool, all tracked via **Git LFS** (`.gitattributes`): `de_cache.dem.zst` is the golden acceptance demo (formerly `donk.dem.zst`), the other `de_*.dem.zst` files are archived map demos not yet onboarded to tests; acceptance tests parse the golden one and skip if absent; regenerate golden fixtures deliberately when extraction changes |
@@ -117,9 +117,7 @@ After cloning, run `git lfs pull` if the golden demo is needed.
   artifact name comes from `make artifact-name`.
 - Release assets (named for the updater's GitHub provider matcher, which
   picks by GOOS+GOARCH substrings): `spectra-linux-amd64` (raw
-  binary), `spectra-windows-amd64.exe` (raw),
-  `spectra-darwin-arm64.zip` (the `.app` bundle as the sole
-  top-level entry — the updater rejects multi-entry archives). The release
+  binary), `spectra-windows-amd64.exe` (raw). The release
   skill adds a `SHA256SUMS` sidecar that the updater verifies downloads
   against. These layouts are a contract between `make artifact`,
   `build/config.yml`, and `initUpdater` in `main.go` — change them together.
