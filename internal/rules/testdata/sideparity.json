@@ -1,19 +1,20 @@
 {
-  "description": "Canonical CS2 side-parity (half-switch) fixture. For N counted rounds and S side switches: flips[k] is the 0-based counted-round index where switch k+1 happens, floor((N*(k+1) + S) / (S + 1)); era[i] is the half (era) index of counted round i, i.e. how many flips are <= i. One fixture, two runners: internal/rules/sideparity_test.go (Go) and frontend/src/lib/sideparity.test.js (node --test). Both must agree with frontend/src/lib/components/RoundStrip.svelte, which renders using era[].",
+  "description": "Canonical CS2 side-parity (half-switch) fixture. For N counted rounds and S side switches: flips[k] is the 0-based counted-round index where switch k+1 happens — the cadence is 12 (after counted round 12), then 27 + 3*(k-2) for k >= 2 (no switch at OT start), keeping only boundaries inside (0, N); era[i] is the half (era) index of counted round i, i.e. how many flips are <= i. One fixture, two runners: internal/rules/sideparity_test.go (Go) and frontend/src/lib/sideparity.test.js (node --test). Both must agree with frontend/src/lib/components/RoundStrip.svelte, which renders using era[].",
   "cases": [
     { "rounds": 24, "switches": 1, "flips": [12], "era": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] },
     { "rounds": 23, "switches": 1, "flips": [12], "era": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] },
-    { "rounds": 13, "switches": 1, "flips": [7], "era": [0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1] },
-    { "rounds": 12, "switches": 1, "flips": [6], "era": [0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1] },
+    { "rounds": 13, "switches": 1, "flips": [12], "era": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1] },
+    { "rounds": 12, "switches": 1, "flips": [], "era": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
     { "rounds": 0, "switches": 1, "flips": [], "era": [] },
     { "rounds": 5, "switches": 0, "flips": [], "era": [0, 0, 0, 0, 0] },
-    { "rounds": 2, "switches": 2, "flips": [1], "era": [0, 1] },
+    { "rounds": 2, "switches": 2, "flips": [], "era": [0, 0] },
     { "rounds": 1, "switches": 2, "flips": [], "era": [0] },
-    { "rounds": 10, "switches": 2, "flips": [4, 7], "era": [0, 0, 0, 0, 1, 1, 1, 2, 2, 2] },
-    { "rounds": 23, "switches": 2, "flips": [8, 16], "era": [0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2] },
-    { "rounds": 25, "switches": 2, "flips": [9, 17], "era": [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2] },
-    { "rounds": 26, "switches": 2, "flips": [9, 18], "era": [0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2] },
-    { "rounds": 37, "switches": 3, "flips": [10, 19, 28], "era": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3] },
-    { "rounds": 48, "switches": 4, "flips": [10, 20, 29, 39], "era": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4] }
+    { "rounds": 10, "switches": 2, "flips": [], "era": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0] },
+    { "rounds": 23, "switches": 2, "flips": [12], "era": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] },
+    { "rounds": 25, "switches": 2, "flips": [12], "era": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] },
+    { "rounds": 26, "switches": 2, "flips": [12], "era": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1] },
+    { "rounds": 28, "switches": 2, "flips": [12, 27], "era": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2] },
+    { "rounds": 37, "switches": 3, "flips": [12, 27, 30], "era": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3] },
+    { "rounds": 48, "switches": 4, "flips": [12, 27, 30, 33], "era": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4, 4] }
   ]
 }

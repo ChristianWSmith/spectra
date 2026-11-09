@@ -74,11 +74,11 @@ $effect(() => {
 // Per-cell data: the separator marker after this cell (if any) + the
 // side the team-above played in that round. Sides swap at every half,
 // so each cell's side comes from the canonical side-parity helper
-// shared with the backend (flip boundaries at
-// floor((n*k + switches) / (switches + 1)) — see ../sideparity.js
-// sideAtRound, which maps the round number through the counted rounds;
-// the per-round name colors resolve through the same helper, so the strip
-// and the names can never disagree).
+// shared with the backend (flip boundaries on the CS2 cadence: after
+// counted round 12, no switch at OT start, then 27 and every 3 rounds —
+// see ../sideparity.js sideAtRound, which maps the round number through
+// the counted rounds; the per-round name colors resolve through the same
+// helper, so the strip and the names can never disagree).
 const cells = $derived.by(() => {
   // Render filter behind the pref: warmup/knife cells drop out unless the
   // pref opts in, with ONE exception — the round being viewed stays, so

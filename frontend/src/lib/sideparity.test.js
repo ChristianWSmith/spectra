@@ -35,15 +35,27 @@ test('regulation MR12 splits at the 12th counted round', () => {
   assert.deepEqual(Array.from({ length: 5 }, (_, i) => eraOf(i, [])), [0, 0, 0, 0, 0]);
 });
 
-test('overtime (switches >= 2) uses per-boundary floor division, not a uniform era length', () => {
-  // A uniform eraLen = ceil(n / eras) would put the second
-  // overtime boundary at 18 for this match; the per-boundary floor
-  // division says 17.
-  assert.deepEqual(flipIndexes(25, 2), [9, 17]);
-  assert.deepEqual(flipIndexes(23, 2), [8, 16]);
-  // A match too short for the second switch keeps only the first boundary.
-  assert.deepEqual(flipIndexes(2, 2), [1]);
+test('overtime (switches >= 2) follows the CS2 cadence, not equal eras', () => {
+  // CS2.md "MR12 regulation + MR3 overtime": switch after counted round 12,
+  // NO switch at OT start (rounds 25-27 keep regulation sides), then after
+  // 27 and every 3 rounds while OTs tie. Physically realizable shapes: a
+  // second switch needs OT (>= 25 rounds), a third a tied OT block (>= 31).
+  // The old equal-era formula put the second flip at 9/17 for these — the
+  // second switch simply has not happened yet in a 25- or 26-round match.
+  assert.deepEqual(flipIndexes(25, 2), [12]);
+  assert.deepEqual(flipIndexes(26, 2), [12]);
+  // The golden nuke demo: 28 counted rounds, sideSwitches=2 → 12 and 27.
+  assert.deepEqual(flipIndexes(28, 2), [12, 27]);
+  assert.deepEqual(flipIndexes(30, 2), [12, 27]);
+  // Further switches come every 3 rounds after 27.
+  assert.deepEqual(flipIndexes(31, 3), [12, 27, 30]);
+  assert.deepEqual(flipIndexes(33, 3), [12, 27, 30]);
+  assert.deepEqual(flipIndexes(34, 4), [12, 27, 30, 33]);
+  assert.deepEqual(flipIndexes(36, 4), [12, 27, 30, 33]);
+  // A match too short for even the first switch keeps no boundary.
+  assert.deepEqual(flipIndexes(2, 2), []);
   assert.deepEqual(flipIndexes(1, 2), []);
+  assert.deepEqual(flipIndexes(12, 1), []); // regulation ends exactly on the switch
 });
 
 test('startSideFor: first-half side of the team that ended on a side', () => {
@@ -114,10 +126,11 @@ test('teamKeyAt: a round\'s side resolves to the TEAM that played it', () => {
   assert.equal(teamKeyAt('ct', 0, 23, 0), 'ct');
   assert.equal(teamKeyAt('t', 22, 23, 0), 't');
   // Two switches (OT) flip twice — era 0 and the last era share the
-  // opening mapping, the middle era is the flipped one.
-  assert.equal(teamKeyAt('ct', 0, 25, 2), 'ct');
-  assert.equal(teamKeyAt('ct', 10, 25, 2), 't');
-  assert.equal(teamKeyAt('ct', 17, 25, 2), 'ct');
+  // opening mapping, the middle era is the flipped one. Golden nuke shape:
+  // 28 counted rounds → flips at 12 and 27 (no switch at OT start).
+  assert.equal(teamKeyAt('ct', 0, 28, 2), 'ct');
+  assert.equal(teamKeyAt('ct', 13, 28, 2), 't');
+  assert.equal(teamKeyAt('ct', 28, 28, 2), 'ct');
   // Unknown side never gets a guessed team.
   assert.equal(teamKeyAt('', 0, 23, 1), null);
   assert.equal(teamKeyAt('ct2', 0, 23, 1), null);
@@ -157,10 +170,13 @@ test('sideAtRound: knife/warmup rounds read as the first era, like RoundStrip ce
   // No recorded switch → the side never moves.
   assert.equal(sideAtRound(rounds, 0, 1, 'ct'), 'ct');
   assert.equal(sideAtRound(rounds, 0, 24, 'ct'), 'ct');
-  // Overtime: 25 counted rounds, two switches → flips at 9 and 17.
-  const ot = roundList(25);
-  assert.equal(sideAtRound(ot, 2, 10, 'ct'), 't');
-  assert.equal(sideAtRound(ot, 2, 18, 'ct'), 'ct');
+  // Overtime: the golden nuke shape — 28 counted rounds, two switches,
+  // flips at 12 and 27 (no switch at OT start).
+  const ot = roundList(28);
+  assert.equal(sideAtRound(ot, 2, 10, 'ct'), 'ct'); // era 0 (regulation half 1)
+  assert.equal(sideAtRound(ot, 2, 13, 'ct'), 't'); // era 1 (after round 12)
+  assert.equal(sideAtRound(ot, 2, 26, 'ct'), 't'); // era 1 still — 25-27 keep sides
+  assert.equal(sideAtRound(ot, 2, 28, 'ct'), 'ct'); // era 2 (after round 27)
 });
 
 test('sideAtRound: missing data never gets a guessed side', () => {

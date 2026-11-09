@@ -262,9 +262,13 @@ at the end of the section.
   ingest mirrors this, see "Round numbering"). Sides: **no switch at
   OT start** — teams keep their regulation sides for OT rounds 25-27,
   switch after round 27, then every 3 rounds while OTs tie, so the
-  real side-switch rounds are 12, 27, 30, 33, …. spectra' round ribbon
-  draws markers after 12, 24, 27, 30, … instead — the marker after 24
-  is a display convention for the regulation/OT boundary and
+  real side-switch rounds are 12, 27, 30, 33, …. spectra implements
+  that cadence as a function of the switch index k — b(1) = 12,
+  b(k) = 27 + 3*(k-2) — in `internal/rules` `FlipIndexes` and its
+  frontend twin `frontend/src/lib/sideparity.js` `flipIndexes`, both
+  pinned to `internal/rules/testdata/sideparity.json`. spectra' round
+  ribbon draws markers after 12, 24, 27, 30, … instead — the marker
+  after 24 is a display convention for the regulation/OT boundary and
   deliberately does NOT coincide with a side switch
   (`frontend/src/lib/rounds.js` `separatorAfter`).
   **Source** — HLTV

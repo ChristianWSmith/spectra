@@ -2,8 +2,9 @@
 // (warmup/knife cells hidden by default, shown when the pref opts in, the
 // viewed round always kept), the canonical W/K display labels from
 // lib/rounds.js roundIndexLabel (never the raw negative index), the
-// side-parity arrows staying correct while those cells are hidden, and
-// the separator cadence (lib/rounds.js separatorAfter + the trailing-
+// side-parity arrows staying correct while those cells are hidden (the
+// MR12 switch after round 12 and the OT cadence 27, 30, …), and the
+// separator cadence (lib/rounds.js separatorAfter + the trailing-
 // marker suppression) staying anchored to counted rounds.
 //
 // jsdom is intentionally not a project dependency; from frontend/ run:
@@ -125,8 +126,9 @@ const aria = () => cells().map((c) => c.getAttribute('aria-label'));
 const cellFor = (n) => cells().find((c) => c.textContent.trim() === String(n));
 
 // Three pre-match rounds (two warmups + the knife) ahead of four counted
-// rounds; sideSwitches=1 splits the counted rounds at index 2, so with the
-// team-above having FINISHED CT it played T in rounds 1-2 and CT in 3-4.
+// rounds. sideSwitches=1 records a switch, but it lands AFTER counted
+// round 12 — a four-round match never reaches it, so with the team-above
+// having FINISHED CT it played T in all four counted rounds (era 0).
 const rounds = [
   { number: -3, warmup: true, winner: 'ct', reason: 'CTWin' },
   { number: -2, pregame: true, winner: 't', reason: 'TerroristsWin' },
@@ -197,10 +199,12 @@ check('aria-current on the kept cell', knife.getAttribute('aria-current') === 't
 
 console.log('E. parity: arrows follow the FULL round list while cells are hidden');
 await showStrip(rounds); // pref OFF → only counted cells
-// sideAtRound over the full list: rounds 1-2 are era 0 (team above played
-// T there), rounds 3-4 era 1 (CT) — the hidden pre-match rows must not
-// shift any of it.
-const wantArrows = { 1: 'point-down', 2: 'point-up', 3: 'point-up', 4: 'point-up' };
+// sideAtRound over the full list: with only FOUR counted rounds the
+// recorded switch (which lands after counted round 12) has not happened
+// yet, so every cell reads era 0 — the team above (which FINISHED CT)
+// played T in all of them. The hidden pre-match rows must not shift any
+// of it.
+const wantArrows = { 1: 'point-down', 2: 'point-up', 3: 'point-down', 4: 'point-down' };
 for (const [n, cls] of Object.entries(wantArrows)) {
   const c = cellFor(n);
   check(
@@ -209,6 +213,29 @@ for (const [n, cls] of Object.entries(wantArrows)) {
     c ? c.className : 'missing cell ' + n,
   );
 }
+
+// The same strip once the match reaches round 13: the switch lands
+// exactly at counted round 13, so round 12 (era 0, team above on T) keeps
+// pointing down while round 13 (era 1, team above back on CT) flips up.
+const thirteen = Array.from({ length: 13 }, (_, i) => ({
+  number: i + 1,
+  winner: 'ct',
+  reason: 'CTWin',
+}));
+await showStrip([...rounds.slice(0, 3), ...thirteen]);
+check('13 counted cells render', cells().length === 13, String(cells().length));
+const r12 = cellFor('12');
+const r13 = cellFor('13');
+check(
+  'round 12 still points down (era 0, team above played T)',
+  !!r12 && r12.classList.contains('point-down'),
+  r12 ? r12.className : 'missing cell 12',
+);
+check(
+  'round 13 points up (era 1, the team above is back on CT)',
+  !!r13 && r13.classList.contains('point-up'),
+  r13 ? r13.className : 'missing cell 13',
+);
 
 console.log('F. separators: after counted 12, then 24 and every 3 OT rounds');
 // Counted rounds 1..n prefixed by the three pre-match rows (two
@@ -272,6 +299,31 @@ check(
   JSON.stringify(splitsAfter()) === '["12","24"]',
   JSON.stringify(splitsAfter()),
 );
+
+console.log('H. OT parity regression: 28 counted rounds, sideSwitches=2 (golden nuke shape)');
+// The switch cadence is 12, then 27 (NO switch at OT start), so rounds
+// 13-27 are era 1: the team above (final CT) played T through OT rounds
+// 25-27 and is back on CT only from round 28. The old equal-era formula
+// flipped at 10 and 19 instead, which pointed the 25-27 arrows at the
+// wrong team — the reported bug.
+const otRounds = Array.from({ length: 28 }, (_, i) => {
+  const n = i + 1;
+  const winner = n === 25 || n === 27 ? 't' : 'ct';
+  return { number: n, winner, reason: winner === 'ct' ? 'CTWin' : 'TerroristsWin' };
+});
+await showStrip(otRounds, { sideSwitches: 2 });
+check('28 counted cells render', cells().length === 28, String(cells().length));
+// Arrows point at the team that WON the round: era 0 → team above on CT,
+// era 1 (13-27) → team above on T, era 2 (28) → team above on CT again.
+const otWants = { 12: 'point-up', 13: 'point-down', 25: 'point-up', 26: 'point-down', 27: 'point-up', 28: 'point-up' };
+for (const [n, cls] of Object.entries(otWants)) {
+  const c = cellFor(n);
+  check(
+    `round ${n} points ${cls.replace('point-', '')}`,
+    !!c && c.classList.contains(cls),
+    c ? c.className : 'missing cell ' + n,
+  );
+}
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 if (inst) unmount(inst);

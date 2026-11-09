@@ -3,11 +3,13 @@
 // internal/analytics, internal/store and the root services can share it
 // without an import cycle — the same reason internal/models exists.
 //
-// Today it owns side parity: where the halves of a match split when the
-// extractor reports N counted rounds and S side switches (MR12 regulation
-// is S=1; overtime adds more). The JavaScript twin lives in
-// frontend/src/lib/sideparity.js; both are pinned to the same fixture
-// (testdata/sideparity.json — see sideparity_test.go and
+// Today it owns side parity: the counted round at which each of the S
+// recorded side switches happens (S=1 for a regulation MR12 match, more
+// when overtime ties), following the canonical CS2 cadence — after counted
+// round 12, none at OT start, then after 27 and every 3 rounds while OTs
+// tie (see CS2.md "MR12 regulation + MR3 overtime"). The JavaScript twin
+// lives in frontend/src/lib/sideparity.js; both are pinned to the same
+// fixture (testdata/sideparity.json — see sideparity_test.go and
 // frontend/src/lib/sideparity.test.js).
 //
 // Production callers today: rules.OtherSide (analytics.Clutches). Every
@@ -18,15 +20,20 @@
 package rules
 
 // FlipIndexes returns the 0-based indexes into a slice of n COUNTED rounds
-// at which the match's side switches happen (k = 1..switches), from the
-// canonical boundary formula
+// at which the match's side switches happen, in canonical CS2 cadence order
+// (CS2.md, "MR12 regulation + MR3 overtime"): the first switch lands after
+// counted round 12, there is NO switch at overtime start, and further
+// switches follow after counted round 27 and every 3 rounds after that
+// while the overtime blocks tie (side-switch rounds 12, 27, 30, 33, …).
+// As a function of the 1-based switch index k, the boundary b(k) — the
+// 0-based counted index of the FIRST round after switch k — is
 //
-//	idx(k) = floor((n*k + switches) / (switches + 1))  ==  ceil(n*k / (switches + 1))
+//	b(1) = 12
+//	b(k) = 27 + 3*(k-2)   for k >= 2      // 27, 30, 33, …
 //
-// i.e. the counted rounds are split into (switches + 1) as-equal-as-possible
-// eras and the flips sit on the era boundaries. Boundaries outside (0, n)
-// are dropped — a match too short to contain the switch (or with no switch
-// at all) yields no flip — and the result is ascending.
+// Boundaries outside (0, n) are dropped — a match too short to reach the
+// switch (or with no switch at all) yields no flip — and the result is
+// ascending.
 //
 // Callers map an index back to a round NUMBER themselves (round numbers are
 // not dense: knife/warmup rounds take negative numbers, see
@@ -39,7 +46,10 @@ func FlipIndexes(n, switches int) []int {
 	}
 	out := make([]int, 0, switches)
 	for k := 1; k <= switches; k++ {
-		idx := (n*k + switches) / (switches + 1)
+		idx := 12 // switch 1: after counted round 12 (index 12)
+		if k >= 2 {
+			idx = 27 + 3*(k-2) // no switch at OT start; every 3 rounds after 27
+		}
 		if idx > 0 && idx < n {
 			out = append(out, idx)
 		}

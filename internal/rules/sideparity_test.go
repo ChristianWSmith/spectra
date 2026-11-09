@@ -88,12 +88,19 @@ func TestFlipIndexesGuards(t *testing.T) {
 	if got := FlipIndexes(-3, 1); got != nil {
 		t.Errorf("negative rounds → %v, want nil", got)
 	}
-	// A switch boundary at or past the end of the match is dropped.
-	if got := FlipIndexes(2, 2); !sameInts(got, []int{1}) {
-		t.Errorf("(2,2) → %v, want [1] (the k=2 boundary at index 2 is out of range)", got)
+	// A switch boundary at or past the end of the match is dropped: the
+	// cadence's first boundary is counted index 12 (after round 12), so a
+	// match that short contains none of the reported switches.
+	if got := FlipIndexes(2, 2); len(got) != 0 {
+		t.Errorf("(2,2) → %v, want no flips (boundary 12 is past the end)", got)
 	}
-	// Boundaries are ascending and strictly inside (0, n).
-	n, sw := 31, 5
+	// Boundaries are ascending and strictly inside (0, n). Expectations
+	// follow the CS2.md "MR12 regulation + MR3 overtime" cadence: after
+	// counted round 12, no switch at OT start, then after 27 and every 3
+	// rounds (12, 27, 30, 33, …). A 34-round match with 4 switches
+	// contains all four boundaries; a shorter one drops whichever fall
+	// at or past its end.
+	n, sw := 34, 4
 	got := FlipIndexes(n, sw)
 	for i := 1; i < len(got); i++ {
 		if got[i] <= got[i-1] {
@@ -106,8 +113,11 @@ func TestFlipIndexesGuards(t *testing.T) {
 		}
 	}
 	// k = switches must be present for a long-enough match.
+	if !sameInts(got, []int{12, 27, 30, 33}) {
+		t.Errorf("(34,4) → %v, want [12 27 30 33]", got)
+	}
 	if len(got) != sw {
-		t.Errorf("(31,5) → %d flips, want %d (%v)", len(got), sw, got)
+		t.Errorf("(34,4) → %d flips, want %d (%v)", len(got), sw, got)
 	}
 }
 
