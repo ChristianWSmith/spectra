@@ -185,6 +185,7 @@ Canonical homes (extend these, don't fork them):
 | Sort headers / stat cells | `lib/components/SortTh.svelte`, `lib/components/StatCard.svelte` — markup only; each view keeps its own sort state and backend |
 | Match pickers | `lib/components/MatchPicker.svelte` — Explorer, Reports, Builder all use it |
 | Radar coordinate transform | `lib/components/mapxform.js` `makeTransform` — THE pack→transform reader; camera/no-pack bounds fallback stay renderer-only |
+| CS2 asset extraction (families, step order, outcome wording) | `frontend/src/lib/assets.js` `extractAllAssets` — Settings and MapPackPrompt both delegate; views own only their busy/progress/refresh rendering |
 | Bot exclusion (Go) | `store.HumanOnly` / `store.HumanOnlyBySteamID` (`internal/store/queries.go`, beside `playersJoin`) — THE roster/aggregate/selection filter; `playersJoin` itself is NOT a bot filter |
 | Bot exclusion (frontend twin) | `frontend/src/lib/players.js` — `isHuman` / `listedPlayers` (+ `isBotId` backstop for flagless rows: synthetic 0xFF ids are 20 digits, real SteamID64s 17) |
 | Replay bot presence | `lib/replay/playercard.js` `presentAt` — the ONE card-presence rule; the sole place a bot may list (while covering a disconnected same-side human) |
@@ -210,6 +211,15 @@ Canonical homes (extend these, don't fork them):
   The ONE exception is the replay view: `lib/replay/playercard.js`
   `presentAt` lists a bot only while it is covering a disconnected
   same-side human (see the CS2.md bot-substitution entry).
+- **The launch asset prompt is presence-driven:** `MapPackPrompt.maybePrompt`
+  opens whenever any of the three families is missing (map-pack data
+  dir empty / `icons.extracted` / `sounds.extracted`) — every launch,
+  until extraction fills them. No suppression pref exists
+  (`mappack_prompt_state` is retired, pinned gone by
+  `TestRetiredPromptSuppressionPrefGone`); "Not now" and Escape are
+  session-only. **Asset extractors serialize:** `internal/mappack.extractMu`
+  is locked at the entry of `ExtractMapPacks`/`ExtractIcons`/`ExtractSounds`
+  — never add an unlocked extractor (pinned by `TestConcurrentExtractions`).
 - **Version nothing until the first release — no versioned migrations,
   no versioned contracts, no legacy-data fallbacks** (pre-release
   policy): until we've cut our first release the repo versions NOTHING
