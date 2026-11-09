@@ -75,7 +75,7 @@ var columnNotes = map[string]map[string]string{
 		"b_steam": "SteamID64 of the counterpart (victim for all kinds)",
 	},
 	"matches": {
-		"status": "queued|running|ready|failed",
+		"status": "queued|parsing|ready|failed",
 		"map":    "map name as extracted (source for groupBy=map)",
 	},
 	"chat": {

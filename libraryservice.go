@@ -41,7 +41,9 @@ func (s *LibraryService) ImportDialog() []string {
 }
 
 // ImportPaths queues one import job per path and returns the job IDs in
-// argument order (invalid paths become immediately-failed jobs).
+// argument order (invalid paths become immediately-failed jobs). A path
+// that already has a non-terminal job is MERGED into it — the existing
+// id comes back, no duplicate job (see library.Importer.Enqueue).
 func (s *LibraryService) ImportPaths(paths []string) []int64 {
 	return s.imp.Enqueue(paths)
 }
@@ -158,12 +160,19 @@ func (s *LibraryService) DeleteMatch(id int64, deleteDemo bool) (bool, error) {
 }
 
 // Reprocess queues a re-parse of a match's demo file: the managed copy
-// when one exists, else the stored path (see Importer.Reprocess).
+// when one exists, else the stored path (see Importer.Reprocess). A
+// pending job for the same match coalesces into that job's id, and the
+// match row shows "queued" until the job claims it (a dequeue hands the
+// row back to its previous state).
 func (s *LibraryService) Reprocess(id int64) (int64, error) {
 	return s.imp.Reprocess(id)
 }
 
-// CancelJob cancels a queued or running job.
+// CancelJob cancels a queued or running job — the Library's Cancel
+// (running) / Dequeue (queued) control. A queued job is removed from the
+// queue and announced as cancelled; a running one aborts its parse. The
+// match/import row is never left stranded — see library.Importer.Cancel
+// for the per-outcome state machine.
 func (s *LibraryService) CancelJob(id int64) error {
 	return s.imp.Cancel(id)
 }

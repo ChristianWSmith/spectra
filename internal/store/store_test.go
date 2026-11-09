@@ -1120,6 +1120,261 @@ func TestOpenMarksStaleJobsInterrupted(t *testing.T) {
 	}
 }
 
+// TestFindPendingJobLookups pins the two dedupe/coalesce lookups: only
+// queued/running jobs count as pending (terminal ones never merge a new
+// request), path matches exactly as stored, match matches the linked
+// reprocess job, and the newest pending job wins when several qualify.
+func TestFindPendingJobLookups(t *testing.T) {
+	s := openMem(t)
+
+	// Nothing pending yet.
+	if _, found, err := s.FindPendingJobByPath("/p/a.dem"); err != nil || found {
+		t.Errorf("FindPendingJobByPath(fresh) = (%v, %v), want (false, nil)", found, err)
+	}
+	if _, found, err := s.FindPendingJobByMatch(7); err != nil || found {
+		t.Errorf("FindPendingJobByMatch(fresh) = (%v, %v), want (false, nil)", found, err)
+	}
+
+	a, err := s.CreateJob("import", "/p/a.dem")
+	if err != nil {
+		t.Fatalf("CreateJob: %v", err)
+	}
+	// Queued → pending.
+	if job, found, err := s.FindPendingJobByPath("/p/a.dem"); err != nil || !found || job.ID != a {
+		t.Errorf("FindPendingJobByPath(queued) = (%+v, %v, %v), want job %d", job, found, err, a)
+	}
+	// A different path never matches (no fuzzy join).
+	if _, found, err := s.FindPendingJobByPath("/p/other.dem"); err != nil || found {
+		t.Errorf("FindPendingJobByPath(other path) found = %v, want false", found)
+	}
+	// Running → still pending.
+	if err := s.UpdateJob(a, models.JobRunning, models.StageParse, 0.3, ""); err != nil {
+		t.Fatalf("UpdateJob running: %v", err)
+	}
+	if job, found, err := s.FindPendingJobByPath("/p/a.dem"); err != nil || !found || job.ID != a {
+		t.Errorf("FindPendingJobByPath(running) = (%+v, %v, %v), want job %d", job, found, err, a)
+	}
+	// Terminal → not pending (a finished job must not swallow a new
+	// request — that path already imported).
+	if err := s.UpdateJob(a, models.JobDone, models.StageDone, 1, ""); err != nil {
+		t.Fatalf("UpdateJob done: %v", err)
+	}
+	if _, found, err := s.FindPendingJobByPath("/p/a.dem"); err != nil || found {
+		t.Errorf("FindPendingJobByPath(done) found = %v, want false", found)
+	}
+
+	// Match lookup: linked reprocess job, pending → found.
+	b, err := s.CreateJob("reprocess", "/p/b.dem")
+	if err != nil {
+		t.Fatalf("CreateJob #2: %v", err)
+	}
+	if err := s.SetJobMatch(b, 7); err != nil {
+		t.Fatalf("SetJobMatch: %v", err)
+	}
+	if job, found, err := s.FindPendingJobByMatch(7); err != nil || !found || job.ID != b {
+		t.Errorf("FindPendingJobByMatch(7) = (%+v, %v, %v), want job %d", job, found, err, b)
+	}
+	if _, found, err := s.FindPendingJobByMatch(8); err != nil || found {
+		t.Errorf("FindPendingJobByMatch(8) found = %v, want false", found)
+	}
+	// Cancelled → not pending (a dequeued reprocess coalesces nothing).
+	if err := s.CancelJob(b); err != nil {
+		t.Fatalf("CancelJob: %v", err)
+	}
+	if _, found, err := s.FindPendingJobByMatch(7); err != nil || found {
+		t.Errorf("FindPendingJobByMatch(cancelled) found = %v, want false", found)
+	}
+
+	// Several pending on one path → the NEWEST wins (created_at DESC, id DESC).
+	c1, err := s.CreateJob("import", "/p/twin.dem")
+	if err != nil {
+		t.Fatalf("CreateJob twin 1: %v", err)
+	}
+	c2, err := s.CreateJob("import", "/p/twin.dem")
+	if err != nil {
+		t.Fatalf("CreateJob twin 2: %v", err)
+	}
+	if job, found, err := s.FindPendingJobByPath("/p/twin.dem"); err != nil || !found || job.ID != c2 {
+		t.Errorf("FindPendingJobByPath(twins) = (%d, %v, %v), want the newest %d", job.ID, found, err, c2)
+	}
+	if c1 == c2 {
+		t.Fatal("test setup: twin jobs share an id")
+	}
+}
+
+// TestUpdateJobProgressRunningOnly pins the progress writer's status
+// guard: it stamps stage/progress on a running job, and writes NOTHING
+// on a queued or terminal job — in particular it must never resurrect a
+// job a concurrent Cancel already moved to cancelled (UpdateJob, the
+// explicit lifecycle writer, has no such guard).
+func TestUpdateJobProgressRunningOnly(t *testing.T) {
+	s := openMem(t)
+	id, err := s.CreateJob("import", "/p/progress.dem")
+	if err != nil {
+		t.Fatalf("CreateJob: %v", err)
+	}
+	// Queued: not running → untouched.
+	if err := s.UpdateJobProgress(id, models.StageHash, 0.05); err != nil {
+		t.Fatalf("UpdateJobProgress(queued): %v", err)
+	}
+	if j := jobByID(t, s, id); j.Stage != models.StageQueued || j.Progress != 0 {
+		t.Errorf("queued job after progress write = %q/%v, want queued/0", j.Stage, j.Progress)
+	}
+	// Running: stamped.
+	if err := s.UpdateJob(id, models.JobRunning, models.StageQueued, 0, ""); err != nil {
+		t.Fatalf("UpdateJob running: %v", err)
+	}
+	if err := s.UpdateJobProgress(id, models.StageParse, 0.42); err != nil {
+		t.Fatalf("UpdateJobProgress(running): %v", err)
+	}
+	if j := jobByID(t, s, id); j.Stage != models.StageParse || j.Progress != 0.42 {
+		t.Errorf("running job after progress write = %q/%v, want parse/0.42", j.Stage, j.Progress)
+	}
+	// Cancelled: not running → the write must not resurrect it.
+	if err := s.CancelJob(id); err != nil {
+		t.Fatalf("CancelJob: %v", err)
+	}
+	if err := s.UpdateJobProgress(id, models.StageParse, 0.9); err != nil {
+		t.Fatalf("UpdateJobProgress(cancelled): %v", err)
+	}
+	j := jobByID(t, s, id)
+	if j.Status != models.JobCancelled {
+		t.Errorf("status after a progress write racing Cancel = %q, want cancelled", j.Status)
+	}
+	if j.Progress != 0.42 {
+		t.Errorf("progress after a post-cancel write = %v, want the pre-cancel 0.42", j.Progress)
+	}
+	// Unknown id: progress is advisory, an absent row is not an error.
+	if err := s.UpdateJobProgress(999999, models.StageParse, 0.5); err != nil {
+		t.Errorf("UpdateJobProgress(unknown) err = %v, want nil", err)
+	}
+}
+
+// jobByID returns the one job row (tests here create at most a handful).
+func jobByID(t *testing.T, s *Store, id int64) models.Job {
+	t.Helper()
+	jobs, err := s.ListJobs()
+	if err != nil {
+		t.Fatalf("ListJobs: %v", err)
+	}
+	for _, j := range jobs {
+		if j.ID == id {
+			return j
+		}
+	}
+	t.Fatalf("job %d not found", id)
+	return models.Job{}
+}
+
+// TestOpenMarksStaleMatchesInterrupted is the matches half of the crash
+// repair (beside TestOpenMarksStaleJobsInterrupted): rows left
+// queued/parsing with NO live job become failed "interrupted by restart"
+// — the jobs repair runs first, so a row whose job just failed counts as
+// jobless — while rows that are ready (or already failed) stay put. The
+// point: a dead worker must never leave a match row stuck behind a queue
+// that no longer exists (its Reprocess/Delete buttons would be disabled
+// forever).
+func TestOpenMarksStaleMatchesInterrupted(t *testing.T) {
+	s, path := openFileStore(t)
+
+	// A: parsing with a RUNNING job (the crash shape) → both repaired.
+	a, err := s.CreateMatchRow("/d/a.dem", "sha-crash-a", 1)
+	if err != nil {
+		t.Fatalf("CreateMatchRow A: %v", err)
+	}
+	if err := s.SetMatchStatus(a, models.StatusParsing, ""); err != nil {
+		t.Fatalf("SetMatchStatus A: %v", err)
+	}
+	jobA, err := s.CreateJob("reprocess", "/d/a.dem")
+	if err != nil {
+		t.Fatalf("CreateJob A: %v", err)
+	}
+	if err := s.SetJobMatch(jobA, a); err != nil {
+		t.Fatalf("SetJobMatch A: %v", err)
+	}
+	if err := s.UpdateJob(jobA, models.JobRunning, models.StageParse, 0.5, ""); err != nil {
+		t.Fatalf("UpdateJob A: %v", err)
+	}
+
+	// B: queued with NO job at all (an import that died before linking)
+	// → repaired.
+	b, err := s.CreateMatchRow("/d/b.dem", "sha-crash-b", 1)
+	if err != nil {
+		t.Fatalf("CreateMatchRow B: %v", err)
+	}
+
+	// C: parsing whose job already finished (no live job) → repaired.
+	c, err := s.CreateMatchRow("/d/c.dem", "sha-crash-c", 1)
+	if err != nil {
+		t.Fatalf("CreateMatchRow C: %v", err)
+	}
+	if err := s.SetMatchStatus(c, models.StatusParsing, ""); err != nil {
+		t.Fatalf("SetMatchStatus C: %v", err)
+	}
+	jobC, err := s.CreateJob("import", "/d/c.dem")
+	if err != nil {
+		t.Fatalf("CreateJob C: %v", err)
+	}
+	if err := s.SetJobMatch(jobC, c); err != nil {
+		t.Fatalf("SetJobMatch C: %v", err)
+	}
+	if err := s.UpdateJob(jobC, models.JobFailed, models.StageParse, 0.5, "boom"); err != nil {
+		t.Fatalf("UpdateJob C: %v", err)
+	}
+
+	// D: ready → untouched. E: failed → untouched.
+	d, err := s.CreateMatchRow("/d/d.dem", "sha-crash-d", 1)
+	if err != nil {
+		t.Fatalf("CreateMatchRow D: %v", err)
+	}
+	if err := s.SetMatchStatus(d, models.StatusReady, ""); err != nil {
+		t.Fatalf("SetMatchStatus D: %v", err)
+	}
+	e, err := s.CreateMatchRow("/d/e.dem", "sha-crash-e", 1)
+	if err != nil {
+		t.Fatalf("CreateMatchRow E: %v", err)
+	}
+	if err := s.SetMatchStatus(e, models.StatusFailed, "boom"); err != nil {
+		t.Fatalf("SetMatchStatus E: %v", err)
+	}
+
+	if err := s.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	s2, err := Open(path)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	defer func() { _ = s2.Close() }()
+
+	for _, id := range []int64{a, b, c} {
+		m, err := s2.GetMatch(id)
+		if err != nil {
+			t.Fatalf("GetMatch(%d): %v", id, err)
+		}
+		if m.Status != models.StatusFailed || m.Error != interruptedJobErr {
+			t.Errorf("stuck match %d = %q/%q, want failed/%q", id, m.Status, m.Error, interruptedJobErr)
+		}
+	}
+	for _, tc := range []struct {
+		id     int64
+		want   string
+		errMsg string
+	}{{d, models.StatusReady, ""}, {e, models.StatusFailed, "boom"}} {
+		m, err := s2.GetMatch(tc.id)
+		if err != nil {
+			t.Fatalf("GetMatch(%d): %v", tc.id, err)
+		}
+		if m.Status != tc.want || m.Error != tc.errMsg {
+			t.Errorf("match %d after reopen = %q/%q, want %q/%q", tc.id, m.Status, m.Error, tc.want, tc.errMsg)
+		}
+	}
+	// The running job was repaired first (jobs before matches).
+	if j := jobByID(t, s2, jobA); j.Status != models.JobFailed || j.Error != interruptedJobErr {
+		t.Errorf("stale job = %q/%q, want failed/%q", j.Status, j.Error, interruptedJobErr)
+	}
+}
+
 func TestSetMatchStatus(t *testing.T) {
 	s := openMem(t)
 	id, err := s.CreateMatchRow("/d/a.dem", "sha-status", 1)

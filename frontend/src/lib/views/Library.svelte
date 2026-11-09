@@ -8,6 +8,7 @@
     listJobs,
     deleteMatch,
     reprocess,
+    cancelJob,
     getScoreboard,
     subscribeJobProgress,
     onJobDone,
@@ -80,7 +81,9 @@
   // Demos sitting in the configured import dirs (Settings → "Import
   // dirs") that are not in the library yet — each with a one-click
   // Import that runs through the same pipeline as drag-and-drop, plus a
-  // confirmed delete-from-disk for the file itself.
+  // confirmed delete-from-disk for the file itself. A file the queue is
+  // already working on flips to the live job's chip with Import replaced
+  // by Dequeue/Cancel (pendingDemoPaths) — see the row markup below.
   let demoFiles = $state([]);
   let demoScanning = $state(false); // UI: refresh button + "Scanning…"
   // Non-reactive in-flight guard: refreshDemoFiles runs inside the mount
@@ -223,6 +226,11 @@
   const problemJobs = $derived(
     jobs
       .filter((j) => {
+        // A cancel that never started is a pure DEQUEUE (the user removed
+        // a waiting job): not a problem — its synthetic row is already
+        // gone and nothing was interrupted. Cancelled jobs that did run
+        // stay (their parse was cut short).
+        if (j.status === 'cancelled' && !j.startedAt) return false;
         if (j.status !== 'failed' && j.status !== 'cancelled') return false;
         const t = j.finishedAt ? new Date(j.finishedAt).getTime() : 0;
         return t > 0 && Date.now() - t < PROBLEM_MAX_AGE_MS;
@@ -245,6 +253,56 @@
     }
     return m;
   });
+
+  // Synthetic rows: imports the queue owns but the matches table cannot
+  // show yet. A match row is only created after hash+copy
+  // (store.CreateMatchRow), so an import that is queued — or hashing/
+  // copying/parsing before its row lands — has NO match row at all. These
+  // jobs render as their own table rows built from `jobs` (kind=import,
+  // matchId 0), live-progress merged: the queued state is visible from the
+  // moment Enqueue returns, never as an invisible wait.
+  const pendingImports = $derived(
+    jobs
+      .filter(
+        (j) => j.kind === 'import' && !j.matchId && (j.status === 'queued' || j.status === 'running'),
+      )
+      .map(jobView),
+  );
+
+  // The pending import for an import-dir path — the row's "queued" flip
+  // (the file has no match row yet, which is exactly why the scan still
+  // lists it). Keyed by the exact path string the pipeline stores: the
+  // dir row's Import hands the same string to importPaths, and Enqueue
+  // dedupes on it.
+  const pendingDemoPaths = $derived(new Map(pendingImports.map((j) => [j.path, j])));
+
+  // Cancel vs Dequeue: one backend call (cancelJob), two labels — a
+  // queued job is waiting in line (dequeue removes it), a running one is
+  // being worked (cancel aborts it).
+  function cancelLabel(status) {
+    return status === 'queued' ? 'Dequeue' : 'Cancel';
+  }
+
+  function cancelTitle(status) {
+    return status === 'queued'
+      ? 'Remove this job from the queue — nothing has been read yet'
+      : 'Abort the running job now';
+  }
+
+  // Cancel/Dequeue on any Library row (match row, synthetic import row,
+  // import-dir row): after it lands the row must be usable again — the
+  // backend restores/hands back the match state (see library.Cancel).
+  async function onCancelJob(id, ev) {
+    ev.stopPropagation();
+    try {
+      await cancelJob(id);
+      await refreshJobs();
+      await refreshList();
+      await refreshDemoFiles();
+    } catch (e) {
+      error = errText(e);
+    }
+  }
 
   async function doImport() {
     importError = '';
@@ -390,9 +448,11 @@
   // on screen. The row's own Reprocess/Delete buttons stopPropagation on
   // click and are disabled while the row is NOT openable (parsing/queued
   // — re-running either against a row mid-parse would race the job), with
-  // a title hint saying why; Enter on them must not navigate the row
-  // either (the keydown bubbles up to the <tr>), hence the target check
-  // in the keydown handler.
+  // a title hint saying why; the row's Cancel/Dequeue control is the one
+  // button that stays ENABLED while the row is locked (it is the way out
+  // of that state — see onCancelJob). Enter on them must not navigate the
+  // row either (the keydown bubbles up to the <tr>), hence the target
+  // check in the keydown handler.
   function isOpenable(m) {
     return m.status !== 'parsing' && m.status !== 'queued';
   }
@@ -563,6 +623,36 @@
           </tr>
         </thead>
         <tbody>
+          <!-- Queued/early imports: jobs with no match row yet (see
+               pendingImports) rendered as their own rows, ahead of the
+               match list — the visible half of the queue. -->
+          {#each pendingImports as job (job.id)}
+            <tr data-pending-import>
+              <td>—</td>
+              <td><span class="mono" title={job.path}>{basename(job.path)}</span></td>
+              <td class="num">—</td>
+              <td class="num">—</td>
+              <td class="num">—</td>
+              <td class="num">—</td>
+              <td>—</td>
+              <td>
+                <StatusChip
+                  status={job.status}
+                  progress={job.progress}
+                  stage={job.stage}
+                  title={job.error || ''}
+                />
+              </td>
+              <td class="row-actions" onclick={(e) => e.stopPropagation()}>
+                <button
+                  class="btn small"
+                  title={cancelTitle(job.status)}
+                  onclick={(e) => onCancelJob(job.id, e)}
+                  >{cancelLabel(job.status)}</button
+                >
+              </td>
+            </tr>
+          {/each}
           {#each matches as m (m.id)}
             <tr
               class:clickable={isOpenable(m)}
@@ -589,6 +679,7 @@
                   <StatusChip
                     status={m.status === 'parsing' ? 'parsing' : 'queued'}
                     progress={progressByMatch.get(m.id)?.progress ?? null}
+                    stage={progressByMatch.get(m.id)?.stage ?? ''}
                     title={m.error || ''}
                   />
                 {:else if m.status === 'failed'}
@@ -598,6 +689,17 @@
                 {/if}
               </td>
               <td class="row-actions" onclick={(e) => e.stopPropagation()}>
+                <!-- Cancel/Dequeue exists only while a job owns this row
+                     (a queued reprocess, a running parse) — the one
+                     control that unlocks it again. -->
+                {#if progressByMatch.has(m.id)}
+                  <button
+                    class="btn small"
+                    title={cancelTitle(progressByMatch.get(m.id).status)}
+                    onclick={(e) => onCancelJob(progressByMatch.get(m.id).id, e)}
+                    >{cancelLabel(progressByMatch.get(m.id).status)}</button
+                  >
+                {/if}
                 <button
                   class="btn small"
                   disabled={!isOpenable(m)}
@@ -619,7 +721,7 @@
           {/each}
         </tbody>
       </table>
-      {#if matches.length === 0}
+      {#if matches.length === 0 && pendingImports.length === 0}
         <div class="empty">
           <p class="muted" role="status">
             {searching
@@ -635,8 +737,10 @@
        Settings → "Import dirs" that are not in the library yet — the
        backend omits recognised imports, so deleting a match brings its
        demo back here. One Import button per row runs the ordinary
-       pipeline (hash dedupe, row status chip); Delete from disk removes
-       the file itself, behind a confirmation. -->
+       pipeline (hash dedupe, row status chip); a file with a pending job
+       flips to that job's chip and swaps Import for its Dequeue/Cancel
+       (pendingDemoPaths, sourced from store.FindPendingJobByPath); Delete
+       from disk removes the file itself, behind a confirmation. -->
   <section class="panel" aria-label="Demos from your import dirs">
     <div class="row-between">
       <h2>Demos from your import dirs</h2>
@@ -676,6 +780,12 @@
         </thead>
         <tbody>
           {#each demoFiles as f (f.path)}
+            <!-- A pending import for this exact path flips the row: the
+                 chip shows the live job (queued → running) and Import is
+                 replaced by its Dequeue/Cancel — the same control the
+                 synthetic row above offers, so the file can never be
+                 enqueued twice from here. -->
+            {@const pj = pendingDemoPaths.get(f.path)}
             <tr>
               <td>
                 <span class="mono lib-demo-name" title={f.path}>{basename(f.path)}</span>
@@ -688,18 +798,36 @@
               <td class="num">{fmtBytes(f.size)}</td>
               <td>{fmtDate(f.modTime)}</td>
               <td>
-                <span
-                  class="chip idle"
-                  title={f.hashed
-                    ? 'Not in the library yet'
-                    : 'Not content-checked yet — importing is safe, duplicates are detected by hash'}
-                  >not imported</span
-                >
+                {#if pj}
+                  <StatusChip
+                    status={pj.status}
+                    progress={pj.progress}
+                    stage={pj.stage}
+                    title={pj.error || 'This demo is already in the import pipeline'}
+                  />
+                {:else}
+                  <span
+                    class="chip idle"
+                    title={f.hashed
+                      ? 'Not in the library yet'
+                      : 'Not content-checked yet — importing is safe, duplicates are detected by hash'}
+                    >not imported</span
+                  >
+                {/if}
               </td>
               <td class="row-actions" onclick={(e) => e.stopPropagation()}>
-                <button class="btn small primary" onclick={(e) => doImportFile(f, e)}
-                  >Import</button
-                >
+                {#if pj}
+                  <button
+                    class="btn small"
+                    title={cancelTitle(pj.status)}
+                    onclick={(e) => onCancelJob(pj.id, e)}
+                    >{cancelLabel(pj.status)}</button
+                  >
+                {:else}
+                  <button class="btn small primary" onclick={(e) => doImportFile(f, e)}
+                    >Import</button
+                  >
+                {/if}
                 <button
                   class="btn small danger"
                   title="Delete this demo file from disk"

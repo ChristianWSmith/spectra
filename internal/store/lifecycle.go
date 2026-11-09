@@ -149,11 +149,68 @@ func (s *Store) CancelJob(id int64) error {
 	return nil
 }
 
+// FindPendingJobByPath returns the newest non-terminal (queued/running)
+// job recorded for path — the dedupe key behind Importer.Enqueue (a file
+// already in flight never gets a second job, which is what stops a double
+// click from turning into a guaranteed "already imported" failure) and
+// the pending signal the Library's import-dir row flips on. The bool is
+// false when no job is pending for the path.
+func (s *Store) FindPendingJobByPath(path string) (models.Job, bool, error) {
+	return s.findPendingJob(`path = ?`, scrub(path))
+}
+
+// FindPendingJobByMatch returns the newest non-terminal (queued/running)
+// job linked to matchID — Importer.Reprocess's coalesce key (one reparse
+// in flight per match). The bool is false when none is pending.
+func (s *Store) FindPendingJobByMatch(matchID int64) (models.Job, bool, error) {
+	return s.findPendingJob(`match_id = ?`, matchID)
+}
+
+// findPendingJob runs the one-job lookup behind the two exported forms:
+// newest pending job matching where (args bound verbatim), false on no
+// row. Callers label their own errors — the two lookups are one query
+// shape, not one concept.
+func (s *Store) findPendingJob(where string, args ...any) (models.Job, bool, error) {
+	row := s.db.QueryRow(
+		`SELECT `+jobsCols+` FROM jobs
+		 WHERE `+where+` AND status IN (?, ?)
+		 ORDER BY created_at DESC, id DESC LIMIT 1`,
+		append(args, models.JobQueued, models.JobRunning)...,
+	)
+	job, err := scanJob(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return models.Job{}, false, nil
+	}
+	if err != nil {
+		return models.Job{}, false, fmt.Errorf("store: find pending job: %w", err)
+	}
+	return job, true, nil
+}
+
+// UpdateJobProgress stamps stage + job-wide progress on a RUNNING job
+// only. The status guard matters: a progress write racing a concurrent
+// Cancel must never resurrect a job the store already moved to cancelled
+// (UpdateJob has no such guard — it is the explicit lifecycle writer).
+// A zero-row update is not an error: progress is advisory and "not
+// running" (queued, terminal, or an unknown id) has nothing to write.
+func (s *Store) UpdateJobProgress(id int64, stage string, progress float64) error {
+	if _, err := s.db.Exec(
+		`UPDATE jobs SET stage = ?, progress = ? WHERE id = ? AND status = ?`,
+		scrub(stage), progress, id, models.JobRunning,
+	); err != nil {
+		return fmt.Errorf("store: update job progress: %w", err)
+	}
+	return nil
+}
+
+// jobsCols is the jobs row read projection (ListJobs and the pending-job
+// lookups), pinned to the DDL by TestColumnListConstsMatchSchema.
+const jobsCols = `id, kind, path, status, progress, stage, error, created_at, started_at, finished_at, match_id`
+
 // ListJobs returns all jobs, newest first (created_at DESC, id DESC).
 func (s *Store) ListJobs() ([]models.Job, error) {
 	rows, err := s.db.Query(
-		`SELECT id, kind, path, status, progress, stage, error, created_at, started_at, finished_at, match_id
-		 FROM jobs ORDER BY created_at DESC, id DESC`,
+		`SELECT ` + jobsCols + ` FROM jobs ORDER BY created_at DESC, id DESC`,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("store: list jobs: %w", err)

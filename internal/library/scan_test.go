@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ChristianWSmith/spectra/internal/models"
 	"github.com/ChristianWSmith/spectra/internal/store"
 )
 
@@ -368,6 +369,55 @@ func TestScannerHashCache(t *testing.T) {
 	sized.Size = f.Size + 1
 	if _, ok := sc.cachedSHA(&sized); ok {
 		t.Error("cachedSHA ignored a changed size")
+	}
+}
+
+// TestScanMarksPendingImports: a demo whose import job is still
+// queued/running — and therefore has no match row yet, which is exactly
+// why it is still listed — comes back marked Pending (the Library flips
+// its chip and disables Import for it). Terminal or absent jobs never
+// flag a row; the flag is read from the ONE pending-job lookup, so
+// recognition itself is untouched.
+func TestScanMarksPendingImports(t *testing.T) {
+	root := t.TempDir()
+	pending := writeScanFile(t, filepath.Join(root, "pending.dem"), "pending bytes")
+	finished := writeScanFile(t, filepath.Join(root, "finished.dem"), "finished bytes")
+	fresh := writeScanFile(t, filepath.Join(root, "fresh.dem"), "fresh bytes")
+
+	sc, st := newTestScanner(t, filepath.Join(t.TempDir(), "data"))
+	queued, err := st.CreateJob("import", pending)
+	if err != nil {
+		t.Fatalf("CreateJob (queued): %v", err)
+	}
+	if job, found, err := st.FindPendingJobByPath(pending); err != nil || !found || job.ID != queued {
+		t.Fatalf("setup: pending job for %s = (%d, %v, %v)", pending, job.ID, found, err)
+	}
+	done, err := st.CreateJob("import", finished)
+	if err != nil {
+		t.Fatalf("CreateJob (done): %v", err)
+	}
+	if err := st.UpdateJob(done, models.JobDone, models.StageDone, 1, ""); err != nil {
+		t.Fatalf("UpdateJob done: %v", err)
+	}
+
+	files, err := sc.Scan([]string{root})
+	if err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	got := foundPaths(files)
+	for _, path := range []string{pending, finished, fresh} {
+		if _, ok := got[path]; !ok {
+			t.Fatalf("scan missing %s", path)
+		}
+	}
+	if !got[pending].Pending {
+		t.Error("file with a queued import job not marked Pending")
+	}
+	if got[finished].Pending {
+		t.Error("file whose job finished marked Pending")
+	}
+	if got[fresh].Pending {
+		t.Error("file with no job marked Pending")
 	}
 }
 

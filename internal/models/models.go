@@ -25,8 +25,27 @@ const (
 	JobCancelled = "cancelled"
 )
 
-// Job stages (jobs.stage) — the progress event's coarse position.
+// Job stages (jobs.stage) — the progress event's coarse position. The
+// stage names the pipeline step the job is in; Job.Progress carries the
+// job-WIDE position (see Job), so a stage's value range is fixed:
+//
+//	queued  0.00        claimed, nothing read yet (indeterminate)
+//	hash    0.00 → 0.10 sha256 bytes read ÷ file size
+//	copy    0.10 → 0.20 copy-on-import bytes written ÷ file size
+//	decompress 0.20     zstd sniff — the byte counter starts over here
+//	parse   0.20 → 0.90 stream bytes consumed ÷ file size (demoinfocs
+//	                    pulls as it parses; frame totals are unknowable
+//	                    mid-parse for CS2, frames only signal the end)
+//	store   0.90        persisting the extract
+//	analyze 0.95        post-import analytics pass
+//	done    1.00
 const (
+	// StageHash is the sha256 pass over the source file (before any
+	// match row exists — the synthetic Library rows key off it).
+	StageHash = "hash"
+	// StageCopy is copy-on-import: the raw demo landing in the managed
+	// demo dir (skipped when the copy already exists).
+	StageCopy       = "copy"
 	StageQueued     = "queued"
 	StageDecompress = "decompress"
 	StageParse      = "parse"
@@ -352,8 +371,12 @@ type Chat struct {
 	Decrypted bool `json:"decrypted"`
 }
 
-// Job is one import/reprocess unit (jobs table). Progress is 0..1 within
-// the current Stage.
+// Job is one import/reprocess unit (jobs table). Progress is 0..1 over
+// the WHOLE job — job-wide, monotone, NOT per-stage (the Library's
+// StatusChip renders it as one bar from 0 to 100%): 0 means "no determinate
+// point yet" and the UI draws an indeterminate bar for it, never 0%.
+// The per-stage value ranges live with the stage constants above; the
+// emitter that writes them is internal/library's progress reporter.
 type Job struct {
 	ID         int64      `json:"id"`
 	Kind       string     `json:"kind"` // "import" | "reprocess"

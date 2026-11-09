@@ -53,7 +53,7 @@ func TestCopyDemo(t *testing.T) {
 	}
 	sha := shaOf("compressed demo bytes")
 
-	dst, err := im.copyDemo(src, sha)
+	dst, err := im.copyDemo(src, sha, nil)
 	if err != nil {
 		t.Fatalf("copyDemo: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestCopyDemo(t *testing.T) {
 	if err := os.WriteFile(dst, []byte("already copied"), 0o644); err != nil {
 		t.Fatalf("seed dst: %v", err)
 	}
-	again, err := im.copyDemo(src, sha)
+	again, err := im.copyDemo(src, sha, nil)
 	if err != nil {
 		t.Fatalf("copyDemo (second): %v", err)
 	}
@@ -95,7 +95,7 @@ func TestCopyDemoIsNoOpForManagedSource(t *testing.T) {
 	if err := os.WriteFile(src, []byte("in place"), 0o644); err != nil {
 		t.Fatalf("write: %v", err)
 	}
-	dst, err := im.copyDemo(src, sha)
+	dst, err := im.copyDemo(src, sha, nil)
 	if err != nil {
 		t.Fatalf("copyDemo: %v", err)
 	}

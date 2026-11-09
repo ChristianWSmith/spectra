@@ -13,12 +13,22 @@
 // Reprocess/Delete buttons are disabled with an "available once parsing
 // finishes" hint (the ready row's are live). Section D also pins the
 // empty state's copy: no import button of its own, the header owns it.
+// Section F covers the queue's visible half: synthetic import rows for
+// jobs with no match row yet (chip + determinate bar + Dequeue), a match
+// row owned by a queued reprocess (queued chip + Dequeue) and by a
+// running parse (Cancel + "parse 42%" determinate bar), the import-dir
+// row flipping to the live job with Import swapped for Dequeue, and the
+// multi-path ImportDialog hand-off (N paths → ONE ImportPaths call).
+// Section G mounts StatusChip directly: progress 0 is indeterminate
+// (moving bar, never "0%"), 0.42 renders "parse 42%".
 // Backend semantics of the facets live in store.TestListMatches; the
-// suggestion source is store.TestListMapNames; this covers the view
+// suggestion source is store.TestListMapNames; the pipeline behind the
+// chips lives in internal/library's queue tests — this covers the view
 // wiring only.
 //
-// jsdom is intentionally not a project dependency; from frontend/ run:
-//   npm i --no-save jsdom
+// jsdom is a declared devDependency of frontend/ — a plain `npm ci`
+// there provides it (never `npm i --no-save`, which makes the next
+// `npm ci` prune it). From frontend/ run:
 //   node --test test/library.dom.mjs
 // (must be run with frontend/ as the working directory)
 import { JSDOM } from 'jsdom';
@@ -579,6 +589,318 @@ await sleep(350); // past the 250 ms debounce
       actBtns.every((b) => b.disabled) &&
       actBtns.every((b) => b.title === 'Available once parsing finishes'),
     JSON.stringify(actBtns.map((b) => [b.textContent.trim(), b.disabled, b.title])),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Section F: the queue made visible. The handlers below replace the
+// mount-time stubs; spectra:library-changed re-runs the view's refetches
+// (jobs + match list + import-dir scan) exactly like the backend would.
+console.log('F. queued state: synthetic rows, cancel controls, dir flip, multi-path import');
+
+const queuedMatch = {
+  id: 3,
+  path: '/d/queued.dem',
+  map: 'de_inferno',
+  size: 4096,
+  scoreCT: 0,
+  scoreT: 0,
+  ctName: 'Queued',
+  tName: 'Side',
+  realRounds: 0,
+  durationS: 0,
+  extractedAt: '0001-01-01T00:00:00Z',
+  status: 'queued',
+  error: '',
+};
+// Import job with NO match row yet (still hashing/queued) → synthetic row
+// + the import-dir flip (same path string the dir row lists).
+const pendingImportJob = {
+  id: 11,
+  kind: 'import',
+  path: '/imports/new.dem',
+  status: 'queued',
+  progress: 0,
+  stage: 'queued',
+  error: '',
+  matchId: 0,
+  createdAt: '2026-01-05T00:00:01Z',
+  startedAt: null,
+  finishedAt: null,
+};
+// Queued reprocess → its match row flipped to queued (visible wait).
+const queuedReprocessJob = {
+  id: 12,
+  kind: 'reprocess',
+  path: '/d/queued.dem',
+  status: 'queued',
+  progress: 0,
+  stage: 'queued',
+  error: '',
+  matchId: 3,
+  createdAt: '2026-01-05T00:00:00Z',
+  startedAt: null,
+  finishedAt: null,
+};
+// Running parse of the section-E parsing row (id 2): determinate bar.
+const runningImportJob = {
+  id: 13,
+  kind: 'import',
+  path: '/d/b.dem',
+  status: 'running',
+  progress: 0.42,
+  stage: 'parse',
+  error: '',
+  matchId: 2,
+  createdAt: '2026-01-05T00:00:02Z',
+  startedAt: '2026-01-05T00:00:03Z',
+  finishedAt: null,
+};
+// A pure dequeue: cancelled before it ever started (no startedAt) — its
+// synthetic row is gone and it must NOT surface in "Recent import
+// problems" (nothing was interrupted; the user removed it).
+const dequeuedJob = {
+  id: 14,
+  kind: 'import',
+  path: '/imports/gone.dem',
+  status: 'cancelled',
+  progress: 0,
+  stage: 'queued',
+  error: '',
+  matchId: 0,
+  createdAt: '2026-01-05T00:00:03Z',
+  startedAt: null,
+  finishedAt: '2026-01-05T00:00:04Z',
+};
+bindings.LibraryService.ListJobs = () =>
+  Promise.resolve([pendingImportJob, queuedReprocessJob, runningImportJob, dequeuedJob]);
+bindings.LibraryService.ListDemoFiles = () =>
+  Promise.resolve([
+    { path: '/imports/new.dem', root: '/imports', size: 1234, modTime: '2026-01-01T00:00:00Z', hashed: false },
+  ]);
+const prevListMatches = bindings.handlers.ListMatches;
+bindings.handlers.ListMatches = (q, sk, d, f) =>
+  f && f.map === 'queued' ? [queuedMatch] : prevListMatches(q, sk, d, f);
+
+// The event bus services.js subscribes to — same module instance the
+// view's subscriptions use (the stub resolves to this file's URL).
+const { fire } = await import(stub('wails-runtime.mjs'));
+fire('spectra:library-changed');
+await sleep(80); // jobs + list + import-dir scan land
+
+check(
+  'a pure dequeue (cancelled, never started) stays out of "Recent import problems"',
+  !document.querySelector('.problems'),
+  document.querySelector('.problems')?.textContent.replace(/\s+/g, ' ').trim() ?? '',
+);
+
+// Both tables exist now: the match list and the import-dir list.
+const matchRows = () => [...document.querySelectorAll('.dropzone .data-table tbody tr')];
+const dirRows = () => [
+  ...document.querySelectorAll('section[aria-label="Demos from your import dirs"] .data-table tbody tr'),
+];
+const cancelCalls = () => bindings.calls.filter((c) => c.method === 'CancelJob');
+
+{
+  // The section-E parsing row now has a live job: determinate bar +
+  // Cancel. The synthetic import row sits ahead of it (pendingImports
+  // render first), so the match row is the SECOND one.
+  const rows = matchRows();
+  check(
+    'running parse row renders with its job (synthetic row first)',
+    rows.length === 2,
+    String(rows.length),
+  );
+  const tr = rows[1];
+  const pct = tr.querySelector('.chip-pct');
+  check(
+    'determinate bar reads the stage + percentage',
+    !!pct && pct.textContent.trim() === 'parse 42%',
+    pct ? pct.textContent.trim() : 'missing',
+  );
+  const fill = tr.querySelector('.chip-bar-fill');
+  check(
+    'bar fill determinate at 42% (not the indeterminate animation)',
+    !!fill && !fill.classList.contains('indeterminate') && fill.style.width === '42%',
+    fill ? `${fill.style.width} indeterminate=${fill.classList.contains('indeterminate')}` : 'missing',
+  );
+  const btns = [...tr.querySelectorAll('.row-actions button')];
+  check(
+    'running parse row: Cancel live, Reprocess/Delete disabled',
+    btns.length === 3 &&
+      btns[0].textContent.trim() === 'Cancel' &&
+      !btns[0].disabled &&
+      btns.slice(1).every((b) => b.disabled),
+    JSON.stringify(btns.map((b) => [b.textContent.trim(), b.disabled])),
+  );
+  const before = cancelCalls().length;
+  click(btns[0]);
+  await sleep(30);
+  check(
+    'Cancel calls CancelJob with the running job id',
+    cancelCalls().length === before + 1 && cancelCalls().at(-1).args[0] === 13,
+    JSON.stringify(cancelCalls().map((c) => c.args)),
+  );
+}
+
+// Queued facet: a synthetic import row (no match row exists yet) plus the
+// match row a queued reprocess flipped.
+type(mapInput(), 'queued');
+await sleep(350); // past the 250 ms debounce
+{
+  const rows = matchRows();
+  check('queued facet: synthetic import row + the queued match row', rows.length === 2, String(rows.length));
+  const synth = rows[0];
+  check(
+    'synthetic row names the demo being imported',
+    synth.textContent.includes('new.dem'),
+    synth.textContent.replace(/\s+/g, ' ').slice(0, 90),
+  );
+  const chip = synth.querySelector('.chip.status');
+  check(
+    'synthetic row chip says queued',
+    !!chip && chip.textContent.includes('queued'),
+    chip ? chip.textContent.replace(/\s+/g, ' ').trim() : 'missing',
+  );
+  check(
+    'synthetic queued row shows the indeterminate bar (progress 0)',
+    !!synth.querySelector('.chip-bar-fill.indeterminate'),
+  );
+  const btns = [...synth.querySelectorAll('.row-actions button')];
+  check(
+    'synthetic row offers exactly Dequeue',
+    btns.length === 1 && btns[0].textContent.trim() === 'Dequeue',
+    JSON.stringify(btns.map((b) => b.textContent.trim())),
+  );
+  const before = cancelCalls().length;
+  click(btns[0]);
+  await sleep(30);
+  check(
+    'Dequeue calls CancelJob with the pending import job id',
+    cancelCalls().length === before + 1 && cancelCalls().at(-1).args[0] === 11,
+    JSON.stringify(cancelCalls().map((c) => c.args)),
+  );
+
+  const tr = rows[1];
+  check(
+    'queued match row carries the queued chip',
+    !!tr.querySelector('.chip.status') && tr.querySelector('.chip.status').textContent.includes('queued'),
+    tr.querySelector('.chip.status')?.textContent.replace(/\s+/g, ' ').trim() ?? 'missing',
+  );
+  const mBtns = [...tr.querySelectorAll('.row-actions button')];
+  check(
+    'queued match row: Dequeue live, Reprocess/Delete disabled',
+    mBtns.length === 3 &&
+      mBtns[0].textContent.trim() === 'Dequeue' &&
+      !mBtns[0].disabled &&
+      mBtns.slice(1).every((b) => b.disabled),
+    JSON.stringify(mBtns.map((b) => [b.textContent.trim(), b.disabled])),
+  );
+  const beforeM = cancelCalls().length;
+  click(mBtns[0]);
+  await sleep(30);
+  check(
+    'match-row Dequeue calls CancelJob with the reprocess job id',
+    cancelCalls().length === beforeM + 1 && cancelCalls().at(-1).args[0] === 12,
+    JSON.stringify(cancelCalls().map((c) => c.args)),
+  );
+}
+
+{
+  // Import-dir row for the SAME pending path: chip flips, Import is
+  // swapped for the job's Dequeue.
+  const rows = dirRows();
+  check('import-dir row lists the pending file', rows.length === 1 && rows[0].textContent.includes('new.dem'), String(rows.length));
+  const chip = rows[0].querySelector('.chip.status');
+  check(
+    'import-dir row flipped to the pending job chip',
+    !!chip && chip.textContent.includes('queued'),
+    chip ? chip.textContent.replace(/\s+/g, ' ').trim() : 'missing',
+  );
+  const btns = [...rows[0].querySelectorAll('.row-actions button')];
+  check(
+    'Import hidden — replaced by Dequeue (Delete from disk stays)',
+    btns.length === 2 &&
+      btns[0].textContent.trim() === 'Dequeue' &&
+      !btns.some((b) => b.textContent.trim() === 'Import'),
+    JSON.stringify(btns.map((b) => b.textContent.trim())),
+  );
+}
+
+{
+  // Multi-file import: the dialog may return N paths and the view must
+  // hand them to ONE ImportPaths call (one job per path, Go side).
+  bindings.handlers.ImportDialog = () => ['/imports/one.dem', '/imports/two.dem'];
+  const before = bindings.calls.filter((c) => c.method === 'ImportPaths').length;
+  const importBtn = [...document.querySelectorAll('.view-header .btn')].find(
+    (b) => b.textContent.trim() === 'Import…',
+  );
+  check('header Import… present for the multi-path pin', !!importBtn);
+  click(importBtn);
+  await sleep(50);
+  const pathCalls = bindings.calls.filter((c) => c.method === 'ImportPaths');
+  check(
+    'multi-path dialog → ONE ImportPaths call carrying both paths',
+    pathCalls.length === before + 1 &&
+      pathCalls.at(-1).args[0].length === 2 &&
+      pathCalls.at(-1).args[0][0] === '/imports/one.dem' &&
+      pathCalls.at(-1).args[0][1] === '/imports/two.dem',
+    JSON.stringify(pathCalls.map((c) => c.args)),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Section G: StatusChip's progress contract, mounted directly — 0 means
+// indeterminate (moving bar, no number, never "0%"), a real fraction
+// renders the stage + rounded percentage and a fixed-width fill.
+console.log('G. StatusChip: indeterminate 0 vs determinate 42%');
+const chipMod = await import(pathToFileURL(join(dir, 'statuschip.js')).href);
+const mountChip = (props) => {
+  const el = document.createElement('div');
+  document.body.appendChild(el);
+  mount(chipMod.default, { target: el, props });
+  return el;
+};
+{
+  const ind = mountChip({ status: 'parsing', progress: 0, stage: 'hash' });
+  const indPct = ind.querySelector('.chip-pct');
+  check(
+    'progress 0 → indeterminate fill, no percentage (stage word only, never "0%")',
+    !!ind.querySelector('.chip-bar-fill.indeterminate') &&
+      (indPct ? !indPct.textContent.includes('%') : true) &&
+      !ind.textContent.includes('0%'),
+    ind.innerHTML.slice(0, 240),
+  );
+  check(
+    'progress 0 still labels the stage in the tooltip',
+    ind.querySelector('.chip').getAttribute('title') === 'hash',
+    ind.querySelector('.chip').getAttribute('title'),
+  );
+
+  const det = mountChip({ status: 'parsing', progress: 0.42, stage: 'parse' });
+  const fill = det.querySelector('.chip-bar-fill');
+  check(
+    'progress 0.42 → determinate fill at 42%',
+    !!fill && !fill.classList.contains('indeterminate') && fill.style.width === '42%',
+    fill ? fill.style.width : 'missing',
+  );
+  check(
+    'progress 0.42 → chip text "parse 42%"',
+    !!det.querySelector('.chip-pct') && det.querySelector('.chip-pct').textContent.trim() === 'parse 42%',
+    det.querySelector('.chip-pct')?.textContent.trim() ?? 'missing',
+  );
+  check(
+    'tooltip carries stage · percent',
+    det.querySelector('.chip').getAttribute('title') === 'parse · 42%',
+    det.querySelector('.chip').getAttribute('title'),
+  );
+
+  // A caller title (match error) rides along ahead of the stage.
+  const titled = mountChip({ status: 'queued', progress: 0, stage: 'hash', title: 'disk on fire' });
+  check(
+    'caller title kept in the tooltip',
+    titled.querySelector('.chip').getAttribute('title') === 'disk on fire · hash',
+    titled.querySelector('.chip').getAttribute('title'),
   );
 }
 

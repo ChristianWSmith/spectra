@@ -60,6 +60,14 @@ type DemoFile struct {
 	Size    int64     `json:"size"`
 	ModTime time.Time `json:"modTime"`
 	Hashed  bool      `json:"hashed"`
+	// Pending marks a file the job queue is already working on (its
+	// import is queued/running and no match row exists yet — which is
+	// exactly why it is still listed): the Library flips the chip and
+	// disables Import for it. The state comes from the ONE pending-job
+	// lookup (store.FindPendingJobByPath) — the recognition rules above
+	// are untouched; Enqueue dedupes by path regardless, this is the
+	// visible half of that contract.
+	Pending bool `json:"pending"`
 }
 
 // ScannerOptions configures a Scanner. Store is the match index (import
@@ -193,6 +201,18 @@ func (sc *Scanner) Scan(roots []string) ([]DemoFile, error) {
 		}
 		return listed[i].Path < listed[j].Path
 	})
+	// Pending-job awareness (see DemoFile.Pending): a file the queue is
+	// already importing flips to "queued". Consults the ONE pending-job
+	// lookup rather than re-deriving anything about recognition here; a
+	// lookup failure is deliberately not a scan failure (importIndex above
+	// already failed the scan for the errors that matter — worst case a
+	// pending row still says "not imported", and Enqueue's dedupe holds
+	// either way).
+	for i := range listed {
+		if _, found, err := sc.st.FindPendingJobByPath(listed[i].Path); err == nil && found {
+			listed[i].Pending = true
+		}
+	}
 	return listed, nil
 }
 
