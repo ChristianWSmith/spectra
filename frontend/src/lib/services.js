@@ -45,14 +45,18 @@ export function errText(e) {
 // refetches pass different args -> different entries) and fetch-on-
 // activate laziness is unchanged (a cache hit just resolves faster).
 //
-// Invalidation: EVERY spectra:* event the Go side can emit flushes the
-// whole cache (the payloads never change what we key on, so a full flush
-// is the safe, simple rule):
+// Invalidation: EVERY spectra:* event that carries a DATA change flushes
+// the whole cache (the payloads never change what we key on, so a full
+// flush is the safe, simple rule):
 //   spectra:library-changed - any view backed by the matches/jobs tables
 //   spectra:job-done        - import/reprocess/cancel outcome
 //   spectra:job-progress    - parse/store progress (data lands mid-stream)
 //   spectra:files-dropped   - import kickoff (its own events may lag the
 //                             call site's refetch)
+// The one exception: spectra:asset-progress (Settings' CS2-asset
+// extraction) is pure progress — it changes no row — so it is NOT in the
+// listener list below; its only subscriber is onAssetProgress, which
+// drives a progress bar.
 // Mutating wrappers (deleteMatch/importPaths/reprocess/
 // recomputeAnalysis) also invalidate on success: DeleteMatch and
 // RecomputeAnalysis emit no event at all, and the event round-trip for
@@ -379,6 +383,15 @@ export function onLibraryChanged(callback) {
 // pointer is over an element with data-file-drop-target (or a descendant).
 export function onFilesDropped(callback) {
   return onEvent('spectra:files-dropped', callback);
+}
+
+// onAssetProgress: per-item progress of the CS2 asset extractors —
+// {family, stage, done, total} (family: 'map-packs' | 'icons' | 'sounds';
+// only map-packs is emitted from Go today, see mappackservice.go).
+// Progress only: it flushes nothing, so it stays out of the read-cache
+// invalidation list at the top of this file.
+export function onAssetProgress(callback) {
+  return onEvent('spectra:asset-progress', callback);
 }
 
 // --- Cross-view navigation ---------------------------------------------------

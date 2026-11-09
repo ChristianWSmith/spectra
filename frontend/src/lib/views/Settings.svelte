@@ -26,6 +26,7 @@
     setDemoDirs,
     resetDemoDirs,
     chooseDemoDir,
+    onAssetProgress,
     errText,
   } from '../services.js';
   import { probeAudio } from '../replay/audio.js';
@@ -35,6 +36,7 @@
   import { getTheme, applyTheme } from '../theme.js';
   import { getFontSize, applyFontSize, reconcileFontSize, FONT_SIZES } from '../fontsize.js';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
+  import StatusChip from '../components/StatusChip.svelte';
 
   let version = $state('…');
   let info = $state(null);
@@ -196,6 +198,38 @@
   let mpBusy = $state(false);
   let mpMsg = $state('');
   let mpError = $state('');
+  // Live extraction progress: mpStep names the family step currently
+  // running (set before each awaited call in doExtract), mpProgress holds
+  // the last spectra:asset-progress payload ({family, stage, done, total})
+  // — only map packs emit one today, so the icon/sound steps render the
+  // animated bar from the step label alone.
+  let mpStep = $state('');
+  let mpProgress = $state(null);
+
+  // The per-map payload while the map-pack step is running; null for the
+  // other steps (no emitter) so their bar never pretends to be determinate.
+  const mpMapProgress = $derived(
+    mpStep === 'radar map packs' && mpProgress && mpProgress.family === 'map-packs'
+      ? mpProgress
+      : null,
+  );
+
+  // 0 = the animated indeterminate bar (StatusChip's class:indeterminate),
+  // a real 0..1 = the determinate bar + its percentage.
+  const mpPct = $derived(
+    mpMapProgress && mpMapProgress.total > 0
+      ? Math.min(1, mpMapProgress.done / mpMapProgress.total)
+      : 0,
+  );
+
+  // Subscribe for the whole view lifetime; the unsubscribe is the $effect
+  // cleanup (the pattern documented at services.js onEvent).
+  $effect(() => {
+    const off = onAssetProgress((p) => {
+      if (p) mpProgress = p;
+    });
+    return off;
+  });
 
   async function refreshMapPacks() {
     try {
@@ -251,11 +285,16 @@
     mpBusy = true;
     mpMsg = '';
     mpError = '';
+    // Drop any progress a previous run (or MapPackPrompt's own extract)
+    // left behind — the first spectra:asset-progress of THIS run replaces
+    // it; without this the bar could open at a stale "18 of 18".
+    mpProgress = null;
     const dir = mpStatus?.path || '';
     const done = [];
     const failed = [];
     try {
       try {
+        mpStep = 'radar map packs';
         const out = await extractMapPacks(dir);
         const n = (out.maps || []).length;
         const errs = out.errors || [];
@@ -266,6 +305,7 @@
         failed.push(`map packs: ${errText(e)}`);
       }
       try {
+        mpStep = 'equipment icons';
         const m = await extractIcons(dir);
         if (m && m.count > 0) {
           done.push(`${m.count} icon${m.count === 1 ? '' : 's'}`);
@@ -277,6 +317,7 @@
         failed.push(`icons: ${errText(e)}`);
       }
       try {
+        mpStep = 'replay sounds';
         const s = await extractSounds(dir);
         if (s && s.count > 0) {
           done.push(`${s.count} sound${s.count === 1 ? '' : 's'}`);
@@ -294,6 +335,10 @@
       await refreshMapPacks();
       await refreshIcons();
       await refreshSounds();
+      // Step label + progress die with the run — the row below renders
+      // only while mpBusy AND a step is armed.
+      mpStep = '';
+      mpProgress = null;
       mpBusy = false;
     }
   }
@@ -628,9 +673,7 @@
         <div>
           <dt>Extracted packs</dt>
           <dd class="mono">
-            {mpStatus.maps && mpStatus.maps.length
-              ? `${mpStatus.maps.length} (${mpStatus.maps.join(', ')})`
-              : 'none'}
+            {mpStatus.maps && mpStatus.maps.length ? mpStatus.maps.length : 'none'}
           </dd>
         </div>
         <div>
@@ -663,6 +706,18 @@
     {/if}
     {#if mpMsg}<p class="sett-msg" role="status">{mpMsg}</p>{/if}
     {#if mpError}<p class="error" role="alert">{mpError}</p>{/if}
+    <!-- Live extraction progress: the app's ONE progress widget
+         (StatusChip) beside the step text. Map packs drive it with real
+         numbers from spectra:asset-progress; the icon/sound steps have no
+         emitter, so their bar stays the animated indeterminate one. -->
+    {#if mpBusy && mpStep}
+      <p class="muted" role="status">
+        <StatusChip status="running" progress={mpPct} />
+        Extracting {mpStep}…{mpMapProgress && mpMapProgress.done > 0
+          ? ` ${mpMapProgress.done} of ${mpMapProgress.total}`
+          : ''}
+      </p>
+    {/if}
     <div class="row-between">
       <span class="muted"
         >Extracts every official-map radar, every equipment icon and the

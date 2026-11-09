@@ -1,7 +1,8 @@
 // Read-through cache tests for services.js (A1): same-args returns the
-// same promise instance, different args miss, every spectra:* event
-// (and the explicit invalidate()/mutating wrappers) flush so the next
-// call refetches.
+// same promise instance, different args miss, every data-carrying
+// spectra:* event (and the explicit invalidate()/mutating wrappers)
+// flush so the next call refetches — spectra:asset-progress being the
+// one spectra:* event that does NOT (pure progress, no row changes).
 //
 // services.js is loaded against TEST STUBS for its two runtime
 // dependencies (test/stubs/) — the real bindings talk to a live Wails
@@ -103,6 +104,33 @@ for (const name of SPECTRA_EVENTS) {
     assert.equal(bindings.callCount('GetMatch'), 2);
   });
 }
+
+// spectra:asset-progress (Settings' CS2-asset extraction) is the one
+// spectra:* event that carries no data change: it must reach its own
+// subscriber and must NOT sit in the flush list at the top of services.js.
+test('onAssetProgress delivers the payload and flushes nothing', async () => {
+  assert.equal(
+    listenerCount('spectra:asset-progress'),
+    0,
+    'no cache-flush listener for a progress-only event',
+  );
+  services.invalidate();
+  bindings.resetCalls();
+  const first = services.getMatch(7);
+  await first;
+
+  const seen = [];
+  const off = services.onAssetProgress((p) => seen.push(p));
+  const payload = { family: 'map-packs', stage: 'extract', done: 4, total: 18 };
+  fire('spectra:asset-progress', payload);
+  assert.deepEqual(seen, [payload], 'the subscriber gets the Go payload');
+
+  const second = services.getMatch(7);
+  assert.equal(second, first, 'progress must not evict the cached read');
+  await second;
+  assert.equal(bindings.callCount('GetMatch'), 1, 'no refetch on progress');
+  off();
+});
 
 test('invalidate() flushes explicitly (recompute/reprocess call sites)', async () => {
   services.invalidate();

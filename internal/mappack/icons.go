@@ -214,8 +214,10 @@ func iconVPKPath(name string) string {
 // refreshes the icons. A canonical name whose file is missing from the
 // VPK lands in errs (the manifest simply omits it); only a failure to
 // open the VPK itself is fatal. Returns the canonical names written,
-// sorted for determinism.
-func ExtractIcons(cs2Dir, outDir string) (names []string, errs []string, err error) {
+// sorted for determinism. opts.Progress, when set, fires once per
+// canonical icon attempted (ExtractOptions).
+func ExtractIcons(cs2Dir, outDir string, opts ...ExtractOptions) (names []string, errs []string, err error) {
+	o := firstOptions(opts)
 	pak := resolvePak(cs2Dir)
 	if pak == "" {
 		return nil, nil, fmt.Errorf("no pak01_dir.vpk under %s", cs2Dir)
@@ -229,32 +231,44 @@ func ExtractIcons(cs2Dir, outDir string) (names []string, errs []string, err err
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return nil, nil, err
 	}
-	for _, name := range extractTableNames {
-		base := extractTable[name]
-		raw, found, rerr := v.read(iconVPKPath(name))
-		if rerr != nil {
-			errs = append(errs, fmt.Sprintf("%s: %v", name, rerr))
-			continue
+	for i, name := range extractTableNames {
+		if msg := extractIcon(v, outDir, name); msg != "" {
+			errs = append(errs, msg)
+		} else {
+			names = append(names, name)
 		}
-		if !found {
-			errs = append(errs, fmt.Sprintf("%s: %s%s not in VPK", name, base, iconSuffix))
-			continue
+		if o.Progress != nil {
+			o.Progress(i+1, len(extractTableNames))
 		}
-		svg, derr := decodeVSVG(raw)
-		if derr != nil {
-			errs = append(errs, fmt.Sprintf("%s: %v", name, derr))
-			continue
-		}
-		if werr := writeFileAtomic(filepath.Join(outDir, base+iconExt), svg); werr != nil {
-			errs = append(errs, fmt.Sprintf("%s: %v", name, werr))
-			continue
-		}
-		names = append(names, name)
 	}
 	if len(names) == 0 && len(errs) > 0 {
 		return nil, errs, fmt.Errorf("no icons extracted (%d errors)", len(errs))
 	}
 	return names, errs, nil
+}
+
+// extractIcon does ONE canonical icon's read → decode → write — the body
+// of the ExtractIcons loop, split out so the loop can report progress
+// after EVERY item (the failure paths are returns here, not `continue`s,
+// which would skip it). Returns the message to record in errs, or "" when
+// the icon was written.
+func extractIcon(v *vpk, outDir, name string) string {
+	base := extractTable[name]
+	raw, found, rerr := v.read(iconVPKPath(name))
+	if rerr != nil {
+		return fmt.Sprintf("%s: %v", name, rerr)
+	}
+	if !found {
+		return fmt.Sprintf("%s: %s%s not in VPK", name, base, iconSuffix)
+	}
+	svg, derr := decodeVSVG(raw)
+	if derr != nil {
+		return fmt.Sprintf("%s: %v", name, derr)
+	}
+	if werr := writeFileAtomic(filepath.Join(outDir, base+iconExt), svg); werr != nil {
+		return fmt.Sprintf("%s: %v", name, werr)
+	}
+	return ""
 }
 
 // IconFiles lists the extracted icons in dir: manifest key → filename

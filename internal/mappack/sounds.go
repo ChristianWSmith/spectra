@@ -372,7 +372,10 @@ func soundStem(vpkPath string) string {
 // decoder rejects, lands in errs (the manifest simply omits that variant);
 // only a failure to open the VPK itself is fatal. Returns the canonical
 // names with at least one extracted variant, sorted for determinism.
-func ExtractSounds(cs2Dir, outDir string) (names []string, errs []string, err error) {
+// opts.Progress, when set, fires once per canonical sound attempted
+// (ExtractOptions).
+func ExtractSounds(cs2Dir, outDir string, opts ...ExtractOptions) (names []string, errs []string, err error) {
+	o := firstOptions(opts)
 	pak := resolvePak(cs2Dir)
 	if pak == "" {
 		return nil, nil, fmt.Errorf("no pak01_dir.vpk under %s", cs2Dir)
@@ -386,7 +389,7 @@ func ExtractSounds(cs2Dir, outDir string) (names []string, errs []string, err er
 	if err := os.MkdirAll(outDir, 0o755); err != nil {
 		return nil, nil, err
 	}
-	for _, name := range soundTableNames {
+	for i, name := range soundTableNames {
 		ok := 0
 		for _, vp := range soundTable[name] {
 			raw, found, rerr := v.read(vp)
@@ -412,6 +415,11 @@ func ExtractSounds(cs2Dir, outDir string) (names []string, errs []string, err er
 		}
 		if ok > 0 {
 			names = append(names, name)
+		}
+		// Progress after every canonical name — the variant loop above
+		// only `continue`s itself, so the end of this body always runs.
+		if o.Progress != nil {
+			o.Progress(i+1, len(soundTableNames))
 		}
 	}
 	if len(names) == 0 && len(errs) > 0 {

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/services/kvstore"
@@ -12,6 +13,35 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/data"
 	"github.com/ChristianWSmith/spectra/internal/mappack"
 )
+
+// Event name emitted while an extractor runs. Deliberately NOT
+// spectra:job-progress: that payload keys a jobId in the Library's job
+// store (services.js jobProgress map), and a colliding id there would
+// corrupt it — asset extraction is not a library job.
+const eventAssetProgress = "spectra:asset-progress"
+
+// assetProgressMinInterval throttles asset-progress events to at most one
+// per 100 ms — the same cadence as library.go's progressMinInterval. The
+// closing call (done == total) is never throttled, so the bar always
+// lands on the end instead of stalling short of it.
+const assetProgressMinInterval = 100 * time.Millisecond
+
+// assetFamilyMapPacks is the payload's family for radar map packs. The
+// contract also names icons and sounds, but only this service holds an
+// app handle to emit through (IconService/SoundService are registered
+// without one), so those two steps are labelled client-side instead.
+const assetFamilyMapPacks = "map-packs"
+
+// AssetProgressEvent is the payload of spectra:asset-progress: one
+// extractor family's per-item progress. family is map-packs / icons /
+// sounds, stage the phase within it ("extract" is the only one today),
+// done the items completed out of the run's total.
+type AssetProgressEvent struct {
+	Family string `json:"family"`
+	Stage  string `json:"stage"`
+	Done   int    `json:"done"`
+	Total  int    `json:"total"`
+}
 
 // MapPackService is the frontend-facing radar map-pack surface: detect a
 // local CS2 install, extract official radar images + transforms from the
@@ -62,6 +92,8 @@ func (s *MapPackService) GetMapPackStatus() MapPackStatus {
 // at cs2Dir (empty = auto-detect / manual pref) into the app data dir.
 // Per-map failures are reported in the outcome; the extraction is
 // idempotent, so re-running after a game update refreshes the packs.
+// Per-map progress is emitted as spectra:asset-progress (throttled) so
+// the frontend can render a determinate bar instead of a bare spinner.
 func (s *MapPackService) ExtractMapPacks(cs2Dir string) ExtractOutcome {
 	if cs2Dir == "" {
 		manual, _ := s.kvs.Get(prefsMapPackCS2PathKey).(string)
@@ -70,7 +102,22 @@ func (s *MapPackService) ExtractMapPacks(cs2Dir string) ExtractOutcome {
 	if cs2Dir == "" {
 		return ExtractOutcome{Errors: []string{"Counter-Strike 2 not found"}}
 	}
-	maps, errs, err := mappack.ExtractMapPacks(cs2Dir, data.MapsDir())
+	var lastProgress time.Time
+	maps, errs, err := mappack.ExtractMapPacks(cs2Dir, data.MapsDir(), mappack.ExtractOptions{
+		Progress: func(done, total int) {
+			now := time.Now()
+			if done < total && now.Sub(lastProgress) < assetProgressMinInterval {
+				return
+			}
+			lastProgress = now
+			s.app.Event.Emit(eventAssetProgress, AssetProgressEvent{
+				Family: assetFamilyMapPacks,
+				Stage:  "extract",
+				Done:   done,
+				Total:  total,
+			})
+		},
+	})
 	if err != nil {
 		errs = append(errs, err.Error())
 	}

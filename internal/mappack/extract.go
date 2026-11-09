@@ -154,12 +154,36 @@ type packSource struct {
 	Note string `json:"note"`
 }
 
+// ExtractOptions is the OPTIONAL trailing parameter of the three
+// extractors — ExtractMapPacks, ExtractIcons and ExtractSounds. Progress,
+// if non-nil, is called with (itemsDone, itemsTotal) once per COMPLETED
+// item — a failed item counts as completed, so done reaches itemsTotal on
+// every run — where itemsTotal is the run's whole item count (packs /
+// canonical icons / canonical sounds) known before the first item. Same
+// shape as extract.ParseOptions.Progress (the demo-parse precedent); a
+// caller that passes no options gets today's behaviour exactly.
+type ExtractOptions struct {
+	Progress func(done, total int)
+}
+
+// firstOptions resolves an extractor's variadic options (none passed →
+// the zero value, Progress nil), so the three extractors share one
+// spelling of "read the optional bits".
+func firstOptions(opts []ExtractOptions) ExtractOptions {
+	if len(opts) > 0 {
+		return opts[0]
+	}
+	return ExtractOptions{}
+}
+
 // ExtractMapPacks extracts every official-map radar from the CS2 install
 // at cs2Dir into outDir (created if needed), one subdirectory per map.
 // Existing packs are overwritten (idempotent re-extract after game
 // updates). Individual map failures are reported in errs but don't abort
-// the rest; a failure to even open the VPK is fatal.
-func ExtractMapPacks(cs2Dir, outDir string) (maps []ExtractResult, errs []string, err error) {
+// the rest; a failure to even open the VPK is fatal. opts.Progress, when
+// set, fires once per map attempted (ExtractOptions).
+func ExtractMapPacks(cs2Dir, outDir string, opts ...ExtractOptions) (maps []ExtractResult, errs []string, err error) {
+	o := firstOptions(opts)
 	pak := resolvePak(cs2Dir)
 	if pak == "" {
 		return nil, nil, fmt.Errorf("no pak01_dir.vpk under %s", cs2Dir)
@@ -170,6 +194,12 @@ func ExtractMapPacks(cs2Dir, outDir string) (maps []ExtractResult, errs []string
 	}
 	defer v.close()
 
+	// The pack candidates are collected first: progress reports against
+	// the number of maps this run will ATTEMPT, and non-map stems or
+	// section radars (never packs — see sectionRadar) must not inflate
+	// that total into a bar that jumps.
+	type packJob struct{ radarPath, mapName string }
+	var jobs []packJob
 	for _, radarPath := range v.names(radarPrefix, radarSuffix) {
 		base := radarBase(radarPath)
 		if base == "" {
@@ -183,15 +213,21 @@ func ExtractMapPacks(cs2Dir, outDir string) (maps []ExtractResult, errs []string
 		if _, _, isSection := sectionRadar(v, base); isSection {
 			continue
 		}
-		mapName := base
-		if err := extractOne(v, mapName, radarPath, outDir); err != nil {
-			errs = append(errs, fmt.Sprintf("%s: %v", mapName, err))
-			continue
+		jobs = append(jobs, packJob{radarPath: radarPath, mapName: base})
+	}
+
+	for i, job := range jobs {
+		if err := extractOne(v, job.mapName, job.radarPath, outDir); err != nil {
+			errs = append(errs, fmt.Sprintf("%s: %v", job.mapName, err))
+		} else {
+			maps = append(maps, ExtractResult{
+				Map:  job.mapName,
+				File: filepath.Join(outDir, job.mapName, packRadarPNG),
+			})
 		}
-		maps = append(maps, ExtractResult{
-			Map:  mapName,
-			File: filepath.Join(outDir, mapName, packRadarPNG),
-		})
+		if o.Progress != nil {
+			o.Progress(i+1, len(jobs))
+		}
 	}
 	if len(maps) == 0 && len(errs) > 0 {
 		return nil, errs, fmt.Errorf("no map packs extracted (%d errors)", len(errs))
