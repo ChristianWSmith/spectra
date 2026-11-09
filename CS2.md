@@ -8,7 +8,7 @@ isn't here, search the web and **append the finding** below so the next
 agent doesn't have to.
 
 This file holds domain knowledge only. Repo-specific facts belong in
-`AGENTS.md`, product scope in `ref/`.
+`AGENTS.md`.
 
 ## Format
 
@@ -351,8 +351,8 @@ at the end of the section.
   `packed_params` parameter names use the same MurmurHash2 with seed
   0x31415926 (verified: `murmur2("public.volume")` → `BD6054E9`, the
   byte-reverse of the published `E9 54 60 BD` sample). This is the
-  lookup the sound-event layer (ref/MISSING.md §5.14) needs to turn the
-  golden demo's 25,266 SOS messages into named events.
+  lookup the sound-event layer needs to turn the golden demo's 25,266
+  SOS messages into named events.
   **Source** — golden-demo parse + vsndevts probe (2026-11-03);
   hash seed from csgocn.net RE post (2025-06-08);
   https://cs2opendev.github.io/CS2OpenDev-Docs/protobufs/gameevents/
@@ -421,6 +421,49 @@ at the end of the section.
   cs2pulse (https://cs2pulse.com/where-to-find-cs2-replay-file-location),
   tradeit.gg CS2 replay controls (https://tradeit.gg/blog/cs2-replay-controls),
   immortalboost "How to Watch CS2 Demos" (2026-11-04).
+
+- **Encrypted chat (`svc_EncryptedData`) in Valve matchmaking demos** —
+  chat in CS2 Valve-MM demos is carried in `svc_EncryptedData`
+  net-messages (encrypted since the Sept 2026 CS2 update; CS:GO MM demos
+  were already like this). The decryption key is the public
+  `cl_decryptdata_key_pub` inside the GC's `CDataGCCStrike15_v2_MatchInfo`
+  protobuf, shipped as the companion `match730_*.dem.info`
+  (`demoinfocs.MatchInfoDecryptionKey()` /
+  `demofile.extractPublicEncryptionKey()`). It decrypts PUBLIC chat; team
+  chat uses a private key not available outside Valve (single hedged
+  source), so encrypted team chat is NOT assumed recoverable. Non-Valve-MM
+  demos (FACEIT, HLTV) carry plaintext chat — no `svc_EncryptedData`.
+  **Source** — https://github.com/saul/demofile/issues/322,
+  https://github.com/markus-wa/demoinfocs-golang/releases/tag/v6.0.0-alpha.1,
+  https://demofile.dev/classes/DemoFile.html (2026-11-09).
+
+- **Voice (`svc_VoiceData`) availability in demos** — CS2 voice packets
+  carry Opus audio. Presence is server-config-dependent, not a format
+  guarantee: SourceTV records player voice only when the server's voice
+  flags allow (e.g. `sv_alltalk 1`; `tv_relayvoice` default 1). FACEIT
+  SourceTV demos demonstrably contain it (38,620 `svc_VoiceData` messages
+  in one 228 MB FACEIT demo). Presence in Valve MM demos is NOT
+  established; demofile's `setEncryptionKey` doc notes the `.dem.info`
+  key also decrypts "caster voice data" from public matchmaking, so some
+  voice there may exist encrypted.
+  **Source** — https://github.com/MohammadAM02/cs2-clipper/pull/14,
+  https://github.com/b0ink/CS2-FixDemoVoiceChat,
+  https://demofile.dev/classes/DemoFile.html,
+  https://developer.valvesoftware.com/wiki/List_of_Counter-Strike_2_console_commands_and_variables
+  (2026-11-09).
+
+- **`match730_*.dem.info` companion file (GC metadata is not in the
+  `.dem`)** — the GC ships `CDataGCCStrike15_v2_MatchInfo` (match
+  metadata AND the chat-decryption key) as a separate `.dem.info`
+  downloaded alongside the replay (Valve log: "MatchInfo Download
+  prepared `replays/match730_*.dem.info`"). In-game downloads come as a
+  `.dem` + `.dem.info` PAIR; Steam "personal game data" downloads give
+  only the `.dem`. Parse it as `CDataGCCStrike15_v2_MatchInfo`;
+  `demoinfocs.MatchInfoDecryptionKey()` reads the key from it.
+  **Source** —
+  https://pkg.go.dev/github.com/markus-wa/demoinfocs-golang/v2/pkg/demoinfocs,
+  https://github.com/ValveSoftware/csgo-osx-linux/issues/986,
+  https://github.com/CSGO-Analysis/CSGO-Analyzer (2026-11-09).
 
 - **World units ↔ meters, and player movement speeds** — coordinate and
   distance units for any proximity math. One world unit is one inch
@@ -974,6 +1017,23 @@ at the end of the section.
   https://wiki.alliedmods.net/Counter-Strike:_Global_Offensive_Events,
   demoinfocs v6 `game_events.go` (delay comment) + `events.ItemPickup`
   docs; golden-demo diag `TestDiagDropInventoryAtKill` (2026-11-08).
+
+- **Which optional CS2 demo events actually fire / input recording
+  limits** — event availability is build- and recorder-dependent:
+  `bullet_impact` fired 0 times across 6,765 rounds of a 388-demo CS2
+  corpus ("zero fires in that many rounds is evidence the event is gone
+  from CS2"), and the same audit found `halftime`, `game_restart`,
+  `bomb_abortdefuse`/`bomb_abortplant`, `defuser_dropped`/
+  `defuser_pickedup`, `inferno_extinguish`, `item_drop`,
+  `player_avenged_teammate` at 0. Older CS2 recordings "without full user
+  commands" yield no user-command rows. POV-only input is NOT a CS2
+  format limitation: demoinfocs decodes full user commands (buttons, view
+  angles, subtick, input history) from public HLTV/GOTV demos —
+  2.24M/1.72M `UserCmd` events on two public HLTV demos, view angles
+  matching pawn eye angles 92–98% within 5°.
+  **Source** — https://github.com/CS2OpenDev/CS2DemoKit/pull/80,
+  https://docs.pureskill.gg/datascience/adx/cs2/csds/changelog,
+  https://github.com/markus-wa/demoinfocs-golang/issues/751 (2026-11-09).
 
 - **C4 beep sounds — assets, events, cadence, and the final-10-second
   samples (spectra's replay beeps)** — where the beeps live and how the

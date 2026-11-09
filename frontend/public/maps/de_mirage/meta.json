@@ -7,7 +7,7 @@
   "sites": {},
   "spawns": {},
   "source": {
-    "note": "transform constants from community tabulation (ref/findings/findings-mappack.md §2, de_mirage overview txt); no radar shipped — exercises the partial map-pack UX path; elevation_regions: derived from in-game getpos_exact samples (2026-11-08) — each box reference sits BETWEEN the two sampled surfaces so both always mark (⊥ above, T below) — see frontend/public/maps/README.md"
+    "note": "transform constants from community tabulation (de_mirage overview txt); no radar shipped — exercises the partial map-pack UX path; elevation_regions: derived from in-game getpos_exact samples (2026-11-08) — each box reference sits BETWEEN the two sampled surfaces so both always mark (⊥ above, T below) — see frontend/public/maps/README.md"
   },
   "elevation_regions": [
     {

@@ -171,7 +171,7 @@
     }, 400);
   }
   // --- Spatial series (series only; pattern detection descoped pending -----
-  // bomb-site region polygons — see ref/MISSING.md).
+  // bomb-site region polygons).
   const SPAT_W = 640;
   const SPAT_H = 140;
 

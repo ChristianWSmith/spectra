@@ -79,6 +79,9 @@ spectacle -b -n -o /tmp/shot.png         # then Read the PNG
 - Known quirk: the KWin titlebar can steal the first click after
   activation; verify effects with a screenshot after each step.
 
+All perf figures and visual smoke runs are Linux/X11 only —
+macOS/Windows timings are unmeasured.
+
 ## Layout
 
 | Path | Role |
@@ -99,7 +102,6 @@ spectacle -b -n -o /tmp/shot.png         # then Read the PNG
 | `Taskfile.yml` + `build/` | stock Wails v3 build system (per-OS tasks, packaging, icons, platform metadata). `build/config.yml` holds product name/ID/version; run `make build-assets` after editing it |
 | `build/appicon.png` | the app icon source (512×512 PNG); `wails3 task common:generate:icons` (run automatically by every build) derives `.ico`/`.icns` |
 | `Makefile` | the single source of build/package commands, shared with CI |
-| `ref/` | project reference docs: `PRD.md` (product spec) and `MISSING.md` (the open backlog — everything not yet in the app) |
 | `CS2.md` | domain-knowledge cache for CS2 facts (formats, mechanics, rules, events); see "CS2 domain knowledge" |
 | `golden/` | the demo pool, all tracked via **Git LFS** (`.gitattributes`): `de_cache.dem.zst` is the golden acceptance demo (formerly `donk.dem.zst`), the other `de_*.dem.zst` files are archived map demos not yet onboarded to tests; acceptance tests parse the golden one and skip if absent; regenerate golden fixtures deliberately when extraction changes |
 
@@ -147,13 +149,44 @@ After cloning, run `git lfs pull` if the golden demo is needed.
   `make build-assets` and commit the
   regenerated assets. The release skill bumps its `version` in lockstep with
   the dispatch input (two sources, one release).
+- **The SQL console is read-only by construction:** `QueryService` /
+  `internal/query` validate the statement and run it on a separate
+  `mode=ro` + `query_only` connection (timeout + row cap); the write
+  handle is never reachable from the console. Keep that layering when
+  touching either side.
+- **Metrics carry their formula and their N:** every metric documents its
+  formula (fallback `Formula: <expr>`), and missing data surfaces as
+  value 0 beside `N` (the sample size) — never a fabricated number.
+- **`PRD §X.Y` citations in comments are historical:** the product spec
+  is retrievable from git history only (it left the tree with the
+  reference docs); leave the comments as-is — when a citation encodes a
+  durable rule, write the rule here instead of chasing the section.
 
 ### One canonical way (consolidation conventions)
 
-Adopted by the application-wide consolidation pass; full canonical-home
-table in `ref/CONSOLIDATION.md`. Before adding any helper, rule, class, or
-query fragment, check whether a canonical one already exists — extend it
-instead of forking it.
+Adopted by the application-wide consolidation pass. Before adding any
+helper, rule, class, or query fragment, check whether a canonical one
+already exists — extend it instead of forking it.
+
+Canonical homes (extend these, don't fork them):
+
+| Concern | Canonical home |
+|---|---|
+| Negative-round filter semantics | `store.queryEvents` — `exactRound` for round detail; `RoundFrom`/`RoundTo` inclusive range with 0 = open bound |
+| KAST / K-D expressions | `store/queries.go` consts `kastPerMatchSQL`/`kastCareerSQL`/`kdPerMatchSQL`/`kdCareerSQL` — per-match vs career are deliberate scope variants |
+| Player-name joins | `store.playersJoin` — builds the join fragments; LEFT joins carry the empty-steam guard, INNER deliberately do not |
+| Column lists | one `<table>Cols` const per table in `internal/store`, pinned to the DDL by `TestColumnListConstsMatchSchema` |
+| Delete-then-insert writers | `store.replaceMatchRows` — voice/plugin/`SaveExtracted` keep bespoke tx (atomicity/upsert reasons in code) |
+| Single-match lookups | `store.GetMatchSummary` / `GetTeamNames` / `GetPlayerRefs` — never fetch the whole library for one row |
+| EventRow → Event | `models.EventFromRow` (payload-free by design); blind-event payloads reach analytics via `store.GetBlindFlashDetails` |
+| Read-side cache | `lib/services.js` `cachedRead` — keyed `(method, args)`, flushed on every `spectra:*` event and on mutating wrappers |
+| Generic-payload labels | `eventlabels.go` — THE one labeler (Go only; the JS copy died with Context) |
+| Event-row renderer | `lib/components/LandmarkRow.svelte` — the one row for the Replay feed AND CompareRounds' compact sequence |
+| Dialogs / popovers | `lib/components/Dialog.svelte`, `lib/components/Popover.svelte` — Escape/outside-click/focus-return; busy-gating stays with the consumer |
+| Search suggestions | `lib/components/SuggestInput.svelte` — the ONE suggestion dropdown; sources `store.ListMapNames` + `ProfileService.ListPlayers` |
+| Sort headers / stat cells | `lib/components/SortTh.svelte`, `lib/components/StatCard.svelte` — markup only; each view keeps its own sort state and backend |
+| Match pickers | `lib/components/MatchPicker.svelte` — Explorer, Reports, Builder all use it |
+| Radar coordinate transform | `lib/components/mapxform.js` `makeTransform` — THE pack→transform reader; camera/no-pack bounds fallback stay renderer-only |
 
 - **Domain rules live in one place:** side-parity arithmetic in
   `internal/rules` (frontend twin `lib/sideparity.js`, both pinned to
@@ -218,6 +251,12 @@ instead of forking it.
   harnesses in `frontend/test/` (`npm i --no-save jsdom` first). Golden
   fixtures may only be regenerated deliberately, with the diff explained —
   a fixture diff without justification is a rejected change.
+- **Deliberate non-consolidations (distinct questions — leave as
+  variants):** Heatmaps vs Replay (aggregate vs live); per-match vs career
+  rollups (share the SQL consts, stay variants); `fmtClock` tick vs second
+  units; palette vs sidebar (share one nav list, different modality);
+  `internal/plugin.MetricDef` vs `store.PluginMetricDef` (manifest schema
+  and write input — not service DTOs).
 
 ## CS2 domain knowledge
 
