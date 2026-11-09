@@ -170,9 +170,18 @@ tasks:
     dir: build
     cmds:
       - mkdir -p {{.ROOT_DIR}}/build/linux/appimage
-      - wails3 generate .desktop -name "{{.APP_NAME}}" -exec "{{.EXEC}}" -icon "{{.ICON}}" -outputfile "{{.ROOT_DIR}}/build/linux/{{.APP_NAME}}.desktop" -categories "{{.CATEGORIES}}"
+      # `-name` feeds ONLY the entry's `Name=` display line — wails3's
+      # dot_desktop generator takes Exec/Icon from the flags below, and
+      # writes no StartupWMClass. DISPLAY_NAME is therefore the
+      # title-case brand name, deliberately NOT APP_NAME: Exec/Icon stay
+      # lowercase `spectra` so the launcher keeps matching the window
+      # class (`StartupWMClass=spectra`, `pkill -x spectra`, `xdotool
+      # search --class "spectra"` — see AGENTS.md). The output filename
+      # comes from -outputfile, also keyed to APP_NAME.
+      - wails3 generate .desktop -name "{{.DISPLAY_NAME}}" -exec "{{.EXEC}}" -icon "{{.ICON}}" -outputfile "{{.ROOT_DIR}}/build/linux/{{.APP_NAME}}.desktop" -categories "{{.CATEGORIES}}"
     vars:
       APP_NAME: '{{.APP_NAME}}'
+      DISPLAY_NAME: 'Spectra'
       EXEC: '{{.APP_NAME}}'
       ICON: '{{.APP_NAME}}'
       CATEGORIES: 'Development;'

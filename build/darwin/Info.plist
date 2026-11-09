@@ -5,7 +5,7 @@
 		<key>CFBundleExecutable</key>
 		<string>spectra</string>
 		<key>CFBundleGetInfoString</key>
-		<string>spectra</string>
+		<string>Spectra</string>
 		<key>CFBundleIconFile</key>
 		<string>icons</string>
 		<key>CFBundleIconName</key>
@@ -13,7 +13,7 @@
 		<key>CFBundleIdentifier</key>
 		<string>com.christianwsmith.spectra</string>
 		<key>CFBundleName</key>
-		<string>spectra</string>
+		<string>Spectra</string>
 		<key>CFBundlePackageType</key>
 		<string>APPL</string>
 		<key>CFBundleShortVersionString</key>

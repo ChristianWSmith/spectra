@@ -1,6 +1,6 @@
 [Desktop Entry]
 Version=1.0
-Name=spectra
+Name=Spectra
 Comment=A powerful, feature-rich CS2 demo viewer and match analysis toolkit.
 # The Exec line includes %u to pass the URL to the application
 Exec=/usr/local/bin/spectra %u

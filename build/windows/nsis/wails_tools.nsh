@@ -11,7 +11,7 @@
     !define INFO_COMPANYNAME "Christian Smith"
 !endif
 !ifndef INFO_PRODUCTNAME
-    !define INFO_PRODUCTNAME "spectra"
+    !define INFO_PRODUCTNAME "Spectra"
 !endif
 !ifndef INFO_PRODUCTVERSION
     !define INFO_PRODUCTVERSION "0.1.1"
