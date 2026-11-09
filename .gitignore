@@ -48,6 +48,8 @@ go.work.sum
 # Session working notes (untracked reference)
 .opencode/*
 !.opencode/skills/
+!.opencode/agents/
+!.opencode/opencode.json
 
 # CS2 Demos
 *.zst
