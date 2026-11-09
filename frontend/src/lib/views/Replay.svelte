@@ -82,6 +82,10 @@
   // K/D/A + ADR fold feeds the cards' stats row.
   import { colorHexOf, colorSlotsOf } from '../replay/playercolor.js';
   import { liveStats } from '../replay/livestats.js';
+  // Card presence (player_connect / player_disconnect): which roster
+  // slots are IN the match at the playhead — the ONE rule that decides
+  // which player cards exist (the card columns' filter below).
+  import { connectedAt, indexConnections } from '../replay/playercard.js';
   import { loadMapPack } from '../components/mapxform.js';
   import { downloadBlob, downloadText } from '../download.js';
   import { toCSV } from '../csv.js';
@@ -293,6 +297,16 @@
   const PAGE = 500; // per-source page size; PAGE+1 probes "there is more"
 
   let drawRows = $state([]); // drawable-kind anchors, fetched once per match
+  // Connection rows (player_connect / player_disconnect), fetched once
+  // per match beside drawRows: the roster keeps a slot for a player who
+  // disconnects mid-demo AND for a bot that joins late, so without them
+  // the columns grow a phantom card (the nuke demo's sixth CT). The
+  // index below groups them per player; the card columns and the follow
+  // dropdown read it through playerConnected(). Fail-soft by contract
+  // like drawRows — any failure lands [] and every card stays visible
+  // (missing data never hides a card).
+  let connRows = $state([]);
+  const connIndex = $derived(indexConnections(connRows));
   // Flash-white overlay rows {slot, tick, ms} — the blind events joined
   // with their narrow flash-duration read in load() (plain let: only
   // startEngine reads it, no rendering depends on it). Empty = no
@@ -930,6 +944,12 @@
   // is invented for them, and the card renders with the column's side,
   // which is '' (neutral) whenever the column's own side is unknown
   // (TeamColumn's contract: the column side wins over any card value).
+  //
+  // cardGroups is the UNFILTERED grouping — team identity (the column's
+  // side) and the team-mute's steam-id list are team facts that must not
+  // change when someone disconnects (see teamSteamIds below). A player
+  // out of the match at the playhead is dropped one step LATER, in
+  // cardColumns, so only the CARD goes away.
   function sideAtLastPayload(slot) {
     const masks = data && data.masks;
     const slotData = data && data.slots && data.slots[slot];
@@ -943,6 +963,18 @@
       }
     }
     return '';
+  }
+
+  // playerConnected(slot, tick) — the ONE card-presence question: is
+  // this roster slot's player IN the match at `tick`? (playercard.js
+  // connectedAt over the indexed connect/disconnect rows; a slot with
+  // no steam id or no rows stays visible — missing data never hides a
+  // card). Reads uiTick through the caller, so scrubbing back before a
+  // disconnect re-shows the card and scrubbing forward hides it again.
+  function playerConnected(slot, tick) {
+    const p = players[slot];
+    const sid = p && p.steamId != null ? String(p.steamId) : '';
+    return connectedAt(connIndex.get(sid), tick);
   }
 
   const cardGroups = $derived.by(() => {
@@ -1133,6 +1165,11 @@
 
   // The steam ids a column's team mute applies to (roster order, one
   // spelling shared by the toggle and startEngine's rebuild re-apply).
+  // Deliberately over the UNFILTERED cardGroups: muting a team is a
+  // durable voice setting, so a player who is out of the match at this
+  // playhead still gets the flag — otherwise a reconnect would land on a
+  // card that reads `muted` while the engine never heard of it (the
+  // exact disagreement this list exists to prevent).
   function teamSteamIds(col) {
     return (col === 'left' ? cardGroups.left : cardGroups.right)
       .map((s) => (players[s] && players[s].steamId != null ? String(players[s].steamId) : ''))
@@ -1144,35 +1181,41 @@
   // speaking, muted) recomputes here, while stable refs (the roster
   // object itself, the icon maps, the memoized mute handlers) keep prop
   // churn to the values that actually changed — Svelte then writes only
-  // the text/classes that differ.
+  // the text/classes that differ. A player who is OUT of the match at
+  // this playhead (disconnected, not yet connected) contributes NO card:
+  // the slot is filtered before the props are built, so TeamColumn's
+  // keyed each-block simply renders one card fewer (and one more on a
+  // reconnect) — no placeholder card, no unmounted-then-remounted row.
   const cardColumns = $derived.by(() => {
     const frame = uiFrame;
     const tick = uiTick;
     const build = (slots, col) =>
-      slots.map((slot) => {
-        const p = players[slot] || {};
-        const alive = aliveAtFrame(frame, slot);
-        // Status is only CLAIMED once the stream has sampled this slot
-        // (firstPayloadFrame); before that it is unknown — `alive: null`
-        // is PlayerCard's "no data" state, which renders neither alive
-        // nor DEAD.
-        const sampled = (firstPayloadFrame[slot] ?? -1) >= 0 && frame >= firstPayloadFrame[slot];
-        const sid = p.steamId != null ? String(p.steamId) : '';
-        return {
-          player: players[slot] || {},
-          playerColor: colorHexOf(p.color),
-          speaking: sid && speakIdx ? speakingAt(speakIdx, sid, tick) : false,
-          muted: uiVoiceMutedAll || teamMuted[col] || !!(sid && uiVoiceMute[sid]),
-          alive: sampled ? alive : null,
-          dead: sampled && !alive,
-          follow: uiFollow === slot,
-          state: stateIndex ? slotStateAt(stateIndex, slot, frame) : null,
-          stats: sid ? statsBySteam.get(sid) ?? null : null,
-          icons: iconMap,
-          iconURLs: iconUrls,
-          onToggleMute: muteHandlerFor(sid),
-        };
-      });
+      slots
+        .filter((slot) => playerConnected(slot, tick))
+        .map((slot) => {
+          const p = players[slot] || {};
+          const alive = aliveAtFrame(frame, slot);
+          // Status is only CLAIMED once the stream has sampled this slot
+          // (firstPayloadFrame); before that it is unknown — `alive: null`
+          // is PlayerCard's "no data" state, which renders neither alive
+          // nor DEAD.
+          const sampled = (firstPayloadFrame[slot] ?? -1) >= 0 && frame >= firstPayloadFrame[slot];
+          const sid = p.steamId != null ? String(p.steamId) : '';
+          return {
+            player: players[slot] || {},
+            playerColor: colorHexOf(p.color),
+            speaking: sid && speakIdx ? speakingAt(speakIdx, sid, tick) : false,
+            muted: uiVoiceMutedAll || teamMuted[col] || !!(sid && uiVoiceMute[sid]),
+            alive: sampled ? alive : null,
+            dead: sampled && !alive,
+            follow: uiFollow === slot,
+            state: stateIndex ? slotStateAt(stateIndex, slot, frame) : null,
+            stats: sid ? statsBySteam.get(sid) ?? null : null,
+            icons: iconMap,
+            iconURLs: iconUrls,
+            onToggleMute: muteHandlerFor(sid),
+          };
+        });
     return { left: build(cardGroups.left, 'left'), right: build(cardGroups.right, 'right') };
   });
 
@@ -1535,6 +1578,20 @@
         (await getEvents({
           matchId: id,
           kinds: DRAW_KINDS,
+          offset: 0,
+          limit: 0,
+        }).catch(() => [])) || [];
+      // Connection events for the card-visibility rule (the SAME narrow
+      // read shape as the blind rows below): one pass over the match's
+      // player_connect / player_disconnect rows — EventRow.attacker is
+      // the roster's steamId spelling, so indexConnections keys it
+      // straight onto meta.players. Fetched BEFORE the engine starts so
+      // the columns never paint a phantom card on first paint; fail-soft
+      // like drawRows (any failure → [] → every card visible).
+      connRows =
+        (await getEvents({
+          matchId: id,
+          kinds: ['player_connect', 'player_disconnect'],
           offset: 0,
           limit: 0,
         }).catch(() => [])) || [];
@@ -2463,7 +2520,12 @@
             >
               <option value="" disabled>Follow player…</option>
               {#each players as p, i (i)}
-                <option value={i}>{i + 1}. {p.name || `slot ${i}`}</option>
+                <!-- Only players IN the match at the playhead are followable —
+                     a disconnected slot has no position for the camera to
+                     track (the same filter the card columns apply). -->
+                {#if playerConnected(i, uiTick)}
+                  <option value={i}>{i + 1}. {p.name || `slot ${i}`}</option>
+                {/if}
               {/each}
             </select>
           {/if}
