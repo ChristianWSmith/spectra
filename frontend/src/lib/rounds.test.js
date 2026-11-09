@@ -2,12 +2,13 @@
 // counted-round predicate (the analytics CountedRounds twin),
 // roundStartTick, the round-number → start-tick lookup behind every
 // "jump to round N" link (nav.entrySeekTick, Replay's round ribbon),
-// and scoreThrough (the scoreline-at-a-round aggregate).
+// scoreThrough (the scoreline-at-a-round aggregate), and separatorAfter
+// (the round-ribbon separator cadence).
 // Run: node --test src/lib/rounds.test.js   (from frontend/)
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { isCounted, roundStartTick, roundIndexLabel, scoreThrough, inFreezeTime } from './rounds.js';
+import { isCounted, roundStartTick, roundIndexLabel, scoreThrough, inFreezeTime, separatorAfter } from './rounds.js';
 
 const ROUNDS = [
   { number: -2, startTick: 100 }, // knife
@@ -22,6 +23,39 @@ test('isCounted: only positive-numbered rounds are counted play', () => {
   assert.equal(isCounted(ROUNDS[1]), false); // warmup
   assert.equal(isCounted(null), false);
   assert.equal(isCounted(undefined), false);
+});
+
+// separatorAfter — the ONE ribbon separator cadence (… 11 12 | 13 … 23
+// 24 | 25 26 27 | 28 29 30 | …): MR12 halftime after 12, regulation end
+// after 24, then every 3 counted rounds (OT halves). The trailing-
+// marker suppression ("only while a later counted round follows") is a
+// render-time concern and pinned in test/round-strip.dom.mjs, not here.
+test('separatorAfter: after 12, then 24 and every 3 OT rounds', () => {
+  for (const n of [12, 24, 27, 30, 33, 36, 45]) {
+    assert.equal(separatorAfter(n), true, `round ${n} should separate`);
+  }
+});
+
+test('separatorAfter: everything else does not separate', () => {
+  // Just before each boundary, and the in-between OT rounds.
+  for (const n of [11, 13, 15, 18, 21, 23, 25, 26, 28, 29, 31, 32, 34, 35]) {
+    assert.equal(separatorAfter(n), false, `round ${n} should not separate`);
+  }
+  // Small numbers never separate.
+  for (let n = 1; n <= 11; n++) {
+    assert.equal(separatorAfter(n), false, `round ${n} should not separate`);
+  }
+  // Knife/warmup negatives, round 0 and junk are never separators.
+  assert.equal(separatorAfter(0), false);
+  assert.equal(separatorAfter(-12), false);
+  assert.equal(separatorAfter(-2), false);
+  assert.equal(separatorAfter(null), false);
+  assert.equal(separatorAfter(undefined), false);
+  assert.equal(separatorAfter('x'), false);
+  assert.equal(separatorAfter(NaN), false);
+  // Numeric strings coerce (a route/query round param would).
+  assert.equal(separatorAfter('24'), true);
+  assert.equal(separatorAfter('13'), false);
 });
 
 test('roundStartTick resolves a round number to its start tick', () => {

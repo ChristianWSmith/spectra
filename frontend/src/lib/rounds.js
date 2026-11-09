@@ -1,8 +1,8 @@
 // Round helpers — the ONE frontend home for round rules: the
 // counted-round predicate ("stats-eligible play"), the round-number →
-// start-tick lookup behind every "jump to round N" link, and the
-// scoreline-through-a-round aggregate. Pure functions,
-// no services.
+// start-tick lookup behind every "jump to round N" link, the
+// scoreline-through-a-round aggregate, and the round-ribbon separator
+// rule. Pure functions, no services.
 //
 // Cross-layer twins that must stay identical (all three are exercised by
 // the golden demo):
@@ -22,6 +22,33 @@
 // isCounted reports whether a round row is counted play (number >= 1).
 export function isCounted(r) {
   return !!r && r.number >= 1;
+}
+
+// separatorAfter — THE one round-ribbon separator rule (RoundStrip's
+// `.round-split` marker): true for the counted round a separator
+// FOLLOWS. Cadence — after 12 (MR12 halftime: regulation halves are
+// rounds 1-12 | 13-24), after 24 (regulation's end / the OT boundary),
+// then every 3 counted rounds (OT is MR3: … | 25 26 27 | 28 29 30 |
+// 31 32 33 | …), i.e. 12, 24, 27, 30, 33, …. Round numbering stays
+// dense 1..N through OT (extract's renumber never resets per half —
+// see the cross-layer twin note above), so the argument is the
+// counted-round NUMBER itself; knife/warmup negatives are never
+// separators (callers gate on isCounted first).
+//
+// Companion rule kept OUT of this predicate on purpose: a marker
+// renders only when at least one MORE counted round follows it (a match
+// ending exactly on a boundary cell gets no dangling marker) — that
+// depends on the visible cell list and lives in RoundStrip.svelte.
+//
+// Display convention, not side parity: the real side switches fall at
+// 12, 27, 30, … (no switch at OT start — teams keep regulation sides
+// for rounds 25-27); the marker after 24 marks the regulation/OT
+// boundary instead. See CS2.md "MR12 regulation + MR3 overtime".
+export function separatorAfter(countedRoundNumber) {
+  const n = Number(countedRoundNumber);
+  if (!Number.isFinite(n)) return false;
+  if (n === 12) return true; // MR12 halftime
+  return n >= 24 && (n - 24) % 3 === 0; // regulation end + OT's 3-round halves
 }
 
 // roundIndexLabel renders a round's DISPLAY label: counted rounds show

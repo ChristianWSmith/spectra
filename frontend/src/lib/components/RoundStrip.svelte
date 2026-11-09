@@ -14,11 +14,14 @@
 // cell points an arrow toward the team that WON that round — ▲ toward the
 // team above, ▼ toward the team below — so the arrow
 // follows the TEAM across the halftime side switch while the cell tint
-// keeps following the SIDE. A marker splits the row after the 12th real
-// round (the MR12 halftime).
+// keeps following the SIDE. Separators split the row after counted round
+// 12 (the MR12 halftime), after 24 (the regulation/OT boundary) and
+// every 3 OT rounds after that (27, 30, 33, …) — and only while another
+// counted round follows, so a match ending on a boundary cell gets no
+// dangling marker (the rule lives in ../rounds.js separatorAfter).
 import { sideAtRound } from '../sideparity.js';
 import { teamStartClass } from '../teams.js';
-import { isCounted, roundIndexLabel } from '../rounds.js';
+import { isCounted, roundIndexLabel, separatorAfter } from '../rounds.js';
 import { buildHash } from '../router.js';
 // Rounds visibility pref (key: show_knife_warmup_rounds, prefs.go).
 // Read HERE rather than passed in, so both call sites obey the one
@@ -49,10 +52,6 @@ let {
   onselect = null,
 } = $props();
 
-// MR12: the first half is real rounds 1..12, so the split sits after the
-// 12th real round (a match that never reaches 12 real rounds gets none).
-const HALFTIME_AFTER = 12;
-
 // false (the default) hides the warmup/knife cells. kvstore values
 // round-trip as JSON — a bool stays a bool (Settings writes this key as a
 // real boolean); anything else (unset, null, corrupt) falls back to
@@ -72,9 +71,10 @@ $effect(() => {
   return () => (live = false);
 });
 
-// Per-cell data: split marker + the side the team-above played in that
-// round. Sides swap at every half, so each cell's side comes from the
-// canonical side-parity helper shared with the backend (flip boundaries at
+// Per-cell data: the separator marker after this cell (if any) + the
+// side the team-above played in that round. Sides swap at every half,
+// so each cell's side comes from the canonical side-parity helper
+// shared with the backend (flip boundaries at
 // floor((n*k + switches) / (switches + 1)) — see ../sideparity.js
 // sideAtRound, which maps the round number through the counted rounds;
 // the per-round name colors resolve through the same helper, so the strip
@@ -91,6 +91,13 @@ const cells = $derived.by(() => {
   const visible = showKnifeWarmup
     ? rounds
     : rounds.filter((r) => isCounted(r) || (current !== 0 && r.number === current));
+  // Trailing-marker suppression: a separator renders only when at least
+  // one MORE counted round follows it — a match ending exactly on a
+  // boundary cell (12, 24, 27, …) gets no dangling marker after its
+  // last cell. Negative (knife/warmup) cells never increment the
+  // counter, so they can never shift a marker's position; the boundary
+  // rule itself is ../rounds.js separatorAfter (the ONE separator rule).
+  const countedTotal = visible.filter(isCounted).length;
   let seen = 0;
   return visible.map((r) => {
     const isReal = isCounted(r);
@@ -98,7 +105,7 @@ const cells = $derived.by(() => {
     // canonical derivation (../sideparity.js sideAtRound → sideInEra —
     // the same one startSideFor feeds the team-identity name colors with).
     const aboveSide = sideAtRound(rounds, sideSwitches, r.number, 'ct');
-    const after = isReal && ++seen === HALFTIME_AFTER;
+    const after = isReal && ++seen < countedTotal && separatorAfter(seen);
     // Display label from the ONE canonical formatter (../rounds.js
     // roundIndexLabel): counted rounds show their number, negative ingest
     // indices show "K" (knife) / "W" (warmup).

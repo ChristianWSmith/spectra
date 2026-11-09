@@ -1079,8 +1079,10 @@ input[type='checkbox']:focus-visible {
 
 /* Round strip */
 
-/* Diverging layout: the team above the row, the cells (with a split
-   marker after the 12th real round), the team below. The wrap is
+/* Diverging layout: the team above the row, the cells (with separator
+   markers after counted rounds 12, 24, 27, 30, … — the MR12 halftime
+   and the regulation/OT boundaries, see lib/rounds.js separatorAfter),
+   the team below. The wrap is
    fit-content: it hugs its widest child, so when the cells fit on one
    line the box is exactly the strip's range (and when they wrap, both
    share the full available width) — that is the range the team labels
@@ -1117,7 +1119,11 @@ input[type='checkbox']:focus-visible {
   align-items: center;
 }
 
-/* Halftime split: a dashed rule after real round 12 (MR12). */
+/* Round-group separator: a dashed rule after counted round 12 (MR12
+   halftime), then after 24 (regulation end) and every 3 OT rounds (27,
+   30, 33, …) — never after the last counted round (trailing markers are
+   suppressed; the rule is lib/rounds.js separatorAfter). Generic dashed
+   marker: .round-strip's flex-wrap flows several of them fine. */
 .round-split {
   width: 0;
   height: 26px;

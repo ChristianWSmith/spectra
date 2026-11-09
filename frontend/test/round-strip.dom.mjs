@@ -1,8 +1,10 @@
 // jsdom driver for RoundStrip: the show_knife_warmup_rounds pref filter
 // (warmup/knife cells hidden by default, shown when the pref opts in, the
 // viewed round always kept), the canonical W/K display labels from
-// lib/rounds.js roundIndexLabel (never the raw negative index), and the
-// side-parity arrows staying correct while those cells are hidden.
+// lib/rounds.js roundIndexLabel (never the raw negative index), the
+// side-parity arrows staying correct while those cells are hidden, and
+// the separator cadence (lib/rounds.js separatorAfter + the trailing-
+// marker suppression) staying anchored to counted rounds.
 //
 // jsdom is intentionally not a project dependency; from frontend/ run:
 //   npm i --no-save jsdom
@@ -208,15 +210,68 @@ for (const [n, cls] of Object.entries(wantArrows)) {
   );
 }
 
-console.log('F. the halftime split still counts only real rounds');
-const long = [...rounds.slice(0, 3), ...Array.from({ length: 13 }, (_, i) => ({
-  number: i + 1,
-  winner: i % 2 ? 't' : 'ct',
-  reason: 'CTWin',
-}))];
-await showStrip(long); // pref OFF
-check('13 counted cells', cells().length === 13, String(cells().length));
-check('exactly one split marker', document.querySelectorAll('.round-split').length === 1);
+console.log('F. separators: after counted 12, then 24 and every 3 OT rounds');
+// Counted rounds 1..n prefixed by the three pre-match rows (two
+// warmups + the knife): with the pref OFF only the counted cells
+// render, so the negative rows must not shift any marker (the counted
+// counter only advances on counted cells).
+const preMatch = rounds.slice(0, 3);
+const counted = (n) =>
+  Array.from({ length: n }, (_, i) => ({
+    number: i + 1,
+    winner: i % 2 ? 't' : 'ct',
+    reason: 'CTWin',
+  }));
+// The label of the cell each `.round-split` immediately FOLLOWS (cells
+// and markers are siblings in DOM order inside .round-strip).
+const splitsAfter = () => {
+  const kids = [...document.querySelector('.round-strip').children];
+  const at = [];
+  kids.forEach((el, i) => {
+    if (!el.classList.contains('round-split')) return;
+    const prev = kids[i - 1];
+    at.push(prev && prev.classList.contains('round-cell') ? prev.textContent.trim() : '(?)');
+  });
+  return at;
+};
+// The cadence (… 12 | … 24 | 25 26 27 | 28 29 30 | …) plus the
+// trailing-marker rule: a separator renders only while a later counted
+// round follows it, so a match ending exactly on a boundary cell (24,
+// 30, 33) gets no dangling marker after its last cell.
+const matrix = [
+  [13, ['12']],
+  [24, ['12']], // after 24 suppressed — no round 25 follows
+  [25, ['12', '24']],
+  [28, ['12', '24', '27']],
+  [30, ['12', '24', '27']], // after 30 suppressed — no round 31 follows
+  [31, ['12', '24', '27', '30']],
+  [33, ['12', '24', '27', '30']], // after 33 suppressed — no round 34 follows
+  [34, ['12', '24', '27', '30', '33']],
+];
+for (const [n, want] of matrix) {
+  await showStrip([...preMatch, ...counted(n)]); // pref OFF → counted cells only
+  check(`${n} counted cells render`, cells().length === n, String(cells().length));
+  const got = splitsAfter();
+  check(
+    `${n} counted → separator after ${want.join(', ')}`,
+    JSON.stringify(got) === JSON.stringify(want),
+    `got ${JSON.stringify(got)}`,
+  );
+}
+
+console.log('G. pref ON: negative knife/warmup cells never shift a separator');
+await showStrip([...preMatch, ...counted(25)], { pref: true });
+check('all 28 cells render (3 pre-match + 25 counted)', cells().length === 28, String(cells().length));
+check(
+  'pre-match cells come first with their W/K labels',
+  JSON.stringify(labels().slice(0, 4)) === '["W","K","W","1"]',
+  JSON.stringify(labels().slice(0, 4)),
+);
+check(
+  'markers still sit after counted 12 and 24',
+  JSON.stringify(splitsAfter()) === '["12","24"]',
+  JSON.stringify(splitsAfter()),
+);
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 if (inst) unmount(inst);

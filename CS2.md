@@ -251,6 +251,33 @@ at the end of the section.
   **Source** — golden-demo diag; awpy datasets.rs (2026-11-01);
   ingest renumber in `internal/extract/build.go` (2026-11-02).
 
+- **MR12 regulation + MR3 overtime (round cadence, scoring, side
+  switches)** — how a CS2 match is structured past round 12.
+  Regulation: 12-round halves, first to 13 round wins, max 24 rounds
+  (12 per half). Overtime at 12-12: MR3 — a block of 6 rounds (two
+  3-round halves), first team to 4 round wins takes it (**not**
+  win-by-2: our own data shows a match continuing at OT 3-1), $10,000
+  start money; a tied OT block repeats. Round numbering continues
+  monotonically through OT (13, 14, … — no per-half reset; spectra'
+  ingest mirrors this, see "Round numbering"). Sides: **no switch at
+  OT start** — teams keep their regulation sides for OT rounds 25-27,
+  switch after round 27, then every 3 rounds while OTs tie, so the
+  real side-switch rounds are 12, 27, 30, 33, …. spectra' round ribbon
+  draws markers after 12, 24, 27, 30, … instead — the marker after 24
+  is a display convention for the regulation/OT boundary and
+  deliberately does NOT coincide with a side switch
+  (`frontend/src/lib/rounds.js` `separatorAfter`).
+  **Source** — HLTV
+  https://www.hltv.org/news/36967/the-logic-behind-valves-move-to-mr12
+  ("maximum of 24 rounds in regulation time (with a 6-round overtime)");
+  CEA rulebook https://cea.gg/cs2-rulebook/ (OT: MR3, first to 4,
+  teams remain on their current side for 3 OT rounds, then switch);
+  Counter-Strike Wiki https://counterstrike.fandom.com/wiki/Overtime
+  (6 rounds, whoever wins 4 first wins); Draculan Series 4 rulebook
+  https://github.com/DraculaNCS/DraculaN-Season-4/blob/main/Draculan%20Series%204%20-%20Official%20Tournament%20Rulebook.md
+  ("Teams continue on the side they ended regulation. After 3 OT
+  rounds, sides are switched") (all 2026-11-08).
+
 - **Weapon/inventory icons in a CS2 install** — where the gun icons live
   for extraction. In `pak01_dir.vpk`: (1) killfeed/HUD-style SVG
   silhouettes at `panorama/images/icons/equipment/<weapon>.vsvg_c`
