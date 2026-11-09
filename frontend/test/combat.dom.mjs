@@ -80,7 +80,7 @@ const svelteCompile = (src, filename, out) => {
 // Plain-ESM deps copied verbatim with their relative layout intact
 // (fmt → rounds, nav → router + replay/landmarks → rounds, teams →
 // sideparity) — the same copy the landmark-row / stat-card drivers do.
-for (const rel of ['rounds.js', 'sideparity.js', 'router.js', 'nav.js', 'teams.js', 'definitions.js', 'fmt.js']) {
+for (const rel of ['rounds.js', 'sideparity.js', 'router.js', 'nav.js', 'teams.js', 'definitions.js', 'fmt.js', 'players.js']) {
   writeFileSync(join(dir, rel), readFileSync(join('src/lib', rel), 'utf8'));
 }
 writeFileSync(

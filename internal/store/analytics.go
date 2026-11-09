@@ -578,6 +578,13 @@ func sideFlips(rounds []models.EconomyRow, exact map[int]map[string]string) []bo
 //     yield NULL/−1 → NOT counted (no position data → no opportunity
 //     claim). UntradedDeaths stays the ungated count — the two columns are
 //     deliberately different metrics.
+//  5. BASE ROWS ARE HUMANS ONLY (HumanOnly): the per-player table this
+//     builds is a roster/aggregate surface, so a bot's stats row never
+//     reaches it — its DAMAGE (dmgs), untraded deaths, trade
+//     opportunities and KAST are still aggregated by steam_id but are
+//     dropped with the row. The event-shaped inputs (damage/kill events,
+//     engagements) are untouched: they keep recording what a bot did.
+//     Pinned by TestBotsExcludedFromRosterReads.
 //
 // Change these decisions (and this comment) deliberately — they are
 // pinned by TestGetCombatStatsSQLDecisions.
@@ -703,12 +710,13 @@ func (s *Store) GetCombatStats(matchID int64) ([]models.CombatStat, error) {
 		return nil, fmt.Errorf("store: get combat stats: %w", err)
 	}
 
-	// Base rows: every player with stats for the match.
+	// Base rows: every HUMAN with stats for the match (decision 5 — a
+	// bot's stats row never reaches this roster table).
 	base, err := s.db.Query(
 		`SELECT ps.steam_id, p.name, ps.entry_kills, ps.trade_kills, ps.deaths, ps.rounds_played
 		 FROM player_stats ps
 		 `+playersJoin(joinInner, "p", "ps.match_id", "ps.steam_id", false)+`
-		 WHERE ps.match_id = ? ORDER BY p.name ASC`, matchID,
+		 WHERE ps.match_id = ? AND `+HumanOnly("p")+` ORDER BY p.name ASC`, matchID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("store: get combat stats: %w", err)
@@ -750,10 +758,14 @@ func (s *Store) GetCombatStats(matchID int64) ([]models.CombatStat, error) {
 	return out, nil
 }
 
-// GetPlayerRefs returns one match's participants (identity + final side).
+// GetPlayerRefs returns one match's participants (identity + final side +
+// the bot flag). Deliberately UNFILTERED: the analytics pass needs every
+// participant's rows and the replay roster needs bots WITH IsBot — the
+// exclusion rule applies to roster/aggregate listings (humanOnly in
+// queries.go), never to this identity read.
 func (s *Store) GetPlayerRefs(matchID int64) ([]models.PlayerRef, error) {
 	rows, err := s.db.Query(
-		`SELECT steam_id, name, side FROM players WHERE match_id = ? ORDER BY name ASC`, matchID,
+		`SELECT steam_id, name, side, is_bot FROM players WHERE match_id = ? ORDER BY name ASC`, matchID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("store: get player refs: %w", err)
@@ -762,7 +774,7 @@ func (s *Store) GetPlayerRefs(matchID int64) ([]models.PlayerRef, error) {
 	var out []models.PlayerRef
 	for rows.Next() {
 		var r models.PlayerRef
-		if err := rows.Scan(&r.SteamID, &r.Name, &r.Side); err != nil {
+		if err := rows.Scan(&r.SteamID, &r.Name, &r.Side, &r.IsBot); err != nil {
 			return nil, fmt.Errorf("store: get player refs: %w", err)
 		}
 		out = append(out, r)
@@ -934,6 +946,13 @@ func (s *Store) DeleteSavedFilter(id int64) error {
 // practice scale (100 matches) this is well under the 5 s budget and is the
 // only writer of the table, so it cannot drift.
 //
+// HUMANS ONLY (HumanOnly): the rollup also joins players, so a rebuild
+// purges bot rows — including rows a pre-rule rebuild already wrote into
+// an existing table (ListPlayers hides them in the meantime; see
+// TestCareerRebuildDropsBotRowsFromExistingData). Every player_stats row
+// has a players row — extract builds both from the same accumulator map
+// (extract/build.go) — so the inner join drops nothing else.
+//
 // Layer notes — per-match rows (player_stats) vs the cross-match rollup,
 // justified and deliberate, not duplication:
 //
@@ -980,6 +999,8 @@ func (s *Store) RebuildCareer() error {
 			?
 		FROM player_stats ps
 		JOIN matches m ON m.id = ps.match_id
+		JOIN players p ON p.match_id = ps.match_id AND p.steam_id = ps.steam_id
+			AND `+HumanOnly("p")+`
 		GROUP BY ps.steam_id`,
 		time.Now(),
 	)
@@ -993,6 +1014,8 @@ func (s *Store) RebuildCareer() error {
 }
 
 // GetCareer returns one player's career rollup (ErrNotFound when absent).
+// A bot's id yields ErrNotFound (HumanOnlyBySteamID): the career rollup
+// is an aggregate surface, so a bot never resolves to a profile.
 func (s *Store) GetCareer(steamID string) (*models.CareerRow, error) {
 	var (
 		c       models.CareerRow
@@ -1000,7 +1023,8 @@ func (s *Store) GetCareer(steamID string) (*models.CareerRow, error) {
 	)
 	err := s.db.QueryRow(
 		`SELECT `+playerCareerCols+`
-		 FROM player_career WHERE steam_id = ?`, scrub(steamID),
+		 FROM player_career pc WHERE pc.steam_id = ? AND `+HumanOnlyBySteamID("pc.steam_id", ""),
+		scrub(steamID),
 	).Scan(
 		&c.SteamID, &c.Name, &c.Matches, &c.Wins, &c.ADRAvg, &c.ADRStd, &c.KD,
 		&c.HSPct, &c.KASTPct, &c.Openings, &c.OpenerWins, &c.Trades, &c.Clutches, &updated,
@@ -1017,6 +1041,10 @@ func (s *Store) GetCareer(steamID string) (*models.CareerRow, error) {
 
 // ListPlayers returns career summaries ("" = all), optionally filtered by a
 // case-insensitive name/steam-id LIKE, ordered by most-recent match first.
+// HUMANS ONLY (HumanOnlyBySteamID): a steam_id that is a bot in any match
+// never lists — this is the Profiles list, CommandPalette's player search
+// and Library's player facet, so a bot is unselectable even on a database
+// whose player_career still carries pre-rule bot rows.
 func (s *Store) ListPlayers(query string) ([]models.CareerSummary, error) {
 	// MAX(extracted_at) is formatted via strftime: the scalar subquery's
 	// result loses the DATETIME declared type (the driver would hand back
@@ -1026,10 +1054,11 @@ func (s *Store) ListPlayers(query string) ([]models.CareerSummary, error) {
 			JOIN matches m ON m.id = ps.match_id
 			WHERE ps.steam_id = c.steam_id)),
 		c.updated_at, c.adr_avg
-		FROM player_career c`
+		FROM player_career c
+		WHERE ` + HumanOnlyBySteamID("c.steam_id", "")
 	var args []any
 	if qq := scrub(query); qq != "" {
-		q += ` WHERE c.name LIKE ? OR c.steam_id LIKE ?`
+		q += ` AND (c.name LIKE ? OR c.steam_id LIKE ?)`
 		like := "%" + qq + "%"
 		args = append(args, like, like)
 	}
@@ -1075,6 +1104,10 @@ var trendMetricWhitelist = map[string]string{
 
 // GetTrend returns a per-match metric series for one player, oldest →
 // newest. metric ∈ adr|kast|kd|hs (unknown names yield an error).
+// HUMANS ONLY (HumanOnlyBySteamID): this is the one profile read the
+// frontend fires for a bare /player/<id> URL without going through
+// GetProfile's GetCareer guard, so a bot id yields an empty series — no
+// bot aggregate ever reaches the profile's trend card.
 func (s *Store) GetTrend(steamID, metric string) ([]models.ProfileTrendPoint, error) {
 	expr, ok := trendMetricWhitelist[metric]
 	if !ok {
@@ -1085,6 +1118,7 @@ func (s *Store) GetTrend(steamID, metric string) ([]models.ProfileTrendPoint, er
 		 FROM player_stats ps
 		 JOIN matches m ON m.id = ps.match_id
 		 WHERE ps.steam_id = ? AND m.extracted_at IS NOT NULL
+		   AND `+HumanOnlyBySteamID("ps.steam_id", "ps.match_id")+`
 		 ORDER BY m.extracted_at ASC, m.id ASC`, scrub(steamID),
 	)
 	if err != nil {

@@ -18,6 +18,7 @@
   import { fmt1, fmtInt } from '../fmt.js';
   import { isCounted } from '../rounds.js';
   import { replayHash } from '../nav.js';
+  import { listedPlayers } from '../players.js';
 
   let { id = 0, nav = () => {} } = $props();
 
@@ -59,7 +60,7 @@
       .then(([m, sb, rs]) => {
         if (!live) return;
         map = (m && m.map) || '';
-        players = sb || [];
+        players = listedPlayers(sb) || [];
         rounds = rs || [];
         matchLoaded = true;
       })

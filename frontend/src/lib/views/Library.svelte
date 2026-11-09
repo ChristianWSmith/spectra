@@ -19,6 +19,7 @@
     errText,
   } from '../services.js';
   import { fmtBytes, fmtDuration, fmtDate, basename } from '../fmt.js';
+  import { listedPlayers } from '../players.js';
   import { teamNames } from '../teams.js';
   import StatusChip from '../components/StatusChip.svelte';
   import SortTh from '../components/SortTh.svelte';
@@ -174,7 +175,7 @@
       .catch(() => {});
     listPlayers('')
       .then((rows) => {
-        if (live) libPlayers = rows || [];
+        if (live) libPlayers = listedPlayers(rows) || [];
       })
       .catch(() => {});
     const offs = [
@@ -426,8 +427,9 @@
       let changed = false;
       const next = new Map(synthPlayers);
       missing.forEach((m, i) => {
-        if (rows[i] && rows[i].length) {
-          next.set(m.id, rows[i]);
+        const sb = listedPlayers(rows[i]) || [];
+        if (sb.length) {
+          next.set(m.id, sb);
           changed = true;
         }
       });

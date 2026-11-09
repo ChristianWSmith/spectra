@@ -16,6 +16,7 @@
   import StatCard from '../components/StatCard.svelte';
   import SuggestInput from '../components/SuggestInput.svelte';
   import { profileBackTarget } from '../nav.js';
+  import { listedPlayers } from '../players.js';
 
   // query is the route's own (?back= origin for the return trip);
   // origin is the hash the app navigated from — App records it on
@@ -47,7 +48,7 @@
     let live = true;
     listPlayers('')
       .then((rows) => {
-        if (live) players = rows || [];
+        if (live) players = listedPlayers(rows) || [];
       })
       .catch(() => {});
     return () => (live = false);

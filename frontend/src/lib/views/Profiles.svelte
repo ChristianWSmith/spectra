@@ -11,6 +11,7 @@
   import { listPlayers, errText } from '../services.js';
   import { isSteam, openProfile } from '../nav.js';
   import { fmt1 } from '../fmt.js';
+  import { listedPlayers } from '../players.js';
   import SuggestInput from '../components/SuggestInput.svelte';
 
   let { nav = () => {} } = $props();
@@ -25,7 +26,7 @@
     listPlayers('')
       .then((rows) => {
         if (!live) return;
-        players = rows || [];
+        players = listedPlayers(rows) || [];
         loading = false;
       })
       .catch((e) => {

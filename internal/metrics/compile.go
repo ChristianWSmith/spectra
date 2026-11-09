@@ -3,6 +3,8 @@ package metrics
 import (
 	"strconv"
 	"strings"
+
+	"github.com/ChristianWSmith/spectra/internal/store"
 )
 
 // PlanMode says which statement shape Compile produced and how Preview
@@ -101,6 +103,24 @@ func Compile(expr, groupBy, denominator, scope string) (Plan, *ParseError) {
 	if gnorm == "none" {
 		gnorm = ""
 	}
+	// A `player`-grouped metric is a player LISTING (the preview labels
+	// each group with a roster name), so it inherits the app's humans-only
+	// rule: bot groups are dropped through store.HumanOnlyBySteamID —
+	// the SAME condition the roster reads use (store.HumanOnly), match-
+	// scoped so the lookup rides the players PK. Grouping by anything
+	// else is not a listing and stays untouched; a PLAIN (ungrouped)
+	// aggregate over event rows also stays untouched — those record what
+	// happened, bots included. Both boundaries are pinned by
+	// TestPlayerGroupExcludesBots.
+	//
+	// Note: phase2 (the percentile fetch) never groups — Compile rejects
+	// percentile+groupBy — so no percentile statement needs the condition.
+	humanGroup := ""
+	if gnorm == "player" {
+		if col := groupColumns[spec.Source]["player"]; col != "" && gexpr == col {
+			humanGroup = col
+		}
+	}
 	plan := Plan{
 		Source:   spec.Source,
 		GroupBy:  gnorm,
@@ -113,11 +133,11 @@ func Compile(expr, groupBy, denominator, scope string) (Plan, *ParseError) {
 	if firstPctl != nil {
 		plan.Mode = ModePercentile
 		plan.PercentileP = firstPctl.P
-		primary := &emitter{source: spec.Source, matchID: matchID, denom: denomTable}
+		primary := &emitter{source: spec.Source, matchID: matchID, denom: denomTable, humanGroup: humanGroup}
 		primary.phase2(firstPctl, denomTable != "")
 		plan.SQL, plan.Args = primary.sb.String(), primary.args
 		if len(sqlAggs) > 0 {
-			sec := &emitter{source: spec.Source, matchID: matchID, denom: denomTable}
+			sec := &emitter{source: spec.Source, matchID: matchID, denom: denomTable, humanGroup: humanGroup}
 			sec.phase1(sqlAggs, gexpr, grouped, false)
 			plan.Secondary = sec.sb.String()
 		}
@@ -128,7 +148,7 @@ func Compile(expr, groupBy, denominator, scope string) (Plan, *ParseError) {
 	if grouped {
 		plan.Mode = ModeGrouped
 	}
-	primary := &emitter{source: spec.Source, matchID: matchID, denom: denomTable}
+	primary := &emitter{source: spec.Source, matchID: matchID, denom: denomTable, humanGroup: humanGroup}
 	primary.phase1(sqlAggs, gexpr, grouped, denomTable != "")
 	plan.SQL, plan.Args = primary.sb.String(), primary.args
 	if hasPctl {
@@ -139,7 +159,7 @@ func Compile(expr, groupBy, denominator, scope string) (Plan, *ParseError) {
 				break
 			}
 		}
-		sec := &emitter{source: spec.Source, matchID: matchID, denom: denomTable}
+		sec := &emitter{source: spec.Source, matchID: matchID, denom: denomTable, humanGroup: humanGroup}
 		sec.phase2(pctl, false)
 		plan.Secondary = sec.sb.String()
 	}
@@ -224,6 +244,11 @@ type emitter struct {
 	source  string
 	matchID int64  // 0 = whole library
 	denom   string // denominator table ("" = none)
+	// humanGroup is the source's player column when — and only when — the
+	// statement groups by player ("" = no humans-only condition): the
+	// condition is emitted by phase1 next to the scope WHERE, as
+	// store.HumanOnlyBySteamID over this source's match_id.
+	humanGroup string
 }
 
 func (e *emitter) bind(v any) string {
@@ -233,7 +258,8 @@ func (e *emitter) bind(v any) string {
 
 // phase1 emits the aggregate statement: every SQL aggregation as a value
 // column (first = previewed value, wrapped by the denominator when set),
-// trailing COUNT(*) sample size, scope WHERE, GROUP/ORDER.
+// trailing COUNT(*) sample size, scope WHERE (+ the humans-only condition
+// for a player group), GROUP/ORDER.
 func (e *emitter) phase1(aggs []*Agg, gexpr string, grouped, wrapDenom bool) {
 	e.sb.WriteString("SELECT ")
 	if grouped {
@@ -256,9 +282,19 @@ func (e *emitter) phase1(aggs []*Agg, gexpr string, grouped, wrapDenom bool) {
 	}
 	e.sb.WriteString(", COUNT(*) AS n FROM ")
 	e.sb.WriteString(e.source)
+	wroteWhere := false
 	if e.matchID > 0 {
 		e.sb.WriteString(" WHERE match_id = ")
 		e.sb.WriteString(e.bind(e.matchID))
+		wroteWhere = true
+	}
+	if grouped && e.humanGroup != "" {
+		if wroteWhere {
+			e.sb.WriteString(" AND ")
+		} else {
+			e.sb.WriteString(" WHERE ")
+		}
+		e.sb.WriteString(store.HumanOnlyBySteamID(e.source+"."+e.humanGroup, e.source+".match_id"))
 	}
 	if grouped {
 		e.sb.WriteString(" GROUP BY grp ORDER BY grp")

@@ -15,6 +15,7 @@
   } from '../services.js';
   import { fmtInt, fmtPercent, roundClock } from '../fmt.js';
   import { replayHash } from '../nav.js';
+  import { listedPlayers } from '../players.js';
   import { roundsByNumber } from '../replay/landmarks.js';
   import { playerStartClass, playerSideClassAt } from '../teams.js';
   import {
@@ -131,10 +132,10 @@
     ])
       .then(([cs, cl, en, sb, m, rd]) => {
         if (!live) return;
-        stats = cs || [];
+        stats = listedPlayers(cs) || [];
         clutches = cl || [];
         engagements = en || [];
-        players = sb || [];
+        players = listedPlayers(sb) || [];
         rounds = rd || [];
         sideSwitches = (m && m.sideSwitches) || 0;
         if (m && m.tickRate > 0) tickRate = m.tickRate;

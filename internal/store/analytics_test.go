@@ -843,17 +843,21 @@ func TestGetCombatStatsFromStoredRows(t *testing.T) {
 
 // TestGetCombatStatsSQLDecisions pins the decisions in the
 // GetCombatStats doc comment — the single implementation of these rules.
+// Decision 5 (base rows are humans only) is pinned here by seeding a bot
+// on the roster and asserting it never reaches the result.
 func TestGetCombatStatsSQLDecisions(t *testing.T) {
 	s := openMem(t)
 	id := saveTestMatch(t, s, "/d/combat2.dem", "sha-combat2", time.Now())
 	em := testExtracted("sha-combat2", time.Now())
 	// Names deliberately sort differently from SteamIDs (ORDER BY name).
+	// A BOT is on the roster too (decision 5: base rows are humans only).
 	em.Players = []models.Player{
 		{SteamID: "100", Name: "zoe", Side: "ct"},
 		{SteamID: "200", Name: "amy", Side: "t"},
 		{SteamID: "300", Name: "carl", Side: "ct"},
 		{SteamID: "400", Name: "dave", Side: ""}, // unknown side
 		{SteamID: "500", Name: "erin", Side: ""}, // unknown side
+		{SteamID: botSteamID, Name: "bot", Side: "ct", IsBot: true},
 	}
 	em.PlayerStats = []models.PlayerStats{
 		{SteamID: "100", Name: "zoe", Side: "ct", RoundsPlayed: 2},
@@ -861,6 +865,7 @@ func TestGetCombatStatsSQLDecisions(t *testing.T) {
 		{SteamID: "300", Name: "carl", Side: "ct", RoundsPlayed: 2},
 		{SteamID: "400", Name: "dave", Side: "", RoundsPlayed: 2},
 		{SteamID: "500", Name: "erin", Side: "", RoundsPlayed: 2},
+		{SteamID: botSteamID, Name: "bot", Side: "ct", RoundsPlayed: 2},
 	}
 	em.Events = []models.Event{
 		// (1) Friendly fire with BOTH sides unknown: ap.side = vp.side
@@ -882,9 +887,15 @@ func TestGetCombatStatsSQLDecisions(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetCombatStats: %v", err)
 	}
-	// (3) Ordering is by NAME, not SteamID.
+	// (3) Ordering is by NAME, not SteamID. The bot on the roster never
+	// reaches the base rows (decision 5 — HumanOnly).
 	if len(rows) != 5 {
-		t.Fatalf("rows = %d, want 5", len(rows))
+		t.Fatalf("rows = %d, want 5 (humans only; the bot row is excluded)", len(rows))
+	}
+	for _, r := range rows {
+		if r.SteamID == botSteamID {
+			t.Fatalf("combat base rows include the bot: %+v", r)
+		}
 	}
 	wantOrder := []string{"200", "300", "400", "500", "100"}
 	for i, sid := range wantOrder {

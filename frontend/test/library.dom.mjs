@@ -101,6 +101,11 @@ bindings.ProfileService.ListPlayers = () =>
   Promise.resolve([
     { steamId: '76561198000000001', name: 'alice', matches: 3, adrAvg: 71.25, lastSeen: '2026-01-02' },
     { steamId: '76561198000000002', name: 'bob', matches: 1, adrAvg: 55.5, lastSeen: '2026-01-01' },
+    // A BOT in the source list (the pre-rule shape): the canonical
+    // client-side filter (lib/players.js listedPlayers) must drop it —
+    // the checks below pin that neither the suggestion list nor a typed
+    // bot query ever surfaces it.
+    { steamId: '18374686479671623692', name: 'Crew', matches: 1, adrAvg: 40, lastSeen: '2026-01-03' },
   ]);
 
 // Scripted match list: rows only for the `cache` facet (the deep-link
@@ -185,6 +190,7 @@ const libSrc = readFileSync('src/lib/views/Library.svelte', 'utf8')
   .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`)
   .replace("from '../fmt.js'", `from '${fileURL('src/lib/fmt.js')}'`)
   .replace("from '../teams.js'", `from '${fileURL('src/lib/teams.js')}'`)
+  .replace("from '../players.js'", `from '${fileURL('src/lib/players.js')}'`)
   .replace("from '../components/StatusChip.svelte'", "from './statuschip.js'")
   .replace("from '../components/SortTh.svelte'", "from './sortth.js'")
   .replace("from '../components/ConfirmDialog.svelte'", "from './confirmdialog.js'")
@@ -436,6 +442,19 @@ await sleep(20);
     'player row carries the profile summary (matches + ADR)',
     rows[0].textContent.includes('1 match') && rows[0].textContent.includes('ADR 55.5'),
     rows[0].textContent.trim(),
+  );
+}
+
+// The bot row in the source list never reaches the widget: neither the
+// full list nor a query that matches only the bot may show it.
+type(playerInput(), 'Crew');
+await sleep(20);
+{
+  const rows = sgRows('lib-filter-player-list');
+  check(
+    'a bot is never a library player suggestion',
+    rows.length === 0,
+    JSON.stringify(rows.map((r) => r.textContent.trim())),
   );
 }
 

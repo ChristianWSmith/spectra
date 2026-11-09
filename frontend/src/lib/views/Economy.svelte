@@ -10,6 +10,7 @@
   import { fmtInt, fmtMoney } from '../fmt.js';
   import { replayHash } from '../nav.js';
   import { teamKeyAt } from '../sideparity.js';
+  import { listedPlayers } from '../players.js';
   import { teamNames } from '../teams.js';
   import { EQUIP_DEF } from '../definitions.js';
   import EconCurve from '../components/EconCurve.svelte';
@@ -44,7 +45,7 @@
         names = teamNames({
           ctName: tn?.ct || '',
           tName: tn?.t || '',
-          players: sb || [],
+          players: listedPlayers(sb) || [],
         });
         loading = false;
         error = '';

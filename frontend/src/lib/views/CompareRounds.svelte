@@ -20,6 +20,7 @@
   } from '../services.js';
   import { fmtDuration, fmtInt, fmtTickSeconds, fmtMs } from '../fmt.js';
   import { replayHash } from '../nav.js';
+  import { listedPlayers } from '../players.js';
   import { roundStartTick, roundIndexLabel } from '../rounds.js';
   import { buildHash } from '../router.js';
   import { normalizeEvent } from '../replay/landmarks.js';
@@ -92,7 +93,7 @@
         if (m && m.tickRate > 0) tickRate = m.tickRate;
         sideSwitches = (m && m.sideSwitches) || 0;
         rounds = roundRows || [];
-        players = sb || [];
+        players = listedPlayers(sb) || [];
         const econBy = new Map((econRows || []).map((e) => [e.round, e]));
         const classBy = new Map((classRows || []).map((c) => [c.round, c]));
         const utils = utilRows || [];

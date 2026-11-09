@@ -13,6 +13,7 @@
     previewMetric,
     errText,
   } from '../services.js';
+  import { listedPlayers } from '../players.js';
   import MatchPicker from '../components/MatchPicker.svelte';
   import PlayerPicker from '../components/PlayerPicker.svelte';
 
@@ -73,7 +74,7 @@
       .catch((e) => (metricsError = errText(e)));
     listPlayers('')
       .then((rows) => {
-        players = rows || [];
+        players = listedPlayers(rows) || [];
         if (players.length && !players.some((p) => p.steamId === steamId)) {
           steamId = players[0].steamId;
         }
@@ -122,7 +123,7 @@
       .then((rows) => {
         if (!live) return;
         const m = {};
-        for (const r of rows || []) m[r.steamId] = r;
+        for (const r of listedPlayers(rows) || []) m[r.steamId] = r;
         sbBySteam = m;
       })
       .catch(() => {

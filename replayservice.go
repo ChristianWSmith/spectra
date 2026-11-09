@@ -39,6 +39,12 @@ type ReplayPlayer struct {
 	SteamID string `json:"steamId"`
 	Name    string `json:"name"`
 	Side    string `json:"side"`
+	// IsBot is players.is_bot for this slot ("" when the roster has no
+	// row for it — then false, never a guess). It is what lets the
+	// frontend apply the replay exception: a bot is listed only while it
+	// covers a disconnected human (frontend lib/replay/playercard.js
+	// presentAt). The rest of the app never lists bots at all.
+	IsBot bool `json:"isBot"`
 	// Color is the player's CS2 teammate color as the RAW
 	// m_iCompTeammateColor int (0 blue, 1 green, 2 yellow, 3 orange,
 	// 4 purple, -1 none/GOTV — CS2.md "Player scoreboard/radar colors").
@@ -73,8 +79,9 @@ func (s *ReplayService) GetReplayMeta(matchID int64) (ReplayMeta, error) {
 		Frames:     m.PositionFrames,
 	}
 
-	// Roster identity for the slot table (name + final side): the players
-	// read model, not the 37-column scoreboard — meta only needs identity.
+	// Roster identity for the slot table (name + final side + the bot
+	// flag): the players read model, not the 37-column scoreboard — meta
+	// only needs identity (IsBot drives the replay exception).
 	refs, err := s.st.GetPlayerRefs(matchID)
 	if err != nil {
 		return ReplayMeta{}, err
@@ -103,7 +110,7 @@ func (s *ReplayService) GetReplayMeta(matchID int64) (ReplayMeta, error) {
 			p := ReplayPlayer{SteamID: sid}
 			if row, ok := bySteam[sid]; ok {
 				delete(bySteam, sid)
-				p.Name, p.Side = row.Name, row.Side
+				p.Name, p.Side, p.IsBot = row.Name, row.Side, row.IsBot
 			}
 			if hasColor {
 				c := color
@@ -121,7 +128,7 @@ func (s *ReplayService) GetReplayMeta(matchID int64) (ReplayMeta, error) {
 	// sidecar never sampled) follows, ordered by name then SteamID.
 	rest := make([]ReplayPlayer, 0, len(bySteam))
 	for sid, row := range bySteam {
-		rest = append(rest, ReplayPlayer{SteamID: sid, Name: row.Name, Side: row.Side})
+		rest = append(rest, ReplayPlayer{SteamID: sid, Name: row.Name, Side: row.Side, IsBot: row.IsBot})
 	}
 	sort.Slice(rest, func(i, j int) bool {
 		if rest[i].Name != rest[j].Name {

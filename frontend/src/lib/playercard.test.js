@@ -16,6 +16,7 @@ import {
   mainAmmoText,
   mainOf,
   moneyText,
+  presentAt,
   reloadProgress,
   STATS_TITLE,
   statsText,
@@ -283,6 +284,102 @@ test('connectedAt: no events is connected — absence is never a disconnect', ()
   assert.equal(connectedAt(leaver, 500), false);
   // An unknown playhead hides nothing (no evidence at a non-tick).
   assert.equal(connectedAt(indexConnections(nukeConnRows).get(CREW), NaN), true);
+});
+
+// --- Card presence: the humans-only rule + the replay exception -----------
+// presentAt is THE one question the columns and the follow dropdown ask.
+// The roster below is the nuke demo's shape: Kr3sh (CT human) out in
+// [23467, 28801), Crew (CT bot) covering exactly that gap from 25155, and
+// a T-side human who never leaves.
+const OTHER = '76561198000000009';
+const nukeRoster = [
+  { steamId: K3SH, name: 'Kr3shProSkuf', side: 'ct' },
+  { steamId: OTHER, name: 'tside', side: 't' },
+  { steamId: CREW, name: 'Crew', side: 'ct', isBot: true },
+];
+const nukeIdx = () => indexConnections(nukeConnRows);
+
+test('presentAt: a human slot keeps connectedAt exactly', () => {
+  const idx = nukeIdx();
+  assert.equal(presentAt(idx, nukeRoster, 0, 23466), true);
+  assert.equal(presentAt(idx, nukeRoster, 0, 23467), false, 'the disconnect hides it');
+  assert.equal(presentAt(idx, nukeRoster, 0, 28800), false);
+  assert.equal(presentAt(idx, nukeRoster, 0, 28801), true, 'the reconnect unhides it');
+  assert.equal(presentAt(idx, nukeRoster, 0, 182636), true);
+  assert.equal(presentAt(idx, nukeRoster, 0, 182637), false, 'the tail disconnect');
+  assert.equal(presentAt(idx, nukeRoster, 1, 182637), true, 'the T-side human never left');
+  assert.equal(presentAt(idx, nukeRoster, 1, NaN), true, 'unknown playhead hides nothing');
+});
+
+test('presentAt: the substitute bot is listed ONLY inside the gap it covers', () => {
+  const idx = nukeIdx();
+  assert.equal(presentAt(idx, nukeRoster, 2, 25154), false, 'before its connect');
+  assert.equal(presentAt(idx, nukeRoster, 2, 25155), true, 'connects while Kr3sh is out');
+  assert.equal(presentAt(idx, nukeRoster, 2, 28800), true, 'still covering');
+  assert.equal(presentAt(idx, nukeRoster, 2, 28801), false, 'Kr3sh is back / the bot left');
+  assert.equal(presentAt(idx, nukeRoster, 2, 0), false, 'never present before its connect');
+  // Scrubbing back is pure — never sticky.
+  assert.equal(presentAt(idx, nukeRoster, 2, 25154), false);
+});
+
+test('presentAt: a bot with no bracketing human disconnect is never listed', () => {
+  // A DemoRecorder/GOTV-style occupant: connects at tick 1 and never
+  // leaves. Even while Kr3sh is out, its connect precedes her disconnect,
+  // so no human's absence brackets it.
+  const recorder = [{ tick: 1, connected: true }];
+  const idx = nukeIdx();
+  idx.set('18374686479671623699', recorder);
+  const roster = [
+    { steamId: K3SH, name: 'Kr3shProSkuf', side: 'ct' },
+    { steamId: '18374686479671623699', name: 'DemoRecorder', side: 'ct', isBot: true },
+  ];
+  for (const tick of [0, 23467, 25155, 28800, 40000]) {
+    assert.equal(presentAt(idx, roster, 1, tick), false, `recorder visible at ${tick}`);
+  }
+  // A bot with NO connection rows at all is not a substitute either.
+  const noRows = [{ steamId: '18374686479671623698', name: 'mystery', side: 'ct', isBot: true }];
+  assert.equal(presentAt(idx, [...roster, ...noRows], 2, 28800), false);
+});
+
+test('presentAt: the pairing requires the SAME side, both sides known', () => {
+  const idx = nukeIdx();
+  // Same rows, but the leaver is on the other side → no pairing.
+  const crossed = [
+    { steamId: K3SH, name: 'Kr3shProSkuf', side: 't' },
+    { steamId: OTHER, name: 'tside', side: 't' },
+    { steamId: CREW, name: 'Crew', side: 'ct', isBot: true },
+  ];
+  assert.equal(presentAt(idx, crossed, 2, 26000), false, 'opposite-side leaver never pairs');
+  // An unknown side fails the pairing rather than guessing one.
+  const unknown = [
+    { steamId: K3SH, name: 'Kr3shProSkuf', side: '' },
+    { steamId: CREW, name: 'Crew', side: 'ct', isBot: true },
+  ];
+  assert.equal(presentAt(idx, unknown, 1, 26000), false, 'unknown side → not listed');
+  // The T-side human never leaves → never justifies the bot.
+  assert.equal(presentAt(idx, nukeRoster, 1, 26000), true, 'control: the human is in');
+});
+
+test('presentAt: bot-ness falls back to the synthetic id when the flag is absent', () => {
+  // Same slot, no isBot (a roster row that never carried the flag) — the
+  // id shape still routes it through the exception.
+  const noFlag = nukeRoster.map((p) => {
+    const { isBot: _drop, ...rest } = p;
+    return rest;
+  });
+  assert.equal(presentAt(nukeIdx(), noFlag, 2, 26000), true, 'still the substitute rule');
+  assert.equal(presentAt(nukeIdx(), noFlag, 2, 40000), false, 'and still never after the gap');
+});
+
+test('presentAt: missing data never hides a human card, and never fakes the exception', () => {
+  assert.equal(presentAt(new Map(), [], 0, 123), true, 'no roster row → visible');
+  assert.equal(presentAt(nukeIdx(), null, 0, 123), true);
+  assert.equal(presentAt(null, nukeRoster, 0, 123), true, 'no index → a human stays visible');
+  // A bot slot with no index has no evidence of a leaver to bracket it —
+  // the exception needs positive evidence (bots fail toward NOT listed),
+  // so an empty read hides it while humans never hide.
+  assert.equal(presentAt(null, nukeRoster, 2, 123), false);
+  assert.equal(presentAt(new Map(), nukeRoster, 2, 28800), false);
 });
 
 // --- Reload ring (the gun icon's grey progress arc) ----------------------
