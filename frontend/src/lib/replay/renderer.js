@@ -1417,6 +1417,11 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     const s = cam.fit * cam.zoom;
     const y = cssH / 2 - cam.cy * s;
     ctx.imageSmoothingEnabled = true;
+    // The extractor ships radar PNGs at 3× their logical size; the
+    // webview downscales at fit/low zoom (aliasing) and upscales when
+    // zoomed (blur). The context default is 'low' (plain bilinear) —
+    // ask for the browser's best filter.
+    ctx.imageSmoothingQuality = 'high';
     let drew = false;
     for (const p of panels) {
       if (!p.img) continue;

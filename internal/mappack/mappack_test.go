@@ -4,8 +4,10 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"image"
 	"image/color"
 	"image/png"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -688,9 +690,9 @@ func TestExtractMapPacks(t *testing.T) {
 		t.Fatalf("maps = %+v", maps)
 	}
 
-	// PNG decodes at 2× the logical size (radarUpscale — the source
-	// vtex has no larger mip, so the writer resamples ×2 for zoom
-	// quality). meta.json below keeps the LOGICAL size on purpose.
+	// PNG decodes at radarUpscale × the logical size (the source vtex
+	// has no larger mip, so the writer resamples for zoom quality).
+	// meta.json below keeps the LOGICAL size on purpose.
 	f, err := os.Open(filepath.Join(out, "de_fixture", "radar.png"))
 	if err != nil {
 		t.Fatal(err)
@@ -700,40 +702,94 @@ func TestExtractMapPacks(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if img.Bounds().Dx() != 2*w || img.Bounds().Dy() != 2*h {
-		t.Errorf("png bounds = %v, want %dx%d", img.Bounds(), 2*w, 2*h)
+	if img.Bounds().Dx() != radarUpscale*w || img.Bounds().Dy() != radarUpscale*h {
+		t.Errorf("png bounds = %v, want %dx%d", img.Bounds(), radarUpscale*w, radarUpscale*h)
 	}
 
-	// …and the ×2 file is a real CatmullRom resample of the decoded
-	// source gradient — not a zero-filled dst or garbled output: every
-	// written pixel stays within rounding of the source ramp it scaled
-	// from (linear fixture → the interpolating kernel is near-exact;
-	// measured max deviation 4, tolerance 6).
+	// …and the file is a real Lanczos-3 + unsharp resample of the
+	// decoded source — not a zero-filled dst, a blank/flat image, or a
+	// shifted/garbled encode. The fixture ramp is ANALYTIC (B = 7x,
+	// G = 11y, R = x+y — bgraPix), so the ideal upscaled value at each
+	// written pixel is computable in closed form from its source
+	// position; every pixel must land within a loose band of it
+	// (Lanczos ringing at the border + the unsharp pass deviate a
+	// little: measured max 2/255 with radarUpscale=3, radius 1,
+	// amount 0.5 — tolerance 6 still fails any 1-SOURCE-pixel
+	// misalignment, which costs ≥7/255 on the B ramp, while leaving
+	// headroom for factor/parameter bumps). The B-channel span
+	// separately proves the output isn't blank: a flat image can't
+	// reproduce a 49-wide ramp.
 	src, err := decodeVTex(radar)
 	if err != nil {
 		t.Fatal(err)
 	}
-	dev := func(a, b uint32) int {
-		d := int(a>>8) - int(b>>8) // both sides are 8-bit values scaled by 0x101
-		if d < 0 {
-			return -d
+	// clampRamp clamps a continuous ramp value into the source's
+	// achievable range (the border samples can't exceed the end pixels).
+	clampRamp := func(v, max float64) float64 {
+		if v < 0 {
+			return 0
 		}
-		return d
+		if v > max {
+			return max
+		}
+		return v
 	}
-	maxDev := 0
-	for y := 0; y < 2*h; y++ {
-		for x := 0; x < 2*w; x++ {
-			sr, sg, sb, sa := src.At(x/2, y/2).RGBA()
+	// rampAt is the closed form of bgraPix's gradient at a source
+	// pixel, in RGBA() order (bgraPix stores B,G,R per byte) — asserted
+	// against the DECODED source below, so the output comparison can't
+	// drift from what the fixture actually encodes.
+	rampAt := func(x, y int) [3]float64 {
+		return [3]float64{float64(x + y), float64(11 * y), float64(7 * x)} // R,G,B
+	}
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			sr, sg, sb, _ := src.At(x, y).RGBA()
+			want := rampAt(x, y)
+			if int(sr>>8) != int(want[0]) || int(sg>>8) != int(want[1]) || int(sb>>8) != int(want[2]) {
+				t.Fatalf("decoded source at (%d,%d) = (%d,%d,%d), want (%.0f,%.0f,%.0f) — ramp closed form is stale",
+					x, y, sr>>8, sg>>8, sb>>8, want[0], want[1], want[2])
+			}
+		}
+	}
+	maxDev, minB, maxB := 0, 255, 0
+	for y := 0; y < radarUpscale*h; y++ {
+		for x := 0; x < radarUpscale*w; x++ {
+			// Source position of this written pixel's centre (the
+			// scaler maps dst x → (x+0.5)/k − 0.5 in src pixels).
+			sx := (float64(x)+0.5)/float64(radarUpscale) - 0.5
+			sy := (float64(y)+0.5)/float64(radarUpscale) - 0.5
+			want := [3]float64{
+				clampRamp(sx, w-1) + clampRamp(sy, h-1), // R = x+y
+				clampRamp(11*sy, 11*(h-1)),              // G
+				clampRamp(7*sx, 7*(w-1)),                // B
+			}
 			dr, dg, db, da := img.At(x, y).RGBA()
-			for _, d := range [4]int{dev(sr, dr), dev(sg, dg), dev(sb, db), dev(sa, da)} {
+			got := [3]int{int(dr >> 8), int(dg >> 8), int(db >> 8)}
+			if da>>8 != 255 {
+				t.Fatalf("alpha at (%d,%d) = %d, want 255 (opaque radar)", x, y, da>>8)
+			}
+			for c := 0; c < 3; c++ {
+				d := got[c] - int(want[c]+0.5)
+				if d < 0 {
+					d = -d
+				}
 				if d > maxDev {
 					maxDev = d
 				}
 			}
+			if got[2] < minB {
+				minB = got[2]
+			}
+			if got[2] > maxB {
+				maxB = got[2]
+			}
 		}
 	}
 	if maxDev > 6 {
-		t.Errorf("upscaled radar.png deviates from the source by %d/255 (want ≤6) — the ×2 resample is not faithful", maxDev)
+		t.Errorf("upscaled radar.png deviates from the ideal source ramp by %d/255 (want ≤6) — the %dx resample is not faithful", maxDev, radarUpscale)
+	}
+	if maxB-minB < 40 {
+		t.Errorf("B channel spans only %d/255 across the image (want ≥40) — output looks blank/flat", maxB-minB)
 	}
 
 	// meta.json has transform + markers.
@@ -752,9 +808,10 @@ func TestExtractMapPacks(t *testing.T) {
 		t.Errorf("transform = %+v", meta.Transform)
 	}
 	// meta.radar.width/height is the LOGICAL image space (w, not the
-	// file's 2×w): the frontend maps world→image in these dims and draws
-	// the PNG destination-size, so writing the upscaled pixel size here
-	// would break world mapping (and the transform scale above).
+	// file's radarUpscale×w): the frontend maps world→image in these
+	// dims and draws the PNG destination-size, so writing the upscaled
+	// pixel size here would break world mapping (and the transform
+	// scale above).
 	if meta.Radar == nil || meta.Radar.Width != w || meta.Radar.File != "radar.png" {
 		t.Errorf("radar = %+v", meta.Radar)
 	}
@@ -827,9 +884,9 @@ func TestExtractMapPacksLayers(t *testing.T) {
 		t.Fatalf("maps = %+v, want only de_fixture", maps)
 	}
 
-	// Both layer images exist, each at 2× its logical size (the writer's
-	// radarUpscale); the sizes differ per layer so the assertion can
-	// tell which image landed where.
+	// Both layer images exist, each at radarUpscale × its logical size
+	// (the writer's upscale factor); the sizes differ per layer so the
+	// assertion can tell which image landed where.
 	for _, tc := range []struct {
 		file string
 		w, h int
@@ -846,8 +903,8 @@ func TestExtractMapPacksLayers(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: %v", tc.file, err)
 		}
-		if img.Bounds().Dx() != 2*tc.w || img.Bounds().Dy() != 2*tc.h {
-			t.Errorf("%s bounds = %v, want %dx%d", tc.file, img.Bounds(), 2*tc.w, 2*tc.h)
+		if img.Bounds().Dx() != radarUpscale*tc.w || img.Bounds().Dy() != radarUpscale*tc.h {
+			t.Errorf("%s bounds = %v, want %dx%d", tc.file, img.Bounds(), radarUpscale*tc.w, radarUpscale*tc.h)
 		}
 	}
 
@@ -865,8 +922,9 @@ func TestExtractMapPacksLayers(t *testing.T) {
 	if strings.Contains(string(metaRaw), `"elevation`) {
 		t.Errorf("extracted meta.json grew an elevation key:\n%s", metaRaw)
 	}
-	// Layer width/height is the LOGICAL size (w/lw), NOT the 2× file
-	// size asserted above — the renderer sizes panels from these dims.
+	// Layer width/height is the LOGICAL size (w/lw), NOT the
+	// radarUpscale× file size asserted above — the renderer sizes
+	// panels from these dims.
 	want := []packLayer{
 		{ID: "default", Name: "Upper", File: "radar.png", Width: w, Height: h, ZMin: -495, ZMax: 10000},
 		{ID: "lower", Name: "Lower", File: "radar_lower.png", Width: lw, Height: lh, ZMin: -10000, ZMax: -495},
@@ -1031,5 +1089,137 @@ func TestFindCS2FromSteamRoot(t *testing.T) {
 	// resolvePak accepts the VPK file itself.
 	if p := resolvePak(filepath.Join(pak, "pak01_dir.vpk")); p == "" {
 		t.Error("resolvePak(pak file) = empty")
+	}
+}
+
+// --- radar upscale pipeline (Lanczos-3 + unsharp mask) -------------------
+
+// TestLanczos3Kernel pins the hand-rolled kernel against its closed
+// form: peak at the centre, even symmetry, zero crossings at every
+// nonzero integer t < 3 (sinc(t) = 0 at t = 1, 2; t = 3 is the support
+// edge), negative first side lobe (the ringing that makes edges
+// crisp), and support exactly 3.
+func TestLanczos3Kernel(t *testing.T) {
+	k := lanczos3
+	if k.Support != 3 {
+		t.Errorf("Support = %v, want 3", k.Support)
+	}
+	if got := k.At(0); got != 1 {
+		t.Errorf("At(0) = %v, want 1 (peak)", got)
+	}
+	// Even symmetry: L(-t) = L(t).
+	for _, tt := range []float64{0.25, 0.5, 1.3, 2.7} {
+		if k.At(-tt) != k.At(tt) {
+			t.Errorf("At(-%v) = %v ≠ At(%v) = %v — kernel must be even", tt, k.At(-tt), tt, k.At(tt))
+		}
+	}
+	// Zero crossings at t = 1, 2 (sinc(t)) and t = 3 (support edge).
+	// t = 1, 2 go through math.Sin(πt), which is ~1e-17 rather than
+	// exact 0 — hence the epsilon.
+	for _, tt := range []float64{1, 2, 3} {
+		if got := k.At(tt); math.Abs(got) > 1e-12 {
+			t.Errorf("At(%v) = %v, want ~0 (zero crossing)", tt, got)
+		}
+	}
+	// Beyond the support the kernel is 0 (the scaler never asks, but
+	// the contract says so).
+	if got := k.At(4); got != 0 {
+		t.Errorf("At(4) = %v, want 0 (outside support)", got)
+	}
+	// Main lobe positive, first side lobe (1 < t < 2) negative —
+	// that's the ringing that sharpens hard edges.
+	if l := k.At(0.5); l <= 0 {
+		t.Errorf("At(0.5) = %v, want > 0 (main lobe)", l)
+	}
+	if l := k.At(1.5); l >= 0 {
+		t.Errorf("At(1.5) = %v, want < 0 (side lobe — the crispness source)", l)
+	}
+	// Closed-form spot check: L(0.5) = sinc(0.5)·sinc(1/6).
+	want := sinc(0.5) * sinc(1.0/6.0)
+	if got := k.At(0.5); math.Abs(got-want) > 1e-12 {
+		t.Errorf("At(0.5) = %v, want %v (sinc(t)·sinc(t/3))", got, want)
+	}
+}
+
+// TestUnsharpMask pins the sharpen pass: flat regions are unchanged
+// (blur == pixel → no change), a hard edge gains contrast (the dark
+// side darkens, the light side lightens), an extreme edge clamps
+// instead of wrapping, and alpha is never touched.
+func TestUnsharpMask(t *testing.T) {
+	// redge builds a 16×16 field split at x=8: left = lo, right = hi,
+	// with the chosen alpha on every pixel (200 — visibly not 255, so
+	// an accidental alpha write shows up).
+	redge := func(lo, hi, alpha uint8) *image.NRGBA {
+		img := image.NewNRGBA(image.Rect(0, 0, 16, 16))
+		for y := 0; y < 16; y++ {
+			for x := 0; x < 16; x++ {
+				o := (y*16 + x) * 4
+				v := lo
+				if x >= 8 {
+					v = hi
+				}
+				img.Pix[o], img.Pix[o+1], img.Pix[o+2], img.Pix[o+3] = v, v, v, alpha
+			}
+		}
+		return img
+	}
+	// at returns the 8-bit R value at (x,y) — read through NRGBAAt,
+	// NOT At().RGBA(): color.NRGBA.RGBA() reports PREMULTIPLIED values,
+	// which would scale every reading by alpha/255 and fake a change.
+	at := func(img *image.NRGBA, x, y int) int {
+		return int(img.NRGBAAt(x, y).R)
+	}
+
+	// Flat field: out == in exactly (amount·(p − p) = 0).
+	flat := image.NewNRGBA(image.Rect(0, 0, 8, 8))
+	for i := 0; i < len(flat.Pix); i += 4 {
+		flat.Pix[i], flat.Pix[i+1], flat.Pix[i+2], flat.Pix[i+3] = 100, 150, 200, 255
+	}
+	got := unsharpMask(flat, unsharpRadius, unsharpAmount)
+	for i := 0; i < len(got.Pix); i += 4 {
+		if got.Pix[i] != 100 || got.Pix[i+1] != 150 || got.Pix[i+2] != 200 {
+			t.Fatalf("flat field changed at byte %d: %v", i, got.Pix[i:i+4])
+		}
+	}
+
+	// Hard edge 50 → 150 (a real radar edge): the sides move APART.
+	out := unsharpMask(redge(50, 150, 200), unsharpRadius, unsharpAmount)
+	if v := at(out, 7, 8); v >= 50 {
+		t.Errorf("dark side at edge = %d, want < 50 (sharpened darker)", v)
+	}
+	if v := at(out, 8, 8); v <= 150 {
+		t.Errorf("light side at edge = %d, want > 150 (sharpened lighter)", v)
+	}
+	// Far from the edge nothing moved.
+	if v := at(out, 0, 8); v != 50 {
+		t.Errorf("far-left pixel = %d, want 50 (flat regions untouched)", v)
+	}
+	// Alpha untouched everywhere (the contract: RGB only) — read via
+	// NRGBAAt (unpremultiplied) for the reason above.
+	for y := 0; y < 16; y++ {
+		for x := 0; x < 16; x++ {
+			if a := out.NRGBAAt(x, y).A; a != 200 {
+				t.Fatalf("alpha at (%d,%d) = %d, want 200 (untouched)", x, y, a)
+			}
+		}
+	}
+
+	// Extreme edge 0 → 255: the clamp must hold (no uint8 wraparound
+	// would send the overshoot to the opposite end of the range) and
+	// the sharpen direction must survive.
+	outExt := unsharpMask(redge(0, 255, 255), unsharpRadius, unsharpAmount)
+	if v := at(outExt, 7, 8); v != 0 {
+		t.Errorf("extreme dark edge = %d, want 0 (clamped, not wrapped)", v)
+	}
+	if v := at(outExt, 8, 8); v != 255 {
+		t.Errorf("extreme light edge = %d, want 255 (clamped, not wrapped)", v)
+	}
+	// radius < 1 or amount 0 is a documented no-op.
+	noop := redge(50, 150, 255)
+	if unsharpMask(noop, 0, 0.5) != noop {
+		t.Error("radius 0 should be a no-op")
+	}
+	if unsharpMask(noop, 1, 0) != noop {
+		t.Error("amount 0 should be a no-op")
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image"
 	"image/png"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,14 +29,33 @@ const (
 	// gets. The source vtex decodes to 1024×1024 with a single mip (see
 	// vtex.go — there is no larger source), which reads grainy at high
 	// zoom; the webview can only sample the pixels the file actually
-	// holds. The resample is classical CatmullRom (golang.org/x/image/
-	// draw) — deterministic, offline, no AI model, so extraction stays
-	// portable. meta.json keeps the LOGICAL size (the decoded source
+	// holds. The resample is Lanczos-3 (lanczos3 below, golang.org/x/
+	// image/draw) followed by a modest unsharp mask (unsharpMask) —
+	// deterministic, offline, no AI model, so extraction stays portable.
+	//
+	// 3× (3072²), NOT 4×: measured per-map total written bytes (radar.png
+	// + layer PNGs) over the 18 official maps on a real CS2 install
+	// (2026-11-08): 3× → 29.67 MB total, largest map ar_shoots 3.14 MB;
+	// 4× → 48.98 MB total, ar_shoots 5.00 MB (de_train 4.46, de_overpass
+	// 3.86) — several maps at or past the ~5 MB/map line, and decoded
+	// texture memory grows quadratically with them (3072² RGBA ≈ 37 MB
+	// per layer vs 4096² ≈ 67 MB) for a gain only the deepest zooms
+	// show. meta.json keeps the LOGICAL size (the decoded source
 	// bounds): the frontend maps world→image in that space and draws the
 	// file destination-size (mapxform.js makeTransform, renderer.js
-	// drawRadar, HeatmapLayer), so 2× pixels only improve sampling at
+	// drawRadar, HeatmapLayer), so 3× pixels only improve sampling at
 	// every zoom without moving anything.
-	radarUpscale = 2
+	radarUpscale = 3
+
+	// Unsharp-mask parameters for the post-Lanczos sharpen (applied at
+	// the UPSCALED resolution — see unsharpMask): a 1-px-radius box
+	// blur (3×3 at every upscale factor) is the "blur" the detail is
+	// measured against; amount 0.5 pushes RGB halfway from blur back
+	// toward the pixel — crisp at zoom without visible halos. Kept
+	// deliberately small: Lanczos-3 already rings slightly at hard
+	// edges (crisper radar art), so the mask only tops it up.
+	unsharpRadius = 1
+	unsharpAmount = 0.5
 )
 
 // ExtractResult reports one extracted map pack.
@@ -436,16 +456,140 @@ func preserveElevation(dir string, meta *packMeta) {
 	}
 }
 
+// lanczos3 is the Lanczos-3 kernel (a = 3): L(t) = sinc(t)·sinc(t/3),
+// 1 at t = 0, zero crossings at every nonzero integer t (the a=3 lobe
+// of sinc(t/3) crosses at t = 3, which is the support edge). Drawn
+// from the closed form rather than a table so the weights are exact;
+// golang.org/x/image/draw v0.45.0 ships no ready-made Lanczos scaler
+// and no NewKernel helper — a *draw.Kernel with exported Support/At
+// fields is the package's extension point. Negative t is handled
+// (mathematically the kernel is even) even though the scaler only
+// calls At with t ∈ [0, Support).
+var lanczos3 = &draw.Kernel{
+	Support: 3,
+	At: func(t float64) float64 {
+		if t < 0 {
+			t = -t
+		}
+		if t == 0 {
+			return 1
+		}
+		if t >= 3 {
+			return 0
+		}
+		return sinc(t) * sinc(t/3)
+	},
+}
+
+// sinc is the normalized cardinal sine sin(πx)/(πx), with the
+// removable singularity at 0 filled in (sinc(0) = 1).
+func sinc(x float64) float64 {
+	if x == 0 {
+		return 1
+	}
+	px := math.Pi * x
+	return math.Sin(px) / px
+}
+
 // upscaleRadar resamples a decoded radar/layer image to radarUpscale ×
-// its logical size with CatmullRom (golang.org/x/image/draw) — a
-// classical interpolating kernel: deterministic, offline, no model to
-// ship, so extraction stays portable. See radarUpscale for why the
+// its logical size with Lanczos-3 (lanczos3 above), then applies a
+// modest unsharp mask (unsharpMask) — deterministic, offline, no model
+// to ship, so extraction stays portable. See radarUpscale for why the
 // extra pixels exist and why meta.json must NOT see them.
 func upscaleRadar(img *image.NRGBA) *image.NRGBA {
 	src := img.Bounds()
 	dst := image.NewNRGBA(image.Rect(0, 0, src.Dx()*radarUpscale, src.Dy()*radarUpscale))
-	draw.CatmullRom.Scale(dst, dst.Bounds(), img, src, draw.Src, nil)
+	lanczos3.Scale(dst, dst.Bounds(), img, src, draw.Src, nil)
+	unsharpMask(dst, unsharpRadius, unsharpAmount)
 	return dst
+}
+
+// unsharpMask sharpens img IN PLACE: out = clamp(p + amount·(p − blur))
+// per RGB channel, alpha untouched, where blur is a separable box blur
+// of the given radius (2·radius+1 taps per axis, edge samples clamped
+// — no wraparound). Pure integer/float Go, deterministic, no
+// dependencies; the radius is in pixels of the ALREADY-UPSCALED image
+// (see radarUpscale), so 1 stays a 3×3 neighbourhood at any factor.
+// Returns img for call-chaining.
+func unsharpMask(img *image.NRGBA, radius int, amount float64) *image.NRGBA {
+	if radius < 1 || amount == 0 {
+		return img
+	}
+	b := img.Bounds()
+	w, h := b.Dx(), b.Dy()
+	tmp := make([]uint8, w*h*3)  // horizontal pass (RGB only)
+	blur := make([]uint8, w*h*3) // vertical pass result
+	n := 2*radius + 1
+
+	// Horizontal pass: for each row, average n clamped samples per channel.
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			var sum [3]int
+			for k := -radius; k <= radius; k++ {
+				sx := x + k
+				if sx < 0 {
+					sx = 0
+				} else if sx >= w {
+					sx = w - 1
+				}
+				o := img.PixOffset(b.Min.X+sx, b.Min.Y+y)
+				sum[0] += int(img.Pix[o])
+				sum[1] += int(img.Pix[o+1])
+				sum[2] += int(img.Pix[o+2])
+			}
+			o := (y*w + x) * 3
+			tmp[o] = uint8(sum[0] / n)
+			tmp[o+1] = uint8(sum[1] / n)
+			tmp[o+2] = uint8(sum[2] / n)
+		}
+	}
+
+	// Vertical pass: average the horizontal result down each column.
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			var sum [3]int
+			for k := -radius; k <= radius; k++ {
+				sy := y + k
+				if sy < 0 {
+					sy = 0
+				} else if sy >= h {
+					sy = h - 1
+				}
+				o := (sy*w + x) * 3
+				sum[0] += int(tmp[o])
+				sum[1] += int(tmp[o+1])
+				sum[2] += int(tmp[o+2])
+			}
+			o := (y*w + x) * 3
+			blur[o] = uint8(sum[0] / n)
+			blur[o+1] = uint8(sum[1] / n)
+			blur[o+2] = uint8(sum[2] / n)
+		}
+	}
+
+	// Combine: p + amount·(p − blur), clamped to [0,255]; alpha copied
+	// through untouched (radar PNGs are fully opaque, but a transparent
+	// pixel must never gain/lose coverage from sharpening).
+	for y := 0; y < h; y++ {
+		for x := 0; x < w; x++ {
+			po := img.PixOffset(b.Min.X+x, b.Min.Y+y)
+			bo := (y*w + x) * 3
+			for c := 0; c < 3; c++ {
+				p := float64(img.Pix[po+c])
+				v := p + amount*(p-float64(blur[bo+c]))
+				switch {
+				case v < 0:
+					img.Pix[po+c] = 0
+				case v > 255:
+					img.Pix[po+c] = 255
+				default:
+					img.Pix[po+c] = uint8(v + 0.5)
+				}
+			}
+			// img.Pix[po+3] (alpha) deliberately untouched.
+		}
+	}
+	return img
 }
 
 // writePNGAtomic writes a radar/layer image at radarUpscale × its

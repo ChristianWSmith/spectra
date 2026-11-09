@@ -4164,6 +4164,15 @@ test('single-layer pack: one panel at the legacy geometry, no labels, no indicat
     [100, 0, 600, 600],
     'the exact pre-layers drawImage box (no offsets, no gutters)',
   );
+  // drawRadar pins the smoothing QUALITY too: the context default is
+  // 'low' (plain bilinear), which aliases the extractor's 3× radar
+  // PNG when the webview downscales it at fit zoom. The recording
+  // ctx's set trap stores property writes, so this is observable.
+  assert.equal(
+    canvas.getContext().imageSmoothingQuality,
+    'high',
+    'drawRadar asks for high-quality image smoothing before blitting the radar',
+  );
 
   const mark = canvas.log.length;
   r.draw();
