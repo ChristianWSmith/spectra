@@ -282,5 +282,11 @@ infer them from context.
   community wikis), then **record the finding in `CS2.md`** using the
   format described there — question, distilled answer, source URL(s) and
   retrieval date — so future agents can skip the search.
+- If web search is unavailable (e.g. the daily search quota is
+  exhausted), fall back to the **`agent-browser` CLI** (installed at
+  `/usr/bin/agent-browser`): `agent-browser read <url>` fetches
+  agent-readable page text; `agent-browser skills get core` loads its
+  workflow guide first. Source requirements are unchanged either way —
+  a URL and retrieval date still go in the `CS2.md` entry.
 - Keep entries short and sourced; re-verify and update stale entries
   rather than piling on contradicting ones.
