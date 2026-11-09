@@ -133,6 +133,14 @@ Each stage has an owner: Understand with the user, **Research → Implement
 by subagents**, Evaluate / Review / Integrate / Verify by you. Holding a
 stage yourself is the exception, not the rule.
 
+Stage gates survive recovery. If a delegated session is lost (eviction,
+crash, expiry), the replacement re-enters at the stage it was in: a lost
+researcher's findings are re-established and **reviewed by you before
+implementation starts** — never collapsed into a single
+"probe-then-implement" worker for expediency. If you do deviate from the
+gated pattern for any reason, say so explicitly when you report; silently
+changing the process is itself a process failure.
+
 This is a default pattern, not a mandatory sequence.
 
 Use judgment:
