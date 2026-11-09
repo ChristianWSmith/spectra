@@ -59,7 +59,7 @@ func TestExtractRealCS2Install(t *testing.T) {
 	if err != nil {
 		t.Fatalf("radar.png decode: %v", err)
 	}
-	// The radar file is upscaled by radarUpscale (3× → 3072 with the
+	// The radar file is upscaled by radarUpscale (2× → 2048 with the
 	// default factor) while meta.radar stays at the logical 1024×1024 —
 	// asserted above against meta.json.
 	if img.Bounds().Dx() != 1024*radarUpscale || img.Bounds().Dy() != 1024*radarUpscale {

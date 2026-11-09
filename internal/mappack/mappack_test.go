@@ -713,8 +713,8 @@ func TestExtractMapPacks(t *testing.T) {
 	// written pixel is computable in closed form from its source
 	// position; every pixel must land within a loose band of it
 	// (Lanczos ringing at the border + the unsharp pass deviate a
-	// little: measured max 2/255 with radarUpscale=3, radius 1,
-	// amount 0.5 — tolerance 6 still fails any 1-SOURCE-pixel
+	// little: measured max 2/255 with radius 1, amount 0.5 at both
+	// radarUpscale=3 and =2 — tolerance 6 still fails any 1-SOURCE-pixel
 	// misalignment, which costs ≥7/255 on the B ramp, while leaving
 	// headroom for factor/parameter bumps). The B-channel span
 	// separately proves the output isn't blank: a flat image can't

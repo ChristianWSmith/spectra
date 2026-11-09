@@ -33,19 +33,24 @@ const (
 	// image/draw) followed by a modest unsharp mask (unsharpMask) —
 	// deterministic, offline, no AI model, so extraction stays portable.
 	//
-	// 3× (3072²), NOT 4×: measured per-map total written bytes (radar.png
-	// + layer PNGs) over the 18 official maps on a real CS2 install
-	// (2026-11-08): 3× → 29.67 MB total, largest map ar_shoots 3.14 MB;
-	// 4× → 48.98 MB total, ar_shoots 5.00 MB (de_train 4.46, de_overpass
-	// 3.86) — several maps at or past the ~5 MB/map line, and decoded
-	// texture memory grows quadratically with them (3072² RGBA ≈ 37 MB
-	// per layer vs 4096² ≈ 67 MB) for a gain only the deepest zooms
-	// show. meta.json keeps the LOGICAL size (the decoded source
-	// bounds): the frontend maps world→image in that space and draws the
-	// file destination-size (mapxform.js makeTransform, renderer.js
-	// drawRadar, HeatmapLayer), so 3× pixels only improve sampling at
-	// every zoom without moving anything.
-	radarUpscale = 3
+	// 2× (2048²), per the product owner's upscale comparison matrix
+	// (reviewed 2026-11-09, /tmp/opencode/radar-upscale-review — {2,3,4}×
+	// × box/triangle/catmullrom/mitchell/lanczos2/lanczos3 ± unsharp,
+	// plus ImageMagick filters): the winner was exactly this recipe at
+	// factor 2 — 2x_lanczos3_unsharp-a0.5-r1.png — chosen over the
+	// previously shipped 3×, whose extra detail only the deepest zooms
+	// show was not worth its file/texture cost. Measured per-map total
+	// written bytes (radar.png + layer PNGs) over the extracted packs on
+	// a real CS2 install (2026-11-09): 2× → 16.66 MB total, largest map
+	// ar_shoots 1.76 MB (the same pack set at 3× → 31.11 MB / ar_shoots
+	// 3.29 MB; an earlier 4× run → 48.98 MB / 5.00 MB) — and decoded
+	// texture memory grows quadratically (2048² RGBA ≈ 17 MB per layer
+	// vs 3072² ≈ 37 MB). meta.json keeps the LOGICAL size (the decoded
+	// source bounds): the frontend maps world→image in that space and
+	// draws the file destination-size (mapxform.js makeTransform,
+	// renderer.js drawRadar, HeatmapLayer), so the extra pixels only
+	// improve sampling at every zoom without moving anything.
+	radarUpscale = 2
 
 	// Unsharp-mask parameters for the post-Lanczos sharpen (applied at
 	// the UPSCALED resolution — see unsharpMask): a 1-px-radius box
