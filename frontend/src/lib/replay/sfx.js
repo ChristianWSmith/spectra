@@ -9,12 +9,12 @@
 // replay state stream and the landmark rows already carry ("AK-47",
 // "HE Grenade", "C4") plus `<name> throw` for a utility's throw group
 // ("HE Grenade throw" — throwCues), the C4 beep groups the beep
-// scheduler builds (`C4 beep <site>[ 10sec]` — c4BeepGroup) and the
+// scheduler builds (`C4 beep <site>` — c4BeepGroup) and the
 // four plant/defuse lifecycle cue groups (bombActionCues — "C4 plant
 // start" … "C4 defuse complete"), so a cue is one exact-match lookup.
 // A logical item with several variants keeps ALL of them and picks one
 // at RANDOM per play, so a spray doesn't loop one sample — the beep
-// groups are single-sample on purpose (site/phase must never substitute
+// groups are single-sample on purpose (the site must never substitute
 // at random), and so are the four lifecycle cues (each is a distinct
 // moment, not a variant).
 //
@@ -52,9 +52,9 @@
 //     updateC4Beeps walks c4BeepTicks' synthesized cadence against an
 //     AudioContext anchor (the voice engine's lookahead pattern —
 //     lib/replay/audio.js), picks each sample deterministically by
-//     (site, time left), re-seeds on a seek/loop wrap (cueGapJump — a
-//     scrub never fast-forwards through missed beeps) and stops while
-//     paused or once the bomb is defused/round's over (bombEndTick);
+//     site, re-seeds on a seek/loop wrap (cueGapJump — a scrub never
+//     fast-forwards through missed beeps) and stops while paused or
+//     once the bomb is defused/round's over (bombEndTick);
 //   - a seek / loop wrap / paused scrub advances the compare point
 //     WITHOUT playing (cueGapJump — the renderer's fireJump idea), so
 //     scrubbing never machine-guns the cues it crossed.
@@ -489,16 +489,15 @@ export function c4BeepTicks(plantTick, fuseEndTick, tr) {
 
 // c4BeepGroup — the manifest key of ONE beep, chosen DETERMINISTICALLY:
 // the plant row's site picks the tone (the game's own C4.PlantSound /
-// C4.PlantSoundB sample pairs — mappack soundTable `C4 beep A|B`) and
-// the time left on the fuse picks the phase (the distinct *_10sec
-// sample of the final 10 seconds). A site we cannot name resolves to
-// null — silence, never a guessed tone. Each group holds exactly one
-// sample, so the engine's random pickVariant is the identity here.
-// Pure — unit-tested by frontend/src/lib/sfx.test.js.
-export function c4BeepGroup(site, remainingTicks, tr) {
+// C4.PlantSoundB sample pairs — mappack soundTable `C4 beep A|B`). A
+// site we cannot name resolves to null — silence, never a guessed tone.
+// Nothing else picks a sample: the WHOLE fuse plays this one tone at the
+// established cadence (c4BeepRate / c4BeepTicks — no phase switch). Each
+// group holds exactly one sample, so the engine's random pickVariant is
+// the identity here. Pure — unit-tested by frontend/src/lib/sfx.test.js.
+export function c4BeepGroup(site) {
   if (site !== 'A' && site !== 'B') return null;
-  const base = `C4 beep ${site}`;
-  return Number.isFinite(remainingTicks) && remainingTicks <= 10 * tr ? `${base} 10sec` : base;
+  return `C4 beep ${site}`;
 }
 
 // firstBeepAfter — index of the first beep tick STRICTLY after `tick`
@@ -997,9 +996,9 @@ export function createSfxEngine({ engine, matchId, onError }) {
   }
 
   function scheduleC4Beep(beatTick, bomb) {
-    // Deterministic sample: the site picks the tone, the time left on
-    // the fuse picks normal vs the final-10-seconds beep (c4BeepGroup).
-    const name = c4BeepGroup(bomb.site, bomb.fuseEnd - beatTick, tr);
+    // Deterministic sample: the site picks the tone (c4BeepGroup) —
+    // the whole fuse beeps the same normal beep.
+    const name = c4BeepGroup(bomb.site);
     if (!name) return; // a site we cannot name — silence, never a guess
     const buf = pickReady(name);
     if (!buf) return; // not extracted / not decoded yet — silent, no error

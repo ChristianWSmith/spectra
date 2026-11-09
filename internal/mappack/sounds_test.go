@@ -227,7 +227,7 @@ func TestDecodeVSndV5Synthetic(t *testing.T) {
 // manifest must carry exactly that key) and INTERNAL sound groups
 // (internalSoundGroups — replay-addressed groups with no equipment
 // spelling, e.g. the C4 beeps sfx.js's scheduler addresses as
-// `C4 beep <site>[ 10sec]`; a new group registers there, the rule never
+// `C4 beep <site>`; a new group registers there, the rule never
 // widens again). Also pins the per-name VPK paths' shape and the
 // output-filename uniqueness the reverse index needs.
 func TestSoundTableKeysInIconTable(t *testing.T) {
@@ -292,14 +292,12 @@ func TestSoundTableKeysInIconTable(t *testing.T) {
 		"M4A1":         {"sounds/weapons/m4a1/m4a1_silencer_01.vsnd_c"},
 		"Desert Eagle": {"sounds/weapons/deagle/deagle_01.vsnd_c", "sounds/weapons/deagle/deagle_02.vsnd_c"},
 		"C4":           {"sounds/weapons/c4/c4_explode1.vsnd_c"},
-		// The C4 beep groups — one deterministic sample per (site,
-		// phase) key; the pairs are the game's C4.PlantSound /
-		// C4.PlantSoundB events' files (sfx.js's beep scheduler builds
-		// these key names).
-		"C4 beep A":       {"sounds/weapons/c4/c4_beep2.vsnd_c"},
-		"C4 beep B":       {"sounds/weapons/c4/c4_beep3.vsnd_c"},
-		"C4 beep A 10sec": {"sounds/weapons/c4/c4_beep2_10sec.vsnd_c"},
-		"C4 beep B 10sec": {"sounds/weapons/c4/c4_beep3_10sec.vsnd_c"},
+		// The C4 beep groups — one deterministic sample per site key;
+		// the pair is the game's C4.PlantSound / C4.PlantSoundB
+		// events' files (sfx.js's beep scheduler builds these key
+		// names).
+		"C4 beep A": {"sounds/weapons/c4/c4_beep2.vsnd_c"},
+		"C4 beep B": {"sounds/weapons/c4/c4_beep3.vsnd_c"},
 		// The plant/defuse cue groups — ONE file per cue (each is its
 		// own soundevent — c4.initiate / c4.plant / c4.disarmstart /
 		// c4.disarmfinish — never a variant of another; see the
@@ -499,7 +497,7 @@ func TestExtractRealCS2Sounds(t *testing.T) {
 	files := SoundFiles(out)
 	for _, key := range []string{
 		"AK-47", "Desert Eagle", "C4",
-		"C4 beep A", "C4 beep B", "C4 beep A 10sec", "C4 beep B 10sec",
+		"C4 beep A", "C4 beep B",
 		"HE Grenade", "Smoke Grenade", "HE Grenade throw",
 	} {
 		if len(files[key]) == 0 {

@@ -5,7 +5,7 @@
 // plant/defuse lifecycle cues (bombActionCues — the four manifest
 // groups, silent cancels, the shared bomb.js ACTION_KINDS taxonomy), the
 // bullet cue window, the decoy fake-gunshot plan window, the C4 beep
-// synthesis (bomb rows → schedule → deterministic (site, phase) group),
+// synthesis (bomb rows → schedule → deterministic site group),
 // the range/seek guards, the random variant pick, the internal gain
 // scales and the weapon-name-less manifest boundary.
 // Run: node --test src/lib/sfx.test.js
@@ -647,31 +647,25 @@ test('c4BeepTicks: hostile inputs yield no schedule (never a throw)', () => {
   assert.deepEqual(c4BeepTicks(0, 100, -64), []);
 });
 
-test('c4BeepGroup: deterministic (site, phase) key — an unknown site is silence', () => {
-  const tr = 64;
+test('c4BeepGroup: deterministic site → tone key — an unknown site is silence', () => {
   // The plant row's site picks the tone (the game's C4.PlantSound /
-  // C4.PlantSoundB sample pairs) …
-  assert.equal(c4BeepGroup('A', 40 * tr, tr), 'C4 beep A');
-  assert.equal(c4BeepGroup('B', 40 * tr, tr), 'C4 beep B');
-  // … and the time left on the fuse picks the phase: the final 10
-  // seconds switch to the distinct *_10sec sample.
-  assert.equal(c4BeepGroup('A', 10 * tr + 1, tr), 'C4 beep A');
-  assert.equal(c4BeepGroup('A', 10 * tr, tr), 'C4 beep A 10sec');
-  assert.equal(c4BeepGroup('B', 10 * tr - 1, tr), 'C4 beep B 10sec');
-  assert.equal(c4BeepGroup('A', 1, tr), 'C4 beep A 10sec'); // the last beep before the blast
+  // C4.PlantSoundB sample pairs); nothing else picks a sample — the
+  // whole fuse beeps this one tone at the established cadence.
+  assert.equal(c4BeepGroup('A'), 'C4 beep A');
+  assert.equal(c4BeepGroup('B'), 'C4 beep B');
   // A site we cannot name never guesses a tone.
-  assert.equal(c4BeepGroup('', 100, tr), null);
-  assert.equal(c4BeepGroup('C', 100, tr), null);
-  assert.equal(c4BeepGroup(null, 100, tr), null);
-  // A non-finite remainder is simply not the 10-seconds phase.
-  assert.equal(c4BeepGroup('A', NaN, tr), 'C4 beep A');
+  assert.equal(c4BeepGroup(''), null);
+  assert.equal(c4BeepGroup('C'), null);
+  assert.equal(c4BeepGroup(null), null);
+  assert.equal(c4BeepGroup(undefined), null);
+  assert.equal(c4BeepGroup(), null);
 });
 
 // --- C4 beep scheduler (engine-level) --------------------------------------
 // The scheduler is the one part of sfx.js that is not pure math, so this
 // drives createSfxEngine against a fake AudioContext + a fake replay
 // engine and pins its OBSERVABLE contract: beeps queue AHEAD on the
-// replay clock with the deterministic (site, phase) sample, and a pause,
+// replay clock with the site's own deterministic sample, and a pause,
 // a seek or a resolved bomb silences the queue (re-seeds drop what they
 // crossed, never queue it twice).
 
@@ -734,8 +728,6 @@ const BEEP_MANIFEST = {
   sounds: {
     'C4 beep A': ['/api/sounds/c4_beep2.wav'],
     'C4 beep B': ['/api/sounds/c4_beep3.wav'],
-    'C4 beep A 10sec': ['/api/sounds/c4_beep2_10sec.wav'],
-    'C4 beep B 10sec': ['/api/sounds/c4_beep3_10sec.wav'],
     C4: ['/api/sounds/c4_explode1.wav'],
     'HE Grenade': ['/api/sounds/hegrenade_detonate_02.wav'],
     // The four plant/defuse lifecycle cues (soundTable's single-file
@@ -802,8 +794,7 @@ test('engine: beeps queue ahead on the replay clock with the site’s own sample
     engine.emit({ playing: true, speed, tick: C4_PLANT });
     // Everything the pure schedule put inside the lookahead window was
     // queued — at its exact AudioContext time (the anchor maps replay
-    // ticks onto wall seconds ÷ speed) and with site A's own sample
-    // (every remaining beep is >10 s out, so never the _10sec twin).
+    // ticks onto wall seconds ÷ speed) and with site A's own sample.
     const want = c4BeepTicks(C4_PLANT, C4_EXPLODE, C4_TR).filter(
       (t) => t <= C4_PLANT + 1.5 * C4_TR * speed,
     );
@@ -821,28 +812,25 @@ test('engine: beeps queue ahead on the replay clock with the site’s own sample
   }
 });
 
-test('engine: the final 10 seconds switch to the _10sec sample mid-queue', async () => {
+test('engine: the fuse’s tail still queues the normal beep — no phase switch', async () => {
   resetSoundManifest();
   const restoreFetch = stubManifestFetch();
   try {
     const { sfx, engine, ctx } = await makeSfx();
     sfx.setLandmarks(c4Rows('A'));
-    const tick = C4_EXPLODE - 15 * C4_TR; // 15 s before the blast
+    const tick = C4_EXPLODE - 5 * C4_TR; // 5 s before the blast
     engine.emit({ playing: true, speed: 8, tick });
     const inWin = c4BeepTicks(C4_PLANT, C4_EXPLODE, C4_TR).filter(
       (t) => t > tick && t <= tick + 1.5 * C4_TR * 8,
     );
-    const urls = [...new Set(ctx.sources.map((s) => s.buffer.url))];
-    assert.ok(
-      urls.includes('/api/sounds/c4_beep2.wav') && urls.includes('/api/sounds/c4_beep2_10sec.wav'),
-      JSON.stringify(urls),
-    );
-    // …and the switch line is exactly the 10-seconds-remaining mark.
+    assert.ok(inWin.length > 0, 'the fuse’s tail is inside the lookahead window');
+    // Every beep of the tail — including the last one before the
+    // detonation — is the site’s one normal sample (c4BeepGroup has no
+    // phase: the whole fuse beeps at the established cadence).
     for (const t of inWin) {
-      const want = C4_EXPLODE - t <= 10 * C4_TR ? 'c4_beep2_10sec.wav' : 'c4_beep2.wav';
       const src = ctx.sources.find((s) => s.started === (t - tick) / (C4_TR * 8));
       assert.ok(src, `beep at ${t} was never queued`);
-      assert.ok(src.buffer.url.endsWith(want), `${src.buffer.url} for a ${want} beep`);
+      assert.equal(src.buffer.url, '/api/sounds/c4_beep2.wav', `beep ${t} sample`);
     }
     sfx.destroy();
   } finally {
