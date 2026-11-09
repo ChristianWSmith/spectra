@@ -1620,7 +1620,7 @@
       // resolveFrame → shots: [], never a guessed weapon).
       renderer?.setDecoyPlan(decoyPlanFor());
       sfx?.setDecoyPlan(decoyPlanFor());
-      sfx?.setRounds(rounds); // freeze gate for the util/knife cue lists
+      sfx?.setRounds(rounds); // freeze gate + the match-point scoreline for the cue lists
       // Voice presence gates the controls block; players ride alongside.
       voicePresence = await getVoicePresence(id).catch(() => null);
       if (voicePresence && voicePresence.hasVoice) {
@@ -1931,7 +1931,7 @@
           sfxErr = msg;
         },
       });
-      sfx.setRounds(rounds); // freeze gate for the util/knife cue lists
+      sfx.setRounds(rounds); // freeze gate + the match-point scoreline for the cue lists
       sfx.setLandmarks(drawNorm); // rebuilds them under it
       // Gun cues: bullets.js' ONE derivation of the state stream (the
       // renderer's tracers read the same rows) — guns-only and

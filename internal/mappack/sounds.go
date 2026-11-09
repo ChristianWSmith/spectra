@@ -269,6 +269,21 @@ var soundTable = map[string][]string{
 	"rounddraw": {"sounds/vo/announcer/cs2_classic/rounddraw.vsnd_c"},
 	"bombpl":    {"sounds/vo/announcer/cs2_classic/bombpl.vsnd_c"},
 	"bombdef":   {"sounds/vo/announcer/cs2_classic/bombdef.vsnd_c"},
+	// The match-POINT stinger (sfx.js matchPointCues — "matchpoint" at
+	// a match-point round's freeze start). cs2find-discovered and
+	// existence-verified against the local pak01_dir.vpk (2026-11-09),
+	// NOT owner-provided: NO match-point line exists under
+	// sounds/vo/announcer/cs2_classic/ (the whole announcer tree carries
+	// only the five shipped lines + hostage/rescue, radio-cutoff,
+	// legacy-hype and map-veto lines),
+	// and the game's own match-point soundevent is
+	// Music.Match.MatchPoint → sounds/music/cs_stinger.vsnd (a 4.1 s
+	// PCM16 44.1 kHz stereo music stinger — also the file behind
+	// Music.Match.FinalRound; the Announcer.* event family has no
+	// match-point entry at all). The key stays the cue's literal name;
+	// the path is the event's file. One file, so it is single-sample
+	// like the other distinct-moment cues.
+	"matchpoint": {"sounds/music/cs_stinger.vsnd_c"},
 	// Grenades (detonation sounds — the replay's utility cues)
 	"HE Grenade": {
 		"sounds/weapons/hegrenade/hegrenade_detonate_02.vsnd_c",
@@ -352,6 +367,11 @@ var internalSoundGroups = map[string]bool{
 	"rounddraw": true,
 	"bombpl":    true,
 	"bombdef":   true,
+	// The match-POINT stinger (sfx.js matchPointCues) — cs2find-
+	// discovered, existence-verified 2026-11-09 (NOT owner-provided;
+	// see the soundTable entry for the Music.Match.MatchPoint event →
+	// file mapping).
+	"matchpoint": true,
 }
 
 // soundTableNames is soundTable's keys in sorted order, so extraction

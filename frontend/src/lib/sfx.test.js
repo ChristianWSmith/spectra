@@ -5,7 +5,10 @@
 // plant/defuse lifecycle cues (bombActionCues — the four manifest
 // groups, silent cancels, the shared bomb.js ACTION_KINDS taxonomy), the
 // ANNOUNCER lines (roundEndCues winner/draw/counted gating,
-// bombAnnouncerCues, the bombdef→win ordering rule), the
+// bombAnnouncerCues, the bombdef→win ordering rule) and the match-POINT
+// freeze cue (matchPointBefore's MR12/MR3 clinch predicate,
+// matchPointCues' freeze-start placement, silence on unresolvable
+// scorelines), the
 // bullet cue window, the decoy fake-gunshot plan window, the C4 beep
 // synthesis (bomb rows → schedule → deterministic site group),
 // the range/seek guards, the random variant pick, the internal gain
@@ -21,6 +24,10 @@ import { installEsmDirHook } from '../../test/esm-dir-hook.mjs';
 // before the hook install below — ACTION_KINDS is the taxonomy
 // bombActionCues keys its cue names from.
 import { ACTION_KINDS } from './replay/bomb.js';
+// rounds.js is pure too — inFreezeTime pins that the match-point cue
+// sits INSIDE the round's freeze window (the one cue list that must not
+// carry a freeze gate of its own).
+import { inFreezeTime } from './rounds.js';
 
 installEsmDirHook();
 
@@ -50,6 +57,8 @@ const {
   bombActionCues,
   roundEndCues,
   bombAnnouncerCues,
+  matchPointBefore,
+  matchPointCues,
   announcerOrder,
   utilCuesInRange,
   bulletCuesInRange,
@@ -565,7 +574,170 @@ test('announcerOrder: a defuse in the window delays ONLY the round-end line', ()
   assert.deepEqual(announcerOrder([]), []);
 });
 
-// --- gun cues (bullets.js rows) --------------------------------------------
+// --- match-point freeze cue (matchPointBefore / matchPointCues) -------------
+// The match-POINT stinger: soundTable "matchpoint" →
+// sounds/music/cs_stinger.vsnd_c (the game's Music.Match.MatchPoint
+// soundevent — cs2find-discovered + existence-verified 2026-11-09; no
+// match-point line exists under sounds/vo/announcer/cs2_classic/). The
+// cue joins drawNorm round_start rows to GetRounds like roundEndCues,
+// but its tick is the round's FREEZE START (the round_start row shares
+// the round row's startTick — extract.agg.roundStart — which is where
+// rounds.js inFreezeTime's window [startTick, freezeEndTick) opens).
+
+// matchPointBefore — the MR12 + MR3 clinch predicate (CS2.md "MR12
+// regulation + MR3 overtime"; predicate sources in the sfx.js comment).
+test('matchPointBefore: regulation MR12 — 12-X is a point, 11-11 and 12-12 are not', () => {
+  assert.equal(matchPointBefore(12, 8), true);
+  assert.equal(matchPointBefore(8, 12), true); // either side can hold the point
+  assert.equal(matchPointBefore(12, 11), true);
+  assert.equal(matchPointBefore(11, 12), true);
+  assert.equal(matchPointBefore(11, 11), false);
+  // 12-12 ENDS regulation (max 24 rounds): overtime — or a tie where
+  // there is none — follows, so the next round is not a 13th-win clinch.
+  assert.equal(matchPointBefore(12, 12), false);
+  assert.equal(matchPointBefore(10, 10), false);
+  assert.equal(matchPointBefore(0, 0), false);
+  // Unreachable / hostile scorelines are never a point (never a guess):
+  // 13-10 means the match is already over, a missing opponent is not a
+  // scoreline at all.
+  assert.equal(matchPointBefore(13, 10), false);
+  assert.equal(matchPointBefore(-1, 12), false);
+  assert.equal(matchPointBefore(NaN, 12), false);
+  assert.equal(matchPointBefore(12), false);
+  assert.equal(matchPointBefore(), false);
+});
+
+test('matchPointBefore: OT MR3 — 3 block wins is a point, a completed 3-3 block is not', () => {
+  // First OT block: overall 15-X is 12 + 3 block wins (opponent ≤14).
+  assert.equal(matchPointBefore(15, 12), true);
+  assert.equal(matchPointBefore(15, 13), true);
+  assert.equal(matchPointBefore(15, 14), true);
+  assert.equal(matchPointBefore(12, 15), true);
+  assert.equal(matchPointBefore(14, 15), true);
+  // An in-progress block below 3 wins is not a point (13-12 = block 1-0,
+  // 14-13 = block 2-1)…
+  assert.equal(matchPointBefore(13, 12), false);
+  assert.equal(matchPointBefore(14, 12), false);
+  assert.equal(matchPointBefore(14, 13), false);
+  // …and 15-15 is a COMPLETED 3-3 block: Premier ends there (draw), a
+  // repeating config starts a fresh 0-0 block — never a point.
+  assert.equal(matchPointBefore(15, 15), false);
+  // Second OT block (after the tied 3-3): overall 18-X = 3+3+3.
+  assert.equal(matchPointBefore(18, 15), true);
+  assert.equal(matchPointBefore(18, 17), true);
+  assert.equal(matchPointBefore(17, 18), true);
+  assert.equal(matchPointBefore(18, 18), false);
+  // A clinched match never cues again (16-14 = block 4-2, over).
+  assert.equal(matchPointBefore(16, 14), false);
+  assert.equal(matchPointBefore(19, 15), false);
+  // Unreachable OT shapes → false.
+  assert.equal(matchPointBefore(14, 11), false);
+});
+
+// The rounds behind the cue tests: winners in round order — CT sweeps
+// rounds 1-12 (12-0), T takes 13-24 (12-12 → overtime), CT takes the
+// first four OT rounds 25-28 (16-12, clinched). Every round freezes
+// [startTick, startTick + 10) like a real GetRounds row.
+const MP_WINNERS = [
+  ...Array(12).fill('ct'), // rounds 1-12  → 12-0
+  ...Array(12).fill('t'), // rounds 13-24 → 12-12
+  ...Array(4).fill('ct'), // rounds 25-28 → 16-12 (OT block 4-0)
+];
+const MP_ROUNDS = MP_WINNERS.map((winner, i) => ({
+  number: i + 1,
+  winner,
+  reason: 'Elimination',
+  startTick: 1000 + i * 100,
+  freezeEndTick: 1010 + i * 100,
+  endTick: 1090 + i * 100,
+}));
+const mpStart = (n) => MP_ROUNDS[n - 1].startTick;
+const mpRow = (n) => ({ kind: 'round_start', bucket: 'start', tick: mpStart(n), round: n });
+// The same rounds with an extra KNIFE round claiming a CT win (number
+// -2, the extract renumber convention): the scoreline walk must ignore
+// it through isCounted — a knife winner is never a phantom round win.
+const MP_WITH_KNIFE = [
+  ...MP_ROUNDS,
+  { number: -2, winner: 'ct', reason: 'Elimination', startTick: 900, freezeEndTick: 905, endTick: 950 },
+];
+// The match-point rounds of that scoreline: 12-0 … 12-11 (rounds 13-24)
+// are all one CT win from 13, then 12-12 starts overtime (silent) and
+// the OT block is silent until 15-12 (round 28) makes it a point again.
+const MP_POINT_ROUNDS = Array.from({ length: 12 }, (_, i) => i + 13).concat(28);
+
+test('matchPointCues: one cue per match-point round at the FREEZE START, literal key, announcer bus', () => {
+  const cues = matchPointCues(MP_ROUNDS.map((r) => mpRow(r.number)), MP_ROUNDS);
+  assert.deepEqual(
+    cues.map((c) => `${c.tick}:${c.name}`),
+    MP_POINT_ROUNDS.map((n) => `${mpStart(n)}:matchpoint`),
+  );
+  // Every cue rides the ANNOUNCER bus (the spec's bus choice — no new
+  // gain, no new pref) and the list stays tick-sorted for the ONE
+  // window selector.
+  assert.ok(cues.every((c) => c.bucket === 'announcer'), JSON.stringify(cues));
+  assert.ok(cues.every((c, i) => i === 0 || cues[i - 1].tick <= c.tick));
+  // FREEZE-START placement: each cue's tick is its round's startTick —
+  // the instant the round's freeze window [startTick, freezeEndTick)
+  // opens, which is exactly why this builder carries NO freeze gate
+  // (inFreezeTime would drop every one of its own cues).
+  for (const c of cues) {
+    const rnd = MP_ROUNDS.find((r) => r.startTick === c.tick);
+    assert.ok(rnd, `no round starts at ${c.tick}`);
+    assert.equal(c.tick, rnd.startTick);
+    assert.ok(inFreezeTime(MP_ROUNDS, c.tick), `tick ${c.tick} is not in freeze time`);
+  }
+});
+
+test('matchPointCues: knife/warmup, unknown rows and a missing rounds list are silence', () => {
+  // The counted gate (lib/rounds.js isCounted): a knife round never
+  // cues, even at a point-looking scoreline.
+  assert.deepEqual(
+    matchPointCues([{ kind: 'round_start', bucket: 'start', tick: 900, round: -2 }], MP_WITH_KNIFE),
+    [],
+  );
+  // A round the lookup does not know → silence (never a guess)…
+  assert.deepEqual(matchPointCues([{ kind: 'round_start', bucket: 'start', tick: 5000, round: 99 }], MP_ROUNDS), []);
+  // …and no rounds pushed at all (setRounds has not arrived) → silence.
+  assert.deepEqual(matchPointCues([mpRow(23)], null), []);
+  assert.deepEqual(matchPointCues([mpRow(23)], []), []);
+  // Only round_start rows cue: a round_end/kill row at the same tick,
+  // and hostile input, make nothing.
+  assert.deepEqual(matchPointCues([{ kind: 'round_end', bucket: 'round', tick: mpStart(23), round: 23 }], MP_ROUNDS), []);
+  assert.deepEqual(matchPointCues([{ kind: 'kill', bucket: 'kill', tick: mpStart(23), round: 23 }], MP_ROUNDS), []);
+  assert.deepEqual(matchPointCues([null, { kind: 'round_start' }], MP_ROUNDS), []);
+  // (tick|name) dedupe: a duplicated round_start row is one line.
+  assert.equal(matchPointCues([mpRow(23), mpRow(23)], MP_ROUNDS).length, 1);
+});
+
+test('matchPointCues: an unresolvable scoreline is silence, never a 12-X guess', () => {
+  // A prior counted round with an UNKNOWN winner (not a settled draw):
+  // the pre-round scoreline is unknown → no cue, even though the known
+  // halves would read 12-10 (a point).
+  const unknownWinner = MP_ROUNDS.map((r) => (r.number === 22 ? { ...r, winner: '', reason: '' } : r));
+  assert.deepEqual(matchPointCues([mpRow(23)], unknownWinner), []);
+  // A draw with no end tick is not evidence of a settled draw either
+  // (the roundEndCues draw rule: winner '' + reason 'Draw' + endTick > 0).
+  const unresolvedDraw = MP_ROUNDS.map((r) =>
+    r.number === 22 ? { ...r, winner: '', reason: 'Draw', endTick: 0 } : r,
+  );
+  assert.deepEqual(matchPointCues([mpRow(23)], unresolvedDraw), []);
+  // A SETTLED draw resolves to no points for either side: round 22
+  // drawn leaves 12-9 before round 23 — still a point, still cued.
+  const settledDraw = MP_ROUNDS.map((r) =>
+    r.number === 22 ? { ...r, winner: '', reason: 'Draw', endTick: r.endTick } : r,
+  );
+  assert.deepEqual(
+    matchPointCues([mpRow(23)], settledDraw).map((c) => c.tick),
+    [mpStart(23)],
+  );
+  // Knife/warmup rows are skipped by the same scoreline walk, so the
+  // CT win stamped on the knife round never becomes a phantom round
+  // win (counting it would read 13-10 — already over — and silence the
+  // round-23 point).
+  assert.deepEqual(matchPointCues([mpRow(23)], MP_WITH_KNIFE).map((c) => c.tick), [mpStart(23)]);
+});
+
+
 
 // The attack-edge gun path is GONE: its rising edges played the
 // manifest's DETONATION sample under the guns bucket on every grenade
@@ -940,6 +1112,10 @@ const BEEP_MANIFEST = {
     rounddraw: ['/api/sounds/rounddraw.wav'],
     bombpl: ['/api/sounds/bombpl.wav'],
     bombdef: ['/api/sounds/bombdef.wav'],
+    // The match-POINT stinger (soundTable "matchpoint" → the game's
+    // Music.Match.MatchPoint file, sounds/music/cs_stinger.vsnd_c —
+    // cs2find-discovered 2026-11-09, not one of the five VO lines).
+    matchpoint: ['/api/sounds/cs_stinger.wav'],
   },
 };
 
@@ -1245,6 +1421,41 @@ test('engine: bombdef starts before the round-win line in a shared window, on th
     assert.equal(ter.length, 1, 'the later round-win line plays exactly once');
     assert.equal(ter[0].started, 1.5, 'no defuse in the window → no delay');
     assert.equal(ter[0].bus, ctx.gains[3], 'terwin on the announcer bus');
+    sfx.destroy();
+  } finally {
+    restoreFetch();
+  }
+});
+
+// The match-point stinger through the REAL play path: setRounds +
+// setLandmarks → rebuildCues → (prevTick, curTick] → playAnnouncerInRange
+// on the announcer bus. The steps stay inside cueGapJump's 0.3 s window,
+// so each crossing is playback rather than a re-seed.
+test('engine: the match-point stinger plays once at freeze start on the announcer bus', async () => {
+  resetSoundManifest();
+  const restoreFetch = stubManifestFetch();
+  try {
+    const { sfx, engine, ctx } = await makeSfx();
+    sfx.setRounds(MP_ROUNDS);
+    sfx.setLandmarks(MP_ROUNDS.map((r) => mpRow(r.number)));
+    const POINT = mpStart(24); // round 24 starts at 12-11 → match point
+    // The first frame seeds the compare point (jump → nothing on arrival)…
+    engine.emit({ playing: true, speed: 1, tick: POINT - 16 });
+    // …an ordinary step crosses the round's FREEZE START.
+    ctx.currentTime = 0.5;
+    engine.emit({ playing: true, speed: 1, tick: POINT + 2 });
+    const mp = ctx.sources.filter((s) => s.buffer && s.buffer.url === '/api/sounds/cs_stinger.wav');
+    assert.equal(mp.length, 1, 'the stinger plays exactly once');
+    assert.equal(mp[0].started, 0.5, 'on arrival — no ordering delay (announcerOrder leaves it 0)');
+    assert.equal(mp[0].bus, ctx.gains[3], 'on the ANNOUNCER bus (guns=0, utility=1, C4=2, announcer=3)');
+    // The NEXT freeze start (round 25, scoreline 12-12 → overtime
+    // begins) crosses the same way and must stay silent — only rounds
+    // the predicate calls match point cue.
+    engine.emit({ playing: true, speed: 1, tick: mpStart(25) - 16 }); // re-seed (a jump)
+    ctx.currentTime = 0.9;
+    engine.emit({ playing: true, speed: 1, tick: mpStart(25) + 2 }); // ordinary step
+    const after = ctx.sources.filter((s) => s.buffer && s.buffer.url === '/api/sounds/cs_stinger.wav');
+    assert.equal(after.length, 1, 'the 12-12 freeze start stays silent');
     sfx.destroy();
   } finally {
     restoreFetch();
