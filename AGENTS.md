@@ -104,6 +104,7 @@ timings are unmeasured.
 | `Taskfile.yml` + `build/` | stock Wails v3 build system (per-OS tasks, packaging, icons, platform metadata). `build/config.yml` holds product name/ID/version; run `make build-assets` after editing it |
 | `build/appicon.png` | the app icon source (512×512 PNG); `wails3 task common:generate:icons` (run automatically by every build) derives `.ico` |
 | `Makefile` | the single source of build/package commands, shared with CI |
+| `README.md` | the app's **front page** — the GitHub repo is the primary distribution channel, so README is player-facing product copy (features, download), NOT developer documentation. Dev depth belongs here or in the Makefile; keep README brief (its Developers section = "how to run this repo locally", nothing deeper), and no screenshots for now |
 | `CS2.md` | domain-knowledge cache for CS2 facts (formats, mechanics, rules, events); see "CS2 domain knowledge" |
 | `golden/` | the demo pool, all tracked via **Git LFS** (`.gitattributes`): `de_cache.dem.zst` is the golden acceptance demo (formerly `donk.dem.zst`), the other `de_*.dem.zst` files are archived map demos not yet onboarded to tests; acceptance tests parse the golden one and skip if absent; regenerate golden fixtures deliberately when extraction changes |
 

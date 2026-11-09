@@ -18,9 +18,6 @@ A powerful, feature-rich CS2 demo viewer and match analysis toolkit.
 - Voice and chat review synchronized with the replay (when available in the demo)
 - Local-first: demos and extracted data stay on your machine, fully offline
 
-Development status: import, library, statistics, replay, analytics, voice,
-and the platform tools have all shipped.
-
 ## Download
 
 Supported platforms: Linux and Windows (desktop only).
@@ -34,17 +31,16 @@ Grab the latest release for your platform from the
 The app checks GitHub Releases on launch and offers to install updates
 itself, verifying downloads against the release's `SHA256SUMS`.
 
-## Building from source
+## Developers
 
 Requires Go 1.27+, Node.js 22+, and — on Linux only — the GTK4 +
-WebKitGTK 6.0 dev packages (Ubuntu 24.04+ / Debian 13+):
+WebKitGTK 6.0 dev packages:
 
-    sudo apt-get install build-essential pkg-config libgtk-4-dev \
-      libwebkitgtk-6.0-dev
-
-    make run      # build + run
-    make dev      # hot reload
-    make package  # distributable for this OS
+    make deps         # dev toolchain (wails3 CLI at the pinned version, Node check)
+    make linux-deps   # Linux only: apt install the GTK4/WebKitGTK build deps
+    make run          # build + run
+    make dev          # hot reload
+    make package      # distributable for this OS
 
 See [AGENTS.md](AGENTS.md) for development details.
 
