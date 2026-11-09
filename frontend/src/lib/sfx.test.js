@@ -501,20 +501,20 @@ test('pickVariant picks uniformly in range and never leaves the list', () => {
 
 // --- internal mix calibration ----------------------------------------------
 
-test('gain scales: guns, utility and C4 all run at 1/3 of the fader, internal to the mixer', () => {
+test('gain scales: guns and utility run at 1/12 of the fader, C4 at 1/3 — internal to the mixer', () => {
   // applyGains() multiplies the fader level by these — the pref default,
   // the sliders and prefs.go never move (a user-facing 80% still reads
   // 80%), so pinning the constants here pins the mix. Voice is
   // deliberately unscaled (no constant exists for it — its master gain
   // IS the fader value, see sfx.js).
-  assert.equal(GUNS_GAIN_SCALE, 1 / 3); // default weapon volume cut by 2/3
-  // Utility: the old 2/3 halved once more, spec 2026-11-07 ("half the
-  // volume of util once more (again, internally)" → 1/3 of the original)
-  // — still INTERNAL: only this constant moved, never the pref default.
-  assert.equal(UTILITY_GAIN_SCALE, 1 / 3);
-  // C4: the explosion MOVED from the utility bus to the C4 bus, so the
-  // bus keeps utility's number — its level must not change with the
-  // migration (the beeps are simply quieter samples than a grenade).
+  // Spec 2026-11-08: "halve internal gain on guns/util one more time
+  // (should go to 1/12)" — two halvings of the previous 1/3, guns and
+  // utility ONLY.
+  assert.equal(GUNS_GAIN_SCALE, 1 / 12);
+  assert.equal(UTILITY_GAIN_SCALE, 1 / 12);
+  // C4: the explosion MOVED from the utility bus to the C4 bus; it does
+  // NOT follow utility's retune — its level must not change (the beeps
+  // are simply quieter samples than a grenade).
   assert.equal(C4_GAIN_SCALE, 1 / 3);
   assert.equal(AUDIO_VOL_DEFAULT, 0.8); // the user-facing default is untouched
 });

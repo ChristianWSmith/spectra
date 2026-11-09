@@ -79,19 +79,20 @@ export const AUDIO_VOL_DEFAULT = 0.8;
 // prefs.go and Settings are all untouched): the reduction lives inside
 // the mixer, invisible to the fader. The numbers exist because this is a
 // relative-mix decision, not a default change: the raw extracted samples
-// play far hotter than the voice/announcer bus, so the gun bus runs at a
-// third of its fader level (a 2/3 cut) and utility at a THIRD of its
-// fader level (the 2/3 value halved once more, spec 2026-11-07: "half
-// the volume of util once more (again, internally)" — the chain is
-// original × 2/3 → halved → × 1/3; the slider/pref/default stay
-// untouched). C4 rides utility's number on purpose: the C4 bus took the
-// explosion over from the utility bus, and its level must not move — the
-// beeps are simply quieter samples than a grenade. Voice is deliberately
-// NOT scaled: its master gain stays exactly the fader value, so this
-// trio is the whole gun/utility/C4-vs-voice calibration. Retune the
-// balance here, never by moving the pref default.
-export const GUNS_GAIN_SCALE = 1 / 3;
-export const UTILITY_GAIN_SCALE = 1 / 3;
+// play far hotter than the voice/announcer bus, so the gun and utility
+// buses each run at 1/12 of their fader level (spec 2026-11-08: "halve
+// internal gain on guns/util one more time (should go to 1/12)" — two
+// halvings of the previous 1/3, which was itself the original × 2/3 cut
+// halved once for utility, spec 2026-11-07; the slider/pref/default stay
+// untouched). C4 deliberately does NOT follow utility down: the C4 bus
+// took the explosion over from the utility bus and keeps × 1/3 — its
+// level must not move with the retune, and the beeps are simply quieter
+// samples than a grenade. Voice is deliberately NOT scaled: its master
+// gain stays exactly the fader value, so this trio is the whole
+// gun/utility/C4-vs-voice calibration. Retune the balance here, never by
+// moving the pref default.
+export const GUNS_GAIN_SCALE = 1 / 12;
+export const UTILITY_GAIN_SCALE = 1 / 12;
 export const C4_GAIN_SCALE = 1 / 3;
 
 // Live-source cap: a new AudioBufferSourceNode per play IS the Web Audio
