@@ -1,6 +1,8 @@
 // jsdom driver for PlayerCard + TeamColumn: the icon → text-fallback
 // contract (icon present renders <img>, a miss renders the readable
-// canonical label), helmet vs armor labels, money/ammo formatting, the
+// canonical label — except on the WEAPON row, which is icon-only by
+// design: no name text, the name rides the chip's title tooltip), helmet
+// vs armor labels, money/ammo formatting, the
 // mute buttons' aria-pressed + callbacks, the side color classes, the
 // PLAYER-COLOR ring as the card's ONE outline (asserted from the
 // component's own injected CSS: no second/outline ring may reappear)
@@ -8,7 +10,8 @@
 // (armor at the right of the HP row, the weapon on its own line), the
 // fixed-height row geometry (nothing may resize the card — including
 // the econ row's exact two-line util reserve, pinned below the old
-// 3em slack),
+// 3em slack) and the weapon icon's aspect-ratio rule (intrinsic ratio,
+// capped at the line's height),
 // the live stats row, the carried C4, and the honest "—" placeholders when
 // slotStateAt state is null (never a zero presented as a fact) — plus the
 // held-item weapon-row modes: a knife/util/C4 ACTIVE in hand renders its
@@ -224,7 +227,17 @@ const imgs = qa(root, 'img');
 check('armor renders the helmet icon (not the vest)', imgs.some((i) => i.getAttribute('src') === '/api/icons/armor_helmet.svg' && i.getAttribute('alt') === 'Kevlar + Helmet'));
 check('armor value', q(root, '.pc-armor-val').textContent === '65');
 check('weapon icon present', imgs.some((i) => i.getAttribute('src') === '/api/icons/ak47.svg'));
-check('weapon name shown beside the icon', q(root, '.pc-wname').textContent === 'AK-47');
+check(
+  'NO weapon name text — the icon-only row keeps the name in the chip tooltip',
+  !q(root, '.pc-wname') && q(root, '.pc-weapon')?.getAttribute('title') === 'AK-47 — 23 / 71',
+  q(root, '.pc-weapon')?.getAttribute('title'),
+);
+check(
+  'weapon chip cells are the icon + ammo only',
+  JSON.stringify([...q(root, '.pc-weapon').children].map(pcClass)) ===
+    JSON.stringify(['pc-ico', 'pc-num pc-ammo']),
+  JSON.stringify([...q(root, '.pc-weapon').children].map(pcClass)),
+);
 check('ammo as mag / reserve', q(root, '.pc-ammo').textContent === '23 / 71', q(root, '.pc-ammo').textContent);
 check('money through fmtMoney', q(root, '.pc-money').textContent === '$3,250', q(root, '.pc-money').textContent);
 check('utility: grenade icons, no weapon icons', imgs.filter((i) => i.getAttribute('alt') === 'Smoke Grenade' || i.getAttribute('alt') === 'Flashbang').length === 2);
@@ -415,6 +428,34 @@ for (const sel of ['pc-head', 'pc-hp-row', 'pc-weapon-row', 'pc-econ', 'pc-stats
   check(`${sel} declares a FIXED height`, /height:\s*[^;]+;/.test(rule), rule);
   check(`${sel} clips what does not fit (no spill into the stack)`, /overflow:\s*hidden/.test(rule), rule);
 }
+
+// The FIREARM icons' own rule: they keep their intrinsic aspect ratio
+// (width:auto — no forced square) and are capped at the weapon line's
+// height, which the row's overflow:hidden enforces — a wide rifle fills
+// the line instead of letterboxing inside the shared 15px square, and
+// the line's height never changes.
+const wIcoRule =
+  sheetText()
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .match(/\.pc-weapon[^{}]*\.pc-ico[^{}]*\{[^}]*\}/)?.[0] || '';
+check(
+  'the firearm icon keeps its aspect ratio (width:auto + object-fit:contain)',
+  /width:\s*auto/.test(wIcoRule) && /object-fit:\s*contain/.test(wIcoRule),
+  wIcoRule,
+);
+const iconH = ((wIcoRule.match(/height:\s*([^;]+);/) || [])[1] || '').trim();
+const rowH = ((ruleFor('pc-weapon-row').match(/height:\s*([^;]+);/) || [])[1] || '').trim();
+check(
+  'the firearm icon is capped at EXACTLY the weapon line height (never exceeds it)',
+  iconH !== '' && iconH === rowH,
+  `icon ${iconH || '(none)'} vs row ${rowH}`,
+);
+check(
+  'the shared .pc-ico square stays a 15px cell for armor/util/C4 badges',
+  /width:\s*15px/.test(ruleFor('pc-ico(?![\\w-])')) &&
+    /height:\s*15px/.test(ruleFor('pc-ico(?![\\w-])')),
+  ruleFor('pc-ico(?![\\w-])'),
+);
 check(
   'the color ring stays pure paint (box-shadow only, never width/height)',
   !/width|height|padding|margin/.test(colorRule) && /box-shadow/.test(colorRule),
@@ -457,8 +498,15 @@ const rootD = await show({ card: { ...fullCard, state: null, iconURLs: null, onT
 const cardD = q(rootD, '.pc-card');
 check('root titled "No player state for this match"', cardD.getAttribute('title') === 'No player state for this match', cardD.getAttribute('title'));
 check('no-state marker in the head', !!q(rootD, '.pc-nostate'));
-const dashes = ['.pc-hp', '.pc-armor-val', '.pc-wname', '.pc-ammo', '.pc-money'].map((s) => q(rootD, s)?.textContent);
-check('every value renders —', JSON.stringify(dashes) === JSON.stringify(['—', '—', '—', '—', '—']), JSON.stringify(dashes));
+const dashes = ['.pc-hp', '.pc-armor-val', '.pc-ammo', '.pc-money'].map((s) => q(rootD, s)?.textContent);
+check('every value renders —', JSON.stringify(dashes) === JSON.stringify(['—', '—', '—', '—']), JSON.stringify(dashes));
+check(
+  'the nameless weapon row degrades to the honest ammo placeholder + tooltip',
+  !q(rootD, '.pc-wname') &&
+    q(rootD, '.pc-weapon')?.textContent.trim() === '—' &&
+    q(rootD, '.pc-weapon')?.getAttribute('title') === 'Weapon unknown',
+  `${q(rootD, '.pc-weapon')?.textContent} / ${q(rootD, '.pc-weapon')?.getAttribute('title')}`,
+);
 check('utility renders —', q(rootD, '.pc-util').textContent.trim() === '—', q(rootD, '.pc-util').textContent);
 check('utility title says unknown', q(rootD, '.pc-util').getAttribute('title') === 'Utility unknown');
 check('no $0 anywhere on the card', !cardD.textContent.includes('$0'), cardD.textContent);
@@ -469,7 +517,12 @@ console.log('E. icons absent: text fallbacks, helmet tri-state');
 const noIcons = { ...fullCard, iconURLs: null, icons: null };
 const rootE = await show({ card: { ...noIcons, onToggleMute: () => {} } });
 check('no <img> when no source resolves', qa(rootE, 'img').length === 0);
-check('weapon name doubles as its text fallback', q(rootE, '.pc-wname').textContent === 'AK-47');
+check(
+  'no weapon name text when the icon is missing — the chip tooltip still names it',
+  !q(rootE, '.pc-wname') &&
+    q(rootE, '.pc-weapon')?.getAttribute('title') === 'AK-47 — 23 / 71',
+  q(rootE, '.pc-weapon')?.getAttribute('title'),
+);
 check('helmet on → "Kevlar + Helmet" label', q(rootE, '.pc-armor').textContent.includes('Kevlar + Helmet'), q(rootE, '.pc-armor').textContent);
 check('grenade text fallbacks', !!qa(rootE, '.pc-fallback').find((f) => f.textContent === 'Smoke Grenade'), qa(rootE, '.pc-fallback').map((f) => f.textContent).join('|'));
 const rootE2 = await show({ card: { ...noIcons, state: { ...noIcons.state, helmet: false }, onToggleMute: () => {} } });
@@ -537,8 +590,9 @@ check('team column does not inject a side the caller did not give', (await show(
 console.log('H. held-item weapon row: knife/util/C4 in hand → held icon | separator | MAIN block (or the bare icon)');
 // The v3 state fields: the MAIN weapon's ammo rides alongside the
 // active one's; with a held item in hand the row must show the MAIN
-// weapon's name and ITS ammo — never the held item's artifact (the
-// knife reads "1 / 0").
+// weapon's icon and ITS ammo — never the held item's artifact (the
+// knife reads "1 / 0") — and no name text at all (the chip tooltip
+// names the gun).
 const heldBase = {
   ...fullCard,
   playerColor: null,
@@ -555,7 +609,7 @@ const heldBase = {
   iconURLs: { ...fullCard.iconURLs, Knife: '/api/icons/knife.svg' },
 };
 
-// H1 — knife held with an AK carried: <knife icon> | <AK icon> AK-47 … 30 / 90
+// H1 — knife held with an AK carried: <knife icon> | <AK icon> … 30 / 90
 const rootH1 = await show({ card: { ...heldBase, onToggleMute: () => {} } });
 const heldImg = q(rootH1, '.pc-held img');
 check(
@@ -570,9 +624,10 @@ check(
   !!q(rootH1, '.pc-weapon-row .pc-hsep') && q(rootH1, '.pc-hsep').getAttribute('aria-hidden') === 'true',
 );
 check(
-  'H1 main name is the AK-47 (the held Knife is never named)',
-  q(rootH1, '.pc-weapon-row .pc-wname')?.textContent === 'AK-47',
-  q(rootH1, '.pc-weapon-row .pc-wname')?.textContent,
+  'H1 main block carries NO name text — the chip tooltip names the AK-47',
+  !q(rootH1, '.pc-weapon-row .pc-wname') &&
+    q(rootH1, '.pc-weapon')?.getAttribute('title') === 'AK-47 — 30 / 90',
+  q(rootH1, '.pc-weapon')?.getAttribute('title'),
 );
 check(
   'H1 ammo shows the MAIN mag/reserve (30 / 90 — not the knife artifact 1 / 0)',
@@ -610,12 +665,13 @@ const rootH2 = await show({
   },
 });
 check(
-  'H2 flash icon | separator | AK-47 with the main ammo',
+  'H2 flash icon | separator | AK icon + the main ammo (no name text)',
   q(rootH2, '.pc-held img')?.getAttribute('src') === '/api/icons/flashbang.svg' &&
     !!q(rootH2, '.pc-hsep') &&
-    q(rootH2, '.pc-wname')?.textContent === 'AK-47' &&
+    !q(rootH2, '.pc-wname') &&
+    q(rootH2, '.pc-weapon img')?.getAttribute('src') === '/api/icons/ak47.svg' &&
     q(rootH2, '.pc-ammo')?.textContent === '30 / 90',
-  `${q(rootH2, '.pc-held img')?.getAttribute('src')} | ${q(rootH2, '.pc-wname')?.textContent} | ${q(rootH2, '.pc-ammo')?.textContent}`,
+  `${q(rootH2, '.pc-held img')?.getAttribute('src')} | ${q(rootH2, '.pc-weapon img')?.getAttribute('src')} | ${q(rootH2, '.pc-ammo')?.textContent}`,
 );
 check(
   'H2 held chip title = Flashbang + AK-47 pair',
@@ -668,17 +724,18 @@ const rootH4 = await show({
   },
 });
 check(
-  'H4 C4 icon | separator | AK-47 with the main ammo',
+  'H4 C4 icon | separator | AK icon + the main ammo (no name text)',
   q(rootH4, '.pc-held img')?.getAttribute('src') === '/api/icons/c4.svg' &&
     !!q(rootH4, '.pc-hsep') &&
-    q(rootH4, '.pc-wname')?.textContent === 'AK-47' &&
+    !q(rootH4, '.pc-wname') &&
+    q(rootH4, '.pc-weapon img')?.getAttribute('src') === '/api/icons/ak47.svg' &&
     q(rootH4, '.pc-ammo')?.textContent === '30 / 90',
-  `${q(rootH4, '.pc-held img')?.getAttribute('src')} | ${q(rootH4, '.pc-wname')?.textContent}`,
+  `${q(rootH4, '.pc-held img')?.getAttribute('src')} | ${q(rootH4, '.pc-weapon img')?.getAttribute('src')}`,
 );
 
 // H5 — held icon missing from the manifest: degrade silently (the
 // prefix has no text label by design) — no held chip, no separator, the
-// MAIN block stays fully readable.
+// MAIN block stays (icon + ammo, its tooltip naming the gun).
 const rootH5 = await show({
   card: { ...heldBase, iconURLs: fullCard.iconURLs, onToggleMute: () => {} }, // no Knife icon
 });
@@ -686,8 +743,10 @@ check(
   'H5 no held icon → no prefix, no separator, main block intact',
   !q(rootH5, '.pc-held') &&
     !q(rootH5, '.pc-hsep') &&
-    q(rootH5, '.pc-wname')?.textContent === 'AK-47' &&
+    !q(rootH5, '.pc-wname') &&
+    q(rootH5, '.pc-weapon')?.getAttribute('title') === 'AK-47 — 30 / 90' &&
     q(rootH5, '.pc-ammo')?.textContent === '30 / 90',
+  q(rootH5, '.pc-weapon')?.getAttribute('title'),
 );
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
