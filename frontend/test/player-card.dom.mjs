@@ -11,17 +11,21 @@
 // fixed-height row geometry (nothing may resize the card — including
 // the econ row's exact two-line util reserve, pinned below the old
 // 3em slack) and the weapon icon's aspect-ratio rule (intrinsic ratio,
-// capped at the line's height),
+// capped at the line's height — the same rule pinned for the held
+// indicator, while the shared .pc-ico square stays 15px for the
+// badges),
 // the live stats row, the carried C4, and the honest "—" placeholders when
 // slotStateAt state is null (never a zero presented as a fact) — plus the
-// held-item weapon-row modes: a knife/util/C4 ACTIVE in hand renders its
-// icon (no text label) | a thin separator | the MAIN weapon's block with
-// the MAIN weapon's ammo (v3 mainMag/mainReserve), a knife-round
-// inventory renders the bare held icon (no separator, no name), and a
-// firearm active renders no prefix at all — and the RELOAD ring: hidden
-// when reloadProgress is null, a grey track + a dasharray-swept arc in
-// the gun chip while reloading, mounted in BOTH weapon-row modes that
-// show a gun, with the row's fixed-height pins untouched.
+// held-item weapon-row modes: a knife/util/C4 ACTIVE in hand rides INSIDE
+// the MAIN weapon's chip, right after the gun icon (the old .pc-hsep
+// separator is gone for good — markup and CSS), with the MAIN weapon's
+// ammo (v3 mainMag/mainReserve) still right-pinned at the row's edge; a
+// knife-round inventory renders the bare held icon (no name), and a
+// firearm active renders no held indicator at all — and the RELOAD ring:
+// hidden when reloadProgress is null, a grey track + a dasharray-swept
+// arc in the gun chip while reloading, mounted in BOTH weapon-row modes
+// that show a gun, sitting between the gun icon and the held indicator,
+// with the row's fixed-height pins untouched.
 //
 // jsdom is intentionally not a project dependency; from frontend/ run:
 //   npm i --no-save jsdom
@@ -260,7 +264,7 @@ check(
 );
 check('no C4 cell when the inventory carries no bomb', !q(root, '.pc-c4'));
 check(
-  'firearm active → the ordinary block only: NO held prefix, NO separator',
+  'firearm active → the ordinary block only: NO held indicator, NO separator',
   !q(root, '.pc-held') && !q(root, '.pc-hsep'),
 );
 
@@ -453,6 +457,24 @@ check(
   iconH !== '' && iconH === rowH,
   `icon ${iconH || '(none)'} vs row ${rowH}`,
 );
+// The held indicator takes the SAME aspect treatment (it is the line's
+// subject too): one rule covers mode 2's indicator (inside the gun chip)
+// and mode 3's bare held chip.
+const hIcoRule =
+  sheetText()
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .match(/\.pc-held[^{}]*\.pc-ico[^{}]*\{[^}]*\}/)?.[0] || '';
+check(
+  'the held indicator keeps its aspect ratio (width:auto + object-fit:contain)',
+  /width:\s*auto/.test(hIcoRule) && /object-fit:\s*contain/.test(hIcoRule),
+  hIcoRule,
+);
+const heldIconH = ((hIcoRule.match(/height:\s*([^;]+);/) || [])[1] || '').trim();
+check(
+  'the held indicator is capped at EXACTLY the weapon line height (same as the gun)',
+  heldIconH !== '' && heldIconH === rowH,
+  `held ${heldIconH || '(none)'} vs row ${rowH}`,
+);
 check(
   'the shared .pc-ico square stays a 15px cell for armor/util/C4 badges',
   /width:\s*15px/.test(ruleFor('pc-ico(?![\\w-])')) &&
@@ -590,7 +612,7 @@ const rootG2 = await show({ team: team2 });
 check('teamMuted sets the team button pressed', q(rootG2, '.tc-mute').getAttribute('aria-pressed') === 'true' && q(rootG2, '.tc-mute').classList.contains('warn'));
 check('team column does not inject a side the caller did not give', (await show({ team: { ...team, side: '' } })) && qa(document.body, '.pc-ct').length === 0);
 
-console.log('H. held-item weapon row: knife/util/C4 in hand → held icon | separator | MAIN block (or the bare icon)');
+console.log('H. held-item weapon row: knife/util/C4 in hand → the held icon rides AFTER the gun icon inside the main chip (or the bare icon)');
 // The v3 state fields: the MAIN weapon's ammo rides alongside the
 // active one's; with a held item in hand the row must show the MAIN
 // weapon's icon and ITS ammo — never the held item's artifact (the
@@ -612,7 +634,7 @@ const heldBase = {
   iconURLs: { ...fullCard.iconURLs, Knife: '/api/icons/knife.svg' },
 };
 
-// H1 — knife held with an AK carried: <knife icon> | <AK icon> … 30 / 90
+// H1 — knife held with an AK carried: <AK icon><knife icon> … 30 / 90
 const rootH1 = await show({ card: { ...heldBase, onToggleMute: () => {} } });
 const heldImg = q(rootH1, '.pc-held img');
 check(
@@ -623,8 +645,9 @@ check(
     !q(rootH1, '.pc-held .pc-wname'),
 );
 check(
-  'H1 separator present and decorative (aria-hidden)',
-  !!q(rootH1, '.pc-weapon-row .pc-hsep') && q(rootH1, '.pc-hsep').getAttribute('aria-hidden') === 'true',
+  'H1 separator gone for good: zero .pc-hsep nodes anywhere + no CSS rule for it',
+  document.querySelectorAll('.pc-hsep').length === 0 && ruleFor('pc-hsep(?![\\w-])') === '',
+  `nodes ${document.querySelectorAll('.pc-hsep').length} / rule "${ruleFor('pc-hsep(?![\\w-])')}"`,
 );
 check(
   'H1 main block carries NO name text — the chip tooltip names the AK-47',
@@ -648,9 +671,15 @@ check(
 );
 const h1Kids = [...q(rootH1, '.pc-weapon-row').children].map(pcClass);
 check(
-  'H1 row children order: held → separator → main',
-  JSON.stringify(h1Kids) === JSON.stringify(['pc-chip pc-held', 'pc-hsep', 'pc-chip pc-weapon']),
+  'H1 row children: ONE gun chip (the held indicator rides inside it now)',
+  JSON.stringify(h1Kids) === JSON.stringify(['pc-chip pc-weapon']),
   JSON.stringify(h1Kids),
+);
+const h1GunKids = [...q(rootH1, '.pc-weapon-row .pc-weapon').children].map(pcClass);
+check(
+  'H1 gun chip order: gun icon → held indicator → ammo (the ammo stays right-pinned)',
+  JSON.stringify(h1GunKids) === JSON.stringify(['pc-ico', 'pc-held', 'pc-num pc-ammo']),
+  JSON.stringify(h1GunKids),
 );
 const h1CardKids = [...q(rootH1, '.pc-card').children].map(pcClass);
 check(
@@ -668,13 +697,21 @@ const rootH2 = await show({
   },
 });
 check(
-  'H2 flash icon | separator | AK icon + the main ammo (no name text)',
+  'H2 flash indicator inside the gun chip + the main ammo (no name text, no separator)',
   q(rootH2, '.pc-held img')?.getAttribute('src') === '/api/icons/flashbang.svg' &&
-    !!q(rootH2, '.pc-hsep') &&
+    !q(rootH2, '.pc-hsep') &&
     !q(rootH2, '.pc-wname') &&
     q(rootH2, '.pc-weapon img')?.getAttribute('src') === '/api/icons/ak47.svg' &&
     q(rootH2, '.pc-ammo')?.textContent === '30 / 90',
   `${q(rootH2, '.pc-held img')?.getAttribute('src')} | ${q(rootH2, '.pc-weapon img')?.getAttribute('src')} | ${q(rootH2, '.pc-ammo')?.textContent}`,
+);
+const h2Imgs = qa(rootH2, '.pc-weapon img');
+check(
+  'H2 order inside the gun chip: AK icon first, flash indicator right after it',
+  h2Imgs.length === 2 &&
+    h2Imgs[0].getAttribute('src') === '/api/icons/ak47.svg' &&
+    h2Imgs[1].getAttribute('src') === '/api/icons/flashbang.svg',
+  h2Imgs.map((i) => i.getAttribute('src')).join(' → '),
 );
 check(
   'H2 held chip title = Flashbang + AK-47 pair',
@@ -697,6 +734,12 @@ check(
 check(
   'H3 NO separator and NO name/ammo in the weapon row',
   !q(rootH3, '.pc-hsep') && !q(rootH3, '.pc-weapon-row .pc-wname') && !q(rootH3, '.pc-weapon-row .pc-ammo'),
+);
+const h3Kids = [...q(rootH3, '.pc-weapon-row').children].map(pcClass);
+check(
+  'H3 row holds ONLY the bare held chip (mode 3 keeps working)',
+  JSON.stringify(h3Kids) === JSON.stringify(['pc-chip pc-held']),
+  JSON.stringify(h3Kids),
 );
 check(
   'H3 title is honest about the missing firearm',
@@ -727,13 +770,21 @@ const rootH4 = await show({
   },
 });
 check(
-  'H4 C4 icon | separator | AK icon + the main ammo (no name text)',
+  'H4 C4 indicator inside the gun chip + the main ammo (no name text, no separator)',
   q(rootH4, '.pc-held img')?.getAttribute('src') === '/api/icons/c4.svg' &&
-    !!q(rootH4, '.pc-hsep') &&
+    !q(rootH4, '.pc-hsep') &&
     !q(rootH4, '.pc-wname') &&
     q(rootH4, '.pc-weapon img')?.getAttribute('src') === '/api/icons/ak47.svg' &&
     q(rootH4, '.pc-ammo')?.textContent === '30 / 90',
   `${q(rootH4, '.pc-held img')?.getAttribute('src')} | ${q(rootH4, '.pc-weapon img')?.getAttribute('src')}`,
+);
+const h4Imgs = qa(rootH4, '.pc-weapon img');
+check(
+  'H4 order inside the gun chip: AK icon first, C4 indicator right after it',
+  h4Imgs.length === 2 &&
+    h4Imgs[0].getAttribute('src') === '/api/icons/ak47.svg' &&
+    h4Imgs[1].getAttribute('src') === '/api/icons/c4.svg',
+  h4Imgs.map((i) => i.getAttribute('src')).join(' → '),
 );
 
 // H5 — held icon missing from the manifest: degrade silently (the
@@ -850,6 +901,12 @@ const rootI4 = await show({ card: { ...heldBase, reloadProgress: 0.25, onToggleM
 const mainRing = q(rootI4, '.pc-weapon-row .pc-weapon .pc-reload');
 check('mode 2: the ring rides the MAIN gun chip', !!mainRing);
 check('mode 2: no ring on the held chip', !q(rootI4, '.pc-held .pc-reload'));
+const chipKids4 = [...q(rootI4, '.pc-weapon').children].map(pcClass);
+check(
+  'mode 2 order with the ring: gun icon → ring → held indicator → ammo',
+  JSON.stringify(chipKids4) === JSON.stringify(['pc-ico', 'pc-reload', 'pc-held', 'pc-num pc-ammo']),
+  JSON.stringify(chipKids4),
+);
 const fill4 = mainRing?.querySelector('.pc-reload-fill');
 check(
   'mode 2: fill swept to the given progress (0.25 → offset 0.75×circumference)',

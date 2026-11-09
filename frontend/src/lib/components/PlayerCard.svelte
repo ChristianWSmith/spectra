@@ -3,10 +3,10 @@
   // name (+ the voice live dot), HP + bar with the armor/helmet chip at
   // the row's right edge, the equipped weapon (icon + mag/reserve ammo —
   // no name text: the weapon's name rides the icon's title tooltip) on
-  // its own line (or the held-item prefix: a knife/util/C4 in hand shows
-  // its icon | the MAIN weapon's block — see the three modes in the
-  // weapon row below), unspent money, utility (+ the C4 when this player
-  // carries the bomb) and the live K/D/A + ADR row — tinted by the
+  // its own line (or the held-item indicator: a knife/util/C4 in hand
+  // shows its icon right AFTER the MAIN weapon's icon — see the three
+  // modes in the weapon row below), unspent money, utility (+ the C4
+  // when this player carries the bomb) and the live K/D/A + ADR row — tinted by the
   // player's CURRENT side, ringed by the player's TEAMMATE COLOR, with a
   // per-player voice mute. TeamColumn stacks five of these under one team
   // name; the caller (Replay) owns all data and all fetching.
@@ -126,11 +126,12 @@
 
   // The weapon row's three display modes (the markup below): a firearm
   // active (or no state) → the ordinary weapon block; a knife/util/C4 IN
-  // HAND → the held item's icon (no text label) | separator | the MAIN
-  // weapon's block with the MAIN weapon's ammo (mainMag/mainReserve —
-  // never the held item's artifact ammo); held with NO firearm carried
-  // (knife round / dropped sidearm) → the bare held icon only. The row's
-  // height and position never change between modes.
+  // HAND → the MAIN weapon's block (icon → reload ring → the held
+  // item's icon right AFTER the gun's → ammo) with the MAIN weapon's
+  // ammo (mainMag/mainReserve — never the held item's artifact ammo);
+  // held with NO firearm carried (knife round / dropped sidearm) → the
+  // bare held icon only. The row's height and position never change
+  // between modes.
   const held = $derived(heldItemOf(state));
   const main = $derived(held ? mainOf(state) : null);
   const mainAmmo = $derived(held ? mainAmmoText(state) : '—');
@@ -229,18 +230,22 @@
          1. a firearm active (or no state): the ordinary icon +
             mag/reserve block — the weapon name has NO text label, it
             rides the icon/chip's title tooltip (weaponTitle);
-         2. knife/util/C4 IN HAND with a main firearm carried: the held
-            item's icon (no text label) | thin separator | the MAIN
-            weapon's icon + the MAIN weapon's ammo (the stream's
+         2. knife/util/C4 IN HAND with a main firearm carried: the MAIN
+            gun chip — the MAIN weapon's icon first, the held item's
+            indicator right AFTER it (no separator between them — the
+            chip's 4px gap is the spacing), then the MAIN weapon's ammo
+            right-pinned at the row's edge (the stream's
             mainMag/mainReserve — not the held item's artifact ammo);
          3. held item and NO firearm (knife round / dropped sidearm):
-            the bare held icon — no separator, no name, no ammo (the
-            row's fixed height keeps the stack stable; a held icon
-            missing from the manifest degrades to nothing, like a missing
-            weapon icon, since the prefix has no text label by design).
+            the bare held icon — no name, no ammo (the row's fixed
+            height keeps the stack stable; a held icon missing from the
+            manifest degrades to nothing, like a missing weapon icon,
+            since the prefix has no text label by design).
        Both GUN chips (mode 1's active firearm, mode 2's main) carry the
        reload ring beside the icon when one is computing; it is pure
-       paint inside the row's fixed height (see .pc-reload below). -->
+       paint inside the row's fixed height (see .pc-reload below). In
+       mode 2 the held indicator rides INSIDE the gun chip, after the
+       ring: gun icon → ring → held icon → (slack) → ammo. -->
   {#snippet reloadRing()}
     {#if reloadProgress != null}
       <span class="pc-reload" aria-hidden="true" title="Reloading">
@@ -265,21 +270,28 @@
   {/snippet}
   <div class="pc-weapon-row">
     {#if held}
-      {#if heldIconSrc}
-        <span class="pc-chip pc-held" title={heldTitle}>
-          <img class="pc-ico" src={heldIconSrc} alt="" />
-        </span>
-      {/if}
-      {#if main && heldIconSrc}
-        <span class="pc-hsep" aria-hidden="true"></span>
-      {/if}
       {#if main}
+        <!-- Mode 2: ONE gun chip owns the line — icon → ring → held
+             indicator (right after the gun) → ammo. The held span drops
+             the pc-chip class here (it rides the gun chip, not the row
+             of its own); its own title tooltip still names the held
+             item + main pair. -->
         <span class="pc-chip pc-weapon" title={mainTitle}>
           {#if mainIconSrc}
             <img class="pc-ico" src={mainIconSrc} alt="" />
           {/if}
           {@render reloadRing()}
+          {#if heldIconSrc}
+            <span class="pc-held" title={heldTitle}>
+              <img class="pc-ico" src={heldIconSrc} alt="" />
+            </span>
+          {/if}
           <span class="pc-num pc-ammo">{mainAmmo}</span>
+        </span>
+      {:else if heldIconSrc}
+        <!-- Mode 3: the bare held icon (no firearm carried). -->
+        <span class="pc-chip pc-held" title={heldTitle}>
+          <img class="pc-ico" src={heldIconSrc} alt="" />
         </span>
       {/if}
     {:else}
@@ -574,10 +586,27 @@
      height mirrors .pc-weapon-row's 1.5em exactly — keep the two in
      step — and the row's overflow:hidden is the hard stop: an icon can
      fill the line, never exceed it; width:auto + object-fit:contain
-     mean the ratio is the image's own, never distorted. Armor, held
-     util and C4 keep the square 15px cell (they are badges, not the
-     line's subject). */
+     mean the ratio is the image's own, never distorted. Armor, the
+     grenade-inventory row and the C4 badge keep the square 15px cell
+     (they are badges, not the line's subject); the held indicator gets
+     the same treatment as the gun below (.pc-held .pc-ico). */
   .pc-weapon .pc-ico {
+    height: 1.5em;
+    width: auto;
+    object-fit: contain;
+  }
+
+  /* The held indicator (knife/util/C4 in hand) takes the SAME
+     aspect-ratio treatment as the firearm icon — it is the line's
+     subject too, so it fills the line at its intrinsic ratio instead of
+     letterboxing in the shared 15px square. This rule is what reaches
+     MODE 3's bare held chip (outside any .pc-weapon); in mode 2 the
+     indicator sits inside the gun chip and matches BOTH this rule and
+     .pc-weapon .pc-ico — same declarations, no cascade conflict. The
+     shared .pc-ico 15px default above is untouched: armor, grenades
+     and C4 keep their square badge cell. Same height pin as the gun
+     rule — keep both in step with .pc-weapon-row's 1.5em. */
+  .pc-held .pc-ico {
     height: 1.5em;
     width: auto;
     object-fit: contain;
@@ -647,25 +676,16 @@
     stroke-linecap: round;
   }
 
-  /* The held-item prefix (knife/util/C4 in hand): a BARE icon — no text
-     label (its name rides the row's title) — and the thin divider that
-     separates it from the main weapon's block. Both are flex:none so
-     they can never squeeze the ammo or move the ammo's auto margin.
-     The divider is a 1px line of the muted text colour at half alpha
-     (the --divider token is an 8% white table line — invisible on a
-     tinted card at 1px) with 4px margins either side, painted inside the
-     row's fixed height. */
+  /* The held-item indicator (knife/util/C4 in hand): a BARE icon — no
+     text label (its name rides its own title tooltip, and in mode 2 the
+     gun chip's tooltip names the gun). flex:none so it can never
+     squeeze the ammo or move the ammo's auto margin. In mode 2 it rides
+     INSIDE the gun chip right after the icon/ring; in mode 3 it is the
+     row's only chip. Its icon takes the line height at intrinsic ratio
+     (see .pc-held .pc-ico above). The old thin separator (.pc-hsep) is
+     GONE — the chip's 4px gap is the spacing now. */
   .pc-held {
     flex: none;
-  }
-
-  .pc-hsep {
-    flex: none;
-    width: 1px;
-    height: 1em;
-    margin: 0 4px;
-    background: var(--muted);
-    opacity: 0.5;
   }
 
   .pc-econ {
