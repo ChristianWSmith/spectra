@@ -27,6 +27,7 @@ make artifact       # produce the release asset the updater downloads for this O
 make artifact-name  # print that asset's name (CI uses it for the artifact name)
 make deps           # ensure dev toolchain: wails3 CLI at go.mod's pin, Node 22+
 make linux-deps     # apt install GTK4 + WebKitGTK 6.0 build deps (Linux only)
+make cs2find ARGS='find --prefix sounds/weapons/c4/'  # in-repo dev tool (read-only VPK search/decode; cs2find --help)
 ```
 
 `make test` / `make vet` / `make lint` create a stub `frontend/dist/` when
@@ -96,6 +97,7 @@ timings are unmeasured.
 | `internal/data` | XDG data-dir paths (db, per-match sidecars, tmp) |
 | `internal/integration` | golden-demo acceptance test (`golden/de_cache.dem.zst`, skip-if-absent/pointer, `-update` fixture regen) |
 | `internal/mappack` | CS2 radar extraction: Steam install detection → VPK v2 reader → vtex_c decode → map packs in the data dir (Valve IP never ships — see `mappackservice.go` + `frontend/public/maps/README.md`) |
+| `cmd/cs2find` + `internal/mappack/devtool.go` | the in-repo dev tool `cs2find` — READ-ONLY search/decode of the local CS2 install and dump of the canonical tables; engine sits beside the mappack internals (no export churn, never a second decoder) |
 | `prefs.go` | preference keys + window-size helpers (backed by the v3 `kvstore` service) |
 | `version.go` | **stamp-only**: `var version = "dev"` — CI overwrites the whole file on release builds; never put logic here |
 | `frontend/` | Svelte 5 + Vite app; built into `frontend/dist` (embedded, gitignored) and `frontend/bindings` (generated per build, gitignored) |
@@ -186,6 +188,7 @@ Canonical homes (extend these, don't fork them):
 | Match pickers | `lib/components/MatchPicker.svelte` — Explorer, Reports, Builder all use it |
 | Radar coordinate transform | `lib/components/mapxform.js` `makeTransform` — THE pack→transform reader; camera/no-pack bounds fallback stay renderer-only |
 | CS2 asset extraction (families, step order, outcome wording) | `frontend/src/lib/assets.js` `extractAllAssets` — Settings and MapPackPrompt both delegate; views own only their busy/progress/refresh rendering |
+| Job progress | `models.Job` — job-wide 0..1 (0 = indeterminate, never "0%") with the stage→range table beside the stage constants in `internal/models`; the emitter is `internal/library`'s progressReporter; render only through `StatusChip` (no second bar) |
 | Bot exclusion (Go) | `store.HumanOnly` / `store.HumanOnlyBySteamID` (`internal/store/queries.go`, beside `playersJoin`) — THE roster/aggregate/selection filter; `playersJoin` itself is NOT a bot filter |
 | Bot exclusion (frontend twin) | `frontend/src/lib/players.js` — `isHuman` / `listedPlayers` (+ `isBotId` backstop for flagless rows: synthetic 0xFF ids are 20 digits, real SteamID64s 17) |
 | Replay bot presence | `lib/replay/playercard.js` `presentAt` — the ONE card-presence rule; the sole place a bot may list (while covering a disconnected same-side human) |
@@ -220,6 +223,14 @@ Canonical homes (extend these, don't fork them):
   session-only. **Asset extractors serialize:** `internal/mappack.extractMu`
   is locked at the entry of `ExtractMapPacks`/`ExtractIcons`/`ExtractSounds`
   — never add an unlocked extractor (pinned by `TestConcurrentExtractions`).
+- **Library queue lifecycle:** `Enqueue` merges a path with a non-terminal
+  job into that job (`store.FindPendingJobByPath`), `Reprocess`
+  coalesces per match (`FindPendingJobByMatch`) and flips the match row
+  to queued with its prior state remembered for the dequeue; a cancel
+  never strands a row (queued reprocess → prior state, running →
+  failed/openable); `store.Open` repairs matches stuck queued/parsing
+  with no live job. Jobs stay on `spectra:job-progress` (100 ms
+  throttle) — never a second job event or progress widget.
 - **Version nothing until the first release — no versioned migrations,
   no versioned contracts, no legacy-data fallbacks** (pre-release
   policy): until we've cut our first release the repo versions NOTHING
@@ -267,6 +278,17 @@ Canonical homes (extend these, don't fork them):
   over already-fetched rows, the formula is documented in the card's title
   or tooltip, and the value is not derivable from a stored metric without
   cost. If a view aggregate duplicates a stored metric, relocate it.
+- **Probing the install goes through `cs2find`** (`cmd/cs2find` +
+  `internal/mappack/devtool.go`, `make cs2find ARGS='…'`): the ONE
+  read-only search/decode CLI over `pak01_dir.vpk` and the canonical
+  tables (`where · find · get · sound · overview · icon · table · hash ·
+  events`). No more `zz_*` scratch harnesses or throwaway VPK probers —
+  if a probe is needed, extend `RunDevTool` (it lives beside the
+  unexported internals, so there is no export churn and never a second
+  decoder). `table` only prints `soundTable`/`iconTable` (they stay THE
+  mappings); `events`/`hash --resolve` are exploratory over the local
+  install. Valve IP never ships: `-o` defaults to `<tmp>/cs2find/`, a
+  working-tree target warns, and tests write only to `t.TempDir()`.
 - **Tests:** characterization tests before behavior changes; frontend unit
   tests are `node --test src/lib/*.test.js`, DOM tests are the jsdom
   harnesses in `frontend/test/` (jsdom is a declared devDependency — a

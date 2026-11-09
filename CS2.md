@@ -397,7 +397,29 @@ at the end of the section.
   byte-reverse of the published `E9 54 60 BD` sample). This is the
   lookup the sound-event layer needs to turn the golden demo's 25,266
   SOS messages into named events.
+  **Pairing names → files is NOT string-table adjacency** (measured
+  2026-11-09 by `cs2find events`): an event name is also written as a
+  VALUE of the `soundevent_01` child list (an array of refs), so the
+  next dotted string after a name is often a reference rather than a
+  path, and an event's region runs from its name to the next name in
+  the KV3 pair stream. Pure adjacency yields only 16,425 pairs and
+  misses canonical events (`BaseGrenade.Explode`, `Flashbang.Explode`,
+  `Molotov.Start`, `IncGrenade.Start`, `BaseSmokeEffect.Sound`,
+  `Default.WalkJump`, `SmokeGrenade.Bounce`). The pair-stream walker in
+  `internal/mappack/devtool.go` (def marking by the `soundevent_01`
+  ref-run; every `.vsnd` path in the region) parses all 183 files with
+  0 errors → 34,326 definitions, 21,220 distinct names (20,580 with ≥1
+  file — the "~41,552 dotted names" above counts occurrences, not
+  distinct names), and attributes 20,002/20,002 distinct `.vsnd` paths.
+  One shipped file, `soundevents/soundevents_from_tools.vsndevts_c`,
+  stores its KV3 buffers RAW (compression=0, no `0xFFEEDD00` trailer) —
+  a reader must accept both LZ4 and raw. Residual risk: the walker
+  assumes `soundevent_01` is the only name-valued property; a game
+  update adding another would split regions (the install-gated test
+  pins the documented events + hash roundtrip, so gross regressions
+  fail loudly).
   **Source** — golden-demo parse + vsndevts probe (2026-11-03);
+  `cs2find events`/`hash --resolve` over the local install (2026-11-09);
   hash seed from csgocn.net RE post (2025-06-08);
   https://cs2opendev.github.io/CS2OpenDev-Docs/protobufs/gameevents/
   (2026-11-03, its "CRC32" claim disproved above).
@@ -1005,9 +1027,11 @@ at the end of the section.
 - **C4 plant/defuse sound events ↔ files (CS2)** — which extracted file
   cues which lifecycle moment. Read from
   `soundevents/game_sounds_weapons.vsndevts_c` (its DATA block is the
-  same 120-byte binary-KV3 + 2×LZ4 layout as a v5 `.vsnd` CTRL, and its
-  string table puts an event name immediately followed by its `.vsnd`
-  path — the adjacency the C4-beep groups were pinned with):
+  same 120-byte binary-KV3 + 2×LZ4 layout as a v5 `.vsnd` CTRL; the
+  name→path pairing follows the pair-stream rule in the
+  `soundevent_hash` entry — these four C4 pairs were originally pinned
+  by string-table adjacency, which is insufficient in general, and
+  remain correct as re-verified by `cs2find events`):
   `c4.initiate` → `sounds/weapons/c4/c4_initiate.vsnd` (1.913 s stereo),
   `c4.plant` → `c4_plant.vsnd` (0.545 s MONO), `c4.disarmstart` →
   `c4_disarmstart.vsnd` (1.250 s), `c4.disarmfinish` →
@@ -1025,8 +1049,9 @@ at the end of the section.
   game files; WHEN each event fires is read off its name (initiate =
   arming starts, plant = plant finished, disarmstart/finish = defuse
   begin/complete) and is NOT independently code-verified.
-  **Source** — local probe of pak01_dir.vpk (vsndevts string-table
-  adjacency + decoded file durations) (2026-11-08).
+  **Source** — local probe of pak01_dir.vpk (vsndevts pairing per the
+  `soundevent_hash` pair-stream rule + decoded file durations; C4 pairs
+  re-verified by `cs2find events` 2026-11-09) (2026-11-08).
 
 - **Death drops (`mp_death_drop_gun` / `mp_death_drop_grenade`) — what
   CS2 actually drops, and where spectra's rule differs** — the game's
@@ -1129,8 +1154,9 @@ at the end of the section.
   not replicate, making them dead assets — one tone per site plays for
   the whole fuse (user decision, 2026-11-09). Extraction technique: a
   `.vsndevts_c` DATA block is the same 120-byte binary-KV3 + 2×LZ4
-  layout as a v5 `.vsnd` CTRL block, and in the string table an event
-  name is immediately followed by its `.vsnd` path.
+  layout as a v5 `.vsnd` CTRL block; name→path pairing follows the
+  pair-stream rule (see the `soundevent_hash` entry — string-table
+  adjacency alone is insufficient).
   **Source** — local probe of pak01_dir.vpk +
   `soundevents/game_sounds_weapons.vsndevts_c` (2026-11-08);
   https://gritter.nl/posts/csgo-bomb-beep-pattern (2020-07-21, cadence
