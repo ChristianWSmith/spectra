@@ -35,12 +35,11 @@
 //	               byteOffset uint64, frameCount uint16, pad uint16
 //	meta.json      Meta (format version, tick rate, sample rate, counts,
 //	               slot table + its teammate colors, plus the state
-//	               stream's stateFormatVersion + weaponNames when
-//	               present — see state.go)
+//	               stream's weaponNames when present — see state.go)
 //
-// A second, independent stream (state.bin/state.idx, its own
-// stateFormatVersion) carries sparse per-change player state — see
-// state.go for its current version, layout, rationale and measurement.
+// A second, independent stream (state.bin/state.idx) carries sparse
+// per-change player state — see state.go for its layout, rationale and
+// measurement.
 package sidecar
 
 import (
@@ -106,13 +105,13 @@ type Meta struct {
 	Players       []uint64  `json:"players"`  // slot table, first-seen order
 	CreatedAt     time.Time `json:"createdAt"`
 
-	// State stream capability (state.go): absent/0 = no state stream
-	// (matches imported before it, or a parse that never wired the State
-	// sink) — readers fail soft, exactly like a missing sidecar. The
-	// state record's weapon/inventory bytes are indices into WeaponNames
-	// (interned first-seen order, [0] = "Unknown").
-	StateFormatVersion int      `json:"stateFormatVersion,omitempty"`
-	WeaponNames        []string `json:"weaponNames,omitempty"`
+	// State stream (state.go): WeaponNames is written iff the stream
+	// exists — its presence IS the capability marker (absent = no state
+	// stream — a parse with no State sink — and readers fail soft,
+	// exactly like a missing sidecar). The state record's
+	// weapon/inventory bytes are indices into WeaponNames (interned
+	// first-seen order, [0] = "Unknown").
+	WeaponNames []string `json:"weaponNames,omitempty"`
 
 	// PlayerColors parallels Players BY SLOT INDEX: the raw
 	// m_iCompTeammateColor of each slot-table player (CS2.md "Player

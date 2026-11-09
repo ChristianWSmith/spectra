@@ -34,9 +34,8 @@ type Reader struct {
 
 // Open reads meta.json, positions.idx and stats positions.bin. Missing
 // files yield ErrNoSidecar; present-but-corrupt files yield other errors.
-// The state stream is optional: it is loaded only when meta.json carries
-// the supported stateFormatVersion AND its files exist (an old import has
-// neither — HasState stays false, no error).
+// The state stream is optional: it is loaded only when its files exist (a
+// match without them keeps HasState=false, no error).
 func Open(dir string) (*Reader, error) {
 	metaRaw, err := os.ReadFile(filepath.Join(dir, MetaName))
 	if err != nil {
@@ -74,15 +73,13 @@ func Open(dir string) (*Reader, error) {
 	return r, nil
 }
 
-// openState loads the optional state stream (see Open).
+// openState loads the optional state stream (see Open). Absence of either
+// file (or both) means no stream — fail soft, not corrupt.
 func (r *Reader) openState() error {
-	if r.meta.StateFormatVersion != StateFormatVersion {
-		return nil // no/unknown stream — fail soft, not corrupt
-	}
 	stateIdx, err := os.ReadFile(filepath.Join(r.dir, StateIdxName))
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return nil // meta says yes but the files are gone — absent
+			return nil // no stream — absent
 		}
 		return fmt.Errorf("sidecar: read %s: %w", StateIdxName, err)
 	}
@@ -103,8 +100,8 @@ func (r *Reader) openState() error {
 	return nil
 }
 
-// HasState reports whether the match carries the state stream (matches
-// imported before it return false; capability for the /state route).
+// HasState reports whether the match carries the state stream (a match
+// without it returns false; capability for the /state route).
 func (r *Reader) HasState() bool { return r.hasState }
 
 // Meta returns the sidecar header read at Open.

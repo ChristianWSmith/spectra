@@ -14,7 +14,7 @@ package sidecar
 // reconstructed player datum is the C4 carrier (analytics.bombStateAt),
 // which this stream does not cover.
 //
-// # Raw stream layout (stateFormatVersion 4)
+// # Raw stream layout
 //
 // state.bin decompresses to a concatenation of independent zstd frames
 // (≤256 records each), each holding records:
@@ -29,18 +29,13 @@ package sidecar
 //	slot        uint8  — the POSITIONS sidecar slot table (meta.players),
 //	                     reused verbatim; no second slot table
 //	mask        uvarint (LEB128) — bit per present field (values follow in
-//	                     bit order). uvarint (v2 change; v1 was a single
-//	                     uint8) because the mask ran out of bits: the seven
-//	                     low bits (0x01..0x40) were all taken, money +
-//	                     helmet need bits 7 and 8, and bit 8 (0x100) does
-//	                     not fit a uint8 at all. A uvarint keeps every
-//	                     mask below 0x80 a single byte — i.e. any record
-//	                     without the new fields is byte-identical to its
-//	                     v1 encoding — while a fixed uint16 would tax
-//	                     every record +1 B. Masks ≥ 0x80 cost exactly
-//	                     1 B extra. v3 added bits 9/10
-//	                     (mainMag/mainReserve), v4 bit 11 (reloading);
-//	                     masks stay two bytes until 0x4000.
+//	                     bit order). uvarint because a fixed uint8 cannot
+//	                     hold the field set (money + helmet live at bits 7
+//	                     and 8, and bit 8 = 0x100 overflows a uint8) while
+//	                     a fixed uint16 would tax every record +1 B. A
+//	                     uvarint keeps every mask below 0x80 a single byte
+//	                     and masks ≥ 0x80 cost exactly 1 B extra; masks
+//	                     stay two bytes until 0x4000.
 //	  0x001 hp          uint8   0 = death (sampled, not inferred)
 //	  0x002 armor       uint8   read as-is even when dead
 //	  0x004 weapon      uint8   index into meta.weaponNames
@@ -85,10 +80,10 @@ package sidecar
 // demo: 22 distinct inventory names, no "Kevlar Vest"/"Kevlar + Helmet",
 // while 707,352 alive samples had helmet=true).
 //
-// Values are written in bit order, so the v3/v4 fields are APPENDED
-// after helmet: every earlier record's bytes are unchanged (its mask
-// simply never sets bits 0x200/0x400/0x800) — TestStateRecordPinnedBytes
-// pins that byte-identity.
+// Values are written in bit order: mainMag/mainReserve/reloading ride
+// after helmet in the value order (a record that carries no main-weapon
+// or reload state simply never sets bits 0x200/0x400/0x800) —
+// TestStateRecordPinnedBytes pins that byte layout.
 //
 // A record is emitted only when a sampled field CHANGED (or on a seed),
 // so a field absent from a record keeps its previous value — piecewise
@@ -103,38 +98,25 @@ package sidecar
 // reloads nothing), so a death mid-reload ends the run in the stream
 // instead of leaving a last-known reload ringing on the card.
 //
-// VERSION POLICY (pre-release, AGENTS.md "No versioned migrations, no
-// legacy-data fallbacks"): v1, v2 AND v3 sidecars are NOT upgraded and
-// NOT decoded — a reader seeing stateFormatVersion != 4 reports "no
-// state stream" (Go: reader.openState fail-soft; frontend:
-// stateCapable === 4), and the cards show unknown + the reprocess note.
-// The decoder handles ONLY the layout above: v1 predates money/helmet,
-// v2 predates the main-weapon fields (mainMag/mainReserve), v3 predates
-// the reload flag — regaining state after this bump means REPROCESSING
-// the match.
-//
-// # Files (added to the positions layout; both streams version
-// independently — q16-v2 is untouched)
+// # Files (rides alongside the positions layout in the same match
+// directory)
 //
 //	state.bin  concatenated independent zstd frames (≤256 records/block,
 //	           EncodeAll — each block decompresses alone)
 //	state.idx  fixed 16-byte entries per block: firstFrame uint32,
 //	           byteOffset uint64, recordCount uint16, pad uint16
-//	meta.json  + stateFormatVersion (absent = no state stream; readers
-//	           fail soft) + weaponNames[] (the interned name table)
+//	meta.json  + weaponNames[] (the interned name table) — written iff
+//	           the stream exists, so its presence IS the capability
+//	           marker (absent = no state stream; readers fail soft)
 //
 // MEASURED on the golden demo (TestGoldenStateStream, 136,948 frames /
 // 23 rounds): 18,834 records — 157,686 B raw / 95,744 B zstd (~154 KB /
 // ~94 KB), against 9,102,512 B raw / 2,559,642 B zstd for the positions
 // stream — i.e. ~1.7% raw / ~3.7% zstd of the sidecar, inside the
-// 100–400 KB raw per-match estimate. (v2 money/helmet cost on that demo:
-// +378 records, +7,400 B raw over v1's 18,456 / 150,286 B — money deltas
-// from buys/kills/round-end rewards plus the extra seed bytes.) The
-// quoted counts/sizes are the v2 BASELINE — they predate the v3 main-
-// weapon fields (mainMag/mainReserve) and the v4 reload flag
-// (reloading), which the test re-measures on every run (the record-count
-// bounds it asserts still hold: the fields are diffed, so unchanged
-// frames stay record-free). Absolute
+// 100–400 KB raw per-match estimate (order-of-magnitude: the test
+// re-measures the current sizes on every run, and the record-count bounds
+// it asserts hold because every field is diffed — unchanged frames stay
+// record-free). Absolute
 // frame uvarints cost 54,467 B of that raw total; a frameDelta encoding
 // would be 18,886 B — the 35,581 B raw saving (less after zstd) buys
 // nothing: absolute frames keep every block and every range-filtered
@@ -153,18 +135,8 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/extract"
 )
 
-// State stream constants recorded in meta.json.
+// State stream constants.
 const (
-	// StateFormatVersion identifies the state record layout above; bump
-	// when it changes. Matches imported before this stream carry no
-	// stateFormatVersion (and no state.bin/idx) — capability detection
-	// is the meta field, never a schema column. v1 (mask as uint8, no
-	// money/helmet), v2 (no main-weapon ammo) and v3 (no reload flag)
-	// are retired, not upgraded: openState treats any version other
-	// than the current one as "no state stream" (pre-release
-	// no-migrations policy — see the layout doc; matches must be
-	// reprocessed to regain state).
-	StateFormatVersion = 4
 	// StateBlockRecords is the maximum number of records per zstd block.
 	StateBlockRecords = 256
 
@@ -181,8 +153,9 @@ const (
 	StateMainMag     uint16 = 1 << 9
 	StateMainReserve uint16 = 1 << 10
 	StateReloading   uint16 = 1 << 11
-	// stateFields is the mask of every defined field bit; unknown bits
-	// are corruption (forward-compatible readers must fail loudly).
+	// stateFields is the mask of every defined field bit of THE current
+	// layout; unknown bits are corruption — readers fail loudly, never
+	// skip or guess.
 	stateFields = StateHP | StateArmor | StateWeapon | StateInventory |
 		StateMagAmmo | StateReserveAmmo | StateAttack | StateMoney | StateHelmet |
 		StateMainMag | StateMainReserve | StateReloading
@@ -199,9 +172,10 @@ const (
 	unknownWeaponName = "Unknown"
 )
 
-// ErrNoState reports that a match directory has no state stream (old
-// import, or the stream was never wired) — callers treat it as "absent",
-// not as a failure, exactly like ErrNoSidecar.
+// ErrNoState reports that a match directory has no state stream (never
+// written — a parse with no State sink — or its files are absent) —
+// callers treat it as "absent", not as a failure, exactly like
+// ErrNoSidecar.
 var ErrNoState = errors.New("sidecar: no state stream")
 
 // StateRecord is one decoded sparse change record. Mask says which fields
@@ -576,8 +550,8 @@ func appendStateRecord(dst []byte, frame int, slot uint8, mask uint16, s stateSa
 			dst = append(dst, 0)
 		}
 	}
-	// v3/v4 fields APPENDED after helmet: an earlier record's bytes are
-	// unchanged (its mask never sets these bits) — see the layout doc.
+	// mainMag/mainReserve/reloading are APPENDED after helmet in the
+	// value order — see the layout doc.
 	if mask&StateMainMag != 0 {
 		dst = binary.LittleEndian.AppendUint16(dst, s.mainMag)
 	}

@@ -526,10 +526,9 @@ func handleSidecar(st *store.Store, w http.ResponseWriter, r *http.Request, p st
 			log.Printf("sidecar: write positions: %v", err)
 		}
 	case "state":
-		// Sparse player-state records (state.go). A match imported
-		// before the stream has no state.bin — ErrNoState is absence,
-		// not a failure (404, same as a missing sidecar; capability
-		// itself is detected via meta.json's stateFormatVersion).
+		// Sparse player-state records (state.go). A match without the
+		// stream has no state.bin — ErrNoState is absence, not a
+		// failure (404, same as a missing sidecar).
 		from, _ := strconv.Atoi(r.URL.Query().Get("from"))
 		to, _ := strconv.Atoi(r.URL.Query().Get("to"))
 		buf, err := rd.ReadStateRange(from, to)

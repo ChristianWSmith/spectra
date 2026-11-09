@@ -60,10 +60,8 @@
   import { attachReplayInput, snapshot } from '../replay/input.js';
   import { createVoiceEngine, fetchVoicePCM } from '../replay/audio.js';
   import {
-    fetchStateMeta,
     loadState,
     slotStateAt,
-    stateCapable,
   } from '../replay/state.js';
   import { deriveBullets } from '../replay/bullets.js';
   import { buildDecoyPlan } from '../replay/decoy.js';
@@ -174,14 +172,11 @@
   let volAnchor = $state(null);
 
   // --- Player-card phase (spec 19–22, 26) -----------------------------------
-  // State stream (handoff B): null until load() proves capability. A
-  // sidecar that HAS a stateFormatVersion but not the current one (v1,
-  // pre-money/helmet) yields stateNote — ONE honest .note-amber telling
-  // the user a reprocess gains the card fields; a match that never had
-  // the stream (no version key) stays silent and the cards just render
-  // their "no state" placeholders.
+  // State stream (handoff B): null until load() proves the match carries
+  // one. An absent stream keeps it null — the cards render their "no
+  // state" placeholders silently, exactly like a match that never had a
+  // stream (no note, no nag).
   let stateIndex = $state(null);
-  let stateNote = $state('');
   // Icons (handoff C): the manifest URL map the cards render <img> from
   // directly, plus the preloaded images (cards' `icons` Map and the
   // renderer's setIcons object). iconNote only when extraction failed —
@@ -1553,49 +1548,42 @@
         noSidecar = true;
         return;
       }
-      const [match, rs, tn, smeta] = await Promise.all([
+      const [match, rs, tn] = await Promise.all([
         getMatch(id).catch(() => null),
         getRounds(id).catch(() => []),
         getTeamNames(id).catch(() => null), // round ribbon team labels
-        fetchStateMeta(id).catch(() => null), // player-state capability (handoff B)
       ]);
       matchMap = (match && match.map) || '';
       sideSwitches = (match && match.sideSwitches) || 0;
       teamNames = tn || null;
       rounds = rs || [];
-      // Player-state stream (handoff B): capability lives in the sidecar's
-      // meta.json. A sidecar that HAS a stateFormatVersion but not the
-      // current one (v1, pre-money/helmet) gets the ONE honest note —
-      // reprocessing re-records the stream in the current layout. A match
-      // that never had the stream (no version key) stays silent: the
-      // cards render "no state" with no reprocess nag. loadState re-reads
-      // meta.json itself (the canonical one-stop loader — never forked
-      // here); the duplicate read is one tiny local JSON.
-      if (stateCapable(smeta)) {
-        stateIndex = await loadState(id).catch(() => null);
-        renderer?.setStateIndex(stateIndex); // normally pre-engine: startEngine pushes it
-        // Tracer rows + gun-cue rows for the same state stream (both
-        // mirrors of the setStateIndex push — same null-guard): ONE
-        // derivation, both consumers. `data` may not be parsed yet on a
-        // fresh load (deriveBullets fails soft to [] without ticks);
-        // startEngine pushes the real rows once data is in.
-        renderer?.setBullets(
-          deriveBullets(stateIndex, { ticks: data?.ticks, rounds, tickRate: meta?.tickRate }),
-        );
-        sfx?.setBullets(
-          deriveBullets(stateIndex, { ticks: data?.ticks, rounds, tickRate: meta?.tickRate }),
-        );
-        // Decoy plan: same guard/push shape as the bullets above (the
-        // rows may not be fetched yet — startEngine re-pushes the real
-        // plan once drawRows/data are in; a null engine here means no
-        // resolveFrame → shots: [], never a guessed weapon).
-        renderer?.setDecoyPlan(decoyPlanFor());
-        sfx?.setDecoyPlan(decoyPlanFor());
-        sfx?.setRounds(rounds); // freeze gate for the util/knife cue lists
-      } else if (smeta && smeta.stateFormatVersion != null) {
-        stateNote =
-          'player state unavailable — reprocess this match to gain HP/weapon/money on the cards';
-      }
+      // Player-state stream (handoff B): loadState re-reads meta.json
+      // itself (the canonical one-stop loader — never forked here) and
+      // fails soft to null for every absence mode (no meta.json, a 404
+      // on /state, a transport error), so a match without the stream
+      // renders exactly like one that never had it: the cards show their
+      // "no state" placeholders with no note. A corrupt stream is loud
+      // in the parser, never rendered as garbage.
+      stateIndex = await loadState(id).catch(() => null);
+      renderer?.setStateIndex(stateIndex); // normally pre-engine: startEngine pushes it
+      // Tracer rows + gun-cue rows for the same state stream (both
+      // mirrors of the setStateIndex push — same null-guard): ONE
+      // derivation, both consumers. `data` may not be parsed yet on a
+      // fresh load (deriveBullets fails soft to [] without ticks);
+      // startEngine pushes the real rows once data is in.
+      renderer?.setBullets(
+        deriveBullets(stateIndex, { ticks: data?.ticks, rounds, tickRate: meta?.tickRate }),
+      );
+      sfx?.setBullets(
+        deriveBullets(stateIndex, { ticks: data?.ticks, rounds, tickRate: meta?.tickRate }),
+      );
+      // Decoy plan: same guard/push shape as the bullets above (the
+      // rows may not be fetched yet — startEngine re-pushes the real
+      // plan once drawRows/data are in; a null engine here means no
+      // resolveFrame → shots: [], never a guessed weapon).
+      renderer?.setDecoyPlan(decoyPlanFor());
+      sfx?.setDecoyPlan(decoyPlanFor());
+      sfx?.setRounds(rounds); // freeze gate for the util/knife cue lists
       // Voice presence gates the controls block; players ride alongside.
       voicePresence = await getVoicePresence(id).catch(() => null);
       if (voicePresence && voicePresence.hasVoice) {
@@ -2371,12 +2359,6 @@
     {:else if data}
       {#if packNote}
         <p class="note-amber" role="status">{packNote}</p>
-      {/if}
-      {#if stateNote}
-        <!-- v1 sidecar: the ONE reprocess note (handoff B) — shown only
-             when the sidecar HAS a stateFormatVersion that isn't the
-             current one; a match that never had the stream stays silent. -->
-        <p class="note-amber" role="status">{stateNote}</p>
       {/if}
       {#if iconNote}
         <!-- Icon extraction failed after one attempt (handoff C): cards

@@ -266,11 +266,10 @@ func (w *Writer) Close(tickRate float64) (Meta, error) {
 		}
 		meta.PlayerColors = row
 	}
-	// State stream capability (absent fields = no stream, which is how
-	// pre-stream imports read): version + the interned weapon-name table
-	// records live against.
+	// State stream capability (state.go): weaponNames is written iff the
+	// stream exists — the honest capability marker. A match without the
+	// stream carries no key, and readers fail soft to "no state".
 	if w.st.bin != nil {
-		meta.StateFormatVersion = StateFormatVersion
 		meta.WeaponNames = w.st.names
 	}
 	raw, err := json.MarshalIndent(meta, "", "  ")

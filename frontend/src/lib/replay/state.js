@@ -11,18 +11,11 @@
 // reconstruct by keeping the last value at or before a frame — never zero
 // defaults: a field with no record yet is UNKNOWN (null).
 //
-// This module is deliberately UNWIRED: Replay.svelte does not import it,
-// so opening a replay fetches nothing extra until a UI actually renders
-// player state. Capability is detected via meta.json's
-// `stateFormatVersion` (matches imported before the stream simply return
-// null — fail soft, never an error).
-//
-// Version policy: this decoder handles ONLY stateFormatVersion 4 (the
-// layout below, incl. mainMag/mainReserve and reloading); v1 (pre-money/
-// helmet), v2 (pre-main-weapon) and v3 (pre-reload flag) sidecars are not
-// decoded and not upgraded — stateCapable reports false, loadState returns
-// null, cards show unknown (pre-release no-migrations policy: a stale
-// match must be REPROCESSED to regain state).
+// This module is loaded by Replay.svelte through loadState (the
+// one-stop loader): an absent stream — no meta.json, a 404 on /state, or
+// any transport error — resolves to null and the cards render state-less,
+// exactly like a match that never had a stream. Corrupt bytes are loud
+// (the unknown-field-bit guard below), never rendered as garbage.
 //
 // Layout per record (little-endian):
 //   uvarint  frame (absolute frame index, LEB128)
@@ -37,15 +30,14 @@
 //     0x040 attack      uint8 0/1
 //     0x080 money       uint16  unspent account (as-read even when dead)
 //     0x100 helmet      uint8 0/1 (as-read even when dead)
-//     0x200 mainMag     uint16  MAIN (stowed) weapon magazine (v3)
-//     0x400 mainReserve uint16  MAIN weapon reserve (v3)
+//     0x200 mainMag     uint16  MAIN (stowed) weapon magazine
+//     0x400 mainReserve uint16  MAIN weapon reserve
 //     0x800 reloading   uint8 0/1  ACTIVE weapon mid-reload, sampled
-//                         alive-only (a death emits the fresh false) (v4)
-//   mask is a uvarint (v2 change from v1's fixed uint8): masks < 0x80
-//   stay one byte (records without money/helmet are byte-identical to
-//   their v1 encoding), money/helmet masks cost one extra byte; the v3
-//   and v4 fields were APPENDED after helmet, so earlier records decode
-//   byte-identical (their mask simply never sets 0x200/0x400/0x800).
+//                         alive-only (a death emits the fresh false)
+//   mask is a uvarint: masks < 0x80 stay one byte, masks ≥ 0x80 cost
+//   one extra byte; values ride in bit order, so mainMag/mainReserve/
+//   reloading sit after helmet in the value order (a record that never
+//   sets 0x200/0x400/0x800 carries no such bytes).
 
 // Field-mask bits (mirror internal/sidecar's State* constants).
 export const STATE_FIELDS = {
@@ -63,10 +55,9 @@ export const STATE_FIELDS = {
   RELOADING: 0x800,
 };
 
-// The current state-record layout version (mirror sidecar.StateFormatVersion).
-export const STATE_FORMAT_VERSION = 4;
-
-// All defined field bits — anything outside is corruption.
+// The defined field set of THE current layout — anything outside it is
+// corruption: parseState fails loudly on unknown bits (they mean a
+// different/corrupt stream, never a field to skip or guess).
 const STATE_ALL_FIELDS = 0xfff;
 
 // The series every slot index keeps (record key → mask bit), in bit order.
@@ -224,17 +215,6 @@ export function slotStateAt(index, slot, frame) {
   return out;
 }
 
-// stateCapable: meta.json says the match carries the stream in the
-// CURRENT layout (the meta route — never a schema column, so old dev DBs
-// stay untouched). A v1 sidecar (pre-money/helmet), a v2 sidecar
-// (pre-main-weapon ammo) or a v3 sidecar (pre-reload flag) is not
-// upgraded (pre-release no-migrations policy): it reports no capability
-// and callers fail soft to "no state" — the match must be reprocessed to
-// regain state.
-export function stateCapable(meta) {
-  return !!meta && meta.stateFormatVersion === STATE_FORMAT_VERSION;
-}
-
 // fetchStateMeta reads the sidecar's meta.json (null when unreadable).
 export async function fetchStateMeta(matchId) {
   const res = await fetch(`/api/sidecar/${matchId}/meta`);
@@ -243,8 +223,8 @@ export async function fetchStateMeta(matchId) {
 }
 
 // fetchState pulls the raw state stream (whole match by default).
-// 404 = the match predates the stream → null (absent, not an error);
-// other HTTP failures throw.
+// 404 = the stream is absent → null (absent, not an error); other HTTP
+// failures throw.
 export async function fetchState(matchId, { from = 0, to = 0 } = {}) {
   const res = await fetch(`/api/sidecar/${matchId}/state?from=${from}&to=${to}`);
   if (res.status === 404) return null;
@@ -252,14 +232,27 @@ export async function fetchState(matchId, { from = 0, to = 0 } = {}) {
   return res.arrayBuffer();
 }
 
-// loadState is the one-stop loader: capability check via meta.json, then
-// fetch + decode + index. Returns null when the match has no state
-// stream (old import) — callers treat null as "hide/unknown", exactly
-// like a missing position sidecar.
+// loadState is the one-stop loader: meta.json, then fetch + decode +
+// index. Every absence mode resolves to null — no meta.json, a 404 on
+// /state (the stream was never written), or any transport error — so an
+// absent stream renders exactly like a match that never had one: cards
+// show their state-less placeholders, never an error. Only corrupt bytes
+// are loud (parseState's unknown-field-bit guard), and Replay.svelte
+// treats null as "no state", exactly like a missing position sidecar.
 export async function loadState(matchId) {
-  const meta = await fetchStateMeta(matchId);
-  if (!stateCapable(meta)) return null;
-  const buf = await fetchState(matchId);
+  let meta = null;
+  try {
+    meta = await fetchStateMeta(matchId);
+  } catch {
+    return null;
+  }
+  if (!meta) return null;
+  let buf = null;
+  try {
+    buf = await fetchState(matchId);
+  } catch {
+    return null;
+  }
   if (!buf) return null;
   const { records } = parseState(buf, meta.weaponNames || []);
   const index = buildStateIndex(records, (meta.players || []).length);

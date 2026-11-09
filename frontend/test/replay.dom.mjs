@@ -157,19 +157,19 @@ for (const rel of [
 }
 
 // The player-state loader is fetch-based: stub it so the suite pins the
-// VIEW's capability contract deterministically — the mounted replay (id 1)
-// mounts against a V1 sidecar (it HAS a stateFormatVersion, not the
-// current one) → the one honest reprocess note, no state loaded.
-// stateAt is the bullets.js import (its magAmmo walk): the real one
-// lives in replay/state.js; null index → deriveBullets never reaches it.
+// VIEW's fail-soft contract deterministically — the mounted replay (id 1)
+// mounts against a match with NO state stream (the stub's loadState
+// resolves null, the absent-stream path): no note, the cards render
+// state-less. stateAt is the bullets.js import (its magAmmo walk);
+// slotStateAt the renderer/decoy import — a null index means both never
+// reach a real series.
 writeFileSync(
   join(dir, 'replay', 'state.js'),
-  `export const STATE_FORMAT_VERSION = 2;
-export function stateCapable(meta) {
-  return !!meta && meta.stateFormatVersion === STATE_FORMAT_VERSION;
+  `export async function fetchStateMeta() {
+  return { players: [], weaponNames: [] };
 }
-export async function fetchStateMeta() {
-  return { stateFormatVersion: 1, players: [], weaponNames: [] };
+export async function fetchState() {
+  return null;
 }
 export async function loadState() {
   return null;
@@ -1120,7 +1120,7 @@ click(dropBtn2); // close — later sections count toolbar chrome
 await sleep();
 check('the popover closes on its trigger', !controls.querySelector('.rp-drops-pop'));
 
-console.log('F. player-card columns: grouping, team names, mute wiring, v1 state note');
+console.log('F. player-card columns: grouping, team names, mute wiring, absent-stream silence');
 const rbody = main.querySelector('.replay-body');
 const kids = children(rbody);
 check(
@@ -1226,16 +1226,13 @@ check(
   teamBtn()?.getAttribute('aria-pressed') === 'false' &&
     target.querySelectorAll('.pc-mute[aria-pressed="true"]').length === 0,
 );
-// The v1 sidecar note (handoff B): present exactly once, truthful wording.
+// An absent state stream (the stub's fail-soft loadState) must render
+// silently: no reprocess note — the cards show their state-less
+// placeholders, exactly like a match that never had a stream.
 const stateNotes = [...target.querySelectorAll('.note-amber')].filter((n) =>
   n.textContent.includes('player state unavailable'),
 );
-check('v1 sidecar shows the ONE state-unavailable note', stateNotes.length === 1, String(stateNotes.length));
-check(
-  'note tells the user a reprocess gains the card fields',
-  !!stateNotes[0] && /reprocess this match to gain HP\/weapon\/money/.test(stateNotes[0].textContent),
-  stateNotes[0]?.textContent,
-);
+check('absent state stream shows NO state note', stateNotes.length === 0, String(stateNotes.length));
 
 console.log('F2. connection: a disconnect hides the card, a reconnect unhides it');
 // The stubbed getEvents hands the view connect/disconnect rows for every

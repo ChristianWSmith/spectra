@@ -1,19 +1,17 @@
 // Tests for the sparse state-stream loader (lib/replay/state.js): the
 // pinned wire format, corrupt-stream handling, the per-slot binary-search
-// index (seeds = unknown, deltas = last value wins), capability detection
-// and the fail-soft loader. Run: node --test src/lib/state.test.js
+// index (seeds = unknown, deltas = last value wins) and the fail-soft
+// loader. Run: node --test src/lib/state.test.js
 // (from frontend/; the lib test glob src/lib/*.test.js picks it up too).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
   STATE_FIELDS,
-  STATE_FORMAT_VERSION,
   parseState,
   buildStateIndex,
   stateAt,
   slotStateAt,
-  stateCapable,
   fetchStateMeta,
   fetchState,
   loadState,
@@ -61,23 +59,22 @@ function encodeRecords(records) {
 
 const NAMES = ['Unknown', 'AK-47', 'USP-S', 'M4A4', 'AWP', 'Glock-18', 'SSG 08', 'MP9'];
 
-test('pinned record bytes decode (format pin — a change needs stateFormatVersion 5)', () => {
+test('pinned record bytes decode (layout pin — THE current wire format)', () => {
   // Record A: frame 300 (uvarint AC 02), slot 1, mask hp|armor|attack
   // (0x43, single-byte uvarint), hp 57, armor 100, attack true.
   // Record B: frame 301 (AD 02), slot 0, mask
   // weapon|inventory|mag|reserve (0x3C), weapon idx 3, inventory [3, 7],
   // mag 150 (Negev — u16, not u8), reserve 200.
-  // Record C (the v2 money/helmet case): frame 300, slot 1, mask
+  // Record C: the two-byte-mask case — frame 300, slot 1, mask
   // hp|money|helmet (0x181 → two-byte uvarint 81 03), hp 57,
   // money 16000 (u16 LE 80 3E), helmet 1.
-  // Record D (the v3 main-weapon case): frame 0, slot 0, mask
+  // Record D: the main-weapon case — frame 0, slot 0, mask
   // mainMag|mainReserve (0x600 → uvarint 80 0C), mainMag 30 (1E 00),
   // mainReserve 90 (5A 00).
-  // Record E (the v4 reload case — WHY added: the version bump's new
-  // bytes): frame 301, slot 2, mask reloading (0x800 → uvarint 80 10),
-  // value 1. A–D are earlier-era layouts that must stay byte-identical
-  // (the new field is APPENDED after helmet, so their masks never set
-  // 0x200/0x400/0x800).
+  // Record E: the reload case — frame 301, slot 2, mask reloading
+  // (0x800 → uvarint 80 10), value 1. Values ride in bit order
+  // (mainMag/mainReserve/reloading after helmet), so a record that never
+  // sets 0x200/0x400/0x800 carries no such bytes.
   const bytes = new Uint8Array([
     0xac, 0x02, 0x01, 0x43, 57, 100, 1,
     0xad, 0x02, 0x00, 0x3c, 0x03, 0x02, 0x03, 0x07, 0x96, 0x00, 0xc8, 0x00,
@@ -156,10 +153,10 @@ test('round-trip through the test encoder', () => {
 test('malformed streams throw instead of decoding garbage', () => {
   // Truncated hp value.
   assert.throws(() => parseState(new Uint8Array([0x01, 0x00, STATE_FIELDS.HP]).buffer), /truncated record/);
-  // Unknown field bit. (WHY re-pin: 0x800 became the LEGAL reloading
-  // field at stateFormatVersion 4, so the first illegal bit moved to
-  // 0x1000 — one past RELOADING — uvarint 80 20; forward-compat must
-  // fail loudly, not skip; old bit 0x80 is the legal money field.)
+  // Unknown field bit. (WHY: 0x800 is the legal RELOADING field, so the
+  // first illegal bit is 0x1000 — one past RELOADING — uvarint 80 20;
+  // an unknown bit must fail loudly, never skip; 0x80 is the legal
+  // money field.)
   assert.throws(() => parseState(new Uint8Array([0x01, 0x00, 0x80, 0x20]).buffer), /unknown field bits/);
   // Truncated mask uvarint (mask byte says "more bytes follow").
   assert.throws(() => parseState(new Uint8Array([0x01, 0x00, 0x80]).buffer), /truncated mask varint/);
@@ -255,34 +252,21 @@ test('buildStateIndex + stateAt: seeds unknown, deltas last-wins, binary search'
   assert.equal(slotStateAt(index, 0, 55).money, 4200);
 });
 
-test('stateCapable reads stateFormatVersion from meta.json only (current = v4)', () => {
-  assert.equal(STATE_FORMAT_VERSION, 4);
-  assert.equal(stateCapable({ stateFormatVersion: 4 }), true);
-  assert.equal(stateCapable({}), false); // pre-stream import
-  // v1 (pre-money/helmet), v2 (pre-main-weapon) and v3 (pre-reload flag)
-  // sidecars are NOT upgraded (pre-release no-migrations policy) → they
-  // report NO capability, fail soft; the match must be reprocessed to
-  // regain state.
-  assert.equal(stateCapable({ stateFormatVersion: 1 }), false);
-  assert.equal(stateCapable({ stateFormatVersion: 2 }), false);
-  assert.equal(stateCapable({ stateFormatVersion: 3 }), false);
-  assert.equal(stateCapable({ stateFormatVersion: 5 }), false); // future version
-  assert.equal(stateCapable(null), false);
-});
-
-test('loadState fails soft: no capability → null without fetching; 404 → null', async () => {
+test('loadState fails soft: dead meta route → null; 404 stream → null', async () => {
   const realFetch = globalThis.fetch;
   try {
+    // meta.json unreadable (no sidecar / dead route) → null, and the
+    // stream is never fetched.
     let calls = 0;
-    // No stateFormatVersion: capability short-circuits before any fetch.
     globalThis.fetch = async () => {
       calls++;
-      return { ok: true, status: 200, json: async () => ({ players: [1] }) };
+      return { ok: false, status: 500 };
     };
     assert.equal(await loadState(7), null);
-    assert.equal(calls, 1, 'only meta is fetched, never the stream');
+    assert.equal(calls, 1, 'only meta is attempted, never the stream');
 
-    // Capable meta but the stream 404s (deleted/partial sidecar) → null.
+    // meta.json readable but the stream 404s (deleted/partial sidecar)
+    // → null: an absent stream is "no state", not an error.
     calls = 0;
     globalThis.fetch = async (url) => {
       calls++;
@@ -290,7 +274,7 @@ test('loadState fails soft: no capability → null without fetching; 404 → nul
         return {
           ok: true,
           status: 200,
-          json: async () => ({ stateFormatVersion: 4, players: [111, 222], weaponNames: NAMES }),
+          json: async () => ({ players: [111, 222], weaponNames: NAMES }),
         };
       }
       assert.match(String(url), /\/state\?from=0&to=0$/);
@@ -298,25 +282,13 @@ test('loadState fails soft: no capability → null without fetching; 404 → nul
     };
     assert.equal(await loadState(7), null);
     assert.equal(calls, 2, 'meta then stream');
-  } finally {
-    globalThis.fetch = realFetch;
-  }
-});
 
-test('loadState: a v1 sidecar reports no capability — meta only, stream never fetched', async () => {
-  const realFetch = globalThis.fetch;
-  try {
-    let calls = 0;
+    // Transport failure on either fetch also resolves to null (never a
+    // rejected promise the view would have to catch).
     globalThis.fetch = async () => {
-      calls++;
-      return {
-        ok: true,
-        status: 200,
-        json: async () => ({ stateFormatVersion: 1, players: [111, 222], weaponNames: NAMES }),
-      };
+      throw new Error('offline');
     };
-    assert.equal(await loadState(7), null, 'v1 (pre-money/helmet) sidecar must fail soft');
-    assert.equal(calls, 1, 'never fetches the v1 stream — no dual-version decoding');
+    assert.equal(await loadState(7), null);
   } finally {
     globalThis.fetch = realFetch;
   }
@@ -334,16 +306,16 @@ test('loadState happy path: fetch → decode → per-slot index', async () => {
         return {
           ok: true,
           status: 200,
-          json: async () => ({ stateFormatVersion: 4, players: [111, 222], weaponNames: NAMES }),
+          json: async () => ({ players: [111, 222], weaponNames: NAMES }),
         };
       }
       return { ok: true, status: 200, arrayBuffer: async () => body };
     };
     const index = await loadState(7);
-    assert.ok(index, 'capable match with a stream must load');
+    assert.ok(index, 'a match with a stream must load');
     assert.equal(index.slots.length, 2, 'one index per slot-table entry');
     assert.equal(index.recordCount, 2);
-    assert.equal(index.meta.stateFormatVersion, 4);
+    assert.equal(index.meta.weaponNames.length, NAMES.length, 'meta rides the index');
     assert.equal(slotStateAt(index, 0, 0).hp, 100);
     assert.equal(slotStateAt(index, 0, 0).weapon, 'AK-47');
     assert.equal(slotStateAt(index, 0, 0).money, 3500, 'money rides the seed');

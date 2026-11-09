@@ -18,7 +18,7 @@ const (
 )
 
 // aliveSample is a fully-loaded living sample (the canonical shape the
-// extractor emits while alive) — incl. the v3 main-weapon ammo (the
+// extractor emits while alive) — incl. the main-weapon ammo (the
 // stowed AK's 30/90, sampled by extract.scanWeapons).
 func aliveSample(id uint64, hp int) extract.StatePlayer {
 	return extract.StatePlayer{
@@ -172,9 +172,6 @@ func TestStateStreamExplicit(t *testing.T) {
 	}
 	recs, meta := decodeState(t, dir)
 
-	if meta.StateFormatVersion != StateFormatVersion {
-		t.Errorf("stateFormatVersion = %d, want %d", meta.StateFormatVersion, StateFormatVersion)
-	}
 	if len(meta.WeaponNames) == 0 || meta.WeaponNames[0] != unknownWeaponName {
 		t.Fatalf("weaponNames = %v, want [%q ...]", meta.WeaponNames, unknownWeaponName)
 	}
@@ -518,10 +515,10 @@ func TestAddStateAfterCloseFails(t *testing.T) {
 	}
 }
 
-// TestStateAbsentFailsSoft: matches imported before the state stream (a
-// parse that never called AddState) carry no state files — Open succeeds,
-// HasState is false, ReadStateRange reports ErrNoState, meta carries no
-// stateFormatVersion. Also: a fresh NewWriter wipes stale state files so
+// TestStateAbsentFailsSoft: a parse that never called AddState carries no
+// state files — meta.json has no weaponNames key (the capability
+// marker), Open succeeds, HasState is false, ReadStateRange reports
+// ErrNoState. Also: a fresh NewWriter wipes stale state files so
 // a reprocess can never inherit the old stream.
 func TestStateAbsentFailsSoft(t *testing.T) {
 	dir := t.TempDir()
@@ -536,8 +533,8 @@ func TestStateAbsentFailsSoft(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	if meta.StateFormatVersion != 0 || meta.WeaponNames != nil {
-		t.Errorf("positions-only meta = %+v, want no state fields", meta)
+	if meta.WeaponNames != nil {
+		t.Errorf("positions-only meta = %+v, want no weaponNames (no state stream)", meta)
 	}
 	if _, err := os.Stat(filepath.Join(dir, StateBinName)); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("state.bin exists after positions-only parse: %v", err)
@@ -579,15 +576,14 @@ func TestStateAbsentFailsSoft(t *testing.T) {
 	}
 }
 
-// TestStateRecordPinnedBytes pins the wire format (stateFormatVersion 4):
-// any change to the layout must be a version bump, so encode/decode
-// against hard-coded bytes. Masks below 0x80 stay single-byte uvarints;
-// the money/helmet mask (0x181), the v3 main mask (0x600) and the v4
-// reload mask (0x800) are the two-byte cases. Records 1–4 are v1/v2/v3-
-// era layouts whose bytes the append-after-helmet rule keeps
-// byte-IDENTICAL (the earlier baseline — a change here would mean the
-// newer fields were encoded BEFORE helmet); record 5 pins the new
-// reloading bytes.
+// TestStateRecordPinnedBytes pins THE current wire layout: encode/decode
+// against hard-coded bytes, so any layout change is a deliberate,
+// diff-visible edit here (pre-release versions nothing — the byte
+// fixtures ARE the layout pin; AGENTS.md). Masks below 0x80 stay
+// single-byte uvarints; the money/helmet mask (0x181), the main mask
+// (0x600) and the reload mask (0x800) are the two-byte cases. Values
+// ride in bit order (mainMag/mainReserve/reloading after helmet), which
+// the fixtures pin too.
 func TestStateRecordPinnedBytes(t *testing.T) {
 	s := stateSample{hp: 57, armor: 100, attack: true}
 	got := appendStateRecord(nil, 300, 1, StateHP|StateArmor|StateAttack, s, func(string) uint8 { return 0 })
@@ -635,10 +631,10 @@ func TestStateRecordPinnedBytes(t *testing.T) {
 		t.Fatalf("decoded record3 = %+v, want hp57/$16000/helmet", recs3)
 	}
 
-	// v3 main-weapon record: mask mainMag|mainReserve = 0x200|0x400 =
+	// main-weapon record: mask mainMag|mainReserve = 0x200|0x400 =
 	// 0x600 → uvarint 80 0C, mainMag 30 → u16 LE 1E 00, mainReserve 90
-	// → 5A 00. (WHY: the first pin of the stateFormatVersion-3 fields —
-	// they ride AFTER helmet in the value order, see the layout doc.)
+	// → 5A 00. (WHY: pins the main-weapon fields — they ride AFTER
+	// helmet in the value order, see the layout doc.)
 	s4 := stateSample{mainMag: 30, mainReserve: 90}
 	got4 := appendStateRecord(nil, 0, 0, StateMainMag|StateMainReserve, s4, func(string) uint8 { return 0 })
 	want4 := []byte{0x00, 0x00, 0x80, 0x0C, 0x1E, 0x00, 0x5A, 0x00}
@@ -653,9 +649,9 @@ func TestStateRecordPinnedBytes(t *testing.T) {
 		t.Fatalf("decoded record4 = %+v, want main 30/90", recs4)
 	}
 
-	// v4 reload record: mask reloading = 0x800 → uvarint 80 10, value 1.
-	// (WHY: the first pin of the stateFormatVersion-4 field — it rides
-	// AFTER mainReserve in the value order, see the layout doc.)
+	// reload record: mask reloading = 0x800 → uvarint 80 10, value 1.
+	// (WHY: pins the reloading field — it rides AFTER mainReserve in
+	// the value order, see the layout doc.)
 	s5 := stateSample{reloading: true}
 	got5 := appendStateRecord(nil, 301, 2, StateReloading, s5, func(string) uint8 { return 0 })
 	want5 := []byte{0xAD, 0x02, 0x02, 0x80, 0x10, 0x01}
@@ -678,10 +674,10 @@ func TestStateCorrupt(t *testing.T) {
 	if _, err := DecodeStateRecords([]byte{0x01, 0x00, byte(StateHP)}); !errCorrupts(err) {
 		t.Errorf("truncated hp: err = %v, want corrupt", err)
 	}
-	// Unknown field bit. (WHY re-pin: 0x800 became the LEGAL reloading
-	// field at stateFormatVersion 4, so the first illegal bit moved to
-	// 0x1000 — one past StateReloading — uvarint 80 20; forward-compat
-	// must fail loudly, not skip; old bit 0x80 is the legal money field.)
+	// Unknown field bit. (WHY: 0x800 is the legal reloading field, so
+	// the first illegal bit is 0x1000 — one past StateReloading —
+	// uvarint 80 20; an unknown bit must fail loudly, never skip; 0x80
+	// is the legal money field.)
 	if _, err := DecodeStateRecords([]byte{0x01, 0x00, 0x80, 0x20}); !errCorrupts(err) {
 		t.Errorf("unknown bit: err = %v, want corrupt", err)
 	}

@@ -102,9 +102,6 @@ func TestGoldenStateStream(t *testing.T) {
 	}
 
 	// ---- capability + lockstep ----
-	if meta.StateFormatVersion != StateFormatVersion {
-		t.Errorf("stateFormatVersion = %d, want %d", meta.StateFormatVersion, StateFormatVersion)
-	}
 	if len(meta.WeaponNames) < 5 {
 		t.Errorf("weaponNames = %v, want a real vocabulary", meta.WeaponNames)
 	}
@@ -206,7 +203,7 @@ func TestGoldenStateStream(t *testing.T) {
 		}
 	}
 
-	// ---- money/helmet sanity (the v2 fields) ----
+	// ---- money/helmet sanity ----
 	var moneyRecs, helmetTrue int
 	var maxMoney uint16
 	for _, rec := range recs {
@@ -232,7 +229,7 @@ func TestGoldenStateStream(t *testing.T) {
 			helmetTrue)
 	}
 
-	// ---- reload flag sanity (the v4 field) ----
+	// ---- reload flag sanity ----
 	// A full match reloads constantly: the flag must flip BOTH ways —
 	// true records are the weapon_reload events, false records are the
 	// completions (clip change) and cancellations (weapon switch) that
