@@ -149,3 +149,54 @@ func TestGetBlindDurations(t *testing.T) {
 		t.Errorf("no-blind match = %+v, %v; want empty slice, nil", got, err)
 	}
 }
+
+// TestGetDropDetails: the replay drop layer's narrow read — weapon_drop
+// rows only in events.seq order (a kill carrying the same payload fields
+// stays out), cat/mag/reserve roundtrip, and a match with no drops
+// yields an empty slice, never an error.
+func TestGetDropDetails(t *testing.T) {
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	id, err := st.CreateMatchRow("/d/drops.dem", "sha-drop-details", 7)
+	if err != nil {
+		t.Fatalf("CreateMatchRow: %v", err)
+	}
+	if err := st.SaveExtracted(id, &models.ExtractedMatch{Events: []models.Event{
+		{Tick: 10, Round: 1, Kind: models.EventWeaponDrop, Attacker: "1", Weapon: "AK-47",
+			DetailJSON: `{"cat":"gun","mag":17,"reserve":90}`},
+		{Tick: 20, Round: 1, Kind: models.EventWeaponDrop, Attacker: "2", Weapon: "Flashbang",
+			DetailJSON: `{"cat":"util"}`},
+		{Tick: 30, Round: 1, Kind: models.EventKill, Victim: "1",
+			DetailJSON: `{"cat":"gun","mag":5}`}, // not a weapon_drop row
+	}}); err != nil {
+		t.Fatalf("SaveExtracted: %v", err)
+	}
+	svc := &MatchService{st: st}
+	got, err := svc.GetDropDetails(id)
+	if err != nil {
+		t.Fatalf("GetDropDetails: %v", err)
+	}
+	want := []models.DropDetail{
+		{Seq: 0, Cat: "gun", Mag: 17, Reserve: 90},
+		{Seq: 1, Cat: "util", Mag: 0, Reserve: 0},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("GetDropDetails = %+v, want %+v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("GetDropDetails[%d] = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+	// A match with no drops: empty slice, nil error (fail-soft input).
+	other, err := st.CreateMatchRow("/d/none.dem", "sha-no-drops", 0)
+	if err != nil {
+		t.Fatalf("CreateMatchRow(other): %v", err)
+	}
+	if got, err := svc.GetDropDetails(other); err != nil || len(got) != 0 {
+		t.Errorf("no-drop match = %+v, %v; want empty slice, nil", got, err)
+	}
+}

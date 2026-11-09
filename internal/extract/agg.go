@@ -217,6 +217,13 @@ type agg struct {
 	// can diff it into round_economy's per-round side spend.
 	lastSpent map[uint64]int
 
+	// lastHeldUtil tracks each participant's last EQUIPPED utility this
+	// round (the death-drop util rule's "last held util first" input —
+	// extract.inferDeathDrops): sampled every frame from the active
+	// weapon (handlers.go FrameDone) and reset in roundStart alongside
+	// the other per-round state (ONE home: roundStart).
+	lastHeldUtil map[uint64]string
+
 	roundSides []models.RoundPlayerSide
 
 	economy  []models.RoundEconomy
@@ -249,6 +256,7 @@ func newAgg() *agg {
 		roundKills:    make(map[int]map[uint64]int),
 		lastMVP:       make(map[uint64]int),
 		lastSpent:     make(map[uint64]int),
+		lastHeldUtil:  make(map[uint64]string),
 		economy:       make([]models.RoundEconomy, 0, 64),
 		roundSides:    make([]models.RoundPlayerSide, 0, 256),
 		events:        make([]models.Event, 0, 512),
@@ -358,6 +366,10 @@ func (a *agg) roundStart(tick int, warmup, pregame bool, timeLimit int, objectiv
 	a.tradeWindow = make(map[uint64]tradeRec)
 	// Health resets with the round: every player spawns back at 100 HP.
 	a.victimHP = make(map[uint64]int)
+	// The last-held util is a PER-ROUND fact (the death-drop rule scopes
+	// it to the round the death happens in) — cleared with the rest of
+	// the per-round state here, the ONE round-reset home.
+	a.lastHeldUtil = make(map[uint64]string)
 	a.addEvent(models.Event{
 		Tick:       tick,
 		Kind:       models.EventRoundStart,
@@ -572,6 +584,9 @@ type killInfo struct {
 	// the raw input for the trade-opportunity proximity stored on the kill
 	// event as detail_json.nearDist (config-independent, measured once).
 	matePos []r3.Vector
+	// inv is the victim's inventory AT the kill tick (dropInventory —
+	// names + gun ammo), the input for the death-drop inference below.
+	inv []inventoryItem
 }
 
 func (a *agg) kill(k killInfo) {
@@ -614,6 +629,43 @@ func (a *agg) kill(k killInfo) {
 			"nearDist": nearDist,
 		}),
 	}, "player_death")
+
+	// Death drops (weapon_drop — inference, no raw game event of its
+	// own): one row per inferred drop (a gun + at most one util, the
+	// inferDeathDrops rules). The position is the VICTIM's position at
+	// the kill tick, stored exactly like bomb_drop stores the C4
+	// carrier's position at release: the item's real landing spot is a
+	// physics result the demo does not record — "stored at release, may
+	// slide short" (CS2.md's dropped-C4 caveat — same accepted
+	// semantics here). A victim with no stored position (zero vector)
+	// still stores the row — the frontend draws nothing without
+	// coordinates (drops.js), never a guessed one.
+	//
+	// Emitted for EVERY kill (warmup/pregame included) like the kill row
+	// itself: these are evidence rows for the map layer, not stats.
+	for _, d := range inferDeathDrops(k.inv, a.lastHeldUtil[k.victimKey]) {
+		detail := map[string]any{
+			"player": k.victimName,
+			"cat":    d.cat,
+			"source": "victim",
+		}
+		if d.cat == "gun" {
+			// Dropped guns track their ammo/mag state at death — the
+			// authoritative mag/reserve on the row (util carries none).
+			detail["mag"] = d.mag
+			detail["reserve"] = d.reserve
+		}
+		a.addEvent(models.Event{
+			Tick:       k.tick,
+			Kind:       models.EventWeaponDrop,
+			Attacker:   keyStr(k.victimKey),
+			Weapon:     d.name,
+			PosX:       k.posX,
+			PosY:       k.posY,
+			PosZ:       k.posZ,
+			DetailJSON: detailJSON(detail),
+		}, "")
+	}
 
 	// Warmup knife fights, pregame (knife) rounds and post-match kills
 	// never pollute stats (event rows are still emitted).
@@ -1078,6 +1130,34 @@ func (a *agg) bombPickedUp(tick int, key uint64, name string, px, py, pz *float6
 		PosZ:       pz,
 		DetailJSON: detailJSON(map[string]any{"player": name, "source": source}),
 	}, "bomb_pickup")
+}
+
+// noteHeldUtil records one participant's currently equipped utility for
+// the death-drop "last held util" rule (per-frame from the FrameDone
+// handler in handlers.go; reset every roundStart — see lastHeldUtil).
+func (a *agg) noteHeldUtil(key uint64, weapon string) {
+	if key == 0 || weapon == "" {
+		return
+	}
+	a.lastHeldUtil[key] = weapon
+}
+
+// weaponPickedUp records a weapon_pickup row: someone acquired a gun or
+// util item at this tick (item_pickup — buys and spawn restocks included
+// at extract time, see the handler), at their own position. The cat is
+// the stored classification ("gun"|"util") so consumers never re-derive
+// it. The raw item_pickup payload pairs onto the row (source).
+func (a *agg) weaponPickedUp(tick int, key uint64, name, weapon, cat string, px, py, pz *float64) {
+	a.addEvent(models.Event{
+		Tick:       tick,
+		Kind:       models.EventWeaponPickup,
+		Attacker:   keyStr(key),
+		Weapon:     weapon,
+		PosX:       px,
+		PosY:       py,
+		PosZ:       pz,
+		DetailJSON: detailJSON(map[string]any{"player": name, "cat": cat}),
+	}, "item_pickup")
 }
 
 // ---- people, chat, meta ----

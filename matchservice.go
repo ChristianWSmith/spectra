@@ -75,6 +75,18 @@ func (s *MatchService) GetBlindDurations(matchID int64) ([]BlindDuration, error)
 	return out, nil
 }
 
+// GetDropDetails returns every death-drop row's cat/mag/reserve payload
+// projection for a match in events.seq order (thin delegate over
+// store.GetDropDetails). A match with no weapon_drop rows — or an
+// unknown match — returns an empty slice, never an error: the replay's
+// drop layer is optional by contract (same rule as GetBlindDurations).
+// The frontend joins these onto the DRAW_KINDS rows by seq — the join
+// that carries the STORED gun|util classification and the dropped gun's
+// ammo state to the renderer (models.EventRow stays payload-free).
+func (s *MatchService) GetDropDetails(matchID int64) ([]models.DropDetail, error) {
+	return s.st.GetDropDetails(matchID)
+}
+
 // GetChat returns a match's chat lines; round < 0 selects all rounds,
 // player "" all senders (the landmark feed passes the active scope).
 func (s *MatchService) GetChat(matchID int64, round int, player string) ([]models.ChatRow, error) {

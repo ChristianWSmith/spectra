@@ -35,10 +35,12 @@
     "player_connect": 11,
     "player_disconnect": 7,
     "round_end": 24,
-    "round_start": 25
+    "round_start": 25,
+    "weapon_drop": 251,
+    "weapon_pickup": 1039
   },
-  "eventTotal": 2117,
-  "eventKindsDistinct": 16,
+  "eventTotal": 3407,
+  "eventKindsDistinct": 18,
   "genericDistinct": 46,
   "genericTotal": 21029,
   "chat": 34,

@@ -8,7 +8,8 @@
 // round ribbon rides the top line too (its .rp-ribbon cell), and the
 // transport splits into the full-width game-time scrubber line ABOVE the
 // centered control-cluster line (round transport, ±15s, play, speed
-// popover, loop popover, camera Smart/Free/Follow popover, the volume
+// popover, loop popover, camera Smart/Free/Follow popover, the drop-layer
+// multi-select popover, the volume
 // popover, snapshot/record, and
 // the hints-only codicon LAST — three .toolbar-sep rules split those
 // groups: after the loop control, after the volume host, before the
@@ -258,6 +259,10 @@ export const getEvent = () => Promise.resolve(null);
 // Flash-white overlay durations (matched to blind rows by seq) — none
 // in the stub: the view's join yields [] and setBlinds receives it.
 export const getBlindDurations = () => Promise.resolve([]);
+// Death-drop payload projection (cat/mag/reserve by seq) — none in the
+// stub: the view's join leaves every weapon_drop row unstamped (the
+// fail-soft path drawDrops draws nothing for).
+export const getDropDetails = () => Promise.resolve([]);
 export const getChat = () => Promise.resolve([]);
 export const getGenericEvents = () => Promise.resolve([]);
 export const getGenericHistogram = () => Promise.resolve([]);
@@ -277,8 +282,23 @@ export const extractIcons = () => Promise.resolve({ ok: false });
 export const listSavedFilters = () => Promise.resolve([]);
 export const saveFilter = () => Promise.resolve(null);
 export const deleteSavedFilter = () => Promise.resolve(null);
-export const getPref = () => Promise.resolve(null);
-export const setPref = () => Promise.resolve();
+// Pref store: a FRESH profile by default (every key unset — undefined,
+// exactly what a fresh kvstore yields), but written through by the view:
+// setPref persists into it and getPref both records the KEYS the view
+// reads (the mount-time drop_layers read IS the reload path) and serves
+// the stored value back. Only the drop-layer test writes here; every
+// other pref read (camera_mode, show_knife_warmup_rounds, the volumes)
+// still resolves undefined on a fresh profile.
+const PREFS = (globalThis.__prefs = globalThis.__prefs || {});
+const PREF_READS = (globalThis.__prefReads = globalThis.__prefReads || []);
+export const getPref = (key) => {
+  PREF_READS.push(key);
+  return Promise.resolve(PREFS[key]);
+};
+export const setPref = (key, value) => {
+  PREFS[key] = value;
+  return Promise.resolve();
+};
 export const errText = (e) => (e == null ? 'unknown error' : String((e && e.message) || e));
 `,
 );
@@ -369,6 +389,12 @@ writeFileSync(
     setChat() {},
     setBullets() {},
     setDecoyPlan() {},
+    setDropLayers(v) {
+      // Recorded so the driver can pin the toolbar wiring: startEngine
+      // pushes the current (default both-off) state, every checkbox
+      // toggle pushes the new pair.
+      globalThis.__dropLayers = { guns: !!(v && v.guns), util: !!(v && v.util) };
+    },
     setHud() {},
     setIcons() {},
     setVoices() {},
@@ -980,6 +1006,120 @@ check(
   controls.querySelector('#rp-follow')?.value,
 );
 
+console.log('E2. drop-layer popover: multi-select between the camera selector and the volume, off by default, pref-persisted');
+const dropHost = controls.querySelector('#rp-drops');
+const camHost2 = controls.querySelector('#rp-cam');
+const volHost2 = controls.querySelector('.rp-vol');
+const ctlKids = [...controls.children];
+check(
+  'the drop popover sits between the camera selector and the volume',
+  !!dropHost &&
+    ctlKids.indexOf(dropHost) > ctlKids.indexOf(camHost2) &&
+    ctlKids.indexOf(dropHost) < ctlKids.indexOf(volHost2),
+  ctlKids.map((el) => el.id || el.className || el.tagName).join(' | '),
+);
+const dropBtn2 = dropHost?.querySelector('button');
+check(
+  'trigger: the Drops label + chevron with the live on-count',
+  !!dropBtn2 &&
+    dropBtn2.textContent.includes('Drops') &&
+    !!dropBtn2.querySelector('.codicon-chevron-down') &&
+    !!dropBtn2.querySelector('.rp-drops-count'),
+);
+check(
+  'fresh profile: the drop_layers pref is unset',
+  globalThis.__prefs['drop_layers'] === undefined,
+  JSON.stringify(globalThis.__prefs['drop_layers']),
+);
+check(
+  'the view READ drop_layers on mount — the same store a reload would read back',
+  (globalThis.__prefReads || []).includes('drop_layers'),
+  JSON.stringify(globalThis.__prefReads),
+);
+check(
+  'both layers off: the trigger count starts at 0',
+  dropBtn2?.querySelector('.rp-drops-count')?.textContent.trim() === '0',
+  dropBtn2?.querySelector('.rp-drops-count')?.textContent,
+);
+check(
+  'startEngine pushed the default (both off) to renderer.setDropLayers',
+  !!globalThis.__dropLayers && !globalThis.__dropLayers.guns && !globalThis.__dropLayers.util,
+  JSON.stringify(globalThis.__dropLayers),
+);
+check('no panel until the popover opens', !controls.querySelector('.rp-drops-pop'));
+
+click(dropBtn2);
+await sleep();
+const dropPop = controls.querySelector('.rp-drops-pop');
+check('popover opens a checkbox list (multi-select)', !!dropPop);
+const dropBoxes = dropPop ? [...dropPop.querySelectorAll('input[type="checkbox"]')] : [];
+const dropLabel = (cb) => (cb.closest('label')?.textContent || '').trim();
+check(
+  'exactly Guns and Utility, in that order',
+  JSON.stringify(dropBoxes.map(dropLabel)) === '["Guns","Utility"]',
+  JSON.stringify(dropBoxes.map(dropLabel)),
+);
+check(
+  'both options unchecked by default',
+  dropBoxes.filter((cb) => cb.checked).length === 0,
+  JSON.stringify(dropBoxes.map((cb) => cb.checked)),
+);
+const setDropBox = async (label) => {
+  const cb = dropBoxes.find((c) => dropLabel(c) === label);
+  cb?.click();
+  await sleep();
+};
+// Unlike the camera pop's single choice, a multi-select STAYS open.
+await setDropBox('Guns');
+check(
+  'toggling Guns checks it and the panel STAYS open (multi-select)',
+  !!controls.querySelector('.rp-drops-pop') && dropBoxes[0].checked === true,
+  String(dropBoxes[0].checked),
+);
+check(
+  'the drop_layers pref persisted as the comma list',
+  globalThis.__prefs['drop_layers'] === 'guns',
+  JSON.stringify(globalThis.__prefs['drop_layers']),
+);
+check(
+  'renderer.setDropLayers received {guns:true, util:false}',
+  globalThis.__dropLayers?.guns === true && globalThis.__dropLayers?.util === false,
+  JSON.stringify(globalThis.__dropLayers),
+);
+check(
+  'the trigger count follows',
+  dropBtn2?.querySelector('.rp-drops-count')?.textContent.trim() === '1',
+  dropBtn2?.querySelector('.rp-drops-count')?.textContent,
+);
+await setDropBox('Utility');
+check(
+  'both on: pref = "guns,util" and the renderer got both',
+  globalThis.__prefs['drop_layers'] === 'guns,util' && globalThis.__dropLayers?.guns && globalThis.__dropLayers?.util,
+  `${JSON.stringify(globalThis.__prefs['drop_layers'])} / ${JSON.stringify(globalThis.__dropLayers)}`,
+);
+check(
+  'the trigger count reads 2',
+  dropBtn2?.querySelector('.rp-drops-count')?.textContent.trim() === '2',
+  dropBtn2?.querySelector('.rp-drops-count')?.textContent,
+);
+await setDropBox('Guns');
+check(
+  'the two layers are independent: unchecking Guns leaves Utility on',
+  globalThis.__prefs['drop_layers'] === 'util' &&
+    dropBoxes[0].checked === false &&
+    dropBoxes[1].checked === true,
+  `${JSON.stringify(globalThis.__prefs['drop_layers'])} / ${JSON.stringify(dropBoxes.map((cb) => cb.checked))}`,
+);
+check(
+  'the pref survives for a reload — the mount effect reads the SAME store back',
+  globalThis.__prefs['drop_layers'] === 'util' &&
+    (globalThis.__prefReads || []).includes('drop_layers'),
+  JSON.stringify(globalThis.__prefs['drop_layers']),
+);
+click(dropBtn2); // close — later sections count toolbar chrome
+await sleep();
+check('the popover closes on its trigger', !controls.querySelector('.rp-drops-pop'));
+
 console.log('F. player-card columns: grouping, team names, mute wiring, v1 state note');
 const rbody = main.querySelector('.replay-body');
 const kids = children(rbody);
@@ -1225,10 +1365,11 @@ await sleep();
 const catMenu = panel?.querySelector('.lm-cat-menu');
 check('dropdown opens a checkbox list (multi-select)', !!catMenu);
 const catBoxes = catMenu ? [...catMenu.querySelectorAll('input[type="checkbox"]')] : [];
-// 14 = 13 + the grenade_lands category (the decoy ACTIVATION —
-// lib/replay/landmarks.js CATEGORIES gained one opt-in entry with the
-// decoy lifecycle split; default selection is unchanged).
-check('one checkbox per category', catBoxes.length === 14, String(catBoxes.length));
+// 15 = 14 + the drops category (the death-drop evidence rows —
+// lib/replay/landmarks.js CATEGORIES gained one opt-in entry so
+// normalizeEvent can claim weapon_drop/weapon_pickup for the draw set;
+// default selection is unchanged).
+check('one checkbox per category', catBoxes.length === 15, String(catBoxes.length));
 const catLabel = (cb) => (cb.closest('label')?.textContent || '').trim();
 check(
   'default selection: round starts ON, kills and round wins OFF',

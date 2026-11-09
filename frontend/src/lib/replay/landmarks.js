@@ -47,6 +47,13 @@ export const LANDMARK_KINDS = [
   'bomb_defuse_abort',
   'grenade_throw',
   'grenade',
+  // The dropped-gun/util map evidence (models.EventKind mirror): a
+  // weapon_drop is INFERRED at a kill (extract.inferDeathDrops), a
+  // weapon_pickup is the gun/util half of item_pickup. A default-OFF
+  // category must claim them or normalizeEvent drops them from the
+  // draw set (see CATEGORIES 'drops').
+  'weapon_drop',
+  'weapon_pickup',
   'grenade_land',
   'round_start',
   'round_end',
@@ -92,6 +99,16 @@ export const DRAW_KINDS = [
   'bomb_plant_abort',
   'bomb_defuse_start',
   'bomb_defuse_abort',
+  // Dropped guns/util ride the draw feed for the map's optional drop
+  // layer (renderer drawDrops, gated by the toolbar's Guns/Utility
+  // toggle — OFF by default). They bucket into 'wdrop'/'wpickup' —
+  // NEVER 'drop'/'pickup': those are the dropped-C4 evidence buckets
+  // bombEvidenceAt reads, and mixing the two would leak weapon rows
+  // into the C4 reconstruction (and vice versa). No scrubber marker
+  // (scrubberMarkerClass returns '' for both), and they add no feed
+  // rows by default: the 'drops' category below is opt-in.
+  'weapon_drop',
+  'weapon_pickup',
   'round_end',
   'round_start',
 ];
@@ -107,6 +124,14 @@ export const CATEGORIES = [
   { id: 'round_wins', label: 'Round wins', short: 'win', source: 'event', kinds: ['round_end'], countedOnly: true },
   { id: 'round_starts', label: 'Round starts', short: 'start', source: 'event', kinds: ['round_start'], default: true, countedOnly: true },
   { id: 'bomb', label: 'Bomb', short: 'bomb', source: 'event', kinds: ['bomb_plant', 'bomb_defuse', 'bomb_explode', 'bomb_drop', 'bomb_pickup', 'bomb_plant_begin', 'bomb_plant_abort', 'bomb_defuse_start', 'bomb_defuse_abort'] },
+  // The death-drop evidence rows. Their OWN category on purpose (the
+  // grenade_lands precedent): normalizeEvent REQUIRES a category to
+  // claim a kind (unclaimed kinds are dropped from the draw set
+  // entirely), but the drops are a WORLD LAYER first — the category is
+  // opt-in like every non-sparse one, default OFF, so the feed's
+  // default (round starts) and its scrubber markers are unchanged; the
+  // map's rows ride DRAW_KINDS regardless (never filtered by chips).
+  { id: 'drops', label: 'Dropped items', short: 'drop', source: 'event', kinds: ['weapon_drop', 'weapon_pickup'] },
   { id: 'grenade_throws', label: 'Grenade throws', short: 'throw', source: 'event', kinds: ['grenade_throw'] },
   { id: 'grenade_dets', label: 'Grenade detonations', short: 'det', source: 'event', kinds: ['grenade'] },
   // The grenade's ACTIVATION (it came to rest — models.EventGrenadeLand,
@@ -225,7 +250,9 @@ export function scrubberMarkerClass(bucket) {
   if (b === 'plant' || b === 'defuse') return 'plant';
   if (b === 'explode' || DETONATION_BUCKETS.includes(b)) return 'det';
   if (b === 'round' || b === 'start') return 'tall';
-  return ''; // 'drop'/'pickup' (bomb evidence), the plant/defuse ATTEMPT
+  return ''; // 'drop'/'pickup' (bomb evidence), 'wdrop'/'wpickup'
+  //             (weapon evidence — the drop layer draws from the world,
+  //             no scrubber tick), the plant/defuse ATTEMPT
   //             lifecycle buckets (the completion tick already carries the
   //             marker), 'damage' and 'land' (a grenade ACTIVATION — the
   //             real explosion carries the det marker) — no marker
@@ -272,6 +299,12 @@ export function drawBucket(kind, weapon) {
   if (k === 'bomb_defuse') return 'defuse';
   if (k === 'bomb_drop') return 'drop';
   if (k === 'bomb_pickup') return 'pickup';
+  // The death-drop evidence buckets — DISTINCT from 'drop'/'pickup'
+  // (the dropped-C4 reconstruction's lists): drawDrops consumes these,
+  // bombEvidenceAt must never see a weapon row or the C4 marker would
+  // vanish when a gun is picked up. Marker-less (scrubberMarkerClass).
+  if (k === 'weapon_drop') return 'wdrop';
+  if (k === 'weapon_pickup') return 'wpickup';
   if (k === 'bomb_plant_begin') return 'plant_begin';
   if (k === 'bomb_plant_abort') return 'plant_abort';
   if (k === 'bomb_defuse_start') return 'defuse_start';

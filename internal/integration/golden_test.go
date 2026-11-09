@@ -87,6 +87,13 @@ var modelEventKinds = []string{
 	models.EventBombDefuseAbort,
 	models.EventGrenadeThrow,
 	models.EventGrenade,
+	// weapon_drop / weapon_pickup (the dropped-gun/util map evidence):
+	// every golden kill carries an inventory, so weapon_drop is NOT zero
+	// there (~160 rows on de_cache — a gun + at most one util per
+	// death); weapon_pickup counts only gun/util item_pickup rows (buys
+	// included — the frontend rule filters them).
+	models.EventWeaponDrop,
+	models.EventWeaponPickup,
 	// grenade_land is the decoy ACTIVATION (models.EventGrenadeLand):
 	// the golden demo has no decoys, so its fixture entry is exactly 0
 	// — the one expected diff when this kind was added.

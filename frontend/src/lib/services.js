@@ -291,6 +291,18 @@ export function getBlindDurations(matchId) {
   return MatchService.GetBlindDurations(matchId);
 }
 
+// getDropDetails returns [{seq, cat, mag, reserve}] — the death-drop
+// payload side channel (the SAME rule as getBlindDurations: models.
+// EventRow stays payload-free): the stored gun|util classification
+// (extract stamps it from models.IsUtilityWeapon — this module and the
+// renderer NEVER re-derive the util rule) plus the dropped gun's
+// mag/reserve at death. The replay's drop layer joins it onto the
+// DRAW_KINDS rows by seq; an empty array (or a failed read) just means
+// no drop markers are drawn.
+export function getDropDetails(matchId) {
+  return MatchService.GetDropDetails(matchId);
+}
+
 // round -1 = all rounds; player "" = all senders (exact steam_id match).
 export function getChat(matchId, round, player) {
   return MatchService.GetChat(matchId, round, player || '');
