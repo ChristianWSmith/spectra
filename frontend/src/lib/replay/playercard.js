@@ -213,6 +213,59 @@ export function carriesC4(inventory) {
   return Array.isArray(inventory) && inventory.includes('C4');
 }
 
+// --- Reload ring ---------------------------------------------------------
+// reloadProgress — the grey ring's fill (0..1) at `frame` for one slot's
+// `reloading` series ({frames, values} — state.js buildStateIndex), or
+// null = the ring is HIDDEN. This is the ONE home of the rule: PlayerCard
+// only paints the number Replay computes through it.
+//
+// Formula (documented here per AGENTS.md's documented-in-the-helper rule):
+//   - the value at `frame` is not exactly true (false, or unknown —
+//     null before the field's first record / a slot that never carried
+//     it) → null, the ring hides; an unknown is NEVER drawn as a fact;
+//   - start = the FIRST frame of the current true run (walk back from
+//     the last record at or before `frame` while the value stays true);
+//   - end   = the next record whose value is false — the run's end. The
+//     stream carries the flag clearing on BOTH paths: the clip change
+//     that COMPLETED the reload and the weapon switch (or death) that
+//     CANCELLED it, so a cancellation ends the run with no special case;
+//   - progress = clamp((frame − start) / (end − start), 0, 1).
+//
+// The whole match stream is loaded (loadState fetches everything), so at
+// any playhead the end is known by look-ahead — including mid-run at the
+// live edge of playback. The ONE exception is a run the stream never
+// clears (the demo itself ends mid-reload): its duration is unknown, so
+// the fill clamps to 0 — the ring still shows that a reload is running,
+// it never fabricates a percentage.
+export function reloadProgress(series, frame) {
+  const frames = series && series.frames;
+  if (!frames || frames.length === 0) return null;
+  const values = series.values;
+  // Last record at or before the playhead (stateAt's binary search).
+  let lo = 0;
+  let hi = frames.length - 1;
+  let cur = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (frames[mid] <= frame) {
+      cur = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  if (cur < 0 || values[cur] !== true) return null; // not reloading (or unknown)
+  let startIdx = cur;
+  while (startIdx > 0 && values[startIdx - 1] === true) startIdx--;
+  let endIdx = cur;
+  while (endIdx < values.length && values[endIdx] === true) endIdx++;
+  if (endIdx >= values.length) return 0; // never cleared → duration unknown → clamp
+  const span = frames[endIdx] - frames[startIdx];
+  if (!(span > 0)) return 0; // same-frame run (can't happen; defensive)
+  const p = (frame - frames[startIdx]) / span;
+  return Math.max(0, Math.min(1, p));
+}
+
 // STATS_TITLE documents the live stats row's exact formula — the card's
 // title attribute, so a tooltip always carries what the numbers mean
 // (they are a playhead fold of the typed events, not the match's stored
