@@ -23,14 +23,13 @@ and the platform tools have all shipped.
 
 ## Download
 
-Supported platforms: macOS, Linux, and Windows (desktop only).
+Supported platforms: Linux and Windows (desktop only).
 
 Grab the latest release for your platform from the
 [Releases page](https://github.com/ChristianWSmith/spectra/releases/latest):
 
 - `spectra-linux-amd64` (run it directly, or `chmod +x` first)
 - `spectra-windows-amd64.exe`
-- `spectra-darwin-arm64.zip` (unzip, then move the `.app` to Applications)
 
 The app checks GitHub Releases on launch and offers to install updates
 itself, verifying downloads against the release's `SHA256SUMS`.
