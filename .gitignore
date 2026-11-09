@@ -60,3 +60,5 @@ go.work.sum
 
 # stray `go build .` output (root package binary)
 /spectra
+# stray `go build ./cmd/cs2find` output (the in-repo dev tool)
+/cs2find
