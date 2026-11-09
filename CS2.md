@@ -465,6 +465,33 @@ at the end of the section.
   https://github.com/markus-wa/demoinfocs-golang/releases/tag/v6.0.0-alpha.1,
   https://demofile.dev/classes/DemoFile.html (2026-11-09).
 
+- **Chat channel lives on `SayText2.MsgName`** — `CUserMessageSayText2.messagename`
+  is the only channel signal in a demo. demoinfocs dispatches
+  `events.SayText2{EntIdx, IsChat, MsgName, Params}` unconditionally
+  *before* its MsgName switch: `Cstrike_Chat_All` / `_AllSpec` / `_AllDead`
+  → all chat; `Cstrike_Chat_T_Loc` / `_CT_Loc` / `_T_Dead` / `_CT_Dead` →
+  team chat (demoinfocs **drops** these — no `ChatMessage` event fires);
+  coach/name-change names → not chat. `events.ChatMessage.IsChatAll` is
+  hardcoded `false` (useless) and `ChatMessage` is synthesized only for the
+  all-chat names — so a parser must read `SayText2` itself to see a channel.
+  `Params = [sender name, text, "", ""]` with **no `*DEAD*`/`*SPEC*`
+  decoration** in the wire text (that decoration is client-side
+  localization). All seven golden demos carry ONLY All (165) + AllDead
+  (117) = 282 rows and **zero team-chat messages** — team-channel rendering
+  is code-complete but unexercised by pool data. spectra reads SayText2 as
+  THE chat-row source (extract `chatChannel`). **Source** —
+  demoinfocs-golang v6.0.0-rc.1 `pkg/demoinfocs/net_messages.go:71-109`;
+  spectra golden-pool MsgName census (2026-11-09).
+
+- **Encrypted MM chat still yields `SayText2` with its channel** —
+  `svc_EncryptedData` is decrypted in-parser (key from the `.dem.info`
+  `MatchInfoDecryptionKey`) and the inner message is re-dispatched through
+  the normal `msgDispatcher`, so it reaches `handleMessageSayText2` and
+  produces `SayText2` with MsgName intact — channel decoding works for
+  Valve-MM chat too. Source-reading only: the pool has `enc_messages = 0`,
+  no end-to-end MM demo. **Source** — demoinfocs-golang v6.0.0-rc.1
+  `net_messages.go:212-249` (2026-11-09).
+
 - **Voice (`svc_VoiceData`) availability in demos** — CS2 voice packets
   carry Opus audio. Presence is server-config-dependent, not a format
   guarantee: SourceTV records player voice only when the server's voice
