@@ -303,7 +303,7 @@ func TestHandleExportRoutes(t *testing.T) {
 	if rec.Code != 200 {
 		t.Fatalf("report route code = %d, body %s", rec.Code, rec.Body.String())
 	}
-	if cd := rec.Header().Get("Content-Disposition"); cd != `attachment; filename="spectra-1-match.md"` {
+	if cd := rec.Header().Get("Content-Disposition"); cd != `attachment; filename="Spectra-1-match.md"` {
 		t.Fatalf("Content-Disposition = %q", cd)
 	}
 	if ct := rec.Header().Get("Content-Type"); !strings.Contains(ct, "markdown") {

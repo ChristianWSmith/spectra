@@ -43,10 +43,18 @@ import (
 var assets embed.FS
 
 const (
-	// appName is the binary/app name. Keep in sync with Taskfile.yml's
-	// APP_NAME and build/config.yml's productName — packaging, the window
-	// title, the prefs file, and the updater all key off the same string.
+	// appName is the lowercase identifier, NOT the display name: it feeds
+	// application.Options.Name (→ the GTK/Wayland app id org.wails.spectra)
+	// and the prefs path (prefs.go: xdg.ConfigFile(appName+"/prefs.json")),
+	// so changing it would orphan ~/.config/spectra/prefs.json. Keep it in
+	// sync with Taskfile.yml's APP_NAME (bin/spectra) and the launcher
+	// Exec/Icon/StartupWMClass names; the user-facing display name is
+	// windowTitle below and build/config.yml's productName.
 	appName = "spectra"
+	// windowTitle is the user-facing display name (title case), used only
+	// where a human reads it — the window title. The document <title> in
+	// frontend/index.html is its twin; appName stays lowercase above.
+	windowTitle = "Spectra"
 	// updateRepo is the GitHub repo whose releases are checked for updates.
 	// Keep in sync with the repository's owner/name.
 	updateRepo = "ChristianWSmith/spectra"
@@ -189,7 +197,7 @@ func main() {
 	initUpdater(app)
 
 	win := app.Window.NewWithOptions(application.WebviewWindowOptions{
-		Title:     appName,
+		Title:     windowTitle,
 		Width:     width,
 		Height:    height,
 		MinWidth:  minWindowWidth,
@@ -620,7 +628,7 @@ func handleExport(st *store.Store, w http.ResponseWriter, r *http.Request, p str
 		contentType = "text/html; charset=utf-8"
 	}
 	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("Content-Disposition", `attachment; filename="spectra-`+idStr+`-`+templateID+`"`)
+	w.Header().Set("Content-Disposition", `attachment; filename="Spectra-`+idStr+`-`+templateID+`"`)
 	if _, err := io.WriteString(w, text); err != nil {
 		log.Printf("export: write report: %v", err)
 	}
@@ -649,7 +657,7 @@ func handleExportLibraryDB(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/vnd.sqlite3")
-	w.Header().Set("Content-Disposition", `attachment; filename="spectra-library.db"`)
+	w.Header().Set("Content-Disposition", `attachment; filename="Spectra-library.db"`)
 	w.Header().Set("Content-Length", strconv.FormatInt(info.Size(), 10))
 	if _, err := io.Copy(w, f); err != nil {
 		log.Printf("export: write library.db: %v", err)

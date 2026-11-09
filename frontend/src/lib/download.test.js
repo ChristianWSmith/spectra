@@ -15,10 +15,10 @@ const { extFromName } = await import('./download.js');
 
 test('extFromName takes the trailing extension', () => {
   assert.equal(extFromName('report.md'), 'md');
-  assert.equal(extFromName('spectra-match-42.html'), 'html');
+  assert.equal(extFromName('Spectra-match-42.html'), 'html');
   assert.equal(extFromName('clip-42-1000.webm'), 'webm');
   assert.equal(extFromName('replay-42-99.png'), 'png');
-  assert.equal(extFromName('spectra-library.db'), 'db');
+  assert.equal(extFromName('Spectra-library.db'), 'db');
 });
 
 test('extFromName falls back when there is no extension', () => {

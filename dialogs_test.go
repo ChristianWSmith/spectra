@@ -141,8 +141,8 @@ func TestSaveExport(t *testing.T) {
 		s := &DialogService{
 			serve: serveHandler(exportTestHandler(0)),
 			promptSave: func(defaultName string, extensions []string) (string, error) {
-				if defaultName != "spectra-library.db" {
-					t.Errorf("defaultName = %q, want spectra-library.db", defaultName)
+				if defaultName != "Spectra-library.db" {
+					t.Errorf("defaultName = %q, want Spectra-library.db", defaultName)
 				}
 				if len(extensions) != 1 || extensions[0] != "db" {
 					t.Errorf("extensions = %v, want [db]", extensions)
@@ -150,7 +150,7 @@ func TestSaveExport(t *testing.T) {
 				return dest, nil
 			},
 		}
-		got, err := s.SaveExport("/api/export/library.db", "spectra-library.db", []string{"db"})
+		got, err := s.SaveExport("/api/export/library.db", "Spectra-library.db", []string{"db"})
 		if err != nil {
 			t.Fatalf("SaveExport: %v", err)
 		}
