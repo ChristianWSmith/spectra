@@ -2037,7 +2037,8 @@ input[type='checkbox']:focus-visible {
    .rp-loop-pop, but a vertical stack of option buttons (the active one
    rides .btn.primary) instead of the inline from/to input row. */
 .rp-speed-pop,
-.rp-cam-pop {
+.rp-cam-pop,
+.rp-drops-pop {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -2047,6 +2048,34 @@ input[type='checkbox']:focus-visible {
   border-radius: var(--radius);
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
   white-space: nowrap;
+}
+
+/* Death-drop layer popover rows (the Categories .lm-cat-item checkbox
+   rows, scoped to Replay's rp- prefix — lm- stays the landmark feed's):
+   the MULTI-select over exactly Guns / Utility. The trigger's on-count
+   is the .lm-filter-count spelling (tabular numerals). */
+.rp-drop-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  border-radius: var(--radius);
+  color: var(--text);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.rp-drop-item:hover {
+  background: var(--list-hover);
+}
+
+.rp-drop-item input {
+  accent-color: var(--accent);
+}
+
+.rp-drops-count {
+  font-size: 0.85em;
+  font-variant-numeric: tabular-nums;
 }
 
 /* Volume popover (the transport's Voice/Guns/Utility faders — the old

@@ -19,6 +19,7 @@
     getEvents,
     getEvent,
     getBlindDurations,
+    getDropDetails,
     getChat,
     getGenericEvents,
     getGenericHistogram,
@@ -234,6 +235,23 @@
   let speedAnchor = $state(null);
   let camOpen = $state(false);
   let camAnchor = $state(null);
+  // The drop-layer popover (between the camera selector and the volume):
+  // the SAME .rp-pop-host / Popover / .rp-pop pattern as the camera pop,
+  // but MULTI-select — checkboxes over exactly Guns / Utility (the
+  // Categories .lm-cat-item checkbox rows are the row reference).
+  // dropGuns/dropUtil gate renderer.setDropLayers; BOTH are OFF by
+  // default (an unset pref = the feature is invisible), persisted in one
+  // kvstore pref (drop_layers — a comma list, the frontend-owned
+  // camera_mode pattern).
+  let dropsOpen = $state(false);
+  let dropsAnchor = $state(null);
+  let dropGuns = $state(false);
+  let dropUtil = $state(false);
+  const DROP_LAYERS = [
+    { key: 'guns', label: 'Guns' },
+    { key: 'util', label: 'Utility' },
+  ];
+  const dropLayerCount = $derived((dropGuns ? 1 : 0) + (dropUtil ? 1 : 0));
 
   let stageEl = $state(null);
   let canvasEl = $state(null);
@@ -1327,6 +1345,41 @@
     setPref('camera_mode', m).catch(() => {}); // durable explicit choice
   }
 
+  // Pref `drop_layers` (frontend-owned kvstore, the camera_mode pattern):
+  // a comma list of the ON layers ("guns", "util", "guns,util"); unset /
+  // unreadable / unknown tokens → both OFF (the default — the drop layer
+  // is opt-in). Applied once on entry like camera_mode; the renderer may
+  // not exist yet (startEngine pushes the current state too).
+  $effect(() => {
+    let live = true;
+    getPref('drop_layers')
+      .then((v) => {
+        if (!live) return;
+        const on = String(v || '').split(',').filter(Boolean);
+        dropGuns = on.includes('guns');
+        dropUtil = on.includes('util');
+        renderer?.setDropLayers({ guns: dropGuns, util: dropUtil });
+      })
+      .catch(() => {
+        /* unreadable store → both off */
+      });
+    return () => (live = false);
+  });
+
+  // toggleDropLayer — one checkbox of the multi-select: flip the layer,
+  // push it to the renderer (pure visibility — the rows stay loaded) and
+  // persist the durable pair (the pref is the whole toggle state, so a
+  // reload restores exactly this).
+  function toggleDropLayer(key) {
+    if (key === 'guns') dropGuns = !dropGuns;
+    else dropUtil = !dropUtil;
+    renderer?.setDropLayers({ guns: dropGuns, util: dropUtil });
+    const on = [];
+    if (dropGuns) on.push('guns');
+    if (dropUtil) on.push('util');
+    setPref('drop_layers', on.join(',')).catch(() => {});
+  }
+
   // --- Follow camera (?follow=<steamid17>) -----------------------------------
   // The Match view's "open the replay on this player" hand-off: the
   // contract is a 17-digit steam id in the route query. Resolved against
@@ -1584,16 +1637,32 @@
           })
           .catch(() => {});
       }
-      // The drawable anchor set (kills/grenades/bomb/round_end) — one
-      // unfiltered source read, awaited before the engine starts so the
-      // world layers and scrubber markers are ready on first paint.
-      drawRows =
-        (await getEvents({
-          matchId: id,
-          kinds: DRAW_KINDS,
-          offset: 0,
-          limit: 0,
-        }).catch(() => [])) || [];
+      // The drawable anchor set (kills/grenades/bomb/drops/round_end) —
+      // one unfiltered source read, awaited before the engine starts so
+      // the world layers and scrubber markers are ready on first paint.
+      // The death-drop payload projection (getDropDetails — cat + the
+      // gun's mag/reserve, joined by seq: models.EventRow stays
+      // payload-free) rides the SAME await, and every weapon_drop row
+      // that matches gets dropCat/dropAmmo stamped on it BEFORE
+      // normalization — the renderer's layer gate reads those, never a
+      // re-derived classification. Fail-soft like drawRows (a failed
+      // side channel → no stamps → drawDrops draws nothing).
+      {
+        const [rows, dropDetails] = await Promise.all([
+          getEvents({
+            matchId: id,
+            kinds: DRAW_KINDS,
+            offset: 0,
+            limit: 0,
+          }).catch(() => []),
+          getDropDetails(id).catch(() => []),
+        ]);
+        const dropsBySeq = new Map((dropDetails || []).map((d) => [d.seq, d]));
+        drawRows = (rows || []).map((r) => {
+          const d = dropsBySeq.get(r.seq);
+          return d ? { ...r, dropCat: d.cat, dropAmmo: { mag: d.mag, reserve: d.reserve } } : r;
+        });
+      }
       // Connection events for the card-visibility rule (the SAME narrow
       // read shape as the blind rows below): one pass over the match's
       // player_connect / player_disconnect rows — EventRow.attacker is
@@ -1738,6 +1807,10 @@
     renderer.setDecoyPlan(decoyPlanFor());
     renderer.resize();
     renderer.setCameraMode(rendererCam()); // default 'smart' unless the pref says free
+    // Drop-layer visibility (both off unless the pref said otherwise —
+    // the pref effect may have run before the renderer existed, so the
+    // CURRENT state is pushed here like every other setter).
+    renderer.setDropLayers({ guns: dropGuns, util: dropUtil });
     offChange = engine.onChange((st) => {
       uiFrame = st.frame;
       uiTick = st.tick;
@@ -2567,6 +2640,43 @@
               {/each}
             </select>
           {/if}
+
+          <!-- Drops (spec: dropped guns/util on the map): a MULTI-select
+               popover between the camera selector and the volume — the
+               camera pop's .rp-pop-host/.rp-pop family, but checkbox
+               rows (the Categories .lm-cat-item rows are the reference)
+               over exactly Guns / Utility. Both OFF by default (the
+               unset drop_layers pref); each toggle persists the pref and
+               pushes renderer.setDropLayers. The trigger shows the label
+               + chevron and the live on-count. -->
+          <span class="rp-pop-host" id="rp-drops" bind:this={dropsAnchor}>
+            <button
+              class="btn"
+              aria-expanded={dropsOpen}
+              aria-haspopup="true"
+              aria-label="Drop markers"
+              title="Show dropped guns and utility on the map (off by default)"
+              onclick={() => (dropsOpen = !dropsOpen)}
+            >
+              Drops
+              <span class="muted rp-drops-count">{dropLayerCount}</span>
+              <span class="codicon codicon-chevron-down" aria-hidden="true"></span>
+            </button>
+            <Popover open={dropsOpen} anchor={dropsAnchor} onClose={() => (dropsOpen = false)}>
+              <div class="rp-pop rp-drops-pop" role="group" aria-label="Drop markers">
+                {#each DROP_LAYERS as l (l.key)}
+                  <label class="rp-drop-item" title={`Show dropped ${l.label.toLowerCase()} on the map`}>
+                    <input
+                      type="checkbox"
+                      checked={l.key === 'guns' ? dropGuns : dropUtil}
+                      onchange={() => toggleDropLayer(l.key)}
+                    />
+                    {l.label}
+                  </label>
+                {/each}
+              </div>
+            </Popover>
+          </span>
 
           <!-- Volume (the old mute-all button, repurposed): ONE popover
                with the four replay-audio faders — Voice / Guns /
