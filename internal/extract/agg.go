@@ -984,6 +984,53 @@ func (a *agg) bombDefused(tick int, site string, key uint64, name string, hasKit
 	}, "bomb_defused")
 }
 
+// The plant/defuse ATTEMPT lifecycle rows (models.EventBombPlantBegin …
+// EventBombDefuseAbort): they OPEN/CANCEL an attempt the frontend pairs
+// with the completion rows above (lib/replay/bomb.js actionIntervals —
+// THE interval rule; no stat counts these rows). source is the raw game
+// event paired into raw_json: bomb_beginplant / bomb_begindefuse exist
+// for every attempt (raw counts matched attempt counts 1:1 on all seven
+// golden demos), while the *_abort cancels have NO raw counterpart
+// (there is no bomb_abortplant/defuse event in CS2) — their source is "",
+// like the other entity-derived rows with no game event (grenadeThrown).
+func (a *agg) bombPlantBegin(tick int, site string, key uint64, name string) {
+	a.addEvent(models.Event{
+		Tick:       tick,
+		Kind:       models.EventBombPlantBegin,
+		Attacker:   keyStr(key),
+		Site:       site,
+		DetailJSON: detailJSON(map[string]any{"player": name}),
+	}, "bomb_beginplant")
+}
+
+func (a *agg) bombPlantAborted(tick int, key uint64, name string) {
+	a.addEvent(models.Event{
+		Tick:       tick,
+		Kind:       models.EventBombPlantAbort,
+		Attacker:   keyStr(key),
+		DetailJSON: detailJSON(map[string]any{"player": name}),
+	}, "")
+}
+
+func (a *agg) bombDefuseStart(tick int, site string, key uint64, name string, hasKit bool) {
+	a.addEvent(models.Event{
+		Tick:       tick,
+		Kind:       models.EventBombDefuseStart,
+		Attacker:   keyStr(key),
+		Site:       site,
+		DetailJSON: detailJSON(map[string]any{"player": name, "hasKit": hasKit}),
+	}, "bomb_begindefuse")
+}
+
+func (a *agg) bombDefuseAborted(tick int, key uint64, name string) {
+	a.addEvent(models.Event{
+		Tick:       tick,
+		Kind:       models.EventBombDefuseAbort,
+		Attacker:   keyStr(key),
+		DetailJSON: detailJSON(map[string]any{"player": name}),
+	}, "")
+}
+
 func (a *agg) bombExploded(tick int, site string, px, py, pz *float64) {
 	a.addEvent(models.Event{
 		Tick:       tick,

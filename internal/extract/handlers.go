@@ -245,6 +245,60 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 		a.bombPlanted(gs.IngameTick(), bombSite(e.Site), key, name, realPeriod(gs), bx, by, bz)
 	})
 
+	// The ATTEMPT lifecycle (models.EventBombPlantBegin…Abort): a
+	// begin/start OPENS an attempt the frontend closes with the matching
+	// completion row above or the *_abort cancel below. demoinfocs
+	// dispatches these from entity properties (CC4 m_bStartedArming /
+	// m_hBombDefuser — spectra leaves DisableMimicSource1Events off), and
+	// the characterization run (plantdefuse_diag_test.go, all seven
+	// golden demos) found the cancels trustworthy: 92 plant attempts
+	// (79 completed / 12 aborted / 1 round-end orphan) and 32 defuse
+	// attempts (17 / 20 / 0), with an abort NEVER observed alongside a
+	// completion — so the extractor stores the events as dispatched and
+	// needs no completion-overrides-cancel filter. No stat counts these
+	// rows; warmup attempts are stored like every other bomb row (only
+	// the stats side gates on realPeriod).
+	p.RegisterEventHandler(func(e events.BombPlantBegin) {
+		gs := p.GameState()
+		key, name := uint64(0), ""
+		if e.Player != nil {
+			key = playerKey(e.Player)
+			name = e.Player.Name
+		}
+		a.bombPlantBegin(gs.IngameTick(), bombSite(e.Site), key, name)
+	})
+
+	p.RegisterEventHandler(func(e events.BombPlantAborted) {
+		gs := p.GameState()
+		key, name := uint64(0), ""
+		if e.Player != nil {
+			key = playerKey(e.Player)
+			name = e.Player.Name
+		}
+		a.bombPlantAborted(gs.IngameTick(), key, name)
+	})
+
+	p.RegisterEventHandler(func(e events.BombDefuseStart) {
+		gs := p.GameState()
+		key, name, hasKit := uint64(0), "", false
+		if e.Player != nil {
+			key = playerKey(e.Player)
+			name = e.Player.Name
+			hasKit = e.Player.HasDefuseKit()
+		}
+		a.bombDefuseStart(gs.IngameTick(), bombSite(e.Site), key, name, hasKit)
+	})
+
+	p.RegisterEventHandler(func(e events.BombDefuseAborted) {
+		gs := p.GameState()
+		key, name := uint64(0), ""
+		if e.Player != nil {
+			key = playerKey(e.Player)
+			name = e.Player.Name
+		}
+		a.bombDefuseAborted(gs.IngameTick(), key, name)
+	})
+
 	p.RegisterEventHandler(func(e events.BombDefused) {
 		gs := p.GameState()
 		key, name, hasKit := uint64(0), "", false

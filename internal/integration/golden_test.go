@@ -76,6 +76,15 @@ var modelEventKinds = []string{
 	models.EventBombExplode,
 	models.EventBombDrop,
 	models.EventBombPickup,
+	// The plant/defuse ATTEMPT lifecycle (models.EventBombPlantBegin…):
+	// the golden demo records begins/starts for every attempt and ZERO
+	// aborts (all 14 plants and 5 defuses there completed), so the two
+	// abort fixture entries are exactly 0 — the expected diff when these
+	// kinds were added.
+	models.EventBombPlantBegin,
+	models.EventBombPlantAbort,
+	models.EventBombDefuseStart,
+	models.EventBombDefuseAbort,
 	models.EventGrenadeThrow,
 	models.EventGrenade,
 	// grenade_land is the decoy ACTIVATION (models.EventGrenadeLand):

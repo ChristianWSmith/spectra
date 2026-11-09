@@ -43,6 +43,10 @@ test('LANDMARK_KINDS is the models.EventKind mirror (order included)', () => {
     'bomb_explode',
     'bomb_drop',
     'bomb_pickup',
+    'bomb_plant_begin',
+    'bomb_plant_abort',
+    'bomb_defuse_start',
+    'bomb_defuse_abort',
     'grenade_throw',
     'grenade',
     'grenade_land',
@@ -93,6 +97,12 @@ test('categoryOfKind maps every kind and rejects unknown input', () => {
   assert.equal(categoryOfKind('round_end'), 'round_wins');
   assert.equal(categoryOfKind('round_start'), 'round_starts');
   assert.equal(categoryOfKind('bomb_defuse'), 'bomb');
+  // The ATTEMPT lifecycle rides the bomb category — an unclaimed kind
+  // would be dropped from the feed AND the draw set entirely.
+  assert.equal(categoryOfKind('bomb_plant_begin'), 'bomb');
+  assert.equal(categoryOfKind('bomb_defuse_start'), 'bomb');
+  assert.equal(categoryOfKind('bomb_plant_abort'), 'bomb');
+  assert.equal(categoryOfKind('bomb_defuse_abort'), 'bomb');
   assert.equal(categoryOfKind('player_disconnect'), 'connects');
   assert.equal(categoryOfKind('grenade'), 'grenade_dets');
   // The decoy ACTIVATION normalizes under its own category — it is not a
@@ -138,6 +148,13 @@ test('drawBucket buckets every drawable kind (renderer/scrubber contract)', () =
   // new scrubber marker classes).
   assert.equal(drawBucket('bomb_drop'), 'drop');
   assert.equal(drawBucket('bomb_pickup'), 'pickup');
+  // The plant/defuse ATTEMPT lifecycle: its OWN four buckets (never
+  // 'plant'/'defuse' — those feed the beep scheduler and the world
+  // markers), all marker-less (see scrubberMarkerClass below).
+  assert.equal(drawBucket('bomb_plant_begin'), 'plant_begin');
+  assert.equal(drawBucket('bomb_plant_abort'), 'plant_abort');
+  assert.equal(drawBucket('bomb_defuse_start'), 'defuse_start');
+  assert.equal(drawBucket('bomb_defuse_abort'), 'defuse_abort');
   assert.equal(drawBucket('round_end'), 'round');
   // round_start buckets to 'start': STORED as the death-X next-round
   // cutoff (killEndTick) — never drawn as a world marker, but it DOES
@@ -155,13 +172,18 @@ test('drawBucket buckets every drawable kind (renderer/scrubber contract)', () =
   // both ride it for the scrubber's tall round ticks; round_start also
   // rides it as the renderer's death-X cutoff — it never draws on the
   // map; drop/pickup ride it for the bomb evidence, damage for the map
-  // flash — neither adds a scrubber marker).
+  // flash, and the plant/defuse ATTEMPT lifecycle for the progress rings
+  // and cue points — none of those adds a scrubber marker).
   assert.deepEqual([...DRAW_KINDS].sort(), [
     'bomb_defuse',
+    'bomb_defuse_abort',
+    'bomb_defuse_start',
     'bomb_drop',
     'bomb_explode',
     'bomb_pickup',
     'bomb_plant',
+    'bomb_plant_abort',
+    'bomb_plant_begin',
     'damage',
     'grenade',
     'grenade_land',
@@ -226,10 +248,15 @@ test('scrubberMarkerClass maps every drawable bucket (the markers contract)', ()
   // Every typed grenade bucket keeps a scrubber marker (they used to
   // all be the one 'detonation' bucket)…
   for (const b of DETONATION_BUCKETS) assert.equal(scrubberMarkerClass(b), 'det', b);
-  // …while bomb evidence and damage stay marker-less:
+  // …while bomb evidence, the plant/defuse ATTEMPT lifecycle and damage
+  // stay marker-less (one plant/defuse = ONE marker, at its completion):
   assert.equal(scrubberMarkerClass('drop'), '');
   assert.equal(scrubberMarkerClass('pickup'), '');
   assert.equal(scrubberMarkerClass('damage'), '');
+  assert.equal(scrubberMarkerClass('plant_begin'), '');
+  assert.equal(scrubberMarkerClass('plant_abort'), '');
+  assert.equal(scrubberMarkerClass('defuse_start'), '');
+  assert.equal(scrubberMarkerClass('defuse_abort'), '');
   // …and so does 'land': a grenade ACTIVATION (decoy rest) gets NO det
   // marker — the scrubber marks the REAL explosion (bucket 'he' now that
   // decoy detonations share the HE path), not the moment the decoy
@@ -284,6 +311,14 @@ test('normalizeEvent tags the row, keeps source fields and drops unknown kinds',
   assert.equal(land.category, 'grenade_lands');
   assert.equal(land.bucket, 'land');
   assert.equal(normalizeEvent({ ...ev, kind: 'damage' }, {}).bucket, 'damage');
+  // The plant/defuse ATTEMPT lifecycle keeps the actor's key (the
+  // renderer resolves it to the dot its ring surrounds), while a
+  // COMPLETED plant still attributes to the bomb entity (steamId '').
+  const begin = normalizeEvent({ ...ev, kind: 'bomb_plant_begin', attacker: '42' }, {});
+  assert.equal(begin.bucket, 'plant_begin');
+  assert.equal(begin.category, 'bomb');
+  assert.equal(begin.steamId, '42');
+  assert.equal(normalizeEvent({ ...ev, kind: 'bomb_plant', attacker: '42' }, {}).steamId, '');
   assert.equal(normalizeEvent({ ...ev, kind: 'teleport' }), null);
 });
 

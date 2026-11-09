@@ -805,3 +805,85 @@ at the end of the section.
   same files (2026-11-08);
   https://github.com/zenojunior/cs2d/discussions/57 (2026-11-08);
   https://www.reddit.com/r/csmapmakers/comments/46dpws/ (2016-02-18).
+
+- **Plant / defuse durations (CS2)** — how long arming the C4 and
+  defusing take. Community consensus: plant ≈ 3.2 s, defuse 10 s / 5 s
+  with a kit (outlier plant claims exist: 3 s, 3.5 s). spectra measures
+  the ticks in demos instead (all 64-tick): `bomb_beginplant` →
+  `bomb_planted` is EXACTLY **200 ticks = 3.125 s** (min = mean = max,
+  n = 79 completions over all seven golden-pool demos + n = 27
+  raw-event pairs in the dev matches), `bomb_begindefuse` →
+  `bomb_defused` EXACTLY **640 ticks = 10.0 s** without a kit and
+  **320 ticks = 5.0 s** with one (n = 4). So the defuse matches the
+  cited 10/5 to the tick, while the plant measures 0.075 s under the
+  cited 3.2 s — either the game's constant really is 3.125 s or one of
+  the two plant events is offset ~5 ticks; NOT resolved
+  (needs-authoritative-source). spectra's replay rings/sound cues use
+  the measured interval, never a duration constant.
+  **Source** — local measurement, `golden/*.dem.zst` +
+  dev-DB `generic_events` (2026-11-08);
+  https://www.strafe.com/news/read/counter-strike-c4-guide-placement-defusal-and-tactics/
+  "3.2 seconds" (2025-04-22); https://gameriv.com/how-long-does-it-take-to-plant-and-defuse-c4-in-counter-strike-2/
+  (2023-10-23); https://gamertagmythras.com/blog/counter-strike-2/cs2-bomb-timer-defuse-blast-guide
+  (2026-09-12); https://csdb.gg/guides/how-to-defuse-cs2/ 10 s / 5 s
+  (2026-07-13); r1gg.com "about 3 seconds" and cs.money "about 3.5
+  seconds" (the outliers) — all retrieved 2026-11-08.
+
+- **What cancels a plant / defuse (needs-authoritative-source)** —
+  community sources DISAGREE, and demos only prove what happened, not
+  the rule. Measured on the golden pool
+  (`internal/extract/plantdefuse_diag_test.go`, `SPECTRA_DIAG=1`): 92
+  plant attempts = 79 completed / 12 aborted, 32 defuse attempts = 17
+  completed / 15 aborted; most aborts are voluntary (spans 3–152 ticks
+  ≈ a tap/fake), only 2/12 plant aborts and 1/15 defuse aborts coincide
+  with damage/flash on the actor (the defuse one 1 tick after its 4th
+  damage hit). Counter-evidence to "damage cancels": **6 of 79
+  completed plants took damage mid-plant and finished anyway**
+  (de_inferno sh1pz09: 5 hits between +125 and +199 of a 200-tick
+  plant), and 0/17 completed defuses took damage at all — so a
+  shot defuser releasing is indistinguishable from a rule-driven
+  cancel. The demo therefore cannot settle the interrupt list:
+  counterstrikewiki.com/Defusing says damage, flash, weapon switch,
+  reload and grenade use interrupt (and leaving the small defuse zone
+  resets progress); other sources say only releasing USE or turning
+  your view far off the bomb cancels, and csbepro claims you CAN throw
+  a grenade mid-defuse (directly contradicting the wiki); a Steam
+  thread denies flash cancels (anecdote). Record: leave-generate,
+  view-angle, movement and damage all cancel with NO partial progress —
+  which exact inputs do so needs an authoritative source before it is
+  asserted anywhere in spectra.
+  **Source** — local measurement, golden pool (2026-11-08);
+  https://counterstrikewiki.com/Defusing; https://gamertagmythras.com/blog/counter-strike-2/cs2-bomb-timer-defuse-blast-guide
+  (2026-09-12); https://csbepro.com/cs2-article/cs2-myths-and-mechanics-guide-whats-true-and-false-2026/
+  (2026-01-22); steamcommunity.com/app/730/discussions/0/3338785229808608596/
+  (2019-11-18) — all retrieved 2026-11-08.
+
+- **demoinfocs v6 plant/defuse ATTEMPT events (entity-derived)** — how
+  spectra detects cancelled plants/defuses without guessing. With
+  `DisableMimicSource1Events` unset (spectra's parser options),
+  `pkg/demoinfocs/datatables.go` dispatches `BombPlantBegin`
+  (`CC4.m_bStartedArming → true`, site from the planter pawn's
+  `m_nWhichBombZone`), `BombPlantAborted` (`m_bStartedArming → false`
+  while `currentPlanter` is set, or the CC4 entity destroyed),
+  `BombDefuseStart` (`m_hBombDefuser` set) and `BombDefuseAborted`
+  (`m_hBombDefuser` cleared while `m_bBombDefused` is still false —
+  completion-guarded). `BombPlanted` / `BombDefused` fire as before.
+  **Reliability, verified empirically** on all seven `golden/*.dem.zst`
+  (2026-11-08): every attempt sequences Begin → (Aborted | Planted),
+  with **0 attempts seeing both an abort and a completion, 0 orphan
+  aborts, 0 completions without a begin**, and raw
+  `bomb_beginplant`/`bomb_begindefuse` counts equal to the attempt
+  counts (no double dispatch). The plant's completion-safety comes from
+  `CPlantedC4` creation clearing `gameState.currentPlanter` BEFORE the
+  `m_bStartedArming → false` abort branch runs (datatables.go), which is
+  why a finished plant never emits a spurious `BombPlantAborted`. There
+  is **no raw `bomb_abortplant`/`bomb_abortdefuse` game event** (the
+  dev DB's `generic_events` holds only begin/planted/defused), so these
+  typed rows are the ONLY cancel signal in the data. One plant attempt
+  (de_ancient 80055) emitted neither abort nor completion before the
+  next plant — the frontend interval rule closes such an open attempt at
+  its round end (lib/replay/bomb.js `actionIntervals`).
+  **Source** — local probe of
+  demoinfocs-golang v6.0.0-rc.1 `datatables.go`/`game_events.go` +
+  `internal/extract/plantdefuse_diag_test.go` over the golden pool
+  (2026-11-08).

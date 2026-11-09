@@ -38,6 +38,13 @@ export const LANDMARK_KINDS = [
   'bomb_explode',
   'bomb_drop',
   'bomb_pickup',
+  // The plant/defuse ATTEMPT lifecycle (mirror of models.EventKind): a
+  // begin/start opens an attempt the completion or the *_abort cancel
+  // closes (lib/replay/bomb.js actionIntervals owns the pairing).
+  'bomb_plant_begin',
+  'bomb_plant_abort',
+  'bomb_defuse_start',
+  'bomb_defuse_abort',
   'grenade_throw',
   'grenade',
   'grenade_land',
@@ -74,6 +81,17 @@ export const DRAW_KINDS = [
   'bomb_explode',
   'bomb_drop',
   'bomb_pickup',
+  // The plant/defuse ATTEMPT lifecycle rides the draw feed so the
+  // renderer's progress rings and the sfx cue points see the whole
+  // attempt (begin → completion/abort). They bucket into their OWN
+  // buckets (plant_begin/plant_abort/defuse_start/defuse_abort) — never
+  // 'plant'/'defuse': those buckets feed the planted-C4 beep scheduler
+  // (sfx.js c4BeepRows) and the world markers, and they carry NO
+  // scrubber marker (the completion tick already has one).
+  'bomb_plant_begin',
+  'bomb_plant_abort',
+  'bomb_defuse_start',
+  'bomb_defuse_abort',
   'round_end',
   'round_start',
 ];
@@ -88,7 +106,7 @@ export const CATEGORIES = [
   { id: 'kills', label: 'Kills', short: 'kill', source: 'event', kinds: ['kill'] },
   { id: 'round_wins', label: 'Round wins', short: 'win', source: 'event', kinds: ['round_end'], countedOnly: true },
   { id: 'round_starts', label: 'Round starts', short: 'start', source: 'event', kinds: ['round_start'], default: true, countedOnly: true },
-  { id: 'bomb', label: 'Bomb', short: 'bomb', source: 'event', kinds: ['bomb_plant', 'bomb_defuse', 'bomb_explode', 'bomb_drop', 'bomb_pickup'] },
+  { id: 'bomb', label: 'Bomb', short: 'bomb', source: 'event', kinds: ['bomb_plant', 'bomb_defuse', 'bomb_explode', 'bomb_drop', 'bomb_pickup', 'bomb_plant_begin', 'bomb_plant_abort', 'bomb_defuse_start', 'bomb_defuse_abort'] },
   { id: 'grenade_throws', label: 'Grenade throws', short: 'throw', source: 'event', kinds: ['grenade_throw'] },
   { id: 'grenade_dets', label: 'Grenade detonations', short: 'det', source: 'event', kinds: ['grenade'] },
   // The grenade's ACTIVATION (it came to rest — models.EventGrenadeLand,
@@ -207,9 +225,10 @@ export function scrubberMarkerClass(bucket) {
   if (b === 'plant' || b === 'defuse') return 'plant';
   if (b === 'explode' || DETONATION_BUCKETS.includes(b)) return 'det';
   if (b === 'round' || b === 'start') return 'tall';
-  return ''; // 'drop'/'pickup' (bomb evidence), 'damage' and 'land' (a
-  //             grenade ACTIVATION — the real explosion carries the det
-  //             marker) — no marker
+  return ''; // 'drop'/'pickup' (bomb evidence), the plant/defuse ATTEMPT
+  //             lifecycle buckets (the completion tick already carries the
+  //             marker), 'damage' and 'land' (a grenade ACTIVATION — the
+  //             real explosion carries the det marker) — no marker
 }
 
 // drawBucket maps a typed kind onto the drawable bucket the renderer and
@@ -232,6 +251,13 @@ export function scrubberMarkerClass(bucket) {
 // never drawn as a world marker, but it DOES carry the tall scrubber
 // tick (scrubberMarkerClass 'tall') so the default round-start feed
 // reads on the timeline.
+// The plant/defuse ATTEMPT lifecycle buckets into its OWN four buckets
+// (plant_begin/plant_abort/defuse_start/defuse_abort): they are neither
+// 'plant'/'defuse' (those feed the planted-C4 beep scheduler and the
+// world markers) nor drawable-world rows — scrubberMarkerClass returns
+// '' for all four, so one plant/defuse still makes ONE scrubber marker
+// (at its completion tick). The renderer's progress rings read the ROWS
+// (lib/replay/bomb.js actionIntervals), not these buckets' geometry.
 export function drawBucket(kind, weapon) {
   const k = String(kind || '').toLowerCase();
   if (k === 'kill') return 'kill';
@@ -246,6 +272,10 @@ export function drawBucket(kind, weapon) {
   if (k === 'bomb_defuse') return 'defuse';
   if (k === 'bomb_drop') return 'drop';
   if (k === 'bomb_pickup') return 'pickup';
+  if (k === 'bomb_plant_begin') return 'plant_begin';
+  if (k === 'bomb_plant_abort') return 'plant_abort';
+  if (k === 'bomb_defuse_start') return 'defuse_start';
+  if (k === 'bomb_defuse_abort') return 'defuse_abort';
   if (k === 'round_end') return 'round';
   if (k === 'round_start') return 'start';
   return '';
@@ -302,6 +332,11 @@ export function normalizeEvent(ev, opts = {}) {
       if (r && !isCounted(r)) return null;
     }
   }
+  // Note on attribution: the completed plant/defuse/explode rows
+  // attribute to the BOMB ENTITY (steamId ''), but the ATTEMPT
+  // lifecycle rows (begin/abort) keep ev.attacker — a begin/abort IS the
+  // planter/defuser, and the renderer resolves that key to the dot its
+  // progress ring surrounds.
   return {
     ...ev,
     key: 'e:' + ev.id,

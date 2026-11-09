@@ -39,16 +39,30 @@ const (
 // Event kinds (events.kind). The timeline filter and round views key off
 // these strings; keep them stable once shipped.
 const (
-	EventKill         = "kill"
-	EventDamage       = "damage"
-	EventBlind        = "blind"
-	EventBombPlant    = "bomb_plant"
-	EventBombDefuse   = "bomb_defuse"
-	EventBombExplode  = "bomb_explode"
-	EventBombDrop     = "bomb_drop"
-	EventBombPickup   = "bomb_pickup"
-	EventGrenadeThrow = "grenade_throw"
-	EventGrenade      = "grenade"
+	EventKill        = "kill"
+	EventDamage      = "damage"
+	EventBlind       = "blind"
+	EventBombPlant   = "bomb_plant"
+	EventBombDefuse  = "bomb_defuse"
+	EventBombExplode = "bomb_explode"
+	EventBombDrop    = "bomb_drop"
+	EventBombPickup  = "bomb_pickup"
+	// The plant/defuse ATTEMPT lifecycle — the entity-derived demoinfocs
+	// mimic events (BombPlantBegin / BombPlantAborted / BombDefuseStart /
+	// BombDefuseAborted): a begin/start OPENS an attempt the frontend
+	// closes with the matching bomb_plant / bomb_defuse completion or the
+	// *_abort cancel. No stat counts them (rings + cue points only), and
+	// the raw bomb_beginplant / bomb_begindefuse game events still ride
+	// generic_events — the *_abort cancels have NO raw counterpart, so
+	// these typed rows are the ONLY cancel signal. Verified on the golden
+	// pool (extract's TestDiagPlantDefuseSequences: 92 plant + 32 defuse
+	// attempts, an abort never co-occurs with a completion).
+	EventBombPlantBegin  = "bomb_plant_begin"
+	EventBombPlantAbort  = "bomb_plant_abort"
+	EventBombDefuseStart = "bomb_defuse_start"
+	EventBombDefuseAbort = "bomb_defuse_abort"
+	EventGrenadeThrow    = "grenade_throw"
+	EventGrenade         = "grenade"
 	// EventGrenadeLand marks a grenade COMING TO REST (the decoy's
 	// activation — decoy_started): the flight ends here and the noise
 	// window starts; the EXPLOSION stays an EventGrenade row
