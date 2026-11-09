@@ -55,6 +55,7 @@
     defaultFilter,
     applyRoundPref,
     landmarkExportRows,
+    precomposeChatLabels,
     scrubberMarkerClass,
   } from '../replay/landmarks.js';
   import { attachReplayInput, snapshot } from '../replay/input.js';
@@ -89,7 +90,8 @@
   import { loadMapPack } from '../components/mapxform.js';
   import { downloadBlob, downloadText } from '../download.js';
   import { toCSV } from '../csv.js';
-  import { chatClock, prettyJson, fmtClock, parseClock, tickSeconds, normTickRate } from '../fmt.js';
+  import { chatClock, chatTag, prettyJson, fmtClock, parseClock, tickSeconds, normTickRate } from '../fmt.js';
+  import { playerSideAt } from '../teams.js';
   import { isCounted, roundStartTick, roundIndexLabel, scoreThrough } from '../rounds.js';
   import { isSteam, entrySeekTick, entryLoopRange } from '../nav.js';
   import { buildHash } from '../router.js';
@@ -605,6 +607,19 @@
   let entryDefaultTick = 0;
   let selApplied = false;
 
+  // The selected chat row's channel tag for the detail pane's Kind field
+  // — the chat CHANNEL side-indicated per THE display rule: '[ALL]' for
+  // all chat, the speaker's side '[T]'/'[CT]' for team chat (teams.playerSideAt
+  // over the inputs this view has). A team row whose side can't be
+  // resolved falls back to the bare word 'TEAM' — the channel still shows,
+  // but never a guessed bracket; system rows (channel '') show nothing.
+  const selectedChatChannel = $derived.by(() => {
+    if (!selected || selected.source !== 'chat') return '';
+    const tag = chatTag(selected.channel || '', playerSideAt(players, sideSwitches, rounds, selected.round, selected.steamId, selected.who));
+    if (tag) return tag;
+    return selected.channel === 'team' ? 'TEAM' : '';
+  });
+
   async function select(row) {
     detailError = '';
     copied = false;
@@ -752,18 +767,28 @@
     if (exportEl) exportEl.open = false;
   }
 
+  // Side inputs for the export's precomposed chat labels (the CSV/JSON
+  // feed export builds `label` through the canonical fmt.chatLine — same
+  // rule the UI renders; team chat without a resolvable side exports
+  // bracket-less, never a guessed side).
+  const exportSideCtx = () => ({ players, sideSwitches, rounds });
+
   function exportCSV() {
     closeExport();
     return download(
       `match-${id}-events.csv`,
       'text/csv;charset=utf-8',
-      toCSV(landmarkExportRows(feedRows)),
+      toCSV(landmarkExportRows(feedRows, exportSideCtx())),
     );
   }
 
   function exportJSON() {
     closeExport();
-    return download(`match-${id}-events.json`, 'application/json', JSON.stringify(feedRows, null, 2));
+    return download(
+      `match-${id}-events.json`,
+      'application/json',
+      JSON.stringify(precomposeChatLabels(feedRows, exportSideCtx()), null, 2),
+    );
   }
 
   // Open the filter panel on ENTRY when the deep link already carries a
@@ -3044,6 +3069,9 @@
             resolveSteam={resolveWho}
             roundByNumber={rbn}
             tickRate={meta?.tickRate}
+            {players}
+            {sideSwitches}
+            {rounds}
             selected={selected?.key === row.key}
             onselect={select}
             onseek={(r) => seekTo(r.tick)}
@@ -3164,7 +3192,11 @@
               </div>
               <div>
                 <dt>Kind</dt>
-                <dd>{selected.kind || 'chat'}{selected.decrypted ? ' · decrypted' : ''}</dd>
+                <dd
+                  >{selected.kind || 'chat'}{selectedChatChannel ? ` · ${selectedChatChannel}` : ''}{selected.decrypted
+                    ? ' · decrypted'
+                    : ''}</dd
+                >
               </div>
             </dl>
             <p class="lm-chat-text">{selected.text}</p>

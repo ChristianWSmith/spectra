@@ -29,6 +29,42 @@ export function chatClock(c, roundByNumber, tickRate) {
   return fmtClock(tickSeconds(c.tick, tickRate));
 }
 
+// chatTag renders the bracket tag of one chat message — the CHANNEL tag
+// for all chat and the SIDE tag for team chat:
+//
+//   channel 'all'  → '[ALL]' — regardless of who spoke
+//   channel 'team' → '[T]' or '[CT]' — the SPEAKER'S SIDE at that round:
+//                    [T] = Terrorist, [CT] = Counter-Terrorist. A CT
+//                    writing in team chat renders `name [CT]: message`.
+//   system rows / an unknown channel, or a team-chat side that cannot be
+//                    resolved → '' — NO bracket, never a guessed side.
+//
+// [T]/[CT] are the speaker's SIDE (Terrorist/CT), not "team" — shown only
+// for team chat; all chat always reads [ALL]. This and chatLine below are
+// THE chat display rule every surface renders through (the DOM surfaces
+// that link the name compose <ProfileLink> + chatTag + ': ' + text, so
+// the link survives and the line reads identically).
+export function chatTag(channel, side) {
+  if (channel === 'all') return '[ALL]';
+  if (channel === 'team') {
+    const s = String(side || '').toLowerCase();
+    if (s === 'ct') return '[CT]';
+    if (s === 't') return '[T]';
+  }
+  return '';
+}
+
+// chatLine composes the full chat line — THE one display rule:
+// `<name> [<tag>]: <text>` (e.g. `donk666 [T]: lol`, `donk666 [ALL]: lol`).
+// A nameless/system row (no name and no tag) is plain text — no bracket,
+// no leading colon. The feed export (CSV/JSON `label`) precomposes through
+// this so exported rows read exactly like the UI.
+export function chatLine(name, channel, side, text) {
+  const head = [name, chatTag(channel, side)].filter(Boolean).join(' ');
+  if (!head) return text ?? '';
+  return `${head}: ${text ?? ''}`;
+}
+
 // roundClock renders a tick as time INTO its round ("m:ss") — the
 // round-relative row clock every per-round row shows (the Utility rows:
 // how far into that round the throw happened). Same arithmetic and

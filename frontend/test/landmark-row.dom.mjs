@@ -60,10 +60,11 @@ const svelteCompile = (src, filename, out) => {
 };
 
 // Plain-ESM deps copied verbatim so their relative imports keep working
-// at their new location: landmarks.js → rounds.js, nav.js → router.js +
+// at their new location: landmarks.js → rounds.js + fmt.js + teams.js
+// (the chat export helpers — teams → sideparity), nav.js → router.js +
 // replay/landmarks.js, fmt.js → rounds.js (the roundClock the round +
 // time columns render).
-for (const rel of ['rounds.js', 'router.js', 'nav.js', 'fmt.js']) {
+for (const rel of ['rounds.js', 'router.js', 'nav.js', 'fmt.js', 'sideparity.js', 'teams.js']) {
   writeFileSync(join(dir, rel), readFileSync(join('src/lib', rel), 'utf8'));
 }
 writeFileSync(
@@ -153,10 +154,15 @@ const botSlot = slot('bot-row');
 check('bot row has no profile link', botSlot.querySelectorAll('.comb-name-btn').length === 0);
 check('bot row still shows both names', text(botSlot.querySelector('.lm-text')).includes('BOT'), text(botSlot.querySelector('.lm-text')));
 
-console.log('D. chat sender links to the profile');
+console.log('D. chat sender links to the profile, channel-tagged per the display rule');
 const chatSlot = slot('chat-row');
-check('sender: message text', text(chatSlot.querySelector('.lm-text')) === 'alice: mid', text(chatSlot.querySelector('.lm-text')));
+// ALL chat always reads [ALL] — no side inputs needed for it.
+check('sender [ALL]: message text', text(chatSlot.querySelector('.lm-text')) === 'alice [ALL]: mid', text(chatSlot.querySelector('.lm-text')));
 check('sender is a profile link', chatSlot.querySelectorAll('.lm-text .comb-name-btn').length === 1);
+// TEAM chat tags the SPEAKER'S SIDE in that round ([CT] for a CT speaker).
+const chatTeamSlot = slot('chat-team-row');
+check('team chat: speaker side tag', text(chatTeamSlot.querySelector('.lm-text')) === 'bob [CT]: b site', text(chatTeamSlot.querySelector('.lm-text')));
+check('team chat sender stays a profile link', chatTeamSlot.querySelectorAll('.lm-text .comb-name-btn').length === 1);
 
 console.log('E. generic rows link only when a resolver returns an id');
 const genericSlot = slot('generic-row');

@@ -7,7 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { synthTeamName, teamNames, teamStartClass, playerStartClass, playerSideClassAt, displayHalfScore } from './teams.js';
+import { synthTeamName, teamNames, teamStartClass, playerStartClass, playerSideAt, playerSideClassAt, displayHalfScore } from './teams.js';
 
 // Round rows for the per-round helper: a warmup (-1) plus 24 counted
 // rounds (MR12 regulation, one side switch — the same shape as the
@@ -155,4 +155,38 @@ test('playerSideClassAt: unresolvable inputs fall back to the aggregate color, n
   assert.equal(playerSideClassAt(SB, 1, ROUNDS, 13, 'missing', 'nobody'), '');
   assert.equal(playerSideClassAt(SB, 1, ROUNDS, 13, 'C00', 'sideless'), '');
   assert.equal(playerSideClassAt(null, 1, ROUNDS, 13, 'A00', 'kRaSnaL'), '');
+});
+
+test('playerSideAt: the side VALUE behind the chat tag ([T]/[CT]) and the color', () => {
+  // Same resolution as playerSideClassAt — the VALUE the class spells:
+  // A00 finished CT, so they were T in round 1 and CT from round 13 on.
+  assert.equal(playerSideAt(SB, 1, ROUNDS, 1, 'A00', ''), 't');
+  assert.equal(playerSideAt(SB, 1, ROUNDS, 12, 'A00', ''), 't');
+  assert.equal(playerSideAt(SB, 1, ROUNDS, 13, 'A00', ''), 'ct');
+  assert.equal(playerSideAt(SB, 1, ROUNDS, 1, 'B00', ''), 'ct');
+  assert.equal(playerSideAt(SB, 1, ROUNDS, 24, 'B00', ''), 't');
+  // Steam-id first, exact-name fallback (chat rows may carry only a name).
+  assert.equal(playerSideAt(SB, 1, ROUNDS, 13, '', 'lowix'), 'ct');
+  assert.equal(playerSideAt(SB, 1, ROUNDS, 13, '', 'zed'), 't');
+  // Color and label are the same value: the class is 'side-' + the value
+  // whenever the round resolves — they can never disagree.
+  for (const [round, steam] of [[1, 'A00'], [13, 'A00'], [1, 'B00'], [24, 'B00']]) {
+    assert.equal(
+      playerSideClassAt(SB, 1, ROUNDS, round, steam, ''),
+      'side-' + playerSideAt(SB, 1, ROUNDS, round, steam, ''),
+      `round ${round}/${steam}: class and tag share one side value`,
+    );
+  }
+});
+
+test('playerSideAt: unknown side → "" — never a guess (no color fallback in a label)', () => {
+  // Round unresolved / no rounds list → '' — unlike the COLOR, the LABEL
+  // never falls back to the team's start side (that would claim a side
+  // this round didn't resolve).
+  assert.equal(playerSideAt(SB, 1, ROUNDS, 99, 'A00', ''), '');
+  assert.equal(playerSideAt(SB, 1, [], 13, 'A00', ''), '');
+  // Unknown player, sideless player, no inputs at all.
+  assert.equal(playerSideAt(SB, 1, ROUNDS, 13, 'missing', 'nobody'), '');
+  assert.equal(playerSideAt(SB, 1, ROUNDS, 13, 'C00', 'sideless'), '');
+  assert.equal(playerSideAt(null, 1, ROUNDS, 13, 'A00', 'kRaSnaL'), '');
 });

@@ -79,6 +79,7 @@ var columnNotes = map[string]map[string]string{
 		"map":    "map name as extracted (source for groupBy=map)",
 	},
 	"chat": {
+		"channel":   "chat channel: 'all' (renders [ALL]) | 'team' (renders the speaker's side [T]/[CT]) | '' for system messages",
 		"decrypted": "chat considered decrypted (always 0 — presence.key_found and matches.enc_messages carry the real state)",
 	},
 	"utility_events": {

@@ -53,7 +53,7 @@ import { dropEvidenceAt, hasDropPos } from './drops.js';
 // basis as the scrubber readout). createRenderer has its own tick-based
 // HUD helper named fmtClock below, so the import is aliased: the two
 // must never blur into one another.
-import { fmtClock as fmtClockSecs, tickSeconds } from '../fmt.js';
+import { fmtClock as fmtClockSecs, tickSeconds, chatTag } from '../fmt.js';
 
 const CT_COLOR = '#5aa9e6';
 const T_COLOR = '#e6a35a';
@@ -1288,7 +1288,9 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // round containing the playhead, the same clearing/scrub rule the kill
   // feed uses). Pure data like setBlinds/setLandmarks: stored verbatim —
   // no side, no normalization, no filtering happens here (drawChat
-  // resolves each speaker's side at the message tick) — and redraws.
+  // resolves each speaker's side at the message tick and composes the
+  // row's channel tag — [ALL]/[T]/[CT] — from the row's own `channel`)
+  // and redraws.
   function setChat(rows) {
     chats = rows || [];
     draw();
@@ -3327,15 +3329,23 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       const slot = slotOfSteam.get(String(c.steamId || ''));
       const side = slot != null && slot < nSlots ? sideAtFrame(slot, frame) : '';
       const name = c.name || '?';
-      // `name: message` — the name in the speaker's side color (kill-
-      // feed convention), the message in SECONDARY_TEXT. A long message
-      // is cut (with an ellipsis) so one entry never spans more than
-      // CHAT_MAX_W of the stage: the stack hugs the corner either way.
+      // THE chat display rule on canvas: `name[ tag]: message` — the tag
+      // is fmt.chatTag over the row's channel and the ALREADY-resolved
+      // live side ('[ALL]' for all chat, the speaker's SIDE '[T]'/'[CT]'
+      // for team chat, none when either is unknown — never guessed), so
+      // the tag sits in the SAME side color as the name. The name+tag
+      // segment measures as ONE head: a long message is cut (with an
+      // ellipsis) so one entry never spans more than CHAT_MAX_W of the
+      // stage: the stack hugs the corner either way.
+      const head = (() => {
+        const tag = chatTag(c.channel || '', side);
+        return tag ? `${name} ${tag}` : name;
+      })();
       const msg = c.text == null ? '' : String(c.text);
       let body = msg ? `: ${msg}` : '';
-      const nameW = ctx.measureText(name).width;
+      const headW = ctx.measureText(head).width;
       const fits = () =>
-        KILL_FEED_INSET * 2 + nameW + ctx.measureText(body).width <= cssW * CHAT_MAX_W;
+        KILL_FEED_INSET * 2 + headW + ctx.measureText(body).width <= cssW * CHAT_MAX_W;
       if (msg && !fits()) {
         let k = msg.length;
         do {
@@ -3343,7 +3353,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
           body = `: ${msg.slice(0, k)}…`;
         } while (k > 0 && !fits());
       }
-      const w = KILL_FEED_INSET * 2 + nameW + ctx.measureText(body).width;
+      const w = KILL_FEED_INSET * 2 + headW + ctx.measureText(body).width;
       const y = top + i * KILL_FEED_PITCH;
 
       // box: the shared dark surface outlined in the speaker's color
@@ -3351,8 +3361,8 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
 
       let tx = KILL_FEED_EDGE + KILL_FEED_INSET;
       ctx.fillStyle = teamColor(side);
-      ctx.fillText(name, tx, y + 4);
-      tx += nameW;
+      ctx.fillText(head, tx, y + 4);
+      tx += headW;
       if (body) {
         ctx.fillStyle = SECONDARY_TEXT;
         ctx.fillText(body, tx, y + 4);

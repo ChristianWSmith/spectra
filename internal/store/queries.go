@@ -949,7 +949,7 @@ func (s *Store) queryChat(matchID int64, round int, exactRound bool, player stri
 			c         models.ChatRow
 			decrypted int64
 		)
-		if err := rows.Scan(&c.ID, &c.Tick, &c.Round, &c.SteamID, &c.Name, &c.Text, &c.Kind, &decrypted); err != nil {
+		if err := rows.Scan(&c.ID, &c.Tick, &c.Round, &c.SteamID, &c.Name, &c.Text, &c.Kind, &c.Channel, &decrypted); err != nil {
 			return nil, fmt.Errorf("store: get chat: %w", err)
 		}
 		c.Decrypted = i2b(decrypted)

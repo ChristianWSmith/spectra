@@ -26,6 +26,8 @@
 // src/lib/*.test.js, so the fixture lives one level up).
 
 import { isCounted } from '../rounds.js';
+import { chatLine } from '../fmt.js';
+import { playerSideAt } from '../teams.js';
 
 // The authoritative typed-kind list: every events.kind value (mirror of
 // models.EventKind — Go side; pinned by this module's test).
@@ -564,10 +566,38 @@ export function filtersEqual(a, b) {
 
 // --- Export ------------------------------------------------------------------
 
+// sideOfChatRow resolves a chat row's SPEAKER side for the export tags —
+// the same teams.playerSideAt + fmt.chatLine composition the UI renders,
+// fed from the caller's side inputs (Replay has them in scope at the
+// export button). Missing inputs → '' → team chat exports channel-only
+// (no bracket), never a guessed side.
+function sideOfChatRow(r, sideCtx) {
+  const ctx = sideCtx || {};
+  return playerSideAt(ctx.players, ctx.sideSwitches, ctx.rounds, r.round, r.steamId, r.who);
+}
+
+// composeChatLabel is THE export half of the chat display rule: the
+// CSV/JSON feed export PRECOMPOSES the full line into `label` through the
+// canonical formatter (fmt.chatLine — `donk666 [T]: lol`), while `who`
+// stays the bare name. System rows (no name/channel) stay plain text.
+function composeChatLabel(r, sideCtx) {
+  return chatLine(r.who || '', r.channel || '', sideOfChatRow(r, sideCtx), r.label || '');
+}
+
+// precomposeChatLabels returns the feed rows with every CHAT row's
+// `label` replaced by the full precomposed line (fmt.chatLine) — the JSON
+// export's shape, so exported JSON reads like the UI (who stays bare).
+export function precomposeChatLabels(rows, sideCtx) {
+  return (rows || []).map((r) => (r.source === 'chat' ? { ...r, label: composeChatLabel(r, sideCtx) } : r));
+}
+
 // landmarkExportRows flattens the loaded feed into canonical CSV/JSON
 // export columns (tick, round, source, name/who, text/label — plus
-// category and typed extras).
-export function landmarkExportRows(rows) {
+// category and typed extras). Chat rows carry the PRECOMPOSED line in
+// `label` (see composeChatLabel); sideCtx is the side inputs
+// ({players, sideSwitches, rounds}) Replay has in scope at the export
+// button — omitted, team chat exports with no bracket (never guessed).
+export function landmarkExportRows(rows, sideCtx) {
   const out = [['tick', 'round', 'source', 'category', 'kind', 'who', 'label', 'weapon', 'dmg']];
   for (const r of rows) {
     out.push([
@@ -577,7 +607,7 @@ export function landmarkExportRows(rows) {
       r.category,
       r.kind || r.name || '',
       r.who || '',
-      r.label || '',
+      r.source === 'chat' ? composeChatLabel(r, sideCtx) : r.label || '',
       r.weapon || '',
       r.dmg != null ? r.dmg : '',
     ]);

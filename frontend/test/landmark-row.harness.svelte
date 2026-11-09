@@ -46,11 +46,32 @@
     source: 'chat',
     kind: 'chat',
     category: 'chat',
+    channel: 'all',
     tick: 2048,
     round: 5,
     steamId: '76561198012345678',
     who: 'alice',
     label: 'mid',
+  };
+
+  // Team chat + the side inputs: the tag is the SPEAKER'S SIDE in that
+  // round (bob is ct here → [CT] — fmt.chatTag + teams.playerSideAt).
+  const chatTeam = {
+    key: 'c:2',
+    source: 'chat',
+    kind: 'chat',
+    category: 'chat',
+    channel: 'team',
+    tick: 2060,
+    round: 5,
+    steamId: '76561198012345679',
+    who: 'bob',
+    label: 'b site',
+  };
+  const chatSideProps = {
+    players: [{ steamId: '76561198012345679', name: 'bob', side: 'ct' }],
+    sideSwitches: 0,
+    rounds: [{ number: 5 }],
   };
 
   const generic = {
@@ -96,6 +117,9 @@
   </div>
   <div data-testid="chat-row">
     <LandmarkRow row={chat} {nav} {onselect} {onseek} />
+  </div>
+  <div data-testid="chat-team-row">
+    <LandmarkRow row={chatTeam} {...chatSideProps} {nav} {onselect} {onseek} />
   </div>
   <div data-testid="generic-row">
     <LandmarkRow row={generic} {nav} {resolveSteam} {onselect} {onseek} />

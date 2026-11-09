@@ -1180,7 +1180,7 @@ func (a *agg) disconnect(tick int, key uint64, name string) {
 	}, "")
 }
 
-func (a *agg) chat(tick int, steam, name, text string) {
+func (a *agg) chat(tick int, steam, name, text, channel string) {
 	a.chatRows = append(a.chatRows, models.Chat{
 		Tick:    tick,
 		Round:   a.evRound(),
@@ -1188,6 +1188,7 @@ func (a *agg) chat(tick int, steam, name, text string) {
 		Name:    name,
 		Text:    text,
 		Kind:    "chat",
+		Channel: channel, // "all" | "team"; "" for non-chat rows (never here)
 	})
 }
 
