@@ -5,8 +5,8 @@
 //
 // The stream carries per-CHANGE samples of HP, armor, unspent money,
 // helmet, active weapon, inventory, magazine/reserve ammo, the stowed
-// MAIN weapon's ammo and the attack trigger, anchored to position-stream
-// frame indices. Records only
+// MAIN weapon's ammo, the attack trigger and the reload state, anchored
+// to position-stream frame indices. Records only
 // contain fields that CHANGED (or a round-start seed), so reads
 // reconstruct by keeping the last value at or before a frame — never zero
 // defaults: a field with no record yet is UNKNOWN (null).
@@ -17,12 +17,12 @@
 // `stateFormatVersion` (matches imported before the stream simply return
 // null — fail soft, never an error).
 //
-// Version policy: this decoder handles ONLY stateFormatVersion 3 (the
-// layout below, incl. mainMag/mainReserve); v1 (pre-money/helmet) and v2
-// (pre-main-weapon) sidecars are not decoded and not upgraded —
-// stateCapable reports false, loadState returns null, cards show unknown
-// (pre-release no-migrations policy: a stale match must be REPROCESSED to
-// regain state).
+// Version policy: this decoder handles ONLY stateFormatVersion 4 (the
+// layout below, incl. mainMag/mainReserve and reloading); v1 (pre-money/
+// helmet), v2 (pre-main-weapon) and v3 (pre-reload flag) sidecars are not
+// decoded and not upgraded — stateCapable reports false, loadState returns
+// null, cards show unknown (pre-release no-migrations policy: a stale
+// match must be REPROCESSED to regain state).
 //
 // Layout per record (little-endian):
 //   uvarint  frame (absolute frame index, LEB128)
@@ -39,11 +39,13 @@
 //     0x100 helmet      uint8 0/1 (as-read even when dead)
 //     0x200 mainMag     uint16  MAIN (stowed) weapon magazine (v3)
 //     0x400 mainReserve uint16  MAIN weapon reserve (v3)
+//     0x800 reloading   uint8 0/1  ACTIVE weapon mid-reload, sampled
+//                         alive-only (a death emits the fresh false) (v4)
 //   mask is a uvarint (v2 change from v1's fixed uint8): masks < 0x80
 //   stay one byte (records without money/helmet are byte-identical to
 //   their v1 encoding), money/helmet masks cost one extra byte; the v3
-//   fields were APPENDED after helmet, so v2 records decode byte-identical
-//   (their mask simply never sets 0x200/0x400).
+//   and v4 fields were APPENDED after helmet, so earlier records decode
+//   byte-identical (their mask simply never sets 0x200/0x400/0x800).
 
 // Field-mask bits (mirror internal/sidecar's State* constants).
 export const STATE_FIELDS = {
@@ -58,13 +60,14 @@ export const STATE_FIELDS = {
   HELMET: 0x100,
   MAIN_MAG: 0x200,
   MAIN_RESERVE: 0x400,
+  RELOADING: 0x800,
 };
 
 // The current state-record layout version (mirror sidecar.StateFormatVersion).
-export const STATE_FORMAT_VERSION = 3;
+export const STATE_FORMAT_VERSION = 4;
 
 // All defined field bits — anything outside is corruption.
-const STATE_ALL_FIELDS = 0x7ff;
+const STATE_ALL_FIELDS = 0xfff;
 
 // The series every slot index keeps (record key → mask bit), in bit order.
 const SERIES = [
@@ -79,6 +82,7 @@ const SERIES = [
   ['helmet', STATE_FIELDS.HELMET],
   ['mainMag', STATE_FIELDS.MAIN_MAG],
   ['mainReserve', STATE_FIELDS.MAIN_RESERVE],
+  ['reloading', STATE_FIELDS.RELOADING],
 ];
 
 // parseState decodes an ArrayBuffer of concatenated state records.
@@ -160,6 +164,11 @@ export function parseState(buffer, weaponNames = []) {
     }
     if (mask & STATE_FIELDS.MAIN_MAG) rec.mainMag = u16();
     if (mask & STATE_FIELDS.MAIN_RESERVE) rec.mainReserve = u16();
+    if (mask & STATE_FIELDS.RELOADING) {
+      const v = u8();
+      if (v > 1) bad('reloading flag not 0/1');
+      rec.reloading = v === 1;
+    }
     records.push(rec);
   }
   return { records };
@@ -217,10 +226,11 @@ export function slotStateAt(index, slot, frame) {
 
 // stateCapable: meta.json says the match carries the stream in the
 // CURRENT layout (the meta route — never a schema column, so old dev DBs
-// stay untouched). A v1 sidecar (pre-money/helmet) or a v2 sidecar
-// (pre-main-weapon ammo) is not upgraded (pre-release no-migrations
-// policy): it reports no capability and callers fail soft to "no state"
-// — the match must be reprocessed to regain state.
+// stay untouched). A v1 sidecar (pre-money/helmet), a v2 sidecar
+// (pre-main-weapon ammo) or a v3 sidecar (pre-reload flag) is not
+// upgraded (pre-release no-migrations policy): it reports no capability
+// and callers fail soft to "no state" — the match must be reprocessed to
+// regain state.
 export function stateCapable(meta) {
   return !!meta && meta.stateFormatVersion === STATE_FORMAT_VERSION;
 }

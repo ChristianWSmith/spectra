@@ -41,9 +41,12 @@ func TestRoundSeeds(t *testing.T) {
 // weapon/inventory/ammo (active OR main) carried — while armor/attack stay
 // as read, and money/helmet stay as read too (deliberate: both persist
 // through death — money lives on the player controller, round-end cash
-// lands while dead).
+// lands while dead). Reloading joins HP's rule, not the weapon rule: even
+// a caller that passes reloading=true gets false on a dead sample (a dead
+// player reloads nothing — the sidecar emits that fresh false, so a death
+// mid-reload ends the reload instead of pinning last-known).
 func TestBuildStateSampleDeath(t *testing.T) {
-	dead := buildStateSample(42, false, 0, 100, 3700, true, "AK-47", []string{"AK-47"}, 30, 90, 30, 90, true)
+	dead := buildStateSample(42, false, 0, 100, 3700, true, "AK-47", []string{"AK-47"}, 30, 90, 30, 90, true, true)
 	if dead.HP != 0 {
 		t.Errorf("dead HP = %d, want 0 (sampled, not inferred)", dead.HP)
 	}
@@ -64,14 +67,20 @@ func TestBuildStateSampleDeath(t *testing.T) {
 		t.Errorf("dead weapon fields = %q %v %d %d %d %d, want empty (entity props gone)",
 			dead.Weapon, dead.Inventory, dead.MagAmmo, dead.ReserveAmmo, dead.MainMag, dead.MainReserve)
 	}
+	if dead.Reloading {
+		t.Error("dead Reloading = true, want false (a dead player reloads nothing)")
+	}
 	if dead.Alive {
 		t.Error("dead sample must carry Alive=false")
 	}
 
 	inv := []string{"AK-47", "USP-S"}
-	alive := buildStateSample(42, true, 87, 100, 4300, false, "AK-47", inv, 30, 90, 30, 90, false)
+	alive := buildStateSample(42, true, 87, 100, 4300, false, "AK-47", inv, 30, 90, 30, 90, false, true)
 	if alive.HP != 87 || alive.Weapon != "AK-47" || alive.MagAmmo != 30 || alive.ReserveAmmo != 90 {
 		t.Errorf("alive sample = %+v", alive)
+	}
+	if !alive.Reloading {
+		t.Error("alive Reloading = false, want the as-read true")
 	}
 	if alive.MainMag != 30 || alive.MainReserve != 90 {
 		t.Errorf("alive main ammo = %d/%d, want 30/90", alive.MainMag, alive.MainReserve)
@@ -94,7 +103,7 @@ func TestBuildStateSampleDeath(t *testing.T) {
 // negative sentinel (AmmoInMagazine -1) and over-range values never reach
 // the writer unclamped (the MAIN weapon's reads clamp the same way).
 func TestBuildStateSampleClamps(t *testing.T) {
-	s := buildStateSample(1, true, 300, -5, 70000, false, "Negev", nil, -1, 70000, -3, 70001, false)
+	s := buildStateSample(1, true, 300, -5, 70000, false, "Negev", nil, -1, 70000, -3, 70001, false, false)
 	if s.HP != 255 {
 		t.Errorf("HP = %d, want 255", s.HP)
 	}
@@ -162,7 +171,7 @@ func TestScanWeaponsMainWeapon(t *testing.T) {
 	}
 
 	// The resolution feeds buildStateSample: no main → 0/0 on the wire.
-	s := buildStateSample(7, true, 100, 0, 800, false, "Knife", inv, 1, 0, 0, 0, false)
+	s := buildStateSample(7, true, 100, 0, 800, false, "Knife", inv, 1, 0, 0, 0, false, false)
 	if s.MainMag != 0 || s.MainReserve != 0 {
 		t.Errorf("knife-round main ammo = %d/%d, want 0/0", s.MainMag, s.MainReserve)
 	}

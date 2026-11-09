@@ -54,13 +54,14 @@ function encodeRecords(records) {
     if (r.mask & STATE_FIELDS.HELMET) push8(r.helmet ? 1 : 0);
     if (r.mask & STATE_FIELDS.MAIN_MAG) push16(r.mainMag);
     if (r.mask & STATE_FIELDS.MAIN_RESERVE) push16(r.mainReserve);
+    if (r.mask & STATE_FIELDS.RELOADING) push8(r.reloading ? 1 : 0);
   }
   return new Uint8Array(out).buffer;
 }
 
 const NAMES = ['Unknown', 'AK-47', 'USP-S', 'M4A4', 'AWP', 'Glock-18', 'SSG 08', 'MP9'];
 
-test('pinned record bytes decode (format pin — a change needs stateFormatVersion 4)', () => {
+test('pinned record bytes decode (format pin — a change needs stateFormatVersion 5)', () => {
   // Record A: frame 300 (uvarint AC 02), slot 1, mask hp|armor|attack
   // (0x43, single-byte uvarint), hp 57, armor 100, attack true.
   // Record B: frame 301 (AD 02), slot 0, mask
@@ -69,19 +70,23 @@ test('pinned record bytes decode (format pin — a change needs stateFormatVersi
   // Record C (the v2 money/helmet case): frame 300, slot 1, mask
   // hp|money|helmet (0x181 → two-byte uvarint 81 03), hp 57,
   // money 16000 (u16 LE 80 3E), helmet 1.
-  // Record D (the v3 main-weapon case — WHY added: the version bump's
-  // new bytes): frame 0, slot 0, mask mainMag|mainReserve (0x600 →
-  // uvarint 80 0C), mainMag 30 (1E 00), mainReserve 90 (5A 00). A–C are
-  // v2-era layouts that must stay byte-identical (the new fields are
-  // APPENDED after helmet, so their masks never set 0x200/0x400).
+  // Record D (the v3 main-weapon case): frame 0, slot 0, mask
+  // mainMag|mainReserve (0x600 → uvarint 80 0C), mainMag 30 (1E 00),
+  // mainReserve 90 (5A 00).
+  // Record E (the v4 reload case — WHY added: the version bump's new
+  // bytes): frame 301, slot 2, mask reloading (0x800 → uvarint 80 10),
+  // value 1. A–D are earlier-era layouts that must stay byte-identical
+  // (the new field is APPENDED after helmet, so their masks never set
+  // 0x200/0x400/0x800).
   const bytes = new Uint8Array([
     0xac, 0x02, 0x01, 0x43, 57, 100, 1,
     0xad, 0x02, 0x00, 0x3c, 0x03, 0x02, 0x03, 0x07, 0x96, 0x00, 0xc8, 0x00,
     0xac, 0x02, 0x01, 0x81, 0x03, 57, 0x80, 0x3e, 0x01,
     0x00, 0x00, 0x80, 0x0c, 0x1e, 0x00, 0x5a, 0x00,
+    0xad, 0x02, 0x02, 0x80, 0x10, 0x01,
   ]);
   const { records } = parseState(bytes.buffer, NAMES);
-  assert.equal(records.length, 4);
+  assert.equal(records.length, 5);
 
   assert.deepEqual(records[0], {
     frame: 300,
@@ -116,11 +121,18 @@ test('pinned record bytes decode (format pin — a change needs stateFormatVersi
     mainMag: 30,
     mainReserve: 90,
   });
+
+  assert.deepEqual(records[4], {
+    frame: 301,
+    slot: 2,
+    mask: 0x800,
+    reloading: true,
+  });
 });
 
 test('round-trip through the test encoder', () => {
   const wire = [
-    { frame: 0, slot: 0, mask: 0x7ff, hp: 100, armor: 100, weaponIndex: 1, inventory: [1, 2], magAmmo: 30, reserveAmmo: 90, attack: false, money: 3400, helmet: true, mainMag: 30, mainReserve: 90 },
+    { frame: 0, slot: 0, mask: 0xfff, hp: 100, armor: 100, weaponIndex: 1, inventory: [1, 2], magAmmo: 30, reserveAmmo: 90, attack: false, money: 3400, helmet: true, mainMag: 30, mainReserve: 90, reloading: true },
     { frame: 10, slot: 0, mask: STATE_FIELDS.HP, hp: 90 },
     { frame: 11, slot: 1, mask: STATE_FIELDS.ATTACK, attack: true },
     { frame: 65536, slot: 3, mask: STATE_FIELDS.MAG_AMMO | STATE_FIELDS.RESERVE_AMMO, magAmmo: 65535, reserveAmmo: 0 },
@@ -144,11 +156,11 @@ test('round-trip through the test encoder', () => {
 test('malformed streams throw instead of decoding garbage', () => {
   // Truncated hp value.
   assert.throws(() => parseState(new Uint8Array([0x01, 0x00, STATE_FIELDS.HP]).buffer), /truncated record/);
-  // Unknown field bit. (WHY re-pin: 0x200 became the LEGAL mainMag
-  // field at stateFormatVersion 3, so the first illegal bit moved to
-  // 0x800 — one past mainReserve — uvarint 80 10; forward-compat must
+  // Unknown field bit. (WHY re-pin: 0x800 became the LEGAL reloading
+  // field at stateFormatVersion 4, so the first illegal bit moved to
+  // 0x1000 — one past RELOADING — uvarint 80 20; forward-compat must
   // fail loudly, not skip; old bit 0x80 is the legal money field.)
-  assert.throws(() => parseState(new Uint8Array([0x01, 0x00, 0x80, 0x10]).buffer), /unknown field bits/);
+  assert.throws(() => parseState(new Uint8Array([0x01, 0x00, 0x80, 0x20]).buffer), /unknown field bits/);
   // Truncated mask uvarint (mask byte says "more bytes follow").
   assert.throws(() => parseState(new Uint8Array([0x01, 0x00, 0x80]).buffer), /truncated mask varint/);
   // Truncated money value (money mask, stream ends before the u16).
@@ -157,6 +169,8 @@ test('malformed streams throw instead of decoding garbage', () => {
   assert.throws(() => parseState(new Uint8Array([0x01, 0x00, 0x80, 0x01, 0x80]).buffer), /truncated record/);
   // Helmet flag not 0/1 (helmet mask 0x100 = uvarint 80 02).
   assert.throws(() => parseState(new Uint8Array([0x01, 0x00, 0x80, 0x02, 5]).buffer), /helmet flag/);
+  // Reloading flag not 0/1 (reloading mask 0x800 = uvarint 80 10).
+  assert.throws(() => parseState(new Uint8Array([0x01, 0x00, 0x80, 0x10, 5]).buffer), /reloading flag/);
   // Unterminated frame varint.
   assert.throws(() => parseState(new Uint8Array(Array(12).fill(0x80)).buffer), /unterminated frame varint/);
   // Attack flag not 0/1.
@@ -227,6 +241,7 @@ test('buildStateIndex + stateAt: seeds unknown, deltas last-wins, binary search'
     helmet: null,
     mainMag: null,
     mainReserve: null,
+    reloading: null,
   });
   // Out-of-range slot: all null, no throw.
   assert.equal(slotStateAt(index, 99, 50).hp, null);
@@ -240,16 +255,18 @@ test('buildStateIndex + stateAt: seeds unknown, deltas last-wins, binary search'
   assert.equal(slotStateAt(index, 0, 55).money, 4200);
 });
 
-test('stateCapable reads stateFormatVersion from meta.json only (current = v3)', () => {
-  assert.equal(STATE_FORMAT_VERSION, 3);
-  assert.equal(stateCapable({ stateFormatVersion: 3 }), true);
+test('stateCapable reads stateFormatVersion from meta.json only (current = v4)', () => {
+  assert.equal(STATE_FORMAT_VERSION, 4);
+  assert.equal(stateCapable({ stateFormatVersion: 4 }), true);
   assert.equal(stateCapable({}), false); // pre-stream import
-  // v1 (pre-money/helmet) and v2 (pre-main-weapon) sidecars are NOT
-  // upgraded (pre-release no-migrations policy) → they report NO
-  // capability, fail soft; the match must be reprocessed to regain state.
+  // v1 (pre-money/helmet), v2 (pre-main-weapon) and v3 (pre-reload flag)
+  // sidecars are NOT upgraded (pre-release no-migrations policy) → they
+  // report NO capability, fail soft; the match must be reprocessed to
+  // regain state.
   assert.equal(stateCapable({ stateFormatVersion: 1 }), false);
   assert.equal(stateCapable({ stateFormatVersion: 2 }), false);
-  assert.equal(stateCapable({ stateFormatVersion: 4 }), false); // future version
+  assert.equal(stateCapable({ stateFormatVersion: 3 }), false);
+  assert.equal(stateCapable({ stateFormatVersion: 5 }), false); // future version
   assert.equal(stateCapable(null), false);
 });
 
@@ -273,7 +290,7 @@ test('loadState fails soft: no capability → null without fetching; 404 → nul
         return {
           ok: true,
           status: 200,
-          json: async () => ({ stateFormatVersion: 3, players: [111, 222], weaponNames: NAMES }),
+          json: async () => ({ stateFormatVersion: 4, players: [111, 222], weaponNames: NAMES }),
         };
       }
       assert.match(String(url), /\/state\?from=0&to=0$/);
@@ -317,7 +334,7 @@ test('loadState happy path: fetch → decode → per-slot index', async () => {
         return {
           ok: true,
           status: 200,
-          json: async () => ({ stateFormatVersion: 3, players: [111, 222], weaponNames: NAMES }),
+          json: async () => ({ stateFormatVersion: 4, players: [111, 222], weaponNames: NAMES }),
         };
       }
       return { ok: true, status: 200, arrayBuffer: async () => body };
@@ -326,7 +343,7 @@ test('loadState happy path: fetch → decode → per-slot index', async () => {
     assert.ok(index, 'capable match with a stream must load');
     assert.equal(index.slots.length, 2, 'one index per slot-table entry');
     assert.equal(index.recordCount, 2);
-    assert.equal(index.meta.stateFormatVersion, 3);
+    assert.equal(index.meta.stateFormatVersion, 4);
     assert.equal(slotStateAt(index, 0, 0).hp, 100);
     assert.equal(slotStateAt(index, 0, 0).weapon, 'AK-47');
     assert.equal(slotStateAt(index, 0, 0).money, 3500, 'money rides the seed');
