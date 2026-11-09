@@ -47,7 +47,7 @@ import { detonationStyleOf, sameUtilityWeapon } from './landmarks.js';
 // src/lib/layers.test.js).
 import { elevationFor, layerIndexForZ } from './layers.js';
 import { slotStateAt } from './state.js';
-import { bombEndTick, bombEvidenceAt, hasBombPos } from './bomb.js';
+import { bombEndTick, bombEvidenceAt, hasBombPos, actionIntervals, actionProgressAt } from './bomb.js';
 // fmt.js is THE seconds clock (fmtClock over tickSeconds — the same
 // basis as the scrubber readout). createRenderer has its own tick-based
 // HUD helper named fmtClock below, so the import is aliased: the two
@@ -171,6 +171,14 @@ const BLIND_PEAK_ALPHA = 0.6; // the flash overlay's PEAK alpha: the dot
 //                              gets LIGHTER (the team color still shows
 //                              through) — never a solid white disc
 const DEATH_X_HALF = 7; // px — half-diagonal of a death marker
+// Plant/defuse PROGRESS ring (drawPlayers, after the follow ring): a
+// partial arc around the arming planter / defusing CT. The color names
+// the ACTION, never the player's side: RED while planting, GREEN while
+// defusing (the defuse green is style.css's --success).
+const ACTION_RING_R = DOT_R + 4; // px — radius (inside the follow ring's r+5)
+const ACTION_RING_W = 3; // px — stroke width (round caps)
+const ACTION_RING_PLANT = '#ff4d4d';
+const ACTION_RING_DEFUSE = '#4caf7d';
 const BOMB_ICON_PX = 12; // px — the extracted C4 icon's screen size
 const DOT_C4_ICON_PX = 10; // px — the carried-C4 badge on a player dot
 const NADE_ICON_PX = 16; // px — the extracted utility icon's screen size
@@ -756,6 +764,12 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // tick (see drawDeaths / drawPlayers' hit flash).
   let kills = [];
   let damages = []; // damages[slot] = [tick, …]
+  // Plant/defuse ATTEMPT intervals grouped by the ACTOR's slot —
+  // rebuilt by setLandmarks from bomb.js actionIntervals (THE one
+  // interval rule), rendered as a pure function of tick by drawPlayers'
+  // progress ring (see drawActionRing). An actor we cannot resolve to a
+  // slot has no dot to ring — skipped, never guessed.
+  let actionBySlot = new Map();
   // Decoy plan (setDecoyPlan — lib/replay/decoy.js buildDecoyPlan): the
   // rest-to-explosion rows ({landTick, detTick, x, y, side, weapon,
   // shots}) stored verbatim like `bullets` — pure data, redraw on set;
@@ -1135,6 +1149,19 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
           roundStarts.push(l);
           break;
       }
+    }
+    // The plant/defuse ATTEMPT intervals (bomb.js actionIntervals —
+    // THE begin → completion/abort/round-end rule), grouped by the
+    // ACTOR's slot for the per-dot progress ring. Rebuilt with the rest
+    // of the landmark buckets so the per-frame path only looks up this
+    // small map; an actor outside the roster has no dot to ring.
+    actionBySlot = new Map();
+    for (const iv of actionIntervals(list)) {
+      const slot = slotOfSteam.get(String(iv.steamId || ''));
+      if (slot == null) continue;
+      const arr = actionBySlot.get(slot);
+      if (arr) arr.push(iv);
+      else actionBySlot.set(slot, [iv]);
     }
     // The bomb evidence bundle for bomb.js (dropped reconstruction +
     // planted round-end cleanup). One rebuild per setLandmarks call —
@@ -2115,6 +2142,26 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     ctx.stroke();
   }
 
+  // drawActionRing — the plant/defuse PROGRESS arc around a player dot:
+  // a partial arc from 12 o'clock sweeping CLOCKWISE by `progress` of a
+  // full turn, ROUND-capped (the first partial-arc stroke in this file —
+  // every other arc here is a full circle). The color names the ACTION:
+  // RED while planting, GREEN while defusing — never the player's side.
+  // No dark track under it: the arc sits at r+4, just inside the follow
+  // ring at r+5, and a full-circle underlay would paint over the
+  // followed player's amber ring. Pure function of (progress, action) —
+  // a scrub re-renders the same arc, nothing is sticky. The caller owns
+  // globalAlpha (the arc draws at full alpha).
+  function drawActionRing(x, y, radius, action, progress) {
+    ctx.lineCap = 'round';
+    ctx.lineWidth = ACTION_RING_W;
+    ctx.strokeStyle = action === 'defuse' ? ACTION_RING_DEFUSE : ACTION_RING_PLANT;
+    ctx.beginPath();
+    ctx.arc(x, y, radius, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
+    ctx.stroke();
+    ctx.lineCap = 'butt'; // restore the default for everything after it
+  }
+
   // drawDeaths — the death markers (spec 28): an X in the VICTIM's team
   // color where their dot was, drawn from the kill's tick until that
   // round's round_end (killEndTick — a pure function of tick + rows, so
@@ -2486,6 +2533,26 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
         ctx.beginPath();
         ctx.arc(c.x, c.y, r + 5, 0, Math.PI * 2);
         ctx.stroke();
+      }
+
+      // 31 — plant/defuse PROGRESS ring: while this player is arming
+      // the C4 (RED) or defusing (GREEN), a round-capped partial arc
+      // grows around the dot from 12 o'clock — a pure function of tick
+      // (bomb.js actionProgressAt over the setLandmarks intervals), so
+      // a scrub replays the same phase and nothing is sticky. Outside
+      // the attempt's [start, end) there is no arc at all; the interval
+      // itself is derived ONCE in setLandmarks from bomb.js
+      // actionIntervals (begin → completion | abort | round end). Drawn
+      // after the follow ring (r+4 sits inside the follow ring's r+5)
+      // and before the carried-C4 badge.
+      const actionIvs = actionBySlot.get(slot);
+      if (actionIvs) {
+        for (const iv of actionIvs) {
+          const p = actionProgressAt(iv, tick);
+          if (p == null) continue;
+          drawActionRing(c.x, c.y, ACTION_RING_R, iv.action, p);
+          break; // at most one live attempt per player
+        }
       }
 
       // 30 — carried-C4 BADGE: this slot's INVENTORY at the playhead

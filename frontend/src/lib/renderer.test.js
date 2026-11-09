@@ -19,7 +19,9 @@
 // LIGHTER flash overlay (peak 0.6, never solid
 // white) and the white talking bloom drawn BENEATH its dot, the
 // death-X-under-C4 layer order, the carried-C4 badge on the carrier's
-// dot and the thrower-side tint of the util flight line + icon, the
+// dot and the plant/defuse progress ring (a tick-pure, round-capped
+// partial arc on the ACTOR's dot — red while planting, green while
+// defusing), the thrower-side tint of the util flight line + icon, the
 // thrower-team tint of the lingering smoke area + its detonation bloom
 // ring (neutral gray when the thrower is unknown); a
 // crouch-size check; and the
@@ -4598,5 +4600,122 @@ test('util elevation marks: only the LANDED decoy is marked — never the in-fli
   assert.equal(landed[0].dir, 'above', '⊥ — the flat bar below the marker (entity above the level)');
   assert.ok(Math.abs(landed[0].x - c.x) < 1e-6, 'anchored to the decoy');
   assert.ok(landed[0].barY > c.y, '⊥ below the marker (entity above the level)');
+  r.destroy();
+});
+
+// --- plant/defuse progress rings on the player dot ---------------------------
+//
+// The intervals come from bomb.js actionIntervals (begin → completion |
+// abort | round end — grouped by the ACTOR's slot in setLandmarks) and
+// the arc from actionProgressAt, so it is a pure function of tick: a
+// scrub replays the same phase and nothing is sticky. RED while
+// planting, GREEN while defusing — the color names the ACTION, never
+// the player's side. Radius r+4 = 13 (inside the follow ring's r+5),
+// round-capped, sweeping clockwise from 12 o'clock.
+
+test('plant/defuse progress ring: red arc on the planter, growing, seek-safe', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2); // frames at ticks 0…1299, both slots alive
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, {
+    engine,
+    data,
+    players: [
+      { steamId: '1', name: 'alice', side: 'ct' },
+      { steamId: '2', name: 'bob', side: 't' },
+    ],
+  });
+  r.resize();
+  const mk = (ev) => normalizeEvent(ev, {});
+  r.setLandmarks([
+    mk({ id: 1, seq: 1, tick: 100, round: 1, kind: 'bomb_plant_begin', attacker: '1' }),
+    mk({ id: 2, seq: 2, tick: 300, round: 1, kind: 'bomb_plant', attacker: '1' }),
+    mk({ id: 3, seq: 3, tick: 600, round: 1, kind: 'bomb_defuse_start', attacker: '2' }),
+    mk({ id: 4, seq: 4, tick: 920, round: 1, kind: 'bomb_defuse', attacker: '2' }),
+  ]);
+  const at = (tick) => {
+    const mark = canvas.log.length;
+    engine.seekTick(tick);
+    r.draw();
+    return canvas.log.slice(mark);
+  };
+  const rings = (seq, color) =>
+    seq.filter((e) => e.op === 'arc' && e.strokeStyle === color && e.args[2] === 13);
+
+  // --- outside the window: nothing at all ---------------------------------
+  assert.equal(rings(at(50), '#ff4d4d').length, 0, 'no ring before the begin');
+  assert.equal(rings(at(100), '#ff4d4d').length, 0, 'the begin tick draws nothing (progress 0)');
+  assert.equal(rings(at(300), '#ff4d4d').length, 0, 'gone AT the completion');
+  assert.equal(rings(at(1000), '#ff4d4d').length, 0, 'no ring long after');
+
+  // --- inside: ONE red arc on the planter's dot ---------------------------
+  const half = rings(at(200), '#ff4d4d');
+  assert.equal(half.length, 1, 'one red ring — the planter’s, and only hers');
+  assert.equal(half[0].lineCap, 'round');
+  assert.equal(half[0].lineWidth, 3);
+  assert.equal(half[0].args[3], -Math.PI / 2, 'the sweep starts at 12 o’clock');
+  // 100 → 300: at 200 the attempt is exactly halfway → half a turn
+  assert.ok(Math.abs(half[0].args[4] - Math.PI / 2) < 1e-9, 'halfway = half a turn clockwise');
+  // …and the arc sits on HER dot (slot 0 draws at (10,10), slot 1 at
+  // (50,50) in synthStore — the ring center must match the dot's).
+  const dot = at(200).find((e) => e.op === 'arc' && e.fillStyle === '#5aa9e6' && e.args[2] === 9);
+  assert.ok(dot, "the planter's dot draws");
+  assert.equal(half[0].args[0], dot.args[0], 'ring centered on the planter’s dot X');
+  assert.equal(half[0].args[1], dot.args[1], 'ring centered on the planter’s dot Y');
+
+  // --- progress grows with the tick ----------------------------------------
+  const quarter = rings(at(150), '#ff4d4d');
+  assert.ok(Math.abs(quarter[0].args[4] - 0) < 1e-9, 'a quarter in = a quarter turn');
+  const threeQ = rings(at(250), '#ff4d4d');
+  assert.ok(Math.abs(threeQ[0].args[4] - Math.PI) < 1e-9, 'three quarters in = three quarters of a turn');
+  assert.ok(
+    quarter[0].args[4] < half[0].args[4] && half[0].args[4] < threeQ[0].args[4],
+    'the arc grows monotonically',
+  );
+
+  // --- seek-safe: the same tick always draws the same arc ------------------
+  assert.deepEqual(rings(at(200), '#ff4d4d')[0].args, half[0].args, 'a redraw at the same tick is identical');
+  assert.deepEqual(rings(at(150), '#ff4d4d')[0].args, quarter[0].args, 'scrubbing back replays the same phase');
+
+  // --- the defuse is GREEN, on the DEFUSER's dot ---------------------------
+  const green = rings(at(760), '#4caf7d');
+  assert.equal(green.length, 1, "one green ring — the defuser's");
+  // 600 → 920: at 760 exactly halfway → half a turn
+  assert.ok(Math.abs(green[0].args[4] - Math.PI / 2) < 1e-9, 'defuse progress is its own interval');
+  assert.notEqual(green[0].args[0], half[0].args[0], "on bob's dot, not alice's");
+  assert.equal(rings(at(760), '#ff4d4d').length, 0, 'alice’s plant ring is long over');
+  assert.equal(rings(at(60), '#4caf7d').length, 0, 'no green ring before the defuse starts');
+  assert.equal(rings(at(920), '#4caf7d').length, 0, 'gone AT the defuse completion');
+  r.destroy();
+});
+
+test('an aborted attempt’s ring stops at the abort tick (no completion)', () => {
+  headlessGlobals();
+  const data = synthStore(400, 1);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, {
+    engine,
+    data,
+    players: [{ steamId: '1', name: 'alice', side: 'ct' }],
+  });
+  r.resize();
+  const mk = (ev) => normalizeEvent(ev, {});
+  r.setLandmarks([
+    mk({ id: 1, seq: 1, tick: 100, round: 1, kind: 'bomb_plant_begin', attacker: '1' }),
+    mk({ id: 2, seq: 2, tick: 150, round: 1, kind: 'bomb_plant_abort', attacker: '1' }),
+  ]);
+  const at = (tick) => {
+    const mark = canvas.log.length;
+    engine.seekTick(tick);
+    r.draw();
+    return canvas.log
+      .slice(mark)
+      .filter((e) => e.op === 'arc' && e.strokeStyle === '#ff4d4d' && e.args[2] === 13);
+  };
+  assert.equal(at(149).length, 1, 'the ring grows until the cancel');
+  assert.equal(at(150).length, 0, 'gone AT the abort — a cancelled plant never reads as complete');
+  assert.equal(at(250).length, 0, 'and it never comes back');
   r.destroy();
 });

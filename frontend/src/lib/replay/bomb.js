@@ -17,7 +17,16 @@
 //
 //   2. bombEvidenceAt — the DROPPED-C4 reconstruction rule (below).
 //
-// Both are pure functions over pre-bucketed landmark rows (lib/replay/
+//   3. actionIntervals / actionProgressAt — the plant/defuse ATTEMPT
+//                      lifecycle (below): begin → completion | abort |
+//                      round-end fallback, the one interval rule behind
+//                      the renderer's progress rings (and the row
+//                      taxonomy ACTION_KINDS that the sfx cue points
+//                      read). Sibling of bombEndTick, never a part of it
+//                      — that one is the PLANTED-MARKER lifetime, this
+//                      one is the ARMING/DEFUSING window.
+//
+// All are pure functions over pre-bucketed landmark rows (lib/replay/
 // landmarks.js normalizeEvent output: kind / round / tick plus x/y/z
 // aliased from the stored posX/posY/posZ). The renderer's world layers
 // (drawBomb's planted + dropped markers) and the smart camera's bomb
@@ -162,4 +171,153 @@ export function bombEvidenceAt(ev, tick) {
   // Branch 2: still on the ground in a live round — the drop position.
   if (!hasBombPos(d)) return null; // branch 3: no evidence → unknown
   return { state: 'dropped', row: d, x: d.x, y: d.y, z: d.z ?? null };
+}
+
+// --- plant/defuse attempt lifecycle -----------------------------------------
+
+// ACTION_KINDS — THE taxonomy of the plant/defuse ATTEMPT events: which
+// typed kind OPENS, COMPLETES and CANCELS each action. One home for the
+// three-way mapping: actionIntervals below and the sfx cue points
+// (sfx.js bombActionCues) both read it, so the renderer's rings and the
+// sounds can never disagree about which row is which. The kinds mirror
+// models.EventKind — the extractor stores them from demoinfocs'
+// entity-derived mimic events (CS2.md "demoinfocs v6 plant/defuse
+// ATTEMPT events": cancels are directly detectable, 0 attempts across
+// the golden pool saw both an abort and a completion).
+export const ACTION_KINDS = {
+  plant: { begin: 'bomb_plant_begin', complete: 'bomb_plant', abort: 'bomb_plant_abort' },
+  defuse: { begin: 'bomb_defuse_start', complete: 'bomb_defuse', abort: 'bomb_defuse_abort' },
+};
+
+// actionActor — a lifecycle row's actor key (the planter/defuser's
+// SteamID). Every row carries it on `attacker` (normalizeEvent blanks
+// `steamId` only for the COMPLETED bomb-entity rows, and those keep
+// `attacker` through the spread), which is what ties an attempt to the
+// dot its ring surrounds. '' = unknown: never guessed, and never a veto
+// on its own (the absent-data rule of landmarks.sameUtilityWeapon).
+function actionActor(row) {
+  return String((row && (row.attacker || row.steamId)) || '');
+}
+
+// actionIntervals — THE plant/defuse ATTEMPT interval rule (sibling of
+// bombEndTick, which is the PLANTED-MARKER lifetime — never a part of
+// it). For every begin row, end = the earliest COMPLETION inside the
+// attempt window — a completed plant/defuse always wins, completion
+// overrides any cancel (the spec's rule) — else the earliest ABORT in
+// the window, else the round-end fallback: that round's round_end at or
+// after the begin, else the next round_start (the SAME evidence rows
+// bombEndTick / killEndTick consume; 1 of 92 plant attempts on the
+// golden pool emitted neither an abort nor a completion and must not
+// ring forever). With no round rows loaded the attempt is DROPPED — no
+// invented duration. The window is [begin, the next begin of the same
+// action): everything after the next attempt's begin belongs to that
+// attempt, so the fallback end is capped there too ('next-begin'). A
+// close whose actor differs from the begin's never closes it, and an
+// attempt that closes at/before its own begin (zero span) is dropped —
+// progress would be undefined.
+//
+// Returns [{action, start, end, closedBy, steamId, round}] with
+// start < end, in begin-tick order. Pure — unit-tested by
+// src/lib/bomb.test.js; consumed by renderer.js setLandmarks (rings).
+export function actionIntervals(rows) {
+  const out = [];
+  if (!Array.isArray(rows) || rows.length === 0) return out;
+  const begins = { plant: [], defuse: [] };
+  const closes = { plant: [], defuse: [] };
+  const roundEnds = [];
+  const roundStarts = [];
+  for (const r of rows) {
+    if (!r || !Number.isFinite(r.tick)) continue;
+    const kind = String(r.kind || '');
+    let family = null;
+    for (const action of ['plant', 'defuse']) {
+      const k = ACTION_KINDS[action];
+      if (kind === k.begin || kind === k.complete || kind === k.abort) {
+        family = action;
+        break;
+      }
+    }
+    if (family) {
+      const k = ACTION_KINDS[family];
+      if (kind === k.begin) begins[family].push(r);
+      else closes[family].push(r);
+    } else if (kind === 'round_end') {
+      roundEnds.push(r);
+    } else if (kind === 'round_start') {
+      roundStarts.push(r);
+    }
+  }
+  const byTick = (a, b) => a.tick - b.tick;
+  for (const action of ['plant', 'defuse']) {
+    const k = ACTION_KINDS[action];
+    const bs = begins[action].slice().sort(byTick);
+    const cs = closes[action].slice().sort(byTick);
+    bs.forEach((b, i) => {
+      const windowEnd = i + 1 < bs.length ? bs[i + 1].tick : Infinity;
+      const actor = actionActor(b);
+      let completion = null;
+      let abort = null;
+      for (const c of cs) {
+        if (c.tick < b.tick || c.tick >= windowEnd) continue;
+        const ca = actionActor(c);
+        if (ca && actor && ca !== actor) continue; // another player's close
+        if (c.kind === k.complete) {
+          if (!completion || c.tick < completion.tick) completion = c;
+        } else if (!abort || c.tick < abort.tick) {
+          abort = c;
+        }
+      }
+      let end = null;
+      let closedBy = '';
+      if (completion) {
+        end = completion.tick;
+        closedBy = 'complete';
+      } else if (abort) {
+        end = abort.tick;
+        closedBy = 'abort';
+      } else {
+        for (const r of roundEnds) {
+          if (r.round === b.round && r.tick >= b.tick && (end === null || r.tick < end)) end = r.tick;
+        }
+        if (end === null) {
+          for (const s of roundStarts) {
+            if (s.tick > b.tick && (end === null || s.tick < end)) end = s.tick;
+          }
+        }
+        closedBy = 'round';
+        if (end !== null && windowEnd !== Infinity && end > windowEnd) {
+          end = windowEnd; // the next attempt's begin bounds this one
+          closedBy = 'next-begin';
+        }
+      }
+      if (end === null || !(end > b.tick)) return; // no evidence → no ring
+      out.push({
+        action,
+        start: b.tick,
+        end,
+        closedBy,
+        steamId: actor,
+        round: b.round,
+      });
+    });
+  }
+  out.sort((a, b) => a.start - b.start);
+  return out;
+}
+
+// actionProgressAt — the ring's fraction at `tick`: (tick − start) /
+// (end − start), or null OUTSIDE the interval. Open at the end: the
+// attempt is over AT its end tick (a finished plant is no longer
+// planting, an aborted one is no longer arming), so the ring disappears
+// the moment the attempt resolves — a pure function of tick, seek-safe
+// like every other renderer layer. Range is (0, 1): the begin tick
+// itself draws nothing (a zero-length arc with a round cap would be a
+// dot, and progress 0 has nothing to show).
+export function actionProgressAt(interval, tick) {
+  if (!interval || !Number.isFinite(tick)) return null;
+  const start = interval.start;
+  const end = interval.end;
+  if (!Number.isFinite(start) || !Number.isFinite(end) || !(end > start)) return null;
+  if (tick <= start || tick >= end) return null;
+  return (tick - start) / (end - start);
 }

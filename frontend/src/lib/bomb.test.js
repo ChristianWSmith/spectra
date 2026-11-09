@@ -1,12 +1,21 @@
 // Tests for the canonical bomb lifecycle module (lib/replay/bomb.js):
-// the planted-C4 visibility rule (round-end cleanup — item 13) and the
-// dropped-C4 reconstruction rule (evidence → position at a tick).
+// the planted-C4 visibility rule (round-end cleanup — item 13), the
+// dropped-C4 reconstruction rule (evidence → position at a tick) and
+// the plant/defuse ATTEMPT intervals (begin → completion | abort |
+// round end — the one rule behind the renderer's progress rings).
 // Run: node --test src/lib/bomb.test.js   (from frontend/; the lib test
 // glob src/lib/*.test.js picks it up too).
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { hasBombPos, bombEndTick, bombEvidenceAt } from './replay/bomb.js';
+import {
+  hasBombPos,
+  bombEndTick,
+  bombEvidenceAt,
+  ACTION_KINDS,
+  actionIntervals,
+  actionProgressAt,
+} from './replay/bomb.js';
 
 // Row factories — the normalized landmark-row shape (kind/round/tick
 // plus x/y aliased from the stored positions; missing evidence = null).
@@ -231,4 +240,164 @@ test('hasBombPos: finite x/y only', () => {
   assert.equal(hasBombPos({ x: null, y: 2 }), false);
   assert.equal(hasBombPos({ x: NaN, y: 2 }), false);
   assert.equal(hasBombPos(null), false);
+});
+
+// --- actionIntervals / actionProgressAt: the plant/defuse ATTEMPT lifecycle --
+
+// Lifecycle row factories (the normalized landmark shape: kind, round,
+// tick, attacker — normalizeEvent blanks `steamId` on the COMPLETED
+// bomb-entity rows but keeps `attacker`, which is what ties the attempt
+// to the dot its ring surrounds).
+const pBegin = (tick, round = 7, attacker = '1') => ({ kind: 'bomb_plant_begin', tick, round, attacker });
+const pAbort = (tick, round = 7, attacker = '1') => ({ kind: 'bomb_plant_abort', tick, round, attacker });
+const planted = (tick, round = 7, attacker = '1') => ({ kind: 'bomb_plant', tick, round, attacker });
+const dStart = (tick, round = 7, attacker = '2') => ({ kind: 'bomb_defuse_start', tick, round, attacker });
+const dAbort = (tick, round = 7, attacker = '2') => ({ kind: 'bomb_defuse_abort', tick, round, attacker });
+const defused = (tick, round = 7, attacker = '2') => ({ kind: 'bomb_defuse', tick, round, attacker });
+
+test('ACTION_KINDS is the one begin/complete/abort kind taxonomy', () => {
+  assert.deepEqual(ACTION_KINDS, {
+    plant: { begin: 'bomb_plant_begin', complete: 'bomb_plant', abort: 'bomb_plant_abort' },
+    defuse: { begin: 'bomb_defuse_start', complete: 'bomb_defuse', abort: 'bomb_defuse_abort' },
+  });
+});
+
+test('actionIntervals: a begin closes at its COMPLETION (the golden shape)', () => {
+  // Every plant on the golden pool is begin → +200 ticks → bomb_plant.
+  const ivs = actionIntervals([pBegin(100), planted(300)]);
+  assert.equal(ivs.length, 1);
+  assert.deepEqual({ ...ivs[0] }, {
+    action: 'plant', start: 100, end: 300, closedBy: 'complete', steamId: '1', round: 7,
+  });
+  // …and the defuse family closes the same way (10 s / 5 s rows).
+  const d = actionIntervals([dStart(1000), defused(1640)]);
+  assert.equal(d.length, 1);
+  assert.equal(d[0].action, 'defuse');
+  assert.equal(d[0].end, 1640);
+  assert.equal(d[0].closedBy, 'complete');
+});
+
+test('actionIntervals: an ABORT closes the attempt (cancels are direct)', () => {
+  const ivs = actionIntervals([pBegin(100), pAbort(112)]);
+  assert.equal(ivs.length, 1);
+  assert.equal(ivs[0].closedBy, 'abort');
+  assert.equal(ivs[0].end, 112);
+  const d = actionIntervals([dStart(500), dAbort(515)]);
+  assert.equal(d[0].closedBy, 'abort');
+  assert.equal(d[0].end, 515);
+});
+
+test('actionIntervals: a COMPLETION overrides any cancel in the window', () => {
+  // The spec's precedence — completion always wins, whatever the cancel
+  // detection says (defensive: the golden pool never sees both).
+  const ivs = actionIntervals([pBegin(100), pAbort(150), planted(300)]);
+  assert.equal(ivs.length, 1);
+  assert.equal(ivs[0].closedBy, 'complete');
+  assert.equal(ivs[0].end, 300);
+  // …and an abort AFTER the completion is not this attempt's close.
+  const after = actionIntervals([pBegin(100), planted(300), pAbort(400)]);
+  assert.equal(after[0].end, 300);
+  assert.equal(after[0].closedBy, 'complete');
+});
+
+test('actionIntervals: the window ends at the NEXT begin of the same action', () => {
+  // A second attempt owns everything after its own begin: the first
+  // attempt never closed, so it is bounded by the next begin (not by
+  // the round end that comes later).
+  const ivs = actionIntervals([
+    pBegin(100), pBegin(400), planted(600), roundEnd(800), roundStart(900),
+  ]);
+  assert.equal(ivs.length, 2);
+  assert.deepEqual(
+    [ivs[0].start, ivs[0].end, ivs[0].closedBy],
+    [100, 400, 'next-begin'],
+  );
+  assert.deepEqual(
+    [ivs[1].start, ivs[1].end, ivs[1].closedBy],
+    [400, 600, 'complete'],
+  );
+  // A defuse attempt between two plant attempts never bounds a plant
+  // (and, with no close and no round rows, is dropped itself).
+  const mixed = actionIntervals([pBegin(100), dStart(200), planted(300)]);
+  assert.equal(mixed.length, 1);
+  assert.equal(mixed[0].action, 'plant');
+  assert.equal(mixed[0].end, 300);
+});
+
+test('actionIntervals: an attempt with no close falls back to its round end', () => {
+  // The one golden-pool shape that emits neither an abort nor a
+  // completion (de_ancient 80055): the attempt must stop at the round,
+  // never ring forever and never invent a duration.
+  const ivs = actionIntervals([pBegin(100), roundEnd(1500), roundStart(1600)]);
+  assert.equal(ivs.length, 1);
+  assert.equal(ivs[0].closedBy, 'round');
+  assert.equal(ivs[0].end, 1500);
+  // The NEXT round's start is the fallback when its round_end is not
+  // loaded (the same evidence bombEndTick/killEndTick consume).
+  const noEnd = actionIntervals([pBegin(100), roundStart(1600)]);
+  assert.equal(noEnd[0].end, 1600);
+  // Another round's round_end never closes this attempt.
+  const other = actionIntervals([pBegin(100, 7), roundEnd(500, 6)]);
+  assert.deepEqual(other, []);
+  // With NO round rows loaded at all the attempt is DROPPED: no
+  // evidence → no interval, never a guessed duration.
+  assert.deepEqual(actionIntervals([pBegin(100)]), []);
+});
+
+test('actionIntervals: another player’s close never closes the attempt', () => {
+  // A defuser's abort must not terminate a planter's attempt even
+  // though both are 'close' rows of the same window.
+  const ivs = actionIntervals([pBegin(100, 7, '1'), dAbort(150, 7, '2'), roundEnd(1500)]);
+  assert.equal(ivs.length, 1);
+  assert.equal(ivs[0].closedBy, 'round');
+  // An ABSENT actor never vetoes (the same rule as sameUtilityWeapon).
+  const unknown = actionIntervals([pBegin(100, 7, '1'), planted(300, 7, '')]);
+  assert.equal(unknown[0].closedBy, 'complete');
+  // The interval's actor comes from the BEGIN row — the completed
+  // plant's blank steamId must not lose the dot it rings.
+  assert.equal(unknown[0].steamId, '1');
+});
+
+test('actionIntervals: only real attempts — junk, zero spans and foreign rows', () => {
+  // Unrelated rows make no intervals at all.
+  assert.deepEqual(actionIntervals([]), []);
+  assert.deepEqual(actionIntervals(null), []);
+  assert.deepEqual(
+    actionIntervals([
+      { kind: 'kill', tick: 10, round: 1 },
+      { kind: 'grenade', tick: 20, round: 1 },
+      { kind: 'bomb_explode', tick: 30, round: 1 },
+      { kind: 'round_end', tick: 40, round: 1 },
+    ]),
+    [],
+  );
+  // A close on the begin's OWN tick is a zero span — dropped (progress
+  // would be undefined), never a NaN interval.
+  assert.deepEqual(actionIntervals([pBegin(100), pAbort(100), roundEnd(1500)]), []);
+  // A completion without any begin is not an attempt (0 on the pool).
+  assert.deepEqual(actionIntervals([planted(300), roundEnd(1500)]), []);
+  // Rows with a non-finite tick are ignored.
+  assert.deepEqual(actionIntervals([pBegin(NaN), roundEnd(1500)]), []);
+});
+
+test('actionProgressAt: (tick − start)/(end − start), null outside the window', () => {
+  const [iv] = actionIntervals([pBegin(100), planted(300)]);
+  assert.equal(actionProgressAt(iv, 100), null); // the begin tick draws nothing
+  assert.equal(actionProgressAt(iv, 200), 0.5);
+  assert.equal(actionProgressAt(iv, 299), 0.995);
+  assert.equal(actionProgressAt(iv, 300), null); // over AT the completion
+  assert.equal(actionProgressAt(iv, 50), null); // before the begin
+  assert.equal(actionProgressAt(iv, 1000), null); // long after
+  // Monotonic inside the window — a scrub replays the same phase.
+  let prev = 0;
+  for (let t = 101; t < 300; t++) {
+    const p = actionProgressAt(iv, t);
+    assert.ok(p > prev, `progress at ${t} (${p}) must grow past ${prev}`);
+    prev = p;
+  }
+  // Hostile input never produces a number.
+  assert.equal(actionProgressAt(null, 150), null);
+  assert.equal(actionProgressAt(iv, NaN), null);
+  assert.equal(actionProgressAt({ start: 200, end: 100 }, 150), null);
+  assert.equal(actionProgressAt({ start: 100, end: 100 }, 150), null);
 });
