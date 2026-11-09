@@ -124,21 +124,37 @@ function sideClassOf(side) {
   return side === 'ct' ? 'side-ct' : side === 't' ? 'side-t' : '';
 }
 
+// playerSideAt resolves the SIDE a player had in one round — 'ct' | 't',
+// or '' when either step is unknown (never a guessed side): the exact
+// name lookup (resolveSide above) first, then the canonical round parity
+// (sideparity.sideAtRound) maps the round number through the counted-
+// round eras. This is THE side VALUE behind both the per-round color
+// (playerSideClassAt below) and the chat tag (fmt.chatTag via fmt.chatLine
+// — `[T]`/`[CT]` name the speaker's SIDE, Terrorist/CT), so a row's color
+// and its tag can never disagree.
+export function playerSideAt(players, sideSwitches, rounds, roundNumber, steamId, name) {
+  const side = resolveSide(players, steamId, name);
+  if (!side) return '';
+  return sideAtRound(rounds, sideSwitches, roundNumber, side) || '';
+}
+
 // playerSideClassAt resolves ONE PER-ROUND name surface (a round's MVP,
 // first blood, kill row, thrower) to the color of the side that player
-// had IN THAT ROUND — the round-scoped twin of playerStartClass above:
-// same name lookup, then sideparity.sideAtRound maps the round number
-// through the counted-round eras. When the round cannot be resolved
-// (no rounds list yet) it falls back to the per-MATCH start-side color —
-// the aggregate color, never a guessed side for this round; an
-// unresolvable player yields ''. The classes are the side spellings
-// (`.side-ct` / `.side-t`), so they read against the side chips in the
-// same row rather than against a team's identity color.
+// had IN THAT ROUND — the round-scoped twin of playerStartClass above,
+// built on the same side VALUE as playerSideAt: same name lookup, then
+// sideparity.sideAtRound maps the round number through the counted-round
+// eras. When the round cannot be resolved (no rounds list yet) it falls
+// back to the per-MATCH start-side color — the aggregate color, never a
+// guessed side for this round; an unresolvable player yields ''. The
+// classes are the side spellings (`.side-ct` / `.side-t`), so they read
+// against the side chips in the same row rather than against a team's
+// identity color. (The chat TAG takes no start-side fallback: a label
+// never shows a side the round didn't resolve — fmt.chatTag gets '' and
+// renders no bracket.)
 export function playerSideClassAt(players, sideSwitches, rounds, roundNumber, steamId, name) {
-  const side = resolveSide(players, steamId, name);
-  const at = sideAtRound(rounds, sideSwitches, roundNumber, side);
+  const at = playerSideAt(players, sideSwitches, rounds, roundNumber, steamId, name);
   // Round resolved → this round's SIDE color; otherwise the per-MATCH
   // start-side color (the surface's aggregate look — still never a guess
   // of this round's side); unknown player → ''.
-  return sideClassOf(at) || teamStartClass(side, sideSwitches);
+  return sideClassOf(at) || teamStartClass(resolveSide(players, steamId, name), sideSwitches);
 }

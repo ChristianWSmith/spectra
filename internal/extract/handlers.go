@@ -495,13 +495,41 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 		a.disconnect(p.GameState().IngameTick(), playerKey(e.Player), e.Player.Name)
 	})
 
-	p.RegisterEventHandler(func(e events.ChatMessage) {
-		steam, name := "", ""
-		if e.Sender != nil {
-			steam = keyStr(playerKey(e.Sender))
-			name = e.Sender.Name
+	// Player chat is read from SayText2, NOT from events.ChatMessage:
+	// SayText2 carries MsgName — the ONLY channel signal (all vs team) —
+	// and is dispatched UNCONDITIONALLY for every chat message, while
+	// demoinfocs synthesizes ChatMessage only for the all-chat MsgNames
+	// and DROPS the team ones (Cstrike_Chat_T_Loc/CT_Loc/T_Dead/CT_Dead
+	// fall through to an empty case in net_messages.go). Handling both
+	// would double every all-chat row (ChatMessage has a single dispatch
+	// site, inside SayText2's handler — same message, same tick), so this
+	// handler is THE one chat source: one row per message, no duplicates.
+	// The encrypted-MM path re-dispatches the decrypted inner message
+	// through the same dispatcher, so channel decoding works there too.
+	p.RegisterEventHandler(func(e events.SayText2) {
+		channel := chatChannel(e.MsgName)
+		if channel == "" {
+			return // not chat — coach join, name change, … (never a row)
 		}
-		a.chat(p.GameState().IngameTick(), steam, name, e.Text)
+		// Sender lookup mirrors demoinfocs' own ChatMessage dispatch
+		// (playersByEntityID[EntIdx] — exposed publicly as
+		// Participants().ByEntityID()); an unresolvable sender keeps the
+		// empty steam/name exactly as before, never a guessed identity.
+		steam, name := "", ""
+		if pl := p.GameState().Participants().ByEntityID()[e.EntIdx]; pl != nil {
+			steam = keyStr(playerKey(pl))
+			name = pl.Name
+		}
+		// Text = Param2 — the same parameter demoinfocs passes as
+		// ChatMessage.Text. The census over golden/*.dem.zst found no
+		// "*DEAD*"/"*SPEC*" decoration in Params (the client adds those
+		// via localization, not in the wire text), so nothing is stripped:
+		// the message is stored exactly as the game sent it.
+		text := ""
+		if len(e.Params) > 1 {
+			text = e.Params[1]
+		}
+		a.chat(p.GameState().IngameTick(), steam, name, text, channel)
 	})
 
 	p.RegisterEventHandler(func(e events.SayText) {
@@ -514,6 +542,26 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 		}
 		a.rankUpdate(playerKey(e.Player), e.Player.Name, e.RankNew, e.WinCount)
 	})
+}
+
+// chatChannel maps a SayText2 MsgName onto the chat channel stored per
+// row (models.Chat.Channel): "all" | "team" | "" (not chat). The MsgName
+// vocabulary is the one demoinfocs switches on in net_messages.go —
+// all-chat (incl. its spectator/dead variants) reads [ALL] downstream;
+// the team-chat MsgNames read the SPECTATOR-free speaker's side instead
+// (the frontend/report tag [T]/[CT]). Anything else (coach join, name
+// change, …) returns "" and never becomes a chat row. The golden-pool
+// census (golden/*.dem.zst) observed ONLY Cstrike_Chat_All and
+// Cstrike_Chat_AllDead — no team MsgName appears in any of them.
+func chatChannel(msgName string) string {
+	switch msgName {
+	case "Cstrike_Chat_All", "Cstrike_Chat_AllSpec", "Cstrike_Chat_AllDead":
+		return "all"
+	case "Cstrike_Chat_T_Loc", "Cstrike_Chat_CT_Loc", "Cstrike_Chat_T_Dead", "Cstrike_Chat_CT_Dead":
+		return "team"
+	default:
+		return ""
+	}
 }
 
 // blastFor converts a grenade detonation event into blastInfo.

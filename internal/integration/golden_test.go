@@ -332,6 +332,18 @@ func TestGolden(t *testing.T) {
 	// regeneration cannot silently commit a shifted baseline.
 	assertSafetyNets(t, &got)
 
+	// Chat channel capture (SayText2 MsgName): the golden pool carries ONLY
+	// all-chat MsgNames (Cstrike_Chat_All/_AllDead — golden-pool MsgName
+	// census), so every chat row must be kind "chat" with channel "all".
+	// Together with the fixture's chat count (34) this is also the
+	// no-duplication pin: exactly one row per SayText2 message — a second
+	// consumer (the removed events.ChatMessage handler) would double both.
+	for i, c := range m.Chat {
+		if c.Kind != "chat" || c.Channel != "all" {
+			t.Errorf("chat[%d] kind/channel = %q/%q, want chat/all", i, c.Kind, c.Channel)
+		}
+	}
+
 	// M3 analytics pass over the same extract (always — its safety nets
 	// hold in both update and verify mode).
 	gotAnalytics := runGoldenAnalytics(t, m)

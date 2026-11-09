@@ -21,11 +21,18 @@
   //                  (CompareRounds' compact sequence) the legacy tick
   //                  cell renders unchanged
   //   tickRate     — match tick rate for the time cell (0 → 64 via fmt)
+  //   players, sideSwitches, rounds — optional side inputs for chat rows'
+  //                  channel tag (fmt.chatTag + teams.playerSideAt): the
+  //                  [ALL]/[T]/[CT] bracket after the speaker's name.
+  //                  Without them (CompareRounds' compact sequence) team
+  //                  chat shows NO bracket rather than a guessed side —
+  //                  the row's generic contract stays intact.
   //   onselect     — click the row (Replay's detail pane)
   //   onseek       — click ▶ (seek to the row's tick)
   import { categoryById } from '../replay/landmarks.js';
   import { roundIndexLabel } from '../rounds.js';
-  import { roundClock } from '../fmt.js';
+  import { roundClock, chatTag } from '../fmt.js';
+  import { playerSideAt } from '../teams.js';
   import ProfileLink from './ProfileLink.svelte';
 
   let {
@@ -36,6 +43,9 @@
     resolveSteam = null,
     roundByNumber = null,
     tickRate = 0,
+    players = null,
+    sideSwitches = 0,
+    rounds = null,
     onselect = () => {},
     onseek = () => {},
   } = $props();
@@ -60,6 +70,18 @@
     if (row.source === 'generic' && row.who && row.label) return row.label;
     return '';
   });
+
+  // The chat row's channel tag — the bracket of THE chat display rule
+  // (fmt.chatTag): '[ALL]' for all chat regardless of who spoke; for team
+  // chat the SPEAKER'S SIDE at this round ('[T]'/'[CT]' — teams.playerSideAt,
+  // the same side VALUE the name color would use, so color and tag can
+  // never disagree). Unresolved side / no side inputs → '' (no bracket,
+  // never a guess); system rows (channel '') never get one.
+  const chatTagText = $derived(
+    row.source === 'chat'
+      ? chatTag(row.channel || '', playerSideAt(players, sideSwitches, rounds, row.round, row.steamId, row.who))
+      : '',
+  );
 
   // The row's main hit area is a role=button DIV, not a <button>: the
   // primary text carries ProfileLinks (real buttons), and interactive
@@ -109,7 +131,10 @@
       {row.kind}
     {/if}
   {:else if row.source === 'chat'}
-    {@render person(row.steamId, row.who)}: {row.label}
+    <!-- THE chat display rule: linked name, channel/side tag, ': ' + text
+         (fmt.chatTag — [ALL] always, [T]/[CT] only for team chat with a
+         resolved side; no tag → the legacy `name: text` line). -->
+    {@render person(row.steamId, row.who)}{#if chatTagText}{' '}{chatTagText}{/if}: {row.label}
   {:else if row.who}
     <!-- Generic rows carry no id — link only when the caller's resolver
          returns one, else ProfileLink renders the plain name. -->

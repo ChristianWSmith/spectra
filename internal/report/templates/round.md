@@ -21,9 +21,9 @@
 {{end}}
 ## Chat
 
-| Tick | Name | Text |
-| --- | --- | --- |
-{{range .Detail.Chat}}| {{.Tick}} | {{.Name}} | {{.Text}} |
+| Tick | Name | Channel | Text |
+| --- | --- | --- | --- |
+{{range .Detail.Chat}}| {{.Tick}} | {{.Name}} | {{if eq .Channel "all"}}[ALL]{{else if eq .Channel "team"}}TEAM{{end}} | {{.Text}} |
 {{end}}
 ---
 

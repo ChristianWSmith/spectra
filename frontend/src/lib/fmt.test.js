@@ -20,6 +20,8 @@ import {
   fmtDate,
   normTickRate,
   chatClock,
+  chatTag,
+  chatLine,
   roundClock,
 } from './fmt.js';
 
@@ -297,6 +299,46 @@ test('chatClock: falls back to the match-relative clock (never negative)', () =>
   assert.equal(chatClock({ round: 9, tick: 640 }, ROUND_MAP, 64), '0:10');
   // Missing round lookup entirely.
   assert.equal(chatClock({ round: 1, tick: 6960 }, undefined, 64), '1:49');
+});
+
+// --- chat tags / lines (chatTag / chatLine) --------------------------------
+// THE chat display rule, pinned by the owner's semantics: the bracket is
+// a CHANNEL tag for all chat and a SIDE tag for team chat.
+//   all  → [ALL] regardless of who spoke;
+//   team → the SPEAKER'S SIDE at that round: [T] = Terrorist, [CT] = CT.
+// System/unknown channel or an unresolved side → NO bracket (never guess).
+
+test('chatTag: all chat reads [ALL] for both sides', () => {
+  assert.equal(chatTag('all', 'ct'), '[ALL]'); // a CT speaking in ALL chat
+  assert.equal(chatTag('all', 't'), '[ALL]'); // a T speaking in ALL chat
+  assert.equal(chatTag('all', ''), '[ALL]'); // side not even needed
+});
+
+test('chatTag: team chat tags the SPEAKER\'S SIDE — [CT] for a CT, [T] for a T', () => {
+  assert.equal(chatTag('team', 'ct'), '[CT]'); // CT in team chat → [CT]
+  assert.equal(chatTag('team', 't'), '[T]'); // T in team chat → [T]
+  // Case-insensitive on the side value, but the SPELLING is uppercase.
+  assert.equal(chatTag('team', 'T'), '[T]');
+  assert.equal(chatTag('team', 'CT'), '[CT]');
+});
+
+test('chatTag: system/unknown channel or unresolved side → no bracket', () => {
+  assert.equal(chatTag('', 'ct'), ''); // system row — plain, no bracket
+  assert.equal(chatTag('team', ''), ''); // team chat, side unknown → NEVER guess
+  assert.equal(chatTag('team', null), '');
+  assert.equal(chatTag('saytext', 't'), ''); // unknown channel
+  assert.equal(chatTag(undefined, undefined), '');
+});
+
+test('chatLine: composes name + tag + ": " + text (THE display rule)', () => {
+  assert.equal(chatLine('donk666', 'all', 'ct', 'lol'), 'donk666 [ALL]: lol');
+  assert.equal(chatLine('donk666', 'all', 't', 'lol'), 'donk666 [ALL]: lol');
+  assert.equal(chatLine('donk666', 'team', 't', 'lol'), 'donk666 [T]: lol');
+  assert.equal(chatLine('donk666', 'team', 'ct', 'lol'), 'donk666 [CT]: lol');
+  // Unresolved team side → the line still reads, bracket-less.
+  assert.equal(chatLine('donk666', 'team', '', 'lol'), 'donk666: lol');
+  // System row (no name, no channel) → plain text — no bracket, no colon.
+  assert.equal(chatLine('', '', '', 'Match is live'), 'Match is live');
 });
 
 test('roundClock: renders time into the given round', () => {

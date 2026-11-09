@@ -219,7 +219,7 @@ const (
 	// chatCols is the chat row WITHOUT match_id; the reader additionally
 	// selects `id, ` + it + `, decrypted` (decrypted is M4 provenance with
 	// a column default — no writer names it).
-	chatCols = `tick, round, steam_id, name, text, kind`
+	chatCols = `tick, round, steam_id, name, text, kind, channel`
 )
 
 // SaveExtracted persists a complete extract output for one match in a
@@ -373,14 +373,14 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 	}
 
 	chatStmt, err := tx.Prepare(
-		`INSERT INTO chat (match_id, ` + chatCols + `) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		`INSERT INTO chat (match_id, ` + chatCols + `) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
 		return fmt.Errorf("store: save extracted: %w", err)
 	}
 	defer chatStmt.Close()
 	for _, c := range em.Chat {
-		if _, err := chatStmt.Exec(matchID, c.Tick, c.Round, scrub(c.SteamID), scrub(c.Name), scrub(c.Text), scrub(c.Kind)); err != nil {
+		if _, err := chatStmt.Exec(matchID, c.Tick, c.Round, scrub(c.SteamID), scrub(c.Name), scrub(c.Text), scrub(c.Kind), scrub(c.Channel)); err != nil {
 			return fmt.Errorf("store: save extracted: chat: %w", err)
 		}
 	}

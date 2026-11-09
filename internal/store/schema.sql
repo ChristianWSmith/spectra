@@ -233,6 +233,10 @@ CREATE TABLE IF NOT EXISTS chat (
 	name TEXT NOT NULL DEFAULT '',
 	text TEXT NOT NULL DEFAULT '',
 	kind TEXT NOT NULL DEFAULT '',
+	-- Chat channel: 'all' ([ALL]) | 'team' (speaker's side [T]/[CT]) |
+	-- '' for system rows / unknown — the channel signal demoinfocs
+	-- discards from events.ChatMessage but keeps on SayText2.MsgName.
+	channel TEXT NOT NULL DEFAULT '',
 	-- Decryption provenance: v1 always writes decrypted=0 — the
 	-- extractor cannot distinguish demoinfocs-decrypted rows from
 	-- plaintext ones (decryption dispatches inner messages as ordinary

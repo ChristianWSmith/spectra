@@ -72,6 +72,14 @@ func seedMatch(t *testing.T, st *store.Store) int64 {
 		{Tick: 100, Round: 1, Kind: "kill", Attacker: "A00", Victim: "A05", Weapon: "ak47", Headshot: true, Dmg: 100},
 		{Tick: 120, Round: 1, Kind: "damage", Attacker: "A05", Victim: "A00", Weapon: "glock", Dmg: 30},
 	}
+	// Chat in round 2 (the round the report test renders): one all-chat,
+	// one team-chat and one system row — pins the Channel column spellings
+	// ([ALL] / TEAM / empty) end to end through SaveExtracted → GetRoundDetail.
+	em.Chat = []models.Chat{
+		{Tick: 810, Round: 2, SteamID: "A00", Name: "player0", Text: "gl hf", Kind: "chat", Channel: "all"},
+		{Tick: 820, Round: 2, SteamID: "A05", Name: "player5", Text: "b long", Kind: "chat", Channel: "team"},
+		{Tick: 830, Round: 2, Text: "Match is live", Kind: "system"},
+	}
 	em.Warnings = []string{"fixture warning"}
 	if err := st.SaveExtracted(id, em); err != nil {
 		t.Fatalf("SaveExtracted: %v", err)
@@ -232,6 +240,20 @@ func TestRenderPlayerAndRound(t *testing.T) {
 	for _, want := range []string{"# Round 2", "## Economy", "## Events", "## Chat"} {
 		if !strings.Contains(rout, want) {
 			t.Errorf("round.md missing %q", want)
+		}
+	}
+	// The chat table carries the Channel column with its exact spellings:
+	// [ALL] for all chat, TEAM for team chat (the round report renders no
+	// side tag — it has no side inputs, so it never guesses one), and an
+	// empty cell for system rows.
+	for _, want := range []string{
+		"| Tick | Name | Channel | Text |",
+		"| 810 | player0 | [ALL] | gl hf |",
+		"| 820 | player5 | TEAM | b long |",
+		"| 830 |  |  | Match is live |",
+	} {
+		if !strings.Contains(rout, want) {
+			t.Errorf("round.md chat table missing %q", want)
 		}
 	}
 }

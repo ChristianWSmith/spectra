@@ -108,7 +108,7 @@ func testExtracted(sha string, extractedAt time.Time) *models.ExtractedMatch {
 		},
 		Chat: []models.Chat{
 			{Tick: 5, Round: 0, Kind: "system", Text: "Warmup started"},
-			{Tick: 10, Round: 1, SteamID: "100", Name: "al\x00ice", Text: "gl\x00hf", Kind: "chat"},
+			{Tick: 10, Round: 1, SteamID: "100", Name: "al\x00ice", Text: "gl\x00hf", Kind: "chat", Channel: "all"},
 		},
 		Warnings: []string{"null\x00byte warning"},
 	}
@@ -181,6 +181,7 @@ func TestOpenBaselineSchemaIdempotent(t *testing.T) {
 		{"player_stats", "two_k", "INTEGER", 1, "0"},
 		{"chat", "decrypted", "INTEGER", 1, "0"},
 		{"chat", "key_source", "TEXT", 1, "''"},
+		{"chat", "channel", "TEXT", 1, "''"},
 	}
 	for _, c := range cols {
 		var dflt any
@@ -450,7 +451,7 @@ func TestSaveExtractedRoundtrip(t *testing.T) {
 		t.Errorf("third event attackerInAir = true, want false: %+v", detail.Events[2])
 	}
 	if len(detail.Chat) != 1 || detail.Chat[0].Text != "glhf" || detail.Chat[0].Name != "alice" ||
-		detail.Chat[0].Kind != "chat" {
+		detail.Chat[0].Kind != "chat" || detail.Chat[0].Channel != "all" {
 		t.Errorf("detail chat mismatch: %+v", detail.Chat)
 	}
 
@@ -570,6 +571,11 @@ func TestSaveExtractedRoundtrip(t *testing.T) {
 	}
 	if len(chat) != 2 || chat[0].Tick != 5 || chat[1].Tick != 10 {
 		t.Errorf("GetChat mismatch: %+v", chat)
+	}
+	// channel round-trip: the system row keeps '' (no channel), the chat
+	// row keeps its stored channel — the read never invents one.
+	if chat[0].Channel != "" || chat[1].Channel != "all" {
+		t.Errorf("GetChat channels = %q/%q, want \"\"/\"all\"", chat[0].Channel, chat[1].Channel)
 	}
 
 	hist, err := s.GetGenericHistogram(id)

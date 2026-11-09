@@ -101,13 +101,14 @@ const svelteCompile = (src, filename, out, opts = {}) =>
   writeFileSync(out, compile(src, { filename, generate: 'client', ...opts }).js.code);
 
 // Plain-ESM deps copied verbatim with their relative layout intact
-// (fmt → rounds; replay/playercard → replay/landmarks → rounds; and the
+// (fmt → rounds; replay/playercard → replay/landmarks → rounds + fmt +
+// teams — landmarks' chat export helpers (teams → sideparity); and the
 // playercard → loadout → bullets → state chain the held-item prefix
 // pulls in — loadout.js also imports bullets.js). The
 // components are compiled with css:'injected' so their <style> blocks
 // land in the document — the outline-geometry checks below read the real
 // rules the browser would apply.
-for (const rel of ['rounds.js', 'fmt.js']) {
+for (const rel of ['rounds.js', 'fmt.js', 'sideparity.js', 'teams.js']) {
   writeFileSync(join(dir, rel), readFileSync(join('src/lib', rel), 'utf8'));
 }
 for (const rel of ['landmarks.js', 'playercard.js', 'loadout.js', 'bullets.js', 'state.js']) {

@@ -325,12 +325,15 @@ func TestNullByteNamesPassThrough(t *testing.T) {
 	// The store scrubs NUL bytes; extract must pass them through untouched.
 	name := "bad\x00name"
 	text := "hi\x00there"
-	a.chat(42, "76561198000000001", name, text)
+	a.chat(42, "76561198000000001", name, text, "all")
 	if a.chatRows[0].Name != name {
 		t.Errorf("chat name = %q, want unmodified %q", a.chatRows[0].Name, name)
 	}
 	if a.chatRows[0].Text != text {
 		t.Errorf("chat text = %q, want unmodified %q", a.chatRows[0].Text, text)
+	}
+	if a.chatRows[0].Channel != "all" || a.chatRows[0].Kind != "chat" {
+		t.Errorf("chat channel/kind = %q/%q, want all/chat", a.chatRows[0].Channel, a.chatRows[0].Kind)
 	}
 
 	a.roundStart(10, false, false, 115, "BOMB TARGET")

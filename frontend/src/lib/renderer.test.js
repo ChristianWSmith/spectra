@@ -3633,6 +3633,53 @@ test('chat: speaker colors name and border at the message tick, neutral when unk
   r.destroy();
 });
 
+test('chat: the channel tag renders beside the name in the SAME side color', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: HUD_PLAYERS });
+  r.setHud({
+    score: null,
+    teamNames: { ct: '', t: '' },
+    round: { number: 1, label: 'R1', startTick: 0, freezeEndTick: 640, endTick: 1200, bombSite: '' },
+    tickRate: 64,
+  });
+  r.setChat([
+    // alice = CT slot 0: all chat always reads [ALL]…
+    { id: 1, tick: 50, round: 1, steamId: '1', name: 'alice', text: 'gg', channel: 'all' },
+    // …team chat tags the SPEAKER'S SIDE (alice is CT → [CT])…
+    { id: 2, tick: 60, round: 1, steamId: '1', name: 'alice', text: 'b site', channel: 'team' },
+    // …and a team message whose side can't be resolved gets NO bracket
+    // (mystery has no slot — never a guessed side), neutral like its name.
+    { id: 3, tick: 70, round: 1, steamId: '999', name: 'mystery', text: 'hi', channel: 'team' },
+  ]);
+  r.resize();
+  engine.seekTick(100);
+  const mark = canvas.log.length;
+  r.draw();
+
+  const boxes = entryBoxOps(canvas.log, mark);
+  assert.equal(boxes.length, 3, 'one entry box per message');
+  const headAt = (n, y) =>
+    canvas.log.find((e) => e.op === 'fillText' && e.args[0] === n && e.args[1] === 14 && e.args[2] === y + 4);
+  assert.ok(headAt('alice [ALL]', boxes[0].y), 'all chat renders name + [ALL]');
+  assert.equal(headAt('alice [ALL]', boxes[0].y).fillStyle, '#5aa9e6', 'the [ALL] line keeps the CT color');
+  assert.ok(headAt('alice [CT]', boxes[1].y), 'team chat renders name + the speaker SIDE tag');
+  assert.equal(headAt('alice [CT]', boxes[1].y).fillStyle, '#5aa9e6', 'a CT speaker’s [CT] reads in CT');
+  assert.ok(headAt('mystery', boxes[2].y), 'unresolved side → name only, NO bracket');
+  assert.equal(headAt('mystery', boxes[2].y).fillStyle, '#9aa4b5', 'an unresolvable speaker stays neutral');
+  assert.equal(boxes[2].stroke, '#9aa4b5', '…and so does its border');
+
+  // the message still follows the measured HEAD (name + tag)
+  const body = canvas.log.find(
+    (e) => e.op === 'fillText' && e.args[0] === ': gg' && e.args[2] === boxes[0].y + 4,
+  );
+  assert.ok(body, 'the `: message` part draws after the name+tag');
+  assert.equal(body.args[1], 14 + 40, 'immediately after the measured head width');
+  r.destroy();
+});
+
 test('chat: newest at the BOTTOM, capped at 6 with the oldest dropped above', () => {
   headlessGlobals();
   const data = synthStore(1300, 2);
@@ -3721,6 +3768,43 @@ test('chat: a long message is cut to 40% of the stage with an ellipsis', () => {
     canvas.log.some((e) => e.op === 'fillText' && e.args[0] === ': hi'),
     'no ellipsis where nothing was cut',
   );
+  r.destroy();
+});
+
+test('chat: the channel tag counts toward the 40% measure and the cut', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  // A LENGTH-AWARE measureText (8 px per character), like the cut test.
+  const canvas = recordingCanvas(800, 600, (s) => s.length * 8);
+  const r = createRenderer(canvas, { engine, data, players: HUD_PLAYERS });
+  r.setHud({
+    score: null,
+    teamNames: { ct: '', t: '' },
+    round: { number: 1, label: 'R1', startTick: 0, freezeEndTick: 640, endTick: 1200, bombSite: '' },
+    tickRate: 64,
+  });
+  r.setChat([
+    // head = 'alice [ALL]' → 11 chars → 88 px: the budget for the body is
+    // 320 − 12 − 88 = 220 px → ': ' + 24 chars + '…' = 27 chars × 8 = 216
+    // fits, one char more (224) does not.
+    { id: 1, tick: 50, round: 1, steamId: '1', name: 'alice', text: 'this chat line is far too long to fit', channel: 'all' },
+    { id: 2, tick: 60, round: 1, steamId: '2', name: 'bob', text: 'hi', channel: 'all' },
+  ]);
+  r.resize();
+  engine.seekTick(100);
+  const mark = canvas.log.length;
+  r.draw();
+
+  const boxes = entryBoxOps(canvas.log, mark);
+  assert.equal(boxes[0].w, 12 + 'alice [ALL]'.length * 8 + 27 * 8, 'the tag width counts against CHAT_MAX_W');
+  assert.ok(boxes[0].w <= 800 * 0.4, 'never wider than CHAT_MAX_W');
+  const cut = canvas.log.find((e) => e.op === 'fillText' && String(e.args[0]).endsWith('…'));
+  assert.ok(cut, 'the message is cut with an ellipsis');
+  assert.equal(cut.args[0], ': this chat line is far to…', 'the cut leaves room for the name + tag head');
+  // the short tagged line is untouched: 12 + 9×8 ('bob [ALL]') + 4×8 (': hi')
+  assert.equal(boxes[1].w, 12 + 'bob [ALL]'.length * 8 + ': hi'.length * 8, 'short entry = inset + head + body');
+  assert.ok(canvas.log.some((e) => e.op === 'fillText' && e.args[0] === 'bob [ALL]'), 'the short line renders name + tag');
   r.destroy();
 });
 

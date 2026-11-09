@@ -337,6 +337,11 @@ type Chat struct {
 	Name    string `json:"name"`
 	Text    string `json:"text"`
 	Kind    string `json:"kind"` // "chat" | "system" | "saytext"
+	// Channel is the chat channel of a row: "all" (reads [ALL]) or
+	// "team" (the speaker's SIDE at that round — [T]/[CT]); "" for
+	// system rows (kind "system"/"saytext") and unknown channels — a
+	// missing channel never gets a guessed bracket downstream.
+	Channel string `json:"channel"`
 	// Decrypted marks a chat row recovered from svc_EncryptedData via the
 	// .dem.info GC key. v1 always stores 0: decryption happens inside
 	// demoinfocs during the parse (the inner messages dispatch as ordinary

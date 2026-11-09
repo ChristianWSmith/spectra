@@ -238,6 +238,7 @@ type ChatRow struct {
 	Name      string `json:"name"`
 	Text      string `json:"text"`
 	Kind      string `json:"kind"`
+	Channel   string `json:"channel"` // "all" | "team" | "" (system/unknown) — see models.Chat
 	Decrypted bool   `json:"decrypted"`
 }
 

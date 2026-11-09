@@ -8,9 +8,9 @@
     getTeamNames,
     errText,
   } from '../services.js';
-  import { fmtDuration, fmtTickSeconds, fmtInt, fmtClock, tickSeconds, chatClock } from '../fmt.js';
+  import { fmtDuration, fmtTickSeconds, fmtInt, fmtClock, tickSeconds, chatClock, chatTag } from '../fmt.js';
   import { roundIndexLabel, scoreThrough } from '../rounds.js';
-  import { playerSideClassAt } from '../teams.js';
+  import { playerSideAt, playerSideClassAt } from '../teams.js';
   import { replayHash } from '../nav.js';
   import { buildHash } from '../router.js';
   import { roundsByNumber } from '../replay/landmarks.js';
@@ -467,6 +467,7 @@
           {:else}
             <ul class="chat-list">
               {#each chat as c (c.id)}
+                {@const tag = chatTag(c.channel || '', playerSideAt(players, sideSwitches, rounds, round, c.steamId, c.name))}
                 <li>
                   <span class="mono muted" title="tick {c.tick}">{chatClock(c, rbn, tickRate)}</span>
                   <strong>
@@ -476,9 +477,13 @@
                       {nav}
                       cls={playerCls(c.steamId, c.name)}
                       title="Open {c.name} profile"
-                    />
+                    />{#if tag}{' '}{tag}{/if}
                   </strong>
-                  <span>{c.text}</span>
+                  <!-- THE chat display rule (fmt.chatLine's DOM twin):
+                       linked name + tag + ': ' + text — team chat tags the
+                       speaker's SIDE in this round, all chat reads [ALL],
+                       system rows stay plain. -->
+                  <span>: {c.text}</span>
                 </li>
               {/each}
             </ul>

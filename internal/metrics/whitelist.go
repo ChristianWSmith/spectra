@@ -66,7 +66,7 @@ var sourceColumns = map[string]map[string]bool{
 		"det_x", "det_y", "damage", "flash_ms", "site",
 	),
 	"chat": colSet(
-		"id", "match_id", "tick", "round", "steam_id", "name", "text", "kind",
+		"id", "match_id", "tick", "round", "steam_id", "name", "text", "kind", "channel",
 		"decrypted", "key_source",
 	),
 	"voice_chunks": colSet(
