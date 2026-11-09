@@ -32,6 +32,7 @@ export const MetricsService = {};
 export const QueryService = {};
 export const PlatformService = {};
 export const LibraryService = {
+  ImportDialog: rec('ImportDialog'),
   ListMatches: rec('ListMatches'),
   ImportPaths: rec('ImportPaths'),
   DeleteMatch: rec('DeleteMatch'),

@@ -38,12 +38,14 @@ func managedDemoCompanion(name string) string {
 
 // copyDemo copies the raw demo at src into im.copyDir under its content
 // hash and returns the destination path. An existing copy is reused (same
-// hash = same bytes). The <demo>.info companion sitting next to src — the
-// chat decryption key — is copied best-effort alongside it so voice/chat
-// decryption survives the source file going away; a missing or
-// unreadable companion never fails the import. A src that already is the
-// managed copy is a no-op.
-func (im *Importer) copyDemo(src, sha string) (string, error) {
+// hash = same bytes). onProgress (optional) receives the running byte
+// total while the demo itself is written — the copy stage's determinate
+// progress (bytes written ÷ file size, reported by the caller). The
+// <demo>.info companion sitting next to src — the chat decryption key —
+// is copied best-effort alongside it so voice/chat decryption survives
+// the source file going away; a missing or unreadable companion never
+// fails the import. A src that already is the managed copy is a no-op.
+func (im *Importer) copyDemo(src, sha string, onProgress func(consumed int64)) (string, error) {
 	name := managedDemoName(sha, src)
 	dst := filepath.Join(im.copyDir, name)
 	if samePath(src, dst) {
@@ -55,12 +57,12 @@ func (im *Importer) copyDemo(src, sha string) (string, error) {
 	if fi, err := os.Stat(dst); err == nil && !fi.IsDir() {
 		return dst, nil
 	}
-	if err := copyFile(src, dst); err != nil {
+	if err := copyFile(src, dst, onProgress); err != nil {
 		return "", fmt.Errorf("copy demo: %w", err)
 	}
 	if info := findInfoFile(src); info != "" {
 		// Companion copy is best-effort: the demo itself already landed.
-		_ = copyFile(info, filepath.Join(im.copyDir, managedDemoCompanion(name)))
+		_ = copyFile(info, filepath.Join(im.copyDir, managedDemoCompanion(name)), nil)
 	}
 	return dst, nil
 }
@@ -119,9 +121,11 @@ func (im *Importer) resolveDemoFile(sha, storedPath string) string {
 
 // copyFile copies src to dst atomically (temp file + rename): a crash or
 // a full disk never leaves a truncated copy behind for a later import to
-// mistake for the real thing. The fixed temp name is safe — the pipeline
-// has a single worker, so two copies never run at once.
-func copyFile(src, dst string) error {
+// mistake for the real thing. onProgress (optional) receives the running
+// byte total as the copy reads — see copyDemo. The fixed temp name is
+// safe — the pipeline has a single worker, so two copies never run at
+// once.
+func copyFile(src, dst string, onProgress func(consumed int64)) error {
 	in, err := os.Open(src)
 	if err != nil {
 		return err
@@ -132,7 +136,7 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := io.Copy(out, in); err != nil {
+	if _, err := io.Copy(out, &countingReader{r: in, onRead: onProgress}); err != nil {
 		_ = out.Close()
 		_ = os.Remove(tmp)
 		return err

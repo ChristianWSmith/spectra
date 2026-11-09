@@ -16,6 +16,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -24,7 +25,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/klauspost/compress/zstd"
@@ -51,14 +51,140 @@ const (
 	EventLibraryChanged = "spectra:library-changed"
 )
 
-// progressMinInterval throttles parse-progress updates to at most one per
-// 100 ms. Stage transitions are emitted separately and never throttled.
+// progressMinInterval throttles byte-progress updates to at most one per
+// 100 ms (per stage — the first tick of a stage always goes through, so
+// even a fast stage reports a determinate point). Stage transitions are
+// emitted separately and never throttled.
 const progressMinInterval = 100 * time.Millisecond
+
+// The job-wide progress mapping (see models.Job and the stage table next
+// to the stage constants): every stage owns a fixed slice of 0..1, so the
+// points one job emits are monotone no matter which stage reports them.
+const (
+	progressHashEnd    = 0.10 // hash:     bytes read ÷ file size
+	progressCopyStart  = 0.10 // copy:     bytes written ÷ file size
+	progressCopyEnd    = 0.20
+	progressParseStart = 0.20 // parse:    stream bytes consumed ÷ file size
+	progressParseEnd   = 0.90
+	progressStore      = 0.90 // store:    coarse step
+	progressAnalyze    = 0.95 // analyze:  coarse step
+)
+
+// errShuttingDown is the refusal Enqueue/Reprocess surface once Shutdown
+// has begun: the worker will never claim anything new, so a job created
+// now would sit queued forever without it.
+var errShuttingDown = errors.New("library: importer is shutting down")
+
+// shuttingDownErr is the jobs.error text for such a job (user-facing —
+// it lands in the Library's "recent import problems" list).
+const shuttingDownErr = "importer is shutting down"
+
+// byteFrac maps consumed bytes of total into 0..1 (clamped). ok is false
+// when there is no determinate denominator — an empty or unknown size
+// yields no progress point rather than a fabricated one.
+func byteFrac(consumed, total int64) (float64, bool) {
+	if total <= 0 {
+		return 0, false
+	}
+	f := float64(consumed) / float64(total)
+	if f < 0 {
+		return 0, true
+	}
+	if f > 1 {
+		return 1, true
+	}
+	return f, true
+}
+
+// inRange maps a 0..1 fraction onto [lo, hi].
+func inRange(lo, hi, frac float64) float64 { return lo + (hi-lo)*frac }
+
+// countingReader reports the running byte total to onRead after every
+// Read — the ONE byte-progress source for hash, copy and parse. It wraps
+// the FILE reader (before zstd), so for a compressed demo the count is
+// the compressed bytes pulled so far ÷ the file size: demoinfocs pulls
+// from its reader as it parses, which makes bytes-consumed a monotone,
+// honest proxy for parse progress (frame totals are unknowable mid-parse
+// for CS2 — see extract.ParseOptions.Progress).
+type countingReader struct {
+	r      io.Reader
+	read   int64 // running total
+	onRead func(consumed int64)
+}
+
+func (c *countingReader) Read(p []byte) (int, error) {
+	n, err := c.r.Read(p)
+	if n > 0 {
+		c.read += int64(n)
+		if c.onRead != nil {
+			c.onRead(c.read)
+		}
+	}
+	return n, err
+}
+
+// progressReporter serializes one job's progress points: stage
+// transitions (emit) go straight through, byte ticks (tick) are throttled
+// to progressMinInterval with the FIRST tick of each stage forced. Every
+// point is written to the jobs row — store.UpdateJobProgress only ever
+// touches a running job, so a point racing a Cancel cannot resurrect it —
+// and announced as spectra:job-progress. Writes are clamped monotone per
+// job: a late byte tick can never walk the bar backwards.
+type progressReporter struct {
+	mu        sync.Mutex
+	im        *Importer
+	jobID     int64
+	matchID   int64
+	lastNano  int64
+	lastPct   float64
+	tickStage string // stage a byte tick was last emitted for
+}
+
+// emit records a stage transition (or a forced point) at pct.
+func (r *progressReporter) emit(stage string, pct float64) {
+	r.mu.Lock()
+	r.lastNano = time.Now().UnixNano()
+	if pct > r.lastPct {
+		r.lastPct = pct
+	}
+	pct = r.lastPct
+	r.mu.Unlock()
+	r.im.writeProgress(r.jobID, r.matchID, stage, pct)
+}
+
+// tick records a byte-derived point, throttled per stage (the first tick
+// of a stage is not).
+func (r *progressReporter) tick(stage string, pct float64) {
+	now := time.Now().UnixNano()
+	r.mu.Lock()
+	if r.tickStage == stage && now-r.lastNano < int64(progressMinInterval) {
+		r.mu.Unlock()
+		return
+	}
+	r.tickStage = stage
+	r.lastNano = now
+	if pct > r.lastPct {
+		r.lastPct = pct
+	}
+	pct = r.lastPct
+	r.mu.Unlock()
+	r.im.writeProgress(r.jobID, r.matchID, stage, pct)
+}
+
+// writeProgress stamps the jobs row and announces the point.
+func (im *Importer) writeProgress(jobID, matchID int64, stage string, pct float64) {
+	_ = im.st.UpdateJobProgress(jobID, stage, pct)
+	im.emitEvent(EventJobProgress, JobProgressEvent{JobID: jobID, Stage: stage, Progress: pct, MatchID: matchID})
+}
 
 // zstdMagic is the 4-byte zstd frame magic number (RFC 8878): 28 b5 2f fd.
 var zstdMagic = []byte{0x28, 0xb5, 0x2f, 0xfd}
 
-// JobProgressEvent is the payload of spectra:job-progress.
+// JobProgressEvent is the payload of spectra:job-progress. Progress is
+// the job-wide 0..1 point (models.Job — NOT per-stage): 0 means
+// "indeterminate" and the UI draws a moving bar for it, never 0%.
+// Stage names the pipeline step (models stage constants) and is what the
+// chip labels the bar with.
 type JobProgressEvent struct {
 	JobID    int64   `json:"jobId"`
 	Stage    string  `json:"stage"`
@@ -104,6 +230,15 @@ type queueItem struct {
 	matchID int64 // reprocess only; 0 for import
 }
 
+// matchLifecycle is a match row's lifecycle state as it stood BEFORE
+// Reprocess flipped it to "queued" (the visible wait). A dequeue, or a
+// queued job the worker never claims, puts the row back exactly as it
+// was — the artificial flip must never outlive the job that caused it.
+type matchLifecycle struct {
+	status string
+	errMsg string
+}
+
 // Importer owns the single background worker goroutine plus the per-job
 // cancellation contexts. Create with New; call Shutdown before closing the
 // store.
@@ -117,10 +252,11 @@ type Importer struct {
 
 	mu        sync.Mutex
 	queue     []queueItem
-	queued    map[int64]bool // jobs sitting in queue (for Cancel)
+	queued    map[int64]queueItem // jobs sitting in queue (for Cancel): kind+matchID
 	cancels   map[int64]context.CancelFunc
-	cancelled map[int64]bool // Cancel() seen but not yet consumed by the worker
-	stopping  bool           // Shutdown started: claims are refused
+	cancelled map[int64]bool           // Cancel() seen but not yet consumed by the worker
+	pending   map[int64]matchLifecycle // match rows Reprocess queued: prior state (key = matchID)
+	stopping  bool                     // Shutdown started: claims are refused
 	wake      chan struct{}
 	done      chan struct{}
 	once      sync.Once
@@ -144,9 +280,10 @@ func New(o Options) *Importer {
 		parserVersion: o.ParserVersion,
 		sidecarDir:    sidecarDir,
 		copyDir:       copyDir,
-		queued:        map[int64]bool{},
+		queued:        map[int64]queueItem{},
 		cancels:       map[int64]context.CancelFunc{},
 		cancelled:     map[int64]bool{},
+		pending:       map[int64]matchLifecycle{},
 		wake:          make(chan struct{}, 1),
 		done:          make(chan struct{}),
 	}
@@ -160,9 +297,25 @@ func New(o Options) *Importer {
 // stat'ed get a job that is failed immediately (with the reason in
 // jobs.error) so the UI can surface it; no hashing happens here — the
 // response stays fast regardless of file size.
+//
+// Dedupe: a path that already has a non-terminal (queued/running) job is
+// MERGED into it — the existing job's id comes back and no second job is
+// created. Two jobs for the same bytes would otherwise guarantee an
+// "already imported" failure for the loser once the winner lands. Paths
+// are matched exactly as given (the same string the import-dir rows and
+// the dialog hand us — see store.FindPendingJobByPath).
+//
+// Once Shutdown has begun every new job fails immediately (never a job
+// stuck in queued with no worker to claim it).
 func (im *Importer) Enqueue(paths []string) []int64 {
 	ids := make([]int64, 0, len(paths))
 	for _, p := range paths {
+		if job, found, err := im.st.FindPendingJobByPath(p); err != nil {
+			slog.Error("library: pending-job lookup", "path", p, "error", err)
+		} else if found {
+			ids = append(ids, job.ID) // merged into the job already in flight
+			continue
+		}
 		id, err := im.st.CreateJob(jobKindImport, p)
 		if err != nil {
 			slog.Error("library: create import job", "path", p, "error", err)
@@ -170,14 +323,23 @@ func (im *Importer) Enqueue(paths []string) []int64 {
 		}
 		ids = append(ids, id)
 		if msg := validateImportPath(p); msg != "" {
-			_ = im.st.UpdateJob(id, models.JobFailed, models.StageQueued, 0, msg)
-			im.emitEvent(EventJobDone, JobDoneEvent{JobID: id, Status: models.JobFailed, Error: msg})
-			im.emitEvent(EventLibraryChanged, LibraryChangedEvent{})
+			im.failNewJob(id, 0, msg)
 			continue
 		}
-		im.push(queueItem{jobID: id, kind: jobKindImport, path: p})
+		if !im.push(queueItem{jobID: id, kind: jobKindImport, path: p}) {
+			im.failNewJob(id, 0, shuttingDownErr)
+		}
 	}
 	return ids
+}
+
+// failNewJob records a job that never entered the queue (invalid path,
+// importer stopping) as failed immediately, announcing the same event
+// pair a worker-side failure does so every view refreshes.
+func (im *Importer) failNewJob(jobID, matchID int64, msg string) {
+	_ = im.st.UpdateJob(jobID, models.JobFailed, models.StageQueued, 0, msg)
+	im.emitEvent(EventJobDone, JobDoneEvent{JobID: jobID, MatchID: matchID, Status: models.JobFailed, Error: msg})
+	im.emitEvent(EventLibraryChanged, LibraryChangedEvent{})
 }
 
 // Reprocess queues a re-parse of a match's demo file: spectra's own copy
@@ -185,10 +347,24 @@ func (im *Importer) Enqueue(paths []string) []int64 {
 // before copy-on-import point at the user's original file. The match must
 // exist (store.ErrNotFound passes through); a reprocess job is linked to
 // its match immediately and skips sha256 dedupe.
+//
+// Coalesce: when a non-terminal job already references the match, that
+// job's id comes back untouched — one reparse in flight per match (no
+// second job, and no status flip: a running job already moved the row to
+// parsing).
+//
+// The match row flips to "queued" for the wait (visible queued state);
+// the row's prior lifecycle state is remembered so a dequeue puts it
+// back — see Cancel and the worker's pre-claim skip paths.
 func (im *Importer) Reprocess(matchID int64) (int64, error) {
 	m, err := im.st.GetMatch(matchID)
 	if err != nil {
 		return 0, err
+	}
+	if job, found, err := im.st.FindPendingJobByMatch(matchID); err != nil {
+		return 0, err
+	} else if found {
+		return job.ID, nil
 	}
 	path := im.resolveDemoFile(m.SHA256, m.Path)
 	id, err := im.st.CreateJob(jobKindReprocess, path)
@@ -196,10 +372,42 @@ func (im *Importer) Reprocess(matchID int64) (int64, error) {
 		return 0, err
 	}
 	if err := im.st.SetJobMatch(id, matchID); err != nil {
+		im.failNewJob(id, matchID, err.Error())
 		return 0, err
 	}
-	im.push(queueItem{jobID: id, kind: jobKindReprocess, path: path, matchID: matchID})
+	im.mu.Lock()
+	im.pending[matchID] = matchLifecycle{status: m.Status, errMsg: m.Error}
+	im.mu.Unlock()
+	if err := im.st.SetMatchStatus(matchID, models.StatusQueued, ""); err != nil {
+		im.restoreMatch(matchID)
+		im.failNewJob(id, matchID, err.Error())
+		return 0, err
+	}
+	if !im.push(queueItem{jobID: id, kind: jobKindReprocess, path: path, matchID: matchID}) {
+		im.restoreMatch(matchID)
+		im.failNewJob(id, matchID, shuttingDownErr)
+		return 0, errShuttingDown
+	}
 	return id, nil
+}
+
+// restoreMatch hands a match row back to the lifecycle state recorded
+// before Reprocess queued it. Nothing recorded (an import job's row, or a
+// match Reprocess never touched) leaves the row alone. Called on the
+// dequeue paths: Cancel of a queued job and the worker's pre-claim skips
+// (cancelled / stopping), where the job never got to touch the row
+// itself.
+func (im *Importer) restoreMatch(matchID int64) {
+	if matchID == 0 {
+		return
+	}
+	im.mu.Lock()
+	prev, ok := im.pending[matchID]
+	delete(im.pending, matchID)
+	im.mu.Unlock()
+	if ok {
+		_ = im.st.SetMatchStatus(matchID, prev.status, prev.errMsg)
+	}
 }
 
 // Cancel cancels a queued or running job. Running jobs have their context
@@ -208,10 +416,22 @@ func (im *Importer) Reprocess(matchID int64) (int64, error) {
 // ids surface store.ErrNotFound, already-terminal jobs are left untouched
 // (and get no event). Jobs the worker has already claimed by the time we
 // look are treated as running.
+//
+// Outcomes (the Library's cancel/dequeue state machine):
+//   - queued IMPORT: the synthetic row disappears (job → cancelled, shown
+//     in "recent import problems"); no match row ever existed, so nothing
+//     can be stranded.
+//   - running IMPORT/REPROCESS: the parse aborts and the worker's
+//     failJob marks the match row failed ("cancelled") — openable, with
+//     Reprocess/Delete enabled.
+//   - queued REPROCESS: the worker skips it silently, so Cancel announces
+//     the terminal state itself AND hands the match row back to the
+//     lifecycle state Reprocess queued it from (the job never touched
+//     the row).
 func (im *Importer) Cancel(jobID int64) error {
 	im.mu.Lock()
 	running := im.cancels[jobID]
-	wasQueued := im.queued[jobID]
+	item, wasQueued := im.queued[jobID]
 	if running == nil && wasQueued {
 		im.cancelled[jobID] = true
 	}
@@ -225,6 +445,7 @@ func (im *Importer) Cancel(jobID int64) error {
 	if running == nil && wasQueued {
 		// Queued: the worker will skip it silently, so announce the
 		// terminal state here.
+		im.restoreMatch(item.matchID)
 		im.emitEvent(EventJobDone, JobDoneEvent{JobID: jobID, Status: models.JobCancelled})
 		im.emitEvent(EventLibraryChanged, LibraryChangedEvent{})
 	}
@@ -273,25 +494,30 @@ func (im *Importer) worker() {
 	}
 }
 
-// push appends to the (unbounded) queue and pokes the worker.
-func (im *Importer) push(item queueItem) {
+// push appends to the (unbounded) queue and pokes the worker. It reports
+// false when the importer is stopping (Shutdown began): nothing will
+// ever claim the item, so the caller fails the job immediately instead of
+// leaving it queued forever.
+func (im *Importer) push(item queueItem) bool {
 	im.mu.Lock()
 	if im.stopping {
 		im.mu.Unlock()
-		return
+		return false
 	}
 	im.queue = append(im.queue, item)
-	im.queued[item.jobID] = true
+	im.queued[item.jobID] = item
 	im.mu.Unlock()
 	select {
 	case im.wake <- struct{}{}:
 	default:
 	}
+	return true
 }
 
-// process runs one job end to end. Stage machine:
-// queued → (decompress sniff) → parse → store → done, with any error or
-// cancellation collapsing to failed/cancelled.
+// process runs one job end to end. Stage machine: queued → hash →
+// (import only) copy → decompress sniff → parse → store → analyze →
+// done, with any error or cancellation collapsing to failed/cancelled.
+// Progress is the job-wide mapping documented with progressHashEnd.
 func (im *Importer) process(item queueItem) {
 	jobID, kind := item.jobID, item.kind
 	matchID := item.matchID // 0 for import until the match row exists
@@ -301,25 +527,33 @@ func (im *Importer) process(item queueItem) {
 	// touching its terminal store state. Claiming completes under the
 	// same lock hold, so Cancel can only ever observe "queued" (pre-claim)
 	// or "running" (post-claim) — never the gap. stopping refuses new
-	// work once Shutdown begins.
+	// work once Shutdown begins. Every pre-claim exit hands a reprocess's
+	// match row back (restoreMatch): the job never touched it, so the
+	// artificial queued flip must not outlive the job.
 	im.mu.Lock()
 	if im.stopping {
 		delete(im.queued, jobID)
 		im.mu.Unlock()
+		im.restoreMatch(matchID)
 		return
 	}
 	if im.cancelled[jobID] {
 		delete(im.cancelled, jobID)
 		delete(im.queued, jobID)
 		im.mu.Unlock()
+		im.restoreMatch(matchID)
 		return
 	}
 	if err := im.st.UpdateJob(jobID, models.JobRunning, models.StageQueued, 0, ""); err != nil {
 		delete(im.cancelled, jobID)
 		delete(im.queued, jobID)
 		im.mu.Unlock()
+		im.restoreMatch(matchID)
 		return
 	}
+	// The job owns the row from here: its own transitions (parsing →
+	// ready/failed) replace the queued flip, so drop the remembered state.
+	delete(im.pending, matchID)
 	ctx, cancel := context.WithCancel(context.Background())
 	im.cancels[jobID] = cancel
 	delete(im.queued, jobID)
@@ -332,15 +566,30 @@ func (im *Importer) process(item queueItem) {
 	}()
 	im.emitEvent(EventJobProgress, JobProgressEvent{JobID: jobID, Stage: models.StageQueued, MatchID: matchID})
 
-	// Hash the file as it sits on disk (compressed bytes for .zst).
+	// Every progress point below funnels through one reporter: stage
+	// transitions straight through, byte ticks throttled (first tick of a
+	// stage forced), all clamped monotone — see progressReporter.
+	rep := &progressReporter{im: im, jobID: jobID, matchID: matchID}
+
+	// Hash the file as it sits on disk (compressed bytes for .zst) — the
+	// first stage with determinate progress (bytes read ÷ file size).
 	f, err := os.Open(item.path)
 	if err != nil {
 		im.failJob(jobID, matchID, models.StageQueued, err.Error(), false)
 		return
 	}
 	defer f.Close()
+	var total int64 // file size: the denominator of every byte fraction
+	if fi, serr := f.Stat(); serr == nil {
+		total = fi.Size()
+	}
+	rep.emit(models.StageHash, 0)
 	hasher := sha256.New()
-	size, err := io.Copy(hasher, f)
+	size, err := io.Copy(hasher, &countingReader{r: f, onRead: func(consumed int64) {
+		if frac, ok := byteFrac(consumed, total); ok {
+			rep.tick(models.StageHash, inRange(0, progressHashEnd, frac))
+		}
+	}})
 	if err != nil {
 		im.failJob(jobID, matchID, models.StageQueued, err.Error(), false)
 		return
@@ -365,7 +614,14 @@ func (im *Importer) process(item queueItem) {
 		// reprocessed later. matches.path keeps the SOURCE path (the file
 		// the user handed us — searchable, and what DeleteMatch refuses to
 		// touch); the managed copy is found by content hash instead.
-		if _, cerr := im.copyDemo(item.path, sha); cerr != nil {
+		// Bytes written ÷ file size drives the copy stage (a reused copy
+		// returns without reading, so the stage just passes through).
+		rep.emit(models.StageCopy, progressCopyStart)
+		if _, cerr := im.copyDemo(item.path, sha, func(consumed int64) {
+			if frac, ok := byteFrac(consumed, total); ok {
+				rep.tick(models.StageCopy, inRange(progressCopyStart, progressCopyEnd, frac))
+			}
+		}); cerr != nil {
 			im.failJob(jobID, 0, models.StageQueued, cerr.Error(), false)
 			return
 		}
@@ -389,7 +645,10 @@ func (im *Importer) process(item queueItem) {
 	// Sniff the zstd magic and wrap the stream; extract.Parse always sees
 	// a raw .dem reader. The hash pass left f at EOF — rewind BEFORE the
 	// sniff, and rewind again after it so the raw path also starts at 0.
-	im.emitEvent(EventJobProgress, JobProgressEvent{JobID: jobID, Stage: models.StageDecompress, MatchID: matchID})
+	// The stage entry carries the parse range's START (0.20): the byte
+	// counter below runs over the FILE stream (compressed bytes for a
+	// .zst), so decompress+parse are one continuum up to 0.90.
+	rep.emit(models.StageDecompress, progressParseStart)
 	if _, err := f.Seek(0, io.SeekStart); err != nil {
 		im.failJob(jobID, matchID, models.StageDecompress, err.Error(), ctx.Err() != nil)
 		return
@@ -401,9 +660,16 @@ func (im *Importer) process(item queueItem) {
 		im.failJob(jobID, matchID, models.StageDecompress, err.Error(), ctx.Err() != nil)
 		return
 	}
-	var reader io.Reader = f
+	// Wrap BEFORE the decoder: zstd pulls compressed bytes through this
+	// reader as it decompresses, the raw path pulls them directly — either
+	// way consumed ÷ total tracks how far the parse has read.
+	var reader io.Reader = &countingReader{r: f, onRead: func(consumed int64) {
+		if frac, ok := byteFrac(consumed, total); ok {
+			rep.tick(models.StageParse, inRange(progressParseStart, progressParseEnd, frac))
+		}
+	}}
 	if isZstd {
-		dec, err := zstd.NewReader(f)
+		dec, err := zstd.NewReader(reader)
 		if err != nil {
 			im.failJob(jobID, matchID, models.StageDecompress, err.Error(), false)
 			return
@@ -412,7 +678,7 @@ func (im *Importer) process(item queueItem) {
 		reader = dec
 	}
 
-	im.emitEvent(EventJobProgress, JobProgressEvent{JobID: jobID, Stage: models.StageParse, MatchID: matchID})
+	rep.emit(models.StageParse, progressParseStart)
 
 	// Position sidecar: sampled frames stream into a per-match
 	// directory while the parse runs. Tick rate is unknown until the parse
@@ -457,24 +723,16 @@ func (im *Importer) process(item queueItem) {
 	// decryption (KeyFound=false on the voice_presence row).
 	netKey := netKeyFromInfoFile(item.path)
 
-	var lastProgress atomic.Int64
-	lastProgress.Store(time.Now().UnixNano())
 	em, err := im.parse(ctx, reader, extract.ParseOptions{
-		Progress: func(done, total int) {
-			now := time.Now().UnixNano()
-			prev := lastProgress.Load()
-			if now-prev < int64(progressMinInterval) {
-				return
+		// Frames carry no determinate point mid-parse: a Source 2 demo
+		// only reveals its frame total at the very end (see
+		// extract.ParseOptions.Progress), so bytes read drive the bar.
+		// The callback's calls with a known total (the final call) pin the
+		// top of the parse range — that is all frames are used for.
+		Progress: func(framesDone, framesTotal int) {
+			if framesTotal > 0 {
+				rep.emit(models.StageParse, progressParseEnd)
 			}
-			if !lastProgress.CompareAndSwap(prev, now) {
-				return
-			}
-			var pct float64
-			if total > 0 {
-				pct = float64(done) / float64(total)
-			}
-			_ = im.st.UpdateJob(jobID, models.JobRunning, models.StageParse, pct, "")
-			im.emitEvent(EventJobProgress, JobProgressEvent{JobID: jobID, Stage: models.StageParse, Progress: pct, MatchID: matchID})
 		},
 		Positions: sw,
 		// State stream rides the same Writer: it reuses the position
@@ -510,7 +768,7 @@ func (im *Importer) process(item queueItem) {
 	}
 
 	em.Match.ParserVersion = im.parserVersion
-	im.emitEvent(EventJobProgress, JobProgressEvent{JobID: jobID, Stage: models.StageStore, Progress: 1, MatchID: matchID})
+	rep.emit(models.StageStore, progressStore)
 	// Mirror the sidecar meta onto the match row, then save. SaveExtracted
 	// forces match status ready itself — don't double-set.
 	if err := im.st.SetPositionMeta(matchID, meta.SampleRate, meta.Frames); err != nil {
@@ -548,14 +806,13 @@ func (im *Importer) process(item queueItem) {
 	}
 
 	// M3 analytics pass: classification/KAST/clutch/engagement/
-	// utility rows + career rebuild over the freshly stored events. Failure
+	// utility rows + career rebuild over the stored events. Failure
 	// here must NOT lose the extracted data: the match stays ready and only
 	// the job is marked failed (with the analytics error prefixed).
-	im.emitEvent(EventJobProgress, JobProgressEvent{JobID: jobID, Stage: models.StageAnalyze, Progress: 0.95, MatchID: matchID})
-	_ = im.st.UpdateJob(jobID, models.JobRunning, models.StageAnalyze, 0.95, "")
+	rep.emit(models.StageAnalyze, progressAnalyze)
 	if aerr := im.analyze(matchID); aerr != nil {
 		msg := "analytics: " + aerr.Error()
-		_ = im.st.UpdateJob(jobID, models.JobFailed, models.StageAnalyze, 0.95, msg)
+		_ = im.st.UpdateJob(jobID, models.JobFailed, models.StageAnalyze, progressAnalyze, msg)
 		im.emitEvent(EventJobDone, JobDoneEvent{JobID: jobID, MatchID: matchID, Status: models.JobFailed, Error: msg})
 		im.emitEvent(EventLibraryChanged, LibraryChangedEvent{})
 		return

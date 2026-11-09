@@ -19,6 +19,13 @@ import (
 
 func newTestImporter(t *testing.T, parse func(ctx context.Context, r io.Reader, opts extract.ParseOptions) (*models.ExtractedMatch, error)) (*Importer, *store.Store) {
 	t.Helper()
+	return newTestImporterEmit(t, parse, nil)
+}
+
+// newTestImporterEmit is newTestImporter with an Emit hook — the way a
+// test observes the spectra:* event stream (progress points included).
+func newTestImporterEmit(t *testing.T, parse func(ctx context.Context, r io.Reader, opts extract.ParseOptions) (*models.ExtractedMatch, error), emit func(event string, data any)) (*Importer, *store.Store) {
+	t.Helper()
 	st, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
@@ -27,6 +34,7 @@ func newTestImporter(t *testing.T, parse func(ctx context.Context, r io.Reader, 
 	im := New(Options{
 		Store:         st,
 		Parse:         parse,
+		Emit:          emit,
 		ParserVersion: "test",
 		// Never the user's real data dir: test matches share the same
 		// numeric ids as real ones (Options doc), and copy-on-import must

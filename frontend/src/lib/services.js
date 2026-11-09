@@ -172,6 +172,18 @@ export function reprocess(id) {
   });
 }
 
+// cancelJob cancels a queued or running job — the Library row action
+// (Cancel on a running parse, Dequeue on a queued one; Go decides which
+// via store.CancelJob + the worker's skip). It emits spectra:job-done /
+// spectra:library-changed itself, so a refetch follows either way; the
+// wrapper invalidates like the other mutators to close the same race.
+export function cancelJob(id) {
+  return LibraryService.CancelJob(id).then((r) => {
+    invalidate();
+    return r;
+  });
+}
+
 export function listJobs() {
   return LibraryService.ListJobs();
 }

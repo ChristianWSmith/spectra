@@ -20,8 +20,9 @@ import (
 // ErrNotFound is returned when a requested row does not exist.
 var ErrNotFound = errors.New("store: not found")
 
-// interruptedJobErr is stamped into jobs.error when Open finds jobs left
-// queued/running by a previous process.
+// interruptedJobErr is stamped into jobs.error (and matches.error, for a
+// match row left lifecycle-pending by a dead process) when Open finds rows
+// left queued/running by a previous process.
 const interruptedJobErr = "interrupted by restart"
 
 // childTables are the per-match child tables deleted (oldest dependency
@@ -43,9 +44,15 @@ type Store struct {
 }
 
 // Open opens (creating the parent directory if needed) the SQLite database
-// at path, applies the embedded baseline schema, and marks any jobs left
-// queued/running by a previous process as failed. The special path
-// ":memory:" opens a private in-memory database (no directory is created).
+// at path, applies the embedded baseline schema, and repairs the lifecycle
+// rows a dead process left behind: jobs stuck queued/running become failed
+// ("interrupted by restart"), and so do match rows stuck queued/parsing
+// that no live job owns — a dead worker cannot finish them, and leaving
+// them would keep the Library's Reprocess/Delete buttons disabled forever.
+// The jobs repair runs FIRST so the matches pass sees the post-repair
+// job table (a match whose job just became failed is by definition
+// jobless). The special path ":memory:" opens a private in-memory database
+// (no directory is created).
 func Open(path string) (*Store, error) {
 	if path != ":memory:" {
 		if dir := filepath.Dir(path); dir != "" && dir != "." {
@@ -76,6 +83,25 @@ func Open(path string) (*Store, error) {
 	); err != nil {
 		_ = db.Close()
 		return nil, fmt.Errorf("store: mark interrupted jobs: %w", err)
+	}
+	// Match rows stuck mid-lifecycle with no live job own them: the jobs
+	// repair above just failed every non-terminal job, so a row still
+	// queued/parsing here has nothing running that could finish it. Mark
+	// it failed (same message) — that re-enables Reprocess/Delete on the
+	// row instead of stranding it behind a queue that no longer exists.
+	if _, err := s.db.Exec(
+		`UPDATE matches SET status = ?, error = ?
+		 WHERE status IN (?, ?)
+		   AND NOT EXISTS (
+		     SELECT 1 FROM jobs
+		     WHERE jobs.match_id = matches.id AND jobs.status IN (?, ?)
+		   )`,
+		models.StatusFailed, interruptedJobErr,
+		models.StatusQueued, models.StatusParsing,
+		models.JobQueued, models.JobRunning,
+	); err != nil {
+		_ = db.Close()
+		return nil, fmt.Errorf("store: mark interrupted matches: %w", err)
 	}
 	return s, nil
 }
