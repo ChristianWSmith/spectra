@@ -1,7 +1,8 @@
 // Tests for the replay renderer's PURE helpers (lib/replay/renderer.js):
 // the trail-continuity rule (trailConnects — the break that keeps player
 // movement trails from streaking across a round reset or a
-// death→respawn teleport), the smart camera's fit/ease (smartCamTarget,
+// death→respawn teleport, plus the TRAIL_MIN_SPEED speed gate: segments
+// traversed below 135 units/sec draw no trail), the smart camera's fit/ease (smartCamTarget,
 // easeValue, camConverged), the world-layer geometry (chevronPath,
 // crossPath, muzzleRays), the tick-window effects (windowAlpha,
 // blindAlpha, voiceBloom), the death-marker lifetime
@@ -77,15 +78,17 @@ function slotPos(points) {
 
 test('contiguous human-speed frames connect (the normal trail)', () => {
   const ticks = [0, 1, 2, 3];
+  // 4 units/tick = 256 u/s at 64 Hz — comfortably above TRAIL_MIN_SPEED
+  // (135), so every segment of a running player draws.
   const pos = slotPos([
     [0, 0],
     [4, 0],
     [8, 1],
     [12, 2],
   ]);
-  assert.equal(trailConnects(ticks, pos, 0), true);
-  assert.equal(trailConnects(ticks, pos, 1), true);
-  assert.equal(trailConnects(ticks, pos, 2), true);
+  assert.equal(trailConnects(ticks, pos, 0, 64), true);
+  assert.equal(trailConnects(ticks, pos, 1, 64), true);
+  assert.equal(trailConnects(ticks, pos, 2, 64), true);
 });
 
 test('a teleport (round reset / respawn) breaks the trail', () => {
@@ -98,9 +101,9 @@ test('a teleport (round reset / respawn) breaks the trail', () => {
     [1600, -900],
     [1604, -900],
   ]);
-  assert.equal(trailConnects(ticks, pos, 0), true); // inside the old round
-  assert.equal(trailConnects(ticks, pos, 1), false); // the reset boundary
-  assert.equal(trailConnects(ticks, pos, 2), true); // fresh from spawn
+  assert.equal(trailConnects(ticks, pos, 0, 64), true); // inside the old round
+  assert.equal(trailConnects(ticks, pos, 1, 64), false); // the reset boundary
+  assert.equal(trailConnects(ticks, pos, 2, 64), true); // fresh from spawn
 });
 
 test('a stalled tick gap breaks the trail', () => {
@@ -111,8 +114,8 @@ test('a stalled tick gap breaks the trail', () => {
     [8, 0],
     [12, 0],
   ]);
-  assert.equal(trailConnects(ticks, pos, 1), true); // gap of 1 tick
-  assert.equal(trailConnects(ticks, pos, 2), false); // gap of 18 ticks
+  assert.equal(trailConnects(ticks, pos, 1, 64), true); // gap of 1 tick
+  assert.equal(trailConnects(ticks, pos, 2, 64), false); // gap of 18 ticks
 });
 
 test('a non-advancing tick never connects', () => {
@@ -122,7 +125,7 @@ test('a non-advancing tick never connects', () => {
     [4, 0],
     [8, 0],
   ]);
-  assert.equal(trailConnects(ticks, pos, 0), false);
+  assert.equal(trailConnects(ticks, pos, 0, 64), false);
 });
 
 test('the step threshold is generous to movement, not to teleports', () => {
@@ -132,13 +135,13 @@ test('the step threshold is generous to movement, not to teleports', () => {
     [256, 0],
     [512, 0],
   ]);
-  assert.equal(trailConnects(ticks, near, 0), true);
+  assert.equal(trailConnects(ticks, near, 0, 64), true);
   const far = slotPos([
     [0, 0],
     [257, 0],
     [514, 0],
   ]);
-  assert.equal(trailConnects(ticks, far, 0), false);
+  assert.equal(trailConnects(ticks, far, 0, 64), false);
 });
 
 test('the segment off either end of the window does not connect', () => {
@@ -147,8 +150,99 @@ test('the segment off either end of the window does not connect', () => {
     [0, 0],
     [4, 0],
   ]);
-  assert.equal(trailConnects(ticks, pos, -1), false);
-  assert.equal(trailConnects(ticks, pos, 1), false); // f+1 past the end
+  assert.equal(trailConnects(ticks, pos, -1, 64), false);
+  assert.equal(trailConnects(ticks, pos, 1, 64), false); // f+1 past the end
+});
+
+// --- the speed gate (TRAIL_MIN_SPEED, 135 units/sec) ------------------------
+//
+// A segment draws only when the player traversed it at ≥ 135 u/s
+// (horizontal): slow/walking movement and standing jitter leave no
+// trail. All fixtures sit exactly on dyadic tick displacements so the
+// boundary comparisons are bit-exact (135/64 = 2.109375 units/tick at
+// 64 Hz).
+
+test('a slow segment (< 135 u/s) draws no trail', () => {
+  const ticks = [0, 1, 2];
+  // ~100 u/s at 64 Hz = 1.5625 units/tick — walking history, gated out;
+  // standing jitter (dx = dy = 0) contributes no trail either.
+  const pos = slotPos([
+    [0, 0],
+    [1.5625, 0],
+    [3.125, 0],
+  ]);
+  assert.equal(trailConnects(ticks, pos, 0, 64), false); // 100 u/s
+  assert.equal(trailConnects(ticks, pos, 1, 64), false); // still 100 u/s
+  const still = slotPos([
+    [0, 0],
+    [0.01, 0],
+    [0.02, 0],
+  ]);
+  assert.equal(trailConnects(ticks, still, 0, 64), false); // jitter ≈ 0.6 u/s
+});
+
+test('a fast segment (≥ 135 u/s) draws', () => {
+  const ticks = [0, 1];
+  // ~250 u/s at 64 Hz = 3.90625 units/tick — above the gate, well
+  // below the 256-unit teleport guard.
+  const pos = slotPos([
+    [0, 0],
+    [3.90625, 0],
+  ]);
+  assert.equal(trailConnects(ticks, pos, 0, 64), true);
+});
+
+test('the speed boundary is ≥ (exactly 135 u/s draws, one hair under does not)', () => {
+  const ticks = [0, 1];
+  // exactly TRAIL_MIN_SPEED · gap / tickRate = 135/64 units per tick
+  const at = slotPos([
+    [0, 0],
+    [135 / 64, 0],
+  ]);
+  assert.equal(trailConnects(ticks, at, 0, 64), true); // boundary included
+  const under = slotPos([
+    [0, 0],
+    [135 / 64 - 1e-6, 0],
+  ]);
+  assert.equal(trailConnects(ticks, under, 0, 64), false); // boundary excluded below
+});
+
+test('the same displacement over a larger gap drops below the speed', () => {
+  // 4 units over 1 tick = 256 u/s → draws…
+  const fast = slotPos([
+    [0, 0],
+    [4, 0],
+    [8, 0],
+  ]);
+  assert.equal(trailConnects([0, 1, 2], fast, 0, 64), true);
+  // …the SAME 4 units spread over 4 ticks = 64 u/s → below the gate
+  // (the gap itself, 4 ≤ TRAIL_MAX_TICK_GAP, is fine — speed is not).
+  const slow = slotPos([
+    [0, 0],
+    [4, 0],
+  ]);
+  assert.equal(trailConnects([0, 4], slow, 0, 64), false);
+  // and exactly at the threshold over that larger gap still draws:
+  // 135 · 4 / 64 = 8.4375 units over 4 ticks = 135 u/s.
+  const at = slotPos([
+    [0, 0],
+    [8.4375, 0],
+  ]);
+  assert.equal(trailConnects([0, 4], at, 0, 64), true);
+});
+
+test('the speed gate needs a valid tickRate (fail closed, no ungated default)', () => {
+  const ticks = [0, 1];
+  const pos = slotPos([
+    [0, 0],
+    [4, 0],
+  ]);
+  assert.equal(trailConnects(ticks, pos, 0, 64), true);
+  // a stale call missing the rate must NOT draw an un-gated trail
+  assert.equal(trailConnects(ticks, pos, 0), false);
+  assert.equal(trailConnects(ticks, pos, 0, undefined), false);
+  assert.equal(trailConnects(ticks, pos, 0, 0), false);
+  assert.equal(trailConnects(ticks, pos, 0, -64), false);
 });
 
 // --- smart camera (the default camera mode) ---------------------------------

@@ -63,7 +63,9 @@ const OTHER_COLOR = '#9aa4b5';
 const SECONDARY_TEXT = '#8b94a7';
 const TRAIL_FRAMES = 192; // ~3 s at 64 Hz
 // Trail continuity: a trail segment is only drawn between two ADJACENT
-// frames that are continuous — a bounded tick gap AND a bounded step.
+// frames that are continuous — a bounded tick gap AND a bounded step —
+// and only while the player actually MOVED fast enough (the
+// TRAIL_MIN_SPEED gate below: slow/walking history draws no trail).
 // Round resets and death→respawns teleport a player across the map
 // between two otherwise-alive frames; without this rule the polyline
 // connects through the teleport and draws one long streaking line from
@@ -71,6 +73,15 @@ const TRAIL_FRAMES = 192; // ~3 s at 64 Hz
 // frames, so a normal gap is ~1 tick and a normal step is a few units.
 const TRAIL_MAX_TICK_GAP = 8; // ticks — anything larger is a discontinuity
 const TRAIL_MAX_STEP2 = 256 * 256; // world units² — human movement is ~8/frame
+// Speed gate: a segment draws only when the player traversed it at
+// ≥ TRAIL_MIN_SPEED horizontal units/sec. Slow/walking movement and
+// standing jitter leave NO trail — history covered below the threshold
+// contributes nothing (the polyline simply restarts once speed picks up
+// again). It is a LOWER bound on the step (the teleport guard above is
+// the upper one): at 64 Hz, gap 1, a drawn step is 2.11…256 units.
+// Compared SQUARED (step² ≥ (v·gap/tickRate)²) so the predicate stays
+// sqrt-free.
+export const TRAIL_MIN_SPEED = 135; // units/sec — below this no trail is drawn
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 8;
 // --- Smart camera (the DEFAULT mode) -----------------------------------------
@@ -275,23 +286,37 @@ function hasPos(l) {
   return l && Number.isFinite(l.x) && Number.isFinite(l.y);
 }
 
-// trailConnects — the pure continuity rule drawTrails applies per segment:
-// does the trail draw between frame f and f+1 of one slot? `ticks` is the
-// store's tick array, `pos` that slot's interleaved Float32Array
-// [x, y, z, yaw] per frame. False breaks the polyline here (teleport /
-// stalled sampling); the chain restarts at the next segment, so trails
-// across a round reset or a death→respawn never connect — the first
-// post-respawn segments start fresh at spawn. Exported for the headless
-// test in src/lib/renderer.test.js.
-export function trailConnects(ticks, pos, f) {
+// trailConnects — the pure continuity + speed rule drawTrails applies
+// per segment: does the trail draw between frame f and f+1 of one slot?
+// `ticks` is the store's tick array, `pos` that slot's interleaved
+// Float32Array [x, y, z, yaw] per frame, `tickRate` the engine's ticks
+// per second (REQUIRED — it converts the gap into seconds for the
+// TRAIL_MIN_SPEED gate; there is deliberately no default, so a stale
+// call can never draw un-gated trails: a missing/invalid rate fails
+// closed). False breaks the polyline here (teleport / stalled sampling /
+// movement slower than TRAIL_MIN_SPEED); the chain restarts at the next
+// segment, so trails across a round reset or a death→respawn never
+// connect — the first post-respawn segments start fresh at spawn — and
+// history covered slow/walking (or standing still) contributes no trail
+// at all. Pure, no side effects. Exported for the headless test in
+// src/lib/renderer.test.js.
+export function trailConnects(ticks, pos, f, tickRate) {
   if (f < 0 || f + 1 >= ticks.length) return false;
   const gap = ticks[f + 1] - ticks[f];
   if (gap <= 0 || gap > TRAIL_MAX_TICK_GAP) return false;
+  if (!(tickRate > 0)) return false; // fail closed — never an ungated trail
   const b = f * 4;
   const pb = (f + 1) * 4;
   const dx = pos[b] - pos[pb];
   const dy = pos[b + 1] - pos[pb + 1];
-  return dx * dx + dy * dy <= TRAIL_MAX_STEP2;
+  const step2 = dx * dx + dy * dy;
+  // Speed gate (BOUNDARY IS ≥): horizontal speed over the segment is
+  // step / (gap / tickRate), so drawing requires
+  //   step ≥ TRAIL_MIN_SPEED · gap / tickRate
+  // squared to stay sqrt-free: step2 ≥ (TRAIL_MIN_SPEED·gap/tickRate)².
+  const minStep = (TRAIL_MIN_SPEED * gap) / tickRate;
+  if (step2 < minStep * minStep) return false; // too slow — no trail here
+  return step2 <= TRAIL_MAX_STEP2; // …and no streaking across a teleport
 }
 
 // smartCamTarget — the smart camera's FIT algorithm (pure; head-tested
@@ -1536,11 +1561,14 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
         const sy = cssH / 2 + (iy - cam.cy) * s;
         // prev is frame f+1 (the loop is contiguous and only alive frames
         // set it); trailConnects breaks the chain across a round reset /
-        // respawn teleport instead of drawing the streaking line. A
-        // PANEL change (floor transition) breaks it too: the two points
-        // live in different panels and a line across the gutter would
-        // be a lie.
-        if (prev && prevPanel === panel && trailConnects(store.ticks, p, f)) {
+        // respawn teleport instead of drawing the streaking line — and it
+        // gates on SPEED per segment: only travel at ≥ TRAIL_MIN_SPEED
+        // (135 u/s) strokes, so slow/walking history leaves no trail
+        // (tickRate comes from the engine, like every other tick math
+        // here). A PANEL change (floor transition) breaks it too: the two
+        // points live in different panels and a line across the gutter
+        // would be a lie.
+        if (prev && prevPanel === panel && trailConnects(store.ticks, p, f, engine.tickRate)) {
           const age = (frame - f) / TRAIL_FRAMES;
           ctx.strokeStyle = color;
           ctx.globalAlpha = (1 - age) * 0.5;
