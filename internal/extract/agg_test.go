@@ -379,6 +379,51 @@ func TestNullByteNamesPassThrough(t *testing.T) {
 	}
 }
 
+// TestBombExplodeEventCarriesC4Weapon is the characterization test for
+// agg.bombExploded: the detonation row is the ONLY source of the C4
+// boom's sound (sfx.js grenadeCues keys the manifest lookup on the
+// row's weapon — "C4" → soundTable "C4" → c4_explode1.wav; a weaponless
+// row is dropped as "never invent"), so the stamp is part of the row's
+// contract: kind bomb_explode, Weapon "C4", site + position + detail
+// payload intact, attributed to the current round. Nothing else stamps
+// this row.
+func TestBombExplodeEventCarriesC4Weapon(t *testing.T) {
+	a := newAgg()
+	a.roundStart(1000, false, false, 115, "BOMB TARGET")
+	px, py, pz := 12.5, -64.0, 1.25
+	a.bombExploded(3624, "B", &px, &py, &pz)
+
+	if len(a.events) != 2 {
+		t.Fatalf("events = %d, want 2 (round_start + bomb_explode) (%+v)", len(a.events), a.events)
+	}
+	ev := a.events[1] // roundStart() emitted the first row
+	if ev.Kind != models.EventBombExplode {
+		t.Errorf("kind = %q, want %q", ev.Kind, models.EventBombExplode)
+	}
+	if ev.Weapon != "C4" {
+		t.Errorf("weapon = %q, want %q (the manifest key the boom plays under)", ev.Weapon, "C4")
+	}
+	if ev.Tick != 3624 || ev.Round != 1 || ev.Site != "B" {
+		t.Errorf("tick/round/site = %d/%d/%q, want 3624/1/B", ev.Tick, ev.Round, ev.Site)
+	}
+	if ev.PosX == nil || *ev.PosX != 12.5 || ev.PosY == nil || *ev.PosY != -64.0 || ev.PosZ == nil || *ev.PosZ != 1.25 {
+		t.Errorf("position = %v/%v/%v, want 12.5/-64/1.25", ev.PosX, ev.PosY, ev.PosZ)
+	}
+	var detail map[string]any
+	if err := json.Unmarshal([]byte(ev.DetailJSON), &detail); err != nil {
+		t.Fatalf("detail JSON invalid: %q (%v)", ev.DetailJSON, err)
+	}
+	if detail["site"] != "B" {
+		t.Errorf("detail site = %v, want B", detail["site"])
+	}
+	// Position-less detonations still stamp the weapon (the boom's sound
+	// must not depend on position evidence).
+	a.bombExploded(4000, "", nil, nil, nil)
+	if len(a.events) != 3 || a.events[2].Weapon != "C4" {
+		t.Fatalf("position-less detonation lost the stamp: %+v", a.events)
+	}
+}
+
 func TestProgressCallback(t *testing.T) {
 	type call struct{ done, total int }
 

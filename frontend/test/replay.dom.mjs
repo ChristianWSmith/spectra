@@ -768,7 +768,7 @@ check('no leftover voice bar / lanes', !target.querySelector('.voice-bar') && !t
 // a direct-child button[aria-label="Mute all"], disabled because this
 // fixture has NO voice, with separator 2 immediately behind it. Delta:
 // that button is now the VOLUME POPOVER's trigger inside a host span
-// (same cluster slot), it is NEVER disabled (voice is one row of four —
+// (same cluster slot), it is NEVER disabled (voice is one row of five —
 // only the popover's Voice row disables), and separator 2 still follows
 // the host. The new popover coverage sits below the separator checks.
 const volHost = controls.querySelector('.rp-pop-host.rp-vol');
@@ -832,23 +832,24 @@ check(
 check('play controls are NOT on the scrub line', !scrub.querySelector('button'));
 
 // Volume popover (the old mute-all button's slot): it opens in place
-// above the trigger, exposes the FOUR fader rows, and the VOICE row is
-// disabled in this no-voice fixture while guns/utility/C4 stay live
+// above the trigger, exposes the FIVE fader rows, and the VOICE row is
+// disabled in this no-voice fixture while guns/utility/C4/announcer
+// stay live
 // (they never need the match to have voice).
 check('volume popover closed on entry', !controls.querySelector('#rp-vol-voice'));
 click(volBtn);
 await sleep();
 const volRows = [...controls.querySelectorAll('.rp-vol-pop .rp-vol-row')];
 check(
-  'volume popover has four rows: Voice, Guns, Utility, C4',
-  volRows.length === 4 &&
+  'volume popover has five rows: Voice, Guns, Utility, C4, Announcer',
+  volRows.length === 5 &&
     volRows.map((r) => (r.querySelector('.field-label')?.textContent || '').trim()).join(',') ===
-      'Voice,Guns,Utility,C4',
+      'Voice,Guns,Utility,C4,Announcer',
   volRows.map((r) => (r.querySelector('.field-label')?.textContent || '?').trim()).join(','),
 );
 check(
   'each row has a 0..100 range fader and a mute toggle button',
-  volRows.length === 4 &&
+  volRows.length === 5 &&
     volRows.every((r) => {
       const slider = r.querySelector('input[type="range"]');
       return (
@@ -867,13 +868,15 @@ check(
   `slider=${voiceSlider?.disabled} mute=${voiceMute?.disabled}`,
 );
 check(
-  'guns/utility/C4 rows stay ENABLED without voice',
+  'guns/utility/C4/announcer rows stay ENABLED without voice',
   controls.querySelector('#rp-vol-guns')?.disabled === false &&
     controls.querySelector('button[aria-label="Mute guns"]')?.disabled === false &&
     controls.querySelector('#rp-vol-utility')?.disabled === false &&
     controls.querySelector('button[aria-label="Mute utility"]')?.disabled === false &&
     controls.querySelector('#rp-vol-c4')?.disabled === false &&
-    controls.querySelector('button[aria-label="Mute c4"]')?.disabled === false,
+    controls.querySelector('button[aria-label="Mute c4"]')?.disabled === false &&
+    controls.querySelector('#rp-vol-announcer')?.disabled === false &&
+    controls.querySelector('button[aria-label="Mute announcer"]')?.disabled === false,
 );
 check('trigger reports the popover open (aria-expanded)', volBtn.getAttribute('aria-expanded') === 'true');
 click(volBtn); // close again — later checks see the original cluster
