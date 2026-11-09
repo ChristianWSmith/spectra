@@ -259,7 +259,10 @@ Canonical homes (extend these, don't fork them):
   cost. If a view aggregate duplicates a stored metric, relocate it.
 - **Tests:** characterization tests before behavior changes; frontend unit
   tests are `node --test src/lib/*.test.js`, DOM tests are the jsdom
-  harnesses in `frontend/test/` (`npm i --no-save jsdom` first). Golden
+  harnesses in `frontend/test/` (jsdom is a declared devDependency — a
+  plain `npm ci`/`npm install` in `frontend/` provides it; never install
+  test deps `--no-save`, which makes `npm ci` prune them and break every
+  parallel agent's DOM runs). Golden
   fixtures may only be regenerated deliberately, with the diff explained —
   a fixture diff without justification is a rejected change.
 - **Deliberate non-consolidations (distinct questions — leave as
