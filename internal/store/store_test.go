@@ -1299,3 +1299,55 @@ func TestGetBlindFlashDurations(t *testing.T) {
 		t.Errorf("empty match = %v, %v; want empty map, nil", m, err)
 	}
 }
+
+// TestGetDropDetails pins the replay drop layer's payload side channel
+// (the same narrow read as the blind durations): only weapon_drop rows
+// contribute in events.seq order, cat/mag/reserve roundtrip, a missing
+// field maps to ""/0 (never a guessed classification — the consumer
+// draws nothing), a malformed payload is guarded by json_valid, and
+// other kinds/matches stay out.
+func TestGetDropDetails(t *testing.T) {
+	s := openMem(t)
+	id, err := s.CreateMatchRow("/demos/drops.dem", "sha-drop-details", 0)
+	if err != nil {
+		t.Fatalf("CreateMatchRow: %v", err)
+	}
+	if err := s.SaveExtracted(id, &models.ExtractedMatch{Events: []models.Event{
+		{Tick: 100, Round: 1, Kind: models.EventWeaponDrop, Attacker: "100", Weapon: "AK-47",
+			DetailJSON: `{"player":"alice","cat":"gun","mag":30,"reserve":90}`},
+		{Tick: 101, Round: 1, Kind: models.EventWeaponDrop, Attacker: "200", Weapon: "HE Grenade",
+			DetailJSON: `{"player":"bob","cat":"util"}`}, // no ammo fields → 0/0
+		{Tick: 102, Round: 1, Kind: models.EventWeaponDrop, Attacker: "300", Weapon: "AWP"},
+		{Tick: 103, Round: 1, Kind: models.EventWeaponDrop, Attacker: "400", Weapon: "M4A4",
+			DetailJSON: `{oops`}, // malformed → json_valid guards → ""/0/0
+		{Tick: 104, Round: 1, Kind: models.EventKill, Victim: "100",
+			DetailJSON: `{"cat":"gun","mag":10}`}, // not a weapon_drop row
+	}}); err != nil {
+		t.Fatalf("SaveExtracted: %v", err)
+	}
+	det, err := s.GetDropDetails(id)
+	if err != nil {
+		t.Fatalf("GetDropDetails: %v", err)
+	}
+	want := []models.DropDetail{
+		{Seq: 0, Cat: "gun", Mag: 30, Reserve: 90},
+		{Seq: 1, Cat: "util", Mag: 0, Reserve: 0},
+		{Seq: 2, Cat: "", Mag: 0, Reserve: 0},
+		{Seq: 3, Cat: "", Mag: 0, Reserve: 0},
+	}
+	if len(det) != len(want) {
+		t.Fatalf("GetDropDetails len = %d (%v), want %d weapon_drop rows only", len(det), det, len(want))
+	}
+	for i := range want {
+		if det[i] != want[i] {
+			t.Errorf("GetDropDetails[%d] = %+v, want %+v", i, det[i], want[i])
+		}
+	}
+	other, err := s.CreateMatchRow("/demos/other-drops.dem", "sha-other-drops", 0)
+	if err != nil {
+		t.Fatalf("CreateMatchRow(other): %v", err)
+	}
+	if d, err := s.GetDropDetails(other); err != nil || len(d) != 0 {
+		t.Errorf("empty match = %v, %v; want empty slice, nil", d, err)
+	}
+}

@@ -49,6 +49,8 @@ test('LANDMARK_KINDS is the models.EventKind mirror (order included)', () => {
     'bomb_defuse_abort',
     'grenade_throw',
     'grenade',
+    'weapon_drop',
+    'weapon_pickup',
     'grenade_land',
     'round_start',
     'round_end',
@@ -109,6 +111,11 @@ test('categoryOfKind maps every kind and rejects unknown input', () => {
   // detonation (no det scrubber marker, no stat), and an unclaimed kind
   // would be dropped from the feed/draw set entirely.
   assert.equal(categoryOfKind('grenade_land'), 'grenade_lands');
+  // The death-drop evidence normalizes under its OWN default-OFF
+  // category — normalizeEvent requires a claim (an unclaimed kind
+  // would be dropped from the feed AND the draw set entirely).
+  assert.equal(categoryOfKind('weapon_drop'), 'drops');
+  assert.equal(categoryOfKind('weapon_pickup'), 'drops');
   assert.equal(categoryOfKind('teleport'), null);
   assert.equal(categoryOfKind(''), null);
   assert.equal(categoryOfKind(null), null);
@@ -148,6 +155,10 @@ test('drawBucket buckets every drawable kind (renderer/scrubber contract)', () =
   // new scrubber marker classes).
   assert.equal(drawBucket('bomb_drop'), 'drop');
   assert.equal(drawBucket('bomb_pickup'), 'pickup');
+  // The death-drop evidence buckets — DISTINCT from the C4 ones above
+  // (drawDrops consumes these; bombEvidenceAt must stay bomb-only).
+  assert.equal(drawBucket('weapon_drop'), 'wdrop');
+  assert.equal(drawBucket('weapon_pickup'), 'wpickup');
   // The plant/defuse ATTEMPT lifecycle: its OWN four buckets (never
   // 'plant'/'defuse' — those feed the beep scheduler and the world
   // markers), all marker-less (see scrubberMarkerClass below).
@@ -191,6 +202,8 @@ test('drawBucket buckets every drawable kind (renderer/scrubber contract)', () =
     'kill',
     'round_end',
     'round_start',
+    'weapon_drop',
+    'weapon_pickup',
   ].sort());
 });
 
@@ -252,6 +265,11 @@ test('scrubberMarkerClass maps every drawable bucket (the markers contract)', ()
   // stay marker-less (one plant/defuse = ONE marker, at its completion):
   assert.equal(scrubberMarkerClass('drop'), '');
   assert.equal(scrubberMarkerClass('pickup'), '');
+  // …and the death-drop evidence buckets (the world layer draws them;
+  // no scrubber tick, and the feed shows them only via the opt-in
+  // 'drops' category — markers still key off bucket classes alone).
+  assert.equal(scrubberMarkerClass('wdrop'), '');
+  assert.equal(scrubberMarkerClass('wpickup'), '');
   assert.equal(scrubberMarkerClass('damage'), '');
   assert.equal(scrubberMarkerClass('plant_begin'), '');
   assert.equal(scrubberMarkerClass('plant_abort'), '');
@@ -311,6 +329,17 @@ test('normalizeEvent tags the row, keeps source fields and drops unknown kinds',
   assert.equal(land.category, 'grenade_lands');
   assert.equal(land.bucket, 'land');
   assert.equal(normalizeEvent({ ...ev, kind: 'damage' }, {}).bucket, 'damage');
+  // The death-drop rows survive normalization under their own category
+  // (unclaimed kinds are dropped) and carry the drop layer's buckets.
+  const wdr = normalizeEvent({ ...ev, kind: 'weapon_drop', weapon: 'AK-47' }, {});
+  assert.ok(wdr, 'weapon_drop rows survive normalization');
+  assert.equal(wdr.category, 'drops');
+  assert.equal(wdr.bucket, 'wdrop');
+  assert.equal(wdr.steamId, '1', 'the dropper keeps its key (not a bomb-entity row)');
+  assert.equal(
+    normalizeEvent({ ...ev, kind: 'weapon_pickup', weapon: 'AK-47' }, {}).bucket,
+    'wpickup',
+  );
   // The plant/defuse ATTEMPT lifecycle keeps the actor's key (the
   // renderer resolves it to the dot its ring surrounds), while a
   // COMPLETED plant still attributes to the bomb entity (steamId '').

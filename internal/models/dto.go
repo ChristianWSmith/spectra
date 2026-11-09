@@ -148,6 +148,23 @@ type EventDetail struct {
 	RawJSON    string `json:"rawJson"`
 }
 
+// DropDetail is ONE weapon_drop row's detail_json projection for the
+// replay's drop layer — the payload side channel in the exact shape of
+// the blind one (store.GetBlindFlashDurations → MatchService.
+// GetBlindDurations): EventRow stays payload-free, so the stored
+// classification (cat, from models.IsUtilityWeapon at extract time —
+// the frontend never re-derives the util rule) and the gun's ammo/mag
+// state at death reach the renderer through a narrow seq-keyed read
+// (store.GetDropDetails), joined onto the DRAW_KINDS rows by seq.
+// Cat "" / Mag 0 mean "payload missing" — the consumer draws nothing,
+// never a guessed classification.
+type DropDetail struct {
+	Seq     int    `json:"seq"`
+	Cat     string `json:"cat"` // "gun" | "util" | "" (missing payload)
+	Mag     int    `json:"mag"`
+	Reserve int    `json:"reserve"`
+}
+
 // EventFromRow is THE EventRow → Event conversion (the typed-columns read
 // shape onto the domain event): every field the two share moves across;
 // the row id and the joined display names stay with the read DTO, and the

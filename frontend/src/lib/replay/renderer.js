@@ -48,6 +48,7 @@ import { detonationStyleOf, sameUtilityWeapon } from './landmarks.js';
 import { elevationFor, layerIndexForZ } from './layers.js';
 import { slotStateAt } from './state.js';
 import { bombEndTick, bombEvidenceAt, hasBombPos, actionIntervals, actionProgressAt } from './bomb.js';
+import { dropEvidenceAt, hasDropPos } from './drops.js';
 // fmt.js is THE seconds clock (fmtClock over tickSeconds — the same
 // basis as the scrubber readout). createRenderer has its own tick-based
 // HUD helper named fmtClock below, so the import is aliased: the two
@@ -182,6 +183,17 @@ const ACTION_RING_DEFUSE = '#4caf7d';
 const BOMB_ICON_PX = 12; // px — the extracted C4 icon's screen size
 const DOT_C4_ICON_PX = 10; // px — the carried-C4 badge on a player dot
 const NADE_ICON_PX = 16; // px — the extracted utility icon's screen size
+// Drop-layer marker sizes (drawDrops) — the same fixed-screen-size,
+// aspect-preserving convention as BOMB_ICON_PX/NADE_ICON_PX: guns sit
+// slightly under a nade so a cluster of dropped guns stays readable,
+// and a dropped util IS a grenade icon (NADE_ICON_PX — the same art
+// drawGrenades paints), never side-tinted.
+const DROP_GUN_ICON_PX = 14;
+const DROP_UTIL_ICON_PX = NADE_ICON_PX;
+const DROP_AMMO_GAP = 11; // px — gun icon's bottom edge → the ammo baseline
+const DROP_AMMO_ELEV = 5; // px — extra baseline drop when an elevation bar
+//                            sits below the marker (the name-label's
+//                            ELEV_NAME_DROP trick, same clearance rule)
 // --- Radar layers (multi-floor packs — meta.layers) ---------------------------
 const LAYER_GAP = 32; // image px between side-by-side layer panels: the
 //                     // camera space spans the combined extent, so the
@@ -739,6 +751,17 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // The dropped-C4 evidence bundle consumed by bomb.js bombEvidenceAt
   // (the smart camera's bomb point and drawBomb's dropped marker).
   let bombEv = { drops: [], pickups: [], plants: [], roundEnds: [] };
+  // The death-drop evidence (lib/replay/drops.js dropEvidenceAt) —
+  // weapon_drop / weapon_pickup rows in their OWN 'wdrop'/'wpickup'
+  // buckets, never mixed with the C4 lists above. roundEnds is shared
+  // with the bomb bundle (one round_end row serves every consumer).
+  let wdrops = [];
+  let wpickups = [];
+  let wdropEv = { drops: [], pickups: [], roundEnds: [] };
+  // The layer toggle: which drop categories draw at all (the toolbar's
+  // Guns/Utility popover → setDropLayers; BOTH OFF by default = the
+  // feature is opt-in, matching the pref's unset state).
+  let dropLayers = { guns: false, util: false };
   let packNote = ''; // HUD hint (missing radar / missing pack)
 
   // --- setIcons / setVoices / setStateIndex inputs (all optional) -----------
@@ -1041,6 +1064,8 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     defuses = [];
     drops = [];
     pickups = [];
+    wdrops = [];
+    wpickups = [];
     roundEnds = [];
     roundStarts = [];
     kills = [];
@@ -1138,6 +1163,19 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
         case 'pickup':
           pickups.push(l);
           break;
+        case 'wdrop':
+          // A death-drop row (the map's drop layer). The gun|util
+          // classification and the gun's ammo were JOINED onto this row
+          // by the view (getDropDetails — extract stamps cat on
+          // detail_json from models.IsUtilityWeapon; the renderer never
+          // re-derives the util rule). A row without the join (failed /
+          // skipped side channel) keeps dropCat '' → drawDrops draws
+          // nothing — an unknown category is never guessed.
+          wdrops.push(l);
+          break;
+        case 'wpickup':
+          wpickups.push(l);
+          break;
         case 'round':
           roundEnds.push(l);
           break;
@@ -1167,6 +1205,9 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     // planted round-end cleanup). One rebuild per setLandmarks call —
     // the per-frame paths only scan these small arrays.
     bombEv = { drops, pickups, plants, roundEnds };
+    // The drop-layer evidence bundle (drops.js dropEvidenceAt) — built
+    // with the bomb one above; roundEnds is the shared round cleanup.
+    wdropEv = { drops: wdrops, pickups: wpickups, roundEnds };
     // Pairing pool: detonations AND landings. A landing row's weapon is
     // "Decoy Grenade", so sameUtilityWeapon only ever pairs it with a
     // DECOY throw (every other grenade's nearest candidate stays its own
@@ -1325,6 +1366,22 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   function cancelEase() {
     if (easeRaf) cancelAnimationFrame(easeRaf);
     easeRaf = 0;
+  }
+
+  // setDropLayers({guns, util}) — the drop layer's visibility toggle
+  // (the FIRST layer toggle in this file: everything else draws whatever
+  // rows arrive, but drops are opt-in per category — the toolbar
+  // popover's two checkboxes, both OFF by default / unset pref). Only
+  // gates WHICH categories drawDrops paints; the rows themselves keep
+  // arriving via setLandmarks either way, so flipping a box is a pure
+  // visibility change — redraw now, and every later draw re-derives
+  // from tick alone (scrub-safe like every layer).
+  function setDropLayers(layers) {
+    dropLayers = {
+      guns: !!(layers && layers.guns),
+      util: !!(layers && layers.util),
+    };
+    draw();
   }
 
   // setCameraMode: 'smart' | 'free' (anything else reads as free).
@@ -2117,6 +2174,73 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       ctx.beginPath();
       ctx.arc(c.x, c.y, 6, 0, Math.PI * 2);
       ctx.fill();
+    }
+  }
+
+  // drawDrops — the map's optional drop layer: every inferred death drop
+  // still on the ground at `tick` (drops.js dropEvidenceAt queried ONE
+  // ROW AT A TIME — each dropped item is its own marker, pickup
+  // terminated and round-end cleaned up per row, pure function of tick).
+  // Drawn like the dropped-C4 marker (bombEvidenceAt's 'dropped' branch)
+  // minus the throbber: NO ring, NO pulse, NO dash — a static white,
+  // NEVER side-tinted item icon (iconFor + drawIcon's neutral
+  // '#ffffff' tint, aspect-preserving at DROP_GUN/DROP_UTIL_ICON_PX)
+  // with the elevation indicator behind it exactly like the dropped C4
+  // (elevationFor + drawElevationIndicator — "basically the same as
+  // dropped C4 except without the extra throbber" includes the floor
+  // mark). Per-category gate first (setDropLayers): a gun needs
+  // {guns}, a util needs {util}, and a row whose STORED cat the view
+  // never joined (dropCat '') draws nothing — the classification is
+  // never re-derived here.
+  // Guns additionally label their ammo state at death (detail_json
+  // mag/reserve, joined as row.dropAmmo) — small, neutral, shadowed
+  // like the player-name micro-label (the renderer's one label
+  // convention; there is no zoom-gated label pattern to follow), and
+  // clear of a below-marker elevation bar via DROP_AMMO_ELEV.
+  function drawDrops(tick) {
+    if (!dropLayers.guns && !dropLayers.util) return;
+    for (const d of wdrops) {
+      // One query per drop row: every dropped item is its own marker
+      // (drops.js — the renderer's per-row call shape), so a round with
+      // three abandoned guns shows three markers, pickup-terminated
+      // individually.
+      const ev = dropEvidenceAt({ drops: [d], pickups: wdropEv.pickups, roundEnds: wdropEv.roundEnds }, tick);
+      if (!ev || ev.state !== 'dropped' || !hasDropPos(ev)) continue;
+      const row = ev.row;
+      const cat = row.dropCat;
+      const want = cat === 'gun' ? dropLayers.guns : cat === 'util' ? dropLayers.util : false;
+      if (!want) continue;
+      const c = worldToScreen(ev.x, ev.y, ev.z);
+      const elev = elevationFor(ev.x, ev.y, ev.z, regions);
+      // Elevation indicator BEHIND the icon (the behind-the-entity rule).
+      if (elev) drawElevationIndicator(c.x, c.y, elev);
+      const size = cat === 'gun' ? DROP_GUN_ICON_PX : DROP_UTIL_ICON_PX;
+      const img = iconFor(row.weapon);
+      if (!img || !drawIcon(img, c.x, c.y, size, '#ffffff')) {
+        // No extracted icon → the neutral name label (the drawBombIcon
+        // text-fallback convention, kept NEUTRAL — never a side color).
+        ctx.font = 'bold 8px ui-monospace, monospace';
+        ctx.textAlign = 'center';
+        ctx.shadowColor = 'rgba(0,0,0,0.9)';
+        ctx.shadowBlur = 3;
+        ctx.fillStyle = '#d7dde8';
+        ctx.fillText(String(row.weapon || '?'), c.x, c.y + 3);
+        ctx.shadowBlur = 0;
+        continue; // the ammo baseline would sit under text of unknown extent
+      }
+      if (cat === 'gun' && row.dropAmmo && Number.isFinite(row.dropAmmo.mag)) {
+        ctx.font = '9px ui-monospace, monospace';
+        ctx.textAlign = 'center';
+        ctx.shadowColor = 'rgba(0,0,0,0.9)';
+        ctx.shadowBlur = 3;
+        ctx.fillStyle = '#d7dde8'; // neutral — ammo belongs to no side
+        ctx.fillText(
+          `${row.dropAmmo.mag}/${row.dropAmmo.reserve}`,
+          c.x,
+          c.y + size / 2 + DROP_AMMO_GAP + (elev ? DROP_AMMO_ELEV : 0),
+        );
+        ctx.shadowBlur = 0;
+      }
     }
   }
 
@@ -3280,6 +3404,11 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       // its rings must render ABOVE a victim's X (an X overlapping the
       // bomb read as a stray mark on it).
       drawDeaths(st.tick); // the victim's team-color X (spec 28)
+      // Drop markers ABOVE the death X (same read as death-X-under-bomb:
+      // an item icon over an X reads as the X's stray mark), and drawn
+      // BEFORE drawBomb so the C4 markers keep the topmost ground-item
+      // slot they've always had over death markers.
+      drawDrops(st.tick); // the inferred death drops (opt-in layer)
       drawBomb(st.tick, now);
       // Bullet tracers UNDER the players, painted WITH the hit-shot
       // tracer: both must read as coming out of the shooter's dot, and
@@ -3316,6 +3445,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     setChat,
     setBullets,
     setDecoyPlan,
+    setDropLayers,
     setStateIndex,
     setData,
     panBy,

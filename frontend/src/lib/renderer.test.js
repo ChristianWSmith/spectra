@@ -4719,3 +4719,150 @@ test('an aborted attempt’s ring stops at the abort tick (no completion)', () =
   assert.equal(at(250).length, 0, 'and it never comes back');
   r.destroy();
 });
+
+// --- the drop layer (drawDrops / setDropLayers) ------------------------------
+// The optional dropped-gun/util markers (weapon_drop / weapon_pickup):
+// gated per category (setDropLayers — BOTH OFF by default), neutral
+// white icons with NO ring/pulse/dash (the dropped-C4 look minus the
+// throbber), the STORED cat (joined by the view as dropCat — never
+// re-derived) deciding the gate, the joined mag/reserve ammo label, and
+// pickup / round-end cleanup. Rows arrive exactly like Replay.svelte
+// builds them: normalizeEvent over a DRAW_KINDS row already joined with
+// getDropDetails (dropCat / dropAmmo ride the row).
+
+// dropHarness — a store + renderer with gun/util drop rows, one
+// same-name pickup and the round's end loaded. `layers` is passed to
+// setDropLayers (absent = never called = the default OFF state).
+function dropHarness({ layers } = {}) {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const players = [
+    { steamId: '1', name: 'alice', side: 'ct' },
+    { steamId: '2', name: 'bob', side: 't' },
+  ];
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players });
+  const mk = (ev) => normalizeEvent(ev, {});
+  r.setLandmarks([
+    mk({
+      id: 1, seq: 1, tick: 100, round: 1, kind: 'weapon_drop', attacker: '2',
+      weapon: 'AK-47', posX: 80, posY: 80,
+      dropCat: 'gun', dropAmmo: { mag: 30, reserve: 90 },
+    }),
+    mk({
+      id: 2, seq: 2, tick: 120, round: 1, kind: 'weapon_drop', attacker: '2',
+      weapon: 'HE Grenade', posX: 20, posY: 20, dropCat: 'util',
+    }),
+    // Someone takes the AK at tick 300 (same name, same round).
+    mk({ id: 3, seq: 3, tick: 300, round: 1, kind: 'weapon_pickup', attacker: '1', weapon: 'AK-47', posX: 80, posY: 80 }),
+    mk({ id: 4, seq: 4, tick: 500, round: 1, kind: 'round_end' }),
+    mk({ id: 5, seq: 5, tick: 550, round: 2, kind: 'round_start' }),
+  ]);
+  r.setIcons({
+    // Deliberately NON-square gun art: 48×24 → 28×14 at
+    // DROP_GUN_ICON_PX = 14 (aspect preserved, never squashed).
+    'AK-47': { width: 48, height: 24, src: 'ak.svg' },
+    'HE Grenade': { width: 32, height: 32, src: 'he.svg' },
+  });
+  if (layers) r.setDropLayers(layers);
+  r.resize();
+  return { engine, canvas, r };
+}
+
+// dropSeek seeks and redraws, returning the ops of that draw.
+function dropSeek(h, tick) {
+  const mark = h.canvas.log.length;
+  h.engine.seekTick(tick);
+  h.r.draw();
+  return h.canvas.log.slice(mark);
+}
+const gunBody = (seq) => seq.filter((e) => e.op === 'drawImage' && e.args[3] === 28 && e.args[4] === 14);
+const utilBody = (seq) => seq.filter((e) => e.op === 'drawImage' && e.args[3] === 16 && e.args[4] === 16);
+
+test('drop layer: both categories OFF by default; ON draws neutral icons with the ammo label and NO ring', () => {
+  // Default state (setDropLayers never called — the unset pref): rows
+  // are loaded, but nothing draws.
+  const off = dropHarness();
+  let seq = dropSeek(off, 200);
+  assert.equal(gunBody(seq).length, 0, 'no gun marker with the layer off');
+  assert.equal(utilBody(seq).length, 0, 'no util marker with the layer off');
+  assert.equal(
+    seq.some((e) => e.op === 'fillText' && e.args[0] === '30/90'),
+    false,
+    'no ammo label either',
+  );
+  off.r.destroy();
+
+  const tintMark = iconTints.length;
+  const h = dropHarness({ layers: { guns: true, util: true } });
+  const MARK = h.r.worldToScreen(80, 80); // the AK's marker (free camera — stable)
+  seq = dropSeek(h, 200);
+  assert.ok(gunBody(seq).length > 0, 'the gun marker draws with {guns} on');
+  assert.ok(utilBody(seq).length > 0, 'the util marker draws with {util} on');
+  assert.ok(
+    seq.some((e) => e.op === 'fillText' && e.args[0] === '30/90'),
+    'the gun labels its mag/reserve at death (joined detail_json)',
+  );
+  // Neutral, never side-tinted: every icon tint built for these markers
+  // is the dark halo or PURE WHITE — no CT blue / T amber ever recolors
+  // them (the dropped-C4 white convention).
+  const tints = tintsSince(tintMark).map((e) => e.color);
+  assert.ok(tints.includes('#ffffff'), 'the body is tinted white');
+  for (const c of tints) {
+    assert.ok(
+      c === '#ffffff' || c === 'rgba(8, 10, 14, 0.85)',
+      `neutral-only icon tints, saw ${c}`,
+    );
+  }
+  // NO ring / pulse / dashed circle around the marker — the drop layer
+  // is static (the dropped C4's throbber is deliberately absent): no
+  // arc is EVER centered on the marker, and no dash pattern is set.
+  assert.equal(
+    seq.filter((e) => e.op === 'arc' && e.args[0] === MARK.x && e.args[1] === MARK.y).length,
+    0,
+    'no ring/pulse arc centered on the drop marker',
+  );
+  assert.equal(
+    seq.filter((e) => e.op === 'setLineDash' && Array.isArray(e.args[0]) && e.args[0].length > 0).length,
+    0,
+    'no dashed ring anywhere in the draw',
+  );
+  h.r.destroy();
+});
+
+test('drop layer: guns and util gate independently; pickup and round end clean up (scrub-safe)', () => {
+  // {guns} only — the util row stays hidden.
+  const g = dropHarness({ layers: { guns: true } });
+  let seq = dropSeek(g, 200);
+  assert.ok(gunBody(seq).length > 0, 'gun marker with {guns}');
+  assert.equal(utilBody(seq).length, 0, 'util marker gated OUT by {guns}');
+  g.r.destroy();
+  // {util} only — the mirror image.
+  const u = dropHarness({ layers: { util: true } });
+  seq = dropSeek(u, 200);
+  assert.equal(gunBody(seq).length, 0, 'gun marker gated OUT by {util}');
+  assert.ok(utilBody(seq).length > 0, 'util marker with {util}');
+  u.r.destroy();
+
+  const h = dropHarness({ layers: { guns: true, util: true } });
+  // After the pickup (300): the AK is gone, the untouched util stays.
+  seq = dropSeek(h, 350);
+  assert.equal(gunBody(seq).length, 0, 'the picked-up gun is gone');
+  assert.ok(utilBody(seq).length > 0, 'the util was not picked up — still on the ground');
+  // The round ends (500): both clean up, like death markers / dropped C4.
+  seq = dropSeek(h, 500);
+  assert.equal(gunBody(seq).length, 0, 'gone AT the round_end tick');
+  assert.equal(utilBody(seq).length, 0, 'util gone AT the round_end tick');
+  seq = dropSeek(h, 560);
+  assert.equal(gunBody(seq).length + utilBody(seq).length, 0, 'nothing bleeds into round 2');
+  // Backward scrub re-derives — nothing sticky (the util's round is over
+  // too, so only the pre-pickup window resurrects the gun).
+  seq = dropSeek(h, 200);
+  assert.ok(gunBody(seq).length > 0, 'a backwards scrub re-draws the pre-pickup gun');
+  assert.ok(utilBody(seq).length > 0, '…and the util at its position');
+  seq = dropSeek(h, 99);
+  assert.equal(gunBody(seq).length, 0, 'before the death: nothing dropped yet');
+  assert.equal(utilBody(seq).length, 0, '…for either item');
+  h.r.destroy();
+});

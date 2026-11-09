@@ -775,6 +775,51 @@ func (s *Store) GetBlindFlashDurations(matchID int64) (map[int]int, error) {
 	return out, nil
 }
 
+// GetDropDetails returns the weapon_drop payload projection (cat /
+// mag / reserve) for every death-drop row of a match in events.seq
+// order. The SAME narrow payload side channel as GetBlindFlashDurations
+// (models.EventRow stays payload-free and eventRowCols is not widened):
+// the replay's gun/util layer gates on the STORED classification
+// (detail_json.cat — derived from models.IsUtilityWeapon at extract
+// time; the frontend never re-derives it) and labels dropped guns with
+// their mag/reserve at death. json_valid guards malformed payloads
+// (json_extract would error); a row missing a field maps to "" / 0 —
+// the consumer draws nothing for those (never a guessed cat).
+func (s *Store) GetDropDetails(matchID int64) ([]models.DropDetail, error) {
+	rows, err := s.db.Query(
+		`SELECT seq,
+		   CASE WHEN json_valid(detail_json)
+		        THEN COALESCE(json_extract(detail_json, '$.cat'), '')
+		        ELSE '' END,
+		   CASE WHEN json_valid(detail_json)
+		        THEN COALESCE(CAST(json_extract(detail_json, '$.mag') AS INTEGER), 0)
+		        ELSE 0 END,
+		   CASE WHEN json_valid(detail_json)
+		        THEN COALESCE(CAST(json_extract(detail_json, '$.reserve') AS INTEGER), 0)
+		        ELSE 0 END
+		  FROM events
+		  WHERE match_id = ? AND kind = ?
+		  ORDER BY seq`,
+		matchID, models.EventWeaponDrop,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("store: get drop details: %w", err)
+	}
+	defer rows.Close()
+	var out []models.DropDetail
+	for rows.Next() {
+		var d models.DropDetail
+		if err := rows.Scan(&d.Seq, &d.Cat, &d.Mag, &d.Reserve); err != nil {
+			return nil, fmt.Errorf("store: get drop details: %w", err)
+		}
+		out = append(out, d)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: get drop details: %w", err)
+	}
+	return out, nil
+}
+
 // GetHurtHealthDetails returns detail_json for every player_hurt event
 // of a match, keyed by events.seq (UNIQUE (match_id, seq)). Same narrow
 // read as GetBlindFlashDetails: analytics.Compute stamps these onto the
