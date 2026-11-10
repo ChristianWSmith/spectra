@@ -23,13 +23,17 @@
     setDemoDirs,
     resetDemoDirs,
     chooseDemoDir,
+    getDemoCopyOnImport,
+    setDemoCopyOnImport,
+    freeAllDemoCopies,
+    listJobs,
     onAssetProgress,
     errText,
   } from '../services.js';
   import { extractAllAssets } from '../assets.js';
   import { probeAudio } from '../replay/audio.js';
   import { AUDIO_VOL_DEFAULT, prefVolume } from '../replay/sfx.js';
-  import { fmtDate } from '../fmt.js';
+  import { fmtDate, fmtBytes } from '../fmt.js';
   import { GLOSSARY } from '../definitions.js';
   import { getTheme, applyTheme } from '../theme.js';
   import { getFontSize, applyFontSize, reconcileFontSize, FONT_SIZES } from '../fontsize.js';
@@ -177,6 +181,32 @@
       await refreshDemoDirs();
       demoDirError = '';
     } catch (e) {
+      demoDirError = errText(e);
+    }
+  }
+
+  // Copy-on-import (the copy_on_import pref — Go reads it PER JOB
+  // through library.Options.CopyEnabled, so a flip here applies to
+  // queued jobs too). On is the default, and a read failure keeps it on:
+  // the toggle must never fail "closed" into silently skipping copies.
+  let copyOnImport = $state(true);
+
+  async function refreshCopyOnImport() {
+    try {
+      copyOnImport = await getDemoCopyOnImport();
+    } catch (e) {
+      demoDirError = errText(e);
+    }
+  }
+
+  async function setCopyOnImport(v) {
+    const prev = copyOnImport;
+    copyOnImport = v; // optimistic: the checkbox paints immediately
+    try {
+      await setDemoCopyOnImport(v);
+      demoDirError = '';
+    } catch (e) {
+      copyOnImport = prev; // roll back — the pref didn't take
       demoDirError = errText(e);
     }
   }
@@ -432,13 +462,68 @@
     audioRunning = false;
   }
 
+  // Settings → Data: refresh keeps info (and the copy count/bytes it
+  // shows) current after a free; jobsPending gates the bulk free so a
+  // sweep can never race an import that is mid-copy (the frontend gate —
+  // re-read right before the dialog, and again after confirming).
+  let dataBusy = $state(false);
+  let dataMsg = $state('');
+  let dataError = $state('');
+  let jobsPending = $state(false);
+
+  function refreshDataInfo() {
+    return getDataInfo()
+      .then((d) => (info = d))
+      .catch((e) => (error = errText(e)));
+  }
+
+  async function refreshJobsPending() {
+    try {
+      const jobs = await listJobs();
+      jobsPending = (jobs || []).some((j) => j.status === 'queued' || j.status === 'running');
+    } catch {
+      jobsPending = false; // no job list → don't block the button on a failed read
+    }
+  }
+
+  async function onFreeAllCopies() {
+    dataMsg = '';
+    dataError = '';
+    await refreshJobsPending();
+    if (jobsPending) {
+      dataError = 'An import is still running — try again once it finishes.';
+      return;
+    }
+    if (!info || info.demoCount === 0) return;
+    const ok = await confirmDlg?.ask({
+      title: 'Free all demo copies?',
+      message:
+        `Removes the ${info.demoCount} demo files (${fmtBytes(info.demoBytes)}) Spectra keeps under ` +
+        `${info.demosDir}. Your matches, sidecars and original files stay untouched — Re-parse ` +
+        'will then need your original file to still exist.',
+      confirmLabel: 'Free all copies',
+      danger: true,
+    });
+    if (!ok) return;
+    dataBusy = true;
+    try {
+      const freed = await freeAllDemoCopies();
+      dataMsg = `Freed ${fmtBytes(typeof freed === 'number' ? freed : 0)}.`;
+      await refreshDataInfo();
+      await refreshJobsPending();
+    } catch (e) {
+      dataError = errText(e);
+    } finally {
+      dataBusy = false;
+    }
+  }
+
   onMount(() => {
     getVersion()
       .then((v) => (version = v))
       .catch((e) => (error = errText(e)));
-    getDataInfo()
-      .then((d) => (info = d))
-      .catch((e) => (error = errText(e)));
+    refreshDataInfo();
+    refreshJobsPending();
     refreshMapPacks();
     refreshIcons();
     refreshSounds();
@@ -494,6 +579,7 @@
         /* keep the defaults */
       });
     refreshDemoDirs();
+    refreshCopyOnImport();
   });
 
   async function saveCfg() {
@@ -577,11 +663,48 @@
           <dt>Matches directory</dt>
           <dd class="mono">{info.matchesDir}</dd>
         </div>
+        <div class="fact-wide">
+          <dt>Demo copies</dt>
+          <dd class="mono">
+            {info.demosDir}
+            <span class="muted">
+              — {info.demoCount === 0
+                ? 'none'
+                : `${info.demoCount} files · ${fmtBytes(info.demoBytes)}`}
+            </span>
+          </dd>
+        </div>
         <div>
           <dt>Parser version</dt>
           <dd class="mono">{info.parserVersion}</dd>
         </div>
       </dl>
+      <div class="row-between">
+        <span class="muted"
+          >Spectra keeps its own copy of each imported demo so Re-parse works after your
+          original file moves or disappears. Freeing them reclaims the space — matches keep
+          everything they saved and replay instantly; Re-parse then needs your original
+          file.</span
+        >
+        <button
+          class="btn danger"
+          disabled={dataBusy || jobsPending || info.demoCount === 0}
+          title={jobsPending
+            ? 'An import is still running — try again once it finishes'
+            : info.demoCount === 0
+              ? 'No demo copies to free'
+              : 'Delete every demo copy from Spectra’s data folder'}
+          onclick={onFreeAllCopies}
+        >
+          {dataBusy ? 'Freeing…' : 'Free all demo copies'}
+        </button>
+      </div>
+      {#if dataMsg}
+        <p class="muted" role="status">{dataMsg}</p>
+      {/if}
+      {#if dataError}
+        <p class="error" role="alert">{dataError}</p>
+      {/if}
     {:else if !error}
       <p class="muted" role="status">Loading…</p>
     {/if}
@@ -592,8 +715,7 @@
     <p class="muted">
       The Library lists <span class="mono">.dem</span> /
       <span class="mono">.dem.zst</span> files found in these import dirs and imports
-      them with one click — each import copies the demo into Spectra’s data
-      folder, so your original files are never moved, modified or deleted.
+      them with one click — your original files are never moved, modified or deleted.
       Subfolders are scanned up to four levels deep; hidden folders are skipped.
       Demos already in the Library are left out of the list.
     </p>
@@ -618,6 +740,23 @@
     {#if demoDirError}
       <p class="error" role="alert">{demoDirError}</p>
     {/if}
+    <div class="row-between">
+      <label class="filt-check" for="sett-copy-on-import">
+        <input
+          id="sett-copy-on-import"
+          type="checkbox"
+          checked={copyOnImport}
+          onchange={(e) => setCopyOnImport(e.target.checked)}
+        />
+        <span>Copy demos into Spectra’s data folder</span>
+      </label>
+      <span class="muted"
+        >On (the default): every import keeps its own copy of the demo, so Re-parse works
+        even after your original file is moved or deleted. Off: imports only reference your
+        original file — nothing is duplicated, and Re-parse needs that file to still exist.
+        Stored copies stay evictable either way (Data below, or Free copy in the Library).</span
+      >
+    </div>
     <div class="row-between">
       <span class="muted">
         {demoDirsCustom

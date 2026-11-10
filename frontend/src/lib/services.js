@@ -182,6 +182,19 @@ export function deleteMatch(id, deleteDemo) {
   });
 }
 
+// evictDemoCopy frees Spectra's own copy of a match's demo — the Library
+// row's "Free copy" / the Match view's copy line — and resolves to the
+// bytes reclaimed (0 when there was no copy: evicting twice is not an
+// error). The match, its sidecars and the stored source file are never
+// touched, so nothing about the saved data changes; the row's copyState
+// re-derives from the filesystem on the next list load.
+export function evictDemoCopy(id) {
+  return LibraryService.EvictDemoCopy(id).then((r) => {
+    invalidate();
+    return r;
+  });
+}
+
 export function reprocess(id) {
   return LibraryService.Reprocess(id).then((r) => {
     invalidate();
@@ -229,6 +242,18 @@ export function chooseDemoDir() {
   return LibraryService.ChooseDemoDir();
 }
 
+// getDemoCopyOnImport is the "copy demos into Spectra's data folder on
+// import" toggle (Settings → Import dirs). Unset/corrupt reads as ON —
+// copying is the default. Go decides per job (library.Options.CopyEnabled),
+// so the setting applies to queued jobs too.
+export function getDemoCopyOnImport() {
+  return LibraryService.GetDemoCopyOnImport();
+}
+
+export function setDemoCopyOnImport(copy) {
+  return LibraryService.SetDemoCopyOnImport(copy);
+}
+
 // listDemoFiles scans the configured import dirs; rows are demos NOT
 // already in the library (recognised imports are omitted, newest first),
 // so deleting the match brings its file back on the next scan.
@@ -262,6 +287,18 @@ export function getGenericEvents(id, name, round, limit, offset) {
 
 export function getDataInfo() {
   return LibraryService.GetDataInfo();
+}
+
+// freeAllDemoCopies sweeps Spectra's managed copy dir (Settings → Data's
+// "Free all demo copies") and resolves to the bytes reclaimed. Callers
+// gate on pending jobs first — an import mid-copy would land its file
+// after the sweep — and confirm before calling; matches, sidecars and
+// your original files are never in scope.
+export function freeAllDemoCopies() {
+  return LibraryService.FreeAllDemoCopies().then((r) => {
+    invalidate();
+    return r;
+  });
 }
 
 // --- MatchService -------------------------------------------------------------

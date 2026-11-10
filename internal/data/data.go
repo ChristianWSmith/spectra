@@ -61,10 +61,13 @@ func TempDir() string {
 }
 
 // DemosDir returns the managed demo-copy directory
-// ($XDG_DATA_HOME/spectra/demos), creating it if needed. Every import
-// copies the raw demo here, named by its content hash, so the match can be
-// reprocessed after the user's original file is moved or deleted. Only
-// files under this directory are ever deleted by the app (see
+// ($XDG_DATA_HOME/spectra/demos), creating it if needed. Imports copy the
+// raw demo here when copy-on-import is on — the default, which the
+// copy_on_import pref in Settings can turn off — named by its content
+// hash, so the match can be reprocessed after the user's original file is
+// moved or deleted. Stored copies are evictable (Free copy /
+// Free all demo copies): this whole directory is spectra' own property,
+// and only files under it are ever deleted by the app (see
 // library.Importer.RemoveManagedDemo) — a user's original demo is never
 // ours to remove.
 func DemosDir() string {

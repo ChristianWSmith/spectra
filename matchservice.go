@@ -3,21 +3,35 @@ package main
 import (
 	"sort"
 
+	"github.com/ChristianWSmith/spectra/internal/library"
 	"github.com/ChristianWSmith/spectra/internal/models"
 	"github.com/ChristianWSmith/spectra/internal/store"
 )
 
 // MatchService is the frontend-facing read surface for one match's
 // extracted data: header, scoreboard, rounds, timeline events and chat.
-// Every method is a thin delegate over internal/store; store.ErrNotFound
-// surfaces as an error (the bindings turn it into a JS exception).
+// Methods are thin delegates over internal/store — GetMatch additionally
+// stamps the fs-derived demo CopyState (service-owned; the store never
+// fills it) — and store.ErrNotFound surfaces as an error (the bindings
+// turn it into a JS exception).
 type MatchService struct {
 	st *store.Store
+	// imp resolves CopyState for GetMatch. Wired in main.go; nil only in
+	// read tests that don't exercise it — those rows keep "" (unstamped).
+	imp *library.Importer
 }
 
-// GetMatch returns one match header row.
+// GetMatch returns one match header row with its demo-copy state filled
+// in (library.CopyStateCopied / External / Missing).
 func (s *MatchService) GetMatch(id int64) (*models.Match, error) {
-	return s.st.GetMatch(id)
+	m, err := s.st.GetMatch(id)
+	if err != nil {
+		return nil, err
+	}
+	if s.imp != nil {
+		m.CopyState = s.imp.CopyState(m.SHA256, m.Path)
+	}
+	return m, nil
 }
 
 // GetScoreboard returns a match's player aggregates, sorted by a

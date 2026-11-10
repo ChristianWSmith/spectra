@@ -159,6 +159,8 @@ func main() {
 
 	// Import pipeline: one worker goroutine, events out through the app's
 	// event manager. Deferred after st.Close above, so it runs first (LIFO).
+	// CopyEnabled reads the copy_on_import pref per job (copyOnImportPref),
+	// so the Settings toggle applies to queued jobs too.
 	imp := library.New(library.Options{
 		Store: st,
 		Parse: extract.Parse,
@@ -166,6 +168,7 @@ func main() {
 			app.Event.Emit(name, payload)
 		},
 		ParserVersion: extract.ParserVersion,
+		CopyEnabled:   copyOnImportPref(kvs),
 	})
 	defer imp.Shutdown()
 
@@ -175,7 +178,7 @@ func main() {
 	sc := library.NewScanner(library.ScannerOptions{Store: st})
 
 	app.RegisterService(application.NewService(&LibraryService{st: st, imp: imp, sc: sc, kvs: kvs, app: app}))
-	app.RegisterService(application.NewService(&MatchService{st: st}))
+	app.RegisterService(application.NewService(&MatchService{st: st, imp: imp}))
 	app.RegisterService(application.NewService(&ReplayService{st: st, app: app}))
 	app.RegisterService(application.NewService(&AnalyticsService{st: st, app: app}))
 	app.RegisterService(application.NewService(&ProfileService{st: st, app: app}))
@@ -235,10 +238,22 @@ func runImport(path string) {
 	}
 	defer func() { _ = st.Close() }()
 
+	// Same prefs as the GUI, loaded straight (no window, no service
+	// registration): the headless import honors copy_on_import, and an
+	// unset pref keeps the default of copying.
+	kvs := kvstore.NewWithConfig(&kvstore.Config{
+		Filename: prefsFilename(),
+		AutoSave: true,
+	})
+	if err := kvs.Load(); err != nil {
+		log.Printf("prefs: load: %v", err)
+	}
+
 	imp := library.New(library.Options{
 		Store:         st,
 		Parse:         extract.Parse,
 		ParserVersion: extract.ParserVersion,
+		CopyEnabled:   copyOnImportPref(kvs),
 	})
 	defer imp.Shutdown()
 

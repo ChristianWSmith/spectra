@@ -2,9 +2,12 @@ package main
 
 import (
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/ChristianWSmith/spectra/internal/library"
 	"github.com/ChristianWSmith/spectra/internal/models"
 	"github.com/ChristianWSmith/spectra/internal/store"
 )
@@ -38,6 +41,58 @@ func newMatchServiceFixture(t *testing.T) (*MatchService, int64) {
 		t.Fatalf("SaveExtracted: %v", err)
 	}
 	return &MatchService{st: st}, id
+}
+
+// TestGetMatchStampsCopyState pins the service-owned annotation:
+// MatchService.GetMatch derives CopyState from the filesystem
+// (library.Importer.CopyState) — a bare MatchService (no importer wired)
+// and the store itself leave it "", which is the "store never fills it"
+// rule made observable.
+func TestGetMatchStampsCopyState(t *testing.T) {
+	svc, id := newMatchServiceFixture(t)
+
+	// No importer wired: the field stays the store's empty default.
+	bare, err := svc.GetMatch(id)
+	if err != nil {
+		t.Fatalf("GetMatch: %v", err)
+	}
+	if bare.CopyState != "" {
+		t.Errorf("CopyState without an importer = %q, want \"\" (the store never fills it)", bare.CopyState)
+	}
+
+	// With an importer: no copy on disk and the fixture's stored path
+	// (/d/svc.dem) not being a real file → "missing".
+	copyDir := t.TempDir()
+	imp := library.New(library.Options{
+		Store:         svc.st,
+		Parse:         stubParse,
+		ParserVersion: "test",
+		SidecarDir:    t.TempDir(),
+		CopyDir:       copyDir,
+	})
+	t.Cleanup(imp.Shutdown)
+	svc.imp = imp
+
+	m, err := svc.GetMatch(id)
+	if err != nil {
+		t.Fatalf("GetMatch: %v", err)
+	}
+	if m.CopyState != "missing" {
+		t.Errorf("CopyState (no copy, dead source) = %q, want missing", m.CopyState)
+	}
+
+	// The copy lands → "copied", derived fresh on the next read (nothing
+	// cached, nothing stored).
+	if err := os.WriteFile(filepath.Join(copyDir, m.SHA256+".dem"), []byte("x"), 0o644); err != nil {
+		t.Fatalf("write copy: %v", err)
+	}
+	m, err = svc.GetMatch(id)
+	if err != nil {
+		t.Fatalf("GetMatch: %v", err)
+	}
+	if m.CopyState != "copied" {
+		t.Errorf("CopyState (copy on disk) = %q, want copied", m.CopyState)
+	}
 }
 
 // TestGetMatchSummary: unknown id → store.ErrNotFound; known id → exactly

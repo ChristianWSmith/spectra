@@ -1,13 +1,24 @@
 package main
 
 import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"errors"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
+	"github.com/adrg/xdg"
 	"github.com/wailsapp/wails/v3/pkg/services/kvstore"
 
+	"github.com/ChristianWSmith/spectra/internal/data"
+	"github.com/ChristianWSmith/spectra/internal/extract"
 	"github.com/ChristianWSmith/spectra/internal/library"
+	"github.com/ChristianWSmith/spectra/internal/models"
 	"github.com/ChristianWSmith/spectra/internal/store"
 )
 
@@ -136,6 +147,159 @@ func TestPrefStrings(t *testing.T) {
 	}
 }
 
+// TestPrefBool covers the kvstore value shapes the copy-on-import pref
+// can arrive in. ok is what tells the caller "unset/corrupt → use MY
+// default" — for a default-true pref, reading a corrupt value as plain
+// false would silently stop making backups.
+func TestPrefBool(t *testing.T) {
+	tests := []struct {
+		name string
+		in   any
+		want bool
+		ok   bool
+	}{
+		{"absent", nil, false, false},
+		{"true", true, true, true},
+		{"false", false, false, true},
+		{"string", "true", false, false},
+		{"number", float64(1), false, false},
+		{"list", []any{}, false, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, ok := prefBool(tt.in)
+			if ok != tt.ok || (ok && got != tt.want) {
+				t.Errorf("prefBool(%#v) = (%v, %v), want (%v, %v)", tt.in, got, ok, tt.want, tt.ok)
+			}
+		})
+	}
+}
+
+// TestDemoCopyOnImportRoundTrip pins the Settings toggle's contract:
+// unset (or corrupt) reads as COPY (the default), Set false/true sticks,
+// and the pipeline-side closure (library.Options.CopyEnabled) reads the
+// SAME key — the display half and the decision half never disagree.
+func TestDemoCopyOnImportRoundTrip(t *testing.T) {
+	svc := newDemoDirsService(t)
+	enabled := copyOnImportPref(svc.kvs)
+
+	if !svc.GetDemoCopyOnImport() {
+		t.Error("unset pref reported copy-off, want the default (copy on)")
+	}
+	if !enabled() {
+		t.Error("pipeline closure reported copy-off for an unset pref")
+	}
+	if err := svc.SetDemoCopyOnImport(false); err != nil {
+		t.Fatalf("SetDemoCopyOnImport(false): %v", err)
+	}
+	if svc.GetDemoCopyOnImport() {
+		t.Error("Get after Set(false) still reports copy-on")
+	}
+	if enabled() {
+		t.Error("pipeline closure still reports copy-on after Set(false)")
+	}
+	if err := svc.SetDemoCopyOnImport(true); err != nil {
+		t.Fatalf("SetDemoCopyOnImport(true): %v", err)
+	}
+	if !svc.GetDemoCopyOnImport() || !enabled() {
+		t.Error("Set(true) did not stick (either reader)")
+	}
+
+	// A corrupt value falls back to the DEFAULT — copying — never to
+	// silently skipping copies.
+	if err := svc.kvs.Set(prefsCopyOnImportKey, "not a bool"); err != nil {
+		t.Fatalf("seed corrupt pref: %v", err)
+	}
+	if !svc.GetDemoCopyOnImport() {
+		t.Error("corrupt pref reported copy-off, want the default (copy on)")
+	}
+	if !enabled() {
+		t.Error("pipeline closure reported copy-off for a corrupt pref")
+	}
+}
+
+// TestListMatchesPageStampsCopyState pins the ONE list-side annotation:
+// every row the Library renders carries its fs-derived CopyState
+// (copied/external/missing), while the store's own unbounded ListMatches
+// stays unstamped — the field is service-owned, the store never fills it
+// (scanner/MatchPicker readers don't pay for the stats).
+func TestListMatchesPageStampsCopyState(t *testing.T) {
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	copyDir := t.TempDir()
+	imp := library.New(library.Options{
+		Store:         st,
+		Parse:         stubParse,
+		ParserVersion: "test",
+		SidecarDir:    t.TempDir(),
+		CopyDir:       copyDir,
+	})
+	t.Cleanup(imp.Shutdown)
+	svc := &LibraryService{st: st, imp: imp}
+
+	copiedSrc := filepath.Join(t.TempDir(), "copied.dem")
+	if err := os.WriteFile(copiedSrc, []byte("a"), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+	externalSrc := filepath.Join(t.TempDir(), "external.dem")
+	if err := os.WriteFile(externalSrc, []byte("b"), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+	missingSrc := filepath.Join(t.TempDir(), "gone.dem") // never written
+	if err := os.WriteFile(filepath.Join(copyDir, "sha-copied.dem"), []byte("a"), 0o644); err != nil {
+		t.Fatalf("write copy: %v", err)
+	}
+
+	idCopied, err := st.CreateMatchRow(copiedSrc, "sha-copied", 1)
+	if err != nil {
+		t.Fatalf("CreateMatchRow: %v", err)
+	}
+	idExternal, err := st.CreateMatchRow(externalSrc, "sha-external", 1)
+	if err != nil {
+		t.Fatalf("CreateMatchRow: %v", err)
+	}
+	idMissing, err := st.CreateMatchRow(missingSrc, "sha-missing", 1)
+	if err != nil {
+		t.Fatalf("CreateMatchRow: %v", err)
+	}
+
+	page, err := svc.ListMatchesPage("", "extracted_at", false, 0, 0, store.MatchListFilter{})
+	if err != nil {
+		t.Fatalf("ListMatchesPage: %v", err)
+	}
+	want := map[int64]string{idCopied: "copied", idExternal: "external", idMissing: "missing"}
+	seen := map[int64]bool{}
+	for _, row := range page.Rows {
+		w, ok := want[row.ID]
+		if !ok {
+			continue
+		}
+		seen[row.ID] = true
+		if row.CopyState != w {
+			t.Errorf("row %d CopyState = %q, want %q", row.ID, row.CopyState, w)
+		}
+	}
+	for id := range want {
+		if !seen[id] {
+			t.Errorf("match %d missing from the page", id)
+		}
+	}
+
+	// The unbounded store read stays unstamped (the field is service-owned).
+	rows, err := st.ListMatches("", "extracted_at", false)
+	if err != nil {
+		t.Fatalf("ListMatches: %v", err)
+	}
+	for _, row := range rows {
+		if row.CopyState != "" {
+			t.Errorf("store.ListMatches row %d CopyState = %q, want \"\" (the store never fills it)", row.ID, row.CopyState)
+		}
+	}
+}
+
 // TestDeleteDemoFileGatesOnConfiguredDirs pins the service wiring behind
 // the Library's "Delete from disk" button: the effective import dirs
 // (the pref) are what gate the delete — a demo under a configured dir is
@@ -177,5 +341,178 @@ func TestDeleteDemoFileGatesOnConfiguredDirs(t *testing.T) {
 	}
 	if _, err := os.Lstat(outside); err != nil {
 		t.Errorf("outside demo removed despite the refusal: %v", err)
+	}
+}
+
+// redirectDataRoot points XDG's data home at a temp dir for one test
+// (the mappackservice_test.go pattern) so data.DemosDir/MatchesDir land
+// in the test's own directory — these tests never touch the user's real
+// data.
+func redirectDataRoot(t *testing.T) {
+	t.Helper()
+	prev := xdg.DataHome
+	xdg.DataHome = t.TempDir()
+	t.Cleanup(func() { xdg.DataHome = prev })
+}
+
+// stubParse stands in for extract.Parse in tests that never enqueue a
+// job (the copy-dir methods below only touch the filesystem).
+func stubParse(_ context.Context, _ io.Reader, _ extract.ParseOptions) (*models.ExtractedMatch, error) {
+	return &models.ExtractedMatch{}, nil
+}
+
+// TestEvictDemoCopy pins the "Free copy" action end to end: the managed
+// demo AND its .info companion are removed, while the stored source file,
+// the match's sidecar directory and the match row itself are all left
+// alone. A second evict is (0, nil) — not an error — and a match with no
+// row surfaces store.ErrNotFound.
+func TestEvictDemoCopy(t *testing.T) {
+	redirectDataRoot(t)
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	imp := library.New(library.Options{
+		Store:         st,
+		Parse:         stubParse,
+		ParserVersion: "test",
+		SidecarDir:    t.TempDir(),
+		CopyDir:       data.DemosDir(),
+	})
+	t.Cleanup(imp.Shutdown)
+	svc := &LibraryService{st: st, imp: imp, kvs: kvstore.New()}
+
+	content := "demo bytes to evict"
+	sha := fmt.Sprintf("%x", sha256.Sum256([]byte(content)))
+	src := filepath.Join(t.TempDir(), "original.dem")
+	if err := os.WriteFile(src, []byte(content), 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+	const size = 4096 // the size the match row records (what freeing returns)
+	matchID, err := st.CreateMatchRow(src, sha, size)
+	if err != nil {
+		t.Fatalf("CreateMatchRow: %v", err)
+	}
+	copyPath := filepath.Join(data.DemosDir(), sha+".dem")
+	companion := filepath.Join(data.DemosDir(), sha+".info")
+	for _, p := range []string{copyPath, companion} {
+		if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", p, err)
+		}
+	}
+	sidecarDir := filepath.Join(data.MatchesDir(), strconv.FormatInt(matchID, 10))
+	marker := filepath.Join(sidecarDir, "meta.json")
+	if err := os.MkdirAll(sidecarDir, 0o755); err != nil {
+		t.Fatalf("mkdir sidecar: %v", err)
+	}
+	if err := os.WriteFile(marker, []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write sidecar marker: %v", err)
+	}
+	if got := imp.CopyState(sha, src); got != "copied" {
+		t.Fatalf("CopyState before evict = %q, want copied", got)
+	}
+
+	freed, err := svc.EvictDemoCopy(matchID)
+	if err != nil {
+		t.Fatalf("EvictDemoCopy: %v", err)
+	}
+	if freed != size {
+		t.Errorf("freed = %d, want the match's size %d", freed, size)
+	}
+	// The copy and its companion are gone…
+	for _, p := range []string{copyPath, companion} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Errorf("%s survived the evict (err=%v)", p, err)
+		}
+	}
+	// …while everything else stays: source, sidecars, match row.
+	if _, err := os.Stat(src); err != nil {
+		t.Errorf("stored source was touched: %v", err)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Errorf("sidecar dir was touched: %v", err)
+	}
+	m, err := st.GetMatch(matchID)
+	if err != nil {
+		t.Fatalf("GetMatch after evict: %v", err)
+	}
+	if m.Path != src || m.SHA256 != sha || m.Size != size {
+		t.Errorf("match row after evict = (path %q, sha %q, size %d), want unchanged", m.Path, m.SHA256, m.Size)
+	}
+	if got := imp.CopyState(m.SHA256, m.Path); got != "external" {
+		t.Errorf("CopyState after evict = %q, want external (source still there)", got)
+	}
+
+	// Evicting again is a no-op that reports honestly, not an error.
+	freed, err = svc.EvictDemoCopy(matchID)
+	if err != nil || freed != 0 {
+		t.Errorf("second EvictDemoCopy = (%d, %v), want (0, nil)", freed, err)
+	}
+	// An unknown match is a real error (the caller showed a row that is
+	// no longer there).
+	if _, err := svc.EvictDemoCopy(999999); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("EvictDemoCopy(unknown) err = %v, want store.ErrNotFound", err)
+	}
+}
+
+// TestFreeAllDemoCopiesAndDataInfo pins Settings → Data's bulk free:
+// GetDataInfo counts/sums the managed copy dir in one readdir, the free
+// removes exactly those files (everything under data.DemosDir is
+// spectra' property) and reports the bytes, a second call is (0, nil),
+// and sidecar data is never in scope.
+func TestFreeAllDemoCopiesAndDataInfo(t *testing.T) {
+	redirectDataRoot(t)
+	svc := &LibraryService{kvs: kvstore.New()}
+	demosDir := data.DemosDir()
+
+	files := map[string]int{
+		"aaa.dem":     100,
+		"bbb.dem.zst": 50,
+		"aaa.info":    10, // companion: same dir, same sweep
+	}
+	var wantBytes int64
+	for name, n := range files {
+		if err := os.WriteFile(filepath.Join(demosDir, name), bytes.Repeat([]byte{'x'}, n), 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+		wantBytes += int64(n)
+	}
+	sidecarMarker := filepath.Join(data.MatchesDir(), "7", "meta.json")
+	if err := os.MkdirAll(filepath.Dir(sidecarMarker), 0o755); err != nil {
+		t.Fatalf("mkdir sidecar: %v", err)
+	}
+	if err := os.WriteFile(sidecarMarker, []byte("{}"), 0o644); err != nil {
+		t.Fatalf("write sidecar marker: %v", err)
+	}
+
+	info := svc.GetDataInfo()
+	if info.DemosDir != demosDir {
+		t.Errorf("DataInfo.demosDir = %q, want %q", info.DemosDir, demosDir)
+	}
+	if info.DemoCount != len(files) || info.DemoBytes != wantBytes {
+		t.Errorf("DataInfo demos = (%d files, %d bytes), want (%d, %d)",
+			info.DemoCount, info.DemoBytes, len(files), wantBytes)
+	}
+	if info.DBPath == "" || info.MatchesDir == "" || info.ParserVersion == "" {
+		t.Errorf("DataInfo missing locations/version: %+v", info)
+	}
+
+	freed, err := svc.FreeAllDemoCopies()
+	if err != nil {
+		t.Fatalf("FreeAllDemoCopies: %v", err)
+	}
+	if freed != wantBytes {
+		t.Errorf("freed = %d, want %d", freed, wantBytes)
+	}
+	if entries, err := os.ReadDir(demosDir); err != nil || len(entries) != 0 {
+		t.Errorf("copy dir after free = %v (err %v), want empty", entries, err)
+	}
+	if _, err := os.Stat(sidecarMarker); err != nil {
+		t.Errorf("sidecar data was swept too: %v", err)
+	}
+	freed, err = svc.FreeAllDemoCopies()
+	if err != nil || freed != 0 {
+		t.Errorf("second FreeAllDemoCopies = (%d, %v), want (0, nil)", freed, err)
 	}
 }

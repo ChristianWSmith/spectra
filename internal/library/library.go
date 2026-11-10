@@ -1,9 +1,10 @@
 // Package library is the presentation-free import pipeline: a single-worker
-// job queue that hashes, dedupes (sha256), copies the raw demo into the
-// app's managed demo dir (copy-on-import — the source file may later move
-// or vanish), decompresses (.dem.zst, streamed — never to a temp file) and
-// parses demos via internal/extract, persisting through internal/store.
-// Progress and terminal transitions are announced as
+// job queue that hashes, dedupes (sha256), optionally copies the raw demo
+// into the app's managed demo dir (copy-on-import, the default — the
+// source file may later move or vanish; the copy_on_import pref skips it,
+// see Options.CopyEnabled), decompresses (.dem.zst, streamed — never to a
+// temp file) and parses demos via internal/extract, persisting through
+// internal/store. Progress and terminal transitions are announced as
 // Wails events (spectra:job-progress / spectra:job-done /
 // spectra:library-changed) through an injected Emit hook; originals are
 // never written. The same package owns import-dir discovery (Scan,
@@ -210,9 +211,12 @@ type LibraryChangedEvent struct{}
 // nil; ParserVersion is stamped onto extracted matches; SidecarDir is the
 // root that holds one position-sidecar directory per match (<root>/<id>),
 // defaulting to data.MatchesDir() when empty; CopyDir is where raw demos
-// are copied on import (<copyDir>/<sha256>.dem[.zst]), defaulting to
-// data.DemosDir() when empty (tests point both at temp dirs so they never
-// touch the user's real data).
+// are copied when copy-on-import runs (<copyDir>/<sha256>.dem[.zst]),
+// defaulting to data.DemosDir() when empty (tests point both at temp dirs
+// so they never touch the user's real data). CopyEnabled is the
+// copy-on-import setting read ONCE PER JOB at process time (so a Settings
+// toggle applies to jobs already queued); nil ⇒ copy — the default every
+// construction site without a pref gets.
 type Options struct {
 	Store         *store.Store
 	Parse         func(ctx context.Context, r io.Reader, opts extract.ParseOptions) (*models.ExtractedMatch, error)
@@ -220,6 +224,7 @@ type Options struct {
 	ParserVersion string
 	SidecarDir    string
 	CopyDir       string
+	CopyEnabled   func() bool
 }
 
 // queueItem is one unit of work for the worker.
@@ -249,6 +254,7 @@ type Importer struct {
 	parserVersion string
 	sidecarDir    string
 	copyDir       string
+	copyEnabled   func() bool // nil ⇒ copy (the default)
 
 	mu        sync.Mutex
 	queue     []queueItem
@@ -280,6 +286,7 @@ func New(o Options) *Importer {
 		parserVersion: o.ParserVersion,
 		sidecarDir:    sidecarDir,
 		copyDir:       copyDir,
+		copyEnabled:   o.CopyEnabled,
 		queued:        map[int64]queueItem{},
 		cancels:       map[int64]context.CancelFunc{},
 		cancelled:     map[int64]bool{},
@@ -290,6 +297,18 @@ func New(o Options) *Importer {
 	im.wg.Add(1)
 	go im.worker()
 	return im
+}
+
+// copyOn is the copy-on-import decision for ONE job, read when the job
+// runs (never at Enqueue/Reprocess time), so flipping the setting in
+// Settings applies to jobs already queued. A nil CopyEnabled (no pref
+// wired — tests, and every construction site that predates the setting)
+// means "copy", the default.
+func (im *Importer) copyOn() bool {
+	if im.copyEnabled == nil {
+		return true
+	}
+	return im.copyEnabled()
 }
 
 // Enqueue creates one import job per path and returns the job IDs in
@@ -344,9 +363,14 @@ func (im *Importer) failNewJob(jobID, matchID int64, msg string) {
 
 // Reprocess queues a re-parse of a match's demo file: spectra's own copy
 // when one exists (copy-on-import), else the stored path — rows imported
-// before copy-on-import point at the user's original file. The match must
-// exist (store.ErrNotFound passes through); a reprocess job is linked to
-// its match immediately and skips sha256 dedupe.
+// without a copy point at the user's original file. The match must exist
+// (store.ErrNotFound passes through); a reprocess job is linked to its
+// match immediately and skips sha256 dedupe.
+//
+// Fail fast when NEITHER file exists (copy evicted AND the source gone —
+// state "missing"): no job is queued and the row never flips to queued,
+// but the reason still lands in "recent import problems" via failNewJob,
+// so the Library shows why Re-parse refused.
 //
 // Coalesce: when a non-terminal job already references the match, that
 // job's id comes back untouched — one reparse in flight per match (no
@@ -367,6 +391,21 @@ func (im *Importer) Reprocess(matchID int64) (int64, error) {
 		return job.ID, nil
 	}
 	path := im.resolveDemoFile(m.SHA256, m.Path)
+	if _, serr := os.Stat(path); serr != nil {
+		// The demo file itself is gone: parse would fail at the job claim's
+		// os.Open anyway — this says WHY, in player language, before any
+		// queueing or status flip happens. A job row is still created and
+		// failed immediately so the Library's problem list carries it.
+		msg := fmt.Sprintf("Demo file not found: %s — Spectra's copy was freed. Restore the file, or delete the match.", path)
+		jid, jerr := im.st.CreateJob(jobKindReprocess, path)
+		if jerr != nil {
+			slog.Error("library: create missing-file reprocess job", "path", path, "error", jerr)
+			return 0, errors.New(msg)
+		}
+		_ = im.st.SetJobMatch(jid, matchID) // best-effort: the row still carries the match link
+		im.failNewJob(jid, matchID, msg)
+		return 0, errors.New(msg)
+	}
 	id, err := im.st.CreateJob(jobKindReprocess, path)
 	if err != nil {
 		return 0, err
@@ -596,6 +635,29 @@ func (im *Importer) process(item queueItem) {
 	}
 	sha := hex.EncodeToString(hasher.Sum(nil))
 
+	// The copy-on-import decision for THIS job: read when the job runs,
+	// never at Enqueue/Reprocess time, so a Settings toggle applies to
+	// jobs already queued (see Options.CopyEnabled).
+	copyOn := im.copyOn()
+
+	// Delete-on-fail: a copy THIS job created (createdCopy) survives only
+	// once its match row reached SaveExtracted (matchSaved). Any earlier
+	// terminal exit — row-create, store, parse or cancel — drops the copy
+	// again, so failed imports stop hoarding copies. The sha-unique dedupe
+	// above means an import job is the copy's only owner: a copy that
+	// already existed (orphan from an older import, or a reprocess reading
+	// a pre-existing backup) makes createdCopy false, and is NEVER this
+	// job's to delete — a failed reprocess can therefore never delete a
+	// backup it did not make. Analytics failure is past SaveExtracted:
+	// the match stays ready and the copy is kept.
+	createdCopy := false
+	matchSaved := false
+	defer func() {
+		if createdCopy && !matchSaved {
+			_, _ = im.RemoveManagedDemo(sha)
+		}
+	}()
+
 	if kind == jobKindImport {
 		existing, found, err := im.st.GetMatchBySHA(sha)
 		if err != nil {
@@ -609,22 +671,36 @@ func (im *Importer) process(item queueItem) {
 			im.emitEvent(EventLibraryChanged, LibraryChangedEvent{})
 			return
 		}
-		// Copy-on-import: the raw demo lands in the managed dir before any
-		// row exists, so a failed copy never leaves a match that cannot be
-		// reprocessed later. matches.path keeps the SOURCE path (the file
-		// the user handed us — searchable, and what DeleteMatch refuses to
-		// touch); the managed copy is found by content hash instead.
-		// Bytes written ÷ file size drives the copy stage (a reused copy
-		// returns without reading, so the stage just passes through).
-		rep.emit(models.StageCopy, progressCopyStart)
-		if _, cerr := im.copyDemo(item.path, sha, func(consumed int64) {
-			if frac, ok := byteFrac(consumed, total); ok {
-				rep.tick(models.StageCopy, inRange(progressCopyStart, progressCopyEnd, frac))
+		// Copy-on-import (the default; skipped when the copy_on_import
+		// pref is off): the raw demo lands in the managed dir before any
+		// row exists, so a failed copy never leaves a match that cannot
+		// be reprocessed later. matches.path keeps the SOURCE path (the
+		// file the user handed us — searchable, and what DeleteMatch
+		// refuses to touch); the managed copy is found by content hash
+		// instead. Bytes written ÷ file size drives the copy stage (a
+		// reused copy returns without reading, so the stage just passes
+		// through). With the pref off no copy is made and StageCopy is
+		// never emitted — hash (≤0.10) → decompress (0.20) stays
+		// monotone without the stage in between.
+		if copyOn {
+			hadCopy := im.ManagedDemoPath(sha) != ""
+			rep.emit(models.StageCopy, progressCopyStart)
+			if _, cerr := im.copyDemo(item.path, sha, func(consumed int64) {
+				if frac, ok := byteFrac(consumed, total); ok {
+					rep.tick(models.StageCopy, inRange(progressCopyStart, progressCopyEnd, frac))
+				}
+			}); cerr != nil {
+				im.failJob(jobID, 0, models.StageQueued, cerr.Error(), false)
+				return
 			}
-		}); cerr != nil {
-			im.failJob(jobID, 0, models.StageQueued, cerr.Error(), false)
-			return
+			createdCopy = !hadCopy
 		}
+		// With copy_on_import off: no copyDemo call ran above, no .info
+		// companion is copied either — chat was already decrypted at
+		// import (voice_presence.key_found, the key read off the SOURCE's
+		// companion in netKeyFromInfoFile), and any later reprocess reads
+		// the companion beside the stored path (infoCompanionCandidates).
+		// Row content is identical either way: path = source, sha, size.
 		matchID, err = im.st.CreateMatchRow(item.path, sha, size)
 		if err != nil {
 			im.failJob(jobID, 0, models.StageQueued, err.Error(), false)
@@ -634,6 +710,24 @@ func (im *Importer) process(item queueItem) {
 			im.failJob(jobID, matchID, models.StageQueued, err.Error(), false)
 			return
 		}
+	} else if copyOn && im.ManagedDemoPath(sha) == "" {
+		// Reprocess RE-COPY: the match has no managed copy (a skip-copied
+		// import whose source now points elsewhere, or an evicted one the
+		// user restored) and the pref is back on — make the backup this
+		// parse needs. The branch condition (no copy exists) is what makes
+		// createdCopy honest: a reprocess reading a pre-existing backup
+		// never enters here, so its failure can't delete the copy that
+		// kept the match alive.
+		rep.emit(models.StageCopy, progressCopyStart)
+		if _, cerr := im.copyDemo(item.path, sha, func(consumed int64) {
+			if frac, ok := byteFrac(consumed, total); ok {
+				rep.tick(models.StageCopy, inRange(progressCopyStart, progressCopyEnd, frac))
+			}
+		}); cerr != nil {
+			im.failJob(jobID, matchID, models.StageQueued, cerr.Error(), false)
+			return
+		}
+		createdCopy = true
 	}
 
 	if err := im.st.SetMatchStatus(matchID, models.StatusParsing, ""); err != nil {
@@ -794,6 +888,10 @@ func (im *Importer) process(item queueItem) {
 		im.failJob(jobID, matchID, models.StageStore, err.Error(), false)
 		return
 	}
+	// The match row has landed: from here on the copy belongs to the
+	// saved match, not to this job (the deferred delete-on-fail above
+	// stops applying — including to the store/analyze failures below).
+	matchSaved = true
 
 	// Voice presence header: the chunk index is already on disk (vw.Close
 	// above, before the save), so this writes one row of provenance counts.

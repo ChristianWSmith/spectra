@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 
 	"github.com/adrg/xdg"
+	"github.com/wailsapp/wails/v3/pkg/services/kvstore"
 )
 
 // Preference keys stored in the app's kvstore (a JSON file under the OS
@@ -42,6 +43,15 @@ const (
 	// nothing. Written and read by LibraryService — the frontend goes
 	// through GetDemoDirs/SetDemoDirs/ResetDemoDirs, never the raw key.
 	prefsDemoDirsKey = "demo_dirs"
+
+	// prefsCopyOnImportKey toggles whether an import copies the demo into
+	// the managed demo dir (data.DemosDir) — the copy that lets Reprocess
+	// survive the source file going away. Boolean, DEFAULT true (unset =
+	// copy). Written by LibraryService.SetDemoCopyOnImport, read by
+	// library.Options.CopyEnabled PER JOB at process time (a toggle in
+	// Settings applies to jobs already queued) and surfaced by
+	// GetDemoCopyOnImport — the frontend never touches the raw key.
+	prefsCopyOnImportKey = "copy_on_import"
 
 	// prefsVoiceVolumeKey / prefsGunsVolumeKey / prefsUtilityVolumeKey /
 	// prefsC4VolumeKey / prefsAnnouncerVolumeKey persist the FIVE
@@ -118,5 +128,28 @@ func prefStrings(v any) ([]string, bool) {
 		return out, true
 	default:
 		return nil, false
+	}
+}
+
+// prefBool coerces a value read from the prefs store to a bool. ok is
+// false when the value is absent or is not a boolean, so a caller with a
+// non-false default (copy-on-import: unset = COPY) can fall back to it
+// instead of reading "corrupt" as "off" — the (value, ok) shape mirrors
+// prefInt/prefStrings.
+func prefBool(v any) (bool, bool) {
+	b, ok := v.(bool)
+	return b, ok
+}
+
+// copyOnImportPref is library.Options.CopyEnabled wired to the kvstore:
+// the copy_on_import pref consulted ONCE PER JOB (process time), so a
+// Settings toggle applies to jobs already queued. Unset or corrupt ⇒
+// true — the default is copying, and a broken pref must never silently
+// stop making backups. The kvstore is internally locked (RWMutex), so
+// the worker goroutine may call this while Settings writes.
+func copyOnImportPref(kvs *kvstore.KVStoreService) func() bool {
+	return func() bool {
+		enabled, ok := prefBool(kvs.Get(prefsCopyOnImportKey))
+		return !ok || enabled
 	}
 }

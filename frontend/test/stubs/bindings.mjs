@@ -39,6 +39,12 @@ export const LibraryService = {
   DeleteMatch: rec('DeleteMatch'),
   Reprocess: rec('Reprocess'),
   CancelJob: rec('CancelJob'),
+  // Demo-copy surface (evictable copies + the copy-on-import toggle).
+  EvictDemoCopy: rec('EvictDemoCopy'),
+  FreeAllDemoCopies: rec('FreeAllDemoCopies'),
+  GetDemoCopyOnImport: rec('GetDemoCopyOnImport'),
+  SetDemoCopyOnImport: rec('SetDemoCopyOnImport'),
+  GetDataInfo: rec('GetDataInfo'),
 };
 export const MatchService = {
   GetMatch: rec('GetMatch'),
