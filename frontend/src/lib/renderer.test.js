@@ -38,7 +38,12 @@
 // the round-scoped bottom-left chat
 // (round/round-change/scrub scoping, speaker colors, the 6-cap stack
 // newest-at-bottom, message truncation, the readout stacked above it)
-// and the ONE entry-box painter both overlays share).
+// and the ONE entry-box painter both overlays share) — plus the
+// performance wave's pins: the trail alpha-band batching (same segments,
+// one stroke per band, the fade direction kept), the moving-vs-settled
+// radar smoothing quality, the cached chat cut, the one-pass HUD
+// measure, the precomputed drop window (swept against dropEvidenceAt)
+// and the scrub-drag draw coalescing.
 // Run: node --test src/lib/renderer.test.js (from frontend/; the lib test
 // glob src/lib/*.test.js picks it up too).
 import test from 'node:test';
@@ -62,7 +67,11 @@ import {
   scoreLineLayout,
   hudTeamNames,
   createRenderer,
+  TRAIL_BANDS,
+  trailBandIndex,
+  trailBandAlpha,
 } from './replay/renderer.js';
+import { dropEvidenceAt, dropWindow } from './replay/drops.js';
 import { createEngine } from './replay/engine.js';
 import { normalizeEvent } from './replay/landmarks.js';
 import { buildStateIndex } from './replay/state.js';
@@ -4949,4 +4958,332 @@ test('drop layer: guns and util gate independently; pickup and round end clean u
   assert.equal(gunBody(seq).length, 0, 'before the death: nothing dropped yet');
   assert.equal(utilBody(seq).length, 0, '…for either item');
   h.r.destroy();
+});
+
+// --- replay performance wave: the approved tradeoffs + hot-path pins --------
+//
+// The wave reworked hot paths WITHOUT changing what the canvas paints,
+// except the two owner-approved visual changes (trail alpha banding, the
+// moving-camera smoothing quality). The pins below hold those two
+// contracts plus the "same output, less work" ones: the chat cut cache,
+// the one-pass HUD measure, the precomputed drop window and the
+// scrub-drag draw coalescing.
+
+// movingStore — synthStore with every slot RUNNING east at 4 units/tick
+// (256 u/s at 64 Hz — comfortably over TRAIL_MIN_SPEED), so the movement
+// trail actually draws (synthStore's standing slots never connect: a
+// zero step fails the speed gate).
+function movingStore(frames, slotCount) {
+  const store = synthStore(frames, slotCount);
+  for (const s of store.slots) {
+    for (let f = 0; f < frames; f++) s.pos[f * 4] = 10 + f * 4;
+  }
+  return store;
+}
+
+test('trails: alpha-band batching — one stroke per band, same segments, same fade direction', () => {
+  headlessGlobals();
+  const data = movingStore(400, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, {
+    engine,
+    data,
+    players: [
+      { steamId: '1', name: 'alice', side: 'ct' },
+      { steamId: '2', name: 'bob', side: 't' },
+    ],
+  });
+  r.resize();
+  r.setCameraMode('free');
+  engine.seekTick(300); // the whole 192-frame trail window sits behind us
+  const mark = canvas.log.length;
+  r.draw();
+  const seq = canvas.log.slice(mark);
+  const isSide = (e) => e.strokeStyle === '#5aa9e6' || e.strokeStyle === '#e6a35a';
+  const trailLine = (e) => e.lineWidth === 2 && isSide(e) && e.alpha <= 0.5;
+  // The band alphas the helper produces — every recorded trail alpha is
+  // one of them (and never above 0.5, which the kill-feed filters lean
+  // on: "trails/arrow draw at alpha ≤ 0.5").
+  const bandAlphas = new Set(
+    Array.from({ length: TRAIL_BANDS }, (_, b) => trailBandAlpha(b)),
+  );
+  for (const [color, why] of [['#5aa9e6', 'CT'], ['#e6a35a', 'T']]) {
+    const segs = seq.filter((e) => e.op === 'lineTo' && trailLine(e) && e.strokeStyle === color);
+    const strokes = seq.filter((e) => e.op === 'stroke' && trailLine(e) && e.strokeStyle === color);
+    // EQUIVALENCE: batching merges STROKES, never segments — the window
+    // still contributes one lineTo per connected frame pair (192 of
+    // them), and each segment's subpath start (the moveTo before it) is
+    // intact, so segLen/segStart keep working.
+    assert.equal(segs.length, 192, `${why}: every window segment still draws`);
+    assert.equal(
+      strokes.length,
+      TRAIL_BANDS,
+      `${why}: one stroke per alpha band instead of one per segment (was 192)`,
+    );
+    const alphas = strokes.map((e) => e.alpha);
+    for (const a of alphas) {
+      assert.ok(a <= 0.5, `${why}: a band alpha never exceeds 0.5 (${a})`);
+      assert.ok(bandAlphas.has(a), `${why}: ${a} is a band center, not a raw age fade`);
+    }
+    // The walk is NEWEST → OLDEST, so the fade direction is unchanged:
+    // the recorded alphas never increase along it, and the newest end is
+    // clearly brighter than the oldest.
+    for (let i = 1; i < alphas.length; i++) {
+      assert.ok(alphas[i] <= alphas[i - 1], `${why}: the fade never brightens with age`);
+    }
+    assert.ok(
+      alphas[0] > alphas[alphas.length - 1],
+      `${why}: the newest segment is the brightest (oldest → newest fade kept)`,
+    );
+    // batchIndex sanity: the helper's band for an age maps to the alphas
+    // actually recorded (band7 = newest, band0 = oldest).
+    assert.equal(trailBandIndex(0), TRAIL_BANDS - 1, 'age 0 is the newest band');
+    assert.equal(trailBandIndex(1), 0, 'age 1 is the oldest band');
+  }
+  r.destroy();
+});
+
+test('radar smoothing: HIGH while the camera is settled, MEDIUM while it moves', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, {
+    engine,
+    data,
+    players: [
+      { steamId: '1', name: 'alice', side: 'ct' },
+      { steamId: '2', name: 'bob', side: 't' },
+    ],
+  });
+  const ctx = canvas.getContext();
+  r.resize();
+  // The FIRST radar draw records the camera without reacting — it paints
+  // at 'high' exactly as the pre-wave build did (one-frame-stale init).
+  assert.equal(ctx.imageSmoothingQuality, 'high', 'the first draw keeps today’s quality');
+  r.draw();
+  assert.equal(ctx.imageSmoothingQuality, 'high', 'a settled frame stays high');
+  r.panBy(40, 0);
+  r.draw();
+  assert.equal(ctx.imageSmoothingQuality, 'medium', 'a pan resamples the radar at medium');
+  r.draw();
+  assert.equal(ctx.imageSmoothingQuality, 'high', 'the camera settles → high again');
+  r.zoomAt(1.6, 400, 300);
+  r.draw();
+  assert.equal(ctx.imageSmoothingQuality, 'medium', 'a zoom is camera motion too');
+  r.draw();
+  assert.equal(ctx.imageSmoothingQuality, 'high', 'paused and settled: high, never medium');
+  r.destroy();
+});
+
+test('chat: the cut is cached per row + width — the measure loop runs once', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  // Count ONLY the truncation loop's measurements (its argument always
+  // starts with ': this chat line'); the flat 40 px measure keeps every
+  // box-geometry assertion exact.
+  let cutMeasures = 0;
+  const canvas = recordingCanvas(800, 600, (s) => {
+    if (String(s).startsWith(': this chat line')) cutMeasures++;
+    return String(s).length * 8;
+  });
+  const r = createRenderer(canvas, { engine, data, players: HUD_PLAYERS });
+  r.setHud({
+    score: null,
+    teamNames: { ct: '', t: '' },
+    round: { number: 1, label: 'R1', startTick: 0, freezeEndTick: 640, endTick: 1200, bombSite: '' },
+    tickRate: 64,
+  });
+  r.resize(); // no chat rows yet — nothing to cut
+  engine.seekTick(100);
+  cutMeasures = 0;
+  r.setChat([
+    { id: 1, tick: 50, round: 1, steamId: '1', name: 'alice', text: 'this chat line is far too long to fit' },
+    { id: 2, tick: 60, round: 1, steamId: '2', name: 'bob', text: 'hi' },
+  ]); // the setter's own draw: a cache MISS — the loop walks the cut
+  const firstPass = cutMeasures;
+  assert.ok(firstPass >= 3, `the first draw walks the cut loop (${firstPass} measures)`);
+  const firstCut = canvas.log.find((e) => e.op === 'fillText' && String(e.args[0]).endsWith('…'));
+  assert.ok(firstCut, 'the long line is cut on the first draw');
+  const mark = canvas.log.length;
+  cutMeasures = 0;
+  r.draw(); // same rows, same width, same head → cache HIT
+  const secondCut = canvas.log.slice(mark).find((e) => e.op === 'fillText' && String(e.args[0]).endsWith('…'));
+  assert.equal(cutMeasures, 0, 'the cached draw measures nothing to cut');
+  assert.equal(secondCut.args[0], firstCut.args[0], 'the cached cut is byte-identical');
+  assert.equal(secondCut.args[1], firstCut.args[1], '…at the same x');
+  r.destroy();
+});
+
+test('chat: a row with NO id cuts correctly every draw (it never joins the cache)', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  let cutMeasures = 0;
+  const canvas = recordingCanvas(800, 600, (s) => {
+    if (String(s).startsWith(': this chat line')) cutMeasures++;
+    return String(s).length * 8;
+  });
+  const r = createRenderer(canvas, { engine, data, players: HUD_PLAYERS });
+  r.setHud({
+    score: null,
+    teamNames: { ct: '', t: '' },
+    round: { number: 1, label: 'R1', startTick: 0, freezeEndTick: 640, endTick: 1200, bombSite: '' },
+    tickRate: 64,
+  });
+  r.resize();
+  engine.seekTick(100);
+  const rows = [{ tick: 50, round: 1, steamId: '1', name: 'alice', text: 'this chat line is far too long to fit' }];
+  cutMeasures = 0;
+  r.setChat(rows);
+  const first = cutMeasures;
+  assert.ok(first >= 3, `the id-less row still cuts (${first} measures)`);
+  const firstCut = canvas.log.find((e) => e.op === 'fillText' && String(e.args[0]).endsWith('…'));
+  cutMeasures = 0;
+  const mark = canvas.log.length;
+  r.draw();
+  assert.ok(cutMeasures >= first, 'an id-less row re-cuts every draw — no shared key');
+  const again = canvas.log.slice(mark).find((e) => e.op === 'fillText' && String(e.args[0]).endsWith('…'));
+  assert.ok(again, 'the second draw cuts too');
+  assert.equal(again.args[0], firstCut.args[0], '…and still cuts to the same text');
+  r.destroy();
+});
+
+test('HUD: the score line is measured ONCE per draw (box width + centering share one pass)', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  let nameMeasures = 0;
+  const canvas = recordingCanvas(800, 600, (s) => {
+    if (s === 'Alpha' || s === 'Beta') nameMeasures++;
+    return 40; // the harness's flat measure — box geometry stays exact
+  });
+  const r = createRenderer(canvas, { engine, data, players: HUD_PLAYERS });
+  r.setHud({
+    score: { ct: 3, t: 2 },
+    teamNames: { ct: 'Alpha', t: 'Beta' },
+    round: { number: 1, label: 'R1', startTick: 0, freezeEndTick: 640, endTick: 1200, bombSite: '' },
+    tickRate: 64,
+  });
+  r.resize();
+  nameMeasures = 0;
+  r.draw();
+  assert.equal(
+    nameMeasures,
+    2,
+    'each team name is measured exactly once — the box width and the centered layout share the pass (was 3 passes = 6)',
+  );
+  r.destroy();
+});
+
+test('drops: the precomputed window answers exactly what dropEvidenceAt answers', () => {
+  // The renderer builds dropWindow rows ONCE in setLandmarks and then
+  // tests them per frame; dropEvidenceAt stays THE rule. This sweep pins
+  // the equivalence the renderer relies on, over every gate the rule has.
+  const ev = {
+    drops: [
+      { kind: 'weapon_drop', round: 1, tick: 100, weapon: 'AK-47', x: 10, y: 10, z: 0 },
+      { kind: 'weapon_drop', round: 1, tick: 120, weapon: 'Smoke Grenade', x: 20, y: 20 },
+      { kind: 'weapon_drop', round: 1, tick: 140, weapon: 'M4A1-S' }, // no position → never visible
+      { kind: 'weapon_drop', round: 2, tick: 700, weapon: 'AWP', x: 30, y: 30 },
+      { kind: 'weapon_drop', round: 3, tick: 900, weapon: 'Glock-18', x: 40, y: 40 }, // no terminators
+    ],
+    pickups: [
+      { kind: 'weapon_pickup', round: 1, tick: 50, weapon: 'AK-47' }, // BEFORE the drop — no effect
+      { kind: 'weapon_pickup', round: 1, tick: 300, weapon: 'AK-47' }, // hides the AK
+      { kind: 'weapon_pickup', round: 1, tick: 500, weapon: 'Molotov' }, // wrong name — never hides
+      { kind: 'weapon_pickup', round: 2, tick: 650, weapon: 'AWP' }, // wrong round — never hides
+      { kind: 'weapon_pickup', round: 1, tick: 950, weapon: 'Glock-18' }, // wrong round — never hides
+    ],
+    roundEnds: [
+      { kind: 'round_end', round: 1, tick: 600 },
+      { kind: 'round_end', round: 1, tick: 640 }, // a second one — the EARLIER wins
+      { kind: 'round_end', round: 2, tick: 800 },
+      // round 3 has no round_end: the tail drop lives to the demo's end
+    ],
+  };
+  for (const d of ev.drops) {
+    const win = dropWindow(d, ev);
+    for (let t = -50; t <= 1200; t++) {
+      const got = dropEvidenceAt(
+        { drops: [d], pickups: ev.pickups, roundEnds: ev.roundEnds },
+        t,
+      );
+      const want = !!win && t >= win.from && t < win.to;
+      assert.equal(!!got, want, `drop @${d.tick} visible at ${t}`);
+      if (got) {
+        assert.equal(got.row, d, 'the window answers THE row');
+        assert.equal(got.x, d.x);
+        assert.equal(got.y, d.y);
+      }
+    }
+  }
+  // The cases the sweep is made of, spelled out:
+  assert.deepEqual(dropWindow(ev.drops[0], ev), { from: 100, to: 300 }, 'pickup-terminated');
+  assert.deepEqual(dropWindow(ev.drops[1], ev), { from: 120, to: 600 }, 'round-end-terminated (the earlier end)');
+  assert.equal(dropWindow(ev.drops[2], ev), null, 'no position → never visible');
+  assert.deepEqual(dropWindow(ev.drops[3], ev), { from: 700, to: 800 }, 'a wrong-round pickup never hides');
+  assert.deepEqual(dropWindow(ev.drops[4], ev), { from: 900, to: Infinity }, 'no terminator → lives on');
+});
+
+test('scrub coalescing: requestDraw defers setHud draws to ONE rAF (latest tick wins)', () => {
+  headlessGlobals();
+  // A CONTROLLABLE rAF — the harness's default one never fires, so the
+  // queue lets the test flush exactly like a display frame would.
+  const queue = [];
+  let rafId = 0;
+  globalThis.requestAnimationFrame = (fn) => {
+    queue.push({ id: ++rafId, fn });
+    return rafId;
+  };
+  globalThis.cancelAnimationFrame = (id) => {
+    const i = queue.findIndex((q) => q.id === id);
+    if (i >= 0) queue.splice(i, 1);
+  };
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: HUD_PLAYERS });
+  const payload = {
+    score: null,
+    teamNames: { ct: '', t: '' },
+    round: { number: 1, label: 'R1', startTick: 0, freezeEndTick: 640, endTick: 1200, bombSite: '' },
+    tickRate: 64,
+  };
+  r.setHud(payload);
+  r.resize();
+  // reference: one synchronous (not coalesced) draw's op count
+  const refMark = canvas.log.length;
+  r.setHud(payload);
+  const singleDraw = canvas.log.length - refMark;
+  assert.ok(singleDraw > 0, 'an undirty setHud still draws synchronously (playing cadence)');
+
+  // the burst: requestDraw BEFORE the seek, exactly like Replay's onScrub
+  const before = canvas.log.length;
+  for (let i = 0; i < 5; i++) {
+    r.requestDraw();
+    engine.seekFrame(i);
+    r.setHud(payload);
+  }
+  assert.equal(canvas.log.length, before, 'no synchronous draw inside the burst');
+  assert.equal(queue.length, 1, 'ONE rAF is pending for the whole burst');
+  assert.equal(engine.state.frame, 4, 'the engine state still advanced per event (seek untouched)');
+  queue.shift().fn(); // the display frame flushes
+  assert.equal(
+    canvas.log.length - before,
+    singleDraw,
+    'exactly ONE draw at the flush — the latest state of the burst',
+  );
+  assert.equal(queue.length, 0, 'the flush consumed the frame');
+  // …and back to synchronous draws the moment the burst is over.
+  const afterFlush = canvas.log.length;
+  r.setHud(payload);
+  assert.equal(canvas.log.length - afterFlush, singleDraw, 'post-burst setHud draws immediately again');
+  // destroy cancels a pending flush instead of painting a dead canvas.
+  r.requestDraw();
+  assert.equal(queue.length, 1, 'a flush is pending');
+  r.destroy();
+  assert.equal(queue.length, 0, 'destroy() cancels it');
 });

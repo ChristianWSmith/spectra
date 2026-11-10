@@ -3,12 +3,14 @@
 // fold (internal/analytics/rounds.go PlayerRounds): counted rounds only,
 // enemy-only kills (unknown side permissive), cross-team non-flash
 // assists, every death, ALL damage (friendly fire included), ADR over the
-// counted rounds STARTED at/before the playhead.
+// counted rounds STARTED at/before the playhead — for BOTH entry points:
+// the pure liveStats and the incremental cursor the view drives per tick
+// (the cursor is pinned to the pure fold's output, row order included).
 // Run: node --test src/lib/livestats.test.js   (from frontend/)
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { liveStats } from './replay/livestats.js';
+import { liveStats, liveStatsIncremental, createLiveStatsCursor } from './replay/livestats.js';
 
 // Rounds: #1 starts at 0, #2 at 1000; the knife (#-2) and a warmup (#-1)
 // are NOT counted, and round 99 never appears in the rows at all.
@@ -151,4 +153,183 @@ test('defensive inputs never throw', () => {
   assert.ok(odd instanceof Map);
   // A row without a usable tick cannot be placed at the playhead → dropped.
   assert.equal([...odd.values()].reduce((n, r) => n + r.k, 0), 0);
+});
+
+// --- The incremental fold (createLiveStatsCursor / liveStatsIncremental) -----
+//
+// The view folds once per playhead tick through the cursor, so the cursor
+// is held to the pure fold's output at EVERY tick — same rows, same row
+// ORDER (the Map's insertion order is part of what the cards render
+// through), same ADR float. The fixtures below deliberately include the
+// awkward rows (warmup/knife/unknown rounds, a bad tick, an assister
+// flash, friendly fire) so the equivalence is pinned on the rules, not
+// just on the happy path.
+
+const SWEEP_ROUNDS = [
+  { number: -2, startTick: -5000, warmup: false, pregame: true }, // knife
+  { number: -1, startTick: -2000, warmup: true, pregame: false }, // warmup
+  { number: 1, startTick: 0, warmup: false, pregame: false },
+  { number: 2, startTick: 1000, warmup: false, pregame: false },
+  { number: 3, startTick: 2000, warmup: false, pregame: false },
+];
+const SWEEP_ROSTER = ['A', 'B', 'C', 'X', 'Y', 'Z'];
+
+// tick-sorted like the real drawNorm rows, with the junk interleaved.
+const SWEEP_EVENTS = [
+  { kind: 'kill', tick: -4000, round: -2, attacker: 'A', victim: 'X' }, // knife — dropped
+  { kind: 'damage', tick: -1500, round: -1, attacker: 'X', victim: 'A', dmg: 40 }, // warmup — dropped
+  { kind: 'damage', tick: 10, round: 1, attacker: 'A', victim: 'X', dmg: 30 },
+  { kind: 'kill', tick: 12, round: 1, attacker: 'A', victim: 'X' },
+  { kind: 'kill', tick: 13, round: 1, attacker: 'A', victim: 'B' }, // teamkill — no K
+  { kind: 'kill', tick: 40, round: 1, attacker: 'A', victim: 'X', assister: 'C' },
+  { kind: 'kill', tick: 41, round: 1, attacker: 'A', victim: 'X', assister: 'C', assistedFlash: true },
+  { kind: 'kill', tick: 999, round: 99, attacker: 'A', victim: 'X' }, // round row absent — dropped
+  null, // a hole in the rows — never folds, never breaks the walk
+  { kind: 'damage', tick: 'x', round: 1, attacker: 'A', dmg: 7 }, // unusable tick — dropped
+  { kind: 'damage', tick: 990, round: 1, attacker: 'C', victim: 'X', dmg: 8 },
+  { kind: 'kill', tick: 1005, round: 2, attacker: 'X', victim: 'A' },
+  { kind: 'damage', tick: 1500, round: 2, attacker: 'X', victim: 'A', dmg: 12 },
+  { kind: 'kill', tick: 2100, round: 3, attacker: 'B', victim: 'Y' },
+  { kind: 'damage', tick: 2500, round: 3, attacker: 'Z', victim: 'Y', dmg: 66 },
+];
+
+const sweepOpts = (tick, over = {}) => ({
+  rounds: SWEEP_ROUNDS,
+  tick,
+  sideAt,
+  steamIds: SWEEP_ROSTER,
+  ...over,
+});
+
+const sameRows = (got, want, why) =>
+  assert.deepEqual([...got], [...want], `${why} (row order included)`);
+
+test('incremental: a FORWARD sweep is byte-identical to the pure fold at every tick', () => {
+  const cursor = createLiveStatsCursor();
+  // Every 7 ticks across the whole fixture span — through the knife/
+  // warmup rows, the round boundaries (0 / 1000 / 2000) and past the end.
+  for (let tick = -6000; tick <= 3200; tick += 7) {
+    const want = liveStats(SWEEP_EVENTS, sweepOpts(tick));
+    const got = liveStatsIncremental(cursor, SWEEP_EVENTS, sweepOpts(tick));
+    sameRows(got, want, `tick ${tick}`);
+  }
+});
+
+test('incremental: a BACKWARD seek rebuilds — scrubbing back never leaks forward state', () => {
+  const cursor = createLiveStatsCursor();
+  // Warm the cursor up to the end first, then walk back tick by tick.
+  liveStatsIncremental(cursor, SWEEP_EVENTS, sweepOpts(3200));
+  for (let tick = 3200; tick >= -6000; tick -= 11) {
+    const want = liveStats(SWEEP_EVENTS, sweepOpts(tick));
+    const got = liveStatsIncremental(cursor, SWEEP_EVENTS, sweepOpts(tick));
+    sameRows(got, want, `tick ${tick}`);
+  }
+  // …and forward again from the cold end (the reset must re-arm the walk).
+  for (let tick = -6000; tick <= 3200; tick += 13) {
+    sameRows(
+      liveStatsIncremental(cursor, SWEEP_EVENTS, sweepOpts(tick)),
+      liveStats(SWEEP_EVENTS, sweepOpts(tick)),
+      `tick ${tick}`,
+    );
+  }
+});
+
+test('incremental: a REPLACEMENT rows array resets the cursor (identity is the key)', () => {
+  const cursor = createLiveStatsCursor();
+  liveStatsIncremental(cursor, SWEEP_EVENTS, sweepOpts(2500));
+  // New identity (what drawNorm does on every refetch) + one more kill
+  // the cursor has never seen — the rebuild must fold it, not skip it.
+  const rows2 = SWEEP_EVENTS.concat([
+    { kind: 'kill', tick: 3000, round: 3, attacker: 'C', victim: 'Y' },
+  ]);
+  for (const tick of [100, 2500, 3100]) {
+    sameRows(
+      liveStatsIncremental(cursor, rows2, sweepOpts(tick)),
+      liveStats(rows2, sweepOpts(tick)),
+      `replacement rows @ ${tick}`,
+    );
+  }
+});
+
+test('incremental: rounds / sideAt identity changes rebuild too (ADR + kill sides)', () => {
+  const cursor = createLiveStatsCursor();
+  liveStatsIncremental(cursor, SWEEP_EVENTS, sweepOpts(2500));
+  // A NEW rounds array (a refetch) that starts round 3 EARLIER: the ADR
+  // denominator and the counted-round gate both move.
+  const rounds2 = SWEEP_ROUNDS.map((r) => (r.number === 3 ? { ...r, startTick: 1500 } : r));
+  sameRows(
+    liveStatsIncremental(cursor, SWEEP_EVENTS, sweepOpts(2500, { rounds: rounds2 })),
+    liveStats(SWEEP_EVENTS, sweepOpts(2500, { rounds: rounds2 })),
+    'rounds replaced',
+  );
+  // A DIFFERENT sideAt (the position store reloaded): the same row can
+  // classify differently, so the accumulators cannot survive it.
+  const flipped = (id, tick) => (id === 'A' || id === 'B' || id === 'C' ? 't' : 'ct');
+  sameRows(
+    liveStatsIncremental(cursor, SWEEP_EVENTS, sweepOpts(2500, { sideAt: flipped })),
+    liveStats(SWEEP_EVENTS, sweepOpts(2500, { sideAt: flipped })),
+    'sideAt replaced',
+  );
+});
+
+test('incremental: UNSORTED rows fall back to the pure fold (correctness first)', () => {
+  const cursor = createLiveStatsCursor();
+  // Same rows, deliberately out of tick order: the forward walk would
+  // miss the early kill, so the cursor must detect it and stop trusting
+  // the fast path — while still returning the pure fold's answer.
+  const shuffled = [
+    SWEEP_EVENTS[10],
+    SWEEP_EVENTS[4],
+    SWEEP_EVENTS[3],
+    SWEEP_EVENTS[12],
+    SWEEP_EVENTS[1],
+    SWEEP_EVENTS[13],
+    SWEEP_EVENTS[0],
+    SWEEP_EVENTS[14],
+  ];
+  for (const tick of [-100, 500, 1200, 2600]) {
+    sameRows(
+      liveStatsIncremental(cursor, shuffled, sweepOpts(tick)),
+      liveStats(shuffled, sweepOpts(tick)),
+      `unsorted @ ${tick}`,
+    );
+  }
+  assert.equal(cursor.usable, false, 'the cursor remembers it cannot walk these rows');
+});
+
+test('incremental: every call returns a FRESH Map (the cards re-render on identity)', () => {
+  const cursor = createLiveStatsCursor();
+  const a = liveStatsIncremental(cursor, SWEEP_EVENTS, sweepOpts(1500));
+  const b = liveStatsIncremental(cursor, SWEEP_EVENTS, sweepOpts(1500)); // same tick
+  assert.notEqual(a, b, 'a derived consumer must see a new value every evaluation');
+  assert.notEqual(a.get('A'), b.get('A'), 'rows are rebuilt, never mutated in place');
+  sameRows(b, a, '…but the CONTENT is identical');
+});
+
+test('incremental: defensive inputs behave exactly like the pure fold', () => {
+  const cursor = createLiveStatsCursor();
+  sameRows(liveStatsIncremental(cursor, null, {}), liveStats(null, {}), 'null rows');
+  sameRows(liveStatsIncremental(cursor, [], {}), liveStats([], {}), 'empty rows');
+  const oddOpts = {
+    rounds: [null, { number: '1' }, { startTick: 'nope', number: 2 }],
+    tick: '1500',
+    steamIds: null,
+    sideAt: null,
+  };
+  const rows = [null, { kind: 'kill' }, { kind: 'kill', tick: 'x', round: 1 }];
+  sameRows(liveStatsIncremental(cursor, rows, oddOpts), liveStats(rows, oddOpts), 'odd rows');
+  // A non-finite playhead folds nothing and starts no rounds.
+  sameRows(
+    liveStatsIncremental(cursor, SWEEP_EVENTS, sweepOpts('nope')),
+    liveStats(SWEEP_EVENTS, sweepOpts('nope')),
+    'non-finite playhead',
+  );
+  // steamIds is output-only: swapping it between calls must not stale the cursor.
+  sameRows(
+    liveStatsIncremental(cursor, SWEEP_EVENTS, sweepOpts(2500, { steamIds: ['A', 'Z'] })),
+    liveStats(SWEEP_EVENTS, sweepOpts(2500, { steamIds: ['A', 'Z'] })),
+    'steamIds swapped',
+  );
+  // A null cursor is the pure fold.
+  sameRows(liveStatsIncremental(null, SWEEP_EVENTS, sweepOpts(2500)), liveStats(SWEEP_EVENTS, sweepOpts(2500)), 'null cursor');
 });
