@@ -690,10 +690,11 @@ func (im *Importer) process(item queueItem) {
 	// matches imported before it simply lack the files (readers fail
 	// soft; Reprocess re-parses to gain them).
 	//
-	// Voice sidecar mirrors the positions lifecycle exactly:
-	// wiped + created before the parse, payloads stream into per-player
-	// .opus files via the extract.VoiceSink, and the DB index is inserted
-	// after SaveExtracted.
+	// Voice sidecar mirrors the positions lifecycle exactly: wiped +
+	// created before the parse, payloads stream into per-player .opus
+	// files via the extract.VoiceSink, and the per-player .idx chunk
+	// index is written when the writer closes (right below, BEFORE the
+	// match row is saved — sidecar-first ordering, see the Close call).
 	sidecarPath := filepath.Join(im.sidecarDir, strconv.FormatInt(matchID, 10))
 	sw, werr := sidecar.NewWriter(sidecarPath, 0)
 	if werr != nil {
@@ -767,6 +768,18 @@ func (im *Importer) process(item queueItem) {
 		return
 	}
 
+	// Voice index closes BEFORE the match row is saved — sidecar-first
+	// ordering: ready implies voice/*.idx exists (strictly better than the
+	// old insert-after-save, which could leave ready with zero voice). The
+	// rows are serialized to the per-player .idx files right here; only the
+	// presence header still needs the store, after SaveExtracted.
+	voiceMeta, _, cerr := vw.Close()
+	if cerr != nil {
+		cleanupSidecar()
+		im.failJob(jobID, matchID, models.StageStore, cerr.Error(), false)
+		return
+	}
+
 	em.Match.ParserVersion = im.parserVersion
 	rep.emit(models.StageStore, progressStore)
 	// Mirror the sidecar meta onto the match row, then save. SaveExtracted
@@ -782,24 +795,18 @@ func (im *Importer) process(item queueItem) {
 		return
 	}
 
-	// Voice index: close the payload writer and insert the
-	// chunk rows + presence in one store transaction. Rounds come straight
-	// from the parse — InsertVoice assigns each row's round from the round
-	// tick ranges. SaveExtracted already cleared stale voice rows (reprocess
-	// path), so InsertVoice's delete-then-insert is a no-op delete here.
-	voiceMeta, voiceRows, cerr := vw.Close()
-	if cerr != nil {
-		cleanupSidecar()
-		im.failJob(jobID, matchID, models.StageStore, cerr.Error(), false)
-		return
-	}
-	if err := im.st.InsertVoice(matchID, voiceRows, models.VoicePresenceRow{
+	// Voice presence header: the chunk index is already on disk (vw.Close
+	// above, before the save), so this writes one row of provenance counts.
+	// SaveExtracted just cleared any stale row through childTables, so the
+	// delete-then-insert shape would delete nothing — a single INSERT is
+	// the whole write.
+	if err := im.st.SaveVoicePresence(matchID, models.VoicePresenceRow{
 		ChunkCount:    voiceMeta.Chunks,
 		PlayerCount:   voiceMeta.Players,
 		CasterCount:   voiceMeta.Casters,
 		KeyFound:      netKey != nil,
 		OutSampleRate: models.VoiceOutSampleRate,
-	}, em.Rounds); err != nil {
+	}); err != nil {
 		cleanupSidecar()
 		im.failJob(jobID, matchID, models.StageStore, err.Error(), false)
 		return

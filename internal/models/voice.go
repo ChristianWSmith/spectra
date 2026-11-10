@@ -1,22 +1,22 @@
-// Voice persistence vocabulary (M4): the store-level rows for the
-// voice_chunks index and voice_presence header. Audio payloads themselves
-// live in the per-match sidecar (<matchDir>/voice/<steamid>.opus) — the DB
-// IS the chunk index (the chunks.idx file is intentionally replaced
-// by these rows; see internal/sidecar VoiceWriter).
+// Voice persistence vocabulary (M4): the store-level voice_presence header
+// plus the sidecar's chunk-index row shape. Audio payloads and their index
+// live entirely in the per-match sidecar (<matchDir>/voice/<steamid>.opus +
+// <steamid>.idx — internal/sidecar): the database IS NOT the index.
 package models
 
 // VoiceOutSampleRate is the PCM decode output rate served by the voice
 // HTTP routes (16 kHz mono is speech-band sufficient).
 const VoiceOutSampleRate = 16000
 
-// VoiceIndexRow is one chunk's row in voice_chunks. SteamID is the decimal
-// SteamID64 string; Off/Len address the payload inside that player's .opus
-// file. Seq (assigned by the store on insert) is the global capture order.
-// Round is assigned by the store at insert time from the match's round
-// tick ranges — writers never know about rounds.
+// VoiceIndexRow is one chunk of a player's voice index (the <steamid>.idx
+// record, internal/sidecar). SteamID is the decimal SteamID64 string;
+// Off/Len address the payload inside that player's .opus file. It is
+// written by the sidecar VoiceWriter and read back by the sidecar voice
+// reader — nothing in SQLite carries it. There is deliberately no round:
+// the index is tick-ordered only, and a round can be derived at read time
+// via store.RoundForTick when a caller needs one.
 type VoiceIndexRow struct {
 	Tick    int    `json:"tick"`
-	Round   int    `json:"round"`
 	SteamID string `json:"steamId"`
 	Off     int64  `json:"off"`
 	Len     int64  `json:"len"`
@@ -26,7 +26,9 @@ type VoiceIndexRow struct {
 
 // VoicePresenceRow is the voice_presence header: one row per match with
 // voice (absent row = no voice). KeyFound records that a parseable
-// <demo>.info companion supplied the chat decryption key at import.
+// <demo>.info companion supplied the chat decryption key at import. The
+// counts are provenance only — the playable index is the sidecar's
+// voice/*.idx (readers gate the presence row on it).
 type VoicePresenceRow struct {
 	MatchID       int64 `json:"matchId"`
 	ChunkCount    int   `json:"chunkCount"`
@@ -34,16 +36,4 @@ type VoicePresenceRow struct {
 	CasterCount   int   `json:"casterCount"`
 	KeyFound      bool  `json:"keyFound"`
 	OutSampleRate int   `json:"outSampleRate"`
-}
-
-// VoicePlayerRow is one player's derived voice summary
-// (voice_players is a read-time GROUP BY, not a table).
-type VoicePlayerRow struct {
-	MatchID   int64   `json:"matchId"`
-	SteamID   string  `json:"steamId"`
-	Name      string  `json:"name"`
-	Chunks    int     `json:"chunks"`
-	FirstTick int     `json:"firstTick"`
-	LastTick  int     `json:"lastTick"`
-	Seconds   float64 `json:"seconds"` // chunks × 10 ms Opus frame duration
 }

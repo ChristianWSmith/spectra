@@ -117,8 +117,17 @@ func (s *PlatformService) GetProvenance(matchID int64) (ProvenancePanel, error) 
 		return ProvenancePanel{}, err
 	}
 	voiceChunks := 0
+	matchDir := matchSidecarDir(matchID)
 	if pres, err := s.st.GetVoicePresence(matchID); err == nil {
-		voiceChunks = pres.ChunkCount
+		// Gated on the sidecar index: a presence row whose voice/*.idx is
+		// absent counts chunks nothing can play (a match imported before
+		// the index moved out of the DB) — the provenance panel reports
+		// one honest number, never a stale count.
+		if _, oerr := sidecar.OpenVoice(matchDir); oerr == nil {
+			voiceChunks = pres.ChunkCount
+		} else if !errors.Is(oerr, sidecar.ErrNoVoiceIndex) {
+			return ProvenancePanel{}, oerr
+		}
 	} else if !errors.Is(err, store.ErrNotFound) {
 		return ProvenancePanel{}, err
 	}
@@ -130,7 +139,7 @@ func (s *PlatformService) GetProvenance(matchID int64) (ProvenancePanel, error) 
 		// ordinary chat events) — the honest provenance is presence.KeyFound.
 		notes = append(notes, "chat.decrypted stays 0 until an .dem.info-keyed demo")
 	}
-	rd, err := sidecar.Open(filepath.Join(data.MatchesDir(), strconv.FormatInt(matchID, 10)))
+	rd, err := sidecar.Open(matchDir)
 	if err == nil {
 		meta := rd.Meta()
 		notes = append(notes, fmt.Sprintf("position sidecar format: %s", meta.Encoding))

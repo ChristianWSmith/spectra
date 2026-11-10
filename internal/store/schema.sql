@@ -436,13 +436,16 @@ CREATE TABLE IF NOT EXISTS analysis_config (
 	rule_version INTEGER NOT NULL DEFAULT 1
 );
 
--- Communications: voice chunk index + presence, encrypted-chat
--- provenance. Every voice table FKs to matches(id) ON DELETE CASCADE so
--- delete/reprocess stay one-pass (they join childTables).
+-- Communications: the voice presence header + encrypted-chat provenance.
+-- The voice CHUNK index is deliberately NOT here: it is one fixed-record
+-- <steamid>.idx per player beside its Opus payloads in the match's sidecar
+-- (<matchDir>/voice, internal/sidecar) — voice is ~77% of a match's rows,
+-- and the index belongs with the audio it addresses. Every voice table FKs
+-- to matches(id) ON DELETE CASCADE so delete/reprocess stay one-pass (they
+-- join childTables).
 --
--- Deliberate deviation from plan §3: there is NO voice_players table and
--- NO chunks.idx sidecar file — players are a read-time GROUP BY over
--- voice_chunks and the DB rows below are the whole chunk index.
+-- Deliberate deviation from plan §3: there is no voice_players table —
+-- per-player summaries are read-time derivations over the sidecar index.
 
 CREATE TABLE IF NOT EXISTS voice_presence (
 	match_id INTEGER PRIMARY KEY REFERENCES matches(id) ON DELETE CASCADE,
@@ -452,21 +455,6 @@ CREATE TABLE IF NOT EXISTS voice_presence (
 	key_found INTEGER NOT NULL DEFAULT 0,
 	out_sample_rate INTEGER NOT NULL DEFAULT 16000
 );
-
-CREATE TABLE IF NOT EXISTS voice_chunks (
-	match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
-	seq INTEGER NOT NULL,
-	steam_id TEXT NOT NULL,
-	tick INTEGER NOT NULL DEFAULT 0,
-	round INTEGER NOT NULL DEFAULT 0,
-	byte_off INTEGER NOT NULL DEFAULT 0,
-	len INTEGER NOT NULL DEFAULT 0,
-	caster INTEGER NOT NULL DEFAULT 0,
-	section INTEGER NOT NULL DEFAULT 0,
-	PRIMARY KEY (match_id, seq)
-);
-CREATE INDEX IF NOT EXISTS idx_voice_chunks_player_tick ON voice_chunks(match_id, steam_id, tick);
-CREATE INDEX IF NOT EXISTS idx_voice_chunks_match_tick ON voice_chunks(match_id, tick);
 
 -- Custom metric engine + read-only SQL console (plan §2.1–2.2).
 --
