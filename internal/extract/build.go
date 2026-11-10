@@ -188,6 +188,7 @@ func (a *agg) build() *models.ExtractedMatch {
 	out.Events = a.events
 	out.GenericEvents = a.generic
 	out.Chat = a.chatRows
+	out.SoundEvents = a.soundEvents
 	out.Warnings = a.warnings
 	return out
 }
@@ -245,6 +246,9 @@ func (a *agg) renumber() {
 	}
 	for i := range a.chatRows {
 		a.chatRows[i].Round = remap(a.chatRows[i].Round)
+	}
+	for i := range a.soundEvents {
+		a.soundEvents[i].Round = remap(a.soundEvents[i].Round)
 	}
 	for i := range a.economy {
 		a.economy[i].Round = remap(a.economy[i].Round)

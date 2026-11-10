@@ -29,6 +29,7 @@
     "bomb_plant_begin": 14,
     "damage": 662,
     "grenade": 478,
+    "grenade_bounce": 979,
     "grenade_land": 0,
     "grenade_throw": 393,
     "kill": 170,
@@ -39,8 +40,8 @@
     "weapon_drop": 251,
     "weapon_pickup": 1039
   },
-  "eventTotal": 3407,
-  "eventKindsDistinct": 18,
+  "eventTotal": 4386,
+  "eventKindsDistinct": 19,
   "genericDistinct": 46,
   "genericTotal": 21029,
   "chat": 34,

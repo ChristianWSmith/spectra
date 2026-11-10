@@ -73,6 +73,12 @@ func TestFrontendPrefKeyStrings(t *testing.T) {
 	if prefsAnnouncerVolumeKey != "announcer_volume" {
 		t.Errorf("announcer volume key = %q, want %q", prefsAnnouncerVolumeKey, "announcer_volume")
 	}
+	// The player-sound fader key the frontend's replay volume popover /
+	// Settings Audio section reads (DEFAULT 0 = muted is a frontend read
+	// default; the key registered here is the durable contract).
+	if prefsFootstepsVolumeKey != "footsteps_volume" {
+		t.Errorf("footsteps volume key = %q, want %q", prefsFootstepsVolumeKey, "footsteps_volume")
+	}
 }
 
 // The copy toggle is one of the few prefs Go CONSUMES (library.Options

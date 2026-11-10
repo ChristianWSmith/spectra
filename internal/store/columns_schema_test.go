@@ -42,6 +42,7 @@ func TestColumnListConstsMatchSchema(t *testing.T) {
 		{"savedQueryCols", "saved_queries", savedQueryCols},
 		{"savedFilterCols", "saved_filters", savedFilterCols},
 		{"chatCols", "chat", chatCols},
+		{"soundEventsCols", "sound_events", soundEventsCols},
 		{"jobsCols", "jobs", jobsCols},
 	}
 	for _, l := range lists {

@@ -146,7 +146,7 @@ func TestOpenBaselineSchemaIdempotent(t *testing.T) {
 	// console, platform, round sides).
 	for _, table := range []string{
 		"matches", "teams", "players", "player_stats", "rounds",
-		"round_economy", "events", "generic_events", "chat", "warnings", "jobs",
+		"round_economy", "events", "generic_events", "chat", "sound_events", "warnings", "jobs",
 		"round_classifications", "player_round_stats", "clutches", "engagements",
 		"utility_events", "player_career", "saved_filters", "analysis_config",
 		"voice_presence",

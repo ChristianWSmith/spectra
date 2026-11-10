@@ -232,6 +232,16 @@ type agg struct {
 	chatRows []models.Chat
 	warnings []string
 
+	// soundEvents are the player sounds (footsteps/lands/jumps/fall
+	// damage) read from CMsgSosStartSoundEvent — stamped with the current
+	// round like every other row and renumbered with them (build.renumber).
+	soundEvents []models.SoundEvent
+
+	// bounceSeen dedupes grenade-bounce SOS messages by (source entity,
+	// tick, name): 87% of bounces fire TWO messages (their origins differ
+	// by <1 u) and the FIRST one wins (its origin is the row's position).
+	bounceSeen map[bounceKey]bool
+
 	// svc_EncryptedData net-messages seen (M4): decrypted inner messages
 	// dispatch as ordinary events, so this raw count is the extract's only
 	// encrypted-chat provenance (models.Match.EncryptedMessages).
@@ -263,6 +273,8 @@ func newAgg() *agg {
 		generic:       make([]models.GenericEvent, 0, 21000),
 		chatRows:      make([]models.Chat, 0, 64),
 		warnings:      make([]string, 0, 8),
+		soundEvents:   make([]models.SoundEvent, 0, 1024),
+		bounceSeen:    make(map[bounceKey]bool, 512),
 		rawLatest:     make(map[string]string),
 		frameQueue:    make(map[string][]string),
 	}
@@ -952,13 +964,16 @@ func (a *agg) blind(b blindInfo) {
 // ---- utility & objective ----
 
 // blastInfo carries a grenade detonation (EventGrenade); source is the game
-// event the raw payload will be paired from.
+// event the raw payload will be paired from. entity is the projectile-side
+// entity id the row stores in detail_json `entity` — the join key the
+// replay pairs throw → bounces → det with (see models.EventGrenadeBounce).
 type blastInfo struct {
 	tick        int
 	weapon      string
 	source      string
 	throwerKey  uint64
 	throwerName string
+	entity      int
 	x, y, z     float64
 }
 
@@ -975,6 +990,7 @@ func (a *agg) grenadeBlast(g blastInfo) {
 		DetailJSON: detailJSON(map[string]any{
 			"thrower": g.throwerName,
 			"grenade": g.weapon,
+			"entity":  g.entity,
 			"x":       g.x,
 			"y":       g.y,
 			"z":       g.z,
@@ -984,8 +1000,10 @@ func (a *agg) grenadeBlast(g blastInfo) {
 
 // grenadeThrown is entity-derived (projectile created), so it has no raw
 // game-event payload to pair. px/py/pz are the throw position (nil when
-// the projectile entity had no position yet).
-func (a *agg) grenadeThrown(tick int, throwerKey uint64, throwerName, weapon string, px, py, pz *float64) {
+// the projectile entity had no position yet). entity is the PROJECTILE
+// entity id stored in detail_json `entity` — the join key the replay pairs
+// throw → bounces → det with (see models.EventGrenadeBounce).
+func (a *agg) grenadeThrown(tick int, throwerKey uint64, throwerName string, entity int, weapon string, px, py, pz *float64) {
 	a.addEvent(models.Event{
 		Tick:     tick,
 		Kind:     models.EventGrenadeThrow,
@@ -997,8 +1015,73 @@ func (a *agg) grenadeThrown(tick int, throwerKey uint64, throwerName, weapon str
 		DetailJSON: detailJSON(map[string]any{
 			"thrower": throwerName,
 			"grenade": weapon,
+			"entity":  entity,
 		}),
 	}, "")
+}
+
+// bounceKey is the grenade-bounce dedupe key: (source entity, tick, name).
+// Two grenades can bounce in the same tick, and one grenade can bounce
+// twice in a tick only by overlapping the same event — the entity index
+// separates the former, the name the latter's look-alikes.
+type bounceKey struct {
+	entity int
+	tick   int
+	name   string
+}
+
+// bounceInfo is one grenade-bounce SOS message (see models.EventGrenadeBounce).
+type bounceInfo struct {
+	tick    int
+	entity  int
+	name    string
+	weapon  string
+	hasPos  bool
+	x, y, z float64
+}
+
+// grenadeBounced stores ONE grenade-bounce row per (entity, tick, name):
+// the game fires two SOS messages for most bounces (87% — their origins
+// differ by <1 u), so the FIRST message claims the key and its origin wins.
+// A first message whose origin is not parseable (hasPos false) claims the
+// key too and stores NOTHING — a bounce without a required input is
+// skipped, never stored with a guessed position, and its duplicate then
+// dedupes away rather than inventing the missing coordinate.
+func (a *agg) grenadeBounced(b bounceInfo) {
+	key := bounceKey{entity: b.entity, tick: b.tick, name: b.name}
+	if a.bounceSeen[key] {
+		return
+	}
+	a.bounceSeen[key] = true
+	if !b.hasPos {
+		return
+	}
+	px, py, pz := pos3(b.x, b.y, b.z)
+	if px == nil {
+		return // zero vector — the posPtrs "no position known" convention
+	}
+	a.addEvent(models.Event{
+		Tick:   b.tick,
+		Kind:   models.EventGrenadeBounce,
+		Weapon: b.weapon,
+		PosX:   px,
+		PosY:   py,
+		PosZ:   pz,
+		DetailJSON: detailJSON(map[string]any{
+			"entity":     b.entity,
+			"soundevent": b.name,
+		}),
+	}, "")
+}
+
+// soundEvent stores one attributed player sound (footstep/land/jump/fall —
+// models.SoundEvent). The row is only built by the SOS handler AFTER the
+// source entity resolved to a participant, so identity is never guessed
+// here; Round is stamped through the same evRound path every other row
+// uses (renumbered with them in build.renumber).
+func (a *agg) soundEvent(se models.SoundEvent) {
+	se.Round = a.evRound()
+	a.soundEvents = append(a.soundEvents, se)
 }
 
 func (a *agg) bombPlanted(tick int, site string, key uint64, name string, real bool, px, py, pz *float64) {

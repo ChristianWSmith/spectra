@@ -766,6 +766,19 @@ func soundEventHash(name string) uint32 {
 	return murmur2([]byte(strings.ToLower(name)), 0x53524332)
 }
 
+// SoundEventHash is the ONE public entry to that same rule — the hash the
+// demo's CMsgSosStartSoundEvent carries, over a sound-event name. It exists
+// for internal/extract's SOS handler (grenade bounces + player sounds), which
+// resolves fixed32 hashes to names at import time with NO access to a CS2
+// install (mappack has zero internal dependencies, so extract importing this
+// package cannot cycle). cs2find reaches the identical rule through
+// soundEventHash above — ONE implementation, never a second copy of the
+// seed/lowercase rule. Test vectors: devtool_test.go (public.volume →
+// BD6054E9 at seed 0x31415926, Weapon_AK47.Single ≡ weapon_ak47.single).
+func SoundEventHash(name string) uint32 {
+	return soundEventHash(name)
+}
+
 // murmurSelfCheck pins the one published vector CS2.md recorded for the
 // packed_params seed (murmur2("public.volume", 0x31415926) → BD6054E9,
 // the byte-reverse of Valve's published E9 54 60 BD sample). It runs

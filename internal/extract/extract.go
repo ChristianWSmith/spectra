@@ -209,6 +209,57 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 	p.RegisterNetMessageHandler(func(*msg.CSVCMsg_EncryptedData) {
 		a.countEncrypted()
 	})
+	// CMsgSosStartSoundEvent — the demo's sound-event channel, read by BOTH
+	// sound-event waves (internal/extract/sos.go owns the two static
+	// candidate tables, hashed ONCE at package init through
+	// mappack.SoundEventHash — the one hash rule, and no CS2 install is
+	// ever touched at import time):
+	//   - Wave A: the five grenade BOUNCE soundevents → typed
+	//     models.EventGrenadeBounce rows, deduped per (source entity, tick,
+	//     name) with the FIRST message's origin winning; a message whose
+	//     packed_params origin does not parse stores NOTHING (missing
+	//     required input ⇒ skipped row, never a guessed position).
+	//   - Wave B: the player-sound vocabulary (steps/lands/jumps/falls) →
+	//     sound_events rows attributed source entity → player pawn →
+	//     participant (extract.playerByEntity: the pawn's m_hController
+	//     handle, falling back to the participant's own m_hPawn link —
+	//     src -1 or a source that resolves to no player skips the row,
+	//     identity is never guessed).
+	// Tick reads the live game state; the round is the agg's current round
+	// (evRound), renumbered with every other row in build.renumber.
+	p.RegisterNetMessageHandler(func(m *msg.CMsgSosStartSoundEvent) {
+		gs := p.GameState()
+		hash := m.GetSoundeventHash()
+		src := int(m.GetSourceEntityIndex())
+
+		if def, ok := bounceByHash[hash]; ok {
+			x, y, z, hasPos := sosOrigin(m.GetPackedParams())
+			a.grenadeBounced(bounceInfo{
+				tick:   gs.IngameTick(),
+				entity: src,
+				name:   def.name,
+				weapon: def.weapon,
+				hasPos: hasPos,
+				x:      x,
+				y:      y,
+				z:      z,
+			})
+		}
+		if def, ok := playerSoundByHash[hash]; ok {
+			pl := playerByEntity(gs, src)
+			if pl == nil {
+				return // src -1 or a non-player source: skip, never guess
+			}
+			a.soundEvent(models.SoundEvent{
+				Tick:       gs.IngameTick(),
+				SteamID:    keyStr(playerKey(pl)),
+				Kind:       def.kind,
+				Material:   def.material,
+				TeamPrefix: def.team,
+				SOSName:    def.name,
+			})
+		}
+	})
 
 	pt := &progressTracker{cb: opts.Progress}
 	frames := 0

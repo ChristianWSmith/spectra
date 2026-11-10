@@ -107,6 +107,22 @@ func (s *MatchService) GetChat(matchID int64, round int, player string) ([]model
 	return s.st.GetChat(matchID, round, player)
 }
 
+// GetSoundEvents returns a match's player sounds (footsteps/lands/jumps/
+// fall damage — sound_events) in an INCLUSIVE tick window; either bound
+// <= 0 is open, so (0, 0) reads the whole match (thin delegate over
+// store.GetSoundEvents — its doc owns the exact semantics).
+func (s *MatchService) GetSoundEvents(matchID int64, fromTick, toTick int) ([]models.SoundEvent, error) {
+	return s.st.GetSoundEvents(matchID, fromTick, toTick)
+}
+
+// GetSoundEventPresence returns the match's sound-event counts by kind —
+// the "does this match have footstep data" signal (Total 0 = none). A
+// match with no rows or an unknown id yields the zero presence, never an
+// error (optional-read contract, same as the blind/drop payload reads).
+func (s *MatchService) GetSoundEventPresence(matchID int64) (models.SoundEventPresence, error) {
+	return s.st.GetSoundEventPresence(matchID)
+}
+
 // GetMatchSummary returns ONE match's library-list row (the ListMatches
 // projection for a single id — store.ErrNotFound for an unknown match).
 func (s *MatchService) GetMatchSummary(matchID int64) (models.MatchSummary, error) {

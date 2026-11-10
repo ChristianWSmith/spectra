@@ -50,6 +50,9 @@ export const MatchService = {
   GetMatch: rec('GetMatch'),
   GetScoreboard: rec('GetScoreboard'),
   GetRounds: rec('GetRounds'),
+  // Player sounds (sound_events): the windowed read + the presence count.
+  GetSoundEvents: rec('GetSoundEvents'),
+  GetSoundEventPresence: rec('GetSoundEventPresence'),
 };
 export const ReplayService = {};
 export const AnalyticsService = {};
