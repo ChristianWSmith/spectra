@@ -17,7 +17,11 @@
 // bombActionCues), the five ANNOUNCER voice lines
 // (roundEndCues / bombAnnouncerCues — "ctwin", "terwin", "rounddraw",
 // "bombpl", "bombdef") and the match-point freeze stinger
-// (matchPointCues — "matchpoint"), so a cue is one exact-match lookup.
+// (matchPointCues — "matchpoint"), the five grenade BOUNCE groups
+// (`<name> bounce` — bounceCues) and the player-sound groups the
+// footstep resolution lands on (`step <file-family>`, `land concrete`,
+// `jump`, `gear CT`/`gear T`, `falldamage` — footstepCues), so a cue is
+// one exact-match lookup.
 // A logical item with several variants keeps ALL of them and picks one
 // at RANDOM per play, so a spray doesn't loop one sample — the beep
 // groups are single-sample on purpose (the site must never substitute
@@ -43,11 +47,19 @@
 //     throw and a knife swing are never bullets, so they never make a
 //     gun sound here); the rows' `draw` flag is TRACER selection only —
 //     sfx plays EVERY row (the real fire cadence, see bullets.js);
-//   - utility cues are the landmark rows' DETONATIONS (grenadeCues) and
-//     their THROWS (throwCues — the `${weapon} throw` manifest groups),
-//     knife cues are their damage rows — all three in (prevTick,
-//     curTick] and all freeze-gated at cue-build time (rounds.js
-//     inFreezeTime — the game forbids firing/utility during freeze);
+//   - utility cues are the landmark rows' DETONATIONS (grenadeCues),
+//     their THROWS (throwCues — the `${weapon} throw` manifest groups)
+//     and their BOUNCES (bounceCues — the `${weapon} bounce` groups,
+//     bucket 'utility'), knife cues are their damage rows — all in
+//     (prevTick, curTick] and all freeze-gated at cue-build time
+//     (rounds.js inFreezeTime — the game forbids firing/utility during
+//     freeze);
+//   - the PLAYER sounds (footstepCues — footsteps/lands/jumps/fall
+//     damage off the sound_events rows the Replay pushed through
+//     setSoundEvents, gated against the manifest's own group keys) play
+//     in the same window on the FOOTSTEPS bus — no freeze gate (players
+//     move during freeze), and no cue at all for a match whose
+//     GetSoundEventPresence total was 0;
 //   - the plant/defuse ATTEMPT cues (bombActionCues — bomb.js
 //     ACTION_KINDS → THREE of the manifest's four lifecycle groups)
 //     play in (prevTick, curTick] on the C4 bus; the abort rows are
@@ -87,14 +99,18 @@ import { DETONATION_BUCKETS } from './landmarks.js';
 import { bombEndTick, ACTION_KINDS } from './bomb.js';
 import { GST_AUDIO_HINT } from './audio.js';
 
-// Default fader level for all five categories — the kvstore prefs
-// voice_volume/guns_volume/utility_volume/c4_volume/announcer_volume
+// Default fader level for the five 0.8-default categories — the kvstore
+// prefs voice_volume/guns_volume/utility_volume/c4_volume/announcer_volume
 // (prefs.go) override
 // it; the Settings tab imports this so both surfaces share one default.
+// The FOOTSTEPS fader is deliberately NOT one of them: footsteps_volume's
+// default is 0 (the bus ships muted), read with prefVolume(v, 0) at both
+// surfaces.
 export const AUDIO_VOL_DEFAULT = 0.8;
 
 // Internal mix calibration — GUNS_GAIN_SCALE / UTILITY_GAIN_SCALE /
-// C4_GAIN_SCALE / ANNOUNCER_GAIN_SCALE are applied to the fader level in
+// C4_GAIN_SCALE / ANNOUNCER_GAIN_SCALE / STEP_GAIN_SCALE are applied to
+// the fader level in
 // applyGains(), so a user-facing 80% still READS 80% (AUDIO_VOL_DEFAULT,
 // the sliders, prefs.go and Settings are all untouched): the reduction
 // lives inside the mixer, invisible to the fader. The numbers exist
@@ -123,6 +139,13 @@ export const UTILITY_GAIN_SCALE = 1 / 12;
 // ANNOUNCER buses (1/3 → 1/6, unscaled ×1 → ×1/2).
 export const C4_GAIN_SCALE = 1 / 6;
 export const ANNOUNCER_GAIN_SCALE = 1 / 2;
+// Spec 2026-11-10: the FOOTSTEPS bus — the 5th gain, carrying the
+// player-sound rows (footsteps / lands / jumps / fall damage) — runs at
+// × 1/2 like the announcer. These are raw extracted game samples (the
+// hot 1/12 family), but they sit under the mix as texture; and the bus
+// ships MUTED anyway (footsteps_volume's default is 0), so the scale
+// only shows once a user raises that fader.
+export const STEP_GAIN_SCALE = 1 / 2;
 
 // Live-source cap: a new AudioBufferSourceNode per play IS the Web Audio
 // contract for unlimited simultaneous instances of one buffer, but a
@@ -256,6 +279,187 @@ export function throwCues(rows, rounds) {
     if (seen.has(key)) continue;
     seen.add(key);
     out.push({ tick: row.tick, name });
+  }
+  out.sort((a, b) => a.tick - b.tick);
+  return out;
+}
+
+// BOUNCE_GROUPS — the FIVE manifest groups a grenade bounce can cue
+// (internal/mappack/sounds.go's grenade BOUNCE entries — read-only, the
+// exact keys the extracted manifest carries: each is the bounce
+// soundevent's own file set). A bounce row's weapon is the canonical
+// equipment name extract stored from the soundevent (grenadeBounceDefs),
+// so the cue key is `<weapon> bounce` — and a weapon whose group is NOT
+// in this set makes NOTHING: a DECOY has no bounce soundevent at all
+// (there is no decoy bounce — extract/sos.go), and an unknown weapon is
+// never substituted with another grenade's sample. Silence, not a guess.
+const BOUNCE_GROUPS = new Set([
+  'HE Grenade bounce',
+  'Flashbang bounce',
+  'Smoke Grenade bounce',
+  'Molotov bounce',
+  'Incendiary Grenade bounce',
+]);
+
+// bounceCues — the grenade BOUNCE cue list: grenade_bounce rows →
+// [{tick, name: `<weapon> bounce`, bucket:'utility'}] in tick order. The
+// bounce rides the UTILITY channel (it is utility audio, exactly like the
+// throw and detonation cues beside it) and is played through the SAME
+// path (rebuildCues merges it into the util list; playUtilInRange plays
+// it). Freeze-gated with the same rule as throwCues (rounds.js
+// inFreezeTime — a bounce inside freeze time would be a mis-stamped row),
+// deduped by (tick, name) like every other cue list (the extractor
+// already dedupes per (entity, tick, name) — two grenades bouncing on
+// one tick stay two cues, one per weapon). Pure — unit-tested by
+// src/lib/sfx.test.js.
+export function bounceCues(rows, rounds) {
+  const seen = new Set();
+  const out = [];
+  for (const row of rows || []) {
+    if (!row || !Number.isFinite(row.tick)) continue;
+    if (String(row.kind || '') !== 'grenade_bounce') continue;
+    const weapon = row.weapon == null || row.weapon === '' ? null : String(row.weapon);
+    if (!weapon) continue;
+    if (inFreezeTime(rounds, row.tick)) continue;
+    const name = `${weapon} bounce`;
+    if (!BOUNCE_GROUPS.has(name)) continue; // decoy/unknown weapon → silence
+    const key = `${row.tick}|${name}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ tick: row.tick, name, bucket: 'utility' });
+  }
+  out.sort((a, b) => a.tick - b.tick);
+  return out;
+}
+
+// --- player sounds (footsteps / lands / jumps / fall damage) ----------------
+// The sound_events rows (models.SoundEvent — kind, material, teamPrefix,
+// sosName) → [{tick, name, bucket:'footsteps'}]. CS2 spells the SURFACE
+// into the SOS name (CS2.md "SOS sound events…"), so the row's
+// kind/material/teamPrefix decide the manifest group — and the group must
+// EXIST in the extracted manifest: resolution is gated against the real
+// soundTable player-sound keys (internal/mappack/sounds.go), so an
+// unmapped material, a `Silent` one, or a kind we do not model makes
+// NOTHING. Never substitute another surface's sample.
+
+// STEP_FAMILY_ALIASES — materials whose install FILE FAMILY is not the
+// mechanical lowercase of their name (the `step <family>` groups are file
+// families: sounds/player/footsteps/<family>_NN.vsnd_c, probed read-only
+// from the local install; the row's material is the game's surface
+// token). Keyed by the LOWERCASED material; only name-evidenced decisions:
+//   concrete / wetconcrete → concrete_ct (the install's ONLY concrete
+//     step set — the spec's "concrete variants → step concrete_ct")
+//   chainlink → metal_chainlink (the same words; the family carries the
+//     metal_ prefix — ChainLink.BulletImpact plays metal_chainlink_*)
+//   solidmetal → metal_solid (the only solid-metal family)
+//   metalrailing → metal_railing_a (the only railing family)
+//   woodladder → ladder_wood (the only wooden-ladder family)
+//   wade → water_wade (Player.Wade plays water_wade_*; the material comes
+//     from the game's lowercase ct_wade.StepLeft)
+// Everything else resolves mechanically (camelCase → snake_case, lower)
+// and is then gated against the manifest keys — a family that is not
+// extracted (Cardboard, Drywall, Foliage, Water, WetMud/WetTile/Wet_Sand,
+// Plastic_Box/autoCover/milkCrate, MetalBarrel/Vehicle, Ceiling_Tile,
+// GlassBottle, Default, Flesh/PlayerFlesh, Grenade, Weapon, Slime,
+// SlipperySlime, WoodBox/Crate/Panel/Solid/Basket …) is a reported GAP:
+// silence, never a wrong surface.
+const STEP_FAMILY_ALIASES = new Map([
+  ['concrete', 'concrete_ct'],
+  ['wetconcrete', 'concrete_ct'],
+  ['chainlink', 'metal_chainlink'],
+  ['solidmetal', 'metal_solid'],
+  ['metalrailing', 'metal_railing_a'],
+  ['woodladder', 'ladder_wood'],
+  ['wade', 'water_wade'],
+]);
+
+// stepFamily — the material → install file-family token ('' = no family,
+// so no group). `Silent` resolves to '' ON PURPOSE: CT_Silent/T_Silent
+// have no extracted group (the silent materials play nothing —
+// internal/mappack/sounds.go) and their rows must stay silent.
+function stepFamily(material) {
+  const m = String(material || '').trim();
+  if (!m) return '';
+  const lower = m.toLowerCase();
+  if (lower === 'silent') return '';
+  const alias = STEP_FAMILY_ALIASES.get(lower);
+  if (alias) return alias;
+  return m.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toLowerCase();
+}
+
+// keyHas — the manifest-key gate over a Set or an array (the engine
+// passes a Set built from the loaded manifest; tests pass either).
+function keyHas(keys, name) {
+  if (!keys || !name) return false;
+  if (typeof keys.has === 'function') return keys.has(name);
+  return Array.isArray(keys) && keys.includes(name);
+}
+
+// footstepGroup — ONE sound_events row → its manifest group (or null =
+// silence). Data-driven: the kind picks the family of rules, the row's
+// own material/teamPrefix pick the group, and `keys` (the extracted
+// manifest's player-sound keys) is what makes "unmapped → silence"
+// literal.
+//   kind 'fall'  → 'falldamage'            (Player.DamageFall*)
+//   kind 'jump'  → 'gear CT'/'gear T' when the row carries a team prefix
+//                   (Gear.JumpLand.CT/.T → suit_ct/suit_t), else 'jump'
+//                   (Default.WalkJump → jump_launch)
+//   kind 'land'  → the PER-MATERIAL land key when the manifest ships one
+//                   (`land <family>` — only 'land concrete' exists today),
+//                   else the ONE land family it ships: 'land concrete'
+//                   (soundTable's land_concrete file — the game's
+//                   Land.Thud landing thud). A material-less land row
+//                   (Land.Thud / Default.Land) lands on that same family.
+//   kind 'step'  → `step <family>` (gated against the keys by
+//                   footstepCues — an unextracted family is silence)
+//   anything else → null (never a guessed group)
+// Pure — unit-tested by src/lib/sfx.test.js.
+export function footstepGroup(ev, keys) {
+  if (!ev) return null;
+  const kind = String(ev.kind || '');
+  if (kind === 'fall') return 'falldamage';
+  if (kind === 'jump') {
+    const team = String(ev.teamPrefix || '').toLowerCase();
+    if (team === 'ct' || team === 't') return `gear ${team.toUpperCase()}`;
+    return 'jump';
+  }
+  if (kind === 'land') {
+    const fam = stepFamily(ev.material);
+    const per = fam ? `land ${fam}` : '';
+    if (per && keys && keyHas(keys, per)) return per;
+    return 'land concrete';
+  }
+  if (kind === 'step') {
+    const fam = stepFamily(ev.material);
+    return fam ? `step ${fam}` : null;
+  }
+  return null;
+}
+
+// footstepCues — the player-sound cue list: sound_events rows →
+// [{tick, name, bucket:'footsteps'}] in tick order, played on the
+// FOOTSTEPS bus. `keys` is the extracted manifest's group set (the engine
+// passes the one its preload proved non-empty): a resolved group that is
+// NOT in it makes no cue — silence, never a substitute. Without keys (a
+// manifest not loaded yet) the resolution stands on its own and the
+// playback side's exact-name lookup still refuses an unknown group.
+// Deduped by (tick, name) like every other cue list — two players
+// stepping on the same surface in the same tick are ONE cue (the
+// concurrency bound is the engine's LIVE_CAP). NO freeze gate: players
+// move (and land) during freeze time, unlike utility/knife cues.
+// Pure — unit-tested by src/lib/sfx.test.js.
+export function footstepCues(events, keys) {
+  const seen = new Set();
+  const out = [];
+  for (const ev of events || []) {
+    if (!ev || !Number.isFinite(ev.tick)) continue;
+    const name = footstepGroup(ev, keys);
+    if (!name) continue;
+    if (keys && !keyHas(keys, name)) continue; // unextracted group → silence
+    const key = `${ev.tick}|${name}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ tick: ev.tick, name, bucket: 'footsteps' });
   }
   out.sort((a, b) => a.tick - b.tick);
   return out;
@@ -875,6 +1079,10 @@ export function createSfxEngine({ engine, matchId, onError }) {
   let utilGain = null;
   let c4Gain = null;
   let announcerGain = null;
+  // 5th bus — the footsteps channel (player sounds: step/land/jump/fall).
+  // Creation order pins the test fixture's gain indexes (guns=0,
+  // utility=1, C4=2, announcer=3, footsteps=4).
+  let stepGain = null;
   let destroyed = false;
   let error = '';
   let retryOff = null; // tears down the parked retry listeners
@@ -883,10 +1091,15 @@ export function createSfxEngine({ engine, matchId, onError }) {
   let utilVol = AUDIO_VOL_DEFAULT;
   let c4Vol = AUDIO_VOL_DEFAULT;
   let annVol = AUDIO_VOL_DEFAULT;
+  // The footsteps fader ships at 0 — the bus is MUTED by default
+  // (footsteps_volume's pref default is 0 too; both surfaces read it with
+  // prefVolume(v, 0)). Every other fader starts at the shared default.
+  let stepVol = 0;
   let gunMuted = false;
   let utilMuted = false;
   let c4Muted = false;
   let annMuted = false;
+  let stepMuted = false;
 
   const buffers = new Map(); // name → AudioBuffer[] (manifest order)
   let total = 0;
@@ -901,8 +1114,14 @@ export function createSfxEngine({ engine, matchId, onError }) {
   // Cue inputs (pushed by the Replay at its load/engine push sites).
   let landmarkRows = []; // drawNorm — the ONE source of util + knife cues
   let rounds = null; // GetRounds rows — the freeze gate (rounds.js)
-  let utilCues = []; // grenadeCues(landmarkRows, rounds) — tick-sorted
+  let utilCues = []; // grenadeCues + bounceCues merged (rebuildCues) — tick-sorted
   let throwHits = []; // throwCues(landmarkRows, rounds) — tick-sorted
+  let soundEvents = []; // setSoundEvents — the sound_events rows (footsteps…)
+  // The manifest's group names (set by preload): the gate the footstep
+  // resolution checks every resolved group against, so an unextracted
+  // surface is silence at CUE-BUILD time (footstepCues).
+  let manifestKeys = null;
+  let stepCues = []; // footstepCues(soundEvents, manifestKeys) — tick-sorted
   let knifeHits = []; // knifeCues(landmarkRows, rounds) — tick-sorted
   let actionCues = []; // bombActionCues(landmarkRows, rounds) — tick-sorted
   let announcerCues = []; // roundEndCues + bombAnnouncerCues + matchPointCues merged, tick-sorted
@@ -944,6 +1163,10 @@ export function createSfxEngine({ engine, matchId, onError }) {
     if (utilGain) utilGain.gain.value = utilMuted ? 0 : utilVol * UTILITY_GAIN_SCALE;
     if (c4Gain) c4Gain.gain.value = c4Muted ? 0 : c4Vol * C4_GAIN_SCALE;
     if (announcerGain) announcerGain.gain.value = annMuted ? 0 : annVol * ANNOUNCER_GAIN_SCALE;
+    // The FOOTSTEPS bus scales like every other bus here (× 1/2 —
+    // STEP_GAIN_SCALE); its fader ships at 0, so this reads 0 until a
+    // surface raises footsteps_volume (or the popover's fader).
+    if (stepGain) stepGain.gain.value = stepMuted ? 0 : stepVol * STEP_GAIN_SCALE;
   }
 
   // tryResume calls ctx.resume() SYNCHRONOUSLY (a listener must invoke
@@ -1041,10 +1264,14 @@ export function createSfxEngine({ engine, matchId, onError }) {
     // 4th bus — the creation order pins the test fixture's gain indexes
     // (guns=0, utility=1, C4=2, announcer=3) and keeps them stable.
     announcerGain = ctx.createGain();
+    // 5th bus — footsteps (indexes: …announcer=3, footsteps=4), created
+    // AFTER the announcer so the four established indexes never move.
+    stepGain = ctx.createGain();
     gunGain.connect(ctx.destination);
     utilGain.connect(ctx.destination);
     c4Gain.connect(ctx.destination);
     announcerGain.connect(ctx.destination);
+    stepGain.connect(ctx.destination);
     applyGains();
   } catch (e) {
     fail(errText(e));
@@ -1074,6 +1301,12 @@ export function createSfxEngine({ engine, matchId, onError }) {
       urls.forEach((url, i) => tasks.push({ name, url, slots, i }));
     }
     total = tasks.length;
+    // The manifest's group names gate the footstep cue build (the
+    // material→group resolution must land on a key that EXISTS —
+    // footstepCues): re-derive every cue list now that the keys are
+    // known, so cues pushed before the manifest arrived are re-gated.
+    manifestKeys = new Set(buffers.keys());
+    rebuildCues();
     if (total === 0) return;
     let next = 0;
     const worker = async () => {
@@ -1101,13 +1334,15 @@ export function createSfxEngine({ engine, matchId, onError }) {
   // --- playback ------------------------------------------------------------
   // busFor — the ONE bucket → GainNode routing: 'guns' → gunGain,
   // 'c4' → c4Gain (the bomb's own fader/mute), 'announcer' →
-  // announcerGain (the round/bomb VO lines' fader/mute), everything
-  // else the historical default, utilGain (throw/detonation/knife cues
-  // ride 'utility').
+  // announcerGain (the round/bomb VO lines' fader/mute), 'footsteps' →
+  // stepGain (the player-sound bus — footstepCues' bucket), everything
+  // else the historical default, utilGain (throw/bounce/detonation/knife
+  // cues ride 'utility').
   function busFor(bucket) {
     if (bucket === 'guns') return gunGain;
     if (bucket === 'c4') return c4Gain;
     if (bucket === 'announcer') return announcerGain;
+    if (bucket === 'footsteps') return stepGain;
     return utilGain;
   }
 
@@ -1207,6 +1442,19 @@ export function createSfxEngine({ engine, matchId, onError }) {
   function playThrowInRange(fromTick, toTick) {
     for (const cue of utilCuesInRange(throwHits, fromTick, toTick)) {
       playGroup(cue.name, 'utility');
+    }
+  }
+
+  // playFootstepInRange — the player sounds (footstepCues: footsteps,
+  // lands, jumps, fall damage) in (prevTick, curTick] on the FOOTSTEPS
+  // bus. Called only inside the guarded block, so a seek/loop wrap/pause
+  // re-seeds through cueGapJump like every other cue list (a scrub never
+  // replays the steps it crossed). Steps run ~5–8/s per player — the
+  // immediate-cue LIVE_CAP (drop the OLDEST still-playing source) is the
+  // concurrency bound, exactly as for gunfire.
+  function playFootstepInRange(fromTick, toTick) {
+    for (const cue of utilCuesInRange(stepCues, fromTick, toTick)) {
+      playGroup(cue.name, cue.bucket || 'footsteps');
     }
   }
 
@@ -1410,6 +1658,7 @@ export function createSfxEngine({ engine, matchId, onError }) {
       playDecoyInRange(prevTick, st.tick);
       playActionInRange(prevTick, st.tick);
       playAnnouncerInRange(prevTick, st.tick);
+      playFootstepInRange(prevTick, st.tick);
     }
     // EVERY path advances the compare point: a seek, a loop wrap or a
     // paused scrub must not machine-gun the cues it crossed when
@@ -1418,17 +1667,28 @@ export function createSfxEngine({ engine, matchId, onError }) {
   }
 
   // rebuildCues re-derives the landmark cue lists (detonations, throws,
-  // knife, the announcer lines) and the C4 beep scheduler's bomb rows
-  // from the rows last pushed — called by setLandmarks and setRounds
+  // bounces, knife, the announcer lines), the footstep cue list and the
+  // C4 beep scheduler's bomb rows
+  // from the rows last pushed — called by setLandmarks, setRounds and
+  // setSoundEvents
   // (either input may arrive second; the freeze gate and the
   // match-point scoreline both need the pair). The decoy plan is NOT
   // rebuilt here: it arrives pre-derived through setDecoyPlan
   // (lib/replay/decoy.js).
   function rebuildCues() {
-    utilCues = grenadeCues(landmarkRows, rounds);
+    // The util list merges detonations and BOUNCES (bounceCues carries
+    // bucket 'utility') — one tick-sorted list → the ONE window selector
+    // (utilCuesInRange) serves both, on the same channel.
+    utilCues = [
+      ...grenadeCues(landmarkRows, rounds),
+      ...bounceCues(landmarkRows, rounds),
+    ].sort((a, b) => a.tick - b.tick);
     throwHits = throwCues(landmarkRows, rounds);
     knifeHits = knifeCues(landmarkRows, rounds);
     actionCues = bombActionCues(landmarkRows, rounds);
+    // The footsteps list is built from the sound_events rows (not
+    // landmark rows) and gated against the manifest keys.
+    stepCues = footstepCues(soundEvents, manifestKeys);
     // The announcer list merges the three voice-line builders, bomb lines
     // FIRST so a same-tick `bombdef`/`ctwin` pair iterates in the
     // owner-observed order (announcerOrder then adds the explicit delay
@@ -1468,6 +1728,15 @@ export function createSfxEngine({ engine, matchId, onError }) {
       rounds = rs || null;
       rebuildCues();
     },
+    // setSoundEvents pushes the match's sound_events rows (the Replay
+    // fetches them ONLY after GetSoundEventPresence proved the match has
+    // any — a match never re-imported under the sound work never calls
+    // this, so its footsteps stay silent with no error). Rebuilds the
+    // footstep cue list under it; tolerates a repeat push like setRounds.
+    setSoundEvents(rows) {
+      soundEvents = rows || [];
+      rebuildCues();
+    },
     // setBullets pushes the bullets.js rows (deriveBullets — globally
     // tick-sorted, guns-only, freeze-filtered; see bullets.js). Tolerates
     // a repeat push; compare points are engine-side and unaffected.
@@ -1504,7 +1773,16 @@ export function createSfxEngine({ engine, matchId, onError }) {
       annVol = Math.max(0, Math.min(1, Number(v) || 0));
       applyGains();
     },
-    // setMuted(bucket, m) — 'guns' | 'utility' | 'c4' | 'announcer';
+    // setFootstepsVolume — the FOOTSTEPS fader (the player-sound bus).
+    // Same 0..1 coercion as the other sfx faders; its DEFAULT is 0 (the
+    // bus ships muted — see stepVol), so a caller that never sets it is
+    // silent by construction.
+    setFootstepsVolume(v) {
+      stepVol = Math.max(0, Math.min(1, Number(v) || 0));
+      applyGains();
+    },
+    // setMuted(bucket, m) — 'guns' | 'utility' | 'c4' | 'announcer' |
+    // 'footsteps';
     // session-only (the
     // popover's toggles are not persisted, unlike the faders). An
     // unknown bucket is ignored on purpose — it never silently mutes a
@@ -1514,6 +1792,7 @@ export function createSfxEngine({ engine, matchId, onError }) {
       else if (bucket === 'utility') utilMuted = !!m;
       else if (bucket === 'c4') c4Muted = !!m;
       else if (bucket === 'announcer') annMuted = !!m;
+      else if (bucket === 'footsteps') stepMuted = !!m;
       applyGains();
     },
     destroy() {

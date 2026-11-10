@@ -77,6 +77,8 @@ import {
   TRAIL_BANDS,
   trailBandIndex,
   trailBandAlpha,
+  joinBounceVerts,
+  flightPointAt,
 } from './replay/renderer.js';
 import { dropEvidenceAt, dropWindow } from './replay/drops.js';
 import { createEngine } from './replay/engine.js';
@@ -4906,6 +4908,10 @@ test('cross-layer nade flight: the line splits at the band edge instead of cross
   // (lineDash [4,4], lineWidth 1.5) — TWO segments for a crossing
   // flight (a same-floor flight draws one — see flightSplits' unit
   // test; a single panel-to-panel line would be ONE segment).
+  // NOTE (deliberate, subject unchanged): a bounce-free flight's vertex
+  // list is exactly [throw, det], so this pin still exercises ONE hop —
+  // the per-hop flightSplits pass introduced with the multi-segment
+  // path. The bouncy case is pinned in the next section.
   const dashed = canvas.log
     .slice(mark)
     .filter(
@@ -4946,6 +4952,283 @@ test('cross-layer nade flight: the line splits at the band edge instead of cross
   const hi = r.worldToScreen(90, 90, 50);
   assert.ok(Math.abs(dashed[3].args[0] - hi.x) < 1e-6, 'segment 2 ends at the detonation');
   assert.ok(Math.abs(dashed[3].args[1] - hi.y) < 1e-6, '…on the upper panel');
+  r.destroy();
+});
+
+// --- grenade flight vertices: throw → bounces → detonation ------------------
+//
+// The renderer builds ONE vertex list per flight — [throw, bounce₁…bounceₙ,
+// det] — joined by the projectile entity extract stamps into detail_json
+// (grenade_throw / grenade / grenade_bounce rows share one id), falling
+// back to the existing round+weapon pairing when an id is missing on
+// either side. drawGrenades then walks the list HOP by HOP: each hop is
+// its own constant-speed interpolation (arrival EXACTLY at the recorded
+// bounce tick, so the bounce sound and the icon land together) and its
+// own flightSplits pass (floor crossings resolve per hop).
+
+const bounceRow = (over) => ({
+  kind: 'grenade_bounce',
+  bucket: 'bounce',
+  weapon: 'HE Grenade',
+  round: 1,
+  tick: 100,
+  x: 10,
+  y: 10,
+  z: 0,
+  ...over,
+});
+
+test('joinBounceVerts: the projectile entity is the join key — a mismatched bounce never joins', () => {
+  const from = { kind: 'grenade_throw', bucket: 'throw', weapon: 'HE Grenade', round: 1, tick: 0, entity: 512 };
+  const to = { kind: 'grenade', bucket: 'he', weapon: 'HE Grenade', round: 1, tick: 200, entity: 512 };
+  const verts = joinBounceVerts(from, to, [
+    bounceRow({ tick: 60, entity: 512 }),
+    bounceRow({ tick: 120, entity: 513 }), // a DIFFERENT projectile → never joins
+    bounceRow({ tick: 150, entity: 512 }),
+    bounceRow({ tick: 999, entity: 512 }), // outside the flight window → no
+    bounceRow({ tick: 170, round: 2, entity: 512 }), // another round → no
+    null, // hostile input never throws
+  ]);
+  assert.deepEqual(verts.map((v) => v.tick), [0, 60, 150, 200]);
+  // The list is the throw → bounces → det SHAPE (the det is the endpoint).
+  assert.equal(verts[0], from);
+  assert.equal(verts[verts.length - 1], to);
+});
+
+test('joinBounceVerts: fallback with no ids — same round + weapon inside the window (the old pairing)', () => {
+  const from = { kind: 'grenade_throw', bucket: 'throw', weapon: 'Molotov', round: 3, tick: 100 };
+  const to = { kind: 'grenade', bucket: 'fire', weapon: 'Incendiary Grenade', round: 3, tick: 300 };
+  const verts = joinBounceVerts(from, to, [
+    bounceRow({ round: 3, tick: 140, weapon: 'Molotov' }), // same round + weapon → joins
+    bounceRow({ round: 3, tick: 160, weapon: 'Incendiary Grenade' }), // Molotov ≡ Incendiary → joins
+    bounceRow({ round: 3, tick: 180, weapon: 'Flashbang' }), // wrong weapon → no
+    bounceRow({ round: 4, tick: 200, weapon: 'Molotov' }), // wrong round → no
+    bounceRow({ round: 3, tick: 400, weapon: 'Molotov' }), // past the detonation → no
+  ]);
+  // Ticks come back in ORDER — the draw side walks them hop by hop.
+  assert.deepEqual(verts.map((v) => v.tick), [100, 140, 160, 300]);
+});
+
+test('joinBounceVerts: an unpaired throw keeps no det vertex; hostile input never throws', () => {
+  const from = { kind: 'grenade_throw', bucket: 'throw', weapon: 'HE Grenade', round: 1, tick: 10 };
+  assert.deepEqual(joinBounceVerts(from, null, []).map((v) => v.tick), [10]);
+  assert.deepEqual(
+    joinBounceVerts(from, null, [bounceRow({ tick: 20, entity: 1 })]).map((v) => v.tick),
+    [10, 20],
+  );
+  assert.deepEqual(joinBounceVerts(null, null, []), []);
+  assert.deepEqual(joinBounceVerts({ tick: NaN }, null, []), []);
+  assert.deepEqual(joinBounceVerts(from, null, [null]).map((v) => v.tick), [10]);
+});
+
+test('flightPointAt: per-segment constant speed, then hold at rest past the last bounce', () => {
+  const verts = [
+    { tick: 0, x: 0, y: 0, z: 0 },
+    { tick: 100, x: 100, y: 0, z: 0 },
+    { tick: 150, x: 100, y: 50, z: 10 },
+    // The detonation sits ON the last bounce's position (the game's
+    // final bounce == detonation position) — the final hop is ≈0 long.
+    { tick: 400, x: 100, y: 50, z: 10 },
+  ];
+  // Hop 1 at ITS OWN constant speed: half the hop in half the ticks …
+  assert.deepEqual(flightPointAt(verts, 50), { x: 50, y: 0, z: 0 });
+  // … and EXACTLY on the bounce when its tick is reached (the bounce
+  // sound and the icon land together — the ratified sync).
+  assert.deepEqual(flightPointAt(verts, 100), { x: 100, y: 0, z: 0 });
+  // Hop 2 runs at its own (different) speed: 25 of its 50 ticks → half.
+  assert.deepEqual(flightPointAt(verts, 125), { x: 100, y: 25, z: 5 });
+  // Past the last bounce: the icon HOLDS at rest until the detonation.
+  assert.deepEqual(flightPointAt(verts, 200), { x: 100, y: 50, z: 10 });
+  assert.deepEqual(flightPointAt(verts, 399), { x: 100, y: 50, z: 10 });
+  assert.deepEqual(flightPointAt(verts, 400), { x: 100, y: 50, z: 10 });
+  // Before the throw it clamps to the throw vertex (the draw side gates
+  // this anyway) — never a projection past the ends.
+  assert.deepEqual(flightPointAt(verts, -10), { x: 0, y: 0, z: 0 });
+  // Hostile input → null: the caller falls back to the origin dot.
+  assert.equal(flightPointAt(null, 10), null);
+  assert.equal(flightPointAt([], 10), null);
+  assert.equal(flightPointAt(verts, NaN), null);
+  assert.equal(flightPointAt([{ tick: 0 }], 5), null); // no position → no point
+  // A zero-tick hop (two bounces stamped on one tick) snaps to its END
+  // vertex — a division by zero never happens.
+  assert.deepEqual(
+    flightPointAt(
+      [
+        { tick: 0, x: 0, y: 0, z: 0 },
+        { tick: 10, x: 10, y: 0, z: 0 },
+        { tick: 10, x: 20, y: 0, z: 0 },
+        { tick: 20, x: 30, y: 0, z: 0 },
+      ],
+      10,
+    ),
+    { x: 20, y: 0, z: 0 },
+  );
+});
+
+test('multi-segment nade flight: the icon lands on each bounce, then holds at rest until the det', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, {
+    engine,
+    data,
+    players: [
+      { steamId: '1', name: 'alice', side: 'ct' },
+      { steamId: '2', name: 'bob', side: 't' },
+    ],
+  });
+  const mk = (ev) => normalizeEvent(ev, {});
+  r.setIcons({ 'Smoke Grenade': { width: 32, height: 32, src: 'smoke.svg' } });
+  // throw (10,10) → bounce₁ (60,10) → bounce₂ (60,60) → det ON bounce₂'s
+  // position (the game's final bounce == detonation). The `entity` field
+  // is what the Replay hydrates from detail_json onto each row.
+  r.setLandmarks([
+    mk({ id: 1, seq: 1, tick: 64, round: 1, kind: 'grenade_throw', attacker: '1', weapon: 'Smoke Grenade', posX: 10, posY: 10, posZ: 0, entity: 7 }),
+    mk({ id: 2, seq: 2, tick: 160, round: 1, kind: 'grenade_bounce', weapon: 'Smoke Grenade', posX: 60, posY: 10, posZ: 0, entity: 7 }),
+    mk({ id: 3, seq: 3, tick: 256, round: 1, kind: 'grenade_bounce', weapon: 'Smoke Grenade', posX: 60, posY: 60, posZ: 0, entity: 7 }),
+    mk({ id: 4, seq: 4, tick: 320, round: 1, kind: 'grenade', attacker: '1', weapon: 'Smoke Grenade', posX: 60, posY: 60, posZ: 0, entity: 7 }),
+  ]);
+  r.resize();
+  // The nade icon is the only drawImage carrying NADE_ICON_PX (16) —
+  // its centre is the recorded top-left plus half the painted size.
+  const iconAt = (from) => {
+    const e = canvas.log.slice(from).find((x) => x.op === 'drawImage' && x.args[4] === 16);
+    if (!e) return null;
+    return { x: e.args[1] + e.args[3] / 2, y: e.args[2] + e.args[4] / 2 };
+  };
+  const seekDraw = (tick) => {
+    engine.seekTick(tick);
+    const mark = canvas.log.length;
+    r.draw();
+    return mark;
+  };
+  const expectIcon = (tick, wx, wy, wz, why) => {
+    const mark = seekDraw(tick);
+    const got = iconAt(mark);
+    const want = r.worldToScreen(wx, wy, wz);
+    assert.ok(got, `${why}: no icon at tick ${tick}`);
+    assert.ok(Math.abs(got.x - want.x) < 1e-6, `${why}: x ${got.x} vs ${want.x}`);
+    assert.ok(Math.abs(got.y - want.y) < 1e-6, `${why}: y ${got.y} vs ${want.y}`);
+  };
+
+  // Mid-hop 1: half the hop in half the ticks (per-segment speed — the
+  // old ONE-segment lerp would still be here, but hop 2 is what pins it).
+  expectIcon(112, 35, 10, 0, 'hop 1 midpoint');
+  // EXACTLY on bounce₁ — arrival is tick-exact (the bounce cue fires on
+  // the same tick, so sound and icon cannot drift).
+  expectIcon(160, 60, 10, 0, 'bounce 1 arrival');
+  // Mid-hop 2 at ITS own speed (different distance over different ticks).
+  expectIcon(208, 60, 35, 0, 'hop 2 midpoint');
+  expectIcon(256, 60, 60, 0, 'bounce 2 arrival');
+  // After the last bounce: HOLD at rest (the det sits on the same spot)
+  // until the detonation pops at its own tick.
+  expectIcon(300, 60, 60, 0, 'hold at rest before the det');
+  expectIcon(320, 60, 60, 0, 'the det tick itself');
+
+  // The PATH: THREE hops (throw→b₁, b₁→b₂, b₂→det) × one same-floor
+  // span each = SIX dashed moveTo/lineTo ops whose ends are the VERTEX
+  // positions (the line is the whole path, exactly as the old single
+  // segment was). The LAST hop is ≈0 long — the det sits on the final
+  // bounce's position, which is the line-geometry half of the
+  // hold-at-rest rule.
+  const mark = seekDraw(200);
+  const dashed = canvas.log
+    .slice(mark)
+    .filter(
+      (e) =>
+        (e.op === 'moveTo' || e.op === 'lineTo') &&
+        e.lineDash[0] === 4 &&
+        e.lineDash[1] === 4 &&
+        e.lineWidth === 1.5,
+    );
+  assert.equal(dashed.length, 6, `three hops × one span each, got ${dashed.length}`);
+  const v = [
+    r.worldToScreen(10, 10, 0),
+    r.worldToScreen(60, 10, 0),
+    r.worldToScreen(60, 60, 0),
+  ];
+  assert.ok(Math.abs(dashed[0].args[0] - v[0].x) < 1e-6 && Math.abs(dashed[0].args[1] - v[0].y) < 1e-6, 'hop 1 starts at the throw');
+  assert.ok(Math.abs(dashed[1].args[0] - v[1].x) < 1e-6 && Math.abs(dashed[1].args[1] - v[1].y) < 1e-6, 'hop 1 ends at bounce 1');
+  assert.ok(Math.abs(dashed[2].args[0] - v[1].x) < 1e-6 && Math.abs(dashed[2].args[1] - v[1].y) < 1e-6, 'hop 2 starts at bounce 1');
+  assert.ok(Math.abs(dashed[3].args[0] - v[2].x) < 1e-6 && Math.abs(dashed[3].args[1] - v[2].y) < 1e-6, 'hop 2 ends at bounce 2');
+  // The final hop starts AND ends on the same screen point (≈0 length).
+  assert.ok(Math.abs(dashed[4].args[0] - v[2].x) < 1e-6 && Math.abs(dashed[4].args[1] - v[2].y) < 1e-6, 'hop 3 starts at bounce 2');
+  assert.ok(Math.abs(dashed[5].args[0] - dashed[4].args[0]) < 1e-6 && Math.abs(dashed[5].args[1] - dashed[4].args[1]) < 1e-6, 'hop 3 is the ≈0-length det hop');
+
+  // The flight window still closes at the detonation (unchanged).
+  const after = seekDraw(321);
+  assert.equal(iconAt(after), null, 'no icon past the detonation');
+  r.destroy();
+});
+
+// Per-SEGMENT flightSplits: each hop resolves ITS OWN floor crossing,
+// so a flat hop stays one span while the hop that climbs floors splits —
+// one panel-to-panel line would lie about where the nade is on the
+// floor it left (Nuke's bottom ramp → top ramp, the case flightSplits
+// was built for; this pin proves the split is per hop, not per flight).
+test('multi-segment nade flight: flightSplits runs PER HOP (flat hop = 1 span, crossing hop = 2)', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: LAYER_PLAYERS });
+  const upper = { width: 1024, height: 1024, src: 'radar.png' };
+  const lower = { width: 1024, height: 1024, src: 'radar_lower.png' };
+  r.setPack(layerMeta(), upper, null, [upper, lower]);
+  const mk = (ev) => normalizeEvent(ev, {});
+  r.setIcons({ 'Smoke Grenade': { width: 32, height: 32, src: 'smoke.svg' } });
+  // Hop 1 stays on the LOWER floor (z −600 → −600), hop 2 climbs across
+  // the −495 band edge (−600 → +50), hop 3 is the ≈0 det hop on the
+  // upper floor.
+  r.setLandmarks([
+    mk({ id: 1, seq: 1, tick: 50, round: 1, kind: 'grenade_throw', attacker: '1', weapon: 'Smoke Grenade', posX: 70, posY: 70, posZ: -600, entity: 512 }),
+    mk({ id: 2, seq: 2, tick: 100, round: 1, kind: 'grenade_bounce', weapon: 'Smoke Grenade', posX: 75, posY: 70, posZ: -600, entity: 512 }),
+    mk({ id: 3, seq: 3, tick: 200, round: 1, kind: 'grenade_bounce', weapon: 'Smoke Grenade', posX: 90, posY: 90, posZ: 50, entity: 512 }),
+    mk({ id: 4, seq: 4, tick: 250, round: 1, kind: 'grenade', attacker: '1', weapon: 'Smoke Grenade', posX: 90, posY: 90, posZ: 50, entity: 512 }),
+  ]);
+  r.resize();
+  engine.seekTick(150); // inside hop 2 (100 → 200)
+  const mark = canvas.log.length;
+  r.draw();
+  const dashed = canvas.log
+    .slice(mark)
+    .filter(
+      (e) =>
+        (e.op === 'moveTo' || e.op === 'lineTo') &&
+        e.lineDash[0] === 4 &&
+        e.lineDash[1] === 4 &&
+        e.lineWidth === 1.5,
+    );
+  // 1 span (flat hop 1) + 2 spans (climbing hop 2) + 1 span (flat hop 3)
+  // → four spans → eight moveTo/lineTo ops.
+  assert.equal(dashed.length, 8, `1 + 2 + 1 spans, got ${dashed.length / 2}`);
+  const throwLo = r.worldToScreen(70, 70, -600);
+  const b1Lo = r.worldToScreen(75, 70, -600);
+  const b2Up = r.worldToScreen(90, 90, 50);
+  // Hop 1: ONE span on the lower panel (its both ends share z — no edge
+  // inside the hop).
+  assert.ok(Math.abs(dashed[0].args[0] - throwLo.x) < 1e-6 && Math.abs(dashed[0].args[1] - throwLo.y) < 1e-6, 'hop 1 starts at the throw (lower panel)');
+  assert.ok(Math.abs(dashed[1].args[0] - b1Lo.x) < 1e-6 && Math.abs(dashed[1].args[1] - b1Lo.y) < 1e-6, 'hop 1 ends at bounce 1 (lower panel)');
+  // Hop 2: starts at bounce 1 on the LOWER panel, crosses the band edge,
+  // and continues from the SAME world XY on the UPPER panel — the two
+  // copies differ by exactly one panel pitch (never a line through the
+  // gutter), and it ENDS on the upper panel.
+  assert.ok(Math.abs(dashed[2].args[0] - b1Lo.x) < 1e-6 && Math.abs(dashed[2].args[1] - b1Lo.y) < 1e-6, 'hop 2 starts at bounce 1 (lower panel)');
+  const radarDraw = opsSince(canvas.log, 'drawImage').find(
+    (e) => e.args[0] && e.args[0].src === 'radar.png',
+  );
+  const s = radarDraw.args[3] / 1024; // fit scale
+  const pitch = (1024 + 32) * s;
+  assert.ok(
+    Math.abs(dashed[3].args[0] - dashed[4].args[0] - pitch) < 1e-6,
+    `the crossing repeats one pitch apart (off by ${dashed[3].args[0] - dashed[4].args[0]}, pitch ${pitch})`,
+  );
+  assert.equal(dashed[3].args[1], dashed[4].args[1], 'shared transform → identical y at the crossing');
+  assert.ok(Math.abs(dashed[5].args[0] - b2Up.x) < 1e-6 && Math.abs(dashed[5].args[1] - b2Up.y) < 1e-6, 'hop 2 ends at bounce 2 (upper panel)');
+  // Hop 3 (the ≈0 det hop) draws on the upper panel, zero length.
+  assert.ok(Math.abs(dashed[6].args[0] - b2Up.x) < 1e-6 && Math.abs(dashed[6].args[1] - b2Up.y) < 1e-6, 'hop 3 starts at bounce 2 (upper panel)');
+  assert.equal(dashed[7].args[0], dashed[6].args[0], 'hop 3 is zero length');
   r.destroy();
 });
 

@@ -85,23 +85,27 @@
   const FONT_LABELS = { small: 'Small', medium: 'Medium', large: 'Large' };
 
   // Replay-audio faders (Audio & voice): the SAME kvstore keys and
-  // default as Replay's volume popover (voice_volume / guns_volume /
-  // utility_volume / c4_volume / announcer_volume — prefs.go) —
+  // defaults as Replay's volume popover (voice_volume / guns_volume /
+  // utility_volume / c4_volume / announcer_volume / footsteps_volume —
+  // prefs.go) —
   // optimistic local state on
   // every input, durable via setPref, read back in onMount (the
-  // font-size pattern).
+  // font-size pattern). The FOOTSTEPS level defaults to 0 (muted) —
+  // deliberately not AUDIO_VOL_DEFAULT.
   let volVoice = $state(AUDIO_VOL_DEFAULT);
   let volGuns = $state(AUDIO_VOL_DEFAULT);
   let volUtil = $state(AUDIO_VOL_DEFAULT);
   let volC4 = $state(AUDIO_VOL_DEFAULT);
   let volAnnouncer = $state(AUDIO_VOL_DEFAULT);
+  let volSteps = $state(0);
 
   function setVol(bucket, raw) {
-    const level = prefVolume(Number(raw) / 100);
+    const level = prefVolume(Number(raw) / 100, bucket === 'footsteps' ? 0 : AUDIO_VOL_DEFAULT);
     if (bucket === 'voice') volVoice = level;
     else if (bucket === 'guns') volGuns = level;
     else if (bucket === 'c4') volC4 = level;
     else if (bucket === 'announcer') volAnnouncer = level;
+    else if (bucket === 'footsteps') volSteps = level;
     else volUtil = level;
     const key =
       bucket === 'voice'
@@ -112,7 +116,9 @@
             ? 'c4_volume'
             : bucket === 'announcer'
               ? 'announcer_volume'
-              : 'utility_volume';
+              : bucket === 'footsteps'
+                ? 'footsteps_volume'
+                : 'utility_volume';
     setPref(key, level).catch((e) => (error = errText(e)));
   }
 
@@ -557,23 +563,27 @@
       .catch(() => {
         /* keep the default (off) */
       });
-    // Replay-audio faders: read the five persisted levels back (the
+    // Replay-audio faders: read the six persisted levels back (the
     // boot-time pass may still be in flight for a deep-linked Settings);
-    // never-set/corrupt falls to the shared 0.8 default so a broken pref
-    // can never bind a 0-fader slider.
+    // never-set/corrupt falls to each key's OWN default — the shared 0.8
+    // for five of them, 0 for footsteps (muted by default) — so a broken
+    // pref can never bind a 0-fader slider … except the footsteps one,
+    // whose 0 IS the shipped state.
     Promise.all([
       getPref('voice_volume').catch(() => null),
       getPref('guns_volume').catch(() => null),
       getPref('utility_volume').catch(() => null),
       getPref('c4_volume').catch(() => null),
       getPref('announcer_volume').catch(() => null),
+      getPref('footsteps_volume').catch(() => null),
     ])
-      .then(([v, g, u, c, a]) => {
+      .then(([v, g, u, c, a, s]) => {
         volVoice = prefVolume(v);
         volGuns = prefVolume(g);
         volUtil = prefVolume(u);
         volC4 = prefVolume(c);
         volAnnouncer = prefVolume(a);
+        volSteps = prefVolume(s, 0);
       })
       .catch(() => {
         /* keep the defaults */
@@ -1015,7 +1025,7 @@
         {/if}
       {/if}
     {/if}
-    <!-- The five replay-audio faders: same kvstore keys (and default)
+    <!-- The six replay-audio faders: same kvstore keys (and defaults)
          as the transport's Volume popover — moving one here moves the
          other, and both survive restarts. -->
     <div class="row-between">
@@ -1081,10 +1091,25 @@
         oninput={(e) => setVol('announcer', e.currentTarget.value)}
       />
     </div>
+    <div class="row-between">
+      <span class="muted"
+        >Footsteps volume — player footsteps and landings in the replay
+        (starts at 0: muted).</span
+      >
+      <input
+        class="sett-vol"
+        type="range"
+        min="0"
+        max="100"
+        value={Math.round(volSteps * 100)}
+        aria-label="Footsteps volume"
+        oninput={(e) => setVol('footsteps', e.currentTarget.value)}
+      />
+    </div>
     <p class="muted">
       Sound effects are extracted from your local CS2 install (CS2 assets
-      above); the replay plays gun, utility, C4 and announcer sounds when
-      they are available.
+      above); the replay plays gun, utility, C4, announcer and footstep
+      sounds when they are available.
     </p>
     <p class="muted">
       Voice is decoded as the replay plays and streamed in small pieces — no

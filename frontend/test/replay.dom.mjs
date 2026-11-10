@@ -275,6 +275,12 @@ export const getBlindDurations = () => Promise.resolve([]);
 // stub: the view's join leaves every weapon_drop row unstamped (the
 // fail-soft path drawDrops draws nothing for).
 export const getDropDetails = () => Promise.resolve([]);
+// Player sounds (sound_events): the fixture has NONE — presence reports
+// total 0, so the view's gate fetches NOTHING (the presence-zero path:
+// no rows, no cues, no error) and the sound-events read below is never
+// reached in this harness.
+export const getSoundEventPresence = () => Promise.resolve({ matchId: 1, total: 0, byKind: {} });
+export const getSoundEvents = () => Promise.resolve([]);
 export const getChat = () => Promise.resolve([]);
 export const getGenericEvents = () => Promise.resolve([]);
 export const getGenericHistogram = () => Promise.resolve([]);
@@ -821,7 +827,7 @@ check('no leftover voice bar / lanes', !target.querySelector('.voice-bar') && !t
 // a direct-child button[aria-label="Mute all"], disabled because this
 // fixture has NO voice, with separator 2 immediately behind it. Delta:
 // that button is now the VOLUME POPOVER's trigger inside a host span
-// (same cluster slot), it is NEVER disabled (voice is one row of five —
+// (same cluster slot), it is NEVER disabled (voice is one row of six —
 // only the popover's Voice row disables), and separator 2 still follows
 // the host. The new popover coverage sits below the separator checks.
 const volHost = controls.querySelector('.rp-pop-host.rp-vol');
@@ -885,24 +891,24 @@ check(
 check('play controls are NOT on the scrub line', !scrub.querySelector('button'));
 
 // Volume popover (the old mute-all button's slot): it opens in place
-// above the trigger, exposes the FIVE fader rows, and the VOICE row is
-// disabled in this no-voice fixture while guns/utility/C4/announcer
-// stay live
+// above the trigger, exposes the SIX fader rows, and the VOICE row is
+// disabled in this no-voice fixture while guns/utility/C4/announcer/
+// footsteps stay live
 // (they never need the match to have voice).
 check('volume popover closed on entry', !controls.querySelector('#rp-vol-voice'));
 click(volBtn);
 await sleep();
 const volRows = [...controls.querySelectorAll('.rp-vol-pop .rp-vol-row')];
 check(
-  'volume popover has five rows: Voice, Guns, Utility, C4, Announcer',
-  volRows.length === 5 &&
+  'volume popover has six rows: Voice, Guns, Utility, C4, Announcer, Footsteps',
+  volRows.length === 6 &&
     volRows.map((r) => (r.querySelector('.field-label')?.textContent || '').trim()).join(',') ===
-      'Voice,Guns,Utility,C4,Announcer',
+      'Voice,Guns,Utility,C4,Announcer,Footsteps',
   volRows.map((r) => (r.querySelector('.field-label')?.textContent || '?').trim()).join(','),
 );
 check(
   'each row has a 0..100 range fader and a mute toggle button',
-  volRows.length === 5 &&
+  volRows.length === 6 &&
     volRows.every((r) => {
       const slider = r.querySelector('input[type="range"]');
       return (
@@ -913,6 +919,15 @@ check(
       );
     }),
 );
+// The FOOTSTEPS fader ships at 0 — footsteps_volume's default is 0 (the
+// bus is muted by default), so an untouched pref must bind a 0-slider,
+// never the shared 0.8 the other five read.
+check(
+  'footsteps fader starts at 0 (muted by default, its own pref default)',
+  controls.querySelector('#rp-vol-footsteps')?.value === '0' &&
+    globalThis.__prefs['footsteps_volume'] === undefined,
+  `value=${controls.querySelector('#rp-vol-footsteps')?.value} pref=${JSON.stringify(globalThis.__prefs['footsteps_volume'])}`,
+);
 const voiceSlider = controls.querySelector('#rp-vol-voice');
 const voiceMute = controls.querySelector('button[aria-label="Mute voice"]');
 check(
@@ -921,7 +936,7 @@ check(
   `slider=${voiceSlider?.disabled} mute=${voiceMute?.disabled}`,
 );
 check(
-  'guns/utility/C4/announcer rows stay ENABLED without voice',
+  'guns/utility/C4/announcer/footsteps rows stay ENABLED without voice',
   controls.querySelector('#rp-vol-guns')?.disabled === false &&
     controls.querySelector('button[aria-label="Mute guns"]')?.disabled === false &&
     controls.querySelector('#rp-vol-utility')?.disabled === false &&
@@ -929,7 +944,9 @@ check(
     controls.querySelector('#rp-vol-c4')?.disabled === false &&
     controls.querySelector('button[aria-label="Mute c4"]')?.disabled === false &&
     controls.querySelector('#rp-vol-announcer')?.disabled === false &&
-    controls.querySelector('button[aria-label="Mute announcer"]')?.disabled === false,
+    controls.querySelector('button[aria-label="Mute announcer"]')?.disabled === false &&
+    controls.querySelector('#rp-vol-footsteps')?.disabled === false &&
+    controls.querySelector('button[aria-label="Mute footsteps"]')?.disabled === false,
 );
 check('trigger reports the popover open (aria-expanded)', volBtn.getAttribute('aria-expanded') === 'true');
 click(volBtn); // close again — later checks see the original cluster
@@ -1690,11 +1707,13 @@ await sleep();
 const catMenu = panel?.querySelector('.lm-cat-menu');
 check('dropdown opens a checkbox list (multi-select)', !!catMenu);
 const catBoxes = catMenu ? [...catMenu.querySelectorAll('input[type="checkbox"]')] : [];
-// 15 = 14 + the drops category (the death-drop evidence rows —
+// 16 = 15 + the drops category (the death-drop evidence rows —
 // lib/replay/landmarks.js CATEGORIES gained one opt-in entry so
 // normalizeEvent can claim weapon_drop/weapon_pickup for the draw set;
-// default selection is unchanged).
-check('one checkbox per category', catBoxes.length === 15, String(catBoxes.length));
+// default selection is unchanged) + the Bounce category (grenade_bounce
+// rows — same shape: an opt-in, default-OFF entry so the kind has a
+// claim; the checked-list pin below stays 'Round starts' only).
+check('one checkbox per category', catBoxes.length === 16, String(catBoxes.length));
 const catLabel = (cb) => (cb.closest('label')?.textContent || '').trim();
 check(
   'default selection: round starts ON, kills and round wins OFF',
