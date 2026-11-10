@@ -49,6 +49,11 @@ import { elevationFor, layerIndexForZ } from './layers.js';
 import { slotStateAt } from './state.js';
 import { bombEndTick, bombEvidenceAt, hasBombPos, actionIntervals, actionProgressAt } from './bomb.js';
 import { buildDropWindows } from './drops.js';
+// The ONE round-boundary cleanup rule (ROUND_POLICY + entityEndTick) —
+// setLandmarks precomputes its cutoffs beside killEnds/dropWins so no
+// draw loop ever re-scans the round rows — plus the two boundary SCANS
+// killEndTick delegates to (sameRoundEndTick / nextRoundStartTick).
+import { ROUND_POLICY, entityEndTick, sameRoundEndTick, nextRoundStartTick } from './roundcut.js';
 // fmt.js is THE seconds clock (fmtClock over tickSeconds — the same
 // basis as the scrubber readout). createRenderer has its own tick-based
 // HUD helper named fmtClock below, so the import is aliased: the two
@@ -122,6 +127,12 @@ const SMART_EPS_CENTER = 0.25; // img px — "converged" for the settle loop
 const SMART_EPS_ZOOM = 0.002; // relative zoom tolerance
 const SMOKE_LIFETIME_S = 18;
 const FIRE_LIFETIME_S = 7;
+// LIFETIME_S_BY_BUCKET — the roundcut 'area' policy's OWN lifetime per
+// bucket (entityEndTick takes min(lifetime, round cut), so a smoke whose
+// 18 s would outrun its round dies with the round instead). The only two
+// 'area' buckets in ROUND_POLICY — an 'area' bucket without an entry here
+// would be round-cut but never lifetime-capped (none exists today).
+const LIFETIME_S_BY_BUCKET = { smoke: SMOKE_LIFETIME_S, fire: FIRE_LIFETIME_S };
 const FIRE_RADIUS = 130; // world units
 const SMOKE_RADIUS = 144;
 // Detonated-smoke TINT — the lingering area AND its detonation bloom ring
@@ -645,25 +656,26 @@ export function shotBloom(tick, startTick, tickRate, anchorR) {
 // ignored; with NEITHER a same-round round_end nor a later round_start
 // in the loaded rows (the truncated final round) the fallback —
 // deliberately LONGER than any round — keeps the marker from outliving
-// the demo without ever cutting a live round short. Pure — head-tested
-// in src/lib/renderer.test.js; drawn by drawDeaths.
+// the demo without ever cutting a live round short.
+//
+// The two boundary SCANS are delegated to roundcut.js (sameRoundEndTick /
+// nextRoundStartTick — the primitives roundCutTick composes), so this
+// rule and the round-cut cleanup of roundcut.js can never drift. What
+// stays here is the MIN between the two: killEndTick is pinned to it by
+// its characterization test (a same-round round_end landing AFTER the
+// next round's start must still lose to that start) — behavior pins win
+// over consolidation, so the roundCutTick ELSE semantics is NOT adopted
+// here. Pure — head-tested in src/lib/renderer.test.js; drawn by
+// drawDeaths.
 export function killEndTick(row, tickRate, roundEnds, roundStarts) {
   if (!row || !Number.isFinite(row.tick)) return 0;
   const tr = tickRate > 0 ? tickRate : 64;
-  let end = null;
-  for (const e of roundEnds || []) {
-    if (e && e.round === row.round && e.tick >= row.tick && (end === null || e.tick < end)) {
-      end = e.tick;
-    }
-  }
-  let next = null;
-  for (const s of roundStarts || []) {
-    if (s && Number.isFinite(s.tick) && s.tick > row.tick && (next === null || s.tick < next)) {
-      next = s.tick;
-    }
-  }
-  if (end !== null) return next !== null ? Math.min(end, next) : end;
-  return next !== null ? next : row.tick + KILL_MARKER_FALLBACK_S * tr;
+  const end = sameRoundEndTick(row, roundEnds);
+  const next = nextRoundStartTick(row.tick, roundStarts);
+  if (end === null && next === null) return row.tick + KILL_MARKER_FALLBACK_S * tr;
+  if (end === null) return next;
+  if (next === null) return end;
+  return Math.min(end, next);
 }
 
 // --- Top-box HUD layout (pure) -----------------------------------------------
@@ -802,6 +814,19 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   //              O(rounds) terminator scan per kill per frame.
   let dropWins = new Map();
   let killEnds = new Map();
+  // roundCuts — the unified round-boundary cutoffs (roundcut.js
+  // ROUND_POLICY + entityEndTick), precomputed beside dropWins/killEnds
+  // so no draw loop ever re-scans the round rows per frame:
+  //   areaCuts  — 'area' policy rows (P1): min(own lifetime, round cut);
+  //   popCuts   — 'pop' policy rows (P2): the next round_start only;
+  //   decoyCuts — the decoy PLAN entries (the 'land' bucket's only draw
+  //               site — the plan carries landTick, not a bucketed row).
+  // Rebuilt by rebuildRoundCuts() from BOTH setLandmarks (rows and round
+  // boundaries changed) and setDecoyPlan (the plan changed), so either
+  // setter arriving last leaves all three consistent.
+  let areaCuts = new Map();
+  let popCuts = new Map();
+  let decoyCuts = new Map();
   // The layer toggle: which drop categories draw at all (the toolbar's
   // Guns/Utility popover → setDropLayers; BOTH OFF by default = the
   // feature is opt-in, matching the pref's unset state).
@@ -1283,7 +1308,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     // The drop-layer evidence bundle (drops.js dropEvidenceAt) — built
     // with the bomb one above; roundEnds is the shared round cleanup.
     wdropEv = { drops: wdrops, pickups: wpickups, roundEnds };
-    // Derived lookups for the per-frame paths (both over match-static
+    // Derived lookups for the per-frame paths (all over match-static
     // rows — pure functions of these buckets, rebuilt whenever they are):
     //   dropWins — drops.js buildDropWindows: each drop row → its
     //              [from, to) visibility window, so drawDrops is O(1)
@@ -1292,7 +1317,12 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     //              frame);
     //   killEnds — killEndTick per kill row: the death-X cutoff, so
     //              drawDeaths is a Map read per kill (it used to rescan
-    //              the round_end/round_start rows per kill per frame).
+    //              the round_end/round_start rows per kill per frame);
+    //   roundCuts — roundcut.js ROUND_POLICY + entityEndTick per
+    //              policy row: the P1 area cutoffs (min(own lifetime,
+    //              round cut)) and the P2 pop cutoffs (the next
+    //              round_start), plus the decoy plan's window cut — so
+    //              drawGrenades/drawBomb gate on one Map read per row.
     // tickRate is the engine's own (killEndTick defaults an invalid one
     // to 64 exactly as drawDeaths' live call would).
     dropWins = buildDropWindows(wdropEv);
@@ -1300,6 +1330,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     for (const k of kills) {
       killEnds.set(k, killEndTick(k, engine ? engine.tickRate : 0, roundEnds, roundStarts));
     }
+    rebuildRoundCuts();
     // Pairing pool: detonations AND landings. A landing row's weapon is
     // "Decoy Grenade", so sameUtilityWeapon only ever pairs it with a
     // DECOY throw (every other grenade's nearest candidate stays its own
@@ -1326,6 +1357,67 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       }
       polylines.push({ from: l, to: best });
     }
+  }
+
+  // rebuildRoundCuts — the unified round-boundary cutoffs (roundcut.js:
+  // ROUND_POLICY picks the rule per pre-bucketed row, entityEndTick
+  // applies min(own end, cut)). Precomputed exactly like killEnds /
+  // dropWins so every gated draw loop is ONE Map read per row per frame,
+  // never an O(rounds) terminator scan. Called from BOTH setLandmarks
+  // (rows / round boundaries changed) and setDecoyPlan (the plan is the
+  // 'land' bucket's only draw site) — Replay.svelte arrives in either
+  // order, so whichever setter runs last rebuilds all three maps from the
+  // inputs it then has.
+  function rebuildRoundCuts() {
+    const tr = engine ? engine.tickRate : 0;
+    areaCuts = new Map();
+    popCuts = new Map();
+    for (const l of landmarks) {
+      const rules = ROUND_POLICY[l.bucket]; // rows arrive bucketed — no
+      if (!rules) continue; //                    runtime classification
+      if (rules.includes('area')) {
+        areaCuts.set(
+          l,
+          entityEndTick(
+            l,
+            { policy: 'area', lifetimeS: LIFETIME_S_BY_BUCKET[l.bucket], tickRate: tr },
+            roundEnds,
+            roundStarts,
+          ),
+        );
+      }
+      if (rules.includes('pop')) {
+        popCuts.set(l, entityEndTick(l, { policy: 'pop' }, roundEnds, roundStarts));
+      }
+    }
+    decoyCuts = new Map();
+    for (const p of decoyPlan) {
+      // ROUND_POLICY 'land' → 'pop' (the P2 rule): the plan carries the
+      // rest tick, not a bucketed row, so the cut is computed from
+      // landTick with the same helper — the decoy's rest/noise window
+      // never survives the next round_start either.
+      decoyCuts.set(p, entityEndTick({ tick: p.landTick }, { policy: 'pop' }, roundEnds, roundStarts));
+    }
+  }
+
+  // areaEnd / popEnd — the precomputed roundCuts read for ONE row, with
+  // the canonical roundcut rule as the fallback for any row a map somehow
+  // misses (the killEnds fallback pattern: both are built together in
+  // rebuildRoundCuts, so the fallback never actually runs).
+  function areaEnd(l, lifetimeS) {
+    return (
+      areaCuts.get(l) ??
+      entityEndTick(
+        l,
+        { policy: 'area', lifetimeS, tickRate: engine ? engine.tickRate : 0 },
+        roundEnds,
+        roundStarts,
+      )
+    );
+  }
+
+  function popEnd(l) {
+    return popCuts.get(l) ?? entityEndTick(l, { policy: 'pop' }, roundEnds, roundStarts);
   }
 
   function setData(newData) {
@@ -1410,10 +1502,13 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // demo recorded). Stored verbatim like setBullets (pure data, redraw on
   // set): the renderer re-derives NOTHING — drawGrenades windows the rows
   // by tick (rest icon while landTick ≤ tick < detTick, one white
-  // shotBloom per shot) and the sfx engine plays the SAME shots (the
-  // bullets.js one-plan-two-consumers pattern). Absent/null clears.
+  // shotBloom per shot; plus the roundcut P2 cut at the next round_start,
+  // so the window never survives into the next round) and the sfx engine
+  // plays the SAME shots (the bullets.js one-plan-two-consumers pattern).
+  // Absent/null clears.
   function setDecoyPlan(plan) {
     decoyPlan = plan || [];
+    rebuildRoundCuts(); // the plan is the 'land' bucket's only draw site
     draw();
   }
 
@@ -1845,7 +1940,14 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     for (const l of smokes) {
       if (!hasPos(l)) continue;
       const age = (tick - l.tick) / tr;
-      if (age < 0 || age > SMOKE_LIFETIME_S) continue;
+      if (age < 0) continue;
+      // P1 round-end cleanup (roundcut.js): the area dies at the EARLIER
+      // of its 18 s lifetime and the round cut (round_end, else the next
+      // round_start) — gone AT the cutoff, its own tick always draws, so
+      // a paused seek to the boundary clears it and a backwards scrub
+      // re-derives it (nothing sticky).
+      const end = areaEnd(l, SMOKE_LIFETIME_S);
+      if (tick >= end && tick !== l.tick) continue;
       const c = worldToScreen(l.x, l.y, l.z, scr1);
       const r = (SMOKE_RADIUS / scaleForZ(l.z)) * cam.fit * cam.zoom;
       const fade = age > SMOKE_LIFETIME_S - 2 ? (SMOKE_LIFETIME_S - age) / 2 : 1;
@@ -1864,7 +1966,10 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     for (const l of fires) {
       if (!hasPos(l)) continue;
       const age = (tick - l.tick) / tr;
-      if (age < 0 || age > FIRE_LIFETIME_S) continue;
+      if (age < 0) continue;
+      // same P1 rule as the smoke area above, with the 7 s fire lifetime
+      const end = areaEnd(l, FIRE_LIFETIME_S);
+      if (tick >= end && tick !== l.tick) continue;
       const c = worldToScreen(l.x, l.y, l.z, scr1);
       const r = (FIRE_RADIUS / scaleForZ(l.z)) * cam.fit * cam.zoom;
       // Molotov/incendiary areas read RED (not orange) — see the
@@ -1892,6 +1997,12 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       if (!hasPos(pl.from)) continue;
       if (tick < pl.from.tick) continue;
       if (pl.to && tick > pl.to.tick) continue;
+      // P2 (roundcut.js): an arc that outlives its round is cut at the
+      // NEXT round_start only — round_end deliberately never terminates a
+      // pop/arc (bomb_explode-on-end_tick rule), and with no round rows
+      // loaded there is no cut at all.
+      const cut = popEnd(pl.from);
+      if (cut != null && tick >= cut && tick !== pl.from.tick) continue;
       const a = worldToScreen(pl.from.x, pl.from.y, pl.from.z, scr1);
       const flight =
         pl.to &&
@@ -1991,6 +2102,13 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     for (const p of decoyPlan) {
       if (!Number.isFinite(p.landTick) || !Number.isFinite(p.detTick)) continue;
       if (tick < p.landTick || tick >= p.detTick) continue;
+      // P2 (roundcut.js ROUND_POLICY 'land'): the rest/noise window is
+      // cut at the next round_start, never at round_end — same rule as
+      // every other pop/arc, read from the precomputed decoyCuts map.
+      const cut =
+        decoyCuts.get(p) ??
+        entityEndTick({ tick: p.landTick }, { policy: 'pop' }, roundEnds, roundStarts);
+      if (cut != null && tick >= cut && tick !== p.landTick) continue;
       if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
       const c = worldToScreen(p.x, p.y, p.z, scr1); // p.z → its radar layer
       // Elevation indicator for the LANDED decoy — this loop is the REST
@@ -2030,8 +2148,13 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     // Detonations — one visual per type (smoke/fire also linger above;
     // their bloom hands the area off to it). Every branch is a function
     // of the event tick: scrubbing replays it, nothing is sticky.
+    // P2 (roundcut.js): a pop that outlives its round dies at the NEXT
+    // round_start — never at round_end (bomb_explode sits exactly on the
+    // end_tick, and a post-round detonation gets its freezetime grace).
     for (const l of dets) {
       if (!hasPos(l)) continue;
+      const cut = popEnd(l);
+      if (cut != null && tick >= cut && tick !== l.tick) continue;
       const age = (tick - l.tick) / tr;
       if (age < 0) continue;
       const c = worldToScreen(l.x, l.y, l.z, scr1);
@@ -2308,8 +2431,14 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       ctx.setLineDash([]);
       drawBombIcon(c, false); // dropped → WHITE C4 icon (text fallback)
     }
+    // The blast ring and the defuse pop are POPS (roundcut.js P2): the
+    // 3 s / 2 s windows are their own, and a round that ends while they
+    // play only cuts them at the NEXT round_start — a round_end cut would
+    // kill the blast ring on bomb_explode's own end_tick.
     for (const l of explodes) {
       if (!hasPos(l)) continue;
+      const cut = popEnd(l);
+      if (cut != null && tick >= cut && tick !== l.tick) continue;
       const age = (tick - l.tick) / tr;
       if (age < 0 || age > 3) continue;
       const c = worldToScreen(l.x, l.y, l.z, scr1);
@@ -2322,6 +2451,8 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     }
     for (const l of defuses) {
       if (!hasPos(l)) continue;
+      const cut = popEnd(l);
+      if (cut != null && tick >= cut && tick !== l.tick) continue;
       const age = (tick - l.tick) / tr;
       if (age < 0 || age > 2) continue;
       const c = worldToScreen(l.x, l.y, l.z, scr1);

@@ -9,7 +9,11 @@
 // (killEndTick) — plus end-to-end draws over a recording 2D context
 // (the world layers follow the tick: lingering smoke/fire, the death
 // X's round cleanup incl. the post-round C4 kill and the EXACT
-// round_start boundary seek, the C4 icon and its aspect-preserving
+// round_start boundary seek, the unified round-end entity cleanup —
+// roundcut.js: smoke/fire areas die AT round_end (lifetime outrun
+// included), pops/arcs at the NEXT round_start only, with the
+// bomb_explode ring's full 3 s past end_tick as the non-vacuous guard,
+// the C4 icon and its aspect-preserving
 // draw, the traveling-dash bullet tracer (a 14 px side-colored dash per
 // row sliding from the fire position out r+MUZZLE_REACH over its 0.1 s
 // travel — miss fades out on the way, mask-guarded + under the dots),
@@ -1443,6 +1447,196 @@ test('planted C4: drawn before its cutoff, gone AT round_end / bomb_explode / th
   assert.equal(at(800), 0, 'gone AT the next round_start — never the 40 s fallback');
   // scrubbing back re-derives it (nothing sticky, like the death X)
   assert.ok(at(760) > 0, 'a backwards scrub redraws the marker');
+  r.destroy();
+});
+
+// --- unified round-end entity cleanup (lib/replay/roundcut.js) ----------------
+//
+// The SAME strategy the death X and the planted C4 already solved, applied
+// to the entities that used to leak past their round: the lingering
+// smoke/fire AREA dies AT round_end (min(own lifetime, round cut)), while
+// POPS/arcs (detonation pops, bomb explode/defuse pops, grenade flight
+// arcs, the decoy rest window) deliberately survive round_end and die only
+// at the NEXT round_start — bomb_explode sits exactly ON end_tick, so a
+// round_end cut would kill the 3 s explosion ring on its own tick.
+// Every gate is the established boundary spelling `tick >= end &&
+// tick !== row.tick` (gone AT the cutoff, the row's own tick always draws),
+// so a paused ribbon seek clears the entity and a backwards scrub
+// re-derives it — nothing sticky.
+
+test('round-end cleanup: the lingering smoke area dies AT round_end (boundary, scrub, lifetime outrun)', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, {
+    engine,
+    data,
+    players: [
+      { steamId: '1', name: 'alice', side: 'ct' },
+      { steamId: '2', name: 'bob', side: 't' },
+    ],
+  });
+  const mk = (ev) => normalizeEvent(ev, {});
+  r.setLandmarks([
+    // one smoke at tick 128: its own 18 s lifetime runs to 1280, but
+    // round 1 ENDS at 400 — the round cut wins (the leak the evidence
+    // found: smoke past the end rode into the next round's freezetime)
+    mk({ id: 1, seq: 1, tick: 128, round: 1, kind: 'grenade', attacker: '1', weapon: 'Smoke Grenade', posX: 50, posY: 50 }),
+    mk({ id: 2, seq: 2, tick: 400, round: 1, kind: 'round_end' }),
+    mk({ id: 3, seq: 3, tick: 450, round: 2, kind: 'round_start' }),
+  ]);
+  r.resize();
+  // alice is CT → the 50/50 CT blend of the neutral smoke gray
+  // (smokeColorRGB / SMOKE_CT in renderer.js)
+  const AREA_FILL = 'rgba(135, 180, 218, 0.3)';
+  const at = (tick) => {
+    const mark = canvas.log.length;
+    engine.seekTick(tick);
+    r.draw();
+    return canvas.log.slice(mark).some((e) => e.op === 'fill' && e.fillStyle === AREA_FILL);
+  };
+
+  assert.equal(at(399), true, 'the smoke is drawn the tick BEFORE its round_end');
+  assert.equal(at(400), false, 'gone AT round_end — not one tick after it (the boundary spelling)');
+  assert.equal(at(401), false, 'still gone a tick into the next frame');
+  assert.equal(at(300), true, 'a backwards scrub re-derives the area (nothing sticky)');
+  assert.equal(
+    at(500),
+    false,
+    'the 18 s smoke that outruns its round is cut (non-vacuous: its natural end is 1280)',
+  );
+  assert.equal(at(1299), false, 'and its own 18 s lifetime still ends it');
+  r.destroy();
+});
+
+test('round-end cleanup: a smoke/fire detonated AFTER round_end survives to the next round_start', () => {
+  // The post-round shape: round 1 already ended at 400 when the smoke (420)
+  // and the molotov (425) land — no same-round round_end is left to cut
+  // them, so the boundary is the NEXT round's start (450), exactly like
+  // the post-round C4 kill's killEndTick.
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, {
+    engine,
+    data,
+    players: [
+      { steamId: '1', name: 'alice', side: 'ct' },
+      { steamId: '2', name: 'bob', side: 't' },
+    ],
+  });
+  const mk = (ev) => normalizeEvent(ev, {});
+  r.setLandmarks([
+    mk({ id: 1, seq: 1, tick: 420, round: 1, kind: 'grenade', attacker: '1', weapon: 'Smoke Grenade', posX: 50, posY: 50 }),
+    mk({ id: 2, seq: 2, tick: 425, round: 1, kind: 'grenade', attacker: '1', weapon: 'Molotov', posX: 60, posY: 60 }),
+    mk({ id: 3, seq: 3, tick: 400, round: 1, kind: 'round_end' }),
+    mk({ id: 4, seq: 4, tick: 450, round: 2, kind: 'round_start' }),
+  ]);
+  r.resize();
+  const SMOKE_FILL = 'rgba(135, 180, 218, 0.3)';
+  const FIRE_FILL = 'rgba(235, 70, 55, 0.3)';
+  const at = (tick, fill) => {
+    const mark = canvas.log.length;
+    engine.seekTick(tick);
+    r.draw();
+    return canvas.log.slice(mark).some((e) => e.op === 'fill' && e.fillStyle === fill);
+  };
+
+  assert.equal(at(440, SMOKE_FILL), true, 'the post-round smoke keeps drawing (natural end 1572)');
+  assert.equal(at(449, SMOKE_FILL), true, '…right up to the tick before the next round_start');
+  assert.equal(at(450, SMOKE_FILL), false, 'gone AT the next round_start');
+  assert.equal(at(451, SMOKE_FILL), false, 'and still gone a tick later');
+  assert.equal(at(430, SMOKE_FILL), true, 'a backwards scrub re-derives it');
+  assert.equal(at(445, FIRE_FILL), true, 'the post-round fire keeps burning (natural end 873)');
+  assert.equal(at(449, FIRE_FILL), true, '…up to the boundary');
+  assert.equal(at(450, FIRE_FILL), false, 'the fire dies AT the next round_start too');
+  r.destroy();
+});
+
+test('pops: the bomb_explode ring paints its full 3 s past end_tick (round_end on its own tick)', () => {
+  // NON-VACUOUS GUARD for P2: bomb_explode sits exactly ON the round_end
+  // tick (400) — a round_end cut (the P1 rule) would kill the 3 s blast
+  // ring on its own tick, leaving a one-frame flash. Pops are cut only at
+  // the NEXT round_start, so the ring runs its whole window.
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, {
+    engine,
+    data,
+    players: [
+      { steamId: '1', name: 'alice', side: 'ct' },
+      { steamId: '2', name: 'bob', side: 't' },
+    ],
+  });
+  const mk = (ev) => normalizeEvent(ev, {});
+  r.setLandmarks([
+    mk({ id: 1, seq: 1, tick: 400, round: 1, kind: 'bomb_explode', posX: 50, posY: 50 }),
+    mk({ id: 2, seq: 2, tick: 400, round: 1, kind: 'round_end' }),
+    // far enough out that the 3 s window (400..592) always finishes first
+    mk({ id: 3, seq: 3, tick: 1000, round: 2, kind: 'round_start' }),
+  ]);
+  r.resize();
+  const ring = (tick) => {
+    const mark = canvas.log.length;
+    engine.seekTick(tick);
+    r.draw();
+    return canvas.log
+      .slice(mark)
+      .some((e) => e.op === 'stroke' && String(e.strokeStyle).startsWith('rgba(224, 91, 91'));
+  };
+
+  assert.equal(ring(400), true, 'the blast ring starts on its own tick (the own-tick exemption)');
+  assert.equal(ring(450), true, '50 ticks past end_tick — a round_end cut would have killed it here');
+  assert.equal(ring(590), true, '…and it still paints at ~2.98 s: the FULL 3 s window survives');
+  assert.equal(ring(600), false, 'its own 3 s window ends it (age > 3 s)');
+  assert.equal(ring(700), false, 'still gone later in the freezetime');
+  r.destroy();
+});
+
+test('pops die at the next round_start: an HE det after round_end pops only until round 2 starts', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, {
+    engine,
+    data,
+    players: [
+      { steamId: '1', name: 'alice', side: 'ct' },
+      { steamId: '2', name: 'bob', side: 't' },
+    ],
+  });
+  const mk = (ev) => normalizeEvent(ev, {});
+  r.setLandmarks([
+    mk({ id: 1, seq: 1, tick: 420, round: 1, kind: 'grenade', attacker: '1', weapon: 'HE Grenade', posX: 50, posY: 50 }),
+    mk({ id: 2, seq: 2, tick: 400, round: 1, kind: 'round_end' }),
+    // inside the HE ring's own 1.3 s window (420 → 503): the boundary is
+    // the round, not the duration
+    mk({ id: 3, seq: 3, tick: 470, round: 2, kind: 'round_start' }),
+  ]);
+  r.resize();
+  const ring = (tick) => {
+    const mark = canvas.log.length;
+    engine.seekTick(tick);
+    r.draw();
+    return canvas.log
+      .slice(mark)
+      .some((e) => e.op === 'stroke' && String(e.strokeStyle).startsWith('rgba(224, 91, 91'));
+  };
+
+  assert.equal(ring(440), true, 'the pop ignores the round_end — P2 grace (round 1 already ended at 400)');
+  assert.equal(ring(469), true, 'drawn right up to the tick before the boundary');
+  assert.equal(ring(470), false, 'gone AT the next round_start');
+  assert.equal(ring(471), false, 'and still gone a tick later');
+  assert.equal(
+    ring(490),
+    false,
+    'non-vacuous: its own 1.3 s ring would still be drawing here (natural end ~503)',
+  );
   r.destroy();
 });
 

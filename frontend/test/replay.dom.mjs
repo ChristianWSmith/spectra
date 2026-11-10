@@ -145,10 +145,13 @@ writeFileSync(
 // engine (deriveBullets fails soft to [] against this harness's null
 // state index). decoy.js is the decoy rest/noise plan Replay derives
 // once per push site (buildDecoyPlan — pure over the draw rows; no
-// state index here → shots: [], icon/explosion rows only).
+// state index here → shots: [], icon/explosion rows only). roundcut.js
+// is the one round-boundary cleanup rule bomb.js (and the renderer)
+// delegate their boundary scans to — without the copy the bomb.js graph
+// fails to link above.
 for (const rel of [
   'playercard.js', 'playercolor.js', 'livestats.js', 'voiceindex.js',
-  'sfx.js', 'stretch.js', 'bullets.js', 'decoy.js', 'bomb.js',
+  'sfx.js', 'stretch.js', 'bullets.js', 'decoy.js', 'bomb.js', 'roundcut.js',
   // playercard.js now resolves its held-item prefix through
   // replay/loadout.js (the one loadout vocabulary) — copy it too, or the
   // card graph fails to link (its own deps, landmarks.js + bullets.js,
