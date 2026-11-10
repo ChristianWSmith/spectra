@@ -2,8 +2,10 @@
 // derivation (flashbang double-dispatch dedupe, the decoy→HE detonation
 // remap, C4 on its own bus, the equip skip, the freeze gate), the throw
 // cues (`<weapon> throw` manifest keys), the knife damage cues, the
-// plant/defuse lifecycle cues (bombActionCues — the four manifest
-// groups, silent cancels, the shared bomb.js ACTION_KINDS taxonomy), the
+// plant/defuse lifecycle cues (bombActionCues — THREE manifest groups
+// played, the plant-complete device cue's PLAYBACK removed by owner
+// instruction 2026-11-09; silent cancels, the shared bomb.js
+// ACTION_KINDS taxonomy), the
 // ANNOUNCER lines (roundEndCues winner/draw/counted gating,
 // bombAnnouncerCues, the bombdef→win ordering rule) and the match-POINT
 // freeze cue (matchPointBefore's MR12/MR3 clinch predicate,
@@ -49,6 +51,7 @@ const {
   GUNS_GAIN_SCALE,
   UTILITY_GAIN_SCALE,
   C4_GAIN_SCALE,
+  ANNOUNCER_GAIN_SCALE,
   SOUND_DETONATION_BUCKETS,
   ANNOUNCER_ORDER_DELAY_S,
   grenadeCues,
@@ -303,13 +306,19 @@ test('utilCuesInRange is open at the left and closed at the right', () => {
 
 // --- plant/defuse lifecycle cues --------------------------------------------
 
-// The four cues key the manifest groups internal/mappack/sounds.go
-// extracts (one soundevent FILE each: c4.initiate / c4.plant /
-// c4.disarmstart / c4.disarmfinish), and the kind → name table is keyed
-// off bomb.js ACTION_KINDS — the same taxonomy the renderer's progress
-// rings read, so the arc and the sound can never disagree.
+// The cues key the manifest groups internal/mappack/sounds.go extracts
+// (one soundevent FILE each: c4.initiate / c4.plant / c4.disarmstart /
+// c4.disarmfinish), and the kind → name table is keyed off bomb.js
+// ACTION_KINDS — the same taxonomy the renderer's progress rings read,
+// so the arc and the sound can never disagree.
+// PLAYBACK covers THREE of the four: the plant-COMPLETE cue ("C4 plant
+// complete" → c4_plant, the bomb itself being planted) is deliberately
+// NOT built — owner instruction 2026-11-09 ("remove the bomb plant
+// sound — NOT the announcer 'bomb has been planted' sound"). The asset
+// stays extracted and the manifest keeps listing it; only these cue
+// lists and the engine's playback of it are gone.
 
-test('bombActionCues: the four lifecycle moments key the manifest’s cue groups', () => {
+test('bombActionCues: three lifecycle moments key the manifest’s cue groups — plant complete is NOT one', () => {
   const cues = bombActionCues([
     { kind: 'bomb_plant', bucket: 'plant', tick: 300, round: 7 },
     { kind: 'bomb_plant_begin', bucket: 'plant_begin', tick: 100, round: 7 },
@@ -320,14 +329,11 @@ test('bombActionCues: the four lifecycle moments key the manifest’s cue groups
   ]);
   assert.deepEqual(
     cues.map((c) => `${c.tick}:${c.name}`),
-    [
-      '100:C4 plant start',
-      '300:C4 plant complete',
-      '600:C4 defuse start',
-      '920:C4 defuse complete',
-    ],
+    // The bomb_plant row at 300 makes NOTHING (owner instruction
+    // 2026-11-09 removed the plant-complete DEVICE cue's playback).
+    ['100:C4 plant start', '600:C4 defuse start', '920:C4 defuse complete'],
   );
-  // All four ride the C4 bus (the bomb's own fader/mute, like the
+  // All of them ride the C4 bus (the bomb's own fader/mute, like the
   // explosion and the beeps).
   assert.ok(cues.every((c) => c.bucket === 'c4'), JSON.stringify(cues));
 });
@@ -335,7 +341,8 @@ test('bombActionCues: the four lifecycle moments key the manifest’s cue groups
 test('bombActionCues: a CANCELLED attempt is silent (abort rows make no cue)', () => {
   // The START still cues — c4.initiate sounds the moment arming begins —
   // but the game plays nothing when a plant/defuse is abandoned, and
-  // spectra ships no cancel sound to extract.
+  // spectra ships no cancel sound to extract. The plant's completion
+  // row is silent too (no plant-complete device cue — owner 2026-11-09).
   const cues = bombActionCues([
     { kind: 'bomb_plant_begin', bucket: 'plant_begin', tick: 100, round: 7 },
     { kind: 'bomb_plant_abort', bucket: 'plant_abort', tick: 112, round: 7 },
@@ -345,13 +352,15 @@ test('bombActionCues: a CANCELLED attempt is silent (abort rows make no cue)', (
   ]);
   assert.deepEqual(
     cues.map((c) => `${c.tick}:${c.name}`),
-    ['100:C4 plant start', '300:C4 plant complete', '500:C4 defuse start'],
+    ['100:C4 plant start', '500:C4 defuse start'],
   );
 });
 
 test('bombActionCues: the cue names follow bomb.js ACTION_KINDS (the one taxonomy)', () => {
   // Renaming a kind in ACTION_KINDS without updating this table would
-  // silently mute the cue — this pins the mapping both sides read.
+  // silently mute the cue — this pins the mapping both sides read. Only
+  // THREE of the four kinds map to a cue: plant.complete is keyed out on
+  // purpose (owner instruction 2026-11-09 — no plant-complete playback).
   assert.deepEqual(ACTION_KINDS, {
     plant: { begin: 'bomb_plant_begin', complete: 'bomb_plant', abort: 'bomb_plant_abort' },
     defuse: { begin: 'bomb_defuse_start', complete: 'bomb_defuse', abort: 'bomb_defuse_abort' },
@@ -364,7 +373,7 @@ test('bombActionCues: the cue names follow bomb.js ACTION_KINDS (the one taxonom
   ]);
   assert.deepEqual(
     cues.map((c) => c.name),
-    ['C4 plant start', 'C4 plant complete', 'C4 defuse start', 'C4 defuse complete'],
+    ['C4 plant start', 'C4 defuse start', 'C4 defuse complete'],
   );
 });
 
@@ -374,13 +383,15 @@ test('bombActionCues: freeze time gates the cue, (tick|name) dedupes', () => {
       { kind: 'bomb_plant_begin', tick: 32 }, // round-1 freeze → dropped
       { kind: 'bomb_plant_begin', tick: 100 }, // live → kept
       { kind: 'bomb_plant_begin', tick: 100 }, // duplicate dispatch → one
-      { kind: 'bomb_plant', tick: 100 }, // same tick, OTHER cue → kept
+      // Same tick, a DIFFERENT cue name → both kept (the plant-complete
+      // name no longer exists — owner 2026-11-09).
+      { kind: 'bomb_defuse', tick: 100 },
     ],
     FREEZE_ROUNDS,
   );
   assert.deepEqual(
     cues.map((c) => `${c.tick}:${c.name}`),
-    ['100:C4 plant start', '100:C4 plant complete'],
+    ['100:C4 plant start', '100:C4 defuse complete'],
   );
 });
 
@@ -869,7 +880,7 @@ test('pickVariant picks uniformly in range and never leaves the list', () => {
 
 // --- internal mix calibration ----------------------------------------------
 
-test('gain scales: guns and utility run at 1/12 of the fader, C4 at 1/3 — internal to the mixer', () => {
+test('gain scales: guns/utility at 1/12, C4 at 1/6, announcer at 1/2 — internal to the mixer', () => {
   // applyGains() multiplies the fader level by these — the pref default,
   // the sliders and prefs.go never move (a user-facing 80% still reads
   // 80%), so pinning the constants here pins the mix. Voice is
@@ -880,10 +891,18 @@ test('gain scales: guns and utility run at 1/12 of the fader, C4 at 1/3 — inte
   // utility ONLY.
   assert.equal(GUNS_GAIN_SCALE, 1 / 12);
   assert.equal(UTILITY_GAIN_SCALE, 1 / 12);
-  // C4: the explosion MOVED from the utility bus to the C4 bus; it does
-  // NOT follow utility's retune — its level must not change (the beeps
-  // are simply quieter samples than a grenade).
-  assert.equal(C4_GAIN_SCALE, 1 / 3);
+  // OWNER INSTRUCTION 2026-11-09 (FINAL): "halve the internal gain for
+  // the ANNOUNCER and C4 buses" — internal scale only; the
+  // announcer_volume/c4_volume pref defaults, the fader ranges and
+  // applyGains' structure are untouched. The C4 bus goes 1/3 → 1/6 (it
+  // took the explosion over from the utility bus at × 1/3 and does NOT
+  // track utility's 1/12 retune).
+  // The ANNOUNCER bus had NO scale when the announcer work landed (its
+  // gain-scale presence stayed UNSCALED — gain IS the fader value, like
+  // the voice master): that unscaled state is gone, and the pin now
+  // asserts the HALVED value the owner asked for.
+  assert.equal(C4_GAIN_SCALE, 1 / 6);
+  assert.equal(ANNOUNCER_GAIN_SCALE, 1 / 2);
   assert.equal(AUDIO_VOL_DEFAULT, 0.8); // the user-facing default is untouched
 });
 
@@ -1098,8 +1117,11 @@ const BEEP_MANIFEST = {
     'C4 beep B': ['/api/sounds/c4_beep3.wav'],
     C4: ['/api/sounds/c4_explode1.wav'],
     'HE Grenade': ['/api/sounds/hegrenade_detonate_02.wav'],
-    // The four plant/defuse lifecycle cues (soundTable's single-file
+    // The four plant/defuse lifecycle cue FILES (soundTable's single-file
     // groups — one soundevent file each, see internal/mappack/sounds.go).
+    // The manifest lists every extracted asset, including the
+    // plant-complete one whose PLAYBACK is removed (owner 2026-11-09) —
+    // a manifest key is availability, not a promise it plays.
     'C4 plant start': ['/api/sounds/c4_initiate.wav'],
     'C4 plant complete': ['/api/sounds/c4_plant.wav'],
     'C4 defuse start': ['/api/sounds/c4_disarmstart.wav'],
@@ -1319,12 +1341,17 @@ test('engine: the explosion cue rides the C4 bus and a resolved bomb never beeps
   }
 });
 
-// The four plant/defuse lifecycle cues through the REAL play path:
-// rows → rebuildCues → (prevTick, curTick] → playGroup on the C4 bus.
-// The steps stay inside cueGapJump's ordinary-window (≤ 0.3 s at 1×) so
-// each crossing is playback, not a re-seed; a jump only re-positions
-// the compare point (which is exactly how a seek must behave).
-test('engine: the plant/defuse lifecycle cues play on the C4 bus, cancels stay silent', async () => {
+// The THREE played plant/defuse lifecycle cues through the REAL play
+// path: rows → rebuildCues → (prevTick, curTick] → playGroup on the C4
+// bus. The plant-COMPLETE device cue ('C4 plant complete' → c4_plant —
+// the bomb itself being planted) is no longer built (owner instruction
+// 2026-11-09), so crossing the plant's completion row plays no DEVICE
+// sound — while the ANNOUNCER `bombpl` line from the SAME row keeps
+// playing, on the announcer bus. The steps stay inside cueGapJump's
+// ordinary-window (≤ 0.3 s at 1×) so each crossing is playback, not a
+// re-seed; a jump only re-positions the compare point (which is exactly
+// how a seek must behave).
+test('engine: plant start plays on the C4 bus — plant complete stays silent, bombpl keeps playing', async () => {
   resetSoundManifest();
   const restoreFetch = stubManifestFetch();
   try {
@@ -1351,12 +1378,19 @@ test('engine: the plant/defuse lifecycle cues play on the C4 bus, cancels stay s
     assert.equal(arm.length, 1, 'the plant-start cue plays exactly once');
     assert.equal(arm[0].bus, ctx.gains[2], 'it rides the C4 bus (guns=0, utility=1, C4=2)');
     // A jump re-seeds without playing (nothing was due in that window),
-    // then an ordinary step crosses the completion.
+    // then an ordinary step crosses the plant's COMPLETION: the DEVICE
+    // sound of the bomb itself being planted is GONE (owner instruction
+    // 2026-11-09), so that row yields no c4 device playback at all.
     engine.emit({ playing: true, speed: 1, tick: DONE - 10 });
     engine.emit({ playing: true, speed: 1, tick: DONE + 2 });
     const done = ctx.sources.filter((s) => s.buffer && s.buffer.url === '/api/sounds/c4_plant.wav');
-    assert.equal(done.length, 1, 'the plant-complete cue plays exactly once');
-    assert.equal(done[0].bus, ctx.gains[2], 'the completion rides the C4 bus too');
+    assert.equal(done.length, 0, 'the plant-complete device sound never plays');
+    // The ANNOUNCER `bombpl` line rides the SAME row and MUST keep
+    // playing — on the 4th gain, the ANNOUNCER bus (guns=0, utility=1,
+    // C4=2, announcer=3).
+    const pl = ctx.sources.filter((s) => s.buffer && s.buffer.url === '/api/sounds/bombpl.wav');
+    assert.equal(pl.length, 1, 'the announcer bombpl line still plays exactly once');
+    assert.equal(pl[0].bus, ctx.gains[3], 'bombpl on the announcer bus');
     // …and the CANCEL is silence: bombActionCues builds no cue for an
     // abort row (there is no cancel sound in the game to extract).
     const before = lifecycle().length;
@@ -1456,6 +1490,42 @@ test('engine: the match-point stinger plays once at freeze start on the announce
     engine.emit({ playing: true, speed: 1, tick: mpStart(25) + 2 }); // ordinary step
     const after = ctx.sources.filter((s) => s.buffer && s.buffer.url === '/api/sounds/cs_stinger.wav');
     assert.equal(after.length, 1, 'the 12-12 freeze start stays silent');
+    sfx.destroy();
+  } finally {
+    restoreFetch();
+  }
+});
+
+// The internal mix calibration through the REAL applyGains path: every
+// bus's gain IS its fader level × the exported scale, so the halved
+// ANNOUNCER/C4 constants (owner instruction 2026-11-09) reach the
+// mixer while the user-facing fader stays a plain 0..1 level.
+test('engine: applyGains multiplies each fader by its bus scale (announcer/C4 halved)', async () => {
+  resetSoundManifest();
+  const restoreFetch = stubManifestFetch();
+  try {
+    const { sfx, ctx } = await makeSfx();
+    // Creation order pins the gains (sfx.js): guns=0, utility=1, C4=2,
+    // announcer=3 — all at the default fader × their own scale.
+    assert.deepEqual(
+      ctx.gains.map((g) => g.gain.value),
+      [
+        AUDIO_VOL_DEFAULT * GUNS_GAIN_SCALE,
+        AUDIO_VOL_DEFAULT * UTILITY_GAIN_SCALE,
+        AUDIO_VOL_DEFAULT * C4_GAIN_SCALE,
+        AUDIO_VOL_DEFAULT * ANNOUNCER_GAIN_SCALE,
+      ],
+    );
+    // Faders are still plain 0..1 levels (untouched ranges): a full C4
+    // fader yields the halved internal gain, a full announcer fader the
+    // halved one — the reduction never leaks into the slider value.
+    sfx.setC4Volume(1);
+    sfx.setAnnouncerVolume(1);
+    assert.equal(ctx.gains[2].gain.value, C4_GAIN_SCALE, 'C4 at 1/6 behind a 100% fader');
+    assert.equal(ctx.gains[3].gain.value, ANNOUNCER_GAIN_SCALE, 'announcer at 1/2 behind a 100% fader');
+    // A mute still zeroes the bus outright (structure untouched).
+    sfx.setMuted('announcer', true);
+    assert.equal(ctx.gains[3].gain.value, 0);
     sfx.destroy();
   } finally {
     restoreFetch();

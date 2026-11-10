@@ -10,17 +10,20 @@
 // "HE Grenade", "C4") plus `<name> throw` for a utility's throw group
 // ("HE Grenade throw" — throwCues), the C4 beep groups the beep
 // scheduler builds (`C4 beep <site>` — c4BeepGroup), the
-// four plant/defuse lifecycle cue groups (bombActionCues — "C4 plant
-// start" … "C4 defuse complete"), the five ANNOUNCER voice lines
+// THREE played plant/defuse lifecycle cue groups (bombActionCues —
+// "C4 plant start", "C4 defuse start", "C4 defuse complete"; the
+// plant-complete device sound "C4 plant complete" is still extracted
+// but its PLAYBACK is removed — owner instruction 2026-11-09, see
+// bombActionCues), the five ANNOUNCER voice lines
 // (roundEndCues / bombAnnouncerCues — "ctwin", "terwin", "rounddraw",
 // "bombpl", "bombdef") and the match-point freeze stinger
 // (matchPointCues — "matchpoint"), so a cue is one exact-match lookup.
 // A logical item with several variants keeps ALL of them and picks one
 // at RANDOM per play, so a spray doesn't loop one sample — the beep
 // groups are single-sample on purpose (the site must never substitute
-// at random), and so are the four lifecycle cues, the five announcer
-// lines and the match-point stinger (each is a distinct moment, not a
-// variant).
+// at random), and so are the three played lifecycle cues, the five
+// announcer lines and the match-point stinger (each is a distinct
+// moment, not a variant).
 //
 // This engine owns its OWN AudioContext: it must work for matches without
 // voice (the voice engine may not exist at all). Autoplay policy mirrors
@@ -46,8 +49,12 @@
 //     curTick] and all freeze-gated at cue-build time (rounds.js
 //     inFreezeTime — the game forbids firing/utility during freeze);
 //   - the plant/defuse ATTEMPT cues (bombActionCues — bomb.js
-//     ACTION_KINDS → the manifest's four lifecycle groups) play in
-//     (prevTick, curTick] on the C4 bus; the abort rows are silent;
+//     ACTION_KINDS → THREE of the manifest's four lifecycle groups)
+//     play in (prevTick, curTick] on the C4 bus; the abort rows are
+//     silent and so is the plant-COMPLETE row (the "C4 plant complete"
+//     device sound's playback is removed — owner instruction
+//     2026-11-09; the announcer `bombpl` line still fires from that
+//     same row);
 //   - the ANNOUNCER voice lines (roundEndCues + bombAnnouncerCues +
 //     matchPointCues — ctwin/terwin/rounddraw from the round_end rows
 //     joined to GetRounds' winner/reason, bombpl/bombdef from the
@@ -87,30 +94,35 @@ import { GST_AUDIO_HINT } from './audio.js';
 export const AUDIO_VOL_DEFAULT = 0.8;
 
 // Internal mix calibration — GUNS_GAIN_SCALE / UTILITY_GAIN_SCALE /
-// C4_GAIN_SCALE are applied to the fader level in applyGains(), so a
-// user-facing 80% still READS 80% (AUDIO_VOL_DEFAULT, the sliders,
-// prefs.go and Settings are all untouched): the reduction lives inside
-// the mixer, invisible to the fader. The numbers exist because this is a
-// relative-mix decision, not a default change: the raw extracted samples
+// C4_GAIN_SCALE / ANNOUNCER_GAIN_SCALE are applied to the fader level in
+// applyGains(), so a user-facing 80% still READS 80% (AUDIO_VOL_DEFAULT,
+// the sliders, prefs.go and Settings are all untouched): the reduction
+// lives inside the mixer, invisible to the fader. The numbers exist
+// because this is a relative-mix decision, not a default change: the raw
+// extracted samples
 // play far hotter than the voice/announcer bus, so the gun and utility
 // buses each run at 1/12 of their fader level (spec 2026-11-08: "halve
 // internal gain on guns/util one more time (should go to 1/12)" — two
 // halvings of the previous 1/3, which was itself the original × 2/3 cut
 // halved once for utility, spec 2026-11-07; the slider/pref/default stay
-// untouched). C4 deliberately does NOT follow utility down: the C4 bus
-// took the explosion over from the utility bus and keeps × 1/3 — its
-// level must not move with the retune, and the beeps are simply quieter
-// samples than a grenade. Voice is deliberately NOT scaled: its master
-// gain stays exactly the fader value, so this trio is the whole
-// gun/utility/C4-vs-voice calibration. Retune the balance here, never by
-// moving the pref default.
+// untouched). C4 follows the same owner instruction one notch: it took
+// the explosion over from the utility bus at × 1/3 (deliberately NOT
+// following utility down to 1/12 — its level must not move with that
+// retune, and the beeps are simply quieter samples than a grenade), and
+// the 2026-11-09 instruction halved it again to × 1/6. The ANNOUNCER bus
+// was added UNSCALED (its gain WAS the fader value, like the voice
+// master) and the SAME 2026-11-09 instruction halves it to × 1/2 — it
+// carries the game's own announcer VO, so it sits near the voice level,
+// not at the 1/12 the raw weapon/utility samples run at. Voice (the
+// separate voice engine, audio.js) is deliberately NOT scaled: its
+// master gain stays exactly the fader value. Retune the balance here,
+// never by moving the pref default.
 export const GUNS_GAIN_SCALE = 1 / 12;
 export const UTILITY_GAIN_SCALE = 1 / 12;
-export const C4_GAIN_SCALE = 1 / 3;
-// The ANNOUNCER bus has no scale on purpose (applyGains): like the
-// voice master, its gain IS the fader value — it carries the game's own
-// announcer VO, not the raw weapon/utility samples the scales above
-// exist for.
+// Owner instruction 2026-11-09: HALVE the internal gain of the C4 and
+// ANNOUNCER buses (1/3 → 1/6, unscaled ×1 → ×1/2).
+export const C4_GAIN_SCALE = 1 / 6;
+export const ANNOUNCER_GAIN_SCALE = 1 / 2;
 
 // Live-source cap: a new AudioBufferSourceNode per play IS the Web Audio
 // contract for unlimited simultaneous instances of one buffer, but a
@@ -274,18 +286,26 @@ export function knifeCues(rows, rounds) {
 
 // bombActionCues — the plant/defuse ATTEMPT cue list: drawNorm rows →
 // [{tick, name, bucket: 'c4'}] in tick order, one cue per lifecycle
-// moment the game has a sound for:
+// moment the game has a sound for AND spectra plays:
 //
 //   bomb_plant_begin  → 'C4 plant start'      (c4.initiate → c4_initiate)
-//   bomb_plant        → 'C4 plant complete'   (c4.plant → c4_plant)
 //   bomb_defuse_start → 'C4 defuse start'     (c4.disarmstart → c4_disarmstart)
 //   bomb_defuse       → 'C4 defuse complete'  (c4.disarmfinish → c4_disarmfinish)
 //
+// The plant-COMPLETE row (bomb_plant → 'C4 plant complete',
+// c4.plant → c4_plant) deliberately makes NO cue: owner instruction
+// 2026-11-09 removed the bomb-itself's plant sound from playback ("not
+// the announcer 'bomb has been planted' sound — the sound of the bomb
+// itself being planted"). The asset stays extracted and in the manifest
+// (soundTable "C4 plant complete" — extraction stability wins), only
+// the playback is gone, and the ANNOUNCER `bombpl` line still fires
+// from that same row (bombAnnouncerCues below — a different list, a
+// different bus).
 // The kind → cue-name mapping comes from bomb.js ACTION_KINDS (THE
 // lifecycle taxonomy the renderer's rings read too), so the arc and the
 // sound can never disagree about which row is which; the manifest key
-// each name builds is soundTable's (internal/mappack — the four files
-// are single-file groups, one cue each). The ABORT rows make NO cue:
+// each name builds is soundTable's (internal/mappack — those files are
+// single-file groups, one cue each). The ABORT rows make NO cue:
 // the game plays nothing when a plant/defuse is abandoned and spectra
 // ships no cancel sound. Freeze-gated with the same rule as
 // grenadeCues (a plant/defuse cannot begin inside freeze time — belt
@@ -294,7 +314,9 @@ export function knifeCues(rows, rounds) {
 export function bombActionCues(rows, rounds) {
   const names = {
     [ACTION_KINDS.plant.begin]: 'C4 plant start',
-    [ACTION_KINDS.plant.complete]: 'C4 plant complete',
+    // [ACTION_KINDS.plant.complete] — 'C4 plant complete' is NOT played
+    // (owner instruction 2026-11-09 — the removal lives HERE, in the one
+    // cue builder, so no playback path can resurrect it).
     [ACTION_KINDS.defuse.begin]: 'C4 defuse start',
     [ACTION_KINDS.defuse.complete]: 'C4 defuse complete',
   };
@@ -409,10 +431,14 @@ export function roundEndCues(rows, rounds) {
   return out;
 }
 
-// bombAnnouncerCues — the plant/defuse ANNOUNCER lines: the SAME
-// canonical completion rows bombActionCues reads (bomb.js ACTION_KINDS —
-// one source, two cue lists: the device arm/disarm cues and the voice
-// line), so the two can never disagree about which row is which.
+// bombAnnouncerCues — the plant/defuse ANNOUNCER lines: the canonical
+// completion rows of bomb.js ACTION_KINDS (the SAME taxonomy
+// bombActionCues keys its device cues from — one source, two cue lists:
+// the device arm/disarm cues and the voice line), so the two can never
+// disagree about which row is which. The plant-COMPLETE row still plays
+// its VOICE line here even though its DEVICE cue is gone
+// (bombActionCues — owner instruction 2026-11-09 removed only the
+// bomb's own plant sound).
 //   bomb_plant  → 'bombpl'  (the plant event row)
 //   bomb_defuse → 'bombdef' (the defuse event row — ordered before the
 //                              round-win line by announcerOrder)
@@ -908,14 +934,16 @@ export function createSfxEngine({ engine, matchId, onError }) {
   function applyGains() {
     // Internal mix calibration (see GUNS_GAIN_SCALE): the fader keeps
     // its user-facing 0..1 meaning, the bus gain carries the reduction.
-    // The ANNOUNCER bus is deliberately UNSCALED like the voice master:
-    // these are the game's own announcer VO lines (they belong with the
-    // voice level, not with the raw weapon/utility samples the 1/12
-    // scale exists for), so its gain IS the fader value.
+    // The ANNOUNCER bus scales like every other bus here, by
+    // ANNOUNCER_GAIN_SCALE (×1/2 — owner instruction 2026-11-09 halved
+    // it from its previously UNSCALED ×1, when the C4 bus was halved
+    // too): these are the game's own announcer VO lines, so they belong
+    // near the voice level, not at the 1/12 the raw weapon/utility
+    // samples run at.
     if (gunGain) gunGain.gain.value = gunMuted ? 0 : gunVol * GUNS_GAIN_SCALE;
     if (utilGain) utilGain.gain.value = utilMuted ? 0 : utilVol * UTILITY_GAIN_SCALE;
     if (c4Gain) c4Gain.gain.value = c4Muted ? 0 : c4Vol * C4_GAIN_SCALE;
-    if (announcerGain) announcerGain.gain.value = annMuted ? 0 : annVol;
+    if (announcerGain) announcerGain.gain.value = annMuted ? 0 : annVol * ANNOUNCER_GAIN_SCALE;
   }
 
   // tryResume calls ctx.resume() SYNCHRONOUSLY (a listener must invoke
@@ -1190,9 +1218,11 @@ export function createSfxEngine({ engine, matchId, onError }) {
     }
   }
 
-  // playActionInRange — the four plant/defuse lifecycle cues, all on
-  // the C4 bus (bombActionCues carries bucket 'c4' — the bomb's own
-  // fader/mute, like the explosion and the beeps).
+  // playActionInRange — the THREE played plant/defuse lifecycle cues,
+  // all on the C4 bus (bombActionCues carries bucket 'c4' — the bomb's
+  // own fader/mute, like the explosion and the beeps). The
+  // plant-complete device cue is never built (bombActionCues — owner
+  // instruction 2026-11-09), so nothing filters it out here.
   function playActionInRange(fromTick, toTick) {
     for (const cue of utilCuesInRange(actionCues, fromTick, toTick)) {
       playGroup(cue.name, 'c4');
