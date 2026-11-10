@@ -37,10 +37,10 @@
     "player_disconnect": 7,
     "round_end": 24,
     "round_start": 25,
-    "weapon_drop": 251,
-    "weapon_pickup": 1039
+    "weapon_drop": 273,
+    "weapon_pickup": 1064
   },
-  "eventTotal": 4386,
+  "eventTotal": 4433,
   "eventKindsDistinct": 19,
   "genericDistinct": 46,
   "genericTotal": 21029,

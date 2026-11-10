@@ -48,6 +48,16 @@
   //   iconURLs    manifest URLs ({name: url}, icons.js iconURL); either
   //               may be null — iconURLs wins, then icons' image src; a
   //               miss renders the mandatory text fallback
+  //   kit         TRI-STATE defuse-kit possession at the playhead:
+  //               true → the kit badge renders; false → the player is
+  //               KNOWN not to hold one (no badge); null → unknown (no
+  //               kit evidence loaded / not computed — never drawn as a
+  //               fact, mirroring carriesC4's false-on-unknown doc in
+  //               replay/playercard.js). Nothing passes it until the
+  //               Replay wiring lands (stage 2) — the badge is inert
+  //               until then, and it is NOT derived from `state`: the
+  //               state stream carries no kit flag (it lives in the
+  //               pawn's m_pItemServices, never in the inventory).
   //   onToggleMute()  mute button click (caller flips audio + `muted`)
   //
   // Per-frame values are $derived (the playhead re-renders ~60×/s); the
@@ -84,6 +94,7 @@
     stats = null,
     icons = null,
     iconURLs = null,
+    kit = null,
     onToggleMute = () => {},
   } = $props();
 
@@ -105,6 +116,11 @@
   // The bomb is checked INDEPENDENTLY of utilityOf (which deliberately
   // drops 'C4'): carrying it is a fact of its own, shown beside the util.
   const hasC4 = $derived(carriesC4(state ? state.inventory : null));
+  // Defuse-kit possession is a TRI-STATE prop (never derived — the state
+  // stream has no kit flag): only an explicit true draws the badge, and
+  // false/null both render nothing (an unknown must never read as a
+  // fact — the same rule carriesC4 applies to a missing inventory).
+  const hasKit = $derived(kit === true);
   const statsLine = $derived(statsText(stats));
 
   // iconSrc resolves a canonical equipment name to an <img> source —
@@ -335,6 +351,21 @@
           <img class="pc-ico" src={iconSrc('C4')} alt="C4" />
         {:else}
           <span class="pc-fallback">C4</span>
+        {/if}
+      </span>
+    {/if}
+    <!-- The defuse kit rides beside the bomb badge — the SAME visual
+         language as the C4 cell (icon, mandatory text fallback, fixed
+         square cell so mounting it shifts nothing), but it is a PROP
+         (tri-state `kit`), never derived from the inventory: the state
+         stream carries no kit flag. null/false → no badge, same
+         false-on-unknown rule as carriesC4. -->
+    {#if hasKit}
+      <span class="pc-kit" title="Defuse kit">
+        {#if iconSrc('Defuse Kit')}
+          <img class="pc-ico" src={iconSrc('Defuse Kit')} alt="Kit" />
+        {:else}
+          <span class="pc-fallback">Kit</span>
         {/if}
       </span>
     {/if}
@@ -731,6 +762,15 @@
   /* The carried bomb — a fixed-size cell beside the util so mounting it
      shifts nothing. */
   .pc-c4 {
+    display: inline-flex;
+    align-items: center;
+    flex: none;
+  }
+
+  /* The defuse kit badge — the C4 cell's exact geometry (a fixed-size
+     cell so mounting/unmounting it never reflows the econ row; the
+     shared .pc-ico 15px square above already sizes the icon). */
+  .pc-kit {
     display: inline-flex;
     align-items: center;
     flex: none;

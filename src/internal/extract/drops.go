@@ -32,11 +32,17 @@ import (
 //     is still in the inventory, else the MOST EXPENSIVE util in the
 //     inventory (models.UtilityPrice — the canonical price table), else
 //     no util drop.
+//   - KIT: a defuse kit when the victim HAD one at the kill tick
+//     (hasKit — read by the handler from the pawn's
+//     m_pItemServices.m_bHasDefuser, NOT from Weapons(): the kit is not
+//     inventory data). CTs cannot drop a kit any other way (CS2.md:
+//     no drop/pickup game events fire for kits), so a kit-owner's death
+//     is the ONLY source of a dropped-kit row.
 //
-// Classification (`cat` "gun"|"util" on the stored detail_json) is
-// stamped HERE from the canonical sets models.IsPrimaryWeapon /
-// IsSecondaryWeapon / IsUtilityWeapon — the frontend never re-derives
-// the util rule.
+// Classification (`cat` "gun"|"util"|"kit" on the stored detail_json)
+// is stamped HERE from the canonical sets models.IsPrimaryWeapon /
+// IsSecondaryWeapon / IsUtilityWeapon / IsKit — the frontend never
+// re-derives the util or the kit rule.
 
 // inventoryItem is one entry of the victim's inventory as the drop rule
 // reads it: canonical name (EquipmentType.String() — the same spelling
@@ -50,7 +56,8 @@ type inventoryItem struct {
 }
 
 // dropDecision is one inferred drop: the canonical weapon name, its
-// detail_json cat ("gun"|"util"), and the gun's ammo (0/0 for util).
+// detail_json cat ("gun"|"util"|"kit"), and the gun's ammo (0/0 for
+// util and kit — neither carries ammo).
 type dropDecision struct {
 	name    string
 	cat     string
@@ -59,9 +66,10 @@ type dropDecision struct {
 }
 
 // dropCat classifies a canonical weapon name for the drop rows: "util"
-// for the canonical grenades, "gun" for firearms, "" for anything else
-// (knife, C4, kit, armour, unknown — never dropped by this rule and
-// never STORED as a weapon_pickup row: the kind's contract is the drop
+// for the canonical grenades, "gun" for firearms, "kit" for the defuse
+// kit (models.IsKit — the ONE kit classifier), "" for anything else
+// (knife, C4, armour, unknown — never dropped by this rule and never
+// STORED as a weapon_pickup row: the kind's contract is the drop
 // evidence pair).
 func dropCat(name string) string {
 	switch {
@@ -69,6 +77,8 @@ func dropCat(name string) string {
 		return "util"
 	case models.IsPrimaryWeapon(name) || models.IsSecondaryWeapon(name):
 		return "gun"
+	case models.IsKit(name):
+		return "kit"
 	default:
 		return ""
 	}
@@ -95,11 +105,15 @@ func dropInventory(weapons []*common.Equipment) []inventoryItem {
 }
 
 // inferDeathDrops applies the drop rules above to the victim's
-// inventory (inventory order = pl.Weapons() order) and this round's
-// last-held util ("" = never equipped one this round). Returns 0–2
-// decisions: a gun (first primary → first secondary → none) and at most
-// one util. Pure — unit-tested by drops_test.go.
-func inferDeathDrops(inv []inventoryItem, lastHeldUtil string) []dropDecision {
+// inventory (inventory order = pl.Weapons() order), this round's
+// last-held util ("" = never equipped one this round) and the victim's
+// defuse-kit possession at the kill tick (hasKit — kit is NOT inventory
+// data: it lives in the pawn's m_pItemServices.m_bHasDefuser, so the
+// handler reads it beside the characterized inventory read; drops.go's
+// header). Returns 0–3 decisions: a gun (first primary → first
+// secondary → none), at most one util, and a kit when the victim had
+// one. Pure — unit-tested by drops_test.go.
+func inferDeathDrops(inv []inventoryItem, lastHeldUtil string, hasKit bool) []dropDecision {
 	var out []dropDecision
 
 	// Gun: same first-primary / first-secondary scan semantics as
@@ -160,6 +174,21 @@ func inferDeathDrops(inv []inventoryItem, lastHeldUtil string) []dropDecision {
 			}
 		}
 		out = append(out, dropDecision{name: best.name, cat: "util"})
+	}
+
+	// Kit (models.IsKit): the ONE decision that does NOT read the
+	// inventory — a kit is never in Weapons() (demoinfocs puts it in
+	// m_pItemServices.m_bHasDefuser, like helmet), so the handler passes
+	// the possession bit it reads at the kill tick. No ammo fields (a kit
+	// has no mag/reserve — the decision keeps 0/0, and agg.kill stamps
+	// mag/reserve only for cat "gun"), no side check here (only a CT can
+	// ever hold one; a true hasKit on a T is impossible evidence, not a
+	// guess this pure rule can make). Appended LAST so the gun → util
+	// decision order above — and every existing expectation over it — is
+	// untouched; each decision is its own stored row, so the order never
+	// changes WHAT is emitted, only the slice's layout.
+	if hasKit {
+		out = append(out, dropDecision{name: models.DefuseKitName, cat: "kit"})
 	}
 	return out
 }

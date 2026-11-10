@@ -14,7 +14,9 @@
 // capped at the line's height — the same rule pinned for the held
 // indicator, while the shared .pc-ico square stays 15px for the
 // badges),
-// the live stats row, the carried C4, and the honest "—" placeholders when
+// the live stats row, the carried C4, the tri-state defuse-kit badge
+// (kit=true renders it, false/null render nothing), and the honest "—"
+// placeholders when
 // slotStateAt state is null (never a zero presented as a fact) — plus the
 // held-item weapon-row modes: a knife/util/C4 ACTIVE in hand rides INSIDE
 // the MAIN weapon's chip, right after the gun icon (the old .pc-hsep
@@ -334,6 +336,62 @@ check(
   q(rootC4b, '.pc-c4')?.textContent,
 );
 check('no <img> on the no-icon card', qa(rootC4b, 'img').length === 0);
+
+console.log('A3. defuse-kit badge: a TRI-STATE prop — only `true` draws it');
+// The badge is inert plumbing today (nothing passes `kit` until the
+// Replay wiring lands); the component contract is what is pinned here.
+const kitCard = {
+  ...fullCard,
+  iconURLs: { ...fullCard.iconURLs, 'Defuse Kit': '/api/icons/defuser.svg' },
+};
+const rootKit = await show({ card: { ...kitCard, kit: true, onToggleMute: () => {} } });
+const kitCell = q(rootKit, '.pc-kit');
+check('kit={true} → the badge mounts inside the econ row', !!kitCell && !!q(rootKit, '.pc-econ .pc-kit'));
+check('kit badge titled "Defuse kit"', kitCell?.getAttribute('title') === 'Defuse kit', kitCell?.getAttribute('title'));
+check(
+  'kit renders its icon when one resolves (alt "Kit")',
+  !!q(kitCell, 'img') &&
+    q(kitCell, 'img').getAttribute('src') === '/api/icons/defuser.svg' &&
+    q(kitCell, 'img').getAttribute('alt') === 'Kit',
+  q(kitCell, 'img')?.getAttribute('alt'),
+);
+check(
+  'the kit cell uses the shared 15px .pc-ico square (the C4 badge geometry)',
+  !!q(kitCell, '.pc-ico'),
+);
+check(
+  'kit={false} → no badge (KNOWN not to hold one)',
+  !(await show({ card: { ...kitCard, kit: false, onToggleMute: () => {} } })).querySelector('.pc-kit'),
+);
+const rootKitNull = await show({ card: { ...kitCard, onToggleMute: () => {} } });
+check(
+  'kit omitted (null) → no badge (unknown is never drawn as a fact)',
+  !q(rootKitNull, '.pc-kit'),
+);
+const rootKitNoIcon = await show({
+  card: { ...kitCard, kit: true, iconURLs: null, icons: null, onToggleMute: () => {} },
+});
+check(
+  'kit falls back to its "Kit" text label when no icon exists',
+  q(rootKitNoIcon, '.pc-kit')?.textContent.trim() === 'Kit',
+  q(rootKitNoIcon, '.pc-kit')?.textContent,
+);
+check('no <img> anywhere on the no-icon card', qa(rootKitNoIcon, 'img').length === 0);
+// C4 + kit together: two independent badges, C4 first, both cells fixed.
+const rootBoth = await show({
+  card: {
+    ...kitCard,
+    kit: true,
+    state: { ...fullCard.state, inventory: ['AK-47', 'C4', 'Smoke Grenade'] },
+    onToggleMute: () => {},
+  },
+});
+const bothKids = [...q(rootBoth, '.pc-econ').children].map(pcClass);
+check(
+  'C4 and kit badges coexist, C4 first (money → util → C4 → kit)',
+  JSON.stringify(bothKids) === JSON.stringify(['pc-num pc-money', 'pc-util', 'pc-c4', 'pc-kit']),
+  JSON.stringify(bothKids),
+);
 
 console.log('B. mute button: aria + callback + pressed state');
 // A2 re-mounted the harness above, so show the full card once more —

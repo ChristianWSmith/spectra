@@ -35,6 +35,24 @@ func TestUtilityPricesPinned(t *testing.T) {
 	}
 }
 
+// TestIsKit pins THE defuse-kit vocabulary (models.DefuseKitName): the
+// one canonical spelling, exact-match, and nothing else classified as a
+// kit (a near-miss spelling must never turn a grenade or an armour vest
+// into kit evidence).
+func TestIsKit(t *testing.T) {
+	if DefuseKitName != "Defuse Kit" {
+		t.Fatalf("DefuseKitName = %q, want %q", DefuseKitName, "Defuse Kit")
+	}
+	if !IsKit("Defuse Kit") {
+		t.Error(`IsKit("Defuse Kit") = false, want true`)
+	}
+	for _, n := range []string{"defuse kit", "Defuse", "Kit", "Defuser", "C4", "Kevlar Vest", ""} {
+		if IsKit(n) {
+			t.Errorf("IsKit(%q) = true, want false", n)
+		}
+	}
+}
+
 // TestWeaponSplitsPinned pins the primary/secondary membership sets —
 // quoted from frontend/src/lib/replay/loadout.js's PRIMARY_WEAPONS /
 // SECONDARY_WEAPONS (the Go/JS twins). A rename or a new weapon must be
