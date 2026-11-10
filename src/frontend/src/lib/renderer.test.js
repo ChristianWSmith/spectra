@@ -5874,3 +5874,81 @@ test('scrub coalescing: requestDraw defers setHud draws to ONE rAF (latest tick 
   r.destroy();
   assert.equal(queue.length, 0, 'destroy() cancels it');
 });
+
+// --- UI overlay toggle (setOverlaysVisible) ----------------------------------
+// The ONE coarse overlay gate (Replay's toggleHud pushes it): while
+// hidden, draw() skips the WHOLE group — HUD box, kill feed, chat — the
+// gameplay layers keep painting, the payloads keep flowing (setHud's
+// additive semantics) and re-enabling repaints the CURRENT state without
+// a re-push. The DOM control-group rows go with the group view-side
+// (Replay's {#if !uiHudOff}); this file owns the canvas half. The
+// CTRL_GROUP_BUDGET reservation is untouched either way — the score
+// box's x-position never moves when the group comes back.
+
+test('overlays: setOverlaysVisible(false) gates HUD/feed/chat — gameplay keeps painting, re-enable repaints', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: HUD_PLAYERS });
+  const mk = (ev) => normalizeEvent(ev, {});
+  const round1 = { number: 1, label: 'R1', startTick: 0, freezeEndTick: 640, endTick: 1200, bombSite: '' };
+  r.setLandmarks([
+    // no positions → the world layers stay out of the way (the feed
+    // itself needs none)
+    mk({ id: 1, seq: 1, tick: 50, round: 1, kind: 'kill', attacker: '1', attackerName: 'alice', victim: '2', victimName: 'bob', weapon: 'AK-47' }),
+  ]);
+  r.setChat([{ id: 1, tick: 50, round: 1, steamId: '1', name: 'alice', text: 'one' }]);
+  r.setHud({ score: { ct: 1, t: 0 }, teamNames: { ct: 'NAVY', t: 'FURY' }, round: round1, tickRate: 64 });
+  r.resize();
+  engine.seekTick(100); // round 1, past the kill + the chat line
+
+  // The shared entry-box surface (radius 4) belongs to BOTH the feed
+  // (top) and the chat (bottom) — split by the stage's mid-line, the
+  // same y-convention chatBoxesSince uses.
+  const feedRows = (from = 0) =>
+    opsSince(canvas.log, 'roundRect', from).filter((e) => e.args[4] === KILL_FEED_R && e.args[1] < 300);
+  const chatRows = (from = 0) =>
+    opsSince(canvas.log, 'roundRect', from).filter((e) => e.args[4] === KILL_FEED_R && e.args[1] >= 300);
+
+  // (1) default: the whole group paints
+  let mark = canvas.log.length;
+  r.draw();
+  assert.ok(hudBoxesSince(canvas.log, mark).length >= 1, 'the score box paints by default');
+  assert.equal(feedRows(mark).length, 1, 'the kill feed paints by default');
+  assert.equal(chatRows(mark).length, 1, 'the chat paints by default');
+  assert.ok(textsSince(canvas.log, mark).includes('NAVY'), 'the score line names the teams');
+
+  // (2) hidden: NONE of the three — the gameplay layers keep painting
+  r.setOverlaysVisible(false);
+  mark = canvas.log.length;
+  r.draw();
+  assert.equal(hudBoxesSince(canvas.log, mark).length, 0, 'no score box while hidden');
+  assert.equal(feedRows(mark).length, 0, 'no kill-feed row while hidden');
+  assert.equal(chatRows(mark).length, 0, 'no chat row while hidden');
+  const tt = textsSince(canvas.log, mark);
+  assert.ok(tt.includes('alice') && tt.includes('bob'), 'the gameplay name labels still paint');
+  assert.ok(!tt.includes('NAVY') && !tt.includes('FURY'), 'no score line while hidden');
+  assert.ok(!tt.includes(': one'), 'no chat text while hidden');
+  assert.ok(!tt.some((t) => String(t).startsWith('freeze')), 'no round clock while hidden');
+
+  // (3) setHud while hidden: the payload is STORED, nothing paints
+  const before = canvas.log.length;
+  r.setHud({ score: { ct: 2, t: 0 }, teamNames: { ct: 'NAVY', t: 'FURY' }, round: round1, tickRate: 64 });
+  const stored = canvas.log.slice(before);
+  assert.equal(hudBoxesSince(stored).length, 0, 'setHud stores its payload but paints no box while hidden');
+  assert.ok(!textsSince(stored).includes('NAVY'), '…and no score text either');
+
+  // (4) re-enable: the CURRENT state repaints with NO re-push of the
+  // chat / feed / HUD payloads (the additive-setter contract)
+  const re = canvas.log.length;
+  r.setOverlaysVisible(true);
+  assert.ok(hudBoxesSince(canvas.log, re).length >= 1, 're-enable repaints the score box');
+  assert.ok(
+    textsSince(canvas.log, re).some((t) => String(t).includes('2 – 0')),
+    '…from the payload stored while hidden (no setHud re-push)',
+  );
+  assert.equal(feedRows(re).length, 1, 'the kill feed comes back');
+  assert.equal(chatRows(re).length, 1, 'the chat comes back');
+  r.destroy();
+});
