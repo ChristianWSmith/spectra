@@ -224,7 +224,7 @@
         {#if cls}
           <span
             class="chip cmp-class"
-            title="{cls.explanation || 'classified'} (rule v{cls.ruleVersion}, confidence {Math.round((cls.confidence || 0) * 100)}%)"
+            title="{cls.explanation || 'classified'} (rules v{cls.ruleVersion} — {Math.round((cls.confidence || 0) * 100)}% sure)"
             >{cls.label}</span
           >
         {/if}

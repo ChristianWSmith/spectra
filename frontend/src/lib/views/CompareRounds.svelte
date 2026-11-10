@@ -218,7 +218,7 @@
             {#if col.cls}
               <span
                 class="chip cmp-class"
-                title="{col.cls.explanation || 'classified'} (rule v{col.cls.ruleVersion})"
+                title="{col.cls.explanation || 'classified'} (rules v{col.cls.ruleVersion})"
                 >{col.cls.label}</span
               >
             {/if}
