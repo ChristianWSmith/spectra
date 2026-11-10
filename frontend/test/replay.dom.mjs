@@ -9,11 +9,18 @@
 // transport splits into the full-width game-time scrubber line ABOVE the
 // centered control-cluster line (round transport, ±15s, play, speed
 // popover, the skip-freeze toggle, loop popover, camera Smart/Free/Follow
-// popover, the drop-layer multi-select popover, the volume popover,
+// popover, the follow-player popover while Follow is armed, the
+// drop-layer multi-select popover, the volume popover,
 // snapshot/record, and the hints-only codicon LAST — three .toolbar-sep
 // rules split those groups: after the loop control, after the volume
 // host, before the hints). A fresh replay also AUTOPLAYS (startEngine
 // calls engine.play() once the position data is up).
+//
+// The stage carries the ONE control group (.rp-ctrl-list): a row per
+// NON-DEFAULT control state (follow + its dismiss, loop range,
+// skip-freeze, a non-Smart camera, the map-pack note). It replaced the
+// follow chip, the canvas bottom-left readout and the packNote
+// paragraph, so each of those lines has exactly ONE copy.
 //
 // The view's data source, engine, renderer and input are scripted stubs —
 // this driver pins STRUCTURE, not rendering (CSS placement of the
@@ -782,9 +789,10 @@ check(
     !controls.querySelector('#rp-round'),
 );
 check(
-  'no native select left for speed/camera (only Follow player still uses one)',
+  'no native select left in the cluster (speed, camera and follow are all popovers)',
   !controls.querySelector('select#rp-speed') && !controls.querySelector('select#rp-cam') &&
-    !controls.querySelector('#rp-speed select') && !controls.querySelector('#rp-cam select'),
+    !controls.querySelector('#rp-speed select') && !controls.querySelector('#rp-cam select') &&
+    !controls.querySelector('#rp-follow select') && !controls.querySelector('select#rp-follow'),
 );
 check(
   'camera trigger reads the ACTIVE mode (Smart) and reports collapsed',
@@ -804,7 +812,10 @@ check(
     !controls.querySelector('#rp-cam ~ .codicon-device-camera-video') &&
     !controls.querySelector('#rp-cam .codicon'),
 );
-check('no follow-player select until Follow is chosen', !controls.querySelector('#rp-follow'));
+// The follow selector hosts with the MODE (only while Follow is armed,
+// exactly where the old <select> sat) — so a fresh replay has no
+// #rp-follow cell at all yet.
+check('no follow-player selector until Follow is chosen', !controls.querySelector('#rp-follow'));
 check('no leftover voice bar / lanes', !target.querySelector('.voice-bar') && !target.querySelector('.voice-lanes-wrap'));
 // CHARACTERIZATION: these three checks pinned the old mute-all button —
 // a direct-child button[aria-label="Mute all"], disabled because this
@@ -1172,7 +1183,15 @@ check(
 click(camOpt('Follow'));
 await sleep();
 check('the camera popover closes after choosing', !controls.querySelector('#rp-cam .rp-cam-pop'));
-check('choosing Follow reveals the player dropdown', !!controls.querySelector('#rp-follow'));
+// The follow selector is a POPOVER now (the old native <select> read as
+// a foreign object among the icon buttons): a trigger showing the
+// followed player in the select's own option format, the player list
+// inside the panel, the SAME onFollowPlayer handler behind it (the
+// option button carries `value`).
+check(
+  'choosing Follow reveals the follow selector (a popover host, no select)',
+  !!controls.querySelector('#rp-follow button') && !controls.querySelector('#rp-follow select'),
+);
 check(
   'camera trigger still reads the chosen mode',
   controls.querySelector('#rp-cam button')?.textContent.trim() === 'Follow',
@@ -1181,23 +1200,130 @@ check(
 // Follow must never rest on the "Follow player…" placeholder: with no
 // ?follow= in the route it lands on a real player (slot 0), and a
 // detour through Free comes back to the player that was being followed.
+const followBtn = () => controls.querySelector('#rp-follow button');
 check(
-  'Follow lands on a real player, never the placeholder',
-  controls.querySelector('#rp-follow')?.value === '0',
-  controls.querySelector('#rp-follow')?.value,
+  'Follow lands on a real player — the trigger shows it, never the placeholder',
+  followBtn()?.textContent.trim() === '1. Alpha1',
+  followBtn()?.textContent,
 );
-const followSel = controls.querySelector('#rp-follow');
-followSel.value = '2';
-followSel.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+click(followBtn());
 await sleep();
-check('the dropdown drives the follow slot', controls.querySelector('#rp-follow')?.value === '2', controls.querySelector('#rp-follow')?.value);
+const followPanelOpts = () => [...controls.querySelectorAll('#rp-follow .rp-follow-pop button')];
+const followPanelLabels = () => followPanelOpts().map((b) => b.textContent.trim());
+check(
+  "the popover lists every player IN the match at the playhead (the select's options)",
+  JSON.stringify(followPanelLabels()) ===
+    JSON.stringify(['1. Alpha1', '2. Alpha2', '3. Alpha3', '4. Bravo1', '5. Bravo2', '6. Lone']),
+  JSON.stringify(followPanelLabels()),
+);
+check(
+  'the followed player is the highlighted option (.btn.primary)',
+  followPanelOpts().find((b) => b.classList.contains('primary'))?.textContent.trim() === '1. Alpha1',
+  JSON.stringify(followPanelLabels()),
+);
+check(
+  'the trigger carries the keyboard hints (1-9, 0 pick · F toggle)',
+  /1-9, 0 picks one/.test(followBtn()?.title || '') && /F toggles follow/.test(followBtn()?.title || ''),
+  followBtn()?.title,
+);
+click(followPanelOpts()[2]); // 3. Alpha3 → slot 2
+await sleep();
+check(
+  'picking a player drives the follow slot and closes the panel',
+  followBtn()?.textContent.trim() === '3. Alpha3' &&
+    !controls.querySelector('#rp-follow .rp-follow-pop'),
+  followBtn()?.textContent,
+);
 await chooseCam('Free');
-check('switching to Free releases follow (player dropdown gone)', !controls.querySelector('#rp-follow'));
+check('switching to Free releases follow (the selector goes with Follow mode)', !controls.querySelector('#rp-follow'));
 await chooseCam('Follow');
 check(
   'switching back to Follow resumes the player that was being followed',
-  controls.querySelector('#rp-follow')?.value === '2',
-  controls.querySelector('#rp-follow')?.value,
+  followBtn()?.textContent.trim() === '3. Alpha3',
+  followBtn()?.textContent,
+);
+
+// --- The stage's control group (.rp-ctrl-list) -------------------------------
+// State entering this section: Follow armed on slot 2 (above), the loop
+// cancelled by the earlier +15s seek, skip-freeze back OFF — so the
+// group holds exactly those two control rows plus the fixture's
+// ever-present packNote (the stubbed match has no map name).
+console.log('E1. stage control group: one row per non-default control state, the ONE copy of each line');
+const ctrlList = () => stage.querySelector('.rp-ctrl-list');
+const ctrlRowEls = () => [...(ctrlList()?.querySelectorAll('.rp-ctrl-row') || [])];
+const ctrlTexts = () => ctrlRowEls().map((r) => r.textContent.trim());
+check(
+  'follow + camera + packNote rows render in the stage top-left group',
+  !!ctrlList() &&
+    JSON.stringify(ctrlTexts()) ===
+      JSON.stringify([
+        'Following Alpha3',
+        'camera: Follow',
+        'Map name unknown — showing a plain grid',
+      ]),
+  JSON.stringify(ctrlTexts()),
+);
+check(
+  "the packNote is the group's amber row — the ONE copy (no paragraph above the stage)",
+  ctrlRowEls()[2]?.classList.contains('rp-ctrl-warn') &&
+    ![...target.querySelectorAll('.note-amber')].some((n) =>
+      n.textContent.includes('Map name unknown'),
+    ),
+  JSON.stringify(ctrlTexts()),
+);
+check('no .follow-chip anywhere (the chip was replaced, not synonymed)', !target.querySelector('.follow-chip'));
+
+// The follow row keeps a REAL dismiss button (the canvas readout could
+// never offer one) — the retired chip's button, the same handler.
+const dismiss = ctrlList()?.querySelector('button[aria-label^="Stop following"]');
+check(
+  'the follow row carries the dismiss button (its title still says F)',
+  !!dismiss && dismiss.getAttribute('title') === 'Release the follow camera (F)',
+  dismiss ? dismiss.getAttribute('title') : 'missing',
+);
+click(dismiss);
+await sleep();
+check(
+  'dismissing releases follow — and the camera row with it (camMode reconciles to Smart)',
+  JSON.stringify(ctrlTexts()) === JSON.stringify(['Map name unknown — showing a plain grid']),
+  JSON.stringify(ctrlTexts()),
+);
+
+// The loop row is the retired canvas `loop:` line — same text, in match
+// time (the popover inputs' own basis).
+click(loopBtn);
+await sleep();
+click(controls.querySelector('button[title="Toggle loop (L)"]'));
+await sleep();
+check(
+  'arming the loop adds its row, in match time',
+  ctrlTexts().includes('loop: 0:01–0:02'),
+  JSON.stringify(ctrlTexts()),
+);
+click(controls.querySelector('button[title="Toggle loop (L)"]'));
+await sleep();
+click(loopBtn); // close the panel — later sections count toolbar chrome
+await sleep();
+check('disarming drops the loop row', !ctrlTexts().some((t) => t.startsWith('loop:')), JSON.stringify(ctrlTexts()));
+
+// Skip-freeze in the toolbar's wording, and a non-Smart camera.
+click(skipBtn);
+await sleep();
+check(
+  "arming skip-freeze adds its row (the toolbar's wording)",
+  ctrlTexts().includes('skip freeze: on'),
+  JSON.stringify(ctrlTexts()),
+);
+click(skipBtn);
+await sleep();
+check('disarming drops the skip-freeze row', !ctrlTexts().includes('skip freeze: on'), JSON.stringify(ctrlTexts()));
+await chooseCam('Free');
+check('a non-Smart camera adds its row (Smart stays silent)', ctrlTexts().includes('camera: Free'), JSON.stringify(ctrlTexts()));
+await chooseCam('Smart');
+check(
+  'back to Smart drops the camera row — only non-default states render',
+  !ctrlTexts().some((t) => t.startsWith('camera:')),
+  JSON.stringify(ctrlTexts()),
 );
 
 console.log('E2. drop-layer popover: multi-select between the camera selector and the volume, off by default, pref-persisted');
@@ -1461,15 +1587,23 @@ check(
   leftNames() === 'Alpha1,Alpha2' && rightNames() === 'Bravo1,Bravo2',
   leftNames() + ' | ' + rightNames(),
 );
-// The follow dropdown must not offer a player the camera cannot track.
+// The follow popover must not offer a player the camera cannot track
+// (the same playerConnected filter the old select applied — the panel
+// only mounts while open).
 await chooseCam('Follow');
-const followOpts = () =>
-  [...controls.querySelectorAll('#rp-follow option')].map((o) => o.value).filter((v) => v !== '');
+click(followBtn());
+await sleep();
+const liveFollowOpts = () =>
+  [...controls.querySelectorAll('#rp-follow .rp-follow-pop button')]
+    .map((b) => b.value)
+    .filter((v) => v !== '');
 check(
-  'the follow dropdown drops the disconnected (and the not-yet-joined) player',
-  followOpts().join(',') === '0,1,3,4',
-  followOpts().join(','),
+  'the follow popover drops the disconnected (and the not-yet-joined) player',
+  liveFollowOpts().join(',') === '0,1,3,4',
+  liveFollowOpts().join(','),
 );
+click(followBtn()); // close — later sections count toolbar chrome
+await sleep();
 await chooseCam('Free');
 // A team mute is a durable voice setting over the WHOLE team (the view
 // mutes the unfiltered roster), so the card that comes back on a

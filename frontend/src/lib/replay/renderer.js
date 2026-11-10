@@ -54,11 +54,13 @@ import { buildDropWindows } from './drops.js';
 // draw loop ever re-scans the round rows — plus the two boundary SCANS
 // killEndTick delegates to (sameRoundEndTick / nextRoundStartTick).
 import { ROUND_POLICY, entityEndTick, sameRoundEndTick, nextRoundStartTick } from './roundcut.js';
-// fmt.js is THE seconds clock (fmtClock over tickSeconds — the same
-// basis as the scrubber readout). createRenderer has its own tick-based
-// HUD helper named fmtClock below, so the import is aliased: the two
-// must never blur into one another.
-import { fmtClock as fmtClockSecs, tickSeconds, chatTag } from '../fmt.js';
+// fmt.js chatTag — the ONE chat display rule's tag spelling (drawChat).
+// The seconds clock (fmtClock over tickSeconds) used to ride here too,
+// aliased as fmtClockSecs for the bottom playback readout's `loop:`
+// line — that readout moved to the DOM control group
+// (Replay.svelte .rp-ctrl-list), which formats the SAME times through
+// fmt.js itself; the renderer no longer owns any clock text.
+import { chatTag } from '../fmt.js';
 
 const CT_COLOR = '#5aa9e6';
 const T_COLOR = '#e6a35a';
@@ -298,6 +300,10 @@ const KILL_FEED_ICON = 14; // px — a feed image's HEIGHT on a line (the
 //                          weapon/indicator art); its width follows
 //                          iconAspect, never a 1:1 squash
 const KILL_FEED_R = 4; // px — entry corner radius (hudBox uses 6)
+// KILL_FEED_FONT — the feed AND chat entry font: both overlays read
+// identically (killFeedLayout's measure pass sets it, both paint passes
+// set it again), so there is one spelling of the entry text style.
+const KILL_FEED_FONT = '11px ui-monospace, SFMono-Regular, Menlo, monospace';
 // The four scoped sniper rifles: the noscope indicator only applies to
 // them. The game's noscope flag may already be gated this way, but the
 // spec names exactly these four — belt and braces, one list here.
@@ -708,6 +714,25 @@ export function scoreLineLayout(leftW, scoreW, rightW, boxCenterX) {
   return { leftX: scoreX - leftW, scoreX, rightX: scoreX + scoreW };
 }
 
+// ellipsize — THE string cut rule: trim `text` to at most `maxW` pixels
+// (measured by `measure`), appending '…' when anything was cut, one
+// measurement per candidate. Two callers share it: drawChat's message
+// body (with its ': ' head — the cut never widens the entry past
+// CHAT_MAX_W) and drawHUD's team names (C1 — the score box's gap clamp
+// above). Returns '' when not even the ellipsis fits, so no caller can
+// paint past its budget; the degenerate tail is the one behavior the
+// chat's inline loop shared differently (it kept ': …' over budget) —
+// nothing that wide is reachable at any supported stage width.
+function ellipsize(text, maxW, measure) {
+  if (!(maxW > 0)) return '';
+  if (measure(text) <= maxW) return text;
+  for (let k = text.length - 1; k >= 0; k--) {
+    const out = text.slice(0, k) + '…';
+    if (measure(out) <= maxW) return out;
+  }
+  return '';
+}
+
 // hudTeamNames — the setHud teamNames PAIRING (exported for tests; the
 // only caller is Replay's hudFor — the dom harness stubs setHud and never
 // reaches it). getTeamNames returns the teams keyed by their FINAL side
@@ -831,7 +856,6 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // Guns/Utility popover → setDropLayers; BOTH OFF by default = the
   // feature is opt-in, matching the pref's unset state).
   let dropLayers = { guns: false, util: false };
-  let packNote = ''; // HUD hint (missing radar / missing pack)
 
   // --- setIcons / setVoices / setStateIndex inputs (all optional) -----------
   // icons: canonical equipment name ('C4', 'Smoke Grenade', …) → a
@@ -1034,8 +1058,6 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       // degenerate-scale guard (0/negative would divide to NaN/infinity).
       tf.scale = packTf.scale > 0 ? packTf.scale : 1;
       buildPanels();
-      if (panels.some((p) => p.img)) packNote = '';
-      else packNote = 'No radar image — showing a plain grid';
     } else {
       // Blank coordinate grid: invent an image space from sample extents.
       const scale = Math.max(spanX, spanY) / 900;
@@ -1050,9 +1072,6 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
         defaultPanel(0, extW, extH, { pos_x: tf.pos_x, pos_y: tf.pos_y, scale: tf.scale }),
       ];
       regions = [];
-      packNote = pack
-        ? 'No radar image — showing a plain grid'
-        : 'No radar image — showing a plain grid';
     }
   }
 
@@ -1785,11 +1804,21 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     return drew;
   }
 
+  // LAYER_LABEL_MIN_Y — px floor for a layer label's y (C5 of the
+  // overlay audit): everything above this line is the TOP BAND the
+  // score box and the kill feed own (region map above), so a label
+  // never paints into it — see drawLayerLabels.
+  const LAYER_LABEL_MIN_Y = 40;
+
   // drawLayerLabels — "Upper"/"Lower" over each panel's top edge, canvas-
-  // drawn (no DOM). Clamped to the viewport top so zooming INTO a panel
-  // (its top edge off-screen) still shows which floor is in view; culled
-  // horizontally when the panel is out of sight. Dark-shadowed like the
-  // name labels so it reads on radar and light theme alike.
+  // drawn (no DOM). The label's natural spot is just above the panel's
+  // top edge, but when zooming INTO a panel pushes that edge up into the
+  // top band (sy < LAYER_LABEL_MIN_Y) the label drops to the PANEL'S
+  // VERTICAL CENTRE instead of pinning to the band — it stays over its
+  // own floor either way; the final floor keeps the invariant when a
+  // panel rides entirely above the line. Culled horizontally when the
+  // panel is out of sight. Dark-shadowed like the name labels so it
+  // reads on radar and light theme alike.
   function drawLayerLabels(s) {
     ctx.font = 'bold 11px system-ui, sans-serif';
     ctx.textAlign = 'center';
@@ -1798,7 +1827,10 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       if (!p.name) continue;
       const sx = cssW / 2 + (p.offsetX + p.width / 2 - cam.cx) * s;
       if (sx < -60 || sx > cssW + 60) continue;
-      const sy = Math.max(14, cssH / 2 - cam.cy * s - 6);
+      const panelTop = cssH / 2 - cam.cy * s; // the same y drawRadar paints at
+      let sy = panelTop - 6; // just above the panel's top edge
+      if (sy < LAYER_LABEL_MIN_Y) sy = panelTop + (p.height * s) / 2; // → its centre
+      sy = Math.max(LAYER_LABEL_MIN_Y, sy);
       ctx.shadowColor = 'rgba(0,0,0,0.9)';
       ctx.shadowBlur = 3;
       ctx.fillStyle = '#d7dde8';
@@ -3001,26 +3033,47 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     }
   }
 
+  // --- Stage overlay regions (the ratified region map) ------------------------
+  // Every overlay owns ONE region. The four independent 8-px anchor
+  // literals (HUD_PAD, KILL_FEED_EDGE, the DOM group's top/left 8, the
+  // chat's bottom/left 8) are ONE documented table — no overlay may
+  // invent its own edge inset:
+  //   top-left      — CONTROL GROUP, DOM (Replay.svelte .rp-ctrl-list):
+  //                   top/left 8 px, max-width 0.28 × stage. The canvas
+  //                   cannot measure DOM, so drawHUD reserves that share
+  //                   plus the same 8 px as the score box's LEFT bound
+  //                   (CTRL_GROUP_BUDGET) — an APPROXIMATION of the
+  //                   group's right edge, deliberately conservative: the
+  //                   group renders no box at all while every row is in
+  //                   its default state, yet the budget stays reserved.
+  //   top-center    — score + round clock box (drawHUD), HUD_PAD anchors.
+  //   top-right     — kill feed (drawKillFeed), KILL_FEED_EDGE anchors —
+  //                   the gameplay record: it NEVER ellipsizes, and the
+  //                   score box yields to it: the feed's widest row is
+  //                   measured FIRST every frame (killFeedLayout) and the
+  //                   box lays into [leftBound, feedLeft − SCORE_FEED_GAP].
+  //   bottom-left   — in-game chat ONLY (drawChat), KILL_FEED_EDGE
+  //                   anchors. The bottom playback readout that used to
+  //                   stack above it is gone: follow / loop / skip-freeze
+  //                   / camera / packNote are DOM rows of the control
+  //                   group, so snapshots and clips carry gameplay only.
+  //   bottom-right  — RESERVED, intentionally empty (documented, no code).
+  //   above/below   — DOM chrome (.replay-topbar / .replay-transport),
+  //                   unchanged.
   // --- HUD -------------------------------------------------------------------
-  // Two boxes, both pure functions of the engine state + the setHud
-  // payload:
+  // ONE box, a pure function of the engine state + the setHud payload:
   //   top-center   — team score + round clock, CENTERED on the stage
-  //                  (x = (cssW − boxWidth) / 2, HUD_PAD from the top).
+  //                  (x = the centered position clamped into the region
+  //                  gap above, HUD_PAD from the top).
   //                  The score line is SCORE-ANCHORED (scoreLineLayout):
   //                  the '‹ct› – ‹t›' segment sits dead-center of the
   //                  box, the longer-name side defines the box's extent
   //                  on its side and the shorter side absorbs the slack
   //                  as padding (names stay adjacent to the score); the
-  //                  clock line centers as a block. The stage's top
-  //                  corners belong to the overlays, so the readout no
-  //                  longer dodges a back button;
-  //   bottom-left  — the playback readout (follow, loop, packNote — the
-  //                  speed× line is gone: the toolbar select owns speed),
-  //                  8px off the BOTTOM-left corner, stacked directly
-  //                  ABOVE the in-game chat (drawChat) when the round has
-  //                  chat lines — never overlapping it, never fighting
-  //                  the top-center box or the top-right kill feed
-  //                  (drawKillFeed).
+  //                  clock line centers as a block. When the box cannot
+  //                  fit the gap, the longer team name(s) are cut with
+  //                  an ellipsis (ellipsize over scoreLineWidth's name
+  //                  term) — the feed never yields, the score does.
   // setHud payload (view-supplied, plain data): {
   //   score: {ct, t} | null,          // cumulative counted wins at the
   //                                   // playhead (lib/rounds.js scoreThrough)
@@ -3035,10 +3088,9 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   //   } | null,
   //   tickRate: number | undefined
   // }
-  // Before the first setHud call the renderer draws the playback
-  // readout alone (no score line, no kill feed, no chat — those three
-  // need hud.round) — the other createRenderer callers (node tests,
-  // stubs) never supply one.
+  // Before the first setHud call the renderer draws NO HUD box at all —
+  // the other createRenderer callers (node tests, stubs) never supply
+  // one.
   let hud = null;
 
   // CS2 competitive round clock (CS2.md "Competitive round clock"):
@@ -3047,9 +3099,20 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // (lib/replay/bomb.js) — this constant is ONLY the round-time length.
   const ROUND_TIME_S = 115;
   const HUD_LH = 15; // px per HUD line
-  const HUD_PAD = 8; // px inside/around a HUD box
+  const HUD_PAD = 8; // px inside/around a HUD box — ALSO the region table's
+  //                  // top/left anchor (see the region map above)
   const HUD_ICON_PX = 12; // px — an icon's size on an icon+text line
   const HUD_ICON_GAP = 4; // px — icon → text gap on an icon+text line
+  // C1 — the score box's gap constraints (region map above): the box
+  // yields to BOTH neighbours — the DOM control group on the left and
+  // the kill feed on the right. CTRL_GROUP_BUDGET mirrors the group's
+  // CSS max-width share (style.css .rp-ctrl-list: 0.28 × stage); the
+  // canvas cannot measure DOM, so its right edge is that share + the
+  // group's own 8 px anchor. SCORE_FEED_GAP is the 8 px clearance the
+  // score box keeps from the feed's LEFT edge (KILL_FEED_EDGE's
+  // mirror-image literal, named for the pair it separates).
+  const CTRL_GROUP_BUDGET = 0.28; // share of cssW the control group may span
+  const SCORE_FEED_GAP = 8; // px — score box → kill feed clearance
   // Codicon clock for the freeze-time line: the codicon font ships with
   // the app (@vscode/codicons/dist/codicon.css, imported app-wide in
   // main.js) and .codicon-clock:before { content: "\ea82" } — codepoint
@@ -3242,8 +3305,9 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // centers as a BLOCK, while a {scoreAnchor} line (the score line) lays
   // its segments out around the SCORE segment — scoreLineLayout pins it
   // dead-center of the box so unequal team names pad the shorter side
-  // instead of pushing the score off-center; the default 'left' keeps the
-  // bottom playback readout's inset.
+  // instead of pushing the score off-center; the default 'left' keeps
+  // each line's own HUD_PAD inset (the retired bottom readout's style —
+  // every current caller centers, both spellings stay).
   // `metrics` (optional) is the caller's measureLine pass for these
   // lines — pass it whenever the caller already measured (drawHUD's
   // centered box), so a box never measures the same line twice; `w` the
@@ -3349,7 +3413,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     draw();
   }
 
-  function drawHUD(chat) {
+  function drawHUD(feed) {
     const st = engine.state;
     const tr = engine.tickRate;
     ctx.font = '12px ui-monospace, SFMono-Regular, Menlo, monospace';
@@ -3382,40 +3446,43 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       if (top.length) {
         // ONE measurement pass for the box: hudBox takes the same
         // metrics for its centering instead of re-measuring each line.
-        const ms = top.map(measureLine);
-        const w = boxWidthOf(ms);
-        hudBox(top, (cssW - w) / 2, HUD_PAD, w, 'center', ms);
+        let ms = top.map(measureLine);
+        let w = boxWidthOf(ms);
+        // C1 — the box lays into the gap the region map leaves: the
+        // control group's right edge (CSS-mirrored approximation) on the
+        // left, the kill feed's left edge − SCORE_FEED_GAP on the right.
+        // `feed` was measured FIRST this frame (killFeedLayout, called
+        // by draw() before this); with no feed in scope the stage's own
+        // right edge bounds the box.
+        const rightBound = (feed ? feed.left : cssW) - SCORE_FEED_GAP;
+        const leftBound = cssW * CTRL_GROUP_BUDGET + HUD_PAD;
+        const line = top[0];
+        if (w > rightBound - leftBound && line.scoreAnchor && ms[0].segs) {
+          // The gap is too narrow for the line: cut the LONGER team
+          // name — scoreLineWidth's name term is 2·max(name) + score —
+          // down to the half of the gap the score segment leaves over.
+          // Both sides are cut when both exceed it (equal long names),
+          // because scoreLineWidth keys off the MAX. The clock line is
+          // short enough to shift without a cut; the clamp below keeps
+          // its right edge clear regardless.
+          const room = (rightBound - leftBound - HUD_PAD * 2 - ms[0].segs[1]) / 2;
+          for (const i of [0, 2]) {
+            if (ms[0].segs[i] > room) {
+              line.segs[i].text = ellipsize(line.segs[i].text, room, (s) => ctx.measureText(s).width);
+            }
+          }
+          ms = top.map(measureLine);
+          w = boxWidthOf(ms);
+        }
+        // The clamp: centered, but never under the control group and
+        // never over the feed. When the two bounds cross (a feed row
+        // wider than the gap) the FEED wins — x then pins the box's
+        // RIGHT edge to the bound, which is the invariant the property
+        // test pins at every stage width.
+        const x = Math.min(Math.max((cssW - w) / 2, leftBound), rightBound - w);
+        hudBox(top, x, HUD_PAD, w, 'center', ms);
       }
     }
-
-    // bottom-left: the playback readout (follow / loop / packNote — no
-    // speed line anymore), 8px off the corner and stacked 8px ABOVE the
-    // chat stack (the shared chatLayout — cssH when the round has no
-    // chat, which leaves the box exactly at the corner). With none of
-    // the three lines there is NO box at all: the empty readout used to
-    // be hidden behind its own speed× line, and an empty box on the
-    // corner would only cover the chat.
-    const lines = [];
-    if (st.followSlot != null) {
-      lines.push(`follow: ${slotNames[st.followSlot] || '#' + st.followSlot}`);
-    }
-    if (st.loopEnabled && st.loopFrom >= 0) {
-      // The loop bounds are FRAMES internally (engine.state.loopFrom /
-      // loopTo); the readout speaks OVERALL MATCH TIME — fmt.js fmtClock
-      // over tickSeconds from the stream's first tick, the SAME basis as
-      // the scrubber's "m:ss / m:ss" and the loop popover's inputs, so
-      // the line reads exactly what the user typed in.
-      const t0 = store.ticks[0];
-      const loopClock = (f) =>
-        fmtClockSecs(
-          tickSeconds(store.ticks[Math.min(Math.max(0, f), store.frames - 1)] - t0, engine.tickRate),
-        );
-      lines.push(`loop: ${loopClock(st.loopFrom)}–${loopClock(st.loopTo)}`);
-    }
-    if (packNote) lines.push(packNote);
-    if (!lines.length) return;
-    const y = Math.max(HUD_PAD, chat.top - HUD_PAD - hudBoxHeight(lines.length));
-    hudBox(lines, HUD_PAD, y);
   }
 
   // --- Entry boxes (the shared kill-feed / chat surface) ----------------------
@@ -3472,8 +3539,18 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // 'explosion' = the hud blast pip); a row whose glyph isn't extracted
   // yet draws WITHOUT it — no space reserved, so the other cells never
   // shift (degradation must not move what's on screen).
-  function drawKillFeed() {
-    if (!hud || !hud.round || !Number.isFinite(hud.round.number)) return;
+  // killFeedLayout — the feed's ONE per-frame layout pass: the scope
+  // rule (round-scoped, tick ≤ playhead, oldest first, newest
+  // KILL_FEED_MAX kept), every visible row's CELLS (the whole build —
+  // colors resolved at the kill tick) and its measured width + left
+  // edge at the feed's font. draw() runs it BEFORE drawHUD: the score
+  // box's C1 clamp reads `left` (the leftmost edge any row reaches
+  // this frame), and drawKillFeed then paints exactly what was measured
+  // — one measure pass per row per frame serves both. Returns null on
+  // the paint pass's old early-outs (no hud.round / nothing in scope):
+  // no feed → no bound, no paint.
+  function killFeedLayout() {
+    if (!hud || !hud.round || !Number.isFinite(hud.round.number)) return null;
     const st = engine.state;
     const rn = hud.round.number;
     const rows = [];
@@ -3481,7 +3558,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       if (!k || k.round !== rn || !Number.isFinite(k.tick) || k.tick > st.tick) continue;
       rows.push(k);
     }
-    if (!rows.length) return;
+    if (!rows.length) return null;
     // oldest first: a new kill appends BELOW the rows already shown
     // (the old newest-first order pushed the whole stack down on every
     // kill), and the cap below drops the oldest — the NEWEST 6 stay.
@@ -3492,11 +3569,12 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     // of throwing — sideAtFrame needs the store.
     const nSlots = (store && store.slots && store.slots.length) || 0;
 
-    ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, monospace';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    for (let i = 0; i < shown.length; i++) {
-      const k = shown[i];
+    // Measured at the FEED's font (the paint pass sets the same one),
+    // then restored: drawHUD's box measurement must not inherit it.
+    const prevFont = ctx.font;
+    ctx.font = KILL_FEED_FONT;
+    const out = [];
+    for (const k of shown) {
       // Side at the kill tick (frame BEFORE the kill — the victim may
       // already be unalived on the kill frame; drawDeaths' reasoning).
       const frame = engine.frameForTick(Math.max(engine.firstTick, k.tick - 1));
@@ -3574,7 +3652,26 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
         KILL_FEED_INSET * 2 +
         widths.reduce((a, b) => a + b, 0) +
         KILL_FEED_GAP * (cells.length - 1);
-      const x = cssW - KILL_FEED_EDGE - w;
+      out.push({ outlineSide, cells, widths, w, x: cssW - KILL_FEED_EDGE - w });
+    }
+    ctx.font = prevFont;
+    return {
+      rows: out,
+      // the leftmost edge the feed reaches — drawHUD's right-hand bound
+      left: out.reduce((min, r) => Math.min(min, r.x), cssW),
+    };
+  }
+
+  // drawKillFeed — the PAINT pass over killFeedLayout's measurement
+  // (the cells/widths/edges are precomputed there, so this never
+  // re-measures): a box + its cells per row, oldest at the top.
+  function drawKillFeed(feed) {
+    if (!feed) return;
+    ctx.font = KILL_FEED_FONT;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    for (let i = 0; i < feed.rows.length; i++) {
+      const { outlineSide, cells, widths, w, x } = feed.rows[i];
       // oldest at the top, entries on the PITCH (box height + gap) so they
       // read as separate lines instead of one touching stack
       const y = KILL_FEED_EDGE + i * KILL_FEED_PITCH;
@@ -3612,14 +3709,16 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // the feed resolves the killer; an unresolvable speaker gets the
   // neutral outline — a side is never guessed).
 
-  // chatLayout — the chat's scope + stack geometry, the ONE rule both
-  // drawHUD (stacking the playback readout 8 px above the stack) and
-  // drawChat (painting it) step by. Rows are sorted chronologically and
+  // chatLayout — the chat's scope + stack geometry, the ONE rule
+  // drawChat (painting it) steps by. Rows are sorted chronologically and
   // capped at CHAT_MAX with the OLDEST dropped, so the NEWEST message
   // sits at the bottom-left corner (adjacent to the edge) and the stack
   // grows upward on the feed's PITCH. Returns { rows, top } where `top`
-  // is the stack's top edge — cssH when nothing is in scope, which puts
-  // the readout at the corner (its position before the chat existed).
+  // is the stack's top edge — cssH when nothing is in scope (the empty
+  // rows short-circuit drawChat before `top` matters). The bottom-left
+  // corner is the CHAT's alone now: the playback readout that used to
+  // stack 8 px above this moved to the DOM control group, so nothing
+  // else reads `top`.
   function chatLayout() {
     if (!hud || !hud.round || !Number.isFinite(hud.round.number)) return { rows: [], top: cssH };
     const st = engine.state;
@@ -3643,11 +3742,11 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     if (!rows.length) return;
     // No position store (a caller that never fed data) → no side to
     // resolve: every name/border degrades to the neutral color instead
-    // of throwing — sideAtFrame needs the store (same as drawKillFeed).
+    // of throwing — sideAtFrame needs the store (same as the feed).
     const nSlots = (store && store.slots && store.slots.length) || 0;
     const budget = cssW * CHAT_MAX_W;
 
-    ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, monospace';
+    ctx.font = KILL_FEED_FONT;
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
     for (let i = 0; i < rows.length; i++) {
@@ -3686,15 +3785,17 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       if (!fit || fit.head !== head) {
         const headW = ctx.measureText(head).width;
         const msg = c.text == null ? '' : String(c.text);
-        let body = msg ? `: ${msg}` : '';
-        const fits = () => KILL_FEED_INSET * 2 + headW + ctx.measureText(body).width <= budget;
-        if (msg && !fits()) {
-          let k = msg.length;
-          do {
-            k--;
-            body = `: ${msg.slice(0, k)}…`;
-          } while (k > 0 && !fits());
-        }
+        // THE cut rule (ellipsize) over the entry's remaining room:
+        // whatever CHAT_MAX_W leaves after both insets and the measured
+        // name+tag head decides how much of ': '+message survives — one
+        // measurement per candidate, exactly as the inline loop cost.
+        const body = msg
+          ? ellipsize(
+              `: ${msg}`,
+              budget - KILL_FEED_INSET * 2 - headW,
+              (s) => ctx.measureText(s).width,
+            )
+          : '';
         fit = { head, headW, body, bodyW: ctx.measureText(body).width };
         if (key != null) chatFitCache.set(key, fit);
       }
@@ -3778,12 +3879,15 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       drawHitTracers(st.tick);
       drawPlayers();
     }
-    // ONE chatLayout() per frame: drawHUD stacks the readout 8 px above
-    // the chat stack and drawChat paints it — the same scope/geometry,
-    // computed once instead of once per phase.
+    // The feed is laid out BEFORE the HUD paints (its leftmost edge is
+    // the score box's right-hand bound — drawHUD's C1 clamp) and then
+    // painted from exactly that measurement; ONE chatLayout() per frame
+    // for the same reason — each scope/geometry computed once instead of
+    // once per phase.
+    const feed = killFeedLayout();
     const chat = chatLayout();
-    drawHUD(chat);
-    drawKillFeed();
+    drawHUD(feed);
+    drawKillFeed(feed);
     drawChat(chat); // in-game chat — the same overlay group as the kill feed
     // Arm the settle loop when smart is still short of its target — a
     // paused seek (or a mode switch) has no other redraw driver. draw()
