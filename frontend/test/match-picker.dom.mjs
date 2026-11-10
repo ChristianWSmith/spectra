@@ -1,8 +1,11 @@
 // jsdom driver for MatchPicker: open/close, filtering, keyboard nav,
-// selection, click-outside.
+// selection, click-outside — and section H's render cap (a 250-match
+// library renders the first 200 rows plus the "type more to narrow" hint;
+// the filter is applied to the whole set BEFORE the cap).
 //
-// jsdom is intentionally not a project dependency; from frontend/ run:
-//   npm i --no-save jsdom
+// jsdom is a declared devDependency of frontend/ — a plain `npm ci`
+// there provides it (never `npm i --no-save`, which makes the next
+// `npm ci` prune it). From frontend/ run:
 //   node --conditions browser test/match-picker.dom.mjs
 // (must be run with frontend/ as the working directory)
 import { JSDOM } from 'jsdom';
@@ -204,6 +207,73 @@ check('open', !!pop());
 click(trigger());
 await sleep();
 check('closed by trigger click', !pop());
+
+// ---------------------------------------------------------------------------
+// Section H: the render cap. The same mounted picker is handed a
+// 250-match library: only RENDER_CAP (200) rows mount, the muted hint
+// names the cap and the total, and the SEARCH still runs over the whole
+// set before the cap (a 250-hit filter is still capped; a narrow filter
+// renders every hit with no hint).
+console.log('H. render cap: 250 matches render 200 + hint');
+const bigMatches = [];
+for (let i = 249; i >= 0; i--) {
+  bigMatches.push({
+    id: 3000 + i,
+    map: i % 50 === 0 ? 'de_mirage' : 'de_cache',
+    scoreCT: 13,
+    scoreT: 9,
+    ctName: 'Team Alpha',
+    tName: 'Team Beta',
+    realRounds: 24,
+    durationS: 2400,
+    extractedAt: '2026-10-01T00:00:00Z',
+    status: 'ready',
+    path: '/demos/bulk.dem',
+  });
+}
+globalThis.__setMatches(bigMatches);
+click(trigger());
+await sleep();
+check('capped library renders 200 rows', rows().length === 200, String(rows().length));
+check(
+  'muted hint names the cap and the total',
+  document.body.textContent.includes('Showing 200 of 250 — type more to narrow'),
+  pop() ? pop().textContent.replace(/\s+/g, ' ').slice(-160) : 'no popover',
+);
+const capInput = $('.mp-search')[0];
+const typeIn = (v) => {
+  capInput.value = v;
+  capInput.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+};
+// Filtering happens BEFORE the cap: 'de_' matches all 250 rows.
+typeIn('de_');
+await sleep();
+check('filter over 250 hits is still capped at 200', rows().length === 200, String(rows().length));
+check(
+  'hint stays while the cap still bites',
+  document.body.textContent.includes('Showing 200 of 250'),
+);
+typeIn('mirage');
+await sleep();
+check('narrow filter renders every hit (5)', rows().length === 5, String(rows().length));
+check(
+  'hint gone when the cap does not bite',
+  !document.body.textContent.includes('Showing 200 of 250'),
+);
+// Keyboard + Enter operate on the RENDERED list.
+typeIn('');
+await sleep();
+key(capInput, 'ArrowDown');
+await sleep(10);
+check('arrow highlights the second rendered row', rows()[1].classList.contains('active'));
+key(capInput, 'Enter');
+await sleep();
+check(
+  'Enter selects a rendered (capped) row',
+  globalThis.__selected.at(-1) === bigMatches[1].id,
+  JSON.stringify(globalThis.__selected),
+);
+check('popover closed after the capped select', !pop());
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');

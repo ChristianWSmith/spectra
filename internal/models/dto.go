@@ -22,6 +22,21 @@ type MatchSummary struct {
 	SHA256      string    `json:"sha256"`
 }
 
+// MatchListPage is one keyset window of the library list (the "Load more"
+// pagination): Rows is the window, HasNext reports whether another window
+// follows it. Rosters carries the matchup-synthesis input for the window's
+// rows that recorded NO team clan name — matchId → the human roster rows
+// (models.PlayerRef) the frontend's canonical team_<player> synthesis
+// (lib/teams.js teamNames) needs; ids whose teams rows carry both names
+// are absent, and a match whose roster is empty is absent too (its
+// Matchup cell stays the "—" placeholder). One page therefore answers a
+// list load in a single IPC call instead of one scoreboard fetch per row.
+type MatchListPage struct {
+	Rows    []MatchSummary        `json:"rows"`
+	HasNext bool                  `json:"hasNext"`
+	Rosters map[int64][]PlayerRef `json:"rosters"`
+}
+
 // PlayerStatsRow is scoreboard output: stats joined with identity + the
 // player's final-side. SortKey addresses either table's columns (the store
 // whitelists it — never interpolate user input).

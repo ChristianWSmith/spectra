@@ -411,6 +411,15 @@
   let matchesError = $state('');
   let recomputeState = $state({}); // matchId → 'busy' | 'ok' | error text
 
+  // Render cap: the list shows at most the RECOMPUTE_CAP MOST RECENT
+  // ready matches — readyMatches arrives oldest-first (extracted_at ASC),
+  // so the tail is the newest window — with a muted hint when the library
+  // is larger. The Re-run actions operate on exactly the listed rows
+  // (recompute semantics unchanged).
+  const RECOMPUTE_CAP = 200;
+  const shownMatches = $derived(readyMatches.slice(-RECOMPUTE_CAP));
+  const cappedMatches = $derived(readyMatches.length > shownMatches.length);
+
   // M4 audio self-test: probe creates a throwaway AudioContext,
   // resumes it (user click = gesture), and reports state/rate or the exact
   // device failure with the gst-plugins-good hint.
@@ -1033,7 +1042,7 @@
       <p class="error" role="alert">{matchesError}</p>
     {/if}
     <div class="sett-matches">
-      {#each readyMatches as m (m.id)}
+      {#each shownMatches as m (m.id)}
         {@const state = recomputeState[m.id]}
         <div class="sett-match-row">
           <span>
@@ -1058,6 +1067,12 @@
           {matchesError ? 'Matches unavailable.' : 'No matches to re-run yet.'}
         </p>
       {/each}
+      {#if cappedMatches}
+        <p class="muted" role="status">
+          Showing the {RECOMPUTE_CAP} most recent of {readyMatches.length} ready matches — older
+          ones aren’t listed.
+        </p>
+      {/if}
     </div>
   </section>
 

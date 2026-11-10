@@ -280,29 +280,12 @@ type MatchListFilter struct {
 	Player string `json:"player"`
 }
 
-// ListMatches returns the library list: matches matching query (a
-// case-insensitive LIKE across map, path and both team names; "" matches
-// all), narrowed by any filters (each ANDed with the query and with the
-// other filters — see MatchListFilter), sorted by a whitelisted sortKey
-// (default extracted_at).
-//
-// The filters ride a variadic tail rather than a fixed parameter: the
-// zero filter is "no constraint", and every existing call site (import
-// scan, single-row readers' tests) passes none — adding a parameter
-// would touch callers across the read surface for no gain. The one
-// binding that forwards a filter (LibraryService.ListMatches) always
-// passes exactly one.
-func (s *Store) ListMatches(query, sortKey string, desc bool, filters ...MatchListFilter) ([]models.MatchSummary, error) {
-	order, ok := matchListSort[sortKey]
-	if !ok {
-		order = matchListSort["extracted_at"]
-	}
-	dir := "ASC"
-	if desc {
-		dir = "DESC"
-	}
-	var b strings.Builder
-	b.WriteString(`SELECT ` + matchSummaryCols + matchSummaryFrom)
+// matchListWhere renders the shared ListMatches/ListMatchesPage filter
+// clause (the free-text LIKE group ANDed with every structured facet) and
+// its bound arguments — the ONE spelling of the library-list conditions,
+// so the paged read can never drift from the full read. Returns "" when
+// nothing narrows the list.
+func matchListWhere(query string, filters []MatchListFilter) (string, []any) {
 	// Conditions join with AND, so the free-text OR group needs its own
 	// parentheses (AND binds tighter than OR).
 	var conds []string
@@ -327,9 +310,41 @@ func (s *Store) ListMatches(query, sortKey string, desc bool, filters ...MatchLi
 			args = append(args, p, "%"+p+"%")
 		}
 	}
-	if len(conds) > 0 {
-		b.WriteString(" WHERE " + strings.Join(conds, " AND "))
+	if len(conds) == 0 {
+		return "", nil
 	}
+	return " WHERE " + strings.Join(conds, " AND "), args
+}
+
+// ListMatches returns the library list: matches matching query (a
+// case-insensitive LIKE across map, path and both team names; "" matches
+// all), narrowed by any filters (each ANDed with the query and with the
+// other filters — see MatchListFilter), sorted by a whitelisted sortKey
+// (default extracted_at).
+//
+// The filters ride a variadic tail rather than a fixed parameter: the
+// zero filter is "no constraint", and every existing call site (import
+// scan, single-row readers' tests) passes none — adding a parameter
+// would touch callers across the read surface for no gain. The one
+// binding that forwards a filter (LibraryService.ListMatches) always
+// passes exactly one.
+//
+// The list is unbounded by design: its readers (Scanner.importIndex's
+// import dedupe, MatchPicker, Settings' recompute list) need the WHOLE
+// filtered set. The view-facing "Load more" window is ListMatchesPage.
+func (s *Store) ListMatches(query, sortKey string, desc bool, filters ...MatchListFilter) ([]models.MatchSummary, error) {
+	order, ok := matchListSort[sortKey]
+	if !ok {
+		order = matchListSort["extracted_at"]
+	}
+	dir := "ASC"
+	if desc {
+		dir = "DESC"
+	}
+	where, args := matchListWhere(query, filters)
+	var b strings.Builder
+	b.WriteString(`SELECT ` + matchSummaryCols + matchSummaryFrom)
+	b.WriteString(where)
 	fmt.Fprintf(&b, " ORDER BY %s %s, m.id DESC", order, dir)
 
 	rows, err := s.db.Query(b.String(), args...)
@@ -349,6 +364,214 @@ func (s *Store) ListMatches(query, sortKey string, desc bool, filters ...MatchLi
 		return nil, fmt.Errorf("store: list matches: %w", err)
 	}
 	return out, nil
+}
+
+// Library-list window bounds (ListMatchesPage's rows per window).
+const (
+	// ListMatchesPageSize is the default window (the Library's first
+	// window and every "Load more" click fetch one of these).
+	ListMatchesPageSize = 200
+	// ListMatchesPageMaxRows is the largest window any caller may ask
+	// for — the roster IN-list and the row scan stay bounded either way.
+	ListMatchesPageMaxRows = 5000
+)
+
+// ListMatchesPage returns ONE keyset window of the library list: the
+// rows strictly after the cursor row (afterID — 0 starts the first
+// window), in ListMatches' exact order for query/sortKey/desc with the
+// same filters, limited to limit rows (<= 0 means ListMatchesPageSize,
+// clamped to ListMatchesPageMaxRows). HasNext reports whether another
+// window exists beyond the returned rows (the query reads limit+1 rows —
+// a window of exactly limit rows with no successor reports false).
+//
+// CURSOR: the caller passes the last row's ID, and the store resolves it
+// to that row's STORED (sort value, id). Resolving inside the store keeps
+// the DATETIME round trip on one driver path (a time parsed out of
+// matches.extracted_at is bound back in the exact format it was written
+// in — never a JS string), and a cursor row that vanished between
+// windows is an ErrNotFound instead of a silently mis-placed page.
+//
+// KEYSET PREDICATE — E is the whitelisted sort expression, cid the cursor
+// row id; the tie-break `E = ? AND m.id < ?` mirrors the ORDER BY's
+// `m.id DESC`, so rows sharing one E (batch imports land on the same
+// extracted_at second constantly) are neither skipped nor duplicated
+// across windows:
+//
+//	desc, cursor E non-NULL: (E < ?) OR (E = ? AND m.id < ?) OR (E IS NULL)
+//	desc, cursor E NULL:     (E IS NULL AND m.id < ?)
+//	asc,  cursor E non-NULL: (E > ?) OR (E = ? AND m.id < ?)
+//	asc,  cursor E NULL:     (E IS NOT NULL) OR (E IS NULL AND m.id < ?)
+//
+// NULL sorts smallest in SQLite (first under ASC, last under DESC): the
+// explicit IS NULL / IS NOT NULL arms keep that placement reachable. A
+// plain `E < ?` compares NULL to anything as NULL (false), so without
+// them a DESC window with a non-NULL cursor would drop every queued match
+// (extracted_at IS NULL) forever, and a NULL cursor would match nothing.
+//
+// ROSTERS: the window also carries the matchup-synthesis rosters for its
+// rows whose teams rows recorded no clan name (see models.MatchListPage)
+// — the ONE batched read that replaced the view's per-row GetScoreboard
+// fetches.
+func (s *Store) ListMatchesPage(query, sortKey string, desc bool, afterID int64, limit int, filters ...MatchListFilter) (*models.MatchListPage, error) {
+	order, ok := matchListSort[sortKey]
+	if !ok {
+		order = matchListSort["extracted_at"]
+	}
+	dir := "ASC"
+	if desc {
+		dir = "DESC"
+	}
+	if limit <= 0 {
+		limit = ListMatchesPageSize
+	}
+	if limit > ListMatchesPageMaxRows {
+		limit = ListMatchesPageMaxRows
+	}
+	where, args := matchListWhere(query, filters)
+	if afterID > 0 {
+		after, a, err := s.keysetAfter(order, dir, afterID)
+		if err != nil {
+			return nil, err
+		}
+		if where == "" {
+			where = " WHERE " + after
+		} else {
+			where += " AND (" + after + ")"
+		}
+		args = append(args, a...)
+	}
+	// limit+1: the extra row is the "there is more" probe, never returned.
+	var b strings.Builder
+	b.WriteString(`SELECT ` + matchSummaryCols + matchSummaryFrom)
+	b.WriteString(where)
+	fmt.Fprintf(&b, " ORDER BY %s %s, m.id DESC LIMIT %d", order, dir, limit+1)
+
+	rows, err := s.db.Query(b.String(), args...)
+	if err != nil {
+		return nil, fmt.Errorf("store: list matches page: %w", err)
+	}
+	defer rows.Close()
+	page := &models.MatchListPage{Rows: []models.MatchSummary{}}
+	for rows.Next() {
+		mm, err := scanMatchSummary(rows)
+		if err != nil {
+			return nil, fmt.Errorf("store: list matches page: %w", err)
+		}
+		page.Rows = append(page.Rows, mm)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: list matches page: %w", err)
+	}
+	if len(page.Rows) > limit {
+		page.Rows = page.Rows[:limit]
+		page.HasNext = true
+	}
+	if err := s.pageRosters(page); err != nil {
+		return nil, err
+	}
+	return page, nil
+}
+
+// keysetAfter resolves the cursor row (afterID) to its stored sort value
+// and renders the "strictly after" predicate for (order, dir) with its
+// bound arguments (see ListMatchesPage's predicate table). E is one of
+// matchListSort's whitelisted expressions — identifiers only, never user
+// input. ErrNotFound when the cursor row no longer exists.
+func (s *Store) keysetAfter(order, dir string, afterID int64) (string, []any, error) {
+	var raw any
+	err := s.db.QueryRow(
+		`SELECT `+order+` FROM matches m WHERE m.id = ?`, afterID,
+	).Scan(&raw)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil, fmt.Errorf("store: list matches page: cursor match %d: %w", afterID, ErrNotFound)
+	}
+	if err != nil {
+		return "", nil, fmt.Errorf("store: list matches page: cursor match %d: %w", afterID, err)
+	}
+	// TEXT comes back as []byte on some driver paths; bind it back as a
+	// string so the comparison stays TEXT-vs-TEXT (a BLOB parameter would
+	// never equal a TEXT column, silently breaking the tie-break arm).
+	if b, ok := raw.([]byte); ok {
+		raw = string(b)
+	}
+	if raw == nil { // NULL sort value (only extracted_at: a queued match never extracted)
+		if dir == "DESC" {
+			return "(" + order + " IS NULL AND m.id < ?)", []any{afterID}, nil
+		}
+		return "(" + order + " IS NOT NULL OR (" + order + " IS NULL AND m.id < ?))", []any{afterID}, nil
+	}
+	cmp := " > "
+	if dir == "DESC" {
+		cmp = " < "
+	}
+	nullArm := ""
+	if dir == "DESC" {
+		// NULL sorts last under DESC: rows below a non-NULL cursor.
+		nullArm = " OR (" + order + " IS NULL)"
+	}
+	return "(" + order + cmp + "? OR (" + order + " = ? AND m.id < ?)" + nullArm + ")",
+		[]any{raw, raw, afterID}, nil
+}
+
+// pageRosters fills page.Rosters with the roster rows the Matchup column
+// synthesizes `team_<player>` names from — for exactly the window rows
+// that recorded no team clan name (both names present → no entry; an
+// empty roster → no entry, the cell stays "—"). Humans only (HumanOnly):
+// this roster feeds a display listing, so the canonical Go bot filter
+// applies; the frontend runs its twin (listedPlayers) on arrival too.
+// One IN-list query per window — the batched read behind the page's
+// single-call list load.
+func (s *Store) pageRosters(page *models.MatchListPage) error {
+	var ids []int64
+	for _, mm := range page.Rows {
+		if mm.CTName == "" || mm.TName == "" {
+			ids = append(ids, mm.ID)
+		}
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	const chunk = 400 // stay well under SQLite's bound-parameter ceiling
+	for start := 0; start < len(ids); start += chunk {
+		part := ids[start:min(start+chunk, len(ids))]
+		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(part)), ",")
+		rows, err := s.db.Query(
+			`SELECT p.match_id, p.steam_id, p.name, p.side, p.is_bot
+			 FROM players p WHERE p.match_id IN (`+placeholders+`) AND `+HumanOnly("p")+`
+			 ORDER BY p.match_id, p.steam_id`, args64(part)...)
+		if err != nil {
+			return fmt.Errorf("store: list matches page: rosters: %w", err)
+		}
+		for rows.Next() {
+			var (
+				id  int64
+				ref models.PlayerRef
+			)
+			if err := rows.Scan(&id, &ref.SteamID, &ref.Name, &ref.Side, &ref.IsBot); err != nil {
+				rows.Close()
+				return fmt.Errorf("store: list matches page: rosters: %w", err)
+			}
+			if page.Rosters == nil {
+				page.Rosters = map[int64][]models.PlayerRef{}
+			}
+			page.Rosters[id] = append(page.Rosters[id], ref)
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return fmt.Errorf("store: list matches page: rosters: %w", err)
+		}
+		rows.Close()
+	}
+	return nil
+}
+
+// args64 boxes int64 ids as bind arguments.
+func args64(ids []int64) []any {
+	out := make([]any, len(ids))
+	for i, id := range ids {
+		out[i] = id
+	}
+	return out
 }
 
 // ListMapNames returns the distinct map names present in the library,

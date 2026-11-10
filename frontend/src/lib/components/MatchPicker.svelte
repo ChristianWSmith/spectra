@@ -36,10 +36,20 @@
     );
   });
 
-  // Highlight index clamped to the filtered list (it shrinks while typing).
-  const activeIdx = $derived(filtered.length ? Math.min(active, filtered.length - 1) : -1);
+  // Render cap: the picker never mounts the whole library — search still
+  // filters the ENTIRE set first, and only the first RENDER_CAP matches
+  // of the filtered result are rendered (with a muted hint below when the
+  // cap bites: "type more to narrow"). The highlight and keyboard
+  // movement operate on the CAPPED list so the active option can never
+  // point at a row that is not in the DOM.
+  const RENDER_CAP = 200;
+  const shown = $derived(filtered.slice(0, RENDER_CAP));
+  const capped = $derived(filtered.length > shown.length);
+
+  // Highlight index clamped to the RENDERED list (it shrinks while typing).
+  const activeIdx = $derived(shown.length ? Math.min(active, shown.length - 1) : -1);
   const activeId = $derived(
-    activeIdx >= 0 && filtered[activeIdx] ? `mp-opt-${filtered[activeIdx].id}` : '',
+    activeIdx >= 0 && shown[activeIdx] ? `mp-opt-${shown[activeIdx].id}` : '',
   );
 
   // Same presentation rule as the Library's Matchup column, minus its
@@ -51,7 +61,9 @@
   function openPop() {
     open = true;
     query = '';
-    const at = filtered.findIndex((m) => m.id === value);
+    // Highlight the selected match when it is INSIDE the rendered cap;
+    // a match beyond it has no row to highlight, so start at the top.
+    const at = shown.findIndex((m) => m.id === value);
     active = at >= 0 ? at : 0;
     requestAnimationFrame(() => inputEl && inputEl.focus());
   }
@@ -69,14 +81,14 @@
   }
 
   function pick(i) {
-    const m = filtered[i];
+    const m = shown[i];
     if (!m) return;
     close(true);
     onselect(m.id);
   }
 
   function move(d) {
-    const n = filtered.length;
+    const n = shown.length;
     if (!n) return;
     const from = activeIdx < 0 ? 0 : activeIdx;
     active = (from + d + n) % n;
@@ -110,7 +122,7 @@
   $effect(() => {
     activeIdx;
     open;
-    filtered.length;
+    shown.length;
     if (!open) return;
     requestAnimationFrame(() => {
       const el = listEl && listEl.querySelector('.mp-opt.active');
@@ -161,7 +173,7 @@
       />
       {#if filtered.length > 0}
         <div class="mp-list" id="mp-list" role="listbox" aria-label="Matches" bind:this={listEl}>
-          {#each filtered as m, i (m.id)}
+          {#each shown as m, i (m.id)}
             <button
               type="button"
               class="mp-opt"
@@ -193,6 +205,11 @@
             </button>
           {/each}
         </div>
+        {#if capped}
+          <p class="mp-empty muted" role="status">
+            Showing {RENDER_CAP} of {filtered.length} — type more to narrow.
+          </p>
+        {/if}
       {:else}
         <p class="mp-empty muted" role="status">
           {query.trim()
