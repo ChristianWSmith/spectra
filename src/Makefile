@@ -7,7 +7,7 @@ WAILS_VERSION := $(shell go list -m -f '{{.Version}}' github.com/wailsapp/wails/
 # The stock Taskfiles shell out to `wails3`, so the CLI must be on PATH.
 export PATH := $(GOPATH_BIN):$(PATH)
 
-.PHONY: build run dev build-assets test lint fmt vet linux-deps deps package artifact artifact-name cs2find clean
+.PHONY: build run dev build-assets test lint fmt vet linux-deps deps package artifact artifact-name cs2find clean deep-clean
 
 # deps ensures the developer toolchain the build needs: the pinned wails3
 # CLI (auto-installed into GOPATH/bin) and Node.js 22+ (checked — install
@@ -98,12 +98,53 @@ artifact: package
 	esac; \
 	echo "built $$name"
 
+# clean removes build outputs only — never runtime state (see deep-clean).
 clean:
 	rm -rf bin .task frontend/dist frontend/bindings \
-	  $(APP)-linux-* $(APP)-windows-*.exe SHA256SUMS
+	  $(APP)-linux-* $(APP)-windows-*.exe SHA256SUMS \
+	  ./spectra ./cs2find
 
 # cs2find runs the in-repo dev tool against the local CS2 install
 # (READ-ONLY search/decode of the VPK; see cs2find --help), e.g.
 # `make cs2find ARGS='find --prefix sounds/weapons/c4/'`.
 cs2find:
 	go run ./cmd/cs2find $(ARGS)
+
+# Runtime-state paths — resolved exactly like the app (adrg/xdg): env wins,
+# XDG defaults below. Setting XDG_* (env or `make XDG_DATA_HOME=…`) selects
+# WHICH instance gets cleaned.
+XDG_DATA_HOME   := $(if $(XDG_DATA_HOME),$(XDG_DATA_HOME),$(HOME)/.local/share)
+XDG_CONFIG_HOME := $(if $(XDG_CONFIG_HOME),$(XDG_CONFIG_HOME),$(HOME)/.config)
+XDG_CACHE_HOME  := $(if $(XDG_CACHE_HOME),$(XDG_CACHE_HOME),$(HOME)/.cache)
+APP_DATA   := $(XDG_DATA_HOME)/$(APP)
+APP_CONFIG := $(XDG_CONFIG_HOME)/$(APP)
+APP_CACHE  := $(XDG_CACHE_HOME)/$(APP)
+
+# deep-clean — DESTRUCTIVE runtime-state wipe (library DB included). Refuses
+# without CONFIRM=1 and while a spectra process is running; cleans ONLY the
+# instance selected by the current XDG_* environment. Not a prerequisite of
+# anything.
+deep-clean: clean
+	@set -eu; \
+	if [ "$$(uname -s)" != "Linux" ]; then \
+	  echo "deep-clean: not implemented on $$(uname -s) — delete \$$(LOCALAPPDATA)/spectra (XDG_* are honored there too)." >&2; exit 1; \
+	fi; \
+	for d in "$(APP_DATA)" "$(APP_CONFIG)" "$(APP_CACHE)"; do \
+	  [ -n "$$d" ] && [ "$$(basename "$$d")" = "$(APP)" ] || \
+	    { echo "refusing suspicious path: '$$d'" >&2; exit 1; }; \
+	done; \
+	if [ "$${CONFIRM:-}" != "1" ]; then \
+	  echo "deep-clean DELETES this instance's runtime state:"; \
+	  for d in "$(APP_DATA)" "$(APP_CONFIG)" "$(APP_CACHE)"; do \
+	    printf '  %-40s %s\n' "$$d" "$$(du -sh "$$d" 2>/dev/null | cut -f1 || true)"; \
+	  done; \
+	  echo "  * $(APP_DATA)/spectra.db = the imported library (IRRECOVERABLE)"; \
+	  echo "  * maps/icons/sounds re-extract from the CS2 install (minutes)"; \
+	  echo "Re-run with CONFIRM=1. XDG_DATA_HOME/XDG_CONFIG_HOME select the instance."; \
+	  exit 1; \
+	fi; \
+	if pgrep -x "$(APP)" >/dev/null 2>&1; then \
+	  echo "error: a $(APP) process is running — kill it first (pkill -x $(APP))." >&2; exit 1; \
+	fi; \
+	rm -rf "$(APP_DATA)" "$(APP_CONFIG)" "$(APP_CACHE)"; \
+	echo "removed data+config: $(APP_DATA) $(APP_CONFIG) $(APP_CACHE)"
