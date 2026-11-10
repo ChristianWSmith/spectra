@@ -358,7 +358,7 @@ test('roundClock: unknown round / negative offset → match-relative, never nega
   assert.equal(roundClock(NaN, { number: 1, startTick: 1200 }, 64), '—');
 });
 
-// --- fmtDate (the Library "Extracted" column / match Details) --------------
+// --- fmtDate (the Library "Imported" column / match Details) --------------
 // matches.extracted_at is NULL until SaveExtracted writes it (status
 // ready), and store.nullTime turns that NULL into the Go zero time.Time,
 // which JSON serializes as "0001-01-01T00:00:00Z". A queued/parsing/failed

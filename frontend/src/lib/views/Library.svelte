@@ -83,7 +83,7 @@
   // Import that runs through the same pipeline as drag-and-drop, plus a
   // confirmed delete-from-disk for the file itself. A file the queue is
   // already working on flips to the live job's chip with Import replaced
-  // by Dequeue/Cancel (pendingDemoPaths) — see the row markup below.
+  // by Remove/Cancel (pendingDemoPaths) — see the row markup below.
   let demoFiles = $state([]);
   let demoScanning = $state(false); // UI: refresh button + "Scanning…"
   // Non-reactive in-flight guard: refreshDemoFiles runs inside the mount
@@ -276,20 +276,20 @@
   // dedupes on it.
   const pendingDemoPaths = $derived(new Map(pendingImports.map((j) => [j.path, j])));
 
-  // Cancel vs Dequeue: one backend call (cancelJob), two labels — a
-  // queued job is waiting in line (dequeue removes it), a running one is
-  // being worked (cancel aborts it).
+  // Cancel vs Remove: one backend call (cancelJob), two labels — a
+  // queued job is waiting in line (Remove takes it out), a running one
+  // is being worked (Cancel stops it).
   function cancelLabel(status) {
-    return status === 'queued' ? 'Dequeue' : 'Cancel';
+    return status === 'queued' ? 'Remove' : 'Cancel';
   }
 
   function cancelTitle(status) {
     return status === 'queued'
-      ? 'Remove this job from the queue — nothing has been read yet'
-      : 'Abort the running job now';
+      ? 'Take it out of line — nothing has been read yet'
+      : 'Stop this import now';
   }
 
-  // Cancel/Dequeue on any Library row (match row, synthetic import row,
+  // Cancel/Remove on any Library row (match row, synthetic import row,
   // import-dir row): after it lands the row must be usable again — the
   // backend restores/hands back the match state (see library.Cancel).
   async function onCancelJob(id, ev) {
@@ -405,9 +405,9 @@
     notice = '';
     if (
       !(await confirmDlg?.ask({
-        title: 'Delete extracted data?',
+        title: 'Delete this match’s data?',
         message:
-          'Removes this match’s extracted data (rounds, events, sidecars) from Spectra. ' +
+          'Removes everything Spectra saved for this match (rounds, events, voice, positions). ' +
           'The demo file itself is not touched.',
         confirmLabel: 'Delete',
       }))
@@ -448,7 +448,7 @@
   // on screen. The row's own Reprocess/Delete buttons stopPropagation on
   // click and are disabled while the row is NOT openable (parsing/queued
   // — re-running either against a row mid-parse would race the job), with
-  // a title hint saying why; the row's Cancel/Dequeue control is the one
+  // a title hint saying why; the row's Cancel/Remove control is the one
   // button that stays ENABLED while the row is locked (it is the way out
   // of that state — see onCancelJob). Enter on them must not navigate the
   // row either (the keydown bubbles up to the <tr>), hence the target
@@ -588,7 +588,7 @@
         <div class="problem-row">
           <StatusChip status={job.status} />
           <span class="mono path" title={job.path}>{basename(job.path)}</span>
-          <span class="error-text">{job.error || 'no error message'}</span>
+          <span class="error-text">{job.error || 'no details'}</span>
         </div>
       {/each}
     </section>
@@ -617,7 +617,7 @@
             <SortTh label="Rounds" cls="num" active={sortKey === 'rounds'} {desc} onclick={() => toggleSort('rounds')} />
             <SortTh label="Duration" cls="num" active={sortKey === 'duration'} {desc} onclick={() => toggleSort('duration')} />
             <SortTh label="Size" cls="num" active={sortKey === 'size'} {desc} onclick={() => toggleSort('size')} />
-            <SortTh label="Extracted" active={sortKey === 'extracted_at'} {desc} onclick={() => toggleSort('extracted_at')} />
+            <SortTh label="Imported" active={sortKey === 'extracted_at'} {desc} onclick={() => toggleSort('extracted_at')} />
             <SortTh label="Status" active={sortKey === 'status'} {desc} onclick={() => toggleSort('status')} />
             <th scope="col"><span class="sr-only">Actions</span></th>
           </tr>
@@ -689,7 +689,7 @@
                 {/if}
               </td>
               <td class="row-actions" onclick={(e) => e.stopPropagation()}>
-                <!-- Cancel/Dequeue exists only while a job owns this row
+                <!-- Cancel/Remove exists only while a job owns this row
                      (a queued reprocess, a running parse) — the one
                      control that unlocks it again. -->
                 {#if progressByMatch.has(m.id)}
@@ -706,14 +706,14 @@
                   title={!isOpenable(m)
                     ? 'Available once parsing finishes'
                     : "Re-parse the demo — from Spectra's copy when one exists"}
-                  onclick={(e) => onReprocess(m.id, e)}>Reprocess</button
+                  onclick={(e) => onReprocess(m.id, e)}>Re-parse</button
                 >
                 <button
                   class="btn small danger"
                   disabled={!isOpenable(m)}
                   title={!isOpenable(m)
                     ? 'Available once parsing finishes'
-                    : 'Delete extracted data'}
+                    : 'Delete this match’s data'}
                   onclick={(e) => onDelete(m.id, e)}>Delete</button
                 >
               </td>
@@ -738,7 +738,7 @@
        backend omits recognised imports, so deleting a match brings its
        demo back here. One Import button per row runs the ordinary
        pipeline (hash dedupe, row status chip); a file with a pending job
-       flips to that job's chip and swaps Import for its Dequeue/Cancel
+       flips to that job's chip and swaps Import for its Remove/Cancel
        (pendingDemoPaths, sourced from store.FindPendingJobByPath); Delete
        from disk removes the file itself, behind a confirmation. -->
   <section class="panel" aria-label="Demos from your import dirs">
@@ -782,7 +782,7 @@
           {#each demoFiles as f (f.path)}
             <!-- A pending import for this exact path flips the row: the
                  chip shows the live job (queued → running) and Import is
-                 replaced by its Dequeue/Cancel — the same control the
+                 replaced by its Remove/Cancel — the same control the
                  synthetic row above offers, so the file can never be
                  enqueued twice from here. -->
             {@const pj = pendingDemoPaths.get(f.path)}
@@ -803,14 +803,14 @@
                     status={pj.status}
                     progress={pj.progress}
                     stage={pj.stage}
-                    title={pj.error || 'This demo is already in the import pipeline'}
+                    title={pj.error || 'This demo is already being imported'}
                   />
                 {:else}
                   <span
                     class="chip idle"
                     title={f.hashed
                       ? 'Not in the library yet'
-                      : 'Not content-checked yet — importing is safe, duplicates are detected by hash'}
+                      : 'Not compared with the library yet — importing is safe; Spectra spots duplicates itself'}
                     >not imported</span
                   >
                 {/if}

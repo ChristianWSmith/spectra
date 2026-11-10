@@ -627,14 +627,14 @@
              facts); only the encrypted-chat key state stays up here. -->
         <p class="muted match-sub">
           {match.map || '—'}
-          · half {halfScore.first}–{halfScore.second}
+          · first half {halfScore.first}–{halfScore.second}
           · {fmtDuration(match.playbackTimeS)}
           · patch {match.patchVersion}
           · <StatusChip status={match.status || 'ready'} title={match.error || ''} />
           {#if voice && !voice.keyFound && (match.encryptedMessages || 0) > 0}
             <span
               class="chip voice-badge idle"
-              title="Encrypted chat present — .dem.info key not found"
+              title="Encrypted chat present — needs the matching .dem.info file to read it"
               ><span class="codicon codicon-lock"></span></span
             >
           {/if}
@@ -654,7 +654,7 @@
     {#if match.warningsCount > 0 && !warningsDismissed}
       <div class="panel warnings-panel">
         <div class="row-between">
-          <h2>Extraction warnings</h2>
+          <h2>Import warnings</h2>
           <button class="btn small" aria-label="Dismiss warnings" onclick={() => (warningsDismissed = true)}>
             <span class="codicon codicon-close"></span>
           </button>
@@ -662,7 +662,7 @@
         {#if warnings == null}
           <p class="muted" role="status">Loading…</p>
         {:else if warnings.length === 0}
-          <p class="muted" role="status">None — the parser ran clean.</p>
+          <p class="muted" role="status">None — this demo imported cleanly.</p>
         {:else}
           <ul class="warning-list">
             {#each warnings as w, i (i)}
@@ -837,7 +837,7 @@
         <p class="error" role="alert">KAST% unavailable: {combatError}</p>
       {/if}
       {#if metricError}
-        <p class="error" role="alert">Pinned metrics unavailable: {metricError}</p>
+        <p class="error" role="alert">Pinned stats unavailable: {metricError}</p>
       {/if}
       <div class="table-scroll">
         <table class="data-table scoreboard">
@@ -858,7 +858,7 @@
                 <SortTh
                   label={mc.def.title || mc.def.name}
                   cls="num def"
-                  title="{mc.def.doc || mc.def.name}{mc.error ? ' — preview failed: ' + mc.error : ''}"
+                  title="{mc.def.doc || mc.def.name}{mc.error ? ` — couldn’t calculate: ${mc.error}` : ''}"
                   active={sortKey === metricSortKey(mc.def.id)}
                   {desc}
                   onclick={() => toggleSort(metricSortKey(mc.def.id))}
@@ -866,7 +866,7 @@
                   <span class="m5-ib" title={mc.def.doc || ''}><span class="codicon codicon-info"></span></span>
                   <span
                     class="m5-n"
-                    title="sample size: N={mc.totalN} across {mc.rows.length} groups"
+                    title="based on {mc.totalN} rounds across {mc.rows.length} players"
                     >({fmtInt(mc.totalN)})</span
                   >
                   <button
@@ -1009,7 +1009,7 @@
       </div>
     {:else if tab === 'Rounds'}
       {#if classError}
-        <p class="error" role="alert">Round classes unavailable: {classError}</p>
+        <p class="error" role="alert">Round types unavailable: {classError}</p>
       {/if}
       <div class="table-scroll">
         <table class="data-table">
@@ -1018,14 +1018,14 @@
               <th
                 scope="col"
                 class="num cmp-cmp-col"
-                title="Tick rounds to compare (max 4 non-warmup rounds)"
+                title="Select rounds to compare (up to 4 — knife/warmup rounds excluded)"
               >Cmp</th>
               <th scope="col" class="num">№</th>
               <th scope="col">Winner</th>
               <th
                 scope="col"
                 class="def"
-                title="Buy/round classification (pistol/anti-eco/eco/force/full/bonus/save) with the rule text and rule_version — hover a chip"
+                title="Buy type (pistol/anti-eco/eco/force/full/bonus/save) with the rule text and rules version — hover a chip"
               >Class</th>
               <th scope="col">Reason</th>
               <th scope="col" class="num">Duration</th>
@@ -1064,7 +1064,7 @@
                   {/if}
                 </td>
                 <td class="num"
-                  >{roundIndexLabel(r)}{#if r.warmup}<span class="chip">wu</span>{:else if r.pregame}<span
+                  >{roundIndexLabel(r)}{#if r.warmup}<span class="chip" title="warmup round — not counted play">warmup</span>{:else if r.pregame}<span
                       class="chip"
                       title="pre-match knife round — not counted play"
                       >knife</span
@@ -1079,7 +1079,7 @@
                   {#if cls}
                     <span
                       class="chip cmp-class"
-                      title="{cls.explanation || 'classified'} (rule v{cls.ruleVersion}, confidence {Math.round((cls.confidence || 0) * 100)}%)"
+                      title="{cls.explanation || 'classified'} (rules v{cls.ruleVersion} — {Math.round((cls.confidence || 0) * 100)}% sure)"
                       >{cls.label}</span
                     >
                   {:else}
@@ -1162,7 +1162,7 @@
           <div><dt>Tickrate</dt><dd>{fmt1(match.tickRate)} Hz</dd></div>
           <div><dt>Frames</dt><dd class="num">{fmtInt(match.frames)}</dd></div>
           <div><dt>Size</dt><dd>{fmtBytes(match.size)}</dd></div>
-          <div><dt>Extracted</dt><dd>{fmtDate(match.extractedAt)}</dd></div>
+          <div><dt>Imported</dt><dd>{fmtDate(match.extractedAt)}</dd></div>
           <div><dt>Parser</dt><dd class="mono">{match.parserVersion || '—'}</dd></div>
           <div>
             <dt>Voice</dt>
@@ -1172,9 +1172,9 @@
               {:else if voice.hasVoice}
                 <span
                   class="chip voice-badge busy"
-                  title="Voice: {fmtInt(voice.chunkCount)} chunks across {voice.playerCount} players — Opus, decoded on demand"
+                  title="Voice recorded for {voice.playerCount} players — Opus, played back live"
                   ><span class="codicon codicon-unmute"></span>
-                  {(voice.chunkCount / 1000).toFixed(1)}k chunks · {voice.playerCount} players</span
+                  {voice.playerCount} players · voice recorded</span
                 >
               {:else}
                 <span

@@ -9,6 +9,22 @@
 // beside it — the ONE progress widget, no second bar anywhere.
 let { status = '', progress = null, title = '', stage = '' } = $props();
 
+// Stage constants are the Go data contract (models.StageHash …); they
+// are translated to player language HERE, at the display layer, so the
+// payload values (jobprogress.test.js) stay untouched. Unknown stages
+// pass through raw.
+const STAGE_LABELS = {
+  hash: 'checking file',
+  copy: 'copying',
+  decompress: 'unpacking',
+  parse: 'reading demo',
+  store: 'saving',
+  analyze: 'analyzing',
+  queued: 'waiting',
+};
+
+let stageText = $derived(STAGE_LABELS[stage] || stage);
+
 const LABELS = {
   ready: 'ready',
   queued: 'queued',
@@ -38,7 +54,7 @@ let palette = $derived(PALETTE[status] || 'idle');
 let tip = $derived.by(() => {
   const parts = [];
   if (title) parts.push(title);
-  if (stage) parts.push(stage);
+  if (stage) parts.push(stageText);
   if (pct != null && pct > 0 && pct < 100) parts.push(pct + '%');
   return parts.join(' · ');
 });
@@ -51,9 +67,9 @@ let tip = $derived.by(() => {
       <span class="chip-bar-fill" class:indeterminate={pct === 0} style="width:{pct || 100}%"></span>
     </span>
     {#if pct > 0 && pct < 100}
-      <span class="chip-pct">{stage ? stage + ' ' : ''}{pct}%</span>
+      <span class="chip-pct">{stage ? stageText + ' ' : ''}{pct}%</span>
     {:else if pct === 0 && stage}
-      <span class="chip-pct">{stage}</span>
+      <span class="chip-pct">{stageText}</span>
     {/if}
   {/if}
 </span>
