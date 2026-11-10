@@ -336,6 +336,419 @@ var soundTable = map[string][]string{
 	// BaseGrenade.Explode — the HE files above — so its cue is remapped
 	// to "HE Grenade" at cue build (sfx.js grenadeCues); there is no
 	// decoy-specific detonation file to extract (CS2.md "Sound assets").
+
+	// ---- Grenade BOUNCE sounds (the replay's bounce cues) -------------
+	// Each group is the bounce SOUND EVENT's own .vsnd set — the canonical
+	// event→file technique (cs2find events bounce, verified against the
+	// local install 2026-11-09): HEGrenade/Flashbang/SmokeGrenade/
+	// Molotov/IncGrenade.Bounce, exactly the five names extract's SOS
+	// handler stores as models.EventGrenadeBounce rows (there is no decoy
+	// bounce, so no Decoy group). One file per event where the game has
+	// one (HE/flash/smoke), variants where it has several (molotov 3,
+	// incendiary 4) so repeated bounces do not loop the same sample —
+	// the throw-group convention above.
+	"HE Grenade bounce":    {"sounds/weapons/hegrenade/he_bounce-1.vsnd_c"},
+	"Flashbang bounce":     {"sounds/weapons/flashbang/grenade_hit1.vsnd_c"},
+	"Smoke Grenade bounce": {"sounds/weapons/smokegrenade/grenade_hit1.vsnd_c"},
+	"Molotov bounce": {
+		"sounds/physics/glass/glass_bottle_impact_hard1.vsnd_c",
+		"sounds/physics/glass/glass_bottle_impact_hard2.vsnd_c",
+		"sounds/physics/glass/glass_bottle_impact_hard3.vsnd_c",
+	},
+	"Incendiary Grenade bounce": {
+		"sounds/physics/weapons/weapon_incendiary_impact_01.vsnd_c",
+		"sounds/physics/weapons/weapon_incendiary_impact_02.vsnd_c",
+		"sounds/physics/weapons/weapon_incendiary_impact_03.vsnd_c",
+		"sounds/physics/weapons/weapon_incendiary_impact_04.vsnd_c",
+	},
+	// ---- Player sounds (footsteps / landings / jumps / fall damage) ----
+	// The asset side of the sound_events table (extract.sos.go): one
+	// `step <material>` group per FILE FAMILY under sounds/player/footsteps
+	// (the shipped vsndevts walker resolves 0 files for `*.StepLeft` names,
+	// so the per-material file lists below are the static result of a
+	// READ-ONLY `cs2find find --prefix sounds/player/footsteps` probe of
+	// the local install, 2026-11-09 — 409 files, indices kept exactly as
+	// shipped, no contiguous-range assumption). Group keys are the family
+	// prefixes verbatim (concrete_ct is the install's only concrete step
+	// set). CT_Silent/T_Silent have no group on purpose: the silent
+	// materials play nothing (their sound_events rows still store the
+	// material as data).
+	"step bass": {
+		"sounds/player/footsteps/bass_01.vsnd_c",
+		"sounds/player/footsteps/bass_02.vsnd_c",
+		"sounds/player/footsteps/bass_03.vsnd_c",
+		"sounds/player/footsteps/bass_04.vsnd_c",
+		"sounds/player/footsteps/bass_05.vsnd_c",
+		"sounds/player/footsteps/bass_06.vsnd_c",
+		"sounds/player/footsteps/bass_07.vsnd_c",
+		"sounds/player/footsteps/bass_08.vsnd_c",
+		"sounds/player/footsteps/bass_09.vsnd_c",
+		"sounds/player/footsteps/bass_10.vsnd_c",
+	},
+	"step carpet": {
+		"sounds/player/footsteps/carpet_01.vsnd_c",
+		"sounds/player/footsteps/carpet_03.vsnd_c",
+		"sounds/player/footsteps/carpet_04.vsnd_c",
+		"sounds/player/footsteps/carpet_05.vsnd_c",
+		"sounds/player/footsteps/carpet_08.vsnd_c",
+		"sounds/player/footsteps/carpet_09.vsnd_c",
+		"sounds/player/footsteps/carpet_11.vsnd_c",
+		"sounds/player/footsteps/carpet_14.vsnd_c",
+		"sounds/player/footsteps/carpet_15.vsnd_c",
+		"sounds/player/footsteps/carpet_16.vsnd_c",
+		"sounds/player/footsteps/carpet_17.vsnd_c",
+		"sounds/player/footsteps/carpet_18.vsnd_c",
+		"sounds/player/footsteps/carpet_19.vsnd_c",
+		"sounds/player/footsteps/carpet_20.vsnd_c",
+	},
+	"step concrete_ct": {
+		"sounds/player/footsteps/concrete_ct_01.vsnd_c",
+		"sounds/player/footsteps/concrete_ct_02.vsnd_c",
+		"sounds/player/footsteps/concrete_ct_03.vsnd_c",
+		"sounds/player/footsteps/concrete_ct_04.vsnd_c",
+		"sounds/player/footsteps/concrete_ct_05.vsnd_c",
+		"sounds/player/footsteps/concrete_ct_06.vsnd_c",
+		"sounds/player/footsteps/concrete_ct_07.vsnd_c",
+		"sounds/player/footsteps/concrete_ct_08.vsnd_c",
+		"sounds/player/footsteps/concrete_ct_09.vsnd_c",
+		"sounds/player/footsteps/concrete_ct_10.vsnd_c",
+		"sounds/player/footsteps/concrete_ct_11.vsnd_c",
+		"sounds/player/footsteps/concrete_ct_12.vsnd_c",
+		"sounds/player/footsteps/concrete_ct_13.vsnd_c",
+		"sounds/player/footsteps/concrete_ct_14.vsnd_c",
+		"sounds/player/footsteps/concrete_ct_15.vsnd_c",
+		"sounds/player/footsteps/concrete_ct_16.vsnd_c",
+		"sounds/player/footsteps/concrete_ct_17.vsnd_c",
+	},
+	"step dirt": {
+		"sounds/player/footsteps/dirt_01.vsnd_c",
+		"sounds/player/footsteps/dirt_02.vsnd_c",
+		"sounds/player/footsteps/dirt_03.vsnd_c",
+		"sounds/player/footsteps/dirt_04.vsnd_c",
+		"sounds/player/footsteps/dirt_05.vsnd_c",
+		"sounds/player/footsteps/dirt_06.vsnd_c",
+		"sounds/player/footsteps/dirt_07.vsnd_c",
+		"sounds/player/footsteps/dirt_08.vsnd_c",
+		"sounds/player/footsteps/dirt_09.vsnd_c",
+		"sounds/player/footsteps/dirt_10.vsnd_c",
+		"sounds/player/footsteps/dirt_11.vsnd_c",
+		"sounds/player/footsteps/dirt_12.vsnd_c",
+		"sounds/player/footsteps/dirt_13.vsnd_c",
+		"sounds/player/footsteps/dirt_14.vsnd_c",
+	},
+	"step glass": {
+		"sounds/player/footsteps/glass_01.vsnd_c",
+		"sounds/player/footsteps/glass_07.vsnd_c",
+		"sounds/player/footsteps/glass_08.vsnd_c",
+		"sounds/player/footsteps/glass_09.vsnd_c",
+		"sounds/player/footsteps/glass_10.vsnd_c",
+		"sounds/player/footsteps/glass_11.vsnd_c",
+		"sounds/player/footsteps/glass_12.vsnd_c",
+		"sounds/player/footsteps/glass_13.vsnd_c",
+	},
+	"step grass": {
+		"sounds/player/footsteps/grass_01.vsnd_c",
+		"sounds/player/footsteps/grass_02.vsnd_c",
+		"sounds/player/footsteps/grass_03.vsnd_c",
+		"sounds/player/footsteps/grass_04.vsnd_c",
+		"sounds/player/footsteps/grass_05.vsnd_c",
+		"sounds/player/footsteps/grass_06.vsnd_c",
+		"sounds/player/footsteps/grass_07.vsnd_c",
+		"sounds/player/footsteps/grass_08.vsnd_c",
+		"sounds/player/footsteps/grass_09.vsnd_c",
+		"sounds/player/footsteps/grass_10.vsnd_c",
+		"sounds/player/footsteps/grass_11.vsnd_c",
+		"sounds/player/footsteps/grass_12.vsnd_c",
+		"sounds/player/footsteps/grass_13.vsnd_c",
+	},
+	"step gravel": {
+		"sounds/player/footsteps/gravel_01.vsnd_c",
+		"sounds/player/footsteps/gravel_02.vsnd_c",
+		"sounds/player/footsteps/gravel_03.vsnd_c",
+		"sounds/player/footsteps/gravel_04.vsnd_c",
+		"sounds/player/footsteps/gravel_05.vsnd_c",
+		"sounds/player/footsteps/gravel_06.vsnd_c",
+		"sounds/player/footsteps/gravel_07.vsnd_c",
+		"sounds/player/footsteps/gravel_08.vsnd_c",
+		"sounds/player/footsteps/gravel_09.vsnd_c",
+		"sounds/player/footsteps/gravel_10.vsnd_c",
+	},
+	"step ladder": {
+		"sounds/player/footsteps/ladder_01.vsnd_c",
+		"sounds/player/footsteps/ladder_02.vsnd_c",
+		"sounds/player/footsteps/ladder_03.vsnd_c",
+		"sounds/player/footsteps/ladder_04.vsnd_c",
+		"sounds/player/footsteps/ladder_05.vsnd_c",
+		"sounds/player/footsteps/ladder_06.vsnd_c",
+		"sounds/player/footsteps/ladder_08.vsnd_c",
+		"sounds/player/footsteps/ladder_09.vsnd_c",
+		"sounds/player/footsteps/ladder_10.vsnd_c",
+		"sounds/player/footsteps/ladder_11.vsnd_c",
+		"sounds/player/footsteps/ladder_12.vsnd_c",
+	},
+	"step ladder_wood": {
+		"sounds/player/footsteps/ladder_wood_01.vsnd_c",
+		"sounds/player/footsteps/ladder_wood_02.vsnd_c",
+		"sounds/player/footsteps/ladder_wood_03.vsnd_c",
+		"sounds/player/footsteps/ladder_wood_04.vsnd_c",
+		"sounds/player/footsteps/ladder_wood_05.vsnd_c",
+		"sounds/player/footsteps/ladder_wood_06.vsnd_c",
+		"sounds/player/footsteps/ladder_wood_07.vsnd_c",
+		"sounds/player/footsteps/ladder_wood_08.vsnd_c",
+		"sounds/player/footsteps/ladder_wood_09.vsnd_c",
+		"sounds/player/footsteps/ladder_wood_10.vsnd_c",
+		"sounds/player/footsteps/ladder_wood_11.vsnd_c",
+		"sounds/player/footsteps/ladder_wood_12.vsnd_c",
+		"sounds/player/footsteps/ladder_wood_13.vsnd_c",
+		"sounds/player/footsteps/ladder_wood_14.vsnd_c",
+	},
+	"step metal_auto": {
+		"sounds/player/footsteps/metal_auto_01.vsnd_c",
+		"sounds/player/footsteps/metal_auto_02.vsnd_c",
+		"sounds/player/footsteps/metal_auto_03.vsnd_c",
+		"sounds/player/footsteps/metal_auto_04.vsnd_c",
+		"sounds/player/footsteps/metal_auto_05.vsnd_c",
+		"sounds/player/footsteps/metal_auto_06.vsnd_c",
+	},
+	"step metal_chainlink": {
+		"sounds/player/footsteps/metal_chainlink_01.vsnd_c",
+		"sounds/player/footsteps/metal_chainlink_02.vsnd_c",
+		"sounds/player/footsteps/metal_chainlink_03.vsnd_c",
+		"sounds/player/footsteps/metal_chainlink_04.vsnd_c",
+		"sounds/player/footsteps/metal_chainlink_05.vsnd_c",
+		"sounds/player/footsteps/metal_chainlink_06.vsnd_c",
+		"sounds/player/footsteps/metal_chainlink_07.vsnd_c",
+		"sounds/player/footsteps/metal_chainlink_09.vsnd_c",
+	},
+	"step metal_grate": {
+		"sounds/player/footsteps/metal_grate_01.vsnd_c",
+		"sounds/player/footsteps/metal_grate_02.vsnd_c",
+		"sounds/player/footsteps/metal_grate_03.vsnd_c",
+		"sounds/player/footsteps/metal_grate_04.vsnd_c",
+		"sounds/player/footsteps/metal_grate_05.vsnd_c",
+		"sounds/player/footsteps/metal_grate_06.vsnd_c",
+		"sounds/player/footsteps/metal_grate_07.vsnd_c",
+		"sounds/player/footsteps/metal_grate_08.vsnd_c",
+		"sounds/player/footsteps/metal_grate_09.vsnd_c",
+		"sounds/player/footsteps/metal_grate_10.vsnd_c",
+		"sounds/player/footsteps/metal_grate_11.vsnd_c",
+		"sounds/player/footsteps/metal_grate_12.vsnd_c",
+		"sounds/player/footsteps/metal_grate_13.vsnd_c",
+		"sounds/player/footsteps/metal_grate_14.vsnd_c",
+		"sounds/player/footsteps/metal_grate_15.vsnd_c",
+	},
+	"step metal_railing_a": {
+		"sounds/player/footsteps/metal_railing_a_01.vsnd_c",
+		"sounds/player/footsteps/metal_railing_a_02.vsnd_c",
+		"sounds/player/footsteps/metal_railing_a_03.vsnd_c",
+		"sounds/player/footsteps/metal_railing_a_04.vsnd_c",
+		"sounds/player/footsteps/metal_railing_a_05.vsnd_c",
+		"sounds/player/footsteps/metal_railing_a_06.vsnd_c",
+		"sounds/player/footsteps/metal_railing_a_07.vsnd_c",
+		"sounds/player/footsteps/metal_railing_a_08.vsnd_c",
+		"sounds/player/footsteps/metal_railing_a_09.vsnd_c",
+	},
+	"step metal_solid": {
+		"sounds/player/footsteps/metal_solid_35.vsnd_c",
+		"sounds/player/footsteps/metal_solid_36.vsnd_c",
+		"sounds/player/footsteps/metal_solid_37.vsnd_c",
+		"sounds/player/footsteps/metal_solid_38.vsnd_c",
+		"sounds/player/footsteps/metal_solid_39.vsnd_c",
+		"sounds/player/footsteps/metal_solid_40.vsnd_c",
+		"sounds/player/footsteps/metal_solid_41.vsnd_c",
+		"sounds/player/footsteps/metal_solid_42.vsnd_c",
+		"sounds/player/footsteps/metal_solid_43.vsnd_c",
+		"sounds/player/footsteps/metal_solid_44.vsnd_c",
+		"sounds/player/footsteps/metal_solid_45.vsnd_c",
+		"sounds/player/footsteps/metal_solid_46.vsnd_c",
+		"sounds/player/footsteps/metal_solid_47.vsnd_c",
+		"sounds/player/footsteps/metal_solid_48.vsnd_c",
+		"sounds/player/footsteps/metal_solid_49.vsnd_c",
+		"sounds/player/footsteps/metal_solid_50.vsnd_c",
+	},
+	"step metal_vent": {
+		"sounds/player/footsteps/metal_vent_01.vsnd_c",
+		"sounds/player/footsteps/metal_vent_02.vsnd_c",
+		"sounds/player/footsteps/metal_vent_03.vsnd_c",
+		"sounds/player/footsteps/metal_vent_04.vsnd_c",
+		"sounds/player/footsteps/metal_vent_05.vsnd_c",
+		"sounds/player/footsteps/metal_vent_06.vsnd_c",
+	},
+	"step mud": {
+		"sounds/player/footsteps/mud_01.vsnd_c",
+		"sounds/player/footsteps/mud_02.vsnd_c",
+		"sounds/player/footsteps/mud_03.vsnd_c",
+		"sounds/player/footsteps/mud_04.vsnd_c",
+		"sounds/player/footsteps/mud_05.vsnd_c",
+		"sounds/player/footsteps/mud_06.vsnd_c",
+		"sounds/player/footsteps/mud_07.vsnd_c",
+		"sounds/player/footsteps/mud_08.vsnd_c",
+		"sounds/player/footsteps/mud_09.vsnd_c",
+	},
+	"step plastic_barrel": {
+		"sounds/player/footsteps/plastic_barrel_01.vsnd_c",
+		"sounds/player/footsteps/plastic_barrel_02.vsnd_c",
+		"sounds/player/footsteps/plastic_barrel_03.vsnd_c",
+		"sounds/player/footsteps/plastic_barrel_04.vsnd_c",
+		"sounds/player/footsteps/plastic_barrel_05.vsnd_c",
+	},
+	"step puddle": {
+		"sounds/player/footsteps/puddle_01.vsnd_c",
+		"sounds/player/footsteps/puddle_02.vsnd_c",
+		"sounds/player/footsteps/puddle_03.vsnd_c",
+		"sounds/player/footsteps/puddle_04.vsnd_c",
+		"sounds/player/footsteps/puddle_05.vsnd_c",
+		"sounds/player/footsteps/puddle_06.vsnd_c",
+		"sounds/player/footsteps/puddle_07.vsnd_c",
+		"sounds/player/footsteps/puddle_08.vsnd_c",
+		"sounds/player/footsteps/puddle_09.vsnd_c",
+	},
+	"step puddle_small": {
+		"sounds/player/footsteps/puddle_small_01.vsnd_c",
+		"sounds/player/footsteps/puddle_small_02.vsnd_c",
+		"sounds/player/footsteps/puddle_small_03.vsnd_c",
+		"sounds/player/footsteps/puddle_small_04.vsnd_c",
+		"sounds/player/footsteps/puddle_small_05.vsnd_c",
+		"sounds/player/footsteps/puddle_small_06.vsnd_c",
+		"sounds/player/footsteps/puddle_small_07.vsnd_c",
+	},
+	"step rubber": {
+		"sounds/player/footsteps/rubber_03.vsnd_c",
+		"sounds/player/footsteps/rubber_04.vsnd_c",
+		"sounds/player/footsteps/rubber_05.vsnd_c",
+		"sounds/player/footsteps/rubber_06.vsnd_c",
+		"sounds/player/footsteps/rubber_07.vsnd_c",
+		"sounds/player/footsteps/rubber_08.vsnd_c",
+		"sounds/player/footsteps/rubber_11.vsnd_c",
+		"sounds/player/footsteps/rubber_12.vsnd_c",
+	},
+	"step sand": {
+		"sounds/player/footsteps/sand_01.vsnd_c",
+		"sounds/player/footsteps/sand_02.vsnd_c",
+		"sounds/player/footsteps/sand_03.vsnd_c",
+		"sounds/player/footsteps/sand_04.vsnd_c",
+		"sounds/player/footsteps/sand_05.vsnd_c",
+		"sounds/player/footsteps/sand_06.vsnd_c",
+		"sounds/player/footsteps/sand_07.vsnd_c",
+		"sounds/player/footsteps/sand_08.vsnd_c",
+		"sounds/player/footsteps/sand_09.vsnd_c",
+		"sounds/player/footsteps/sand_10.vsnd_c",
+		"sounds/player/footsteps/sand_11.vsnd_c",
+		"sounds/player/footsteps/sand_12.vsnd_c",
+	},
+	"step snow": {
+		"sounds/player/footsteps/snow_01.vsnd_c",
+		"sounds/player/footsteps/snow_02.vsnd_c",
+		"sounds/player/footsteps/snow_03.vsnd_c",
+		"sounds/player/footsteps/snow_04.vsnd_c",
+		"sounds/player/footsteps/snow_05.vsnd_c",
+		"sounds/player/footsteps/snow_06.vsnd_c",
+		"sounds/player/footsteps/snow_07.vsnd_c",
+		"sounds/player/footsteps/snow_08.vsnd_c",
+		"sounds/player/footsteps/snow_09.vsnd_c",
+		"sounds/player/footsteps/snow_10.vsnd_c",
+		"sounds/player/footsteps/snow_11.vsnd_c",
+	},
+	"step tile": {
+		"sounds/player/footsteps/tile_01.vsnd_c",
+		"sounds/player/footsteps/tile_02.vsnd_c",
+		"sounds/player/footsteps/tile_03.vsnd_c",
+		"sounds/player/footsteps/tile_04.vsnd_c",
+		"sounds/player/footsteps/tile_05.vsnd_c",
+		"sounds/player/footsteps/tile_06.vsnd_c",
+		"sounds/player/footsteps/tile_07.vsnd_c",
+		"sounds/player/footsteps/tile_08.vsnd_c",
+		"sounds/player/footsteps/tile_09.vsnd_c",
+		"sounds/player/footsteps/tile_10.vsnd_c",
+		"sounds/player/footsteps/tile_11.vsnd_c",
+		"sounds/player/footsteps/tile_12.vsnd_c",
+		"sounds/player/footsteps/tile_13.vsnd_c",
+		"sounds/player/footsteps/tile_14.vsnd_c",
+	},
+	"step water_entry": {
+		"sounds/player/footsteps/water_entry_01.vsnd_c",
+		"sounds/player/footsteps/water_entry_02.vsnd_c",
+		"sounds/player/footsteps/water_entry_03.vsnd_c",
+		"sounds/player/footsteps/water_entry_04.vsnd_c",
+		"sounds/player/footsteps/water_entry_06.vsnd_c",
+	},
+	"step water_exit": {
+		"sounds/player/footsteps/water_exit_01.vsnd_c",
+		"sounds/player/footsteps/water_exit_02.vsnd_c",
+		"sounds/player/footsteps/water_exit_03.vsnd_c",
+		"sounds/player/footsteps/water_exit_04.vsnd_c",
+		"sounds/player/footsteps/water_exit_05.vsnd_c",
+		"sounds/player/footsteps/water_exit_06.vsnd_c",
+	},
+	"step water_wade": {
+		"sounds/player/footsteps/water_wade_01.vsnd_c",
+		"sounds/player/footsteps/water_wade_02.vsnd_c",
+		"sounds/player/footsteps/water_wade_03.vsnd_c",
+		"sounds/player/footsteps/water_wade_04.vsnd_c",
+		"sounds/player/footsteps/water_wade_05.vsnd_c",
+		"sounds/player/footsteps/water_wade_06.vsnd_c",
+	},
+	"step wet": {
+		"sounds/player/footsteps/wet_01.vsnd_c",
+		"sounds/player/footsteps/wet_02.vsnd_c",
+		"sounds/player/footsteps/wet_03.vsnd_c",
+		"sounds/player/footsteps/wet_04.vsnd_c",
+		"sounds/player/footsteps/wet_05.vsnd_c",
+		"sounds/player/footsteps/wet_06.vsnd_c",
+	},
+	"step wood": {
+		"sounds/player/footsteps/wood_01.vsnd_c",
+		"sounds/player/footsteps/wood_02.vsnd_c",
+		"sounds/player/footsteps/wood_03.vsnd_c",
+		"sounds/player/footsteps/wood_04.vsnd_c",
+		"sounds/player/footsteps/wood_05.vsnd_c",
+		"sounds/player/footsteps/wood_06.vsnd_c",
+		"sounds/player/footsteps/wood_07.vsnd_c",
+		"sounds/player/footsteps/wood_08.vsnd_c",
+		"sounds/player/footsteps/wood_09.vsnd_c",
+		"sounds/player/footsteps/wood_10.vsnd_c",
+		"sounds/player/footsteps/wood_11.vsnd_c",
+		"sounds/player/footsteps/wood_12.vsnd_c",
+		"sounds/player/footsteps/wood_13.vsnd_c",
+		"sounds/player/footsteps/wood_14.vsnd_c",
+		"sounds/player/footsteps/wood_15.vsnd_c",
+	},
+	// Landings: the `land_*` sets (per-material, same probe as the steps),
+	// the jump LAUNCH cue, the team gear landings (Gear.JumpLand.CT/T's own
+	// file sets — suit_ct has no _10 in the install) and the fall-damage
+	// set (Player.DamageFall's sounds/player/damage1..3).
+	"land concrete": {"sounds/player/footsteps/land_concrete_01.vsnd_c"},
+	"jump":          {"sounds/player/footsteps/jump_launch_01.vsnd_c"},
+	"gear CT": {
+		"sounds/player/footsteps/suit_ct_01.vsnd_c",
+		"sounds/player/footsteps/suit_ct_02.vsnd_c",
+		"sounds/player/footsteps/suit_ct_03.vsnd_c",
+		"sounds/player/footsteps/suit_ct_04.vsnd_c",
+		"sounds/player/footsteps/suit_ct_05.vsnd_c",
+		"sounds/player/footsteps/suit_ct_06.vsnd_c",
+		"sounds/player/footsteps/suit_ct_07.vsnd_c",
+		"sounds/player/footsteps/suit_ct_08.vsnd_c",
+		"sounds/player/footsteps/suit_ct_09.vsnd_c",
+	},
+	"gear T": {
+		"sounds/player/footsteps/suit_t_01.vsnd_c",
+		"sounds/player/footsteps/suit_t_02.vsnd_c",
+		"sounds/player/footsteps/suit_t_03.vsnd_c",
+		"sounds/player/footsteps/suit_t_04.vsnd_c",
+		"sounds/player/footsteps/suit_t_05.vsnd_c",
+		"sounds/player/footsteps/suit_t_06.vsnd_c",
+		"sounds/player/footsteps/suit_t_07.vsnd_c",
+		"sounds/player/footsteps/suit_t_08.vsnd_c",
+		"sounds/player/footsteps/suit_t_09.vsnd_c",
+		"sounds/player/footsteps/suit_t_10.vsnd_c",
+		"sounds/player/footsteps/suit_t_11.vsnd_c",
+		"sounds/player/footsteps/suit_t_12.vsnd_c",
+	},
+	"falldamage": {
+		"sounds/player/damage1.vsnd_c",
+		"sounds/player/damage2.vsnd_c",
+		"sounds/player/damage3.vsnd_c",
+	},
 }
 
 // internalSoundGroups — the ONE list of soundTable keys that are neither
@@ -372,6 +785,52 @@ var internalSoundGroups = map[string]bool{
 	// see the soundTable entry for the Music.Match.MatchPoint event →
 	// file mapping).
 	"matchpoint": true,
+	// The five grenade BOUNCE groups (the replay's bounce cues for the
+	// models.EventGrenadeBounce rows — soundTable carries each bounce
+	// soundevent's own file set).
+	"HE Grenade bounce":         true,
+	"Flashbang bounce":          true,
+	"Smoke Grenade bounce":      true,
+	"Molotov bounce":            true,
+	"Incendiary Grenade bounce": true,
+	// The player-sound groups (the asset side of sound_events): one
+	// `step <material>` group per footsteps file family, plus the land /
+	// jump / gear / fall-damage sets. Keys are the literal names the
+	// frontend playback wave addresses (see the soundTable section for
+	// how the file lists were derived).
+	"land concrete":        true,
+	"jump":                 true,
+	"gear CT":              true,
+	"gear T":               true,
+	"falldamage":           true,
+	"step bass":            true,
+	"step carpet":          true,
+	"step concrete_ct":     true,
+	"step dirt":            true,
+	"step glass":           true,
+	"step grass":           true,
+	"step gravel":          true,
+	"step ladder":          true,
+	"step ladder_wood":     true,
+	"step metal_auto":      true,
+	"step metal_chainlink": true,
+	"step metal_grate":     true,
+	"step metal_railing_a": true,
+	"step metal_solid":     true,
+	"step metal_vent":      true,
+	"step mud":             true,
+	"step plastic_barrel":  true,
+	"step puddle":          true,
+	"step puddle_small":    true,
+	"step rubber":          true,
+	"step sand":            true,
+	"step snow":            true,
+	"step tile":            true,
+	"step water_entry":     true,
+	"step water_exit":      true,
+	"step water_wade":      true,
+	"step wet":             true,
+	"step wood":            true,
 }
 
 // soundTableNames is soundTable's keys in sorted order, so extraction
@@ -387,13 +846,15 @@ var soundTableNames = func() []string {
 
 // soundFileToNames is the reverse index for manifest building: extracted
 // filename ("ak47_01.wav") → canonical name(s). Built once from
-// soundTable; a slice because two names COULD share a path (none do today
-// — TestSoundTableFileNamesPinned pins the no-collision property).
+// soundTable through the ONE naming rule (soundStem — a shared basename
+// is disambiguated there, so two groups never share a filename); a slice
+// because two names COULD still share a whole VPK path (none do today —
+// TestSoundTableKeysInIconTable pins the no-collision property).
 var soundFileToNames = func() map[string][]string {
 	m := make(map[string][]string)
 	for name, paths := range soundTable {
 		for _, vp := range paths {
-			stem := strings.TrimSuffix(path.Base(vp), soundSuffix)
+			stem := soundStem(vp) // THE output naming rule (soundStems)
 			// The extension is only known after decoding, so index BOTH
 			// candidate names here; SoundFiles keeps the one on disk.
 			for _, ext := range []string{soundExtWAV, soundExtMP3} {
@@ -404,9 +865,55 @@ var soundFileToNames = func() map[string][]string {
 	return m
 }()
 
+// soundStems maps every soundTable VPK path to its UNIQUE output filename
+// stem. The rule (ONE naming rule — soundStem below is its only reader):
+// the file's basename, PREFIXED with its parent directory when that
+// basename is shared with another table entry. A shared basename would
+// otherwise make the extractor overwrite one group's audio with the
+// other's and merge them in the reverse index — measured when the two
+// bounce groups landed (flashbang/grenade_hit1 vs smokegrenade/
+// grenade_hit1). Stems that need no disambiguation are byte-identical to
+// the plain basename, so every previously extracted file keeps its name.
+var soundStems = buildSoundStems(soundTable)
+
+// buildSoundStems derives soundStems from a table (unit-testable on small
+// tables). Result depends only on the SET of paths, never map order; the
+// test re-checks the derived stems for uniqueness, so a rule that ever
+// produced a second collision fails TestSoundTableKeysInIconTable instead
+// of shipping an overwrite.
+func buildSoundStems(table map[string][]string) map[string]string {
+	byBase := map[string][]string{}
+	total := 0
+	for _, paths := range table {
+		total += len(paths)
+		for _, vp := range paths {
+			base := strings.TrimSuffix(path.Base(vp), soundSuffix)
+			byBase[base] = append(byBase[base], vp)
+		}
+	}
+	out := make(map[string]string, total)
+	for base, paths := range byBase {
+		if len(paths) == 1 {
+			out[paths[0]] = base
+			continue
+		}
+		for _, vp := range paths {
+			dir := strings.ReplaceAll(strings.TrimSuffix(path.Dir(vp), "/"), "/", "_")
+			out[vp] = dir + "_" + base
+		}
+	}
+	return out
+}
+
 // soundStem returns the output filename stem for a VPK path
-// ("sounds/weapons/ak47/ak47_01.vsnd_c" → "ak47_01").
+// ("sounds/weapons/ak47/ak47_01.vsnd_c" → "ak47_01"; a basename shared
+// with another table entry → "<dir>_<basename>", see soundStems). Paths
+// outside soundTable (the dev tool's single-file decodes) keep the plain
+// basename — they are written one at a time and never enter the index.
 func soundStem(vpkPath string) string {
+	if s, ok := soundStems[vpkPath]; ok {
+		return s
+	}
 	return strings.TrimSuffix(path.Base(vpkPath), soundSuffix)
 }
 

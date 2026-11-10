@@ -87,6 +87,12 @@ var modelEventKinds = []string{
 	models.EventBombDefuseAbort,
 	models.EventGrenadeThrow,
 	models.EventGrenade,
+	// grenade_bounce is a grenade projectile BOUNCING off a surface (the
+	// CMsgSosStartSoundEvent bounce family — models.EventGrenadeBounce):
+	// 979 rows on the golden demo after the (source entity, tick, name)
+	// dedupe (1,826 messages), which is the expected diff when this kind
+	// was added — eventTotal 3,407 → 4,386, kinds distinct 18 → 19.
+	models.EventGrenadeBounce,
 	// weapon_drop / weapon_pickup (the dropped-gun/util map evidence):
 	// every golden kill carries an inventory, so weapon_drop is NOT zero
 	// there (~160 rows on de_cache — a gun + at most one util per

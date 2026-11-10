@@ -107,10 +107,41 @@ const (
 	// (analytics/heatmap match EventGrenade exactly), and the replay's
 	// scrubber must not put a det-marker on an activation.
 	EventGrenadeLand = "grenade_land"
-	EventRoundStart  = "round_start"
-	EventRoundEnd    = "round_end"
-	EventConnect     = "player_connect"
-	EventDisconnect  = "player_disconnect"
+	// EventGrenadeBounce marks a grenade projectile BOUNCING off a
+	// surface: a CMsgSosStartSoundEvent for one of the five grenade
+	// bounce soundevents (HEGrenade.Bounce / Flashbang.Bounce /
+	// SmokeGrenade.Bounce / Molotov.Bounce / IncGrenade.Bounce — no
+	// decoy bounce exists), deduplicated per (source entity, tick, name)
+	// because the game fires two SOS messages for most bounces (their
+	// origins differ by <1 u; the first one wins). Row positions come
+	// from packed_params — a bounce whose origin cannot be parsed is
+	// SKIPPED, never stored without a guessed position (missing required
+	// input ⇒ no row). Deliberately NOT an EventGrenade/EventGrenadeLand:
+	// no stat or detonation/landing rule may count a bounce, and the
+	// replay pairs throw → bounces → det by the projectile entity (the
+	// `entity` key in detail_json, shared with grenade_throw/grenade).
+	EventGrenadeBounce = "grenade_bounce"
+	EventRoundStart    = "round_start"
+	EventRoundEnd      = "round_end"
+	EventConnect       = "player_connect"
+	EventDisconnect    = "player_disconnect"
+)
+
+// Sound-event kinds (sound_events.kind) — the classification of one player
+// sound heard as a CMsgSosStartSoundEvent (footsteps, landings, jumps, fall
+// damage). Extracted from the SOS NAME, never guessed (the material/team
+// tokens ride beside them on the row). Keep them stable once shipped.
+const (
+	// SoundStep is a walking/running footstep: `<CT|T>_<Material>.StepLeft`
+	// (the surfaceproperties walkleft/walkright vocabulary).
+	SoundStep = "step"
+	// SoundLand is a landing: `Land_<Material>.StepLeft`, `Land.Thud` and
+	// `Default.Land`.
+	SoundLand = "land"
+	// SoundJump is a jump: `Gear.JumpLand.CT/.T` and `Default.WalkJump`.
+	SoundJump = "jump"
+	// SoundFall is fall damage: `Player.DamageFall*`.
+	SoundFall = "fall"
 )
 
 // Match is the header/lifecycle row for one imported demo (matches table).
@@ -378,6 +409,46 @@ type Chat struct {
 	Decrypted bool `json:"decrypted"`
 }
 
+// SoundEvent is one player sound row (sound_events table): a footstep,
+// landing, jump or fall-damage sound a player pawn made, read from a
+// CMsgSosStartSoundEvent during the parse. The SOS NAME carries the
+// surface data (CS2 puts the material in the event name), so no VPK or
+// surfaceproperties read is needed at import time — imports must work
+// without CS2 installed.
+//
+// SteamID is the attributed participant's SteamID64 string — the SAME
+// join key every other row uses (extract.playerKey; a bot keeps its
+// synthetic 0xFF-prefixed key — this is an event-shaped read, bots are
+// never dropped here). Attribution goes source entity → player pawn →
+// m_hController → participant; a message whose source is -1 or resolves
+// to no participant is SKIPPED — identity is never guessed. Material is
+// the name's surface token exactly as the game spells it ("" when the
+// name carries none: Gear.JumpLand.*, Default.WalkJump,
+// Player.DamageFall*, Land.Thud, Default.Land); TeamPrefix is "ct"/"t"
+// when the name carries a team prefix (CT_/T_/Gear.JumpLand.CT), else
+// "" — the repo's lowercase side vocabulary. Kind is
+// models.SoundStep/SoundLand/SoundJump/SoundFall.
+type SoundEvent struct {
+	MatchID    int64  `json:"matchId"`
+	Tick       int    `json:"tick"`
+	Round      int    `json:"round"`
+	SteamID    string `json:"steamId"`
+	Kind       string `json:"kind"`
+	Material   string `json:"material"`
+	TeamPrefix string `json:"teamPrefix"`
+	SOSName    string `json:"sosName"`
+}
+
+// SoundEventPresence is the match-level "does this match carry player
+// sound data" summary: Total is every sound_events row of the match
+// (0 = none — the UI's footstep-data signal), ByKind the per-kind split
+// (kinds with no rows are absent from the map, never a fabricated 0).
+type SoundEventPresence struct {
+	MatchID int64          `json:"matchId"`
+	Total   int            `json:"total"`
+	ByKind  map[string]int `json:"byKind"`
+}
+
 // Job is one import/reprocess unit (jobs table). Progress is 0..1 over
 // the WHOLE job — job-wide, monotone, NOT per-stage (the Library's
 // StatusChip renders it as one bar from 0 to 100%): 0 means "no determinate
@@ -425,5 +496,9 @@ type ExtractedMatch struct {
 	Events        []Event           `json:"events"`
 	GenericEvents []GenericEvent    `json:"genericEvents"`
 	Chat          []Chat            `json:"chat"`
-	Warnings      []string          `json:"warnings"`
+	// SoundEvents are the player sounds (footsteps/lands/jumps/fall
+	// damage) read from CMsgSosStartSoundEvent — persisted to the
+	// sound_events table by SaveExtracted like every other child.
+	SoundEvents []SoundEvent `json:"soundEvents"`
+	Warnings    []string     `json:"warnings"`
 }

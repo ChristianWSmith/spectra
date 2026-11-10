@@ -280,6 +280,11 @@ const (
 	// selects `id, ` + it + `, decrypted` (decrypted is M4 provenance with
 	// a column default — no writer names it).
 	chatCols = `tick, round, steam_id, name, text, kind, channel`
+
+	// soundEventsCols is the sound_events row WITHOUT match_id (G1); both
+	// SaveExtracted's INSERT and GetSoundEvents' SELECT use this list —
+	// pinned to the DDL by TestColumnListConstsMatchSchema.
+	soundEventsCols = `tick, round, steam_id, kind, material, team_prefix, sos_name`
 )
 
 // SaveExtracted persists a complete extract output for one match in a
@@ -442,6 +447,19 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 	for _, c := range em.Chat {
 		if _, err := chatStmt.Exec(matchID, c.Tick, c.Round, scrub(c.SteamID), scrub(c.Name), scrub(c.Text), scrub(c.Kind), scrub(c.Channel)); err != nil {
 			return fmt.Errorf("store: save extracted: chat: %w", err)
+		}
+	}
+
+	soundStmt, err := tx.Prepare(
+		`INSERT INTO sound_events (match_id, ` + soundEventsCols + `) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+	)
+	if err != nil {
+		return fmt.Errorf("store: save extracted: %w", err)
+	}
+	defer soundStmt.Close()
+	for _, se := range em.SoundEvents {
+		if _, err := soundStmt.Exec(matchID, se.Tick, se.Round, scrub(se.SteamID), scrub(se.Kind), scrub(se.Material), scrub(se.TeamPrefix), scrub(se.SOSName)); err != nil {
+			return fmt.Errorf("store: save extracted: sound_events: %w", err)
 		}
 	}
 

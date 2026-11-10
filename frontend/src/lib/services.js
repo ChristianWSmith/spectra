@@ -378,6 +378,28 @@ export function getChat(matchId, round, player) {
   return MatchService.GetChat(matchId, round, player || '');
 }
 
+// getSoundEvents returns the match's player sounds (footsteps/lands/jumps/
+// fall damage — sound_events) in an INCLUSIVE tick window; either bound
+// <= 0 is open on that side, so (0, 0) reads the whole match. Read-cached
+// like the other single-match reads (flushed with the rest on every
+// spectra:* data event); kind/steam filtering happens in the caller over
+// the returned window.
+export function getSoundEvents(matchId, fromTick, toTick) {
+  return cachedRead('GetSoundEvents', [matchId, fromTick, toTick], () =>
+    MatchService.GetSoundEvents(matchId, fromTick, toTick),
+  );
+}
+
+// getSoundEventPresence returns {matchId, total, byKind} — the "does this
+// match have footstep data" signal (total 0 = none; byKind omits kinds
+// with no rows). Also read-cached: a reprocess replaces the rows and the
+// spectra:* flush makes the next read fresh.
+export function getSoundEventPresence(matchId) {
+  return cachedRead('GetSoundEventPresence', [matchId], () =>
+    MatchService.GetSoundEventPresence(matchId),
+  );
+}
+
 // --- ReplayService ------------------------------------------------------------
 // Bulk position bytes do NOT ride the bindings (base64-inflated); the Replay
 // view fetches them from HTTP /api/sidecar/<matchId>/positions directly.

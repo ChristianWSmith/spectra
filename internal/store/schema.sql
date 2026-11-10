@@ -275,6 +275,32 @@ CREATE INDEX IF NOT EXISTS idx_events_match_kind_tick ON events(match_id, kind, 
 CREATE INDEX IF NOT EXISTS idx_generic_events_match_name ON generic_events(match_id, name);
 CREATE INDEX IF NOT EXISTS idx_chat_match_tick ON chat(match_id, tick);
 
+-- Player sound events: footsteps/lands/jumps/fall damage read from
+-- CMsgSosStartSoundEvent at import (extract.sos.go) — one row per
+-- ATTRIBUTED player sound; a source entity that resolves to no participant
+-- never lands here (identity is never guessed). The SOS NAME carries the
+-- surface data (kind/material/team_prefix/sos_name are copied from it at
+-- extract time), so no material/VPK join exists — imports work without CS2
+-- installed. steam_id is the participant join key (a bot keeps its
+-- synthetic 0xFF-prefixed key: this is an event-shaped read, bots are not
+-- dropped here — readers that want humans-only route through HumanOnly).
+CREATE TABLE IF NOT EXISTS sound_events (
+	match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+	tick INTEGER NOT NULL DEFAULT 0,
+	round INTEGER NOT NULL DEFAULT 0,
+	steam_id TEXT NOT NULL DEFAULT '',
+	kind TEXT NOT NULL DEFAULT '',
+	material TEXT NOT NULL DEFAULT '',
+	team_prefix TEXT NOT NULL DEFAULT '',
+	sos_name TEXT NOT NULL DEFAULT ''
+);
+-- The one access path: GetSoundEvents is always match-scoped and
+-- tick-ordered (inclusive window), and the presence count is the same
+-- match-bounded scan. Deliberately NO (match_id, kind) twin — every reader
+-- of this table is match-bounded, so a second index would only duplicate
+-- match_id's leading column without a distinct query to serve.
+CREATE INDEX IF NOT EXISTS idx_sound_events_match_tick ON sound_events(match_id, tick);
+
 -- Deep match analytics: derived per-match rows, cross-match career
 -- rollups, saved filter presets and the single-row rules config.
 -- Deviations from plan §3 are noted per table; every child table FKs to
