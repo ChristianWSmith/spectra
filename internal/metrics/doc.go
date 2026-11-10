@@ -53,12 +53,12 @@
 //
 // # Sources and the column whitelist
 //
-// The ten v1 sources (columns curated from the store schema,
+// The nine v1 sources (columns curated from the store schema,
 // internal/store/schema.sql — JSON/blob
 // payload columns such as events.detail_json, events.raw_json,
 // utility_events.affected, player_stats.kills_by_weapon are deliberately
 // excluded): events, engagements, rounds, player_stats, player_round_stats,
-// round_economy, clutches, utility_events, chat, voice_chunks.
+// round_economy, clutches, utility_events, chat.
 // See whitelist.go for the exact column sets.
 //
 // # GroupBy
@@ -68,7 +68,7 @@
 // v1 mappings are fixed per source; anything unmapped is an ExprError, never
 // an ambiguous join. Highlights: player → attacker (events, the killer
 // side), a_steam (engagements — the acting player for every v1 kind),
-// steam_id (player_stats/player_round_stats/clutches/chat/voice_chunks),
+// steam_id (player_stats/player_round_stats/clutches/chat),
 // mvp (rounds), thrower (utility_events); team/side → side columns only
 // where the table carries one (player_stats, round_economy); weapon →
 // events.weapon only; round → the round column (number on rounds,

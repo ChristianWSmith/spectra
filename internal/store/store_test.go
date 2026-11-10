@@ -149,7 +149,7 @@ func TestOpenBaselineSchemaIdempotent(t *testing.T) {
 		"round_economy", "events", "generic_events", "chat", "warnings", "jobs",
 		"round_classifications", "player_round_stats", "clutches", "engagements",
 		"utility_events", "player_career", "saved_filters", "analysis_config",
-		"voice_presence", "voice_chunks",
+		"voice_presence",
 		"metrics", "saved_queries", "query_history",
 		"plugins", "round_player_sides",
 	} {

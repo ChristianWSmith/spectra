@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"testing"
 	"time"
@@ -92,23 +93,30 @@ func TestPerfVoiceDevDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetMatch: %v", err)
 	}
-	players, err := st.GetVoicePlayers(matchID)
-	if err != nil || len(players) == 0 {
-		t.Fatalf("GetVoicePlayers: %v, %v", players, err)
+	matchDir := filepath.Join(data.MatchesDir(), strconv.FormatInt(matchID, 10))
+	rd, err := sidecar.OpenVoice(matchDir)
+	if err != nil {
+		t.Fatalf("OpenVoice: %v (the chunk index lives in the sidecar — re-import the match)", err)
 	}
+	players, err := rd.Players()
+	if err != nil || len(players) == 0 {
+		t.Fatalf("Players: %v, %v", players, err)
+	}
+	// Busiest player first (the service's chunks-DESC order).
+	sort.Slice(players, func(i, j int) bool { return players[i].Chunks > players[j].Chunks })
 	steam := players[0].SteamID
-	voiceDir := filepath.Join(data.MatchesDir(), strconv.FormatInt(matchID, 10), sidecar.VoiceDirName)
 	tickRate := m.TickRate
 	if tickRate <= 0 {
 		tickRate = 64
 	}
 
 	// 2-second PCM window from the player's first voice tick (the timeline
-	// engine's request shape; target <20 ms).
+	// engine's request shape; target <20 ms — the budget covers opening
+	// the index per request, no cache).
 	from := players[0].FirstTick
 	to := from + int(2*tickRate)
 	t0 := time.Now()
-	pcm, err := decodeVoicePCM(st, voiceDir, matchID, steam, from, to, tickRate)
+	pcm, err := decodeVoicePCM(matchDir, steam, from, to, tickRate)
 	if err != nil {
 		t.Fatalf("decodeVoicePCM(2s window): %v", err)
 	}
@@ -122,7 +130,7 @@ func TestPerfVoiceDevDB(t *testing.T) {
 	// Full-match WAV: record the wall time (no hard target beyond the
 	// "decode full match < 60 s" background-job budget).
 	t0 = time.Now()
-	full, err := decodeVoicePCM(st, voiceDir, matchID, steam, 0, m.DurationTicks, tickRate)
+	full, err := decodeVoicePCM(matchDir, steam, 0, m.DurationTicks, tickRate)
 	if err != nil {
 		t.Fatalf("decodeVoicePCM(full match): %v", err)
 	}

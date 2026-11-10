@@ -210,7 +210,7 @@ func TestSyntheticCorpusCounts(t *testing.T) {
 	for table, want := range map[string]int{
 		"matches": 3, "players": 24, "player_stats": 24, "rounds": 72,
 		"events": 1944, "player_round_stats": 576, "round_economy": 144,
-		"engagements": 216, "utility_events": 216, "voice_chunks": 36,
+		"engagements": 216, "utility_events": 216,
 		"chat": 12,
 	} {
 		res, err := st.RunReadOnly("SELECT COUNT(*) FROM "+table, nil, 1, 5000)

@@ -27,14 +27,15 @@ const interruptedJobErr = "interrupted by restart"
 
 // childTables are the per-match child tables deleted (oldest dependency
 // first) by SaveExtracted and DeleteMatchData. All FK to matches(id).
-// voice_* tables join here too (M4): SaveExtracted clears them before a
-// reprocess's InsertVoice refills them.
+// voice_presence joins here too (M4): SaveExtracted clears it before a
+// reprocess's SaveVoicePresence refills it. The voice CHUNK index is not
+// a table — it lives in the per-match sidecar (internal/sidecar).
 var childTables = []string{
 	"events", "generic_events", "chat", "round_economy", "rounds",
 	"round_player_sides", "player_stats", "players", "teams", "warnings",
 	"round_classifications", "player_round_stats", "clutches",
 	"engagements", "utility_events",
-	"voice_chunks", "voice_presence",
+	"voice_presence",
 }
 
 // Store is a SQLite-backed persistence handle. The underlying database is

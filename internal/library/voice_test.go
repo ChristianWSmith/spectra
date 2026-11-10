@@ -14,6 +14,7 @@ import (
 
 	"github.com/ChristianWSmith/spectra/internal/extract"
 	"github.com/ChristianWSmith/spectra/internal/models"
+	"github.com/ChristianWSmith/spectra/internal/sidecar"
 )
 
 func TestInfoCompanionCandidates(t *testing.T) {
@@ -158,8 +159,9 @@ func voiceParse(ctx context.Context, r io.Reader, opts extract.ParseOptions) (*m
 }
 
 // TestImportWritesVoice proves the M4 import wiring end to end with a fake
-// parser: voice dir + .opus files land in the sidecar dir and
-// voice_presence/voice_chunks rows land in the store.
+// parser: voice dir + per-player .opus payloads + .idx chunk index land in
+// the sidecar dir, and the store carries the voice_presence header (the
+// index itself is never in SQLite).
 func TestImportWritesVoice(t *testing.T) {
 	im, st := newTestImporter(t, voiceParse)
 	path := writeDemo(t, "voice.dem", "not-really-a-demo")
@@ -187,24 +189,40 @@ func TestImportWritesVoice(t *testing.T) {
 		t.Errorf("OutSampleRate = %d, want %d", presence.OutSampleRate, models.VoiceOutSampleRate)
 	}
 
-	ticks, err := st.GetVoiceTicks(job.MatchID, "")
+	matchDir := filepath.Join(im.sidecarDir, strconv.FormatInt(job.MatchID, 10))
+	rd, err := sidecar.OpenVoice(matchDir)
 	if err != nil {
-		t.Fatalf("GetVoiceTicks: %v", err)
+		t.Fatalf("OpenVoice: %v", err)
 	}
-	if len(ticks) != 6 {
-		t.Fatalf("ticks = %d, want 6", len(ticks))
+	stats, err := rd.Players()
+	if err != nil {
+		t.Fatalf("Players: %v", err)
+	}
+	if len(stats) != 2 {
+		t.Fatalf("index players = %d, want 2", len(stats))
+	}
+	ticks := 0
+	for _, p := range stats {
+		playerTicks, err := rd.Ticks(p.SteamID)
+		if err != nil {
+			t.Fatalf("Ticks(%s): %v", p.SteamID, err)
+		}
+		ticks += len(playerTicks)
+	}
+	if ticks != 6 {
+		t.Fatalf("ticks = %d, want 6", ticks)
 	}
 
-	// Per-player payload files exist with byte-accurate rows.
+	// Per-player payload files exist with byte-accurate index rows.
 	for _, steamID := range []string{"100", "101"} {
-		rows, err := st.GetVoiceChunkRange(job.MatchID, steamID, 0, 1<<30)
+		rows, err := rd.Chunks(steamID, 0, 1<<30)
 		if err != nil {
-			t.Fatalf("GetVoiceChunkRange(%s): %v", steamID, err)
+			t.Fatalf("Chunks(%s): %v", steamID, err)
 		}
 		if len(rows) != 3 {
 			t.Fatalf("rows(%s) = %d, want 3", steamID, len(rows))
 		}
-		voicePath := filepath.Join(im.sidecarDir, strconv.FormatInt(job.MatchID, 10), "voice", steamID+".opus")
+		voicePath := filepath.Join(matchDir, sidecar.VoiceDirName, steamID+".opus")
 		f, err := os.Open(voicePath)
 		if err != nil {
 			t.Fatalf("open voice file %s: %v", steamID, err)

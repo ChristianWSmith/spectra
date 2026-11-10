@@ -13,7 +13,7 @@ import "strings"
 // Sources are the v1 single-source tables (package doc).
 var sources = []string{
 	"events", "engagements", "rounds", "player_stats", "player_round_stats",
-	"round_economy", "clutches", "utility_events", "chat", "voice_chunks",
+	"round_economy", "clutches", "utility_events", "chat",
 }
 
 // sourceColumns is the per-source column whitelist. JSON/blob payload
@@ -69,10 +69,6 @@ var sourceColumns = map[string]map[string]bool{
 		"id", "match_id", "tick", "round", "steam_id", "name", "text", "kind", "channel",
 		"decrypted", "key_source",
 	),
-	"voice_chunks": colSet(
-		"match_id", "seq", "steam_id", "tick", "round", "byte_off", "len",
-		"caster", "section",
-	),
 }
 
 func colSet(cols ...string) map[string]bool {
@@ -91,7 +87,7 @@ var groupTokens = map[string]bool{
 	"side": true, "map": true, "none": true,
 }
 
-// mapGroupExpr is the fixed `map` group for every source (all ten carry
+// mapGroupExpr is the fixed `map` group for every source (all nine carry
 // match_id; the correlated subquery is emitted by us — the user never
 // writes a table name).
 func mapGroupExpr(source string) string {
@@ -139,10 +135,6 @@ var groupColumns = map[string]map[string]string{
 	"chat": {
 		"player": "steam_id", "round": "round",
 		"map": mapGroupExpr("chat"),
-	},
-	"voice_chunks": {
-		"player": "steam_id", "round": "round",
-		"map": mapGroupExpr("voice_chunks"),
 	},
 }
 

@@ -456,7 +456,7 @@
             <p class="bld-hint mono">
               from &lt;table&gt;: count() | sum(col) | avg(col) | ratio(a, b) | stddev(col) |
               percentile(p, col) — tables: events, engagements, rounds, player_stats,
-              player_round_stats, round_economy, clutches, utility_events, chat, voice_chunks
+              player_round_stats, round_economy, clutches, utility_events, chat
             </p>
             {#if exprCheck.state === 'pending'}
               <p class="bld-expr-state muted">checking…</p>

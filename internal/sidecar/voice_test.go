@@ -2,12 +2,14 @@ package sidecar
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
 
 	"github.com/ChristianWSmith/spectra/internal/extract"
+	"github.com/ChristianWSmith/spectra/internal/models"
 )
 
 // voiceStream is a synthetic 3-player chunk stream with deterministic
@@ -76,9 +78,6 @@ func TestVoiceWriterRoundtrip(t *testing.T) {
 		if r.Section != c.Section {
 			t.Errorf("rows[%d].Section = %d, want %d", i, r.Section, c.Section)
 		}
-		if r.Round != 0 {
-			t.Errorf("rows[%d].Round = %d, want 0 (store assigns)", i, r.Round)
-		}
 		if r.Off != offOf[r.SteamID] {
 			t.Errorf("rows[%d].Off = %d, want %d (player %s append offset)", i, r.Off, offOf[r.SteamID], r.SteamID)
 		}
@@ -111,9 +110,133 @@ func TestVoiceWriterRoundtrip(t *testing.T) {
 		}
 	}
 
+	// Close also writes the index: one .idx per player, and the reader
+	// returns exactly the writer's rows — byte-accurate Off/Len, ticks
+	// sorted (capture order here: each player's ticks are increasing).
+	rd, err := OpenVoice(dir)
+	if err != nil {
+		t.Fatalf("OpenVoice: %v", err)
+	}
+	stats, err := rd.Players()
+	if err != nil {
+		t.Fatalf("Players: %v", err)
+	}
+	if len(stats) != 3 {
+		t.Fatalf("player stats = %d, want 3", len(stats))
+	}
+	bySteam := map[string]int{}
+	for _, st := range stats {
+		if st.Bytes != offOf[st.SteamID] {
+			t.Errorf("player %s bytes = %d, want payload size %d", st.SteamID, st.Bytes, offOf[st.SteamID])
+		}
+		if st.Chunks == 0 {
+			t.Errorf("player %s has 0 chunks", st.SteamID)
+		}
+		bySteam[st.SteamID] = st.Chunks
+	}
+	for _, r := range rows {
+		if bySteam[r.SteamID] == 0 {
+			t.Fatalf("no index stats for player %s", r.SteamID)
+		}
+	}
+	for _, want := range []string{"76561198000000001", "76561198000000002", "76561198000000003"} {
+		got, err := rd.Chunks(want, -1<<30, 1<<30)
+		if err != nil {
+			t.Fatalf("Chunks(%s): %v", want, err)
+		}
+		var wantRows []models.VoiceIndexRow
+		for _, r := range rows {
+			if r.SteamID == want {
+				wantRows = append(wantRows, r)
+			}
+		}
+		if len(got) != len(wantRows) {
+			t.Fatalf("chunks(%s) = %d, want %d", want, len(got), len(wantRows))
+		}
+		for i := range wantRows {
+			g, w := got[i], wantRows[i]
+			if g.Tick != w.Tick || g.Off != w.Off || g.Len != w.Len ||
+				g.Caster != w.Caster || g.Section != w.Section || g.SteamID != w.SteamID {
+				t.Errorf("chunks(%s)[%d] = %+v, want %+v", want, i, g, w)
+			}
+		}
+		ticks, err := rd.Ticks(want)
+		if err != nil {
+			t.Fatalf("Ticks(%s): %v", want, err)
+		}
+		for i := 1; i < len(ticks); i++ {
+			if ticks[i] < ticks[i-1] {
+				t.Fatalf("Ticks(%s) not sorted: %v", want, ticks)
+			}
+		}
+	}
+
 	// Close is single-shot (positions.Writer.Close convention).
 	if _, _, err := w.Close(); err == nil {
 		t.Error("second Close: err = nil, want already-closed error")
+	}
+}
+
+// TestVoiceIndexTickSortedWithTies pins the on-disk order: records are
+// sorted by tick at Close, and equal ticks KEEP CAPTURE ORDER (the stable
+// sort) — the reader's binary search depends on the first, and a burst of
+// same-tick speech must replay in the order it was captured.
+func TestVoiceIndexTickSortedWithTies(t *testing.T) {
+	dir := t.TempDir()
+	w, err := NewVoiceWriter(dir)
+	if err != nil {
+		t.Fatalf("NewVoiceWriter: %v", err)
+	}
+	// Capture order deliberately NOT tick order; one player, 1-byte
+	// payloads so Off is the capture index.
+	stream := []extract.VoiceChunk{
+		{Tick: 300, XUID: 7, Payload: []byte{0xAA}}, // off 0
+		{Tick: 100, XUID: 7, Payload: []byte{0xBB}}, // off 1
+		{Tick: 100, XUID: 7, Payload: []byte{0xCC}}, // off 2
+		{Tick: 200, XUID: 7, Payload: []byte{0xDD}}, // off 3
+		{Tick: 100, XUID: 7, Payload: []byte{0xEE}}, // off 4
+	}
+	for _, c := range stream {
+		if err := w.Add(c); err != nil {
+			t.Fatalf("Add: %v", err)
+		}
+	}
+	if _, _, err := w.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+
+	rd, err := OpenVoice(dir)
+	if err != nil {
+		t.Fatalf("OpenVoice: %v", err)
+	}
+	rows, err := rd.Chunks("7", 0, 1<<30)
+	if err != nil {
+		t.Fatalf("Chunks: %v", err)
+	}
+	wantTicks := []int{100, 100, 100, 200, 300}
+	wantOffs := []int64{1, 2, 4, 3, 0} // ties in capture order
+	if len(rows) != len(wantTicks) {
+		t.Fatalf("rows = %d, want %d", len(rows), len(wantTicks))
+	}
+	for i := range wantTicks {
+		if rows[i].Tick != wantTicks[i] || rows[i].Off != wantOffs[i] {
+			t.Errorf("row[%d] = tick %d off %d, want tick %d off %d",
+				i, rows[i].Tick, rows[i].Off, wantTicks[i], wantOffs[i])
+		}
+	}
+
+	// Window read: [100,200] is the three ties plus the 200 chunk.
+	win, err := rd.Chunks("7", 100, 200)
+	if err != nil {
+		t.Fatalf("Chunks(window): %v", err)
+	}
+	if len(win) != 4 {
+		t.Fatalf("window = %d rows, want 4", len(win))
+	}
+	// Beyond the last chunk is an empty window, not an error.
+	empty, err := rd.Chunks("7", 1<<30, 1<<31)
+	if err != nil || len(empty) != 0 {
+		t.Errorf("Chunks(out of range) = %v, %v; want empty, nil", empty, err)
 	}
 }
 
@@ -136,8 +259,13 @@ func TestVoiceWriterTruncatesOnRewrite(t *testing.T) {
 	if fi, err := os.Stat(path); err != nil || fi.Size() != 320 {
 		t.Fatalf("pre-rewrite size = %v %v, want 320", fi, err)
 	}
+	idxPath := filepath.Join(dir, VoiceDirName, "42.idx")
+	if fi, err := os.Stat(idxPath); err != nil || fi.Size() != 5*voiceIdxRecordSize {
+		t.Fatalf("pre-rewrite index size = %v %v, want %d", fi, err, 5*voiceIdxRecordSize)
+	}
 
-	// Rewrite: NewVoiceWriter + os.Create must truncate the stale file.
+	// Rewrite: NewVoiceWriter + os.Create must truncate the stale payload,
+	// and Close must truncate the stale index in place (os.WriteFile).
 	w2, err := NewVoiceWriter(dir)
 	if err != nil {
 		t.Fatalf("NewVoiceWriter (rewrite): %v", err)
@@ -162,6 +290,19 @@ func TestVoiceWriterTruncatesOnRewrite(t *testing.T) {
 	if rows[0].Off != 0 || rows[0].Len != 3 {
 		t.Errorf("rewrite row = %+v, want Off=0 Len=3", rows[0])
 	}
+
+	// The rewritten index carries exactly the one new record.
+	rd, err := OpenVoice(dir)
+	if err != nil {
+		t.Fatalf("OpenVoice (rewrite): %v", err)
+	}
+	got, err := rd.Chunks("42", -1<<30, 1<<30)
+	if err != nil {
+		t.Fatalf("Chunks (rewrite): %v", err)
+	}
+	if len(got) != 1 || got[0].Tick != 99 || got[0].Off != 0 || got[0].Len != 3 {
+		t.Errorf("rewritten index = %+v, want one tick-99 record Off 0 Len 3", got)
+	}
 }
 
 func TestVoiceWriterAddAfterClose(t *testing.T) {
@@ -175,4 +316,114 @@ func TestVoiceWriterAddAfterClose(t *testing.T) {
 	if err := w.Add(extract.VoiceChunk{XUID: 1, Payload: []byte{0}}); err == nil {
 		t.Error("Add after Close: err = nil, want error")
 	}
+}
+
+// TestVoiceReaderNoIndex: absence is ErrNoVoiceIndex — both "no voice
+// directory" and "empty voice directory" mean the match has no voice, and
+// neither is reported as corruption.
+func TestVoiceReaderNoIndex(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := OpenVoice(dir); !errors.Is(err, ErrNoVoiceIndex) {
+		t.Errorf("OpenVoice(no voice dir) = %v, want ErrNoVoiceIndex", err)
+	}
+	if err := os.MkdirAll(filepath.Join(dir, VoiceDirName), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := OpenVoice(dir); !errors.Is(err, ErrNoVoiceIndex) {
+		t.Errorf("OpenVoice(empty voice dir) = %v, want ErrNoVoiceIndex", err)
+	}
+	// Payloads without an index (a crash before Close) is still absence:
+	// nothing can be addressed without the index.
+	if err := os.WriteFile(filepath.Join(dir, VoiceDirName, "7.opus"), []byte{1, 2, 3}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := OpenVoice(dir); !errors.Is(err, ErrNoVoiceIndex) {
+		t.Errorf("OpenVoice(payload only) = %v, want ErrNoVoiceIndex", err)
+	}
+}
+
+// TestVoiceReaderCorruptGuards: an index that EXISTS must fail loud —
+// corrupt is never mistaken for absent (ErrNoVoiceIndex) and the match's
+// other players stay readable only through the error path, not silently
+// short.
+func TestVoiceReaderCorruptGuards(t *testing.T) {
+	// A valid baseline: one player, one 4-byte chunk.
+	writeIndex := func(t *testing.T, payload []byte, idx []byte) string {
+		t.Helper()
+		dir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(dir, VoiceDirName), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		vd := filepath.Join(dir, VoiceDirName)
+		if err := os.WriteFile(filepath.Join(vd, "7.opus"), payload, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(vd, "7"+voiceIdxExt), idx, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return dir
+	}
+	valid := func() []byte {
+		return appendVoiceIdxRecord(nil, models.VoiceIndexRow{Tick: 5, SteamID: "7", Off: 0, Len: 4})
+	}
+
+	t.Run("misaligned index size", func(t *testing.T) {
+		dir := writeIndex(t, []byte{1, 2, 3, 4}, append(valid(), 0xAB))
+		rd, err := OpenVoice(dir)
+		if err != nil {
+			t.Fatalf("OpenVoice (listing only): %v", err)
+		}
+		if _, err := rd.Players(); err == nil || errors.Is(err, ErrNoVoiceIndex) {
+			t.Fatalf("Players(misaligned) = %v, want a corruption error (not ErrNoVoiceIndex)", err)
+		}
+	})
+
+	t.Run("record beyond payload", func(t *testing.T) {
+		// Off 0 + Len 64 against a 4-byte payload.
+		bad := appendVoiceIdxRecord(nil, models.VoiceIndexRow{Tick: 5, SteamID: "7", Off: 0, Len: 64})
+		dir := writeIndex(t, []byte{1, 2, 3, 4}, bad)
+		rd, err := OpenVoice(dir)
+		if err != nil {
+			t.Fatalf("OpenVoice: %v", err) // Open is a listing only
+		}
+		if _, err := rd.Chunks("7", 0, 1<<30); err == nil || errors.Is(err, ErrNoVoiceIndex) {
+			t.Fatalf("Chunks(beyond payload) = %v, want a corruption error", err)
+		}
+	})
+
+	t.Run("index without payload", func(t *testing.T) {
+		dir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(dir, VoiceDirName), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, VoiceDirName, "7"+voiceIdxExt), valid(), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		rd, err := OpenVoice(dir)
+		if err != nil {
+			t.Fatalf("OpenVoice: %v", err)
+		}
+		if _, err := rd.Ticks("7"); err == nil {
+			t.Fatal("Ticks(no payload) = nil, want an error")
+		}
+	})
+
+	t.Run("player without index is empty, not an error", func(t *testing.T) {
+		dir := writeIndex(t, []byte{1, 2, 3, 4}, valid())
+		rd, err := OpenVoice(dir)
+		if err != nil {
+			t.Fatalf("OpenVoice: %v", err)
+		}
+		if rows, err := rd.Chunks("999", 0, 100); err != nil || len(rows) != 0 {
+			t.Errorf("Chunks(unknown player) = %v, %v; want empty, nil", rows, err)
+		}
+		if ticks, err := rd.Ticks("999"); err != nil || len(ticks) != 0 {
+			t.Errorf("Ticks(unknown player) = %v, %v; want empty, nil", ticks, err)
+		}
+		// A non-decimal stem (a path segment arriving in a query string)
+		// never leaves the voice directory — it reads as "no such player".
+		if rows, err := rd.Chunks("../../etc/passwd", 0, 100); err != nil || len(rows) != 0 {
+			t.Errorf("Chunks(path segment) = %v, %v; want empty, nil", rows, err)
+		}
+	})
 }

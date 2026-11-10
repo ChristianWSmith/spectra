@@ -43,7 +43,7 @@ func generateCorpus(n int) string {
 	}
 
 	var (
-		matches, teams, players, pstats, rounds, econ, events, prows, engs, utils, voices, chats []string
+		matches, teams, players, pstats, rounds, econ, events, prows, engs, utils, chats []string
 	)
 	for m := 1; m <= n; m++ {
 		mapName := maps[(m-1)%len(maps)]
@@ -137,10 +137,6 @@ func generateCorpus(n int) string {
 					btoi((i+r)%2 == 0), 50+((i+r)%3)*10, 1000+((i+r)%4)*500))
 			}
 		}
-		for s := 0; s < 12; s++ {
-			voices = append(voices, fmt.Sprintf("(%d,%d,'%s',%d,%d,%d,320,%d,0)",
-				m, s, sid(s%8+1), s*1000, s%24+1, s*320, btoi(s == 0)))
-		}
 		for c := 0; c < 4; c++ {
 			chats = append(chats, fmt.Sprintf("(%d,%d,%d,'%s','%s','gg wp','all')",
 				m, c*400+50, c+1, sid(c+1), names[c]))
@@ -157,7 +153,6 @@ func generateCorpus(n int) string {
 	emit("player_round_stats", "match_id,round,steam_id,name,kills,assists,deaths,traded,survived,kast,dmg,util_dmg,money_start,equip,spent,rule_version", prows)
 	emit("engagements", "match_id,seq,tick,round,kind,a_steam,b_steam,distance,won_by", engs)
 	emit("utility_events", "match_id,seq,tick,round,thrower,thrower_name,kind,damage,flash_ms,site", utils)
-	emit("voice_chunks", "match_id,seq,steam_id,tick,round,byte_off,len,caster,section", voices)
 	emit("chat", "match_id,tick,round,steam_id,name,text,kind", chats)
 	return b.String()
 }

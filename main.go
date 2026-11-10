@@ -663,12 +663,15 @@ func handleExportLibraryDB(w http.ResponseWriter, r *http.Request) {
 
 // handleVoice serves the /api/sidecar/<id>/voice/{pcm,wav} routes.
 func handleVoice(st *store.Store, w http.ResponseWriter, r *http.Request, matchID int64, idStr, kind string) {
-	presence, err := st.GetVoicePresence(matchID)
-	if errors.Is(err, store.ErrNotFound) || (err == nil && presence.ChunkCount == 0) {
-		http.NotFound(w, r)
-		return
-	}
-	if err != nil {
+	matchDir := filepath.Join(data.MatchesDir(), idStr)
+	// The sidecar index is the chunk source: no voice/*.idx is a match
+	// without playable voice (or one imported before the index moved out
+	// of the database) — 404, exactly like the old presence-row gate.
+	if _, err := sidecar.OpenVoice(matchDir); err != nil {
+		if errors.Is(err, sidecar.ErrNoVoiceIndex) {
+			http.NotFound(w, r)
+			return
+		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
@@ -682,7 +685,6 @@ func handleVoice(st *store.Store, w http.ResponseWriter, r *http.Request, matchI
 		http.Error(w, "voice: missing steamId", http.StatusBadRequest)
 		return
 	}
-	voiceDir := filepath.Join(data.MatchesDir(), idStr, sidecar.VoiceDirName)
 	tickRate := m.TickRate
 	if tickRate <= 0 {
 		tickRate = analytics.DefaultTickRate // CS2's fixed simulation rate
@@ -712,7 +714,7 @@ func handleVoice(st *store.Store, w http.ResponseWriter, r *http.Request, matchI
 			http.Error(w, "voice: tick range exceeds 60s window", http.StatusBadRequest)
 			return
 		}
-		pcm, err := decodeVoicePCM(st, voiceDir, matchID, steamID, from, to, tickRate)
+		pcm, err := decodeVoicePCM(matchDir, steamID, from, to, tickRate)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -730,7 +732,7 @@ func handleVoice(st *store.Store, w http.ResponseWriter, r *http.Request, matchI
 		}
 	case "wav":
 		from, to := 0, m.DurationTicks
-		pcm, err := decodeVoicePCM(st, voiceDir, matchID, steamID, from, to, tickRate)
+		pcm, err := decodeVoicePCM(matchDir, steamID, from, to, tickRate)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -763,10 +765,16 @@ func voiceSamplesPerTick(tickRate float64) int {
 // than the tick rate (10 ms Opus vs. 15.6 ms ticks at 64 tick) continue
 // back-to-back instead of clobbering each other at a shared tick
 // offset, while real pauses stay silent — speech stays contiguous and
-// on the timeline. A missing .opus file surfaces as an error; stray
-// undecodable packets are skipped.
-func decodeVoicePCM(st *store.Store, voiceDir string, matchID int64, steamID string, from, to int, tickRate float64) ([]byte, error) {
-	rows, err := st.GetVoiceChunkRange(matchID, steamID, from, to)
+// on the timeline. The sidecar index is opened per request (no cache —
+// TestPerfVoiceDevDB's <20 ms window gate is the budget); a player with
+// no chunks yields silence, a missing .opus file surfaces as an error;
+// stray undecodable packets are skipped.
+func decodeVoicePCM(matchDir string, steamID string, from, to int, tickRate float64) ([]byte, error) {
+	rd, err := sidecar.OpenVoice(matchDir)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := rd.Chunks(steamID, from, to)
 	if err != nil {
 		return nil, err
 	}
@@ -776,7 +784,7 @@ func decodeVoicePCM(st *store.Store, voiceDir string, matchID int64, steamID str
 	if len(rows) == 0 {
 		return pcm, nil
 	}
-	f, err := os.Open(filepath.Join(voiceDir, steamID+".opus"))
+	f, err := os.Open(filepath.Join(matchDir, sidecar.VoiceDirName, steamID+".opus")) //nolint:gosec // rows above prove the stem is the index's decimal one
 	if err != nil {
 		return nil, err
 	}

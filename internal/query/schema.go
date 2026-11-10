@@ -34,7 +34,6 @@ var tableNotes = map[string]string{
 
 	// M4 communications.
 	"voice_presence": "per-match voice index summary (chunk/player/caster counts, key_found)",
-	"voice_chunks":   "voice chunk index: SteamID, tick, byte range, caster flag (audio lives in sidecars)",
 
 	// M5 (this milestone).
 	"metrics":       "custom metric definitions (origin builtin|user|plugin; declarative metric grammar)",

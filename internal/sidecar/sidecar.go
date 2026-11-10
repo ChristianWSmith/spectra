@@ -38,7 +38,9 @@
 //
 // A second, independent stream (state.bin/state.idx) carries sparse
 // per-change player state — see state.go for its layout, rationale and
-// measurement.
+// measurement. Voice is a third, per-player payload pair under voice/ —
+// <steamid>.opus plus its fixed-record chunk index <steamid>.idx — see
+// voice.go (writer + record layout) and voicereader.go (reader).
 package sidecar
 
 import (
