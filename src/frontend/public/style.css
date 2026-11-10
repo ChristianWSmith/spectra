@@ -1525,7 +1525,7 @@ input[type='checkbox']:focus-visible {
    (the back button and the collapsed rail toggle moved OUT to the main
    column's .replay-topbar — its top-left / top-right, spec 7/14; the
    stage's other corners are canvas — renderer.js's region map. The
-   theater-exit button renders only while theater mode is on, bottom-left
+   theater-exit button renders only while theater mode is on, bottom-RIGHT
    of the stage — it is the ONE control that mode leaves standing, so it
    must never be gated away). */
 
@@ -1595,19 +1595,20 @@ input[type='checkbox']:focus-visible {
   line-height: 1.6;
 }
 
-/* Theater-exit button (.rp-theater-exit) — the stage's BOTTOM-LEFT
-   corner while theater mode is on (renderer.js's region map: beside the
-   canvas chat), the ONE control that mode leaves standing. It reuses
+/* Theater-exit button (.rp-theater-exit) — the stage's BOTTOM-RIGHT
+   corner while theater mode is on (renderer.js's region map: the reserved
+   bottom-right slot), the ONE control that mode leaves standing. The
+   canvas chat keeps the bottom-left corner to itself. It reuses
    .btn plus the collapsed rail toggle's chrome (background / hairline /
    radius / shadow verbatim) so it reads as app chrome over the radar;
    .btn's own hover/focus rules stay in force — no second hover
    spelling. It is a SIBLING of the canvas, outside .rp-ctrl-list and
    outside every overlay gate: hiding it would softlock the view (the
    transport is unmounted in theater mode). z-index 2 is the control
-   group's tier — the two never overlap (top-left vs bottom-left). */
+   group's tier — the two never overlap (top-left vs bottom-right). */
 .rp-theater-exit {
   position: absolute;
-  left: 8px;
+  right: 8px;
   bottom: 8px;
   z-index: 2;
   padding: 6px 8px;

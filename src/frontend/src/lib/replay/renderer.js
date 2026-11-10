@@ -3235,16 +3235,16 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   //                   score box yields to it: the feed's widest row is
   //                   measured FIRST every frame (killFeedLayout) and the
   //                   box lays into [leftBound, feedLeft − SCORE_FEED_GAP].
-  //   bottom-left   — in-game chat (drawChat), KILL_FEED_EDGE anchors,
-  //                   PLUS the DOM theater-exit button
-  //                   (Replay.svelte .rp-theater-exit, bottom/left 8 px)
-  //                   while theater mode is on — the stage's only
-  //                   control then, never gated by the overlay toggle.
+  //   bottom-left   — in-game chat (drawChat), KILL_FEED_EDGE anchors.
   //                   The bottom playback readout that used to
   //                   stack above it is gone: follow / loop / skip-freeze
   //                   / camera / packNote are DOM rows of the control
   //                   group, so snapshots and clips carry gameplay only.
-  //   bottom-right  — RESERVED, intentionally empty (documented, no code).
+  //   bottom-right  — the DOM theater-exit button
+  //                   (Replay.svelte .rp-theater-exit, right/bottom 8 px)
+  //                   while theater mode is on — the stage's only
+  //                   control then, never gated by the overlay toggle —
+  //                   otherwise intentionally empty (documented, no code).
   //   above/below   — DOM chrome (.replay-topbar / .replay-transport),
   //                   unchanged.
   // --- HUD -------------------------------------------------------------------

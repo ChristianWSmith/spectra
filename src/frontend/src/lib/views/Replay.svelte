@@ -2879,8 +2879,9 @@
                every overlay-gated block — the one element neither the
                UI toggle nor the control group may ever hide: it is the
                only control left on screen, so hiding it would softlock
-               the view). Bottom-left of the stage — the region map's
-               bottom-left corner (renderer.js), beside the canvas chat. -->
+               the view). Bottom-RIGHT of the stage — the region map's
+               reserved bottom-right corner (renderer.js); the canvas
+               chat keeps the bottom-left corner to itself. -->
           {#if theater}
             <button
               class="btn rp-theater-exit"
@@ -2897,7 +2898,8 @@
                the stage's corners belong to the overlay region map now
                (renderer.js): the DOM control group top-left, the canvas
                score box top-center, the kill feed top-right, the chat
-               bottom-left, bottom-right reserved. -->
+               bottom-left, the theater-exit button bottom-right while
+               theater mode is on. -->
           <!-- Control group: one row per NON-DEFAULT control state
                (ctrlRows — every state already had a mirror, so this adds
                no plumbing). It is the ONE copy of each line: the follow

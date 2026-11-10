@@ -261,7 +261,14 @@
        reload ring beside the icon when one is computing; it is pure
        paint inside the row's fixed height (see .pc-reload below). In
        mode 2 the held indicator rides INSIDE the gun chip, after the
-       ring: gun icon → ring → held icon → (slack) → ammo. -->
+       ring: gun icon → ring → held icon → (slack) → ammo.
+       WIDTH PRESSURE: the killfeed silhouettes are wide (the M4A1-S
+       art is 3:1, the knife 2.4:1), so a long weapon + knife pair can
+       outgrow a narrow column — then the ICONS yield (they shrink:
+       flex-shrink, see the .pc-weapon/.pc-held rules) and the ammo
+       NEVER does (.pc-ammo: flex:none + nowrap) — the mag/reserve
+       readout always renders in full, the art beside it gets smaller
+       instead. -->
   {#snippet reloadRing()}
     {#if reloadProgress != null}
       <span class="pc-reload" aria-hidden="true" title="Reloading">
@@ -587,7 +594,15 @@
      firearm icon takes the line's height at its intrinsic aspect ratio
      (see .pc-weapon .pc-ico below) and the ammo keeps its 9ch floor,
      right-pinned by its auto margin, so neither can wrap a second line
-     or resize the card. */
+     or resize the card.
+     YIELD ORDER: the row's cells may not fit a narrow column (wide
+     silhouette + knife + 9ch ammo), and this row clips overflow — so
+     exactly one side yields: the ammo is flex:none + nowrap (always
+     fully rendered), the icon cells carry flex-shrink with min-width:0
+     (their art scales down via object-fit:contain — never distorted,
+     never clipped). Before that split, EVERY cell was a non-yielder
+     and this overflow:hidden cut the trailing ammo off the card's right
+     edge whenever a long weapon + knife pair outgrew the column. */
   .pc-weapon-row {
     display: flex;
     align-items: center;
@@ -620,11 +635,18 @@
      mean the ratio is the image's own, never distorted. Armor, the
      grenade-inventory row and the C4 badge keep the square 15px cell
      (they are badges, not the line's subject); the held indicator gets
-     the same treatment as the gun below (.pc-held .pc-ico). */
+     the same treatment as the gun below (.pc-held .pc-ico). It is ALSO
+     the row's YIELDER: flex 0 1 auto + min-width:0 let a wide
+     silhouette (the 3:1 M4A1-S art, the 2.4:1 knife) shrink under
+     width pressure instead of pushing the ammo past the row's clip —
+     object-fit keeps the ratio, so the art only renders smaller, never
+     distorted and never clipped. */
   .pc-weapon .pc-ico {
     height: 1.5em;
     width: auto;
     object-fit: contain;
+    flex: 0 1 auto;
+    min-width: 0;
   }
 
   /* The held indicator (knife/util/C4 in hand) takes the SAME
@@ -636,11 +658,16 @@
      .pc-weapon .pc-ico — same declarations, no cascade conflict. The
      shared .pc-ico 15px default above is untouched: armor, grenades
      and C4 keep their square badge cell. Same height pin as the gun
-     rule — keep both in step with .pc-weapon-row's 1.5em. */
+     rule — keep both in step with .pc-weapon-row's 1.5em. The
+     aspect-ratio rule doubles as the yielder, exactly like the gun's
+     above (flex 0 1 auto + min-width:0 — see .pc-ammo for the side
+     that never yields). */
   .pc-held .pc-ico {
     height: 1.5em;
     width: auto;
     object-fit: contain;
+    flex: 0 1 auto;
+    min-width: 0;
   }
 
   /* The mandatory text fallback: full canonical label, slightly smaller
@@ -663,8 +690,14 @@
   /* 9ch reserves the widest real pair ("150 / 200") so a magazine drop
      never reflows the row; margin-left:auto pins the pair to the row's
      right edge (the weapon name that used to absorb the slack is gone —
-     the icon + tooltip carry the weapon now). */
+     the icon + tooltip carry the weapon now). The readout is the row's
+     NEVER-YIELDING cell: flex:none (it never shrinks — the icon cells
+     beside it take every pixel of a tight row) + white-space:nowrap
+     (the mag/reserve pair never breaks into a second line the fixed
+     1.5em row would clip). */
   .pc-ammo {
+    flex: none;
+    white-space: nowrap;
     min-width: 9ch;
     margin-left: auto;
     text-align: right;
@@ -709,14 +742,22 @@
 
   /* The held-item indicator (knife/util/C4 in hand): a BARE icon — no
      text label (its name rides its own title tooltip, and in mode 2 the
-     gun chip's tooltip names the gun). flex:none so it can never
-     squeeze the ammo or move the ammo's auto margin. In mode 2 it rides
-     INSIDE the gun chip right after the icon/ring; in mode 3 it is the
-     row's only chip. Its icon takes the line height at intrinsic ratio
-     (see .pc-held .pc-ico above). The old thin separator (.pc-hsep) is
-     GONE — the chip's 4px gap is the spacing now. */
+     gun chip's tooltip names the gun). In mode 2 it rides INSIDE the
+     gun chip right after the icon/ring; in mode 3 it is the row's only
+     chip. Its icon takes the line height at intrinsic ratio (see
+     .pc-held .pc-ico above). The old thin separator (.pc-hsep) is
+     GONE — the chip's 4px gap is the spacing now.
+     YIELDING: unlike its old flex:none, the indicator is now one of the
+     row's YIELDERS (flex 0 1 auto + min-width:0) — under width
+     pressure it lets its art shrink rather than squeeze the ammo; the
+     ammo's own flex:none (.pc-ammo) is what guarantees the readout can
+     never be squeezed instead. inline-flex makes the span a flex
+     container so the img INSIDE it can shrink within the span (a plain
+     inline span would just overflow it). */
   .pc-held {
-    flex: none;
+    display: inline-flex;
+    flex: 0 1 auto;
+    min-width: 0;
   }
 
   .pc-econ {

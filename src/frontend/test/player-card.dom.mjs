@@ -27,7 +27,10 @@
 // hidden when reloadProgress is null, a grey track + a dasharray-swept
 // arc in the gun chip while reloading, mounted in BOTH weapon-row modes
 // that show a gun, sitting between the gun icon and the held indicator,
-// with the row's fixed-height pins untouched.
+// with the row's fixed-height pins untouched. Section H6 also pins the
+// LONG-LOADOUT yield order (the reported ammo-clipping bug): the ammo
+// cell is the never-yielding one (flex:none + nowrap), the icon cells
+// carry the shrink — structural pins only, jsdom does no layout.
 //
 // jsdom is intentionally not a project dependency; from frontend/ run:
 //   npm i --no-save jsdom
@@ -860,6 +863,99 @@ check(
     q(rootH5, '.pc-weapon')?.getAttribute('title') === 'AK-47 — 30 / 90' &&
     q(rootH5, '.pc-ammo')?.textContent === '30 / 90',
   q(rootH5, '.pc-weapon')?.getAttribute('title'),
+);
+
+// H6 — LONG LOADOUT (the "M4A1-S pushes the ammo off the right edge"
+// report): a wide weapon + knife pair can outgrow a narrow column and
+// this row clips overflow — so the row pins a YIELD ORDER rather than
+// amputating the trailing readout: the ammo cell NEVER yields
+// (flex:none + nowrap) and the icon cells carry the shrink
+// (flex:0 1 auto + min-width:0 — object-fit keeps the art's ratio, it
+// only renders smaller). jsdom performs no layout, so these pins are
+// honestly structural: the rendered cells + full ammo text for the
+// long pair, and the injected CSS rules that are the contract. The row
+// is icon-only BY DESIGN (the name rides the chip tooltip, pinned in A
+// and H1 — there is no name span to ellipsize), so the "truncating
+// cell" pin here is the icon cells' shrink rule, not a text ellipsis.
+// The canonical EquipmentType spelling for the silenced M4 is 'M4A1'
+// (the icon table maps it to m4a1_silencer — the 3:1 silhouette).
+const rootH6 = await show({
+  card: {
+    ...heldBase,
+    state: {
+      ...heldBase.state,
+      weapon: 'Knife',
+      inventory: ['M4A1', 'Knife'], // M4A1-S + knife — the reported pair
+      mainMag: 20,
+      mainReserve: 60,
+    },
+    iconURLs: { ...heldBase.iconURLs, M4A1: '/api/icons/m4a1_silencer.svg' },
+    onToggleMute: () => {},
+  },
+});
+check(
+  'H6 long M4A1-S + knife renders gun icon → knife icon → FULL ammo on the one row',
+  q(rootH6, '.pc-weapon img')?.getAttribute('src') === '/api/icons/m4a1_silencer.svg' &&
+    !!q(rootH6, '.pc-held img') &&
+    q(rootH6, '.pc-ammo')?.textContent === '20 / 60',
+  `${q(rootH6, '.pc-weapon img')?.getAttribute('src')} | ${
+    q(rootH6, '.pc-held img')?.getAttribute('src')
+  } | ${q(rootH6, '.pc-ammo')?.textContent}`,
+);
+const h6Kids = [...q(rootH6, '.pc-weapon-row .pc-weapon').children].map(pcClass);
+check(
+  'H6 chip cells unchanged: icon → held → ammo (no name span, no extra cell)',
+  JSON.stringify(h6Kids) === JSON.stringify(['pc-ico', 'pc-held', 'pc-num pc-ammo']),
+  JSON.stringify(h6Kids),
+);
+check(
+  'H6 the full weapon name rides the tooltip (row stays icon-only)',
+  !q(rootH6, '.pc-wname') &&
+    q(rootH6, '.pc-weapon')?.getAttribute('title') === 'M4A1 — 20 / 60',
+  q(rootH6, '.pc-weapon')?.getAttribute('title'),
+);
+// The CSS halves of the contract, read from the component's own
+// injected sheet (comments stripped first — Svelte keeps them and the
+// prose names selectors the regexes below would otherwise swallow).
+const sheet6 = sheetText().replace(/\/\*[\s\S]*?\*\//g, '');
+const h6AmmoRule = sheet6.match(/\.pc-ammo[^{}]*\{[^}]*\}/)?.[0] || '';
+check(
+  'H6 ammo = the non-yielder: flex:none + white-space:nowrap (9ch floor and auto pin kept)',
+  /flex:\s*none/.test(h6AmmoRule) &&
+    /white-space:\s*nowrap/.test(h6AmmoRule) &&
+    /min-width:\s*9ch/.test(h6AmmoRule) &&
+    /margin-left:\s*auto/.test(h6AmmoRule),
+  h6AmmoRule,
+);
+const h6GunIcoRule = sheet6.match(/\.pc-weapon[^{}]*\.pc-ico[^{}]*\{[^}]*\}/)?.[0] || '';
+const h6HeldIcoRule = sheet6.match(/\.pc-held[^{}]*\.pc-ico[^{}]*\{[^}]*\}/)?.[0] || '';
+check(
+  'H6 both icon cells carry the yield (flex 0 1 auto + min-width:0) beside the non-yielder',
+  /flex:\s*0 1 auto/.test(h6GunIcoRule) &&
+    /min-width:\s*0/.test(h6GunIcoRule) &&
+    /flex:\s*0 1 auto/.test(h6HeldIcoRule) &&
+    /min-width:\s*0/.test(h6HeldIcoRule),
+  `${h6GunIcoRule} || ${h6HeldIcoRule}`,
+);
+const h6HeldSpanRule = sheet6.match(/\.pc-held\.[^{} ]*\s*\{[^}]*\}/)?.[0] || '';
+check(
+  'H6 the held wrapper is a shrinkable flex container (its img can shrink INSIDE it)',
+  /display:\s*inline-flex/.test(h6HeldSpanRule) &&
+    /flex:\s*0 1 auto/.test(h6HeldSpanRule) &&
+    /min-width:\s*0/.test(h6HeldSpanRule),
+  h6HeldSpanRule,
+);
+check(
+  'H6 the row itself still clips + keeps its fixed height (the invariant the yield order protects)',
+  /height:\s*[^;]+;/.test(ruleFor('pc-weapon-row')) && /overflow:\s*hidden/.test(ruleFor('pc-weapon-row')),
+  ruleFor('pc-weapon-row'),
+);
+const h6CardKids = [...q(rootH6, '.pc-card').children].map(pcClass);
+check(
+  'H6 card row order unchanged (money → util → C4 → kit econ row untouched)',
+  JSON.stringify(h6CardKids) ===
+    JSON.stringify(['pc-head', 'pc-hp-row', 'pc-weapon-row', 'pc-econ', 'pc-stats']),
+  JSON.stringify(h6CardKids),
 );
 
 console.log('I. reload ring: hidden when not reloading, a grey arc beside the gun icon while reloading');
