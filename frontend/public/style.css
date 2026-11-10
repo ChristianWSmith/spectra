@@ -1520,9 +1520,10 @@ input[type='checkbox']:focus-visible {
   cursor: grabbing;
 }
 
-/* --- Stage overlays: only the follow chip still floats INSIDE the stage ---
+/* --- Stage overlays: the control group is the only DOM inside the stage ---
    (the back button and the collapsed rail toggle moved OUT to the main
-   column's .replay-topbar — its top-left / top-right, spec 7/14.) */
+   column's .replay-topbar — its top-left / top-right, spec 7/14; the
+   stage's other corners are canvas — renderer.js's region map). */
 
 /* Back button (spec 7): the top bar's FIRST cell — left of the round
    ribbon. It no longer floats over the radar, so the plain .btn chrome
@@ -1554,28 +1555,74 @@ input[type='checkbox']:focus-visible {
   border-color: var(--accent-40);
 }
 
-/* Follow chip — the "Following <player>" overlay on the replay stage.
-   It mirrors the engine's follow state (the ?follow= entry, the camera
-   dropdown's Follow and the F/1-9 keys all land here) and is the dismiss
-   surface for it. TOP-LEFT: the canvas kill feed owns the stage's
-   top-right (right-aligned, up to 6 × 18px from the top edge), so the
-   chip no longer sits under the landmark toggle there; the top-center
-   score box is clear of this corner too. */
-.follow-chip {
+/* Control group (.rp-ctrl-list) — the stage's TOP-LEFT status list, one
+   row per NON-DEFAULT control state (Replay's ctrlRows: Following + its
+   dismiss button, the loop range, skip-freeze, a non-Smart camera and
+   the map-pack note). It REPLACED three copies of those lines: the
+   follow chip (same corner, same backdrop recipe — background, hairline
+   and shadow verbatim), the canvas bottom-left readout and the
+   .note-amber packNote paragraph above the stage. The canvas copies die
+   with the readout, so this list is THE one — snapshots and clips
+   (canvas only) carry gameplay alone.
+   MAX-WIDTH: a percentage resolves against the nearest positioned
+   ancestor's padding box, which is .replay-stage (position: relative)
+   — so `28%` IS a share of the STAGE width, the same basis as the
+   renderer's CTRL_GROUP_BUDGET (0.28 × cssW, see renderer.js's region
+   map). The −8px offsets the group's own left anchor, so its RIGHT
+   edge lands at exactly 28% of the stage; the renderer reserves that
+   share PLUS 8 px as the score box's left bound. Rows ellipsize
+   instead of widening past it. */
+.rp-ctrl-list {
   position: absolute;
   top: 8px;
   left: 8px;
   z-index: 2;
-  gap: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-width: calc(28% - 8px);
   padding: 2px 4px 2px 8px;
   background: rgba(14, 17, 22, 0.85);
-  border-color: var(--accent-40);
-  color: var(--text);
+  border: 1px solid var(--accent-40);
+  border-radius: var(--radius);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  color: var(--text);
+  font-size: 0.78em;
+  line-height: 1.6;
 }
 
-.follow-chip .btn {
-  padding: 0 4px;
+.rp-ctrl-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+/* The row's text is the only shrinking cell: it ellipsizes at the
+   group's max-width while the eye glyph and the dismiss button keep
+   their size. */
+.rp-ctrl-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rp-ctrl-row .codicon {
+  flex: none;
+}
+
+.rp-ctrl-row .btn {
+  flex: none;
+  padding: 0 4px; /* the retired follow-chip's compact dismiss button */
+}
+
+/* The pack-note row — the ONE amber warning in the group: the retired
+   .note-amber paragraph's message as amber TEXT on the group's own
+   backdrop (a nested callout box inside the pill would double the
+   chrome). */
+.rp-ctrl-warn {
+  color: var(--accent);
 }
 
 .replay-side {
@@ -2082,11 +2129,12 @@ input[type='checkbox']:focus-visible {
   white-space: nowrap;
 }
 
-/* Speed / camera popover panels: the same widget chrome as
-   .rp-loop-pop, but a vertical stack of option buttons (the active one
-   rides .btn.primary) instead of the inline from/to input row. */
+/* Speed / camera / follow-player popover panels: the same widget chrome
+   as .rp-loop-pop, but a vertical stack of option buttons (the active
+   one rides .btn.primary) instead of the inline from/to input row. */
 .rp-speed-pop,
 .rp-cam-pop,
+.rp-follow-pop,
 .rp-drops-pop {
   display: flex;
   flex-direction: column;

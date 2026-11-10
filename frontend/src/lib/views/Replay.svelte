@@ -243,6 +243,13 @@
   let speedAnchor = $state(null);
   let camOpen = $state(false);
   let camAnchor = $state(null);
+  // Follow-player popover: the SAME .rp-pop-host / trigger / Popover /
+  // .rp-pop pattern as the camera control above — it replaces the old
+  // native <select> (a foreign object among the icon buttons, like the
+  // speed/camera selects before it) and keeps its slot: only rendered
+  // while camMode is 'follow'.
+  let followOpen = $state(false);
+  let followAnchor = $state(null);
   // The drop-layer popover (between the camera selector and the volume):
   // the SAME .rp-pop-host / Popover / .rp-pop pattern as the camera pop,
   // but MULTI-select — checkboxes over exactly Guns / Utility (the
@@ -294,7 +301,7 @@
   });
 
   // Loop bounds are typed as TIME, not frames: the popover's inputs and
-  // the renderer's `loop:` readout both speak OVERALL MATCH TIME — fmt.js
+  // the control group's `loop:` row both speak OVERALL MATCH TIME — fmt.js
   // fmtClock over tickSeconds measured from the stream's first tick, the
   // SAME basis as scrubTime above (a "1:00" here is the minute the
   // scrubber shows "1:00"). The engine keeps FRAMES (uiLoopFrom/uiLoopTo
@@ -344,7 +351,7 @@
   // startEngine reads it, no rendering depends on it). Empty = no
   // overlay; any fetch failure lands here as [].
   let blindRows = [];
-  // In-game chat lines for the canvas readout (fetch: round -1 = ALL
+  // In-game chat lines for the canvas chat (fetch: round -1 = ALL
   // rounds; the renderer scopes them per round at the playhead). Plain
   // let like blindRows: only startEngine reads it — empty = no chat,
   // any fetch failure lands here as [] (fail-soft, never a load error).
@@ -721,8 +728,9 @@
   // Every filter change navigates: serialize + preserve the entry
   // context (tick/loop/back/follow) + write the hash. sel is entry-only — it is not
   // re-pinned on later filter changes (selection stays local).
-  // keepFollow=false drops the follow param (the chip's dismiss — see
-  // releaseFollow), so a preserved entry context cannot re-arm it.
+  // keepFollow=false drops the follow param (the control group's dismiss
+  // row — see releaseFollow), so a preserved entry context cannot
+  // re-arm it.
   // keepLoop=false drops the loop param instead (the range-edit rule —
   // see onLoopTime): after the user edits a bound the URL must mirror
   // the ENGINE's loop, never resurrect the pre-edit entry range.
@@ -1334,14 +1342,54 @@
     (CAM_MODES.find((m) => m.value === camMode) || CAM_MODES[0]).label,
   );
 
-  // The player Follow last had: the dropdown must never enter Follow
+  // The follow selector's trigger label: the followed player in the
+  // select's own option format ("3. Alpha3"), or the select's
+  // placeholder while camMode is follow with no player (never a settled
+  // state — onFollowPlayer always lands on one — but the button always
+  // has to say something).
+  const followLabel = $derived(
+    uiFollow != null && players[uiFollow]
+      ? `${uiFollow + 1}. ${players[uiFollow].name || `slot ${uiFollow}`}`
+      : 'Follow player…',
+  );
+
+  // The stage's CONTROL GROUP rows (.rp-ctrl-list — the ratified overlay
+  // audit): NON-DEFAULT control states only, each from a mirror that
+  // already exists — zero new plumbing. The group replaced three
+  // scattered copies of the same state: the stage's follow chip (its
+  // dismiss button rides the follow row), the canvas bottom-left readout
+  // (the follow:/loop: lines — snapshots and clips now carry gameplay
+  // only) and the packNote paragraph above the stage (the ONE packNote
+  // is the warning row here). Each kind appears at most once, so the
+  // each-key can be the kind.
+  const ctrlRows = $derived.by(() => {
+    const rows = [];
+    if (uiFollow != null && players[uiFollow]) {
+      rows.push({ kind: 'follow', name: players[uiFollow].name || `slot ${uiFollow}` });
+    }
+    if (uiLoopOn && uiLoopFrom >= 0 && uiLoopTo >= 0) {
+      // Bounds are FRAMES internally (engine.state.loopFrom/loopTo); the
+      // row speaks OVERALL MATCH TIME through the popover inputs' own
+      // derived strings (loopClockOf — fmt.js over tickSeconds), the
+      // exact text the canvas readout used to draw.
+      rows.push({ kind: 'loop', text: `loop: ${loopFromText}–${loopToText}` });
+    }
+    if (uiSkipFreeze) rows.push({ kind: 'skip', text: 'skip freeze: on' });
+    // Smart is the default camera — only a manual/selected mode is worth
+    // a row (camLabel is the popover's own label).
+    if (camMode !== 'smart') rows.push({ kind: 'cam', text: `camera: ${camLabel}` });
+    if (packNote) rows.push({ kind: 'note', text: packNote });
+    return rows;
+  });
+
+  // The player Follow last had: the selector must never enter Follow
   // with NO player (an empty "Follow player…" selection is an unclear
   // state), so switching back to Follow resumes the player the user was
   // already following. Plain (non-reactive) view state — it is only read
   // inside event handlers, never rendered. Free/Smart release the engine
   // follow but must NOT clear this; the mirror below records every
   // non-null follow the engine reports (F/1-9 keys, canvas drag, the
-  // ?follow= entry and the player dropdown all land there).
+  // ?follow= entry and the player popover all land there).
   let lastFollowed = null;
 
   // The renderer's own mode: 'follow' is a dropdown concept — the
@@ -1453,9 +1501,10 @@
     if (engine.state.followSlot !== want) engine.setFollow(want);
   });
 
-  // Dismiss the follow chip: release the camera AND drop ?follow= from
-  // the route (entry context rides the query — navigateFilter preserves
-  // it, so the param has to go for the dismissal to stick).
+  // Dismiss the follow row of the stage's control group: release the
+  // camera AND drop ?follow= from the route (entry context rides the
+  // query — navigateFilter preserves it, so the param has to go for the
+  // dismissal to stick).
   function releaseFollow() {
     engine?.setFollow(null);
     if (query.follow) navigateFilter(filter, { keepFollow: false });
@@ -1782,7 +1831,7 @@
       } catch {
         blindRows = []; // fail-soft — no overlay, never a load error
       }
-      // In-game chat for the canvas readout (drawChat): ALL rounds —
+      // In-game chat for the canvas chat (drawChat): ALL rounds —
       // round -1, the same match-wide read the landmark feed's chat
       // source uses — fetched raw ({tick, round, steamId, name, text};
       // the renderer resolves each speaker's side itself). Fail-soft by
@@ -2132,11 +2181,11 @@
     setPref('skip_freeze', uiSkipFreeze).catch(() => {});
   }
 
-  // The Follow player dropdown (spec 17) — only rendered while camMode
-  // is 'follow'. Selecting a player keeps the camera smooth (smart);
-  // releasing follow itself happens through the chip, the F/1-9 keys or
-  // a manual drag (never an empty option that would strand camMode on
-  // 'follow' with no followSlot).
+  // The Follow player selector (spec 17) — only rendered while camMode
+  // is 'follow'. Picking a player keeps the camera smooth (smart);
+  // releasing follow itself happens through the control group's dismiss
+  // row, the F/1-9 keys or a manual drag (never an empty option that
+  // would strand camMode on 'follow' with no followSlot).
   function onFollowPlayer(e) {
     const v = e.currentTarget.value;
     if (v !== '') {
@@ -2519,9 +2568,10 @@
         </button>
       </div>
     {:else if data}
-      {#if packNote}
-        <p class="note-amber" role="status">{packNote}</p>
-      {/if}
+      <!-- The map-pack note (the old .note-amber paragraph above the
+           stage) moved INTO the stage's control group — the ONE
+           packNote copy; iconNote and the frame-mismatch note keep
+           their paragraphs (nothing else shows them). -->
       {#if iconNote}
         <!-- Icon extraction failed after one attempt (handoff C): cards
              already fell back to text labels; this says why, once. -->
@@ -2550,25 +2600,38 @@
           <!-- The back button and the collapsed landmark-rail toggle
                used to float here (top-left / top-right of the stage);
                both now live in the main column's .replay-topbar above —
-               the stage's corners are left to the canvas overlays (the
-               score box sits top-center, the kill feed top-right). -->
-          {#if uiFollow != null && players[uiFollow]}
-            <!-- Follow chip: the dismiss surface for the camera-follow
-                 state (?follow= entry, the camera dropdown's Follow and
-                 the F/1-9 keys all land here). Top-LEFT of the stage —
-                 the kill feed owns the top-right, so nothing else
-                 claims this corner. -->
-            <span class="chip follow-chip" role="status">
-              <span class="codicon codicon-eye" aria-hidden="true"></span>
-              Following {players[uiFollow].name || `slot ${uiFollow}`}
-              <button
-                class="btn small ghost"
-                aria-label="Stop following {players[uiFollow].name || 'player'}"
-                title="Release the follow camera (F)"
-                onclick={releaseFollow}
-                ><span class="codicon codicon-close"></span></button
-              >
-            </span>
+               the stage's corners belong to the overlay region map now
+               (renderer.js): the DOM control group top-left, the canvas
+               score box top-center, the kill feed top-right, the chat
+               bottom-left, bottom-right reserved. -->
+          <!-- Control group: one row per NON-DEFAULT control state
+               (ctrlRows — every state already had a mirror, so this adds
+               no plumbing). It is the ONE copy of each line: the follow
+               chip's dismiss button (row 1), the retired canvas
+               readout's follow:/loop: text (rows 1/2 — snapshots and
+               clips carry gameplay only now) and the packNote paragraph
+               that used to sit above the stage (the note row). The
+               canvas copy of all three died with the readout. -->
+          {#if ctrlRows.length}
+            <div class="rp-ctrl-list" role="status">
+              {#each ctrlRows as row (row.kind)}
+                {#if row.kind === 'follow'}
+                  <div class="rp-ctrl-row">
+                    <span class="codicon codicon-eye" aria-hidden="true"></span>
+                    <span class="rp-ctrl-text">Following {row.name}</span>
+                    <button
+                      class="btn small ghost"
+                      aria-label="Stop following {row.name}"
+                      title="Release the follow camera (F)"
+                      onclick={releaseFollow}
+                      ><span class="codicon codicon-close" aria-hidden="true"></span></button
+                    >
+                  </div>
+                {:else}
+                  <div class="rp-ctrl-row" class:rp-ctrl-warn={row.kind === 'note'}>{row.text}</div>
+                {/if}
+              {/each}
+            </div>
           {/if}
         </div>
         <TeamColumn
@@ -2796,24 +2859,43 @@
           </span>
 
           {#if camMode === 'follow'}
-            <label class="sr-only" for="rp-follow">Follow player</label>
-            <select
-              class="input"
-              id="rp-follow"
-              value={uiFollow ?? ''}
-              onchange={onFollowPlayer}
-              title="The player the camera follows — release it from the stage chip, with F, or by dragging"
-            >
-              <option value="" disabled>Follow player…</option>
-              {#each players as p, i (i)}
-                <!-- Only players IN the match at the playhead are followable —
-                     a disconnected slot has no position for the camera to
-                     track (the same filter the card columns apply). -->
-                {#if playerConnected(i, uiTick)}
-                  <option value={i}>{i + 1}. {p.name || `slot ${i}`}</option>
-                {/if}
-              {/each}
-            </select>
+            <!-- Follow player (spec 17): the old native <select> as the
+                 toolbar's popover pattern (the speed/camera/drops
+                 controls): a trigger showing the followed player in the
+                 select's own option format, the player list inside the
+                 panel. The option button carries `value`, so the SAME
+                 onFollowPlayer handler runs unchanged; only rendered
+                 while camMode is 'follow' — exactly where the select
+                 sat, between the camera control and the drops popover. -->
+            <span class="rp-pop-host" id="rp-follow" bind:this={followAnchor}>
+              <button
+                class="btn"
+                aria-expanded={followOpen}
+                aria-haspopup="true"
+                aria-label="Follow player"
+                title="The player the camera follows — 1-9, 0 picks one, F toggles follow, dragging releases"
+                onclick={() => (followOpen = !followOpen)}>{followLabel}</button
+              >
+              <Popover open={followOpen} anchor={followAnchor} onClose={() => (followOpen = false)}>
+                <div class="rp-pop rp-follow-pop" role="group" aria-label="Follow player">
+                  {#each players as p, i (i)}
+                    <!-- Only players IN the match at the playhead are followable —
+                         a disconnected slot has no position for the camera to
+                         track (the same filter the card columns apply). -->
+                    {#if playerConnected(i, uiTick)}
+                      <button
+                        class="btn small"
+                        class:primary={uiFollow === i}
+                        value={i}
+                        onclick={(e) => {
+                          onFollowPlayer(e);
+                          followOpen = false;
+                        }}>{i + 1}. {p.name || `slot ${i}`}</button>
+                    {/if}
+                  {/each}
+                </div>
+              </Popover>
+            </span>
           {/if}
 
           <!-- Drops (spec: dropped guns/util on the map): a MULTI-select

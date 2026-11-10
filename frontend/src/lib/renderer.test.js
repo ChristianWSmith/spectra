@@ -34,14 +34,17 @@
 // CT/T names in their side colors, white score), the team-side pairing
 // rule (hudTeamNames — the ct slot holds the team on CT at the playhead),
 // the codicon freeze clock (document.fonts.check stubbed both ways), the
-// C4/0:00 clock, the tick/frame-free playback readout (and the speed×
-// line's removal: no speed text, no empty readout box) — plus the
+// C4/0:00 clock, the score↔feed gap clamp (C1: the box lays into
+// [control-group budget, feed left − 8] and ellipsizes the longer team
+// name to fit — the feed never yields) and the RETIRED playback readout
+// (no follow:/loop:/packNote fillText ever, no left-aligned box — those
+// rows are DOM now) — plus the
 // round-scoped kill feed with its rounded entry boxes, image cells that
 // reserve their PAINTED width (a 12 px gap on each side of every cell),
 // the append-at-bottom stack (oldest on top) and the 22 px entry pitch,
 // the round-scoped bottom-left chat
 // (round/round-change/scrub scoping, speaker colors, the 6-cap stack
-// newest-at-bottom, message truncation, the readout stacked above it)
+// newest-at-bottom, message truncation, owning the corner alone)
 // and the ONE entry-box painter both overlays share) — plus the
 // performance wave's pins: the trail alpha-band batching (same segments,
 // one stroke per band, the fade direction kept), the moving-vs-settled
@@ -2420,8 +2423,9 @@ const elevMarks = (log, from = 0) => {
 // radius 6 separates them from the entry overlays' radius 4.
 const feedBoxesSince = (log, from = 0) =>
   opsSince(log, 'fill', from).filter((e) => e.fillStyle === 'rgba(14,17,22,0.78)');
-// hudBoxesSince — hudBox's own boxes (radius 6): the top-center score/
-// clock box and the bottom-left readout.
+// hudBoxesSince — hudBox's own boxes (radius 6): the ONE top-center
+// score/clock box (the bottom-left readout is gone — its state lives in
+// the DOM control group, so a radius-6 box is always the top one).
 const hudBoxesSince = (log, from = 0) =>
   opsSince(log, 'roundRect', from).filter((e) => e.args[4] === 6);
 // chatBoxesSince — the chat's entry boxes among the shared radius-4
@@ -2579,15 +2583,14 @@ test('HUD: score-anchored line in colored segments, label-free clock, no tick/fr
     !texts.some((t) => /^\d+(?:\.\d+)?×$/.test(String(t))),
     'no speed readout at ANY speed (not just 1×)',
   );
-  // …but the readout box itself survives on its conditional lines: this
-  // renderer never got a map pack, so reproject() set packNote — the box
-  // is NOT centered, its line starts at the box's own left inset
-  // (x = HUD_PAD, content 8px in)
-  const note = canvas.log.find(
-    (e) => e.op === 'fillText' && String(e.args[0]).startsWith('No radar image'),
+  // …and this renderer never got a map pack: reproject's packNote used
+  // to ride the bottom-left readout as a canvas line. That COPY is
+  // retired with the readout — the one packNote is Replay's DOM
+  // control-group row — so the canvas carries no radar/grid note at all.
+  assert.ok(
+    !texts.some((t) => String(t).startsWith('No radar image')),
+    'the canvas packNote copy is gone (the DOM control-group row owns it)',
   );
-  assert.ok(note, 'the readout keeps its conditional lines (packNote)');
-  assert.equal(note.args[1], HUD_PAD + HUD_PAD, 'the playback readout keeps its left-aligned style');
 
   // an empty team name falls back to the bare side, in the SAME colors
   r.setHud({ score: { ct: 3, t: 2 }, teamNames: { ct: '', t: '' }, round, tickRate: 64 });
@@ -2608,6 +2611,75 @@ test('HUD: score-anchored line in colored segments, label-free clock, no tick/fr
   r.draw();
   assert.ok(textsSince(canvas.log).includes('1:52'), 'the round clock counts the 115 s round time');
   r.destroy();
+});
+
+// --- C1: the score box yields to its two neighbours ---------------------------
+//
+// Region map (renderer.js): the score box lays into [control-group
+// budget, kill-feed left − 8]. Overlap with the feed happened whenever
+// cssW ≲ 1024 (the feed is right-anchored, the box was centered), so the
+// feed's widest row is measured FIRST and the box is clamped into the
+// gap — ellipsizing the longer team name when the line cannot fit it.
+// The feed NEVER yields (gameplay record): the invariant is
+// box.right ≤ feed.left − 8 at every stage width, short names and long
+// names alike.
+
+test('score box right edge ≤ feed left − 8 across cssW ∈ {400,600,800,1200} × short/long names', () => {
+  headlessGlobals();
+  const round = { number: 1, label: 'R1', startTick: 0, freezeEndTick: 640, endTick: 1200, bombSite: '' };
+  const kill = {
+    id: 1,
+    seq: 1,
+    tick: 50,
+    round: 1,
+    kind: 'kill',
+    attacker: '1',
+    attackerName: 'alice',
+    victim: '2',
+    victimName: 'bob',
+    weapon: 'AK-47',
+  };
+  const namePairs = [
+    ['A', 'B'], // short names — the line fits, only the clamp can move it
+    ['NORTHWIND GAMING', 'SOUTHERN STORM'], // long names — cut to fit the gap
+  ];
+  for (const cssW of [400, 600, 800, 1200]) {
+    for (const [ct, t] of namePairs) {
+      // LENGTH-AWARE measureText (8 px/char): the harness's flat 40 px
+      // can never exceed any budget, so the ellipsis path would never run.
+      const canvas = recordingCanvas(cssW, 600, (s) => s.length * 8);
+      const data = synthStore(1300, 2);
+      const engine = createEngine(data, 64);
+      const r = createRenderer(canvas, { engine, data, players: HUD_PLAYERS });
+      r.setLandmarks([normalizeEvent(kill, {})]);
+      r.setHud({ score: { ct: 3, t: 2 }, teamNames: { ct, t }, round, tickRate: 64 });
+      r.resize();
+      engine.seekTick(100); // the kill is in the past → the feed draws
+      const mark = canvas.log.length;
+      r.draw();
+
+      const feedBoxes = canvas.log
+        .slice(mark)
+        .filter((e) => e.op === 'roundRect' && e.args[4] === KILL_FEED_R && e.args[1] < 300);
+      assert.ok(feedBoxes.length >= 1, `cssW=${cssW} [${ct}/${t}]: the feed draws`);
+      const feedLeft = Math.min(...feedBoxes.map((b) => b.args[0]));
+      const scoreBox = canvas.log.slice(mark).find((e) => e.op === 'roundRect' && e.args[4] === 6);
+      assert.ok(scoreBox, `cssW=${cssW} [${ct}/${t}]: the score box draws`);
+      const right = scoreBox.args[0] + scoreBox.args[2];
+      assert.ok(
+        right <= feedLeft - 8,
+        `cssW=${cssW} [${ct}/${t}]: box right ${right} ≤ feed left ${feedLeft} − 8`,
+      );
+      // …and the left bound holds too: the box never slides under the
+      // DOM control group's reserved share (0.28 × cssW + its 8 px edge)
+      // while the gap still fits it.
+      assert.ok(
+        scoreBox.args[0] >= cssW * 0.28 + 8 - 1e-9,
+        `cssW=${cssW} [${ct}/${t}]: box left ${scoreBox.args[0]} ≥ control-group budget ${cssW * 0.28 + 8}`,
+      );
+      r.destroy();
+    }
+  }
 });
 
 test('HUD clock: C4 icon line with text fallback, 0:00 after the detonation', () => {
@@ -3659,71 +3731,76 @@ test('kill feed: missing round-4 indicator images reserve NO cell (no gap either
   r.destroy();
 });
 
-// --- Readout box (speed line removed) + in-game chat -------------------------
+// --- Retired readout + in-game chat (the bottom-left corner) ----------------
 //
-// The bottom-left corner: the playback readout (follow/loop/packNote —
-// NO speed× line any more) and the in-game chat (drawChat) share it, so
-// these pin both the readout's draw-only-when-it-has-lines rule and the
-// chat's round/tick scoping, colors, stack order, truncation and its
-// geometry relative to the readout.
+// The bottom-left corner belongs to the in-game chat (drawChat) ALONE:
+// the playback readout (follow/loop/packNote — and before it the speed×
+// line) moved to the DOM control group (Replay.svelte .rp-ctrl-list), so
+// these pin that the canvas never paints it back AND the chat's
+// round/tick scoping, colors, stack order, truncation and corner
+// geometry.
 
-test('readout box: drawn only when it has a follow/loop/packNote line (no speed line)', () => {
+test('no playback readout on canvas: follow/loop/packNote never draw (the DOM control group owns them)', () => {
   headlessGlobals();
   const data = synthStore(1300, 2);
   const engine = createEngine(data, 64);
   const canvas = recordingCanvas();
   const r = createRenderer(canvas, { engine, data, players: HUD_PLAYERS });
   const round = { number: 1, label: 'R1', startTick: 0, freezeEndTick: 640, endTick: 1200, bombSite: '' };
-  // A pack WITH its radar image: reproject's happy path clears packNote,
-  // so with no follow and no loop the readout has NOTHING to say — and
-  // the speed line is gone, so there is no line to hide the emptiness.
-  r.setPack({ transform: { pos_x: 0, pos_y: 0, scale: 1 } }, { width: 64, height: 64 });
+  // NO setPack: reproject takes the no-pack path, which used to arm the
+  // readout's packNote line — and with it a left-aligned box on the
+  // corner. Nothing of it may survive.
   r.setHud({ score: { ct: 0, t: 0 }, teamNames: { ct: '', t: '' }, round, tickRate: 64 });
   r.resize();
 
+  // ONE hudBox — the top-center score/clock box — and no left-aligned
+  // (x = HUD_PAD) box at all: the readout's box died with its lines.
+  const boxes = hudBoxesSince(canvas.log);
+  assert.equal(boxes.length, 1, 'only the top-center box — there is no readout to draw empty');
+  assert.equal(boxes[0].args[1], HUD_PAD, '…and that one box is the top one');
+  assert.ok(
+    !boxes.some((b) => b.args[0] === HUD_PAD),
+    'no left-aligned box ever (the bottom-left corner is chat-only)',
+  );
   const texts = textsSince(canvas.log);
   assert.ok(!texts.some((t) => String(t) === '1×'), 'no speed line');
-  assert.equal(
-    hudBoxesSince(canvas.log).length,
-    1,
-    'only the top-center box — an empty readout draws NO box',
+  assert.ok(
+    !texts.some((t) => String(t).startsWith('No radar image')),
+    'no packNote line either (the DOM control-group row owns it)',
   );
-  assert.equal(hudBoxesSince(canvas.log)[0].args[1], HUD_PAD, '…and that one box is the top one');
 
-  // a follow line brings the readout back — at the corner (no chat)
+  // FOLLOW armed — the old readout's first line: no text, no box.
   engine.setFollow(0);
   let mark = canvas.log.length;
   r.draw();
-  let hb = hudBoxesSince(canvas.log, mark); // the top box + the readout
-  assert.equal(
-    hb.filter((b) => b.args[0] === HUD_PAD).length,
-    1,
-    'exactly ONE left-aligned readout box (the top box is centered)',
+  let since = canvas.log.slice(mark);
+  assert.ok(
+    !since.some((e) => e.op === 'fillText' && String(e.args[0]).startsWith('follow:')),
+    "the follow line is DOM now — the canvas never draws 'follow:'",
   );
-  const readout = hb.find((b) => b.args[0] === HUD_PAD);
-  assert.equal(readout.args[1], 600 - 8 - 28, '8 px off the bottom (one line = 28 px tall)');
-  assert.equal(readout.args[3], 28, 'the box is exactly one line tall');
-  const follow = canvas.log
-    .slice(mark)
-    .find((e) => e.op === 'fillText' && String(e.args[0]).startsWith('follow:'));
-  assert.ok(follow, 'the follow line draws');
-  assert.equal(follow.args[1], HUD_PAD + HUD_PAD, "the readout's left-inset content");
+  assert.ok(
+    !hudBoxesSince(canvas.log, mark).some((b) => b.args[0] === HUD_PAD),
+    'follow draws no box on the corner (the DOM row shows it)',
+  );
 
-  // the loop line joins it → one box, two lines tall
-  // The bounds are FRAMES internally (0 → 640) but the readout speaks
-  // OVERALL MATCH TIME (fmt.js fmtClock over tickSeconds from the
-  // stream's first tick — the same basis as the scrubber), so frame 640
-  // at 64 tick reads 0:10, not "f640".
+  // LOOP armed — the old second line, in match time (frame 640 at 64
+  // tick = 0:10): same silence. The bounds are FRAMES internally
+  // (engine.state.loopFrom/loopTo); the DOM row speaks OVERALL MATCH
+  // TIME through fmt.js, exactly what the toolbar's inputs show.
   engine.setLoop(0, 640);
   engine.toggleLoop();
   mark = canvas.log.length;
   r.draw();
-  hb = hudBoxesSince(canvas.log, mark).filter((b) => b.args[0] === HUD_PAD);
-  assert.equal(hb.length, 1, 'still ONE readout box');
-  assert.equal(hb[0].args[1], 600 - 8 - 43, '43 px tall (2 lines), still 8 px off the bottom');
-  assert.equal(hb[0].args[3], 43, 'two lines now');
   const tt = textsSince(canvas.log, mark);
-  assert.ok(tt.some((t) => String(t) === 'loop: 0:00–0:10'), 'the loop line joins the readout, in match time');
+  assert.ok(
+    !tt.some((t) => String(t).startsWith('loop:')),
+    "the loop range is DOM now — the canvas never draws 'loop:'",
+  );
+  assert.equal(
+    hudBoxesSince(canvas.log, mark).filter((b) => b.args[0] === HUD_PAD).length,
+    0,
+    'still no left-aligned box with both control states armed',
+  );
   r.destroy();
 });
 
@@ -4011,65 +4088,50 @@ test('chat: the channel tag counts toward the 40% measure and the cut', () => {
   r.destroy();
 });
 
-test('readout stacks 8 px above the chat; alone at the corner without chat', () => {
+test('the chat owns the bottom-left corner alone — no readout box stacks above it', () => {
+  // RATIONALE (the subject changed with the readout's retirement): this
+  // used to pin the readout's `chat.top − HUD_PAD − boxHeight` stacking
+  // branch. The readout is a DOM control-group row now, so that branch
+  // is dead code and was removed — what stays true is that NOTHING
+  // canvas-drawn sits above the chat: the chat's own bottom-anchored
+  // stack geometry (the corner, the 22 px pitch) is all the corner
+  // carries, at every stack height and with no chat at all.
   headlessGlobals();
   const data = synthStore(1300, 2);
   const engine = createEngine(data, 64);
   const canvas = recordingCanvas();
   const r = createRenderer(canvas, { engine, data, players: HUD_PLAYERS });
   const round = { number: 1, label: 'R1', startTick: 0, freezeEndTick: 640, endTick: 1200, bombSite: '' };
-  // no setPack → packNote gives the readout one line (28 px tall)
   r.setHud({ score: null, teamNames: { ct: '', t: '' }, round, tickRate: 64 });
   const chatRow = (tick, text) => ({ id: tick, tick, round: 1, steamId: '1', name: 'alice', text });
+  const cornerBox = (mark) => hudBoxesSince(canvas.log, mark).filter((b) => b.args[0] === HUD_PAD);
 
-  // ONE chat line: stack top = 600 − 8 − 18 = 574 → readout bottom 566
+  // ONE chat line: at the corner (600 − 8 − 18 = 574) — and no box
+  // above it where the readout used to stack.
   r.setChat([chatRow(50, 'one')]);
   r.resize();
   engine.seekTick(100); // the playhead must have passed the message
   let mark = canvas.log.length;
   r.draw();
-  let readout = hudBoxesSince(canvas.log, mark).find((b) => b.args[0] === HUD_PAD);
   let chat = chatBoxesSince(canvas.log, mark);
   assert.equal(chat.length, 1, 'the chat draws');
   assert.equal(chat[0].args[1], 574, 'the message sits at the bottom-left corner');
-  assert.ok(readout, 'the readout has a line (packNote) so it draws');
-  assert.equal(
-    readout.args[1] + 28,
-    chat[0].args[1] - 8,
-    "the readout's bottom edge is 8 px above the chat's top edge",
-  );
+  assert.equal(cornerBox(mark).length, 0, 'no readout box above it — the stacking branch is gone');
 
-  // TWO chat lines → the stack grows up, the readout follows it
+  // TWO chat lines → the stack grows up; the corner still holds no box.
   r.setChat([chatRow(50, 'one'), chatRow(60, 'two')]);
   mark = canvas.log.length;
   r.draw();
   chat = chatBoxesSince(canvas.log, mark);
   assert.equal(chat[0].args[1], 552, 'the second message pushes the stack up');
-  readout = hudBoxesSince(canvas.log, mark).find((b) => b.args[0] === HUD_PAD);
-  assert.equal(readout.args[1], 552 - 8 - 28, 'the readout moves up with the chat top');
+  assert.equal(cornerBox(mark).length, 0, 'the readout does not follow it up — it does not exist');
 
-  // NO chat → the readout returns to the corner (its old position)
+  // NO chat → the stack clears and the corner is simply empty.
   r.setChat([]);
   mark = canvas.log.length;
   r.draw();
   assert.equal(chatBoxesSince(canvas.log, mark).length, 0, 'the stack clears');
-  readout = hudBoxesSince(canvas.log, mark).find((b) => b.args[0] === HUD_PAD);
-  assert.equal(readout.args[1], 600 - 8 - 28, 'the readout sits at the corner again');
-
-  // NO readout lines (a pack with its radar clears packNote) → the chat
-  // alone owns the corner
-  r.setPack({ transform: { pos_x: 0, pos_y: 0, scale: 1 } }, { width: 64, height: 64 });
-  r.setChat([chatRow(50, 'one')]);
-  mark = canvas.log.length;
-  r.draw();
-  assert.equal(
-    hudBoxesSince(canvas.log, mark).filter((b) => b.args[0] === HUD_PAD).length,
-    0,
-    'no readout lines → no readout box, not even an empty one',
-  );
-  chat = chatBoxesSince(canvas.log, mark);
-  assert.equal(chat.length, 1, 'the chat draws alone');
-  assert.equal(chat[0].args[1], 574, '…right at the corner');
+  assert.equal(cornerBox(mark).length, 0, 'no box returns to the empty corner');
   r.destroy();
 });
 
@@ -4460,6 +4522,54 @@ test('multi-layer pack: side-by-side panels, layer labels, per-layer projection'
   assert.equal(xs.length, 2, 'both player dots draw (distinct centers)');
   assert.ok(xs.some((x) => Math.abs(x - lo.x) < 1e-6), 'slot0 draws on the lower panel');
   assert.ok(xs.some((x) => Math.abs(x - slot1.x) < 1e-6), 'slot1 draws on the default panel');
+  r.destroy();
+});
+
+// C5: the layer label never lands in the TOP BAND (the score box / kill
+// feed region): its natural spot is just above the panel's top edge, but
+// when that edge rides up under LAYER_LABEL_MIN_Y the label drops to the
+// panel's VERTICAL CENTRE — still over its own floor — and the final
+// floor keeps the invariant for a panel riding entirely above it.
+test('layer label: never draws at y < 40 — it drops to the panel centre when its top edge enters the band', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas(); // 800×600
+  const r = createRenderer(canvas, { engine, data, players: LAYER_PLAYERS });
+  const upper = { width: 1024, height: 1024, src: 'radar.png' };
+  const lower = { width: 1024, height: 1024, src: 'radar_lower.png' };
+  r.setPack(layerMeta(), upper, null, [upper, lower]);
+  r.resize();
+
+  const radarBox = (from = 0) =>
+    opsSince(canvas.log, 'drawImage', from).find((e) => e.args[0] && e.args[0].src === 'radar.png');
+  const label = (name, from = 0) =>
+    opsSince(canvas.log, 'fillText', from).find((e) => e.args[0] === name);
+
+  // NORMAL placement (unchanged): the panel's top edge is well clear of
+  // the band, so the label sits just above it.
+  const top0 = radarBox().args[2];
+  assert.ok(top0 - 6 >= 40, `fixture must start below the band (panel top ${top0})`);
+  assert.equal(label('Upper').args[2], top0 - 6, 'above the panel top edge by default');
+
+  // Pan the camera up until the panel's top edge rides INTO the band —
+  // the label must drop to the panel's vertical centre instead.
+  const mark = canvas.log.length;
+  r.panBy(0, 20 - top0); // panelTop_new = panelTop_old + dy → 20
+  r.draw();
+  const img = radarBox(mark);
+  const movedTop = img.args[2];
+  assert.ok(movedTop - 6 < 40, `the top edge is in the band now (${movedTop})`);
+  for (const name of ['Upper', 'Lower']) {
+    const l = label(name, mark);
+    assert.ok(l, `${name} still labels its panel`);
+    assert.ok(l.args[2] >= 40, `${name} never draws at y < 40 (got ${l.args[2]})`);
+    assert.equal(
+      l.args[2],
+      movedTop + img.args[4] / 2,
+      `${name} dropped to the panel's vertical centre`,
+    );
+  }
   r.destroy();
 });
 
