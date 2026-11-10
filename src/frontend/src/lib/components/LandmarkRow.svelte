@@ -16,8 +16,8 @@
   //                  (Replay resolves `who` against the sidecar slot
   //                  table; without it a generic name stays plain text)
   //   roundByNumber — optional round lookup (Replay's roundsByNumber):
-  //                  with it the row shows the ROUND + TIME-IN-ROUND
-  //                  columns (roundIndexLabel / roundClock); without it
+  //                  with it the row shows the ROUND + TIME columns
+  //                  (roundIndexLabel / the match clock); without it
   //                  (CompareRounds' compact sequence) the legacy tick
   //                  cell renders unchanged
   //   tickRate     — match tick rate for the time cell (0 → 64 via fmt)
@@ -31,7 +31,7 @@
   //   onseek       — click ▶ (seek to the row's tick)
   import { categoryById } from '../replay/landmarks.js';
   import { roundIndexLabel } from '../rounds.js';
-  import { roundClock, chatTag } from '../fmt.js';
+  import { chatTag, fmtClock, tickSeconds } from '../fmt.js';
   import { playerSideAt } from '../teams.js';
   import ProfileLink from './ProfileLink.svelte';
 
@@ -53,8 +53,9 @@
   const cat = $derived(categoryById(row.category));
 
   // The round ROW behind this row's round number (null when the lookup
-  // has no row — roundClock falls back to the match-relative clock then,
-  // never a negative readout).
+  // has no row — the ROUND column falls back to the raw round number
+  // then; the time cell is match-relative for every row, so no clock
+  // arithmetic depends on it).
   const roundRow = $derived(roundByNumber ? roundByNumber.get(row.round) ?? null : null);
 
   // Secondary text: the event's weapon / damage / distance bits, or a
@@ -161,13 +162,15 @@
     onkeydown={onMainKey}
   >
     {#if roundByNumber}
-      <!-- Round + time-into-round (the feed's canonical readout): the
-           round label via lib/rounds.js roundIndexLabel (12 / K / W),
-           the time cell via lib/fmt.js roundClock — event tick − its
-           round's start tick (unknown round → match-relative fallback).
-           The raw tick stays in the tooltip. -->
+      <!-- Round + match clock (the feed's canonical readout): the round
+           label via lib/rounds.js roundIndexLabel (12 / K / W) and the
+           time cell as the MATCH-relative clock — fmtClock(tick /
+           tickRate) via fmt.tickSeconds — for EVERY row kind, so a
+           round_start row (tick === its round's startTick) never reads
+           0:00 and no row silently changes shape by kind. The raw tick
+           stays in the tooltip. -->
       <span class="chip round-chip lm-round" title="Round {roundIndexLabel(roundRow ?? row.round)}">{roundIndexLabel(roundRow ?? row.round)}</span>
-      <span class="mono lm-time" title="tick {row.tick}">{roundClock(row.tick, roundRow, tickRate)}</span>
+      <span class="mono lm-time" title="tick {row.tick}">{fmtClock(tickSeconds(row.tick, tickRate))}</span>
     {:else}
       <!-- Legacy cell (CompareRounds' compact sequence — no round
            lookup passed): tick + raw round chip, unchanged. -->

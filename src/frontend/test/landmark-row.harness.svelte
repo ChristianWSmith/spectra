@@ -91,7 +91,7 @@
   const resolveSteam = (name) => (name === 'alice' ? '76561198012345678' : '');
 
   // Round lookup (Replay passes roundsByNumber + tickRate): rows then
-  // show the ROUND + TIME-IN-ROUND columns instead of the legacy tick
+  // show the ROUND + MATCH-CLOCK columns instead of the legacy tick
   // cell. Round 5 starts at tick 1920; round -2 is the knife round.
   const rounds = [
     { number: 5, startTick: 1920, warmup: false, pregame: false },
@@ -100,6 +100,18 @@
   const rbn = new Map(rounds.map((r) => [r.number, r]));
   const timed = { ...kill, key: 'e:3', tick: 3000, round: 5 };
   const knife = { ...kill, key: 'e:4', tick: 2100, round: -2 };
+  // A round_start row exactly as the default feed emits it: its tick IS
+  // the round's startTick (Go extract sets round_start.Tick =
+  // round.startTick), so a round-relative clock would read 0:00 — the
+  // time cell renders the MATCH-relative clock for every row instead.
+  const roundStart = {
+    key: 'e:5',
+    source: 'event',
+    kind: 'round_start',
+    category: 'round_starts',
+    tick: 1920,
+    round: 5,
+  };
 </script>
 
 <div>
@@ -111,6 +123,9 @@
   </div>
   <div data-testid="knife-row">
     <LandmarkRow row={knife} roundByNumber={rbn} tickRate={64} {nav} {onselect} {onseek} />
+  </div>
+  <div data-testid="round-start-row">
+    <LandmarkRow row={roundStart} roundByNumber={rbn} tickRate={64} {nav} {onselect} {onseek} />
   </div>
   <div data-testid="bot-row">
     <LandmarkRow row={botKill} {nav} {onselect} {onseek} />

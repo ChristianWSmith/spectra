@@ -62,8 +62,8 @@ const svelteCompile = (src, filename, out) => {
 // Plain-ESM deps copied verbatim so their relative imports keep working
 // at their new location: landmarks.js → rounds.js + fmt.js + teams.js
 // (the chat export helpers — teams → sideparity), nav.js → router.js +
-// replay/landmarks.js, fmt.js → rounds.js (the roundClock the round +
-// time columns render).
+// replay/landmarks.js, fmt.js → rounds.js (its isCounted import; the row
+// time cell itself renders the match clock via fmtClock/tickSeconds).
 for (const rel of ['rounds.js', 'router.js', 'nav.js', 'fmt.js', 'sideparity.js', 'teams.js']) {
   writeFileSync(join(dir, rel), readFileSync(join('src/lib', rel), 'utf8'));
 }
@@ -171,7 +171,7 @@ const unresolvedSlot = slot('generic-unresolved-row');
 check('unresolved generic name is plain text', unresolvedSlot.querySelectorAll('.lm-text .comb-name-btn').length === 0);
 check('unresolved generic name still renders', text(unresolvedSlot.querySelector('.lm-text')).includes('dave'), text(unresolvedSlot.querySelector('.lm-text')));
 
-console.log('F. round + time-into-round columns (roundByNumber lookup)');
+console.log('F. round + match-clock columns (roundByNumber lookup)');
 const timedSlot = slot('timed-row');
 check(
   'round chip shows the roundIndexLabel for the round row',
@@ -179,8 +179,8 @@ check(
   text(timedSlot.querySelector('.lm-round')),
 );
 check(
-  'time cell shows time INTO the round (tick − startTick via roundClock)',
-  text(timedSlot.querySelector('.lm-time')) === '0:17',
+  'time cell shows the MATCH clock (3000 / 64 = 0:47)',
+  text(timedSlot.querySelector('.lm-time')) === '0:47',
   text(timedSlot.querySelector('.lm-time')),
 );
 check(
@@ -196,14 +196,32 @@ check(
   text(knifeSlot.querySelector('.lm-round')),
 );
 check(
-  'knife round time cell renders (2100 − 100) / 64 = 0:31',
-  text(knifeSlot.querySelector('.lm-time')) === '0:31',
+  'knife round time cell renders the match clock (2100 / 64 = 0:33)',
+  text(knifeSlot.querySelector('.lm-time')) === '0:33',
   text(knifeSlot.querySelector('.lm-time')),
 );
 check(
   'rows without the lookup keep the legacy tick cell (CompareRounds)',
   killSlot.querySelector('.lm-tick') !== null && text(killSlot.querySelector('.lm-tick')) === '1024',
   text(killSlot.querySelector('.lm-tick')),
+);
+
+console.log('G. round_start rows (tick === round.startTick)');
+const roundStartSlot = slot('round-start-row');
+check(
+  'round chip shows the roundIndexLabel for the round row',
+  text(roundStartSlot.querySelector('.lm-round')) === '5',
+  text(roundStartSlot.querySelector('.lm-round')),
+);
+check(
+  'round_start time cell shows the match clock (1920 / 64 = 0:30, not 0:00)',
+  text(roundStartSlot.querySelector('.lm-time')) === '0:30',
+  text(roundStartSlot.querySelector('.lm-time')),
+);
+check(
+  'round_start keeps the raw tick tooltip',
+  roundStartSlot.querySelector('.lm-time').getAttribute('title') === 'tick 1920',
+  roundStartSlot.querySelector('.lm-time').getAttribute('title'),
 );
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
