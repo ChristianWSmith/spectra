@@ -695,7 +695,12 @@
             <SortTh label="Duration" cls="num" active={sortKey === 'duration'} {desc} onclick={() => toggleSort('duration')} />
             <SortTh label="Size" cls="num" active={sortKey === 'size'} {desc} onclick={() => toggleSort('size')} />
             <SortTh label="Imported" active={sortKey === 'extracted_at'} {desc} onclick={() => toggleSort('extracted_at')} />
-            <SortTh label="Status" active={sortKey === 'status'} {desc} onclick={() => toggleSort('status')} />
+            <!-- Status is a reserved-width column (lib-status-col): its chip
+                 carries a live progress bar + stage text whose length changes
+                 on every parse stage, and an auto table would resize the whole
+                 row each time — the column reserves its widest content instead
+                 (style.css, "Library: reserved column widths"). -->
+            <SortTh label="Status" cls="lib-status-col" active={sortKey === 'status'} {desc} onclick={() => toggleSort('status')} />
             <th scope="col"><span class="sr-only">Actions</span></th>
           </tr>
         </thead>
@@ -706,13 +711,18 @@
           {#each pendingImports as job (job.id)}
             <tr data-pending-import>
               <td>—</td>
-              <td><span class="mono" title={job.path}>{basename(job.path)}</span></td>
+              <!-- The importing demo's file name rides the SAME truncation
+                   every other demo name in this view uses (lib-demo-name,
+                   the 260px cap): an unbounded basename here is what used to
+                   inflate the Matchup column while the job ran, then collapse
+                   it the moment the match row landed. -->
+              <td><span class="mono lib-demo-name" title={job.path}>{basename(job.path)}</span></td>
               <td class="num">—</td>
               <td class="num">—</td>
               <td class="num">—</td>
               <td class="num">—</td>
               <td>—</td>
-              <td>
+              <td class="lib-status-col">
                 <StatusChip
                   status={job.status}
                   progress={job.progress}
@@ -751,7 +761,7 @@
                    extracted yet (NULL extracted_at → Go zero time) renders
                    "—", never a year-0001 date. -->
               <td>{fmtDate(m.extractedAt)}</td>
-              <td>
+              <td class="lib-status-col">
                 {#if m.status === 'parsing' || m.status === 'queued'}
                   <StatusChip
                     status={m.status === 'parsing' ? 'parsing' : 'queued'}
@@ -874,7 +884,11 @@
             <th scope="col">Folder</th>
             <th scope="col" class="num">Size</th>
             <th scope="col">Modified</th>
-            <th scope="col">Library</th>
+            <!-- The import-dir table's status column is the SAME reserved
+                 column as the match table's (lib-status-col): the cell flips
+                 between the "not imported" chip and a live job chip (bar +
+                 stage text) as a file gets enqueued mid-parse. -->
+            <th scope="col" class="lib-status-col">Library</th>
             <th scope="col"><span class="sr-only">Actions</span></th>
           </tr>
         </thead>
@@ -897,7 +911,7 @@
               </td>
               <td class="num">{fmtBytes(f.size)}</td>
               <td>{fmtDate(f.modTime)}</td>
-              <td>
+              <td class="lib-status-col">
                 {#if pj}
                   <StatusChip
                     status={pj.status}

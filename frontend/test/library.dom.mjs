@@ -36,6 +36,12 @@
 // confirm is asked ONLY when a managed copy exists. Backend semantics of
 // copyState live in internal/library.CopyState +
 // LibraryService.ListMatchesPage/EvictDemoCopy — this covers the wiring.
+// Section J pins the reserved-width columns (the parse-jitter fix): every
+// volatile column carries its reservation class in the markup (status in
+// both library tables, the synthetic job row's demo name) and
+// public/style.css carries the matching min-width declarations. jsdom has
+// no layout, so the RULE'S APPLICATION is what is pinned — never pixel
+// widths (those are sized in the style.css comments).
 // Backend semantics of the facets live in store.TestListMatches (the
 // keyset itself in store.TestListMatchesPage*); the
 // suggestion source is store.TestListMapNames; the pipeline behind the
@@ -1189,6 +1195,102 @@ const roleStatus = () =>
       globalThis.__deleted[1][0] === 1 &&
       globalThis.__deleted[1][1] === false,
     JSON.stringify(globalThis.__deleted),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Section J: reserved column widths — the fix for the demo table jittering
+// while a parse runs. The chip's stage tail ("checking file" → "copying" →
+// "reading demo 42%"), the 44px progress bar and the Cancel/Free-copy
+// buttons appearing and disappearing all change content inside
+// table-layout:auto cells, which re-solves EVERY column — so each volatile
+// column reserves its widest content instead. jsdom has no layout, so these
+// pin the RULE'S APPLICATION: the reservation class on each column's cells
+// and the min-width declarations in public/style.css (the values and their
+// sizing arithmetic live in the style.css comments, not here).
+console.log('J. reserved column widths: status, actions, job-row demo name');
+
+const css = readFileSync(join('public', 'style.css'), 'utf8');
+// ruleBody(sel) returns the declaration block that follows the FIRST
+// occurrence of the selector text — enough to pin that the rule carries
+// the reservation without re-asserting its exact pixel arithmetic.
+const ruleBody = (sel) => {
+  const i = css.indexOf(sel);
+  if (i < 0) return null;
+  const open = css.indexOf('{', i);
+  if (open < 0) return null;
+  const close = css.indexOf('}', open);
+  return close < 0 ? null : css.slice(open + 1, close);
+};
+
+{
+  // The status COLUMN: the match table's Status header, every row's status
+  // cell (synthetic job row AND match rows), and the import-dir table's
+  // Library column + its row — one class, both tables.
+  const head = $('.dropzone .data-table thead th').find((th) =>
+    th.textContent.includes('Status'),
+  );
+  check(
+    'match table Status header carries lib-status-col',
+    !!head && head.classList.contains('lib-status-col'),
+    head ? head.outerHTML.slice(0, 140) : 'no Status header',
+  );
+  const rows = matchRows();
+  check(
+    'every match-table row reserves its status cell',
+    rows.length > 0 && rows.every((tr) => tr.children[7].classList.contains('lib-status-col')),
+    JSON.stringify(rows.map((tr) => tr.children[7] && tr.children[7].className)),
+  );
+  check(
+    'the synthetic job row reserves its status cell too',
+    rows.some((tr) => tr.hasAttribute('data-pending-import') && tr.children[7].classList.contains('lib-status-col')),
+  );
+
+  const dirHead = $(
+    'section[aria-label="Demos from your import dirs"] .data-table thead th',
+  ).find((th) => th.textContent.includes('Library'));
+  check(
+    'import-dir Library header carries lib-status-col',
+    !!dirHead && dirHead.classList.contains('lib-status-col'),
+    dirHead ? dirHead.outerHTML.slice(0, 140) : 'no Library header',
+  );
+  const dRows = dirRows();
+  check(
+    'import-dir rows reserve their status cell',
+    dRows.length > 0 && dRows.every((tr) => tr.children[4].classList.contains('lib-status-col')),
+    JSON.stringify(dRows.map((tr) => tr.children[4] && tr.children[4].className)),
+  );
+
+  // The stylesheet side of the same pins.
+  const st = ruleBody('.view .data-table .lib-status-col');
+  check(
+    'status column rule carries a reserved min-width',
+    !!st && /min-width:\s*calc\(/.test(st),
+    st ? st.trim() : 'rule .view .data-table .lib-status-col not found',
+  );
+  const ra = ruleBody('.view .data-table td.row-actions');
+  check(
+    'actions cell rule carries a reserved min-width',
+    !!ra && /min-width:\s*calc\(/.test(ra),
+    ra ? ra.trim() : 'rule .view .data-table td.row-actions not found',
+  );
+
+  // Row-type difference: the synthetic job row's Matchup cell holds the
+  // importing demo's file name — it rides the SAME truncation cap as every
+  // other demo name in the view, so an unbounded basename cannot inflate
+  // the column while the job runs and collapse it when the match row lands.
+  const synth = rows.find((tr) => tr.hasAttribute('data-pending-import'));
+  const nameSpan = synth && synth.children[1].querySelector('span');
+  check(
+    'job-row demo name carries the lib-demo-name cap',
+    !!nameSpan && nameSpan.classList.contains('lib-demo-name'),
+    nameSpan ? nameSpan.className : 'no synthetic row / name span',
+  );
+  const cap = ruleBody('.lib-demo-name,');
+  check(
+    'the demo-name cap still bounds it (max-width + ellipsis)',
+    !!cap && /max-width:\s*260px/.test(cap) && /text-overflow:\s*ellipsis/.test(cap),
+    cap ? cap.trim() : 'rule .lib-demo-name not found',
   );
 }
 
