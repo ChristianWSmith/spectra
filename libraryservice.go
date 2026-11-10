@@ -124,6 +124,19 @@ func (s *LibraryService) ListMatches(query, sortKey string, desc bool, filter st
 	return s.st.ListMatches(query, sortKey, desc, filter)
 }
 
+// ListMatchesPage returns ONE keyset window of the same list ListMatches
+// returns: the rows after afterID (0 = the first window) for the same
+// query/sortKey/desc/filter, at most limit rows (0 = the store's default
+// window), plus HasNext (another window follows) and the roster rows the
+// Library's Matchup column synthesizes `team_<player>` names from (see
+// store.ListMatchesPage / models.MatchListPage) — the one binding the
+// Library's "Load more" pagination and its single-call list load go
+// through. ListMatches itself stays unbounded for its whole-library
+// readers (import dedupe, MatchPicker, Settings' recompute list).
+func (s *LibraryService) ListMatchesPage(query, sortKey string, desc bool, afterID int64, limit int, filter store.MatchListFilter) (*models.MatchListPage, error) {
+	return s.st.ListMatchesPage(query, sortKey, desc, afterID, limit, filter)
+}
+
 // ListMapNames returns the distinct, non-empty map names in the library
 // (A→Z) — the suggestion source for the Library's map facet. The facet
 // itself stays a substring LIKE (store.MatchListFilter): a suggestion is

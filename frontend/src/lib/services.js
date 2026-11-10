@@ -147,6 +147,23 @@ export function listMatches(query, sortKey, desc, filter) {
   );
 }
 
+// listMatchesPage is the Library list's keyset window ("Load more"): the
+// same query/sortKey/desc/filter contract as listMatches, but ONE window
+// of `limit` rows strictly after `afterID` (0 = the first window),
+// returned as {rows, hasNext, rosters}. `rosters` carries the per-match
+// human players the Matchup column synthesizes `team_<player>` names from
+// (rows whose extract recorded no clan name), so a list load is ONE IPC
+// call — the pre-pagination view fetched a scoreboard PER such row. The
+// whole window is one read-cache entry (no per-row keys), flushed with
+// the rest on every spectra:* data event; listMatches stays unbounded
+// for its whole-library readers (import dedupe, MatchPicker, Settings).
+export function listMatchesPage(query, sortKey, desc, afterID, limit, filter) {
+  const f = { map: (filter && filter.map) || '', player: (filter && filter.player) || '' };
+  return cachedRead('ListMatchesPage', [query, sortKey, desc, afterID, limit, f], () =>
+    LibraryService.ListMatchesPage(query, sortKey, desc, afterID, limit, f),
+  );
+}
+
 // listMapNames returns the distinct map names present in the library
 // (A→Z, blanks omitted) — the suggestion source for the Library's map
 // facet (store.ListMapNames). Read-cached like listMatches: a fresh

@@ -2,14 +2,13 @@
   import {
     importDialog,
     importPaths,
-    listMatches,
+    listMatchesPage,
     listMapNames,
     listPlayers,
     listJobs,
     deleteMatch,
     reprocess,
     cancelJob,
-    getScoreboard,
     subscribeJobProgress,
     onJobDone,
     onLibraryChanged,
@@ -52,7 +51,19 @@
   const PROBLEM_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
   const PROBLEM_MAX = 10;
 
+  // Window size for the match list: one page per fetch, one more page per
+  // Load-more click (backend default store.ListMatchesPageSize is the
+  // same 200 — the button's row counts and the store's window agree).
+  const PAGE_SIZE = 200;
+
   let matches = $state([]);
+  // Keyset pagination ("Load more"): one window per fetch (PAGE_SIZE), and
+  // hasNext is the backend's limit+1 probe — the button below the table
+  // appends the NEXT window (cursor = last row's id) until it comes back
+  // false. The whole window is ONE IPC call (its roster fallback rides
+  // along — see applyRosters), so a list load never fans out per row.
+  let hasNext = $state(false);
+  let loadingMore = $state(false);
   let jobs = $state([]);
   let jobProgress = $state(new Map()); // jobId -> latest progress payload
   // Structured list facets (ANDed with each other — store.MatchListFilter,
@@ -131,12 +142,54 @@
     return () => clearTimeout(timer);
   });
 
+  // listGen distinguishes the current window sequence from stale replies
+  // (see refreshList/loadMore); non-reactive on purpose — it is not state.
+  let listGen = 0;
+
   async function refreshList(sk = sortKey, d = desc, mf = mapFilter, pf = playerFilter) {
+    // Any full (re)fetch restarts the window: cursor 0, replace — a sort/
+    // filter change or a spectra:* refresh must never APPEND onto the
+    // previous window's rows. listGen tags the fetch so a Load-more reply
+    // that lands after a restart is dropped instead of appended.
+    const gen = ++listGen;
     try {
-      matches = await listMatches('', sk, d, { map: mf, player: pf });
+      const page = await listMatchesPage('', sk, d, 0, PAGE_SIZE, { map: mf, player: pf });
+      if (gen !== listGen) return;
+      matches = (page && page.rows) || [];
+      hasNext = !!(page && page.hasNext);
+      applyRosters(page && page.rosters);
+      error = '';
+    } catch (e) {
+      if (gen === listGen) error = errText(e);
+    }
+  }
+
+  // loadMore appends the NEXT window: the cursor is the last rendered
+  // row's id (the store resolves it to its stored sort value — ties are
+  // broken server-side, so windows never skip or duplicate a row).
+  // Duplicate ids are filtered out anyway (a row re-sorted or re-imported
+  // between windows), because a repeated keyed {#each} id would throw.
+  async function loadMore() {
+    if (loadingMore || !hasNext || !matches.length) return;
+    loadingMore = true;
+    const gen = listGen;
+    try {
+      const last = matches[matches.length - 1];
+      const page = await listMatchesPage('', sortKey, desc, last.id, PAGE_SIZE, {
+        map: mapFilter,
+        player: playerFilter,
+      });
+      if (gen !== listGen) return; // a refresh replaced the list meanwhile
+      const seen = new Set(matches.map((m) => m.id));
+      const add = ((page && page.rows) || []).filter((m) => !seen.has(m.id));
+      matches = [...matches, ...add];
+      hasNext = !!(page && page.hasNext);
+      applyRosters(page && page.rosters);
       error = '';
     } catch (e) {
       error = errText(e);
+    } finally {
+      loadingMore = false;
     }
   }
 
@@ -462,41 +515,30 @@
     nav(`/match/${m.id}`);
   }
 
-  // Team names for rows whose extract recorded no clan name: the list
-  // carries no player rows, so fetch each such match's scoreboard once,
-  // derive the per-side `team_<player>` names (shared with Match — see
-  // lib/teams.js) and cache them per match id (the list refreshes on every
-  // search/sort). Empty results (still parsing) and failures aren't cached,
-  // so a later refresh picks up the extracted players or retries.
-  let synthPlayers = $state(new Map()); // matchId → scoreboard rows
+  // Team names for rows whose extract recorded no clan name: the page's
+  // `rosters` map carries the roster rows for exactly those matches (the
+  // ONE batched read — store.ListMatchesPage, replacing the pre-pagination
+  // per-row getScoreboard fan-out), so the synthesis inputs land with the
+  // list load itself: no second IPC call, no per-row cache keys. Derived
+  // rosters cache per match id across windows (the list refreshes on every
+  // search/sort); a match with NO roster (still parsing) gets no entry, so
+  // its matchup stays "—" until a later window carries players.
+  let synthPlayers = $state(new Map()); // matchId → roster rows
 
-  $effect(() => {
-    const missing = matches.filter(
-      (m) => (!m.ctName || !m.tName) && !synthPlayers.has(m.id),
-    );
-    if (!missing.length) return;
-    let live = true;
-    Promise.all(
-      missing.map((m) =>
-        getScoreboard(m.id, '', false).catch(() => null),
-      ),
-    ).then((rows) => {
-      if (!live) return;
-      // Only publish when something new arrived — reassigning an unchanged
-      // map would re-trigger this effect (and refetch) forever.
-      let changed = false;
-      const next = new Map(synthPlayers);
-      missing.forEach((m, i) => {
-        const sb = listedPlayers(rows[i]) || [];
-        if (sb.length) {
-          next.set(m.id, sb);
-          changed = true;
-        }
-      });
-      if (changed) synthPlayers = next;
-    });
-    return () => (live = false);
-  });
+  function applyRosters(rosters) {
+    if (!rosters) return;
+    let next = null;
+    for (const key of Object.keys(rosters)) {
+      const id = Number(key);
+      if (synthPlayers.has(id)) continue; // already resolved by an earlier window
+      const players = listedPlayers(rosters[key]) || [];
+      if (!players.length) continue; // no extracted players (parsing/failed row)
+      (next ??= new Map(synthPlayers)).set(id, players);
+    }
+    // Only publish when something new arrived — reassigning an unchanged
+    // map would churn every dependent render for nothing.
+    if (next) synthPlayers = next;
+  }
 
   function matchup(m) {
     // Both demo clan names known: no need for the scoreboard fallback.
@@ -728,6 +770,17 @@
               ? `No matches match ${filterSummary}.`
               : 'No matches yet — imports will appear here.'}
           </p>
+        </div>
+      {/if}
+      <!-- Keyset pagination footer: only while another window exists
+           (backend hasNext). Appends the next PAGE_SIZE rows below the
+           ones already shown — jobs and dir sections are unaffected. -->
+      {#if hasNext}
+        <div class="row-between">
+          <span class="muted" role="status">Showing {matches.length} matches</span>
+          <button class="btn" disabled={loadingMore} onclick={loadMore}>
+            {loadingMore ? 'Loading…' : 'Load more'}
+          </button>
         </div>
       {/if}
     {/if}

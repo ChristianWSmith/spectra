@@ -1,9 +1,12 @@
 <script>
   // Test harness for MatchPicker: fixed match list, selection recorded
-  // globally so a driver script can assert on it.
+  // globally so a driver script can assert on it. __setMatches swaps the
+  // list at runtime so the render-cap section can drive a 250-match
+  // library through the SAME mounted picker (the A–G checks run first,
+  // against the three-row list below).
   import MatchPicker from './matchpicker-bundle.js';
 
-  const matches = [
+  let matches = $state([
     {
       id: 2,
       map: 'de_cache',
@@ -44,10 +47,13 @@
       status: 'parsing',
       path: '',
     },
-  ];
+  ]);
 
   let value = $state(2);
   globalThis.__selected = [];
+  globalThis.__setMatches = (ms) => {
+    matches = ms;
+  };
 </script>
 
 <MatchPicker

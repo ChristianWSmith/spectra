@@ -34,6 +34,7 @@ export const PlatformService = {};
 export const LibraryService = {
   ImportDialog: rec('ImportDialog'),
   ListMatches: rec('ListMatches'),
+  ListMatchesPage: rec('ListMatchesPage'),
   ImportPaths: rec('ImportPaths'),
   DeleteMatch: rec('DeleteMatch'),
   Reprocess: rec('Reprocess'),

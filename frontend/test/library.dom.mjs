@@ -21,7 +21,15 @@
 // multi-path ImportDialog hand-off (N paths → ONE ImportPaths call).
 // Section G mounts StatusChip directly: progress 0 is indeterminate
 // (moving bar, never "0%"), 0.42 renders "reading demo 42%".
-// Backend semantics of the facets live in store.TestListMatches; the
+// Section H covers the keyset "Load more" pagination: the first window
+// renders (PAGE_SIZE rows), the Load-more footer only shows while the
+// backend reports a next window, clicking appends the next window with
+// the last row's id as the cursor (and drops the button when the list is
+// exhausted), and the matchup fallback for nameless rows arrives on the
+// page's `rosters` — the list load never fans out into per-row
+// GetScoreboard calls (the N+1 this pagination replaces).
+// Backend semantics of the facets live in store.TestListMatches (the
+// keyset itself in store.TestListMatchesPage*); the
 // suggestion source is store.TestListMapNames; the pipeline behind the
 // chips lives in internal/library's queue tests — this covers the view
 // wiring only.
@@ -118,6 +126,28 @@ bindings.ProfileService.ListPlayers = () =>
     { steamId: '18374686479671623692', name: 'Crew', matches: 1, adrAvg: 40, lastSeen: '2026-01-03' },
   ]);
 
+// pageOf mimics the store's keyset window over a scripted row array:
+// start AFTER the cursor row (afterID), take one window, report whether
+// anything follows. (The real cursor resolves the last row's stored sort
+// value — store.ListMatchesPage — the stub only has to reproduce the
+// slicing/hasNext contract the view consumes.)
+const pageOf = (rows, afterID, limit) => {
+  const start = afterID ? rows.findIndex((r) => r.id === afterID) + 1 : 0;
+  const win = rows.slice(start, start + (limit || 200));
+  const rosters = {};
+  for (const r of win) {
+    if (!r.ctName || !r.tName) {
+      // A row whose extract recorded no clan name: the page carries the
+      // roster the Matchup cell synthesizes team_<player> names from.
+      rosters[r.id] = [
+        { steamId: '76561198000000011', name: 'alice', side: 'ct', isBot: false },
+        { steamId: '76561198000000022', name: 'bob', side: 't', isBot: false },
+      ];
+    }
+  }
+  return { rows: win, hasNext: start + win.length < rows.length, rosters };
+};
+
 // Scripted match list: rows only for the `cache` facet (the deep-link
 // preset itself must find nothing yet), plus a `parsing` facet that
 // returns a still-parsing row — the not-yet-extracted case (NULL
@@ -153,8 +183,12 @@ const parsingRow = {
   status: 'parsing',
   error: '',
 };
-bindings.handlers.ListMatches = (q, sk, d, f) =>
+// rowsForFacet is the scripted list per facet; Section H swaps it for a
+// 201-row library (two rows without recorded team names).
+let rowsForFacet = (f) =>
   f && f.map === 'cache' ? [row] : f && f.map === 'parsing' ? [parsingRow] : [];
+bindings.handlers.ListMatchesPage = (q, sk, d, after, limit, f) =>
+  pageOf(rowsForFacet(f), after, limit);
 
 const dir = join('node_modules', '.cache', 'spectra-dom-tests', 'library');
 mkdirSync(dir, { recursive: true });
@@ -244,8 +278,8 @@ const playerInput = () => document.getElementById('lib-filter-player');
 // (they live in .sg-opt inside the SuggestInput widget).
 const clearBtn = () => $('.lib-filters .btn');
 const sgRows = (listId) => $(`#${listId} .sg-opt`);
-const listCalls = () => bindings.calls.filter((c) => c.method === 'ListMatches');
-const lastCall = () => listCalls()[listCalls().length - 1];
+const pageCalls = () => bindings.calls.filter((c) => c.method === 'ListMatchesPage');
+const lastCall = () => pageCalls()[pageCalls().length - 1];
 const navCalls = () => globalThis.__nav || [];
 const click = (el) => el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
 const focus = (el) => el.dispatchEvent(new dom.window.FocusEvent('focus', { bubbles: false }));
@@ -287,10 +321,10 @@ check('clear button present', clearBtn().length === 1, String(clearBtn().length)
     !document.querySelector('[aria-label="Search matches"]'),
   );
 }
-check('exactly one fetch on entry', listCalls().length === 1, String(listCalls().length));
+check('exactly one fetch on entry', pageCalls().length === 1, String(pageCalls().length));
 {
-  const first = listCalls()[0];
-  const f = first && first.args[3];
+  const first = pageCalls()[0];
+  const f = first && first.args[5];
   check(
     'first fetch carries the preset facets',
     f && f.map === 'de_mirage' && f.player === '76561198000000001',
@@ -317,7 +351,7 @@ type(mapInput(), 'cache');
 await sleep(350); // past the 250 ms debounce
 {
   const c = lastCall();
-  const f = c && c.args[3];
+  const f = c && c.args[5];
   check('fetch fired with the new map facet', f && f.map === 'cache', JSON.stringify(c && c.args));
   check('player facet preserved', f && f.player === '76561198000000001');
   check('scripted rows render', $('tbody tr').length === 1, String($('tbody tr').length));
@@ -374,7 +408,7 @@ await sleep(350); // past the 250 ms debounce
     String($('[aria-label="Search matches"]').length),
   );
   const c = lastCall();
-  const f = c && c.args[3];
+  const f = c && c.args[5];
   check('free-text query stays empty', c && c.args[0] === '', JSON.stringify(c && c.args));
   check(
     'both facets ride along',
@@ -428,7 +462,7 @@ await sleep(350); // past the 250 ms debounce — the map facet is off again
     !document.getElementById('lib-filter-map-list'),
   );
   const c = lastCall();
-  const f = c && c.args[3];
+  const f = c && c.args[5];
   check(
     'refetch carries the picked map',
     f && f.map === 'de_ancient' && f.player === '76561198000000001',
@@ -497,7 +531,7 @@ await sleep(20);
     !document.getElementById('lib-filter-player-list'),
   );
   const c = lastCall();
-  const f = c && c.args[3];
+  const f = c && c.args[5];
   check(
     'refetch carries the picked player',
     f && f.player === '76561198000000002',
@@ -522,7 +556,7 @@ check('player input cleared', playerInput().value === '');
 check('clear button gone', clearBtn().length === 0, String(clearBtn().length));
 {
   const c = lastCall();
-  const f = c && c.args[3];
+  const f = c && c.args[5];
   check(
     'refetch with both facets off (free-text still empty)',
     c && c.args[0] === '' && f && f.map === '' && f.player === '',
@@ -678,9 +712,8 @@ bindings.LibraryService.ListDemoFiles = () =>
   Promise.resolve([
     { path: '/imports/new.dem', root: '/imports', size: 1234, modTime: '2026-01-01T00:00:00Z', hashed: false },
   ]);
-const prevListMatches = bindings.handlers.ListMatches;
-bindings.handlers.ListMatches = (q, sk, d, f) =>
-  f && f.map === 'queued' ? [queuedMatch] : prevListMatches(q, sk, d, f);
+const prevRowsForFacet = rowsForFacet;
+rowsForFacet = (f) => (f && f.map === 'queued' ? [queuedMatch] : prevRowsForFacet(f));
 
 // The event bus services.js subscribes to — same module instance the
 // view's subscriptions use (the stub resolves to this file's URL).
@@ -901,6 +934,106 @@ const mountChip = (props) => {
     'caller title kept in the tooltip',
     titled.querySelector('.chip').getAttribute('title') === 'disk on fire · checking file',
     titled.querySelector('.chip').getAttribute('title'),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Section H: keyset "Load more" pagination + the page-borne matchup
+// roster. A scripted 201-row library (its first two rows recorded no
+// team clan name) pages 200 + 1: the first window renders behind the
+// footer, clicking Load more appends the next window with the last row's
+// id as cursor, the footer disappears when the list is exhausted — and
+// the nameless rows get their team_<player> matchup from the page's
+// `rosters` with ZERO per-row GetScoreboard calls (the N+1 this feature
+// replaces; the backend contract is store.TestListMatchesPage*).
+console.log('H. Load more: first window, footer, append, batched roster');
+
+const pagedRows = [];
+for (let i = 201; i >= 1; i--) {
+  const nameless = i >= 200; // these extracts recorded no team clan name
+  pagedRows.push({
+    id: 1000 + i,
+    path: `/d/page${i}.dem`,
+    map: 'de_paged',
+    size: 4096,
+    scoreCT: 13,
+    scoreT: 10,
+    ctName: nameless ? '' : `Team${i}`,
+    tName: nameless ? '' : `Side${i}`,
+    realRounds: 23,
+    durationS: 2400,
+    extractedAt: '2026-02-01T00:00:00Z',
+    status: 'ready',
+    error: '',
+  });
+}
+const prevPagedRowsForFacet = rowsForFacet;
+rowsForFacet = (f) => (f && f.map === 'paged' ? pagedRows : prevPagedRowsForFacet(f));
+
+// match rows only — the synthetic import row (a job with no match row
+// yet) renders ahead of them and is not part of any window.
+const windowRows = () => matchRows().filter((tr) => !tr.hasAttribute('data-pending-import'));
+const loadMoreBtn = () =>
+  [...document.querySelectorAll('.dropzone .btn')].find((b) => b.textContent.trim() === 'Load more');
+
+type(mapInput(), 'paged');
+await sleep(350); // past the 250 ms debounce
+{
+  const call = pageCalls()[pageCalls().length - 1];
+  check(
+    'first window fetch: cursor 0, PAGE_SIZE limit',
+    call.args[3] === 0 && call.args[4] === 200,
+    JSON.stringify(call.args.slice(3, 5)),
+  );
+  check('first window renders exactly PAGE_SIZE rows', windowRows().length === 200, String(windowRows().length));
+  check(
+    'Load-more footer shows the loaded count',
+    !!loadMoreBtn() &&
+      [...document.querySelectorAll('.dropzone .row-between .muted')].some((el) =>
+        el.textContent.includes('Showing 200 matches'),
+      ),
+    document.querySelector('.dropzone .row-between')?.textContent ?? 'no footer',
+  );
+  check(
+    'no per-row GetScoreboard calls — the roster rides the page',
+    bindings.callCount('GetScoreboard') === 0,
+    String(bindings.callCount('GetScoreboard')),
+  );
+  const matchup = windowRows()[0].children[1].textContent.trim();
+  check(
+    'nameless row synthesizes team_<player> names from the page roster',
+    matchup === 'team_alice vs team_bob',
+    matchup,
+  );
+}
+
+{
+  // Append the second (final) window: cursor = the last rendered row's id.
+  const beforeRows = windowRows().length;
+  const beforeCalls = pageCalls().length;
+  click(loadMoreBtn());
+  await sleep(60);
+  const call = pageCalls()[pageCalls().length - 1];
+  check(
+    'Load more fetches with the last row id as cursor',
+    pageCalls().length === beforeCalls + 1 && call.args[3] === 1002,
+    JSON.stringify(call.args.slice(3, 5)),
+  );
+  check(
+    'second window appends its single remaining row',
+    pageCalls().length === beforeCalls + 1 && windowRows().length === beforeRows + 1,
+    `calls ${pageCalls().length - beforeCalls}, rows ${windowRows().length} (was ${beforeRows})`,
+  );
+  check('footer gone once the list is exhausted', !loadMoreBtn(), String(!!loadMoreBtn()));
+  // The appended tail is the library's OLDEST row (ids descend): a
+  // duplicated or mis-ordered window would end on some id 1200 instead.
+  const lastRow = windowRows()[windowRows().length - 1];
+  const beforeNav = navCalls().length;
+  click(lastRow);
+  check(
+    'the appended tail is the oldest row (full order preserved)',
+    navCalls().length === beforeNav + 1 && navCalls().at(-1) === '/match/1001',
+    JSON.stringify(navCalls().slice(-2)),
   );
 }
 
