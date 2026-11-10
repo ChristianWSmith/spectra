@@ -957,7 +957,10 @@ input[type='checkbox']:focus-visible {
 /* --- Library: watched-folder demo list (lib-) ------------------------------- */
 
 /* Long demo file names / folder names truncate; the full path rides the
-   title tooltip. */
+   title tooltip. The synthetic job row (Library's pendingImports, its
+   Matchup cell) rides the SAME cap, so a long importing file name can
+   never inflate that column while the job runs — see the reserved-width
+   block below. */
 .lib-demo-name,
 .lib-demo-root {
   display: inline-block;
@@ -1023,10 +1026,56 @@ input[type='checkbox']:focus-visible {
 .view .data-table td.row-actions {
   display: table-cell;
   text-align: right;
+  /* Reserved width for the widest button set a row can ever show —
+     Re-parse + Free copy + Delete (or Cancel/Remove + Re-parse + Delete,
+     the control that appears the moment a job takes the row: exactly the
+     instant this column used to jump and drag its neighbours with it).
+     table-layout: auto re-solves every column on any content change, so
+     the cell reserves the worst case instead: the widest combo measured
+     at ~224/245/266px for the small/medium/large font sizes
+     (lib/fontsize.js) in DejaVu Sans — the widest default sans the
+     common system-ui stacks resolve to — plus ~4% for anything wider.
+     The rem term is the button text (it scales with the font-size
+     setting); the px term is the fixed chrome (3 × 18px button padding +
+     border, 2 × 6px gaps, 20px cell padding) that does not. The
+     import-dir table's narrower Import/Remove + "Delete from disk" combo
+     rides the same rule — one reservation for both library tables. */
+  min-width: calc(11rem + 90px);
 }
 
 .view .data-table td.row-actions .btn + .btn {
   margin-left: 6px;
+}
+
+/* --- Library: reserved column widths (lib-) -------------------------------- */
+
+/* The status column of BOTH library tables (the match list's Status header
+   + every row's status cell, and the import-dir list's Library column)
+   reserves the width of its WIDEST possible chip. .data-table is
+   table-layout: auto: every content change re-solves every column, so this
+   column's changing content used to resize it — and squeeze its neighbours
+   — each time a parse tick moved the chip:
+
+     StatusChip = label ("parsing"/"running"/"queued" ≤ 7 chars) + the 44px
+     progress bar appearing/disappearing + the stage tail, whose length
+     swings from "checking file"/"copying"/"unpacking"/"saving"/"analyzing"
+     to the widest case, "reading demo 90%" (internal/models' stage table
+     pins the parse stage at job progress 0.20 → 0.90, so two digits are
+     what that stage renders — .chip-pct already sets tabular-nums, the
+     digits were never the wobble, the stage WORD was).
+
+   Sized as that widest composition — 7-char label + gaps + 44px bar +
+   "reading demo 90%" + chip padding/border + cell padding — measured at
+   ~219/238/257px for the small/medium/large font sizes in DejaVu Sans (the
+   widest default sans the common system-ui stacks resolve to; Noto Sans
+   ~211/229/248, Segoe UI/Arial narrower still) with ~4% headroom on top.
+   The rem term is the text (it scales with the font-size setting); the px
+   term is the fixed chrome (bar, gaps, chip padding+border, cell padding)
+   that does not. Reserving the parse-time width costs nothing new — it is
+   the width the column already jumped to during every parse; it simply
+   stops moving. */
+.view .data-table .lib-status-col {
+  min-width: calc(10rem + 96px);
 }
 
 /* --- Match view ------------------------------------------------------------ */
