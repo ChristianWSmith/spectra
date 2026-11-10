@@ -81,6 +81,7 @@ import {
   flightPointAt,
 } from './replay/renderer.js';
 import { dropEvidenceAt, dropWindow } from './replay/drops.js';
+import { buildKitEvidence } from './replay/kits.js';
 import { createEngine } from './replay/engine.js';
 import { normalizeEvent } from './replay/landmarks.js';
 import { buildStateIndex } from './replay/state.js';
@@ -2178,6 +2179,66 @@ test('C4 badge: inventory-driven carrier, top-right anchor, alive only, text fal
     'the label is centered in the same top-right box',
   );
   assert.ok(Math.abs(label.args[2] - (dot2.args[1] - 10 + 8)) < 1e-9, '…and sits inside it vertically');
+  r.destroy();
+});
+
+test('C4 badge two-pass: the carrier badge paints AFTER every dot and name label', () => {
+  // C2: the badge used to draw INSIDE the slot loop, so it was covered
+  // by every dot/label drawn after its own slot (slot 0's badge sat
+  // under slot 1's dot). It is now COLLECTED in the loop and painted in
+  // a second pass — the ordering pins below are exactly that contract.
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, {
+    engine,
+    data,
+    players: [
+      { steamId: '1', name: 'alice', side: 'ct' },
+      { steamId: '2', name: 'bob', side: 't' },
+    ],
+  });
+  r.setIcons({ C4: { width: 48, height: 24, src: 'c4.svg' } });
+  // alice (slot 0, drawn FIRST in the loop) carries the bomb.
+  r.setStateIndex(
+    buildStateIndex([{ frame: 0, slot: 0, mask: 0x008, inventory: ['C4', 'AK-47'] }], 2),
+  );
+  r.resize();
+  engine.seekTick(10);
+  const mark = canvas.log.length;
+  r.draw();
+  const seq = canvas.log.slice(mark);
+
+  const badges = seq.filter((e) => e.op === 'drawImage' && e.args[3] === 20 && e.args[4] === 10);
+  assert.equal(badges.length, 1, 'exactly one carrier badge (alice\'s)');
+  const badgeAt = seq.indexOf(badges[0]);
+
+  // BOTH dots draw (alice ct-blue, bob t-amber at r=9) — filtered to
+  // the BODY fill (arc immediately followed by fill: the rim/halo rings
+  // share the fillStyle but stroke instead). The badge must sit above
+  // the dot drawn AFTER it in the loop (bob's), which is the case the
+  // in-loop draw got wrong.
+  const dots = seq.filter(
+    (e, i) =>
+      e.op === 'arc' &&
+      e.args[2] === 9 &&
+      (e.fillStyle === '#5aa9e6' || e.fillStyle === '#e6a35a') &&
+      seq[i + 1] &&
+      seq[i + 1].op === 'fill',
+  );
+  assert.equal(dots.length, 2, 'both dots draw in one frame');
+  for (const d of dots) {
+    assert.ok(badgeAt > seq.indexOf(d), 'the badge paints above EVERY dot');
+  }
+
+  // …and above every name label (the labels are painted inside the
+  // loop, after each dot — the second pass clears them all).
+  const names = seq.filter((e) => e.op === 'fillText' && (e.args[0] === 'alice' || e.args[0] === 'bob'));
+  assert.equal(names.length, 2, 'both name labels draw');
+  for (const n of names) {
+    assert.ok(badgeAt > seq.indexOf(n), 'the badge paints above EVERY name label');
+  }
   r.destroy();
 });
 
@@ -5544,6 +5605,180 @@ test('drop layer: guns and util gate independently; pickup and round end clean u
   seq = dropSeek(h, 99);
   assert.equal(gunBody(seq).length, 0, 'before the death: nothing dropped yet');
   assert.equal(utilBody(seq).length, 0, '…for either item');
+  h.r.destroy();
+});
+
+// --- the defuse-kit layer (drawDrops' cat "kit" + setKitEvidence) ----------
+//
+// The kit marker is the drop layer's THIRD category: the SAME draw call
+// as a gun/util drop (white icon + the elevation indicator behind it,
+// NO ring / NO pulse / NO dash — the dashed-pulse throbber stays the
+// dropped C4's alone) but its OWN evidence: the view pushes
+// lib/replay/kits.js buildKitEvidence through setKitEvidence, so the
+// window is the NEAREST-DEATH back-propagation + buytime rule — never
+// drops.js's best-evidence window, which ANY later same-name pickup
+// closes (a mid-round kit BUY would erase a dropped kit).
+// Rows arrive exactly like Replay.svelte builds them: normalizeEvent
+// over DRAW_KINDS rows joined with getDropDetails (dropCat 'kit').
+
+// kitHarness — a store + renderer with `rows` normalized, the kit
+// evidence built from those SAME rows (the real seam: the view builds
+// from drawNorm too) and the kit icon loaded. `layers` → setDropLayers,
+// `buyEnds` → buildKitEvidence's buy boundary, `pack` → setPack (the
+// elevation case).
+function kitHarness(rows, { layers, buyEnds = new Map(), pack } = {}) {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: LAYER_PLAYERS });
+  const norm = rows.map((ev, i) => normalizeEvent({ id: i + 1, seq: i + 1, ...ev }, {}));
+  r.setLandmarks(norm);
+  r.setKitEvidence(buildKitEvidence(norm, buyEnds, 64));
+  r.setIcons({ 'Defuse Kit': { width: 32, height: 32, src: 'kit.svg' } });
+  if (layers) r.setDropLayers(layers);
+  if (pack) r.setPack(pack, { width: 1024, height: 1024, src: 'radar.png' });
+  r.resize();
+  return { engine, canvas, r };
+}
+
+// The kit body: drawImage at DROP_KIT_ICON_PX = 14 square (the 32×32
+// art keeps its aspect; the halo rides 2 px larger at 16×16).
+const kitBody = (seq) => seq.filter((e) => e.op === 'drawImage' && e.args[3] === 14 && e.args[4] === 14);
+
+const kitDrop = (tick, x, y, over = {}) => ({
+  kind: 'weapon_drop', tick, round: 1, attacker: '2', weapon: 'Defuse Kit',
+  posX: x, posY: y, posZ: 0, dropCat: 'kit', ...over,
+});
+const kitPick = (tick, x, y, over = {}) => ({
+  kind: 'weapon_pickup', tick, round: 1, attacker: '1', weapon: 'Defuse Kit',
+  posX: x, posY: y, posZ: 0, ...over,
+});
+const kRs = (tick, round = 1) => ({ kind: 'round_start', tick, round });
+const kRe = (tick, round = 1) => ({ kind: 'round_end', tick, round });
+
+test('kit marker: gated by {kits} alone — white icon, NO ring/pulse/dash', () => {
+  const rows = [kRs(0), kitDrop(200, 100, 100), kRe(1000)];
+
+  // Default state (setDropLayers never called): rows loaded, nothing draws.
+  const off = kitHarness(rows);
+  assert.equal(kitBody(dropSeek(off, 300)).length, 0, 'no kit marker with the layer off');
+  off.r.destroy();
+
+  // guns + util ON, kits still OFF → the kit is gated out (independent).
+  const others = kitHarness(rows, { layers: { guns: true, util: true } });
+  assert.equal(kitBody(dropSeek(others, 300)).length, 0, 'kits gate independently of guns/util');
+  others.r.destroy();
+
+  const h = kitHarness(rows, { layers: { kits: true } });
+  const MARK = h.r.worldToScreen(100, 100, 0);
+  const seq = dropSeek(h, 300);
+  const body = kitBody(seq);
+  assert.equal(body.length, 1, 'one white kit icon with {kits} on');
+  assert.ok(
+    Math.abs(body[0].args[1] + body[0].args[3] / 2 - MARK.x) < 1e-6 &&
+      Math.abs(body[0].args[2] + body[0].args[4] / 2 - MARK.y) < 1e-6,
+    'centered on the stored drop position',
+  );
+  // NO ring, NO pulse, NO dash — the owner's kit rule (the dashed
+  // pulse stays C4's): no arc is EVER centered on the marker and no
+  // dash pattern is set anywhere in the draw.
+  assert.equal(
+    seq.filter((e) => e.op === 'arc' && Math.abs(e.args[0] - MARK.x) < 1e-6 && Math.abs(e.args[1] - MARK.y) < 1e-6).length,
+    0,
+    'no ring/pulse arc centered on the kit marker',
+  );
+  assert.equal(
+    seq.filter((e) => e.op === 'setLineDash' && Array.isArray(e.args[0]) && e.args[0].length > 0).length,
+    0,
+    'no dashed ring anywhere in the draw',
+  );
+  // Neutral WHITE body (14×14 is this marker's own footprint in the
+  // tint cache — no side color is ever built for it).
+  assert.ok(
+    iconTints.some((t) => t.color === '#ffffff' && t.w === 14 && t.h === 14),
+    'the kit body is tinted neutral white',
+  );
+  h.r.destroy();
+});
+
+test('kit windows come from the nearest-death evidence (not drops.js)', () => {
+  // Two CTs died with kits; one later pickup stands ON the NEARER
+  // body. drops.js's best-evidence rule would hide BOTH at the pickup
+  // (any later same-name pickup closes the drop) — the kit layer must
+  // keep the far one on the ground to the round end.
+  const near = kitDrop(200, 100, 100, { attacker: '1' });
+  const far = kitDrop(250, 600, 600, { attacker: '2' });
+  const pickup = kitPick(500, 100, 100); // 400 ticks after buytime (400)
+  const h = kitHarness([kRs(0), near, far, pickup, kRe(1000)], {
+    layers: { kits: true },
+    buyEnds: new Map([[1, 400]]),
+  });
+
+  let seq = dropSeek(h, 300);
+  assert.equal(kitBody(seq).length, 2, 'both kits on the ground before the pickup');
+
+  seq = dropSeek(h, 500);
+  const left = kitBody(seq);
+  assert.equal(left.length, 1, 'the NEAREST drop ends at the pickup; the far one stays (drops.js would leave 0)');
+  const FAR = h.r.worldToScreen(600, 600, 0);
+  assert.ok(
+    left.every((b) => Math.abs(b.args[1] + b.args[3] / 2 - FAR.x) < 1e-6),
+    'the survivor is the FAR drop',
+  );
+
+  // Round-end cleanup, then a backward scrub re-derives (nothing sticky).
+  assert.equal(kitBody(dropSeek(h, 999)).length, 1, 'the far drop holds to the round end');
+  assert.equal(kitBody(dropSeek(h, 1000)).length, 0, 'gone AT the round_end tick');
+  assert.equal(kitBody(dropSeek(h, 300)).length, 2, 'a backwards scrub re-derives both');
+  h.r.destroy();
+});
+
+test('a kit BUY inside buytime never terminates a drop', () => {
+  // Same position, same round — but the pickup lands INSIDE the round's
+  // buytime (ended 600), so it is a purchase and must leave the drop.
+  const rows = [kRs(0), kitDrop(200, 100, 100), kitPick(500, 100, 100), kRe(1000)];
+  const h = kitHarness(rows, { layers: { kits: true }, buyEnds: new Map([[1, 600]]) });
+  assert.equal(kitBody(dropSeek(h, 500)).length, 1, 'still on the ground at the buy');
+  assert.equal(kitBody(dropSeek(h, 999)).length, 1, '…all the way to the round end');
+  assert.equal(kitBody(dropSeek(h, 1000)).length, 0, 'gone AT round_end');
+  h.r.destroy();
+});
+
+test('KIT_MATCH_MAX: a far pickup never claims a drop', () => {
+  // 5000 wu away — past the 4096 hard filter, so the drop stays even
+  // though the pickup is the only candidate and well after buytime.
+  const rows = [kRs(0), kitDrop(200, 100, 100), kitPick(500, 5100, 100), kRe(1000)];
+  const h = kitHarness(rows, { layers: { kits: true }, buyEnds: new Map([[1, 400]]) });
+  assert.equal(kitBody(dropSeek(h, 500)).length, 1, 'unmatched → the drop stays to round end');
+  assert.equal(kitBody(dropSeek(h, 1000)).length, 0, '…and still cleans up at round_end');
+  h.r.destroy();
+});
+
+test('kit marker: the elevation indicator paints BEHIND the icon (region boxes only)', () => {
+  // The region claims the KIT's XY (700,700) and NOT the two player
+  // dots at (10,10)/(50,50) — so the only mark in this draw is the
+  // kit's, and it must sit under the icon (the behind-the-entity rule).
+  const rows = [kRs(0), kitDrop(200, 700, 700), kRe(1000)];
+  const h = kitHarness(rows, {
+    layers: { kits: true },
+    pack: {
+      radar: { file: 'radar.png', width: 1024, height: 1024 },
+      transform: { pos_x: 0, pos_y: 0, scale: 1 },
+      elevation_regions: [{ x: 600, y: 600, w: 200, h: 200, reference_z: -1, above: 0, below: 0 }],
+    },
+  });
+  const seq = dropSeek(h, 300);
+  const marks = elevMarks(seq);
+  assert.equal(marks.length, 1, 'exactly one region-box indicator — the kit\'s');
+  const MARK = h.r.worldToScreen(700, 700, 0);
+  assert.ok(Math.abs(marks[0].x - MARK.x) < 1e-6, 'at the kit\'s screen position');
+  const body = kitBody(seq);
+  assert.equal(body.length, 1, 'the icon still draws');
+  const stroke = seq.findIndex(
+    (e) => e.op === 'moveTo' && e.strokeStyle === ELEV_TINT && e.lineWidth === ELEV_W,
+  );
+  assert.ok(stroke >= 0 && stroke < seq.indexOf(body[0]), 'the mark paints BEFORE (behind) the icon');
   h.r.destroy();
 });
 

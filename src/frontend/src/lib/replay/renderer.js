@@ -14,7 +14,10 @@
 // players layer with the tracer rework) → players (elevation indicator T/⊥
 // UNDER the dot → white talking bloom UNDER the dot →
 // view chevron, body, player-color rim, flash-white overlay, damage
-// flash, follow ring, carried-C4 badge, name) → HUD +
+// flash, follow ring, name — and the carried-C4 badge, which is
+// COLLECTED in the slot loop and painted in a SECOND pass after it so
+// it sits above every dot, label and ring of the frame — see
+// drawPlayers) → HUD +
 // kill feed (top-right) + in-game chat (bottom-left).
 //
 // Multi-floor packs (meta.layers — e.g. Nuke's upper + lower radars)
@@ -223,6 +226,13 @@ const NADE_ICON_PX = 16; // px — the extracted utility icon's screen size
 // drawGrenades paints), never side-tinted.
 const DROP_GUN_ICON_PX = 14;
 const DROP_UTIL_ICON_PX = NADE_ICON_PX;
+// DROP_KIT_ICON_PX — the dropped DEFUSE KIT's marker size: the drop
+// family's gun size (a kit is a body-sized ground item, not a
+// grenade), never the nade's. Its VISUAL language is the owner's kit
+// rule — a plain white icon + the elevation indicator behind it, the
+// same neutral treatment the dropped C4 gets MINUS its ring/pulse/dash
+// (see drawDrops: the throbber stays C4's alone).
+const DROP_KIT_ICON_PX = 14;
 const DROP_AMMO_GAP = 11; // px — gun icon's bottom edge → the ammo baseline
 const DROP_AMMO_ELEV = 5; // px — extra baseline drop when an elevation bar
 //                            sits below the marker (the name-label's
@@ -952,9 +962,18 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   let popCuts = new Map();
   let decoyCuts = new Map();
   // The layer toggle: which drop categories draw at all (the toolbar's
-  // Guns/Utility popover → setDropLayers; BOTH OFF by default = the
+  // Guns/Utility/Kits popover → setDropLayers; ALL OFF by default = the
   // feature is opt-in, matching the pref's unset state).
-  let dropLayers = { guns: false, util: false };
+  let dropLayers = { guns: false, util: false, kits: false };
+  // kitWins — the DEFUSE-KIT evidence windows (lib/replay/kits.js
+  // buildKitEvidence: Map<kit drop row, {from, to}> — the nearest-death
+  // back-propagation + buytime rule, precomputed once per push). Kit
+  // rows deliberately do NOT read dropWins above: drops.js's
+  // best-evidence rule hides a drop at ANY later same-name pickup,
+  // which would let a mid-round kit BUY terminate a dropped kit. Empty
+  // until setKitEvidence pushes the view's build — no evidence → no
+  // kit marker, never a guessed window.
+  let kitWins = new Map();
 
   // --- setIcons / setVoices / setStateIndex inputs (all optional) -----------
   // icons: canonical equipment name ('C4', 'Smoke Grenade', …) → a
@@ -1701,19 +1720,32 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     easeRaf = 0;
   }
 
-  // setDropLayers({guns, util}) — the drop layer's visibility toggle
-  // (the FIRST layer toggle in this file: everything else draws whatever
-  // rows arrive, but drops are opt-in per category — the toolbar
-  // popover's two checkboxes, both OFF by default / unset pref). Only
-  // gates WHICH categories drawDrops paints; the rows themselves keep
-  // arriving via setLandmarks either way, so flipping a box is a pure
-  // visibility change — redraw now, and every later draw re-derives
+  // setDropLayers({guns, util, kits}) — the drop layer's visibility
+  // toggle (the FIRST layer toggle in this file: everything else draws
+  // whatever rows arrive, but drops are opt-in per category — the
+  // toolbar popover's three checkboxes, ALL OFF by default / unset pref).
+  // Only gates WHICH categories drawDrops paints; the rows themselves
+  // keep arriving via setLandmarks either way, so flipping a box is a
+  // pure visibility change — redraw now, and every later draw re-derives
   // from tick alone (scrub-safe like every layer).
   function setDropLayers(layers) {
     dropLayers = {
       guns: !!(layers && layers.guns),
       util: !!(layers && layers.util),
+      kits: !!(layers && layers.kits),
     };
+    draw();
+  }
+
+  // setKitEvidence(ev) — the defuse-kit evidence bundle (the view
+  // builds it ONCE with lib/replay/kits.js buildKitEvidence and pushes
+  // it beside setLandmarks). ev.drops is Map<kit drop row, {from, to}>;
+  // anything else (absent / malformed / a match with no kit rows) reads
+  // as an EMPTY map, so drawDrops draws no kit marker — fail-soft to
+  // nothing, never a guessed window. Pure visibility: the windows are
+  // match-static, so a repeat push just rebuilds the same lookup.
+  function setKitEvidence(ev) {
+    kitWins = ev && ev.drops instanceof Map ? ev.drops : new Map();
     draw();
   }
 
@@ -2623,37 +2655,53 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // Drawn like the dropped-C4 marker (bombEvidenceAt's 'dropped' branch)
   // minus the throbber: NO ring, NO pulse, NO dash — a static white,
   // NEVER side-tinted item icon (iconFor + drawIcon's neutral
-  // '#ffffff' tint, aspect-preserving at DROP_GUN/DROP_UTIL_ICON_PX)
+  // '#ffffff' tint, aspect-preserving at DROP_GUN/DROP_UTIL/DROP_KIT_ICON_PX)
   // with the elevation indicator behind it exactly like the dropped C4
   // (elevationFor + drawElevationIndicator — "basically the same as
   // dropped C4 except without the extra throbber" includes the floor
   // mark). Per-category gate first (setDropLayers): a gun needs
-  // {guns}, a util needs {util}, and a row whose STORED cat the view
-  // never joined (dropCat '') draws nothing — the classification is
-  // never re-derived here.
+  // {guns}, a util needs {util}, a KIT needs {kits}, and a row whose
+  // STORED cat the view never joined (dropCat '') draws nothing — the
+  // classification is never re-derived here.
   // Guns additionally label their ammo state at death (detail_json
   // mag/reserve, joined as row.dropAmmo) — small, neutral, shadowed
   // like the player-name micro-label (the renderer's one label
   // convention; there is no zoom-gated label pattern to follow), and
   // clear of a below-marker elevation bar via DROP_AMMO_ELEV.
+  //
+  // DEFUSE KITS (cat 'kit') take the same draw call but their OWN
+  // window and their OWN look: kitWins (lib/replay/kits.js — the
+  // nearest-death back-propagation, never drops.js's best-evidence
+  // window, which a mid-round kit BUY would terminate), and a plain
+  // WHITE ICON + the elevation indicator behind it — NO ring, NO pulse,
+  // NO dash (the owner's kit rule: the dashed-pulse throbber stays the
+  // dropped C4's alone; a CT dot holding a kit gets NO dot indicator —
+  // the kit badge lives on the player CARD only).
   function drawDrops(tick) {
-    if (!dropLayers.guns && !dropLayers.util) return;
+    if (!dropLayers.guns && !dropLayers.util && !dropLayers.kits) return;
     for (const d of wdrops) {
-      // The precomputed window IS the dropEvidenceAt answer for this
-      // row: [from, to) — absent (never visible: no position / no usable
-      // tick) or out of scope now → not on the ground.
-      const win = dropWins.get(d);
-      if (!win || tick < win.from || tick >= win.to) continue;
       const row = d;
       const cat = row.dropCat;
-      const want = cat === 'gun' ? dropLayers.guns : cat === 'util' ? dropLayers.util : false;
+      const isKit = cat === 'kit';
+      // The precomputed window IS the reconstruction answer for this
+      // row: [from, to) — absent (never visible: no position / no usable
+      // tick / no kit evidence) or out of scope now → not on the ground.
+      const win = isKit ? kitWins.get(row) : dropWins.get(row);
+      if (!win || tick < win.from || tick >= win.to) continue;
+      const want = isKit
+        ? dropLayers.kits
+        : cat === 'gun'
+          ? dropLayers.guns
+          : cat === 'util'
+            ? dropLayers.util
+            : false;
       if (!want) continue;
       const z = row.z ?? null; // dropEvidenceAt's own z spelling (null when absent)
       const c = worldToScreen(row.x, row.y, z, scr1);
       const elev = elevationFor(row.x, row.y, z, regions);
       // Elevation indicator BEHIND the icon (the behind-the-entity rule).
       if (elev) drawElevationIndicator(c.x, c.y, elev);
-      const size = cat === 'gun' ? DROP_GUN_ICON_PX : DROP_UTIL_ICON_PX;
+      const size = isKit ? DROP_KIT_ICON_PX : cat === 'gun' ? DROP_GUN_ICON_PX : DROP_UTIL_ICON_PX;
       const img = iconFor(row.weapon);
       if (!img || !drawIcon(img, c.x, c.y, size, '#ffffff')) {
         // No extracted icon → the neutral name label (the drawBombIcon
@@ -2955,6 +3003,14 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     const st = engine.state;
     const tick = st.tick;
     const tr = engine.tickRate;
+    // Carrier badges (the carried-C4 marker) are COLLECTED here and
+    // painted AFTER the whole slot loop — the two-pass rule (C2): a
+    // badge inside the loop sat under every dot drawn after its own
+    // slot, so a neighbour's dot/label could cover the objective
+    // marker. The pass paints them above EVERY dot, name label and ring
+    // of the frame. `c` is the shared worldToScreen scratch, so the
+    // badge records its own x/y copy.
+    const badges = [];
     for (let slot = 0; slot < store.slots.length; slot++) {
       engine.lerpAt(slot, tmp);
       if (!tmp.alive) continue;
@@ -3112,7 +3168,8 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       // itself is derived ONCE in setLandmarks from bomb.js
       // actionIntervals (begin → completion | abort | round end). Drawn
       // after the follow ring (r+4 sits inside the follow ring's r+5)
-      // and before the carried-C4 badge.
+      // and before the carried-C4 badge (which the second pass after the
+      // loop paints above everything).
       const actionIvs = actionBySlot.get(slot);
       if (actionIvs) {
         for (const iv of actionIvs) {
@@ -3125,14 +3182,15 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
 
       // 30 — carried-C4 BADGE: this slot's INVENTORY at the playhead
       // (state.js slotStateAt — the per-slot series setStateIndex pushed)
-      // still lists 'C4', so this is the bomb carrier: a
-      // small white C4 at the dot's top-right, readable without opening
-      // the player card. Dead players never reach here (drawPlayers
-      // skips them) and a dropped/planted bomb leaves every inventory,
-      // so the badge clears itself; drawBomb owns the world bomb.
+      // still lists 'C4', so this is the bomb carrier. COLLECTED, not
+      // painted: the badge is drawn in the second pass after the loop,
+      // above every dot/label/ring of the frame (see `badges` above).
+      // Dead players never reach here (drawPlayers skips them) and a
+      // dropped/planted bomb leaves every inventory, so the badge clears
+      // itself; drawBomb owns the world bomb.
       if (stateIndex) {
         const inv = slotStateAt(stateIndex, slot, st.frame).inventory;
-        if (Array.isArray(inv) && inv.includes('C4')) drawCarrierBadge(c, r);
+        if (Array.isArray(inv) && inv.includes('C4')) badges.push({ x: c.x, y: c.y, r });
       }
 
       // name label — baseline cy+r+13 (cy+22), dropped ELEV_NAME_DROP
@@ -3149,6 +3207,13 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       ctx.fillText(name, c.x, c.y + r + 13 + (elev ? ELEV_NAME_DROP : 0));
       ctx.shadowBlur = 0;
     }
+
+    // Second pass — the collected carrier badges (C2): painted after the
+    // loop so a C4 badge sits ABOVE every dot, name label and ring of
+    // the frame (inside the loop it was covered by any slot drawn after
+    // its own). The kit badge is deliberately NOT here — a CT dot with a
+    // defuse kit gets no dot indicator (the kit lives on the card).
+    for (const b of badges) drawCarrierBadge(b, b.r);
   }
 
   // --- Stage overlay regions (the ratified region map) ------------------------
@@ -4058,6 +4123,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     setBullets,
     setDecoyPlan,
     setDropLayers,
+    setKitEvidence,
     setStateIndex,
     setData,
     panBy,

@@ -1177,23 +1177,43 @@ at the end of the section.
   game_events.go — queued to the end of the tick, because
   Equipment.UniqueID() is not yet stable in the raw handler). Measured
   on all seven golden demos (extract.TestDiagDropInventoryAtKill):
-  1473 pickups on de_cache of which only 91 pair with a death drop of
-  the same weapon that round — spectra stores ONLY gun/util rows
-  (dropCat: knife/C4/kit/armour filtered, 434/1473 on golden) and the
-  frontend's evidence rule consumes only same-round AFTER-drop matches
-  (lib/replay/drops.js), so buy/restock rows are stored but never
-  terminate a drop they cannot match. Companion seam, same diag:
-  `events.Kill` dispatches with the victim's inventory INTACT —
-  1174/1174 kills across the pool non-empty, identical to the last
-  frame sample, victim still alive at dispatch — so the kill-time
-  `e.Victim.Weapons()` read is authoritative for death drops.
+  1473 pickups on de_cache of which only 94 pair with a death drop of
+  the same weapon that round — spectra stores gun/util/KIT rows
+  (dropCat: knife/C4/armour filtered, 409/1473 on golden; kit rows
+  landed with the defuse-kit feature) and the frontend's evidence rule
+  consumes only same-round AFTER-drop matches (lib/replay/drops.js),
+  so buy/restock rows are stored but never terminate a drop they cannot
+  match. Companion seam, same diag: `events.Kill` dispatches with the
+  victim's inventory INTACT — 1174/1174 kills across the pool
+  non-empty, identical to the last frame sample, victim still alive at
+  dispatch — so the kill-time `e.Victim.Weapons()` read is authoritative
+  for death drops.
+
+  **Defuse kits are NOT inventory** — possession lives in the pawn's
+  `m_pItemServices.m_bHasDefuser` (demoinfocs `Player.HasDefuseKit`),
+  never in `Weapons()`, and no drop/pickup game event for kits fires at
+  all (the `defuser_dropped`/`defuser_pickedup` zero below), so a kit
+  owner's DEATH is the only source of a dropped-kit row and the
+  `item_pickup` row is all that separates a buy from a ground pickup.
+  Repo-local measurement on de_cache, same diag run
+  (`SPECTRA_DIAG=1`, extract.TestDiagDropInventoryAtKill, 2026-11-10):
+  22/170 kills dispatch with `HasDefuseKit()==true` and the last
+  alive-frame sample agrees on every one of them (0 disagreements —
+  the dispatch-time read needs no fallback); 22 inferred kit death
+  drops, all 22 carrying the victim's position; 25 `item_pickup`
+  "Defuse Kit" rows pass the gate (21 at/before their round's
+  `buytime_ended` = buys, 4 after = ground candidates), and
+  `buytime_ended` generic rows exist for 24/25 rounds (0 duplicates) —
+  that per-round boundary is the frontend's buy-vs-ground rule
+  (lib/replay/kits.js; a round with no row reads as "no buy evidence").
   **Source** —
   https://cs2opendev.github.io/CS2OpenDev-Docs/generated/gameevents.html +
   https://github.com/SteamDatabase/GameTracking-CS2 (mod.gameevents
   `item_pickup` fields),
   https://wiki.alliedmods.net/Counter-Strike:_Global_Offensive_Events,
   demoinfocs v6 `game_events.go` (delay comment) + `events.ItemPickup`
-  docs; golden-demo diag `TestDiagDropInventoryAtKill` (2026-11-08).
+  docs + `common/player.go` `HasDefuseKit`; golden-demo diag
+  `TestDiagDropInventoryAtKill` (2026-11-08; kit seam 2026-11-10).
 
 - **Which optional CS2 demo events actually fire / input recording
   limits** — event availability is build- and recorder-dependent:

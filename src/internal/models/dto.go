@@ -174,15 +174,16 @@ type EventDetail struct {
 // replay's drop layer — the payload side channel in the exact shape of
 // the blind one (store.GetBlindFlashDurations → MatchService.
 // GetBlindDurations): EventRow stays payload-free, so the stored
-// classification (cat, from models.IsUtilityWeapon at extract time —
-// the frontend never re-derives the util rule) and the gun's ammo/mag
+// classification (cat, stamped at extract time by models.IsUtilityWeapon
+// / models.IsKit / the firearm sets — the frontend never re-derives the
+// util or the kit rule) and the gun's ammo/mag
 // state at death reach the renderer through a narrow seq-keyed read
 // (store.GetDropDetails), joined onto the DRAW_KINDS rows by seq.
 // Cat "" / Mag 0 mean "payload missing" — the consumer draws nothing,
 // never a guessed classification.
 type DropDetail struct {
 	Seq     int    `json:"seq"`
-	Cat     string `json:"cat"` // "gun" | "util" | "" (missing payload)
+	Cat     string `json:"cat"` // "gun" | "util" | "kit" | "" (missing payload)
 	Mag     int    `json:"mag"`
 	Reserve int    `json:"reserve"`
 }

@@ -1063,10 +1063,11 @@ func (s *Store) GetBlindFlashDurations(matchID int64) (map[int]int, error) {
 // mag / reserve) for every death-drop row of a match in events.seq
 // order. The SAME narrow payload side channel as GetBlindFlashDurations
 // (models.EventRow stays payload-free and eventRowCols is not widened):
-// the replay's gun/util layer gates on the STORED classification
-// (detail_json.cat — derived from models.IsUtilityWeapon at extract
-// time; the frontend never re-derives it) and labels dropped guns with
-// their mag/reserve at death. json_valid guards malformed payloads
+// the replay's gun/util/kit layer gates on the STORED classification
+// (detail_json.cat — stamped at extract time by models.IsUtilityWeapon /
+// models.IsKit / the firearm sets; the frontend never re-derives it) and
+// labels dropped guns with their mag/reserve at death. json_valid guards
+// malformed payloads
 // (json_extract would error); a row missing a field maps to "" / 0 —
 // the consumer draws nothing for those (never a guessed cat).
 func (s *Store) GetDropDetails(matchID int64) ([]models.DropDetail, error) {

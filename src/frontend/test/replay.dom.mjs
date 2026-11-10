@@ -163,6 +163,11 @@ for (const rel of [
   // copy it or the audio graph fails to link above.
   'voicewindows.js',
   'sfx.js', 'stretch.js', 'bullets.js', 'decoy.js', 'bomb.js', 'roundcut.js',
+  // kits.js is the defuse-kit evidence Replay builds (buildKitEvidence
+  // over the draw feed + the buytime_ended read) and pushes through
+  // setKitEvidence; it imports drops.js for the position rule — copy
+  // both or the kit graph fails to link above.
+  'kits.js', 'drops.js',
   // playercard.js now resolves its held-item prefix through
   // replay/loadout.js (the one loadout vocabulary) — copy it too, or the
   // card graph fails to link (its own deps, landmarks.js + bullets.js,
@@ -264,10 +269,34 @@ const CONN_ROWS = [
   { kind: 'player_connect', tick: 448, attacker: '76561198000000006' },
   { kind: 'player_disconnect', tick: 1000, attacker: '76561198000000004' },
 ];
+// Defuse-kit evidence rows for the card plumbing: ONE kit pickup (a
+// GAIN for Alpha1 — a buy at the round's start still counts as
+// possession) plus the round's round_start, so hasKitAt can scope the
+// gain to a round (kits.js roundContaining). The view joins these with
+// its single buytime_ended read below. Every OTHER read (drawRows for
+// the other kinds, the blind join, the feed) stays empty as before.
+const KIT_ROWS = [
+  { id: 900, seq: 900, kind: 'round_start', tick: 0, round: 1 },
+  {
+    id: 901,
+    seq: 901,
+    kind: 'weapon_pickup',
+    tick: 0,
+    round: 1,
+    weapon: 'Defuse Kit',
+    attacker: '76561198000000001',
+    posX: 10,
+    posY: 20,
+    posZ: 0,
+  },
+];
 export const getEvents = (filter) => {
   const kinds = (filter && filter.kinds) || [];
   if (kinds.includes('player_connect') || kinds.includes('player_disconnect')) {
     return Promise.resolve(CONN_ROWS);
+  }
+  if (kinds.includes('weapon_pickup')) {
+    return Promise.resolve(KIT_ROWS); // the DRAW_KINDS read
   }
   return Promise.resolve([]);
 };
@@ -286,7 +315,16 @@ export const getDropDetails = () => Promise.resolve([]);
 export const getSoundEventPresence = () => Promise.resolve({ matchId: 1, total: 0, byKind: {} });
 export const getSoundEvents = () => Promise.resolve([]);
 export const getChat = () => Promise.resolve([]);
-export const getGenericEvents = () => Promise.resolve([]);
+// buytime_ended — the ONE generic read the kit evidence needs (the
+// view's buy-vs-ground boundary). Round 1's buy window ended at tick 10
+// (the fixture's kit pickup at tick 0 is therefore a BUY — a gain, never
+// a drop terminator, which is exactly what the card badge pins).
+export const getGenericEvents = (id, name) =>
+  Promise.resolve(
+    name === 'buytime_ended'
+      ? [{ rowId: 1, name: 'buytime_ended', tick: 10, round: 1, payloadJson: '{}' }]
+      : [],
+  );
 export const getGenericHistogram = () => Promise.resolve([]);
 export const getMatch = () => Promise.resolve({ map: '', sideSwitches: 1 });
 export const getRounds = () =>
@@ -484,11 +522,20 @@ writeFileSync(
     setChat() {},
     setBullets() {},
     setDecoyPlan() {},
+    setKitEvidence(v) {
+      // Recorded so the driver can pin the kit-evidence wiring: the
+      // view pushes the buildKitEvidence result beside setLandmarks.
+      globalThis.__kitEvidence = v || null;
+    },
     setDropLayers(v) {
       // Recorded so the driver can pin the toolbar wiring: startEngine
-      // pushes the current (default both-off) state, every checkbox
-      // toggle pushes the new pair.
-      globalThis.__dropLayers = { guns: !!(v && v.guns), util: !!(v && v.util) };
+      // pushes the current (default all-off) state, every checkbox
+      // toggle pushes the new triple.
+      globalThis.__dropLayers = {
+        guns: !!(v && v.guns),
+        util: !!(v && v.util),
+        kits: !!(v && v.kits),
+      };
     },
     setHud() {},
     setOverlaysVisible(v) {
@@ -1501,14 +1548,22 @@ check(
   JSON.stringify(globalThis.__prefReads),
 );
 check(
-  'both layers off: the trigger count starts at 0',
+  'all three layers off: the trigger count starts at 0',
   dropBtn2?.querySelector('.rp-drops-count')?.textContent.trim() === '0',
   dropBtn2?.querySelector('.rp-drops-count')?.textContent,
 );
 check(
-  'startEngine pushed the default (both off) to renderer.setDropLayers',
-  !!globalThis.__dropLayers && !globalThis.__dropLayers.guns && !globalThis.__dropLayers.util,
+  'startEngine pushed the default (all off) to renderer.setDropLayers',
+  !!globalThis.__dropLayers &&
+    !globalThis.__dropLayers.guns &&
+    !globalThis.__dropLayers.util &&
+    !globalThis.__dropLayers.kits,
   JSON.stringify(globalThis.__dropLayers),
+);
+check(
+  'the kit evidence was pushed beside the landmarks (built, not null)',
+  !!globalThis.__kitEvidence,
+  String(globalThis.__kitEvidence),
 );
 check('no panel until the popover opens', !controls.querySelector('.rp-drops-pop'));
 
@@ -1519,12 +1574,12 @@ check('popover opens a checkbox list (multi-select)', !!dropPop);
 const dropBoxes = dropPop ? [...dropPop.querySelectorAll('input[type="checkbox"]')] : [];
 const dropLabel = (cb) => (cb.closest('label')?.textContent || '').trim();
 check(
-  'exactly Guns and Utility, in that order',
-  JSON.stringify(dropBoxes.map(dropLabel)) === '["Guns","Utility"]',
+  'exactly Guns, Utility and Kits, in that order',
+  JSON.stringify(dropBoxes.map(dropLabel)) === '["Guns","Utility","Kits"]',
   JSON.stringify(dropBoxes.map(dropLabel)),
 );
 check(
-  'both options unchecked by default',
+  'all three options unchecked by default (the kit filter is OFF)',
   dropBoxes.filter((cb) => cb.checked).length === 0,
   JSON.stringify(dropBoxes.map((cb) => cb.checked)),
 );
@@ -1546,8 +1601,10 @@ check(
   JSON.stringify(globalThis.__prefs['drop_layers']),
 );
 check(
-  'renderer.setDropLayers received {guns:true, util:false}',
-  globalThis.__dropLayers?.guns === true && globalThis.__dropLayers?.util === false,
+  'renderer.setDropLayers received {guns:true, util:false, kits:false}',
+  globalThis.__dropLayers?.guns === true &&
+    globalThis.__dropLayers?.util === false &&
+    globalThis.__dropLayers?.kits === false,
   JSON.stringify(globalThis.__dropLayers),
 );
 check(
@@ -1579,6 +1636,31 @@ check(
   globalThis.__prefs['drop_layers'] === 'util' &&
     (globalThis.__prefReads || []).includes('drop_layers'),
   JSON.stringify(globalThis.__prefs['drop_layers']),
+);
+// The THIRD layer: Kits toggles independently of Guns/Utility and lands
+// in the same durable comma list (the default-OFF contract is the
+// "unchecked above" pin; this is the wiring).
+await setDropBox('Kits');
+check(
+  'kits toggles independently: pref = "util,kits", renderer got kits:true',
+  globalThis.__prefs['drop_layers'] === 'util,kits' &&
+    globalThis.__dropLayers?.kits === true &&
+    globalThis.__dropLayers?.util === true &&
+    globalThis.__dropLayers?.guns === false,
+  `${JSON.stringify(globalThis.__prefs['drop_layers'])} / ${JSON.stringify(globalThis.__dropLayers)}`,
+);
+check(
+  'the trigger count follows the third layer (2)',
+  dropBtn2?.querySelector('.rp-drops-count')?.textContent.trim() === '2',
+  dropBtn2?.querySelector('.rp-drops-count')?.textContent,
+);
+await setDropBox('Kits'); // back off — later sections count layers as off
+check(
+  'unchecking Kits leaves Utility on (three independent flags)',
+  globalThis.__prefs['drop_layers'] === 'util' &&
+    dropBoxes[2].checked === false &&
+    dropBoxes[1].checked === true,
+  `${JSON.stringify(globalThis.__prefs['drop_layers'])} / ${JSON.stringify(dropBoxes.map((cb) => cb.checked))}`,
 );
 click(dropBtn2); // close — later sections count toolbar chrome
 await sleep();
@@ -1708,6 +1790,24 @@ check(
     (c) => c.querySelector('.pc-stats')?.textContent === 'K/D/A 0/0/0 · ADR 0.0',
   ),
   [...leftCards, ...rightCards].map((c) => c.querySelector('.pc-stats')?.textContent).join(' | '),
+);
+// Defuse-kit badge (the card plumbing): the stubbed draw feed carries a
+// kit GAIN for Alpha1 (plus the round's round_start so hasKitAt can
+// scope it), the buytime_ended read supplies the boundary → cardColumns'
+// tri-state `kit` prop → PlayerCard's .pc-kit. No icon in this harness's
+// manifest → the mandatory "Kit" text fallback.
+const kitBadge = (c) => c.querySelector('.pc-kit');
+check(
+  'the kit badge renders on the card whose player holds a kit (Alpha1)',
+  !!kitBadge(leftCards[0]) &&
+    kitBadge(leftCards[0]).getAttribute('title') === 'Defuse kit' &&
+    kitBadge(leftCards[0]).textContent.trim() === 'Kit',
+  `${kitBadge(leftCards[0])?.getAttribute('title')} / ${kitBadge(leftCards[0])?.textContent}`,
+);
+check(
+  'no kit badge on any other card (known NOT to hold one — never a guess)',
+  [...leftCards.slice(1), ...rightCards].every((c) => !kitBadge(c)),
+  [...leftCards.slice(1), ...rightCards].map((c) => (kitBadge(c) ? 'BADGE' : '-')).join(','),
 );
 // Per-player mute (spec 22): the card button flips exactly that player.
 const cardMute = () => leftCards[0].querySelector('.pc-mute');

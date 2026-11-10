@@ -68,6 +68,10 @@
   } from '../replay/state.js';
   import { deriveBullets } from '../replay/bullets.js';
   import { buildDecoyPlan } from '../replay/decoy.js';
+  // Defuse-kit evidence: THE one nearest-death + buytime reconstruction
+  // (built once below from the draw feed joined with the single
+  // buytime_ended read in load()).
+  import { buildKitEvidence, buyEndsFromRows } from '../replay/kits.js';
   import { loadIconManifest, preloadIcons } from '../replay/icons.js';
   import {
     AUDIO_VOL_DEFAULT,
@@ -281,21 +285,28 @@
   let followAnchor = $state(null);
   // The drop-layer popover (between the camera selector and the volume):
   // the SAME .rp-pop-host / Popover / .rp-pop pattern as the camera pop,
-  // but MULTI-select — checkboxes over exactly Guns / Utility (the
+  // but MULTI-select — checkboxes over exactly Guns / Utility / Kits (the
   // Categories .lm-cat-item checkbox rows are the row reference).
-  // dropGuns/dropUtil gate renderer.setDropLayers; BOTH are OFF by
-  // default (an unset pref = the feature is invisible), persisted in one
-  // kvstore pref (drop_layers — a comma list, the frontend-owned
+  // dropGuns/dropUtil/dropKits gate renderer.setDropLayers; ALL are OFF
+  // by default (an unset pref = the feature is invisible), persisted in
+  // one kvstore pref (drop_layers — a comma list, the frontend-owned
   // camera_mode pattern).
   let dropsOpen = $state(false);
   let dropsAnchor = $state(null);
   let dropGuns = $state(false);
   let dropUtil = $state(false);
+  let dropKits = $state(false);
   const DROP_LAYERS = [
     { key: 'guns', label: 'Guns' },
     { key: 'util', label: 'Utility' },
+    { key: 'kits', label: 'Kits' },
   ];
-  const dropLayerCount = $derived((dropGuns ? 1 : 0) + (dropUtil ? 1 : 0));
+  // The three flags as ONE lookup, keyed like DROP_LAYERS — the popover
+  // checkbox reads it by key (a guns/util ternary could not carry the
+  // third layer), and the count is derived from the same object so the
+  // two can never disagree.
+  const dropLayerOn = $derived({ guns: dropGuns, util: dropUtil, kits: dropKits });
+  const dropLayerCount = $derived(Object.values(dropLayerOn).filter(Boolean).length);
 
   let stageEl = $state(null);
   let canvasEl = $state(null);
@@ -364,6 +375,11 @@
   const PAGE = 500; // per-source page size; PAGE+1 probes "there is more"
 
   let drawRows = $state([]); // drawable-kind anchors, fetched once per match
+  // The ONE buytime_ended read (round → tick), fetched in load() beside
+  // drawRows: the kit evidence's buy-vs-ground boundary. null until it
+  // resolves — kitEv (below) stays null until then, so no card claims a
+  // kit before the evidence is complete (tri-state `kit`: null = unknown).
+  let buyEnds = $state(null);
   // The match's sound_events rows (footsteps/lands/jumps/fall damage) —
   // fetched ONCE in load(), ONLY after GetSoundEventPresence proved the
   // match has any (presence-zero matches keep this [] and their footsteps
@@ -584,6 +600,16 @@
   // load() and handed to the renderer — the category selection never
   // rebuilds the world layers.
   const drawNorm = $derived(drawRows.map((r) => normalizeEvent(r, {})).filter(Boolean));
+
+  // The defuse-kit evidence (lib/replay/kits.js buildKitEvidence) — built
+  // ONCE per match (both inputs are match-static: the draw feed above
+  // and the buytime_ended boundary from load()). Two consumers:
+  //   renderer  setKitEvidence pushes it beside setLandmarks (the
+  //             precomputed [from,to) windows the kit marker reads);
+  //   cards     hasKitAt(steamId, tick) in cardColumns → PlayerCard's
+  //             tri-state `kit` prop.
+  // null until buyEnds resolves: an unknown answer, never a guessed one.
+  const kitEv = $derived(buyEnds ? buildKitEvidence(drawNorm, buyEnds, meta?.tickRate ?? 0) : null);
 
   // Scrubber markers: the draw feed gated by the ACTIVE category set +
   // round/player scope (the scrubber mirrors the feed's overview;
@@ -1332,6 +1358,13 @@
             stats: sid ? statsBySteam.get(sid) ?? null : null,
             icons: iconMap,
             iconURLs: iconUrls,
+            // Defuse-kit possession at the playhead — lib/replay/kits.js
+            // hasKitAt (round-scoped gains/losses over the match-static
+            // kit rows). TRI-STATE for PlayerCard: true/false straight
+            // from the evidence, null while kitEv is not built yet (the
+            // buytime read has not landed) — an unknown is never drawn
+            // as a fact.
+            kit: kitEv ? kitEv.hasKitAt(sid, tick) : null,
             onToggleMute: muteHandlerFor(sid),
           };
         });
@@ -1476,8 +1509,9 @@
   }
 
   // Pref `drop_layers` (frontend-owned kvstore, the camera_mode pattern):
-  // a comma list of the ON layers ("guns", "util", "guns,util"); unset /
-  // unreadable / unknown tokens → both OFF (the default — the drop layer
+  // a comma list of the ON layers ("guns", "util", "kits",
+  // "guns,util", …); unset /
+  // unreadable / unknown tokens → ALL OFF (the default — the drop layer
   // is opt-in). Applied once on entry like camera_mode; the renderer may
   // not exist yet (startEngine pushes the current state too).
   $effect(() => {
@@ -1488,25 +1522,28 @@
         const on = String(v || '').split(',').filter(Boolean);
         dropGuns = on.includes('guns');
         dropUtil = on.includes('util');
-        renderer?.setDropLayers({ guns: dropGuns, util: dropUtil });
+        dropKits = on.includes('kits');
+        renderer?.setDropLayers({ guns: dropGuns, util: dropUtil, kits: dropKits });
       })
       .catch(() => {
-        /* unreadable store → both off */
+        /* unreadable store → all off */
       });
     return () => (live = false);
   });
 
   // toggleDropLayer — one checkbox of the multi-select: flip the layer,
   // push it to the renderer (pure visibility — the rows stay loaded) and
-  // persist the durable pair (the pref is the whole toggle state, so a
+  // persist the durable list (the pref is the whole toggle state, so a
   // reload restores exactly this).
   function toggleDropLayer(key) {
     if (key === 'guns') dropGuns = !dropGuns;
-    else dropUtil = !dropUtil;
-    renderer?.setDropLayers({ guns: dropGuns, util: dropUtil });
+    else if (key === 'util') dropUtil = !dropUtil;
+    else dropKits = !dropKits;
+    renderer?.setDropLayers({ guns: dropGuns, util: dropUtil, kits: dropKits });
     const on = [];
     if (dropGuns) on.push('guns');
     if (dropUtil) on.push('util');
+    if (dropKits) on.push('kits');
     setPref('drop_layers', on.join(',')).catch(() => {});
   }
 
@@ -1856,6 +1893,19 @@
           }),
         );
       }
+      // buytime_ended — the ONE generic read the defuse-kit evidence
+      // needs (kitEv above): the per-round buy-window boundary that
+      // separates a kit bought on the buy menu from one taken off a dead
+      // CT (both are the SAME item_pickup row — only buytime tells them
+      // apart, lib/replay/kits.js). Round -1 = all rounds in ONE call;
+      // limit 0 = the store's default page (500) — a match has one row
+      // per round, far under it. Fail-soft like every read here: an
+      // error → [] → an EMPTY boundary map, and a round with no row
+      // reads as "no buy evidence" (never an invented buy window).
+      {
+        const bt = await getGenericEvents(id, 'buytime_ended', -1, 0, 0).catch(() => []);
+        buyEnds = buyEndsFromRows(bt);
+      }
       // Player sounds (footsteps/lands/jumps/fall damage): PRESENCE
       // first — a match whose sound_events table is empty (imported
       // before the SOS work, never re-imported) fetches NOTHING, pushes
@@ -2004,6 +2054,13 @@
     });
     renderer.setPack(pack, radarImg, packTf, layerImgs);
     renderer.setLandmarks(drawNorm);
+    // Defuse-kit evidence pushed beside the landmarks (the same
+    // additive-setter contract): the precomputed [from,to) windows the
+    // kit marker reads. load() always resolves the buytime_ended read
+    // BEFORE startEngine, so kitEv is built here; the setter still
+    // treats null/absent as an EMPTY window map (no kit marker, never a
+    // guessed one) for the fail-soft path.
+    renderer.setKitEvidence(kitEv);
     renderer.setBlinds(blindRows); // flash-white overlay rows from load()
     renderer.setChat(chatLines); // raw chat rows from load() (round -1)
     // Player-card phase inputs (handoff E): push whatever load() already
@@ -2031,10 +2088,10 @@
     renderer.setDecoyPlan(decoyPlanFor());
     renderer.resize();
     renderer.setCameraMode(rendererCam()); // default 'smart' unless the pref says free
-    // Drop-layer visibility (both off unless the pref said otherwise —
+    // Drop-layer visibility (all off unless the pref said otherwise —
     // the pref effect may have run before the renderer existed, so the
     // CURRENT state is pushed here like every other setter).
-    renderer.setDropLayers({ guns: dropGuns, util: dropUtil });
+    renderer.setDropLayers({ guns: dropGuns, util: dropUtil, kits: dropKits });
     // UI-overlay visibility: the SAME current-state push — the toggle
     // may have flipped before the engine rebuilt (or the view mounted
     // with it already off), so re-push whatever uiHudOff says now.
@@ -3186,21 +3243,21 @@
             ><span class="codicon {uiHudOff ? 'codicon-eye-closed' : 'codicon-eye'}" aria-hidden="true"></span></button
           >
 
-          <!-- Drops (spec: dropped guns/util on the map): a MULTI-select
-               popover between the camera selector and the volume — the
-               camera pop's .rp-pop-host/.rp-pop family, but checkbox
-               rows (the Categories .lm-cat-item rows are the reference)
-               over exactly Guns / Utility. Both OFF by default (the
-               unset drop_layers pref); each toggle persists the pref and
-               pushes renderer.setDropLayers. The trigger shows the label
-               + chevron and the live on-count. -->
+          <!-- Drops (spec: dropped guns/util/kits on the map): a
+               MULTI-select popover between the camera selector and the
+               volume — the camera pop's .rp-pop-host/.rp-pop family, but
+               checkbox rows (the Categories .lm-cat-item rows are the
+               reference) over exactly Guns / Utility / Kits. ALL OFF by
+               default (the unset drop_layers pref); each toggle persists
+               the pref and pushes renderer.setDropLayers. The trigger
+               shows the label + chevron and the live on-count. -->
           <span class="rp-pop-host" id="rp-drops" bind:this={dropsAnchor}>
             <button
               class="btn"
               aria-expanded={dropsOpen}
               aria-haspopup="true"
               aria-label="Drop markers"
-              title="Show dropped guns and utility on the map (off by default)"
+              title="Show dropped guns, utility and defuse kits on the map (off by default)"
               onclick={() => (dropsOpen = !dropsOpen)}
             >
               Drops
@@ -3213,7 +3270,7 @@
                   <label class="rp-drop-item" title={`Show dropped ${l.label.toLowerCase()} on the map`}>
                     <input
                       type="checkbox"
-                      checked={l.key === 'guns' ? dropGuns : dropUtil}
+                      checked={!!dropLayerOn[l.key]}
                       onchange={() => toggleDropLayer(l.key)}
                     />
                     {l.label}
