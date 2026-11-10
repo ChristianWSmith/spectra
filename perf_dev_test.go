@@ -116,7 +116,7 @@ func TestPerfVoiceDevDB(t *testing.T) {
 	from := players[0].FirstTick
 	to := from + int(2*tickRate)
 	t0 := time.Now()
-	pcm, err := decodeVoicePCM(matchDir, steam, from, to, tickRate)
+	pcm, err := decodeVoicePCM(rd, matchDir, steam, from, to, tickRate)
 	if err != nil {
 		t.Fatalf("decodeVoicePCM(2s window): %v", err)
 	}
@@ -130,7 +130,7 @@ func TestPerfVoiceDevDB(t *testing.T) {
 	// Full-match WAV: record the wall time (no hard target beyond the
 	// "decode full match < 60 s" background-job budget).
 	t0 = time.Now()
-	full, err := decodeVoicePCM(matchDir, steam, 0, m.DurationTicks, tickRate)
+	full, err := decodeVoicePCM(rd, matchDir, steam, 0, m.DurationTicks, tickRate)
 	if err != nil {
 		t.Fatalf("decodeVoicePCM(full match): %v", err)
 	}

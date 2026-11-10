@@ -506,7 +506,10 @@ func handleSidecar(st *store.Store, w http.ResponseWriter, r *http.Request, p st
 		http.NotFound(w, r)
 		return
 	}
-	if _, err := st.GetMatch(id); err != nil {
+	// The ONE match lookup per request: it gates every sub-route here and
+	// the voice routes reuse it below (never a second GetMatch).
+	m, err := st.GetMatch(id)
+	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -515,7 +518,7 @@ func handleSidecar(st *store.Store, w http.ResponseWriter, r *http.Request, p st
 			http.NotFound(w, r)
 			return
 		}
-		handleVoice(st, w, r, id, idStr, tail)
+		handleVoice(w, r, m, idStr, tail)
 		return
 	}
 	rd, err := sidecar.Open(filepath.Join(data.MatchesDir(), idStr))
@@ -676,23 +679,22 @@ func handleExportLibraryDB(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// handleVoice serves the /api/sidecar/<id>/voice/{pcm,wav} routes.
-func handleVoice(st *store.Store, w http.ResponseWriter, r *http.Request, matchID int64, idStr, kind string) {
+// handleVoice serves the /api/sidecar/<id>/voice/{pcm,wav} routes. The
+// match row (m) and the sidecar index are opened ONCE by the caller and
+// passed down — one GetMatch + one OpenVoice per PCM request, never two
+// of each.
+func handleVoice(w http.ResponseWriter, r *http.Request, m *models.Match, idStr, kind string) {
 	matchDir := filepath.Join(data.MatchesDir(), idStr)
 	// The sidecar index is the chunk source: no voice/*.idx is a match
 	// without playable voice (or one imported before the index moved out
 	// of the database) — 404, exactly like the old presence-row gate.
-	if _, err := sidecar.OpenVoice(matchDir); err != nil {
+	rd, err := sidecar.OpenVoice(matchDir)
+	if err != nil {
 		if errors.Is(err, sidecar.ErrNoVoiceIndex) {
 			http.NotFound(w, r)
 			return
 		}
 		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-	m, err := st.GetMatch(matchID)
-	if err != nil {
-		http.NotFound(w, r)
 		return
 	}
 	steamID := r.URL.Query().Get("steamId")
@@ -729,25 +731,33 @@ func handleVoice(st *store.Store, w http.ResponseWriter, r *http.Request, matchI
 			http.Error(w, "voice: tick range exceeds 60s window", http.StatusBadRequest)
 			return
 		}
-		pcm, err := decodeVoicePCM(matchDir, steamID, from, to, tickRate)
+		pcm, err := decodeVoicePCM(rd, matchDir, steamID, from, to, tickRate)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
 		// Fixed 8-byte header: int32 fromTick | int32 sampleRate (LE), then
-		// s16le mono PCM.
-		out := make([]byte, 8+len(pcm))
-		binary.LittleEndian.PutUint32(out[0:4], uint32(from))
-		binary.LittleEndian.PutUint32(out[4:8], models.VoiceOutSampleRate)
-		copy(out[8:], pcm)
+		// s16le mono PCM — two writes over the KNOWN Content-Length (no
+		// combined out buffer to allocate and copy). A chunk-less window
+		// ships the header alone: 8 bytes, 0 samples (the engine treats
+		// n === 0 as "no buffer to play", never silence to decode).
+		var hdr [8]byte
+		binary.LittleEndian.PutUint32(hdr[0:4], uint32(from))
+		binary.LittleEndian.PutUint32(hdr[4:8], models.VoiceOutSampleRate)
 		w.Header().Set("Content-Type", "application/octet-stream")
-		w.Header().Set("Content-Length", strconv.Itoa(len(out)))
-		if _, err := w.Write(out); err != nil {
+		w.Header().Set("Content-Length", strconv.Itoa(8+len(pcm)))
+		if _, err := w.Write(hdr[:]); err != nil {
 			log.Printf("sidecar: write voice pcm: %v", err)
+			return
+		}
+		if len(pcm) > 0 {
+			if _, err := w.Write(pcm); err != nil {
+				log.Printf("sidecar: write voice pcm: %v", err)
+			}
 		}
 	case "wav":
 		from, to := 0, m.DurationTicks
-		pcm, err := decodeVoicePCM(matchDir, steamID, from, to, tickRate)
+		pcm, err := decodeVoicePCM(rd, matchDir, steamID, from, to, tickRate)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
@@ -773,6 +783,11 @@ func voiceSamplesPerTick(tickRate float64) int {
 	return int(math.Round(models.VoiceOutSampleRate / tickRate))
 }
 
+// maxOpusPacketLen is the largest Opus packet decodeVoicePCM will read
+// (RFC 6716's max of 1275 bytes); a larger record only ever comes from
+// corruption and is skipped rather than handed to the decoder.
+const maxOpusPacketLen = 1275
+
 // decodeVoicePCM decodes one player's chunks in [from,to] onto a
 // zero-filled 16 kHz s16le mono timeline. Frames are placed with an
 // anchor cursor: at max((tick-from)*samplesPerTick, cursor), where
@@ -780,48 +795,62 @@ func voiceSamplesPerTick(tickRate float64) int {
 // than the tick rate (10 ms Opus vs. 15.6 ms ticks at 64 tick) continue
 // back-to-back instead of clobbering each other at a shared tick
 // offset, while real pauses stay silent — speech stays contiguous and
-// on the timeline. The sidecar index is opened per request (no cache —
-// TestPerfVoiceDevDB's <20 ms window gate is the budget); a player with
-// no chunks yields silence, a missing .opus file surfaces as an error;
-// stray undecodable packets are skipped.
-func decodeVoicePCM(matchDir string, steamID string, from, to int, tickRate float64) ([]byte, error) {
-	rd, err := sidecar.OpenVoice(matchDir)
-	if err != nil {
-		return nil, err
-	}
+// on the timeline. The index reader is opened ONCE by the caller (one
+// OpenVoice per PCM request); the window's payload span
+// [minOff,maxOff) is pulled in a SINGLE ReadAt (chunks are
+// append-contiguous, so one pread beats one per chunk). A window with
+// NO chunks returns EMPTY pcm — never an allocated silence buffer (the
+// route ships the 8-byte header alone and the engine skips the buffer);
+// a missing .opus file surfaces as an error; stray undecodable packets
+// are skipped.
+func decodeVoicePCM(rd *sidecar.VoiceReader, matchDir string, steamID string, from, to int, tickRate float64) ([]byte, error) {
 	rows, err := rd.Chunks(steamID, from, to)
 	if err != nil {
 		return nil, err
 	}
+	if len(rows) == 0 {
+		return nil, nil // no chunks in the window: 0 samples, no buffer
+	}
 	spt := voiceSamplesPerTick(tickRate)
 	totalSamples := (to - from) * spt
-	pcm := make([]byte, totalSamples*2) // zero-filled: silence = absence of chunks
-	if len(rows) == 0 {
-		return pcm, nil
-	}
+	pcm := make([]byte, totalSamples*2)                                               // zero-filled: silence = absence of chunks
 	f, err := os.Open(filepath.Join(matchDir, sidecar.VoiceDirName, steamID+".opus")) //nolint:gosec // rows above prove the stem is the index's decimal one
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = f.Close() }()
+	// One ReadAt over the window's whole payload span: the records' Offs
+	// are append-ordered per player, so every chunk sits inside
+	// [minOff, maxOff) — a span bounded by the payload size the index
+	// records were validated against.
+	minOff, maxOff := rows[0].Off, rows[0].Off+rows[0].Len
+	for _, row := range rows[1:] {
+		if row.Off < minOff {
+			minOff = row.Off
+		}
+		if end := row.Off + row.Len; end > maxOff {
+			maxOff = end
+		}
+	}
+	span := make([]byte, maxOff-minOff)
+	if len(span) > 0 {
+		if _, err := f.ReadAt(span, minOff); err != nil {
+			return nil, err
+		}
+	}
 	dec, err := opus.NewDecoderWithOutput(models.VoiceOutSampleRate, 1)
 	if err != nil {
 		return nil, err
 	}
 	// 10 ms @ 48 kHz is 480 samples; 2048 leaves headroom for longer frames.
 	samples := make([]int16, 2048)
-	// 1275 is the max Opus packet size (RFC 6716); a smaller cap silently
-	// dropped big packets as holes in the speech.
-	payload := make([]byte, 1275)
 	cursor := 0 // end of the last placed frame; never write before it
 	for _, row := range rows {
-		if row.Len <= 0 || row.Len > int64(cap(payload)) {
+		if row.Len <= 0 || row.Len > maxOpusPacketLen {
 			continue
 		}
-		if _, err := f.ReadAt(payload[:row.Len], row.Off); err != nil {
-			return nil, err
-		}
-		n, derr := dec.DecodeToInt16(payload[:row.Len], samples)
+		pkt := span[row.Off-minOff : row.Off-minOff+row.Len]
+		n, derr := dec.DecodeToInt16(pkt, samples)
 		if derr != nil || n <= 0 {
 			continue // tolerate stray packets: leave the window silent there
 		}

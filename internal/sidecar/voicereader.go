@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 
 	"github.com/ChristianWSmith/spectra/internal/models"
@@ -36,9 +35,11 @@ type VoicePlayerStat struct {
 
 // VoiceReader serves one match's voice chunk index (the <steamid>.idx
 // files VoiceWriter.Close writes beside the .opus payloads). The index
-// IS the chunk source: rows carry Off/Len into that player's payload, so
-// a range read is a whole-file read plus a binary search — a player's
-// index is ≤ ~900 KB, well under the millisecond budget, and no cache is
+// IS the chunk source: rows carry Off/Len into that player's payload.
+// Records are fixed-width and tick-sorted, so a range read (Chunks)
+// binary-searches the file ON disk and pulls only the window's records —
+// the whole-file reads (Players/Ticks/PlayersWithTicks) validate every
+// record, a windowed read validates only the ones it returns. No cache is
 // kept between requests.
 //
 // The reader only ever imports internal/models (never the store — the store
@@ -79,29 +80,61 @@ func OpenVoice(dir string) (*VoiceReader, error) {
 
 // Players returns one stat per index file: the chunk count (index size ÷
 // 16 — a size that is not a multiple of 16 is corrupt), the first/last
-// tick over the whole file, and the payload file's byte size.
+// tick over the whole file, and the payload file's byte size. Whole-file
+// validation: every record is checked against the payload size.
 func (r *VoiceReader) Players() ([]VoicePlayerStat, error) {
-	out := make([]VoicePlayerStat, 0, len(r.players))
+	idx, err := r.PlayersWithTicks()
+	if err != nil {
+		return nil, err
+	}
+	out := make([]VoicePlayerStat, len(idx))
+	for i, p := range idx {
+		out[i] = p.VoicePlayerStat
+	}
+	return out, nil
+}
+
+// VoicePlayerIndex pairs one player's summary with every captured tick —
+// the one-read metadata payload behind the voice listings: stats AND the
+// lane-bucketing/window source from a single pass over the file, instead
+// of Players() + Ticks() reading it twice.
+type VoicePlayerIndex struct {
+	VoicePlayerStat
+	Ticks []int // every captured chunk tick, in index order
+}
+
+// PlayersWithTicks reads each player's index ONCE and yields the summary
+// plus every captured tick (the union of Players + Ticks with one file
+// read per player instead of two — the match-load walk). Whole-file
+// validation, exactly like Players.
+func (r *VoiceReader) PlayersWithTicks() ([]VoicePlayerIndex, error) {
+	out := make([]VoicePlayerIndex, 0, len(r.players))
 	for _, steamID := range r.players {
 		recs, payload, err := r.readPlayer(steamID)
 		if err != nil {
 			return nil, err
 		}
-		stat := VoicePlayerStat{SteamID: steamID, Chunks: len(recs), Bytes: payload}
+		p := VoicePlayerIndex{
+			VoicePlayerStat: VoicePlayerStat{SteamID: steamID, Chunks: len(recs), Bytes: payload},
+			Ticks:           make([]int, 0, len(recs)),
+		}
 		// Min/max rather than first/last: honest even if a hand-edited
 		// index ever lost its tick order (the writer sorts at Close).
-		if len(recs) > 0 {
-			stat.FirstTick, stat.LastTick = int(recs[0].Tick), int(recs[0].Tick)
-			for _, rec := range recs[1:] {
-				if int(rec.Tick) < stat.FirstTick {
-					stat.FirstTick = int(rec.Tick)
-				}
-				if int(rec.Tick) > stat.LastTick {
-					stat.LastTick = int(rec.Tick)
-				}
+		for _, rec := range recs {
+			t := int(rec.Tick)
+			p.Ticks = append(p.Ticks, t)
+			if len(p.Ticks) == 1 {
+				p.FirstTick, p.LastTick = t, t
+				continue
+			}
+			if t < p.FirstTick {
+				p.FirstTick = t
+			}
+			if t > p.LastTick {
+				p.LastTick = t
 			}
 		}
-		out = append(out, stat)
+		out = append(out, p)
 	}
 	return out, nil
 }
@@ -127,21 +160,69 @@ func (r *VoiceReader) Ticks(steamID string) ([]int, error) {
 
 // Chunks returns one player's index records with from <= tick <= to, in
 // index order — the PCM/WAV decode source (rows carry Off/Len into that
-// player's .opus file). Binary search for the window start, then a slice
-// walk; a player without an index file yields no chunks.
+// player's .opus file). The index is tick-sorted by contract, so the
+// window's record range is located by two on-disk binary searches and
+// pulled with ONE ReadAt: only those records are parsed and validated
+// against the payload size (corruption outside the requested window is
+// the whole-file readers' job — Players/Ticks/PlayersWithTicks). A player
+// without an index file yields no chunks.
 func (r *VoiceReader) Chunks(steamID string, from, to int) ([]models.VoiceIndexRow, error) {
-	recs, _, err := r.readPlayer(steamID)
+	// Same stem guard as readPlayer: a non-decimal stem — notably a path
+	// segment arriving in a query string — reads as "that player has no
+	// index" and can never leave the voice directory.
+	if !decimalSteamID(steamID) {
+		return nil, nil
+	}
+	f, err := os.Open(filepath.Join(r.dir, steamID+voiceIdxExt)) //nolint:gosec // stem is decimal-checked above
 	if err != nil {
-		if errors.Is(err, errNoVoicePlayer) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil, nil
 		}
-		return nil, err
+		return nil, fmt.Errorf("sidecar: read voice index %s: %w", steamID, err)
 	}
-	// First record with tick >= from (index is tick-sorted by contract).
-	start := sort.Search(len(recs), func(i int) bool { return int(recs[i].Tick) >= from })
-	var out []models.VoiceIndexRow
-	for i := start; i < len(recs) && int(recs[i].Tick) <= to; i++ {
-		rec := recs[i]
+	defer func() { _ = f.Close() }()
+	fi, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("sidecar: stat voice index %s: %w", steamID, err)
+	}
+	size := fi.Size()
+	if size%voiceIdxRecordSize != 0 {
+		return nil, errCorrupt(fmt.Sprintf(
+			"voice index %s length %d is not a multiple of %d", steamID, size, voiceIdxRecordSize))
+	}
+	// The payload bound every returned record's Off/Len must stay inside:
+	// an index without its payload is a torn pair — fail loud, exactly
+	// like readPlayer (corrupt ≠ absent: the index exists).
+	payload, err := os.Stat(filepath.Join(r.dir, steamID+voicePayloadExt)) //nolint:gosec // stem is decimal-checked above
+	if err != nil {
+		return nil, fmt.Errorf("sidecar: voice index %s has no payload: %w", steamID, err)
+	}
+	paySize := payload.Size()
+	// First record with tick >= from, then the first with tick > to — both
+	// probes read only 4 bytes per step off disk (log2 of the record count).
+	lo, err := searchIndexTick(f, int(size/voiceIdxRecordSize), func(t int) bool { return t >= from })
+	if err != nil {
+		return nil, fmt.Errorf("sidecar: search voice index %s: %w", steamID, err)
+	}
+	hi, err := searchIndexTick(f, int(size/voiceIdxRecordSize), func(t int) bool { return t > to })
+	if err != nil {
+		return nil, fmt.Errorf("sidecar: search voice index %s: %w", steamID, err)
+	}
+	if lo >= hi {
+		return nil, nil
+	}
+	raw := make([]byte, (hi-lo)*voiceIdxRecordSize)
+	if _, err := f.ReadAt(raw, int64(lo)*voiceIdxRecordSize); err != nil {
+		return nil, fmt.Errorf("sidecar: read voice index %s records [%d,%d): %w", steamID, lo, hi, err)
+	}
+	out := make([]models.VoiceIndexRow, 0, hi-lo)
+	for off := 0; off < len(raw); off += voiceIdxRecordSize {
+		rec := decodeVoiceIdxRecord(raw[off : off+voiceIdxRecordSize])
+		if rec.Off+rec.Len > paySize {
+			return nil, errCorrupt(fmt.Sprintf(
+				"voice index %s record %d spans %d+%d beyond payload %d bytes",
+				steamID, lo+off/voiceIdxRecordSize, rec.Off, rec.Len, paySize))
+		}
 		out = append(out, models.VoiceIndexRow{
 			Tick:    int(rec.Tick),
 			SteamID: steamID,
@@ -154,6 +235,28 @@ func (r *VoiceReader) Chunks(steamID string, from, to int) ([]models.VoiceIndexR
 	return out, nil
 }
 
+// searchIndexTick binary-searches the first record index whose tick
+// satisfies pred (ticks ascend by index — the writer's Close sort), probing
+// the on-disk record's 4-byte tick field only: log2(records) small reads,
+// never the whole file. Read errors abort the search (returned, never
+// silently mis-ordered).
+func searchIndexTick(f *os.File, records int, pred func(tick int) bool) (int, error) {
+	lo, hi := 0, records
+	var buf [4]byte
+	for lo < hi {
+		mid := lo + (hi-lo)/2
+		if _, err := f.ReadAt(buf[:], int64(mid)*voiceIdxRecordSize); err != nil {
+			return 0, err
+		}
+		if pred(int(int32(binary.LittleEndian.Uint32(buf[:])))) {
+			hi = mid
+		} else {
+			lo = mid + 1
+		}
+	}
+	return lo, nil
+}
+
 // voiceIdxRecord is one decoded <steamid>.idx record (the layout written
 // by VoiceWriter.Close — see voice.go).
 type voiceIdxRecord struct {
@@ -162,6 +265,19 @@ type voiceIdxRecord struct {
 	Len     int64
 	Section uint32
 	Caster  bool
+}
+
+// decodeVoiceIdxRecord decodes one fixed-width record — THE record
+// decoder, shared by the whole-file readers and the windowed read (never
+// a second field layout).
+func decodeVoiceIdxRecord(raw []byte) voiceIdxRecord {
+	return voiceIdxRecord{
+		Tick:    int32(binary.LittleEndian.Uint32(raw[0:4])),
+		Off:     int64(binary.LittleEndian.Uint32(raw[4:8])),
+		Section: binary.LittleEndian.Uint32(raw[8:12]),
+		Len:     int64(binary.LittleEndian.Uint16(raw[12:14])),
+		Caster:  raw[14]&voiceIdxFlagCaster != 0,
+	}
 }
 
 // readPlayer reads and validates one player's whole index plus the payload
@@ -195,13 +311,7 @@ func (r *VoiceReader) readPlayer(steamID string) ([]voiceIdxRecord, int64, error
 	size := payload.Size()
 	recs := make([]voiceIdxRecord, 0, len(raw)/voiceIdxRecordSize)
 	for off := 0; off < len(raw); off += voiceIdxRecordSize {
-		rec := voiceIdxRecord{
-			Tick:    int32(binary.LittleEndian.Uint32(raw[off : off+4])),
-			Off:     int64(binary.LittleEndian.Uint32(raw[off+4 : off+8])),
-			Section: binary.LittleEndian.Uint32(raw[off+8 : off+12]),
-			Len:     int64(binary.LittleEndian.Uint16(raw[off+12 : off+14])),
-			Caster:  raw[off+14]&voiceIdxFlagCaster != 0,
-		}
+		rec := decodeVoiceIdxRecord(raw[off : off+voiceIdxRecordSize])
 		if rec.Off+rec.Len > size {
 			return nil, 0, errCorrupt(fmt.Sprintf(
 				"voice index %s record %d spans %d+%d beyond payload %d bytes",
