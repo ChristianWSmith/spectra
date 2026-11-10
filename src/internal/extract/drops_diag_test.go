@@ -53,9 +53,9 @@ func TestDiagDropInventoryAtKill(t *testing.T) {
 	if os.Getenv("SPECTRA_DIAG") == "" {
 		t.Skip("set SPECTRA_DIAG=1")
 	}
-	paths := []string{"../../golden/de_cache.dem.zst"}
+	paths := []string{"../../../golden/de_cache.dem.zst"}
 	if os.Getenv("SPECTRA_DIAG_ALL") != "" {
-		matches, err := filepath.Glob("../../golden/*.dem.zst")
+		matches, err := filepath.Glob("../../../golden/*.dem.zst")
 		if err != nil || len(matches) == 0 {
 			t.Fatalf("glob golden demos: %v", err)
 		}

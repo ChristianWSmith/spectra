@@ -35,8 +35,8 @@ import (
 
 const (
 	// demoPath is relative to this package dir (go test sets the cwd to the
-	// package directory); ../../ is the repo root.
-	demoPath = "../../golden/de_cache.dem.zst"
+	// package directory); ../../../ is the repo root.
+	demoPath = "../../../golden/de_cache.dem.zst"
 	// fixturePath is the committed golden numbers this test enforces.
 	fixturePath = "testdata/donk.golden.json"
 	// analyticsFixturePath is the M3 analytics fixture (clutches, KAST,

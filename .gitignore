@@ -1,16 +1,5 @@
-# Wails v3 project layout
-.task
-bin/
-frontend/dist/
-frontend/bindings/
-frontend/node_modules/
-
-# Unsupported platforms: iOS/Android (mobile) and macOS — Linux/Windows
-# desktop only. `wails3 update build-assets` re-extracts their stock trees;
-# keep untracked.
-build/ios/
-build/android/
-build/darwin/
+# Wails v3 project layout, Go module, binaries, and platform build trees
+# live under src/ — see src/.gitignore for those patterns.
 
 # Release artifacts produced by `make artifact`
 *.zip
@@ -58,7 +47,4 @@ go.work.sum
 # …except the golden demo selection in golden/, tracked via Git LFS
 !golden/*.dem.zst
 
-# stray `go build .` output (root package binary)
-/spectra
-# stray `go build ./cmd/cs2find` output (the in-repo dev tool)
-/cs2find
+# stray `go build .` / `go build ./cmd/cs2find` output — see src/.gitignore

@@ -9,7 +9,7 @@ Full pipeline from a dirty working tree to a published GitHub release:
 verify docs and checks, commit and push, dispatch the CI matrix with the
 version to stamp, wait for it to go green, tag the exact commit it
 built, download its artifacts, and publish the release. The dispatch
-build stamps the version into the binary (`version.go`), which is what
+build stamps the version into the binary (`src/version.go`), which is what
 the in-app updater compares against on other installs.
 
 There are three confirmation checkpoints (commit, version bump,
@@ -46,7 +46,7 @@ exactly one 2-OS run).
    - any feat / UI change / user-facing improvement → minor bump (`0.1.0` → `0.2.0`)
    - breaking change (prefs format, CLI flags removed) → major bump
    - never released a tag before → propose `0.1.0` (the committed
-     `build/config.yml` says `0.1.0`; treat that as the implicit baseline)
+     `src/build/config.yml` says `0.1.0`; treat that as the implicit baseline)
 2. **Ask the user to confirm the version** along with the commit
    review below. Same-day double releases are fine — just bump patch.
 3. Confirm the branch is `main` and show the user:
@@ -54,7 +54,7 @@ exactly one 2-OS run).
    - a one-paragraph summary of what's changing
    - the proposed commit message (sentence-case summary in the repo's
      style; `docs:` prefix when the commit is documentation-only)
-4. Update `build/config.yml` `info.version` to the chosen version
+4. Update `src/build/config.yml` `info.version` to the chosen version
    (cosmetic — the CI stamp is authoritative — but keep it in sync; it
    feeds the Windows version resources and the Linux `.desktop`/nfpm
    metadata), then
@@ -222,7 +222,7 @@ see the new tag on their next launch.
 - Tag/title format is strictly semver `X.Y.Z`, zero `v` prefix (the
   updater's GitHub provider tolerates either, but tags here are bare).
 - **The dispatch run is the one that ships:** its `version` input is
-  stamped into `version.go` before compiling. Never publish artifacts
+  stamped into `src/version.go` before compiling. Never publish artifacts
   from a pull-request run or any other unstamped build (those say
   `version = "dev"` and would never update-check), and never dispatch
   with a version other than the one the tag and release will use — the
@@ -231,7 +231,7 @@ see the new tag on their next launch.
   GOOS+GOARCH (the provider's `DefaultAssetMatcher` picks by substring),
   and `SHA256SUMS` must list the exact asset filenames. These are pinned
   by `make artifact-name`/`make artifact` and the `initUpdater` wiring in
-  `main.go` — change them together.
+  `src/main.go` — change them together.
 - `gh run watch` without `--exit-status` exits 0 even on failure —
   always pass it, or a failed build silently becomes a "successful"
   wait.

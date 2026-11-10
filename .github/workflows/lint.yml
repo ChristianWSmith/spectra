@@ -16,7 +16,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
-          go-version-file: go.mod
+          go-version-file: src/go.mod
 
       # golangci-lint typechecks, and Wails' cgo packages need the
       # GTK4/WebKitGTK headers to load — same deps the build workflow

@@ -1,0 +1,10 @@
+.task
+bin/
+frontend/dist/
+frontend/bindings/
+frontend/node_modules/
+build/ios/
+build/android/
+build/darwin/
+/spectra
+/cs2find

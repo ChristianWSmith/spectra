@@ -14,8 +14,9 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/extract"
 )
 
-// goldenStateDemo is the repo-root golden acceptance demo (Git LFS).
-const goldenStateDemo = "../../golden/de_cache.dem.zst"
+// goldenStateDemo is the repo-root golden acceptance demo (Git LFS),
+// three levels up from this package (src/internal/sidecar → repo root).
+const goldenStateDemo = "../../../golden/de_cache.dem.zst"
 
 // lfsStatePointerPrefix/MaxSize detect an un-smudged LFS pointer (the
 // demo is skipped rather than parsed) — same policy as the integration

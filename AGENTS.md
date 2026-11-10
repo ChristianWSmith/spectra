@@ -3,8 +3,13 @@
 Guide for AI agents (and humans) working in this repository. This is a
 Wails v3 desktop app (*A powerful, feature-rich CS2 demo viewer and match
 analysis toolkit.*; Go services + Svelte 5 frontend): single Go
-module at the repo root, GitHub Releases distribution, framework in-app
+module in `src/`, GitHub Releases distribution, framework in-app
 auto-updater.
+
+**The project root is `src/`: all relative paths and raw
+`go`/`npm`/`wails3`/`golangci-lint` commands in this document are
+relative to `src/`; `make` targets run from the repo root via the
+forwarding Makefile.**
 
 Supported platforms: **Linux, Windows** (desktop only). The stock
 Wails mobile scaffolding (iOS/Android) is removed from `build/` and
@@ -14,7 +19,7 @@ not commit or wire it up.
 ## Commands
 
 ```sh
-make build          # wails3 build → bin/spectra (bootstraps pinned wails3 CLI)
+make build          # wails3 build → src/bin/spectra (bootstraps pinned wails3 CLI)
 make run            # build + run
 make dev            # hot reload: wails3 dev (Go rebuilds + Vite dev server)
 make build-assets   # regenerate platform metadata from build/config.yml
@@ -55,7 +60,7 @@ and screenshot with `spectacle`. On KDE the app must run on
 (tool runners kill background process groups when a command times out):
 
 ```sh
-setsid -f env GDK_BACKEND=x11 ./bin/spectra >/tmp/spectra.log 2>&1
+setsid -f env GDK_BACKEND=x11 ./src/bin/spectra >/tmp/spectra.log 2>&1
 sleep 5
 WID=$(xdotool search --class "spectra" | head -1)
 xdotool windowactivate "$WID"
@@ -75,8 +80,9 @@ spectacle -b -n -o /tmp/shot.png         # then Read the PNG
 - Input injection needs KWin's EIS permission — the one-time "Remote
   Control" prompt (tick "Always allow") writes
   `XwaylandEisNoPromptApps=xdotool` into `~/.config/kwinrc`.
-- Kill with `pkill -x spectra` — never `pkill -f bin/spectra`, which
-  matches the invoking shell's own command line.
+- Kill with `pkill -x spectra` — never `pkill -f src/bin/spectra`
+  (nor the old `pkill -f bin/spectra`, which still substring-matches
+  the path but can match the invoking shell's own command line).
 - Known quirk: the KWin titlebar can steal the first click after
   activation; verify effects with a screenshot after each step.
 
@@ -84,6 +90,10 @@ All perf figures and visual smoke runs are Linux/X11 only — Windows
 timings are unmeasured.
 
 ## Layout
+
+The table below lists both repo-root entries (`README.md`, `CS2.md`,
+`golden/`, the root forwarder `Makefile`) and `src/`-relative project
+paths (everything else) — resolve project paths against `src/`.
 
 | Path | Role |
 |---|---|
@@ -95,7 +105,7 @@ timings are unmeasured.
 | `internal/extract` | demoinfocs v6 engine: handlers → `models.ExtractedMatch`; `Parse(ctx, r, progress)`; unit-tested accumulator |
 | `internal/library` | import pipeline: hash/dedupe, zstd sniff, single-worker job queue, cancellation, `spectra:*` events |
 | `internal/data` | XDG data-dir paths (db, per-match sidecars, tmp) |
-| `internal/integration` | golden-demo acceptance test (`golden/de_cache.dem.zst`, skip-if-absent/pointer, `-update` fixture regen) |
+| `internal/integration` | golden-demo acceptance test (repo-root `golden/de_cache.dem.zst`, skip-if-absent/pointer, `-update` fixture regen) |
 | `internal/mappack` | CS2 radar extraction: Steam install detection → VPK v2 reader → vtex_c decode → map packs in the data dir (Valve IP never ships — see `mappackservice.go` + `frontend/public/maps/README.md`) |
 | `cmd/cs2find` + `internal/mappack/devtool.go` | the in-repo dev tool `cs2find` — READ-ONLY search/decode of the local CS2 install and dump of the canonical tables; engine sits beside the mappack internals (no export churn, never a second decoder) |
 | `prefs.go` | preference keys + window-size helpers (backed by the v3 `kvstore` service) |
@@ -103,7 +113,7 @@ timings are unmeasured.
 | `frontend/` | Svelte 5 + Vite app; built into `frontend/dist` (embedded, gitignored) and `frontend/bindings` (generated per build, gitignored) |
 | `Taskfile.yml` + `build/` | stock Wails v3 build system (per-OS tasks, packaging, icons, platform metadata). `build/config.yml` holds product name/ID/version; run `make build-assets` after editing it |
 | `build/appicon.png` | the app icon source (512×512 PNG); `wails3 task common:generate:icons` (run automatically by every build) derives `.ico` |
-| `Makefile` | the single source of build/package commands, shared with CI |
+| `Makefile` (in `src/`) | the single source of build/package commands, shared with CI; the repo-root `Makefile` is a thin forwarder (`make -C src <target>`) |
 | `README.md` | the app's **front page** — the GitHub repo is the primary distribution channel, so README is player-facing product copy (features, download), NOT developer documentation. Dev depth belongs here or in the Makefile; keep README brief (its Developers section = "how to run this repo locally", nothing deeper), and no screenshots for now |
 | `CS2.md` | domain-knowledge cache for CS2 facts (formats, mechanics, rules, events); see "CS2 domain knowledge" |
 | `golden/` | the demo pool, all tracked via **Git LFS** (`.gitattributes`): `de_cache.dem.zst` is the golden acceptance demo (formerly `donk.dem.zst`), the other `de_*.dem.zst` files are archived map demos not yet onboarded to tests; acceptance tests parse the golden one and skip if absent; regenerate golden fixtures deliberately when extraction changes |
@@ -114,7 +124,7 @@ After cloning, run `git lfs pull` if the golden demo is needed.
 
 - CI (`.github/workflows/ci.yml`) builds only on `workflow_dispatch` (release)
   and `pull_request`. Pushes never build. The dispatch input `version`
-  (`X.Y.Z`) is stamped over `version.go` before compiling. Build, test, and
+  (`X.Y.Z`) is stamped over `src/version.go` before compiling. Build, test, and
   packaging steps call the Makefile (`make vet`, `make test`,
   `make artifact`) so CI and local flows are the same commands; the uploaded
   artifact name comes from `make artifact-name`.
@@ -123,12 +133,12 @@ After cloning, run `git lfs pull` if the golden demo is needed.
   binary), `spectra-windows-amd64.exe` (raw). The release
   skill adds a `SHA256SUMS` sidecar that the updater verifies downloads
   against. These layouts are a contract between `make artifact`,
-  `build/config.yml`, and `initUpdater` in `main.go` — change them together.
+  `src/build/config.yml`, and `initUpdater` in `src/main.go` — change them together.
 - Tags are plain semver `X.Y.Z` (no `v`), created only after the dispatch
   build is green. The `release` skill (`.opencode/skills/release/SKILL.md`)
   is the canonical cut-a-release procedure.
 - The updater queries `https://api.github.com/repos/<updateRepo>/releases/latest`
-  (`updateRepo` const in `main.go`). `version = "dev"` never update-checks.
+  (`updateRepo` const in `src/main.go`). `version = "dev"` never update-checks.
 
 ## Conventions
 
@@ -294,7 +304,8 @@ Canonical homes (extend these, don't fork them):
   install. Valve IP never ships: `-o` defaults to `<tmp>/cs2find/`, a
   working-tree target warns, and tests write only to `t.TempDir()`.
 - **Tests:** characterization tests before behavior changes; frontend unit
-  tests are `node --test src/lib/*.test.js`, DOM tests are the jsdom
+  tests are `node --test src/lib/*.test.js` (run from `frontend/`),
+  DOM tests are the jsdom
   harnesses in `frontend/test/` (jsdom is a declared devDependency — a
   plain `npm ci`/`npm install` in `frontend/` provides it; never install
   test deps `--no-save`, which makes `npm ci` prune them and break every
