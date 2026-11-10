@@ -2381,7 +2381,7 @@ test('HUD: score-anchored line in colored segments, label-free clock, no tick/fr
   // is NOT centered, its line starts at the box's own left inset
   // (x = HUD_PAD, content 8px in)
   const note = canvas.log.find(
-    (e) => e.op === 'fillText' && String(e.args[0]).startsWith('map pack missing'),
+    (e) => e.op === 'fillText' && String(e.args[0]).startsWith('No radar image'),
   );
   assert.ok(note, 'the readout keeps its conditional lines (packNote)');
   assert.equal(note.args[1], HUD_PAD + HUD_PAD, 'the playback readout keeps its left-aligned style');

@@ -604,8 +604,8 @@ check('no .replay-side while collapsed', !target.querySelector('.replay-side'));
 check('toggle aria-expanded=false', toggle?.getAttribute('aria-expanded') === 'false', toggle?.getAttribute('aria-expanded'));
 check(
   'toggle title/aria-label carry the event count',
-  toggle?.getAttribute('aria-label') === 'Landmarks (0 events)' &&
-    toggle?.getAttribute('title') === 'Landmarks (0 events)',
+  toggle?.getAttribute('aria-label') === 'Events (0 events)' &&
+    toggle?.getAttribute('title') === 'Events (0 events)',
   toggle?.getAttribute('aria-label'),
 );
 check('collapsed handle shows the chevron-left glyph', !!toggle?.querySelector('.codicon-chevron-left'));

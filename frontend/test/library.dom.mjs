@@ -14,13 +14,13 @@
 // finishes" hint (the ready row's are live). Section D also pins the
 // empty state's copy: no import button of its own, the header owns it.
 // Section F covers the queue's visible half: synthetic import rows for
-// jobs with no match row yet (chip + determinate bar + Dequeue), a match
-// row owned by a queued reprocess (queued chip + Dequeue) and by a
-// running parse (Cancel + "parse 42%" determinate bar), the import-dir
-// row flipping to the live job with Import swapped for Dequeue, and the
+// jobs with no match row yet (chip + determinate bar + Remove), a match
+// row owned by a queued reprocess (queued chip + Remove) and by a
+// running parse (Cancel + "reading demo 42%" determinate bar), the import-dir
+// row flipping to the live job with Import swapped for Remove, and the
 // multi-path ImportDialog hand-off (N paths → ONE ImportPaths call).
 // Section G mounts StatusChip directly: progress 0 is indeterminate
-// (moving bar, never "0%"), 0.42 renders "parse 42%".
+// (moving bar, never "0%"), 0.42 renders "reading demo 42%".
 // Backend semantics of the facets live in store.TestListMatches; the
 // suggestion source is store.TestListMapNames; the pipeline behind the
 // chips lives in internal/library's queue tests — this covers the view
@@ -360,7 +360,7 @@ await sleep(350); // past the 250 ms debounce
       readyBtns.length === 2 &&
         readyBtns.every((b) => !b.disabled) &&
         readyBtns.some((b) => b.title.includes('Re-parse')) &&
-        readyBtns.some((b) => b.title.includes('Delete extracted')),
+        readyBtns.some((b) => b.title.includes('Delete this match')),
       JSON.stringify(readyBtns.map((b) => [b.textContent.trim(), b.disabled, b.title])),
     );
   }
@@ -715,7 +715,7 @@ const cancelCalls = () => bindings.calls.filter((c) => c.method === 'CancelJob')
   const pct = tr.querySelector('.chip-pct');
   check(
     'determinate bar reads the stage + percentage',
-    !!pct && pct.textContent.trim() === 'parse 42%',
+    !!pct && pct.textContent.trim() === 'reading demo 42%',
     pct ? pct.textContent.trim() : 'missing',
   );
   const fill = tr.querySelector('.chip-bar-fill');
@@ -768,15 +768,15 @@ await sleep(350); // past the 250 ms debounce
   );
   const btns = [...synth.querySelectorAll('.row-actions button')];
   check(
-    'synthetic row offers exactly Dequeue',
-    btns.length === 1 && btns[0].textContent.trim() === 'Dequeue',
+    'synthetic row offers exactly Remove',
+    btns.length === 1 && btns[0].textContent.trim() === 'Remove',
     JSON.stringify(btns.map((b) => b.textContent.trim())),
   );
   const before = cancelCalls().length;
   click(btns[0]);
   await sleep(30);
   check(
-    'Dequeue calls CancelJob with the pending import job id',
+    'Remove calls CancelJob with the pending import job id',
     cancelCalls().length === before + 1 && cancelCalls().at(-1).args[0] === 11,
     JSON.stringify(cancelCalls().map((c) => c.args)),
   );
@@ -789,9 +789,9 @@ await sleep(350); // past the 250 ms debounce
   );
   const mBtns = [...tr.querySelectorAll('.row-actions button')];
   check(
-    'queued match row: Dequeue live, Reprocess/Delete disabled',
+    'queued match row: Remove live, Re-parse/Delete disabled',
     mBtns.length === 3 &&
-      mBtns[0].textContent.trim() === 'Dequeue' &&
+      mBtns[0].textContent.trim() === 'Remove' &&
       !mBtns[0].disabled &&
       mBtns.slice(1).every((b) => b.disabled),
     JSON.stringify(mBtns.map((b) => [b.textContent.trim(), b.disabled])),
@@ -800,7 +800,7 @@ await sleep(350); // past the 250 ms debounce
   click(mBtns[0]);
   await sleep(30);
   check(
-    'match-row Dequeue calls CancelJob with the reprocess job id',
+    'match-row Remove calls CancelJob with the reprocess job id',
     cancelCalls().length === beforeM + 1 && cancelCalls().at(-1).args[0] === 12,
     JSON.stringify(cancelCalls().map((c) => c.args)),
   );
@@ -808,7 +808,7 @@ await sleep(350); // past the 250 ms debounce
 
 {
   // Import-dir row for the SAME pending path: chip flips, Import is
-  // swapped for the job's Dequeue.
+  // swapped for the job's Remove.
   const rows = dirRows();
   check('import-dir row lists the pending file', rows.length === 1 && rows[0].textContent.includes('new.dem'), String(rows.length));
   const chip = rows[0].querySelector('.chip.status');
@@ -819,9 +819,9 @@ await sleep(350); // past the 250 ms debounce
   );
   const btns = [...rows[0].querySelectorAll('.row-actions button')];
   check(
-    'Import hidden — replaced by Dequeue (Delete from disk stays)',
+    'Import hidden — replaced by Remove (Delete from disk stays)',
     btns.length === 2 &&
-      btns[0].textContent.trim() === 'Dequeue' &&
+      btns[0].textContent.trim() === 'Remove' &&
       !btns.some((b) => b.textContent.trim() === 'Import'),
     JSON.stringify(btns.map((b) => b.textContent.trim())),
   );
@@ -873,7 +873,7 @@ const mountChip = (props) => {
   );
   check(
     'progress 0 still labels the stage in the tooltip',
-    ind.querySelector('.chip').getAttribute('title') === 'hash',
+    ind.querySelector('.chip').getAttribute('title') === 'checking file',
     ind.querySelector('.chip').getAttribute('title'),
   );
 
@@ -885,13 +885,13 @@ const mountChip = (props) => {
     fill ? fill.style.width : 'missing',
   );
   check(
-    'progress 0.42 → chip text "parse 42%"',
-    !!det.querySelector('.chip-pct') && det.querySelector('.chip-pct').textContent.trim() === 'parse 42%',
+    'progress 0.42 → chip text "reading demo 42%"',
+    !!det.querySelector('.chip-pct') && det.querySelector('.chip-pct').textContent.trim() === 'reading demo 42%',
     det.querySelector('.chip-pct')?.textContent.trim() ?? 'missing',
   );
   check(
     'tooltip carries stage · percent',
-    det.querySelector('.chip').getAttribute('title') === 'parse · 42%',
+    det.querySelector('.chip').getAttribute('title') === 'reading demo · 42%',
     det.querySelector('.chip').getAttribute('title'),
   );
 
@@ -899,7 +899,7 @@ const mountChip = (props) => {
   const titled = mountChip({ status: 'queued', progress: 0, stage: 'hash', title: 'disk on fire' });
   check(
     'caller title kept in the tooltip',
-    titled.querySelector('.chip').getAttribute('title') === 'disk on fire · hash',
+    titled.querySelector('.chip').getAttribute('title') === 'disk on fire · checking file',
     titled.querySelector('.chip').getAttribute('title'),
   );
 }

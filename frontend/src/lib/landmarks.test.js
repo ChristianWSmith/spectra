@@ -547,7 +547,7 @@ test('landmarkExportRows flattens the feed into canonical columns', () => {
     normalizeChat({ id: 2, tick: 11, round: 1, name: 'alice', text: 'gl hf', kind: 'chat', channel: 'all' }),
   ];
   const out = landmarkExportRows(rows);
-  assert.deepEqual(out[0], ['tick', 'round', 'source', 'category', 'kind', 'who', 'label', 'weapon', 'dmg']);
+  assert.deepEqual(out[0], ['time', 'round', 'source', 'type', 'event', 'player', 'details', 'weapon', 'damage']);
   assert.deepEqual(out[1], [10, 1, 'event', 'kills', 'kill', '', '', 'ak47', 100]);
   // DELIBERATE pin change: the chat `label` is the PRECOMPOSED line — the
   // canonical fmt.chatLine (`name [tag]: text`) — while `who` stays the
