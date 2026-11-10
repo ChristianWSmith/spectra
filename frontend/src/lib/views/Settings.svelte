@@ -499,8 +499,8 @@
       });
       if (saved) cfg = { ...cfg, ...saved };
       cfgMsg =
-        `Saved — rule_version ${cfg.ruleVersion}. Stored rows keep the version they ` +
-        'were computed with; run a recompute below to apply the new rules.';
+        `Saved. Matches you've already imported keep their old numbers` +
+        ' — re-run them below to apply the new rules.';
     } catch (e) {
       cfgError = errText(e);
     }
@@ -508,11 +508,11 @@
 
   async function recompute(m) {
     const ok = await confirmDlg?.ask({
-      title: 'Recompute analysis?',
+      title: 'Re-run this match’s analysis?',
       message:
-        `Recompute analysis for ${m.map || 'match #' + m.id} (${fmtDate(m.extractedAt)}) ` +
-        'under the current rules? Stored derived rows for this match are rebuilt.',
-      confirmLabel: 'Recompute',
+        `Re-run the analysis for ${m.map || 'match #' + m.id} (${fmtDate(m.extractedAt)}) ` +
+        'using the current rules?',
+      confirmLabel: 'Re-run',
       danger: false,
     });
     if (!ok) {
@@ -541,14 +541,14 @@
   <section class="panel">
     <h2>About</h2>
     <p>
-      Spectra <span class="muted">v{version}</span> — an offline, local-first
-      CS2 demo viewer and match analysis toolkit. Demos are parsed on your
-      machine; nothing is uploaded anywhere.
+      Spectra <span class="muted">v{version}</span> — an offline CS2 demo
+      viewer and match analysis toolkit. Everything runs on your machine;
+      nothing is uploaded anywhere.
     </p>
     <div class="row-between">
       <span class="muted"
-        >Checks GitHub Releases for a newer version and runs the update flow
-        when one exists (already up to date is reported too).</span
+        >Checks GitHub Releases for a newer version and offers to install it
+        when one exists (it also tells you when you're already up to date).</span
       >
       <button class="btn" disabled={updateBusy} onclick={checkForUpdates}>
         {updateBusy ? 'Checking…' : 'Check for Updates…'}
@@ -627,10 +627,9 @@
   <section class="panel">
     <h2>CS2 assets</h2>
     <p class="muted">
-      Radar map transforms, equipment-icon silhouettes and replay sounds are
-      all extracted locally from your own Counter-Strike 2 installation on
-      this machine — nothing is uploaded, and no Valve assets ship with the
-      app.
+      Radar images, equipment icons and replay sounds are all read from your
+      own Counter-Strike 2 installation on this machine — nothing is
+      uploaded, and no Valve assets ship with the app.
     </p>
     {#if mpStatus}
       <dl class="facts">
@@ -642,7 +641,7 @@
           </dd>
         </div>
         <div>
-          <dt>Extracted packs</dt>
+          <dt>Radar packs</dt>
           <dd class="mono">
             {mpStatus.maps && mpStatus.maps.length ? mpStatus.maps.length : 'none'}
           </dd>
@@ -692,8 +691,8 @@
     <div class="row-between">
       <span class="muted"
         >Extracts every official-map radar, every equipment icon and the
-        replay's gun/utility sounds (idempotent — re-run after a CS2 update
-        to refresh).</span
+        replay's gun/utility sounds (safe to run again — re-run after a CS2
+        update to refresh).</span
       >
       <div class="sett-seg">
         <button class="btn" disabled={mpBusy} onclick={mpChooseFolder}>
@@ -845,8 +844,7 @@
     <h2>Audio &amp; voice</h2>
     <div class="row-between">
       <span class="muted"
-        >Audio self-test — creates an AudioContext, resumes it and reports the
-        device state.</span
+        >Audio self-test — checks Spectra can open your audio device.</span
       >
       <button class="btn" onclick={runAudioSelfTest} disabled={audioRunning}
         >{audioRunning ? 'Testing…' : 'Run audio self-test'}</button
@@ -855,7 +853,7 @@
     {#if audioProbe}
       {#if audioProbe.ok}
         <p class="sett-audio-ok" role="status">
-          PASS — AudioContext running at {audioProbe.sampleRate} Hz.
+          PASS — audio device open at {audioProbe.sampleRate} Hz.
         </p>
       {:else}
         <p class="error" role="alert">
@@ -941,13 +939,11 @@
       they are available.
     </p>
     <p class="muted">
-      Voice decode: on-demand Opus decode (pure-Go pion/opus) — no cache
-      directory in v1. PCM is served over HTTP per playback window at 16 kHz
-      mono and mixed live with the replay clock.
+      Voice is decoded as the replay plays and streamed in small pieces — no
+      extra disk space, always in sync with the replay.
     </p>
     <p class="muted">
-      Transcription (local whisper) is not included — no whisper UI in this
-      app; the storage and export fields stay reserved for future use.
+      Voice-to-text transcription isn't available yet.
     </p>
   </section>
 
@@ -989,7 +985,7 @@
         <label
           class="field-label"
           for="sett-trade-dist"
-          title="A death counts as a missed trade opportunity only if a living teammate of the victim was within this distance of the killer at the death tick — someone close enough to actually trade him. The proximity is measured once per kill at import; this threshold only gates the count. Deaths with no nearby teammate or no position data never count.">Trade-opportunity distance (units)</label
+          title="A death counts as a missed trade opportunity only if a living teammate of the victim was within this distance of the killer at the death tick — someone close enough to actually trade him. The distance is measured for each kill when the demo is imported; this setting only decides which deaths count. Deaths with no nearby teammate or no position data never count.">Trade-opportunity distance (units)</label
         >
         <input
           class="input"
@@ -1000,7 +996,7 @@
           bind:value={cfg.tradeOppDistance}
         />
         <span class="muted sett-hint"
-          >“Trade opp missed” counts an untraded death only when a living teammate of the victim was within this distance of the killer (default 1000).</span
+          >“Missed trades” counts a death nobody answered only when a living teammate of the victim was within this distance of the killer (default 1000).</span
         >
       </div>
       <div class="sett-field">
@@ -1017,21 +1013,21 @@
       </div>
     </div>
     <div class="row-between">
-      <span class="muted">Active rule_version: <strong class="mono">{cfg.ruleVersion}</strong></span>
+      <span class="muted">Rules version: <strong class="mono">{cfg.ruleVersion}</strong></span>
       <button class="btn primary" onclick={saveCfg}>Save rules</button>
     </div>
     {#if cfgMsg}
       <p class="sett-msg" role="status">{cfgMsg}</p>
     {/if}
     <p class="muted">
-      Saving stores the rules and bumps <span class="mono">rule_version</span>;
-      it does <strong>not</strong> rewrite stored rows — recompute explicitly below.
+      Saving applies these rules to future analysis. Matches already in your
+      library keep the numbers they had — re-run them below.
     </p>
 
-    <h3 class="section-title sett-sub">Recompute analysis…</h3>
+    <h3 class="section-title sett-sub">Re-run analysis…</h3>
     <p class="muted">
-      Per match, under the current rules (classification, KAST, clutches,
-      engagements, career rollups refresh too).
+      Per match, under the current rules (round types, KAST, clutches,
+      engagements and career numbers refresh too).
     </p>
     {#if matchesError}
       <p class="error" role="alert">{matchesError}</p>
@@ -1046,32 +1042,32 @@
           </span>
           <span class="row-actions">
             {#if state === 'busy'}
-              <span class="muted">recomputing…</span>
+              <span class="muted">re-running…</span>
             {:else if state === 'ok'}
               <span class="chip status ok">done</span>
             {:else if state}
               <span class="error-text" title={state}>failed</span>
               <button class="btn small" onclick={() => recompute(m)}>Retry</button>
             {:else}
-              <button class="btn small" onclick={() => recompute(m)}>Recompute</button>
+              <button class="btn small" onclick={() => recompute(m)}>Re-run</button>
             {/if}
           </span>
         </div>
       {:else}
         <p class="muted" role="status">
-          {matchesError ? 'Matches unavailable.' : 'No ready matches to recompute yet.'}
+          {matchesError ? 'Matches unavailable.' : 'No matches to re-run yet.'}
         </p>
       {/each}
     </div>
   </section>
 
   <section class="panel">
-    <h2>Metric definitions</h2>
+    <h2>Stat definitions</h2>
     <p class="muted">
-      Every derived or heuristic number in the app, with its rule. Thresholds
-      live in <span class="mono">analysis_config</span> and are versioned —
-      stored rows keep the <span class="mono">rule_version</span> they were
-      computed with.
+      What every stat in Spectra means and how it's calculated. Settings like
+      the trade window and buy thresholds are saved with a version number;
+      matches analyzed under older rules keep those numbers until you re-run
+      them.
     </p>
     <div class="sett-defs">
       {#each GLOSSARY as d (d.term)}
@@ -1081,7 +1077,7 @@
             {#if d.inferred}
               <span
                 class="chip badge-inferred"
-                title="Heuristic/reconstructed — not a raw demo fact"
+                title="Worked out from the demo data — not read straight from the game"
               >inferred</span>
             {/if}
           </summary>

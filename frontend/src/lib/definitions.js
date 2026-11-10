@@ -22,22 +22,22 @@ export const GLOSSARY = [
   {
     term: 'KAST%',
     inferred: false,
-    text: 'Share of rounds where the player recorded a Kill, an Assist, was Traded after their death, or Survived the round. Stored per player-round (player_round_stats); the “traded” part follows the configured trade window (Settings → Analysis rules).',
+    text: 'Share of rounds where the player recorded a Kill, an Assist, was Traded after their death, or Survived the round. Counted per round; the “traded” part follows the configured trade window (Settings → Analysis rules).',
   },
   {
     term: 'Trade window',
     inferred: false,
-    text: 'Seconds after a death during which a teammate’s kill counts as a trade (default 5 s, configurable under Analysis rules; saving bumps rule_version — stored rows keep the version they were computed with until you run a recompute). Every trade surface follows the window of its recompute: KAST “traded”, the engagement trade and untraded rows, and player_stats.trade_kills — recomputed by the analytics pass from the configured window — which feeds the scoreboard Trade column, career trades, profile Trade rate, the successful-trades metric and the Combat tab Trade rate.',
+    text: 'Seconds after a death during which a teammate’s kill counts as a trade (default 5 s, configurable under Analysis rules; saving gives the rules a new version number — matches keep the numbers they were calculated with until you re-run them). Every trade surface follows the window of its re-run: KAST “traded”, the engagement trade and untraded rows, and the trade-kills total — recalculated by the analytics pass from the configured window — which feeds the scoreboard Trade column, career trades, profile Trade rate, the successful-trades stat and the Combat tab Trade rate.',
   },
   {
-    term: 'Buy classes (full / force / eco / save / pistol / bonus)',
+    term: 'Buy types (full / force / eco / save / pistol / bonus)',
     inferred: false,
-    text: 'Derived per side from the round-start equipment value against the configured thresholds (full buy ≥ ecoFullBuy, force ≥ ecoForce, below that = eco/save), plus pistol detection by round number and side-switch pattern, and bonus/save by spend behaviour. Each round stores its label, explanation and rule_version — hover a round chip for the exact rule text that produced it.',
+    text: 'Derived per side from the round-start equipment value against the configured thresholds (full buy ≥ ecoFullBuy, force ≥ ecoForce, below that = eco/save), plus pistol detection by round number and side-switch pattern, and bonus/save by spend behaviour. Each round keeps its label and the exact rule that produced it — hover a round chip to see it.',
   },
   {
     term: 'Loss bonus (reconstructed)',
     inferred: true,
-    text: 'A team’s loss-bonus money is reconstructed from consecutive round losses rather than read from a raw net message, so it is labelled reconstructed/inferred (fact/inference badge). The base amounts follow the game rules, not a configurable threshold.',
+    text: 'A team’s loss-bonus money is worked out from the round results instead of read straight from the game, so it carries the inferred badge. The base amounts follow the game rules, not a configurable threshold.',
   },
   {
     term: 'Equipment value',
@@ -47,27 +47,27 @@ export const GLOSSARY = [
   {
     term: 'Net worth',
     inferred: false,
-    text: 'Equipment value plus that team’s unspent money at freeze time end: the total value the team holds at that instant — every weapon, armor, grenade and defuse kit its players carry (the free spawn-issued default sidearms included, since the game counts them at $200 each — see Equipment value) plus the cash it can still spend. It can never be below equipment value, because unspent money is never negative. The economy chart’s Net worth metric plots this per team per round — on a pistol round each side reads its starting money ($4000 = 5 × $800) plus the free default sidearms it still holds, so a side that dropped or upgraded some of them reads less than an opponent that kept all five.',
+    text: 'Equipment value plus that team’s unspent money at freeze time end: the total value the team holds at that instant — every weapon, armor, grenade and defuse kit its players carry (the free spawn-issued default sidearms included, since the game counts them at $200 each — see Equipment value) plus the cash it can still spend. It can never be below equipment value, because unspent money is never negative. The economy chart’s Net worth plots this per team per round — on a pistol round each side reads its starting money ($4000 = 5 × $800) plus the free default sidearms it still holds, so a side that dropped or upgraded some of them reads less than an opponent that kept all five.',
   },
   {
     term: 'Trade opportunities missed (inferred)',
     inferred: true,
-    text: 'A death that went unanswered: no teammate of the dead player killed their killer within the trade window after the death, AND at the death tick a living teammate of the victim stood within the trade-opportunity distance of the killer — close enough to actually trade him. That distance is measured once per kill at import (nearest living teammate to the killer’s position) and gated against the configurable threshold (Settings → Analysis rules, default 1000 units ≈ 25 m — the ground a player covers inside the default 5 s trade window, and the range trades actually happen at): a death with no living teammate nearby, or with no position data for the kill, does not count. The Combat tab’s Untraded deaths metric reads the same engagement rows without the distance gate.',
+    text: 'A death that went unanswered: no teammate of the dead player killed their killer within the trade window after the death, AND at the death tick a living teammate of the victim stood within the trade-opportunity distance of the killer — close enough to actually trade him. The distance is measured for each kill when the demo is imported (nearest living teammate to the killer’s position) and gated against the configurable threshold (Settings → Analysis rules, default 1000 units ≈ 25 m — the ground a player covers inside the default 5 s trade window, and the range trades actually happen at): a death with no living teammate nearby, or with no position data for the kill, does not count. The Combat tab’s Untraded deaths reads the same engagement rows without the distance gate.',
   },
   {
     term: 'Damage conversion',
     inferred: false,
-    text: 'Share of a player’s dealt damage that contributed to a kill by that player (damage preceding a kill in the same engagement), derived from stored events rather than reported by the game.',
+    text: 'Share of a player’s dealt damage that contributed to a kill by that player (damage preceding a kill in the same engagement), counted from the demo’s events rather than reported by the game.',
   },
   {
     term: 'ADR',
     inferred: false,
-    text: 'Average damage per round = total damage ÷ rounds played, from the player aggregates (player_stats). Friendly-fire damage is reported separately in the Combat tab.',
+    text: 'Average damage per round = total damage ÷ rounds played, across this player’s rounds. Friendly-fire damage is reported separately in the Combat tab.',
   },
   {
     term: 'Consistency σ',
     inferred: false,
-    text: 'Standard deviation of per-match ADR across a player’s match history, shown as “ADR ± σ” on profiles: a spread, not an error bar. Lower σ = steadier performance.',
+    text: 'How much this player’s ADR moves from match to match — lower means steadier. Shown as “ADR ± σ” on profiles. It is not a margin of error.',
   },
 ];
 
@@ -121,7 +121,7 @@ export const NETWORTH_DEF = `Net worth — ${lowerFirst(glossaryText('Net worth'
 // entry kind). Percent scale: 0..100, like every other *Pct/*Rate field
 // the views hand to fmtPercent (store.GetCombatStats).
 export const ENTRY_DEF =
-  'Entry rate — entry kills ÷ rounds played, as a percent of rounds played (0–100): the share of rounds in which the player drew first blood (player_stats.entry_kills: the extractor’s first-blood attribution for the round).';
+  'Entry rate — entry kills ÷ rounds played, as a percent of rounds played (0–100): the share of rounds where this player drew first blood.';
 
 // Trade% (Combat scoreboard column) — same formula AND scale as the
 // store.GetCombatStats row it renders: 100 × player_stats.trade_kills /
@@ -133,7 +133,7 @@ export const ENTRY_DEF =
 // denominator (trade opportunities, not own deaths) — see
 // PROFILE_TRADE_DEF; the two are deliberately no longer the same card.
 export const TRADE_DEF =
-  'Trade rate — trade kills ÷ deaths, as a percent: a trade kill answers a teammate’s death inside the trade window and the denominator is the player’s own deaths (player_stats), so this is a ratio rather than a share and can exceed 100%.';
+  'Trade rate — trade kills ÷ deaths, as a percent: a trade kill answers a teammate’s death inside the trade window and the deaths counted are this player’s own, so it’s a ratio, not a share — it can top 100%.';
 
 // Trade rate (profile card) — trades ÷ TRADE OPPORTUNITIES, career-wide.
 // The denominator is store.CountPlayerTradeOpportunities: a teammate
@@ -145,33 +145,33 @@ export const TRADE_DEF =
 // career-wide (numerator: player_stats.trade_kills via the career
 // rollup), and the rate is a ratio, not a share.
 export const PROFILE_TRADE_DEF =
-  'Trade rate — successful trades ÷ trade opportunities, as a percent: a trade kill answers a teammate’s death inside the trade window (player_stats.trade_kills). A trade opportunity is a teammate’s death you could have answered — you were still alive in that round, and at the death tick a living teammate of the victim stood within the trade-opportunity distance of the killer (the proximity is measured to the nearest living teammate, so the gate is team-level). Counted across every match in the library; a ratio rather than a share, so it can exceed 100%.';
+  'Trade rate — successful trades ÷ trade opportunities, as a percent: a trade kill answers a teammate’s death inside the trade window. A trade opportunity is a teammate’s death you could have answered — you were still alive in that round, and at the death tick a living teammate of the victim stood within the trade-opportunity distance of the killer (the distance is measured for each kill at import — nobody nearby = not counted — and the gate is team-level). Counted across every match in the library; it’s a ratio, so it can top 100%.';
 
 // Per-match averages (profile cards) — player_stats counters averaged over
 // the player's matches (one player_stats row per match), not career sums.
 export const AVG_FLASHED_DEF =
-  'Average enemies flashed per match — player_stats.enemies_flashed averaged across this player’s matches: one credit per enemy player blinded by their flash (team and self blinds excluded).';
+  'Average enemies flashed per match — counted across this player’s matches: one credit per enemy player blinded by their flash (team and self blinds excluded).';
 
 export const AVG_UTIL_DEF =
-  'Average utility damage per match — player_stats.utility_damage averaged across this player’s matches: damage credited to the player from CS2’s utility set (HE, flashbang, smoke, molotov/incendiary, decoy).';
+  'Average utility damage per match — counted across this player’s matches: damage credited to the player from CS2’s utility set (HE, flashbang, smoke, molotov/incendiary, decoy).';
 
 // Untraded deaths (Combat): engagement rows of kind=untraded with the
 // player as victim — no teammate of the victim killed the victim’s killer
 // inside the trade window (internal/analytics/engagements.go).
 export const UNTRADED_DEF =
-  'Untraded deaths — deaths with no teammate kill inside the trade window afterwards (engagement detection).';
+  'Untraded deaths — deaths with no teammate kill inside the trade window afterwards.';
 
 // Opening duel win rate (profile career). Verified: OpeningRate =
 // 100 × career.OpenerWins / career.Openings where RebuildCareer sums
 // player_stats.opening_kills and (opening_kills + opening_deaths) — the
 // extractor’s first-blood columns, NOT the engagement detector.
 export const OPENING_DEF =
-  'Opening duel win rate — opening kills ÷ (opening kills + opening deaths) across matches (career rollup of the extractor’s player_stats first-blood columns).';
+  'Opening duel win rate — opening kills ÷ (opening kills + opening deaths), added up across all of this player’s matches.';
 
 // ADR ± σ (profile header cell) — the Consistency σ glossary entry read as
 // a one-line tooltip.
 export const ADR_SIGMA_DEF =
-  'ADR ± σ — average damage per round plus the standard deviation of per-match ADR across the player’s history: σ is the consistency measure (lower = steadier), not an error bar.';
+  'ADR ± σ — average damage per round plus a second number showing how much ADR varies match to match — lower = more consistent.';
 
 // Engagement distance (Combat's engagement deep-dive "Dist (m)" column).
 // The value is the game's own player_death `distance` field (demoinfocs

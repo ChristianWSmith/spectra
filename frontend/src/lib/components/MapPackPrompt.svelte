@@ -161,9 +161,9 @@
     {#if notFound}
       <h2 class="pk-title">Counter-Strike 2 not found</h2>
       <p class="muted">
-        Spectra extracts radar images and map transforms from a local
-        Counter-Strike 2 installation for authentic map backgrounds in
-        replay and heatmaps. Without one, maps render as a plain grid.
+        Spectra reads the official radar images from a local Counter-Strike 2
+        installation for authentic map backgrounds in replay and heatmaps.
+        Without one, maps render as a plain grid.
       </p>
       <p class="muted pk-fine">
         Nothing from Counter-Strike ships with the app, and nothing is
@@ -176,10 +176,9 @@
     {:else}
       <h2 class="pk-title">Found Counter-Strike 2</h2>
       <p class="muted">
-        Spectra can extract the official radar images and map transforms,
-        the equipment icons and the replay sounds from your local
-        Counter-Strike 2 installation — authentic map backgrounds,
-        inventory silhouettes and in-replay audio.
+        Spectra can read the official radar images, the equipment icons and
+        the replay sounds from your local Counter-Strike 2 installation —
+        authentic map backgrounds, inventory silhouettes and in-replay audio.
       </p>
       <p class="muted pk-path mono">{pickedDir || status?.path || 'CS2 install'}</p>
       <p class="muted pk-fine">
