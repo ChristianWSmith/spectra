@@ -1317,9 +1317,11 @@
   // disagree — the F / 1-9 keys and the canvas drag drive follow
   // directly — the dropdown follows the engine (see the onChange mirror
   // in startEngine): following renders 'follow' over the smart camera, a
-  // release returns to 'smart'. A manual pan/zoom (renderer onUserCamera)
+  // release returns to 'smart'. A manual pan (renderer onUserCamera)
   // releases follow and drops to 'free' for the SESSION only (the pref
-  // keeps whatever the user picked explicitly).
+  // keeps whatever the user picked explicitly); the wheel ZOOM is
+  // exempt — it scales around the followed player and keeps follow
+  // (renderer zoomAt).
   let camMode = $state('smart');
   // The camera popover's option list — the old <select>'s three entries
   // (labels included; the trigger button renders the ACTIVE one).
@@ -1820,12 +1822,15 @@
       players,
       // Manual pan/zoom: drop to Free for the session (the pref keeps
       // its explicit value; only the selector follows) — and, per spec
-      // 17, a drag/zoom while FOLLOWING releases follow too, so the
-      // engine can never keep a followSlot under a camera mode that
-      // fights it. camMode is written BEFORE setFollow: the onChange
-      // mirror below must not read a stale 'follow' and bounce back to
-      // smart. A ?follow= entry is dropped as well (releaseFollow's
-      // contract), or the next route write would re-arm it.
+      // 17, a drag while FOLLOWING releases follow too (the engine can
+      // never keep a followSlot under a camera mode that fights it).
+      // The WHEEL is exempt: renderer zoomAt changes only the scale and
+      // anchors on the followed player, so it never reaches this path
+      // while following. camMode is written BEFORE setFollow: the
+      // onChange mirror below must not read a stale 'follow' and bounce
+      // back to smart. A ?follow= entry is dropped as well
+      // (releaseFollow's contract), or the next route write would
+      // re-arm it.
       onUserCamera: () => {
         camMode = 'free';
         if (engine && engine.state.followSlot != null) engine.setFollow(null);
@@ -1900,6 +1905,18 @@
       renderer,
       matchId: id,
       slotCount: players.length || 10,
+      // [ / ] — the SAME round→tick rule the prev/next buttons use
+      // (roundNav is null-disabled at either end; onRibbonRound keeps an
+      // unknown number in place), so the key can never jump where the
+      // button would refuse to.
+      onRound: (dir) => {
+        const n = dir < 0 ? roundNav.prev : roundNav.next;
+        if (n != null) onRibbonRound(n);
+      },
+      // X — the VIEW's toggle (never engine.toggleSkipFreeze): it flips
+      // the ui state, pushes the engine AND persists the `skip_freeze`
+      // pref, exactly like the toolbar button.
+      onSkipFreeze: toggleSkipFreeze,
     });
     ro = new ResizeObserver(() => renderer.resize());
     ro.observe(stageEl);
@@ -2547,7 +2564,7 @@
               <button
                 class="btn small ghost"
                 aria-label="Stop following {players[uiFollow].name || 'player'}"
-                title="Release the follow camera"
+                title="Release the follow camera (F)"
                 onclick={releaseFollow}
                 ><span class="codicon codicon-close"></span></button
               >
@@ -2587,7 +2604,19 @@
           >
         </div>
 
-        <div class="toolbar">
+        <div
+          class="toolbar"
+          role="group"
+          onpointerup={(e) => {
+            // A clicked toolbar button keeps focus, which would hand the
+            // NEXT Space to its native activation instead of the global
+            // transport hotkey (input.js defers to a focused control).
+            // Release it on pointer-up so a mouse click never leaves the
+            // Space key hijacked.
+            const btn = e.target?.closest?.('button');
+            if (btn) btn.blur();
+          }}
+        >
           <!-- Round transport (prev/next round): flank the play
                cluster — disabled at either end or while the playhead
                round is unknown (before the first round). -->
@@ -2644,7 +2673,7 @@
             <button
               class="btn"
               aria-label={`Speed ${uiSpeed}×`}
-              title="Playback speed"
+              title="Playback speed (, / .)"
               aria-expanded={speedOpen}
               onclick={() => (speedOpen = !speedOpen)}>{uiSpeed}×</button
             >
@@ -2679,7 +2708,7 @@
             class:warn={uiSkipFreeze}
             aria-pressed={uiSkipFreeze}
             aria-label="Skip freeze time"
-            title="Skip freeze time — auto-jump the pre-round freeze during playback"
+            title="Skip freeze time — auto-jump the pre-round freeze during playback (X)"
             onclick={toggleSkipFreeze}
             ><span class="codicon codicon-skip" aria-hidden="true"></span></button
           >
@@ -2746,7 +2775,7 @@
               class="btn"
               aria-label={`Camera mode: ${camLabel}`}
               aria-expanded={camOpen}
-              title="Smart keeps every player and the bomb on screen with smooth pan/zoom (drag or wheel takes over → Free); Free is manual; Follow locks the camera onto a player (pick them below) — dragging releases it"
+              title="Smart keeps every player and the bomb on screen with smooth pan/zoom (drag or wheel takes over → Free); Free is manual; Follow locks the camera onto a player (pick them below) — dragging releases it (F to follow, 1-9 to pick)"
               onclick={() => (camOpen = !camOpen)}>{camLabel}</button
             >
             <Popover open={camOpen} anchor={camAnchor} onClose={() => (camOpen = false)}>
@@ -3026,7 +3055,7 @@
           <!-- Keyboard hints — the toolbar's LAST cell (rightmost): one
                codicon, no label, the shortcuts ride the title. Outside
                the ready/data gate so it always shows. -->
-          <span class="muted" title="Space play/pause · , . speed · ←/→ step · Shift ±64 · L loop · F follow · 1-9 select · S snapshot"><span class="codicon codicon-keyboard" aria-hidden="true"></span></span>
+          <span class="muted" title="Space play/pause · , . speed · ←/→ step · Shift+←/→ ±64 frames (~1s) · [ ] round · L loop · F follow · 1-9, 0 select · X skip freeze · S snapshot"><span class="codicon codicon-keyboard" aria-hidden="true"></span></span>
         </div>
       </div>
     {/if}
