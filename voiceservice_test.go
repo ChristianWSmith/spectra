@@ -2,6 +2,7 @@ package main
 
 import (
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"testing"
 
@@ -175,6 +176,115 @@ func TestVoicePlayersAndLanes(t *testing.T) {
 	}
 	if lanes.Players[0].SteamID != "1" {
 		t.Errorf("lane order = %s first, want busiest player first", lanes.Players[0].SteamID)
+	}
+}
+
+// TestVoiceIndexWindowsPinsWindowMath pins the server-side sparse-window
+// map: start = tick / windowTicks * windowTicks (integer division — the
+// exact complement of the engine's Math.floor(end / windowTicks) *
+// windowTicks, whose JS twin lives in src/lib/voicewindows.js and is
+// pinned by frontend/src/lib/voicewindows.test.js). One start per
+// speech-bearing window; WindowTicks echoes the caller (the engine's
+// consistency check); an unusable windowTicks yields NO map — the engine
+// fail-opens to fetching, never skipping.
+func TestVoiceIndexWindowsPinsWindowMath(t *testing.T) {
+	// Window edges: 0..15 → 0, 16..31 → 16, 32..47 → 32, 48..63 → 48, …;
+	// equal starts (and same-tick ties) collapse to one row.
+	got := windowStarts([]int{0, 15, 16, 31, 32, 63, 64, 64, 100}, 16)
+	want := []int{0, 16, 32, 48, 64, 96}
+	if len(got) != len(want) {
+		t.Fatalf("windowStarts = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("windowStarts = %v, want %v", got, want)
+		}
+	}
+	if s := windowStarts(nil, 16); len(s) != 0 {
+		t.Errorf("windowStarts(no ticks) = %v, want empty", s)
+	}
+	if s := windowStarts([]int{5}, 0); s != nil {
+		t.Errorf("windowStarts(windowTicks 0) = %v, want nil (fail-open)", s)
+	}
+}
+
+// TestVoiceIndexOnePass pins GetVoiceIndex against the thin wrappers: the
+// combined read's players/lanes must equal GetVoicePlayers/GetVoiceLanes
+// (same single index pass, same ordering), and its window map must match
+// windowStarts per player — plus the fail-open shapes (no index → all
+// empty, windowTicks < 1 → no map rows).
+func TestVoiceIndexOnePass(t *testing.T) {
+	st, id := newVoiceFixture(t)
+	svc := &VoiceService{st: st}
+	if err := st.SaveVoicePresence(id, models.VoicePresenceRow{
+		ChunkCount: 4, PlayerCount: 2, OutSampleRate: models.VoiceOutSampleRate,
+	}); err != nil {
+		t.Fatalf("SaveVoicePresence: %v", err)
+	}
+
+	// Before the index exists: everything empty, no error (same gate the
+	// two wrappers already pin).
+	empty, err := svc.GetVoiceIndex(id, 16, 16)
+	if err != nil {
+		t.Fatalf("GetVoiceIndex(no index): %v", err)
+	}
+	if len(empty.Players) != 0 || len(empty.Lanes.Players) != 0 || len(empty.Windows.Players) != 0 {
+		t.Errorf("GetVoiceIndex(no index) = %+v, want empty players/lanes/windows", empty)
+	}
+	if empty.Windows.WindowTicks != 16 {
+		t.Errorf("WindowTicks(no index) = %d, want the echoed 16", empty.Windows.WindowTicks)
+	}
+
+	writeVoiceSidecar(t, id) // player "1": ticks 10/20/40; player "2": tick 30
+	idx, err := svc.GetVoiceIndex(id, 16, 16)
+	if err != nil {
+		t.Fatalf("GetVoiceIndex: %v", err)
+	}
+	players, err := svc.GetVoicePlayers(id)
+	if err != nil {
+		t.Fatalf("GetVoicePlayers: %v", err)
+	}
+	lanes, err := svc.GetVoiceLanes(id, 16)
+	if err != nil {
+		t.Fatalf("GetVoiceLanes: %v", err)
+	}
+	if !reflect.DeepEqual(idx.Players, players) {
+		t.Errorf("index players = %+v, want the wrapper's %+v", idx.Players, players)
+	}
+	if !reflect.DeepEqual(idx.Lanes, lanes) {
+		t.Errorf("index lanes = %+v, want the wrapper's %+v", idx.Lanes, lanes)
+	}
+	// Windows: player 1's ticks 10/20/40 → starts 0/16/32; player 2's
+	// tick 30 → 16. (windowTicks 16 divides the match's chunk ticks.)
+	wantWindows := map[string][]int{"1": {0, 16, 32}, "2": {16}}
+	if idx.Windows.WindowTicks != 16 {
+		t.Errorf("WindowTicks = %d, want 16", idx.Windows.WindowTicks)
+	}
+	if len(idx.Windows.Players) != len(wantWindows) {
+		t.Fatalf("windows = %+v, want one row per speaking player", idx.Windows.Players)
+	}
+	for _, w := range idx.Windows.Players {
+		want := wantWindows[w.SteamID]
+		if want == nil {
+			t.Fatalf("unexpected window row %s", w.SteamID)
+		}
+		if !reflect.DeepEqual(w.Starts, want) {
+			t.Errorf("windows[%s] = %v, want %v", w.SteamID, w.Starts, want)
+		}
+	}
+
+	// windowTicks < 1 → no map rows at all (WindowTicks stays the echo):
+	// the engine treats that as "no map" and fetches every window.
+	noMap, err := svc.GetVoiceIndex(id, 16, 0)
+	if err != nil {
+		t.Fatalf("GetVoiceIndex(windowTicks 0): %v", err)
+	}
+	if noMap.Windows.WindowTicks != 0 || len(noMap.Windows.Players) != 0 {
+		t.Errorf("windows(windowTicks 0) = %+v, want no map (fail-open)", noMap.Windows)
+	}
+	// buckets <= 0 still defaults (the wrapper's contract).
+	if def, err := svc.GetVoiceIndex(id, 0, 16); err != nil || def.Lanes.Buckets != voiceDefaultBuckets {
+		t.Errorf("GetVoiceIndex(buckets 0) = %+v, %v; want buckets %d", def, err, voiceDefaultBuckets)
 	}
 }
 

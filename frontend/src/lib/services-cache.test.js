@@ -154,6 +154,42 @@ test('a mutating wrapper invalidates on success (no event needed)', async () => 
   assert.equal(bindings.callCount('GetMatch'), 2, 'delete flushed the cache');
 });
 
+test('voice reads are cachedRead like every other read (item: voice index)', async () => {
+  services.invalidate();
+  bindings.resetCalls();
+  // Same args → the identical promise; one backend call per method.
+  const p1 = services.getVoicePresence(7);
+  const p2 = services.getVoicePresence(7);
+  assert.equal(p1, p2, 'presence is a cache hit');
+  const pl1 = services.getVoicePlayers(7);
+  const pl2 = services.getVoicePlayers(7);
+  assert.equal(pl1, pl2, 'players is a cache hit');
+  const l1 = services.getVoiceLanes(7, 100);
+  const l2 = services.getVoiceLanes(7, 100);
+  assert.equal(l1, l2, 'lanes is a cache hit (normalized bucket arg)');
+  const i1 = services.getVoiceIndex(7, 100, 64);
+  const i2 = services.getVoiceIndex(7, 100, 64);
+  assert.equal(i1, i2, 'the combined index read is a cache hit');
+  await Promise.all([p1, pl1, l1, i1]);
+  assert.equal(bindings.callCount('GetVoicePresence'), 1);
+  assert.equal(bindings.callCount('GetVoicePlayers'), 1);
+  assert.equal(bindings.callCount('GetVoiceLanes'), 1);
+  assert.equal(bindings.callCount('GetVoiceIndex'), 1);
+
+  // Different args miss: buckets/windowTicks are part of the key.
+  await services.getVoiceLanes(7, 200);
+  await services.getVoiceIndex(7, 100, 128);
+  assert.equal(bindings.callCount('GetVoiceLanes'), 2);
+  assert.equal(bindings.callCount('GetVoiceIndex'), 2);
+
+  // A spectra:* data event (import/reprocess) flushes them like the rest.
+  fire('spectra:job-done', { jobId: 1 });
+  const again = services.getVoicePlayers(7);
+  assert.notEqual(again, pl1, 'event must flush the voice entry');
+  await again;
+  assert.equal(bindings.callCount('GetVoicePlayers'), 2);
+});
+
 test('failed reads are not cached — the next call retries', async () => {
   services.invalidate();
   bindings.resetCalls();

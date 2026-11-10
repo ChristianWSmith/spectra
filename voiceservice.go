@@ -77,6 +77,38 @@ type VoiceLane struct {
 	Counts  []int  `json:"counts"`
 }
 
+// VoicePlayerWindow is one player's non-empty window start ticks — the
+// per-player row of the sparse-window map.
+type VoicePlayerWindow struct {
+	SteamID string `json:"steamId"`
+	Starts  []int  `json:"starts"`
+}
+
+// VoiceWindows is the server-exact sparse-window map: per player, the
+// start tick of every WindowTicks-wide window that holds ≥1 chunk. The
+// replay engine skips scheduling the windows absent from it (~90% of
+// requested windows are pure silence) — membership is ALWAYS server-
+// computed here, never derived client-side from lanes (float bucket math
+// could drop real speech = an audible dropout). WindowTicks echoes the
+// caller's argument so the engine can prove the map was built for ITS
+// window size; WindowTicks 0 with no players means "no map", which the
+// engine treats as fail-open (fetch, never skip).
+type VoiceWindows struct {
+	WindowTicks int                 `json:"windowTicks"`
+	Players     []VoicePlayerWindow `json:"players"`
+}
+
+// VoiceIndexResult is the ONE match-load read: per-player summaries, the
+// timeline lane buckets and the sparse-window map — all derived from a
+// single walk over the per-player index files (GetVoicePlayers +
+// GetVoiceLanes used to walk them three times).
+type VoiceIndexResult struct {
+	MatchID int64            `json:"matchId"`
+	Players []VoicePlayer    `json:"players"`
+	Lanes   VoiceLanesResult `json:"lanes"`
+	Windows VoiceWindows     `json:"windows"`
+}
+
 // VoiceService — see doc comment above.
 type VoiceService struct {
 	st  *store.Store
@@ -127,10 +159,12 @@ func (s *VoiceService) GetVoicePresence(matchID int64) (VoicePresence, error) {
 	}, nil
 }
 
-// voicePlayerStats reads the sidecar index's per-player summaries; a match
-// with no index yields an empty slice (never an error — "no voice" is not
-// a failure here either).
-func voicePlayerStats(matchID int64) ([]sidecar.VoicePlayerStat, error) {
+// voiceIndexRead opens the match's voice index and reads every player's
+// file ONCE (sidecar.PlayersWithTicks — summary AND ticks from one read):
+// THE index pass behind GetVoicePlayers, GetVoiceLanes and GetVoiceIndex
+// (match load used to walk each file up to three times). A match without
+// an index yields (nil, nil) — "no voice" is not a failure here either.
+func voiceIndexRead(matchID int64) ([]sidecar.VoicePlayerIndex, error) {
 	rd, err := sidecar.OpenVoice(matchSidecarDir(matchID))
 	if errors.Is(err, sidecar.ErrNoVoiceIndex) {
 		return nil, nil
@@ -138,19 +172,19 @@ func voicePlayerStats(matchID int64) ([]sidecar.VoicePlayerStat, error) {
 	if err != nil {
 		return nil, err
 	}
-	return rd.Players()
+	return rd.PlayersWithTicks()
 }
 
-// orderVoiceStats pins the read order both voice listings share: chunks
+// orderVoiceIndex pins the read order all voice listings share: chunks
 // DESC, then steam ID ASC (string order — the SQL ORDER BY the store used
 // to own). The comparator is total (SteamIDs are unique), so plain
 // sort.Slice is deterministic.
-func orderVoiceStats(stats []sidecar.VoicePlayerStat) {
-	sort.Slice(stats, func(i, j int) bool {
-		if stats[i].Chunks != stats[j].Chunks {
-			return stats[i].Chunks > stats[j].Chunks
+func orderVoiceIndex(idx []sidecar.VoicePlayerIndex) {
+	sort.Slice(idx, func(i, j int) bool {
+		if idx[i].Chunks != idx[j].Chunks {
+			return idx[i].Chunks > idx[j].Chunks
 		}
-		return stats[i].SteamID < stats[j].SteamID
+		return idx[i].SteamID < idx[j].SteamID
 	})
 }
 
@@ -170,9 +204,9 @@ func (s *VoiceService) voiceNames(matchID int64) (map[string]string, error) {
 }
 
 // GetVoicePlayers returns per-player voice summaries (empty slice when no
-// voice — never an error).
+// voice — never an error). Thin wrapper over the one index pass.
 func (s *VoiceService) GetVoicePlayers(matchID int64) ([]VoicePlayer, error) {
-	stats, err := voicePlayerStats(matchID)
+	idx, err := voiceIndexRead(matchID)
 	if err != nil {
 		return nil, err
 	}
@@ -180,9 +214,15 @@ func (s *VoiceService) GetVoicePlayers(matchID int64) ([]VoicePlayer, error) {
 	if err != nil {
 		return nil, err
 	}
-	orderVoiceStats(stats)
-	out := make([]VoicePlayer, 0, len(stats))
-	for _, p := range stats {
+	orderVoiceIndex(idx)
+	return voicePlayerRows(idx, names), nil
+}
+
+// voicePlayerRows maps the index-pass rows onto the binding DTO (roster
+// names joined through voiceNames — casters map to "").
+func voicePlayerRows(idx []sidecar.VoicePlayerIndex, names map[string]string) []VoicePlayer {
+	out := make([]VoicePlayer, 0, len(idx))
+	for _, p := range idx {
 		out = append(out, VoicePlayer{
 			SteamID:   p.SteamID,
 			Name:      names[p.SteamID],
@@ -192,14 +232,73 @@ func (s *VoiceService) GetVoicePlayers(matchID int64) ([]VoicePlayer, error) {
 			Seconds:   float64(p.Chunks) * 0.01, // 10 ms Opus frames
 		})
 	}
-	return out, nil
+	return out
+}
+
+// laneCounts buckets one player's chunk ticks into `buckets` cells over
+// [from, from+span) — the GetVoiceLanes formula, shared by GetVoiceIndex
+// (one spelling of the bucket math).
+func laneCounts(ticks []int, from int, span float64, buckets int) []int {
+	counts := make([]int, buckets)
+	for _, t := range ticks {
+		b := int(float64(t-from) / span * float64(buckets))
+		if b < 0 {
+			b = 0
+		}
+		if b >= buckets {
+			b = buckets - 1 // tick == to lands in the last bucket
+		}
+		counts[b]++
+	}
+	return counts
+}
+
+// voiceLanes builds the lane result from ONE index pass (idx must already
+// be in listing order — orderVoiceIndex). The bucket window is the match
+// timeline [0, durationTicks) — the span the events/replay view uses.
+func voiceLanes(durationTicks, buckets int, idx []sidecar.VoicePlayerIndex) VoiceLanesResult {
+	res := VoiceLanesResult{FromTick: 0, ToTick: durationTicks, Buckets: buckets, Players: []VoiceLane{}}
+	if res.ToTick <= res.FromTick || len(idx) == 0 {
+		return res
+	}
+	span := float64(res.ToTick - res.FromTick)
+	for _, p := range idx {
+		res.Players = append(res.Players, VoiceLane{
+			SteamID: p.SteamID,
+			Counts:  laneCounts(p.Ticks, res.FromTick, span, buckets),
+		})
+	}
+	return res
+}
+
+// windowStarts maps one player's chunk ticks onto the start tick of the
+// fixed window holding them: tick / windowTicks * windowTicks (integer
+// division — the exact complement of the engine's
+// Math.floor(end / windowTicks) * windowTicks; windowTicks is the
+// caller's, so the window math lives in exactly one place per side).
+// Index order is tick-sorted, so same-window duplicates collapse
+// consecutively. windowTicks < 1 yields nil — no map, fail-open client
+// side.
+func windowStarts(ticks []int, windowTicks int) []int {
+	if windowTicks < 1 {
+		return nil
+	}
+	out := make([]int, 0, len(ticks))
+	for _, t := range ticks {
+		start := t / windowTicks * windowTicks
+		if len(out) == 0 || out[len(out)-1] != start {
+			out = append(out, start)
+		}
+	}
+	return out
 }
 
 // GetVoiceLanes returns density buckets across the match span for the
 // timeline lanes. The bucket window is the match timeline [0,
 // DurationTicks) — the same span the events/replay view uses — so lane
 // clicks seek the master clock directly. Players without voice are
-// omitted; buckets <= 0 defaults to 160.
+// omitted; buckets <= 0 defaults to 160. Thin wrapper over the one index
+// pass.
 func (s *VoiceService) GetVoiceLanes(matchID int64, buckets int) (VoiceLanesResult, error) {
 	if buckets <= 0 {
 		buckets = voiceDefaultBuckets
@@ -208,41 +307,61 @@ func (s *VoiceService) GetVoiceLanes(matchID int64, buckets int) (VoiceLanesResu
 	if err != nil {
 		return VoiceLanesResult{}, err
 	}
-	from, to := 0, m.DurationTicks
-	res := VoiceLanesResult{FromTick: from, ToTick: to, Buckets: buckets, Players: []VoiceLane{}}
-	if to <= from {
-		return res, nil
+	if m.DurationTicks <= 0 {
+		return voiceLanes(m.DurationTicks, buckets, nil), nil
 	}
-	rd, err := sidecar.OpenVoice(matchSidecarDir(matchID))
-	if errors.Is(err, sidecar.ErrNoVoiceIndex) {
-		return res, nil
-	}
+	idx, err := voiceIndexRead(matchID)
 	if err != nil {
 		return VoiceLanesResult{}, err
 	}
-	stats, err := rd.Players()
-	if err != nil {
-		return VoiceLanesResult{}, err
+	orderVoiceIndex(idx)
+	return voiceLanes(m.DurationTicks, buckets, idx), nil
+}
+
+// GetVoiceIndex is the ONE match-load voice read: per-player summaries,
+// lane buckets and the sparse-window map from a single walk over the
+// index files (the replay view's three reads collapsed into one).
+// buckets <= 0 defaults to 160; windowTicks < 1 (or a player with no
+// window starts) yields NO map for that scope — the engine fail-opens to
+// fetching rather than skipping.
+func (s *VoiceService) GetVoiceIndex(matchID int64, buckets, windowTicks int) (VoiceIndexResult, error) {
+	if buckets <= 0 {
+		buckets = voiceDefaultBuckets
 	}
-	orderVoiceStats(stats)
-	span := float64(to - from)
-	for _, p := range stats {
-		ticks, err := rd.Ticks(p.SteamID)
-		if err != nil {
-			return VoiceLanesResult{}, err
+	if windowTicks < 0 {
+		windowTicks = 0
+	}
+	m, err := s.st.GetMatch(matchID)
+	if err != nil {
+		return VoiceIndexResult{}, err
+	}
+	res := VoiceIndexResult{
+		MatchID: matchID,
+		Players: []VoicePlayer{},
+		Lanes:   voiceLanes(m.DurationTicks, buckets, nil),
+		Windows: VoiceWindows{WindowTicks: windowTicks, Players: []VoicePlayerWindow{}},
+	}
+	idx, err := voiceIndexRead(matchID)
+	if err != nil {
+		return VoiceIndexResult{}, err
+	}
+	if len(idx) == 0 {
+		return res, nil
+	}
+	names, err := s.voiceNames(matchID)
+	if err != nil {
+		return VoiceIndexResult{}, err
+	}
+	orderVoiceIndex(idx)
+	res.Players = voicePlayerRows(idx, names)
+	res.Lanes = voiceLanes(m.DurationTicks, buckets, idx)
+	if windowTicks >= 1 {
+		for _, p := range idx {
+			res.Windows.Players = append(res.Windows.Players, VoicePlayerWindow{
+				SteamID: p.SteamID,
+				Starts:  windowStarts(p.Ticks, windowTicks),
+			})
 		}
-		counts := make([]int, buckets)
-		for _, t := range ticks {
-			b := int(float64(t-from) / span * float64(buckets))
-			if b < 0 {
-				b = 0
-			}
-			if b >= buckets {
-				b = buckets - 1 // tick == to lands in the last bucket
-			}
-			counts[b]++
-		}
-		res.Players = append(res.Players, VoiceLane{SteamID: p.SteamID, Counts: counts})
 	}
 	return res, nil
 }

@@ -28,10 +28,16 @@
 import { errText } from '../services.js';
 import { normTickRate } from '../fmt.js';
 import { stretchPCM } from './stretch.js';
+import {
+  voiceWindowTicks,
+  buildVoiceWindowIndex,
+  windowHasVoice,
+} from './voicewindows.js';
 
-const WIN_SEC = 1.0;      // fetch window, replay seconds (≤2 s contract)
 const LOOKAHEAD = 1.5;    // schedule this far ahead of the clock
-const CACHE_MAX = 40;     // decoded-window cache entries, LRU
+const CACHE_MAX = 128;    // decoded-window cache entries, LRU (~2 min of
+                          // windows; every entry holds real speech — the
+                          // server-exact map keeps chunk-less windows out)
 const DRIFT_S = 0.05;     // resync threshold
 // A browser without a user gesture may keep ctx.resume()'s promise
 // pending forever; race it against this timeout before concluding the
@@ -112,7 +118,10 @@ export async function probeAudio() {
 // any parked listener.
 export function createVoiceEngine({ engine, matchId, fetchPCM, onError, onStateChange }) {
   const tr = normTickRate(engine.tickRate);
-  const windowTicks = Math.max(1, Math.round(WIN_SEC * tr));
+  // The fetch window's width in ticks — the ONE formula, shared with the
+  // GetVoiceIndex request through voicewindows.js (the map describes
+  // exactly these windows).
+  const windowTicks = voiceWindowTicks(tr);
 
   let ctx = null;
   let master = null;
@@ -139,6 +148,10 @@ export function createVoiceEngine({ engine, matchId, fetchPCM, onError, onStateC
   let lastPlayState = false; // play-START edge → one silent resume retry
 
   let players = []; // VoicePlayer rows: {steamId, firstTick, lastTick, …}
+  // Server-exact sparse-window map (voicewindows.js): steamId → Set of
+  // window starts that hold speech; null = no usable map, so every
+  // window fetches (fail-open — an absent map must never skip).
+  let winIndex = null;
   const muted = new Set();
   const solo = new Set();
   const gains = new Map(); // steamId → GainNode (per-player mute/solo)
@@ -222,6 +235,14 @@ export function createVoiceEngine({ engine, matchId, fetchPCM, onError, onStateC
         if (to <= end) break; // safety: cursor must always advance
         if (to < first) {
           // pre-voice emptiness: advance the cursor without fetching
+          end = to;
+          continue;
+        }
+        if (!windowHasVoice(winIndex, p.steamId, from)) {
+          // Server-exact emptiness (GetVoiceIndex's window map): the
+          // window holds no chunks for this player — advance without
+          // fetching, exactly like the pre-voice skip above. Unknowns
+          // fetch (windowHasVoice fails open).
           end = to;
           continue;
         }
@@ -543,6 +564,13 @@ export function createVoiceEngine({ engine, matchId, fetchPCM, onError, onStateC
       for (const p of players) gainFor(p.steamId);
       emit();
     },
+    // setWindows installs the server's exact sparse-window map (the skip
+    // set, computed by GetVoiceIndex over THIS windowTicks). Anything
+    // untrustworthy — null payload, wrong windowTicks, empty rows —
+    // resolves to "no map", which fails OPEN: every window fetches.
+    setWindows(result) {
+      winIndex = buildVoiceWindowIndex(result, windowTicks);
+    },
     setMasterVolume(v) {
       volume = Math.max(0, Math.min(1, Number(v) || 0));
       if (master) master.gain.value = volume;
@@ -581,6 +609,7 @@ export function createVoiceEngine({ engine, matchId, fetchPCM, onError, onStateC
     destroy() {
       enabled = false;
       enableWanted = false;
+      winIndex = null;
       clearRetry(); // never leak the parked retry listeners
       offChange();
       cancelAll();

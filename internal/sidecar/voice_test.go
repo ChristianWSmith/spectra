@@ -3,6 +3,7 @@ package sidecar
 import (
 	"bytes"
 	"errors"
+	"math/rand/v2"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -315,6 +316,154 @@ func TestVoiceWriterAddAfterClose(t *testing.T) {
 	}
 	if err := w.Add(extract.VoiceChunk{XUID: 1, Payload: []byte{0}}); err == nil {
 		t.Error("Add after Close: err = nil, want error")
+	}
+}
+
+// TestVoiceChunksRangeEqualsFull pins the windowed read against the
+// whole-file read: for random AND boundary windows Chunks(from, to)
+// returns exactly the full-range rows with from <= tick <= to — the range
+// read (item: on-disk binary search + one ReadAt) may only change WHICH
+// bytes are touched, never the rows it yields.
+func TestVoiceChunksRangeEqualsFull(t *testing.T) {
+	dir := t.TempDir()
+	w, err := NewVoiceWriter(dir)
+	if err != nil {
+		t.Fatalf("NewVoiceWriter: %v", err)
+	}
+	// One player: 200 chunks folded into 1000 ticks (many same-tick ties)
+	// plus two far outliers — windows land on record boundaries, inside
+	// gaps, on ties and outside the range entirely.
+	for n := 0; n < 200; n++ {
+		tick := (n * 37) % 1000
+		switch n {
+		case 0:
+			tick = 0
+		case 199:
+			tick = 999999
+		}
+		if err := w.Add(extract.VoiceChunk{
+			Tick:    tick,
+			XUID:    7,
+			Payload: []byte{byte(n), byte(n >> 8)},
+		}); err != nil {
+			t.Fatalf("Add(n=%d): %v", n, err)
+		}
+	}
+	if _, _, err := w.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	rd, err := OpenVoice(dir)
+	if err != nil {
+		t.Fatalf("OpenVoice: %v", err)
+	}
+	full, err := rd.Chunks("7", -1<<30, 1<<30)
+	if err != nil {
+		t.Fatalf("Chunks(full): %v", err)
+	}
+	if len(full) != 200 {
+		t.Fatalf("full read = %d rows, want 200", len(full))
+	}
+	// The whole-file parse is the reference the windowed read must match.
+	rowsEqual := func(got, want []models.VoiceIndexRow) bool {
+		if len(got) != len(want) {
+			return false
+		}
+		for i := range got {
+			if got[i] != want[i] {
+				return false
+			}
+		}
+		return true
+	}
+	filter := func(from, to int) []models.VoiceIndexRow {
+		var out []models.VoiceIndexRow
+		for _, r := range full {
+			if r.Tick >= from && r.Tick <= to {
+				out = append(out, r)
+			}
+		}
+		return out
+	}
+	check := func(from, to int) {
+		t.Helper()
+		got, err := rd.Chunks("7", from, to)
+		if err != nil {
+			t.Fatalf("Chunks(%d,%d): %v", from, to, err)
+		}
+		if want := filter(from, to); !rowsEqual(got, want) {
+			t.Fatalf("Chunks(%d,%d) = %+v, want %+v", from, to, got, want)
+		}
+	}
+	// Deterministic pseudo-random windows (fixed seed): empties, gaps,
+	// inverted ranges and spans over the whole tick domain.
+	rng := rand.New(rand.NewPCG(1, 2))
+	for i := 0; i < 400; i++ {
+		from := rng.IntN(1300) - 150
+		to := from + rng.IntN(600) - 100
+		check(from, to)
+	}
+	// Boundary windows pinned around real chunk ticks: exact point, both
+	// neighbours, and the two-point spans that include/exclude one edge.
+	for _, r := range []models.VoiceIndexRow{full[0], full[1], full[100], full[199]} {
+		check(r.Tick, r.Tick)
+		check(r.Tick-1, r.Tick)
+		check(r.Tick, r.Tick+1)
+		check(r.Tick+1, r.Tick) // from > to → empty
+	}
+	// Degenerate and out-of-range windows.
+	check(5, 4)
+	check(1<<30, 1<<31)
+	check(-1<<31, -1<<30)
+}
+
+// TestVoicePlayersWithTicksMatchesPlayersAndTicks pins the merged one-pass
+// read: it must yield exactly what Players() + Ticks() returned (stats and
+// ticks alike) — the match-load walk reads each file once instead of twice.
+func TestVoicePlayersWithTicksMatchesPlayersAndTicks(t *testing.T) {
+	dir := t.TempDir()
+	w, err := NewVoiceWriter(dir)
+	if err != nil {
+		t.Fatalf("NewVoiceWriter: %v", err)
+	}
+	for _, c := range voiceStream() {
+		if err := w.Add(c); err != nil {
+			t.Fatalf("Add: %v", err)
+		}
+	}
+	if _, _, err := w.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	rd, err := OpenVoice(dir)
+	if err != nil {
+		t.Fatalf("OpenVoice: %v", err)
+	}
+	merged, err := rd.PlayersWithTicks()
+	if err != nil {
+		t.Fatalf("PlayersWithTicks: %v", err)
+	}
+	stats, err := rd.Players()
+	if err != nil {
+		t.Fatalf("Players: %v", err)
+	}
+	if len(merged) != len(stats) {
+		t.Fatalf("PlayersWithTicks = %d players, Players = %d", len(merged), len(stats))
+	}
+	for i, m := range merged {
+		if m.VoicePlayerStat != stats[i] {
+			t.Errorf("player %d stat = %+v, want %+v", i, m.VoicePlayerStat, stats[i])
+		}
+		wantTicks, err := rd.Ticks(m.SteamID)
+		if err != nil {
+			t.Fatalf("Ticks(%s): %v", m.SteamID, err)
+		}
+		if len(m.Ticks) != len(wantTicks) {
+			t.Fatalf("player %s ticks = %d, want %d", m.SteamID, len(m.Ticks), len(wantTicks))
+		}
+		for j := range wantTicks {
+			if m.Ticks[j] != wantTicks[j] {
+				t.Errorf("player %s tick[%d] = %d, want %d", m.SteamID, j, m.Ticks[j], wantTicks[j])
+			}
+		}
 	}
 }
 

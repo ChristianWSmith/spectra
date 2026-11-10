@@ -1,6 +1,7 @@
 package sidecar
 
 import (
+	"bufio"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -34,8 +35,9 @@ const (
 //	reserved uint8   0
 //
 // One file per player, sorted by tick (sort.SliceStable at Close — ties
-// keep capture order), no compression: a player's index is ≤ ~900 KB, so a
-// whole-file read plus a binary search is sub-ms. The round number is NOT
+// keep capture order), no compression: fixed 16-byte records, so a window
+// read binary-searches the file on disk and pulls only that window's
+// records (see VoiceReader.Chunks). The round number is NOT
 // stored (its only reader was a metrics groupBy whose source is gone);
 // compute it at read time with store.RoundForTick if ever needed.
 const voiceIdxRecordSize = 16
@@ -74,10 +76,16 @@ type VoiceMeta struct {
 	Bytes   int
 }
 
-// voiceFile is one open per-player payload file plus its append offset.
+// voiceFile is one open per-player payload file: a buffered writer (the
+// chunks are ~10 ms frames of tens-to-hundreds of bytes — one unbuffered
+// Write each would be ~105k tiny syscalls per match), its append offset
+// and the cached decimal SteamID stem the rows and file names share
+// (strconv.FormatUint once per player, not once per chunk).
 type voiceFile struct {
-	f   *os.File
-	off int64
+	f     *os.File
+	bw    *bufio.Writer
+	off   int64
+	steam string
 }
 
 // VoiceWriter appends Opus payloads to a match's voice/<xuid>.opus files
@@ -110,26 +118,29 @@ func NewVoiceWriter(dir string) (*VoiceWriter, error) {
 // Add appends one chunk's payload to voice/<xuid>.opus (extract.VoiceSink)
 // and records its index row (Off/Len against that player's file, in capture
 // order — Close serializes them tick-sorted). Payload is only read here.
+// The payload write is buffered (the per-player file flushes at Close) and
+// the decimal SteamID is formatted once per player, not once per chunk.
 func (w *VoiceWriter) Add(c extract.VoiceChunk) error {
 	if w.closed {
 		return errors.New("sidecar: add voice chunk after close")
 	}
 	vf, ok := w.files[c.XUID]
 	if !ok {
-		f, err := os.Create(filepath.Join(w.dir, strconv.FormatUint(c.XUID, 10)+voicePayloadExt))
+		steamID := strconv.FormatUint(c.XUID, 10) // formatted ONCE per player
+		f, err := os.Create(filepath.Join(w.dir, steamID+voicePayloadExt))
 		if err != nil {
 			return fmt.Errorf("sidecar: create voice file for %d: %w", c.XUID, err)
 		}
-		vf = &voiceFile{f: f}
+		vf = &voiceFile{f: f, bw: bufio.NewWriter(f), steam: steamID}
 		w.files[c.XUID] = vf
 	}
-	n, err := vf.f.Write(c.Payload)
+	n, err := vf.bw.Write(c.Payload)
 	if err != nil {
 		return fmt.Errorf("sidecar: write voice chunk: %w", err)
 	}
 	w.rows = append(w.rows, models.VoiceIndexRow{
 		Tick:    c.Tick,
-		SteamID: strconv.FormatUint(c.XUID, 10),
+		SteamID: vf.steam,
 		Off:     vf.off,
 		Len:     int64(n),
 		Caster:  c.Caster,
@@ -139,7 +150,7 @@ func (w *VoiceWriter) Add(c extract.VoiceChunk) error {
 	return nil
 }
 
-// Close closes every per-player payload file, then writes one
+// Close flushes and closes every per-player payload file, then writes one
 // <steamid>.idx per player — the rows sorted by tick (sort.SliceStable:
 // ties keep capture order) — and returns the summary plus the index rows
 // in capture order (steam IDs as decimal strings). Single-shot like
@@ -158,10 +169,14 @@ func (w *VoiceWriter) Close() (VoiceMeta, []models.VoiceIndexRow, error) {
 			meta.Casters++
 		}
 	}
-	// Payload files first: their final sizes are the bound every record's
-	// uint32 off must stay inside, and the size the reader validates against.
+	// Payload files first: flush the buffered chunks, then their final
+	// sizes are the bound every record's uint32 off must stay inside, and
+	// the size the reader validates against.
 	byPlayer := make(map[string][]models.VoiceIndexRow, len(w.files))
 	for id, vf := range w.files {
+		if err := vf.bw.Flush(); err != nil {
+			return meta, nil, fmt.Errorf("sidecar: flush voice file %d: %w", id, err)
+		}
 		if vf.off > maxVoicePayloadBytes {
 			return meta, nil, fmt.Errorf("sidecar: voice payload %d is %d bytes, over the %d byte index limit",
 				id, vf.off, maxVoicePayloadBytes)

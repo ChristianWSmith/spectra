@@ -12,7 +12,11 @@
 //     player's own mute/solo state,
 //   • the scheduling contract: every window is fetched for audible
 //     players only, and sources start at playbackRate 1 over buffers
-//     pre-stretched by stretchPCM for the epoch's speed.
+//     pre-stretched by stretchPCM for the epoch's speed,
+//   • the server-exact sparse-window map (voicewindows.js): windows the
+//     map proves chunk-less are NEVER fetched, unknown players and
+//     mismatched windowTicks fail OPEN to fetching, and a 0-sample
+//     window starts no source at all (the Go route's empty-window shape).
 //
 // jsdom is intentionally not a project dependency; from frontend/ run:
 //   npm i --no-save jsdom
@@ -352,4 +356,91 @@ test('sources play at playbackRate 1 over pre-stretched buffers at speed ≠ 1',
     assert.ok(s.offset >= 0, 'late-offset is non-negative');
   }
   ve.destroy();
+});
+
+test('server-exact window map: proven-silent windows are never fetched; unknowns fail open', async () => {
+  resumeMode = 'running';
+  const engine = makeEngine();
+  const { ve, fetched } = makeVoice(engine);
+  await ve.setEnabled(true);
+  // Windows are 64 ticks (1 s @ 64 tick). Each emit resyncs (the fake
+  // context's clock never advances), so every phase schedules from the
+  // current tick: [512,640), then [640,704), then [768,896).
+
+  // A speaks only in the first two windows; B has NO map row.
+  ve.setWindows({ windowTicks: 64, players: [{ steamId: 'A', starts: [0, 64] }] });
+  engine.state.playing = true;
+  engine.state.tick = 512;
+  engine.emit();
+  await flush();
+  assert.equal(fetched.A, 0, 'server-proven silent windows are not fetched at all');
+  assert.equal(fetched.B, 2, 'a player absent from the map fail-opens to fetching');
+
+  // A map that DOES mark speech in the next window fetches exactly that.
+  ve.setWindows({ windowTicks: 64, players: [{ steamId: 'A', starts: [640] }] });
+  engine.state.tick = 640;
+  engine.emit();
+  await flush();
+  assert.equal(fetched.A, 1, 'the marked window is fetched, its silent sibling skipped');
+  assert.equal(fetched.B, 4, 'the unknown player keeps fetching every window');
+
+  // A map computed for ANOTHER window size is unusable (its starts are
+  // not this engine's aligned windows): the engine discards it and
+  // fail-opens — real speech must never be skipped on a mismatched map.
+  ve.setWindows({ windowTicks: 128, players: [{ steamId: 'A', starts: [768] }] });
+  engine.state.tick = 768;
+  engine.emit();
+  await flush();
+  assert.equal(fetched.A, 3, 'windowTicks mismatch → fetch, never skip');
+  assert.equal(fetched.B, 6, 'the unknown player is unaffected');
+  ve.destroy();
+});
+
+test('an empty (0-sample) window builds no buffer and starts no source', async () => {
+  resumeMode = 'running';
+  const engine = makeEngine();
+  const errors = [];
+  // Record the audio graph: a 0-sample result must never reach
+  // createBuffer/createBufferSource (the Go route's empty-window shape —
+  // header only) and must never report an error.
+  const buffers = [];
+  const started = [];
+  const origCreate = FakeAudioContext.prototype.createBuffer;
+  const origSource = FakeAudioContext.prototype.createBufferSource;
+  FakeAudioContext.prototype.createBuffer = function (ch, len, rate) {
+    const buf = { duration: len / rate, copyToChannel() {} };
+    buffers.push(buf);
+    return buf;
+  };
+  FakeAudioContext.prototype.createBufferSource = function () {
+    const src = origSource.call(this);
+    const origStart = src.start.bind(src);
+    src.start = (when, offset) => started.push({ when, offset });
+    return src;
+  };
+  try {
+    const ve = createVoiceEngine({
+      engine,
+      matchId: 1,
+      fetchPCM: async () => ({ fromTick: 0, sampleRate: 16000, samples: new Int16Array(0) }),
+      onError: (e) => errors.push(e),
+      onStateChange: () => {},
+    });
+    ve.setPlayers(PLAYERS);
+    await ve.setEnabled(true);
+    engine.state.playing = true;
+    engine.state.tick = 0;
+    engine.emit();
+    await flush();
+    engine.state.tick += 64;
+    engine.emit();
+    await flush();
+    assert.equal(buffers.length, 0, 'a 0-sample window never becomes an AudioBuffer');
+    assert.equal(started.length, 0, 'and starts no AudioBufferSourceNode');
+    assert.equal(errors.length, 0, 'silence is not an error');
+    ve.destroy();
+  } finally {
+    FakeAudioContext.prototype.createBuffer = origCreate;
+    FakeAudioContext.prototype.createBufferSource = origSource;
+  }
 });
