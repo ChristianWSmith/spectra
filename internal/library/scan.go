@@ -292,10 +292,11 @@ func (sc *Scanner) collect(roots []string, imported map[string]bool) ([]DemoFile
 // removed unless every invariant holds: a non-empty path that is a
 // regular .dem/.dem.zst file sitting under one of roots, outside the
 // app's own data dir, and not the stored path of a match already in the
-// library (that demo belongs to the match — for rows imported before
-// copy-on-import it is the only copy, so delete the match instead).
-// Every failed check returns an error naming the reason; the frontend's
-// confirmation dialog precedes this call, it never replaces these checks.
+// library (that demo belongs to the match — with no managed copy beside
+// it (copy-on-import off, or evicted) it is the only file, so delete the
+// match instead). Every failed check returns an error naming the reason;
+// the frontend's confirmation dialog precedes this call, it never
+// replaces these checks.
 func (sc *Scanner) RemoveDemoFile(roots []string, path string) error {
 	if strings.TrimSpace(path) == "" {
 		return fmt.Errorf("delete demo file: empty path")

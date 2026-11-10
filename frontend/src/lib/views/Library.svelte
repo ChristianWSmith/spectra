@@ -7,6 +7,7 @@
     listPlayers,
     listJobs,
     deleteMatch,
+    evictDemoCopy,
     reprocess,
     cancelJob,
     subscribeJobProgress,
@@ -106,7 +107,7 @@
   let demoError = $state('');
   let notice = $state('');
   // The one confirmation modal (ConfirmDialog.svelte) — see onDelete /
-  // onDeleteFile for the two prompts this view opens.
+  // onDeleteFile / onFreeCopy for the three prompts this view opens.
   let confirmDlg = $state(null);
 
   // Route-query presets (#/library?map=&player=): (re)apply the deep-link
@@ -308,9 +309,10 @@
   });
 
   // Synthetic rows: imports the queue owns but the matches table cannot
-  // show yet. A match row is only created after hash+copy
-  // (store.CreateMatchRow), so an import that is queued — or hashing/
-  // copying/parsing before its row lands — has NO match row at all. These
+  // show yet. A match row is only created after hash (and the copy stage,
+  // when copy-on-import is on — store.CreateMatchRow), so an import that
+  // is queued — or hashing/copying/parsing before its row lands — has NO
+  // match row at all. These
   // jobs render as their own table rows built from `jobs` (kind=import,
   // matchId 0), live-progress merged: the queued state is visible from the
   // moment Enqueue returns, never as an invisible wait.
@@ -453,7 +455,34 @@
     }
   }
 
-  async function onDelete(id, ev) {
+  // Free the disk space Spectra's copy of a match's demo uses — the row
+  // action behind copyState 'copied' (fs-derived, so it is only rendered
+  // when a copy actually exists and the row is openable). Only the managed
+  // copy under the app's data dir goes: the match, its sidecars and the
+  // user's original file are untouched, and the row re-derives its state
+  // (external / missing) on the next list load.
+  async function onFreeCopy(m, ev) {
+    ev.stopPropagation();
+    notice = '';
+    const ok = await confirmDlg?.ask({
+      title: 'Free Spectra’s copy of the demo?',
+      message:
+        `Deletes the ${fmtBytes(m.size)} copy Spectra keeps for this match. ` +
+        'Your original file, this match’s data and its replay stay as they are — ' +
+        'but Re-parse will need your original file to still exist.',
+      confirmLabel: 'Free copy',
+    });
+    if (!ok) return;
+    try {
+      const freed = await evictDemoCopy(m.id);
+      notice = `Freed ${fmtBytes(typeof freed === 'number' ? freed : m.size)}`;
+      await refreshList();
+    } catch (e) {
+      error = errText(e);
+    }
+  }
+
+  async function onDelete(m, ev) {
     ev.stopPropagation();
     notice = '';
     if (
@@ -467,19 +496,25 @@
     ) {
       return;
     }
-    // Only Spectra's OWN copy of the demo file is ever removed — the
-    // backend reports removedDemo=false when there is no managed copy
-    // (a row imported before copy-on-import points at the user's
-    // original file, which stays untouched).
-    const alsoFile = !!(await confirmDlg?.ask({
-      title: 'Also delete the demo file?',
-      message:
-        'Deletes Spectra’s own imported copy of the demo from disk. ' +
-        'Your original file is never touched.',
-      confirmLabel: 'Delete demo file',
-    }));
+    // The "also delete the demo file?" prompt only makes sense when there
+    // IS a managed copy to delete (copyState 'copied' — fs-derived at the
+    // last list load): a skip-copied or already-evicted match has none,
+    // and asking to delete a file that isn't ours would be a lie. Only
+    // Spectra's OWN copy is ever removed — the backend reports
+    // removedDemo=false when there is no managed copy, and the user's
+    // original file is never ours to touch.
+    let alsoFile = false;
+    if (m.copyState === 'copied') {
+      alsoFile = !!(await confirmDlg?.ask({
+        title: 'Also delete the demo file?',
+        message:
+          'Deletes Spectra’s own imported copy of the demo from disk. ' +
+          'Your original file is never touched.',
+        confirmLabel: 'Delete demo file',
+      }));
+    }
     try {
-      const removedDemo = await deleteMatch(id, alsoFile);
+      const removedDemo = await deleteMatch(m.id, alsoFile);
       if (alsoFile && !removedDemo) {
         notice = 'The demo file was kept — Spectra only deletes the copy it imported.';
       }
@@ -750,13 +785,24 @@
                     : "Re-parse the demo — from Spectra's copy when one exists"}
                   onclick={(e) => onReprocess(m.id, e)}>Re-parse</button
                 >
+                <!-- Free copy: rendered only while the fs-derived state
+                     says a managed copy exists AND the row is openable —
+                     a parsing/queued row never shows it, so the row's
+                     action-count stays the two controls the queue pins. -->
+                {#if m.copyState === 'copied' && isOpenable(m)}
+                  <button
+                    class="btn small"
+                    title="Free the disk space Spectra’s copy uses — your original file is not touched"
+                    onclick={(e) => onFreeCopy(m, e)}>Free copy</button
+                  >
+                {/if}
                 <button
                   class="btn small danger"
                   disabled={!isOpenable(m)}
                   title={!isOpenable(m)
                     ? 'Available once parsing finishes'
                     : 'Delete this match’s data'}
-                  onclick={(e) => onDelete(m.id, e)}>Delete</button
+                  onclick={(e) => onDelete(m, e)}>Delete</button
                 >
               </td>
             </tr>
@@ -806,8 +852,9 @@
     </div>
     <p class="muted">
       Found under your import dirs (Settings → Import dirs) — subfolders up to
-      four levels deep, hidden folders skipped. Importing copies the demo into
-      Spectra’s data folder; your original file is never touched.
+      four levels deep, hidden folders skipped. Importing never moves, modifies or
+      deletes your original file; the copy kept in Spectra’s data folder is
+      optional (Settings → Import dirs) and can be freed from any match row.
     </p>
     {#if demoError}
       <p class="error" role="alert">{demoError}</p>

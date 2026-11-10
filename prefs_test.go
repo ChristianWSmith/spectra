@@ -75,6 +75,17 @@ func TestFrontendPrefKeyStrings(t *testing.T) {
 	}
 }
 
+// The copy toggle is one of the few prefs Go CONSUMES (library.Options
+// CopyEnabled via copyOnImportPref, read per job) — but the string is
+// still the durable contract: a rename silently orphans every stored
+// choice and reverts the user to the default as soon as they have toggled
+// it once.
+func TestCopyOnImportPrefKey(t *testing.T) {
+	if prefsCopyOnImportKey != "copy_on_import" {
+		t.Errorf("copy-on-import key = %q, want %q", prefsCopyOnImportKey, "copy_on_import")
+	}
+}
+
 // Removal pin for the retired prompt-suppression pref: the launch prompt
 // is presence-driven (it re-opens on EVERY launch until the assets
 // exist — "Not now" is session-only), so there is deliberately no

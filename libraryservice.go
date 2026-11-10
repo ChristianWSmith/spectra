@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -82,6 +83,24 @@ func (s *LibraryService) ResetDemoDirs() error {
 	return s.kvs.Delete(prefsDemoDirsKey)
 }
 
+// GetDemoCopyOnImport reports whether imports copy the demo into
+// data.DemosDir (the copy Reprocess survives on). Unset or corrupt pref
+// ⇒ true — copying is the default and a broken pref never silently turns
+// backups off. The pipeline reads the same pref per job
+// (library.Options.CopyEnabled), so this is the display half of it.
+func (s *LibraryService) GetDemoCopyOnImport() bool {
+	enabled, ok := prefBool(s.kvs.Get(prefsCopyOnImportKey))
+	return !ok || enabled
+}
+
+// SetDemoCopyOnImport stores the copy-on-import toggle (Settings →
+// Import dirs). It applies to jobs from the NEXT process() on — queued
+// jobs pick the new value up too, because the importer reads the pref
+// per job, never at enqueue time.
+func (s *LibraryService) SetDemoCopyOnImport(copy bool) error {
+	return s.kvs.Set(prefsCopyOnImportKey, copy)
+}
+
 // ChooseDemoDir opens the native folder picker for the import-dir list;
 // an empty string means cancel. The caller persists the choice (the
 // picker itself is dialogs.go's chooseDirectory, shared with
@@ -133,8 +152,20 @@ func (s *LibraryService) ListMatches(query, sortKey string, desc bool, filter st
 // Library's "Load more" pagination and its single-call list load go
 // through. ListMatches itself stays unbounded for its whole-library
 // readers (import dedupe, MatchPicker, Settings' recompute list).
+//
+// Every row also gets its fs-derived CopyState stamped here (bounded:
+// ~50 rows × ≤3 stats per row, sub-ms — the ONE list-side annotation; the
+// unbounded ListMatches deliberately stays unstamped, see
+// models.MatchSummary.CopyState).
 func (s *LibraryService) ListMatchesPage(query, sortKey string, desc bool, afterID int64, limit int, filter store.MatchListFilter) (*models.MatchListPage, error) {
-	return s.st.ListMatchesPage(query, sortKey, desc, afterID, limit, filter)
+	page, err := s.st.ListMatchesPage(query, sortKey, desc, afterID, limit, filter)
+	if err != nil {
+		return nil, err
+	}
+	for i := range page.Rows {
+		page.Rows[i].CopyState = s.imp.CopyState(page.Rows[i].SHA256, page.Rows[i].Path)
+	}
+	return page, nil
 }
 
 // ListMapNames returns the distinct, non-empty map names in the library
@@ -148,9 +179,9 @@ func (s *LibraryService) ListMapNames() ([]string, error) {
 // DeleteMatch removes a match and its extracted data, including the
 // per-match position sidecar directory (best-effort — the delete
 // cascade removes the directory). When deleteDemo is set, spectra's OWN
-// copy of the demo (the copy-on-import file under data.DemosDir) is
-// removed from disk as well — a user's original file is never ours to
-// delete, so rows without a managed copy remove nothing. A missing match
+// copy of the demo (the managed copy under data.DemosDir) is removed
+// from disk as well — a user's original file is never ours to delete,
+// so rows without a managed copy remove nothing. A missing match
 // surfaces store.ErrNotFound. The bool reports whether a demo file was
 // actually deleted.
 func (s *LibraryService) DeleteMatch(id int64, deleteDemo bool) (bool, error) {
@@ -170,6 +201,30 @@ func (s *LibraryService) DeleteMatch(id int64, deleteDemo bool) (bool, error) {
 		return false, nil
 	}
 	return s.imp.RemoveManagedDemo(sha)
+}
+
+// EvictDemoCopy frees spectra's OWN copy of a match's demo — the "Free
+// copy" action — WITHOUT touching anything else: the match row, its
+// sidecars (<matchDir>) and the stored SOURCE path are all left alone
+// (RemoveManagedDemo only ever deletes inside data.DemosDir). freedBytes
+// is the match's recorded size; no copy at all (already evicted, or
+// imported with copy-on-import off) resolves to (0, nil) — evicting twice
+// is not an error. Afterwards the match reprocesses from the stored path
+// (CopyState "external"), or fails fast in Reprocess's missing-file
+// pre-check when the source is gone too ("missing").
+func (s *LibraryService) EvictDemoCopy(id int64) (int64, error) {
+	m, err := s.st.GetMatch(id)
+	if err != nil {
+		return 0, err
+	}
+	removed, err := s.imp.RemoveManagedDemo(m.SHA256)
+	if err != nil {
+		return 0, err
+	}
+	if !removed {
+		return 0, nil
+	}
+	return m.Size, nil
 }
 
 // Reprocess queues a re-parse of a match's demo file: the managed copy
@@ -206,20 +261,90 @@ func (s *LibraryService) GetWarnings(id int64) ([]string, error) {
 }
 
 // DataInfo describes where Spectra keeps its state — Settings shows it.
+// DemosDir/DemoCount/DemoBytes describe the managed copy dir from ONE
+// readdir: everything under data.DemosDir is spectra' own property
+// (content-hash demo copies + their .info companions), so the count and
+// bytes are exactly what "Free all demo copies" reclaims.
 type DataInfo struct {
 	DBPath        string `json:"dbPath"`
 	MatchesDir    string `json:"matchesDir"`
 	ParserVersion string `json:"parserVersion"`
+	DemosDir      string `json:"demosDir"`
+	DemoCount     int    `json:"demoCount"`
+	DemoBytes     int64  `json:"demoBytes"`
 }
 
 // GetDataInfo returns the on-disk data locations and the parser version
 // recorded per match (PRD: users must know where their data lives).
 func (s *LibraryService) GetDataInfo() DataInfo {
+	demosDir := data.DemosDir()
+	count, bytes := countManagedDemoFiles(demosDir)
 	return DataInfo{
 		DBPath:        data.DBPath(),
 		MatchesDir:    data.MatchesDir(),
 		ParserVersion: extract.ParserVersion,
+		DemosDir:      demosDir,
+		DemoCount:     count,
+		DemoBytes:     bytes,
 	}
+}
+
+// countManagedDemoFiles counts the regular files under dir and their
+// total size in ONE readdir (the copy dir is flat — no recursion). A
+// missing/unreadable dir yields (0, 0): no copies to report, no error to
+// surface on a Settings tab.
+func countManagedDemoFiles(dir string) (int, int64) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return 0, 0
+	}
+	var count int
+	var bytes int64
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		count++
+		if info, err := e.Info(); err == nil {
+			bytes += info.Size()
+		}
+	}
+	return count, bytes
+}
+
+// FreeAllDemoCopies removes every file spectra keeps under
+// data.DemosDir — Settings → Data's "Free all demo copies" — and reports
+// the bytes reclaimed. Everything under that directory is spectra'
+// property (see data.DemosDir), so a whole-dir sweep cannot catch a
+// match row, a sidecar (<matchDir>) or a user file; matches keep playing
+// from their stored data and simply reprocess from their stored source
+// afterwards (or hit Reprocess's missing-file pre-check when the source
+// is gone too). Callers gate on pending jobs — an import mid-copy would
+// land its file after the sweep — and a second call reports (0, nil).
+func (s *LibraryService) FreeAllDemoCopies() (int64, error) {
+	demosDir := data.DemosDir()
+	entries, err := os.ReadDir(demosDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return 0, nil
+		}
+		return 0, err
+	}
+	var freed int64
+	for _, e := range entries {
+		p := filepath.Join(demosDir, e.Name())
+		if e.IsDir() {
+			continue // spectra never nests the copy dir; leave anything else alone
+		}
+		info, ierr := e.Info()
+		if err := os.Remove(p); err != nil && !os.IsNotExist(err) {
+			return freed, fmt.Errorf("free demo copy: %w", err)
+		}
+		if ierr == nil {
+			freed += info.Size()
+		}
+	}
+	return freed, nil
 }
 
 // GetGenericEvents returns raw game-event rows for one name ("" = all),

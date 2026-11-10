@@ -44,7 +44,9 @@ const (
 	// match row exists — the synthetic Library rows key off it).
 	StageHash = "hash"
 	// StageCopy is copy-on-import: the raw demo landing in the managed
-	// demo dir (skipped when the copy already exists).
+	// demo dir (skipped when the copy already exists, and never emitted
+	// when the copy_on_import setting is off — hash 0.10 → decompress 0.20
+	// then hand over with no copy stage in between).
 	StageCopy       = "copy"
 	StageQueued     = "queued"
 	StageDecompress = "decompress"
@@ -155,6 +157,11 @@ type Match struct {
 	// set), so this counter plus voice_presence.key_found are the only
 	// provenance the UI has for the "chat possibly encrypted" lock chip.
 	EncryptedMessages int `json:"encryptedMessages"`
+	// CopyState is the fs-derived demo-copy state ("copied" | "external" |
+	// "missing" — library.CopyState*). SERVICE-OWNED: the store never
+	// fills it; MatchService.GetMatch stamps it from Importer.CopyState
+	// (see the same field on MatchSummary).
+	CopyState string `json:"copyState"`
 }
 
 // Team is one side's summary for a match (teams table).

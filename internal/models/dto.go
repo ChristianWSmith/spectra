@@ -20,6 +20,13 @@ type MatchSummary struct {
 	Status      string    `json:"status"`
 	Error       string    `json:"error"`
 	SHA256      string    `json:"sha256"`
+	// CopyState is the fs-derived demo-copy state ("copied" | "external" |
+	// "missing" — library.CopyState*). SERVICE-OWNED: the store never
+	// fills it (no column, nothing to go stale); LibraryService.
+	// ListMatchesPage stamps it per row from Importer.CopyState, and it
+	// stays "" on every other projection (ListMatches and its
+	// whole-library readers).
+	CopyState string `json:"copyState"`
 }
 
 // MatchListPage is one keyset window of the library list (the "Load more"

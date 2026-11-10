@@ -28,6 +28,14 @@
 // exhausted), and the matchup fallback for nameless rows arrives on the
 // page's `rosters` — the list load never fans out into per-row
 // GetScoreboard calls (the N+1 this pagination replaces).
+// Section I covers the demo-copy actions: a row whose fs-derived
+// copyState says "copied" renders the third "Free copy" action (behind
+// the one ConfirmDialog), a copy-less row keeps exactly the two controls
+// (the same render gate that keeps the parsing/queued action-count pins
+// valid), and the delete flow's "Also delete the demo file?" second
+// confirm is asked ONLY when a managed copy exists. Backend semantics of
+// copyState live in internal/library.CopyState +
+// LibraryService.ListMatchesPage/EvictDemoCopy — this covers the wiring.
 // Backend semantics of the facets live in store.TestListMatches (the
 // keyset itself in store.TestListMatchesPage*); the
 // suggestion source is store.TestListMapNames; the pipeline behind the
@@ -1034,6 +1042,153 @@ await sleep(350); // past the 250 ms debounce
     'the appended tail is the oldest row (full order preserved)',
     navCalls().length === beforeNav + 1 && navCalls().at(-1) === '/match/1001',
     JSON.stringify(navCalls().slice(-2)),
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Section I: the demo-copy actions. The scripted facet carries one ready
+// row WITH a managed copy (copyState 'copied', stamped in production by
+// LibraryService.ListMatchesPage from Importer.CopyState) beside a
+// copy-less ready row, so the render gate, the confirm flow and the
+// delete flow's second prompt can all be pinned against each other.
+console.log('I. Free copy: gated render, confirm flow, delete second-confirm');
+
+const copiedRow = {
+  id: 4,
+  path: '/d/copied.dem',
+  map: 'de_overpass',
+  size: 214 * 1024 * 1024,
+  scoreCT: 13,
+  scoreT: 11,
+  ctName: 'Copied',
+  tName: 'Team',
+  realRounds: 24,
+  durationS: 3000,
+  extractedAt: '2026-01-03T00:00:00Z',
+  status: 'ready',
+  error: '',
+  copyState: 'copied',
+};
+const prevRowsForFacetI = rowsForFacet;
+rowsForFacet = (f) => (f && f.map === 'freecopy' ? [copiedRow, row] : prevRowsForFacetI(f));
+bindings.handlers.EvictDemoCopy = (id) => (id === 4 ? copiedRow.size : 0);
+globalThis.__deleted = [];
+bindings.handlers.DeleteMatch = (id, also) => {
+  globalThis.__deleted.push([id, also]);
+  return also;
+};
+
+type(mapInput(), 'freecopy');
+await sleep(350); // past the 250 ms debounce
+
+const dlgBtn = (label) =>
+  [...document.querySelectorAll('.cf-actions .btn')].find((b) => b.textContent.trim() === label);
+const dlgOpen = () => !!document.querySelector('.cf-prompt');
+const freeCopyBtn = (tr) =>
+  [...tr.querySelectorAll('.row-actions button')].find((b) => b.textContent.trim() === 'Free copy');
+const deleteBtn = (tr) =>
+  [...tr.querySelectorAll('.row-actions button')].find((b) => b.textContent.trim() === 'Delete');
+const roleStatus = () =>
+  [...document.querySelectorAll('[role="status"]')].map((e) => e.textContent).join(' | ');
+
+{
+  const rows = windowRows();
+  check('copy facet renders two ready rows', rows.length === 2, String(rows.length));
+  const copiedBtns = [...rows[0].querySelectorAll('.row-actions button')];
+  check(
+    'copied row renders Free copy between Re-parse and Delete',
+    copiedBtns.map((b) => b.textContent.trim()).join(',') === 'Re-parse,Free copy,Delete',
+    JSON.stringify(copiedBtns.map((b) => b.textContent.trim())),
+  );
+  const plainBtns = [...rows[1].querySelectorAll('.row-actions button')];
+  check(
+    'a row with no copy keeps exactly Re-parse + Delete (render gate)',
+    plainBtns.map((b) => b.textContent.trim()).join(',') === 'Re-parse,Delete',
+    JSON.stringify(plainBtns.map((b) => b.textContent.trim())),
+  );
+
+  // Cancel is a cancel: the confirm dialog resolves false, nothing hits
+  // the backend.
+  const before = bindings.callCount('EvictDemoCopy');
+  click(freeCopyBtn(rows[0]));
+  await sleep(40);
+  check(
+    'free-copy confirm opens and names the copy',
+    dlgOpen() && document.body.textContent.includes('Free Spectra’s copy of the demo?'),
+    document.querySelector('.cf-prompt')?.textContent.replace(/\s+/g, ' ').slice(0, 120) ?? '',
+  );
+  click(dlgBtn('Cancel'));
+  await sleep(40);
+  check('dialog dismissed after cancel', !dlgOpen());
+  check(
+    'cancelled free copies nothing',
+    bindings.callCount('EvictDemoCopy') === before,
+    String(bindings.callCount('EvictDemoCopy')),
+  );
+
+  // Confirm → one EvictDemoCopy with the row id, then the freed-bytes
+  // notice (fmtBytes of what the backend reported).
+  click(freeCopyBtn(windowRows()[0]));
+  await sleep(40);
+  click(dlgBtn('Free copy'));
+  await sleep(150);
+  const evictCalls = bindings.calls.filter((c) => c.method === 'EvictDemoCopy');
+  check(
+    'confirmed free → ONE EvictDemoCopy carrying the row id',
+    evictCalls.length === before + 1 && evictCalls.at(-1).args[0] === 4,
+    JSON.stringify(evictCalls.map((c) => c.args)),
+  );
+  check(
+    'notice reports the freed size',
+    roleStatus().includes('Freed 214.0 MB'),
+    roleStatus(),
+  );
+  check('dialog closed after confirming', !dlgOpen());
+}
+
+{
+  // Delete flow: the copied row asks BOTH confirms (data, then the file
+  // we own) and passes alsoFile=true; the copy-less row asks only the
+  // data confirm — there is no file of ours to delete, so the second
+  // prompt would be a lie.
+  const rows = windowRows();
+  click(deleteBtn(rows[0]));
+  await sleep(40);
+  check(
+    'delete opens the data confirm first',
+    document.body.textContent.includes('Delete this match’s data?'),
+  );
+  click(dlgBtn('Delete'));
+  await sleep(40);
+  check(
+    'copied row then asks about the demo file',
+    document.body.textContent.includes('Also delete the demo file?'),
+  );
+  click(dlgBtn('Delete demo file'));
+  await sleep(250); // delete + jobs/list/dir refetches
+  check(
+    'copied row delete passed alsoFile=true',
+    globalThis.__deleted.length === 1 &&
+      globalThis.__deleted[0][0] === 4 &&
+      globalThis.__deleted[0][1] === true,
+    JSON.stringify(globalThis.__deleted),
+  );
+
+  click(deleteBtn(windowRows()[1]));
+  await sleep(40);
+  check(
+    'no-copy row asks only the data confirm',
+    document.body.textContent.includes('Delete this match’s data?') &&
+      !document.body.textContent.includes('Also delete the demo file?'),
+  );
+  click(dlgBtn('Delete'));
+  await sleep(250);
+  check(
+    'no-copy row delete passed alsoFile=false (second confirm skipped)',
+    globalThis.__deleted.length === 2 &&
+      globalThis.__deleted[1][0] === 1 &&
+      globalThis.__deleted[1][1] === false,
+    JSON.stringify(globalThis.__deleted),
   );
 }
 

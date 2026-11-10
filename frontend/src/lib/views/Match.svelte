@@ -11,6 +11,7 @@
     getRoundClasses,
     getVoicePresence,
     getMatchSummary,
+    evictDemoCopy,
     listMetrics,
     previewMetric,
     errText,
@@ -209,6 +210,25 @@
       });
     return () => (live = false);
   });
+
+  // Demo-copy state line (Details → Key facts): copyState is fs-derived
+  // by Go on this read (copied / external / missing). Freeing re-reads the
+  // header through the normal getter (the mutating wrapper invalidated the
+  // read cache), so the state line re-derives instead of being guessed.
+  let copyBusy = $state(false);
+
+  async function onFreeCopy() {
+    if (copyBusy || !match) return;
+    copyBusy = true;
+    try {
+      await evictDemoCopy(match.id);
+      match = await getMatch(id);
+    } catch (e) {
+      error = errText(e);
+    } finally {
+      copyBusy = false;
+    }
+  }
 
   // Warnings fetch — only when the match actually has warnings
   // (match.warningsCount > 0; a clean match renders no panel at all).
@@ -1210,6 +1230,31 @@
             </div>
           {/if}
           <div class="fact-wide"><dt>Source</dt><dd class="mono">{match.path}</dd></div>
+          <!-- State line under Source: which demo file Re-parse would read
+               right now (copyState is fs-derived by Go on this read —
+               store never fills it). -->
+          <div class="fact-wide">
+            <dt>Demo copy</dt>
+            <dd>
+              {#if match.copyState === 'copied'}
+                <span>copy · {fmtBytes(match.size)}</span>
+                <button
+                  class="btn small"
+                  disabled={copyBusy}
+                  title="Free the disk space Spectra’s copy uses — your original file is not touched"
+                  onclick={onFreeCopy}>{copyBusy ? 'Freeing…' : 'Free copy'}</button
+                >
+              {:else if match.copyState === 'external'}
+                <span class="muted">no copy — using your file</span>
+              {:else if match.copyState === 'missing'}
+                <span class="muted">file not found</span>
+              {:else}
+                <!-- Unstamped (never in production — Go always derives one
+                     of the three states): a placeholder, never a claim. -->
+                <span class="muted">—</span>
+              {/if}
+            </dd>
+          </div>
         </dl>
       </section>
       <Explorer embedded routeId={id} {nav} />
