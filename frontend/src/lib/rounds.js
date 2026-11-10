@@ -98,27 +98,43 @@ export function roundEndTick(rounds, number) {
   return r && Number.isFinite(r.endTick) ? r.endTick : null;
 }
 
-// inFreezeTime — the ONE freeze-phase predicate: true while `tick` sits
-// inside a round's FREEZE time (round start ≤ tick < freezeEndTick).
-// Freeze is where the game forbids firing, so no gun sound, no utility
-// sound and no tracer may play there (replay/bullets.js filters bullets
-// with it; replay/sfx.js gates utility/knife cues with it). The usable-
-// window rule mirrors the HUD round clock's honest fallback (renderer.js
-// roundClockLine): a row without a real window — the warmup row ships
-// start/freezeEnd 0, a corrupt row may ship freezeEnd ≤ start — reports
-// false rather than guessing, so such rounds never silence anything.
-// Rounds arrive number-ordered (= start-tick-ordered), but the scan
-// tolerates any order by taking the LAST row whose start reaches tick.
-export function inFreezeTime(rounds, tick) {
-  if (!Number.isFinite(tick)) return false;
+// freezeWindowAt — the ONE freeze WINDOW: the {start, end} bounds of the
+// round whose freeze contains `tick` (start ≤ tick < freezeEndTick, a
+// half-open window), or null when no round has a usable one. The window
+// is exactly the rule inFreezeTime reports on — this is its canonical
+// home, so both can never disagree. A row without a real window — the
+// warmup row ships start/freezeEnd 0, a corrupt row may ship
+// freezeEnd ≤ start — yields null rather than guessing, so callers skip
+// (or silence) nothing they do not actually know. Rounds arrive
+// number-ordered (= start-tick-ordered), but the scan tolerates any
+// order by taking the LAST row whose start reaches tick.
+//
+// Consumers: inFreezeTime (the freeze-phase predicate behind bullets.js
+// / sfx.js), and the replay engine's auto-skip of the pre-round freeze
+// (skipFreeze jumps playhead → freezeEndTick, the first-action tick).
+export function freezeWindowAt(rounds, tick) {
+  if (!Number.isFinite(tick)) return null;
   let best = null;
   for (const r of rounds || []) {
     if (!r || !Number.isFinite(r.startTick) || r.startTick > tick) continue;
     if (!best || r.startTick > best.startTick) best = r;
   }
-  if (!best) return false;
+  if (!best) return null;
   const fe = best.freezeEndTick;
-  return Number.isFinite(fe) && fe > best.startTick && tick < fe;
+  if (!Number.isFinite(fe) || fe <= best.startTick || tick >= fe) return null;
+  return { start: best.startTick, end: fe };
+}
+
+// inFreezeTime — the ONE freeze-phase predicate: true while `tick` sits
+// inside a round's FREEZE time (round start ≤ tick < freezeEndTick).
+// Freeze is where the game forbids firing, so no gun sound, no utility
+// sound and no tracer may play there (replay/bullets.js filters bullets
+// with it; replay/sfx.js gates utility/knife cues with it). The usable-
+// window rule is freezeWindowAt's (above) — the HUD round clock's honest
+// fallback (renderer.js roundClockLine) reports false rather than
+// guessing, so a row without a real window never silences anything.
+export function inFreezeTime(rounds, tick) {
+  return freezeWindowAt(rounds, tick) !== null;
 }
 
 // scoreThrough — the ONE scoreline-at-a-round aggregate: cumulative

@@ -13,6 +13,7 @@
 // arrays — no per-frame objects — so scrub/seek/lerp are O(1)/O(log n).
 
 import { normTickRate } from '../fmt.js';
+import { freezeWindowAt } from '../rounds.js';
 
 // popcount for a 16-bit alive mask.
 function popcount16(m) {
@@ -100,8 +101,9 @@ export const SPEEDS = [0.25, 0.5, 1, 2, 4, 8];
 
 // createEngine builds the playback clock over a parsed position store.
 // state fields: playing, speed, tick, frame, loopFrom, loopTo, loopEnabled,
-// followSlot. Subscribers (onChange) get the state object on every change,
-// including every rAF advance while playing — the renderer redraws from it.
+// skipFreeze, followSlot. Subscribers (onChange) get the state object on
+// every change, including every rAF advance while playing — the renderer
+// redraws from it.
 export function createEngine(data, tickRate) {
   const frames = data.frames;
   const ticks = data.ticks;
@@ -115,10 +117,15 @@ export function createEngine(data, tickRate) {
     loopFrom: -1, // frame indices; -1 = unset
     loopTo: -1,
     loopEnabled: false,
+    skipFreeze: false, // auto-jump the pre-round freeze while playing
     followSlot: null, // player slot to center camera on; null = free camera
   };
 
   let tickF = state.tick; // fractional tick position (lerp source of truth)
+  // The round freeze windows the auto-skip consults — pushed by the view
+  // (setRounds, the sfx.setRounds precedent) before playback starts; []
+  // until then, so an engine built without rounds never skips.
+  let rounds = [];
   const subs = new Set();
 
   function emit() {
@@ -150,6 +157,35 @@ export function createEngine(data, tickRate) {
       const from = ticks[state.loopFrom];
       const to = ticks[state.loopTo];
       if (tickF > to) tickF = from;
+    }
+    // AUTO-SKIP FREEZE (skipFreeze — the ONE playback hook; paused
+    // scrubbing/stepping inspects a freeze freely). Entering a round's
+    // freeze window jumps the playhead to freezeEndTick — the exact tick
+    // the game lets you act — landing on the FIRST frame at/after it.
+    // ONE check per frame, never a while: the target always sits ahead
+    // of the entry point, so no second window can be found and an
+    // oscillation is structurally impossible. It YIELDS TO AN ARMED
+    // LOOP: when the skip would carry the playhead past loopTo the loop
+    // could never wrap (a wrap↔skip ping-pong pins the playhead), so
+    // that freeze plays out and the wrap wins — while a round-span loop
+    // (start → end, fe < loopTo) skips every cycle. The end-of-stream
+    // clamp below still runs after this, so a skip that lands on the
+    // stream's last tick stops playback there. Knife-round freezes are
+    // skipped like any other (they carry a real window); a warmup row
+    // ships fe = 0 → no window → never skipped (data-driven). The
+    // round-over gap (endTick → next startTick) is NOT a window and is
+    // never skipped.
+    if (state.skipFreeze) {
+      const w = freezeWindowAt(rounds, tickF);
+      if (w) {
+        const end = Math.min(w.end, ticks[frames - 1]); // clamp to the stream
+        const yields =
+          state.loopEnabled &&
+          state.loopFrom >= 0 &&
+          state.loopTo >= state.loopFrom &&
+          frameForTick(end) > state.loopTo;
+        if (!yields) tickF = end;
+      }
     }
     if (tickF >= ticks[frames - 1]) {
       tickF = ticks[frames - 1];
@@ -207,6 +243,23 @@ export function createEngine(data, tickRate) {
     setSpeed(SPEEDS[ni]);
   }
 
+  // LOOP-EXIT GUARD — the ONE choke point both seeks run: a seek that
+  // lands OUTSIDE the armed range cancels the loop, in FRAME space with
+  // INCLUSIVE boundaries (landing exactly on from/to keeps it — the
+  // wrap's own test is `tickF > to`). Cancellation is exactly
+  // setLoopEnabled(false): the flag drops, the BOUNDS RETAIN (the
+  // popover still shows the times — one click re-arms), the emit
+  // un-warns the trigger; playback continues linearly from the landing
+  // position and the URL keeps its ?loop= (only bound edits strip it).
+  // Exempt by construction, so they carry no flag: the wrap, the
+  // end-of-stream clamp and the armed play() restart write tickF
+  // directly inside loop()/play(), the entry seeks run BEFORE ?loop=
+  // arms, startClip lands on loopFrom, and the freeze skip's direct
+  // write already yields to a skip past loopTo.
+  function cancelLoopIfOutside(f) {
+    if (state.loopEnabled && (f < state.loopFrom || f > state.loopTo)) setLoopEnabled(false);
+  }
+
   // seekTick: exact-frame seek to the first frame at/after t.
   function seekTick(t) {
     if (frames === 0) return;
@@ -214,6 +267,7 @@ export function createEngine(data, tickRate) {
     state.frame = f;
     state.tick = ticks[f];
     tickF = ticks[f];
+    cancelLoopIfOutside(f);
     emit();
   }
 
@@ -223,6 +277,7 @@ export function createEngine(data, tickRate) {
     state.frame = clamped;
     state.tick = ticks[clamped];
     tickF = ticks[clamped];
+    cancelLoopIfOutside(clamped);
     emit();
   }
 
@@ -280,6 +335,32 @@ export function createEngine(data, tickRate) {
     emit();
   }
 
+  // setRounds(rows): the freeze windows the auto-skip consults (the
+  // sfx.setRounds precedent — the view pushes them once, where the
+  // rounds load, before playback starts). Deliberately NOT state and
+  // silent: nothing renders from it, only loop() reads it, and an engine
+  // pushed no rounds simply never skips ([] → no window).
+  function setRounds(rows) {
+    rounds = rows || [];
+  }
+
+  // setSkipFreeze / toggleSkipFreeze — the freeze auto-skip's explicit
+  // arm/disarm (the setLoopEnabled / toggleLoop precedent: a plain
+  // setter for "set it to this", a toggle for the toolbar button, so a
+  // caller that means "turn it on" can never flip it off). The view
+  // persists the choice in the frontend-owned `skip_freeze` pref and
+  // re-applies it on every startEngine.
+  function setSkipFreeze(on) {
+    const next = !!on;
+    if (state.skipFreeze === next) return;
+    state.skipFreeze = next;
+    emit();
+  }
+
+  function toggleSkipFreeze() {
+    setSkipFreeze(!state.skipFreeze);
+  }
+
   function onChange(fn) {
     subs.add(fn);
     return () => subs.delete(fn);
@@ -335,6 +416,9 @@ export function createEngine(data, tickRate) {
     setLoop,
     setLoopEnabled,
     toggleLoop,
+    setRounds,
+    setSkipFreeze,
+    toggleSkipFreeze,
     setFollow,
     onChange,
     destroy,

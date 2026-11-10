@@ -212,6 +212,12 @@
   let uiLoopFrom = $state(-1);
   let uiLoopTo = $state(-1);
   let uiLoopOn = $state(false);
+  // Skip-freeze mirror (the same transport-bar mirror as uiLoopOn): the
+  // ENGINE owns the jump (skipFreeze + the rounds pushed in startEngine),
+  // this drives the toolbar button and is persisted in the frontend-owned
+  // `skip_freeze` pref (the camera_mode pattern — such keys are not in
+  // prefs.go). Default OFF; load() reads the pref before startEngine.
+  let uiSkipFreeze = $state(false);
   let eventsOpen = $state(false); // a fresh replay opens with the feed collapsed
   // ONE toggle governs every filter surface in the panel (the Filters
   // button): the category dropdown, the game-events name picker, the
@@ -1712,6 +1718,11 @@
           .then((v) => v === true)
           .catch(() => false), // unreadable store → hidden (the default)
       );
+      // Skip-freeze toggle (frontend-owned kvstore — the camera_mode
+      // pattern): read HERE, before startEngine, so the first engine
+      // push carries the persisted choice; unset / unreadable → OFF (the
+      // default — the freeze skip is opt-in).
+      uiSkipFreeze = (await getPref('skip_freeze').catch(() => null)) === true;
       // Replay-audio faders: the five persisted levels (voice/guns/
       // utility/C4/announcer) are read here — before startEngine applies
       // them to
@@ -1788,6 +1799,12 @@
     teardown();
     if (!canvasEl || !data || !data.frames) return;
     engine = createEngine(data, meta.tickRate);
+    // Round freeze windows + the skip-freeze choice, pushed BEFORE the
+    // entry seek and the autoplay: the engine consults rounds only inside
+    // loop() (the freeze auto-skip), and rounds loaded in load() are
+    // complete by now — the first played frame already knows every window.
+    engine.setRounds(rounds);
+    engine.setSkipFreeze(uiSkipFreeze);
     renderer = createRenderer(canvasEl, {
       engine,
       data,
@@ -1852,6 +1869,7 @@
       uiLoopFrom = st.loopFrom;
       uiLoopTo = st.loopTo;
       uiLoopOn = st.loopEnabled;
+      uiSkipFreeze = st.skipFreeze;
       // Camera reconciliation (spec 17): the F / 1-9 keys and the canvas
       // drag drive engine follow directly, so the dropdown follows the
       // ENGINE — following renders 'follow' over the smooth smart camera,
@@ -2066,6 +2084,18 @@
 
   function toggleLoop() {
     engine?.toggleLoop();
+  }
+
+  // toggleSkipFreeze — view state + engine push + durable write, all in
+  // one click (the toggleDropLayer pattern): the `skip_freeze` pref IS
+  // the whole toggle state, so a reload restores exactly this. The
+  // engine ships the matching setSkipFreeze/toggleSkipFreeze pair (the
+  // setLoopEnabled/toggleLoop precedent) for callers that drive the
+  // engine directly; the pref lives here, view-side.
+  function toggleSkipFreeze() {
+    uiSkipFreeze = !uiSkipFreeze;
+    engine?.setSkipFreeze(uiSkipFreeze);
+    setPref('skip_freeze', uiSkipFreeze).catch(() => {});
   }
 
   // The Follow player dropdown (spec 17) — only rendered while camMode
@@ -2617,6 +2647,25 @@
               </div>
             </Popover>
           </span>
+
+          <!-- Skip freeze: auto-jump the pre-round freeze during
+               playback — the loop trigger's markup minus the popover: an
+               icon-only toggle in the SAME cluster slot family, armed
+               state in .warn + aria-pressed. OFF by default, persisted in
+               the frontend-owned `skip_freeze` pref (the camera_mode
+               pattern); the ENGINE owns the jump (freezeWindowAt over the
+               rounds pushed in startEngine), so paused scrubbing/stepping
+               still inspects a freeze freely. -->
+          <button
+            class="btn"
+            id="rp-skip-freeze"
+            class:warn={uiSkipFreeze}
+            aria-pressed={uiSkipFreeze}
+            aria-label="Skip freeze time"
+            title="Skip freeze time — auto-jump the pre-round freeze during playback"
+            onclick={toggleSkipFreeze}
+            ><span class="codicon codicon-skip" aria-hidden="true"></span></button
+          >
 
           <!-- Loop (spec 12): the from/to TIME inputs + the toggle grouped
                in ONE popover behind a loop-like codicon (sync). Popover

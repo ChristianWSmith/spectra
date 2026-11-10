@@ -8,12 +8,11 @@
 // round ribbon rides the top line too (its .rp-ribbon cell), and the
 // transport splits into the full-width game-time scrubber line ABOVE the
 // centered control-cluster line (round transport, ±15s, play, speed
-// popover, loop popover, camera Smart/Free/Follow popover, the drop-layer
-// multi-select popover, the volume
-// popover, snapshot/record, and
-// the hints-only codicon LAST — three .toolbar-sep rules split those
-// groups: after the loop control, after the volume host, before the
-// hints). A fresh replay also AUTOPLAYS (startEngine
+// popover, the skip-freeze toggle, loop popover, camera Smart/Free/Follow
+// popover, the drop-layer multi-select popover, the volume popover,
+// snapshot/record, and the hints-only codicon LAST — three .toolbar-sep
+// rules split those groups: after the loop control, after the volume
+// host, before the hints). A fresh replay also AUTOPLAYS (startEngine
 // calls engine.play() once the position data is up).
 //
 // The view's data source, engine, renderer and input are scripted stubs —
@@ -320,11 +319,80 @@ export function createEngine(data, tickRate) {
     playing: false,
     speed: 1,
     followSlot: null,
+    skipFreeze: false,
     loopFrom: -1,
     loopTo: -1,
     loopEnabled: false,
   };
   let emit = null;
+  // Rounds only satisfy the view's startEngine push (setRounds): this
+  // stub never pumps loop(), so the freeze skip itself — a PLAYBACK rule
+  // — is pinned in src/lib/engine.test.js against the real engine.
+  function setRounds() {}
+  // skipFreeze state/setters, mirrored from the REAL engine (engine.js)
+  // so the toolbar toggle's aria-pressed/warn round trip is observable.
+  function setSkipFreeze(on) {
+    const next = !!on;
+    if (state.skipFreeze === next) return;
+    state.skipFreeze = next;
+    emit?.(state);
+  }
+  function toggleSkipFreeze() {
+    setSkipFreeze(!state.skipFreeze);
+  }
+  // Loop state, mirrored from the REAL engine (engine.js) so the
+  // view's range-edit rule and the entry ?loop= apply are observable:
+  // setLoop writes frame bounds (either < 0 clears, invalid bounds
+  // force loopEnabled OFF) and NEVER enables; setLoopEnabled arms/
+  // disarms explicitly (arming without a valid range is a no-op);
+  // toggleLoop keeps the enable-when-off semantics (and its 10 s
+  // default range) the transport's Loop button and the L key drive.
+  function setLoop(a, b) {
+    const fa = a == null || a < 0 ? -1 : Math.max(0, Math.min(data.frames - 1, Math.round(a)));
+    const fb = b == null || b < 0 ? -1 : Math.max(0, Math.min(data.frames - 1, Math.round(b)));
+    state.loopFrom = fa;
+    state.loopTo = fb;
+    if (fa < 0 || fb < 0 || fa > fb) state.loopEnabled = false;
+    emit?.(state);
+  }
+  function setLoopEnabled(on) {
+    const next = !!on;
+    if (next && (state.loopFrom < 0 || state.loopTo < state.loopFrom)) return;
+    if (state.loopEnabled === next) return;
+    state.loopEnabled = next;
+    emit?.(state);
+  }
+  function toggleLoop() {
+    if (!state.loopEnabled) {
+      if (state.loopFrom < 0 || state.loopTo < state.loopFrom) {
+        const from = state.frame;
+        state.loopFrom = from;
+        state.loopTo = Math.min(data.frames - 1, from + Math.round(tickRate * 10));
+      }
+      state.loopEnabled = true;
+    } else {
+      state.loopEnabled = false;
+    }
+    emit?.(state);
+  }
+  // The loop popover resolves typed TIMES through the engine's
+  // exact-frame search (Replay's onLoopTime) — same rule as the real
+  // engine: the first frame whose tick is >= t, clamped to the stream
+  // (the stub's ticks are 0, 64, … 576).
+  function frameForTick(t) {
+    const f = Number.isFinite(t) ? Math.floor(t / 64) : 0;
+    return Math.max(0, Math.min(9, f));
+  }
+  // LOOP-EXIT GUARD, mirrored from the REAL engine (engine.js
+  // cancelLoopIfOutside): a seek landing outside the armed range drops
+  // the flag and RETAINS the bounds (one click re-arms), inclusive at
+  // both ends. The stub keeps state.tick RAW (its transport pins read
+  // the unclamped tick), so seekTick computes the landing frame exactly
+  // as the real one does — frameForTick over the tick — WITHOUT
+  // rewriting state.frame.
+  function cancelLoopIfOutside(f) {
+    if (state.loopEnabled && (f < state.loopFrom || f > state.loopTo)) setLoopEnabled(false);
+  }
   return {
     state,
     tickRate,
@@ -336,6 +404,7 @@ export function createEngine(data, tickRate) {
     },
     seekTick(t) {
       state.tick = t;
+      cancelLoopIfOutside(frameForTick(t));
       emit?.(state);
     },
     seekFrame(f) {
@@ -346,6 +415,7 @@ export function createEngine(data, tickRate) {
       const clamped = Math.max(0, Math.min(data.frames - 1, Math.round(f)));
       state.frame = clamped;
       state.tick = data.ticks[clamped];
+      cancelLoopIfOutside(clamped);
       emit?.(state);
     },
     play() {
@@ -360,49 +430,13 @@ export function createEngine(data, tickRate) {
       state.speed = s;
       emit?.(state);
     },
-    // Loop state, mirrored from the REAL engine (engine.js) so the
-    // view's range-edit rule and the entry ?loop= apply are observable:
-    // setLoop writes frame bounds (either < 0 clears, invalid bounds
-    // force loopEnabled OFF) and NEVER enables; setLoopEnabled arms/
-    // disarms explicitly (arming without a valid range is a no-op);
-    // toggleLoop keeps the enable-when-off semantics (and its 10 s
-    // default range) the transport's Loop button and the L key drive.
-    setLoop(a, b) {
-      const fa = a == null || a < 0 ? -1 : Math.max(0, Math.min(data.frames - 1, Math.round(a)));
-      const fb = b == null || b < 0 ? -1 : Math.max(0, Math.min(data.frames - 1, Math.round(b)));
-      state.loopFrom = fa;
-      state.loopTo = fb;
-      if (fa < 0 || fb < 0 || fa > fb) state.loopEnabled = false;
-      emit?.(state);
-    },
-    setLoopEnabled(on) {
-      const next = !!on;
-      if (next && (state.loopFrom < 0 || state.loopTo < state.loopFrom)) return;
-      if (state.loopEnabled === next) return;
-      state.loopEnabled = next;
-      emit?.(state);
-    },
-    toggleLoop() {
-      if (!state.loopEnabled) {
-        if (state.loopFrom < 0 || state.loopTo < state.loopFrom) {
-          const from = state.frame;
-          state.loopFrom = from;
-          state.loopTo = Math.min(data.frames - 1, from + Math.round(tickRate * 10));
-        }
-        state.loopEnabled = true;
-      } else {
-        state.loopEnabled = false;
-      }
-      emit?.(state);
-    },
-    // The loop popover resolves typed TIMES through the engine's
-    // exact-frame search (Replay's onLoopTime) — same rule as the real
-    // engine: the first frame whose tick is >= t, clamped to the stream
-    // (the stub's ticks are 0, 64, … 576).
-    frameForTick(t) {
-      const f = Number.isFinite(t) ? Math.floor(t / 64) : 0;
-      return Math.max(0, Math.min(9, f));
-    },
+    setLoop,
+    setLoopEnabled,
+    toggleLoop,
+    frameForTick,
+    setRounds,
+    setSkipFreeze,
+    toggleSkipFreeze,
     setFollow(s) {
       state.followSlot = s;
       emit?.(state);
@@ -989,6 +1023,87 @@ check(
   'the edit itself still landed (from 0:01)',
   controls.querySelector('#rp-loop-from')?.value === '0:01',
   controls.querySelector('#rp-loop-from')?.value,
+);
+
+// --- Skip-freeze toggle + the loop seek-exit guard (features A / B) --------
+// The toggle mirrors the loop trigger's markup minus the popover and
+// sits IMMEDIATELY LEFT of .rp-loop; its state is view-owned
+// (uiSkipFreeze), read from the frontend-owned skip_freeze pref in
+// load() and written back on every click.
+const skipBtn = controls.querySelector('#rp-skip-freeze');
+check(
+  'skip-freeze toggle sits immediately LEFT of the loop control',
+  !!skipBtn && skipBtn.nextElementSibling === controls.querySelector('.rp-loop'),
+  skipBtn
+    ? `next = ${skipBtn.nextElementSibling?.className || skipBtn.nextElementSibling?.tagName}`
+    : 'missing #rp-skip-freeze',
+);
+check(
+  'skip toggle is icon-only (codicon-skip — the shipped font has no fast-forward)',
+  !!skipBtn?.querySelector('.codicon-skip') && !skipBtn.textContent.trim(),
+  skipBtn ? JSON.stringify(skipBtn.textContent) : 'missing',
+);
+check(
+  'skip-freeze starts OFF on a fresh profile (aria-pressed=false, no warn)',
+  skipBtn?.getAttribute('aria-pressed') === 'false' && !skipBtn.classList.contains('warn'),
+  skipBtn?.getAttribute('aria-pressed'),
+);
+check(
+  'the view READ skip_freeze on load (the same store a reload reads back)',
+  (globalThis.__prefReads || []).includes('skip_freeze'),
+  JSON.stringify(globalThis.__prefReads),
+);
+click(skipBtn);
+await sleep();
+check(
+  'clicking arms it (aria-pressed + warn) and persists the skip_freeze pref',
+  skipBtn.getAttribute('aria-pressed') === 'true' &&
+    skipBtn.classList.contains('warn') &&
+    globalThis.__prefs['skip_freeze'] === true,
+  `${skipBtn.getAttribute('aria-pressed')} warn=${skipBtn.classList.contains('warn')} pref=${JSON.stringify(globalThis.__prefs['skip_freeze'])}`,
+);
+click(skipBtn); // back OFF — the sections below must never skip a freeze
+await sleep();
+check('second click disarms it', skipBtn.getAttribute('aria-pressed') === 'false');
+
+// (B) LOOP AUTO-CANCEL: arm the edited range (frames 1–2), then seek
+// PAST it with +15s — the engine's seek guard drops the flag, the
+// bounds RETAIN (one click re-arms) and the trigger un-warns.
+click(loopToggle);
+await sleep();
+check(
+  'the edited range re-arms for the seek-exit check',
+  loopBtn.getAttribute('aria-pressed') === 'true',
+  loopBtn.getAttribute('aria-pressed'),
+);
+click(controls.querySelector('#rp-seek-fwd')); // 640 → 1600, landing frame 9 > loopTo 2
+await sleep();
+check(
+  'a +15s seek landing past loopTo cancels the loop (trigger un-warns)',
+  loopBtn.getAttribute('aria-pressed') === 'false' && !loopBtn.classList.contains('warn'),
+  `${loopBtn.getAttribute('aria-pressed')} warn=${loopBtn.classList.contains('warn')}`,
+);
+// Bounds RETAIN: the guard only flips the flag, so reopening the
+// popover shows the same times (only a bound EDIT rewrites them). The
+// seek above was an outside click — reopen if it closed the panel.
+if (!controls.querySelector('#rp-loop-from')) {
+  click(loopBtn);
+  await sleep();
+}
+check(
+  'the bounds retain for a one-click re-arm (0:01–0:02 survive the cancel)',
+  controls.querySelector('#rp-loop-from')?.value === '0:01' &&
+    controls.querySelector('#rp-loop-to')?.value === '0:02',
+  `${controls.querySelector('#rp-loop-from')?.value}–${controls.querySelector('#rp-loop-to')?.value}`,
+);
+click(loopBtn); // close the popover — later sections count toolbar chrome
+await sleep();
+click(controls.querySelector('#rp-seek-back')); // restore the round-2 playhead
+await sleep();
+check(
+  'the playhead is restored for the sections below (+15s/−15s → tick 640)',
+  readoutTick().includes('tick 640'),
+  readoutTick(),
 );
 
 // Speed: the ladder as a popover (same pattern) — the option button

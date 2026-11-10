@@ -3,13 +3,15 @@
 // roundStartTick / roundEndTick, the round-number → start/end-tick
 // lookups behind every "jump to round N" link and every round-span loop
 // range (nav.entrySeekTick, nav.entryLoopSpan, Replay's round ribbon),
-// scoreThrough (the scoreline-at-a-round aggregate), and separatorAfter
-// (the round-ribbon separator cadence).
+// scoreThrough (the scoreline-at-a-round aggregate), separatorAfter
+// (the round-ribbon separator cadence), and the freeze window
+// (freezeWindowAt — THE window the inFreezeTime predicate reports on and
+// the replay engine's auto-skip jumps to).
 // Run: node --test src/lib/rounds.test.js   (from frontend/)
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { isCounted, roundStartTick, roundEndTick, roundIndexLabel, scoreThrough, inFreezeTime, separatorAfter } from './rounds.js';
+import { isCounted, roundStartTick, roundEndTick, roundIndexLabel, scoreThrough, inFreezeTime, freezeWindowAt, separatorAfter } from './rounds.js';
 
 const ROUNDS = [
   { number: -2, startTick: 100 }, // knife
@@ -190,4 +192,51 @@ test('inFreezeTime takes the round reaching tick regardless of row order', () =>
   ];
   assert.equal(inFreezeTime([...rounds].reverse(), 1050), true, 'shuffled rows still resolve');
   assert.equal(inFreezeTime([...rounds].reverse(), 5100), true);
+});
+
+// freezeWindowAt — THE freeze window {start, end} the inFreezeTime
+// predicate reports on and the replay engine's auto-skip jumps to (its
+// `end` is the exact tick playback resumes at). Same usable-window rule,
+// half-open: start ≤ tick < freezeEndTick, null when the row cannot say.
+const WINDOW_ROUNDS = [
+  { number: -1, startTick: 200, freezeEndTick: 0 }, // warmup row ships fe = 0
+  { number: 1, startTick: 1000, freezeEndTick: 1160, endTick: 5000 },
+  { number: 2, startTick: 5000, freezeEndTick: 5160 },
+];
+
+test('freezeWindowAt: the window of the round whose freeze contains the tick', () => {
+  assert.deepEqual(
+    freezeWindowAt(WINDOW_ROUNDS, 1000),
+    { start: 1000, end: 1160 },
+    'tick == start is INSIDE (half-open)',
+  );
+  assert.deepEqual(freezeWindowAt(WINDOW_ROUNDS, 1159), { start: 1000, end: 1160 });
+  assert.equal(freezeWindowAt(WINDOW_ROUNDS, 1160), null, 'tick == freezeEnd is OUT');
+  assert.equal(freezeWindowAt(WINDOW_ROUNDS, 999), null, 'before the round there is no window');
+  assert.equal(freezeWindowAt(WINDOW_ROUNDS, 3000), null, 'live play has no window');
+  assert.deepEqual(
+    freezeWindowAt(WINDOW_ROUNDS, 5050),
+    { start: 5000, end: 5160 },
+    'the round reaching the tick decides, any row order',
+  );
+  assert.equal(freezeWindowAt(WINDOW_ROUNDS, 250), null, 'warmup fe = 0 → no window');
+  assert.equal(freezeWindowAt([], 100), null);
+  assert.equal(freezeWindowAt(null, 100), null);
+  assert.equal(freezeWindowAt(WINDOW_ROUNDS, NaN), null);
+});
+
+test('freezeWindowAt: a corrupt window (fe ≤ start) reports no window', () => {
+  const rounds = [{ number: 1, startTick: 1000, freezeEndTick: 900 }];
+  assert.equal(freezeWindowAt(rounds, 1050), null, 'never a guessed window');
+  assert.equal(freezeWindowAt(rounds, 1000), null, 'start is inside only with a usable window');
+});
+
+test('inFreezeTime is exactly freezeWindowAt ≠ null (the two can never disagree)', () => {
+  for (let tick = 0; tick <= 5300; tick += 50) {
+    assert.equal(
+      inFreezeTime(WINDOW_ROUNDS, tick),
+      freezeWindowAt(WINDOW_ROUNDS, tick) !== null,
+      `disagreement at tick ${tick}`,
+    );
+  }
 });
