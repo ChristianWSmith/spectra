@@ -330,7 +330,7 @@
               <span class="chip">{result.ms} ms</span>
               <span class="chip">{result.rowCount} rows</span>
               {#if result.truncated}
-                <span class="chip sql-trunc" title="Hit the server-side row cap — narrow the query for more."
+                <span class="chip sql-trunc" title="Hit the row limit — narrow the query for more."
                   >showing first {result.rowCount} (truncated)</span
                 >
               {/if}

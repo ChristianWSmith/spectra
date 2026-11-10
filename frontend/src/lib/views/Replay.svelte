@@ -306,9 +306,9 @@
   const loopToText = $derived(loopClockOf(uiLoopTo));
 
   const packNote = $derived.by(() => {
-    if (!matchMap) return 'map name unknown — world-coordinate grid';
-    if (!pack) return `map pack missing for ${matchMap} — world-coordinate grid`;
-    if (!pack.radar) return `map pack for ${matchMap} has no radar image — grid only`;
+    if (!matchMap) return 'Map name unknown — showing a plain grid';
+    if (!pack) return `No radar image for ${matchMap} — showing a plain grid`;
+    if (!pack.radar) return `No radar image for ${matchMap} — showing a plain grid`;
     return '';
   });
 
@@ -2429,8 +2429,8 @@
         <button
           class="side-toggle rp-rail-toggle"
           aria-expanded="false"
-          aria-label="Landmarks ({feedCountLabel} events)"
-          title="Landmarks ({feedCountLabel} events)"
+          aria-label="Events ({feedCountLabel} events)"
+          title="Events ({feedCountLabel} events)"
           onclick={() => (eventsOpen = true)}
         >
           <span class="codicon codicon-chevron-left" aria-hidden="true"></span>
@@ -2447,8 +2447,8 @@
       <div class="panel empty">
         <p class="empty-title" role="status">No replay data for this match</p>
         <p class="muted">
-          Positions are recorded during parsing — reprocess to record them, then
-          reopen the replay.
+          This match was imported without position data — run Re-parse on it in
+          the Library, then come back.
         </p>
         <button class="btn primary" onclick={() => nav('/library')}>
           Go to Library
@@ -2966,15 +2966,15 @@
     {/if}
   </div>
   {#if railVisible && eventsOpen}
-  <aside class="replay-side" aria-label="Landmark events">
+  <aside class="replay-side" aria-label="Event feed">
     <button
       class="side-toggle"
       aria-expanded="true"
-      aria-label="Landmarks ({feedCountLabel} events)"
-      title="Landmarks ({feedCountLabel} events)"
+      aria-label="Events ({feedCountLabel} events)"
+      title="Events ({feedCountLabel} events)"
       onclick={() => (eventsOpen = false)}
     >
-      <h2>Landmarks</h2>
+      <h2>Events</h2>
       <span class="spacer"></span>
       <span class="muted num">{feedCountLabel}</span>
       <!-- Hiding the panel points right — matching the collapsed
@@ -3085,7 +3085,7 @@
               </select>
             </label>
             {#if !filter.gname}
-              <p class="muted lm-hint">High-volume sources load by name only — pick one above.</p>
+              <p class="muted lm-hint">Big event lists load on demand — pick a name above.</p>
             {/if}
           {/if}
 
@@ -3153,7 +3153,7 @@
       {/if}
       {/if}
       {#if selected}
-        <div class="lm-detail" aria-label="Selected landmark">
+        <div class="lm-detail" aria-label="Selected event">
           <div class="lm-detail-head">
             <span class="chip kind">{categoryById(selected.category)?.label || selected.category}</span>
             {#if selected.source === 'event'}

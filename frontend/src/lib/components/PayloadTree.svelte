@@ -65,7 +65,7 @@
 </script>
 
 {#if payload === null}
-  <pre class="mono expl-kv-err">unparseable payload JSON — use the raw toggle</pre>
+  <pre class="mono expl-kv-err">This payload isn't valid JSON — use the Raw view.</pre>
 {:else}
   <div class="expl-kv">
     {#each entries(payload) as [k, v] (k)}

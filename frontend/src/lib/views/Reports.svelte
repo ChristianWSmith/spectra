@@ -218,7 +218,7 @@
   function appendixMd() {
     const ents = appendixEntries();
     if (!ents.length) return '';
-    let out = '\n\n## Metrics appendix\n\n';
+    let out = '\n\n## Stats appendix\n\n';
     for (const [, a] of ents) {
       out += `### ${a.metric.title || a.metric.name}\n\n`;
       out += `group by ${a.groupBy || 'none'} · ${a.rows.length} rows · match #${matchId}`;
@@ -240,7 +240,7 @@
   function appendixHtml() {
     const ents = appendixEntries();
     if (!ents.length) return '';
-    let out = '<section class="rep-appendix-doc"><h2>Metrics appendix</h2>';
+    let out = '<section class="rep-appendix-doc"><h2>Stats appendix</h2>';
     for (const [, a] of ents) {
       out += `<h3>${esc(a.metric.title || a.metric.name)}</h3>`;
       out += `<p>group by ${esc(a.groupBy || 'none')} · ${a.rows.length} rows · match #${matchId}${a.truncated ? ' · truncated' : ''} · ${a.ms} ms</p>`;
@@ -292,7 +292,7 @@
       <!-- Render lives with its inputs: template + target pick the scope,
            this button produces the document they both address. -->
       <button class="btn primary" disabled={rendering || !targetReady()} onclick={render}>
-        {#if rendering}Rendering…{:else}Render <span class="codicon codicon-play"></span>{/if}
+        {#if rendering}Generating…{:else}Generate report <span class="codicon codicon-play"></span>{/if}
       </button>
     </div>
     <div class="rep-tpl-grid">
@@ -367,14 +367,14 @@
   </section>
 
   {#if tpl}
-    <!-- Metrics appendix (acceptance #1: checked metric → table under the report). -->
+    <!-- Stats appendix (acceptance #1: checked metric → table under the report). -->
     <section class="panel">
-      <h2>Metrics appendix</h2>
+      <h2>Stats appendix</h2>
       {#if metricsError}
         <p class="error" role="alert">{metricsError}</p>
       {/if}
       <p class="muted">
-        Check metrics to append their tables under the report (scoped to this
+        Check stats to append their tables under the report (scoped to this
         match). They are composed with the rendered document and shown in the
         Preview below.
       </p>
@@ -401,7 +401,7 @@
           {/each}
         </div>
       {:else}
-        <p class="muted" role="status">No metrics defined yet — build one in the Builder.</p>
+        <p class="muted" role="status">No custom stats yet — build one in the Builder.</p>
       {/each}
     </section>
 
@@ -421,7 +421,7 @@
           <pre class="rep-md">{compositeText()}</pre>
         {/if}
       {:else if !rendering}
-        <p class="muted" role="status">Press Render to generate the report.</p>
+        <p class="muted" role="status">Press Generate report to create the report.</p>
       {/if}
     </section>
   {/if}

@@ -552,7 +552,7 @@
                     <tr
                       class:bld-missing={r.n === 0}
                       class:bld-egroup={!r.group}
-                      title={r.n === 0 ? 'missing data — N=0 behind this value' : ''}
+                      title={r.n === 0 ? 'no data behind this value' : ''}
                     >
                       <td class="mono">{r.group || '—'}</td>
                       <td>

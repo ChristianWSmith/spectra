@@ -148,7 +148,7 @@ export const CATEGORIES = [
   { id: 'connects', label: 'Joins & leaves', short: 'join/leave', source: 'event', kinds: ['player_connect', 'player_disconnect'] },
   { id: 'chat', label: 'Chat', short: 'chat', source: 'chat' },
   { id: 'team_changes', label: 'Team changes', short: 'team', source: 'generic', name: 'player_team' },
-  { id: 'convars', label: 'ConVar changes', short: 'cvar', source: 'generic', name: 'server_cvar' },
+  { id: 'convars', label: 'Server setting changes', short: 'cvar', source: 'generic', name: 'server_cvar' },
   { id: 'game_events', label: 'Game events', short: 'game', source: 'generic', nameFrom: 'gname' },
 ];
 
@@ -592,13 +592,13 @@ export function precomposeChatLabels(rows, sideCtx) {
 }
 
 // landmarkExportRows flattens the loaded feed into canonical CSV/JSON
-// export columns (tick, round, source, name/who, text/label — plus
+// export columns (time, round, source, player, details — plus
 // category and typed extras). Chat rows carry the PRECOMPOSED line in
 // `label` (see composeChatLabel); sideCtx is the side inputs
 // ({players, sideSwitches, rounds}) Replay has in scope at the export
 // button — omitted, team chat exports with no bracket (never guessed).
 export function landmarkExportRows(rows, sideCtx) {
-  const out = [['tick', 'round', 'source', 'category', 'kind', 'who', 'label', 'weapon', 'dmg']];
+  const out = [['time', 'round', 'source', 'type', 'event', 'player', 'details', 'weapon', 'damage']];
   for (const r of rows) {
     out.push([
       r.tick,

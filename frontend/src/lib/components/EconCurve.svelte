@@ -109,7 +109,7 @@
   );
 
   // Strip mark: coarse BUY-CLASS comparison — equipment value is not
-  // compared (a $100 equip difference says nothing), the buy class is.
+  // compared (a $100 equip difference says nothing), the buy type is.
   // Rank is full > force > everything else (eco/save/pistol/… all rank
   // equal — the label set mirrors internal/analytics/classify.go:
   // pistol|full|force|save|eco, unknown → null); missing/unknown on
@@ -151,9 +151,9 @@
   function verdict(r) {
     if (!r.winner) return 'no winner recorded';
     const rr = ranks(r);
-    if (rr[0] === null || rr[1] === null) return 'unknown buy class — neutral';
-    if (rr[0] > rr[1]) return 'favorite (higher buy class) held';
-    if (rr[0] < rr[1]) return 'upset (lower buy class won)';
+    if (rr[0] === null || rr[1] === null) return 'unknown buy type — neutral';
+    if (rr[0] > rr[1]) return 'favorite (higher buy type) held';
+    if (rr[0] < rr[1]) return 'upset (lower buy type won)';
     return 'toss-up (even buy)';
   }
 
@@ -325,7 +325,7 @@
     <p class="econ-strip-note muted">
       <span class="econ-strip-swatch pistol" aria-hidden="true"></span>
       pistol round · <span class="codicon codicon-check"></span> favorite (higher buy
-      class) held · <span class="codicon codicon-error"></span> upset (lower buy class
+      type) held · <span class="codicon codicon-error"></span> upset (lower buy type
       won) · <span class="codicon codicon-grabber"></span> even buy (toss-up) · <span
         class="codicon codicon-circle-small"></span> no verdict · click a round to open
       it

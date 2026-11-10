@@ -216,7 +216,7 @@
         label="Clutches"
         value={profile.clutches}
         sub={`${fmtPercent(profile.clutchWinPct)} won`}
-        title="Detected clutches (1vN) and the share won (clutch v2)"
+        title="Clutches (1vN) found in this player's matches, and the share won"
       />
       <StatCard
         label="Avg enemies flashed"
@@ -235,7 +235,7 @@
     <section class="panel">
       <div class="row-between">
         <h2>Trend</h2>
-        <div class="prof-metrics" role="group" aria-label="Trend metric">
+        <div class="prof-metrics" role="group" aria-label="Trend stat">
           {#each METRICS as m (m.key)}
             <button
               class="btn small prof-metric"
@@ -277,9 +277,9 @@
           · x = sequence (oldest → newest) · click a dot to open the match
         </p>
       {:else if trend.length === 1}
-        <p class="muted" role="status">Only one data point — a trend needs at least two matches.</p>
+        <p class="muted" role="status">Only one match so far — the trend line needs at least two.</p>
       {:else}
-        <p class="muted" role="status">No trend data for this metric yet.</p>
+        <p class="muted" role="status">No trend data for this stat yet.</p>
       {/if}
     </section>
 
@@ -308,7 +308,7 @@
                 <td class="num">{fmt2(s.kd)}</td>
               </tr>
             {:else}
-              <tr><td colspan="6" class="muted">No side splits.</td></tr>
+              <tr><td colspan="6" class="muted">No CT/T breakdown yet.</td></tr>
             {/each}
           </tbody>
         </table>
@@ -342,7 +342,7 @@
                 <td class="num">{fmt1(m.adr)}</td>
               </tr>
             {:else}
-              <tr><td colspan="4" class="muted">No map splits.</td></tr>
+              <tr><td colspan="4" class="muted">No per-map breakdown yet.</td></tr>
             {/each}
           </tbody>
         </table>

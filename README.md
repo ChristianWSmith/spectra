@@ -6,8 +6,8 @@ A powerful, feature-rich CS2 demo viewer and match analysis toolkit.
 
 - Import `.dem` / `.dem.zst` demos (picker or drag-and-drop) with background
   parsing, progress, and duplicate detection — originals are never modified
-- Searchable match library: reprocess, delete extracted data (optionally the
-  file too), per-match parser version and extraction warnings
+- Searchable match library: re-run imports, delete a match’s data (optionally
+  the file too), per-match parser version and import warnings
 - Match overview, sortable scoreboard (K/D/A, ADR, HS%, K/D, KDA, entries,
   trades, openings, streaks, multi-kills, utility, MVPs…), round browser with
   economy + kill feed, player chat, raw game-event histogram + payload viewer
@@ -16,7 +16,7 @@ A powerful, feature-rich CS2 demo viewer and match analysis toolkit.
 - Interactive 2D tactical replay of entire matches — no CS2 install required
 - Comprehensive match, player, round, economy, and utility statistics
 - Voice and chat review synchronized with the replay (when available in the demo)
-- Local-first: demos and extracted data stay on your machine, fully offline
+- Fully offline: demos and their data stay on your machine
 
 ## Download
 

@@ -166,7 +166,7 @@
   // changes (heatmap generate is the expensive op).
   async function generate() {
     if (roundFrom >= 0 && roundTo >= 0 && roundFrom > roundTo) {
-      error = 'round range inverted — first round must be ≤ last';
+      error = 'First round can’t be higher than the last round.';
       return;
     }
     loading = true;
@@ -324,7 +324,7 @@
 
   {#if dirty}
     <p class="heat-stale muted" role="status">
-      controls changed — press Regenerate to apply them to the raster
+      controls changed — press Regenerate to redraw the heatmap
     </p>
   {/if}
 
@@ -350,7 +350,7 @@
       {/if}
       <span class="chip heat-unit">{unit}</span>
       <span class="muted"
-        >{fmtInt(grid.samples)} samples · {grid.w}×{grid.h} grid · √ scale</span
+        >{fmtInt(grid.samples)} plotted points · {grid.w}×{grid.h} grid · square-root scale</span
       >
     </div>
   {/if}
@@ -359,7 +359,7 @@
 
   {#if grid}
     <p class="heat-hint muted">
-      Click the map to open the replay events for that region (cell-sized bbox).
+      Click the map to open the replay events for that region (the clicked square).
     </p>
   {:else if !loading}
     <p class="heat-empty muted" role="status">

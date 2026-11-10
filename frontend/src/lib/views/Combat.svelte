@@ -37,10 +37,10 @@
 
   const STAT_COLS = [
     { key: 'name', label: 'Player', fmt: (r) => r.name },
-    { key: 'dmgNoKill', label: 'Dmg no-kill', fmt: (r) => fmtInt(r.dmgNoKill) },
+    { key: 'dmgNoKill', label: 'Damage (no kill)', fmt: (r) => fmtInt(r.dmgNoKill) },
     {
       key: 'dmgConvPct',
-      label: 'Dmg conv%',
+      label: 'Kill conversion %',
       fmt: (r) => fmtPercent(r.dmgConvPct),
       title: DMG_CONV_DEF,
     },
@@ -59,13 +59,13 @@
     },
     {
       key: 'untradedDeaths',
-      label: 'Untraded D',
+      label: 'Untraded deaths',
       fmt: (r) => String(r.untradedDeaths ?? 0),
       title: UNTRADED_DEF,
     },
     {
       key: 'tradeOppMissed',
-      label: 'Trade opp missed',
+      label: 'Missed trades',
       fmt: (r) => String(r.tradeOppMissed ?? 0),
       title: TRADE_OPP_MISSED_DEF,
       badge: TRADE_OPP_MISSED_DEF,
@@ -295,7 +295,8 @@
     </div>
     <p class="muted comb-note">
       Dotted headers and <span class="chip badge-inferred">inferred</span> badges
-      mark derived/heuristic metrics — hover for the rule text.
+      mark stats Spectra calculates rather than reads from the demo — hover for
+      the rule.
     </p>
   </section>
 
@@ -316,7 +317,7 @@
           <tr>
             <th scope="col"><span class="sr-only">Replay</span></th>
             <th scope="col" class="num">Round</th>
-            <th scope="col" class="num def" title="Time into the round — how far past the round's start tick the engagement happened (raw tick in the cell tooltip)">Time</th>
+            <th scope="col" class="num def" title="Time into the round — how far past the round's start tick the engagement happened (exact tick in the tooltip)">Time</th>
             <th scope="col">Kind</th>
             <th scope="col">Killer</th>
             <th scope="col"><span class="sr-only">versus</span></th>
@@ -383,7 +384,7 @@
 
   <section class="panel comb-sec">
     <h2>
-      Clutches <span class="chip provenance" title="Detected by alive-count analysis over the stored events: a 1vN starts when a side drops to one alive player while the opponents still have ≥ 1, and ends when the solo dies or the last opponent falls. WON clutches only — a lost 1vN is not listed.">alive-count · won only</span>
+      Clutches <span class="chip provenance" title="Found by counting who is alive when the side drops to one player while the opponents still have ≥ 1; it ends when the solo dies or the last opponent falls. WON clutches only — a lost 1vN is not listed.">alive-count · won only</span>
     </h2>
     {#if clutches.length === 0 && !error}
       <p class="muted" role="status">No clutches detected in this match.</p>
@@ -400,7 +401,7 @@
               <th scope="col">Player</th>
               <th scope="col">Outcome</th>
               <th scope="col">Bomb</th>
-              <th scope="col" class="num def" title="Remaining HP of the solo player when the clutch resolved: the game-sampled health of the last player_hurt at or before that moment (HP changes only through player_hurt, so the value is exact); rows without that detail fall back to damage arithmetic, and a dead solo reads 0">HP left</th>
+              <th scope="col" class="num def" title="Remaining HP of the solo player when the clutch resolved: the last recorded health before the round ended (rows without that detail fall back to damage arithmetic, and a dead solo reads 0)">HP left</th>
             </tr>
           </thead>
           <tbody>

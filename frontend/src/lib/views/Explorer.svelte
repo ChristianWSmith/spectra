@@ -107,7 +107,7 @@
         value={matchId}
         onselect={(id) => (matchId = id)}
       />
-      <span class="muted">Demo-file diagnostics over the stored corpus.</span>
+      <span class="muted">Diagnostics for this demo file.</span>
     </header>
   {/if}
 
@@ -123,7 +123,7 @@
   {:else}
     <!-- Provenance: reproducibility panel per match. -->
     <section class="panel">
-      <h2>Provenance</h2>
+      <h2>Import details</h2>
       {#if provError}
         <p class="error" role="alert">{provError}</p>
       {:else if !prov}
@@ -135,7 +135,7 @@
             <dd class="mono">{prov.parserVersion || '—'}</dd>
           </div>
           <div>
-            <dt>Extracted at</dt>
+            <dt>Imported</dt>
             <dd>{fmtDate(prov.extractedAt)}</dd>
           </div>
           <div>
@@ -143,7 +143,7 @@
             <dd class="num">{fmtInt(prov.parseMs)} ms</dd>
           </div>
           <div>
-            <dt>Rule version</dt>
+            <dt>Rules version</dt>
             <dd class="num">{prov.ruleVersion}</dd>
           </div>
           <div>
@@ -170,7 +170,7 @@
         {#if prov.notes && prov.notes.length}
           <div class="expl-notes">
             {#each prov.notes as n, i (i)}
-              <span class="chip expl-note-chip" title="Provenance caveat">{n}</span>
+              <span class="chip expl-note-chip" title="Note">{n}</span>
             {/each}
           </div>
         {/if}
@@ -182,7 +182,7 @@
 
     <!-- Entity summary -->
     <section class="panel">
-      <h2>Entity summary</h2>
+      <h2>Advanced diagnostics</h2>
       {#if entError}
         <p class="error" role="alert">{entError}</p>
       {:else if !entities}
@@ -190,11 +190,11 @@
       {:else}
         <dl class="facts">
           <div>
-            <dt>Server classes</dt>
+            <dt>Entity types</dt>
             <dd class="num">{fmtInt(entities.entityClasses)}</dd>
           </div>
           <div>
-            <dt>End entities</dt>
+            <dt>Entities at end</dt>
             <dd class="num">{fmtInt(entities.endEntities)}</dd>
           </div>
           <div>
@@ -214,10 +214,10 @@
 
     <!-- Static reference block (short pointer, not a dump). -->
     <section class="panel expl-ref">
-      <h2>Network message census — reference</h2>
+      <h2>Network messages</h2>
       <p class="muted">
-        <strong>639</strong> protobuf network-message types enumerated on the
-        golden demo; <strong>39</strong> fire (1,965,413 messages total).
+        <strong>639</strong> protobuf network-message types exist in CS2;
+        <strong>39</strong> of them fire in the golden demo (1,965,413 messages total).
       </p>
       <ul class="expl-ref-list">
         {#each REF_BULLETS as b, i (i)}
@@ -228,7 +228,7 @@
         {#if Number(prov.encMessages) > 0}
           <p class="muted">
             Encrypted messages present ({fmtInt(prov.encMessages)}) —
-            <span class="chip flag">enc</span> key status is listed under Provenance
+            <span class="chip flag">enc</span> key status is listed under Import details
             notes above; content is never stored or shown.
           </p>
         {:else}

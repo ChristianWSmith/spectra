@@ -936,7 +936,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       tf.scale = packTf.scale > 0 ? packTf.scale : 1;
       buildPanels();
       if (panels.some((p) => p.img)) packNote = '';
-      else packNote = 'map pack has no radar image — grid only';
+      else packNote = 'No radar image — showing a plain grid';
     } else {
       // Blank coordinate grid: invent an image space from sample extents.
       const scale = Math.max(spanX, spanY) / 900;
@@ -952,8 +952,8 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       ];
       regions = [];
       packNote = pack
-        ? 'map pack missing radar — world-coordinate grid'
-        : 'map pack missing — world-coordinate grid (transform unknown)';
+        ? 'No radar image — showing a plain grid'
+        : 'No radar image — showing a plain grid';
     }
   }
 

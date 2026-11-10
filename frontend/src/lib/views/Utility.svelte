@@ -285,8 +285,8 @@
             >
             <span><span class="util-dot {clsT}"></span>{names.t}</span>
             <span class="muted"
-              title="sum of damage rows in the current filter, grouped by thrower team"
-              >max {damageBars.max} dmg/round · sums of recorded damage</span
+              title="total damage in the current filter, by thrower team"
+              >max {damageBars.max} dmg/round · totals of recorded damage</span
             >
           </div>
         {/if}
@@ -309,7 +309,7 @@
         <p class="util-flash-note">
           <span
             class="chip badge-inferred"
-            title="derived from blind events — inferred"
+            title="calculated from the demo's blind events"
             >inferred</span
           >
           <span class="muted"

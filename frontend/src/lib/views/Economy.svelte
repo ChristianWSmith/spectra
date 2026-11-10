@@ -224,7 +224,7 @@
       >
       <span class="spacer"></span>
       <span class="muted econ-head-note"
-        >buy classes are versioned rules — click a chip for the why</span
+        >buy types follow saved rules — click a chip for the reason</span
       >
     </div>
 
@@ -262,7 +262,7 @@
         value={summary.avgGap == null ? '—' : fmtMoney(summary.avgGap)}
         sub="avg winner − loser equip per round"
         cls={!summary.gapRound ? 'no-drill' : ''}
-        title="Formula: mean over decided rounds of (winner equipment value − loser equipment value) at freeze time end — the value of the gear each side actually holds (weapons carried over from earlier rounds included), never this round's spend. Click: open Replay events for round {summary.gapRound || '—'} (largest gap)."
+        title="Formula: average across decided rounds of (winner equipment value − loser equipment value) at freeze time end — the value of the gear each side actually holds (weapons carried over from earlier rounds included), never this round's spend. Click: open Replay events for round {summary.gapRound || '—'} (largest gap)."
         onclick={() => drill(summary.gapRound)}
       >
         {#snippet badge()}<span class="chip badge-computed">computed</span>{/snippet}
@@ -273,7 +273,7 @@
         value={fmtMoney(summary.lostTotal)}
         sub={`${names.ct} ${fmtMoney(summary.lost.ct)} · ${names.t} ${fmtMoney(summary.lost.t)}`}
         cls={!summary.lostRound ? 'no-drill' : ''}
-        title="Formula: Σ over decided rounds of the losing TEAM's freeze-end equipment value, credited to the team that lost it rather than the side it played — inferred: assumes all losing-side equipment is destroyed. Click: open Replay events for round {summary.lostRound || '—'} (largest loss)."
+        title="Formula: total across decided rounds of the losing team's freeze-end equipment value, credited to the team that lost it rather than the side it played — inferred: assumes all losing-side equipment is destroyed. Click: open Replay events for round {summary.lostRound || '—'} (largest loss)."
         onclick={() => drill(summary.lostRound)}
       >
         {#snippet badge()}<span class="chip badge-inferred">inferred</span>{/snippet}
@@ -281,9 +281,9 @@
     </div>
 
     <section class="panel">
-      <h2>Buy classification</h2>
+      <h2>Buy types</h2>
       {#if rows.length === 0}
-        <p class="muted" role="status">No classification rows.</p>
+        <p class="muted" role="status">No buy types recorded yet.</p>
       {:else}
         <div class="table-scroll">
           <table class="data-table econ-table">
@@ -300,7 +300,7 @@
                   {#if lossInferredCT}
                     <span
                       class="chip badge-inferred"
-                      title="reconstructed from round results — inferred"
+                      title="calculated from the round results"
                       >inferred</span
                     >
                   {/if}
@@ -310,7 +310,7 @@
                   {#if lossInferredT}
                     <span
                       class="chip badge-inferred"
-                      title="reconstructed from round results — inferred"
+                      title="calculated from the round results"
                       >inferred</span
                     >
                   {/if}
@@ -343,7 +343,7 @@
                   <td>
                     <button
                       class="chip econ-cls {ctc.cls}"
-                      title="{ctc.why} (rule v{ctc.rule}) — click for full text"
+                      title="{ctc.why} (rules v{ctc.rule}) — click for full text"
                       aria-expanded={whyOpen === `${r.round}:ct`}
                       onclick={() => toggleWhy(r, 'ct')}>{ctc.cls}</button
                     >
@@ -351,7 +351,7 @@
                   <td>
                     <button
                       class="chip econ-cls {tc.cls}"
-                      title="{tc.why} (rule v{tc.rule}) — click for full text"
+                      title="{tc.why} (rules v{tc.rule}) — click for full text"
                       aria-expanded={whyOpen === `${r.round}:t`}
                       onclick={() => toggleWhy(r, 't')}>{tc.cls}</button
                     >
@@ -373,7 +373,7 @@
                         >
                         <span class="spacer"></span>
                         <span class="econ-why-rules mono"
-                          >rule v{whyText?.rule ?? r.ruleVersion}</span
+                          >rules v{whyText?.rule ?? r.ruleVersion}</span
                         >
                         <button
                           class="btn small ghost"
@@ -400,7 +400,7 @@
           steps it up, a win steps it down (never a full reset), and every
           half starts one level up (a pistol loss pays $1900);
           <span class="chip badge-inferred">inferred</span> on the Loss headers
-          marks those values as reconstructed from round results rather than
+          marks those values as calculated from the round results rather than
           recorded.
         </p>
       {/if}
