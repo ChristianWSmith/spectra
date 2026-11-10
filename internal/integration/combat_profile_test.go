@@ -2,7 +2,7 @@ package integration_test
 
 // Golden-demo acceptance for the two profile/combat read models this
 // package's fixtures do not cover end-to-end: the Combat tab's
-// distance-gated "Trade opp missed" column (analysis_config default) and
+// distance-gated "Missed trades" column (analysis_config default) and
 // the profile's per-weapon headshots / K-D surfaces. Both assertions are
 // regressions guards for "the value is silently 0 for everyone".
 

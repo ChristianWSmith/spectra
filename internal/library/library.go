@@ -372,7 +372,7 @@ func (im *Importer) Reprocess(matchID int64) (int64, error) {
 		return 0, err
 	}
 	if err := im.st.SetJobMatch(id, matchID); err != nil {
-		im.failNewJob(id, matchID, err.Error())
+		im.failNewJob(id, matchID, playerJobError(models.StageQueued, err.Error()))
 		return 0, err
 	}
 	im.mu.Lock()
@@ -380,7 +380,7 @@ func (im *Importer) Reprocess(matchID int64) (int64, error) {
 	im.mu.Unlock()
 	if err := im.st.SetMatchStatus(matchID, models.StatusQueued, ""); err != nil {
 		im.restoreMatch(matchID)
-		im.failNewJob(id, matchID, err.Error())
+		im.failNewJob(id, matchID, playerJobError(models.StageQueued, err.Error()))
 		return 0, err
 	}
 	if !im.push(queueItem{jobID: id, kind: jobKindReprocess, path: path, matchID: matchID}) {
@@ -811,7 +811,7 @@ func (im *Importer) process(item queueItem) {
 	// the job is marked failed (with the analytics error prefixed).
 	rep.emit(models.StageAnalyze, progressAnalyze)
 	if aerr := im.analyze(matchID); aerr != nil {
-		msg := "analytics: " + aerr.Error()
+		msg := playerJobError(models.StageAnalyze, aerr.Error())
 		_ = im.st.UpdateJob(jobID, models.JobFailed, models.StageAnalyze, progressAnalyze, msg)
 		im.emitEvent(EventJobDone, JobDoneEvent{JobID: jobID, MatchID: matchID, Status: models.JobFailed, Error: msg})
 		im.emitEvent(EventLibraryChanged, LibraryChangedEvent{})
@@ -832,12 +832,65 @@ func (im *Importer) analyze(matchID int64) error {
 	return analytics.Compute(im.st, matchID, analytics.ConfigFrom(cfg, 0))
 }
 
+// jobErrPrefixes are the package/context prefixes pipeline errors wrap
+// themselves in ("store: create match row: …", "extract: parse failed:
+// demoinfocs: …"). They are developer vocabulary — dropped at the
+// failJob boundary so "Recent import problems" and the chip titles read
+// as player language. Known context segments (parse failed, the sink
+// names, copy demo) go too; the loop peels nested prefixes.
+var jobErrPrefixes = []string{
+	"store: ", "extract: ", "analytics: ", "sidecar: ", "library: ",
+	"demoinfocs: ", "zstd: ", "copy demo: ",
+	"parse failed: ", "parse cancelled: ",
+	"voice sink: ", "position sink: ", "state sink: ",
+}
+
+// playerJobError frames a raw pipeline error for jobs.error and the
+// match's error text: the message is wrapped in what failed for the
+// player — reading the file, saving the import, or the analysis pass —
+// with the package prefixes stripped. Already-friendly strings
+// ("cancelled", "already imported (match N)", "unsupported file type
+// …", "importer is shutting down") never reach here or pass through
+// unchanged; a cancellation must stay cancellable-looking.
+func playerJobError(stage, msg string) string {
+	if msg == "" || msg == "cancelled" {
+		return msg
+	}
+	var frame string
+	switch {
+	case stage == models.StageAnalyze || strings.HasPrefix(msg, "analytics: "):
+		frame = "Analysis failed: "
+	case stage == models.StageStore ||
+		strings.HasPrefix(msg, "store: ") ||
+		strings.HasPrefix(msg, "copy demo: ") ||
+		strings.HasPrefix(msg, "sidecar: "):
+		frame = "Couldn't save the import: "
+	default:
+		frame = "Couldn't read this file: "
+	}
+	for {
+		changed := false
+		for _, p := range jobErrPrefixes {
+			if strings.HasPrefix(msg, p) {
+				msg = strings.TrimPrefix(msg, p)
+				changed = true
+			}
+		}
+		if !changed {
+			break
+		}
+	}
+	return frame + msg
+}
+
 // failJob records a terminal failure for jobID. When the job had a match
 // row (matchID != 0) the match is marked failed with the same message —
 // including reprocess failures: any pre-existing extracted rows may remain,
 // but the status/error tell the truth. A context cancellation is reported
-// as job status cancelled and match error "cancelled".
+// as job status cancelled and match error "cancelled". The message is
+// framed as player language here — the ONE boundary for job errors.
 func (im *Importer) failJob(jobID, matchID int64, stage, errMsg string, cancelled bool) {
+	errMsg = playerJobError(stage, errMsg)
 	status := models.JobFailed
 	if cancelled {
 		status = models.JobCancelled

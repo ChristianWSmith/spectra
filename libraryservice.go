@@ -169,7 +169,7 @@ func (s *LibraryService) Reprocess(id int64) (int64, error) {
 }
 
 // CancelJob cancels a queued or running job — the Library's Cancel
-// (running) / Dequeue (queued) control. A queued job is removed from the
+// (running) / Remove (queued) control. A queued job is removed from the
 // queue and announced as cancelled; a running one aborts its parse. The
 // match/import row is never left stranded — see library.Importer.Cancel
 // for the per-outcome state machine.

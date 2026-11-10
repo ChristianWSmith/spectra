@@ -4,7 +4,7 @@
 - Score: **{{.CTName}} {{.Match.ScoreCT}} – {{.Match.ScoreT}} {{.TName}}**
 - Rounds: {{.Match.RealRounds}} real (+{{.Match.WarmupRounds}} warmup)
 - Duration: {{.Match.PlaybackTimeS}} s @ {{.Match.TickRate}} ticks/s
-- Extracted: {{.Match.ExtractedAt}} (parser {{.Match.ParserVersion}}, {{.Match.ParseMS}} ms)
+- Imported: {{.Match.ExtractedAt}} (parser {{.Match.ParserVersion}}, {{.Match.ParseMS}} ms)
 
 ## Scoreboard
 
@@ -38,4 +38,4 @@
 {{end}}
 ---
 
-Generated {{.GeneratedAt}} by Spectra from the local library. Inferred values (loss bonus, classifications) carry their rule version in-app; CSV/JSON exports are available from the read-only SQL console.
+Generated {{.GeneratedAt}} by Spectra from the local library. Inferred values (loss bonus, round types) are marked in-app; exports are available in the SQL console.

@@ -150,7 +150,7 @@ func pakInLibrary(lib string) string {
 // itself or one level down), for surfacing errors in the UI.
 func ValidateInstall(dir string) error {
 	if resolvePak(dir) == "" {
-		return fmt.Errorf("no pak01_dir.vpk found under %s", dir)
+		return fmt.Errorf("that folder has no Counter-Strike 2 game files (no pak01_dir.vpk under %s)", dir)
 	}
 	return nil
 }

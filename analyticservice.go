@@ -163,16 +163,16 @@ func (s *AnalyticsService) GetConfig() (models.AnalysisConfig, error) {
 // row straight from the store).
 func (s *AnalyticsService) SetConfig(c models.AnalysisConfig) (models.AnalysisConfig, error) {
 	if c.TradeWindowS <= 0 {
-		return models.AnalysisConfig{}, errors.New("analytics: tradeWindowS must be > 0")
+		return models.AnalysisConfig{}, errors.New("trade window must be at least 1 second")
 	}
 	if c.EcoForce <= 0 || c.EcoFullBuy <= 0 {
-		return models.AnalysisConfig{}, errors.New("analytics: eco thresholds must be > 0")
+		return models.AnalysisConfig{}, errors.New("buy thresholds must be at least $1")
 	}
 	if c.EcoForce > c.EcoFullBuy {
-		return models.AnalysisConfig{}, errors.New("analytics: ecoForce must be ≤ ecoFullBuy")
+		return models.AnalysisConfig{}, errors.New("force-buy threshold can't be higher than the full-buy threshold")
 	}
 	if c.TradeOppDistance < 0 {
-		return models.AnalysisConfig{}, errors.New("analytics: tradeOppDistance must be ≥ 0")
+		return models.AnalysisConfig{}, errors.New("trade-opportunity distance can't be negative")
 	}
 	cur, err := s.st.GetConfig()
 	if err != nil {
@@ -516,7 +516,7 @@ func (s *AnalyticsService) ListSavedFilters() ([]models.SavedFilterRow, error) {
 
 func (s *AnalyticsService) SaveFilter(name, scope, filterJSON string) (models.SavedFilterRow, error) {
 	if name == "" {
-		return models.SavedFilterRow{}, errors.New("analytics: filter name is required")
+		return models.SavedFilterRow{}, errors.New("give the filter a name")
 	}
 	return s.st.CreateSavedFilter(name, scope, filterJSON)
 }

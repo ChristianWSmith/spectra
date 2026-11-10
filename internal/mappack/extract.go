@@ -242,7 +242,7 @@ func ExtractMapPacks(cs2Dir, outDir string, opts ...ExtractOption) (maps []Extra
 	}
 	pak := resolvePak(cs2Dir)
 	if pak == "" {
-		return nil, nil, fmt.Errorf("no pak01_dir.vpk under %s", cs2Dir)
+		return nil, nil, fmt.Errorf("couldn't read the radar files in that CS2 folder (%s)", cs2Dir)
 	}
 	v, err := openVPK(pak)
 	if err != nil {
@@ -286,7 +286,7 @@ func ExtractMapPacks(cs2Dir, outDir string, opts ...ExtractOption) (maps []Extra
 		}
 	}
 	if len(maps) == 0 && len(errs) > 0 {
-		return nil, errs, fmt.Errorf("no map packs extracted (%d errors)", len(errs))
+		return nil, errs, fmt.Errorf("couldn't read the radar files in that CS2 folder (%d errors)", len(errs))
 	}
 	return maps, errs, nil
 }

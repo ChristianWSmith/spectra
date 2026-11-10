@@ -37,9 +37,9 @@ func devToolPK(t *testing.T, files map[string][]byte) string {
 // --- where / help / no-install -------------------------------------------
 
 func TestDevToolNoInstall(t *testing.T) {
-	// A pointed install without a pak must fail with the SAME wording
-	// ExtractSounds reports (TestExtractSoundsNoInstall) — and must not
-	// fall back to whatever install happens to be on the machine.
+	// A pointed install without a pak must fail with the developer-facing
+	// wording (the extractors phrase the same failure for players) — and
+	// must not fall back to whatever install happens to be on the machine.
 	code, _, stderr := runDevToolForTest(t, filepath.Join(t.TempDir(), "no-cs2"), "where")
 	if code == 0 {
 		t.Fatalf("exit 0 with no install; stderr=%q", stderr)

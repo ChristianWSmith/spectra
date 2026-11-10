@@ -247,7 +247,7 @@ func ExtractIcons(cs2Dir, outDir string, opts ...ExtractOption) (names []string,
 		}
 	}
 	if len(names) == 0 && len(errs) > 0 {
-		return nil, errs, fmt.Errorf("no icons extracted (%d errors)", len(errs))
+		return nil, errs, fmt.Errorf("couldn't read the icons — your game files may have changed format (%d errors)", len(errs))
 	}
 	return names, errs, nil
 }

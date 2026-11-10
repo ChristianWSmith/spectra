@@ -222,7 +222,8 @@ func TestImportCopyFailureFailsJob(t *testing.T) {
 		t.Fatalf("Enqueue returned %d ids, want 1", len(ids))
 	}
 	job := waitStatus(t, st, ids[0], models.JobFailed)
-	if !strings.Contains(job.Error, "copy demo") {
+	// failJob frames the copy failure in player language (library.playerJobError).
+	if !strings.Contains(job.Error, "Couldn't save the import") {
 		t.Errorf("job error = %q, want it to mention the copy failure", job.Error)
 	}
 	rows, err := st.ListMatches("", "extracted_at", false)

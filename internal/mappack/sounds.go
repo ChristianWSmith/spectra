@@ -428,7 +428,7 @@ func ExtractSounds(cs2Dir, outDir string, opts ...ExtractOption) (names []string
 	}
 	pak := resolvePak(cs2Dir)
 	if pak == "" {
-		return nil, nil, fmt.Errorf("no pak01_dir.vpk under %s", cs2Dir)
+		return nil, nil, fmt.Errorf("couldn't read the replay sounds in that CS2 folder (%s)", cs2Dir)
 	}
 	v, err := openVPK(pak)
 	if err != nil {
@@ -473,7 +473,7 @@ func ExtractSounds(cs2Dir, outDir string, opts ...ExtractOption) (names []string
 		}
 	}
 	if len(names) == 0 && len(errs) > 0 {
-		return nil, errs, fmt.Errorf("no sounds extracted (%d errors)", len(errs))
+		return nil, errs, fmt.Errorf("couldn't read the replay sounds — your game files may have changed format (%d errors)", len(errs))
 	}
 	return names, errs, nil
 }
