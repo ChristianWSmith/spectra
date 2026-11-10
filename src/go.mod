@@ -10,7 +10,7 @@ require (
 	github.com/pierrec/lz4/v4 v4.1.33
 	github.com/pion/opus v0.1.1-0.20261026214112-e7b8aa55508c
 	github.com/wailsapp/wails/v3 v3.0.0
-	golang.org/x/image v0.45.0
+	golang.org/x/image v0.47.0
 	google.golang.org/protobuf v1.36.12
 	modernc.org/sqlite v1.61.0
 )
