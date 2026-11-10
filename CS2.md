@@ -333,6 +333,34 @@ at the end of the section.
   (https://www.hltv.org/news/36967/the-logic-behind-valves-move-to-mr12)
   (all retrieved 2026-11-09).
 
+- **Round-boundary cleanup of leftover projectiles/infernos, and
+  smoke/fire lifetimes** — does CS2 clear leftover grenades and fires at
+  the round boundary, and how long do smoke/fire last? The game clears
+  leftover grenade projectiles and infernos when a round ends; demoinfocs
+  mirrors it in `clearGrenadeProjectiles()` — "Sometimes grenades &
+  infernos aren't deleted / destroyed via entity-updates at the end of
+  the round, so we need to do it here for those that weren't" — invoked
+  from `roundStart` and `roundOfficiallyEnded`, and from the rules-entity
+  `dispatchRoundStart`; its tests pin leftover projectiles destroyed and
+  infernos expired at the clear (`TestRoundEndDestroyOrder_Deterministic`
+  notes a demo with "leftover projectiles and infernos at several round
+  ends"). Smoke lasts ≈18 s; Molotov fire ≈7.03 s (`inferno_startburn` →
+  `inferno_expire`; Incendiary ≈5.5 s). Expiry game events exist in
+  demoinfocs (`smokegrenade_expired` → `SmokeGrenadeExpired`,
+  `inferno_expire` → `InfernoExpired`) but are deliberately UNEXTRACTED
+  in spectra — the render-side rule (`frontend/src/lib/replay/roundcut.js`)
+  is sufficient and needs no new event rows.
+  **Source** — demoinfocs-golang v6.0.0-rc.1 module cache:
+  `pkg/demoinfocs/game_events.go` (`clearGrenadeProjectiles` def +
+  `roundStart`/`roundOfficiallyEnded` calls + the expiry handler table),
+  `pkg/demoinfocs/datatables.go` (`dispatchRoundStart`), the package's
+  `game_events_test.go` / `demoinfocs_test.go`
+  (`TestRoundEndDestroyOrder_Deterministic`);
+  https://swap.gg/blog/how-long-does-smoke-last-in-cs2 (18 s smoke, 7 s
+  molly); https://counterstrike.fandom.com/wiki/Molotov (7 s fire);
+  https://docs.pureskill.gg/datascience/adx/cs2/csds/enums/ (Molotov
+  7.03 s, Incendiary 5.5 s) (all retrieved 2026-11-09).
+
 - **Weapon/inventory icons in a CS2 install** — where the gun icons live
   for extraction. In `pak01_dir.vpk`: (1) killfeed/HUD-style SVG
   silhouettes at `panorama/images/icons/equipment/<weapon>.vsvg_c`
