@@ -1,6 +1,9 @@
 # Wails v3 project layout, Go module, binaries, and platform build trees
 # live under src/ — see src/.gitignore for those patterns.
 
+# Per-worktree XDG instance dirs (see AGENTS.md "Instance isolation (XDG)")
+.xdg/
+
 # Release artifacts produced by `make artifact`
 *.zip
 SHA256SUMS
