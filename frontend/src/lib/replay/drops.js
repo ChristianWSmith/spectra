@@ -6,6 +6,10 @@
 //     structural sibling of bomb.js bombEvidenceAt (the DROPPED-C4
 //     reconstruction) but its OWN module: bomb.js is the C4
 //     lifecycle's home, this one is the death-drop layer's.
+//   dropWindow(d, ev) / buildDropWindows(ev) — the SAME rule as a
+//     precomputed visibility window per row (the renderer's per-frame
+//     lookup — pure, evaluated once in setLandmarks; see the notes on
+//     dropWindow for the equivalence proof).
 //
 // Rule, over an evidence bundle of pre-bucketed landmark rows
 // { drops, pickups, roundEnds } (landmarks.js normalizeEvent output —
@@ -94,4 +98,55 @@ export function dropEvidenceAt(ev, tick) {
 
   if (!hasDropPos(d)) return null;
   return { state: 'dropped', row: d, x: d.x, y: d.y, z: d.z ?? null };
+}
+
+// dropWindow — the SAME rule as a half-open VISIBILITY WINDOW
+// [from, to) for ONE drop row, evaluated once over the match-static
+// inputs (the rows never change after setLandmarks, so the renderer
+// precomputes this beside dropEvidenceAt instead of rescanning the
+// pickups/round_end lists for every row on every frame —
+// drawDrops' per-frame cost is then an O(1) window test).
+//
+// Equivalence (pinned by the sweep in src/lib/renderer.test.js): for a
+// bundle whose drops entry is exactly this row — the renderer's ONE-row
+// query shape, see the module header —
+//     dropEvidenceAt({drops:[d], …}, tick) !== null
+//       ⇔  window !== null && tick >= window.from && tick < window.to
+// because the three gates are independent thresholds on the same row:
+//   1. selection     d.tick <= tick                    → from = d.tick
+//   2. round_end     tick < the round's first round_end at/after d.tick
+//   3. pickup        tick < the earliest same-name pickup in the round
+//                    after d.tick
+//   4. position      hasDropPos(d) — a position-less row is never
+//                    visible → null window (never drawn, never guessed)
+// `to` is Infinity when neither terminator exists (the row then lives
+// until the demo ends — exactly what dropEvidenceAt answers today).
+export function dropWindow(d, ev) {
+  const e = ev || {};
+  if (!d || !Number.isFinite(d.tick) || !hasDropPos(d)) return null;
+  let to = Infinity;
+  for (const r of e.roundEnds || []) {
+    if (r && r.round === d.round && r.tick >= d.tick && r.tick < to) to = r.tick;
+  }
+  for (const p of e.pickups || []) {
+    if (!p || !Number.isFinite(p.tick)) continue;
+    if (p.round !== d.round || p.weapon !== d.weapon) continue;
+    if (p.tick <= d.tick) continue;
+    if (p.tick < to) to = p.tick;
+  }
+  return { from: d.tick, to };
+}
+
+// buildDropWindows — the derived index: every drop row of an evidence
+// bundle → its window (a Map keyed by the ROW OBJECT — the rows are the
+// same objects the renderer holds, so a lookup is identity-exact).
+export function buildDropWindows(ev) {
+  const out = new Map();
+  const e = ev || {};
+  for (const d of e.drops || []) {
+    if (!d) continue;
+    const w = dropWindow(d, e);
+    if (w) out.set(d, w);
+  }
+  return out;
 }

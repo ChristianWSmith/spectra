@@ -471,6 +471,11 @@ writeFileSync(
     setStateIndex() {},
     resize() {},
     draw() {},
+    // The scrub-drag draw coalescing mark (renderer.requestDraw): a no-op
+    // here — this harness's engine/renderer are inert — but the METHOD
+    // must exist, or Replay's onScrub would throw on the very first
+    // scrubber input event.
+    requestDraw() {},
     setCameraMode() {},
     destroy() {},
   };

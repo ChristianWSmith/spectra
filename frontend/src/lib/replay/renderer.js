@@ -48,7 +48,7 @@ import { detonationStyleOf, sameUtilityWeapon } from './landmarks.js';
 import { elevationFor, layerIndexForZ } from './layers.js';
 import { slotStateAt } from './state.js';
 import { bombEndTick, bombEvidenceAt, hasBombPos, actionIntervals, actionProgressAt } from './bomb.js';
-import { dropEvidenceAt, hasDropPos } from './drops.js';
+import { buildDropWindows } from './drops.js';
 // fmt.js is THE seconds clock (fmtClock over tickSeconds — the same
 // basis as the scrubber readout). createRenderer has its own tick-based
 // HUD helper named fmtClock below, so the import is aliased: the two
@@ -83,6 +83,26 @@ const TRAIL_MAX_STEP2 = 256 * 256; // world units² — human movement is ~8/fra
 // Compared SQUARED (step² ≥ (v·gap/tickRate)²) so the predicate stays
 // sqrt-free.
 export const TRAIL_MIN_SPEED = 135; // units/sec — below this no trail is drawn
+// Trail alpha BANDS — the approved batching tradeoff: the age-fade
+// (1 − age) · 0.5 is quantized into TRAIL_BANDS steps and every segment
+// of one band strokes on ONE path (one beginPath/stroke per band instead
+// of one per segment — a late-match frame was up to ~1,900 strokes).
+// The visual direction is unchanged: the fade still runs oldest → newest
+// in the player's team color, at the band's CENTER alpha (always strictly
+// below 0.5, so every "trails draw at ≤ 0.5" filter downstream keeps
+// holding). Pure — head-tested in src/lib/renderer.test.js.
+export const TRAIL_BANDS = 8;
+const TRAIL_ALPHA_MAX = 0.5;
+// trailBandIndex — a segment's age (0 = newest, 1 = the window's oldest)
+// → its band: 0 is the oldest/faintest, TRAIL_BANDS − 1 the newest.
+export function trailBandIndex(age) {
+  return Math.max(0, Math.min(TRAIL_BANDS - 1, Math.floor((1 - age) * TRAIL_BANDS)));
+}
+// trailBandAlpha — a band's representative alpha (its CENTER).
+export function trailBandAlpha(band) {
+  const b = Math.max(0, Math.min(TRAIL_BANDS - 1, Math.floor(band)));
+  return ((b + 0.5) / TRAIL_BANDS) * TRAIL_ALPHA_MAX;
+}
 const ZOOM_MIN = 0.5;
 const ZOOM_MAX = 8;
 // --- Smart camera (the DEFAULT mode) -----------------------------------------
@@ -453,19 +473,32 @@ export function flightSplits(z0, z1, panels) {
 // Returns 3 [x, y] points, apex in the middle: arm-end-left → APEX →
 // arm-end-right — stroked (never filled) by drawPlayers. Pure — head-
 // tested in src/lib/renderer.test.js; drawn by drawPlayers.
-export function chevronPath(cx, cy, angleRad, size) {
+// `out` (optional) is a 3-slot point array to fill instead of allocating
+// one per dot per frame (drawPlayers' chevScratch); omit it for an owned
+// value — the pre-scratch contract every test uses.
+export function chevronPath(cx, cy, angleRad, size, out) {
   const s = Math.max(0, Number(size) || 0);
   const back = s * 0.4; // how far the arm ends sit back from the apex
   const spread = s * 0.5; // their perpendicular half-spread
   const cos = Math.cos(angleRad);
   const sin = Math.sin(angleRad);
-  // local frame: +x along the look direction, +y to its right
-  const local = [
-    [s - back, -spread],
-    [s, 0],
-    [s - back, spread],
-  ];
-  return local.map(([lx, ly]) => [cx + lx * cos - ly * sin, cy + lx * sin + ly * cos]);
+  const pts = out && out.length >= 3 ? out : [[0, 0], [0, 0], [0, 0]];
+  // The three local-frame points (arm-end-left, APEX, arm-end-right:
+  // +x along the look direction, +y to its right) written straight into
+  // `pts` — no intermediate arrays, so the hot path allocates nothing.
+  let lx = s - back;
+  let ly = -spread;
+  pts[0][0] = cx + lx * cos - ly * sin;
+  pts[0][1] = cy + lx * sin + ly * cos;
+  lx = s;
+  ly = 0;
+  pts[1][0] = cx + lx * cos - ly * sin;
+  pts[1][1] = cy + lx * sin + ly * cos;
+  lx = s - back;
+  ly = spread;
+  pts[2][0] = cx + lx * cos - ly * sin;
+  pts[2][1] = cy + lx * sin + ly * cos;
+  return pts;
 }
 
 // crossPath — a death marker's X (spec 28): two segments of half-length
@@ -758,6 +791,17 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   let wdrops = [];
   let wpickups = [];
   let wdropEv = { drops: [], pickups: [], roundEnds: [] };
+  // Derived INDICES over the match-static rows (both rebuilt in
+  // setLandmarks, both pure lookups at draw time):
+  //   dropWins — each drop row → its visibility window (drops.js
+  //              dropWindow, the SAME rule dropEvidenceAt answers), so
+  //              drawDrops is an O(1) test per row instead of a
+  //              rescanning query per row per frame;
+  //   killEnds — each kill row → its death-X cutoff (killEndTick), so
+  //              drawDeaths is a Map read per kill instead of the
+  //              O(rounds) terminator scan per kill per frame.
+  let dropWins = new Map();
+  let killEnds = new Map();
   // The layer toggle: which drop categories draw at all (the toolbar's
   // Guns/Utility popover → setDropLayers; BOTH OFF by default = the
   // feature is opt-in, matching the pref's unset state).
@@ -818,6 +862,11 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // drawChat scopes them to the round containing the playhead and
   // resolves each speaker's side itself at the message tick.
   let chats = [];
+  // chatFitCache — the cut message + measured widths per chat row,
+  // keyed `id|cssW` (see drawChat): invalidated wherever those inputs
+  // change — setChat (new rows), resize (the stage width), setData (the
+  // speaker's side feeds the head, and the head compare re-checks it).
+  let chatFitCache = new Map();
   // steamId → slot, from the sidecar slot table (meta.players, slot
   // order) — resolves a kill/damage row's victim to the dot it marks.
   const slotOfSteam = new Map();
@@ -856,6 +905,10 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   let easeRaf = 0; // the smart settle loop's pending frame (0 = idle)
   let lastEaseT = 0; // last eased draw, for the dt of the next step
   let smartConverged = true;
+  // The camera as of the LAST radar draw — drawRadar's motion signal for
+  // the smoothing-quality policy (see drawRadar); null until the first
+  // radar draw records it.
+  const camSeen = { cx: null, cy: null, zoom: null };
   // Effective world→image transform + image extent, rebuilt by reproject()
   // from packTf (makeTransform's canonical derivation) or sample bounds.
   // `tf` is the SHARED map transform (the grid fallback's, and the value
@@ -869,6 +922,11 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   let extH = 1024;
 
   const tmp = {};
+
+  // chevScratch — chevronPath's `out` for drawPlayers: the 3 chevron
+  // points are read straight back within the same slot iteration, so one
+  // per renderer replaces the per-dot allocation.
+  const chevScratch = [[0, 0], [0, 0], [0, 0]];
 
   // panelForZ — the panel an entity at world Z belongs to (layers.js
   // layerIndexForZ: half-open bands, default layer for unknown Z). z
@@ -898,18 +956,32 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   }
 
   const imgPt = { x: 0, y: 0 };
+  // Screen-space SCRATCH for the hot projection paths — the `tmp`
+  // precedent above: worldToScreen/panelToScreen take an optional `out`
+  // and write into it instead of allocating a {x, y} per call (50–200 of
+  // them per frame). Callers that need TWO projected points AT ONCE must
+  // pass two different scratches (scr1/scr2/scr3 below); a caller that
+  // reads its point before the next projection may share one. Tests (and
+  // any caller wanting an owned value) omit `out` → a fresh object, the
+  // pre-scratch contract.
+  const scr1 = { x: 0, y: 0 };
+  const scr2 = { x: 0, y: 0 };
+  const scr3 = { x: 0, y: 0 };
   // panelToScreen — one panel's projection of a world point into screen
   // space: THE canonical world→screen step, shared by worldToScreen and
   // the per-panel flight segments (never a second copy of the formula).
-  function panelToScreen(p, wx, wy) {
+  function panelToScreen(p, wx, wy, out) {
     const s = cam.fit * cam.zoom;
     const ix = (wx - p.tf.pos_x) / p.tf.scale + p.offsetX;
     const iy = (p.tf.pos_y - wy) / p.tf.scale;
-    return { x: cssW / 2 + (ix - cam.cx) * s, y: cssH / 2 + (iy - cam.cy) * s };
+    const o = out || { x: 0, y: 0 };
+    o.x = cssW / 2 + (ix - cam.cx) * s;
+    o.y = cssH / 2 + (iy - cam.cy) * s;
+    return o;
   }
 
-  function worldToScreen(wx, wy, z) {
-    return panelToScreen(panelForZ(z), wx, wy);
+  function worldToScreen(wx, wy, z, out) {
+    return panelToScreen(panelForZ(z), wx, wy, out);
   }
 
   function screenToImage(sx, sy) {
@@ -1028,6 +1100,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     canvas.width = Math.max(1, Math.round(cssW * dpr));
     canvas.height = Math.max(1, Math.round(cssH * dpr));
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    chatFitCache.clear(); // the stage width is half of every cache key
     fit();
     draw();
   }
@@ -1208,6 +1281,23 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     // The drop-layer evidence bundle (drops.js dropEvidenceAt) — built
     // with the bomb one above; roundEnds is the shared round cleanup.
     wdropEv = { drops: wdrops, pickups: wpickups, roundEnds };
+    // Derived lookups for the per-frame paths (both over match-static
+    // rows — pure functions of these buckets, rebuilt whenever they are):
+    //   dropWins — drops.js buildDropWindows: each drop row → its
+    //              [from, to) visibility window, so drawDrops is O(1)
+    //              per row (it used to run a one-row dropEvidenceAt
+    //              query — a pickups + round_end rescan — per row per
+    //              frame);
+    //   killEnds — killEndTick per kill row: the death-X cutoff, so
+    //              drawDeaths is a Map read per kill (it used to rescan
+    //              the round_end/round_start rows per kill per frame).
+    // tickRate is the engine's own (killEndTick defaults an invalid one
+    // to 64 exactly as drawDeaths' live call would).
+    dropWins = buildDropWindows(wdropEv);
+    killEnds = new Map();
+    for (const k of kills) {
+      killEnds.set(k, killEndTick(k, engine ? engine.tickRate : 0, roundEnds, roundStarts));
+    }
     // Pairing pool: detonations AND landings. A landing row's weapon is
     // "Decoy Grenade", so sameUtilityWeapon only ever pairs it with a
     // DECOY throw (every other grenade's nearest candidate stays its own
@@ -1242,6 +1332,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     // dataset — clear them (the view re-pushes via setBullets), exactly
     // like the edge-state re-seed this replaced.
     bullets = [];
+    chatFitCache.clear(); // the speaker's side (→ head) comes from the store
     fit();
   }
 
@@ -1293,6 +1384,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // and redraws.
   function setChat(rows) {
     chats = rows || [];
+    chatFitCache.clear(); // new rows → new cuts (the key space changes)
     draw();
   }
 
@@ -1496,6 +1588,11 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
 
   function destroy() {
     cancelEase();
+    if (drawRaf) {
+      cancelAnimationFrame(drawRaf);
+      drawRaf = 0;
+    }
+    drawDirty = false;
   }
 
   // --- layers ----------------------------------------------------------------
@@ -1544,12 +1641,30 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     const s = cam.fit * cam.zoom;
     const y = cssH / 2 - cam.cy * s;
     ctx.imageSmoothingEnabled = true;
+    // RESAMPLE QUALITY POLICY (approved): 'high' while the camera is
+    // settled, 'medium' while it eases/moves (smart ease, follow, a
+    // manual pan/zoom) — the browser's best filter is the expensive
+    // resample, so a moving view pays for it only while it is actually
+    // moving. The signal is the camera's own delta since the previous
+    // radar draw, held to the SAME tolerances camConverged declares a
+    // settle (SMART_EPS_*), so a converged smart camera — and every
+    // paused frame — keeps 'high' exactly as before. camSeen starts
+    // unset: the FIRST radar draw records without reacting and paints at
+    // 'high' like it always did (one-frame-stale initialisation).
+    const moving =
+      camSeen.cx != null &&
+      (Math.abs(cam.cx - camSeen.cx) > SMART_EPS_CENTER ||
+        Math.abs(cam.cy - camSeen.cy) > SMART_EPS_CENTER ||
+        Math.abs(cam.zoom - camSeen.zoom) > SMART_EPS_ZOOM * Math.max(camSeen.zoom, 1e-9));
+    camSeen.cx = cam.cx;
+    camSeen.cy = cam.cy;
+    camSeen.zoom = cam.zoom;
     // The extractor ships radar PNGs above their logical size (2× as of
     // the owner's 2026-11 upscale matrix); the
     // webview downscales at fit/low zoom (aliasing) and upscales when
     // zoomed (blur). The context default is 'low' (plain bilinear) —
-    // ask for the browser's best filter.
-    ctx.imageSmoothingQuality = 'high';
+    // ask for the browser's best filter while it is worth it.
+    ctx.imageSmoothingQuality = moving ? 'medium' : 'high';
     let drew = false;
     for (const p of panels) {
       if (!p.img) continue;
@@ -1622,17 +1737,26 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   }
 
   function drawTrails(frame) {
-    const n = store.frames;
     const from = Math.max(0, frame - TRAIL_FRAMES);
     const s = cam.fit * cam.zoom;
     for (let slot = 0; slot < store.slots.length; slot++) {
       const p = store.slots[slot].pos;
       const color = teamColor(sideAtFrame(slot, frame));
-      let prev = null;
+      // Previous point as SCALARS (the old prev = [x, y] allocated one
+      // array per step — ~1,400 per frame): read straight into moveTo.
+      let hasPrev = false;
+      let prevX = 0;
+      let prevY = 0;
       let prevPanel = null;
+      // Alpha-band batching: the open path carries ONE band; a band
+      // change strokes the previous one (styles differ) and starts a
+      // new path. Walk order is unchanged — newest → oldest — so the
+      // paint order over the other layers is exactly what it was.
+      let band = -1;
+      let open = false;
       for (let f = frame; f >= from; f--) {
         if (!(store.masks[f] & (1 << slot))) {
-          prev = null;
+          hasPrev = false;
           prevPanel = null;
           continue;
         }
@@ -1654,20 +1778,29 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
         // (tickRate comes from the engine, like every other tick math
         // here). A PANEL change (floor transition) breaks it too: the two
         // points live in different panels and a line across the gutter
-        // would be a lie.
-        if (prev && prevPanel === panel && trailConnects(store.ticks, p, f, engine.tickRate)) {
-          const age = (frame - f) / TRAIL_FRAMES;
-          ctx.strokeStyle = color;
-          ctx.globalAlpha = (1 - age) * 0.5;
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.moveTo(prev[0], prev[1]);
+        // would be a lie. A chain break simply leaves the current band's
+        // path open — a later segment starts a new SUBPATH in it, which
+        // strokes identically (no join is shared across subpaths).
+        if (hasPrev && prevPanel === panel && trailConnects(store.ticks, p, f, engine.tickRate)) {
+          const bIdx = trailBandIndex((frame - f) / TRAIL_FRAMES);
+          if (bIdx !== band) {
+            if (open) ctx.stroke();
+            band = bIdx;
+            ctx.strokeStyle = color;
+            ctx.globalAlpha = trailBandAlpha(band);
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            open = true;
+          }
+          ctx.moveTo(prevX, prevY);
           ctx.lineTo(sx, sy);
-          ctx.stroke();
         }
-        prev = [sx, sy];
+        prevX = sx;
+        prevY = sy;
+        hasPrev = true;
         prevPanel = panel;
       }
+      if (open) ctx.stroke();
     }
     ctx.globalAlpha = 1;
   }
@@ -1699,7 +1832,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       if (!hasPos(l)) continue;
       const age = (tick - l.tick) / tr;
       if (age < 0 || age > SMOKE_LIFETIME_S) continue;
-      const c = worldToScreen(l.x, l.y, l.z);
+      const c = worldToScreen(l.x, l.y, l.z, scr1);
       const r = (SMOKE_RADIUS / scaleForZ(l.z)) * cam.fit * cam.zoom;
       const fade = age > SMOKE_LIFETIME_S - 2 ? (SMOKE_LIFETIME_S - age) / 2 : 1;
       // team-tinted (the thrower's side, 50/50 with the smoke gray — see
@@ -1718,7 +1851,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       if (!hasPos(l)) continue;
       const age = (tick - l.tick) / tr;
       if (age < 0 || age > FIRE_LIFETIME_S) continue;
-      const c = worldToScreen(l.x, l.y, l.z);
+      const c = worldToScreen(l.x, l.y, l.z, scr1);
       const r = (FIRE_RADIUS / scaleForZ(l.z)) * cam.fit * cam.zoom;
       // Molotov/incendiary areas read RED (not orange) — see the
       // detonation ring below for the same hue family.
@@ -1745,7 +1878,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       if (!hasPos(pl.from)) continue;
       if (tick < pl.from.tick) continue;
       if (pl.to && tick > pl.to.tick) continue;
-      const a = worldToScreen(pl.from.x, pl.from.y, pl.from.z);
+      const a = worldToScreen(pl.from.x, pl.from.y, pl.from.z, scr1);
       const flight =
         pl.to &&
         hasPos(pl.to) &&
@@ -1769,17 +1902,21 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
         // exactly the old single segment.
         for (const seg of flightSplits(pl.from.z, pl.to.z, panels)) {
           const pa = panels[seg.layer] || panels[0];
+          // One scratch for both ends: moveTo copies the numbers into the
+          // path before s1 reuses the object, so nothing aliases.
           const s0 = panelToScreen(
             pa,
             pl.from.x + (pl.to.x - pl.from.x) * seg.t0,
             pl.from.y + (pl.to.y - pl.from.y) * seg.t0,
+            scr3,
           );
+          ctx.moveTo(s0.x, s0.y);
           const s1 = panelToScreen(
             pa,
             pl.from.x + (pl.to.x - pl.from.x) * seg.t1,
             pl.from.y + (pl.to.y - pl.from.y) * seg.t1,
+            scr3,
           );
-          ctx.moveTo(s0.x, s0.y);
           ctx.lineTo(s1.x, s1.y);
         }
         ctx.stroke();
@@ -1804,6 +1941,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
             pl.from.x + (pl.to.x - pl.from.x) * p,
             pl.from.y + (pl.to.y - pl.from.y) * p,
             zFlight,
+            scr2, // `a` (scr1) is still live for the fallback dot below
           );
           drawn = drawIcon(img, c.x, c.y, NADE_ICON_PX, team);
         }
@@ -1840,7 +1978,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       if (!Number.isFinite(p.landTick) || !Number.isFinite(p.detTick)) continue;
       if (tick < p.landTick || tick >= p.detTick) continue;
       if (!Number.isFinite(p.x) || !Number.isFinite(p.y)) continue;
-      const c = worldToScreen(p.x, p.y, p.z); // p.z → its radar layer
+      const c = worldToScreen(p.x, p.y, p.z, scr1); // p.z → its radar layer
       // Elevation indicator for the LANDED decoy — this loop is the REST
       // window (landTick ≤ tick < detTick); the in-flight arc/icon above
       // draws no mark, so util is only ever marked at rest. Same rules
@@ -1882,7 +2020,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       if (!hasPos(l)) continue;
       const age = (tick - l.tick) / tr;
       if (age < 0) continue;
-      const c = worldToScreen(l.x, l.y, l.z);
+      const c = worldToScreen(l.x, l.y, l.z, scr1);
       const style = detonationStyleOf(l);
       if (style === 'smoke') {
         const dur = 0.9; // s — the bloom racing out to the smoke radius
@@ -2118,7 +2256,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       // the spot for that one tick; `tick !== l.tick` also keeps a
       // NaN-tick row — bombEndTick → 0 — from ever drawing).
       if (tick < l.tick || (tick >= endTick && tick !== l.tick)) continue;
-      const c = worldToScreen(l.x, l.y, l.z);
+      const c = worldToScreen(l.x, l.y, l.z, scr1);
       // Elevation indicator BEHIND the bomb (drawn before its ring/icon
       // — same behind-the-entity rule as the player dots); only when a
       // region box claims the XY (never a guessed Z — see layers.js).
@@ -2141,7 +2279,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     // loop above — neither draws here. Dashed ring = not armed.
     const ev = bombEvidenceAt(bombEv, tick);
     if (ev && ev.state === 'dropped' && hasBombPos(ev)) {
-      const c = worldToScreen(ev.x, ev.y, ev.z);
+      const c = worldToScreen(ev.x, ev.y, ev.z, scr1);
       const elev = elevationFor(ev.x, ev.y, ev.z, regions);
       if (elev) drawElevationIndicator(c.x, c.y, elev);
       const pulse = 9 + 3 * Math.sin(now / 240);
@@ -2160,7 +2298,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       if (!hasPos(l)) continue;
       const age = (tick - l.tick) / tr;
       if (age < 0 || age > 3) continue;
-      const c = worldToScreen(l.x, l.y, l.z);
+      const c = worldToScreen(l.x, l.y, l.z, scr1);
       const r = 12 + age * 28;
       ctx.strokeStyle = `rgba(224, 91, 91, ${0.9 - age * 0.3})`;
       ctx.lineWidth = 3;
@@ -2172,7 +2310,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       if (!hasPos(l)) continue;
       const age = (tick - l.tick) / tr;
       if (age < 0 || age > 2) continue;
-      const c = worldToScreen(l.x, l.y, l.z);
+      const c = worldToScreen(l.x, l.y, l.z, scr1);
       ctx.fillStyle = `rgba(90, 169, 230, ${0.8 - age * 0.4})`;
       ctx.beginPath();
       ctx.arc(c.x, c.y, 6, 0, Math.PI * 2);
@@ -2181,9 +2319,12 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   }
 
   // drawDrops — the map's optional drop layer: every inferred death drop
-  // still on the ground at `tick` (drops.js dropEvidenceAt queried ONE
-  // ROW AT A TIME — each dropped item is its own marker, pickup
-  // terminated and round-end cleaned up per row, pure function of tick).
+  // still on the ground at `tick` (drops.js: the row's visibility
+  // WINDOW was precomputed in setLandmarks — dropWindow, the SAME rule
+  // dropEvidenceAt answers for a one-row bundle — so this loop is an O(1)
+  // window test per row instead of a rescanning query per row per
+  // frame; each dropped item is still its own marker, pickup-terminated
+  // and round-end cleaned up per row, pure function of tick).
   // Drawn like the dropped-C4 marker (bombEvidenceAt's 'dropped' branch)
   // minus the throbber: NO ring, NO pulse, NO dash — a static white,
   // NEVER side-tinted item icon (iconFor + drawIcon's neutral
@@ -2203,18 +2344,18 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   function drawDrops(tick) {
     if (!dropLayers.guns && !dropLayers.util) return;
     for (const d of wdrops) {
-      // One query per drop row: every dropped item is its own marker
-      // (drops.js — the renderer's per-row call shape), so a round with
-      // three abandoned guns shows three markers, pickup-terminated
-      // individually.
-      const ev = dropEvidenceAt({ drops: [d], pickups: wdropEv.pickups, roundEnds: wdropEv.roundEnds }, tick);
-      if (!ev || ev.state !== 'dropped' || !hasDropPos(ev)) continue;
-      const row = ev.row;
+      // The precomputed window IS the dropEvidenceAt answer for this
+      // row: [from, to) — absent (never visible: no position / no usable
+      // tick) or out of scope now → not on the ground.
+      const win = dropWins.get(d);
+      if (!win || tick < win.from || tick >= win.to) continue;
+      const row = d;
       const cat = row.dropCat;
       const want = cat === 'gun' ? dropLayers.guns : cat === 'util' ? dropLayers.util : false;
       if (!want) continue;
-      const c = worldToScreen(ev.x, ev.y, ev.z);
-      const elev = elevationFor(ev.x, ev.y, ev.z, regions);
+      const z = row.z ?? null; // dropEvidenceAt's own z spelling (null when absent)
+      const c = worldToScreen(row.x, row.y, z, scr1);
+      const elev = elevationFor(row.x, row.y, z, regions);
       // Elevation indicator BEHIND the icon (the behind-the-entity rule).
       if (elev) drawElevationIndicator(c.x, c.y, elev);
       const size = cat === 'gun' ? DROP_GUN_ICON_PX : DROP_UTIL_ICON_PX;
@@ -2311,11 +2452,16 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       // — kill and round_end share the tick) must still mark the spot
       // for that one tick. `tick !== k.tick` also keeps a NaN-tick row
       // (killEndTick → 0) from ever drawing.
-      const end = killEndTick(k, tr, roundEnds, roundStarts);
+      // The cutoff was precomputed in setLandmarks (killEnds — the SAME
+      // killEndTick rule, one Map read instead of the O(rounds)
+      // terminator scan per kill per frame); the fallback keeps the
+      // canonical function as the answer for any row the index somehow
+      // does not hold (it never happens — both are built together).
+      const end = killEnds.get(k) ?? killEndTick(k, tr, roundEnds, roundStarts);
       if (tick >= end && tick !== k.tick) continue;
       const slot = slotOfSteam.get(String(k.victim || ''));
       if (slot == null || slot >= store.slots.length) continue; // no dot to mark
-      const c = worldToScreen(k.x, k.y, k.z);
+      const c = worldToScreen(k.x, k.y, k.z, scr1);
       if (c.x < -60 || c.y < -60 || c.x > cssW + 60 || c.y > cssH + 60) continue;
       const frame = engine.frameForTick(Math.max(engine.firstTick, k.tick - 1));
       const color = teamColor(sideAtFrame(slot, frame));
@@ -2452,7 +2598,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       if (!(store.masks[f] & (1 << slot))) continue; // no sample → no line
       const ppos = store.slots[slot].pos;
       const o = f * 4;
-      const a = worldToScreen(ppos[o], ppos[o + 1], ppos[o + 2]);
+      const a = worldToScreen(ppos[o], ppos[o + 1], ppos[o + 2], scr1);
       const angle = (-ppos[o + 3]) * Math.PI / 180; // engine yaw → screen (drawPlayers' convention)
       // The PATH runs from the ORIGIN (inner 0), reach r + MUZZLE_REACH
       // along the frame's aim — the dash rides it (strokeTracer).
@@ -2502,8 +2648,8 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       if (!(store.masks[f] & (1 << slot))) continue; // no sample → no line
       const ppos = store.slots[slot].pos;
       const b = f * 4;
-      const a = worldToScreen(ppos[b], ppos[b + 1], ppos[b + 2]);
-      const v = worldToScreen(h.x, h.y, h.z);
+      const a = worldToScreen(ppos[b], ppos[b + 1], ppos[b + 2], scr1);
+      const v = worldToScreen(h.x, h.y, h.z, scr2); // both ends live until strokeTracer
       ctx.globalAlpha = 1; // HIT — no fade, full alpha until arrival
       strokeTracer(a.x, a.y, v.x, v.y, p, tracerColor(throwerSideAt(h.attacker, h.tick)));
       ctx.globalAlpha = 1;
@@ -2517,7 +2663,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     for (let slot = 0; slot < store.slots.length; slot++) {
       engine.lerpAt(slot, tmp);
       if (!tmp.alive) continue;
-      const c = worldToScreen(tmp.x, tmp.y, tmp.z);
+      const c = worldToScreen(tmp.x, tmp.y, tmp.z, scr1);
       if (c.x < -60 || c.y < -60 || c.x > cssW + 60 || c.y > cssH + 60) continue;
       // Elevation indicator (T / ⊥) — the FIRST thing painted for this
       // slot, so every part of the dot (bloom, chevron, fill, rim,
@@ -2575,7 +2721,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       // radius ≈ 0.78·size ≈ 12.6 px at r = 9) instead of floating far
       // away; a 2.75 px stroke at near-opaque team color keeps it
       // clearly visible without competing with the dot itself.
-      const pts = chevronPath(c.x, c.y, angle, r * 1.8);
+      const pts = chevronPath(c.x, c.y, angle, r * 1.8, chevScratch);
       ctx.globalAlpha = 0.9;
       ctx.lineWidth = 2.75;
       ctx.strokeStyle = color;
@@ -2903,39 +3049,42 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   }
 
   // segWidths — every segment's drawn width (its own font + an optional
-  // explicit gap): the ONE measure hudLineWidth (box width) and hudBox
+  // explicit gap): the ONE measurement measureLine (box width) and hudBox
   // (segment positions) both step by.
   function segWidths(ln) {
     return ln.segs.map((s) => measureHudSeg(s) + (s.gap || 0));
   }
 
-  // hudLineWidth — one line's drawn width: a plain string is its text;
-  // a {segs} run is the sum of its segments (each in its own font, plus
-  // an optional explicit gap after a segment); an
-  // {img, text} line reserves the icon slot ahead of its text (the
-  // caller resolved the image — an icon line always has one). The
-  // SCORE-ANCHORED line ({segs, scoreAnchor}) measures scoreLineWidth
-  // instead of the plain sum: the box has to reach past the LONGER name
-  // (see scoreLineWidth), never just hug the block.
-  function hudLineWidth(ln) {
-    if (typeof ln === 'string') return ctx.measureText(ln).width;
+  // measureLine — ONE line's measurement, the single spelling the box
+  // width AND hudBox's layout step by: {w} for a plain / icon line,
+  // {w, segs} for a {segs} run (the per-segment widths the draw advances
+  // `cx` by, so the centered box never re-measures what it already
+  // measured). One pass per line per frame: hudBox used to re-measure
+  // every centered line — and the score line its segments again — with
+  // its own measureText calls after the box width had already measured
+  // them.
+  function measureLine(ln) {
+    if (typeof ln === 'string') return { w: ctx.measureText(ln).width };
     if (ln.segs) {
-      if (ln.scoreAnchor && ln.segs.length === 3) {
-        const [leftW, scoreW, rightW] = segWidths(ln);
-        return scoreLineWidth(leftW, scoreW, rightW);
-      }
+      const segs = segWidths(ln);
       let w = 0;
-      for (const sw of segWidths(ln)) w += sw;
-      return w;
+      for (const sw of segs) w += sw;
+      // The SCORE-ANCHORED line ({segs, scoreAnchor}) measures
+      // scoreLineWidth instead of the plain sum: the box has to reach
+      // past the LONGER name (see scoreLineWidth), never just hug the
+      // block.
+      if (ln.scoreAnchor && ln.segs.length === 3) w = scoreLineWidth(segs[0], segs[1], segs[2]);
+      return { w, segs };
     }
-    return HUD_ICON_PX + HUD_ICON_GAP + ctx.measureText(ln.text).width;
+    // An {img, text} line reserves the icon slot ahead of its text.
+    return { w: HUD_ICON_PX + HUD_ICON_GAP + ctx.measureText(ln.text).width };
   }
 
-  // hudBoxWidth — the full box width (widest line + padding). The top
-  // box centers itself on this, so it is measured once, not twice.
-  function hudBoxWidth(lines) {
+  // boxWidthOf — the full box width from an ALREADY measured pass
+  // (widest line + padding).
+  function boxWidthOf(metrics) {
     let w = 0;
-    for (const ln of lines) w = Math.max(w, hudLineWidth(ln));
+    for (const m of metrics) w = Math.max(w, m.w);
     return w + HUD_PAD * 2;
   }
 
@@ -2950,7 +3099,13 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // dead-center of the box so unequal team names pad the shorter side
   // instead of pushing the score off-center; the default 'left' keeps the
   // bottom playback readout's inset.
-  function hudBox(lines, x, y, w = hudBoxWidth(lines), align = 'left') {
+  // `metrics` (optional) is the caller's measureLine pass for these
+  // lines — pass it whenever the caller already measured (drawHUD's
+  // centered box), so a box never measures the same line twice; `w` the
+  // caller's box width (defaults to the width of a fresh measure).
+  function hudBox(lines, x, y, w, align = 'left', metrics = null) {
+    const ms = metrics || lines.map(measureLine);
+    const boxW = w != null ? w : boxWidthOf(ms);
     const bh = hudBoxHeight(lines.length);
     ctx.fillStyle = 'rgba(14, 17, 22, 0.78)';
     ctx.strokeStyle = 'rgba(35, 42, 55, 0.9)';
@@ -2958,12 +3113,12 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     ctx.beginPath();
     // roundRect is baseline in modern WebKit; fall back for older builds
     if (typeof ctx.roundRect === 'function') {
-      ctx.roundRect(x, y, w, bh, 6);
+      ctx.roundRect(x, y, boxW, bh, 6);
       ctx.fill();
       ctx.stroke();
     } else {
-      ctx.fillRect(x, y, w, bh);
-      ctx.strokeRect(x, y, w, bh);
+      ctx.fillRect(x, y, boxW, bh);
+      ctx.strokeRect(x, y, boxW, bh);
     }
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
@@ -2976,7 +3131,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       // content (segments then step from here by their own widths); the
       // left box keeps its HUD_PAD inset.
       let cx = x + HUD_PAD;
-      if (align === 'center') cx = x + (w - hudLineWidth(ln)) / 2;
+      if (align === 'center') cx = x + (boxW - ms[i].w) / 2;
       if (typeof ln === 'string') {
         ctx.fillText(ln, cx, y0);
         return;
@@ -2987,8 +3142,8 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
         // block-centered step from cx.
         let xs = null;
         if (ln.scoreAnchor && ln.segs.length === 3 && align === 'center') {
-          const [leftW, scoreW, rightW] = segWidths(ln);
-          const lay = scoreLineLayout(leftW, scoreW, rightW, x + w / 2);
+          const [leftW, scoreW, rightW] = ms[i].segs;
+          const lay = scoreLineLayout(leftW, scoreW, rightW, x + boxW / 2);
           xs = [lay.leftX, lay.scoreX, lay.rightX];
         }
         ln.segs.forEach((s, si) => {
@@ -2998,7 +3153,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
           ctx.fillText(s.text, sx, y0);
           if (!xs) {
             // same step the width was measured with (incl. an explicit gap)
-            cx += ctx.measureText(s.text).width + (s.gap || 0);
+            cx += ms[i].segs[si];
           }
         });
         ctx.font = baseFont;
@@ -3013,16 +3168,43 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     ctx.textBaseline = 'alphabetic';
   }
 
+  // --- deferred draws (the scrub-drag coalescing) ----------------------------
+  // requestDraw marks the canvas dirty and schedules ONE rAF draw; while
+  // that mark is up, setHud stores its payload but SKIPS its synchronous
+  // draw (the rAF paints the latest engine state instead). Replay's
+  // onScrub marks BEFORE the seek, so a drag's whole input burst — each
+  // event's synchronous onChange → setHud cascade — costs one draw per
+  // display frame instead of one per event. The engine state itself is
+  // still updated per event (seek semantics are untouched: engine.js),
+  // the flush lands on the NEXT frame (no added latency to the final
+  // position of a drag), and outside a burst nothing defers: every other
+  // setHud draws synchronously exactly as before, so the playing cadence
+  // is unchanged. destroy() cancels a pending flush.
+  let drawDirty = false;
+  let drawRaf = 0;
+
+  function flushDraw() {
+    drawRaf = 0;
+    drawDirty = false;
+    draw();
+  }
+
+  function requestDraw() {
+    drawDirty = true;
+    if (!drawRaf) drawRaf = requestAnimationFrame(flushDraw);
+  }
+
   // setHud(payload): score/round context for the top-center HUD box —
   // additive like the other setters (redraws on set). A null/absent
   // payload clears it: the renderer then draws the playback box (and no
   // kill feed) alone — the state before any view supplied a score line.
   function setHud(payload) {
     hud = payload || null;
+    if (drawDirty) return; // the pending frame paints the burst's latest
     draw();
   }
 
-  function drawHUD() {
+  function drawHUD(chat) {
     const st = engine.state;
     const tr = engine.tickRate;
     ctx.font = '12px ui-monospace, SFMono-Regular, Menlo, monospace';
@@ -3053,18 +3235,21 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       }
       if (hud.round) top.push(roundClockLine(st.tick, hud.round, tr));
       if (top.length) {
-        const w = hudBoxWidth(top);
-        hudBox(top, (cssW - w) / 2, HUD_PAD, w, 'center');
+        // ONE measurement pass for the box: hudBox takes the same
+        // metrics for its centering instead of re-measuring each line.
+        const ms = top.map(measureLine);
+        const w = boxWidthOf(ms);
+        hudBox(top, (cssW - w) / 2, HUD_PAD, w, 'center', ms);
       }
     }
 
     // bottom-left: the playback readout (follow / loop / packNote — no
     // speed line anymore), 8px off the corner and stacked 8px ABOVE the
-    // chat stack (chatLayout — cssH when the round has no chat, which
-    // leaves the box exactly at the corner). With none of the three
-    // lines there is NO box at all: the empty readout used to be hidden
-    // behind its own speed× line, and an empty box on the corner would
-    // only cover the chat.
+    // chat stack (the shared chatLayout — cssH when the round has no
+    // chat, which leaves the box exactly at the corner). With none of
+    // the three lines there is NO box at all: the empty readout used to
+    // be hidden behind its own speed× line, and an empty box on the
+    // corner would only cover the chat.
     const lines = [];
     if (st.followSlot != null) {
       lines.push(`follow: ${slotNames[st.followSlot] || '#' + st.followSlot}`);
@@ -3084,8 +3269,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     }
     if (packNote) lines.push(packNote);
     if (!lines.length) return;
-    const chatTop = chatLayout().top;
-    const y = Math.max(HUD_PAD, chatTop - HUD_PAD - hudBoxHeight(lines.length));
+    const y = Math.max(HUD_PAD, chat.top - HUD_PAD - hudBoxHeight(lines.length));
     hudBox(lines, HUD_PAD, y);
   }
 
@@ -3309,13 +3493,14 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     };
   }
 
-  function drawChat() {
-    const { rows, top } = chatLayout();
+  function drawChat(chat) {
+    const { rows, top } = chat;
     if (!rows.length) return;
     // No position store (a caller that never fed data) → no side to
     // resolve: every name/border degrades to the neutral color instead
     // of throwing — sideAtFrame needs the store (same as drawKillFeed).
     const nSlots = (store && store.slots && store.slots.length) || 0;
+    const budget = cssW * CHAT_MAX_W;
 
     ctx.font = '11px ui-monospace, SFMono-Regular, Menlo, monospace';
     ctx.textAlign = 'left';
@@ -3341,19 +3526,36 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
         const tag = chatTag(c.channel || '', side);
         return tag ? `${name} ${tag}` : name;
       })();
-      const msg = c.text == null ? '' : String(c.text);
-      let body = msg ? `: ${msg}` : '';
-      const headW = ctx.measureText(head).width;
-      const fits = () =>
-        KILL_FEED_INSET * 2 + headW + ctx.measureText(body).width <= cssW * CHAT_MAX_W;
-      if (msg && !fits()) {
-        let k = msg.length;
-        do {
-          k--;
-          body = `: ${msg.slice(0, k)}…`;
-        } while (k > 0 && !fits());
+      // The cut — and both widths — is CACHED per row + stage width
+      // (chatFitCache): rows are static per match (setChat) and the head
+      // is a pure function of the row + the store's side, so the
+      // measureText loop that walks ONE character per measurement runs
+      // once per row per width instead of every frame (a long chat used
+      // to cost hundreds of measureText calls per frame against a ~27
+      // baseline). The head compare is the correctness guard: a changed
+      // head (a reloaded position store) recomputes instead of serving
+      // a stale cut. A row without an id never joins the cache — no
+      // shared key.
+      const key = c.id != null ? `${c.id}|${cssW}` : null;
+      let fit = key != null ? chatFitCache.get(key) : null;
+      if (!fit || fit.head !== head) {
+        const headW = ctx.measureText(head).width;
+        const msg = c.text == null ? '' : String(c.text);
+        let body = msg ? `: ${msg}` : '';
+        const fits = () => KILL_FEED_INSET * 2 + headW + ctx.measureText(body).width <= budget;
+        if (msg && !fits()) {
+          let k = msg.length;
+          do {
+            k--;
+            body = `: ${msg.slice(0, k)}…`;
+          } while (k > 0 && !fits());
+        }
+        fit = { head, headW, body, bodyW: ctx.measureText(body).width };
+        if (key != null) chatFitCache.set(key, fit);
       }
-      const w = KILL_FEED_INSET * 2 + headW + ctx.measureText(body).width;
+      const headW = fit.headW;
+      const body = fit.body;
+      const w = KILL_FEED_INSET * 2 + headW + fit.bodyW;
       const y = top + i * KILL_FEED_PITCH;
 
       // box: the shared dark surface outlined in the speaker's color
@@ -3431,9 +3633,13 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       drawHitTracers(st.tick);
       drawPlayers();
     }
-    drawHUD();
+    // ONE chatLayout() per frame: drawHUD stacks the readout 8 px above
+    // the chat stack and drawChat paints it — the same scope/geometry,
+    // computed once instead of once per phase.
+    const chat = chatLayout();
+    drawHUD(chat);
     drawKillFeed();
-    drawChat(); // in-game chat — the same overlay group as the kill feed
+    drawChat(chat); // in-game chat — the same overlay group as the kill feed
     // Arm the settle loop when smart is still short of its target — a
     // paused seek (or a mode switch) has no other redraw driver. draw()
     // is the single arming point and it checks !easeRaf, so the engine's
@@ -3445,6 +3651,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
 
   return {
     draw,
+    requestDraw,
     resize,
     fit,
     setPack,

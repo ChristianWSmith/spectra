@@ -81,7 +81,7 @@
   // m_iCompTeammateColor the sidecar carries, mapped once here; the live
   // K/D/A + ADR fold feeds the cards' stats row.
   import { colorHexOf, colorSlotsOf } from '../replay/playercolor.js';
-  import { liveStats } from '../replay/livestats.js';
+  import { createLiveStatsCursor, liveStatsIncremental } from '../replay/livestats.js';
   // Card presence (player_connect / player_disconnect): which roster
   // slots are IN the match at the playhead — the ONE rule that decides
   // which player cards exist (the card columns' filter below) — plus the
@@ -1151,8 +1151,17 @@
     });
   }
 
+  // The fold runs through a CURSOR (replay/livestats.js — its contract,
+  // and why the rows/rounds/sideAt identities key it, live there): the
+  // rows are tick-sorted, so a forward playhead only folds the rows it
+  // passed (a late-match tick used to re-walk every drawable row at or
+  // before the playhead), while a backward seek / a refetched rows array
+  // rebuilds from the pure fold's rule. The cursor sits OUTSIDE the
+  // derived — it must outlive individual evaluations — and the derived
+  // still returns a fresh Map every evaluation, so every card re-renders.
+  const statsCursor = createLiveStatsCursor();
   const statsBySteam = $derived(
-    liveStats(drawNorm, {
+    liveStatsIncremental(statsCursor, drawNorm, {
       rounds,
       tick: uiTick,
       sideAt: sideAtTick,
@@ -2014,6 +2023,14 @@
   }
 
   function onScrub(e) {
+    // Scrub-drag draw coalescing (renderer requestDraw): mark the canvas
+    // dirty BEFORE the seek so the seek's synchronous change cascade
+    // (onChange → setHud) stores the HUD payload and lets ONE rAF paint
+    // the burst's latest position — one draw per display frame instead
+    // of one per input event. The seek itself is untouched: the engine
+    // state still updates per event, the flush just rides the next frame
+    // (input ordering preserved — engine.js is not involved in this).
+    renderer?.requestDraw();
     engine?.seekFrame(Number(e.currentTarget.value));
   }
 
