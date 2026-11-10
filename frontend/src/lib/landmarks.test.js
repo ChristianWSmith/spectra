@@ -53,6 +53,9 @@ test('LANDMARK_KINDS is the models.EventKind mirror (order included)', () => {
     'weapon_drop',
     'weapon_pickup',
     'grenade_land',
+    // models.EventKind's grenade_bounce (the SOS bounce rows) — order
+    // mirrors the Go const block, so the mirror pin stays honest.
+    'grenade_bounce',
     'round_start',
     'round_end',
     'player_connect',
@@ -71,6 +74,11 @@ test('the default selection is exactly round starts (sparse default)', () => {
   assert.equal(CATEGORIES.find((c) => c.id === 'kills').default, undefined);
   assert.equal(CATEGORIES.find((c) => c.id === 'round_wins').default, undefined);
   assert.equal(CATEGORIES.find((c) => c.id === 'round_starts').default, true);
+  // The Bounce category (grenade_bounce rows) is OPT-IN like every
+  // non-sparse one — the grenade_lands precedent: its rows ride the draw
+  // feed for the world layer, but the feed lists them only when the chip
+  // is on, so the sparse default must not claim it.
+  assert.equal(CATEGORIES.find((c) => c.id === 'grenade_bounces').default, undefined);
 });
 
 test('every category is well-formed and typed kinds are covered exactly once', () => {
@@ -112,6 +120,10 @@ test('categoryOfKind maps every kind and rejects unknown input', () => {
   // detonation (no det scrubber marker, no stat), and an unclaimed kind
   // would be dropped from the feed/draw set entirely.
   assert.equal(categoryOfKind('grenade_land'), 'grenade_lands');
+  // The BOUNCE rows claim their OWN default-OFF category — an unclaimed
+  // kind would be dropped from the feed AND the draw set entirely (and
+  // the renderer's flight path would lose its vertices).
+  assert.equal(categoryOfKind('grenade_bounce'), 'grenade_bounces');
   // The death-drop evidence normalizes under its OWN default-OFF
   // category — normalizeEvent requires a claim (an unclaimed kind
   // would be dropped from the feed AND the draw set entirely).
@@ -148,6 +160,10 @@ test('drawBucket buckets every drawable kind (renderer/scrubber contract)', () =
   // plan.
   assert.equal(drawBucket('grenade_land', 'Decoy Grenade'), 'land');
   assert.equal(drawBucket('grenade_land'), 'land');
+  // A projectile BOUNCE is neither a detonation nor a rest: its OWN
+  // 'bounce' bucket — the renderer's flight-path vertex pool — with no
+  // scrubber marker (see scrubberMarkerClass below).
+  assert.equal(drawBucket('grenade_bounce'), 'bounce');
   assert.equal(drawBucket('bomb_plant'), 'plant');
   assert.equal(drawBucket('bomb_explode'), 'explode');
   assert.equal(drawBucket('bomb_defuse'), 'defuse');
@@ -184,8 +200,9 @@ test('drawBucket buckets every drawable kind (renderer/scrubber contract)', () =
   // both ride it for the scrubber's tall round ticks; round_start also
   // rides it as the renderer's death-X cutoff — it never draws on the
   // map; drop/pickup ride it for the bomb evidence, damage for the map
-  // flash, and the plant/defuse ATTEMPT lifecycle for the progress rings
-  // and cue points — none of those adds a scrubber marker).
+  // flash, the plant/defuse ATTEMPT lifecycle for the progress rings
+  // and cue points, and grenade_bounce as the flight path's vertices —
+  // none of those adds a scrubber marker).
   assert.deepEqual([...DRAW_KINDS].sort(), [
     'bomb_defuse',
     'bomb_defuse_abort',
@@ -198,6 +215,7 @@ test('drawBucket buckets every drawable kind (renderer/scrubber contract)', () =
     'bomb_plant_begin',
     'damage',
     'grenade',
+    'grenade_bounce',
     'grenade_land',
     'grenade_throw',
     'kill',
@@ -281,6 +299,9 @@ test('scrubberMarkerClass maps every drawable bucket (the markers contract)', ()
   // decoy detonations share the HE path), not the moment the decoy
   // started making noise.
   assert.equal(scrubberMarkerClass('land'), '');
+  // …and 'bounce' too: the vertices of a flight carry no scrubber tick of
+  // their own — the flight's DETONATION carries the det marker.
+  assert.equal(scrubberMarkerClass('bounce'), '');
   assert.equal(scrubberMarkerClass(''), '');
   assert.equal(scrubberMarkerClass(null), '');
   // 'decoy' is no longer a bucket ANYWHERE: detonationStyle('Decoy
@@ -329,6 +350,15 @@ test('normalizeEvent tags the row, keeps source fields and drops unknown kinds',
   assert.ok(land, 'grenade_land rows survive normalization');
   assert.equal(land.category, 'grenade_lands');
   assert.equal(land.bucket, 'land');
+  // A BOUNCE row survives under its OWN default-OFF category with the
+  // vertex bucket (unclaimed kinds are dropped), and it keeps the source
+  // fields the renderer's projectile join reads — normalizeEvent spreads
+  // them through.
+  const bnc = normalizeEvent({ ...ev, kind: 'grenade_bounce', weapon: 'HE Grenade', posX: 3 }, {});
+  assert.ok(bnc, 'grenade_bounce rows survive normalization');
+  assert.equal(bnc.category, 'grenade_bounces');
+  assert.equal(bnc.bucket, 'bounce');
+  assert.equal(bnc.posX, 3);
   assert.equal(normalizeEvent({ ...ev, kind: 'damage' }, {}).bucket, 'damage');
   // The death-drop rows survive normalization under their own category
   // (unclaimed kinds are dropped) and carry the drop layer's buckets.

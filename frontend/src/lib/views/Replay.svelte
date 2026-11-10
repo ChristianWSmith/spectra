@@ -21,6 +21,8 @@
     getBlindDurations,
     getDropDetails,
     getChat,
+    getSoundEvents,
+    getSoundEventPresence,
     getGenericEvents,
     getGenericHistogram,
     getMatch,
@@ -148,17 +150,20 @@
   let uiVoiceMutedAll = $state(false);
   const uiVoiceMute = $state({}); // steamId → bool (per-player mute — card phase)
 
-  // --- Replay audio (voice + guns + utility + C4 + announcer) ---------------
-  // The volume popover under the scrubber drives FIVE independent
+  // --- Replay audio (voice + guns + utility + C4 + announcer + footsteps) ---
+  // The volume popover under the scrubber drives SIX independent
   // faders: voice (the voice engine's master), guns, utility, C4 (the
-  // sfx engine's three gain buckets — C4 carries the planted bomb's
-  // beeps and its explosion) and announcer (the round/bomb voice lines).
+  // sfx engine's four gain buckets — C4 carries the planted bomb's
+  // beeps and its explosion), announcer (the round/bomb voice lines) and
+  // FOOTSTEPS (the player-sound bus — footsteps/lands/jumps/fall
+  // damage, muted by default).
   // The levels persist in the kvstore
   // (voice_volume / guns_volume / utility_volume / c4_volume /
-  // announcer_volume — prefs.go;
+  // announcer_volume / footsteps_volume — prefs.go;
   // frontend-only keys), read in load() and applied on every input; the
   // VOICE mute is uiVoiceMutedAll (engine-owned, cards consume it) while
-  // the guns/utility/C4/announcer mutes are session-only on the sfx
+  // the guns/utility/C4/announcer/footsteps mutes are session-only on
+  // the sfx
   // engine. sfx
   // itself is null until startEngine proves the sounds manifest is
   // non-empty.
@@ -167,10 +172,15 @@
   let uiUtilVol = $state(AUDIO_VOL_DEFAULT);
   let uiC4Vol = $state(AUDIO_VOL_DEFAULT);
   let uiAnnouncerVol = $state(AUDIO_VOL_DEFAULT);
+  // The footsteps fader's default is 0 (MUTED by default — the same
+  // default its pref read uses, prefVolume(v, 0)); it is NOT
+  // AUDIO_VOL_DEFAULT.
+  let uiStepsVol = $state(0);
   let uiGunsMuted = $state(false);
   let uiUtilMuted = $state(false);
   let uiC4Muted = $state(false);
   let uiAnnouncerMuted = $state(false);
+  let uiStepsMuted = $state(false);
   let sfx = null;
   let sfxErr = $state('');
   // The volume popover: one Popover anchored to the unmute-codicon
@@ -335,6 +345,11 @@
   const PAGE = 500; // per-source page size; PAGE+1 probes "there is more"
 
   let drawRows = $state([]); // drawable-kind anchors, fetched once per match
+  // The match's sound_events rows (footsteps/lands/jumps/fall damage) —
+  // fetched ONCE in load(), ONLY after GetSoundEventPresence proved the
+  // match has any (presence-zero matches keep this [] and their footsteps
+  // stay silent), and pushed to the sfx engine beside rounds/landmarks.
+  let soundRows = [];
   // Connection rows (player_connect / player_disconnect), fetched once
   // per match beside drawRows: the roster keeps a slot for a player who
   // disconnects mid-demo AND for a bot that joins late, so without them
@@ -1530,6 +1545,7 @@
     uiGunsMuted = false; // …including the sfx bucket mutes (session-only)
     uiUtilMuted = false;
     uiAnnouncerMuted = false;
+    uiStepsMuted = false;
     sfxErr = '';
     if (input) input.detach();
     if (ro) ro.disconnect();
@@ -1627,6 +1643,57 @@
       if (isCounted(r) && Number.isFinite(r.startTick)) return r.startTick;
     }
     return 0;
+  }
+
+  // grenadeEntity — the projectile entity id out of one row's
+  // detail_json (extract stamps it on grenade_throw / grenade /
+  // grenade_bounce rows: the ONE id the throw, every bounce and the
+  // blast share — extract/handlers.go). models.EventRow stays
+  // payload-free, so the value reaches the view through the per-row
+  // EventDetail read; 0/absent = unknown and the renderer falls back to
+  // its round+weapon pairing (never a guessed id).
+  function grenadeEntity(detailJson) {
+    if (!detailJson) return 0;
+    try {
+      const e = Number(JSON.parse(detailJson).entity);
+      return Number.isFinite(e) && e > 0 ? e : 0;
+    } catch {
+      return 0; // malformed payload → unknown, never a throw
+    }
+  }
+
+  // hydrateGrenadeEntities — stamps `entity` onto the draw rows the
+  // renderer's flight join reads (renderer.joinBounceVerts: throw →
+  // bounces → det by projectile). Worth doing ONLY when the match
+  // actually HAS bounce rows (a pre-bounce import has none → zero extra
+  // reads), because the payloads live on the per-row EventDetail read
+  // (GetEvent), not on the list read. Bounded concurrency, fail-soft:
+  // any failed read leaves that row entity-less → the fallback pairing,
+  // never a load error.
+  async function hydrateGrenadeEntities(rows) {
+    const kinds = new Set(['grenade_throw', 'grenade', 'grenade_bounce']);
+    const targets = rows.filter((r) => kinds.has(r.kind) && Number.isFinite(r.id));
+    if (!targets.length || !rows.some((r) => r.kind === 'grenade_bounce')) return rows;
+    const byId = new Map();
+    let next = 0;
+    const CONCURRENCY = 12;
+    const worker = async () => {
+      for (;;) {
+        const i = next++;
+        if (i >= targets.length) return;
+        const r = targets[i];
+        try {
+          const d = await getEvent(r.id);
+          const e = grenadeEntity(d && d.detailJson);
+          if (e > 0) byId.set(r.id, e);
+        } catch {
+          /* fail-soft: that row keeps entity 0 → the fallback pairing */
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, targets.length) }, worker));
+    if (!byId.size) return rows;
+    return rows.map((r) => (byId.has(r.id) ? { ...r, entity: byId.get(r.id) } : r));
   }
 
   async function load() {
@@ -1749,10 +1816,22 @@
           getDropDetails(id).catch(() => []),
         ]);
         const dropsBySeq = new Map((dropDetails || []).map((d) => [d.seq, d]));
-        drawRows = (rows || []).map((r) => {
-          const d = dropsBySeq.get(r.seq);
-          return d ? { ...r, dropCat: d.cat, dropAmmo: { mag: d.mag, reserve: d.reserve } } : r;
-        });
+        drawRows = await hydrateGrenadeEntities(
+          (rows || []).map((r) => {
+            const d = dropsBySeq.get(r.seq);
+            return d ? { ...r, dropCat: d.cat, dropAmmo: { mag: d.mag, reserve: d.reserve } } : r;
+          }),
+        );
+      }
+      // Player sounds (footsteps/lands/jumps/fall damage): PRESENCE
+      // first — a match whose sound_events table is empty (imported
+      // before the SOS work, never re-imported) fetches NOTHING, pushes
+      // nothing and stays silent with no error (the sfx engine's
+      // footstepCues only ever sees rows this gate let through).
+      {
+        const pres = await getSoundEventPresence(id).catch(() => null);
+        const total = pres && Number.isFinite(pres.total) ? pres.total : 0;
+        soundRows = total > 0 ? (await getSoundEvents(id, 0, 0).catch(() => [])) || [] : [];
       }
       // Connection events for the card-visibility rule (the SAME narrow
       // read shape as the blind rows below): one pass over the match's
@@ -1783,25 +1862,28 @@
       // push carries the persisted choice; unset / unreadable → OFF (the
       // default — the freeze skip is opt-in).
       uiSkipFreeze = (await getPref('skip_freeze').catch(() => null)) === true;
-      // Replay-audio faders: the five persisted levels (voice/guns/
-      // utility/C4/announcer) are read here — before startEngine applies
-      // them to
+      // Replay-audio faders: the six persisted levels (voice/guns/
+      // utility/C4/announcer/footsteps) are read here — before
+      // startEngine applies them to
       // the voice master and (once the sounds manifest proves non-empty)
-      // the sfx engine. One Promise.all, fail-soft to the 0.8 default
-      // like every other pref read in load().
+      // the sfx engine. One Promise.all, fail-soft to each key's default
+      // like every other pref read in load(). The FOOTSTEPS level reads
+      // with default 0 — that bus ships muted (not AUDIO_VOL_DEFAULT).
       {
-        const [vv, gv, uv, cv, av] = await Promise.all([
+        const [vv, gv, uv, cv, av, sv] = await Promise.all([
           getPref('voice_volume').catch(() => null),
           getPref('guns_volume').catch(() => null),
           getPref('utility_volume').catch(() => null),
           getPref('c4_volume').catch(() => null),
           getPref('announcer_volume').catch(() => null),
+          getPref('footsteps_volume').catch(() => null),
         ]);
         uiVoiceVol = prefVolume(vv);
         uiGunsVol = prefVolume(gv);
         uiUtilVol = prefVolume(uv);
         uiC4Vol = prefVolume(cv);
         uiAnnouncerVol = prefVolume(av);
+        uiStepsVol = prefVolume(sv, 0); // footsteps_volume's default is 0 (muted)
       }
       // Flash-white overlay: the blind events joined with their narrow
       // flash-duration read — the duration lives on detail_json
@@ -2026,6 +2108,10 @@
       });
       sfx.setRounds(rounds); // freeze gate + the match-point scoreline for the cue lists
       sfx.setLandmarks(drawNorm); // rebuilds them under it
+      // Player sounds: the presence-gated sound_events rows (load()
+      // fetched them only when the match has any) — the footstep cue
+      // list is rebuilt from them, gated against the manifest keys.
+      sfx.setSoundEvents(soundRows);
       // Gun cues: bullets.js' ONE derivation of the state stream (the
       // renderer's tracers read the same rows) — guns-only and
       // freeze-filtered upstream, so the sound engine just plays them.
@@ -2040,10 +2126,14 @@
       sfx.setUtilityVolume(uiUtilVol);
       sfx.setC4Volume(uiC4Vol);
       sfx.setAnnouncerVolume(uiAnnouncerVol);
+      // The footsteps fader ships at 0 — applying it explicitly keeps the
+      // engine's own default (0) and the UI state in lockstep.
+      sfx.setFootstepsVolume(uiStepsVol);
       sfx.setMuted('guns', uiGunsMuted);
       sfx.setMuted('utility', uiUtilMuted);
       sfx.setMuted('c4', uiC4Muted);
       sfx.setMuted('announcer', uiAnnouncerMuted);
+      sfx.setMuted('footsteps', uiStepsMuted);
     });
     // Entry position rides the URL — durable and deep-linkable.
     // entrySeekTick is the ONE resolver: an exact ?tick= wins, else the
@@ -2413,7 +2503,8 @@
   // onStateChange mirror updates uiVoiceMutedAll (aria-pressed/styling),
   // so the control and the engine can never disagree. No voice in this
   // match → the row's controls are disabled (voiceEngine stays null,
-  // no-op); the guns/utility/C4/announcer rows keep working either way.
+  // no-op); the guns/utility/C4/announcer/footsteps rows keep working
+  // either way.
   function toggleVoiceMuteAll() {
     voiceEngine?.setMutedAll(!uiVoiceMutedAll);
   }
@@ -2427,6 +2518,7 @@
     utility: 'utility_volume',
     c4: 'c4_volume',
     announcer: 'announcer_volume',
+    footsteps: 'footsteps_volume',
   };
 
   function onVolInput(bucket, e) {
@@ -2448,6 +2540,11 @@
       // the fall-through would move utility instead.
       uiAnnouncerVol = v;
       sfx?.setAnnouncerVolume(v);
+    } else if (bucket === 'footsteps') {
+      // …and the footsteps fader owns the player-sound bus (the 5th
+      // gain) — the fall-through would move utility instead.
+      uiStepsVol = v;
+      sfx?.setFootstepsVolume(v);
     } else {
       uiUtilVol = v;
       sfx?.setUtilityVolume(v);
@@ -2464,11 +2561,14 @@
             ? uiC4Vol
             : bucket === 'announcer'
               ? uiAnnouncerVol
-              : uiUtilVol;
+              : bucket === 'footsteps'
+                ? uiStepsVol
+                : uiUtilVol;
     setPref(VOL_KEYS[bucket], level).catch((e) => (sfxErr = errText(e)));
   }
 
-  // Guns/utility/C4/announcer mutes are session-only (unlike the
+  // Guns/utility/C4/announcer/footsteps mutes are session-only (unlike
+  // the
   // faders): they
   // live on the sfx engine and reset with it.
   function toggleGunsMute() {
@@ -2491,15 +2591,24 @@
     sfx?.setMuted('announcer', uiAnnouncerMuted);
   }
 
+  function toggleStepsMute() {
+    uiStepsMuted = !uiStepsMuted;
+    sfx?.setMuted('footsteps', uiStepsMuted);
+  }
+
   // The trigger reads "warn" only when EVERY audible category is muted —
   // without voice in the match the audible set is guns + utility + C4 +
-  // announcer.
+  // announcer. The FOOTSTEPS bus only counts while its fader is above 0
+  // (it ships at 0 — muted by default — so an untouched footsteps row
+  // must not keep the trigger from reporting "everything audible is
+  // muted", and an unmuted flag on a 0-fader bus makes no sound).
   const audioAllMuted = $derived(
     (!voicePresence || !voicePresence.hasVoice || uiVoiceMutedAll) &&
       uiGunsMuted &&
       uiUtilMuted &&
       uiC4Muted &&
-      uiAnnouncerMuted,
+      uiAnnouncerMuted &&
+      (uiStepsVol === 0 || uiStepsMuted),
   );
 </script>
 
@@ -2936,12 +3045,14 @@
           </span>
 
           <!-- Volume (the old mute-all button, repurposed): ONE popover
-               with the five replay-audio faders — Voice / Guns /
-               Utility / C4 / Announcer — anchored exactly like the loop
+               with the six replay-audio faders — Voice / Guns /
+               Utility / C4 / Announcer / Footsteps — anchored exactly
+               like the loop
                control
                above. The trigger is NEVER disabled: voice is just one
-               row of five (its row goes disabled when the match has no
-               voice, while guns/utility/C4/announcer always work). The
+               row of six (its row goes disabled when the match has no
+               voice, while guns/utility/C4/announcer/footsteps always
+               work). The
                engine
                owns the voice mute flag and mirrors it through
                onStateChange. -->
@@ -2951,7 +3062,7 @@
               class:warn={audioAllMuted}
               aria-expanded={volOpen}
               aria-label="Volume"
-              title="Volume — voice, guns, utility, C4 and announcer"
+              title="Volume — voice, guns, utility, C4, announcer and footsteps"
               onclick={() => (volOpen = !volOpen)}
               ><span class="codicon codicon-unmute" aria-hidden="true"></span></button
             >
@@ -3072,6 +3183,29 @@
                     title={uiAnnouncerMuted ? 'Unmute announcer' : 'Mute announcer'}
                     onclick={toggleAnnouncerMute}
                     ><span class="codicon {uiAnnouncerMuted ? 'codicon-mute' : 'codicon-unmute'}" aria-hidden="true"></span></button
+                  >
+                </div>
+                <div class="rp-vol-row">
+                  <label class="field-label" for="rp-vol-footsteps">Footsteps</label>
+                  <input
+                    class="rp-vol-range"
+                    id="rp-vol-footsteps"
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={Math.round(uiStepsVol * 100)}
+                    oninput={(e) => onVolInput('footsteps', e)}
+                    onchange={() => onVolChange('footsteps')}
+                    aria-label="Footsteps volume"
+                  />
+                  <button
+                    class="btn small"
+                    class:warn={uiStepsMuted}
+                    aria-pressed={uiStepsMuted}
+                    aria-label="Mute footsteps"
+                    title={uiStepsMuted ? 'Unmute footsteps' : 'Mute footsteps'}
+                    onclick={toggleStepsMute}
+                    ><span class="codicon {uiStepsMuted ? 'codicon-mute' : 'codicon-unmute'}" aria-hidden="true"></span></button
                   >
                 </div>
               </div>

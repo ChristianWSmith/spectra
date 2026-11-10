@@ -1,7 +1,10 @@
 // Sound-effect cue math tests (lib/replay/sfx.js): the utility-cue
 // derivation (flashbang double-dispatch dedupe, the decoy→HE detonation
 // remap, C4 on its own bus, the equip skip, the freeze gate), the throw
-// cues (`<weapon> throw` manifest keys), the knife damage cues, the
+// cues (`<weapon> throw` manifest keys), the grenade BOUNCE cues
+// (`<weapon> bounce` on the utility channel — the decoy has no bounce
+// group), the player-sound cues (footstepCues — kind/material → manifest
+// group, gated by the extracted keys, silence for Silent/unmapped), the knife damage cues, the
 // plant/defuse lifecycle cues (bombActionCues — THREE manifest groups
 // played, the plant-complete device cue's PLAYBACK removed by owner
 // instruction 2026-11-09; silent cancels, the shared bomb.js
@@ -14,7 +17,7 @@
 // bullet cue window, the decoy fake-gunshot plan window, the C4 beep
 // synthesis (bomb rows → schedule → deterministic site group),
 // the range/seek guards, the random variant pick, the internal gain
-// scales and the weapon-name-less manifest boundary.
+// scales (five buses) and the weapon-name-less manifest boundary.
 // Run: node --test src/lib/sfx.test.js
 // (from frontend/; the lib test glob src/lib/*.test.js picks it up too).
 import test from 'node:test';
@@ -52,10 +55,14 @@ const {
   UTILITY_GAIN_SCALE,
   C4_GAIN_SCALE,
   ANNOUNCER_GAIN_SCALE,
+  STEP_GAIN_SCALE,
   SOUND_DETONATION_BUCKETS,
   ANNOUNCER_ORDER_DELAY_S,
   grenadeCues,
   throwCues,
+  bounceCues,
+  footstepCues,
+  footstepGroup,
   knifeCues,
   bombActionCues,
   roundEndCues,
@@ -261,6 +268,178 @@ test('throwCues: FREEZE time gates the throw, (tick|name) dedupes', () => {
   // No rounds pushed → nothing gated (the gate fails open, it never
   // invents a freeze window).
   assert.equal(throwCues([{ kind: 'grenade_throw', weapon: 'HE Grenade', tick: 32 }]).length, 1);
+});
+
+// --- grenade bounce cues ----------------------------------------------------
+
+test('bounceCues: grenade_bounce rows cue `<weapon> bounce` on the UTIL channel', () => {
+  const cues = bounceCues([
+    { kind: 'grenade_bounce', bucket: 'bounce', weapon: 'HE Grenade', tick: 10 },
+    { kind: 'grenade_bounce', bucket: 'bounce', weapon: 'Flashbang', tick: 20 },
+    { kind: 'grenade_bounce', bucket: 'bounce', weapon: 'Smoke Grenade', tick: 30 },
+    { kind: 'grenade_bounce', bucket: 'bounce', weapon: 'Molotov', tick: 40 },
+    { kind: 'grenade_bounce', bucket: 'bounce', weapon: 'Incendiary Grenade', tick: 50 },
+    // The DECOY has no bounce soundevent by design (extract/sos.go — there
+    // is no decoy bounce), so its row is silence, never a substitute …
+    { kind: 'grenade_bounce', bucket: 'bounce', weapon: 'Decoy Grenade', tick: 60 },
+    // … and neither an unknown weapon nor a missing one invents a group …
+    { kind: 'grenade_bounce', bucket: 'bounce', weapon: 'AK-47', tick: 70 },
+    { kind: 'grenade_bounce', bucket: 'bounce', weapon: '', tick: 80 },
+    // … while throws/detonations keep their OWN cue lists (not this one).
+    { kind: 'grenade_throw', bucket: 'throw', weapon: 'HE Grenade', tick: 90 },
+    { kind: 'grenade', bucket: 'he', weapon: 'HE Grenade', tick: 100 },
+    null, // hostile input never throws
+  ]);
+  assert.deepEqual(
+    cues.map((c) => `${c.tick}:${c.name}:${c.bucket}`),
+    [
+      '10:HE Grenade bounce:utility',
+      '20:Flashbang bounce:utility',
+      '30:Smoke Grenade bounce:utility',
+      '40:Molotov bounce:utility',
+      '50:Incendiary Grenade bounce:utility',
+    ],
+  );
+  // Sorted by tick (the engine's range window relies on it).
+  assert.ok(cues.every((c, i) => i === 0 || cues[i - 1].tick <= c.tick));
+});
+
+test('bounceCues: FREEZE time gates the bounce, (tick|name) dedupes', () => {
+  const cues = bounceCues(
+    [
+      { kind: 'grenade_bounce', weapon: 'HE Grenade', tick: 32 }, // round-1 freeze → dropped
+      { kind: 'grenade_bounce', weapon: 'HE Grenade', tick: 100 }, // live → kept
+      { kind: 'grenade_bounce', weapon: 'HE Grenade', tick: 100 }, // duplicate → one cue
+      { kind: 'grenade_bounce', weapon: 'Flashbang', tick: 100 }, // same tick, OTHER grenade → kept
+    ],
+    FREEZE_ROUNDS,
+  );
+  assert.deepEqual(
+    cues.map((c) => `${c.tick}:${c.name}`),
+    ['100:HE Grenade bounce', '100:Flashbang bounce'],
+  );
+  // No rounds pushed → nothing gated (the same fail-open rule as throwCues).
+  assert.equal(bounceCues([{ kind: 'grenade_bounce', weapon: 'HE Grenade', tick: 32 }]).length, 1);
+});
+
+// --- player sounds (footsteps / lands / jumps / fall damage) ----------------
+
+// The extracted manifest's PLAYER-SOUND keys (internal/mappack/sounds.go
+// soundTable — the 38 groups the Go side extracted; a fixture of the REAL
+// key set, so "unmapped → silence" is asserted against the truth, not a
+// convenient subset).
+const PLAYER_KEYS = new Set([
+  'land concrete',
+  'jump',
+  'gear CT',
+  'gear T',
+  'falldamage',
+  'step bass',
+  'step carpet',
+  'step concrete_ct',
+  'step dirt',
+  'step glass',
+  'step grass',
+  'step gravel',
+  'step ladder',
+  'step ladder_wood',
+  'step metal_auto',
+  'step metal_chainlink',
+  'step metal_grate',
+  'step metal_railing_a',
+  'step metal_solid',
+  'step metal_vent',
+  'step mud',
+  'step plastic_barrel',
+  'step puddle',
+  'step puddle_small',
+  'step rubber',
+  'step sand',
+  'step snow',
+  'step tile',
+  'step water_entry',
+  'step water_exit',
+  'step water_wade',
+  'step wet',
+  'step wood',
+]);
+
+const snd = (over) => ({ tick: 100, kind: 'step', material: 'Gravel', teamPrefix: '', ...over });
+
+test('footstepCues: kind → manifest group, gated by the extracted keys', () => {
+  const cues = footstepCues(
+    [
+      snd({ tick: 10, material: 'Gravel' }),
+      snd({ tick: 20, material: 'Concrete' }), // → the concrete_ct family
+      snd({ tick: 30, material: 'MetalGrate' }), // camelCase → the file family
+      snd({ tick: 40, kind: 'land', material: '' }), // material-less landing
+      snd({ tick: 50, kind: 'land', material: 'Gravel' }), // no per-material land key → the one family
+      snd({ tick: 60, kind: 'jump', teamPrefix: 'ct' }),
+      snd({ tick: 70, kind: 'jump', teamPrefix: 't' }),
+      snd({ tick: 80, kind: 'jump', teamPrefix: '' }),
+      snd({ tick: 90, kind: 'fall' }),
+      // SILENT materials and unextracted families are SILENCE, never a
+      // substitution for another surface's sample …
+      snd({ tick: 110, material: 'Silent' }),
+      snd({ tick: 120, material: 'Cardboard' }), // no `step cardboard` family exists
+      snd({ tick: 130, material: 'Water' }), // three water families, none unambiguous
+      // … and an unmodelled kind makes nothing either.
+      snd({ tick: 140, kind: 'grenade', material: 'Gravel' }),
+      snd({ tick: 150, kind: '' }),
+      null, // hostile input never throws
+    ],
+    PLAYER_KEYS,
+  );
+  assert.deepEqual(
+    cues.map((c) => `${c.tick}:${c.name}:${c.bucket}`),
+    [
+      '10:step gravel:footsteps',
+      '20:step concrete_ct:footsteps',
+      '30:step metal_grate:footsteps',
+      '40:land concrete:footsteps',
+      '50:land concrete:footsteps',
+      '60:gear CT:footsteps',
+      '70:gear T:footsteps',
+      '80:jump:footsteps',
+      '90:falldamage:footsteps',
+    ],
+  );
+  assert.ok(cues.every((c, i) => i === 0 || cues[i - 1].tick <= c.tick));
+});
+
+test('footstepCues: presence-zero → no cues, and the key gate is the silence rule', () => {
+  // A match with no sound_events rows (GetSoundEventPresence total 0 —
+  // the Replay never fetches/pushes any) is silence by construction.
+  assert.deepEqual(footstepCues([], PLAYER_KEYS), []);
+  assert.deepEqual(footstepCues(null, PLAYER_KEYS), []);
+  // The gate is checked against the REAL manifest keys: a resolved group
+  // the manifest does not carry makes no cue (an empty key set silences
+  // everything — the strictest form of "never substitute").
+  assert.deepEqual(footstepCues([snd({ material: 'Cardboard' })], PLAYER_KEYS), []);
+  assert.deepEqual(footstepCues([snd({ material: 'Cardboard' })], new Set()), []);
+  // Without a key set (the manifest has not loaded yet) the resolution
+  // stands on its own — playback's exact-name lookup still refuses an
+  // unknown group, so nothing is ever substituted.
+  assert.deepEqual(footstepCues([snd({ material: 'Gravel' })]).map((c) => c.name), ['step gravel']);
+  // Deduped by (tick|name): two players on one surface in one tick = ONE cue.
+  assert.equal(
+    footstepCues([snd({ tick: 5 }), snd({ tick: 5 })], PLAYER_KEYS).length,
+    1,
+  );
+});
+
+test('footstepGroup: the one kind → group rule (pure, per-row)', () => {
+  assert.equal(footstepGroup(snd({ kind: 'fall' }), PLAYER_KEYS), 'falldamage');
+  assert.equal(footstepGroup(snd({ kind: 'jump', teamPrefix: 'ct' }), PLAYER_KEYS), 'gear CT');
+  assert.equal(footstepGroup(snd({ kind: 'jump', teamPrefix: 't' }), PLAYER_KEYS), 'gear T');
+  assert.equal(footstepGroup(snd({ kind: 'jump' }), PLAYER_KEYS), 'jump');
+  assert.equal(footstepGroup(snd({ kind: 'land', material: 'Concrete' }), PLAYER_KEYS), 'land concrete');
+  assert.equal(footstepGroup(snd({ kind: 'step', material: 'wade' }), PLAYER_KEYS), 'step water_wade');
+  // A `Silent` material resolves to NO family at all (no group on
+  // purpose — internal/mappack/sounds.go) and an unknown kind is silence.
+  assert.equal(footstepGroup(snd({ material: 'Silent' }), PLAYER_KEYS), null);
+  assert.equal(footstepGroup(snd({ kind: 'kill' }), PLAYER_KEYS), null);
+  assert.equal(footstepGroup(null, PLAYER_KEYS), null);
 });
 
 // --- knife cues ------------------------------------------------------------
@@ -880,7 +1059,7 @@ test('pickVariant picks uniformly in range and never leaves the list', () => {
 
 // --- internal mix calibration ----------------------------------------------
 
-test('gain scales: guns/utility at 1/12, C4 at 1/6, announcer at 1/2 — internal to the mixer', () => {
+test('gain scales: guns/utility at 1/12, C4 at 1/6, announcer & footsteps at 1/2 — internal to the mixer', () => {
   // applyGains() multiplies the fader level by these — the pref default,
   // the sliders and prefs.go never move (a user-facing 80% still reads
   // 80%), so pinning the constants here pins the mix. Voice is
@@ -903,7 +1082,12 @@ test('gain scales: guns/utility at 1/12, C4 at 1/6, announcer at 1/2 — interna
   // asserts the HALVED value the owner asked for.
   assert.equal(C4_GAIN_SCALE, 1 / 6);
   assert.equal(ANNOUNCER_GAIN_SCALE, 1 / 2);
+  // The 5th bus (FOOTSTEPS) scales like the announcer, but its pref
+  // default is 0 — the bus ships muted, so AUDIO_VOL_DEFAULT is
+  // deliberately NOT its default. Both facts pinned here.
+  assert.equal(STEP_GAIN_SCALE, 1 / 2);
   assert.equal(AUDIO_VOL_DEFAULT, 0.8); // the user-facing default is untouched
+  assert.equal(prefVolume(null, 0), 0); // footsteps_volume's default read
 });
 
 // --- C4 beeps ---------------------------------------------------------------
@@ -1138,6 +1322,15 @@ const BEEP_MANIFEST = {
     // Music.Match.MatchPoint file, sounds/music/cs_stinger.vsnd_c —
     // cs2find-discovered 2026-11-09, not one of the five VO lines).
     matchpoint: ['/api/sounds/cs_stinger.wav'],
+    // The grenade BOUNCE groups (soundTable's five bounce entries — the
+    // bounce soundevent's own file sets) …
+    'HE Grenade bounce': ['/api/sounds/he_bounce-1.wav'],
+    'Flashbang bounce': ['/api/sounds/grenade_hit1.wav'],
+    // … and the FOOTSTEPS bus's player-sound groups (soundTable's
+    // `step <family>` / land / jump / gear / falldamage keys).
+    'step gravel': ['/api/sounds/gravel_01.wav'],
+    'land concrete': ['/api/sounds/land_concrete_01.wav'],
+    falldamage: ['/api/sounds/damage1.wav'],
   },
 };
 
@@ -1496,17 +1689,88 @@ test('engine: the match-point stinger plays once at freeze start on the announce
   }
 });
 
+// The BOUNCE cue through the REAL play path: grenade_bounce rows →
+// rebuildCues → (prevTick, curTick] → playGroup on the UTILITY bus — the
+// same channel the throw/detonation cues ride (bounceCues' bucket).
+test('engine: bounce cues play on the utility bus through the guarded window', async () => {
+  resetSoundManifest();
+  const restoreFetch = stubManifestFetch();
+  try {
+    const { sfx, engine, ctx } = await makeSfx();
+    sfx.setLandmarks([
+      { kind: 'grenade_bounce', bucket: 'bounce', weapon: 'HE Grenade', tick: 1000 },
+      // A decoy bounce row makes NO cue (no decoy bounce group exists) —
+      // the pure gate already pins it; nothing here may play for it.
+      { kind: 'grenade_bounce', bucket: 'bounce', weapon: 'Decoy Grenade', tick: 1001 },
+    ]);
+    engine.emit({ playing: true, speed: 1, tick: 990 }); // first draw → seed (jump)
+    engine.emit({ playing: true, speed: 1, tick: 1005 }); // ordinary step → crosses the bounce
+    const he = ctx.sources.filter((s) => s.buffer && s.buffer.url === '/api/sounds/he_bounce-1.wav');
+    assert.equal(he.length, 1, 'the HE bounce plays exactly once');
+    assert.equal(he[0].bus, ctx.gains[1], 'bounces ride the utility bus (2nd gain)');
+    // A scrub never replays what it crossed (cueGapJump re-seeds).
+    const before = ctx.sources.length;
+    engine.emit({ playing: true, speed: 1, tick: 4000 });
+    assert.equal(ctx.sources.length, before, 'the forward jump replays nothing');
+    sfx.destroy();
+  } finally {
+    restoreFetch();
+  }
+});
+
+// The FOOTSTEP cue through the REAL play path: sound_events rows pushed
+// by setSoundEvents (the Replay does it only for a match whose presence
+// total was > 0) → rebuildCues → (prevTick, curTick] → playGroup on the
+// 5th bus, with the manifest keys gating the material→group resolution.
+test('engine: footstep cues play on the 5th (footsteps) bus; unextracted surfaces stay silent', async () => {
+  resetSoundManifest();
+  const restoreFetch = stubManifestFetch();
+  try {
+    const { sfx, engine, ctx } = await makeSfx();
+    sfx.setSoundEvents([
+      { tick: 1000, kind: 'step', material: 'Gravel', teamPrefix: '' },
+      { tick: 1010, kind: 'fall' },
+      { tick: 1020, kind: 'step', material: 'Cardboard', teamPrefix: '' }, // no such group
+    ]);
+    engine.emit({ playing: true, speed: 1, tick: 995 }); // first draw → seed (jump)
+    engine.emit({ playing: true, speed: 1, tick: 1010 }); // ordinary step (≤19.2 ticks) → crosses both rows
+    const steps = ctx.sources.filter((s) => s.buffer && s.buffer.url === '/api/sounds/gravel_01.wav');
+    assert.equal(steps.length, 1, 'the gravel step plays exactly once');
+    assert.equal(steps[0].bus, ctx.gains[4], 'footsteps ride the 5th bus');
+    assert.equal(
+      ctx.sources.filter((s) => s.buffer && s.buffer.url === '/api/sounds/damage1.wav').length,
+      1,
+      'the fall-damage cue rides the same bus',
+    );
+    // EXACTLY those two: the Cardboard step resolved to a family the
+    // manifest does not carry, so it made no cue (silence, no substitute).
+    assert.equal(ctx.sources.length, 2, 'only the two extracted groups played');
+    // The footsteps fader ships at 0 — the same window with the fader
+    // untouched still spawns sources (the gain node is what silences
+    // them); a mute zeroes it (pinned in the applyGains test below).
+    assert.equal(ctx.gains[4].gain.value, 0, 'the footsteps bus ships muted');
+    sfx.destroy();
+  } finally {
+    restoreFetch();
+  }
+});
+
 // The internal mix calibration through the REAL applyGains path: every
 // bus's gain IS its fader level × the exported scale, so the halved
-// ANNOUNCER/C4 constants (owner instruction 2026-11-09) reach the
-// mixer while the user-facing fader stays a plain 0..1 level.
-test('engine: applyGains multiplies each fader by its bus scale (announcer/C4 halved)', async () => {
+// ANNOUNCER/C4 constants (owner instruction 2026-11-09) and the 1/2
+// FOOTSTEPS scale reach the mixer while the user-facing fader stays a
+// plain 0..1 level.
+test('engine: applyGains multiplies each fader by its bus scale (five buses, footsteps ships at 0)', async () => {
   resetSoundManifest();
   const restoreFetch = stubManifestFetch();
   try {
     const { sfx, ctx } = await makeSfx();
     // Creation order pins the gains (sfx.js): guns=0, utility=1, C4=2,
-    // announcer=3 — all at the default fader × their own scale.
+    // announcer=3, footsteps=4 — the four established indexes never move
+    // (the 5th bus is created AFTER the announcer), and every bus starts
+    // at its own default fader × its own scale. The footsteps fader's
+    // default is 0 (the bus ships MUTED), so its gain starts at 0 —
+    // AUDIO_VOL_DEFAULT × STEP_GAIN_SCALE would be a bug.
     assert.deepEqual(
       ctx.gains.map((g) => g.gain.value),
       [
@@ -1514,6 +1778,7 @@ test('engine: applyGains multiplies each fader by its bus scale (announcer/C4 ha
         AUDIO_VOL_DEFAULT * UTILITY_GAIN_SCALE,
         AUDIO_VOL_DEFAULT * C4_GAIN_SCALE,
         AUDIO_VOL_DEFAULT * ANNOUNCER_GAIN_SCALE,
+        0,
       ],
     );
     // Faders are still plain 0..1 levels (untouched ranges): a full C4
@@ -1523,9 +1788,19 @@ test('engine: applyGains multiplies each fader by its bus scale (announcer/C4 ha
     sfx.setAnnouncerVolume(1);
     assert.equal(ctx.gains[2].gain.value, C4_GAIN_SCALE, 'C4 at 1/6 behind a 100% fader');
     assert.equal(ctx.gains[3].gain.value, ANNOUNCER_GAIN_SCALE, 'announcer at 1/2 behind a 100% fader');
+    // The footsteps fader behaves like every other one (0..1 in, scale
+    // applied inside the mixer) — it simply STARTS at 0.
+    sfx.setFootstepsVolume(1);
+    assert.equal(ctx.gains[4].gain.value, STEP_GAIN_SCALE, 'footsteps at 1/2 behind a 100% fader');
+    sfx.setFootstepsVolume(0.5);
+    assert.equal(ctx.gains[4].gain.value, 0.5 * STEP_GAIN_SCALE, 'the fader stays a plain 0..1 level');
     // A mute still zeroes the bus outright (structure untouched).
     sfx.setMuted('announcer', true);
     assert.equal(ctx.gains[3].gain.value, 0);
+    sfx.setMuted('footsteps', true);
+    assert.equal(ctx.gains[4].gain.value, 0, 'the footsteps mute zeroes its own bus');
+    sfx.setMuted('footsteps', false);
+    assert.equal(ctx.gains[4].gain.value, 0.5 * STEP_GAIN_SCALE, 'unmuting restores the fader level');
     sfx.destroy();
   } finally {
     restoreFetch();

@@ -57,6 +57,12 @@ export const LANDMARK_KINDS = [
   'weapon_drop',
   'weapon_pickup',
   'grenade_land',
+  // A grenade projectile BOUNCING off a surface (models.EventGrenadeBounce
+  // — the CMsgSosStartSoundEvent bounce family): a positioned VERTEX of a
+  // flight, neither a detonation nor a rest. Like every kind it needs a
+  // category claim or normalizeEvent drops it from the feed AND the draw
+  // set (see CATEGORIES 'grenade_bounces').
+  'grenade_bounce',
   'round_start',
   'round_end',
   'player_connect',
@@ -78,12 +84,16 @@ export const LANDMARK_KINDS = [
 // (the scrubber's marker loop gates this set by the enabled
 // categories); `grenade_land` rides it for the decoy REST marker
 // (bucket 'land' — the renderer's plan pairs the throw arc to it; no
-// scrubber marker either).
+// scrubber marker either); `grenade_bounce` rides it because a bounce is a
+// VERTEX of the renderer's throw→bounce→det path — the world layer needs
+// those rows whether or not the 'Bounce' feed category is on (bucket
+// 'bounce', no scrubber marker either).
 export const DRAW_KINDS = [
   'kill',
   'damage',
   'grenade',
   'grenade_throw',
+  'grenade_bounce',
   'grenade_land',
   'bomb_plant',
   'bomb_defuse',
@@ -143,6 +153,15 @@ export const CATEGORIES = [
   // category to normalize under (normalizeEvent drops unclaimed kinds).
   // Opt-in like every non-sparse category; default OFF.
   { id: 'grenade_lands', label: 'Grenade landings', short: 'land', source: 'event', kinds: ['grenade_land'] },
+  // The grenade's BOUNCE rows (models.EventGrenadeBounce — the five SOS
+  // bounce soundevents). Their OWN category on purpose (the grenade_lands
+  // precedent): normalizeEvent REQUIRES a category to claim a kind, but
+  // the rows are a WORLD-LAYER input FIRST — the renderer builds its
+  // multi-segment throw→bounce→det path from them regardless of the chips
+  // (they ride DRAW_KINDS), while the feed lists them only when this
+  // opt-in, default-OFF category is on. No scrubber marker either
+  // (scrubberMarkerClass 'bounce' → '').
+  { id: 'grenade_bounces', label: 'Bounce', short: 'bounce', source: 'event', kinds: ['grenade_bounce'] },
   { id: 'damage', label: 'Damage', short: 'dmg', source: 'event', kinds: ['damage'] },
   { id: 'blinds', label: 'Flashes & blinds', short: 'flash', source: 'event', kinds: ['blind'] },
   { id: 'connects', label: 'Joins & leaves', short: 'join/leave', source: 'event', kinds: ['player_connect', 'player_disconnect'] },
@@ -257,7 +276,9 @@ export function scrubberMarkerClass(bucket) {
   //             no scrubber tick), the plant/defuse ATTEMPT
   //             lifecycle buckets (the completion tick already carries the
   //             marker), 'damage' and 'land' (a grenade ACTIVATION — the
-  //             real explosion carries the det marker) — no marker
+  //             real explosion carries the det marker) and 'bounce' (the
+  //             vertices of a flight — its detonation carries the det
+  //             marker) — no marker
 }
 
 // drawBucket maps a typed kind onto the drawable bucket the renderer and
@@ -292,6 +313,12 @@ export function drawBucket(kind, weapon) {
   if (k === 'kill') return 'kill';
   if (k === 'grenade_throw') return 'throw';
   if (k === 'grenade_land') return 'land';
+  // A projectile BOUNCE: a vertex of the renderer's flight path (not a
+  // detonation, not a rest) — its own bucket so the renderer can collect
+  // the rows without touching the det/land pairing pools, marker-less on
+  // the scrubber (scrubberMarkerClass) and feed-visible only through the
+  // opt-in 'grenade_bounces' category.
+  if (k === 'grenade_bounce') return 'bounce';
   if (k === 'grenade') return detonationStyle(weapon);
   if (k === 'damage') return 'damage';
   if (k.includes('smoke')) return 'smoke';

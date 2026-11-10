@@ -481,6 +481,105 @@ export function flightSplits(z0, z1, panels) {
   return spans;
 }
 
+// rowEntity — the projectile entity id a grenade row carries (extract
+// stamps it into detail_json for grenade_throw / grenade / grenade_bounce
+// rows; the view hydrates it onto the row as `entity`). 0 = unknown —
+// never a guess. Pure.
+function rowEntity(r) {
+  const e = Number(r && r.entity);
+  return Number.isFinite(e) && e > 0 ? e : 0;
+}
+
+// joinBounceVerts — THE throw → bounces → detonation vertex join for one
+// flight (pure; setLandmarks calls it once per paired throw). Returns the
+// vertex list [throw, bounce₁…bounceₙ, det] in tick order — drawGrenades
+// then walks it segment by segment (per-segment constant speed, one
+// flightSplits pass per segment).
+//
+// JOIN RULE, in order:
+//  1. ENTITY (preferred): the projectile entity id all three row kinds
+//     carry in detail_json (extract's grenadeThrown / grenadeBlast /
+//     grenadeBounced — the SAME id on every side, measured 979/979 on
+//     golden). A bounce joins only when BOTH sides carry an id and they
+//     AGREE — a mismatch is a different projectile and never joins.
+//  2. FALLBACK (entity missing on either side): the EXISTING pairing
+//     rule — same round + same weapon (sameUtilityWeapon — Molotov ≡
+//     Incendiary) inside the [throw, det] tick window. Bounce rows carry
+//     NO thrower (extract stores none — agg.grenadeBounced stamps no
+//     attacker), so the thrower half of that rule is unavailable by
+//     construction; the same-round window is what keeps the fallback
+//     from wandering (never guess wildly — same-round only).
+// Rows outside the window or in another round never join. `to` may be
+// null (an unpaired throw) — the list then ends at the last bounce and
+// the draw side still draws no flight (its `to` gate), exactly as
+// before. Pure — unit-tested by src/lib/renderer.test.js.
+export function joinBounceVerts(from, to, bounces) {
+  if (!from || !Number.isFinite(from.tick)) return [];
+  const verts = [from];
+  const chain = rowEntity(from) || rowEntity(to);
+  const round = Number.isFinite(from.round) ? from.round : null;
+  const hi = to && Number.isFinite(to.tick) ? to.tick : Infinity;
+  const cands = [];
+  for (const b of bounces || []) {
+    if (!b || !Number.isFinite(b.tick)) continue;
+    if (b.tick < from.tick || b.tick > hi) continue;
+    if (round != null && Number.isFinite(b.round) && b.round !== round) continue;
+    cands.push(b);
+  }
+  cands.sort((a, b) => a.tick - b.tick);
+  for (const b of cands) {
+    const e = rowEntity(b);
+    if (chain > 0 && e > 0) {
+      if (e !== chain) continue; // another projectile's bounce
+    } else if (!sameUtilityWeapon(from.weapon, b.weapon)) {
+      continue; // the fallback rule (see above)
+    }
+    verts.push(b);
+  }
+  if (to) verts.push(to);
+  return verts;
+}
+
+// flightPointAt — the flight icon's world position at `tick` over a
+// vertex list (pure; the renderer draws the icon here and the tests pin
+// the geometry through it). The segment CONTAINING the playhead is
+// interpolated at a PER-SEGMENT constant speed (progress is pure tick
+// math inside that segment), so the icon arrives EXACTLY at each
+// recorded bounce tick — the bounce sound and the icon land together. A
+// segment whose ends share a tick (or has no usable end) snaps to its
+// START vertex — a division by zero never happens and nothing is
+// invented. Past the last vertex the point HOLDS at that vertex: after
+// the last bounce the path to the detonation has ≈0 length, so the icon
+// rests until the detonation pops. Returns {x, y, z} or null (no usable
+// vertex — the caller falls back to the origin dot).
+export function flightPointAt(verts, tick) {
+  if (!Array.isArray(verts) || !verts.length || !Number.isFinite(tick)) return null;
+  let i = 0;
+  for (let k = 0; k + 1 < verts.length; k++) {
+    const a = verts[k];
+    if (a && Number.isFinite(a.tick) && tick >= a.tick) i = k;
+  }
+  const v0 = verts[i];
+  if (!v0 || !Number.isFinite(v0.x) || !Number.isFinite(v0.y)) return null;
+  const v1 = verts[i + 1];
+  const usable =
+    v1 &&
+    Number.isFinite(v1.x) &&
+    Number.isFinite(v1.y) &&
+    Number.isFinite(v0.tick) &&
+    Number.isFinite(v1.tick) &&
+    v1.tick > v0.tick;
+  if (!usable) return { x: v0.x, y: v0.y, z: v0.z }; // hold at the vertex
+  const p = Math.max(0, Math.min(1, (tick - v0.tick) / (v1.tick - v0.tick)));
+  const z =
+    Number.isFinite(v0.z) && Number.isFinite(v1.z)
+      ? v0.z + (v1.z - v0.z) * p
+      : Number.isFinite(v0.z)
+        ? v0.z
+        : v1.z; // unknown z on one end keeps the known one (never a guess)
+  return { x: v0.x + (v1.x - v0.x) * p, y: v0.y + (v1.y - v0.y) * p, z };
+}
+
 // chevronPath — the view-direction CHEVRON (spec 27): an open ">" of
 // two arms meeting at the apex pointing along `angleRad` (screen
 // radians — the engine yaw convention, -yaw), from the dot's center
@@ -802,7 +901,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   let regions = []; // pack elevation_regions (world-space boxes) — see
   //                  // lib/replay/layers.js elevationFor; [] when absent
   let landmarks = [];
-  let polylines = []; // grenade throw→detonate (or throw→rest) pairs
+  let polylines = []; // grenade throw→…→detonate flights ({from, to, verts})
   let dets = []; // grenade detonations
   let lands = []; // grenade LANDINGS (bucket 'land' — the decoy's rest
   //                // activation row; a throw pairing candidate, NEVER a
@@ -1192,6 +1291,11 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     hitTracers = [];
     const hitSeen = new Set();
     const throws = [];
+    // Bounce vertices of the grenade flights (bucket 'bounce') — a
+    // throw's path is [throw, bounce₁…bounceₙ, det], so the rows are
+    // collected here and joined AFTER the throw→det pairing pool is
+    // complete (joinBounceVerts).
+    const bounces = [];
     for (const l of landmarks) {
       switch (l.bucket) {
         case 'throw':
@@ -1255,6 +1359,13 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
           // only joins the throw-pairing pool below so a decoy's arc
           // ends at the rest position instead of at the explosion.
           lands.push(l);
+          break;
+        case 'bounce':
+          // A projectile BOUNCE (models.EventGrenadeBounce): it draws no
+          // marker of its own — it is a VERTEX of the flight path the
+          // throw pairing below builds (joinBounceVerts), so it only
+          // joins the collection pool here.
+          bounces.push(l);
           break;
         case 'smoke':
           // Typed detonations land in their OWN bucket (drawBucket routes
@@ -1374,7 +1485,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
           best = d;
         }
       }
-      polylines.push({ from: l, to: best });
+      polylines.push({ from: l, to: best, verts: joinBounceVerts(l, best, bounces) });
     }
   }
 
@@ -2015,8 +2126,14 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       ctx.stroke();
     }
     // throw→detonate: the grenade's flight, visible while it is "in the
-    // air" (from throw tick to detonation tick). Progress = pure tick
-    // interpolation; equal/unknown pair ticks keep the origin dot only.
+    // air" (from throw tick to detonation tick) — a MULTI-SEGMENT path
+    // over [throw, bounce₁…bounceₙ, det] (joinBounceVerts): one hop per
+    // recorded bounce, each traversed at its OWN constant speed so the
+    // icon lands EXACTLY on the bounce tick (the bounce sound and the
+    // icon stay in sync), then the final ≈0-length hop to the detonation
+    // where the icon rests at the last bounce position. A flight with no
+    // bounces is exactly the old two-vertex segment; equal/unknown pair
+    // ticks keep the origin dot only.
     // The trail (and the icon riding it) is tinted by the THROWER's side
     // at the throw tick (throwerSideAt — slotOfSteam + sideAtFrame, the
     // canonical rule): CT blue / T orange, and the NEUTRAL orange line
@@ -2043,6 +2160,11 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
         Number.isFinite(pl.to.tick) &&
         pl.to.tick > pl.from.tick;
       if (flight) {
+        // The vertex list the pairing built (joinBounceVerts); a polyline
+        // without one (defensive — every setter path supplies it) falls
+        // back to the plain throw→det pair, i.e. the pre-bounce behavior.
+        const verts =
+          Array.isArray(pl.verts) && pl.verts.length >= 2 ? pl.verts : [pl.from, pl.to];
         const side = throwerSideAt(pl.from.steamId, pl.from.tick);
         const team = side === 'ct' || side === 't' ? teamColor(side) : null;
         ctx.strokeStyle = team || 'rgba(251, 172, 24, 0.4)';
@@ -2050,61 +2172,57 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
         ctx.lineWidth = 1.5;
         ctx.setLineDash([4, 4]);
         ctx.beginPath();
-        // Per-LAYER segments (flightSplits): a nade CAN cross floors —
-        // bottom ramp → top ramp on Nuke — and one line drawn from one
-        // panel to the other would cross the gutter and lie about where
-        // the nade is. The flight is cut at the band edges (linear z —
-        // the same interpolation the icon rides) and each span draws on
-        // its own floor's panel; a same-floor flight is ONE span, i.e.
-        // exactly the old single segment.
-        for (const seg of flightSplits(pl.from.z, pl.to.z, panels)) {
-          const pa = panels[seg.layer] || panels[0];
-          // One scratch for both ends: moveTo copies the numbers into the
-          // path before s1 reuses the object, so nothing aliases.
-          const s0 = panelToScreen(
-            pa,
-            pl.from.x + (pl.to.x - pl.from.x) * seg.t0,
-            pl.from.y + (pl.to.y - pl.from.y) * seg.t0,
-            scr3,
-          );
-          ctx.moveTo(s0.x, s0.y);
-          const s1 = panelToScreen(
-            pa,
-            pl.from.x + (pl.to.x - pl.from.x) * seg.t1,
-            pl.from.y + (pl.to.y - pl.from.y) * seg.t1,
-            scr3,
-          );
-          ctx.lineTo(s1.x, s1.y);
+        // Per-SEGMENT, per-LAYER spans: every consecutive vertex pair is
+        // its own flight, so flightSplits runs with THAT hop's z ends (a
+        // floor crossing is resolved hop by hop; a same-floor hop is ONE
+        // span — and a bounce-free flight is exactly the old single
+        // segment). A nade CAN cross floors — bottom ramp → top ramp on
+        // Nuke — and one line drawn from one panel to the other would
+        // cross the gutter and lie about where the nade is, so each span
+        // draws on its own floor's panel.
+        for (let i = 0; i + 1 < verts.length; i++) {
+          const v0 = verts[i];
+          const v1 = verts[i + 1];
+          if (!hasPos(v0) || !hasPos(v1)) continue;
+          for (const seg of flightSplits(v0.z, v1.z, panels)) {
+            const pa = panels[seg.layer] || panels[0];
+            // One scratch for both ends: moveTo copies the numbers into
+            // the path before s1 reuses the object, so nothing aliases.
+            const s0 = panelToScreen(
+              pa,
+              v0.x + (v1.x - v0.x) * seg.t0,
+              v0.y + (v1.y - v0.y) * seg.t0,
+              scr3,
+            );
+            ctx.moveTo(s0.x, s0.y);
+            const s1 = panelToScreen(
+              pa,
+              v0.x + (v1.x - v0.x) * seg.t1,
+              v0.y + (v1.y - v0.y) * seg.t1,
+              scr3,
+            );
+            ctx.lineTo(s1.x, s1.y);
+          }
         }
         ctx.stroke();
         ctx.setLineDash([]);
         if (team) ctx.globalAlpha = 1;
-        const p = Math.max(0, Math.min(1, (tick - pl.from.tick) / (pl.to.tick - pl.from.tick)));
+        // The icon rides the CONTAINING hop at that hop's constant speed
+        // (flightPointAt — arrival exactly at each recorded bounce tick,
+        // hold at rest past the last vertex, never a divide-by-zero). Its
+        // Z lerps with the same progress when both hop ends know it
+        // (a floor-crossing hop), else the one that does — unknown → the
+        // default panel, never a guess.
+        const at = flightPointAt(verts, tick);
         const img = iconFor(pl.from.weapon) || iconFor(pl.to.weapon);
         let drawn = false;
-        if (img) {
-          // The icon rides the interpolated position; its Z lerps too
-          // when both ends know it (a floor-crossing arc), else the one
-          // end that does — unknown → the default panel, never a guess.
-          const zFrom = pl.from.z;
-          const zTo = pl.to.z;
-          const zFlight =
-            Number.isFinite(zFrom) && Number.isFinite(zTo)
-              ? zFrom + (zTo - zFrom) * p
-              : Number.isFinite(zFrom)
-                ? zFrom
-                : zTo;
-          const c = worldToScreen(
-            pl.from.x + (pl.to.x - pl.from.x) * p,
-            pl.from.y + (pl.to.y - pl.from.y) * p,
-            zFlight,
-            scr2, // `a` (scr1) is still live for the fallback dot below
-          );
+        if (img && at) {
+          const c = worldToScreen(at.x, at.y, at.z, scr2); // `a` (scr1) stays live for the fallback dot below
           drawn = drawIcon(img, c.x, c.y, NADE_ICON_PX, team);
         }
         if (!drawn) {
-          // no icon for this weapon — today's vector drawing (the orange
-          // origin dot), never an error.
+          // no icon for this weapon (or no drawable vertex) — today's
+          // vector drawing (the orange origin dot), never an error.
           ctx.fillStyle = 'rgba(251, 172, 24, 0.8)';
           ctx.beginPath();
           ctx.arc(a.x, a.y, 3, 0, Math.PI * 2);
