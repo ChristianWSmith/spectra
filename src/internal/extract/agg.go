@@ -599,6 +599,11 @@ type killInfo struct {
 	// inv is the victim's inventory AT the kill tick (dropInventory —
 	// names + gun ammo), the input for the death-drop inference below.
 	inv []inventoryItem
+	// hasKit is the victim's defuse-kit possession AT the kill tick
+	// (demoinfocs Player.HasDefuseKit — pawn property, NOT inventory:
+	// the kit never appears in Weapons()). The handler reads it beside
+	// inv; the death-drop inference turns it into the kit drop row.
+	hasKit bool
 }
 
 func (a *agg) kill(k killInfo) {
@@ -643,27 +648,28 @@ func (a *agg) kill(k killInfo) {
 	}, "player_death")
 
 	// Death drops (weapon_drop — inference, no raw game event of its
-	// own): one row per inferred drop (a gun + at most one util, the
-	// inferDeathDrops rules). The position is the VICTIM's position at
-	// the kill tick, stored exactly like bomb_drop stores the C4
-	// carrier's position at release: the item's real landing spot is a
-	// physics result the demo does not record — "stored at release, may
-	// slide short" (CS2.md's dropped-C4 caveat — same accepted
-	// semantics here). A victim with no stored position (zero vector)
-	// still stores the row — the frontend draws nothing without
-	// coordinates (drops.js), never a guessed one.
+	// own): one row per inferred drop (a gun + at most one util + a kit
+	// when the victim had one — the inferDeathDrops rules). The position
+	// is the VICTIM's position at the kill tick, stored exactly like
+	// bomb_drop stores the C4 carrier's position at release: the item's
+	// real landing spot is a physics result the demo does not record —
+	// "stored at release, may slide short" (CS2.md's dropped-C4 caveat —
+	// same accepted semantics here). A victim with no stored position
+	// (zero vector) still stores the row — the frontend draws nothing
+	// without coordinates (drops.js), never a guessed one.
 	//
 	// Emitted for EVERY kill (warmup/pregame included) like the kill row
 	// itself: these are evidence rows for the map layer, not stats.
-	for _, d := range inferDeathDrops(k.inv, a.lastHeldUtil[k.victimKey]) {
+	for _, d := range inferDeathDrops(k.inv, a.lastHeldUtil[k.victimKey], k.hasKit) {
 		detail := map[string]any{
 			"player": k.victimName,
 			"cat":    d.cat,
 			"source": "victim",
 		}
+		// Gun only: dropped guns track their ammo/mag state at death —
+		// the authoritative mag/reserve on the row (util and kit carry
+		// none; a kit row's detail_json is exactly player/cat/source).
 		if d.cat == "gun" {
-			// Dropped guns track their ammo/mag state at death — the
-			// authoritative mag/reserve on the row (util carries none).
 			detail["mag"] = d.mag
 			detail["reserve"] = d.reserve
 		}
@@ -1234,11 +1240,12 @@ func (a *agg) noteHeldUtil(key uint64, weapon string) {
 	a.lastHeldUtil[key] = weapon
 }
 
-// weaponPickedUp records a weapon_pickup row: someone acquired a gun or
-// util item at this tick (item_pickup — buys and spawn restocks included
-// at extract time, see the handler), at their own position. The cat is
-// the stored classification ("gun"|"util") so consumers never re-derive
-// it. The raw item_pickup payload pairs onto the row (source).
+// weaponPickedUp records a weapon_pickup row: someone acquired a gun,
+// util item or defuse kit at this tick (item_pickup — buys and spawn
+// restocks included at extract time, see the handler), at their own
+// position. The cat is the stored classification ("gun"|"util"|"kit")
+// so consumers never re-derive it. The raw item_pickup payload pairs
+// onto the row (source).
 func (a *agg) weaponPickedUp(tick int, key uint64, name, weapon, cat string, px, py, pz *float64) {
 	a.addEvent(models.Event{
 		Tick:       tick,

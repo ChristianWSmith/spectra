@@ -165,6 +165,13 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 			// inventory identical to the last frame's sample, so this
 			// read is authoritative (no last-known fallback path).
 			k.inv = dropInventory(e.Victim.Weapons())
+			// Defuse-kit possession rides the SAME dispatch instant: the
+			// kit is not inventory (HasDefuseKit reads the pawn's
+			// m_pItemServices.m_bHasDefuser), so it needs its own read —
+			// characterized in the same diag run (victim alive at
+			// dispatch, so the pawn property is still there to read;
+			// counts reported by TestDiagDropInventoryAtKill).
+			k.hasKit = e.Victim.HasDefuseKit()
 		}
 		if e.Assister != nil {
 			k.assisterKey = playerKey(e.Assister)
@@ -462,8 +469,11 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 	// AND spawn restocks (characterized: drops_diag_test.go saw 1473
 	// events on golden vs 91 that pair with a death drop; raw
 	// item_purchase never fires there). The typed row is restricted to
-	// gun/util items (dropCat — knife/C4/kit/armour have no drop-evidence
-	// counterpart) and the FRONTEND rule consumes only same-round
+	// gun/util/kit items (dropCat — knife/C4/armour have no drop-evidence
+	// counterpart; the KIT rides through because a kit bought on the
+	// buy menu and one taken off a dead CT are the SAME item_pickup row
+	// and only the frontend's buytime rule can tell them apart — see
+	// lib/replay/kits.js) and the FRONTEND rule consumes only same-round
 	// post-drop matches (lib/replay/drops.js), so buy-restock rows are
 	// harmless there; they stay stored because nothing can tell the two
 	// apart at extract time.
@@ -471,6 +481,11 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 		if e.Player == nil {
 			return
 		}
+		// demoinfocs resolves e.Weapon from the payload's `item` field
+		// (game_events.go itemEvent → common.MapEquipment("defuser") →
+		// EqDefuseKit), so wepName reads "Defuse Kit" for a kit row —
+		// models.DefuseKitName's spelling, verified by the diag run's
+		// kit pickup counts (drops_diag_test.go).
 		name := wepName(e.Weapon)
 		cat := dropCat(name)
 		if cat == "" {

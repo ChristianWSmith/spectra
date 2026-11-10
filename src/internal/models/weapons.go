@@ -98,6 +98,26 @@ var secondaryWeapons = map[string]struct{}{
 	"Zeus x27": {},
 }
 
+// DefuseKitName is THE canonical defuse-kit spelling: exactly what
+// demoinfocs' common.EquipmentType.String() emits for EqDefuseKit
+// (equipment.go eqElementToName), which is what extract's wepName
+// writes into events.weapon when item_pickup's `item` field reads
+// "defuser" (eqNameToWeapon maps that classname onto EqDefuseKit). The
+// mappack icon table (internal/mappack icons.go) and the frontend's
+// icon lookup key on the same string.
+const DefuseKitName = "Defuse Kit"
+
+// IsKit reports whether weapon is a defuse kit — the CT gear whose
+// possession is NOT carried by any demo stream as inventory (it lives
+// in the pawn's m_pItemServices.m_bHasDefuser, demoinfocs'
+// Player.HasDefuseKit) and which never appears in Weapons(). It exists
+// so one layer decides "this name is the kit": extract's drop-row
+// classification (dropCat → cat "kit") and the death-drop inference.
+// Exact-match on the canonical name, like every classifier here.
+func IsKit(weapon string) bool {
+	return weapon == DefuseKitName
+}
+
 // IsPrimaryWeapon reports whether weapon is a CS2 long gun (rifle, SMG,
 // shotgun, LMG, sniper) — the FIRST choice for a player's main weapon.
 // Exact-match on the canonical name (twin: loadout.js isPrimaryWeapon).
