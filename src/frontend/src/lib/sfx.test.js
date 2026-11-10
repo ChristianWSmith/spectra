@@ -10,14 +10,16 @@
 // instruction 2026-11-09; silent cancels, the shared bomb.js
 // ACTION_KINDS taxonomy), the
 // ANNOUNCER lines (roundEndCues winner/draw/counted gating,
-// bombAnnouncerCues, the bombdef→win ordering rule) and the match-POINT
+// bombAnnouncerCues, the bombdef→win ordering rule incl. the A3
+// duration+gap sequencing and its two fallbacks) and the match-POINT
 // freeze cue (matchPointBefore's MR12/MR3 clinch predicate,
 // matchPointCues' freeze-start placement, silence on unresolvable
-// scorelines), the
+// scorelines, matchPointJumpCues' once-per-tick jump guard), the
 // bullet cue window, the decoy fake-gunshot plan window, the C4 beep
 // synthesis (bomb rows → schedule → deterministic site group),
 // the range/seek guards, the random variant pick, the internal gain
-// scales (five buses) and the weapon-name-less manifest boundary.
+// scales (five buses — footsteps: 1/3 scale, 100 % fader, muted by
+// default) and the weapon-name-less manifest boundary.
 // Run: node --test src/lib/sfx.test.js
 // (from frontend/; the lib test glob src/lib/*.test.js picks it up too).
 import test from 'node:test';
@@ -51,6 +53,7 @@ registerHooks({
 
 const {
   AUDIO_VOL_DEFAULT,
+  FOOTSTEPS_VOL_DEFAULT,
   GUNS_GAIN_SCALE,
   UTILITY_GAIN_SCALE,
   C4_GAIN_SCALE,
@@ -58,6 +61,7 @@ const {
   STEP_GAIN_SCALE,
   SOUND_DETONATION_BUCKETS,
   ANNOUNCER_ORDER_DELAY_S,
+  ANNOUNCER_SEQUENCE_GAP_S,
   grenadeCues,
   throwCues,
   bounceCues,
@@ -69,6 +73,7 @@ const {
   bombAnnouncerCues,
   matchPointBefore,
   matchPointCues,
+  matchPointJumpCues,
   announcerOrder,
   utilCuesInRange,
   bulletCuesInRange,
@@ -927,6 +932,37 @@ test('matchPointCues: an unresolvable scoreline is silence, never a 12-X guess',
   assert.deepEqual(matchPointCues([mpRow(23)], MP_WITH_KNIFE).map((c) => c.tick), [mpStart(23)]);
 });
 
+// matchPointJumpCues — the JUMP-path selector (deliberate exception #2):
+// what onEngineChange plays when the playhead jumps across a
+// match-point freeze, with the once-per-cue-tick guard that keeps a
+// repeated scrub from machine-gunning the 4.1 s stinger.
+test('matchPointJumpCues: forward-jump window + the once-per-cue-tick guard', () => {
+  const cues = [
+    { tick: 100, name: 'matchpoint', bucket: 'announcer' },
+    { tick: 300, name: 'matchpoint', bucket: 'announcer' },
+    { tick: 500, name: 'matchpoint', bucket: 'announcer' },
+  ];
+  const fired = new Set();
+  const ticks = (from, to, set = fired) => matchPointJumpCues(cues, from, to, set).map((c) => c.tick);
+  // The SAME open/closed window as every other selector: (from, to].
+  assert.deepEqual(ticks(0, 100), [100]);
+  assert.deepEqual(ticks(100, 300), [300]);
+  // The engine records what it played: a second jump over the same cue
+  // (scrub back, scrub forward again) does NOT re-fire it, while the
+  // cues it has not played yet still do.
+  fired.add(100);
+  assert.deepEqual(ticks(0, 100), []);
+  assert.deepEqual(ticks(0, 600), [300, 500]);
+  fired.add(300);
+  fired.add(500);
+  assert.deepEqual(ticks(0, 600), [], 'every cue tick played once — later jumps stay silent');
+  // No guard set → no guard (hostile/absent input never throws).
+  assert.deepEqual(ticks(0, 600, null).length, 3);
+  assert.deepEqual(matchPointJumpCues(null, 0, 10, fired), []);
+  assert.deepEqual(matchPointJumpCues(cues, NaN, 10, fired), []);
+  assert.deepEqual(matchPointJumpCues(cues, 0, NaN, fired), []);
+});
+
 
 
 // The attack-edge gun path is GONE: its rising edges played the
@@ -1059,7 +1095,7 @@ test('pickVariant picks uniformly in range and never leaves the list', () => {
 
 // --- internal mix calibration ----------------------------------------------
 
-test('gain scales: guns/utility at 1/12, C4 at 1/6, announcer & footsteps at 1/2 — internal to the mixer', () => {
+test('gain scales: guns/utility at 1/12, C4 at 1/6, announcer at 1/2, footsteps at 1/3 — internal to the mixer', () => {
   // applyGains() multiplies the fader level by these — the pref default,
   // the sliders and prefs.go never move (a user-facing 80% still reads
   // 80%), so pinning the constants here pins the mix. Voice is
@@ -1082,12 +1118,15 @@ test('gain scales: guns/utility at 1/12, C4 at 1/6, announcer & footsteps at 1/2
   // asserts the HALVED value the owner asked for.
   assert.equal(C4_GAIN_SCALE, 1 / 6);
   assert.equal(ANNOUNCER_GAIN_SCALE, 1 / 2);
-  // The 5th bus (FOOTSTEPS) scales like the announcer, but its pref
-  // default is 0 — the bus ships muted, so AUDIO_VOL_DEFAULT is
-  // deliberately NOT its default. Both facts pinned here.
-  assert.equal(STEP_GAIN_SCALE, 1 / 2);
+  // OWNER INSTRUCTION 2026-11-10 (A1): the 5th bus (FOOTSTEPS) internal
+  // gain goes to 1/3 — while its user-facing default rises to 100 %
+  // (FOOTSTEPS_VOL_DEFAULT) with the bus MUTED by the session mute
+  // instead of by a 0 fader. Both facts pinned here: the scale and the
+  // default (AUDIO_VOL_DEFAULT stays 0.8 for the other five).
+  assert.equal(STEP_GAIN_SCALE, 1 / 3);
   assert.equal(AUDIO_VOL_DEFAULT, 0.8); // the user-facing default is untouched
-  assert.equal(prefVolume(null, 0), 0); // footsteps_volume's default read
+  assert.equal(FOOTSTEPS_VOL_DEFAULT, 1); // footsteps read 100 % by default …
+  assert.equal(prefVolume(null, FOOTSTEPS_VOL_DEFAULT), 1); // … on an unset pref
 });
 
 // --- C4 beeps ---------------------------------------------------------------
@@ -1282,9 +1321,14 @@ class FakeAudioContext {
     return src;
   }
   // The preload tags every decoded buffer with the URL it came from, so
-  // the tests can tell WHICH manifest group each source plays.
+  // the tests can tell WHICH manifest group each source plays. The two
+  // announcer lines the A3 defuse SEQUENCE measures also carry their
+  // real durations (bombdef.wav 1.776 s, ctwin.wav 1.877 s) — every
+  // other buffer decodes duration-less, which is exactly the "no
+  // duration info" fallback path in playAnnouncerInRange.
   decodeAudioData(raw) {
-    return Promise.resolve({ url: raw && raw.url });
+    const url = raw && raw.url;
+    return Promise.resolve({ url, duration: SOUND_DURATIONS[url] });
   }
   resume() {
     return Promise.resolve();
@@ -1294,6 +1338,16 @@ class FakeAudioContext {
     return Promise.resolve();
   }
 }
+
+// The measured lengths of the two announcer lines the A3 defuse
+// SEQUENCE uses (the real durations of the extracted files): the win
+// line starts after bombdef ENDS plus ANNOUNCER_SEQUENCE_GAP_S. Any
+// other URL decodes duration-less (SOUND_DURATIONS lookup → undefined),
+// which is the "no duration info" fallback path.
+const SOUND_DURATIONS = {
+  '/api/sounds/bombdef.wav': 1.776,
+  '/api/sounds/ctwin.wav': 1.877,
+};
 
 const BEEP_MANIFEST = {
   sounds: {
@@ -1597,10 +1651,10 @@ test('engine: plant start plays on the C4 bus — plant complete stays silent, b
 });
 
 // The ANNOUNCER lines through the REAL play path: rows → rebuildCues →
-// (prevTick, curTick] → announcerOrder → playGroupAt on the announcer
-// bus. Same ordinary-window stepping as the lifecycle test above (the
-// steps stay inside cueGapJump's 0.3 s window, so each crossing is
-// playback rather than a re-seed).
+// (prevTick, curTick] → announcerOrder → playAnnouncerInRange on the
+// announcer bus. Same ordinary-window stepping as the lifecycle test
+// above (the steps stay inside cueGapJump's 0.3 s window, so each
+// crossing is playback rather than a re-seed).
 test('engine: bombdef starts before the round-win line in a shared window, on the announcer bus', async () => {
   resetSoundManifest();
   const restoreFetch = stubManifestFetch();
@@ -1627,14 +1681,22 @@ test('engine: bombdef starts before the round-win line in a shared window, on th
     const win = ctx.sources.filter((s) => s.buffer && s.buffer.url === '/api/sounds/ctwin.wav');
     assert.equal(def.length, 1, 'the defuse line plays exactly once');
     assert.equal(win.length, 1, 'the round-win line plays exactly once');
-    // THE ordering: bombdef starts on arrival, the win line
-    // ANNOUNCER_ORDER_DELAY_S later (the owner-observed sequence —
-    // both rows share a tick, so only the explicit delay can order them).
+    // THE ordering (A3): bombdef starts on arrival and the win line
+    // waits for the defuse line to END plus ANNOUNCER_SEQUENCE_GAP_S —
+    // the two must NOT overlap (the fixed ANNOUNCER_ORDER_DELAY_S of
+    // 0.5 s would cut into a 1.776 s bombdef.wav by ~1.28 s).
+    const defDur = SOUND_DURATIONS['/api/sounds/bombdef.wav'];
     assert.equal(def[0].started, 0.25, 'bombdef starts now');
+    assert.ok(
+      win[0].started >= def[0].started + defDur + ANNOUNCER_SEQUENCE_GAP_S,
+      `win at ${win[0].started}, defuse runs to ${def[0].started + defDur} then ${ANNOUNCER_SEQUENCE_GAP_S}s of gap`,
+    );
+    // Exactness pin: with a decoded duration the delay IS duration+gap
+    // (grouped the way playAnnouncerInRange computes it — float-exact).
     assert.equal(
       win[0].started,
-      def[0].started + ANNOUNCER_ORDER_DELAY_S,
-      'the win line follows after the explicit delay',
+      def[0].started + (defDur + ANNOUNCER_SEQUENCE_GAP_S),
+      'the win line follows the defuse line’s END plus the sequence gap',
     );
     // Both ride the 4th gain — the ANNOUNCER bus (guns=0, utility=1,
     // C4=2, announcer=3) — never the C4 or utility bus.
@@ -1648,6 +1710,75 @@ test('engine: bombdef starts before the round-win line in a shared window, on th
     assert.equal(ter.length, 1, 'the later round-win line plays exactly once');
     assert.equal(ter[0].started, 1.5, 'no defuse in the window → no delay');
     assert.equal(ter[0].bus, ctx.gains[3], 'terwin on the announcer bus');
+    sfx.destroy();
+  } finally {
+    restoreFetch();
+  }
+});
+
+// A3 fallbacks through the REAL play path: the defuse→win SEQUENCE is
+// measured from the defuse line's decoded duration, so both of its
+// fail-soft branches are pinned here — no duration info → the fixed
+// ANNOUNCER_ORDER_DELAY_S; a defuse line that never plays at all → NO
+// delay for the win line (a silent defuse must not push the round-win
+// line back by a beat).
+test('engine: a defuse window with no decoded duration falls back to the fixed delay', async () => {
+  resetSoundManifest();
+  // The same group, a URL the duration table does not know → the buffer
+  // decodes duration-less.
+  const restoreFetch = stubManifestFetch(manifestWithUrl('bombdef', '/api/sounds/bombdef_nodur.wav'));
+  try {
+    const { sfx, engine, ctx } = await makeSfx();
+    const DEF = 1200;
+    sfx.setRounds([
+      { number: 5, winner: 'ct', reason: 'Bomb defused', startTick: 1000, freezeEndTick: 1010, endTick: DEF },
+    ]);
+    sfx.setLandmarks([
+      { kind: 'bomb_defuse', bucket: 'defuse', tick: DEF, round: 5 },
+      { kind: 'round_end', bucket: 'round', tick: DEF, round: 5 },
+    ]);
+    engine.emit({ playing: true, speed: 1, tick: DEF - 16 });
+    ctx.currentTime = 0.25;
+    engine.emit({ playing: true, speed: 1, tick: DEF + 2 });
+    const def = ctx.sources.filter((s) => s.buffer && s.buffer.url === '/api/sounds/bombdef_nodur.wav');
+    const win = ctx.sources.filter((s) => s.buffer && s.buffer.url === '/api/sounds/ctwin.wav');
+    assert.equal(def.length, 1, 'the defuse line plays (its rewritten URL)');
+    assert.equal(win.length, 1, 'the round-win line plays exactly once');
+    assert.equal(def[0].started, 0.25, 'bombdef starts now');
+    assert.equal(
+      win[0].started,
+      def[0].started + ANNOUNCER_ORDER_DELAY_S,
+      'no duration info → the fixed 0.5 s fallback still orders them',
+    );
+    sfx.destroy();
+  } finally {
+    restoreFetch();
+  }
+});
+
+test('engine: a defuse line that never plays delays the win line not at all', async () => {
+  resetSoundManifest();
+  // The defuse row is there, the manifest group is not (extraction never
+  // produced it) → playAnnouncerInRange must not schedule a wait.
+  const restoreFetch = stubManifestFetch(manifestWithout('bombdef'));
+  try {
+    const { sfx, engine, ctx } = await makeSfx();
+    const DEF = 1200;
+    sfx.setRounds([
+      { number: 5, winner: 'ct', reason: 'Bomb defused', startTick: 1000, freezeEndTick: 1010, endTick: DEF },
+    ]);
+    sfx.setLandmarks([
+      { kind: 'bomb_defuse', bucket: 'defuse', tick: DEF, round: 5 },
+      { kind: 'round_end', bucket: 'round', tick: DEF, round: 5 },
+    ]);
+    engine.emit({ playing: true, speed: 1, tick: DEF - 16 });
+    ctx.currentTime = 0.25;
+    engine.emit({ playing: true, speed: 1, tick: DEF + 2 });
+    const def = ctx.sources.filter((s) => s.buffer && s.buffer.url === '/api/sounds/bombdef.wav');
+    const win = ctx.sources.filter((s) => s.buffer && s.buffer.url === '/api/sounds/ctwin.wav');
+    assert.equal(def.length, 0, 'the defuse line is not in the manifest → silence');
+    assert.equal(win.length, 1, 'the round-win line still plays');
+    assert.equal(win[0].started, 0.25, 'nothing played to sequence after → no delay');
     sfx.destroy();
   } finally {
     restoreFetch();
@@ -1683,6 +1814,68 @@ test('engine: the match-point stinger plays once at freeze start on the announce
     engine.emit({ playing: true, speed: 1, tick: mpStart(25) + 2 }); // ordinary step
     const after = ctx.sources.filter((s) => s.buffer && s.buffer.url === '/api/sounds/cs_stinger.wav');
     assert.equal(after.length, 1, 'the 12-12 freeze start stays silent');
+    sfx.destroy();
+  } finally {
+    restoreFetch();
+  }
+});
+
+// A2 through the REAL play path — the golden inferno demo's exact
+// sequence: round 24 starts at tick 173342, its freeze runs to 177634,
+// and the scoreline before it is 12-11 (CT one win from 13). With
+// skip_freeze ON the engine jumps 173341 → 177634 in ONE step, so no
+// frame ever lands inside the freeze and the ordinary guarded window
+// would never fire the stinger — the jump path (deliberate exception #2)
+// must.
+test('engine: the match-point stinger fires across a skip_freeze jump over the freeze', async () => {
+  resetSoundManifest();
+  const restoreFetch = stubManifestFetch();
+  try {
+    const { sfx, engine, ctx } = await makeSfx();
+    // 24 rounds shaped like the golden demo: CT sweeps 1-12 (12-0), T
+    // takes 13-23 (12-11 before round 24 — the match-point round).
+    const rounds = [];
+    for (let n = 1; n <= 23; n++) {
+      rounds.push({
+        number: n,
+        winner: n <= 12 ? 'ct' : 't',
+        reason: 'Elimination',
+        startTick: 1000 + n * 100,
+        freezeEndTick: 1010 + n * 100,
+        endTick: 1090 + n * 100,
+      });
+    }
+    rounds.push({
+      number: 24,
+      winner: 'ct',
+      reason: 'Bomb defused',
+      startTick: 173342, // the cue tick — the round's FREEZE START
+      freezeEndTick: 177634,
+      endTick: 178000,
+    });
+    sfx.setRounds(rounds);
+    sfx.setLandmarks([{ kind: 'round_start', bucket: 'start', tick: 173342, round: 24 }]);
+    // The first frame seeds the compare point one tick before the freeze…
+    engine.emit({ playing: true, speed: 1, tick: 173341 });
+    // …and skip_freeze jumps the WHOLE freeze in one step — far past
+    // cueGapJump's 19.2-tick ordinary window (a re-seed for every other
+    // cue list).
+    ctx.currentTime = 2.5;
+    engine.emit({ playing: true, speed: 1, tick: 177634 });
+    const stinger = () =>
+      ctx.sources.filter((s) => s.buffer && s.buffer.url === '/api/sounds/cs_stinger.wav');
+    assert.equal(stinger().length, 1, 'the stinger starts across the jump');
+    assert.equal(stinger()[0].started, 2.5, 'on arrival — the jump path carries no ordering delay');
+    assert.equal(
+      stinger()[0].bus,
+      ctx.gains[3],
+      'on the ANNOUNCER bus (guns=0, utility=1, C4=2, announcer=3)',
+    );
+    // Scrub BACK over the same freeze and forward again: the
+    // once-per-cue-tick guard keeps the 4.1 s stinger from re-firing.
+    engine.emit({ playing: true, speed: 1, tick: 173341 }); // backward → seed, silent
+    engine.emit({ playing: true, speed: 1, tick: 177634 }); // forward jump over the same cue
+    assert.equal(stinger().length, 1, 'a second jump over the same cue tick does not re-fire');
     sfx.destroy();
   } finally {
     restoreFetch();
@@ -1745,10 +1938,12 @@ test('engine: footstep cues play on the 5th (footsteps) bus; unextracted surface
     // EXACTLY those two: the Cardboard step resolved to a family the
     // manifest does not carry, so it made no cue (silence, no substitute).
     assert.equal(ctx.sources.length, 2, 'only the two extracted groups played');
-    // The footsteps fader ships at 0 — the same window with the fader
-    // untouched still spawns sources (the gain node is what silences
-    // them); a mute zeroes it (pinned in the applyGains test below).
-    assert.equal(ctx.gains[4].gain.value, 0, 'the footsteps bus ships muted');
+    // The footsteps fader ships at 1 (FOOTSTEPS_VOL_DEFAULT) while the
+    // bus ships MUTED — the same window with the fader untouched still
+    // spawns sources (the gain node is what silences them); unmuting
+    // raises it to 1 × STEP_GAIN_SCALE (pinned in the applyGains test
+    // below).
+    assert.equal(ctx.gains[4].gain.value, 0, 'the footsteps bus ships muted (fader 1, mute on)');
     sfx.destroy();
   } finally {
     restoreFetch();
@@ -1757,10 +1952,11 @@ test('engine: footstep cues play on the 5th (footsteps) bus; unextracted surface
 
 // The internal mix calibration through the REAL applyGains path: every
 // bus's gain IS its fader level × the exported scale, so the halved
-// ANNOUNCER/C4 constants (owner instruction 2026-11-09) and the 1/2
-// FOOTSTEPS scale reach the mixer while the user-facing fader stays a
-// plain 0..1 level.
-test('engine: applyGains multiplies each fader by its bus scale (five buses, footsteps ships at 0)', async () => {
+// ANNOUNCER/C4 constants (owner instruction 2026-11-09), the 1/3
+// FOOTSTEPS scale and the muted-by-default footsteps bus (owner
+// instruction 2026-11-10, A1) reach the mixer while the user-facing
+// fader stays a plain 0..1 level.
+test('engine: applyGains multiplies each fader by its bus scale (five buses, footsteps ships muted)', async () => {
   resetSoundManifest();
   const restoreFetch = stubManifestFetch();
   try {
@@ -1769,8 +1965,9 @@ test('engine: applyGains multiplies each fader by its bus scale (five buses, foo
     // announcer=3, footsteps=4 — the four established indexes never move
     // (the 5th bus is created AFTER the announcer), and every bus starts
     // at its own default fader × its own scale. The footsteps fader's
-    // default is 0 (the bus ships MUTED), so its gain starts at 0 —
-    // AUDIO_VOL_DEFAULT × STEP_GAIN_SCALE would be a bug.
+    // default is 1 (FOOTSTEPS_VOL_DEFAULT = 100 %) but its bus ships
+    // MUTED (stepMuted), so its gain starts at 0 — FOOTSTEPS_VOL_DEFAULT
+    // × STEP_GAIN_SCALE would be a bug (the bus would blare on launch).
     assert.deepEqual(
       ctx.gains.map((g) => g.gain.value),
       [
@@ -1789,9 +1986,12 @@ test('engine: applyGains multiplies each fader by its bus scale (five buses, foo
     assert.equal(ctx.gains[2].gain.value, C4_GAIN_SCALE, 'C4 at 1/6 behind a 100% fader');
     assert.equal(ctx.gains[3].gain.value, ANNOUNCER_GAIN_SCALE, 'announcer at 1/2 behind a 100% fader');
     // The footsteps fader behaves like every other one (0..1 in, scale
-    // applied inside the mixer) — it simply STARTS at 0.
+    // applied inside the mixer) — it simply STARTS muted, so raising the
+    // fader alone changes nothing until the session mute comes off.
     sfx.setFootstepsVolume(1);
-    assert.equal(ctx.gains[4].gain.value, STEP_GAIN_SCALE, 'footsteps at 1/2 behind a 100% fader');
+    assert.equal(ctx.gains[4].gain.value, 0, 'the fader alone never lifts a MUTED bus');
+    sfx.setMuted('footsteps', false);
+    assert.equal(ctx.gains[4].gain.value, STEP_GAIN_SCALE, 'footsteps at 1/3 behind a 100% fader');
     sfx.setFootstepsVolume(0.5);
     assert.equal(ctx.gains[4].gain.value, 0.5 * STEP_GAIN_SCALE, 'the fader stays a plain 0..1 level');
     // A mute still zeroes the bus outright (structure untouched).
@@ -1807,15 +2007,45 @@ test('engine: applyGains multiplies each fader by its bus scale (five buses, foo
   }
 });
 
+// Owner instruction 2026-11-10 (A1): footsteps default to 100 %
+// volume, MUTED — the user unmutes instead of hunting the slider, and
+// the internal gain is 1/3. The two defaults come from
+// FOOTSTEPS_VOL_DEFAULT (the fader) and stepMuted (the bus), and only
+// their COMBINATION decides the gain.
+test('engine: footsteps default = fader 1.0 + muted → gain 0; unmute → 1 × STEP_GAIN_SCALE', async () => {
+  resetSoundManifest();
+  const restoreFetch = stubManifestFetch();
+  try {
+    const { sfx, ctx } = await makeSfx();
+    assert.equal(FOOTSTEPS_VOL_DEFAULT, 1, 'the fader ships at 100 %');
+    assert.equal(ctx.gains[4].gain.value, 0, '…but the bus ships muted → gain 0');
+    // One unmute is all it takes: the fader is already at 1.
+    sfx.setMuted('footsteps', false);
+    assert.equal(
+      ctx.gains[4].gain.value,
+      1 * STEP_GAIN_SCALE,
+      'unmuting alone yields the full fader × the 1/3 internal scale',
+    );
+    // …and re-muting silences it again without touching the fader.
+    sfx.setMuted('footsteps', true);
+    assert.equal(ctx.gains[4].gain.value, 0, 'the mute wins over the 1.0 fader');
+    sfx.destroy();
+  } finally {
+    restoreFetch();
+  }
+});
+
 // stubManifestFetch — the engine's preload pulls /api/sounds/manifest.json
 // and the URLs it lists; the decoded buffer is tagged with its URL so the
-// tests can assert WHICH sample a source plays. Returns the un-stub.
-function stubManifestFetch() {
+// tests can assert WHICH sample a source plays. `manifest` defaults to the
+// full fixture — pass a reduced/rewritten one for the fail-soft cases (a
+// missing group, a URL without a known duration). Returns the un-stub.
+function stubManifestFetch(manifest = BEEP_MANIFEST) {
   const prev = globalThis.fetch;
   globalThis.fetch = async (url) => {
     const u = String(url);
     if (u.includes('manifest.json')) {
-      return { ok: true, json: async () => BEEP_MANIFEST };
+      return { ok: true, json: async () => manifest };
     }
     return { ok: true, arrayBuffer: async () => ({ url: u }) };
   };
@@ -1823,6 +2053,16 @@ function stubManifestFetch() {
     globalThis.fetch = prev;
   };
 }
+
+// manifestWithout / manifestWithUrl — tiny manifest variants for the
+// A3 fail-soft cases (the full fixture minus one group, or with one
+// group pointed at a different file).
+const manifestWithout = (name) => {
+  const sounds = { ...BEEP_MANIFEST.sounds };
+  delete sounds[name];
+  return { sounds };
+};
+const manifestWithUrl = (name, url) => ({ sounds: { ...BEEP_MANIFEST.sounds, [name]: [url] } });
 
 // --- prefs + manifest boundary ---------------------------------------------
 

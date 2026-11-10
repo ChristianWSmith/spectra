@@ -260,8 +260,10 @@ var soundTable = map[string][]string{
 	// key. sfx.js roundEndCues/bombAnnouncerCues address them by their
 	// literal manifest keys: a counted round win → ctwin/terwin
 	// (reason-independent), a draw → rounddraw, a bomb plant → bombpl,
-	// a defuse → bombdef (played FIRST, then ctwin — the owner-observed
-	// ordering, sfx.js ANNOUNCER_ORDER_DELAY_S). Extracted on demand
+	// a defuse → bombdef (played FIRST, then ctwin AFTER the defuse
+	// line's own duration + sfx.js ANNOUNCER_SEQUENCE_GAP_S — the
+	// owner-observed sequencing; ANNOUNCER_ORDER_DELAY_S is the fallback
+	// when the buffer is not decoded). Extracted on demand
 	// from the user's own install like every other entry (Valve IP never
 	// ships).
 	"ctwin":     {"sounds/vo/announcer/cs2_classic/ctwin.vsnd_c"},

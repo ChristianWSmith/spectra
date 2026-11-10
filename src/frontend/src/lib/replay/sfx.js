@@ -73,8 +73,18 @@
 //     canonical plant/defuse rows, matchpoint at a MATCH-POINT round's
 //     freeze start derived from the scoreline) play in the same window
 //     on the announcer bus, ordered by announcerOrder (a defuse line
-//     precedes the round-win line by ANNOUNCER_ORDER_DELAY_S when both
-//     land in one window);
+//     precedes the round-win line when both land in one window: the win
+//     line waits for the defuse line's own DURATION plus
+//     ANNOUNCER_SEQUENCE_GAP_S — computed at play time in
+//     playAnnouncerInRange, with ANNOUNCER_ORDER_DELAY_S as the fallback
+//     when the buffer is not decoded);
+//   - DELIBERATE EXCEPTION #2 (after matchPointCues' missing freeze
+//     gate): the match-point stinger also fires when a FORWARD jump
+//     (skip_freeze crossing the freeze in one step, a scrub) lands
+//     across the round's freeze start — see onEngineChange's jump path.
+//     Ordinary playback and ordinary crossings are untouched; the jump
+//     path is guarded by a persistent once-per-cue-tick set so repeated
+//     scrubs cannot machine-gun the 4.1 s stinger;
 //   - decoy noise cues are the decoy PLAN's fake shots (setDecoyPlan —
 //     lib/replay/decoy.js), played on the GUNS channel with the mimic
 //     weapon's own samples (see decoyCues);
@@ -88,7 +98,10 @@
 //     once the bomb is defused/round's over (bombEndTick);
 //   - a seek / loop wrap / paused scrub advances the compare point
 //     WITHOUT playing (cueGapJump — the renderer's fireJump idea), so
-//     scrubbing never machine-guns the cues it crossed.
+//     scrubbing never machine-guns the cues it crossed — except the
+//     match-point stinger, which plays across a forward jump (the
+//     deliberate exception above), and except a queued announcer line
+//     whose delay the jump cancels (cancelQueuedAnnouncer).
 //
 // Pure cue-selection math is exported and unit-tested by
 // frontend/src/lib/sfx.test.js.
@@ -103,10 +116,19 @@ import { GST_AUDIO_HINT } from './audio.js';
 // prefs voice_volume/guns_volume/utility_volume/c4_volume/announcer_volume
 // (prefs.go) override
 // it; the Settings tab imports this so both surfaces share one default.
-// The FOOTSTEPS fader is deliberately NOT one of them: footsteps_volume's
-// default is 0 (the bus ships muted), read with prefVolume(v, 0) at both
-// surfaces.
+// The FOOTSTEPS fader is deliberately NOT one of them: its default is
+// FOOTSTEPS_VOL_DEFAULT below (1 = 100 %), read with
+// prefVolume(v, FOOTSTEPS_VOL_DEFAULT) at both surfaces. Footsteps are
+// muted by the SESSION mute instead of by the fader (the engine's
+// stepMuted ships true — owner instruction 2026-11-10), so an untouched
+// slider reads 100 % and the user only has to unmute to hear them.
 export const AUDIO_VOL_DEFAULT = 0.8;
+// Owner instruction 2026-11-10: footsteps at 100 % volume by default,
+// MUTED by default — the fader carries the level, the session mute
+// (stepMuted / the popover's toggle) carries the silence. NO pref key
+// default changed: footsteps_volume stays unset until the user moves
+// that fader, and both surfaces read it with this default.
+export const FOOTSTEPS_VOL_DEFAULT = 1;
 
 // Internal mix calibration — GUNS_GAIN_SCALE / UTILITY_GAIN_SCALE /
 // C4_GAIN_SCALE / ANNOUNCER_GAIN_SCALE / STEP_GAIN_SCALE are applied to
@@ -139,13 +161,13 @@ export const UTILITY_GAIN_SCALE = 1 / 12;
 // ANNOUNCER buses (1/3 → 1/6, unscaled ×1 → ×1/2).
 export const C4_GAIN_SCALE = 1 / 6;
 export const ANNOUNCER_GAIN_SCALE = 1 / 2;
-// Spec 2026-11-10: the FOOTSTEPS bus — the 5th gain, carrying the
-// player-sound rows (footsteps / lands / jumps / fall damage) — runs at
-// × 1/2 like the announcer. These are raw extracted game samples (the
+// Owner instruction 2026-11-10: the FOOTSTEPS bus — the 5th gain,
+// carrying the player-sound rows (footsteps / lands / jumps / fall
+// damage) — runs at × 1/3. These are raw extracted game samples (the
 // hot 1/12 family), but they sit under the mix as texture; and the bus
-// ships MUTED anyway (footsteps_volume's default is 0), so the scale
-// only shows once a user raises that fader.
-export const STEP_GAIN_SCALE = 1 / 2;
+// ships MUTED anyway (stepMuted defaults true — the session mute, not a
+// 0 fader), so the scale only shows once the user unmutes it.
+export const STEP_GAIN_SCALE = 1 / 3;
 
 // Live-source cap: a new AudioBufferSourceNode per play IS the Web Audio
 // contract for unlimited simultaneous instances of one buffer, but a
@@ -563,7 +585,23 @@ export function bombActionCues(rows, rounds) {
 // "Counter-Terrorists win" sequence). Explicit rather than incidental:
 // both rows usually share a tick, so without the delay the two would
 // start simultaneously and the sequence would be lost.
+// Owner instruction 2026-11-10 (A3): this fixed 0.5 s is now the
+// FALLBACK — when the defuse line's decoded duration is known,
+// playAnnouncerInRange waits for the line to END plus
+// ANNOUNCER_SEQUENCE_GAP_S instead (0.5 s would overlap a 1.776 s
+// bombdef.wav by ~1.28 s).
 export const ANNOUNCER_ORDER_DELAY_S = 0.5;
+
+// ANNOUNCER_SEQUENCE_GAP_S — the silence between the defuse line's END
+// and the round-win line's START (owner instruction 2026-11-10, A3:
+// "sequence them one after the other … 'bomb has been defused' and THEN
+// 'counter terrorists win'"). Counted AFTER the defuse line's own
+// duration, so the win line starts at bombdef.duration + this gap; the
+// fixed ANNOUNCER_ORDER_DELAY_S remains the fallback when the buffer is
+// not decoded yet, and a defuse line that does not play AT ALL delays
+// nothing (playAnnouncerInRange). Only bombdef windows sequence — every
+// other window keeps delay 0.
+export const ANNOUNCER_SEQUENCE_GAP_S = 0.15;
 
 // The round-END lines — the only cues the ordering rule delays.
 const ROUND_END_LINES = new Set(['ctwin', 'terwin', 'rounddraw']);
@@ -572,9 +610,12 @@ const ROUND_END_LINES = new Set(['ctwin', 'terwin', 'rounddraw']);
 // window's announcer cues (in tick order) right before playback: a
 // window containing `bombdef` delays its round-end line by
 // ANNOUNCER_ORDER_DELAY_S; every other cue (and every cue in a window
-// with no defuse) keeps delay 0 and plays on arrival. Returns COPIES —
-// the stored cue list is never mutated. Pure — unit-tested by
-// src/lib/sfx.test.js.
+// with no defuse) keeps delay 0 and plays on arrival. This is the pure
+// "WHICH cues are ordered" rule — the actual WHEN of a defuse window is
+// re-measured at play time in playAnnouncerInRange (the defuse line's
+// decoded duration + ANNOUNCER_SEQUENCE_GAP_S, this constant as the
+// fallback). Returns COPIES — the stored cue list is never mutated.
+// Pure — unit-tested by src/lib/sfx.test.js.
 export function announcerOrder(cues) {
   const list = cues || [];
   const defused = list.some((c) => c && c.name === 'bombdef');
@@ -789,6 +830,19 @@ function scorelineBefore(rounds, number) {
 // cue SITS at freeze start, so inFreezeTime (which opens the round's
 // window on this very tick) would always drop it. Deduped by (tick|name)
 // like every other cue list. Pure — unit-tested by src/lib/sfx.test.js.
+// DELIBERATE EXCEPTION #2 (the second one in this file — see the header
+// contract): this cue ALSO plays across a FORWARD JUMP over its tick.
+// With skip_freeze the playhead jumps the whole freeze in one step
+// (cueGapJump → the re-seed path), so no frame ever carries a tick
+// inside [startTick, freezeEndTick) and the ordinary guarded window
+// would never fire the stinger (measured on the golden inferno demo:
+// round 24's cue tick 173342, freeze 173342→177634). onEngineChange's
+// jump path therefore plays match-point cues in (prevTick, st.tick] via
+// matchPointJumpCues, guarded by a persistent once-per-cue-tick set (a
+// repeated scrub over the same freeze cannot machine-gun the 4.1 s
+// stinger). Ordinary non-jump crossings keep their existing
+// re-fire-per-crossing behaviour — loops included; only the jump path
+// consults the set.
 export function matchPointCues(rows, rounds) {
   const byNumber = new Map();
   for (const r of rounds || []) {
@@ -809,6 +863,24 @@ export function matchPointCues(rows, rounds) {
     out.push({ tick: row.tick, name: 'matchpoint', bucket: 'announcer' });
   }
   out.sort((a, b) => a.tick - b.tick);
+  return out;
+}
+
+// matchPointJumpCues — the JUMP-path selector behind deliberate
+// exception #2 (see matchPointCues above and the header contract): the
+// match-point cues inside (fromTick, toTick] that `fired` does NOT
+// already hold. `fired` is the engine's persistent once-per-cue-tick
+// set — a cue's tick is added once the jump path has played it, so a
+// second scrub over the same freeze cannot re-fire the 4.1 s stinger.
+// The set is consulted ONLY by this jump path: ordinary non-jump
+// crossings keep their existing re-fire-per-crossing behaviour (loops
+// included). Pure — unit-tested by src/lib/sfx.test.js.
+export function matchPointJumpCues(cues, fromTick, toTick, fired) {
+  const out = [];
+  for (const cue of utilCuesInRange(cues, fromTick, toTick)) {
+    if (fired && fired.has(cue.tick)) continue;
+    out.push(cue);
+  }
   return out;
 }
 
@@ -1091,15 +1163,18 @@ export function createSfxEngine({ engine, matchId, onError }) {
   let utilVol = AUDIO_VOL_DEFAULT;
   let c4Vol = AUDIO_VOL_DEFAULT;
   let annVol = AUDIO_VOL_DEFAULT;
-  // The footsteps fader ships at 0 — the bus is MUTED by default
-  // (footsteps_volume's pref default is 0 too; both surfaces read it with
-  // prefVolume(v, 0)). Every other fader starts at the shared default.
-  let stepVol = 0;
+  // The footsteps fader ships at FOOTSTEPS_VOL_DEFAULT (1 = 100 %) — the
+  // bus is silenced by the SESSION mute instead (stepMuted ships true,
+  // so even a caller that never calls setMuted stays silent; both
+  // surfaces read footsteps_volume with prefVolume(v,
+  // FOOTSTEPS_VOL_DEFAULT)). Every other fader starts at the shared
+  // default.
+  let stepVol = FOOTSTEPS_VOL_DEFAULT;
   let gunMuted = false;
   let utilMuted = false;
   let c4Muted = false;
   let annMuted = false;
-  let stepMuted = false;
+  let stepMuted = true; // footsteps ship MUTED (session-only, never persisted)
 
   const buffers = new Map(); // name → AudioBuffer[] (manifest order)
   let total = 0;
@@ -1125,6 +1200,12 @@ export function createSfxEngine({ engine, matchId, onError }) {
   let knifeHits = []; // knifeCues(landmarkRows, rounds) — tick-sorted
   let actionCues = []; // bombActionCues(landmarkRows, rounds) — tick-sorted
   let announcerCues = []; // roundEndCues + bombAnnouncerCues + matchPointCues merged, tick-sorted
+  let matchPointList = []; // matchPointCues alone — the JUMP path's own list (no full scan)
+  // The JUMP path's once-per-cue-tick guard (deliberate exception #2):
+  // a match-point cue tick that jump-played stays played for the life of
+  // this engine, so repeated forward scrubs over one freeze cannot
+  // machine-gun the 4.1 s stinger. Ordinary crossings never read it.
+  const mpJumpFired = new Set();
   let bullets = []; // setBullets — bullets.js rows, tick-sorted
   let decoyShots = []; // setDecoyPlan → decoyCues(plan), tick-sorted
   let bombRows = c4BeepRows([]); // the C4 beep scheduler's row lists
@@ -1163,9 +1244,10 @@ export function createSfxEngine({ engine, matchId, onError }) {
     if (utilGain) utilGain.gain.value = utilMuted ? 0 : utilVol * UTILITY_GAIN_SCALE;
     if (c4Gain) c4Gain.gain.value = c4Muted ? 0 : c4Vol * C4_GAIN_SCALE;
     if (announcerGain) announcerGain.gain.value = annMuted ? 0 : annVol * ANNOUNCER_GAIN_SCALE;
-    // The FOOTSTEPS bus scales like every other bus here (× 1/2 —
-    // STEP_GAIN_SCALE); its fader ships at 0, so this reads 0 until a
-    // surface raises footsteps_volume (or the popover's fader).
+    // The FOOTSTEPS bus scales like every other bus here (× 1/3 —
+    // STEP_GAIN_SCALE); its fader ships at 1 (FOOTSTEPS_VOL_DEFAULT)
+    // but the bus is MUTED (stepMuted), so this reads 0 until a surface
+    // unmutes it — the mute, not the fader, is what silences it.
     if (stepGain) stepGain.gain.value = stepMuted ? 0 : stepVol * STEP_GAIN_SCALE;
   }
 
@@ -1418,8 +1500,16 @@ export function createSfxEngine({ engine, matchId, onError }) {
   // other cue (a window carries at most a handful of announcer lines).
   function playGroupAt(name, bucket, delay) {
     if (destroyed || !ctx || ctx.state !== 'running') return false;
-    const buf = pickReady(name);
-    if (!buf) return false;
+    return playBufferAt(pickReady(name), bucket, delay);
+  }
+
+  // playBufferAt — the spawn half of playGroupAt for an ALREADY-PICKED
+  // buffer, so a caller that must both play AND measure one exact
+  // variant (playAnnouncerInRange reads the defuse line's own duration)
+  // cannot pick twice. Returns false when the buffer is missing or
+  // playback is unavailable.
+  function playBufferAt(buf, bucket, delay) {
+    if (destroyed || !ctx || ctx.state !== 'running' || !buf) return false;
     const when = delay > 0 ? ctx.currentTime + delay : null;
     return !!spawnSource(buf, bucket, when, live, LIVE_CAP);
   }
@@ -1479,19 +1569,65 @@ export function createSfxEngine({ engine, matchId, onError }) {
 
   // playAnnouncerInRange — the announcer voice lines (roundEndCues +
   // bombAnnouncerCues + matchPointCues) in (prevTick, curTick] on the
-  // ANNOUNCER bus. The window's cues go through announcerOrder first: a
-  // `bombdef` and a round-end line in the SAME window start in the
-  // owner-observed order (bombdef now, the win line ANNOUNCER_ORDER_DELAY_S
-  // later) — the one place two cues must not start together. Everything
-  // else starts on arrival, exactly like the other cue lists (same
-  // open/closed window, same seek/pause guards — it is called only inside
-  // the guarded block), which is what makes the match-point stinger fire
-  // once per match-point round at freeze start and re-seed on a seek.
+  // ANNOUNCER bus. The window's cues go through announcerOrder first (the
+  // pure "which cues are ordered" rule): a `bombdef` and a round-end line
+  // in the SAME window start in the owner-observed order — the one place
+  // two cues must not start together. The WHEN of that ordering is
+  // re-measured HERE, at play time (owner instruction 2026-11-10, A3):
+  // the defuse line is picked and played FIRST, and when its decoded
+  // buffer carries a duration the round-win line starts at
+  // `bombdef.duration + ANNOUNCER_SEQUENCE_GAP_S` — the line plays out,
+  // then a beat of silence, then the win line (no more ~1.28 s of
+  // overlap on a 1.776 s bombdef.wav). Fallbacks: no duration info →
+  // announcerOrder's fixed ANNOUNCER_ORDER_DELAY_S; the defuse line did
+  // NOT play at all (no buffer — pickReady/decode failed) → no delay for
+  // the win line. Everything else starts on arrival, exactly like the
+  // other cue lists (same open/closed window, same seek/pause guards —
+  // it is called only inside the guarded block), which is what makes the
+  // match-point stinger fire once per match-point round at freeze start
+  // and re-seed on a seek.
   function playAnnouncerInRange(fromTick, toTick) {
     const win = utilCuesInRange(announcerCues, fromTick, toTick);
     if (!win.length) return;
-    for (const cue of announcerOrder(win)) {
-      playGroupAt(cue.name, cue.bucket || 'announcer', cue.delay || 0);
+    const ordered = announcerOrder(win);
+    // The window's defuse cue, if any: play it first so the round-end
+    // line's delay can depend on whether it actually sounded (and on how
+    // long it is). Only bombdef windows sequence — every other window
+    // keeps announcerOrder's delay 0.
+    const defIdx = ordered.findIndex((c) => c && c.name === 'bombdef');
+    let roundEndDelay = null; // null → keep announcerOrder's cue.delay
+    if (defIdx >= 0) {
+      const cue = ordered[defIdx];
+      const buf = pickReady('bombdef'); // ONE pick: played AND measured
+      const played = playBufferAt(buf, cue.bucket || 'announcer', cue.delay || 0);
+      roundEndDelay = !played
+        ? 0 // the defuse line did not play at all → never delay the win line
+        : buf && Number.isFinite(buf.duration) && buf.duration > 0
+          ? buf.duration + ANNOUNCER_SEQUENCE_GAP_S // the line's END, then a beat
+          : ANNOUNCER_ORDER_DELAY_S; // no duration info → the fixed fallback
+    }
+    for (let i = 0; i < ordered.length; i++) {
+      if (i === defIdx) continue; // already played above
+      const cue = ordered[i];
+      const delay =
+        roundEndDelay != null && ROUND_END_LINES.has(String(cue.name)) ? roundEndDelay : cue.delay || 0;
+      playGroupAt(cue.name, cue.bucket || 'announcer', delay);
+    }
+  }
+
+  // playMatchPointJump — deliberate exception #2 (see the header
+  // contract and matchPointCues): the match-point cues whose freeze start
+  // the playhead jumped ACROSS (skip_freeze steps the whole freeze in
+  // one frame; a forward scrub does the same), played on the announcer
+  // bus. Reached only for a FORWARD jump with a real compare point — the
+  // first frame and backward jumps re-seed silently, exactly as before —
+  // and each cue tick plays at most once per engine (mpJumpFired), so
+  // scrubbing back and forth over the same freeze cannot machine-gun the
+  // 4.1 s stinger. A cue whose buffer is not decoded yet stays eligible
+  // (nothing is recorded unless it actually started).
+  function playMatchPointJump(fromTick, toTick) {
+    for (const cue of matchPointJumpCues(matchPointList, fromTick, toTick, mpJumpFired)) {
+      if (playGroupAt(cue.name, cue.bucket || 'announcer', 0)) mpJumpFired.add(cue.tick);
     }
   }
 
@@ -1559,6 +1695,24 @@ export function createSfxEngine({ engine, matchId, onError }) {
       if (beepLive[i].when > ctx.currentTime) {
         stopSourceEntry(beepLive[i]);
         beepLive.splice(i, 1);
+      }
+    }
+  }
+
+  // cancelQueuedAnnouncer — the same not-yet-started rule for the
+  // ANNOUNCER bus's FUTURE-scheduled lines (only announcerOrder queues
+  // anything: every other cue starts with when = ctx.currentTime, so
+  // `when > currentTime` selects exactly the lines waiting out their
+  // defuse→win gap). A cueGapJump re-anchors the playback position, so a
+  // line queued against the pre-seek clock must not fire after the scrub
+  // (mirrors cancelQueuedBeeps — an already-ringing line plays out).
+  // The gap is ≤ ~2 s, but a seek during it is a real interaction.
+  function cancelQueuedAnnouncer() {
+    if (!ctx) return;
+    for (let i = live.length - 1; i >= 0; i--) {
+      if (live[i].when > ctx.currentTime) {
+        stopSourceEntry(live[i]);
+        live.splice(i, 1);
       }
     }
   }
@@ -1649,6 +1803,10 @@ export function createSfxEngine({ engine, matchId, onError }) {
     lastPlaying = st.playing;
     const jump = cueGapJump(st.tick, prevTick, st.speed, tr);
     const running = !!ctx && ctx.state === 'running';
+    // A jump re-anchors playback: any announcer line still WAITING out
+    // its defuse→win delay was scheduled against the old clock and must
+    // not fire after the scrub (mirrors cancelQueuedBeeps).
+    if (jump) cancelQueuedAnnouncer();
     updateC4Beeps(st, jump, running);
     if (st.playing && running && !jump) {
       playUtilInRange(prevTick, st.tick);
@@ -1659,6 +1817,12 @@ export function createSfxEngine({ engine, matchId, onError }) {
       playActionInRange(prevTick, st.tick);
       playAnnouncerInRange(prevTick, st.tick);
       playFootstepInRange(prevTick, st.tick);
+    } else if (st.playing && running && jump && prevTick != null && st.tick > prevTick) {
+      // DELIBERATE EXCEPTION #2: a FORWARD jump across a match-point
+      // round's freeze start still plays the stinger (skip_freeze jumps
+      // the whole freeze in one step, so no ordinary frame ever crosses
+      // its tick). Every OTHER cue list keeps re-seeding here.
+      playMatchPointJump(prevTick, st.tick);
     }
     // EVERY path advances the compare point: a seek, a loop wrap or a
     // paused scrub must not machine-gun the cues it crossed when
@@ -1695,11 +1859,15 @@ export function createSfxEngine({ engine, matchId, onError }) {
     // to the win line); matchPointCues rides last (its freeze-start tick
     // marks the next round's start, and it has no ordering rule of its
     // own). One tick-sorted list → the ONE window selector
-    // (utilCuesInRange) serves it like every other cue list.
+    // (utilCuesInRange) serves it like every other cue list. The
+    // match-point sub-list is kept separately too — the jump path
+    // (deliberate exception #2) selects from it without scanning every
+    // announcer cue.
+    matchPointList = matchPointCues(landmarkRows, rounds);
     announcerCues = [
       ...bombAnnouncerCues(landmarkRows, rounds),
       ...roundEndCues(landmarkRows, rounds),
-      ...matchPointCues(landmarkRows, rounds),
+      ...matchPointList,
     ].sort((a, b) => a.tick - b.tick);
     bombRows = c4BeepRows(landmarkRows);
   }
@@ -1774,9 +1942,10 @@ export function createSfxEngine({ engine, matchId, onError }) {
       applyGains();
     },
     // setFootstepsVolume — the FOOTSTEPS fader (the player-sound bus).
-    // Same 0..1 coercion as the other sfx faders; its DEFAULT is 0 (the
-    // bus ships muted — see stepVol), so a caller that never sets it is
-    // silent by construction.
+    // Same 0..1 coercion as the other sfx faders; its DEFAULT is 1
+    // (FOOTSTEPS_VOL_DEFAULT — 100 %), but the bus ships MUTED (see
+    // stepVol/stepMuted), so a caller that never calls setMuted stays
+    // silent by construction even with the fader at 1.
     setFootstepsVolume(v) {
       stepVol = Math.max(0, Math.min(1, Number(v) || 0));
       applyGains();

@@ -32,7 +32,7 @@
   } from '../services.js';
   import { extractAllAssets } from '../assets.js';
   import { probeAudio } from '../replay/audio.js';
-  import { AUDIO_VOL_DEFAULT, prefVolume } from '../replay/sfx.js';
+  import { AUDIO_VOL_DEFAULT, FOOTSTEPS_VOL_DEFAULT, prefVolume } from '../replay/sfx.js';
   import { fmtDate, fmtBytes } from '../fmt.js';
   import { GLOSSARY } from '../definitions.js';
   import { getTheme, applyTheme } from '../theme.js';
@@ -90,17 +90,19 @@
   // prefs.go) —
   // optimistic local state on
   // every input, durable via setPref, read back in onMount (the
-  // font-size pattern). The FOOTSTEPS level defaults to 0 (muted) —
-  // deliberately not AUDIO_VOL_DEFAULT.
+  // font-size pattern). The FOOTSTEPS level defaults to
+  // FOOTSTEPS_VOL_DEFAULT (1 = 100 %) — it is muted by the replay
+  // popover's session mute, never by the fader (owner instruction
+  // 2026-11-10), so this surface has no mute control of its own.
   let volVoice = $state(AUDIO_VOL_DEFAULT);
   let volGuns = $state(AUDIO_VOL_DEFAULT);
   let volUtil = $state(AUDIO_VOL_DEFAULT);
   let volC4 = $state(AUDIO_VOL_DEFAULT);
   let volAnnouncer = $state(AUDIO_VOL_DEFAULT);
-  let volSteps = $state(0);
+  let volSteps = $state(FOOTSTEPS_VOL_DEFAULT);
 
   function setVol(bucket, raw) {
-    const level = prefVolume(Number(raw) / 100, bucket === 'footsteps' ? 0 : AUDIO_VOL_DEFAULT);
+    const level = prefVolume(Number(raw) / 100, bucket === 'footsteps' ? FOOTSTEPS_VOL_DEFAULT : AUDIO_VOL_DEFAULT);
     if (bucket === 'voice') volVoice = level;
     else if (bucket === 'guns') volGuns = level;
     else if (bucket === 'c4') volC4 = level;
@@ -566,9 +568,9 @@
     // Replay-audio faders: read the six persisted levels back (the
     // boot-time pass may still be in flight for a deep-linked Settings);
     // never-set/corrupt falls to each key's OWN default — the shared 0.8
-    // for five of them, 0 for footsteps (muted by default) — so a broken
-    // pref can never bind a 0-fader slider … except the footsteps one,
-    // whose 0 IS the shipped state.
+    // for five of them, FOOTSTEPS_VOL_DEFAULT (1 = 100 %) for footsteps
+    // (muted by the replay popover's session mute, not by the fader) —
+    // so a broken pref can never bind a wrong slider.
     Promise.all([
       getPref('voice_volume').catch(() => null),
       getPref('guns_volume').catch(() => null),
@@ -583,7 +585,7 @@
         volUtil = prefVolume(u);
         volC4 = prefVolume(c);
         volAnnouncer = prefVolume(a);
-        volSteps = prefVolume(s, 0);
+        volSteps = prefVolume(s, FOOTSTEPS_VOL_DEFAULT);
       })
       .catch(() => {
         /* keep the defaults */
@@ -1094,7 +1096,8 @@
     <div class="row-between">
       <span class="muted"
         >Footsteps volume — player footsteps and landings in the replay
-        (starts at 0: muted).</span
+        (100 % by default — muted until you unmute in the replay volume
+        popover).</span
       >
       <input
         class="sett-vol"

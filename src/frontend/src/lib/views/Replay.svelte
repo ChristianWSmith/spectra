@@ -71,6 +71,7 @@
   import { loadIconManifest, preloadIcons } from '../replay/icons.js';
   import {
     AUDIO_VOL_DEFAULT,
+    FOOTSTEPS_VOL_DEFAULT,
     createSfxEngine,
     loadSoundManifest,
     prefVolume,
@@ -176,15 +177,16 @@
   let uiUtilVol = $state(AUDIO_VOL_DEFAULT);
   let uiC4Vol = $state(AUDIO_VOL_DEFAULT);
   let uiAnnouncerVol = $state(AUDIO_VOL_DEFAULT);
-  // The footsteps fader's default is 0 (MUTED by default — the same
-  // default its pref read uses, prefVolume(v, 0)); it is NOT
-  // AUDIO_VOL_DEFAULT.
-  let uiStepsVol = $state(0);
+  // The footsteps fader's default is FOOTSTEPS_VOL_DEFAULT (1 = 100 % —
+  // the same default its pref read uses); the bus is MUTED by the
+  // session mute (uiStepsMuted starts true), never by the fader, so a
+  // user only has to unmute it.
+  let uiStepsVol = $state(FOOTSTEPS_VOL_DEFAULT);
   let uiGunsMuted = $state(false);
   let uiUtilMuted = $state(false);
   let uiC4Muted = $state(false);
   let uiAnnouncerMuted = $state(false);
-  let uiStepsMuted = $state(false);
+  let uiStepsMuted = $state(true); // footsteps ship muted (session-only)
   let sfx = null;
   let sfxErr = $state('');
   // The volume popover: one Popover anchored to the unmute-codicon
@@ -1562,7 +1564,9 @@
     uiGunsMuted = false; // …including the sfx bucket mutes (session-only)
     uiUtilMuted = false;
     uiAnnouncerMuted = false;
-    uiStepsMuted = false;
+    // …except FOOTSTEPS: a fresh engine ships that bus muted again
+    // (owner instruction 2026-11-10 — unmute-to-listen, never a 0 fader).
+    uiStepsMuted = true;
     sfxErr = '';
     if (input) input.detach();
     if (ro) ro.disconnect();
@@ -1897,7 +1901,8 @@
       // the voice master and (once the sounds manifest proves non-empty)
       // the sfx engine. One Promise.all, fail-soft to each key's default
       // like every other pref read in load(). The FOOTSTEPS level reads
-      // with default 0 — that bus ships muted (not AUDIO_VOL_DEFAULT).
+      // with FOOTSTEPS_VOL_DEFAULT (1 = 100 %) — it is muted by the
+      // session mute, not by its fader.
       {
         const [vv, gv, uv, cv, av, sv] = await Promise.all([
           getPref('voice_volume').catch(() => null),
@@ -1912,7 +1917,7 @@
         uiUtilVol = prefVolume(uv);
         uiC4Vol = prefVolume(cv);
         uiAnnouncerVol = prefVolume(av);
-        uiStepsVol = prefVolume(sv, 0); // footsteps_volume's default is 0 (muted)
+        uiStepsVol = prefVolume(sv, FOOTSTEPS_VOL_DEFAULT); // 100 % by default; muted by uiStepsMuted
       }
       // Flash-white overlay: the blind events joined with their narrow
       // flash-duration read — the duration lives on detail_json
@@ -2162,8 +2167,9 @@
       sfx.setUtilityVolume(uiUtilVol);
       sfx.setC4Volume(uiC4Vol);
       sfx.setAnnouncerVolume(uiAnnouncerVol);
-      // The footsteps fader ships at 0 — applying it explicitly keeps the
-      // engine's own default (0) and the UI state in lockstep.
+      // The footsteps fader ships at FOOTSTEPS_VOL_DEFAULT (1) while the
+      // bus ships MUTED — applying both explicitly keeps the engine's
+      // own defaults and the UI state in lockstep.
       sfx.setFootstepsVolume(uiStepsVol);
       sfx.setMuted('guns', uiGunsMuted);
       sfx.setMuted('utility', uiUtilMuted);
@@ -2678,10 +2684,11 @@
 
   // The trigger reads "warn" only when EVERY audible category is muted —
   // without voice in the match the audible set is guns + utility + C4 +
-  // announcer. The FOOTSTEPS bus only counts while its fader is above 0
-  // (it ships at 0 — muted by default — so an untouched footsteps row
-  // must not keep the trigger from reporting "everything audible is
-  // muted", and an unmuted flag on a 0-fader bus makes no sound).
+  // announcer. The FOOTSTEPS bus only counts while it can actually make
+  // sound: it ships MUTED (uiStepsMuted — the unmute is the user's one
+  // deliberate act), and a 0-fader bus is silent even unmuted, so
+  // either state keeps the trigger from reporting "everything audible is
+  // muted".
   const audioAllMuted = $derived(
     (!voicePresence || !voicePresence.hasVoice || uiVoiceMutedAll) &&
       uiGunsMuted &&

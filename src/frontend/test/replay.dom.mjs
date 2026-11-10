@@ -954,14 +954,21 @@ check(
       );
     }),
 );
-// The FOOTSTEPS fader ships at 0 — footsteps_volume's default is 0 (the
-// bus is muted by default), so an untouched pref must bind a 0-slider,
-// never the shared 0.8 the other five read.
+// The FOOTSTEPS fader ships at 100 % (FOOTSTEPS_VOL_DEFAULT — an
+// untouched footsteps_volume must bind the 100-slider, never the shared
+// 0.8 and never 0) while the bus ships MUTED: the row's mute toggle
+// starts pressed + warn, so the user unmutes instead of hunting the
+// slider (owner instruction 2026-11-10, A1).
+const stepsSlider = controls.querySelector('#rp-vol-footsteps');
+const stepsMute = controls.querySelector('button[aria-label="Mute footsteps"]');
 check(
-  'footsteps fader starts at 0 (muted by default, its own pref default)',
-  controls.querySelector('#rp-vol-footsteps')?.value === '0' &&
-    globalThis.__prefs['footsteps_volume'] === undefined,
-  `value=${controls.querySelector('#rp-vol-footsteps')?.value} pref=${JSON.stringify(globalThis.__prefs['footsteps_volume'])}`,
+  'footsteps fader starts at 100 (its own pref default) with the session mute ON',
+  stepsSlider?.value === '100' &&
+    globalThis.__prefs['footsteps_volume'] === undefined &&
+    !!stepsMute &&
+    stepsMute.getAttribute('aria-pressed') === 'true' &&
+    stepsMute.classList.contains('warn'),
+  `value=${stepsSlider?.value} pref=${JSON.stringify(globalThis.__prefs['footsteps_volume'])} pressed=${stepsMute?.getAttribute('aria-pressed')} warn=${stepsMute?.classList.contains('warn')}`,
 );
 const voiceSlider = controls.querySelector('#rp-vol-voice');
 const voiceMute = controls.querySelector('button[aria-label="Mute voice"]');
