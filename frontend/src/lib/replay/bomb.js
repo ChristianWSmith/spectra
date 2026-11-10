@@ -44,6 +44,7 @@
 //
 // Unit-tested by src/lib/bomb.test.js (the lib test glob
 // src/lib/*.test.js picks it up).
+import { sameRoundEndTick, nextRoundStartTick } from './roundcut.js';
 
 // hasBombPos reports whether a row carries a usable world position
 // (normalizeEvent aliases posX/posY → x/y; missing evidence stays
@@ -80,6 +81,8 @@ export function hasBombPos(row) {
 export function bombEndTick(plant, tr, explodes, defuses, roundEnds, roundStarts) {
   if (!plant || !Number.isFinite(plant.tick)) return 0;
   let end = null;
+  // The bomb's OWN terminators (bomb_explode / bomb_defuse): same round,
+  // at/after the plant — the earliest wins.
   const consider = (list) => {
     if (!list) return;
     for (const e of list) {
@@ -90,7 +93,15 @@ export function bombEndTick(plant, tr, explodes, defuses, roundEnds, roundStarts
   };
   consider(explodes);
   consider(defuses);
-  consider(roundEnds);
+  // The round_end half of the boundary is DELEGATED to roundcut.js
+  // (sameRoundEndTick — the scan roundCutTick composes), so this rule and
+  // the death X / the round-cut cleanup can never drift apart. The MIN
+  // with the next round_start below is kept: bombEndTick is pinned to it
+  // (a same-round round_end AFTER the next round's start must lose —
+  // behavior pins win over consolidation), so the roundCutTick ELSE
+  // semantics is deliberately NOT adopted here.
+  const roundEnd = sameRoundEndTick(plant, roundEnds);
+  if (roundEnd !== null && (end === null || roundEnd < end)) end = roundEnd;
   // No same-round terminator rows loaded → the C4 timer (40 s) is the
   // hard fallback. Present rows are evidence, never capped: the 41 s
   // recorded plant → blast (above) would otherwise truncate before the
@@ -100,13 +111,12 @@ export function bombEndTick(plant, tr, explodes, defuses, roundEnds, roundStarts
   // start strictly after the plant IS the next round's). Strictly after,
   // like killEndTick: a round_start on the plant's own tick is the
   // plant round's start and cannot terminate a bomb it contains. Only
-  // ever shortens (`s.tick < end`), so a distant next-round start never
-  // outlives the terminator or the 40 s fallback either.
-  for (const s of roundStarts || []) {
-    if (s && Number.isFinite(s.tick) && s.tick > plant.tick && s.tick < end) {
-      end = s.tick;
-    }
-  }
+  // ever shortens (`next < end`), so a distant next-round start never
+  // outlives the terminator or the 40 s fallback either. Scanned by
+  // roundcut.js's nextRoundStartTick — the same helper killEndTick and
+  // the pops' gates use.
+  const next = nextRoundStartTick(plant.tick, roundStarts);
+  if (next !== null && next < end) end = next;
   return end;
 }
 
