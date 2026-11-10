@@ -900,7 +900,9 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // Follow overrides both (explicit user intent) and smart resumes when
   // follow releases. Panning/zooming while smart takes over to free and
   // notifies the caller (onUserCamera) so its selector follows — the
-  // pref keeps whatever the user picked there explicitly.
+  // pref keeps whatever the user picked there explicitly. The wheel
+  // ZOOM is exempt while follow is engaged: it changes only the scale,
+  // anchored on the followed player (see zoomAt).
   let camMode = 'free';
   let easeRaf = 0; // the smart settle loop's pending frame (0 = idle)
   let lastEaseT = 0; // last eased draw, for the dt of the next step
@@ -1432,15 +1434,27 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   }
 
   function zoomAt(factor, sx, sy) {
-    if (camMode === 'smart') takeOver(); // manual wheel → free camera
-    screenToImage(sx, sy);
-    const bx = imgPt.x;
-    const by = imgPt.y;
+    // FOLLOW keeps the camera: the wheel changes ONLY the scale — it
+    // never takeOver()s to free (that would release follow through
+    // onUserCamera) and never anchors on the cursor. draw() re-centers
+    // on the followed player every frame, so the zoom reads as scaling
+    // around THEM. Free (and the non-following smart takeover below)
+    // keep the cursor-anchored behavior exactly.
+    const following = engine.state.followSlot != null;
+    if (!following && camMode === 'smart') takeOver(); // manual wheel → free camera
+    let bx = 0;
+    let by = 0;
+    if (!following) {
+      screenToImage(sx, sy);
+      bx = imgPt.x;
+      by = imgPt.y;
+    }
     // Clamp the on-screen scale (fit-relative zoom × fit), not the raw
     // ratio: ZOOM_MIN/MAX are about how much map is visible, so they
     // must mean the same thing whatever the canvas/image size is.
     const eff = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, cam.fit * cam.zoom * factor));
     cam.zoom = eff / cam.fit;
+    if (following) return; // the center belongs to the followed player
     const s = cam.fit * cam.zoom;
     cam.cx = bx - (sx - cssW / 2) / s;
     cam.cy = by - (sy - cssH / 2) / s;
