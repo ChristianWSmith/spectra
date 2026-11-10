@@ -158,6 +158,10 @@ writeFileSync(
 // fails to link above.
 for (const rel of [
   'playercard.js', 'playercolor.js', 'livestats.js', 'voiceindex.js',
+  // voicewindows.js is the pure sparse-window map module audio.js (the
+  // audio-real.js copy below re-exports GST_AUDIO_HINT through) imports —
+  // copy it or the audio graph fails to link above.
+  'voicewindows.js',
   'sfx.js', 'stretch.js', 'bullets.js', 'decoy.js', 'bomb.js', 'roundcut.js',
   // playercard.js now resolves its held-item prefix through
   // replay/loadout.js (the one loadout vocabulary) — copy it too, or the
@@ -292,9 +296,14 @@ export const getRounds = () =>
   ]);
 export const getTeamNames = () => Promise.resolve({ ct: 'Alpha', t: 'Bravo' });
 export const getScoreboard = () => Promise.resolve([]);
+// Voice: the fixture has NO voice (presence null → the whole voice index
+// read below is gated off), but the view links getVoiceIndex like the
+// other reads — the stub resolves null, which the view treats as the
+// fail-soft "no players / no lanes / no window map" result.
 export const getVoicePresence = () => Promise.resolve(null);
 export const getVoicePlayers = () => Promise.resolve([]);
 export const getVoiceLanes = () => Promise.resolve(null);
+export const getVoiceIndex = () => Promise.resolve(null);
 export const voiceWavURL = () => '';
 export const extractIcons = () => Promise.resolve({ ok: false });
 export const listSavedFilters = () => Promise.resolve([]);

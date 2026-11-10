@@ -29,8 +29,7 @@
     getRounds,
     getTeamNames,
     getVoicePresence,
-    getVoicePlayers,
-    getVoiceLanes,
+    getVoiceIndex,
     extractIcons,
     listSavedFilters,
     saveFilter,
@@ -62,6 +61,7 @@
   } from '../replay/landmarks.js';
   import { attachReplayInput, snapshot } from '../replay/input.js';
   import { createVoiceEngine, fetchVoicePCM } from '../replay/audio.js';
+  import { voiceWindowTicks } from '../replay/voicewindows.js';
   import {
     loadState,
     slotStateAt,
@@ -144,6 +144,10 @@
   // silent-retry contract — no gesture-pending hint anymore).
   let voicePresence = $state(null);
   let voicePlayers = $state([]);
+  // The server-exact sparse-window map (GetVoiceIndex → windows) the
+  // engine skips chunk-less windows against; null = no map, which the
+  // engine fail-opens to fetching every window.
+  let voiceWindows = $state(null);
   let voiceEngine = null;
   let uiVoiceOn = $state(false);
   let uiVoiceErr = $state('');
@@ -206,8 +210,8 @@
   // a late extraction re-pushes through the same expression.
   const iconObj = $derived(iconMap ? Object.fromEntries(iconMap) : null);
   // Voice metadata (handoff D): colors are a pure map over roster +
-  // voice players; the speaking index arrives from getVoiceLanes (~1
-  // bucket per second) and fails soft to null (no rings, no crash).
+  // voice players; the speaking index arrives from getVoiceIndex's lanes
+  // (~1 bucket per second) and fails soft to null (no rings, no crash).
   let speakIdx = $state(null);
   // Per-column voice mute (spec 22) — view-owned like uiVoiceMute: it
   // survives engine rebuilds and is re-applied in startEngine.
@@ -1754,13 +1758,14 @@
       renderer?.setDecoyPlan(decoyPlanFor());
       sfx?.setDecoyPlan(decoyPlanFor());
       sfx?.setRounds(rounds); // freeze gate + the match-point scoreline for the cue lists
-      // Voice presence gates the controls block; players ride alongside.
+      // Voice presence gates the controls block. The index read itself
+      // (players + lanes + window map, ONE pass) runs after the positions
+      // parse below — the lane bucket count needs the timeline span —
+      // which collapses the old players read + background lanes read
+      // (three index walks at load) into one.
       voicePresence = await getVoicePresence(id).catch(() => null);
-      if (voicePresence && voicePresence.hasVoice) {
-        voicePlayers = (await getVoicePlayers(id).catch(() => [])) || [];
-      } else {
-        voicePlayers = [];
-      }
+      voicePlayers = [];
+      voiceWindows = null;
       const { pack: p, transform: tf, img, layerImgs: lims } = await loadPack(matchMap);
       pack = p;
       packTf = tf;
@@ -1773,27 +1778,38 @@
       const buf = await res.arrayBuffer();
       if (!live) return;
       data = parsePositions(buf, players.length || 10);
-      // Voice speaking index (handoff D): ~1 bucket per second of match
-      // time (spec 26's talking ring/card outline). BACKGROUND fetch — it
-      // must not hold up first paint; whether it lands before or after
-      // startEngine, the cards re-derive from the $state and the
-      // renderer's setVoices is re-pushed at the assignment. A null lanes
-      // result (no voice rows / stubbed service) fails soft to "no
-      // speaking ring" — the colors payload is the PLAYER colors either
-      // way (startEngine pushed them; they are not a voice fact).
+      // Voice index (handoff D): ONE read carries the players (cards +
+      // engine), the speaking lanes (~1 bucket per second of match time —
+      // spec 26's talking ring/card outline) and the engine's
+      // server-exact sparse-window map (windows it may skip WITHOUT
+      // fetching — membership is never re-derived client-side). Awaited
+      // before startEngine (which needs voicePlayers): it costs the one
+      // walk the old players read did, so first paint is unchanged. The
+      // colors payload is the PLAYER colors either way (startEngine
+      // pushed them; they are not a voice fact); any failure fail-softs
+      // to no players / no speaking ring / no map — the engine then
+      // fail-opens to fetching every window.
       if (voicePresence && voicePresence.hasVoice) {
         const tr = normTickRate(meta?.tickRate);
         const span = data.ticks[data.frames - 1] - data.ticks[0];
-        getVoiceLanes(id, Math.max(1, Math.ceil(span / tr)))
-          .then((lanes) => {
-            if (!live) return;
-            speakIdx = lanes ? buildSpeakingIndex(lanes) : null;
-            renderer?.setVoices({
-              colors: playerColorSlots,
-              speaking: speakIdx ? speakingFor : null,
-            });
-          })
-          .catch(() => {});
+        const vidx = await getVoiceIndex(
+          id,
+          Math.max(1, Math.ceil(span / tr)),
+          voiceWindowTicks(tr),
+        ).catch(() => null);
+        if (!live) return;
+        if (vidx) {
+          voicePlayers = vidx.players || [];
+          voiceWindows = vidx.windows || null;
+          speakIdx = vidx.lanes ? buildSpeakingIndex(vidx.lanes) : null;
+          renderer?.setVoices({
+            colors: playerColorSlots,
+            speaking: speakIdx ? speakingFor : null,
+          });
+        } else {
+          voicePlayers = [];
+          voiceWindows = null;
+        }
       }
       // The drawable anchor set (kills/grenades/bomb/drops/round_end) —
       // one unfiltered source read, awaited before the engine starts so
@@ -2072,6 +2088,9 @@
         },
       });
       voiceEngine.setPlayers(voicePlayers);
+      // The server-exact window map (null → the engine fetches every
+      // window: fail-open, never a skipped window on a missing map).
+      voiceEngine.setWindows(voiceWindows);
       voiceEngine.setMasterVolume(uiVoiceVol); // the popover's Voice fader
       // The per-player mute map survives engine rebuilds (the player
       // cards own its UI); the per-column team mutes survive the same

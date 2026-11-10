@@ -516,10 +516,32 @@ export function deleteSavedFilter(id) { return AnalyticsService.DeleteSavedFilte
 // --- VoiceService (M4) -------------------------------------------------------
 // Bulk PCM/WAV audio does NOT ride the bindings — it is fetched from the
 // HTTP routes /api/sidecar/<id>/voice/pcm|wav (see replay/audio.js).
+// The index reads are cachedRead like the sound-event reads: every
+// spectra:* data event (import/reprocess) flushes them, so a reprocessed
+// match never serves a stale listing or window map.
 
-export function getVoicePresence(id) { return VoiceService.GetVoicePresence(id); }
-export function getVoicePlayers(id) { return VoiceService.GetVoicePlayers(id); }
-export function getVoiceLanes(id, buckets) { return VoiceService.GetVoiceLanes(id, buckets || 180); }
+export function getVoicePresence(id) {
+  return cachedRead('GetVoicePresence', [id], () => VoiceService.GetVoicePresence(id));
+}
+
+export function getVoicePlayers(id) {
+  return cachedRead('GetVoicePlayers', [id], () => VoiceService.GetVoicePlayers(id));
+}
+
+export function getVoiceLanes(id, buckets) {
+  const b = buckets || 180;
+  return cachedRead('GetVoiceLanes', [id, b], () => VoiceService.GetVoiceLanes(id, b));
+}
+
+// getVoiceIndex is the ONE match-load voice read: players + lane buckets +
+// the engine's server-exact sparse-window map from a single index pass
+// (buckets ≤ 0 → the Go default; windowTicks is the caller's window width
+// — voiceWindowTicks, the engine's own).
+export function getVoiceIndex(id, buckets, windowTicks) {
+  return cachedRead('GetVoiceIndex', [id, buckets, windowTicks], () =>
+    VoiceService.GetVoiceIndex(id, buckets, windowTicks),
+  );
+}
 
 // voiceWavURL is the per-player full-track download link (anchor `download`).
 export function voiceWavURL(matchId, steamId) {

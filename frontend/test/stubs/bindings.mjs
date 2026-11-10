@@ -57,7 +57,13 @@ export const MatchService = {
 export const ReplayService = {};
 export const AnalyticsService = {};
 export const ProfileService = {};
-export const VoiceService = {};
+export const VoiceService = {
+  // Voice index reads (the read-cache tests drive these).
+  GetVoicePresence: rec('GetVoicePresence'),
+  GetVoicePlayers: rec('GetVoicePlayers'),
+  GetVoiceLanes: rec('GetVoiceLanes'),
+  GetVoiceIndex: rec('GetVoiceIndex'),
+};
 export const MapPackService = {};
 export const IconService = {};
 export const SoundService = {};
