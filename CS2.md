@@ -333,6 +333,32 @@ at the end of the section.
   (https://www.hltv.org/news/36967/the-logic-behind-valves-move-to-mr12)
   (all retrieved 2026-11-09).
 
+- **SOS sound events for grenade bounces and player sounds (attribution,
+  origin layout, vocabulary)** — how spectra resolves and attributes the
+  `CMsgSosStartSoundEvent` stream. BOUNCE: the sound's
+  `source_entity_index` is the THROWN PROJECTILE entity — det rows must
+  take it from `GrenadeEvent.Projectile.Entity.ID()` (NOT
+  `GrenadeEntityID`/payload `entityid`, which miss molotovs: 912/979 vs
+  979/979); the world origin is 3×float32 LE inside `packed_params` at
+  offset 7 after header `4d ce 7c 5a 0a 0c 00` (validated 1,826/1,826
+  golden messages; final bounce == detonation position exactly); 87% of
+  bounces fire TWO messages → dedupe by (entity, tick, name), first wins.
+  PLAYER SOUNDS: the source is the player pawn, but `m_hController`
+  reads `0xFFFFFF` for ~68% of messages (demoinfocs' own handle walk
+  fails there) — the reverse link `Player.PlayerPawnEntity().ID()==src`
+  resolves 100% (16,252/16,252 golden); `src=-1` never occurs for these.
+  Vocabulary: 50 materials × `CT_`/`T_`/`Land_` prefixes (126
+  `*.StepLeft` names, incl. lowercase `ct_wade`) + `Gear.JumpLand.*`,
+  `Default.WalkJump`, `Player.DamageFall*`, `Land.Thud`, `Default.Land`;
+  material lives IN the name (from `scripts/surfaceproperties_footsteps.txt`).
+  `grenade_bounce` the legacy game event fires 0× (unusable); the
+  `player_footstep` game event is a sparse ~6% echo (SOS is
+  authoritative); `player_falldamage` fires 0× in CS2 demos (fall damage
+  = same-tick `Player.DamageFall` SOS ↔ `weapon='World'` hurt rows,
+  14/15 + 14/14 reverse). Consumed by `internal/extract/sos.go`.
+  **Source** — local probes of the golden pool (7 demos) + demoinfocs v6
+  module cache + `cs2find` over the local install (2026-11-09).
+
 - **Round-boundary cleanup of leftover projectiles/infernos, and
   smoke/fire lifetimes** — does CS2 clear leftover grenades and fires at
   the round boundary, and how long do smoke/fire last? The game clears
