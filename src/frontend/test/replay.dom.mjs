@@ -491,6 +491,12 @@ writeFileSync(
       globalThis.__dropLayers = { guns: !!(v && v.guns), util: !!(v && v.util) };
     },
     setHud() {},
+    setOverlaysVisible(v) {
+      // Recorded so the driver can pin the toolbar wiring: startEngine
+      // pushes the current (default shown) state, #rp-ui pushes each
+      // flip — one flag, two pushes (the setDropLayers pattern).
+      globalThis.__overlays = !!v;
+    },
     setIcons() {},
     setVoices() {},
     setStateIndex() {},
@@ -869,6 +875,26 @@ check(
     return !!hints && !controls.textContent.includes('hints') &&
       children(controls)[children(controls).length - 1] === hints;
   })(),
+);
+// B3 — the shortcuts ride the title ONE PER LINE ('\n' is what stacks
+// them; the old ' · ' join rendered as one long line). jsdom can only
+// prove the ATTRIBUTE carries the ten lines — that '\n' actually stacks
+// them in a rendered tooltip is the one thing left to the human GUI
+// smoke (no CSS/DOM rendering of title tooltips here).
+check(
+  'hints title carries the 10 shortcuts, one per line',
+  (() => {
+    const want = [
+      'Space play/pause', ', . speed', '←/→ step', 'Shift+←/→ ±64 frames (~1s)',
+      '[ ] round', 'L loop', 'F follow', '1-9, 0 select', 'X skip freeze', 'S snapshot',
+    ];
+    const hints = controls.querySelector('.codicon-keyboard')?.parentElement;
+    const got = (hints?.getAttribute('title') || '').split('\n');
+    return JSON.stringify(got) === JSON.stringify(want);
+  })(),
+  JSON.stringify(
+    (controls.querySelector('.codicon-keyboard')?.parentElement?.getAttribute('title') || '').split('\n'),
+  ),
 );
 // Exactly THREE separators split the cluster into groups — each pinned at
 // its exact position: after the loop control, after the volume host
@@ -1352,6 +1378,91 @@ check(
   JSON.stringify(ctrlTexts()),
 );
 
+console.log('E1b. loop popover: the ±10 s quick range (clamped at the stream edges, arms the loop)');
+// State entering this section: the popover closed by E1's last step,
+// bounds 0:01–0:02 (the range-edit rule), loop OFF, playhead at the
+// round-2 start (tick 640 over the stub's ticks 0…576 / 10 frames).
+click(loopBtn);
+await sleep();
+const loopPanel10 = controls.querySelector('.rp-loop-pop');
+// The sr-only labels are accessibility text, not controls — the VISIBLE
+// order is start input, the – separator, stop input, Loop, ±10 s.
+const panelKids = children(loopPanel10).filter(
+  (el) => !(el.tagName === 'LABEL' && el.classList.contains('sr-only')),
+);
+check(
+  'popover child order: start, stop, Loop, ±10 s',
+  panelKids.length === 5 &&
+    panelKids[0].id === 'rp-loop-from' &&
+    panelKids[1].textContent.trim() === '–' &&
+    panelKids[2].id === 'rp-loop-to' &&
+    panelKids[3].textContent.trim() === 'Loop' &&
+    panelKids[4].textContent.trim() === '±10 s',
+  panelKids.map((el) => el.id || el.textContent.trim() || el.tagName).join(' | '),
+);
+check(
+  'the bounds speak start/stop (placeholders + sr-only labels)',
+  controls.querySelector('#rp-loop-from')?.placeholder === 'start' &&
+    controls.querySelector('#rp-loop-to')?.placeholder === 'stop' &&
+    loopPanel10.querySelector('label[for="rp-loop-from"]')?.textContent === 'Loop start time' &&
+    loopPanel10.querySelector('label[for="rp-loop-to"]')?.textContent === 'Loop stop time',
+  `${controls.querySelector('#rp-loop-from')?.placeholder}/${controls.querySelector('#rp-loop-to')?.placeholder}`,
+);
+const loop10Btn = panelKids[4];
+const navBase10 = (globalThis.__nav || []).length;
+click(loop10Btn);
+await sleep();
+check(
+  '±10 s around the playhead (tick 640): 0:00 — 0:09, the `to` clamped to the last frame',
+  controls.querySelector('#rp-loop-from')?.value === '0:00' &&
+    controls.querySelector('#rp-loop-to')?.value === '0:09',
+  `${controls.querySelector('#rp-loop-from')?.value}–${controls.querySelector('#rp-loop-to')?.value}`,
+);
+check(
+  'it ARMS the loop (bounds-then-arm — never the bound-edit rule that disables)',
+  loopBtn.getAttribute('aria-pressed') === 'true' && loopBtn.classList.contains('warn'),
+  `${loopBtn.getAttribute('aria-pressed')} warn=${loopBtn.classList.contains('warn')}`,
+);
+check(
+  '±10 s writes no navigation (the harness query carries no loop= promise)',
+  (globalThis.__nav || []).length === navBase10,
+  String((globalThis.__nav || []).length - navBase10),
+);
+// Near-start clamp: at the stream's first frame the window SHRINKS to
+// what exists — `from` floors at 0, it never wraps to the tail.
+const scrub0 = scrub.querySelector('input.scrubber');
+scrub0.value = '0';
+scrub0.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+await sleep();
+check('the scrub landed on frame 0 (tick 0)', readoutTick().includes('tick 0'), readoutTick());
+click(loop10Btn);
+await sleep();
+check(
+  '±10 s at tick 0 clamps BOTH edges to the stream (0:00–0:09, no wrap)',
+  controls.querySelector('#rp-loop-from')?.value === '0:00' &&
+    controls.querySelector('#rp-loop-to')?.value === '0:09',
+  `${controls.querySelector('#rp-loop-from')?.value}–${controls.querySelector('#rp-loop-to')?.value}`,
+);
+check('the clamp leaves the loop armed', loopBtn.getAttribute('aria-pressed') === 'true', loopBtn.getAttribute('aria-pressed'));
+// Disarm through the popover's own Loop button, then restore the
+// round-2 playhead for the sections below (the transport cluster is
+// re-addressed by the NEXT section's own queries anyway).
+click(controls.querySelector('button[title="Toggle loop (L)"]'));
+await sleep();
+check('the Loop toggle disarms it again', loopBtn.getAttribute('aria-pressed') === 'false', loopBtn.getAttribute('aria-pressed'));
+if (controls.querySelector('#rp-loop-from')) {
+  click(loopBtn);
+  await sleep();
+}
+click(controls.querySelector('#rp-round-next'));
+await sleep();
+check(
+  'the playhead is back at tick 640 for the sections below',
+  readoutTick().includes('tick 640'),
+  readoutTick(),
+);
+check('disarming dropped the loop row again', !ctrlTexts().some((t) => t.startsWith('loop:')), JSON.stringify(ctrlTexts()));
+
 console.log('E2. drop-layer popover: multi-select between the camera selector and the volume, off by default, pref-persisted');
 const dropHost = controls.querySelector('#rp-drops');
 const camHost2 = controls.querySelector('#rp-cam');
@@ -1465,6 +1576,58 @@ check(
 click(dropBtn2); // close — later sections count toolbar chrome
 await sleep();
 check('the popover closes on its trigger', !controls.querySelector('.rp-drops-pop'));
+
+console.log('E3. UI overlay toggle: the ONE coarse chat/feed/score + control-group on-off, no pref');
+const uiBtn = controls.querySelector('#rp-ui');
+check(
+  'the toggle sits immediately before the drops selector',
+  !!uiBtn && uiBtn.nextElementSibling === dropHost,
+  uiBtn ? `next = ${uiBtn.nextElementSibling?.id || uiBtn.nextElementSibling?.className}` : 'missing #rp-ui',
+);
+check(
+  'icon-only, the open-eye glyph while the overlays show',
+  !!uiBtn?.querySelector('.codicon-eye') && !uiBtn.textContent.trim(),
+  uiBtn ? JSON.stringify(uiBtn.textContent) : 'missing',
+);
+check(
+  'startEngine pushed the default (shown) to renderer.setOverlaysVisible',
+  globalThis.__overlays === true,
+  String(globalThis.__overlays),
+);
+check(
+  'the control group is on screen to hide (the ever-present packNote row)',
+  !!ctrlList(),
+  ctrlTexts().join(' | '),
+);
+const prefKeys = () => JSON.stringify(Object.keys(globalThis.__prefs).sort());
+const prefsBefore = prefKeys();
+click(uiBtn);
+await sleep();
+check(
+  'toggling OFF: the renderer got false AND the .rp-ctrl-list is gone',
+  globalThis.__overlays === false && !stage.querySelector('.rp-ctrl-list'),
+  `overlays=${globalThis.__overlays} ctrl=${!!stage.querySelector('.rp-ctrl-list')}`,
+);
+check(
+  'the armed pattern (#rp-skip-freeze\'s shape): pressed + warn + eye-closed while hidden',
+  uiBtn.getAttribute('aria-pressed') === 'true' &&
+    uiBtn.classList.contains('warn') &&
+    !!uiBtn.querySelector('.codicon-eye-closed'),
+  `${uiBtn.getAttribute('aria-pressed')} warn=${uiBtn.classList.contains('warn')}`,
+);
+check(
+  'the toggle writes NO pref (session-only, like theater)',
+  prefKeys() === prefsBefore,
+  `${prefsBefore} → ${prefKeys()}`,
+);
+click(uiBtn);
+await sleep();
+check(
+  'toggling back ON: the renderer got true and the control group returns',
+  globalThis.__overlays === true && !!stage.querySelector('.rp-ctrl-list'),
+  `overlays=${globalThis.__overlays} ctrl=${!!stage.querySelector('.rp-ctrl-list')}`,
+);
+check('the open-eye glyph returns', !!uiBtn.querySelector('.codicon-eye'));
 
 console.log('F. player-card columns: grouping, team names, mute wiring, absent-stream silence');
 const rbody = main.querySelector('.replay-body');
@@ -1785,6 +1948,100 @@ check(
   `${new Set(weaponOpts).size} vs ${weaponOpts.length}`,
 );
 check('headshot toggle kept', !!bar?.querySelector('.filt-check'));
+
+console.log('I. theater mode: the chrome hides, the stage keeps its exit button, popovers reset');
+const theaterBtn = controls.querySelector('#rp-theater');
+check(
+  'the theater cell sits immediately left of the camera selector',
+  !!theaterBtn && theaterBtn.nextElementSibling === controls.querySelector('#rp-cam'),
+  theaterBtn
+    ? `next = ${theaterBtn.nextElementSibling?.id || theaterBtn.nextElementSibling?.className}`
+    : 'missing #rp-theater',
+);
+check(
+  'separator 1 still sits directly after the loop control (the theater cell splits nothing)',
+  !!seps[0] && seps[0] === after(controls.querySelector('.rp-loop')),
+  children(controls).map((el) => el.className || el.id || el.getAttribute('aria-label')).join(' | '),
+);
+check(
+  'the theater cell is icon-only',
+  !!theaterBtn?.querySelector('.codicon-screen-full') && !theaterBtn.textContent.trim(),
+  theaterBtn ? JSON.stringify(theaterBtn.textContent) : 'missing',
+);
+// Open the loop popover FIRST: its panel lives inside the transport, so
+// entering must RESET it — otherwise it would remount OPEN on exit with
+// no toolbar around it.
+click(loopBtn);
+await sleep();
+check('the loop panel is open before entering', !!controls.querySelector('#rp-loop-from'));
+check('the feed aside is up (rail expanded) before entering', !!target.querySelector('.replay-side'));
+const navBaseT = (globalThis.__nav || []).length;
+click(theaterBtn);
+await sleep();
+check('entering hides the top bar', !target.querySelector('.replay-topbar'));
+check('entering hides the transport (scrubber + control cluster)', !target.querySelector('.replay-transport'));
+check('entering hides the feed aside (the rail stays expanded)', !target.querySelector('.replay-side'));
+check(
+  'the stage keeps its exit button',
+  !!stage.querySelector('.rp-theater-exit') &&
+    stage.querySelector('.rp-theater-exit')?.getAttribute('aria-label') === 'Exit theater mode',
+  stage.querySelector('.rp-theater-exit')?.getAttribute('aria-label') || 'missing',
+);
+check(
+  'the exit button is OUTSIDE the control group (never gated with it)',
+  !stage.querySelector('.rp-ctrl-list .rp-theater-exit'),
+);
+check(
+  'the team columns stay (spec scope: theater hides chrome, not the cards)',
+  !!main.querySelector('.replay-body > .tc-col'),
+);
+check('entering writes no navigation', (globalThis.__nav || []).length === navBaseT, String((globalThis.__nav || []).length - navBaseT));
+click(stage.querySelector('.rp-theater-exit'));
+await sleep();
+check(
+  'exiting restores the top bar, the transport and the feed aside',
+  !!target.querySelector('.replay-topbar') &&
+    !!target.querySelector('.replay-transport') &&
+    !!target.querySelector('.replay-side'),
+);
+check(
+  'a popover open at enter time does NOT remount open (it was reset on enter)',
+  !target.querySelector('#rp-loop-from'),
+  String(!!target.querySelector('#rp-loop-from')),
+);
+
+// --- SOFTLOCK PIN (B4 × B2): overlays off must never hide the exit path --
+// The transport and the control group are gone in theater mode; the
+// toggle's flag survives the round trip, so the exit button has to stay
+// renderable with overlays OFF — and the toggle has to work again after.
+const transportAfter = target.querySelector('.replay-transport');
+const controlsAfter = transportAfter?.children[1];
+const uiBtnAfter = controlsAfter?.querySelector('#rp-ui');
+click(uiBtnAfter);
+await sleep();
+check(
+  'overlays off: the control group is gone again',
+  globalThis.__overlays === false && !stage.querySelector('.rp-ctrl-list'),
+  `overlays=${globalThis.__overlays} ctrl=${!!stage.querySelector('.rp-ctrl-list')}`,
+);
+click(controlsAfter.querySelector('#rp-theater'));
+await sleep();
+check('overlays off still renders the theater exit (never gated)', !!stage.querySelector('.rp-theater-exit'));
+click(stage.querySelector('.rp-theater-exit'));
+await sleep();
+const transportBack = target.querySelector('.replay-transport');
+check(
+  'exit returns the transport with overlays STILL off (no softlock, no state loss)',
+  !!transportBack && globalThis.__overlays === false && !stage.querySelector('.rp-ctrl-list'),
+  `transport=${!!transportBack} overlays=${globalThis.__overlays} ctrl=${!!stage.querySelector('.rp-ctrl-list')}`,
+);
+click(transportBack?.children[1]?.querySelector('#rp-ui'));
+await sleep();
+check(
+  'and the toggle round-trips again after the theater hop',
+  globalThis.__overlays === true && !!stage.querySelector('.rp-ctrl-list'),
+  `overlays=${globalThis.__overlays} ctrl=${!!stage.querySelector('.rp-ctrl-list')}`,
+);
 
 // --- (A) + (B): the range-edit rule and the entry ?loop= promise ----------
 // A SECOND Replay instance mounts against the ENTRY query the link sites

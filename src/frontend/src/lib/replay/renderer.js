@@ -3170,8 +3170,12 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   //                   score box yields to it: the feed's widest row is
   //                   measured FIRST every frame (killFeedLayout) and the
   //                   box lays into [leftBound, feedLeft − SCORE_FEED_GAP].
-  //   bottom-left   — in-game chat ONLY (drawChat), KILL_FEED_EDGE
-  //                   anchors. The bottom playback readout that used to
+  //   bottom-left   — in-game chat (drawChat), KILL_FEED_EDGE anchors,
+  //                   PLUS the DOM theater-exit button
+  //                   (Replay.svelte .rp-theater-exit, bottom/left 8 px)
+  //                   while theater mode is on — the stage's only
+  //                   control then, never gated by the overlay toggle.
+  //                   The bottom playback readout that used to
   //                   stack above it is gone: follow / loop / skip-freeze
   //                   / camera / packNote are DOM rows of the control
   //                   group, so snapshots and clips carry gameplay only.
@@ -3527,6 +3531,24 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // kill feed) alone — the state before any view supplied a score line.
   function setHud(payload) {
     hud = payload || null;
+    if (drawDirty) return; // the pending frame paints the burst's latest
+    draw();
+  }
+
+  // setOverlaysVisible(on): the ONE coarse overlay gate — the UI
+  // toggle's renderer half (Replay's toggleHud). While false, draw()
+  // skips the whole overlay group (HUD box, kill feed, chat — the DOM
+  // control-group rows go with them, gated view-side); the gameplay
+  // layers are NEVER gated, and CTRL_GROUP_BUDGET stays reserved so the
+  // score box's x-position does not jump when the group comes back.
+  // Additive like setHud: payloads keep flowing while hidden (the
+  // engine's per-change setHud still stores its payload), so
+  // re-enabling repaints the CURRENT state without a re-push. The
+  // drawDirty guard mirrors setHud's: the pending frame paints the
+  // burst's latest instead of a synchronous draw per event.
+  let overlaysVisible = true;
+  function setOverlaysVisible(on) {
+    overlaysVisible = on !== false;
     if (drawDirty) return; // the pending frame paints the burst's latest
     draw();
   }
@@ -4001,12 +4023,16 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     // the score box's right-hand bound — drawHUD's C1 clamp) and then
     // painted from exactly that measurement; ONE chatLayout() per frame
     // for the same reason — each scope/geometry computed once instead of
-    // once per phase.
-    const feed = killFeedLayout();
-    const chat = chatLayout();
-    drawHUD(feed);
-    drawKillFeed(feed);
-    drawChat(chat); // in-game chat — the same overlay group as the kill feed
+    // once per phase. The whole group is ONE gate (setOverlaysVisible —
+    // the UI toggle): hidden, neither layout runs and the three corner
+    // regions stay empty — the gameplay layers above are never gated.
+    if (overlaysVisible) {
+      const feed = killFeedLayout();
+      const chat = chatLayout();
+      drawHUD(feed);
+      drawKillFeed(feed);
+      drawChat(chat); // in-game chat — the same overlay group as the kill feed
+    }
     // Arm the settle loop when smart is still short of its target — a
     // paused seek (or a mode switch) has no other redraw driver. draw()
     // is the single arming point and it checks !easeRaf, so the engine's
@@ -4024,6 +4050,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     setPack,
     setLandmarks,
     setHud,
+    setOverlaysVisible,
     setIcons,
     setVoices,
     setBlinds,

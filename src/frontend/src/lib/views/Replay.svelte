@@ -233,6 +233,19 @@
   // prefs.go). Default OFF; load() reads the pref before startEngine.
   let uiSkipFreeze = $state(false);
   let eventsOpen = $state(false); // a fresh replay opens with the feed collapsed
+  // Theater mode (session-only, like eventsOpen — no pref, no route
+  // query): hides the top bar, the transport AND the feed aside so the
+  // stage fills the column; the stage's own exit button is the only
+  // control left (it is never gated by the overlay toggle or by the
+  // control group, so there is no softlock path out).
+  let theater = $state(false);
+  // UI-overlay toggle (session-only): INVERTED like the skip-freeze
+  // arm — uiHudOff true = the coarse overlay group (canvas score box /
+  // kill feed / chat + the DOM control-group rows) is HIDDEN, so the
+  // button wears the armed pattern (aria-pressed + warn) exactly like
+  // #rp-skip-freeze. One flag, two pushes (the setDropLayers pattern):
+  // the button flips it, startEngine re-pushes the current value.
+  let uiHudOff = $state(false);
   // ONE toggle governs every filter surface in the panel (the Filters
   // button): the category dropdown, the game-events name picker, the
   // FilterBar scope, the saved-preset controls and Reset all show/hide
@@ -2017,6 +2030,10 @@
     // the pref effect may have run before the renderer existed, so the
     // CURRENT state is pushed here like every other setter).
     renderer.setDropLayers({ guns: dropGuns, util: dropUtil });
+    // UI-overlay visibility: the SAME current-state push — the toggle
+    // may have flipped before the engine rebuilt (or the view mounted
+    // with it already off), so re-push whatever uiHudOff says now.
+    renderer.setOverlaysVisible(!uiHudOff);
     offChange = engine.onChange((st) => {
       uiFrame = st.frame;
       uiTick = st.tick;
@@ -2276,6 +2293,50 @@
 
   function toggleLoop() {
     engine?.toggleLoop();
+  }
+
+  // loop10 — arm ±10 s AROUND the playhead in one click (the loop
+  // popover's quick-range button, beside the Loop toggle). The window
+  // CLAMPS at the stream edges — frameForTick floors at 0 and the `to`
+  // side clamps to the last frame — so it SHRINKS near an edge, never
+  // wraps. Unlike a bound EDIT (loopBoundEdited — whose job is to
+  // disable) this never disarms first: bounds, then arm, exactly the
+  // entry ?loop='s order (startEngine's apply above), and the URL's
+  // promise is dropped on the way (an edit owns the URL: a refresh must
+  // not resurrect the pre-click range) — but only when there was one, so
+  // a session without ?loop= keeps its hash byte-identical.
+  function loop10() {
+    if (!engine || !data) return;
+    const tr = normTickRate(meta?.tickRate);
+    const f0 = engine.frameForTick(uiTick - 10 * tr); // clamps to 0
+    const f1 = Math.min(data.frames - 1, engine.frameForTick(uiTick + 10 * tr));
+    engine.setLoop(f0, f1); // never enables by itself
+    if (query.loop) navigateFilter(filter, { keepLoop: false });
+    engine.setLoopEnabled(true); // arm, like the entry ?loop= apply
+  }
+
+  // enterTheater — the ONLY way into theater mode (the toolbar's
+  // #rp-theater cell; the stage's .rp-theater-exit is the way out).
+  // Every popover PANEL lives inside the transport toolbar, so entering
+  // closes them all: their state would survive the transport's unmount
+  // and the panels would remount OPEN on exit, floating over the stage
+  // with no toolbar around them.
+  function enterTheater() {
+    theater = true;
+    loopOpen = speedOpen = camOpen = followOpen = dropsOpen = volOpen = false;
+  }
+
+  // toggleHud — the ONE coarse overlay toggle: canvas score box + kill
+  // feed + chat AND the DOM control-group rows go together (the whole
+  // overlay group, never the gameplay layers and never the theater-exit
+  // button). One flag, two pushes (the setDropLayers pattern): the view
+  // flag drives the button, renderer.setOverlaysVisible gates the paint
+  // — payloads keep flowing while hidden (setHud's additive semantics),
+  // so re-enabling repaints without a re-push. Session-only: no pref
+  // write (like theater, it is not a durable setting).
+  function toggleHud() {
+    uiHudOff = !uiHudOff;
+    renderer?.setOverlaysVisible(!uiHudOff);
   }
 
   // toggleSkipFreeze — view state + engine push + durable write, all in
@@ -2629,6 +2690,24 @@
       uiAnnouncerMuted &&
       (uiStepsVol === 0 || uiStepsMuted),
   );
+  // Keyboard hints — the toolbar's last cell rides these ONE per line in
+  // its title tooltip ('\n' makes every browser render them stacked; a
+  // ' · ' join renders as one long line). VIEW-LOCAL by design: the
+  // shortcuts are this view's own (input.js's are stubbed in the DOM
+  // harness), so the list lives beside its only consumer instead of
+  // being imported.
+  const KBD_HINTS = [
+    'Space play/pause',
+    ', . speed',
+    '←/→ step',
+    'Shift+←/→ ±64 frames (~1s)',
+    '[ ] round',
+    'L loop',
+    'F follow',
+    '1-9, 0 select',
+    'X skip freeze',
+    'S snapshot',
+  ];
 </script>
 
 <div class="view replay-view">
@@ -2644,6 +2723,11 @@
        plus the {#if !eventsOpen} gate: when the rail is open its aside
        header owns the toggle instead, at the same height as this bar. -->
   <div class="replay-main">
+    <!-- {#if !theater} — theater mode hides the WHOLE top line (the jsdom
+         harness loads no CSS, so display:none would keep these focusable:
+         the gate is structural). Back, ribbon and the rail toggle all go;
+         the feed aside follows the same flag below. -->
+    {#if !theater}
     <div class="replay-topbar">
       <button class="btn rp-back" aria-label="Back" title="Back" onclick={goBack}>
         <span class="codicon codicon-arrow-left" aria-hidden="true"></span> Back
@@ -2678,6 +2762,7 @@
         </button>
       {/if}
     </div>
+    {/if}
     {#if loadError}
       <p class="error" role="alert">{loadError}</p>
     {/if}
@@ -2725,6 +2810,23 @@
         />
         <div class="replay-stage" bind:this={stageEl}>
           <canvas bind:this={canvasEl} aria-label="Replay canvas"></canvas>
+          <!-- Theater mode's way OUT: rendered only while theater is on,
+               a SIBLING of the canvas (outside .rp-ctrl-list and outside
+               every overlay-gated block — the one element neither the
+               UI toggle nor the control group may ever hide: it is the
+               only control left on screen, so hiding it would softlock
+               the view). Bottom-left of the stage — the region map's
+               bottom-left corner (renderer.js), beside the canvas chat. -->
+          {#if theater}
+            <button
+              class="btn rp-theater-exit"
+              aria-label="Exit theater mode"
+              title="Exit theater mode"
+              onclick={() => (theater = false)}
+            >
+              <span class="codicon codicon-screen-normal" aria-hidden="true"></span>
+            </button>
+          {/if}
           <!-- The back button and the collapsed landmark-rail toggle
                used to float here (top-left / top-right of the stage);
                both now live in the main column's .replay-topbar above —
@@ -2740,7 +2842,7 @@
                clips carry gameplay only now) and the packNote paragraph
                that used to sit above the stage (the note row). The
                canvas copy of all three died with the readout. -->
-          {#if ctrlRows.length}
+          {#if !uiHudOff && ctrlRows.length}
             <div class="rp-ctrl-list" role="status">
               {#each ctrlRows as row (row.kind)}
                 {#if row.kind === 'follow'}
@@ -2771,6 +2873,11 @@
         />
       </div>
 
+      <!-- {#if !theater} — theater mode hides the WHOLE transport line
+           (scrubber + control cluster) the same structural way as the
+           top bar above: the stage fills the column, and the stage's own
+           .rp-theater-exit is the only control left. -->
+      {#if !theater}
       <!-- Two lines: the scrubber owns the FULL-WIDTH line (round
            markers + the game-time readout ride with it), the centered
            button/control cluster keeps the ONE .toolbar row below it. -->
@@ -2924,22 +3031,22 @@
             >
             <Popover open={loopOpen} anchor={loopAnchor} onClose={() => (loopOpen = false)}>
               <div class="rp-pop rp-loop-pop loop-group" role="group" aria-label="Loop range">
-                <label class="sr-only" for="rp-loop-from">Loop from time</label>
+                <label class="sr-only" for="rp-loop-from">Loop start time</label>
                 <input
                   class="input mono loop-input"
                   id="rp-loop-from"
                   type="text"
-                  placeholder="from"
+                  placeholder="start"
                   value={loopFromText}
                   onchange={(e) => onLoopTime('from', e)}
                 />
                 <span class="muted">–</span>
-                <label class="sr-only" for="rp-loop-to">Loop to time</label>
+                <label class="sr-only" for="rp-loop-to">Loop stop time</label>
                 <input
                   class="input mono loop-input"
                   id="rp-loop-to"
                   type="text"
-                  placeholder="to"
+                  placeholder="stop"
                   value={loopToText}
                   onchange={(e) => onLoopTime('to', e)}
                 />
@@ -2949,11 +3056,36 @@
                   title="Toggle loop (L)"
                   onclick={toggleLoop}>Loop</button
                 >
+                <!-- Quick range: ±10 s AROUND the playhead, clamped at
+                     the stream edges (never wraps) — bounds then arm,
+                     one click. It never DISABLES first (unlike a bound
+                     edit): the window is the point of the click. -->
+                <button
+                  class="btn small"
+                  title="Loop ±10 s around the playhead"
+                  disabled={!ready}
+                  onclick={loop10}>±10 s</button
+                >
               </div>
             </Popover>
           </span>
 
           <span class="toolbar-sep" aria-hidden="true"></span>
+
+          <!-- Theater mode: icon-only cell between the loop group's
+               separator and the camera selector (its own slot family —
+               the transport cluster's icon buttons). Entering hides the
+               top bar, the transport and the feed aside; the stage's
+               .rp-theater-exit (rendered only then) is the way out.
+               Session-only: no pref, no route write. -->
+          <button
+            class="btn"
+            id="rp-theater"
+            aria-label="Theater mode"
+            title="Theater mode — hide the top bar and controls"
+            onclick={enterTheater}
+            ><span class="codicon codicon-screen-full" aria-hidden="true"></span></button
+          >
 
           <!-- Camera (spec 17): Smart/Free/Follow as a popover — the
                player list appears as a second (native) dropdown only
@@ -3025,6 +3157,27 @@
               </Popover>
             </span>
           {/if}
+
+          <!-- UI overlays — the ONE coarse overlay toggle (chat, kill
+               feed, score/timer and the stage's control-group rows all
+               go together; gameplay layers and the theater-exit button
+               never do). Icon-only, between the camera selector and the
+               drops selector in every cam mode (the follow popover's
+               slot is conditional; this one is not). The armed pattern
+               is INVERTED like #rp-skip-freeze: uiHudOff true = the
+               group is HIDDEN, so pressed + warn mean "overlays off".
+               Session-only: no pref write (the setDropLayers push
+               pattern, one flag → renderer.setOverlaysVisible). -->
+          <button
+            class="btn"
+            id="rp-ui"
+            class:warn={uiHudOff}
+            aria-pressed={uiHudOff}
+            aria-label="UI overlays"
+            title="Show/hide the chat, kill feed, score/timer and stage indicators — one toggle (never hides the theater-exit button)"
+            onclick={toggleHud}
+            ><span class="codicon {uiHudOff ? 'codicon-eye-closed' : 'codicon-eye'}" aria-hidden="true"></span></button
+          >
 
           <!-- Drops (spec: dropped guns/util on the map): a MULTI-select
                popover between the camera selector and the volume — the
@@ -3288,14 +3441,16 @@
           <span class="toolbar-sep" aria-hidden="true"></span>
 
           <!-- Keyboard hints — the toolbar's LAST cell (rightmost): one
-               codicon, no label, the shortcuts ride the title. Outside
-               the ready/data gate so it always shows. -->
-          <span class="muted" title="Space play/pause · , . speed · ←/→ step · Shift+←/→ ±64 frames (~1s) · [ ] round · L loop · F follow · 1-9, 0 select · X skip freeze · S snapshot"><span class="codicon codicon-keyboard" aria-hidden="true"></span></span>
+               codicon, no label, the shortcuts ride the title, ONE PER
+               LINE (KBD_HINTS joined with '\n'). Outside the ready/data
+               gate so it always shows. -->
+          <span class="muted" title={KBD_HINTS.join('\n')}><span class="codicon codicon-keyboard" aria-hidden="true"></span></span>
         </div>
       </div>
+      {/if}
     {/if}
   </div>
-  {#if railVisible && eventsOpen}
+  {#if railVisible && eventsOpen && !theater}
   <aside class="replay-side" aria-label="Event feed">
     <button
       class="side-toggle"
