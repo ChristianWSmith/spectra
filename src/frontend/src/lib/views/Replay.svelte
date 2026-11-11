@@ -333,7 +333,10 @@
   // fresh entry autoplays, so returning must play: shouldResumeOnReturn
   // is the one rule). Cleared when activation applies it. A deliberate
   // pause before leaving leaves it false → returning never resumes a
-  // user's pause. Drives the dock bar's ▶ marker while collapsed.
+  // user's pause. While collapsed the caption's play/pause control OWNS
+  // it directly (onMiniToggle writes it), so expand continues from
+  // exactly the state the dock was left in — the old ▶-means-will-resume
+  // marker display is superseded by that real control.
   let wasPlaying = $state(false);
   let engine = null;
   let renderer = null;
@@ -2498,6 +2501,39 @@
     engine?.toggle();
   }
 
+  // onMiniToggle / onMiniToggleKey — the caption bar's REAL play/pause
+  // control (collapsed only; the passive ▶ resume marker is retired):
+  // it plays/pauses the ENGINE while the dock shows it — real playback
+  // (audio + motion) inside the mini frame — and OWNS wasPlaying while
+  // collapsed, so the activation effect's resume rule continues from
+  // exactly this state: dock play → wasPlaying = true (expand keeps
+  // playing), dock pause → wasPlaying = false (expand stays paused — a
+  // deliberate dock pause is never resumed). The glyph follows the live
+  // uiPlaying mirror (the template), so no state is written twice here.
+  // Isolation is the close-X pattern (App.svelte closeReplay /
+  // onDockCloseKey): stopPropagation on BOTH events — the panel wrapper
+  // is the expand target, so neither its click nor its Enter/Space
+  // handler can ever be reached from this button — and NO preventDefault
+  // on keydown: the focused BUTTON's native click activation performs
+  // the toggle in a real browser (jsdom never synthesizes it). Nothing
+  // here touches setOverlaysVisible: the world-only dock rule holds
+  // through a dock-play.
+  function onMiniToggle(e) {
+    e.stopPropagation();
+    if (!engine) return; // pre-engine load over the dock: inert until ready
+    if (engine.state.playing) {
+      engine.pause();
+      wasPlaying = false; // deliberate dock pause: expand must stay paused
+    } else {
+      engine.play();
+      wasPlaying = true; // dock play: expand keeps playing
+    }
+  }
+
+  function onMiniToggleKey(e) {
+    e.stopPropagation(); // no preventDefault — the native button click fires the toggle
+  }
+
   function onSpeed(e) {
     engine?.setSpeed(Number(e.currentTarget.value));
   }
@@ -3763,18 +3799,32 @@
     {/if}
     <!-- Mini-player dock bar (keep-alive, collapsed only): the frozen
          frame's compact caption — playhead time (the SAME scrubTime the
-         scrubber line shows), a resume marker ▶ when expanding will
-         RESUME playback (wasPlaying: playing at leave, or the load was
-         still in flight; a deliberate pause shows no marker), and the
+         scrubber line shows), the REAL play/pause control, and the
          expand hint. The whole .rp-keepalive panel (App) is the click
-         and Enter/Space target — this bar is the visible affordance, so
-         it carries no interactive elements of its own. -->
+         and Enter/Space target — EXCEPT this button: onMiniToggle /
+         onMiniToggleKey stop propagation on BOTH events, so clicking it
+         (or Enter/Space on the focused button) toggles playback and
+         NEVER expands the panel. The glyphs mirror the transport's play
+         button exactly (codicon-play paused / codicon-debug-pause
+         playing), driven by the live uiPlaying engine mirror; the
+         toggle owns wasPlaying while collapsed (dock pause → expand
+         stays paused, dock play → expand keeps playing). Dock-play
+         never touches the canvas overlays — the world-only dock rule
+         (setOverlaysVisible) stays until expand. -->
     {#if !active}
       <div class="rp-mini-bar">
         <span class="mono rp-mini-time" title="Playhead">{scrubTime}</span>
-        {#if wasPlaying}
-          <span class="rp-mini-resume" title="Expanding resumes playback">▶</span>
-        {/if}
+        <button
+          class="btn primary rp-mini-toggle"
+          aria-label={uiPlaying ? 'Pause' : 'Play'}
+          title={uiPlaying ? 'Pause' : 'Play'}
+          onclick={onMiniToggle}
+          onkeydown={onMiniToggleKey}
+          ><span
+            class="codicon {uiPlaying ? 'codicon-debug-pause' : 'codicon-play'}"
+            aria-hidden="true"
+          ></span></button
+        >
         <span class="rp-mini-hint">Click to expand</span>
       </div>
     {/if}

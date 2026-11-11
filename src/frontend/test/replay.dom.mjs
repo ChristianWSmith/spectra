@@ -492,7 +492,16 @@ export function createEngine(data, tickRate) {
     play() {
       // Counted so section J can pin the keep-alive play/pause contract
       // (an inactive load never autoplays; activation resumes exactly
-      // once; a deliberate pause is never resumed).
+      // once; a deliberate pause is never resumed; expand-after-dock-play
+      // adds NO new call). The early-return mirrors the REAL engine
+      // (engine.js play: "if (state.playing …) return"): a redundant
+      // play while already running is a no-op and is NOT counted — the
+      // activation effect calls play() unconditionally when wasPlaying is
+      // set, so after a dock-play the expand leg's call must not inflate
+      // the counter. (pause() deliberately keeps counting every CALL —
+      // the "no second pause" pins use the counter as a call-detector
+      // for the view's guard.)
+      if (state.playing) return;
       globalThis.__plays = (globalThis.__plays || 0) + 1;
       state.playing = true;
       emit?.(state);
@@ -2279,8 +2288,13 @@ check(
 // collapse pushes renderer.setOverlaysVisible(false) (the E3 toggle's
 // renderer half), expand re-pushes the SESSION flag — a user's OFF
 // preference survives the round trip exactly like theater does. The
-// engine stub counts play()/pause() (globalThis.__plays / __pauses) and
-// the renderer stub records the last setOverlaysVisible into
+// caption's REAL play/pause control replaces the old passive ▶ marker
+// (button pins + the dock-toggle flow in J2 below), and Replay mounts
+// INSIDE a .dock-probe wrapper whose Svelte handlers mirror App's
+// expand target (the isolation pins need something to not-reach). The
+// engine stub counts play()/pause() (globalThis.__plays / __pauses —
+// play() idempotent like the real engine, pause() counts every call)
+// and the renderer stub records the last setOverlaysVisible into
 // globalThis.__overlays — snapshots are taken around each step, so the
 // earlier sections' play traffic cannot leak into these deltas.
 console.log('J. keep-alive: inactive never autoplays; collapse pauses + world-only frame, expand resumes once, a deliberate pause stays paused');
@@ -2293,7 +2307,13 @@ const harness3Src = `<script>
   let active = $state(false);
   globalThis.__setActive = (v) => (active = v);
 </script>
-<Replay id={1} query={{}} nav={(h) => (globalThis.__nav3 = (globalThis.__nav3 || []).concat(h))} {active} />`;
+<div
+  class="dock-probe"
+  onclick={() => (globalThis.__wrapperClicks = (globalThis.__wrapperClicks || 0) + 1)}
+  onkeydown={() => (globalThis.__wrapperKeys = (globalThis.__wrapperKeys || 0) + 1)}
+>
+  <Replay id={1} query={{}} nav={(h) => (globalThis.__nav3 = (globalThis.__nav3 || []).concat(h))} {active} />
+</div>`;
 const harness3Out = join(dir, 'harness3.js');
 svelteCompile(harness3Src, 'harness3.svelte', harness3Out);
 const mod3 = await import(pathToFileURL(harness3Out).href);
@@ -2306,14 +2326,25 @@ check(
   `+${(globalThis.__plays || 0) - playsBase} play calls`,
 );
 const miniBar3 = target3.querySelector('.rp-mini-bar');
+const miniBtn3 = () => target3.querySelector('.rp-mini-bar .rp-mini-toggle');
+const miniGlyph3 = () => {
+  const g = miniBtn3()?.querySelector('.codicon');
+  return g?.classList.contains('codicon-debug-pause') ? 'pause' : g?.classList.contains('codicon-play') ? 'play' : 'none';
+};
 check(
   'collapsed: the dock caption renders (playhead time + expand hint)',
   !!miniBar3 && miniBar3.textContent.includes('Click to expand'),
   miniBar3 ? miniBar3.textContent : 'no .rp-mini-bar',
 );
 check(
-  'collapsed: the resume marker ▶ shows (an in-flight load counts as "would have played")',
-  !!miniBar3?.querySelector('.rp-mini-resume'),
+  'the caption is a child of the main column — the column whose 10px flex gap was the dead space (app-dock E pins the zeroing rule)',
+  miniBar3?.parentElement?.classList.contains('replay-main'),
+  miniBar3?.parentElement?.className,
+);
+check(
+  'collapsed: the caption carries a REAL play/pause control (inactive load → engine paused → Play glyph), the passive ▶ marker is gone',
+  !!miniBtn3() && miniGlyph3() === 'play' && !miniBar3?.querySelector('.rp-mini-resume'),
+  miniBtn3() ? miniBtn3().outerHTML : 'no .rp-mini-toggle',
 );
 check(
   'collapsed: NO chrome (top bar, transport, rail, player cards)',
@@ -2349,7 +2380,9 @@ check(
 );
 check('expanded: the player cards are back', !!target3.querySelector('.tc-col'));
 
-// Collapse while PLAYING → pause +1 and the ▶ marker promises a resume.
+// Collapse while PLAYING → pause +1; the caption then offers Play (the
+// engine is paused — the resume intent lives in wasPlaying, applied on
+// expand, not displayed as a marker anymore).
 globalThis.__setActive(false);
 await sleep();
 check(
@@ -2363,8 +2396,9 @@ check(
   `overlays=${globalThis.__overlays}`,
 );
 check(
-  'collapsed: the ▶ resume marker shows (it was playing when left)',
-  !!target3.querySelector('.rp-mini-bar')?.querySelector('.rp-mini-resume'),
+  'collapsed after leaving a playing replay: the caption offers Play (engine paused; the intent lives in wasPlaying)',
+  miniGlyph3() === 'play',
+  miniGlyph3(),
 );
 
 // Expand resumes, then a DELIBERATE pause: collapse must not double-pause,
@@ -2408,8 +2442,9 @@ check(
   `+${(globalThis.__pauses || 0) - pausesAfterUser} pause calls`,
 );
 check(
-  'collapsed after a user pause: NO ▶ marker (deliberate pause is remembered)',
-  !target3.querySelector('.rp-mini-bar')?.querySelector('.rp-mini-resume'),
+  'collapsed after a user pause: the caption still offers Play (state, not intent — no passive ▶ marker; the expand pins below prove the remembered intent)',
+  miniGlyph3() === 'play' && !target3.querySelector('.rp-mini-bar')?.querySelector('.rp-mini-resume'),
+  miniGlyph3(),
 );
 globalThis.__setActive(true);
 await sleep();
@@ -2424,6 +2459,195 @@ check(
   `overlays=${globalThis.__overlays}`,
 );
 check('expanded: chrome fully restored', !!target3.querySelector('.replay-transport') && !!target3.querySelector('.tc-col'));
+
+// --- (J2): the caption's REAL play/pause control (the retired ▶ marker) ---
+// Entering state: expanded, USER-paused, canvas overlays OFF (the E3
+// preference set above). The button toggles the ENGINE while collapsed
+// (real playback in the mini frame), OWNS wasPlaying so expand
+// continues from exactly the state the dock was left in, keeps the
+// world-only rule through a dock-play, and is event-isolated from the
+// panel's expand handlers — the .dock-probe wrapper mirrors App's
+// wrapper (Svelte handlers on the div, Replay inside), so the isolation
+// pins prove the stopPropagation pair actually blocks the same walk the
+// real wrapper uses; the positive controls at the end prove those
+// handlers are alive (so "nothing happened" above is real isolation).
+console.log('J2. caption control: dock play/pause toggles the engine, owns resume intent, isolates the expand wrapper');
+const probe3 = target3.querySelector('.dock-probe');
+check('the harness wraps Replay in an expand-target probe (the App wrapper shape)', !!probe3, 'no .dock-probe');
+const wrapC0 = globalThis.__wrapperClicks || 0;
+const wrapK0 = globalThis.__wrapperKeys || 0;
+const j2P0 = globalThis.__plays || 0;
+const j2Q0 = globalThis.__pauses || 0;
+
+// Collapse the already-paused replay: the guard issues no pause call,
+// and the caption offers Play (engine state, not a resume promise).
+globalThis.__setActive(false);
+await sleep();
+check(
+  'collapsing the already-paused replay issues no pause call (the view guard holds)',
+  (globalThis.__pauses || 0) === j2Q0,
+  `+${(globalThis.__pauses || 0) - j2Q0} pause calls`,
+);
+check('the caption offers Play (engine paused)', miniGlyph3() === 'play', miniGlyph3());
+
+// KEYDOWN isolation: Enter on the button must not reach the wrapper's
+// handler, must NOT be preventDefault-ed (a real browser's native
+// button activation then performs the toggle — jsdom never synthesizes
+// it), and changes no engine state by itself.
+const keyEv = new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+miniBtn3().dispatchEvent(keyEv);
+check(
+  "Enter on the caption button never reaches the wrapper's expand handler",
+  (globalThis.__wrapperKeys || 0) === wrapK0,
+  `wrapper keys +${(globalThis.__wrapperKeys || 0) - wrapK0}`,
+);
+check(
+  '...and the keydown is NOT preventDefault-ed (the native button click still toggles)',
+  keyEv.defaultPrevented === false,
+  String(keyEv.defaultPrevented),
+);
+check(
+  'the isolated keydown changed no engine state',
+  (globalThis.__plays || 0) === j2P0 && (globalThis.__pauses || 0) === j2Q0,
+  `plays +${(globalThis.__plays || 0) - j2P0} pauses +${(globalThis.__pauses || 0) - j2Q0}`,
+);
+
+// CLICK isolation + DOCK PLAY: the click plays the engine (play +1),
+// flips the glyph to Pause, never reaches the wrapper, and leaves the
+// render area WORLD ONLY (dock-play must not re-enable the overlays).
+click(miniBtn3());
+await sleep();
+check(
+  'clicking the caption button PLAYS in the dock (play +1, glyph → Pause)',
+  (globalThis.__plays || 0) === j2P0 + 1 && miniGlyph3() === 'pause',
+  `plays +${(globalThis.__plays || 0) - j2P0} glyph=${miniGlyph3()}`,
+);
+check(
+  'the caption click never reaches the wrapper (isolation)',
+  (globalThis.__wrapperClicks || 0) === wrapC0,
+  `wrapper clicks +${(globalThis.__wrapperClicks || 0) - wrapC0}`,
+);
+check(
+  'dock-play keeps the render area WORLD ONLY (overlays still OFF)',
+  globalThis.__overlays === false,
+  `overlays=${globalThis.__overlays}`,
+);
+
+// DOCK PAUSE → the intent flips to "stay paused".
+click(miniBtn3());
+await sleep();
+check(
+  'clicking again PAUSES in the dock (pause +1, glyph → Play)',
+  (globalThis.__pauses || 0) === j2Q0 + 1 && miniGlyph3() === 'play',
+  `pauses +${(globalThis.__pauses || 0) - j2Q0} glyph=${miniGlyph3()}`,
+);
+check(
+  'the pause click never reaches the wrapper either',
+  (globalThis.__wrapperClicks || 0) === wrapC0,
+  `wrapper clicks +${(globalThis.__wrapperClicks || 0) - wrapC0}`,
+);
+
+// Leave it RUNNING for the expand leg (dock play → expand keeps playing).
+click(miniBtn3());
+await sleep();
+const playsDockRunning = globalThis.__plays || 0;
+check(
+  'dock play again (play +2 total, glyph → Pause)',
+  playsDockRunning === j2P0 + 2 && miniGlyph3() === 'pause',
+  `plays +${playsDockRunning - j2P0} glyph=${miniGlyph3()}`,
+);
+
+// EXPAND-after-dock-play: KEEPS playing — the activation's resume play
+// is a no-op in the real engine (already running; the stub mirrors that
+// idempotence, so NO new call lands), and the transport reads Pause.
+globalThis.__setActive(true);
+await sleep();
+check(
+  'expand-after-dock-play KEEPS playing, with no new play call (the engine never stopped)',
+  (globalThis.__plays || 0) === playsDockRunning &&
+    !!target3.querySelector('.replay-transport button[aria-label="Pause"]'),
+  `plays +${(globalThis.__plays || 0) - playsDockRunning}`,
+);
+check(
+  'the OFF overlay preference still holds after the dock round trip',
+  globalThis.__overlays === false,
+  `overlays=${globalThis.__overlays}`,
+);
+
+// The other direction: collapse the DOCK-PLAYING replay, dock-pause it
+// (the toggle owns the intent), and expand — it must STAY paused.
+const j2Leave = { plays: globalThis.__plays || 0, pauses: globalThis.__pauses || 0 };
+globalThis.__setActive(false);
+await sleep();
+check(
+  'collapsing the dock-playing replay pauses it (pause +1)',
+  (globalThis.__pauses || 0) === j2Leave.pauses + 1,
+  `+${(globalThis.__pauses || 0) - j2Leave.pauses} pause calls`,
+);
+check('the caption offers Play again (engine paused by the leave)', miniGlyph3() === 'play', miniGlyph3());
+click(miniBtn3()); // dock play — the engine must be running to dock-pause it
+await sleep();
+check(
+  'dock play (play +1, glyph → Pause)',
+  (globalThis.__plays || 0) === j2Leave.plays + 1 && miniGlyph3() === 'pause',
+  `plays +${(globalThis.__plays || 0) - j2Leave.plays} glyph=${miniGlyph3()}`,
+);
+click(miniBtn3()); // DOCK PAUSE → wasPlaying = false
+await sleep();
+check(
+  'DOCK PAUSE (pause +1, glyph → Play)',
+  (globalThis.__pauses || 0) === j2Leave.pauses + 2 && miniGlyph3() === 'play',
+  `pauses +${(globalThis.__pauses || 0) - j2Leave.pauses} glyph=${miniGlyph3()}`,
+);
+const playsBeforeDockPauseExpand = globalThis.__plays || 0;
+globalThis.__setActive(true);
+await sleep();
+check(
+  'expand-after-dock-pause STAYS paused (no resume call)',
+  (globalThis.__plays || 0) === playsBeforeDockPauseExpand &&
+    !!target3.querySelector('.replay-transport button[aria-label="Play"]'),
+  `plays +${(globalThis.__plays || 0) - playsBeforeDockPauseExpand}`,
+);
+
+// "Collapse after a dock pause records no resume": the deactivation
+// re-records the intent from the ENGINE (paused → false), so the next
+// expand still stays paused — the dock-pause intent survives its own
+// round trip.
+const j2Leave2 = { plays: globalThis.__plays || 0, pauses: globalThis.__pauses || 0 };
+globalThis.__setActive(false);
+await sleep();
+check(
+  're-collapsing the dock-paused replay issues no pause call (already paused)',
+  (globalThis.__pauses || 0) === j2Leave2.pauses,
+  `+${(globalThis.__pauses || 0) - j2Leave2.pauses} pause calls`,
+);
+check('the caption offers Play', miniGlyph3() === 'play', miniGlyph3());
+globalThis.__setActive(true);
+await sleep();
+check(
+  'the next expand still stays paused (collapse-after-dock-pause recorded no resume)',
+  (globalThis.__plays || 0) === j2Leave2.plays &&
+    !!target3.querySelector('.replay-transport button[aria-label="Play"]'),
+  `plays +${(globalThis.__plays || 0) - j2Leave2.plays}`,
+);
+
+// Positive controls: the wrapper's OWN handlers fire — so every
+// "never reaches the wrapper" pin above proves reachability-blocking,
+// not dead handlers.
+click(probe3);
+await sleep();
+check(
+  'positive control: a click on the wrapper reaches its expand handler',
+  (globalThis.__wrapperClicks || 0) === wrapC0 + 1,
+  `wrapper clicks +${(globalThis.__wrapperClicks || 0) - wrapC0}`,
+);
+probe3.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+await sleep();
+check(
+  'positive control: Enter on the wrapper reaches its keydown handler',
+  (globalThis.__wrapperKeys || 0) === wrapK0 + 1,
+  `wrapper keys +${(globalThis.__wrapperKeys || 0) - wrapK0}`,
+);
 
 // --- (K): keep-alive entry seed — distinct applies ONCE, identical/null never
 // A FOURTH instance mounts with a ?tick= seed and a SETTABLE query

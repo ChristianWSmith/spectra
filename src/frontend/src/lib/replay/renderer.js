@@ -118,7 +118,12 @@ const ZOOM_MAX = 8;
 // --- Smart camera (the DEFAULT mode) -----------------------------------------
 // Keeps every alive player + the active bomb on screen at all times,
 // easing toward a fitted target each frame (never snapping).
-const SMART_MARGIN = 56; // CSS px of breathing room around the entities
+const SMART_MARGIN = 56; // CSS px of breathing room around the entities —
+//                        // the FULL-SIZE value (the ceiling of the
+//                        // size-aware smartMarginFor below; identical
+//                        // framing at every canvas ≥ the reference)
+const SMART_MARGIN_REF = 480; // px short side at/above which the margin is exactly SMART_MARGIN
+const SMART_MARGIN_MIN = 10; // px floor — even a tiny canvas keeps some padding
 const SMART_TAU_CENTER = 0.18; // s — center ease time constant
 const SMART_TAU_ZOOM = 0.26; // s — zoom ease (slower = calmer)
 const SMART_DT_CLAMP = 0.033; // s — max eased step per draw: after a
@@ -386,18 +391,45 @@ export function trailConnects(ticks, pos, f, tickRate) {
   return step2 <= TRAIL_MAX_STEP2; // …and no streaking across a teleport
 }
 
+// smartMarginFor — the smart camera's SIZE-AWARE breathing room (pure;
+// head-tested in renderer.test.js beside smartCamTarget's pins): derived
+// from the canvas dimensions ALONE — the renderer never needs to know
+// it is a dock.
+// The fixed 56 px framed full-size stages perfectly but ate a
+// proportionally huge slice of the mini-player dock's ~320×190 frame
+// (56 px per side left only 78 of 190 px vertically — the radar sat
+// needlessly zoomed out). Formula:
+//   margin = clamp(SMART_MARGIN * shortSide / SMART_MARGIN_REF,
+//                  SMART_MARGIN_MIN, SMART_MARGIN)
+// — a linear scale over the canvas's SHORT side that converges to
+// EXACTLY today's 56 px at the 480 px reference and above (full-size
+// behavior is bit-identical — the existing large-size pins stay green),
+// tightens below it (~22 px at the dock's 190 px short side, lifting
+// the dock's vertical room from 78 to ≈146 px), and never drops under
+// the 10 px floor. Stateless by construction: same canvas → same
+// margin, wherever that canvas lives.
+export function smartMarginFor(cssW, cssH) {
+  const short = Math.max(1, Math.min(cssW, cssH));
+  if (!Number.isFinite(short)) return SMART_MARGIN; // degenerate input → the full-size value
+  return Math.max(
+    SMART_MARGIN_MIN,
+    Math.min(SMART_MARGIN, (SMART_MARGIN * short) / SMART_MARGIN_REF),
+  );
+}
+
 // smartCamTarget — the smart camera's FIT algorithm (pure; head-tested
 // in renderer.test.js). `box` is the entity bounding box in IMAGE px,
 // cssW/cssH the canvas size, cfg { margin, minZoom, maxZoom, extW, extH }.
 // Returns the target camera state { cx, cy, s } where s is the ABSOLUTE
 // scale (screen px per image px = cam.fit * cam.zoom): the box is padded
-// by `margin` on every side and scaled to fit the canvas (clamped to the
-// smart zoom band), then the center is clamped so a view that FITS
-// INSIDE the image extent never shows void outside it — a view wider
-// than the image centers on the image instead (the entities are inside
-// the image either way, so they stay on screen).
+// by `margin` on every side (cfg override; the default is the
+// size-aware smartMarginFor above) and scaled to fit the canvas
+// (clamped to the smart zoom band), then the center is clamped so a
+// view that FITS INSIDE the image extent never shows void outside it —
+// a view wider than the image centers on the image instead (the
+// entities are inside the image either way, so they stay on screen).
 export function smartCamTarget(box, cssW, cssH, cfg = {}) {
-  const margin = cfg.margin ?? SMART_MARGIN;
+  const margin = cfg.margin ?? smartMarginFor(cssW, cssH);
   const minS = cfg.minZoom ?? SMART_ZOOM_MIN;
   const maxS = cfg.maxZoom ?? SMART_ZOOM_MAX;
   const w = Math.max(1e-6, box.maxX - box.minX);
