@@ -1619,25 +1619,34 @@
   // (their anchors unmount with the chrome — same reset enterTheater does,
   // plus the feed's category picker). Everything else — theater, speed,
   // loop, layer toggles, mutes, selection — is view mode and SURVIVES.
+  // The dock's render area is WORLD ONLY: collapse also pushes the canvas
+  // overlay group off (renderer.setOverlaysVisible — the SAME renderer
+  // half the E3 UI toggle drives, so the collapsed frame shows radar +
+  // gameplay and nothing else), and activate re-pushes the SESSION flag
+  // (uiHudOff — read through untrack like wasPlaying, so the effect still
+  // tracks ONLY `active`: the toggle pushes its own value while expanded).
   // Activate (→ back on the replay route): resume iff it was playing when
   // left (engine.play() on a paused engine is a no-op when the flag was
   // cleared), then clear the flag. The effect tracks ONLY `active` —
-  // wasPlaying is read through untrack so its own write cannot retrigger.
-  // renderer.resize() repaints the frozen frame at the new size in BOTH
-  // directions (the wrapper flips display:contents ↔ fixed box; resize
-  // draws engine state even while paused, and the ResizeObserver covers
-  // every later size change) — the canvas must never go blank.
+  // wasPlaying and uiHudOff are read through untrack so their own writes
+  // cannot retrigger. renderer.resize() repaints the frozen frame at the
+  // new size in BOTH directions (the wrapper flips display:contents ↔
+  // fixed box; resize draws engine state even while paused, and the
+  // ResizeObserver covers every later size change) — the canvas must
+  // never go blank.
   $effect(() => {
     if (active) {
       const resume = untrack(() => wasPlaying);
       wasPlaying = false;
       if (resume) engine?.play();
+      renderer?.setOverlaysVisible(!untrack(() => uiHudOff)); // the user's session flag survives the round trip
       renderer?.resize();
       return;
     }
     loopOpen = speedOpen = camOpen = followOpen = dropsOpen = volOpen = catsOpen = false;
     wasPlaying = shouldResumeOnReturn(!!engine, engine?.state.playing === true);
     if (engine?.state.playing) engine.pause();
+    renderer?.setOverlaysVisible(false); // the dock shows the world only
     renderer?.resize();
   });
 
@@ -2190,8 +2199,11 @@
     renderer.setDropLayers({ guns: dropGuns, util: dropUtil, kits: dropKits });
     // UI-overlay visibility: the SAME current-state push — the toggle
     // may have flipped before the engine rebuilt (or the view mounted
-    // with it already off), so re-push whatever uiHudOff says now.
-    renderer.setOverlaysVisible(!uiHudOff);
+    // with it already off), so re-push whatever uiHudOff says now —
+    // EXCEPT over the collapsed dock: a load finishing while inactive
+    // (active false) pushes the dock's world-only view instead, and the
+    // expand leg of the activation effect re-pushes the session flag.
+    renderer.setOverlaysVisible(active && !uiHudOff);
     offChange = engine.onChange((st) => {
       uiFrame = st.frame;
       uiTick = st.tick;
@@ -2895,20 +2907,21 @@
 <div class="view replay-view">
   <!-- Main column — the FIRST child of the view (the landmark rail
        joins as its sibling when expanded, so both columns' headers
-       share the same top line). Its first line is the top bar: back
-       button + the Economy shortcut left (spec 7 / the 2-click round
-       trip), the round ribbon in the middle (spec 13, the
-       flex-grow cell — it shrinks before the buttons do), the
-       collapsed landmark-rail toggle right (spec 14). Both used to
-       float inside the render stage; the stage's corners belong to the
-       HUD/canvas now. The toggle keeps the rail-visible gate the
-       stage-floated one had (it appears exactly when the canvas does)
-       plus the {#if !eventsOpen} gate: when the rail is open its aside
-       header owns the toggle instead, at the same height as this bar. -->
+       share the same top line). Its first line is the top bar: the
+       back button left (the single way out — its ?back= origin carries
+       whichever match tab the user came from), the round ribbon in the
+       middle (spec 13, the flex-grow cell — it shrinks before the
+       buttons do), the collapsed landmark-rail toggle right (spec 14).
+       Both used to float inside the render stage; the stage's corners
+       belong to the HUD/canvas now. The toggle keeps the rail-visible
+       gate the stage-floated one had (it appears exactly when the canvas
+       does) plus the {#if !eventsOpen} gate: when the rail is open its
+       aside header owns the toggle instead, at the same height as this
+       bar. -->
   <div class="replay-main">
     <!-- {#if !theater && active} — theater mode hides the WHOLE top line
          (the jsdom harness loads no CSS, so display:none would keep these
-         focusable: the gate is structural). Back, Economy, ribbon and the
+         focusable: the gate is structural). Back, ribbon and the
          rail toggle all go; the feed aside follows the same flag below.
          `active` collapses the line the same structural way: while the
          instance sits in the mini-player dock only the frozen frame and
@@ -2917,19 +2930,6 @@
     <div class="replay-topbar">
       <button class="btn rp-back" aria-label="Back" title="Back" onclick={goBack}>
         <span class="codicon codicon-arrow-left" aria-hidden="true"></span> Back
-      </button>
-      <!-- Economy shortcut: leg 1 of the strict 2-click round trip —
-           replay → Economy in ONE click from any origin tab (there is no
-           replay → specific-tab link otherwise); collapsing keeps this
-           instance alive and the dock's click is leg 2. Back keeps its
-           ?back= origin semantics untouched. -->
-      <button
-        class="btn rp-economy"
-        aria-label="Economy"
-        title="Open this match's Economy tab (the replay stays loaded — click its panel to return)"
-        onclick={() => nav(`/match/${id}/economy`)}
-      >
-        <span class="codicon codicon-graph" aria-hidden="true"></span> Economy
       </button>
       <div class="rp-ribbon">
         {#if rounds.length}

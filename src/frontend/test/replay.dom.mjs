@@ -1,12 +1,11 @@
 // jsdom driver for Replay: a FRESH replay opens with the landmark feed
 // COLLAPSED — its toggle sits on the main column's ONE top line
-// (.replay-topbar, first child of .replay-main: back button + the
-// Economy shortcut left, round ribbon in the flex-grow middle, rail
-// toggle right, spec 7/13/14) with no .replay-side at all until it
-// expands; the view itself is the ROW (main column + rail beside it when
-// open, no .replay-cols wrapper), so the expanded aside's header shares
-// the top line with that bar. The round ribbon rides the top line too
-// (its .rp-ribbon cell), and the
+// (.replay-topbar, first child of .replay-main: back button left, round
+// ribbon in the flex-grow middle, rail toggle right, spec 7/13/14) with
+// no .replay-side at all until it expands; the view itself is the ROW
+// (main column + rail beside it when open, no .replay-cols wrapper), so
+// the expanded aside's header shares the top line with that bar. The
+// round ribbon rides the top line too (its .rp-ribbon cell), and the
 // transport splits into the full-width game-time scrubber line ABOVE the
 // centered control-cluster line (round transport, ±15s, play, speed
 // popover, the skip-freeze toggle, loop popover, camera Smart/Free/Follow
@@ -705,7 +704,7 @@ function check(name, cond, detail = '') {
 const click = (el) => el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
 const children = (el) => [...el.children];
 
-console.log('A. fresh replay: no header/title; back + economy + ribbon + rail toggle share ONE top line of the main column');
+console.log('A. fresh replay: no header/title; back + ribbon + rail toggle share ONE top line of the main column');
 const stage = target.querySelector('.replay-stage');
 check('stage rendered', !!stage);
 check('no view header and no Replay title', !target.querySelector('.view-header') && !target.querySelector('h1'));
@@ -733,28 +732,11 @@ check(
   !!toggle && !stage.querySelector('.side-toggle'),
   'missing top-bar .side-toggle',
 );
-const economy = topbar?.querySelector('.rp-economy');
 check(
-  'economy shortcut sits directly after Back (the 2-click round trip leg 1)',
-  !!economy && topbar && children(topbar)[1] === economy &&
-    economy?.getAttribute('aria-label') === 'Economy' &&
-    !!economy?.querySelector('.codicon-graph'),
-  topbar ? children(topbar).map((el) => el.className || el.tagName).join(' | ') : 'no topbar',
-);
-check(
-  'bar order: back first, economy second, ribbon cell in the middle, rail toggle last',
-  topbar && children(topbar)[0] === back && children(topbar)[2]?.classList.contains('rp-ribbon') &&
+  'bar order: back first, ribbon cell second, rail toggle last',
+  topbar && children(topbar)[0] === back && children(topbar)[1]?.classList.contains('rp-ribbon') &&
     children(topbar)[children(topbar).length - 1] === toggle,
   (topbar ? children(topbar).map((el) => el.className || el.tagName).join(' | ') : 'no topbar'),
-);
-const navEcoBase = (globalThis.__nav || []).length;
-click(economy);
-await sleep();
-check(
-  'the economy shortcut navigates to match/<id>/economy (collapse is App-side)',
-  (globalThis.__nav || []).length > navEcoBase &&
-    (globalThis.__nav || [])[navEcoBase] === '/match/1/economy',
-  JSON.stringify((globalThis.__nav || []).slice(navEcoBase)),
 );
 check('no .replay-side while collapsed', !target.querySelector('.replay-side'));
 check('toggle aria-expanded=false', toggle?.getAttribute('aria-expanded') === 'false', toggle?.getAttribute('aria-expanded'));
@@ -2292,11 +2274,16 @@ check(
 // kept-alive replay sits over a match view): the load chain must run to
 // completion WITHOUT autoplaying (audio over the match view is a bug),
 // the chrome unmounts down to frame + caption (stage/canvas stay — the
-// renderer holds the element), and wasPlaying carries the resume intent
-// through both activation orders. The engine stub counts play()/pause()
-// (globalThis.__plays / __pauses) — snapshots are taken around each step,
-// so the earlier sections' play traffic cannot leak into these deltas.
-console.log('J. keep-alive: inactive never autoplays; collapse pauses, expand resumes exactly once, a deliberate pause stays paused');
+// renderer holds the element), wasPlaying carries the resume intent
+// through both activation orders, and the render area stays WORLD ONLY:
+// collapse pushes renderer.setOverlaysVisible(false) (the E3 toggle's
+// renderer half), expand re-pushes the SESSION flag — a user's OFF
+// preference survives the round trip exactly like theater does. The
+// engine stub counts play()/pause() (globalThis.__plays / __pauses) and
+// the renderer stub records the last setOverlaysVisible into
+// globalThis.__overlays — snapshots are taken around each step, so the
+// earlier sections' play traffic cannot leak into these deltas.
+console.log('J. keep-alive: inactive never autoplays; collapse pauses + world-only frame, expand resumes once, a deliberate pause stays paused');
 const playsBase = globalThis.__plays || 0;
 const pausesBase = globalThis.__pauses || 0;
 const target3 = document.createElement('div');
@@ -2339,6 +2326,11 @@ check(
   'collapsed: the stage + canvas stay MOUNTED (the renderer holds them)',
   !!target3.querySelector('.replay-stage') && !!target3.querySelector('.replay-stage canvas'),
 );
+check(
+  'collapsed: the render area is WORLD ONLY (the inactive load pushed overlays OFF)',
+  globalThis.__overlays === false,
+  `overlays=${globalThis.__overlays}`,
+);
 
 // Activate → the pending resume fires EXACTLY once (load finished inactive).
 globalThis.__setActive(true);
@@ -2350,6 +2342,11 @@ check(
     !!target3.querySelector('.replay-topbar'),
   `+${(globalThis.__plays || 0) - playsBase} play calls`,
 );
+check(
+  'expanding re-pushes the session overlay flag (ON by default)',
+  globalThis.__overlays === true,
+  `overlays=${globalThis.__overlays}`,
+);
 check('expanded: the player cards are back', !!target3.querySelector('.tc-col'));
 
 // Collapse while PLAYING → pause +1 and the ▶ marker promises a resume.
@@ -2359,6 +2356,11 @@ check(
   'collapsing a playing replay pauses it (pause +1)',
   (globalThis.__pauses || 0) === pausesBase + 1,
   `+${(globalThis.__pauses || 0) - pausesBase} pause calls`,
+);
+check(
+  'collapsing pushes the canvas overlays OFF (world-only dock)',
+  globalThis.__overlays === false,
+  `overlays=${globalThis.__overlays}`,
 );
 check(
   'collapsed: the ▶ resume marker shows (it was playing when left)',
@@ -2373,6 +2375,24 @@ check(
   'expanding resumes the replay (play +2 total)',
   (globalThis.__plays || 0) === playsBase + 2,
   `+${(globalThis.__plays || 0) - playsBase} play calls`,
+);
+check(
+  'expand restores the overlays (the session flag ON re-pushed)',
+  globalThis.__overlays === true,
+  `overlays=${globalThis.__overlays}`,
+);
+// The user's overlay preference rides the round trip too (the same
+// session-state-survives rule as theater): flip the E3 toggle OFF while
+// expanded — the collapse/expand legs below must keep it OFF (never
+// snap back to the default ON).
+const uiBtn3 = target3.querySelector('#rp-ui');
+check('the E3 overlay toggle is reachable while expanded', !!uiBtn3, 'missing #rp-ui');
+click(uiBtn3);
+await sleep();
+check(
+  'the E3 toggle drives the renderer flag (overlays OFF)',
+  globalThis.__overlays === false,
+  `overlays=${globalThis.__overlays}`,
 );
 const playBtn3 = target3.querySelector('.replay-transport button[aria-label="Pause"]');
 check('the transport offers the Pause cell while playing', !!playBtn3, 'missing aria-label=Pause');
@@ -2397,6 +2417,11 @@ check(
   're-expanding a user-paused replay stays paused (no play call)',
   (globalThis.__plays || 0) === playsAfterUser,
   `+${(globalThis.__plays || 0) - playsAfterUser} play calls`,
+);
+check(
+  "the user's OFF overlay preference survives the round trip (expand re-pushes OFF)",
+  globalThis.__overlays === false,
+  `overlays=${globalThis.__overlays}`,
 );
 check('expanded: chrome fully restored', !!target3.querySelector('.replay-transport') && !!target3.querySelector('.tc-col'));
 
