@@ -26,6 +26,13 @@
 // Section E — the collapsed dock's caption-flush CSS: the inherited
 // 10px column gap the mini panel zeroes (frame flush to .rp-mini-bar),
 // characterized against the expanded rhythm it must not change.
+// Section F — the displaced-view overlay (App's derived viewRoute): the
+// view beneath the expanded replay stays MOUNTED + inert, minimize
+// hands it back with NO remount (the section's THE pin), close tears
+// down only the overlay/instance, back-absent entries keep today's
+// nothing-beneath behavior, and the overlay/collapsed CSS rules are
+// source-pinned (jsdom has no layout AND does not reflect el.inert to
+// an attribute, so the IDL property + the rules are the observables).
 //
 // SCOPE: App's wiring only. The views are inert stubs (Replay's stub
 // counts mounts and mirrors the App-passed props as data attributes) —
@@ -153,7 +160,19 @@ for (const name of [
   'Library', 'Match', 'RoundDetail', 'Settings', 'Builder', 'SqlConsole', 'Explorer',
   'Reports', 'Profiles', 'PlayerProfile', 'CompareRounds',
 ]) {
-  writeStub(`lib/views/${name}.svelte`, `<div class="stub-view stub-${name}" />\n`);
+  // Per-view MOUNT counter (section F): the displaced-view overlay's
+  // THE pin is that an expand → minimize round trip does NOT remount
+  // the view beneath the overlay — the counter is the observable (it
+  // survives unmounts; it counts construction, not presence).
+  writeStub(
+    `lib/views/${name}.svelte`,
+    `<script>
+  globalThis.__viewMounts = globalThis.__viewMounts || {};
+  globalThis.__viewMounts['${name}'] = (globalThis.__viewMounts['${name}'] || 0) + 1;
+</script>
+<div class="stub-view stub-${name}" />
+`,
+  );
 }
 // Replay — the kept-alive component: the mount counter is THE observable
 // of fresh-vs-kept (a close must destroy the instance; a keep-alive
@@ -226,6 +245,8 @@ const wrapper = () => document.querySelector('.rp-keepalive');
 const closeBtn = () => wrapper()?.querySelector('.rp-keepalive-close');
 const stubReplay = () => document.querySelector('.stub-replay');
 const mounts = () => globalThis.__replayMounts || 0;
+const viewHost = () => document.querySelector('.app-views');
+const viewMounts = (name) => (globalThis.__viewMounts || {})[name] || 0;
 
 // Compile/link/mount failure below would otherwise be swallowed by the
 // uncaughtException handler and exit 0 — fail loudly instead.
@@ -409,6 +430,133 @@ check(
   'the caption styles its real play/pause control (the retired ▶ marker class is gone)',
   /\.rp-mini-toggle\s*\{/.test(cssE) && !/\.rp-mini-resume\s*\{/.test(cssE),
   'expected a .rp-mini-toggle rule and NO .rp-mini-resume rule',
+);
+
+// --- (F): the displaced-view overlay ---------------------------------------
+// Option A: expanding the dock over a ?back= origin must NOT destroy the
+// view beneath — it stays MOUNTED under .rp-keepalive-cover and inert
+// (App's derived viewRoute), minimize hands it back with NO remount (THE
+// pin), close tears down only the overlay/instance, and a back-absent
+// entry keeps today's nothing-beneath behavior (minimize mounts fresh).
+// jsdom has no layout AND does not implement inert's attribute
+// reflection (el.inert = true is an expando there), so the IDL property
+// — which both WebView targets reflect onto the attribute — is the
+// observable, and the CSS rules are the source pins (section D/E
+// precedent: the rule's APPLICATION is what is pinned, never pixels).
+console.log('F. displaced-view overlay: the preserved view stays mounted + inert; minimize never remounts');
+const host = viewHost();
+check('the chain host exists (a persistent wrapper — never remounted)', !!host, host ? '' : 'no .app-views');
+check(
+  'back-absent entry: NOTHING beneath the overlay (today\'s behavior)',
+  !document.querySelector('.stub-view'),
+  document.querySelector('.stub-view') ? 'a view stub is mounted' : '',
+);
+check(
+  'back-absent entry: the empty host is still inert while the overlay is up',
+  host?.inert === true,
+  `host.inert=${host?.inert}`,
+);
+
+// back-absent minimize falls back to goBack's /match/:id — FRESH (the
+// pre-overlay behavior for palette jumps / hand-edited deep links).
+const mFresh = viewMounts('Match');
+await go('#/match/1');
+check(
+  "back-absent minimize mounts the match view FRESH (today's behavior)",
+  viewMounts('Match') === mFresh + 1,
+  `Match mounts ${mFresh} → ${viewMounts('Match')}`,
+);
+check('inert is gone once the overlay is down', viewHost()?.inert !== true, `host.inert=${viewHost()?.inert}`);
+check('the route landed on the match view', location.hash === '#/match/1', location.hash);
+
+// THE round trip: expand over ?back= → the SAME Match instance is
+// preserved beneath (expand never remounts it) and the host goes inert.
+const mKept = viewMounts('Match');
+wrapper()?.blur(); // make the focus pin meaningful (focus was parked on the dock)
+await sleep();
+click(wrapper());
+await sleep();
+check('expanded: the hash carries the back origin', location.hash.startsWith('#/replay/1?back='), location.hash);
+check(
+  'expanded: the displaced match view is still MOUNTED beneath the overlay',
+  !!document.querySelector('.stub-view.stub-Match'),
+  document.querySelector('.stub-view.stub-Match') ? '' : 'underlying unmounted',
+);
+check(
+  'expanded: expand did NOT remount the underlying view (same instance)',
+  viewMounts('Match') === mKept,
+  `Match mounts ${mKept} → ${viewMounts('Match')}`,
+);
+check('expanded: the host is inert under the overlay', viewHost()?.inert === true, `host.inert=${viewHost()?.inert}`);
+check(
+  'expanded: focus landed on the overlay container (tabindex -1)',
+  document.activeElement === wrapper(),
+  `activeElement=${document.activeElement?.className || document.activeElement?.nodeName}`,
+);
+
+// THE pin: minimize (goBack's exact destination — '/' + back, the very
+// string viewRoute parsed at expand) → same branch, same props → the
+// displaced instance BECOMES the live view: no remount, inert off.
+await go('#/match/1');
+check(
+  'MINIMIZE: the underlying view did NOT remount (THE pin)',
+  viewMounts('Match') === mKept,
+  `Match mounts ${mKept} → ${viewMounts('Match')}`,
+);
+check('minimize: inert is gone', viewHost()?.inert !== true, `host.inert=${viewHost()?.inert}`);
+check('minimize: the route is the back origin', location.hash === '#/match/1', location.hash);
+check(
+  'minimize: the instance collapsed into the dock (mini class, no overlay class)',
+  wrapper()?.classList.contains('rp-keepalive-mini') && !wrapper()?.classList.contains('rp-keepalive-cover'),
+  wrapper() ? wrapper().className : 'no wrapper',
+);
+
+// Close: the real order is Replay's Close = goBack FIRST (exit half) then
+// the onClose teardown — by teardown time the underlying view is already
+// the live route, so alive=null tears down ONLY the overlay/instance.
+click(wrapper());
+await sleep();
+check('re-expanded for the close leg', location.hash.startsWith('#/replay/1?back='), location.hash);
+check(
+  're-expand again preserved the same underlying instance',
+  viewMounts('Match') === mKept,
+  `Match mounts ${mKept} → ${viewMounts('Match')}`,
+);
+await go('#/match/1'); // Close's exit half (goBack)
+const mBeforeClose = viewMounts('Match');
+globalThis.__replayClose(new dom.window.MouseEvent('click', { bubbles: true }));
+await sleep();
+check(
+  'close: the overlay/instance is torn down (wrapper + stub gone)',
+  !wrapper() && !stubReplay(),
+  `${wrapper() ? 'wrapper' : ''} ${stubReplay() ? 'stub' : ''}`.trim() || 'gone',
+);
+check(
+  'close: the underlying view survived untouched (no remount, already live)',
+  viewMounts('Match') === mBeforeClose && !!document.querySelector('.stub-view.stub-Match'),
+  `Match mounts ${mBeforeClose} → ${viewMounts('Match')}, mounted=${!!document.querySelector('.stub-view.stub-Match')}`,
+);
+check('close: the route stays on the match view', location.hash === '#/match/1', location.hash);
+
+// CSS source pins (jsdom has no layout — the RULES are the pins): the
+// overlay rule exists with its fixed content-area geometry, and the
+// collapsed dock rule keeps its own fixed panel (the wrapper gained a
+// class; no existing rule was repurposed — sections A–E stay green).
+const cssF = readFileSync('public/style.css', 'utf8');
+check(
+  'style.css: the overlay rule is position:fixed with the content-area numbers (left 52px = sidebar, padding 16/20 = .content)',
+  /\.rp-keepalive\.rp-keepalive-cover\s*\{[^}]*position:\s*fixed[^}]*left:\s*52px[^}]*padding:\s*16px 20px/s.test(cssF),
+  'no .rp-keepalive.rp-keepalive-cover { position:fixed; left:52px; padding:16px 20px } rule',
+);
+check(
+  'style.css: the collapsed dock rule is still its own fixed 320px panel (untouched)',
+  /\.rp-keepalive\.rp-keepalive-mini\s*\{[^}]*position:\s*fixed[^}]*width:\s*320px/s.test(cssF),
+  'the .rp-keepalive.rp-keepalive-mini fixed panel rule changed',
+);
+check(
+  'style.css: the base rule is still display:contents (the ACTIVE in-flow state survived)',
+  /\.rp-keepalive\s*\{\s*display:\s*contents/s.test(cssF),
+  'no .rp-keepalive { display: contents } rule',
 );
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
