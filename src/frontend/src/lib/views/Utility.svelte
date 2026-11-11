@@ -216,14 +216,18 @@
     closed = { ...closed, [round]: !closed[round] };
   }
 
-  // (the events button and its round-scope filter are gone — outside
-  // the replay, buttons seek, never filter).
-  // "replay ▶" → the throw's own tick, with a ±10 s entry loop around it
-  // (nav.entryLoopAround — the engine's default loop width). The ONE way
-  // this view enters the replay: buttons SEEK, never set a landmark
-  // filter (the round "events" filter button is retired with that rule).
+  // The throw's row ▶ — ICON-ONLY play (the one canonical tick-link
+  // glyph; no label text). It stamps the throw's own tick with a ±10 s
+  // entry loop around it (nav.entryLoopAround — the engine's default
+  // loop width) AND the THROWER as the camera follow: entry context,
+  // never a filter — an absent thrower stamps no follow (buildHash
+  // drops it). The ONE way this view enters the replay: buttons SEEK,
+  // never set a landmark filter (the retired round "events" filter
+  // button stays gone).
   function openReplay(r) {
-    go(replayHash(id, {}, { tick: r.tick, loop: entryLoopAround(r.tick, tickRate), back }));
+    // `|| undefined` — an absent thrower stamps NOTHING (buildHash keeps
+    // an empty string as `follow=`, which is not "no stamp").
+    go(replayHash(id, {}, { tick: r.tick, loop: entryLoopAround(r.tick, tickRate), follow: r.thrower || undefined, back }));
   }
 
   const barW = 1000;
@@ -263,7 +267,7 @@
           : 's'}</span
       >
       <span class="spacer"></span>
-      <span class="muted util-hint">replay seeks to the throw (±10 s loop)</span>
+      <span class="muted util-hint">▶ seeks to the throw (±10 s loop) · camera follows the thrower</span>
     </div>
 
     <div class="util-summary">
@@ -462,8 +466,14 @@
                     <span class="util-actions">
                       <button
                         class="btn small ghost"
-                        title="Watch this throw in the replay (seek to tick {r.tick})"
-                        onclick={() => openReplay(r)}>replay <span class="codicon codicon-play"></span></button
+                        title={r.thrower
+                          ? `Watch this throw — follow ${r.throwerName || r.thrower}`
+                          : 'Watch this throw in the replay'}
+                        aria-label={r.thrower
+                          ? `Watch this throw at tick ${r.tick} — follow ${r.throwerName || r.thrower}`
+                          : `Watch this throw at tick ${r.tick}`}
+                        onclick={() => openReplay(r)}
+                        ><span class="codicon codicon-play" aria-hidden="true"></span></button
                       >
                     </span>
                     <span

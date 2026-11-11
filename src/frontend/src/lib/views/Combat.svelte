@@ -177,8 +177,14 @@
   // Deep link into the replay at a tick, with an optional entry-only
   // ?loop= range stamped beside it (undefined = none): ±10 s around an
   // engagement tick, the clutch's own start→end span for a clutch row.
-  function replay(tick, loop) {
-    nav(replayHash(id, {}, { tick, loop, back: `match/${id}/combat` }));
+  // `follow` is the ROW'S ACTOR (entry context, never a filter): the
+  // engagement's killer, the clutch's solo — absent actor → undefined,
+  // which buildHash drops (never a guessed follow). Round-level links
+  // (watchRound below) pass none.
+  function replay(tick, loop, follow) {
+    // `|| undefined` — buildHash drops null/undefined but would keep an
+    // empty string as `follow=`; an actor-less row stamps NOTHING.
+    nav(replayHash(id, {}, { tick, loop, follow: follow || undefined, back: `match/${id}/combat` }));
   }
 
   // Round chip → WATCH the round: its start tick plus the round's own
@@ -187,7 +193,11 @@
   // round→tick lookups, lib/rounds.js). A round without a usable tick
   // stamps neither (buildHash drops null/undefined), so an unknown round
   // makes no promise rather than a guessed one — never a landmark FILTER:
-  // outside the replay, buttons seek.
+  // outside the replay, buttons seek. ROUND-level → NO follow (only the
+  // row's own ▶ follows its actor); the button is icon-only play like
+  // every other tick link, which leaves TWO play buttons in one row —
+  // the row ▶ (follow the actor) beside the round ▶ (watch the round):
+  // their titles carry which is which.
   function watchRound(round) {
     const start = roundStartTick(rounds, round);
     replay(start, entryLoopSpan(start, roundEndTick(rounds, round)));
@@ -336,19 +346,26 @@
           {#each visibleEngagements as e, i (i)}
             <tr>
               <td>
+                <!-- Row ▶ follows the ENGAGEMENT's KILLER (the owner's
+                     rule: the play button on a kill follows the killer). -->
                 <EventPlay
                   tick={e.tick}
-                  title="Watch this engagement in the replay"
-                  label="Watch tick {e.tick} in the replay"
-                  onclick={() => replay(e.tick, entryLoopAround(e.tick, tickRate))}
+                  title={e.aSteam
+                    ? `Watch this engagement — follow ${e.aName || e.aSteam} (killer)`
+                    : 'Watch this engagement in the replay'}
+                  label={e.aSteam
+                    ? `Watch tick ${e.tick} — follow ${e.aName || e.aSteam}`
+                    : `Watch tick ${e.tick} in the replay`}
+                  onclick={() => replay(e.tick, entryLoopAround(e.tick, tickRate), e.aSteam)}
                 />
               </td>
               <td class="num">
                 <button
                   class="btn small ghost"
                   title="Watch round {e.round} in the replay (from its start)"
+                  aria-label="Watch round {e.round}"
                   onclick={() => watchRound(e.round)}
-                >R{e.round}</button>
+                ><span class="codicon codicon-play" aria-hidden="true"></span></button>
               </td>
               <td class="num mono" title="tick {e.tick}">{roundClock(e.tick, rbn.get(e.round), tickRate)}</td>
               <td>
@@ -416,11 +433,16 @@
               <tr>
                 <td>
                   {#if c.replayAnchorTick > 0}
+                    <!-- Row ▶ follows the CLUTCH's solo (the row actor). -->
                     <EventPlay
                       tick={c.replayAnchorTick}
-                      title="Watch this clutch in the replay"
-                      label="Watch the clutch in round {c.round} in the replay"
-                      onclick={() => replay(c.replayAnchorTick, entryLoopSpan(c.startTick, c.endTick))}
+                      title={c.steamId
+                        ? `Watch this clutch — follow ${c.name || c.steamId}`
+                        : 'Watch this clutch in the replay'}
+                      label={c.steamId
+                        ? `Watch the clutch in round ${c.round} — follow ${c.name || c.steamId}`
+                        : `Watch the clutch in round ${c.round} in the replay`}
+                      onclick={() => replay(c.replayAnchorTick, entryLoopSpan(c.startTick, c.endTick), c.steamId)}
                     />
                   {/if}
                 </td>
@@ -428,8 +450,9 @@
                   <button
                     class="btn small ghost"
                     title="Watch round {c.round} in the replay (from its start)"
+                    aria-label="Watch round {c.round}"
                     onclick={() => watchRound(c.round)}
-                  >R{c.round}</button>
+                  ><span class="codicon codicon-play" aria-hidden="true"></span></button>
                 </td>
                 <td><strong>1v{c.size}</strong></td>
                 <td>

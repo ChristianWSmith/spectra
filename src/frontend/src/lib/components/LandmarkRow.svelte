@@ -29,6 +29,13 @@
   //                  the row's generic contract stays intact.
   //   onselect     — click the row (Replay's detail pane)
   //   onseek       — click ▶ (seek to the row's tick)
+  //   seekTitle / seekLabel — optional caller's OWN ▶ tooltip copy: the
+  //                  canonical tick link outside Replay says what the
+  //                  arrival does beyond seeking (CompareRounds stamps
+  //                  the row's actor as the camera follow, so its ▶
+  //                  titles say "follow <name>"). Empty/absent = the
+  //                  default seek wording below — Replay's feed passes
+  //                  neither and keeps byte-identical copy.
   import { categoryById } from '../replay/landmarks.js';
   import { roundIndexLabel } from '../rounds.js';
   import { chatTag, fmtClock, tickSeconds } from '../fmt.js';
@@ -48,6 +55,8 @@
     rounds = null,
     onselect = () => {},
     onseek = () => {},
+    seekTitle = '',
+    seekLabel = '',
   } = $props();
 
   const cat = $derived(categoryById(row.category));
@@ -148,10 +157,10 @@
 <li class="lm-row" class:lm-compact={compact} class:active={selected}>
   <button
     class="btn small ghost lm-play"
-    title="Seek replay to tick {row.tick}"
-    aria-label="Seek to tick {row.tick}"
+    title={seekTitle || `Seek replay to tick ${row.tick}`}
+    aria-label={seekLabel || `Seek to tick ${row.tick}`}
     onclick={seek}
-  ><span class="codicon codicon-play"></span></button
+  ><span class="codicon codicon-play" aria-hidden="true"></span></button
   >
   <div
     class="lm-main"

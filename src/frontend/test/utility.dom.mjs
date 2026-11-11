@@ -6,7 +6,9 @@
 // group-header summary read "—" at 0 while the toolbar's row counts stay
 // numeric and the Flash-effectiveness card stays out of scope), the
 // coordinate carve-out (dashes only when BOTH components are 0), the dead
-// site column's removal (markup + CSS) and the retired events button.
+// site column's removal (markup + CSS), the retired events button and the
+// icon-only throw ▶ (tick + ±10 s loop + the thrower as the camera
+// follow — never a filter).
 //
 // jsdom is a declared devDependency; from frontend/ run:
 //   node --test test/utility.dom.mjs
@@ -132,7 +134,7 @@ svelteCompile(utilSrc, 'Utility.svelte', join(dir, 'views', 'Utility.js'));
 const harnessSrc = `<script>
   import Utility from './views/Utility.js';
 </script>
-<Utility id={3} />`;
+<Utility id={3} nav={(h) => (globalThis.__nav = (globalThis.__nav || []).concat(h))} />`;
 const harnessOut = join(dir, 'harness.js');
 svelteCompile(harnessSrc, 'harness.svelte', harnessOut);
 
@@ -332,8 +334,41 @@ check(
   $$('button').map((b) => b.textContent.trim()).join(' | '),
 );
 check(
-  'the replay seek button is still there',
-  $$('button').some((b) => /replay/i.test(b.textContent)),
+  'the throw ▶ is still there — icon-only play (its "replay" label text is gone)',
+  !!$$('.util-actions button').length &&
+    $$('.util-actions button').every(
+      (b) => b.textContent.trim() === '' && !!b.querySelector('.codicon-play'),
+    ) &&
+    $$('.util-actions button').every((b) => (b.getAttribute('title') || '').startsWith('Watch this throw')),
+  $$('.util-actions button').map((b) => `${b.textContent.trim()}[${b.getAttribute('title')}]`).join(' | '),
+);
+
+console.log("G1. the throw ▶ seeks + follows the THROWER (icon-only, no filter)");
+const throwBtn = $('.util-nade .util-actions button');
+check('a throw ▶ rendered', !!throwBtn, 'no .util-actions button');
+check(
+  'throw ▶ icon-only play with the follow-aware title',
+  !!throwBtn && throwBtn.textContent.trim() === '' && !!throwBtn.querySelector('.codicon-play') &&
+    throwBtn.getAttribute('title') === 'Watch this throw — follow alice',
+  throwBtn?.getAttribute('title'),
+);
+check(
+  'throw ▶ carries an aria-label with the tick + follow',
+  throwBtn?.getAttribute('aria-label') === 'Watch this throw at tick 1500 — follow alice',
+  throwBtn?.getAttribute('aria-label'),
+);
+throwBtn.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+await sleep();
+const navThrow = (globalThis.__nav || [])[(globalThis.__nav || []).length - 1];
+check(
+  'throw ▶ stamps tick + ±10 s loop + follow=thrower, no filter',
+  !!navThrow &&
+    navThrow.includes('tick=1500') &&
+    navThrow.includes('loop=860,2140') &&
+    navThrow.includes('follow=A') &&
+    !navThrow.includes('cat=') &&
+    !navThrow.includes('roundFrom'),
+  navThrow || 'no navigation',
 );
 
 console.log('G. toolbar counts stay NUMERIC when nothing matches (the table’s N)');
