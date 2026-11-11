@@ -16,6 +16,13 @@ repo root — it is the authority on what Spectra is and isn't. The
 roadmap execution plan (with per-item research reports and completion
 checkboxes) is `roadmap/PATH.md`.
 
+**Roadmap work happens only on explicit request.** Assume any ad-hoc
+request does NOT pertain to the roadmap unless the product owner says
+otherwise: do not search `roadmap/` to check whether the change maps to
+a roadmap item, do not tick `PATH.md` checkboxes, and do not fold a
+request into roadmap execution. When it is time to work the roadmap,
+they will be explicit about it.
+
 Supported platforms: **Linux, Windows** (desktop only). The stock
 Wails mobile scaffolding (iOS/Android) is removed from `build/` and
 gitignored — `wails3 update build-assets` may re-extract it locally; do
