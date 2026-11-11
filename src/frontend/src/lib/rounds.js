@@ -2,7 +2,8 @@
 // counted-round predicate ("stats-eligible play"), the round-number →
 // start/end-tick lookups behind every "jump to round N" link and every
 // round-span loop range, the scoreline-through-a-round aggregate, and the
-// round-ribbon separator rule. Pure functions, no services.
+// round-group separator rule (the cadence + its gating over a rendered
+// list). Pure functions, no services.
 //
 // Cross-layer twins that must stay identical (all three are exercised by
 // the golden demo):
@@ -35,10 +36,9 @@ export function isCounted(r) {
 // counted-round NUMBER itself; knife/warmup negatives are never
 // separators (callers gate on isCounted first).
 //
-// Companion rule kept OUT of this predicate on purpose: a marker
-// renders only when at least one MORE counted round follows it (a match
-// ending exactly on a boundary cell gets no dangling marker) — that
-// depends on the visible cell list and lives in RoundStrip.svelte.
+// Companion rule kept OUT of this predicate on purpose: whether a marker
+// actually RENDERS depends on the visible row list (counted-gating and
+// trailing suppression) — that composition is separatorFlags below.
 //
 // Display convention, not side parity: the real side switches fall at
 // 12, 27, 30, … (no switch at OT start — teams keep regulation sides
@@ -49,6 +49,35 @@ export function separatorAfter(countedRoundNumber) {
   if (!Number.isFinite(n)) return false;
   if (n === 12) return true; // MR12 halftime
   return n >= 24 && (n - 24) % 3 === 0; // regulation end + OT's 3-round halves
+}
+
+// separatorFlags — THE separator GATING over one rendered round list: an
+// array aligned index-for-index with `rows`, true where a separator
+// FOLLOWS that row. It composes the cadence above (separatorAfter) with
+// the two render-time rules that depend on the visible list — the
+// semantics that used to live inline in RoundStrip.svelte:
+//
+//   - counted-gating: only a counted row can carry a separator, counted
+//     by its ORDINAL among the counted rows of this list (negative
+//     knife/warmup rows never increment the counter, so showing them —
+//     the Rounds/RoundStrip warmup pref — can never shift a marker);
+//   - trailing suppression: the LAST counted row never carries one (the
+//     boundary needs at least one more counted round after it), so a
+//     match ending exactly on 12/24/27/30/33 gets no dangling marker.
+//
+// Consumers: RoundStrip renders its `.round-split` span right after a
+// flagged cell; the Rounds and Economy tables put a class on the
+// FOLLOWING data row (row i reads flags[i - 1] → `.split-before` in
+// style.css), which is the same rule seen from the other side — the
+// trailing case is covered here, and in a table the follower simply
+// cannot exist past the last row. Non-array input reads as [].
+export function separatorFlags(rows) {
+  const list = Array.isArray(rows) ? rows : [];
+  const countedTotal = list.filter(isCounted).length;
+  let seen = 0;
+  return list.map((r) =>
+    isCounted(r) ? ++seen < countedTotal && separatorAfter(seen) : false,
+  );
 }
 
 // roundIndexLabel renders a round's DISPLAY label: counted rounds show

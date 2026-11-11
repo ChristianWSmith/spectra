@@ -9,12 +9,14 @@
   } from '../services.js';
   import { fmtInt, fmtMoney } from '../fmt.js';
   import { replayHash } from '../nav.js';
-  import { teamKeyAt } from '../sideparity.js';
+  import { teamKeyAt, winnerTeamKey } from '../sideparity.js';
+  import { separatorFlags } from '../rounds.js';
   import { listedPlayers } from '../players.js';
   import { teamNames } from '../teams.js';
   import { EQUIP_DEF } from '../definitions.js';
   import EconCurve from '../components/EconCurve.svelte';
   import StatCard from '../components/StatCard.svelte';
+  import WinnerCell from '../components/WinnerCell.svelte';
 
   let { id = 0, nav = () => {} } = $props();
 
@@ -73,6 +75,29 @@
   // side-parity helper (teamKeyAt), keyed by the team's final side —
   // the same key the display names and identity colors use.
   const sideSwitches = $derived(match?.sideSwitches || 0);
+
+  // Side-switch boundary per row (index-aligned with `rows`): the
+  // canonical separator gating (lib/rounds.js separatorFlags — cadence +
+  // counted-gating + trailing suppression). Row i carries the boundary
+  // that follows row i-1 as its `.split-before` class (public/style.css,
+  // the table twin of RoundStrip's `.round-split`), so the interleaved
+  // econ-why-row stays attached ABOVE the line and the last row can never
+  // carry a trailing one. The projection to `{number}` is only the row
+  // SHAPE: isCounted/separatorAfter read `number` (extract's renumber —
+  // see lib/rounds.js), while models.EconomyRow keys its round as
+  // `round`. `rows` is counted-only (the store's SQL), so the ordinals
+  // separatorAfter expects are exactly these round numbers.
+  const sepFlags = $derived(separatorFlags(rows.map((r) => ({ number: r.round }))));
+
+  // Winner cell label for ONE buy-types row: the TEAM that won that
+  // round, resolved by the canonical round-number parity
+  // (sideparity.winnerTeamKey) and looked up in `names` (keyed by final
+  // side — teamNames above). Unknown → '' so WinnerCell falls back to
+  // the bare side chip, never a guessed name.
+  function winnerName(r) {
+    const key = winnerTeamKey(rounds, sideSwitches, r.round, r.winner);
+    return key ? names[key] : '';
+  }
 
   // Winner of the WHOLE match, keyed by final side (the final score is
   // already keyed by final side); a tie or unfinished match has none.
@@ -318,10 +343,10 @@
               </tr>
             </thead>
             <tbody>
-              {#each rows as r (r.round)}
+              {#each rows as r, ri (r.round)}
                 {@const ctc = classChip('ct', r)}
                 {@const tc = classChip('t', r)}
-                <tr>
+                <tr class:split-before={ri > 0 && sepFlags[ri - 1]}>
                   <td class="num">
                     <button
                       class="btn small ghost econ-rd"
@@ -329,16 +354,9 @@
                       onclick={() => nav(`/match/${id}/round/${r.round}`)}
                       >{r.round}</button
                     >
-                    {#if r.pistolRound}
-                      <span
-                        class="econ-pip pistol"
-                        title="pistol round"></span>
-                    {/if}
                   </td>
                   <td>
-                    <span class="chip side {r.winner || 'none'}">
-                      {r.winner ? r.winner.toUpperCase() : '—'}
-                    </span>
+                    <WinnerCell winner={r.winner} name={winnerName(r)} />
                   </td>
                   <td>
                     <button

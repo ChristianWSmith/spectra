@@ -31,7 +31,8 @@
     fmtMetric,
   } from '../fmt.js';
   import { teamNames, teamStartClass, playerSideClassAt, displayHalfScore } from '../teams.js';
-  import { isCounted, roundIndexLabel } from '../rounds.js';
+  import { isCounted, roundIndexLabel, separatorFlags } from '../rounds.js';
+  import { winnerTeamKey } from '../sideparity.js';
   import { MATCH_TABS, matchTabSlug, buildHash } from '../router.js';
   import RoundStrip from '../components/RoundStrip.svelte';
   import Economy from './Economy.svelte';
@@ -46,6 +47,7 @@
   import SortTh from '../components/SortTh.svelte';
   import StatCard from '../components/StatCard.svelte';
   import ProfileLink from '../components/ProfileLink.svelte';
+  import WinnerCell from '../components/WinnerCell.svelte';
 
   // routeTab: the deep-linked tab from App's route (#/match/:id/<slug> —
   // every tab is deep-linkable, see MATCH_TABS in lib/router.js); '' for
@@ -181,6 +183,15 @@
   // (negative for warmup/knife; they are extracted facts and are never
   // renumbered here).
   const viewRounds = $derived(showKnifeWarmup ? rounds : rounds.filter(isCounted));
+
+  // Side-switch boundary per VISIBLE row (index-aligned with viewRounds):
+  // the round-group separator gating from the canonical helper
+  // (lib/rounds.js separatorFlags — cadence + counted-gating + trailing
+  // suppression). Row i carries the boundary that follows row i-1 as its
+  // `.split-before` class (public/style.css, the table twin of
+  // RoundStrip's `.round-split`), so pref-on negative rows never shift a
+  // line and the last row can never carry a trailing one.
+  const sepFlags = $derived(separatorFlags(viewRounds));
 
   // localStorage contract (M5): 'spectra:pinned-metrics' holds a JSON array
   // of metric ids — written by Builder's pin toggles, read here when a
@@ -564,6 +575,17 @@
       players: scoreboard,
     }),
   );
+
+  // Winner cell label for ONE round row: the TEAM that won it, resolved
+  // by the canonical round-number parity (sideparity.winnerTeamKey) and
+  // looked up in `teams` (keyed by final side). A side never names a
+  // team past the halftime switch. Unknown (no winner side, round not
+  // loaded) → '' so WinnerCell falls back to the bare side chip — never
+  // a guessed name.
+  function winnerName(r) {
+    const key = winnerTeamKey(rounds, match?.sideSwitches || 0, r.number, r.winner);
+    return key ? teams[key] : '';
+  }
 
   // The header's half score in the teams' DISPLAY order (the scoreline's
   // order): displayHalfScore (lib/teams.js) re-maps the stored first-half-
@@ -1055,7 +1077,7 @@
                 class="num cmp-cmp-col"
                 title="Select rounds to compare (up to 4 — knife/warmup rounds excluded)"
               >Cmp</th>
-              <th scope="col" class="num">№</th>
+              <th scope="col" class="num">Rd</th>
               <th scope="col">Winner</th>
               <th
                 scope="col"
@@ -1073,10 +1095,11 @@
             </tr>
           </thead>
           <tbody>
-            {#each viewRounds as r (r.number)}
+            {#each viewRounds as r, ri (r.number)}
               {@const cls = classByRound.get(r.number)}
               <tr
                 class="clickable"
+                class:split-before={ri > 0 && sepFlags[ri - 1]}
                 onclick={(e) => {
                   if (e.target instanceof Element && e.target.closest('input, button, a'))
                     return;
@@ -1106,9 +1129,7 @@
                     >{/if}</td
                 >
                 <td>
-                  <span class="chip side {r.winner || 'none'}">
-                    {r.winner ? r.winner.toUpperCase() : '—'}
-                  </span>
+                  <WinnerCell winner={r.winner} name={winnerName(r)} />
                 </td>
                 <td>
                   {#if cls}

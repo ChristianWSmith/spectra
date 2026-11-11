@@ -18,10 +18,10 @@
 // 12 (the MR12 halftime), after 24 (the regulation/OT boundary) and
 // every 3 OT rounds after that (27, 30, 33, …) — and only while another
 // counted round follows, so a match ending on a boundary cell gets no
-// dangling marker (the rule lives in ../rounds.js separatorAfter).
+// dangling marker (the gating lives in ../rounds.js separatorFlags).
 import { sideAtRound } from '../sideparity.js';
 import { teamStartClass } from '../teams.js';
-import { isCounted, roundIndexLabel, separatorAfter } from '../rounds.js';
+import { isCounted, roundIndexLabel, separatorFlags } from '../rounds.js';
 import { buildHash } from '../router.js';
 // Rounds visibility pref (key: show_knife_warmup_rounds, prefs.go).
 // Read HERE rather than passed in, so both call sites obey the one
@@ -78,7 +78,9 @@ $effect(() => {
 // counted round 12, no switch at OT start, then 27 and every 3 rounds —
 // see ../sideparity.js sideAtRound, which maps the round number through
 // the counted rounds; the per-round name colors resolve through the same
-// helper, so the strip and the names can never disagree).
+// helper, so the strip and the names can never disagree). The separator
+// flags come from the canonical gating helper (../rounds.js
+// separatorFlags — cadence + counted-gating + trailing suppression).
 const cells = $derived.by(() => {
   // Render filter behind the pref: warmup/knife cells drop out unless the
   // pref opts in, with ONE exception — the round being viewed stays, so
@@ -91,21 +93,19 @@ const cells = $derived.by(() => {
   const visible = showKnifeWarmup
     ? rounds
     : rounds.filter((r) => isCounted(r) || (current !== 0 && r.number === current));
-  // Trailing-marker suppression: a separator renders only when at least
-  // one MORE counted round follows it — a match ending exactly on a
-  // boundary cell (12, 24, 27, …) gets no dangling marker after its
-  // last cell. Negative (knife/warmup) cells never increment the
-  // counter, so they can never shift a marker's position; the boundary
-  // rule itself is ../rounds.js separatorAfter (the ONE separator rule).
-  const countedTotal = visible.filter(isCounted).length;
-  let seen = 0;
-  return visible.map((r) => {
-    const isReal = isCounted(r);
+  // Separator gating over the VISIBLE list — the ONE rule lives in
+  // ../rounds.js separatorFlags (a separator follows a counted cell only
+  // while at least one MORE counted cell follows it, and negative cells
+  // never shift a marker's position). It must run over `visible` (the
+  // list actually rendered), while sideAtRound below still gets the
+  // FULL list.
+  const flags = separatorFlags(visible);
+  return visible.map((r, i) => {
     // The team above FINISHED CT, so its side in this round is the
     // canonical derivation (../sideparity.js sideAtRound → sideInEra —
     // the same one startSideFor feeds the team-identity name colors with).
     const aboveSide = sideAtRound(rounds, sideSwitches, r.number, 'ct');
-    const after = isReal && ++seen < countedTotal && separatorAfter(seen);
+    const after = flags[i];
     // Display label from the ONE canonical formatter (../rounds.js
     // roundIndexLabel): counted rounds show their number, negative ingest
     // indices show "K" (knife) / "W" (warmup).
