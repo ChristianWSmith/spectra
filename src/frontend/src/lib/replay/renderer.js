@@ -50,7 +50,7 @@ import { detonationStyleOf, sameUtilityWeapon } from './landmarks.js';
 // src/lib/layers.test.js).
 import { elevationFor, layerIndexForZ } from './layers.js';
 import { slotStateAt } from './state.js';
-import { bombEndTick, bombEvidenceAt, hasBombPos, actionIntervals, actionProgressAt } from './bomb.js';
+import { bombEndTick, bombEvidenceAt, hasBombPos, actionIntervals, actionDurationTicks, actionProgressAt } from './bomb.js';
 import { buildDropWindows } from './drops.js';
 // The ONE round-boundary cleanup rule (ROUND_POLICY + entityEndTick) —
 // setLandmarks precomputes its cutoffs beside killEnds/dropWins so no
@@ -1006,6 +1006,13 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // until setKitEvidence pushes the view's build — no evidence → no
   // kit marker, never a guessed window.
   let kitWins = new Map();
+  // kitHasAt — the kit-POSSESSION probe from the same bundle (kits.js
+  // buildKitEvidence's tri-state hasKitAt(steamId, tick) → true | false |
+  // null), retained by setKitEvidence for the defuse ring's duration
+  // (bomb.js actionDurationTicks: only an answered `true` buys the 5 s
+  // denominator). null until evidence arrives / a match with no kit rows
+  // → the ring reads NO kit (10 s), the conservative side.
+  let kitHasAt = null;
 
   // --- setIcons / setVoices / setStateIndex inputs (all optional) -----------
   // icons: canonical equipment name ('C4', 'Smoke Grenade', …) → a
@@ -1032,9 +1039,12 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   let damages = []; // damages[slot] = [tick, …]
   // Plant/defuse ATTEMPT intervals grouped by the ACTOR's slot —
   // rebuilt by setLandmarks from bomb.js actionIntervals (THE one
-  // interval rule), rendered as a pure function of tick by drawPlayers'
-  // progress ring (see drawActionRing). An actor we cannot resolve to a
-  // slot has no dot to ring — skipped, never guessed.
+  // interval rule — visibility only), rendered as a pure function of
+  // tick by drawPlayers' progress ring (see drawActionRing; the arc's
+  // FRACTION is elapsed over bomb.js actionDurationTicks' fixed game
+  // duration, kit resolved at draw from setKitEvidence's hasKitAt). An
+  // actor we cannot resolve to a slot has no dot to ring — skipped,
+  // never guessed.
   let actionBySlot = new Map();
   // Decoy plan (setDecoyPlan — lib/replay/decoy.js buildDecoyPlan): the
   // rest-to-explosion rows ({landTick, detTick, x, y, side, weapon,
@@ -1774,10 +1784,21 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // it beside setLandmarks). ev.drops is Map<kit drop row, {from, to}>;
   // anything else (absent / malformed / a match with no kit rows) reads
   // as an EMPTY map, so drawDrops draws no kit marker — fail-soft to
-  // nothing, never a guessed window. Pure visibility: the windows are
-  // match-static, so a repeat push just rebuilds the same lookup.
+  // nothing, never a guessed window. ev.hasKitAt (the tri-state
+  // possession probe) is RETAINED too: the defuse ring's denominator
+  // (bomb.js actionDurationTicks — 5 s with a kit, 10 s without) resolves
+  // it for the defuser at the attempt's start tick. Both inputs are
+  // match-static, so a repeat push just rebuilds the same lookups.
+  //
+  // TWO-SETTER ORDERING: setLandmarks builds actionBySlot (the
+  // intervals) and this arrives separately, in either order. The ring's
+  // duration is therefore stamped LAZILY AT DRAW, where both are in
+  // scope — no rebuild-on-arrival coupling, and whichever setter lands
+  // last just triggers the next draw with everything present. Absent
+  // hasKitAt reads as NO kit (10 s) — the conservative side.
   function setKitEvidence(ev) {
     kitWins = ev && ev.drops instanceof Map ? ev.drops : new Map();
+    kitHasAt = ev && typeof ev.hasKitAt === 'function' ? ev.hasKitAt : null;
     draw();
   }
 
@@ -2788,7 +2809,10 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // drawActionRing — the plant/defuse PROGRESS arc around a player dot:
   // a partial arc from 12 o'clock sweeping CLOCKWISE by `progress` of a
   // full turn, ROUND-capped (the first partial-arc stroke in this file —
-  // every other arc here is a full circle). The color names the ACTION:
+  // every other arc here is a full circle). `progress` arrives clamped
+  // to (0, 1] from bomb.js actionProgressAt (elapsed over the fixed
+  // game duration — never past a full turn, so this arc math cannot
+  // sweep beyond 2π). The color names the ACTION:
   // RED while planting, GREEN while defusing — never the player's side.
   // No dark track under it: the arc sits at r+4, just inside the follow
   // ring at r+5, and a full-circle underlay would paint over the
@@ -3198,14 +3222,25 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       // a scrub replays the same phase and nothing is sticky. Outside
       // the attempt's [start, end) there is no arc at all; the interval
       // itself is derived ONCE in setLandmarks from bomb.js
-      // actionIntervals (begin → completion | abort | round end). Drawn
-      // after the follow ring (r+4 sits inside the follow ring's r+5)
-      // and before the carried-C4 badge (which the second pass after the
-      // loop paints above everything).
+      // actionIntervals (begin → completion | abort | round end).
+      // Progress is elapsed over the FIXED game duration, not the
+      // interval's span (bomb.js actionDurationTicks — 3.125 s plant,
+      // defuse 10 s / 5 s by kit): the span bounds VISIBILITY only, so
+      // a tapped/faked attempt shows a brief sliver instead of racing
+      // to full. The kit resolves HERE at draw — see the two-setter
+      // ordering note in setKitEvidence (setLandmarks owns the
+      // interval, setKitEvidence owns hasKitAt; both are closure state
+      // by the time any frame renders). The defuser's kit is read at
+      // the attempt's START tick; null (unanswerable) → NO kit → 10 s.
+      // Drawn after the follow ring (r+4 sits inside the follow ring's
+      // r+5) and before the carried-C4 badge (which the second pass
+      // after the loop paints above everything).
       const actionIvs = actionBySlot.get(slot);
       if (actionIvs) {
         for (const iv of actionIvs) {
-          const p = actionProgressAt(iv, tick);
+          const kit =
+            iv.action === 'defuse' && kitHasAt ? kitHasAt(iv.steamId, iv.start) : null;
+          const p = actionProgressAt(iv, tick, actionDurationTicks(iv.action, kit, tr));
           if (p == null) continue;
           drawActionRing(c.x, c.y, ACTION_RING_R, iv.action, p);
           break; // at most one live attempt per player

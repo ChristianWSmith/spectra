@@ -1,8 +1,10 @@
 // Tests for the canonical bomb lifecycle module (lib/replay/bomb.js):
 // the planted-C4 visibility rule (round-end cleanup — item 13), the
 // dropped-C4 reconstruction rule (evidence → position at a tick) and
-// the plant/defuse ATTEMPT intervals (begin → completion | abort |
-// round end — the one rule behind the renderer's progress rings).
+// the plant/defuse ATTEMPT lifecycle (begin → completion | abort |
+// round end — the one visibility rule behind the renderer's progress
+// rings, plus the rings' fixed game DURATION: actionDurationTicks /
+// actionProgressAt).
 // Run: node --test src/lib/bomb.test.js   (from frontend/; the lib test
 // glob src/lib/*.test.js picks it up too).
 import test from 'node:test';
@@ -14,6 +16,7 @@ import {
   bombEvidenceAt,
   ACTION_KINDS,
   actionIntervals,
+  actionDurationTicks,
   actionProgressAt,
 } from './replay/bomb.js';
 
@@ -380,24 +383,99 @@ test('actionIntervals: only real attempts — junk, zero spans and foreign rows'
   assert.deepEqual(actionIntervals([pBegin(NaN), roundEnd(1500)]), []);
 });
 
-test('actionProgressAt: (tick − start)/(end − start), null outside the window', () => {
-  const [iv] = actionIntervals([pBegin(100), planted(300)]);
-  assert.equal(actionProgressAt(iv, 100), null); // the begin tick draws nothing
-  assert.equal(actionProgressAt(iv, 200), 0.5);
-  assert.equal(actionProgressAt(iv, 299), 0.995);
-  assert.equal(actionProgressAt(iv, 300), null); // over AT the completion
-  assert.equal(actionProgressAt(iv, 50), null); // before the begin
-  assert.equal(actionProgressAt(iv, 1000), null); // long after
+test('actionDurationTicks: the fixed game durations (THE ring denominator)', () => {
+  // CS2.md "Plant / defuse durations": plant 3.125 s = 200 ticks @64;
+  // defuse 640 (10 s) / 320 (5 s with a kit).
+  assert.equal(actionDurationTicks('plant', false, 64), 200);
+  assert.equal(actionDurationTicks('plant', true, 64), 200); // a kit never moves the plant
+  assert.equal(actionDurationTicks('defuse', false, 64), 640);
+  assert.equal(actionDurationTicks('defuse', true, 64), 320);
+  // Kit is TRI-STATE (kits.js hasKitAt): only an answered `true` buys
+  // the 5 s denominator — false, null (unanswerable) and junk all read
+  // as NO kit, the conservative side (a fake must never fill fast).
+  assert.equal(actionDurationTicks('defuse', null, 64), 640);
+  assert.equal(actionDurationTicks('defuse', 'junk', 64), 640);
+  // An invalid tickRate reads as 64 (the killEndTick rule); a real one
+  // scales the durations.
+  assert.equal(actionDurationTicks('defuse', true, 0), 320);
+  assert.equal(actionDurationTicks('defuse', false, 128), 1280);
+  assert.equal(actionDurationTicks('plant', false, 128), 400);
+  // Unknown family → no duration → no ring, never a guessed one.
+  assert.equal(actionDurationTicks('c4', false, 64), null);
+});
+
+test('actionProgressAt: elapsed / fixed game duration, null outside the window', () => {
+  // THE formula pin (it replaced the old (tick − start)/(end − start)
+  // pin): progress = (tick − start) / actionDurationTicks(...), clamped
+  // ≤ 1. The interval's [start, end) span bounds VISIBILITY only —
+  // never the denominator (dividing by it was the fake-defuse bug: a
+  // 15-tick tap span raced the arc to ~1.0).
+  //
+  // A completed 10 s NO-KIT defuse: 640-tick span == 640-tick duration.
+  const [iv] = actionIntervals([dStart(1000), defused(1640)]);
+  assert.equal(actionProgressAt(iv, 1000, 640), null); // the begin tick draws nothing
+  assert.equal(actionProgressAt(iv, 1320, 640), 0.5); // 5 s elapsed → exactly half a turn
+  assert.equal(actionProgressAt(iv, 1639, 640), 639 / 640);
+  assert.equal(actionProgressAt(iv, 1640, 640), null); // over AT the completion
+  assert.equal(actionProgressAt(iv, 999, 640), null); // before the begin
+  assert.equal(actionProgressAt(iv, 5000, 640), null); // long after
   // Monotonic inside the window — a scrub replays the same phase.
   let prev = 0;
-  for (let t = 101; t < 300; t++) {
-    const p = actionProgressAt(iv, t);
+  for (let t = 1001; t < 1640; t++) {
+    const p = actionProgressAt(iv, t, 640);
     assert.ok(p > prev, `progress at ${t} (${p}) must grow past ${prev}`);
     prev = p;
   }
-  // Hostile input never produces a number.
-  assert.equal(actionProgressAt(null, 150), null);
-  assert.equal(actionProgressAt(iv, NaN), null);
-  assert.equal(actionProgressAt({ start: 200, end: 100 }, 150), null);
-  assert.equal(actionProgressAt({ start: 100, end: 100 }, 150), null);
+  // A COMPLETED attempt's span EQUALS its duration (200 = 3.125 s @64),
+  // so a finished plant reads the numbers the old span pin had — the
+  // fix changes nothing where the old formula was accidentally right.
+  const [plantIv] = actionIntervals([pBegin(100), planted(300)]);
+  assert.equal(actionProgressAt(plantIv, 200, 200), 0.5);
+  assert.equal(actionProgressAt(plantIv, 299, 200), 0.995);
+
+  // FAKE (tapped) defuse — THE bug pin: begin 500 → abort 515 (15
+  // ticks). The old span denominator read (507−500)/(515−500) = 7/15 ≈
+  // 0.47 and ~0.93 at the last visible tick — a tap looked nearly done.
+  // The fixed 10 s denominator gives 7/640 ≈ 0.011: brief, and not far.
+  const [fake] = actionIntervals([dStart(500), dAbort(515)]);
+  assert.equal(fake.closedBy, 'abort');
+  assert.equal(actionProgressAt(fake, 507, 640), 7 / 640); // ≈ 0.0109
+  assert.ok(actionProgressAt(fake, 507, 640) < 0.02, 'a tick into the tap is barely on');
+  assert.equal(actionProgressAt(fake, 514, 640), 14 / 640); // ≈ 0.022 at the last visible tick
+  assert.equal(actionProgressAt(fake, 515, 640), null); // gone AT the abort
+  // Kit variant: the same tap against the 5 s denominator — a sliver.
+  assert.equal(actionProgressAt(fake, 507, 320), 7 / 320); // ≈ 0.022
+
+  // A TAPPED plant (begin 100 → abort 115, 15 ticks — the plant ring
+  // had the identical shape): the last visible tick is 14/200 = 0.07 of
+  // a turn, and the whole tap could never exceed 15/200 = 0.075 (the
+  // old formula read 14/15 ≈ 0.93 there).
+  const [tap] = actionIntervals([pBegin(100), pAbort(115)]);
+  assert.equal(tap.closedBy, 'abort');
+  assert.equal(actionProgressAt(tap, 114, 200), 14 / 200); // 0.07
+  assert.ok(actionProgressAt(tap, 114, 200) < 15 / 200, 'never past 15/200 across the whole tap');
+  assert.equal(actionProgressAt(tap, 115, 200), null); // gone AT the abort
+
+  // CLAMP: an attempt that outlives its duration (the round-end
+  // fallback window) holds a FULL circle — exactly 1.0, never > 1 and
+  // never wrapping past 2π (drawActionRing's arc math).
+  const [long] = actionIntervals([pBegin(100), roundEnd(1500), roundStart(1600)]);
+  assert.equal(long.closedBy, 'round');
+  assert.equal(actionProgressAt(long, 300, 200), 1); // 200 ticks elapsed → full
+  assert.equal(actionProgressAt(long, 1000, 200), 1); // …and it HOLDS, not wraps
+  assert.equal(actionProgressAt(long, 1499, 200), 1);
+  assert.equal(actionProgressAt(long, 1500, 200), null); // gone AT the round end
+
+  // Hostile input never produces a number (boundaries unchanged).
+  assert.equal(actionProgressAt(null, 150, 640), null);
+  assert.equal(actionProgressAt(iv, NaN, 640), null);
+  assert.equal(actionProgressAt({ start: 200, end: 100 }, 150, 640), null);
+  assert.equal(actionProgressAt({ start: 100, end: 100 }, 150, 640), null);
+  // …and a missing/invalid DURATION draws nothing — never a fallback to
+  // the observed span (that fallback IS the bug this replaced).
+  assert.equal(actionProgressAt(iv, 1320), null);
+  assert.equal(actionProgressAt(iv, 1320, undefined), null);
+  assert.equal(actionProgressAt(iv, 1320, 0), null);
+  assert.equal(actionProgressAt(iv, 1320, -640), null);
+  assert.equal(actionProgressAt(iv, 1320, NaN), null);
 });

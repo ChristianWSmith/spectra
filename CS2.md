@@ -1035,8 +1035,15 @@ at the end of the section.
   cited 10/5 to the tick, while the plant measures 0.075 s under the
   cited 3.2 s — either the game's constant really is 3.125 s or one of
   the two plant events is offset ~5 ticks; NOT resolved
-  (needs-authoritative-source). spectra's replay rings/sound cues use
-  the measured interval, never a duration constant.
+  (needs-authoritative-source). spectra's replay ATTEMPT rings measure
+  progress against this fixed game duration — **10 s / 5 s defuse by
+  kit evidence (an unanswerable kit = no kit = the conservative 10 s),
+  3.125 s plant — clamped to one full turn**; the ring's VISIBILITY is
+  still bounded by the observed begin → completion/abort/round-end
+  interval (never an invented one), so a fake/tapped attempt (3–152
+  ticks) shows only a brief sliver instead of racing to full. Sound
+  cues keep their measured-event rule — they fire ON the observed
+  begin/complete rows, never on a duration constant (unchanged).
   **Source** — local measurement, `golden/*.dem.zst` +
   dev-DB `generic_events` (2026-11-08);
   https://www.strafe.com/news/read/counter-strike-c4-guide-placement-defusal-and-tactics/
