@@ -1738,10 +1738,24 @@ input[type='checkbox']:focus-visible {
 
 /* --- Replay keep-alive / mini-player dock (App's .rp-keepalive wrapper) ---
    App keeps ONE Replay mounted across same-id match routes; the wrapper
-   flips between two states:
+   flips between three states:
    ACTIVE (replay route): display:contents — zero boxes of its own, so
      .replay-view remains .content's direct child and the layout is
      byte-for-byte the pre-keep-alive one (nothing below applies).
+   OVERLAY (replay route expanded over a preserved view — App's
+     displaced-view overlay): a NEW class, .rp-keepalive-cover, turns the
+     wrapper into a fixed panel covering the CONTENT area so the replay
+     sits "on top" of the view it displaced (which stays mounted + inert
+     beneath — never destroyed). The numbers: left 52px = .sidebar (flex
+     0 0 52px under the global border-box, its 1px border included) so
+     the rail stays reachable; top/right/bottom 0 = the window edges;
+     padding 16px 20px reproduces .content's own padding exactly, so
+     .replay-view's height: calc(100vh - 32px) fits the inner box the
+     same 100vh − 2×16px it does in flow; background var(--bg) keeps the
+     preserved view from peeking through that padding ring; z-index 40
+     sits above any view chrome (≤ 30) and below .dlg-back (z-60, the
+     dialogs AND the command palette). Collapsed state never wears it
+     (cover ⟺ replayActive, mini ⟺ !replayActive).
    COLLAPSED (same-id match/round route): a fixed bottom-right panel, the
      .cmp-float precedent (fixed right/bottom, z-30 — the .dlg-back
      backdrop at z-60 stays above it) sized to the frozen frame + the
@@ -1753,6 +1767,19 @@ input[type='checkbox']:focus-visible {
      new size. */
 .rp-keepalive {
   display: contents;
+}
+
+.rp-keepalive.rp-keepalive-cover {
+  display: block;
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 52px; /* .sidebar's outer width (see the block comment) */
+  padding: 16px 20px; /* .content's padding, reproduced (see above) */
+  overflow-y: auto; /* .content scrolls the same way when a view overflows */
+  background: var(--bg);
+  z-index: 40;
 }
 
 .rp-keepalive.rp-keepalive-mini {

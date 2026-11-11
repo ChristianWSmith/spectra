@@ -51,6 +51,32 @@
   // match route's query (which would reset the filter to defaults).
   const replayQuery = $derived(alive ? parseHash(alive.hash).query || {} : {});
 
+  // Displaced-view overlay (the "replay on top, nothing beneath is
+  // destroyed" rule): while the replay route is expanded, the view the
+  // user was on when the dock expanded (?back= — path AND query ride it:
+  // backOrigin copies the whole live hash, expandReplayHash stamps it,
+  // parseHash re-splits on the first ?) stays MOUNTED beneath the overlay
+  // instead of being destroyed by the chain's branch transition.
+  //
+  // THE INVARIANT THAT MAKES THIS WORK: at expand, `back` IS the hash
+  // that was just rendering — parseHash('/' + back) yields the same
+  // branch with the same props the live route had one tick ago, so the
+  // {#if} chain below never swaps branches and the instance never
+  // remounts; at minimize, goBack() navigates to '/' + back — exactly
+  // the string parsed here — so the identical parse lands and the
+  // displaced instance simply BECOMES the live route view (same branch,
+  // same props, still no remount). Off-replay, viewRoute === route (the
+  // chain is byte-identical to today); replay WITHOUT ?back (palette
+  // jumps, hand-edited links) → null → the {#if viewRoute} guard renders
+  // nothing beneath = today's behavior (minimize then falls back to
+  // goBack's /match/:id, which mounts fresh). The degenerate
+  // back=replay/… parses to a replay route and hits the chain's replay
+  // branch (renders nothing) — by construction, never a special case.
+  const displaced = $derived(
+    route.name === 'replay' && route.query?.back ? parseHash('/' + route.query.back) : null,
+  );
+  const viewRoute = $derived(route.name === 'replay' ? displaced : route);
+
   // expandReplay — THE expand path of the dock (both triggers go through
   // it: the mini-panel's click below, and Match's header "Watch replay"
   // via the expandReplay prop — see Match.svelte). One navigation:
@@ -104,6 +130,48 @@
   function onDockCloseKey(e) {
     e.stopPropagation(); // no preventDefault: the button's own click should still fire
   }
+
+  // Focus management for the displaced-view overlay — Dialog.svelte's
+  // restoreTo pattern: expanding captures document.activeElement and
+  // moves focus ONTO the overlay container (tabindex -1 while expanded —
+  // the wrapper's dynamic tabindex below), so a keyboard user lands on
+  // the replay; minimize/close hands focus back — ONLY when the captured
+  // element survived the trip (still connected — a preserved view's
+  // button does, an unmounted one doesn't) AND focus was not deliberately
+  // moved elsewhere (still on/inside the overlay, or dropped to body by
+  // its teardown; a sidebar click meanwhile is respected — the sidebar is
+  // interactive BY DESIGN while the overlay covers only the content
+  // area). preventScroll on both legs: neither the move nor the restore
+  // may scroll the preserved .content underneath. No focus trap beyond
+  // that — the overlay is a landing point, not a modal.
+  let keepAliveEl = $state(null); // the .rp-keepalive wrapper (the overlay container)
+
+  $effect(() => {
+    if (!replayActive) return;
+    const overlay = keepAliveEl;
+    const prev = document.activeElement;
+    overlay?.focus({ preventScroll: true });
+    return () => {
+      const active = document.activeElement;
+      const focusStillOnOverlay =
+        !active ||
+        active === document.body ||
+        active === document.documentElement ||
+        active === overlay ||
+        !!overlay?.contains(active);
+      if (
+        focusStillOnOverlay &&
+        prev &&
+        prev !== document.body &&
+        prev !== document.documentElement &&
+        prev !== active &&
+        prev.isConnected &&
+        typeof prev.focus === 'function'
+      ) {
+        prev.focus({ preventScroll: true });
+      }
+    };
+  });
 
   // Sidebar layout partitions the shared action list (lib/nav.js):
   // `bottom` entries (Settings) pin to the rail's foot as a gear; every
@@ -200,27 +268,34 @@
   </nav>
   <main class="content">
     <!-- Replay keep-alive (mini-player dock): rendered OUTSIDE the view
-         chain so it can coexist with the match view. The wrapper is
-         display:contents while active (the layout is byte-for-byte the
-         pre-keep-alive one — .replay-view stays .content's direct child)
-         and a fixed bottom-right panel while collapsed (its own .rp-keepalive
-         CSS in style.css; dialogs at z-60 stay above it). The WHOLE
-         collapsed panel is the expand target (role=button + click/key) —
-         expandReplay above is the one path. {#key alive.id} keeps the old
-         {#key route.id} remount rule: same id → never remount (query
-         changes ride the replayQuery prop); a different id destroys the
-         instance and fresh-loads; alive → null unmounts it (cleanup runs
-         as before). -->
+         chain so it can coexist with the match view. The wrapper has
+         three states: display:contents while active (the layout is
+         byte-for-byte the pre-keep-alive one — .replay-view stays
+         .content's direct child); a FIXED OVERLAY over the content area
+         while active AND expanded over a preserved view (.rp-keepalive-cover
+         — the displaced-view overlay, see viewRoute above; the preserved
+         view stays mounted + inert beneath it); and a fixed bottom-right
+         panel while collapsed (its own .rp-keepalive CSS in style.css;
+         dialogs at z-60 stay above it). The WHOLE collapsed panel is the
+         expand target (role=button + click/key) — expandReplay above is
+         the one path. {#key alive.id} keeps the old {#key route.id}
+         remount rule: same id → never remount (query changes ride the
+         replayQuery prop); a different id destroys the instance and
+         fresh-loads; alive → null unmounts it (cleanup runs as before). -->
     {#if alive}
-      <!-- svelte-ignore a11y_no_noninteractive_tabindex (the dock's
-           role=button is DYNAMIC — it exists exactly when tabindex does:
-           the collapsed panel is a button, the full replay view is not.
-           The compiler cannot see the pairing through the ternary.) -->
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex (both ends are
+           DYNAMIC through ternaries the compiler cannot pair up: while
+           collapsed this element is the dock's role=button with
+           tabindex 0; while expanded it is the overlay container with
+           tabindex -1 and NO role — the focus target the $effect above
+           lands on. The ignore covers the expanded, role-less case.) -->
       <div
         class="rp-keepalive"
+        class:rp-keepalive-cover={replayActive}
         class:rp-keepalive-mini={!replayActive}
+        bind:this={keepAliveEl}
         role={!replayActive ? 'button' : undefined}
-        tabindex={!replayActive ? 0 : undefined}
+        tabindex={replayActive ? -1 : 0}
         aria-label={!replayActive ? 'Expand replay' : undefined}
         title={!replayActive ? 'Expand replay' : undefined}
         onclick={replayActive ? null : expandReplay}
@@ -249,36 +324,54 @@
         {/if}
       </div>
     {/if}
-    {#if route.name === 'library'}
-      <Library {nav} query={route.query || {}} />
-    {:else if route.name === 'match'}
-      <Match id={route.id} routeTab={route.tab || ''} {nav} expandReplay={matchExpand} />
-    {:else if route.name === 'round'}
-      <RoundDetail id={route.id} round={route.round} query={route.query || {}} {nav} />
-    {:else if route.name === 'player'}
-      <PlayerProfile steamId={route.steamId} query={route.query || {}} origin={originHash} {nav} />
-    {:else if route.name === 'compare'}
-      <CompareRounds id={route.id} query={route.query || {}} {nav} />
-    {:else if route.name === 'replay'}
-      <!-- Replay renders ABOVE (the keep-alive block), outside this
-           chain: it must survive into same-id match routes as the
-           mini-player dock. Mount/destroy is keyed by the alive record
-           (id), so a replay → replay jump for another id remounts it and
-           any out-of-scope route destroys it — the same rules the old
-           in-chain {#key route.id} gave, plus the cross-route keep-alive. -->
-    {:else if route.name === 'builder'}
-      <Builder {nav} />
-    {:else if route.name === 'sql'}
-      <SqlConsole {nav} />
-    {:else if route.name === 'profiles'}
-      <Profiles {nav} />
-    {:else if route.name === 'explorer'}
-      <Explorer {nav} routeId={route.id || 0} />
-    {:else if route.name === 'reports'}
-      <Reports {nav} routeId={route.id || 0} />
-    {:else if route.name === 'settings'}
-      <Settings />
-    {/if}
+    <!-- The view chain's HOST: a plain block (layout-neutral — verified
+         against style.css: there are NO `.content >` direct-child or
+         :first-child/:last-child selectors, and .view's centering is
+         width-based, so a full-width wrapper between .content and the
+         views changes nothing), holding the chain so the expanded replay
+         can keep the displaced view MOUNTED beneath its overlay and
+         INERT (viewRoute/inert above — the property is what both WebView
+         targets reflect; the sidebar is OUTSIDE .content, hence outside
+         this host, hence interactive by design). inert flips with
+         replayActive: the overlay is up ⟺ nothing beneath is reachable. -->
+    <div class="app-views" inert={replayActive}>
+      {#if viewRoute}
+        {#if viewRoute.name === 'library'}
+          <Library {nav} query={viewRoute.query || {}} />
+        {:else if viewRoute.name === 'match'}
+          <Match id={viewRoute.id} routeTab={viewRoute.tab || ''} {nav} expandReplay={matchExpand} />
+        {:else if viewRoute.name === 'round'}
+          <RoundDetail id={viewRoute.id} round={viewRoute.round} query={viewRoute.query || {}} {nav} />
+        {:else if viewRoute.name === 'player'}
+          <PlayerProfile steamId={viewRoute.steamId} query={viewRoute.query || {}} origin={originHash} {nav} />
+        {:else if viewRoute.name === 'compare'}
+          <CompareRounds id={viewRoute.id} query={viewRoute.query || {}} {nav} />
+        {:else if viewRoute.name === 'replay'}
+          <!-- Replay renders ABOVE (the keep-alive block), outside this
+               chain: it must survive into same-id match routes as the
+               mini-player dock. Mount/destroy is keyed by the alive record
+               (id), so a replay → replay jump for another id remounts it and
+               any out-of-scope route destroys it — the same rules the old
+               in-chain {#key route.id} gave, plus the cross-route keep-alive.
+               This branch ALSO catches the degenerate hand-edited
+               back=replay/… (viewRoute = the parsed back → replay): renders
+               nothing beneath the overlay, exactly like a replay route with
+               no back. -->
+        {:else if viewRoute.name === 'builder'}
+          <Builder {nav} />
+        {:else if viewRoute.name === 'sql'}
+          <SqlConsole {nav} />
+        {:else if viewRoute.name === 'profiles'}
+          <Profiles {nav} />
+        {:else if viewRoute.name === 'explorer'}
+          <Explorer {nav} routeId={viewRoute.id || 0} />
+        {:else if viewRoute.name === 'reports'}
+          <Reports {nav} routeId={viewRoute.id || 0} />
+        {:else if viewRoute.name === 'settings'}
+          <Settings />
+        {/if}
+      {/if}
+    </div>
   </main>
   <CommandPalette {nav} />
   <MapPackPrompt bind:this={mapPackPrompt} />
