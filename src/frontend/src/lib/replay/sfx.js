@@ -218,6 +218,30 @@ const BEEP_TRACK_CAP = 256;
 // as the named contract the cue gate reads.
 export const SOUND_DETONATION_BUCKETS = DETONATION_BUCKETS;
 
+// SFX_CUE_KINDS — every landmark EVENT kind the cue builders below read
+// out of the WORLD rows (the draw feed Replay pushes through
+// setLandmarks): the AUDIO half of the draw set, named so the world
+// contract can pin it (src/lib/replay-world-contract.test.js asserts
+// SFX_CUE_KINDS ⊆ DRAW_KINDS). The tie matters both ways: a cue kind
+// outside the draw set would be fed rows the fetch never returns (dead
+// silence), and a draw kind dropped from the draw set would silently
+// kill its cue. The sound_events kinds (step/jump/land/fall) are NOT
+// here — they come from getSoundEvents, not the landmark rows.
+export const SFX_CUE_KINDS = [
+  'kill', // headshotKillCues (the dink/bare pair)
+  'damage', // knifeCues
+  'grenade_throw', // throwCues
+  'grenade', // grenadeCues (detonation) + bombActionCues (plant/defuse begin+complete)
+  'grenade_bounce', // bounceCues
+  'bomb_explode', // grenadeCues (the C4 explosion)
+  'bomb_plant', // bombAnnouncerCues + c4BeepRows (bucket 'plant')
+  'bomb_plant_begin', // bombActionCues (plant start)
+  'bomb_defuse', // bombAnnouncerCues + bombActionCues (defuse complete) + c4BeepRows (bucket 'defuse')
+  'bomb_defuse_start', // bombActionCues (defuse start)
+  'round_end', // roundEndCues + c4BeepRows (bucket 'round')
+  'round_start', // matchPointCues + c4BeepRows (bucket 'start')
+];
+
 // prefVolume coerces a kvstore read into a 0..1 fader level: the store
 // round-trips JSON (an unset key arrives as null), so anything missing,
 // non-numeric or out of range falls back to the default — a corrupt pref

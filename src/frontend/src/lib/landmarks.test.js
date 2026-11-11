@@ -15,6 +15,7 @@ import {
   DETONATION_BUCKETS,
   categoryOfKind,
   rowCategory,
+  enabledClaimOf,
   killRoleFor,
   drawBucket,
   detonationStyle,
@@ -24,6 +25,7 @@ import {
   typedKindsFor,
   enabledSources,
   normalizeEvent,
+  normalizeWorld,
   normalizeChat,
   normalizeGeneric,
   mergeFeed,
@@ -179,6 +181,77 @@ test('rowCategory stamps the ENABLED claim (the deaths/kill view decision)', () 
   // An unclaimed kind still resolves to null (normalizeEvent's drop).
   assert.equal(rowCategory({ kind: 'teleport' }, ['kills']), null);
   assert.equal(rowCategory(null, ['kills']), null);
+});
+
+// --- World path: normalizeWorld + the enabled-claim predicate ---------------
+
+test('DRAW_KINDS ⊆ claimed kinds (the draw fetch can never outrun the registry)', () => {
+  // The world fetch is scoped to kinds: DRAW_KINDS; normalizeWorld has
+  // no claim gate, so an unclaimed draw kind would still RENDER — but no
+  // feed filter could ever select it. The two registries must stay in
+  // step; this is the direct subset assert beside the all-kinds coverage
+  // above.
+  for (const k of DRAW_KINDS) {
+    assert.ok(LANDMARK_KINDS.includes(k), `draw kind not in LANDMARK_KINDS: ${k}`);
+    assert.ok(categoryOfKind(k), `unclaimed draw kind: ${k}`);
+  }
+});
+
+test('normalizeWorld: every DRAW_KINDS kind yields a row — the world path has NO claim gate', () => {
+  for (const k of DRAW_KINDS) {
+    const row = normalizeWorld({ id: 7, seq: 1, tick: 64, round: 1, kind: k, weapon: 'ak47' });
+    assert.ok(row, `normalizeWorld dropped ${k}`);
+    assert.equal(row.key, 'e:7');
+    assert.equal(row.source, 'event');
+    assert.equal(row.bucket, drawBucket(k, 'ak47'), k);
+    // The enabled stamp is FEED-ONLY by construction: a world row never
+    // carries `category`, so no world consumer can read it (the fs-scan
+    // contract pins that no lib/replay consumer references `.category`).
+    assert.equal('category' in row, false, `world row carries a category stamp: ${k}`);
+  }
+  // The gate normalizeEvent KEEPS (the feed's) is gone on the world path:
+  // a kind no category claims still normalizes for the world, still
+  // drops from the feed — deleting a category can never kill a world
+  // marker, a cue, the kit evidence or a live-stat row.
+  const unclaimed = { id: 8, seq: 2, tick: 128, round: 1, kind: 'teleport' };
+  assert.equal(normalizeEvent(unclaimed, {}), null, 'the feed gate stays');
+  assert.ok(normalizeWorld(unclaimed), 'the world gate is gone');
+  assert.equal(normalizeWorld(unclaimed).bucket, '', 'an un-drawable kind keeps no bucket');
+  assert.equal(normalizeWorld(null), null, 'a null row yields null, never a throw');
+  // No round policy either: a countedOnly kind from a knife round still
+  // normalizes (round visibility is the CONSUMER'S rule — the marker
+  // gate's applyRoundPref — never the shape's).
+  assert.ok(normalizeWorld({ id: 9, tick: 1, round: -2, kind: 'round_start' }));
+});
+
+test('enabledClaimOf ⇔ cats.has(rowCategory) — the marker-gate equivalence', () => {
+  // The scrubber gate used to read the STAMP off the row
+  // (cats.has(rowCategory(row, cats))); world rows carry no stamp, so
+  // the gate asks the predicate instead. For EVERY kind × a spread of
+  // enabled sets the two answers must agree — that equivalence is what
+  // keeps §N (deaths-only marks kill rows) green through the switch.
+  const catSets = [
+    DEFAULT_CATEGORIES, // the sparse default
+    [],
+    ['kills'],
+    ['deaths'],
+    ['kills', 'deaths'],
+    ['round_starts', 'kills', 'deaths'],
+    CATEGORIES.map((c) => c.id), // everything on
+    ['bogus'], // unknown ids are never a claim
+  ];
+  for (const kind of LANDMARK_KINDS) {
+    for (const cats of catSets) {
+      const stamped = cats.includes(rowCategory({ kind }, cats));
+      const gated = enabledClaimOf(kind, cats) != null;
+      assert.equal(gated, stamped, `${kind} @ ${JSON.stringify(cats)}`);
+    }
+  }
+  // No cats at all (defensive): the stamp falls back to the canonical
+  // claim but the predicate says "no" — a gate must never open on an
+  // absent filter, which is exactly why the gate asks the predicate.
+  assert.equal(enabledClaimOf('kill', undefined), null);
+  assert.equal(enabledClaimOf('kill', null), null);
 });
 
 test('killRoleFor derives the player-filter role from the CATEGORY ids', () => {

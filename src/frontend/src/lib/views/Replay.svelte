@@ -48,6 +48,8 @@
     enabledSources,
     killRoleFor,
     normalizeEvent,
+    normalizeWorld,
+    enabledClaimOf,
     normalizeChat,
     normalizeGeneric,
     mergeFeed,
@@ -644,14 +646,15 @@
   // number and the collapsed handle's title/aria-label both use it.
   const feedCountLabel = $derived(String(feedRows.length) + (hasMore ? '+' : ''));
 
-  // Draw feed: the drawable-kind anchors, fetched ONCE per match in
-  // load() and handed to the renderer — the category selection never
-  // rebuilds the world layers. The STAMP does ride the enabled cats
-  // (rowCategory through normalizeEvent): the scrubber-marker gate below
-  // reads it, so a deaths-only selection stamps its kill rows 'deaths'
-  // and the markers survive (the renderer/sfx pushes ignore category —
-  // they consume buckets).
-  const drawNorm = $derived(drawRows.map((r) => normalizeEvent(r, { cats: filter.cats })).filter(Boolean));
+  // WORLD dataset rows: the drawable-kind anchors normalized ONCE per
+  // match — normalizeWorld applies NO claim gate (every DRAW_KINDS row
+  // survives whatever CATEGORIES claims) and NO round policy, and this
+  // derived reads NOTHING but drawRows, so a category toggle can never
+  // re-derive it (the live-stats cursor keys off this identity — see
+  // livestats.js' reset key). The claim gate is a FEED concept
+  // (rowCategory → feedRows above); the world consumers (renderer, sfx,
+  // kit evidence, decoy plan, live stats) take buckets/kinds only.
+  const drawNorm = $derived(drawRows.map((r) => normalizeWorld(r)).filter(Boolean));
 
   // The defuse-kit evidence (lib/replay/kits.js buildKitEvidence) — built
   // ONCE per match (both inputs are match-static: the draw feed above
@@ -672,7 +675,6 @@
     const t0 = data.ticks[0];
     const t1 = data.ticks[data.frames - 1];
     const span = Math.max(1, t1 - t0);
-    const cats = new Set(filter.cats);
     const out = [];
     // Same round-visibility pref as the feed — the scrubber mirrors the
     // feed's overview, so hidden rounds carry no markers either. (The
@@ -680,8 +682,14 @@
     // full spatial context — see the drawNorm comment.)
     const norm = applyRoundPref(drawNorm, rbn, showKnifeWarmup);
     for (const l of norm) {
-      if (!cats.has(l.category)) continue;
-      const cat = categoryById(l.category);
+      // THE enabled-claim gate, in predicate form over (kind, cats) —
+      // enabledClaimOf ⇔ the old cats.has(rowCategory(...)) stamp (the
+      // equivalence landmarks.test.js pins: a null claim here IS "no
+      // marker", which the stamp's canonical fallback used to stand in
+      // for). The world row carries no stamp to read, by design.
+      const claim = enabledClaimOf(l.kind, filter.cats);
+      if (!claim) continue;
+      const cat = categoryById(claim);
       if (cat && cat.countedOnly) {
         const r = rbn.get(l.round);
         if (r && !isCounted(r)) continue;

@@ -212,18 +212,32 @@ export function categoryOfKind(kind) {
 // concept, the kind the demo detail), so the ENABLED set decides which
 // view the row presents under: kills-only → 'kills', deaths-only →
 // 'deaths', both → 'kills' (first claim wins). Pure — unit-tested by
-// src/lib/landmarks.test.js; every consumer (list chips, the export
-// `type` column, the scrubber-marker gate) reads the stamp normalizeEvent
-// sets through this, so no site re-derives it.
+// src/lib/landmarks.test.js; every FEED consumer (list chips, the export
+// `type` column, the ?sel= detail) reads the stamp normalizeEvent sets
+// through this, so no site re-derives it. The WORLD path never stamps —
+// see normalizeWorld.
 export function rowCategory(row, cats) {
-  const k = String((row && row.kind) || '');
-  if (cats) {
-    const enabled = CATEGORIES.find(
-      (c) => c.source === 'event' && (c.kinds || []).includes(k) && cats.includes(c.id),
-    );
-    if (enabled) return enabled.id;
-  }
-  return categoryOfKind(k);
+  return enabledClaimOf((row && row.kind) || '', cats) || categoryOfKind((row && row.kind) || '');
+}
+
+// enabledClaimOf — THE pure enabled-claim answer for a KIND: the first
+// category claiming `kind` (CATEGORIES order) that the enabled set
+// contains, or null when none is enabled. rowCategory is exactly this
+// rule plus the canonical first-claim fallback (that is the stamp); the
+// raw answer is what a GATE needs — "may a row of this kind show?" —
+// where a null must mean NO, not "fall back to a claim nobody enabled".
+// Array-shaped like rowCategory (callers pass filter.cats verbatim).
+// Pure — unit-tested by src/lib/landmarks.test.js, which pins the
+// equivalence every marker gate relies on:
+//   cats.has(rowCategory(row, cats))  ⇔  enabledClaimOf(row.kind, cats) != null
+// (the §N deaths-only case is one row of that matrix).
+export function enabledClaimOf(kind, cats) {
+  if (!cats) return null;
+  const k = String(kind || '');
+  const enabled = CATEGORIES.find(
+    (c) => c.source === 'event' && (c.kinds || []).includes(k) && cats.includes(c.id),
+  );
+  return enabled ? enabled.id : null;
 }
 
 // detonationStyle — THE weapon → detonation-visual decision (pure; the
@@ -468,6 +482,55 @@ export function normalizeEvent(ev, opts = {}) {
     key: 'e:' + ev.id,
     source: 'event',
     category,
+    bucket: drawBucket(ev.kind, ev.weapon),
+    // Landmark position/attribution aliases the renderer's world layers
+    // consume (the shared landmark representation — EventRow keeps its
+    // posX/posY/posZ for everything else). Bomb events attribute to the
+    // bomb entity, not a player.
+    x: ev.posX ?? null,
+    y: ev.posY ?? null,
+    z: ev.posZ ?? null,
+    steamId:
+      ev.kind === 'bomb_plant' || ev.kind === 'bomb_defuse' || ev.kind === 'bomb_explode'
+        ? ''
+        : ev.attacker || '',
+    who: '',
+    label: '',
+  };
+}
+
+// normalizeWorld — THE world-path normalizer: the SAME row shape
+// normalizeEvent builds for the renderer / sfx / kit evidence / decoy
+// plan / live-stats dataset, with the two FEED rules stripped off:
+//
+//   1. NO claim gate. Every row the draw fetch returns (kinds:
+//      DRAW_KINDS — already scoped upstream in the fetch) normalizes to
+//      a row, whatever CATEGORIES claims. Deleting a category can never
+//      drop a world marker, an audio cue, the kit evidence or a
+//      live-stat row — the claim gate is a FEED concept (rowCategory)
+//      and lives only there. A kind no category claims still yields a
+//      row (bucket '' = not drawn, never a null).
+//   2. NO round policy (no countedOnly drop, no roundsByNumber): the
+//      world shows the full spatial context — the consumers that need
+//      round-visibility apply it themselves where they mean it (the
+//      scrubber-marker gate's applyRoundPref), never in the shape.
+//
+// The returned row deliberately carries NO `category` field: the enabled
+// stamp is feed-only by construction, so no world consumer can read it
+// (the fs-scan contract in src/lib/replay-world-contract.test.js pins
+// that no lib/replay/{renderer,sfx,kits,drops,bomb,decoy,livestats,
+// roundcut,playercard}.js references `.category` at all). `key`,
+// `bucket`, the position/attribution aliases and `source` are shared
+// with the feed rows — the world and the feed are two READS of one
+// event vocabulary, not two vocabularies.
+// Unit-tested by src/lib/landmarks.test.js (every DRAW_KINDS kind → a
+// row, claim-gate-free).
+export function normalizeWorld(ev) {
+  if (!ev) return null; // defensive: a null row yields null, never a throw
+  return {
+    ...ev,
+    key: 'e:' + ev.id,
+    source: 'event',
     bucket: drawBucket(ev.kind, ev.weapon),
     // Landmark position/attribution aliases the renderer's world layers
     // consume (the shared landmark representation — EventRow keeps its
