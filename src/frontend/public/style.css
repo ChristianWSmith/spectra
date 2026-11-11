@@ -386,7 +386,9 @@ select {
    shrinks to fit-content and its cards render narrower than the view —
    "occasionally" because it only shows while the content's natural width
    is below the available width. The outer .view is already capped at
-   1400px and centered, so a nested one just stretches (this is why the
+   1400px and centered (replay opts its OWN root out of the cap — see
+   .replay-view — but it never nests a .view, so this rule is untouched
+   there), so a nested one just stretches (this is why the
    Details tab's Explorer cards came out short of full width while Key
    facts — a direct child of the outer .view — never did). */
 .view > .view {
@@ -1450,9 +1452,23 @@ input[type='checkbox']:focus-visible {
    back left, round ribbon center, collapsed landmark toggle right)
    beside the landmark rail when it expands, so both columns' headers
    share the same top line. On narrow windows (media query below) the
-   pair stacks: main above the aside. */
+   pair stacks: main above the aside.
+   WIDTH — the ONE view exempt from .view's 1400px centered cap
+   (max-width: none below): the replay is disproportionately
+   width-hungry — its fixed 340px landmark rail compresses the main
+   column inside the cap (the stage is left ~1060px on a 1400px window),
+   and extra width turns straight into a bigger render stage. Every
+   other view keeps the tight centered column (.view stays untouched).
+   The centered layout's margin: 0 auto remains from .view, but resolves
+   to 0 once the block fills .content — no visual change there. Dock
+   states are unaffected: ACTIVE is display:contents (this rule fills
+   .content as before), and the COLLAPSED .rp-keepalive-mini wrapper
+   fixes the 320px panel width itself — its own width: 100% of that box
+   cannot be grown by max-width: none. The ≤1000px media rules only flip
+   flex-direction (already narrower than the cap). */
 .replay-view {
   position: relative; /* the layout shell */
+  max-width: none; /* the width exemption — see comment above */
   height: calc(100vh - 32px);
   display: flex;
   flex-direction: row;
