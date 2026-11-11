@@ -6365,3 +6365,342 @@ test('follow camera holds the last alive position while the followed player is d
   );
   r.destroy();
 });
+
+// --- smart camera composition: WHAT the frame frames (smartTarget) ------------
+//
+// smartTarget (renderer.js) unions the points the smart camera must keep
+// on screen: ALIVE players + the ACTIVE bomb — planted inside
+// bombEndTick's window (INCLUSIVE of the cutoff tick, deliberately: at
+// the cutoff the blast is still what the viewer needs to see, while the
+// MARKER is already gone there — see the planted-C4 boundary test
+// above) or dropped (bomb.js bombEvidenceAt's 'dropped' branch). A
+// carried bomb needs NO point of its own — its carrier is an alive
+// player — and a DEAD player contributes nothing (their last spot would
+// pin the view to a ghost).
+//
+// Nothing else pins that composition: the pure pins above cover
+// smartCamTarget's fit/clamp math and the world-layer tests cover
+// drawBomb's MARKER, but smartTarget is reachable ONLY through the real
+// path — createRenderer → setLandmarks → setCameraMode('smart') →
+// draw() → getCam() — which is what these tests drive.
+//
+// Two harness rules keep the pins honest:
+//   · RELATIVE assertions only — with-bomb vs without-bomb on the SAME
+//     fixture and the same 800×600 canvas (the size-aware
+//     smartMarginFor makes absolute scales a function of the stage),
+//     plus the bomb point's OWN screen position (r.worldToScreen — the
+//     renderer's projection, no duplicated image math);
+//   · a VIRTUAL clock (the engine.test.js precedent): stepSmart eases
+//     off performance.now(), so a real clock would make the number of
+//     eased steps depend on how long the test process happens to take.
+//     `at()` advances it 33 ms per draw — the SMART_DT_CLAMP — so every
+//     settle is the same deterministic ramp: 100 draws = 3.3 s ≈ 18 τ
+//     on the center ease, a residual <1e-5 of the target distance.
+
+// The virtual clock + the renderers the current test built. One
+// smartClock() per test; the teardown it returns (t.after) destroys the
+// harness renderers and puts performance.now back on its prototype.
+let smartNowMs = 0;
+let smartRenders = [];
+function smartClock() {
+  smartNowMs = 0;
+  Object.defineProperty(performance, 'now', {
+    value: () => smartNowMs,
+    configurable: true,
+    writable: true,
+  });
+  return () => {
+    for (const r of smartRenders) r.destroy();
+    smartRenders = [];
+    delete performance.now;
+  };
+}
+
+// smartHarness — the composition fixture, wired the way the view wires
+// it: synthStore's standing players (alice (10,10), bob (50,50) on the
+// 0…100 grid), a recording 800×600 canvas, then setLandmarks →
+// setStateIndex? → resize → setCameraMode('smart'). `at(tick, probes,
+// draws)` seeks, pumps `draws` eased frames, then snapshots the camera
+// — cx/cy in image space, s = fit × zoom (the SCREEN scale
+// smartCamTarget's target.s IS) — AND projects each named probe point
+// [wx, wy] under the SETTLED camera as { x, y, inFrame } (inFrame =
+// inside the stage — THE framing claim, independent of margin policy).
+// Probes are evaluated INSIDE at(): a later at() re-eases the camera,
+// so a lazy closure would answer for the WRONG frame — the snapshot
+// must carry everything it claims.
+function smartHarness({ landmarks = [], stateIndex = null } = {}) {
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, {
+    engine,
+    data,
+    players: [
+      { steamId: '1', name: 'alice', side: 'ct' },
+      { steamId: '2', name: 'bob', side: 't' },
+    ],
+  });
+  smartRenders.push(r);
+  const mk = (ev) => normalizeEvent(ev, {});
+  r.setLandmarks(landmarks.map(mk));
+  if (stateIndex) r.setStateIndex(stateIndex);
+  r.resize();
+  r.setCameraMode('smart'); // the view's default mode (Replay.svelte)
+  const at = (tick, probes = {}, draws = 100) => {
+    engine.seekTick(tick);
+    for (let i = 0; i < draws; i++) {
+      smartNowMs += 33;
+      r.draw();
+    }
+    const cam = r.getCam();
+    const shot = { cx: cam.cx, cy: cam.cy, s: cam.fit * cam.zoom };
+    for (const [name, [wx, wy]] of Object.entries(probes)) {
+      const p = r.worldToScreen(wx, wy);
+      shot[name] = {
+        x: p.x,
+        y: p.y,
+        inFrame: p.x >= 0 && p.x <= canvas.clientWidth && p.y >= 0 && p.y <= canvas.clientHeight,
+      };
+    }
+    return shot;
+  };
+  return { r, engine, data, canvas, at };
+}
+
+// assertSameFrame — two settled cameras framed the SAME box: equal
+// within the settle residual (100 eased draws leave <1e-5 of the target
+// distance — the tolerances below are float dust; a real composition
+// difference is tens of image px).
+function assertSameFrame(a, b, msg) {
+  assert.ok(Math.abs(a.cx - b.cx) < 0.01, `${msg}: cx ${a.cx} vs ${b.cx}`);
+  assert.ok(Math.abs(a.cy - b.cy) < 0.01, `${msg}: cy ${a.cy} vs ${b.cy}`);
+  assert.ok(Math.abs(a.s - b.s) < 0.001 * b.s, `${msg}: s ${a.s} vs ${b.s}`);
+}
+
+test('smart camera frames the planted C4: a bomb far outside the player box PULLS the frame', (t) => {
+  const teardown = smartClock();
+  t.after(teardown);
+  headlessGlobals();
+  // The plant sits at (90,90) — FAR outside the players' box
+  // ((10,10)…(50,50)), the map's top-right corner (world y flips into
+  // image y, so it reads as up-and-right of them) — and carries a full
+  // world position like the marker fixtures above. The control is the
+  // SAME fixture without the bomb row: any framing difference is the
+  // row's contribution alone.
+  const plantRow = { id: 1, seq: 1, tick: 192, round: 1, kind: 'bomb_plant', posX: 90, posY: 90, posZ: 0 };
+
+  const baseH = smartHarness();
+  const base = baseH.at(300, { bomb: [90, 90] });
+  const bombH = smartHarness({ landmarks: [plantRow] });
+  const withBomb = bombH.at(300, { bomb: [90, 90], alice: [10, 10] });
+
+  assert.equal(base.bomb.inFrame, false, 'fixture sanity: without the plant row the bomb corner sits off screen');
+  assert.ok(withBomb.bomb.inFrame, 'with the plant row the bomb IS framed — the target box grew to include it');
+  assert.ok(withBomb.alice.inFrame, '…and the players stay framed: the bomb ADDS to the union, it never replaces it');
+  // The wider box loosens the fit (smaller screen scale) and the center
+  // moves toward the bomb's image point: image x grows with world x
+  // (cx ↑), image y shrinks with world y (cy ↓).
+  assert.ok(withBomb.s < base.s, `the zoom loosens to fit the bomb (${withBomb.s} < ${base.s})`);
+  assert.ok(withBomb.cx > base.cx && withBomb.cy < base.cy, 'the center is pulled toward the bomb');
+});
+
+test('the planted bomb frames only inside bombEndTick: framed in-window and AT the cutoff, gone one tick later', (t) => {
+  const teardown = smartClock();
+  t.after(teardown);
+  headlessGlobals();
+  // Plant at 192; round 1's round_end at 400 is its ONLY terminator
+  // (no bomb_explode / bomb_defuse / round_start rows → bombEndTick =
+  // 400), so the window is [192, 400] INCLUSIVE — the deliberate
+  // `tick <= end` at smartTarget, whose comment contrasts it with
+  // drawBomb's `>=` rule (the MARKER is already gone AT 400 — pinned by
+  // the planted-C4 boundary test above; this is the CAMERA keeping the
+  // blast framed for that last tick).
+  const rows = [
+    { id: 1, seq: 1, tick: 192, round: 1, kind: 'bomb_plant', posX: 90, posY: 90, posZ: 0 },
+    { id: 2, seq: 2, tick: 400, round: 1, kind: 'round_end' },
+  ];
+  const baseH = smartHarness(); // control: the same players, no rows
+  const base = baseH.at(401, { bomb: [90, 90] });
+  const h = smartHarness({ landmarks: rows });
+  const inWindow = h.at(399, { bomb: [90, 90] });
+  const atCutoff = h.at(400, { bomb: [90, 90] }); // tick === bombEndTick — the inclusive boundary
+  const pastCutoff = h.at(401, { bomb: [90, 90] });
+
+  assert.ok(inWindow.bomb.inFrame, 'inside the window the bomb is framed');
+  assert.ok(
+    atCutoff.bomb.inFrame,
+    'AT the cutoff tick the bomb is STILL framed — the inclusive boundary the smartTarget comment pins',
+  );
+  assert.equal(pastCutoff.bomb.inFrame, false, 'one tick past the cutoff the bomb contributes nothing');
+  assert.ok(inWindow.cx > base.cx && inWindow.s < base.s, 'in-window the frame is the pulled one');
+  assertSameFrame(pastCutoff, base, 'past the cutoff the frame is the bomb-less one again');
+});
+
+test('the dropped C4 frames while bombEvidenceAt says dropped; a pickup closes the evidence and the frame snaps back', (t) => {
+  const teardown = smartClock();
+  t.after(teardown);
+  headlessGlobals();
+  // A bomb_drop at (90,90) — far from the players — with no plant and
+  // no round_end before the playhead: bombEvidenceAt's 'dropped'
+  // branch (the round is still live — round_end sits at 800). The
+  // pickup at 400 lands at a DIFFERENT far corner (10,90): if the
+  // 'picked-up' evidence ever leaked its position into smartTarget,
+  // this frame would be pulled toward that corner instead of snapping
+  // back to the players-only box.
+  const rows = [
+    { id: 1, seq: 1, tick: 100, round: 1, kind: 'bomb_drop', attacker: '1', posX: 90, posY: 90, posZ: 0 },
+    { id: 2, seq: 2, tick: 400, round: 1, kind: 'bomb_pickup', attacker: '2', posX: 10, posY: 90, posZ: 0 },
+    { id: 3, seq: 3, tick: 800, round: 1, kind: 'round_end' },
+  ];
+  const baseH = smartHarness(); // control: the same players, no rows
+  const base = baseH.at(500, { drop: [90, 90] });
+  const h = smartHarness({ landmarks: rows });
+  const dropped = h.at(300, { drop: [90, 90] }); // after the drop, before the pickup
+  const pickedUp = h.at(500, { drop: [90, 90], pickup: [10, 90] }); // the pickup closed the evidence
+
+  assert.ok(dropped.drop.inFrame, 'while the bomb is on the ground its position is framed');
+  assert.ok(dropped.cx > base.cx && dropped.s < base.s, '…and it pulls the frame away from the players-only box');
+  assert.equal(pickedUp.drop.inFrame, false, 'a pickup closes the evidence: the DROP position stops contributing');
+  assert.equal(
+    pickedUp.pickup.inFrame,
+    false,
+    'the PICKUP position never contributes either — the bomb rides its carrier (an alive player)',
+  );
+  assertSameFrame(pickedUp, base, 'after the pickup the frame is the players-only one');
+});
+
+test('a carried C4 adds NO point: the frame is exactly the players-only one (the carrier rides its own dot)', (t) => {
+  const teardown = smartClock();
+  t.after(teardown);
+  headlessGlobals();
+  // The carried-C4 badge fixture shape (the inventory pins above): the
+  // C4 sits in alice's inventory from frame 0, and the bomb's evidence
+  // — dropped at (90,90), picked up by alice at (10,90), BOTH far
+  // corners the players never visit — resolves to 'picked-up' at the
+  // playhead (bombEvidenceAt branch 1: a pickup after the drop closes
+  // it). smartTarget has no inventory/pickup branch for a carried bomb
+  // ON PURPOSE (its comment: "A carried bomb needs no point of its own
+  // — its carrier is an alive player"): the union box is idempotent
+  // over the carrier's OWN point, so what this pins is that no EXTRA
+  // point (a stale evidence position) leaks in.
+  const rows = [
+    { id: 1, seq: 1, tick: 50, round: 1, kind: 'bomb_drop', attacker: '2', posX: 90, posY: 90, posZ: 0 },
+    { id: 2, seq: 2, tick: 100, round: 1, kind: 'bomb_pickup', attacker: '1', posX: 10, posY: 90, posZ: 0 },
+  ];
+  const stateIndex = buildStateIndex(
+    [
+      { frame: 0, slot: 0, mask: 0x008, inventory: ['C4', 'AK-47'] }, // alice carries
+      { frame: 0, slot: 1, mask: 0x008, inventory: ['USP-S'] }, // bob does not
+    ],
+    2,
+  );
+  const baseH = smartHarness(); // control: the same players, no rows
+  const base = baseH.at(300, { drop: [90, 90], pickup: [10, 90] });
+  const h = smartHarness({ landmarks: rows, stateIndex });
+  // the badge (the inventory pins' own drawImage signature — the 48×24
+  // art at 20×10) proves the fixture is genuinely CARRIED
+  h.r.setIcons({ C4: { width: 48, height: 24, src: 'c4.svg' } });
+  const carried = h.at(300, { drop: [90, 90], pickup: [10, 90] });
+
+  assert.ok(
+    h.canvas.log.some((e) => e.op === 'drawImage' && e.args[4] === 10 && e.args[3] === 20),
+    'fixture sanity: the carrier badge paints — the bomb really is in an inventory',
+  );
+  assert.equal(carried.drop.inFrame, false, 'the stale DROP position never becomes a camera point');
+  assert.equal(carried.pickup.inFrame, false, '…nor the PICKUP position: the bomb rides its carrier (an alive player)');
+  assertSameFrame(carried, base, 'the carried bomb adds NO point: the frame is the players-only one');
+});
+
+test('a dead player never pulls the frame: bob’s far last spot frames only while he is alive', (t) => {
+  const teardown = smartClock();
+  t.after(teardown);
+  headlessGlobals();
+  // bob's position stream stands at (90,90) — a corner far from alice
+  // at (10,10) — for the WHOLE fixture: wherever he dies, his last
+  // alive spot is out there. smartTarget's player loop gates on
+  // tmp.alive (the store only samples alive slots), so a dead frame's
+  // stale position must never enter the box.
+  const bobFar = (h) => {
+    for (let f = 0; f < h.data.frames; f++) {
+      h.data.slots[1].pos[f * 4] = 90;
+      h.data.slots[1].pos[f * 4 + 1] = 90;
+    }
+  };
+
+  const aliveH = smartHarness();
+  bobFar(aliveH);
+  const alive = aliveH.at(300, { bob: [90, 90] }); // bob alive at the playhead
+
+  const deadH = smartHarness();
+  bobFar(deadH);
+  deadH.data.masks[300] &= ~2; // bob dies at frame 300 — his last spot stays (90,90)
+  const dead = deadH.at(300, { bob: [90, 90], alice: [10, 10] });
+
+  const aloneH = smartHarness(); // the control: bob out of the round entirely
+  bobFar(aloneH);
+  for (let f = 0; f < aloneH.data.frames; f++) aloneH.data.masks[f] &= ~2;
+  const alone = aloneH.at(300, { bob: [90, 90] });
+
+  assert.ok(alive.bob.inFrame, 'fixture sanity: the ALIVE far player IS framed');
+  assert.equal(dead.bob.inFrame, false, 'the DEAD player’s last spot does not pull the frame');
+  assert.ok(
+    Math.abs(dead.alice.x - 400) < 1 && Math.abs(dead.alice.y - 300) < 1,
+    'the frame is alice alone — one point fits at the band’s max zoom and centres on it (margin-independent)',
+  );
+  assertSameFrame(dead, alone, 'and it is exactly the frame the fixture has without bob');
+  assert.ok(
+    alive.cx > dead.cx && alive.s < dead.s,
+    'the SAME far spot widens the frame while bob is alive — the gate is the aliveness alone',
+  );
+
+  // …and with NOBODY alive smartTarget returns null → the view HOLDS
+  // (its documented "hold the current view"): the camera must not move
+  // an inch toward the stale far position sitting in the shared tmp
+  // from the previous draw — anything less than the full alive+finite
+  // gate would ease the camera onto that ghost instead of holding.
+  aliveH.data.masks[400] &= ~3; // alice AND bob dead at frame 400
+  const held = aliveH.at(400, { bob: [90, 90] });
+  assertSameFrame(held, alive, 'nobody alive → the view holds the framing it had — no ghost eases in');
+});
+
+test("setCameraMode('smart') re-arms the ease — never snaps — and stepSmart converges onto smartCamTarget of the framed box", (t) => {
+  const teardown = smartClock();
+  t.after(teardown);
+  headlessGlobals();
+  // The VIEW's default is Smart (Replay.svelte's camMode $state('smart'),
+  // pinned view-side by replay.dom.mjs's "the active mode is
+  // highlighted … Smart"); the renderer itself starts 'free' and the
+  // view arms smart on attach. What nothing pinned until now is the
+  // mechanism that default relies on: switching to smart RE-ARMING the
+  // ease from wherever the camera is ("the target is computed on the
+  // next draw, never snapped to") and stepSmart carrying the view onto
+  // it.
+  const h = smartHarness(); // players only, no landmark rows
+  const armed = h.at(300, {}, 0); // seek only — the single eased step setCameraMode already took
+  const settled = h.at(300);
+
+  // The framed box in image space: synthStore's 0…100 bounds through
+  // reproject's no-pack grid fallback (scale = span/900 = 1/9 with the
+  // ±5 % inset → image = 9·(x+5), 9·(105−y); extent = 1.1·span/scale
+  // = 990): alice (10,10) → (135,855), bob (50,50) → (495,495).
+  // The margin stays smartCamTarget's default — the size-aware
+  // smartMarginFor for this canvas, the same call smartTarget makes.
+  const expected = smartCamTarget(
+    { minX: 135, minY: 495, maxX: 495, maxY: 855 },
+    800,
+    600,
+    { extW: 990, extH: 990 },
+  );
+
+  assert.equal(
+    camConverged(armed, expected),
+    false,
+    'right after the switch the view is NOT yet at the target — the mode re-arms the ease instead of snapping',
+  );
+  assert.ok(
+    camConverged(settled, expected),
+    'and the settle eases onto smartCamTarget of smartTarget’s box — stepSmart ran on every draw',
+  );
+  assert.ok(settled.cx < armed.cx - 50, 'the ease actually travelled toward the target (the center moved)');
+  assert.ok(settled.s > armed.s * 1.5, '…and so did the zoom');
+});
