@@ -84,30 +84,37 @@
   vector-effect: non-scaling-stroke;
 }
 
-/* One line per TEAM (keyed by the team's final side), colored by the
-   side it opened the match on — the team-identity classes from
-   lib/teams.js, never the live side, which swaps at halftime. The match
-   loser's line is dashed; both stay solid when no winner is decided. */
+/* One <path> per TEAM per SIDE era (EconCurve's `segments`): the stroke
+   follows the SIDE the team held in that era — the side colors --ct/--t,
+   via .side-ct/.side-t — and swaps at every side switch (era boundary),
+   so a line's color flips where the teams swap sides. The solid/dashed
+   style stays the TEAM throughline: all of the match loser's segments
+   are dashed, both stay solid when the winner is undecided. Adjacent
+   segments share their boundary point exactly; the round linecap/linejoin
+   closes that joint so the shared vertex cannot show an antialiasing
+   seam between the two colors (segments restart the 7 5 dash there too). */
 .econ-line {
   fill: none;
   stroke-width: 2;
   vector-effect: non-scaling-stroke;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
-.econ-line.team-start-ct {
-  stroke: var(--team-start-ct);
+.econ-line.side-ct {
+  stroke: var(--ct);
 }
 
-.econ-line.team-start-t {
-  stroke: var(--team-start-t);
+.econ-line.side-t {
+  stroke: var(--t);
 }
 
 .econ-line.loser {
   stroke-dasharray: 7 5;
 }
 
-/* Legend above the chart: line swatch + team name (identity-colored),
-   plus the solid/dashed reading of the match outcome. */
+/* Legend above the chart: line swatch + team name (identity-colored) —
+   the swatch's solid/dashed style reads the match outcome. */
 .econ-legend {
   display: flex;
   gap: 14px;
@@ -336,19 +343,6 @@
 .econ-rd {
   font-variant-numeric: tabular-nums;
   font-weight: 600;
-}
-
-.econ-pip {
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  margin-left: 5px;
-  vertical-align: middle;
-}
-
-.econ-pip.pistol {
-  background: #f2c94c;
 }
 
 .econ-cls {

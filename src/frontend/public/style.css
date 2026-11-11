@@ -1171,13 +1171,28 @@ input[type='checkbox']:focus-visible {
 /* Round-group separator: a dashed rule after counted round 12 (MR12
    halftime), then after 24 (regulation end) and every 3 OT rounds (27,
    30, 33, …) — never after the last counted round (trailing markers are
-   suppressed; the rule is lib/rounds.js separatorAfter). Generic dashed
+   suppressed; the gating is lib/rounds.js separatorFlags). Generic dashed
    marker: .round-strip's flex-wrap flows several of them fine. */
 .round-split {
   width: 0;
   height: 26px;
   margin: 0 3px;
   border-left: 2px dashed var(--border);
+}
+
+/* TABLE twin of .round-split (same cadence — lib/rounds.js
+   separatorFlags): a table can't hold a marker BETWEEN rows, so the
+   boundary rides the FOLLOWING data row as a dashed top rule
+   (class:split-before in the Rounds and Economy tables — row i reads
+   flags[i - 1]). That placement keeps an expanded econ-why-row attached
+   ABOVE the line (round row → why row → line → next round row), makes
+   trailing suppression automatic (the last row has no follower), and
+   keeps negative knife/warmup rows from shifting a line. The table is
+   border-collapsed (.data-table above), so this 2px dashed top border
+   wins over the previous row's 1px bottom border — intended. Spelled
+   once; both tables use the plain `.data-table` vocabulary. */
+.data-table tbody tr.split-before td {
+  border-top: 2px dashed var(--border);
 }
 
 .round-cell {

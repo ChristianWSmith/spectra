@@ -8,7 +8,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-import { flipIndexes, eraOf, startSideFor, sideInEra, teamKeyAt, sideAtRound } from './sideparity.js';
+import { flipIndexes, eraOf, startSideFor, sideInEra, teamKeyAt, sideAtRound, winnerTeamKey } from './sideparity.js';
 
 const fixture = JSON.parse(
   readFileSync(new URL('../../../internal/rules/testdata/sideparity.json', import.meta.url), 'utf8'),
@@ -191,4 +191,49 @@ test('sideAtRound: missing data never gets a guessed side', () => {
   assert.equal(sideAtRound(rounds, 1, 13, 'ct2'), null);
   // Garbage switch counts coerce to 0 rather than throwing.
   assert.equal(sideAtRound(rounds, undefined, 13, 'ct'), 'ct');
+});
+
+test('winnerTeamKey: a round\'s winner side resolves to the TEAM behind it', () => {
+  // MR12 regulation (24 counted rounds, one switch): the team that
+  // FINISHED CT played T in round 1, so a round-1 T win is the final-CT
+  // team's — the Rounds/Economy winner cells show teams.ct's name there
+  // and the side chip keeps its color.
+  const rounds = roundList(24);
+  assert.equal(winnerTeamKey(rounds, 1, 1, 't'), 'ct');
+  assert.equal(winnerTeamKey(rounds, 1, 1, 'ct'), 't');
+  assert.equal(winnerTeamKey(rounds, 1, 12, 't'), 'ct'); // last first-half round
+  assert.equal(winnerTeamKey(rounds, 1, 12, 'ct'), 't');
+  // Second half (rounds 13-24): the sides are back to the final sides.
+  assert.equal(winnerTeamKey(rounds, 1, 13, 'ct'), 'ct');
+  assert.equal(winnerTeamKey(rounds, 1, 13, 't'), 't');
+  assert.equal(winnerTeamKey(rounds, 1, 24, 'ct'), 'ct');
+  assert.equal(winnerTeamKey(rounds, 1, 24, 't'), 't');
+  // No recorded switch: side and team key are the same thing.
+  assert.equal(winnerTeamKey(rounds, 0, 5, 'ct'), 'ct');
+  assert.equal(winnerTeamKey(rounds, 0, 5, 't'), 't');
+  // Overtime (golden nuke shape: 28 counted rounds, switches=2 → flips
+  // at 12 and 27, NO switch at OT start): rounds 25-27 keep the era-1
+  // sides, round 28 flips back.
+  const ot = roundList(28);
+  assert.equal(winnerTeamKey(ot, 2, 25, 't'), 'ct');
+  assert.equal(winnerTeamKey(ot, 2, 26, 't'), 'ct');
+  assert.equal(winnerTeamKey(ot, 2, 27, 't'), 'ct');
+  assert.equal(winnerTeamKey(ot, 2, 28, 'ct'), 'ct');
+  assert.equal(winnerTeamKey(ot, 2, 28, 't'), 't');
+});
+
+test('winnerTeamKey: unknown winner or unresolvable round never gets a guessed team', () => {
+  const rounds = roundList(24);
+  // No winner recorded (unfinished/deserted round) or not a side at all.
+  assert.equal(winnerTeamKey(rounds, 1, 5, ''), null);
+  assert.equal(winnerTeamKey(rounds, 1, 5, 'ct2'), null);
+  assert.equal(winnerTeamKey(rounds, 1, 5, null), null);
+  // Round not in this match's list, or the rounds list not loaded yet.
+  assert.equal(winnerTeamKey(rounds, 1, 99, 'ct'), null);
+  assert.equal(winnerTeamKey([], 1, 5, 'ct'), null);
+  assert.equal(winnerTeamKey(null, 1, 5, 't'), null);
+  // Garbage switch counts coerce to 0 (same as sideAtRound) — the answer
+  // is still exact for that coercion, never a guess.
+  assert.equal(winnerTeamKey(rounds, undefined, 5, 'ct'), 'ct');
+  assert.equal(winnerTeamKey(rounds, NaN, 5, 't'), 't');
 });

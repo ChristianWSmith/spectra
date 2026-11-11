@@ -19,7 +19,9 @@
 // feeds the team-identity name colors through lib/teams.js; teamKeyAt
 // maps a round's side onto the TEAM behind it for per-team rollups;
 // sideAtRound maps a round NUMBER onto the side played in that round for
-// the per-round name colors (lib/teams.js playerSideClassAt).
+// the per-round name colors (lib/teams.js playerSideClassAt); and
+// winnerTeamKey maps a round's winner side onto the winning TEAM for the
+// per-round winner cells (components/WinnerCell.svelte).
 
 import { isCounted } from './rounds.js';
 
@@ -118,4 +120,28 @@ export function sideAtRound(rounds, sideSwitches, roundNumber, finalSide) {
   const eras = Math.max(1, s + 1);
   const era = idx < 0 ? 0 : Math.min(eras - 1, eraOf(idx, flips));
   return sideInEra(finalSide, s, era);
+}
+
+// winnerTeamKey maps the WINNER of one round (its round number + the
+// side it was won by) onto the TEAM that won it, keyed by the team's
+// FINAL side — the key lib/teams.js names (teamNames) are keyed by, so
+// a round's winner cell can show a team NAME instead of the side name
+// that swaps meaning at halftime. Round-number based (through
+// sideAtRound), so a surface that re-filters its rows — the Rounds tab's
+// show-knife-warmup pref, counted-only economy rows — can never move the
+// answer.
+//
+// The derivation: sideAtRound answers which side the team that FINISHED
+// CT played in that round; if that side is the winning side, the winner
+// is the final-CT team ('ct'), otherwise the final-T team ('t').
+//
+// Unknown never gets a guessed team: an unrecorded winner ('' — an
+// unfinished/deserted round), a round not in `rounds`, or a `rounds`
+// list that has not loaded yet all return null, and callers fall back to
+// the bare side chip. Frontend-only composition over sideAtRound.
+export function winnerTeamKey(rounds, sideSwitches, roundNumber, winnerSide) {
+  if (winnerSide !== 'ct' && winnerSide !== 't') return null;
+  const ctSide = sideAtRound(rounds, sideSwitches, roundNumber, 'ct');
+  if (ctSide === null) return null;
+  return ctSide === winnerSide ? 'ct' : 't';
 }

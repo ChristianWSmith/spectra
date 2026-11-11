@@ -12,7 +12,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { isCounted, roundStartTick, roundEndTick, roundIndexLabel, scoreThrough, inFreezeTime, freezeWindowAt, separatorAfter } from './rounds.js';
+import { isCounted, roundStartTick, roundEndTick, roundIndexLabel, scoreThrough, inFreezeTime, freezeWindowAt, separatorAfter, separatorFlags } from './rounds.js';
 
 const ROUNDS = [
   { number: -2, startTick: 100 }, // knife
@@ -32,8 +32,9 @@ test('isCounted: only positive-numbered rounds are counted play', () => {
 // separatorAfter — the ONE ribbon separator cadence (… 11 12 | 13 … 23
 // 24 | 25 26 27 | 28 29 30 | …): MR12 halftime after 12, regulation end
 // after 24, then every 3 counted rounds (OT halves). The trailing-
-// marker suppression ("only while a later counted round follows") is a
-// render-time concern and pinned in test/round-strip.dom.mjs, not here.
+// marker suppression and counted-gating over a VISIBLE list are
+// separatorFlags' (below, same file); the DOM rendering of both is
+// pinned in test/round-strip.dom.mjs and test/economy.dom.mjs.
 test('separatorAfter: after 12, then 24 and every 3 OT rounds', () => {
   for (const n of [12, 24, 27, 30, 33, 36, 45]) {
     assert.equal(separatorAfter(n), true, `round ${n} should separate`);
@@ -60,6 +61,102 @@ test('separatorAfter: everything else does not separate', () => {
   // Numeric strings coerce (a route/query round param would).
   assert.equal(separatorAfter('24'), true);
   assert.equal(separatorAfter('13'), false);
+});
+
+// separatorFlags — the gating over a RENDERED list: index-aligned
+// booleans, true where a separator follows that row. Characterized
+// against the inline bookkeeping RoundStrip used to do (counted-only
+// increment + trailing suppression), so the strip's markers and the
+// tables' `.split-before` rows can never drift apart.
+const countedRows = (n) => Array.from({ length: n }, (_, i) => ({ number: i + 1 }));
+
+const flagAt = (flags, rows) =>
+  rows.filter((_, i) => flags[i]).map((r) => r.number);
+
+test('separatorFlags: cadence after 12 / 24 / every 3 OT rounds, index-aligned', () => {
+  // 13 rows: only the boundary after 12 renders (24 not reached).
+  assert.deepEqual(
+    flagAt(separatorFlags(countedRows(13)), countedRows(13)),
+    [12],
+    '13 counted → separator after 12 only',
+  );
+  // 25 rows: after 12 and after 24.
+  assert.deepEqual(flagAt(separatorFlags(countedRows(25)), countedRows(25)), [12, 24]);
+  // 28 rows (golden nuke shape): 12, 24, 27 — no switch at OT start
+  // does NOT affect the display cadence (see separatorAfter above).
+  assert.deepEqual(flagAt(separatorFlags(countedRows(28)), countedRows(28)), [12, 24, 27]);
+  // 34 rows: the every-3 cadence keeps going.
+  assert.deepEqual(
+    flagAt(separatorFlags(countedRows(34)), countedRows(34)),
+    [12, 24, 27, 30, 33],
+  );
+  // The flags are index-aligned with the input list.
+  const rows = countedRows(13);
+  const flags = separatorFlags(rows);
+  assert.equal(flags.length, rows.length);
+  assert.equal(flags[11], true, 'index 11 = round 12'); // the boundary row
+  assert.equal(flags[10], false);
+  assert.equal(flags[12], false, 'the last row never flags');
+});
+
+test('separatorFlags: trailing suppression — a boundary on the LAST row never flags', () => {
+  // A match ending exactly on 12/24/27/30/33 gets no dangling separator.
+  for (const n of [12, 24, 27, 30, 33]) {
+    const rows = countedRows(n);
+    assert.ok(
+      !flagAt(separatorFlags(rows), rows).includes(n),
+      `round ${n} must not flag itself (it is the last row)`,
+    );
+  }
+  assert.deepEqual(flagAt(separatorFlags(countedRows(24)), countedRows(24)), [12], '24 rows: after 24 suppressed');
+  assert.deepEqual(flagAt(separatorFlags(countedRows(12)), countedRows(12)), [], '12 rows: halftime suppressed');
+  assert.deepEqual(flagAt(separatorFlags(countedRows(30)), countedRows(30)), [12, 24, 27], '30 rows: after 30 suppressed');
+  assert.deepEqual(flagAt(separatorFlags(countedRows(33)), countedRows(33)), [12, 24, 27, 30], '33 rows: after 33 suppressed');
+});
+
+test('separatorFlags: negative knife/warmup rows never flag nor shift a boundary', () => {
+  // The Rounds-tab / RoundStrip pref-on shape: three pre-match rows
+  // (negatives) ahead of the counted rounds.
+  const preMatch = [
+    { number: -3 },
+    { number: -2 },
+    { number: -1 },
+  ];
+  const rows = [...preMatch, ...countedRows(13)];
+  const flags = separatorFlags(rows);
+  assert.equal(flags.length, 16);
+  assert.deepEqual(flags.slice(0, 3), [false, false, false], 'negatives never flag');
+  // Round 12 sits at index 14 — its flag must NOT have been pushed to 15.
+  assert.equal(flags[14], true, 'round 12 still carries the boundary');
+  assert.equal(flags[15], false);
+  // Trailing suppression also sees through the negatives.
+  const rows24 = [...preMatch, ...countedRows(24)];
+  assert.deepEqual(
+    flagAt(separatorFlags(rows24), rows24),
+    [12],
+    '24 counted + negatives: after 12 only, after 24 suppressed',
+  );
+  assert.deepEqual(
+    flagAt(separatorFlags([...preMatch, ...countedRows(25)]), [...preMatch, ...countedRows(25)]),
+    [12, 24],
+  );
+});
+
+test('separatorFlags: empty, short and junk input degrade to no separators', () => {
+  assert.deepEqual(separatorFlags([]), []);
+  assert.deepEqual(separatorFlags(null), [], 'null list → []');
+  assert.deepEqual(separatorFlags(undefined), []);
+  assert.deepEqual(separatorFlags('x'), [], 'non-array → []');
+  assert.deepEqual(separatorFlags(countedRows(11)), Array(11).fill(false), 'no boundary yet');
+  assert.deepEqual(separatorFlags(countedRows(1)), [false]);
+  // A round row with junk/missing fields is still not a separator.
+  assert.deepEqual(separatorFlags([{ number: 12 }, { number: 13 }]), [false, false]);
+  // The counted predicate reads `number` (extract's renumber) and NOTHING
+  // else: a row keyed like models.EconomyRow (`round`) is never counted
+  // here — callers project the shape first (Economy.svelte maps
+  // { number: r.round } before calling), so a mis-keyed call degrades to
+  // "no separators" instead of misplacing a boundary.
+  assert.deepEqual(separatorFlags([{ round: 12 }, { round: 13 }]), [false, false]);
 });
 
 test('roundStartTick resolves a round number to its start tick', () => {
