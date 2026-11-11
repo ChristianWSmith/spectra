@@ -1,8 +1,9 @@
 // Tests for lib/rounds.js — the canonical round helpers: the
 // counted-round predicate (the analytics CountedRounds twin),
 // roundStartTick / roundEndTick, the round-number → start/end-tick
-// lookups behind every "jump to round N" link and every round-span loop
-// range (nav.entrySeekTick, nav.entryLoopSpan, Replay's round ribbon),
+// lookups behind every "jump to round N" link (the watch/drill links'
+// stamped ?tick=) and every round-span loop
+// range (nav.entryLoopSpan, Replay's round ribbon),
 // scoreThrough (the scoreline-at-a-round aggregate), separatorAfter
 // (the round-ribbon separator cadence), and the freeze window
 // (freezeWindowAt — THE window the inFreezeTime predicate reports on and

@@ -15,6 +15,7 @@
   } from '../services.js';
   import { fmtInt, fmtPercent, roundClock } from '../fmt.js';
   import { replayHash, entryLoopSpan, entryLoopAround } from '../nav.js';
+  import { roundStartTick } from '../rounds.js';
   import { listedPlayers } from '../players.js';
   import { roundsByNumber } from '../replay/landmarks.js';
   import { playerStartClass, playerSideClassAt } from '../teams.js';
@@ -181,9 +182,19 @@
   }
 
   // Round chip → THE event browser scoped to that round (both inclusive
-  // round bounds set to the same number).
+  // round bounds set to the same number), STAMPED with the round's
+  // start tick — ?tick= is the only "where to jump" instruction (the
+  // scope alone is feed filter and never seeks), so the chip still
+  // lands on the round it names; a null start drops the tick and the
+  // link stays filter-only.
   function openRoundEvents(round) {
-    nav(replayHash(id, { roundFrom: round, roundTo: round }, { back: `match/${id}/combat` }));
+    nav(
+      replayHash(
+        id,
+        { roundFrom: round, roundTo: round },
+        { tick: roundStartTick(rounds, round), back: `match/${id}/combat` },
+      ),
+    );
   }
 
   // The Clutches card lists WON clutches only (the card's scope decision):

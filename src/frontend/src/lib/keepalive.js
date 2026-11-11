@@ -23,10 +23,12 @@
 //   replay/:id          → { id, hash }: created fresh, or REFRESHED when
 //                         an instance for that id already exists — the
 //                         captured hash is the live replay hash (filter,
-//                         scope, tick/loop/sel entry params, back …),
-//                         updated on every replay-route navigation so
-//                         the expand path always carries the latest
-//                         state. Same id ⇒ App's {#key id} does NOT
+//                         scope, loop/sel entry params, back …; a ?
+//                         tick= riding along is consumed by
+//                         nav.expandReplayHash on expand — the playhead
+//                         lives in the engine), updated on every
+//                         replay-route navigation so the expand path
+//                         always carries the latest state. Same id ⇒ App's {#key id} does NOT
 //                         remount: a filter change (or the palette's
 //                         same-id jump) keeps the running instance.
 //   same-id match route → prev UNCHANGED: the instance survives and its

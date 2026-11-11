@@ -172,9 +172,18 @@
   }
 
   // Contextual entries into THE event browser: this round, scoped (both
-  // inclusive round bounds set to the same number).
+  // inclusive round bounds set to the same number) AND stamped with the
+  // round's start tick — ?tick= is the only "where to jump" instruction
+  // (the scope alone is feed filter and never seeks), so the button
+  // still lands on this round like it always did.
   function openEvents() {
-    nav(replayHash(id, { roundFrom: round, roundTo: round }, { back: `match/${id}/round/${round}` }));
+    nav(
+      replayHash(
+        id,
+        { roundFrom: round, roundTo: round },
+        { tick: detail.round.startTick, back: `match/${id}/round/${round}` },
+      ),
+    );
   }
 
   // Jump to the replay at a tick (the header button uses the round start;

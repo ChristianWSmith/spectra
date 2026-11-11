@@ -9,6 +9,7 @@
   } from '../services.js';
   import { fmtInt, fmtMoney } from '../fmt.js';
   import { replayHash } from '../nav.js';
+  import { roundStartTick } from '../rounds.js';
   import { teamKeyAt } from '../sideparity.js';
   import { listedPlayers } from '../players.js';
   import { teamNames } from '../teams.js';
@@ -182,7 +183,18 @@
 
   function drill(round) {
     if (!round) return;
-    nav(replayHash(id, { roundFrom: round, roundTo: round }, { back: `match/${id}/economy` }));
+    // The card's round, BOTH ways it can travel: the scope filters the
+    // feed to it, and the STAMPED ?tick= (the round's start — the only
+    // "where to jump" instruction; scope alone never seeks) lands the
+    // playhead on it. A null start (round unknown) drops the tick from
+    // buildHash and the link stays filter-only — never a guessed time.
+    nav(
+      replayHash(
+        id,
+        { roundFrom: round, roundTo: round },
+        { tick: roundStartTick(rounds, round), back: `match/${id}/economy` },
+      ),
+    );
   }
 
   function toggleWhy(r, side) {

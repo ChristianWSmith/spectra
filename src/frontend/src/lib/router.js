@@ -21,17 +21,20 @@
 //                            (parseLandmarkFilter in lib/replay/
 //                            landmarks.js): cat/roundFrom/roundTo/
 //                            player/weapon/distMin/distMax/hs/bbox/gname
-//                            plus tick (initial seek), loop (initial
-//                            loop range "<fromTick>,<toTick>" — ticks,
+//                            plus tick (THE position: ?tick= is the
+//                            only "where to jump" instruction — applied
+//                            on entry and re-applied only for a distinct
+//                            value while the keep-alive instance lives,
+//                            nav.entrySeekTick), loop (initial loop
+//                            range "<fromTick>,<toTick>" — ticks,
 //                            entry-only), sel (selected landmark) and
-//                            back (origin path). The initial time target
-//                            is resolved by nav.entrySeekTick: ?tick=
-//                            wins, else the round scope (?roundFrom=,
-//                            else ?roundTo=) resolves to that round's
-//                            start tick, else the first frame — applied
-//                            on entry and re-applied only for a DISTINCT
-//                            resolution while the keep-alive instance
-//                            lives (nav.entrySeedPlan). The loop range
+//                            back (origin path). The round scope
+//                            (roundFrom/roundTo) is FEED FILTER state:
+//                            it never moves the playhead, at mount or
+//                            mid-session — a scope-only URL lands at
+//                            the pref-aware default position with its
+//                            filter intact (a watch/drill link stamps
+//                            ?tick= beside its scope). The loop range
 //                            is the SECOND, independent entry promise —
 //                            nav.entryLoopRange → applied in startEngine
 //                            (bounds, then arm), re-armed only for a

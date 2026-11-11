@@ -286,7 +286,11 @@
             return;
           }
           // Saved filters ride the URL into the canonical event browser —
-          // parse normalizes the shape.
+          // parse normalizes the shape. FILTER-ONLY by design: a saved
+          // filter's round scope is feed state, never a position, so the
+          // jump lands at the default position with the filter applied
+          // (the accepted scope-URL consequence — nav.entrySeekTick reads
+          // ?tick= alone, and a saved filter carries no tick).
           nav(replayHash(mid, parseLandmarkFilter(f)));
         },
       })),
