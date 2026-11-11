@@ -356,6 +356,20 @@ func TestSoundTableKeysInIconTable(t *testing.T) {
 			"sounds/weapons/knife/knife_hit_light_backstab_flesh_05.vsnd_c",
 			"sounds/weapons/knife/knife_hit_light_backstab_flesh_06.vsnd_c",
 		},
+		// The headshot KILL cue groups (sfx.js headshotKillCues — the
+		// dink/bare pair keyed off the kill row's victimHelmet). Pin the
+		// event→file mapping (cs2find events, 2026-11-11) so neither side
+		// drifts alone: Player.DeathHeadShot[.Dink]/Player.DamageHeadShot*
+		// → these files (the sibling Player.DeathHeadShotArmor.* family is
+		// unresolved and deliberately absent — see soundTable).
+		"Headshot dink": {"sounds/player/headshot_armor_e1.vsnd_c"},
+		"Headshot bare": {
+			"sounds/player/headshot_noarmor_01.vsnd_c",
+			"sounds/player/headshot_noarmor_02.vsnd_c",
+			"sounds/player/headshot_noarmor_03.vsnd_c",
+			"sounds/player/headshot_noarmor_04.vsnd_c",
+			"sounds/player/headshot_noarmor_05.vsnd_c",
+		},
 		// ---- the Wave A grenade BOUNCE groups (each the bounce soundevent's own file set, cs2find events bounce) ----
 		"HE Grenade bounce":    {"sounds/weapons/hegrenade/he_bounce-1.vsnd_c"},
 		"Flashbang bounce":     {"sounds/weapons/flashbang/grenade_hit1.vsnd_c"},
@@ -848,6 +862,11 @@ func TestExtractRealCS2Sounds(t *testing.T) {
 		{"c4_plant", "sounds/weapons/c4/c4_plant.vsnd_c", soundExtWAV, 44100, 1},
 		{"c4_disarmstart", "sounds/weapons/c4/c4_disarmstart.vsnd_c", soundExtWAV, 44100, 2},
 		{"c4_disarmfinish", "sounds/weapons/c4/c4_disarmfinish.vsnd_c", soundExtWAV, 44100, 2},
+		// The headshot kill cue pair's files (dink single-file, bare set's
+		// first variant): both PCM16 44.1 kHz stereo (cs2find sound,
+		// 2026-11-11).
+		{"headshot_armor_e1", "sounds/player/headshot_armor_e1.vsnd_c", soundExtWAV, 44100, 2},
+		{"headshot_noarmor_01", "sounds/player/headshot_noarmor_01.vsnd_c", soundExtWAV, 44100, 2},
 	}
 	for _, tc := range want {
 		raw, found, rerr := v.read(tc.vpk)
@@ -907,6 +926,7 @@ func TestExtractRealCS2Sounds(t *testing.T) {
 		"AK-47", "Desert Eagle", "C4",
 		"C4 beep A", "C4 beep B",
 		"HE Grenade", "Smoke Grenade", "HE Grenade throw",
+		"Headshot dink", "Headshot bare",
 	} {
 		if len(files[key]) == 0 {
 			t.Errorf("manifest key %q missing (have %d keys)", key, len(files))

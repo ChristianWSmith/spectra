@@ -9,7 +9,9 @@
 // replay state stream and the landmark rows already carry ("AK-47",
 // "HE Grenade", "C4") plus `<name> throw` for a utility's throw group
 // ("HE Grenade throw" — throwCues), the C4 beep groups the beep
-// scheduler builds (`C4 beep <site>` — c4BeepGroup), the
+// scheduler builds (`C4 beep <site>` — c4BeepGroup), the two
+// HEADSHOT-kill groups ("Headshot dink" / "Headshot bare" —
+// headshotKillCues), the
 // THREE played plant/defuse lifecycle cue groups (bombActionCues —
 // "C4 plant start", "C4 defuse start", "C4 defuse complete"; the
 // plant-complete device sound "C4 plant complete" is still extracted
@@ -54,6 +56,18 @@
 //     (prevTick, curTick] and all freeze-gated at cue-build time
 //     (rounds.js inFreezeTime — the game forbids firing/utility during
 //     freeze);
+//   - headshot kill cues (headshotKillCues) play in (prevTick, curTick]
+//     on the GUNS channel for a LETHAL headshot only: the Replay stamps
+//     `victimHelmet` (true/false/null) onto every kill row from the
+//     sidecar state stream BEFORE normalizeEvent (slotAliveHelmetAt
+//     builds the stamp — see the builder below), and this engine cues
+//     "Headshot dink" (helmet) or "Headshot bare" (no helmet) — a
+//     non-lethal headshot, a non-headshot kill, a knife kill and an
+//     UNKNOWN helmet state (no stream, no slot, no alive sample) all
+//     make NO cue (silence, never a guess). Freeze-gated like every
+//     damage-adjacent cue AND counted-round-gated (only a round the
+//     lookup KNOWS as counted cues — rounds.js isCounted, the
+//     roundEndCues shape), both at cue-build time;
 //   - the PLAYER sounds (footstepCues — footsteps/lands/jumps/fall
 //     damage off the sound_events rows the Replay pushed through
 //     setSoundEvents, gated against the manifest's own group keys) play
@@ -505,6 +519,145 @@ export function knifeCues(rows, rounds) {
     if (String(row.weapon || '') !== 'Knife') continue;
     if (inFreezeTime(rounds, row.tick)) continue;
     out.push({ tick: row.tick, name: 'Knife' });
+  }
+  out.sort((a, b) => a.tick - b.tick);
+  return out;
+}
+
+// slotAliveHelmetAt — THE victim-helmet read behind headshotKillCues
+// below: the slot's HELMET as of the last state record at/before
+// `frame` at which the slot's hp was still > 0, or null when that is
+// unknowable. The Replay calls it at its drawRows stamping join
+// (Replay.svelte — the dropsBySeq template) with the victim's slot
+// (meta.players) and the kill tick's frame (positions stream).
+//
+// Why not a plain stateAt(helmet, frame): on death the extractor
+// samples the pawn AS-READ — hp 0, armor 0, helmet false — so a read AT
+// the kill frame zeroes a helmeted victim's flag and would classify
+// every dink as a bare-head kill (internal/sidecar state_test.go
+// `deadSample` pins the death shape; this helper is the frontend's
+// guard against it).
+//
+// How the walk works: hp and helmet are separate series, so the "last
+// record where hp > 0" is found in the MERGE of the two — a
+// helmet-ONLY record (e.g. the freeze-time helmet buy, whose hp never
+// changed off the round seed) is a record too, and is often the LAST
+// one before the killing blow (reading the helmet at the last HP record
+// instead would miss it and report the pre-buy value). The walk steps
+// backward over both series from `frame` and stops at the first merged
+// frame whose standing hp > 0; the helmet there is `helmet.values[j]`
+// directly — j is the last helmet record at/before `frame`, and no
+// helmet record can sit between that frame and the merged frame (both
+// are ≤ `frame`), which is exactly stateAt's answer without a second
+// search. A slot/frame outside the index, an hp series with no sample
+// at/before frame, or a helmet never recorded → null — unknown, never a
+// guess.
+// Placed HERE, beside its ONLY consumer (the stamp's shape and the cue
+// predicate can never drift apart — the bomb.js ACTION_KINDS pattern),
+// not in state.js. Pure — unit-tested by src/lib/sfx.test.js.
+export function slotAliveHelmetAt(index, slot, frame) {
+  if (!index || !index.slots || !Number.isFinite(frame)) return null;
+  const s = index.slots[slot];
+  if (!s) return null;
+  const hp = s.hp || { frames: [], values: [] };
+  const hel = s.helmet || { frames: [], values: [] };
+  // lastLE — the last series index whose frame is ≤ frame (-1 = none),
+  // the same binary search stateAt does.
+  const lastLE = (frames) => {
+    let lo = 0;
+    let hi = frames.length - 1;
+    let ans = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (frames[mid] <= frame) {
+        ans = mid;
+        lo = mid + 1;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    return ans;
+  };
+  let i = lastLE(hp.frames);
+  let j = lastLE(hel.frames);
+  while (i >= 0) {
+    const fHp = hp.frames[i];
+    const fHel = j >= 0 ? hel.frames[j] : -Infinity;
+    const f = fHp >= fHel ? fHp : fHel;
+    // hp at the merged frame: the hp series is unchanged since its own
+    // last record (i is that record), so hp.values[i] stands at f.
+    if (hp.values[i] > 0) return j >= 0 ? hel.values[j] : null;
+    // Dead at f (the death sample) — step back past whichever series
+    // holds f, so a record-less frame gap cannot trap the walk.
+    if (fHel === f && fHp === f) {
+      i--;
+      j--;
+    } else if (fHp === f) {
+      i--;
+    } else {
+      j--;
+    }
+  }
+  return null; // no alive hp sample at/before frame — unknown
+}
+
+// headshotKillCues — the LETHAL-headshot cue list: kill rows →
+// [{tick, name, bucket:'guns'}] in tick order, one of the two manifest
+// groups the game's headshot impact plays (internal/mappack/sounds.go
+// soundTable, event→file mapping probed with cs2find 2026-11-11):
+//
+//   victimHelmet === true  → 'Headshot dink'   (helmeted head — the
+//                             metallic dink, headshot_armor_e1)
+//   victimHelmet === false → 'Headshot bare'   (no helmet — the
+//                             5-variant headshot_noarmor_01..05 set)
+//   anything else          → NO cue (helmet unknown — silence, never
+//                             a guess)
+//
+// `victimHelmet` is stamped onto the kill rows by the Replay BEFORE
+// normalizeEvent (Replay.svelte's drawRows join — the dropsBySeq
+// template), read from the sidecar state stream as of the victim's
+// LAST record while hp > 0: the death sample zeroes hp and helmet
+// AS-READ (internal/sidecar state_test.go deadSample pins it), so a
+// read AT the kill frame would mis-classify every helmeted victim as
+// bare. A row without the stamp (no state stream / no victim slot) is
+// unknown → silent.
+//
+// Predicate gates, in order: kind 'kill' (a damage row or a grenade
+// blast makes no headshot cue — the flag lives on player_death only),
+// `headshot === true` STRICT (non-headshot kills and non-lethal hits
+// are not this pair's business — the demo's headshot flag marks the
+// hit, and a non-LETHAL headshot simply has no kill row), weapon
+// NOT 'Knife' (knife kills already fire knifeCues' flesh hit, and the
+// game's knife-vs-helmet behavior is unestablished — never double-cue,
+// never guess), the freeze gate (knifeCues' rule — rounds.js
+// inFreezeTime) and the counted gate (roundEndCues' rule: a round the
+// lookup does not KNOW as counted makes nothing — knife/warmup rounds
+// never cue). Deduped by (tick|name) like every other cue list (a
+// dink and a bare-head kill can share a tick — a trade — and stay two
+// cues; a duplicated dispatch collapses). Pure — unit-tested by
+// src/lib/sfx.test.js.
+export function headshotKillCues(rows, rounds) {
+  const byNumber = new Map();
+  for (const r of rounds || []) {
+    if (r && Number.isFinite(r.number)) byNumber.set(r.number, r);
+  }
+  const seen = new Set();
+  const out = [];
+  for (const row of rows || []) {
+    if (!row || !Number.isFinite(row.tick)) continue;
+    if (String(row.kind || '') !== 'kill') continue;
+    if (row.headshot !== true) continue;
+    if (String(row.weapon || '') === 'Knife') continue; // knife kills keep their own cue
+    const helmet = row.victimHelmet;
+    if (helmet !== true && helmet !== false) continue; // unknown → silence, never a guess
+    const rnd = byNumber.get(row.round);
+    if (!rnd || !isCounted(rnd)) continue; // unknown or knife/warmup round → silence
+    if (inFreezeTime(rounds, row.tick)) continue;
+    const name = helmet ? 'Headshot dink' : 'Headshot bare';
+    const key = `${row.tick}|${name}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ tick: row.tick, name, bucket: 'guns' });
   }
   out.sort((a, b) => a.tick - b.tick);
   return out;
@@ -1198,6 +1351,7 @@ export function createSfxEngine({ engine, matchId, onError }) {
   let manifestKeys = null;
   let stepCues = []; // footstepCues(soundEvents, manifestKeys) — tick-sorted
   let knifeHits = []; // knifeCues(landmarkRows, rounds) — tick-sorted
+  let headshotHits = []; // headshotKillCues(landmarkRows, rounds) — tick-sorted
   let actionCues = []; // bombActionCues(landmarkRows, rounds) — tick-sorted
   let announcerCues = []; // roundEndCues + bombAnnouncerCues + matchPointCues merged, tick-sorted
   let matchPointList = []; // matchPointCues alone — the JUMP path's own list (no full scan)
@@ -1556,6 +1710,19 @@ export function createSfxEngine({ engine, matchId, onError }) {
     }
   }
 
+  // playHeadshotInRange — the lethal-headshot cues (headshotKillCues:
+  // "Headshot dink" / "Headshot bare") in (prevTick, curTick] on the
+  // GUNS channel — the same fader/mute as gunfire (the cue carries
+  // bucket 'guns'). Called only inside the guarded block, so a seek /
+  // loop wrap / paused scrub re-seeds through cueGapJump like every
+  // other cue list (no jump exception — a scrub never replays the
+  // kills it crossed).
+  function playHeadshotInRange(fromTick, toTick) {
+    for (const cue of utilCuesInRange(headshotHits, fromTick, toTick)) {
+      playGroup(cue.name, cue.bucket || 'guns');
+    }
+  }
+
   // playActionInRange — the THREE played plant/defuse lifecycle cues,
   // all on the C4 bus (bombActionCues carries bucket 'c4' — the bomb's
   // own fader/mute, like the explosion and the beeps). The
@@ -1812,6 +1979,7 @@ export function createSfxEngine({ engine, matchId, onError }) {
       playUtilInRange(prevTick, st.tick);
       playThrowInRange(prevTick, st.tick);
       playKnifeInRange(prevTick, st.tick);
+      playHeadshotInRange(prevTick, st.tick);
       playBulletsInRange(prevTick, st.tick);
       playDecoyInRange(prevTick, st.tick);
       playActionInRange(prevTick, st.tick);
@@ -1831,7 +1999,7 @@ export function createSfxEngine({ engine, matchId, onError }) {
   }
 
   // rebuildCues re-derives the landmark cue lists (detonations, throws,
-  // bounces, knife, the announcer lines), the footstep cue list and the
+  // bounces, knife, headshot kills, the announcer lines), the footstep cue list and the
   // C4 beep scheduler's bomb rows
   // from the rows last pushed — called by setLandmarks, setRounds and
   // setSoundEvents
@@ -1849,6 +2017,7 @@ export function createSfxEngine({ engine, matchId, onError }) {
     ].sort((a, b) => a.tick - b.tick);
     throwHits = throwCues(landmarkRows, rounds);
     knifeHits = knifeCues(landmarkRows, rounds);
+    headshotHits = headshotKillCues(landmarkRows, rounds);
     actionCues = bombActionCues(landmarkRows, rounds);
     // The footsteps list is built from the sound_events rows (not
     // landmark rows) and gated against the manifest keys.
@@ -1887,9 +2056,10 @@ export function createSfxEngine({ engine, matchId, onError }) {
       landmarkRows = rows || [];
       rebuildCues();
     },
-    // setRounds hands over GetRounds' rows — the freeze gate the util
-    // and knife cue lists are built under (rounds.js inFreezeTime;
-    // bullets are freeze-filtered upstream in bullets.js) and the
+    // setRounds hands over GetRounds' rows — the freeze gate the util,
+    // knife and headshot cue lists are built under (rounds.js
+    // inFreezeTime; the headshot list's counted gate reads the same rows
+    // — bullets are freeze-filtered upstream in bullets.js) and the
     // scoreline the match-point cue derives its clinch decision from
     // (silence until this arrives).
     setRounds(rs) {

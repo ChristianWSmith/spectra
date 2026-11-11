@@ -5,6 +5,9 @@
 // (`<weapon> bounce` on the utility channel — the decoy has no bounce
 // group), the player-sound cues (footstepCues — kind/material → manifest
 // group, gated by the extracted keys, silence for Silent/unmapped), the knife damage cues, the
+// lethal-headshot cues (slotAliveHelmetAt's victimHelmet stamp read +
+// headshotKillCues' helmet dink / bare-head pair — knife kills and
+// unknown helmet state silent), the
 // plant/defuse lifecycle cues (bombActionCues — THREE manifest groups
 // played, the plant-complete device cue's PLAYBACK removed by owner
 // instruction 2026-11-09; silent cancels, the shared bomb.js
@@ -35,6 +38,10 @@ import { ACTION_KINDS } from './replay/bomb.js';
 // sits INSIDE the round's freeze window (the one cue list that must not
 // carry a freeze gate of its own).
 import { inFreezeTime } from './rounds.js';
+// state.js is pure as well — buildStateIndex/STATE_FIELDS assemble the
+// per-slot series slotAliveHelmetAt walks (the victimHelmet stamp's
+// raw input, exactly as Replay pushes it).
+import { buildStateIndex, STATE_FIELDS } from './replay/state.js';
 
 installEsmDirHook();
 
@@ -68,6 +75,8 @@ const {
   footstepCues,
   footstepGroup,
   knifeCues,
+  headshotKillCues,
+  slotAliveHelmetAt,
   bombActionCues,
   roundEndCues,
   bombAnnouncerCues,
@@ -486,6 +495,179 @@ test('utilCuesInRange is open at the left and closed at the right', () => {
   assert.deepEqual(utilCuesInRange(cues, 0, 50).map((c) => c.name), []); // before the start
   assert.deepEqual(utilCuesInRange([], 0, 50), []);
   assert.deepEqual(utilCuesInRange(cues, NaN, 500), []);
+});
+
+// --- headshot kill cues -----------------------------------------------------
+// sfx.js headshotKillCues — the lethal-headshot pair, keyed off the
+// victimHelmet stamp the Replay reads from the sidecar state stream
+// (Replay.svelte drawRows join → slotAliveHelmetAt).
+
+// A kill row the way normalizeEvent hands it to the cue builder
+// (`...ev` spread): headshot flag from player_death, victimHelmet from
+// the state-stream stamp, round 1 inside FREEZE_ROUNDS' counted range.
+const hsKill = (over) => ({
+  kind: 'kill',
+  headshot: true,
+  weapon: 'AK-47',
+  round: 1,
+  tick: 100,
+  victimHelmet: true,
+  ...over,
+});
+
+test('headshotKillCues: helmet → dink, no helmet → bare, unknown → silence', () => {
+  const cues = headshotKillCues(
+    [
+      hsKill({ tick: 100, victimHelmet: true }),
+      hsKill({ tick: 110, victimHelmet: false }),
+      hsKill({ tick: 120, victimHelmet: null }), // no alive sample / no stream → silence
+      hsKill({ tick: 130, victimHelmet: undefined }), // stamp absent entirely → silence
+      hsKill({ tick: 140, victimHelmet: 'true' }), // hostile non-boolean → silence
+      hsKill({ tick: 150, victimHelmet: 1 }), // … never coerced to true
+      null, // hostile input never throws
+    ],
+    FREEZE_ROUNDS,
+  );
+  assert.deepEqual(
+    cues.map((c) => `${c.tick}:${c.name}:${c.bucket}`),
+    ['100:Headshot dink:guns', '110:Headshot bare:guns'],
+  );
+});
+
+test('headshotKillCues: non-headshot kills, non-kill rows and knife kills make NOTHING', () => {
+  assert.deepEqual(
+    headshotKillCues(
+      [
+        hsKill({ tick: 100, headshot: false, victimHelmet: true }), // body-shot kill
+        hsKill({ tick: 110, headshot: undefined, victimHelmet: true }), // flag absent
+        hsKill({ tick: 120, headshot: 1, victimHelmet: true }), // hostile non-boolean
+        // A non-LETHAL headshot is a damage row — the pair only ever
+        // keys off kill rows, so it is silence by construction …
+        { kind: 'damage', headshot: true, weapon: 'AK-47', tick: 130, round: 1, victimHelmet: true },
+        // … and so is any other row shape carrying the flag.
+        { kind: 'grenade', bucket: 'he', headshot: true, weapon: 'HE Grenade', tick: 140, round: 1, victimHelmet: true },
+        // Knife kills: knifeCues' flesh hit already fires (the game's
+        // knife-vs-helmet behaviour is unestablished — never double-cue).
+        hsKill({ tick: 150, weapon: 'Knife', victimHelmet: true }),
+      ],
+      FREEZE_ROUNDS,
+    ),
+    [],
+  );
+  // Hostile top-level inputs: no rows, no list at all.
+  assert.deepEqual(headshotKillCues([], FREEZE_ROUNDS), []);
+  assert.deepEqual(headshotKillCues(null, FREEZE_ROUNDS), []);
+  assert.deepEqual(headshotKillCues(undefined), []);
+});
+
+test('headshotKillCues: freeze time and the counted gate (knife/warmup/unknown rounds)', () => {
+  const rounds = [...FREEZE_ROUNDS, { number: -2, startTick: 2000, freezeEndTick: 2060 }];
+  const cues = headshotKillCues(
+    [
+      hsKill({ tick: 32, victimHelmet: true }), // round-1 freeze → dropped
+      hsKill({ tick: 100, victimHelmet: true }), // live counted round → kept
+      hsKill({ tick: 2100, round: -2, victimHelmet: true }), // knife round (isCounted) → dropped
+      hsKill({ tick: 2110, round: 99, victimHelmet: true }), // unknown round → dropped
+    ],
+    rounds,
+  );
+  assert.deepEqual(cues.map((c) => c.tick), [100]);
+  // No rounds list → no round is KNOWN as counted → silence (the
+  // roundEndCues shape — only a round the lookup knows as counted cues).
+  assert.deepEqual(headshotKillCues([hsKill({ tick: 100 })], null), []);
+});
+
+test('headshotKillCues: (tick|name) dedupe, a dink+bare trade at one tick stays two cues, tick-sorted', () => {
+  const cues = headshotKillCues(
+    [
+      hsKill({ tick: 300, victimHelmet: true }),
+      hsKill({ tick: 100, victimHelmet: false }),
+      hsKill({ tick: 100, victimHelmet: true }), // a trade kill on the same tick
+      hsKill({ tick: 100, victimHelmet: true }), // duplicated dispatch → collapses
+      hsKill({ tick: 200, victimHelmet: false }),
+      hsKill({ tick: 200, victimHelmet: false }), // same tick + same name → one cue
+    ],
+    FREEZE_ROUNDS,
+  );
+  assert.deepEqual(
+    cues.map((c) => `${c.tick}:${c.name}`),
+    ['100:Headshot bare', '100:Headshot dink', '200:Headshot bare', '300:Headshot dink'],
+  );
+});
+
+test('slotAliveHelmetAt: the last record while hp > 0 — the death sample never zeroes the read', () => {
+  // The dead-sample trap (internal/sidecar state_test.go deadSample): on
+  // death the stream reports hp 0 / helmet false AS-READ in the killing
+  // frame, so a naive read at the kill frame would call a helmeted victim
+  // bare. The helper walks back to the victim's last ALIVE record — the
+  // plain records below are exactly what buildStateIndex folds (Replay's
+  // input shape).
+  const index = buildStateIndex(
+    [
+      // Round seed: hp 100, helmet false (the fresh pawn carries no
+      // helmet until the freeze-time buy).
+      { frame: 10, slot: 0, mask: STATE_FIELDS.HP | STATE_FIELDS.HELMET, hp: 100, helmet: false },
+      // The buy: armor + helmet, hp UNCHANGED — a helmet-only record
+      // after the last hp sample, and the last record before the kill.
+      // (Reading the helmet at the last hp record instead would miss it
+      // and report the pre-buy false.)
+      { frame: 20, slot: 0, mask: STATE_FIELDS.ARMOR | STATE_FIELDS.HELMET, armor: 100, helmet: true },
+      // The killing headshot, as-read: hp 0, helmet false.
+      { frame: 40, slot: 0, mask: STATE_FIELDS.HP | STATE_FIELDS.HELMET, hp: 0, helmet: false },
+    ],
+    2,
+  );
+  // At/after the death frame: STILL the alive helmet — the zeroed death
+  // sample never wins (the regression the whole cue pair depends on).
+  assert.equal(slotAliveHelmetAt(index, 0, 40), true);
+  assert.equal(slotAliveHelmetAt(index, 0, 41), true);
+  assert.equal(slotAliveHelmetAt(index, 0, 1e9), true);
+  // Same fact before the kill, and the buy frame itself.
+  assert.equal(slotAliveHelmetAt(index, 0, 39), true);
+  assert.equal(slotAliveHelmetAt(index, 0, 20), true);
+  // The seed frame: helmet still the pre-buy false (recorded truth as of
+  // that frame — never a look-ahead).
+  assert.equal(slotAliveHelmetAt(index, 0, 10), false);
+});
+
+test('slotAliveHelmetAt: bare heads, unknown state and hostile shapes → never a guess', () => {
+  // A victim who never wore a helmet: the death sample carries no helmet
+  // change (false → false), so the alive read is the seed's false.
+  const index = buildStateIndex(
+    [
+      { frame: 5, slot: 0, mask: STATE_FIELDS.HP | STATE_FIELDS.HELMET, hp: 100, helmet: false },
+      { frame: 30, slot: 0, mask: STATE_FIELDS.HP, hp: 0 },
+    ],
+    2,
+  );
+  assert.equal(slotAliveHelmetAt(index, 0, 30), false); // bare → the bare cue's raw material
+
+  // Helmet never recorded at all → null (unknown — silence downstream).
+  const noHelmet = buildStateIndex(
+    [
+      { frame: 5, slot: 0, mask: STATE_FIELDS.HP, hp: 100 },
+      { frame: 30, slot: 0, mask: STATE_FIELDS.HP, hp: 0 },
+    ],
+    2,
+  );
+  assert.equal(slotAliveHelmetAt(noHelmet, 0, 30), null);
+
+  // No ALIVE hp sample at/before the frame (only ever reported dead) →
+  // null, never the stale helmet of an earlier life.
+  const onlyDead = buildStateIndex(
+    [{ frame: 5, slot: 0, mask: STATE_FIELDS.HP | STATE_FIELDS.HELMET, hp: 0, helmet: false }],
+    2,
+  );
+  assert.equal(slotAliveHelmetAt(onlyDead, 0, 30), null);
+  // Before the first record of any series: unknown, not a default.
+  assert.equal(slotAliveHelmetAt(index, 0, 4), null);
+
+  // Hostile/absent shapes: null index, out-of-range slots, bad frames.
+  assert.equal(slotAliveHelmetAt(null, 0, 10), null);
+  assert.equal(slotAliveHelmetAt(index, 99, 10), null);
+  assert.equal(slotAliveHelmetAt(index, -1, 10), null);
+  assert.equal(slotAliveHelmetAt(index, 0, NaN), null);
+  assert.equal(slotAliveHelmetAt(index, 0, 'nope'), null);
 });
 
 // --- plant/defuse lifecycle cues --------------------------------------------
@@ -1380,6 +1562,15 @@ const BEEP_MANIFEST = {
     // bounce soundevent's own file sets) …
     'HE Grenade bounce': ['/api/sounds/he_bounce-1.wav'],
     'Flashbang bounce': ['/api/sounds/grenade_hit1.wav'],
+    // … the two HEADSHOT-kill cue groups (soundTable's dink/bare pair) …
+    'Headshot dink': ['/api/sounds/headshot_armor_e1.wav'],
+    'Headshot bare': [
+      '/api/sounds/headshot_noarmor_01.wav',
+      '/api/sounds/headshot_noarmor_02.wav',
+      '/api/sounds/headshot_noarmor_03.wav',
+      '/api/sounds/headshot_noarmor_04.wav',
+      '/api/sounds/headshot_noarmor_05.wav',
+    ],
     // … and the FOOTSTEPS bus's player-sound groups (soundTable's
     // `step <family>` / land / jump / gear / falldamage keys).
     'step gravel': ['/api/sounds/gravel_01.wav'],
@@ -1905,6 +2096,59 @@ test('engine: bounce cues play on the utility bus through the guarded window', a
     const before = ctx.sources.length;
     engine.emit({ playing: true, speed: 1, tick: 4000 });
     assert.equal(ctx.sources.length, before, 'the forward jump replays nothing');
+    sfx.destroy();
+  } finally {
+    restoreFetch();
+  }
+});
+
+// The HEADSHOT kill cues through the REAL play path: kill rows with the
+// victimHelmet stamp → rebuildCues → (prevTick, curTick] → playGroup on
+// the GUNS bus, with the unknown-helmet row silent and a forward JUMP
+// never replaying what it crossed (the guarded window has NO jump
+// exception — cueGapJump re-seeds).
+test('engine: headshot kill cues play on the guns bus through the guarded window', async () => {
+  resetSoundManifest();
+  const restoreFetch = stubManifestFetch();
+  try {
+    const { sfx, engine, ctx } = await makeSfx();
+    sfx.setRounds([{ number: 1, startTick: 0, freezeEndTick: 64 }]);
+    sfx.setLandmarks([
+      { kind: 'kill', headshot: true, victimHelmet: true, weapon: 'AK-47', tick: 1000, round: 1 },
+      { kind: 'kill', headshot: true, victimHelmet: false, weapon: 'AK-47', tick: 1004, round: 1 },
+      // Unknown helmet → NO cue (the pure gate already pins it; nothing
+      // here may play for it).
+      { kind: 'kill', headshot: true, victimHelmet: null, weapon: 'AK-47', tick: 1006, round: 1 },
+      // Crossed ONLY by the forward jump below — it must stay silent
+      // (no match-point-style exception for this list).
+      { kind: 'kill', headshot: true, victimHelmet: true, weapon: 'AK-47', tick: 2000, round: 1 },
+    ]);
+    engine.emit({ playing: true, speed: 1, tick: 990 }); // first draw → seed (jump)
+    engine.emit({ playing: true, speed: 1, tick: 1005 }); // ordinary step → crosses 1000/1004
+    const dink = ctx.sources.filter(
+      (s) => s.buffer && s.buffer.url === '/api/sounds/headshot_armor_e1.wav',
+    );
+    assert.equal(dink.length, 1, 'the dink plays exactly once');
+    assert.equal(dink[0].bus, ctx.gains[0], 'headshot cues ride the guns bus (1st gain)');
+    const bare = ctx.sources.filter(
+      (s) => s.buffer && /^\/api\/sounds\/headshot_noarmor_\d+\.wav$/.test(s.buffer.url),
+    );
+    assert.equal(bare.length, 1, 'the bare-head cue plays exactly once (a random variant of the set)');
+    assert.equal(bare[0].bus, ctx.gains[0], 'the bare cue rides the guns bus too');
+    assert.equal(
+      ctx.sources.length,
+      2,
+      'exactly the two cues — the unknown-helmet row stayed silent',
+    );
+    // A forward jump over the tick-2000 kill replays NOTHING (every cue
+    // list except the match-point stinger re-seeds on a jump).
+    engine.emit({ playing: true, speed: 1, tick: 4000 });
+    assert.equal(
+      ctx.sources.filter((s) => s.buffer && s.buffer.url === '/api/sounds/headshot_armor_e1.wav').length,
+      1,
+      'the jump across tick 2000 never played its dink',
+    );
+    assert.equal(ctx.sources.length, 2, 'the jump added no source at all');
     sfx.destroy();
   } finally {
     restoreFetch();

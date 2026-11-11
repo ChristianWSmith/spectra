@@ -751,6 +751,36 @@ var soundTable = map[string][]string{
 		"sounds/player/damage2.vsnd_c",
 		"sounds/player/damage3.vsnd_c",
 	},
+	// ---- Headshot KILL cues (the replay's lethal-headshot pair) --------
+	// sfx.js headshotKillCues keys these two OFF a kill row's
+	// victimHelmet stamp — the game plays ONE distinct impact per headshot
+	// depending on what the victim's head was wearing (CS2.md "Headshot
+	// impact sounds…"): the metallic DINK on a helmeted head, the
+	// no-armor sample on a bare one. Event→file mapping read from the
+	// local install's soundevents (cs2find events, 2026-11-11):
+	//   Player.DeathHeadShot.Dink / .Victim.Dink /
+	//     Player.DamageHeadShotArmor.* → headshot_armor_e1 (SINGLE file —
+	//     the dink group is deliberately one sample, like the beep/
+	//     lifecycle groups: one distinct moment, not a variant)
+	//   Player.DeathHeadShot.AttackerFeedback / .Onlooker / .Spectator /
+	//     .Victim, Player.DamageHeadShot.* → headshot_noarmor_01..05
+	//     (the 5-variant set — pickVariant keeps them all and chooses one
+	//     per play, so repeated kills never loop one sample)
+	// The sibling Player.DeathHeadShotArmor.* family (→ headshot_armor_01
+	// / player_damagebody_05..07) is an UNRESOLVED mapping (CS2.md —
+	// non-blocking: it plays no role in the dink/bare decision) and is
+	// deliberately NOT extracted. Both files decode PCM16 44100 stereo
+	// (cs2find sound, 2026-11-11).
+	"Headshot dink": {
+		"sounds/player/headshot_armor_e1.vsnd_c",
+	},
+	"Headshot bare": {
+		"sounds/player/headshot_noarmor_01.vsnd_c",
+		"sounds/player/headshot_noarmor_02.vsnd_c",
+		"sounds/player/headshot_noarmor_03.vsnd_c",
+		"sounds/player/headshot_noarmor_04.vsnd_c",
+		"sounds/player/headshot_noarmor_05.vsnd_c",
+	},
 }
 
 // internalSoundGroups — the ONE list of soundTable keys that are neither
@@ -795,6 +825,13 @@ var internalSoundGroups = map[string]bool{
 	"Smoke Grenade bounce":      true,
 	"Molotov bounce":            true,
 	"Incendiary Grenade bounce": true,
+	// The two HEADSHOT-kill cue groups (sfx.js headshotKillCues — the
+	// dink/bare pair stamped off the kill row's victimHelmet). Opaque
+	// names with no equipment spelling, so they register HERE (the whole
+	// widening mechanism — see the comment above); the files' basenames
+	// are globally unique, so soundStems needs no prefixing.
+	"Headshot dink": true,
+	"Headshot bare": true,
 	// The player-sound groups (the asset side of sound_events): one
 	// `step <material>` group per footsteps file family, plus the land /
 	// jump / gear / fall-damage sets. Keys are the literal names the

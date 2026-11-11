@@ -1265,3 +1265,58 @@ at the end of the section.
   2023-10-17 / 2024-02-06 patch notes via
   https://counterstrike.fandom.com/wiki/Counter-Strike_2/Updates
   (site tone + final-10 s samples), all fetched 2026-11-08.
+
+- **Headshot impact sounds — helmet "dink" vs bare head** — CS2 plays a
+  distinct impact sound for a headshot depending on what the victim's
+  head was wearing: the metallic "dink" into a Kevlar helmet, a
+  different (no-armor) sample into a bare head. Assets under
+  `sounds/player/` in `pak01_dir.vpk`, event→file mapping probed
+  read-only with `cs2find events`/`sound` (2026-11-11):
+  - dink = `headshot_armor_e1.vsnd_c` (single file, PCM16 44100 stereo),
+    referenced by `Player.DeathHeadShot.Dink`,
+    `Player.DeathHeadShot.Victim.Dink`,
+    `Player.DeathHeadShot.AttackerFeedback.Dink` and
+    `Player.DamageHeadShotArmor.{AttackerFeedback,Onlooker,Spectator,Victim}`;
+  - bare = `headshot_noarmor_01..05.vsnd_c` (5-variant set), referenced
+    by `Player.DeathHeadShot.{AttackerFeedback,Onlooker,Spectator,Victim}`
+    and `Player.DamageHeadShot.{AttackerFeedback,Onlooker,Victim}`;
+  - `Player.DeathHeadShot{,.Victim,.AttackerFeedback}.Flesh` →
+    `headshot_armor_flesh.vsnd_c` (a third, flesh-in-helmet sample).
+  UNRESOLVED sibling family (non-blocking for the dink/bare pair — it
+  plays no role in the helmet decision): `Player.DeathHeadShotArmor.AttackerFeedback`
+  → `headshot_armor_01.vsnd_c` and `Player.DeathHeadShotArmor.{Onlooker,Spectator,Victim}`
+  → `player_damagebody_05..07.vsnd_c`; which family a client plays per
+  listener role is not established, and the `Flesh` variants' exact
+  trigger is not either.
+  **Source** —
+  https://esports.gg/news/counter-strike-2/cs2-update-sub-tick-feedback-and-matchmaking/ (dink vs no-dink distinct sounds);
+  https://counterstrike.fandom.com/wiki/Kevlar_%2B_Helmet (helmet absorbs
+  the headshot); local probe of pak01_dir.vpk via `cs2find` (2026-11-11).
+
+- **`player_death` / `player_hurt` carry NO helmet state** — a demo's
+  game events cannot answer "did the victim wear a helmet":
+  `player_death` has `headshot` (bool) but no helmet field, and
+  `player_hurt` has `health` / `armor` / `hitgroup` but no helmet flag
+  (armor > 0 does not imply a helmet). Helmet possession is only
+  exposed through the pawn's `m_bHasHelmet` prop, i.e. demoinfocs'
+  `common.Player.HasHelmet()` — state at parse time, never an event
+  payload. That is why a replay that must distinguish dink from bare
+  reads helmet state (state stream / `HasHelmet()` at the kill), not any
+  event row.
+  **Source** —
+  https://github.com/SteamDatabase/GameTracking-CS2/blob/master/game/csgo/pak01_dir/resource/mod.gameevents
+  (player_death / player_hurt field lists);
+  https://pkg.go.dev/github.com/markus-wa/demoinfocs-golang/v6/pkg/demoinfocs/events
+  (+ `common.Player.HasHelmet()`), both retrieved 2026-11-11.
+
+- **Headshot soundevents are networked in demos (partial coverage)** —
+  the `Player.DeathHeadShot*` / `Player.DamageHeadShot*` soundevents do
+  reach clients through the demo's SOS sound-event messages, so a
+  replay can observe them — but only partially: on the golden demo
+  (de_cache) `Player.DeathHeadShotArmor.Onlooker` fires ×57 against 85
+  headshot kills. Listener-role/onlooker conditions and per-client
+  routing mean these messages are NOT a complete headshot record — a
+  replay derives headshot facts from `player_death.headshot` and helmet
+  from state, never from counting soundevents.
+  **Source** — golden-demo soundevent-hash analysis (local probe,
+  2026-11-11).
