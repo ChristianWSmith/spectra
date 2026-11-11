@@ -1,8 +1,10 @@
 // Tests for the heatmap kind registry (lib/heatkinds.js): the id list the
 // Heatmaps selector renders, its label spellings, the region-drill
-// category projection, and — the pin that matters — parity with the Go
-// registry (heatmap.go grenadeHeatmapKinds) so a grenade type added on
-// one side cannot silently vanish on the other.
+// filter projection (categories, bbox capability and the settings →
+// landmark-filter mapping behind a region click), and — the pin that
+// matters — parity with the Go registry (heatmap.go grenadeHeatmapKinds)
+// so a grenade type added on one side cannot silently vanish on the
+// other.
 // Run: node --test src/lib/heatkinds.test.js   (from frontend/)
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -17,8 +19,10 @@ import {
   HEAT_KINDS,
   heatKindLabel,
   heatRegionCats,
+  heatRegionFilter,
+  heatRegionTakesBBox,
 } from './heatkinds.js';
-import { categoryById } from './replay/landmarks.js';
+import { categoryById, serializeLandmarkFilter } from './replay/landmarks.js';
 
 test('kind registry: core + one thrown/det pair per grenade type, no duplicates', () => {
   assert.deepEqual(HEAT_CORE_KINDS, ['presence', 'kills', 'deaths', 'damage', 'kd']);
@@ -101,7 +105,83 @@ test('region drills open the matching landmark categories', () => {
     assert.deepEqual(cat.kinds, ['grenade'], k);
   }
   assert.deepEqual(heatRegionCats('damage'), ['kills', 'damage']);
-  for (const k of ['presence', 'kd', 'kills', 'deaths']) {
-    assert.equal(heatRegionCats(k), undefined, `${k} narrows no category`);
+  // DELIBERATE PIN CHANGE (bbox empty-arrival fix): kills/kd/deaths used
+  // to narrow NO category, so a region drill arrived with the sparse
+  // default ['round_starts'] — round-start rows store no position, and
+  // the bbox then excluded EVERY row (guaranteed-empty arrival). Each
+  // now projects onto the KILLS category: there is no death kind (a
+  // death IS a kill row, victim side) and kd spans kills AND deaths, so
+  // the kills category is the position-bearing half either way; the
+  // store's either-endpoint bbox (internal/store/queries.go) matches the
+  // victim positions of those rows too.
+  for (const k of ['kills', 'kd', 'deaths']) {
+    assert.deepEqual(heatRegionCats(k), ['kills'], k);
   }
+  // presence keeps narrowing nothing: it has no event counterpart — and
+  // heatRegionTakesBBox keeps its bbox out of the arrival as well (a bbox
+  // it cannot satisfy would guarantee an empty feed).
+  assert.equal(heatRegionCats('presence'), undefined);
+  assert.equal(heatRegionTakesBBox('presence'), false);
+  for (const k of HEAT_KINDS) {
+    if (k === 'presence') continue;
+    assert.equal(heatRegionTakesBBox(k), true, `${k} drills with its bbox`);
+  }
+});
+
+test('heatRegionFilter: cats + player + round range, sentinels omitted', () => {
+  // No settings → only the kind's category projection; presence has none,
+  // so a presence click with no settings is a PLAIN arrival ({}).
+  assert.deepEqual(heatRegionFilter('kills', {}), { cats: ['kills'] });
+  assert.deepEqual(heatRegionFilter('presence', {}), {});
+  // The player selector: '' (All players) omits, a steam id maps to the
+  // filter's player key (steamId — serialize emits it as ?player=).
+  assert.deepEqual(heatRegionFilter('kills', { player: '' }), { cats: ['kills'] });
+  assert.deepEqual(heatRegionFilter('kd', { player: '76561198012345678' }), {
+    cats: ['kills'],
+    steamId: '76561198012345678',
+  });
+  // The heatmap's `-1 = all` sentinel maps to the filter's `0 = open`
+  // bound (landmarks.DEFAULT_FILTER): both omit the key. 0 omits too.
+  assert.deepEqual(heatRegionFilter('damage', { roundFrom: -1, roundTo: -1 }), {
+    cats: ['kills', 'damage'],
+  });
+  assert.deepEqual(heatRegionFilter('damage', { roundFrom: 0, roundTo: 0 }), {
+    cats: ['kills', 'damage'],
+  });
+  // A real range keeps BOTH bounds (partial ranges are legal — an open
+  // side simply stays omitted).
+  assert.deepEqual(heatRegionFilter('damage', { roundFrom: 7, roundTo: -1 }), {
+    cats: ['kills', 'damage'],
+    roundFrom: 7,
+  });
+  assert.deepEqual(heatRegionFilter('kills', { roundFrom: 3, roundTo: 12 }), {
+    cats: ['kills'],
+    roundFrom: 3,
+    roundTo: 12,
+  });
+  // Absent / junk settings never throw and never invent a bound.
+  assert.deepEqual(heatRegionFilter('kills'), { cats: ['kills'] });
+  assert.deepEqual(heatRegionFilter('kills', { roundFrom: 'x', roundTo: NaN, player: null }), {
+    cats: ['kills'],
+  });
+  // NO side/team key: the heatmap's team selector has no filter counterpart
+  // (queued separately), so a team setting is ignored rather than invented.
+  assert.deepEqual(heatRegionFilter('kills', { team: 'ct', player: '1', roundFrom: 1, roundTo: 2 }), {
+    cats: ['kills'],
+    steamId: '1',
+    roundFrom: 1,
+    roundTo: 2,
+  });
+});
+
+test('heatRegionFilter output round-trips through the URL (feed reveal keys)', () => {
+  // The arrival is built with replayHash → serializeLandmarkFilter: every
+  // key the helper emits must survive as a non-default URL param (which
+  // is also what shouldRevealFeed keys off) — and {} must serialize to
+  // nothing (a plain arrival stays silent).
+  assert.deepEqual(
+    serializeLandmarkFilter(heatRegionFilter('kills', { player: '1', roundFrom: 3, roundTo: 9 })),
+    { cat: 'kills', player: '1', roundFrom: '3', roundTo: '9' },
+  );
+  assert.deepEqual(serializeLandmarkFilter(heatRegionFilter('presence', {})), {});
 });

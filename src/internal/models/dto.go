@@ -239,10 +239,16 @@ type EventFilter struct {
 	DistanceMin  float64 `json:"distanceMin,omitempty"`
 	DistanceMax  float64 `json:"distanceMax,omitempty"`
 	HeadshotOnly bool    `json:"headshotOnly,omitempty"`
-	BBox         *BBox   `json:"bbox,omitempty"` // world-space position filter
+	// BBox is a world-space EITHER-ENDPOINT position filter — see BBox.
+	BBox *BBox `json:"bbox,omitempty"`
 }
 
-// BBox is a world-coordinate rectangle (event pos must fall inside).
+// BBox is a world-coordinate rectangle; an event matches when EITHER of
+// its endpoints falls inside it — the victim/hit position (events.pos_*)
+// OR the attacker position (events.apos_*). The region drill surrounds
+// what the heatmap RASTERIZED, and the kills heatmap plots the KILLER's
+// position (AnalyticsService.GetHeatmap), so a victim-only predicate
+// would drop every non-point-blank kill of a clicked cell.
 type BBox struct {
 	MinX float64 `json:"minX"`
 	MinY float64 `json:"minY"`

@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -730,6 +731,85 @@ func TestGetEventsAdvancedFilters(t *testing.T) {
 	// Positions still scan out of the extended SELECT.
 	if got := get(models.EventFilter{Weapon: "AK-47"}); len(got) != 1 || got[0].PosX == nil || *got[0].PosX != 5 {
 		t.Errorf("positions not scanned: %+v", got[0])
+	}
+
+	// --- EITHER-ENDPOINT bbox (the kills-heatmap region drill) ----------
+	// The bbox surrounds what the heatmap RASTERIZED, and the kills
+	// heatmap plots the ATTACKER's position (AnalyticsService.GetHeatmap)
+	// — so a region click must match when EITHER endpoint falls inside.
+	// SaveExtracted clears + rewrites the match's child rows, so the
+	// extended fixture below replaces the three rows above (their
+	// assertions have already run) with rows that separate the two
+	// endpoints and every NULL corner. Rect [40,60]×[40,60]:
+	//   400 kill  victim-in / attacker-out      → match (victim side)
+	//   500 kill  attacker-in / victim-out      → match (THE heatmap case)
+	//   600 kill  both out                      → no match
+	//   700 kill  pos_* NULL, apos_* in range   → match (NULL OR TRUE)
+	//   800 kill  pos_x in / pos_y NULL (partial NULL), apos out → no match
+	//   900 kill  pos out / apos_x in / apos_y NULL (partial NULL) → no match
+	//  1000 dmg   victim in, apos_* NULL        → match (non-kill as today)
+	//  1100 dmg   victim out, apos_* NULL       → no match (as today)
+	//  1200 kill  pos_* AND apos_* NULL         → no match (both NULL)
+	bb := &models.BBox{MinX: 40, MaxX: 60, MinY: 40, MaxY: 60}
+	em.Events = append(em.Events,
+		models.Event{Tick: 400, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "200",
+			Weapon: "AK-47", PosX: pf(50), PosY: pf(50), PosZ: pf(1),
+			AttackerPosX: pf(900), AttackerPosY: pf(900)},
+		models.Event{Tick: 500, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "200",
+			Weapon: "AWP", PosX: pf(900), PosY: pf(900),
+			AttackerPosX: pf(50), AttackerPosY: pf(50)},
+		models.Event{Tick: 600, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "200",
+			Weapon: "AWP", PosX: pf(900), PosY: pf(900),
+			AttackerPosX: pf(950), AttackerPosY: pf(950)},
+		models.Event{Tick: 700, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "200",
+			Weapon: "AK-47", AttackerPosX: pf(50), AttackerPosY: pf(50)},
+		models.Event{Tick: 800, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "200",
+			Weapon: "AK-47", PosX: pf(50), /* PosY stays NULL */
+			AttackerPosX: pf(900), AttackerPosY: pf(900)},
+		models.Event{Tick: 900, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "200",
+			Weapon: "AK-47", PosX: pf(900), PosY: pf(900),
+			AttackerPosX: pf(50) /* AttackerPosY stays NULL */},
+		models.Event{Tick: 1000, Round: 1, Kind: models.EventDamage, Attacker: "100", Victim: "200",
+			Weapon: "HE Grenade", Dmg: 15, PosX: pf(50), PosY: pf(50)},
+		models.Event{Tick: 1100, Round: 1, Kind: models.EventDamage, Attacker: "100", Victim: "200",
+			Weapon: "HE Grenade", Dmg: 15, PosX: pf(900), PosY: pf(900)},
+		models.Event{Tick: 1200, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "200",
+			Weapon: "AK-47"},
+	)
+	if err := s.SaveExtracted(id, em); err != nil {
+		t.Fatalf("SaveExtracted (bbox fixture): %v", err)
+	}
+	// Guard: the extension really rewrote the match's rows (12 events) —
+	// an empty bbox result below must mean "no match", never "no rows".
+	if got := get(models.EventFilter{}); len(got) != 12 {
+		t.Fatalf("extended fixture rows = %d, want 12", len(got))
+	}
+	// The matching tick set, ordered by seq (= insertion order here).
+	bboxTicks := func(box *models.BBox, f models.EventFilter) []int {
+		t.Helper()
+		f.BBox = box
+		rows := get(f)
+		out := make([]int, 0, len(rows))
+		for _, r := range rows {
+			out = append(out, r.Tick)
+		}
+		return out
+	}
+	if got := bboxTicks(bb, models.EventFilter{}); !slices.Equal(got, []int{400, 500, 700, 1000}) {
+		t.Errorf("either-endpoint bbox → %v, want [400 500 700 1000]", got)
+	}
+	// Kills only: both endpoint sides plus the NULL-pos/attacker-in row.
+	if got := bboxTicks(bb, models.EventFilter{Kind: models.EventKill}); !slices.Equal(got, []int{400, 500, 700}) {
+		t.Errorf("kill + either-endpoint bbox → %v, want [400 500 700]", got)
+	}
+	// Non-kill rows keep the victim-only behavior (apos_* is NULL):
+	// victim in matches, victim out does not.
+	if got := bboxTicks(bb, models.EventFilter{Kind: models.EventDamage}); !slices.Equal(got, []int{1000}) {
+		t.Errorf("damage + either-endpoint bbox → %v, want [1000]", got)
+	}
+	// The pre-existing victim-side rect is unchanged by the extension.
+	if got := bboxTicks(&models.BBox{MinX: -10, MaxX: 10, MinY: -10, MaxY: 10}, models.EventFilter{}); !slices.Equal(got, []int{100}) {
+		t.Errorf("bbox ±10 after the extension → %v, want [100]", got)
 	}
 }
 
