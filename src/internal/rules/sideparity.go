@@ -12,11 +12,13 @@
 // fixture (testdata/sideparity.json — see sideparity_test.go and
 // frontend/src/lib/sideparity.test.js).
 //
-// Production callers today: rules.OtherSide (analytics.Clutches). Every
-// import stores round_player_sides, so data lacking exact per-round sides
-// gets NO parity guess — there is no fallback pass. FlipIndexes/SideAt are
-// fixture-pinned references the frontend twin is tested against; do not
-// reintroduce a fallback that re-expresses them.
+// Production callers today: rules.OtherSide (analytics.Clutches) and
+// rules.StartSide (store.queryEvents' Team key — the replay filter's
+// start-side identity). Every import stores round_player_sides, so data
+// lacking exact per-round sides gets NO parity guess — there is no
+// fallback pass. FlipIndexes/SideAt are fixture-pinned references the
+// frontend twin is tested against; do not reintroduce a fallback that
+// re-expresses them.
 package rules
 
 // FlipIndexes returns the 0-based indexes into a slice of n COUNTED rounds
@@ -83,4 +85,29 @@ func OtherSide(side string) string {
 		return "ct"
 	}
 	return ""
+}
+
+// StartSide returns the side a player/team OPENED the match on: their
+// final side flipped once per recorded side switch — i.e. flipped iff
+// the SWITCH COUNT IS ODD (every switch swaps both teams, so an even
+// count returns them to their opening sides; zero keeps the final side).
+// This is the era-0 form of SideAt and the Go twin of frontend
+// sideparity.js startSideFor/sideInEra (flips = |switches| % 2, with the
+// negative-count guard normalized to zero exactly like the JS
+// max(1, s+1) era math), so the team-identity colors and the replay's
+// Team filter key resolve the SAME start side from the same rule — the
+// parity lives HERE, never re-expressed in a caller's SQL. Unknown sides
+// ("", "CT", anything but ct/t) stay "" — missing data never gets a
+// guessed identity.
+func StartSide(finalSide string, switches int) string {
+	if finalSide != "ct" && finalSide != "t" {
+		return ""
+	}
+	if switches < 0 {
+		switches = 0 // the JS twin's max(1, s+1) normalizes negatives to "no flip"
+	}
+	if switches%2 == 1 {
+		return OtherSide(finalSide)
+	}
+	return finalSide
 }

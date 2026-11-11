@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/ChristianWSmith/spectra/internal/models"
+	"github.com/ChristianWSmith/spectra/internal/rules"
 )
 
 // matchColumns is the full matches column list in scan order — the ONE
@@ -863,6 +864,72 @@ func kindsToAny(kinds []string) []any {
 	return out
 }
 
+// heatmapScopedGrenades — the grenade projectile rows the heatmap's
+// party rule covers (the two the rasterizers query — grenade_throw /
+// grenade — plus the bounce/rest siblings of the same throw: same
+// thrower, same side — a mixed sided/unsided flight would be
+// incoherent).
+var heatmapScopedGrenades = []string{
+	models.EventGrenade, models.EventGrenadeThrow,
+	models.EventGrenadeBounce, models.EventGrenadeLand,
+}
+
+// heatmapScopedKinds — every event kind the Side/Team keys constrain:
+// kill (the kills AND deaths heatmaps both query EventKill — the
+// endpoint comes from the enabled view's KillRole), damage, and the
+// grenade projectile rows. Every OTHER kind has no heatmap population:
+// the side/team setting is never guessed onto one (this also keeps
+// playerless kinds like round_start visible under a side filter).
+var heatmapScopedKinds = append([]string{models.EventKill, models.EventDamage}, heatmapScopedGrenades...)
+
+// endpointScopeClause renders ONE Side/Team clause — the per-kind
+// endpoint scoping over heatmapScopedKinds, AND'ed into the WHERE by the
+// caller:
+//
+//	(kind = kill       → the KillRole endpoint: kills-only → attacker,
+//	                      deaths-only → victim, both/neither → either)
+//	OR (kind = damage  → victim)               (the damage heatmap's party)
+//	OR (kind IN grenades → the thrower)        (the throw heatmaps' party)
+//	OR (kind NOT IN <covered>)                 (no heatmap population:
+//	                                            unconstrained)
+//
+// `endpoint` renders the per-role test with its own arguments: Side
+// builds the round_player_sides EXISTS (the endpoint's side AT e.round);
+// Team builds the rules.StartSide CASE over the already-joined final
+// side (ap/vp.side — eventRowFrom's players joins). killRole selects the
+// kill row's endpoint — the same derivation the SteamID clause uses
+// (killRoleFor). The caller validates its literal first: an invalid
+// side/team never reaches here (no clause — the KillRole discipline).
+func endpointScopeClause(endpoint func(role string) (string, []any), killRole string) (string, []any) {
+	att, attArgs := endpoint("attacker")
+	vic, vicArgs := endpoint("victim")
+	kill, killArgs := att, attArgs
+	if role := scrub(killRole); role == "victim" {
+		kill, killArgs = vic, vicArgs
+	} else if role != "attacker" { // "any"/""/unknown → either endpoint
+		kill = "(" + att + " OR " + vic + ")"
+		killArgs = append(append([]any{}, attArgs...), vicArgs...)
+	}
+	ph := func(list []string) string {
+		return strings.TrimSuffix(strings.Repeat("?,", len(list)), ",")
+	}
+	clause := "(" +
+		"(e.kind = ? AND " + kill + ")" +
+		" OR (e.kind = ? AND " + vic + ")" +
+		" OR (e.kind IN (" + ph(heatmapScopedGrenades) + ") AND " + att + ")" +
+		" OR (e.kind NOT IN (" + ph(heatmapScopedKinds) + ")))"
+	args := make([]any, 0, 2+len(killArgs)+len(vicArgs)+len(attArgs)+
+		len(heatmapScopedGrenades)+len(heatmapScopedKinds))
+	args = append(args, models.EventKill)
+	args = append(args, killArgs...)
+	args = append(args, models.EventDamage)
+	args = append(args, vicArgs...)
+	args = append(args, kindsToAny(heatmapScopedGrenades)...)
+	args = append(args, attArgs...)
+	args = append(args, kindsToAny(heatmapScopedKinds)...)
+	return clause, args
+}
+
 // GetEvents returns typed timeline rows for a filter, ordered by seq.
 // The round bounds are a PARTIAL inclusive range (RoundFrom/RoundTo, 0 =
 // open on that side — round 0 never exists, so 0 is the "unset"
@@ -920,9 +987,10 @@ func (s *Store) queryEvents(f models.EventFilter, exactRound *int) ([]models.Eve
 	// selected never fires (no-op). "any"/"" (both or neither category
 	// enabled) adds no clause: today's behavior. Structurally separate
 	// from the round-range block above and the bbox either-endpoint
-	// predicate below — the side/team join lands beside this block next
-	// (Q2). The kind literal rides a placeholder (models.EventKill), so
-	// the clause can never drift from the stored spelling.
+	// predicate below — the Side/Team clauses (the heatmap mirror) land
+	// between this block and the bbox. The kind literal rides a
+	// placeholder (models.EventKill), so the clause can never drift from
+	// the stored spelling.
 	if sid := scrub(f.SteamID); sid != "" {
 		switch scrub(f.KillRole) {
 		case "attacker":
@@ -930,6 +998,74 @@ func (s *Store) queryEvents(f models.EventFilter, exactRound *int) ([]models.Eve
 		case "victim":
 			w.add("(e.kind != ? OR e.victim = ?)", models.EventKill, sid)
 		}
+	}
+	// Side/Team clauses (EventFilter.Side / EventFilter.Team — the FE's
+	// side-at-round / start-side keys): THE mirror of the heatmap's Team
+	// selector (analyticservice.heatmapEvents side-checks `party`, the
+	// endpoint ITS player filter uses, at the EVENT'S ROUND through
+	// round_player_sides) — the owner's rule is that a feed carrying
+	// these settings reflects the settings the heatmap was generated
+	// from. Both keys are independent AND'ed clauses over the SAME
+	// endpoint map (endpointScopeClause): kill → the KillRole endpoint
+	// (kills-only → the kills heatmap's attacker, deaths-only → the
+	// deaths heatmap's victim, both/neither → either endpoint — no
+	// single heatmap view), damage → victim, the grenade projectile
+	// rows → the thrower, every other kind UNCONSTRAINED (no heatmap
+	// population exists to reflect — the setting is never guessed onto
+	// one, which also keeps playerless kinds like round_start visible
+	// under a side filter).
+	//   Side = the endpoint's side AT e.round: the exact freeze-end
+	//     sample (round_player_sides — no sample → no match, mirroring
+	//     the heatmap's sideAt "" ≠ "ct"; no parity is ever guessed).
+	//   Team = the endpoint's START side (identity): ap/vp.side — the
+	//     players joins eventRowFrom already carries — mapped through
+	//     rules.StartSide over the match's side-switch count (one tiny
+	//     query, only when the key is set). The heatmap has NO identity
+	//     notion (its selector is side-at-round), so Team mirrors Side's
+	//     endpoints with the start-side value; the parity lives in
+	//     internal/rules, never re-expressed in SQL.
+	// Both literals validate FIRST (only the exact "ct"/"t" spellings —
+	// anything else adds no clause, the KillRole discipline: never a
+	// guessed filter). Structurally separate from the round-range block
+	// above, the kill-role clause and the bbox predicate below — the
+	// blocks compose (side+team+player+role).
+	if sv := scrub(f.Side); sv == "ct" || sv == "t" {
+		endpoint := func(role string) (string, []any) {
+			col := "attacker"
+			if role == "victim" {
+				col = "victim"
+			}
+			// The endpoint's side at THIS event's round — the correlated
+			// lookup mirrors the heatmap's exact[round][steam] read.
+			return "EXISTS (SELECT 1 FROM round_player_sides rps" +
+				" WHERE rps.match_id = e.match_id AND rps.round = e.round" +
+				" AND rps.steam_id = e." + col + " AND rps.side = ?)", []any{sv}
+		}
+		clause, args := endpointScopeClause(endpoint, f.KillRole)
+		w.add(clause, args...)
+	}
+	if tv := scrub(f.Team); tv == "ct" || tv == "t" {
+		var sw int
+		if err := s.db.QueryRow(`SELECT side_switches FROM matches WHERE id = ?`, f.MatchID).
+			Scan(&sw); err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return nil, fmt.Errorf("store: get events side switches: %w", err)
+		}
+		// The two Go-computed identities: rules.StartSide owns the flip
+		// (odd switch count), so SQL only maps a final side onto its
+		// identity literal — the parity never lands here. Both inputs are
+		// valid sides, so StartSide always yields ct/t (never "").
+		startCT := rules.StartSide("ct", sw)
+		startT := rules.StartSide("t", sw)
+		endpoint := func(role string) (string, []any) {
+			alias := "ap"
+			if role == "victim" {
+				alias = "vp"
+			}
+			return "(CASE " + alias + ".side WHEN 'ct' THEN ? WHEN 't' THEN ? END = ?)",
+				[]any{startCT, startT, tv}
+		}
+		clause, args := endpointScopeClause(endpoint, f.KillRole)
+		w.add(clause, args...)
 	}
 	// M3 advanced filters: every clause is an AND'ed bound
 	// parameter; zero/""/nil means unconstrained. The distance bounds are

@@ -4,9 +4,11 @@
   // no kind select here) — see lib/replay/landmarks.js CATEGORIES.
   //
   // Props:
-  //   filter   — {roundFrom, roundTo, steamId, weapon, distMin, distMax,
+  //   filter   — {roundFrom, roundTo, steamId, side, team, weapon, distMin, distMax,
   //               headshotOnly, bbox:{minX,minY,maxX,maxY}}
   //              (the typed/scope subset — cats/gname live on the parent).
+  //              side/team are the heatmap-mirror keys ('' | 'ct' | 't' —
+  //              landmarks.sideVal is the ONE spelling of the rule).
   //              The round and distance bounds are INCLUSIVE and PARTIAL:
   //              empty/0 = open on that side (min only = no max and vice
   //              versa; round 0 never exists, so 0 is the "unset" bound).
@@ -19,6 +21,7 @@
   //              reset that also clears the category selection).
   import { getScoreboard } from '../services.js';
   import { listedPlayers } from '../players.js';
+  import { sideVal } from '../replay/landmarks.js';
 
   let { filter = {}, onchange = () => {}, id = 0, showReset = true } = $props();
 
@@ -91,6 +94,8 @@
     roundFrom: 0, // 0 = open (round 0 never exists → 0 can only mean unset)
     roundTo: 0,
     steamId: '',
+    side: '', // '' = unconstrained; 'ct' | 't' (landmarks.sideVal)
+    team: '',
     weapon: '',
     distMin: 0, // 0/"" = unconstrained (either side of the range may be open)
     distMax: 0,
@@ -128,6 +133,8 @@
       roundFrom: roundNum(s.roundFrom),
       roundTo: roundNum(s.roundTo),
       steamId: s.steamId || s.player || '',
+      side: sideVal(s.side),
+      team: sideVal(s.team),
       weapon: s.weapon || '',
       distMin: num(s.distMin),
       distMax: num(s.distMax),
@@ -243,6 +250,37 @@
       {#each players as p (p.steamId)}
         <option value={p.steamId}>{p.name}</option>
       {/each}
+    </select>
+  </label>
+
+  <!-- Side and Team — the heatmap-mirror keys, each on its own row like
+       Player/Weapon. Side = the side AT the event's round (swaps at
+       halftime): the COLOR follows the side at that moment — the
+       .side-ct/.side-t spellings (style.css: "For SIDE semantics keep
+       .ct/.t/.side-*"). Team = the START-side IDENTITY (constant across
+       halftime): the .team-start-* classes lib/teams.js teamStartClass
+       derives (started CT → indigo, started T → orange); the team NAMES
+       are not in this component's context, so the options spell the
+       identity out ("Started CT"/"Started T") rather than guessing a
+       name — never pattern text, and an unresolvable identity stays
+       neutral. Both carry the exact ct/t wire values only
+       (landmarks.sideVal); both are plain filter state (they never
+       position the replay — only ?tick= does). -->
+  <label class="filt-grp filt-line" for="filt-side">
+    Side
+    <select class="input" id="filt-side" value={f.side} onchange={(e) => set('side', e.currentTarget.value)}>
+      <option value="">All</option>
+      <option value="ct" class="side-ct">CT</option>
+      <option value="t" class="side-t">T</option>
+    </select>
+  </label>
+
+  <label class="filt-grp filt-line" for="filt-team">
+    Team
+    <select class="input" id="filt-team" value={f.team} onchange={(e) => set('team', e.currentTarget.value)}>
+      <option value="">All</option>
+      <option value="ct" class="team-start-ct">Started CT</option>
+      <option value="t" class="team-start-t">Started T</option>
     </select>
   </label>
 
