@@ -11,6 +11,9 @@ auto-updater.
 relative to `src/`; `make` targets run from the repo root via the
 forwarding Makefile.**
 
+Product vision, philosophy, and feature policy: see `PRODUCT.md` at the
+repo root — it is the authority on what Spectra is and isn't.
+
 Supported platforms: **Linux, Windows** (desktop only). The stock
 Wails mobile scaffolding (iOS/Android) is removed from `build/` and
 gitignored — `wails3 update build-assets` may re-extract it locally; do
@@ -170,7 +173,7 @@ paths (everything else) — resolve project paths against `src/`.
 | `Taskfile.yml` + `build/` | stock Wails v3 build system (per-OS tasks, packaging, icons, platform metadata). `build/config.yml` holds product name/ID/version; run `make build-assets` after editing it |
 | `build/appicon.png` | the app icon source (512×512 PNG); `wails3 task common:generate:icons` (run automatically by every build) derives `.ico` |
 | `Makefile` (in `src/`) | the single source of build/package commands, shared with CI; the repo-root `Makefile` is a thin forwarder (`make -C src <target>`) |
-| `README.md` | the app's **front page** — the GitHub repo is the primary distribution channel, so README is player-facing product copy (features, download), NOT developer documentation. Dev depth belongs here or in the Makefile; keep README brief (its Developers section = "how to run this repo locally", nothing deeper), and no screenshots for now |
+| `README.md` | repo-root front page: player-facing product copy (features, download); the full rule lives in `PRODUCT.md` |
 | `CS2.md` | domain-knowledge cache for CS2 facts (formats, mechanics, rules, events); see "CS2 domain knowledge" |
 | `golden/` | the demo pool, all tracked via **Git LFS** (`.gitattributes`): `de_cache.dem.zst` is the golden acceptance demo (formerly `donk.dem.zst`), the other `de_*.dem.zst` files are archived map demos not yet onboarded to tests; acceptance tests parse the golden one and skip if absent; regenerate golden fixtures deliberately when extraction changes |
 
@@ -371,15 +374,6 @@ Canonical homes (extend these, don't fork them):
   parallel agent's DOM runs). Golden
   fixtures may only be regenerated deliberately, with the diff explained —
   a fixture diff without justification is a rejected change.
-- **Deliberate non-consolidations (distinct questions — leave as
-  variants):** Heatmaps vs Replay (aggregate vs live); per-match vs career
-  rollups (share the SQL consts, stay variants); `fmtClock` tick vs second
-  units; palette vs sidebar (share one nav list, different modality);
-  `internal/plugin.MetricDef` vs `store.PluginMetricDef` (manifest schema
-  and write input — not service DTOs); `MatchSummary.path`/`.sha256` on
-  the list projection (`Scanner.importIndex`'s import dedupe and
-  MatchPicker's search read them off `ListMatches` — single-match
-  `GetMatch` is a separate struct).
 
 ## CS2 domain knowledge
 
