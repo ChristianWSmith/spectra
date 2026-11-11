@@ -120,7 +120,11 @@
   background: none;
   border: none;
   padding: 0;
-  color: var(--ct);
+  /* An unresolved name is NOT a side: the old var(--ct) default painted
+     every plain link CT (a guessed side). Inherit the surrounding text;
+     a RESOLVED side keeps its color from the :root .side-* /
+     .team-start-* rules (they outrank this one); hover keeps the accent. */
+  color: inherit;
   cursor: pointer;
   font: inherit;
   text-decoration: underline dotted;
@@ -405,11 +409,14 @@
   cursor: pointer;
 }
 
-/* Scoreboard player-name profile link (Match.svelte). */
+/* Scoreboard player-name profile link (Match.svelte). Same rule as
+   .comb-name-btn: color: inherit — an unresolved name wears the row's
+   text color, never the CT side color (a guessed side); a resolved
+   side/identity class still wins through :root. */
 .name-link {
   padding: 0 2px !important;
   font-size: inherit;
-  color: var(--ct);
+  color: inherit;
   text-decoration: underline dotted;
   text-underline-offset: 2px;
 }

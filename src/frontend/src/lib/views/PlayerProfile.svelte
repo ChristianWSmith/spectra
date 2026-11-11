@@ -17,6 +17,7 @@
   import SuggestInput from '../components/SuggestInput.svelte';
   import { profileBackTarget } from '../nav.js';
   import { listedPlayers } from '../players.js';
+  import { teamStartClass } from '../teams.js';
 
   // query is the route's own (?back= origin for the return trip);
   // origin is the hash the app navigated from — App records it on
@@ -409,7 +410,17 @@
                 </td>
                 <td class="num">{h.scoreCT}–{h.scoreT}</td>
                 <td>
-                  <span class="chip side {h.startSide}" title="Side the player started the match on">
+                  <!-- h.startSide is already the START side (identity, not
+                       a live side): teamStartClass with zero switches is
+                       the no-flip form — it maps the start side straight
+                       to its own identity class ('' → no class, never a
+                       guessed color). NEVER `.chip side` here: that
+                       paints the side-AT-TIME color on a start-side
+                       value. -->
+                  <span
+                    class="chip {teamStartClass(h.startSide, 0)}"
+                    title="Side the player started the match on"
+                  >
                     {(h.startSide || '—').toUpperCase()}
                   </span>
                 </td>

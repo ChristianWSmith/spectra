@@ -1213,7 +1213,7 @@
         {@const state = recomputeState[m.id]}
         <div class="sett-match-row">
           <span>
-            <span class="chip side ct">#{m.id}</span>
+            <span class="chip">#{m.id}</span>
             {m.map || '—'} · {m.scoreCT}–{m.scoreT} · {fmtDate(m.extractedAt)}
           </span>
           <span class="row-actions">
