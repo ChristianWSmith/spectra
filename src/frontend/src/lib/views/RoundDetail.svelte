@@ -203,8 +203,33 @@
   // which buildHash drops): the round's start→end span for the header's
   // "Watch round", ±10 s around the event tick for the kill-feed and
   // bomb-timeline ▶ buttons (nav.entryLoopSpan / nav.entryLoopAround).
-  function watchTick(tick, loop) {
-    nav(replayHash(id, {}, { tick, loop, back: `match/${id}/round/${round}` }));
+  // `follow` is ENTRY CONTEXT (never a filter): the actor of the ROW the
+  // link came from — the killer for a kill row, the planter/defuser for
+  // a bomb row — so the replay's camera lands on them. Absent actor →
+  // undefined, and buildHash drops it: never a guessed follow. The
+  // round-level header link passes none (round controls never follow).
+  function watchTick(tick, loop, follow) {
+    // `|| undefined` — buildHash drops null/undefined but would keep an
+    // empty string as `follow=`; an actor-less row stamps NOTHING.
+    nav(replayHash(id, {}, { tick, loop, follow: follow || undefined, back: `match/${id}/round/${round}` }));
+  }
+
+  // The bomb-timeline ▶ copy + follow: a plant records its planter and a
+  // defuse its defuser in `attacker`; bomb_explode attributes to the bomb
+  // entity and has NO actor — no follow then, and the title never claims
+  // one.
+  function bombWatch(e) {
+    const who = e.attackerName || e.attacker;
+    const role = e.kind === 'bomb_plant' ? 'planter' : e.kind === 'bomb_defuse' ? 'defuser' : null;
+    return e.attacker && role
+      ? {
+          title: `Watch this bomb event — follow ${who} (${role})`,
+          label: `Watch from tick ${e.tick} — follow ${who}`,
+        }
+      : {
+          title: 'Watch this bomb event in the replay',
+          label: `Watch from tick ${e.tick} in the replay`,
+        };
   }
 </script>
 
@@ -212,13 +237,17 @@
   <header class="view-header">
     <button class="btn" onclick={() => nav(backPath ? '/' + backPath : `/match/${id}`)}><span class="codicon codicon-arrow-left"></span> Back</button>
     {#if detail}
+      <!-- Round-level control: ICON-ONLY play (the one canonical tick-
+           link glyph — no label text, no chevron/arrow), round-level so
+           it stamps NO follow. -->
       <button
         class="btn primary"
-        title="Watch this round from its start in the replay"
+        title="Watch round {round} from its start in the replay"
+        aria-label="Watch round {round}"
         onclick={() =>
           watchTick(detail.round.startTick || 0, entryLoopSpan(detail.round.startTick, detail.round.endTick))}
       >
-        <span class="codicon codicon-play"></span> Watch round
+        <span class="codicon codicon-play" aria-hidden="true"></span>
       </button>
       <h1>
         {#if roundKind(detail.round)}
@@ -272,10 +301,10 @@
     <!-- Round analysis: the round's result, kill feed and bomb timeline
          (the round-detail read's typed events), with economy and this
          round's chat alongside. Every event row drills into the replay
-         at its tick (watchTick — ▶ rows stamp a ±10 s ?loop= range, the
-         header the round's own span); outside this view nothing links
-         this round through a landmark FILTER — buttons seek, never
-         filter. -->
+         at its tick (watchTick — ▶ rows stamp a ±10 s ?loop= range AND
+         the row's actor as ?follow=, the header the round's own span and
+         no follow); outside this view nothing links this round through a
+         landmark FILTER — buttons seek, never filter. -->
     <div class="round-grid">
       <div class="round-side">
         <section class="panel">
@@ -385,10 +414,14 @@
                       <td>
                         <button
                           class="btn small ghost"
-                          title="Watch from this kill in the replay"
-                          aria-label="Watch from tick {k.tick} in the replay"
-                          onclick={() => watchTick(k.tick, entryLoopAround(k.tick, tickRate))}
-                          ><span class="codicon codicon-play"></span></button
+                          title={k.attacker
+                            ? `Watch from this kill — follow ${k.attackerName || k.attacker} (killer)`
+                            : 'Watch from this kill in the replay'}
+                          aria-label={k.attacker
+                            ? `Watch from tick ${k.tick} — follow ${k.attackerName || k.attacker}`
+                            : `Watch from tick ${k.tick} in the replay`}
+                          onclick={() => watchTick(k.tick, entryLoopAround(k.tick, tickRate), k.attacker)}
+                          ><span class="codicon codicon-play" aria-hidden="true"></span></button
                         >
                       </td>
                     </tr>
@@ -433,10 +466,10 @@
                       <td>
                         <button
                           class="btn small ghost"
-                          title="Watch from this event in the replay"
-                          aria-label="Watch from tick {e.tick} in the replay"
-                          onclick={() => watchTick(e.tick, entryLoopAround(e.tick, tickRate))}
-                          ><span class="codicon codicon-play"></span></button
+                          title={bombWatch(e).title}
+                          aria-label={bombWatch(e).label}
+                          onclick={() => watchTick(e.tick, entryLoopAround(e.tick, tickRate), e.attacker)}
+                          ><span class="codicon codicon-play" aria-hidden="true"></span></button
                         >
                       </td>
                     </tr>

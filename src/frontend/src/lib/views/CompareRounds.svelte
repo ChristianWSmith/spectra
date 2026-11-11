@@ -1,7 +1,8 @@
 <script>
   // Side-by-side round comparison — a distinct analytical view (not an
   // event browser): its bounded event sequence renders through the shared
-  // LandmarkRow and links into Replay's landmark feed at that tick. The
+  // LandmarkRow and links into Replay at that tick, following the row's
+  // actor when it has one (openEvent below). The
   // selected rounds ride the URL (?rounds=3,5,7), as does the origin path
   // (?back=).
   //
@@ -138,9 +139,29 @@
 
   // …and both click and ▶ land in it through this handler — with a ±10 s
   // entry loop around the tick (nav.entryLoopAround), the same anchor
-  // every event ▶ link stamps.
+  // every event ▶ link stamps, plus the row's ACTOR as the camera
+  // follow: `attacker` is the killer of a kill, the thrower of a throw,
+  // the planter/defuser of a bomb row — actor-less rows (round_start /
+  // round_end, chat) stamp none, and a null stamp drops the param (never
+  // a guessed follow). `sel` stays the entry selection.
   function openEvent(row) {
-    nav(replayHash(id, {}, { tick: row.tick, loop: entryLoopAround(row.tick, tickRate), sel: row.key, back: backToCompare }));
+    nav(replayHash(id, {}, {
+      tick: row.tick,
+      loop: entryLoopAround(row.tick, tickRate),
+      sel: row.key,
+      follow: row.attacker || undefined,
+      back: backToCompare,
+    }));
+  }
+
+  // The row ▶'s own tooltip (passed to LandmarkRow): names the follow so
+  // the icon-only button says what it does; actor-less rows keep the
+  // component's default seek copy.
+  function seekCopy(row) {
+    const who = row.attackerName || row.attacker;
+    return row.attacker
+      ? { title: `Watch this event — follow ${who}`, label: `Watch at tick ${row.tick} — follow ${who}` }
+      : { title: '', label: '' };
   }
 
   function replayStart(col) {
@@ -358,6 +379,8 @@
                     {row}
                     {nav}
                     compact={true}
+                    seekTitle={seekCopy(row).title}
+                    seekLabel={seekCopy(row).label}
                     onselect={openEvent}
                     onseek={openEvent}
                   />
@@ -368,11 +391,15 @@
             </div>
 
             <div class="toolbar cmp-actions">
+              <!-- Round-level tick link → ICON-ONLY play (the one
+                   canonical glyph, no label) and NO follow (a round-level
+                   control never follows a player). -->
               <button
                 class="btn small"
                 title="Replay from the round start ({fmtTickSeconds(col.detail.round.startTick, tickRate)})"
+                aria-label="Replay from the round start"
                 onclick={() => replayStart(col)}
-              ><span class="codicon codicon-play"></span> Replay start</button>
+              ><span class="codicon codicon-play" aria-hidden="true"></span></button>
               <button class="btn small" onclick={() => openRound(col)}>Round detail</button>
             </div>
           {/if}

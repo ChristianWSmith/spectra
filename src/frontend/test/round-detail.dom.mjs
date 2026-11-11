@@ -230,7 +230,10 @@ const detailFor = (n, extra = {}) => ({
   events: [
     { id: 1, seq: 1, tick: (n - 1) * 2000 + 100, round: n, kind: 'kill', attacker: '76561198012345678', attackerName: 'donk', victim: '76561198012345679', victimName: 'zweih', weapon: 'ak47', headshot: true },
     { id: 2, seq: 2, tick: (n - 1) * 2000 + 900, round: n, kind: 'kill', attacker: '76561198012345679', attackerName: 'zweih', victim: '76561198012345678', victimName: 'donk', weapon: 'awp' },
+    // The plant records NO actor (the bomb entity) — its ▶ must stamp no
+    // follow; the defuse records its defuser — its ▶ must stamp one.
     { id: 3, seq: 3, tick: (n - 1) * 2000 + 1200, round: n, kind: 'bomb_plant', attacker: '', attackerName: '', site: 'A' },
+    { id: 4, seq: 4, tick: (n - 1) * 2000 + 1500, round: n, kind: 'bomb_defuse', attacker: '76561198012345679', attackerName: 'zweih', site: 'A' },
   ],
   chat: [],
   ...extra,
@@ -271,29 +274,69 @@ const result = sections(root, 'Round result')[0];
 check('Round result card still carries the reason', result?.textContent.includes('target bombed'), result?.textContent.slice(0, 200));
 check('Economy card still carries equip', sections(root, 'Economy')[0]?.textContent.includes('4200'), '');
 
-console.log('B. "Events in Replay" is gone; "Watch round" seeks with a loop');
+console.log('B. "Events in Replay" is gone; every tick link is an icon-only play (follow where a row has an actor)');
 check('no Events-in-Replay button', !/Events in Replay/.test(root.textContent), root.querySelector('header')?.textContent.slice(0, 200));
 check('no landmark-feed filter button anywhere', !/landmark feed/.test(root.textContent), '');
-const watch = [...(header?.querySelectorAll('button') || [])].find((b) => b.textContent.includes('Watch round'));
-check('Watch round present', !!watch);
+const headerBtns = [...(header?.querySelectorAll('button') || [])];
+const watch = headerBtns.find((b) => (b.getAttribute('title') || '').startsWith('Watch round 5'));
+check('Watch round present (found by TITLE — it has no visible text now)', !!watch);
+check('Watch round is icon-only', !!watch && watch.textContent.trim() === '', watch?.textContent);
+check('Watch round carries the canonical play glyph', !!watch?.querySelector('.codicon-play'), watch?.innerHTML);
+check(
+  'Watch round has an aria-label',
+  watch?.getAttribute('aria-label') === 'Watch round 5',
+  watch?.getAttribute('aria-label'),
+);
 click(watch);
 await sleep();
 const navWatch = (globalThis.__nav || []).at(-1);
 check(
-  'Watch round stamps the round tick + span loop, no filter',
+  'Watch round stamps the round tick + span loop, no filter, NO follow (round-level)',
   !!navWatch &&
     navWatch.includes('tick=8000') &&
     navWatch.includes('loop=8000,9999') &&
     !navWatch.includes('roundFrom') &&
-    !navWatch.includes('cat='),
+    !navWatch.includes('cat=') &&
+    !navWatch.includes('follow='),
   navWatch || 'no navigation',
 );
-const killBtn = [...root.querySelectorAll('button')].find((b) => b.getAttribute('title') === 'Watch from this kill in the replay');
-check('kill-feed ▶ rows kept', !!killBtn);
+const killBtn = [...root.querySelectorAll('button')].find((b) =>
+  (b.getAttribute('title') || '').startsWith('Watch from this kill — follow'),
+);
+check('kill-feed ▶ rows kept, icon-only, follow-aware title', !!killBtn && killBtn.textContent.trim() === '' && !!killBtn.querySelector('.codicon-play'), killBtn?.getAttribute('title'));
+check(
+  'kill ▶ title names the KILLER it follows',
+  killBtn?.getAttribute('title') === 'Watch from this kill — follow donk (killer)',
+  killBtn?.getAttribute('title'),
+);
 click(killBtn);
 await sleep();
 const navKill = (globalThis.__nav || []).at(-1);
-check('kill ▶ still seeks with a ±10 s loop', !!navKill && navKill.includes('tick=8100') && navKill.includes('loop=7460,8740'), navKill || 'no navigation');
+check(
+  'kill ▶ seeks with a ±10 s loop AND follows the killer, no filter',
+  !!navKill &&
+    navKill.includes('tick=8100') &&
+    navKill.includes('loop=7460,8740') &&
+    navKill.includes('follow=76561198012345678') &&
+    !navKill.includes('cat='),
+  navKill || 'no navigation',
+);
+// Bomb rows: the plant records no actor (the bomb entity) → no follow;
+// the defuse records its defuser → follow.
+const bombSection = sections(root, 'Bomb')[0];
+const bombBtns = [...(bombSection?.querySelectorAll('tbody button') || [])];
+const plantBtn = bombBtns.find((b) => b.getAttribute('title') === 'Watch this bomb event in the replay');
+check('bomb plant (actor-less) keeps the neutral title + no follow claim', !!plantBtn, bombBtns.map((b) => b.getAttribute('title')).join(' | '));
+click(plantBtn);
+await sleep();
+const navPlant = (globalThis.__nav || []).at(-1);
+check('bomb plant ▶ seeks with NO follow', !!navPlant && navPlant.includes('tick=9200') && !navPlant.includes('follow='), navPlant || 'no navigation');
+const defuseBtn = bombBtns.find((b) => (b.getAttribute('title') || '').startsWith('Watch this bomb event — follow'));
+check('bomb defuse ▶ names the defuser it follows', defuseBtn?.getAttribute('title') === 'Watch this bomb event — follow zweih (defuser)', defuseBtn?.getAttribute('title'));
+click(defuseBtn);
+await sleep();
+const navDefuse = (globalThis.__nav || []).at(-1);
+check('bomb defuse ▶ seeks AND follows the defuser', !!navDefuse && navDefuse.includes('tick=9500') && navDefuse.includes('follow=76561198012345679'), navDefuse || 'no navigation');
 
 console.log('C. ribbon: centered row, icon-only chevron transport');
 const nav2 = root.querySelector('.round-nav');

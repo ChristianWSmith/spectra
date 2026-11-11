@@ -30,7 +30,7 @@
     fmtInt,
     fmtMetric,
   } from '../fmt.js';
-  import { teamNames, teamStartClass, playerSideClassAt, displayHalfScore } from '../teams.js';
+  import { teamNames, teamStartClass, playerSideClassAt } from '../teams.js';
   import { isCounted, roundIndexLabel, separatorFlags } from '../rounds.js';
   import { winnerTeamKey } from '../sideparity.js';
   import { MATCH_TABS, matchTabSlug, buildHash } from '../router.js';
@@ -588,12 +588,6 @@
     return key ? teams[key] : '';
   }
 
-  // The header's half score in the teams' DISPLAY order (the scoreline's
-  // order): displayHalfScore (lib/teams.js) re-maps the stored first-half-
-  // side numbers through the side-switch parity, so the golden demo reads
-  // "half 4–8" instead of the stored 8–4.
-  const halfScore = $derived(displayHalfScore(match));
-
   const rosters = $derived.by(() => {
     const ct = scoreboard.filter((p) => p.side === 'ct');
     const t = scoreboard.filter((p) => p.side === 't');
@@ -673,17 +667,28 @@
           <span class="score">{match.scoreCT}–{match.scoreT}</span>
           <span class={teamCls('t')}>{teams.t}</span>
         </h1>
-        <!-- The view's primary action: it rides the meta line below the
-             team names/scoreline (right-aligned, so a long matchup
-             wraps the line rather than crowding the title), carries the
-             play codicon and a size bump (.match-replay), so it still
-             reads as the primary action without costing a line of its
-             own. It navigates via openReplay below. Tickrate, voice
+        <!-- The view's primary action: the FIRST cell of the meta line
+             below the team names/scoreline — far LEFT, with the line's
+             details following to its right (the component-scoped rule at
+             the end of this file zeroes the global .match-replay
+             auto-margin that used to park it on the right). It carries
+             the play codicon and a size bump (.match-replay), so it
+             still reads as the primary action without costing a line of
+             its own. It launches at NO tick — a plain fresh entry (or the
+             keep-alive expand), via openReplay below. Tickrate, voice
              presence and parser version live in the Details tab (Key
              facts); only the encrypted-chat key state stays up here. -->
         <p class="muted match-sub">
+          <button
+            class="btn primary match-replay"
+            title={expandReplay
+              ? 'Return to the replay (resumes where you left it)'
+              : 'Watch this match in the replay view'}
+            onclick={openReplay}
+          >
+            <span class="codicon codicon-play" aria-hidden="true"></span> Watch replay
+          </button>
           {match.map || '—'}
-          · first half {halfScore.first}–{halfScore.second}
           · {fmtDuration(match.playbackTimeS)}
           · patch {match.patchVersion}
           · <StatusChip status={match.status || 'ready'} title={match.error || ''} />
@@ -694,15 +699,6 @@
               ><span class="codicon codicon-lock"></span></span
             >
           {/if}
-          <button
-            class="btn primary match-replay"
-            title={expandReplay
-              ? 'Return to the replay (resumes where you left it)'
-              : 'Watch this match in the replay view'}
-            onclick={openReplay}
-          >
-            <span class="codicon codicon-play"></span> Watch replay
-          </button>
         </p>
       </div>
     </header>
@@ -1300,3 +1296,18 @@
     <p class="muted" role="status">Loading…</p>
   {/if}
 </div>
+
+<style>
+  /* Watch replay sits at the FAR LEFT of the .match-sub meta row (its
+     first flex child — the details follow to its right). The global
+     .match-replay rule in public/style.css carries `margin-left: auto`,
+     which parks it at the RIGHT end of that flex row; this component-
+     scoped override zeroes it for THIS row only instead of editing the
+     shared rule (public/style.css stays the design worker's file, and
+     the right-parked layout remains available to any other host).
+     Component CSS is injected after the global sheet and this selector
+     is more specific, so it wins. */
+  .match-sub .match-replay {
+    margin-left: 0;
+  }
+</style>

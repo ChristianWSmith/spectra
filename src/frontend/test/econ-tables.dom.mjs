@@ -4,7 +4,9 @@
 // the `.split-before` side-switch boundary row via rounds.separatorFlags,
 // the retired yellow pistol pip) and the EconCurve per-era stroke colors
 // (one <path> per team per side era, split at the COLUMN-BOUNDARY
-// midpoint so each round column reads exactly one era).
+// midpoint so each round column reads exactly one era) — plus the
+// Match HEADER row (Watch replay parked far LEFT of the meta line, the
+// "first half" segment cut, the half-score wiring removed).
 //
 // The driver builds a SELF-CONTAINED mirror of src/lib (every transitive
 // .js copied, every transitive .svelte compiled, services.js + the Wails
@@ -599,6 +601,48 @@ check(
   'the nested-.view margin rule is untouched',
   /margin-inline:\s*0/.test(ruleBody('\n.view > .view {') || ''),
   '.view > .view rule not found or changed',
+);
+
+console.log("H. Match header: Watch replay is the row's FAR-LEFT cell, first-half copy cut");
+root = await showMatch(dataFor(13), { routeTab: 'Rounds' });
+const sub = root.querySelector('.match-sub');
+check('the header meta row renders', !!sub, 'no .match-sub');
+const firstCell = sub?.children[0];
+check(
+  "Watch replay is the row's FIRST element (details follow to its right)",
+  !!firstCell && firstCell.classList.contains('match-replay') && [...sub.children].indexOf(firstCell) === 0,
+  sub ? [...sub.children].map((c) => c.className || c.tagName).join(' | ') : 'no .match-sub',
+);
+const subText = (sub?.textContent || '').replace(/\s+/g, ' ').trim();
+check(
+  'the details text follows the button (map reads AFTER "Watch replay")',
+  subText.indexOf('Watch replay') >= 0 && subText.indexOf('de_mirage') > subText.indexOf('Watch replay'),
+  subText.slice(0, 160),
+);
+check(
+  'the button STAYS LABELED with the play glyph (it launches at no tick)',
+  !!firstCell && /Watch replay/.test(firstCell.textContent) && !!firstCell.querySelector('.codicon-play'),
+  firstCell?.textContent,
+);
+check('"first half" is gone from the details line', !/first half/i.test(subText), subText.slice(0, 160));
+check(
+  'the remaining facts survive (map · duration · patch · status)',
+  subText.includes('de_mirage') && subText.includes('40m00s') && subText.includes('1.40') && !!sub.querySelector('.status, .chip'),
+  subText.slice(0, 200),
+);
+// Source pins (jsdom applies no CSS): the component-scoped override that
+// zeroes the global .match-replay auto-margin (which parks it RIGHT), and
+// the removed half-score wiring.
+const matchSrc = readFileSync('src/lib/views/Match.svelte', 'utf8');
+check(
+  'component-scoped style zeroes the auto-margin (the button parks LEFT)',
+  /\.match-sub\s+\.match-replay\s*\{[^}]*margin-left:\s*0/.test(matchSrc),
+  'no .match-sub .match-replay { margin-left: 0 } rule in Match.svelte',
+);
+check(
+  'the half-score wiring is fully gone (no dead halfScore/displayHalfScore)',
+  !matchSrc.includes('halfScore') && !matchSrc.includes('displayHalfScore'),
+  '',
 );
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

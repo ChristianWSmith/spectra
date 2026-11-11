@@ -200,7 +200,29 @@ check(
 const engRows = rows(engTable);
 check('two engagement rows', engRows.length === 2, String(engRows.length));
 const first = engRows[0]?.querySelectorAll('td') || [];
-check('round chip is the first data cell', first[1]?.textContent.trim() === 'R7', first[1]?.textContent);
+// The round cell lost its "R{n}" text with the icon-only pass: it is now
+// a SECOND play button in the same row (A5 ambiguity — the row's own ▶
+// follows the killer, this one watches the round). Both stay, told apart
+// by their titles.
+const engRoundBtn = first[1]?.querySelector('button');
+check(
+  'round cell is an icon-only play (no R{n} text left)',
+  !!engRoundBtn && first[1]?.textContent.trim() === '' && !!engRoundBtn.querySelector('.codicon-play'),
+  first[1]?.textContent,
+);
+check(
+  'round play title names the round',
+  engRoundBtn?.getAttribute('title') === 'Watch round 7 in the replay (from its start)',
+  engRoundBtn?.getAttribute('title'),
+);
+check('round play carries an aria-label', engRoundBtn?.getAttribute('aria-label') === 'Watch round 7', engRoundBtn?.getAttribute('aria-label'));
+const engPlayBtn = first[0]?.querySelector('button');
+check(
+  'A5: the row has TWO play buttons with DISTINCT titles',
+  !!engPlayBtn && !!engRoundBtn &&
+    engPlayBtn.getAttribute('title') !== engRoundBtn.getAttribute('title'),
+  JSON.stringify([engPlayBtn?.getAttribute('title'), engRoundBtn?.getAttribute('title')]),
+);
 check('time cell is time INTO the round', first[2]?.textContent.trim() === '0:10', first[2]?.textContent);
 check('raw tick kept in the cell title', first[2]?.getAttribute('title') === 'tick 10640', first[2]?.getAttribute('title'));
 check('kind chip intact', first[3]?.textContent.includes('opening'), first[3]?.textContent);
@@ -215,15 +237,41 @@ check(
   [...eng.querySelectorAll('.comb-kind')].map((b) => b.textContent.trim()).join(','),
 );
 
-// (B) the engagement ▶ keeps its seek tick and stamps the ±10 s entry
-// loop (nav.entryLoopAround — 10 s × 64 tick = 640 either side).
-click(first[0]?.querySelector('button'));
+// (B) the engagement ▶ keeps its seek tick, stamps the ±10 s entry
+// loop (nav.entryLoopAround — 10 s × 64 tick = 640 either side) AND the
+// KILLER as the camera follow (the owner's rule for kill rows).
+check(
+  'engagement ▶ is icon-only play with a follow-aware title',
+  !!engPlayBtn && engPlayBtn.textContent.trim() === '' && !!engPlayBtn.querySelector('.codicon-play') &&
+    engPlayBtn.getAttribute('title') === 'Watch this engagement — follow alice (killer)',
+  engPlayBtn?.getAttribute('title'),
+);
+click(engPlayBtn);
 await sleep();
 const navEng = (globalThis.__nav || [])[(globalThis.__nav || []).length - 1];
 check(
-  'engagement ▶ links tick + a ±10 s loop',
-  !!navEng && navEng.includes('tick=10640') && navEng.includes('loop=10000,11280'),
+  'engagement ▶ links tick + a ±10 s loop + follow=the killer, no filter',
+  !!navEng &&
+    navEng.includes('tick=10640') &&
+    navEng.includes('loop=10000,11280') &&
+    navEng.includes('follow=A') &&
+    !navEng.includes('cat='),
   navEng || 'no navigation',
+);
+
+// The round play: seek-with-loop like every round-level link, and NO
+// follow (round-level controls never follow a player).
+click(engRoundBtn);
+await sleep();
+const navRound = (globalThis.__nav || [])[(globalThis.__nav || []).length - 1];
+check(
+  'round play seeks to the round start + span, NO follow, no filter',
+  !!navRound &&
+    navRound.includes('tick=10000') &&
+    navRound.includes('loop=10000,10960') &&
+    !navRound.includes('follow=') &&
+    !navRound.includes('cat='),
+  navRound || 'no navigation',
 );
 
 console.log('B. clutches card lists WON clutches only');
@@ -236,15 +284,35 @@ check('lost clutch dropped', !clutchSec?.textContent.includes('dave'), '');
 check('lost clutch HP-left (1) gone with it', !clutchRows.some((r) => r.textContent.includes('1v2')), '');
 check('HP left column kept', clutchRows[0]?.textContent.includes('42'), clutchRows[0]?.textContent);
 
-// (B) the clutch ▶ keeps its anchor SEEK (replayAnchorTick) and stamps
-// the clutch's own start→end span as the entry ?loop=.
-click(clutchRows[0]?.querySelector('td button'));
+// (B) the clutch ▶ keeps its anchor SEEK (replayAnchorTick), stamps the
+// clutch's own start→end span as the entry ?loop=, and follows the
+// CLUTCH's solo (the row actor).
+const clutchPlay = clutchRows[0]?.querySelector('td button');
+check(
+  'clutch ▶ is icon-only play naming the solo it follows',
+  !!clutchPlay && clutchPlay.textContent.trim() === '' && !!clutchPlay.querySelector('.codicon-play') &&
+    clutchPlay.getAttribute('title') === 'Watch this clutch — follow carol',
+  clutchPlay?.getAttribute('title'),
+);
+click(clutchPlay);
 await sleep();
 const navClutch = (globalThis.__nav || [])[(globalThis.__nav || []).length - 1];
 check(
-  'clutch ▶ links tick + the clutch start→end loop',
-  !!navClutch && navClutch.includes('tick=10600') && navClutch.includes('loop=10480,10960'),
+  'clutch ▶ links tick + the clutch start→end loop + follow=the solo',
+  !!navClutch &&
+    navClutch.includes('tick=10600') &&
+    navClutch.includes('loop=10480,10960') &&
+    navClutch.includes('follow=C') &&
+    !navClutch.includes('cat='),
   navClutch || 'no navigation',
+);
+// …and the clutch row's round play is the SAME second-button pattern.
+const clutchRoundBtn = clutchRows[0]?.querySelectorAll('td')[1]?.querySelector('button');
+check(
+  'clutch row round play: icon-only, distinct title, no follow',
+  !!clutchRoundBtn && clutchRoundBtn.textContent.trim() === '' &&
+    clutchRoundBtn.getAttribute('title') === 'Watch round 7 in the replay (from its start)',
+  clutchRoundBtn?.getAttribute('title'),
 );
 
 console.log('C. only lost clutches → explicit empty state');
