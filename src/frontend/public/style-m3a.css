@@ -86,11 +86,14 @@
 
 /* One <path> per TEAM per SIDE era (EconCurve's `segments`): the stroke
    follows the SIDE the team held in that era — the side colors --ct/--t,
-   via .side-ct/.side-t — and swaps at every side switch (era boundary),
-   so a line's color flips where the teams swap sides. The solid/dashed
+   via .side-ct/.side-t — and swaps at every side switch at the COLUMN
+   BOUNDARY between the flip's two rounds (the shared midpoint split in
+   EconCurve), so each round column reads exactly one era and the
+   visible flip lands ON the flip round, never a round early. The
+   solid/dashed
    style stays the TEAM throughline: all of the match loser's segments
    are dashed, both stay solid when the winner is undecided. Adjacent
-   segments share their boundary point exactly; the round linecap/linejoin
+   segments share their split point exactly; the round linecap/linejoin
    closes that joint so the shared vertex cannot show an antialiasing
    seam between the two colors (segments restart the 7 5 dash there too). */
 .econ-line {

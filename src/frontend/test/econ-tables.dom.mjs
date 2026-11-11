@@ -3,7 +3,8 @@
 // the Winner cells via sideparity.winnerTeamKey + components/WinnerCell,
 // the `.split-before` side-switch boundary row via rounds.separatorFlags,
 // the retired yellow pistol pip) and the EconCurve per-era stroke colors
-// (one <path> per team per side era, shared boundary points).
+// (one <path> per team per side era, split at the COLUMN-BOUNDARY
+// midpoint so each round column reads exactly one era).
 //
 // The driver builds a SELF-CONTAINED mirror of src/lib (every transitive
 // .js copied, every transitive .svelte compiled, services.js + the Wails
@@ -470,7 +471,7 @@ check(
   String(rowsOf(table).findIndex((tr) => tr.classList.contains('split-before'))),
 );
 
-console.log('F. EconCurve: one path per team per side era, shared boundary points');
+console.log('F. EconCurve: one path per team per side era, split at the column boundary');
 const paths = [...root.querySelectorAll('.econ-line')];
 check('13 rows × one switch → 2 teams × 2 eras = 4 paths', paths.length === 4, String(paths.length));
 const sides = paths.map((p) => (p.classList.contains('side-ct') ? 'ct' : p.classList.contains('side-t') ? 't' : '?'));
@@ -485,13 +486,20 @@ check(
     paths[2].classList.contains('loser') && paths[3].classList.contains('loser'),
   paths.map((p) => p.getAttribute('class')).join(' | '),
 );
-// Continuity: adjacent segments share their boundary point EXACTLY (the
-// round linecap closes any antialiasing seam at the shared vertex).
+// Continuity: adjacent segments share their SPLIT point EXACTLY — the
+// midpoint of the straddling edge = the COLUMN BOUNDARY between the
+// flip's two rounds (the round linecap closes any antialiasing seam at
+// the shared vertex). W and the row count are EconCurve's own chart
+// constants for this fixture (viewBox 1000 wide, 13 rows).
 const coord = (tok) => tok.replace(/^[ML]/, '');
 const tokens = (p) => p.getAttribute('d').trim().split(/\s+/);
+const W = 1000;
+const NROWS = 13;
+const xAt = (i) => ((i + 0.5) / NROWS) * W; // the column CENTER of row i
+const BOUNDARY = (12 * W) / NROWS; // split x at the first flip (index 12)
 check(
-  'team-ct segments share the pre-switch vertex exactly (12 pts + 2 pts over 13 rows)',
-  tokens(paths[0]).length === 12 &&
+  'team-ct segments split at the column boundary (13 pts + 2 pts over 13 rows)',
+  tokens(paths[0]).length === 13 &&
     tokens(paths[1]).length === 2 &&
     coord(tokens(paths[0]).at(-1)) === coord(tokens(paths[1])[0]) &&
     tokens(paths[0]).at(-1).startsWith('L') &&
@@ -499,9 +507,38 @@ check(
   `${tokens(paths[0]).at(-1)} vs ${tokens(paths[1])[0]}`,
 );
 check(
-  'team-t segments share the same boundary point',
-  coord(tokens(paths[2]).at(-1)) === coord(tokens(paths[3])[0]),
+  'team-t segments share the same split point (13 + 2 tokens)',
+  tokens(paths[2]).length === 13 &&
+    tokens(paths[3]).length === 2 &&
+    coord(tokens(paths[2]).at(-1)) === coord(tokens(paths[3])[0]),
   `${tokens(paths[2]).at(-1)} vs ${tokens(paths[3])[0]}`,
+);
+const splitX = Number(coord(tokens(paths[0]).at(-1)).split(',')[0]);
+check(
+  "the shared split x is f*W/n (12·1000/13 ≈ 923.1), NOT round 12's vertex (884.6)",
+  Math.abs(splitX - BOUNDARY) < 0.05 && Math.abs(splitX - xAt(11)) > 1,
+  `splitX=${splitX} boundary=${BOUNDARY} xAt(11)=${xAt(11)}`,
+);
+// THE behavior pin the fix exists for: each round COLUMN reads exactly
+// ONE era — round 12's center lies strictly inside era 0's x-span, round
+// 13's strictly inside era 1's, and the two spans meet exactly ON the
+// column boundary between them, so the visible switch lands ON round 13
+// (the reported bug flipped the colors at round 12 instead).
+const xsOf = (p) => tokens(p).map((t) => Number(coord(t).split(',')[0]));
+const era0Xs = xsOf(paths[0]);
+const era1Xs = xsOf(paths[1]);
+const era0Max = Math.max(...era0Xs);
+const era1Min = Math.min(...era1Xs);
+check(
+  "round 12's column center is inside era 0, round 13's inside era 1 (the fix)",
+  xAt(11) < era0Max && era0Max === era1Min && era1Min < xAt(12) &&
+    era0Xs.every((x) => x <= era0Max) && era1Xs.every((x) => x >= era1Min),
+  `xAt(11)=${xAt(11)} era0Max=${era0Max} era1Min=${era1Min} xAt(12)=${xAt(12)}`,
+);
+check(
+  'era 1 keeps a drawable edge (≥2 vertices — never a lone M… that paints nothing)',
+  tokens(paths[1]).length >= 2 && tokens(paths[3]).length >= 2,
+  `${tokens(paths[1]).length} + ${tokens(paths[3]).length} vertices`,
 );
 check(
   'legend keeps the two identity-colored items (Alpha, Beta)',

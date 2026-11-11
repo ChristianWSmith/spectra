@@ -12,7 +12,10 @@
   // drawn as one <path> per SIDE era, recolored at every side switch
   // (.econ-line.side-ct/.side-t in public/style-m3a.css — the side colors
   // --ct/--t), because the color says which side that team held in those
-  // rounds.
+  // rounds. OWNERSHIP RULE: each round COLUMN reads exactly one era's
+  // color — the two eras share their split point at the COLUMN BOUNDARY
+  // (the midpoint of the straddling edge), so the visible switch lands ON
+  // the flip round (round 13), never a round early.
   import { fmtMoney } from '../fmt.js';
   import { teamKeyAt, flipIndexes, sideInEra } from '../sideparity.js';
   import { teamStartClass } from '../teams.js';
@@ -103,47 +106,64 @@
     return PAD_TOP + (1 - v / series.max) * (H - PAD_TOP - PAD_BOTTOM);
   }
 
-  // One polyline slice, index `from`..`to` INCLUSIVE: adjacent era
-  // segments overlap on ONE vertex (the flip's predecessor — the segment
-  // before ENDS there, the segment after STARTS there), so the two
-  // <path>s share that point EXACTLY, the edge leading into the new
-  // era's first round is drawn in the new era's color, and the drawn
-  // line stays continuous where the color flips (the round linecap in
-  // style-m3a.css closes the joint, so the shared vertex cannot show an
-  // antialiasing seam between the two colors).
-  function pathOver(vals, from, to) {
-    let d = '';
-    for (let i = from; i <= to; i++) {
-      d += `${i === from ? 'M' : 'L'}${xAt(i).toFixed(1)},${yAt(vals[i]).toFixed(1)}`;
-      if (i < to) d += ' ';
-    }
-    return d;
+  // One vertex of row i: its column CENTER (xAt), the one-decimal format
+  // every coordinate in the chart renders with.
+  function vertex(vals, i) {
+    return `${xAt(i).toFixed(1)},${yAt(vals[i]).toFixed(1)}`;
+  }
+
+  // The SPLIT point between two eras — the fix for "the lines switch
+  // colors one round too early": the shared point is NOT a data vertex
+  // but the MIDPOINT of the straddling edge (row f-1 → row f). Its x is
+  // the COLUMN BOUNDARY f * W / n — exactly halfway between the two
+  // column centers, since xAt is column-centered — and its y the average
+  // of the two vertex values, so the split sits ON the original straight
+  // edge: the drawn line's shape never changes, only which era owns
+  // which half. Every round column therefore reads exactly ONE era's
+  // color — round f-1 fully old, round f fully new — so the visible
+  // switch lands ON the flip round (13 for the first switch), not on
+  // round 12. Both adjacent segments build this point with the SAME
+  // expression (identical toFixed(1) coords → the seam closes; the round
+  // linecap in style-m3a.css finishes the joint).
+  function split(vals, f) {
+    return `${((f * W) / n).toFixed(1)},${((yAt(vals[f - 1]) + yAt(vals[f])) / 2).toFixed(1)}`;
+  }
+
+  // One polyline through an explicit, already-formatted point list.
+  function pathOf(points) {
+    return points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p}`).join(' ');
   }
 
   // One <path> per TEAM per SIDE era. The stroke color follows the SIDE
   // the team held in that era (.econ-line.side-ct/.side-t — the side
-  // colors --ct/--t), swapping at every side switch (era boundary); the
-  // solid/dashed style follows the TEAM (loser → dashed on all of its
-  // segments). Era edges are the counted-index flips (flipIndexes) —
-  // rows here ARE the counted rounds index-for-index (store.GetEconomy's
-  // SQL) — so era j spans from the predecessor of its OPENING flip (row
-  // 0 for era 0) to the predecessor of its CLOSING flip (the final row
-  // for the last era): the vertex just before each flip is the one the
-  // two adjacent segments share (see pathOver above). Side unknown can't
-  // happen for a 'ct'/'t' key (sideInEra only rejects a non-side), so
-  // every segment gets exactly one side class.
+  // colors --ct/--t); the solid/dashed style follows the TEAM (loser →
+  // dashed on all of its segments). Era edges are the counted-index
+  // flips (flipIndexes) — rows here ARE the counted rounds index-for-
+  // index (store.GetEconomy's SQL) — and era j OWNS the rows from its
+  // opening flip (row 0 for era 0) through its closing flip − 1 (the
+  // final row for the last era), bookended by the SPLIT point at each
+  // internal flip: the segment before a flip ENDS on the split, the one
+  // after STARTS there (both from `split` above), so each era always
+  // keeps at least one drawable edge — even when the flip lands on the
+  // last row (a lone `M…` path paints nothing and the new color would
+  // vanish). Side unknown can't happen for a 'ct'/'t' key (sideInEra only
+  // rejects a non-side), so every segment gets exactly one side class.
   const segments = $derived.by(() => {
     const flips = flipIndexes(n, sideSwitches);
-    const starts = [0, ...flips.map((f) => f - 1)];
-    const ends = [...flips.map((f) => f - 1), n - 1];
     const out = [];
     for (const key of ['ct', 't']) {
       const vals = key === 'ct' ? series.ct : series.tr;
       const loser = key === 'ct' ? loserCT : loserT;
-      for (let j = 0; j < starts.length; j++) {
+      for (let j = 0; j <= flips.length; j++) {
+        const from = j === 0 ? 0 : flips[j - 1]; // first row this era opens on
+        const to = j < flips.length ? flips[j] - 1 : n - 1; // last whole row
+        const pts = [];
+        if (j > 0) pts.push(split(vals, flips[j - 1])); // shared opening split
+        for (let i = from; i <= to; i++) pts.push(vertex(vals, i));
+        if (j < flips.length) pts.push(split(vals, flips[j])); // shared closing split
         const side = sideInEra(key, sideSwitches, j);
         out.push({
-          d: pathOver(vals, starts[j], ends[j]),
+          d: pathOf(pts),
           cls: `econ-line ${side === 'ct' ? 'side-ct' : 'side-t'}`,
           loser,
         });
