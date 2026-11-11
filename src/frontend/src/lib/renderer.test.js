@@ -5460,8 +5460,15 @@ test('plant/defuse progress ring: red arc on the planter, growing, seek-safe', (
   // --- the defuse is GREEN, on the DEFUSER's dot ---------------------------
   const green = rings(at(760), '#4caf7d');
   assert.equal(green.length, 1, "one green ring — the defuser's");
-  // 600 → 920: at 760 exactly halfway → half a turn
-  assert.ok(Math.abs(green[0].args[4] - Math.PI / 2) < 1e-9, 'defuse progress is its own interval');
+  // 600 → 920 is a 5 s (kit) SPAN, but this fixture pushes NO kit
+  // evidence → hasKitAt absent → the conservative 10 s (640-tick)
+  // denominator (bomb.js actionDurationTicks). So at 760 only
+  // (760−600)/640 = 0.25 of a turn has elapsed — a QUARTER turn (end
+  // angle −π/2 + π/2 = 0), where the old observed-span formula read
+  // this midpoint as exactly half a turn. The WITH-KIT half-turn pins
+  // live in the kit-vs-no-kit test below; the fixture's 320-tick span
+  // is what a kit defuse really takes, so kit evidence restores it.
+  assert.ok(Math.abs(green[0].args[4] - 0) < 1e-9, 'no kit evidence → 10 s denominator → a quarter turn at 760');
   assert.notEqual(green[0].args[0], half[0].args[0], "on bob's dot, not alice's");
   assert.equal(rings(at(760), '#ff4d4d').length, 0, 'alice’s plant ring is long over');
   assert.equal(rings(at(60), '#4caf7d').length, 0, 'no green ring before the defuse starts');
@@ -5493,9 +5500,67 @@ test('an aborted attempt’s ring stops at the abort tick (no completion)', () =
       .slice(mark)
       .filter((e) => e.op === 'arc' && e.strokeStyle === '#ff4d4d' && e.args[2] === 13);
   };
-  assert.equal(at(149).length, 1, 'the ring grows until the cancel');
+  const last = at(149);
+  assert.equal(last.length, 1, 'the ring grows until the cancel');
+  // …but only as far as GAME TIME says: 49 ticks of the 3.125 s
+  // (200-tick) plant duration is 0.245 of a turn — end angle still
+  // BELOW 12 o'clock, where the old observed-span formula read 49/50 ≈
+  // 0.98 of a turn (a cancelled plant looked nearly done).
+  assert.ok(last[0].args[4] < 0, 'a cancelled plant never reads as nearly-done');
   assert.equal(at(150).length, 0, 'gone AT the abort — a cancelled plant never reads as complete');
   assert.equal(at(250).length, 0, 'and it never comes back');
+  r.destroy();
+});
+
+test('defuse ring denominator: kit evidence at the attempt start (5 s vs 10 s)', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, {
+    engine,
+    data,
+    players: [
+      { steamId: '1', name: 'alice', side: 'ct' },
+      { steamId: '2', name: 'bob', side: 't' },
+    ],
+  });
+  r.resize();
+  const mk = (ev) => normalizeEvent(ev, {});
+  const rows = [
+    mk({ id: 1, seq: 1, tick: 0, round: 1, kind: 'round_start' }),
+    // bob grabs a kit at 500 — BEFORE the attempt begins at 600, so
+    // hasKitAt('2', 600) answers true (the rule reads at the START tick).
+    mk({ id: 2, seq: 2, tick: 500, round: 1, kind: 'weapon_pickup', attacker: '2', weapon: 'Defuse Kit' }),
+    mk({ id: 3, seq: 3, tick: 600, round: 1, kind: 'bomb_defuse_start', attacker: '2' }),
+    mk({ id: 4, seq: 4, tick: 920, round: 1, kind: 'bomb_defuse', attacker: '2' }),
+  ];
+  const at = (tick) => {
+    const mark = canvas.log.length;
+    engine.seekTick(tick);
+    r.draw();
+    return canvas.log
+      .slice(mark)
+      .filter((e) => e.op === 'arc' && e.strokeStyle === '#4caf7d' && e.args[2] === 13)[0];
+  };
+
+  // BEFORE setKitEvidence: no hasKitAt → conservative 10 s (640 ticks)
+  // → at 760, (760−600)/640 = 0.25 → a quarter turn (end angle 0).
+  r.setLandmarks(rows);
+  const noKit = at(760);
+  assert.ok(noKit, 'the defuse rings before any kit evidence arrives');
+  assert.ok(Math.abs(noKit.args[4] - 0) < 1e-9, 'no kit evidence → 10 s denominator → a quarter turn');
+
+  // AFTER setKitEvidence — pushed AFTER setLandmarks on purpose: the
+  // two setters are independent (the duration stamps lazily at draw, see
+  // setKitEvidence's ordering note). hasKitAt('2', 600) === true → the
+  // 5 s (320-tick) denominator → at 760, (760−600)/320 = 0.5 → half a
+  // turn (end angle π/2) — the SAME attempt, the SAME tick.
+  r.setKitEvidence(buildKitEvidence(rows, new Map(), 64));
+  const withKit = at(760);
+  assert.ok(withKit, 'the defuse still rings with kit evidence');
+  assert.ok(Math.abs(withKit.args[4] - Math.PI / 2) < 1e-9, 'kit at the attempt start → 5 s denominator → half a turn');
+  assert.ok(noKit.args[4] < withKit.args[4], 'kit evidence strictly grows the sweep at the same tick');
   r.destroy();
 });
 

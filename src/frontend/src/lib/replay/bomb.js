@@ -17,14 +17,20 @@
 //
 //   2. bombEvidenceAt — the DROPPED-C4 reconstruction rule (below).
 //
-//   3. actionIntervals / actionProgressAt — the plant/defuse ATTEMPT
-//                      lifecycle (below): begin → completion | abort |
-//                      round-end fallback, the one interval rule behind
-//                      the renderer's progress rings (and the row
-//                      taxonomy ACTION_KINDS that the sfx cue points
-//                      read). Sibling of bombEndTick, never a part of it
-//                      — that one is the PLANTED-MARKER lifetime, this
-//                      one is the ARMING/DEFUSING window.
+//   3. actionIntervals / actionDurationTicks / actionProgressAt — the
+//                      plant/defuse ATTEMPT lifecycle (below): begin →
+//                      completion | abort | round-end fallback, the one
+//                      interval rule behind the renderer's progress
+//                      rings (and the row taxonomy ACTION_KINDS that
+//                      the sfx cue points read). The interval bounds the
+//                      ring's VISIBILITY; the ring's FRACTION is elapsed
+//                      over the fixed game duration (actionDurationTicks
+//                      — 10 s / 5 s defuse by kit, 3.125 s plant), never
+//                      over the attempt's own observed span (a fake
+//                      defuse aborts in 3–152 ticks and would race to
+//                      full otherwise). Sibling of bombEndTick, never a
+//                      part of it — that one is the PLANTED-MARKER
+//                      lifetime, this one is the ARMING/DEFUSING window.
 //
 // All are pure functions over pre-bucketed landmark rows (lib/replay/
 // landmarks.js normalizeEvent output: kind / round / tick plus x/y/z
@@ -226,6 +232,13 @@ function actionActor(row) {
 // attempt that closes at/before its own begin (zero span) is dropped —
 // progress would be undefined.
 //
+// The returned span bounds the ring's VISIBILITY only ([start, end): the
+// arc appears at begin and vanishes at completion/abort/round-end); the
+// ring's FRACTION is elapsed over the fixed game duration — see
+// actionDurationTicks / actionProgressAt below. A fake/tapped attempt's
+// span (3–152 ticks — CS2.md "What cancels a plant / defuse") must never
+// be the denominator: dividing by it raced a tapped attempt's arc to full.
+//
 // Returns [{action, start, end, closedBy, steamId, round}] with
 // start < end, in begin-tick order. Pure — unit-tested by
 // src/lib/bomb.test.js; consumed by renderer.js setLandmarks (rings).
@@ -315,19 +328,60 @@ export function actionIntervals(rows) {
   return out;
 }
 
-// actionProgressAt — the ring's fraction at `tick`: (tick − start) /
-// (end − start), or null OUTSIDE the interval. Open at the end: the
-// attempt is over AT its end tick (a finished plant is no longer
-// planting, an aborted one is no longer arming), so the ring disappears
-// the moment the attempt resolves — a pure function of tick, seek-safe
-// like every other renderer layer. Range is (0, 1): the begin tick
-// itself draws nothing (a zero-length arc with a round cap would be a
-// dot, and progress 0 has nothing to show).
-export function actionProgressAt(interval, tick) {
+// actionDurationTicks — the FIXED game duration of an attempt in ticks:
+// the ring's denominator (CS2.md "Plant / defuse durations": plant
+// 3.125 s = 200 ticks @64; defuse 10 s = 640 / 5 s = 320 with a kit).
+//
+//   plant   3.125 s × tickRate
+//   defuse  (hasKit === true ? 5 : 10) s × tickRate
+//
+// Kit is TRI-STATE (kits.js hasKitAt: true | false | null): only an
+// answered `true` buys the 5 s denominator — false and null (rows cannot
+// answer: no player key, before the first round_start) both read as NO
+// kit, the conservative side: a fake must never fill fast. An invalid
+// tickRate reads as 64 (the killEndTick rule).
+//
+// WHY a constant and not the observed span: for a COMPLETED attempt the
+// span equals the real duration (640/320/200), so the two agree — but a
+// FAKE/tapped attempt aborts 3–152 ticks after its begin (CS2.md "What
+// cancels a plant / defuse"), and dividing by that span raced a tap's
+// arc to ~full. Visibility stays the observed interval (actionIntervals
+// — begin → completion/abort/round-end); only the FRACTION is game-time.
+// Pure — unit-tested by src/lib/bomb.test.js; consumed by renderer.js
+// drawPlayers at draw time (see the setKitEvidence / setLandmarks
+// ordering note there).
+export function actionDurationTicks(action, hasKit, tickRate) {
+  const tr = tickRate > 0 ? tickRate : 64;
+  if (action === 'defuse') return (hasKit === true ? 5 : 10) * tr;
+  if (action === 'plant') return 3.125 * tr;
+  return null; // unknown family — no ring rather than a guessed duration
+}
+
+// actionProgressAt — the ring's fraction at `tick`: elapsed / fixed game
+// duration —
+//
+//   defuse  (tick − start) / (hasKit ? 5 s : 10 s)      [actionDurationTicks]
+//   plant   (tick − start) / 3.125 s
+//
+// CLAMPED to ≤ 1: an attempt that outlives its duration (the round-end
+// fallback window) holds a full circle and never sweeps past 2π
+// (drawActionRing's arc math would otherwise wrap). The denominator is
+// NEVER the attempt's own [start, end) span — that span bounds
+// VISIBILITY only: null OUTSIDE [start, end), open at the end (the
+// attempt is over AT its end tick — a finished plant is no longer
+// planting, an aborted one no longer arming), so the ring disappears the
+// moment the attempt resolves — a pure function of tick, seek-safe like
+// every other renderer layer. Range is (0, 1]: the begin tick itself
+// draws nothing (a zero-length arc with a round cap would be a dot, and
+// progress 0 has nothing to show). A non-finite/non-positive duration
+// draws nothing — never a guessed denominator (the observed-span bug
+// this replaced). `duration` comes from actionDurationTicks.
+export function actionProgressAt(interval, tick, duration) {
   if (!interval || !Number.isFinite(tick)) return null;
   const start = interval.start;
   const end = interval.end;
   if (!Number.isFinite(start) || !Number.isFinite(end) || !(end > start)) return null;
   if (tick <= start || tick >= end) return null;
-  return (tick - start) / (end - start);
+  if (!Number.isFinite(duration) || !(duration > 0)) return null;
+  return Math.min((tick - start) / duration, 1);
 }
