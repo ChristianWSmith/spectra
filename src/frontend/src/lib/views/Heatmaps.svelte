@@ -213,6 +213,13 @@
   // browser (Replay's landmark feed) scoped to that region. The note
   // renders first so "filtered by region" is visible before the route
   // switch.
+  // ACCEPTED EXCEPTION to "outside-replay buttons seek, never filter":
+  // this region drill is a documented power-user path that arrives with
+  // a landmark filter (bbox + mirrored categories), kept by product-
+  // owner decision — together with the command palette's saved-filter
+  // apply, the ONLY two filter-arrival paths outside the replay. Its
+  // non-default arriving filter is what triggers the replay's feed
+  // reveal on entry (lib/replay/landmarks.js shouldRevealFeed).
   function onRegion(bbox) {
     regionNote = `filtered by region — bbox (${Math.round(bbox.minX)}, ${Math.round(bbox.minY)}) → (${Math.round(bbox.maxX)}, ${Math.round(bbox.maxY)})`;
     // Mirror the viewed heatmap kind: a damage region drill enables the

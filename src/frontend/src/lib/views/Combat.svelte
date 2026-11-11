@@ -14,8 +14,8 @@
     errText,
   } from '../services.js';
   import { fmtInt, fmtPercent, roundClock } from '../fmt.js';
+  import { roundStartTick, roundEndTick } from '../rounds.js';
   import { replayHash, entryLoopSpan, entryLoopAround } from '../nav.js';
-  import { roundStartTick } from '../rounds.js';
   import { listedPlayers } from '../players.js';
   import { roundsByNumber } from '../replay/landmarks.js';
   import { playerStartClass, playerSideClassAt } from '../teams.js';
@@ -181,20 +181,16 @@
     nav(replayHash(id, {}, { tick, loop, back: `match/${id}/combat` }));
   }
 
-  // Round chip → THE event browser scoped to that round (both inclusive
-  // round bounds set to the same number), STAMPED with the round's
-  // start tick — ?tick= is the only "where to jump" instruction (the
-  // scope alone is feed filter and never seeks), so the chip still
-  // lands on the round it names; a null start drops the tick and the
-  // link stays filter-only.
-  function openRoundEvents(round) {
-    nav(
-      replayHash(
-        id,
-        { roundFrom: round, roundTo: round },
-        { tick: roundStartTick(rounds, round), back: `match/${id}/combat` },
-      ),
-    );
+  // Round chip → WATCH the round: its start tick plus the round's own
+  // start→end ?loop= span — the exact seek-with-loop the RoundDetail
+  // header's "Watch round" stamps (nav.entryLoopSpan over the canonical
+  // round→tick lookups, lib/rounds.js). A round without a usable tick
+  // stamps neither (buildHash drops null/undefined), so an unknown round
+  // makes no promise rather than a guessed one — never a landmark FILTER:
+  // outside the replay, buttons seek.
+  function watchRound(round) {
+    const start = roundStartTick(rounds, round);
+    replay(start, entryLoopSpan(start, roundEndTick(rounds, round)));
   }
 
   // The Clutches card lists WON clutches only (the card's scope decision):
@@ -350,8 +346,8 @@
               <td class="num">
                 <button
                   class="btn small ghost"
-                  title="Open round {e.round} in the replay landmark feed"
-                  onclick={() => openRoundEvents(e.round)}
+                  title="Watch round {e.round} in the replay (from its start)"
+                  onclick={() => watchRound(e.round)}
                 >R{e.round}</button>
               </td>
               <td class="num mono" title="tick {e.tick}">{roundClock(e.tick, rbn.get(e.round), tickRate)}</td>
@@ -431,8 +427,8 @@
                 <td class="num">
                   <button
                     class="btn small ghost"
-                    title="Open round {c.round} in the replay landmark feed"
-                    onclick={() => openRoundEvents(c.round)}
+                    title="Watch round {c.round} in the replay (from its start)"
+                    onclick={() => watchRound(c.round)}
                   >R{c.round}</button>
                 </td>
                 <td><strong>1v{c.size}</strong></td>

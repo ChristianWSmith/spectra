@@ -286,11 +286,14 @@
             return;
           }
           // Saved filters ride the URL into the canonical event browser —
-          // parse normalizes the shape. FILTER-ONLY by design: a saved
-          // filter's round scope is feed state, never a position, so the
-          // jump lands at the default position with the filter applied
-          // (the accepted scope-URL consequence — nav.entrySeekTick reads
-          // ?tick= alone, and a saved filter carries no tick).
+          // parse normalizes the shape. ACCEPTED EXCEPTION to "outside-
+          // replay buttons seek, never filter": saved filters are the
+          // power-user path (save/delete/apply retained) — one of the two
+          // documented filter-arrival paths outside the replay (the
+          // Heatmaps region drill is the other). The jump carries no
+          // tick, so it lands at the default position with the filter
+          // applied — nav.entrySeekTick reads ?tick= alone — and the
+          // feed rail reveals on arrival (landmarks.shouldRevealFeed).
           nav(replayHash(mid, parseLandmarkFilter(f)));
         },
       })),

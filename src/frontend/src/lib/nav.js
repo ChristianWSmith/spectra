@@ -39,8 +39,10 @@ export function openProfile(nav, steam) {
 //   sel    — selected landmark key (e:123 / c:4 / g:9)
 //   back   — origin path for the return trip ("match/5/rounds",
 //            "compare/5?rounds=3,5", …) — rendered as-is by buildHash
-// One navigation system: every event drill-down lands in Replay's
-// landmark feed with its scope intact.
+// One navigation system: every event drill-down lands in Replay —
+// normally as a SEEK (?tick=, usually + ?loop=, empty filter), and for
+// the two accepted filter-arrival exceptions (Heatmaps' region drill,
+// the command palette's saved-filter apply) with its scope intact.
 export function replayHash(matchId, filter, extras) {
   return buildHash(`/replay/${matchId}`, {
     ...serializeLandmarkFilter(filter || {}),
@@ -139,12 +141,14 @@ export function entryLoopAround(tick, tickRate) {
 //               distinguishable from an explicit first-frame target,
 //               which is the whole point of the pref-aware default —
 //               and it is why a scope-only URL (a saved/bookmarked
-//               filter, an "events" drill) lands at that default while
-//               its filter still applies. A link that means to JUMP
-//               stamps ?tick= BESIDE its scope (roundStartTick at every
-//               watch/drill replayHash call site); a malformed ?tick=
-//               (non-numeric, negative) is not a promise either — it
-//               resolves to null, never to a guess.
+//               filter, a deep link) lands at that default while its
+//               filter still applies. Watch links from OUTSIDE the
+//               replay (RoundDetail's "Watch round", Combat's round
+//               chips, Utility's ▶, Economy's stat-card drill) stamp
+//               ?tick= EXPLICITLY and never carry a landmark filter —
+//               outside the replay, buttons seek, never filter; a
+//               malformed ?tick= (non-numeric, negative) is not a
+//               promise either — it resolves to null, never to a guess.
 // The loop range is a SEPARATE promise resolved by entryLoopRange below
 // — neither resolver reads the other's params. `rounds` no longer feeds
 // this half at all; it stays in entrySeed's signature for the loop

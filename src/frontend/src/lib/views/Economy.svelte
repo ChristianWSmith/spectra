@@ -205,17 +205,22 @@
     };
   });
 
+  // Stat-card drill → WATCH the round: its start tick stamped as ?tick=
+  // (the seek the round scope used to derive at entry — nav.entrySeekTick
+  // resolved roundFrom/roundTo to exactly this tick, so the link's promise
+  // is unchanged and the URL carries it explicitly). No landmark FILTER:
+  // outside the replay, buttons seek.
   function drill(round) {
     if (!round) return;
-    // The card's round, BOTH ways it can travel: the scope filters the
-    // feed to it, and the STAMPED ?tick= (the round's start — the only
-    // "where to jump" instruction; scope alone never seeks) lands the
-    // playhead on it. A null start (round unknown) drops the tick from
-    // buildHash and the link stays filter-only — never a guessed time.
+    // Filter STRIPPED (outside-replay buttons seek, never filter): the
+    // card travels as the round's start ?tick= only — the "where to
+    // jump" instruction — with no round scope. A null start (round
+    // unknown) drops the tick from buildHash and the link makes no
+    // promise — never a guessed time.
     nav(
       replayHash(
         id,
-        { roundFrom: round, roundTo: round },
+        {},
         { tick: roundStartTick(rounds, round), back: `match/${id}/economy` },
       ),
     );
@@ -272,7 +277,7 @@
         value={summary.pistolWon ? `${summary.held}/${summary.pistolWon}` : '—'}
         sub="pistol wins held next round"
         cls={!summary.firstPistol ? 'no-drill' : ''}
-        title="Formula: pistol rounds won by a side where that side also won the immediately following round ÷ pistol rounds won. Click: open Replay events for round {summary.firstPistol || '—'}."
+        title="Formula: pistol rounds won by a side where that side also won the immediately following round ÷ pistol rounds won. Click: watch round {summary.firstPistol || '—'} in the replay (from its start)."
         onclick={() => drill(summary.firstPistol)}
       >
         {#snippet badge()}<span class="chip badge-computed">computed</span>{/snippet}
@@ -287,7 +292,7 @@
           ? `${names.ct} ${summary.force.ct.won}/${summary.force.ct.total} · ${names.t} ${summary.force.t.won}/${summary.force.t.total}`
           : 'no force buys'}
         cls={!summary.firstForce ? 'no-drill' : ''}
-        title="Formula: force-buy rounds won by the force-buying TEAM ÷ that team's own force-buy rounds, attributed per team across the halftime side switch (a round both teams force-bought counts once for each). Click: open Replay events for round {summary.firstForce || '—'}."
+        title="Formula: force-buy rounds won by the force-buying TEAM ÷ that team's own force-buy rounds, attributed per team across the halftime side switch (a round both teams force-bought counts once for each). Click: watch round {summary.firstForce || '—'} in the replay (from its start)."
         onclick={() => drill(summary.firstForce)}
       >
         {#snippet badge()}<span class="chip badge-computed">computed</span>{/snippet}
@@ -298,7 +303,7 @@
         value={summary.avgGap == null ? '—' : fmtMoney(summary.avgGap)}
         sub="avg winner − loser equip per round"
         cls={!summary.gapRound ? 'no-drill' : ''}
-        title="Formula: average across decided rounds of (winner equipment value − loser equipment value) at freeze time end — the value of the gear each side actually holds (weapons carried over from earlier rounds included), never this round's spend. Click: open Replay events for round {summary.gapRound || '—'} (largest gap)."
+        title="Formula: average across decided rounds of (winner equipment value − loser equipment value) at freeze time end — the value of the gear each side actually holds (weapons carried over from earlier rounds included), never this round's spend. Click: watch round {summary.gapRound || '—'} (largest gap) in the replay (from its start)."
         onclick={() => drill(summary.gapRound)}
       >
         {#snippet badge()}<span class="chip badge-computed">computed</span>{/snippet}
@@ -309,7 +314,7 @@
         value={fmtMoney(summary.lostTotal)}
         sub={`${names.ct} ${fmtMoney(summary.lost.ct)} · ${names.t} ${fmtMoney(summary.lost.t)}`}
         cls={!summary.lostRound ? 'no-drill' : ''}
-        title="Formula: total across decided rounds of the losing team's freeze-end equipment value, credited to the team that lost it rather than the side it played — inferred: assumes all losing-side equipment is destroyed. Click: open Replay events for round {summary.lostRound || '—'} (largest loss)."
+        title="Formula: total across decided rounds of the losing team's freeze-end equipment value, credited to the team that lost it rather than the side it played — inferred: assumes all losing-side equipment is destroyed. Click: watch round {summary.lostRound || '—'} (largest loss) in the replay (from its start)."
         onclick={() => drill(summary.lostRound)}
       >
         {#snippet badge()}<span class="chip badge-inferred">inferred</span>{/snippet}

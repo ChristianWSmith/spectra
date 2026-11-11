@@ -20,7 +20,9 @@
 //                        category opt-ins and ?roundFrom/?roundTo
 //                        scoping).
 //   6. filter <-> URL  — the landmark filter model serialized to the
-//                        route query (deep links, refresh, back/forward).
+//                        route query (deep links, refresh, back/forward)
+//                        and shouldRevealFeed, the feed-reveal-on-arrival
+//                        rule over it.
 //
 // Unit-tested by src/lib/landmarks.test.js (the lib test glob is
 // src/lib/*.test.js, so the fixture lives one level up).
@@ -589,6 +591,30 @@ export function serializeLandmarkFilter(filter) {
 // round-trip must not loop: serialize → parse → compare → stop).
 export function filtersEqual(a, b) {
   return JSON.stringify(serializeLandmarkFilter(a)) === JSON.stringify(serializeLandmarkFilter(b));
+}
+
+// shouldRevealFeed — THE feed-reveal-on-arrival rule: entering the replay
+// with a NON-DEFAULT landmark filter must open the landmark feed rail so
+// the arriving scope (the Heatmaps region drill, a saved filter, a scoped
+// deep link) is actually visible; a default arrival stays collapsed.
+//   - non-default = the arriving filter serializes to AT LEAST ONE key
+//     (serializeLandmarkFilter's round-trip rule: defaults emit nothing,
+//     so bbox/player/cats/roundFrom/weapon/hs/… all count, an absent or
+//     default filter does not);
+//   - AND different from the filter the instance ALREADY had — the second
+//     half is what keeps a rail the user deliberately closed closed: the
+//     keep-alive dock expand re-arrives with the instance's OWN captured
+//     filter (same filter → no forced open), while a genuinely new scope
+//     re-opens it. No prior filter (fresh mount) differs from any
+//     non-default arrival, so mount falls out of the same rule — no
+//     special case. Entry context that is not a filter (?tick=, ?loop=,
+//     ?sel=, ?back=, ?follow=) never reaches this decision: the caller
+//     passes the PARSED LANDMARK FILTER only. Pure — unit-tested by
+//     src/lib/landmarks.test.js; the wiring (mount + keep-alive
+//     activation, never in-session churn) lives in Replay.svelte.
+export function shouldRevealFeed(prevFilter, nextFilter) {
+  if (Object.keys(serializeLandmarkFilter(nextFilter)).length === 0) return false;
+  return !filtersEqual(prevFilter, nextFilter);
 }
 
 // --- Export ------------------------------------------------------------------

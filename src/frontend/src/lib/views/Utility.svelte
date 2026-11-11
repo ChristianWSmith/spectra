@@ -8,7 +8,7 @@
     errText,
   } from '../services.js';
   import { fmtMs, roundClock } from '../fmt.js';
-  import { roundIndexLabel, roundStartTick } from '../rounds.js';
+  import { roundIndexLabel } from '../rounds.js';
   import { replayHash, entryLoopAround } from '../nav.js';
   import { listedPlayers } from '../players.js';
   import { roundsByNumber } from '../replay/landmarks.js';
@@ -180,24 +180,12 @@
     closed = { ...closed, [round]: !closed[round] };
   }
 
-  // Round drill → THE event browser with the grenade categories enabled
-  // (the round range pins BOTH bounds to the same number: inclusive,
-  // exactly that round), STAMPED with the round's start tick — ?tick=
-  // is the only "where to jump" instruction (the scope alone is feed
-  // filter and never seeks), so the drill still lands on that round; a
-  // null start drops the tick and the link stays filter-only.
-  function openEvents(r) {
-    go(
-      replayHash(
-        id,
-        { roundFrom: r.round, roundTo: r.round, cats: ['grenade_throws', 'grenade_dets'] },
-        { tick: roundStartTick(rounds, r.round), back },
-      ),
-    );
-  }
-
+  // (the events button and its round-scope filter are gone — outside
+  // the replay, buttons seek, never filter).
   // "replay ▶" → the throw's own tick, with a ±10 s entry loop around it
-  // (nav.entryLoopAround — the engine's default loop width).
+  // (nav.entryLoopAround — the engine's default loop width). The ONE way
+  // this view enters the replay: buttons SEEK, never set a landmark
+  // filter (the round "events" filter button is retired with that rule).
   function openReplay(r) {
     go(replayHash(id, {}, { tick: r.tick, loop: entryLoopAround(r.tick, tickRate), back }));
   }
@@ -239,10 +227,7 @@
           : 's'}</span
       >
       <span class="spacer"></span>
-      <span class="muted util-hint"
-        >events opens the replay at the round's start with its feed scoped
-        to the round · replay seeks to the throw</span
-      >
+      <span class="muted util-hint">replay seeks to the throw (±10 s loop)</span>
     </div>
 
     <div class="util-summary">
@@ -381,11 +366,6 @@
                       >{r.site || '—'}</span
                     >
                     <span class="util-actions">
-                      <button
-                        class="btn small ghost"
-                        title="Open this round's grenade events in the replay landmark feed"
-                        onclick={() => openEvents(r)}>events</button
-                      >
                       <button
                         class="btn small ghost"
                         title="Watch this throw in the replay (seek to tick {r.tick})"

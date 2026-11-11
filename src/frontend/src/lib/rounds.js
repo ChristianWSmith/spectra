@@ -103,14 +103,16 @@ export function roundIndexLabel(r) {
 }
 
 // roundStartTick resolves a round NUMBER to its start tick — the time a
-// "jump to round N" link targets (the round watch/drill links stamp it
-// as ?tick= beside their feed scope — nav.entrySeekTick reads ?tick=
-// alone — and Replay's round ribbon). The
+// "jump to round N" link targets: the outside-replay watch links stamp it
+// as ?tick= themselves (Combat's round chips, Economy's stat-card drill —
+// both build the URL with nav.replayHash) — nav.entrySeekTick reads ?tick=
+// alone, never the round scope — and it is also what Replay's round
+// ribbon resolves through. The
 // GetRounds rows carry the number/startTick pair; a missing round or a
 // row without a usable start tick returns null so callers keep their
 // current position — a round link must never fall back to the first
 // frame or a guessed time (a null stamp drops the tick from buildHash
-// and the link stays filter-only).
+// and the link makes no promise).
 export function roundStartTick(rounds, number) {
   const n = Number(number);
   const r = (rounds || []).find((x) => x && x.number === n);

@@ -15,7 +15,7 @@
     value="20/10/3"
     sub="donk"
     subCls="team-start-t"
-    title="Open Replay events filtered to donk"
+    title="Open the replay following donk"
     onclick={() => globalThis.__drill++}
   >
     {#snippet subSlot()}

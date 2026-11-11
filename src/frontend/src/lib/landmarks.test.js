@@ -28,6 +28,7 @@ import {
   parseLandmarkFilter,
   serializeLandmarkFilter,
   filtersEqual,
+  shouldRevealFeed,
   defaultFilter,
   landmarkExportRows,
   precomposeChatLabels,
@@ -487,6 +488,87 @@ test('filter <-> query round-trip: defaults serialize to nothing', () => {
   assert.equal(back.roundTo, 7);
   assert.equal(back.steamId, '76561198012345678');
   assert.deepEqual(back.bbox, { minX: -1, minY: -2, maxX: 3, maxY: 4 });
+});
+
+// --- Feed reveal on filter arrival (shouldRevealFeed) -----------------------
+// The rule entering the replay must obey: a NON-default landmark filter
+// reveals the feed rail (the drill's effect must be visible), a default
+// one never does, and a filter the instance ALREADY had never re-opens a
+// rail the user deliberately closed. The wiring (mount + keep-alive
+// activation, never in-session churn) is Replay.svelte's.
+
+test('shouldRevealFeed: a default arrival never reveals', () => {
+  // No prior filter + default arrival = silent.
+  assert.equal(shouldRevealFeed(null, undefined), false);
+  assert.equal(shouldRevealFeed(null, {}), false);
+  assert.equal(shouldRevealFeed(null, defaultFilter()), false);
+  assert.equal(shouldRevealFeed(null, parseLandmarkFilter({})), false);
+  // The default cats spelled out serialize to nothing → still default.
+  assert.equal(shouldRevealFeed(null, parseLandmarkFilter({ cat: 'round_starts' })), false);
+  // Unset sentinels / empty values serialize to nothing → default.
+  assert.equal(shouldRevealFeed(null, parseLandmarkFilter({ roundFrom: '0', roundTo: '0' })), false);
+  assert.equal(shouldRevealFeed(null, parseLandmarkFilter({ player: '', weapon: '', hs: '0' })), false);
+  assert.equal(shouldRevealFeed(null, parseLandmarkFilter({ bbox: 'junk' })), false); // malformed → dropped by parse
+});
+
+test('shouldRevealFeed: a fresh entry (no prior filter) reveals every non-default filter', () => {
+  // Every serializable key counts on its own — the "present beyond what
+  // serializes to nothing" definition.
+  const cases = [
+    { roundFrom: '3', roundTo: '3' },
+    { bbox: '-1,-2,3,4' },
+    { player: '76561198012345678' },
+    { cat: 'kills' },
+    { cat: '' }, // explicitly NO categories — a real state, not the default
+    { weapon: 'AWP' },
+    { hs: '1' },
+    { gname: 'weapon_fire' },
+    { distMin: '10' },
+    { distMax: '50' },
+  ];
+  for (const q of cases) {
+    assert.equal(shouldRevealFeed(null, parseLandmarkFilter(q)), true, JSON.stringify(q));
+    assert.equal(shouldRevealFeed(undefined, parseLandmarkFilter(q)), true, JSON.stringify(q));
+  }
+});
+
+test('shouldRevealFeed: entry context that is NOT a filter never reveals', () => {
+  // ?tick=/?loop=/?sel=/?back=/?follow= are entry/navigation context, not
+  // landmark filter keys — a watch link (tick + loop), a follow link
+  // (back + follow) and a linked landmark (sel) all arrive silently.
+  assert.equal(shouldRevealFeed(null, parseLandmarkFilter({ tick: '1200', loop: '1000,2000', back: 'match/5/round/3' })), false);
+  assert.equal(shouldRevealFeed(null, parseLandmarkFilter({ follow: '76561198012345678', back: 'match/5' })), false);
+  assert.equal(shouldRevealFeed(null, parseLandmarkFilter({ sel: 'e:9' })), false);
+  // A ?tick= ALONE on top of an unchanged non-default filter is not a new
+  // filter either — only the filter half is compared.
+  const scoped = parseLandmarkFilter({ roundFrom: '3', roundTo: '3' });
+  assert.equal(shouldRevealFeed(scoped, parseLandmarkFilter({ tick: '9999', roundFrom: '3', roundTo: '3' })), false);
+});
+
+test('shouldRevealFeed: the same filter never reveals (deliberate close survives)', () => {
+  const f = parseLandmarkFilter({ bbox: '-1,-2,3,4', cat: 'damage' });
+  assert.equal(shouldRevealFeed(f, f), false);
+  assert.equal(shouldRevealFeed(f, parseLandmarkFilter({ bbox: '-1,-2,3,4', cat: 'damage' })), false);
+  // The keep-alive dock expand: expandReplayHash re-arrives with the
+  // instance's OWN captured query → same filter → no forced open.
+  const captured = parseLandmarkFilter(serializeLandmarkFilter(f));
+  assert.equal(shouldRevealFeed(f, captured), false);
+  // In-session baseline + unchanged default (rail closed by the user).
+  assert.equal(shouldRevealFeed(defaultFilter(), defaultFilter()), false);
+});
+
+test('shouldRevealFeed: a DIFFERENT non-default filter reveals; a default arrival still does not', () => {
+  const before = parseLandmarkFilter({ roundFrom: '3', roundTo: '3' });
+  assert.equal(shouldRevealFeed(before, parseLandmarkFilter({ roundFrom: '4', roundTo: '4' })), true);
+  assert.equal(shouldRevealFeed(before, parseLandmarkFilter({ bbox: '-1,-2,3,4' })), true);
+  assert.equal(
+    shouldRevealFeed(parseLandmarkFilter({ weapon: 'AWP' }), parseLandmarkFilter({ distMax: '50' })),
+    true,
+  );
+  // Reverting to the default differs, but the non-default half gates it:
+  // a default arrival NEVER opens the rail.
+  assert.equal(shouldRevealFeed(before, defaultFilter()), false);
+  assert.equal(shouldRevealFeed(before, parseLandmarkFilter({})), false);
 });
 
 test('round range: inclusive, partial, 0 = unset (round 0 never exists)', () => {

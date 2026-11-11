@@ -8,8 +8,9 @@
     getTeamNames,
     errText,
   } from '../services.js';
-  import { fmtDuration, fmtTickSeconds, fmtInt, fmtClock, tickSeconds, chatClock, chatTag } from '../fmt.js';
+  import { fmtDuration, fmtInt, fmtClock, tickSeconds, chatClock, chatTag } from '../fmt.js';
   import { roundIndexLabel, scoreThrough } from '../rounds.js';
+  import { sideAtRound } from '../sideparity.js';
   import { playerSideAt, playerSideClassAt } from '../teams.js';
   import { replayHash, entryLoopSpan, entryLoopAround } from '../nav.js';
   import { listedPlayers } from '../players.js';
@@ -165,27 +166,37 @@
     return l === 'K' ? 'Knife' : l === 'W' ? 'Warmup' : null;
   };
 
+  // Era-aware SIDE → TEAM key for THIS round. `teams` (display names) and
+  // `winner` disagree after halftime: teams is keyed by each team's FINAL
+  // side while a round row's winner / economy row's side are the sides
+  // played IN THAT ROUND — reading teams[roundWinner] named the wrong team
+  // post-switch. Resolution is the inverse of the canonical round parity
+  // (lib/sideparity.js sideAtRound): which final-side key played `side` in
+  // this round. null = unknown (rounds not loaded, round not in the list,
+  // malformed side) → callers fall back to the bare side chip, never a
+  // guessed team name.
+  function teamKeyForSide(side) {
+    if (side !== 'ct' && side !== 't') return null;
+    if (sideAtRound(rounds, sideSwitches, round, 'ct') === side) return 'ct';
+    if (sideAtRound(rounds, sideSwitches, round, 't') === side) return 't';
+    return null;
+  }
+
+  // The team NAME behind a side of this round — teamKeyForSide above
+  // resolved into the final-side-keyed `teams`, bare side when unresolved.
+  function teamNameForSide(side) {
+    const key = teamKeyForSide(side);
+    return key ? teams[key] || side.toUpperCase() : side.toUpperCase();
+  }
+
   // Round nav preserves the origin (the return trip from RoundDetail
   // goes back to where the user came from, not always Overview).
   function roundNav(n) {
     return buildHash(`/match/${id}/round/${n}`, { back: backPath });
   }
 
-  // Contextual entries into THE event browser: this round, scoped (both
-  // inclusive round bounds set to the same number) AND stamped with the
-  // round's start tick — ?tick= is the only "where to jump" instruction
-  // (the scope alone is feed filter and never seeks), so the button
-  // still lands on this round like it always did.
-  function openEvents() {
-    nav(
-      replayHash(
-        id,
-        { roundFrom: round, roundTo: round },
-        { tick: detail.round.startTick, back: `match/${id}/round/${round}` },
-      ),
-    );
-  }
-
+  // (the "Events in Replay" button and its round-scope filter are gone —
+  // outside the replay, buttons seek, never filter).
   // Jump to the replay at a tick (the header button uses the round start;
   // per-event seeks live in the canonical feed now). `loop` is the
   // entry-only ?loop= range stamped BESIDE the seek (undefined = none,
@@ -209,13 +220,6 @@
       >
         <span class="codicon codicon-play"></span> Watch round
       </button>
-      <button
-        class="btn"
-        title="Open this round's events in the replay landmark feed"
-        onclick={openEvents}
-      >
-        Events in Replay <span class="codicon codicon-chevron-right"></span>
-      </button>
       <h1>
         {#if roundKind(detail.round)}
           <span
@@ -227,9 +231,6 @@
         {:else}
           Round {detail.round.number}
         {/if}
-        <span class="chip side {detail.round.winner || 'none'}">
-          {detail.round.winner ? detail.round.winner.toUpperCase() : '—'}
-        </span>
         {#if cls}
           <span
             class="chip cmp-class"
@@ -238,14 +239,14 @@
           >
         {/if}
       </h1>
+      <!-- Header keeps the fields nothing else on this view shows:
+           duration (unique once the start/stop seconds are gone), bomb
+           site (the Bomb card's Site column is empty-state-dependent) and
+           the MVP line. Reason, kill count, winner chip and the equip
+           CT/T pair live in the Round result / Kills / Economy cards. -->
       <p class="muted">
-        {detail.round.reason || '—'}
-        · {fmtDuration(detail.round.durationS)}
+        {fmtDuration(detail.round.durationS)}
         · site {detail.round.bombSite || '—'}
-        · equip <span class="ct">{detail.round.equipCT}</span>/<span
-          class="t">{detail.round.equipT}</span
-        >
-        · {detail.round.kills} kills
         · MVP
         {#if detail.round.mvpName}
           <ProfileLink
@@ -259,10 +260,6 @@
           —
         {/if}
         {#if detail.round.mvpReason}({detail.round.mvpReason}){/if}
-        · {fmtTickSeconds(detail.round.startTick, tickRate)}–{fmtTickSeconds(
-          detail.round.endTick,
-          tickRate,
-        )}
       </p>
     {/if}
   </header>
@@ -276,8 +273,9 @@
          (the round-detail read's typed events), with economy and this
          round's chat alongside. Every event row drills into the replay
          at its tick (watchTick — ▶ rows stamp a ±10 s ?loop= range, the
-         header the round's own span); openEvents keeps the canonical
-         landmark-feed entry. -->
+         header the round's own span); outside this view nothing links
+         this round through a landmark FILTER — buttons seek, never
+         filter. -->
     <div class="round-grid">
       <div class="round-side">
         <section class="panel">
@@ -287,8 +285,11 @@
               <dt>Winner</dt>
               <dd>
                 {#if detail.round.winner}
+                  <!-- detail.round.winner is the side played IN THIS ROUND;
+                       teams is keyed by FINAL side — resolve through
+                       teamNameForSide (era-aware), never teams[winner]. -->
                   <span class="chip side {detail.round.winner}"
-                    >{teams[detail.round.winner] || detail.round.winner.toUpperCase()}</span
+                    >{teamNameForSide(detail.round.winner)}</span
                   >
                 {:else}
                   <span class="muted">—</span>
@@ -459,7 +460,13 @@
             <tbody>
               {#each economy as e (e.side)}
                 <tr>
-                  <td><span class="chip side {e.side}">{e.side.toUpperCase()}</span></td>
+                  <!-- Side-colored TEAM NAME (era-aware: e.side is this
+                       round's side, teams is final-side keyed — see
+                       teamKeyForSide); unresolved → the bare side chip,
+                       never a guessed name. -->
+                  <td
+                    ><span class="chip side {e.side}">{teamNameForSide(e.side)}</span></td
+                  >
                   <td class="num">{e.equipValue}</td>
                   <td class="num">
                     {e.moneySamples > 0
@@ -508,11 +515,21 @@
       </div>
     </div>
 
+    <!-- Ribbon chrome: icon-only round transport (the replay transport's
+         #rp-round-prev/#rp-round-next glyph pattern — chevrons reserve
+         codicon-arrow-* for back/forward nav), the canonical RoundStrip
+         between them. Centered by .round-nav in public/style.css (the
+         shared .round-strip-wrap rule stays out of it — see the note
+         there). -->
     <div class="round-nav">
       {#if prevRound}
-        <button class="btn" onclick={() => nav(roundNav(prevRound.number))}>
-          <span class="codicon codicon-arrow-left"></span>
-          {roundKind(prevRound) ?? `Round ${prevRound.number}`}
+        <button
+          class="btn"
+          aria-label="Previous round"
+          title="Previous round"
+          onclick={() => nav(roundNav(prevRound.number))}
+        >
+          <span class="codicon codicon-chevron-left" aria-hidden="true"></span>
         </button>
       {/if}
       <RoundStrip
@@ -526,9 +543,13 @@
         {nav}
       />
       {#if nextRound}
-        <button class="btn" onclick={() => nav(roundNav(nextRound.number))}>
-          {roundKind(nextRound) ?? `Round ${nextRound.number}`}
-          <span class="codicon codicon-arrow-right"></span>
+        <button
+          class="btn"
+          aria-label="Next round"
+          title="Next round"
+          onclick={() => nav(roundNav(nextRound.number))}
+        >
+          <span class="codicon codicon-chevron-right" aria-hidden="true"></span>
         </button>
       {/if}
     </div>

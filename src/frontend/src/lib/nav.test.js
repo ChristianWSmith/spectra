@@ -120,8 +120,10 @@ test('sidebar active(): exactly one action lights up per route', () => {
 // default, the filter still applies).
 
 test('entrySeekTick: an exact ?tick= link is the only position source', () => {
-  // RoundDetail's "Watch round" / Combat's EventPlay / Utility's
-  // "replay" buttons all stamp an exact tick.
+  // RoundDetail's "Watch round" / Combat's EventPlay and round chips /
+  // Utility's "replay" / Economy's stat-card drill all stamp an exact
+  // tick — the outside-replay buttons seek (never filter), so ?tick= is
+  // the dominant real-world entry promise.
   assert.equal(entrySeekTick({ tick: '9999' }), 9999);
   // A scope BESIDE the tick is irrelevant to position (it still filters
   // the feed — replayHash serializes it; this half never reads it).
