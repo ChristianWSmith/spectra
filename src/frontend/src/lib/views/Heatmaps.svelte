@@ -10,7 +10,7 @@
   // GetHeatmapKD) — called on the binding directly; every other kind
   // shares getHeatmap.
   import { AnalyticsService } from '../../../bindings/github.com/ChristianWSmith/spectra';
-  import { HEAT_CORE_KINDS, HEAT_GRENADE_THROW_KINDS, HEAT_GRENADE_DET_KINDS, heatKindLabel, heatRegionCats } from '../heatkinds.js';
+  import { HEAT_CORE_KINDS, HEAT_GRENADE_THROW_KINDS, HEAT_GRENADE_DET_KINDS, heatKindLabel, heatRegionFilter, heatRegionTakesBBox } from '../heatkinds.js';
   import { HEAT_STOPS, DEATH_STOPS, rampCss, signedRampCss } from '../heatramp.js';
   import { loadMapPack } from '../components/mapxform.js';
   import HeatmapLayer from '../components/HeatmapLayer.svelte';
@@ -56,6 +56,10 @@
   let matchLoaded = $state(false);
   let packTried = $state(false); // pack load attempt finished (ok or failed)
   let regionNote = $state('');
+  // The note's chip wording is decided WITH the note (onRegion): a drill
+  // that carried its bbox says so, a presence click says the region was
+  // NOT applied. Both render only while regionNote is set.
+  let regionChip = $state('filtered by region');
 
   let navTimer = null;
 
@@ -172,6 +176,7 @@
     loading = true;
     error = '';
     regionNote = '';
+    regionChip = 'filtered by region';
     // The fetch is FOR the layer selected right now: the band it sends and
     // the gridLayer it records must be that one index, even if the radar
     // is flipped to another floor while the call is in flight — the
@@ -211,24 +216,40 @@
 
   // Region drill: cell-sized bbox around the click → the canonical event
   // browser (Replay's landmark feed) scoped to that region. The note
-  // renders first so "filtered by region" is visible before the route
+  // renders first so the effect of the click is visible before the route
   // switch.
   // ACCEPTED EXCEPTION to "outside-replay buttons seek, never filter":
   // this region drill is a documented power-user path that arrives with
-  // a landmark filter (bbox + mirrored categories), kept by product-
-  // owner decision — together with the command palette's saved-filter
-  // apply, the ONLY two filter-arrival paths outside the replay. Its
-  // non-default arriving filter is what triggers the replay's feed
-  // reveal on entry (lib/replay/landmarks.js shouldRevealFeed).
+  // a landmark filter (the cell bbox + the mirrored categories AND the
+  // heatmap's own player/round settings — heatRegionFilter, lib/
+  // heatkinds.js), kept by product-owner decision — together with the
+  // command palette's saved-filter apply, the ONLY two filter-arrival
+  // paths outside the replay. Its non-default arriving filter is what
+  // triggers the replay's feed reveal on entry (lib/replay/landmarks.js
+  // shouldRevealFeed), which picks the mirrored keys up through the same
+  // serialization.
   function onRegion(bbox) {
-    regionNote = `filtered by region — bbox (${Math.round(bbox.minX)}, ${Math.round(bbox.minY)}) → (${Math.round(bbox.maxX)}, ${Math.round(bbox.maxY)})`;
-    // Mirror the viewed heatmap kind: a damage region drill enables the
-    // damage category too (kills/deaths are kill events; presence has no
-    // event category), a grenade drill opens exactly that flavor's
-    // events — throws (grenade_throws) or detonations (grenade_dets) —
-    // via heatRegionCats (lib/heatkinds.js).
-    const cats = heatRegionCats(kind);
-    const target = replayHash(id, { bbox, ...(cats ? { cats } : {}) }, { back: `match/${id}/heatmaps` });
+    const carries = heatRegionTakesBBox(kind);
+    // The heatmap's settings mirrored into the arrival filter (cats, the
+    // player selector, the round range — `-1 = all` maps to the filter's
+    // open bound). presence is the exception: its raster has NO events
+    // behind it, so a bbox it cannot satisfy would guarantee an empty
+    // feed — that click arrives WITHOUT one (settings only). The heatmap's
+    // TEAM selector is deliberately absent: the filter has no side/team
+    // key yet (queued separately), so nothing is invented for it.
+    const filter = heatRegionFilter(kind, { player, roundFrom, roundTo });
+    if (carries) {
+      regionChip = 'filtered by region';
+      regionNote = `bbox (${Math.round(bbox.minX)}, ${Math.round(bbox.minY)}) → (${Math.round(bbox.maxX)}, ${Math.round(bbox.maxY)})`;
+    } else {
+      regionChip = 'region not applied';
+      regionNote = `${kind} has no event rows behind it — replay opens without a bbox`;
+    }
+    const target = replayHash(
+      id,
+      carries ? { ...filter, bbox } : filter,
+      { back: `match/${id}/heatmaps` },
+    );
     if (navTimer) clearTimeout(navTimer);
     navTimer = setTimeout(() => {
       navTimer = null;
@@ -324,7 +345,7 @@
 
   {#if regionNote}
     <p class="heat-region-note" role="status">
-      <span class="chip heat-region">filtered by region</span>
+      <span class="chip heat-region">{regionChip}</span>
       <span class="mono muted">{regionNote}</span>
     </p>
   {/if}

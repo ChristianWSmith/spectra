@@ -927,7 +927,23 @@ func (s *Store) queryEvents(f models.EventFilter, exactRound *int) ([]models.Eve
 		w.add("e.headshot = 1")
 	}
 	if bb := f.BBox; bb != nil {
-		w.add("e.pos_x BETWEEN ? AND ? AND e.pos_y BETWEEN ? AND ?", bb.MinX, bb.MaxX, bb.MinY, bb.MaxY)
+		// EITHER endpoint inside the rect = "events touching this region",
+		// parenthesized as a whole so it ANDs with the clauses above.
+		// e.pos_* is the victim/hit position while e.apos_* is the
+		// attacker's (schema.sql events DDL) — and the kills heatmap
+		// RASTERIZES THE ATTACKER POSITION (AnalyticsService.GetHeatmap:
+		// `kind == "kills"` plots AttackerPosX/Y), so a region click
+		// surrounds the KILLER: victim-only matching caught only
+		// point-blank kills, where the victim still stood inside the
+		// killer's ~40u cell. Damage/grenade rows keep their old
+		// behavior through the pos_* half (their apos_* is NULL — SQL
+		// three-valued logic: NULL OR TRUE = TRUE, NULL OR FALSE = NULL,
+		// both NULL = no match), which the bbox tests pin per case.
+		w.add(
+			"((e.pos_x BETWEEN ? AND ? AND e.pos_y BETWEEN ? AND ?) OR (e.apos_x BETWEEN ? AND ? AND e.apos_y BETWEEN ? AND ?))",
+			bb.MinX, bb.MaxX, bb.MinY, bb.MaxY,
+			bb.MinX, bb.MaxX, bb.MinY, bb.MaxY,
+		)
 	}
 	limit := f.Limit
 	if limit <= 0 {
