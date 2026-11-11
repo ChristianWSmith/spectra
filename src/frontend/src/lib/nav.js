@@ -24,10 +24,12 @@ export function openProfile(nav, steam) {
 // default keys) plus the entry context extras:
 //   tick   — initial replay position
 //   loop   — initial loop range "<fromTick>,<toTick>" (ticks; the comma
-//            stays raw in buildHash). ENTRY-ONLY: Replay applies it once
-//            on entry (nav.entryLoopRange → engine bounds + arm) and
-//            drops it from the URL as soon as the user edits a bound,
-//            so the URL keeps mirroring the engine's loop state.
+//            stays raw in buildHash). ENTRY-ONLY: Replay applies it on
+//            entry (nav.entryLoopRange → engine bounds + arm), re-arms
+//            only a DISTINCT range while the keep-alive instance lives
+//            (nav.entrySeedPlan), and drops it from the URL as soon as
+//            the user edits a bound, so the URL keeps mirroring the
+//            engine's loop state.
 //   sel    — selected landmark key (e:123 / c:4 / g:9)
 //   back   — origin path for the return trip ("match/5/rounds",
 //            "compare/5?rounds=3,5", …) — rendered as-is by buildHash
@@ -102,9 +104,11 @@ export function entryLoopAround(tick, tickRate) {
 
 // entrySeekTick resolves the INITIAL TIME TARGET of a Replay entry URL —
 // the counterpart to replayHash: the one place a link's time promise
-// becomes a tick (Replay applies it once the position data is loaded,
-// then never again — in-session filter changes keep the playback
-// position). Priority:
+// becomes a tick (startEngine applies it once per fresh load, and the
+// keep-alive's seed watcher re-applies a DISTINCT resolution while the
+// instance lives — entry-once PER DISTINCT SEED: identical-value
+// in-session churn keeps the playback position, a no-promise rewrite
+// never seeks). Priority:
 //   1. ?tick=  — an exact tick link (event/round-start "watch" buttons)
 //               wins as-is;
 //   2. else the round scope — ?roundFrom= when it names a round, else
@@ -169,8 +173,10 @@ export function entrySeekTick(query, rounds) {
 //     on their own).
 // Independent of entrySeekTick's priority: ?tick= / ?roundFrom= /
 // ?roundTo= decide WHERE the replay starts, never what it loops over.
-// Replay applies the resolved range ONCE in startEngine (bounds, then
-// arm), so in-session query churn can neither re-apply nor cancel it.
+// Replay applies the resolved range in startEngine (bounds, then arm)
+// and the keep-alive's seed watcher re-arms only a DISTINCT range
+// (entrySeedPlan below) — identical-value in-session query churn can
+// neither re-apply nor cancel it.
 export function entryLoopRange(query, rounds) {
   const raw = query == null ? null : query.loop;
   if (raw == null || raw === '') return null;
@@ -200,6 +206,54 @@ function roundSpan(rounds) {
     if (last == null || end > last) last = end;
   }
   return first == null ? null : { first, last };
+}
+
+// entrySeed — THE resolved entry seed of a Replay URL: the two
+// independent promises above resolved TOGETHER against the loaded
+// rounds → { seek: number|null, loop: {from,to}|null }. One bundle, ONE
+// resolution source for both apply paths in Replay — startEngine's
+// fresh-mount block and the keep-alive's seed watcher: neither may
+// resolve on its own, or the two could disagree about what the URL
+// promised. Each half keeps its own resolver's contract: seek is null
+// when the URL makes no time promise (never a guess — a round scope
+// whose rounds have not loaded yet resolves to null too), loop null
+// when it states no usable range.
+export function entrySeed(query, rounds) {
+  return { seek: entrySeekTick(query, rounds), loop: entryLoopRange(query, rounds) };
+}
+
+// entrySeedPlan — THE distinct-seed rule of the replay keep-alive
+// ("entry-once per load" became "entry-once per DISTINCT seed"): given
+// the last-applied seed and a freshly resolved one, what does the
+// engine still owe? Both flags are false — nothing is applied — unless
+// at least one NON-NULL component resolves to a value the last-applied
+// seed does not carry. Distinctness is by VALUE (the seek tick; the
+// loop's from/to pair), never object identity, so a fresh query object
+// carrying the same seed — a filter edit that keeps ?tick=/?loop=, an
+// expandReplayHash round trip, a ?back= rewrite — applies NOTHING.
+// A null component is "no promise": it never seeks, never arms and
+// never disarms (absence clears nothing — the Loop toggle, Replay's
+// range-edit rule and the engine's own cancelLoopIfOutside own every
+// removal), so dropping ?loop= while ?tick= is unchanged (a bound edit)
+// is NOT a new seed and can never yank the playhead back.
+// When something IS distinct, the WHOLE current promise applies: both
+// flags then mirror the non-null halves of `next`, in startEngine's
+// entry order (seek first — a seek landing outside an armed range
+// cancels it, engine.js cancelLoopIfOutside — then loop bounds + arm),
+// so a link's full promise lands even when only one half changed and
+// the arm re-asserts a range the seek just cancelled. The CALLER owns
+// the bookkeeping: it records `next` as the last-applied seed on EVERY
+// resolution (nulls included — a no-promise rewrite becomes the new
+// baseline), so a repeat of the last value resolves equal and applies
+// nothing.
+export function entrySeedPlan(prev, next) {
+  const p = prev || { seek: null, loop: null };
+  const n = next || { seek: null, loop: null };
+  const seekNew = n.seek != null && n.seek !== p.seek;
+  const loopNew =
+    n.loop != null && (p.loop == null || p.loop.from !== n.loop.from || p.loop.to !== n.loop.to);
+  const distinct = seekNew || loopNew;
+  return { applySeek: distinct && n.seek != null, applyLoop: distinct && n.loop != null };
 }
 
 // profileBackTarget resolves the player profile's top-left back button —

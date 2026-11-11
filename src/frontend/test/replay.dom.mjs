@@ -470,6 +470,11 @@ export function createEngine(data, tickRate) {
       };
     },
     seekTick(t) {
+      // Logged so section K can pin the keep-alive seed contract (a
+      // distinct seed applies exactly once; identical-value churn and a
+      // no-promise rewrite never re-seek). seekFrame (scrubbing) is
+      // deliberately NOT a seed path and stays unlogged.
+      globalThis.__seeks = (globalThis.__seeks || []).concat(t);
       state.tick = t;
       cancelLoopIfOutside(frameForTick(t));
       emit?.(state);
@@ -2394,6 +2399,221 @@ check(
   `+${(globalThis.__plays || 0) - playsAfterUser} play calls`,
 );
 check('expanded: chrome fully restored', !!target3.querySelector('.replay-transport') && !!target3.querySelector('.tc-col'));
+
+// --- (K): keep-alive entry seed — distinct applies ONCE, identical/null never
+// A FOURTH instance mounts with a ?tick= seed and a SETTABLE query
+// (globalThis.__setQuery replaces the whole query object — exactly what
+// App's replayQuery re-derives on every same-id replay navigation), so
+// the driver drives in-session route churn against ONE live instance:
+// the mount path applies its seed exactly once (startEngine seeds the
+// record, and the watcher's pre-engine runs defer to it), every DISTINCT
+// resolution applies once, identical-value churn and a no-promise rewrite
+// never move the playhead, and no application ever touches play/pause.
+// The engine stub logs every seed-path seekTick into globalThis.__seeks
+// (seekFrame — scrubbing — is not a seed path and stays unlogged).
+console.log('K. keep-alive entry seed: mount once, distinct applies once, identical/null never, seek never touches play/pause');
+const seeksBase = [...(globalThis.__seeks || [])];
+const playsK0 = globalThis.__plays || 0;
+const pausesK0 = globalThis.__pauses || 0;
+const seeksNow = () => [...(globalThis.__seeks || [])];
+const seeksDelta = () => seeksNow().length - seeksBase.length;
+const target4 = document.createElement('div');
+document.body.appendChild(target4);
+const harness4Src = `<script>
+  import Replay from './views/Replay.js';
+  let query = $state({ tick: '192' });
+  let active = $state(true);
+  globalThis.__setQuery = (q) => (query = q);
+  globalThis.__setActive4 = (v) => (active = v);
+</script>
+<Replay id={1} {query} {active} nav={(h) => (globalThis.__nav4 = (globalThis.__nav4 || []).concat(h))} />`;
+const harness4Out = join(dir, 'harness4.js');
+svelteCompile(harness4Src, 'harness4.svelte', harness4Out);
+const mod4 = await import(pathToFileURL(harness4Out).href);
+mount(mod4.default, { target: target4 });
+await sleep();
+await sleep(); // load() → startEngine: the mount seed applies ONCE
+check(
+  'mount applies its ?tick= seed exactly once (the fresh-mount path owns the pre-engine runs)',
+  seeksDelta() === 1 && seeksNow().at(-1) === 192,
+  JSON.stringify(seeksNow().slice(seeksBase.length)),
+);
+// Identical-value churn: a NEW query object with the SAME resolved seed
+// (a filter edit that keeps ?tick=, an expandReplayHash round trip).
+globalThis.__setQuery({ tick: '192', back: 'match/1' });
+await sleep();
+check(
+  'an identical-value query rewrite never re-seeks (entry-once per distinct seed)',
+  seeksDelta() === 1,
+  JSON.stringify(seeksNow().slice(seeksBase.length)),
+);
+// A NEW distinct ?tick= (a RoundDetail/Combat link while alive) applies once.
+globalThis.__setQuery({ tick: '256' });
+await sleep();
+const readout4 = () => target4.querySelector('.replay-readout')?.getAttribute('title') || '';
+check(
+  'a NEW distinct ?tick= seed applies (one seek → tick 256)',
+  seeksDelta() === 2 && seeksNow().at(-1) === 256,
+  JSON.stringify(seeksNow().slice(seeksBase.length)),
+);
+check('the playhead reads the applied seed (readout → tick 256)', readout4().endsWith('tick 256'), readout4());
+// A no-promise rewrite (the palette's plain same-id jump): never seeks.
+globalThis.__setQuery({});
+await sleep();
+check(
+  'a no-promise rewrite (no ?tick=, no round scope) never seeks',
+  seeksDelta() === 2,
+  JSON.stringify(seeksNow().slice(seeksBase.length)),
+);
+check('and the playhead stays put (still tick 256)', readout4().endsWith('tick 256'), readout4());
+// A round-scope seed (Economy's gap-round watch card / a round
+// drill-down): the RAW round params resolve against the loaded rounds →
+// round 2's start tick (the harness fixture's 640).
+globalThis.__setQuery({ roundFrom: '2', roundTo: '2' });
+await sleep();
+check(
+  'a distinct round-scope seed applies (round 2 start → tick 640)',
+  seeksDelta() === 3 && seeksNow().at(-1) === 640 && readout4().endsWith('tick 640'),
+  `${JSON.stringify(seeksNow().slice(seeksBase.length))} | ${readout4()}`,
+);
+// The SAME scope with a ?back= rewrite around it: no re-apply.
+globalThis.__setQuery({ roundFrom: '2', roundTo: '2', back: 'match/1/round/2' });
+await sleep();
+check(
+  'the same round scope again (back rewrite) never re-seeks',
+  seeksDelta() === 3,
+  JSON.stringify(seeksNow().slice(seeksBase.length)),
+);
+// The loop promise: a distinct ?loop= arms (bounds + enable) WITHOUT a
+// seek — this seed carries no tick.
+const transport4 = target4.querySelector('.replay-transport');
+const controls4 = transport4?.children[1];
+const loopBtn4 = controls4?.querySelector('button[aria-label="Loop range"]');
+check('the instance rendered its transport loop control', !!loopBtn4, String(!!loopBtn4));
+globalThis.__setQuery({ loop: '0,320' });
+await sleep();
+check(
+  'a distinct ?loop= arms the loop (and seeks nothing — no tick promise)',
+  loopBtn4?.getAttribute('aria-pressed') === 'true' && seeksDelta() === 3,
+  `pressed=${loopBtn4?.getAttribute('aria-pressed')} seeks=+${seeksDelta()}`,
+);
+// Same-value churn must not re-arm: turn the loop OFF (the popover's
+// Loop button — engine state only, the URL keeps ?loop=), then churn the
+// query with the SAME range. A re-apply would flip it back on.
+click(loopBtn4);
+await sleep();
+const loopOff4 = controls4?.querySelector('.rp-loop-pop button[title="Toggle loop (L)"]');
+check('the popover offers the Loop toggle while armed', !!loopOff4, String(!!loopOff4));
+click(loopOff4);
+await sleep();
+check(
+  'the toggle turns the entry loop off',
+  loopBtn4.getAttribute('aria-pressed') === 'false',
+  loopBtn4.getAttribute('aria-pressed'),
+);
+click(loopBtn4); // close the popover (section H's pattern)
+await sleep();
+globalThis.__setQuery({ loop: '0,320', cat: 'kills' });
+await sleep();
+check(
+  'identical ?loop= churn never re-arms (the toggle-off survives)',
+  loopBtn4.getAttribute('aria-pressed') === 'false',
+  loopBtn4.getAttribute('aria-pressed'),
+);
+// A NEW distinct range re-arms it.
+globalThis.__setQuery({ loop: '64,576' });
+await sleep();
+check(
+  'a NEW distinct ?loop= range re-arms the loop (and still seeks nothing)',
+  loopBtn4.getAttribute('aria-pressed') === 'true' && seeksDelta() === 3,
+  `pressed=${loopBtn4?.getAttribute('aria-pressed')} seeks=+${seeksDelta()}`,
+);
+// The full promise (Combat's ▶ shape: ?tick= + ?loop=): BOTH apply —
+// seek first, then arm, so the arm lands behind the seek's
+// cancelLoopIfOutside instead of being cancelled by it.
+globalThis.__setQuery({ tick: '384', loop: '320,576' });
+await sleep();
+check(
+  'a fresh tick+loop link applies BOTH (seek → 384, range armed)',
+  seeksDelta() === 4 && seeksNow().at(-1) === 384 &&
+    loopBtn4.getAttribute('aria-pressed') === 'true' && readout4().endsWith('tick 384'),
+  `seeks=${JSON.stringify(seeksNow().slice(seeksBase.length))} pressed=${loopBtn4?.getAttribute('aria-pressed')} | ${readout4()}`,
+);
+check(
+  'seeking never touched play/pause (the mount autoplay is the only play)',
+  (globalThis.__plays || 0) === playsK0 + 1 && (globalThis.__pauses || 0) === pausesK0,
+  `plays +${(globalThis.__plays || 0) - playsK0}, pauses +${(globalThis.__pauses || 0) - pausesK0}`,
+);
+// The dock leg: collapsing pauses (the resume intent is recorded), and a
+// distinct seed landing while collapsed seeks WITHOUT resuming the
+// user's pause — seeking is a position change only.
+globalThis.__setActive4(false);
+await sleep();
+const playsAfterCollapse = globalThis.__plays || 0;
+const pausesAfterCollapse = globalThis.__pauses || 0;
+check(
+  'collapsing pauses the instance (the dock records its resume intent)',
+  pausesAfterCollapse === pausesK0 + 1,
+  `pauses +${pausesAfterCollapse - pausesK0}`,
+);
+globalThis.__setQuery({ tick: '64' });
+await sleep();
+check(
+  'a distinct seed over the collapsed dock seeks without resuming the pause',
+  seeksDelta() === 5 && seeksNow().at(-1) === 64 &&
+    (globalThis.__plays || 0) === playsAfterCollapse &&
+    (globalThis.__pauses || 0) === pausesAfterCollapse,
+  `seeks=${JSON.stringify(seeksNow().slice(seeksBase.length))} plays +${(globalThis.__plays || 0) - playsAfterCollapse} pauses +${(globalThis.__pauses || 0) - pausesAfterCollapse}`,
+);
+globalThis.__setActive4(true);
+await sleep();
+check(
+  'expanding resumes exactly once (the seek changed nothing)',
+  (globalThis.__plays || 0) === playsAfterCollapse + 1,
+  `plays +${(globalThis.__plays || 0) - playsAfterCollapse}`,
+);
+
+// --- (K2): async rounds — the round-scope seed resolves against a list
+// that loads AFTER the route is set. A FIFTH instance mounts with a round
+// scope and EMPTY rounds: the watcher's first run resolves null (a round
+// scope whose rounds are not loaded is never a guess) and defers — no
+// misfire, no record — then the rounds arrive and the mount path applies
+// the resolved seed EXACTLY ONCE; a later identical resolution (rounds
+// loaded now) applies nothing.
+console.log('K2. async rounds: a round-scope seed applied once after the rounds arrive, never while empty');
+const seeksBase5 = [...(globalThis.__seeks || [])];
+const target5 = document.createElement('div');
+document.body.appendChild(target5);
+const harness5Src = `<script>
+  import Replay from './views/Replay.js';
+  let query = $state({ roundFrom: '2', roundTo: '2' });
+  globalThis.__setQuery5 = (q) => (query = q);
+</script>
+<Replay id={1} {query} nav={(h) => (globalThis.__nav5 = (globalThis.__nav5 || []).concat(h))} />`;
+const harness5Out = join(dir, 'harness5.js');
+svelteCompile(harness5Src, 'harness5.svelte', harness5Out);
+const mod5 = await import(pathToFileURL(harness5Out).href);
+mount(mod5.default, { target: target5 });
+await sleep();
+await sleep(); // rounds arrive → startEngine applies the resolved seed once
+check(
+  'the round scope applies exactly once after the rounds arrive (round 2 → 640)',
+  seeksNow().length === seeksBase5.length + 1 && seeksNow().at(-1) === 640,
+  JSON.stringify(seeksNow().slice(seeksBase5.length)),
+);
+check(
+  'the playhead reads the round-2 seed (readout → tick 640)',
+  (target5.querySelector('.replay-readout')?.getAttribute('title') || '').endsWith('tick 640'),
+  target5.querySelector('.replay-readout')?.getAttribute('title'),
+);
+// The rounds are loaded now: the SAME resolution is identical-value churn.
+globalThis.__setQuery5({ roundFrom: '2', roundTo: '2', back: 'match/1' });
+await sleep();
+check(
+  'the same round scope once the rounds are loaded never re-seeks',
+  seeksNow().length === seeksBase5.length + 1,
+  JSON.stringify(seeksNow().slice(seeksBase5.length)),
+);
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');

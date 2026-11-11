@@ -25,15 +25,18 @@
 //                            loop range "<fromTick>,<toTick>" — ticks,
 //                            entry-only), sel (selected landmark) and
 //                            back (origin path). The initial time target
-//                            is resolved ONCE on entry by
-//                            nav.entrySeekTick: ?tick= wins, else the
-//                            round scope (?roundFrom=, else ?roundTo=)
-//                            resolves to that round's start tick, else
-//                            the first frame. The loop range is the
-//                            SECOND, independent entry promise —
-//                            nav.entryLoopRange → applied once in
-//                            startEngine (bounds, then arm) and dropped
-//                            from the URL when the user edits a bound.
+//                            is resolved by nav.entrySeekTick: ?tick=
+//                            wins, else the round scope (?roundFrom=,
+//                            else ?roundTo=) resolves to that round's
+//                            start tick, else the first frame — applied
+//                            on entry and re-applied only for a DISTINCT
+//                            resolution while the keep-alive instance
+//                            lives (nav.entrySeedPlan). The loop range
+//                            is the SECOND, independent entry promise —
+//                            nav.entryLoopRange → applied in startEngine
+//                            (bounds, then arm), re-armed only for a
+//                            distinct range, and dropped from the URL
+//                            when the user edits a bound.
 //   #/explorer/:id           optional context id: the match Explorer's
 //                            inspectors preselect (absent = newest match)
 //   #/reports/:id            optional context id: Reports' match preselect
