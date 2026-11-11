@@ -697,14 +697,30 @@ input[type='checkbox']:focus-visible {
   border-color: var(--accent-50);
 }
 
+/* Side chips: color AND border follow the --ct/--t tokens (color-mix),
+   so the light theme's darkened side hexes (style-m3b) stay in step —
+   the old rgba literals pinned the dark-theme values. */
 .chip.side.ct {
   color: var(--ct);
-  border-color: rgba(90, 169, 230, 0.5);
+  border-color: color-mix(in srgb, var(--ct) 50%, transparent);
 }
 
 .chip.side.t {
   color: var(--t);
-  border-color: rgba(230, 163, 90, 0.5);
+  border-color: color-mix(in srgb, var(--t) 50%, transparent);
+}
+
+/* Chip border twin of the TEAM-IDENTITY pair (the :root .team-start-*
+   rules above set only `color`): an identity-colored CHIP — the
+   PlayerProfile start-side chip — needs its border here to read like its
+   `.chip.side` cousins. Spelled ONCE, no synonym class; color-mix
+   follows the token into the light theme. */
+.chip.team-start-ct {
+  border-color: color-mix(in srgb, var(--team-start-ct) 50%, transparent);
+}
+
+.chip.team-start-t {
+  border-color: color-mix(in srgb, var(--team-start-t) 50%, transparent);
 }
 
 .chip.side.none,
@@ -1237,14 +1253,16 @@ input[type='checkbox']:focus-visible {
 }
 
 .round-cell.ct {
-  background: rgba(90, 169, 230, 0.18);
-  border-color: rgba(90, 169, 230, 0.45);
+  /* side-color twins follow the tokens (color-mix) for light-theme
+     correctness — the old rgba literals pinned the dark-theme values */
+  background: color-mix(in srgb, var(--ct) 18%, transparent);
+  border-color: color-mix(in srgb, var(--ct) 45%, transparent);
   color: var(--ct);
 }
 
 .round-cell.t {
-  background: rgba(230, 163, 90, 0.18);
-  border-color: rgba(230, 163, 90, 0.45);
+  background: color-mix(in srgb, var(--t) 18%, transparent);
+  border-color: color-mix(in srgb, var(--t) 45%, transparent);
   color: var(--t);
 }
 

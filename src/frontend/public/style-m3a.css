@@ -262,14 +262,17 @@
 }
 
 .econ-strip-cell.ct {
-  background: rgba(90, 169, 230, 0.16);
-  border-color: rgba(90, 169, 230, 0.45);
+  /* side-color twins follow the --ct/--t tokens (color-mix), so the
+     light theme's darkened side hexes stay in step — the old rgba
+     literals pinned the dark-theme values */
+  background: color-mix(in srgb, var(--ct) 16%, transparent);
+  border-color: color-mix(in srgb, var(--ct) 45%, transparent);
   color: var(--ct);
 }
 
 .econ-strip-cell.t {
-  background: rgba(230, 163, 90, 0.16);
-  border-color: rgba(230, 163, 90, 0.45);
+  background: color-mix(in srgb, var(--t) 16%, transparent);
+  border-color: color-mix(in srgb, var(--t) 45%, transparent);
   color: var(--t);
 }
 
@@ -359,9 +362,14 @@
   border-color: rgba(232, 131, 58, 0.55);
 }
 
+/* eco is a BUY CLASS, not a side — it wore var(--ct) (side vocabulary on
+   a non-side value). The buy-class palette is full=--accent,
+   force=#e8833a, save=--muted, pistol=#f2c94c; eco takes --success (a
+   non-side token): green reads "saving money", stays clear of the CT/T
+   pair, and the border follows the token (color-mix, the same 55%). */
 .econ-cls.eco {
-  color: var(--ct);
-  border-color: rgba(90, 169, 230, 0.55);
+  color: var(--success);
+  border-color: color-mix(in srgb, var(--success) 55%, transparent);
 }
 
 .econ-cls.save {
@@ -455,20 +463,42 @@
   display: block;
 }
 
-/* Bars and legend dots are keyed by TEAM — the identity colors of the
-   sides the teams opened the match on (lib/teams.js), so the two series
-   stay the same two teams after halftime. The plain class is the neutral
-   fallback for an unresolvable side (never a guessed color). */
+/* --- Damage bars: COLOR = side at that round, PATTERN = team identity ---
+   (the derivation lives in Utility.svelte: barSide / STRIPED_KEY) */
+
+/* The stripe token — ONE spelling shared by the SVG <pattern> overlay
+   (.util-stripe-line) and the legend dot's CSS twin (.util-dot.striped)
+   so the two media can never drift apart. A neutral dark overlay: it
+   reads over both side colors and both themes, and it is NOT a side
+   color (the renderer.js CT_COLOR/T_COLOR hex lock does not apply). */
+.util-view {
+  --util-stripe: rgba(14, 17, 22, 0.45);
+}
+
+/* COLOR: a bar's hue is the side its team held IN THAT ROUND
+   (lib/sideparity.js sideAtRound → Utility.svelte barSide), swapping at
+   every side switch — the side colors, spelled as FILLS (style.css's
+   text .side-* rule sets `color` instead). The plain .util-bar class is
+   the neutral fallback for an unresolvable round (never a guessed
+   color); the old team-start-* fills are gone — identity now rides the
+   stripe below, color rides the side. */
 .util-bar {
   fill: var(--muted);
 }
 
-.util-bar.team-start-ct {
-  fill: var(--team-start-ct);
+.util-bar.side-ct {
+  fill: var(--ct);
 }
 
-.util-bar.team-start-t {
-  fill: var(--team-start-t);
+.util-bar.side-t {
+  fill: var(--t);
+}
+
+/* PATTERN: the stripe overlay painted on the STRIPED team's bars (the
+   <pattern id="util-stripe"> in Utility.svelte) — identity rides the
+   stripe, the hue underneath stays the side color. */
+.util-stripe-line {
+  fill: var(--util-stripe);
 }
 
 .util-legend {
@@ -489,12 +519,26 @@
   background: var(--muted);
 }
 
+/* The legend dots keep the team-IDENTITY colors (they name teams — the
+   EconCurve swatch precedent: identity context in the legend, side color
+   in the data). */
 .util-dot.team-start-ct {
   background: var(--team-start-ct);
 }
 
 .util-dot.team-start-t {
   background: var(--team-start-t);
+}
+
+/* The legend twin of the SVG bar stripe: whichever team the bars stripe
+   (STRIPED_KEY) repeats the same neutral diagonal over its identity
+   color; labels stay plain text (never patterned text). */
+.util-dot.striped {
+  background-image: repeating-linear-gradient(
+    45deg,
+    var(--util-stripe) 0 2px,
+    transparent 2px 5px
+  );
 }
 
 .util-flash-grid {
@@ -571,8 +615,9 @@
 
 .util-nade {
   display: grid;
-  grid-template-columns:
-    74px minmax(90px, 1fr) 78px 76px 74px 62px 44px auto 96px;
+  /* kind · thrower · clock · dmg · blind · aff · actions · coords —
+     the dead site column is gone (the extractor never wrote it) */
+  grid-template-columns: 74px minmax(90px, 1fr) 78px 76px 74px 62px auto 96px;
   gap: 8px;
   align-items: center;
   padding: 5px 12px;
@@ -633,10 +678,6 @@
 .util-num {
   font-variant-numeric: tabular-nums;
   text-align: right;
-}
-
-.util-site {
-  text-align: center;
 }
 
 .util-actions {

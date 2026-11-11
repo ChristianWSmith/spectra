@@ -17,6 +17,7 @@ import {
   fmtMoney,
   fmtMetric,
   fmtMs,
+  fmtZeroDash,
   fmtDate,
   normTickRate,
   chatClock,
@@ -251,6 +252,32 @@ test('fmtMs renders ms as seconds with one decimal', () => {
   assert.equal(fmtMs(999), '1.0s');
   assert.equal(fmtMs(-500), '-0.5s');
   assert.equal(fmtMs(NaN), 'NaNs');
+});
+
+// fmtZeroDash — the zero → em-dash rule for the utility tables' value
+// cells (Utility damage / affected counts and the group-header summary).
+// The exclusions (clock, toolbar N, coordinates, flash card) are the
+// owner's carve-outs — pinned by test/utility.dom.mjs at the call sites.
+test('fmtZeroDash: 0 (and missing input) render the em dash, never a unit', () => {
+  assert.equal(fmtZeroDash(0), '—');
+  assert.equal(fmtZeroDash(0, 'dmg'), '—', 'a dash never carries a unit');
+  assert.equal(fmtZeroDash(0, 'aff'), '—');
+  assert.equal(fmtZeroDash(null), '—');
+  assert.equal(fmtZeroDash(undefined), '—');
+  assert.equal(fmtZeroDash(NaN), '—');
+  assert.equal(fmtZeroDash(''), '—');
+  assert.equal(fmtZeroDash('0'), '—');
+});
+
+test('fmtZeroDash: positive values render as themselves with the optional unit', () => {
+  assert.equal(fmtZeroDash(42), '42');
+  assert.equal(fmtZeroDash(42, 'dmg'), '42 dmg');
+  assert.equal(fmtZeroDash(3, 'aff'), '3 aff');
+  assert.equal(fmtZeroDash('7'), '7', 'numeric strings coerce');
+  assert.equal(fmtZeroDash(42.5, 'dmg'), '42.5 dmg', 'no rounding — the old cells printed raw');
+  // Never fabricated either way: a negative (no cell produces one) is
+  // shown as-is, not swallowed by the dash.
+  assert.equal(fmtZeroDash(-5), '-5');
 });
 
 test('normTickRate is the shared >0 ? :64 fallback', () => {

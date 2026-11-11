@@ -7,8 +7,9 @@
     getTeamNames,
     errText,
   } from '../services.js';
-  import { fmtMs, roundClock } from '../fmt.js';
+  import { fmtMs, roundClock, fmtZeroDash } from '../fmt.js';
   import { roundIndexLabel } from '../rounds.js';
+  import { sideAtRound } from '../sideparity.js';
   import { replayHash, entryLoopAround } from '../nav.js';
   import { listedPlayers } from '../players.js';
   import { roundsByNumber } from '../replay/landmarks.js';
@@ -92,10 +93,45 @@
     return m;
   });
 
-  // Identity colors of the two teams (final-side keyed), for the bars,
-  // the legend dots and the flash cells.
+  // Identity colors of the two teams (final-side keyed) — now only the
+  // LEGEND dots and the flash-card labels (identity context, the
+  // EconCurve legend precedent); the damage bars take their COLOR from
+  // the side at that round (barSide below).
   const clsCT = $derived(teamStartClass('ct', sideSwitches));
   const clsT = $derived(teamStartClass('t', sideSwitches));
+
+  // --- Damage bars: COLOR = side at that round, PATTERN = team identity ---
+  // COLOR: a bar is one TEAM's damage (final-side keyed) but its hue is
+  // the side that team held IN THAT round — resolved through the
+  // canonical parity helper (lib/sideparity.js sideAtRound), so the hue
+  // swaps at every side switch with the teams. An unresolvable round →
+  // '' → the neutral .util-bar fill, never a guessed color.
+  function barSide(roundNumber, finalSide) {
+    const side = sideAtRound(rounds, sideSwitches, roundNumber, finalSide);
+    return side === 'ct' ? 'side-ct' : side === 't' ? 'side-t' : '';
+  }
+
+  // PATTERN: exactly one of the two teams draws STRIPED bars (the
+  // audit's first striped implementation), the other solid — a fixed
+  // display convention: the team that FINISHED T (final-side key 't').
+  // The final side never changes mid-match, so the assignment is stable
+  // for the whole chart; it only says "these are two different teams"
+  // (the hue already says which side each held when).
+  const STRIPED_KEY = 't';
+
+  // Coordinate cell — the owner's carve-out from the zero-dash rule: a
+  // world position is identity/positional, so it dashes ONLY when BOTH
+  // components are 0 (and when the detonation recorded no position at
+  // all — DetX/DetY are omitempty, so a missing one would otherwise
+  // render "(NaN, NaN)"). Any real coordinate renders as-is, including
+  // a single zero: (5, 0).
+  function coordCell(r) {
+    const x = r.detX;
+    const y = r.detY;
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return '—'; // no position recorded
+    if (x === 0 && y === 0) return '—';
+    return `(${Math.round(x)}, ${Math.round(y)})`;
+  }
 
   const kindOptions = $derived(
     [...new Set(rows.map((r) => r.kind).filter(Boolean))].sort(),
@@ -242,36 +278,97 @@
             preserveAspectRatio="none"
             aria-label="Team utility damage per round"
           >
+            <defs>
+              <!-- The identity STRIPE (the design language's first
+                   striped implementation): a neutral diagonal overlay
+                   painted ONLY over the STRIPED team's bars (STRIPED_KEY
+                   in the script) — hue stays the side color on the bar
+                   beneath (color = side at that round), the stripe
+                   marks the team (pattern = identity). userSpaceOnUse
+                   keeps the tile in bar units; preserveAspectRatio="none"
+                   stretches the viewBox non-uniformly, so the 45° angle
+                   skews a few degrees with the panel's aspect ratio —
+                   accepted and documented, still unambiguously stripes.
+                   The overlay color is the view's --util-stripe token
+                   (style-m3a.css) so the SVG pattern and the legend
+                   dot's CSS twin can never drift apart. -->
+              <pattern
+                id="util-stripe"
+                patternUnits="userSpaceOnUse"
+                width="7"
+                height="7"
+                patternTransform="rotate(45)"
+              >
+                <rect x="0" y="0" width="3" height="7" class="util-stripe-line" />
+              </pattern>
+            </defs>
             {#each damageBars.per as p, i (p.round)}
               {@const slot = barW / damageBars.per.length}
               {@const x = i * slot}
               {@const bw = Math.max(2, slot * 0.32)}
+              {@const hCt = (p.ct / damageBars.max) * (barH - 4)}
+              {@const hT = (p.t / damageBars.max) * (barH - 4)}
+              {@const ctX = x + slot * 0.08}
+              {@const tX = x + slot * 0.08 + bw + 2}
+              <!-- COLOR = the side each team held IN THIS ROUND -->
               <rect
-                class="util-bar {clsCT}"
-                x={x + slot * 0.08}
-                y={barH - (p.ct / damageBars.max) * (barH - 4)}
+                class="util-bar {barSide(p.round, 'ct')}"
+                x={ctX}
+                y={barH - hCt}
                 width={bw}
-                height={(p.ct / damageBars.max) * (barH - 4)}
+                height={hCt}
               >
                 <title>Round {roundIndexLabel(rbn.get(p.round) ?? p.round)} — {names.ct} {p.ct} damage</title>
               </rect>
+              {#if STRIPED_KEY === 'ct'}
+                <rect
+                  class="util-bar-stripe"
+                  x={ctX}
+                  y={barH - hCt}
+                  width={bw}
+                  height={hCt}
+                  fill="url(#util-stripe)"
+                  pointer-events="none"
+                />
+              {/if}
               <rect
-                class="util-bar {clsT}"
-                x={x + slot * 0.08 + bw + 2}
-                y={barH - (p.t / damageBars.max) * (barH - 4)}
+                class="util-bar {barSide(p.round, 't')}"
+                x={tX}
+                y={barH - hT}
                 width={bw}
-                height={(p.t / damageBars.max) * (barH - 4)}
+                height={hT}
               >
                 <title>Round {roundIndexLabel(rbn.get(p.round) ?? p.round)} — {names.t} {p.t} damage</title>
               </rect>
+              {#if STRIPED_KEY === 't'}
+                <rect
+                  class="util-bar-stripe"
+                  x={tX}
+                  y={barH - hT}
+                  width={bw}
+                  height={hT}
+                  fill="url(#util-stripe)"
+                  pointer-events="none"
+                />
+              {/if}
             {/each}
           </svg>
           <div class="util-legend">
+            <!-- The dots are the legend's identity context (named teams,
+                 EconCurve's swatch precedent): they keep the team-
+                 identity colors and carry the STRIPE as the CSS twin of
+                 the bar pattern (style-m3a.css) for whichever team the
+                 bars stripe — labels stay plain text (never patterned
+                 text). -->
             <span
-              ><span class="util-dot {clsCT}"></span>{names.ct}
+              ><span class="util-dot {clsCT}" class:striped={STRIPED_KEY === 'ct'}></span
+              >{names.ct}
               <span class="chip badge-computed">computed</span></span
             >
-            <span><span class="util-dot {clsT}"></span>{names.t}</span>
+            <span
+              ><span class="util-dot {clsT}" class:striped={STRIPED_KEY === 't'}></span
+              >{names.t}</span
+            >
             <span class="muted"
               title="total damage in the current filter, by thrower team"
               >max {damageBars.max} dmg/round · totals of recorded damage</span
@@ -328,7 +425,7 @@
             >
               <span class="util-group-title">Round {roundIndexLabel(rbn.get(round) ?? round)}</span>
               <span class="chip round-chip">{list.length}</span>
-              <span class="muted mono">{names.ct} {ctDmg} · {names.t} {tDmg} dmg</span>
+              <span class="muted mono">{names.ct} {fmtZeroDash(ctDmg)} · {names.t} {fmtZeroDash(tDmg)} dmg</span>
               <span class="spacer"></span>
               <span class="muted"><span class="codicon {closed[round] ? 'codicon-chevron-right' : 'codicon-chevron-down'}"></span></span>
             </button>
@@ -350,7 +447,7 @@
                       >{roundClock(r.tick, rbn.get(r.round), tickRate)}</span
                     >
                     <span class="util-num" title="damage dealt"
-                      >{r.damage || 0} dmg</span
+                      >{fmtZeroDash(r.damage, 'dmg')}</span
                     >
                     <span class="util-num muted" title="total blind time"
                       >{r.flashMsTotal > 0
@@ -360,10 +457,7 @@
                     <span
                       class="util-num muted"
                       title="affected players (blinded or damaged by this throw)"
-                      >{affectedCount(r.affected)} aff</span
-                    >
-                    <span class="util-site muted" title="detonation site"
-                      >{r.site || '—'}</span
+                      >{fmtZeroDash(affectedCount(r.affected), 'aff')}</span
                     >
                     <span class="util-actions">
                       <button
@@ -375,7 +469,7 @@
                     <span
                       class="util-coord muted mono"
                       title="detonation world coordinates"
-                      >({Math.round(r.detX)}, {Math.round(r.detY)})</span
+                      >{coordCell(r)}</span
                     >
                   </li>
                 {/each}

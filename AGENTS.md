@@ -359,6 +359,21 @@ Canonical homes (extend these, don't fork them):
   `.field-label`, `.note-amber`, `.chip.ok/.bad/.busy/.idle`, `.toolbar`,
   `.view <name>-view`, `--fs-section`. Do not add a prefixed synonym for
   an existing concept.
+- **Design language — color vs pattern:** the side pair is "CT blue"
+  (`--ct`) / T-orange (`--t`). COLOR = the side at that moment (`--ct` /
+  `--t`, swaps at side switches; per-round names via
+  `teams.playerSideClassAt`, canvas via `renderer.js` `sideFromFlags`);
+  PATTERN = team identity wherever the medium carries one (solid vs
+  dashed series lines, solid vs striped bars/swatches, position like the
+  round-strip arrow); no pattern possible → fall back to the side the
+  team STARTED as (`--team-start-*` via `teams.teamStartClass` /
+  `playerStartClass`); never pattern TEXT (no underline/strikethrough
+  differentiation); never hard-code the hexes outside `renderer.js`'s
+  documented `CT_COLOR`/`T_COLOR`; an unresolvable side stays
+  `''`/neutral, never a guessed color. The dashed vocabulary is scoped:
+  solid/dashed = team identity IN SERIES LINES; existing border dashes
+  (provenance chips, halftime separator, unknown buy-class) keep their
+  meanings.
 - **View-level aggregates are allowed** only when they are pure functions
   over already-fetched rows, the formula is documented in the card's title
   or tooltip, and the value is not derivable from a stored metric without
