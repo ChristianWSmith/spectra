@@ -9,9 +9,8 @@ tone), secondarily for human contributors. Operational mechanics live in
 ## Vision
 
 - **One-liner:** "The ultimate 2D demo viewer."
-- **North star:** voice comms with potential voice analysis. In-demo
-  voice replay already exists; the *analysis* of comms is the
-  aspiration that nothing else names.
+- **North star:** be the best 2D offline demo playback and analysis
+  tool for CS2, bar none.
 - **3-year target:** the gold-standard 2D demo viewer and analysis tool
   that no other offering can compete with.
 - **Never sells.** Built for the community out of love; everybody
@@ -39,7 +38,8 @@ tone), secondarily for human contributors. Operational mechanics live in
 differentiators:
 
 - **Open source.**
-- **Voice comms**, with voice analysis as the stretch.
+- **Voice comms** — the main differentiator: in-demo voice replay
+  exists today, with voice analysis as the stretch.
 - **Fully offline.**
 - **Sharing** (clips, reports, screenshots) is an important part of the
   product even though nothing is cloud-hosted.

@@ -87,13 +87,13 @@ proposing anything.
 - Per-shot aim telemetry — yaw, pitch, recoil index, punch angles and velocity
   per shot; later, further down the road
 
-## Voice (north star)
+## Voice (main differentiator)
 
 In-demo voice comms **replay already exists** — these are the analysis
 and coverage future:
 
-- Voice comms analysis — analyze in-demo voice comms; the north-star
-  feature (voice comms with potential voice analysis)
+- Voice comms analysis — analyze in-demo voice comms; the main
+  differentiator (voice comms with potential voice analysis)
 - Coach voice support — blocked on a golden demo containing a coach
 
 ## Export & scripting
