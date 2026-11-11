@@ -174,7 +174,13 @@ const SWEEP_ROUNDS = [
 ];
 const SWEEP_ROSTER = ['A', 'B', 'C', 'X', 'Y', 'Z'];
 
-// tick-sorted like the real drawNorm rows, with the junk interleaved.
+// The shared sweep fixture — tick-sorted like the real drawNorm rows,
+// with the junk (a hole, an unusable tick) interleaved. The ORDER is a
+// CONTRACT, not a convenience: cursor.usable is verified by the pin
+// below, because an unsorted fixture silently parks EVERY incremental
+// pin on the pure-fold fallback — those pins compare against the pure
+// fold, so they would keep passing while testing nothing of the cursor
+// (the defect this fixture was repaired for: 999 used to precede 990).
 const SWEEP_EVENTS = [
   { kind: 'kill', tick: -4000, round: -2, attacker: 'A', victim: 'X' }, // knife — dropped
   { kind: 'damage', tick: -1500, round: -1, attacker: 'X', victim: 'A', dmg: 40 }, // warmup — dropped
@@ -183,10 +189,10 @@ const SWEEP_EVENTS = [
   { kind: 'kill', tick: 13, round: 1, attacker: 'A', victim: 'B' }, // teamkill — no K
   { kind: 'kill', tick: 40, round: 1, attacker: 'A', victim: 'X', assister: 'C' },
   { kind: 'kill', tick: 41, round: 1, attacker: 'A', victim: 'X', assister: 'C', assistedFlash: true },
+  { kind: 'damage', tick: 990, round: 1, attacker: 'C', victim: 'X', dmg: 8 },
   { kind: 'kill', tick: 999, round: 99, attacker: 'A', victim: 'X' }, // round row absent — dropped
   null, // a hole in the rows — never folds, never breaks the walk
   { kind: 'damage', tick: 'x', round: 1, attacker: 'A', dmg: 7 }, // unusable tick — dropped
-  { kind: 'damage', tick: 990, round: 1, attacker: 'C', victim: 'X', dmg: 8 },
   { kind: 'kill', tick: 1005, round: 2, attacker: 'X', victim: 'A' },
   { kind: 'damage', tick: 1500, round: 2, attacker: 'X', victim: 'A', dmg: 12 },
   { kind: 'kill', tick: 2100, round: 3, attacker: 'B', victim: 'Y' },
@@ -203,6 +209,18 @@ const sweepOpts = (tick, over = {}) => ({
 
 const sameRows = (got, want, why) =>
   assert.deepEqual([...got], [...want], `${why} (row order included)`);
+
+test('incremental: the sweep fixture takes the FAST path (the cursor really walks)', () => {
+  // The contract the fixture header states: an UNSORTED SWEEP_EVENTS
+  // would make cursor.usable false and park every pin below on the
+  // pure-fold fallback — those pins compare against the pure fold, so
+  // they would pass while testing none of the cursor. This is the guard
+  // that keeps them honest.
+  const cursor = createLiveStatsCursor();
+  liveStatsIncremental(cursor, SWEEP_EVENTS, sweepOpts(0));
+  assert.equal(cursor.usable, true, 'SWEEP_EVENTS is unsorted — the incremental pins are testing the fallback');
+  assert.ok(cursor.next > 0, 'the walk advanced past the early rows');
+});
 
 test('incremental: a FORWARD sweep is byte-identical to the pure fold at every tick', () => {
   const cursor = createLiveStatsCursor();

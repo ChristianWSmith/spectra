@@ -347,7 +347,15 @@ Canonical homes (extend these, don't fork them):
   same array); event landmark categories/normalization →
   `lib/replay/landmarks.js` (the ONE categorization — the feed list, the
   scrubber markers and the renderer's world layers all consume its
-  pre-bucketed rows); radar layer assignment + elevation-indicator rules →
+  pre-bucketed rows; the filter <-> URL shape lives here too);
+  landmark feed RUNTIME → `lib/replay/feed.js` (the ONE filter → query
+  composer `buildFeedQuery` — no second site may compose feed query
+  params from a filter, pinned by feed.test.js — plus the source
+  descriptors with their jobs/paging/merge ranks, the `?sel=` resolution
+  and the CSV/JSON export shaping); match-static WORLD dataset →
+  `lib/replay/world.js` (the once-per-match draw fetch with its side
+  channels, the world normalization and the renderer/sfx pushes); radar
+  layer assignment + elevation-indicator rules →
   `lib/replay/layers.js` (band convention + the REGION-ONLY threshold
   rules with the optional per-box `z_min`/`z_max` floor scope —
   indicators come only from `elevation_regions` boxes, never a

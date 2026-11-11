@@ -28,14 +28,11 @@ import {
   normalizeWorld,
   normalizeChat,
   normalizeGeneric,
-  mergeFeed,
   parseLandmarkFilter,
   serializeLandmarkFilter,
   filtersEqual,
   shouldRevealFeed,
   defaultFilter,
-  landmarkExportRows,
-  precomposeChatLabels,
 } from './replay/landmarks.js';
 import { isCounted } from './rounds.js';
 
@@ -576,32 +573,6 @@ test('normalizeChat / normalizeGeneric tag rows with who+label', () => {
   assert.equal(g.label, 'alice → T');
 });
 
-test('mergeFeed orders by tick, then source, then sequence key', () => {
-  const ev = (id, tick) => ({ ...normalizeEvent({ id, seq: id, tick, round: 1, kind: 'kill' }, {}) });
-  const chat = (id, tick) => normalizeChat({ id, tick, round: 1, name: 'a', text: 'x' });
-  const gen = (rowId, tick) => normalizeGeneric({ rowId, name: 'player_team', tick, round: 1, payloadJson: '{}' }, 'team_changes');
-
-  const merged = mergeFeed([
-    [ev(1, 300), ev(2, 100)],
-    [chat(5, 100), chat(6, 200)],
-    [gen(9, 100)],
-  ]);
-  assert.deepEqual(
-    merged.map((r) => r.key),
-    ['e:2', 'e:1', 'c:5', 'c:6', 'g:9'].sort((a, b) => {
-      const t = { 'e:2': 100, 'c:5': 100, 'g:9': 100, 'c:6': 200, 'e:1': 300 };
-      return t[a] - t[b];
-    }),
-  );
-  // Same tick: event < chat < generic; within a source: seq/id order.
-  const ticks = merged.map((r) => r.tick);
-  assert.deepEqual(ticks, [100, 100, 100, 200, 300]);
-  assert.deepEqual(merged.slice(0, 3).map((r) => r.source), ['event', 'chat', 'generic']);
-  // Empty/disabled sources merge cleanly.
-  assert.deepEqual(mergeFeed([]), []);
-  assert.equal(mergeFeed([[ev(1, 1)], null, undefined]).length, 1);
-});
-
 test('filter <-> query round-trip: defaults serialize to nothing', () => {
   // Default state → empty query ("#/replay/5" IS the sparse default).
   assert.deepEqual(serializeLandmarkFilter(defaultFilter()), {});
@@ -847,77 +818,4 @@ test('side/team keys: exact ct/t only, ride the URL round-trip, absent = open', 
   // filter parse ignores ?tick= — THE position stays nav.entrySeekTick's
   // own query read, untouched by these keys).
   assert.equal(parseLandmarkFilter({ side: 'ct', tick: '99' }).tick, undefined);
-});
-
-test('landmarkExportRows flattens the feed into canonical columns', () => {
-  const rows = [
-    normalizeEvent({ id: 1, seq: 0, tick: 10, round: 1, kind: 'kill', attackerName: 'a', victimName: 'b', weapon: 'ak47', dmg: 100 }, {}),
-    normalizeChat({ id: 2, tick: 11, round: 1, name: 'alice', text: 'gl hf', kind: 'chat', channel: 'all' }),
-  ];
-  const out = landmarkExportRows(rows);
-  assert.deepEqual(out[0], ['time', 'round', 'source', 'type', 'event', 'player', 'details', 'weapon', 'damage']);
-  assert.deepEqual(out[1], [10, 1, 'event', 'kills', 'kill', '', '', 'ak47', 100]);
-  // DELIBERATE pin change: the chat `label` is the PRECOMPOSED line — the
-  // canonical fmt.chatLine (`name [tag]: text`) — while `who` stays the
-  // bare name (owner's export contract; matches what the UI renders).
-  assert.deepEqual(out[2], [11, 1, 'chat', 'chat', 'chat', 'alice', 'alice [ALL]: gl hf', '', '']);
-  // The `type` column carries the STAMPED category: a deaths-only
-  // selection's kill row exports as 'deaths' while the `event` column
-  // keeps the demo kind (the enabled-claim stamp — rowCategory through
-  // normalizeEvent's opts.cats).
-  const drow = normalizeEvent(
-    { id: 3, seq: 2, tick: 12, round: 1, kind: 'kill', attackerName: 'a' },
-    { cats: ['deaths'] },
-  );
-  const dout = landmarkExportRows([drow]);
-  assert.equal(dout[1][3], 'deaths');
-  assert.equal(dout[1][4], 'kill');
-});
-
-test('export chat labels side-indicate: [ALL] always, [T]/[CT] from the side inputs', () => {
-  // 14 counted rounds so switch 1 (after round 12) is in range —
-  // round 13 is second-half, round 1 first-half.
-  const rounds = Array.from({ length: 14 }, (_, i) => ({ number: i + 1 }));
-  const sideCtx = {
-    players: [
-      { steamId: '1', name: 'alice', side: 'ct' },
-      { steamId: '2', name: 'bob', side: 't' },
-    ],
-    sideSwitches: 1,
-    rounds,
-  };
-  const all = normalizeChat({ id: 1, tick: 5, round: 13, steamId: '1', name: 'alice', text: 'gg', kind: 'chat', channel: 'all' });
-  const teamCT = normalizeChat({ id: 2, tick: 6, round: 13, steamId: '1', name: 'alice', text: 'b site', kind: 'chat', channel: 'team' });
-  const teamT = normalizeChat({ id: 3, tick: 7, round: 1, steamId: '1', name: 'alice', text: 'mid', kind: 'chat', channel: 'team' });
-  const system = normalizeChat({ id: 4, tick: 8, round: 1, name: '', text: 'Match is live', kind: 'system' });
-  const out = landmarkExportRows([all, teamCT, teamT, system], sideCtx);
-  // all chat → [ALL] regardless of who spoke (alice is CT here)
-  assert.equal(out[1][6], 'alice [ALL]: gg');
-  // team chat → the SPEAKER'S SIDE at that round: alice finished ct, so
-  // round 13 (second half) is [CT] and round 1 (first half) is [T].
-  assert.equal(out[2][6], 'alice [CT]: b site');
-  assert.equal(out[3][6], 'alice [T]: mid');
-  // system row → plain text, no bracket, no colon
-  assert.equal(out[4][6], 'Match is live');
-  // `who` stays the BARE name in every chat row (the tag lives in label)
-  assert.deepEqual(out.slice(1).map((r) => r[5]), ['alice', 'alice', 'alice', '']);
-
-  // No side inputs (a surface without them) → team chat exports the line
-  // WITHOUT a bracket — never a guessed side; [ALL] still applies.
-  const noCtx = landmarkExportRows([all, teamCT]);
-  assert.equal(noCtx[1][6], 'alice [ALL]: gg');
-  assert.equal(noCtx[2][6], 'alice: b site');
-});
-
-test('precomposeChatLabels is the JSON export shape (label composed, others untouched)', () => {
-  const rows = [
-    normalizeEvent({ id: 1, seq: 0, tick: 10, round: 1, kind: 'kill', attackerName: 'a' }, {}),
-    normalizeChat({ id: 2, tick: 11, round: 1, name: 'alice', text: 'gl hf', kind: 'chat', channel: 'all' }),
-  ];
-  const out = precomposeChatLabels(rows);
-  assert.equal(out[0], rows[0], 'event rows pass through untouched');
-  assert.equal(out[1].label, 'alice [ALL]: gl hf', 'chat label precomposed for JSON');
-  assert.equal(out[1].who, 'alice', 'who stays the bare name');
-  assert.equal(out[1].text, 'gl hf', 'the raw text column is preserved');
-  assert.equal(rows[1].label, 'gl hf', 'the input rows are not mutated');
 });

@@ -1,6 +1,8 @@
-// Canonical landmark module — THE one place event categorization,
-// normalization, merging and filter serialization live for the Replay
-// landmark feed (the app's single raw-event browser per match).
+// Canonical landmark module — THE one place the landmark VOCABULARY
+// lives for the Replay landmark feed (the app's single raw-event browser
+// per match): the category registry, the row shapes and the filter <-> URL
+// model. The feed's RUNTIME over this vocabulary (query composition,
+// source reads, paging, merge, export) is lib/replay/feed.js.
 //
 // This module owns:
 //
@@ -12,24 +14,27 @@
 //   3. normalize*      — source rows (typed EventRow / ChatRow /
 //                        GenericEvent) → one landmark row shape that
 //                        preserves the source's own fields.
-//   4. mergeFeed       — chronological merge of the source-specific
-//                        reads (the backend keeps its three retrieval
-//                        paths; there is no universal event query).
-//   5. applyRoundPref  — the show_knife_warmup_rounds visibility rule
+//   4. applyRoundPref  — the show_knife_warmup_rounds visibility rule
 //                        (an ADDITIONAL feed filter on top of the
 //                        category opt-ins and ?roundFrom/?roundTo
 //                        scoping).
-//   6. filter <-> URL  — the landmark filter model serialized to the
+//   5. filter <-> URL  — the landmark filter model serialized to the
 //                        route query (deep links, refresh, back/forward)
 //                        and shouldRevealFeed, the feed-reveal-on-arrival
 //                        rule over it.
 //
+// NOT here (the feed RUNTIME lives in lib/replay/feed.js — the one
+// filter → query composer, the source descriptors with their paging and
+// merge ranks, the ?sel= resolution and the export projection): this
+// file is the VOCABULARY — registry, buckets, row shapes, filter model
+// — and the derivations over them (typedKindsFor / killRoleFor /
+// enabledSources / rowCategory / enabledClaimOf).
+//
 // Unit-tested by src/lib/landmarks.test.js (the lib test glob is
-// src/lib/*.test.js, so the fixture lives one level up).
+// src/lib/*.test.js, so the fixture lives one level up); the feed
+// runtime's tests live beside it in src/lib/feed.test.js.
 
 import { isCounted } from '../rounds.js';
-import { chatLine } from '../fmt.js';
-import { playerSideAt } from '../teams.js';
 
 // The authoritative typed-kind list: every events.kind value (mirror of
 // models.EventKind — Go side; pinned by this module's test).
@@ -578,25 +583,6 @@ export function normalizeGeneric(g, category) {
   };
 }
 
-// mergeFeed merges the source-specific arrays into one chronological
-// list: tick first, then source (events → chat → generic), then the
-// source's own sequence key. Stable and deterministic — the same rows
-// always land in the same order regardless of which sources were
-// enabled.
-export function mergeFeed(arrays) {
-  const rank = { event: 0, chat: 1, generic: 2 };
-  const seqOf = (r) => (r.source === 'event' ? r.seq : r.source === 'chat' ? r.id : r.rowId);
-  const out = [];
-  for (const a of arrays) if (Array.isArray(a)) out.push(...a);
-  out.sort(
-    (a, b) =>
-      a.tick - b.tick ||
-      (rank[a.source] ?? 3) - (rank[b.source] ?? 3) ||
-      (seqOf(a) || 0) - (seqOf(b) || 0),
-  );
-  return out;
-}
-
 // applyRoundPref — the show_knife_warmup_rounds visibility rule (the
 // kvstore pref Settings writes; default OFF = hide knife/warmup rows):
 // with the pref off, every row of a NON-COUNTED round (negative ingest
@@ -607,7 +593,8 @@ export function mergeFeed(arrays) {
 // the lookup does not know (or a row with no round stamp) is KEPT —
 // defensive, never invented, the same convention as normalizeEvent.
 // Pref on → the input array comes back untouched (same reference).
-// Consumed by Replay's feed and scrubber markers (Replay.svelte).
+// Consumed by feed.composeFeedRows (the list) and Replay's scrubber
+// markers — the same rule on both reads, so they can never disagree.
 export function applyRoundPref(rows, roundsByNumber, showKnifeWarmup) {
   if (showKnifeWarmup) return rows;
   const by = roundsByNumber || new Map();
@@ -767,55 +754,4 @@ export function filtersEqual(a, b) {
 export function shouldRevealFeed(prevFilter, nextFilter) {
   if (Object.keys(serializeLandmarkFilter(nextFilter)).length === 0) return false;
   return !filtersEqual(prevFilter, nextFilter);
-}
-
-// --- Export ------------------------------------------------------------------
-
-// sideOfChatRow resolves a chat row's SPEAKER side for the export tags —
-// the same teams.playerSideAt + fmt.chatLine composition the UI renders,
-// fed from the caller's side inputs (Replay has them in scope at the
-// export button). Missing inputs → '' → team chat exports channel-only
-// (no bracket), never a guessed side.
-function sideOfChatRow(r, sideCtx) {
-  const ctx = sideCtx || {};
-  return playerSideAt(ctx.players, ctx.sideSwitches, ctx.rounds, r.round, r.steamId, r.who);
-}
-
-// composeChatLabel is THE export half of the chat display rule: the
-// CSV/JSON feed export PRECOMPOSES the full line into `label` through the
-// canonical formatter (fmt.chatLine — `donk666 [T]: lol`), while `who`
-// stays the bare name. System rows (no name/channel) stay plain text.
-function composeChatLabel(r, sideCtx) {
-  return chatLine(r.who || '', r.channel || '', sideOfChatRow(r, sideCtx), r.label || '');
-}
-
-// precomposeChatLabels returns the feed rows with every CHAT row's
-// `label` replaced by the full precomposed line (fmt.chatLine) — the JSON
-// export's shape, so exported JSON reads like the UI (who stays bare).
-export function precomposeChatLabels(rows, sideCtx) {
-  return (rows || []).map((r) => (r.source === 'chat' ? { ...r, label: composeChatLabel(r, sideCtx) } : r));
-}
-
-// landmarkExportRows flattens the loaded feed into canonical CSV/JSON
-// export columns (time, round, source, player, details — plus
-// category and typed extras). Chat rows carry the PRECOMPOSED line in
-// `label` (see composeChatLabel); sideCtx is the side inputs
-// ({players, sideSwitches, rounds}) Replay has in scope at the export
-// button — omitted, team chat exports with no bracket (never guessed).
-export function landmarkExportRows(rows, sideCtx) {
-  const out = [['time', 'round', 'source', 'type', 'event', 'player', 'details', 'weapon', 'damage']];
-  for (const r of rows) {
-    out.push([
-      r.tick,
-      r.round,
-      r.source,
-      r.category,
-      r.kind || r.name || '',
-      r.who || '',
-      r.source === 'chat' ? composeChatLabel(r, sideCtx) : r.label || '',
-      r.weapon || '',
-      r.dmg != null ? r.dmg : '',
-    ]);
-  }
-  return out;
 }

@@ -23,7 +23,6 @@
     getChat,
     getSoundEvents,
     getSoundEventPresence,
-    getGenericEvents,
     getGenericHistogram,
     getMatch,
     getRounds,
@@ -43,24 +42,31 @@
   import {
     CATEGORIES,
     categoryById,
-    typedKindsFor,
-    enabledSources,
-    killRoleFor,
-    normalizeEvent,
-    normalizeChat,
     categoryOfKind,
-    normalizeGeneric,
-    mergeFeed,
     roundsByNumber,
     parseLandmarkFilter,
     serializeLandmarkFilter,
     shouldRevealFeed,
     defaultFilter,
     applyRoundPref,
-    landmarkExportRows,
-    precomposeChatLabels,
     scrubberMarkerClass,
   } from '../replay/landmarks.js';
+  // THE feed runtime — lib/replay/feed.js owns the one filter → query
+  // composer (buildFeedQuery: the list read AND the marker answer share
+  // it), the source descriptors (jobs / fetch / normalize / rank /
+  // paging), the merge and the ?sel= + export shaping. This view only
+  // wires them: it holds the page state (Svelte needs $state) and the
+  // chrome around the list.
+  import {
+    buildFeedQuery,
+    feedJobs,
+    runFeedJob,
+    composeFeedRows,
+    entrySelection,
+    fetchEntryRow,
+    landmarkExportRows,
+    precomposeChatLabels,
+  } from '../replay/feed.js';
   import { attachReplayInput, snapshot } from '../replay/input.js';
   import { createVoiceEngine, fetchVoicePCM } from '../replay/audio.js';
   import { voiceWindowTicks } from '../replay/voicewindows.js';
@@ -402,8 +408,6 @@
   const filterKey = $derived(JSON.stringify(serializeLandmarkFilter(filter)));
   const backPath = $derived(query.back || '');
 
-  const PAGE = 500; // per-source page size; PAGE+1 probes "there is more"
-
   // THE world dataset (lib/replay/world.js): the drawable-kind anchors
   // with their side channels, the canonical world normalization and the
   // kit evidence — fetched ONCE per match in load(), pushed ONCE in
@@ -443,10 +447,12 @@
   // let like blindRows: only startEngine reads it — empty = no chat,
   // any fetch failure lands here as [] (fail-soft, never a load error).
   let chatLines = [];
-  let typedRows = $state([]); // accumulated raw EventRows (paged)
-  let chatRows = $state([]);
-  let genPages = $state({}); // generic name → {rows, hasMore, cat}
-  let typedHasMore = $state(false);
+  // THE feed's raw pages — one slot per feed job (feedJobs' `key`):
+  // { job, rows, hasMore }. Fed by pullFeed (the initial load AND load
+  // more — feed.js owns the paging rule), read by composeFeedRows (the
+  // list derivation). The view holds it only because Svelte needs $state
+  // for reactivity; the SHAPE and the rules live in feed.js.
+  let feedPages = $state({});
   let feedLoading = $state(false);
   let feedSettled = $state(false);
   let feedError = $state('');
@@ -500,65 +506,33 @@
     return inScope.length > 0 && inScope.every((r) => !isCounted(r));
   });
 
-  // The chat and generic sources read ONE exact round (their Go
-  // signatures — MatchService.GetChat / LibraryService.GetGenericEvents —
-  // are unchanged), so they scope when the range names exactly one round
-  // and stay match-wide for any wider range; the typed events carry the
-  // inclusive range (fetchTyped below).
-  const srcRound = (f) => (f.roundFrom !== 0 && f.roundFrom === f.roundTo ? f.roundFrom : -1);
-
   // Fetch effect: re-runs only when the SERIALIZED filter changes (the
   // query object identity changes on every route write — the string key
   // keeps unrelated query churn, e.g. sel dropping, from refetching).
+  // THE job list (feedJobs — feed.js) is both the enabled check and the
+  // work: one gate per source, one page slot per job, one promise per
+  // job. Nothing here composes query params — runFeedJob does, through
+  // buildFeedQuery.
   $effect(() => {
     const key = filterKey;
     const f = parseLandmarkFilter(JSON.parse(key));
     const my = ++gen;
     feedF = f;
-    typedRows = [];
-    chatRows = [];
-    genPages = {};
-    typedHasMore = false;
+    feedPages = {};
     feedError = '';
     feedSettled = false;
     markerKeys = null; // the marker answer for THIS filter (below)
-    const src = enabledSources(f.cats);
-    const jobs = [];
-    const fail = (e) => {
-      if (my === gen) feedError = errText(e);
-    };
-    if (src.event) {
-      jobs.push(fetchTyped(f, 0, my, false));
-      // The marker answer rides the SAME query (see fetchMarkerKeys) —
-      // the feed and the scrubber can no longer disagree about which
-      // rows match.
-      jobs.push(fetchMarkerKeys(f, my));
-    } else {
-      // No event category enabled → the list holds no event rows, so the
-      // marker set is EMPTY (never an unfiltered answer — an empty
-      // kinds list would mean "every kind" in the store's contract).
-      markerKeys = new Set();
-    }
-    if (src.chat) {
-      jobs.push(
-        getChat(id, srcRound(f), f.steamId)
-          .then((rows) => {
-            if (my === gen) chatRows = rows || [];
-          })
-          .catch(fail),
-      );
-    }
-    // One fetch per distinct generic name (two sources naming the same
-    // generic — e.g. a gname equal to a surviving source's name — dedupe
-    // to a single source read).
-    const names = new Map();
-    for (const g of src.generic) {
-      const name = g.nameFrom ? f.gname : g.name;
-      if (name && !names.has(name)) names.set(name, g.id);
-    }
-    for (const [name, catId] of names) jobs.push(fetchGeneric(f, name, catId, 0, my, false));
-    feedLoading = jobs.length > 0;
-    Promise.allSettled(jobs).then(() => {
+    const jobs = feedJobs(f);
+    const reads = jobs.map((job) => pullFeed(f, job, 0, false, my));
+    // The marker answer rides the SAME composed query (see fetchMarkerKeys)
+    // — the feed and the scrubber can no longer disagree about which rows
+    // match. No event job → the list holds no event rows, so the marker
+    // set is EMPTY (never an unfiltered answer: an empty kinds list would
+    // mean "every kind" in the store's contract).
+    if (jobs.some((j) => j.source.id === 'event')) reads.push(fetchMarkerKeys(f, my));
+    else markerKeys = new Set();
+    feedLoading = reads.length > 0;
+    Promise.allSettled(reads).then(() => {
       if (my === gen) {
         feedLoading = false;
         feedSettled = true;
@@ -566,56 +540,23 @@
     });
   });
 
-  // THE typed-event filter params — the ONE FE spelling of the landmark
-  // feed's models.EventFilter: fetchTyped PAGES it for the list and
-  // fetchMarkerKeys reads it KEYS-ONLY for the scrubber, so both send
-  // byte-identical filters (the Go side shares one clause builder —
-  // store.eventWhere — so the marker set IS the list's answer by
-  // construction, never a second matcher).
-  //   kinds: the enabled categories' kind set (typedKindsFor) — an empty
-  //     set would mean "every kind" in the store contract, so both reads
-  //     are spawned only when an EVENT source is enabled (the fetch
-  //     effect's src.event gate above).
-  //   killRole: the player filter's ROLE for kill rows
-  //     (landmarks.killRoleFor over the category ids — the kinds can't
-  //     tell Kills from Deaths): Kills-only → "X's kills" (attacker),
-  //     Deaths-only → "X's deaths" (victim), both/neither → 'any' (the
-  //     either-endpoint). Go applies it scoped to kind='kill' only.
-  //     Side/Team ride beside it (the heatmap mirror — side-at-round /
-  //     start-side identity); the chat and generic reads have no
-  //     side/team columns in their Go signatures, so those sources stay
-  //     unscoped (stage 2 is the typed feed — noted, not invented).
-  //   distMin/distMax map onto the Go EventFilter's distanceMin/
-  //     distanceMax JSON fields (models.EventFilter).
-  function typedFilterParams(f) {
-    return {
-      matchId: id,
-      kinds: typedKindsFor(f.cats),
-      roundFrom: f.roundFrom,
-      roundTo: f.roundTo,
-      steamId: f.steamId,
-      killRole: killRoleFor(f.cats),
-      side: f.side,
-      team: f.team,
-      weapon: f.weapon,
-      distanceMin: f.distMin,
-      distanceMax: f.distMax,
-      headshotOnly: f.headshotOnly,
-      bbox: f.bbox || undefined,
-    };
-  }
-
-  function fetchTyped(f, offset, my, append) {
-    return getEvents({
-      ...typedFilterParams(f),
-      offset,
-      limit: PAGE + 1, // probe row → "load more" without silent truncation
-    })
-      .then((rows) => {
+  // pullFeed — one source job's page into its slot (the initial load and
+  // load-more both go through runFeedJob, so the paging rule lives in
+  // feed.js). `append` grows the slot's rows; the generation guard drops
+  // a stale answer that lands after the filter changed.
+  function pullFeed(f, job, offset, append, my) {
+    return runFeedJob(id, f, job, offset)
+      .then((page) => {
         if (my !== gen) return;
-        const page = rows || [];
-        typedHasMore = page.length > PAGE;
-        typedRows = append ? [...typedRows, ...page.slice(0, PAGE)] : page.slice(0, PAGE);
+        const prev = feedPages[job.key];
+        feedPages = {
+          ...feedPages,
+          [job.key]: {
+            job,
+            rows: append && prev ? [...prev.rows, ...page.rows] : page.rows,
+            hasMore: page.hasMore,
+          },
+        };
       })
       .catch((e) => {
         if (my === gen) feedError = errText(e);
@@ -625,13 +566,16 @@
   // fetchMarkerKeys — THE scrubber-marker answer: the event ids matching
   // the CURRENT filter, keys-only and UNPAGED (store.GetEventKeys
   // ignores Limit/Offset — the list's page cap must never truncate the
-  // markers). Recorded as a Set of event ids; the marker derived
+  // markers). It composes through buildFeedQuery — THE one filter →
+  // query composer — so the marker set IS the list's answer by
+  // construction (the Go side shares one clause builder, store.
+  // eventWhere). Recorded as a Set of event ids; the marker derived
   // intersects the world rows with it, so a marker can only ever be a
   // row the LIST also matches (the owner's ruling: the scrubber follows
   // the FULL filter — cats, rounds, player, side, team, killRole, bbox,
   // weapon, distance, headshot).
   function fetchMarkerKeys(f, my) {
-    return getEventKeys(typedFilterParams(f))
+    return getEventKeys(buildFeedQuery(id, f))
       .then((keys) => {
         if (my !== gen) return;
         markerKeys = new Set((keys || []).map((k) => k.id));
@@ -645,52 +589,34 @@
       });
   }
 
-  function fetchGeneric(f, name, catId, offset, my, append) {
-    return getGenericEvents(id, name, srcRound(f), PAGE + 1, offset)
-      .then((rows) => {
-        if (my !== gen) return;
-        const page = rows || [];
-        const prev = genPages[name] || { rows: [], hasMore: false, cat: catId };
-        genPages[name] = {
-          rows: append ? [...prev.rows, ...page.slice(0, PAGE)] : page.slice(0, PAGE),
-          hasMore: page.length > PAGE,
-          cat: catId,
-        };
-      })
-      .catch((e) => {
-        if (my === gen) feedError = errText(e);
-      });
-  }
-
+  // "Load more" — one pull per page slot that still has more (each
+  // source pages itself; the chat read is unpaged and never lands here).
   function loadMore() {
     const f = feedF;
     if (!f) return;
     const my = gen;
-    if (typedHasMore) fetchTyped(f, typedRows.length, my, true);
-    for (const [name, p] of Object.entries(genPages)) {
-      if (p.hasMore) fetchGeneric(f, name, p.cat, p.rows.length, my, true);
+    const jobs = new Map(feedJobs(f).map((j) => [j.key, j]));
+    for (const [key, slot] of Object.entries(feedPages)) {
+      if (!slot.hasMore) continue;
+      const job = jobs.get(key);
+      if (job) pullFeed(f, job, slot.rows.length, true, my);
     }
   }
 
-  const hasMore = $derived(typedHasMore || Object.values(genPages).some((p) => p.hasMore));
+  const hasMore = $derived(Object.values(feedPages).some((p) => p.hasMore));
 
-  // The merged, categorized, chronological feed, then the round-
-  // visibility pref (knife/warmup rows hidden unless the user opted in)
-  // applied as an ADDITIONAL filter — the category opt-in rules and
-  // the round-range scoping above it are untouched (applyRoundPref).
-  const feedRows = $derived.by(() =>
-    applyRoundPref(
-      mergeFeed([
-        // cats rides the stamp: a kill row presents as 'deaths' under a
-        // deaths-only selection and as 'kills' otherwise (rowCategory —
-        // the list chips and the export `type` column read the stamp).
-        typedRows.map((r) => normalizeEvent(r, { roundsByNumber: rbn, cats: filter.cats })).filter(Boolean),
-        chatRows.map((c) => normalizeChat(c)),
-        Object.values(genPages).flatMap((p) => p.rows.map((g) => normalizeGeneric(g, p.cat))),
-      ]),
-      rbn,
+  // The merged, categorized, chronological feed — ONE derivation in
+  // feed.js: each source's rows normalized under the CURRENT filter (the
+  // enabled-claim stamp), the merge with the SOURCES' own ranks/seq keys,
+  // then the round-visibility pref (applyRoundPref) as an additional
+  // filter on top of the category opt-in rules and the round-range
+  // scoping already in the query.
+  const feedRows = $derived(
+    composeFeedRows(feedPages, {
+      roundsByNumber: rbn,
+      cats: filter.cats,
       showKnifeWarmup,
-    ),
+    }),
   );
 
   // The feed count as the rail toggle prints it ("185", "185+" while a
@@ -846,34 +772,33 @@
   // events resolve by id even beyond the loaded pages) and seeks the
   // replay to its tick — "open the intended position AND selection".
   // Selection during the session never seeks (the user's playback
-  // context is preserved); ▶ is the explicit seek action.
+  // context is preserved); ▶ is the explicit seek action. The RESOLUTION
+  // is feed-shape (feed.entrySelection: the row already in the list, or
+  // the event id to fetch — feed.fetchEntryRow); this effect is the
+  // CHROME half that applies it (selection state + the seek).
   $effect(() => {
     if (!entrySel || selApplied) return;
     feedRows;
-    if (feedRows.some((r) => r.key === entrySel)) {
+    const pick = entrySelection(entrySel, feedRows);
+    if (pick && pick.row) {
       selApplied = true;
-      const row = feedRows.find((r) => r.key === entrySel);
-      select(row);
-      seekEntry(row.tick);
+      select(pick.row);
+      seekEntry(pick.row.tick);
       return;
     }
     if (!feedSettled) return;
     selApplied = true;
-    if (entrySel.startsWith('e:')) {
-      const n = Number(entrySel.slice(2));
-      if (Number.isFinite(n) && n > 0) {
-        getEvent(n)
-          .then((d) => {
-            if (!d) return;
-            const row = normalizeEvent(d, { cats: filter.cats });
-            if (row) {
-              selected = row;
-              detail = d;
-              seekEntry(d.tick);
-            }
-          })
-          .catch(() => {});
-      }
+    if (pick && pick.id) {
+      // The enabled-claim stamp takes the category set CURRENT at
+      // resolution (a one-shot: this effect never re-runs for it).
+      fetchEntryRow(id, pick.id, filter.cats)
+        .then((hit) => {
+          if (!hit) return;
+          selected = hit.row;
+          detail = hit.detail;
+          seekEntry(hit.detail.tick);
+        })
+        .catch(() => {});
     }
   });
 

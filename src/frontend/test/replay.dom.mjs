@@ -176,6 +176,11 @@ for (const rel of [
   // normalization + the renderer/sfx pushes) — Replay imports it next
   // to landmarks.js; copy it or the world graph fails to link above.
   'world.js',
+  // feed.js is THE feed runtime (the one filter → query composer, the
+  // source descriptors with their paging/merge, the ?sel= + export
+  // shaping) — Replay imports it beside landmarks.js; copy it or the
+  // feed graph fails to link above.
+  'feed.js',
   // playercard.js now resolves its held-item prefix through
   // replay/loadout.js (the one loadout vocabulary) — copy it too, or the
   // card graph fails to link (its own deps, landmarks.js + bullets.js,
