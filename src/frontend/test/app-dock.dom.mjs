@@ -19,6 +19,9 @@
 // instance was really destroyed: the stub Replay re-mounts), and
 // style.css carries the .rp-keepalive-close rule (jsdom has no layout,
 // so the rule's APPLICATION is what is pinned — never pixel geometry).
+// Section E — the collapsed dock's caption-flush CSS: the inherited
+// 10px column gap the mini panel zeroes (frame flush to .rp-mini-bar),
+// characterized against the expanded rhythm it must not change.
 //
 // SCOPE: App's wiring only. The views are inert stubs (Replay's stub
 // counts mounts and mirrors the App-passed props as data attributes) —
@@ -340,6 +343,33 @@ check(
     readFileSync('public/style.css', 'utf8'),
   ),
   'no absolute top:6px right:6px .rp-keepalive-close rule',
+);
+
+// --- (E): the collapsed dock's caption sits FLUSH against the frame -------
+// jsdom has no layout, so the RULES are the pins (the .rp-keepalive-close
+// precedent in section D). The dead gap between the frozen frame and
+// .rp-mini-bar was .replay-main's inherited 10px flex gap: at full size
+// it separates the topbar / stage / transport lines (harmless, wanted),
+// but while collapsed those siblings unmount and it became dead space
+// above the caption. The dock zeroes it INSIDE the mini panel only — the
+// expanded rhythm is characterized right beside it, so a regression that
+// moves the spacing in EITHER direction fails.
+console.log('E. collapsed dock: the frame sits flush against the caption (CSS rules — jsdom has no layout)');
+const cssE = readFileSync('public/style.css', 'utf8');
+check(
+  'the inherited spacing is characterized: .replay-main keeps its 10px column gap (the expanded rhythm)',
+  /\.replay-main\s*\{[^}]*gap:\s*10px/s.test(cssE),
+  'no .replay-main { gap: 10px } rule',
+);
+check(
+  'the collapsed dock zeroes that gap WHEN THE FRAME IS PRESENT (flush frame → caption; the loading/error states keep their spacing)',
+  /\.rp-keepalive-mini\s+\.replay-main:has\(>\s*\.replay-body\)\s*\{[^}]*gap:\s*0/s.test(cssE),
+  'no .rp-keepalive-mini .replay-main:has(> .replay-body) { gap: 0 } rule',
+);
+check(
+  'the caption styles its real play/pause control (the retired ▶ marker class is gone)',
+  /\.rp-mini-toggle\s*\{/.test(cssE) && !/\.rp-mini-resume\s*\{/.test(cssE),
+  'expected a .rp-mini-toggle rule and NO .rp-mini-resume rule',
 );
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

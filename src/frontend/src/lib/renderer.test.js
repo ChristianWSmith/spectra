@@ -59,6 +59,7 @@ import assert from 'node:assert/strict';
 import {
   trailConnects,
   smartCamTarget,
+  smartMarginFor,
   easeValue,
   camConverged,
   flightSplits,
@@ -312,6 +313,43 @@ test('smartCamTarget clamps the center into the image extent', () => {
   assert.equal(big.s, 4); // zoom cap
   assert.equal(big.cx, 1024 / 2); // view (1500) wider than the image → centered
   assert.equal(big.cy, 1024 / 2);
+});
+
+// The margin is size-aware (smartMarginFor): identical framing at full
+// size — the reference-and-above value is EXACTLY the pre-existing 56 px,
+// so every large-size pin above passes bit-identical — and meaningfully
+// tighter at the mini-player dock's ~320×190, where the fixed 56 px ate
+// a proportionally huge slice (78 of 190 px vertically) and left the
+// radar needlessly zoomed out. Stateless: derived from the canvas
+// dimensions alone, wherever that canvas lives.
+test('smartCamTarget margin: identical framing at full size, tighter at the dock', () => {
+  // Full size → EXACTLY today's 56 px (the convergence proof): at and
+  // above the 480 px short-side reference the formula clamps to the
+  // legacy constant, so the fit is bit-identical to the fixed-margin
+  // formula the pins above were written against.
+  assert.equal(smartMarginFor(800, 600), 56);
+  assert.equal(smartMarginFor(480, 1200), 56); // exactly at the reference
+  assert.equal(smartMarginFor(6000, 6000), 56);
+  const box = { minX: 0, minY: 0, maxX: 100, maxY: 50 };
+  const full = smartCamTarget(box, 800, 600, { maxZoom: 10 });
+  assert.equal(full.s, (800 - 2 * 56) / 100); // the old formula's exact value (6.88)
+  // Linear below the reference: the midpoint is exactly half.
+  assert.equal(smartMarginFor(240, 900), 28); // 56 × 240/480
+  // The dock (~320×190): the margin tightens to ≈22 px — less than half
+  // — so the SAME box frames strictly larger than the fixed-56 formula
+  // allowed ((320 − 112)/100 = 2.08), and the height stops being the
+  // starvation side: 190 − 2×22 ≈ 146 px of vertical room vs 78 before.
+  assert.ok(smartMarginFor(320, 190) < 56 / 2, String(smartMarginFor(320, 190)));
+  const dock = smartCamTarget(box, 320, 190, { maxZoom: 10 });
+  assert.ok(dock.s > (320 - 2 * 56) / 100, `dock s=${dock.s}`);
+  assert.ok(dock.s <= 320 / 100, 'never wider than the raw canvas');
+  assert.ok(190 - 2 * smartMarginFor(320, 190) > 190 - 2 * 56, 'more vertical room than the fixed margin');
+  // The floor: tiny canvases keep padding — never a zero/negative slot
+  // (availW/H are Math.max(1, …) downstream, but the margin itself
+  // never collapses to nothing).
+  assert.equal(smartMarginFor(40, 40), 10);
+  // Degenerate input keeps the full-size value rather than NaN.
+  assert.equal(smartMarginFor(NaN, 600), 56);
 });
 
 test('easeValue: exponential approach — smooth, bounded, never a snap', () => {

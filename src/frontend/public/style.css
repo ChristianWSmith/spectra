@@ -1750,14 +1750,28 @@ input[type='checkbox']:focus-visible {
   min-height: 0;
 }
 
+/* COLLAPSED ONLY: the frame sits FLUSH against the caption. The main
+   column's own 10px flex gap (.replay-main below) is the inherited
+   spacing that separated the stage from .rp-mini-bar the moment the
+   topbar/transport siblings unmount — dead space that served no
+   purpose in the dock. Gated on the frame being present
+   (:has(> .replay-body) — dynamic, and supported by both Wails WebView
+   targets: WebKitGTK 6 and WebView2/Chromium) so the loading /
+   error / no-sidecar states keep their 10px note-to-caption spacing;
+   the expanded layout never matches (.rp-keepalive-mini only) and
+   keeps its 10px rhythm untouched (app-dock.dom.mjs section E pins
+   both rules). */
+.rp-keepalive-mini .replay-main:has(> .replay-body) {
+  gap: 0;
+}
+
 /* The panel IS the click target — no grab/pan affordance on the frame. */
 .rp-keepalive-mini .replay-stage canvas {
   cursor: pointer;
 }
 
-/* The dock caption: playhead time, the resume marker (▶ — expanding
-   resumes playback) and the expand hint, hugging the panel's bottom
-   edge under the frozen frame. */
+/* The dock caption: playhead time, the real play/pause control and the
+   expand hint, hugging the panel's bottom edge under the frozen frame. */
 .rp-mini-bar {
   flex: 0 0 auto;
   display: flex;
@@ -1774,9 +1788,18 @@ input[type='checkbox']:focus-visible {
   flex: 0 0 auto;
 }
 
-.rp-mini-resume {
+/* The caption's play/pause control — a real button (never the passive
+   ▶ span it replaced): the transport play button's `btn primary` chrome
+   with a tighter cell so it does not dwarf the 0.85em caption. The
+   glyph follows the live engine state (codicon-play paused /
+   codicon-debug-pause playing — the transport's exact glyphs), and the
+   button stopPropagation()s click AND keydown (Replay.svelte): the
+   panel is the expand target, so Enter/Space on the focused button
+   TOGGLES playback, never expands (no preventDefault — the native
+   button click does the toggle). */
+.rp-mini-toggle {
   flex: 0 0 auto;
-  color: var(--accent);
+  padding: 1px 6px;
   font-size: 0.9em;
 }
 
