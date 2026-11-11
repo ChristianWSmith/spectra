@@ -57,6 +57,13 @@ function isControlTarget(t) {
 // the caller (round navigation and the skip-freeze toggle persist the
 // `skip_freeze` pref view-side) — this module stays the key OWNER, never
 // the owner of those decisions.
+// isActive (optional) gates EVERY handler — the keep-alive mini-player
+// dock passes () => active: while the replay is collapsed the window
+// keys (Space etc.) and the canvas pointer/wheel must be inert (audio
+// and camera over the match view are a bug; the panel's own click is the
+// expand path), and they come back automatically when it expands. The
+// handlers stay ATTACHED (detach/re-attach would race the engine rebuild)
+// — they just no-op; omitting isActive preserves the always-live behavior.
 export function attachReplayInput({
   canvas,
   engine,
@@ -65,6 +72,7 @@ export function attachReplayInput({
   slotCount,
   onRound,
   onSkipFreeze,
+  isActive,
 }) {
   let lastSlot = 0;
 
@@ -76,6 +84,7 @@ export function attachReplayInput({
   });
 
   function onKey(e) {
+    if (isActive && !isActive()) return; // collapsed to the mini dock
     if (e.metaKey || e.ctrlKey || e.altKey) return; // browser/app shortcuts
     // A focused component that already handled the key wins (a
     // LandmarkRow role=button preventDefaults its own Space).
@@ -147,6 +156,7 @@ export function attachReplayInput({
   let lastY = 0;
 
   function onPointerDown(e) {
+    if (isActive && !isActive()) return; // collapsed: no pan, no follow release
     if (e.button !== 0) return;
     panning = true;
     lastX = e.clientX;
@@ -174,6 +184,7 @@ export function attachReplayInput({
   }
 
   function onWheel(e) {
+    if (isActive && !isActive()) return; // collapsed: inert (no preventDefault either)
     e.preventDefault();
     const rect = canvas.getBoundingClientRect();
     renderer.zoomAt(

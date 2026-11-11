@@ -40,6 +40,29 @@ export function replayHash(matchId, filter, extras) {
   });
 }
 
+// expandReplayHash — THE mini-player expand path (the keep-alive's one
+// canonical way back into Replay; App.svelte calls it for BOTH expand
+// triggers: the dock panel's click and Match's header "Watch replay"
+// while the instance is alive). It takes the CAPTURED replay hash —
+// whatever the user last had open (filter/scope, ?tick=/?loop=/?sel=
+// entry params, all preserved) — and rewrites only its ?back= origin to
+// the LATEST match path (keepalive.backOrigin), so Back inside the
+// expanded replay returns to the tab the user was actually on instead
+// of the entry-time origin. The fresh-entry builder stays replayHash
+// above (it must never be used here: a same-id navigation keeps the
+// instance, but a re-minted query would drop the live state). A hash
+// that does not parse to a replay route is handed back unchanged —
+// never minted into a wrong replay URL. A missing/empty backPath DROPS
+// a stale ?back= rather than keeping an origin the user has left.
+export function expandReplayHash(replayHashValue, backPath) {
+  const route = parseHash(replayHashValue || '');
+  if (route.name !== 'replay' || route.id == null) return replayHashValue;
+  const q = { ...(route.query || {}) };
+  if (backPath) q.back = backPath;
+  else delete q.back;
+  return buildHash(`/replay/${route.id}`, q);
+}
+
 // entryLoopSpan stamps the ?loop= extra for a RANGE link (the closing
 // half of the replayHash contract above): "<fromTick>,<toTick>". Bounds
 // that cannot be stated exactly — absent (null/"" — Number(null) would

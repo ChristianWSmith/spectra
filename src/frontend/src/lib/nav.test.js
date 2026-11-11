@@ -18,6 +18,7 @@ import {
   entryLoopRange,
   entryLoopSpan,
   entryLoopAround,
+  expandReplayHash,
 } from './nav.js';
 
 test('an explicit ?back= origin wins (durable, deep-linkable)', () => {
@@ -274,4 +275,52 @@ test('entryLoopAround anchors an event at ±10 s (the engine default width)', ()
   assert.equal(entryLoopAround(null, 64), undefined);
   assert.equal(entryLoopAround(NaN, 64), undefined);
   assert.equal(entryLoopAround(-1, 64), undefined);
+});
+
+// --- expandReplayHash: THE mini-player expand path ------------------------
+// The dock's captured replay hash goes in, the SAME hash with only ?back=
+// rewritten to the latest match path comes out — every entry param (filter
+// scope, tick, loop, sel) is preserved byte-for-byte, because expanding
+// must never reset state or re-seek (the instance was never unmounted).
+test('expandReplayHash rewrites only ?back= to the latest match path', () => {
+  assert.equal(
+    expandReplayHash(
+      '#/replay/5?cat=kill&roundFrom=3&roundTo=7&tick=1234&loop=100,200&sel=e%3A9&back=match/5/rounds',
+      'match/5/economy',
+    ),
+    '/replay/5?cat=kill&roundFrom=3&roundTo=7&tick=1234&loop=100,200&sel=e%3A9&back=match/5/economy',
+  );
+  // A captured hash with NO ?back= gets one appended (the last leg of a
+  // first-time round trip), and a multi-value cat list stays raw (buildHash
+  // keeps "/" and "," unescaped — the same grammar replayHash emits).
+  assert.equal(
+    expandReplayHash('#/replay/5?cat=chat,connects', 'match/5'),
+    '/replay/5?cat=chat,connects&back=match/5',
+  );
+  // An empty origin DROPS a stale ?back= (never keep an origin the user
+  // has already left).
+  assert.equal(
+    expandReplayHash('#/replay/5?cat=kill&back=match/5/rounds', ''),
+    '/replay/5?cat=kill',
+  );
+});
+
+test('expandReplayHash canonicalizes a legacy match-chat hash to its replay form', () => {
+  // The keep-alive captures the RAW location hash — a legacy
+  // #/match/:id/chat entry parses as a replay route, so expanding it must
+  // mint the canonical #/replay/:id form (with its default scope) and
+  // stamp the fresh back origin, never echo the match path back.
+  assert.equal(
+    expandReplayHash('#/match/5/chat', 'match/5/economy'),
+    '/replay/5?cat=chat&back=match/5/economy',
+  );
+});
+
+test('expandReplayHash passes a non-replay hash through unchanged (never mints one)', () => {
+  // Defensive: the App-side caller only hands it captured replay hashes;
+  // anything else comes back untouched instead of becoming /replay/undefined.
+  assert.equal(expandReplayHash('#/match/5', 'match/5'), '#/match/5');
+  assert.equal(expandReplayHash('/match/5/economy', 'match/5'), '/match/5/economy');
+  assert.equal(expandReplayHash('', 'match/5'), '');
+  assert.equal(expandReplayHash(undefined, 'match/5'), undefined);
 });

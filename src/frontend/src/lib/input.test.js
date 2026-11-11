@@ -205,6 +205,65 @@ test('modifier guard: ctrl/meta/alt chords never reach the transport', () => {
   assert.deepEqual(h.engine.calls, ['step:-64']);
 });
 
+test('isActive gate: inert while collapsed to the mini dock, live again on expand', () => {
+  // The keep-alive hands attachReplayInput a getter over Replay's active
+  // prop: while the instance sits in the mini-player dock its window keys
+  // and canvas pointer/wheel must do NOTHING over the match view — and
+  // everything must come back WITHOUT a re-attach (the instance survives
+  // the dock round trip).
+  const h = harness();
+  let on = false;
+  const det = h.attach({ isActive: () => on });
+
+  // Inactive: keys never reach the engine or the view callbacks.
+  h.press(' ');
+  h.press('l');
+  h.press('3');
+  h.press('[');
+  h.press('ArrowLeft');
+  h.press('s');
+  assert.deepEqual(h.engine.calls, []);
+  assert.deepEqual(h.rounds, []);
+  assert.deepEqual(h.skips, []);
+
+  // Inactive: the pointer never starts a pan (renderer untouched) and
+  // the wheel does not preventDefault (wheeling over the dock scrolls
+  // whatever is behind it).
+  const pans = [];
+  h.renderer.panBy = (...a) => pans.push(a);
+  h.canvas.dispatch('pointerdown', { button: 0, pointerId: 1, clientX: 0, clientY: 0 });
+  h.canvas.dispatch('pointermove', { pointerId: 1, clientX: 40, clientY: 0 });
+  assert.deepEqual(pans, []);
+  let prevented = false;
+  h.canvas.dispatch('wheel', {
+    deltaY: -100,
+    clientX: 10,
+    clientY: 10,
+    preventDefault: () => (prevented = true),
+  });
+  assert.equal(prevented, false);
+
+  // Reactive gate (no re-attach): flipping active restores every path.
+  on = true;
+  h.press(' ');
+  h.press('[');
+  assert.deepEqual(h.engine.calls, ['toggle']);
+  assert.deepEqual(h.rounds, [-1]);
+  h.engine.state.followSlot = 5; // following: a drag must release it again
+  h.canvas.dispatch('pointerdown', { button: 0, pointerId: 2, clientX: 0, clientY: 0 });
+  assert.ok(h.engine.calls.includes('setFollow:null'), 'pan release fires while active');
+  h.canvas.dispatch('pointermove', { pointerId: 2, clientX: 40, clientY: 0 });
+  assert.deepEqual(pans, [[40, 0]]);
+  h.canvas.dispatch('wheel', {
+    deltaY: -100,
+    clientX: 10,
+    clientY: 10,
+    preventDefault: () => (prevented = true),
+  });
+  assert.equal(prevented, true, 'wheel preventDefault returns while active');
+  det.detach();
+});
+
 test('defaultPrevented: a component that already handled the key wins', () => {
   const h = harness();
   h.attach();
