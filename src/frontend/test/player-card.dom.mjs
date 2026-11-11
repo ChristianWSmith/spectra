@@ -31,6 +31,11 @@
 // LONG-LOADOUT yield order (the reported ammo-clipping bug): the ammo
 // cell is the never-yielding one (flex:none + nowrap), the icon cells
 // carry the shrink — structural pins only, jsdom does no layout.
+// Section J pins the card CLICK → onFollow wiring (the root fires, an
+// inner control like the mute button is guarded out, a DEAD card stays
+// clickable) plus its CSS: the pointer/hover affordance and the
+// .pc-follow border tint — never an outline (the one-ring pin above
+// scans every .pc-card rule).
 //
 // jsdom is intentionally not a project dependency; from frontend/ run:
 //   npm i --no-save jsdom
@@ -1067,6 +1072,89 @@ check(
   'mode 2: fill swept to the given progress (0.25 → offset 0.75×circumference)',
   !!fill4 && Math.abs(Number(fill4.getAttribute('stroke-dashoffset')) - CIRC * 0.75) < 1e-9,
   fill4?.getAttribute('stroke-dashoffset'),
+);
+
+console.log('J. card click → onFollow (the replay follow wiring): the root fires, inner controls never, a dead card still does');
+// The card is ONE click target: a root click reports onFollow (the
+// caller drives engine.setFollow / releaseFollow — pinned end to end in
+// replay.dom.mjs section F3), while a click landing on an inner control
+// must NOT follow (the Match.svelte row idiom guard on the root).
+const followsJ = [];
+const rootJ = await show({ card: { ...fullCard, onFollow: () => followsJ.push('follow') } });
+click(q(rootJ, '.pc-card'));
+check(
+  'clicking the card root fires onFollow exactly once',
+  JSON.stringify(followsJ) === '["follow"]',
+  JSON.stringify(followsJ),
+);
+click(q(rootJ, '.pc-card'));
+check(
+  'a second click fires again (the component never swallows a click — the toggle lives with the caller)',
+  followsJ.length === 2,
+  JSON.stringify(followsJ),
+);
+
+// The mute button sits INSIDE the root: the target guard must keep it
+// from firing follow while the mute itself still fires (section B pins
+// the mute half on a fixture with NO onFollow; this pins the guard half
+// with a recording onFollow beside it).
+const followsJ2 = [];
+const mutesJ2 = [];
+const rootJ2 = await show({
+  card: { ...fullCard, onFollow: () => followsJ2.push('f'), onToggleMute: () => mutesJ2.push('m') },
+});
+click(q(rootJ2, '.pc-mute'));
+check(
+  'a mute click fires onToggleMute once and NEVER onFollow (the root guard)',
+  JSON.stringify(mutesJ2) === '["m"]' && followsJ2.length === 0,
+  `${JSON.stringify(mutesJ2)} / follows=${JSON.stringify(followsJ2)}`,
+);
+
+// NO dead-gating: a DEAD card stays clickable (follow-of-dead is
+// well-defined — the renderer holds the last alive position until
+// respawn, and neither the keyboard nor the popover checks alive).
+const followsJ3 = [];
+const rootJ3 = await show({ card: { ...fullCard, dead: true, onFollow: () => followsJ3.push('f') } });
+click(q(rootJ3, '.pc-card'));
+check(
+  'a dead card still fires onFollow (and still renders .pc-dead while clickable)',
+  followsJ3.length === 1 && q(rootJ3, '.pc-card').classList.contains('pc-dead'),
+  `${JSON.stringify(followsJ3)} / ${q(rootJ3, '.pc-card').className}`,
+);
+
+// The follow highlight + click affordance: CSS-ONLY (no head markup is
+// added — the head-order pin in section C stays green), and NEVER an
+// outline (the one-ring pin above scans every .pc-card rule).
+const followRule = ruleFor('pc-card\\.pc-follow');
+check(
+  '.pc-follow highlight rule exists: a BORDER tint (UI state, not side/identity)',
+  /border-color/.test(followRule) && !/outline/.test(followRule),
+  followRule,
+);
+check(
+  'the card wears a pointer affordance (cursor: pointer on the base rule)',
+  /cursor:\s*pointer/.test(ruleFor('pc-card(?![\\w-])')),
+  ruleFor('pc-card(?![\\w-])'),
+);
+// Svelte scopes the hash BETWEEN the class and the pseudo-class
+// (.pc-card.svelte-hash:hover), so the hover rule is matched through
+// the scope hash, and the order pin compares the two rule positions.
+const hoverRule = ruleFor('pc-card[^{}]*:hover');
+check(
+  'a modest hover treatment exists (border lift on :hover)',
+  /border-color/.test(hoverRule),
+  hoverRule,
+);
+// The follow tint must OUTRANK the hover lift (equal specificity →
+// source order decides): the .pc-follow rule comes after the :hover one,
+// so a followed card never loses its amber under the cursor.
+const sheetJ = sheetText().replace(/\/\*[\s\S]*?\*\//g, '');
+const hoverIdx = sheetJ.search(/\.pc-card[^{}]*:hover/);
+const followIdx = sheetJ.search(/\.pc-card\.pc-follow/);
+check(
+  'the follow rule is ordered AFTER the hover rule (a followed card keeps its tint on hover)',
+  hoverIdx >= 0 && followIdx > hoverIdx,
+  `${hoverIdx} vs ${followIdx}`,
 );
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

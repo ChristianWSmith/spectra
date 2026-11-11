@@ -13,7 +13,7 @@
   //                   `side` (the column owns it and overrides), e.g.
   //                   {player, playerColor, speaking, muted, dead, follow,
   //                   state, reloadProgress, stats, icons, iconURLs,
-  //                   onToggleMute}; order
+  //                   onToggleMute, onFollow}; order
   //                   is the caller's (roster slot order by default)
   //   teamMuted       every player on the team voice-muted → the team
   //                   mute button's state

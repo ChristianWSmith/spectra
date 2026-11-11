@@ -389,9 +389,25 @@ export const errText = (e) => (e == null ? 'unknown error' : String((e && e.mess
 writeFileSync(
   join(dir, 'replay', 'engine.js'),
   `export const SPEEDS = [0.25, 0.5, 1, 2, 4];
-export const parsePositions = () => ({
+export const parsePositions = (_buf, n = 6) => ({
   frames: 10,
   ticks: [0, 64, 128, 192, 256, 320, 384, 448, 512, 576],
+  // The REAL position store's shape — slot table + per-frame aliveness
+  // masks — because the card columns read data.masks through
+  // aliveAtFrame / firstPayloadFrame: WITHOUT these every card renders
+  // alive: null and the harness can never show a DEAD card (the
+  // section-F3 dead-pin's fixture). slots entries stay NULL (no flags →
+  // sideAtLastPayload / columnSideAt / sideAtTick all fall back exactly
+  // as before, so grouping and every side read are unchanged), and
+  // exactly ONE (slot, frame) is dead: Alpha2 (slot 1) at frame 4
+  // (tick 256). Every frame the EXISTING sections visit (0, 3, 5, 7, 9
+  // — the scrubs and the transport clamps) stays ALL-ALIVE, so no other
+  // pin's card ever dims; section F3 scrubs to frame 4 for the pin and
+  // restores the playhead afterwards.
+  slots: new Array(n).fill(null),
+  masks: Array.from({ length: 10 }, (_, f) =>
+    f === 4 ? ((1 << n) - 1) & ~(1 << 1) : (1 << n) - 1,
+  ),
 });
 export function createEngine(data, tickRate) {
   const state = {
@@ -546,6 +562,10 @@ export function createEngine(data, tickRate) {
     setSkipFreeze,
     toggleSkipFreeze,
     setFollow(s) {
+      // Recorded (the __plays / __pauses / __seeks precedent) so section
+      // F3 can pin the card-click → follow wiring end to end: every
+      // setFollow — a follow, a release (null), from any caller.
+      globalThis.__follows = (globalThis.__follows || []).concat([s]);
       state.followSlot = s;
       emit?.(state);
     },
@@ -2067,6 +2087,107 @@ check(
   'scrubbing back to 640 brings Bravo1 back — every card visible again',
   leftNames() === 'Alpha1,Alpha2,Alpha3,Lone' && rightNames() === 'Bravo1,Bravo2',
   leftNames() + ' | ' + rightNames(),
+);
+
+console.log(
+  'F3. card click → camera follow (engine.setFollow), release on the followed card, the dead-card pin',
+);
+// End to end from a RENDERED card to the engine call the F/1-9 keys and
+// the follow popover share: the stub engine records every setFollow
+// into __follows (the __plays/__pauses/__seeks recording precedent).
+// State entering F3: F2 left frame 3 / tick 640, follow released
+// (its chooseCam("Free")), camMode "free".
+const followsF3 = () => [...(globalThis.__follows || [])];
+const endLeft = () => [...leftCol.querySelectorAll('.pc-card')];
+const endRight = () => [...rightCol.querySelectorAll('.pc-card')];
+const byName = (cards, name) =>
+  cards.find((c) => c.querySelector('.pc-name').textContent === name);
+const alpha1 = byName(endLeft(), 'Alpha1');
+const baseF3 = followsF3().length;
+click(alpha1);
+await sleep();
+check(
+  'clicking a card drives engine.setFollow(slot) — Alpha1 → slot 0',
+  followsF3().length === baseF3 + 1 && followsF3().at(-1) === 0,
+  JSON.stringify(followsF3()),
+);
+check(
+  "the click's effect derives on the card itself (.pc-follow + the follow marker)",
+  alpha1.classList.contains('pc-follow') && !!alpha1.querySelector('.pc-mark'),
+  alpha1.className,
+);
+check(
+  'only the clicked card marks follow',
+  endLeft().every((c) => c === alpha1 || !c.classList.contains('pc-follow')) &&
+    endRight().every((c) => !c.classList.contains('pc-follow')),
+);
+// Clicking the card ALREADY followed RELEASES it — the F-toggle
+// semantics with the ✕'s route hygiene (releaseFollow drops ?follow=
+// too; this harness's query carries none, so only the engine call
+// shows).
+click(alpha1);
+await sleep();
+check(
+  'clicking the followed card RELEASES: setFollow(null)',
+  followsF3().at(-1) === null,
+  JSON.stringify(followsF3()),
+);
+check(
+  'the release clears the card mark (the onChange mirror derives it back)',
+  !alpha1.classList.contains('pc-follow') && !alpha1.querySelector('.pc-mark'),
+);
+
+// --- THE DEAD CARD (the item-1 gap-fill) ------------------------------------
+// The data.masks → aliveAtFrame → cardColumns → .pc-dead wiring at the
+// REPLAY level (the component half is pinned in player-card.dom.mjs):
+// the position stub marks exactly Alpha2 (slot 1) dead at frame 4
+// (tick 256) — scrub there and the rendered card must carry .pc-dead
+// while its live neighbour stays plain.
+await scrubTo(4);
+const deadAlpha2 = byName(endLeft(), 'Alpha2');
+check(
+  "a dead player's rendered card carries .pc-dead (masks → aliveAtFrame → the card)",
+  !!deadAlpha2 && deadAlpha2.classList.contains('pc-dead'),
+  deadAlpha2?.className,
+);
+check('the DEAD chip rides the dead card', !!deadAlpha2?.querySelector('.pc-dead-mark'));
+check(
+  'a live neighbour does NOT dim',
+  !byName(endLeft(), 'Alpha1')?.classList.contains('pc-dead'),
+);
+// NO dead-gating: the dead card stays clickable — follow-of-dead is
+// well-defined (the renderer holds the last alive position until
+// respawn) and neither the keyboard nor the follow popover checks
+// alive.
+const baseDead = followsF3().length;
+click(deadAlpha2);
+await sleep();
+check(
+  'clicking the DEAD card still follows its player (slot 1)',
+  followsF3().length === baseDead + 1 && followsF3().at(-1) === 1,
+  JSON.stringify(followsF3()),
+);
+click(deadAlpha2); // now followed → the second click releases
+await sleep();
+check(
+  '…and clicking the followed dead card releases it',
+  followsF3().at(-1) === null,
+  JSON.stringify(followsF3()),
+);
+
+// Restore the playhead F2 left for the sections below (frame 3, tick
+// 640): the scrub sets frame+tick, the round transport's seekTick moves
+// ONLY the tick (the stub's frame stays) — the same sequence F2 ends
+// with, so every section below inherits the exact state it would have
+// had without F3 (all-alive at frame 3: the stub's dead bit lives only
+// at frame 4).
+await scrubTo(3);
+click(controls.querySelector('#rp-round-next'));
+await sleep();
+check(
+  'the playhead is restored (tick 640) for the sections below',
+  readoutTick().includes('tick 640'),
+  readoutTick(),
 );
 
 console.log('G. filter surface: the category multi-select dropdown + the FilterBar rows');
