@@ -16,12 +16,22 @@
   import PlayerProfile from './lib/views/PlayerProfile.svelte';
   import CompareRounds from './lib/views/CompareRounds.svelte';
   import { parseHash } from './lib/router.js';
-  import { NAV_ACTIONS } from './lib/nav.js';
+  import { NAV_ACTIONS, expandReplayHash } from './lib/nav.js';
+  import { nextReplayAlive, backOrigin } from './lib/keepalive.js';
 
   // Hand-rolled hash router: the route table (parseHash) lives in
   // lib/router.js with its own tests; this component owns the hashchange
-  // wiring and the view switch.
-  let route = $state(parseHash(location.hash));
+  // wiring and the view switch. The initial parse is a plain const so
+  // both seeds below read it once (no state_referenced_locally noise).
+  const firstRoute = parseHash(location.hash);
+  let route = $state(firstRoute);
+  // Replay keep-alive (mini-player dock) — App OWNS the instance record:
+  // {id, hash} while a Replay component is mounted (scope + transition in
+  // lib/keepalive.js, pure and unit-tested), null when none. The record
+  // is updated in the hashchange handler BEFORE `route` flips (one flush),
+  // so the mount condition below can never observe an out-of-scope record.
+  // It lives in $state only — no sessionStorage / module-global store.
+  let alive = $state(nextReplayAlive(null, firstRoute, location.hash));
   // In-app origin for views that return "where you came from":
   // PlayerProfile's back button resolves it through profileBackTarget
   // (lib/nav.js). Recorded on every hashchange — the hash BEFORE the
@@ -29,6 +39,44 @@
   let originHash = $state('');
   let lastHash = location.hash;
   let mapPackPrompt = $state(null); // MapPackPrompt instance (bind:this)
+
+  // Keep-alive activation: true only while the ROUTE is the replay view
+  // (the record is non-null only in scope, so route.name alone decides).
+  // Deactivating (→ same-id match route) collapses Replay into the dock;
+  // activating restores it. Replay reads this as its `active` prop.
+  const replayActive = $derived(!!alive && route.name === 'replay');
+  // The query Replay consumes: taken from the CAPTURED replay hash —
+  // while active it equals the live route query; while collapsed it stays
+  // frozen at the last replay state (filter/scope/loop context), never the
+  // match route's query (which would reset the filter to defaults).
+  const replayQuery = $derived(alive ? parseHash(alive.hash).query || {} : {});
+
+  // expandReplay — THE expand path of the dock (both triggers go through
+  // it: the mini-panel's click below, and Match's header "Watch replay"
+  // via the expandReplay prop — see Match.svelte). One navigation:
+  // the captured replay hash with ?back= rewritten to the LATEST match
+  // path (keepalive.backOrigin), so the replay's Back button returns to
+  // the tab the user was actually on. Never replayHash() here: that is
+  // the FRESH-entry builder and would reset the live query state.
+  function expandReplay() {
+    if (!alive || route.name === 'replay') return; // no instance / already expanded
+    nav(expandReplayHash(alive.hash, backOrigin(location.hash)));
+  }
+
+  // The header-button flavor: null while no same-id instance is alive
+  // (Match then falls back to its fresh-entry replayHash exactly as today).
+  const matchExpand = $derived(
+    alive && alive.id === route.id && route.name === 'match' ? expandReplay : null,
+  );
+
+  // Keyboard activation of the collapsed dock (Enter/Space — input.js's
+  // window keys are inert while inactive, so Space cannot double-fire).
+  function onDockKey(e) {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      expandReplay();
+    }
+  }
 
   // Sidebar layout partitions the shared action list (lib/nav.js):
   // `bottom` entries (Settings) pin to the rail's foot as a gear; every
@@ -41,7 +89,12 @@
     const onChange = () => {
       originHash = lastHash;
       lastHash = location.hash;
-      route = parseHash(location.hash);
+      const next = parseHash(location.hash);
+      // Keep-alive FIRST (same flush as `route` below): replay routes
+      // create/refresh the captured hash, same-id match routes keep the
+      // record (hash frozen), everything else drops it → unmount.
+      alive = nextReplayAlive(alive, next, location.hash);
+      route = next;
     };
     window.addEventListener('hashchange', onChange);
 
@@ -119,10 +172,42 @@
     {/each}
   </nav>
   <main class="content">
+    <!-- Replay keep-alive (mini-player dock): rendered OUTSIDE the view
+         chain so it can coexist with the match view. The wrapper is
+         display:contents while active (the layout is byte-for-byte the
+         pre-keep-alive one — .replay-view stays .content's direct child)
+         and a fixed bottom-right panel while collapsed (its own .rp-keepalive
+         CSS in style.css; dialogs at z-60 stay above it). The WHOLE
+         collapsed panel is the expand target (role=button + click/key) —
+         expandReplay above is the one path. {#key alive.id} keeps the old
+         {#key route.id} remount rule: same id → never remount (query
+         changes ride the replayQuery prop); a different id destroys the
+         instance and fresh-loads; alive → null unmounts it (cleanup runs
+         as before). -->
+    {#if alive}
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex (the dock's
+           role=button is DYNAMIC — it exists exactly when tabindex does:
+           the collapsed panel is a button, the full replay view is not.
+           The compiler cannot see the pairing through the ternary.) -->
+      <div
+        class="rp-keepalive"
+        class:rp-keepalive-mini={!replayActive}
+        role={!replayActive ? 'button' : undefined}
+        tabindex={!replayActive ? 0 : undefined}
+        aria-label={!replayActive ? 'Expand replay' : undefined}
+        title={!replayActive ? 'Expand replay' : undefined}
+        onclick={replayActive ? null : expandReplay}
+        onkeydown={replayActive ? null : onDockKey}
+      >
+        {#key alive.id}
+          <Replay id={alive.id} query={replayQuery} active={replayActive} {nav} />
+        {/key}
+      </div>
+    {/if}
     {#if route.name === 'library'}
       <Library {nav} query={route.query || {}} />
     {:else if route.name === 'match'}
-      <Match id={route.id} routeTab={route.tab || ''} {nav} />
+      <Match id={route.id} routeTab={route.tab || ''} {nav} expandReplay={matchExpand} />
     {:else if route.name === 'round'}
       <RoundDetail id={route.id} round={route.round} query={route.query || {}} {nav} />
     {:else if route.name === 'player'}
@@ -130,13 +215,12 @@
     {:else if route.name === 'compare'}
       <CompareRounds id={route.id} query={route.query || {}} {nav} />
     {:else if route.name === 'replay'}
-      <!-- {#key}: Replay loads in onMount only, so a replay → replay
-           jump (same route, different id — a saved filter for another
-           match) must remount it or meta/positions/engine stay on the
-           previous match. Query-only changes keep the component. -->
-      {#key route.id}
-        <Replay id={route.id} query={route.query || {}} {nav} />
-      {/key}
+      <!-- Replay renders ABOVE (the keep-alive block), outside this
+           chain: it must survive into same-id match routes as the
+           mini-player dock. Mount/destroy is keyed by the alive record
+           (id), so a replay → replay jump for another id remounts it and
+           any out-of-scope route destroys it — the same rules the old
+           in-chain {#key route.id} gave, plus the cross-route keep-alive. -->
     {:else if route.name === 'builder'}
       <Builder {nav} />
     {:else if route.name === 'sql'}

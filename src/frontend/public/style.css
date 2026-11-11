@@ -1672,6 +1672,95 @@ input[type='checkbox']:focus-visible {
    ~340px, full height, reserving its space; its header sits on the
    same top line as that bar. */
 
+/* --- Replay keep-alive / mini-player dock (App's .rp-keepalive wrapper) ---
+   App keeps ONE Replay mounted across same-id match routes; the wrapper
+   flips between two states:
+   ACTIVE (replay route): display:contents — zero boxes of its own, so
+     .replay-view remains .content's direct child and the layout is
+     byte-for-byte the pre-keep-alive one (nothing below applies).
+   COLLAPSED (same-id match/round route): a fixed bottom-right panel, the
+     .cmp-float precedent (fixed right/bottom, z-30 — the .dlg-back
+     backdrop at z-60 stays above it) sized to the frozen frame + the
+     compact .rp-mini-bar. The whole panel is the expand target (its
+     role=button + handlers ride the wrapper in App.svelte); the canvas
+     keeps its identity inside .replay-view — only chrome unmounts — and
+     the stage ResizeObserver repaints the frame at the new size. */
+.rp-keepalive {
+  display: contents;
+}
+
+.rp-keepalive.rp-keepalive-mini {
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  right: 26px;
+  bottom: 26px;
+  width: 320px;
+  z-index: 30;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 28px var(--overlay-55);
+  overflow: hidden;
+  cursor: pointer;
+}
+
+/* The view fills the panel: height stops being viewport-derived (this
+   0,2,0 selector beats .replay-view's own height and the ≤1000px media
+   rules), width fills the 320px box (overriding .view's auto-margins —
+   an auto cross-margin would shrink the item below the box), and the
+   body's stage drops the narrow-window min-height so the panel never
+   grows past caption + frame. */
+.rp-keepalive-mini .replay-view {
+  height: 220px;
+  width: 100%;
+  margin: 0;
+}
+
+.rp-keepalive-mini .replay-view .replay-stage {
+  min-height: 0;
+}
+
+/* The panel IS the click target — no grab/pan affordance on the frame. */
+.rp-keepalive-mini .replay-stage canvas {
+  cursor: pointer;
+}
+
+/* The dock caption: playhead time, the resume marker (▶ — expanding
+   resumes playback) and the expand hint, hugging the panel's bottom
+   edge under the frozen frame. */
+.rp-mini-bar {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 9px;
+  font-size: 0.85em;
+  background: var(--panel);
+  border-top: 1px solid var(--border);
+  min-width: 0;
+}
+
+.rp-mini-time {
+  flex: 0 0 auto;
+}
+
+.rp-mini-resume {
+  flex: 0 0 auto;
+  color: var(--accent);
+  font-size: 0.9em;
+}
+
+.rp-mini-hint {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: right;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .side-toggle {
   display: flex;
   align-items: center;

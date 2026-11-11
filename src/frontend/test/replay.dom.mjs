@@ -1,11 +1,12 @@
 // jsdom driver for Replay: a FRESH replay opens with the landmark feed
 // COLLAPSED — its toggle sits on the main column's ONE top line
-// (.replay-topbar, first child of .replay-main: back button left, round
-// ribbon in the flex-grow middle, rail toggle right, spec 7/13/14) with
-// no .replay-side at all until it expands; the view itself is the ROW
-// (main column + rail beside it when open, no .replay-cols wrapper), so
-// the expanded aside's header shares the top line with that bar. The
-// round ribbon rides the top line too (its .rp-ribbon cell), and the
+// (.replay-topbar, first child of .replay-main: back button + the
+// Economy shortcut left, round ribbon in the flex-grow middle, rail
+// toggle right, spec 7/13/14) with no .replay-side at all until it
+// expands; the view itself is the ROW (main column + rail beside it when
+// open, no .replay-cols wrapper), so the expanded aside's header shares
+// the top line with that bar. The round ribbon rides the top line too
+// (its .rp-ribbon cell), and the
 // transport splits into the full-width game-time scrubber line ABOVE the
 // centered control-cluster line (round transport, ±15s, play, speed
 // popover, the skip-freeze toggle, loop popover, camera Smart/Free/Follow
@@ -124,6 +125,9 @@ for (const rel of [
   // players.js is the canonical bot filter — Replay's roster rows and
   // replay/playercard.js's bot check both import it.
   'players.js',
+  // keepalive.js is the mini-player dock's resume rule
+  // (shouldResumeOnReturn) — Replay imports it next to nav.js.
+  'keepalive.js',
 ]) {
   writeFileSync(join(dir, rel), readFileSync(join('src/lib', rel), 'utf8'));
 }
@@ -482,7 +486,20 @@ export function createEngine(data, tickRate) {
       emit?.(state);
     },
     play() {
+      // Counted so section J can pin the keep-alive play/pause contract
+      // (an inactive load never autoplays; activation resumes exactly
+      // once; a deliberate pause is never resumed).
+      globalThis.__plays = (globalThis.__plays || 0) + 1;
       state.playing = true;
+      emit?.(state);
+    },
+    pause() {
+      // The real engine API's pause (engine.js L400+) — the keep-alive's
+      // deactivate calls it. Mirrored (state + emit) and counted like
+      // play; absent from the old stub because nothing could pause a
+      // harness instance before the keep-alive existed.
+      globalThis.__pauses = (globalThis.__pauses || 0) + 1;
+      state.playing = false;
       emit?.(state);
     },
     toggle() {
@@ -683,7 +700,7 @@ function check(name, cond, detail = '') {
 const click = (el) => el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
 const children = (el) => [...el.children];
 
-console.log('A. fresh replay: no header/title; back + ribbon + rail toggle share ONE top line of the main column');
+console.log('A. fresh replay: no header/title; back + economy + ribbon + rail toggle share ONE top line of the main column');
 const stage = target.querySelector('.replay-stage');
 check('stage rendered', !!stage);
 check('no view header and no Replay title', !target.querySelector('.view-header') && !target.querySelector('h1'));
@@ -711,11 +728,28 @@ check(
   !!toggle && !stage.querySelector('.side-toggle'),
   'missing top-bar .side-toggle',
 );
+const economy = topbar?.querySelector('.rp-economy');
 check(
-  'bar order: back first, ribbon cell in the middle, rail toggle last',
-  topbar && children(topbar)[0] === back && children(topbar)[1]?.classList.contains('rp-ribbon') &&
+  'economy shortcut sits directly after Back (the 2-click round trip leg 1)',
+  !!economy && topbar && children(topbar)[1] === economy &&
+    economy?.getAttribute('aria-label') === 'Economy' &&
+    !!economy?.querySelector('.codicon-graph'),
+  topbar ? children(topbar).map((el) => el.className || el.tagName).join(' | ') : 'no topbar',
+);
+check(
+  'bar order: back first, economy second, ribbon cell in the middle, rail toggle last',
+  topbar && children(topbar)[0] === back && children(topbar)[2]?.classList.contains('rp-ribbon') &&
     children(topbar)[children(topbar).length - 1] === toggle,
   (topbar ? children(topbar).map((el) => el.className || el.tagName).join(' | ') : 'no topbar'),
+);
+const navEcoBase = (globalThis.__nav || []).length;
+click(economy);
+await sleep();
+check(
+  'the economy shortcut navigates to match/<id>/economy (collapse is App-side)',
+  (globalThis.__nav || []).length > navEcoBase &&
+    (globalThis.__nav || [])[navEcoBase] === '/match/1/economy',
+  JSON.stringify((globalThis.__nav || []).slice(navEcoBase)),
 );
 check('no .replay-side while collapsed', !target.querySelector('.replay-side'));
 check('toggle aria-expanded=false', toggle?.getAttribute('aria-expanded') === 'false', toggle?.getAttribute('aria-expanded'));
@@ -2247,6 +2281,119 @@ check(
     !lastNav2.includes('loop='),
   lastNav2 || 'no navigation',
 );
+
+// --- (J): keep-alive — the collapsed dock + the activation contract -------
+// A THIRD instance mounts INACTIVE (App passes active=false while the
+// kept-alive replay sits over a match view): the load chain must run to
+// completion WITHOUT autoplaying (audio over the match view is a bug),
+// the chrome unmounts down to frame + caption (stage/canvas stay — the
+// renderer holds the element), and wasPlaying carries the resume intent
+// through both activation orders. The engine stub counts play()/pause()
+// (globalThis.__plays / __pauses) — snapshots are taken around each step,
+// so the earlier sections' play traffic cannot leak into these deltas.
+console.log('J. keep-alive: inactive never autoplays; collapse pauses, expand resumes exactly once, a deliberate pause stays paused');
+const playsBase = globalThis.__plays || 0;
+const pausesBase = globalThis.__pauses || 0;
+const target3 = document.createElement('div');
+document.body.appendChild(target3);
+const harness3Src = `<script>
+  import Replay from './views/Replay.js';
+  let active = $state(false);
+  globalThis.__setActive = (v) => (active = v);
+</script>
+<Replay id={1} query={{}} nav={(h) => (globalThis.__nav3 = (globalThis.__nav3 || []).concat(h))} {active} />`;
+const harness3Out = join(dir, 'harness3.js');
+svelteCompile(harness3Src, 'harness3.svelte', harness3Out);
+const mod3 = await import(pathToFileURL(harness3Out).href);
+mount(mod3.default, { target: target3 });
+await sleep();
+await sleep(); // load() → startEngine while INACTIVE
+check(
+  'an inactive load never autoplays (startEngine gates on active)',
+  (globalThis.__plays || 0) === playsBase,
+  `+${(globalThis.__plays || 0) - playsBase} play calls`,
+);
+const miniBar3 = target3.querySelector('.rp-mini-bar');
+check(
+  'collapsed: the dock caption renders (playhead time + expand hint)',
+  !!miniBar3 && miniBar3.textContent.includes('Click to expand'),
+  miniBar3 ? miniBar3.textContent : 'no .rp-mini-bar',
+);
+check(
+  'collapsed: the resume marker ▶ shows (an in-flight load counts as "would have played")',
+  !!miniBar3?.querySelector('.rp-mini-resume'),
+);
+check(
+  'collapsed: NO chrome (top bar, transport, rail, player cards)',
+  !target3.querySelector('.replay-topbar') &&
+    !target3.querySelector('.replay-transport') &&
+    !target3.querySelector('.replay-side') &&
+    !target3.querySelector('.tc-col'),
+);
+check(
+  'collapsed: the stage + canvas stay MOUNTED (the renderer holds them)',
+  !!target3.querySelector('.replay-stage') && !!target3.querySelector('.replay-stage canvas'),
+);
+
+// Activate → the pending resume fires EXACTLY once (load finished inactive).
+globalThis.__setActive(true);
+await sleep();
+check(
+  'activating applies the pending resume once (play +1, no chrome flicker)',
+  (globalThis.__plays || 0) === playsBase + 1 &&
+    !target3.querySelector('.rp-mini-bar') &&
+    !!target3.querySelector('.replay-topbar'),
+  `+${(globalThis.__plays || 0) - playsBase} play calls`,
+);
+check('expanded: the player cards are back', !!target3.querySelector('.tc-col'));
+
+// Collapse while PLAYING → pause +1 and the ▶ marker promises a resume.
+globalThis.__setActive(false);
+await sleep();
+check(
+  'collapsing a playing replay pauses it (pause +1)',
+  (globalThis.__pauses || 0) === pausesBase + 1,
+  `+${(globalThis.__pauses || 0) - pausesBase} pause calls`,
+);
+check(
+  'collapsed: the ▶ resume marker shows (it was playing when left)',
+  !!target3.querySelector('.rp-mini-bar')?.querySelector('.rp-mini-resume'),
+);
+
+// Expand resumes, then a DELIBERATE pause: collapse must not double-pause,
+// expand must NOT resume — never resume a user's pause.
+globalThis.__setActive(true);
+await sleep();
+check(
+  'expanding resumes the replay (play +2 total)',
+  (globalThis.__plays || 0) === playsBase + 2,
+  `+${(globalThis.__plays || 0) - playsBase} play calls`,
+);
+const playBtn3 = target3.querySelector('.replay-transport button[aria-label="Pause"]');
+check('the transport offers the Pause cell while playing', !!playBtn3, 'missing aria-label=Pause');
+click(playBtn3);
+await sleep();
+const pausesAfterUser = globalThis.__pauses || 0;
+const playsAfterUser = globalThis.__plays || 0;
+globalThis.__setActive(false);
+await sleep();
+check(
+  'collapsing a USER-paused replay issues no second pause',
+  (globalThis.__pauses || 0) === pausesAfterUser,
+  `+${(globalThis.__pauses || 0) - pausesAfterUser} pause calls`,
+);
+check(
+  'collapsed after a user pause: NO ▶ marker (deliberate pause is remembered)',
+  !target3.querySelector('.rp-mini-bar')?.querySelector('.rp-mini-resume'),
+);
+globalThis.__setActive(true);
+await sleep();
+check(
+  're-expanding a user-paused replay stays paused (no play call)',
+  (globalThis.__plays || 0) === playsAfterUser,
+  `+${(globalThis.__plays || 0) - playsAfterUser} play calls`,
+);
+check('expanded: chrome fully restored', !!target3.querySelector('.replay-transport') && !!target3.querySelector('.tc-col'));
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');

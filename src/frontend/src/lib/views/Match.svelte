@@ -52,7 +52,13 @@
   // plain #/match/:id. Tabs are otherwise local state like every other
   // match tab — see selectTab for how the active tab mirrors itself in
   // the URL.
-  let { id = 0, nav = () => {}, routeTab = '' } = $props();
+  // expandReplay: when App still holds a LIVE Replay instance for this
+  // match (the mini-player dock — keepalive.js), it is THE expand path
+  // back into it (App.expandReplay): "Watch replay" then returns to the
+  // running instance (filter/loop/selection/playhead intact) instead of
+  // minting a fresh entry hash. Null while no instance is alive → the
+  // fresh-entry replayHash below, exactly as before.
+  let { id = 0, nav = () => {}, routeTab = '', expandReplay = null } = $props();
 
   // The tab bar is the canonical list from the route table, so a deep
   // link can never point at a tab that does not exist.
@@ -493,6 +499,13 @@
   }
 
   function openReplay() {
+    // Keep-alive expand: the dock's one canonical path (same function the
+    // mini-panel's click uses) — replayHash() below is only for a FRESH
+    // entry (no instance alive), where the entry query is the point.
+    if (expandReplay) {
+      expandReplay();
+      return;
+    }
     nav(replayHash(id, {}, { back: backPath() }));
   }
 
@@ -660,7 +673,9 @@
           {/if}
           <button
             class="btn primary match-replay"
-            title="Watch this match from tick 0 in the replay view"
+            title={expandReplay
+              ? 'Return to the replay (resumes where you left it)'
+              : 'Watch this match from tick 0 in the replay view'}
             onclick={openReplay}
           >
             <span class="codicon codicon-play"></span> Watch replay

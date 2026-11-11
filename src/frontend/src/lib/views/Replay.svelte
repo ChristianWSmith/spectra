@@ -13,7 +13,7 @@
   // (#/replay/:id?cat=…&roundFrom=…&back=…) — deep links, refresh and
   // back/forward preserve it by construction. Playback state (engine
   // tick, selection after entry) is local.
-  import { onMount, tick as svelteTick } from 'svelte';
+  import { onMount, tick as svelteTick, untrack } from 'svelte';
   import {
     getReplayMeta,
     getEvents,
@@ -101,6 +101,9 @@
   import { playerSideAt } from '../teams.js';
   import { isCounted, roundStartTick, roundIndexLabel, scoreThrough } from '../rounds.js';
   import { isSteam, entrySeekTick, entryLoopRange } from '../nav.js';
+  // Keep-alive resume rule (the mini-player dock): THE one predicate for
+  // "leaving should remember this as a play-on-return" — see keepalive.js.
+  import { shouldResumeOnReturn } from '../keepalive.js';
   import { buildHash } from '../router.js';
   import FilterBar from '../components/FilterBar.svelte';
   import LandmarkRow from '../components/LandmarkRow.svelte';
@@ -111,7 +114,16 @@
   import RoundStrip from '../components/RoundStrip.svelte';
   import TeamColumn from '../components/TeamColumn.svelte';
 
-  let { id = 0, query = {}, nav = () => {} } = $props();
+  // active — App's keep-alive activation flag: false while this instance
+  // is collapsed into the mini-player dock (the route sits on a same-id
+  // match view), true on the replay route. It gates autoplay, the window
+  // input handlers, the chrome (top bar / transport / rail / cards) and
+  // the dock bar below; view-mode state (theater, speed, loop, layer
+  // toggles, mutes) deliberately IGNORES it and survives the round trip.
+  // App only ever mounts this component active (the alive record is
+  // created on the replay route), and the DOM harness mounts it with the
+  // default — fresh-entry behavior is unchanged.
+  let { id = 0, query = {}, nav = () => {}, active = true } = $props();
 
   let meta = $state(null);
   let matchMap = $state('');
@@ -312,6 +324,13 @@
   let canvasEl = $state(null);
   let ready = $state(false); // engine+renderer live (template gate)
   let live = true; // false after unmount — drops late async results
+  // Keep-alive resume flag (mini-player dock): recorded on DEACTIVATION —
+  // the engine was playing, or the initial load is still in flight (a
+  // fresh entry autoplays, so returning must play: shouldResumeOnReturn
+  // is the one rule). Cleared when activation applies it. A deliberate
+  // pause before leaving leaves it false → returning never resumes a
+  // user's pause. Drives the dock bar's ▶ marker while collapsed.
+  let wasPlaying = $state(false);
   let engine = null;
   let renderer = null;
   let input = null;
@@ -1586,6 +1605,34 @@
     return cleanup;
   });
 
+  // --- Keep-alive activation (App's `active` prop) --------------------------
+  // Deactivate (→ same-id match route, collapsed to the dock): pause the
+  // engine AND remember whether to resume; close the transient popovers
+  // (their anchors unmount with the chrome — same reset enterTheater does,
+  // plus the feed's category picker). Everything else — theater, speed,
+  // loop, layer toggles, mutes, selection — is view mode and SURVIVES.
+  // Activate (→ back on the replay route): resume iff it was playing when
+  // left (engine.play() on a paused engine is a no-op when the flag was
+  // cleared), then clear the flag. The effect tracks ONLY `active` —
+  // wasPlaying is read through untrack so its own write cannot retrigger.
+  // renderer.resize() repaints the frozen frame at the new size in BOTH
+  // directions (the wrapper flips display:contents ↔ fixed box; resize
+  // draws engine state even while paused, and the ResizeObserver covers
+  // every later size change) — the canvas must never go blank.
+  $effect(() => {
+    if (active) {
+      const resume = untrack(() => wasPlaying);
+      wasPlaying = false;
+      if (resume) engine?.play();
+      renderer?.resize();
+      return;
+    }
+    loopOpen = speedOpen = camOpen = followOpen = dropsOpen = volOpen = catsOpen = false;
+    wasPlaying = shouldResumeOnReturn(!!engine, engine?.state.playing === true);
+    if (engine?.state.playing) engine.pause();
+    renderer?.resize();
+  });
+
   // teardown releases the engine/input/observer without marking the view dead
   // (startEngine re-runs it on the live path).
   function teardown() {
@@ -2131,6 +2178,11 @@
       renderer,
       matchId: id,
       slotCount: players.length || 10,
+      // Keep-alive gating: while collapsed (active false) the window keys
+      // (Space/,/./digits…) and the canvas pan/wheel are inert — this
+      // instance stays attached across the dock round trip, so no
+      // detach/re-attach dance (and no keys leaking into the match view).
+      isActive: () => active,
       // [ / ] — the SAME round→tick rule the prev/next buttons use
       // (roundNav is null-disabled at either end; onRibbonRound keeps an
       // unknown number in place), so the key can never jump where the
@@ -2263,10 +2315,17 @@
     renderer.setHud(hudFor(engine.state.tick)); // first HUD paint (redraws)
     ready = true;
     // A replay starts playing as soon as it is ready — startEngine runs
-    // ONCE per launch (in-session filter changes never re-run it), so
-    // this fires on first launch only; every later seek/filter keeps the
-    // playback position.
-    engine.play();
+    // ONCE per load (in-session filter changes never re-run it), so this
+    // fires on first launch only; every later seek/filter keeps the
+    // playback position. NEVER while deactivated (keep-alive): a load
+    // chain finishing over the collapsed dock must start PAUSED (audio
+    // over the match view is a bug). Both orders are covered:
+    //   load finishes INACTIVE → stays paused; activation applies
+    //     wasPlaying (recorded at leave: no engine yet → "would have
+    //     played") and starts it;
+    //   user returns FIRST → active is already true here, so the play
+    //     lands exactly like a fresh entry.
+    if (active) engine.play();
   }
 
   function togglePlay() {
@@ -2778,8 +2837,9 @@
   <!-- Main column — the FIRST child of the view (the landmark rail
        joins as its sibling when expanded, so both columns' headers
        share the same top line). Its first line is the top bar: back
-       button left (spec 7), the round ribbon in the middle (spec 13,
-       the one flex-grow cell — it shrinks before the buttons do), the
+       button + the Economy shortcut left (spec 7 / the 2-click round
+       trip), the round ribbon in the middle (spec 13, the
+       flex-grow cell — it shrinks before the buttons do), the
        collapsed landmark-rail toggle right (spec 14). Both used to
        float inside the render stage; the stage's corners belong to the
        HUD/canvas now. The toggle keeps the rail-visible gate the
@@ -2787,14 +2847,30 @@
        plus the {#if !eventsOpen} gate: when the rail is open its aside
        header owns the toggle instead, at the same height as this bar. -->
   <div class="replay-main">
-    <!-- {#if !theater} — theater mode hides the WHOLE top line (the jsdom
-         harness loads no CSS, so display:none would keep these focusable:
-         the gate is structural). Back, ribbon and the rail toggle all go;
-         the feed aside follows the same flag below. -->
-    {#if !theater}
+    <!-- {#if !theater && active} — theater mode hides the WHOLE top line
+         (the jsdom harness loads no CSS, so display:none would keep these
+         focusable: the gate is structural). Back, Economy, ribbon and the
+         rail toggle all go; the feed aside follows the same flag below.
+         `active` collapses the line the same structural way: while the
+         instance sits in the mini-player dock only the frozen frame and
+         .rp-mini-bar remain (the mini shows chrome only on expand). -->
+    {#if !theater && active}
     <div class="replay-topbar">
       <button class="btn rp-back" aria-label="Back" title="Back" onclick={goBack}>
         <span class="codicon codicon-arrow-left" aria-hidden="true"></span> Back
+      </button>
+      <!-- Economy shortcut: leg 1 of the strict 2-click round trip —
+           replay → Economy in ONE click from any origin tab (there is no
+           replay → specific-tab link otherwise); collapsing keeps this
+           instance alive and the dock's click is leg 2. Back keeps its
+           ?back= origin semantics untouched. -->
+      <button
+        class="btn rp-economy"
+        aria-label="Economy"
+        title="Open this match's Economy tab (the replay stays loaded — click its panel to return)"
+        onclick={() => nav(`/match/${id}/economy`)}
+      >
+        <span class="codicon codicon-graph" aria-hidden="true"></span> Economy
       </button>
       <div class="rp-ribbon">
         {#if rounds.length}
@@ -2848,13 +2924,15 @@
       <!-- The map-pack note (the old .note-amber paragraph above the
            stage) moved INTO the stage's control group — the ONE
            packNote copy; iconNote and the frame-mismatch note keep
-           their paragraphs (nothing else shows them). -->
-      {#if iconNote}
+           their paragraphs (nothing else shows them). Both paragraphs
+           are chrome: gated by `active` so the collapsed dock shows
+           only frame + caption. -->
+      {#if active && iconNote}
         <!-- Icon extraction failed after one attempt (handoff C): cards
              already fell back to text labels; this says why, once. -->
         <p class="note-amber" role="status">{iconNote}</p>
       {/if}
-      {#if meta && data.frames !== meta.frames}
+      {#if active && meta && data.frames !== meta.frames}
         <p class="note-amber" role="status">
           frame count mismatch: stream has {data.frames}, meta says {meta.frames}
         </p>
@@ -2864,7 +2942,13 @@
              RIGHT (the grouping is stable across halftime); each column's
              side — and with it the team name color AND every card tint —
              is that team's side AT THE PLAYHEAD (leftSide/rightSide flip
-             at halftime, see columnSideAt). -->
+             at halftime, see columnSideAt). Gated by `active`: the
+             collapsed dock is frame + caption ONLY (the cards unmount;
+             teamMuted/state live in this component and survive). The
+             STAGE below is deliberately NEVER gated — the renderer holds
+             the canvas element across the dock round trip, so an
+             unmount here would leave it drawing into a detached node. -->
+        {#if active}
         <TeamColumn
           teamName={leftTeamName}
           side={leftSide}
@@ -2872,6 +2956,7 @@
           teamMuted={teamMuted.left}
           onToggleTeamMute={toggleLeftTeamMute}
         />
+        {/if}
         <div class="replay-stage" bind:this={stageEl}>
           <canvas bind:this={canvasEl} aria-label="Replay canvas"></canvas>
           <!-- Theater mode's way OUT: rendered only while theater is on,
@@ -2881,8 +2966,11 @@
                only control left on screen, so hiding it would softlock
                the view). Bottom-RIGHT of the stage — the region map's
                reserved bottom-right corner (renderer.js); the canvas
-               chat keeps the bottom-left corner to itself. -->
-          {#if theater}
+               chat keeps the bottom-left corner to itself. `active`
+               joins the gate only for the collapsed dock (chrome-only
+               frame; the button returns with the chrome on expand —
+               theater itself survives the round trip). -->
+          {#if theater && active}
             <button
               class="btn rp-theater-exit"
               aria-label="Exit theater mode"
@@ -2907,8 +2995,9 @@
                readout's follow:/loop: text (rows 1/2 — snapshots and
                clips carry gameplay only now) and the packNote paragraph
                that used to sit above the stage (the note row). The
-               canvas copy of all three died with the readout. -->
-          {#if !uiHudOff && ctrlRows.length}
+               canvas copy of all three died with the readout. The
+               collapsed dock hides it with the rest of the chrome. -->
+          {#if !uiHudOff && ctrlRows.length && active}
             <div class="rp-ctrl-list" role="status">
               {#each ctrlRows as row (row.kind)}
                 {#if row.kind === 'follow'}
@@ -2930,6 +3019,7 @@
             </div>
           {/if}
         </div>
+        {#if active}
         <TeamColumn
           teamName={rightTeamName}
           side={rightSide}
@@ -2937,13 +3027,15 @@
           teamMuted={teamMuted.right}
           onToggleTeamMute={toggleRightTeamMute}
         />
+        {/if}
       </div>
 
-      <!-- {#if !theater} — theater mode hides the WHOLE transport line
-           (scrubber + control cluster) the same structural way as the
-           top bar above: the stage fills the column, and the stage's own
-           .rp-theater-exit is the only control left. -->
-      {#if !theater}
+      <!-- {#if !theater && active} — theater mode hides the WHOLE
+           transport line (scrubber + control cluster) the same structural
+           way as the top bar above: the stage fills the column, and the
+           stage's own .rp-theater-exit is the only control left. The
+           collapsed dock hides it too — frame + caption only. -->
+      {#if !theater && active}
       <!-- Two lines: the scrubber owns the FULL-WIDTH line (round
            markers + the game-time readout ride with it), the centered
            button/control cluster keeps the ONE .toolbar row below it. -->
@@ -3515,8 +3607,25 @@
       </div>
       {/if}
     {/if}
+    <!-- Mini-player dock bar (keep-alive, collapsed only): the frozen
+         frame's compact caption — playhead time (the SAME scrubTime the
+         scrubber line shows), a resume marker ▶ when expanding will
+         RESUME playback (wasPlaying: playing at leave, or the load was
+         still in flight; a deliberate pause shows no marker), and the
+         expand hint. The whole .rp-keepalive panel (App) is the click
+         and Enter/Space target — this bar is the visible affordance, so
+         it carries no interactive elements of its own. -->
+    {#if !active}
+      <div class="rp-mini-bar">
+        <span class="mono rp-mini-time" title="Playhead">{scrubTime}</span>
+        {#if wasPlaying}
+          <span class="rp-mini-resume" title="Expanding resumes playback">▶</span>
+        {/if}
+        <span class="rp-mini-hint">Click to expand</span>
+      </div>
+    {/if}
   </div>
-  {#if railVisible && eventsOpen && !theater}
+  {#if railVisible && eventsOpen && !theater && active}
   <aside class="replay-side" aria-label="Event feed">
     <button
       class="side-toggle"
