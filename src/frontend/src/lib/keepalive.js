@@ -63,7 +63,8 @@ export function shouldResumeOnReturn(engineExists, enginePlaying) {
 // backOrigin — the current hash as a ?back= origin VALUE ("match/5/
 // economy", "match/5/round/3?…"): location.hash minus the leading '#'
 // and '/' (goBack/nav prepend the '/' again). Used when the dock
-// expands: the replay's Back button must return to the tab the user was
+// expands: the replay's return trip (the Minimize cell — and Close,
+// which exits before its teardown) must return to the tab the user was
 // ACTUALLY on, not to the entry-time origin captured in ?back=.
 export function backOrigin(hash) {
   return String(hash || '').replace(/^#\/?/, '');

@@ -56,8 +56,9 @@ export function replayHash(matchId, filter, extras) {
 // while the instance is alive). It takes the CAPTURED replay hash —
 // whatever the user last had open (filter/scope, ?loop=/?sel= entry
 // params, all preserved) — and rewrites its ?back= origin to the LATEST
-// match path (keepalive.backOrigin), so Back inside the expanded replay
-// returns to the tab the user was actually on instead of the
+// match path (keepalive.backOrigin), so the return trip out of the
+// expanded replay (the topbar's Minimize cell, and Close before its
+// teardown) lands on the tab the user was actually on instead of the
 // entry-time origin. It also DROPS a stale ?tick=: the playhead lives
 // in the running engine (the instance was never unmounted), so the
 // captured tick is a consumed promise — re-applying it would yank the

@@ -127,7 +127,12 @@
   // App only ever mounts this component active (the alive record is
   // created on the replay route), and the DOM harness mounts it with the
   // default — fresh-entry behavior is unchanged.
-  let { id = 0, query = {}, nav = () => {}, active = true } = $props();
+  // onClose — App's TEARDOWN path (closeReplay: stopPropagation +
+  // alive = null — the collapsed dock X's exact handler) handed down so
+  // the topbar Close cell shares ONE path instead of forking it. Only
+  // Close calls it (Minimize keeps the instance); App always passes it,
+  // the DOM drivers opt in to pin the wiring.
+  let { id = 0, query = {}, nav = () => {}, active = true, onClose = null } = $props();
 
   let meta = $state(null);
   let matchMap = $state('');
@@ -860,8 +865,30 @@
     navigateFilter({ ...filter, ...next });
   }
 
+  // goBack — the ?back= origin exit: Minimize's WHOLE behavior (collapse
+  // to the keep-alive dock — App keeps the instance on the same-id match
+  // route, resume semantics unchanged) and Close's first half (exit to
+  // the origin before the teardown). The origin itself is unchanged —
+  // every entry still stamps ?back=, and expandReplayHash rewrites it
+  // on each dock cycle.
   function goBack() {
     nav(backPath ? '/' + backPath : `/match/${id}`);
+  }
+
+  // closeInstance — the topbar Close cell (the cluster's leftmost):
+  // EXIT to the back origin (the same goBack destination Minimize uses)
+  // and TEAR THE INSTANCE DOWN through App's closeReplay — the onClose
+  // prop is the collapsed dock X's exact alive=null handler, reused,
+  // never forked: no dock is left behind, the route lands on the match
+  // view, and the next replay entry mounts FRESH. Navigate FIRST:
+  // goBack reads the live query.back (alive=null swaps the captured
+  // query to {}), and the hashchange is async — both run in this tick
+  // and nextReplayAlive(prev = null) agrees with either order.
+  // stopPropagation rides along inside closeReplay (harmless while
+  // expanded — the wrapper's expand handlers are null when active).
+  function closeInstance(e) {
+    goBack();
+    onClose?.(e);
   }
 
   // --- Export (native save dialog — lib/save.js) -----------------------------
@@ -2639,8 +2666,10 @@
     engine.setLoopEnabled(true); // arm, like the entry ?loop= apply
   }
 
-  // enterTheater — the ONLY way into theater mode (the toolbar's
-  // #rp-theater cell; the stage's .rp-theater-exit is the way out).
+  // enterTheater — the ONLY way into theater mode (the top bar's
+  // #rp-theater cluster cell; the stage's .rp-theater-exit is the way
+  // out — theater hides the whole top bar, so the exit button is the
+  // only control left standing).
   // Every popover PANEL lives inside the transport toolbar, so entering
   // closes them all: their state would survive the transport's unmount
   // and the panels would remount OPEN on exit, floating over the stage
@@ -3039,29 +3068,53 @@
   <!-- Main column — the FIRST child of the view (the landmark rail
        joins as its sibling when expanded, so both columns' headers
        share the same top line). Its first line is the top bar: the
-       back button left (the single way out — its ?back= origin carries
-       whichever match tab the user came from), the round ribbon in the
-       middle (spec 13, the flex-grow cell — it shrinks before the
-       buttons do), the collapsed landmark-rail toggle right (spec 14).
-       Both used to float inside the render stage; the stage's corners
-       belong to the HUD/canvas now. The toggle keeps the rail-visible
-       gate the stage-floated one had (it appears exactly when the canvas
-       does) plus the {#if !eventsOpen} gate: when the rail is open its
+       Close · Minimize · Theater cluster left (macOS traffic-light
+       order — Close exits to the ?back= origin AND tears the instance
+       down through App's closeReplay, Minimize is the old Back
+       behavior verbatim: exit to the origin with the instance kept
+       alive in the dock, Theater hides this bar + the transport), the
+       round ribbon in the middle (spec 13, the flex-grow cell — it
+       shrinks before the buttons do), the collapsed landmark-rail
+       toggle right (spec 14). The cluster and the toggle used to float
+       inside the render stage; the stage's corners belong to the
+       HUD/canvas now. The toggle keeps the rail-visible gate the
+       stage-floated one had (it appears exactly when the canvas does)
+       plus the {#if !eventsOpen} gate: when the rail is open its
        aside header owns the toggle instead, at the same height as this
        bar. -->
   <div class="replay-main">
     <!-- {#if !theater && active} — theater mode hides the WHOLE top line
          (the jsdom harness loads no CSS, so display:none would keep these
-         focusable: the gate is structural). Back, ribbon and the
+         focusable: the gate is structural). The cluster, ribbon and the
          rail toggle all go; the feed aside follows the same flag below.
          `active` collapses the line the same structural way: while the
          instance sits in the mini-player dock only the frozen frame and
          .rp-mini-bar remain (the mini shows chrome only on expand). -->
     {#if !theater && active}
     <div class="replay-topbar">
-      <button class="btn rp-back" aria-label="Back" title="Back" onclick={goBack}>
-        <span class="codicon codicon-arrow-left" aria-hidden="true"></span> Back
+      <!-- Top-left cluster, macOS traffic-light order: Close (exit to
+           the back origin + TEAR DOWN via App's closeReplay — the dock
+           X's exact path through the onClose prop), Minimize (today's
+           Back behavior verbatim: collapse to the keep-alive dock,
+           instance alive, resume semantics unchanged — no text label),
+           Theater (moved OUT of the transport's control group; the
+           stage's .rp-theater-exit stays the way out, because theater
+           hides this whole bar). Icon-only .btn cells like their
+           neighbors; the ribbon and the rail toggle keep their places. -->
+      <button class="btn rp-close" aria-label="Close" title="Close" onclick={closeInstance}>
+        <span class="codicon codicon-close" aria-hidden="true"></span>
       </button>
+      <button class="btn rp-minimize" aria-label="Minimize" title="Minimize" onclick={goBack}>
+        <span class="codicon codicon-chrome-minimize" aria-hidden="true"></span>
+      </button>
+      <button
+        class="btn rp-theater"
+        id="rp-theater"
+        aria-label="Theater mode"
+        title="Theater mode — hide the top bar and controls"
+        onclick={enterTheater}
+        ><span class="codicon codicon-screen-full" aria-hidden="true"></span></button
+      >
       <div class="rp-ribbon">
         {#if rounds.length}
           <!-- The canonical RoundStrip (Match header / RoundDetail keep
@@ -3170,9 +3223,10 @@
               <span class="codicon codicon-screen-normal" aria-hidden="true"></span>
             </button>
           {/if}
-          <!-- The back button and the collapsed landmark-rail toggle
-               used to float here (top-left / top-right of the stage);
-               both now live in the main column's .replay-topbar above —
+          <!-- The top-left cluster (Close · Minimize · Theater) and the
+               collapsed landmark-rail toggle used to float here (top-left
+               / top-right of the stage); both now live in the main
+               column's .replay-topbar above —
                the stage's corners belong to the overlay region map now
                (renderer.js): the DOM control group top-left, the canvas
                score box top-center, the kill feed top-right, the chat
@@ -3420,20 +3474,13 @@
 
           <span class="toolbar-sep" aria-hidden="true"></span>
 
-          <!-- Theater mode: icon-only cell between the loop group's
-               separator and the camera selector (its own slot family —
-               the transport cluster's icon buttons). Entering hides the
-               top bar, the transport and the feed aside; the stage's
-               .rp-theater-exit (rendered only then) is the way out.
-               Session-only: no pref, no route write. -->
-          <button
-            class="btn"
-            id="rp-theater"
-            aria-label="Theater mode"
-            title="Theater mode — hide the top bar and controls"
-            onclick={enterTheater}
-            ><span class="codicon codicon-screen-full" aria-hidden="true"></span></button
-          >
+          <!-- The theater cell MOVED OUT to the top bar's Close ·
+               Minimize · Theater cluster (the top-left controls rework):
+               this slot runs straight from the loop group's separator to
+               the camera selector, and entering theater still hides the
+               top bar + this transport — the stage's .rp-theater-exit
+               (rendered only then) remains the way out. Session-only:
+               no pref, no route write. -->
 
           <!-- Camera (spec 17): Smart/Free/Follow as a popover — the
                player list appears as a second (native) dropdown only

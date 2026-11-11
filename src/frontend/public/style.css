@@ -1501,10 +1501,11 @@ input[type='checkbox']:focus-visible {
   min-height: 0;
 }
 
-/* The main column's TOP LINE: back button left, the round ribbon in
-   the one flex-grow cell, the collapsed rail toggle right (both used
-   to float inside the render stage). The toggle only renders while the
-   rail is collapsed — expanded, the aside's header owns it at the same
+/* The main column's TOP LINE: the Close · Minimize · Theater cluster
+   left, the round ribbon in the one flex-grow cell, the collapsed rail
+   toggle right (the cluster and the toggle used to float inside the
+   render stage). The toggle only renders while the rail is collapsed —
+   expanded, the aside's header owns it at the same
    height (see .replay-side). Buttons stay flex: none so the ribbon
    absorbs the squeeze; min-width: 0 lets it shrink with the column. */
 .replay-topbar {
@@ -1516,7 +1517,7 @@ input[type='checkbox']:focus-visible {
 }
 
 /* The round ribbon's cell in the top bar: it takes every spare pixel
-   between the back button and the rail toggle (and keeps the toggle
+   between the top-left cluster and the rail toggle (and keeps the toggle
    pinned right while the ribbon is empty/loading), shrinking before
    either button does — min-width: 0 lifts the automatic minimum so a
    narrow window squeezes the strip instead of overflowing the bar. */
@@ -1578,20 +1579,25 @@ input[type='checkbox']:focus-visible {
 
 /* --- Stage overlays: the control group + the theater-exit button are the
        only DOM inside the stage ---
-   (the back button and the collapsed rail toggle moved OUT to the main
-   column's .replay-topbar — its top-left / top-right, spec 7/14; the
+   (the Close · Minimize · Theater cluster and the collapsed rail toggle
+   moved OUT to the main column's .replay-topbar — its top-left /
+   top-right, spec 7/14; the
    stage's other corners are canvas — renderer.js's region map. The
    theater-exit button renders only while theater mode is on, bottom-RIGHT
    of the stage — it is the ONE control that mode leaves standing, so it
    must never be gated away). */
 
-/* Back button (spec 7): the top bar's FIRST cell — left of the round
-   ribbon. It no longer floats over the radar, so the plain .btn chrome
-   applies (the renderer's score box sits top-CENTER of the stage now);
-   the compact pill padding is kept so the labelled button stays tidy
-   in the one-line bar, and flex: none keeps the ribbon from squashing
-   it. */
-.replay-topbar .rp-back {
+/* Top-left cluster (macOS traffic-light order): Close · Minimize ·
+   Theater — the top bar's FIRST cells, left of the round ribbon. All
+   icon-only .btn cells (the labelled "← Back" pill is retired: its
+   exit-to-origin behavior is now the Minimize cell, and Close adds the
+   closeReplay teardown on top). flex: none keeps the ribbon's flex-grow
+   from squashing them (the rule the old .rp-back cell carried); the
+   compact padding matches that cell. Theater keeps its #rp-theater id —
+   it moved here from the transport's control group. */
+.replay-topbar .rp-close,
+.replay-topbar .rp-minimize,
+.replay-topbar .rp-theater {
   padding: 3px 8px;
   flex: none;
 }
