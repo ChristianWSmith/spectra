@@ -1,9 +1,10 @@
 // Round helpers — the ONE frontend home for round rules: the
 // counted-round predicate ("stats-eligible play"), the round-number →
 // start/end-tick lookups behind every "jump to round N" link and every
-// round-span loop range, the scoreline-through-a-round aggregate, and the
+// round-span loop range, the scoreline-through-a-round aggregate, the
 // round-group separator rule (the cadence + its gating over a rendered
-// list). Pure functions, no services.
+// list) and the money-reset cadence it also spells (moneyResetIndexes).
+// Pure functions, no services.
 //
 // Cross-layer twins that must stay identical (all three are exercised by
 // the golden demo):
@@ -43,12 +44,55 @@ export function isCounted(r) {
 // Display convention, not side parity: the real side switches fall at
 // 12, 27, 30, … (no switch at OT start — teams keep regulation sides
 // for rounds 25-27); the marker after 24 marks the regulation/OT
-// boundary instead. See CS2.md "MR12 regulation + MR3 overtime".
+// boundary instead. The cadence (12, 24, 27, 30, …) is, however,
+// exactly the MONEY-RESET series — moneyResetIndexes below delegates
+// to this predicate rather than re-spelling the numbers. See CS2.md
+// "MR12 regulation + MR3 overtime" and "Money resets".
 export function separatorAfter(countedRoundNumber) {
   const n = Number(countedRoundNumber);
   if (!Number.isFinite(n)) return false;
   if (n === 12) return true; // MR12 halftime
   return n >= 24 && (n - 24) % 3 === 0; // regulation end + OT's 3-round halves
+}
+
+// moneyResetIndexes — the counted-round indexes (0-based) where the
+// game SETS every player's cash again, so money does NOT carry across
+// them (CS2.md "Money resets", with the sources):
+//
+//   - 12  — round 13, the first round of regulation half 2 ($800; the
+//           loss-bonus counter resets too — the second pistol round)
+//   - 24 + 3j (24, 27, 30, 33, …) — the first round of EVERY 3-round
+//           OT sub-half ($10,000; mp_overtime_startmoney's "each
+//           overtime half" — an MR3 block is two such halves)
+//
+// so the reset series is 12, 24, 27, 30, … — exactly separatorAfter's
+// cadence above (the ribbon markers already sit ON money-reset
+// boundaries: the marker after 24 is the regulation/OT money reset,
+// not only a display convention), which is why this delegates to it
+// instead of re-spelling 12/24/27/… — one spelling, one source; the
+// pinned cadence tests (rounds.test.js) fail if either side ever
+// drifts.
+// Boundaries outside (0, n) are dropped, the identical rule to
+// sideparity.flipIndexes — a match ending exactly on a boundary starts
+// no new money era (n = 12 or n = 24 never yields that index).
+//
+// The side-switch series (flipIndexes: 12, 27, 30, …) is a strict
+// SUBSET of this one — every color-change boundary is also a money
+// reset, the reset at 24 the one boundary with no switch (pinned in
+// rounds.test.js) — which is what lets EconCurve give each money-reset
+// segment exactly one side color.
+//
+// For dense counted numbering a reset at index i sits after counted
+// round i (index i-1), hence the round-number argument below. FE-only
+// today: a future Go consumer moves this to internal/rules with the
+// cross-language twin discipline (AGENTS.md), never a second cadence.
+export function moneyResetIndexes(counted) {
+  const n = Number.isFinite(counted) ? Math.trunc(counted) : 0;
+  const out = [];
+  for (let i = 1; i < n; i++) {
+    if (separatorAfter(i)) out.push(i);
+  }
+  return out;
 }
 
 // separatorFlags — THE separator GATING over one rendered round list: an

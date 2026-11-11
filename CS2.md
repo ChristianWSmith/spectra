@@ -308,6 +308,39 @@ at the end of the section.
   ("Teams continue on the side they ended regulation. After 3 OT
   rounds, sides are switched") (all 2026-11-08).
 
+- **Money resets (money does NOT carry across a half boundary)** — the
+  game SETS every player's cash at these rounds, so no line/graph may
+  imply continuity across them: **round 13** (first round of regulation
+  half 2 — $800, the second pistol round; the consecutive-loss counter
+  resets too) and the first round of **every 3-round OT sub-half** —
+  **rounds 25, 28, 31, 34, …** — **$10,000** each
+  (`mp_overtime_startmoney`'s "beginning of each overtime half"; an MR3
+  block is two such halves). In 0-based COUNTED indexes the series is
+  **12, then 24 + 3j** (24, 27, 30, 33, …) — EXACTLY the round-ribbon
+  separator cadence (`frontend/src/lib/rounds.js` `separatorAfter`; the
+  marker after 24 sits on the regulation/OT money reset), and a strict
+  SUPERSET of the side-switch series 12, 27, 30, … (every flip is a
+  reset; the reset at 24 — no switch at OT start — is the one boundary
+  that is only a money reset). spectra consumes it as
+  `frontend/src/lib/rounds.js` `moneyResetIndexes` (delegates to
+  `separatorAfter`, pinned in `rounds.test.js`) — EconCurve breaks its
+  lines at money-reset boundaries only, and each reset era nesting inside
+  one side era is what gives every segment a single side color.
+  FE-only today: a future Go consumer moves it to `internal/rules` with
+  the cross-language twin discipline (AGENTS.md).
+  **Source** — totalcsgo `mp_overtime_startmoney` ("sets the amount of
+  cash that players start with at the beginning of each overtime half.
+  Default is 10,000", https://totalcsgo.com/commands/mpovertimestartmoney);
+  CSDB economy guide ("At halftime everything resets: money back to
+  $800 … Round 13 is a genuine second pistol round"; "overtime is played
+  in MR3 halves, and players start each overtime half with $10,000 rather
+  than $800", https://csdb.gg/guides/economy-guide/, reviewed 2026-07-13);
+  CS wiki Premier ("Both teams are given $10,000 at the start of their
+  overtime half", https://counterstrike.fandom.com/wiki/Premier);
+  Liquipedia Definitions ("maximum of three rounds per overtime half and
+  $10,000 starting money",
+  https://liquipedia.net/counterstrike/Definitions) (2026-11-11).
+
 - **Match point (the one-win-from-clinching predicate)** — when is a
   round a MATCH-POINT round under CS2's MR12 + MR3 format, judged on
   the scoreline BEFORE it starts? REGULATION: first to 13 round wins,
