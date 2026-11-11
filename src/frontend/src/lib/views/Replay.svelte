@@ -100,7 +100,7 @@
   import { chatClock, chatTag, prettyJson, fmtClock, parseClock, tickSeconds, normTickRate } from '../fmt.js';
   import { playerSideAt } from '../teams.js';
   import { isCounted, roundStartTick, roundIndexLabel, scoreThrough } from '../rounds.js';
-  import { isSteam, entrySeekTick, entryLoopRange } from '../nav.js';
+  import { isSteam, entrySeed, entrySeedPlan } from '../nav.js';
   // Keep-alive resume rule (the mini-player dock): THE one predicate for
   // "leaving should remember this as a play-on-return" — see keepalive.js.
   import { shouldResumeOnReturn } from '../keepalive.js';
@@ -703,6 +703,14 @@
   // in-session filter change lands (those never re-run startEngine).
   let entryDefaultTick = 0;
   let selApplied = false;
+  // The LAST-APPLIED entry seed — the ONE record both seed-application
+  // paths write: startEngine's fresh-mount block (seeds it with the mount
+  // resolution) and the keep-alive's seed watcher below (records every
+  // resolution it sees). { seek: number|null, loop: {from,to}|null } —
+  // exactly nav.entrySeed's shape. Reactive like wasPlaying so the
+  // watcher can read it through untrack (its own write must never
+  // retrigger the effect); nothing renders from it.
+  let appliedSeed = $state({ seek: null, loop: null });
 
   // The selected chat row's channel tag for the detail pane's Kind field
   // — the chat CHANNEL side-indicated per THE display rule: '[ALL]' for
@@ -1633,6 +1641,47 @@
     renderer?.resize();
   });
 
+  // --- Keep-alive entry seed (entry-once PER DISTINCT SEED) -----------------
+  // A same-id navigation ACTIVATES this instance instead of remounting it,
+  // so a fresh entry seed arriving mid-session must apply HERE: Economy's
+  // round "watch" card / a round drill-down (replayHash round scope),
+  // Combat's and Utility's ▶ links (?tick= + usually ?loop=), RoundDetail's
+  // tick links, a scoped CommandPalette jump. The OPPOSITE must keep
+  // holding: identical-value query churn never moves the playhead or the
+  // loop — filter edits that keep ?tick=/?loop= (navigateFilter re-pins
+  // them), every expandReplayHash round trip, ?back= rewrites.
+  // THE rule is nav.entrySeedPlan over nav.entrySeed — the ONE resolution
+  // source startEngine also uses (no second resolver may exist):
+  //   - the effect tracks ONLY the resolved VALUE: the entrySeed(query,
+  //     rounds) call below IS the subscription (query prop + rounds),
+  //     engine is a plain let and appliedSeed is read through untrack, so
+  //     nothing here can self-retrigger (the activation effect's pattern);
+  //   - a distinct non-null component applies the WHOLE current promise in
+  //     startEngine's entry order (seek first — engine.seekTick is a
+  //     POSITION change only, it never touches play/pause, so a seed over
+  //     the collapsed dock cannot resume a user's pause — then loop bounds
+  //     + arm, behind the seek's cancelLoopIfOutside);
+  //   - a null component is "no promise": never seek, never arm, never
+  //     disarm (absence clears nothing — the toggle, the range-edit rule
+  //     and cancelLoopIfOutside own every removal);
+  //   - EVERY resolution is recorded into appliedSeed, so the record tracks
+  //     the URL's seed and a repeat of the last value applies nothing.
+  // Pre-engine runs return WITHOUT recording: the load's mount path
+  // (startEngine) owns the application AND seeds appliedSeed itself —
+  // engine existence splits the two appliers for good, so a resolution is
+  // applied by exactly one of them, never both.
+  $effect(() => {
+    const seed = entrySeed(query, rounds);
+    if (!engine) return; // load still in flight: startEngine applies + records the mount seed
+    const plan = untrack(() => entrySeedPlan(appliedSeed, seed));
+    if (plan.applySeek) engine.seekTick(seed.seek);
+    if (plan.applyLoop) {
+      engine.setLoop(engine.frameForTick(seed.loop.from), engine.frameForTick(seed.loop.to));
+      engine.setLoopEnabled(true);
+    }
+    appliedSeed = seed;
+  });
+
   // teardown releases the engine/input/observer without marking the view dead
   // (startEngine re-runs it on the live path).
   function teardown() {
@@ -2287,31 +2336,41 @@
       sfx.setMuted('footsteps', uiStepsMuted);
     });
     // Entry position rides the URL — durable and deep-linkable.
-    // entrySeekTick is the ONE resolver: an exact ?tick= wins, else the
-    // round scope (?roundFrom=, else ?roundTo=) resolves to that round's
-    // START tick (a round link is a link to a point in time — never the
-    // first frame); it returns null when the URL made NO time promise,
-    // and then the pref-decided default (load() awaited the knife/warmup
-    // pref: first counted round's start while it hides them, frame 0
-    // while it shows them) applies; a ?sel= landmark that resolved before
-    // the engine was up applies in between. Applied once here, after
-    // loading — in-session filter changes keep the playback position.
-    const tick0 = entrySeekTick(query, rounds);
-    if (tick0 != null) engine.seekTick(tick0);
+    // entrySeed is the ONE resolution (nav.entrySeed → entrySeekTick: an
+    // exact ?tick= wins, else the round scope (?roundFrom=, else
+    // ?roundTo=) resolves to that round's START tick — a round link is a
+    // link to a point in time, never the first frame; null when the URL
+    // made NO time promise, and then the pref-decided default (load()
+    // awaited the knife/warmup pref: first counted round's start while it
+    // hides them, frame 0 while it shows them) applies; a ?sel= landmark
+    // that resolved before the engine was up applies in between).
+    // Applied once HERE per fresh load — the keep-alive's seed watcher
+    // ("Keep-alive entry seed" above) owns every DISTINCT resolution
+    // after it: entry-once PER DISTINCT SEED, not per load. Identical-
+    // value churn (filter edits keeping ?tick=, expandReplayHash round
+    // trips, ?back= rewrites) resolves the same seed and applies nothing.
+    const seed0 = entrySeed(query, rounds);
+    if (seed0.seek != null) engine.seekTick(seed0.seek);
     else if (entrySelTick) engine.seekTick(entrySelTick);
     else if (entryDefaultTick) engine.seekTick(entryDefaultTick);
     // Entry loop — the URL's SECOND entry promise (nav.entryLoopRange;
     // the seek above is the first): bounds first, then arm (setLoop
     // never enables, setLoopEnabled never arms an invalid range).
-    // Applied ONCE here, right after the seek: startEngine runs once per
-    // mount, so in-session query churn can neither re-apply nor cancel a
-    // loop — and the range-edit rule (onLoopTime) owns every later
-    // change, stripping ?loop= from the URL as it goes.
-    const loop0 = entryLoopRange(query, rounds);
-    if (loop0) {
-      engine.setLoop(engine.frameForTick(loop0.from), engine.frameForTick(loop0.to));
+    // Applied once here, right after the seek; the watcher re-arms only a
+    // DISTINCT range (nav.entrySeedPlan), so in-session query churn can
+    // neither re-apply nor cancel a loop — and the range-edit rule
+    // (onLoopTime) owns every later change, stripping ?loop= from the
+    // URL as it goes.
+    if (seed0.loop) {
+      engine.setLoop(engine.frameForTick(seed0.loop.from), engine.frameForTick(seed0.loop.to));
       engine.setLoopEnabled(true);
     }
+    // Seed the ONE last-applied record both paths write: the MOUNT
+    // resolution becomes the watcher's baseline, so mount + a later
+    // identical-value navigation can never double-apply (and a
+    // no-promise mount records null, the same "no promise" a later
+    // plain navigation resolves).
+    appliedSeed = seed0;
     renderer.setHud(hudFor(engine.state.tick)); // first HUD paint (redraws)
     ready = true;
     // A replay starts playing as soon as it is ready — startEngine runs

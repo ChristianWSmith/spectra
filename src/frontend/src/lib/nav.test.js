@@ -4,7 +4,10 @@
 // action highlighters (NAV_ACTIONS active()) and the replay entry
 // resolvers (entrySeekTick — the ?tick=/?roundFrom=/?roundTo= contract
 // every link into THE event browser relies on — plus entryLoopRange and
-// the ?loop= stampers entryLoopSpan / entryLoopAround beside it).
+// the ?loop= stampers entryLoopSpan / entryLoopAround beside it, and the
+// keep-alive's entrySeed/entrySeedPlan: the one resolution bundle and
+// the distinct-seed apply rule Replay's mount path and seed watcher
+// share).
 // Run: node --test src/lib/nav.test.js   (from frontend/)
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -16,6 +19,8 @@ import {
   NAV_ACTIONS,
   entrySeekTick,
   entryLoopRange,
+  entrySeed,
+  entrySeedPlan,
   entryLoopSpan,
   entryLoopAround,
   expandReplayHash,
@@ -244,6 +249,108 @@ test('entryLoopRange: independent of the entry seek priority', () => {
   // does not rescue it.
   assert.equal(entryLoopRange({ roundFrom: '7', roundTo: '7', loop: 'x' }, LOOP_ROUNDS), null);
   assert.equal(entrySeekTick({ roundFrom: '7', loop: 'x' }, LOOP_ROUNDS), 24500, 'seek unaffected by a bad loop');
+});
+
+// --- entrySeed / entrySeedPlan: entry-once PER DISTINCT SEED ---------------
+// The keep-alive's seed contract in pure form: startEngine (the fresh
+// mount) and Replay's seed watcher share ONE resolution (entrySeed) and
+// ONE apply rule (entrySeedPlan) — a new distinct seed applies once,
+// identical-value churn never re-applies, absence never touches.
+test('entrySeed bundles both promises through the one resolvers', () => {
+  assert.deepEqual(entrySeed({ tick: '9999', loop: '1200,2400' }, LOOP_ROUNDS), {
+    seek: 9999,
+    loop: { from: 1200, to: 2400 },
+  });
+  assert.deepEqual(entrySeed({ roundFrom: '7', roundTo: '7' }, LOOP_ROUNDS), {
+    seek: 24500,
+    loop: null,
+  });
+  assert.deepEqual(entrySeed({ loop: '1200,2400' }, LOOP_ROUNDS), {
+    seek: null,
+    loop: { from: 1200, to: 2400 },
+  });
+  assert.deepEqual(entrySeed({}, LOOP_ROUNDS), { seek: null, loop: null });
+  // Rounds still loading: the round scope resolves to NOTHING — never a
+  // guess (the watcher then applies nothing; startEngine's mount-time
+  // resolution runs after the rounds are in, so the mount still lands).
+  assert.deepEqual(entrySeed({ roundFrom: '1' }, []), { seek: null, loop: null });
+});
+
+test('entrySeedPlan: identical-value churn applies nothing', () => {
+  // A filter edit that keeps ?tick=/?loop=, an expandReplayHash round
+  // trip, a ?back= rewrite: a fresh OBJECT with the same resolved
+  // VALUES is still the same seed — distinctness is by value, never
+  // identity (that is the whole "the playhead survives the round trip"
+  // feature).
+  const prev = entrySeed({ tick: '1200', loop: '1200,2400' }, LOOP_ROUNDS);
+  const same = entrySeed({ tick: 1200, loop: '1200, 2400', back: 'match/5' }, LOOP_ROUNDS);
+  assert.deepEqual(entrySeedPlan(prev, same), { applySeek: false, applyLoop: false });
+  assert.deepEqual(entrySeedPlan(prev, prev), { applySeek: false, applyLoop: false });
+  // Two no-promise rewrites in a row: nothing ever applies.
+  assert.deepEqual(
+    entrySeedPlan(entrySeed({}, LOOP_ROUNDS), entrySeed({ cat: 'kills' }, LOOP_ROUNDS)),
+    { applySeek: false, applyLoop: false },
+  );
+});
+
+test('entrySeedPlan: a distinct seed applies the WHOLE current promise', () => {
+  const prev = entrySeed({ tick: '1200', loop: '1200,2400' }, LOOP_ROUNDS);
+  // Only the loop changed → the link's unchanged ?tick= lands too: the
+  // full promise, exactly what a fresh mount would do (the seek runs
+  // BEFORE the arm — startEngine's order — so the arm survives the
+  // seek's cancelLoopIfOutside).
+  assert.deepEqual(
+    entrySeedPlan(prev, entrySeed({ tick: '1200', loop: '1300,2400' }, LOOP_ROUNDS)),
+    { applySeek: true, applyLoop: true },
+  );
+  // Only the seek changed → the promised range is re-asserted behind it.
+  assert.deepEqual(
+    entrySeedPlan(prev, entrySeed({ tick: '2400', loop: '1200,2400' }, LOOP_ROUNDS)),
+    { applySeek: true, applyLoop: true },
+  );
+  // A tick-only link (no loop promise): seek only, never an arm.
+  assert.deepEqual(entrySeedPlan(prev, entrySeed({ tick: '2400' }, LOOP_ROUNDS)), {
+    applySeek: true,
+    applyLoop: false,
+  });
+  // A loop-only link: arm only, never a seek.
+  assert.deepEqual(entrySeedPlan(prev, entrySeed({ loop: '1300,2400' }, LOOP_ROUNDS)), {
+    applySeek: false,
+    applyLoop: true,
+  });
+  // The pristine record (before any application) applies a real promise.
+  assert.deepEqual(entrySeedPlan(null, entrySeed({ tick: '1200' }, LOOP_ROUNDS)), {
+    applySeek: true,
+    applyLoop: false,
+  });
+  assert.deepEqual(
+    entrySeedPlan({ seek: null, loop: null }, entrySeed({ loop: '1200,2400' }, LOOP_ROUNDS)),
+    { applySeek: false, applyLoop: true },
+  );
+});
+
+test('entrySeedPlan: a null component is never applied (absence promises nothing)', () => {
+  const prev = entrySeed({ tick: '1200', loop: '1200,2400' }, LOOP_ROUNDS);
+  // The CommandPalette's plain same-id jump (no ?tick=, no round scope):
+  // never seeks, never disarms.
+  assert.deepEqual(entrySeedPlan(prev, entrySeed({}, LOOP_ROUNDS)), {
+    applySeek: false,
+    applyLoop: false,
+  });
+  // The range-edit rule: dropping ?loop= while ?tick= is UNCHANGED is
+  // not a new seed — re-applying would yank the playhead back on every
+  // bound edit (the exact regression entry-once per distinct seed
+  // exists to prevent).
+  assert.deepEqual(entrySeedPlan(prev, entrySeed({ tick: '1200' }, LOOP_ROUNDS)), {
+    applySeek: false,
+    applyLoop: false,
+  });
+  // A changed seek with no loop promise arms nothing (absence never
+  // disarms either — removal is the toggle's/range-edit's/cancel's job).
+  assert.deepEqual(entrySeedPlan(prev, entrySeed({ tick: '2400' }, LOOP_ROUNDS)), {
+    applySeek: true,
+    applyLoop: false,
+  });
 });
 
 // --- the ?loop= stampers (what the link sites put in the URL) ------------
