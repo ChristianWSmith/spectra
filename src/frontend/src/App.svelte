@@ -78,6 +78,28 @@
     }
   }
 
+  // closeReplay — the dock panel's X (rendered only while collapsed):
+  // destroy the kept-alive instance. `alive = null` unmounts the whole
+  // {#if alive} wrapper, so Replay's own cleanup runs exactly as it does
+  // for any out-of-scope route — the component and its engine/renderer
+  // memory are gone — and the user stays on whatever match route they are
+  // on. The next replay navigation then mounts FRESH (the header's
+  // "Watch replay" falls back to replayHash as if no instance ever
+  // existed).
+  // stopPropagation FIRST: the whole wrapper is the expand target (its
+  // click handler and onDockKey ride the div), so this click must never
+  // bubble into expandReplay — and the paired onDockCloseKey below stops
+  // the Enter/Space keydown that activates the focused BUTTON, whose own
+  // default click then lands here (close, never expand).
+  function closeReplay(e) {
+    e.stopPropagation();
+    alive = null;
+  }
+
+  function onDockCloseKey(e) {
+    e.stopPropagation(); // no preventDefault: the button's own click should still fire
+  }
+
   // Sidebar layout partitions the shared action list (lib/nav.js):
   // `bottom` entries (Settings) pin to the rail's foot as a gear; every
   // other action renders in the main icon list. Membership itself stays
@@ -202,6 +224,24 @@
         {#key alive.id}
           <Replay id={alive.id} query={replayQuery} active={replayActive} {nav} />
         {/key}
+        {#if !replayActive}
+          <!-- Close (X): the panel's TOP-RIGHT corner, collapsed state
+               ONLY — the full replay view's single way out is its Back
+               button, so this can never appear there. It sits inside
+               the expand target above, hence the stopPropagation pair
+               (closeReplay / onDockCloseKey): a click or Enter/Space on
+               the X closes the instance and NEVER also expands it. -->
+          <button
+            type="button"
+            class="btn rp-keepalive-close"
+            aria-label="Close replay"
+            title="Close the replay — it reloads when reopened"
+            onclick={closeReplay}
+            onkeydown={onDockCloseKey}
+          >
+            <span class="codicon codicon-close" aria-hidden="true"></span>
+          </button>
+        {/if}
       </div>
     {/if}
     {#if route.name === 'library'}
