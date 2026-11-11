@@ -1429,6 +1429,34 @@
       .filter((x) => x);
   }
 
+  // Follow handlers with STABLE identity per slot — the muteHandlerFor
+  // stable-closure precedent (above): a fresh closure every frame would
+  // churn every card's onclick for nothing. Clicking a card drives
+  // engine.setFollow(slot) — the SAME call the F/1-9 keys and the
+  // follow popover use, so everything visible (the camera dropdown →
+  // "Follow", the control-group "Following <name>" row + its ✕,
+  // uiFollow → the card's .pc-mark, camMode reconciliation) derives
+  // from the existing onChange mirror untouched. Clicking the card you
+  // are ALREADY following (uiFollow === slot) RELEASES it instead — the
+  // F-toggle semantics with the ✕'s route hygiene (releaseFollow drops
+  // ?follow= too, so the entry effect can never resurrect it). NO
+  // alive-gating: the keyboard (input.js) and the popover gate only
+  // connectivity, follow-of-dead is well-defined (the renderer holds
+  // the last alive position until respawn — renderer.js draw()), and a
+  // dead player's card must stay clickable. uiFollow / engine are read
+  // at CLICK time, so the cached closure never goes stale.
+  const followHandlerFor = (() => {
+    const cache = new Map();
+    return (slot) => {
+      let h = cache.get(slot);
+      if (!h) {
+        h = () => (uiFollow === slot ? releaseFollow() : engine?.setFollow(slot));
+        cache.set(slot, h);
+      }
+      return h;
+    };
+  })();
+
   // The card prop arrays — ONE derived that reads the playhead (uiFrame
   // / uiTick): every per-frame value (state, reload ring, alive/dead,
   // follow, speaking, muted) recomputes here, while stable refs (the
@@ -1482,6 +1510,9 @@
             // as a fact.
             kit: kitEv ? kitEv.hasKitAt(sid, tick) : null,
             onToggleMute: muteHandlerFor(sid),
+            // Card click → follow/release that slot (the stable-closure
+            // handler above — TeamColumn spreads it through).
+            onFollow: followHandlerFor(slot),
           };
         });
     return { left: build(cardGroups.left, 'left'), right: build(cardGroups.right, 'right') };
@@ -1691,7 +1722,10 @@
   // Dismiss the follow row of the stage's control group: release the
   // camera AND drop ?follow= from the route (entry context rides the
   // query — navigateFilter preserves it, so the param has to go for the
-  // dismissal to stick).
+  // dismissal to stick). ALSO the release half of a CARD click —
+  // followHandlerFor routes a click on the already-followed card here
+  // (the F-toggle semantics), so this function now has two callers: the
+  // ✕ row and the card columns.
   function releaseFollow() {
     engine?.setFollow(null);
     if (query.follow) navigateFilter(filter, { keepFollow: false });

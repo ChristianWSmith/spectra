@@ -6290,3 +6290,78 @@ test('overlays: setOverlaysVisible(false) gates HUD/feed/chat — gameplay keeps
   assert.equal(chatRows(re).length, 1, 'the chat comes back');
   r.destroy();
 });
+
+// --- follow camera: the last-ALIVE hold while the followed player is dead ----
+//
+// renderer.js draw()'s follow block: lerpAt reports a DEAD frame without
+// touching x/y and `tmp` is shared with drawPlayers — without the hold
+// the camera would jump to whichever slot drew last (the followed
+// player's death yanking the view onto a neighbour). This is exactly
+// what a DEAD card's click-to-follow relies on: following a dead player
+// frames their LAST ALIVE position until respawn. Characterization pin
+// — nothing pinned this before.
+test('follow camera holds the last alive position while the followed player is dead, then tracks them again', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, {
+    engine,
+    data,
+    players: [
+      { steamId: '1', name: 'alice', side: 'ct' },
+      { steamId: '2', name: 'bob', side: 't' },
+    ],
+  });
+  r.resize();
+  // The OTHER player's dot is the camera probe: panelToScreen reads
+  // cam.cx/cy directly, so where bob's dot lands IS where the camera
+  // is (alice's own dot cannot probe her hold — she is the one dying).
+  const bobDot = (from) =>
+    canvas.log
+      .slice(from)
+      .find((e) => e.op === 'arc' && e.fillStyle === '#e6a35a' && e.args[2] === 9);
+  const aliceDots = (from) =>
+    canvas.log
+      .slice(from)
+      .filter((e) => e.op === 'arc' && e.fillStyle === '#5aa9e6' && e.args[2] === 9);
+
+  engine.setFollow(0); // camera follows alice (slot 0)
+  engine.seekTick(100);
+  let mark = canvas.log.length;
+  r.draw();
+  const bobAlive = bobDot(mark);
+  assert.ok(bobAlive, "bob's dot draws while alice is alive");
+  assert.ok(aliceDots(mark).length >= 1, "alice's dot draws too");
+
+  // alice dies at this frame — lerpAt returns with alive:false and x/y
+  // untouched (still bob's, from the shared tmp).
+  data.masks[100] &= ~1;
+  mark = canvas.log.length;
+  r.draw();
+  assert.equal(aliceDots(mark).length, 0, 'the dead followed player draws no dot');
+  const bobHeld = bobDot(mark);
+  assert.ok(bobHeld, "bob's dot still draws while alice is dead");
+  assert.deepEqual(
+    [bobHeld.args[0], bobHeld.args[1]],
+    [bobAlive.args[0], bobAlive.args[1]],
+    "the camera HELD alice's last alive position — bob's dot did not jump (the shared-tmp leak the hold prevents)",
+  );
+
+  // alice respawns AND has moved (the position stream advances): the
+  // hold releases and the camera tracks her new position again.
+  data.slots[0].pos[100 * 4] = 90;
+  data.slots[0].pos[100 * 4 + 1] = 90;
+  data.masks[100] |= 1;
+  mark = canvas.log.length;
+  r.draw();
+  const bobRespawn = bobDot(mark);
+  assert.ok(aliceDots(mark).length >= 1, 'the respawned player draws again');
+  assert.ok(bobRespawn, "bob's dot draws after the respawn");
+  assert.notDeepEqual(
+    [bobRespawn.args[0], bobRespawn.args[1]],
+    [bobHeld.args[0], bobHeld.args[1]],
+    'the camera tracks the respawned player again (the hold is only while dead)',
+  );
+  r.destroy();
+});

@@ -59,6 +59,15 @@
   //               state stream carries no kit flag (it lives in the
   //               pawn's m_pItemServices, never in the inventory).
   //   onToggleMute()  mute button click (caller flips audio + `muted`)
+  //   onFollow()      card click → the caller follows this player (the
+  //                   follow/release toggle lives with the caller — the
+  //                   component only reports the click). Guarded at the
+  //                   ROOT: a click landing on an inner control (button /
+  //                   a / input — today's mute button) never fires it
+  //                   (the Match.svelte row idiom). No dead-gating: a
+  //                   DEAD card stays clickable (follow-of-dead is
+  //                   well-defined — the camera holds the last alive
+  //                   position).
   //
   // Per-frame values are $derived (the playhead re-renders ~60×/s); the
   // card itself does no work beyond reading props. Every row has a FIXED
@@ -96,6 +105,7 @@
     iconURLs = null,
     kit = null,
     onToggleMute = () => {},
+    onFollow = () => {},
   } = $props();
 
   // Display name: roster name, else the steam id (a nameless row still
@@ -196,6 +206,17 @@
   class:pc-color={!!playerColor}
   style:--pc-color={playerColor || null}
   title={hasState ? undefined : 'No player state for this match'}
+  onclick={(e) => {
+    // The whole card follows the player (the caller's onFollow drives
+    // engine.setFollow). Svelte 5 delegated events: child
+    // stopPropagation does not reliably stop this root handler — guard
+    // on target instead (the Match.svelte row idiom): a click landing
+    // on an inner control (button / a / input — today's mute button)
+    // returns without firing follow, so nested and future controls stay
+    // independent of the card click.
+    if (e.target instanceof Element && e.target.closest('button, a, input')) return;
+    onFollow();
+  }}
 >
   <div class="pc-head">
     <span class="pc-name" title={name}>{name}</span>
@@ -408,6 +429,27 @@
     background: color-mix(in srgb, var(--pc-side, var(--panel)) 14%, var(--panel));
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
+    /* The whole card is a click target (onFollow — follow/release the
+       camera on this player); the pointer is the affordance. */
+    cursor: pointer;
+  }
+
+  /* Modest hover: the border lifts toward the muted text colour — paint
+     only, and the fixed row heights never move. Ordered BEFORE the
+     .pc-follow rule below so a FOLLOWED card keeps its tint under the
+     cursor (equal specificity → source order decides). */
+  .pc-card:hover {
+    border-color: var(--muted);
+  }
+
+  /* Follow is UI STATE (the camera's target), not side/identity — the
+     same amber (--accent) the stage's follow ring wears, as a BORDER
+     tint so the player-color box-shadow stays the card's ONLY ring:
+     never outline on any .pc-card rule (player-card.dom.mjs's one-ring
+     pin scans them all), and no second shadow that could fight the
+     .pc-color ring it may sit beside. */
+  .pc-card.pc-follow {
+    border-color: var(--accent-55);
   }
 
   /* --- Fixed-height rows (no card may ever resize) ----------------------
