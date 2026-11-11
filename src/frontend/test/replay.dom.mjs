@@ -1,7 +1,8 @@
 // jsdom driver for Replay: a FRESH replay opens with the landmark feed
 // COLLAPSED — its toggle sits on the main column's ONE top line
-// (.replay-topbar, first child of .replay-main: back button left, round
-// ribbon in the flex-grow middle, rail toggle right, spec 7/13/14) with
+// (.replay-topbar, first child of .replay-main: the Close · Minimize ·
+// Theater cluster left (macOS traffic-light order), round ribbon in the
+// flex-grow middle, rail toggle right, spec 7/13/14) with
 // no .replay-side at all until it expands; the view itself is the ROW
 // (main column + rail beside it when open, no .replay-cols wrapper), so
 // the expanded aside's header shares the top line with that bar. The
@@ -681,7 +682,7 @@ svelteCompile(replaySrc, 'Replay.svelte', join(dir, 'views', 'Replay.js'));
 const harnessSrc = `<script>
   import Replay from './views/Replay.js';
 </script>
-<Replay id={1} query={{}} nav={(h) => (globalThis.__nav = (globalThis.__nav || []).concat(h))} />`;
+<Replay id={1} query={{}} nav={(h) => (globalThis.__nav = (globalThis.__nav || []).concat(h))} onClose={(e) => (globalThis.__closes = (globalThis.__closes || []).concat(e))} />`;
 const harnessOut = join(dir, 'harness.js');
 svelteCompile(harnessSrc, 'harness.svelte', harnessOut);
 
@@ -713,7 +714,7 @@ function check(name, cond, detail = '') {
 const click = (el) => el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
 const children = (el) => [...el.children];
 
-console.log('A. fresh replay: no header/title; back + ribbon + rail toggle share ONE top line of the main column');
+console.log('A. fresh replay: no header/title; close + minimize + theater + ribbon + rail toggle share ONE top line of the main column');
 const stage = target.querySelector('.replay-stage');
 check('stage rendered', !!stage);
 check('no view header and no Replay title', !target.querySelector('.view-header') && !target.querySelector('h1'));
@@ -723,17 +724,37 @@ check('main column is a direct child of the view (the view is the row)', !!main,
 check('no .replay-cols wrapper anymore', !view?.querySelector('.replay-cols'));
 const topbar = main?.querySelector(':scope > .replay-topbar');
 check('top bar is the FIRST child of the main column', !!topbar && children(main)[0] === topbar, 'missing .replay-topbar first');
-const back = topbar?.querySelector('.rp-back');
+// --- The top-left cluster (macOS traffic-light order): Close · Minimize · Theater ---
+const closeCell = topbar?.querySelector('.rp-close');
+const minCell = topbar?.querySelector('.rp-minimize');
+const theaterCell = topbar?.querySelector('#rp-theater');
 check(
-  'back button lives in the top bar, NOT inside the stage',
-  !!back && !stage.querySelector('.rp-back'),
-  'missing top-bar .rp-back',
+  'cluster order: Close, Minimize, Theater — the top bar\'s first three cells (macOS traffic-light order)',
+  !!closeCell && !!minCell && !!theaterCell &&
+    children(topbar)[0] === closeCell && children(topbar)[1] === minCell && children(topbar)[2] === theaterCell,
+  topbar ? children(topbar).map((el) => el.className || el.id || el.getAttribute('aria-label')).join(' | ') : 'no topbar',
 );
 check(
-  'back button is the arrow-left codicon PLUS the Back text (like other views)',
-  back?.getAttribute('aria-label') === 'Back' && back?.getAttribute('title') === 'Back' &&
-    !!back?.querySelector('.codicon-arrow-left') && back?.textContent.trim() === 'Back',
-  back ? JSON.stringify(back.textContent) : 'missing',
+  'the cluster lives in the top bar, NOT inside the stage',
+  !stage.querySelector('.rp-close') && !stage.querySelector('.rp-minimize') && !stage.querySelector('#rp-theater'),
+);
+check(
+  'Close: icon-only codicon-close, labelled + titled "Close"',
+  closeCell?.getAttribute('aria-label') === 'Close' && closeCell?.getAttribute('title') === 'Close' &&
+    !!closeCell?.querySelector('.codicon-close') && closeCell?.textContent.trim() === '',
+  closeCell ? closeCell.outerHTML : 'missing',
+);
+check(
+  'Minimize: icon-only codicon-chrome-minimize, labelled + titled "Minimize", NO text label',
+  minCell?.getAttribute('aria-label') === 'Minimize' && minCell?.getAttribute('title') === 'Minimize' &&
+    !!minCell?.querySelector('.codicon-chrome-minimize') && minCell?.textContent.trim() === '',
+  minCell ? minCell.outerHTML : 'missing',
+);
+check(
+  'Theater moved INTO the cluster (icon + id kept) and is OUT of the transport',
+  !!theaterCell?.querySelector('.codicon-screen-full') && theaterCell.textContent.trim() === '' &&
+    !target.querySelector('.replay-transport #rp-theater'),
+  theaterCell ? theaterCell.outerHTML : 'missing',
 );
 const toggle = topbar?.querySelector('.side-toggle');
 check(
@@ -742,8 +763,9 @@ check(
   'missing top-bar .side-toggle',
 );
 check(
-  'bar order: back first, ribbon cell second, rail toggle last',
-  topbar && children(topbar)[0] === back && children(topbar)[1]?.classList.contains('rp-ribbon') &&
+  'bar order: cluster (Close, Minimize, Theater) first, ribbon cell FOURTH, rail toggle last',
+  topbar && children(topbar)[0] === closeCell && children(topbar)[1] === minCell &&
+    children(topbar)[2] === theaterCell && children(topbar)[3]?.classList.contains('rp-ribbon') &&
     children(topbar)[children(topbar).length - 1] === toggle,
   (topbar ? children(topbar).map((el) => el.className || el.tagName).join(' | ') : 'no topbar'),
 );
@@ -758,6 +780,52 @@ check(
 check('collapsed handle shows the chevron-left glyph', !!toggle?.querySelector('.codicon-chevron-left'));
 check('feed toolbar absent while collapsed', !target.querySelector('.lm-toolbar'));
 check('landmark list absent while collapsed', !target.querySelector('.landmark-list'));
+
+// Close vs Minimize are genuinely different: Close tears down through
+// App's closeReplay (the onClose prop — the dock X's exact handler) and
+// exits; Minimize only exits (collapse to the keep-alive dock — App
+// keeps the instance alive, pinned app-side by app-dock's keep-alive
+// round trip + keepalive.test.js). In THIS standalone harness nav is a
+// recorder and onClose a spy, so the pins are the signals: destination,
+// teardown call, and event isolation.
+const closesA = () => (globalThis.__closes || []).length;
+const navA0 = (globalThis.__nav || []).length;
+const closesA0 = closesA();
+click(minCell);
+await sleep();
+check(
+  "Minimize exits to the back origin (today's Back behavior → /match/1)",
+  (globalThis.__nav || []).slice(navA0).includes('/match/1'),
+  JSON.stringify((globalThis.__nav || []).slice(navA0)),
+);
+check(
+  'Minimize does NOT tear down (no onClose call — the instance would stay alive in the dock)',
+  closesA() === closesA0,
+  `closes +${closesA() - closesA0}`,
+);
+// Isolation context: the wrapper's expand handlers exist only while
+// COLLAPSED (App: `replayActive ? null : …`, role=button likewise) and
+// this cluster renders only while ACTIVE — mutually exclusive by
+// construction (the other half is section J's "collapsed: NO chrome"
+// pin: no top bar while the dock is up). What this driver pins is the
+// Close CONTRACT on one real dispatched event: teardown exactly once +
+// the exit destination + the SAME event object handed to onClose, so
+// App's closeReplay stopPropagation applies to the real bubbling event
+// (it is the very handler the dock X uses — its isolation is pinned in
+// app-dock.dom.mjs).
+const closeEv = new dom.window.MouseEvent('click', { bubbles: true, cancelable: true });
+closeCell.dispatchEvent(closeEv);
+await sleep();
+check(
+  'Close TEARS DOWN through the onClose prop (App closeReplay, exactly once, with its click event)',
+  closesA() === closesA0 + 1 && (globalThis.__closes || []).at(-1) === closeEv,
+  `closes +${closesA() - closesA0}, same-event=${(globalThis.__closes || []).at(-1) === closeEv}`,
+);
+check(
+  'Close exits to the SAME back origin as Minimize (/match/1 twice)',
+  (globalThis.__nav || []).slice(navA0).filter((h) => h === '/match/1').length === 2,
+  JSON.stringify((globalThis.__nav || []).slice(navA0)),
+);
 
 console.log('B. the top-bar handle expands the panel (existing eventsOpen toggle)');
 click(toggle);
@@ -2087,16 +2155,19 @@ check(
 check('headshot toggle kept', !!bar?.querySelector('.filt-check'));
 
 console.log('I. theater mode: the chrome hides, the stage keeps its exit button, popovers reset');
-const theaterBtn = controls.querySelector('#rp-theater');
+// The theater cell MOVED to the top bar's Close · Minimize · Theater
+// cluster (the top-left controls rework): it toggles from its new home
+// here, and the transport keeps its own rhythm (sep1 → camera directly,
+// the old cell's slot gone).
+const theaterBtn = target.querySelector('.replay-topbar #rp-theater');
 check(
-  'the theater cell sits immediately left of the camera selector',
-  !!theaterBtn && theaterBtn.nextElementSibling === controls.querySelector('#rp-cam'),
-  theaterBtn
-    ? `next = ${theaterBtn.nextElementSibling?.id || theaterBtn.nextElementSibling?.className}`
-    : 'missing #rp-theater',
+  'the theater cell lives in the top bar cluster (its new home), never the transport',
+  !!theaterBtn && !!theaterBtn.closest('.replay-topbar') &&
+    !target.querySelector('.replay-transport #rp-theater'),
+  theaterBtn ? 'top bar ✓' : 'missing #rp-theater',
 );
 check(
-  'separator 1 still sits directly after the loop control (the theater cell splits nothing)',
+  'separator 1 still sits directly after the loop control (the old theater slot is gone — sep1 → camera)',
   !!seps[0] && seps[0] === after(controls.querySelector('.rp-loop')),
   children(controls).map((el) => el.className || el.id || el.getAttribute('aria-label')).join(' | '),
 );
@@ -2161,7 +2232,7 @@ check(
   globalThis.__overlays === false && !stage.querySelector('.rp-ctrl-list'),
   `overlays=${globalThis.__overlays} ctrl=${!!stage.querySelector('.rp-ctrl-list')}`,
 );
-click(controlsAfter.querySelector('#rp-theater'));
+click(target.querySelector('.replay-topbar #rp-theater'));
 await sleep();
 check('overlays off still renders the theater exit (never gated)', !!stage.querySelector('.rp-theater-exit'));
 click(stage.querySelector('.rp-theater-exit'));

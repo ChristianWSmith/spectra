@@ -55,7 +55,8 @@
   // it: the mini-panel's click below, and Match's header "Watch replay"
   // via the expandReplay prop — see Match.svelte). One navigation:
   // the captured replay hash with ?back= rewritten to the LATEST match
-  // path (keepalive.backOrigin), so the replay's Back button returns to
+  // path (keepalive.backOrigin), so the return trip out of the expanded
+  // replay (the Minimize cell, and Close before its teardown) lands on
   // the tab the user was actually on. Never replayHash() here: that is
   // the FRESH-entry builder and would reset the live query state.
   function expandReplay() {
@@ -78,9 +79,13 @@
     }
   }
 
-  // closeReplay — the dock panel's X (rendered only while collapsed):
-  // destroy the kept-alive instance. `alive = null` unmounts the whole
-  // {#if alive} wrapper, so Replay's own cleanup runs exactly as it does
+  // closeReplay — THE teardown path, shared by BOTH Close affordances:
+  // the dock panel's X (rendered only while collapsed) and Replay's
+  // topbar Close cell — which receives this exact handler as its
+  // onClose prop (that cell exits to the back origin via goBack FIRST,
+  // then lands here; never forked). Destroy the kept-alive instance:
+  // `alive = null` unmounts the whole {#if alive} wrapper, so Replay's
+  // own cleanup runs exactly as it does
   // for any out-of-scope route — the component and its engine/renderer
   // memory are gone — and the user stays on whatever match route they are
   // on. The next replay navigation then mounts FRESH (the header's
@@ -222,7 +227,7 @@
         onkeydown={replayActive ? null : onDockKey}
       >
         {#key alive.id}
-          <Replay id={alive.id} query={replayQuery} active={replayActive} {nav} />
+          <Replay id={alive.id} query={replayQuery} active={replayActive} {nav} onClose={closeReplay} />
         {/key}
         {#if !replayActive}
           <!-- Close (X): the panel's TOP-RIGHT corner, collapsed state

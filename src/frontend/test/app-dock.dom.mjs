@@ -5,8 +5,10 @@
 // expand handlers) and the keep-alive transitions around them.
 //
 // Section A — off the replay route there is no dock; the replay route
-// mounts the instance EXPANDED (no X: Back is the single way out of the
-// full view) and pins the fresh-entry mount count.
+// mounts the instance EXPANDED (no DOCK X: the top bar owns its own
+// Close · Minimize · Theater cluster — Replay's contract, pinned in
+// replay.dom.mjs — while this .rp-keepalive-close dock X stays
+// collapsed-only) and pins the fresh-entry mount count.
 // Section B — a same-id match route COLLAPSES the same instance (no
 // remount — the keep-alive), the X appears only while collapsed, and the
 // wrapper's own handlers are the positive controls: a click or Enter on
@@ -16,8 +18,10 @@
 // reaches the wrapper's onDockKey (the hash does not move), and a
 // click closes (alive = null → the wrapper unmounts, the route stays).
 // Section D — reopening after a close is a FRESH entry (the kept
-// instance was really destroyed: the stub Replay re-mounts), and
-// style.css carries the .rp-keepalive-close rule (jsdom has no layout,
+// instance was really destroyed: the stub Replay re-mounts), the
+// onClose prop App hands Replay IS this teardown (invoking it destroys,
+// never docks), and style.css carries the .rp-keepalive-close rule
+// (jsdom has no layout,
 // so the rule's APPLICATION is what is pinned — never pixel geometry).
 // Section E — the collapsed dock's caption-flush CSS: the inherited
 // 10px column gap the mini panel zeroes (frame flush to .rp-mini-bar),
@@ -158,8 +162,12 @@ for (const name of [
 writeStub(
   'lib/views/Replay.svelte',
   `<script>
-  let { id = 0, query = {}, nav = () => {}, active = true } = $props();
+  let { id = 0, query = {}, nav = () => {}, active = true, onClose = null } = $props();
   globalThis.__replayMounts = (globalThis.__replayMounts || 0) + 1;
+  // The teardown half of the TOPBAR Close: App hands Replay its own
+  // closeReplay through this prop (replay.dom.mjs pins the real button
+  // calling it; section D here exercises the prop against App's wiring).
+  globalThis.__replayClose = (e) => onClose?.(e);
 </script>
 <div class="stub-replay" data-id={String(id)} data-active={String(active)} />
 `,
@@ -232,7 +240,7 @@ try {
 }
 await sleep(); // onMount: the hashchange listener is registered
 
-console.log('A. off the replay route there is no dock; the replay route mounts the instance (no X — Back is the single way out)');
+console.log('A. off the replay route there is no dock; the replay route mounts the instance (no DOCK X — the top bar cluster is Replay\'s own)');
 check('no keep-alive wrapper on the library route', !wrapper(), wrapper() ? 'wrapper present' : '');
 check(
   'the stub Replay is not mounted either',
@@ -245,7 +253,7 @@ check(
   !!wrapper() && !wrapper().classList.contains('rp-keepalive-mini'),
   wrapper() ? wrapper().className : 'no wrapper',
 );
-check('no close X on the full replay view', !closeBtn(), closeBtn() ? 'X present' : '');
+check('no DOCK close X on the full replay view (the top bar cluster is Replay\'s own — pinned in replay.dom.mjs)', !closeBtn(), closeBtn() ? 'X present' : '');
 check('fresh entry: the stub Replay mounted once', mounts() === 1, `mounts=${mounts()}`);
 check(
   'the instance reads ACTIVE on the replay route',
@@ -332,7 +340,7 @@ check('clicking the X closes the dock (alive = null → the wrapper unmounts)', 
 check('the instance was destroyed (the stub Replay unmounted)', !stubReplay(), stubReplay() ? 'stub present' : 'gone');
 check('the user stays on the match route', location.hash === '#/match/1', location.hash);
 
-console.log('D. reopening after a close is a FRESH entry (no instance ever existed)');
+console.log('D. reopening after a close is a FRESH entry (no instance ever existed); the onClose prop shares the teardown');
 await go('#/replay/1');
 check('the wrapper is back on the replay route', !!wrapper(), 'no wrapper');
 check('FRESH: the stub Replay mounted a SECOND time', mounts() === 2, `mounts=${mounts()}`);
@@ -343,6 +351,37 @@ check(
     readFileSync('public/style.css', 'utf8'),
   ),
   'no absolute top:6px right:6px .rp-keepalive-close rule',
+);
+
+// The TOPBAR Close reaches the same teardown through the onClose prop
+// App passes down (closeReplay — never forked): the exit half is
+// Replay's goBack (its destination is pinned in replay.dom.mjs; it runs
+// BEFORE onClose so query.back is still live), so here the teardown
+// half alone must destroy exactly like the dock X did — NOT collapse (a
+// dock would keep the wrapper alive), route untouched, next entry fresh.
+await go('#/match/1'); // compose with the exit half: land on the match route first
+check(
+  'collapsed for the prop-teardown leg (the keep-alive holds)',
+  wrapper()?.classList.contains('rp-keepalive-mini'),
+  wrapper() ? wrapper().className : 'no wrapper',
+);
+globalThis.__replayClose(new dom.window.MouseEvent('click', { bubbles: true }));
+await sleep();
+check(
+  'the onClose prop IS the dock teardown (alive = null → the wrapper is GONE, not docked)',
+  !wrapper(),
+  wrapper() ? `wrapper "${wrapper().className}" survived` : 'gone',
+);
+check(
+  'the prop itself never navigates (the exit half is Replay goBack)',
+  location.hash === '#/match/1',
+  location.hash,
+);
+await go('#/replay/1');
+check(
+  'entry after the prop teardown is FRESH again (a third mount)',
+  mounts() === 3 && !!wrapper() && !wrapper().classList.contains('rp-keepalive-mini'),
+  `mounts=${mounts()}`,
 );
 
 // --- (E): the collapsed dock's caption sits FLUSH against the frame -------
