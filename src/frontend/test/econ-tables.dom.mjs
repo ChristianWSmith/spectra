@@ -2,9 +2,9 @@
 // tab table and the Economy buy-types table (side-colored TEAM names in
 // the Winner cells via sideparity.winnerTeamKey + components/WinnerCell,
 // the `.split-before` side-switch boundary row via rounds.separatorFlags,
-// the retired yellow pistol pip) and the EconCurve per-era stroke colors
-// (one <path> per team per side era, split at the COLUMN-BOUNDARY
-// midpoint so each round column reads exactly one era).
+// the retired yellow pistol pip) and the EconCurve per-money-era stroke
+// colors (one <path> per team per money era, GAPped at every money-reset
+// boundary — the line is never drawn across one).
 //
 // The driver builds a SELF-CONTAINED mirror of src/lib (every transitive
 // .js copied, every transitive .svelte compiled, services.js + the Wails
@@ -471,9 +471,9 @@ check(
   String(rowsOf(table).findIndex((tr) => tr.classList.contains('split-before'))),
 );
 
-console.log('F. EconCurve: one path per team per side era, split at the column boundary');
+console.log('F. EconCurve: one path per team per MONEY era — gaps at resets, one side color each');
 const paths = [...root.querySelectorAll('.econ-line')];
-check('13 rows × one switch → 2 teams × 2 eras = 4 paths', paths.length === 4, String(paths.length));
+check('13 rows × one money reset → 2 teams × 2 eras = 4 paths', paths.length === 4, String(paths.length));
 const sides = paths.map((p) => (p.classList.contains('side-ct') ? 'ct' : p.classList.contains('side-t') ? 't' : '?'));
 check(
   'stroke side classes: team-ct era0 side-t → era1 side-ct; team-t era0 side-ct → era1 side-t',
@@ -486,59 +486,44 @@ check(
     paths[2].classList.contains('loser') && paths[3].classList.contains('loser'),
   paths.map((p) => p.getAttribute('class')).join(' | '),
 );
-// Continuity: adjacent segments share their SPLIT point EXACTLY — the
-// midpoint of the straddling edge = the COLUMN BOUNDARY between the
-// flip's two rounds (the round linecap closes any antialiasing seam at
-// the shared vertex). W and the row count are EconCurve's own chart
-// constants for this fixture (viewBox 1000 wide, 13 rows).
+// GAP geometry: the money reset at index 12 (round 13) splits the rows
+// into two segments with NO shared point — each ends on its own last
+// column center, the next starts one column pitch later, so the line is
+// never drawn across the reset. W and the row count are EconCurve's own
+// chart constants for this fixture (viewBox 1000 wide, 13 rows).
 const coord = (tok) => tok.replace(/^[ML]/, '');
 const tokens = (p) => p.getAttribute('d').trim().split(/\s+/);
 const W = 1000;
 const NROWS = 13;
 const xAt = (i) => ((i + 0.5) / NROWS) * W; // the column CENTER of row i
-const BOUNDARY = (12 * W) / NROWS; // split x at the first flip (index 12)
-check(
-  'team-ct segments split at the column boundary (13 pts + 2 pts over 13 rows)',
-  tokens(paths[0]).length === 13 &&
-    tokens(paths[1]).length === 2 &&
-    coord(tokens(paths[0]).at(-1)) === coord(tokens(paths[1])[0]) &&
-    tokens(paths[0]).at(-1).startsWith('L') &&
-    tokens(paths[1])[0].startsWith('M'),
-  `${tokens(paths[0]).at(-1)} vs ${tokens(paths[1])[0]}`,
-);
-check(
-  'team-t segments share the same split point (13 + 2 tokens)',
-  tokens(paths[2]).length === 13 &&
-    tokens(paths[3]).length === 2 &&
-    coord(tokens(paths[2]).at(-1)) === coord(tokens(paths[3])[0]),
-  `${tokens(paths[2]).at(-1)} vs ${tokens(paths[3])[0]}`,
-);
-const splitX = Number(coord(tokens(paths[0]).at(-1)).split(',')[0]);
-check(
-  "the shared split x is f*W/n (12·1000/13 ≈ 923.1), NOT round 12's vertex (884.6)",
-  Math.abs(splitX - BOUNDARY) < 0.05 && Math.abs(splitX - xAt(11)) > 1,
-  `splitX=${splitX} boundary=${BOUNDARY} xAt(11)=${xAt(11)}`,
-);
-// THE behavior pin the fix exists for: each round COLUMN reads exactly
-// ONE era — round 12's center lies strictly inside era 0's x-span, round
-// 13's strictly inside era 1's, and the two spans meet exactly ON the
-// column boundary between them, so the visible switch lands ON round 13
-// (the reported bug flipped the colors at round 12 instead).
 const xsOf = (p) => tokens(p).map((t) => Number(coord(t).split(',')[0]));
-const era0Xs = xsOf(paths[0]);
-const era1Xs = xsOf(paths[1]);
-const era0Max = Math.max(...era0Xs);
-const era1Min = Math.min(...era1Xs);
+const seg1 = tokens(paths[0]);
+const seg2 = tokens(paths[1]);
 check(
-  "round 12's column center is inside era 0, round 13's inside era 1 (the fix)",
-  xAt(11) < era0Max && era0Max === era1Min && era1Min < xAt(12) &&
-    era0Xs.every((x) => x <= era0Max) && era1Xs.every((x) => x >= era1Min),
-  `xAt(11)=${xAt(11)} era0Max=${era0Max} era1Min=${era1Min} xAt(12)=${xAt(12)}`,
+  'team-ct: seg1 = rows 1-12 (12 pts), seg2 = the lone row 13 as a DOT (M + zero-length L)',
+  seg1.length === 12 &&
+    seg2.length === 2 &&
+    coord(seg2[0]) === coord(seg2[1]) &&
+    seg2[0].startsWith('M') &&
+    seg2[1].startsWith('L'),
+  `seg1=${seg1.length} pts, seg2=${seg2.join(' ')}`,
 );
 check(
-  'era 1 keeps a drawable edge (≥2 vertices — never a lone M… that paints nothing)',
-  tokens(paths[1]).length >= 2 && tokens(paths[3]).length >= 2,
-  `${tokens(paths[1]).length} + ${tokens(paths[3]).length} vertices`,
+  'team-ct: a GAP, not a shared point — round 12 ends seg1, round 13 opens seg2',
+  Math.abs(Math.max(...xsOf(paths[0])) - xAt(11)) < 0.05 &&
+    Math.abs(Math.min(...xsOf(paths[1])) - xAt(12)) < 0.05 &&
+    Math.max(...xsOf(paths[0])) < Math.min(...xsOf(paths[1])) &&
+    coord(seg1.at(-1)) !== coord(seg2[0]),
+  `max0=${Math.max(...xsOf(paths[0]))} min1=${Math.min(...xsOf(paths[1]))} xAt(11)=${xAt(11)} xAt(12)=${xAt(12)}`,
+);
+check(
+  'team-t: same gap + lone-row dot (12 + 2 tokens, no shared point)',
+  tokens(paths[2]).length === 12 &&
+    tokens(paths[3]).length === 2 &&
+    coord(tokens(paths[3])[0]) === coord(tokens(paths[3])[1]) &&
+    Math.max(...xsOf(paths[2])) < Math.min(...xsOf(paths[3])) &&
+    coord(tokens(paths[2]).at(-1)) !== coord(tokens(paths[3])[0]),
+  `seg1=${tokens(paths[2]).length} pts, seg2=${tokens(paths[3]).join(' ')}`,
 );
 check(
   'legend keeps the two identity-colored items (Alpha, Beta)',
@@ -549,6 +534,59 @@ check(
   'legend hint text (solid = match winner …) is gone',
   !root.textContent.includes('solid = match winner') &&
     !root.textContent.includes('match winner undecided'),
+);
+
+console.log('F2. EconCurve n=28 (golden nuke shape, sideSwitches=2): resets-only boundaries');
+// Remount the Economy tab with 28 counted rows and TWO recorded side
+// switches (flips at indexes 12 and 27): the money resets are
+// [12, 24, 27] — a strict superset — so the row structure is
+// 1-12 | 13-24 | 25-27 | 28: the round-25 gap carries NO side switch
+// (same class both sides), the round-28 gap does.
+root = await showMatch({ ...dataFor(28), getMatch: { ...match, sideSwitches: 2 } }, { routeTab: 'Economy' });
+const paths28 = [...root.querySelectorAll('.econ-line')];
+check('28 rows × 4 money resets → 2 teams × 4 eras = 8 paths', paths28.length === 8, String(paths28.length));
+const cls28 = (p) => (p.classList.contains('side-ct') ? 'ct' : p.classList.contains('side-t') ? 't' : '?');
+const classes28 = paths28.map(cls28);
+check(
+  "side classes: team-ct ['ct','t','t','ct'], team-t ['t','ct','ct','t'] — one color per money era",
+  JSON.stringify(classes28) === JSON.stringify(['ct', 't', 't', 'ct', 't', 'ct', 'ct', 't']),
+  JSON.stringify(classes28),
+);
+check(
+  'round-25 boundary: SAME class on both sides (resets ⊋ flips — no switch at OT start)',
+  classes28[1] === classes28[2],
+  `${classes28[1]} vs ${classes28[2]}`,
+);
+check(
+  'round-28 boundary: the class CHANGES (a side switch, which is also a reset)',
+  classes28[2] !== classes28[3],
+  `${classes28[2]} vs ${classes28[3]}`,
+);
+const counts28 = paths28.slice(0, 4).map((p) => tokens(p).length);
+const counts28t = paths28.slice(4, 8).map((p) => tokens(p).length);
+check(
+  'segment structure …1-12 | 13-24 | 25-27 | 28 (token counts 12,12,3,2 per team)',
+  JSON.stringify(counts28) === JSON.stringify([12, 12, 3, 2]) &&
+    JSON.stringify(counts28t) === JSON.stringify([12, 12, 3, 2]),
+  `ct=${JSON.stringify(counts28)} t=${JSON.stringify(counts28t)}`,
+);
+check(
+  'every adjacent pair is a strictly increasing gap (the line never crosses a reset)',
+  paths28.slice(0, 4).every((p, i, a) => i === 0 || Math.max(...xsOf(a[i - 1])) < Math.min(...xsOf(p))) &&
+    paths28.slice(4, 8).every((p, i, a) => i === 0 || Math.max(...xsOf(a[i - 1])) < Math.min(...xsOf(p))),
+);
+check(
+  'the lone round-28 segment paints as a dot (M + zero-length L)',
+  tokens(paths28[3]).length === 2 &&
+    coord(tokens(paths28[3])[0]) === coord(tokens(paths28[3])[1]) &&
+    tokens(paths28[3])[0].startsWith('M'),
+  tokens(paths28[3]).join(' '),
+);
+check(
+  'loser dash on every segment of the losing team (4 dashed), winner solid',
+  paths28.slice(4).every((p) => p.classList.contains('loser')) &&
+    paths28.slice(0, 4).every((p) => !p.classList.contains('loser')),
+  paths28.map((p) => p.getAttribute('class')).join(' | '),
 );
 
 console.log('G. style pin: replay opts OUT of the .view 1400px cap (source pin — jsdom has no layout)');

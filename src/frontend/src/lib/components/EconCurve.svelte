@@ -9,15 +9,19 @@
   // change which line is which — the match winner's line is solid, the
   // match loser's dashed, so who-is-who stays readable after the switch.
   // The STROKE COLOR, in contrast, is a SIDE property: each team's line is
-  // drawn as one <path> per SIDE era, recolored at every side switch
-  // (.econ-line.side-ct/.side-t in public/style-m3a.css — the side colors
-  // --ct/--t), because the color says which side that team held in those
-  // rounds. OWNERSHIP RULE: each round COLUMN reads exactly one era's
-  // color — the two eras share their split point at the COLUMN BOUNDARY
-  // (the midpoint of the straddling edge), so the visible switch lands ON
-  // the flip round (round 13), never a round early.
+  // drawn as one <path> per MONEY era, colored by the side era that
+  // contains it (.econ-line.side-ct/.side-t in public/style-m3a.css — the
+  // side colors --ct/--t). BOUNDARY RULE: the line is NEVER drawn across
+  // a money-reset boundary (../rounds.js moneyResetIndexes — the game
+  // SETS cash at round 13 and at every 3-round OT sub-half, so a line
+  // crossing one would imply false money continuity): each segment spans
+  // exactly one money era, ending at its last row and leaving a GAP to
+  // the next era's first column. Every money era lies wholly inside one
+  // SIDE era (the side-switch series is a subset of the reset series —
+  // see rounds.js), so a segment takes exactly one side color.
   import { fmtMoney } from '../fmt.js';
-  import { teamKeyAt, flipIndexes, sideInEra } from '../sideparity.js';
+  import { teamKeyAt, flipIndexes, eraOf, sideInEra } from '../sideparity.js';
+  import { moneyResetIndexes } from '../rounds.js';
   import { teamStartClass } from '../teams.js';
   import { econColumns, econValue } from '../econ.js';
   import { EQUIP_DEF, NETWORTH_DEF } from '../definitions.js';
@@ -112,56 +116,45 @@
     return `${xAt(i).toFixed(1)},${yAt(vals[i]).toFixed(1)}`;
   }
 
-  // The SPLIT point between two eras — the fix for "the lines switch
-  // colors one round too early": the shared point is NOT a data vertex
-  // but the MIDPOINT of the straddling edge (row f-1 → row f). Its x is
-  // the COLUMN BOUNDARY f * W / n — exactly halfway between the two
-  // column centers, since xAt is column-centered — and its y the average
-  // of the two vertex values, so the split sits ON the original straight
-  // edge: the drawn line's shape never changes, only which era owns
-  // which half. Every round column therefore reads exactly ONE era's
-  // color — round f-1 fully old, round f fully new — so the visible
-  // switch lands ON the flip round (13 for the first switch), not on
-  // round 12. Both adjacent segments build this point with the SAME
-  // expression (identical toFixed(1) coords → the seam closes; the round
-  // linecap in style-m3a.css finishes the joint).
-  function split(vals, f) {
-    return `${((f * W) / n).toFixed(1)},${((yAt(vals[f - 1]) + yAt(vals[f])) / 2).toFixed(1)}`;
-  }
-
-  // One polyline through an explicit, already-formatted point list.
+  // One polyline through an explicit, already-formatted point list. A
+  // SINGLE point would emit only `M…`, which paints nothing: repeat it
+  // as a zero-length `L` so the round stroke-linecap (style-m3a.css)
+  // draws the dot — a one-row money era (e.g. the fixture's lone round
+  // 13 after the halftime reset) must still render.
   function pathOf(points) {
-    return points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p}`).join(' ');
+    const pts = points.length === 1 ? [points[0], points[0]] : points;
+    return pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p}`).join(' ');
   }
 
-  // One <path> per TEAM per SIDE era. The stroke color follows the SIDE
-  // the team held in that era (.econ-line.side-ct/.side-t — the side
-  // colors --ct/--t); the solid/dashed style follows the TEAM (loser →
-  // dashed on all of its segments). Era edges are the counted-index
-  // flips (flipIndexes) — rows here ARE the counted rounds index-for-
-  // index (store.GetEconomy's SQL) — and era j OWNS the rows from its
-  // opening flip (row 0 for era 0) through its closing flip − 1 (the
-  // final row for the last era), bookended by the SPLIT point at each
-  // internal flip: the segment before a flip ENDS on the split, the one
-  // after STARTS there (both from `split` above), so each era always
-  // keeps at least one drawable edge — even when the flip lands on the
-  // last row (a lone `M…` path paints nothing and the new color would
-  // vanish). Side unknown can't happen for a 'ct'/'t' key (sideInEra only
-  // rejects a non-side), so every segment gets exactly one side class.
+  // One <path> per TEAM per MONEY era. The line is NEVER drawn across a
+  // money-reset boundary (../rounds.js moneyResetIndexes — the game SETS
+  // cash there, so a crossing line implies false money continuity):
+  // segment j spans rows [bounds[j] … bounds[j+1] − 1] — its OWN rows
+  // only, NO synthetic points — so adjacent segments are separated by
+  // the natural column pitch (a GAP: xAt(to) < xAt(to+1)), never joined.
+  // Each money era lies wholly inside ONE side era (side switches ⊆
+  // money resets — pinned in rounds.test.js), so the segment's side
+  // color comes from its FIRST row (eraOf over the flip list) and holds
+  // for the whole segment; the solid/dashed style follows the TEAM
+  // (loser → dashed on every segment). Rows here ARE the counted rounds
+  // index-for-index (store.GetEconomy's SQL) — the same space
+  // flipIndexes/moneyResetIndexes use, negatives never in it. Side
+  // unknown can't happen for a 'ct'/'t' key (sideInEra only rejects a
+  // non-side), so every segment gets exactly one side class.
   const segments = $derived.by(() => {
     const flips = flipIndexes(n, sideSwitches);
+    const bounds = [0, ...moneyResetIndexes(n), n];
     const out = [];
     for (const key of ['ct', 't']) {
       const vals = key === 'ct' ? series.ct : series.tr;
       const loser = key === 'ct' ? loserCT : loserT;
-      for (let j = 0; j <= flips.length; j++) {
-        const from = j === 0 ? 0 : flips[j - 1]; // first row this era opens on
-        const to = j < flips.length ? flips[j] - 1 : n - 1; // last whole row
+      for (let j = 0; j + 1 < bounds.length; j++) {
+        const from = bounds[j];
+        const to = bounds[j + 1] - 1;
+        if (from > to) continue; // unreachable: resets are strictly inside (0, n)
+        const side = sideInEra(key, sideSwitches, eraOf(from, flips));
         const pts = [];
-        if (j > 0) pts.push(split(vals, flips[j - 1])); // shared opening split
         for (let i = from; i <= to; i++) pts.push(vertex(vals, i));
-        if (j < flips.length) pts.push(split(vals, flips[j])); // shared closing split
-        const side = sideInEra(key, sideSwitches, j);
         out.push({
           d: pathOf(pts),
           cls: `econ-line ${side === 'ct' ? 'side-ct' : 'side-t'}`,

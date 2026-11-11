@@ -5,14 +5,17 @@
 // stamped ?tick=) and every round-span loop
 // range (nav.entryLoopSpan, Replay's round ribbon),
 // scoreThrough (the scoreline-at-a-round aggregate), separatorAfter
-// (the round-ribbon separator cadence), and the freeze window
+// (the round-ribbon separator cadence), separatorFlags (its gating over
+// a rendered list), moneyResetIndexes (the money-reset cadence behind
+// EconCurve's line gaps), and the freeze window
 // (freezeWindowAt — THE window the inFreezeTime predicate reports on and
 // the replay engine's auto-skip jumps to).
 // Run: node --test src/lib/rounds.test.js   (from frontend/)
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { isCounted, roundStartTick, roundEndTick, roundIndexLabel, scoreThrough, inFreezeTime, freezeWindowAt, separatorAfter, separatorFlags } from './rounds.js';
+import { isCounted, roundStartTick, roundEndTick, roundIndexLabel, scoreThrough, inFreezeTime, freezeWindowAt, separatorAfter, separatorFlags, moneyResetIndexes } from './rounds.js';
+import { flipIndexes } from './sideparity.js';
 
 const ROUNDS = [
   { number: -2, startTick: 100 }, // knife
@@ -157,6 +160,66 @@ test('separatorFlags: empty, short and junk input degrade to no separators', () 
   // { number: r.round } before calling), so a mis-keyed call degrades to
   // "no separators" instead of misplacing a boundary.
   assert.deepEqual(separatorFlags([{ round: 12 }, { round: 13 }]), [false, false]);
+});
+
+// moneyResetIndexes — where the game SETS cash again (round 13 → $800,
+// every 3-round OT sub-half → $10,000), as counted-round indexes: 12,
+// then 24, 27, 30, 33, …. The EconCurve breaks its lines on these
+// boundaries only (money does not carry across them — CS2.md "Money
+// resets"). The cadence delegates to separatorAfter, so these pins are
+// the guard on BOTH sides of that identity.
+test('moneyResetIndexes: the reset cadence 12, then 24 and every 3 OT rounds', () => {
+  assert.deepEqual(moneyResetIndexes(13), [12], 'half 2 starts at index 12 (round 13)');
+  assert.deepEqual(moneyResetIndexes(24), [12], 'no OT → the round-25 boundary is out of range');
+  assert.deepEqual(moneyResetIndexes(25), [12, 24], 'first OT sub-half starts at index 24 (round 25)');
+  assert.deepEqual(moneyResetIndexes(28), [12, 24, 27], 'golden nuke shape (round 28 = OT half 2)');
+  assert.deepEqual(moneyResetIndexes(31), [12, 24, 27, 30]);
+  assert.deepEqual(
+    moneyResetIndexes(50),
+    [12, 24, 27, 30, 33, 36, 39, 42, 45, 48],
+    'large n keeps the every-3 cadence',
+  );
+});
+
+test('moneyResetIndexes: no boundary inside regulation, exact-n boundaries dropped, junk → []', () => {
+  // n = 12: the halftime boundary IS index 12, which a 12-row match
+  // never reaches (the same (0, n) rule as flipIndexes).
+  assert.deepEqual(moneyResetIndexes(12), []);
+  assert.deepEqual(moneyResetIndexes(11), []);
+  assert.deepEqual(moneyResetIndexes(1), []);
+  assert.deepEqual(moneyResetIndexes(0), []);
+  // Boundary at exactly n dropped for every cadence point (n = 24 → the
+  // round-25 reset would be index 24 ≥ n).
+  assert.deepEqual(moneyResetIndexes(24), [12]);
+  assert.deepEqual(moneyResetIndexes(27), [12, 24], 'index 27 (round 28) needs n > 27');
+  // Non-finite input coerces exactly like flipIndexes (never throws).
+  assert.deepEqual(moneyResetIndexes(NaN), []);
+  assert.deepEqual(moneyResetIndexes(-3), []);
+  assert.deepEqual(moneyResetIndexes(undefined), []);
+});
+
+test('moneyResetIndexes: side switches are a strict subset of money resets', () => {
+  // The structural fact EconCurve leans on: EVERY color-change boundary
+  // is also a money gap (flips ⊆ resets), so a line never crosses a
+  // color boundary and each money era lies wholly inside one side era.
+  // Exhaustive over a grid of match shapes and switch counts — including
+  // shapes where the switch has not happened yet (flipIndexes drops it,
+  // the reset series does not care).
+  for (const n of [1, 2, 5, 12, 13, 14, 23, 24, 25, 26, 27, 28, 29, 30, 31, 33, 34, 36, 40, 55, 100]) {
+    for (const s of [0, 1, 2, 3, 4, 5, 12]) {
+      const resets = new Set(moneyResetIndexes(n));
+      for (const f of flipIndexes(n, s)) {
+        assert.ok(resets.has(f), `flip ${f} missing from resets at n=${n}, switches=${s}`);
+      }
+      // And the series are not equal in general: the OT-start reset at
+      // 24 has no side switch (no switch at OT start).
+      if (n > 24) assert.ok(resets.has(24), `n=${n} must carry the round-25 reset`);
+    }
+  }
+  // The one boundary that is a reset but never a flip.
+  const resets28 = moneyResetIndexes(28);
+  assert.ok(resets28.includes(24));
+  assert.ok(!flipIndexes(28, 2).includes(24));
 });
 
 test('roundStartTick resolves a round number to its start tick', () => {
