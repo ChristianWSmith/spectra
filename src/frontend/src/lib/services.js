@@ -351,6 +351,17 @@ export function getEvent(id) {
   return MatchService.GetEvent(id);
 }
 
+// getEventKeys returns the id/tick/kind of EVERY event matching the SAME
+// filter as getEvents — the replay's scrubber-marker answer (the store
+// shares one clause builder between the two reads, and this read is
+// UNPAGED: the marker set is the whole answer, never a page of it).
+// Read-cached on the whole filter object — marker answers re-query per
+// filter change, and every spectra:* data event flushes the cache like
+// the rest of the reads here.
+export function getEventKeys(filter) {
+  return cachedRead('GetEventKeys', [filter], () => MatchService.GetEventKeys(filter));
+}
+
 // getBlindDurations returns [{seq, ms}] — the extractor's flash length
 // per blind event (the payload-side channel: models.EventRow stays
 // payload-free, so the duration needs this narrow read — the same rule

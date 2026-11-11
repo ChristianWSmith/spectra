@@ -14,7 +14,12 @@
 //   3. renderer.js / sfx.js never reference `.category` at all — the
 //      stamp is feed-only by construction (normalizeWorld does not emit
 //      the field), so no world consumer can grow a dependency on it;
-//   4. SFX_CUE_KINDS ⊆ DRAW_KINDS — the audio cue kinds are a subset of
+//   4. the world pushes are wired ONCE each: Replay.svelte calls
+//      pushWorldToRenderer / pushWorldToSfx exactly once (the renderer
+//      half is pinned behaviorally in replay.dom.mjs section O — one
+//      push per load, zero per filter edit; the sfx engine is never
+//      constructed in that harness, so its half is pinned here);
+//   5. SFX_CUE_KINDS ⊆ DRAW_KINDS — the audio cue kinds are a subset of
 //      the world fetch's kind set: a cue kind outside it would be fed
 //      rows the fetch never returns (dead silence), and a draw kind
 //      dropped from the draw set would silently kill its cue. Nothing
@@ -55,6 +60,7 @@ const { SFX_CUE_KINDS } = await import('./replay/sfx.js');
 // (the view pushes the dataset into renderer/sfx; kits/drops/bomb/decoy/
 // livestats/roundcut/playercard DERIVE from it).
 const WORLD_MODULES = [
+  'world.js',
   'renderer.js',
   'sfx.js',
   'kits.js',
@@ -87,6 +93,17 @@ test('renderer.js / sfx.js never reference `.category` (the stamp is feed-only)'
       !/\.category\b/.test(src),
       `${rel} reads .category — normalizeWorld does not even emit the field`,
     );
+  }
+});
+
+test('the world pushes are wired ONCE each in Replay.svelte', () => {
+  const view = readFileSync(
+    fileURLToPath(new URL('./views/Replay.svelte', import.meta.url)),
+    'utf8',
+  );
+  for (const fn of ['pushWorldToRenderer', 'pushWorldToSfx']) {
+    const calls = (view.match(new RegExp(`${fn}\\(`, 'g')) || []).length;
+    assert.equal(calls, 1, `${fn} must be called from exactly one site (${calls})`);
   }
 });
 

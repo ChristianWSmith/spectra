@@ -943,9 +943,14 @@ func (s *Store) GetEvents(f models.EventFilter) ([]models.EventRow, error) {
 	return s.queryEvents(f, nil)
 }
 
-// queryEvents is the one typed-event read: every optional filter ANDs
-// into the shared whereClause builder (no bound empty-string parameter,
-// no placeholder-count drift).
+// eventWhere builds THE one typed-event filter → whereClause: every
+// optional filter ANDs into the shared builder (no bound empty-string
+// parameter, no placeholder-count drift). BOTH typed-event reads share
+// it — queryEvents (the rows the feed lists) and GetEventKeys (the
+// scrubber-marker answer) — so "what matches" can never drift between
+// the list and the markers: ONE matcher, one clause set (round range,
+// kinds, player, kill-role, side, team, weapon, distance, headshot,
+// bbox). It carries no LIMIT/OFFSET: paging belongs to the caller.
 //
 // exactRound, when non-nil, replaces the round range with `e.round = ?`
 // for THAT number — the round-detail read must match its (possibly
@@ -954,7 +959,7 @@ func (s *Store) GetEvents(f models.EventFilter) ([]models.EventRow, error) {
 // adds its own clause only when non-zero, so a knife/warmup round number
 // (-1, -2) filters exactly like a positive one and 0 on a side means
 // "no bound on that side".
-func (s *Store) queryEvents(f models.EventFilter, exactRound *int) ([]models.EventRow, error) {
+func (s *Store) eventWhere(f models.EventFilter, exactRound *int) (whereClause, error) {
 	var w whereClause
 	if exactRound != nil {
 		w.add("e.round = ?", *exactRound)
@@ -1048,7 +1053,7 @@ func (s *Store) queryEvents(f models.EventFilter, exactRound *int) ([]models.Eve
 		var sw int
 		if err := s.db.QueryRow(`SELECT side_switches FROM matches WHERE id = ?`, f.MatchID).
 			Scan(&sw); err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return nil, fmt.Errorf("store: get events side switches: %w", err)
+			return w, fmt.Errorf("store: get events side switches: %w", err)
 		}
 		// The two Go-computed identities: rules.StartSide owns the flip
 		// (odd switch count), so SQL only maps a final side onto its
@@ -1101,6 +1106,18 @@ func (s *Store) queryEvents(f models.EventFilter, exactRound *int) ([]models.Eve
 			bb.MinX, bb.MaxX, bb.MinY, bb.MaxY,
 		)
 	}
+	return w, nil
+}
+
+// queryEvents is the ROWS read (the feed's typed fetch, the round-detail
+// read, the once-per-match world/draw fetch): the shared eventWhere
+// clause set plus the row projection, paged by f.Offset/f.Limit (Limit
+// <= 0 → the DefaultEventLimit hard cap).
+func (s *Store) queryEvents(f models.EventFilter, exactRound *int) ([]models.EventRow, error) {
+	w, err := s.eventWhere(f, exactRound)
+	if err != nil {
+		return nil, err
+	}
 	limit := f.Limit
 	if limit <= 0 {
 		limit = DefaultEventLimit
@@ -1130,6 +1147,46 @@ func (s *Store) queryEvents(f models.EventFilter, exactRound *int) ([]models.Eve
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("store: get events: %w", err)
+	}
+	return out, nil
+}
+
+// GetEventKeys returns the IDENTITY/TICK/KIND of EVERY event matching
+// the filter — the scrubber-marker answer (the replay asks "which world
+// rows does the LIST contain?" per filter change). It shares eventWhere
+// with GetEvents, so side/team/killRole/bbox/weapon/distance/headshot/
+// rounds/player/kinds apply EXACTLY as they do to the list — ONE
+// matcher, never a JS re-implementation of the SQL. NO paging at all
+// (f.Limit/f.Offset are deliberately ignored): the marker set is the
+// whole answer, not a page of it, and the row cap that truncates the
+// list must never truncate the markers. Ordered by seq like the list, so
+// the two stay comparable row-for-row. A match with no rows — or an
+// unknown match — returns an empty slice, never an error.
+func (s *Store) GetEventKeys(f models.EventFilter) ([]models.EventKey, error) {
+	w, err := s.eventWhere(f, nil)
+	if err != nil {
+		return nil, err
+	}
+	q := `SELECT e.id, e.tick, e.kind` + eventRowFrom +
+		` WHERE e.match_id = ?` + w.sql() + ` ORDER BY e.seq`
+	args := make([]any, 0, 1+len(w.args))
+	args = append(args, f.MatchID)
+	args = append(args, w.bound()...)
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("store: get event keys: %w", err)
+	}
+	defer rows.Close()
+	out := make([]models.EventKey, 0, 64)
+	for rows.Next() {
+		var k models.EventKey
+		if err := rows.Scan(&k.ID, &k.Tick, &k.Kind); err != nil {
+			return nil, fmt.Errorf("store: get event keys: %w", err)
+		}
+		out = append(out, k)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: get event keys: %w", err)
 	}
 	return out, nil
 }

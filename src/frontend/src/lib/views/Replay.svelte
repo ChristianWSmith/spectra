@@ -19,7 +19,7 @@
     getEvents,
     getEvent,
     getBlindDurations,
-    getDropDetails,
+    getEventKeys,
     getChat,
     getSoundEvents,
     getSoundEventPresence,
@@ -42,15 +42,13 @@
   import { createRenderer, sideFromFlags, hudTeamNames } from '../replay/renderer.js';
   import {
     CATEGORIES,
-    DRAW_KINDS,
     categoryById,
     typedKindsFor,
     enabledSources,
     killRoleFor,
     normalizeEvent,
-    normalizeWorld,
-    enabledClaimOf,
     normalizeChat,
+    categoryOfKind,
     normalizeGeneric,
     mergeFeed,
     roundsByNumber,
@@ -72,10 +70,9 @@
   } from '../replay/state.js';
   import { deriveBullets } from '../replay/bullets.js';
   import { buildDecoyPlan } from '../replay/decoy.js';
-  // Defuse-kit evidence: THE one nearest-death + buytime reconstruction
-  // (built once below from the draw feed joined with the single
-  // buytime_ended read in load()).
-  import { buildKitEvidence, buyEndsFromRows } from '../replay/kits.js';
+  // THE world dataset (match-static fetch + normalization + the world
+  // pushes): lib/replay/world.js owns it; this view only wires it.
+  import { loadWorld, pushWorldToRenderer, pushWorldToSfx } from '../replay/world.js';
   import { loadIconManifest, preloadIcons } from '../replay/icons.js';
   import {
     AUDIO_VOL_DEFAULT,
@@ -83,9 +80,8 @@
     createSfxEngine,
     loadSoundManifest,
     prefVolume,
-    // The victimHelmet stamp's state read lives beside headshotKillCues
-    // (sfx.js) — the stamp's shape and the cue predicate can never drift.
-    slotAliveHelmetAt,
+    // (the victimHelmet stamp's state read lives in world.js, beside
+    // the cue predicate it feeds — sfx.js slotAliveHelmetAt)
   } from '../replay/sfx.js';
   import {
     buildSpeakingIndex,
@@ -408,24 +404,31 @@
 
   const PAGE = 500; // per-source page size; PAGE+1 probes "there is more"
 
-  let drawRows = $state([]); // drawable-kind anchors, fetched once per match
-  // The ONE buytime_ended read (round → tick), fetched in load() beside
-  // drawRows: the kit evidence's buy-vs-ground boundary. null until it
-  // resolves — kitEv (below) stays null until then, so no card claims a
-  // kit before the evidence is complete (tri-state `kit`: null = unknown).
-  let buyEnds = $state(null);
+  // THE world dataset (lib/replay/world.js): the drawable-kind anchors
+  // with their side channels, the canonical world normalization and the
+  // kit evidence — fetched ONCE per match in load(), pushed ONCE in
+  // startEngine, identity stable for the session. null until the load
+  // lands (drawNorm/kitEv below read through it: no world → no rows, no
+  // card claims a kit — tri-state `kit`: null = unknown).
+  let world = $state(null);
+  // The SCRUBBER-MARKER answer: the event ids matching the CURRENT feed
+  // filter (getEventKeys — keys-only, unpaged; null until the first
+  // answer lands, an empty Set when the answer is empty/unreadable).
+  // The marker derived intersects the world rows with it, so markers can
+  // only ever be a SUBSET of the list.
+  let markerKeys = $state(null);
   // The match's sound_events rows (footsteps/lands/jumps/fall damage) —
   // fetched ONCE in load(), ONLY after GetSoundEventPresence proved the
   // match has any (presence-zero matches keep this [] and their footsteps
   // stay silent), and pushed to the sfx engine beside rounds/landmarks.
   let soundRows = [];
   // Connection rows (player_connect / player_disconnect), fetched once
-  // per match beside drawRows: the roster keeps a slot for a player who
+  // per match beside the world dataset: the roster keeps a slot for a player who
   // disconnects mid-demo AND for a bot that joins late, so without them
   // the columns grow a phantom card (the nuke demo's sixth CT) — and for
   // a BOT these rows are the only evidence that it is covering a
   // disconnected human (playercard.js presentAt). Fail-soft like
-  // drawRows: any failure lands [] and every HUMAN card stays visible;
+  // the world load: any failure lands [] and every HUMAN card stays visible;
   // a bot card then stays hidden, because the replay exception needs
   // positive evidence (bots fail toward NOT listed).
   let connRows = $state([]);
@@ -518,6 +521,7 @@
     typedHasMore = false;
     feedError = '';
     feedSettled = false;
+    markerKeys = null; // the marker answer for THIS filter (below)
     const src = enabledSources(f.cats);
     const jobs = [];
     const fail = (e) => {
@@ -525,6 +529,15 @@
     };
     if (src.event) {
       jobs.push(fetchTyped(f, 0, my, false));
+      // The marker answer rides the SAME query (see fetchMarkerKeys) —
+      // the feed and the scrubber can no longer disagree about which
+      // rows match.
+      jobs.push(fetchMarkerKeys(f, my));
+    } else {
+      // No event category enabled → the list holds no event rows, so the
+      // marker set is EMPTY (never an unfiltered answer — an empty
+      // kinds list would mean "every kind" in the store's contract).
+      markerKeys = new Set();
     }
     if (src.chat) {
       jobs.push(
@@ -553,32 +566,48 @@
     });
   });
 
-  function fetchTyped(f, offset, my, append) {
-    return getEvents({
+  // THE typed-event filter params — the ONE FE spelling of the landmark
+  // feed's models.EventFilter: fetchTyped PAGES it for the list and
+  // fetchMarkerKeys reads it KEYS-ONLY for the scrubber, so both send
+  // byte-identical filters (the Go side shares one clause builder —
+  // store.eventWhere — so the marker set IS the list's answer by
+  // construction, never a second matcher).
+  //   kinds: the enabled categories' kind set (typedKindsFor) — an empty
+  //     set would mean "every kind" in the store contract, so both reads
+  //     are spawned only when an EVENT source is enabled (the fetch
+  //     effect's src.event gate above).
+  //   killRole: the player filter's ROLE for kill rows
+  //     (landmarks.killRoleFor over the category ids — the kinds can't
+  //     tell Kills from Deaths): Kills-only → "X's kills" (attacker),
+  //     Deaths-only → "X's deaths" (victim), both/neither → 'any' (the
+  //     either-endpoint). Go applies it scoped to kind='kill' only.
+  //     Side/Team ride beside it (the heatmap mirror — side-at-round /
+  //     start-side identity); the chat and generic reads have no
+  //     side/team columns in their Go signatures, so those sources stay
+  //     unscoped (stage 2 is the typed feed — noted, not invented).
+  //   distMin/distMax map onto the Go EventFilter's distanceMin/
+  //     distanceMax JSON fields (models.EventFilter).
+  function typedFilterParams(f) {
+    return {
       matchId: id,
       kinds: typedKindsFor(f.cats),
       roundFrom: f.roundFrom,
       roundTo: f.roundTo,
       steamId: f.steamId,
-      // The player filter's ROLE for kill rows (landmarks.killRoleFor
-      // over the category ids — the kinds can't tell Kills from Deaths):
-      // Kills-only → "X's kills" (attacker), Deaths-only → "X's deaths"
-      // (victim), both/neither → 'any' (today's either-endpoint). Go
-      // applies it scoped to kind='kill' only. Side/Team ride beside it
-      // (the heatmap mirror — side-at-round / start-side identity); the
-      // chat and generic reads have no side/team columns in their Go
-      // signatures, so those sources stay unscoped (stage 2 is the typed
-      // feed — noted, not invented).
       killRole: killRoleFor(f.cats),
       side: f.side,
       team: f.team,
       weapon: f.weapon,
-      // The filter's distMin/distMax map onto the Go EventFilter's
-      // distanceMin/distanceMax JSON fields (models.EventFilter).
       distanceMin: f.distMin,
       distanceMax: f.distMax,
       headshotOnly: f.headshotOnly,
       bbox: f.bbox || undefined,
+    };
+  }
+
+  function fetchTyped(f, offset, my, append) {
+    return getEvents({
+      ...typedFilterParams(f),
       offset,
       limit: PAGE + 1, // probe row → "load more" without silent truncation
     })
@@ -590,6 +619,29 @@
       })
       .catch((e) => {
         if (my === gen) feedError = errText(e);
+      });
+  }
+
+  // fetchMarkerKeys — THE scrubber-marker answer: the event ids matching
+  // the CURRENT filter, keys-only and UNPAGED (store.GetEventKeys
+  // ignores Limit/Offset — the list's page cap must never truncate the
+  // markers). Recorded as a Set of event ids; the marker derived
+  // intersects the world rows with it, so a marker can only ever be a
+  // row the LIST also matches (the owner's ruling: the scrubber follows
+  // the FULL filter — cats, rounds, player, side, team, killRole, bbox,
+  // weapon, distance, headshot).
+  function fetchMarkerKeys(f, my) {
+    return getEventKeys(typedFilterParams(f))
+      .then((keys) => {
+        if (my !== gen) return;
+        markerKeys = new Set((keys || []).map((k) => k.id));
+      })
+      .catch(() => {
+        // Fail-soft: an unreadable answer is an EMPTY marker set (no
+        // markers), never an unfiltered one — markers are a subset of
+        // the list by construction, and an error must not widen that.
+        if (my !== gen) return;
+        markerKeys = new Set();
       });
   }
 
@@ -646,57 +698,58 @@
   // number and the collapsed handle's title/aria-label both use it.
   const feedCountLabel = $derived(String(feedRows.length) + (hasMore ? '+' : ''));
 
-  // WORLD dataset rows: the drawable-kind anchors normalized ONCE per
-  // match — normalizeWorld applies NO claim gate (every DRAW_KINDS row
-  // survives whatever CATEGORIES claims) and NO round policy, and this
-  // derived reads NOTHING but drawRows, so a category toggle can never
-  // re-derive it (the live-stats cursor keys off this identity — see
-  // livestats.js' reset key). The claim gate is a FEED concept
-  // (rowCategory → feedRows above); the world consumers (renderer, sfx,
-  // kit evidence, decoy plan, live stats) take buckets/kinds only.
-  const drawNorm = $derived(drawRows.map((r) => normalizeWorld(r)).filter(Boolean));
+  // WORLD dataset rows — world.rows alias (world.js owns the fetch AND
+  // the normalization: normalizeWorld takes no filter, applies no claim
+  // gate and stamps no category, so this derived has ONE dependency
+  // (world) and its identity is stable across every filter edit — the
+  // live-stats cursor keys off it, see livestats.js' reset key). The
+  // claim gate is a FEED concept (rowCategory → feedRows above); the
+  // world consumers (renderer, sfx, kit evidence, decoy plan, live
+  // stats) take buckets/kinds only.
+  const drawNorm = $derived(world ? world.rows : []);
 
-  // The defuse-kit evidence (lib/replay/kits.js buildKitEvidence) — built
-  // ONCE per match (both inputs are match-static: the draw feed above
-  // and the buytime_ended boundary from load()). Two consumers:
+  // The defuse-kit evidence — built ONCE inside world.js (both inputs
+  // are match-static: the anchor rows and the buytime_ended boundary,
+  // fetched together in loadWorld). Two consumers:
   //   renderer  setKitEvidence pushes it beside setLandmarks (the
   //             precomputed [from,to) windows the kit marker reads);
   //   cards     hasKitAt(steamId, tick) in cardColumns → PlayerCard's
   //             tri-state `kit` prop.
-  // null until buyEnds resolves: an unknown answer, never a guessed one.
-  const kitEv = $derived(buyEnds ? buildKitEvidence(drawNorm, buyEnds, meta?.tickRate ?? 0) : null);
+  // null until the world lands: an unknown answer, never a guessed one.
+  const kitEv = $derived(world ? world.kitEv : null);
 
-  // Scrubber markers: the draw feed gated by the ACTIVE category set +
-  // round/player scope (the scrubber mirrors the feed's overview;
-  // weapon/distance filters are list concerns and do not move
-  // markers). Precomputed buckets — no classification at runtime.
+  // Scrubber markers — THE LIST'S OVERVIEW (the owner's ruling): a
+  // marker is a world row whose id is in the marker ANSWER — the same
+  // EventFilter the list fetches with (fetchMarkerKeys → store.
+  // GetEventKeys, which shares queryEvents' clause builder), so cats,
+  // rounds, player, side, team, killRole, bbox, weapon, distance and
+  // headshot all apply here EXACTLY as they do to the list. The old
+  // client-side gates are gone on purpose: a bbox/weapon/hs arrival used
+  // to leave markers on the map while the list read "No events match",
+  // and re-implementing the SQL in JS would drift against its pins (the
+  // side/team keys are DB joins). Chat/generic rows never intersect —
+  // the world is event kinds only — so markers stay event-only.
+  // Precomputed buckets — no classification at runtime.
   const markers = $derived.by(() => {
-    if (!data || !data.frames || !drawNorm.length) return [];
+    if (!data || !data.frames || !drawNorm.length || !markerKeys) return [];
     const t0 = data.ticks[0];
     const t1 = data.ticks[data.frames - 1];
     const span = Math.max(1, t1 - t0);
     const out = [];
-    // Same round-visibility pref as the feed — the scrubber mirrors the
-    // feed's overview, so hidden rounds carry no markers either. (The
-    // renderer's WORLD layers stay unfiltered: the map always shows the
-    // full spatial context — see the drawNorm comment.)
+    // The TWO client-side rules the list applies to the same rows (the
+    // SQL has neither): the knife/warmup visibility pref and the
+    // countedOnly category rule — keeping them is what makes markers a
+    // SUBSET of the list rather than a parallel answer. (The renderer's
+    // WORLD layers stay unfiltered: the map always shows the full
+    // spatial context — see the drawNorm comment.)
     const norm = applyRoundPref(drawNorm, rbn, showKnifeWarmup);
     for (const l of norm) {
-      // THE enabled-claim gate, in predicate form over (kind, cats) —
-      // enabledClaimOf ⇔ the old cats.has(rowCategory(...)) stamp (the
-      // equivalence landmarks.test.js pins: a null claim here IS "no
-      // marker", which the stamp's canonical fallback used to stand in
-      // for). The world row carries no stamp to read, by design.
-      const claim = enabledClaimOf(l.kind, filter.cats);
-      if (!claim) continue;
-      const cat = categoryById(claim);
+      if (!markerKeys.has(l.id)) continue; // THE filter answer
+      const cat = categoryById(categoryOfKind(l.kind));
       if (cat && cat.countedOnly) {
         const r = rbn.get(l.round);
         if (r && !isCounted(r)) continue;
       }
-      if (filter.roundFrom !== 0 && l.round < filter.roundFrom) continue;
-      if (filter.roundTo !== 0 && l.round > filter.roundTo) continue;
-      if (filter.steamId && l.steamId !== filter.steamId) continue;
       // The ONE bucket → marker mapping (landmarks.scrubberMarkerClass —
       // the contract src/lib/landmarks.test.js pins): the typed grenade
       // buckets (smoke/fire/flash/he) count as 'det' alongside
@@ -1943,57 +1996,6 @@
     return 0;
   }
 
-  // grenadeEntity — the projectile entity id out of one row's
-  // detail_json (extract stamps it on grenade_throw / grenade /
-  // grenade_bounce rows: the ONE id the throw, every bounce and the
-  // blast share — extract/handlers.go). models.EventRow stays
-  // payload-free, so the value reaches the view through the per-row
-  // EventDetail read; 0/absent = unknown and the renderer falls back to
-  // its round+weapon pairing (never a guessed id).
-  function grenadeEntity(detailJson) {
-    if (!detailJson) return 0;
-    try {
-      const e = Number(JSON.parse(detailJson).entity);
-      return Number.isFinite(e) && e > 0 ? e : 0;
-    } catch {
-      return 0; // malformed payload → unknown, never a throw
-    }
-  }
-
-  // hydrateGrenadeEntities — stamps `entity` onto the draw rows the
-  // renderer's flight join reads (renderer.joinBounceVerts: throw →
-  // bounces → det by projectile). Worth doing ONLY when the match
-  // actually HAS bounce rows (a pre-bounce import has none → zero extra
-  // reads), because the payloads live on the per-row EventDetail read
-  // (GetEvent), not on the list read. Bounded concurrency, fail-soft:
-  // any failed read leaves that row entity-less → the fallback pairing,
-  // never a load error.
-  async function hydrateGrenadeEntities(rows) {
-    const kinds = new Set(['grenade_throw', 'grenade', 'grenade_bounce']);
-    const targets = rows.filter((r) => kinds.has(r.kind) && Number.isFinite(r.id));
-    if (!targets.length || !rows.some((r) => r.kind === 'grenade_bounce')) return rows;
-    const byId = new Map();
-    let next = 0;
-    const CONCURRENCY = 12;
-    const worker = async () => {
-      for (;;) {
-        const i = next++;
-        if (i >= targets.length) return;
-        const r = targets[i];
-        try {
-          const d = await getEvent(r.id);
-          const e = grenadeEntity(d && d.detailJson);
-          if (e > 0) byId.set(r.id, e);
-        } catch {
-          /* fail-soft: that row keeps entity 0 → the fallback pairing */
-        }
-      }
-    };
-    await Promise.all(Array.from({ length: Math.min(CONCURRENCY, targets.length) }, worker));
-    if (!byId.size) return rows;
-    return rows.map((r) => (byId.has(r.id) ? { ...r, entity: byId.get(r.id) } : r));
-  }
-
   async function load() {
     loading = true;
     loadError = '';
@@ -2048,7 +2050,7 @@
       );
       // Decoy plan: same guard/push shape as the bullets above (the
       // rows may not be fetched yet — startEngine re-pushes the real
-      // plan once drawRows/data are in; a null engine here means no
+      // plan once world/data are in; a null engine here means no
       // resolveFrame → shots: [], never a guessed weapon).
       renderer?.setDecoyPlan(decoyPlanFor());
       sfx?.setDecoyPlan(decoyPlanFor());
@@ -2106,96 +2108,24 @@
           voiceWindows = null;
         }
       }
-      // The drawable anchor set (kills/grenades/bomb/drops/round_end) —
-      // one unfiltered source read, awaited before the engine starts so
-      // the world layers and scrubber markers are ready on first paint.
-      // The death-drop payload projection (getDropDetails — cat + the
-      // gun's mag/reserve, joined by seq: models.EventRow stays
-      // payload-free) rides the SAME await, and every weapon_drop row
-      // that matches gets dropCat/dropAmmo stamped on it BEFORE
-      // normalization — the renderer's layer gate reads those, never a
-      // re-derived classification. Fail-soft like drawRows (a failed
-      // side channel → no stamps → drawDrops draws nothing).
-      // THE same pre-normalization stamp for the headshot cues: every
-      // kill row gets `victimHelmet` (true/false/null) from the sidecar
-      // state stream — sfx.js headshotKillCues keys its dink/bare pair
-      // off it, and normalizeEvent's `...ev` spread carries it onto the
-      // cue input. Unknown inputs (no stream, no victim slot, no frame,
-      // no alive sample) stamp null → silence — never a guess.
-      {
-        const [rows, dropDetails] = await Promise.all([
-          getEvents({
-            matchId: id,
-            kinds: DRAW_KINDS,
-            offset: 0,
-            limit: 0,
-          }).catch(() => []),
-          getDropDetails(id).catch(() => []),
-        ]);
-        const dropsBySeq = new Map((dropDetails || []).map((d) => [d.seq, d]));
-        // victimHelmet join — the dropsBySeq template above, one step
-        // deeper: EventRow carries the victim's STEAM id, never a slot,
-        // so resolve the slot through the sidecar slot table
-        // (meta.players — the SAME table buildStateIndex numbers slots
-        // by; the blind overlay's slotBySteam precedent), map the kill
-        // tick onto the position stream's LAST frame ≤ tick
-        // (sideAtTick's binary search — the engine does not exist yet
-        // at load time) and read the helmet through slotAliveHelmetAt
-        // (sfx.js — beside headshotKillCues): the victim's last record
-        // while hp > 0, so the death sample's as-read zeroing
-        // (armor/helmet → 0/false on the killing blow —
-        // internal/sidecar state_test.go deadSample) can never flip a
-        // helmeted victim to bare.
-        const slotBySteam = new Map();
-        players.forEach((p, i) => {
-          if (p && p.steamId != null) slotBySteam.set(String(p.steamId), i);
-        });
-        const ticks = data ? data.ticks : null;
-        const stampVictimHelmet = (r) => {
-          if (String(r.kind || '') !== 'kill') return r; // only kill rows carry it
-          let helmet = null;
-          const slot = slotBySteam.get(String(r.victim || ''));
-          const t = Number(r.tick);
-          if (stateIndex && slot != null && Number.isFinite(t) && ticks && ticks.length) {
-            let lo = 0;
-            let hi = ticks.length - 1;
-            let frame = -1;
-            while (lo <= hi) {
-              const mid = (lo + hi) >> 1;
-              if (ticks[mid] <= t) {
-                frame = mid;
-                lo = mid + 1;
-              } else {
-                hi = mid - 1;
-              }
-            }
-            if (frame >= 0) helmet = slotAliveHelmetAt(stateIndex, slot, frame);
-          }
-          return { ...r, victimHelmet: helmet };
-        };
-        drawRows = await hydrateGrenadeEntities(
-          (rows || []).map((r) => {
-            const d = dropsBySeq.get(r.seq);
-            const stamped = d
-              ? { ...r, dropCat: d.cat, dropAmmo: { mag: d.mag, reserve: d.reserve } }
-              : r;
-            return stampVictimHelmet(stamped);
-          }),
-        );
-      }
-      // buytime_ended — the ONE generic read the defuse-kit evidence
-      // needs (kitEv above): the per-round buy-window boundary that
-      // separates a kit bought on the buy menu from one taken off a dead
-      // CT (both are the SAME item_pickup row — only buytime tells them
-      // apart, lib/replay/kits.js). Round -1 = all rounds in ONE call;
-      // limit 0 = the store's default page (500) — a match has one row
-      // per round, far under it. Fail-soft like every read here: an
-      // error → [] → an EMPTY boundary map, and a round with no row
-      // reads as "no buy evidence" (never an invented buy window).
-      {
-        const bt = await getGenericEvents(id, 'buytime_ended', -1, 0, 0).catch(() => []);
-        buyEnds = buyEndsFromRows(bt);
-      }
+      // THE world dataset (lib/replay/world.js): the drawable anchor set
+      // (kills/grenades/bomb/drops/round_end) with its side channels —
+      // the death-drop payload projection, the per-kill victimHelmet
+      // stamp, the grenade-entity hydration — plus the buytime_ended
+      // boundary the kit evidence needs, all normalized ONCE (no claim
+      // gate, no filter: world.js owns the fetch and the shape).
+      // Awaited before the engine starts so the world layers, the
+      // scrubber markers and the kit evidence are ready on first paint;
+      // fail-soft INSIDE world.js (a failed side channel → its empty
+      // value → no stamps, no drop markers, "no buy evidence"), never a
+      // load error — exactly the contract the inline code had.
+      world = await loadWorld({
+        matchId: id,
+        players,
+        stateIndex,
+        ticks: data ? data.ticks : null,
+        tickRate: meta?.tickRate ?? 0,
+      });
       // Player sounds (footsteps/lands/jumps/fall damage): PRESENCE
       // first — a match whose sound_events table is empty (imported
       // before the SOS work, never re-imported) fetches NOTHING, pushes
@@ -2212,7 +2142,7 @@
       // the roster's steamId spelling, so indexConnections keys it
       // straight onto meta.players. Fetched BEFORE the engine starts so
       // the columns never paint a phantom card on first paint; fail-soft
-      // like drawRows (any failure → [] → every card visible).
+      // like the world load (any failure → [] → every card visible).
       connRows =
         (await getEvents({
           matchId: id,
@@ -2343,14 +2273,12 @@
       },
     });
     renderer.setPack(pack, radarImg, packTf, layerImgs);
-    renderer.setLandmarks(drawNorm);
-    // Defuse-kit evidence pushed beside the landmarks (the same
-    // additive-setter contract): the precomputed [from,to) windows the
-    // kit marker reads. load() always resolves the buytime_ended read
-    // BEFORE startEngine, so kitEv is built here; the setter still
-    // treats null/absent as an EMPTY window map (no kit marker, never a
-    // guessed one) for the fail-soft path.
-    renderer.setKitEvidence(kitEv);
+    // THE world pushes (landmarks + kit evidence + the decoy plan) — one
+    // call, one world object, ONCE per startEngine (never on a filter
+    // edit: the dataset has no filter dependency). load() always
+    // resolves the whole world BEFORE startEngine, so the rows and the
+    // kit evidence are complete here.
+    pushWorldToRenderer(renderer, world, decoyPlanFor());
     renderer.setBlinds(blindRows); // flash-white overlay rows from load()
     renderer.setChat(chatLines); // raw chat rows from load() (round -1)
     // Player-card phase inputs (handoff E): push whatever load() already
@@ -2370,12 +2298,10 @@
     renderer.setBullets(
       deriveBullets(stateIndex, { ticks: data.ticks, rounds, tickRate: meta?.tickRate }),
     );
-    // Decoy plan: the SAME derivation for both consumers (the renderer's
-    // rest icon + noise pulses, the sfx engine's fake gunshots) — the
-    // engine exists now, so resolveFrame resolves and the schedule is
-    // generated. Always push: like deriveBullets(null, …) → [], a match
-    // without decoys/state clears any rows from a previous push.
-    renderer.setDecoyPlan(decoyPlanFor());
+    // (The decoy plan rides pushWorldToRenderer above — the SAME
+    // derivation for both consumers, engine exists now so resolveFrame
+    // resolves; always pushed, so a match without decoys/state clears
+    // any rows from a previous push.)
     renderer.resize();
     renderer.setCameraMode(rendererCam()); // default 'smart' unless the pref says free
     // Drop-layer visibility (all off unless the pref said otherwise —
@@ -2503,10 +2429,11 @@
         },
       });
       sfx.setRounds(rounds); // freeze gate + the counted gate + the match-point scoreline for the cue lists
-      // drawNorm's kill rows carry the pre-normalization victimHelmet
-      // stamp (drawRows join above), so the headshot cue list rebuilds
-      // from the same rows as everything else.
-      sfx.setLandmarks(drawNorm); // rebuilds them under it
+      // THE world pushes for the sfx engine: the SAME world rows (kill
+      // rows carry the pre-normalization victimHelmet stamp world.js
+      // joined) and the SAME decoy plan the renderer just got — one
+      // dataset, two consumers, once per engine construction.
+      pushWorldToSfx(sfx, world, decoyPlanFor());
       // Player sounds: the presence-gated sound_events rows (load()
       // fetched them only when the match has any) — the footstep cue
       // list is rebuilt from them, gated against the manifest keys.
@@ -2517,10 +2444,6 @@
       sfx.setBullets(
         deriveBullets(stateIndex, { ticks: data.ticks, rounds, tickRate: meta?.tickRate }),
       );
-      // Decoy plan — the SAME rows the renderer just got: one
-      // derivation, both consumers (a pulse and its gunshot can never
-      // disagree).
-      sfx.setDecoyPlan(decoyPlanFor());
       sfx.setVolume(uiGunsVol);
       sfx.setUtilityVolume(uiUtilVol);
       sfx.setC4Volume(uiC4Vol);
