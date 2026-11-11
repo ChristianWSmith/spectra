@@ -150,8 +150,8 @@ and library db.
 
 ## Layout
 
-The table below lists both repo-root entries (`README.md`, `CS2.md`,
-`golden/`, the root forwarder `Makefile`) and `src/`-relative project
+The table below lists both repo-root entries (`README.md`, `PRODUCT.md`,
+`CS2.md`, `golden/`, the root forwarder `Makefile`) and `src/`-relative project
 paths (everything else) — resolve project paths against `src/`.
 
 | Path | Role |
