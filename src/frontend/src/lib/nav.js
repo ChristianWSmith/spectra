@@ -2,7 +2,6 @@
 // name/chip to #/player/:steamid. One Steam-id test, one navigation.
 import { buildHash, parseHash } from './router.js';
 import { serializeLandmarkFilter } from './replay/landmarks.js';
-import { roundStartTick } from './rounds.js';
 import { normTickRate } from './fmt.js';
 
 // isSteam reports whether a name/id field holds a 17-digit Steam id
@@ -21,8 +20,15 @@ export function openProfile(nav, steam) {
 // replayHash builds the canonical #/replay/:id URL for a contextual
 // entry point into THE event browser: a partial landmark filter (the
 // defaults fill every gap — serializeLandmarkFilter only emits non-
-// default keys) plus the entry context extras:
-//   tick   — initial replay position
+// default keys) plus the entry context extras. The round scope in that
+// filter (roundFrom/roundTo) is FEED state only — it never positions
+// the replay (nav.entrySeekTick reads ?tick= alone); a link that means
+// to JUMP stamps `tick` BESIDE the scope (roundStartTick at the
+// watch/drill call sites):
+//   tick   — initial replay position: the ONLY "where to jump"
+//            instruction (winner-take-all, applied on entry and
+//            re-applied only for a distinct value while the keep-alive
+//            instance lives)
 //   loop   — initial loop range "<fromTick>,<toTick>" (ticks; the comma
 //            stays raw in buildHash). ENTRY-ONLY: Replay applies it on
 //            entry (nav.entryLoopRange → engine bounds + arm), re-arms
@@ -46,20 +52,28 @@ export function replayHash(matchId, filter, extras) {
 // canonical way back into Replay; App.svelte calls it for BOTH expand
 // triggers: the dock panel's click and Match's header "Watch replay"
 // while the instance is alive). It takes the CAPTURED replay hash —
-// whatever the user last had open (filter/scope, ?tick=/?loop=/?sel=
-// entry params, all preserved) — and rewrites only its ?back= origin to
-// the LATEST match path (keepalive.backOrigin), so Back inside the
-// expanded replay returns to the tab the user was actually on instead
-// of the entry-time origin. The fresh-entry builder stays replayHash
-// above (it must never be used here: a same-id navigation keeps the
-// instance, but a re-minted query would drop the live state). A hash
-// that does not parse to a replay route is handed back unchanged —
-// never minted into a wrong replay URL. A missing/empty backPath DROPS
-// a stale ?back= rather than keeping an origin the user has left.
+// whatever the user last had open (filter/scope, ?loop=/?sel= entry
+// params, all preserved) — and rewrites its ?back= origin to the LATEST
+// match path (keepalive.backOrigin), so Back inside the expanded replay
+// returns to the tab the user was actually on instead of the
+// entry-time origin. It also DROPS a stale ?tick=: the playhead lives
+// in the running engine (the instance was never unmounted), so the
+// captured tick is a consumed promise — re-applying it would yank the
+// playhead back on every expand — and clearing it resets the seed
+// baseline, so clicking the SAME watch link again re-seeks (the
+// repeat-click wart). ?loop= / ?sel= / the filter params stay as they
+// are (the loop promise re-arms only when distinct; sel/filter carry
+// live state). The fresh-entry builder stays replayHash above (it must
+// never be used here: a same-id navigation keeps the instance, but a
+// re-minted query would drop the live state). A hash that does not
+// parse to a replay route is handed back unchanged — never minted into
+// a wrong replay URL. A missing/empty backPath DROPS a stale ?back=
+// rather than keeping an origin the user has left.
 export function expandReplayHash(replayHashValue, backPath) {
   const route = parseHash(replayHashValue || '');
   if (route.name !== 'replay' || route.id == null) return replayHashValue;
   const q = { ...(route.query || {}) };
+  delete q.tick; // consumed — the engine owns the playhead now
   if (backPath) q.back = backPath;
   else delete q.back;
   return buildHash(`/replay/${route.id}`, q);
@@ -108,33 +122,34 @@ export function entryLoopAround(tick, tickRate) {
 // keep-alive's seed watcher re-applies a DISTINCT resolution while the
 // instance lives — entry-once PER DISTINCT SEED: identical-value
 // in-session churn keeps the playback position, a no-promise rewrite
-// never seeks). Priority:
+// never seeks). PARAMETER SEPARATION is the contract: ?tick= is the
+// ONLY "where to jump" instruction — ?roundFrom=/?roundTo= are FEED
+// FILTER state ("what to show") and never a position, at mount or
+// mid-session:
 //   1. ?tick=  — an exact tick link (event/round-start "watch" buttons)
-//               wins as-is;
-//   2. else the round scope — ?roundFrom= when it names a round, else
-//               ?roundTo= — resolves to that round's START tick (a
-//               round-scoped link stamps BOTH bounds to the same
-//               number, so a range opens at its first round): a round
-//               link is a link to a point in time (Economy's gap-round
-//               card, Combat's round chips, the "events" buttons),
-//               never the first frame;
-//   3. else null — the URL makes NO time promise, so there is nothing to
-//               resolve here: Replay applies the user's DEFAULT start
-//               position (the knife/warmup hiding pref decides between
-//               the first counted round's start and frame 0). Returning
-//               null instead of 0 keeps "no promise" distinguishable
-//               from an explicit first-frame target, which is the whole
-//               point of the pref-aware default.
-// `rounds` is the GetRounds array; an unknown round or an unusable tick
-// falls through to the next source — never a guessed time. The round is
-// read from the RAW params rather than parseLandmarkFilter: that parser
-// folds "no bound" onto 0 (the unset sentinel), which cannot say
-// whether the URL named a round — while the raw param can (absent/0 =
-// no time promise, "-1" = the warmup round, which is a real round with
-// a real start). Round 0 never exists, so a 0 bound is never a target.
+//               wins as-is when it names a real non-negative tick —
+//               0 included (a round-1 start link stamps tick 0, and an
+//               explicit first frame must not be reinterpreted as "no
+//               promise");
+//   2. else null — the URL makes NO time promise, so there is nothing
+//               to resolve here: Replay applies the user's DEFAULT
+//               start position (the knife/warmup hiding pref decides
+//               between the first counted round's start and frame 0).
+//               Returning null instead of 0 keeps "no promise"
+//               distinguishable from an explicit first-frame target,
+//               which is the whole point of the pref-aware default —
+//               and it is why a scope-only URL (a saved/bookmarked
+//               filter, an "events" drill) lands at that default while
+//               its filter still applies. A link that means to JUMP
+//               stamps ?tick= BESIDE its scope (roundStartTick at every
+//               watch/drill replayHash call site); a malformed ?tick=
+//               (non-numeric, negative) is not a promise either — it
+//               resolves to null, never to a guess.
 // The loop range is a SEPARATE promise resolved by entryLoopRange below
-// — neither resolver reads the other's params.
-export function entrySeekTick(query, rounds) {
+// — neither resolver reads the other's params. `rounds` no longer feeds
+// this half at all; it stays in entrySeed's signature for the loop
+// half's span gate alone.
+export function entrySeekTick(query) {
   const q = query || {};
   // ?tick= is explicit whenever it names a real non-negative tick —
   // 0 included (a round-1 start link stamps tick 0, and an explicit
@@ -142,17 +157,6 @@ export function entrySeekTick(query, rounds) {
   if (q.tick != null && q.tick !== '') {
     const tick = Number(q.tick);
     if (Number.isFinite(tick) && tick >= 0) return tick;
-  }
-  // The round scope: the first bound that actually names a round wins
-  // (roundFrom, else roundTo). Absent, empty, 0 (the unset sentinel) and
-  // malformed values are not round names; a named-but-unknown round
-  // resolves to nothing rather than to a guess.
-  for (const raw of [q.roundFrom, q.roundTo]) {
-    if (raw == null || raw === '') continue;
-    const n = Number(raw);
-    if (!Number.isFinite(n) || n === 0) continue;
-    const start = roundStartTick(rounds, n);
-    return start != null ? start : null;
   }
   return null;
 }
@@ -171,8 +175,9 @@ export function entrySeekTick(query, rounds) {
 //     round and is not a promise (roundSpan returns null when there is
 //     no span to check against — then the explicit finite bounds stand
 //     on their own).
-// Independent of entrySeekTick's priority: ?tick= / ?roundFrom= /
-// ?roundTo= decide WHERE the replay starts, never what it loops over.
+// Independent of entrySeekTick: ?tick= decides WHERE the replay starts
+// (the round scope is feed-filter state and never a position), never
+// what it loops over.
 // Replay applies the resolved range in startEngine (bounds, then arm)
 // and the keep-alive's seed watcher re-arms only a DISTINCT range
 // (entrySeedPlan below) — identical-value in-session query churn can
@@ -209,17 +214,18 @@ function roundSpan(rounds) {
 }
 
 // entrySeed — THE resolved entry seed of a Replay URL: the two
-// independent promises above resolved TOGETHER against the loaded
-// rounds → { seek: number|null, loop: {from,to}|null }. One bundle, ONE
-// resolution source for both apply paths in Replay — startEngine's
-// fresh-mount block and the keep-alive's seed watcher: neither may
-// resolve on its own, or the two could disagree about what the URL
-// promised. Each half keeps its own resolver's contract: seek is null
-// when the URL makes no time promise (never a guess — a round scope
-// whose rounds have not loaded yet resolves to null too), loop null
-// when it states no usable range.
+// independent promises above resolved TOGETHER → { seek: number|null,
+// loop: {from,to}|null } (rounds feed ONLY the loop half's span gate —
+// the seek half reads ?tick= alone). One bundle, ONE resolution source
+// for both apply paths in Replay — startEngine's fresh-mount block and
+// the keep-alive's seed watcher: neither may resolve on its own, or the
+// two could disagree about what the URL promised. Each half keeps its
+// own resolver's contract: seek is null when the URL carries no valid
+// ?tick= (the round scope never seeks — a scope-only URL resolves null
+// and lands at the pref-aware default, filter intact), loop null when
+// it states no usable range.
 export function entrySeed(query, rounds) {
-  return { seek: entrySeekTick(query, rounds), loop: entryLoopRange(query, rounds) };
+  return { seek: entrySeekTick(query), loop: entryLoopRange(query, rounds) };
 }
 
 // entrySeedPlan — THE distinct-seed rule of the replay keep-alive

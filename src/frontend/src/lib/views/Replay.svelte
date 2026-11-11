@@ -695,8 +695,9 @@
   let copied = $state(false);
   let entrySel = ''; // ?sel= from the entry URL (applied once)
   let entrySelTick = 0; // its tick when it resolves before the engine is up
-  // The DEFAULT entry tick when the URL makes no time promise (no ?tick=
-  // / no usable round scope): load() resolves it once, AWAITING the
+  // The DEFAULT entry tick when the URL makes no time promise (no valid
+  // ?tick= — the round scope is filter state and never a promise):
+  // load() resolves it once, AWAITING the
   // knife/warmup hiding pref (show_knife_warmup_rounds) — pref OFF → the
   // first COUNTED round's start, pref ON → frame 0. It is not reactive
   // on purpose: the pref decides where a replay LAUNCHES, not where an
@@ -1652,13 +1653,17 @@
 
   // --- Keep-alive entry seed (entry-once PER DISTINCT SEED) -----------------
   // A same-id navigation ACTIVATES this instance instead of remounting it,
-  // so a fresh entry seed arriving mid-session must apply HERE: Economy's
-  // round "watch" card / a round drill-down (replayHash round scope),
-  // Combat's and Utility's ▶ links (?tick= + usually ?loop=), RoundDetail's
-  // tick links, a scoped CommandPalette jump. The OPPOSITE must keep
-  // holding: identical-value query churn never moves the playhead or the
-  // loop — filter edits that keep ?tick=/?loop= (navigateFilter re-pins
-  // them), every expandReplayHash round trip, ?back= rewrites.
+  // so a fresh entry seed arriving mid-session must apply HERE: the round
+  // watch/drill links' STAMPED ?tick= (Economy's stat cards, RoundDetail's /
+  // Combat's / Utility's scoped entries — the ?roundFrom=/?roundTo=
+  // beside it is feed filter and NEVER seeks), Combat's and Utility's ▶
+  // links (?tick= + usually ?loop=), RoundDetail's tick links. The
+  // OPPOSITE must keep holding: identical-value query churn never moves
+  // the playhead or the loop — filter edits that keep ?tick=/?loop=
+  // (navigateFilter re-pins them), every expandReplayHash round trip
+  // (which also drops the consumed ?tick=), ?back= rewrites, and every
+  // scope-only navigation (the palette's saved-filter jump) which
+  // resolves no promise at all.
   // THE rule is nav.entrySeedPlan over nav.entrySeed — the ONE resolution
   // source startEngine also uses (no second resolver may exist):
   //   - the effect tracks ONLY the resolved VALUE: the entrySeed(query,
@@ -2035,7 +2040,7 @@
           offset: 0,
           limit: 0,
         }).catch(() => [])) || [];
-      // The DEFAULT entry tick (no explicit ?tick= / round scope): resolve
+      // The DEFAULT entry tick (no explicit ?tick=): resolve
       // it here with an awaited getPref — the showKnifeWarmup $effect
       // reads the same key asynchronously and could land AFTER startEngine
       // applies the entry seek, which would start the replay on the
@@ -2348,13 +2353,13 @@
       sfx.setMuted('footsteps', uiStepsMuted);
     });
     // Entry position rides the URL — durable and deep-linkable.
-    // entrySeed is the ONE resolution (nav.entrySeed → entrySeekTick: an
-    // exact ?tick= wins, else the round scope (?roundFrom=, else
-    // ?roundTo=) resolves to that round's START tick — a round link is a
-    // link to a point in time, never the first frame; null when the URL
-    // made NO time promise, and then the pref-decided default (load()
-    // awaited the knife/warmup pref: first counted round's start while it
-    // hides them, frame 0 while it shows them) applies; a ?sel= landmark
+    // entrySeed is the ONE resolution (nav.entrySeed → entrySeekTick):
+    // ?tick= is the ONLY position source — the round scope
+    // (?roundFrom=/?roundTo=) is feed-filter state and NEVER seeks, so
+    // a scope-only URL resolves null here; null means the URL made NO
+    // time promise, and then the pref-decided default (load() awaited
+    // the knife/warmup pref: first counted round's start while it hides
+    // them, frame 0 while it shows them) applies; a ?sel= landmark
     // that resolved before the engine was up applies in between).
     // Applied once HERE per fresh load — the keep-alive's seed watcher
     // ("Keep-alive entry seed" above) owns every DISTINCT resolution

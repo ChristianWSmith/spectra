@@ -8,7 +8,7 @@
     errText,
   } from '../services.js';
   import { fmtMs, roundClock } from '../fmt.js';
-  import { roundIndexLabel } from '../rounds.js';
+  import { roundIndexLabel, roundStartTick } from '../rounds.js';
   import { replayHash, entryLoopAround } from '../nav.js';
   import { listedPlayers } from '../players.js';
   import { roundsByNumber } from '../replay/landmarks.js';
@@ -182,13 +182,16 @@
 
   // Round drill → THE event browser with the grenade categories enabled
   // (the round range pins BOTH bounds to the same number: inclusive,
-  // exactly that round).
+  // exactly that round), STAMPED with the round's start tick — ?tick=
+  // is the only "where to jump" instruction (the scope alone is feed
+  // filter and never seeks), so the drill still lands on that round; a
+  // null start drops the tick and the link stays filter-only.
   function openEvents(r) {
     go(
       replayHash(
         id,
         { roundFrom: r.round, roundTo: r.round, cats: ['grenade_throws', 'grenade_dets'] },
-        { back },
+        { tick: roundStartTick(rounds, r.round), back },
       ),
     );
   }

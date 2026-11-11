@@ -2,8 +2,9 @@
 // resolution behind PlayerProfile's top-left back button), the navigation
 // guards the profile links share (isSteam/openProfile), the sidebar
 // action highlighters (NAV_ACTIONS active()) and the replay entry
-// resolvers (entrySeekTick — the ?tick=/?roundFrom=/?roundTo= contract
-// every link into THE event browser relies on — plus entryLoopRange and
+// resolvers (entrySeekTick — the ?tick= position contract: the ONLY
+// "where to jump" instruction, with the round scope as feed-filter
+// state that never seeks — plus entryLoopRange and
 // the ?loop= stampers entryLoopSpan / entryLoopAround beside it, and the
 // keep-alive's entrySeed/entrySeedPlan: the one resolution bundle and
 // the distinct-seed apply rule Replay's mount path and seed watcher
@@ -111,65 +112,57 @@ test('sidebar active(): exactly one action lights up per route', () => {
 });
 
 // --- entrySeekTick: the replay entry time target --------------------------
-const ROUNDS = [
-  { number: -2, startTick: 100 }, // knife
-  { number: -1, startTick: 400 }, // warmup
-  { number: 1, startTick: 1200 },
-  { number: 7, startTick: 24500 },
-];
+// PARAMETER SEPARATION (the product-owner contract): ?tick= is the ONLY
+// "where to jump" instruction — ?roundFrom=/?roundTo= are feed-filter
+// state ("what to show") and never a position, at mount or mid-session.
+// The watch/drill links stamp roundStartTick as ?tick= BESIDE their
+// scope; a scope-only URL resolves null (Replay lands on the pref-aware
+// default, the filter still applies).
 
-test('entrySeekTick: an exact ?tick= link wins over everything', () => {
+test('entrySeekTick: an exact ?tick= link is the only position source', () => {
   // RoundDetail's "Watch round" / Combat's EventPlay / Utility's
   // "replay" buttons all stamp an exact tick.
-  assert.equal(entrySeekTick({ tick: '9999' }, ROUNDS), 9999);
-  assert.equal(entrySeekTick({ tick: '9999', roundFrom: '7', roundTo: '7' }, ROUNDS), 9999);
-  assert.equal(entrySeekTick({ tick: 9999 }, ROUNDS), 9999);
-  assert.equal(entrySeekTick({ tick: '0' }, ROUNDS), 0); // tick 0 = first frame
-});
-
-test('entrySeekTick: a round-scoped link resolves to that round\'s start tick', () => {
-  // The Economy gap-round card, Combat's round chips and every "events"
-  // button promise round N — the replay must land on N's start tick,
-  // never the first frame (the reported "lands at the first tick" bug).
-  // Every round-scoped link stamps BOTH inclusive bounds to the same
-  // number; roundFrom is the primary target, roundTo covers a max-only
-  // range, and a wider range opens at its FIRST round.
-  assert.equal(entrySeekTick({ roundFrom: '7', roundTo: '7' }, ROUNDS), 24500);
-  assert.equal(entrySeekTick({ roundFrom: 1 }, ROUNDS), 1200);
-  assert.equal(entrySeekTick({ roundTo: 7 }, ROUNDS), 24500);
-  assert.equal(entrySeekTick({ roundFrom: 1, roundTo: 7 }, ROUNDS), 1200);
-  // Negative-numbered rounds are real rounds too (knife/warmup) — both
-  // resolve to their own start tick.
-  assert.equal(entrySeekTick({ roundFrom: '-2', roundTo: '-2' }, ROUNDS), 100);
-  assert.equal(entrySeekTick({ roundFrom: '-1' }, ROUNDS), 400);
-});
-
-test('entrySeekTick: no explicit time target → null (Replay applies the pref-based default)', () => {
-  // DELIBERATE CHANGE: the fallback used to be 0 ("start on the first
-  // frame"), but Replay now starts at the knife/warmup-hiding pref's
-  // default (first COUNTED round's start when the pref hides them, frame
-  // 0 when it shows them). nav.js must therefore distinguish "the URL
-  // promised nothing" (null → Replay picks the default) from an explicit
+  assert.equal(entrySeekTick({ tick: '9999' }), 9999);
+  // A scope BESIDE the tick is irrelevant to position (it still filters
+  // the feed — replayHash serializes it; this half never reads it).
+  assert.equal(entrySeekTick({ tick: '9999', roundFrom: '7', roundTo: '7' }), 9999);
+  assert.equal(entrySeekTick({ tick: 9999 }), 9999);
+  assert.equal(entrySeekTick({ tick: '0' }), 0); // tick 0 = first frame
+  // Malformed / negative ?tick= is not a promise — null, never a guess.
+  assert.equal(entrySeekTick({ tick: 'x' }), null);
+  assert.equal(entrySeekTick({ tick: '-5' }), null);
+  // No position param at all: null → Replay applies the pref-based
+  // default (first counted round's start while the pref hides
+  // knife/warmup, frame 0 when it shows them) — the DELIBERATE CHANGE
+  // that keeps "no promise" distinguishable from the explicit
   // first-frame target (?tick=0 → 0, asserted above).
-  assert.equal(entrySeekTick({}, ROUNDS), null);
-  assert.equal(entrySeekTick(undefined, ROUNDS), null);
-  assert.equal(entrySeekTick({ roundFrom: '12' }, ROUNDS), null); // unknown round — never a guess
-  // Round 0 never exists: 0 is the UNSET bound, so it is never a target.
-  assert.equal(entrySeekTick({ roundFrom: '0', roundTo: '0' }, ROUNDS), null);
-  // Malformed is not a promise either — but an unusable bound simply
-  // falls through to the other bound of the same range.
-  assert.equal(entrySeekTick({ roundFrom: 'x' }, ROUNDS), null);
-  assert.equal(entrySeekTick({ roundFrom: 'x', roundTo: '7' }, ROUNDS), 24500);
-  assert.equal(entrySeekTick({ roundFrom: '1' }, []), null); // rounds not loaded
-  assert.equal(entrySeekTick({ roundFrom: '1' }, null), null);
-  // Absent bounds = no time promise at all: entrySeekTick reads the RAW
-  // params (parseLandmarkFilter folds "absent" onto the same 0 the unset
-  // sentinel uses), so an absent range and the warmup round's "-1" stay
-  // distinguishable — the warmup round still resolves below.
-  assert.equal(entrySeekTick({ roundFrom: '-1' }, ROUNDS), 400); // warmup round start
-  assert.equal(entrySeekTick({ roundTo: '-1' }, ROUNDS), 400); // warmup via the max bound
-  assert.equal(entrySeekTick({ cat: 'kills' }, ROUNDS), null); // no round param
-  assert.equal(entrySeekTick({ tick: 'x' }, ROUNDS), null); // malformed tick, no round
+  assert.equal(entrySeekTick({}), null);
+  assert.equal(entrySeekTick(undefined), null);
+  assert.equal(entrySeekTick({ cat: 'kills' }), null);
+});
+
+test('entrySeekTick: the round scope NEVER seeks (feed filter, never a position)', () => {
+  // The scope shapes that USED to resolve to a round's start tick now
+  // resolve null — every one of them — because the resolver does not
+  // even take a rounds list anymore: loaded, empty or absent rounds
+  // cannot turn a filter into a jump.
+  assert.equal(entrySeekTick({ roundFrom: '7', roundTo: '7' }), null);
+  assert.equal(entrySeekTick({ roundFrom: 1 }), null);
+  assert.equal(entrySeekTick({ roundTo: 7 }), null);
+  assert.equal(entrySeekTick({ roundFrom: 1, roundTo: 7 }), null); // a range opens at its first round — still no seek
+  // Knife/warmup scope is filter state too (never a start tick).
+  assert.equal(entrySeekTick({ roundFrom: '-2', roundTo: '-2' }), null);
+  assert.equal(entrySeekTick({ roundFrom: '-1' }), null);
+  // Unknown rounds, the unset sentinel, malformed bounds: null for the
+  // right reason now — the scope is never consulted.
+  assert.equal(entrySeekTick({ roundFrom: '12' }), null);
+  assert.equal(entrySeekTick({ roundFrom: '0', roundTo: '0' }), null);
+  assert.equal(entrySeekTick({ roundFrom: 'x' }), null);
+  assert.equal(entrySeekTick({ roundFrom: 'x', roundTo: '7' }), null);
+  // The stamped tick beside a scope still lands (the watch-link rule:
+  // Economy's cards, RoundDetail/Combat/Utility's scoped entries all
+  // stamp roundStartTick this way).
+  assert.equal(entrySeekTick({ roundFrom: '7', roundTo: '7', tick: '24500' }), 24500);
 });
 
 // --- entryLoopRange: the replay entry loop range --------------------------
@@ -233,22 +226,23 @@ test('entryLoopRange: a range naming no known round → null (loaded rounds gate
 });
 
 test('entryLoopRange: independent of the entry seek priority', () => {
-  // ?tick= / ?roundFrom= decide WHERE the replay starts; the loop range
-  // is a separate promise that neither reads nor is read by them — a URL
-  // may carry either or both, and each resolves on its own.
+  // ?tick= decides WHERE the replay starts (the round scope decides
+  // nothing — feed filter only); the loop range is a separate promise
+  // that neither reads nor is read by them — a URL may carry either or
+  // both, and each resolves on its own.
   assert.deepEqual(entryLoopRange({ tick: '9999', loop: '1200,2400' }, LOOP_ROUNDS), {
     from: 1200,
     to: 2400,
   });
-  assert.equal(entrySeekTick({ tick: '9999', loop: '1200,2400' }, LOOP_ROUNDS), 9999, 'seek unaffected by loop');
+  assert.equal(entrySeekTick({ tick: '9999', loop: '1200,2400' }), 9999, 'seek unaffected by loop');
   assert.deepEqual(entryLoopRange({ roundFrom: '7', roundTo: '7', loop: '1200,2400' }, LOOP_ROUNDS), {
     from: 1200,
     to: 2400,
   });
   // A malformed loop does not borrow the round scope, and a round scope
-  // does not rescue it.
+  // does not rescue it (nor ever seek on its own).
   assert.equal(entryLoopRange({ roundFrom: '7', roundTo: '7', loop: 'x' }, LOOP_ROUNDS), null);
-  assert.equal(entrySeekTick({ roundFrom: '7', loop: 'x' }, LOOP_ROUNDS), 24500, 'seek unaffected by a bad loop');
+  assert.equal(entrySeekTick({ roundFrom: '7', loop: 'x' }), null, 'the scope never seeks, loop or not');
 });
 
 // --- entrySeed / entrySeedPlan: entry-once PER DISTINCT SEED ---------------
@@ -261,8 +255,10 @@ test('entrySeed bundles both promises through the one resolvers', () => {
     seek: 9999,
     loop: { from: 1200, to: 2400 },
   });
+  // The round scope is FEED state: no seek promise at all (the stamped
+  // tick beside it is what a watch link lands on).
   assert.deepEqual(entrySeed({ roundFrom: '7', roundTo: '7' }, LOOP_ROUNDS), {
-    seek: 24500,
+    seek: null,
     loop: null,
   });
   assert.deepEqual(entrySeed({ loop: '1200,2400' }, LOOP_ROUNDS), {
@@ -270,9 +266,9 @@ test('entrySeed bundles both promises through the one resolvers', () => {
     loop: { from: 1200, to: 2400 },
   });
   assert.deepEqual(entrySeed({}, LOOP_ROUNDS), { seek: null, loop: null });
-  // Rounds still loading: the round scope resolves to NOTHING — never a
-  // guess (the watcher then applies nothing; startEngine's mount-time
-  // resolution runs after the rounds are in, so the mount still lands).
+  // Rounds still loading: the LOOP half's span gate has no span to
+  // check against (the explicit bounds stand on their own); the seek
+  // half never reads rounds at all.
   assert.deepEqual(entrySeed({ roundFrom: '1' }, []), { seek: null, loop: null });
 });
 
@@ -385,18 +381,26 @@ test('entryLoopAround anchors an event at ±10 s (the engine default width)', ()
 });
 
 // --- expandReplayHash: THE mini-player expand path ------------------------
-// The dock's captured replay hash goes in, the SAME hash with only ?back=
-// rewritten to the latest match path comes out — every entry param (filter
-// scope, tick, loop, sel) is preserved byte-for-byte, because expanding
-// must never reset state or re-seek (the instance was never unmounted).
-test('expandReplayHash rewrites only ?back= to the latest match path', () => {
+// The dock's captured replay hash goes in; ?back= is rewritten to the
+// latest match path and the consumed ?tick= is DROPPED, every other
+// param (filter scope, loop, sel) preserved byte-for-byte — expanding
+// must never reset state or move the playhead (the instance was never
+// unmounted; the engine owns the position), while dropping the tick
+// resets the seed baseline so the SAME watch link clicked again
+// re-seeks.
+test('expandReplayHash rewrites ?back= and drops the consumed ?tick= (keeps loop/sel/filter)', () => {
   assert.equal(
     expandReplayHash(
       '#/replay/5?cat=kill&roundFrom=3&roundTo=7&tick=1234&loop=100,200&sel=e%3A9&back=match/5/rounds',
       'match/5/economy',
     ),
-    '/replay/5?cat=kill&roundFrom=3&roundTo=7&tick=1234&loop=100,200&sel=e%3A9&back=match/5/economy',
+    '/replay/5?cat=kill&roundFrom=3&roundTo=7&loop=100,200&sel=e%3A9&back=match/5/economy',
   );
+  // ?tick= is the ONLY param the expand drops: a tick-only capture
+  // leaves nothing but the fresh back (never a bare "?").
+  assert.equal(expandReplayHash('#/replay/5?tick=42', 'match/5'), '/replay/5?back=match/5');
+  // …and with an empty origin too (the stale ?back= goes as well).
+  assert.equal(expandReplayHash('#/replay/5?tick=42', ''), '/replay/5');
   // A captured hash with NO ?back= gets one appended (the last leg of a
   // first-time round trip), and a multi-value cat list stays raw (buildHash
   // keeps "/" and "," unescaped — the same grammar replayHash emits).
