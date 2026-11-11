@@ -3,8 +3,8 @@
 The product constitution for Spectra. **This document is the authority on
 what Spectra is and isn't** — written primarily for AI agents (directive
 tone), secondarily for human contributors. Operational mechanics live in
-`AGENTS.md`, CS2 domain facts in `CS2.md`, roadmap candidates in
-`ROADMAP.md`.
+`AGENTS.md`, CS2 domain facts in `CS2.md`, the roadmap execution plan
+(with per-item research) in `roadmap/PATH.md`.
 
 ## Vision
 
@@ -156,12 +156,12 @@ When evaluating a new feature proposal:
 3. Prefer the **built-ins + user-extendable** shape.
 4. Anything requiring network-dependent content or external state is
    suspect.
-5. Roadmap candidates live in `ROADMAP.md`; new candidates are added
-   **only when the owner asks** — agents do not append feature ideas to
-   it. The owner is the PO; rejections are not recorded anywhere —
-   removed means removed.
-6. `ROADMAP.md` carries no priorities yet; the owner picks what gets
-   worked.
+5. Roadmap candidates and the execution plan live in
+   `roadmap/PATH.md`; new candidates are added **only when the owner
+   asks** — agents do not append feature ideas to it. The owner is the
+   PO; rejections are not recorded anywhere — removed means removed.
+6. `roadmap/PATH.md` carries the priority order and the completion
+   checkboxes; keep it updated as work lands.
 
 ## README rule
 

@@ -1,0 +1,73 @@
+# Video & clip export — roadmap research
+
+**Unit:** video-export · **Priority tier:** P2 · **Date:** 2026-11-10
+**LoE (aggregate):** L — item 1 alone is L (three formats × frame-rate control × a headless render path that has no precedent in the repo, with an unresolved MP4/licensing decision gate), item 2 is M on top; the WebM half of both is genuinely S and should ship first.
+**Feasibility:** medium — WebM export exists today and GIF is cheap; the blockers are (a) an MP4 encoder path in WebKitGTK (MediaRecorder mp4/WebCodecs availability is unproven here — a runtime probe, not a code problem), (b) the owner's licensing caveat if that probe fails and ffmpeg becomes the fallback, and (c) headless rendering: the replay renderer is a 4.1k-line JS canvas module with no Go twin, so a true headless CLI means either a hidden webview window or a renderer port.
+
+## Items in scope
+
+1. **Full video export** — WebM/MP4/GIF of arbitrary windows with HUD and drawings
+   burned in, frame-rate choices, headless CLI; worth, but
+   not if licensing blocks us
+2. **MP4 clip export** — in/out points to a short MP4 with map drawings burned in
+
+## Current state
+
+- **The WebM clip recorder already exists and covers most of item 1's "burned in" contract.** `src/frontend/src/lib/views/Replay.svelte` `startClip` (~L2471): `canvasEl.captureStream(30)` → `MediaRecorder` with a mime fallback list (`video/webm;codecs=vp9,opus` → `vp8` → plain `video/webm`), voice mixed in via `voiceEngine.getStreamTap()` → `createMediaStreamDestination` when voice is enabled, saved through `downloadBlob` → `lib/save.js` native dialog + Go `DialogService.WriteFile` (base64 over bindings, chunked). It **forces `engine.setSpeed(1)` and plays**; auto-stops at the end frame (`onChange` watches `recEndFrame`). Whatever the renderer paints — HUD box, kill feed, chat, world layers — is in the recording; the `setOverlaysVisible` gate means HUD on/off at record time is honored. Failure modes are already user-facing ("install gst-plugins-good") because **WebKitGTK encoders are system-GStreamer-dependent** — the same dependency will decide the MP4 question.
+- **In/out points exist**: the loop range (`uiLoopFrom`/`uiLoopTo`, set in the transport popover) doubles as clip bounds — `startClip` records "loop range if set, else 10 s from the playhead" (toolbar tooltip L3478). Item 2's in/out is therefore a UI/semantic reuse, not new plumbing.
+- **No MP4, no GIF, no frame-rate choice, no export settings UI.** No `video/mp4` mime in `CLIP_MIMES`, no GIF encoder anywhere (frontend deps are only codicons + wails runtime), `captureStream(30)` is hard-coded.
+- **"Drawings" don't exist yet** — `roadmap/notes-drawings.md` confirms no drawing tool today; "map drawings burned in" is roadmap copy resting on the contract *if drawings are painted in `renderer.js`'s draw() pass, they burn in automatically*. The video items must not create a DOM-overlay path for drawings.
+- **No headless render path.** `main.go` has exactly one headless flag (`-import` → `runImport`, before services register); the renderer/engine are frontend JS driven by `requestAnimationFrame` over a real `<canvas>`. The engine itself (`lib/replay/engine.js`, 426 lines) is headless-testable (`engine.test.js` runs the clock without a DOM), but `renderer.js` needs a canvas + images.
+- **Frame pacing today is wall-clock, not frame-timed.** `engine.loop()` does `tickF += tr * dt * state.speed` per rAF; `captureStream(30)` samples whatever the browser paints at 30 fps. There is no deterministic "advance exactly N ticks and paint" capture loop, though the pieces exist: `seekTick()` + `frameForTick()` + the renderer's synchronous `draw()` on state change (with `requestDraw` only coalescing scrub bursts).
+
+## Implementation path
+
+### 1. Full video export — LoE: L
+
+- **Phase A (S–M): generalize the existing recorder into a capture module.** Extract `startClip/stopClip/finishClip` from `Replay.svelte` (~180 lines) into `lib/replay/capture.js` parameterized by `{fps, format, inFrame, outFrame, overlays, audio}`. Frame-rate choices for the WebM path = `captureStream(fps)` + keep real-time playback at 1× — cheap, but **not deterministic** (see risks). HUD/drawings burn-in is already automatic via canvas painting; add explicit format/fps/in-out controls in the transport popover (record-button popover, `CLIP_SEC` retires).
+- **Phase B (M): deterministic frame-timed capture.** For true frame-rate choices and reproducible exports (PRODUCT's determinism preference), drive the engine manually instead of playing: loop `seekTick(tickAtFrame(i))` → force a synchronous `draw()` → grab the frame (`canvas.toBlob`/`transferToImageBitmap`) at the chosen fps, stepping demo ticks at `tickRate/fps` (drop/duplicate naturally when fps ≠ tick rate). This bypasses rAF wall-clock entirely and is also the only shape a headless/CLI exporter can share. The engine already exposes `seekTick`/`frameForTick`; the renderer draws synchronously outside scrub bursts — one "capture mode" flag that suppresses `requestDraw` coalescing and camera easing (`easeRaf` smart-settle must not run mid-export).
+- **Phase C (M–L): encoders, per format:**
+  - **WebM** — keep `MediaRecorder`; no new dependency; already shipping.
+  - **GIF** — cheapest new format: a small pure-JS encoder (e.g. `gifenc`/`gif.js`-class, MIT/BSD, ~tens of KB) fed from Phase B frames; or Go-side `image/gif` (stdlib! frames cross as PNG chunks over `saveExportURL`-style HTTP route). Real-time capture is wrong for GIF (need quantization over the whole sequence anyway). Licensing risk: **none**. LoE: S.
+  - **MP4** — probe first, in this order: (1) `MediaRecorder.isTypeSupported('video/mp4;codecs=avc1…')` in WebKitGTK (Safari supports it; WebKitGTK depends on GStreamer mp4mux + an H.264 encoder being installed — same gst-plugins class as today's WebM, **no licensing on our side**, system-provided); (2) WebCodecs `VideoEncoder` (Safari 16.4+ has it; WebKitGTK status needs a runtime probe — unknown) + a JS MP4 muxer (`mp4-muxer` is MIT, small); (3) **bundled ffmpeg — the licensing-flagged fallback**: LGPL ffmpeg *dynamically linked* or invoked as a subprocess binary avoids GPL contagion, but a statically-linked GPL build (x264) would make the whole shipped binary GPL-adjacent — the owner's "not if licensing blocks us" line lives here. ffmpeg also breaks the release contract: `make artifact` ships a **raw single binary**; a bundled ffmpeg means a sidecar binary or tarball, changing `artifact-name`, the updater's GOOS+GOARCH matcher, and `SHA256SUMS` (all three are documented as a contract in AGENTS). Size: ~20–80 MB per platform × 2 platforms. **Recommendation: probe 1/2 first; treat ffmpeg as the decision gate, not the default.**
+- **Phase D (M): headless CLI** — **shared with the export-tooling unit** (their `runX` flag pattern in `main.go`; see Dependencies). The renderer is JS, so options: (a) hidden/minimized Wails window driving the same capture module with `--export` flags, then exit — reuses everything, but needs a display (X11/Wayland; WebKitGTK has no true headless mode) — acceptable for v1 ("CLI" ≠ "server"); (b) offscreen webview; (c) Go renderer port — XL, reject. Recommend (a), scoped as "runs on a machine with a display, exits when done".
+- **Scope of "arbitrary windows":** classify as **replay view (incl. theater mode) only** — it is the only animated canvas. Heatmaps (`HeatmapLayer`) are static per-config images (PNG export fits better than video); reports/tables/statistics are DOM/SVG (would need DOM capture — out of scope; they have their own export units). State this scope in the roadmap text.
+
+### 2. MP4 clip export — LoE: M
+
+- Reuses Phase A + the Phase C MP4 probe **as the gate**: if `MediaRecorder` mp4 works in WebKitGTK, this item is nearly a mime-list + UI change on top of the existing recorder (S); if it needs WebCodecs+muxer, add the muxer and feed Phase B frames (M); if it needs ffmpeg, this item inherits item 1's packaging/licensing problem (M+ and the owner caveat bites).
+- **In/out points:** the loop range already is the in/out selector — surface it explicitly ("export loop range as MP4") rather than inventing a second range state; `startClip`'s frame math (`data.ticks[]` walk) already does exactly this.
+- **"Map drawings burned in":** free *if* the drawings unit paints them in `renderer.js`'s draw() pass (the contract in `notes-drawings.md`); this item must co-schedule with the drawings unit rather than build anything itself. Same for the "which overlays burn in" rule (HUD on = current `setOverlaysVisible` state at export time — document it).
+
+## Existing scaffolding to reuse
+
+- `Replay.svelte` `startClip`/`stopClip`/`finishClip`/`pickClipMime` — the whole recorder, mime-fallback and error-copy pattern; `recEndFrame` auto-stop watch in `onChange`.
+- Loop range (`uiLoopFrom`/`uiLoopTo` → `engine.setLoop`) — the in/out points for both items; frame-bound math already written.
+- `engine.js` — `seekTick`, `frameForTick`, `setSpeed`, `onChange` subscriptions: the deterministic stepping API; headless-tested already.
+- `renderer.js` — synchronous `draw()` on state change, `setOverlaysVisible` (HUD gate), `setDropLayers`, `requestDraw`/`flushDraw` coalescing (a capture mode must bypass it), `worldToScreen`.
+- `lib/save.js` + `dialogs.go` — native save dialog + `WriteFile` (small blobs) and `saveExportURL`/`SaveExport` (large blobs round-trip-free over HTTP routes — the right sink for frame streams or ffmpeg output).
+- `voiceEngine.getStreamTap()` — audio mix for real-time capture; note: **a frame-stepped deterministic export cannot use the live tap** (no wall-clock audio) — audio needs either the real-time path or an offline render of the voice windows (voice unit's `voicewindows.js`), a real design fork.
+- `input.js` `snapshot()` / `downloadCanvasPNG` — the PNG half precedent; filename convention `clip-<id>-<tick>.webm`.
+- Tests: `engine.test.js` (headless clock), `renderer.test.js`, `frontend/test/replay.dom.mjs` (pins record button/tooltip — churn expected).
+
+## Dependencies & overlaps
+
+- **replay-playback (Smart Mode) — co-scheduled contract:** `startClip` pins `setSpeed(1)`; the Smart Mode policy must suspend during any capture/export or exports become non-deterministic (flagged in `replay-playback.md` L52/L67). The export module owns the "policy off while capturing" rule; both units must agree on where it lives (view-side guard beside `toggleRecord`).
+- **export-tooling CLI — shared dependency:** the headless-CLI half of item 1 rides the same `main.go` flag/`runX` harness, single-instance and "bypass `app.Run` vs hidden window" decisions they are designing. **Co-schedule or sequence after their CLI v1**; do not build a second flag layer. Note their `store.Open` single-writer hazard matters only if the export CLI opens the DB (it mostly needs sidecar routes, but replay meta does read the store).
+- **notes-drawings:** "drawings burned in" is entirely conditional on drawings living in the canvas draw pass (`notes-drawings.md` L55 states the contract). Co-schedule the "which overlays burn in" rule with replay-overlays too (`replay-overlays.md` L58 — the video tier contract).
+- **voice:** audio mix exists for real-time clips; deterministic/offline export audio is uncharted — either keep "audio ⇒ real-time capture" as an explicit v1 rule or schedule the offline-window render with the voice unit.
+- **replay-overlays / annotations:** vision cones, callout zones, damage numerals all paint the same canvas → they burn in automatically; nothing to do beyond the shared rule.
+- **Release pipeline:** only if ffmpeg lands — `make artifact`, `artifact-name`, updater matcher, `SHA256SUMS` are a documented three-way contract (AGENTS "Release pipeline"); packaging change, not code-only. Otherwise formats ride the existing single-binary artifact with zero pipeline impact.
+- **Localization:** export UI strings (format/fps labels, error copy) ride the future localization item — keep them in existing string surfaces.
+- **Statistics / library / metadata:** no impact — no schema, no jobs table, no sidecar changes; exports are client-side bytes through `save.js`.
+- **Heatmaps/reports:** out of scope for video (classify above); heatmap PNG export, if wanted, is a separate cheap addition to `HeatmapLayer`.
+
+## Risks & unknowns
+
+- **MP4 availability in WebKitGTK is unproven** — `MediaRecorder('video/mp4')` and WebCodecs `VideoEncoder` both need a runtime probe on Linux WebKitGTK (and Windows uses WebView2, a *different* engine — MediaRecorder/WebCodecs support there is a second probe; Windows MP4 via `video/mp4;codecs=avc1` is likely fine in Chromium-based WebView2, but untested by this repo — all perf/visual testing here is Linux-only). This single probe decides item 2's LoE (S vs M+) and whether item 1 ever touches the licensing caveat.
+- **Licensing gate (owner caveat):** ffmpeg fallback = LGPL/GPL decision + size + the raw-binary artifact contract; x264-static is the scenario that could actually "block us". Recommend: probe system/WebCodecs paths first; if ffmpeg is required, ship it as a separate LGPL dynamic/subprocess binary and treat the packaging rework as part of the item's LoE, not an add-on.
+- **Determinism vs real-time capture:** `captureStream(30)` + wall-clock `loop()` means exports vary with display refresh, dropped frames and system load; PRODUCT prefers determinism. Frame-stepped capture (Phase B) fixes it but breaks the live audio tap and needs camera-ease suppression — the audio fork is the biggest design unknown in item 1.
+- **Headless = no true headless on WebKitGTK.** A CLI export realistically needs a display (hidden window). If the owner means "runs on a CI/server with no display", the LoE jumps (offscreen rendering research or a renderer port — XL). Clarify intent before sizing Phase D.
+- **Long exports and the base64 sink:** `WriteFile` round-trips bytes as base64 over bindings — fine for 10 s clips, poor for a full-match MP4; large outputs must use `saveExportURL`/`SaveExport` (HTTP route) or a streaming variant. Frame streams during a frame-stepped export should never cross bindings per-frame (buffer to disk/HTTP route).
+- **Speed/policy interactions:** Smart Mode suspension contract (above), plus `skipFreeze` — a deterministic export must decide whether freeze-skip applies (it changes what frames exist); the `loop()` "one check per frame" invariants must not be violated by an export driver.
+- **Test churn:** `replay.dom.mjs` pins the record button/tooltip exactly; any control restructure updates pins deliberately. No golden-fixture, sidecar or schema implications.

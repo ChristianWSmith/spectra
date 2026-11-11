@@ -12,7 +12,9 @@ relative to `src/`; `make` targets run from the repo root via the
 forwarding Makefile.**
 
 Product vision, philosophy, and feature policy: see `PRODUCT.md` at the
-repo root — it is the authority on what Spectra is and isn't.
+repo root — it is the authority on what Spectra is and isn't. The
+roadmap execution plan (with per-item research reports and completion
+checkboxes) is `roadmap/PATH.md`.
 
 Supported platforms: **Linux, Windows** (desktop only). The stock
 Wails mobile scaffolding (iOS/Android) is removed from `build/` and
