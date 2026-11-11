@@ -172,6 +172,10 @@ for (const rel of [
   // setKitEvidence; it imports drops.js for the position rule — copy
   // both or the kit graph fails to link above.
   'kits.js', 'drops.js',
+  // world.js is THE world dataset module (match-static fetch +
+  // normalization + the renderer/sfx pushes) — Replay imports it next
+  // to landmarks.js; copy it or the world graph fails to link above.
+  'world.js',
   // playercard.js now resolves its held-item prefix through
   // replay/loadout.js (the one loadout vocabulary) — copy it too, or the
   // card graph fails to link (its own deps, landmarks.js + bullets.js,
@@ -301,22 +305,79 @@ const KIT_ROWS = [
 // real bucket/position so the marker gate and the chip can be pinned.
 // Tick 128 keeps it inside the 0..576 stream and AFTER the kit rows, so
 // the tick-sorted contract the live fold reads by still holds.
+// id is the MARKER KEY now (getEventKeys → the marker set intersects
+// the world rows on it), so the draw row carries one like the kit rows.
 const KILL_ROWS = [
-  { seq: 90, tick: 128, round: 1, kind: 'kill',
+  { id: 90, seq: 90, tick: 128, round: 1, kind: 'kill',
     attacker: '911', attackerName: 'ghost', victim: '922', victimName: 'phantom',
     weapon: 'ak47', headshot: true, dmg: 100, posX: 100, posY: 200, posZ: 0 },
 ];
+// ONE predicate, TWO reads — the mirror of store.eventWhere (the Go
+// side shares ONE clause builder between GetEvents and GetEventKeys, and
+// the stub must stay consistent the same way, or the marker pins would
+// test a second matcher).
+//
+// Visibility first: the fixture registers its row groups under the kinds
+// they exist for (the coarse registration this stub always had) — the
+// draw/kit group rides weapon_pickup, the connection group its own two
+// kinds, the kill group kill. A round_starts CATEGORY therefore does not
+// surface the kit fixture's round_start row: that row exists for the kit
+// evidence's round scoping, not as a feed row this harness lists.
+const GROUPS = [
+  { rows: CONN_ROWS, kinds: ['player_connect', 'player_disconnect'] },
+  { rows: KIT_ROWS, kinds: ['weapon_pickup'] },
+  { rows: KILL_ROWS, kinds: ['kill'] },
+];
+const rowsForKinds = (f) => {
+  const kinds = (f && f.kinds) || [];
+  if (!kinds.length) return GROUPS.flatMap((g) => g.rows); // empty = all (the store contract)
+  return GROUPS.filter((g) => g.kinds.some((k) => kinds.includes(k))).flatMap((g) => g.rows);
+};
+// …then the clause predicates over whatever those groups expose: the
+// EITHER-ENDPOINT bbox (the store's rule), weapon, headshot, the player
+// filter with its kill role and the round bounds. side/team are NOT
+// modelled (they are Go-pinned in internal/store): the stub only has to
+// give the FE ONE consistent answer for both reads.
+const IN_RECT = (v, lo, hi) => typeof v === 'number' && v >= lo && v <= hi;
+const matchStubRow = (r, f) => {
+  if (f && f.weapon && r.weapon !== f.weapon) return false;
+  if (f && f.headshotOnly && r.headshot !== true) return false;
+  if (f && f.roundFrom && r.round < f.roundFrom) return false;
+  if (f && f.roundTo && r.round > f.roundTo) return false;
+  if (f && f.steamId) {
+    const role =
+      r.kind === 'kill' && f.killRole === 'attacker'
+        ? [r.attacker]
+        : r.kind === 'kill' && f.killRole === 'victim'
+          ? [r.victim]
+          : [r.attacker, r.victim];
+    if (!role.includes(f.steamId)) return false;
+  }
+  if (f && f.bbox) {
+    const b = f.bbox;
+    const victim =
+      IN_RECT(r.posX, b.minX, b.maxX) && IN_RECT(r.posY, b.minY, b.maxY);
+    const attacker =
+      IN_RECT(r.attackerPosX, b.minX, b.maxX) && IN_RECT(r.attackerPosY, b.minY, b.maxY);
+    if (!victim && !attacker) return false;
+  }
+  return true;
+};
+const matched = (filter) => rowsForKinds(filter).filter((r) => matchStubRow(r, filter));
 export const getEvents = (filter) => {
-  const kinds = (filter && filter.kinds) || [];
   // Every request is recorded: section N asserts the killRole that
   // fetchTyped derives from the enabled categories (only fetchTyped
   // passes one — the load-time draw/blind/conn reads never do).
   globalThis.__eventFilters = (globalThis.__eventFilters || []).concat([filter]);
-  const out = [];
-  if (kinds.includes('player_connect') || kinds.includes('player_disconnect')) out.push(...CONN_ROWS);
-  if (kinds.includes('weapon_pickup')) out.push(...KIT_ROWS); // the DRAW_KINDS read
-  if (kinds.includes('kill')) out.push(...KILL_ROWS);
-  return Promise.resolve(out);
+  return Promise.resolve(matched(filter));
+};
+// getEventKeys — the SCRUBBER-MARKER answer: the SAME rows the list read
+// returns for this filter (the shared predicate above), keys-only. Every
+// request is recorded so section O can pin that the marker set and the
+// list are asked with byte-identical filters.
+export const getEventKeys = (filter) => {
+  globalThis.__keyFilters = (globalThis.__keyFilters || []).concat([filter]);
+  return Promise.resolve(matched(filter).map((r) => ({ id: r.id, tick: r.tick, kind: r.kind })));
 };
 export const getEvent = () => Promise.resolve(null);
 // Flash-white overlay durations (matched to blind rows by seq) — none
@@ -582,7 +643,12 @@ writeFileSync(
   `export function createRenderer() {
   return {
     setPack() {},
-    setLandmarks() {},
+    setLandmarks(v) {
+      // Recorded (the __plays / __seeks precedent) so section O can pin
+      // the world push contract: exactly ONE per load, ZERO across a
+      // category toggle (world.js pushes once per startEngine).
+      globalThis.__landmarkPushes = (globalThis.__landmarkPushes || []).concat([v]);
+    },
     setBlinds() {},
     setChat() {},
     setBullets() {},
@@ -2965,6 +3031,13 @@ const harness4Src = `<script>
   let active = $state(true);
   globalThis.__setQuery = (q) => (query = q);
   globalThis.__setActive4 = (v) => (active = v);
+  // ONE flush, both props — what App's hashchange does (the route and
+  // the captured replay hash flip together). Section O's A4 pin needs
+  // the activation and the arriving query to land in the SAME update.
+  globalThis.__setActiveAndQuery4 = (a, q) => {
+    active = a;
+    query = q;
+  };
 </script>
 <Replay id={1} {query} {active} nav={(h) => (globalThis.__nav4 = (globalThis.__nav4 || []).concat(h))} />`;
 const harness4Out = join(dir, 'harness4.js');
@@ -3352,6 +3425,130 @@ check(
   'both: the typed fetch carries killRole=any (today\'s either-endpoint)',
   lastFilter6()?.killRole === 'any',
   JSON.stringify(lastFilter6() || {}),
+);
+
+// ============================================================================
+// APPENDED SECTION (feed/world decoupling — Stage B) — a self-contained
+// tail after N on purpose: keep it in one block if you edit this file.
+// ============================================================================
+
+console.log('O. world pushes (one per load, zero per filter edit) + the marker answer IS the list answer');
+// --- O1: exactly ONE world push per load, ZERO across filter edits ------
+const pushesBase = (globalThis.__landmarkPushes || []).length;
+const target7 = document.createElement('div');
+document.body.appendChild(target7);
+const harness7Src = `<script>
+  import Replay from './views/Replay.js';
+  let query = $state({});
+  globalThis.__setQuery7 = (q) => (query = q);
+</script>
+<Replay id={1} {query} nav={(h) => (globalThis.__nav7 = (globalThis.__nav7 || []).concat(h))} />`;
+const harness7Out = join(dir, 'harness7.js');
+svelteCompile(harness7Src, 'harness7.svelte', harness7Out);
+const mod7 = await import(pathToFileURL(harness7Out).href);
+mount(mod7.default, { target: target7 });
+await sleep();
+await sleep(); // load → startEngine pushes the world ONCE
+const pushesNow = () => (globalThis.__landmarkPushes || []).length;
+check(
+  'exactly ONE world push per load (renderer.setLandmarks via pushWorldToRenderer)',
+  pushesNow() - pushesBase === 1,
+  `+${pushesNow() - pushesBase}`,
+);
+// A category toggle re-fetches the LIST and re-derives the markers — it
+// must never re-push the world (the dataset has no filter dependency:
+// world.rows has one identity, the load's).
+globalThis.__setQuery7({ cat: 'kills' });
+await sleep();
+check(
+  'ZERO world pushes across a category toggle',
+  pushesNow() - pushesBase === 1,
+  `+${pushesNow() - pushesBase}`,
+);
+globalThis.__setQuery7({ cat: 'kills', bbox: '-1000,-1000,-900,-900' });
+await sleep();
+check(
+  'ZERO world pushes across a bbox arrival (still one per load)',
+  pushesNow() - pushesBase === 1,
+  `+${pushesNow() - pushesBase}`,
+);
+
+// --- O2: the marker answer is asked with the LIST's filter ---------------
+// typedFilterParams is the ONE FE spelling (both reads spread it), so the
+// recorded filters differ only by the list's paging fields.
+const lastList = { ...(globalThis.__eventFilters || [{}]).at(-1) };
+delete lastList.offset;
+delete lastList.limit;
+const lastKeys = (globalThis.__keyFilters || [{}]).at(-1);
+check(
+  'the marker answer carries byte-identical filter params as the list (one FE spelling)',
+  JSON.stringify(lastList) === JSON.stringify(lastKeys),
+  JSON.stringify([lastList, lastKeys]),
+);
+
+// --- O3: markers ⊆ list under the FULL filter (the disagreement pin) -----
+// Section N's instance: rail open, kills6 counts the kill markers.
+check(
+  'kills-only control: the list row and its marker agree',
+  target6.querySelectorAll('.lm-row').length === 1 && kills6() === 1,
+  `rows=${target6.querySelectorAll('.lm-row').length} markers=${kills6()}`,
+);
+globalThis.__setQuery6({ cat: 'kills', bbox: '-1000,-1000,-900,-900' });
+await sleep();
+check(
+  'bbox arrival whose LIST is empty: the markers go with it (no map-only markers)',
+  target6.querySelectorAll('.lm-row').length === 0 && kills6() === 0,
+  `rows=${target6.querySelectorAll('.lm-row').length} markers=${kills6()}`,
+);
+globalThis.__setQuery6({ cat: 'kills', weapon: 'AWP' });
+await sleep();
+check(
+  'weapon arrival with no match: empty list, empty markers',
+  target6.querySelectorAll('.lm-row').length === 0 && kills6() === 0,
+  `rows=${target6.querySelectorAll('.lm-row').length} markers=${kills6()}`,
+);
+globalThis.__setQuery6({ cat: 'kills', hs: '1', weapon: 'AWP' });
+await sleep();
+check(
+  'headshot+weapon arrival with no match: empty list, empty markers',
+  target6.querySelectorAll('.lm-row').length === 0 && kills6() === 0,
+  `rows=${target6.querySelectorAll('.lm-row').length} markers=${kills6()}`,
+);
+globalThis.__setQuery6({ cat: 'kills', weapon: 'ak47' });
+await sleep();
+check(
+  'a matching weapon keeps the row AND its marker (markers ⊆ list both ways)',
+  target6.querySelectorAll('.lm-row').length === 1 && kills6() === 1,
+  `rows=${target6.querySelectorAll('.lm-row').length} markers=${kills6()}`,
+);
+
+// --- O4: A4 addendum — a keep-alive activation with a CHANGED ?follow= ---
+// (The mechanism — followSlot is a $derived over query.follow + players
+// and the apply effect tracks it — was verified by the tick-button audit
+// but never pinned. The arrival lands in ONE flush with the activation,
+// which is what App's hashchange does.)
+globalThis.__setActive4(false);
+await sleep();
+const followsBase = (globalThis.__follows || []).length;
+globalThis.__setActiveAndQuery4(true, { follow: '76561198000000001' });
+await sleep();
+check(
+  'activation with a CHANGED ?follow= applies it (setFollow → slot 0)',
+  (globalThis.__follows || []).length === followsBase + 1 &&
+    (globalThis.__follows || []).at(-1) === 0,
+  JSON.stringify((globalThis.__follows || []).slice(followsBase)),
+);
+// …and the redundant-emit guard: the SAME follow arriving again changes
+// nothing (the derived resolves to the same slot, so the effect does not
+// re-run — no camera clobber).
+globalThis.__setActive4(false);
+await sleep();
+globalThis.__setActiveAndQuery4(true, { follow: '76561198000000001' });
+await sleep();
+check(
+  're-activating with the SAME ?follow= never re-emits setFollow',
+  (globalThis.__follows || []).length === followsBase + 1,
+  JSON.stringify((globalThis.__follows || []).slice(followsBase)),
 );
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

@@ -56,6 +56,16 @@ func (s *MatchService) GetEvents(f models.EventFilter) ([]models.EventRow, error
 	return s.st.GetEvents(f)
 }
 
+// GetEventKeys returns every matching event's identity/tick/kind for the
+// SAME filter — the replay's scrubber-marker answer (thin delegate over
+// store.GetEventKeys, which shares eventWhere with GetEvents: ONE
+// matcher for the list and the markers). No paging: the marker set is
+// the whole answer, never a page of it (store.GetEventKeys' doc owns the
+// semantics).
+func (s *MatchService) GetEventKeys(f models.EventFilter) ([]models.EventKey, error) {
+	return s.st.GetEventKeys(f)
+}
+
 // GetEvent returns one event with its detail/raw JSON payloads.
 func (s *MatchService) GetEvent(id int64) (*models.EventDetail, error) {
 	return s.st.GetEvent(id)

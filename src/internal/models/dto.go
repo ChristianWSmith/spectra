@@ -283,6 +283,17 @@ type BBox struct {
 	MaxY float64 `json:"maxY"`
 }
 
+// EventKey is ONE matching event's identity for a keys-only read
+// (MatchService.GetEventKeys): Id is the landmark key's `e:<id>` half,
+// Tick its position on the scrubber, Kind the bucket derivation's
+// input. Nothing else — the read answers "WHICH rows does this filter
+// match" (the replay's scrubber-marker set), never "show me those rows".
+type EventKey struct {
+	ID   int64  `json:"id"`
+	Tick int    `json:"tick"`
+	Kind string `json:"kind"`
+}
+
 // ChatRow is one chat line with display name (chat table join players).
 // Decrypted marks a row recovered from svc_EncryptedData via the .dem.info
 // key — v1 always stores false (see models.Chat for the provenance note).

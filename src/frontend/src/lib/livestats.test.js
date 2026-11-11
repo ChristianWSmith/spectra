@@ -251,6 +251,42 @@ test('incremental: a REPLACEMENT rows array resets the cursor (identity is the k
   }
 });
 
+test('incremental: a SAME-identity rows array never resets the cursor (the category-toggle case)', () => {
+  // A SORTED local fixture on purpose: the cursor's fast path is gated
+  // on tick order, and the shared SWEEP_EVENTS fixture above interleaves
+  // its junk in a way that leaves it unsorted (999 → 990), which parks
+  // that whole sweep on the pure-fold fallback (see the report note —
+  // the sweep's equivalence pins still hold, they just never walk).
+  // This pin has to OBSERVE the walk, so it brings its own ordered rows.
+  const rows = [
+    { kind: 'kill', tick: 10, round: 1, attacker: 'A', victim: 'X' },
+    { kind: 'damage', tick: 20, round: 1, attacker: 'A', victim: 'X', dmg: 30 },
+    { kind: 'kill', tick: 1500, round: 2, attacker: 'B', victim: 'Y' },
+    { kind: 'damage', tick: 2500, round: 3, attacker: 'Z', victim: 'Y', dmg: 66 },
+  ];
+  const opts = (tick) => ({ rounds: SWEEP_ROUNDS, tick, sideAt, steamIds: SWEEP_ROSTER });
+  const cursor = createLiveStatsCursor();
+  liveStatsIncremental(cursor, rows, opts(100));
+  assert.ok(cursor.usable, 'the sorted fixture takes the fast path');
+  const walked = cursor.next;
+  assert.ok(walked > 0, 'the forward walk advanced');
+  // The view's world dataset reads NOTHING but the fetched rows
+  // (Replay's drawNorm → landmarks.normalizeWorld takes no filter), so a
+  // category toggle keeps this EXACT array identity: the cursor must
+  // keep its place instead of re-walking from 0 — the rebuild the old
+  // filter-dependent normalization caused on every toggle. (A genuine
+  // refetch still replaces the array and resets — the identity test
+  // above stays true for actual refetches.)
+  liveStatsIncremental(cursor, rows, opts(100));
+  assert.equal(cursor.next, walked, 'same identity + same playhead → no rebuild');
+  assert.equal(cursor.rows, rows, 'the rows identity is untouched');
+  // …and the walk continues forward, still byte-identical to the pure
+  // fold (the equivalence contract at the top of this file).
+  const later = liveStatsIncremental(cursor, rows, opts(3100));
+  sameRows(later, liveStats(rows, opts(3100)), 'same-identity forward sweep');
+  assert.ok(cursor.next > walked, 'the walk continued forward');
+});
+
 test('incremental: rounds / sideAt identity changes rebuild too (ADR + kill sides)', () => {
   const cursor = createLiveStatsCursor();
   liveStatsIncremental(cursor, SWEEP_EVENTS, sweepOpts(2500));
