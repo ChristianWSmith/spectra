@@ -931,6 +931,80 @@ func TestGetEventsFilters(t *testing.T) {
 	}
 }
 
+// TestGetEventsKillRole pins the KillRole endpoint clause (the FE's
+// killRoleFor(cats) — the Kills/Deaths category separation): with a
+// player selected, Kills-only matches the ATTACKER of kind="kill" rows
+// only and Deaths-only the VICTIM, while every OTHER kind keeps the
+// either-endpoint "involved in" semantics of the plain SteamID clause;
+// "any"/"" (both or neither category enabled) is today's behavior, and
+// a role WITHOUT a player never fires.
+func TestGetEventsKillRole(t *testing.T) {
+	s := openMem(t)
+	id := saveTestMatch(t, s, "/d/kr.dem", "sha-kill-role", time.Now())
+
+	seqs := func(f models.EventFilter) []int {
+		t.Helper()
+		f.MatchID = id
+		rows, err := s.GetEvents(f)
+		if err != nil {
+			t.Fatalf("GetEvents(%+v): %v", f, err)
+		}
+		out := make([]int, len(rows))
+		for i, r := range rows {
+			out[i] = r.Seq
+		}
+		return out
+	}
+	want := func(name string, got, exp []int) {
+		t.Helper()
+		if len(got) != len(exp) {
+			t.Fatalf("%s = %v, want %v", name, got, exp)
+		}
+		for i := range exp {
+			if got[i] != exp[i] {
+				t.Fatalf("%s = %v, want %v", name, got, exp)
+			}
+		}
+	}
+
+	// The shared fixture (testExtracted): seq0 kill 100→200, seq1 damage
+	// 100→200, seq2 kill 200→100, seq3 bomb_plant by 200, seq4 round_end.
+	// No player selected → the role NEVER fires (a role without a player
+	// is a no-op): all five rows, role ignored.
+	want("role/no player", seqs(models.EventFilter{KillRole: "victim"}), []int{0, 1, 2, 3, 4})
+
+	// Either-endpoint baseline — today's behavior, and what "both or
+	// neither category" selects (KillRole "any"/""): 100 attacks seq0/1
+	// and is the victim of seq2.
+	want("plain steam", seqs(models.EventFilter{SteamID: "100"}), []int{0, 1, 2})
+	want("role any", seqs(models.EventFilter{SteamID: "100", KillRole: "any"}), []int{0, 1, 2})
+	want("role empty", seqs(models.EventFilter{SteamID: "100", KillRole: ""}), []int{0, 1, 2})
+
+	// Kills-only → "X's kills": kill rows match the ATTACKER only — seq2
+	// (100 as victim) drops out — while the NON-kill damage row (seq1,
+	// 100 attacks it) keeps either-endpoint.
+	want("kills/attacker", seqs(models.EventFilter{SteamID: "100", KillRole: "attacker"}), []int{0, 1})
+
+	// Deaths-only → "X's deaths": kill rows match the VICTIM only — seq0
+	// (100 as attacker) drops out — and the non-kill rows are untouched:
+	// seq1 (damage, 100 attacks it) still matches either-endpoint.
+	want("deaths/victim", seqs(models.EventFilter{SteamID: "100", KillRole: "victim"}), []int{1, 2})
+
+	// Non-kill kinds are NEVER role-scoped ("involved in" stays): with
+	// 200 under the victim role only seq2's kill drops (200 is its
+	// ATTACKER); the damage row (victim 200) and the bomb plant (by 200)
+	// keep matching.
+	want("deaths/victim 200", seqs(models.EventFilter{SteamID: "200", KillRole: "victim"}), []int{0, 1, 3})
+
+	// The FE's actual query shapes (fetchTyped passes Kinds + the role
+	// together): Deaths+player → only the victim's death; Kills+player →
+	// only the attacker's kill.
+	want("deaths+player query",
+		seqs(models.EventFilter{Kinds: []string{models.EventKill}, SteamID: "100", KillRole: "victim"}), []int{2})
+	want("kills+player query",
+		seqs(models.EventFilter{Kinds: []string{models.EventKill}, SteamID: "100", KillRole: "attacker"}), []int{0})
+}
+
 // TestGetEventsRoundRange pins the EventFilter round bounds: an
 // INCLUSIVE, PARTIAL range where 0 = open on that side (round 0 never
 // exists, so 0 can only mean "unset"), negative knife/warmup numbers are

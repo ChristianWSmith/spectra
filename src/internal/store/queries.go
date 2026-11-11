@@ -911,6 +911,26 @@ func (s *Store) queryEvents(f models.EventFilter, exactRound *int) ([]models.Eve
 	if sid := scrub(f.SteamID); sid != "" {
 		w.add("(e.attacker = ? OR e.victim = ?)", sid, sid)
 	}
+	// Kill-role clause (EventFilter.KillRole — the FE's killRoleFor(cats)
+	// derivation over the CATEGORY ids): Kills-only means "X's kills"
+	// (attacker), Deaths-only means "X's deaths" (victim). Scoped to
+	// kind='kill' rows ONLY — every other kind keeps the either-endpoint
+	// "involved in" semantics of the SteamID clause above (damage/blinds:
+	// attacker OR victim) — and the sid guard means a role with NO player
+	// selected never fires (no-op). "any"/"" (both or neither category
+	// enabled) adds no clause: today's behavior. Structurally separate
+	// from the round-range block above and the bbox either-endpoint
+	// predicate below — the side/team join lands beside this block next
+	// (Q2). The kind literal rides a placeholder (models.EventKill), so
+	// the clause can never drift from the stored spelling.
+	if sid := scrub(f.SteamID); sid != "" {
+		switch scrub(f.KillRole) {
+		case "attacker":
+			w.add("(e.kind != ? OR e.attacker = ?)", models.EventKill, sid)
+		case "victim":
+			w.add("(e.kind != ? OR e.victim = ?)", models.EventKill, sid)
+		}
+	}
 	// M3 advanced filters: every clause is an AND'ed bound
 	// parameter; zero/""/nil means unconstrained. The distance bounds are
 	// a partial range (either side may be open).

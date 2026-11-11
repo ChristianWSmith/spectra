@@ -94,12 +94,14 @@ test('legacy raw-event routes resolve to the canonical Replay feed', () => {
     id: 42,
     query: { cat: 'chat' },
   });
-  // The context URL → Replay with chat, connects, convars and team
-  // changes enabled.
+  // The context URL → Replay with chat, connects and team changes
+  // enabled (convars left the FE registry — the owner's ConVars-out
+  // ruling; a stale cat=convars degrades through parseLandmarkFilter's
+  // unknown-id drop).
   assert.deepEqual(parseHash('#/match/42/context'), {
     name: 'replay',
     id: 42,
-    query: { cat: 'chat,connects,convars,team_changes' },
+    query: { cat: 'chat,connects,team_changes' },
   });
   // Real query params win over the mapped default.
   assert.deepEqual(parseHash('#/match/42/chat?cat=chat,kills'), {

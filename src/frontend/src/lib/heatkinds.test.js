@@ -105,18 +105,25 @@ test('region drills open the matching landmark categories', () => {
     assert.deepEqual(cat.kinds, ['grenade'], k);
   }
   assert.deepEqual(heatRegionCats('damage'), ['kills', 'damage']);
-  // DELIBERATE PIN CHANGE (bbox empty-arrival fix): kills/kd/deaths used
-  // to narrow NO category, so a region drill arrived with the sparse
-  // default ['round_starts'] — round-start rows store no position, and
-  // the bbox then excluded EVERY row (guaranteed-empty arrival). Each
-  // now projects onto the KILLS category: there is no death kind (a
-  // death IS a kill row, victim side) and kd spans kills AND deaths, so
-  // the kills category is the position-bearing half either way; the
-  // store's either-endpoint bbox (internal/store/queries.go) matches the
-  // victim positions of those rows too.
-  for (const k of ['kills', 'kd', 'deaths']) {
+  // DELIBERATE PIN CHANGES (bbox empty-arrival fix, then the enabled-
+  // claim flip): kills/kd/deaths used to narrow NO category, so a region
+  // drill arrived with the sparse default ['round_starts'] — round-start
+  // rows store no position, and the bbox then excluded EVERY row
+  // (guaranteed-empty arrival); they projected onto the KILLS category,
+  // and deaths followed it while no stamping existed. With enabled-claim
+  // stamping in the SAME commit (landmarks.rowCategory), DEATHS projects
+  // onto ['deaths'] so the arrival's kill rows PRESENT as deaths there —
+  // and killRoleFor derives the victim player role from those same
+  // category ids; the store's either-endpoint bbox (queries.go) matches
+  // their victim positions either way. kd spans both views but keeps the
+  // kills projection (owner ruling).
+  for (const k of ['kills', 'kd']) {
     assert.deepEqual(heatRegionCats(k), ['kills'], k);
   }
+  assert.deepEqual(heatRegionCats('deaths'), ['deaths']);
+  const deathsCat = categoryById('deaths');
+  assert.ok(deathsCat, 'deaths is a landmark category');
+  assert.deepEqual(deathsCat.kinds, ['kill'], 'deaths claims the kill kind');
   // presence keeps narrowing nothing: it has no event counterpart — and
   // heatRegionTakesBBox keeps its bbox out of the arrival as well (a bbox
   // it cannot satisfy would guarantee an empty feed).

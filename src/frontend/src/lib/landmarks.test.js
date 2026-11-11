@@ -14,6 +14,8 @@ import {
   DEFAULT_FILTER,
   DETONATION_BUCKETS,
   categoryOfKind,
+  rowCategory,
+  killRoleFor,
   drawBucket,
   detonationStyle,
   detonationStyleOf,
@@ -80,9 +82,12 @@ test('the default selection is exactly round starts (sparse default)', () => {
   // feed for the world layer, but the feed lists them only when the chip
   // is on, so the sparse default must not claim it.
   assert.equal(CATEGORIES.find((c) => c.id === 'grenade_bounces').default, undefined);
+  // Deaths (the SECOND view of the kill kind) is OPT-IN too — the sparse
+  // default never selects a view of the kill rows.
+  assert.equal(CATEGORIES.find((c) => c.id === 'deaths').default, undefined);
 });
 
-test('every category is well-formed and typed kinds are covered exactly once', () => {
+test('every category is well-formed and every typed kind is claimed at least once', () => {
   const seen = new Set();
   for (const c of CATEGORIES) {
     assert.ok(c.id && c.label && c.source, c.id);
@@ -90,7 +95,14 @@ test('every category is well-formed and typed kinds are covered exactly once', (
       assert.ok(Array.isArray(c.kinds) && c.kinds.length > 0, c.id);
       for (const k of c.kinds) {
         assert.ok(LANDMARK_KINDS.includes(k), `${c.id}: unknown kind ${k}`);
-        assert.equal(seen.has(k), false, `kind ${k} claimed twice`);
+        // DELIBERATE RELAXATION — claims may be SHARED: deaths/kill are
+        // two VIEWS of one row (the category is the spectra concept, the
+        // kind the demo detail — the audit's translation-layer ruling at
+        // the spectra↔demo boundary), so the kind → category map is
+        // one-to-MANY. What must hold is COVERAGE: every kind is claimed
+        // at least once — an unclaimed kind would be dropped from the
+        // feed AND the draw set by normalizeEvent (the old "claimed
+        // exactly once" assert died with the Deaths category).
         seen.add(k);
       }
     } else if (c.source === 'generic') {
@@ -106,6 +118,14 @@ test('every category is well-formed and typed kinds are covered exactly once', (
 
 test('categoryOfKind maps every kind and rejects unknown input', () => {
   assert.equal(categoryOfKind('kill'), 'kills');
+  // kill is claimed TWICE — kills + deaths, IN THAT ORDER (the shared
+  // claim): the FIRST claim stays 'kills' (categoryOfKind's/rowCategory's
+  // fallback and the both-enabled stamp), while the ENABLED set decides
+  // which view a row presents under (rowCategory below).
+  assert.deepEqual(
+    CATEGORIES.filter((c) => (c.kinds || []).includes('kill')).map((c) => c.id),
+    ['kills', 'deaths'],
+  );
   assert.equal(categoryOfKind('round_end'), 'round_wins');
   assert.equal(categoryOfKind('round_start'), 'round_starts');
   assert.equal(categoryOfKind('bomb_defuse'), 'bomb');
@@ -133,6 +153,51 @@ test('categoryOfKind maps every kind and rejects unknown input', () => {
   assert.equal(categoryOfKind('teleport'), null);
   assert.equal(categoryOfKind(''), null);
   assert.equal(categoryOfKind(null), null);
+});
+
+test('rowCategory stamps the ENABLED claim (the deaths/kill view decision)', () => {
+  const kill = { kind: 'kill' };
+  // Kills-only → the kills view; deaths-only → the deaths view (the row
+  // PRESENTS under the category the user actually has on).
+  assert.equal(rowCategory(kill, ['round_starts', 'kills']), 'kills');
+  assert.equal(rowCategory(kill, ['round_starts', 'deaths']), 'deaths');
+  // Both → the FIRST claim wins (kills is first in CATEGORIES order) —
+  // one row, one stamp, never a double-presented row.
+  assert.equal(rowCategory(kill, ['kills', 'deaths']), 'kills');
+  assert.equal(rowCategory(kill, ['deaths', 'kills']), 'kills');
+  // Neither (the sparse default) → the canonical first claim: the stamp
+  // stays 'kills' so the marker gate's cats.has() simply excludes it.
+  assert.equal(rowCategory(kill, ['round_starts']), 'kills');
+  assert.equal(rowCategory(kill, []), 'kills');
+  // No cats at all (every non-feed caller) → first claim, exactly the
+  // pre-stamping behavior.
+  assert.equal(rowCategory(kill, undefined), 'kills');
+  assert.equal(rowCategory(kill, null), 'kills');
+  // Single-claim kinds are unaffected by the enabled set.
+  assert.equal(rowCategory({ kind: 'round_start' }, ['round_starts']), 'round_starts');
+  assert.equal(rowCategory({ kind: 'damage' }, ['deaths']), 'damage'); // damage never presents as deaths
+  // An unclaimed kind still resolves to null (normalizeEvent's drop).
+  assert.equal(rowCategory({ kind: 'teleport' }, ['kills']), null);
+  assert.equal(rowCategory(null, ['kills']), null);
+});
+
+test('killRoleFor derives the player-filter role from the CATEGORY ids', () => {
+  // Both categories claim 'kill', so typedKindsFor cannot tell the
+  // selections apart — the role MUST come from the ids (the endpoint
+  // clause in store.queryEvents applies it to kind=kill rows only).
+  assert.equal(killRoleFor(['round_starts', 'kills']), 'attacker'); // "X's kills"
+  assert.equal(killRoleFor(['kills']), 'attacker');
+  assert.equal(killRoleFor(['round_starts', 'deaths']), 'victim'); // "X's deaths"
+  assert.equal(killRoleFor(['deaths']), 'victim');
+  // Both or neither → today's either-endpoint match (no behavior change).
+  assert.equal(killRoleFor(['kills', 'deaths']), 'any');
+  assert.equal(killRoleFor(['round_starts']), 'any');
+  assert.equal(killRoleFor([]), 'any');
+  // Malformed/unknown ids behave as 'neither' → 'any' (never guessed).
+  assert.equal(killRoleFor(['bogus']), 'any');
+  assert.equal(killRoleFor(['kills', 'bogus']), 'attacker');
+  assert.equal(killRoleFor(undefined), 'any');
+  assert.equal(killRoleFor(null), 'any');
 });
 
 test('drawBucket buckets every drawable kind (renderer/scrubber contract)', () => {
@@ -318,10 +383,14 @@ test('typedKindsFor unions enabled categories; enabledSources splits paths', () 
   assert.deepEqual(typedKindsFor([]), []);
   assert.deepEqual(typedKindsFor(['kills', 'kills']), ['kill']);
 
-  const src = enabledSources(['kills', 'chat', 'convars', 'game_events']);
+  // convars left the FE registry (the owner's ConVars-out ruling): a
+  // stale id degrades silently here exactly like a stale URL does —
+  // categoryById → null → dropped (the unknown-id-drop pin below).
+  const src = enabledSources(['kills', 'chat', 'team_changes', 'game_events']);
   assert.equal(src.event, true);
   assert.equal(src.chat, true);
-  assert.deepEqual(src.generic.map((c) => c.id), ['convars', 'game_events']);
+  assert.deepEqual(src.generic.map((c) => c.id), ['team_changes', 'game_events']);
+  assert.deepEqual(enabledSources(['convars']).generic, []);
   const none = enabledSources([]);
   assert.equal(none.event, false);
   assert.equal(none.chat, false);
@@ -339,7 +408,13 @@ test('normalizeEvent tags the row, keeps source fields and drops unknown kinds',
   assert.equal(row.source, 'event');
   assert.equal(row.category, 'kills');
   assert.equal(row.bucket, 'kill');
-  assert.equal(row.attackerName, 'a'); // source fields preserved
+  // The SHARED claim (deaths/kill): a kill row is never dropped because
+  // only Deaths is enabled — it stamps as 'deaths' instead (rowCategory
+  // through opts.cats), while the bucket/kind stay the demo detail.
+  const drow = normalizeEvent(ev, { cats: ['deaths'] });
+  assert.equal(drow.category, 'deaths');
+  assert.equal(drow.bucket, 'kill');
+  assert.equal(drow.attackerName, 'a');
   assert.equal(row.posX, 1.5);
   // The bucket follows the KIND and the weapon (grenade routing reaches
   // the renderer through this one stamping point).
@@ -413,20 +488,25 @@ test('normalizeChat / normalizeGeneric tag rows with who+label', () => {
   // [ALL]/[T]/[CT] tag the surfaces render); normalize* never re-derives it
   assert.equal(c.channel, 'all');
 
+  // A surviving generic category (convars left the FE registry — the Go
+  // labeler still labels those rows, they are just not browsable): the
+  // stamp comes from the FETCH's catId — generic sources are one
+  // category per name, so there is no shared-claim question there.
   const g = normalizeGeneric(
-    { rowId: 12, name: 'server_cvar', tick: 8, round: 1, payloadJson: '{}', who: '', label: 'sv = 1' },
-    'convars',
+    { rowId: 12, name: 'player_team', tick: 8, round: 1, payloadJson: '{}', who: 'alice', label: 'alice → T' },
+    'team_changes',
   );
   assert.equal(g.key, 'g:12');
   assert.equal(g.source, 'generic');
-  assert.equal(g.category, 'convars');
-  assert.equal(g.label, 'sv = 1');
+  assert.equal(g.category, 'team_changes');
+  assert.equal(g.who, 'alice');
+  assert.equal(g.label, 'alice → T');
 });
 
 test('mergeFeed orders by tick, then source, then sequence key', () => {
   const ev = (id, tick) => ({ ...normalizeEvent({ id, seq: id, tick, round: 1, kind: 'kill' }, {}) });
   const chat = (id, tick) => normalizeChat({ id, tick, round: 1, name: 'a', text: 'x' });
-  const gen = (rowId, tick) => normalizeGeneric({ rowId, name: 'server_cvar', tick, round: 1, payloadJson: '{}' }, 'convars');
+  const gen = (rowId, tick) => normalizeGeneric({ rowId, name: 'player_team', tick, round: 1, payloadJson: '{}' }, 'team_changes');
 
   const merged = mergeFeed([
     [ev(1, 300), ev(2, 100)],
@@ -665,6 +745,17 @@ test('landmarkExportRows flattens the feed into canonical columns', () => {
   // canonical fmt.chatLine (`name [tag]: text`) — while `who` stays the
   // bare name (owner's export contract; matches what the UI renders).
   assert.deepEqual(out[2], [11, 1, 'chat', 'chat', 'chat', 'alice', 'alice [ALL]: gl hf', '', '']);
+  // The `type` column carries the STAMPED category: a deaths-only
+  // selection's kill row exports as 'deaths' while the `event` column
+  // keeps the demo kind (the enabled-claim stamp — rowCategory through
+  // normalizeEvent's opts.cats).
+  const drow = normalizeEvent(
+    { id: 3, seq: 2, tick: 12, round: 1, kind: 'kill', attackerName: 'a' },
+    { cats: ['deaths'] },
+  );
+  const dout = landmarkExportRows([drow]);
+  assert.equal(dout[1][3], 'deaths');
+  assert.equal(dout[1][4], 'kill');
 });
 
 test('export chat labels side-indicate: [ALL] always, [T]/[CT] from the side inputs', () => {

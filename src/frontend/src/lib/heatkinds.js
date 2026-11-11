@@ -60,17 +60,23 @@ export function heatKindLabel(kind) {
 // onto KILLS — the bbox drill must arrive with POSITION-BEARING rows,
 // never the sparse default ['round_starts'] (round-start rows store no
 // position, so a bbox on top of it excluded EVERYTHING: the guaranteed-
-// empty arrival this table was fixed for). There is no death kind — a
-// death IS a kill row, victim side — so kills/kd/deaths all read the
-// kills category; with the store's either-endpoint bbox (queries.go)
-// the victim positions match there too. presence has NO event
-// counterpart at all (a sampled position grid): no category, and
-// heatRegionTakesBBox keeps its bbox out of the arrival as well.
+// empty arrival this table was fixed for). DEATHS projects onto the
+// DEATHS category (the enabled-claim stamping flip): a death IS a kill
+// row, but with Deaths claiming that kind the drill must arrive with
+// cats=['deaths'] so the feed's kill rows PRESENT as deaths
+// (landmarks.rowCategory) and killRoleFor derives the victim player
+// role from the same category ids; the store's either-endpoint bbox
+// (internal/store/queries.go) matches their victim positions either way.
+// kd spans both views but keeps the kills projection (owner ruling).
+// presence has NO event counterpart at all (a sampled position grid): no
+// category, and heatRegionTakesBBox keeps its bbox out of the arrival as
+// well.
 export function heatRegionCats(kind) {
   if (kind.endsWith('_thrown')) return ['grenade_throws'];
   if (kind.endsWith('_det')) return ['grenade_dets'];
   if (kind === 'damage') return ['kills', 'damage'];
-  if (kind === 'kills' || kind === 'kd' || kind === 'deaths') return ['kills'];
+  if (kind === 'deaths') return ['deaths']; // the enabled-claim flip (rowCategory)
+  if (kind === 'kills' || kind === 'kd') return ['kills'];
   return undefined; // presence (and any unknown id — never invented)
 }
 

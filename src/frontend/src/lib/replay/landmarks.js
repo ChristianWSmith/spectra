@@ -135,6 +135,16 @@ export const DRAW_KINDS = [
 // knife/warmup rounds are not part of the default narrative).
 export const CATEGORIES = [
   { id: 'kills', label: 'Kills', short: 'kill', source: 'event', kinds: ['kill'] },
+  // Deaths claims the SAME kind as Kills — deliberately SHARED: a death
+  // IS a kill row (victim side), so the two are two VIEWS of one row
+  // (the audit's translation-layer ruling: the category is the spectra
+  // concept, the kind the demo detail). First in CATEGORIES order after
+  // kills, so categoryOfKind/rowCategory's first claim stays 'kills'
+  // (both-enabled rows present as kills — the enabled set decides which
+  // view a row shows under: see rowCategory). Default-OFF like every
+  // non-sparse category; no new kind, so LANDMARK_KINDS/DRAW_KINDS are
+  // untouched.
+  { id: 'deaths', label: 'Deaths', short: 'death', source: 'event', kinds: ['kill'] },
   { id: 'round_wins', label: 'Round wins', short: 'win', source: 'event', kinds: ['round_end'], countedOnly: true },
   { id: 'round_starts', label: 'Round starts', short: 'start', source: 'event', kinds: ['round_start'], default: true, countedOnly: true },
   { id: 'bomb', label: 'Bomb', short: 'bomb', source: 'event', kinds: ['bomb_plant', 'bomb_defuse', 'bomb_explode', 'bomb_drop', 'bomb_pickup', 'bomb_plant_begin', 'bomb_plant_abort', 'bomb_defuse_start', 'bomb_defuse_abort'] },
@@ -169,7 +179,6 @@ export const CATEGORIES = [
   { id: 'connects', label: 'Joins & leaves', short: 'join/leave', source: 'event', kinds: ['player_connect', 'player_disconnect'] },
   { id: 'chat', label: 'Chat', short: 'chat', source: 'chat' },
   { id: 'team_changes', label: 'Team changes', short: 'team', source: 'generic', name: 'player_team' },
-  { id: 'convars', label: 'Server setting changes', short: 'cvar', source: 'generic', name: 'server_cvar' },
   { id: 'game_events', label: 'Game events', short: 'game', source: 'generic', nameFrom: 'gname' },
 ];
 
@@ -183,11 +192,38 @@ export function categoryById(id) {
 
 // categoryOfKind maps a typed events.kind onto its category id (or null
 // for a kind no category claims — the stored vocabulary is closed, so
-// null only ever hits unknown input).
+// null only ever hits unknown input). SHARED claims resolve to the FIRST
+// claim in CATEGORIES order (kill → 'kills', with Deaths second) — the
+// canonical first claim; which view a row PRESENTS as is rowCategory's
+// job (the enabled set decides).
 export function categoryOfKind(kind) {
   const k = String(kind || '');
   const cat = CATEGORIES.find((c) => c.source === 'event' && (c.kinds || []).includes(k));
   return cat ? cat.id : null;
+}
+
+// rowCategory — THE enabled-claim stamp (one canonical resolution): the
+// category the user actually has ENABLED for this row's kind — the first
+// claim (CATEGORIES order) among the enabled set — falling back to the
+// canonical first claim (categoryOfKind) when NO claim is enabled (an
+// unfiltered draw row under a sparse selection: its stamp stays 'kills'
+// and the scrubber-marker gate simply excludes it). Shared claims are
+// two VIEWS of one row (deaths/kill — the category IS the spectra
+// concept, the kind the demo detail), so the ENABLED set decides which
+// view the row presents under: kills-only → 'kills', deaths-only →
+// 'deaths', both → 'kills' (first claim wins). Pure — unit-tested by
+// src/lib/landmarks.test.js; every consumer (list chips, the export
+// `type` column, the scrubber-marker gate) reads the stamp normalizeEvent
+// sets through this, so no site re-derives it.
+export function rowCategory(row, cats) {
+  const k = String((row && row.kind) || '');
+  if (cats) {
+    const enabled = CATEGORIES.find(
+      (c) => c.source === 'event' && (c.kinds || []).includes(k) && cats.includes(c.id),
+    );
+    if (enabled) return enabled.id;
+  }
+  return categoryOfKind(k);
 }
 
 // detonationStyle — THE weapon → detonation-visual decision (pure; the
@@ -369,6 +405,25 @@ export function enabledSources(catIds) {
   };
 }
 
+// killRoleFor — THE player-filter role derivation for kind='kill' rows
+// (pure; unit-tested by src/lib/landmarks.test.js, applied by
+// store.queryEvents): Kills-only means "X's kills" (attacker),
+// Deaths-only means "X's deaths" (victim), both or neither → 'any'
+// (today's either-endpoint match — no clause Go-side). The role MUST
+// come from the CATEGORY ids, never the kinds: both categories claim
+// 'kill', so typedKindsFor cannot tell the two selections apart.
+// Applies only to kill rows (every other kind keeps attacker-OR-victim
+// — "involved in" for damage/blinds) and only with a player selected
+// (store-side guard). Malformed/unknown ids behave as 'neither' → 'any'.
+export function killRoleFor(catIds) {
+  const cats = new Set(catIds || []);
+  const kills = cats.has('kills');
+  const deaths = cats.has('deaths');
+  if (kills && !deaths) return 'attacker';
+  if (deaths && !kills) return 'victim';
+  return 'any';
+}
+
 // --- Normalization -----------------------------------------------------------
 
 // roundsByNumber builds the counted-round lookup from a GetRounds array
@@ -382,9 +437,16 @@ export function roundsByNumber(rounds) {
 // warmup round-win rows from the sparse narrative (a round the lookup
 // does not know is kept — defensive, never invented). opts.policy=false
 // skips the round policy (CompareRounds shows every row the user asked
-// to compare). Returns null when no category claims the kind.
+// to compare). opts.cats is the ENABLED category set — the row is
+// STAMPED with its enabled claim (rowCategory: kills-only → 'kills',
+// deaths-only → 'deaths', both → 'kills'), which is what the list chips,
+// the export `type` column and the scrubber-marker gate read; absent
+// (every non-feed caller — CompareRounds, the ?sel= detail, the unit
+// fixtures) the stamp is the canonical first claim, exactly as before.
+// Returns null when no category claims the kind (shared claims count —
+// a kill row is never dropped because only Deaths is enabled).
 export function normalizeEvent(ev, opts = {}) {
-  const category = categoryOfKind(ev.kind);
+  const category = rowCategory(ev, opts.cats);
   if (!category) return null;
   if (opts.policy !== false) {
     const cat = categoryById(category);

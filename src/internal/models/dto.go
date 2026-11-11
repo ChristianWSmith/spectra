@@ -216,8 +216,9 @@ func EventFromRow(r EventRow) Event {
 // — store.GetRoundDetail matches its (possibly negative knife/warmup,
 // possibly 0) round EXACTLY through store.queryEvents' exactRound, see
 // that function. Kind "" = all kinds; SteamID matches attacker OR
-// victim. Offset/Limit paginate (Limit <= 0 means "no limit" — the store
-// still applies a hard cap).
+// victim (kind="kill" rows may be narrowed to ONE endpoint by KillRole —
+// see that field). Offset/Limit paginate (Limit <= 0 means "no limit" —
+// the store still applies a hard cap).
 type EventFilter struct {
 	MatchID int64 `json:"matchId"`
 	// RoundFrom/RoundTo: inclusive round bounds, 0 = open on that side.
@@ -241,6 +242,16 @@ type EventFilter struct {
 	HeadshotOnly bool    `json:"headshotOnly,omitempty"`
 	// BBox is a world-space EITHER-ENDPOINT position filter — see BBox.
 	BBox *BBox `json:"bbox,omitempty"`
+	// KillRole narrows the SteamID clause to ONE endpoint of kind="kill"
+	// rows only: "attacker" = X's kills, "victim" = X's deaths — the FE's
+	// killRoleFor(cats) derivation over the CATEGORY ids (Kills-only /
+	// Deaths-only; both or neither → "any"/"" = no clause, today's
+	// either-endpoint match). Every OTHER kind keeps attacker-OR-victim
+	// regardless ("involved in" for damage/blinds), and with SteamID
+	// empty the role never fires (a role with no player selected is a
+	// no-op). queryEvents applies it as its own clause, structurally
+	// separate from the round range and the bbox predicate.
+	KillRole string `json:"killRole,omitempty"`
 }
 
 // BBox is a world-coordinate rectangle; an event matches when EITHER of

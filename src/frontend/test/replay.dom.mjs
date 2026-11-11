@@ -294,15 +294,29 @@ const KIT_ROWS = [
     posZ: 0,
   },
 ];
+// A kill row for the DRAW feed (scrubber markers) and the kills/deaths
+// LIST toggles (section N): the attacker/victim are deliberately NOT
+// roster ids — section F pins every card at K/D/A 0/0/0 · ADR 0.0 and
+// the live fold keys off the roster — while the row still carries a
+// real bucket/position so the marker gate and the chip can be pinned.
+// Tick 128 keeps it inside the 0..576 stream and AFTER the kit rows, so
+// the tick-sorted contract the live fold reads by still holds.
+const KILL_ROWS = [
+  { seq: 90, tick: 128, round: 1, kind: 'kill',
+    attacker: '911', attackerName: 'ghost', victim: '922', victimName: 'phantom',
+    weapon: 'ak47', headshot: true, dmg: 100, posX: 100, posY: 200, posZ: 0 },
+];
 export const getEvents = (filter) => {
   const kinds = (filter && filter.kinds) || [];
-  if (kinds.includes('player_connect') || kinds.includes('player_disconnect')) {
-    return Promise.resolve(CONN_ROWS);
-  }
-  if (kinds.includes('weapon_pickup')) {
-    return Promise.resolve(KIT_ROWS); // the DRAW_KINDS read
-  }
-  return Promise.resolve([]);
+  // Every request is recorded: section N asserts the killRole that
+  // fetchTyped derives from the enabled categories (only fetchTyped
+  // passes one — the load-time draw/blind/conn reads never do).
+  globalThis.__eventFilters = (globalThis.__eventFilters || []).concat([filter]);
+  const out = [];
+  if (kinds.includes('player_connect') || kinds.includes('player_disconnect')) out.push(...CONN_ROWS);
+  if (kinds.includes('weapon_pickup')) out.push(...KIT_ROWS); // the DRAW_KINDS read
+  if (kinds.includes('kill')) out.push(...KILL_ROWS);
+  return Promise.resolve(out);
 };
 export const getEvent = () => Promise.resolve(null);
 // Flash-white overlay durations (matched to blind rows by seq) — none
@@ -2084,18 +2098,22 @@ await sleep();
 const catMenu = panel?.querySelector('.lm-cat-menu');
 check('dropdown opens a checkbox list (multi-select)', !!catMenu);
 const catBoxes = catMenu ? [...catMenu.querySelectorAll('input[type="checkbox"]')] : [];
-// 16 = 15 + the drops category (the death-drop evidence rows —
-// lib/replay/landmarks.js CATEGORIES gained one opt-in entry so
-// normalizeEvent can claim weapon_drop/weapon_pickup for the draw set;
-// default selection is unchanged) + the Bounce category (grenade_bounce
-// rows — same shape: an opt-in, default-OFF entry so the kind has a
-// claim; the checked-list pin below stays 'Round starts' only).
+// 16 = the registry after the gameplay pass: − convars (server settings
+// left the FE — the owner's ConVars-out ruling; the Go labeler still
+// labels those rows), + Deaths (the SECOND view of the kill kind —
+// lib/replay/landmarks.js, shared claim). The checked-list pin below
+// stays 'Round starts' only: every addition is opt-in, default OFF.
 check('one checkbox per category', catBoxes.length === 16, String(catBoxes.length));
 const catLabel = (cb) => (cb.closest('label')?.textContent || '').trim();
 check(
   'default selection: round starts ON, kills and round wins OFF',
   catBoxes.filter((cb) => cb.checked).map(catLabel).join(',') === 'Round starts',
   catBoxes.filter((cb) => cb.checked).map(catLabel).join(','),
+);
+check(
+  'the convars category is GONE from the dropdown (owner ruling — ConVars out of the FE)',
+  !catBoxes.some((cb) => catLabel(cb) === 'Server setting changes'),
+  catBoxes.map(catLabel).join(', '),
 );
 // Checking another category navigates with the new set — the route query
 // IS the filter (toggleCat → navigateFilter → serializeLandmarkFilter).
@@ -2108,6 +2126,27 @@ check(
   'toggling a category writes the new cat= list',
   navCats.length > navBeforeCats && navCats[navCats.length - 1].includes('cat=round_starts,kills'),
   navCats[navCats.length - 1] || 'no navigation',
+);
+// Deaths sits RIGHT AFTER kills in the registry (the shared-claim order
+// — categoryOfKind's first claim must stay 'kills'), toggles on like
+// every other category, and rides the URL in CATEGORIES order.
+const deathsBox = catBoxes.find((cb) => catLabel(cb) === 'Deaths');
+check(
+  'the Deaths checkbox sits right after Kills (the shared-claim order)',
+  !!deathsBox && !!killsBox && catBoxes.indexOf(deathsBox) === catBoxes.indexOf(killsBox) + 1,
+  catBoxes.map(catLabel).join(', '),
+);
+deathsBox?.click();
+await sleep();
+const navCats2 = globalThis.__nav || [];
+// The harness query is STATIC (documented in section H): each toggle
+// starts from the default set, so this navigation carries
+// round_starts+deaths rather than accumulating the previous click —
+// what the pin cares about is the Deaths id landing in the URL.
+check(
+  'toggling Deaths writes its category into the cat= list',
+  navCats2.length > navCats.length && navCats2[navCats2.length - 1].includes('cat=round_starts,deaths'),
+  navCats2[navCats2.length - 1] || 'no navigation',
 );
 
 const bar = panel?.querySelector('.filt-bar');
@@ -3042,6 +3081,100 @@ check(
   'ACTIVATION with the SAME filter never re-opens a user-closed rail',
   !railOf(target4),
   '',
+);
+
+// --- (N): enabled-claim stamping + killRole (the Deaths category) -----
+// The Change-3/4 invariant end to end on a SIXTH instance with a
+// settable query: a kill row PRESENTS under the category the user has
+// enabled for its kind (kills-only → 'kills', deaths-only → 'deaths',
+// both → 'kills' — the first claim), its scrubber marker follows the
+// same stamp (the gate reads l.category), and the typed fetch carries
+// killRoleFor(cats) — the endpoint clause Go applies to kill rows only.
+// The stub's kill row uses NON-roster ids (section F pins every card at
+// 0/0/0) and lands in the DRAW feed (limit-0 read) for the markers.
+console.log('N. deaths category: enabled-claim stamping (chip + markers) + killRoleFor in the fetch');
+const target6 = document.createElement('div');
+document.body.appendChild(target6);
+const harness6Src = `<script>
+  import Replay from './views/Replay.js';
+  let query = $state({});
+  globalThis.__setQuery6 = (q) => (query = q);
+</script>
+<Replay id={1} {query} nav={(h) => (globalThis.__nav6 = (globalThis.__nav6 || []).concat(h))} />`;
+const harness6Out = join(dir, 'harness6.js');
+svelteCompile(harness6Src, 'harness6.svelte', harness6Out);
+const mod6 = await import(pathToFileURL(harness6Out).href);
+mount(mod6.default, { target: target6 });
+await sleep();
+await sleep(); // load → startEngine (the draw feed carries the kill row)
+const kills6 = () => target6.querySelectorAll('.scrub-marker.kill').length;
+const lastFilter6 = () => (globalThis.__eventFilters || []).at(-1);
+const chipOf6 = () => target6.querySelector('.lm-row .lm-cat')?.textContent.trim();
+check(
+  'default: no kill scrubber marker (round_starts claims no kill view — the fallback stamp is excluded)',
+  kills6() === 0,
+  `kill markers=${kills6()}`,
+);
+const railToggle6 = target6.querySelector('.replay-topbar .side-toggle');
+check('the collapsed rail toggle is there (a default arrival never reveals)', !!railToggle6);
+click(railToggle6);
+await sleep();
+check(
+  'default list: no kill row (round_starts fetches only round_start kinds)',
+  !target6.querySelector('.lm-row'),
+  String(target6.querySelectorAll('.lm-row').length),
+);
+
+// Deaths-only: the row presents as DEATHS (the chip), keeps its
+// scrubber marker (the gate reads the enabled-claim stamp), and the
+// fetch asks with the victim role.
+globalThis.__setQuery6({ cat: 'deaths' });
+await sleep();
+check(
+  'deaths-only: the kill row chips as "death" (the enabled claim, not the first)',
+  chipOf6() === 'death',
+  chipOf6() || 'no row',
+);
+check(
+  'deaths-only: the kill row keeps its scrubber marker (the gate reads the stamp)',
+  kills6() === 1,
+  `kill markers=${kills6()}`,
+);
+check(
+  'deaths-only: the typed fetch carries killRole=victim (X\'s deaths)',
+  lastFilter6()?.killRole === 'victim',
+  JSON.stringify(lastFilter6() || {}),
+);
+
+// Kills-only: the other view of the same row.
+globalThis.__setQuery6({ cat: 'kills' });
+await sleep();
+check(
+  'kills-only: the row chips as "kill"',
+  chipOf6() === 'kill',
+  chipOf6() || 'no row',
+);
+check('kills-only: the marker is still there', kills6() === 1, `kill markers=${kills6()}`);
+check(
+  'kills-only: the typed fetch carries killRole=attacker (X\'s kills)',
+  lastFilter6()?.killRole === 'attacker',
+  JSON.stringify(lastFilter6() || {}),
+);
+
+// Both views: ONE row, the FIRST claim wins (kills), and the role
+// reverts to today's either-endpoint ('any').
+globalThis.__setQuery6({ cat: 'kills,deaths' });
+await sleep();
+check(
+  'both: one row, presented as "kill" (the first claim wins — never double-stamped)',
+  target6.querySelectorAll('.lm-row').length === 1 && chipOf6() === 'kill',
+  `rows=${target6.querySelectorAll('.lm-row').length} chip=${chipOf6()}`,
+);
+check('both: still ONE marker (one row, one stamp)', kills6() === 1, `kill markers=${kills6()}`);
+check(
+  'both: the typed fetch carries killRole=any (today\'s either-endpoint)',
+  lastFilter6()?.killRole === 'any',
+  JSON.stringify(lastFilter6() || {}),
 );
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

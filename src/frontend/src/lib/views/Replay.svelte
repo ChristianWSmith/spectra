@@ -46,6 +46,7 @@
     categoryById,
     typedKindsFor,
     enabledSources,
+    killRoleFor,
     normalizeEvent,
     normalizeChat,
     normalizeGeneric,
@@ -532,8 +533,9 @@
           .catch(fail),
       );
     }
-    // One fetch per distinct generic name (convars + game_events with the
-    // same name dedupe to a single source read).
+    // One fetch per distinct generic name (two sources naming the same
+    // generic — e.g. a gname equal to a surviving source's name — dedupe
+    // to a single source read).
     const names = new Map();
     for (const g of src.generic) {
       const name = g.nameFrom ? f.gname : g.name;
@@ -556,6 +558,12 @@
       roundFrom: f.roundFrom,
       roundTo: f.roundTo,
       steamId: f.steamId,
+      // The player filter's ROLE for kill rows (landmarks.killRoleFor
+      // over the category ids — the kinds can't tell Kills from Deaths):
+      // Kills-only → "X's kills" (attacker), Deaths-only → "X's deaths"
+      // (victim), both/neither → 'any' (today's either-endpoint). Go
+      // applies it scoped to kind='kill' only.
+      killRole: killRoleFor(f.cats),
       weapon: f.weapon,
       // The filter's distMin/distMax map onto the Go EventFilter's
       // distanceMin/distanceMax JSON fields (models.EventFilter).
@@ -613,7 +621,10 @@
   const feedRows = $derived.by(() =>
     applyRoundPref(
       mergeFeed([
-        typedRows.map((r) => normalizeEvent(r, { roundsByNumber: rbn })).filter(Boolean),
+        // cats rides the stamp: a kill row presents as 'deaths' under a
+        // deaths-only selection and as 'kills' otherwise (rowCategory —
+        // the list chips and the export `type` column read the stamp).
+        typedRows.map((r) => normalizeEvent(r, { roundsByNumber: rbn, cats: filter.cats })).filter(Boolean),
         chatRows.map((c) => normalizeChat(c)),
         Object.values(genPages).flatMap((p) => p.rows.map((g) => normalizeGeneric(g, p.cat))),
       ]),
@@ -629,8 +640,12 @@
 
   // Draw feed: the drawable-kind anchors, fetched ONCE per match in
   // load() and handed to the renderer — the category selection never
-  // rebuilds the world layers.
-  const drawNorm = $derived(drawRows.map((r) => normalizeEvent(r, {})).filter(Boolean));
+  // rebuilds the world layers. The STAMP does ride the enabled cats
+  // (rowCategory through normalizeEvent): the scrubber-marker gate below
+  // reads it, so a deaths-only selection stamps its kill rows 'deaths'
+  // and the markers survive (the renderer/sfx pushes ignore category —
+  // they consume buckets).
+  const drawNorm = $derived(drawRows.map((r) => normalizeEvent(r, { cats: filter.cats })).filter(Boolean));
 
   // The defuse-kit evidence (lib/replay/kits.js buildKitEvidence) — built
   // ONCE per match (both inputs are match-static: the draw feed above
@@ -783,7 +798,7 @@
         getEvent(n)
           .then((d) => {
             if (!d) return;
-            const row = normalizeEvent(d, {});
+            const row = normalizeEvent(d, { cats: filter.cats });
             if (row) {
               selected = row;
               detail = d;

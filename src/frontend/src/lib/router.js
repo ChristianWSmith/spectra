@@ -50,7 +50,7 @@
 // Context tab no longer exist as tabs):
 //   #/match/:id/timeline           → #/replay/:id
 //   #/match/:id/chat               → #/replay/:id?cat=chat
-//   #/match/:id/context            → #/replay/:id?cat=chat,connects,convars,team_changes
+//   #/match/:id/context            → #/replay/:id?cat=chat,connects,team_changes
 //
 // Prefix routes (builder/sql/profiles/explorer/reports/settings) match
 // with startsWith, so "#/settings/foo" is still Settings; every other
@@ -139,7 +139,7 @@ export function parseHash(hash) {
     return withQuery({
       name: 'replay',
       id: Number(m[1]),
-      query: { cat: 'chat,connects,convars,team_changes', ...(query || {}) },
+      query: { cat: 'chat,connects,team_changes', ...(query || {}) },
     });
 
   // Any match tab: #/match/:id/<tab-slug>. An unknown segment (or a
