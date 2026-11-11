@@ -1112,12 +1112,14 @@ input[type='checkbox']:focus-visible {
   margin-top: 4px;
 }
 
-/* Replay entry point: rides the END of the meta line (the map · half ·
-   duration · patch · status row) instead of a line of its own, so the
-   header costs no extra vertical space. The auto margin parks it on the
-   right when the line has room and lets it wrap to its own line (still
-   right-aligned, never overlapping the meta text) when it does not; the
-   size bump (.match-replay) keeps it reading as the primary action. */
+/* Replay entry point: rides the meta line (map · duration · patch ·
+   status row) instead of a line of its own, so the header costs no
+   extra vertical space. The size bump (.match-replay) keeps it reading
+   as the primary action. The `margin-left: auto` here is the RIGHT-
+   park default (wrap → own line, right-aligned); Match.svelte sits it
+   at the FAR LEFT of the meta line instead and zeroes this in its
+   component-scoped override — see the comment there before touching
+   either side. */
 .match-replay {
   margin-left: auto;
   flex: none;
