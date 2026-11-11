@@ -1,6 +1,8 @@
 <script>
   // Combat tab: per-player damage/trade stats, the engagement deep-dive
-  // (round → time-into-round → killer vs victim → distance in metres) and
+  // (round → time-into-round → killer vs victim → distance in metres —
+  // ONE row per KILL: a kill's independent kind facts — e.g. trade +
+  // untraded — share the one row, both chips in its Kind cell) and
   // the WON clutches. Every inferred metric carries the badge with
   // its definition in the title attribute.
   import {
@@ -148,8 +150,61 @@
     return () => (live = false);
   });
 
+  // ONE rendered row per KILL. analytics/engagements.go emits up to
+  // THREE rows for a single kill event — opening / trade / untraded are
+  // independent detections over the SAME event (analytics_test.go
+  // TestEngagementsKinds pins one kill producing the trade row AND
+  // "Y's death untraded") — and every row of one kill carries the same
+  // round, tick, killer, victim and distance; only Kind differs. Two
+  // look-alike rows were therefore dual-semantics, not a duplicate
+  // emission: the owner ruled they merge into ONE row whose Kind cell
+  // carries both facts (Go keeps emitting per-kind rows — the stats
+  // consume those verbatim; the merge is presentation-only).
+  //
+  // Grouping key: round | tick | killer | victim. A same-tick same-pair
+  // double kill cannot occur: every engagement row derives from ONE
+  // player_death event, a victim dies at most once per round, and a
+  // single kill emits at most one row per kind (opening once per round
+  // via firstKillDone; trade/untraded single emits) — so a group is
+  // exactly one kill and its kinds are distinct.
+  //
+  // Sort: a merged row keeps its FIRST member's position. The fetch is
+  // GetEngagements ORDER BY seq (store/analytics.go; seq was written in
+  // round → tick → kind order with opening < trade < untraded), so Map
+  // insertion order — first appearance in that sorted stream — preserves
+  // the round/tick ordering exactly: the merged row sits where its
+  // earliest (lowest-kind) row used to, and nothing else moves.
+  const engagementRows = $derived.by(() => {
+    const groups = new Map();
+    for (const e of engagements) {
+      const key = `${e.round}|${e.tick}|${e.aSteam}|${e.bSteam}`;
+      let g = groups.get(key);
+      if (!g) {
+        g = {
+          key,
+          round: e.round,
+          tick: e.tick,
+          aSteam: e.aSteam,
+          aName: e.aName,
+          bSteam: e.bSteam,
+          bName: e.bName,
+          distance: e.distance,
+          kinds: [],
+        };
+        groups.set(key, g);
+      }
+      // Distinct kinds only (one kill emits each kind at most once);
+      // push keeps the fetch's opening → trade → untraded order.
+      if (!g.kinds.includes(e.kind)) g.kinds.push(e.kind);
+    }
+    return [...groups.values()];
+  });
+
+  // The kind chips FILTER the merged rows: a row matches when it
+  // CONTAINS that kind — a trade+untraded kill shows under either chip
+  // (and once, not twice, under "all").
   const visibleEngagements = $derived(
-    engKind ? engagements.filter((e) => e.kind === engKind) : engagements,
+    engKind ? engagementRows.filter((g) => g.kinds.includes(engKind)) : engagementRows,
   );
 
   const sortedStats = $derived.by(() => {
@@ -343,56 +398,61 @@
           </tr>
         </thead>
         <tbody>
-          {#each visibleEngagements as e, i (i)}
+          {#each visibleEngagements as g (g.key)}
             <tr>
               <td>
                 <!-- Row ▶ follows the ENGAGEMENT's KILLER (the owner's
                      rule: the play button on a kill follows the killer). -->
                 <EventPlay
-                  tick={e.tick}
-                  title={e.aSteam
-                    ? `Watch this engagement — follow ${e.aName || e.aSteam} (killer)`
+                  tick={g.tick}
+                  title={g.aSteam
+                    ? `Watch this engagement — follow ${g.aName || g.aSteam} (killer)`
                     : 'Watch this engagement in the replay'}
-                  label={e.aSteam
-                    ? `Watch tick ${e.tick} — follow ${e.aName || e.aSteam}`
-                    : `Watch tick ${e.tick} in the replay`}
-                  onclick={() => replay(e.tick, entryLoopAround(e.tick, tickRate), e.aSteam)}
+                  label={g.aSteam
+                    ? `Watch tick ${g.tick} — follow ${g.aName || g.aSteam}`
+                    : `Watch tick ${g.tick} in the replay`}
+                  onclick={() => replay(g.tick, entryLoopAround(g.tick, tickRate), g.aSteam)}
                 />
               </td>
               <td class="num">
                 <button
                   class="btn small ghost"
-                  title="Watch round {e.round} in the replay (from its start)"
-                  aria-label="Watch round {e.round}"
-                  onclick={() => watchRound(e.round)}
+                  title="Watch round {g.round} in the replay (from its start)"
+                  aria-label="Watch round {g.round}"
+                  onclick={() => watchRound(g.round)}
                 ><span class="codicon codicon-play" aria-hidden="true"></span></button>
               </td>
-              <td class="num mono" title="tick {e.tick}">{roundClock(e.tick, rbn.get(e.round), tickRate)}</td>
+              <td class="num mono" title="tick {g.tick}">{roundClock(g.tick, rbn.get(g.round), tickRate)}</td>
               <td>
-                <span class="chip comb-kind-chip {e.kind}" title={ENG_KIND_TITLES[e.kind] || e.kind}>
-                  {e.kind}
-                </span>
+                <!-- ONE kill, up to TWO facts: the kinds are independent
+                     detections over the same kill event (see
+                     engagementRows above), so a merged row wears BOTH
+                     chips side by side — each keeping its own
+                     perspective title — plus an sr-only combined line,
+                     making the cell read as one kill with two facts
+                     rather than as two rows' worth of labels. -->
+                {#each g.kinds as k, i (k)}{#if i > 0}{' · '}{/if}<span class="chip comb-kind-chip {k}" title={ENG_KIND_TITLES[k] || k}>{k}</span>{/each}{#if g.kinds.length > 1}{' '}<span class="sr-only">One kill — {g.kinds.map((k) => ENG_KIND_TITLES[k] || k).join('; ')}</span>{/if}
               </td>
               <td>
                 <ProfileLink
-                  steam={e.aSteam}
-                  name={e.aName || '—'}
+                  steam={g.aSteam}
+                  name={g.aName || '—'}
                   {nav}
-                  cls={playerRoundCls(e.round, e.aSteam, e.aName)}
-                  title="Open profile — {e.aName}"
+                  cls={playerRoundCls(g.round, g.aSteam, g.aName)}
+                  title="Open profile — {g.aName}"
                 />
               </td>
               <td class="muted">vs</td>
               <td>
                 <ProfileLink
-                  steam={e.bSteam}
-                  name={e.bName || '—'}
+                  steam={g.bSteam}
+                  name={g.bName || '—'}
                   {nav}
-                  cls={playerRoundCls(e.round, e.bSteam, e.bName)}
-                  title="Open profile — {e.bName}"
+                  cls={playerRoundCls(g.round, g.bSteam, g.bName)}
+                  title="Open profile — {g.bName}"
                 />
               </td>
-              <td class="num" title={ENG_DIST_DEF}>{e.distance ? Math.round(e.distance) : '—'}</td>
+              <td class="num" title={ENG_DIST_DEF}>{g.distance ? Math.round(g.distance) : '—'}</td>
             </tr>
           {:else}
             <tr>

@@ -185,9 +185,14 @@ export const ENG_DIST_DEF =
 
 // Engagement-kind chips (Combat's engagement deep-dive). Only the kinds
 // analytics/engagements.go produces live here — "entry" is deferred
-// (models.go), so it is deliberately absent.
+// (models.go), so it is deliberately absent. Wording is PERSPECTIVE-
+// explicit (killer side / victim side): one kill can carry two of these
+// facts at once (Combat merges a kill's rows into ONE row), so each
+// title reads as a statement about the kill from its own side rather
+// than as a row label — the chip text stays the short kind name, the
+// title says whose fact it is.
 export const ENG_KIND_TITLES = {
-  opening: 'opening duel — first kill of the round',
-  trade: 'trade — kill inside the trade window after a teammate died',
-  untraded: 'untraded death — neither side answered inside the trade window',
+  opening: 'opening duel — first kill of the round (killer side)',
+  trade: 'This kill answered a teammate’s death within the trade window (killer side)',
+  untraded: 'Nobody answered this death within the trade window (victim side)',
 };

@@ -1,6 +1,9 @@
 // jsdom driver for Combat: the Engagements card's column order (round →
 // time into round → killer vs victim → distance in metres — no raw-tick
-// and no "won by" column) and the Clutches card's won-only scope.
+// and no "won by" column), ONE-ROW-PER-KILL merging (a kill's trade +
+// untraded facts share one row with both chips — section D — plus the
+// opening+untraded pair, the contained-kind filter behaviour and the
+// grouping-key precision in E/F) and the Clutches card's won-only scope.
 //
 // jsdom is intentionally not a project dependency; from frontend/ run:
 //   npm i --no-save jsdom
@@ -323,6 +326,190 @@ check(
   'no-won-clutches message',
   clutchSec2?.textContent.includes('No won clutches in this match.'),
   clutchSec2?.textContent.slice(0, 120),
+);
+
+// The kind-filter buttons of a given Engagements section (each scenario
+// mounts its own root, so the helper is scoped per section).
+const kindBtn = (sec, label) =>
+  [...sec.querySelectorAll('.comb-kind')].find((b) => b.textContent.trim() === label);
+
+console.log('D. one kill, one row: the same-tick trade+untraded pair merges (the reported bug)');
+document.body.removeChild(root2);
+// The real seq 30/31 shape: same round, tick, killer, victim AND
+// distance in BOTH fetched rows — only Kind differs (two true statements
+// about ONE kill — killer-side fact + victim-side fact — not a
+// duplicate emission; Go keeps emitting both per-kind rows).
+const pairKill = {
+  tick: 10640,
+  round: 7,
+  aSteam: 'A',
+  aName: 'alice',
+  bSteam: 'B',
+  bName: 'bob',
+  distance: 7.888,
+  wonBy: 'ct',
+};
+const rootD = await render({
+  ...base,
+  engagements: [
+    { ...pairKill, kind: 'trade' },
+    { ...pairKill, kind: 'untraded' },
+  ],
+});
+const engD = sections(rootD, 'Engagements')[0];
+const tableD = engD?.querySelector('table');
+check('engagements table rendered', !!tableD);
+const dRows = rows(tableD);
+check('TWO fetched rows render as ONE', dRows.length === 1, String(dRows.length));
+const dCells = dRows[0]?.querySelectorAll('td') || [];
+check(
+  'one distance cell — the shared 7.888 rounds to 8 m exactly once',
+  dCells.length === 8 && dCells[7]?.textContent.trim() === '8',
+  `${dCells.length} cells / dist="${dCells[7]?.textContent}"`,
+);
+const dChips = [...(dRows[0]?.querySelectorAll('.comb-kind-chip') || [])];
+check(
+  'the single row carries BOTH kind chips, side by side',
+  JSON.stringify(dChips.map((c) => c.textContent.trim())) === '["trade","untraded"]',
+  JSON.stringify(dChips.map((c) => c.textContent.trim())),
+);
+check(
+  'each chip keeps its own perspective-explicit title (killer side / victim side)',
+  /killer side/.test(dChips[0]?.getAttribute('title') || '') &&
+    /victim side/.test(dChips[1]?.getAttribute('title') || ''),
+  JSON.stringify(dChips.map((c) => c.getAttribute('title'))),
+);
+check(
+  'the Kind cell carries an accessible combined label (one kill, both facts)',
+  /One kill/.test(dCells[3]?.textContent || '') && /killer side/.test(dCells[3]?.textContent || ''),
+  dCells[3]?.textContent,
+);
+// The A5 two-buttons pattern holds on the MERGED row too.
+const dPlay = dCells[0]?.querySelector('button');
+const dRound = dCells[1]?.querySelector('button');
+check(
+  'A5 on the merged row: two play buttons with distinct titles',
+  !!dPlay && !!dRound && dPlay.getAttribute('title') !== dRound.getAttribute('title'),
+  JSON.stringify([dPlay?.getAttribute('title'), dRound?.getAttribute('title')]),
+);
+check(
+  'the merged row ▶ still follows the killer',
+  dPlay?.getAttribute('title') === 'Watch this engagement — follow alice (killer)',
+  dPlay?.getAttribute('title'),
+);
+check(
+  'the merged row keeps its round ▶ (no follow, round-scoped)',
+  !!dRound && dRound.getAttribute('title') === 'Watch round 7 in the replay (from its start)',
+  dRound?.getAttribute('title'),
+);
+
+// The kind chips FILTER merged rows by CONTAINED kind: the row shows
+// under trade AND under untraded, exactly once under "all", and a kind
+// the pair does not carry empties the table.
+const dMatched = () => !tableD.textContent.includes('No engagements match this filter.');
+click(kindBtn(engD, 'trade'));
+await sleep();
+check('filter trade → the merged row shows', rows(tableD).length === 1 && dMatched(), String(rows(tableD).length));
+click(kindBtn(engD, 'untraded'));
+await sleep();
+check(
+  'filter untraded → the SAME row (both chips still on it)',
+  rows(tableD).length === 1 && dMatched() &&
+    [...tableD.querySelectorAll('.comb-kind-chip')].length === 2,
+  String(rows(tableD).length),
+);
+click(kindBtn(engD, 'opening'));
+await sleep();
+check(
+  'filter opening → no match (the pair carries no opening fact)',
+  !dMatched() && tableD.textContent.includes('No engagements match this filter.'),
+  tableD.textContent.slice(-90),
+);
+click(kindBtn(engD, 'all'));
+await sleep();
+check('filter all → exactly ONE row (never twice)', rows(tableD).length === 1, String(rows(tableD).length));
+
+console.log('E. the real seq 27/28 shape: an opening+untraded pair merges too');
+document.body.removeChild(rootD);
+const pairKill2 = {
+  tick: 10640,
+  round: 7,
+  aSteam: 'A',
+  aName: 'alice',
+  bSteam: 'B',
+  bName: 'bob',
+  distance: 12.5,
+  wonBy: 'ct',
+};
+const rootE = await render({
+  ...base,
+  engagements: [
+    { ...pairKill2, kind: 'opening' },
+    { ...pairKill2, kind: 'untraded' },
+  ],
+});
+const engE = sections(rootE, 'Engagements')[0];
+const tableE = engE?.querySelector('table');
+const eRows = rows(tableE);
+check('opening+untraded renders ONE row', eRows.length === 1, String(eRows.length));
+const eChips = [...(eRows[0]?.querySelectorAll('.comb-kind-chip') || [])];
+check(
+  'both chips present, in the fetch (kind) order',
+  JSON.stringify(eChips.map((c) => c.textContent.trim())) === '["opening","untraded"]',
+  JSON.stringify(eChips.map((c) => c.textContent.trim())),
+);
+click(kindBtn(engE, 'opening'));
+await sleep();
+check(
+  'filter opening → the merged row shows',
+  rows(tableE).length === 1 && !tableE.textContent.includes('No engagements match this filter.'),
+  String(rows(tableE).length),
+);
+click(kindBtn(engE, 'untraded'));
+await sleep();
+check(
+  'filter untraded → the SAME row shows',
+  rows(tableE).length === 1 && !tableE.textContent.includes('No engagements match this filter.'),
+  String(rows(tableE).length),
+);
+
+console.log('F. grouping precision: same tick, DIFFERENT pair stays its own row; fetch order preserved');
+document.body.removeChild(rootE);
+const rootF = await render({
+  ...base,
+  engagements: [
+    // an EARLIER single-kill row…
+    { tick: 10500, round: 7, kind: 'untraded', aSteam: 'B', aName: 'bob', bSteam: 'A', bName: 'alice', distance: 0, wonBy: 't' },
+    // …the merged pair (its two rows share round+tick+killer+victim)…
+    { ...pairKill, kind: 'trade' },
+    { ...pairKill, kind: 'untraded' },
+    // …and a DIFFERENT kill at the SAME tick (the other pair): the
+    // grouping key carries killer+victim, so it must NOT merge.
+    { tick: 10640, round: 7, kind: 'untraded', aSteam: 'B', aName: 'bob', bSteam: 'A', bName: 'alice', distance: 4, wonBy: 't' },
+  ],
+});
+const tableF = sections(rootF, 'Engagements')[0]?.querySelector('table');
+const fRows = rows(tableF);
+check('three rows: earlier single + merged pair + same-tick other pair', fRows.length === 3, String(fRows.length));
+const fCells = (i) => fRows[i]?.querySelectorAll('td') || [];
+check(
+  'fetch order (round → tick → kind) preserved: merged row sits at its earliest member',
+  fCells(0)[2]?.getAttribute('title') === 'tick 10500' &&
+    fCells(1)[2]?.getAttribute('title') === 'tick 10640' &&
+    fCells(2)[2]?.getAttribute('title') === 'tick 10640',
+  [fCells(0)[2], fCells(1)[2], fCells(2)[2]].map((c) => c?.getAttribute('title')).join(' | '),
+);
+check(
+  'the pair merges to one two-chip row…',
+  [...fRows[1].querySelectorAll('.comb-kind-chip')].length === 2 &&
+    fRows[1].textContent.includes('alice'),
+  fRows[1]?.textContent,
+);
+check(
+  '…while the same-tick DIFFERENT pair stays its own one-chip row',
+  [...fRows[2].querySelectorAll('.comb-kind-chip')].length === 1 &&
+    fRows[2].textContent.includes('bob'),
+  fRows[2]?.textContent,
 );
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
