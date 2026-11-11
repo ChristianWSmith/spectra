@@ -171,14 +171,21 @@ test('heatRegionFilter: cats + player + round range, sentinels omitted', () => {
   assert.deepEqual(heatRegionFilter('kills', { roundFrom: 'x', roundTo: NaN, player: null }), {
     cats: ['kills'],
   });
-  // NO side/team key: the heatmap's team selector has no filter counterpart
-  // (queued separately), so a team setting is ignored rather than invented.
-  assert.deepEqual(heatRegionFilter('kills', { team: 'ct', player: '1', roundFrom: 1, roundTo: 2 }), {
+  // The SIDE selector mirrors into the `side` key (its value is
+  // side-AT-ROUND — the heatmap's old "Team" label was the misnomer,
+  // relabelled); the `team` (identity) key never rides this selector —
+  // a team setting in the settings bag is ignored rather than invented
+  // into an identity filter, and a malformed side drops the same way
+  // (landmarks.sideVal — never a guessed side).
+  assert.deepEqual(heatRegionFilter('kills', { side: 'ct', player: '1', roundFrom: 1, roundTo: 2 }), {
     cats: ['kills'],
     steamId: '1',
+    side: 'ct',
     roundFrom: 1,
     roundTo: 2,
   });
+  assert.deepEqual(heatRegionFilter('kills', { team: 'ct' }), { cats: ['kills'] });
+  assert.deepEqual(heatRegionFilter('kills', { side: 'CT' }), { cats: ['kills'] });
 });
 
 test('heatRegionFilter output round-trips through the URL (feed reveal keys)', () => {

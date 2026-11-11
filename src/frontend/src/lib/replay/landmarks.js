@@ -578,6 +578,19 @@ export const DEFAULT_FILTER = {
   headshotOnly: false,
   bbox: null, // {minX,minY,maxX,maxY}
   gname: '', // generic event name for the game_events category
+  // Side/Team — the heatmap mirror (both '' = unconstrained):
+  //   side — the side AT the event's round (the exact per-round sample,
+  //          swaps at halftime): the value the heatmap's Team selector
+  //          actually carries (its label says Side now — see
+  //          heatkinds.heatRegionFilter).
+  //   team — the team IDENTITY: the side the player OPENED the match
+  //          with (constant across halftime).
+  // Exact 'ct'/'t' wire spellings only (malformed → '' at parse, the
+  // store's literal discipline); plain filter state — they serialize
+  // whenever set (shouldRevealFeed rides that), and neither ever
+  // positions the replay (only ?tick= does).
+  side: '',
+  team: '',
 };
 
 // defaultFilter returns a fresh copy of the sparse default (new arrays
@@ -597,6 +610,16 @@ function num(v) {
 function roundNum(v) {
   const n = Math.trunc(Number(v));
   return Number.isFinite(n) && n !== 0 ? n : 0;
+}
+
+// sideVal reads a side query param (side= / team=) strictly: only the
+// exact wire spellings 'ct'/'t' pass — the same values the heatmap's
+// Team selector and models.EventFilter.Side/Team carry. Absent, empty,
+// uppercase or unknown → '' = unconstrained (never a guessed side; the
+// same discipline the store applies to the literal). Exported for
+// FilterBar's own filter copy (the ONE spelling of the rule).
+export function sideVal(v) {
+  return v === 'ct' || v === 't' ? v : '';
 }
 
 // parseLandmarkFilter builds a complete filter from a parsed route
@@ -621,6 +644,8 @@ export function parseLandmarkFilter(query) {
     }
   }
   f.gname = q.gname || '';
+  f.side = sideVal(q.side);
+  f.team = sideVal(q.team);
   return f;
 }
 
@@ -646,6 +671,8 @@ export function serializeLandmarkFilter(filter) {
   if (f.headshotOnly) q.hs = '1';
   if (f.bbox) q.bbox = `${f.bbox.minX},${f.bbox.minY},${f.bbox.maxX},${f.bbox.maxY}`;
   if (f.gname) q.gname = f.gname;
+  if (f.side) q.side = f.side;
+  if (f.team) q.team = f.team;
   return q;
 }
 

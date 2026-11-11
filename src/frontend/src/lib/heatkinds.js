@@ -15,6 +15,8 @@
 
 // Core kinds: the kd id is the signed combine (its own Go entry point,
 // GetHeatmapKD); everything else shares GetHeatmap.
+import { sideVal } from './replay/landmarks.js';
+
 export const HEAT_CORE_KINDS = ['presence', 'kills', 'deaths', 'damage', 'kd'];
 
 export const HEAT_GRENADE_TYPES = ['he', 'flash', 'smoke', 'molotov', 'decoy'];
@@ -101,9 +103,19 @@ export function heatRegionTakesBBox(kind) {
 //   kind      → cats via heatRegionCats (the fixed table above); no
 //               projection = no cats key (the arrival keeps the feed's
 //               sparse default categories).
-//   settings  → { player, roundFrom, roundTo }:
+//   settings  → { player, side, roundFrom, roundTo }:
 //                 player    — the heatmap's player selector; '' (All
 //                             players) → omitted.
+//                 side      — the heatmap's SIDE selector (the UI label
+//                             said "Team" — the misnomer the relabel
+//                             fixed): the value is side-AT-ROUND
+//                             (GetRoundPlayerSides), which maps to the
+//                             filter's `side` key — NOT `team`: team
+//                             IDENTITY never rides this selector (a
+//                             side-at-round setting must not become a
+//                             start-side filter). Exact 'ct'/'t' passes
+//                             through, anything else drops
+//                             (landmarks.sideVal).
 //                 roundFrom/roundTo — the heatmap's `<0 = all` sentinel
 //                             (-1) and the filter's `0 = open` bound
 //                             (landmarks.DEFAULT_FILTER) both OMIT the
@@ -116,16 +128,14 @@ export function heatRegionTakesBBox(kind) {
 // default rule), so a drill with no settings set is a plain arrival and
 // still non-default whenever ANY key lands — shouldRevealFeed picks the
 // feed reveal up through that same serialization.
-//
-// NOT included: the heatmap's TEAM selector — the landmark filter has no
-// side/team key yet (separate queued task), so a drill mirrors only what
-// a key exists for rather than inventing one.
 export function heatRegionFilter(kind, settings = {}) {
   const f = {};
   const cats = heatRegionCats(kind);
   if (cats) f.cats = cats;
   const player = settings.player == null ? '' : String(settings.player);
   if (player) f.steamId = player;
+  const side = sideVal(settings.side);
+  if (side) f.side = side;
   for (const key of ['roundFrom', 'roundTo']) {
     const n = Number(settings[key]);
     // Non-finite or the heatmap's "<0 = all" sentinel → omitted; 0 is the

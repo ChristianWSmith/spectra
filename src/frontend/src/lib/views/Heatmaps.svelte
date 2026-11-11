@@ -32,7 +32,7 @@
 
   let kind = $state('presence');
   let player = $state(''); // steamId, '' = all
-  let team = $state(''); // '' | ct | t
+  let team = $state(''); // '' | ct | t — SIDE at the round (the selector's label says Side; the generate payload's wire key stays `team`)
   let roundFrom = $state(-1); // <0 = all
   let roundTo = $state(-1); // <0 = all
 
@@ -231,13 +231,15 @@
   function onRegion(bbox) {
     const carries = heatRegionTakesBBox(kind);
     // The heatmap's settings mirrored into the arrival filter (cats, the
-    // player selector, the round range — `-1 = all` maps to the filter's
-    // open bound). presence is the exception: its raster has NO events
-    // behind it, so a bbox it cannot satisfy would guarantee an empty
-    // feed — that click arrives WITHOUT one (settings only). The heatmap's
-    // TEAM selector is deliberately absent: the filter has no side/team
-    // key yet (queued separately), so nothing is invented for it.
-    const filter = heatRegionFilter(kind, { player, roundFrom, roundTo });
+    // player selector, the SIDE selector, the round range — `-1 = all`
+    // maps to the filter's open bound). presence is the exception: its
+    // raster has NO events behind it, so a bbox it cannot satisfy would
+    // guarantee an empty feed — that click arrives WITHOUT one (settings
+    // only). The side selector's value is side-AT-ROUND (its old "Team"
+    // label was the misnomer — relabelled), so it mirrors into the
+    // filter's `side` key; the `team` (identity) key never rides this
+    // selector — identity is not a heatmap setting.
+    const filter = heatRegionFilter(kind, { player, side: team, roundFrom, roundTo });
     if (carries) {
       regionChip = 'filtered by region';
       regionNote = `bbox (${Math.round(bbox.minX)}, ${Math.round(bbox.minY)}) → (${Math.round(bbox.maxX)}, ${Math.round(bbox.maxY)})`;
@@ -311,8 +313,15 @@
       </select>
     </div>
     <div class="heat-field">
-      <label class="field-label" for="heat-team">Team</label>
-      <select class="input" id="heat-team" bind:value={team}>
+      <!-- The selector is SIDE-AT-ROUND (the exact freeze-end sample via
+           GetRoundPlayerSides) — the old "Team" label was the misnomer
+           the audit found; relabelled to Side. The option VALUES stay
+           ct/t and the generate payload keeps its `team` key
+           (HeatmapFilter.Team — the wire is unchanged); only this label
+           (and the arrival filter's `side` key — heatRegionFilter) name
+           it for what it is. -->
+      <label class="field-label" for="heat-side">Side</label>
+      <select class="input" id="heat-side" bind:value={team}>
         <option value="">Both</option>
         <option value="ct">CT</option>
         <option value="t">T</option>

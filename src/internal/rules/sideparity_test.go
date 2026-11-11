@@ -152,3 +152,34 @@ func TestOtherSide(t *testing.T) {
 		t.Errorf("OtherSide must return \"\" for unknown input")
 	}
 }
+
+// TestStartSide pins the start-side identity against the JS twin
+// (sideparity.js startSideFor — the era-0 form of sideInEra): a team's
+// opening side is its final side flipped ONCE PER SWITCH — odd counts
+// flip, even counts (and zero) do not — and unknown sides stay unknown.
+// store.queryEvents' Team key resolves through this, so the parity
+// lives here rather than in any caller's SQL.
+func TestStartSide(t *testing.T) {
+	cases := []struct {
+		final    string
+		switches int
+		want     string
+	}{
+		{"ct", 0, "ct"}, // no switch: final side IS the opening side
+		{"t", 0, "t"},
+		{"ct", 1, "t"}, // one switch (regulation): flipped
+		{"t", 1, "ct"},
+		{"ct", 2, "ct"}, // two swaps return them to their opening sides
+		{"t", 2, "t"},
+		{"ct", 3, "t"}, // odd again → flipped
+		{"t", 5, "ct"},
+		{"", 1, ""},      // unknown final side → never guessed
+		{"CT", 1, ""},    // (only the exact ct/t spellings resolve)
+		{"ct", -1, "ct"}, // a negative count normalizes to "no flip" (the JS twin)
+	}
+	for _, tc := range cases {
+		if got := StartSide(tc.final, tc.switches); got != tc.want {
+			t.Errorf("StartSide(%q, %d) = %q, want %q", tc.final, tc.switches, got, tc.want)
+		}
+	}
+}

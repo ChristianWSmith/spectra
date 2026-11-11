@@ -21,7 +21,10 @@
 //                            (parseLandmarkFilter in lib/replay/
 //                            landmarks.js): cat/roundFrom/roundTo/
 //                            player/weapon/distMin/distMax/hs/bbox/gname
-//                            plus tick (THE position: ?tick= is the
+//                            plus side (side AT the event's round) and
+//                            team (start-side identity) — the heatmap
+//                            mirror keys, both '' = unconstrained — and
+//                            tick (THE position: ?tick= is the
 //                            only "where to jump" instruction — applied
 //                            on entry and re-applied only for a distinct
 //                            value while the keep-alive instance lives,

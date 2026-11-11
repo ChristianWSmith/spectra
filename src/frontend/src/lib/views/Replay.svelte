@@ -562,8 +562,14 @@
       // over the category ids — the kinds can't tell Kills from Deaths):
       // Kills-only → "X's kills" (attacker), Deaths-only → "X's deaths"
       // (victim), both/neither → 'any' (today's either-endpoint). Go
-      // applies it scoped to kind='kill' only.
+      // applies it scoped to kind='kill' only. Side/Team ride beside it
+      // (the heatmap mirror — side-at-round / start-side identity); the
+      // chat and generic reads have no side/team columns in their Go
+      // signatures, so those sources stay unscoped (stage 2 is the typed
+      // feed — noted, not invented).
       killRole: killRoleFor(f.cats),
+      side: f.side,
+      team: f.team,
       weapon: f.weapon,
       // The filter's distMin/distMax map onto the Go EventFilter's
       // distanceMin/distanceMax JSON fields (models.EventFilter).

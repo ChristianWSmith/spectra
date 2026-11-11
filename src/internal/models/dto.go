@@ -252,6 +252,22 @@ type EventFilter struct {
 	// no-op). queryEvents applies it as its own clause, structurally
 	// separate from the round range and the bbox predicate.
 	KillRole string `json:"killRole,omitempty"`
+	// Side is the side AT the event's round — the exact per-round
+	// freeze-end sample (round_player_sides), which swaps at halftime —
+	// mirrored from the heatmap's Team selector (analyticservice.
+	// heatmapEvents side-checks the same party at the same round, so a
+	// feed filtered Side=ct is the population a Side=CT heatmap was
+	// generated from). "" | "ct" | "t"; any other literal is ignored
+	// (no clause — never a guessed filter). Only the endpoint(s) the
+	// heatmap's party rule names are constrained — see queryEvents.
+	Side string `json:"side,omitempty"`
+	// Team is the team IDENTITY of the endpoint: the side that player
+	// OPENED the match on (players.side flipped through rules.StartSide
+	// over the match's side-switch count — constant across halftime,
+	// unlike Side). "" | "ct" | "t"; any other literal is ignored. The
+	// heatmap has no identity notion (its selector is side-at-round), so
+	// Team mirrors Side's ENDPOINTS with the start-side value.
+	Team string `json:"team,omitempty"`
 }
 
 // BBox is a world-coordinate rectangle; an event matches when EITHER of

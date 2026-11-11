@@ -649,6 +649,21 @@ test('shouldRevealFeed: a DIFFERENT non-default filter reveals; a default arriva
   // a default arrival NEVER opens the rail.
   assert.equal(shouldRevealFeed(before, defaultFilter()), false);
   assert.equal(shouldRevealFeed(before, parseLandmarkFilter({})), false);
+  // The side/team keys participate through the SAME serialization: a
+  // side-scoped arrival is non-default (it reveals), changing ONLY side
+  // counts as a different filter (it reveals over the previous side),
+  // and re-arriving with the SAME side is not a change (it does not —
+  // the keys are filter state, churn-safe like every other).
+  assert.equal(shouldRevealFeed(defaultFilter(), parseLandmarkFilter({ side: 'ct' })), true);
+  assert.equal(shouldRevealFeed(defaultFilter(), parseLandmarkFilter({ team: 't' })), true);
+  assert.equal(
+    shouldRevealFeed(parseLandmarkFilter({ side: 'ct' }), parseLandmarkFilter({ side: 't' })),
+    true,
+  );
+  assert.equal(
+    shouldRevealFeed(parseLandmarkFilter({ side: 'ct' }), parseLandmarkFilter({ side: 'ct' })),
+    false,
+  );
 });
 
 test('round range: inclusive, partial, 0 = unset (round 0 never exists)', () => {
@@ -731,6 +746,34 @@ test('parse edge cases: empty cat = none, junk falls back, no shared arrays', ()
   const b = parseLandmarkFilter({});
   a.cats.push('chat');
   assert.deepEqual(b.cats, ['round_starts']);
+});
+
+test('side/team keys: exact ct/t only, ride the URL round-trip, absent = open', () => {
+  // Absent (saved filters and links from before the keys existed) →
+  // open, and the DEFAULT serializes to NOTHING (the round-trip rule —
+  // a plain arrival never looks non-default just for being parsed).
+  assert.equal(parseLandmarkFilter({}).side, '');
+  assert.equal(parseLandmarkFilter({}).team, '');
+  assert.deepEqual(serializeLandmarkFilter(defaultFilter()), {});
+  // The exact wire spellings pass; everything else is dropped — never a
+  // guessed side (the store's literal discipline, mirrored here).
+  assert.equal(parseLandmarkFilter({ side: 'ct' }).side, 'ct');
+  assert.equal(parseLandmarkFilter({ side: 't' }).side, 't');
+  assert.equal(parseLandmarkFilter({ team: 'ct' }).team, 'ct');
+  assert.equal(parseLandmarkFilter({ side: 'CT' }).side, ''); // uppercase is not the wire
+  assert.equal(parseLandmarkFilter({ side: 'x' }).side, '');
+  assert.equal(parseLandmarkFilter({ team: '' }).team, '');
+  // Round-trip: both keys survive serialize → parse, alone and together
+  // (partial state stays partial — no other default leaks out).
+  const both = { ...defaultFilter(), side: 'ct', team: 't' };
+  const q = serializeLandmarkFilter(both);
+  assert.deepEqual(q, { side: 'ct', team: 't' });
+  assert.ok(filtersEqual(both, parseLandmarkFilter(q)));
+  assert.deepEqual(serializeLandmarkFilter({ ...defaultFilter(), team: 't' }), { team: 't' });
+  // The keys are plain FILTER state: they never carry a position (the
+  // filter parse ignores ?tick= — THE position stays nav.entrySeekTick's
+  // own query read, untouched by these keys).
+  assert.equal(parseLandmarkFilter({ side: 'ct', tick: '99' }).tick, undefined);
 });
 
 test('landmarkExportRows flattens the feed into canonical columns', () => {

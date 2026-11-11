@@ -1005,6 +1005,113 @@ func TestGetEventsKillRole(t *testing.T) {
 		seqs(models.EventFilter{Kinds: []string{models.EventKill}, SteamID: "100", KillRole: "attacker"}), []int{0})
 }
 
+// TestGetEventsSideTeam pins the Side/Team clauses (the FE's heatmap
+// mirror): Side is the endpoint's side AT THE EVENT'S ROUND
+// (round_player_sides — swaps at halftime), Team the endpoint's START
+// SIDE identity (players' final side through rules.StartSide — constant
+// across the switch). Both compose with the player/KillRole clauses,
+// invalid literals add no clause (never a guessed filter), and kinds the
+// heatmap never covers stay unconstrained (a side filter must not empty
+// the round-start feed).
+func TestGetEventsSideTeam(t *testing.T) {
+	s := openMem(t)
+	id := saveTestMatch(t, s, "/d/side.dem", "sha-side-team", time.Now())
+
+	// Re-save with a halftime flip and a round-2 side swap (the sibling
+	// TestGetEventsRoundRange pattern): ONE recorded switch → start side
+	// = flip(final) — 100 ended ct → STARTED t, 200 ended t → STARTED ct
+	// — while the per-round samples swap across the switch (round 1:
+	// 100=ct/200=t, round 2: 100=t/200=ct). Two more kills land in
+	// round 2 so the flip is observable per endpoint.
+	em := testExtracted("sha-side-team", time.Now())
+	em.Match.SideSwitches = 1
+	em.RoundSides = append(em.RoundSides,
+		models.RoundPlayerSide{Round: 2, SteamID: "100", Side: "t"},
+		models.RoundPlayerSide{Round: 2, SteamID: "200", Side: "ct"},
+	)
+	em.Events = append(em.Events,
+		models.Event{Tick: 250, Round: 2, Kind: models.EventKill, Attacker: "200", Victim: "100", Weapon: "ak47"},
+		models.Event{Tick: 260, Round: 2, Kind: models.EventKill, Attacker: "100", Victim: "200", Weapon: "awp"},
+	)
+	if err := s.SaveExtracted(id, em); err != nil {
+		t.Fatalf("SaveExtracted: %v", err)
+	}
+
+	seqs := func(f models.EventFilter) []int {
+		t.Helper()
+		f.MatchID = id
+		rows, err := s.GetEvents(f)
+		if err != nil {
+			t.Fatalf("GetEvents(%+v): %v", f, err)
+		}
+		out := make([]int, len(rows))
+		for i, r := range rows {
+			out[i] = r.Seq
+		}
+		return out
+	}
+	want := func(name string, got, exp []int) {
+		t.Helper()
+		if len(got) != len(exp) {
+			t.Fatalf("%s = %v, want %v", name, got, exp)
+		}
+		for i := range exp {
+			if got[i] != exp[i] {
+				t.Fatalf("%s = %v, want %v", name, got, exp)
+			}
+		}
+	}
+
+	// The fixture after the append: seq0 kill r1 100→200, seq1 damage r1
+	// 100→200, seq2 kill r1 200→100, seq3 bomb_plant by 200, seq4
+	// round_end, seq5 kill r2 200→100, seq6 kill r2 100→200.
+	// Invalid literals add NO clause (the KillRole discipline): the
+	// whole fixture comes back.
+	want("side invalid literal", seqs(models.EventFilter{Side: "CT"}), []int{0, 1, 2, 3, 4, 5, 6})
+	want("team invalid literal", seqs(models.EventFilter{Team: "x"}), []int{0, 1, 2, 3, 4, 5, 6})
+	want("side empty", seqs(models.EventFilter{Side: ""}), []int{0, 1, 2, 3, 4, 5, 6})
+
+	// Side (no role → kill rows take EITHER endpoint; damage → the
+	// damage heatmap's party, the VICTIM): side=ct drops ONLY the damage
+	// row (victim 200 was t in round 1) — every kill has a ct endpoint
+	// in its own round, and the unconstrained kinds (plant, round_end)
+	// pass — a side filter never empties the playerless rows.
+	want("side=ct", seqs(models.EventFilter{Side: "ct"}), []int{0, 2, 3, 4, 5, 6})
+	// side=t: both endpoints of every kill plus the victim-side damage
+	// row qualify (every row involves a t-side player in its round).
+	want("side=t", seqs(models.EventFilter{Side: "t"}), []int{0, 1, 2, 3, 4, 5, 6})
+
+	// THE HALFTIME FLIP — side follows the round, not the identity:
+	// with the attacker endpoint (kills view), 200's kill in round 2
+	// counts for ct (200 flipped INTO ct) while 100's round-2 kill does
+	// not (100 flipped INTO t) — the SAME pair swaps across the switch.
+	// The damage row rides its victim (200 was t in round 1): it drops
+	// under side=ct and passes under side=t.
+	want("side=ct kills/attacker (flipped rounds)",
+		seqs(models.EventFilter{Side: "ct", KillRole: "attacker"}), []int{0, 3, 4, 5})
+	want("side=t kills/attacker (flipped rounds)",
+		seqs(models.EventFilter{Side: "t", KillRole: "attacker"}), []int{1, 2, 3, 4, 6})
+
+	// Team IGNORES the flip — identity is constant: 100 STARTED t, so
+	// under team=t the attacker endpoint keeps BOTH of 100's kills (the
+	// round-2 one that side=ct rejected above), and 200 (started ct)
+	// owns the complement. The damage row follows its victim's identity
+	// — victim 200 STARTED ct, so it passes team=ct too (identity, not
+	// the round-1 side the side=ct clause dropped it on).
+	want("team=t kills/attacker (identity, no flip)",
+		seqs(models.EventFilter{Team: "t", KillRole: "attacker"}), []int{0, 3, 4, 6})
+	want("team=ct kills/attacker (identity)",
+		seqs(models.EventFilter{Team: "ct", KillRole: "attacker"}), []int{1, 2, 3, 4, 5})
+
+	// side + team + player + role compose: only seq6 survives — the
+	// round-2 kill where 100 was the T-side attacker (side), STARTED t
+	// (team), and is the player's kill (role); the damage row passes the
+	// player + side halves but drops on the victim's ct identity.
+	want("compose side=t team=t player=100 kills/attacker",
+		seqs(models.EventFilter{Side: "t", Team: "t", SteamID: "100", KillRole: "attacker"}),
+		[]int{6})
+}
+
 // TestGetEventsRoundRange pins the EventFilter round bounds: an
 // INCLUSIVE, PARTIAL range where 0 = open on that side (round 0 never
 // exists, so 0 can only mean "unset"), negative knife/warmup numbers are

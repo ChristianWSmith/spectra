@@ -2193,6 +2193,62 @@ check(
 );
 check('headshot toggle kept', !!bar?.querySelector('.filt-check'));
 
+// Side + Team — the heatmap-mirror keys, each on its own row like
+// Player/Weapon, carrying the design-language classes: Side's options
+// are SIDE colors (.side-ct/.side-t — the side AT that moment, swaps at
+// halftime), Team's are IDENTITY colors (.team-start-ct/.team-start-t —
+// the start side, constant; the team names are not in FilterBar's
+// context, so the options spell the identity out — never pattern text).
+const sideSel = bar?.querySelector('#filt-side');
+const teamSel = bar?.querySelector('#filt-team');
+check(
+  'Side and Team selects render beside the Player/Weapon rows',
+  !!sideSel &&
+    !!teamSel &&
+    sideSel.closest('label')?.classList.contains('filt-line') &&
+    teamSel.closest('label')?.classList.contains('filt-line'),
+  `${sideSel?.id} | ${teamSel?.id}`,
+);
+check(
+  'Side options carry the side-color classes (color = side at that moment)',
+  sideSel?.querySelector('option[value=""]')?.textContent === 'All' &&
+    sideSel?.querySelector('option[value="ct"]')?.classList.contains('side-ct') &&
+    sideSel?.querySelector('option[value="t"]')?.classList.contains('side-t'),
+  [...(sideSel?.options || [])].map((o) => `${o.value}:${o.className}`).join(', '),
+);
+check(
+  'Team options carry the identity classes and spell the identity out',
+  teamSel?.querySelector('option[value="ct"]')?.classList.contains('team-start-ct') &&
+    teamSel?.querySelector('option[value="t"]')?.classList.contains('team-start-t') &&
+    teamSel?.querySelector('option[value="ct"]')?.textContent === 'Started CT' &&
+    teamSel?.querySelector('option[value="t"]')?.textContent === 'Started T',
+  [...(teamSel?.options || [])].map((o) => `${o.value}:${o.textContent}`).join(', '),
+);
+// Selecting writes the keys into the URL; FilterBar's LOCAL filter copy
+// accumulates across commits (unlike the category checkboxes, which
+// re-derive from the static harness query — the §H quirk), so Side then
+// Team lands BOTH keys in one navigation.
+const navBeforeSide = (globalThis.__nav || []).length;
+sideSel.value = 'ct';
+sideSel.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+await sleep();
+const navSide = (globalThis.__nav || []).length;
+check(
+  'selecting Side writes side=ct into the URL',
+  navSide > navBeforeSide && (globalThis.__nav || [])[navSide - 1]?.includes('side=ct'),
+  (globalThis.__nav || [])[navSide - 1] || 'no navigation',
+);
+teamSel.value = 't';
+teamSel.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+await sleep();
+const navTeam = (globalThis.__nav || []).length;
+const lastTeamURL = (globalThis.__nav || [])[navTeam - 1] || '';
+check(
+  'selecting Team accumulates: the URL carries BOTH keys',
+  navTeam > navSide && lastTeamURL.includes('side=ct') && lastTeamURL.includes('team=t'),
+  lastTeamURL,
+);
+
 console.log('I. theater mode: the chrome hides, the stage keeps its exit button, popovers reset');
 // The theater cell MOVED to the top bar's Close · Minimize · Theater
 // cluster (the top-left controls rework): it toggles from its new home
