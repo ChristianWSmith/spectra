@@ -79,6 +79,9 @@
     createSfxEngine,
     loadSoundManifest,
     prefVolume,
+    // The victimHelmet stamp's state read lives beside headshotKillCues
+    // (sfx.js) — the stamp's shape and the cue predicate can never drift.
+    slotAliveHelmetAt,
   } from '../replay/sfx.js';
   import {
     buildSpeakingIndex,
@@ -1980,6 +1983,12 @@
       // normalization — the renderer's layer gate reads those, never a
       // re-derived classification. Fail-soft like drawRows (a failed
       // side channel → no stamps → drawDrops draws nothing).
+      // THE same pre-normalization stamp for the headshot cues: every
+      // kill row gets `victimHelmet` (true/false/null) from the sidecar
+      // state stream — sfx.js headshotKillCues keys its dink/bare pair
+      // off it, and normalizeEvent's `...ev` spread carries it onto the
+      // cue input. Unknown inputs (no stream, no victim slot, no frame,
+      // no alive sample) stamp null → silence — never a guess.
       {
         const [rows, dropDetails] = await Promise.all([
           getEvents({
@@ -1991,10 +2000,53 @@
           getDropDetails(id).catch(() => []),
         ]);
         const dropsBySeq = new Map((dropDetails || []).map((d) => [d.seq, d]));
+        // victimHelmet join — the dropsBySeq template above, one step
+        // deeper: EventRow carries the victim's STEAM id, never a slot,
+        // so resolve the slot through the sidecar slot table
+        // (meta.players — the SAME table buildStateIndex numbers slots
+        // by; the blind overlay's slotBySteam precedent), map the kill
+        // tick onto the position stream's LAST frame ≤ tick
+        // (sideAtTick's binary search — the engine does not exist yet
+        // at load time) and read the helmet through slotAliveHelmetAt
+        // (sfx.js — beside headshotKillCues): the victim's last record
+        // while hp > 0, so the death sample's as-read zeroing
+        // (armor/helmet → 0/false on the killing blow —
+        // internal/sidecar state_test.go deadSample) can never flip a
+        // helmeted victim to bare.
+        const slotBySteam = new Map();
+        players.forEach((p, i) => {
+          if (p && p.steamId != null) slotBySteam.set(String(p.steamId), i);
+        });
+        const ticks = data ? data.ticks : null;
+        const stampVictimHelmet = (r) => {
+          if (String(r.kind || '') !== 'kill') return r; // only kill rows carry it
+          let helmet = null;
+          const slot = slotBySteam.get(String(r.victim || ''));
+          const t = Number(r.tick);
+          if (stateIndex && slot != null && Number.isFinite(t) && ticks && ticks.length) {
+            let lo = 0;
+            let hi = ticks.length - 1;
+            let frame = -1;
+            while (lo <= hi) {
+              const mid = (lo + hi) >> 1;
+              if (ticks[mid] <= t) {
+                frame = mid;
+                lo = mid + 1;
+              } else {
+                hi = mid - 1;
+              }
+            }
+            if (frame >= 0) helmet = slotAliveHelmetAt(stateIndex, slot, frame);
+          }
+          return { ...r, victimHelmet: helmet };
+        };
         drawRows = await hydrateGrenadeEntities(
           (rows || []).map((r) => {
             const d = dropsBySeq.get(r.seq);
-            return d ? { ...r, dropCat: d.cat, dropAmmo: { mag: d.mag, reserve: d.reserve } } : r;
+            const stamped = d
+              ? { ...r, dropCat: d.cat, dropAmmo: { mag: d.mag, reserve: d.reserve } }
+              : r;
+            return stampVictimHelmet(stamped);
           }),
         );
       }
@@ -2317,7 +2369,10 @@
           sfxErr = msg;
         },
       });
-      sfx.setRounds(rounds); // freeze gate + the match-point scoreline for the cue lists
+      sfx.setRounds(rounds); // freeze gate + the counted gate + the match-point scoreline for the cue lists
+      // drawNorm's kill rows carry the pre-normalization victimHelmet
+      // stamp (drawRows join above), so the headshot cue list rebuilds
+      // from the same rows as everything else.
       sfx.setLandmarks(drawNorm); // rebuilds them under it
       // Player sounds: the presence-gated sound_events rows (load()
       // fetched them only when the match has any) — the footstep cue
