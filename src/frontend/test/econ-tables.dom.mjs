@@ -514,6 +514,56 @@ check(
     !root.textContent.includes('match winner undecided'),
 );
 
+console.log('G. style pin: replay opts OUT of the .view 1400px cap (source pin — jsdom has no layout)');
+// The app-dock.dom.mjs precedent: jsdom has no layout, so the rule IS
+// the pin. Reads the stylesheet from frontend/ (the driver's cwd).
+const css = readFileSync('public/style.css', 'utf8');
+const ruleBody = (sel) => {
+  const i = css.indexOf(sel);
+  if (i < 0) return null;
+  const open = css.indexOf('{', i);
+  if (open < 0) return null;
+  const close = css.indexOf('}', open);
+  return close < 0 ? null : css.slice(open + 1, close);
+};
+const baseView = ruleBody('\n.view {');
+check(
+  'the shared .view cap stays for every other view (1400px centered)',
+  !!baseView && /max-width:\s*1400px/.test(baseView) && /margin:\s*0 auto/.test(baseView),
+  baseView ? baseView.trim() : '.view rule not found',
+);
+const replayView = ruleBody('\n.replay-view {');
+check(
+  '.replay-view carries max-width: none (the one exemption, same rule as its row layout)',
+  !!replayView && /max-width:\s*none/.test(replayView) && /height:\s*calc\(100vh - 32px\)/.test(replayView),
+  replayView ? replayView.trim() : '.replay-view rule not found',
+);
+const miniView = ruleBody('.rp-keepalive-mini .replay-view {');
+check(
+  'the dock override still fixes the collapsed panel (220px / 100% / margin 0)',
+  !!miniView &&
+    /height:\s*220px/.test(miniView) &&
+    /width:\s*100%/.test(miniView) &&
+    /margin:\s*0/.test(miniView),
+  miniView ? miniView.trim() : 'dock rule not found',
+);
+check(
+  'the dock wrapper still fixes the 320px box the 100% resolves against',
+  /width:\s*320px/.test(ruleBody('.rp-keepalive.rp-keepalive-mini {') || ''),
+  'no width:320px on .rp-keepalive.rp-keepalive-mini',
+);
+const mediaBlock = /@media \(max-width: 1000px\) \{[\s\S]*?\.replay-view \{[^}]*\}/.exec(css);
+check(
+  'the ≤1000px media rule still flips .replay-view to a column',
+  !!mediaBlock && /flex-direction:\s*column/.test(mediaBlock[0]),
+  mediaBlock ? mediaBlock[0] : 'media block not found',
+);
+check(
+  'the nested-.view margin rule is untouched',
+  /margin-inline:\s*0/.test(ruleBody('\n.view > .view {') || ''),
+  '.view > .view rule not found or changed',
+);
+
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 if (inst) unmount(inst);
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');
