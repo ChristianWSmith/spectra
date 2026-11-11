@@ -74,8 +74,11 @@ export function roundIndexLabel(r) {
 }
 
 // roundStartTick resolves a round NUMBER to its start tick — the time a
-// "jump to round N" link targets (Replay's round-scope entry seek via
-// nav.entrySeekTick, and Replay's round ribbon). The
+// "jump to round N" link targets: the outside-replay watch links stamp it
+// as ?tick= themselves (Combat's round chips, Economy's stat-card drill —
+// both build the URL with nav.replayHash), and it is also what Replay's
+// round-scope entry seek (nav.entrySeekTick) and round ribbon resolve
+// through. The
 // GetRounds rows carry the number/startTick pair; a missing round or a
 // row without a usable start tick returns null so callers keep their
 // current position — a round link must never fall back to the first

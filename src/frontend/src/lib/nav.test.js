@@ -119,8 +119,10 @@ const ROUNDS = [
 ];
 
 test('entrySeekTick: an exact ?tick= link wins over everything', () => {
-  // RoundDetail's "Watch round" / Combat's EventPlay / Utility's
-  // "replay" buttons all stamp an exact tick.
+  // RoundDetail's "Watch round" / Combat's EventPlay and round chips /
+  // Utility's "replay" / Economy's stat-card drill all stamp an exact
+  // tick — the outside-replay buttons seek (never filter), so ?tick= is
+  // the dominant real-world entry promise.
   assert.equal(entrySeekTick({ tick: '9999' }, ROUNDS), 9999);
   assert.equal(entrySeekTick({ tick: '9999', roundFrom: '7', roundTo: '7' }, ROUNDS), 9999);
   assert.equal(entrySeekTick({ tick: 9999 }, ROUNDS), 9999);
@@ -128,12 +130,13 @@ test('entrySeekTick: an exact ?tick= link wins over everything', () => {
 });
 
 test('entrySeekTick: a round-scoped link resolves to that round\'s start tick', () => {
-  // The Economy gap-round card, Combat's round chips and every "events"
-  // button promise round N — the replay must land on N's start tick,
-  // never the first frame (the reported "lands at the first tick" bug).
-  // Every round-scoped link stamps BOTH inclusive bounds to the same
-  // number; roundFrom is the primary target, roundTo covers a max-only
-  // range, and a wider range opens at its FIRST round.
+  // A round-scoped URL — the in-replay round bounds (FilterBar) and deep
+  // links, the form outside-the-replay WATCH links no longer use (they
+  // stamp ?tick= directly) — must land on round N's start tick, never the
+  // first frame (the reported "lands at the first tick" bug). Every
+  // round-scoped link stamps BOTH inclusive bounds to the same number;
+  // roundFrom is the primary target, roundTo covers a max-only range, and
+  // a wider range opens at its FIRST round.
   assert.equal(entrySeekTick({ roundFrom: '7', roundTo: '7' }, ROUNDS), 24500);
   assert.equal(entrySeekTick({ roundFrom: 1 }, ROUNDS), 1200);
   assert.equal(entrySeekTick({ roundTo: 7 }, ROUNDS), 24500);

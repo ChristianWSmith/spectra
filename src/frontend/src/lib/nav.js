@@ -33,8 +33,10 @@ export function openProfile(nav, steam) {
 //   sel    — selected landmark key (e:123 / c:4 / g:9)
 //   back   — origin path for the return trip ("match/5/rounds",
 //            "compare/5?rounds=3,5", …) — rendered as-is by buildHash
-// One navigation system: every event drill-down lands in Replay's
-// landmark feed with its scope intact.
+// One navigation system: every event drill-down lands in Replay —
+// normally as a SEEK (?tick=, usually + ?loop=, empty filter), and for
+// the two accepted filter-arrival exceptions (Heatmaps' region drill,
+// the command palette's saved-filter apply) with its scope intact.
 export function replayHash(matchId, filter, extras) {
   return buildHash(`/replay/${matchId}`, {
     ...serializeLandmarkFilter(filter || {}),
@@ -108,15 +110,20 @@ export function entryLoopAround(tick, tickRate) {
 // keep-alive's seed watcher re-applies a DISTINCT resolution while the
 // instance lives — entry-once PER DISTINCT SEED: identical-value
 // in-session churn keeps the playback position, a no-promise rewrite
-// never seeks). Priority:
+// never seeks). Watch links from OUTSIDE the replay (RoundDetail's
+// "Watch round", Combat's round chips, Utility's ▶, Economy's stat-card
+// drill) stamp that tick EXPLICITLY through ?tick= — they never carry a
+// landmark filter; the round scope below is the in-replay/deep-link
+// form of the same promise. Priority:
 //   1. ?tick=  — an exact tick link (event/round-start "watch" buttons)
 //               wins as-is;
 //   2. else the round scope — ?roundFrom= when it names a round, else
 //               ?roundTo= — resolves to that round's START tick (a
 //               round-scoped link stamps BOTH bounds to the same
 //               number, so a range opens at its first round): a round
-//               link is a link to a point in time (Economy's gap-round
-//               card, Combat's round chips, the "events" buttons),
+//               link is a link to a point in time (the in-replay round
+//               bounds and deep links — outside the replay, buttons
+//               stamp ?tick= and never a landmark filter),
 //               never the first frame;
 //   3. else null — the URL makes NO time promise, so there is nothing to
 //               resolve here: Replay applies the user's DEFAULT start

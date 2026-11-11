@@ -110,7 +110,7 @@ console.log('A. structure');
 check('cell is a real button', !!cell() && cell().tagName === 'BUTTON');
 check('sub line renders the link', !!link(), 'no .comb-name-btn in .stat-sub');
 check('the link is inside the cell (component-inserted, not parsed apart)', !!link().closest('button.stat-cell'));
-check('cell title kept', cell().getAttribute('title') === 'Open Replay events filtered to donk');
+check('cell title kept', cell().getAttribute('title') === 'Open the replay following donk');
 check('value and label rendered', cell().textContent.includes('20/10/3') && cell().textContent.includes('Top fragger'));
 
 console.log('B. clicks: the link opens the profile, the cell keeps its drill');

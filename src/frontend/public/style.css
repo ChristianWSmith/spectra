@@ -1422,9 +1422,16 @@ input[type='checkbox']:focus-visible {
   gap: 16px;
 }
 
+/* RoundDetail's ribbon row: the strip sits BETWEEN the two icon-only
+   round-transport buttons and the whole row centers in the view. The
+   centering deliberately lives HERE, not on the shared .round-strip-wrap
+   rule above (see its note): as a flex ITEM the strip only needs its row
+   to distribute centered — justify-content centers each wrapped line too
+   (flex-wrap: wrap on narrow windows), so no narrow-width hugging. */
 .round-nav {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 12px;
   flex-wrap: wrap;
 }

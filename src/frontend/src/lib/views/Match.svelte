@@ -487,15 +487,16 @@
     return tab === 'Overview' ? `match/${id}` : `match/${id}/${matchTabSlug(tab)}`;
   }
 
-  // Every event drill-down goes to THE event browser: Replay's landmark
-  // feed, scoped by the entry point.
+  // Player entry → THE event browser with the camera on that player.
   // opts.follow asks Replay to set the camera to that player; EVERY
   // player entry point passes it — roster rows, scoreboard rows and the
   // Overview stat cards — so a click on any of them opens Replay focused
-  // on the player it belongs to.
+  // on the player it belongs to. back + follow are navigation context,
+  // NOT a landmark filter: the steamId scope is deliberately not set
+  // (outside the replay, buttons seek/follow — never filter).
   function openPlayerEvents(steamId, opts) {
     const follow = opts && opts.follow ? { follow: steamId } : {};
-    nav(replayHash(id, { steamId }, { back: backPath(), ...follow }));
+    nav(replayHash(id, {}, { back: backPath(), ...follow }));
   }
 
   function openReplay() {
@@ -675,7 +676,7 @@
             class="btn primary match-replay"
             title={expandReplay
               ? 'Return to the replay (resumes where you left it)'
-              : 'Watch this match from tick 0 in the replay view'}
+              : 'Watch this match in the replay view'}
             onclick={openReplay}
           >
             <span class="codicon codicon-play"></span> Watch replay
@@ -734,13 +735,13 @@
             value={s.value}
             sub={s.p.name}
             subCls={teamCls(s.p.side)}
-            title="Open Replay events filtered to {s.p.name} — camera follows {s.p.name}"
+            title="Open the replay following {s.p.name}"
             onclick={() => openPlayerEvents(s.p.steamId, { follow: true })}
           >
             <!-- Aggregate (per-match) surface: the name keeps the TEAM
                  identity color, but the text itself is the profile link —
-                 the card's own click opens Replay events with the camera
-                 on that player (same as the roster/scoreboard rows). -->
+                 the card's own click opens Replay with the camera on that
+                 player (same as the roster/scoreboard rows). -->
             {#snippet subSlot()}
               <ProfileLink
                 steam={s.p.steamId}

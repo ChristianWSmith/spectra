@@ -286,7 +286,11 @@
             return;
           }
           // Saved filters ride the URL into the canonical event browser —
-          // parse normalizes the shape.
+          // parse normalizes the shape. ACCEPTED EXCEPTION to "outside-
+          // replay buttons seek, never filter": saved filters are the
+          // power-user path (save/delete/apply retained) — one of the two
+          // documented filter-arrival paths outside the replay (the
+          // Heatmaps region drill is the other).
           nav(replayHash(mid, parseLandmarkFilter(f)));
         },
       })),

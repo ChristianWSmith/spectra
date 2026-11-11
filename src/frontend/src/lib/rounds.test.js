@@ -81,8 +81,9 @@ test('roundStartTick returns null instead of a guessed time', () => {
 });
 
 // roundEndTick is the closing twin: the second bound of a round-span
-// link (nav.entryLoopSpan — "Watch round" / "Replay start" loop over the
-// whole round, freeze included). Same never-a-guess contract.
+// link (nav.entryLoopSpan — RoundDetail's "Watch round", Combat's round
+// chips and "Replay start" loop over the whole round, freeze included).
+// Same never-a-guess contract.
 const END_ROUNDS = [
   { number: -2, startTick: 100, endTick: 380 }, // knife
   { number: 1, startTick: 1200, endTick: 24000 },

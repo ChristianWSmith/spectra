@@ -53,6 +53,7 @@
     roundsByNumber,
     parseLandmarkFilter,
     serializeLandmarkFilter,
+    shouldRevealFeed,
     defaultFilter,
     applyRoundPref,
     landmarkExportRows,
@@ -900,18 +901,51 @@
     );
   }
 
-  // Open the filter panel on ENTRY when the deep link already carries a
-  // scope filter (round range/player/weapon/bbox/distance window) — a
-  // scoped link should show the scope it arrived with. In-session changes
-  // never force it open (the Filters button owns that). The feed opens
-  // WITH it: the panel lives inside the expanded rail, so a collapsed
-  // feed would hide the very scope the link promises to show.
-  function syncFiltersOpen(f) {
-    if (f.roundFrom || f.roundTo || f.steamId || f.weapon || f.bbox || f.distMin || f.distMax) {
+  // Feed reveal on FILTER ARRIVAL (the product-owner rule): entering the
+  // replay with a non-default landmark filter must open the landmark feed
+  // rail so the drill's effect is visible. THE decision is the pure helper
+  // landmarks.shouldRevealFeed (non-default AND different from the filter
+  // this instance already had) — this block is only its WIRING, placed
+  // where Replay learns its query:
+  //   - MOUNT: the effect's first run (App mounts the instance active);
+  //   - KEEP-ALIVE ACTIVATION: App's `active` prop flipping false→true —
+  //     the collapsed dock expanding, which is how the Heatmaps region
+  //     drill reaches a live instance.
+  // The effect tracks BOTH subscriptions (`active` + the filter) and
+  // tells arrival from in-session churn with the plain `revealActive`
+  // flag: only an arrival run DECIDES; a query edit that keeps `active`
+  // true (the Filters bar, navigateFilter) just re-baselines the recorded
+  // filter — so in-session edits never force the rail open, and a rail the
+  // user deliberately closed stays closed for an unchanged filter. While
+  // inactive the record is frozen (the arrival compares against what the
+  // instance last showed), which is exactly why the dock expand —
+  // expandReplayHash re-arrives with the instance's OWN captured filter,
+  // same filter — never forces it open. Entry context that is not a
+  // filter (?tick=/?loop=/?sel=/?back=/?follow=) never reaches the
+  // helper: `filter` is the parsed LANDMARK FILTER alone, so watch links
+  // arrive silently.
+  let revealFilter = null; // the filter this instance last had while active
+  let revealActive = false; // was `active` true on the previous run?
+
+  $effect(() => {
+    const isActive = active; // subscription: keep-alive activation
+    const f = filter; // subscription: the arriving query
+    if (!isActive) {
+      revealActive = false;
+      return;
+    }
+    const arriving = !revealActive;
+    revealActive = true;
+    if (arriving && shouldRevealFeed(revealFilter, f)) {
+      // Feed AND filter panel open together (both live inside the expanded
+      // rail) — a scoped arrival shows the scope it arrived with: the
+      // former entry rule ("a scoped deep link opens the filter panel")
+      // now gated by the new reveal condition.
       filtersOpen = true;
       eventsOpen = true;
     }
-  }
+    revealFilter = f; // re-baseline on EVERY active run (edits included)
+  });
 
   // --- Saved filter presets (scope "match") ----------------------------------
   let saved = $state([]);
@@ -1869,9 +1903,10 @@
     entrySelTick = 0;
     entryDefaultTick = 0;
     // A linked landmark must be visible on entry — the selection lives in
-    // the feed/detail pane, which the collapsed default would hide.
+    // the feed/detail pane, which the collapsed default would hide. (A
+    // SCOPED link's reveal is the shouldRevealFeed effect above — mount
+    // run — not this entry-sel path.)
     if (entrySel) eventsOpen = true;
-    syncFiltersOpen(filter); // a scoped deep link opens the filter panel
     // Icon pipeline (handoff C) in the BACKGROUND: manifest read, one
     // extractIcons('') attempt when it reports no extraction yet, then
     // preload — a slow CS2 scan must never delay first paint, and the

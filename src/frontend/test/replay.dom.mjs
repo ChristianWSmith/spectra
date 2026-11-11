@@ -2640,6 +2640,64 @@ check(
   JSON.stringify(seeksNow().slice(seeksBase5.length)),
 );
 
+// ============================================================================
+// APPENDED SECTION (feed-reveal work) — kept apart from the sections above on
+// purpose: replay.dom.mjs is edited by a parallel worker, so this block is a
+// single self-contained tail. Do not renumber what precedes it.
+// ============================================================================
+
+// --- (M): feed reveal on FILTER ARRIVAL (landmarks.shouldRevealFeed wiring) --
+// The pure decision lives in src/lib/landmarks.test.js (unit-pinned); this
+// only pins Replay.svelte's WIRING: a non-default filter arriving at MOUNT
+// opens the feed rail (harness5 mounts scoped), an in-session filter edit on
+// an ACTIVE instance never force-opens a closed rail, a keep-alive ACTIVATION
+// with a DIFFERENT non-default filter reveals it, and the SAME filter arriving
+// again after the user closed it (the dock expand carries the instance's own
+// captured query) stays closed.
+console.log('M. feed reveal on filter arrival (mount + activation, never same-filter churn)');
+const railOf = (t) => !!t?.querySelector('.replay-side');
+const filtersBtnOf = (t) =>
+  t?.querySelector('.lm-toolbar button[title^="Show/hide"]');
+check('MOUNT: a non-default filter reveals the feed rail (harness5 is scoped)', railOf(target5), '');
+check(
+  'MOUNT: the filter panel rode along with the reveal',
+  filtersBtnOf(target5)?.getAttribute('aria-expanded') === 'true',
+  filtersBtnOf(target5)?.getAttribute('aria-expanded'),
+);
+check('target4 rail starts closed (its mount filter was the default)', !railOf(target4), '');
+globalThis.__setQuery({ roundFrom: '2', roundTo: '2' });
+await sleep();
+check(
+  'IN-SESSION: a scoped filter edit on an ACTIVE instance never reveals',
+  !railOf(target4),
+  '',
+);
+globalThis.__setActive4(false);
+await sleep();
+globalThis.__setQuery({ roundFrom: '5', roundTo: '5' });
+await sleep();
+globalThis.__setActive4(true);
+await sleep();
+check(
+  'ACTIVATION: a DIFFERENT non-default filter reveals the rail (heatmap drill on a live instance)',
+  railOf(target4),
+  '',
+);
+const close4 = target4.querySelector('.replay-side .side-toggle');
+check('the revealed rail offers its close toggle', !!close4);
+click(close4);
+await sleep();
+check('the user can close the revealed rail', !railOf(target4), '');
+globalThis.__setActive4(false);
+await sleep();
+globalThis.__setActive4(true);
+await sleep();
+check(
+  'ACTIVATION with the SAME filter never re-opens a user-closed rail',
+  !railOf(target4),
+  '',
+);
+
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');
 process.exit(failures || errors.length ? 1 : 0);
