@@ -1408,6 +1408,180 @@ console.log('K. view-state registry: sort restores across a remount; URL facets 
   await unmount(c.inst);
 }
 
+// ---------------------------------------------------------------------------
+// Section L: the cold-start loading gate (loading ladder rung 3 — PRODUCT.md
+// ### Defaults). With BOTH first reads in flight the dropzone shows the
+// plain loading indicator — it never claims "No matches yet" while the
+// library is still on its way — and the table appears only once they land.
+// The reads are delayed through the stubs (services.invalidate() first, so a
+// cache-served promise cannot bypass them — section K's mountLib rule).
+console.log('L. cold start: the empty state never claims "No matches yet" mid-load');
+services.invalidate();
+const prevList = bindings.handlers.ListMatchesPage;
+const prevJobs = bindings.LibraryService.ListJobs;
+bindings.handlers.ListMatchesPage = (...args) =>
+  new Promise((res) => setTimeout(() => res(prevList(...args)), 250));
+bindings.LibraryService.ListJobs = () =>
+  new Promise((res) => setTimeout(() => res(prevJobs()), 250));
+
+viewstate.resetViewState();
+const coldTarget = document.createElement('div');
+document.body.appendChild(coldTarget);
+const coldInst = mount(mod.default, { target: coldTarget, props: { query: {} } });
+await sleep(60); // both first reads still in flight (250 ms delay)
+const coldDrop = () =>
+  coldTarget.querySelector('.dropzone')?.textContent.replace(/\s+/g, ' ').trim() ?? '';
+check(
+  'mid-load: loading indicator, no empty claim, no table',
+  coldTarget.textContent.includes('Loading…') &&
+    !coldTarget.textContent.includes('No matches yet') &&
+    !coldTarget.querySelector('.dropzone .data-table'),
+  coldDrop().slice(0, 140),
+);
+await sleep(400); // both reads landed
+check(
+  'after both reads land: the list renders and the gate is gone',
+  !coldTarget.textContent.includes('Loading…') &&
+    coldTarget.querySelectorAll('.dropzone .data-table tbody tr:not([data-pending-import])')
+      .length === 1,
+  coldDrop().slice(0, 140),
+);
+
+// ---------------------------------------------------------------------------
+// Section M: the Match-header prefetch from natural pre-click triggers. All
+// four reads are services.cachedRead entries, so warming is fire-and-forget;
+// the bail-outs are what need pinning — one warm per row entry (mouseenter
+// fires once per entry, never per mousemove) with a per-id throttle, and
+// job-done re-warming the fresh match by FORCE (past that throttle), after
+// services.js's module-load flush listeners have already cleared the cache.
+console.log('M. row hover warms the Match header reads; job-done re-warms by force');
+const headerCalls = () =>
+  ['GetMatch', 'GetRounds', 'GetMatchSummary', 'GetVoicePresence'].map(bindings.callCount);
+// The match row — NOT the synthetic pending-import row rendered ahead of it
+// (that one has nothing to open, so it is never warmed).
+const coldRow = coldTarget.querySelector(
+  '.dropzone .data-table tbody tr:not([data-pending-import])',
+);
+const beforeWarm = headerCalls();
+coldRow.dispatchEvent(new dom.window.MouseEvent('mouseenter'));
+await sleep(20);
+check(
+  'hover fires the four header reads exactly once',
+  headerCalls().every((c, i) => c === beforeWarm[i] + 1),
+  JSON.stringify({ before: beforeWarm, after: headerCalls() }),
+);
+coldRow.dispatchEvent(new dom.window.MouseEvent('mouseenter'));
+await sleep(20);
+check(
+  'an immediate re-hover inside the per-row throttle does not re-fire',
+  headerCalls().every((c, i) => c === beforeWarm[i] + 1),
+  JSON.stringify(headerCalls()),
+);
+
+// Restore the handlers BEFORE the event below: job-done refetches jobs +
+// list + a scheduled (300 ms) demo scan, and that cleanup must not inherit
+// section L's delays.
+bindings.handlers.ListMatchesPage = prevList;
+bindings.LibraryService.ListJobs = prevJobs;
+const beforeDone = bindings.callCount('GetMatch');
+fire('spectra:job-done', { jobId: 99, matchId: 42, status: 'done', error: '' });
+await sleep(20);
+const matchCalls = bindings.calls.filter((c) => c.method === 'GetMatch');
+check(
+  'job-done warms the fresh match header by force (same id, inside the throttle)',
+  bindings.callCount('GetMatch') === beforeDone + 1 &&
+    matchCalls[matchCalls.length - 1].args[0] === 42,
+  JSON.stringify(matchCalls.slice(-2)),
+);
+
+// ---------------------------------------------------------------------------
+// Section N: the import-dir scan is off the hot path — event-driven rescans
+// go through the trailing debounce (scheduleDemoScan), so a burst of
+// job-done / library-changed events settles into ONE rescan instead of one
+// per event (a first scan can stream gigabytes through sha256 inside the
+// binding).
+console.log('N. an event burst coalesces into ONE import-dir rescan');
+{
+  // Count scans through the stub (the section-F replacement is a plain
+  // no-recording stub, so wrap it). The job-done above already scheduled
+  // one scan; the events fired below land inside its 300 ms window and
+  // push it out — still ONE call for the whole burst.
+  const prevScan = bindings.LibraryService.ListDemoFiles;
+  let scanCount = 0;
+  bindings.LibraryService.ListDemoFiles = (...args) => {
+    scanCount++;
+    return prevScan(...args);
+  };
+  fire('spectra:library-changed');
+  fire('spectra:job-done', { jobId: 100, matchId: 43, status: 'done', error: '' });
+  await sleep(600); // past the 300 ms debounce + the scan itself
+  check(
+    'three events in one burst → exactly one scan',
+    scanCount === 1,
+    String(scanCount),
+  );
+  bindings.LibraryService.ListDemoFiles = prevScan;
+}
+// ---------------------------------------------------------------------------
+// Section O: spectra:scan-progress drives the ONE StatusChip (MapPackPrompt's
+// non-job precedent) — 0 is the walk phase (indeterminate bar), a real byte
+// fraction flips it determinate, and the scan resolving hides it again. The
+// chip renders while a scan runs AND the import-dir list is still empty (the
+// expensive first scan is exactly that state), so the list is emptied first.
+console.log('O. scan progress drives the StatusChip: indeterminate → determinate → gone');
+{
+  const prevScan = bindings.LibraryService.ListDemoFiles;
+  const dirRoot = () =>
+    coldTarget.querySelector('section[aria-label="Demos from your import dirs"]');
+  const chipOf = () => dirRoot()?.querySelector('.chip.status');
+
+  // (a) Empty the import-dir list: one rescan resolving zero rows.
+  bindings.LibraryService.ListDemoFiles = () => Promise.resolve([]);
+  fire('spectra:library-changed');
+  await sleep(500); // 300 ms debounce + the scan itself
+  check(
+    'import-dir list emptied (the chip’s precondition)',
+    !!dirRoot() && !dirRoot().querySelector('.data-table'),
+    dirRoot() ? dirRoot().textContent.replace(/\s+/g, ' ').slice(0, 90) : 'no panel',
+  );
+
+  // (b) Stall the NEXT scan mid-flight — the chip must be up and
+  // indeterminate (progress 0) while the walk phase runs.
+  let release;
+  bindings.LibraryService.ListDemoFiles = () =>
+    new Promise((res) => (release = () => res([])));
+  fire('spectra:library-changed');
+  await sleep(400); // past the debounce: the scan is now in flight
+  const stalledChip = chipOf();
+  check(
+    'scan chip up and indeterminate while the scan runs (never "0%")',
+    !!stalledChip &&
+      !!stalledChip.querySelector('.chip-bar-fill.indeterminate') &&
+      !stalledChip.textContent.includes('0%'),
+    stalledChip ? stalledChip.textContent.replace(/\s+/g, ' ').trim() : 'missing',
+  );
+
+  // (c) A real byte fraction renders determinate.
+  fire('spectra:scan-progress', { stage: 'hash', progress: 0.42, done: 42, total: 100 });
+  await sleep(20);
+  const fill = chipOf()?.querySelector('.chip-bar-fill');
+  check(
+    'scan chip reads the byte fraction: determinate fill at 42%',
+    !!fill &&
+      !fill.classList.contains('indeterminate') &&
+      fill.style.width === '42%' &&
+      (chipOf()?.textContent.includes('42%') ?? false),
+    fill ? `${fill.style.width} ${chipOf()?.textContent.replace(/\s+/g, ' ').trim()}` : 'missing',
+  );
+
+  // (d) The scan resolving hides the chip again.
+  release();
+  await sleep(60);
+  check('scan chip gone once the scan lands', !chipOf(), chipOf()?.textContent ?? '');
+  bindings.LibraryService.ListDemoFiles = prevScan;
+}
+await unmount(coldInst);
+
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');
 process.exit(failures || errors.length ? 1 : 0);

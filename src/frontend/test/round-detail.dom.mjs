@@ -110,12 +110,18 @@ writeFileSync(
 writeFileSync(
   join(dir, 'services.js'),
   `const d = () => globalThis.__roundDetail || {};
-export const getRoundDetail = (id, round) => Promise.resolve((d().details || {})[round] || null);
-export const getRounds = () => Promise.resolve(d().rounds || []);
-export const getMatch = () => Promise.resolve(d().match || null);
-export const getScoreboard = () => Promise.resolve(d().scoreboard || []);
-export const getRoundClasses = () => Promise.resolve(d().classes || []);
-export const getTeamNames = () => Promise.resolve(d().teams || null);
+// __roundDetailDelay (section G) holds every read back so the cold-start
+// loading gate is observable; unset/0 keeps the plain resolve.
+const wait = (v) =>
+  globalThis.__roundDetailDelay
+    ? new Promise((res) => setTimeout(() => res(v), globalThis.__roundDetailDelay))
+    : Promise.resolve(v);
+export const getRoundDetail = (id, round) => wait((d().details || {})[round] || null);
+export const getRounds = () => wait(d().rounds || []);
+export const getMatch = () => wait(d().match || null);
+export const getScoreboard = () => wait(d().scoreboard || []);
+export const getRoundClasses = () => wait(d().classes || []);
+export const getTeamNames = () => wait(d().teams || null);
 export const errText = (e) => (e == null ? 'unknown error' : String((e && e.message) || e));
 `,
 );
@@ -449,6 +455,33 @@ check(
   !!prev2 && !root2.querySelector('.round-nav button[title="Next round"]'),
   JSON.stringify([!!prev2, !!root2.querySelector('.round-nav button[title="Next round"]')]),
 );
+
+// ---------------------------------------------------------------------------
+// Section G: the cold-start loading gate (loading ladder rung 3). Without
+// it this view is a blank page with only a Back button — with it, the plain
+// loading line shows until the round reads land, and the false-empty state
+// never renders.
+console.log('G. cold start: never a blank page while the round reads are in flight');
+{
+  globalThis.__roundDetailDelay = 250;
+  const rootG = await render(base, 5);
+  check(
+    'mid-load: loading line up, no round content',
+    rootG.textContent.includes('Loading round…') &&
+      !rootG.textContent.includes('Round result') &&
+      !rootG.textContent.includes('Round 5'),
+    rootG.textContent.replace(/\s+/g, ' ').slice(0, 140),
+  );
+  await sleep(400); // past the 250 ms delay
+  check(
+    'after the fetch lands: gate gone, the round renders',
+    !rootG.textContent.includes('Loading round…') &&
+      sections(rootG, 'Round result').length === 1 &&
+      /Round 5/.test(rootG.querySelector('header.view-header')?.textContent || ''),
+    rootG.textContent.replace(/\s+/g, ' ').slice(0, 140),
+  );
+  globalThis.__roundDetailDelay = 0;
+}
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');

@@ -19,12 +19,38 @@
   import { NAV_ACTIONS, expandReplayHash } from './lib/nav.js';
   import { nextReplayAlive, backOrigin } from './lib/keepalive.js';
   import { arbitrate, captureScroll, scrollTopFor } from './lib/viewstate.svelte.js';
+  import { listMatchesPage, listJobs } from './lib/services.js';
 
   // Hand-rolled hash router: the route table (parseHash) lives in
   // lib/router.js with its own tests; this component owns the hashchange
   // wiring and the view switch. The initial parse is a plain const so
   // both seeds below read it once (no state_referenced_locally noise).
   const firstRoute = parseHash(location.hash);
+
+  // Boot-warm the Library's first paint — the loading ladder's rung 1
+  // (PRODUCT.md "### Defaults": pre-load what the user will plausibly ask
+  // for next). This is the earliest hook that knows the FIRST route (main.js
+  // mounts App before any view), so when it is the Library the exact reads
+  // that view's mount fires start right here: the first match-list window
+  // (200 = store.ListMatchesPageSize, the same window Library asks for —
+  // carrying the route query's facets, the same seeds Library starts from,
+  // so the warm key is the key ITS first fetch builds) and the job list.
+  // Both are cachedRead in services.js, so Library's mount awaits these
+  // SAME in-flight promises — one IPC round trip, not two — and the cache
+  // flushes on every spectra:* data event like the rest. Fire-and-forget:
+  // a failure never blocks boot (the view still issues its own reads and
+  // surfaces its own errors), and every library-changed / job-* event
+  // invalidates before the view refetches, so a warm entry can never be
+  // served past a change.
+  if (firstRoute.name === 'library') {
+    const q = firstRoute.query || {};
+    listMatchesPage('', 'extracted_at', true, 0, 200, {
+      map: String(q.map || ''),
+      player: String(q.player || ''),
+    }).catch(() => {});
+    listJobs().catch(() => {});
+  }
+
   let route = $state(firstRoute);
   // Replay keep-alive (mini-player dock) — App OWNS the instance record:
   // {id, hash} while a Replay component is mounted (scope + transition in

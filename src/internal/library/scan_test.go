@@ -421,6 +421,109 @@ func TestScanMarksPendingImports(t *testing.T) {
 	}
 }
 
+// TestScanEmitsProgressEvents pins the scan's spectra:scan-progress
+// contract: the walk phase reports progress 0 (indeterminate — the file
+// count is unknowable before the walk, so no fabricated percentage), the
+// hash phase reports a real byte fraction over the bytes it plans to hash,
+// and points never move backwards. It also pins the AGENTS.md rule the
+// event was shaped for: a scan is NOT a job — no job event is emitted and
+// no row lands in the jobs table.
+func TestScanEmitsProgressEvents(t *testing.T) {
+	root := t.TempDir()
+	writeScanFile(t, filepath.Join(root, "alpha.dem"), strings.Repeat("a", 4096))
+	writeScanFile(t, filepath.Join(root, "beta.dem"), strings.Repeat("b", 4096))
+
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("open store: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	var names []string
+	var pts []ScanProgressEvent
+	sc := NewScanner(ScannerOptions{
+		Store:    st,
+		DataRoot: filepath.Join(t.TempDir(), "data"),
+		Emit: func(name string, data any) {
+			names = append(names, name)
+			if ev, ok := data.(ScanProgressEvent); ok {
+				pts = append(pts, ev)
+			}
+		},
+	})
+	if _, err := sc.Scan([]string{root}); err != nil {
+		t.Fatalf("Scan: %v", err)
+	}
+	if len(names) == 0 {
+		t.Fatal("Scan emitted no progress events")
+	}
+	for _, n := range names {
+		if n != EventScanProgress {
+			t.Errorf("Scan emitted %q, want only %q (a scan is not a job)", n, EventScanProgress)
+		}
+	}
+	if len(pts) != len(names) {
+		t.Fatalf("payloads decoded %d of %d events — every payload is a ScanProgressEvent", len(pts), len(names))
+	}
+
+	// First point: the walk phase, indeterminate.
+	if first := pts[0]; first.Stage != scanStageWalk || first.Progress != 0 || first.Done != 0 || first.Total != 0 {
+		t.Errorf("first point = %+v, want an indeterminate walk entry", first)
+	}
+
+	// Hash phase: a real fraction over the planned bytes, never decreasing.
+	const totalBytes = 2 * 4096
+	seenHash, last := false, 0.0
+	for _, ev := range pts {
+		if ev.Stage != scanStageHash {
+			continue
+		}
+		seenHash = true
+		if ev.Progress < 0 || ev.Progress > 1 {
+			t.Errorf("hash point %v outside 0..1", ev.Progress)
+		}
+		if ev.Progress != 0 && ev.Total != totalBytes {
+			t.Errorf("hash point total = %d, want the planned %d bytes", ev.Total, totalBytes)
+		}
+		if ev.Progress < last {
+			t.Errorf("hash progress went backwards: %v after %v", ev.Progress, last)
+		}
+		if ev.Progress > last {
+			last = ev.Progress
+		}
+	}
+	if !seenHash {
+		t.Error("no scanStageHash point — the hash phase reported nothing")
+	}
+	if last == 0 {
+		t.Error("every hash point read 0 — no honest byte progress was reported")
+	}
+
+	// The jobs table is untouched: a scan never creates or updates a job.
+	jobs, jerr := st.ListJobs()
+	if jerr != nil {
+		t.Fatalf("ListJobs: %v", jerr)
+	}
+	if len(jobs) != 0 {
+		t.Errorf("Scan wrote %d jobs rows, want 0", len(jobs))
+	}
+
+	// A repeat scan is cache-warm: no bytes left to hash, so no hash
+	// phase — and still no job events.
+	names, pts = nil, nil
+	if _, err := sc.Scan([]string{root}); err != nil {
+		t.Fatalf("Scan (2): %v", err)
+	}
+	if len(pts) == 0 || pts[0].Stage != scanStageWalk {
+		t.Fatalf("warm scan points = %+v, want a walk entry", pts)
+	}
+	for _, ev := range pts {
+		if ev.Stage == scanStageHash {
+			t.Errorf("warm scan reported a hash phase at %+v", ev)
+		}
+	}
+}
+
 // TestRemoveDemoFile deletes a demo the scanner would list: a regular
 // .dem file under a configured import dir goes away, the cached hash
 // goes with it, and the next scan reports nothing.

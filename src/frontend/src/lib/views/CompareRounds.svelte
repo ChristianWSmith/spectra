@@ -61,6 +61,11 @@
   let cols = $state([]);
   let tickRate = $state(64);
   let error = $state('');
+  // Rung 3 of the loading ladder: without it the selection renders as empty
+  // column shells while the round reads are in flight. Plain indicator,
+  // transient (never seeded/remembered, never in the URL); cleared once on
+  // the first settled read like every first-load flag.
+  let loading = $state(true);
   // Round-scoped name colors: the round list (the counted-round index
   // behind the per-round side) and the scoreboard (each player's final
   // side), plus the match's side-switch count. Fetched once per
@@ -123,9 +128,13 @@
           };
         });
         error = '';
+        loading = false;
       })
       .catch((e) => {
-        if (live) error = errText(e);
+        if (live) {
+          error = errText(e);
+          loading = false;
+        }
       });
     return () => (live = false);
   });
@@ -219,6 +228,11 @@
         <button class="btn primary" onclick={() => nav(backHash())}><span class="codicon codicon-arrow-left"></span> Back to match</button>
       </div>
     </section>
+  {:else if loading}
+    <!-- The round reads are still in flight: without this the selection
+         renders as empty column shells (rung 3 — plain indicator,
+         transient). -->
+    <p class="muted" role="status">Loading rounds…</p>
   {:else}
     <div class="cmp-grid" style={gridStyle}>
       {#each cols as col (col.round)}

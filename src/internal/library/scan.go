@@ -73,10 +73,12 @@ type DemoFile struct {
 // ScannerOptions configures a Scanner. Store is the match index (import
 // recognition); DataRoot is the app's own data directory, which is never
 // scanned (spectra's managed copies are not the user's demos — default
-// data.RootDir() when empty).
+// data.RootDir() when empty); Emit receives the scan's progress event name
+// + payload (see EventScanProgress) and may be nil (tests, headless runs).
 type ScannerOptions struct {
 	Store    *store.Store
 	DataRoot string
+	Emit     func(event string, data any)
 }
 
 // Scanner owns the hash cache behind Scan. Create with NewScanner; one
@@ -86,6 +88,7 @@ type ScannerOptions struct {
 type Scanner struct {
 	st       *store.Store
 	dataRoot string
+	emit     func(event string, data any)
 
 	mu     sync.Mutex
 	hashes map[string]hashEntry
@@ -107,8 +110,96 @@ func NewScanner(o ScannerOptions) *Scanner {
 	return &Scanner{
 		st:       o.Store,
 		dataRoot: root,
+		emit:     o.Emit,
 		hashes:   map[string]hashEntry{},
 	}
+}
+
+// Scan phases — ScanProgressEvent.Stage. The split is the honesty rule:
+// the walk has no denominator, the hash pass does.
+const (
+	// scanStageWalk is the stat-only directory walk (plus the import
+	// recognition it feeds): the number of files is unknown until the walk
+	// is over, so its progress is always 0 = indeterminate — never a
+	// fabricated percentage.
+	scanStageWalk = "walk"
+	// scanStageHash is sha256 over the files this scan has never seen:
+	// bytes read ÷ the bytes it will hash (measured up front from the file
+	// sizes), a real 0..1 fraction.
+	scanStageHash = "hash"
+)
+
+// ScanProgressEvent is the payload of spectra:scan-progress — one
+// import-dir scan's progress, announced while the binding call runs.
+// Deliberately NOT spectra:job-progress: that payload keys a jobId into
+// the frontend's job store (services.js jobProgress map) and a colliding
+// id there would corrupt it — a scan is not a job, has no jobId, and
+// NEVER writes a row into the jobs table (see mappackservice.go's
+// equivalent note for spectra:asset-progress). Stage is scanStageWalk
+// (Progress 0 = indeterminate) or scanStageHash (a real byte fraction;
+// Done/Total are that phase's hashed/total bytes). The frontend renders it
+// through StatusChip only — no second progress widget.
+type ScanProgressEvent struct {
+	Stage    string  `json:"stage"`
+	Progress float64 `json:"progress"`
+	Done     int64   `json:"done"`
+	Total    int64   `json:"total"`
+}
+
+// scanProgress serializes ONE scan's progress events, mirroring the job
+// reporter's split (progressReporter.emit/tick in library.go): entry
+// announces a phase transition and is never throttled; tick announces a
+// byte-derived point and is throttled to progressMinInterval, with the
+// FIRST tick of each phase forced through (the same cadence and rule the
+// import pipeline's bar uses — the throttle kit lives there; this copy
+// holds no job state, so it cannot reuse that reporter without dragging
+// the jobs table into a scan). scanProgress is a Scan-local value guarded
+// by the scanner mutex Scan already holds — no lock of its own.
+type scanProgress struct {
+	emit      func(event string, data any)
+	tickStage string // stage a byte tick was last emitted for
+	lastNano  int64
+	lastPct   float64 // monotone clamp: the bar never walks backwards
+}
+
+// entry announces a phase (walk / hash) at frac — unthrottled.
+func (p *scanProgress) entry(stage string, frac float64, done, total int64) {
+	if p.emit == nil {
+		return
+	}
+	p.lastNano = time.Now().UnixNano()
+	p.send(stage, frac, done, total)
+}
+
+// tick announces a byte-derived point, throttled per phase (the first
+// tick of a phase always goes through).
+func (p *scanProgress) tick(stage string, frac float64, done, total int64) {
+	if p.emit == nil {
+		return
+	}
+	now := time.Now().UnixNano()
+	if p.tickStage == stage && now-p.lastNano < int64(progressMinInterval) {
+		return
+	}
+	p.tickStage = stage
+	p.lastNano = now
+	p.send(stage, frac, done, total)
+}
+
+func (p *scanProgress) send(stage string, frac float64, done, total int64) {
+	// Clamped monotone, exactly like the job reporter's points: a late
+	// (or byte-count-mismatched) reading can never walk the bar backwards.
+	if frac < p.lastPct {
+		frac = p.lastPct
+	} else {
+		p.lastPct = frac
+	}
+	p.emit(EventScanProgress, ScanProgressEvent{
+		Stage:    stage,
+		Progress: frac,
+		Done:     done,
+		Total:    total,
+	})
 }
 
 // importIndex is the library lookup the scan is built on: one pass over
@@ -157,9 +248,20 @@ func (sc *Scanner) importIndex() (importIndex, error) {
 // by content hash after it, which is what recognises an imported demo
 // sitting under a different path. Deleting the match therefore makes the
 // file reappear on the next scan.
+//
+// Progress: the scan announces itself as spectra:scan-progress (see
+// ScanProgressEvent) — an indeterminate walk point first, then a real
+// byte fraction while it hashes (the walk's file count is unknowable
+// before the walk, so the walk phase never fabricates a percentage).
+// Scans are SLOW on first run (up to scanMaxNewHashBytes of sha256), so
+// the frontend schedules them after first paint / off event bursts rather
+// than inline.
 func (sc *Scanner) Scan(roots []string) ([]DemoFile, error) {
 	sc.mu.Lock()
 	defer sc.mu.Unlock()
+
+	sg := &scanProgress{emit: sc.emit}
+	sg.entry(scanStageWalk, 0, 0, 0)
 
 	idx, err := sc.importIndex()
 	if err != nil {
@@ -171,21 +273,50 @@ func (sc *Scanner) Scan(roots []string) ([]DemoFile, error) {
 		return nil, err
 	}
 
+	// The hash phase's honest denominator: the sizes of exactly the files
+	// this scan will hash (cache misses, inside the SAME budget the loop
+	// below enforces — pre-rolled so the first byte read already has a
+	// total to divide by). A file that later fails to hash leaves its
+	// planned bytes uncounted, so the fraction may land below 1; it never
+	// moves backwards and the scan's end is the call resolving anyway.
 	hashesLeft, bytesLeft := scanMaxNewHashes, scanMaxNewHashBytes
+	var hashTotal int64
+	for i := range files {
+		if _, ok := sc.cachedSHA(&files[i]); ok {
+			continue
+		}
+		if hashesLeft <= 0 || files[i].Size > bytesLeft {
+			continue
+		}
+		hashesLeft--
+		bytesLeft -= files[i].Size
+		hashTotal += files[i].Size
+	}
+	if hashTotal > 0 {
+		sg.entry(scanStageHash, 0, 0, hashTotal)
+	}
+	hashesLeft, bytesLeft = scanMaxNewHashes, scanMaxNewHashBytes
+
+	var hashed int64 // bytes hashed so far — the numerator's base per file
 	listed := make([]DemoFile, 0, len(files))
 	for _, f := range files {
-		sha, hashed := sc.cachedSHA(&f)
-		if !hashed {
+		sha, ok := sc.cachedSHA(&f)
+		if !ok {
 			if hashesLeft <= 0 || f.Size > bytesLeft {
 				listed = append(listed, f) // budget spent: listed, unverified
 				continue
 			}
-			if sha, err = hashFile(f.Path); err != nil {
+			if sha, err = hashFile(f.Path, func(consumed int64) {
+				if frac, all := byteFrac(hashed+consumed, hashTotal); all {
+					sg.tick(scanStageHash, frac, hashed+consumed, hashTotal)
+				}
+			}); err != nil {
 				listed = append(listed, f) // vanished/unreadable: listed unverified
 				continue
 			}
 			hashesLeft--
 			bytesLeft -= f.Size
+			hashed += f.Size
 			sc.rememberSHA(&f, sha)
 		}
 		if idx.bySHA[sha] {
@@ -386,15 +517,18 @@ func (sc *Scanner) forgetSHA(path string) {
 }
 
 // hashFile streams a file through sha256 (never loads it whole — demos
-// are hundreds of MB).
-func hashFile(path string) (string, error) {
+// are hundreds of MB). onRead (optional) receives the running byte total
+// after every read — the SAME countingReader the import pipeline's hash
+// stage uses (library.go), so the scan's hash phase reports an honest
+// bytes-read fraction instead of a bare spinner.
+func hashFile(path string, onRead func(consumed int64)) (string, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return "", err
 	}
 	defer f.Close()
 	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
+	if _, err := io.Copy(h, &countingReader{r: f, onRead: onRead}); err != nil {
 		return "", err
 	}
 	return hex.EncodeToString(h.Sum(nil)), nil
