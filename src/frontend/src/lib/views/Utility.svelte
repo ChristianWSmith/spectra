@@ -274,7 +274,12 @@
 
 <div class="view util-view">
   {#if error}
-    <p class="error" role="alert">{error}</p>
+    <p class="error" role="alert">
+      {error}
+      <button class="btn small" aria-label="Dismiss error" onclick={() => (error = '')}>
+        <span class="codicon codicon-close"></span>
+      </button>
+    </p>
   {/if}
 
   {#if loading}

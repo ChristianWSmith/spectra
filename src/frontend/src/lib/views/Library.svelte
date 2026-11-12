@@ -803,7 +803,10 @@
            library is still on its way. Plain indicator only — transient
            (see listLoading/jobsLoading), never a progress widget. -->
       <p class="muted" role="status">Loading…</p>
-    {:else if matches.length === 0 && jobs.length === 0 && !searching}
+    {:else if matches.length === 0 && jobs.length === 0 && !searching && !error}
+      <!-- Honesty gate: a FAILED list load must not also claim the
+           library is empty (error above is the truth about why nothing
+           is here); the claim returns when a retry clears it. -->
       <div class="empty">
         <p class="empty-title" role="status">No matches yet</p>
         <!-- No Import… button here: the header already owns the one
@@ -953,7 +956,10 @@
           {/each}
         </tbody>
       </table>
-      {#if matches.length === 0 && pendingImports.length === 0}
+      <!-- Honesty gate (twin of the dropzone's above): while the failure
+           is on screen, no empty claim may stand in for it — the error IS
+           why the table has no rows. -->
+      {#if matches.length === 0 && pendingImports.length === 0 && !error}
         <div class="empty">
           <p class="muted" role="status">
             {searching
