@@ -494,6 +494,7 @@ export const subscribeJobProgress = (cb) => {
   cb(new Map());
   return () => {};
 };
+export const warmProfile = () => {};
 `,
 );
 

@@ -109,6 +109,7 @@ export const getRounds = () => Promise.resolve(d().rounds || []);
 export const getScoreboard = () => Promise.resolve(d().scoreboard || []);
 export const getMatch = () => Promise.resolve(d().match || null);
 export const errText = (e) => (e == null ? 'unknown error' : String((e && e.message) || e));
+export const warmProfile = () => {};
 `,
 );
 

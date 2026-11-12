@@ -104,6 +104,7 @@ export const getUtility = () => Promise.resolve(d().utility || []);
 export const getRoundClasses = () => Promise.resolve(d().classes || []);
 export const getRoundDetail = (id, round) => Promise.resolve((d().details || {})[round] || null);
 export const errText = (e) => (e == null ? 'unknown error' : String((e && e.message) || e));
+export const warmProfile = () => {};
 `,
 );
 
