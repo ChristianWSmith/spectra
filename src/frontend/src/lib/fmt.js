@@ -12,7 +12,7 @@ function intoRoundSeconds(tick, round, tickRate) {
   return into >= 0 ? into : null;
 }
 
-// chatClock renders a chat line's time cell: "R12 1:23" — how far INTO
+// chatClock renders a chat line's time cell: "RD12 1:23" — how far INTO
 // its round the message was said, rendered with fmtClock. Messages with
 // no containing round, in a counted-out round (knife/warmup —
 // lib/rounds.js) or with a negative offset fall back to a match-relative
@@ -24,7 +24,9 @@ export function chatClock(c, roundByNumber, tickRate) {
   const r = (roundByNumber || new Map()).get(c.round);
   if (r && isCounted(r)) {
     const into = intoRoundSeconds(c.tick, r, tickRate);
-    if (into != null) return `R${r.number} ${fmtClock(into)}`;
+    // Round prefix is spelled RD everywhere (owner: "standardize round
+    // spelling everywhere as RD") — RD12, never R12.
+    if (into != null) return `RD${r.number} ${fmtClock(into)}`;
   }
   return fmtClock(tickSeconds(c.tick, tickRate));
 }

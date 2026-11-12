@@ -201,9 +201,35 @@ const base = {
     { steamId: '76561198012345678', name: 'donk', side: 'ct' },
     { steamId: '76561198012345679', name: 'zweih', side: 't' },
   ],
-  economy: [],
+  economy: [
+    {
+      round: 5,
+      equipCT: 4200,
+      equipT: 3800,
+      moneyCT: 1500,
+      moneyT: 2000,
+      spentCT: 4000,
+      spentT: 3600,
+      classCT: 'full',
+      classT: 'eco',
+    },
+    {
+      round: 6,
+      equipCT: 3000,
+      equipT: 4500,
+      moneyCT: 900,
+      moneyT: 2500,
+      spentCT: 2800,
+      spentT: 4300,
+      classCT: 'force',
+      classT: 'full',
+    },
+  ],
   utility: [],
-  classes: [],
+  classes: [
+    { round: 5, label: 'full', confidence: 1, ruleVersion: 1, explanation: 'both teams full buy' },
+    { round: 6, label: 'force', confidence: 1, ruleVersion: 1, explanation: 'equip over threshold' },
+  ],
   details: { 5: mkDetail(5), 6: mkDetail(6) },
 };
 
@@ -318,6 +344,41 @@ check(
   'actor-less ▶ stamps NO follow (never a guess)',
   !!navStartRow && navStartRow.includes('tick=1100') && !navStartRow.includes('follow='),
   navStartRow || 'no navigation',
+);
+
+console.log('C. buy-class chips wear the shared palette (raw key as class, tooltip intact)');
+// Both chip shapes carry the RAW value as a class — the palette key that
+// style-m3a.css's `.cmp-class.<key>` paints: the column h3 chip is the
+// round classification (RoundClassification.label) and the per-side note
+// chips are EconomyRow.classCT/classT (empty → `unknown`, the dashed key).
+const clsChip = col?.querySelector('h3 .chip.cmp-class');
+check(
+  'column h3 chip carries the RAW classification key as a class',
+  !!clsChip && clsChip.classList.contains('full') && clsChip.textContent.trim() === 'full',
+  clsChip ? clsChip.className : 'missing',
+);
+check(
+  'column h3 chip keeps its explanation + rules-version tooltip',
+  clsChip?.getAttribute('title') === 'both teams full buy (rules v1)',
+  clsChip?.getAttribute('title'),
+);
+const noteChips = [...(col?.querySelectorAll('.cmp-note .chip.cmp-class') || [])];
+check(
+  'per-side note chips carry the RAW EconomyRow class values as classes',
+  noteChips.length === 2 &&
+    noteChips[0].classList.contains('full') &&
+    noteChips[0].textContent.trim() === 'full' &&
+    noteChips[1].classList.contains('eco') &&
+    noteChips[1].textContent.trim() === 'eco',
+  JSON.stringify(noteChips.map((c) => c.className)),
+);
+// The sequence's legacy round cell (LandmarkRow without a roundByNumber
+// lookup) is the other compact round label this driver renders.
+const seqChips = [...(col?.querySelectorAll('.lm-row .chip.round-chip') || [])];
+check(
+  'sequence round chips spell the canonical RD prefix (RD5)',
+  seqChips.length === 2 && seqChips.every((c) => c.textContent.trim() === 'RD5'),
+  JSON.stringify(seqChips.map((c) => c.textContent.trim())),
 );
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

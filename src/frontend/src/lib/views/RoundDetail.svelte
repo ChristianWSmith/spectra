@@ -262,9 +262,9 @@
         {/if}
         {#if cls}
           <span
-            class="chip cmp-class"
+            class="chip cmp-class {cls.label || 'unknown'}"
             title="{cls.explanation || 'classified'} (rules v{cls.ruleVersion} — {Math.round((cls.confidence || 0) * 100)}% sure)"
-            >{cls.label}</span
+            >{cls.label || 'unknown'}</span
           >
         {/if}
       </h1>

@@ -182,9 +182,10 @@
       <span class="mono lm-time" title="tick {row.tick}">{fmtClock(tickSeconds(row.tick, tickRate))}</span>
     {:else}
       <!-- Legacy cell (CompareRounds' compact sequence — no round
-           lookup passed): tick + raw round chip, unchanged. -->
+           lookup passed): tick + raw round chip, the round prefix
+           spelled RD like every compact round label. -->
       <span class="mono lm-tick">{row.tick}</span>
-      <span class="chip round-chip">{row.round >= 1 ? `R${row.round}` : roundIndexLabel(row.round)}</span>
+      <span class="chip round-chip">{row.round >= 1 ? `RD${row.round}` : roundIndexLabel(row.round)}</span>
     {/if}
     <span class="chip kind lm-cat" class:lm-cat-generic={row.source !== 'event'} title={cat?.label}>{cat?.short || cat?.label || row.category}</span>
     <span class="lm-text">{@render primaryText()}</span>

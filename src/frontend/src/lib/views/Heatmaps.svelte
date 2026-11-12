@@ -334,7 +334,7 @@
         <!-- Counted rounds only (lib/rounds.js): knife/warmup rounds are
              numbered negatively, and -1 is this range's "all" sentinel. -->
         {#each rounds.filter(isCounted) as r (r.number)}
-          <option value={r.number}>R{r.number}</option>
+          <option value={r.number}>RD{r.number}</option>
         {/each}
       </select>
     </div>
@@ -343,7 +343,7 @@
       <select class="input" id="heat-to" bind:value={roundTo}>
         <option value={-1}>All</option>
         {#each rounds.filter(isCounted) as r (r.number)}
-          <option value={r.number}>R{r.number}</option>
+          <option value={r.number}>RD{r.number}</option>
         {/each}
       </select>
     </div>

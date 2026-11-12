@@ -377,7 +377,11 @@
   gap: 6px;
 }
 
-/* Round-classification chip (Match Rounds tab, RoundDetail, Compare). */
+/* Round-classification chip (Match Rounds tab, RoundDetail, Compare).
+   LAYOUT + the no-class-key fallback only: the per-class COLOR lives in
+   style-m3a.css's THE buy-class palette (.econ-cls.<key> /
+   .cmp-class.<key> — specificity 0,2,0 beats this rule's 0,1,0
+   regardless of load order), so no palette value is spelled here. */
 .cmp-class {
   color: var(--accent);
   border-color: var(--accent-40);
