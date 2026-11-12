@@ -50,7 +50,7 @@
 //
 // Unit-tested by src/lib/bomb.test.js (the lib test glob
 // src/lib/*.test.js picks it up).
-import { sameRoundEndTick, nextRoundStartTick } from './roundcut.js';
+import { sameRoundEndTick, nextRoundStartTick, roundCutTick } from './roundcut.js';
 
 // hasBombPos reports whether a row carries a usable world position
 // (normalizeEvent aliases posX/posY → x/y; missing evidence stays
@@ -127,7 +127,8 @@ export function bombEndTick(plant, tr, explodes, defuses, roundEnds, roundStarts
 }
 
 // bombEvidenceAt — THE dropped-C4 reconstruction rule, over an evidence
-// bundle of pre-bucketed rows { drops, pickups, plants, roundEnds }:
+// bundle of pre-bucketed rows { drops, pickups, plants, roundEnds,
+// roundStarts }:
 //
 //   For tick T in a round, with d = the LAST bomb_drop at/before T:
 //     1. if a bomb_pickup (or bomb_plant) exists in d's round at
@@ -139,14 +140,20 @@ export function bombEndTick(plant, tr, explodes, defuses, roundEnds, roundStarts
 //     3. else → unknown (null — draw nothing, never extrapolate).
 //
 // Round scoping: T is evaluated against d's round only ("for tick T in
-// a round"), and a T at/after that round's round_end returns unknown —
-// a previous round's drop must never anchor the current frame. A drop
-// without a stored position (old evidence / zero vector) falls through
-// to unknown too. 'picked-up' consumers resolve the carrier from
-// row.attacker (the pickup player) and follow that PLAYER's stream —
-// carried bomb = its player; the pickup position itself is evidence of
-// where the carrier took it, not a place to draw. Unit-tested by
-// src/lib/bomb.test.js.
+// a round"), and a T at/after the canonical ROUND TERMINATOR returns
+// unknown — a previous round's drop must never anchor the current
+// frame. That terminator is roundcut.js roundCutTick (the same-round
+// round_end at/after d, else the next round_start, else null for a
+// live/truncated round — never scanned here; a drop stamped AFTER its
+// own round_end, the post-round C4-kill shape, ends at the next
+// round_start instead of forever). The pickup/plant branches are the
+// drop's OWN terminators and are min'd with it by the tick gates: each
+// branch only answers while tick < cut. A drop without a stored
+// position (old evidence / zero vector) falls through to unknown too.
+// 'picked-up' consumers resolve the carrier from row.attacker (the
+// pickup player) and follow that PLAYER's stream — carried bomb = its
+// player; the pickup position itself is evidence of where the carrier
+// took it, not a place to draw. Unit-tested by src/lib/bomb.test.js.
 export function bombEvidenceAt(ev, tick) {
   const e = ev || {};
   let d = null;
@@ -156,14 +163,12 @@ export function bombEvidenceAt(ev, tick) {
   if (!d) return null; // never dropped before T: carried from spawn or
   // planted directly — the player stream / plant path owns those.
 
-  // Scope to the drop's round; out of scope once that round ended.
-  let end = null;
-  for (const r of e.roundEnds || []) {
-    if (r && r.round === d.round && r.tick >= d.tick && (!end || r.tick < end.tick)) {
-      end = r;
-    }
-  }
-  if (end && tick >= end.tick) return null;
+  // Round scope — the canonical composition (roundcut.js roundCutTick):
+  // same-round round_end at/after the drop, else the next round_start,
+  // else null (no boundary rows loaded → the item's own evidence keeps
+  // answering — never a fabricated boundary).
+  const cut = roundCutTick(d, e.roundEnds, e.roundStarts);
+  if (cut !== null && tick >= cut) return null;
 
   // Branch 1: a pickup/plant after the drop, still ≤ T, ends it.
   let term = null;

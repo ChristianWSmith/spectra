@@ -961,14 +961,17 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   let roundStarts = [];
   // The dropped-C4 evidence bundle consumed by bomb.js bombEvidenceAt
   // (the smart camera's bomb point and drawBomb's dropped marker).
-  let bombEv = { drops: [], pickups: [], plants: [], roundEnds: [] };
+  // roundStarts rides along: bombEvidenceAt's round scope is the
+  // canonical roundcut.js roundCutTick (round_end, else next round_start).
+  let bombEv = { drops: [], pickups: [], plants: [], roundEnds: [], roundStarts: [] };
   // The death-drop evidence (lib/replay/drops.js dropEvidenceAt) —
   // weapon_drop / weapon_pickup rows in their OWN 'wdrop'/'wpickup'
-  // buckets, never mixed with the C4 lists above. roundEnds is shared
-  // with the bomb bundle (one round_end row serves every consumer).
+  // buckets, never mixed with the C4 lists above. roundEnds/roundStarts
+  // are shared with the bomb bundle (one boundary row serves every
+  // consumer; roundcut.js is the one terminator home).
   let wdrops = [];
   let wpickups = [];
-  let wdropEv = { drops: [], pickups: [], roundEnds: [] };
+  let wdropEv = { drops: [], pickups: [], roundEnds: [], roundStarts: [] };
   // Derived INDICES over the match-static rows (both rebuilt in
   // setLandmarks, both pure lookups at draw time):
   //   dropWins — each drop row → its visibility window (drops.js
@@ -1494,11 +1497,15 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     }
     // The bomb evidence bundle for bomb.js (dropped reconstruction +
     // planted round-end cleanup). One rebuild per setLandmarks call —
-    // the per-frame paths only scan these small arrays.
-    bombEv = { drops, pickups, plants, roundEnds };
+    // the per-frame paths only scan these small arrays. roundStarts
+    // rides along for bombEvidenceAt's round scope (roundcut.js
+    // roundCutTick — same-round round_end, else the next round_start).
+    bombEv = { drops, pickups, plants, roundEnds, roundStarts };
     // The drop-layer evidence bundle (drops.js dropEvidenceAt) — built
-    // with the bomb one above; roundEnds is the shared round cleanup.
-    wdropEv = { drops: wdrops, pickups: wpickups, roundEnds };
+    // with the bomb one above; roundEnds/roundStarts are the shared
+    // round cleanup (the ONE roundcut.js composition, never scanned
+    // here).
+    wdropEv = { drops: wdrops, pickups: wpickups, roundEnds, roundStarts };
     // Derived lookups for the per-frame paths (all over match-static
     // rows — pure functions of these buckets, rebuilt whenever they are):
     //   dropWins — drops.js buildDropWindows: each drop row → its
