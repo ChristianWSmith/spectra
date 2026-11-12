@@ -33,9 +33,10 @@
 // carry the shrink — structural pins only, jsdom does no layout.
 // Section J pins the card CLICK → onFollow wiring (the root fires, an
 // inner control like the mute button is guarded out, a DEAD card stays
-// clickable) plus its CSS: the pointer/hover affordance and the
-// .pc-follow border tint — never an outline (the one-ring pin above
-// scans every .pc-card rule).
+// clickable) plus its KEYBOARD parity (role=button + tabindex, Enter/Space
+// fire, other keys and inner-control keys never) and its CSS: the
+// pointer/hover affordance and the .pc-follow border tint — never an
+// outline (the one-ring pin above scans every .pc-card rule).
 //
 // jsdom is intentionally not a project dependency; from frontend/ run:
 //   npm i --no-save jsdom
@@ -1093,6 +1094,38 @@ check(
   followsJ.length === 2,
   JSON.stringify(followsJ),
 );
+
+// Keyboard parity (the LandmarkRow role=button idiom): the card root is
+// focusable with a role, Enter/Space fire follow, other keys never do,
+// and a key landing on the mute button stays with the button.
+const key = (el, k) =>
+  el.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true }));
+const followsJk = [];
+const rootJk = await show({ card: { ...fullCard, onFollow: () => followsJk.push('f') } });
+const cardJk = q(rootJk, '.pc-card');
+check(
+  'the card root is a focusable role=button (tabindex=0)',
+  cardJk.getAttribute('role') === 'button' && cardJk.getAttribute('tabindex') === '0',
+  `${cardJk.getAttribute('role')} / ${cardJk.getAttribute('tabindex')}`,
+);
+key(cardJk, 'Enter');
+check('Enter on the card root fires onFollow', followsJk.length === 1, JSON.stringify(followsJk));
+// dispatchEvent returns false when preventDefault ran (Space would
+// otherwise scroll the page under the card).
+const spaceOk = key(cardJk, ' ');
+check(
+  'Space on the card root fires onFollow AND is preventDefault-ed',
+  followsJk.length === 2 && spaceOk === false,
+  `${JSON.stringify(followsJk)} / defaultPrevented=${!spaceOk}`,
+);
+key(cardJk, 'x');
+check('any other key never fires follow', followsJk.length === 2, JSON.stringify(followsJk));
+const followsJk2 = [];
+const rootJk2 = await show({
+  card: { ...fullCard, onFollow: () => followsJk2.push('f'), onToggleMute: () => {} },
+});
+key(q(rootJk2, '.pc-mute'), 'Enter');
+check('Enter on the inner mute button never fires onFollow (the same target guard)', followsJk2.length === 0, JSON.stringify(followsJk2));
 
 // The mute button sits INSIDE the root: the target guard must keep it
 // from firing follow while the mute itself still fires (section B pins
