@@ -83,25 +83,26 @@ export const LANDMARK_KINDS = [
   'player_disconnect',
 ];
 
-// DRAW_KINDS: the typed kinds the replay world layers and scrubber
-// markers draw — positioned anchors (kills, damage, grenades, bomb incl.
-// the dropped-C4 evidence rows) plus round_end (round-win markers) and
-// round_start (the death-X cutoff — a kill stamped round N can land
-// AFTER round N's round_end, e.g. the C4 detonation kill, so the NEXT
-// round's start terminates it; the row itself is STORED as a round
-// start and never drawn as a world marker). Fetched once per match,
-// unfiltered by category chips: the map always shows the full spatial
-// context, while the LIST and scrubber markers follow the enabled
-// categories. `damage` rides here for the victim-hit flash only — it
-// carries no scrubber marker (see scrubberMarkerClass); `round_start`
-// carries the TALL tick marker when the round_starts category is on
-// (the scrubber's marker loop gates this set by the enabled
-// categories); `grenade_land` rides it for the decoy REST marker
-// (bucket 'land' — the renderer's plan pairs the throw arc to it; no
-// scrubber marker either); `grenade_bounce` rides it because a bounce is a
-// VERTEX of the renderer's throw→bounce→det path — the world layer needs
-// those rows whether or not the 'Bounce' feed category is on (bucket
-// 'bounce', no scrubber marker either).
+// DRAW_KINDS: the typed kinds the replay world layers draw — positioned
+// anchors (kills, damage, grenades, bomb incl. the dropped-C4 evidence
+// rows) plus round_end and round_start (the round-cut inputs: a kill
+// stamped round N can land AFTER round N's round_end, e.g. the C4
+// detonation kill, so the NEXT round's start terminates it — the rows
+// are STORED for that rule and never drawn as world markers). Fetched
+// once per match, unfiltered by category chips: the map always shows the
+// full spatial context, while the LIST and the scrubber's event markers
+// follow the enabled categories.
+// NEITHER round row feeds a scrubber tick any more (the owner's ruling:
+// round-start ticks come from the round rows themselves — Replay's
+// markers pass 1, unconditional — and the round-win tick is gone from
+// the scrubber; see scrubberMarkerClass). `damage` rides here for the
+// victim-hit flash only — it carries no scrubber marker (see
+// scrubberMarkerClass); `grenade_land` rides it for the decoy REST
+// marker (bucket 'land' — the renderer's plan pairs the throw arc to
+// it; no scrubber marker either); `grenade_bounce` rides it because a
+// bounce is a VERTEX of the renderer's throw→bounce→det path — the world
+// layer needs those rows whether or not the 'Bounce' feed category is
+// on (bucket 'bounce', no scrubber marker either).
 export const DRAW_KINDS = [
   'kill',
   'damage',
@@ -341,18 +342,25 @@ export function sameUtilityWeapon(a, b) {
 // Kept here so the one categorization module owns the whole bucket
 // contract: every drawable bucket the world layers draw stays meaningful
 // on the scrubber, including the typed grenade buckets. 'tall' is THE
-// tall tick mark (style.css .scrub-marker.tall): round starts take it —
-// and so do round wins, which is why the class is not bucket-named
-// (the two overlap on the scrubber when both categories are on; a
-// future pass may want to differentiate them). Pure — unit-tested by
-// src/lib/landmarks.test.js.
+// tall tick mark (style.css .scrub-marker.tall) and it is round STARTS'
+// class only: the scrubber draws those ticks from the match's own round
+// rows (Replay.svelte's markers pass 1), unconditionally — the owner's
+// ruling: round-start ticks always draw regardless of filter and are the
+// ONLY tick marks. ROUND WINS carry NO scrubber mark ('round' → '' — the
+// round-win tick is removed from the scrubber; its feed rows, category
+// and map/world presence are untouched). Note the scrubber skips
+// round_start/round_end world rows before consulting this mapping, so
+// 'start' survives as the vocabulary for the class pass 1 emits (and the
+// never-duplicated-tick rule lives in the view), never as a second source
+// of ticks. Pure — unit-tested by src/lib/landmarks.test.js.
 export function scrubberMarkerClass(bucket) {
   const b = String(bucket || '');
   if (b === 'kill') return 'kill';
   if (b === 'plant' || b === 'defuse') return 'plant';
   if (b === 'explode' || DETONATION_BUCKETS.includes(b)) return 'det';
-  if (b === 'round' || b === 'start') return 'tall';
-  return ''; // 'drop'/'pickup' (bomb evidence), 'wdrop'/'wpickup'
+  if (b === 'start') return 'tall';
+  return ''; // 'round' (a round WIN — no scrubber tick since the ruling
+  //             above), 'drop'/'pickup' (bomb evidence), 'wdrop'/'wpickup'
   //             (weapon evidence — the drop layer draws from the world,
   //             no scrubber tick), the plant/defuse ATTEMPT
   //             lifecycle buckets (the completion tick already carries the
@@ -379,9 +387,13 @@ export function scrubberMarkerClass(bucket) {
 // (scrubberMarkerClass returns '' for them).
 // round_start buckets to 'start' — the death-X cutoff row the renderer
 // STORES as a round start (killEndTick's next-round terminator); it is
-// never drawn as a world marker, but it DOES carry the tall scrubber
-// tick (scrubberMarkerClass 'tall') so the default round-start feed
-// reads on the timeline.
+// never drawn as a world marker and it no longer sources a scrubber tick
+// either: the scrubber's round-start ticks come from the round ROWS
+// themselves (Replay's markers pass 1, unconditional — the owner's
+// ruling), so 'start' stays the bucket vocabulary and the class pass 1
+// emits (scrubberMarkerClass 'tall'), never a second tick source.
+// round_end buckets to 'round' — the round-cut input only; the round-win
+// tick was removed from the scrubber (scrubberMarkerClass 'round' → '').
 // The plant/defuse ATTEMPT lifecycle buckets into its OWN four buckets
 // (plant_begin/plant_abort/defuse_start/defuse_abort): they are neither
 // 'plant'/'defuse' (those feed the planted-C4 beep scheduler and the

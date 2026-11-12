@@ -324,6 +324,18 @@ const KILL_ROWS = [
     attacker: '911', attackerName: 'ghost', victim: '922', victimName: 'phantom',
     weapon: 'ak47', headshot: true, dmg: 100, posX: 100, posY: 200, posZ: 0 },
 ];
+// A round-WIN row for the round-win-tick pin (section Q): registered
+// under round_end, so BOTH the draw feed (DRAW_KINDS) and a
+// round_wins-filtered read return it — i.e. the row really IS in the
+// marker answer when that category is on, which is what makes "no tick
+// draws for it" a non-vacuous pin (the owner's ruling: the round-win
+// tick is removed from the scrubber; the row keeps its feed/category/
+// map presence). Tick 300 sits mid-stream (0..576), far from both round
+// starts, so a round-win tick that survived the ruling would show up as
+// an extra 'tall' tick beside the round-start one.
+const ROUND_ROWS = [
+  { id: 95, seq: 95, tick: 300, round: 1, kind: 'round_end', winner: 'ct' },
+];
 // ONE predicate, TWO reads — the mirror of store.eventWhere (the Go
 // side shares ONE clause builder between GetEvents and GetEventKeys, and
 // the stub must stay consistent the same way, or the marker pins would
@@ -332,13 +344,15 @@ const KILL_ROWS = [
 // Visibility first: the fixture registers its row groups under the kinds
 // they exist for (the coarse registration this stub always had) — the
 // draw/kit group rides weapon_pickup, the connection group its own two
-// kinds, the kill group kill. A round_starts CATEGORY therefore does not
-// surface the kit fixture's round_start row: that row exists for the kit
-// evidence's round scoping, not as a feed row this harness lists.
+// kinds, the kill group kill, the round-win group round_end (section Q).
+// A round_starts CATEGORY therefore does not surface the kit fixture's
+// round_start row: that row exists for the kit evidence's round scoping,
+// not as a feed row this harness lists.
 const GROUPS = [
   { rows: CONN_ROWS, kinds: ['player_connect', 'player_disconnect'] },
   { rows: KIT_ROWS, kinds: ['weapon_pickup'] },
   { rows: KILL_ROWS, kinds: ['kill'] },
+  { rows: ROUND_ROWS, kinds: ['round_end'] },
 ];
 const rowsForKinds = (f) => {
   const kinds = (f && f.kinds) || [];
@@ -386,10 +400,14 @@ export const getEvents = (filter) => {
 // getEventKeys — the SCRUBBER-MARKER answer: the SAME rows the list read
 // returns for this filter (the shared predicate above), keys-only. Every
 // request is recorded so section O can pin that the marker set and the
-// list are asked with byte-identical filters.
+// list are asked with byte-identical filters; the matched ROWS are
+// recorded beside it (__keyRows) so section Q can prove a row really WAS
+// in the marker answer while the scrubber drew no tick for it.
 export const getEventKeys = (filter) => {
   globalThis.__keyFilters = (globalThis.__keyFilters || []).concat([filter]);
-  return Promise.resolve(matched(filter).map((r) => ({ id: r.id, tick: r.tick, kind: r.kind })));
+  const rows = matched(filter);
+  globalThis.__keyRows = (globalThis.__keyRows || []).concat(rows);
+  return Promise.resolve(rows.map((r) => ({ id: r.id, tick: r.tick, kind: r.kind })));
 };
 export const getEvent = () => Promise.resolve(null);
 // Flash-white overlay durations (matched to blind rows by seq) — none
@@ -417,11 +435,18 @@ export const getGenericEvents = (id, name) =>
       : [],
   );
 export const getMatch = () => Promise.resolve({ map: '', sideSwitches: 1 });
+// The round rows — ONE fixture for the round-ribbon pins (section C)
+// and the scrubber round-tick pins (sections D/Q): round 1 spans the
+// whole position stream [0..576], round 2 starts at 640 — PAST the
+// stream's last tick (576), which is what makes "never an invented tick
+// position" testable (only round 1's start can draw a scrubber tick).
+// Exported so section Q can derive its expected ticks from the SAME rows.
+export const ROUNDS_FIXTURE = [
+  { number: 1, winner: 'ct', reason: 'CTWin', startTick: 0, endTick: 576, freezeEndTick: 64, warmup: false, pregame: false, bombSite: '' },
+  { number: 2, winner: 't', reason: 'BombDefused', startTick: 640, endTick: 1216, freezeEndTick: 704, warmup: false, pregame: false, bombSite: 'A' },
+];
 export const getRounds = () =>
-  Promise.resolve([
-    { number: 1, winner: 'ct', reason: 'CTWin', startTick: 0, endTick: 576, freezeEndTick: 64, warmup: false, pregame: false, bombSite: '' },
-    { number: 2, winner: 't', reason: 'BombDefused', startTick: 640, endTick: 1216, freezeEndTick: 704, warmup: false, pregame: false, bombSite: 'A' },
-  ]);
+  Promise.resolve(ROUNDS_FIXTURE.map((r) => ({ ...r })));
 export const getTeamNames = () => Promise.resolve({ ct: 'Alpha', t: 'Bravo' });
 export const getScoreboard = () => Promise.resolve([]);
 // Voice: the fixture has NO voice (presence null → the whole voice index
@@ -1026,6 +1051,23 @@ check(
   children(scrub).length === 2 && children(scrub)[0].classList.contains('scrubber-wrap') &&
     children(scrub)[1].classList.contains('replay-readout'),
   children(scrub).map((el) => el.className).join(' | '),
+);
+// The owner's ruling (scrubber ticks): round-start ticks ALWAYS draw —
+// sourced from the round ROWS, never from the filtered marker answer —
+// and they are the ONLY tick marks on the scrubber (the round-win tick
+// is removed). A fresh mount therefore draws ONE 'tall' tick: round 1's
+// startTick 0 → left 0% of the stream basis (t0=0, span=576, the engine
+// stub's ticks above); round 2 starts at tick 640 — PAST the stream's
+// last tick — so it draws NOTHING (a position outside the stream is
+// never invented; the same bounds rule the event markers use). The
+// per-filter half of the ruling is pinned in section Q.
+const freshTicks = () => [...scrub.querySelectorAll('.scrub-marker.tall')];
+check(
+  'the scrubber draws the round-start tick (data-round=1 at left 0%) — round 2 out of stream draws none',
+  freshTicks().length === 1 &&
+    freshTicks()[0].getAttribute('data-round') === '1' &&
+    /left:\s*0%/.test(freshTicks()[0].getAttribute('style') || ''),
+  JSON.stringify(freshTicks().map((t) => `${t.getAttribute('style')} round=${t.getAttribute('data-round')}`)),
 );
 const controls = lines[1];
 // Autoplay (spec: "start playing immediately once ready"): startEngine
@@ -4019,6 +4061,98 @@ check(
   !!cardP('NoColor1') && !cardP('NoColor1').classList.contains('pc-color') &&
     !cardP('NoColor2').classList.contains('pc-color'),
   `${cardP('NoColor1')?.className} / ${cardP('NoColor2')?.className}`,
+);
+
+// ============================================================================
+// APPENDED SECTION (scrubber round ticks — the owner's ruling) =============
+// "Round-start ticks always draw regardless of filter, and are the only
+// tick marks (round-win tick removed)." It reuses section N's harness6
+// (the one with a settable query) — no new mount. Basis: the engine
+// stub's stream spans ticks 0..576 (parsePositions above) and the round
+// fixture has round 1 starting at tick 0 (in range) and round 2 at 640
+// (PAST the stream → never a tick — a position is never invented).
+// ============================================================================
+console.log('Q. scrubber round-start ticks: unconditional, the ONLY tick marks');
+const { ROUNDS_FIXTURE: RFIX } = await import(pathToFileURL(join(dir, 'services.js')).href);
+const T0 = 0;
+const T1 = 576; // the engine stub's ticks[0] / ticks[frames - 1]
+// THE expectation — the markers loop's OWN transform over the rounds that
+// fit the stream: tick count = the in-range rounds, position maps to
+// startTick, data-round names the round.
+const wantTicks = RFIX.filter(
+  (r) => Number.isFinite(r.startTick) && r.startTick >= T0 && r.startTick <= T1,
+).map((r) => ({
+  round: String(r.number),
+  pct: ((r.startTick - T0) / Math.max(1, T1 - T0)) * 100,
+}));
+const tallQ = () => [...target6.querySelectorAll('.scrub-marker.tall')];
+const leftPct = (el) => {
+  const m = /left:\s*(-?[\d.eE+]+)%/.exec(el?.getAttribute('style') || '');
+  return m ? Number(m[1]) : NaN;
+};
+const ticksMatchQ = () =>
+  tallQ().length === wantTicks.length &&
+  wantTicks.every(
+    (w, i) =>
+      tallQ()[i].getAttribute('data-round') === w.round &&
+      Math.abs(leftPct(tallQ()[i]) - w.pct) < 1e-9,
+  );
+const tickDetailQ = () =>
+  JSON.stringify(tallQ().map((t) => ({ round: t.getAttribute('data-round'), left: leftPct(t) })));
+
+// Baseline on the DEFAULT category (round_starts).
+globalThis.__setQuery6({ cat: 'round_starts' });
+await sleep();
+check(
+  'default (round_starts): the tall ticks are exactly the round rows — count, startTick position, data-round',
+  ticksMatchQ(),
+  `got ${tickDetailQ()} want ${JSON.stringify(wantTicks)}`,
+);
+
+// (a) KILLS-ONLY — the ruling's headline case: the round ticks do not
+// care that round_starts is off (and the kill dot still follows the
+// filter, unchanged).
+globalThis.__setQuery6({ cat: 'kills' });
+await sleep();
+check(
+  'kills-only: the round-start tick still draws (kills6 keeps its filtered dot)',
+  ticksMatchQ() && kills6() === 1,
+  `ticks ${tickDetailQ()} kill markers=${kills6()}`,
+);
+
+// (b) ZERO categories — reachable through the URL (cat= parses to []),
+// and it means NO event job at all: the marker answer is never even
+// asked (the stub records every getEventKeys call). The round tick must
+// not care.
+const keysBeforeEmpty = (globalThis.__keyFilters || []).length;
+globalThis.__setQuery6({ cat: '' });
+await sleep();
+check(
+  'zero categories: no marker answer is asked at all — and the round-start tick still draws',
+  (globalThis.__keyFilters || []).length === keysBeforeEmpty && ticksMatchQ() && kills6() === 0,
+  `keyFilters +${(globalThis.__keyFilters || []).length - keysBeforeEmpty} ticks ${tickDetailQ()} kill markers=${kills6()}`,
+);
+
+// (c) ROUND WINS on: the round-win row reaches BOTH the list and the
+// marker answer (the stub's one shared predicate) — so the next pin is
+// non-vacuous — yet NO tick draws for it: round-start ticks are the ONLY
+// tick marks (the round-win tick is removed from the scrubber; the row
+// keeps its feed/category presence).
+globalThis.__setQuery6({ cat: 'round_wins' });
+await sleep();
+const winRowsQ = target6.querySelectorAll('.lm-row').length;
+const winKeyQ = (globalThis.__keyRows || []).some((r) => r && r.id === 95);
+check(
+  'round_wins: the round-win row IS listed and IS in the marker answer (non-vacuous)',
+  winRowsQ === 1 && chipOf6() === 'win' && winKeyQ,
+  `rows=${winRowsQ} chip=${chipOf6()} inKeyAnswer=${winKeyQ}`,
+);
+check(
+  'round_wins: yet it draws NO scrubber tick — every tall tick is a round start (data-round), none at its tick',
+  ticksMatchQ() &&
+    tallQ().every((t) => t.hasAttribute('data-round')) &&
+    !tallQ().some((t) => Math.abs(leftPct(t) - ((300 - T0) / (T1 - T0)) * 100) < 1e-9),
+  `ticks ${tickDetailQ()}`,
 );
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

@@ -641,24 +641,50 @@
   // null until the world lands: an unknown answer, never a guessed one.
   const kitEv = $derived(world ? world.kitEv : null);
 
-  // Scrubber markers — THE LIST'S OVERVIEW (the owner's ruling): a
-  // marker is a world row whose id is in the marker ANSWER — the same
-  // EventFilter the list fetches with (fetchMarkerKeys → store.
-  // GetEventKeys, which shares queryEvents' clause builder), so cats,
-  // rounds, player, side, team, killRole, bbox, weapon, distance and
-  // headshot all apply here EXACTLY as they do to the list. The old
-  // client-side gates are gone on purpose: a bbox/weapon/hs arrival used
-  // to leave markers on the map while the list read "No events match",
-  // and re-implementing the SQL in JS would drift against its pins (the
-  // side/team keys are DB joins). Chat/generic rows never intersect —
-  // the world is event kinds only — so markers stay event-only.
-  // Precomputed buckets — no classification at runtime.
+  // Scrubber markers — TWO passes over ONE transform (the owner's
+  // ruling: "round-start ticks always draw regardless of filter, and are
+  // the only tick marks (round-win tick removed)").
+  //
+  // Pass 1 — ROUND-START TICKS, UNCONDITIONAL: every round in the loaded
+  // rounds list (the round ribbon's data; rounds[].startTick IS the
+  // round_start event tick — store round rows) draws its 'tall' tick
+  // here, from the match's OWN round rows and NEVER from the filtered
+  // marker answer — so it is independent of the enabled feed categories
+  // and of every other filter field (kills-only, footsteps-only, no
+  // categories at all: the round ticks are still there). Derived from
+  // `rounds` rather than requested through the marker query on purpose:
+  // structurally immune to the filter, no second query, and it cannot
+  // disagree with the ribbon. The list arrives async with load(), so the
+  // ticks appear when the rounds land; a round whose start tick falls
+  // outside the position stream draws NOTHING — a tick position is never
+  // invented (same bounds rule as the event markers below).
+  //
+  // Pass 2 — THE LIST'S OVERVIEW (unchanged): a marker is a world row
+  // whose id is in the marker ANSWER — the same EventFilter the list
+  // fetches with (fetchMarkerKeys → store. GetEventKeys, which shares
+  // queryEvents' clause builder), so cats, rounds, player, side, team,
+  // killRole, bbox, weapon, distance and headshot all apply here
+  // EXACTLY as they do to the list. The old client-side gates are gone
+  // on purpose: a bbox/weapon/hs arrival used to leave markers on the
+  // map while the list read "No events match", and re-implementing the
+  // SQL in JS would drift against its pins (the side/team keys are DB
+  // joins). Chat/generic rows never intersect — the world is event kinds
+  // only — so markers stay event-only. Precomputed buckets — no
+  // classification at runtime.
   const markers = $derived.by(() => {
-    if (!data || !data.frames || !drawNorm.length || !markerKeys) return [];
+    if (!data || !data.frames) return [];
     const t0 = data.ticks[0];
     const t1 = data.ticks[data.frames - 1];
     const span = Math.max(1, t1 - t0);
     const out = [];
+    // Pass 1 — the round-start ticks (the ruling above), one per round
+    // row with a usable start tick inside the stream.
+    for (const r of rounds) {
+      if (!r || !Number.isFinite(r.startTick)) continue; // never a guessed position
+      if (r.startTick < t0 || r.startTick > t1) continue;
+      out.push({ cls: 'tall', pct: ((r.startTick - t0) / span) * 100, round: r.number });
+    }
+    if (!drawNorm.length || !markerKeys) return out; // the event pass may still be in flight
     // The TWO client-side rules the list applies to the same rows (the
     // SQL has neither): the knife/warmup visibility pref and the
     // countedOnly category rule — keeping them is what makes markers a
@@ -668,6 +694,13 @@
     const norm = applyRoundPref(drawNorm, rbn, showKnifeWarmup);
     for (const l of norm) {
       if (!markerKeys.has(l.id)) continue; // THE filter answer
+      // Round rows never draw from the filtered answer: round-start
+      // ticks are owned by pass 1 (a second tick at the same position
+      // would duplicate it AND re-couple the tick to the filter), and
+      // the round-win tick is REMOVED from the scrubber entirely (the
+      // ruling). round_end keeps its category, its feed rows and its
+      // map/world presence — only the scrubber's tick rendering goes.
+      if (l.kind === 'round_start' || l.kind === 'round_end') continue;
       const cat = categoryById(categoryOfKind(l.kind));
       if (cat && cat.countedOnly) {
         const r = rbn.get(l.round);
@@ -3209,7 +3242,10 @@
               aria-label="Frame"
             />
             {#each markers as m, i (i)}
-              <span class="scrub-marker {m.cls}" style="left:{m.pct}%"></span>
+              <!-- data-round rides ONLY the pass-1 round-start ticks
+                   (undefined omits the attribute) — the DOM twin of the
+                   ruling: every tall tick is a round start. -->
+              <span class="scrub-marker {m.cls}" data-round={m.round} style="left:{m.pct}%"></span>
             {/each}
           </div>
           <span class="mono replay-readout" title="frame {uiFrame + 1}/{frames} · tick {uiTick}"

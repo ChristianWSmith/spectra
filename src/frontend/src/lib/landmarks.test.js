@@ -336,8 +336,9 @@ test('drawBucket buckets every drawable kind (renderer/scrubber contract)', () =
   assert.equal(drawBucket('bomb_defuse_abort'), 'defuse_abort');
   assert.equal(drawBucket('round_end'), 'round');
   // round_start buckets to 'start': STORED as the death-X next-round
-  // cutoff (killEndTick) — never drawn as a world marker, but it DOES
-  // carry the tall scrubber tick (see scrubberMarkerClass below).
+  // cutoff (killEndTick) — never drawn as a world marker, and no longer
+  // a scrubber tick source either (the ticks come from the round ROWS —
+  // see scrubberMarkerClass below).
   assert.equal(drawBucket('round_start'), 'start');
   // damage rides the draw feed for the victim-hit flash (no scrubber
   // marker — see scrubberMarkerClass); the rest stay non-drawable:
@@ -348,9 +349,10 @@ test('drawBucket buckets every drawable kind (renderer/scrubber contract)', () =
   assert.equal(drawBucket('smoke'), 'smoke');
   assert.equal(drawBucket('molotov'), 'fire');
   // DRAW_KINDS is exactly the drawable set (round_end and round_start
-  // both ride it for the scrubber's tall round ticks; round_start also
-  // rides it as the renderer's death-X cutoff — it never draws on the
-  // map; drop/pickup ride it for the bomb evidence, damage for the map
+  // both ride it as the renderer's round-cut inputs — the death-X
+  // next-round cutoff and the roundcut.js boundaries — never as map
+  // markers and never as scrubber ticks, which come from the round ROWS;
+  // drop/pickup ride it for the bomb evidence, damage for the map
   // flash, the plant/defuse ATTEMPT lifecycle for the progress rings
   // and cue points, and grenade_bounce as the flight path's vertices —
   // none of those adds a scrubber marker).
@@ -423,10 +425,14 @@ test('scrubberMarkerClass maps every drawable bucket (the markers contract)', ()
   assert.equal(scrubberMarkerClass('plant'), 'plant');
   assert.equal(scrubberMarkerClass('defuse'), 'plant');
   assert.equal(scrubberMarkerClass('explode'), 'det');
-  // 'tall' is THE vertical tick: round starts take it (the default
-  // category) and so do round wins — both buckets return the SAME class,
-  // so the mark is never named after one of them.
-  assert.equal(scrubberMarkerClass('round'), 'tall');
+  // 'tall' is THE vertical tick — and since the owner's ruling
+  // ("round-start ticks always draw regardless of filter, and are the
+  // only tick marks — round-win tick removed") it is round STARTS' class
+  // only: the scrubber draws those ticks from the round ROWS themselves
+  // (Replay's markers pass 1), while a round WIN carries NO scrubber
+  // mark ('round' → '' — its feed rows, category and map/world presence
+  // are untouched; only the scrubber's tick rendering went).
+  assert.equal(scrubberMarkerClass('round'), '');
   assert.equal(scrubberMarkerClass('start'), 'tall');
   // Every typed grenade bucket keeps a scrubber marker (they used to
   // all be the one 'detonation' bucket)…

@@ -2010,10 +2010,12 @@ input[type='checkbox']:focus-visible {
   background: var(--danger);
 }
 
-/* Round-start / round-win markers: ONE vertical tick (not a dot) so a
-   round boundary reads at a glance — 'tall' is the shared marker class
-   (landmarks.scrubberMarkerClass maps BOTH the round_start and
-   round_end buckets to it; they overlap when both categories are on). */
+/* Round-start markers: ONE vertical tick (not a dot) so a round boundary
+   reads at a glance — 'tall' is THE tick class and round-start ticks are
+   the ONLY tick marks on the scrubber (the owner's ruling): they are
+   drawn from the round ROWS themselves (Replay's markers pass 1),
+   unconditionally, and the round-win tick is removed — landmarks.
+   scrubberMarkerClass maps 'round' to no marker. */
 .scrub-marker.tall {
   background: #d7dce8;
   border-radius: 1px;
