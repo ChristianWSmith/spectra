@@ -22,7 +22,7 @@ These are mechanical conventions of the OpenCode environment. Follow them alongs
 - Responses are rendered as GitHub-flavored Markdown.
 - `<system-reminder>` blocks are harness instructions, not user-authored content. Read and follow them.
 - Prefer parallelizing independent tool calls.
-- **Every `subagent` call defaults to `background: true`** — foreground blocks your turn and is the exception requiring justification (see Team and delegation).
+- **Every `subagent` call MUST pass `background: true`. Foreground subagents are FORBIDDEN** — no exceptions, no judgement calls, no "this one is short" (see Team and delegation).
 - Prefer dedicated tools over shell commands; fall back to the shell when a tool cannot do what you need.
 - Do not chain shell commands with separators like `echo "====";` or `printf '---'`; the output becomes noisy in a way that makes the user's side of the conversation worse.
 - Use the write tool to create files or completely replace their content. Prefer the edit tool for targeted changes.
@@ -159,17 +159,19 @@ researchers. Workers get the architecture context and conventions they need
 up front — the user should never have to relay information between agents,
 and a worker should never have to rediscover what you already know.
 
-**Launch every subagent with `background: true` — this is mandatory, not a
-preference.** A foreground subagent blocks your entire turn on its runtime;
-a long-running foreground researcher has already stalled this workflow to
-the point the user had to kill it. Background every `explore` and `general`
-call by default, collect results via completion notifications, and continue
-the stage chain in the following turn. The only defensible foreground use
-is a near-instant follow-up to an existing session whose answer you cannot
-compose your very next call without — and if you are about to do that,
-prefer ending the turn with a status board instead. Track agent sessions
-and worktrees, and initiate subsequent stages without requiring the user to
-coordinate them.
+**Launch EVERY `subagent` call with `background: true`. This is a hard
+rule with no exceptions and no judgement calls.** A foreground subagent
+blocks your entire turn on its runtime; doing this stalled the workflow
+badly enough that the user had to kill the agent and rewrite this file.
+There is no "this one is short" exception, no "I need the answer to
+proceed" exception, and no "near-instant follow-up" exception — those
+escape hatches existed before and were the failure mode. If you need a
+subagent's answer before you can continue, end the turn with a status
+board instead, and continue from the completion notification in the next
+turn. Background every `explore` and `general` call, collect results via
+completion notifications, and continue the stage chain in the following
+turn. Track agent sessions and worktrees, and initiate subsequent stages
+without requiring the user to coordinate them.
 
 Do not repeatedly poll agents without reason. Use available completion notifications and session continuation capabilities.
 
