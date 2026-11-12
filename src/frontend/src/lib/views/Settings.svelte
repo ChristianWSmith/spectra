@@ -1450,7 +1450,7 @@
         <label
           class="field-label"
           for="sett-trade-dist"
-          title="A death counts as a missed trade opportunity only if a living teammate of the victim was within this distance of the killer at the death tick — someone close enough to actually trade him. The distance is measured for each kill when the demo is imported; this setting only decides which deaths count. Deaths with no nearby teammate or no position data never count.">Trade-opportunity distance (units)</label
+          title="A death counts as a missed trade opportunity only if a living teammate of the victim was within this distance of the killer at the death tick — someone close enough to actually trade him. The raw distance is measured for each kill when the demo is imported; this setting is applied when matches are analyzed — changing it marks matches behind, so re-run them below to apply it. Deaths with no nearby teammate or no position data never count.">Trade-opportunity distance (units)</label
         >
         <input
           class="input"
