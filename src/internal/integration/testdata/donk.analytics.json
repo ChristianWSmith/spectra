@@ -12,6 +12,7 @@
   "engagementsByKind": {
     "opening": 23,
     "trade": 32,
+    "traded": 35,
     "untraded": 124
   },
   "utilityRows": 478,

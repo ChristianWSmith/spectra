@@ -2,6 +2,7 @@ package analytics
 
 import (
 	"encoding/json"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -388,7 +389,7 @@ func TestEngagementsKinds(t *testing.T) {
 	events := []models.Event{
 		ev(0, 100, 1, models.EventKill, "A", "X", withWeapon("AK-47")),
 		ev(1, 150, 1, models.EventKill, "Y", "A"), // trade: Y is A, who killed Y's teammate X
-		ev(2, 200, 1, models.EventKill, "Y", "B"), // NOT a trade (B never killed a T teammate)
+		ev(2, 200, 1, models.EventKill, "Y", "B"), // NOT a trade (B never killed a T teammate) — but answered → traded row
 		ev(3, 250, 1, models.EventKill, "C", "Y"), // trade: C traded teammate A; Y's death untraded
 	}
 	got := Engagements(events, rounds, testCfg, players, exactSides(rounds, players))
@@ -397,21 +398,96 @@ func TestEngagementsKinds(t *testing.T) {
 		counts[e.Kind]++
 	}
 	// Strict rule: only kills whose VICTIM killed one of the killer's
-	// teammates inside the window count as trades (Y→B produces no row).
-	if counts[KindOpening] != 1 || counts[KindTrade] != 2 || counts[KindUntraded] != 1 {
-		t.Errorf("engagement counts = %v, want opening=1 trade=2 untraded=1 (rows: %+v)", counts, got)
+	// teammates inside the window count as trades — Y→B is NOT a trade.
+	// Coverage rule: Y→B still gets its victim-side row with kind
+	// `traded` (it was answered by C→Y at tick 250).
+	if counts[KindOpening] != 1 || counts[KindTrade] != 2 || counts[KindTraded] != 3 || counts[KindUntraded] != 1 {
+		t.Errorf("engagement counts = %v, want opening=1 trade=2 traded=3 untraded=1 (rows: %+v)", counts, got)
 	}
 	// Opening row: A killed X.
+	tradedB := false
 	for _, e := range got {
 		if e.Kind == KindOpening && (e.ASteam != "A" || e.BSteam != "X" || e.WonBy != "ct") {
 			t.Errorf("opening row = %+v", e)
 		}
 		if e.BSteam == "B" {
-			t.Errorf("Y killing B must not be an engagement row: %+v", e)
+			// Y killing B: present with kind traded (answered by C→Y),
+			// but never a trade row (B never killed a T teammate).
+			if e.Kind != KindTraded || e.ASteam != "Y" || e.WonBy != "t" {
+				t.Errorf("Y killing B row = %+v, want kind traded from killer Y", e)
+			}
+			tradedB = true
+		}
+		if e.Kind == KindTrade && e.BSteam == "B" {
+			t.Errorf("Y killing B must NOT be a trade row: %+v", e)
 		}
 		if e.Kind == KindUntraded && (e.ASteam != "C" || e.BSteam != "Y") {
 			t.Errorf("untraded row = %+v, want killer C victim Y", e)
 		}
+	}
+	if !tradedB {
+		t.Errorf("rows = %+v, want the answered Y→B kill present with kind traded", got)
+	}
+}
+
+// TestEngagementsEveryKillHasARow pins the COVERAGE invariant: every
+// counted kill with known sides appears in ≥1 output row — exactly one
+// victim-side row (traded when a teammate of the victim answered inside
+// the window, untraded otherwise) plus optional opening/trade
+// killer-side rows. The fixture is shaped like golden-demo round 1:
+// A→X opens (and stays untraded — X is never answered), Y→Z (Z = A's
+// teammate) is answered by A→Y inside the window, and A→Y is both the
+// trade (Y killed Y's killer's teammate Z) and an untraded death (Y's
+// killer A never dies). Before the KindTraded fix the answered Y→Z kill
+// emitted ZERO rows — the gap the Combat card's "one row per kill"
+// contract exposed.
+func TestEngagementsEveryKillHasARow(t *testing.T) {
+	players := []PlayerRef{
+		{SteamID: "A", Side: "ct"}, {SteamID: "B", Side: "ct"}, {SteamID: "Z", Side: "ct"},
+		{SteamID: "X", Side: "t"}, {SteamID: "Y", Side: "t"},
+	}
+	rounds := []RoundInfo{{Number: 1, Winner: "ct"}}
+	events := []models.Event{
+		ev(0, 100, 1, models.EventKill, "A", "X"), // opening; X's death unanswered → untraded
+		ev(1, 200, 1, models.EventKill, "Y", "Z"), // answered by A→Y → traded (was: no row)
+		ev(2, 300, 1, models.EventKill, "A", "Y"), // trade + untraded (A never dies)
+	}
+	got := Engagements(events, rounds, testCfg, players, exactSides(rounds, players))
+
+	// (a) Every kill event (round, tick, killer, victim) is present in ≥1 row.
+	kills := 0
+	for _, e := range events {
+		if e.Kind != models.EventKill || e.Victim == "" || e.Attacker == "" || e.Attacker == e.Victim {
+			continue
+		}
+		kills++
+		found := false
+		for _, g := range got {
+			if g.Round == e.Round && g.Tick == e.Tick && g.ASteam == e.Attacker && g.BSteam == e.Victim {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Errorf("kill %s→%s at tick %d (round %d) has no engagement row (rows: %+v)",
+				e.Attacker, e.Victim, e.Tick, e.Round, got)
+		}
+	}
+	if kills != 3 {
+		t.Fatalf("fixture kills = %d, want 3", kills)
+	}
+
+	// (b)+(c) Exact output: the traded row for the answered kill exists,
+	// and the four rows that existed before the fix are byte-identical.
+	want := []Engagement{
+		{Tick: 100, Round: 1, Kind: KindOpening, ASteam: "A", BSteam: "X", WonBy: "ct"},
+		{Tick: 100, Round: 1, Kind: KindUntraded, ASteam: "A", BSteam: "X", WonBy: "ct"},
+		{Tick: 200, Round: 1, Kind: KindTraded, ASteam: "Y", BSteam: "Z", WonBy: "t"},
+		{Tick: 300, Round: 1, Kind: KindTrade, ASteam: "A", BSteam: "Y", WonBy: "ct"},
+		{Tick: 300, Round: 1, Kind: KindUntraded, ASteam: "A", BSteam: "Y", WonBy: "ct"},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("engagements =\n %+v\nwant\n %+v", got, want)
 	}
 }
 

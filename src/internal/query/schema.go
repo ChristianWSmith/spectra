@@ -26,7 +26,7 @@ var tableNotes = map[string]string{
 	"round_classifications": "per-round buy classification with rule_version + human explanation",
 	"player_round_stats":    "per-player per-round stats: KAST components, traded/survived, damage, spend",
 	"clutches":              "detected 1vN clutch attempts + outcome",
-	"engagements":           "detected opening/trade/untraded engagements between two players",
+	"engagements":           "detected opening/trade/traded/untraded engagements between two players",
 	"utility_events":        "grenade throws/detonations: damage, flash ms, site",
 	"player_career":         "cross-match career rollup per SteamID64 (rebuilt after imports)",
 	"saved_filters":         "saved analytics filter presets",
@@ -68,7 +68,7 @@ var columnNotes = map[string]map[string]string{
 		"kast":     "KAST round component: kill/assist/traded-death/survived",
 	},
 	"engagements": {
-		"kind":    "opening|trade|untraded (a = killer, b = victim)",
+		"kind":    "opening|trade|traded|untraded (a = killer, b = victim)",
 		"won_by":  "side that won the engagement (ct|t)",
 		"a_steam": "SteamID64 of the acting player (killer for all kinds)",
 		"b_steam": "SteamID64 of the counterpart (victim for all kinds)",

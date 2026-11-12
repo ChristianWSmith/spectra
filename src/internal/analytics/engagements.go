@@ -13,6 +13,7 @@ import (
 const (
 	KindOpening  = "opening"
 	KindTrade    = "trade"
+	KindTraded   = "traded"
 	KindUntraded = "untraded"
 )
 
@@ -27,16 +28,27 @@ const (
 //	          teamkills neither anchor a trade nor count as one (the
 //	          extractor's gate — a teamkill death writes no trade
 //	          record there).
+//	traded    a death ANSWERED: a teammate of the victim killed the
+//	          victim's killer within cfg.TradeWindowS after the death
+//	          (a = killer, b = victim). The natural pair of untraded,
+//	          sharing its vocabulary with player_round_stats.traded /
+//	          KAST "T".
 //	untraded  a death NOT answered: no teammate of the victim killed the
 //	          victim's killer within cfg.TradeWindowS after the death
 //	          (a = killer, b = victim)
 //
+// COVERAGE INVARIANT: every counted kill with known sides appears in at
+// least one row — exactly one victim-side row (traded OR untraded) per
+// kill, plus optional opening/trade killer-side rows. A kill that WAS
+// answered is never dropped from the feed (it used to be: the victim
+// side emitted only `untraded`, so an answered non-opening non-trade
+// kill produced no row at all).
 // The KindTrade row is THE trade-window rule (one owner):
 // analytics.Compute derives player_stats.trade_kills from these rows, so
 // the scoreboard Trade column, career trades, profile trade rate and the
 // successful_trades metric all follow cfg.TradeWindowS too.
 // One kill can yield multiple rows (kinds are independent detections: the
-// first kill can also be untraded later classified per victim, a trade
+// first kill can also be untraded or traded per victim, a trade
 // kill's victim can themselves go untraded). Warmup and pregame rounds are
 // skipped; kills with an unknown-side killer or victim are skipped (team
 // attribution uses the per-round sides — sides carries the extractor's
@@ -114,19 +126,23 @@ func Engagements(events []models.Event, rounds []RoundInfo, cfg Config, players 
 			if isTrade {
 				emit(e, KindTrade, e.Attacker, e.Victim, kt)
 			}
-			// Untraded: no teammate of the victim killed the killer within
-			// the window after this death.
-			untraded := true
+			// Victim-side row: every kill with known sides gets exactly
+			// one — traded (a teammate of the victim answered inside
+			// the window) or untraded (nobody did). Without the
+			// positive branch an answered kill emitted nothing at all.
+			answered := false
 			for _, later := range roundEvents {
 				if later.Kind != models.EventKill || later.Tick <= e.Tick || later.Tick-e.Tick > window {
 					continue
 				}
 				if later.Victim == e.Attacker && teamR[later.Attacker] == vt {
-					untraded = false
+					answered = true
 					break
 				}
 			}
-			if untraded {
+			if answered {
+				emit(e, KindTraded, e.Attacker, e.Victim, kt)
+			} else {
 				emit(e, KindUntraded, e.Attacker, e.Victim, kt)
 			}
 			// Anchor records feed ONLY trade detection: an enemy kill
@@ -138,7 +154,7 @@ func Engagements(events []models.Event, rounds []RoundInfo, cfg Config, players 
 		}
 	}
 	// Stable order: round, tick, kind.
-	kindOrder := map[string]int{KindOpening: 0, KindTrade: 1, KindUntraded: 2}
+	kindOrder := map[string]int{KindOpening: 0, KindTrade: 1, KindTraded: 2, KindUntraded: 3}
 	sort.SliceStable(out, func(i, j int) bool {
 		if out[i].Round != out[j].Round {
 			return out[i].Round < out[j].Round

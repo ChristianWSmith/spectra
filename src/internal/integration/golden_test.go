@@ -485,7 +485,7 @@ func runGoldenAnalytics(t *testing.T, m *models.ExtractedMatch) analyticsFixture
 	if err != nil {
 		t.Fatalf("GetEngagements: %v", err)
 	}
-	engagementsByKind := map[string]int{"opening": 0, "trade": 0, "untraded": 0}
+	engagementsByKind := map[string]int{"opening": 0, "trade": 0, "traded": 0, "untraded": 0}
 	for _, e := range engs {
 		if _, ok := engagementsByKind[e.Kind]; !ok {
 			t.Errorf("unexpected engagement kind %q", e.Kind)
@@ -559,7 +559,7 @@ func compareAnalyticsGolden(t *testing.T, got, want *analyticsFixture) {
 	for _, k := range []string{"full", "force", "eco", "save", "pistol"} {
 		cmpInt(t, "analytics.classCounts."+k, got.ClassCounts[k], want.ClassCounts[k])
 	}
-	for _, k := range []string{"opening", "trade", "untraded"} {
+	for _, k := range []string{"opening", "trade", "traded", "untraded"} {
 		cmpInt(t, "analytics.engagementsByKind."+k, got.EngagementsByKind[k], want.EngagementsByKind[k])
 	}
 	cmpInt(t, "analytics.utilityRows", got.UtilityRows, want.UtilityRows)

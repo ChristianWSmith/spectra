@@ -116,16 +116,16 @@ type Clutch struct {
 	ReplayAnchor int    `json:"replayAnchor"` // = StartTick
 }
 
-// Engagement is one engagements row (kinds: opening|trade|untraded — the
-// entry kind is deferred; extractor entry_kills already covers per-player
-// entry attribution).
+// Engagement is one engagements row (kinds: opening|trade|traded|untraded
+// — the entry kind is deferred; extractor entry_kills already covers
+// per-player entry attribution).
 type Engagement struct {
 	MatchID  int64   `json:"matchId"`
 	Seq      int     `json:"seq"`
 	Tick     int     `json:"tick"`
 	Round    int     `json:"round"`
 	Kind     string  `json:"kind"`
-	ASteam   string  `json:"aSteam"` // opening/trade: killer; untraded: killer
+	ASteam   string  `json:"aSteam"` // all kinds: killer (a = actor)
 	AName    string  `json:"aName"`
 	BSteam   string  `json:"bSteam"` // victim
 	BName    string  `json:"bName"`

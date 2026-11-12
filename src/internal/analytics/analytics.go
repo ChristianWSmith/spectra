@@ -18,9 +18,9 @@
 //   - Per-player money_start/equip/spent stay 0: the item_equip payload
 //     carries no price/cost, so per-player per-round spend is not
 //     extractable (team-level equip/money live in the economy view).
-//   - Engagement kinds are opening|trade|untraded; the entry kind is
-//     deferred (player_stats.entry_kills from the extractor already covers
-//     per-player entry attribution).
+//   - Engagement kinds are opening|trade|traded|untraded; the entry kind
+//     is deferred (player_stats.entry_kills from the extractor already
+//     covers per-player entry attribution).
 //   - TradeOppMissed = the distance-gated subset of untraded deaths
 //     (inferred → UI badge): the kill event's detail_json.nearDist —
 //     the nearest living teammate of the victim to the killer, measured
