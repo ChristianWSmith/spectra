@@ -392,13 +392,19 @@ func TestCancelStateMachine(t *testing.T) {
 		var calls atomic.Int32
 		im, st := newTestImporter(t, blockingParse(0, &calls))
 		id := im.Enqueue([]string{writeDemo(t, "cancel-run.dem", "x")})[0]
-		running := waitStatus(t, st, id, models.JobRunning)
+		waitStatus(t, st, id, models.JobRunning)
 
 		if err := im.Cancel(id); err != nil {
 			t.Fatalf("Cancel: %v", err)
 		}
 		waitStatus(t, st, id, models.JobCancelled)
-		m := waitMatchStatus(t, st, running.MatchID, models.StatusFailed)
+		// Cancel marks the job terminal synchronously, but an import's
+		// match row is created only after hash+copy — the JobRunning
+		// snapshot can carry match_id = 0. Resolve the link fresh (the
+		// claimed worker creates and links the row even with a cancelled
+		// ctx — no ctx check before CreateMatchRow), then wait for
+		// failJob's match-row write.
+		m := waitMatchStatus(t, st, waitJobMatch(t, st, id), models.StatusFailed)
 		if m.Error != "cancelled" {
 			t.Errorf("match error = %q, want cancelled", m.Error)
 		}
@@ -416,7 +422,10 @@ func TestCancelStateMachine(t *testing.T) {
 		}
 		waitStatus(t, st, second, models.JobCancelled)
 		// The dequeued import never became a match: only the first job's
-		// row exists (still parsing — its own cancel comes next).
+		// row exists (still parsing — its own cancel comes next). That
+		// row lands only after the first job's hash+copy, so wait for
+		// its link before counting.
+		waitJobMatch(t, st, first)
 		rows, err := st.ListMatches("", "extracted_at", false)
 		if err != nil {
 			t.Fatalf("ListMatches: %v", err)

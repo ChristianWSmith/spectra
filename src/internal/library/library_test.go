@@ -98,6 +98,34 @@ func waitStatus(t *testing.T, st *store.Store, jobID int64, want string) models.
 	return models.Job{}
 }
 
+// waitJobMatch polls until the job row carries its match link and returns
+// it. An import job flips to running at CLAIM time (the worker's
+// UpdateJob), but the pipeline creates the match row and writes
+// jobs.match_id only after the hash+copy stages — so a JobRunning (or a
+// cancel-announced JobCancelled, which Cancel writes synchronously)
+// snapshot can read match_id = 0. Snapshotting MatchID off such a row and
+// feeding it to GetMatch yields a spurious "store: not found". Only for
+// jobs whose pipeline reaches CreateMatchRow (a claimed import or
+// reprocess): a dequeued queued import never links a row by design.
+func waitJobMatch(t *testing.T, st *store.Store, jobID int64) int64 {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		jobs, err := st.ListJobs()
+		if err != nil {
+			t.Fatalf("list jobs: %v", err)
+		}
+		for _, j := range jobs {
+			if j.ID == jobID && j.MatchID != 0 {
+				return j.MatchID
+			}
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("job %d never linked a match row", jobID)
+	return 0
+}
+
 func TestImportSuccess(t *testing.T) {
 	im, st := newTestImporter(t, fakeParse)
 	path := writeDemo(t, "ok.dem", "not-really-a-demo")
