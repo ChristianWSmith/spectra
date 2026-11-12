@@ -35,7 +35,7 @@
 // rule (hudTeamNames — the ct slot holds the team on CT at the playhead),
 // the codicon freeze clock (document.fonts.check stubbed both ways), the
 // C4/0:00 clock, the score↔feed gap clamp (C1: the box lays into
-// [control-group budget, feed left − 8] and ellipsizes the longer team
+// [top-left reserve, feed left − 8] and ellipsizes the longer team
 // name to fit — the feed never yields) and the RETIRED playback readout
 // (no follow:/loop:/packNote fillText ever, no left-aligned box — those
 // rows are DOM now) — plus the
@@ -2476,6 +2476,11 @@ test('smoke tint: lingering area + bloom ring take the thrower team color, neutr
 // stubbed per-test to steer the codicon-clock branch.
 
 const HUD_PAD = 8; // mirrors renderer.js — box padding / stage offset
+// mirrors renderer.js TOP_LEFT_RESERVE_PX — the theater-exit button's
+// width: style.css .rp-theater-exit is padding 8+8 + border 1+1 + one
+// codicon at font-size 1em = 18 + the root font size = 31/33/35 px
+// across the 13/15/17 px font scale, so 36 covers the widest.
+const TOP_LEFT_RESERVE_PX = 36;
 const KILL_FEED_LH = 18; // mirrors renderer.js — one entry line
 const KILL_FEED_R = 4; // mirrors renderer.js — entry corner radius
 const KILL_FEED_GAP = 12; // mirrors renderer.js — the gap between EVERY pair
@@ -2716,8 +2721,9 @@ test('HUD: score-anchored line in colored segments, label-free clock, no tick/fr
 
 // --- C1: the score box yields to its two neighbours ---------------------------
 //
-// Region map (renderer.js): the score box lays into [control-group
-// budget, kill-feed left − 8]. Overlap with the feed happened whenever
+// Region map (renderer.js): the score box lays into [top-left reserve
+// (TOP_LEFT_RESERVE_PX + HUD_PAD — the theater-exit button's measured
+// width), kill-feed left − 8]. Overlap with the feed happened whenever
 // cssW ≲ 1024 (the feed is right-anchored, the box was centered), so the
 // feed's widest row is measured FIRST and the box is clamped into the
 // gap — ellipsizing the longer team name when the line cannot fit it.
@@ -2772,15 +2778,95 @@ test('score box right edge ≤ feed left − 8 across cssW ∈ {400,600,800,1200
         `cssW=${cssW} [${ct}/${t}]: box right ${right} ≤ feed left ${feedLeft} − 8`,
       );
       // …and the left bound holds too: the box never slides under the
-      // stage's top-left DOM slot (0.28 × cssW + its 8 px edge — the
-      // theater-exit button's corner now; the share still mirrors
-      // .rp-ctrl-list's max-width) while the gap still fits it.
+      // stage's top-left DOM slot — the theater-exit button's fixed
+      // reserve (TOP_LEFT_RESERVE_PX + HUD_PAD = 36 + 8 = 44, the
+      // button's measured width + the shared 8 px anchor). The old pin
+      // here was the control group's 0.28 × cssW share — removed with
+      // the rightward-skew bug: the share outlived the group's move to
+      // bottom-right (b5d21bf) and bound whenever the stage narrowed
+      // (e.g. the events panel open), pinning the box right of center.
       assert.ok(
-        scoreBox.args[0] >= cssW * 0.28 + 8 - 1e-9,
-        `cssW=${cssW} [${ct}/${t}]: box left ${scoreBox.args[0]} ≥ control-group budget ${cssW * 0.28 + 8}`,
+        scoreBox.args[0] >= TOP_LEFT_RESERVE_PX + HUD_PAD - 1e-9,
+        `cssW=${cssW} [${ct}/${t}]: box left ${scoreBox.args[0]} ≥ top-left reserve ${TOP_LEFT_RESERVE_PX + HUD_PAD}`,
       );
       r.destroy();
     }
+  }
+});
+
+// --- C1 left bound: the stage-centered score box (the events-panel skew) ------
+//
+// drawHUD centers the box on the STAGE (x = (cssW − w)/2), clamped into
+// [TOP_LEFT_RESERVE_PX + HUD_PAD, feedLeft − 8]. The left clamp USED to
+// be the control group's 0.28 × cssW share (7450c5b), kept after
+// b5d21bf moved that group to the bottom-right — so at every width where
+// the centered x fell left of 0.28·cssW + 8 the box pinned RIGHT of
+// center: the owner's bug (open the events panel → the stage narrows →
+// the left clamp binds → the HUD leans right; measured +16/+35/+52 px
+// at 1366/1280/1200 window widths with the panel open). These pins are
+// the fixed behavior: dead-center whenever centering fits, and pinned to
+// the reserve (never under the theater-exit button) when the clamp binds.
+
+test('score box: stage-centered with no feed where the old 28% left bound skewed it; the clamp pins to the reserve', () => {
+  headlessGlobals();
+  const round = { number: 1, label: 'R1', startTick: 0, freezeEndTick: 640, endTick: 1200, bombSite: '' };
+  // Length-aware measure (8 px/char) + the long name pair give the box a
+  // realistic width (2·128 + 56 content + 2×8 pad = 328 px), so the
+  // CENTERED x lands left of the old bound (0.28·cssW + 8) at these
+  // widths — each case asserts that below, so the centering pin can
+  // never be vacuous (it would fail against the pre-fix renderer).
+  const centered = [440, 480, 512, 544];
+  // …and one width where even the NEW bound binds (center 36 < 44): the
+  // clamp itself pins to the reserve — which must still clear the
+  // theater-exit button's right edge (8 px anchor + 35 px worst-case
+  // width = 43 px), so the old overlap protection is not lost.
+  const clamped = [400];
+  for (const cssW of [...centered, ...clamped]) {
+    const canvas = recordingCanvas(cssW, 600, (s) => s.length * 8);
+    const data = synthStore(1300, 2);
+    const engine = createEngine(data, 64);
+    const r = createRenderer(canvas, { engine, data, players: HUD_PLAYERS });
+    r.setHud({
+      score: { ct: 3, t: 2 },
+      teamNames: { ct: 'NORTHWIND GAMING', t: 'SOUTHERN STORM' },
+      round,
+      tickRate: 64,
+    });
+    r.resize();
+    engine.seekTick(100);
+    const mark = canvas.log.length;
+    r.draw();
+
+    // NO landmarks → no feed rows → killFeedLayout() returns null → the
+    // stage's own right edge (cssW − 8) is the only right-hand bound.
+    assert.equal(feedBoxesSince(canvas.log, mark).length, 0, `cssW=${cssW}: no feed in scope`);
+    const boxes = hudBoxesSince(canvas.log, mark);
+    assert.equal(boxes.length, 1, `cssW=${cssW}: the score box draws`);
+    // from the EMITTED args: roundRect(x, y, w, h, r) — no fudged widths
+    const [x, , w] = boxes[0].args;
+    const center = (cssW - w) / 2;
+    const oldBound = cssW * 0.28 + 8;
+    const reserve = TOP_LEFT_RESERVE_PX + HUD_PAD;
+    if (centered.includes(cssW)) {
+      // non-vacuous: the OLD left bound WOULD have moved the box (the bug)
+      assert.ok(
+        center < oldBound,
+        `cssW=${cssW}: old bound would bind — center ${center} < old ${oldBound}`,
+      );
+      // the box sits dead-center of the STAGE
+      assert.ok(
+        Math.abs(x - center) <= 1e-9,
+        `cssW=${cssW}: box x ${x} = stage center ${center} (w ${w})`,
+      );
+      // …and still clear of the theater-exit slot
+      assert.ok(x >= reserve - 1e-9, `cssW=${cssW}: box x ${x} ≥ reserve ${reserve}`);
+    } else {
+      // the clamp binds: x pins EXACTLY to the new left bound — above the
+      // button's right edge (8 + 35 = 43), so nothing overlaps the slot
+      assert.equal(x, reserve, `cssW=${cssW}: the left clamp pins x to the reserve`);
+      assert.ok(x >= 8 + 35, `cssW=${cssW}: clear of the theater-exit button (right edge 43)`);
+    }
+    r.destroy();
   }
 });
 
@@ -6284,7 +6370,7 @@ test('scrub coalescing: requestDraw defers setHud draws to ONE rAF (latest tick 
 // a re-push. The per-element gate (setOverlayLayers — Replay's UI
 // popover rows) hides ONE of the three BENEATH the master; the DOM
 // control-group rows are view-side only (Replay's {#if uiHud.ctrl});
-// this file owns the canvas half. The CTRL_GROUP_BUDGET reservation is
+// this file owns the canvas half. The TOP_LEFT_RESERVE_PX reservation is
 // untouched either way — the score box's x-position never moves when a
 // layer or the whole group comes back (killFeedLayout keeps running
 // under a hidden feed: its `left` is still the score box's bound).

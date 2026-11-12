@@ -1642,16 +1642,16 @@ input[type='checkbox']:focus-visible {
    (canvas only) carry gameplay alone.
    MAX-WIDTH: a percentage resolves against the nearest positioned
    ancestor's padding box, which is .replay-stage (position: relative)
-   — so `28%` IS a share of the STAGE width, the same basis as the
-   renderer's CTRL_GROUP_BUDGET (0.28 × cssW, see renderer.js's region
-   map). The −8px offsets the group's own RIGHT anchor, so at its widest
-   its LEFT edge lands at exactly 72% of the stage
+   — so `28%` IS a share of the STAGE width (this group's own sizing;
+   the renderer no longer mirrors it: the score box's left bound is
+   TOP_LEFT_RESERVE_PX — the theater-exit button's fixed width + 8 px —
+   because the mirrored share skewed the top-center HUD rightward
+   whenever the stage narrowed; see renderer.js's region map). The −8px
+   offsets the group's own RIGHT anchor, so at its widest its LEFT edge
+   lands at exactly 72% of the stage
    — a ~32% gap over the canvas chat's bottom-left 40% cap (CHAT_MAX_W),
    the only other overlay down there (the renderer draws nothing in the
-   bottom-right region). That renderer budget — the share PLUS 8 px as
-   the score box's left bound — now keeps the top-center HUD clear of
-   the stage's TOP-LEFT DOM slot (the theater-exit button) instead of
-   this group. Rows ellipsize instead of widening past it. */
+   bottom-right region). Rows ellipsize instead of widening past it. */
 .rp-ctrl-list {
   position: absolute;
   bottom: 8px;
