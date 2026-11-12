@@ -1640,7 +1640,7 @@ check(
 check('no .follow-chip anywhere (the chip was replaced, not synonymed)', !target.querySelector('.follow-chip'));
 
 // DISPLAY-ONLY: the indicator carries NO buttons — the old follow-row
-// dismiss ✕ is gone (the owner's ruling: no controls in the top-left
+// dismiss ✕ is gone (the owner's ruling: no controls in the stage
 // indicator, the camera controls already exist). Release still has every
 // home it needs: F / 1-9 (input.js), the camera popover's Smart/Free,
 // the canvas drag, and clicking the followed card again (F3 pins that

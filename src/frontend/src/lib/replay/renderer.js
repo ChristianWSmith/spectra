@@ -3284,18 +3284,24 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   }
 
   // --- Stage overlay regions (the ratified region map) ------------------------
-  // Every overlay owns ONE region. The four independent 8-px anchor
-  // literals (HUD_PAD, KILL_FEED_EDGE, the DOM group's top/left 8, the
-  // chat's bottom/left 8) are ONE documented table — no overlay may
-  // invent its own edge inset:
-  //   top-left      — CONTROL GROUP, DOM (Replay.svelte .rp-ctrl-list):
-  //                   top/left 8 px, max-width 0.28 × stage. The canvas
-  //                   cannot measure DOM, so drawHUD reserves that share
-  //                   plus the same 8 px as the score box's LEFT bound
-  //                   (CTRL_GROUP_BUDGET) — an APPROXIMATION of the
-  //                   group's right edge, deliberately conservative: the
-  //                   group renders no box at all while every row is in
-  //                   its default state, yet the budget stays reserved.
+  // Every overlay owns ONE region. The independent 8-px anchor literals
+  // (HUD_PAD, KILL_FEED_EDGE, the DOM theater-exit's top/left 8, the DOM
+  // control group's right/bottom 8, the chat's bottom/left 8) are ONE
+  // documented table — no overlay may invent its own edge inset:
+  //   top-left      — THEATER-EXIT BUTTON, DOM (Replay.svelte
+  //                   .rp-theater-exit): top/left 8 px, rendered only
+  //                   while theater mode is on — the stage's only
+  //                   control then, never gated by the overlay toggle.
+  //                   The canvas cannot measure DOM, so drawHUD keeps
+  //                   this region clear: CTRL_GROUP_BUDGET (0.28 × cssW,
+  //                   the .rp-ctrl-list width share, see below) plus the
+  //                   same 8 px is the score box's LEFT bound — a FIXED
+  //                   reservation of the region (the number mirrors that
+  //                   group's CSS max-width, which now sits bottom-right;
+  //                   the canvas measures no DOM either way),
+  //                   deliberately conservative: the button is a small
+  //                   icon cell, yet the full share stays reserved (and
+  //                   the region is empty while theater mode is off).
   //   top-center    — score + round clock box (drawHUD), HUD_PAD anchors.
   //   top-right     — kill feed (drawKillFeed), KILL_FEED_EDGE anchors —
   //                   the gameplay record: it NEVER ellipsizes, and the
@@ -3307,11 +3313,15 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   //                   stack above it is gone: follow / loop / skip-freeze
   //                   / camera / packNote are DOM rows of the control
   //                   group, so snapshots and clips carry gameplay only.
-  //   bottom-right  — the DOM theater-exit button
-  //                   (Replay.svelte .rp-theater-exit, right/bottom 8 px)
-  //                   while theater mode is on — the stage's only
-  //                   control then, never gated by the overlay toggle —
-  //                   otherwise intentionally empty (documented, no code).
+  //   bottom-right  — CONTROL GROUP, DOM (Replay.svelte .rp-ctrl-list):
+  //                   right/bottom 8 px, max-width 0.28 × stage — at its
+  //                   widest its left edge lands at 72% of the stage,
+  //                   clear of the chat's 40% cap — one row per
+  //                   non-default control state, display-only, while its
+  //                   own gate is open (the overlay toggle + rows +
+  //                   active); otherwise intentionally empty (the group
+  //                   renders no box at all when every row is in its
+  //                   default state — documented, no code).
   //   above/below   — DOM chrome (.replay-topbar / .replay-transport),
   //                   unchanged.
   // --- HUD -------------------------------------------------------------------
@@ -3358,13 +3368,16 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   const HUD_ICON_PX = 12; // px — an icon's size on an icon+text line
   const HUD_ICON_GAP = 4; // px — icon → text gap on an icon+text line
   // C1 — the score box's gap constraints (region map above): the box
-  // yields to BOTH neighbours — the DOM control group on the left and
-  // the kill feed on the right. CTRL_GROUP_BUDGET mirrors the group's
-  // CSS max-width share (style.css .rp-ctrl-list: 0.28 × stage); the
-  // canvas cannot measure DOM, so its right edge is that share + the
-  // group's own 8 px anchor. SCORE_FEED_GAP is the 8 px clearance the
-  // score box keeps from the feed's LEFT edge (KILL_FEED_EDGE's
-  // mirror-image literal, named for the pair it separates).
+  // yields to BOTH neighbours — the stage's top-left DOM region (the
+  // theater-exit button) on the left and the kill feed on the right.
+  // CTRL_GROUP_BUDGET mirrors the control group's CSS max-width share
+  // (style.css .rp-ctrl-list: 0.28 × stage — that group now sits
+  // bottom-right, but the share stays THE reservation for the top-left
+  // region, pinned); the canvas cannot measure DOM, so that region's
+  // right bound is the share + the same 8 px anchor. SCORE_FEED_GAP is
+  // the 8 px clearance the score box keeps from the feed's LEFT edge
+  // (KILL_FEED_EDGE's mirror-image literal, named for the pair it
+  // separates).
   const CTRL_GROUP_BUDGET = 0.28; // share of cssW the control group may span
   const SCORE_FEED_GAP = 8; // px — score box → kill feed clearance
   // Codicon clock for the freeze-time line: the codicon font ships with
@@ -3721,8 +3734,9 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
         let ms = top.map(measureLine);
         let w = boxWidthOf(ms);
         // C1 — the box lays into the gap the region map leaves: the
-        // control group's right edge (CSS-mirrored approximation) on the
-        // left, the kill feed's left edge − SCORE_FEED_GAP on the right.
+        // top-left DOM region's right bound (CTRL_GROUP_BUDGET — the
+        // CSS-mirrored .rp-ctrl-list width share) on the left, the kill
+        // feed's left edge − SCORE_FEED_GAP on the right.
         // `feed` was measured FIRST this frame (killFeedLayout, called
         // by draw() before this); with no feed in scope the stage's own
         // right edge bounds the box.
@@ -3746,7 +3760,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
           ms = top.map(measureLine);
           w = boxWidthOf(ms);
         }
-        // The clamp: centered, but never under the control group and
+        // The clamp: centered, but never under the top-left DOM region and
         // never over the feed. When the two bounds cross (a feed row
         // wider than the gap) the FEED wins — x then pins the box's
         // RIGHT edge to the bound, which is the invariant the property
