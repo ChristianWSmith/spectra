@@ -308,11 +308,11 @@ const ROUND_MAP = new Map([
   [9, { number: 9 }], // row without a startTick
 ]);
 
-test('chatClock: "R{n} m:ss" — time into a counted round', () => {
+test('chatClock: "RD{n} m:ss" — time into a counted round', () => {
   // 64 tick: (6960 − 1200) = 5760 ticks = 90 s into round 1.
-  assert.equal(chatClock({ round: 1, tick: 6960 }, ROUND_MAP, 64), 'R1 1:30');
+  assert.equal(chatClock({ round: 1, tick: 6960 }, ROUND_MAP, 64), 'RD1 1:30');
   // Unknown tickrate falls back to 64 (tickSeconds contract).
-  assert.equal(chatClock({ round: 7, tick: 24500 + 64 * 61 }, ROUND_MAP, 0), 'R7 1:01');
+  assert.equal(chatClock({ round: 7, tick: 24500 + 64 * 61 }, ROUND_MAP, 0), 'RD7 1:01');
 });
 
 test('chatClock: falls back to the match-relative clock (never negative)', () => {

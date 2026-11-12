@@ -238,9 +238,9 @@
             {/if}
             {#if col.cls}
               <span
-                class="chip cmp-class"
+                class="chip cmp-class {col.cls.label || 'unknown'}"
                 title="{col.cls.explanation || 'classified'} (rules v{col.cls.ruleVersion})"
-                >{col.cls.label}</span
+                >{col.cls.label || 'unknown'}</span
               >
             {/if}
           </h3>
@@ -276,8 +276,8 @@
               </table>
               {#if col.econ}
                 <p class="muted cmp-note">
-                  buy CT <span class="chip cmp-class">{col.econ.classCT || 'unknown'}</span>
-                  · T <span class="chip cmp-class">{col.econ.classT || 'unknown'}</span>
+                  buy CT <span class="chip cmp-class {col.econ.classCT || 'unknown'}">{col.econ.classCT || 'unknown'}</span>
+                  · T <span class="chip cmp-class {col.econ.classT || 'unknown'}">{col.econ.classT || 'unknown'}</span>
                   · {fmtDuration(col.detail.round.durationS)}
                 </p>
               {:else}

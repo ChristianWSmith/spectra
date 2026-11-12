@@ -267,6 +267,18 @@ globalThis.__set(1, 0); // floor clicked before any Generate
 await sleep();
 check('still no overlay (floor mismatch + no grid)', overlayDraws() === 0, String(overlayDraws()));
 
+console.log('H. Heatmaps view: the round-range <option> labels spell RD (source pin)');
+// The two round selects (Rounds from / Rounds to) are Heatmaps' only
+// compact round labels; the owner's "standardize round spelling
+// everywhere as RD" applies (R{n} → RD{n}). No driver mounts the Heatmaps
+// view (heatmap-layer.dom.mjs drives components/HeatmapLayer.js), so this
+// is a source pin over the view — mounting it would drag in the whole
+// service surface for two <option> strings.
+const heatSrc = readFileSync('src/lib/views/Heatmaps.svelte', 'utf8');
+const rdOptionLabels = (heatSrc.match(/RD\{r\.number\}/g) || []).length;
+check('both round-range options read RD{r.number}', rdOptionLabels === 2, String(rdOptionLabels));
+check('no bare R{r.number} option label survives', !/>R\{r\.number\}</.test(heatSrc), '');
+
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');
 process.exit(failures || errors.length ? 1 : 0);

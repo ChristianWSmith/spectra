@@ -355,12 +355,28 @@
   cursor: pointer;
 }
 
-.econ-cls.full {
+/* THE buy-class palette — ONE block, ONE set of values (never forked).
+   Consumers: Economy/EconCurve through `econ-cls <class>` and the
+   round-classification chips (Match's Rounds tab, Round detail header,
+   Compare columns + per-side note) through `cmp-class <class>` — those
+   four sites render the RAW class value as an extra class, so the
+   selector lists below cover both spellings from the same declaration.
+   Cascade: these compound selectors are specificity (0,2,0) and beat
+   m3b's flat `.cmp-class { color/border-color }` (0,1,0) by
+   SPECIFICITY, not by load order — m3b loads AFTER this file, but a
+   later file only wins at EQUAL specificity, so the palette always
+   shows. The flat rule stays as the no-class-key fallback.
+   The class key is the value itself (models.RoundClassification.label
+   and models.EconomyRow.classCT/ClassT are the palette keys:
+   pistol|eco|force|full|save, empty → `unknown` — no label mapping). */
+.econ-cls.full,
+.cmp-class.full {
   color: var(--accent);
   border-color: var(--accent-55);
 }
 
-.econ-cls.force {
+.econ-cls.force,
+.cmp-class.force {
   color: #e8833a;
   border-color: rgba(232, 131, 58, 0.55);
 }
@@ -370,33 +386,45 @@
    force=#e8833a, save=--muted, pistol=#f2c94c; eco takes --success (a
    non-side token): green reads "saving money", stays clear of the CT/T
    pair, and the border follows the token (color-mix, the same 55%). */
-.econ-cls.eco {
+.econ-cls.eco,
+.cmp-class.eco {
   color: var(--success);
   border-color: color-mix(in srgb, var(--success) 55%, transparent);
 }
 
-.econ-cls.save {
+.econ-cls.save,
+.cmp-class.save {
   color: var(--muted);
   border-color: rgba(139, 148, 167, 0.5);
 }
 
-.econ-cls.pistol {
+.econ-cls.pistol,
+.cmp-class.pistol {
   color: #f2c94c;
   border-color: rgba(242, 201, 76, 0.6);
 }
 
-.econ-cls.anti-eco {
+.econ-cls.anti-eco,
+.cmp-class.anti-eco {
   color: #4cc9c0;
   border-color: rgba(76, 201, 192, 0.5);
 }
 
-.econ-cls.bonus {
+.econ-cls.bonus,
+.cmp-class.bonus {
   color: #b48ce8;
   border-color: rgba(180, 140, 232, 0.5);
 }
 
-.econ-cls.unknown {
+/* unknown is the empty class — dashed + muted on the CHIP's default
+   border (var(--border), the same one .econ-cls.unknown has always
+   computed to through .chip). border-color is spelled out because the
+   cmp-class sites carry a flat accent border that would otherwise show
+   through the dash. */
+.econ-cls.unknown,
+.cmp-class.unknown {
   color: var(--muted);
+  border-color: var(--border);
   border-style: dashed;
 }
 

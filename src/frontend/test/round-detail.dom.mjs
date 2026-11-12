@@ -263,6 +263,20 @@ check('duration kept', htext.includes('1m45s'), htext.slice(0, 200));
 check('bomb site kept', htext.includes('site A'), htext.slice(0, 200));
 check('MVP name + reason kept', htext.includes('donk') && htext.includes('(killed 3)'), htext.slice(0, 240));
 check('classification chip kept', !!header?.querySelector('h1 .chip.cmp-class'), htext.slice(0, 200));
+// Buy-class chips wear the shared palette: the RAW label is the palette
+// key (fixture round 5 → `full`) carried as a class, so
+// style-m3a.css's `.cmp-class.full` (0,2,0) paints it.
+const rdChip = header?.querySelector('h1 .chip.cmp-class');
+check(
+  'classification chip carries the RAW palette key as a class',
+  !!rdChip && rdChip.classList.contains('full') && rdChip.textContent.trim() === 'full',
+  rdChip ? rdChip.className : 'missing',
+);
+check(
+  'classification chip keeps its explanation + rules-version + confidence tooltip',
+  rdChip?.getAttribute('title') === 'both teams full buy (rules v1 — 90% sure)',
+  rdChip?.getAttribute('title'),
+);
 check('reason CUT from the header', !htext.includes('target bombed'), htext.slice(0, 240));
 check('kill count CUT from the header', !/5 kills/.test(htext), htext.slice(0, 240));
 check('start/stop seconds CUT from the header', !htext.includes('125.0s') && !htext.includes('156.2s'), htext.slice(0, 240));

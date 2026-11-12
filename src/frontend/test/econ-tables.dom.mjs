@@ -413,6 +413,122 @@ table = root.querySelector('.data-table');
 check('12 rows render', rowsOf(table).length === 12, String(rowsOf(table).length));
 check('no split-before row exists', splitRows(table).length === 0, JSON.stringify(splitRows(table).map(roundOf)));
 
+console.log('C2. Rounds tab: the buy-class chip wears THE palette (raw key as class, shared CSS)');
+// The four .cmp-class sites (this tab, RoundDetail, Compare ×2) render the
+// RAW classification label as an extra class — and the raw value IS the
+// palette key (models.RoundClassification.label: pistol|eco|force|full|save;
+// empty → `unknown`, the same `|| 'unknown'` idiom Economy's classChip
+// uses). style-m3a.css's THE buy-class palette covers `.cmp-class.<key>`
+// at specificity (0,2,0), which beats m3b's flat `.cmp-class` accent
+// (0,1,0) — by specificity, NOT load order (m3b loads last), so the
+// palette value always shows and is never forked.
+const classRows = [
+  { round: 1, label: 'pistol', confidence: 1, ruleVersion: 1, explanation: 'half start' },
+  { round: 2, label: 'force', confidence: 1, ruleVersion: 1, explanation: 'equip over threshold' },
+  { round: 3, label: '', confidence: 1, ruleVersion: 1, explanation: 'nothing recorded' },
+];
+const roundsData = dataFor(13);
+const classedData = {
+  ...roundsData,
+  getRoundClasses: classRows,
+  // Round 1 opens the match's first blood — the Details-tab fact spells
+  // its round with the RD prefix too.
+  getRounds: roundsData.getRounds.map((r) =>
+    r.number === 1
+      ? { ...r, firstKillName: 'alice', firstKillSteam: 'A', firstDeathName: 'bob', firstDeathSteam: 'B' }
+      : r,
+  ),
+};
+root = await showMatch(classedData, { routeTab: 'Rounds' });
+table = root.querySelector('.data-table');
+const clsChips = [...table.querySelectorAll('.chip.cmp-class')];
+check(
+  'classified rounds render exactly one chip each (rounds 1–3)',
+  clsChips.length === 3,
+  String(clsChips.length),
+);
+check(
+  'round 1 chip carries the RAW palette key as a class',
+  !!clsChips[0] && clsChips[0].classList.contains('pistol') && clsChips[0].textContent.trim() === 'pistol',
+  clsChips[0] ? clsChips[0].className : 'missing',
+);
+check(
+  'round 2 chip carries the RAW palette key as a class',
+  !!clsChips[1] && clsChips[1].classList.contains('force') && clsChips[1].textContent.trim() === 'force',
+  clsChips[1] ? clsChips[1].className : 'missing',
+);
+check(
+  'empty label falls back to the `unknown` key (the dashed one)',
+  !!clsChips[2] && clsChips[2].classList.contains('unknown') && clsChips[2].textContent.trim() === 'unknown',
+  clsChips[2] ? clsChips[2].className : 'missing',
+);
+check(
+  'the explanation + rules-version + confidence tooltip is intact',
+  clsChips[0]?.getAttribute('title') === 'half start (rules v1 — 100% sure)' &&
+    clsChips[1]?.getAttribute('title') === 'equip over threshold (rules v1 — 100% sure)',
+  clsChips[0]?.getAttribute('title'),
+);
+check(
+  'a round with no classification row still reads — (never a guessed chip)',
+  rowsOf(table)[6]?.children[3]?.textContent.trim() === '—',
+  rowsOf(table)[6]?.children[3]?.textContent.trim(),
+);
+// The First blood fact lives in the DETAILS tab's Key facts list — mount
+// it with the same data (the Rounds mount above cannot show it).
+root = await showMatch(classedData, { routeTab: 'Details' });
+const fbDd = [...root.querySelectorAll('dt')]
+  .find((dt) => dt.textContent.trim() === 'First blood')
+  ?.nextElementSibling;
+check(
+  'the Details-tab First blood fact spells its round with the RD prefix (RD1)',
+  /\(RD1\)/.test(fbDd?.textContent || ''),
+  fbDd ? fbDd.textContent.trim() : 'First blood fact missing',
+);
+// jsdom has no cascade — the rules are the pins (same idiom as the
+// stylesheet pins below). The palette must live ONCE, cover every key
+// through `.cmp-class.<key>`, and leave m3b with no per-class value.
+const m3a = readFileSync('public/style-m3a.css', 'utf8');
+const m3b = readFileSync('public/style-m3b.css', 'utf8');
+const paletteRule = (src, sel) => {
+  const i = src.indexOf(sel);
+  if (i < 0) return null;
+  const open = src.indexOf('{', i);
+  if (open < 0) return null;
+  const close = src.indexOf('}', open);
+  return close < 0 ? null : src.slice(open + 1, close);
+};
+const PALETTE = {
+  full: 'var(--accent)',
+  force: '#e8833a',
+  eco: 'var(--success)',
+  save: 'var(--muted)',
+  pistol: '#f2c94c',
+  'anti-eco': '#4cc9c0',
+  bonus: '#b48ce8',
+  unknown: 'var(--muted)',
+};
+for (const [key, color] of Object.entries(PALETTE)) {
+  const body = paletteRule(m3a, `.cmp-class.${key} {`);
+  check(
+    `palette value for ${key} lives at .econ-cls.${key} / .cmp-class.${key} in m3a`,
+    !!body && body.includes(color) && m3a.includes(`.econ-cls.${key},`),
+    String(body),
+  );
+}
+check(
+  'unknown wears the dashed muted chip border (border-color reset to the .chip default)',
+  /border-style:\s*dashed/.test(paletteRule(m3a, '.cmp-class.unknown {') || '') &&
+    /border-color:\s*var\(--border\)/.test(paletteRule(m3a, '.cmp-class.unknown {') || ''),
+  String(paletteRule(m3a, '.cmp-class.unknown {')),
+);
+check(
+  'cascade: the palette selectors are compound (0,2,0) over m3b flat .cmp-class (0,1,0) — palette wins, load order irrelevant',
+  /\.cmp-class\.(full|force|eco|save|pistol|anti-eco|bonus|unknown)\s*\{/.test(m3a) &&
+    /\.cmp-class\s*\{/.test(m3b) &&
+    !/\.cmp-class\.[a-z]/.test(m3b),
+  'm3a palette selector or m3b flat rule missing/overridden',
+);
+
 console.log('D. Economy tab: buy-types table — Rd header, TEAM names, pip retired');
 root = await showMatch(dataFor(13), { routeTab: 'Economy' });
 table = root.querySelector('.econ-table');
