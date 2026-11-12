@@ -24,7 +24,7 @@
     invalidate,
     errText,
   } from '../services.js';
-  import { fmtBytes, fmtDuration, fmtDate, basename } from '../fmt.js';
+  import { fmtBytes, fmtDuration, fmtDate, basename, neverExtracted } from '../fmt.js';
   import { listedPlayers } from '../players.js';
   import { teamNames } from '../teams.js';
   import { seed, remember } from '../viewstate.svelte.js';
@@ -633,13 +633,19 @@
   // failure state (the failed StatusChip carries match.error in its
   // title), and a reprocess failure keeps any previously extracted rows
   // on screen. The row's own Reprocess/Delete buttons stopPropagation on
-  // click and are disabled while the row is NOT openable (parsing/queued
-  // — re-running either against a row mid-parse would race the job), with
-  // a title hint saying why; the row's Cancel/Remove control is the one
-  // button that stays ENABLED while the row is locked (it is the way out
-  // of that state — see onCancelJob). Enter on them must not navigate the
-  // row either (the keydown bubbles up to the <tr>), hence the target
-  // check in the keydown handler.
+  // click. While the row is NOT openable (parsing/queued) they render
+  // disabled with a title hint saying why — but ONLY when prior
+  // extracted data exists (a reprocess mid-parse, old values on screen):
+  // a NEVER-EXTRACTED row renders neither one (before the first extract
+  // there is nothing to re-run and nothing to delete, and that disabled
+  // pair is exactly what made a parsing row read as dead beside the
+  // synthetic queued row — owner ruling), leaving its Cancel/Remove
+  // control as the one button (the way out of the state — see
+  // onCancelJob); with no job in the jobs snapshot such a row has no
+  // buttons at all (a row no job owns is not actionable — no fallback
+  // control is invented). Enter on a button must not navigate the row
+  // either (the keydown bubbles up to the <tr>), hence the target check
+  // in the keydown handler.
   function isOpenable(m) {
     return m.status !== 'parsing' && m.status !== 'queued';
   }
@@ -878,6 +884,16 @@
             </tr>
           {/each}
           {#each matches as m (m.id)}
+            <!-- Never-extracted presentation gate — the extracted_at
+                 stamp (fmt.js neverExtracted), NEVER the status: a
+                 reprocess keeps its old stamp (and values) mid-parse,
+                 while a fresh queued/parsing/failed row was never
+                 stamped by SaveExtracted. Such a row presents like the
+                 synthetic queued rows above: the demo's file name in
+                 Matchup and "—" wherever no value has ever been
+                 computed (no 0–0/0/0s). Size keeps its real value — it
+                 is known, and hiding real data would be a downgrade. -->
+            {@const neverExt = neverExtracted(m.extractedAt)}
             <tr
               class:clickable={isOpenable(m)}
               onclick={() => openMatch(m)}
@@ -889,13 +905,26 @@
               tabindex={isOpenable(m) ? 0 : undefined}
             >
               <td>{m.map || '—'}</td>
-              <td>{matchup(m)}</td>
-              <td class="num"
-                ><span class="ct">{m.scoreCT}</span>–<span class="t">{m.scoreT}</span
-                ></td
-              >
-              <td class="num">{m.realRounds}</td>
-              <td class="num">{fmtDuration(m.durationS)}</td>
+              <td>
+                {#if neverExt && m.path}
+                  <!-- The file name rides the SAME truncation every other
+                       demo name in this view uses (lib-demo-name, the
+                       260px cap) — an unbounded basename would inflate
+                       the Matchup column while the row parses. -->
+                  <span class="mono lib-demo-name" title={m.path}>{basename(m.path)}</span>
+                {:else}
+                  {matchup(m)}
+                {/if}
+              </td>
+              <td class="num">
+                {#if neverExt}
+                  —
+                {:else}
+                  <span class="ct">{m.scoreCT}</span>–<span class="t">{m.scoreT}</span>
+                {/if}
+              </td>
+              <td class="num">{neverExt ? '—' : m.realRounds}</td>
+              <td class="num">{neverExt ? '—' : fmtDuration(m.durationS)}</td>
               <td class="num">{fmtBytes(m.size)}</td>
               <!-- fmtDate owns the placeholder: a row that has not been
                    extracted yet (NULL extracted_at → Go zero time) renders
@@ -927,33 +956,48 @@
                     >{cancelLabel(progressByMatch.get(m.id).status)}</button
                   >
                 {/if}
-                <button
-                  class="btn small"
-                  disabled={!isOpenable(m)}
-                  title={!isOpenable(m)
-                    ? 'Available once parsing finishes'
-                    : "Re-parse the demo — from Spectra's copy when one exists"}
-                  onclick={(e) => onReprocess(m.id, e)}>Re-parse</button
-                >
-                <!-- Free copy: rendered only while the fs-derived state
-                     says a managed copy exists AND the row is openable —
-                     a parsing/queued row never shows it, so the row's
-                     action-count stays the two controls the queue pins. -->
-                {#if m.copyState === 'copied' && isOpenable(m)}
+                <!-- Re-parse/Delete render EXCEPT on a never-extracted
+                     row still queued/parsing: before the first extract
+                     there is nothing to re-run and nothing to delete,
+                     and their disabled pair is what made a parsing row
+                     read as dead beside the synthetic queued row (owner
+                     ruling). The cancel control above is such a row's
+                     one button — or none at all when no job in the jobs
+                     snapshot owns it (a row no job owns is not
+                     actionable). A reprocess mid-parse (old values still
+                     on screen) keeps the pair disabled, and failed/ready
+                     rows keep it live (retry) — both fall out of the
+                     same neverExtracted gate. -->
+                {#if !neverExt || isOpenable(m)}
                   <button
                     class="btn small"
-                    title="Free the disk space Spectra’s copy uses — your original file is not touched"
-                    onclick={(e) => onFreeCopy(m, e)}>Free copy</button
+                    disabled={!isOpenable(m)}
+                    title={!isOpenable(m)
+                      ? 'Available once parsing finishes'
+                      : "Re-parse the demo — from Spectra's copy when one exists"}
+                    onclick={(e) => onReprocess(m.id, e)}>Re-parse</button
+                  >
+                  <!-- Free copy: rendered only while the fs-derived state
+                       says a managed copy exists AND the row is openable —
+                       a parsing/queued row never shows it (and a
+                       never-extracted one renders neither it nor the
+                       pair — see the gate above). -->
+                  {#if m.copyState === 'copied' && isOpenable(m)}
+                    <button
+                      class="btn small"
+                      title="Free the disk space Spectra’s copy uses — your original file is not touched"
+                      onclick={(e) => onFreeCopy(m, e)}>Free copy</button
+                    >
+                  {/if}
+                  <button
+                    class="btn small danger"
+                    disabled={!isOpenable(m)}
+                    title={!isOpenable(m)
+                      ? 'Available once parsing finishes'
+                      : 'Delete this match’s data'}
+                    onclick={(e) => onDelete(m, e)}>Delete</button
                   >
                 {/if}
-                <button
-                  class="btn small danger"
-                  disabled={!isOpenable(m)}
-                  title={!isOpenable(m)
-                    ? 'Available once parsing finishes'
-                    : 'Delete this match’s data'}
-                  onclick={(e) => onDelete(m, e)}>Delete</button
-                >
               </td>
             </tr>
           {/each}
