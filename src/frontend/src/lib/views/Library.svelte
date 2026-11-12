@@ -68,6 +68,15 @@
   let loadingMore = $state(false);
   let jobs = $state([]);
   let jobProgress = $state(new Map()); // jobId -> latest progress payload
+  // First-paint gates for the empty state — the loading ladder's rung 3 (a
+  // plain indicator, TRANSIENT by the State-placement rule: never seeded,
+  // never remembered, never in the URL). Until BOTH first reads have
+  // answered, an empty table would claim "No matches yet" while the library
+  // simply has not arrived, so the dropzone shows "Loading…" until then.
+  // Cleared once and never re-armed: a later refresh keeps the rows already
+  // on screen instead of flashing back to a spinner.
+  let listLoading = $state(true);
+  let jobsLoading = $state(true);
   // Structured list facets (ANDed with each other — store.MatchListFilter,
   // forwarded by services.js listMatches): a map substring and "has player
   // X" (exact 17-digit SteamID or name substring — one input covers both).
@@ -172,8 +181,12 @@
       hasNext = !!(page && page.hasNext);
       applyRosters(page && page.rosters);
       error = '';
+      listLoading = false; // gen-guarded: only a CURRENT reply ends the wait
     } catch (e) {
-      if (gen === listGen) error = errText(e);
+      if (gen === listGen) {
+        error = errText(e);
+        listLoading = false; // a failed first read shows the error, not a hang
+      }
     }
   }
 
@@ -225,6 +238,8 @@
       jobs = await listJobs();
     } catch (e) {
       error = errText(e);
+    } finally {
+      jobsLoading = false;
     }
   }
 
@@ -684,7 +699,13 @@
   {/if}
 
   <div class="dropzone">
-    {#if matches.length === 0 && jobs.length === 0 && !searching}
+    {#if listLoading || jobsLoading}
+      <!-- Rung 3 of the loading ladder: until BOTH first reads have
+           answered, an empty table would claim "No matches yet" while the
+           library is still on its way. Plain indicator only — transient
+           (see listLoading/jobsLoading), never a progress widget. -->
+      <p class="muted" role="status">Loading…</p>
+    {:else if matches.length === 0 && jobs.length === 0 && !searching}
       <div class="empty">
         <p class="empty-title" role="status">No matches yet</p>
         <!-- No Import… button here: the header already owns the one

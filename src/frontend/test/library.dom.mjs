@@ -1408,6 +1408,51 @@ console.log('K. view-state registry: sort restores across a remount; URL facets 
   await unmount(c.inst);
 }
 
+// ---------------------------------------------------------------------------
+// Section L: the cold-start loading gate (loading ladder rung 3 — PRODUCT.md
+// ### Defaults). With BOTH first reads in flight the dropzone shows the
+// plain loading indicator — it never claims "No matches yet" while the
+// library is still on its way — and the table appears only once they land.
+// The reads are delayed through the stubs (services.invalidate() first, so a
+// cache-served promise cannot bypass them — section K's mountLib rule).
+console.log('L. cold start: the empty state never claims "No matches yet" mid-load');
+services.invalidate();
+const prevList = bindings.handlers.ListMatchesPage;
+const prevJobs = bindings.LibraryService.ListJobs;
+bindings.handlers.ListMatchesPage = (...args) =>
+  new Promise((res) => setTimeout(() => res(prevList(...args)), 250));
+bindings.LibraryService.ListJobs = () =>
+  new Promise((res) => setTimeout(() => res(prevJobs()), 250));
+
+viewstate.resetViewState();
+const coldTarget = document.createElement('div');
+document.body.appendChild(coldTarget);
+const coldInst = mount(mod.default, { target: coldTarget, props: { query: {} } });
+await sleep(60); // both first reads still in flight (250 ms delay)
+const coldDrop = () =>
+  coldTarget.querySelector('.dropzone')?.textContent.replace(/\s+/g, ' ').trim() ?? '';
+check(
+  'mid-load: loading indicator, no empty claim, no table',
+  coldTarget.textContent.includes('Loading…') &&
+    !coldTarget.textContent.includes('No matches yet') &&
+    !coldTarget.querySelector('.dropzone .data-table'),
+  coldDrop().slice(0, 140),
+);
+await sleep(400); // both reads landed
+check(
+  'after both reads land: the list renders and the gate is gone',
+  !coldTarget.textContent.includes('Loading…') &&
+    coldTarget.querySelectorAll('.dropzone .data-table tbody tr:not([data-pending-import])')
+      .length === 1,
+  coldDrop().slice(0, 140),
+);
+
+// Section L leaves the delayed stubs and the mounted instance behind —
+// hand both back before the suite ends.
+bindings.handlers.ListMatchesPage = prevList;
+bindings.LibraryService.ListJobs = prevJobs;
+await unmount(coldInst);
+
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');
 process.exit(failures || errors.length ? 1 : 0);

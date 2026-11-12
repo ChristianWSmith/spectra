@@ -214,8 +214,19 @@ export function cancelJob(id) {
   });
 }
 
+// listJobs is the jobs table's listing (200 most recent, newest first).
+// Read-cached through the SAME cachedRead as every other read here — no
+// second cache: everything that can change a job row already flushes it
+// (spectra:job-progress while a job runs, spectra:job-done at its terminal
+// transition, spectra:library-changed for the rows a job writes through),
+// and the wrappers that CREATE or cancel jobs (importPaths / reprocess /
+// cancelJob) invalidate on success, so an entry can never outlive the
+// change that matters. Caching is also what makes the boot warm useful:
+// App fires this read before the first paint when the boot route is the
+// Library (App.svelte), and the Library view's own mount then awaits the
+// SAME in-flight promise instead of a second round trip.
 export function listJobs() {
-  return LibraryService.ListJobs();
+  return cachedRead('ListJobs', [], () => LibraryService.ListJobs());
 }
 
 // --- Import dirs (Settings → "Import dirs") --------------------------------
