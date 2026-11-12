@@ -9,9 +9,16 @@ import "time"
 // shared vocabulary both sides may depend on (package docs).
 
 // AnalysisConfig is the single-row analysis_config: the versioned
-// heuristic thresholds. RuleVersion bumps by one whenever SetConfig
-// stores CHANGED values; saving identical values is a no-op (no bump —
-// see AnalyticsService.SetConfig).
+// heuristic thresholds. Every threshold here is an analysis-rule INPUT
+// whose OUTPUTS are stored at analyze time — trade window →
+// player_stats.trade_kills, eco thresholds → round_classifications +
+// round_side_classes, trade-opp distance → match_trade_opps — so a save
+// that changes a value bumps RuleVersion, the affected matches go behind
+// and RecomputeAll rewrites their stored rows (AGENTS.md
+// "Analysis-rule derived values": read-time thresholding of rule outputs
+// is forbidden). RuleVersion bumps by one whenever SetConfig stores
+// CHANGED values; saving identical values is a no-op (no bump — see
+// AnalyticsService.SetConfig).
 type AnalysisConfig struct {
 	TradeWindowS float64 `json:"tradeWindowS"`
 	EcoFullBuy   int     `json:"ecoFullBuy"`
@@ -79,6 +86,21 @@ type RoundClassification struct {
 	Confidence  float64 `json:"confidence"`
 	RuleVersion int     `json:"ruleVersion"`
 	Explanation string  `json:"explanation"`
+}
+
+// RoundSideClass is one round_side_classes row: the STORED buy class of
+// ONE side of one counted round, with the REQUIRED why string (transparent
+// rules). Derived at analyze time from the run's config —
+// analytics.Classify → store.ReplaceRoundSideClasses — and read back by
+// store.GetEconomy; never re-classified at read time (AGENTS.md
+// "Analysis-rule derived values": read-time thresholding of rule outputs
+// is forbidden). Side is "ct" | "t".
+type RoundSideClass struct {
+	MatchID int64  `json:"matchId"`
+	Round   int    `json:"round"`
+	Side    string `json:"side"`
+	Class   string `json:"class"` // pistol|eco|force|full|save (v1)
+	Why     string `json:"why"`
 }
 
 // PlayerRoundStat is one player_round_stats row: per-player-per-round combat
@@ -180,14 +202,19 @@ type CombatStat struct {
 }
 
 // EconomyRow is the raw per-round economy view (rounds ⋈ round_economy ⋈
-// round_classifications) with loss-bonus reconstruction applied. ClassCT/
-// ClassT/ClassWhy* are left empty by the store and filled by the caller via
-// analytics.buyClass (unexported: package-internal only, and the store
-// cannot import analytics — cycle); everything else is complete on return.
-// Money* is the sampled freeze-end money sum; Spent* is the side's real
-// per-round buy spend (round_economy.spent — Σ over the side's players of
-// the delta in the cumulative money-spent counter between freeze-time
-// ends; see extract.agg.freezeEnd). FreePistol* carries
+// round_classifications ⋈ round_side_classes) with loss-bonus
+// reconstruction applied. ClassCT/ClassT/ClassWhy* are the STORED per-side
+// classes (round_side_classes — written by analytics.Compute at analyze
+// time and read verbatim by store.GetEconomy; "" = no stored row = an
+// unanalyzed/pre-change match, never a read-time re-classification — the
+// UI renders that as its honest "unknown" chip). PistolRound derives from
+// the STORED round label (round_classifications.label = "pistol" — the
+// round chips' own label, so the two can never disagree). Everything else
+// is complete on return. Money* is the sampled freeze-end money sum;
+// Spent* is the side's real per-round buy spend (round_economy.spent — Σ
+// over the side's players of the delta in the cumulative money-spent
+// counter between freeze-time ends; see extract.agg.freezeEnd).
+// FreePistol* carries
 // round_economy.free_pistol_value — the side's held free spawn-issued
 // default-pistol value at that freeze end (granted, not bought): they
 // count INSIDE Equip*, so net worth = Equip* + Money* (frontend

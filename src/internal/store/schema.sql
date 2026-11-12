@@ -327,6 +327,39 @@ CREATE TABLE IF NOT EXISTS round_classifications (
 	PRIMARY KEY (match_id, round)
 );
 
+-- Per-side buy classes: the eco thresholds' (analysis_config.eco_full_buy
+-- / eco_force) analysis-rule OUTPUT for ONE side of one counted round —
+-- the per-side chips and their why tooltips (Economy tab + match report).
+-- Owner ruling 2026-11-12 ("all-stored rule", AGENTS.md "Analysis-rule
+-- derived values"): analytics.Compute derives them from the run's config
+-- at analyze time (store.ReplaceRoundSideClasses — the ONE writer) and
+-- every read (store.GetEconomy) fetches the stored row; the retired
+-- read-time fill (analytics.EconomyRows, which re-classified with the
+-- CURRENT config on every read) survives only as the reference oracle in
+-- internal/analytics' eco equivalence test.
+--
+-- Keys mirror round_economy's (match_id, round, side) — the same per-round
+-- per-side grain the classification reads its equip from; round_classifications
+-- stays THE round-level classification home (its label feeds the round
+-- chips) and this table is its side-scoped extension, written in the SAME
+-- Compute pass. A match analyzed before this table existed has NO rows:
+-- the Economy view renders the honest "unknown" chip (its classChip
+-- fallback) and the force-buy summary counts 0 until a rules save bumps
+-- rule_version → the match goes behind → RecomputeAll, or a reprocess
+-- re-analyzes it. There is no backfill and no ensure/ALTER path
+-- (pre-release policy: stale local data is wiped + re-imported, never
+-- migrated). A NEW TABLE reaches every existing DB at Open; adding these
+-- as columns on round_classifications would NOT (the baseline only
+-- CREATEs), which is why the shape is a table.
+CREATE TABLE IF NOT EXISTS round_side_classes (
+	match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+	round INTEGER NOT NULL,
+	side TEXT NOT NULL,
+	class TEXT NOT NULL DEFAULT '',
+	why TEXT NOT NULL DEFAULT '',
+	PRIMARY KEY (match_id, round, side)
+);
+
 CREATE TABLE IF NOT EXISTS player_round_stats (
 	match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
 	round INTEGER NOT NULL,
@@ -514,11 +547,17 @@ CREATE TABLE IF NOT EXISTS saved_filters (
 -- Single-row rules config (plan M3 §3): id is pinned to 1 by CHECK; the
 -- Go GetConfig seeds DefaultConfig on first use (trade 5s / full 20000 /
 -- force 10000 / trade-opp 1000u / rule v1).
+-- The DEFAULTs MIRROR store.DefaultConfig — the Go seed is the ONE
+-- canonical source (GetConfig's explicit INSERT writes every column, so
+-- these are never read in practice; the eco pair used to disagree here
+-- at 4000/2000 — a dead value that made the file contradict the seed).
+-- The mirror is pinned by TestAnalysisConfigDDLDefaultsMatchGoSeed, so
+-- the two can never silently drift apart again.
 CREATE TABLE IF NOT EXISTS analysis_config (
 	id INTEGER PRIMARY KEY CHECK (id = 1),
 	trade_window_s REAL NOT NULL DEFAULT 5.0,
-	eco_full_buy INTEGER NOT NULL DEFAULT 4000,
-	eco_force INTEGER NOT NULL DEFAULT 2000,
+	eco_full_buy INTEGER NOT NULL DEFAULT 20000,
+	eco_force INTEGER NOT NULL DEFAULT 10000,
 	trade_opp_distance INTEGER NOT NULL DEFAULT 1000,
 	rule_version INTEGER NOT NULL DEFAULT 1
 );

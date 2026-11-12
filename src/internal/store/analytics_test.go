@@ -1,8 +1,11 @@
 package store
 
 import (
+	"database/sql"
 	"errors"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -16,7 +19,7 @@ import (
 func TestAnalyticsTablesFreshOpen(t *testing.T) {
 	s, path := openFileStore(t)
 	analyticsTables := []string{
-		"round_classifications", "player_round_stats", "clutches", "engagements",
+		"round_classifications", "round_side_classes", "player_round_stats", "clutches", "engagements",
 		"utility_events", "match_trade_opps", "player_career", "saved_filters",
 		"analysis_config",
 	}
@@ -123,6 +126,12 @@ func TestAnalyticsReplaceAndGetters(t *testing.T) {
 		fn   func() error
 	}{
 		{"classifications", func() error { return s.ReplaceRoundClassifications(id, cls) }},
+		{"side classes", func() error {
+			return s.ReplaceRoundSideClasses(id, []models.RoundSideClass{
+				{Round: 1, Side: "ct", Class: "full", Why: "equip 24000 ≥ full-buy threshold 20000 → full buy\x00nul"},
+				{Round: 1, Side: "t", Class: "eco", Why: "equip 3000 < force threshold 10000 → eco"},
+			})
+		}},
 		{"player rounds", func() error { return s.ReplacePlayerRounds(id, prs) }},
 		{"clutches", func() error { return s.ReplaceClutches(id, clutches) }},
 		{"engagements", func() error { return s.ReplaceEngagements(id, engs) }},
@@ -136,6 +145,17 @@ func TestAnalyticsReplaceAndGetters(t *testing.T) {
 	gotCls, err := s.GetRoundClasses(id)
 	if err != nil || len(gotCls) != 1 || gotCls[0].Explanation != "whynul" {
 		t.Errorf("GetRoundClasses = %+v, %v (NUL scrubbed)", gotCls, err)
+	}
+	// The per-side classes round-trip through GetEconomy (stored read).
+	econ, err := s.GetEconomy(id)
+	if err != nil || len(econ) != 1 {
+		t.Fatalf("GetEconomy = %d rows, %v, want 1", len(econ), err)
+	}
+	if econ[0].ClassCT != "full" || econ[0].ClassT != "eco" {
+		t.Errorf("economy classes = %q/%q, want full/eco (stored round_side_classes)", econ[0].ClassCT, econ[0].ClassT)
+	}
+	if econ[0].ClassWhyCT != "equip 24000 ≥ full-buy threshold 20000 → full buynul" {
+		t.Errorf("ClassWhyCT = %q (NUL scrubbed)", econ[0].ClassWhyCT)
 	}
 	gotPrs, err := s.GetPlayerRounds(id, "")
 	if err != nil || len(gotPrs) != 1 || !gotPrs[0].KAST || gotPrs[0].DMG != 130 {
@@ -289,6 +309,193 @@ func TestGetEconomyLossBonus(t *testing.T) {
 	}
 	if rows[1].MoneyCT != 15000 || rows[1].MoneyT != 9000 {
 		t.Errorf("round 2 money = %d/%d, want 15000/9000", rows[1].MoneyCT, rows[1].MoneyT)
+	}
+}
+
+// TestGetEconomyUnanalyzedClassesAreHonestUnknown pins the pre-change-DB
+// read contract of the all-stored eco ruling (2026-11-12): a match with
+// NO stored round_side_classes rows reads EMPTY per-side classes — the
+// Economy view renders that as its honest "unknown" chip (classChip's
+// `cls || 'unknown'` fallback) — and never a read-time re-classification.
+// Two shapes: a match never analyzed (no round label either) and the
+// PRE-CHANGE-DB match (analyzed before this table existed: its stored
+// round label and with it the pistol flag are there, its side classes are
+// not — it fills in on the next rules-change re-run or reprocess, never
+// by guessing).
+func TestGetEconomyUnanalyzedClassesAreHonestUnknown(t *testing.T) {
+	s := openMem(t)
+	id := saveTestMatch(t, s, "/d/noside.dem", "sha-noside", time.Now())
+	em := testExtracted("sha-noside", time.Now())
+	em.Match.RealRounds = 1
+	em.Rounds = []models.Round{
+		{Number: 1, Winner: "ct", EquipCT: 4000, EquipT: 3600, StartTick: 100, EndTick: 2000},
+	}
+	em.RoundEconomy = []models.RoundEconomy{
+		{Round: 1, Side: "ct", EquipValue: 4000, MoneySamples: 5},
+		{Round: 1, Side: "t", EquipValue: 3600, MoneySamples: 5},
+	}
+	if err := s.SaveExtracted(id, em); err != nil {
+		t.Fatalf("SaveExtracted: %v", err)
+	}
+	emptyClasses := func(r models.EconomyRow, shape string) {
+		t.Helper()
+		if r.ClassCT != "" || r.ClassT != "" || r.ClassWhyCT != "" || r.ClassWhyT != "" {
+			t.Errorf("%s: side classes = %q/%q (why %q/%q), want empty (no stored rows → honest unknown, never a read-time classification)",
+				shape, r.ClassCT, r.ClassT, r.ClassWhyCT, r.ClassWhyT)
+		}
+	}
+
+	// Shape 1: never analyzed — no stored round label, no side classes.
+	rows, err := s.GetEconomy(id)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("GetEconomy = %d rows, %v, want 1", len(rows), err)
+	}
+	if rows[0].Label != "" || rows[0].Explanation != "" || rows[0].RuleVersion != 0 || rows[0].PistolRound {
+		t.Errorf("unanalyzed row label/pistol = %q/%q/v%d/%v, want \"\"/\"\"/0/false",
+			rows[0].Label, rows[0].Explanation, rows[0].RuleVersion, rows[0].PistolRound)
+	}
+	emptyClasses(rows[0], "never analyzed")
+
+	// Shape 2: analyzed BEFORE round_side_classes existed (the pre-change
+	// DB): the round label is there — the round chips keep working and
+	// PistolRound still derives from it — while the side classes stay
+	// empty until a re-run.
+	if err := s.ReplaceRoundClassifications(id, []models.RoundClassification{
+		{Round: 1, Label: "pistol", Confidence: 1, RuleVersion: 1, Explanation: "half start"},
+	}); err != nil {
+		t.Fatalf("ReplaceRoundClassifications: %v", err)
+	}
+	rows, err = s.GetEconomy(id)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("GetEconomy (post-label) = %d rows, %v, want 1", len(rows), err)
+	}
+	if rows[0].Label != "pistol" || !rows[0].PistolRound {
+		t.Errorf("pre-change row label/pistol = %q/%v, want pistol/true (stored label still drives the pistol flag)",
+			rows[0].Label, rows[0].PistolRound)
+	}
+	emptyClasses(rows[0], "pre-change DB")
+}
+
+// TestRoundSideClassesReachExistingDB pins the shape claim behind the
+// table choice (all-stored eco, 2026-11-12): a DB that PREDATES
+// round_side_classes — a non-wiped pre-change library — gets the table
+// from the baseline at its next Open (no wipe, no ensure/ALTER path),
+// reads serve it without error with the old matches' side classes empty
+// (the honest "unknown" the Economy view renders), and a later analyze
+// pass can write and read them again.
+func TestRoundSideClassesReachExistingDB(t *testing.T) {
+	s, path := openFileStore(t)
+	id := saveTestMatch(t, s, "/d/prechange.dem", "sha-prechange", time.Now())
+	em := testExtracted("sha-prechange", time.Now())
+	em.Match.RealRounds = 1
+	em.Rounds = []models.Round{
+		{Number: 1, Winner: "ct", EquipCT: 4000, EquipT: 3600, StartTick: 100, EndTick: 2000},
+	}
+	em.RoundEconomy = []models.RoundEconomy{
+		{Round: 1, Side: "ct", EquipValue: 4000, MoneySamples: 5},
+		{Round: 1, Side: "t", EquipValue: 3600, MoneySamples: 5},
+	}
+	if err := s.SaveExtracted(id, em); err != nil {
+		t.Fatalf("SaveExtracted: %v", err)
+	}
+	// The old build's analyzed shape: round label only.
+	if err := s.ReplaceRoundClassifications(id, []models.RoundClassification{
+		{Round: 1, Label: "pistol", Confidence: 1, RuleVersion: 1, Explanation: "half start"},
+	}); err != nil {
+		t.Fatalf("ReplaceRoundClassifications: %v", err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	// Simulate the pre-change schema: drop the table an old build never
+	// had (second raw connection to the same file — the standard surgery
+	// pattern in this repo's tests).
+	db2, err := sql.Open("sqlite", path+"?_pragma=busy_timeout(5000)")
+	if err != nil {
+		t.Fatalf("second connection: %v", err)
+	}
+	if _, err := db2.Exec(`DROP TABLE round_side_classes`); err != nil {
+		t.Fatalf("drop round_side_classes: %v", err)
+	}
+	if err := db2.Close(); err != nil {
+		t.Fatalf("close second connection: %v", err)
+	}
+	// Re-open with the current code: the baseline re-creates the table
+	// (CREATE IF NOT EXISTS — the new-table-reaches-existing-DBs claim).
+	s2, err := Open(path)
+	if err != nil {
+		t.Fatalf("reopen: %v", err)
+	}
+	t.Cleanup(func() { _ = s2.Close() })
+	rows, err := s2.GetEconomy(id)
+	if err != nil {
+		t.Fatalf("GetEconomy on a pre-change DB: %v", err)
+	}
+	if len(rows) != 1 {
+		t.Fatalf("economy rows = %d, want 1", len(rows))
+	}
+	if rows[0].Label != "pistol" || !rows[0].PistolRound {
+		t.Errorf("pre-change label/pistol = %q/%v, want pistol/true (round chips untouched)", rows[0].Label, rows[0].PistolRound)
+	}
+	if rows[0].ClassCT != "" || rows[0].ClassT != "" {
+		t.Errorf("pre-change side classes = %q/%q, want empty until a re-run", rows[0].ClassCT, rows[0].ClassT)
+	}
+	// The re-run shape works: write the stored classes, read them back.
+	if err := s2.ReplaceRoundSideClasses(id, []models.RoundSideClass{
+		{Round: 1, Side: "ct", Class: "pistol", Why: "half-start pistol round (equip 4000)"},
+		{Round: 1, Side: "t", Class: "pistol", Why: "half-start pistol round (equip 3600)"},
+	}); err != nil {
+		t.Fatalf("ReplaceRoundSideClasses after reopen: %v", err)
+	}
+	rows, err = s2.GetEconomy(id)
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("GetEconomy after write = %d rows, %v", len(rows), err)
+	}
+	if rows[0].ClassCT != "pistol" || rows[0].ClassT != "pistol" {
+		t.Errorf("side classes after write = %q/%q, want pistol/pistol", rows[0].ClassCT, rows[0].ClassT)
+	}
+}
+
+// TestAnalysisConfigDDLDefaultsMatchGoSeed pins the DDL defaults of
+// analysis_config to store.DefaultConfig — the ONE canonical source
+// (GetConfig's seed INSERT writes every column, so a DEFAULT is never
+// read; it must still not contradict the seed, as the eco pair used to at
+// 4000/2000 against the Go seed's 20000/10000). The schema.sql comment
+// above the table names the same rule; this test is what makes the mirror
+// unable to drift.
+func TestAnalysisConfigDDLDefaultsMatchGoSeed(t *testing.T) {
+	start := strings.Index(schemaSQL, "CREATE TABLE IF NOT EXISTS analysis_config (")
+	if start < 0 {
+		t.Fatal("analysis_config DDL missing from schema.sql")
+	}
+	end := strings.Index(schemaSQL[start:], ");")
+	if end < 0 {
+		t.Fatal("analysis_config DDL block not terminated")
+	}
+	block := schemaSQL[start : start+end]
+
+	cols := map[string]float64{
+		"trade_window_s":     DefaultConfig.TradeWindowS,
+		"eco_full_buy":       float64(DefaultConfig.EcoFullBuy),
+		"eco_force":          float64(DefaultConfig.EcoForce),
+		"trade_opp_distance": float64(DefaultConfig.TradeOppDistance),
+		"rule_version":       float64(DefaultConfig.RuleVersion),
+	}
+	for col, want := range cols {
+		re := regexp.MustCompile(`\b` + col + `\s+(?:INTEGER|REAL) NOT NULL DEFAULT ([0-9.]+)`)
+		m := re.FindStringSubmatch(block)
+		if m == nil {
+			t.Errorf("%s: no `NOT NULL DEFAULT` entry in the analysis_config DDL block", col)
+			continue
+		}
+		got, err := strconv.ParseFloat(m[1], 64)
+		if err != nil {
+			t.Errorf("%s: unpinnable default %q: %v", col, m[1], err)
+			continue
+		}
+		if got != want {
+			t.Errorf("%s DDL default = %v, want %v (store.DefaultConfig is canonical)", col, got, want)
+		}
 	}
 }
 

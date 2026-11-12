@@ -24,6 +24,7 @@ var tableNotes = map[string]string{
 
 	// M3 analytics (derived rows).
 	"round_classifications": "per-round buy classification with rule_version + human explanation",
+	"round_side_classes":    "per-round per-SIDE stored buy class + why (the eco rule's output — full|force|eco|save|pistol) — written by analytics.Compute at analyze time, read verbatim by GetEconomy",
 	"player_round_stats":    "per-player per-round stats: KAST components, traded/survived, damage, spend",
 	"clutches":              "detected 1vN clutch attempts + outcome",
 	"engagements":           "detected opening/trade/traded/untraded engagements between two players",

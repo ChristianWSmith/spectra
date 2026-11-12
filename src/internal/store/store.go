@@ -35,7 +35,7 @@ const interruptedJobErr = "interrupted by restart"
 var childTables = []string{
 	"events", "generic_events", "chat", "sound_events", "round_economy", "rounds",
 	"round_player_sides", "player_stats", "players", "teams", "warnings",
-	"round_classifications", "player_round_stats", "clutches",
+	"round_classifications", "round_side_classes", "player_round_stats", "clutches",
 	"engagements", "utility_events", "match_trade_opps",
 	"voice_presence",
 }
