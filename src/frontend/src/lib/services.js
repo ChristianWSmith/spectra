@@ -53,15 +53,19 @@ export function errText(e) {
 //   spectra:job-progress    - parse/store progress (data lands mid-stream)
 //   spectra:files-dropped   - import kickoff (its own events may lag the
 //                             call site's refetch)
-// The one exception: spectra:asset-progress (Settings' CS2-asset
-// extraction) is pure progress — it changes no row — so it is NOT in the
-// listener list below; its only subscriber is onAssetProgress, which
-// drives a progress bar.
-// Mutating wrappers (deleteMatch/importPaths/reprocess/
-// recomputeAnalysis) also invalidate on success: DeleteMatch and
-// RecomputeAnalysis emit no event at all, and the event round-trip for
-// the others can land AFTER the call site's own refetch - invalidating
+// The progress-only exceptions: spectra:asset-progress (Settings' CS2-asset
+// extraction), spectra:heatmap-progress (Heatmaps' generate) and
+// spectra:analysis-progress (a re-run's start note) change no row — they
+// are NOT in the listener list below and never flush; each reaches only
+// its own chip.
+// Mutating wrappers (deleteMatch/importPaths/reprocess) also invalidate
+// on success: DeleteMatch emits no event at all, and the event round-trip
+// for the others can land AFTER the call site's own refetch - invalidating
 // inside the wrapper closes that race without any call-site change.
+// RecomputeAnalysis deliberately left that group: it SUBMITS a background
+// compute and resolves at submission, so its invalidation rides
+// spectra:analysis-done — completion, not submission (listener beside the
+// wrapper below).
 // Exported for the explicit cases a view knows about before refetching.
 const readCache = new Map(); // "Method:JSON(args)" -> in-flight/resolved promise
 const READ_CACHE_MAX = 256; // bounded: library search spawns one entry per query
@@ -515,14 +519,26 @@ export function onAssetProgress(callback) {
 
 export function getAnalysisConfig() { return AnalyticsService.GetConfig(); }
 export function setAnalysisConfig(cfg) { return AnalyticsService.SetConfig(cfg); }
-// Recompute rebuilds a match's derived rows and emits no event — flush
-// the read cache so the next read (and the call site's refetch) is fresh.
+// Recompute SUBMITS a background recompute — Go (analyticservice.go
+// RecomputeAnalysis) returns as soon as the run is queued, so the caller
+// resolves at SUBMISSION and the compute keeps running behind it. The
+// read cache is therefore NOT flushed here: flushing now would let the
+// next read re-cache pre-compute rows and serve them stale once the
+// compute lands. The invalidation moved to the spectra:analysis-done
+// listener BELOW — completion, not submission (the ordering rule the old
+// post-return invalidate() encoded).
 export function recomputeAnalysis(matchId) {
-  return AnalyticsService.RecomputeAnalysis(matchId).then((r) => {
-    invalidate();
-    return r;
-  });
+  return AnalyticsService.RecomputeAnalysis(matchId);
 }
+
+// spectra:analysis-done — a background recompute REPLACED a match's
+// derived rows (a real data change), so it flushes the read cache exactly
+// like the wrapper's old post-return invalidate() did. Registered once per
+// process beside its wrapper (services.js is a singleton), deliberately as
+// its own listener rather than an addition to the flush list above: that
+// list stays the library/job-event block.
+Events.On('spectra:analysis-done', () => invalidate());
+
 export function getEconomy(matchId) { return AnalyticsService.GetEconomy(matchId); }
 export function getRoundClasses(matchId) { return AnalyticsService.GetRoundClasses(matchId); }
 export function getPlayerRounds(matchId, steamId) { return AnalyticsService.GetPlayerRounds(matchId, steamId || ''); }

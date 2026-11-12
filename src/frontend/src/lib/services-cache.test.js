@@ -1,8 +1,12 @@
 // Read-through cache tests for services.js (A1): same-args returns the
 // same promise instance, different args miss, every data-carrying
 // spectra:* event (and the explicit invalidate()/mutating wrappers)
-// flush so the next call refetches — spectra:asset-progress being the
-// one spectra:* event that does NOT (pure progress, no row changes).
+// flush so the next call refetches — spectra:asset-progress,
+// spectra:heatmap-progress and spectra:analysis-progress being the
+// progress-only events that do NOT (they change no row), and
+// spectra:analysis-done being the recompute's completion flush (the
+// wrapper itself submits and returns, so completion — not submission —
+// is where the cache is invalidated).
 //
 // services.js is loaded against TEST STUBS for its two runtime
 // dependencies (test/stubs/) — the real bindings talk to a live Wails
@@ -130,6 +134,76 @@ test('onAssetProgress delivers the payload and flushes nothing', async () => {
   await second;
   assert.equal(bindings.callCount('GetMatch'), 1, 'no refetch on progress');
   off();
+});
+
+// spectra:heatmap-progress (Heatmaps' generate) and
+// spectra:analysis-progress (a background re-run's start note) are
+// progress-only like asset-progress: they reach their own subscribers
+// through the generic onEvent and must NOT sit in the flush list.
+test('heatmap-progress and analysis-progress deliver payloads and flush nothing', async () => {
+  assert.equal(listenerCount('spectra:heatmap-progress'), 0, 'no cache-flush listener for heatmap progress');
+  assert.equal(listenerCount('spectra:analysis-progress'), 0, 'no cache-flush listener for analysis progress');
+  services.invalidate();
+  bindings.resetCalls();
+  const first = services.getMatch(7);
+  await first;
+
+  const heat = [];
+  const analysis = [];
+  const offHeat = services.onEvent('spectra:heatmap-progress', (p) => heat.push(p));
+  const offAn = services.onEvent('spectra:analysis-progress', (p) => analysis.push(p));
+  const heatPayload = { stage: 'load', done: 512, total: 2048 };
+  const anPayload = { matchId: 7, stage: 'analyze', done: 0, total: 0 };
+  fire('spectra:heatmap-progress', heatPayload);
+  fire('spectra:analysis-progress', anPayload);
+  assert.deepEqual(heat, [heatPayload], 'the heatmap subscriber gets the Go payload');
+  assert.deepEqual(analysis, [anPayload], 'the analysis subscriber gets the Go payload');
+
+  const second = services.getMatch(7);
+  assert.equal(second, first, 'progress must not evict the cached read');
+  await second;
+  assert.equal(bindings.callCount('GetMatch'), 1, 'no refetch on progress');
+  offHeat();
+  offAn();
+});
+
+// spectra:analysis-done is the recompute's DATA change (the derived rows
+// were replaced): it flushes the read cache exactly like the wrapper's
+// old post-return invalidate() did.
+test('spectra:analysis-done invalidates -> the next call refetches', async () => {
+  assert.ok(listenerCount('spectra:analysis-done') >= 1, 'the completion listener is registered');
+  services.invalidate();
+  bindings.resetCalls();
+  const first = services.getMatch(7);
+  await first;
+  fire('spectra:analysis-done', { matchId: 7, error: '' });
+  const second = services.getMatch(7);
+  assert.notEqual(second, first, 'completion must flush the entry');
+  await second;
+  assert.equal(bindings.callCount('GetMatch'), 2);
+});
+
+// The invalidation-ORDERING rule: the wrapper submits a background
+// compute and resolves at submission, so it must NOT flush then (a read
+// issued during the compute would re-cache pre-compute rows) — the
+// completion event is the flush point.
+test('recomputeAnalysis invalidates at completion, not submission', async () => {
+  services.invalidate();
+  bindings.resetCalls();
+  const first = services.getMatch(7);
+  await first;
+
+  await services.recomputeAnalysis(7); // submission only (Go returns at queue time)
+  const during = services.getMatch(7);
+  assert.equal(during, first, 'submission alone must not flush');
+  await during;
+  assert.equal(bindings.callCount('GetMatch'), 1, 'still one call before completion');
+
+  fire('spectra:analysis-done', { matchId: 7, error: '' });
+  const after = services.getMatch(7);
+  assert.notEqual(after, first, 'completion must flush');
+  await after;
+  assert.equal(bindings.callCount('GetMatch'), 2);
 });
 
 test('invalidate() flushes explicitly (recompute/reprocess call sites)', async () => {

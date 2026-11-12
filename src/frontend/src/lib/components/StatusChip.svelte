@@ -9,10 +9,11 @@
 // beside it — the ONE progress widget, no second bar anywhere.
 let { status = '', progress = null, title = '', stage = '' } = $props();
 
-// Stage constants are the Go data contract (models.StageHash …); they
-// are translated to player language HERE, at the display layer, so the
-// payload values (jobprogress.test.js) stay untouched. Unknown stages
-// pass through raw.
+// Stage constants are the Go data contract (models.StageHash … for jobs,
+// heatmapStageLoad/heatmapStageRaster in analyticservice.go for
+// spectra:heatmap-progress); they are translated to player language HERE,
+// at the display layer, so the payload values (jobprogress.test.js)
+// stay untouched. Unknown stages pass through raw.
 const STAGE_LABELS = {
   hash: 'checking file',
   copy: 'copying',
@@ -21,6 +22,8 @@ const STAGE_LABELS = {
   store: 'saving',
   analyze: 'analyzing',
   queued: 'waiting',
+  load: 'reading replay data',
+  raster: 'building heatmap',
 };
 
 let stageText = $derived(STAGE_LABELS[stage] || stage);

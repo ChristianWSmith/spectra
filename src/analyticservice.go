@@ -5,7 +5,10 @@ import (
 	"fmt"
 	"math"
 	"path/filepath"
+	"slices"
 	"strconv"
+	"sync"
+	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
@@ -144,10 +147,108 @@ type HeatmapGrid struct {
 // heatmapGridSide/heatmapPad and the raster arithmetic live in heatmap.go
 // (shared by the presence and event kinds).
 
-// AnalyticsService — see doc comment above.
+// AnalyticsService — see doc comment above. Background recompute state
+// (in-flight runs) lives in rc; progress/completion is announced on the
+// app's event bus (event consts below).
 type AnalyticsService struct {
 	st  *store.Store
 	app *application.App
+	rc  recomputeRunner
+}
+
+// Event names emitted by AnalyticsService. Deliberately NOT
+// spectra:job-progress / spectra:job-done: those payloads key a jobId in
+// the Library's job store (services.js jobProgress map), and neither a
+// heatmap generate nor a re-run analysis is a library job — no jobs-table
+// row, no job event (mappackservice.go eventAssetProgress carries the same
+// rule for asset extraction).
+//
+//	heatmap-progress — progress ONLY (it changes no row, so it never
+//	  enters services.js's read-cache flush list; only Heatmaps' chip
+//	  subscribes).
+//	analysis-progress — progress ONLY, same rule (queued run started).
+//	analysis-done     — the DATA change: the recompute replaced the match's
+//	  derived rows, so services.js flushes the read cache on this one.
+const (
+	eventHeatmapProgress  = "spectra:heatmap-progress"
+	eventAnalysisProgress = "spectra:analysis-progress"
+	eventAnalysisDone     = "spectra:analysis-done"
+)
+
+// heatmapProgressMinInterval throttles spectra:heatmap-progress to at
+// most one per 100 ms — the same cadence as library.go's
+// progressMinInterval and mappackservice.go's assetProgressMinInterval.
+const heatmapProgressMinInterval = 100 * time.Millisecond
+
+// The presence heatmap's two phases (the payload's stage values). "load"
+// reads + decodes the sidecar stream — its denominator is real: the frame
+// count out of the stream's total (sidecar meta Frames for a whole
+// match). "raster" builds extents/cells over the already-decoded frames
+// in memory — a phase with no honest work denominator the payload could
+// carry, so it rides done/total 0/0 (indeterminate + truthful stage,
+// exactly what the loading ladder allows — never an invented percent).
+const (
+	heatmapStageLoad   = "load"
+	heatmapStageRaster = "raster"
+)
+
+// HeatmapProgressEvent is the payload of spectra:heatmap-progress: one
+// generate's phase progress ({stage, done, total} — the shape
+// AssetProgressEvent set for progress payloads, minus the family key:
+// one emitter, one family, the heatmap). done/total count frames during
+// "load"; total 0 marks an indeterminate phase.
+type HeatmapProgressEvent struct {
+	Stage string `json:"stage"`
+	Done  int    `json:"done"`
+	Total int    `json:"total"`
+}
+
+// heatmapProgressFor returns the spectra:heatmap-progress callback for a
+// generate on a service that holds an app handle — the production adapter
+// over heatmapProgress (the throttled emitter). A nil app (services
+// constructed without a handle, as the package tests do) means no
+// emitter: heatmapPresence turns a nil callback into a no-op.
+func heatmapProgressFor(app *application.App) func(stage string, done, total int) {
+	if app == nil {
+		return nil
+	}
+	return heatmapProgress(func(ev HeatmapProgressEvent) {
+		app.Event.Emit(eventHeatmapProgress, ev)
+	})
+}
+
+// heatmapProgress builds the per-phase progress callback GetHeatmap wires
+// into heatmapPresence — THE one spectra:heatmap-progress emitter.
+// Emission goes through emit (production: app.Event.Emit via
+// heatmapProgressFor; tests: a recorder), throttled to
+// heatmapProgressMinInterval with two never-throttled exemptions: a STAGE
+// change (the chip must switch phases immediately, never render the old
+// phase's numbers against the new stage) and the closing call
+// (total > 0 && done >= total — the bar lands on the end instead of
+// stalling short of it).
+func heatmapProgress(emit func(HeatmapProgressEvent)) func(stage string, done, total int) {
+	return throttledHeatmapProgress(heatmapProgressMinInterval, emit)
+}
+
+// throttledHeatmapProgress is heatmapProgress with the throttle window
+// passed in — the seam the tests use to pin the drop rule without racing
+// the real clock (production always passes heatmapProgressMinInterval via
+// heatmapProgress).
+func throttledHeatmapProgress(window time.Duration, emit func(HeatmapProgressEvent)) func(stage string, done, total int) {
+	if emit == nil {
+		return nil
+	}
+	var last time.Time
+	lastStage := ""
+	return func(stage string, done, total int) {
+		now := time.Now()
+		complete := total > 0 && done >= total
+		if !last.IsZero() && stage == lastStage && !complete && now.Sub(last) < window {
+			return
+		}
+		last, lastStage = now, stage
+		emit(HeatmapProgressEvent{Stage: stage, Done: done, Total: total})
+	}
 }
 
 // GetConfig returns the active analysis rules (defaults seeded on first use).
@@ -182,14 +283,164 @@ func (s *AnalyticsService) SetConfig(c models.AnalysisConfig) (models.AnalysisCo
 	return s.st.SetConfig(c)
 }
 
+// --- Background recompute ----------------------------------------------------
+//
+// RecomputeAnalysis SUBMITS the compute: analytics.Compute runs on a
+// goroutine, so the binding returns as soon as the run is queued — the
+// Settings dialog can close and the user can navigate away while it
+// continues. The outcome rides events instead of the call's return:
+//
+//	spectra:analysis-progress {matchId, stage, done, total} — a submitted
+//	  run actually started. stage is models.StageAnalyze; done/total are
+//	  0/0 (indeterminate): analytics.Compute exposes no cheap per-stage
+//	  counters, so the indicator is an honest indeterminate bar with a
+//	  truthful stage — never a fabricated percentage.
+//	spectra:analysis-done {matchId, error} — the run REPLACED the match's
+//	  derived rows (error "" on success, the failure text otherwise).
+//	  This is the data-change signal: services.js's listener beside the
+//	  recomputeAnalysis wrapper flushes the read cache HERE, at
+//	  completion — invalidating at submission would let the next read
+//	  re-cache pre-compute rows and serve them stale.
+//
+// Runs are deduped per match (a second submit while one is in flight is a
+// no-op whose events keep driving the UI) and SERIALIZED on one slot:
+// analytics.Compute ends in store.RebuildCareer, a read-modify-write over
+// EVERY match's player_stats — two overlapping Computes could commit a
+// career rollup built from a pre-recompute snapshot (the store is
+// single-connection, but each Compute issues separate transactions).
+//
+// AnalysisProgressEvent / AnalysisDoneEvent are the two payloads; the
+// progress one is progress-only (never a cache flush), the done one is
+// the data change.
+
+// AnalysisProgressEvent is the payload of spectra:analysis-progress — a
+// queued background recompute starting its compute.
+type AnalysisProgressEvent struct {
+	MatchID int64  `json:"matchId"`
+	Stage   string `json:"stage"` // models.StageAnalyze
+	Done    int    `json:"done"`  // 0 — indeterminate (see RecomputeAnalysis)
+	Total   int    `json:"total"` // 0 — indeterminate
+}
+
+// AnalysisDoneEvent is the payload of spectra:analysis-done — one
+// background recompute's outcome; Error is "" on success.
+type AnalysisDoneEvent struct {
+	MatchID int64  `json:"matchId"`
+	Error   string `json:"error"`
+}
+
+// RecomputeState is RecomputeStates' answer: the in-flight background
+// recomputes, split by whether they hold the compute slot (running) or
+// wait for it (queued) — the remount rehydration read for Settings'
+// per-match indicator.
+type RecomputeState struct {
+	Running []int64 `json:"running"`
+	Queued  []int64 `json:"queued"`
+}
+
+// recomputeRunner tracks and serializes background recomputes. Zero value
+// ready to use (maps are created under mu on first submit); emit/compute
+// are passed per submit so the tests can drive it with a fake compute and
+// a recorder while production uses AnalyticsService's app handle.
+type recomputeRunner struct {
+	mu      sync.Mutex
+	queued  map[int64]bool
+	running map[int64]bool
+	slot    sync.Mutex // one compute at a time (serialization rationale above)
+}
+
+// submit queues compute on a new goroutine for matchID and returns false
+// when that match is already queued or running (dedupe — no second run).
+// It returns as soon as the run is queued: the goroutine first waits for
+// the slot, then flips queued → running (emitting analysis-progress) and
+// runs compute, then flips running → gone and emits analysis-done.
+func (r *recomputeRunner) submit(matchID int64, emit func(name string, payload any), compute func() error) bool {
+	r.mu.Lock()
+	if r.queued == nil {
+		r.queued = map[int64]bool{}
+	}
+	if r.running == nil {
+		r.running = map[int64]bool{}
+	}
+	if r.queued[matchID] || r.running[matchID] {
+		r.mu.Unlock()
+		return false
+	}
+	r.queued[matchID] = true
+	r.mu.Unlock()
+
+	go func() {
+		r.slot.Lock() // one run at a time — see the serialization rationale
+		defer r.slot.Unlock()
+		r.mu.Lock()
+		delete(r.queued, matchID)
+		r.running[matchID] = true
+		r.mu.Unlock()
+		emit(eventAnalysisProgress, AnalysisProgressEvent{
+			MatchID: matchID, Stage: models.StageAnalyze, Done: 0, Total: 0,
+		})
+		err := compute()
+		r.mu.Lock()
+		delete(r.running, matchID)
+		r.mu.Unlock()
+		msg := ""
+		if err != nil {
+			msg = err.Error()
+		}
+		emit(eventAnalysisDone, AnalysisDoneEvent{MatchID: matchID, Error: msg})
+	}()
+	return true
+}
+
+// states reports the in-flight matches (sorted — map order is random).
+func (r *recomputeRunner) states() RecomputeState {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := RecomputeState{Running: []int64{}, Queued: []int64{}}
+	for id := range r.running {
+		out.Running = append(out.Running, id)
+	}
+	for id := range r.queued {
+		out.Queued = append(out.Queued, id)
+	}
+	slices.Sort(out.Running)
+	slices.Sort(out.Queued)
+	return out
+}
+
 // RecomputeAnalysis re-runs classification + analytics for one match under
-// the current rules and refreshes career rollups.
+// the current rules and refreshes career rollups — IN THE BACKGROUND: it
+// returns as soon as the run is queued (only the config read is
+// synchronous), and the outcome arrives as spectra:analysis-done. A match
+// already queued or running is a no-op. See the background-recompute
+// block above for the events and the serialization rule.
 func (s *AnalyticsService) RecomputeAnalysis(matchID int64) error {
 	c, err := s.st.GetConfig()
 	if err != nil {
 		return err
 	}
-	return analytics.Compute(s.st, matchID, analytics.ConfigFrom(c, 0))
+	cfg := analytics.ConfigFrom(c, 0)
+	st := s.st
+	s.rc.submit(matchID, s.emitEvent, func() error {
+		return analytics.Compute(st, matchID, cfg)
+	})
+	return nil
+}
+
+// RecomputeStates reports the in-flight background recomputes — what a
+// freshly (re)mounted Settings uses to keep an already-running run's
+// indicator honest.
+func (s *AnalyticsService) RecomputeStates() RecomputeState {
+	return s.rc.states()
+}
+
+// emitEvent sends payload on the app's event bus; a service constructed
+// without an app handle (the package tests) emits nothing.
+func (s *AnalyticsService) emitEvent(name string, payload any) {
+	if s.app == nil {
+		return
+	}
+	s.app.Event.Emit(name, payload)
 }
 
 // GetEconomy returns per-round economy + buy classes (warmup rounds
@@ -288,7 +539,8 @@ func (s *AnalyticsService) GetCombatStats(matchID int64) ([]models.CombatStat, e
 // Gaussian splat (sigma 150u), so an edge sample paints a whole blob
 // instead of a clipped half; the grid is 128×128 with per-axis cell sizes;
 // presence cells are dwell seconds (1/sample-rate per frame per player),
-// event cells are counts.
+// event cells are counts. presence emits spectra:heatmap-progress while it
+// works (throttled, honest denominators — heatmapProgress).
 func (s *AnalyticsService) GetHeatmap(matchID int64, kind string, f HeatmapFilter) (HeatmapGrid, error) {
 	switch kind {
 	case "presence", "kills", "deaths", "damage":
@@ -320,7 +572,12 @@ func (s *AnalyticsService) GetHeatmap(matchID int64, kind string, f HeatmapFilte
 	}
 	sideAt := func(steamID string, round int) string { return exact[round][steamID] }
 	if kind == "presence" {
-		return s.heatmapPresence(matchID, f, roundSpans, sideAt)
+		// The one phase with real work (sidecar read + decode + two frame
+		// passes) carries the honest progress emitter; the event kinds are
+		// a single indexed query plus small in-memory loops and emit
+		// nothing — the frontend chip stays indeterminate for them, which
+		// is truthful.
+		return s.heatmapPresence(matchID, f, roundSpans, sideAt, heatmapProgressFor(s.app))
 	}
 	return s.heatmapEvents(matchID, kind, f, sideAt)
 }
@@ -332,10 +589,22 @@ func (s *AnalyticsService) GetHeatmap(matchID int64, kind string, f HeatmapFilte
 // pass (so the raster's bounds — the raster is bounds-derived, see
 // newHeatmapRaster — describe only the kept samples) and the add pass
 // (so no dropped sample deposits dwell).
-func (s *AnalyticsService) heatmapPresence(matchID int64, f HeatmapFilter, rounds []models.Round, sideAt func(string, int) string) (HeatmapGrid, error) {
-	// Whole sidecar stream, decoded once (sidecar.Load = Open → ReadRange →
-	// DecodeFrames; the spatial series uses the same helper).
-	stream, err := sidecar.Load(filepath.Join(data.MatchesDir(), strconv.FormatInt(matchID, 10)), 0, 0)
+//
+// progress is the spectra:heatmap-progress callback (nil = no emitter,
+// as the package tests build the service): "load" rides sidecar
+// LoadProgress's real frame denominator, "raster" starts with the
+// indeterminate 0/0 — see the heatmapStage consts.
+func (s *AnalyticsService) heatmapPresence(matchID int64, f HeatmapFilter, rounds []models.Round, sideAt func(string, int) string, progress func(stage string, done, total int)) (HeatmapGrid, error) {
+	emit := progress
+	if emit == nil {
+		emit = func(string, int, int) {}
+	}
+	// Whole sidecar stream, decoded with honest per-block progress
+	// (sidecar.LoadProgress = Open → block walk → DecodeFrames per block —
+	// the Load steps; the denominator is the stream's frame count known
+	// from the meta before the first read).
+	stream, err := sidecar.LoadProgress(filepath.Join(data.MatchesDir(), strconv.FormatInt(matchID, 10)), 0, 0,
+		func(done, total int) { emit(heatmapStageLoad, done, total) })
 	if err != nil {
 		return HeatmapGrid{}, fmt.Errorf("analytics: heatmap presence: %w", err)
 	}
@@ -368,6 +637,10 @@ func (s *AnalyticsService) heatmapPresence(matchID int64, f HeatmapFilter, round
 	// voice writer uses): (round, found).
 	roundAt := func(tick int) (int, bool) { return store.RoundForTick(rounds, tick) }
 
+	// Raster phase: extents → cells over the decoded frames in memory —
+	// honestly indeterminate (0/0) with a truthful stage; the load phase's
+	// frame numbers must not be shown against it.
+	emit(heatmapStageRaster, 0, 0)
 	// Sampled extents (every 8th frame) for the bounds, then the shared
 	// raster (bounds → pad → cells; see heatmap.go).
 	minX, minY := math.Inf(1), math.Inf(1)

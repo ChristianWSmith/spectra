@@ -107,13 +107,12 @@ func (r *Reader) HasState() bool { return r.hasState }
 // Meta returns the sidecar header read at Open.
 func (r *Reader) Meta() Meta { return r.meta }
 
-// ReadRange returns the decompressed raw stream of whole frames
-// [fromFrame, toFrame). fromFrame clamps to [0, Frames]; toFrame <=
-// fromFrame or toFrame > Frames means Frames (i.e. "through the end"), so
-// ReadRange(0, 0) is the whole match. Only the zstd blocks intersecting
-// the range are read and decompressed. The result is the q16 stream —
-// see the package doc for the frame layout.
-func (r *Reader) ReadRange(fromFrame, toFrame int) ([]byte, error) {
+// frameRange clamps a [fromFrame, toFrame) request against the meta's
+// frame count: fromFrame clamps to [0, Frames]; toFrame <= fromFrame or
+// toFrame > Frames means Frames (i.e. "through the end"), so (0, 0) is
+// the whole match. THE range contract, in one place for ReadRange and
+// LoadProgress.
+func (r *Reader) frameRange(fromFrame, toFrame int) (int, int) {
 	frames := r.meta.Frames
 	if fromFrame < 0 {
 		fromFrame = 0
@@ -124,22 +123,38 @@ func (r *Reader) ReadRange(fromFrame, toFrame int) ([]byte, error) {
 	if toFrame <= fromFrame || toFrame > frames {
 		toFrame = frames
 	}
+	return fromFrame, toFrame
+}
+
+// visitRangeStream opens positions.bin and its decompressor exactly once
+// and walks every zstd block intersecting the clamped [fromFrame,
+// toFrame) range in order, calling visit with each block's IN-RANGE frame
+// bytes (whole frames only — a block boundary never splits one) and the
+// running count of in-range frames delivered so far. THE shared block
+// walk: ReadRange concatenates the visits into the raw q16 stream,
+// LoadProgress decodes them per visit (which is what gives an honest
+// per-block progress denominator without re-opening anything). The
+// corrupt-index checks and the walked-vs-index frame-count integrity
+// check live here, once. visit errors propagate unwrapped; read errors
+// carry the messages the walk has always produced.
+func (r *Reader) visitRangeStream(fromFrame, toFrame int, visit func(delivered int, data []byte) error) error {
+	fromFrame, toFrame = r.frameRange(fromFrame, toFrame)
 	if fromFrame >= toFrame || len(r.blocks) == 0 {
-		return []byte{}, nil
+		return nil
 	}
 
 	f, err := os.Open(filepath.Join(r.dir, BinName))
 	if err != nil {
-		return nil, fmt.Errorf("sidecar: open %s: %w", BinName, err)
+		return fmt.Errorf("sidecar: open %s: %w", BinName, err)
 	}
 	defer func() { _ = f.Close() }()
 	dec, err := zstd.NewReader(nil)
 	if err != nil {
-		return nil, fmt.Errorf("sidecar: zstd reader: %w", err)
+		return fmt.Errorf("sidecar: zstd reader: %w", err)
 	}
 	defer dec.Close()
 
-	var out []byte
+	delivered := 0
 	for i, b := range r.blocks {
 		blockStart := int(b.firstFrame)
 		blockEnd := blockStart + int(b.frameCount)
@@ -152,36 +167,64 @@ func (r *Reader) ReadRange(fromFrame, toFrame int) ([]byte, error) {
 		}
 		size := end - int64(b.byteOffset)
 		if size < 0 || int64(b.byteOffset)+size > r.binSize {
-			return nil, errCorrupt("index offset outside file")
+			return errCorrupt("index offset outside file")
 		}
 		if size == 0 {
 			continue
 		}
 		raw := make([]byte, size)
 		if _, err := f.ReadAt(raw, int64(b.byteOffset)); err != nil {
-			return nil, fmt.Errorf("sidecar: read block: %w", err)
+			return fmt.Errorf("sidecar: read block: %w", err)
 		}
 		data, err := dec.DecodeAll(raw, nil)
 		if err != nil {
-			return nil, fmt.Errorf("sidecar: decompress block at frame %d: %w", blockStart, err)
+			return fmt.Errorf("sidecar: decompress block at frame %d: %w", blockStart, err)
 		}
-		off, walked := 0, 0
+		var chunk []byte
+		off, walked, inRange := 0, 0, 0
 		for off < len(data) {
 			n, err := frameLen(data, off)
 			if err != nil {
-				return nil, err
+				return err
 			}
 			global := blockStart + walked
 			if global >= fromFrame && global < toFrame {
-				out = append(out, data[off:off+n]...)
+				chunk = append(chunk, data[off:off+n]...)
+				inRange++
 			}
 			off += n
 			walked++
 		}
 		if walked != int(b.frameCount) {
-			return nil, fmt.Errorf("sidecar: block at frame %d holds %d frames, index says %d",
+			return fmt.Errorf("sidecar: block at frame %d holds %d frames, index says %d",
 				blockStart, walked, b.frameCount)
 		}
+		if inRange == 0 {
+			continue // the intersection test above makes this unreachable; kept for clarity
+		}
+		delivered += inRange
+		if err := visit(delivered, chunk); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ReadRange returns the decompressed raw stream of whole frames
+// [fromFrame, toFrame). fromFrame clamps to [0, Frames]; toFrame <=
+// fromFrame or toFrame > Frames means Frames (i.e. "through the end"), so
+// ReadRange(0, 0) is the whole match. Only the zstd blocks intersecting
+// the range are read and decompressed. The result is the q16 stream —
+// see the package doc for the frame layout. The walk itself is
+// visitRangeStream; this simply concatenates its per-block chunks.
+func (r *Reader) ReadRange(fromFrame, toFrame int) ([]byte, error) {
+	out := []byte{}
+	err := r.visitRangeStream(fromFrame, toFrame, func(_ int, data []byte) error {
+		out = append(out, data...)
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return out, nil
 }
