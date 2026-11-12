@@ -25,6 +25,9 @@ import {
   typedKindsFor,
   killRoleFor,
 } from './replay/landmarks.js';
+// The Heatmaps region drill's projection (pure — landmarks/rounds only in
+// its graph) so the deaths/kd-arrival chain below can start at the source.
+import { heatRegionFilter } from './heatkinds.js';
 
 installEsmDirHook();
 
@@ -100,6 +103,41 @@ test('buildFeedQuery: deaths-only drives kinds + killRole, defaults stay default
   assert.equal(deaths.killRole, 'victim'); // "X's deaths" → the victim endpoint
   const kills = buildFeedQuery(1, parseLandmarkFilter({ cat: 'kills' }));
   assert.equal(kills.killRole, 'attacker'); // "X's kills"
+
+  // The FULL Heatmaps region-drill chain for a deaths arrival — the plain
+  // deaths heatmap's drill and the kd sign override's negative branch:
+  // heatRegionFilter → serializeLandmarkFilter (replayHash) →
+  // parseLandmarkFilter (Replay entry) → buildFeedQuery (THE composer).
+  // It lands on the VICTIM endpoint with bbox/side/player/rounds intact —
+  // proving the vocabulary needs no new filter field for victim-side kills.
+  const drill = buildFeedQuery(
+    1,
+    parseLandmarkFilter(
+      serializeLandmarkFilter({
+        ...heatRegionFilter('deaths', { player: '76561198012345678', side: 'ct', roundFrom: 3 }),
+        bbox: { minX: -50, minY: 25, maxX: -25, maxY: 50 },
+      }),
+    ),
+  );
+  assert.deepEqual(drill.kinds, ['kill']);
+  assert.equal(drill.killRole, 'victim');
+  assert.equal(drill.steamId, '76561198012345678');
+  assert.equal(drill.side, 'ct');
+  assert.equal(drill.roundFrom, 3);
+  assert.deepEqual(drill.bbox, { minX: -50, minY: 25, maxX: -25, maxY: 50 });
+
+  // The kd sign override's NO-SIGNAL cell (value 0 / missing → either
+  // endpoint): cats ['kills','deaths'] → killRoleFor 'any', kinds still
+  // 'kill' — the exact object Heatmaps.onRegion composes for that cell.
+  const zero = {
+    ...heatRegionFilter('kd', {}),
+    cats: ['kills', 'deaths'],
+    bbox: { minX: -50, minY: 25, maxX: -25, maxY: 50 },
+  };
+  const zeroQ = buildFeedQuery(1, parseLandmarkFilter(serializeLandmarkFilter(zero)));
+  assert.deepEqual(zeroQ.kinds, ['kill']);
+  assert.equal(zeroQ.killRole, 'any'); // either endpoint — no invented pick
+  assert.deepEqual(zeroQ.bbox, { minX: -50, minY: 25, maxX: -25, maxY: 50 });
 
   const d = buildFeedQuery(1, defaultFilter());
   // typedKindsFor returns the KIND the category claims, not its id.

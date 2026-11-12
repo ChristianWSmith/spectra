@@ -22,7 +22,7 @@ import {
   heatRegionFilter,
   heatRegionTakesBBox,
 } from './heatkinds.js';
-import { categoryById, serializeLandmarkFilter } from './replay/landmarks.js';
+import { categoryById, serializeLandmarkFilter, parseLandmarkFilter, killRoleFor } from './replay/landmarks.js';
 
 test('kind registry: core + one thrown/det pair per grenade type, no duplicates', () => {
   assert.deepEqual(HEAT_CORE_KINDS, ['presence', 'kills', 'deaths', 'damage', 'kd']);
@@ -198,4 +198,25 @@ test('heatRegionFilter output round-trips through the URL (feed reveal keys)', (
     { cat: 'kills', player: '1', roundFrom: '3', roundTo: '9' },
   );
   assert.deepEqual(serializeLandmarkFilter(heatRegionFilter('presence', {})), {});
+  // The DEATHS projection — the victim-endpoint arrival the plain deaths
+  // heatmap drills AND the kd sign override's negative branch emits —
+  // survives the URL with its player/side/round keys intact (the 'deaths'
+  // category is event-sourced and claims 'kill' — landmarks.js CATEGORIES
+  // — so clearInapplicableFields keeps every one of them) and parses back
+  // to the role the store scopes by: killRoleFor(['deaths']) = 'victim'
+  // (endpointScopeClause then constrains the side to the victim). The full
+  // serialize → parse → buildFeedQuery chain is pinned in feed.test.js.
+  const deathsQ = serializeLandmarkFilter(
+    heatRegionFilter('deaths', { player: '1', side: 'ct', roundFrom: 3, roundTo: 9 }),
+  );
+  assert.deepEqual(deathsQ, {
+    cat: 'deaths',
+    player: '1',
+    side: 'ct',
+    roundFrom: '3',
+    roundTo: '9',
+  });
+  const deathsBack = parseLandmarkFilter(deathsQ);
+  assert.deepEqual(deathsBack.cats, ['deaths']);
+  assert.equal(killRoleFor(deathsBack.cats), 'victim');
 });

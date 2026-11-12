@@ -396,7 +396,7 @@ console.log('J. Heatmaps.onRegion source pins: pad expansion + the no-bbox no-na
 // No driver mounts the Heatmaps VIEW (mounting it would drag in the whole
 // service surface), so its region composition is source-pinned here — the
 // same precedent as section H.
-const onRegionSrc = /function onRegion\(\w+\)\s*\{([\s\S]*?)\n  \}/.exec(heatSrc)?.[1] || '';
+const onRegionSrc = /function onRegion\([^)]*\)\s*\{([\s\S]*?)\n  \}/.exec(heatSrc)?.[1] || '';
 check('onRegion body located in Heatmaps.svelte', onRegionSrc.length > 200, String(onRegionSrc.length));
 check(
   'the gate reads heatRegionTakesBBox(src.kind) — generic, never a kind name',
@@ -448,6 +448,76 @@ check(
     norm.includes('gen = null;') &&
     /remember\(k, \{[^}]*gen \}\)/.test(norm) &&
     /gen: null,/.test(norm),
+);
+
+console.log('L. signed kd cell: the emitted value carries the sign');
+// A kd grid is SIGNED (heatmap.go combineSignedHeatmaps: kills − deaths);
+// the harness paints whatever fixture it is handed, so the driver swaps in
+// a signed raster with the value under test at cell (col 0, row 3) — the
+// cell the standard click lands in. The value is the POST-SMEAR cell the
+// overlay draws (row 0 at grid.minY — the same indexing the click math
+// uses), so what the view reads is what the user sees.
+const mkSigned = (v) => ({
+  kind: 'kd',
+  w: 4,
+  h: 4,
+  max: 5,
+  samples: 100,
+  pad: 450,
+  minX: -50,
+  maxX: 50,
+  minY: -50,
+  maxY: 50,
+  cells: Array.from({ length: 16 }, (_, i) => (i === 12 ? v : 0)),
+});
+globalThis.__setKind('kd');
+await sleep();
+for (const v of [5, -5, 0]) {
+  globalThis.__setGrid(mkSigned(v));
+  await sleep();
+  globalThis.__regions.length = 0;
+  clickCanvas(10, 10);
+  const r = globalThis.__regions[0];
+  const label =
+    v > 0 ? 'positive (killers stood here)' : v < 0 ? 'negative (victims fell here)' : 'zero (no signal)';
+  check(`kd cell value ${label} is emitted as-is`, r && r.value === v, String(r && r.value));
+  check(
+    `kd bbox stays the raw cell for ${label} (the view pads it)`,
+    r &&
+      r.bbox.minX === -50 && r.bbox.maxX === -25 &&
+      r.bbox.minY === 25 && r.bbox.maxY === 50,
+    JSON.stringify(r && r.bbox),
+  );
+}
+// A click OUTSIDE the raster's own cells: no cell exists there, so the
+// value is MISSING (undefined) — never a fabricated 0 (the kd sign rule
+// reads missing as "no signal" → either endpoint).
+globalThis.__setGrid(mkSigned(5));
+await sleep();
+globalThis.__regions.length = 0;
+clickCanvas(500, 500);
+const out = globalThis.__regions[0];
+check(
+  'outside the raster the value is missing (undefined), not 0',
+  out && 'value' in out && out.value === undefined,
+  JSON.stringify(out),
+);
+
+console.log('M. kd sign → cats mapping (source pin over Heatmaps.onRegion)');
+// The override lives at the click site (Heatmaps.onRegion) — heatRegionCats
+// keeps its pinned ['kills'] default for kd (heatkinds.test.js untouched).
+const onRegionNorm = onRegionSrc.replace(/\s+/g, ' ');
+check('onRegion receives the cell value', /function onRegion\(\w+, value\)/.test(heatSrc));
+check(
+  'kd maps value > 0 → cats kills, value < 0 → cats deaths',
+  /src\.kind === 'kd'/.test(onRegionNorm) &&
+    /v > 0 \? \['kills'\] : \['deaths'\]/.test(onRegionNorm),
+);
+check(
+  'a 0 / missing cell → cats kills+deaths (either endpoint, killRoleFor → any)',
+  /Number\.isFinite\(v\) && v !== 0 \? \(v > 0 \? \['kills'\] : \['deaths'\]\) : \['kills', 'deaths'\]/.test(
+    onRegionNorm,
+  ),
 );
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

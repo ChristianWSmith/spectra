@@ -276,6 +276,13 @@
   // nowhere useful would open the replay with no region selected. The
   // cell readout under the cursor stays available (the title still names
   // what the map shows) — only the DRILL affordance goes away.
+  // The cell's DISPLAYED value rides the callback (second argument): the
+  // post-smear figure the overlay paints — cells are row-major with row 0
+  // at grid.minY, the convention this cell math and heatramp's
+  // sampleField share — so the view can read the SIGN of a signed kd
+  // cell (> 0 killers stood here, < 0 victims fell here —
+  // heatmap.go combineSignedHeatmaps, kills − deaths). A cell outside
+  // the grid reads undefined (no signal — never a fabricated 0).
   function onClick(e) {
     if (!drillable) return;
     const c = canvas;
@@ -293,12 +300,16 @@
     const world = baseTf.toWorld(ix, iy);
     const ci = Math.floor((world.x - grid.minX) / cw);
     const ri = Math.floor((world.y - grid.minY) / ch);
-    onRegion({
-      minX: grid.minX + ci * cw,
-      minY: grid.minY + ri * ch,
-      maxX: grid.minX + (ci + 1) * cw,
-      maxY: grid.minY + (ri + 1) * ch,
-    });
+    const inGrid = ci >= 0 && ci < grid.w && ri >= 0 && ri < grid.h;
+    onRegion(
+      {
+        minX: grid.minX + ci * cw,
+        minY: grid.minY + ri * ch,
+        maxX: grid.minX + (ci + 1) * cw,
+        maxY: grid.minY + (ri + 1) * ch,
+      },
+      inGrid ? grid.cells[ri * grid.w + ci] : undefined,
+    );
   }
 </script>
 

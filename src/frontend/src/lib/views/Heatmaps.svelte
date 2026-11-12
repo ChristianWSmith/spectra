@@ -390,7 +390,7 @@
   // under changed live controls never opens an arrival that contradicts
   // what the user is clicking. The live controls only reach the drill
   // through the documented `src` fallback (no raster → nothing to click).
-  function onRegion(bbox) {
+  function onRegion(bbox, value) {
     const carries = heatRegionTakesBBox(src.kind);
     if (!carries) {
       regionChip = 'region not applied';
@@ -409,6 +409,33 @@
       roundFrom: src.roundFrom,
       roundTo: src.roundTo,
     });
+    // KD IS SIGNED — the clicked cell's VALUE picks the endpoint the
+    // arrival asks for (the sign override lives HERE, at the click site;
+    // heatRegionCats('kd') keeps its ['kills'] default projection, so the
+    // registry's pinned test line is untouched). Polarity, verified:
+    // heatmap.go GetHeatmapKD builds the kills population from
+    // heatmapEvents("kills") (the ATTACKER's position — analyticservice.go
+    // heatmapEvents) and the deaths population from heatmapEvents("deaths")
+    // (the VICTIM's position), then combineSignedHeatmaps does
+    // `v += kills; v -= deaths` (heatmap.go) — "Output cells hold net
+    // kills (positive) / net deaths (negative)"; heatramp.js paints the
+    // same polarity (positive → HEAT_STOPS, negative → DEATH_STOPS).
+    //   value > 0  → killers stood in this cell   → cats ['kills'] (the
+    //                projection that SHOULD have returned rows — the pad
+    //                fix is what makes them appear)
+    //   value < 0  → victims fell in this cell    → cats ['deaths'] (the
+    //                victim endpoint: killRoleFor over those category ids
+    //                derives 'victim', and the side scope follows the same
+    //                role in store.endpointScopeClause)
+    //   0 / missing → no signal cell (nothing to pick with) → cats
+    //                ['kills','deaths'] = either endpoint: killRoleFor
+    //                returns 'any', which the store renders as the
+    //                either-endpoint predicate — no invented pick.
+    if (src.kind === 'kd') {
+      const v = Number(value);
+      filter.cats =
+        Number.isFinite(v) && v !== 0 ? (v > 0 ? ['kills'] : ['deaths']) : ['kills', 'deaths'];
+    }
     // Cell ± pad = the events whose splat can reach the clicked cell
     // (the kernel is windowed to zero AT pad, so a sample a touch beyond
     // the expanded edge contributes nothing — at most one cell of index
