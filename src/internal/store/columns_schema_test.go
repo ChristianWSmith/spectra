@@ -35,6 +35,7 @@ func TestColumnListConstsMatchSchema(t *testing.T) {
 		{"clutchCols", "clutches", clutchCols},
 		{"engagementCols", "engagements", engagementCols},
 		{"utilityCols", "utility_events", utilityCols},
+		{"matchTradeOppsCols", "match_trade_opps", matchTradeOppsCols},
 		{"playerCareerCols", "player_career", playerCareerCols},
 		{"voicePresenceCols", "voice_presence", voicePresenceCols},
 		{"pluginCols", "plugins", pluginCols},
