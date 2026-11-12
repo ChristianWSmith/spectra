@@ -8,7 +8,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { hasDropPos, dropEvidenceAt } from './replay/drops.js';
+import { hasDropPos, dropEvidenceAt, dropWindow, buildDropWindows } from './replay/drops.js';
 
 // Row factories — the normalized landmark-row shape (kind/round/tick/
 // weapon plus x/y aliased from the stored positions; missing evidence
@@ -32,8 +32,9 @@ const wpickup = (tick, weapon = 'AK-47', round = 7, x = 500, y = 600) => ({
   z: 8,
 });
 const roundEnd = (tick, round = 7) => ({ kind: 'round_end', tick, round, x: null, y: null });
+const roundStart = (tick, round = 8) => ({ kind: 'round_start', tick, round, x: null, y: null });
 
-const bundle = (over = {}) => ({ drops: [], pickups: [], roundEnds: [], ...over });
+const bundle = (over = {}) => ({ drops: [], pickups: [], roundEnds: [], roundStarts: [], ...over });
 
 // --- position evidence -------------------------------------------------------
 
@@ -104,6 +105,81 @@ test('a round_end BEFORE the drop is no terminator, another round stays out', ()
     roundEnds: [roundEnd(1500), roundEnd(1400, 6)],
   };
   assert.ok(dropEvidenceAt(ev, 1700), 'the earlier round_end cannot kill a later drop');
+});
+
+// --- post-round stamps (the golden demo's round-2 tail) ----------------------
+// The owner's bug, in golden-shaped ticks: the golden demo's round 2
+// `round_end` (14930) sits ON the bomb_explode tick, while the C4 kill +
+// the deagle `weapon_drop` are stamped at 14963 — AFTER it — and the
+// next `round_start` is 15378. A round_end-only scan finds no
+// terminator at/after the drop (to = Infinity) and the gun outlives the
+// replay; the canonical cut (roundcut.js roundCutTick: same-round
+// round_end at/after the row, ELSE the next round_start) bounds it at
+// 15378. Ticks verified against the library DB + golden tick dump
+// (2026-11-12).
+
+test('a post-round drop stays visible until the NEXT round_start (golden round-2 tail)', () => {
+  const ev = {
+    drops: [wdrop(14963, 'Desert Eagle', 2)],
+    pickups: [],
+    roundEnds: [roundEnd(14930, 2)],
+    roundStarts: [roundStart(15378, 3)],
+  };
+  assert.equal(dropEvidenceAt(ev, 14962), null, 'before its own tick nothing draws');
+  assert.ok(dropEvidenceAt(ev, 14963), 'draws from its own tick');
+  assert.ok(dropEvidenceAt(ev, 15000), 'round-over tail: the gun really is on the ground');
+  assert.ok(dropEvidenceAt(ev, 15377), '…right up to the tick before the next round_start');
+  assert.equal(
+    dropEvidenceAt(ev, 15378),
+    null,
+    'gone AT the next round_start — not for the rest of the replay',
+  );
+  assert.equal(dropEvidenceAt(ev, 20000), null, '…and for the rest of the replay');
+  // Backward scrub re-derives — pure, nothing sticky.
+  assert.ok(dropEvidenceAt(ev, 15000), 'a backwards scrub re-draws the drop');
+});
+
+test('dropWindow / buildDropWindows: the post-round window ends at the next round_start', () => {
+  const d = wdrop(14963, 'Desert Eagle', 2);
+  const ev = {
+    drops: [d],
+    pickups: [],
+    roundEnds: [roundEnd(14930, 2)],
+    roundStarts: [roundStart(15378, 3)],
+  };
+  assert.deepEqual(
+    dropWindow(d, ev),
+    { from: 14963, to: 15378 },
+    'the round_end at 14930 predates the drop — the next round_start is the cut',
+  );
+  const w = buildDropWindows(ev).get(d);
+  assert.deepEqual(w, { from: 14963, to: 15378 }, 'buildDropWindows derives the same window');
+  assert.ok(15000 >= w.from && 15000 < w.to, 'visible in the round-over tail');
+  assert.ok(!(15378 >= w.from && 15378 < w.to), 'gone AT 15378 (half-open)');
+  // The equivalence the renderer's O(1) window test relies on, on this shape.
+  for (const t of [14962, 14963, 15000, 15377, 15378, 15379]) {
+    const got = dropEvidenceAt(
+      { drops: [d], pickups: [], roundEnds: ev.roundEnds, roundStarts: ev.roundStarts },
+      t,
+    );
+    assert.equal(!!got, t >= w.from && t < w.to, `dropEvidenceAt ≡ window at ${t}`);
+  }
+});
+
+test('a drop stamped ON its round_end is a degenerate [t,t) window — never draws', () => {
+  // Windows are half-open [from, to): when the cut lands on the drop's
+  // own tick (a same-round round_end at/after the row — >=), from === to
+  // and the row can never draw; the query side agrees (null AT the tick).
+  const d = wdrop(14930, 'Desert Eagle', 2);
+  const ev = {
+    drops: [d],
+    pickups: [],
+    roundEnds: [roundEnd(14930, 2)],
+    roundStarts: [roundStart(15378, 3)],
+  };
+  assert.deepEqual(dropWindow(d, ev), { from: 14930, to: 14930 }, 'degenerate: the cut is the drop tick itself');
+  assert.equal(dropEvidenceAt(ev, 14930), null, 'never visible — the two rules agree');
+  assert.equal(dropEvidenceAt(ev, 14931), null, '…at every later tick too');
 });
 
 // --- duplicate-name best-evidence matching -----------------------------------
