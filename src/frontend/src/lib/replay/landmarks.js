@@ -135,8 +135,9 @@ export const DRAW_KINDS = [
 // CATEGORIES — the filterable landmark categories. GAMEPLAY-ONLY since
 // Q3a: the chat / team-change / game-event filters left the surface (the
 // store keeps those rows; this registry stops offering them) and `buys`
-// is the one generic (fixed-name) category left. `source` picks the
-// backend retrieval path (typed events / generic events);
+// is the one generic (fixed-name) category left, and `footsteps` (Q3b)
+// is the one sound-event source. `source` picks the backend retrieval
+// path (typed events / generic events / sound events);
 // `kinds` (event source) or `name` (generic source) scopes the query;
 // `default` categories are the sparse initial selection; `countedOnly`
 // restricts the category to counted rounds (lib/rounds.js isCounted —
@@ -192,6 +193,15 @@ export const CATEGORIES = [
   // no histogram), one job in feed.genericSource per filter that enables
   // it.
   { id: 'buys', label: 'Buys', short: 'buy', source: 'generic', name: 'item_purchase' },
+  // Q3b: the player-sound rows (step/jump/land/fall — sound_events, NOT
+  // the events table) as a feed source. Its OWN `source: 'sound'` value
+  // is the whole point: typedKindsFor / categoryOfKind / enabledClaimOf
+  // all scan `source === 'event'`, so footsteps can never leak into a
+  // typed query, a world row or the scrubber-marker answer. Its kinds
+  // are deliberately NOT listed here (kinds = the typed-event vocabulary
+  // — LANDMARK_KINDS is the pinned models.EventKind mirror) and NOT in
+  // LANDMARK_KINDS; the row carries its own `kind` (step/jump/land/fall).
+  { id: 'footsteps', label: 'Footsteps', short: 'step', source: 'sound' },
 ];
 
 // The sparse default: round starts only — every other category is
@@ -422,13 +432,16 @@ export function typedKindsFor(catIds) {
 
 // enabledSources reports which retrieval paths the feed needs for a
 // category set (the backend keeps one path per source). The path split
-// follows the registry: after Q3a every category is `event` (typed) or
-// `generic` (a fixed name) — the chat path left with its category.
+// follows the registry: `event` (typed), `generic` (a fixed name) and
+// `sound` (the Q3b footsteps source) — the chat path left with its
+// category in Q3a. `event`/`sound` are booleans (one category each
+// today), `generic` returns the records because its jobs are per-name.
 export function enabledSources(catIds) {
   const cats = catIds.map(categoryById).filter(Boolean);
   return {
     event: cats.some((c) => c.source === 'event'),
     generic: cats.filter((c) => c.source === 'generic'),
+    sound: cats.some((c) => c.source === 'sound'),
   };
 }
 

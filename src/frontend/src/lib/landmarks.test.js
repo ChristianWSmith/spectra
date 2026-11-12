@@ -110,9 +110,14 @@ test('every category is well-formed and every typed kind is claimed at least onc
       // yield no feed job.
       assert.ok(c.name, c.id);
     } else {
-      // Q3a: the chat path left with its category — an unknown source
-      // fails here rather than silently rendering as chat.
-      assert.ok(c.source === 'event' || c.source === 'generic', c.id);
+      // Q3a: the chat path left with its category; Q3b added `sound`
+      // (footsteps). An unknown source fails here rather than silently
+      // rendering as something the feed has no descriptor for — and a
+      // sound category must NOT claim typed kinds (kinds are the
+      // events-table vocabulary; typedKindsFor/marker answers scan
+      // source === 'event' only).
+      assert.ok(['event', 'generic', 'sound'].includes(c.source), c.id);
+      if (c.source === 'sound') assert.equal(c.kinds, undefined, c.id);
     }
   }
   // All stored kinds land in a category — no recorded activity is
@@ -454,8 +459,12 @@ test('scrubberMarkerClass maps every drawable bucket (the markers contract)', ()
 test('typedKindsFor unions enabled categories; enabledSources splits paths', () => {
   assert.deepEqual(typedKindsFor(['kills', 'round_wins']), ['kill', 'round_end']);
   assert.deepEqual(typedKindsFor(['kills', 'damage']), ['kill', 'damage']);
-  // A generic category claims no typed KIND (its read is name-scoped).
+  // A generic category claims no typed KIND (its read is name-scoped) …
   assert.deepEqual(typedKindsFor(['buys']), []);
+  // … and neither does the sound category: typedKindsFor scans
+  // source === 'event' only, so footsteps can never leak into a typed
+  // query (the marker answer's kind set rides this function).
+  assert.deepEqual(typedKindsFor(['footsteps']), []);
   assert.deepEqual(typedKindsFor([]), []);
   assert.deepEqual(typedKindsFor(['kills', 'kills']), ['kill']);
 
@@ -469,8 +478,16 @@ test('typedKindsFor unions enabled categories; enabledSources splits paths', () 
   assert.equal('chat' in src, false, 'enabledSources still reports a chat path');
   assert.deepEqual(enabledSources(['convars']).generic, []);
   assert.deepEqual(enabledSources(['chat']).generic, []);
+  // Q3b: the sound path — footsteps alone turns it on and NOTHING else
+  // (never the typed query, never a generic name read).
+  const snd = enabledSources(['footsteps']);
+  assert.equal(snd.sound, true);
+  assert.equal(snd.event, false);
+  assert.deepEqual(snd.generic, []);
+  assert.equal(enabledSources(['kills']).sound, false);
   const none = enabledSources([]);
   assert.equal(none.event, false);
+  assert.equal(none.sound, false);
   assert.deepEqual(none.generic, []);
 });
 

@@ -10,10 +10,11 @@
 //      can never drift. INVARIANT: no second site may compose query
 //      params from a filter (pinned by feed.test.js' source scan).
 //   2. FEED_SOURCES — THE source interface: one descriptor per
-//      retrieval path (typed events / generic — Q3a made the filters
-//      gameplay-only), each owning its job list, fetch, normalization,
-//      merge rank, sequence key and paging. A new path lands as ONE
-//      registration here.
+//      retrieval path (typed events / generic / sound — Q3a made the
+//      filters gameplay-only, Q3b added the footsteps sound source),
+//      each owning its job list, fetch, normalization, merge rank,
+//      sequence key and paging. A new path lands as ONE registration
+//      here.
 //   3. feedJobs / runFeedJob / pageSlice — the job list a filter needs
 //      and the ONE paging rule (the +1 probe row).
 //   4. mergeSourceRows / composeFeedRows — the chronological merge (rank
@@ -41,18 +42,15 @@
 //     chat half. The FILTER's `gname` key died with the picker in
 //     landmarks.js; the in-view histogram chrome (hist/needHist +
 //     getGenericHistogram) died with it in Replay.svelte.
-//   Q3b (footsteps): register a THIRD descriptor over GetSoundEvents'
-//     tick window — page: null (that read is already a windowed read in
-//     services), normalize the sound row into a landmark row, rank 2
-//     (after generic), seqOf = its own id. Three REGISTRATIONS, no
-//     machinery: the `footsteps` category in landmarks' CATEGORIES, its
-//     path field in landmarks' enabledSources (the registry's path
-//     split, which every descriptor's jobs() reads), and this descriptor
-//     in FEED_SOURCES. jobs(), paging, merge and the export take the
-//     registry as they find it; the MARKER answer stays event-only
-//     (markers intersect the world rows, which are event kinds) —
-//     buildFeedQuery is untouched by it.
-import { getEvents, getGenericEvents, getEvent } from '../services.js';
+//   Q3b (footsteps) is DONE: the `footsteps` category (landmarks'
+//     CATEGORIES, its own `source: 'sound'`), its path field in
+//     enabledSources, and the `soundSource` descriptor below. The one
+//     design point it settled — a TICK-windowed read under a
+//     ROUND-scoped filter — is documented on the descriptor: the scope
+//     rides the JOB and is applied in normalize(), the fetch reads the
+//     whole match through the shared cache. buildFeedQuery, the paging
+//     rule, the merge and the marker answer were all untouched.
+import { getEvents, getGenericEvents, getEvent, getSoundEvents } from '../services.js';
 import {
   enabledSources,
   typedKindsFor,
@@ -131,12 +129,12 @@ export function buildFeedQuery(matchId, filter) {
 // --- THE source interface --------------------------------------------------
 //
 // One descriptor per retrieval path:
-//   id        — the page-slot namespace ('event' | 'generic');
+//   id        — the page-slot namespace ('event' | 'generic' | 'sound');
 //               it is also the landmark row's own `source` field, which
 //               is how the merge finds a row's rank/seqOf.
 //   rank      — the merge tiebreak when two rows share a tick (the
-//               sources are listed in merge order: events → generic); a
-//               queued source appends its own rank here.
+//               sources are listed in merge order: events → generic →
+//               sound); a queued source appends its own rank here.
 //   page      — {size} when the path pages, null for an unpaged read
 //               (runFeedJob then slices with Infinity: everything back,
 //               hasMore false).
@@ -147,14 +145,22 @@ export function buildFeedQuery(matchId, filter) {
 //               { key, ...params } — `key` is the page slot's name;
 //               feedJobs() stamps `source` onto it.
 //   fetch     — (matchId, filter, job, offset) → Promise<raw rows>
-//   normalize — (rawRow, job, ctx) → the landmark row (null = dropped —
-//               the feed's own gate, e.g. a kind no category claims)
+//               (may be async and may choose the window it reads — see
+//               the tick-windowed contract on soundSource below)
+//   normalize — (rawRow, job, ctx, index) → the landmark row (null =
+//               dropped — the feed's own gate: a kind no category
+//               claims, or a row outside the job's own scope). `index`
+//               is the row's position in its page slot: the stable,
+//               unique key for a source whose rows carry NO id (sound).
 //   seqOf     — (rawRow) → the row's own sequence key (the merge's third
-//               tiebreak)
+//               tiebreak; 0 when it has none — the merge's sort is
+//               stable, so ties keep the store's own order)
 //
 // normalize's ctx: { roundsByNumber, cats } — the round index behind the
 // countedOnly rule and the enabled category set behind the enabled-claim
-// stamp.
+// stamp. Per-source scope that the row itself cannot express rides the
+// JOB (chat's `round`, sound's round bounds + player) — never a second
+// query composer (buildFeedQuery owns the events matcher).
 
 // The typed (event) source — the typed-event timeline read, paged. Its
 // query is also the scrubber-marker answer's (buildFeedQuery below).
@@ -207,10 +213,82 @@ const genericSource = {
   seqOf: (row) => row.rowId,
 };
 
-// THE registry — merge order = rank order. Q3b appends its footsteps
-// descriptor here (rank 2, after generic); Q3a already deleted
-// chatSource, which renumbered generic to rank 1.
-export const FEED_SOURCES = [typedSource, genericSource];
+// The sound source (Q3b) — the player-sound rows behind the `footsteps`
+// category: step / jump / land / fall (sound_events — a table of its
+// own, NOT the events table).
+//
+// FEED-ONLY: sound rows are never world rows (the world dataset is the
+// event kinds the renderer/sfx push), so they never reach the map, the
+// scrubber markers or the cue lists — the marker answer stays
+// event-only by construction, and nothing here touches world.js.
+//
+// THE TICK-WINDOWED-SOURCE CONTRACT (the one design point Q3b settled):
+// GetSoundEvents reads a (fromTick, toTick) window while the feed filter
+// is ROUND-scoped — and the feed effect can fire BEFORE the rounds list
+// lands (Replay loads rounds asynchronously), so a window translated
+// from rounds would be wrong exactly when it mattered, and would force
+// `rounds` into the effect's dependencies (a second fetch when they
+// arrive — breaking its "re-runs only when the serialized filter
+// changes" contract). Therefore this descriptor:
+//   - reads the WHOLE match `getSoundEvents(matchId, 0, 0)` — the
+//     store's own open-window contract, and the SAME cache key Replay's
+//     sfx `soundRows` read already uses (services.getSoundEvents is a
+//     cachedRead), so a match with footsteps shares ONE DB read between
+//     the feed and the audio path;
+//   - applies the round scope AND the player scope on the JOB inside
+//     `normalize` (the row carries its own `round`/`steamId`) — exact no
+//     matter when the rounds arrive. The scopes a sound row cannot
+//     answer are NOT applied and never guessed: side/team are DB joins
+//     in the store (event-source keys), and weapon/distance/headshot/bbox
+//     have no field on a sound row — the same contract the chat source
+//     had before Q3a (round + player only).
+const soundSource = {
+  id: 'sound',
+  rank: 2,
+  page: null, // one whole-match read, never paged
+  jobs(filter) {
+    return enabledSources(filter.cats).sound
+      ? [
+          {
+            key: 'sound',
+            roundFrom: filter.roundFrom,
+            roundTo: filter.roundTo,
+            steamId: filter.steamId,
+          },
+        ]
+      : [];
+  },
+  fetch(matchId) {
+    return getSoundEvents(matchId, 0, 0); // (0, 0) = the whole match
+  },
+  normalize(row, job, ctx, index) {
+    // The round scope (0 = open on that side) and the player scope
+    // ('' = all) — the two bounds a sound row CAN answer, applied here
+    // because the Go read takes ticks, not rounds.
+    if (job.roundFrom !== 0 && row.round < job.roundFrom) return null;
+    if (job.roundTo !== 0 && row.round > job.roundTo) return null;
+    if (job.steamId && row.steamId !== job.steamId) return null;
+    return {
+      ...row,
+      // SoundEvent carries NO id: the page index is the row's key within
+      // this filter's list (the store orders the read by tick, rowid —
+      // deterministic, so the index is stable across re-derivations).
+      key: `s:${index}`,
+      source: 'sound',
+      category: 'footsteps', // the stamp the list chip / export `type` read
+      bucket: '', // a world concept — sound rows never render on the map
+      // sound_events has no position — never invented (x/y/z stay absent).
+      who: '', // no display name on the row (steamId only)
+      name: row.kind, // the detail pane's "Event" line
+      label: row.material ? `${row.kind} · ${row.material}` : String(row.kind || 'sound'),
+    };
+  },
+  seqOf: () => 0, // no sequence id — the stable sort keeps (tick, rowid)
+};
+
+// THE registry — merge order = rank order (Q3a renumbered generic to 1
+// when chatSource left; Q3b's footsteps appends at 2).
+export const FEED_SOURCES = [typedSource, genericSource, soundSource];
 
 const SOURCE_BY_ID = new Map(FEED_SOURCES.map((s) => [s.id, s]));
 
@@ -290,8 +368,9 @@ export function composeFeedRows(pages, ctx) {
   for (const slot of Object.values(pages || {})) {
     const source = slot.job && slot.job.source;
     if (!source) continue;
-    for (const raw of slot.rows || []) {
-      const row = source.normalize(raw, slot.job, ctx);
+    const raw = slot.rows || [];
+    for (let i = 0; i < raw.length; i++) {
+      const row = source.normalize(raw[i], slot.job, ctx, i);
       if (row) rows.push(row); // null = the feed's gate dropped it
     }
   }
