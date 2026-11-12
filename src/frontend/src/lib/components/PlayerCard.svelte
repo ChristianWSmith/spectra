@@ -195,6 +195,29 @@
   const utilTitle = $derived(
     util == null ? 'Utility unknown' : util.length ? 'Utility carried' : 'No utility',
   );
+
+  // The whole card follows the player (the caller's onFollow drives
+  // engine.setFollow) — click AND keyboard, the LandmarkRow.svelte
+  // role=button idiom (a real <button> can't wrap the nested mute
+  // button). Svelte 5 delegated events: child stopPropagation does not
+  // reliably stop this root handler — guard on target instead (the
+  // Match.svelte row idiom): an event landing on an inner control
+  // (button / a / input — today's mute button) returns without firing
+  // follow, so nested and future controls stay independent of the card
+  // activation. Enter/Space mirror the click; they are redundant with
+  // the Replay view's own follow controls (F, 1-9/0, the follow
+  // popover) — never a second source of follow state.
+  function onCardClick(e) {
+    if (e.target instanceof Element && e.target.closest('button, a, input')) return;
+    onFollow();
+  }
+
+  function onCardKey(e) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    if (e.target instanceof Element && e.target.closest('button, a, input')) return;
+    e.preventDefault();
+    onFollow();
+  }
 </script>
 
 <div
@@ -206,17 +229,10 @@
   class:pc-color={!!playerColor}
   style:--pc-color={playerColor || null}
   title={hasState ? undefined : 'No player state for this match'}
-  onclick={(e) => {
-    // The whole card follows the player (the caller's onFollow drives
-    // engine.setFollow). Svelte 5 delegated events: child
-    // stopPropagation does not reliably stop this root handler — guard
-    // on target instead (the Match.svelte row idiom): a click landing
-    // on an inner control (button / a / input — today's mute button)
-    // returns without firing follow, so nested and future controls stay
-    // independent of the card click.
-    if (e.target instanceof Element && e.target.closest('button, a, input')) return;
-    onFollow();
-  }}
+  role="button"
+  tabindex="0"
+  onclick={onCardClick}
+  onkeydown={onCardKey}
 >
   <div class="pc-head">
     <span class="pc-name" title={name}>{name}</span>

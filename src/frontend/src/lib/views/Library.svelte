@@ -76,7 +76,10 @@
   // link (#/library?map=&player=) lands pre-filtered; the preset effect
   // below re-applies them if the route query changes while this view stays
   // mounted.
+  // svelte-ignore state_referenced_locally (intentional seed — the preset
+  // effect below re-applies later query changes)
   let mapFilter = $state(String(routeQuery.map || ''));
+  // svelte-ignore state_referenced_locally (intentional seed — ditto)
   let playerFilter = $state(String(routeQuery.player || ''));
   // Suggestion sources for the two facets, fetched once on mount: the
   // distinct maps in the library (store.ListMapNames) and every player in
