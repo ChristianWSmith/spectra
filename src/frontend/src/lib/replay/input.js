@@ -8,12 +8,24 @@
 import { downloadCanvasPNG } from '../download.js';
 
 // snapshot saves the canvas as replay-<matchId>-<tick>.png through the
-// native save dialog (lib/save.js → download.js) — cancel is a silent
-// no-op; the S-key / button path has no error surface, so failures log to
-// the console.
-export function snapshot(canvas, matchId, tick) {
-  downloadCanvasPNG(canvas, `replay-${matchId}-${tick}.png`).catch((e) =>
-    console.error('snapshot save failed:', e),
+// native save dialog (lib/save.js → download.js).
+//
+// Settle contract (onResult, optional): save.js's cancel contract means a
+// CANCELLED save resolves "" and never rejects, so onResult is called with
+// null on every non-failure settle (written OR cancelled — both are silent,
+// and null lets the view clear a stale error on a retry) and with the Error
+// only on a genuine failure (dialog/backend write, no PNG data). With no
+// callback the failure falls back to the console — a bare caller has no
+// surface of its own. The callback is view-owned, the same pattern as
+// onRound/onSkipFreeze: this module stays the key OWNER, never the owner
+// of the status area.
+export function snapshot(canvas, matchId, tick, onResult) {
+  downloadCanvasPNG(canvas, `replay-${matchId}-${tick}.png`).then(
+    () => onResult?.(null),
+    (e) => {
+      if (onResult) onResult(e);
+      else console.error('snapshot save failed:', e);
+    },
   );
 }
 
@@ -56,7 +68,9 @@ function isControlTarget(t) {
 // onRound(dir) / onSkipFreeze() hand the two VIEW-owned actions back to
 // the caller (round navigation and the skip-freeze toggle persist the
 // `skip_freeze` pref view-side) — this module stays the key OWNER, never
-// the owner of those decisions.
+// the owner of those decisions. onSnapshotResult does the same for the S
+// key's PNG save (the settle contract in snapshot above): the view owns
+// the status chip, so a failed save surfaces there instead of the console.
 // isActive (optional) gates EVERY handler — the keep-alive mini-player
 // dock passes () => active: while the replay is collapsed the window
 // keys (Space etc.) and the canvas pointer/wheel must be inert (audio
@@ -72,6 +86,7 @@ export function attachReplayInput({
   slotCount,
   onRound,
   onSkipFreeze,
+  onSnapshotResult,
   isActive,
 }) {
   let lastSlot = 0;
@@ -132,7 +147,7 @@ export function attachReplayInput({
         break;
       case 's':
       case 'S':
-        snapshot(canvas, matchId, engine.state.tick);
+        snapshot(canvas, matchId, engine.state.tick, onSnapshotResult);
         break;
       default: {
         // Player slots: 1-9 are slots 0-8, 0 is slot 10 (only in a
