@@ -15,12 +15,8 @@
   // tick, selection after entry) is local.
   import { onMount, tick as svelteTick, untrack } from 'svelte';
   import {
-    getReplayMeta,
-    getEvents,
     getEvent,
-    getBlindDurations,
     getEventKeys,
-    getChat,
     getSoundEvents,
     getSoundEventPresence,
     getMatch,
@@ -36,7 +32,7 @@
     setPref,
     errText,
   } from '../services.js';
-  import { createEngine, parsePositions, SPEEDS } from '../replay/engine.js';
+  import { createEngine, SPEEDS } from '../replay/engine.js';
   import { createRenderer, sideFromFlags, hudTeamNames } from '../replay/renderer.js';
   import {
     CATEGORIES,
@@ -68,15 +64,18 @@
   import { attachReplayInput, snapshot } from '../replay/input.js';
   import { createVoiceEngine, fetchVoicePCM } from '../replay/audio.js';
   import { voiceWindowTicks } from '../replay/voicewindows.js';
-  import {
-    loadState,
-    slotStateAt,
-  } from '../replay/state.js';
+  import { slotStateAt } from '../replay/state.js';
   import { deriveBullets } from '../replay/bullets.js';
   import { buildDecoyPlan } from '../replay/decoy.js';
-  // THE world dataset (match-static fetch + normalization + the world
-  // pushes): lib/replay/world.js owns it; this view only wires it.
-  import { loadWorld, pushWorldToRenderer, pushWorldToSfx } from '../replay/world.js';
+  // THE world dataset (lib/replay/world.js): this view only wires the
+  // pushes — loadWorld itself runs in replay/preload.js (the bundle),
+  // once the state stream and data.ticks exist.
+  import { pushWorldToRenderer, pushWorldToSfx } from '../replay/world.js';
+  // The pre-emptive bundle (the loading ladder — PRODUCT.md "###
+  // Defaults"): load() starts the SAME memo Match's tier-1 effect warms
+  // and awaits it (start-if-missing — a deep link to #/replay/:id
+  // works), and the stage ledger below drives the tier-2 progress chip.
+  import { preloadReplay, onReplayPreloadProgress } from '../replay/preload.js';
   import { loadIconManifest, preloadIcons } from '../replay/icons.js';
   import {
     AUDIO_VOL_DEFAULT,
@@ -101,10 +100,9 @@
   // which player cards exist (the card columns' filter below) — plus the
   // reload ring's fill (the ONE reload-progress formula).
   import { presentAt, indexConnections, reloadProgress } from '../replay/playercard.js';
-  import { loadMapPack } from '../components/mapxform.js';
   import { downloadBlob, downloadText } from '../download.js';
   import { toCSV } from '../csv.js';
-  import { chatClock, chatTag, prettyJson, fmtClock, parseClock, tickSeconds, normTickRate } from '../fmt.js';
+  import { chatClock, chatTag, prettyJson, fmtClock, parseClock, tickSeconds, normTickRate, fmtBytes } from '../fmt.js';
   import { playerSideAt } from '../teams.js';
   import { isCounted, roundStartTick, roundIndexLabel, scoreThrough } from '../rounds.js';
   import { isSteam, entrySeed, entrySeedPlan } from '../nav.js';
@@ -119,6 +117,7 @@
   import PayloadTree from '../components/PayloadTree.svelte';
   import Popover from '../components/Popover.svelte';
   import RoundStrip from '../components/RoundStrip.svelte';
+  import StatusChip from '../components/StatusChip.svelte';
   import TeamColumn from '../components/TeamColumn.svelte';
 
   // active — App's keep-alive activation flag: false while this instance
@@ -145,7 +144,8 @@
   let teamNames = $state(null);
   let sideSwitches = $state(0);
   let pack = $state(null); // map pack meta.json or null
-  let packTf = null; // makeTransform(meta) from loadMapPack — passed to
+  let packTf = null; // makeTransform(meta) — off the preload bundle (the
+  //                    pack loader lives in replay/preload.js), passed to
   //                    the renderer instead of re-deriving pack fields
   let data = $state(null); // parsed position store
   let rounds = $state([]);
@@ -1872,46 +1872,6 @@
     teardown();
   }
 
-  async function loadPack(map) {
-    if (!map) return { pack: null, transform: null, img: null, layerImgs: null };
-    // Shared loader: extracted pack (local CS2) wins over the bundled
-    // metadata-only fallback at /maps/ (no art ships — see
-    // frontend/public/maps/README.md; a missing pack = plain grid).
-    // The makeTransform() output rides along — the renderer consumes it
-    // instead of re-deriving the pack's transform fields.
-    const p = await loadMapPack(map);
-    if (!p || !p.meta) return { pack: null, transform: null, img: null, layerImgs: null };
-    // One image per radar file: every meta.layers[i].file for a
-    // multi-floor pack (side-by-side panels), else the single
-    // meta.radar.file (today's one image). A file that fails to decode
-    // resolves to null — the renderer skips that panel's pixels (the
-    // grid shows through), never an error.
-    const files = [];
-    if (Array.isArray(p.meta.layers) && p.meta.layers.length) {
-      for (const l of p.meta.layers) if (l && l.file) files.push(l.file);
-    } else if (p.meta.radar && p.meta.radar.file) {
-      files.push(p.meta.radar.file);
-    }
-    const imgs = await Promise.all(
-      files.map(async (file) => {
-        const im = new Image();
-        im.src = `${p.base}/${file}`;
-        try {
-          await im.decode();
-          return im;
-        } catch {
-          return null;
-        }
-      }),
-    );
-    return {
-      pack: p.meta,
-      transform: p.transform,
-      img: imgs.length ? imgs[0] : null,
-      layerImgs: imgs,
-    };
-  }
-
   // Icon pipeline (handoff C): read the manifest; when it reports no
   // extraction YET, ask services.extractIcons('') ONCE (it auto-detects
   // the local CS2 install / saved pref and takes a moment), then re-read
@@ -1957,6 +1917,47 @@
     return 0;
   }
 
+  // --- Tier-2 progress (the loading ladder — PRODUCT.md "### Defaults") ---
+  // The preload's stage ledger, subscribed while `loading` — transient
+  // state: never seeded, never remembered, never in the URL (AGENTS.md
+  // "State placement": loading is neither route-query nor registry
+  // state). progress 0 = indeterminate (StatusChip's animated bar); a
+  // percentage only ever appears over an honest denominator (positions
+  // bytes vs Content-Length, radar images i/N) — never a fabricated one.
+  // preloadArm is bumped by load() AFTER it starts the preload: this
+  // effect can run first (onMount's load() is the later site), and
+  // without the bump it would subscribe to no entry at all.
+  let preloadProgress = $state(null);
+  let preloadArm = $state(0);
+  $effect(() => {
+    id;
+    preloadArm;
+    preloadProgress = null;
+    const off = onReplayPreloadProgress(id, (p) => {
+      preloadProgress = p;
+    });
+    return off;
+  });
+
+  // The chip's copy: the stage label beside the bar, plus the count for
+  // the determinate stages (fmtBytes is the one canonical byte
+  // formatter). unit 'bytes' is the Content-Length-denominated positions
+  // stream; the only other determinate unit is the radar image count.
+  const loadDetail = $derived.by(() => {
+    const p = preloadProgress;
+    if (!p || !p.stage) return '';
+    if (p.total > 0 && p.unit === 'bytes') {
+      return ` ${p.stage} — ${fmtBytes(p.done)} of ${fmtBytes(p.total)}`;
+    }
+    if (p.total > 0) return ` ${p.stage} — ${p.done} of ${p.total} images`;
+    return ` ${p.stage}…`;
+  });
+  const loadPct = $derived(
+    preloadProgress && preloadProgress.total > 0
+      ? Math.min(1, preloadProgress.done / preloadProgress.total)
+      : 0,
+  );
+
   async function load() {
     loading = true;
     loadError = '';
@@ -1974,12 +1975,30 @@
     // cards stay reactive to the late iconMap either way.
     loadIcons().catch(() => {});
     try {
-      const m = await getReplayMeta(id);
+      // The pre-emptive bundle (the loading ladder — PRODUCT.md
+      // "### Defaults"): Match's tier-1 effect warms it in the
+      // background; here it is START-IF-MISSING (a deep link straight
+      // to #/replay/:id) and always the SAME promise — an in-flight
+      // preload is awaited, never restarted. {force}: the foreground
+      // start never takes preload.js's library-job bail-out (the user
+      // asked for the replay NOW — the flush listeners there remain
+      // the correctness net either way).
+      const bundleP = preloadReplay(id, { force: true });
+      // Re-arm the progress subscription on THIS entry: the $effect
+      // above may have run before load() existed (it would then have
+      // found no memo to subscribe to).
+      preloadArm++;
+      const b = await bundleP;
+      if (!live) return;
+      const m = b.meta;
       meta = m;
       if (!m || !m.hasSidecar) {
         noSidecar = true;
         return;
       }
+      // The match/rounds/teamNames reads are cachedRead — the preload
+      // primed the SAME keys, so this Promise.all is a cache hit (its
+      // .catch contract is unchanged).
       const [match, rs, tn] = await Promise.all([
         getMatch(id).catch(() => null),
         getRounds(id).catch(() => []),
@@ -1989,14 +2008,14 @@
       sideSwitches = (match && match.sideSwitches) || 0;
       teamNames = tn || null;
       rounds = rs || [];
-      // Player-state stream (handoff B): loadState re-reads meta.json
-      // itself (the canonical one-stop loader — never forked here) and
-      // fails soft to null for every absence mode (no meta.json, a 404
-      // on /state, a transport error), so a match without the stream
-      // renders exactly like one that never had it: the cards show their
-      // "no state" placeholders with no note. A corrupt stream is loud
-      // in the parser, never rendered as garbage.
-      stateIndex = await loadState(id).catch(() => null);
+      // Player-state stream (handoff B): the BUNDLE carries loadState's
+      // result (the canonical one-stop loader runs in preload.js — never
+      // forked here) — it fails soft to null for every absence mode (no
+      // meta.json, a 404 on /state, a transport error), so a match
+      // without the stream renders exactly like one that never had it:
+      // the cards show their "no state" placeholders with no note. A
+      // corrupt stream is loud in the parser, never rendered as garbage.
+      stateIndex = b.stateIndex;
       renderer?.setStateIndex(stateIndex); // normally pre-engine: startEngine pushes it
       // Tracer rows + gun-cue rows for the same state stream (both
       // mirrors of the setStateIndex push — same null-guard): ONE
@@ -2024,18 +2043,16 @@
       voicePresence = await getVoicePresence(id).catch(() => null);
       voicePlayers = [];
       voiceWindows = null;
-      const { pack: p, transform: tf, img, layerImgs: lims } = await loadPack(matchMap);
-      pack = p;
-      packTf = tf;
-      radarImg = img;
-      layerImgs = lims;
-      const res = await fetch(`/api/sidecar/${id}/positions`);
-      if (!res.ok) {
-        throw new Error(`position data unavailable (HTTP ${res.status})`);
-      }
-      const buf = await res.arrayBuffer();
-      if (!live) return;
-      data = parsePositions(buf, players.length || 10);
+      // The radar pack + its decoded images and the parsed position
+      // store both ride the bundle (preload.js owns the pack loader and
+      // the positions fetch AND parsePositions — the CPU that used to
+      // sit on this click path). The `if (!live)` above covers the big
+      // await; everything here is assignment.
+      pack = b.pack;
+      packTf = b.packTf;
+      radarImg = b.radarImg;
+      layerImgs = b.layerImgs;
+      data = b.data;
       // Voice index (handoff D): ONE read carries the players (cards +
       // engine), the speaking lanes (~1 bucket per second of match time —
       // spec 26's talking ring/card outline) and the engine's
@@ -2074,19 +2091,14 @@
       // the death-drop payload projection, the per-kill victimHelmet
       // stamp, the grenade-entity hydration — plus the buytime_ended
       // boundary the kit evidence needs, all normalized ONCE (no claim
-      // gate, no filter: world.js owns the fetch and the shape).
-      // Awaited before the engine starts so the world layers, the
+      // gate, no filter: world.js owns the fetch and the shape). The
+      // BUNDLE carries loadWorld's result (preload.js runs it once the
+      // state stream and data.ticks exist), so the world layers, the
       // scrubber markers and the kit evidence are ready on first paint;
       // fail-soft INSIDE world.js (a failed side channel → its empty
       // value → no stamps, no drop markers, "no buy evidence"), never a
       // load error — exactly the contract the inline code had.
-      world = await loadWorld({
-        matchId: id,
-        players,
-        stateIndex,
-        ticks: data ? data.ticks : null,
-        tickRate: meta?.tickRate ?? 0,
-      });
+      world = b.world;
       // Player sounds (footsteps/lands/jumps/fall damage): PRESENCE
       // first — a match whose sound_events table is empty (imported
       // before the SOS work, never re-imported) fetches NOTHING, pushes
@@ -2103,65 +2115,50 @@
       // the roster's steamId spelling, so indexConnections keys it
       // straight onto meta.players. Fetched BEFORE the engine starts so
       // the columns never paint a phantom card on first paint; fail-soft
-      // like the world load (any failure → [] → every card visible).
-      connRows =
-        (await getEvents({
-          matchId: id,
-          kinds: ['player_connect', 'player_disconnect'],
-          offset: 0,
-          limit: 0,
-        }).catch(() => [])) || [];
-      // The DEFAULT entry tick (no explicit ?tick=): resolve
-      // it here with an awaited getPref — the showKnifeWarmup $effect
-      // reads the same key asynchronously and could land AFTER startEngine
-      // applies the entry seek, which would start the replay on the
-      // wrong side of the knife/warmup-hiding pref.
-      entryDefaultTick = defaultEntryTick(
-        await getPref('show_knife_warmup_rounds')
-          .then((v) => v === true)
-          .catch(() => false), // unreadable store → hidden (the default)
-      );
+      // like the world load (any failure → [] → every card visible) —
+      // the BUNDLE carries the rows (preload.js read them with the same
+      // default).
+      connRows = b.connRows || [];
+      // The DEFAULT entry tick (no explicit ?tick=): resolved from the
+      // bundle's pref read — the showKnifeWarmup $effect reads the same
+      // key asynchronously and could land AFTER startEngine applies the
+      // entry seek, which would start the replay on the wrong side of
+      // the knife/warmup-hiding pref. Unreadable store → hidden (the
+      // default).
+      entryDefaultTick = defaultEntryTick(b.prefs.knife === true);
       // Skip-freeze toggle (frontend-owned kvstore — the camera_mode
-      // pattern): read HERE, before startEngine, so the first engine
-      // push carries the persisted choice; unset / unreadable → OFF (the
-      // default — the freeze skip is opt-in).
-      uiSkipFreeze = (await getPref('skip_freeze').catch(() => null)) === true;
+      // pattern): the bundle's read lands before startEngine, so the
+      // first engine push carries the persisted choice; unset /
+      // unreadable → OFF (the default — the freeze skip is opt-in).
+      uiSkipFreeze = b.prefs.skip === true;
       // Replay-audio faders: the six persisted levels (voice/guns/
-      // utility/C4/announcer/footsteps) are read here — before
-      // startEngine applies them to
-      // the voice master and (once the sounds manifest proves non-empty)
-      // the sfx engine. One Promise.all, fail-soft to each key's default
-      // like every other pref read in load(). The FOOTSTEPS level reads
-      // with FOOTSTEPS_VOL_DEFAULT (1 = 100 %) — it is muted by the
-      // session mute, not by its fader.
+      // utility/C4/announcer/footsteps) off the bundle — before
+      // startEngine applies them to the voice master and (once the
+      // sounds manifest proves non-empty) the sfx engine. Raw values
+      // (null = unset/unreadable) map through prefVolume's per-key
+      // default, fail-soft like every other pref read in load(). The
+      // FOOTSTEPS level reads with FOOTSTEPS_VOL_DEFAULT (1 = 100 %) —
+      // it is muted by the session mute, not by its fader.
       {
-        const [vv, gv, uv, cv, av, sv] = await Promise.all([
-          getPref('voice_volume').catch(() => null),
-          getPref('guns_volume').catch(() => null),
-          getPref('utility_volume').catch(() => null),
-          getPref('c4_volume').catch(() => null),
-          getPref('announcer_volume').catch(() => null),
-          getPref('footsteps_volume').catch(() => null),
-        ]);
-        uiVoiceVol = prefVolume(vv);
-        uiGunsVol = prefVolume(gv);
-        uiUtilVol = prefVolume(uv);
-        uiC4Vol = prefVolume(cv);
-        uiAnnouncerVol = prefVolume(av);
-        uiStepsVol = prefVolume(sv, FOOTSTEPS_VOL_DEFAULT); // 100 % by default; muted by uiStepsMuted
+        const pv = b.prefs;
+        uiVoiceVol = prefVolume(pv.voice);
+        uiGunsVol = prefVolume(pv.guns);
+        uiUtilVol = prefVolume(pv.util);
+        uiC4Vol = prefVolume(pv.c4);
+        uiAnnouncerVol = prefVolume(pv.ann);
+        uiStepsVol = prefVolume(pv.steps, FOOTSTEPS_VOL_DEFAULT); // 100 % by default; muted by uiStepsMuted
       }
       // Flash-white overlay: the blind events joined with their narrow
       // flash-duration read — the duration lives on detail_json
       // (EventRow stays payload-free, so it needs its own query; the
-      // same side-channel rule as store.GetBlindFlashDetails). Fail-soft
-      // by contract: any failure just leaves the overlay off, and rows
-      // whose victim resolves to no slot, or whose duration is not
-      // positive, are dropped here.
-      try {
-        const [blinds, durs] = await Promise.all([
-          getEvents({ matchId: id, kinds: ['blind'], offset: 0, limit: 0 }),
-          getBlindDurations(id),
-        ]);
+      // same side-channel rule as store.GetBlindFlashDetails). Both raw
+      // reads ride the bundle (preload.js fail-softs either failure to
+      // an empty pair, so the join can only produce rows or an empty
+      // overlay — never a load error); rows whose victim resolves to no
+      // slot, or whose duration is not positive, are dropped here.
+      {
+        const blinds = b.blinds.rows;
+        const durs = b.blinds.durs;
         const msBySeq = new Map((durs || []).map((d) => [d.seq, d.ms]));
         const slotBySteam = new Map();
         players.forEach((p, i) => {
@@ -2175,20 +2172,14 @@
           rows.push({ slot, tick: ev.tick, ms });
         }
         blindRows = rows;
-      } catch {
-        blindRows = []; // fail-soft — no overlay, never a load error
       }
       // In-game chat for the canvas chat (drawChat): ALL rounds —
       // round -1, the same match-wide read the landmark feed's chat
-      // source uses — fetched raw ({tick, round, steamId, name, text};
-      // the renderer resolves each speaker's side itself). Fail-soft by
-      // contract like the blind overlay: any failure just leaves the
-      // chat off, never a load error.
-      try {
-        chatLines = (await getChat(id, -1, '')) || [];
-      } catch {
-        chatLines = [];
-      }
+      // source uses — raw ({tick, round, steamId, name, text}; the
+      // renderer resolves each speaker's side itself), off the bundle
+      // (fail-soft like the blind overlay: a failed read left it empty —
+      // chat off, never a load error).
+      chatLines = b.chatLines || [];
       // loading must be false BEFORE the tick, else {#if loading} still hides
       // the {#if data} branch and bind:this never resolves (canvasEl null).
       if (live) loading = false;
@@ -3098,7 +3089,17 @@
     {/if}
 
     {#if loading}
-      <p class="muted" role="status">Loading replay…</p>
+      <!-- The ladder's tier-2 indication (PRODUCT.md "### Defaults"):
+           the ONE progress widget (StatusChip — no second bar anywhere)
+           over the preload's stage ledger. progress 0 = indeterminate
+           (the animated bar, never a fabricated "0%"); a number only
+           appears over an honest denominator (positions bytes vs
+           Content-Length, radar images i/N), and the stage label + count
+           ride the text beside the chip (the MapPackPrompt pattern).
+           Loading is transient — never restored. -->
+      <p class="muted" role="status">
+        <StatusChip status="running" progress={loadPct} /> Loading replay…{loadDetail}
+      </p>
     {:else if noSidecar}
       <div class="panel empty">
         <p class="empty-title" role="status">No replay data for this match</p>
