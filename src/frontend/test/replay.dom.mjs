@@ -2380,10 +2380,6 @@ check(
     !bar.querySelector('#filt-round-from').hasAttribute('min'),
 );
 check(
-  'dist min/max inputs replace the single max field',
-  !!bar?.querySelector('#filt-dist-min') && !!bar?.querySelector('#filt-dist-max'),
-);
-check(
   'no tick window and no damage range',
   !!bar &&
     !bar.querySelector('[aria-label="From tick"]') &&
@@ -2392,82 +2388,371 @@ check(
     !bar.querySelector('[aria-label="Maximum damage"]') &&
     !bar.querySelector('#filt-dist'),
 );
-const playerGrp = bar?.querySelector('#filt-player')?.closest('.filt-grp');
-const weaponGrp = bar?.querySelector('#filt-weapon')?.closest('.filt-grp');
+
+// --- Conditional fields — the HIDE half (the owner's ruling) ----------
+// harness1 mounts with the SPARSE default (round starts): round_start
+// carries no player endpoint, is outside the Side/Team scope clause and
+// writes no weapon/distance/headshot, so every value field except ROUND
+// hides — the empty-list footgun the ruling complained about, pinned
+// from the DOM. The PRESENCE / clearing / URL-write half needs an
+// endpoint-scoped selection and mounts below (G2 — kills-seeded
+// harness8); the dist/player/weapon/headshot pins moved there with it.
 check(
-  'player and weapon selects each own their own row (.filt-line)',
-  !!playerGrp && !!weaponGrp && playerGrp !== weaponGrp &&
-    playerGrp.classList.contains('filt-line') && weaponGrp.classList.contains('filt-line'),
-  `${playerGrp?.className} | ${weaponGrp?.className}`,
+  'default selection: every field except ROUND hides (hide-and-clear ruling)',
+  !!bar &&
+    !bar.querySelector('#filt-player') &&
+    !bar.querySelector('#filt-side') &&
+    !bar.querySelector('#filt-team') &&
+    !bar.querySelector('#filt-weapon') &&
+    !bar.querySelector('#filt-dist-min') &&
+    !bar.querySelector('#filt-dist-max') &&
+    !bar.querySelector('#filt-hs') &&
+    !bar.querySelector('.filt-bbox'),
+  bar ? [...bar.children].map((el) => el.className).join(' | ') : 'no bar',
 );
-const weaponOpts = [...(bar?.querySelector('#filt-weapon')?.options || [])].map((o) => o.value);
+
+// Layout ruling (owner's screenshot): the panel rows are a two-column
+// GRID — every child is a .filt-lab label cell followed by its .filt-ctl
+// control cell, so control edges align (the old inline-flex rows started
+// right after their own label — 26px-ragged left edges, content-sized
+// selects).
+const barKids = bar ? [...bar.children] : [];
+check(
+  'filter rows are .filt-lab/.filt-ctl pairs (one aligned control column)',
+  barKids.length >= 2 &&
+    barKids.every((el, i) => el.classList.contains(i % 2 === 0 ? 'filt-lab' : 'filt-ctl')),
+  barKids.map((el) => el.className).join(' | '),
+);
+check(
+  'the ROUND row: label cell + a control cell holding both number inputs',
+  barKids[0]?.textContent.trim() === 'Round' &&
+    !!barKids[1]?.querySelector('#filt-round-from') &&
+    !!barKids[1]?.querySelector('#filt-round-to'),
+  barKids.slice(0, 2).map((el) => `${el.className}:${el.textContent.trim()}`).join(' | '),
+);
+
+// Saved-preset row structure (the owner's screenshot: "Saved fi" sat on
+// its 90px floor while the option reads "Saved filters…", and Reset
+// orphaned alone on the next line). Now the select owns its OWN line
+// (flex-basis 100% — stylesheet pin below) and the four actions ride ONE
+// flex item, so the buttons can never split across lines. jsdom has no
+// layout — the DOM structure + the CSS rules are the pins.
+const savedRow = panel?.querySelector('[aria-label="Saved filter presets"]');
+const savedSelect = savedRow?.querySelector(':scope > .lm-saved');
+const savedActions = savedRow?.querySelector(':scope > .lm-saved-actions');
+check(
+  'the saved select is its own full-width line cell of the saved row',
+  !!savedSelect &&
+    savedSelect.parentElement === savedRow &&
+    savedSelect.querySelector('option')?.textContent === 'Saved filters…',
+  savedRow ? `${savedRow.children.length} children` : 'no saved row',
+);
+const actionBtns = savedActions ? [...savedActions.children] : [];
+check(
+  'Apply · Save · × · Reset ride ONE group in order (no orphaned Reset)',
+  actionBtns.length === 4 &&
+    actionBtns.every((b) => b.tagName === 'BUTTON') &&
+    actionBtns[0].textContent.includes('Apply') &&
+    actionBtns[1].textContent.includes('Save') &&
+    !!actionBtns[2].querySelector('.codicon-close') &&
+    actionBtns[3].textContent.includes('Reset'),
+  actionBtns.map((b) => `${b.tagName}:${b.textContent.trim()}`).join(' | '),
+);
+check(
+  'no button outside the group in the saved row (nothing can wrap alone)',
+  !!savedRow && !savedRow.querySelector(':scope > button'),
+  savedRow
+    ? [...savedRow.children].map((el) => el.className || el.tagName).join(' | ')
+    : 'no saved row',
+);
+
+// Stylesheet pins (jsdom has no layout — the rules are the pins): the
+// two-column grid, the ONE label style, the single 8px gap scale and the
+// control-column fill rules.
+const cssM3b = readFileSync('public/style-m3b.css', 'utf8');
+const cssMain = readFileSync('public/style.css', 'utf8');
+const ruleBody = (css, sel) => {
+  const i = css.indexOf(sel);
+  if (i < 0) return null;
+  const open = css.indexOf('{', i);
+  if (open < 0) return null;
+  const close = css.indexOf('}', open);
+  return close < 0 ? null : css.slice(open + 1, close);
+};
+const filtBarRule = ruleBody(cssM3b, '.filt-bar {') || '';
+check(
+  '.filt-bar is a two-column grid (label column + control column)',
+  /display:\s*grid/.test(filtBarRule) && /max-content minmax\(0, 1fr\)/.test(filtBarRule),
+  filtBarRule || 'no .filt-bar rule',
+);
+check(
+  'one consistent 8px gap scale for the panel (scroll / panel / filter bar — the 6px stack is gone)',
+  /gap:\s*8px/.test(filtBarRule) &&
+    /gap:\s*8px/.test(ruleBody(cssMain, '.lm-filter-panel {') || '') &&
+    /gap:\s*8px/.test(ruleBody(cssMain, '.lm-scroll {') || ''),
+  `filt-bar: ${filtBarRule}`,
+);
+const labRule = ruleBody(cssM3b, '.filt-lab {') || '';
+check(
+  'ONE label style for every field (.filt-lab — the .filt-grp/.filt-line split is gone)',
+  /font-size:\s*0\.76em/.test(labRule) &&
+    /text-transform:\s*uppercase/.test(labRule) &&
+    !/\.filt-grp\s*\{/.test(cssM3b) &&
+    !/\.filt-line\s*\{/.test(cssM3b),
+  labRule || 'no .filt-lab rule',
+);
+check(
+  'the saved select fills its own line (full width — never "Saved fi")',
+  /flex:\s*1 1 100%/.test(ruleBody(cssMain, '.lm-saved {') || '') &&
+    ruleBody(cssMain, '.lm-saved-actions {') !== null,
+  ruleBody(cssMain, '.lm-saved {') || 'no .lm-saved rule',
+);
+check(
+  'selects fill the control column; the spinner pairs split it evenly',
+  /flex:\s*1 1 auto/.test(ruleBody(cssM3b, '.filt-ctl select.input {') || '') &&
+    /flex:\s*1 1 0/.test(ruleBody(cssM3b, '.filt-num {') || '') &&
+    !/width:\s*86px/.test(ruleBody(cssM3b, '.filt-num {') || ''),
+  ruleBody(cssM3b, '.filt-num {') || 'no .filt-num rule',
+);
+
+// --- G2: conditional fields — the PRESENCE + CLEARING half ------------------
+// The default mount above hides every value field (pinned), so the
+// presence, clearing and URL-write pins need an endpoint-scoped mount:
+// harness8 starts on an inapplicable-PLAYER arrival (round_starts — the
+// key must clear at parse and the rail must NOT reveal), then turns
+// kills on. Unlike harness1's STATIC query (the §H quirk — its toggles
+// re-derive from the mount query), harness8's nav recorder FEEDS the
+// written query back into the prop: the real URL → prop loop, so the
+// toggle-off pins exercise the real end-to-end path. Its navs land in
+// their OWN __nav8 — harness1's __nav counts stay untouched.
+console.log('G2. conditional fields: presence under kills, clearing at arrival and on the URL write');
+const target8 = document.createElement('div');
+document.body.appendChild(target8);
+const harness8Src = `<script>
+  import Replay from './views/Replay.js';
+  let query = $state({ cat: 'round_starts', player: '76561198012345678' });
+  globalThis.__setQuery8 = (q) => (query = q);
+</script>
+<Replay
+  id={1}
+  {query}
+  nav={(h) => {
+    globalThis.__nav8 = (globalThis.__nav8 || []).concat(h);
+    const qi = h.indexOf('?');
+    const q = {};
+    if (qi >= 0) for (const [k, v] of new URLSearchParams(h.slice(qi + 1))) q[k] = v;
+    globalThis.__setQuery8(q);
+  }}
+/>`;
+const harness8Out = join(dir, 'harness8.js');
+svelteCompile(harness8Src, 'harness8.svelte', harness8Out);
+const mod8 = await import(pathToFileURL(harness8Out).href);
+mount(mod8.default, { target: target8 });
+await sleep();
+await sleep();
+
+// The mount arrival carries ONLY an inapplicable key (player under
+// round_starts — no endpoints): parse CLEARS it, so the arrival IS the
+// default — the rail stays collapsed (the DOM twin of the unit's
+// "inapplicable-only payload never reveals" pin) and there is no
+// invisible player filter hiding rows.
+const railToggle8 = target8.querySelector('.replay-topbar .side-toggle');
+check(
+  'an inapplicable-only arrival parses to default → the rail never reveals',
+  !!railToggle8 && !target8.querySelector('.replay-side'),
+  railToggle8 ? 'rail up' : 'no toggle',
+);
+click(railToggle8);
+await sleep();
+const rail8 = target8.querySelector('.replay-side');
+const filtersBtn8 = rail8?.querySelector('.lm-toolbar button[aria-expanded]');
+check('the harness8 rail opens for the filter surface', !!rail8 && !!filtersBtn8);
+click(filtersBtn8);
+await sleep();
+const panel8 = rail8?.querySelector('.lm-filter-panel');
+check('its filter panel opens', !!panel8);
+
+// Turn kills on: every conditional field becomes applicable and renders,
+// and the mount's CLEARED player must NOT resurrect (hide-and-clear —
+// had it been retained, the seeded id would show here).
+globalThis.__setQuery8({ cat: 'round_starts,kills' });
+await sleep();
+const bar8 = panel8?.querySelector('.filt-bar');
+const presenceIds = [
+  '#filt-player', '#filt-side', '#filt-team', '#filt-weapon',
+  '#filt-dist-min', '#filt-dist-max', '#filt-hs',
+];
+check(
+  'kills on: every conditional field renders',
+  !!bar8 && presenceIds.every((s) => bar8.querySelector(s)),
+  bar8 ? `${presenceIds.filter((s) => !bar8.querySelector(s)).join(' missing')}` : 'no bar',
+);
+check(
+  "the arrival's inapplicable player value cleared (All — never the seeded id)",
+  bar8?.querySelector('#filt-player')?.value === '',
+  bar8?.querySelector('#filt-player')?.value ?? 'no select',
+);
+check(
+  'the field rows read ROUND · PLAYER · SIDE · TEAM · WEAPON · DIST · HEADSHOTS ONLY (one label style)',
+  (bar8 ? [...bar8.children].filter((el, i) => i % 2 === 0).map((el) => el.textContent.trim()) : []).join(' · ') ===
+    'Round · Player · Side · Team · Weapon · Dist · Headshots only',
+  (bar8 ? [...bar8.children].map((el) => el.textContent.trim()) : []).join(' · '),
+);
+
+// The pins moved from the default mount (they need an applicable
+// selection now): field presence + structure + option vocabularies.
+check(
+  'dist min/max inputs replace the single max field',
+  !!bar8?.querySelector('#filt-dist-min') && !!bar8?.querySelector('#filt-dist-max'),
+);
+check(
+  'no tick window and no damage range (under a selection that shows fields)',
+  !!bar8 &&
+    !bar8.querySelector('[aria-label="From tick"]') &&
+    !bar8.querySelector('[aria-label="To tick"]') &&
+    !bar8.querySelector('[aria-label="Minimum damage"]') &&
+    !bar8.querySelector('[aria-label="Maximum damage"]') &&
+    !bar8.querySelector('#filt-dist'),
+);
+const cellOf8 = (sel) => bar8?.querySelector(sel)?.closest('.filt-ctl') || null;
+const labOf8 = (cell) => cell?.previousElementSibling || null;
+const playerCell8 = cellOf8('#filt-player');
+const weaponCell8 = cellOf8('#filt-weapon');
+check(
+  'player and weapon selects each own their own control cell (grid pair, never a ragged inline row)',
+  !!playerCell8 && !!weaponCell8 && playerCell8 !== weaponCell8 &&
+    labOf8(playerCell8)?.classList.contains('filt-lab') &&
+    labOf8(playerCell8)?.textContent.trim() === 'Player' &&
+    labOf8(weaponCell8)?.textContent.trim() === 'Weapon',
+  `${labOf8(playerCell8)?.className} | ${labOf8(weaponCell8)?.className}`,
+);
+const weaponOpts8 = [...(bar8?.querySelector('#filt-weapon')?.options || [])].map((o) => o.value);
 check(
   'weapon options list each weapon ONCE, by display name (events.weapon spelling)',
-  weaponOpts.includes('Desert Eagle') && weaponOpts.includes('AK-47') &&
-    !weaponOpts.includes('deagle') && !weaponOpts.includes('ak47'),
-  weaponOpts.slice(0, 8).join(','),
+  weaponOpts8.includes('Desert Eagle') && weaponOpts8.includes('AK-47') &&
+    !weaponOpts8.includes('deagle') && !weaponOpts8.includes('ak47'),
+  weaponOpts8.slice(0, 8).join(','),
 );
 check(
   'weapon option values are unique (no double counting)',
-  new Set(weaponOpts).size === weaponOpts.length,
-  `${new Set(weaponOpts).size} vs ${weaponOpts.length}`,
+  new Set(weaponOpts8).size === weaponOpts8.length,
+  `${new Set(weaponOpts8).size} vs ${weaponOpts8.length}`,
 );
-check('headshot toggle kept', !!bar?.querySelector('.filt-check'));
+check('headshot toggle kept (its own labeled row)', !!bar8?.querySelector('#filt-hs[type="checkbox"]'));
 
-// Side + Team — the heatmap-mirror keys, each on its own row like
-// Player/Weapon, carrying the design-language classes: Side's options
-// are SIDE colors (.side-ct/.side-t — the side AT that moment, swaps at
-// halftime), Team's are IDENTITY colors (.team-start-ct/.team-start-t —
-// the start side, constant; the team names are not in FilterBar's
-// context, so the options spell the identity out — never pattern text).
-const sideSel = bar?.querySelector('#filt-side');
-const teamSel = bar?.querySelector('#filt-team');
+// Side + Team — the heatmap-mirror keys, carrying the design-language
+// classes: Side's options are SIDE colors (.side-ct/.side-t — the side
+// AT that moment, swaps at halftime), Team's are IDENTITY colors
+// (.team-start-ct/.team-start-t — the start side, constant; the team
+// names are not in FilterBar's context, so the options spell the
+// identity out — never pattern text).
+const sideSel8 = bar8?.querySelector('#filt-side');
+const teamSel8 = bar8?.querySelector('#filt-team');
 check(
-  'Side and Team selects render beside the Player/Weapon rows',
-  !!sideSel &&
-    !!teamSel &&
-    sideSel.closest('label')?.classList.contains('filt-line') &&
-    teamSel.closest('label')?.classList.contains('filt-line'),
-  `${sideSel?.id} | ${teamSel?.id}`,
+  'Side and Team selects render in their own control cells',
+  !!sideSel8 && !!teamSel8 &&
+    sideSel8.closest('.filt-ctl') && teamSel8.closest('.filt-ctl') &&
+    labOf8(sideSel8.closest('.filt-ctl'))?.textContent.trim() === 'Side' &&
+    labOf8(teamSel8.closest('.filt-ctl'))?.textContent.trim() === 'Team',
+  `${sideSel8?.id} | ${teamSel8?.id}`,
 );
 check(
   'Side options carry the side-color classes (color = side at that moment)',
-  sideSel?.querySelector('option[value=""]')?.textContent === 'All' &&
-    sideSel?.querySelector('option[value="ct"]')?.classList.contains('side-ct') &&
-    sideSel?.querySelector('option[value="t"]')?.classList.contains('side-t'),
-  [...(sideSel?.options || [])].map((o) => `${o.value}:${o.className}`).join(', '),
+  sideSel8?.querySelector('option[value=""]')?.textContent === 'All' &&
+    sideSel8?.querySelector('option[value="ct"]')?.classList.contains('side-ct') &&
+    sideSel8?.querySelector('option[value="t"]')?.classList.contains('side-t'),
+  [...(sideSel8?.options || [])].map((o) => `${o.value}:${o.className}`).join(', '),
 );
 check(
   'Team options carry the identity classes and spell the identity out',
-  teamSel?.querySelector('option[value="ct"]')?.classList.contains('team-start-ct') &&
-    teamSel?.querySelector('option[value="t"]')?.classList.contains('team-start-t') &&
-    teamSel?.querySelector('option[value="ct"]')?.textContent === 'Started CT' &&
-    teamSel?.querySelector('option[value="t"]')?.textContent === 'Started T',
-  [...(teamSel?.options || [])].map((o) => `${o.value}:${o.textContent}`).join(', '),
+  teamSel8?.querySelector('option[value="ct"]')?.classList.contains('team-start-ct') &&
+    teamSel8?.querySelector('option[value="t"]')?.classList.contains('team-start-t') &&
+    teamSel8?.querySelector('option[value="ct"]')?.textContent === 'Started CT' &&
+    teamSel8?.querySelector('option[value="t"]')?.textContent === 'Started T',
+  [...(teamSel8?.options || [])].map((o) => `${o.value}:${o.textContent}`).join(', '),
 );
-// Selecting writes the keys into the URL; FilterBar's LOCAL filter copy
-// accumulates across commits (unlike the category checkboxes, which
-// re-derive from the static harness query — the §H quirk), so Side then
-// Team lands BOTH keys in one navigation.
-const navBeforeSide = (globalThis.__nav || []).length;
-sideSel.value = 'ct';
-sideSel.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+
+// Selecting writes the keys into the URL; harness8's nav feeds the prop
+// back (the real loop), and the commit still merges the whole local copy,
+// so Side then Team lands BOTH keys in one navigation.
+const navBeforeSide8 = (globalThis.__nav8 || []).length;
+sideSel8.value = 'ct';
+sideSel8.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
 await sleep();
-const navSide = (globalThis.__nav || []).length;
+const navSide8 = (globalThis.__nav8 || []).length;
 check(
   'selecting Side writes side=ct into the URL',
-  navSide > navBeforeSide && (globalThis.__nav || [])[navSide - 1]?.includes('side=ct'),
-  (globalThis.__nav || [])[navSide - 1] || 'no navigation',
+  navSide8 > navBeforeSide8 && (globalThis.__nav8 || [])[navSide8 - 1]?.includes('side=ct'),
+  (globalThis.__nav8 || [])[navSide8 - 1] || 'no navigation',
 );
-teamSel.value = 't';
-teamSel.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+teamSel8.value = 't';
+teamSel8.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
 await sleep();
-const navTeam = (globalThis.__nav || []).length;
-const lastTeamURL = (globalThis.__nav || [])[navTeam - 1] || '';
+const navTeam8 = (globalThis.__nav8 || []).length;
+const lastTeamURL8 = (globalThis.__nav8 || [])[navTeam8 - 1] || '';
 check(
   'selecting Team accumulates: the URL carries BOTH keys',
-  navTeam > navSide && lastTeamURL.includes('side=ct') && lastTeamURL.includes('team=t'),
-  lastTeamURL,
+  navTeam8 > navSide8 && lastTeamURL8.includes('side=ct') && lastTeamURL8.includes('team=t'),
+  lastTeamURL8,
+);
+
+// A weapon set while kills are ON serializes (applicable → kept)…
+const weaponSel8 = bar8?.querySelector('#filt-weapon');
+weaponSel8.value = 'AWP';
+weaponSel8.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+await sleep();
+const lastWeaponURL8 = (globalThis.__nav8 || []).at(-1) || '';
+check(
+  'a weapon set while kills are on serializes into the URL',
+  lastWeaponURL8.includes('weapon=AWP'),
+  lastWeaponURL8,
+);
+// …and toggling kills OFF must drop it again — the hide-and-CLEAR
+// ruling at the WRITE choke point (serializeLandmarkFilter prunes
+// against the payload's own cats): side/team/weapon all leave with it.
+const catsBtn8 = panel8?.querySelector('.lm-cats')?.querySelector('button');
+click(catsBtn8);
+await sleep();
+const catBoxes8 = panel8 ? [...panel8.querySelectorAll('.lm-cat-menu input[type="checkbox"]')] : [];
+const killsBox8 = catBoxes8.find((cb) => catLabel(cb) === 'Kills');
+check('the categories menu offers the Kills box to toggle off', !!killsBox8);
+killsBox8?.click();
+await sleep();
+const lastOffURL8 = (globalThis.__nav8 || []).at(-1) || '';
+check(
+  'toggling kills OFF drops the now-inapplicable keys from the URL (weapon gone — clear, not retain)',
+  !lastOffURL8.includes('weapon=') &&
+    !lastOffURL8.includes('side=') &&
+    !lastOffURL8.includes('team=') &&
+    !lastOffURL8.includes('player='),
+  lastOffURL8,
+);
+// The nav above fed the landing query back into the prop: the hidden
+// fields unmount…
+await sleep();
+check(
+  'the landing URL hides every conditional field again (ROUND only)',
+  !!bar8?.querySelector('#filt-round-from') &&
+    !bar8.querySelector('#filt-player') &&
+    !bar8.querySelector('#filt-side') &&
+    !bar8.querySelector('#filt-team') &&
+    !bar8.querySelector('#filt-weapon') &&
+    !bar8.querySelector('#filt-hs'),
+  bar8 ? [...bar8.children].map((el) => el.className).join(' | ') : 'no bar',
+);
+// …and turning kills back on must NOT resurrect the cleared values —
+// FilterBar's seeded local copy re-synced from the cleared prop.
+const killsBox8b = (panel8 ? [...panel8.querySelectorAll('.lm-cat-menu input[type="checkbox"]')] : [])
+  .find((cb) => catLabel(cb) === 'Kills');
+killsBox8b?.click();
+await sleep();
+check(
+  "re-enabling kills renders the fields with the CLEARED values (the local copy can't hold a cleared key)",
+  bar8?.querySelector('#filt-weapon')?.value === '' &&
+    bar8?.querySelector('#filt-side')?.value === '' &&
+    bar8?.querySelector('#filt-team')?.value === '' &&
+    bar8?.querySelector('#filt-player')?.value === '',
+  `weapon=${bar8?.querySelector('#filt-weapon')?.value} side=${bar8?.querySelector('#filt-side')?.value}`,
 );
 
 console.log('I. theater mode: the chrome hides, the stage keeps its exit button, popovers reset');

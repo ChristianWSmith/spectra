@@ -3,10 +3,17 @@
   // landmark feed: event categories are the feed's filter model (there is
   // no kind select here) — see lib/replay/landmarks.js CATEGORIES.
   //
+  // Conditional fields (the hide-and-CLEAR ruling): the panel renders only
+  // the fields that apply to the parent's own category selection — the
+  // derivation is landmarks.applicableFilterFields (canonical home; this
+  // component only CONSUMES it) and normalize() below clears a value whose
+  // field does not apply, so the local copy can never hold a cleared key.
+  // Categories/ROUND/saved chrome live on the parent and are always on.
+  //
   // Props:
-  //   filter   — {roundFrom, roundTo, steamId, side, team, weapon, distMin, distMax,
-  //               headshotOnly, bbox:{minX,minY,maxX,maxY}}
-  //              (the typed/scope subset — cats live on the parent;
+  //   filter   — {cats, roundFrom, roundTo, steamId, side, team, weapon,
+  //               distMin, distMax, headshotOnly, bbox:{minX,minY,maxX,maxY}}
+  //              (cats rides the prop — it drives the conditional fields;
   //              Q3a removed the gname picker).
   //              side/team are the heatmap-mirror keys ('' | 'ct' | 't' —
   //              landmarks.sideVal is the ONE spelling of the rule).
@@ -22,7 +29,11 @@
   //              reset that also clears the category selection).
   import { getScoreboard } from '../services.js';
   import { listedPlayers } from '../players.js';
-  import { sideVal } from '../replay/landmarks.js';
+  import {
+    sideVal,
+    applicableFilterFields,
+    clearInapplicableFields,
+  } from '../replay/landmarks.js';
 
   let { filter = {}, onchange = () => {}, id = 0, showReset = true } = $props();
 
@@ -114,6 +125,14 @@
   let f = $state(seedFilter());
   let players = $state([]);
 
+  // Conditional fields — WHICH rows render. The derivation lives in
+  // replay/landmarks.js (canonical home beside CATEGORIES; this component
+  // never re-derives it): a field that does not apply to the parent's
+  // category selection is not rendered at all, and normalize() clears its
+  // value too — hide AND CLEAR, never retain (a hidden-but-retained value
+  // would keep invisibly filtering the list, markers and URL).
+  const fields = $derived(applicableFilterFields(filter.cats));
+
   function num(v) {
     const n = Number(v);
     return Number.isFinite(n) && n > 0 ? n : 0;
@@ -130,7 +149,7 @@
   // partial objects) into a complete filter.
   function normalize(src) {
     const s = src || {};
-    return {
+    const out = {
       roundFrom: roundNum(s.roundFrom),
       roundTo: roundNum(s.roundTo),
       steamId: s.steamId || s.player || '',
@@ -142,6 +161,12 @@
       headshotOnly: !!s.headshotOnly,
       bbox: s.bbox || null,
     };
+    // Seeding RE-CLEARS too (belt beside the parent's parse choke point):
+    // the local copy must never hold a value the current cats deem
+    // inapplicable — a seed or prop re-sync can therefore never resurrect
+    // a cleared key. A bare typed object (no cats — nothing to derive
+    // applicability from) is taken at face value.
+    return s.cats ? clearInapplicableFields(out, s.cats) : out;
   }
 
   // Re-seed from the prop whenever the parent replaces the object (pending
@@ -217,9 +242,16 @@
   }
 </script>
 
+<!-- The rows are a two-column GRID (style-m3b .filt-bar): a .filt-lab
+     label cell + a .filt-ctl control cell per field, so every control's
+     left edge aligns (the old inline-flex rows started right after their
+     own ragged label). Every row is a lab/ctl PAIR — an empty label cell
+     for the bbox chip and Reset — and rows whose field does not apply to
+     the parent's category selection are not rendered at all (fields —
+     landmarks.applicableFilterFields, the hide-and-CLEAR ruling). -->
 <div class="toolbar filt-bar" role="group" aria-label="Event filters">
-  <span class="filt-grp">
-    Round
+  <span class="filt-lab">Round</span>
+  <span class="filt-ctl">
     <input
       class="input filt-num"
       id="filt-round-from"
@@ -243,16 +275,17 @@
     />
   </span>
 
-  <!-- Player and weapon each own a full row of the filter bar. -->
-  <label class="filt-grp filt-line" for="filt-player">
-    Player
-    <select class="input" id="filt-player" value={f.steamId} onchange={(e) => set('steamId', e.currentTarget.value)}>
-      <option value="">All</option>
-      {#each players as p (p.steamId)}
-        <option value={p.steamId}>{p.name}</option>
-      {/each}
-    </select>
-  </label>
+  {#if fields.player}
+    <label class="filt-lab" for="filt-player">Player</label>
+    <span class="filt-ctl">
+      <select class="input" id="filt-player" value={f.steamId} onchange={(e) => set('steamId', e.currentTarget.value)}>
+        <option value="">All</option>
+        {#each players as p (p.steamId)}
+          <option value={p.steamId}>{p.name}</option>
+        {/each}
+      </select>
+    </span>
+  {/if}
 
   <!-- Side and Team — the heatmap-mirror keys, each on its own row like
        Player/Weapon. Side = the side AT the event's round (swaps at
@@ -267,83 +300,100 @@
        neutral. Both carry the exact ct/t wire values only
        (landmarks.sideVal); both are plain filter state (they never
        position the replay — only ?tick= does). -->
-  <label class="filt-grp filt-line" for="filt-side">
-    Side
-    <select class="input" id="filt-side" value={f.side} onchange={(e) => set('side', e.currentTarget.value)}>
-      <option value="">All</option>
-      <option value="ct" class="side-ct">CT</option>
-      <option value="t" class="side-t">T</option>
-    </select>
-  </label>
+  {#if fields.side}
+    <label class="filt-lab" for="filt-side">Side</label>
+    <span class="filt-ctl">
+      <select class="input" id="filt-side" value={f.side} onchange={(e) => set('side', e.currentTarget.value)}>
+        <option value="">All</option>
+        <option value="ct" class="side-ct">CT</option>
+        <option value="t" class="side-t">T</option>
+      </select>
+    </span>
+  {/if}
 
-  <label class="filt-grp filt-line" for="filt-team">
-    Team
-    <select class="input" id="filt-team" value={f.team} onchange={(e) => set('team', e.currentTarget.value)}>
-      <option value="">All</option>
-      <option value="ct" class="team-start-ct">Started CT</option>
-      <option value="t" class="team-start-t">Started T</option>
-    </select>
-  </label>
+  {#if fields.team}
+    <label class="filt-lab" for="filt-team">Team</label>
+    <span class="filt-ctl">
+      <select class="input" id="filt-team" value={f.team} onchange={(e) => set('team', e.currentTarget.value)}>
+        <option value="">All</option>
+        <option value="ct" class="team-start-ct">Started CT</option>
+        <option value="t" class="team-start-t">Started T</option>
+      </select>
+    </span>
+  {/if}
 
-  <label class="filt-grp filt-line" for="filt-weapon">
-    Weapon
-    <select class="input" id="filt-weapon" value={f.weapon} onchange={(e) => set('weapon', e.currentTarget.value)}>
-      <option value="">All</option>
-      {#each weapons as w (w)}
-        <option value={w}>{w}</option>
-      {/each}
-    </select>
-  </label>
+  {#if fields.weapon}
+    <label class="filt-lab" for="filt-weapon">Weapon</label>
+    <span class="filt-ctl">
+      <select class="input" id="filt-weapon" value={f.weapon} onchange={(e) => set('weapon', e.currentTarget.value)}>
+        <option value="">All</option>
+        {#each weapons as w (w)}
+          <option value={w}>{w}</option>
+        {/each}
+      </select>
+    </span>
+  {/if}
 
-  <span class="filt-grp">
-    Dist
-    <input
-      class="input filt-num"
-      id="filt-dist-min"
-      type="number"
-      min="0"
-      placeholder="min"
-      aria-label="Minimum distance"
-      value={f.distMin || ''}
-      onchange={(e) => onNum('distMin', e)}
-    />
-    <span class="filt-sep">–</span>
-    <input
-      class="input filt-num"
-      id="filt-dist-max"
-      type="number"
-      min="0"
-      placeholder="max"
-      aria-label="Maximum distance"
-      value={f.distMax || ''}
-      onchange={(e) => onNum('distMax', e)}
-    />
-  </span>
+  {#if fields.dist}
+    <span class="filt-lab">Dist</span>
+    <span class="filt-ctl">
+      <input
+        class="input filt-num"
+        id="filt-dist-min"
+        type="number"
+        min="0"
+        placeholder="min"
+        aria-label="Minimum distance"
+        value={f.distMin || ''}
+        onchange={(e) => onNum('distMin', e)}
+      />
+      <span class="filt-sep">–</span>
+      <input
+        class="input filt-num"
+        id="filt-dist-max"
+        type="number"
+        min="0"
+        placeholder="max"
+        aria-label="Maximum distance"
+        value={f.distMax || ''}
+        onchange={(e) => onNum('distMax', e)}
+      />
+    </span>
+  {/if}
 
-  <label class="filt-check">
-    <input
-      type="checkbox"
-      checked={f.headshotOnly}
-      onchange={(e) => set('headshotOnly', e.currentTarget.checked)}
-    />
-    Headshots only
-  </label>
+  {#if fields.headshot}
+    <label class="filt-lab" for="filt-hs">Headshots only</label>
+    <span class="filt-ctl">
+      <input
+        type="checkbox"
+        id="filt-hs"
+        checked={f.headshotOnly}
+        onchange={(e) => set('headshotOnly', e.currentTarget.checked)}
+      />
+    </span>
+  {/if}
 
   {#if f.bbox}
-    <span
-      class="chip filt-bbox"
-      title="Position filter: x {Math.round(f.bbox.minX)}…{Math.round(f.bbox.maxX)}, y {Math.round(f.bbox.minY)}…{Math.round(f.bbox.maxY)} (world units)"
-    >
-      bbox {Math.round(f.bbox.minX)},{Math.round(f.bbox.minY)}–{Math.round(f.bbox.maxX)},{Math.round(f.bbox.maxY)}
-      <button
-        class="filt-x"
-        aria-label="Clear position filter"
-        onclick={clearBbox}
-      ><span class="codicon codicon-close"></span></button>
+    <span class="filt-lab"></span>
+    <span class="filt-ctl">
+      <span
+        class="chip filt-bbox"
+        title="Position filter: x {Math.round(f.bbox.minX)}…{Math.round(f.bbox.maxX)}, y {Math.round(f.bbox.minY)}…{Math.round(f.bbox.maxY)} (world units)"
+      >
+        bbox {Math.round(f.bbox.minX)},{Math.round(f.bbox.minY)}–{Math.round(f.bbox.maxX)},{Math.round(f.bbox.maxY)}
+        <button
+          class="filt-x"
+          aria-label="Clear position filter"
+          onclick={clearBbox}
+        ><span class="codicon codicon-close"></span></button>
+      </span>
     </span>
   {/if}
 
   {#if showReset}
-    <button class="btn" onclick={reset}>Reset</button>
+    <span class="filt-lab"></span>
+    <span class="filt-ctl">
+      <button class="btn" onclick={reset}>Reset</button>
+    </span>
   {/if}
 </div>

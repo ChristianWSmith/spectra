@@ -22,13 +22,20 @@
 //                        route query (deep links, refresh, back/forward)
 //                        and shouldRevealFeed, the feed-reveal-on-arrival
 //                        rule over it.
+//   6. conditional fields — applicableFilterFields /
+//                        clearInapplicableFields: which FilterBar fields
+//                        can constrain a category set at all, and the
+//                        clearing rule both choke points (parse and
+//                        serialize) apply so a hidden field can never
+//                        keep invisibly filtering (owner ruling).
 //
 // NOT here (the feed RUNTIME lives in lib/replay/feed.js — the one
 // filter → query composer, the source descriptors with their paging and
 // merge ranks, the ?sel= resolution and the export projection): this
 // file is the VOCABULARY — registry, buckets, row shapes, filter model
 // — and the derivations over them (typedKindsFor / killRoleFor /
-// enabledSources / rowCategory / enabledClaimOf).
+// enabledSources / rowCategory / enabledClaimOf /
+// applicableFilterFields).
 //
 // Unit-tested by src/lib/landmarks.test.js (the lib test glob is
 // src/lib/*.test.js, so the fixture lives one level up); the feed
@@ -445,6 +452,139 @@ export function enabledSources(catIds) {
   };
 }
 
+// --- Conditional filter fields (applicability + clearing) ----------------------
+//
+// The product-owner ruling behind both helpers below: "many of these
+// filter options only apply to certain subsets of events, so it's bad to
+// show all of them all the time" — a field that does not apply to the
+// currently enabled categories is REMOVED from the panel AND its value
+// is DROPPED from the filter (the owner explicitly chose clear over
+// retain: a hidden-but-retained value keeps invisibly filtering the
+// list, the scrubber markers and the URL).
+//
+// The kind sets are derived from the STORE's own clauses
+// (internal/store/queries.go eventWhere / endpointScopeClause /
+// heatmapScopedKinds) and the row writers in internal/extract — never
+// re-expressed in a component. FilterBar only CONSUMES
+// applicableFilterFields; the parse/serialize choke points below are the
+// only places clearInapplicableFields runs.
+
+// ENDPOINT_KINDS — every typed kind whose rows carry an attacker/victim
+// endpoint, i.e. the kinds the PLAYER filter can actually constrain
+// (eventWhere: `e.attacker = ? OR e.victim = ?`). Write sites in
+// internal/extract: agg.kill/hurt/blind write Attacker+Victim,
+// agg.grenadeBlast/grenadeThrown/decoyLanded write the thrower,
+// agg.weaponDrop/weaponPickedUp and the bomb lifecycle
+// (plant/defuse/attempts/drop/pickup) write the actor, and
+// agg.connect/disconnect stamp the player key. The COMPLEMENT of this
+// set (pinned by the unit test) is the four kinds that store NO player:
+// round_start / round_end (agg.roundStart/roundEnd — playerless rows),
+// bomb_explode (the bomb entity) and grenade_bounce (the projectile
+// only). Footsteps rides PLAYER through the sound SOURCE instead — see
+// applicableFilterFields.
+export const ENDPOINT_KINDS = [
+  'kill',
+  'damage',
+  'blind',
+  'grenade',
+  'grenade_throw',
+  'grenade_land',
+  'weapon_drop',
+  'weapon_pickup',
+  'bomb_plant',
+  'bomb_defuse',
+  'bomb_plant_begin',
+  'bomb_plant_abort',
+  'bomb_defuse_start',
+  'bomb_defuse_abort',
+  'bomb_drop',
+  'bomb_pickup',
+  'player_connect',
+  'player_disconnect',
+];
+
+// SCOPED_KINDS — every typed kind the SIDE/TEAM keys constrain: THE
+// mirror of store queries.go heatmapScopedKinds + heatmapScopedGrenades
+// (kill, damage and the four grenade projectile rows — throw/det/bounce/
+// land, "same thrower, same side"). Every OTHER kind is an UNSCOPED
+// no-op under endpointScopeClause's `kind NOT IN (…)` arm — for pure
+// round_starts/connects/buys/footsteps a side/team value filters
+// nothing, so those fields hide.
+export const SCOPED_KINDS = [
+  'kill',
+  'damage',
+  'grenade',
+  'grenade_throw',
+  'grenade_bounce',
+  'grenade_land',
+];
+
+// WEAPON_KINDS — every typed kind whose row carries a weapon value, so
+// the WEAPON select can constrain it (eventWhere: `e.weapon = ?`).
+// Write sites in internal/extract: agg.kill (k.weapon), agg.hurt
+// (damage), agg.grenadeBlast / grenadeThrown / grenadeBounced +
+// handlers.decoyLanded (the grenade family), agg.inferDeathDrops output
+// (weapon_drop), agg.weaponPickedUp (weapon_pickup) and agg.bombExploded
+// ("C4"). The COMPLEMENT (pinned) is the playerless/player-keyed kinds
+// that store no weapon: blind, the bomb plant/defuse lifecycle (drop/
+// pickup included — the dropped C4 row carries no weapon column),
+// connect/disconnect and the round rows. The generic `buys` category
+// has NO kinds at all, so buys-only exposes no weapon either (the
+// weapon clause only ever reaches typed rows).
+export const WEAPON_KINDS = [
+  'kill',
+  'damage',
+  'grenade',
+  'grenade_throw',
+  'grenade_bounce',
+  'grenade_land',
+  'weapon_drop',
+  'weapon_pickup',
+  'bomb_explode',
+];
+
+// applicableFilterFields — THE conditional-field derivation: which
+// FilterBar fields apply to a category selection (pure; unit-tested by
+// src/lib/landmarks.test.js against the owner's rule table). Keys are
+// the field names, `true` = the field applies:
+//
+//   player    — any enabled kind carries attacker/victim endpoints
+//               (round_start/round_end carry NONE — so this hides under
+//               the default selection), OR the sound source is enabled
+//               (footsteps rows are per-player and the feed honors the
+//               player key on that source).
+//   side/team — any enabled kind is endpoint-scoped in
+//               store.endpointScopeClause (SCOPED_KINDS — kill/damage/
+//               grenade family; no-ops for everything else → hide).
+//   weapon    — any enabled kind carries a weapon value (WEAPON_KINDS).
+//   dist      — the `kill` kind is enabled (distance is written only on
+//               kill rows).
+//   headshot  — the `kill` kind is enabled (headshot only written on
+//               kill rows).
+//   bbox      — the event source is enabled (the bbox predicate lives in
+//               eventWhere over typed rows only; the chip additionally
+//               keeps its own `{#if f.bbox}` value check).
+//
+// ALWAYS visible (never keyed off the selection): the Categories
+// dropdown, ROUND from–to, the saved-filter chrome and Reset. Accepts
+// any catIds array shape (unknown ids are dropped; a missing/empty
+// selection → nothing applies — no throw).
+export function applicableFilterFields(catIds) {
+  const ids = catIds || [];
+  const kinds = typedKindsFor(ids);
+  const src = enabledSources(ids);
+  const any = (list) => kinds.some((k) => list.includes(k));
+  return {
+    player: any(ENDPOINT_KINDS) || src.sound,
+    side: any(SCOPED_KINDS),
+    team: any(SCOPED_KINDS),
+    weapon: any(WEAPON_KINDS),
+    dist: kinds.includes('kill'),
+    headshot: kinds.includes('kill'),
+    bbox: src.event,
+  };
+}
+
 // killRoleFor — THE player-filter role derivation for kind='kill' rows
 // (pure; unit-tested by src/lib/landmarks.test.js, applied by
 // store.queryEvents): Kills-only means "X's kills" (attacker),
@@ -664,8 +804,10 @@ export const DEFAULT_FILTER = {
   //          with (constant across halftime).
   // Exact 'ct'/'t' wire spellings only (malformed → '' at parse, the
   // store's literal discipline); plain filter state — they serialize
-  // whenever set (shouldRevealFeed rides that), and neither ever
-  // positions the replay (only ?tick= does).
+  // whenever set AND applicable to the payload's own cats
+  // (clearInapplicableFields — for a selection outside
+  // SCOPED_KINDS they are cleared at parse/serialize and drop out),
+  // and neither ever positions the replay (only ?tick= does).
   side: '',
   team: '',
 };
@@ -699,10 +841,43 @@ export function sideVal(v) {
   return v === 'ct' || v === 't' ? v : '';
 }
 
+// clearInapplicableFields — THE one clearing rule (the product-owner
+// ruling: hide AND clear, never retain): drop every value whose field
+// does not apply to the filter's OWN category selection (see
+// applicableFilterFields for the rule table). `catIds` is the selection
+// to clear against (both filter choke points pass the payload's own
+// cats); mutates and returns `f` — every caller hands it a fresh copy.
+//
+// It runs at BOTH ends of the filter<->URL round trip, which is what
+// makes "clear" cover every arrival path with one rule:
+//   - parseLandmarkFilter — every arrival (route URL, saved-preset
+//     apply, CommandPalette jumps, Heatmaps drills) parses here, so an
+//     inapplicable key in a deep link/preset normalizes away and can
+//     never invisibly filter the list, the markers or the URL;
+//   - serializeLandmarkFilter — every write goes through here, so a
+//     category toggle that makes a SET value inapplicable rewrites the
+//     URL without it (it already emits only non-default keys — a cleared
+//     value is a default value, so it falls out naturally).
+export function clearInapplicableFields(f, catIds) {
+  const on = applicableFilterFields(catIds);
+  if (!on.player) f.steamId = '';
+  if (!on.side) f.side = '';
+  if (!on.team) f.team = '';
+  if (!on.weapon) f.weapon = '';
+  if (!on.dist) {
+    f.distMin = 0;
+    f.distMax = 0;
+  }
+  if (!on.headshot) f.headshotOnly = false;
+  if (!on.bbox) f.bbox = null;
+  return f;
+}
+
 // parseLandmarkFilter builds a complete filter from a parsed route
 // query. Unknown/absent keys fall back to DEFAULT_FILTER — a deep link
 // with no params is the sparse default (round starts), never
-// "everything on".
+// "everything on". Keys that do not apply to the parsed payload's OWN
+// cats are then cleared (clearInapplicableFields — the ruling above).
 export function parseLandmarkFilter(query) {
   const q = query || {};
   const f = { ...DEFAULT_FILTER, cats: [...DEFAULT_CATEGORIES] };
@@ -722,7 +897,7 @@ export function parseLandmarkFilter(query) {
   }
   f.side = sideVal(q.side);
   f.team = sideVal(q.team);
-  return f;
+  return clearInapplicableFields(f, f.cats);
 }
 
 // serializeLandmarkFilter emits ONLY the non-default keys — default
@@ -730,9 +905,13 @@ export function parseLandmarkFilter(query) {
 // "#/replay/5?cat=round_starts" never both exist for the same state.
 // Values are URLSearchParams-friendly (comma lists, numbers, steam ids,
 // and the bbox rect); a range bound serializes only when it is set (0 =
-// open → nothing emitted, so a min-only range stays min-only).
+// open → nothing emitted, so a min-only range stays min-only). Values
+// the payload's own cats make inapplicable are cleared first
+// (clearInapplicableFields), so a write that narrows the selection can
+// never leave a now-hidden key behind in the URL.
 export function serializeLandmarkFilter(filter) {
   const f = { ...DEFAULT_FILTER, ...(filter || {}) };
+  clearInapplicableFields(f, f.cats);
   const q = {};
   const sameCats =
     f.cats.length === DEFAULT_CATEGORIES.length &&
@@ -764,7 +943,11 @@ export function filtersEqual(a, b) {
 //   - non-default = the arriving filter serializes to AT LEAST ONE key
 //     (serializeLandmarkFilter's round-trip rule: defaults emit nothing,
 //     so bbox/player/cats/roundFrom/weapon/hs/… all count, an absent or
-//     default filter does not);
+//     default filter does not). Note the clearing ruling's interaction:
+//     a payload whose keys are ALL inapplicable to its own cats parses to
+//     the default (clearInapplicableFields), so it serializes to nothing
+//     and never reveals — an "arrived scoped" link whose scope could not
+//     filter anything is a default arrival.
 //   - AND different from the filter the instance ALREADY had — the second
 //     half is what keeps a rail the user deliberately closed closed: the
 //     keep-alive dock expand re-arrives with the instance's OWN captured

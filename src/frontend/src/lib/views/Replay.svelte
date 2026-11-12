@@ -3864,6 +3864,13 @@
 
           <FilterBar {id} filter={filter} onchange={onBarFilter} showReset={false} />
 
+          <!-- Saved-preset row — TWO lines by construction (the owner's
+               screenshot: "Saved fi" truncated on a 90px floor with Reset
+               orphaned on its own line): the select owns the first line
+               (flex-basis 100% → "Saved filters…" always reads in full)
+               and the four actions ride ONE flex item on the next, so
+               Apply/Save/×/Reset can never split across lines and Reset
+               is never orphaned alone. -->
           <div class="lm-toolbar" role="group" aria-label="Saved filter presets">
             <select class="input lm-saved" aria-label="Saved filters" value={savedSel} onchange={(e) => (savedSel = e.currentTarget.value)}>
               <option value="">Saved filters…</option>
@@ -3871,11 +3878,12 @@
                 <option value={String(s.id)}>{s.name}</option>
               {/each}
             </select>
-            <button class="btn small" disabled={!savedSel} onclick={applySaved}>Apply</button>
-            <button class="btn small" onclick={saveCurrent} title="Save the current filter as a preset">Save</button>
-            <button class="btn small" disabled={!savedSel} title="Delete the selected saved filter" onclick={removeSaved}><span class="codicon codicon-close"></span></button>
-            <span class="spacer"></span>
-            <button class="btn small" onclick={resetFilters} title="Reset every filter to the sparse default">Reset</button>
+            <div class="lm-saved-actions">
+              <button class="btn small" disabled={!savedSel} onclick={applySaved}>Apply</button>
+              <button class="btn small" onclick={saveCurrent} title="Save the current filter as a preset">Save</button>
+              <button class="btn small" disabled={!savedSel} title="Delete the selected saved filter" onclick={removeSaved}><span class="codicon codicon-close"></span></button>
+              <button class="btn small" onclick={resetFilters} title="Reset every filter to the sparse default">Reset</button>
+            </div>
           </div>
         </div>
       {/if}
