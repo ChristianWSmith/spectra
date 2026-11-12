@@ -17,7 +17,10 @@ import (
 // pass (KindTrade per killer), so the frozen extractor column (import-time
 // 5 s default) becomes cfg-aware for every consumer — the scoreboard
 // Trade column, career trades, profile trade rate and the successful_trades
-// metric — without touching their SQL.
+// metric — without touching their SQL. match_trade_opps (the two
+// distance-derived trade-opportunity counts, tradeopps.go) is written the
+// same way: cfg.TradeOppDistance is applied HERE, at analyze time, and
+// read back by store.GetCombatStats / store.CountPlayerTradeOpportunities.
 //
 // RULE STAMP: a successful pass ends by writing cfg.RuleVersion to
 // matches.analyzed_rule_version (store.SetMatchRuleVersion — the one
@@ -147,6 +150,28 @@ func compute(st *store.Store, matchID int64, cfg Config, rebuildCareer bool) err
 	}
 	if err := st.ReplaceTradeKills(matchID, tradeKills); err != nil {
 		return fmt.Errorf("analytics: replace trade kills: %w", err)
+	}
+	// Trade-opportunity counts — the ONE writer of match_trade_opps
+	// (AGENTS.md "Analysis-rule derived values": every rules-derived
+	// value is STORED at analyze time; this file's tradeopps.go is the
+	// single predicate implementation, replacing two query-time
+	// json_extract gates). Both counts gate on cfg.TradeOppDistance, so
+	// a distance change bumps rule_version (SetConfig) → the match goes
+	// behind → RecomputeAll rewrites these rows under the new radius.
+	// Runs in Compute AND ComputeForBatch (shared body) and BEFORE the
+	// career rebuild like every other per-match write. The targeted
+	// nearDist read is the narrow payload side channel (kill payloads;
+	// models.EventRow stays payload-free). Each table's transaction
+	// commits independently — a failed pass never stamps (RULE STAMP
+	// note above), so the next run rewrites every table; no cross-table
+	// rollback exists or is needed.
+	kills, err := st.GetKillNearDists(matchID)
+	if err != nil {
+		return fmt.Errorf("analytics: load kill near dists: %w", err)
+	}
+	opps, missed := tradeOppCounts(kills, rounds, sides, engs, players, cfg.TradeOppDistance)
+	if err := st.ReplaceTradeOpps(matchID, opps, missed); err != nil {
+		return fmt.Errorf("analytics: replace trade opps: %w", err)
 	}
 	if err := st.ReplaceUtility(matchID, utils); err != nil {
 		return err

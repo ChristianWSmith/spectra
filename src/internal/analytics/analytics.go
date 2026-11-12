@@ -4,9 +4,11 @@
 // economy view — from extracted events/rounds plus the versioned rules
 // config. Every function is unit-testable with synthetic event sets;
 // Compute is the store orchestration (read → derive → replace → career
-// rebuild). The combat deep-dive rows (models.CombatStat) are NOT derived
-// here: store.GetCombatStats is their single implementation (see the
-// authoritative-SQL notes there).
+// rebuild). The combat deep-dive rows (models.CombatStat) are NOT
+// derived here: store.GetCombatStats is their read implementation (see
+// the authoritative-SQL notes there) — with ONE stored exception: the
+// trade-opportunity counts (tradeopps.go) are derived here at analyze
+// time and read back by GetCombatStats / CountPlayerTradeOpportunities.
 //
 // # Documented v1 limitations (heuristics need UI badges)
 //
@@ -24,9 +26,11 @@
 //   - TradeOppMissed = the distance-gated subset of untraded deaths
 //     (inferred → UI badge): the kill event's detail_json.nearDist —
 //     the nearest living teammate of the victim to the killer, measured
-//     once at extract — must fall within [0, tradeOppDistance]
-//     (config, default 1000u; the gate itself lives in
-//     store.GetCombatStats).
+//     once at extract — must fall within [0, cfg.TradeOppDistance]
+//     (default 1000u). The gate runs HERE at analyze time and the counts
+//     are stored per match in match_trade_opps (tradeopps.go — AGENTS.md
+//     "Analysis-rule derived values"); the retired query-time gate lived
+//     in store.GetCombatStats.
 //   - Clutch HPLeft is the game-sampled victim-health of the last
 //     player_hurt at/before the resolve tick (HP changes only through
 //     player_hurt; detail_json is stamped onto the typed copies by
@@ -51,13 +55,16 @@ import (
 // Config is the versioned rules input for the analytics pass. TickRate is
 // needed to convert the seconds-based windows (trade window, utility
 // pairing) into ticks — Compute fills it from the match row; a value <= 0
-// means 64 (CS2's fixed simulation rate).
+// means 64 (CS2's fixed simulation rate). TradeOppDistance is the
+// trade-opportunity radius (world units) the stored match_trade_opps
+// counts gate on — see tradeopps.go.
 type Config struct {
-	TradeWindowS float64
-	EcoFullBuy   int
-	EcoForce     int
-	RuleVersion  int
-	TickRate     float64
+	TradeWindowS     float64
+	EcoFullBuy       int
+	EcoForce         int
+	TradeOppDistance int
+	RuleVersion      int
+	TickRate         float64
 }
 
 // DefaultTickRate is the CS2 fixed simulation rate used when Config's is
@@ -74,11 +81,12 @@ const DefaultTickRate = 64.0
 // for that reason).
 func ConfigFrom(c models.AnalysisConfig, tickRate float64) Config {
 	return Config{
-		TradeWindowS: c.TradeWindowS,
-		EcoFullBuy:   c.EcoFullBuy,
-		EcoForce:     c.EcoForce,
-		RuleVersion:  c.RuleVersion,
-		TickRate:     tickRate,
+		TradeWindowS:     c.TradeWindowS,
+		EcoFullBuy:       c.EcoFullBuy,
+		EcoForce:         c.EcoForce,
+		TradeOppDistance: c.TradeOppDistance,
+		RuleVersion:      c.RuleVersion,
+		TickRate:         tickRate,
 	}
 }
 
