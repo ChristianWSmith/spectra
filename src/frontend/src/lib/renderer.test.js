@@ -2772,8 +2772,9 @@ test('score box right edge ≤ feed left − 8 across cssW ∈ {400,600,800,1200
         `cssW=${cssW} [${ct}/${t}]: box right ${right} ≤ feed left ${feedLeft} − 8`,
       );
       // …and the left bound holds too: the box never slides under the
-      // DOM control group's reserved share (0.28 × cssW + its 8 px edge)
-      // while the gap still fits it.
+      // stage's top-left DOM slot (0.28 × cssW + its 8 px edge — the
+      // theater-exit button's corner now; the share still mirrors
+      // .rp-ctrl-list's max-width) while the gap still fits it.
       assert.ok(
         scoreBox.args[0] >= cssW * 0.28 + 8 - 1e-9,
         `cssW=${cssW} [${ct}/${t}]: box left ${scoreBox.args[0]} ≥ control-group budget ${cssW * 0.28 + 8}`,

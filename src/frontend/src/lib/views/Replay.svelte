@@ -1741,7 +1741,7 @@
   // Release the follow camera AND drop ?follow= from the route (entry
   // context rides the query — navigateFilter preserves it, so the
   // param has to go for the dismissal to stick). The stage indicator's
-  // ✕ is GONE (the owner's overlay ruling: no controls in the top-left
+  // ✕ is GONE (the owner's overlay ruling: no controls in the stage
   // indicator), so the caller here is now ONLY the release half of a
   // CARD click — followHandlerFor routes a click on the already-followed
   // card here (the F-toggle semantics). The other release paths never
@@ -3154,9 +3154,10 @@
                every overlay-gated block — the one element neither the
                UI toggle nor the control group may ever hide: it is the
                only control left on screen, so hiding it would softlock
-               the view). Bottom-RIGHT of the stage — the region map's
-               reserved bottom-right corner (renderer.js); the canvas
-               chat keeps the bottom-left corner to itself. `active`
+               the view). TOP-LEFT of the stage — the region map's
+               reserved top-left slot (renderer.js); the score box's
+               left bound (CTRL_GROUP_BUDGET) keeps the top-center HUD
+               clear of it. `active`
                joins the gate only for the collapsed dock (chrome-only
                frame; the button returns with the chrome on expand —
                theater itself survives the round trip). -->
@@ -3175,10 +3176,10 @@
                / top-right of the stage); both now live in the main
                column's .replay-topbar above —
                the stage's corners belong to the overlay region map now
-               (renderer.js): the DOM control group top-left, the canvas
-               score box top-center, the kill feed top-right, the chat
-               bottom-left, the theater-exit button bottom-right while
-               theater mode is on. -->
+               (renderer.js): the theater-exit button top-left while
+               theater mode is on, the canvas score box top-center, the
+               kill feed top-right, the chat bottom-left, the DOM
+               control group bottom-right. -->
           <!-- Control group: one row per NON-DEFAULT control state
                (ctrlRows — every state already had a mirror, so this adds
                no plumbing). It is the ONE copy of each line: the

@@ -1590,7 +1590,7 @@ input[type='checkbox']:focus-visible {
    moved OUT to the main column's .replay-topbar — its top-left /
    top-right, spec 7/14; the
    stage's other corners are canvas — renderer.js's region map. The
-   theater-exit button renders only while theater mode is on, bottom-RIGHT
+   theater-exit button renders only while theater mode is on, TOP-LEFT
    of the stage — it is the ONE control that mode leaves standing, so it
    must never be gated away). */
 
@@ -1628,14 +1628,14 @@ input[type='checkbox']:focus-visible {
   border-color: var(--accent-40);
 }
 
-/* Control group (.rp-ctrl-list) — the stage's TOP-LEFT status list, one
+/* Control group (.rp-ctrl-list) — the stage's BOTTOM-RIGHT status list, one
    row per NON-DEFAULT control state (Replay's ctrlRows: the deduped
    Following row, the loop range, skip-freeze, a non-Smart camera and
    the map-pack note). DISPLAY-ONLY (the owner's overlay ruling,
    2026-11-11): the group carries NO buttons — release/controls live
    with the camera controls (F key, the camera popover, card clicks).
    It REPLACED three copies of those lines: the
-   follow chip (same corner, same backdrop recipe — background, hairline
+   follow chip (its backdrop recipe — background, hairline
    and shadow verbatim), the canvas bottom-left readout and the
    .note-amber packNote paragraph above the stage. The canvas copies die
    with the readout, so this list is THE one — snapshots and clips
@@ -1644,20 +1644,24 @@ input[type='checkbox']:focus-visible {
    ancestor's padding box, which is .replay-stage (position: relative)
    — so `28%` IS a share of the STAGE width, the same basis as the
    renderer's CTRL_GROUP_BUDGET (0.28 × cssW, see renderer.js's region
-   map). The −8px offsets the group's own left anchor, so its RIGHT
-   edge lands at exactly 28% of the stage; the renderer reserves that
-   share PLUS 8 px as the score box's left bound. Rows ellipsize
-   instead of widening past it. */
+   map). The −8px offsets the group's own RIGHT anchor, so at its widest
+   its LEFT edge lands at exactly 72% of the stage
+   — a ~32% gap over the canvas chat's bottom-left 40% cap (CHAT_MAX_W),
+   the only other overlay down there (the renderer draws nothing in the
+   bottom-right region). That renderer budget — the share PLUS 8 px as
+   the score box's left bound — now keeps the top-center HUD clear of
+   the stage's TOP-LEFT DOM slot (the theater-exit button) instead of
+   this group. Rows ellipsize instead of widening past it. */
 .rp-ctrl-list {
   position: absolute;
-  top: 8px;
-  left: 8px;
+  bottom: 8px;
+  right: 8px;
   z-index: 2;
   display: flex;
   flex-direction: column;
   gap: 2px;
   max-width: calc(28% - 8px);
-  padding: 2px 4px 2px 8px;
+  padding: 2px 8px 2px 4px;
   background: rgba(14, 17, 22, 0.85);
   border: 1px solid var(--accent-40);
   border-radius: var(--radius);
@@ -1667,21 +1671,22 @@ input[type='checkbox']:focus-visible {
   line-height: 1.6;
 }
 
-/* Theater-exit button (.rp-theater-exit) — the stage's BOTTOM-RIGHT
+/* Theater-exit button (.rp-theater-exit) — the stage's TOP-LEFT
    corner while theater mode is on (renderer.js's region map: the reserved
-   bottom-right slot), the ONE control that mode leaves standing. The
-   canvas chat keeps the bottom-left corner to itself. It reuses
+   top-left slot), the ONE control that mode leaves standing. The
+   canvas score box's LEFT bound (CTRL_GROUP_BUDGET) keeps the
+   top-center HUD clear of this slot. It reuses
    .btn plus the collapsed rail toggle's chrome (background / hairline /
    radius / shadow verbatim) so it reads as app chrome over the radar;
    .btn's own hover/focus rules stay in force — no second hover
    spelling. It is a SIBLING of the canvas, outside .rp-ctrl-list and
    outside every overlay gate: hiding it would softlock the view (the
    transport is unmounted in theater mode). z-index 2 is the control
-   group's tier — the two never overlap (top-left vs bottom-right). */
+   group's tier — the two never overlap (bottom-right vs top-left). */
 .rp-theater-exit {
   position: absolute;
-  right: 8px;
-  bottom: 8px;
+  top: 8px;
+  left: 8px;
   z-index: 2;
   padding: 6px 8px;
   background: var(--panel);
