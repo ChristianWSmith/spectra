@@ -1293,16 +1293,18 @@ check(
       );
     }),
 );
-// The FOOTSTEPS fader ships at 100 % (FOOTSTEPS_VOL_DEFAULT — an
-// untouched footsteps_volume must bind the 100-slider, never the shared
-// 0.8 and never 0) while the bus ships MUTED: the row's mute toggle
-// starts pressed + warn, so the user unmutes instead of hunting the
-// slider (owner instruction 2026-11-10, A1).
+// The FOOTSTEPS fader ships at 80 % (FOOTSTEPS_VOL_DEFAULT — an
+// untouched footsteps_volume binds that constant, never 0; since the
+// 2026-11-12 ruling it happens to equal the shared 0.8, but the read
+// still goes through FOOTSTEPS_VOL_DEFAULT) while the bus ships MUTED:
+// the row's mute toggle starts pressed + warn, so the user unmutes
+// instead of hunting the slider (owner instruction 2026-11-10 A1 for
+// the mute, 2026-11-12 for the 100 % → 80 % level default).
 const stepsSlider = controls.querySelector('#rp-vol-footsteps');
 const stepsMute = controls.querySelector('button[aria-label="Mute footsteps"]');
 check(
-  'footsteps fader starts at 100 (its own pref default) with the session mute ON',
-  stepsSlider?.value === '100' &&
+  'footsteps fader starts at 80 (its own pref default) with the session mute ON',
+  stepsSlider?.value === '80' &&
     globalThis.__prefs['footsteps_volume'] === undefined &&
     !!stepsMute &&
     stepsMute.getAttribute('aria-pressed') === 'true' &&

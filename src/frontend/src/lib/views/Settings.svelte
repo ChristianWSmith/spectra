@@ -98,7 +98,7 @@
   // optimistic local state on
   // every input, durable via setPref, read back in onMount (the
   // font-size pattern). The FOOTSTEPS level defaults to
-  // FOOTSTEPS_VOL_DEFAULT (1 = 100 %) — it is muted by the replay
+  // FOOTSTEPS_VOL_DEFAULT (0.8 = 80 %) — it is muted by the replay
   // popover's session mute, never by the fader (owner instruction
   // 2026-11-10), so this surface has no mute control of its own.
   let volVoice = $state(AUDIO_VOL_DEFAULT);
@@ -635,7 +635,7 @@
     // Replay-audio faders: read the six persisted levels back (the
     // boot-time pass may still be in flight for a deep-linked Settings);
     // never-set/corrupt falls to each key's OWN default — the shared 0.8
-    // for five of them, FOOTSTEPS_VOL_DEFAULT (1 = 100 %) for footsteps
+    // for five of them, FOOTSTEPS_VOL_DEFAULT (0.8 = 80 %) for footsteps
     // (muted by the replay popover's session mute, not by the fader) —
     // so a broken pref can never bind a wrong slider.
     Promise.all([
@@ -1187,7 +1187,7 @@
     <div class="row-between">
       <span class="muted"
         >Footsteps volume — player footsteps and landings in the replay
-        (100 % by default — muted until you unmute in the replay volume
+        (80 % by default — muted until you unmute in the replay volume
         popover).</span
       >
       <input

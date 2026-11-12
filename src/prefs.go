@@ -58,8 +58,9 @@ const (
 	// fader levels (0..1; default 0.8) — the volume popover under the
 	// scrubber and Settings' Audio & voice section write the same keys.
 	// prefsFootstepsVolumeKey joins them for the player-sound (footsteps /
-	// land / jump / fall) fader; its frontend read default is 1.0 (100 %)
-	// — muted by the session mute in the replay volume popover, not by
+	// land / jump / fall) fader; its frontend read default is 0.8 (80 %,
+	// owner instruction 2026-11-12 — inline with the other five) — muted
+	// by the session mute in the replay volume popover, not by
 	// the fader (the key itself is just registered here — Go never
 	// consumes it).
 	// The frontend reads/writes all six directly through the kvstore

@@ -21,7 +21,7 @@
 // bullet cue window, the decoy fake-gunshot plan window, the C4 beep
 // synthesis (bomb rows → schedule → deterministic site group),
 // the range/seek guards, the random variant pick, the internal gain
-// scales (five buses — footsteps: 1/3 scale, 100 % fader, muted by
+// scales (five buses — footsteps: 1/3 scale, 80 % fader, muted by
 // default) and the weapon-name-less manifest boundary.
 // Run: node --test src/lib/sfx.test.js
 // (from frontend/; the lib test glob src/lib/*.test.js picks it up too).
@@ -1301,14 +1301,15 @@ test('gain scales: guns/utility at 1/12, C4 at 1/6, announcer at 1/2, footsteps 
   assert.equal(C4_GAIN_SCALE, 1 / 6);
   assert.equal(ANNOUNCER_GAIN_SCALE, 1 / 2);
   // OWNER INSTRUCTION 2026-11-10 (A1): the 5th bus (FOOTSTEPS) internal
-  // gain goes to 1/3 — while its user-facing default rises to 100 %
-  // (FOOTSTEPS_VOL_DEFAULT) with the bus MUTED by the session mute
-  // instead of by a 0 fader. Both facts pinned here: the scale and the
-  // default (AUDIO_VOL_DEFAULT stays 0.8 for the other five).
+  // gain goes to 1/3 — while its bus ships MUTED by the session mute
+  // instead of by a 0 fader. OWNER INSTRUCTION 2026-11-12: its
+  // user-facing default drops 100 % → 80 % ("bring it inline with the
+  // others"). Both facts pinned here: the scale and the default
+  // (AUDIO_VOL_DEFAULT stays 0.8 for the other five).
   assert.equal(STEP_GAIN_SCALE, 1 / 3);
   assert.equal(AUDIO_VOL_DEFAULT, 0.8); // the user-facing default is untouched
-  assert.equal(FOOTSTEPS_VOL_DEFAULT, 1); // footsteps read 100 % by default …
-  assert.equal(prefVolume(null, FOOTSTEPS_VOL_DEFAULT), 1); // … on an unset pref
+  assert.equal(FOOTSTEPS_VOL_DEFAULT, 0.8); // footsteps read 80 % by default …
+  assert.equal(prefVolume(null, FOOTSTEPS_VOL_DEFAULT), 0.8); // … on an unset pref
 });
 
 // --- C4 beeps ---------------------------------------------------------------
@@ -2182,12 +2183,12 @@ test('engine: footstep cues play on the 5th (footsteps) bus; unextracted surface
     // EXACTLY those two: the Cardboard step resolved to a family the
     // manifest does not carry, so it made no cue (silence, no substitute).
     assert.equal(ctx.sources.length, 2, 'only the two extracted groups played');
-    // The footsteps fader ships at 1 (FOOTSTEPS_VOL_DEFAULT) while the
+    // The footsteps fader ships at 0.8 (FOOTSTEPS_VOL_DEFAULT) while the
     // bus ships MUTED — the same window with the fader untouched still
     // spawns sources (the gain node is what silences them); unmuting
-    // raises it to 1 × STEP_GAIN_SCALE (pinned in the applyGains test
+    // raises it to 0.8 × STEP_GAIN_SCALE (pinned in the applyGains test
     // below).
-    assert.equal(ctx.gains[4].gain.value, 0, 'the footsteps bus ships muted (fader 1, mute on)');
+    assert.equal(ctx.gains[4].gain.value, 0, 'the footsteps bus ships muted (fader 0.8, mute on)');
     sfx.destroy();
   } finally {
     restoreFetch();
@@ -2209,7 +2210,8 @@ test('engine: applyGains multiplies each fader by its bus scale (five buses, foo
     // announcer=3, footsteps=4 — the four established indexes never move
     // (the 5th bus is created AFTER the announcer), and every bus starts
     // at its own default fader × its own scale. The footsteps fader's
-    // default is 1 (FOOTSTEPS_VOL_DEFAULT = 100 %) but its bus ships
+    // default is 0.8 (FOOTSTEPS_VOL_DEFAULT = 80 %, owner instruction
+    // 2026-11-12) but its bus ships
     // MUTED (stepMuted), so its gain starts at 0 — FOOTSTEPS_VOL_DEFAULT
     // × STEP_GAIN_SCALE would be a bug (the bus would blare on launch).
     assert.deepEqual(
@@ -2251,28 +2253,29 @@ test('engine: applyGains multiplies each fader by its bus scale (five buses, foo
   }
 });
 
-// Owner instruction 2026-11-10 (A1): footsteps default to 100 %
-// volume, MUTED — the user unmutes instead of hunting the slider, and
-// the internal gain is 1/3. The two defaults come from
+// Owner instruction 2026-11-10 (A1): footsteps MUTED by default — the
+// user unmutes instead of hunting the slider, and the internal gain is
+// 1/3. Owner instruction 2026-11-12: the fader LEVEL default follows the
+// other five at 80 % (100 % → 80 %). The two defaults come from
 // FOOTSTEPS_VOL_DEFAULT (the fader) and stepMuted (the bus), and only
 // their COMBINATION decides the gain.
-test('engine: footsteps default = fader 1.0 + muted → gain 0; unmute → 1 × STEP_GAIN_SCALE', async () => {
+test('engine: footsteps default = fader 0.8 + muted → gain 0; unmute → 0.8 × STEP_GAIN_SCALE', async () => {
   resetSoundManifest();
   const restoreFetch = stubManifestFetch();
   try {
     const { sfx, ctx } = await makeSfx();
-    assert.equal(FOOTSTEPS_VOL_DEFAULT, 1, 'the fader ships at 100 %');
+    assert.equal(FOOTSTEPS_VOL_DEFAULT, 0.8, 'the fader ships at 80 %');
     assert.equal(ctx.gains[4].gain.value, 0, '…but the bus ships muted → gain 0');
-    // One unmute is all it takes: the fader is already at 1.
+    // One unmute is all it takes: the fader is already at 0.8.
     sfx.setMuted('footsteps', false);
     assert.equal(
       ctx.gains[4].gain.value,
-      1 * STEP_GAIN_SCALE,
-      'unmuting alone yields the full fader × the 1/3 internal scale',
+      0.8 * STEP_GAIN_SCALE,
+      'unmuting alone yields the default fader × the 1/3 internal scale',
     );
     // …and re-muting silences it again without touching the fader.
     sfx.setMuted('footsteps', true);
-    assert.equal(ctx.gains[4].gain.value, 0, 'the mute wins over the 1.0 fader');
+    assert.equal(ctx.gains[4].gain.value, 0, 'the mute wins over the 0.8 fader');
     sfx.destroy();
   } finally {
     restoreFetch();

@@ -205,7 +205,7 @@
   let uiUtilVol = $state(AUDIO_VOL_DEFAULT);
   let uiC4Vol = $state(AUDIO_VOL_DEFAULT);
   let uiAnnouncerVol = $state(AUDIO_VOL_DEFAULT);
-  // The footsteps fader's default is FOOTSTEPS_VOL_DEFAULT (1 = 100 % —
+  // The footsteps fader's default is FOOTSTEPS_VOL_DEFAULT (0.8 = 80 % —
   // the same default its pref read uses); the bus is MUTED by the
   // session mute (uiStepsMuted starts true), never by the fader, so a
   // user only has to unmute it.
@@ -2183,14 +2183,14 @@
       // sounds manifest proves non-empty) the sfx engine. Null (unset /
       // unreadable) maps through prefVolume's per-key default, fail-soft
       // like every other pref read in load(). The FOOTSTEPS level reads
-      // with FOOTSTEPS_VOL_DEFAULT (1 = 100 %) — it is muted by the
+      // with FOOTSTEPS_VOL_DEFAULT (0.8 = 80 %) — it is muted by the
       // session mute, not by its fader.
       uiVoiceVol = prefVolume(vv);
       uiGunsVol = prefVolume(gv);
       uiUtilVol = prefVolume(uv);
       uiC4Vol = prefVolume(cv);
       uiAnnouncerVol = prefVolume(av);
-      uiStepsVol = prefVolume(sv, FOOTSTEPS_VOL_DEFAULT); // 100 % by default; muted by uiStepsMuted
+      uiStepsVol = prefVolume(sv, FOOTSTEPS_VOL_DEFAULT); // 80 % by default; muted by uiStepsMuted
       // Flash-white overlay: the blind events joined with their narrow
       // flash-duration read — the duration lives on detail_json
       // (EventRow stays payload-free, so it needs its own query; the
@@ -2458,7 +2458,7 @@
       sfx.setUtilityVolume(uiUtilVol);
       sfx.setC4Volume(uiC4Vol);
       sfx.setAnnouncerVolume(uiAnnouncerVol);
-      // The footsteps fader ships at FOOTSTEPS_VOL_DEFAULT (1) while the
+      // The footsteps fader ships at FOOTSTEPS_VOL_DEFAULT (0.8) while the
       // bus ships MUTED — applying both explicitly keeps the engine's
       // own defaults and the UI state in lockstep.
       sfx.setFootstepsVolume(uiStepsVol);
