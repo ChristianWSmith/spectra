@@ -1522,6 +1522,64 @@ console.log('N. an event burst coalesces into ONE import-dir rescan');
   );
   bindings.LibraryService.ListDemoFiles = prevScan;
 }
+// ---------------------------------------------------------------------------
+// Section O: spectra:scan-progress drives the ONE StatusChip (MapPackPrompt's
+// non-job precedent) — 0 is the walk phase (indeterminate bar), a real byte
+// fraction flips it determinate, and the scan resolving hides it again. The
+// chip renders while a scan runs AND the import-dir list is still empty (the
+// expensive first scan is exactly that state), so the list is emptied first.
+console.log('O. scan progress drives the StatusChip: indeterminate → determinate → gone');
+{
+  const prevScan = bindings.LibraryService.ListDemoFiles;
+  const dirRoot = () =>
+    coldTarget.querySelector('section[aria-label="Demos from your import dirs"]');
+  const chipOf = () => dirRoot()?.querySelector('.chip.status');
+
+  // (a) Empty the import-dir list: one rescan resolving zero rows.
+  bindings.LibraryService.ListDemoFiles = () => Promise.resolve([]);
+  fire('spectra:library-changed');
+  await sleep(500); // 300 ms debounce + the scan itself
+  check(
+    'import-dir list emptied (the chip’s precondition)',
+    !!dirRoot() && !dirRoot().querySelector('.data-table'),
+    dirRoot() ? dirRoot().textContent.replace(/\s+/g, ' ').slice(0, 90) : 'no panel',
+  );
+
+  // (b) Stall the NEXT scan mid-flight — the chip must be up and
+  // indeterminate (progress 0) while the walk phase runs.
+  let release;
+  bindings.LibraryService.ListDemoFiles = () =>
+    new Promise((res) => (release = () => res([])));
+  fire('spectra:library-changed');
+  await sleep(400); // past the debounce: the scan is now in flight
+  const stalledChip = chipOf();
+  check(
+    'scan chip up and indeterminate while the scan runs (never "0%")',
+    !!stalledChip &&
+      !!stalledChip.querySelector('.chip-bar-fill.indeterminate') &&
+      !stalledChip.textContent.includes('0%'),
+    stalledChip ? stalledChip.textContent.replace(/\s+/g, ' ').trim() : 'missing',
+  );
+
+  // (c) A real byte fraction renders determinate.
+  fire('spectra:scan-progress', { stage: 'hash', progress: 0.42, done: 42, total: 100 });
+  await sleep(20);
+  const fill = chipOf()?.querySelector('.chip-bar-fill');
+  check(
+    'scan chip reads the byte fraction: determinate fill at 42%',
+    !!fill &&
+      !fill.classList.contains('indeterminate') &&
+      fill.style.width === '42%' &&
+      (chipOf()?.textContent.includes('42%') ?? false),
+    fill ? `${fill.style.width} ${chipOf()?.textContent.replace(/\s+/g, ' ').trim()}` : 'missing',
+  );
+
+  // (d) The scan resolving hides the chip again.
+  release();
+  await sleep(60);
+  check('scan chip gone once the scan lands', !chipOf(), chipOf()?.textContent ?? '');
+  bindings.LibraryService.ListDemoFiles = prevScan;
+}
 await unmount(coldInst);
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
