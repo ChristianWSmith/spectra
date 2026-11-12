@@ -256,8 +256,15 @@ func (s *AnalyticsService) GetConfig() (models.AnalysisConfig, error) {
 	return s.st.GetConfig()
 }
 
-// SetConfig stores new rules (bumps rule_version). Does NOT recompute —
-// call RecomputeAnalysis per match explicitly.
+// SetConfig stores new rules and bumps rule_version ONLY when a value
+// actually changed: saving the four thresholds identical to the stored
+// row is a NO-OP — no store write, no bump, the current row returned
+// untouched (clicking Save must not push every match behind by itself).
+// When any of tradeWindowS / ecoFullBuy / ecoForce / tradeOppDistance
+// differs, the stored version bumps by exactly 1. The input's
+// RuleVersion is ignored in BOTH cases — the stored version is
+// authoritative. Does NOT recompute — call RecomputeAnalysis per match
+// (or RecomputeAll for the behind set) explicitly.
 //
 // This is the single validation gate for analysis rules (the import
 // pipeline's analyze path and RecomputeAnalysis read the already-validated
@@ -279,7 +286,15 @@ func (s *AnalyticsService) SetConfig(c models.AnalysisConfig) (models.AnalysisCo
 	if err != nil {
 		return models.AnalysisConfig{}, err
 	}
-	c.RuleVersion = cur.RuleVersion + 1 // input RuleVersion ignored — always bump
+	// Identical values → return the stored row as-is: no SetConfig write,
+	// no bump (owner ruling — a Save that changes nothing must leave
+	// every match's behind-state alone). The caller's RuleVersion stays
+	// ignored here too, so a client-sent version can never leak through.
+	if c.TradeWindowS == cur.TradeWindowS && c.EcoFullBuy == cur.EcoFullBuy &&
+		c.EcoForce == cur.EcoForce && c.TradeOppDistance == cur.TradeOppDistance {
+		return cur, nil
+	}
+	c.RuleVersion = cur.RuleVersion + 1 // input RuleVersion ignored — bump on CHANGE
 	return s.st.SetConfig(c)
 }
 
@@ -308,6 +323,18 @@ func (s *AnalyticsService) SetConfig(c models.AnalysisConfig) (models.AnalysisCo
 // EVERY match's player_stats — two overlapping Computes could commit a
 // career rollup built from a pre-recompute snapshot (the store is
 // single-connection, but each Compute issues separate transactions).
+//
+// RecomputeAll is the BULK twin: it resolves the behind set server-side
+// (store.MatchListFilter.Behind), reads the config ONCE, and queues one
+// run per id through the same slot and the same per-match events (the UI
+// counts the N analysis-done). Its runs use analytics.ComputeForBatch —
+// no per-match career rebuild; the runner rebuilds career ONCE inside the
+// last batch member's slot hold (see submitBatch). Tradeoff, deliberate:
+// if the process dies mid-batch, that deferred rebuild never happens and
+// player_career stays stale until the next Compute (an import or a single
+// recompute) or a match delete rebuilds it — no crash-recovery machinery
+// is added for it. A single RecomputeAnalysis interleaved with a batch
+// keeps today's per-run rebuild (its own Compute owns it).
 //
 // AnalysisProgressEvent / AnalysisDoneEvent are the two payloads; the
 // progress one is progress-only (never a cache flush), the done one is
@@ -349,13 +376,22 @@ type recomputeRunner struct {
 	slot    sync.Mutex // one compute at a time (serialization rationale above)
 }
 
-// submit queues compute on a new goroutine for matchID and returns false
-// when that match is already queued or running (dedupe — no second run).
-// It returns as soon as the run is queued: the goroutine first waits for
-// the slot, then flips queued → running (emitting analysis-progress) and
-// runs compute, then flips running → gone and emits analysis-done.
-func (r *recomputeRunner) submit(matchID int64, emit func(name string, payload any), compute func() error) bool {
+// careerBatch is one submitBatch's deferred career rebuild: remaining is
+// how many of its members have not finished their compute yet. It is
+// seeded with the ACCEPTED count before any member is spawned, and the
+// member that drives it to zero runs rebuild while still holding the
+// compute slot — so a bulk run rebuilds career exactly once, never
+// interleaved with another run.
+type careerBatch struct {
+	remaining int
+	rebuild   func() error
+}
+
+// markQueued records matchID as queued; false when it is already queued
+// or running (the per-match dedupe — no second run).
+func (r *recomputeRunner) markQueued(matchID int64) bool {
 	r.mu.Lock()
+	defer r.mu.Unlock()
 	if r.queued == nil {
 		r.queued = map[int64]bool{}
 	}
@@ -363,12 +399,20 @@ func (r *recomputeRunner) submit(matchID int64, emit func(name string, payload a
 		r.running = map[int64]bool{}
 	}
 	if r.queued[matchID] || r.running[matchID] {
-		r.mu.Unlock()
 		return false
 	}
 	r.queued[matchID] = true
-	r.mu.Unlock()
+	return true
+}
 
+// spawn runs one already-queued match on a new goroutine: wait for the
+// slot, flip queued → running (emitting analysis-progress), run compute,
+// then flip running → gone and emit analysis-done. batch is nil for a
+// single run; a batch member decrements its shared remaining count after
+// its compute and the one reaching zero runs the batch's deferred career
+// rebuild — still inside this run's slot hold, before its analysis-done
+// leaves (so the UI's last done of the batch implies the rebuild ran).
+func (r *recomputeRunner) spawn(matchID int64, emit func(name string, payload any), compute func() error, batch *careerBatch) {
 	go func() {
 		r.slot.Lock() // one run at a time — see the serialization rationale
 		defer r.slot.Unlock()
@@ -380,6 +424,24 @@ func (r *recomputeRunner) submit(matchID int64, emit func(name string, payload a
 			MatchID: matchID, Stage: models.StageAnalyze, Done: 0, Total: 0,
 		})
 		err := compute()
+		if batch != nil {
+			r.mu.Lock()
+			batch.remaining--
+			last := batch.remaining == 0 && batch.rebuild != nil
+			r.mu.Unlock()
+			if last {
+				// The batch's ONE career rebuild (RebuildCareer is a
+				// full-library rollup — 16-34 s per rebuild at 1,000
+				// matches, so N per-match rebuilds would dominate a bulk
+				// run). A failure rides THIS member's analysis-done: the
+				// members' own passes succeeded and are stamped; the
+				// rollup is what lagged (it self-heals on the next
+				// Compute or match delete).
+				if rbErr := batch.rebuild(); rbErr != nil && err == nil {
+					err = fmt.Errorf("rebuild career: %w", rbErr)
+				}
+			}
+		}
 		r.mu.Lock()
 		delete(r.running, matchID)
 		r.mu.Unlock()
@@ -389,7 +451,57 @@ func (r *recomputeRunner) submit(matchID int64, emit func(name string, payload a
 		}
 		emit(eventAnalysisDone, AnalysisDoneEvent{MatchID: matchID, Error: msg})
 	}()
+}
+
+// submit queues compute on a new goroutine for matchID and returns false
+// when that match is already queued or running (dedupe — no second run).
+// It returns as soon as the run is queued: the goroutine first waits for
+// the slot, then flips queued → running (emitting analysis-progress) and
+// runs compute, then flips running → gone and emits analysis-done.
+func (r *recomputeRunner) submit(matchID int64, emit func(name string, payload any), compute func() error) bool {
+	if !r.markQueued(matchID) {
+		return false
+	}
+	r.spawn(matchID, emit, compute, nil)
 	return true
+}
+
+// submitBatch queues every id that is not already in flight as ONE batch
+// (the rest are skipped by the same per-match dedupe as submit) and
+// returns (submitted, skipped) — RecomputeAll's honest k/N. The accepted
+// members share a careerBatch: career is rebuilt exactly ONCE, after their
+// last compute, inside that member's slot hold (see spawn). The whole id
+// list is resolved under mu BEFORE any member spawns, so a fast member
+// can never decrement the count while later ids are still being accepted.
+// An empty accepted set rebuilds nothing — the runs it would have joined
+// already own their own rebuild.
+func (r *recomputeRunner) submitBatch(ids []int64, emit func(name string, payload any), compute func(id int64) error, rebuild func() error) (submitted, skipped int) {
+	r.mu.Lock()
+	if r.queued == nil {
+		r.queued = map[int64]bool{}
+	}
+	if r.running == nil {
+		r.running = map[int64]bool{}
+	}
+	accepted := make([]int64, 0, len(ids))
+	for _, id := range ids {
+		if r.queued[id] || r.running[id] {
+			skipped++
+			continue
+		}
+		r.queued[id] = true // also dedupes a repeated id inside ids
+		accepted = append(accepted, id)
+	}
+	r.mu.Unlock()
+	if len(accepted) == 0 {
+		return 0, skipped
+	}
+	batch := &careerBatch{remaining: len(accepted), rebuild: rebuild}
+	for _, id := range accepted {
+		id := id
+		r.spawn(id, emit, func() error { return compute(id) }, batch)
+	}
+	return len(accepted), skipped
 }
 
 // states reports the in-flight matches (sorted — map order is random).
@@ -432,6 +544,61 @@ func (s *AnalyticsService) RecomputeAnalysis(matchID int64) error {
 // indicator honest.
 func (s *AnalyticsService) RecomputeStates() RecomputeState {
 	return s.rc.states()
+}
+
+// RecomputeAllResult is RecomputeAll's answer — honest k/N for the
+// "re-run everything behind" button: Submitted runs were queued, Skipped
+// were already queued or running (the runner's per-match dedupe), Total
+// is the behind set resolved at submission (Submitted + Skipped == Total;
+// Total 0 = nothing is behind).
+type RecomputeAllResult struct {
+	Submitted int `json:"submitted"`
+	Skipped   int `json:"skipped"`
+	Total     int `json:"total"`
+}
+
+// RecomputeAll SUBMITS a background re-run of every match behind the
+// current rules (store.MatchListFilter.Behind: ready AND an older
+// analyzed_rule_version — 0/never counts as behind). The set is resolved
+// SERVER-SIDE at submission, so the button can never act on a stale
+// client list; every id goes through the same runner as
+// RecomputeAnalysis — per-match dedupe, the single compute slot, and the
+// per-match spectra:analysis-progress / spectra:analysis-done events the
+// UI counts its N dones from (nothing about the per-match event contract
+// changes).
+//
+// Config capture: the rules are read ONCE, before the first submit, and
+// the SAME analytics.Config rides every run of the batch — so every member
+// computes AND stamps one rule_version (a save-rules change mid-batch
+// therefore lands on the next batch, never half of this one).
+//
+// Career: the members run analytics.ComputeForBatch (no per-match
+// RebuildCareer) and the runner rebuilds career ONCE after the last
+// member, inside the compute slot — see the background-recompute block
+// above for the crash tradeoff (mid-batch death leaves player_career
+// stale until the next compute/rebuild; deliberate, no recovery
+// machinery). Returns the counts as soon as the runs are queued.
+func (s *AnalyticsService) RecomputeAll() (RecomputeAllResult, error) {
+	behind, err := s.st.ListMatches("", "", false, store.MatchListFilter{Behind: true})
+	if err != nil {
+		return RecomputeAllResult{}, err
+	}
+	ids := make([]int64, len(behind))
+	for i, m := range behind {
+		ids[i] = m.ID
+	}
+	// ONE config read for the whole batch (see the doc above).
+	c, err := s.st.GetConfig()
+	if err != nil {
+		return RecomputeAllResult{}, err
+	}
+	cfg := analytics.ConfigFrom(c, 0)
+	st := s.st
+	submitted, skipped := s.rc.submitBatch(ids, s.emitEvent,
+		func(id int64) error { return analytics.ComputeForBatch(st, id, cfg) },
+		func() error { return st.RebuildCareer() },
+	)
+	return RecomputeAllResult{Submitted: submitted, Skipped: skipped, Total: len(ids)}, nil
 }
 
 // emitEvent sends payload on the app's event bus; a service constructed

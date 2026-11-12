@@ -43,7 +43,18 @@ CREATE TABLE IF NOT EXISTS matches (
 	sample_rate INTEGER NOT NULL DEFAULT 0,
 	position_frames INTEGER NOT NULL DEFAULT 0,
 	-- Match header mirror: svc_EncryptedData count seen during the parse.
-	enc_messages INTEGER NOT NULL DEFAULT 0
+	enc_messages INTEGER NOT NULL DEFAULT 0,
+	-- Analytics provenance: the analysis_config.rule_version the match's
+	-- derived rows (round_classifications / player_round_stats / clutches /
+	-- engagements / utility_events + player_stats.trade_kills) were last
+	-- computed under. Written ONLY at the end of a successful
+	-- analytics.Compute (store.SetMatchRuleVersion — the one writer);
+	-- 0 = never analyzed / unknown (rule_version starts at 1, so 0 is
+	-- never a real version). The behind read (store.MatchListFilter.Behind)
+	-- compares it against the live rule version. SaveExtracted never
+	-- touches it (matchOwnedElsewhere): a reprocess keeps its old stamp
+	-- until its analyze stage re-stamps it.
+	analyzed_rule_version INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS teams (

@@ -33,9 +33,18 @@ var matchColumnsSQL = strings.Join(matchColumns, ", ")
 // path/sha256/size stay lifecycle-owned (CreateMatchRow wrote them) and
 // position_* stay sidecar-owned (SetPositionMeta writes them from the
 // sidecar's close meta).
+//
+// analyzed_rule_version is analytics-owned (SetMatchRuleVersion stamps it
+// at the END of a successful analytics.Compute): it is deliberately NOT
+// in matchColumns — neither GetMatch's SELECT nor SaveExtracted's UPDATE
+// walks it, so a reprocess keeps the old stamp until its analyze stage
+// re-stamps it and every hot match read stays column-free. It is listed
+// here so that ownership is pinned in one place (and the skip already
+// exists, should the column ever join matchColumns).
 var matchOwnedElsewhere = map[string]bool{
 	"id": true, "path": true, "sha256": true, "size": true,
 	"sample_rate": true, "position_frames": true,
+	"analyzed_rule_version": true,
 }
 
 // Event limits: DefaultEventLimit is what GetEvents applies when the caller
@@ -276,9 +285,20 @@ const matchSummaryFrom = ` FROM matches m
 // (typing a name), so the frontend needs no exact-vs-name mode switch.
 // The roster side of the facet is humans-only (HumanOnly): a bot's name
 // or id never matches.
+//
+// Behind selects the RE-RUNNABLE set that is stale relative to the
+// analysis rules: matches.analyzed_rule_version < the live
+// analysis_config.rule_version — any older stamp, including 0 (never
+// analyzed) — AND status = 'ready' (a queued/parsing/failed match cannot
+// be re-run, so it is never "behind" for this purpose; the re-run list's
+// status === 'ready' rule). This predicate is THE behind spelling, and it
+// lives here — in matchListWhere, the one WHERE shared by ListMatches,
+// ListMatchesPage and CountMatches — so the list, the page window and
+// the count can never disagree about who is behind.
 type MatchListFilter struct {
 	Map    string `json:"map"`
 	Player string `json:"player"`
+	Behind bool   `json:"behind"`
 }
 
 // matchListWhere renders the shared ListMatches/ListMatchesPage filter
@@ -309,6 +329,19 @@ func matchListWhere(query string, filters []MatchListFilter) (string, []any) {
 			conds = append(conds, `EXISTS (SELECT 1 FROM players p
 				WHERE p.match_id = m.id AND `+HumanOnly("p")+` AND (p.steam_id = ? OR p.name LIKE ?))`)
 			args = append(args, p, "%"+p+"%")
+		}
+		if f.Behind {
+			// The behind predicate (see MatchListFilter): an uncorrelated
+			// scalar subquery — one lookup per query, never per row. The
+			// COALESCE wraps the WHOLE subquery (an empty analysis_config
+			// yields no row at all, so a per-row COALESCE would still be
+			// NULL): an unseeded single-row table reads as "no rules saved
+			// yet = v1", analysis_config's own column default, instead of
+			// NULL comparisons that silently match nothing.
+			conds = append(conds, `m.analyzed_rule_version <
+				COALESCE((SELECT rule_version FROM analysis_config WHERE id = 1), 1)
+				AND m.status = ?`)
+			args = append(args, models.StatusReady)
 		}
 	}
 	if len(conds) == 0 {
@@ -471,6 +504,20 @@ func (s *Store) ListMatchesPage(query, sortKey string, desc bool, afterID int64,
 		return nil, err
 	}
 	return page, nil
+}
+
+// CountMatches counts the rows ListMatches would return for the same
+// query and filters — the honest "N matches" behind a facet (the behind
+// count the Settings re-run button labels its k/N with). It reuses the
+// SAME matchListWhere spelling as the list and the page window, so the
+// number shown can never drift from what those return.
+func (s *Store) CountMatches(query string, filters ...MatchListFilter) (int, error) {
+	where, args := matchListWhere(query, filters)
+	var n int
+	if err := s.db.QueryRow(`SELECT COUNT(*)`+matchSummaryFrom+where, args...).Scan(&n); err != nil {
+		return 0, fmt.Errorf("store: count matches: %w", err)
+	}
+	return n, nil
 }
 
 // keysetAfter resolves the cursor row (afterID) to its stored sort value

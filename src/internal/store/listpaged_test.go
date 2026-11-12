@@ -377,6 +377,66 @@ func TestListMatchesPageOtherSortKeyAndFilter(t *testing.T) {
 	}
 }
 
+// TestListMatchesPageBehindFacet pages the BEHIND set: the window walk
+// over {Behind: true} tiles exactly ListMatches' behind order (the SAME
+// matchListWhere predicate + keyset), skips the current-stamp row and the
+// non-ready row, and CountMatches labels the walk's total — the k/N the
+// re-run button shows must equal what the page windows actually serve.
+func TestListMatchesPageBehindFacet(t *testing.T) {
+	s := openMem(t)
+	at := time.Date(2026, 5, 1, 12, 0, 0, 0, time.UTC)
+	// Five ready rows sharing one extracted_at (the tie case), plus a
+	// queued row that is never behind (not re-runnable).
+	ids := make([]int64, 0, 5)
+	for i := range 5 {
+		ids = append(ids, seedListRow(t, s, i, &at))
+	}
+	queued := seedListRow(t, s, 90, nil)
+
+	// Live rules at v1: rows 1..4 start at stamp 0 (behind). Make row 1
+	// current and row 3 non-ready → the behind set is rows 4, 2, 0.
+	if _, err := s.SetConfig(models.AnalysisConfig{
+		TradeWindowS: 5, EcoFullBuy: 20000, EcoForce: 10000,
+		TradeOppDistance: 1000, RuleVersion: 1,
+	}); err != nil {
+		t.Fatalf("SetConfig: %v", err)
+	}
+	if err := s.SetMatchRuleVersion(ids[1], 1); err != nil {
+		t.Fatalf("stamp current: %v", err)
+	}
+	if _, err := s.db.Exec(`UPDATE matches SET status = 'failed' WHERE id = ?`, ids[3]); err != nil {
+		t.Fatalf("flip failed: %v", err)
+	}
+	want := []int64{ids[4], ids[2], ids[0]} // extracted_at DESC → id DESC tie-break
+
+	f := MatchListFilter{Behind: true}
+	sizes, got := walkPage(t, s, 0, "extracted_at", true, 2, f)
+	if len(sizes) != 2 || sizes[0] != 2 || sizes[1] != 1 {
+		t.Errorf("behind windows = %v, want [2 1]", sizes)
+	}
+	if !sameIDs(got, want) {
+		t.Errorf("paged behind ids %v, want %v", got, want)
+	}
+	if !sameIDs(got, listOrder(t, s, "extracted_at", true, f)) {
+		t.Errorf("paged ids %v diverged from the unbounded reference order", got)
+	}
+	if n, err := s.CountMatches("", f); err != nil || n != 3 {
+		t.Errorf("CountMatches(behind) = %d, %v; want 3 (the walk's total)", n, err)
+	}
+	// The excluded rows really are excluded: current (1) and failed (3)
+	// never appear, and the queued row is invisible to both lists.
+	for _, id := range []int64{ids[1], ids[3], queued} {
+		for _, paged := range got {
+			if paged == id {
+				t.Errorf("row %d must not be in the behind walk %v", id, got)
+			}
+		}
+	}
+	if n, err := s.CountMatches(""); err != nil || n != 6 {
+		t.Errorf("unfiltered count = %d, %v; want 6", n, err)
+	}
+}
+
 // pageIDList is the window's ids in row order.
 func pageIDList(p *models.MatchListPage) []int64 {
 	ids := make([]int64, 0, len(p.Rows))
