@@ -2,9 +2,11 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"slices"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,6 +14,7 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/extract"
 	"github.com/ChristianWSmith/spectra/internal/models"
 	"github.com/ChristianWSmith/spectra/internal/sidecar"
+	"github.com/ChristianWSmith/spectra/internal/store"
 )
 
 // TestHeatmapProgressEmitter pins THE spectra:heatmap-progress emitter
@@ -152,5 +155,144 @@ func TestHeatmapPresenceProgressDenominators(t *testing.T) {
 		if ev.Stage == heatmapStageLoad && ev.Total != 100 {
 			t.Errorf("load event total = %d, want the stream's 100 frames (sidecar meta)", ev.Total)
 		}
+	}
+}
+
+// TestRecomputeRunnerLifecycle pins the background-recompute state
+// machine: submit returns without running anything (the compute is on a
+// goroutine), a duplicate submit for an in-flight match is refused, a
+// second match queues BEHIND the single compute slot (serialization —
+// RebuildCareer must never interleave two Computes), states report
+// running/queued while in flight and drain afterwards, and each run
+// announces analysis-progress (stage analyze, indeterminate 0/0) before
+// analysis-done carries the outcome — "" on success, the failure text
+// otherwise.
+func TestRecomputeRunnerLifecycle(t *testing.T) {
+	type recEv struct {
+		name    string
+		payload any
+	}
+	var mu sync.Mutex
+	var seen []recEv
+	emit := func(name string, payload any) {
+		mu.Lock()
+		defer mu.Unlock()
+		seen = append(seen, recEv{name, payload})
+	}
+	events := func() []recEv {
+		mu.Lock()
+		defer mu.Unlock()
+		return slices.Clone(seen)
+	}
+	rc := &recomputeRunner{}
+	waitFor := func(what string, cond func() bool) {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for !cond() {
+			if time.Now().After(deadline) {
+				s := rc.states()
+				t.Fatalf("timed out waiting for %s (states %+v)", what, s)
+			}
+			time.Sleep(2 * time.Millisecond)
+		}
+	}
+
+	started := make(chan struct{})
+	release := make(chan struct{})
+	ranSecond := make(chan bool, 1)
+
+	if !rc.submit(7, emit, func() error { close(started); <-release; return nil }) {
+		t.Fatal("first submit was deduped")
+	}
+	<-started // run 7 holds the slot and is inside compute()
+
+	// Dedupe: a second submit for the in-flight match never starts a run.
+	if rc.submit(7, emit, func() error { t.Error("duplicate run started"); return nil }) {
+		t.Error("submit accepted while match 7 is already running")
+	}
+
+	// A different match queues behind the slot.
+	if !rc.submit(8, emit, func() error { ranSecond <- true; return errors.New("boom") }) {
+		t.Fatal("second submit was deduped")
+	}
+	waitFor("match 7 running and match 8 queued", func() bool {
+		s := rc.states()
+		return slices.Equal(s.Running, []int64{7}) && slices.Equal(s.Queued, []int64{8})
+	})
+	if got := len(events()); got != 1 {
+		t.Fatalf("%d events while run 2 waits for the slot, want 1 (match 8 must not have started)", got)
+	}
+
+	close(release)
+	waitFor("both runs drained", func() bool {
+		s := rc.states()
+		return len(s.Running) == 0 && len(s.Queued) == 0
+	})
+	<-ranSecond // draining implies match 8's compute ran (and only once — see the deduped submit)
+
+	got := events()
+	want := []recEv{
+		{name: eventAnalysisProgress, payload: AnalysisProgressEvent{MatchID: 7, Stage: models.StageAnalyze, Done: 0, Total: 0}},
+		{name: eventAnalysisDone, payload: AnalysisDoneEvent{MatchID: 7, Error: ""}},
+		{name: eventAnalysisProgress, payload: AnalysisProgressEvent{MatchID: 8, Stage: models.StageAnalyze, Done: 0, Total: 0}},
+		{name: eventAnalysisDone, payload: AnalysisDoneEvent{MatchID: 8, Error: "boom"}},
+	}
+	if !slices.EqualFunc(got, want, func(a, b recEv) bool {
+		return a.name == b.name && a.payload == b.payload
+	}) {
+		t.Errorf("events =\n%+v\nwant\n%+v", got, want)
+	}
+}
+
+// TestRecomputeAnalysisSubmitsInBackground pins the service-level
+// contract: RecomputeAnalysis returns as soon as the run is QUEUED (only
+// the config read is synchronous — the compute itself fails for this
+// nonexistent match, and that failure must NOT come back through the
+// call), the queued run is visible through RecomputeStates, a duplicate
+// submit while it is in flight is a no-op, and the run drains once the
+// slot frees.
+func TestRecomputeAnalysisSubmitsInBackground(t *testing.T) {
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	as := &AnalyticsService{st: st}
+
+	// Hold the compute slot so the queued state is observable
+	// deterministically (the background goroutine blocks on it).
+	as.rc.slot.Lock()
+	if err := as.RecomputeAnalysis(4242); err != nil {
+		as.rc.slot.Unlock()
+		t.Fatalf("submission: %v (only a config read may fail here)", err)
+	}
+	s := as.RecomputeStates()
+	if !slices.Equal(s.Queued, []int64{4242}) || len(s.Running) != 0 {
+		as.rc.slot.Unlock()
+		t.Fatalf("states after submit = %+v, want queued=[4242] running=[]", s)
+	}
+	// Duplicate submit while in flight: still one queued run, no error.
+	if err := as.RecomputeAnalysis(4242); err != nil {
+		as.rc.slot.Unlock()
+		t.Fatalf("duplicate submission: %v", err)
+	}
+	if s := as.RecomputeStates(); !slices.Equal(s.Queued, []int64{4242}) {
+		as.rc.slot.Unlock()
+		t.Fatalf("states after duplicate submit = %+v, want the single queued run kept", s)
+	}
+	as.rc.slot.Unlock()
+
+	// The background run fails (match 4242 does not exist — the error
+	// rides spectra:analysis-done, not the call) and the state drains.
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		s := as.RecomputeStates()
+		if len(s.Queued) == 0 && len(s.Running) == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("background recompute never drained: %+v", s)
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }

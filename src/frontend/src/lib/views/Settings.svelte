@@ -28,8 +28,13 @@
     freeAllDemoCopies,
     listJobs,
     onAssetProgress,
+    onEvent,
     errText,
   } from '../services.js';
+  // Background-recompute rehydration: RecomputeStates reads the runs that
+  // are already in flight (the same generated-binding import Heatmaps
+  // uses — services.js stays untouched for this).
+  import { AnalyticsService } from '../../../bindings/github.com/ChristianWSmith/spectra';
   import { extractAllAssets, assetFamilyForStep } from '../assets.js';
   import { probeAudio } from '../replay/audio.js';
   import { AUDIO_VOL_DEFAULT, FOOTSTEPS_VOL_DEFAULT, prefVolume } from '../replay/sfx.js';
@@ -452,7 +457,49 @@
   // Per-match recompute list (recomputeAnalysis is per-match, never global).
   let readyMatches = $state([]);
   let matchesError = $state('');
-  let recomputeState = $state({}); // matchId → 'busy' | 'ok' | error text
+  // matchId → 'queued' | 'running' | 'ok' | error text. Recompute runs in
+  // the BACKGROUND now (analyticservice.go RecomputeAnalysis returns at
+  // submission): this view sets 'queued' at submit and the row's state
+  // then moves queued → running → ok/failed from the events below — never
+  // a state the backend didn't announce. Transient view state: not
+  // registered, not URL'd.
+  let recomputeState = $state({});
+
+  // The background recompute's lifecycle (single subscription for the view
+  // lifetime; the unsubscribes are the $effect cleanup):
+  //   spectra:analysis-progress — a queued run actually started (stage
+  //     analyze, indeterminate — no fake percent).
+  //   spectra:analysis-done     — success (error '') or the failure text.
+  // The RecomputeStates read rehydrates runs already in flight when this
+  // view mounted, so a remount keeps an honest chip; it only fills ids
+  // this view has no state for, so a completion landing during the read
+  // can never be overwritten by its stale snapshot.
+  $effect(() => {
+    const offProgress = onEvent('spectra:analysis-progress', (d) => {
+      const cur = d ? recomputeState[d.matchId] : undefined;
+      if (cur === undefined || cur === 'queued') {
+        recomputeState = { ...recomputeState, [d.matchId]: 'running' };
+      }
+    });
+    const offDone = onEvent('spectra:analysis-done', (d) => {
+      if (!d) return;
+      recomputeState = { ...recomputeState, [d.matchId]: d.error ? d.error : 'ok' };
+    });
+    AnalyticsService.RecomputeStates()
+      .then((s) => {
+        const next = { ...recomputeState };
+        for (const id of (s && s.queued) || []) if (next[id] === undefined) next[id] = 'queued';
+        for (const id of (s && s.running) || []) if (next[id] === undefined) next[id] = 'running';
+        recomputeState = next;
+      })
+      .catch(() => {
+        /* no rehydration — rows just start in their default state */
+      });
+    return () => {
+      offProgress();
+      offDone();
+    };
+  });
 
   // Render cap: the list shows at most the RECOMPUTE_CAP MOST RECENT
   // ready matches — readyMatches arrives oldest-first (extracted_at ASC),
@@ -630,11 +677,15 @@
     if (!ok) {
       return;
     }
-    recomputeState = { ...recomputeState, [m.id]: 'busy' };
+    // Submit only: the compute runs in the background (Go returns at
+    // submission), so the dialog can close and the row moves on to
+    // 'running'/'ok' from the events — never a premature 'ok' here.
+    recomputeState = { ...recomputeState, [m.id]: 'queued' };
     try {
       await recomputeAnalysis(m.id);
-      recomputeState = { ...recomputeState, [m.id]: 'ok' };
     } catch (e) {
+      // Synchronous submission failure only (config read); a compute
+      // failure arrives as spectra:analysis-done with the error text.
       recomputeState = { ...recomputeState, [m.id]: errText(e) };
     }
   }
@@ -1223,8 +1274,17 @@
             {m.map || '—'} · {m.scoreCT}–{m.scoreT} · {fmtDate(m.extractedAt)}
           </span>
           <span class="row-actions">
-            {#if state === 'busy'}
-              <span class="muted">re-running…</span>
+            {#if state === 'queued' || state === 'running'}
+              <!-- Honest background indicator: waiting shows the queued
+                   chip, computing shows the ONE progress widget with an
+                   indeterminate bar + the truthful stage (analytics.Compute
+                   has no cheap stage counters — 0 means indeterminate,
+                   never "0%"). -->
+              <StatusChip
+                status={state}
+                progress={state === 'running' ? 0 : null}
+                stage={state === 'running' ? 'analyze' : ''}
+              />
             {:else if state === 'ok'}
               <span class="chip status ok">done</span>
             {:else if state}

@@ -55,7 +55,10 @@ export const MatchService = {
   GetSoundEventPresence: rec('GetSoundEventPresence'),
 };
 export const ReplayService = {};
-export const AnalyticsService = {};
+export const AnalyticsService = {
+  // Background recompute (the cache tests pin its completion-driven flush).
+  RecomputeAnalysis: rec('RecomputeAnalysis'),
+};
 export const ProfileService = {};
 export const VoiceService = {
   // Voice index reads (the read-cache tests drive these).

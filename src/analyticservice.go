@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"math"
 	"path/filepath"
+	"slices"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -145,20 +147,33 @@ type HeatmapGrid struct {
 // heatmapGridSide/heatmapPad and the raster arithmetic live in heatmap.go
 // (shared by the presence and event kinds).
 
-// AnalyticsService — see doc comment above.
+// AnalyticsService — see doc comment above. Background recompute state
+// (in-flight runs) lives in rc; progress/completion is announced on the
+// app's event bus (event consts below).
 type AnalyticsService struct {
 	st  *store.Store
 	app *application.App
+	rc  recomputeRunner
 }
 
-// Event name emitted while a heatmap generate works. Deliberately NOT
+// Event names emitted by AnalyticsService. Deliberately NOT
 // spectra:job-progress / spectra:job-done: those payloads key a jobId in
-// the Library's job store (services.js jobProgress map), and a heatmap
-// generate is not a library job — no jobs-table row, no job event
-// (mappackservice.go eventAssetProgress carries the same rule for asset
-// extraction). Progress ONLY: it changes no row, so it never enters
-// services.js's read-cache flush list; only Heatmaps' chip subscribes.
-const eventHeatmapProgress = "spectra:heatmap-progress"
+// the Library's job store (services.js jobProgress map), and neither a
+// heatmap generate nor a re-run analysis is a library job — no jobs-table
+// row, no job event (mappackservice.go eventAssetProgress carries the same
+// rule for asset extraction).
+//
+//	heatmap-progress — progress ONLY (it changes no row, so it never
+//	  enters services.js's read-cache flush list; only Heatmaps' chip
+//	  subscribes).
+//	analysis-progress — progress ONLY, same rule (queued run started).
+//	analysis-done     — the DATA change: the recompute replaced the match's
+//	  derived rows, so services.js flushes the read cache on this one.
+const (
+	eventHeatmapProgress  = "spectra:heatmap-progress"
+	eventAnalysisProgress = "spectra:analysis-progress"
+	eventAnalysisDone     = "spectra:analysis-done"
+)
 
 // heatmapProgressMinInterval throttles spectra:heatmap-progress to at
 // most one per 100 ms — the same cadence as library.go's
@@ -266,6 +281,166 @@ func (s *AnalyticsService) SetConfig(c models.AnalysisConfig) (models.AnalysisCo
 	}
 	c.RuleVersion = cur.RuleVersion + 1 // input RuleVersion ignored — always bump
 	return s.st.SetConfig(c)
+}
+
+// --- Background recompute ----------------------------------------------------
+//
+// RecomputeAnalysis SUBMITS the compute: analytics.Compute runs on a
+// goroutine, so the binding returns as soon as the run is queued — the
+// Settings dialog can close and the user can navigate away while it
+// continues. The outcome rides events instead of the call's return:
+//
+//	spectra:analysis-progress {matchId, stage, done, total} — a submitted
+//	  run actually started. stage is models.StageAnalyze; done/total are
+//	  0/0 (indeterminate): analytics.Compute exposes no cheap per-stage
+//	  counters, so the indicator is an honest indeterminate bar with a
+//	  truthful stage — never a fabricated percentage.
+//	spectra:analysis-done {matchId, error} — the run REPLACED the match's
+//	  derived rows (error "" on success, the failure text otherwise).
+//	  This is the data-change signal: services.js's listener beside the
+//	  recomputeAnalysis wrapper flushes the read cache HERE, at
+//	  completion — invalidating at submission would let the next read
+//	  re-cache pre-compute rows and serve them stale.
+//
+// Runs are deduped per match (a second submit while one is in flight is a
+// no-op whose events keep driving the UI) and SERIALIZED on one slot:
+// analytics.Compute ends in store.RebuildCareer, a read-modify-write over
+// EVERY match's player_stats — two overlapping Computes could commit a
+// career rollup built from a pre-recompute snapshot (the store is
+// single-connection, but each Compute issues separate transactions).
+//
+// AnalysisProgressEvent / AnalysisDoneEvent are the two payloads; the
+// progress one is progress-only (never a cache flush), the done one is
+// the data change.
+
+// AnalysisProgressEvent is the payload of spectra:analysis-progress — a
+// queued background recompute starting its compute.
+type AnalysisProgressEvent struct {
+	MatchID int64  `json:"matchId"`
+	Stage   string `json:"stage"` // models.StageAnalyze
+	Done    int    `json:"done"`  // 0 — indeterminate (see RecomputeAnalysis)
+	Total   int    `json:"total"` // 0 — indeterminate
+}
+
+// AnalysisDoneEvent is the payload of spectra:analysis-done — one
+// background recompute's outcome; Error is "" on success.
+type AnalysisDoneEvent struct {
+	MatchID int64  `json:"matchId"`
+	Error   string `json:"error"`
+}
+
+// RecomputeState is RecomputeStates' answer: the in-flight background
+// recomputes, split by whether they hold the compute slot (running) or
+// wait for it (queued) — the remount rehydration read for Settings'
+// per-match indicator.
+type RecomputeState struct {
+	Running []int64 `json:"running"`
+	Queued  []int64 `json:"queued"`
+}
+
+// recomputeRunner tracks and serializes background recomputes. Zero value
+// ready to use (maps are created under mu on first submit); emit/compute
+// are passed per submit so the tests can drive it with a fake compute and
+// a recorder while production uses AnalyticsService's app handle.
+type recomputeRunner struct {
+	mu      sync.Mutex
+	queued  map[int64]bool
+	running map[int64]bool
+	slot    sync.Mutex // one compute at a time (serialization rationale above)
+}
+
+// submit queues compute on a new goroutine for matchID and returns false
+// when that match is already queued or running (dedupe — no second run).
+// It returns as soon as the run is queued: the goroutine first waits for
+// the slot, then flips queued → running (emitting analysis-progress) and
+// runs compute, then flips running → gone and emits analysis-done.
+func (r *recomputeRunner) submit(matchID int64, emit func(name string, payload any), compute func() error) bool {
+	r.mu.Lock()
+	if r.queued == nil {
+		r.queued = map[int64]bool{}
+	}
+	if r.running == nil {
+		r.running = map[int64]bool{}
+	}
+	if r.queued[matchID] || r.running[matchID] {
+		r.mu.Unlock()
+		return false
+	}
+	r.queued[matchID] = true
+	r.mu.Unlock()
+
+	go func() {
+		r.slot.Lock() // one run at a time — see the serialization rationale
+		defer r.slot.Unlock()
+		r.mu.Lock()
+		delete(r.queued, matchID)
+		r.running[matchID] = true
+		r.mu.Unlock()
+		emit(eventAnalysisProgress, AnalysisProgressEvent{
+			MatchID: matchID, Stage: models.StageAnalyze, Done: 0, Total: 0,
+		})
+		err := compute()
+		r.mu.Lock()
+		delete(r.running, matchID)
+		r.mu.Unlock()
+		msg := ""
+		if err != nil {
+			msg = err.Error()
+		}
+		emit(eventAnalysisDone, AnalysisDoneEvent{MatchID: matchID, Error: msg})
+	}()
+	return true
+}
+
+// states reports the in-flight matches (sorted — map order is random).
+func (r *recomputeRunner) states() RecomputeState {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	out := RecomputeState{Running: []int64{}, Queued: []int64{}}
+	for id := range r.running {
+		out.Running = append(out.Running, id)
+	}
+	for id := range r.queued {
+		out.Queued = append(out.Queued, id)
+	}
+	slices.Sort(out.Running)
+	slices.Sort(out.Queued)
+	return out
+}
+
+// RecomputeAnalysis re-runs classification + analytics for one match under
+// the current rules and refreshes career rollups — IN THE BACKGROUND: it
+// returns as soon as the run is queued (only the config read is
+// synchronous), and the outcome arrives as spectra:analysis-done. A match
+// already queued or running is a no-op. See the background-recompute
+// block above for the events and the serialization rule.
+func (s *AnalyticsService) RecomputeAnalysis(matchID int64) error {
+	c, err := s.st.GetConfig()
+	if err != nil {
+		return err
+	}
+	cfg := analytics.ConfigFrom(c, 0)
+	st := s.st
+	s.rc.submit(matchID, s.emitEvent, func() error {
+		return analytics.Compute(st, matchID, cfg)
+	})
+	return nil
+}
+
+// RecomputeStates reports the in-flight background recomputes — what a
+// freshly (re)mounted Settings uses to keep an already-running run's
+// indicator honest.
+func (s *AnalyticsService) RecomputeStates() RecomputeState {
+	return s.rc.states()
+}
+
+// emitEvent sends payload on the app's event bus; a service constructed
+// without an app handle (the package tests) emits nothing.
+func (s *AnalyticsService) emitEvent(name string, payload any) {
+	if s.app == nil {
+		return
+	}
+	s.app.Event.Emit(name, payload)
 }
 
 // GetEconomy returns per-round economy + buy classes (warmup rounds
