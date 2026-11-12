@@ -17,12 +17,15 @@
 //   D. the search box's suggestion list keeps the SERVICE order — the
 //      sort is view-local and never reorders `players`;
 //   E. PlayerProfile's match-history column header reads "Imported"
-//      (never "Date") and the career-trend dot tooltip prefixes
-//      "Imported" — the chart must not read as a played-on timeline.
+//      (never "Date"), the career-trend dot tooltip leads with the
+//      match's patch (fmtPatch) followed by the honest "Imported" date
+//      (read off the trend point's own extractedAt), and the x-axis
+//      caption names the patch-ordered sequence — the chart must not
+//      read as a played-on timeline.
 //
 // Backend semantics are out of scope here: ListPlayers' ORDER BY
 // (last-seen DESC, steam_id ASC) lives in store.ListPlayers
-// (internal/store/analytics.go) and GetTrend's import-ordered seq in
+// (internal/store/analytics.go) and GetTrend's patch-ordered seq in
 // store.GetTrend — this pins the VIEW's wiring only.
 //
 // jsdom is a declared devDependency of frontend/ — a plain `npm ci`
@@ -115,7 +118,7 @@ const PLAYERS = [
 bindings.ProfileService.ListPlayers = () => Promise.resolve(PLAYERS);
 
 // PlayerProfile's reads (Part 2): one career trend of two points (the
-// sparkline needs ≥2) and a two-row match history, each with its
+// sparkline needs ≥2) and a two-row match history, each row carrying an
 // extractedAt (an IMPORT time).
 bindings.ProfileService.GetProfile = () =>
   Promise.resolve({
@@ -153,10 +156,16 @@ bindings.ProfileService.GetProfile = () =>
       },
     ],
   });
+// The trend points carry their OWN patch + extractedAt (the tooltip
+// reads them straight off the point, never the history join): match 1's
+// history row above says 2026-03-03 while this point says 2025-07-28 —
+// the import time of the 1.40.8.9 patch — so a tooltip showing 2025
+// pins the trend point as the date's source. Patches ascend with seq
+// (GetTrend's row order); the history table keeps its own import order.
 bindings.ProfileService.GetCareerTrend = () =>
   Promise.resolve([
-    { matchId: 1, seq: 0, value: 35 },
-    { matchId: 2, seq: 1, value: 40 },
+    { matchId: 1, seq: 0, value: 35, patch: 14089, extractedAt: '2025-07-28T09:00:00Z' },
+    { matchId: 2, seq: 1, value: 40, patch: 14113, extractedAt: '2026-03-01T10:00:00Z' },
   ]);
 
 const dir = join('node_modules', '.cache', 'spectra-dom-tests', 'profiles');
@@ -350,7 +359,7 @@ await sleep(40);
   );
 }
 
-console.log('E. PlayerProfile: "Imported" history header + "Imported" trend tooltips');
+console.log('E. PlayerProfile: "Imported" history header + patch-first trend tooltips');
 document.body.removeChild(root);
 const pTarget = document.createElement('div');
 document.body.appendChild(pTarget);
@@ -386,14 +395,21 @@ await sleep(100); // mount + getProfile + getCareerTrend + listPlayers
   );
   check('the sparkline rendered its dots', dotTitles.length === 2, JSON.stringify(dotTitles));
   check(
-    'every trend tooltip is prefixed "Imported"',
-    dotTitles.length === 2 && dotTitles.every((t) => t.startsWith('Imported ')),
+    'every trend tooltip leads with the patch (fmtPatch), then the honest "Imported" date',
+    dotTitles.length === 2 &&
+      dotTitles[0].startsWith('1.40.8.9 · Imported ') &&
+      dotTitles[1].startsWith('1.41.1.3 · Imported '),
+    JSON.stringify(dotTitles),
+  );
+  check(
+    'the tooltip date is the trend point\'s own extractedAt (2025), not the history join (2026-03-03)',
+    dotTitles.length === 2 && dotTitles[0].includes('2025'),
     JSON.stringify(dotTitles),
   );
   const caption = pTarget.querySelector('.prof-spark-cap')?.textContent || '';
   check(
-    'the x-axis caption says import order (not play chronology)',
-    caption.includes('oldest import → newest'),
+    'the x-axis caption says patch order, with import order as the within-patch tiebreaker',
+    caption.includes('x = sequence (patch order → import order within a patch)'),
     caption,
   );
 }

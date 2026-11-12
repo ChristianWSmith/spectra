@@ -34,6 +34,7 @@
     fmtPercent,
     fmtInt,
     fmtMetric,
+    fmtPatch,
   } from '../fmt.js';
   import { teamNames, teamStartClass, playerSideClassAt } from '../teams.js';
   import { isCounted, roundIndexLabel, separatorFlags } from '../rounds.js';
@@ -793,7 +794,7 @@
           </button>
           {match.map || '—'}
           · {fmtDuration(match.playbackTimeS)}
-          · patch {match.patchVersion}
+          · patch {fmtPatch(match.patchVersion)}
           · <StatusChip status={match.status || 'ready'} title={match.error || ''} />
           {#if voice && !voice.keyFound && (match.encryptedMessages || 0) > 0}
             <span

@@ -579,6 +579,66 @@ func TestCareerRebuildMath(t *testing.T) {
 	}
 }
 
+// TestGetTrend pins the trend series' ROW ORDER — the sparkline's x axis
+// (store.GetTrend): known CS2 patch numbers ascending (the authoritative
+// "when this match was played": a demo carries no played-at date, see
+// CS2.md), import time (extracted_at) as the tiebreak inside a patch
+// (id after that), and unknown patches (patch_version = 0) trailing no
+// matter how early they imported. Seq is computed from that row order,
+// so it follows automatically. The value/seq/unknown-metric assertions
+// live in TestCareerRebuildMath above.
+func TestGetTrend(t *testing.T) {
+	s := openMem(t)
+	base := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+
+	// save stores one match for player "100" with the given patch, import
+	// time and ADR — the ADR identifies the row in the returned series.
+	save := func(name string, patch int, at time.Time, adr float64) int64 {
+		t.Helper()
+		id, err := s.CreateMatchRow("/d/"+name+".dem", "sha-"+name, 1234)
+		if err != nil {
+			t.Fatalf("CreateMatchRow(%s): %v", name, err)
+		}
+		em := testExtracted("sha-"+name, at)
+		em.Match.PatchVersion = patch
+		em.PlayerStats[0].ADR = adr
+		if err := s.SaveExtracted(id, em); err != nil {
+			t.Fatalf("SaveExtracted(%s): %v", name, err)
+		}
+		return id
+	}
+
+	// A/B/C share patch 14089 (→ extracted_at ASC, then id ASC for B/C
+	// which share an import time), D is a LATER patch with the EARLIEST
+	// import, and E is unknown (0) yet imported first of all — it still
+	// trails every known patch.
+	idA := save("trend-a", 14089, base.Add(time.Hour), 10)
+	idB := save("trend-b", 14089, base.Add(2*time.Hour), 20)
+	idC := save("trend-c", 14089, base.Add(2*time.Hour), 30)
+	idD := save("trend-d", 14113, base, 40)
+	idE := save("trend-e", 0, base, 50)
+
+	trend, err := s.GetTrend("100", "adr")
+	if err != nil {
+		t.Fatalf("GetTrend: %v", err)
+	}
+	wantIDs := []int64{idA, idB, idC, idD, idE}
+	wantPatches := []int{14089, 14089, 14089, 14113, 0}
+	wantValues := []float64{10, 20, 30, 40, 50}
+	if len(trend) != len(wantIDs) {
+		t.Fatalf("GetTrend returned %d points, want %d: %+v", len(trend), len(wantIDs), trend)
+	}
+	for i, p := range trend {
+		if p.MatchID != wantIDs[i] || p.Patch != wantPatches[i] || p.Value != wantValues[i] || p.Seq != i {
+			t.Errorf("trend[%d] = %+v, want match %d patch %d value %v seq %d",
+				i, p, wantIDs[i], wantPatches[i], wantValues[i], i)
+		}
+		if p.ExtractedAt.IsZero() {
+			t.Errorf("trend[%d].ExtractedAt = zero, want the match's import time", i)
+		}
+	}
+}
+
 // TestGetPlayerWeaponJSONsHeadshots pins the headshots-by-weapon
 // derivation in GetPlayerWeaponJSONs: it counts exactly the headshot
 // kills extract would credit to player_stats.headshots/kills_by_weapon
