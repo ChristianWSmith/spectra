@@ -334,8 +334,8 @@ const rowsOf = (table) => [...table.querySelectorAll('tbody tr')];
 const headerTexts = (table) =>
   [...table.querySelectorAll('thead th')].map((th) => th.textContent.trim());
 // The Winner cell chip: the `.chip.side` span inside the WINNER column —
-// column 3 of the Rounds table (Cmp · Rd · Winner · …), column 2 of the
-// buy-types table (Rd · Winner · …). The Rounds table's Equip CT/T cells
+// column 3 of the Rounds table (Cmp · RD · Winner · …), column 2 of the
+// buy-types table (RD · Winner · …). The Rounds table's Equip CT/T cells
 // also carry `.chip side ct|t` chips, so the column index matters.
 const winnerChips = (table, winnerCol) =>
   rowsOf(table)
@@ -346,13 +346,13 @@ const splitRows = (table) =>
 // Round number of a round row (its first .econ-rd button, else the first cell).
 const roundOf = (tr) => (tr.querySelector('.econ-rd') || tr.children[1]).textContent.trim();
 
-console.log('A. Rounds tab: Rd header, side-colored TEAM winner names, split-before');
+console.log('A. Rounds tab: RD header, side-colored TEAM winner names, split-before');
 let root = await showMatch(dataFor(13), { routeTab: 'Rounds' });
 let table = root.querySelector('.data-table');
 check('rounds table rendered', !!table);
 check(
-  'round-number header is Rd (uppercase → "RD" matches Economy)',
-  headerTexts(table).includes('Rd') && !headerTexts(table).includes('№'),
+  'round-number header is RD (the standardized prefix — matches Economy)',
+  headerTexts(table).includes('RD') && !headerTexts(table).includes('№'),
   JSON.stringify(headerTexts(table)),
 );
 check('pref-off renders the 13 counted rows only', rowsOf(table).length === 13, String(rowsOf(table).length));
@@ -531,13 +531,13 @@ check(
   'm3a palette selector or m3b flat rule missing/overridden',
 );
 
-console.log('D. Economy tab: buy-types table — Rd header, TEAM names, pip retired');
+console.log('D. Economy tab: buy-types table — RD header, TEAM names, pip retired');
 root = await showMatch(dataFor(13), { routeTab: 'Economy' });
 table = root.querySelector('.econ-table');
 check('buy-types table rendered', !!table);
 check(
   'economy header still reads Rd',
-  headerTexts(table).includes('Rd'),
+  headerTexts(table).includes('RD'),
   JSON.stringify(headerTexts(table)),
 );
 chips = winnerChips(table, 2);

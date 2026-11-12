@@ -1074,7 +1074,7 @@
                 class="num cmp-cmp-col"
                 title="Select rounds to compare (up to 4 — knife/warmup rounds excluded)"
               >Cmp</th>
-              <th scope="col" class="num">Rd</th>
+              <th scope="col" class="num">RD</th>
               <th scope="col">Winner</th>
               <th
                 scope="col"

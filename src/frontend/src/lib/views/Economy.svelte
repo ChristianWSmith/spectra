@@ -334,7 +334,7 @@
           <table class="data-table econ-table">
             <thead>
               <tr>
-                <th scope="col" class="num">Rd</th>
+                <th scope="col" class="num">RD</th>
                 <th scope="col">Winner</th>
                 <th scope="col">CT buy</th>
                 <th scope="col">T buy</th>

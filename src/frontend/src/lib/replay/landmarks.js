@@ -575,7 +575,7 @@ export function normalizeWorld(ev) {
 }
 
 // normalizeChat converts one ChatRow into a landmark row. The round
-// clock ("R12 1:23" with the match-relative fallback) is a formatting
+// clock ("RD12 1:23" with the match-relative fallback) is a formatting
 // concern — lib/fmt.js chatClock — not part of the row.
 // KEPT (not dead): no FEED SOURCE produces chat rows since Q3a cut the
 // chat category, but the chat ROW SHAPE is still vocabulary — the shared
