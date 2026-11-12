@@ -21,8 +21,12 @@ type AnalysisConfig struct {
 	// opportunities missed" only when a living teammate of the victim was
 	// within this distance of the KILLER at the death tick. The proximity
 	// itself is measured once at extract time (config-independent, stored
-	// on the kill event as detail_json.nearDist); this threshold only
-	// gates the read in store.GetCombatStats.
+	// on the kill event as detail_json.nearDist); this threshold is
+	// applied at ANALYZE time by analytics.Compute — the counts are
+	// stored per match in match_trade_opps, so a change bumps
+	// rule_version → the match goes behind → RecomputeAll rewrites them
+	// (owner, 2026-11-12: read-time thresholding of rule outputs is
+	// forbidden — AGENTS.md "Analysis-rule derived values").
 	TradeOppDistance int `json:"tradeOppDistance"`
 	RuleVersion      int `json:"ruleVersion"`
 }
@@ -158,8 +162,9 @@ type UtilityEvent struct {
 
 // CombatStat is one per-player combat deep-dive row derived from stored
 // rows. TradeOppMissed is inferred — a gated subset of the untraded
-// deaths (kill-event detail_json.nearDist within the configured
-// trade-opportunity distance; see the store.GetCombatStats notes) — and
+// deaths (the kill event's detail_json.nearDist within the configured
+// trade-opportunity distance, gated at analyze time and stored in
+// match_trade_opps — see the store.GetCombatStats notes) — and
 // needs a UI badge.
 type CombatStat struct {
 	SteamID        string  `json:"steamId"`

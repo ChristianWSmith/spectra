@@ -70,7 +70,7 @@ func TestLivingTeammatePosGuards(t *testing.T) {
 }
 
 // killDetailNearDist pulls the nearDist the kill handler stored in
-// detail_json — the payload store.GetCombatStats gates on.
+// detail_json — the payload analytics' trade-opportunity counts gate on.
 func killDetailNearDist(t *testing.T, a *agg) float64 {
 	t.Helper()
 	var kill *models.Event

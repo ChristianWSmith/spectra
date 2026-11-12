@@ -79,103 +79,57 @@ func TestGetPlayerSideSplits(t *testing.T) {
 	}
 }
 
-// TestCountPlayerTradeOpportunities pins the definition in the query's
-// doc comment, decision by decision, against a 200u gate (the fixtures
-// are calibrated to it, not to the 1000u default):
-//
-// baseline (+1): an enemy kill in a counted round whose victim is this
-// player's teammate that round, the player alive at the death tick, and
-// detail_json.nearDist inside [0, gate].
-//
-// rejected: nearDist beyond the gate; the -1 "not measurable" sentinel;
-// a kill with no detail_json; the player's OWN death (victim = player);
-// a victim or killer with no freeze-end side sample (unknown, never
-// guessed); a teamkill; a suicide; a warmup-round kill; and a teammate
-// death after the player himself died (a dead player cannot answer).
+// TestCountPlayerTradeOpportunities pins the STORED read: the profile's
+// trade-opportunity denominator is SUM(opps) over the match_trade_opps
+// rows analytics.Compute writes per match (AGENTS.md "Analysis-rule
+// derived values" — the count is stored at analyze time; "no row" = 0),
+// scoped to the requested steam_id across every match of the library.
+// The RETIRED query-time derivation — and its reject-case fixture
+// (warmup/pregame kills, teamkills, suicides, unknown-side players, an
+// already-dead player, out-of-range/-1/missing nearDist, the boundary
+// values) — lives on as the reference oracle in internal/analytics'
+// tradeopps_equivalence_test.go (legacy query-time derivation, retired
+// 2026-11-12), which pins stored == oracle on exactly those cases.
 func TestCountPlayerTradeOpportunities(t *testing.T) {
 	s := openMem(t)
-	id, err := s.CreateMatchRow("/d/tradeopp.dem", "sha-tradeopp", 7)
+	id1, err := s.CreateMatchRow("/d/tradeopp1.dem", "sha-tradeopp1", 7)
 	if err != nil {
 		t.Fatalf("CreateMatchRow: %v", err)
 	}
-	em := testExtracted("sha-tradeopp", time.Now())
-	em.Players = []models.Player{
-		{SteamID: "100", Name: "alice", Side: "ct"}, // the profile player
-		{SteamID: "200", Name: "bob", Side: "t"},    // enemy killer
-		{SteamID: "300", Name: "carl", Side: "ct"},  // alice's teammate
-		{SteamID: "500", Name: "dave", Side: "ct"},  // alice's teammate
-		{SteamID: "400", Name: "zed", Side: "ct"},   // no round-1 sample
-		{SteamID: "600", Name: "ghost", Side: "t"},  // no round-1 sample
+	id2, err := s.CreateMatchRow("/d/tradeopp2.dem", "sha-tradeopp2", 7)
+	if err != nil {
+		t.Fatalf("CreateMatchRow (2): %v", err)
 	}
-	em.PlayerStats = []models.PlayerStats{
-		{SteamID: "100", Side: "ct", Name: "alice"},
+	// Rows as analytics.Compute writes them: match 1 credits alice three
+	// opportunities (and bob one — another player's row must not leak
+	// into alice's SUM), match 2 two more for alice. A third match is
+	// left with NO rows: absence contributes 0.
+	if err := s.ReplaceTradeOpps(id1, map[string]int{"100": 3, "200": 1}, nil); err != nil {
+		t.Fatalf("ReplaceTradeOpps (1): %v", err)
 	}
-	em.RoundSides = []models.RoundPlayerSide{
-		{Round: 1, SteamID: "100", Side: "ct"},
-		{Round: 1, SteamID: "200", Side: "t"},
-		{Round: 1, SteamID: "300", Side: "ct"},
-		{Round: 1, SteamID: "500", Side: "ct"},
-		// Warmup sides too, so the warmup FILTER is what rejects #10.
-		{Round: 0, SteamID: "100", Side: "ct"},
-		{Round: 0, SteamID: "200", Side: "t"},
-		{Round: 0, SteamID: "300", Side: "ct"},
-	}
-	em.Events = []models.Event{
-		{Tick: 10, Round: 1, Kind: models.EventKill, Attacker: "200", Victim: "300",
-			DetailJSON: `{"nearDist":150}`}, // baseline: +1
-		{Tick: 20, Round: 1, Kind: models.EventKill, Attacker: "200", Victim: "300",
-			DetailJSON: `{"nearDist":500}`}, // beyond the 200u gate
-		{Tick: 30, Round: 1, Kind: models.EventKill, Attacker: "200", Victim: "300",
-			DetailJSON: `{"nearDist":-1}`}, // not measurable
-		{Tick: 40, Round: 1, Kind: models.EventKill, Attacker: "200", Victim: "300"},
-		{Tick: 50, Round: 1, Kind: models.EventKill, Attacker: "200", Victim: "100",
-			DetailJSON: `{"nearDist":150}`}, // the player's own death
-		{Tick: 60, Round: 1, Kind: models.EventKill, Attacker: "200", Victim: "400",
-			DetailJSON: `{"nearDist":150}`}, // victim side unknown
-		{Tick: 70, Round: 1, Kind: models.EventKill, Attacker: "600", Victim: "300",
-			DetailJSON: `{"nearDist":150}`}, // killer side unknown
-		{Tick: 80, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "300",
-			DetailJSON: `{"nearDist":150}`}, // teamkill
-		{Tick: 90, Round: 1, Kind: models.EventKill, Attacker: "300", Victim: "300",
-			DetailJSON: `{"nearDist":150}`}, // suicide
-		{Tick: 5, Round: 0, Kind: models.EventKill, Attacker: "200", Victim: "300",
-			DetailJSON: `{"nearDist":150}`}, // warmup round
-		{Tick: 110, Round: 1, Kind: models.EventKill, Attacker: "200", Victim: "500",
-			DetailJSON: `{"nearDist":150}`}, // alice is dead by then
-		// alice's death (makes #11 and everything after unavailable):
-		{Tick: 55, Round: 1, Kind: models.EventKill, Attacker: "200", Victim: "100",
-			DetailJSON: `{"nearDist":150}`},
-	}
-	if err := s.SaveExtracted(id, em); err != nil {
-		t.Fatalf("SaveExtracted: %v", err)
-	}
-	if _, err := s.SetConfig(models.AnalysisConfig{
-		TradeWindowS: 5, EcoFullBuy: 20000, EcoForce: 10000, TradeOppDistance: 200, RuleVersion: 1,
-	}); err != nil {
-		t.Fatalf("SetConfig (distance 200): %v", err)
+	if err := s.ReplaceTradeOpps(id2, map[string]int{"100": 2}, nil); err != nil {
+		t.Fatalf("ReplaceTradeOpps (2): %v", err)
 	}
 
 	n, err := s.CountPlayerTradeOpportunities("100")
 	if err != nil {
 		t.Fatalf("CountPlayerTradeOpportunities: %v", err)
 	}
-	if n != 1 {
-		t.Errorf("opportunities @200u = %d, want 1 (only the tick-10 baseline)", n)
+	if n != 5 {
+		t.Errorf("opportunities = %d, want 5 (3 + 2 across matches; bob's row excluded)", n)
 	}
 	if n, err := s.CountPlayerTradeOpportunities("999"); err != nil || n != 0 {
-		t.Errorf("unknown player = %d, %v, want 0, nil", n, err)
+		t.Errorf("unknown player = %d, %v, want 0, nil (no rows → 0)", n, err)
 	}
 
-	// Widening the gate to the 1000u default admits the tick-20 death
-	// (500u) and nothing else — the gate is the configured radius, not a
-	// hardcoded one.
-	if _, err := s.SetConfig(models.AnalysisConfig{
-		TradeWindowS: 5, EcoFullBuy: 20000, EcoForce: 10000, TradeOppDistance: 1000, RuleVersion: 1,
-	}); err != nil {
-		t.Fatalf("SetConfig (distance 1000): %v", err)
+	// A recompute REPLACES the match's rows (delete-then-insert): match 1
+	// re-ran under a narrower radius and now stores one opportunity —
+	// the SUM follows the stored rows, never a query-time threshold.
+	if err := s.ReplaceTradeOpps(id1, map[string]int{"100": 1}, nil); err != nil {
+		t.Fatalf("ReplaceTradeOpps (re-run): %v", err)
 	}
-	if n, err := s.CountPlayerTradeOpportunities("100"); err != nil || n != 2 {
-		t.Errorf("opportunities @1000u = %d, %v, want 2", n, err)
+	if n, err := s.CountPlayerTradeOpportunities("100"); err != nil || n != 3 {
+		t.Errorf("opportunities after re-run = %d, %v, want 3 (1 + 2)", n, err)
 	}
 }
 

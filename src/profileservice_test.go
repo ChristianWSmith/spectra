@@ -55,8 +55,11 @@ func newProfileFixture(t *testing.T) *ProfileService {
 		// in the counted round with a measurable nearDist inside the
 		// default 1000u trade-opportunity distance — three opportunities
 		// for alice per match (she is alive and on the victim's side in
-		// round 1). store.CountPlayerTradeOpportunities is what counts
-		// them; see TestGetProfileTradeRatePercent for the total.
+		// round 1). The kill events are what analytics.Compute gates on
+		// when it WRITES match_trade_opps; this fixture seeds the row
+		// that pass produces (the store test pins the SUM read, the
+		// analytics equivalence test pins the gating) — see
+		// TestGetProfileTradeRatePercent for the total.
 		for i, victim := range []string{"300", "400", "500"} {
 			events = append(events, models.Event{
 				Tick: 150 + 10*i, Round: 1, Kind: models.EventKill,
@@ -117,6 +120,14 @@ func newProfileFixture(t *testing.T) *ProfileService {
 		}
 		if err := st.SaveExtracted(id, em); err != nil {
 			t.Fatalf("SaveExtracted: %v", err)
+		}
+		// The stored trade-opportunity rows analytics.Compute writes for
+		// alice here: three tradeable teammate deaths per match under the
+		// default distance (nearDist 500 ≤ 1000) — the profile reads them
+		// through store.CountPlayerTradeOpportunities (SUM over
+		// match_trade_opps).
+		if err := st.ReplaceTradeOpps(id, map[string]int{"100": 3}, nil); err != nil {
+			t.Fatalf("ReplaceTradeOpps: %v", err)
 		}
 		// One counted round of per-round stats — the Sides card's rows
 		// (store.GetPlayerSideSplits). Alice plays it on `side`: match 1

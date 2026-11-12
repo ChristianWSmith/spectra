@@ -143,7 +143,9 @@ func (s *ProfileService) GetProfile(steamID string) (Profile, error) {
 	// trade opportunities. The numerator is player_stats.trade_kills via
 	// the career rollup (recomputed by analytics.Compute, so it follows
 	// the configured trade window); the denominator is
-	// store.CountPlayerTradeOpportunities — both sides span every match
+	// store.CountPlayerTradeOpportunities — SUM of the stored
+	// match_trade_opps rows analytics.Compute writes (AGENTS.md
+	// "Analysis-rule derived values"), so both sides span every match
 	// in the library, unlike the ≤100-row history (the old denominator,
 	// the player's own deaths). Percent scale: 0..100 like OpeningRate
 	// above and every other *Pct/*Rate field on this DTO — the value

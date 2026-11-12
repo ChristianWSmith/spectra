@@ -10,10 +10,11 @@ import (
 // (schema.sql, applied whole on every Open) must actually CREATE each
 // index — a dropped or renamed statement would silently degrade the
 // library-wide reads it exists for (RebuildCareer's per-group subqueries,
-// ListPlayers' bot check, CountPlayerTradeOpportunities' kind scan, the
-// pending-job lookups) back into full-table scans. Mirrors the column-pin
-// pattern in TestColumnListConstsMatchSchema, against sqlite_master so the
-// DDL really applied rather than merely being present as text.
+// ListPlayers' bot check, the profile's stored trade-opportunity SUM,
+// the pending-job lookups) back into full-table scans. Mirrors the
+// column-pin pattern in TestColumnListConstsMatchSchema, against
+// sqlite_master so the DDL really applied rather than merely being
+// present as text.
 func TestTier1IndexesPresent(t *testing.T) {
 	s := openMem(t)
 
@@ -24,6 +25,7 @@ func TestTier1IndexesPresent(t *testing.T) {
 		"idx_events_kind_match",
 		"idx_jobs_path",
 		"idx_jobs_match",
+		"idx_match_trade_opps_steam",
 	}
 	for _, name := range want {
 		var n int

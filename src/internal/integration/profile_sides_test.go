@@ -59,7 +59,8 @@ func TestGoldenProfileSideSplits(t *testing.T) {
 		t.Fatalf("SaveExtracted: %v", err)
 	}
 	cfg := analytics.ConfigFrom(models.AnalysisConfig{
-		TradeWindowS: 5.0, EcoFullBuy: 20000, EcoForce: 10000, RuleVersion: 1,
+		TradeWindowS: 5.0, EcoFullBuy: 20000, EcoForce: 10000,
+		TradeOppDistance: store.DefaultConfig.TradeOppDistance, RuleVersion: 1,
 	}, 0)
 	if err := analytics.Compute(st, id, cfg); err != nil {
 		t.Fatalf("analytics.Compute: %v", err)

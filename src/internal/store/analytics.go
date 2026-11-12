@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"sort"
 	"time"
 
 	"github.com/ChristianWSmith/spectra/internal/models"
@@ -57,6 +58,8 @@ const (
 
 	playerCareerCols = `steam_id, name, matches, wins, adr_avg, adr_std, kd, hs_pct,
 		kast_pct, openings, opener_wins, trades, clutches, updated_at`
+
+	matchTradeOppsCols = `steam_id, opps, missed`
 
 	savedFilterCols = `name, scope, filter_json, created_at`
 )
@@ -255,6 +258,51 @@ func (s *Store) ReplaceTradeKills(matchID int64, counts map[string]int) error {
 		return fmt.Errorf("%s: %w", op, err)
 	}
 	return nil
+}
+
+// ReplaceTradeOpps swaps a match's match_trade_opps rows in one
+// transaction (canonical replaceMatchRows — delete-then-insert, so a
+// recompute under a smaller distance leaves no stale count). Rows are
+// SPARSE: a steam ID whose two counts are both ≤ 0 writes no row (reads
+// treat absence as 0 — the same rule as a missing player_stats row), and
+// a match with nothing to count ends up with no rows at all.
+//
+// CONTRACT: the counts arrive pre-derived from analytics.Compute — the
+// ONE writer, which applies cfg.TradeOppDistance at analyze time (see
+// AGENTS.md "Analysis-rule derived values": every rules-derived value
+// is stored at analyze time; read-time thresholding is forbidden). This
+// writer applies no rule of its own. Like the neighboring Replace*
+// functions, each table's transaction commits INDEPENDENTLY: a failed
+// pass may have already committed this table, or failed here while
+// earlier replaces committed — no cross-table rollback is attempted;
+// the pass never stamps (compute.go's RULE STAMP note), so the match
+// stays behind and the next run rewrites every table.
+func (s *Store) ReplaceTradeOpps(matchID int64, opps, missed map[string]int) error {
+	const op = "store: replace trade opps"
+	set := map[string]bool{}
+	for sid, n := range opps {
+		if n > 0 {
+			set[sid] = true
+		}
+	}
+	for sid, n := range missed {
+		if n > 0 {
+			set[sid] = true
+		}
+	}
+	keys := make([]string, 0, len(set))
+	for sid := range set {
+		keys = append(keys, sid)
+	}
+	sort.Strings(keys) // deterministic insert order (row errors name no index, but reproducibility is free)
+	return s.replaceMatchRows(op, "match_trade_opps", "match_id, "+matchTradeOppsCols, matchID, len(keys),
+		func(stmt *sql.Stmt, i int) error {
+			sid := keys[i]
+			if _, err := stmt.Exec(matchID, scrub(sid), opps[sid], missed[sid]); err != nil {
+				return fmt.Errorf("%s: %w", op, err)
+			}
+			return nil
+		})
 }
 
 // GetRoundClasses returns a match's stored classifications by round ASC.
@@ -583,21 +631,29 @@ func sideFlips(rounds []models.EconomyRow, exact map[int]map[string]string) []bo
 // scale: 0..100 percents — the read-DTO convention every consumer renders
 // with frontend fmtPercent directly (a 0..1 fraction there renders as
 // "0.05%", not "5%"); the scale note at the assignments is pinned by
-// TestGetCombatStatsFromStoredRows. Team attribution (FF, and the
-// trade-opportunity heuristic) uses each player's FINAL side — events carry
-// no team column, so this is an approximation (documented; badge in UI).
+// TestGetCombatStatsFromStoredRows. Team attribution (friendly fire)
+// uses each player's FINAL side — events carry no team column, so this
+// is an approximation (documented; badge in UI). The trade-opportunity
+// counts do no side attribution here at all: they arrive stored per
+// player (analytics gates them on the exact per-round freeze-end sides
+// at analyze time).
 // UntradedDeaths is the raw engagement count (timing only);
 // TradeOppMissed is the distance-gated subset of it (inferred heuristic —
 // UI badge): an untraded death counts only when the kill event's
 // detail_json.nearDist — the closest living teammate of the victim to the
 // KILLER at the death tick, measured once at extract time (extract.
-// nearTeammateDist) — is ≥ 0 (nobody measurable → -1 → never counted) and
-// ≤ the stored analysis_config.trade_opp_distance (default 1000 units,
+// nearTeammateDist) — was ≥ 0 (nobody measurable → -1 → never counted)
+// and ≤ the analysis_config.trade_opp_distance (default 1000 units,
 // calibrated to the range trades actually happen in — see DefaultConfig).
+// That gate runs ONCE at analyze time: analytics.Compute stores the
+// per-match counts in match_trade_opps, and this read returns them
+// (AGENTS.md "Analysis-rule derived values" — read-time thresholding of
+// rule outputs is forbidden; the query-time json_extract gate retired
+// 2026-11-12).
 //
-// This SQL is AUTHORITATIVE: it is the single implementation of these
-// rules (there is no second in-memory copy to drift from), and every
-// decision below is pinned by TestGetCombatStatsSQLDecisions:
+// This SQL is AUTHORITATIVE for the read-time decisions below (they
+// have no second implementation anywhere), and every decision is pinned
+// by TestGetCombatStatsSQLDecisions:
 //
 //  1. Friendly fire is `ap.side = vp.side`: an absent player row (LEFT JOIN
 //     NULL) never matches, but two players whose stored side is "" (unknown)
@@ -606,13 +662,14 @@ func sideFlips(rounds []models.EconomyRow, exact map[int]map[string]string) []bo
 //     tick — a same-tick trade kill credits the actual killer, never any
 //     other death of the victim on that tick.
 //  3. Rows come back ordered by player NAME (ORDER BY p.name ASC).
-//  4. TradeOppMissed is proximity-gated against analysis_config.
-//     trade_opp_distance: the untraded row must join to its kill event's
-//     detail_json.nearDist within [0, distance]. No matching kill event,
-//     malformed/absent JSON, a missing nearDist key or the -1 sentinel all
-//     yield NULL/−1 → NOT counted (no position data → no opportunity
-//     claim). UntradedDeaths stays the ungated count — the two columns are
-//     deliberately different metrics.
+//  4. TradeOppMissed READS THE STORED count (match_trade_opps.missed —
+//     written by analytics.Compute under the match's rule version and
+//     cfg.TradeOppDistance). "No row" = 0, exactly like a missing
+//     player_stats row. The proximity gate itself moved out of this
+//     query into analyze time; its equivalence with the retired
+//     query-time SQL is pinned by internal/analytics' trade-opps oracle
+//     test. UntradedDeaths stays the ungated read-time count — the two
+//     columns are deliberately different metrics.
 //  5. BASE ROWS ARE HUMANS ONLY (HumanOnly): the per-player table this
 //     builds is a roster/aggregate surface, so a bot's stats row never
 //     reaches it — its DAMAGE (dmgs), untraded deaths, trade
@@ -624,10 +681,6 @@ func sideFlips(rounds []models.EconomyRow, exact map[int]map[string]string) []bo
 // Change these decisions (and this comment) deliberately — they are
 // pinned by TestGetCombatStatsSQLDecisions.
 func (s *Store) GetCombatStats(matchID int64) ([]models.CombatStat, error) {
-	cfg, err := s.GetConfig()
-	if err != nil {
-		return nil, err
-	}
 	// Damage per attacker, splitting damage-on-kill (a kill event with the
 	// same attacker/victim on the same tick) from damage-without-kill, and
 	// same-final-side (friendly) damage.
@@ -686,26 +739,18 @@ func (s *Store) GetCombatStats(matchID int64) ([]models.CombatStat, error) {
 		return nil, fmt.Errorf("store: get combat stats: %w", err)
 	}
 
-	// Trade opportunities missed: the untraded deaths whose kill event
-	// carries a nearDist within [0, cfg.TradeOppDistance] — i.e. a living
-	// teammate of the victim was close enough to the killer at the death
-	// tick to actually trade him. The scalar subquery joins the untraded
-	// engagement back to its kill event (same tick/attacker/victim);
-	// json_valid guards malformed payloads (json_extract would error),
-	// a missing key or the -1 sentinel yields NULL/out-of-range → not
-	// counted (decision 4 — see the doc comment).
+	// Trade opportunities missed: the STORED per-match counts —
+	// analytics.Compute writes match_trade_opps under
+	// cfg.TradeOppDistance at analyze time (AGENTS.md "Analysis-rule
+	// derived values"; the retired query-time json_extract gate is kept
+	// as the reference oracle in internal/analytics' equivalence test).
+	// The canonical home of the gate is analytics.tradeOppCounts — this
+	// read only fetches the stored number (decision 4 in the doc
+	// comment). No row = 0, the same absence rule as a missing
+	// player_stats row below.
 	tradeOpp := map[string]int{}
 	toRows, err := s.db.Query(
-		`SELECT e.b_steam, COUNT(*) FROM engagements e
-		 WHERE e.match_id = ? AND e.kind = 'untraded' AND e.b_steam <> ''
-		   AND (SELECT CASE WHEN json_valid(k.detail_json)
-		                    THEN json_extract(k.detail_json, '$.nearDist') END
-		        FROM events k
-		        WHERE k.match_id = e.match_id AND k.kind = 'kill'
-		          AND k.tick = e.tick AND k.attacker = e.a_steam
-		          AND k.victim = e.b_steam
-		        LIMIT 1) BETWEEN 0 AND ?
-		 GROUP BY e.b_steam`, matchID, cfg.TradeOppDistance,
+		`SELECT steam_id, missed FROM match_trade_opps WHERE match_id = ?`, matchID,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("store: get combat stats: %w", err)
@@ -1365,63 +1410,35 @@ func (s *Store) GetPlayerSideSplits(steamID string) ([]models.ProfileSideSplit, 
 
 // CountPlayerTradeOpportunities returns how many trade opportunities a
 // player had across every match in the library — the denominator of the
-// profile's Trade rate (profileservice.GetProfile). Nothing stores this
-// count, so THIS query is the definition; it is pinned by
-// TestCountPlayerTradeOpportunities.
+// profile's Trade rate (profileservice.GetProfile): one `SUM(opps)` seek
+// over the stored match_trade_opps rows (steam_id index — µs at every
+// library scale; the query-time derivation it replaced scanned every
+// kill ever recorded and failed at 1k+ matches: 8.16 s @1k, 77.9 s @10k
+// per profile open on the single DB connection).
 //
-// One opportunity = one ENEMY kill in a counted round (warmup/pregame
-// excluded; both sides known from that round's freeze-end samples and
-// different — the same gates analytics.Engagements applies) whose VICTIM
-// is this player's teammate in that round, where BOTH:
+// The count is written per match by analytics.Compute (AGENTS.md
+// "Analysis-rule derived values" — rules-derived values are STORED at
+// analyze time; "no row" = 0, the same absence rule as a missing
+// player_stats row). The exact predicate lives THERE, in
+// analytics.tradeOppCounts: an enemy kill in a counted round whose
+// victim was this player's teammate, the player alive at the death
+// tick, and the kill's detail_json.nearDist within
+// [0, analysis_config.trade_opp_distance] — the proximity is measured
+// to the NEAREST living teammate of the victim (team-level), so the
+// gate can credit someone who was himself out of range — the same
+// documented approximation as GetCombatStats' final-side friendly
+// fire. The numerator (successful trades) is player_stats.trade_kills
+// via the career rollup, so both sides follow the configured rules.
 //
-//   - the player was ALIVE at the death tick: no death event for them in
-//     that round at or before it — a dead player cannot answer; and
-//   - the death was tradeable in principle: the kill event's
-//     detail_json.nearDist (extract.nearTeammateDist — the nearest living
-//     teammate of the victim to the killer at that tick; -1 when nobody
-//     is measurable) falls within [0, analysis_config.trade_opp_distance].
-//     This is the SAME proximity predicate store.GetCombatStats gates
-//     "Trade opportunities missed" on, applied to every teammate death
-//     rather than only the untraded ones (that metric is this set's
-//     untraded subset).
-//
-// The proximity is measured to the NEAREST living teammate of the victim,
-// not to this player specifically (per-player distances are not stored),
-// so the gate is team-level: a teammate death counts for every player
-// still alive on the victim's side, which can credit someone who was
-// himself out of range — the same class of documented approximation as
-// GetCombatStats' final-side friendly fire. The numerator (successful
-// trades) is player_stats.trade_kills via the career rollup, recomputed
-// by analytics.Compute, so both sides follow the configured trade window.
+// The RETIRED query-time SQL (legacy query-time derivation, retired
+// 2026-11-12) is kept verbatim as the reference oracle in
+// internal/analytics' trade-opps equivalence test, which pins stored ==
+// oracle on synthetic fixtures.
 func (s *Store) CountPlayerTradeOpportunities(steamID string) (int, error) {
-	cfg, err := s.GetConfig()
-	if err != nil {
-		return 0, err
-	}
 	sid := scrub(steamID)
 	var n int
-	err = s.db.QueryRow(
-		`SELECT COUNT(*)
-		 FROM events d
-		 JOIN rounds rd ON rd.match_id = d.match_id AND rd.number = d.round
-		 JOIN round_player_sides ks
-		   ON ks.match_id = d.match_id AND ks.round = d.round AND ks.steam_id = d.attacker
-		 JOIN round_player_sides vs
-		   ON vs.match_id = d.match_id AND vs.round = d.round AND vs.steam_id = d.victim
-		 WHERE d.kind = 'kill'
-		   AND d.attacker <> '' AND d.attacker <> d.victim AND d.victim <> ?
-		   AND rd.warmup = 0 AND rd.pregame = 0
-		   AND ks.side IN ('ct','t') AND vs.side IN ('ct','t') AND ks.side <> vs.side
-		   AND EXISTS (SELECT 1 FROM round_player_sides ps
-		               WHERE ps.match_id = d.match_id AND ps.round = d.round
-		                 AND ps.steam_id = ? AND ps.side = vs.side)
-		   AND NOT EXISTS (SELECT 1 FROM events pd
-		                   WHERE pd.match_id = d.match_id AND pd.round = d.round
-		                     AND pd.kind = 'kill' AND pd.victim = ? AND pd.tick <= d.tick)
-		   AND CASE WHEN json_valid(d.detail_json)
-		            THEN json_extract(d.detail_json, '$.nearDist') END
-		       BETWEEN 0 AND ?`,
-		sid, sid, sid, cfg.TradeOppDistance,
+	err := s.db.QueryRow(
+		`SELECT COALESCE(SUM(opps), 0) FROM match_trade_opps WHERE steam_id = ?`, sid,
 	).Scan(&n)
 	if err != nil {
 		return 0, fmt.Errorf("store: count player trade opportunities: %w", err)

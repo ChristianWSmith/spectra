@@ -348,23 +348,72 @@ CREATE TABLE IF NOT EXISTS player_round_stats (
 );
 CREATE INDEX IF NOT EXISTS idx_player_round_stats_player ON player_round_stats(match_id, steam_id);
 
+-- Trade-opportunity counts: the two distance-derived per-player metrics,
+-- written by analytics.Compute (store.ReplaceTradeOpps — one tx per
+-- match) under the match's rule version. Owner ruling 2026-11-12: every
+-- rules-derived value is STORED at analyze time (AGENTS.md
+-- "Analysis-rule derived values") — the retired query-time json_extract
+-- gates (GetCombatStats' TradeOppMissed subquery and
+-- CountPlayerTradeOpportunities, the latter an O(library) scan per
+-- profile open) survive only as reference oracles in internal/analytics'
+-- equivalence test. Defined ABOVE the Tier-1 index block so its
+-- steam_id-leading index can live there (library-wide convention).
+--
+--   opps   per player: enemy kills in counted rounds (warmup/pregame
+--          out; killer and victim both have freeze-end side samples in
+--          ct/t and they differ) whose VICTIM was this player's teammate
+--          that round, where the player was alive at the death tick (no
+--          own death at/before it in that round) and the kill's
+--          detail_json.nearDist (extract-measured, config-independent)
+--          falls in [0, analysis_config.trade_opp_distance] — the
+--          profile Trade-rate denominator, SUMmed library-wide.
+--   missed per player: this player's 'untraded' engagements whose paired
+--          kill event's nearDist falls in the same range — Combat's
+--          "trade opportunities missed" badge (the distance-gated subset
+--          of the read-time untraded count, which stays ungated).
+--
+-- HUMANS ONLY (is_bot = 0): both read surfaces drop bots, so a bot's
+-- counts are not stored. SPARSE: a player with both counts at 0 writes
+-- no row — reads treat "no row" as 0 (like a missing player_stats row).
+-- A trade_opp_distance change bumps rule_version (SetConfig) → the
+-- match is behind → RecomputeAll rewrites these rows; there is no
+-- ensure/ALTER path (pre-release policy: a DB that lacks this table is
+-- wiped + re-imported, never migrated).
+CREATE TABLE IF NOT EXISTS match_trade_opps (
+	match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+	steam_id TEXT NOT NULL,
+	opps INTEGER NOT NULL DEFAULT 0,
+	missed INTEGER NOT NULL DEFAULT 0,
+	PRIMARY KEY (match_id, steam_id)
+);
+
 -- Tier 1 index pass (library-wide reads). Placed here because every table
 -- they target now exists (the baseline script runs top-to-bottom).
 --
--- The three steam_id-leading indexes kill correlated full-table scans on
--- library-wide `WHERE steam_id = ?` reads: RebuildCareer's per-group
--- subqueries (player_stats p2 / clutches c in RebuildCareer, analytics.go)
--- and ListPlayers' HumanOnlyBySteamID bot check (players). Those are
+-- The original three steam_id-leading indexes kill correlated full-table
+-- scans on library-wide `WHERE steam_id = ?` reads: RebuildCareer's
+-- per-group subqueries (player_stats p2 / clutches c in RebuildCareer,
+-- analytics.go) and ListPlayers' HumanOnlyBySteamID bot check (players).
+-- Those are
 -- O(library)-per-import and quadratic over a bulk import — measured 16-34 s
 -- per RebuildCareer at 1,000 matches / 500-1,000 distinct players without
 -- them (linear in the distinct-player count: minutes per import at
 -- realistic overlap). Each index is a leading-column mirror of the
 -- match_id-first primary key.
 --
--- idx_events_kind_match turns library-wide `kind='kill'` scans
--- (CountPlayerTradeOpportunities — it used to SCAN every event ever
--- recorded) into an index seek. Partial relief only: the join order and
--- the per-row NOT EXISTS stay, and the structural fix is Tier 2.
+-- idx_events_kind_match turns library-wide `kind='kill'` scans into an
+-- index seek. Its original consumer, CountPlayerTradeOpportunities'
+-- per-row NOT EXISTS over every kill ever recorded, retired with the
+-- query-time trade-opportunity derivation (2026-11-12 — the count is
+-- now stored in match_trade_opps); the index stays for the other
+-- library-wide kind-filtered reads (the builtin metric expressions).
+--
+-- idx_match_trade_opps_steam serves the profile's stored trade-
+-- opportunity denominator: CountPlayerTradeOpportunities is now one
+-- `SUM(opps) WHERE steam_id = ?` seek per profile open (the O(library)
+-- query it replaces is deleted, so no events victim index is added for
+-- it). Leading-column mirror of the match_id-first primary key, like
+-- the three above.
 --
 -- The jobs indexes cover the pending-job lookups (FindPendingJobByPath /
 -- FindPendingJobByMatch — path/match_id + non-terminal status, newest
@@ -377,6 +426,7 @@ CREATE INDEX IF NOT EXISTS idx_player_round_stats_steam ON player_round_stats(st
 CREATE INDEX IF NOT EXISTS idx_events_kind_match ON events(kind, match_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_path ON jobs(path);
 CREATE INDEX IF NOT EXISTS idx_jobs_match ON jobs(match_id);
+CREATE INDEX IF NOT EXISTS idx_match_trade_opps_steam ON match_trade_opps(steam_id, match_id);
 
 CREATE TABLE IF NOT EXISTS clutches (
 	match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,

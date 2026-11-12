@@ -1479,6 +1479,66 @@ func (s *Store) GetHurtHealthDetails(matchID int64) (map[int]string, error) {
 	return out, nil
 }
 
+// KillNearDist pairs one kill event's typed columns with its
+// extract-measured nearDist payload — the narrow payload side channel
+// (same boundary as GetBlindFlashDetails: models.EventRow stays
+// payload-free) that analytics.Compute's stored trade-opportunity counts
+// read (tradeopps.go). HasNear is false exactly where the retired
+// query-time SQL's `CASE WHEN json_valid(...) THEN json_extract(...,
+// '$.nearDist') END` produced NULL — malformed JSON, an absent key,
+// JSON null, or a non-numeric value (a quoted number is TEXT and never
+// satisfies BETWEEN; JSON true/false extracts as integer 1/0 like
+// SQLite's json_extract — pinned by the equivalence-oracle test in
+// internal/analytics). The [0, distance] range test itself is the
+// caller's (replicating BETWEEN), never this read's.
+type KillNearDist struct {
+	Tick     int
+	Round    int
+	Attacker string
+	Victim   string
+	Near     float64
+	HasNear  bool
+}
+
+// GetKillNearDists returns every kill event of a match with its
+// detail_json.nearDist projection, in events.id order (insertion order —
+// the retired queries' `LIMIT 1` first-row semantics for a
+// (tick, attacker, victim) join). json_valid guards malformed payloads
+// exactly as the retired SQL did.
+func (s *Store) GetKillNearDists(matchID int64) ([]KillNearDist, error) {
+	rows, err := s.db.Query(
+		`SELECT tick, round, attacker, victim,
+		   CASE WHEN json_valid(detail_json)
+		        THEN json_extract(detail_json, '$.nearDist') END
+		 FROM events WHERE match_id = ? AND kind = 'kill' ORDER BY id`, matchID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("store: get kill near dists: %w", err)
+	}
+	defer rows.Close()
+	var out []KillNearDist
+	for rows.Next() {
+		var k KillNearDist
+		var raw any
+		if err := rows.Scan(&k.Tick, &k.Round, &k.Attacker, &k.Victim, &raw); err != nil {
+			return nil, fmt.Errorf("store: get kill near dists: %w", err)
+		}
+		switch v := raw.(type) {
+		case nil: // malformed / absent key / JSON null → never counted
+		case int64:
+			k.Near, k.HasNear = float64(v), true
+		case float64:
+			k.Near, k.HasNear = v, true
+		default: // TEXT (e.g. "nearDist":"150") never satisfies BETWEEN
+		}
+		out = append(out, k)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: get kill near dists: %w", err)
+	}
+	return out, nil
+}
+
 // GetChat returns a match's chat lines ordered by tick, id. Round < 0
 // selects all rounds (same sentinel as GetEvents — the landmark feed's
 // match-wide chat read passes -1); round detail reads exact rounds
