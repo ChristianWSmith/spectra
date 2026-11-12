@@ -12,7 +12,10 @@
 // rest: the replay meta, the player-state stream, the radar pack +
 // decoded images, the positions FETCH AND parsePositions (the CPU that
 // used to sit on the click path), loadWorld (fetch + grenade hydration
-// + normalize), the conn/blind/chat rows, and the load-time prefs.
+// + normalize), and the conn/blind/chat rows. The load-time PREFS are
+// deliberately ABSENT (see the note at the bottom): kvstore writes emit
+// no flush event, so a pref changed after this preload would be served
+// stale — Replay reads them fresh at load time.
 //
 // WHAT IT IS NOT — deliberately neither viewstate nor URL (AGENTS.md
 // "State placement": loading is transient — it never restores, never
@@ -34,9 +37,14 @@
 //
 // Failures are captured into the memo (the stored promise carries a
 // no-op handler, so a preload nobody awaits can never surface as an
-// unhandled rejection). Replay awaiting the SAME promise still gets the
-// rejection and renders its own loadError — and because the memo keeps
-// it, the failure is never silently re-fetched behind the user's back.
+// unhandled rejection). Within ONE visit Replay awaiting the same
+// promise gets the rejection, renders its own loadError — and there is
+// no refetch loop, because load() runs once per mount. The moment that
+// failure is SURFACED, Replay calls dropRejectedReplayPreload() so a
+// LATER visit retries fresh: a transient failure must not be sticky for
+// the whole session (there is no retry button). Until it is surfaced,
+// the memo keeps the rejection — that window is what makes "surface it
+// exactly once" possible at all.
 import {
   onEvent,
   subscribeJobProgress,
@@ -51,7 +59,6 @@ import {
   getEvents,
   getBlindDurations,
   getChat,
-  getPref,
 } from '../services.js';
 import { loadState } from './state.js';
 import { loadWorld } from './world.js';
@@ -62,13 +69,14 @@ import { normTickRate } from '../fmt.js';
 
 // --- The stage ledger --------------------------------------------------------
 // Canonical order = the serial chain Replay's load() would otherwise walk.
-// Execution is CONCURRENT (state ‖ pack ‖ positions ‖ prefs ‖ events ‖
-// primes; loadWorld waits on stateIndex + data.ticks), but the indicator
+// Execution is CONCURRENT (state ‖ pack ‖ positions ‖ events ‖ primes;
+// loadWorld waits on stateIndex + data.ticks), but the indicator
 // names the EARLIEST stage still running: honest by construction — a stage
 // is only ever shown while its own promise is unsettled — and stable as the
 // groups finish out of order. Labels are display copy (these are not job
 // stages, so StatusChip has no vocabulary for them); the view renders them
-// beside the ONE progress widget.
+// beside the ONE progress widget. The prefs are NOT a stage here: Replay
+// reads them fresh at load time (they never ride this ledger).
 const STAGES = [
   'meta', // getReplayMeta — gates everything (no sidecar → nothing else)
   'match', // the cachedRead primes (match/rounds/teamNames/voice/sounds)
@@ -79,7 +87,6 @@ const STAGES = [
   'voice', // getVoiceIndex prime (only a match WITH voice reaches it)
   'world', // loadWorld: anchor read + grenade hydration + normalize
   'events', // conn + blind (+durations) + chat rows
-  'prefs', // the load-time pref reads (knife/skip/volumes)
 ];
 const STAGE_LABEL = {
   meta: 'reading replay metadata',
@@ -91,7 +98,6 @@ const STAGE_LABEL = {
   voice: 'reading voice data',
   world: 'loading world events',
   events: 'reading chat and events',
-  prefs: 'reading replay settings',
 };
 
 // --- The memo ----------------------------------------------------------------
@@ -290,6 +296,22 @@ export function resetReplayPreload() {
   memos.clear();
 }
 
+// dropRejectedReplayPreload is Replay's "the failure was SURFACED" call:
+// the view sets loadError from a bundle rejection, then drops THAT memo
+// entry so a later visit retries fresh (within the visit nothing
+// re-triggers load(), so the error still surfaces exactly once and there
+// is no refetch loop). Guarded on entry.rejected: only a memo currently
+// HOLDING a rejection can go — a healthy or in-flight entry is never
+// dropped here (an unrelated startEngine failure surfacing through the
+// same catch must not evict a good bundle), and dropping some other
+// rejected entry would cost at most one extra refetch on the next visit,
+// never stale data.
+export function dropRejectedReplayPreload(id) {
+  const key = String(id);
+  const entry = memos.get(key);
+  if (entry && entry.rejected) memos.delete(key);
+}
+
 // --- The bundle --------------------------------------------------------------
 
 async function buildBundle(id, entry) {
@@ -308,7 +330,7 @@ async function buildBundle(id, entry) {
   // The independent groups, started TOGETHER — the serial chain this
   // replaces walked them one after another:
   //   state ‖ pack(after the match row names the map) ‖ positions ‖
-  //   prefs ‖ events ‖ the cachedRead prime group.
+  //   events ‖ the cachedRead prime group.
   // loadWorld below is the one that waits (stateIndex + data.ticks).
   const matchMapP = getMatch(id).catch(() => null);
   const voicePresenceP = getVoicePresence(id).catch(() => null);
@@ -327,7 +349,6 @@ async function buildBundle(id, entry) {
     .finally(() => completeStage(entry, 'state'));
   const packP = matchMapP.then((m) => loadPackStage((m && m.map) || '', entry));
   const positionsP = fetchAndParse(id, meta, entry);
-  const prefsP = readPrefs(entry);
   const eventsP = readEvents(id, entry);
   // The voice index needs BOTH the presence flag and the parsed timeline
   // (its bucket count is span/ tickRate — the args Replay re-derives, so
@@ -365,14 +386,13 @@ async function buildBundle(id, entry) {
     return world;
   })();
 
-  const [, stateIndex, packParts, data, world, ev, prefs] = await Promise.all([
+  const [, stateIndex, packParts, data, world, ev] = await Promise.all([
     primeP,
     stateP,
     packP,
     positionsP,
     worldP,
     eventsP,
-    prefsP,
     voiceP,
   ]);
 
@@ -388,7 +408,6 @@ async function buildBundle(id, entry) {
     connRows: ev.connRows,
     blinds: ev.blinds,
     chatLines: ev.chatLines,
-    prefs,
   };
 }
 
@@ -538,27 +557,13 @@ async function readEvents(id, entry) {
   return { connRows: connRows || [], blinds, chatLines };
 }
 
-// readPrefs — the load-time pref reads (the knife/warmup entry decision,
-// the skip-freeze toggle, the six fader levels). RAW values ride the
-// bundle (null = unset/unreadable); Replay maps them through its own
-// defaults (prefVolume, FOOTSTEPS_VOL_DEFAULT) exactly as before. Read
-// concurrently here — the view used to walk them as seven/eight
-// sequential IPC round trips on the click path. NOTE: prefs are not
-// covered by the flush events (kvstore writes emit none), so a pref
-// changed AFTER this preload lands is served from the memo — the same
-// bounded staleness every other bundle piece has, ended by any library
-// event or resetReplayPreload.
-async function readPrefs(entry) {
-  const [knife, skip, voice, guns, util, c4, ann, steps] = await Promise.all([
-    getPref('show_knife_warmup_rounds').catch(() => null),
-    getPref('skip_freeze').catch(() => null),
-    getPref('voice_volume').catch(() => null),
-    getPref('guns_volume').catch(() => null),
-    getPref('utility_volume').catch(() => null),
-    getPref('c4_volume').catch(() => null),
-    getPref('announcer_volume').catch(() => null),
-    getPref('footsteps_volume').catch(() => null),
-  ]);
-  completeStage(entry, 'prefs');
-  return { knife, skip, voice, guns, util, c4, ann, steps };
-}
+// PREFS ARE DELIBERATELY NOT BUNDLED (the load-time reads stay in
+// Replay's load()): kvstore writes emit NO flush event, so anything
+// memoized here would serve a volume/knife-warmup/skip-freeze change
+// made in Settings AFTER this preload — stale, with no refresh path.
+// The pre-preload semantics were "read at load time" and they are
+// preserved exactly: Replay starts them as ONE Promise.all alongside
+// the bundle await, so they stay concurrent with it (never a serialized
+// stage of the click path) while always reading the CURRENT store.
+// 'prefs' is therefore gone from the ledger — the indicator must only
+// ever name work this module is doing.
