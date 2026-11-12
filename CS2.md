@@ -1360,3 +1360,42 @@ at the end of the section.
   from state, never from counting soundevents.
   **Source** — golden-demo soundevent-hash analysis (local probe,
   2026-11-11).
+
+- **Does a CS2 demo record the wall-clock time it was played? (played-at
+  date)** — **No: the `.dem` file itself contains NO real-world date
+  anywhere.** The Source 2 file header is `PBDEMS2` + 8 skipped bytes
+  (protocol ints); the `CDemoFileHeader` net-message carries only
+  `demo_file_stamp, patch_version, server_name, client_name, map_name,
+  game_directory, fullpackets_version, allow_clientside_*,
+  addons, demo_version_name, demo_version_guid, build_num, game,
+  server_start_tick` — no timestamp (demoinfocs v6 drops `Parser.Header()`;
+  spectra reads this message in `internal/extract/handlers.go`). The
+  end-of-demo `CDemoFileInfo` is playback-only (`playback_time/ticks/frames`
+  + CS `round_start_ticks`); the one `end_time` in demo.proto is the DOTA
+  branch. No demo-carried net-message holds a wall clock — the only `time`
+  fields in the wire protos are relative durations. The demoinfocs
+  maintainer states it outright (issue #127: "that info doesn't seem to be
+  anywhere"), and CS Demo Manager's docs say the same operationally: its
+  demo date is "the creation date of the demo file". **The one real
+  played-at source is OUTSIDE the `.dem`: the companion
+  `match730_*.dem.info` (a serialized `CDataGCCStrike15_v2_MatchInfo`)
+  carries `matchtime` (field 2, unix seconds) — verified on two real CS2
+  `.dem.info` files (2026-11-11): 1789305587 → 2026-09-13T13:19:47Z and
+  1791245536 → 2026-10-06T00:12:16Z, both preceding their `.dem`'s write
+  time.** Caveats: it is the GC's match record (start-vs-end semantics not
+  established), and it exists ONLY for in-client Valve matchmaking GOTV
+  downloads (`.dem` + `.dem.info` pair); Steam-web bz2 downloads, POV
+  `record` output, FACEIT and HLTV demos ship no companion, so no played
+  date is recoverable from them. Indirect/secondary signals only:
+  source-file mtime (≈ download time for GOTV, ≈ recording end for POV,
+  arbitrary for copied files), managed-copy mtime (always import time),
+  and third-party platform APIs keyed by match id/share code.
+  **Source** — demoinfocs-golang v6.0.0-rc.1 module cache
+  (`pkg/demoinfocs/parser.go:27-36`, `parsing.go:69-100`,
+  `msg/proto/v6/demo.proto:28-42,83-88`,
+  `msg/proto/v6/cstrike15_gcmessages.proto:1001-1006`);
+  https://github.com/markus-wa/demoinfocs-golang/issues/127 (2019-07-05);
+  https://cs-demo-manager.com/docs/guides/demos-analysis#demos-date-are-wrong
+  and https://cs-demo-manager.com/changelog (v3.14.0, v3.18.3);
+  local decode of two CS2 `match730_*.dem.info` files in
+  `~/…/Counter-Strike Global Offensive/game/csgo/replays/` (2026-11-11).
