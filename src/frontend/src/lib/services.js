@@ -512,13 +512,33 @@ export function recomputeAnalysis(matchId) {
     return r;
   });
 }
-export function getEconomy(matchId) { return AnalyticsService.GetEconomy(matchId); }
-export function getRoundClasses(matchId) { return AnalyticsService.GetRoundClasses(matchId); }
+// The per-match ANALYTICS family is read-cached like every other repeated
+// read (Match warms all six from its mount effect — services' KAST column
+// and round chips then share ONE entry with the Combat/Utility/Economy
+// tabs, and Match/RoundDetail/CompareRounds collapse onto one
+// getRoundClasses entry; flush comes free from the listeners above).
+// getPlayerRounds/getHeatmap stay uncached: per-player/per-filter reads
+// with no repeated mount site.
+export function getEconomy(matchId) {
+  return cachedRead('GetEconomy', [matchId], () => AnalyticsService.GetEconomy(matchId));
+}
+export function getRoundClasses(matchId) {
+  return cachedRead('GetRoundClasses', [matchId], () => AnalyticsService.GetRoundClasses(matchId));
+}
 export function getPlayerRounds(matchId, steamId) { return AnalyticsService.GetPlayerRounds(matchId, steamId || ''); }
-export function getClutches(matchId) { return AnalyticsService.GetClutches(matchId); }
-export function getEngagements(matchId, kind) { return AnalyticsService.GetEngagements(matchId, kind || ''); }
-export function getUtility(matchId) { return AnalyticsService.GetUtility(matchId); }
-export function getCombatStats(matchId) { return AnalyticsService.GetCombatStats(matchId); }
+export function getClutches(matchId) {
+  return cachedRead('GetClutches', [matchId], () => AnalyticsService.GetClutches(matchId));
+}
+export function getEngagements(matchId, kind) {
+  const k = kind || '';
+  return cachedRead('GetEngagements', [matchId, k], () => AnalyticsService.GetEngagements(matchId, k));
+}
+export function getUtility(matchId) {
+  return cachedRead('GetUtility', [matchId], () => AnalyticsService.GetUtility(matchId));
+}
+export function getCombatStats(matchId) {
+  return cachedRead('GetCombatStats', [matchId], () => AnalyticsService.GetCombatStats(matchId));
+}
 export function getHeatmap(matchId, kind, filter) { return AnalyticsService.GetHeatmap(matchId, kind, filter || {}); }
 export function listSavedFilters() { return AnalyticsService.ListSavedFilters(); }
 export function saveFilter(name, scope, filterJson) { return AnalyticsService.SaveFilter(name, scope, filterJson); }
@@ -561,9 +581,48 @@ export function voiceWavURL(matchId, steamId) {
 
 // --- ProfileService (M3) -----------------------------------------------------
 
-export function getProfile(steamId) { return ProfileService.GetProfile(steamId); }
-export function listPlayers(query) { return ProfileService.ListPlayers(query || ''); }
-export function getCareerTrend(steamId, metric) { return ProfileService.GetCareerTrend(steamId, metric); }
+// Profile reads are read-cached too (item: profile cache): getProfile is
+// the hover-warmed cheap read below, getCareerTrend's (steamId, metric)
+// args become part of the key automatically — it stays CLICK-driven (only
+// getProfile is prefetched on hover). listPlayers is the library-wide
+// career list — per-query entries (CommandPalette's typed queries), same
+// bounded-FIFO handling as the library-search entries above.
+export function getProfile(steamId) {
+  return cachedRead('GetProfile', [steamId], () => ProfileService.GetProfile(steamId));
+}
+export function listPlayers(query) {
+  const q = query || '';
+  return cachedRead('ListPlayers', [q], () => ProfileService.ListPlayers(q));
+}
+export function getCareerTrend(steamId, metric) {
+  return cachedRead('GetCareerTrend', [steamId, metric], () =>
+    ProfileService.GetCareerTrend(steamId, metric),
+  );
+}
+
+// warmProfile — ProfileLink's HOVER prefetch: fire-and-forget getProfile
+// so the click finds the entry warm (tier 1 of the loading ladder). The
+// warm itself is THROTTLED per steamId — a re-hover inside the window is
+// a no-op, so pointer jitter / enter-leave cycling never refires it;
+// past the window it warms again, which is exactly when a spectra:*
+// flush may have dropped the entry. Warming is KBs and auto-flushes, so
+// a wasted warm is cheap — deliberately NO job bail-out here (unlike
+// Match's analytics warm). Failures are swallowed: the click path reads
+// through getProfile and reports its own error. nowMs is injectable for
+// the test.
+const WARM_PROFILE_TTL_MS = 30_000;
+const WARM_PROFILE_MAX = 256; // bounded FIFO like readCache (hovered ids)
+const profileWarmedAt = new Map(); // steamId -> last warm (ms)
+export function warmProfile(steamId, nowMs) {
+  if (!steamId) return;
+  const now = nowMs == null ? Date.now() : nowMs;
+  const last = profileWarmedAt.get(steamId);
+  if (last != null && now - last < WARM_PROFILE_TTL_MS) return;
+  profileWarmedAt.set(steamId, now);
+  if (profileWarmedAt.size > WARM_PROFILE_MAX)
+    profileWarmedAt.delete(profileWarmedAt.keys().next().value);
+  getProfile(steamId).catch(() => {});
+}
 
 // The landmark feed's filter state lives in the route query
 // (lib/replay/landmarks.js parseLandmarkFilter — {cats, roundFrom,
@@ -573,7 +632,13 @@ export function getCareerTrend(steamId, metric) { return ProfileService.GetCaree
 
 // --- MetricsService (M5) -----------------------------------------------------
 
-export function listMetrics() { return MetricsService.ListMetrics(); }
+// listMetrics is the library-wide metric-definition list (Builder's
+// dropdowns, Match's pinned columns, Reports, CommandPalette) — refetched
+// on every mount/tab switch before this; one read-cached entry now, like
+// listMapNames.
+export function listMetrics() {
+  return cachedRead('ListMetrics', [], () => MetricsService.ListMetrics());
+}
 export function getMetric(id) { return MetricsService.GetMetric(id); }
 export function saveMetric(m) { return MetricsService.SaveMetric(m); }
 export function deleteMetric(id) { return MetricsService.DeleteMetric(id); }

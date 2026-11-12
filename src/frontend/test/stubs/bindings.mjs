@@ -28,7 +28,10 @@ export function resetCalls() {
 // Only the methods the cache tests invoke need real entries; the rest of
 // services.js references them lazily inside function bodies.
 export const AppService = { GetVersion: rec('GetVersion'), SaveWindowSize: rec('SaveWindowSize') };
-export const MetricsService = {};
+export const MetricsService = {
+  // Library-wide metric definitions (listMetrics — the read-cache tests).
+  ListMetrics: rec('ListMetrics'),
+};
 export const QueryService = {};
 export const PlatformService = {};
 export const LibraryService = {
@@ -55,8 +58,21 @@ export const MatchService = {
   GetSoundEventPresence: rec('GetSoundEventPresence'),
 };
 export const ReplayService = {};
-export const AnalyticsService = {};
-export const ProfileService = {};
+export const AnalyticsService = {
+  // The per-match analytics family (the six read-cached wrappers).
+  GetEconomy: rec('GetEconomy'),
+  GetRoundClasses: rec('GetRoundClasses'),
+  GetCombatStats: rec('GetCombatStats'),
+  GetClutches: rec('GetClutches'),
+  GetEngagements: rec('GetEngagements'),
+  GetUtility: rec('GetUtility'),
+};
+export const ProfileService = {
+  // Profile reads + the library-wide player list (cached wrappers).
+  GetProfile: rec('GetProfile'),
+  ListPlayers: rec('ListPlayers'),
+  GetCareerTrend: rec('GetCareerTrend'),
+};
 export const VoiceService = {
   // Voice index reads (the read-cache tests drive these).
   GetVoicePresence: rec('GetVoicePresence'),
