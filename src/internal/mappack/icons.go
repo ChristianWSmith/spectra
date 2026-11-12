@@ -119,7 +119,10 @@ var iconTable = map[string]string{
 // them (iconFor('blind_kill') before the killer's name, iconFor('headshot')
 // after the weapon — the other keys are the feed's round-4 indicators:
 // 'noscope'/'throughsmoke'/'wallbang' after the weapon, 'airborne' after
-// the killer, 'suicide'/'explosion' on the icon-only rows). The values are
+// the killer, 'suicide' on the suicide row). 'explosion' (the hud blast
+// pip) is still extracted but NO LONGER drawn: since 2026-11-12 the
+// feed's C4 row shows the shared 'C4' weapon image beside the victim
+// instead (see renderer.js's C4 branch). The values are
 // the .vsvg_c basenames — same container format as the equipment set,
 // verified to decode with decodeVSVG on a real install (2026-11-07).
 //
@@ -145,10 +148,13 @@ var noticeIconTable = map[string]string{
 // noticePrefixes overrides the VPK directory for noticeIconTable keys that
 // do NOT live under noticePrefix. Only 'explosion': the deathnotice dir has
 // no explosion glyph (huddeathnotice.vxml_c binds bomb deaths to Suicide +
-// the weapon slot), so the feed's C4 row uses the hud kill-context "blast"
-// pip — panorama/images/hud/kill_pip_blast.vsvg_c (decodes with decodeVSVG,
-// verified 2026-11-07). Swap point: put a true deathnotice explosion
-// glyph in noticeIconTable and drop this entry.
+// the weapon slot — CS2.md "Kill-feed indicator glyphs"), so the hud
+// kill-context "blast" pip — panorama/images/hud/kill_pip_blast.vsvg_c
+// (decodes with decodeVSVG, verified 2026-11-07) — is what got extracted
+// here. It stays in the manifest even though the feed stopped drawing it
+// (2026-11-12: the C4 row shows the shared 'C4' weapon image instead).
+// Swap point: a true deathnotice explosion glyph would replace this entry
+// wholesale.
 var noticePrefixes = map[string]string{
 	"explosion": hudPrefix,
 }

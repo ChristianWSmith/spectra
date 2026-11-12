@@ -3808,8 +3808,9 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // over a dark transparent box (entryBox) outlined in the KILLER's team
   // color (neutral when unknown); names are tinted by their own side AT
   // THE KILL TICK (sideAtFrame — the same rule the death markers use).
-  // Two icon-only rows replace the whole line (C4 checked FIRST):
-  //   • C4 death:   (explosion) victim — no killer/assister/attacker-side
+  // Two short glyph + victim rows replace the whole line (C4 checked
+  // FIRST):
+  //   • C4 death:   C4 icon + victim — no killer/assister/attacker-side
   //                 flags at all; outlined in T ORANGE (teamColor('t')):
   //                 the bomb always belongs to the T side, this is NOT a
   //                 killer's side (there is none).
@@ -3821,8 +3822,9 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // (iconFor('blind_kill') before the killer, iconFor('airborne') after
   // it, then the weapon's glyph, iconFor('noscope'/'throughsmoke'/
   // 'wallbang'/'headshot') after the weapon — internal/mappack/icons.go
-  // extracts them from panorama/images/hud/deathnotice/, except
-  // 'explosion' = the hud blast pip); a row whose glyph isn't extracted
+  // extracts them from panorama/images/hud/deathnotice/; the C4 row's
+  // glyph is the shared 'C4' image, never 'planted_c4' — deliberately
+  // not extracted, see its branch); a row whose glyph isn't extracted
   // yet draws WITHOUT it — no space reserved, so the other cells never
   // shift (degradation must not move what's on screen).
   // killFeedLayout — the feed's ONE per-frame layout pass: the scope
@@ -3885,17 +3887,26 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       const wbImg = k.wallbang ? iconFor('wallbang') : null;
       const hsImg = k.headshot ? iconFor('headshot') : null;
       // outlineSide: the box's team color — the KILLER's side normally,
-      // overridden for the two icon-only rows (see the header comment).
+      // overridden for the two glyph + victim rows (see the header
+      // comment).
       let outlineSide = kSide;
       let cells;
       if (k.weapon === 'C4') {
         // Bomb death: NO killer name, NO assister, NO attacker-side
         // flags. Outlined in T ORANGE — the bomb belongs to the T side
-        // (NOT the killer's side: there is none).
+        // (NOT the killer's side: there is none). The row shows the C4
+        // WEAPON icon (canonical key 'C4' — never 'planted_c4', which is
+        // deliberately not extracted; internal/mappack/icons.go) beside
+        // the victim, because that is what CS2's deathnotice binds for a
+        // bomb death (CS2.md "Kill-feed indicator glyphs"). The hud
+        // 'explosion' blast pip is dropped from this row: its artwork is
+        // 48×126 squeezed into a 14 px line → a ~3 px invisible speck
+        // that conveys nothing at this geometry (it never made the row
+        // read as "C4").
         outlineSide = 't';
         cells = [];
-        const boom = iconFor('explosion');
-        if (boom) cells.push({ img: boom }); // same skip-a-missing-glyph rule
+        const c4Img = iconFor('C4');
+        if (c4Img) cells.push({ img: c4Img }); // same skip-a-missing-glyph rule
         cells.push({ text: victim, fill: teamColor(vSide) });
       } else if (!k.attacker || k.attacker === k.victim) {
         // Suicide: world/fall (weapon 'World'), own utility, plain

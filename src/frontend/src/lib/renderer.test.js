@@ -3572,7 +3572,7 @@ test('kill feed: noscope is gated to the four scoped snipers', () => {
   r.destroy();
 });
 
-test('kill feed: C4 death — explosion glyph + victim only, T-orange outline, no attacker-side flags', () => {
+test('kill feed: C4 death — C4 weapon icon + victim only, T-orange outline, no attacker-side flags', () => {
   headlessGlobals();
   const data = synthStore(1300, 2);
   const engine = createEngine(data, 64);
@@ -3608,7 +3608,11 @@ test('kill feed: C4 death — explosion glyph + victim only, T-orange outline, n
     }),
   ]);
   r.setIcons({
-    C4: { width: 32, height: 32, src: 'c4.svg' }, // the weapon glyph must stay out
+    // The C4 weapon image IS this row's context icon now (owner fix,
+    // 2026-11-12) — the canonical 'C4' key, never 'planted_c4'.
+    C4: { width: 32, height: 32, src: 'c4.svg' },
+    // The hud blast pip stays REGISTERED on purpose: the srcs pin below
+    // proves the row no longer draws it even when it is available.
     explosion: { width: 32, height: 32, src: 'blast.svg' },
     blind_kill: { width: 32, height: 32, src: 'blind.svg' },
     airborne: { width: 32, height: 32, src: 'air.svg' },
@@ -3638,24 +3642,28 @@ test('kill feed: C4 death — explosion glyph + victim only, T-orange outline, n
   assert.ok(!feedText('carol', 12), 'no assister either');
   assert.ok(feedText('alice', 12), 'the victim cell survives');
 
-  // [explosion(16)][victim(40)] + 1 gap + 2 inset = 80 → x = 712; the
-  // glyph starts at the inset (718), the victim one gap past it (746).
+  // [c4(16)][victim(40)] + 1 gap + 2 inset = 80 → x = 712; the glyph
+  // starts at the inset (718), the victim one gap past it (746). The
+  // C4 cell occupies the same 16 px square the blast pip did (both
+  // fixture icons are 32×32), so the box/glyph/victim x come out
+  // unchanged — only the SOURCE swapped (recomputed from the painter's
+  // recorded ops, not assumed).
   const box = opsSince(canvas.log, 'roundRect', mark).find(
     (e) => e.args[3] === KILL_FEED_LH && e.args[4] === KILL_FEED_R,
   );
   assert.deepEqual([box.args[0], box.args[1], box.args[2]], [712, 8, 80]);
-  const boom = bodyBySrc(canvas.log, mark, 'blast.svg');
-  assert.ok(boom, 'the explosion glyph is drawn at the killer cell’s x');
-  assert.equal(boom.args[1], 719, '…at the box inset (712 + 6 + 1)');
+  const c4 = bodyBySrc(canvas.log, mark, 'c4.svg');
+  assert.ok(c4, 'the C4 weapon glyph is drawn at the killer cell’s x');
+  assert.equal(c4.args[1], 719, '…at the box inset (712 + 6 + 1)');
   const victim = opsSince(canvas.log, 'fillText', mark).find((e) => e.args[0] === 'alice' && e.args[2] === 12);
   assert.equal(victim.args[1], 746, 'the victim is right-aligned as always');
   assert.equal(victim.fillStyle, '#5aa9e6', 'the victim name keeps the VICTIM’s side tint (CT)');
 
-  // Not ONE other glyph paints: no weapon image, no attacker-side flag.
+  // Not ONE other glyph paints: no blast pip, no attacker-side flag.
   const srcs = opsSince(canvas.log, 'drawImage', mark)
     .filter((e) => e.args[0] && e.args[0].src)
     .map((e) => e.args[0].src);
-  assert.deepEqual(srcs, ['blast.svg'], 'the row is explosion + victim, nothing else');
+  assert.deepEqual(srcs, ['c4.svg'], 'the row is the C4 icon + victim, nothing else');
 
   // Outline in T orange — the bomb belongs to the T side, NOT to either
   // player: the killer is T (a killer-side outline would be orange) and

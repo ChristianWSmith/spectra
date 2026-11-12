@@ -117,8 +117,10 @@ func TestIconTableCanonicalNames(t *testing.T) {
 // glyphs renderer.js drawKillFeed consumes (iconFor('blind_kill') before
 // the killer's name, iconFor('headshot') after the weapon — plus the
 // round-4 indicators 'noscope'/'throughsmoke'/'wallbang' after the
-// weapon, 'airborne' after the killer, and the icon-only 'suicide'/
-// 'explosion' rows). Every entry must decode-ready through the shared
+// weapon, 'airborne' after the killer, and the icon-only 'suicide' row
+// — plus 'explosion', the hud blast pip the feed's C4 row stopped
+// drawing on 2026-11-12 but which stays extracted). Every entry must
+// decode-ready through the shared
 // pipeline (its exact VPK path → <base>.svg written and re-manifested by
 // TestExtractIconsSynthetic), keep safe file stems for the /api/icons
 // whitelist, and never collide with the equipment table — iconFileToName
