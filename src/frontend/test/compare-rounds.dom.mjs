@@ -108,7 +108,12 @@ export const getScoreboard = () => wait(d().scoreboard || []);
 export const getEconomy = () => wait(d().economy || []);
 export const getUtility = () => wait(d().utility || []);
 export const getRoundClasses = () => wait(d().classes || []);
-export const getRoundDetail = (id, round) => wait((d().details || {})[round] || null);
+export const getRoundDetail = (id, round) =>
+  // __cmpError (section E) makes the round read REJECT — the load-failure
+  // path the dismissible alert is pinned against; unset it for plain reads.
+  globalThis.__cmpError
+    ? Promise.reject(new Error(globalThis.__cmpError))
+    : wait((d().details || {})[round] || null);
 export const errText = (e) => (e == null ? 'unknown error' : String((e && e.message) || e));
 export const warmProfile = () => {};
 `,
@@ -415,6 +420,51 @@ console.log('D. cold start: never empty column shells while the round reads are 
   );
   await unmount(i2);
   globalThis.__cmpDelay = 0;
+}
+
+// ---------------------------------------------------------------------------
+// Section E: a failed round read is dismissible IN PLACE (PRODUCT.md "Every
+// error indication is dismissible"). The ✕ is the canonical idiom — a
+// `btn small` with `codicon-close` INSIDE the `p.error[role="alert"]`,
+// clearing `error` — and the view keeps rendering (its header stays
+// mounted): no navigation, no remount.
+console.log('E. failed round read: the error is dismissible in place (✕ clears it, view stays)');
+{
+  globalThis.__cmpError = 'round read failed';
+  const tE = document.createElement('div');
+  document.body.appendChild(tE);
+  const iE = mount(mod.default, { target: tE });
+  await sleep(60);
+  const errP = tE.querySelector('p.error[role="alert"]');
+  check(
+    'failure renders the alert with its message',
+    !!errP && errP.textContent.includes('round read failed'),
+    errP ? errP.textContent.trim() : 'no p.error',
+  );
+  check(
+    'the ✕ rides INSIDE the alert (btn small + codicon-close)',
+    !!errP?.querySelector('button.btn.small .codicon-close'),
+    errP ? errP.innerHTML.slice(0, 160) : '',
+  );
+  check(
+    'the view header still renders (nothing unmounted)',
+    !!tE.querySelector('.view-header'),
+    tE.textContent.replace(/\s+/g, ' ').slice(0, 120),
+  );
+  const navBefore = (globalThis.__nav || []).length;
+  errP
+    .querySelector('button.btn.small')
+    .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  await sleep();
+  check(
+    '✕ clears the error in place (header still mounted, no navigation)',
+    !tE.querySelector('p.error[role="alert"]') &&
+      !!tE.querySelector('.view-header') &&
+      (globalThis.__nav || []).length === navBefore,
+    tE.textContent.replace(/\s+/g, ' ').slice(0, 120),
+  );
+  await unmount(iE);
+  globalThis.__cmpError = 0;
 }
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

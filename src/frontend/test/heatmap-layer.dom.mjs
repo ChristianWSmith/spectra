@@ -279,6 +279,23 @@ const rdOptionLabels = (heatSrc.match(/RD\{r\.number\}/g) || []).length;
 check('both round-range options read RD{r.number}', rdOptionLabels === 2, String(rdOptionLabels));
 check('no bare R{r.number} option label survives', !/>R\{r\.number\}</.test(heatSrc), '');
 
+// The Heatmaps VIEW's load-failure alert is dismissible in place too
+// (PRODUCT.md "Every error indication is dismissible") — a source pin
+// again, for the same reason as H: no driver mounts Heatmaps.svelte, so
+// building a mount harness for one ✕ would drag in the whole service
+// surface. The shape pinned is the canonical idiom: the ✕ lives INSIDE
+// p.error[role="alert"] and clears the `error` state variable (the
+// generate-path retry already cleared it — this covers the mount-time
+// failure path).
+const errBlock = /\{#if error\}([\s\S]*?)\{\/if\}/.exec(heatSrc)?.[1] || '';
+check(
+  'Heatmaps error alert carries the ✕ that clears `error` in place',
+  /p class="error" role="alert"/.test(errBlock) &&
+    /onclick=\{\(\) => \(error = ''\)\}/.test(errBlock) &&
+    /codicon codicon-close/.test(errBlock),
+  errBlock.replace(/\s+/g, ' ').slice(0, 160),
+);
+
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');
 process.exit(failures || errors.length ? 1 : 0);

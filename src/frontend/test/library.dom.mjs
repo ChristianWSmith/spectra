@@ -1582,6 +1582,59 @@ console.log('O. scan progress drives the StatusChip: indeterminate → determina
 }
 await unmount(coldInst);
 
+// ---------------------------------------------------------------------------
+// Section P: honesty gate on a FAILED list load — the error and the
+// "No matches yet" claim must never render together (the failure is the
+// truth about why nothing is here), and the next SUCCESSFUL refetch clears
+// the error and lets the claim return. One mount, one failure, one retry:
+// the view stays mounted throughout (no navigation, no remount).
+console.log('P. failed list load: the error renders, the empty claim waits for a retry');
+services.invalidate();
+const prevListP = bindings.handlers.ListMatchesPage;
+const prevRowsP = rowsForFacet;
+const prevListJobsP = bindings.LibraryService.ListJobs;
+// An empty library for this section: the claim under test is the PLAIN
+// "No matches yet" (no rows, no jobs, no facets) — section K's scripted
+// row and section F's job list must not stand in the way of it.
+rowsForFacet = () => [];
+bindings.LibraryService.ListJobs = () => Promise.resolve([]);
+bindings.handlers.ListMatchesPage = () => {
+  throw new Error('library backend down');
+};
+viewstate.resetViewState();
+const pTarget = document.createElement('div');
+document.body.appendChild(pTarget);
+const pInst = mount(mod.default, { target: pTarget, props: { query: {} } });
+await sleep(200); // the immediate first list fetch (failing) + the jobs read
+{
+  const errP = pTarget.querySelector('p.error[role="alert"]');
+  check(
+    'failed list load renders its error',
+    !!errP && errP.textContent.includes('library backend down'),
+    errP ? errP.textContent.trim() : 'no p.error',
+  );
+  check(
+    'no "No matches yet" claim beside the error (honesty gate)',
+    !pTarget.textContent.includes('No matches yet'),
+    pTarget.textContent.replace(/\s+/g, ' ').slice(0, 160),
+  );
+  // The retry: the next successful refetch (a spectra:library-changed —
+  // the event that drives every Library refresh) clears the error, and
+  // only then may the empty claim return.
+  bindings.handlers.ListMatchesPage = prevListP;
+  fire('spectra:library-changed');
+  await sleep(250);
+  check(
+    'a retry clears the error and the empty claim returns',
+    !pTarget.querySelector('p.error[role="alert"]') &&
+      pTarget.textContent.includes('No matches yet'),
+    pTarget.textContent.replace(/\s+/g, ' ').slice(0, 160),
+  );
+}
+await unmount(pInst);
+rowsForFacet = prevRowsP;
+bindings.LibraryService.ListJobs = prevListJobsP;
+
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');
 process.exit(failures || errors.length ? 1 : 0);
