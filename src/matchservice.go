@@ -71,6 +71,16 @@ func (s *MatchService) GetEvent(id int64) (*models.EventDetail, error) {
 	return s.st.GetEvent(id)
 }
 
+// GetEventDetails returns the events for ids with their JSON payloads in
+// INPUT ORDER (unknown ids skipped, empty input → empty result) — the
+// bulk twin of GetEvent the replay's grenade-entity hydration reads
+// through (one chunked IPC call instead of one round trip per row; a
+// thin delegate over store.GetEventDetails, whose doc owns the exact
+// semantics).
+func (s *MatchService) GetEventDetails(ids []int64) ([]models.EventDetail, error) {
+	return s.st.GetEventDetails(ids)
+}
+
 // BlindDuration is one blind event's flash length for the replay's
 // flash-white overlay: Seq is the events.seq key the frontend joins the
 // blind row on, Ms the flashDurationMs the extractor recorded on

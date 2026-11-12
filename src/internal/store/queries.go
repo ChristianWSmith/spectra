@@ -532,9 +532,8 @@ func (s *Store) pageRosters(page *models.MatchListPage) error {
 	if len(ids) == 0 {
 		return nil
 	}
-	const chunk = 400 // stay well under SQLite's bound-parameter ceiling
-	for start := 0; start < len(ids); start += chunk {
-		part := ids[start:min(start+chunk, len(ids))]
+	for start := 0; start < len(ids); start += inListChunk {
+		part := ids[start:min(start+inListChunk, len(ids))]
 		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(part)), ",")
 		rows, err := s.db.Query(
 			`SELECT p.match_id, p.steam_id, p.name, p.side, p.is_bot
@@ -565,6 +564,12 @@ func (s *Store) pageRosters(page *models.MatchListPage) error {
 	}
 	return nil
 }
+
+// inListChunk is the ids per IN (...) statement — deliberately well
+// under SQLite's bound-parameter ceiling. The one spelling of that
+// headroom: pageRosters' roster batch and GetEventDetails' bulk detail
+// read share it.
+const inListChunk = 400
 
 // args64 boxes int64 ids as bind arguments.
 func args64(ids []int64) []any {
@@ -1194,28 +1199,90 @@ func (s *Store) GetEventKeys(f models.EventFilter) ([]models.EventKey, error) {
 // GetEvent returns one event with its JSON payloads (ErrNotFound when
 // absent).
 func (s *Store) GetEvent(id int64) (*models.EventDetail, error) {
-	var (
-		er  models.EventRow
-		det string
-		raw string
-	)
-	err := s.db.QueryRow(
+	det, err := scanEventDetail(s.db.QueryRow(
 		`SELECT `+eventRowCols+`, e.detail_json, e.raw_json`+eventRowFrom+` WHERE e.id = ?`, id,
-	).Scan(
-		&er.ID, &er.Seq, &er.Tick, &er.Round, &er.Kind, &er.Attacker, &er.AttackerName,
-		&er.Victim, &er.VictimName, &er.Assister, &er.AssisterName, &er.Weapon, &er.Headshot,
-		&er.Wallbang, &er.Noscope, &er.ThroughSmoke, &er.AttackerBlind, &er.AttackerInAir, &er.AssistedFlash,
-		&er.Distance, &er.Hitgroup, &er.Dmg, &er.Site, &er.PosX, &er.PosY, &er.PosZ,
-		&er.AttackerPosX, &er.AttackerPosY, &er.AttackerPosZ,
-		&det, &raw,
-	)
+	))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
 	if err != nil {
 		return nil, fmt.Errorf("store: get event: %w", err)
 	}
-	return &models.EventDetail{EventRow: er, DetailJSON: det, RawJSON: raw}, nil
+	return &det, nil
+}
+
+// scanEventDetail scans one `eventRowCols, e.detail_json, e.raw_json`
+// row — THE payload-row scan shared by GetEvent and GetEventDetails, so
+// a bulk row can never drift from the single read. eventRowCols stays
+// payload-free (the typed-columns boundary); the two payload columns are
+// appended exactly where GetEvent has always selected them.
+func scanEventDetail(row interface{ Scan(...any) error }) (models.EventDetail, error) {
+	var d models.EventDetail
+	err := row.Scan(
+		&d.ID, &d.Seq, &d.Tick, &d.Round, &d.Kind, &d.Attacker, &d.AttackerName,
+		&d.Victim, &d.VictimName, &d.Assister, &d.AssisterName, &d.Weapon, &d.Headshot,
+		&d.Wallbang, &d.Noscope, &d.ThroughSmoke, &d.AttackerBlind, &d.AttackerInAir, &d.AssistedFlash,
+		&d.Distance, &d.Hitgroup, &d.Dmg, &d.Site, &d.PosX, &d.PosY, &d.PosZ,
+		&d.AttackerPosX, &d.AttackerPosY, &d.AttackerPosZ,
+		&d.DetailJSON, &d.RawJSON,
+	)
+	return d, err
+}
+
+// GetEventDetails returns the events for the given ids with their JSON
+// payloads — the BULK twin of GetEvent (the replay's grenade-entity
+// hydration used to read one detail per row; this is the N+1 fix). It:
+//
+//   - PRESERVES INPUT ORDER: the ids are walked in the order given, so a
+//     caller that shuffled them gets its shuffle back (a repeated id
+//     yields a repeated row);
+//   - SKIPS unknown ids — never a fabricated row (the single read would
+//     answer ErrNotFound for the same id);
+//   - answers an EMPTY input with an empty result and NO query;
+//   - returns rows through the SAME projection as the single read
+//     (eventRowCols + the two payload columns through the playersJoin
+//     name joins, one scan — scanEventDetail), so bulk == single by
+//     construction.
+//
+// The ids go in chunked IN (...) lists (inListChunk) like every other
+// batched read here, so the bound-parameter count stays under SQLite's
+// ceiling whatever the caller passes. Ordering across chunks is restored
+// by the final input-order walk, not by SQL.
+func (s *Store) GetEventDetails(ids []int64) ([]models.EventDetail, error) {
+	if len(ids) == 0 {
+		return []models.EventDetail{}, nil
+	}
+	byID := make(map[int64]models.EventDetail, len(ids))
+	for start := 0; start < len(ids); start += inListChunk {
+		part := ids[start:min(start+inListChunk, len(ids))]
+		placeholders := strings.TrimSuffix(strings.Repeat("?,", len(part)), ",")
+		rows, err := s.db.Query(
+			`SELECT `+eventRowCols+`, e.detail_json, e.raw_json`+eventRowFrom+
+				` WHERE e.id IN (`+placeholders+`)`, args64(part)...)
+		if err != nil {
+			return nil, fmt.Errorf("store: get event details: %w", err)
+		}
+		for rows.Next() {
+			det, err := scanEventDetail(rows)
+			if err != nil {
+				rows.Close()
+				return nil, fmt.Errorf("store: get event details: %w", err)
+			}
+			byID[det.ID] = det
+		}
+		if err := rows.Err(); err != nil {
+			rows.Close()
+			return nil, fmt.Errorf("store: get event details: %w", err)
+		}
+		rows.Close()
+	}
+	out := make([]models.EventDetail, 0, len(ids))
+	for _, id := range ids {
+		if det, ok := byID[id]; ok {
+			out = append(out, det)
+		}
+	}
+	return out, nil
 }
 
 // GetBlindFlashDetails returns detail_json for every blind event of a
