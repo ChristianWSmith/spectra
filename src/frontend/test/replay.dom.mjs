@@ -607,6 +607,20 @@ export function createEngine(data, tickRate) {
   function cancelLoopIfOutside(f) {
     if (state.loopEnabled && (f < state.loopFrom || f > state.loopTo)) setLoopEnabled(false);
   }
+  // seekTick: the ONE seek path — hoisted so seekRelative (the ±15 s
+  // buttons' freeze-zero entry point) delegates here, keeping the
+  // __seeks seed log in one place: a seekRelative landing is
+  // indistinguishable from a direct seekTick for every existing pin.
+  function seekTick(t) {
+    // Logged so section K can pin the keep-alive seed contract (a
+    // distinct seed applies exactly once; identical-value churn and a
+    // no-promise rewrite never re-seek). seekFrame (scrubbing) is
+    // deliberately NOT a seed path and stays unlogged.
+    globalThis.__seeks = (globalThis.__seeks || []).concat(t);
+    state.tick = t;
+    cancelLoopIfOutside(frameForTick(t));
+    emit?.(state);
+  }
   return {
     state,
     tickRate,
@@ -616,15 +630,16 @@ export function createEngine(data, tickRate) {
         emit = null;
       };
     },
-    seekTick(t) {
-      // Logged so section K can pin the keep-alive seed contract (a
-      // distinct seed applies exactly once; identical-value churn and a
-      // no-promise rewrite never re-seek). seekFrame (scrubbing) is
-      // deliberately NOT a seed path and stays unlogged.
-      globalThis.__seeks = (globalThis.__seeks || []).concat(t);
-      state.tick = t;
-      cancelLoopIfOutside(frameForTick(t));
-      emit?.(state);
+    seekTick,
+    seekRelative(delta) {
+      // Mirrors the REAL engine's skip-OFF path (the stub's setRounds is
+      // a no-op → no windows → plain arithmetic); the freeze-zero walk
+      // is pinned in src/lib/engine.test.js against the real engine.
+      // Also the route-proof: the transport section asserts this log
+      // recorded both ±15 clicks, so a view still calling seekTick
+      // directly fails there.
+      globalThis.__relativeSeeks = (globalThis.__relativeSeeks || []).concat(delta);
+      seekTick(state.tick + delta);
     },
     seekFrame(f) {
       // The REAL engine derives the tick from the frame it lands on
@@ -1372,13 +1387,25 @@ check('volume popover closes on a second trigger click', !controls.querySelector
 
 // The transport buttons drive the engine (stubbed): ±15s at the match
 // tick rate (64), then the round transport through the round→tick rule.
+// The reset below is safe: nothing before this section clicks the ±15
+// buttons (earlier sections only query their ids/titles).
 const readoutTick = () => target.querySelector('.replay-readout')?.getAttribute('title') || '';
+globalThis.__relativeSeeks = [];
 click(controls.querySelector('#rp-seek-fwd'));
 await sleep();
 check('+15s seeks 15 × tickRate ahead (640 → 1600)', readoutTick().includes('tick 1600'), readoutTick());
 click(controls.querySelector('#rp-seek-back'));
 await sleep();
 check('−15s seeks 15 × tickRate back (1600 → 640)', readoutTick().includes('tick 640'), readoutTick());
+// Route-proof: both clicks must have gone through engine.seekRelative —
+// the freeze-zero walk's entry point. A view still calling seekTick
+// directly leaves this log empty (or partial) and fails here, even
+// though the readout pins above would still pass.
+check(
+  'both ±15 buttons route through engine.seekRelative (the freeze-zero entry point)',
+  JSON.stringify(globalThis.__relativeSeeks || []) === JSON.stringify([15 * 64, -15 * 64]),
+  JSON.stringify(globalThis.__relativeSeeks || []),
+);
 click(controls.querySelector('#rp-round-prev'));
 await sleep();
 check('previous round seeks to round 1 start', readoutTick().includes('tick 0'), readoutTick());

@@ -1126,11 +1126,17 @@
   });
 
   // Fixed-step transport: ±15 seconds at the match's tick rate —
-  // seekTick clamps to the stream, so the buttons can never overshoot
-  // (or seek to a negative tick).
+  // engine.seekRelative reads state.tick (uiTick is only its mirror, so
+  // the view deliberately passes no from-tick) and, with skip-freeze
+  // armed, runs the freeze-zero walk (rounds.seekTargetTick): the
+  // interceding freeze time counts as 0, so the landing never sits
+  // inside a freeze and playback's snap can never bump the seek.
+  // Plain arithmetic with the skip off; the seek still clamps to the
+  // stream, so the buttons can never overshoot (or seek to a negative
+  // tick).
   function seekBySeconds(sign) {
     if (!engine) return;
-    engine.seekTick(uiTick + sign * 15 * engine.tickRate);
+    engine.seekRelative(sign * 15 * engine.tickRate);
   }
 
   // hudFor builds the renderer's setHud payload for a playhead tick —
