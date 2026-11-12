@@ -137,7 +137,13 @@
   // never registered; busy/error/warnings stay transient.
   const selDefaults = () => ({ expanded: 0, compareSel: [] });
   const selKey = $derived(matchKey('selection', id));
-  const selSeed = seed(selKey, selDefaults());
+  // Deliberate ONE-TIME init capture: the derived is read inside a closure
+  // (Svelte's documented state_referenced_locally fix); the snapshot carries
+  // the key so lastKey matches without a second top-level derived read.
+  // The combined reseed/write-through $effect below owns every later key
+  // change — URL stays the sole durable record; registry semantics unchanged.
+  const selInit = () => ({ ...seed(selKey, selDefaults()), key: selKey });
+  const selSeed = selInit();
   let expanded = $state(selSeed.expanded); // steamId of the expanded scoreboard row
   let warnings = $state(null); // null = not loaded
   // Warnings render directly (no header button): the panel is open by
@@ -157,7 +163,7 @@
   let classError = $state('');
   // Rounds-tab compare picker: round numbers (max 4, non-warmup only).
   let compareSel = $state(selSeed.compareSel);
-  let selLastKey = selKey;
+  let selLastKey = selSeed.key;
   $effect(() => {
     const k = selKey;
     if (k !== selLastKey) {

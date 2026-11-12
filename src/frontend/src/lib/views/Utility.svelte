@@ -43,11 +43,17 @@
   // new key. Loading/error stay transient.
   const utilDefaults = () => ({ kindF: '', throwerF: '', closed: {} });
   const utilKey = $derived(matchKey('utility', id));
-  const utilSeed = seed(utilKey, utilDefaults());
+  // Deliberate ONE-TIME init capture: the derived is read inside a closure
+  // (Svelte's documented state_referenced_locally fix); the snapshot carries
+  // the key so lastKey matches without a second top-level derived read.
+  // The combined reseed/write-through $effect below owns every later key
+  // change — URL stays the sole durable record; registry semantics unchanged.
+  const utilInit = () => ({ ...seed(utilKey, utilDefaults()), key: utilKey });
+  const utilSeed = utilInit();
   let kindF = $state(utilSeed.kindF);
   let throwerF = $state(utilSeed.throwerF);
   let closed = $state(utilSeed.closed); // round -> true = collapsed
-  let utilLastKey = utilKey;
+  let utilLastKey = utilSeed.key;
   $effect(() => {
     const k = utilKey;
     if (k !== utilLastKey) {

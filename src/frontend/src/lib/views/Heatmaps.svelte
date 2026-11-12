@@ -44,7 +44,13 @@
     lastKey: '',
   });
   const heatKey = $derived(matchKey('heatmaps', id));
-  const heatSeed = seed(heatKey, heatDefaults());
+  // Deliberate ONE-TIME init capture: the derived is read inside a closure
+  // (Svelte's documented state_referenced_locally fix); the snapshot carries
+  // the key so lastKey matches without a second top-level derived read.
+  // The combined reseed/write-through $effect below owns every later key
+  // change — URL stays the sole durable record; registry semantics unchanged.
+  const heatInit = () => ({ ...seed(heatKey, heatDefaults()), key: heatKey });
+  const heatSeed = heatInit();
 
   // The kind registry lives in lib/heatkinds.js (pinned to Go's
   // grenadeHeatmapKinds by its test) — core kinds, then one option per
@@ -206,7 +212,7 @@
   // under the new key. While the key is unchanged every control/raster
   // change writes through, keeping the record internally consistent
   // (controls + grid + gridLayer + lastKey move together).
-  let heatLastKey = heatKey;
+  let heatLastKey = heatSeed.key;
   $effect(() => {
     const k = heatKey;
     if (k !== heatLastKey) {

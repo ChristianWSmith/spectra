@@ -132,7 +132,13 @@
     statSort: { key: 'kastPct', desc: true },
   });
   const combKey = $derived(matchKey('combat', id));
-  const combSeed = seed(combKey, combDefaults());
+  // Deliberate ONE-TIME init capture: the derived is read inside a closure
+  // (Svelte's documented state_referenced_locally fix); the snapshot carries
+  // the key so lastKey matches without a second top-level derived read.
+  // The combined reseed/write-through $effect below owns every later key
+  // change — URL stays the sole durable record; registry semantics unchanged.
+  const combInit = () => ({ ...seed(combKey, combDefaults()), key: combKey });
+  const combSeed = combInit();
   let engKind = $state(combSeed.engKind);
   // Clutches card outcome toggle — LOCAL state only: never stamped into
   // the URL (the route-query retention ruling resolved to the
@@ -143,7 +149,7 @@
   let clutchWon = $state(combSeed.clutchWon);
   let clutchLost = $state(combSeed.clutchLost);
   let statSort = $state(combSeed.statSort);
-  let combLastKey = combKey;
+  let combLastKey = combSeed.key;
   $effect(() => {
     const k = combKey;
     if (k !== combLastKey) {
