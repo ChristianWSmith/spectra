@@ -33,7 +33,7 @@
 // Every read here is fail-soft: a failed side channel yields its empty
 // value (no stamps → no drop markers, no helmet cues, "no buy evidence")
 // and never a load error — the exact contract the inline code had.
-import { getEvents, getDropDetails, getGenericEvents } from '../services.js';
+import { getEvents, getDropDetails, getGenericEvents, getEventDetails } from '../services.js';
 import { DRAW_KINDS, normalizeWorld } from './landmarks.js';
 import { slotAliveHelmetAt } from './sfx.js';
 import { buildKitEvidence, buyEndsFromRows } from './kits.js';
@@ -79,9 +79,11 @@ const HYDRATION_UNIT = 'grenade reads';
 //               reports, exactly today's behavior. It fires ONCE with
 //               {done: 0, total: <unique grenade ids>, unit} immediately
 //               BEFORE the bulk chunk reads start — and only when they
-//               WILL run: an unresolvable binding or a match with no
-//               bounce rows reports NOTHING (indeterminate is honest;
-//               claiming work that never ran is not) — then once per
+//               WILL run: a match with no bounce rows reports NOTHING
+//               (indeterminate is honest; claiming work that never ran
+//               is not; the binding resolves statically with the module
+//               graph, so there is no runtime import that could fail
+//               here) — then once per
 //               chunk SETTLE: each chunk adds its own length to done
 //               whether it RESOLVED or REJECTED (fail-soft contract: a
 //               failed chunk's ids were attempted work, so done reaches
@@ -209,19 +211,21 @@ function grenadeEntity(detailJson) {
 // an id with no detail row is skipped upstream (the store never
 // fabricates one).
 //
-// Fail-soft, at the same granularity as before: the binding resolves
-// LAZILY (a dynamic import — the world path treats an unresolvable
-// binding exactly like a failed read: no stamps, never a load error) and
-// each chunk catches its own failure, so a failed chunk leaves exactly
-// its rows entity-less while the rest still stamp.
+// Fail-soft, at the same granularity as before: the bulk read goes
+// through services.js getEventDetails — a STATIC import, so an
+// "unresolvable binding" can no longer happen at runtime (that failure
+// mode is impossible-by-construction: it would fail the whole module
+// graph at load, not this call; fail-soft here now means a REJECTED
+// call, which the per-chunk catch below keeps covering) and each chunk
+// catches its own failure, so a failed chunk leaves exactly its rows
+// entity-less while the rest still stamp.
 //
 // onProgress (loadWorld's optional callback) reports the ONE honest
 // denominator this phase has — the unique grenade detail ids, counted as
 // ATTEMPTED work:
 //   · {done: 0, total: ids.length, unit: 'grenade reads'} fires once,
-//     AFTER the binding import resolves and the chunks are about to run
-//     — an unresolvable binding reports nothing (no reads will run, so
-//     there is nothing to report; the stage stays indeterminate).
+//     right before the chunks run (the binding is already resolved with
+//     the module graph — nothing lazy left to fail).
 //   · every chunk adds its own length to done when it SETTLES, resolved
 //     OR rejected — a failed chunk's ids were still attempted work, so
 //     done always reaches total (even when every chunk rejects: the bar
@@ -235,21 +239,19 @@ async function hydrateGrenadeEntities(rows, onProgress) {
   const ids = [...new Set(targets.map((r) => r.id))];
   const chunks = [];
   for (let i = 0; i < ids.length; i += BULK_CHUNK) chunks.push(ids.slice(i, i + BULK_CHUNK));
-  let bindings;
-  try {
-    bindings = await import('../../../bindings/github.com/ChristianWSmith/spectra');
-  } catch {
-    return rows; // fail-soft: no resolvable binding → no stamps, never an error
-  }
   // The reads are about to run — the denominator lands now (total = the
   // UNIQUE ids after dedupe, done counting ids ATTEMPTED per settle).
+  // The bulk read is services.js getEventDetails (a STATIC import): the
+  // binding resolves with the module graph, so the old dynamic-import
+  // "unresolvable binding" guard is impossible-by-construction — a
+  // rejected call is the only failure left, covered per chunk below.
   const total = ids.length;
   let done = 0;
   if (onProgress) onProgress({ done: 0, total, unit: HYDRATION_UNIT });
   const lists = await Promise.all(
     chunks.map(async (chunk) => {
       try {
-        return await bindings.MatchService.GetEventDetails(chunk);
+        return await getEventDetails(chunk);
       } catch {
         return []; // fail-soft: that chunk's rows stay entity-less
       } finally {

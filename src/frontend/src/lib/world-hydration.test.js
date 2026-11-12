@@ -15,9 +15,8 @@
 // callback — the preload ledger's world-stage denominator) pins the
 // {done, total, unit} contract: the denominator lands before any read
 // runs and counts UNIQUE ids, done counts ids ATTEMPTED (a settle is a
-// settle — every chunk rejecting still reaches total), and the two
-// paths where NO read will run (no bounce rows / unresolvable binding)
-// report nothing at all.
+// settle — every chunk rejecting still reaches total), and the path
+// where NO read will run (no bounce rows) reports nothing at all.
 //
 // Run: node --test src/lib/world-hydration.test.js (from frontend/; the
 // lib test glob src/lib/*.test.js picks it up too).
@@ -33,16 +32,18 @@ installEsmDirHook();
 // before the module graph loads (hooks are per-process, this file runs
 // alone — the sfx/feed test pattern).
 const stub = (name) => new URL(`../../test/stubs/${name}`, import.meta.url).href;
-// Set by the onProgress "nothing to report" test below: the hook then
-// REFUSES the bindings specifier, so hydrateGrenadeEntities' dynamic
-// import rejects (the fail-soft "no resolvable binding" path) while the
-// already-loaded module graph is untouched.
-let refuseBindings = false;
+// (Q6: the world's bulk read used to be a DYNAMIC bindings import with a
+// `refuseBindings` resolve-hook flag pinning "unresolvable binding →
+// zero reports". world.js now imports it statically through
+// services.js getEventDetails, so the specifier resolves once at module
+// load — refusing it now would fail this whole file's import, and no
+// runtime path can reach an unresolvable binding any more. The failure
+// mode is impossible-by-construction; the surviving pins are the gates
+// (no bounce rows → silence) and the per-chunk rejected-call fail-soft.)
 registerHooks({
   resolve(specifier, context, nextResolve) {
     if (specifier === '@wailsio/runtime') return { url: stub('wails-runtime.mjs'), shortCircuit: true };
     if (specifier.includes('bindings/github.com')) {
-      if (refuseBindings) throw new Error('bindings unresolvable (scripted)');
       return { url: stub('bindings.mjs'), shortCircuit: true };
     }
     return nextResolve(specifier, context);
@@ -409,31 +410,17 @@ test('onProgress reports NOTHING when no hydration read will run', async () => {
   assert.deepEqual(reportsA2, [], 'a match with no grenade targets reports nothing');
   assert.equal(bindings.callCount('GetEventDetails'), 0, 'and no detail read ran');
 
-  // (b) bounce rows present, but the binding import FAILS → the reads
-  // never run → zero reports (claiming work that never ran is not).
-  bindings.resetCalls();
-  bindings.handlers.GetEvents = () => [
-    { id: 620, seq: 0, tick: 100, round: 1, kind: 'grenade_bounce', attacker: '100', weapon: 'hegrenade' },
-    { id: 621, seq: 1, tick: 110, round: 1, kind: 'grenade', attacker: '100', weapon: 'smokegrenade' },
-  ];
-  bindings.handlers.GetEventDetails = () => {
-    throw new Error('must not run');
-  };
-  refuseBindings = true;
-  try {
-    const reportsB = [];
-    const world = await loadWorld({
-      matchId: 7,
-      players: [],
-      stateIndex: null,
-      ticks: null,
-      tickRate: 64,
-      onProgress: (p) => reportsB.push(p),
-    });
-    assert.deepEqual(reportsB, [], 'an unresolvable binding reports nothing');
-    assert.equal(bindings.callCount('GetEventDetails'), 0, 'and no detail read ran');
-    assert.equal(world.rows.length, 2, 'the rows still load (fail-soft)');
-  } finally {
-    refuseBindings = false;
-  }
+  // (b) REMOVED (Q6 consolidation): the third "nothing to report" path
+  // was the DYNAMIC bindings import failing, scripted by refusing the
+  // specifier in the resolve hook above. world.js now reaches the bulk
+  // read through the statically imported services.js wrapper, so that
+  // failure mode is impossible-by-construction: an unresolvable binding
+  // would fail the module graph at load — before any test could run —
+  // and never surface as a silent runtime path. What the refused call
+  // degenerates into is a REJECTED wrapper call, and that is pinned
+  // byte-strict by "onProgress reaches total even when EVERY chunk read
+  // rejects" above (denominator fires, done reaches total, rows load
+  // entity-less). The "no read ran ⇒ zero reports" principle itself
+  // stays pinned by (a) and (a2) — the worth-doing gates above, the only
+  // paths left where no read can run.
 });
