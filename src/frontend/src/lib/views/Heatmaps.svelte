@@ -179,11 +179,15 @@
   const showLayers = $derived(layers.length >= 2);
 
   // Legend labels must describe the data on screen, not the pending
-  // controls (fetch is on-demand, so the two can diverge).
+  // controls (fetch is on-demand, so the two can diverge). presence's
+  // unit says "live play" because it IS the live-play population now:
+  // the raster skips every frame inside a round's freeze window
+  // (analyticservice.go inFreezeTime — the buy phase would otherwise
+  // weigh the T/CT spawns).
   const unitKind = $derived(grid && grid.kind ? grid.kind : kind);
   const unit = $derived(
     unitKind === 'presence'
-      ? 'time-weighted seconds'
+      ? 'time-weighted seconds · live play'
       : unitKind === 'kd'
         ? 'kills − deaths (net)'
         : 'count',

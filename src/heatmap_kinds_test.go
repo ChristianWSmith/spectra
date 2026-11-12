@@ -26,6 +26,17 @@ func pf(v float64) *float64 { return &v }
 // Kill B: victim at (50,50), killer at (200,200).
 func seedHeatmapMatch(t *testing.T, events []models.Event) (*store.Store, int64) {
 	t.Helper()
+	return seedHeatmapMatchRounds(t, events, []models.Round{
+		{Number: 1, Winner: "ct", StartTick: 0, EndTick: 1000},
+	})
+}
+
+// seedHeatmapMatchRounds is seedHeatmapMatch with the rounds the caller
+// needs — the seam the freeze-window tests use (a fixture round with a
+// real freeze_end_tick; the default fixture ships 0 = no usable window).
+// Everything else (players, sides) is the shared shape above.
+func seedHeatmapMatchRounds(t *testing.T, events []models.Event, rounds []models.Round) (*store.Store, int64) {
+	t.Helper()
 	st, err := store.Open(filepath.Join(t.TempDir(), "heatmap.db"))
 	if err != nil {
 		t.Fatalf("open store: %v", err)
@@ -45,9 +56,7 @@ func seedHeatmapMatch(t *testing.T, events []models.Event) (*store.Store, int64)
 			{SteamID: "100", Name: "a", Side: "ct", FinalStatePresent: true},
 			{SteamID: "200", Name: "b", Side: "t", FinalStatePresent: true},
 		},
-		Rounds: []models.Round{
-			{Number: 1, Winner: "ct", StartTick: 0, EndTick: 1000},
-		},
+		Rounds: rounds,
 		RoundSides: []models.RoundPlayerSide{
 			{Round: 1, SteamID: "100", Side: "ct"},
 			{Round: 1, SteamID: "200", Side: "t"},
@@ -866,5 +875,140 @@ func TestHeatmapGridCarriesKernelPad(t *testing.T) {
 		t.Errorf("HeatmapGrid JSON has no pad key: %s", raw)
 	} else if v != float64(heatmapPad) {
 		t.Errorf("wire pad = %v, want %v", v, heatmapPad)
+	}
+}
+
+// --- Freeze time is not live play (presence) --------------------------------
+//
+// Presence is dwell time, and the buy phase is not live play: counting it
+// weighs the T/CT spawns unfairly (the owner's report). The freeze
+// interval is the STORED round clock — rounds.start_tick →
+// rounds.freeze_end_tick (store.GetRoundInfos → the roundSpans projection
+// in GetHeatmap) — read through the Go twin of the canonical frontend
+// predicate lib/rounds.js inFreezeTime: start ≤ tick < freezeEndTick,
+// half-open, and only for a row with a usable window.
+
+// TestInFreezeTimeWindowRule pins the predicate itself: the half-open
+// bounds, the no-guess rows (warmup fe = 0, fe ≤ start) that must never
+// skip a frame, ticks no round claims, and row order.
+func TestInFreezeTimeWindowRule(t *testing.T) {
+	rounds := []models.Round{
+		{Number: -1, StartTick: 100, FreezeEndTick: 0, EndTick: 400},     // warmup row ships fe = 0
+		{Number: 1, StartTick: 500, FreezeEndTick: 660, EndTick: 1400},   // a real freeze window
+		{Number: 2, StartTick: 1500, FreezeEndTick: 1500, EndTick: 2000}, // fe == start: no usable window
+	}
+	cases := []struct {
+		tick int
+		want bool
+	}{
+		{99, false},   // before every round: no window
+		{100, false},  // inside the warmup row (start) — fe = 0 never skips
+		{150, false},  // anywhere in the warmup round: no usable window
+		{450, false},  // gap between rounds: the row whose start reaches it is the warmup one → no window
+		{500, true},   // round 1's start is INSIDE freeze
+		{659, true},   // last freeze tick
+		{660, false},  // freeze END is exclusive — live play
+		{1400, false}, // after freeze end
+		{1500, false}, // knife-shaped fe == start: no window, nothing skipped
+		{1700, false},
+		{2500, false}, // past the last round: no window
+	}
+	for _, c := range cases {
+		if got := inFreezeTime(rounds, c.tick); got != c.want {
+			t.Errorf("inFreezeTime(tick %d) = %v, want %v", c.tick, got, c.want)
+		}
+	}
+	// Row order never matters (the frontend scan tolerates any order).
+	shuffled := []models.Round{rounds[2], rounds[0], rounds[1]}
+	for _, c := range cases {
+		if got := inFreezeTime(shuffled, c.tick); got != c.want {
+			t.Errorf("shuffled inFreezeTime(tick %d) = %v, want %v", c.tick, got, c.want)
+		}
+	}
+	// No rounds / nothing reaching the tick: live play, never a guess.
+	if inFreezeTime(nil, 100) || inFreezeTime([]models.Round{}, 100) {
+		t.Error("no rounds must read as no freeze")
+	}
+}
+
+// TestHeatmapPresenceSkipsFreezeTime pins the raster: freeze frames are
+// dropped in BOTH passes — no dwell deposited (Samples) and no extent
+// claimed (bounds describe the KEPT samples only, exactly like the z-band
+// contract above). Positions are deliberately split: the freeze frames
+// stand at the spawns, the live frames out on the map, so a raster that
+// kept freeze frames would show it in the bounds alone. A match whose
+// whole sidecar falls inside freeze yields the empty raster, not an error.
+func TestHeatmapPresenceSkipsFreezeTime(t *testing.T) {
+	useTempXDG(t)
+	writeFrames := func(t *testing.T, id int64, freezeEnd int) {
+		t.Helper()
+		dir := filepath.Join(data.MatchesDir(), strconv.FormatInt(id, 10))
+		w, err := sidecar.NewWriter(dir, 64)
+		if err != nil {
+			t.Fatalf("NewWriter: %v", err)
+		}
+		for i := 0; i < 100; i++ {
+			// 100 frames @ tick = frame index (the band test's seeding):
+			// ticks < freezeEnd are the buy phase (standing at the
+			// spawns), the rest live play (out on the map).
+			x0, x1 := float32(500), float32(600)
+			if i < freezeEnd {
+				x0, x1 = 0, 100
+			}
+			players := []extract.PositionPlayer{
+				{SteamID: 100, X: x0, Y: 0, Z: 0},
+				{SteamID: 200, X: x1, Y: 0, Z: 0},
+			}
+			if err := w.AddFrame(int32(i), players); err != nil {
+				t.Fatalf("AddFrame %d: %v", i, err)
+			}
+		}
+		if _, err := w.Close(64); err != nil {
+			t.Fatalf("Close sidecar: %v", err)
+		}
+	}
+
+	// Mixed match: freeze [0,40), live [40,100).
+	st, id := seedHeatmapMatchRounds(t, nil, []models.Round{
+		{Number: 1, Winner: "ct", StartTick: 0, FreezeEndTick: 40, EndTick: 200},
+	})
+	writeFrames(t, id, 40)
+	as := &AnalyticsService{st: st}
+	g, err := as.GetHeatmap(id, "presence", HeatmapFilter{RoundFrom: -1, RoundTo: -1})
+	if err != nil {
+		t.Fatalf("GetHeatmap(presence): %v", err)
+	}
+	// 60 live ticks (40..99) × 2 players; the 40 freeze frames are gone.
+	if g.Samples != 120 {
+		t.Errorf("presence samples = %d, want 120 (2 players × 60 live frames — freeze dropped)",
+			g.Samples)
+	}
+	// Bounds come from the LIVE positions only: had the extent pass kept
+	// the spawn frames, minX would be 0-pad (both passes must agree).
+	if g.MinX != 500-heatmapPad || g.MaxX != 600+heatmapPad {
+		t.Errorf("presence bounds x = [%v,%v], want the live-play span ± pad [%v,%v]",
+			g.MinX, g.MaxX, 500-heatmapPad, 600+heatmapPad)
+	}
+	// The freeze-end boundary is half-open: the frame AT freezeEnd is live
+	// play (tick 39 dropped, tick 40 counted) — which the 60-frame count
+	// above already fixes; make the boundary explicit per frame:
+	if inFreezeTime([]models.Round{{StartTick: 0, FreezeEndTick: 40, EndTick: 200}}, 39) != true ||
+		inFreezeTime([]models.Round{{StartTick: 0, FreezeEndTick: 40, EndTick: 200}}, 40) != false {
+		t.Error("freeze window must drop tick 39 and keep tick 40 (half-open)")
+	}
+
+	// All-freeze match: every frame inside freeze → the empty raster.
+	st2, id2 := seedHeatmapMatchRounds(t, nil, []models.Round{
+		{Number: 1, Winner: "ct", StartTick: 0, FreezeEndTick: 500, EndTick: 600},
+	})
+	writeFrames(t, id2, 500)
+	as2 := &AnalyticsService{st: st2}
+	empty, err := as2.GetHeatmap(id2, "presence", HeatmapFilter{RoundFrom: -1, RoundTo: -1})
+	if err != nil {
+		t.Fatalf("GetHeatmap(presence, all-freeze): %v", err)
+	}
+	if empty.Samples != 0 || empty.Max != 0 || len(empty.Cells) != heatmapGridSide*heatmapGridSide {
+		t.Errorf("all-freeze presence = %d samples / max %v / %d cells, want an empty raster",
+			empty.Samples, empty.Max, len(empty.Cells))
 	}
 }
