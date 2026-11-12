@@ -91,8 +91,31 @@ func TestGetProvenanceAndEntitySummary(t *testing.T) {
 	if p.Map != "De_Inferno" || p.Warnings != 2 || p.EncMessages != 3 {
 		t.Fatalf("provenance mismatch: %+v", p)
 	}
-	if p.RuleVersion != 1 || p.TradeWindowS != 5.0 {
-		t.Fatalf("config provenance mismatch: %+v", p)
+	// RuleVersion is the MATCH's stamp, never the live config's: this
+	// fixture was never analyzed → 0 = unknown (the panel's
+	// missing-data convention, like VoiceChunks), while TradeWindowS
+	// stays the live config's (the stamp carries only the version).
+	if p.RuleVersion != 0 || p.TradeWindowS != 5.0 {
+		t.Fatalf("rules provenance mismatch: %+v", p)
+	}
+	// A stamped match reports ITS stamp — and bumping the live config
+	// afterwards must not move it (only a re-run does), while the live
+	// TradeWindowS follows the config.
+	if err := st.SetMatchRuleVersion(id, 4); err != nil {
+		t.Fatalf("SetMatchRuleVersion: %v", err)
+	}
+	if _, err := st.SetConfig(models.AnalysisConfig{
+		TradeWindowS: 7, EcoFullBuy: 20000, EcoForce: 10000,
+		TradeOppDistance: 1000, RuleVersion: 9,
+	}); err != nil {
+		t.Fatalf("SetConfig: %v", err)
+	}
+	p2, err := svc.GetProvenance(id)
+	if err != nil {
+		t.Fatalf("GetProvenance(stamped): %v", err)
+	}
+	if p2.RuleVersion != 4 || p2.TradeWindowS != 7 {
+		t.Fatalf("stamped provenance = %+v, want ruleVersion 4 (the match's stamp) + tradeWindowS 7 (the live config)", p2)
 	}
 	joined := strings.Join(p.Notes, "\n")
 	if !strings.Contains(joined, "entity schema browser descoped") {

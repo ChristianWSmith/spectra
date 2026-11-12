@@ -26,19 +26,29 @@ import (
 // ProvenancePanel is the per-match reproducibility surface (PRD §9.2):
 // every input that shaped the rows on screen.
 type ProvenancePanel struct {
-	MatchID       int64    `json:"matchId"`
-	ParserVersion string   `json:"parserVersion"`
-	ExtractedAt   string   `json:"extractedAt"`
-	ParseMS       int64    `json:"parseMs"`
-	Warnings      int      `json:"warnings"`
-	EncMessages   int      `json:"encMessages"`
-	SampleRate    int      `json:"sampleRate"`
-	VoiceChunks   int      `json:"voiceChunks"`
-	RuleVersion   int      `json:"ruleVersion"`
-	TradeWindowS  float64  `json:"tradeWindowS"`
-	Map           string   `json:"map"`
-	Status        string   `json:"status"`
-	Notes         []string `json:"notes"` // descoped/caveat annotations (e.g. chat.decrypted provenance)
+	MatchID       int64  `json:"matchId"`
+	ParserVersion string `json:"parserVersion"`
+	ExtractedAt   string `json:"extractedAt"`
+	ParseMS       int64  `json:"parseMs"`
+	Warnings      int    `json:"warnings"`
+	EncMessages   int    `json:"encMessages"`
+	SampleRate    int    `json:"sampleRate"`
+	VoiceChunks   int    `json:"voiceChunks"`
+	// RuleVersion is the MATCH's own stamp (matches.analyzed_rule_version
+	// — the rule_version its derived rows were last computed under), NOT
+	// the live config's version: reporting the live one claimed rows were
+	// current when they might not be. 0 = never analyzed / unknown —
+	// never a real version (analysis_config starts at 1) — and the same
+	// missing-data convention as VoiceChunks above (0, no fabricated
+	// number).
+	RuleVersion int `json:"ruleVersion"`
+	// TradeWindowS is the LIVE config's trade window — the rules a
+	// re-run would apply; the per-match stamp carries only the version,
+	// not the values.
+	TradeWindowS float64  `json:"tradeWindowS"`
+	Map          string   `json:"map"`
+	Status       string   `json:"status"`
+	Notes        []string `json:"notes"` // descoped/caveat annotations (e.g. chat.decrypted provenance)
 }
 
 // EntitySummary describes what the parser saw (schema-browser-lite; full
@@ -116,6 +126,13 @@ func (s *PlatformService) GetProvenance(matchID int64) (ProvenancePanel, error) 
 	if err != nil {
 		return ProvenancePanel{}, err
 	}
+	// The match's OWN rule stamp (0 = never analyzed — see the field
+	// doc): this is the value the panel must report; the live config's
+	// version says nothing about which rules shaped these rows.
+	stamp, err := s.st.GetMatchRuleVersion(matchID)
+	if err != nil {
+		return ProvenancePanel{}, err
+	}
 	voiceChunks := 0
 	matchDir := matchSidecarDir(matchID)
 	if pres, err := s.st.GetVoicePresence(matchID); err == nil {
@@ -160,7 +177,7 @@ func (s *PlatformService) GetProvenance(matchID int64) (ProvenancePanel, error) 
 		EncMessages:   m.EncryptedMessages,
 		SampleRate:    m.SampleRate,
 		VoiceChunks:   voiceChunks,
-		RuleVersion:   cfg.RuleVersion,
+		RuleVersion:   stamp,
 		TradeWindowS:  cfg.TradeWindowS,
 		Map:           m.Map,
 		Status:        m.Status,
