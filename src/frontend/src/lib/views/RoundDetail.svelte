@@ -59,8 +59,16 @@
   // synth twin of lib/teams.js — see the cross-reference there).
   let teams = $state({ ct: 'CT', t: 'T' });
 
-  $effect(() => {
-    let live = true;
+  // The round reads (mount, round navigation AND error's Retry): the
+  // generation drops stale results when the route changes mid-flight;
+  // the slot clears and loading goes back up for every attempt, so a
+  // retry shows "Loading round…" instead of a blank body (or a stale
+  // failure) under the header.
+  let roundGen = 0;
+  function loadRound() {
+    const my = ++roundGen;
+    error = '';
+    loading = true;
     Promise.all([
       getRoundDetail(id, round),
       getRounds(id),
@@ -68,7 +76,7 @@
       getScoreboard(id, 'kills', true).catch(() => []),
     ])
       .then(([d, r, m, sb]) => {
-        if (!live) return;
+        if (my !== roundGen) return;
         detail = d;
         rounds = r || [];
         players = listedPlayers(sb) || [];
@@ -78,12 +86,15 @@
         loading = false;
       })
       .catch((e) => {
-        if (live) {
+        if (my === roundGen) {
           error = errText(e);
           loading = false;
         }
       });
-    return () => (live = false);
+  }
+
+  $effect(() => {
+    loadRound();
   });
 
   // Match-level identity (runs once per id, not per round navigation).
@@ -304,7 +315,10 @@
   </header>
 
   {#if error}
-    <p class="error" role="alert">{error}</p>
+    <p class="error" role="alert">
+      {error}
+      <button class="btn small" onclick={loadRound}>Retry</button>
+    </p>
   {/if}
 
   {#if detail}

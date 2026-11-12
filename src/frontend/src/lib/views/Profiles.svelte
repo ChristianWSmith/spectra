@@ -32,20 +32,30 @@
   let query = $state(profSeed.query);
   $effect(() => remember('profiles', { query }));
 
-  $effect(() => {
-    let live = true;
+  // The one list read (mount AND error's Retry): loading goes back up
+  // for the flight so the panel shows "Loading players…" — never a
+  // false "No players yet" — and the error clears only on success.
+  let playersGen = 0;
+  function loadPlayers() {
+    const my = ++playersGen;
+    loading = true;
+    error = '';
     listPlayers('')
       .then((rows) => {
-        if (!live) return;
+        if (my !== playersGen) return;
         players = listedPlayers(rows) || [];
         loading = false;
+        error = '';
       })
       .catch((e) => {
-        if (!live) return;
+        if (my !== playersGen) return;
         error = errText(e);
         loading = false;
       });
-    return () => (live = false);
+  }
+
+  $effect(() => {
+    loadPlayers();
   });
 
   // Client-side name filter (case-insensitive; an empty query keeps the
@@ -155,17 +165,24 @@
   </div>
 
   {#if error}
-    <p class="error" role="alert">{error}</p>
+    <p class="error" role="alert">
+      {error}
+      <button class="btn small" onclick={loadPlayers}>Retry</button>
+    </p>
   {/if}
 
   <section class="panel">
     {#if loading}
       <p class="muted" role="status">Loading players…</p>
     {:else if players.length === 0}
-      <div class="empty">
-        <p class="empty-title" role="status">No players yet</p>
-        <p class="muted">Players appear here once matches are imported.</p>
-      </div>
+      {#if !error}
+        <!-- Gated on error: a failed list read is UNKNOWN, never "no
+             players yet" — the alert above carries the failure. -->
+        <div class="empty">
+          <p class="empty-title" role="status">No players yet</p>
+          <p class="muted">Players appear here once matches are imported.</p>
+        </div>
+      {/if}
     {:else if filtered.length === 0}
       <div class="empty">
         <p class="empty-title" role="status">No players match “{query.trim()}”</p>

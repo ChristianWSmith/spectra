@@ -484,6 +484,39 @@ console.log('G. cold start: never a blank page while the round reads are in flig
   globalThis.__roundDetailDelay = 0;
 }
 
+console.log('H. a failed round read carries a Retry that clears the message in place');
+{
+  // getRoundDetail resolves null for an unknown round → "Round not
+  // found." with no detail behind it (today only round-strip navigation
+  // could clear it — and no strip renders without a detail).
+  const bad = { ...base, details: {} };
+  const rootH = await render(bad, 5);
+  const hErr = () => rootH.querySelector('p.error[role="alert"]');
+  check('error renders in p.error[role="alert"]', !!hErr(), 'no error line');
+  check(
+    'error offers Retry that re-runs the round reads',
+    !!hErr() && [...hErr().querySelectorAll('button')].some((b) => b.textContent.trim() === 'Retry'),
+    hErr()?.textContent,
+  );
+  check(
+    'no round content behind the failure (never a blank claim)',
+    !rootH.textContent.includes('Round result'),
+    rootH.textContent.replace(/\s+/g, ' ').slice(0, 140),
+  );
+  // Restore the fixture and Retry: the SAME reads re-run, the message
+  // clears in place and the round renders — same root, no remount.
+  globalThis.__roundDetail = base;
+  click([...hErr().querySelectorAll('button')].find((b) => b.textContent.trim() === 'Retry'));
+  await sleep(80);
+  check('error cleared in place', !hErr(), hErr()?.textContent);
+  check(
+    'the round renders in the SAME root after Retry',
+    sections(rootH, 'Round result').length === 1,
+    String(sections(rootH, 'Round result').length),
+  );
+  document.body.removeChild(rootH);
+}
+
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');
 process.exit(failures || errors.length ? 1 : 0);

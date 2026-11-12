@@ -414,6 +414,111 @@ await sleep(100); // mount + getProfile + getCareerTrend + listPlayers
   );
 }
 
+console.log('F. Profiles: a failed list read gates the empty state and Retries in place');
+document.body.removeChild(pTarget);
+// Fail the read: the alert must stand INSTEAD of "No players yet" (the
+// empty copy is gated on the error), and Retry must actually re-fetch.
+// listPlayers is read-cached (services.js cachedRead) — flush first or
+// sections A–E's successful read would answer in the stub's place.
+bindings.ProfileService.ListPlayers = () => Promise.reject(new Error('players read failed'));
+const { invalidate } = await import(pathToFileURL('src/lib/services.js').href);
+invalidate();
+const fTarget = document.createElement('div');
+document.body.appendChild(fTarget);
+mount(profilesMod.default, { target: fTarget, props: { nav: () => {} } });
+await sleep(100);
+const fErr = () => fTarget.querySelector('p.error[role="alert"]');
+check('error renders in p.error[role="alert"]', !!fErr(), 'no error line');
+check(
+  'error carries a Retry that re-invokes the list read',
+  !!fErr() && [...fErr().querySelectorAll('button')].some((b) => b.textContent.trim() === 'Retry'),
+  fErr()?.textContent,
+);
+check(
+  '"No players yet" gated on the error (a failed read is UNKNOWN, not none)',
+  !fTarget.textContent.includes('No players yet'),
+  fTarget.textContent.replace(/\s+/g, ' ').slice(0, 160),
+);
+check('the view did not unmount (toolbar still there)', !!fTarget.querySelector('#pf-search'));
+// Retry with the read restored: the message clears IN PLACE — same root,
+// no remount — and the table renders.
+bindings.ProfileService.ListPlayers = () => Promise.resolve(PLAYERS);
+click([...fErr().querySelectorAll('button')].find((b) => b.textContent.trim() === 'Retry'));
+await sleep(100);
+check('error cleared in place', !fErr(), fErr()?.textContent);
+check(
+  'the table renders in the SAME root after Retry',
+  JSON.stringify(rowNames(fTarget)) === JSON.stringify(['zoe', 'bob', 'dan', 'amy']),
+  JSON.stringify(fTarget.querySelector('table.data-table') ? rowNames(fTarget) : []),
+);
+document.body.removeChild(fTarget);
+
+console.log('G. PlayerProfile: profile + trend failures each carry a Retry that clears in place');
+const goodGetProfile = bindings.ProfileService.GetProfile;
+const goodGetTrend = bindings.ProfileService.GetCareerTrend;
+
+// G1: the profile read fails — the alert stands INSTEAD of a stuck
+// "Loading…" (that copy is gated on the error), and Retry re-fetches
+// into the same root.
+bindings.ProfileService.GetProfile = () => Promise.reject(new Error('profile read failed'));
+invalidate(); // both reads are read-cached — flush so the failure lands
+const g1 = document.createElement('div');
+document.body.appendChild(g1);
+mount(profileMod.default, { target: g1, props: { steamId: '76561198000000001', nav: () => {} } });
+await sleep(100);
+const g1Err = () => g1.querySelector('p.error[role="alert"]');
+check('profile alert renders in p.error[role="alert"]', !!g1Err(), 'no error line');
+check(
+  'profile alert offers Retry that re-invokes getProfile',
+  !!g1Err() && [...g1Err().querySelectorAll('button')].some((b) => b.textContent.trim() === 'Retry'),
+  g1Err()?.textContent,
+);
+check(
+  'no stuck "Loading…" behind the failure (gated on the error)',
+  !g1.textContent.includes('Loading…'),
+  g1.textContent.replace(/\s+/g, ' ').slice(0, 160),
+);
+check('no profile content behind the failure', !g1.querySelector('.stat-grid'));
+bindings.ProfileService.GetProfile = goodGetProfile;
+click([...g1Err().querySelectorAll('button')].find((b) => b.textContent.trim() === 'Retry'));
+await sleep(100);
+check('profile error cleared in place (same root, no remount)', !g1Err(), g1Err()?.textContent);
+check('profile content rendered after Retry', !!g1.querySelector('.stat-grid'));
+document.body.removeChild(g1);
+
+// G2: the trend read fails while the profile is fine — the alert stands
+// INSTEAD of the false "No trend data for this stat yet." claim, and
+// Retry re-fetches into the same root.
+bindings.ProfileService.GetCareerTrend = () => Promise.reject(new Error('trend read failed'));
+invalidate();
+const g2 = document.createElement('div');
+document.body.appendChild(g2);
+mount(profileMod.default, { target: g2, props: { steamId: '76561198000000001', nav: () => {} } });
+await sleep(100);
+const g2Err = () => g2.querySelector('p.error[role="alert"]');
+check('trend alert renders in p.error[role="alert"]', !!g2Err(), 'no error line');
+check(
+  'trend alert offers Retry that re-invokes getCareerTrend',
+  !!g2Err() && [...g2Err().querySelectorAll('button')].some((b) => b.textContent.trim() === 'Retry'),
+  g2Err()?.textContent,
+);
+check(
+  '"No trend data for this stat yet." gated on the error (a failed read is UNKNOWN)',
+  !g2.textContent.includes('No trend data'),
+  g2.textContent.replace(/\s+/g, ' ').slice(0, 200),
+);
+check('the failure is local to the trend — profile content still renders', !!g2.querySelector('.stat-grid'));
+bindings.ProfileService.GetCareerTrend = goodGetTrend;
+click([...g2Err().querySelectorAll('button')].find((b) => b.textContent.trim() === 'Retry'));
+await sleep(100);
+check('trend error cleared in place (same root, no remount)', !g2Err(), g2Err()?.textContent);
+check(
+  'trend sparkline rendered after Retry',
+  g2.querySelectorAll('.prof-spark circle').length === 2,
+  String(g2.querySelectorAll('.prof-spark circle').length),
+);
+document.body.removeChild(g2);
+
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');
 process.exit(failures || errors.length ? 1 : 0);
