@@ -41,9 +41,8 @@ registerHooks({
 
 const bindings = await import('../../test/stubs/bindings.mjs');
 const { calls, handlers, callCount, resetCalls, ReplayService, MatchService, LibraryService } = bindings;
-const { preloadReplay, resetReplayPreload, dropRejectedReplayPreload } = await import(
-  './replay/preload.js'
-);
+const { preloadReplay, resetReplayPreload, dropRejectedReplayPreload, onReplayPreloadProgress } =
+  await import('./replay/preload.js');
 
 // The shared stub only implements what services-cache drives; these are
 // the bundle's reads. Same recording shape as the stub's own `rec`
@@ -183,4 +182,65 @@ test('a rejected preload nobody awaits never surfaces as an unhandled rejection'
     process.removeListener('unhandledRejection', onUr);
   }
   resetReplayPreload();
+});
+
+// The world-stage wiring pin (the loading-ladder audit's Q4): loadWorld's
+// onProgress feeds the EXISTING updateStage ledger helper, so while the
+// bundle hydrates grenade entities the head stage 'world' carries a real
+// denominator (total = the unique grenade ids, unit 'grenade reads') and
+// reaches done === total — instead of staying indeterminate. The other
+// loadWorld phases (anchor/drop/buytime reads) report nothing, so the
+// stage's denominator is exactly the hydration work.
+test('the world stage carries a real denominator while the bundle hydrates grenades', async () => {
+  fresh();
+  handlers.GetReplayMeta = () => ({
+    hasSidecar: true,
+    tickRate: 64,
+    frames: 0,
+    players: [{ steamId: '1', name: 'x', side: 'ct' }],
+  });
+  handlers.GetMatch = () => ({ map: 'de_dust2', sideSwitches: 1 });
+  handlers.GetRounds = () => [];
+  handlers.GetTeamNames = () => ({ ct: 'Alpha', t: 'Bravo' });
+  // The anchor read (DRAW_KINDS → includes grenade_bounce) carries a
+  // bounce row + grenade rows (the hydration gate opens); the ids are
+  // the denominator. The feed's own conn/blind reads get nothing.
+  handlers.GetEvents = (f) =>
+    f && Array.isArray(f.kinds) && f.kinds.includes('grenade_bounce')
+      ? [
+          { id: 11, seq: 0, tick: 100, round: 1, kind: 'grenade_bounce', attacker: '100', weapon: 'hegrenade' },
+          { id: 12, seq: 1, tick: 110, round: 1, kind: 'grenade', attacker: '100', weapon: 'smokegrenade' },
+          { id: 13, seq: 2, tick: 120, round: 1, kind: 'grenade', attacker: '100', weapon: 'flashbang' },
+        ]
+      : [];
+  handlers.GetEventDetails = (ids) =>
+    ids.map((id) => ({ id, detailJson: '{"entity":4242}' }));
+  handlers.GetDropDetails = () => [];
+  handlers.GetGenericEvents = () => [];
+  handlers.GetChat = () => [];
+  handlers.GetBlindDurations = () => [];
+
+  const seen = [];
+  const p = preloadReplay(55, { force: true });
+  const off = onReplayPreloadProgress(55, (snap) => seen.push({ ...snap }));
+  try {
+    const bundle = await p;
+    assert.ok(bundle.world && bundle.world.rows.length === 3, 'loadWorld ran');
+
+    const world = seen.filter((s) => s.stage === 'loading world events');
+    assert.ok(world.length > 0, 'the world stage surfaced to the subscriber');
+    const firstWithTotal = world.find((s) => s.total > 0);
+    assert.ok(
+      firstWithTotal,
+      `the world stage carried a denominator (saw: ${JSON.stringify(world)})`,
+    );
+    assert.equal(firstWithTotal.total, 3, 'the denominator = the unique grenade ids');
+    assert.equal(firstWithTotal.unit, 'grenade reads');
+    assert.ok(
+      world.some((s) => s.done === s.total && s.total > 0),
+      'the stage reached done === total while still head',
+    );
+  } finally {
+    off();
+  }
 });
