@@ -272,6 +272,7 @@ Canonical homes (extend these, don't fork them):
 | Radar coordinate transform | `lib/components/mapxform.js` `makeTransform` — THE pack→transform reader; camera/no-pack bounds fallback stay renderer-only |
 | CS2 asset extraction (families, step order, outcome wording) | `frontend/src/lib/assets.js` `extractAllAssets` — Settings and MapPackPrompt both delegate; views own only their busy/progress/refresh rendering |
 | Job progress | `models.Job` — job-wide 0..1 (0 = indeterminate, never "0%") with the stage→range table beside the stage constants in `internal/models`; the emitter is `internal/library`'s progressReporter; render only through `StatusChip` (no second bar) |
+| Loading / pre-fetch preference ladder | `PRODUCT.md` `### Defaults` — THE statement; route loading/prefetch preference questions there, never restate the ladder in this file |
 | Library-wide index coverage | `internal/store/schema.sql` — the one baseline index block; new library-wide (`steam_id`/`kind`-leading, pending-job) indexes go in the Tier-1 block with their rationale comment, never beside their table alone |
 | Bot exclusion (Go) | `store.HumanOnly` / `store.HumanOnlyBySteamID` (`internal/store/queries.go`, beside `playersJoin`) — THE roster/aggregate/selection filter; `playersJoin` itself is NOT a bot filter |
 | Bot exclusion (frontend twin) | `frontend/src/lib/players.js` — `isHuman` / `listedPlayers` (+ `isBotId` backstop for flagless rows: synthetic 0xFF ids are 20 digits, real SteamID64s 17) |
@@ -335,6 +336,22 @@ Canonical homes (extend these, don't fork them):
   positions) yields unknown/skipped rows — never a guessed
   parity/recovery fallback. Do not reintroduce `RecoverSides`, a
   side-parity guess, or a backfill.
+- **State placement — the forward test:** if it should survive a
+  restart, is or should be a link, or is shareable ⇒ the route query
+  (`lib/router.js` `buildHash`/`parseHash`); if it is view-local working
+  state for the current process ⇒ the registry `lib/viewstate.svelte.js`
+  (`seed`/`remember`); if it is transient (dialog/modal/popover/busy/
+  error/loading/toast) ⇒ neither — it never restores. The URL always
+  wins: the registry fills only what the route/query leaves at its
+  default, never touches URL-owned state (Replay's filter, Match's tab,
+  `?sel=`) and adds no query param of its own. Match-scoped state goes
+  through `matchKey(view, id)`. Scroll position per view is
+  registry-owned: `captureScroll` records the outgoing view's `.content`
+  scrollTop at navigation time (while that view is still rendered),
+  `scrollTopFor` returns the incoming view's stored top (0 the first
+  time), and `arbitrate` (pure `(prev, route) → next`, pinned in
+  `viewstate.test.js`) decides keep (same view — never re-scrolls) vs
+  restore (a different view's stored top).
 - **Frontend helpers:** errors `errText` → `lib/services.js`; Steam
   profiles/nav actions → `lib/nav.js` (incl. `replayHash`, the one entry
   point into the canonical event browser); formatting → `lib/fmt.js`
@@ -345,17 +362,12 @@ Canonical homes (extend these, don't fork them):
   sessionStorage hand-offs were retired with the landmark
   consolidation; view-local, NON-navigation state → the process-scoped
   registry `lib/viewstate.svelte.js` (`seed`/`remember`) — the ONE
-  sanctioned exception to the module-scoped-view-state rule: process
+  sanctioned exception to the module-scoped-view-state rule; WHERE that
+  state goes (route query vs registry vs transient) is the **State
+  placement** bullet above. Process
   lifetime only (never web storage, never restart durability —
-  `webstorage.test.js` scans `src/` and fails on a new reference),
-  never anything that is or should be a link (the URL stays the sole
-  durable navigation record, no new query params — the registry fills
-  only what the route/query leaves at its default, so URL wins),
-  arbitration the pure `(prev, route) → next` (`arbitrate`, pinned in
-  `viewstate.test.js`), match-scoped state keyed through
-  `matchKey(view, id)` so it never crosses matches, transient UI state
-  (dialogs/modals/popovers/busy/error/loading/toasts) never restores,
-  and tests call the registry's `resetViewState()` hook (required in
+  `webstorage.test.js` scans `src/` and fails on a new reference), and
+  tests call the registry's `resetViewState()` hook (required in
   jsdom driver setup — the module instance persists across a suite's
   mounts); metric/definition tooltip
   strings → `lib/definitions.js` (Settings' glossary is rendered from the

@@ -84,6 +84,18 @@ differentiators:
   the priority — but the user must have ways to self-manage and
   eventually automate storage management (extending the existing
   free-copy idea).
+- **Loading ladder — anticipate, then show honest progress:** pre-emptive
+  background loading of data we can reasonably expect the user to
+  request in the near future is the default; failing that, pre-load with
+  an honest progress indication (the same honesty rule as every other
+  number — an unknown denominator means indeterminate, never a
+  fabricated percentage); only when no honest indication is possible do
+  we fall back to a bare loading indicator. This is about perceived
+  latency and honest feedback serving the **cockpit** (everything within
+  reach) feeling and the **Honest metrics** principle — not prefetching
+  everything at any cost: wasted work must always be cheap to abandon
+  (a bail-out), so eager loading never becomes a resource obsession, and
+  loading flags are transient — they never persist or restore.
 
 ### Preferences
 
