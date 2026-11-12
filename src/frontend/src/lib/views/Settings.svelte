@@ -59,6 +59,7 @@
   // update window (it reports "up to date" and failures itself), so this
   // only guards the button while the check is kicked off.
   async function checkForUpdates() {
+    error = ''; // clears-on-retry: a new attempt starts with a clean banner
     updateBusy = true;
     try {
       await checkForUpdateNow();
@@ -83,6 +84,7 @@
   let fontSize = $state(getFontSize());
 
   function setFontSize(sz) {
+    error = ''; // clears-on-retry
     fontSize = applyFontSize(sz);
     setPref('font_size', sz).catch((e) => (error = errText(e)));
   }
@@ -107,6 +109,7 @@
   let volSteps = $state(FOOTSTEPS_VOL_DEFAULT);
 
   function setVol(bucket, raw) {
+    error = ''; // clears-on-retry
     const level = prefVolume(Number(raw) / 100, bucket === 'footsteps' ? FOOTSTEPS_VOL_DEFAULT : AUDIO_VOL_DEFAULT);
     if (bucket === 'voice') volVoice = level;
     else if (bucket === 'guns') volGuns = level;
@@ -134,6 +137,7 @@
   let showKnife = $state(false);
 
   function setShowKnife(v) {
+    error = ''; // clears-on-retry
     showKnife = v;
     setPref('show_knife_warmup_rounds', v).catch((e) => (error = errText(e)));
   }
@@ -160,6 +164,7 @@
       const r = await getDemoDirs();
       demoDirs = (r && r.dirs) || [];
       demoDirsCustom = !!(r && r.custom);
+      demoDirError = ''; // a successful panel read clears the slot (Retry below)
     } catch (e) {
       demoDirError = errText(e);
     }
@@ -465,6 +470,20 @@
   // registered, not URL'd.
   let recomputeState = $state({});
 
+  // The re-run list read (mount AND matchesError's Retry): the error
+  // clears only when the read lands, so a retry never flashes the
+  // "no matches to re-run" copy while the list is still unknown.
+  function refreshReadyMatches() {
+    listMatches('', 'extracted_at', false)
+      .then((rows) => {
+        readyMatches = (rows || []).filter((m) => m.status === 'ready');
+        matchesError = '';
+      })
+      .catch((e) => {
+        matchesError = errText(e);
+      });
+  }
+
   // The background recompute's lifecycle (single subscription for the view
   // lifetime; the unsubscribes are the $effect cleanup):
   //   spectra:analysis-progress — a queued run actually started (stage
@@ -532,6 +551,7 @@
   let jobsPending = $state(false);
 
   function refreshDataInfo() {
+    error = ''; // clears-on-retry: a fresh read starts with a clean banner
     return getDataInfo()
       .then((d) => (info = d))
       .catch((e) => (error = errText(e)));
@@ -579,6 +599,7 @@
   }
 
   onMount(() => {
+    error = ''; // the banner starts clean on every mount
     getVersion()
       .then((v) => (version = v))
       .catch((e) => (error = errText(e)));
@@ -598,13 +619,7 @@
         cfgError = errText(e);
         cfgLoading = false;
       });
-    listMatches('', 'extracted_at', false)
-      .then((rows) => {
-        readyMatches = (rows || []).filter((m) => m.status === 'ready');
-      })
-      .catch((e) => {
-        matchesError = errText(e);
-      });
+    refreshReadyMatches();
     refreshPlugins();
     // Prefs: the font size re-reconciles against the durable kvstore (the
     // boot-time pass may still be in flight for a deep-linked Settings),
@@ -698,7 +713,12 @@
   </header>
 
   {#if error}
-    <p class="error" role="alert">{error}</p>
+    <p class="error" role="alert">
+      {error}
+      <button class="btn small" aria-label="Dismiss" onclick={() => (error = '')}
+        ><span class="codicon codicon-close"></span></button
+      >
+    </p>
   {/if}
 
   <section class="panel">
@@ -788,9 +808,13 @@
       Demos already in the Library are left out of the list.
     </p>
     {#if demoDirs.length === 0}
-      <p class="muted" role="status">
-        No import dirs — the Library won’t offer any demos to import.
-      </p>
+      {#if !demoDirError}
+        <!-- Gated on the panel's error: a failed read means the dirs are
+             UNKNOWN, never "none" — the alert below carries the failure. -->
+        <p class="muted" role="status">
+          No import dirs — the Library won’t offer any demos to import.
+        </p>
+      {/if}
     {:else}
       <div class="sett-dirs">
         {#each demoDirs as dir (dir)}
@@ -806,7 +830,10 @@
       </div>
     {/if}
     {#if demoDirError}
-      <p class="error" role="alert">{demoDirError}</p>
+      <p class="error" role="alert">
+        {demoDirError}
+        <button class="btn small" onclick={refreshDemoDirs}>Retry</button>
+      </p>
     {/if}
     <div class="row-between">
       <label class="filt-check" for="sett-copy-on-import">
@@ -1002,7 +1029,10 @@
       >
     </div>
     {#if pluginsError}
-      <p class="error" role="alert">{pluginsError}</p>
+      <p class="error" role="alert">
+        {pluginsError}
+        <button class="btn small" onclick={refreshPlugins}>Retry</button>
+      </p>
     {/if}
     {#if pluginMsg}
       <p class="sett-msg" role="status">{pluginMsg}</p>
@@ -1010,7 +1040,11 @@
     {#if pluginsLoading}
       <p class="muted" role="status">Loading plugins…</p>
     {:else if plugins.length === 0}
-      <p class="muted" role="status">No plugins installed yet.</p>
+      {#if !pluginsError}
+        <!-- Gated on the list error: a failed read is UNKNOWN, not
+             "none installed" — the alert above carries the failure. -->
+        <p class="muted" role="status">No plugins installed yet.</p>
+      {/if}
     {:else}
       <div class="sett-plugins">
         {#each plugins as p (p.manifest.id)}
@@ -1263,7 +1297,10 @@
       engagements and career numbers refresh too).
     </p>
     {#if matchesError}
-      <p class="error" role="alert">{matchesError}</p>
+      <p class="error" role="alert">
+        {matchesError}
+        <button class="btn small" onclick={refreshReadyMatches}>Retry</button>
+      </p>
     {/if}
     <div class="sett-matches">
       {#each shownMatches as m (m.id)}
