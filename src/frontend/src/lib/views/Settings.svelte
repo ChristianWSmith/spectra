@@ -262,18 +262,33 @@
   // The payload of the step CURRENTLY running, gated on that step's own
   // family (assets.js assetFamilyForStep): a stale payload from the
   // previous step or a concurrent run's payload for another family never
-  // drives this bar. Null between steps → the animated indeterminate bar
-  // (StatusChip's class:indeterminate) — never a pretended percentage.
+  // drives this display. Null between steps → StatusChip's indeterminate
+  // spinner (block mode, progress 0) — never a pretended percentage.
   const mpStepProgress = $derived(
     mpProgress && mpProgress.family === assetFamilyForStep(mpStep) ? mpProgress : null,
   );
 
-  // 0 = the animated indeterminate bar (StatusChip's class:indeterminate),
-  // a real 0..1 = the determinate bar + its percentage.
+  // 0 = the indeterminate spinner (StatusChip block mode), a real 0..1 =
+  // the ring plus its percentage in the details line underneath.
   const mpPct = $derived(
     mpStepProgress && mpStepProgress.total > 0
       ? Math.min(1, mpStepProgress.done / mpStepProgress.total)
       : 0,
+  );
+
+  // The details line under the block-mode indicator: the running step's
+  // name plus its honest counts — byte-for-byte MapPackPrompt's
+  // stepDetail (the identical site there), the counts only while that
+  // step's own payload has any (between steps the line is the step name
+  // alone).
+  const mpDetail = $derived(
+    mpStep
+      ? `Extracting ${mpStep}…${
+          mpStepProgress && mpStepProgress.done > 0
+            ? ` ${mpStepProgress.done} of ${mpStepProgress.total}`
+            : ''
+        }`
+      : '',
   );
 
   // Subscribe for the whole view lifetime; the unsubscribe is the $effect
@@ -339,7 +354,8 @@
   // sounds) whose result message names what succeeded ("…N map packs, M
   // icons, K sounds") and what failed (every part is attempted even when
   // the first one fails). This view keeps the render: the mpBusy gate,
-  // the mpStep label beside StatusChip, and the refreshes in finally.
+  // the mpStep label in StatusChip's details line, and the refreshes in
+  // finally.
   async function doExtract() {
     mpBusy = true;
     mpMsg = '';
@@ -977,7 +993,7 @@
         <p class="error" role="alert">{dataError}</p>
       {/if}
     {:else if !error}
-      <p class="muted" role="status">Loading…</p>
+      <p class="muted" role="status"><StatusChip block detail="Loading…" /></p>
     {/if}
   </section>
 
@@ -1098,21 +1114,20 @@
         </div>
       </dl>
     {:else}
-      <p class="muted" role="status">Loading…</p>
+      <p class="muted" role="status"><StatusChip block detail="Loading…" /></p>
     {/if}
     {#if mpMsg}<p class="sett-msg" role="status">{mpMsg}</p>{/if}
     {#if mpError}<p class="error" role="alert">{mpError}</p>{/if}
     <!-- Live extraction progress: the app's ONE progress widget
-         (StatusChip) beside the step text. Every family drives it with
-         real numbers from spectra:asset-progress (gated to the running
-         step's family); between steps the bar stays the animated
-         indeterminate one. -->
+         (StatusChip) in BLOCK mode — the centered ring/spinner with its
+         details text underneath, the presentation every progress display
+         outside a table cell uses (PRODUCT.md "### Defaults"). Every
+         family drives it with real numbers from spectra:asset-progress
+         (gated to the running step's own family); between steps the
+         indicator stays the indeterminate spinner. -->
     {#if mpBusy && mpStep}
       <p class="muted" role="status">
-        <StatusChip status="running" progress={mpPct} />
-        Extracting {mpStep}…{mpStepProgress && mpStepProgress.done > 0
-          ? ` ${mpStepProgress.done} of ${mpStepProgress.total}`
-          : ''}
+        <StatusChip block progress={mpPct} detail={mpDetail} />
       </p>
     {/if}
     <div class="row-between">
@@ -1221,7 +1236,7 @@
       <p class="sett-msg" role="status">{pluginMsg}</p>
     {/if}
     {#if pluginsLoading}
-      <p class="muted" role="status">Loading plugins…</p>
+      <p class="muted" role="status"><StatusChip block detail="Loading plugins…" /></p>
     {:else if plugins.length === 0}
       {#if !pluginsError}
         <!-- Gated on the list error: a failed read is UNKNOWN, not
@@ -1403,7 +1418,7 @@
       <p class="error" role="alert">{cfgError}</p>
     {/if}
     {#if cfgLoading && !cfgError}
-      <p class="muted" role="status">Loading…</p>
+      <p class="muted" role="status"><StatusChip block detail="Loading…" /></p>
     {/if}
     <div class="sett-rules">
       <div class="sett-field">
