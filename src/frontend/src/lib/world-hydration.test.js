@@ -9,6 +9,9 @@
 // also records WHICH read path ran: `t.diagnostic` prints the per-row
 // (GetEvent) vs bulk (GetEventDetails) call counts — one GetEvent per
 // grenade row before the swap, one GetEventDetails per chunk after it.
+// Two more tests pin the swap's SHAPE: the ids chunk at BULK_CHUNK with
+// zero per-row round trips, and a failed chunk fails soft over exactly
+// its own rows.
 //
 // Run: node --test src/lib/world-hydration.test.js (from frontend/; the
 // lib test glob src/lib/*.test.js picks it up too).
@@ -33,7 +36,7 @@ registerHooks({
 });
 
 const bindings = await import('../../test/stubs/bindings.mjs');
-const { loadWorld } = await import('./replay/world.js');
+const { loadWorld, BULK_CHUNK } = await import('./replay/world.js');
 
 // One projectile's rows (throw → bounces → blast) plus every edge case
 // the hydration must NOT stamp: entity 0 / non-numeric / absent /
@@ -120,4 +123,105 @@ test('loadWorld stamps the grenade entity onto the draw rows (characterization)'
     `detail reads: GetEvent=${bindings.callCount('GetEvent')} ` +
       `GetEventDetails=${bindings.callCount('GetEventDetails')}`,
   );
+});
+
+test('hydration reads details in BULK chunks — never one call per row', async () => {
+  // BULK_CHUNK + 1 grenade ids (the +1 spills into a second chunk; the
+  // bounce row at the head passes the worth-doing gate) → the ids are
+  // split exactly at the chunk boundary and read with ZERO per-row
+  // round trips.
+  const rows = [];
+  for (let i = 0; i < BULK_CHUNK + 1; i++) {
+    rows.push({
+      id: 1000 + i,
+      seq: i,
+      tick: 100 + i,
+      round: 1,
+      kind: i === 0 ? 'grenade_bounce' : 'grenade',
+      attacker: '100',
+      weapon: 'hegrenade',
+    });
+  }
+  bindings.resetCalls();
+  bindings.handlers.GetEvents = () => rows.map((r) => ({ ...r }));
+  bindings.handlers.GetDropDetails = () => [];
+  bindings.handlers.GetGenericEvents = () => [];
+  // The per-row read must NOT be touched any more; if it is, the call
+  // log below catches it (the handler itself would answer anyway).
+  bindings.handlers.GetEvent = () => null;
+  bindings.handlers.GetEventDetails = (ids) =>
+    ids.map((id) => ({ id, detailJson: `{"entity":${id}}` }));
+
+  const world = await loadWorld({
+    matchId: 7,
+    players: [],
+    stateIndex: null,
+    ticks: null,
+    tickRate: 64,
+  });
+
+  assert.equal(bindings.callCount('GetEvent'), 0, 'the per-row read must be gone');
+  const detailCalls = bindings.calls.filter((c) => c.method === 'GetEventDetails');
+  assert.equal(detailCalls.length, 2, 'one call per BULK_CHUNK ids (400 + 1)');
+  const chunksRead = detailCalls.map((c) => c.args[0]);
+  assert.deepEqual(
+    chunksRead.map((c) => c.length),
+    [BULK_CHUNK, 1],
+    'the chunk boundary sits exactly at BULK_CHUNK',
+  );
+  assert.deepEqual(
+    chunksRead.flat(),
+    rows.map((r) => r.id),
+    'every target id is read once, in input order, across the chunks',
+  );
+
+  // The stamps are byte-identical to the per-row path's: each row gets
+  // its own detail's entity (characterization test pins the values).
+  assert.equal(world.rows.length, rows.length);
+  for (const r of world.rows) {
+    assert.equal(r.entity, r.id, `row ${r.id} must carry its own entity`);
+  }
+});
+
+test('a FAILED chunk leaves exactly its rows entity-less (fail-soft, per chunk)', async () => {
+  // The second chunk's read rejects: its rows keep the fallback pairing
+  // while the first chunk's rows still stamp — the same granularity
+  // contract the per-row reader had, one read failure later.
+  const rows = [];
+  for (let i = 0; i < BULK_CHUNK + 1; i++) {
+    rows.push({
+      id: 2000 + i,
+      seq: i,
+      tick: 100 + i,
+      round: 1,
+      kind: i === 0 ? 'grenade_bounce' : 'grenade',
+      attacker: '100',
+      weapon: 'hegrenade',
+    });
+  }
+  bindings.resetCalls();
+  bindings.handlers.GetEvents = () => rows.map((r) => ({ ...r }));
+  bindings.handlers.GetDropDetails = () => [];
+  bindings.handlers.GetGenericEvents = () => [];
+  bindings.handlers.GetEventDetails = (ids) => {
+    if (ids.length === 1) throw new Error('second chunk read failed');
+    return ids.map((id) => ({ id, detailJson: `{"entity":${id}}` }));
+  };
+
+  const world = await loadWorld({
+    matchId: 7,
+    players: [],
+    stateIndex: null,
+    ticks: null,
+    tickRate: 64,
+  });
+
+  assert.equal(world.rows.length, rows.length, 'a failed read never drops rows');
+  for (const r of world.rows) {
+    if (r.id < 2000 + BULK_CHUNK) {
+      assert.equal(r.entity, r.id, `row ${r.id} (healthy chunk) must stamp`);
+    } else {
+      assert.equal('entity' in r, false, `row ${r.id} (failed chunk) stays entity-less`);
+    }
+  }
 });
