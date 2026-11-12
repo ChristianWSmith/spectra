@@ -610,8 +610,9 @@ func (a *agg) kill(k killInfo) {
 	// Trade-opportunity proximity (config-independent, measured once at
 	// extract time): the closest living teammate of the victim to the
 	// KILLER at this death tick, -1 when nobody is measurable. Stored on
-	// the kill event as detail_json.nearDist; store.GetCombatStats gates
-	// the "Missed trades" count on it against analysis_config.trade_opp_distance.
+	// the kill event as detail_json.nearDist; analytics.Compute gates
+	// the stored "Missed trades" count on it against
+	// analysis_config.trade_opp_distance (store.match_trade_opps).
 	nearDist := -1.0
 	if k.attackerPosX != nil && k.attackerPosY != nil && k.attackerPosZ != nil {
 		nearDist = nearTeammateDist(

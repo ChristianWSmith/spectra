@@ -82,14 +82,10 @@ func TestGoldenCombatProfileSurfaces(t *testing.T) {
 	if err := st.SaveExtracted(id, m); err != nil {
 		t.Fatalf("SaveExtracted: %v", err)
 	}
-	cfg := analytics.ConfigFrom(models.AnalysisConfig{
-		TradeWindowS: 5.0, EcoFullBuy: 20000, EcoForce: 10000, RuleVersion: 1,
-	}, 0)
-	if err := analytics.Compute(st, id, cfg); err != nil {
-		t.Fatalf("analytics.Compute: %v", err)
-	}
-
 	// The seeded default is the calibration under test — do not SetConfig.
+	// Production always passes the stored config row into Compute
+	// (library.analyze, RecomputeAnalysis): mirror that here so the
+	// analyze-time trade-opp gate runs under the seeded radius.
 	seeded, err := st.GetConfig()
 	if err != nil {
 		t.Fatalf("GetConfig: %v", err)
@@ -97,6 +93,10 @@ func TestGoldenCombatProfileSurfaces(t *testing.T) {
 	if seeded.TradeOppDistance != store.DefaultConfig.TradeOppDistance {
 		t.Fatalf("stored trade_opp_distance = %d, want the %du default",
 			seeded.TradeOppDistance, store.DefaultConfig.TradeOppDistance)
+	}
+	cfg := analytics.ConfigFrom(seeded, 0)
+	if err := analytics.Compute(st, id, cfg); err != nil {
+		t.Fatalf("analytics.Compute: %v", err)
 	}
 
 	stats, err := st.GetCombatStats(id)

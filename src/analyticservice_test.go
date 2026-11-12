@@ -380,6 +380,153 @@ func TestSetConfigBumpsOnlyOnChange(t *testing.T) {
 	}
 }
 
+// TestTradeOppDistanceChangeRecomputesStoredCounts pins the owner ruling
+// (2026-11-12 — AGENTS.md "Analysis-rule derived values"): the trade-opp
+// distance changes the STORED match_trade_opps counts (analytics gates
+// on it at analyze time), so saving a new radius bumps rule_version —
+// the analyzed match goes behind — and the re-run rewrites the counts
+// under the new radius, while the reads themselves never threshold.
+// Full loop: run under the seeded 1000u default → save 200u (bump
+// v1→v2, match behind) → re-run → the 500u death leaves the count.
+func TestTradeOppDistanceChangeRecomputesStoredCounts(t *testing.T) {
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	as := &AnalyticsService{st: st}
+
+	em := &models.ExtractedMatch{
+		Match: models.Match{
+			Path: "/d/dist-loop.dem", SHA256: "sha-dist-loop", Size: 1,
+			Map: "de_cache", TickRate: 64, RealRounds: 1,
+			ScoreCT: 1, ScoreT: 0, ParserVersion: "v6", ExtractedAt: time.Now(),
+		},
+		Players: []models.Player{
+			{SteamID: "100", Name: "alice", Side: "ct", FinalStatePresent: true},
+			{SteamID: "200", Name: "bob", Side: "t", FinalStatePresent: true},
+			{SteamID: "300", Name: "carl", Side: "ct", FinalStatePresent: true},
+			{SteamID: "400", Name: "dave", Side: "ct", FinalStatePresent: true},
+		},
+		PlayerStats: []models.PlayerStats{
+			{SteamID: "100", Side: "ct", Name: "alice", RoundsPlayed: 1},
+			{SteamID: "200", Side: "t", Name: "bob", RoundsPlayed: 1},
+			{SteamID: "300", Side: "ct", Name: "carl", RoundsPlayed: 1},
+			{SteamID: "400", Side: "ct", Name: "dave", RoundsPlayed: 1},
+		},
+		Rounds: []models.Round{
+			{Number: 1, Winner: "ct", StartTick: 64, EndTick: 7200, FreezeEndTick: 64},
+		},
+		RoundSides: []models.RoundPlayerSide{
+			{Round: 1, SteamID: "100", Side: "ct"},
+			{Round: 1, SteamID: "200", Side: "t"},
+			{Round: 1, SteamID: "300", Side: "ct"},
+			{Round: 1, SteamID: "400", Side: "ct"},
+		},
+		Events: []models.Event{
+			// carl dies with a teammate 150u from the killer; dave dies
+			// at 500u — inside the 1000u default, outside a 200u save.
+			{Tick: 100, Round: 1, Kind: models.EventKill, Attacker: "200", Victim: "300",
+				DetailJSON: `{"nearDist":150}`},
+			{Tick: 200, Round: 1, Kind: models.EventKill, Attacker: "200", Victim: "400",
+				DetailJSON: `{"nearDist":500}`},
+		},
+	}
+	id, err := st.CreateMatchRow(em.Match.Path, em.Match.SHA256, 1)
+	if err != nil {
+		t.Fatalf("CreateMatchRow: %v", err)
+	}
+	if err := st.SaveExtracted(id, em); err != nil {
+		t.Fatalf("SaveExtracted: %v", err)
+	}
+
+	missedRow := func(t *testing.T, sid string) int {
+		t.Helper()
+		rows, err := st.GetCombatStats(id)
+		if err != nil {
+			t.Fatalf("GetCombatStats: %v", err)
+		}
+		for _, r := range rows {
+			if r.SteamID == sid {
+				return r.TradeOppMissed
+			}
+		}
+		return 0
+	}
+	opps := func(t *testing.T, sid string) int {
+		t.Helper()
+		n, err := st.CountPlayerTradeOpportunities(sid)
+		if err != nil {
+			t.Fatalf("CountPlayerTradeOpportunities: %v", err)
+		}
+		return n
+	}
+
+	// Run under the seeded default (1000u): both deaths in range.
+	if err := as.RecomputeAnalysis(id); err != nil {
+		t.Fatalf("RecomputeAnalysis: %v", err)
+	}
+	drainRecompute(t, as)
+	if missedRow(t, "300") != 1 || missedRow(t, "400") != 1 {
+		t.Fatalf("missed @1000 = carl %d / dave %d, want 1/1", missedRow(t, "300"), missedRow(t, "400"))
+	}
+	if n := opps(t, "100"); n != 2 {
+		t.Fatalf("alice opps @1000 = %d, want 2 (both teammate deaths)", n)
+	}
+	if v, err := st.GetMatchRuleVersion(id); err != nil || v != 1 {
+		t.Fatalf("stamp after first run = %d, %v, want 1 (seeded default rules)", v, err)
+	}
+
+	// Save a narrower radius: bump v1 → v2 and the match goes behind.
+	saved, err := as.SetConfig(models.AnalysisConfig{
+		TradeWindowS: 5, EcoFullBuy: 20000, EcoForce: 10000,
+		TradeOppDistance: 200, RuleVersion: 1,
+	})
+	if err != nil {
+		t.Fatalf("SetConfig(200): %v", err)
+	}
+	if saved.RuleVersion != 2 {
+		t.Fatalf("rule_version after distance change = %d, want 2 (exactly one bump)", saved.RuleVersion)
+	}
+	behind, err := st.ListMatches("", "", false, store.MatchListFilter{Behind: true})
+	if err != nil {
+		t.Fatalf("ListMatches(behind): %v", err)
+	}
+	found := false
+	for _, m := range behind {
+		found = found || m.ID == id
+	}
+	if !found {
+		t.Fatal("match not behind after the distance change")
+	}
+
+	// Re-run: the stored counts follow the new radius (the 500u death
+	// drops out) and the match is current again.
+	if err := as.RecomputeAnalysis(id); err != nil {
+		t.Fatalf("RecomputeAnalysis (after bump): %v", err)
+	}
+	drainRecompute(t, as)
+	if missedRow(t, "300") != 1 || missedRow(t, "400") != 0 {
+		t.Errorf("missed @200 = carl %d / dave %d, want 1/0 (500u death outside the new radius)",
+			missedRow(t, "300"), missedRow(t, "400"))
+	}
+	if n := opps(t, "100"); n != 1 {
+		t.Errorf("alice opps @200 = %d, want 1 (only the 150u death)", n)
+	}
+	if v, err := st.GetMatchRuleVersion(id); err != nil || v != 2 {
+		t.Errorf("stamp after re-run = %d, %v, want 2 (current rules)", v, err)
+	}
+	behind, err = st.ListMatches("", "", false, store.MatchListFilter{Behind: true})
+	if err != nil {
+		t.Fatalf("ListMatches(behind after): %v", err)
+	}
+	for _, m := range behind {
+		if m.ID == id {
+			t.Error("match still behind after the re-run")
+		}
+	}
+}
+
 // seedReadyMatch stores a minimal READY match (SaveExtracted sets the
 // status) whose stamp stays 0 = never analyzed.
 func seedReadyMatch(t *testing.T, st *store.Store, n int) int64 {

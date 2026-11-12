@@ -276,6 +276,14 @@ func (s *AnalyticsService) GetConfig() (models.AnalysisConfig, error) {
 // authoritative. Does NOT recompute — call RecomputeAnalysis per match
 // (or RecomputeAll for the behind set) explicitly.
 //
+// tradeOppDistance deliberately STAYS in the compare (owner ruling
+// 2026-11-12 — AGENTS.md "Analysis-rule derived values"): distance
+// changes the STORED match_trade_opps counts (analytics.Compute applies
+// it at analyze time, not at read time), so a distance save must bump →
+// every analyzed match goes behind → RecomputeAll rewrites the counts
+// under the new radius. A value that only affected a read could be
+// excluded from this compare; distance is no longer one of those.
+//
 // This is the single validation gate for analysis rules (the import
 // pipeline's analyze path and RecomputeAnalysis read the already-validated
 // row straight from the store).

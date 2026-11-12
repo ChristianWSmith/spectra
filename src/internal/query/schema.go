@@ -28,6 +28,7 @@ var tableNotes = map[string]string{
 	"clutches":              "detected 1vN clutch attempts + outcome",
 	"engagements":           "detected opening/trade/traded/untraded engagements between two players",
 	"utility_events":        "grenade throws/detonations: damage, flash ms, site",
+	"match_trade_opps":      "per-match stored trade-opportunity counts per player (opps = profile Trade-rate denominator, missed = Combat badge) — written by analytics.Compute under the match's rule version",
 	"player_career":         "cross-match career rollup per SteamID64 (rebuilt after imports)",
 	"saved_filters":         "saved analytics filter presets",
 	"analysis_config":       "single-row analysis rule thresholds (trade window, eco, rule version)",
