@@ -19,10 +19,45 @@ import (
 // Trade column, career trades, profile trade rate and the successful_trades
 // metric — without touching their SQL.
 //
+// RULE STAMP: a successful pass ends by writing cfg.RuleVersion to
+// matches.analyzed_rule_version (store.SetMatchRuleVersion — the one
+// writer), and the zero-round no-op below stamps too: a match computed
+// under this version is never left "behind". A FAILED pass never stamps —
+// the previous stamp (0 = never) stays, so the match remains behind and
+// retryable. The stamp is written LAST, after the career rebuild, so a
+// stamped match means the whole pass committed.
+//
 // cfg.TickRate is filled from the match row when unset/<= 0. A match with
 // no extracted rounds is a no-op (not an error). Errors name the failing
 // stage.
 func Compute(st *store.Store, matchID int64, cfg Config) error {
+	return compute(st, matchID, cfg, true)
+}
+
+// ComputeForBatch is Compute's bulk twin: identical reads, derives,
+// replaces and rule stamp, but it does NOT rebuild player_career — the
+// caller rebuilds career ONCE after the whole batch instead, because a
+// RebuildCareer is a full-library rollup (16-34 s per rebuild at 1,000
+// matches — see the schema.sql Tier-1 index note; N per-match rebuilds
+// would make a bulk re-run quadratic in library size).
+//
+// A caller MUST arrange that deferred final rebuild
+// (AnalyticsService.RecomputeAll wires it through
+// recomputeRunner.submitBatch, which runs it inside the compute slot
+// after the batch's last member); skipping it leaves player_career stale
+// until the next Compute (an import or a single recompute) or a match
+// delete rebuilds it. A batch member whose own pass succeeds IS stamped
+// even if the batch's deferred rebuild later fails (that failure rides
+// the last member's analysis-done event) — the stamp asserts the match's
+// own rows, not the cross-match rollup.
+func ComputeForBatch(st *store.Store, matchID int64, cfg Config) error {
+	return compute(st, matchID, cfg, false)
+}
+
+// compute is the shared body of Compute / ComputeForBatch; the
+// rebuildCareer flag is the ONE difference between them (see the two
+// wrappers' docs).
+func compute(st *store.Store, matchID int64, cfg Config, rebuildCareer bool) error {
 	m, err := st.GetMatch(matchID)
 	if err != nil {
 		return fmt.Errorf("analytics: load match %d: %w", matchID, err)
@@ -116,8 +151,16 @@ func Compute(st *store.Store, matchID int64, cfg Config) error {
 	if err := st.ReplaceUtility(matchID, utils); err != nil {
 		return err
 	}
-	if err := st.RebuildCareer(); err != nil {
-		return fmt.Errorf("analytics: rebuild career: %w", err)
+	if rebuildCareer {
+		if err := st.RebuildCareer(); err != nil {
+			return fmt.Errorf("analytics: rebuild career: %w", err)
+		}
+	}
+	// The stamp lands last (see the RULE STAMP note): only a pass that
+	// reached here — every replace committed, and the career rebuild when
+	// this path owns it — claims the rule version.
+	if err := st.SetMatchRuleVersion(matchID, cfg.RuleVersion); err != nil {
+		return fmt.Errorf("analytics: stamp rule version: %w", err)
 	}
 	return nil
 }
