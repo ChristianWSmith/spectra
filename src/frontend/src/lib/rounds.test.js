@@ -7,14 +7,16 @@
 // scoreThrough (the scoreline-at-a-round aggregate), separatorAfter
 // (the round-ribbon separator cadence), separatorFlags (its gating over
 // a rendered list), moneyResetIndexes (the money-reset cadence behind
-// EconCurve's line gaps), and the freeze window
+// EconCurve's line gaps), the freeze window
 // (freezeWindowAt — THE window the inFreezeTime predicate reports on and
-// the replay engine's auto-skip jumps to).
+// the replay engine's auto-skip jumps to) and seekTargetTick (the
+// freeze-zero seek step behind the ±15 s transport when skip-freeze is
+// armed).
 // Run: node --test src/lib/rounds.test.js   (from frontend/)
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { isCounted, roundStartTick, roundEndTick, roundIndexLabel, scoreThrough, inFreezeTime, freezeWindowAt, separatorAfter, separatorFlags, moneyResetIndexes } from './rounds.js';
+import { isCounted, roundStartTick, roundEndTick, roundIndexLabel, scoreThrough, inFreezeTime, freezeWindowAt, freezeWindows, seekTargetTick, separatorAfter, separatorFlags, moneyResetIndexes } from './rounds.js';
 import { flipIndexes } from './sideparity.js';
 
 const ROUNDS = [
@@ -401,4 +403,143 @@ test('inFreezeTime is exactly freezeWindowAt ≠ null (the two can never disagre
       `disagreement at tick ${tick}`,
     );
   }
+});
+
+// seekTargetTick — the ONE freeze-zero seek step (the ±15 s transport's
+// arithmetic when skip-freeze is armed): freeze windows are 0-LENGTH
+// for the budget, so the result never lands inside one and the
+// playback snap can never fire right after the seek. WINDOW_ROUNDS
+// (above): the warmup row ships fe = 0 (no window), round 1 is
+// [1000, 1160), round 2 is [5000, 5160) — real-shaped, disjoint rows.
+const TR = 64; // the match tick rate these pins speak
+const S15 = 15 * TR; // the ±15 s budget in ticks (960)
+const S1 = TR; // one second (64)
+
+test('seekTargetTick: the owner example — from freezeEnd + 1s, −15s lands start − 14s, outside the freeze', () => {
+  const w = { start: 1000, end: 1160 };
+  const from = w.end + S1; // 1224 — one second of live play after the freeze
+  const got = seekTargetTick(WINDOW_ROUNDS, from, -S15);
+  assert.equal(
+    got,
+    w.start - 14 * S1,
+    '1s of live play reaches fe, the freeze costs 0, the remaining 14s run below start',
+  );
+  assert.equal(freezeWindowAt(WINDOW_ROUNDS, got), null, 'the landing is outside every usable window');
+  assert.ok(got < w.start, 'strictly below the window — never at/inside it');
+});
+
+test('seekTargetTick backward crosses TWO freezes at 0 cost (the budget counts live time only)', () => {
+  // 6000 → below round 1: live 840 (down to round 2's fe) + 3840 (round
+  // 2's start down to round 1's fe) + 100 = 4780. Plain wall-clock
+  // arithmetic would land at 1120 — INSIDE round 1's freeze.
+  const delta = -4880;
+  assert.ok(
+    freezeWindowAt(WINDOW_ROUNDS, 6000 + delta) !== null,
+    'plain arithmetic would land inside [1000, 1160) — the old bug',
+  );
+  const got = seekTargetTick(WINDOW_ROUNDS, 6000, delta);
+  assert.equal(got, 800, 'both freezes crossed free, 200 live ticks left below start');
+  assert.equal(freezeWindowAt(WINDOW_ROUNDS, got), null, 'outside every window it crossed');
+});
+
+test('seekTargetTick backward: gap == rem stops exactly on the window END (half-open, safe)', () => {
+  const from = 1224; // fe + 1s
+  // Budget == the live gap exactly: the landing IS freezeEndTick —
+  // outside, because the window is [start, end).
+  assert.equal(seekTargetTick(WINDOW_ROUNDS, from, -S1), 1160, 'exact gap → the window END');
+  assert.equal(freezeWindowAt(WINDOW_ROUNDS, 1160), null, 'freezeEnd is OUT (half-open)');
+  // One tick less: stops strictly above the end, in live play.
+  assert.equal(seekTargetTick(WINDOW_ROUNDS, from, -(S1 - 1)), 1161);
+  // One tick more: the window crosses free and 1 tick remains below start.
+  assert.equal(seekTargetTick(WINDOW_ROUNDS, from, -(S1 + 1)), 999, 'crossed at 0 cost, 1 tick left');
+});
+
+test('seekTargetTick backward from INSIDE a freeze spends the full budget below start', () => {
+  const got = seekTargetTick(WINDOW_ROUNDS, 1100, -S15);
+  assert.equal(got, 1000 - S15, 'the exit downward is free, the whole 15s runs below start');
+  assert.equal(freezeWindowAt(WINDOW_ROUNDS, got), null);
+});
+
+test('seekTargetTick: empty/absent rounds and unusable rows degrade to plain from + delta', () => {
+  for (const rounds of [[], null, undefined]) {
+    assert.equal(seekTargetTick(rounds, 1000, -S15), 40, 'no windows → plain arithmetic');
+    assert.equal(seekTargetTick(rounds, 1000, S15), 1960);
+  }
+  // A warmup row (ships fe = 0 → no usable window)…
+  const warmupOnly = [{ number: -1, startTick: 200, freezeEndTick: 0, warmup: true }];
+  assert.equal(seekTargetTick(warmupOnly, 1000, -S15), 40, 'warmup is never a window');
+  assert.equal(seekTargetTick(warmupOnly, 1000, S15), 1960);
+  // …and a corrupt row (fe ≤ start).
+  const corrupt = [{ number: 1, startTick: 1000, freezeEndTick: 900 }];
+  assert.equal(seekTargetTick(corrupt, 5000, -S15), 4040);
+  assert.equal(seekTargetTick(corrupt, 1050, S15), 2010);
+  // A zero seek never moves — not even out of the freeze it sits in.
+  assert.equal(seekTargetTick(WINDOW_ROUNDS, 1100, 0), 1100);
+});
+
+test('seekTargetTick forward (+15): crosses the next freeze at 0 cost and lands outside it', () => {
+  const got = seekTargetTick(WINDOW_ROUNDS, 4100, S15);
+  assert.equal(
+    got,
+    5160 + (S15 - 900),
+    '900 live ticks reach start, the freeze costs 0, the rest runs past fe',
+  );
+  assert.equal(got, 5220);
+  assert.equal(freezeWindowAt(WINDOW_ROUNDS, got), null, 'never inside the crossed window');
+  assert.ok(
+    freezeWindowAt(WINDOW_ROUNDS, 4100 + S15) !== null,
+    'plain arithmetic would land inside [5000, 5160) — the mirrored old bug',
+  );
+});
+
+test('seekTargetTick forward: stopping short lands in live play; an exact gap lands on the END, never the START', () => {
+  const short = seekTargetTick(WINDOW_ROUNDS, 0, S15);
+  assert.equal(short, 960, 'stops 40 ticks short of round 1 start — live play');
+  assert.ok(short < 1000, 'strictly before the window');
+  assert.equal(freezeWindowAt(WINDOW_ROUNDS, short), null);
+  // gap (1000 − 384 = 616) == budget: the freeze point is crossed at
+  // 0 cost and the landing is its END — the START is inside (half-open).
+  assert.equal(seekTargetTick(WINDOW_ROUNDS, 384, 616), 1160, 'exact gap → the window END');
+  assert.equal(freezeWindowAt(WINDOW_ROUNDS, 1160), null);
+  assert.equal(seekTargetTick(WINDOW_ROUNDS, 384, 615), 999, 'one less → strictly before start');
+  assert.equal(seekTargetTick(WINDOW_ROUNDS, 384, 617), 1161, 'one more → one tick past the end');
+});
+
+test('seekTargetTick: an out-of-stream target is returned as-is (clamping is seekTick\'s job)', () => {
+  assert.equal(seekTargetTick(WINDOW_ROUNDS, 100, -S15), 100 - S15, '−860, never clamped here');
+  assert.equal(seekTargetTick(WINDOW_ROUNDS, 500, -100000), 500 - 100000);
+  // Forward past round 2's freeze: the crossed 160 ticks cost 0, so the
+  // result runs 160 FURTHER than plain arithmetic.
+  assert.equal(seekTargetTick(WINDOW_ROUNDS, 4000, 1e9), 5160 + (1e9 - 1000));
+});
+
+test('seekTargetTick properties: never lands inside a usable window; backward never ON a window start', () => {
+  const starts = new Set([1000, 5000]); // the usable window starts (warmup excluded)
+  for (let from = 0; from <= 5300; from += 50) {
+    for (const d of [1, 63, 64, 65, 300, 960, 1500, -1, -63, -64, -65, -300, -960, -1500]) {
+      const got = seekTargetTick(WINDOW_ROUNDS, from, d);
+      assert.equal(
+        freezeWindowAt(WINDOW_ROUNDS, got),
+        null,
+        `from=${from} d=${d} landed inside a window at ${got}`,
+      );
+      if (d < 0) {
+        assert.ok(!starts.has(got), `from=${from} d=${d} landed ON a window start at ${got}`);
+      }
+    }
+  }
+});
+
+test('freezeWindows: the list form of the SAME usable-window predicate', () => {
+  assert.deepEqual(
+    freezeWindows(WINDOW_ROUNDS),
+    [
+      { start: 1000, end: 1160 },
+      { start: 5000, end: 5160 },
+    ],
+    'warmup (fe = 0) excluded, ascending by start',
+  );
+  assert.deepEqual(freezeWindows([{ number: 1, startTick: 1000, freezeEndTick: 900 }]), [], 'corrupt fe ≤ start excluded');
+  assert.deepEqual(freezeWindows(null), []);
+  assert.deepEqual(freezeWindows(undefined), []);
 });

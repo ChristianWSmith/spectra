@@ -317,3 +317,113 @@ test('the rAF wrap and the armed play() restart do NOT cancel the loop', () => {
   e3.setLoopEnabled(true);
   assert.equal(e3.state.loopEnabled, true, 'arming after an out-of-range seek keeps the loop');
 });
+
+// --- seekRelative ---------------------------------------------------------
+// The ±fixed-step transport's engine method (the ±15 s buttons): with
+// skip-freeze armed it runs rounds.seekTargetTick — freeze windows are
+// 0-LENGTH for the budget — so the landing is never inside a freeze and
+// playback's snap can never fire right after the seek; with the skip OFF
+// it is exactly seekTick(from + delta). The Replay.svelte WIRING is
+// phase 2; these pins hold the engine contract on its own.
+const S15 = 15 * 64; // the ±15 s budget at this engine's tick rate
+
+// (8) skip ON: the owner's shape — from just after round 2's freezeEnd,
+// −15 s runs 68 live ticks down to fe, crosses [2048, 2300) free, and
+// spends the remaining 892 below start → t = 1156 (frame 1216).
+test('seekRelative, skip ON: lands outside every freeze, no jump while paused, no freeze-end bump on play', () => {
+  const e = fresh();
+  e.setSkipFreeze(true);
+  e.seekTick(2368); // the first frame at/after fe + 1s (2300 + 64 = 2364)
+  assert.equal(e.state.tick, 2368);
+  let emits = 0;
+  const off = e.onChange(() => emits++);
+  e.seekRelative(-S15);
+  off();
+  assert.equal(emits, 1, 'one seek, one emit — no snap jump while paused');
+  assert.equal(e.state.tick, 1216, 'helper t = 1156 rounds up to the first frame ≥ it');
+  assert.equal(freezeWindowAt(ROUNDS, e.state.tick), null, 'the landing frame is outside every usable window');
+  assert.notEqual(e.state.tick, 2304, 'not bumped to the freeze end while paused');
+  e.play();
+  pump(250); // 16 ticks of REAL play — a snap would jump to 2304
+  assert.notEqual(e.state.tick, 2304, 'no bump to round 2\'s freeze end after one frame');
+  assert.notEqual(e.state.tick, 704, 'nor round 1\'s');
+  assert.equal(freezeWindowAt(ROUNDS, e.state.tick), null, 'still outside after a frame of playback');
+  e.pause();
+});
+
+// (9) the frame-rounding nudge: frameForTick(2047) = frame 2048, which
+// sits INSIDE [2048, 2300) — from a t the helper proved outside — so
+// seekRelative steps back to the frame below instead of landing in the
+// freeze (where the first playback frame would snap it to 2304).
+test('seekRelative, skip ON: a frame rounding INTO a window start steps back one frame', () => {
+  const e = fresh();
+  e.setSkipFreeze(true);
+  e.seekTick(1984); // live play just below round 2's freeze
+  e.seekRelative(63); // helper t = 2047 (outside); frameForTick → 2048, INSIDE
+  assert.equal(e.state.tick, 1984, 'stepped back to the frame below — never inside the window');
+  assert.equal(freezeWindowAt(ROUNDS, e.state.tick), null);
+  e.play();
+  pump(250);
+  assert.notEqual(e.state.tick, 2304, 'no freeze-end bump on the first playback frame');
+  e.pause();
+});
+
+// (10) skip OFF: byte-for-byte identical to the plain wall-clock seek —
+// the nudge and the helper are both gated on state.skipFreeze.
+test('seekRelative, skip OFF: ≡ seekTick(from ± 15·tickRate), byte-for-byte', () => {
+  const cases = [
+    [384, S15],
+    [384, -S15],
+    [1984, S15],
+    [2368, -S15],
+    [0, S15],
+    [4032, -S15],
+    [640, S15],
+  ];
+  for (const [from, d] of cases) {
+    const a = fresh();
+    a.seekTick(from);
+    a.seekRelative(d);
+    const b = fresh();
+    b.seekTick(from);
+    b.seekTick(from + d);
+    assert.equal(
+      JSON.stringify(a.state),
+      JSON.stringify(b.state),
+      `from=${from} d=${d}: seekRelative must be seekTick(from + d) with the skip off`,
+    );
+  }
+});
+
+// (11) clamping stays seekTick's — the helper returns out-of-stream
+// targets as-is, seekTick folds them onto the stream.
+test('seekRelative clamps to the stream in both directions (skip on and off)', () => {
+  for (const skip of [false, true]) {
+    const e = fresh();
+    e.setSkipFreeze(skip);
+    e.seekTick(2048);
+    e.seekRelative(-1e9);
+    assert.equal(e.state.tick, e.firstTick, `skip=${skip}: −huge clamps to ticks[0]`);
+    e.seekRelative(1e9);
+    assert.equal(e.state.tick, e.lastTick, `skip=${skip}: +huge clamps to the last tick`);
+  }
+});
+
+// (12) seekRelative runs through seekTick, so the loop-exit guard holds
+// on its landings exactly as on every other seek.
+test('seekRelative runs the loop-exit guard: out-of-range landing cancels, in-range keeps', () => {
+  const e = fresh();
+  const from = F(512);
+  const to = F(1024);
+  e.setLoop(from, to);
+  e.setLoopEnabled(true);
+  e.seekTick(512);
+  e.seekRelative(S15); // 512 + 960 = 1472 → frame 23 > loopTo 16
+  assert.equal(e.state.loopEnabled, false, 'a landing past loopTo cancels');
+  assert.equal(e.state.loopFrom, from, 'loopFrom retained');
+  assert.equal(e.state.loopTo, to, 'loopTo retained');
+  e.setLoopEnabled(true); // re-arm
+  e.seekTick(512);
+  e.seekRelative(64); // 512 + 64 = 576 → frame 9 ∈ [8, 16]
+  assert.equal(e.state.loopEnabled, true, 'an in-range landing keeps the loop');
+});
