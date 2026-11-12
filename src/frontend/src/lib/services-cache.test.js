@@ -282,3 +282,127 @@ test('failed reads are not cached — the next call retries', async () => {
     delete bindings.handlers.GetMatch;
   }
 });
+
+test('analytics family is read-cached (item: warm per-match analytics)', async () => {
+  services.invalidate();
+  bindings.resetCalls();
+
+  // Same args → the identical promise for every wrapped analytics read
+  // (in-flight sharing: Match's warm and the tab reads join one entry).
+  const pairs = [
+    ['GetEconomy', services.getEconomy(7), services.getEconomy(7)],
+    ['GetRoundClasses', services.getRoundClasses(7), services.getRoundClasses(7)],
+    ['GetCombatStats', services.getCombatStats(7), services.getCombatStats(7)],
+    ['GetClutches', services.getClutches(7), services.getClutches(7)],
+    ['GetEngagements', services.getEngagements(7, ''), services.getEngagements(7)],
+    ['GetUtility', services.getUtility(7), services.getUtility(7)],
+  ];
+  for (const [method, a, b] of pairs) {
+    assert.equal(a, b, `${method} is a cache hit`);
+  }
+  await Promise.all(pairs.map(([, a]) => a));
+  for (const [method] of pairs) {
+    assert.equal(bindings.callCount(method), 1, `${method} called once`);
+  }
+
+  // Per-match keying: another match id is a separate entry.
+  await services.getEconomy(8);
+  assert.equal(bindings.callCount('GetEconomy'), 2);
+
+  // A spectra:* data event flushes them like every other cached read.
+  fire('spectra:job-done', { jobId: 1 });
+  const again = services.getCombatStats(7);
+  assert.notEqual(again, pairs[2][1], 'event must flush the analytics entry');
+  await again;
+  assert.equal(bindings.callCount('GetCombatStats'), 2);
+});
+
+test('listPlayers/listMetrics are library-wide reads behind cachedRead (item 3)', async () => {
+  services.invalidate();
+  bindings.resetCalls();
+
+  // listPlayers(undefined) and listPlayers('') normalize to ONE entry.
+  const p1 = services.listPlayers('');
+  const p2 = services.listPlayers();
+  assert.equal(p1, p2, 'the unfiltered player list is a cache hit');
+  const m1 = services.listMetrics();
+  const m2 = services.listMetrics();
+  assert.equal(m1, m2, 'the metric list is a cache hit');
+  await Promise.all([p1, m1]);
+  assert.equal(bindings.callCount('ListPlayers'), 1);
+  assert.equal(bindings.callCount('ListMetrics'), 1);
+
+  // Typed queries get their own entries (CommandPalette), bounded by the
+  // shared FIFO — same shape as the existing library-search entries.
+  const q = services.listPlayers('donk');
+  assert.notEqual(q, p1, 'a per-query entry must miss the unfiltered one');
+  await q;
+  assert.equal(bindings.callCount('ListPlayers'), 2);
+
+  // Flush semantics come free from the shared listener list.
+  fire('spectra:library-changed', {});
+  const afterMetrics = services.listMetrics();
+  const afterPlayers = services.listPlayers('');
+  assert.notEqual(afterMetrics, m1, 'library-changed flushes listMetrics');
+  assert.notEqual(afterPlayers, p1, 'library-changed flushes listPlayers');
+  await Promise.all([afterMetrics, afterPlayers]);
+  assert.equal(bindings.callCount('ListMetrics'), 2);
+  assert.equal(bindings.callCount('ListPlayers'), 3);
+});
+
+test('getProfile/getCareerTrend are read-cached (item 6: profile cache)', async () => {
+  services.invalidate();
+  bindings.resetCalls();
+  const SID = '76561198000000042';
+
+  const pr1 = services.getProfile(SID);
+  const pr2 = services.getProfile(SID);
+  assert.equal(pr1, pr2, 'getProfile is a cache hit');
+  const t1 = services.getCareerTrend(SID, 'rating');
+  const t2 = services.getCareerTrend(SID, 'rating');
+  assert.equal(t1, t2, 'getCareerTrend is a cache hit for the same metric');
+  await Promise.all([pr1, t1]);
+  assert.equal(bindings.callCount('GetProfile'), 1);
+  assert.equal(bindings.callCount('GetCareerTrend'), 1);
+
+  // The metric arg is part of the key (the trend stays click-driven, but
+  // each metric still reads fresh).
+  await services.getCareerTrend(SID, 'adr');
+  assert.equal(bindings.callCount('GetCareerTrend'), 2);
+
+  fire('spectra:job-done', { jobId: 1 });
+  const again = services.getProfile(SID);
+  assert.notEqual(again, pr1, 'event must flush the profile entry');
+  await again;
+  assert.equal(bindings.callCount('GetProfile'), 2);
+});
+
+test('warmProfile: hover prefetch is throttled per steamId', async () => {
+  services.invalidate();
+  bindings.resetCalls();
+  const SID = '76561198000000042';
+
+  // First hover warms; re-hovers inside the TTL window are no-ops.
+  services.warmProfile(SID, 1_000);
+  services.warmProfile(SID, 1_500);
+  services.warmProfile(SID, 30_999); // 29 999 ms after the last warm
+  assert.equal(bindings.callCount('GetProfile'), 1, 'one warm per TTL window');
+
+  // The throttle is per steamId, not the cache: even after a spectra:*
+  // flush drops the entry, an in-window hover does NOT refire (the point
+  // of the throttle) ...
+  fire('spectra:job-done', { jobId: 1 });
+  services.warmProfile(SID, 2_000);
+  assert.equal(bindings.callCount('GetProfile'), 1, 'flush does not bypass the throttle');
+
+  // ... while a hover PAST the window warms again (that is exactly when
+  // the entry may be gone).
+  services.warmProfile(SID, 31_000); // 30 000 ms after the first warm
+  assert.equal(bindings.callCount('GetProfile'), 2, 'warms again past the TTL');
+
+  // Independent per id, and an empty id is a no-op.
+  services.warmProfile('76561198000000099', 32_000);
+  assert.equal(bindings.callCount('GetProfile'), 3, 'a different id warms on its own');
+  services.warmProfile('', 33_000);
+  assert.equal(bindings.callCount('GetProfile'), 3, 'no id, no warm');
+});

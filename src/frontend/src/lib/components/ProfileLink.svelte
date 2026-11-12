@@ -11,6 +11,12 @@
   // round-scoped ones (playerSideClassAt). Default '' keeps every
   // existing call site rendering exactly as before.
   import { isSteam, openProfile } from '../nav.js';
+  // Hover prefetch (loading ladder, PRODUCT.md "### Defaults"): warming
+  // the CHEAP profile read on hover so the click finds it cached — the
+  // career trend stays click-driven (never prefetched). warmProfile
+  // throttles per steamId (no refire on pointer jitter) and swallows
+  // failures; see services.js.
+  import { warmProfile } from '../services.js';
 
   let { steam = '', name = '', nav = () => {}, title = '', cls = '' } = $props();
 </script>
@@ -19,6 +25,7 @@
   <button
     class="comb-name-btn {cls}"
     title={title || `Open ${name} profile`}
+    onmouseenter={() => warmProfile(steam)}
     onclick={() => openProfile(nav, steam)}>{name || '—'}</button
   >
 {:else}

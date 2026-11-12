@@ -67,6 +67,11 @@ writeFileSync(
   join(dir, 'replay', 'landmarks.js'),
   readFileSync('src/lib/replay/landmarks.js', 'utf8'),
 );
+
+// ProfileLink now statically imports ../services.js for its hover
+// prefetch (warmProfile) — a no-op stub here (this driver never hovers).
+writeFileSync(join(dir, 'services.js'), 'export const warmProfile = () => {};\n');
+
 svelteCompile(
   readFileSync('src/lib/components/ProfileLink.svelte', 'utf8'),
   'ProfileLink.svelte',

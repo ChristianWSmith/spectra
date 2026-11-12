@@ -115,6 +115,7 @@ export const getRounds = () => wait(d().rounds || []);
 export const getScoreboard = () => wait(d().scoreboard || []);
 export const getMatch = () => wait(d().match || null);
 export const errText = (e) => (e == null ? 'unknown error' : String((e && e.message) || e));
+export const warmProfile = () => {};
 `,
 );
 

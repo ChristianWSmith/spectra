@@ -123,6 +123,7 @@ export const getScoreboard = () => wait(d().scoreboard || []);
 export const getRoundClasses = () => wait(d().classes || []);
 export const getTeamNames = () => wait(d().teams || null);
 export const errText = (e) => (e == null ? 'unknown error' : String((e && e.message) || e));
+export const warmProfile = () => {};
 `,
 );
 

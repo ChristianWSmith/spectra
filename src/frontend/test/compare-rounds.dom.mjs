@@ -110,6 +110,7 @@ export const getUtility = () => wait(d().utility || []);
 export const getRoundClasses = () => wait(d().classes || []);
 export const getRoundDetail = (id, round) => wait((d().details || {})[round] || null);
 export const errText = (e) => (e == null ? 'unknown error' : String((e && e.message) || e));
+export const warmProfile = () => {};
 `,
 );
 
