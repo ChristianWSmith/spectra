@@ -390,7 +390,10 @@ export function getChat(matchId, round, player) {
 // <= 0 is open on that side, so (0, 0) reads the whole match. Read-cached
 // like the other single-match reads (flushed with the rest on every
 // spectra:* data event); kind/steam filtering happens in the caller over
-// the returned window.
+// the returned window. TWO callers share this one read: the sfx engine's
+// footstep cue rows (Replay, (0, 0)) and the feed's `footsteps` source
+// (feed.js — the SAME (0, 0) key, so a match with footsteps does one DB
+// read for both).
 export function getSoundEvents(matchId, fromTick, toTick) {
   return cachedRead('GetSoundEvents', [matchId, fromTick, toTick], () =>
     MatchService.GetSoundEvents(matchId, fromTick, toTick),

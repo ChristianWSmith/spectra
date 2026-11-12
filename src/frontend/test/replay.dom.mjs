@@ -2289,15 +2289,16 @@ await sleep();
 const catMenu = panel?.querySelector('.lm-cat-menu');
 check('dropdown opens a checkbox list (multi-select)', !!catMenu);
 const catBoxes = catMenu ? [...catMenu.querySelectorAll('input[type="checkbox"]')] : [];
-// 14 = the registry after TWO owner rulings: − convars (server settings
+// 15 = the registry after THREE owner rulings: − convars (server settings
 // left the FE — the owner's ConVars-out ruling; the Go labeler still
 // labels those rows), + Deaths (the SECOND view of the kill kind —
 // lib/replay/landmarks.js, shared claim), then − chat / team changes /
 // game events + Buys (Q3a — the filters are gameplay-only; the store
-// keeps those rows, only the filter stops offering them). The
+// keeps those rows, only the filter stops offering them), then + the
+// Footsteps sound source (Q3b — its own `source: 'sound'` path). The
 // checked-list pin below stays 'Round starts' only: every addition is
 // opt-in, default OFF.
-check('one checkbox per category', catBoxes.length === 14, String(catBoxes.length));
+check('one checkbox per category', catBoxes.length === 15, String(catBoxes.length));
 const catLabel = (cb) => (cb.closest('label')?.textContent || '').trim();
 // Q3a: the three cut categories are gone from the dropdown and `buys`
 // (the one generic category left) is there — same shape as the convars
@@ -2314,6 +2315,12 @@ check(
   !!catBoxes.find((cb) => catLabel(cb) === 'Buys'),
   catBoxes.map(catLabel).join(', '),
 );
+// Q3b: the footsteps source renders as a checkbox straight off
+// CATEGORIES (the FilterBar is registry-driven — no view wiring) and is
+// opt-in like every non-sparse category.
+const stepsBox = catBoxes.find((cb) => catLabel(cb) === 'Footsteps');
+check('the Footsteps category is in the dropdown (Q3b — the sound path)', !!stepsBox, catBoxes.map(catLabel).join(', '));
+check('Footsteps is opt-in (default OFF — the checked list stays Round starts)', !!stepsBox && !stepsBox.checked, stepsBox ? String(stepsBox.checked) : 'missing');
 check(
   'the gname name-picker is gone with game_events (Q3a)',
   !panel?.querySelector('#lm-gname'),

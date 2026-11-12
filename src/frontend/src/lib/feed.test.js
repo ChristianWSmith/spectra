@@ -136,21 +136,22 @@ test('srcRound scopes a single-round range and stays match-wide otherwise', () =
 // --- THE source interface --------------------------------------------------
 
 test('FEED_SOURCES: one descriptor per path, ranks in merge order', () => {
-  // Q3a: the chat descriptor left with its category — two paths remain,
-  // and generic renumbered to rank 1 (the merge reads the rank off the
-  // descriptor, so nothing else moved).
-  assert.deepEqual(FEED_SOURCES.map((s) => s.id), ['event', 'generic']);
-  assert.deepEqual(FEED_SOURCES.map((s) => s.rank), [0, 1]);
+  // Q3a left two paths (the chat descriptor left with its category and
+  // generic renumbered to rank 1); Q3b appends the sound source at 2.
+  // The merge reads the rank off the descriptor, so nothing else moved.
+  assert.deepEqual(FEED_SOURCES.map((s) => s.id), ['event', 'generic', 'sound']);
+  assert.deepEqual(FEED_SOURCES.map((s) => s.rank), [0, 1, 2]);
   for (const s of FEED_SOURCES) {
     for (const fn of ['jobs', 'fetch', 'normalize', 'seqOf']) {
       assert.equal(typeof s[fn], 'function', `${s.id}.${fn}`);
     }
   }
-  // Paging specs: both remaining paths page (the +1 probe rule) — the
-  // unpaged-source rule still exists and is pinned on pageSlice /
-  // runFeedJob below (a synthetic source carries page: null).
+  // Paging specs: the two event-shaped paths page (the +1 probe rule);
+  // the sound path is ONE whole-match read (page: null — the unpaged
+  // rule itself is pinned on pageSlice / runFeedJob below).
   assert.deepEqual(FEED_SOURCES[0].page, { size: PAGE });
   assert.deepEqual(FEED_SOURCES[1].page, { size: PAGE });
+  assert.equal(FEED_SOURCES[2].page, null);
 });
 
 test('feedJobs: the job list IS the enabled check (one gate, not two)', () => {
@@ -185,6 +186,23 @@ test('feedJobs: the job list IS the enabled check (one gate, not two)', () => {
   // Two sources on → two jobs, in rank order.
   const both = feedJobs(parseLandmarkFilter({ cat: 'kills,buys' }));
   assert.deepEqual(both.map((j) => j.source.id), ['event', 'generic']);
+
+  // Q3b: the footsteps source — ONE job carrying the two scopes a sound
+  // row CAN answer (round bounds + player); the job IS the enabled check
+  // like every other source.
+  const steps = feedJobs(parseLandmarkFilter({ cat: 'footsteps' }));
+  assert.deepEqual(steps.map((j) => [j.key, j.source.id]), [['sound', 'sound']]);
+  const scopedSteps = feedJobs(
+    parseLandmarkFilter({ cat: 'footsteps', roundFrom: '3', roundTo: '5', player: '76561198012345678' }),
+  )[0];
+  assert.equal(scopedSteps.key, 'sound');
+  assert.equal(scopedSteps.roundFrom, 3);
+  assert.equal(scopedSteps.roundTo, 5);
+  assert.equal(scopedSteps.steamId, '76561198012345678');
+  // …and footsteps alone never spawns the EVENT job (an empty kinds list
+  // would mean "every kind" in the store contract — the marker answer
+  // therefore stays empty when only sound is on).
+  assert.equal(steps.some((j) => j.source.id === 'event'), false);
 });
 
 test('pageSlice: the ONE paging rule (the +1 probe row)', () => {
@@ -291,6 +309,92 @@ test('composeFeedRows: normalize per source → merge → the round-visibility p
   assert.deepEqual(composeFeedRows({}, ctx), []);
 });
 
+// --- The sound source (Q3b) ---------------------------------------------------
+
+// The raw row GetSoundEvents returns (models.SoundEvent — no id, no
+// position, no weapon): the fields the source maps.
+const SOUND_ROW = {
+  tick: 640,
+  round: 2,
+  steamId: '76561198012345678',
+  kind: 'step',
+  material: 'concrete',
+  teamPrefix: '',
+  sosName: 'Player.Dirt',
+};
+const soundSource = FEED_SOURCES.find((s) => s.id === 'sound');
+const soundJob = (filter) => feedJobs(parseLandmarkFilter({ cat: 'footsteps', ...filter }))[0];
+
+test('soundSource: the row shape — feed-only, no invented position, index key', () => {
+  const job = soundJob({});
+  const row = soundSource.normalize(SOUND_ROW, job, {}, 7);
+  // The landmark-row contract: source/category stamp, no bucket (never
+  // drawn on the map), no x/y/z (sound_events carries none — never
+  // invented), no `who` (the row has a steamId, not a display name).
+  assert.equal(row.key, 's:7', 'SoundEvent has no id — the slot index is the key');
+  assert.equal(row.source, 'sound');
+  assert.equal(row.category, 'footsteps');
+  assert.equal(row.bucket, '');
+  assert.equal('x' in row, false);
+  assert.equal('y' in row, false);
+  assert.equal('z' in row, false);
+  assert.equal(row.who, '');
+  // The detail pane's Event line and the list's primary text.
+  assert.equal(row.name, 'step');
+  assert.equal(row.label, 'step · concrete');
+  // The source fields the feed row keeps (tick/round/steamId).
+  assert.equal(row.tick, 640);
+  assert.equal(row.round, 2);
+  assert.equal(row.steamId, '76561198012345678');
+  // A material-less kind reads as its kind alone.
+  assert.equal(soundSource.normalize({ ...SOUND_ROW, material: '' }, job, {}, 8).label, 'step');
+});
+
+test('soundSource: the round + player scopes ride the JOB (the tick-windowed contract)', () => {
+  // The Go read is tick-windowed while the filter is round-scoped, so
+  // the scope is applied here — the row carries its own round/steamId.
+  const scoped = soundJob({ roundFrom: '3', roundTo: '3', player: '76561198012345678' });
+  assert.ok(soundSource.normalize({ ...SOUND_ROW, round: 3 }, scoped, {}, 0), 'in scope');
+  assert.equal(soundSource.normalize({ ...SOUND_ROW, round: 2 }, scoped, {}, 1), null, 'out of round scope');
+  assert.equal(soundSource.normalize({ ...SOUND_ROW, round: 4 }, scoped, {}, 2), null, 'past the range');
+  assert.equal(
+    soundSource.normalize({ ...SOUND_ROW, round: 3, steamId: '76561198012345679' }, scoped, {}, 3),
+    null,
+    'another player',
+  );
+  // 0 / '' = open (the filter's own sentinels): the whole match, every
+  // player — the same contract as every other bound in the model.
+  const open = soundJob({});
+  assert.ok(soundSource.normalize({ ...SOUND_ROW, round: -2 }, open, {}, 4), 'open round bound');
+  assert.ok(soundSource.normalize({ ...SOUND_ROW, steamId: '' }, open, {}, 5), 'open player');
+  // A one-sided range stays one-sided.
+  const lower = soundJob({ roundFrom: '3' });
+  assert.equal(soundSource.normalize({ ...SOUND_ROW, round: 2 }, lower, {}, 6), null, 'below the lower bound');
+});
+
+test('composeFeedRows: a sound page lands with its index keys (the round pref still applies)', () => {
+  const filter = parseLandmarkFilter({ cat: 'footsteps' });
+  const job = feedJobs(filter)[0];
+  const pages = {
+    [job.key]: { job, rows: [SOUND_ROW, { ...SOUND_ROW, tick: 700 }], hasMore: false },
+  };
+  const rbn = new Map([
+    [2, { number: 2 }],
+    [-2, { number: -2, warmup: true, pregame: true }],
+  ]);
+  const rows = composeFeedRows(pages, { roundsByNumber: rbn, cats: filter.cats, showKnifeWarmup: false });
+  assert.deepEqual(rows.map((r) => r.key), ['s:0', 's:1']);
+  assert.deepEqual(rows.map((r) => r.tick), [640, 700]);
+  assert.equal(rows[0].category, 'footsteps');
+  // The knife/warmup visibility pref is a RULE, not a source detail — it
+  // applies to sound rows exactly as it does to event rows.
+  const warm = composeFeedRows(
+    { [job.key]: { job, rows: [{ ...SOUND_ROW, round: -2 }], hasMore: false } },
+    { roundsByNumber: rbn, cats: filter.cats, showKnifeWarmup: false },
+  );
+  assert.deepEqual(warm.map((r) => r.key), [], 'a hidden warmup row never reaches the list');
+});
+
 // --- The ?sel= resolution ---------------------------------------------------
 
 test('entrySelection: the loaded row first, else the typed id, else nothing', () => {
@@ -339,6 +443,15 @@ test('landmarkExportRows flattens the feed into canonical columns', () => {
   assert.equal(dout[1][4], 'kill');
   // An empty feed exports its header only (never a throw).
   assert.deepEqual(landmarkExportRows([]), [out[0]]);
+  // Q3b: sound rows flow through the SAME generic projection — `type`
+  // stamps the category ('footsteps'), `event` the row's own kind and
+  // `details` its label; the columns a sound row has no field for stay
+  // empty (never invented).
+  const srow = soundSource.normalize(SOUND_ROW, soundJob({}), {}, 0);
+  assert.deepEqual(
+    landmarkExportRows([srow])[1],
+    [640, 2, 'sound', 'footsteps', 'step', '', 'step · concrete', '', ''],
+  );
 });
 
 // --- The composer invariant (fs-scan) ---------------------------------------
