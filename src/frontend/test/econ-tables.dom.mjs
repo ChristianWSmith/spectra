@@ -303,7 +303,7 @@ const match = {
   warningsCount: 0,
   status: 'ready',
   playbackTimeS: 2400,
-  patchVersion: '1.40',
+  patchVersion: 14089, // the flattened demo-header value (1.40.8.9)
   frames: 150000,
   size: 1000000,
   encryptedMessages: 0,
@@ -825,7 +825,7 @@ check(
 check('"first half" is gone from the details line', !/first half/i.test(subText), subText.slice(0, 160));
 check(
   'the remaining facts survive (map · duration · patch · status)',
-  subText.includes('de_mirage') && subText.includes('40m00s') && subText.includes('1.40') && !!sub.querySelector('.status, .chip'),
+  subText.includes('de_mirage') && subText.includes('40m00s') && subText.includes('patch 1.40.8.9') && !!sub.querySelector('.status, .chip'),
   subText.slice(0, 200),
 );
 // Source pins (jsdom applies no CSS): the component-scoped override that

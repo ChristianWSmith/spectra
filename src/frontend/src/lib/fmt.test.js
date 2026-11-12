@@ -19,6 +19,7 @@ import {
   fmtMs,
   fmtZeroDash,
   fmtDate,
+  fmtPatch,
   normTickRate,
   chatClock,
   chatTag,
@@ -405,4 +406,34 @@ test('fmtDate renders a stamped extraction time as a locale date-time', () => {
   assert.notEqual(out, '—');
   assert.match(out, /2026/);
   assert.notEqual(fmtDate(new Date('2026-06-15T09:30:00Z')), '—');
+});
+
+// --- fmtPatch (the flattened demo-header PatchVersion) --------------------
+// matches.patch_version is the CS2 PatchVersion with the dots stripped
+// (1.40.8.9 → 14089 — CS2.md). THE canonical patch formatter: the match
+// header's meta line and the profile trend dot tooltip both render
+// through it.
+
+test('fmtPatch decomposes the CS2-era 5-digit flattened patch to x.y.z.w', () => {
+  assert.equal(fmtPatch(14089), '1.40.8.9');
+  assert.equal(fmtPatch(14113), '1.41.1.3');
+  assert.equal(fmtPatch(14196), '1.41.9.6');
+});
+
+test('fmtPatch: 0 (unknown patch) is the placeholder, never "patch 0"', () => {
+  // The column default and the demo header's absent optional field both
+  // read 0 — that means UNKNOWN, not "patch 0".
+  assert.equal(fmtPatch(0), '—');
+  // Missing / unreadable input takes the same placeholder.
+  assert.equal(fmtPatch(undefined), '—');
+  assert.equal(fmtPatch(null), '—');
+  assert.equal(fmtPatch(NaN), '—');
+});
+
+test('fmtPatch: an unexpected digit length returns the raw number, never a guess', () => {
+  // The fixed-width rule only covers the CS2-era 5-digit shape; anything
+  // else is shown verbatim — no fabricated version.
+  assert.equal(fmtPatch(1489), '1489'); // 4 digits — not decomposable
+  assert.equal(fmtPatch(140101), '140101'); // 6 digits — a 2-digit component
+  assert.equal(fmtPatch(7), '7');
 });

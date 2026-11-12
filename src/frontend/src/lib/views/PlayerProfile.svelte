@@ -11,7 +11,7 @@
     AVG_UTIL_DEF,
     KAST_DEF,
   } from '../definitions.js';
-  import { fmt1, fmt2, fmtPercent, fmtDate, fmtInt } from '../fmt.js';
+  import { fmt1, fmt2, fmtPercent, fmtDate, fmtInt, fmtPatch } from '../fmt.js';
   import { buildHash } from '../router.js';
   import StatCard from '../components/StatCard.svelte';
   import SuggestInput from '../components/SuggestInput.svelte';
@@ -118,17 +118,14 @@
     return fmt1(v);
   }
 
-  // ProfileTrendPoint has no date — join matchId → extractedAt via
-  // history. That value is the match's IMPORT time (every date in the
-  // app is: CS2 demos carry no played-at timestamp — CS2.md), so the
-  // dot tooltip below labels it "Imported".
-  const dateByMatch = $derived.by(() => {
-    const map = new Map();
-    for (const h of profile?.history || []) map.set(h.matchId, h.extractedAt);
-    return map;
-  });
-
-  // Hand-rolled sparkline: x = Seq (oldest → newest), y = Value.
+  // Hand-rolled sparkline: x = Seq (GetTrend's row order — CS2 patch
+  // order, import order within a patch), y = Value. Each dot's tooltip
+  // is self-contained: the patch (fmtPatch — the authoritative "when",
+  // a demo carries no played-at date) plus the HONEST import label
+  // (every date in this app is import time, never implied play time),
+  // both read off the trend point itself — no history join, so a dot
+  // older than the history table's 100-match window still dates right
+  // instead of "Imported —".
   const spark = $derived.by(() => {
     const pts = trend;
     if (pts.length < 2) return null;
@@ -160,7 +157,7 @@
         y: Y(p.value),
         value: p.value,
         matchId: p.matchId,
-        title: `Imported ${fmtDate(dateByMatch.get(p.matchId) || '')} · ${fmtProfileMetric(p.value, metric)}`,
+        title: `${fmtPatch(p.patch)} · Imported ${fmtDate(p.extractedAt)} · ${fmtProfileMetric(p.value, metric)}`,
       })),
     };
   });
@@ -285,7 +282,7 @@
         </svg>
         <p class="muted prof-spark-cap">
           {trend.length} matches · min {fmtProfileMetric(spark.min, metric)} · max {fmtProfileMetric(spark.max, metric)}
-          · x = sequence (oldest import → newest) · click a dot to open the match
+          · x = sequence (patch order → import order within a patch) · click a dot to open the match
         </p>
       {:else if trend.length === 1}
         <p class="muted" role="status">Only one match so far — the trend line needs at least two.</p>

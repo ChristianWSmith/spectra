@@ -252,6 +252,27 @@ export function fmtDate(d) {
   });
 }
 
+// fmtPatch renders the demo header's flattened CS2 PatchVersion
+// (matches.patch_version — `x.y.z.w` from steam.inf with the dots
+// stripped: 1.40.8.9 → 14089) back to its dotted form. THE canonical
+// patch formatter — the match header's meta line and the profile trend
+// dot tooltip both render through it.
+//   5 digits (the CS2-era shape: x = 1 digit, y = 2, z/w = 1)
+//     → dotted, split on that fixed width: 14089 → "1.40.8.9"
+//   0  → "—" — unknown patch (the column default and the demo header's
+//        absent optional field): NEVER rendered as "patch 0"
+//   any other digit length (a component past its fixed width) → the raw
+//        number as a string ("140101"): shown verbatim, never a version
+//        fabricated from a shape this rule cannot decompose.
+// Non-integer / missing input (null, undefined, NaN, negatives) is not a
+// readable patch either → the placeholder.
+export function fmtPatch(n) {
+  if (!Number.isInteger(n) || n <= 0) return '—';
+  const s = String(n);
+  if (s.length !== 5) return s;
+  return `${s[0]}.${s.slice(1, 3)}.${s[3]}.${s[4]}`;
+}
+
 // round1 rounds a float to one decimal (the ±float formatter).
 export function round1(x) {
   if (!Number.isFinite(x)) return 0;
