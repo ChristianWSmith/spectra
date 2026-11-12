@@ -85,7 +85,7 @@ const STAGES = [
   'positions', // positions bytes (determinate: vs Content-Length)
   'parse', // parsePositions — CPU, no honest denominator → indeterminate
   'voice', // getVoiceIndex prime (only a match WITH voice reaches it)
-  'world', // loadWorld: anchor read + grenade hydration + normalize
+  'world', // loadWorld: anchor read + grenade hydration (determinate while the bulk reads run: i/N grenade reads) + normalize
   'events', // conn + blind (+durations) + chat rows
 ];
 const STAGE_LABEL = {
@@ -381,6 +381,13 @@ async function buildBundle(id, entry) {
       stateIndex,
       ticks: data.ticks,
       tickRate: meta.tickRate ?? 0,
+      // The ONE determinate sub-denominator in this stage: the bulk
+      // grenade reads report {done, total, unit} while they run (the
+      // other loadWorld phases stay indeterminate — no invented step
+      // denominators). updateStage is the canonical spelling (same as
+      // the pack/positions stages); publish's signature-throttle keeps
+      // it from spamming subscribers.
+      onProgress: (p) => updateStage(entry, 'world', p),
     });
     completeStage(entry, 'world');
     return world;

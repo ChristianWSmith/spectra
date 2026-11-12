@@ -48,6 +48,13 @@ const GRENADE_KINDS = new Set(['grenade_throw', 'grenade', 'grenade_bounce']);
 // Exported for world-hydration.test.js, which pins the chunk boundary.
 export const BULK_CHUNK = 400;
 
+// HYDRATION_UNIT — the onProgress unit for the hydration denominator,
+// lowercase-plural like the preload ledger's other units ('images' in
+// the pack stage, 'bytes' in positions): one unit per unique grenade
+// detail id ATTEMPTED. 'grenade reads' names the work the denominator
+// actually counts — the bulk GetEventDetails reads, not rows or bytes.
+const HYDRATION_UNIT = 'grenade reads';
+
 // loadWorld — the ONE match-static world fetch. Sequential like the
 // inline code it replaces: the anchor read and its side channel first,
 // then the grenade hydration, then the buytime boundary (the kit
@@ -64,7 +71,30 @@ export const BULK_CHUNK = 400;
 //   ticks     — data.ticks: the LAST frame ≤ the kill tick (the stamp's
 //               binary search); null → no stamps.
 //   tickRate  — meta.tickRate: the kit evidence's window arithmetic.
-export async function loadWorld({ matchId, players, stateIndex, ticks, tickRate }) {
+//   onProgress — OPTIONAL, additive: {done, total, unit} reports in the
+//               preload ledger's vocabulary (preload.js: the pack stage
+//               reports unit 'images', positions unit 'bytes'; this one
+//               reports unit 'grenade reads' — one unit per unique
+//               grenade detail id ATTEMPTED). Absent (default) = zero
+//               reports, exactly today's behavior. It fires ONCE with
+//               {done: 0, total: <unique grenade ids>, unit} immediately
+//               BEFORE the bulk chunk reads start — and only when they
+//               WILL run: an unresolvable binding or a match with no
+//               bounce rows reports NOTHING (indeterminate is honest;
+//               claiming work that never ran is not) — then once per
+//               chunk SETTLE: each chunk adds its own length to done
+//               whether it RESOLVED or REJECTED (fail-soft contract: a
+//               failed chunk's ids were attempted work, so done reaches
+//               total even when every chunk rejects — the bar never
+//               sticks below 100%). The anchor/drop/buytime reads are
+//               single IPC calls with no honest count → never reported
+//               (an invented step denominator is the fake-stage this
+//               ledger refuses). The bar may reach 100% while the
+//               trailing buytime read + normalize still finish — the
+//               denominator counts the hydration reads; the stage
+//               completes when the whole load resolves — honest, since
+//               every counted id was really attempted.
+export async function loadWorld({ matchId, players, stateIndex, ticks, tickRate, onProgress }) {
   const [rows, dropDetails] = await Promise.all([
     getEvents({ matchId, kinds: DRAW_KINDS, offset: 0, limit: 0 }).catch(() => []),
     getDropDetails(matchId).catch(() => []),
@@ -83,7 +113,7 @@ export async function loadWorld({ matchId, players, stateIndex, ticks, tickRate 
       : r;
     return stampVictimHelmet(withDrop, { slotBySteam, stateIndex, ticks });
   });
-  const hydrated = await hydrateGrenadeEntities(stamped);
+  const hydrated = await hydrateGrenadeEntities(stamped, onProgress);
   // buytime_ended — the ONE generic read the defuse-kit evidence needs:
   // the per-round buy-window boundary that separates a kit bought on the
   // buy menu from one taken off a dead CT (both are the SAME item_pickup
@@ -184,7 +214,22 @@ function grenadeEntity(detailJson) {
 // binding exactly like a failed read: no stamps, never a load error) and
 // each chunk catches its own failure, so a failed chunk leaves exactly
 // its rows entity-less while the rest still stamp.
-async function hydrateGrenadeEntities(rows) {
+//
+// onProgress (loadWorld's optional callback) reports the ONE honest
+// denominator this phase has — the unique grenade detail ids, counted as
+// ATTEMPTED work:
+//   · {done: 0, total: ids.length, unit: 'grenade reads'} fires once,
+//     AFTER the binding import resolves and the chunks are about to run
+//     — an unresolvable binding reports nothing (no reads will run, so
+//     there is nothing to report; the stage stays indeterminate).
+//   · every chunk adds its own length to done when it SETTLES, resolved
+//     OR rejected — a failed chunk's ids were still attempted work, so
+//     done always reaches total (even when every chunk rejects: the bar
+//     never sticks below 100% forever).
+//   · the no-bounce/no-target early return reports nothing at all.
+// The other loadWorld phases (anchor read, drop details, buytime
+// boundary) are single IPC calls with no honest count → never reported.
+async function hydrateGrenadeEntities(rows, onProgress) {
   const targets = rows.filter((r) => GRENADE_KINDS.has(r.kind) && Number.isFinite(r.id));
   if (!targets.length || !rows.some((r) => r.kind === 'grenade_bounce')) return rows;
   const ids = [...new Set(targets.map((r) => r.id))];
@@ -196,12 +241,22 @@ async function hydrateGrenadeEntities(rows) {
   } catch {
     return rows; // fail-soft: no resolvable binding → no stamps, never an error
   }
+  // The reads are about to run — the denominator lands now (total = the
+  // UNIQUE ids after dedupe, done counting ids ATTEMPTED per settle).
+  const total = ids.length;
+  let done = 0;
+  if (onProgress) onProgress({ done: 0, total, unit: HYDRATION_UNIT });
   const lists = await Promise.all(
     chunks.map(async (chunk) => {
       try {
         return await bindings.MatchService.GetEventDetails(chunk);
       } catch {
         return []; // fail-soft: that chunk's rows stay entity-less
+      } finally {
+        // Attempted, not succeeded: a rejected chunk's ids were real
+        // work, so done reaches total either way.
+        done += chunk.length;
+        if (onProgress) onProgress({ done, total, unit: HYDRATION_UNIT });
       }
     }),
   );
