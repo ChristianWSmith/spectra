@@ -49,6 +49,9 @@
   import ProfileLink from '../components/ProfileLink.svelte';
   import WinnerCell from '../components/WinnerCell.svelte';
   import { seed, remember, matchKey } from '../viewstate.svelte.js';
+  // Tier 1 of the loading ladder (PRODUCT.md "### Defaults"): the
+  // replay's data bundle, warmed in the BACKGROUND from this screen.
+  import { preloadReplay } from '../replay/preload.js';
 
   // routeTab: the deep-linked tab from App's route (#/match/:id/<slug> —
   // every tab is deep-linkable, see MATCH_TABS in lib/router.js); '' for
@@ -264,6 +267,21 @@
         if (live) error = errText(e);
       });
     return () => (live = false);
+  });
+
+  // Tier 1 of the loading ladder (PRODUCT.md "### Defaults"): warm the
+  // replay bundle the MOMENT the match screen opens — before "Watch
+  // replay" is ever clicked — so the replay usually resolves from
+  // memory. Fire-and-forget: never awaited, never gates this view's
+  // rendering (Replay's load() awaits the SAME memo, start-if-missing,
+  // so a deep link straight to #/replay/:id keeps working). preloadReplay
+  // skips the start while a library job is running — warming cached
+  // reads mid-import is systematically wasted (preload.js documents the
+  // bail-out; its flush listeners are the correctness net either way).
+  // App reuses this view across id changes without remounting (see the
+  // selection-key comment above), so the effect is keyed on id alone.
+  $effect(() => {
+    preloadReplay(id);
   });
 
   // Demo-copy state line (Details → Key facts): copyState is fs-derived

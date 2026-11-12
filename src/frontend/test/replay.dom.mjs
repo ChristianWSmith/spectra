@@ -189,6 +189,10 @@ for (const rel of [
   // card graph fails to link (its own deps, landmarks.js + bullets.js,
   // are already in this list).
   'loadout.js',
+  // preload.js is the pre-emptive replay bundle (Replay's load() awaits
+  // it; the memo is reset before every mount below) — copy it or the
+  // view graph fails to link above.
+  'preload.js',
 ]) {
   writeFileSync(join(dir, 'replay', rel), readFileSync(join('src/lib/replay', rel), 'utf8'));
 }
@@ -480,6 +484,16 @@ export const setPref = (key, value) => {
   return Promise.resolve();
 };
 export const errText = (e) => (e == null ? 'unknown error' : String((e && e.message) || e));
+// The two glue reads preload.js uses: onEvent backs the four flush
+// listeners it mirrors from services.cachedRead (no events fire in this
+// harness — nothing to flush), subscribeJobProgress hands the CURRENT
+// job snapshot to cb synchronously (empty → the library-job bail-out
+// never trips) and returns the unsubscribe.
+export const onEvent = () => () => {};
+export const subscribeJobProgress = (cb) => {
+  cb(new Map());
+  return () => {};
+};
 `,
 );
 
@@ -798,6 +812,9 @@ export const downloadText = async () => '';
 for (const name of [
   'ProfileLink', 'FilterBar', 'EventFlags', 'PayloadTree', 'LandmarkRow', 'Popover', 'RoundStrip',
   'PlayerCard', 'TeamColumn',
+  // StatusChip — the loading ladder's tier-2 progress renderer (the
+  // ONE progress widget; MapPackPrompt's non-job precedent).
+  'StatusChip',
 ]) {
   let src = readFileSync(`src/lib/components/${name}.svelte`, 'utf8').replace(
     /from '\.\/(\w+)\.svelte'/g,
@@ -829,6 +846,13 @@ const harnessOut = join(dir, 'harness.js');
 svelteCompile(harnessSrc, 'harness.svelte', harnessOut);
 
 const { mount } = await import('svelte');
+// The preload memo lives in the copied preload.js module instance — every
+// mount in this file must be a FRESH load (each section's fixtures differ:
+// the roster override, the pref store, the query), so the memo is dropped
+// first — the resetViewState() precedent in the jsdom setups.
+const { resetReplayPreload } = await import(
+  pathToFileURL(join(dir, 'replay', 'preload.js')).href
+);
 // A compile/link/mount failure below would otherwise be swallowed by the
 // uncaughtException handler above and exit 0 — fail loudly instead.
 let target;
@@ -836,6 +860,7 @@ try {
   const mod = await import(pathToFileURL(harnessOut).href);
   target = document.createElement('div');
   document.body.appendChild(target);
+  resetReplayPreload();
   mount(mod.default, { target });
 } catch (e) {
   console.error('HARNESS LOAD FAILED: ' + (e && e.stack ? e.stack : e));
@@ -2611,6 +2636,7 @@ const harness8Src = `<script>
 const harness8Out = join(dir, 'harness8.js');
 svelteCompile(harness8Src, 'harness8.svelte', harness8Out);
 const mod8 = await import(pathToFileURL(harness8Out).href);
+resetReplayPreload();
 mount(mod8.default, { target: target8 });
 await sleep();
 await sleep();
@@ -2933,6 +2959,7 @@ const harness2Src = `<script>
 const harness2Out = join(dir, 'harness2.js');
 svelteCompile(harness2Src, 'harness2.svelte', harness2Out);
 const mod2 = await import(pathToFileURL(harness2Out).href);
+resetReplayPreload();
 mount(mod2.default, { target: target2 });
 await sleep();
 await sleep(); // load() → startEngine: seek, then the loop apply
@@ -3066,6 +3093,7 @@ const harness3Src = `<script>
 const harness3Out = join(dir, 'harness3.js');
 svelteCompile(harness3Src, 'harness3.svelte', harness3Out);
 const mod3 = await import(pathToFileURL(harness3Out).href);
+resetReplayPreload();
 mount(mod3.default, { target: target3 });
 await sleep();
 await sleep(); // load() → startEngine while INACTIVE
@@ -3494,6 +3522,7 @@ const harness4Src = `<script>
 const harness4Out = join(dir, 'harness4.js');
 svelteCompile(harness4Src, 'harness4.svelte', harness4Out);
 const mod4 = await import(pathToFileURL(harness4Out).href);
+resetReplayPreload();
 mount(mod4.default, { target: target4 });
 await sleep();
 await sleep(); // load() → startEngine: the mount seed applies ONCE
@@ -3696,6 +3725,7 @@ const harness5Src = `<script>
 const harness5Out = join(dir, 'harness5.js');
 svelteCompile(harness5Src, 'harness5.svelte', harness5Out);
 const mod5 = await import(pathToFileURL(harness5Out).href);
+resetReplayPreload();
 mount(mod5.default, { target: target5 });
 await sleep();
 await sleep(); // load() → startEngine with the rounds in
@@ -3805,6 +3835,7 @@ const harness6Src = `<script>
 const harness6Out = join(dir, 'harness6.js');
 svelteCompile(harness6Src, 'harness6.svelte', harness6Out);
 const mod6 = await import(pathToFileURL(harness6Out).href);
+resetReplayPreload();
 mount(mod6.default, { target: target6 });
 await sleep();
 await sleep(); // load → startEngine (the draw feed carries the kill row)
@@ -3897,6 +3928,7 @@ const harness7Src = `<script>
 const harness7Out = join(dir, 'harness7.js');
 svelteCompile(harness7Src, 'harness7.svelte', harness7Out);
 const mod7 = await import(pathToFileURL(harness7Out).href);
+resetReplayPreload();
 mount(mod7.default, { target: target7 });
 await sleep();
 await sleep(); // load → startEngine pushes the world ONCE
@@ -4033,6 +4065,7 @@ const harnessPSrc = `<script>
 const harnessPOut = join(dir, 'harnessP.js');
 svelteCompile(harnessPSrc, 'harnessP.svelte', harnessPOut);
 const modP = await import(pathToFileURL(harnessPOut).href);
+resetReplayPreload();
 mount(modP.default, { target: targetP });
 await sleep();
 await sleep(); // load → startEngine → the columns render
