@@ -228,6 +228,126 @@ test('a mutating wrapper invalidates on success (no event needed)', async () => 
   assert.equal(bindings.callCount('GetMatch'), 2, 'delete flushed the cache');
 });
 
+// setAnalysisConfig is a mutating wrapper TOO (item 4): the config
+// VALUES gate reads (GetCombatStats reads tradeOppDistance), SetConfig
+// emits no event, and without the flush a distance/window edit served
+// stale Combat/profile numbers until an unrelated spectra:* event. The
+// full flush is the same rule every other mutating wrapper follows —
+// cachedRead keys carry no config dependency, so a targeted flush is
+// not expressible.
+test('setAnalysisConfig invalidates on success (mutating wrapper)', async () => {
+  services.invalidate();
+  bindings.resetCalls();
+  bindings.handlers.SetConfig = (c) => ({ ...c, ruleVersion: 3 });
+  try {
+    const first = services.getCombatStats(7);
+    await first;
+    assert.equal(bindings.callCount('GetCombatStats'), 1);
+
+    const saved = await services.setAnalysisConfig({
+      tradeWindowS: 6,
+      ecoFullBuy: 20000,
+      ecoForce: 10000,
+      tradeOppDistance: 1500,
+    });
+    assert.equal(saved.ruleVersion, 3, 'the wrapper returns the server row untouched');
+
+    const after = services.getCombatStats(7);
+    assert.notEqual(after, first, 'a rules save must flush the read cache');
+    await after;
+    assert.equal(bindings.callCount('GetCombatStats'), 2, 'refetch after the save');
+  } finally {
+    delete bindings.handlers.SetConfig;
+  }
+});
+
+// The behind facet rides the ONE filter normalization (normFilter) into
+// list, page window AND count — the Settings re-run list's fetch shape:
+// ListMatchesPage({behind:true}) + CountMatches({behind:true}), never an
+// unbounded whole-library read.
+test('the behind facet flows through list/page/count filter normalization', async () => {
+  services.invalidate();
+  bindings.resetCalls();
+
+  const page = services.listMatchesPage('', 'extracted_at', true, 0, 50, { behind: true });
+  const n = services.countMatches('', { behind: true });
+  const all = services.countMatches('', {});
+  await Promise.all([page, n, all]);
+
+  const pageCall = bindings.calls.find((c) => c.method === 'ListMatchesPage');
+  assert.ok(pageCall, 'ListMatchesPage called');
+  assert.deepEqual(
+    pageCall.args[5],
+    { map: '', player: '', behind: true },
+    'page window carries the behind facet through the shared normalization',
+  );
+  assert.equal(pageCall.args[4], 50, 'page window is bounded by its limit');
+
+  const countCalls = bindings.calls.filter((c) => c.method === 'CountMatches');
+  assert.equal(countCalls.length, 2, 'behind count + total count');
+  assert.deepEqual(countCalls[0].args[1], { map: '', player: '', behind: true }, 'behind count');
+  assert.deepEqual(countCalls[1].args[1], { map: '', player: '', behind: false }, 'total count');
+
+  // Equivalent filters share one cache entry (normalization is the key);
+  // the behind facet is part of the key (a different result set).
+  const page2 = services.listMatchesPage('', 'extracted_at', true, 0, 50, { behind: true });
+  assert.equal(page2, page, 'same facet -> same promise (cache hit)');
+  const n2 = services.countMatches('', { behind: true });
+  assert.equal(n2, n, 'same count -> same promise (cache hit)');
+
+  // Flush semantics come free: analysis-done (a row stamped out of the
+  // behind set) and a SetConfig save both invalidate.
+  fire('spectra:analysis-done', { matchId: 7, error: '' });
+  const nAfter = services.countMatches('', { behind: true });
+  assert.notEqual(nAfter, n, 'analysis-done flushes the count');
+  await nAfter;
+  assert.equal(bindings.callCount('CountMatches'), 3);
+
+  await services.setAnalysisConfig({
+    tradeWindowS: 5,
+    ecoFullBuy: 20000,
+    ecoForce: 10000,
+    tradeOppDistance: 1000,
+  });
+  const pageAfter = services.listMatchesPage('', 'extracted_at', true, 0, 50, { behind: true });
+  assert.notEqual(pageAfter, page, 'a rules save flushes the behind page');
+  await pageAfter;
+  assert.equal(bindings.callCount('ListMatchesPage'), 2);
+});
+
+// recomputeAll is submission-only like recomputeAnalysis: it resolves at
+// queue time and must NOT flush (the completion flush rides each member's
+// spectra:analysis-done — invalidating at submission would let a read
+// re-cache pre-compute rows).
+test('recomputeAll invalidates at completion, not submission', async () => {
+  services.invalidate();
+  bindings.resetCalls();
+  bindings.handlers.RecomputeAll = () => ({ submitted: 3, skipped: 1, total: 4 });
+  try {
+    const first = services.getMatch(7);
+    await first;
+
+    const r = await services.recomputeAll();
+    assert.deepEqual(
+      { submitted: r.submitted, skipped: r.skipped, total: r.total },
+      { submitted: 3, skipped: 1, total: 4 },
+      'the honest {submitted, skipped, total} passes through',
+    );
+    const during = services.getMatch(7);
+    assert.equal(during, first, 'submission alone must not flush');
+    await during;
+    assert.equal(bindings.callCount('GetMatch'), 1, 'still one call before completion');
+
+    fire('spectra:analysis-done', { matchId: 7, error: '' });
+    const after = services.getMatch(7);
+    assert.notEqual(after, first, 'completion must flush');
+    await after;
+    assert.equal(bindings.callCount('GetMatch'), 2);
+  } finally {
+    delete bindings.handlers.RecomputeAll;
+  }
+});
+
 test('voice reads are cachedRead like every other read (item: voice index)', async () => {
   services.invalidate();
   bindings.resetCalls();
