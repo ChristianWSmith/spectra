@@ -421,6 +421,11 @@ export const getBlindDurations = () => Promise.resolve([]);
 // stub: the view's join leaves every weapon_drop row unstamped (the
 // fail-soft path drawDrops draws nothing for).
 export const getDropDetails = () => Promise.resolve([]);
+// Bulk EventDetail read (world.js's grenade-entity hydration — the STATIC
+// services.js import): none in the stub, so every chunk resolves [] and the
+// grenade rows stay ENTITY-LESS (world.js's own fail-soft contract: an id
+// with no detail row is skipped upstream, never fabricated).
+export const getEventDetails = () => Promise.resolve([]);
 // Player sounds (sound_events): the fixture has NONE — presence reports
 // total 0, so the view's gate fetches NOTHING (the presence-zero path:
 // no rows, no cues, no error) and the sound-events read below is never
