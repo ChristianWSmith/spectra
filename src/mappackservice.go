@@ -25,21 +25,79 @@ const eventAssetProgress = "spectra:asset-progress"
 // lands on the end instead of stalling short of it.
 const assetProgressMinInterval = 100 * time.Millisecond
 
-// assetFamilyMapPacks is the payload's family for radar map packs. The
-// contract also names icons and sounds, but only this service holds an
-// app handle to emit through (IconService/SoundService are registered
-// without one), so those two steps are labelled client-side instead.
-const assetFamilyMapPacks = "map-packs"
+// The payload's family per extractor — all THREE families emit
+// spectra:asset-progress through the one emitter below (map packs via
+// MapPackService, icons via IconService, sounds via SoundService), so
+// every step of a run renders a determinate bar.
+const (
+	assetFamilyMapPacks = "map-packs"
+	assetFamilyIcons    = "icons"
+	assetFamilySounds   = "sounds"
+)
 
 // AssetProgressEvent is the payload of spectra:asset-progress: one
 // extractor family's per-item progress. family is map-packs / icons /
-// sounds, stage the phase within it ("extract" is the only one today),
-// done the items completed out of the run's total.
+// sounds (the consts above), stage the phase within it ("extract" is the
+// only one today), done the items completed out of the run's total.
 type AssetProgressEvent struct {
 	Family string `json:"family"`
 	Stage  string `json:"stage"`
 	Done   int    `json:"done"`
 	Total  int    `json:"total"`
+}
+
+// assetProgressFor returns the spectra:asset-progress callback for an
+// extractor run on a service that holds an app handle — the production
+// adapter over assetProgress (the throttled emitter every family
+// shares). A nil app (services constructed without a handle, as the
+// package tests do) means no emitter: a nil callback the extractor
+// simply skips.
+func assetProgressFor(app *application.App, family string) func(done, total int) {
+	if app == nil {
+		return nil
+	}
+	return assetProgress(func(ev AssetProgressEvent) {
+		app.Event.Emit(eventAssetProgress, ev)
+	}, family)
+}
+
+// assetProgress builds the per-item progress callback one family wires
+// into mappack.WithProgress — THE one spectra:asset-progress emitter,
+// shared by map packs, icons and sounds (the extractors' honest
+// denominators are set beside their loops: packs attempted / canonical
+// icon table / canonical sound table, all known before the first item).
+// Emission goes through emit (production: app.Event.Emit via
+// assetProgressFor; tests: a recorder), throttled to
+// assetProgressMinInterval: an intermediate call inside the window is
+// dropped, the closing call (done == total) never is. Each call carries
+// one COMPLETED item, so done counts 1..total — never a fabricated
+// fraction.
+func assetProgress(emit func(AssetProgressEvent), family string) func(done, total int) {
+	return throttledAssetProgress(assetProgressMinInterval, emit, family)
+}
+
+// throttledAssetProgress is assetProgress with the throttle window
+// passed in — the seam the tests use to pin the drop rule without
+// racing the real clock (production always passes
+// assetProgressMinInterval via assetProgress).
+func throttledAssetProgress(window time.Duration, emit func(AssetProgressEvent), family string) func(done, total int) {
+	if emit == nil {
+		return nil
+	}
+	var last time.Time
+	return func(done, total int) {
+		now := time.Now()
+		if done < total && now.Sub(last) < window {
+			return
+		}
+		last = now
+		emit(AssetProgressEvent{
+			Family: family,
+			Stage:  "extract",
+			Done:   done,
+			Total:  total,
+		})
+	}
 }
 
 // MapPackService is the frontend-facing radar map-pack surface: detect a
@@ -107,21 +165,8 @@ func (s *MapPackService) ExtractMapPacks(cs2Dir string) ExtractOutcome {
 	if cs2Dir == "" {
 		return ExtractOutcome{Errors: []string{"Counter-Strike 2 not found"}}
 	}
-	var lastProgress time.Time
 	maps, errs, err := mappack.ExtractMapPacks(cs2Dir, data.MapsDir(),
-		mappack.WithProgress(func(done, total int) {
-			now := time.Now()
-			if done < total && now.Sub(lastProgress) < assetProgressMinInterval {
-				return
-			}
-			lastProgress = now
-			s.app.Event.Emit(eventAssetProgress, AssetProgressEvent{
-				Family: assetFamilyMapPacks,
-				Stage:  "extract",
-				Done:   done,
-				Total:  total,
-			})
-		}),
+		mappack.WithProgress(assetProgressFor(s.app, assetFamilyMapPacks)),
 		mappack.WithBundledMeta(bundledMapMeta))
 	if err != nil {
 		errs = append(errs, err.Error())

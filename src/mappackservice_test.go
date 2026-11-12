@@ -5,7 +5,9 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
+	"time"
 
 	"github.com/adrg/xdg"
 	"github.com/wailsapp/wails/v3/pkg/services/kvstore"
@@ -140,4 +142,110 @@ func TestSetCS2DirPersistsOnlyThePath(t *testing.T) {
 	if got := kvs.Get("mappack_prompt_state"); got != nil {
 		t.Errorf("retired prompt-suppression pref was written: %v", got)
 	}
+}
+
+// TestAssetProgressEmitter pins THE spectra:asset-progress emitter all
+// THREE extractor families share (assetProgress / assetProgressFor /
+// throttledAssetProgress): the wire payload shape the frontend reads,
+// the throttle drop rule (intermediate calls inside the window dropped,
+// the closing call never throttled), the per-family label with stage
+// "extract", and the nil seams — a service constructed without an app
+// handle has no emitter and must never panic.
+func TestAssetProgressEmitter(t *testing.T) {
+	// The wire contract: the four JSON keys the renderers parse.
+	raw, err := json.Marshal(AssetProgressEvent{
+		Family: assetFamilyIcons, Stage: "extract", Done: 7, Total: 120,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire map[string]any
+	if err := json.Unmarshal(raw, &wire); err != nil {
+		t.Fatal(err)
+	}
+	for _, key := range []string{"family", "stage", "done", "total"} {
+		if _, ok := wire[key]; !ok {
+			t.Errorf("AssetProgressEvent JSON missing %q: %s", key, raw)
+		}
+	}
+	if wire["family"] != "icons" || wire["stage"] != "extract" {
+		t.Errorf("payload = %s, want family=icons stage=extract", raw)
+	}
+
+	// The drop rule, on a window far larger than the test's own runtime
+	// so the clock can never race it: the FIRST call always emits
+	// (nothing seen yet), an intermediate call inside the window is
+	// dropped, the closing call (done == total) is never throttled.
+	for _, family := range []string{assetFamilyMapPacks, assetFamilyIcons, assetFamilySounds} {
+		var seen []AssetProgressEvent
+		cb := throttledAssetProgress(time.Hour, func(ev AssetProgressEvent) { seen = append(seen, ev) }, family)
+		cb(1, 3)
+		cb(2, 3)
+		cb(3, 3)
+		want := []AssetProgressEvent{
+			{Family: family, Stage: "extract", Done: 1, Total: 3},
+			{Family: family, Stage: "extract", Done: 3, Total: 3},
+		}
+		if !slices.Equal(seen, want) {
+			t.Errorf("%s: emitted %+v, want %+v", family, seen, want)
+		}
+	}
+
+	// An open window (0) drops nothing — the rule is the window itself,
+	// not a cap on how many events a run may send.
+	var all []AssetProgressEvent
+	cb := throttledAssetProgress(0, func(ev AssetProgressEvent) { all = append(all, ev) }, assetFamilySounds)
+	for i := 1; i <= 3; i++ {
+		cb(i, 3)
+	}
+	if len(all) != 3 {
+		t.Errorf("window=0 emitted %d calls, want 3: %+v", len(all), all)
+	}
+
+	// Nil seams: no emitter, no panic (the package's service tests build
+	// IconService/SoundService/MapPackService without an app handle).
+	if got := assetProgress(nil, assetFamilyIcons); got != nil {
+		t.Error("assetProgress(nil emit, …) = non-nil, want nil")
+	}
+	if got := assetProgressFor(nil, assetFamilyMapPacks); got != nil {
+		t.Error("assetProgressFor(nil app, …) = non-nil, want nil (a handle-less service never emits)")
+	}
+}
+
+// assertAssetProgressRun pins the shape of a COMPLETE extraction run's
+// recorded spectra:asset-progress emissions (used by the real-install
+// service tests below): the first canonical item and the closing call
+// always emit (the throttle withholds neither end of a run), done is
+// strictly increasing, the total never moves, and every payload carries
+// the run's family with stage "extract".
+func assertAssetProgressRun(t *testing.T, family string, seen []AssetProgressEvent) AssetProgressEvent {
+	t.Helper()
+	if len(seen) < 2 {
+		t.Fatalf("%s: %d emitted events, want ≥2 (first item + closing call): %+v", family, len(seen), seen)
+	}
+	first, last := seen[0], seen[len(seen)-1]
+	if first.Done != 1 {
+		t.Errorf("first event = %+v, want done 1", first)
+	}
+	if first.Total <= 1 {
+		t.Errorf("first event total = %d, want the run's item count (> 1)", first.Total)
+	}
+	if last.Done != last.Total {
+		t.Errorf("last event = %+v, want the closing call done == total", last)
+	}
+	if last.Total != first.Total {
+		t.Errorf("total changed mid-run: %+v", seen)
+	}
+	for i, ev := range seen {
+		if ev.Family != family || ev.Stage != "extract" {
+			t.Errorf("event %d = %+v, want family %q stage \"extract\"", i, ev, family)
+			break
+		}
+		if i > 0 && ev.Done <= seen[i-1].Done {
+			t.Errorf("done not strictly increasing: %+v", seen)
+			break
+		}
+	}
+	t.Logf("%s: %d emissions, first %+v, last %+v", family, len(seen), first, last)
+	return last
 }

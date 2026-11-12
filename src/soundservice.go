@@ -3,6 +3,7 @@ package main
 import (
 	"strings"
 
+	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/services/kvstore"
 
 	"github.com/ChristianWSmith/spectra/internal/data"
@@ -24,6 +25,10 @@ import (
 // the replay plays nothing for it.
 type SoundService struct {
 	kvs *kvstore.KVStoreService
+	// app is the handle the shared spectra:asset-progress emitter rides
+	// (assetProgressFor in mappackservice.go) — nil in tests, which
+	// simply means no emission.
+	app *application.App
 }
 
 // SoundManifest is the one sounds contract, returned by the service AND
@@ -62,16 +67,22 @@ func (s *SoundService) GetSoundManifest() SoundManifest {
 // returns the refreshed manifest. Never panics and never fails the call: a
 // missing install or a VPK error comes back as extracted=false with a
 // human-readable note, because "no sounds" is a fallback state (silence),
-// not an error.
+// not an error. Per-sound progress rides the shared
+// spectra:asset-progress emitter (assetProgressFor, family "sounds") so
+// the frontend can render a determinate bar.
 func (s *SoundService) ExtractSounds(cs2Dir string) SoundManifest {
 	manual, _ := s.kvs.Get(prefsMapPackCS2PathKey).(string)
-	return extractSounds(cs2Dir, manual, data.SoundsDir())
+	return extractSounds(cs2Dir, manual, data.SoundsDir(), assetProgressFor(s.app, assetFamilySounds))
 }
 
 // extractSounds is the testable core of ExtractSounds: detect the install
 // (explicit dir wins over detection via the saved manual path), extract
-// into outDir, and describe the outcome as a manifest.
-func extractSounds(cs2Dir, manual, outDir string) SoundManifest {
+// into outDir, and describe the outcome as a manifest. progress (nil =
+// no emission) is the per-item callback forwarded to
+// mappack.WithProgress; the honest denominator is mappack's canonical
+// sound table — one call per canonical sound name attempted (a name's
+// variant loop finishes before its call).
+func extractSounds(cs2Dir, manual, outDir string, progress func(done, total int)) SoundManifest {
 	if cs2Dir == "" {
 		cs2Dir = mappack.FindCS2(manual)
 	}
@@ -81,7 +92,7 @@ func extractSounds(cs2Dir, manual, outDir string) SoundManifest {
 			Note:   "Counter-Strike 2 not found (install it, or choose its folder in Settings)",
 		}
 	}
-	_, errs, err := mappack.ExtractSounds(cs2Dir, outDir)
+	_, errs, err := mappack.ExtractSounds(cs2Dir, outDir, mappack.WithProgress(progress))
 	m := buildSoundManifest(outDir)
 	var notes []string
 	if err != nil {

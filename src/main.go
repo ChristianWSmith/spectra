@@ -187,8 +187,8 @@ func main() {
 	app.RegisterService(application.NewService(&QueryService{st: st, app: app}))
 	app.RegisterService(application.NewService(&PlatformService{st: st, app: app}))
 	app.RegisterService(application.NewService(&MapPackService{kvs: kvs, app: app}))
-	app.RegisterService(application.NewService(&IconService{kvs: kvs}))
-	app.RegisterService(application.NewService(&SoundService{kvs: kvs}))
+	app.RegisterService(application.NewService(&IconService{kvs: kvs, app: app}))
+	app.RegisterService(application.NewService(&SoundService{kvs: kvs, app: app}))
 	// DialogService: native save dialogs + writes. SaveExport serves the
 	// app's own HTTP export/sidecar routes internally (buffered) so large
 	// downloads (library.db, voice WAVs) never ride the bindings.
