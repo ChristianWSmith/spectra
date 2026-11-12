@@ -5,6 +5,7 @@
     getRounds,
     getHeatmap,
     errText,
+    onEvent,
   } from '../services.js';
   // The signed kd raster has its own Go entry point (heatmap.go
   // GetHeatmapKD) — called on the binding directly; every other kind
@@ -14,6 +15,7 @@
   import { HEAT_STOPS, DEATH_STOPS, rampCss, signedRampCss } from '../heatramp.js';
   import { loadMapPack } from '../components/mapxform.js';
   import HeatmapLayer from '../components/HeatmapLayer.svelte';
+  import StatusChip from '../components/StatusChip.svelte';
   import { fmt1, fmtInt } from '../fmt.js';
   import { isCounted } from '../rounds.js';
   import { replayHash } from '../nav.js';
@@ -237,6 +239,32 @@
     remember(k, { kind, player, team, roundFrom, roundTo, layer, grid, gridLayer, lastKey });
   });
 
+  // Live generate progress: the last spectra:heatmap-progress payload
+  // ({stage, done, total} — AnalyticsService's presence emitter).
+  // TRANSIENT like `loading` itself: never seeded/remembered, no URL or
+  // viewstate-registry involvement; dropped when a run starts and ends.
+  // null before the first event → the chip renders its indeterminate bar
+  // (also what the fast event-kind rasters show — they emit no progress,
+  // which is the honest picture: no denominator, no pretend percentage).
+  let heatProgress = $state(null);
+
+  // Subscribe for the whole view lifetime (the onEvent pattern at
+  // services.js); the unsubscribe is the $effect cleanup. Generic
+  // onEvent, no new wrapper: this is the event's only subscriber.
+  $effect(() => {
+    const off = onEvent('spectra:heatmap-progress', (p) => {
+      if (p) heatProgress = p;
+    });
+    return off;
+  });
+
+  // 0 = StatusChip's animated indeterminate bar; a real 0..1 = the
+  // determinate bar with its percentage (frames read so far / total).
+  const heatPct = $derived(
+    heatProgress && heatProgress.total > 0 ? Math.min(1, heatProgress.done / heatProgress.total) : 0,
+  );
+  const heatStage = $derived(heatProgress ? heatProgress.stage : '');
+
   // The heavy GetHeatmap call fires only on Generate — never on control
   // changes (heatmap generate is the expensive op).
   async function generate() {
@@ -248,6 +276,10 @@
     error = '';
     regionNote = '';
     regionChip = 'filtered by region';
+    // Drop any progress a previous run left behind — without this the bar
+    // could open at a stale "N of N" (the asset-extraction run clears
+    // mpProgress the same way).
+    heatProgress = null;
     // The fetch is FOR the layer selected right now: the band it sends and
     // the gridLayer it records must be that one index, even if the radar
     // is flipped to another floor while the call is in flight — the
@@ -282,6 +314,8 @@
       error = errText(e);
     } finally {
       loading = false;
+      // Progress dies with the run — the chip renders only while loading.
+      heatProgress = null;
     }
   }
 
@@ -421,6 +455,14 @@
     <button class="btn primary heat-generate" disabled={loading} onclick={generate}>
       {loading ? 'Generating…' : grid ? 'Regenerate' : 'Generate'}
     </button>
+    {#if loading}
+      <!-- The ONE progress widget beside the (necessarily label-only)
+           button: determinate frames while the sidecar loads
+           (spectra:heatmap-progress), the raster phase and any generate
+           with no honest denominator ride progress 0 = StatusChip's
+           indeterminate bar — never a pretend percentage. -->
+      <StatusChip status="running" progress={heatPct} stage={heatStage} />
+    {/if}
   </div>
 
   {#if regionNote}

@@ -6,6 +6,7 @@ import (
 	"math"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
 
@@ -150,6 +151,91 @@ type AnalyticsService struct {
 	app *application.App
 }
 
+// Event name emitted while a heatmap generate works. Deliberately NOT
+// spectra:job-progress / spectra:job-done: those payloads key a jobId in
+// the Library's job store (services.js jobProgress map), and a heatmap
+// generate is not a library job — no jobs-table row, no job event
+// (mappackservice.go eventAssetProgress carries the same rule for asset
+// extraction). Progress ONLY: it changes no row, so it never enters
+// services.js's read-cache flush list; only Heatmaps' chip subscribes.
+const eventHeatmapProgress = "spectra:heatmap-progress"
+
+// heatmapProgressMinInterval throttles spectra:heatmap-progress to at
+// most one per 100 ms — the same cadence as library.go's
+// progressMinInterval and mappackservice.go's assetProgressMinInterval.
+const heatmapProgressMinInterval = 100 * time.Millisecond
+
+// The presence heatmap's two phases (the payload's stage values). "load"
+// reads + decodes the sidecar stream — its denominator is real: the frame
+// count out of the stream's total (sidecar meta Frames for a whole
+// match). "raster" builds extents/cells over the already-decoded frames
+// in memory — a phase with no honest work denominator the payload could
+// carry, so it rides done/total 0/0 (indeterminate + truthful stage,
+// exactly what the loading ladder allows — never an invented percent).
+const (
+	heatmapStageLoad   = "load"
+	heatmapStageRaster = "raster"
+)
+
+// HeatmapProgressEvent is the payload of spectra:heatmap-progress: one
+// generate's phase progress ({stage, done, total} — the shape
+// AssetProgressEvent set for progress payloads, minus the family key:
+// one emitter, one family, the heatmap). done/total count frames during
+// "load"; total 0 marks an indeterminate phase.
+type HeatmapProgressEvent struct {
+	Stage string `json:"stage"`
+	Done  int    `json:"done"`
+	Total int    `json:"total"`
+}
+
+// heatmapProgressFor returns the spectra:heatmap-progress callback for a
+// generate on a service that holds an app handle — the production adapter
+// over heatmapProgress (the throttled emitter). A nil app (services
+// constructed without a handle, as the package tests do) means no
+// emitter: heatmapPresence turns a nil callback into a no-op.
+func heatmapProgressFor(app *application.App) func(stage string, done, total int) {
+	if app == nil {
+		return nil
+	}
+	return heatmapProgress(func(ev HeatmapProgressEvent) {
+		app.Event.Emit(eventHeatmapProgress, ev)
+	})
+}
+
+// heatmapProgress builds the per-phase progress callback GetHeatmap wires
+// into heatmapPresence — THE one spectra:heatmap-progress emitter.
+// Emission goes through emit (production: app.Event.Emit via
+// heatmapProgressFor; tests: a recorder), throttled to
+// heatmapProgressMinInterval with two never-throttled exemptions: a STAGE
+// change (the chip must switch phases immediately, never render the old
+// phase's numbers against the new stage) and the closing call
+// (total > 0 && done >= total — the bar lands on the end instead of
+// stalling short of it).
+func heatmapProgress(emit func(HeatmapProgressEvent)) func(stage string, done, total int) {
+	return throttledHeatmapProgress(heatmapProgressMinInterval, emit)
+}
+
+// throttledHeatmapProgress is heatmapProgress with the throttle window
+// passed in — the seam the tests use to pin the drop rule without racing
+// the real clock (production always passes heatmapProgressMinInterval via
+// heatmapProgress).
+func throttledHeatmapProgress(window time.Duration, emit func(HeatmapProgressEvent)) func(stage string, done, total int) {
+	if emit == nil {
+		return nil
+	}
+	var last time.Time
+	lastStage := ""
+	return func(stage string, done, total int) {
+		now := time.Now()
+		complete := total > 0 && done >= total
+		if !last.IsZero() && stage == lastStage && !complete && now.Sub(last) < window {
+			return
+		}
+		last, lastStage = now, stage
+		emit(HeatmapProgressEvent{Stage: stage, Done: done, Total: total})
+	}
+}
+
 // GetConfig returns the active analysis rules (defaults seeded on first use).
 func (s *AnalyticsService) GetConfig() (models.AnalysisConfig, error) {
 	return s.st.GetConfig()
@@ -180,16 +266,6 @@ func (s *AnalyticsService) SetConfig(c models.AnalysisConfig) (models.AnalysisCo
 	}
 	c.RuleVersion = cur.RuleVersion + 1 // input RuleVersion ignored — always bump
 	return s.st.SetConfig(c)
-}
-
-// RecomputeAnalysis re-runs classification + analytics for one match under
-// the current rules and refreshes career rollups.
-func (s *AnalyticsService) RecomputeAnalysis(matchID int64) error {
-	c, err := s.st.GetConfig()
-	if err != nil {
-		return err
-	}
-	return analytics.Compute(s.st, matchID, analytics.ConfigFrom(c, 0))
 }
 
 // GetEconomy returns per-round economy + buy classes (warmup rounds
@@ -288,7 +364,8 @@ func (s *AnalyticsService) GetCombatStats(matchID int64) ([]models.CombatStat, e
 // Gaussian splat (sigma 150u), so an edge sample paints a whole blob
 // instead of a clipped half; the grid is 128×128 with per-axis cell sizes;
 // presence cells are dwell seconds (1/sample-rate per frame per player),
-// event cells are counts.
+// event cells are counts. presence emits spectra:heatmap-progress while it
+// works (throttled, honest denominators — heatmapProgress).
 func (s *AnalyticsService) GetHeatmap(matchID int64, kind string, f HeatmapFilter) (HeatmapGrid, error) {
 	switch kind {
 	case "presence", "kills", "deaths", "damage":
@@ -320,7 +397,12 @@ func (s *AnalyticsService) GetHeatmap(matchID int64, kind string, f HeatmapFilte
 	}
 	sideAt := func(steamID string, round int) string { return exact[round][steamID] }
 	if kind == "presence" {
-		return s.heatmapPresence(matchID, f, roundSpans, sideAt)
+		// The one phase with real work (sidecar read + decode + two frame
+		// passes) carries the honest progress emitter; the event kinds are
+		// a single indexed query plus small in-memory loops and emit
+		// nothing — the frontend chip stays indeterminate for them, which
+		// is truthful.
+		return s.heatmapPresence(matchID, f, roundSpans, sideAt, heatmapProgressFor(s.app))
 	}
 	return s.heatmapEvents(matchID, kind, f, sideAt)
 }
@@ -332,10 +414,22 @@ func (s *AnalyticsService) GetHeatmap(matchID int64, kind string, f HeatmapFilte
 // pass (so the raster's bounds — the raster is bounds-derived, see
 // newHeatmapRaster — describe only the kept samples) and the add pass
 // (so no dropped sample deposits dwell).
-func (s *AnalyticsService) heatmapPresence(matchID int64, f HeatmapFilter, rounds []models.Round, sideAt func(string, int) string) (HeatmapGrid, error) {
-	// Whole sidecar stream, decoded once (sidecar.Load = Open → ReadRange →
-	// DecodeFrames; the spatial series uses the same helper).
-	stream, err := sidecar.Load(filepath.Join(data.MatchesDir(), strconv.FormatInt(matchID, 10)), 0, 0)
+//
+// progress is the spectra:heatmap-progress callback (nil = no emitter,
+// as the package tests build the service): "load" rides sidecar
+// LoadProgress's real frame denominator, "raster" starts with the
+// indeterminate 0/0 — see the heatmapStage consts.
+func (s *AnalyticsService) heatmapPresence(matchID int64, f HeatmapFilter, rounds []models.Round, sideAt func(string, int) string, progress func(stage string, done, total int)) (HeatmapGrid, error) {
+	emit := progress
+	if emit == nil {
+		emit = func(string, int, int) {}
+	}
+	// Whole sidecar stream, decoded with honest per-block progress
+	// (sidecar.LoadProgress = Open → block walk → DecodeFrames per block —
+	// the Load steps; the denominator is the stream's frame count known
+	// from the meta before the first read).
+	stream, err := sidecar.LoadProgress(filepath.Join(data.MatchesDir(), strconv.FormatInt(matchID, 10)), 0, 0,
+		func(done, total int) { emit(heatmapStageLoad, done, total) })
 	if err != nil {
 		return HeatmapGrid{}, fmt.Errorf("analytics: heatmap presence: %w", err)
 	}
@@ -368,6 +462,10 @@ func (s *AnalyticsService) heatmapPresence(matchID int64, f HeatmapFilter, round
 	// voice writer uses): (round, found).
 	roundAt := func(tick int) (int, bool) { return store.RoundForTick(rounds, tick) }
 
+	// Raster phase: extents → cells over the decoded frames in memory —
+	// honestly indeterminate (0/0) with a truthful stage; the load phase's
+	// frame numbers must not be shown against it.
+	emit(heatmapStageRaster, 0, 0)
 	// Sampled extents (every 8th frame) for the bounds, then the shared
 	// raster (bounds → pad → cells; see heatmap.go).
 	minX, minY := math.Inf(1), math.Inf(1)
