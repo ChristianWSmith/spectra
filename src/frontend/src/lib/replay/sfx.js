@@ -131,18 +131,22 @@ import { GST_AUDIO_HINT } from './audio.js';
 // (prefs.go) override
 // it; the Settings tab imports this so both surfaces share one default.
 // The FOOTSTEPS fader is deliberately NOT one of them: its default is
-// FOOTSTEPS_VOL_DEFAULT below (1 = 100 %), read with
+// FOOTSTEPS_VOL_DEFAULT below (0.8 = 80 %), read with
 // prefVolume(v, FOOTSTEPS_VOL_DEFAULT) at both surfaces. Footsteps are
 // muted by the SESSION mute instead of by the fader (the engine's
 // stepMuted ships true — owner instruction 2026-11-10), so an untouched
-// slider reads 100 % and the user only has to unmute to hear them.
+// slider reads 80 % and the user only has to unmute to hear them.
 export const AUDIO_VOL_DEFAULT = 0.8;
-// Owner instruction 2026-11-10: footsteps at 100 % volume by default,
-// MUTED by default — the fader carries the level, the session mute
-// (stepMuted / the popover's toggle) carries the silence. NO pref key
-// default changed: footsteps_volume stays unset until the user moves
-// that fader, and both surfaces read it with this default.
-export const FOOTSTEPS_VOL_DEFAULT = 1;
+// Level default 0.8 (80 %) — owner instruction 2026-11-12: "bring it
+// inline with the others, so default 100 → 80" (footsteps was the ONE
+// fader defaulting to 1; voice/guns/utility/C4/announcer all default to
+// AUDIO_VOL_DEFAULT). The footsteps fader is still the only one carrying
+// a separate constant, because it is still the only one MUTED by
+// default: the 2026-11-10 session-mute ruling stands — the fader carries
+// the level, the session mute (stepMuted / the popover's toggle) carries
+// the silence. Still NO pref-key migration: a saved footsteps_volume
+// keeps winning over this fallback; only the fallback constant changed.
+export const FOOTSTEPS_VOL_DEFAULT = 0.8;
 
 // Internal mix calibration — GUNS_GAIN_SCALE / UTILITY_GAIN_SCALE /
 // C4_GAIN_SCALE / ANNOUNCER_GAIN_SCALE / STEP_GAIN_SCALE are applied to
@@ -1340,7 +1344,7 @@ export function createSfxEngine({ engine, matchId, onError }) {
   let utilVol = AUDIO_VOL_DEFAULT;
   let c4Vol = AUDIO_VOL_DEFAULT;
   let annVol = AUDIO_VOL_DEFAULT;
-  // The footsteps fader ships at FOOTSTEPS_VOL_DEFAULT (1 = 100 %) — the
+  // The footsteps fader ships at FOOTSTEPS_VOL_DEFAULT (0.8 = 80 %) — the
   // bus is silenced by the SESSION mute instead (stepMuted ships true,
   // so even a caller that never calls setMuted stays silent; both
   // surfaces read footsteps_volume with prefVolume(v,
@@ -1423,7 +1427,7 @@ export function createSfxEngine({ engine, matchId, onError }) {
     if (c4Gain) c4Gain.gain.value = c4Muted ? 0 : c4Vol * C4_GAIN_SCALE;
     if (announcerGain) announcerGain.gain.value = annMuted ? 0 : annVol * ANNOUNCER_GAIN_SCALE;
     // The FOOTSTEPS bus scales like every other bus here (× 1/3 —
-    // STEP_GAIN_SCALE); its fader ships at 1 (FOOTSTEPS_VOL_DEFAULT)
+    // STEP_GAIN_SCALE); its fader ships at 0.8 (FOOTSTEPS_VOL_DEFAULT)
     // but the bus is MUTED (stepMuted), so this reads 0 until a surface
     // unmutes it — the mute, not the fader, is what silences it.
     if (stepGain) stepGain.gain.value = stepMuted ? 0 : stepVol * STEP_GAIN_SCALE;
@@ -2136,10 +2140,10 @@ export function createSfxEngine({ engine, matchId, onError }) {
       applyGains();
     },
     // setFootstepsVolume — the FOOTSTEPS fader (the player-sound bus).
-    // Same 0..1 coercion as the other sfx faders; its DEFAULT is 1
-    // (FOOTSTEPS_VOL_DEFAULT — 100 %), but the bus ships MUTED (see
+    // Same 0..1 coercion as the other sfx faders; its DEFAULT is 0.8
+    // (FOOTSTEPS_VOL_DEFAULT — 80 %), but the bus ships MUTED (see
     // stepVol/stepMuted), so a caller that never calls setMuted stays
-    // silent by construction even with the fader at 1.
+    // silent by construction even with the fader at 0.8.
     setFootstepsVolume(v) {
       stepVol = Math.max(0, Math.min(1, Number(v) || 0));
       applyGains();
