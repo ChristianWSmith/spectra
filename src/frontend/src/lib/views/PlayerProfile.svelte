@@ -18,6 +18,7 @@
   import { profileBackTarget } from '../nav.js';
   import { listedPlayers } from '../players.js';
   import { teamStartClass } from '../teams.js';
+  import { seed, remember } from '../viewstate.svelte.js';
 
   // query is the route's own (?back= origin for the return trip);
   // origin is the hash the app navigated from — App records it on
@@ -42,7 +43,13 @@
   // fetched once and filtered client-side by SuggestInput, which owns the
   // dropdown, the keyboard and the dismissal. Picking navigates to the
   // canonical /player/:steamid view.
-  let q = $state('');
+  // The finder's query is view-local state: it restores across
+  // navigation through the process-scoped registry (viewstate.svelte.js
+  // — flat key; the same search pool for every profile). The route's
+  // own query above stays URL-owned and is never registered.
+  const finderSeed = seed('player', { q: '' });
+  let q = $state(finderSeed.q);
+  $effect(() => remember('player', { q }));
   let players = $state([]);
 
   $effect(() => {

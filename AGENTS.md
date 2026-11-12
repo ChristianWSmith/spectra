@@ -262,6 +262,7 @@ Canonical homes (extend these, don't fork them):
 | Single-match lookups | `store.GetMatchSummary` / `GetTeamNames` / `GetPlayerRefs` — never fetch the whole library for one row |
 | EventRow → Event | `models.EventFromRow` (payload-free by design); blind-event payloads reach analytics via `store.GetBlindFlashDetails` |
 | Read-side cache | `lib/services.js` `cachedRead` — keyed `(method, args)`, flushed on every `spectra:*` event and on mutating wrappers |
+| View-local state (non-nav) | `frontend/src/lib/viewstate.svelte.js` `seed`/`remember` — THE process-scoped registry (process-lifetime only; never web storage, never URL state); match-scoped keys `matchKey`, navigation arbitration `arbitrate` (pure, `(prev, route) → next`), test hook `resetViewState()` |
 | Generic-payload labels | `eventlabels.go` — THE one labeler (Go only; the JS copy died with Context) |
 | Event-row renderer | `lib/components/LandmarkRow.svelte` — the one row for the Replay feed AND CompareRounds' compact sequence |
 | Dialogs / popovers | `lib/components/Dialog.svelte`, `lib/components/Popover.svelte` — Escape/outside-click/focus-return; busy-gating stays with the consumer |
@@ -342,7 +343,21 @@ Canonical homes (extend these, don't fork them):
   `lib/save.js`); durable navigation state → the route query
   (`lib/router.js` `buildHash` + `parseHash`) — the one-shot
   sessionStorage hand-offs were retired with the landmark
-  consolidation; metric/definition tooltip
+  consolidation; view-local, NON-navigation state → the process-scoped
+  registry `lib/viewstate.svelte.js` (`seed`/`remember`) — the ONE
+  sanctioned exception to the module-scoped-view-state rule: process
+  lifetime only (never web storage, never restart durability —
+  `webstorage.test.js` scans `src/` and fails on a new reference),
+  never anything that is or should be a link (the URL stays the sole
+  durable navigation record, no new query params — the registry fills
+  only what the route/query leaves at its default, so URL wins),
+  arbitration the pure `(prev, route) → next` (`arbitrate`, pinned in
+  `viewstate.test.js`), match-scoped state keyed through
+  `matchKey(view, id)` so it never crosses matches, transient UI state
+  (dialogs/modals/popovers/busy/error/loading/toasts) never restores,
+  and tests call the registry's `resetViewState()` hook (required in
+  jsdom driver setup — the module instance persists across a suite's
+  mounts); metric/definition tooltip
   strings → `lib/definitions.js` (Settings' glossary is rendered from the
   same array); event landmark categories/normalization →
   `lib/replay/landmarks.js` (the ONE categorization — the feed list, the

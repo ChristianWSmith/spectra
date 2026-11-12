@@ -42,6 +42,13 @@
 // public/style.css carries the matching min-width declarations. jsdom has
 // no layout, so the RULE'S APPLICATION is what is pinned — never pixel
 // widths (those are sized in the style.css comments).
+// Section K pins the view-state registry (lib/viewstate.svelte.js): a
+// mutated sort RESTORES across an unmount → remount, the URL-owned
+// facet input does NOT (the registry never carries route-query state —
+// URL wins), and resetViewState() returns the next mount to defaults.
+// This suite shares ONE registry instance across sections (the jsdom
+// cross-talk rule in the module header), so K resets in setup.
+//
 // Backend semantics of the facets live in store.TestListMatches (the
 // keyset itself in store.TestListMatchesPage*); the
 // suggestion source is store.TestListMapNames; the pipeline behind the
@@ -244,11 +251,15 @@ svelteCompile(siSrc, 'SuggestInput.svelte', join(dir, 'suggestinput.js'));
 
 // Library → its plain-ESM imports (services/fmt/teams) resolve from the
 // real module locations; its components resolve from the local bundles.
+// viewstate.svelte.js is rewritten to the SAME absolute URL the pins
+// below import, so the view and the test share one registry instance
+// (the jsdom cross-talk rule in that module's header).
 const libSrc = readFileSync('src/lib/views/Library.svelte', 'utf8')
   .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`)
   .replace("from '../fmt.js'", `from '${fileURL('src/lib/fmt.js')}'`)
   .replace("from '../teams.js'", `from '${fileURL('src/lib/teams.js')}'`)
   .replace("from '../players.js'", `from '${fileURL('src/lib/players.js')}'`)
+  .replace("from '../viewstate.svelte.js'", `from '${fileURL('src/lib/viewstate.svelte.js')}'`)
   .replace("from '../components/StatusChip.svelte'", "from './statuschip.js'")
   .replace("from '../components/SortTh.svelte'", "from './sortth.js'")
   .replace("from '../components/ConfirmDialog.svelte'", "from './confirmdialog.js'")
@@ -267,12 +278,17 @@ const harnessSrc = `<script>
 writeFileSync(join(dir, 'harness.svelte'), harnessSrc);
 svelteCompile(harnessSrc, 'harness.svelte', join(dir, 'harness.js'));
 
-const { mount } = await import('svelte');
+const { mount, unmount } = await import('svelte');
 const mod = await import(pathToFileURL(join(dir, 'harness.js')).href);
+// The registry the view imports (same URL → same instance — section K
+// drives it directly; its header documents the per-suite cross-talk rule).
+const viewstate = await import(pathToFileURL('src/lib/viewstate.svelte.js').href);
+// The same services module the view links (cache flushing — see K).
+const services = await import(pathToFileURL('src/lib/services.js').href);
 const target = document.createElement('div');
 document.body.appendChild(target);
 const DEEP_LINK = { map: 'de_mirage', player: '76561198000000001' };
-mount(mod.default, { target, props: { query: DEEP_LINK } });
+let libInst = mount(mod.default, { target, props: { query: DEEP_LINK } });
 
 const sleep = (ms = 40) => new Promise((r) => setTimeout(r, ms));
 await sleep(100); // mount + the immediate first list fetch
@@ -1292,6 +1308,104 @@ const ruleBody = (sel) => {
     !!cap && /max-width:\s*260px/.test(cap) && /text-overflow:\s*ellipsis/.test(cap),
     cap ? cap.trim() : 'rule .lib-demo-name not found',
   );
+}
+
+console.log('K. view-state registry: sort restores across a remount; URL facets never do; reset → defaults');
+{
+  // The jsdom cross-talk rule (viewstate.svelte.js header): this suite
+  // shares ONE registry instance — reset before pinning fresh mounts.
+  viewstate.resetViewState();
+  // A rendered table (→ sortable headers): one ready row, no facets.
+  const kRow = {
+    id: 42,
+    path: '/d/k.dem',
+    map: 'de_inferno',
+    size: 2048,
+    scoreCT: 13,
+    scoreT: 11,
+    ctName: 'K1',
+    tName: 'K2',
+    realRounds: 24,
+    durationS: 2400,
+    extractedAt: '2026-02-02T00:00:00Z',
+    status: 'ready',
+    error: '',
+  };
+  rowsForFacet = () => [kRow];
+
+  const mountLib = async (query) => {
+    // Flush the read cache (services.cachedRead — same module instance
+    // the view uses): a cache-served fetch never reaches the stub, so
+    // without this the assertions below would read the PREVIOUS mount's
+    // recorded call instead of this one's.
+    services.invalidate();
+    const t = document.createElement('div');
+    document.body.appendChild(t);
+    const inst = mount(mod.default, { target: t, props: { query } });
+    await sleep(100); // mount + the immediate first list fetch
+    return { inst, t };
+  };
+  const sortOf = () => {
+    const c = lastCall();
+    return c ? { sk: c.args[1], desc: c.args[2] } : null;
+  };
+  const sortBtn = (root, label) =>
+    [...root.querySelectorAll('button.th-sort')].find(
+      (b) => b.getAttribute('aria-label') === `Sort by ${label}`,
+    );
+
+  // (a) fresh mount after reset → the documented default key/direction.
+  await unmount(libInst);
+  const a = await mountLib({});
+  check(
+    'fresh mount sorts by the default key/direction',
+    sortOf() && sortOf().sk === 'extracted_at' && sortOf().desc === true,
+    JSON.stringify(sortOf()),
+  );
+
+  // (b) mutate: two clicks on Map (second flips the direction) + a facet
+  // typed into the URL-owned input (deliberately NOT registered).
+  click(sortBtn(a.t, 'Map'));
+  click(sortBtn(a.t, 'Map'));
+  await sleep(350); // past the 250 ms debounce
+  const mutated = sortOf();
+  check(
+    'sort mutated to Map / flipped direction',
+    mutated && mutated.sk === 'map' && mutated.desc === true,
+    JSON.stringify(mutated),
+  );
+  type(mapInput(), 'cache');
+  await sleep(350);
+  check('facet typed (URL-owned state)', mapInput().value === 'cache', mapInput().value);
+
+  // (c) unmount → remount: the SORT restores (key + direction), the
+  // facet does not — the registry never carries route-query state, so a
+  // deep link / default always wins over anything typed before.
+  await unmount(a.inst);
+  const b = await mountLib({});
+  const restored = sortOf();
+  check(
+    'sort RESTORED after remount (key + direction)',
+    restored && restored.sk === 'map' && restored.desc === mutated.desc,
+    JSON.stringify(restored),
+  );
+  check(
+    'URL-owned facet NOT restored (registry never holds it)',
+    mapInput().value === '',
+    mapInput().value,
+  );
+
+  // (d) the test hook: reset → the next mount is defaults again.
+  viewstate.resetViewState();
+  await unmount(b.inst);
+  const c = await mountLib({});
+  const back = sortOf();
+  check(
+    'resetViewState() → defaults on the next mount',
+    back && back.sk === 'extracted_at' && back.desc === true,
+    JSON.stringify(back),
+  );
+  await unmount(c.inst);
 }
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

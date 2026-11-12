@@ -87,10 +87,12 @@ const svelteCompile = (src, filename, out) => {
 // Plain-ESM deps copied verbatim with their relative layout intact
 // (fmt → rounds; nav → router + replay/landmarks → rounds/fmt/teams;
 // teams → sideparity; landmarks → rounds/fmt/teams) — the same copy the
-// combat / round-detail drivers do.
+// combat / round-detail drivers do. viewstate.svelte.js is Utility's
+// view-state registry (match-scoped seed/remember — see its header;
+// plain JS, copied raw).
 for (const rel of [
   'rounds.js', 'sideparity.js', 'router.js', 'nav.js', 'teams.js',
-  'fmt.js', 'players.js',
+  'fmt.js', 'players.js', 'viewstate.svelte.js',
 ]) {
   writeFileSync(join(dir, rel), readFileSync(join('src/lib', rel), 'utf8'));
 }

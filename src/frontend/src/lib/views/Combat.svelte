@@ -21,6 +21,7 @@
   import { listedPlayers } from '../players.js';
   import { roundsByNumber } from '../replay/landmarks.js';
   import { playerStartClass, playerSideClassAt } from '../teams.js';
+  import { seed, remember, matchKey } from '../viewstate.svelte.js';
   import {
     KAST_DEF,
     DMG_CONV_DEF,
@@ -115,15 +116,53 @@
     return playerSideClassAt(players, sideSwitches, rounds, roundNumber, steamId, name);
   }
 
-  let engKind = $state('');
-  // Clutches card outcome toggle — LOCAL state only (the route-query
-  // retention ruling is pending; never stamp these into the URL): won ON
-  // and lost OFF by default, i.e. the card's historical won-only scope
-  // preserved, with lost rows one click away. Independent booleans (not
-  // one enum) so both ON lists every clutch and both OFF empties the card.
-  let clutchWon = $state(true);
-  let clutchLost = $state(false);
-  let statSort = $state({ key: 'kastPct', desc: true });
+  // View-local filter/sort state (kind chips, clutch won/lost, stat
+  // sort) restores per match through the process-scoped registry
+  // (viewstate.svelte.js): the key carries the match id (matchKey), so
+  // match A's filters never seed into match B. App's {#if} chain reuses
+  // this component when only the id changes (no remount), so ONE
+  // combined effect both RE-SEEDS when the key changes and writes
+  // through otherwise — self-ordering: the write branch runs only while
+  // the key is unchanged, so the old match's values can never land
+  // under the new key. KAST drill-down, busy/error stay transient.
+  const combDefaults = () => ({
+    engKind: '',
+    clutchWon: true,
+    clutchLost: false,
+    statSort: { key: 'kastPct', desc: true },
+  });
+  const combKey = $derived(matchKey('combat', id));
+  const combSeed = seed(combKey, combDefaults());
+  let engKind = $state(combSeed.engKind);
+  // Clutches card outcome toggle — LOCAL state only: never stamped into
+  // the URL (the route-query retention ruling resolved to the
+  // process-scoped registry below): won ON and lost OFF by default, i.e.
+  // the card's historical won-only scope preserved, with lost rows one
+  // click away. Independent booleans (not one enum) so both ON lists
+  // every clutch and both OFF empties the card.
+  let clutchWon = $state(combSeed.clutchWon);
+  let clutchLost = $state(combSeed.clutchLost);
+  let statSort = $state(combSeed.statSort);
+  let combLastKey = combKey;
+  $effect(() => {
+    const k = combKey;
+    if (k !== combLastKey) {
+      // The view moved to ANOTHER match without remounting: apply the
+      // new key's record (defaults when it has none) and do not write —
+      // the entry keeps exactly what was applied, so the old match's
+      // values can never land under the new key (the write-through
+      // re-arms on the next user change, which reads the re-seeded
+      // values).
+      combLastKey = k;
+      const s = seed(k, combDefaults());
+      engKind = s.engKind;
+      clutchWon = s.clutchWon;
+      clutchLost = s.clutchLost;
+      statSort = s.statSort;
+      return;
+    }
+    remember(k, { engKind, clutchWon, clutchLost, statSort });
+  });
 
   // KAST drill-down modal (per-round K/A/T/S grid).
   let kastSteam = $state('');

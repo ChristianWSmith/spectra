@@ -18,8 +18,33 @@
   import { isCounted } from '../rounds.js';
   import { replayHash } from '../nav.js';
   import { listedPlayers } from '../players.js';
+  import { seed, remember, matchKey } from '../viewstate.svelte.js';
 
   let { id = 0, nav = () => {} } = $props();
+
+  // View-local controls AND the generated raster restore per match
+  // through the process-scoped registry (viewstate.svelte.js): the key
+  // carries the match id (matchKey) — the player/round references are
+  // match-scoped, so match A's heatmap never seeds into match B. NO URL
+  // params are involved (sticky-registry-only ruling): a deep link
+  // lands at the defaults exactly as today, and the registry fills only
+  // what the route leaves alone. The record holds controls + grid +
+  // gridLayer + lastKey TOGETHER, so a restored raster is consistent
+  // with the restored controls (no spurious dirty banner). Loading,
+  // error, region notes, pack/match data stay transient.
+  const heatDefaults = () => ({
+    kind: 'presence',
+    player: '',
+    team: '',
+    roundFrom: -1,
+    roundTo: -1,
+    layer: 0,
+    grid: null,
+    gridLayer: 0,
+    lastKey: '',
+  });
+  const heatKey = $derived(matchKey('heatmaps', id));
+  const heatSeed = seed(heatKey, heatDefaults());
 
   // The kind registry lives in lib/heatkinds.js (pinned to Go's
   // grenadeHeatmapKinds by its test) — core kinds, then one option per
@@ -30,13 +55,13 @@
     { label: 'Grenade detonation', kinds: HEAT_GRENADE_DET_KINDS },
   ];
 
-  let kind = $state('presence');
-  let player = $state(''); // steamId, '' = all
-  let team = $state(''); // '' | ct | t — SIDE at the round (the selector's label says Side; the generate payload's wire key stays `team`)
-  let roundFrom = $state(-1); // <0 = all
-  let roundTo = $state(-1); // <0 = all
+  let kind = $state(heatSeed.kind);
+  let player = $state(heatSeed.player); // steamId, '' = all
+  let team = $state(heatSeed.team); // '' | ct | t — SIDE at the round (the selector's label says Side; the generate payload's wire key stays `team`)
+  let roundFrom = $state(heatSeed.roundFrom); // <0 = all
+  let roundTo = $state(heatSeed.roundTo); // <0 = all
 
-  let grid = $state(null);
+  let grid = $state(heatSeed.grid);
   // Layer (floor) selector: `layer` is the LIVE selection — the radar
   // image switches with it immediately — while `gridLayer` is the layer
   // the displayed raster was FETCHED for. HeatmapLayer draws the raster
@@ -45,8 +70,8 @@
   // until Regenerate refetches it with the new band; any other pending
   // control keeps the stale raster on screen under the dirty banner
   // (only a floor mismatch hides it).
-  let layer = $state(0);
-  let gridLayer = $state(0);
+  let layer = $state(heatSeed.layer);
+  let gridLayer = $state(heatSeed.gridLayer);
   let loading = $state(false);
   let error = $state('');
   let players = $state([]);
@@ -89,16 +114,23 @@
       pack = null;
       return;
     }
-    // A different map may declare different panels — drop any floor
-    // selection rather than keeping an index the new pack may not have
-    // (index 0 is the canonical default, layers.js "default first").
-    layer = 0;
     let live = true;
     packTried = false;
     loadMapPack(m).then((p) => {
       if (live) {
         pack = p;
         packTried = true;
+        // Never keep a floor index the pack does not have — but only
+        // clamp OUT-OF-RANGE values (a record restored from a pack with
+        // more panels than this one — viewstate): a restored index in
+        // range is this match's own and must survive the load (the
+        // per-match re-seed already scoped it, so no cross-map carry
+        // can be sitting here — the old blanket `layer = 0` would have
+        // clobbered every restore). Index 0 stays the canonical default
+        // (layers.js "default first").
+        const ls =
+          p && p.transform && Array.isArray(p.transform.layers) ? p.transform.layers : [];
+        if (ls.length && layer >= ls.length) layer = 0;
       }
     });
     return () => (live = false);
@@ -153,7 +185,7 @@
   );
 
   const filterKey = (k, p, t, from, to, l) => `${k}|${p}|${t}|${from}|${to}|${l}`;
-  let lastKey = $state('');
+  let lastKey = $state(heatSeed.lastKey);
   // The layer is part of the key: switching floors changes the band the
   // NEXT raster is fetched with, so the pending raster is stale until
   // Regenerate — the same dirty/stale gate as kind and the other controls.
@@ -165,6 +197,39 @@
   const dirty = $derived(
     !!grid && lastKey !== filterKey(kind, player, team, roundFrom, roundTo, layer),
   );
+
+  // Combined re-seed + write-through (viewstate.svelte.js): App's {#if}
+  // chain reuses this component when only the id changes (no remount),
+  // so on a key change the record for the NEW match is applied (fresh
+  // defaults when it has none) and nothing is written — the entry keeps
+  // exactly what was applied, so the old match's state can never land
+  // under the new key. While the key is unchanged every control/raster
+  // change writes through, keeping the record internally consistent
+  // (controls + grid + gridLayer + lastKey move together).
+  let heatLastKey = heatKey;
+  $effect(() => {
+    const k = heatKey;
+    if (k !== heatLastKey) {
+      // Another match without a remount: apply its record (defaults
+      // when it has none) and do not write — the entry keeps exactly
+      // what was applied, so the old match's raster/controls can never
+      // land under the new key (the write-through re-arms on the next
+      // control change or Generate, which reads the re-seeded values).
+      heatLastKey = k;
+      const s = seed(k, heatDefaults());
+      kind = s.kind;
+      player = s.player;
+      team = s.team;
+      roundFrom = s.roundFrom;
+      roundTo = s.roundTo;
+      layer = s.layer;
+      grid = s.grid;
+      gridLayer = s.gridLayer;
+      lastKey = s.lastKey;
+      return;
+    }
+    remember(k, { kind, player, team, roundFrom, roundTo, layer, grid, gridLayer, lastKey });
+  });
 
   // The heavy GetHeatmap call fires only on Generate — never on control
   // changes (heatmap generate is the expensive op).

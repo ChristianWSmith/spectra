@@ -12,6 +12,7 @@
   import { fmtInt, fmtMetric } from '../fmt.js';
   import MatchPicker from '../components/MatchPicker.svelte';
   import ProfileLink from '../components/ProfileLink.svelte';
+  import { seed, remember } from '../viewstate.svelte.js';
 
   let { nav = () => {} } = $props();
 
@@ -31,8 +32,15 @@
   let disabledPlugins = $state(new Set());
   let listError = $state('');
 
-  let form = $state(newForm());
-  let baseline = $state('');
+  // The editor form (fields + the dirty-check baseline) is view-local
+  // state: it restores across navigation through the process-scoped
+  // registry (viewstate.svelte.js — flat key; both travel together so
+  // the unsaved-changes flag reads exactly as it did on leave). Saving,
+  // previews, errors and the pin list stay transient / their own store.
+  const bldSeed = seed('builder', { form: newForm(), baseline: '' });
+  let form = $state(bldSeed.form);
+  let baseline = $state(bldSeed.baseline);
+  $effect(() => remember('builder', { form, baseline }));
   let saveError = $state('');
   let saving = $state(false);
 

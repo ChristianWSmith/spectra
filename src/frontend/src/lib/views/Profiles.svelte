@@ -17,13 +17,20 @@
   import { listedPlayers } from '../players.js';
   import SuggestInput from '../components/SuggestInput.svelte';
   import SortTh from '../components/SortTh.svelte';
+  import { seed, remember } from '../viewstate.svelte.js';
 
   let { nav = () => {} } = $props();
 
   let players = $state([]);
   let loading = $state(true);
   let error = $state('');
-  let query = $state('');
+  // The search box is view-local state: it restores across navigation
+  // through the process-scoped registry (viewstate.svelte.js — flat key;
+  // the table sort below stays view-local too but is NOT registered —
+  // only the search is in scope for restore).
+  const profSeed = seed('profiles', { query: '' });
+  let query = $state(profSeed.query);
+  $effect(() => remember('profiles', { query }));
 
   $effect(() => {
     let live = true;

@@ -22,6 +22,7 @@
   import { fmtBytes, fmtDuration, fmtDate, basename } from '../fmt.js';
   import { listedPlayers } from '../players.js';
   import { teamNames } from '../teams.js';
+  import { seed, remember } from '../viewstate.svelte.js';
   import StatusChip from '../components/StatusChip.svelte';
   import SortTh from '../components/SortTh.svelte';
   import ConfirmDialog from '../components/ConfirmDialog.svelte';
@@ -88,8 +89,16 @@
   // of the read cache on spectra:library-changed.
   let mapNames = $state([]);
   let libPlayers = $state([]);
-  let sortKey = $state('extracted_at');
-  let desc = $state(true);
+  // Sort (key + direction) is view-local state: it restores across
+  // navigation through the process-scoped registry (viewstate.svelte.js
+  // — flat key, the Library is match-agnostic). The facets above stay
+  // URL-owned (route query) and are deliberately NOT registered: the
+  // registry never holds anything the route carries (URL wins).
+  const LIB_KEY = 'library';
+  const libSort = seed(LIB_KEY, { sortKey: 'extracted_at', desc: true });
+  let sortKey = $state(libSort.sortKey);
+  let desc = $state(libSort.desc);
+  $effect(() => remember(LIB_KEY, { sortKey, desc }));
   let error = $state('');
   let importError = $state('');
 

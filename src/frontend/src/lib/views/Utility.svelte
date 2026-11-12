@@ -14,6 +14,7 @@
   import { listedPlayers } from '../players.js';
   import { roundsByNumber } from '../replay/landmarks.js';
   import { playerSideClassAt, teamNames, teamStartClass } from '../teams.js';
+  import { seed, remember, matchKey } from '../viewstate.svelte.js';
   import ProfileLink from '../components/ProfileLink.svelte';
 
   // Match renders <Utility {id} /> — nav is optional, fall back to the hash
@@ -30,9 +31,40 @@
   let names = $state({ ct: 'CT', t: 'T' }); // team names, final-side keyed
   let loading = $state(true);
   let error = $state('');
-  let kindF = $state('');
-  let throwerF = $state('');
-  let closed = $state({}); // round -> true = collapsed
+
+  // View-local filter/selection state (kind + thrower filters, collapsed
+  // rounds) restores per match through the process-scoped registry
+  // (viewstate.svelte.js): the key carries the match id (matchKey), so
+  // match A's filters never seed into match B. App's {#if} chain reuses
+  // Match's children across an id change (no remount), so ONE combined
+  // effect both RE-SEEDS when the key changes and writes through
+  // otherwise — self-ordering: the write branch runs only while the key
+  // is unchanged, so the old match's values can never land under the
+  // new key. Loading/error stay transient.
+  const utilDefaults = () => ({ kindF: '', throwerF: '', closed: {} });
+  const utilKey = $derived(matchKey('utility', id));
+  const utilSeed = seed(utilKey, utilDefaults());
+  let kindF = $state(utilSeed.kindF);
+  let throwerF = $state(utilSeed.throwerF);
+  let closed = $state(utilSeed.closed); // round -> true = collapsed
+  let utilLastKey = utilKey;
+  $effect(() => {
+    const k = utilKey;
+    if (k !== utilLastKey) {
+      // Another match without a remount: apply its record (defaults
+      // when it has none) and do not write — the entry keeps exactly
+      // what was applied, so the old match's values can never land
+      // under the new key (the write-through re-arms on the next user
+      // change, which reads the re-seeded values).
+      utilLastKey = k;
+      const s = seed(k, utilDefaults());
+      kindF = s.kindF;
+      throwerF = s.throwerF;
+      closed = s.closed;
+      return;
+    }
+    remember(k, { kindF, throwerF, closed });
+  });
   // Match tickrate for the tick → clock conversion (unknown until the
   // match metadata lands; 64 is CS2's standard fallback). sideSwitches is
   // the other half of the per-round name colors.

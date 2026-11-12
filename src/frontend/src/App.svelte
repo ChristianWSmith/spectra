@@ -18,6 +18,7 @@
   import { parseHash } from './lib/router.js';
   import { NAV_ACTIONS, expandReplayHash } from './lib/nav.js';
   import { nextReplayAlive, backOrigin } from './lib/keepalive.js';
+  import { arbitrate, captureScroll, scrollTopFor } from './lib/viewstate.svelte.js';
 
   // Hand-rolled hash router: the route table (parseHash) lives in
   // lib/router.js with its own tests; this component owns the hashchange
@@ -30,7 +31,10 @@
   // lib/keepalive.js, pure and unit-tested), null when none. The record
   // is updated in the hashchange handler BEFORE `route` flips (one flush),
   // so the mount condition below can never observe an out-of-scope record.
-  // It lives in $state only — no sessionStorage / module-global store.
+  // It lives in $state only — no persistent store (sessionStorage /
+  // localStorage stay forbidden); the one sanctioned module-scoped
+  // view-state exception is the process-scoped registry
+  // (lib/viewstate.svelte.js) — non-nav state, process-lifetime only.
   let alive = $state(nextReplayAlive(null, firstRoute, location.hash));
   // In-app origin for views that return "where you came from":
   // PlayerProfile's back button resolves it through profileBackTarget
@@ -76,6 +80,32 @@
     route.name === 'replay' && route.query?.back ? parseHash('/' + route.query.back) : null,
   );
   const viewRoute = $derived(route.name === 'replay' ? displaced : route);
+
+  // .content scroll — per-view position across navigation
+  // (viewstate.svelte.js): App owns the scroll container, so the LEAVE
+  // capture happens in the hashchange handler below — while the
+  // outgoing view is still the rendered one — and the ENTER restore in
+  // this effect, after the incoming view's DOM is in. arbitrate() is
+  // the pure (prev, route) → next decision: SAME view → keep (the
+  // position carries untouched — a match tab hop or a query-only change
+  // never re-scrolls, exactly as today), another view → restore ITS
+  // stored top (0 the first time), boot → nothing (the browser's own
+  // first paint is left alone). The key is view-level (scrollKey in
+  // viewstate.svelte.js), so scroll of A never applies to B.
+  let contentEl = $state(null);
+  // {key, top} of the view being left. Deliberately non-reactive: it is
+  // written only in the hashchange handler, always together with
+  // `route = next`, so the effect below re-runs on every navigation
+  // anyway (same one-flush discipline as the keep-alive record above).
+  let scrollRec = null;
+  $effect(() => {
+    const r = viewRoute;
+    const content = contentEl;
+    if (!content || !scrollRec) return; // boot: no view has been left yet
+    const next = arbitrate(scrollRec, r);
+    if (!next || next.keep) return;
+    content.scrollTop = scrollTopFor(next.key);
+  });
 
   // expandReplay — THE expand path of the dock (both triggers go through
   // it: the mini-panel's click below, and Match's header "Watch replay"
@@ -185,6 +215,12 @@
       originHash = lastHash;
       lastHash = location.hash;
       const next = parseHash(location.hash);
+      // Scroll capture FIRST — viewRoute still reads the outgoing view
+      // (route has not flipped yet), and .content still holds its
+      // position: record it under the outgoing view's key so the effect
+      // above can restore the INCOMING view's own position after the
+      // chain re-renders (one flush, same discipline as `alive` below).
+      scrollRec = captureScroll(viewRoute, contentEl ? contentEl.scrollTop : 0);
       // Keep-alive FIRST (same flush as `route` below): replay routes
       // create/refresh the captured hash, same-id match routes keep the
       // record (hash frozen), everything else drops it → unmount.
@@ -266,7 +302,7 @@
       </button>
     {/each}
   </nav>
-  <main class="content">
+  <main class="content" bind:this={contentEl}>
     <!-- Replay keep-alive (mini-player dock): rendered OUTSIDE the view
          chain so it can coexist with the match view. The wrapper has
          three states: display:contents while active (the layout is

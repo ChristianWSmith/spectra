@@ -11,6 +11,7 @@
   } from '../services.js';
   import { downloadText } from '../download.js';
   import { toCSV } from '../csv.js';
+  import { seed, remember } from '../viewstate.svelte.js';
 
   let { nav = () => {} } = $props();
 
@@ -23,7 +24,12 @@
   let openTables = $state({});
 
   let editor = $state(null);
-  let sql = $state('');
+  // The draft query is view-local state: it survives leaving and coming
+  // back through the process-scoped registry (viewstate.svelte.js — flat
+  // key; results/errors/history stay transient and never restore).
+  const sqlDraft = seed('sql', { sql: '' });
+  let sql = $state(sqlDraft.sql);
+  $effect(() => remember('sql', { sql }));
 
   let result = $state(null);
   let runError = $state('');

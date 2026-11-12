@@ -13,8 +13,13 @@
 // the scope rules and the resume rule are unit-testable:
 //   node --test src/lib/keepalive.test.js   (from frontend/)
 // App.svelte owns the instance record in $state and calls these — there
-// is deliberately NO sessionStorage / module-global view store (AGENTS:
-// component state + the route query are the only durable nav state).
+// is deliberately NO persistent store: sessionStorage / localStorage
+// stay forbidden (AGENTS: component state + the route query are the
+// only DURABLE nav state). The one sanctioned module-scoped view-state
+// exception is the process-scoped registry (viewstate.svelte.js):
+// non-navigation state only, for the life of the process — it never
+// holds anything that is or should be a link, and this dock's record
+// stays exactly where it belongs, in App.svelte's $state.
 
 // nextReplayAlive — THE keep-alive transition (this function IS the
 // scope predicate): given the previous instance record (null = none),

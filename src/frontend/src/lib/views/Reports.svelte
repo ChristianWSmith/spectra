@@ -16,15 +16,31 @@
   import { listedPlayers } from '../players.js';
   import MatchPicker from '../components/MatchPicker.svelte';
   import PlayerPicker from '../components/PlayerPicker.svelte';
+  import { seed, remember } from '../viewstate.svelte.js';
 
   let { nav = () => {}, routeId = 0, embedded = false } = $props();
 
+  // The report selection (template, match, player, round, appendix
+  // checks) is view-local state: it restores across navigation through
+  // the process-scoped registry (viewstate.svelte.js — flat key; the
+  // component serves both the standalone route and Match's embedded
+  // tab, one selection pool). URL wins for the context id: routeId
+  // below overrides the restored matchId whenever the route carries one,
+  // so a deep link never loses to the registry. Rendered docs, appendix
+  // rows and busy/error stay transient and never restore.
+  const repSeed = seed('reports', {
+    tplId: '',
+    matchId: 0,
+    steamId: '',
+    roundNo: 1,
+    checked: {},
+  });
   let templates = $state([]);
   let tplError = $state('');
-  let tplId = $state('');
+  let tplId = $state(repSeed.tplId);
 
   let matches = $state([]);
-  let matchId = $state(0);
+  let matchId = $state(repSeed.matchId);
 
   // Route context (#/reports/:id, or the host view's match id when
   // embedded): preselects the target match (and re-seeds if the route id
@@ -37,13 +53,14 @@
     if (rid) matchId = rid;
   });
   let players = $state([]);
-  let steamId = $state('');
+  let steamId = $state(repSeed.steamId);
   let rounds = $state([]);
-  let roundNo = $state(1);
+  let roundNo = $state(repSeed.roundNo);
 
   let metrics = $state([]);
   let metricsError = $state('');
-  let checked = $state({}); // metricId → true (appendix selection)
+  let checked = $state(repSeed.checked); // metricId → true (appendix selection)
+  $effect(() => remember('reports', { tplId, matchId, steamId, roundNo, checked }));
   let appendix = $state({}); // metricId → {loading, rows?, error?, metric, groupBy}
 
   let doc = $state(''); // rendered report text

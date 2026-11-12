@@ -86,7 +86,9 @@ const svelteCompile = (src, filename, out) => {
 // Plain-ESM deps copied verbatim with their relative layout intact
 // (fmt → rounds, nav → router + replay/landmarks → rounds, teams →
 // sideparity) — the same copy the landmark-row / stat-card drivers do.
-for (const rel of ['rounds.js', 'sideparity.js', 'router.js', 'nav.js', 'teams.js', 'definitions.js', 'fmt.js', 'players.js']) {
+// viewstate.svelte.js is Combat's view-state registry (match-scoped
+// seed/remember — see its header; plain JS, copied raw).
+for (const rel of ['rounds.js', 'sideparity.js', 'router.js', 'nav.js', 'teams.js', 'definitions.js', 'fmt.js', 'players.js', 'viewstate.svelte.js']) {
   writeFileSync(join(dir, rel), readFileSync(join('src/lib', rel), 'utf8'));
 }
 writeFileSync(
@@ -136,6 +138,12 @@ svelteCompile(harnessSrc, 'harness.svelte', harnessOut);
 
 const { mount } = await import('svelte');
 const mod = await import(pathToFileURL(harnessOut).href);
+// The view-state registry Combat links (the copied file → same
+// instance): reset in every scenario's setup — the jsdom cross-talk rule
+// in viewstate.svelte.js' header. Each render() is a FRESH mount that
+// pins defaults (section B's won/lost, the chip states), so a prior
+// section's kind-chip clicks must not restore into it.
+const viewstate = await import(pathToFileURL(join(dir, 'viewstate.svelte.js')).href);
 
 const sleep = (ms = 40) => new Promise((r) => setTimeout(r, ms));
 
@@ -153,6 +161,7 @@ const click = (el) => el.dispatchEvent(new dom.window.MouseEvent('click', { bubb
 // the scripted data, so each scenario gets its own root.
 async function render(data) {
   globalThis.__combatData = data;
+  viewstate.resetViewState();
   const target = document.createElement('div');
   document.body.appendChild(target);
   mount(mod.default, { target });

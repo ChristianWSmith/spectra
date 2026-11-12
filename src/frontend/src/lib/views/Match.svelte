@@ -48,6 +48,7 @@
   import StatCard from '../components/StatCard.svelte';
   import ProfileLink from '../components/ProfileLink.svelte';
   import WinnerCell from '../components/WinnerCell.svelte';
+  import { seed, remember, matchKey } from '../viewstate.svelte.js';
 
   // routeTab: the deep-linked tab from App's route (#/match/:id/<slug> —
   // every tab is deep-linkable, see MATCH_TABS in lib/router.js); '' for
@@ -123,7 +124,21 @@
   let tab = $state('Overview');
   let sortKey = $state('kills');
   let desc = $state(true);
-  let expanded = $state(0); // steamId of the expanded scoreboard row
+
+  // Selection state (the expanded scoreboard row + the Rounds-tab
+  // compare picks below) restores per match through the process-scoped
+  // registry (viewstate.svelte.js): the key carries the match id
+  // (matchKey), so match A's picks never show in match B. App reuses
+  // this component when only the id changes (no remount), so ONE
+  // combined effect both RE-SEEDS on a key change and writes through
+  // otherwise — self-ordering: the write branch runs only while the key
+  // is unchanged, so the old match's values can never land under the
+  // new key. The TAB stays URL-owned (routeTab effect below) and is
+  // never registered; busy/error/warnings stay transient.
+  const selDefaults = () => ({ expanded: 0, compareSel: [] });
+  const selKey = $derived(matchKey('selection', id));
+  const selSeed = seed(selKey, selDefaults());
+  let expanded = $state(selSeed.expanded); // steamId of the expanded scoreboard row
   let warnings = $state(null); // null = not loaded
   // Warnings render directly (no header button): the panel is open by
   // default whenever the match has warnings, and the dismiss X hides it
@@ -141,7 +156,24 @@
   let classByRound = $state(new Map());
   let classError = $state('');
   // Rounds-tab compare picker: round numbers (max 4, non-warmup only).
-  let compareSel = $state([]);
+  let compareSel = $state(selSeed.compareSel);
+  let selLastKey = selKey;
+  $effect(() => {
+    const k = selKey;
+    if (k !== selLastKey) {
+      // Another match without a remount: apply its record (defaults
+      // when it has none) and do not write — the entry keeps exactly
+      // what was applied, so the old match's picks can never land under
+      // the new key (the write-through re-arms on the next selection
+      // change, which reads the re-seeded values).
+      selLastKey = k;
+      const s = seed(k, selDefaults());
+      expanded = s.expanded;
+      compareSel = s.compareSel;
+      return;
+    }
+    remember(k, { expanded, compareSel });
+  });
 
   // Rounds-tab visibility pref (key: show_knife_warmup_rounds, prefs.go).
   // false (the default) hides warmup and pregame/knife rounds — they are
