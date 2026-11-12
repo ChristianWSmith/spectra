@@ -362,6 +362,15 @@ export function getEvent(id) {
   return MatchService.GetEvent(id);
 }
 
+// getEventDetails is getEvent's BULK variant: the EventDetail rows for a
+// SET of ids in one call (the replay's grenade-entity hydration —
+// lib/replay/world.js). Plain like getEvent — NOT a cachedRead: the
+// payload side channel is read once per world load and nothing shares
+// the answer, so it never enters the flush list.
+export function getEventDetails(ids) {
+  return MatchService.GetEventDetails(ids);
+}
+
 // getEventKeys returns the id/tick/kind of EVERY event matching the SAME
 // filter as getEvents — the replay's scrubber-marker answer (the store
 // shares one clause builder between the two reads, and this read is
