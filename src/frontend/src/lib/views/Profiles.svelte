@@ -8,11 +8,15 @@
   // profile finder does — picking one opens the profile straight away.
   // A row only navigates when its id is a well-formed
   // 17-digit Steam id (isSteam — bots/rows without one are inert).
+  // The TABLE is sortable on every column and defaults to matches DESC
+  // (owner ruling: a player seen in many matches is the common case in a
+  // single-player import list, so they sit on top).
   import { listPlayers, errText } from '../services.js';
   import { isSteam, openProfile } from '../nav.js';
   import { fmt1 } from '../fmt.js';
   import { listedPlayers } from '../players.js';
   import SuggestInput from '../components/SuggestInput.svelte';
+  import SortTh from '../components/SortTh.svelte';
 
   let { nav = () => {} } = $props();
 
@@ -38,12 +42,80 @@
   });
 
   // Client-side name filter (case-insensitive; an empty query keeps the
-  // service order — most recently seen first).
+  // fetched list as-is). The order here is only the FILTER's — the table
+  // renders `sorted` below (matches DESC by default), while the search
+  // box's SuggestInput keeps `players` in the service order.
   const filtered = $derived.by(() => {
     const q = query.trim().toLowerCase();
     if (!q) return players;
     return players.filter((p) => (p.name || '').toLowerCase().includes(q));
   });
+
+  // Sortable columns (SortTh): the first click on a header applies that
+  // column's NATURAL direction from this map — newest/largest first for
+  // dates and counts, A→Z for the player name — never a blanket
+  // `desc: true` (which would make the first click on Player read Z→A).
+  // The table's own default state below is matches DESC (the ruling).
+  const SORT_DEFAULT_DESC = {
+    name: false,
+    matches: true,
+    adrAvg: true,
+    lastSeen: true,
+  };
+  let sortKey = $state('matches');
+  let desc = $state(true);
+
+  // Search first, THEN sort: `filtered` narrows the fetched list and the
+  // sort orders what survives it. Sort semantics per column — Player →
+  // p.name (localeCompare; an empty name '' sorts first ascending and
+  // renders '—'), Matches → p.matches numeric, ADR → the RAW p.adrAvg
+  // numeric (never the fmt1 string in the cell), the import-date column
+  // (field `lastSeen`, header "Last import") → p.lastSeen string compare
+  // (zero-padded YYYY-MM-DD, so lexicographic = chronological; '' renders
+  // '—').
+  //
+  // Ties are the SERVICE's order: Array#sort is stable (ES2019) over a
+  // copy of the service-ordered array, so equal values fall back to
+  // last-seen DESC then steam_id ASC — today's `ORDER BY 4 DESC,
+  // c.steam_id ASC` in store.ListPlayers (internal/store/analytics.go).
+  // The sort is view-local on purpose: `players` itself is NEVER
+  // reordered — the SuggestInput above and every other listPlayers
+  // consumer keep the service order.
+  const sorted = $derived.by(() => {
+    const key = sortKey;
+    const direction = desc;
+    const rows = [...filtered];
+    rows.sort((a, b) => {
+      const av = a[key];
+      const bv = b[key];
+      let c;
+      if (typeof av === 'string' || typeof bv === 'string') {
+        c = String(av ?? '').localeCompare(String(bv ?? ''));
+      } else {
+        c = (av ?? 0) - (bv ?? 0);
+      }
+      return direction ? -c : c;
+    });
+    return rows;
+  });
+
+  // First click on an inactive header → the column's natural direction;
+  // a second click on the ACTIVE header flips it.
+  function toggleSort(key) {
+    if (sortKey === key) desc = !desc;
+    else {
+      sortKey = key;
+      desc = !!SORT_DEFAULT_DESC[key];
+    }
+  }
+
+  // Part-2 honesty: this column's value is the IMPORT date of the
+  // player's most recent match (CS2 demos record no played time — see
+  // CS2.md's played-at entry), never a "saw them playing" timestamp.
+  // It doubles as SortTh's `title`, so it keeps the "Sort by" prefix the
+  // component would otherwise default to.
+  const LAST_IMPORT_TITLE =
+    'Sort by Last import — the import date of this player’s most recent match (CS2 demos carry no played time)';
 
   function fmtLastSeen(p) {
     return p.lastSeen || '—';
@@ -97,14 +169,20 @@
         <table class="data-table">
           <thead>
             <tr>
-              <th scope="col">Player</th>
-              <th scope="col" class="num">Matches</th>
-              <th scope="col" class="num">ADR</th>
-              <th scope="col">Last seen</th>
+              <SortTh label="Player" active={sortKey === 'name'} {desc} onclick={() => toggleSort('name')} />
+              <SortTh label="Matches" cls="num" active={sortKey === 'matches'} {desc} onclick={() => toggleSort('matches')} />
+              <SortTh label="ADR" cls="num" active={sortKey === 'adrAvg'} {desc} onclick={() => toggleSort('adrAvg')} />
+              <SortTh
+                label="Last import"
+                title={LAST_IMPORT_TITLE}
+                active={sortKey === 'lastSeen'}
+                {desc}
+                onclick={() => toggleSort('lastSeen')}
+              />
             </tr>
           </thead>
           <tbody>
-            {#each filtered as p (p.steamId)}
+            {#each sorted as p (p.steamId)}
               <tr
                 class:clickable={isSteam(p.steamId)}
                 title={isSteam(p.steamId) ? `Open ${p.name || p.steamId}’s profile` : p.steamId}

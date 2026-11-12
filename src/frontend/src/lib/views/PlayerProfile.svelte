@@ -111,7 +111,10 @@
     return fmt1(v);
   }
 
-  // ProfileTrendPoint has no date — join matchId → extractedAt via history.
+  // ProfileTrendPoint has no date — join matchId → extractedAt via
+  // history. That value is the match's IMPORT time (every date in the
+  // app is: CS2 demos carry no played-at timestamp — CS2.md), so the
+  // dot tooltip below labels it "Imported".
   const dateByMatch = $derived.by(() => {
     const map = new Map();
     for (const h of profile?.history || []) map.set(h.matchId, h.extractedAt);
@@ -150,7 +153,7 @@
         y: Y(p.value),
         value: p.value,
         matchId: p.matchId,
-        title: `${fmtDate(dateByMatch.get(p.matchId) || '')} · ${fmtProfileMetric(p.value, metric)}`,
+        title: `Imported ${fmtDate(dateByMatch.get(p.matchId) || '')} · ${fmtProfileMetric(p.value, metric)}`,
       })),
     };
   });
@@ -275,7 +278,7 @@
         </svg>
         <p class="muted prof-spark-cap">
           {trend.length} matches · min {fmtProfileMetric(spark.min, metric)} · max {fmtProfileMetric(spark.max, metric)}
-          · x = sequence (oldest → newest) · click a dot to open the match
+          · x = sequence (oldest import → newest) · click a dot to open the match
         </p>
       {:else if trend.length === 1}
         <p class="muted" role="status">Only one match so far — the trend line needs at least two.</p>
@@ -382,7 +385,10 @@
         <table class="data-table">
           <thead>
             <tr>
-              <th scope="col">Date</th>
+              <th
+                scope="col"
+                title="Import date of the demo — CS2 demos record no played time"
+              >Imported</th>
               <th scope="col">Map</th>
               <th scope="col">Result</th>
               <th scope="col" class="num">Score</th>
