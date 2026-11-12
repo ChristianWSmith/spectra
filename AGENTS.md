@@ -279,6 +279,7 @@ Canonical homes (extend these, don't fork them):
 | Bot exclusion (frontend twin) | `frontend/src/lib/players.js` — `isHuman` / `listedPlayers` (+ `isBotId` backstop for flagless rows: synthetic 0xFF ids are 20 digits, real SteamID64s 17) |
 | Replay bot presence | `lib/replay/playercard.js` `presentAt` — the ONE card-presence rule; the sole place a bot may list (while covering a disconnected same-side human) |
 | Bot identity | `extract.isBotKey` + `players.is_bot` — never the "Bot " name prefix |
+| Analysis-rule derived values | every rules-derived value is STORED at analyze time by `internal/analytics` Compute (trade-window counts, trade-opp counts; eco classes pending) — read-time thresholding of rule outputs is forbidden (owner, 2026-11-12); a rules change bumps `analyzed_rule_version` → behind set → `RecomputeAll` |
 
 - **Domain rules live in one place:** side-parity arithmetic in
   `internal/rules` (frontend twin `lib/sideparity.js`, both pinned to
@@ -329,7 +330,12 @@ Canonical homes (extend these, don't fork them):
   `internal/store/schema.sql` applied on every Open — there is no
   `schema_version` table and no upgrade path, so stale local data (a dev
   DB, an old sidecar) is deleted and re-imported, never
-  detected-and-branched. Structural corruption guards (mask-legality,
+  detected-and-branched. Schema-reach problems — a new column (or table
+  shape) that cannot reach an existing DB, since the baseline only
+  CREATEs — are resolved pre-migration by wipe + re-import
+  (`make deep-clean CONFIRM=1`): ALWAYS the answer pre-migration (owner,
+  2026-11-12) — never add ensure-column/ALTER paths, and never contort
+  the schema to dodge a re-import. Structural corruption guards (mask-legality,
   truncation, monotonicity, frame-count consistency) are NOT version
   machinery — they stay. Reintroducing versioning (migrations, format
   ladders) is a deliberate first-release decision. Data missing a
