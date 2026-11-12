@@ -33,14 +33,20 @@
 // Every read here is fail-soft: a failed side channel yields its empty
 // value (no stamps → no drop markers, no helmet cues, "no buy evidence")
 // and never a load error — the exact contract the inline code had.
-import { getEvents, getEvent, getDropDetails, getGenericEvents } from '../services.js';
+import { getEvents, getDropDetails, getGenericEvents } from '../services.js';
 import { DRAW_KINDS, normalizeWorld } from './landmarks.js';
 import { slotAliveHelmetAt } from './sfx.js';
 import { buildKitEvidence, buyEndsFromRows } from './kits.js';
 
-// The grenade kinds whose rows carry a projectile entity (the per-row
+// The grenade kinds whose rows carry a projectile entity (the bulk
 // EventDetail read hydrates it — see hydrateGrenadeEntities).
 const GRENADE_KINDS = new Set(['grenade_throw', 'grenade', 'grenade_bounce']);
+
+// BULK_CHUNK — the ids per GetEventDetails IPC call: the same number as
+// the store's IN-list chunk (internal/store inListChunk), so one call is
+// one SQL statement and neither side has to split the other's payload.
+// Exported for world-hydration.test.js, which pins the chunk boundary.
+export const BULK_CHUNK = 400;
 
 // loadWorld — the ONE match-static world fetch. Sequential like the
 // inline code it replaces: the anchor read and its side channel first,
@@ -143,9 +149,9 @@ function stampVictimHelmet(row, { slotBySteam, stateIndex, ticks }) {
 // detail_json (extract stamps it on grenade_throw / grenade /
 // grenade_bounce rows: the ONE id the throw, every bounce and the
 // blast share — extract/handlers.go). models.EventRow stays
-// payload-free, so the value reaches the view through the per-row
-// EventDetail read; 0/absent = unknown and the renderer falls back to
-// its round+weapon pairing (never a guessed id).
+// payload-free, so the value reaches the view through the EventDetail
+// read (BULK in hydrateGrenadeEntities); 0/absent = unknown and the
+// renderer falls back to its round+weapon pairing (never a guessed id).
 function grenadeEntity(detailJson) {
   if (!detailJson) return 0;
   try {
@@ -160,31 +166,52 @@ function grenadeEntity(detailJson) {
 // renderer's flight join reads (renderer.joinBounceVerts: throw →
 // bounces → det by projectile). Worth doing ONLY when the match
 // actually HAS bounce rows (a pre-bounce import has none → zero extra
-// reads), because the payloads live on the per-row EventDetail read
-// (GetEvent), not on the list read. Bounded concurrency, fail-soft:
-// any failed read leaves that row entity-less → the fallback pairing,
-// never a load error.
+// reads), because the payloads live on the detail read, not on the list
+// read.
+//
+// The read is BULK — one GetEventDetails call per BULK_CHUNK ids, the
+// chunks in parallel — instead of the one-IPC-round-trip-per-row N+1 it
+// replaces (2,534 getEvent calls on the measured sample match, each a
+// full binding call + JSON EventDetail on the load's critical path). The
+// rows are fed through the SAME grenadeEntity normalization the per-row
+// path used, so the output is byte-identical: a missing / malformed / 0
+// payload leaves the row entity-less (the renderer's fallback pairing),
+// an id with no detail row is skipped upstream (the store never
+// fabricates one).
+//
+// Fail-soft, at the same granularity as before: the binding resolves
+// LAZILY (a dynamic import — the world path treats an unresolvable
+// binding exactly like a failed read: no stamps, never a load error) and
+// each chunk catches its own failure, so a failed chunk leaves exactly
+// its rows entity-less while the rest still stamp.
 async function hydrateGrenadeEntities(rows) {
   const targets = rows.filter((r) => GRENADE_KINDS.has(r.kind) && Number.isFinite(r.id));
   if (!targets.length || !rows.some((r) => r.kind === 'grenade_bounce')) return rows;
-  const byId = new Map();
-  let next = 0;
-  const CONCURRENCY = 12;
-  const worker = async () => {
-    for (;;) {
-      const i = next++;
-      if (i >= targets.length) return;
-      const r = targets[i];
+  const ids = [...new Set(targets.map((r) => r.id))];
+  const chunks = [];
+  for (let i = 0; i < ids.length; i += BULK_CHUNK) chunks.push(ids.slice(i, i + BULK_CHUNK));
+  let bindings;
+  try {
+    bindings = await import('../../../bindings/github.com/ChristianWSmith/spectra');
+  } catch {
+    return rows; // fail-soft: no resolvable binding → no stamps, never an error
+  }
+  const lists = await Promise.all(
+    chunks.map(async (chunk) => {
       try {
-        const d = await getEvent(r.id);
-        const e = grenadeEntity(d && d.detailJson);
-        if (e > 0) byId.set(r.id, e);
+        return await bindings.MatchService.GetEventDetails(chunk);
       } catch {
-        /* fail-soft: that row keeps entity 0 → the fallback pairing */
+        return []; // fail-soft: that chunk's rows stay entity-less
       }
+    }),
+  );
+  const byId = new Map();
+  for (const list of lists) {
+    for (const d of list || []) {
+      const e = grenadeEntity(d && d.detailJson);
+      if (e > 0 && Number.isFinite(d.id)) byId.set(d.id, e);
     }
-  };
-  await Promise.all(Array.from({ length: Math.min(CONCURRENCY, targets.length) }, worker));
+  }
   if (!byId.size) return rows;
   return rows.map((r) => (byId.has(r.id) ? { ...r, entity: byId.get(r.id) } : r));
 }

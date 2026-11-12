@@ -48,6 +48,8 @@ export const LibraryService = {
   GetDemoCopyOnImport: rec('GetDemoCopyOnImport'),
   SetDemoCopyOnImport: rec('SetDemoCopyOnImport'),
   GetDataInfo: rec('GetDataInfo'),
+  // The buytime_ended boundary read loadWorld pulls for the kit evidence.
+  GetGenericEvents: rec('GetGenericEvents'),
 };
 export const MatchService = {
   GetMatch: rec('GetMatch'),
@@ -57,6 +59,12 @@ export const MatchService = {
   // cached reads the Library's hover / job-done warm exercises
   // (library.dom.mjs section M).
   GetMatchSummary: rec('GetMatchSummary'),
+  // Event reads the replay world/feed drive (world-hydration.test.js):
+  // the anchor list, the per-row detail read and its BULK twin.
+  GetEvents: rec('GetEvents'),
+  GetEvent: rec('GetEvent'),
+  GetEventDetails: rec('GetEventDetails'),
+  GetDropDetails: rec('GetDropDetails'),
   // Player sounds (sound_events): the windowed read + the presence count.
   GetSoundEvents: rec('GetSoundEvents'),
   GetSoundEventPresence: rec('GetSoundEventPresence'),

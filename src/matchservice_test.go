@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -253,5 +254,62 @@ func TestGetDropDetails(t *testing.T) {
 	}
 	if got, err := svc.GetDropDetails(other); err != nil || len(got) != 0 {
 		t.Errorf("no-drop match = %+v, %v; want empty slice, nil", got, err)
+	}
+}
+
+// TestGetEventDetails: the service delegate over the store's bulk detail
+// read — the wire surface the replay's grenade hydration calls. Input
+// order preserved for a shuffled request, unknown ids skipped, empty
+// input → empty result (the zero-work path), and every row equal to the
+// single GetEvent read it replaces.
+func TestGetEventDetails(t *testing.T) {
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	id, err := st.CreateMatchRow("/d/bulk.dem", "sha-event-details-svc", 7)
+	if err != nil {
+		t.Fatalf("CreateMatchRow: %v", err)
+	}
+	if err := st.SaveExtracted(id, &models.ExtractedMatch{Events: []models.Event{
+		{Tick: 10, Round: 1, Kind: models.EventGrenadeThrow, Attacker: "1",
+			DetailJSON: `{"entity":4242}`},
+		{Tick: 20, Round: 1, Kind: models.EventGrenadeBounce, Attacker: "1",
+			DetailJSON: `{"entity":4242}`},
+		{Tick: 30, Round: 1, Kind: models.EventGrenade, Attacker: "1",
+			DetailJSON: `{"entity":0}`},
+	}}); err != nil {
+		t.Fatalf("SaveExtracted: %v", err)
+	}
+	svc := &MatchService{st: st}
+
+	all, err := svc.GetEvents(models.EventFilter{MatchID: id})
+	if err != nil {
+		t.Fatalf("GetEvents: %v", err)
+	}
+	if len(all) != 3 {
+		t.Fatalf("GetEvents len = %d, want 3", len(all))
+	}
+	// Shuffled + one unknown id in the middle.
+	got, err := svc.GetEventDetails([]int64{all[1].ID, 999999, all[2].ID, all[0].ID})
+	if err != nil {
+		t.Fatalf("GetEventDetails: %v", err)
+	}
+	if len(got) != 3 {
+		t.Fatalf("GetEventDetails len = %d, want 3 (unknown id skipped)", len(got))
+	}
+	for i, wantID := range []int64{all[1].ID, all[2].ID, all[0].ID} {
+		single, err := svc.GetEvent(wantID)
+		if err != nil {
+			t.Fatalf("GetEvent(%d): %v", wantID, err)
+		}
+		if !reflect.DeepEqual(got[i], *single) {
+			t.Errorf("GetEventDetails[%d] != GetEvent(%d):\n bulk   = %+v\n single = %+v",
+				i, wantID, got[i], *single)
+		}
+	}
+	if empty, err := svc.GetEventDetails(nil); err != nil || len(empty) != 0 {
+		t.Errorf("GetEventDetails(nil) = %+v, %v; want empty slice, nil", empty, err)
 	}
 }
