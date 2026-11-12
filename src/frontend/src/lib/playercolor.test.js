@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { PLAYER_COLORS, colorHexOf, colorSlotsOf } from './replay/playercolor.js';
+import { PLAYER_COLORS, colorHexOf, colorSlotsOf, colorRankOf } from './replay/playercolor.js';
 
 test('PLAYER_COLORS is the exact five CS2 teammate colors', () => {
   // The hexes the spec pinned for voice/player colors, now keyed by the
@@ -56,6 +56,31 @@ test('colorSlotsOf: slot-aligned hex array, null where there is no color', () =>
   assert.deepEqual(colorSlotsOf(null), []);
   assert.deepEqual(colorSlotsOf(undefined), []);
   assert.deepEqual(colorSlotsOf('nope'), []);
+});
+
+test('colorRankOf: the card-column order yellow → purple → green → blue → orange', () => {
+  // The owner's ruling (2026-11-11): each team column reads
+  // top-to-bottom yellow, purple, green, blue, orange — rank 0 = top,
+  // mapped from the raw int (0 blue, 1 green, 2 yellow, 3 orange,
+  // 4 purple). A permutation of 0..4: every known color gets exactly
+  // one rank, none is dropped or doubled.
+  assert.deepEqual([0, 1, 2, 3, 4].map((raw) => colorRankOf(raw)).sort((a, b) => a - b), [0, 1, 2, 3, 4]);
+  assert.equal(colorRankOf(2), 0); // yellow — top
+  assert.equal(colorRankOf(4), 1); // purple
+  assert.equal(colorRankOf(1), 2); // green
+  assert.equal(colorRankOf(0), 3); // blue
+  assert.equal(colorRankOf(3), 4); // orange — bottom of the knowns
+  // …so sorting a SCRAMBLED roster by rank lands in the ratified order.
+  const scrambled = [0, 4, 1, 3, 2];
+  const sorted = scrambled.slice().sort((a, b) => (colorRankOf(a) ?? Infinity) - (colorRankOf(b) ?? Infinity));
+  assert.deepEqual(sorted, [2, 4, 1, 0, 3]); // yellow, purple, green, blue, orange
+  // Unknown colors resolve to NULL — never a guessed position (the
+  // column sorts these LAST, in slot order). The validator is
+  // colorHexOf's, so "has a rank" and "has a ring" always agree.
+  for (const raw of [null, undefined, -1, 5, 9, 1.5, NaN, Infinity, {}, [], true, false, '']) {
+    assert.equal(colorRankOf(raw), null, String(raw));
+  }
+  assert.equal(colorRankOf('2'), 0); // the string form ranks like the ring maps
 });
 
 test('the golden demo ground-truth assignments resolve to their hexes', () => {

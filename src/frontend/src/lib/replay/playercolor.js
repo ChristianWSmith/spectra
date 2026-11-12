@@ -31,6 +31,27 @@ const BY_RAW = [
   PLAYER_COLORS.purple,
 ];
 
+// RANK_BY_RAW — the CARD ORDER the owner ratified (2026-11-11): each
+// team column of player cards reads top-to-bottom
+//   yellow → purple → green → blue → orange
+// (the in-game teammate-color order), derived from the raw int above —
+// never from the hex, which is display-only. Indexed BY RAW VALUE the
+// same way BY_RAW is: blue(0)→3, green(1)→2, yellow(2)→0,
+// orange(3)→4, purple(4)→1. colorRankOf returns that rank for a KNOWN
+// color and null otherwise — the column sorts nulls LAST in slot order
+// (a missing color is never guessed into a position).
+const RANK_BY_RAW = [3, 2, 0, 4, 1];
+
+// colorRankOf — one raw m_iCompTeammateColor value → its rank in the
+// card order above (0 = top), or null when the value is absent /
+// non-integer / outside 0..4. Validation is colorHexOf's, so "has a
+// rank" and "has a ring" can never disagree about a player.
+export function colorRankOf(raw) {
+  if (colorHexOf(raw) == null) return null;
+  const n = typeof raw === 'string' ? Number(raw) : raw;
+  return RANK_BY_RAW[n];
+}
+
 // colorHexOf maps one raw color int onto its hex, or null when the value
 // is absent / not an integer / outside 0..4 (-1 = "no color", a missing
 // field = a sidecar that predates it). Never falls back to a default

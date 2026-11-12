@@ -1629,9 +1629,12 @@ input[type='checkbox']:focus-visible {
 }
 
 /* Control group (.rp-ctrl-list) — the stage's TOP-LEFT status list, one
-   row per NON-DEFAULT control state (Replay's ctrlRows: Following + its
-   dismiss button, the loop range, skip-freeze, a non-Smart camera and
-   the map-pack note). It REPLACED three copies of those lines: the
+   row per NON-DEFAULT control state (Replay's ctrlRows: the deduped
+   Following row, the loop range, skip-freeze, a non-Smart camera and
+   the map-pack note). DISPLAY-ONLY (the owner's overlay ruling,
+   2026-11-11): the group carries NO buttons — release/controls live
+   with the camera controls (F key, the camera popover, card clicks).
+   It REPLACED three copies of those lines: the
    follow chip (same corner, same backdrop recipe — background, hairline
    and shadow verbatim), the canvas bottom-left readout and the
    .note-amber packNote paragraph above the stage. The canvas copies die
@@ -1695,8 +1698,7 @@ input[type='checkbox']:focus-visible {
 }
 
 /* The row's text is the only shrinking cell: it ellipsizes at the
-   group's max-width while the eye glyph and the dismiss button keep
-   their size. */
+   group's max-width while the eye glyph keeps its size. */
 .rp-ctrl-text {
   min-width: 0;
   overflow: hidden;
@@ -1706,11 +1708,6 @@ input[type='checkbox']:focus-visible {
 
 .rp-ctrl-row .codicon {
   flex: none;
-}
-
-.rp-ctrl-row .btn {
-  flex: none;
-  padding: 0 4px; /* the retired follow-chip's compact dismiss button */
 }
 
 /* The pack-note row — the ONE amber warning in the group: the retired
