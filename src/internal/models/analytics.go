@@ -9,7 +9,9 @@ import "time"
 // shared vocabulary both sides may depend on (package docs).
 
 // AnalysisConfig is the single-row analysis_config: the versioned
-// heuristic thresholds. RuleVersion bumps on every SetConfig.
+// heuristic thresholds. RuleVersion bumps by one whenever SetConfig
+// stores CHANGED values; saving identical values is a no-op (no bump —
+// see AnalyticsService.SetConfig).
 type AnalysisConfig struct {
 	TradeWindowS float64 `json:"tradeWindowS"`
 	EcoFullBuy   int     `json:"ecoFullBuy"`

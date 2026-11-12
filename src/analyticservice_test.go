@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -294,5 +295,439 @@ func TestRecomputeAnalysisSubmitsInBackground(t *testing.T) {
 			t.Fatalf("background recompute never drained: %+v", s)
 		}
 		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// TestSetConfigBumpsOnlyOnChange pins the no-bump-on-identical contract:
+// a save whose four values equal the stored row returns the stored row
+// untouched (same rule_version — the observable of "no write, no bump"),
+// a caller-supplied RuleVersion is ignored in BOTH paths, and each single
+// field changing bumps by exactly one. Validation still runs first, so a
+// rejected save never bumps.
+func TestSetConfigBumpsOnlyOnChange(t *testing.T) {
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	as := &AnalyticsService{st: st}
+
+	cur, err := as.GetConfig() // seeds the defaults (rule v1)
+	if err != nil {
+		t.Fatalf("GetConfig: %v", err)
+	}
+	if cur.RuleVersion != 1 {
+		t.Fatalf("seeded rule version = %d, want 1", cur.RuleVersion)
+	}
+
+	// Identical values → the stored row back, version untouched, even
+	// when the caller supplies its own RuleVersion (still ignored).
+	in := cur
+	in.RuleVersion = 999
+	saved, err := as.SetConfig(in)
+	if err != nil {
+		t.Fatalf("identical save: %v", err)
+	}
+	if saved != cur {
+		t.Errorf("identical save returned %+v, want the stored %+v (no write, no bump)", saved, cur)
+	}
+
+	// One field at a time: each bumps by exactly 1 and stores the value;
+	// immediately re-saving those stored values bumps nothing.
+	changes := []struct {
+		name   string
+		mutate func(*models.AnalysisConfig)
+	}{
+		{"tradeWindowS", func(c *models.AnalysisConfig) { c.TradeWindowS += 1.5 }},
+		{"ecoFullBuy", func(c *models.AnalysisConfig) { c.EcoFullBuy += 1000 }},
+		{"ecoForce", func(c *models.AnalysisConfig) { c.EcoForce += 500 }},
+		{"tradeOppDistance", func(c *models.AnalysisConfig) { c.TradeOppDistance += 250 }},
+	}
+	wantVersion := cur.RuleVersion
+	for _, ch := range changes {
+		next := cur
+		ch.mutate(&next)
+		saved, err := as.SetConfig(next)
+		if err != nil {
+			t.Fatalf("%s change: %v", ch.name, err)
+		}
+		wantVersion++
+		if saved.RuleVersion != wantVersion {
+			t.Errorf("%s change: rule_version = %d, want %d (exactly one bump)", ch.name, saved.RuleVersion, wantVersion)
+		}
+		if saved.TradeWindowS != next.TradeWindowS || saved.EcoFullBuy != next.EcoFullBuy ||
+			saved.EcoForce != next.EcoForce || saved.TradeOppDistance != next.TradeOppDistance {
+			t.Errorf("%s change: stored %+v, want the mutated values %+v", ch.name, saved, next)
+		}
+		again, err := as.SetConfig(saved)
+		if err != nil {
+			t.Fatalf("%s identical re-save: %v", ch.name, err)
+		}
+		if again.RuleVersion != wantVersion {
+			t.Errorf("%s identical re-save: rule_version = %d, want %d (no bump)", ch.name, again.RuleVersion, wantVersion)
+		}
+		cur = saved
+	}
+
+	// Validation precedes the compare: a rejected save never bumps.
+	bad := cur
+	bad.TradeWindowS = 0
+	if _, err := as.SetConfig(bad); err == nil {
+		t.Fatal("invalid trade window accepted")
+	}
+	if got, err := as.GetConfig(); err != nil || got.RuleVersion != wantVersion {
+		t.Errorf("rule_version after a rejected save = %d, %v; want %d", got.RuleVersion, err, wantVersion)
+	}
+}
+
+// seedReadyMatch stores a minimal READY match (SaveExtracted sets the
+// status) whose stamp stays 0 = never analyzed.
+func seedReadyMatch(t *testing.T, st *store.Store, n int) int64 {
+	t.Helper()
+	path := fmt.Sprintf("/d/bulk/%d.dem", n)
+	sha := fmt.Sprintf("sha-bulk-%03d", n)
+	id, err := st.CreateMatchRow(path, sha, 1)
+	if err != nil {
+		t.Fatalf("CreateMatchRow(%d): %v", n, err)
+	}
+	em := &models.ExtractedMatch{
+		Match: models.Match{
+			Map: "de_test", TickRate: 64, DurationTicks: 1000, Frames: 100,
+			PlaybackTimeS: 15.625, RealRounds: 1, ExtractedAt: time.Now(), ParseMS: 1,
+		},
+		Players: []models.Player{
+			{SteamID: "100", Name: "a", Side: "ct", FinalStatePresent: true},
+			{SteamID: "200", Name: "b", Side: "t", FinalStatePresent: true},
+		},
+		Rounds: []models.Round{{Number: 1, Winner: "ct", StartTick: 0, EndTick: 1000}},
+		RoundSides: []models.RoundPlayerSide{
+			{Round: 1, SteamID: "100", Side: "ct"},
+			{Round: 1, SteamID: "200", Side: "t"},
+		},
+	}
+	if err := st.SaveExtracted(id, em); err != nil {
+		t.Fatalf("SaveExtracted(%d): %v", n, err)
+	}
+	return id
+}
+
+// drainRecompute waits until no run is queued or running.
+func drainRecompute(t *testing.T, as *AnalyticsService) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		s := as.RecomputeStates()
+		if len(s.Queued) == 0 && len(s.Running) == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("recomputes never drained: %+v", s)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
+// TestRecomputeAllResolvesBehindSet pins the bulk entry: the behind set
+// is resolved SERVER-SIDE (ready + stamp < live rule version — the
+// queued and the current-stamp rows are not in it), an id already in
+// flight is skipped rather than double-run, every member runs and ends
+// stamped at the ONE config version captured at submission, and a second
+// call therefore reports nothing behind.
+func TestRecomputeAllResolvesBehindSet(t *testing.T) {
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	as := &AnalyticsService{st: st}
+
+	id1 := seedReadyMatch(t, st, 1)
+	id2 := seedReadyMatch(t, st, 2)
+	id3 := seedReadyMatch(t, st, 3)
+	// Non-ready: cannot be re-run → never behind.
+	idQueued, err := st.CreateMatchRow("/d/bulk/queued.dem", "sha-bulk-queued", 1)
+	if err != nil {
+		t.Fatalf("CreateMatchRow(queued): %v", err)
+	}
+	// Current: stamped at the live version (defaults = rule v1).
+	idCurrent := seedReadyMatch(t, st, 4)
+	if err := st.SetMatchRuleVersion(idCurrent, 1); err != nil {
+		t.Fatalf("stamp current: %v", err)
+	}
+
+	// Phase 1: one run already in flight — the batch skips it.
+	as.rc.slot.Lock()
+	if err := as.RecomputeAnalysis(id1); err != nil {
+		as.rc.slot.Unlock()
+		t.Fatalf("RecomputeAnalysis: %v", err)
+	}
+	res, err := as.RecomputeAll()
+	if err != nil {
+		as.rc.slot.Unlock()
+		t.Fatalf("RecomputeAll: %v", err)
+	}
+	if res != (RecomputeAllResult{Submitted: 2, Skipped: 1, Total: 3}) {
+		as.rc.slot.Unlock()
+		t.Fatalf("RecomputeAll = %+v, want {submitted:2 skipped:1 total:3} (id1 in flight → skipped; queued/current not in the set)", res)
+	}
+	if s := as.RecomputeStates(); len(s.Queued) != 3 || len(s.Running) != 0 {
+		as.rc.slot.Unlock()
+		t.Fatalf("states during submission = %+v, want 3 queued, 0 running", s)
+	}
+	as.rc.slot.Unlock()
+
+	drainRecompute(t, as)
+
+	// Every member stamped at the captured version (v1 — the defaults);
+	// the rows outside the set are untouched.
+	for _, id := range []int64{id1, id2, id3} {
+		if v, err := st.GetMatchRuleVersion(id); err != nil || v != 1 {
+			t.Errorf("match %d stamp = %d, %v; want 1 (the batch's captured rule version)", id, v, err)
+		}
+	}
+	if v, err := st.GetMatchRuleVersion(idQueued); err != nil || v != 0 {
+		t.Errorf("queued match stamp = %d, %v; want 0 (excluded from the behind set)", v, err)
+	}
+	if v, err := st.GetMatchRuleVersion(idCurrent); err != nil || v != 1 {
+		t.Errorf("current match stamp = %d, %v; want 1 (unchanged)", v, err)
+	}
+
+	// Phase 2: nothing is behind anymore.
+	again, err := as.RecomputeAll()
+	if err != nil {
+		t.Fatalf("RecomputeAll after drain: %v", err)
+	}
+	if again != (RecomputeAllResult{}) {
+		t.Errorf("second RecomputeAll = %+v, want the empty result (everyone is current)", again)
+	}
+}
+
+// recRecorder is the emit sink the runner tests drive: an ordered,
+// mutex-guarded event log.
+type recRecorder struct {
+	mu   sync.Mutex
+	seen []recEvent
+}
+
+type recEvent struct {
+	name    string
+	payload any
+}
+
+func (r *recRecorder) emit(name string, payload any) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.seen = append(r.seen, recEvent{name: name, payload: payload})
+}
+
+func (r *recRecorder) events() []recEvent {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return slices.Clone(r.seen)
+}
+
+// TestRecomputeRunnerBatchLifecycle is the bulk twin of
+// TestRecomputeRunnerLifecycle: a batch queues behind an in-flight run,
+// each member runs EXACTLY once and serialized on the one slot, one
+// progress + one done leaves per member (99's pair first — the gate
+// drains before any batch run), a repeated id inside the batch is
+// deduped, and career is rebuilt EXACTLY ONCE — inside the last member's
+// slot hold, immediately before that member's analysis-done (the last
+// event of the run).
+func TestRecomputeRunnerBatchLifecycle(t *testing.T) {
+	rec := &recRecorder{}
+	rc := &recomputeRunner{}
+	waitFor := func(what string, cond func() bool) {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for !cond() {
+			if time.Now().After(deadline) {
+				t.Fatalf("timed out waiting for %s (states %+v)", what, rc.states())
+			}
+			time.Sleep(2 * time.Millisecond)
+		}
+	}
+
+	var mu sync.Mutex
+	runs := map[int64]int{}
+	inFlight, maxInFlight := 0, 0
+	var rebuilds, rebuildIdx int
+
+	// The gate: an in-flight single run holds the slot while the batch
+	// queues behind it.
+	started, release := make(chan struct{}), make(chan struct{})
+	if !rc.submit(99, rec.emit, func() error {
+		mu.Lock()
+		runs[99]++
+		mu.Unlock()
+		close(started)
+		<-release
+		return nil
+	}) {
+		t.Fatal("gate submit was deduped")
+	}
+	<-started // 99 is running, inside compute()
+
+	submitted, skipped := rc.submitBatch([]int64{1, 2, 3, 2}, rec.emit,
+		func(id int64) error {
+			mu.Lock()
+			runs[id]++
+			inFlight++
+			if inFlight > maxInFlight {
+				maxInFlight = inFlight
+			}
+			mu.Unlock()
+			time.Sleep(2 * time.Millisecond) // a window overlap would show in maxInFlight
+			mu.Lock()
+			inFlight--
+			mu.Unlock()
+			return nil
+		},
+		func() error {
+			rec.mu.Lock()
+			defer rec.mu.Unlock()
+			rebuilds++
+			rebuildIdx = len(rec.seen) // the index the NEXT event (the last done) lands on
+			return nil
+		})
+	if submitted != 3 || skipped != 1 {
+		t.Fatalf("submitBatch = (%d, %d), want (3, 1) — id 2 repeated inside the batch is deduped", submitted, skipped)
+	}
+
+	// Gated: 99 running, the three members queued, nothing else started.
+	waitFor("gate holding + batch queued", func() bool {
+		s := rc.states()
+		return slices.Equal(s.Running, []int64{99}) && slices.Equal(s.Queued, []int64{1, 2, 3})
+	})
+	if n := len(rec.events()); n != 1 {
+		t.Fatalf("%d events while gated, want 1 (99's progress only)", n)
+	}
+
+	close(release)
+	waitFor("both runs drained", func() bool {
+		s := rc.states()
+		return len(s.Running) == 0 && len(s.Queued) == 0
+	})
+
+	mu.Lock()
+	for _, id := range []int64{1, 2, 3, 99} {
+		if runs[id] != 1 {
+			t.Errorf("match %d ran %d times, want exactly 1", id, runs[id])
+		}
+	}
+	if maxInFlight != 1 {
+		t.Errorf("max concurrent batch computes = %d, want 1 (the slot serializes)", maxInFlight)
+	}
+	mu.Unlock()
+
+	rec.mu.Lock()
+	defer rec.mu.Unlock()
+	got := rec.seen
+	if len(got) != 8 {
+		t.Fatalf("%d events, want 8 (4 runs × progress+done): %+v", len(got), got)
+	}
+	if got[0].name != eventAnalysisProgress || got[0].payload != (AnalysisProgressEvent{MatchID: 99, Stage: models.StageAnalyze, Done: 0, Total: 0}) {
+		t.Errorf("first event = %+v, want 99's progress", got[0])
+	}
+	if got[1].name != eventAnalysisDone || got[1].payload != (AnalysisDoneEvent{MatchID: 99, Error: ""}) {
+		t.Errorf("second event = %+v, want 99's done (the gate drains before any batch run)", got[1])
+	}
+	progresses, dones := map[int64]int{}, map[int64]int{}
+	for _, ev := range got {
+		switch p := ev.payload.(type) {
+		case AnalysisProgressEvent:
+			if ev.name == eventAnalysisProgress {
+				progresses[p.MatchID]++
+			}
+		case AnalysisDoneEvent:
+			if ev.name == eventAnalysisDone && p.Error != "" {
+				t.Errorf("done event carries an error: %+v", ev)
+			}
+			dones[p.MatchID]++
+		}
+	}
+	for _, id := range []int64{1, 2, 3} {
+		if progresses[id] != 1 || dones[id] != 1 {
+			t.Errorf("member %d: %d progress / %d done, want 1/1", id, progresses[id], dones[id])
+		}
+	}
+	if rebuilds != 1 {
+		t.Errorf("career rebuilds = %d, want exactly 1 for the batch", rebuilds)
+	}
+	if rebuildIdx != len(got)-1 {
+		t.Fatalf("rebuild landed before %d trailing events, want 0 (it must run in the last member's slot hold)", len(got)-1-rebuildIdx)
+	}
+	if got[rebuildIdx].name != eventAnalysisDone {
+		t.Errorf("event after the rebuild = %+v, want the last member's analysis-done", got[rebuildIdx])
+	}
+}
+
+// TestRecomputeRunnerBatchSkipsInFlight: an id already running when the
+// batch resolves is SKIPPED — never double-run — and it does not join
+// the batch (its own run owns its career rebuild), so the batch's
+// deferred rebuild still fires exactly once for the members it accepted.
+func TestRecomputeRunnerBatchSkipsInFlight(t *testing.T) {
+	rec := &recRecorder{}
+	rc := &recomputeRunner{}
+	waitFor := func(what string, cond func() bool) {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for !cond() {
+			if time.Now().After(deadline) {
+				t.Fatalf("timed out waiting for %s (states %+v)", what, rc.states())
+			}
+			time.Sleep(2 * time.Millisecond)
+		}
+	}
+
+	var mu sync.Mutex
+	runs := map[int64]int{}
+	rebuilds := 0
+
+	started, release := make(chan struct{}), make(chan struct{})
+	if !rc.submit(7, rec.emit, func() error {
+		mu.Lock()
+		runs[7]++
+		mu.Unlock()
+		close(started)
+		<-release
+		return nil
+	}) {
+		t.Fatal("gate submit was deduped")
+	}
+	<-started
+	waitFor("7 running", func() bool { return slices.Equal(rc.states().Running, []int64{7}) })
+
+	submitted, skipped := rc.submitBatch([]int64{7, 8}, rec.emit,
+		func(id int64) error {
+			mu.Lock()
+			runs[id]++
+			mu.Unlock()
+			return nil
+		},
+		func() error {
+			mu.Lock()
+			rebuilds++
+			mu.Unlock()
+			return nil
+		})
+	if submitted != 1 || skipped != 1 {
+		t.Fatalf("submitBatch = (%d, %d), want (1, 1) — the in-flight id 7 is skipped", submitted, skipped)
+	}
+	waitFor("8 queued behind 7", func() bool { return slices.Equal(rc.states().Queued, []int64{8}) })
+
+	close(release)
+	waitFor("drained", func() bool {
+		s := rc.states()
+		return len(s.Running) == 0 && len(s.Queued) == 0
+	})
+
+	mu.Lock()
+	defer mu.Unlock()
+	if runs[7] != 1 || runs[8] != 1 {
+		t.Errorf("runs = %v, want {7:1 8:1} (no double run for the skipped id)", runs)
+	}
+	if rebuilds != 1 {
+		t.Errorf("career rebuilds = %d, want 1 (only the batch member's own — the in-flight single run owns its rebuild)", rebuilds)
 	}
 }
