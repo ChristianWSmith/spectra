@@ -14,43 +14,70 @@
 
 /* --- FilterBar (filt-) --------------------------------------------------- */
 
+/* The filter rows are a TWO-COLUMN grid: a .filt-lab label cell + a
+   .filt-ctl control cell per field, so every control starts at ONE x
+   (the old inline-flex rows started right after their own label — 26px-
+   ragged control edges, content-sized selects). Rows are always a
+   lab/ctl pair (an empty label cell for the bbox chip and Reset), and
+   rows whose field does not apply to the category selection are not
+   rendered at all (landmarks.applicableFilterFields — the hide-and-CLEAR
+   ruling). gap 8px = the panel's rhythm scale (.lm-filter-panel and
+   .lm-scroll are 8px too — one scale for the whole surface; this used to
+   be a 6px stack). */
 .filt-bar {
-  gap: 6px;
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
 }
 
-.filt-grp {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+/* THE one label style for every filter field — the old split (.filt-grp
+   0.76em uppercase-muted for grouped controls vs .filt-check 0.82em
+   normal-case for the checkbox) is gone: ROUND/PLAYER/SIDE/TEAM/WEAPON/
+   DIST/HEADSHOTS ONLY all read as this. .filt-grp/.filt-line died with
+   the inline layout; .filt-check itself STAYS below for Reports/Settings
+   (FilterBar no longer renders through it). */
+.filt-lab {
   font-size: 0.76em;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: var(--muted);
 }
 
-.filt-grp .input {
-  padding: 4px 6px;
-  font-size: 0.95em;
-  text-transform: none;
-  letter-spacing: normal;
-  color: var(--text);
+label.filt-lab {
+  cursor: pointer; /* label-for elements toggle their control */
 }
 
-/* Own-line group: the player and weapon selects each take a full row of
-   the filter toolbar (they must not share a line with the range
-   inputs). */
-.filt-grp.filt-line {
-  flex: 0 0 100%;
+/* Control cell: controls fill the column — every select stretches to the
+   same width instead of hugging its own content (measured 54–135px). */
+.filt-ctl {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
 }
 
+.filt-ctl select.input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+/* Spinner rows (ROUND from/to + DIST min/max): the pair splits the
+   control cell evenly, so both pair rows size and align identically and
+   the steppers get comfortable click targets; the cap keeps a wide rail
+   from ballooning a spinner box. */
 .filt-num {
-  width: 86px;
+  flex: 1 1 0;
+  min-width: 68px;
+  max-width: 120px;
 }
 
 .filt-sep {
   opacity: 0.55;
 }
 
+/* Shared with Reports/Settings (their checkbox rows render through this
+   class); FilterBar's own headshot row is now .filt-lab + a bare input. */
 .filt-check {
   display: inline-flex;
   align-items: center;

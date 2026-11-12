@@ -24,6 +24,11 @@ import {
   scrubberMarkerClass,
   typedKindsFor,
   enabledSources,
+  applicableFilterFields,
+  clearInapplicableFields,
+  ENDPOINT_KINDS,
+  SCOPED_KINDS,
+  WEAPON_KINDS,
   normalizeEvent,
   normalizeWorld,
   normalizeChat,
@@ -602,6 +607,12 @@ test('filter <-> query round-trip: defaults serialize to nothing', () => {
   assert.deepEqual(parseLandmarkFilter({}), defaultFilter());
   assert.ok(filtersEqual(defaultFilter(), parseLandmarkFilter({})));
 
+  // The seed's cats (kills + connects) make EVERY field applicable —
+  // kill carries endpoints/weapon/distance/headshot and is endpoint-
+  // scoped, connects carry the player key, and the event source covers
+  // bbox — so this round-trip still exercises every serializable key
+  // through clearInapplicableFields (nothing gets cleared here by
+  // design; the clearing pins live in the tests below).
   const f = {
     ...defaultFilter(),
     cats: ['kills', 'connects'],
@@ -635,6 +646,158 @@ test('filter <-> query round-trip: defaults serialize to nothing', () => {
   assert.deepEqual(back.bbox, { minX: -1, minY: -2, maxX: 3, maxY: 4 });
 });
 
+// --- Conditional fields (applicableFilterFields + clearing) ------------------
+// The product-owner ruling: a field that does not apply to the enabled
+// categories is REMOVED from the panel AND its value is DROPPED from the
+// filter (the owner chose clear over retain — a hidden-but-retained value
+// keeps invisibly filtering the list, the markers and the URL).
+// applicableFilterFields is THE one derivation (replay/landmarks.js,
+// beside CATEGORIES/typedKindsFor/enabledSources — FilterBar only
+// consumes it); clearInapplicableFields runs inside parse (every
+// arrival: URL, saved preset, CommandPalette, Heatmaps drill) and
+// serialize (every write), so both halves of the round trip obey one
+// rule. The DOM twins live in test/replay.dom.mjs §G/G2.
+
+test('applicableFilterFields: the owner rule table (kind-level applicability)', () => {
+  const on = (cats) => applicableFilterFields(cats);
+  // Default selection (Round starts only) → every value field hides —
+  // exactly the empty-list footgun the ruling complained about. The
+  // event source is on, so bbox APPLIES (the chip keeps its own value
+  // check and only renders when a bbox exists).
+  assert.deepEqual(on(['round_starts']), {
+    player: false, side: false, team: false, weapon: false, dist: false, headshot: false, bbox: true,
+  });
+  // buys-only → ROUND only: the generic source contributes no kinds (no
+  // endpoints/scope/weapon) and there is no event source → bbox goes too.
+  assert.deepEqual(on(['buys']), {
+    player: false, side: false, team: false, weapon: false, dist: false, headshot: false, bbox: false,
+  });
+  // footsteps-only → PLAYER + ROUND (the sound source honors the player
+  // key — feed.js soundSource carries/filters steamId; nothing else
+  // applies, bbox included).
+  assert.deepEqual(on(['footsteps']), {
+    player: true, side: false, team: false, weapon: false, dist: false, headshot: false, bbox: false,
+  });
+  // kills → every field (endpoints, heatmap scope, weapon, distance,
+  // headshot, event source).
+  assert.deepEqual(on(['kills']), {
+    player: true, side: true, team: true, weapon: true, dist: true, headshot: true, bbox: true,
+  });
+  // DIST/HS are kill-only: every other event selection hides them.
+  for (const id of ['round_wins', 'damage', 'blinds', 'connects', 'grenade_dets']) {
+    const f = on([id]);
+    assert.equal(f.dist, false, id);
+    assert.equal(f.headshot, false, id);
+  }
+  // SIDE/TEAM follow the endpoint-scoped set (store heatmapScopedKinds):
+  // damage + the grenade family scope; round_wins/connects do not.
+  assert.equal(on(['damage']).side, true);
+  assert.equal(on(['grenade_throws']).side, true);
+  assert.equal(on(['grenade_dets']).team, true);
+  assert.equal(on(['grenade_bounces']).side, true);
+  assert.equal(on(['round_wins']).side, false);
+  assert.equal(on(['connects']).side, false);
+  // PLAYER follows the endpoint kinds: connects/blinds/bomb carry a
+  // player; round_end (playerless rows) does not — and neither does a
+  // Bounce-only selection (grenade_bounce stores only the projectile).
+  assert.equal(on(['connects']).player, true);
+  assert.equal(on(['blinds']).player, true);
+  assert.equal(on(['bomb']).player, true); // plant/defuse/drop/pickup carry the actor
+  assert.equal(on(['round_wins']).player, false);
+  assert.equal(on(['grenade_bounces']).player, false);
+  // WEAPON follows the weapon-writing kinds: drops/grenades/bomb
+  // (bomb_explode writes "C4") yes; blinds (no weapon column) no.
+  assert.equal(on(['drops']).weapon, true);
+  assert.equal(on(['grenade_lands']).weapon, true);
+  assert.equal(on(['bomb']).weapon, true);
+  assert.equal(on(['blinds']).weapon, false);
+  // Empty or unknown selections: nothing applies, never a throw.
+  const none = { player: false, side: false, team: false, weapon: false, dist: false, headshot: false, bbox: false };
+  assert.deepEqual(on([]), none);
+  assert.deepEqual(on(['bogus']), none);
+  assert.deepEqual(on(undefined), none);
+});
+
+test('the applicability kind tables partition LANDMARK_KINDS (new kinds must be classified)', () => {
+  // ENDPOINT_KINDS' complement is exactly the four kinds that store NO
+  // attacker/victim (extract agg): the round rows, the bomb explosion
+  // (bomb entity) and the grenade bounce (projectile only).
+  assert.deepEqual(
+    LANDMARK_KINDS.filter((k) => !ENDPOINT_KINDS.includes(k)).sort(),
+    ['bomb_explode', 'grenade_bounce', 'round_end', 'round_start'],
+  );
+  // SCOPED_KINDS is THE store mirror: heatmapScopedKinds (kill, damage)
+  // + heatmapScopedGrenades (the four projectile rows).
+  assert.deepEqual(
+    [...SCOPED_KINDS].sort(),
+    ['damage', 'grenade', 'grenade_bounce', 'grenade_land', 'grenade_throw', 'kill'].sort(),
+  );
+  // WEAPON_KINDS' complement: every kind with no weapon column written
+  // in internal/extract.
+  assert.deepEqual(
+    LANDMARK_KINDS.filter((k) => !WEAPON_KINDS.includes(k)).sort(),
+    [
+      'blind', 'bomb_plant', 'bomb_defuse', 'bomb_drop', 'bomb_pickup',
+      'bomb_plant_begin', 'bomb_plant_abort', 'bomb_defuse_start', 'bomb_defuse_abort',
+      'player_connect', 'player_disconnect', 'round_start', 'round_end',
+    ].sort(),
+  );
+  // Both positive tables stay closed over the stored vocabulary.
+  for (const k of ENDPOINT_KINDS) assert.ok(LANDMARK_KINDS.includes(k), k);
+  for (const k of SCOPED_KINDS) assert.ok(LANDMARK_KINDS.includes(k), k);
+  for (const k of WEAPON_KINDS) assert.ok(LANDMARK_KINDS.includes(k), k);
+});
+
+test('clearInapplicableFields at BOTH choke points: arrivals parse clean, writes serialize clean', () => {
+  // ARRIVAL — a saved preset / deep link / drill carrying inapplicable
+  // keys normalizes to the default payload (clear over retain)…
+  const stale = parseLandmarkFilter({
+    cat: 'round_starts',
+    player: '76561198012345678', weapon: 'AWP', side: 'ct', team: 't',
+    hs: '1', distMin: '10', distMax: '50',
+  });
+  assert.deepEqual(stale, defaultFilter());
+  assert.deepEqual(serializeLandmarkFilter(stale), {});
+  // …while the bbox chip keeps its OWN conditional: cleared only when the
+  // event source is off (round_starts keeps the value; footsteps/buys
+  // drop it — the chip then hides because f.bbox is null).
+  assert.deepEqual(
+    parseLandmarkFilter({ cat: 'round_starts', bbox: '1,2,3,4' }).bbox,
+    { minX: 1, minY: 2, maxX: 3, maxY: 4 },
+  );
+  assert.equal(parseLandmarkFilter({ cat: 'footsteps', bbox: '1,2,3,4' }).bbox, null);
+  // Applicable values survive untouched (the footgun is the hidden half,
+  // not the value).
+  const live = parseLandmarkFilter({
+    cat: 'kills', player: '76561198012345678', weapon: 'AWP', side: 'ct', hs: '1',
+  });
+  assert.equal(live.steamId, '76561198012345678');
+  assert.equal(live.weapon, 'AWP');
+  assert.equal(live.side, 'ct');
+  assert.equal(live.headshotOnly, true);
+  // WRITE — a category toggle that makes a SET value inapplicable
+  // rewrites the URL without it: serialize prunes against the payload's
+  // OWN cats (toggleCat spreads the previous filter + the new cats
+  // through here, so this is the kills-off-with-a-weapon-set path).
+  assert.deepEqual(
+    serializeLandmarkFilter({ ...defaultFilter(), cats: ['round_starts', 'kills'], weapon: 'AWP', side: 'ct' }),
+    { cat: 'round_starts,kills', weapon: 'AWP', side: 'ct' },
+  );
+  assert.deepEqual(
+    serializeLandmarkFilter({ ...defaultFilter(), cats: ['round_starts'], weapon: 'AWP', side: 'ct' }),
+    {},
+  );
+  // The helper itself: the same rule against an explicit selection,
+  // mutating and returning its argument.
+  const f = { ...defaultFilter(), cats: ['kills'], weapon: 'AWP', steamId: 'x', distMin: 5 };
+  f.cats = ['footsteps'];
+  assert.equal(clearInapplicableFields(f, f.cats), f);
+  assert.equal(f.weapon, ''); // the sound source carries no weapon rows
+  assert.equal(f.steamId, 'x'); // footsteps honors the player → kept
+  assert.equal(f.distMin, 0);
+  assert.equal(f.side, '');
+});
+
 // --- Feed reveal on filter arrival (shouldRevealFeed) -----------------------
 // The rule entering the replay must obey: a NON-default landmark filter
 // reveals the feed rail (the drill's effect must be visible), a default
@@ -658,22 +821,43 @@ test('shouldRevealFeed: a default arrival never reveals', () => {
 
 test('shouldRevealFeed: a fresh entry (no prior filter) reveals every non-default filter', () => {
   // Every serializable key counts on its own — the "present beyond what
-  // serializes to nothing" definition.
+  // serializes to nothing" definition. Since the hide-and-clear ruling,
+  // a key is only serializable when it APPLIES to the payload's own cats
+  // (clearInapplicableFields) — so the field keys below carry a seed cat
+  // that makes them applicable (kills → endpoints/weapon/distance/
+  // headshot/scoped), while ROUND and bbox already apply under the
+  // default selection (round starts keeps the event source on).
   const cases = [
     { roundFrom: '3', roundTo: '3' },
     { bbox: '-1,-2,3,4' },
-    { player: '76561198012345678' },
+    { cat: 'round_starts,kills', player: '76561198012345678' },
     { cat: 'kills' },
     { cat: '' }, // explicitly NO categories — a real state, not the default
-    { weapon: 'AWP' },
-    { hs: '1' },
-    { side: 'ct' },
-    { distMin: '10' },
-    { distMax: '50' },
+    { cat: 'kills', weapon: 'AWP' },
+    { cat: 'kills', hs: '1' },
+    { cat: 'kills', side: 'ct' },
+    { cat: 'kills', distMin: '10' },
+    { cat: 'kills', distMax: '50' },
   ];
   for (const q of cases) {
     assert.equal(shouldRevealFeed(null, parseLandmarkFilter(q)), true, JSON.stringify(q));
     assert.equal(shouldRevealFeed(undefined, parseLandmarkFilter(q)), true, JSON.stringify(q));
+  }
+  // THE clearing counterpart (the owner's ruling): a payload whose keys
+  // are ALL inapplicable to its own cats parses to the default — it has
+  // no scope left to reveal, so it never opens the rail. Same payloads,
+  // seed removed.
+  const clearedCases = [
+    { player: '76561198012345678' },
+    { weapon: 'AWP' },
+    { hs: '1' },
+    { side: 'ct' },
+    { team: 't' },
+    { distMin: '10', distMax: '50' },
+  ];
+  for (const q of clearedCases) {
+    assert.deepEqual(parseLandmarkFilter(q), defaultFilter(), JSON.stringify(q));
+    assert.equal(shouldRevealFeed(null, parseLandmarkFilter(q)), false, JSON.stringify(q));
   }
 });
 
@@ -706,8 +890,14 @@ test('shouldRevealFeed: a DIFFERENT non-default filter reveals; a default arriva
   const before = parseLandmarkFilter({ roundFrom: '3', roundTo: '3' });
   assert.equal(shouldRevealFeed(before, parseLandmarkFilter({ roundFrom: '4', roundTo: '4' })), true);
   assert.equal(shouldRevealFeed(before, parseLandmarkFilter({ bbox: '-1,-2,3,4' })), true);
+  // Seeded with `cat: kills` — the hide-and-clear ruling removes these
+  // keys under the default selection, so the kill seed is what keeps
+  // weapon/dist under test as CHANGING filters (not as cleared ones).
   assert.equal(
-    shouldRevealFeed(parseLandmarkFilter({ weapon: 'AWP' }), parseLandmarkFilter({ distMax: '50' })),
+    shouldRevealFeed(
+      parseLandmarkFilter({ cat: 'kills', weapon: 'AWP' }),
+      parseLandmarkFilter({ cat: 'kills', distMax: '50' }),
+    ),
     true,
   );
   // Reverting to the default differs, but the non-default half gates it:
@@ -718,17 +908,25 @@ test('shouldRevealFeed: a DIFFERENT non-default filter reveals; a default arriva
   // side-scoped arrival is non-default (it reveals), changing ONLY side
   // counts as a different filter (it reveals over the previous side),
   // and re-arriving with the SAME side is not a change (it does not —
-  // the keys are filter state, churn-safe like every other).
-  assert.equal(shouldRevealFeed(defaultFilter(), parseLandmarkFilter({ side: 'ct' })), true);
-  assert.equal(shouldRevealFeed(defaultFilter(), parseLandmarkFilter({ team: 't' })), true);
+  // the keys are filter state, churn-safe like every other). Seeded with
+  // `cat: round_starts,kills` (kill ∈ SCOPED_KINDS): without an
+  // endpoint-scoped selection both keys clear to default and there is
+  // deliberately nothing left to reveal — pinned below.
+  const seed = 'round_starts,kills';
+  assert.equal(shouldRevealFeed(defaultFilter(), parseLandmarkFilter({ cat: seed, side: 'ct' })), true);
+  assert.equal(shouldRevealFeed(defaultFilter(), parseLandmarkFilter({ cat: seed, team: 't' })), true);
   assert.equal(
-    shouldRevealFeed(parseLandmarkFilter({ side: 'ct' }), parseLandmarkFilter({ side: 't' })),
+    shouldRevealFeed(parseLandmarkFilter({ cat: seed, side: 'ct' }), parseLandmarkFilter({ cat: seed, side: 't' })),
     true,
   );
   assert.equal(
-    shouldRevealFeed(parseLandmarkFilter({ side: 'ct' }), parseLandmarkFilter({ side: 'ct' })),
+    shouldRevealFeed(parseLandmarkFilter({ cat: seed, side: 'ct' }), parseLandmarkFilter({ cat: seed, side: 'ct' })),
     false,
   );
+  // Hide-and-clear: side alone under the default selection parses to the
+  // default → no reveal (the clearing ruling's reveal twin).
+  assert.equal(shouldRevealFeed(null, parseLandmarkFilter({ side: 'ct' })), false);
+  assert.equal(shouldRevealFeed(null, parseLandmarkFilter({ team: 't', player: '76561198012345678' })), false);
 });
 
 test('round range: inclusive, partial, 0 = unset (round 0 never exists)', () => {
@@ -758,19 +956,29 @@ test('round range: inclusive, partial, 0 = unset (round 0 never exists)', () => 
 });
 
 test('distance range: inclusive, partial, 0 = open', () => {
-  const both = parseLandmarkFilter({ distMin: '10', distMax: '50' });
+  // Seeded with `cat: kills`: DIST applies only while the kill kind is
+  // enabled (distance is written on kill rows alone — the conditional-
+  // fields ruling clears it under any other selection), so the kill seed
+  // keeps the RANGE SEMANTICS — the subject of this test — observable.
+  const both = parseLandmarkFilter({ cat: 'kills', distMin: '10', distMax: '50' });
   assert.deepEqual([both.distMin, both.distMax], [10, 50]);
-  assert.deepEqual(serializeLandmarkFilter(both), { distMin: '10', distMax: '50' });
-  const minOnly = parseLandmarkFilter({ distMin: '10' });
+  assert.deepEqual(serializeLandmarkFilter(both), { cat: 'kills', distMin: '10', distMax: '50' });
+  const minOnly = parseLandmarkFilter({ cat: 'kills', distMin: '10' });
   assert.equal(minOnly.distMax, 0);
-  assert.deepEqual(serializeLandmarkFilter(minOnly), { distMin: '10' });
-  const maxOnly = parseLandmarkFilter({ distMax: '50' });
+  assert.deepEqual(serializeLandmarkFilter(minOnly), { cat: 'kills', distMin: '10' });
+  const maxOnly = parseLandmarkFilter({ cat: 'kills', distMax: '50' });
   assert.equal(maxOnly.distMin, 0);
-  assert.deepEqual(serializeLandmarkFilter(maxOnly), { distMax: '50' });
+  assert.deepEqual(serializeLandmarkFilter(maxOnly), { cat: 'kills', distMax: '50' });
   // 0 / absent / junk = open on that side.
   assert.equal(parseLandmarkFilter({ distMin: '0', distMax: '0' }).distMax, 0);
   assert.equal(parseLandmarkFilter({ distMin: 'x' }).distMin, 0);
   assert.deepEqual(serializeLandmarkFilter(defaultFilter()), {});
+  // …and under a selection with no kill kind the bounds are CLEARED at
+  // parse and at serialize (hide-and-clear — a hidden bound must never
+  // keep constraining the list/markers/URL).
+  const cleared = parseLandmarkFilter({ distMin: '10', distMax: '50' });
+  assert.deepEqual([cleared.distMin, cleared.distMax], [0, 0]);
+  assert.deepEqual(serializeLandmarkFilter({ ...defaultFilter(), distMin: 10 }), {});
 });
 
 test('removed filter fields are gone: exact round, tick window, damage range', () => {
@@ -821,22 +1029,33 @@ test('side/team keys: exact ct/t only, ride the URL round-trip, absent = open', 
   assert.equal(parseLandmarkFilter({}).team, '');
   assert.deepEqual(serializeLandmarkFilter(defaultFilter()), {});
   // The exact wire spellings pass; everything else is dropped — never a
-  // guessed side (the store's literal discipline, mirrored here).
-  assert.equal(parseLandmarkFilter({ side: 'ct' }).side, 'ct');
-  assert.equal(parseLandmarkFilter({ side: 't' }).side, 't');
-  assert.equal(parseLandmarkFilter({ team: 'ct' }).team, 'ct');
-  assert.equal(parseLandmarkFilter({ side: 'CT' }).side, ''); // uppercase is not the wire
-  assert.equal(parseLandmarkFilter({ side: 'x' }).side, '');
-  assert.equal(parseLandmarkFilter({ team: '' }).team, '');
+  // guessed side (the store's literal discipline, mirrored here). Seeded
+  // with `cat: kills`: side/team are endpoint-scoped fields (kill ∈
+  // SCOPED_KINDS), and the conditional-fields ruling CLEARS them under a
+  // selection the endpointScopeClause clause cannot constrain — so the
+  // kill seed keeps the LITERAL rule itself under test, not the clearing.
+  assert.equal(parseLandmarkFilter({ cat: 'kills', side: 'ct' }).side, 'ct');
+  assert.equal(parseLandmarkFilter({ cat: 'kills', side: 't' }).side, 't');
+  assert.equal(parseLandmarkFilter({ cat: 'kills', team: 'ct' }).team, 'ct');
+  assert.equal(parseLandmarkFilter({ cat: 'kills', side: 'CT' }).side, ''); // uppercase is not the wire
+  assert.equal(parseLandmarkFilter({ cat: 'kills', side: 'x' }).side, '');
+  assert.equal(parseLandmarkFilter({ cat: 'kills', team: '' }).team, '');
   // Round-trip: both keys survive serialize → parse, alone and together
   // (partial state stays partial — no other default leaks out).
-  const both = { ...defaultFilter(), side: 'ct', team: 't' };
+  const both = { ...defaultFilter(), cats: ['kills'], side: 'ct', team: 't' };
   const q = serializeLandmarkFilter(both);
-  assert.deepEqual(q, { side: 'ct', team: 't' });
+  assert.deepEqual(q, { cat: 'kills', side: 'ct', team: 't' });
   assert.ok(filtersEqual(both, parseLandmarkFilter(q)));
-  assert.deepEqual(serializeLandmarkFilter({ ...defaultFilter(), team: 't' }), { team: 't' });
+  assert.deepEqual(serializeLandmarkFilter({ ...defaultFilter(), cats: ['kills'], team: 't' }), { cat: 'kills', team: 't' });
   // The keys are plain FILTER state: they never carry a position (the
   // filter parse ignores ?tick= — THE position stays nav.entrySeekTick's
   // own query read, untouched by these keys).
-  assert.equal(parseLandmarkFilter({ side: 'ct', tick: '99' }).tick, undefined);
+  assert.equal(parseLandmarkFilter({ cat: 'kills', side: 'ct', tick: '99' }).tick, undefined);
+  // Hide-and-clear: under the default selection (round starts — outside
+  // SCOPED_KINDS) a side/team value is a NO-OP for the query, so both
+  // choke points drop it — it never rides the URL or the local copy
+  // invisibly filtering.
+  assert.equal(parseLandmarkFilter({ side: 'ct', team: 't' }).side, '');
+  assert.equal(parseLandmarkFilter({ side: 'ct', team: 't' }).team, '');
+  assert.deepEqual(serializeLandmarkFilter({ ...defaultFilter(), side: 'ct' }), {});
 });

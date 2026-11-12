@@ -2094,10 +2094,6 @@ input[type='checkbox']:focus-visible {
   gap: 8px;
 }
 
-.lm-filter-panel .filt-bar {
-  padding: 2px 0 0;
-}
-
 /* Enabled-category count — on the Filters toggle (the whole surface is
    hidden while the panel is closed, so the count is its affordance) and
    on the category dropdown's trigger (the checkbox list's own summary). */
@@ -2166,10 +2162,23 @@ input[type='checkbox']:focus-visible {
   align-items: center;
 }
 
+/* Saved-filter preset row (the owner's screenshot: "Saved fi" sat on the
+   90px floor while the option reads "Saved filters…", and Reset orphaned
+   alone on the next line). The select owns its OWN line (flex-basis:
+   100% of the wrapping toolbar) so the label always reads in full, and
+   the four actions ride ONE flex item (.lm-saved-actions) on the next
+   line — Apply/Save/×/Reset travel together and can never split, so
+   Reset is never orphaned. */
 .lm-saved {
-  flex: 1;
-  min-width: 90px;
+  flex: 1 1 100%;
+  min-width: 0;
   font-size: 0.85em;
+}
+
+.lm-saved-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 
 .lm-more {
