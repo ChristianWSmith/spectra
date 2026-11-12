@@ -18,9 +18,11 @@ import (
 // 5 s default) becomes cfg-aware for every consumer — the scoreboard
 // Trade column, career trades, profile trade rate and the successful_trades
 // metric — without touching their SQL. match_trade_opps (the two
-// distance-derived trade-opportunity counts, tradeopps.go) is written the
-// same way: cfg.TradeOppDistance is applied HERE, at analyze time, and
-// read back by store.GetCombatStats / store.CountPlayerTradeOpportunities.
+// distance-derived trade-opportunity counts, tradeopps.go) and
+// round_side_classes (the per-side eco classes, classify.go) are written
+// the same way: cfg.TradeOppDistance / cfg.EcoFullBuy / cfg.EcoForce are
+// applied HERE, at analyze time, and read back by store.GetCombatStats /
+// store.CountPlayerTradeOpportunities and store.GetEconomy respectively.
 //
 // RULE STAMP: a successful pass ends by writing cfg.RuleVersion to
 // matches.analyzed_rule_version (store.SetMatchRuleVersion — the one
@@ -118,15 +120,22 @@ func compute(st *store.Store, matchID int64, cfg Config, rebuildCareer bool) err
 		return fmt.Errorf("analytics: load round sides: %w", err)
 	}
 
-	classes := Classify(eco, rounds, cfg)
+	classes, sideClasses := Classify(eco, rounds, cfg)
 	prs := PlayerRounds(evs, rounds, players, cfg, sides)
 	clutches := Clutches(evs, rounds, players, sides)
 	engs := Engagements(evs, rounds, cfg, players, sides)
 	utils := Utility(evs, players, cfg, blindDetails)
 
 	// Replace* take matchID as their own argument (rows stay unstamped —
-	// the MatchID column is written from the parameter).
+	// the MatchID column is written from the parameter). The round-level
+	// label and the per-side classes come from the ONE Classify pass
+	// above (same config, same inputs), so the round chips and the
+	// Economy tab's side chips can never disagree — and neither is ever
+	// re-derived at read time (AGENTS.md "Analysis-rule derived values").
 	if err := st.ReplaceRoundClassifications(matchID, classes); err != nil {
+		return err
+	}
+	if err := st.ReplaceRoundSideClasses(matchID, sideClasses); err != nil {
 		return err
 	}
 	if err := st.ReplacePlayerRounds(matchID, prs); err != nil {

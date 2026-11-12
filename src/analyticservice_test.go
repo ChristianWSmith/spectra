@@ -527,6 +527,151 @@ func TestTradeOppDistanceChangeRecomputesStoredCounts(t *testing.T) {
 	}
 }
 
+// TestEcoThresholdChangeRecomputesStoredClasses pins the owner ruling
+// (2026-11-12 — AGENTS.md "Analysis-rule derived values", the eco half of
+// "all-stored"): the eco thresholds change the STORED round_classifications
+// labels AND the stored per-side round_side_classes (analytics.Classify
+// applies them at analyze time), so saving a new full-buy line bumps
+// rule_version — the analyzed match goes behind — and the re-run rewrites
+// the stored classes under the new rules. Between the save and the re-run
+// the read returns the OLD stored classes (uniformly stale, honestly so)
+// — never the new thresholds: that disagreement between the Economy tab's
+// side chips and the round chips is the visible bug this closes.
+// Full loop: run under the seeded 20000/10000 defaults → save a 12000
+// full line (bump v1→v2, match behind) → the read still says force →
+// re-run → the read says full and the match is current again.
+func TestEcoThresholdChangeRecomputesStoredClasses(t *testing.T) {
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	as := &AnalyticsService{st: st}
+
+	em := &models.ExtractedMatch{
+		Match: models.Match{
+			Path: "/d/eco-loop.dem", SHA256: "sha-eco-loop", Size: 1,
+			Map: "de_cache", TickRate: 64, RealRounds: 2,
+			ScoreCT: 2, ScoreT: 0, ParserVersion: "v6", ExtractedAt: time.Now(),
+		},
+		Players: []models.Player{
+			{SteamID: "100", Name: "alice", Side: "ct", FinalStatePresent: true},
+			{SteamID: "200", Name: "bob", Side: "t", FinalStatePresent: true},
+		},
+		PlayerStats: []models.PlayerStats{
+			{SteamID: "100", Side: "ct", Name: "alice", RoundsPlayed: 2},
+			{SteamID: "200", Side: "t", Name: "bob", RoundsPlayed: 2},
+		},
+		Rounds: []models.Round{
+			// Round 1: the index-0 pistol round (equip irrelevant).
+			{Number: 1, Winner: "ct", StartTick: 64, EndTick: 3600, FreezeEndTick: 96,
+				EquipCT: 4000, EquipT: 3600},
+			// Round 2: CT 12000 → FORCE under 20000/10000, FULL once the
+			// full-buy line drops to 12000; T 8000 stays eco (below the
+			// 10000 force line in both configs).
+			{Number: 2, Winner: "ct", StartTick: 3600, EndTick: 7200, FreezeEndTick: 3632,
+				EquipCT: 12000, EquipT: 8000},
+		},
+		RoundEconomy: []models.RoundEconomy{
+			{Round: 1, Side: "ct", EquipValue: 4000, MoneySamples: 5},
+			{Round: 1, Side: "t", EquipValue: 3600, MoneySamples: 5},
+			{Round: 2, Side: "ct", EquipValue: 12000, MoneySamples: 5},
+			{Round: 2, Side: "t", EquipValue: 8000, MoneySamples: 5},
+		},
+	}
+	id, err := st.CreateMatchRow(em.Match.Path, em.Match.SHA256, 1)
+	if err != nil {
+		t.Fatalf("CreateMatchRow: %v", err)
+	}
+	if err := st.SaveExtracted(id, em); err != nil {
+		t.Fatalf("SaveExtracted: %v", err)
+	}
+
+	// round 2's stored classes + round label + pistol flag, read straight
+	// from the store (AnalyticsService.GetEconomy is this read verbatim).
+	round2 := func(t *testing.T) (ct, tCls, label string, pistol bool) {
+		t.Helper()
+		rows, err := st.GetEconomy(id)
+		if err != nil {
+			t.Fatalf("GetEconomy: %v", err)
+		}
+		for _, r := range rows {
+			if r.Round == 2 {
+				return r.ClassCT, r.ClassT, r.Label, r.PistolRound
+			}
+		}
+		t.Fatal("round 2 missing from the economy view")
+		return "", "", "", false
+	}
+
+	// Run under the seeded defaults (20000/10000).
+	if err := as.RecomputeAnalysis(id); err != nil {
+		t.Fatalf("RecomputeAnalysis: %v", err)
+	}
+	drainRecompute(t, as)
+	if ct, tc, _, _ := round2(t); ct != "force" || tc != "eco" {
+		t.Fatalf("round 2 @20000/10000 = %q/%q, want force/eco", ct, tc)
+	}
+	if v, err := st.GetMatchRuleVersion(id); err != nil || v != 1 {
+		t.Fatalf("stamp after first run = %d, %v, want 1 (seeded default rules)", v, err)
+	}
+	if rows, err := st.GetRoundClasses(id); err != nil || len(rows) != 2 {
+		t.Fatalf("round classes = %d, %v, want 2", len(rows), err)
+	}
+
+	// Save a lower full-buy line: bump v1 → v2 and the match goes behind.
+	saved, err := as.SetConfig(models.AnalysisConfig{
+		TradeWindowS: 5, EcoFullBuy: 12000, EcoForce: 10000,
+		TradeOppDistance: 1000, RuleVersion: 1,
+	})
+	if err != nil {
+		t.Fatalf("SetConfig(12000): %v", err)
+	}
+	if saved.RuleVersion != 2 {
+		t.Fatalf("rule_version after eco change = %d, want 2 (exactly one bump)", saved.RuleVersion)
+	}
+	behind, err := st.ListMatches("", "", false, store.MatchListFilter{Behind: true})
+	if err != nil {
+		t.Fatalf("ListMatches(behind): %v", err)
+	}
+	found := false
+	for _, m := range behind {
+		found = found || m.ID == id
+	}
+	if !found {
+		t.Fatal("match not behind after the eco threshold change")
+	}
+
+	// BEFORE the re-run the stored classes are the OLD ones — the read
+	// never re-classifies, so the Economy tab cannot disagree with the
+	// round chips (the bug this test pins away).
+	if ct, tc, _, _ := round2(t); ct != "force" || tc != "eco" {
+		t.Errorf("round 2 after save, before re-run = %q/%q, want the STORED force/eco (uniformly stale)", ct, tc)
+	}
+
+	// Re-run: the stored classes follow the new thresholds and the match
+	// is current again.
+	if err := as.RecomputeAnalysis(id); err != nil {
+		t.Fatalf("RecomputeAnalysis (after bump): %v", err)
+	}
+	drainRecompute(t, as)
+	if ct, tc, _, _ := round2(t); ct != "full" || tc != "eco" {
+		t.Errorf("round 2 @12000/10000 = %q/%q, want full/eco (stored rows must follow the thresholds)", ct, tc)
+	}
+	if v, err := st.GetMatchRuleVersion(id); err != nil || v != 2 {
+		t.Errorf("stamp after re-run = %d, %v, want 2 (current rules)", v, err)
+	}
+	behind, err = st.ListMatches("", "", false, store.MatchListFilter{Behind: true})
+	if err != nil {
+		t.Fatalf("ListMatches(behind after): %v", err)
+	}
+	for _, m := range behind {
+		if m.ID == id {
+			t.Error("match still behind after the re-run")
+		}
+	}
+}
+
 // seedReadyMatch stores a minimal READY match (SaveExtracted sets the
 // status) whose stamp stays 0 = never analyzed.
 func seedReadyMatch(t *testing.T, st *store.Store, n int) int64 {

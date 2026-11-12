@@ -18,7 +18,6 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/ChristianWSmith/spectra/internal/analytics"
 	"github.com/ChristianWSmith/spectra/internal/models"
 	"github.com/ChristianWSmith/spectra/internal/store"
 )
@@ -36,9 +35,9 @@ type Template struct {
 // MatchReport is the match-scope data map (builtin + plugin templates).
 // CTName/TName are the display names of the two teams behind ScoreCT/
 // ScoreT — teams, never sides (sides switch at halftime): see teamNames.
-// Economy rows carry the read-time buy classes (ClassCT/ClassT/ClassWhy*,
-// PistolRound) filled by analytics.EconomyRows — the same enrichment the
-// Economy tab applies.
+// Economy rows carry the STORED per-side buy classes (ClassCT/ClassT/
+// ClassWhy*, PistolRound) exactly as store.GetEconomy reads them — no
+// report-side enrichment, so report and app agree by construction.
 type MatchReport struct {
 	Match       models.Match
 	CTName      string
@@ -85,16 +84,12 @@ func BuildMatchData(st *store.Store, matchID int64) (*MatchReport, error) {
 	if err != nil {
 		return nil, fmt.Errorf("report: economy: %w", err)
 	}
-	// Read-time buy-class enrichment — the SAME rules the Economy tab runs
-	// (analytics.EconomyRows under the stored analysis_config): ClassCT/
-	// ClassT/ClassWhyCT/ClassWhyT/PistolRound are filled here so report and
-	// app agree. store.GetEconomy leaves them empty by design (the store
-	// cannot import analytics — documented cycle deviation).
-	cfg, err := st.GetConfig()
-	if err != nil {
-		return nil, fmt.Errorf("report: analysis config: %w", err)
-	}
-	econ = analytics.EconomyRows(econ, analytics.ConfigFrom(cfg, 0))
+	// No read-time enrichment here: store.GetEconomy already returns the
+	// STORED per-side buy classes (round_side_classes — written by
+	// analytics.Compute under the run's config; AGENTS.md "Analysis-rule
+	// derived values" forbids re-classifying at read time). Report and
+	// Economy tab therefore agree by construction, and a match analyzed
+	// under older rules shows the same honestly-stale classes in both.
 	clutches, err := st.GetClutches(matchID)
 	if err != nil {
 		return nil, fmt.Errorf("report: clutches: %w", err)
