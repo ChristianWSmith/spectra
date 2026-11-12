@@ -90,12 +90,27 @@ differentiators:
   an honest progress indication (the same honesty rule as every other
   number — an unknown denominator means indeterminate, never a
   fabricated percentage); only when no honest indication is possible do
-  we fall back to a bare loading indicator. This is about perceived
+  we fall back to a bare loading indicator — whose shape is the centered
+  spinner with its details text underneath, never a number (see
+  **Progress presentation** below). This is about perceived
   latency and honest feedback serving the **cockpit** (everything within
   reach) feeling and the **Honest metrics** principle — not prefetching
   everything at any cost: wasted work must always be cheap to abandon
   (a bail-out), so eager loading never becomes a resource obsession, and
   loading flags are transient — they never persist or restore.
+- **Progress presentation — outside a cell it is centered:** a progress
+  display shown OUTSIDE a table cell (row-shaped list items count as
+  cells) is centered: a progress **ring** when the work can be
+  quantified, a **spinner** when it cannot — an unknown denominator is
+  indeterminate, so never a fabricated percentage — with its details
+  text underneath it: what is actually happening (the existing stage
+  vocabulary) plus the honest count or percentage. **Busy buttons are
+  exempt** — a button that is working keeps its plain "Generating…"
+  label. Progress inside a table cell or list row stays compact and
+  inline (the small pill + bar): density there is deliberate, and the
+  column-width arithmetic in the library tables depends on it. This is
+  about perceived latency and honest feedback serving the **cockpit**
+  feeling — the same motivation as the loading ladder above.
 - **Every error indication is dismissible:** an error may gate an
   action, but the user must always be able to clear it in place — close
   it, acknowledge it, or make it go away by retrying — never be left
