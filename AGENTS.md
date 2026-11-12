@@ -280,12 +280,16 @@ Canonical homes (extend these, don't fork them):
 | Bot exclusion (frontend twin) | `frontend/src/lib/players.js` — `isHuman` / `listedPlayers` (+ `isBotId` backstop for flagless rows: synthetic 0xFF ids are 20 digits, real SteamID64s 17) |
 | Replay bot presence | `lib/replay/playercard.js` `presentAt` — the ONE card-presence rule; the sole place a bot may list (while covering a disconnected same-side human) |
 | Bot identity | `extract.isBotKey` + `players.is_bot` — never the "Bot " name prefix |
-| Analysis-rule derived values | every rules-derived value is STORED at analyze time by `internal/analytics` Compute (trade-window counts, trade-opp counts; eco classes pending) — read-time thresholding of rule outputs is forbidden (owner, 2026-11-12); a rules change bumps `analyzed_rule_version` → behind set → `RecomputeAll` |
+| Analysis-rule derived values | every rules-derived value is STORED at analyze time by `internal/analytics` Compute (trade-window counts, trade-opp counts, eco classes/labels in `round_classifications` + `round_side_classes`) — read-time thresholding of rule outputs is forbidden (owner, 2026-11-12); a rules change bumps `analyzed_rule_version` → behind set → `RecomputeAll` |
 
 - **Domain rules live in one place:** side-parity arithmetic in
   `internal/rules` (frontend twin `lib/sideparity.js`, both pinned to
   `internal/rules/testdata/sideparity.json`); the trade window in the analytics pass
-  (`analytics.Compute` recomputes `player_stats.trade_kills`);
+  (`analytics.Compute` recomputes `player_stats.trade_kills`); the eco
+  buy class in `analytics.buyClass` via `Classify` (stored per round in
+  `round_classifications` and per side in `round_side_classes`; the
+  retired read-time fill `EconomyRows` survives only as the oracle in
+  `internal/analytics/eco_equivalence_test.go`);
   `store.GetCombatStats` SQL is authoritative for combat stats (its
   decisions are pinned by `TestGetCombatStatsSQLDecisions`); counted
   rounds in `analytics.CountedRounds` (frontend twin: `lib/rounds.js`
