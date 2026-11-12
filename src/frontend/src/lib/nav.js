@@ -82,12 +82,37 @@ export function expandReplayHash(replayHashValue, backPath) {
   return buildHash(`/replay/${route.id}`, q);
 }
 
+// THE WATCH-LOOP CATEGORIES — the owner's rule for every "watch this
+// thing in the replay" button; these three stampers are THE ways a link
+// states its loop:
+//   round-level   — the round IS the sequence: ?loop= is the round's own
+//                   start→end span (entryLoopSpan over the round row's
+//                   startTick/endTick — freeze included; ±10 s around the
+//                   round's edges would bleed into the previous round's
+//                   end / the next round's freeze, so the round span is
+//                   the right bound). Sites: RoundDetail's "Watch round",
+//                   CompareRounds' "Replay start", Economy's stat-card
+//                   drill.
+//   long event    — first-occurrence −10 s → last-occurrence +10 s (a
+//                   clutch, an engagement sequence): entryLoopSpanAround
+//                   below.
+//   singular event — the event tick ±10 s (a kill, a nade throw, a bomb
+//                   event, a damage event): entryLoopAround below.
+// No loop at all: filter/nav-only entries (Heatmaps' region drill, the
+// palette's saved filter, player rows with no tick) and fresh entries
+// (Match's header "Watch replay") stamp no ?loop= — they navigate, they
+// do not seek-with-loop.
+//
 // entryLoopSpan stamps the ?loop= extra for a RANGE link (the closing
-// half of the replayHash contract above): "<fromTick>,<toTick>". Bounds
-// that cannot be stated exactly — absent (null/"" — Number(null) would
-// silently read 0), non-finite, negative or inverted (from > to) —
-// yield undefined, which buildHash drops: a link never promises a loop
-// it cannot state (the seek still happens on its own).
+// half of the replayHash contract above): "<fromTick>,<toTick>" — the
+// ROUND-LEVEL stamper (the caller states the round's own bounds exactly;
+// an unknown bound yields undefined rather than a guess) and the closing
+// half of the long-event pair (callers that need the ±10 s padding use
+// entryLoopSpanAround). Bounds that cannot be stated exactly — absent
+// (null/"" — Number(null) would silently read 0), non-finite, negative
+// or inverted (from > to) — yield undefined, which buildHash drops: a
+// link never promises a loop it cannot state (the seek still happens on
+// its own).
 export function entryLoopSpan(fromTick, toTick) {
   const from = asTick(fromTick);
   const to = asTick(toTick);
@@ -105,18 +130,40 @@ function asTick(v) {
 // EVENT_LOOP_SECONDS is the engine's own default loop width (toggleLoop
 // arms "10 s from the current frame" — engine.js): every EVENT anchor
 // link spans ± this around the event tick, so a linked loop feels the
-// same as a manually armed one.
+// same as a manually armed one. THE conformance constant of the owner's
+// watch rule — a singular event loops event tick ±10 s.
 const EVENT_LOOP_SECONDS = 10;
 
-// entryLoopAround stamps the ?loop= extra for an EVENT link: ±10 s
-// around the event tick at the match tick rate, floored at 0 — a
-// negative bound is never legal and is the ONLY clamp (the range may
-// legitimately run past the round's edge; it is never reshaped to it).
+// entryLoopAround stamps the ?loop= extra for an EVENT link — the
+// SINGULAR-EVENT category: ±10 s (EVENT_LOOP_SECONDS) around the event
+// tick at the match tick rate, floored at 0 — a negative bound is never
+// legal and is the ONLY clamp (the range may legitimately run past the
+// round's edge; it is never reshaped to it).
 export function entryLoopAround(tick, tickRate) {
   const t = asTick(tick);
   if (!Number.isFinite(t) || t < 0) return undefined;
   const half = Math.round(EVENT_LOOP_SECONDS * normTickRate(tickRate));
   return entryLoopSpan(Math.max(0, Math.round(t - half)), Math.round(t + half));
+}
+
+// entryLoopSpanAround stamps the ?loop= extra for a LONG event — the
+// owner's rule verbatim: "10 seconds before the first [occurrence] … to
+// 10 seconds after the last [occurrence]" of the sequence (a clutch, an
+// engagement sequence): ±EVENT_LOOP_SECONDS padded onto BOTH ends of the
+// occurrence span [firstTick, lastTick] — first − half → last + half —
+// at the match tick rate, floored at 0 like entryLoopAround. Either
+// bound unstatable (absent/non-finite/negative) or an inverted span
+// (first > last) yields undefined — same never-a-promise contract as
+// entryLoopSpan. A single-occurrence span (first === last) is legal and
+// degenerates to the ±10 s singular-event anchor.
+export function entryLoopSpanAround(firstTick, lastTick, tickRate) {
+  const first = asTick(firstTick);
+  const last = asTick(lastTick);
+  if (!Number.isFinite(first) || !Number.isFinite(last) || first < 0 || last < 0 || first > last) {
+    return undefined;
+  }
+  const half = Math.round(EVENT_LOOP_SECONDS * normTickRate(tickRate));
+  return entryLoopSpan(Math.max(0, Math.round(first - half)), Math.round(last + half));
 }
 
 // entrySeekTick resolves the INITIAL TIME TARGET of a Replay entry URL —
@@ -144,8 +191,9 @@ export function entryLoopAround(tick, tickRate) {
 //               and it is why a scope-only URL (a saved/bookmarked
 //               filter, a deep link) lands at that default while its
 //               filter still applies. Watch links from OUTSIDE the
-//               replay (RoundDetail's "Watch round", Combat's round
-//               chips, Utility's ▶, Economy's stat-card drill) stamp
+//               replay (RoundDetail's "Watch round", Combat's
+//               engagement/clutch ▶, Utility's ▶, Economy's stat-card
+//               drill) stamp
 //               ?tick= EXPLICITLY and never carry a landmark filter —
 //               outside the replay, buttons seek, never filter; a
 //               malformed ?tick= (non-numeric, negative) is not a

@@ -5,7 +5,8 @@
 // resolvers (entrySeekTick — the ?tick= position contract: the ONLY
 // "where to jump" instruction, with the round scope as feed-filter
 // state that never seeks — plus entryLoopRange and
-// the ?loop= stampers entryLoopSpan / entryLoopAround beside it, and the
+// the ?loop= stampers entryLoopSpan / entryLoopAround /
+// entryLoopSpanAround beside it, and the
 // keep-alive's entrySeed/entrySeedPlan: the one resolution bundle and
 // the distinct-seed apply rule Replay's mount path and seed watcher
 // share).
@@ -24,6 +25,7 @@ import {
   entrySeedPlan,
   entryLoopSpan,
   entryLoopAround,
+  entryLoopSpanAround,
   expandReplayHash,
 } from './nav.js';
 
@@ -120,8 +122,8 @@ test('sidebar active(): exactly one action lights up per route', () => {
 // default, the filter still applies).
 
 test('entrySeekTick: an exact ?tick= link is the only position source', () => {
-  // RoundDetail's "Watch round" / Combat's EventPlay and round chips /
-  // Utility's "replay" / Economy's stat-card drill all stamp an exact
+  // RoundDetail's "Watch round" / Combat's EventPlay / Utility's
+  // "replay" / Economy's stat-card drill all stamp an exact
   // tick — the outside-replay buttons seek (never filter), so ?tick= is
   // the dominant real-world entry promise.
   assert.equal(entrySeekTick({ tick: '9999' }), 9999);
@@ -368,6 +370,8 @@ test('entryLoopSpan stamps a round/clutch span, or nothing when unstatable', () 
 test('entryLoopAround anchors an event at ±10 s (the engine default width)', () => {
   // 10 s × 64 tick = 640 ticks either side — the width toggleLoop arms.
   assert.equal(entryLoopAround(10640, 64), '10000,11280');
+  // …and exactly ±10 s at ANY match rate (128-tick → 1280 a side).
+  assert.equal(entryLoopAround(10640, 128), '9360,11920');
   // The lower bound floors at 0 (never negative); the upper keeps full
   // width — the range is never reshaped to the round.
   assert.equal(entryLoopAround(100, 64), '0,740');
@@ -380,6 +384,40 @@ test('entryLoopAround anchors an event at ±10 s (the engine default width)', ()
   assert.equal(entryLoopAround(null, 64), undefined);
   assert.equal(entryLoopAround(NaN, 64), undefined);
   assert.equal(entryLoopAround(-1, 64), undefined);
+});
+
+// The LONG-EVENT category (the owner's rule verbatim: "10 seconds before
+// the first … to 10 seconds after the last"): the same ±10 s half-width
+// as entryLoopAround, padded onto BOTH ends of the occurrence span.
+test('entryLoopSpanAround pads ±10 s onto BOTH ends of a long-event span', () => {
+  // 10 s × 64 tick = 640 ticks on each side of each bound.
+  assert.equal(entryLoopSpanAround(10640, 20000, 64), '10000,20640');
+  // A single-occurrence span (first === last) degenerates to the
+  // singular-event ±10 s anchor.
+  assert.equal(entryLoopSpanAround(10640, 10640, 64), '10000,11280');
+  // The lower bound floors at 0 (never negative); the upper keeps full
+  // width — never reshaped to the round, same clamp as entryLoopAround.
+  assert.equal(entryLoopSpanAround(100, 5000, 64), '0,5640');
+  // An absent/invalid tick rate falls back to the engine's 64
+  // (fmt.normTickRate), never a zero-width pad.
+  assert.equal(entryLoopSpanAround(10640, 20000, 0), '10000,20640');
+  assert.equal(entryLoopSpanAround(10640, 20000, undefined), '10000,20640');
+  // 128-tick matches pad by 1280 (the width scales with the match rate).
+  assert.equal(entryLoopSpanAround(10640, 20000, 128), '9360,21280');
+});
+
+test('entryLoopSpanAround states nothing when a bound or the order is unstatable', () => {
+  // Either bound absent/non-finite/negative, or an inverted span: never a
+  // promise (undefined → buildHash drops it; the seek still fires).
+  assert.equal(entryLoopSpanAround(undefined, 20000, 64), undefined);
+  assert.equal(entryLoopSpanAround(10640, undefined, 64), undefined);
+  assert.equal(entryLoopSpanAround(null, null, 64), undefined); // Number(null) is 0 — never a bound
+  assert.equal(entryLoopSpanAround('', '', 64), undefined); // Number('') is 0 too
+  assert.equal(entryLoopSpanAround(NaN, 20000, 64), undefined);
+  assert.equal(entryLoopSpanAround(10640, NaN, 64), undefined);
+  assert.equal(entryLoopSpanAround(-1, 20000, 64), undefined);
+  assert.equal(entryLoopSpanAround(10640, -1, 64), undefined);
+  assert.equal(entryLoopSpanAround(20000, 10640, 64), undefined); // first > last
 });
 
 // --- expandReplayHash: THE mini-player expand path ------------------------

@@ -6,7 +6,9 @@
 // colors (one <path> per team per money era, GAPped at every money-reset
 // boundary — the line is never drawn across one) — plus the
 // Match HEADER row (Watch replay parked far LEFT of the meta line, the
-// "first half" segment cut, the half-score wiring removed).
+// "first half" segment cut, the half-score wiring removed) and the
+// Economy summary stat-card drill's ROUND-LEVEL watch loop (tick +
+// nav.entryLoopSpan round span, never an event ±10 s anchor).
 //
 // The driver builds a SELF-CONTAINED mirror of src/lib (every transitive
 // .js copied, every transitive .svelte compiled, services.js + the Wails
@@ -453,6 +455,48 @@ check(
 
 // Open round 12's WHY row: it must stay attached ABOVE the boundary line
 // (round row → why row → line → next round row).
+console.log("D2. Economy stat-card drill → ROUND-LEVEL loop (the round's own span, never ±10 s)");
+// The four summary cards are the Economy view's watch buttons: each
+// drills to the round it names with the ROUND-LEVEL loop (the round IS
+// the sequence — owner's watch rule): tick = the round's start, loop =
+// nav.entryLoopSpan(start, end) — the SAME helper RoundDetail's "Watch
+// round" and CompareRounds' "Replay start" stamp — never an event-style
+// ±10 s anchor and never a filter. Fixture round 1 spans 1000→2900
+// (counted(13) above).
+globalThis.__nav = [];
+const econCards = [...root.querySelectorAll('.econ-summary .stat-cell')];
+check('four drillable stat cards render', econCards.length === 4, String(econCards.length));
+check(
+  'first card is the pistol drill',
+  /Pistol/.test(econCards[0]?.textContent || ''),
+  (econCards[0]?.textContent || '').slice(0, 60),
+);
+econCards[0]?.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+await sleep();
+const navDrill = (globalThis.__nav || []).at(-1);
+const { entryLoopSpan } = await import('../src/lib/nav.js');
+const r1 = counted(13).find((r) => r.number === 1);
+check(
+  'card click seeks to the round start WITH the round-span loop (entryLoopSpan), no filter',
+  !!navDrill &&
+    navDrill.includes('tick=1000') &&
+    navDrill.includes('loop=' + entryLoopSpan(r1.startTick, r1.endTick)) &&
+    navDrill.includes('loop=1000,2900') &&
+    !navDrill.includes('cat=') &&
+    !navDrill.includes('roundFrom'),
+  navDrill || 'no navigation',
+);
+check(
+  'the round span is NOT an event anchor (no ±10 s pad: 1000−640 would read loop=360,…)',
+  !!navDrill && !navDrill.includes('loop=360,'),
+  navDrill || 'no navigation',
+);
+check(
+  'the drill keeps its Economy return origin',
+  !!navDrill && navDrill.includes('back=match/3/economy'),
+  navDrill || 'no navigation',
+);
+
 console.log('E. Economy tab: an open econ-why-row stays above the split-before line');
 const whyBtn = rowsOf(table)[11].querySelector('.econ-cls');
 check('round 12 has a class chip button', !!whyBtn);
