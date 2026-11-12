@@ -825,7 +825,7 @@
           </button>
         </div>
         {#if warnings == null}
-          <p class="muted" role="status">Loading…</p>
+          <p class="muted" role="status"><StatusChip block detail="Loading…" /></p>
         {:else if warnings.length === 0}
           <p class="muted" role="status">None — this demo imported cleanly.</p>
         {:else}
@@ -1419,7 +1419,7 @@
       <Explorer embedded routeId={id} {nav} />
     {/if}
   {:else if !error}
-    <p class="muted" role="status">Loading…</p>
+    <p class="muted" role="status"><StatusChip block detail="Loading…" /></p>
   {/if}
 </div>
 

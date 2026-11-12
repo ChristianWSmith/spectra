@@ -16,6 +16,7 @@
   import { playerSideClassAt, teamNames, teamStartClass } from '../teams.js';
   import { seed, remember, matchKey } from '../viewstate.svelte.js';
   import ProfileLink from '../components/ProfileLink.svelte';
+  import StatusChip from '../components/StatusChip.svelte';
 
   // Match renders <Utility {id} /> — nav is optional, fall back to the hash
   // router directly so the drill-downs still work. `go` is what the
@@ -283,7 +284,7 @@
   {/if}
 
   {#if loading}
-    <p class="muted" role="status">Loading utility events…</p>
+    <p class="muted" role="status"><StatusChip block detail="Loading utility events…" /></p>
   {:else}
     <div class="util-filters toolbar">
       <label class="util-field" for="util-kind">

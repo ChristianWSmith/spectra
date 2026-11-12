@@ -36,6 +36,7 @@
   import SortTh from '../components/SortTh.svelte';
   import EventPlay from '../components/EventPlay.svelte';
   import ProfileLink from '../components/ProfileLink.svelte';
+  import StatusChip from '../components/StatusChip.svelte';
 
   let { id = 0, nav = () => {} } = $props();
 
@@ -433,8 +434,9 @@
   {#if loading}
     <!-- All three panels below come from ONE Promise.all: until it
          settles, empty tables would be a false "no data" state — rung 3
-         of the loading ladder (plain indicator, transient). -->
-    <p class="muted" role="status">Loading combat data…</p>
+         of the loading ladder (the bare fallback's centered spinner +
+         details underneath, transient). -->
+    <p class="muted" role="status"><StatusChip block detail="Loading combat data…" /></p>
   {:else}
     <section class="panel comb-sec">
       <h2>Combat stats</h2>
@@ -717,7 +719,7 @@
     {#if kastError}
       <p class="error" role="alert">{kastError}</p>
     {:else if kastLoading}
-      <p class="muted" role="status">Loading…</p>
+      <p class="muted" role="status"><StatusChip block detail="Loading…" /></p>
     {:else}
       <div class="comb-kast-grid">
         {#each kastRows as r (r.round)}

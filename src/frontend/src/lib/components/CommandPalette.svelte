@@ -15,6 +15,7 @@
   import { listedPlayers } from '../players.js';
   import { parseLandmarkFilter } from '../replay/landmarks.js';
   import Dialog from './Dialog.svelte';
+  import StatusChip from './StatusChip.svelte';
 
   let { nav = () => {} } = $props();
 
@@ -357,7 +358,9 @@
       {/each}
     {/each}
     {#if loading}
-      <div class="cp-empty muted" role="status">Searching…</div>
+      <div class="cp-empty muted" role="status">
+        <StatusChip block detail="Searching…" />
+      </div>
     {:else if query.trim() && flat.length === 0}
       <div class="cp-empty muted" role="status">No results for “{query.trim()}”.</div>
     {/if}

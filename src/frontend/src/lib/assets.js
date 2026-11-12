@@ -1,6 +1,6 @@
 // assets.js — THE shared CS2 asset-extraction driver: the three-family
 // sequence (radar map packs → equipment icons → replay sounds), the step
-// labels shown beside the ONE progress widget (StatusChip), the
+// labels the ONE progress widget (StatusChip) renders, the
 // spectra:asset-progress family each step's payloads carry, and the
 // aggregated outcome wording. Settings' CS2 assets section and the
 // launch prompt (MapPackPrompt.svelte) both run it — one home for the

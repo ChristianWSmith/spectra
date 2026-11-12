@@ -40,18 +40,31 @@
   // The payload of the step CURRENTLY running, gated on that step's own
   // family (assets.js assetFamilyForStep): a stale payload from the
   // previous step or a concurrent run's payload for another family never
-  // drives this bar. Null between steps → the animated indeterminate bar
-  // (StatusChip's class:indeterminate) — never a pretended percentage.
+  // drives this display. Null between steps → StatusChip's indeterminate
+  // spinner (block mode, progress 0) — never a pretended percentage.
   const stepProgress = $derived(
     progress && progress.family === assetFamilyForStep(step) ? progress : null,
   );
 
-  // 0 = the animated indeterminate bar (StatusChip's class:indeterminate),
-  // a real 0..1 = the determinate bar + its percentage.
+  // 0 = the indeterminate spinner (StatusChip block mode), a real 0..1 =
+  // the ring plus its percentage in the details line underneath.
   const pct = $derived(
     stepProgress && stepProgress.total > 0
       ? Math.min(1, stepProgress.done / stepProgress.total)
       : 0,
+  );
+
+  // The details line under the block-mode indicator: the running step's
+  // name plus its honest counts — the counts only while that step's own
+  // payload has any (between steps the line is the step name alone).
+  const stepDetail = $derived(
+    step
+      ? `Extracting ${step}…${
+          stepProgress && stepProgress.done > 0
+            ? ` ${stepProgress.done} of ${stepProgress.total}`
+            : ''
+        }`
+      : '',
   );
 
   // Subscribe for the whole component lifetime; the unsubscribe is the
@@ -206,16 +219,15 @@
         Counter-Strike ships with the app.
       </p>
       <!-- Live extraction progress: the app's ONE progress widget
-           (StatusChip) beside the step text — the Settings pattern.
+           (StatusChip) in BLOCK mode — the centered ring/spinner with
+           its details text underneath, the presentation every progress
+           display outside a table cell uses (PRODUCT.md "### Defaults").
            Every family drives it with real numbers from
            spectra:asset-progress (gated to the running step's family);
-           between steps the bar stays the animated indeterminate one. -->
+           between steps the indicator stays the indeterminate spinner. -->
       {#if busy && step}
         <p class="muted" role="status">
-          <StatusChip status="running" progress={pct} />
-          Extracting {step}…{stepProgress && stepProgress.done > 0
-            ? ` ${stepProgress.done} of ${stepProgress.total}`
-            : ''}
+          <StatusChip block progress={pct} detail={stepDetail} />
         </p>
       {/if}
       {#if msg}

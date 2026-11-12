@@ -15,6 +15,7 @@
   import { buildHash } from '../router.js';
   import StatCard from '../components/StatCard.svelte';
   import SuggestInput from '../components/SuggestInput.svelte';
+  import StatusChip from '../components/StatusChip.svelte';
   import { profileBackTarget } from '../nav.js';
   import { listedPlayers } from '../players.js';
   import { teamStartClass } from '../teams.js';
@@ -471,6 +472,6 @@
       </div>
     </section>
   {:else if !profileError}
-    <p class="muted" role="status">Loading…</p>
+    <p class="muted" role="status"><StatusChip block detail="Loading…" /></p>
   {/if}
 </div>

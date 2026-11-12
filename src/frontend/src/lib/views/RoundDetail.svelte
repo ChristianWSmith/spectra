@@ -19,6 +19,7 @@
   import RoundStrip from '../components/RoundStrip.svelte';
   import EventFlags from '../components/EventFlags.svelte';
   import ProfileLink from '../components/ProfileLink.svelte';
+  import StatusChip from '../components/StatusChip.svelte';
 
   let { id = 0, round = 0, query = {}, nav = () => {} } = $props();
 
@@ -27,8 +28,9 @@
   const backPath = $derived(query.back || '');
 
   let detail = $state(null);
-  // Rung 3 of the loading ladder: a plain indicator while the round reads
-  // are in flight — without it this view is a blank page with only a Back
+  // Rung 3 of the loading ladder: the bare fallback (a centered spinner
+  // with its details text underneath) while the round reads are in
+  // flight — without it this view is a blank page with only a Back
   // button. Transient (never seeded/remembered, never in the URL); cleared
   // once like every first-load flag, so round-to-round navigation keeps the
   // current content instead of flashing back to a spinner.
@@ -612,7 +614,8 @@
     </div>
   {:else if loading}
     <!-- The round reads are still in flight: without this the view is a
-         blank page under its header (rung 3 — a plain indicator, transient). -->
-    <p class="muted" role="status">Loading round…</p>
+         blank page under its header (rung 3 — the bare fallback's
+         centered spinner + details underneath, transient). -->
+    <p class="muted" role="status"><StatusChip block detail="Loading round…" /></p>
   {/if}
 </div>

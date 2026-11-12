@@ -12,6 +12,7 @@
   import { fmtInt, fmtMetric } from '../fmt.js';
   import MatchPicker from '../components/MatchPicker.svelte';
   import ProfileLink from '../components/ProfileLink.svelte';
+  import StatusChip from '../components/StatusChip.svelte';
   import { seed, remember } from '../viewstate.svelte.js';
 
   let { nav = () => {} } = $props();
@@ -405,7 +406,7 @@
         </div>
       {/if}
       {#if metrics.length === 0 && !listError}
-        <p class="muted" role="status">Loading…</p>
+        <p class="muted" role="status"><StatusChip block detail="Loading…" /></p>
       {/if}
     </section>
 

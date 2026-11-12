@@ -12,6 +12,7 @@
   import { downloadText } from '../download.js';
   import { toCSV } from '../csv.js';
   import { seed, remember } from '../viewstate.svelte.js';
+  import StatusChip from '../components/StatusChip.svelte';
 
   let { nav = () => {} } = $props();
 
@@ -302,7 +303,7 @@
           </div>
         {:else}
           {#if !schemaError}
-            <p class="muted" role="status">Loading schema…</p>
+            <p class="muted" role="status"><StatusChip block detail="Loading schema…" /></p>
           {/if}
         {/each}
       </div>

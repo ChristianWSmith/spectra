@@ -17,6 +17,7 @@
   import { listedPlayers } from '../players.js';
   import SuggestInput from '../components/SuggestInput.svelte';
   import SortTh from '../components/SortTh.svelte';
+  import StatusChip from '../components/StatusChip.svelte';
   import { seed, remember } from '../viewstate.svelte.js';
 
   let { nav = () => {} } = $props();
@@ -173,7 +174,7 @@
 
   <section class="panel">
     {#if loading}
-      <p class="muted" role="status">Loading players…</p>
+      <p class="muted" role="status"><StatusChip block detail="Loading players…" /></p>
     {:else if players.length === 0}
       {#if !error}
         <!-- Gated on error: a failed list read is UNKNOWN, never "no

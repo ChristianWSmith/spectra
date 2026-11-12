@@ -1951,7 +1951,7 @@
   // The preload's stage ledger, subscribed while `loading` — transient
   // state: never seeded, never remembered, never in the URL (AGENTS.md
   // "State placement": loading is neither route-query nor registry
-  // state). progress 0 = indeterminate (StatusChip's animated bar); a
+  // state). progress 0 = indeterminate (StatusChip's spinner); a
   // percentage only ever appears over an honest denominator (positions
   // bytes vs Content-Length, radar images i/N) — never a fabricated one.
   // preloadArm is bumped by load() AFTER it starts the preload: this
@@ -1969,8 +1969,8 @@
     return off;
   });
 
-  // The chip's copy: the stage label beside the bar, plus the count for
-  // the determinate stages (fmtBytes is the one canonical byte
+  // The details line under the indicator: the stage label, plus the
+  // count for the determinate stages (fmtBytes is the one canonical byte
   // formatter). unit 'bytes' is the Content-Length-denominated positions
   // stream; the only other determinate unit is the radar image count.
   const loadDetail = $derived.by(() => {
@@ -3177,14 +3177,14 @@
     {#if loading}
       <!-- The ladder's tier-2 indication (PRODUCT.md "### Defaults"):
            the ONE progress widget (StatusChip — no second bar anywhere)
-           over the preload's stage ledger. progress 0 = indeterminate
-           (the animated bar, never a fabricated "0%"); a number only
-           appears over an honest denominator (positions bytes vs
+           in BLOCK mode: the centered ring/spinner over the preload's
+           stage ledger with the details text underneath. progress 0 =
+           indeterminate (the spinner, never a fabricated "0%"); a number
+           only appears over an honest denominator (positions bytes vs
            Content-Length, radar images i/N), and the stage label + count
-           ride the text beside the chip (the MapPackPrompt pattern).
-           Loading is transient — never restored. -->
+           ride the details line. Loading is transient — never restored. -->
       <p class="muted" role="status">
-        <StatusChip status="running" progress={loadPct} /> Loading replay…{loadDetail}
+        <StatusChip block progress={loadPct} detail={'Loading replay…' + loadDetail} />
       </p>
     {:else if noSidecar}
       <div class="panel empty">
@@ -4125,7 +4125,7 @@
             {#if filter.cats.length === 0}
               No categories enabled — turn some on in Filters.
             {:else if feedLoading}
-              Loading events…
+              <StatusChip block detail="Loading events…" />
             {:else if prefHidesScope}
               Knife/warmup rounds are hidden — show them in Settings, or clear the round range.
             {:else}
@@ -4140,7 +4140,7 @@
         </button>
       {/if}
       {#if feedLoading && feedRows.length > 0}
-        <p class="muted lm-hint" role="status">Loading…</p>
+        <p class="muted lm-hint" role="status"><StatusChip block detail="Loading…" /></p>
       {/if}
       {/if}
       {#if selected}
@@ -4222,7 +4222,7 @@
               </details>
               <button class="btn small" onclick={copyDetail}>{copied ? 'Copied' : 'Copy payloads'}</button>
             {:else if !detailError}
-              <p class="muted" role="status">Loading payloads…</p>
+              <p class="muted" role="status"><StatusChip block detail="Loading payloads…" /></p>
             {/if}
           {:else if selected.source === 'chat'}
             <dl class="facts lm-facts">

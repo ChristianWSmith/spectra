@@ -73,8 +73,9 @@
   let loadingMore = $state(false);
   let jobs = $state([]);
   let jobProgress = $state(new Map()); // jobId -> latest progress payload
-  // First-paint gates for the empty state — the loading ladder's rung 3 (a
-  // plain indicator, TRANSIENT by the State-placement rule: never seeded,
+  // First-paint gates for the empty state — the loading ladder's rung 3
+  // (the bare fallback: a centered spinner with its details text
+  // underneath, TRANSIENT by the State-placement rule: never seeded,
   // never remembered, never in the URL). Until BOTH first reads have
   // answered, an empty table would claim "No matches yet" while the library
   // simply has not arrived, so the dropzone shows "Loading…" until then.
@@ -125,9 +126,9 @@
   let demoFiles = $state([]);
   let demoScanning = $state(false); // UI: refresh button + "Scanning…"
   // The scan's progress point (spectra:scan-progress → StatusChip): 0 while
-  // the walk/stat phase runs (no honest denominator → indeterminate bar),
-  // a real bytes fraction while it hashes. Transient like every loading
-  // flag — never seeded, never in the URL.
+  // the walk/stat phase runs (no honest denominator → the indeterminate
+  // spinner), a real bytes fraction while it hashes. Transient like every
+  // loading flag — never seeded, never in the URL.
   let scanProgress = $state(0);
   // Non-reactive in-flight guard: refreshDemoFiles WRITES $state
   // (demoScanning / scanProgress), so a $effect must never READ those —
@@ -280,8 +281,8 @@
       subscribeJobProgress((snap) => (jobProgress = snap)),
       // Scan progress (spectra:scan-progress): the import-dir panel's ONE
       // StatusChip rides this — progress 0 = the walk phase's indeterminate
-      // bar, a real fraction while the backend hashes. Pure progress: it
-      // changes no row, so it stays OUT of services.js's read-cache
+      // spinner, a real fraction while the backend hashes. Pure progress:
+      // it changes no row, so it stays OUT of services.js's read-cache
       // invalidation list (the spectra:asset-progress rule).
       onEvent('spectra:scan-progress', (p) => {
         scanProgress = p && typeof p.progress === 'number' ? p.progress : 0;
@@ -800,9 +801,11 @@
     {#if listLoading || jobsLoading}
       <!-- Rung 3 of the loading ladder: until BOTH first reads have
            answered, an empty table would claim "No matches yet" while the
-           library is still on its way. Plain indicator only — transient
-           (see listLoading/jobsLoading), never a progress widget. -->
-      <p class="muted" role="status">Loading…</p>
+           library is still on its way. The bare fallback's shape — a
+           centered spinner with its details text underneath, no numbers
+           (there is no denominator) — transient (see listLoading/
+           jobsLoading), never restored. -->
+      <p class="muted" role="status"><StatusChip block detail="Loading…" /></p>
     {:else if matches.length === 0 && jobs.length === 0 && !searching && !error}
       <!-- Honesty gate: a FAILED list load must not also claim the
            library is empty (error above is the truth about why nothing
@@ -1010,13 +1013,15 @@
       <p class="error" role="alert">{demoError}</p>
     {/if}
     {#if demoScanning && demoFiles.length === 0}
-      <!-- The scan's ONE progress widget (StatusChip — MapPackPrompt's
-           non-job precedent): spectra:scan-progress drives `progress`.
-           0 = the walk phase, which has no honest denominator → the
-           animated indeterminate bar; a real byte fraction while the
-           backend hashes. Never a second bar, never a fabricated "0%". -->
+      <!-- The scan's ONE progress widget (StatusChip — block mode: the
+           centered ring/spinner + details underneath that PRODUCT.md
+           "### Defaults" requires OUTSIDE a table cell). spectra:scan-progress
+           drives `progress`. 0 = the walk phase, which has no honest
+           denominator → the spinner; a real byte fraction while the
+           backend hashes → the ring. Never a second bar, never a
+           fabricated "0%". -->
       <p class="muted" role="status">
-        <StatusChip status="running" progress={scanProgress} /> Scanning folders…
+        <StatusChip block progress={scanProgress} detail="Scanning folders…" />
       </p>
     {:else if demoFiles.length === 0}
       <p class="muted" role="status">

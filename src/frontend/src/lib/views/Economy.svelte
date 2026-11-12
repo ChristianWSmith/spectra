@@ -17,6 +17,7 @@
   import EconCurve from '../components/EconCurve.svelte';
   import StatCard from '../components/StatCard.svelte';
   import WinnerCell from '../components/WinnerCell.svelte';
+  import StatusChip from '../components/StatusChip.svelte';
 
   let { id = 0, nav = () => {} } = $props();
 
@@ -265,7 +266,7 @@
   {/if}
 
   {#if loading}
-    <p class="muted" role="status">Loading economy…</p>
+    <p class="muted" role="status"><StatusChip block detail="Loading economy…" /></p>
   {:else}
     <div class="econ-head">
       <span class="muted"

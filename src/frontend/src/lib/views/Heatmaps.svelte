@@ -267,7 +267,7 @@
   // ({stage, done, total} — AnalyticsService's presence emitter).
   // TRANSIENT like `loading` itself: never seeded/remembered, no URL or
   // viewstate-registry involvement; dropped when a run starts and ends.
-  // null before the first event → the chip renders its indeterminate bar
+  // null before the first event → StatusChip's indeterminate spinner
   // (also what the fast event-kind rasters show — they emit no progress,
   // which is the honest picture: no denominator, no pretend percentage).
   let heatProgress = $state(null);
@@ -282,8 +282,9 @@
     return off;
   });
 
-  // 0 = StatusChip's animated indeterminate bar; a real 0..1 = the
-  // determinate bar with its percentage (frames read so far / total).
+  // 0 = StatusChip's indeterminate spinner (block mode); a real 0..1 =
+  // the ring with its percentage in the details line (frames read so
+  // far / total).
   const heatPct = $derived(
     heatProgress && heatProgress.total > 0 ? Math.min(1, heatProgress.done / heatProgress.total) : 0,
   );
@@ -554,15 +555,20 @@
     <button class="btn primary heat-generate" disabled={loading} onclick={generate}>
       {loading ? 'Generating…' : grid ? 'Regenerate' : 'Generate'}
     </button>
-    {#if loading}
-      <!-- The ONE progress widget beside the (necessarily label-only)
-           button: determinate frames while the sidecar loads
-           (spectra:heatmap-progress), the raster phase and any generate
-           with no honest denominator ride progress 0 = StatusChip's
-           indeterminate bar — never a pretend percentage. -->
-      <StatusChip status="running" progress={heatPct} stage={heatStage} />
-    {/if}
   </div>
+  <!-- The ONE progress widget (StatusChip block mode) — deliberately
+       OUTSIDE the toolbar row: a horizontal control row cannot be
+       "centered", so the centered ring/spinner + its details text sit
+       in their own row beneath it (PRODUCT.md "### Defaults").
+       Determinate frames while the sidecar loads
+       (spectra:heatmap-progress), the raster phase and any generate
+       with no honest denominator ride progress 0 = the spinner —
+       never a pretend percentage. -->
+  {#if loading}
+    <p class="muted" role="status">
+      <StatusChip block progress={heatPct} stage={heatStage} />
+    </p>
+  {/if}
 
   {#if regionNote}
     <p class="heat-region-note" role="status">

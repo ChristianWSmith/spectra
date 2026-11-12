@@ -28,6 +28,7 @@
   import { playerSideClassAt } from '../teams.js';
   import LandmarkRow from '../components/LandmarkRow.svelte';
   import ProfileLink from '../components/ProfileLink.svelte';
+  import StatusChip from '../components/StatusChip.svelte';
 
   let { id = 0, query = {}, nav = () => {} } = $props();
 
@@ -235,9 +236,9 @@
     </section>
   {:else if loading}
     <!-- The round reads are still in flight: without this the selection
-         renders as empty column shells (rung 3 — plain indicator,
-         transient). -->
-    <p class="muted" role="status">Loading rounds…</p>
+         renders as empty column shells (rung 3 — the bare fallback's
+         centered spinner + details underneath, transient). -->
+    <p class="muted" role="status"><StatusChip block detail="Loading rounds…" /></p>
   {:else}
     <div class="cmp-grid" style={gridStyle}>
       {#each cols as col (col.round)}
