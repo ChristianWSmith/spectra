@@ -248,6 +248,33 @@ check(
     !navStart.includes('cat='),
   navStart || 'no navigation',
 );
+// Round-span EQUALITY pin (watch-audit): the stamped loop is exactly
+// nav.entryLoopSpan(round.startTick, round.endTick) — the SAME canonical
+// stamper RoundDetail's "Watch round" uses (its driver pins the same
+// helper with its own fixture), so the two round-level buttons cannot
+// drift apart. The round IS the sequence (owner's watch rule): the loop
+// is the round's own start→end span, never an event-style ±10 s anchor.
+const { entryLoopSpan } = await import('../src/lib/nav.js');
+const r5 = base.rounds.find((r) => r.number === 5);
+check(
+  'Replay start loop = nav.entryLoopSpan(startTick, endTick) — the ONE round-level stamper',
+  !!navStart && navStart.includes('loop=' + entryLoopSpan(r5.startTick, r5.endTick)),
+  navStart || 'no navigation',
+);
+check(
+  'the round span is NOT padded (no ±10 s bleed into the previous round / next freeze)',
+  !!navStart && navStart.includes('loop=1000,9999') && !navStart.includes('loop=360,'),
+  navStart || 'no navigation',
+);
+// Cross-view source pin: RoundDetail's round-level button stamps the
+// SAME helper over the SAME bounds (the equality half lives in the
+// round-detail driver for the other direction).
+const rdSrc = readFileSync('src/lib/views/RoundDetail.svelte', 'utf8');
+check(
+  'RoundDetail "Watch round" uses the same entryLoopSpan(startTick, endTick) (round-span equality)',
+  rdSrc.includes('entryLoopSpan(detail.round.startTick, detail.round.endTick)'),
+  'Watch round no longer stamps entryLoopSpan(startTick, endTick)',
+);
 
 console.log('B. the sequence ▶ follows the row ACTOR when it has one');
 const rows = [...(col?.querySelectorAll('.lm-row') || [])];

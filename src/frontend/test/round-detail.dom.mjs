@@ -300,6 +300,34 @@ check(
     !navWatch.includes('follow='),
   navWatch || 'no navigation',
 );
+// Round-span EQUALITY pin (watch-audit): the stamped loop is exactly
+// nav.entryLoopSpan(round.startTick, round.endTick) — the canonical
+// round-level stamper CompareRounds' "Replay start" uses TOO (its driver
+// pins the same helper with its own fixture), so the two round-level
+// buttons cannot drift apart. The fixture's round 5 spans 8000→9999 and
+// its freeze ends at 9500: the loop covers the WHOLE round INCLUDING the
+// freeze (it starts at startTick, never at freezeEndTick) — the round IS
+// the sequence (owner's watch rule).
+const { entryLoopSpan } = await import('../src/lib/nav.js');
+check(
+  "Watch round loop = nav.entryLoopSpan(startTick, endTick) — the ONE round-level stamper",
+  !!navWatch && navWatch.includes('loop=' + entryLoopSpan(roundRow(5).startTick, roundRow(5).endTick)),
+  navWatch || 'no navigation',
+);
+check(
+  'the round span starts at the round start (freeze INCLUDED, not skipped to freezeEnd)',
+  !!navWatch && navWatch.includes('loop=8000,') && !navWatch.includes('loop=9500'),
+  navWatch || 'no navigation',
+);
+// Cross-view source pin: CompareRounds' round-level button stamps the
+// SAME helper over the SAME bounds (the equality half lives in the
+// compare-rounds driver for the other direction).
+const cmpSrc = readFileSync('src/lib/views/CompareRounds.svelte', 'utf8');
+check(
+  'CompareRounds "Replay start" uses the same entryLoopSpan(start, end) (round-span equality)',
+  cmpSrc.includes('loop: entryLoopSpan(start, end)'),
+  'replayStart no longer stamps entryLoopSpan(start, end)',
+);
 const killBtn = [...root.querySelectorAll('button')].find((b) =>
   (b.getAttribute('title') || '').startsWith('Watch from this kill — follow'),
 );
