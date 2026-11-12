@@ -1155,6 +1155,28 @@ check(
   `${JSON.stringify(followsJ3)} / ${q(rootJ3, '.pc-card').className}`,
 );
 
+// --- The dead card's PAINT (the owner's ruling, 2026-11-11) ---------------
+// A STRONGER dim than the old 0.72 and the card's BORDER going gray —
+// both CSS-only, read from the component's injected sheet (comments
+// stripped, like the ring pins). Border-color, never outline: the
+// player-color box-shadow stays the card's ONE ring.
+const deadRule = ruleFor('pc-dead(?![\\w-])');
+check(
+  'dead card dims MORE: opacity 0.55 (was 0.72)',
+  /opacity:\s*0\.55\b/.test(deadRule),
+  deadRule,
+);
+check(
+  'dead card: the BORDER goes gray (border-color tint, never an outline)',
+  /border-color:\s*var\(--muted\)/.test(deadRule) && !/outline/.test(deadRule),
+  deadRule,
+);
+check(
+  'live cards stay untouched: the base .pc-card rule carries NO opacity (dim lives only on .pc-dead)',
+  !!ruleFor('pc-card(?![\\w-])') && !/opacity/.test(ruleFor('pc-card(?![\\w-])')),
+  ruleFor('pc-card(?![\\w-])'),
+);
+
 // The follow highlight + click affordance: CSS-ONLY (no head markup is
 // added — the head-order pin in section C stays green), and NEVER an
 // outline (the one-ring pin above scans every .pc-card rule).

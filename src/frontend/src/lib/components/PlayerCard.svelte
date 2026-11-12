@@ -524,9 +524,22 @@
     }
   }
 
-  /* Dead reads as dead without hiding the last-known values. */
+  /* Dead reads as dead without hiding the last-known values — TWO
+     paint-only signals (the owner's ruling, 2026-11-11): a stronger dim
+     (0.55 — clearly distinct from a live card at a glance) and the
+     card's BORDER going gray (var(--muted), the same neutral tint the
+     hover lift uses) so the outline itself reads as dead. Border-color,
+     NEVER outline and never a second box-shadow: the .pc-color ring
+     stays the card's ONLY ring (the one-ring pin scans every .pc-card
+     rule) — same mechanism as .pc-follow's amber tint. Precedence:
+     .pc-follow (0,2,0) outranks this (0,1,0), so a FOLLOWED dead card
+     keeps its amber (the follow icon in the head marks both); :hover
+     outranks it too, and hover paints the same --muted gray, so a dead
+     card simply never lifts under the cursor. Live cards are untouched:
+     opacity lives ONLY here, never on the base .pc-card rule. */
   .pc-dead {
-    opacity: 0.72;
+    opacity: 0.55;
+    border-color: var(--muted);
   }
 
   /* The head's STATUS SLOT is its height: reserved for the tallest state

@@ -94,7 +94,7 @@
   // Player colors (the card ring + the renderer's dot rim) are the raw
   // m_iCompTeammateColor the sidecar carries, mapped once here; the live
   // K/D/A + ADR fold feeds the cards' stats row.
-  import { colorHexOf, colorSlotsOf } from '../replay/playercolor.js';
+  import { colorHexOf, colorSlotsOf, colorRankOf } from '../replay/playercolor.js';
   import { createLiveStatsCursor, liveStatsIncremental } from '../replay/livestats.js';
   // Card presence (player_connect / player_disconnect): which roster
   // slots are IN the match at the playhead — the ONE rule that decides
@@ -816,8 +816,9 @@
   // Every filter change navigates: serialize + preserve the entry
   // context (tick/loop/back/follow) + write the hash. sel is entry-only — it is not
   // re-pinned on later filter changes (selection stays local).
-  // keepFollow=false drops the follow param (the control group's dismiss
-  // row — see releaseFollow), so a preserved entry context cannot
+  // keepFollow=false drops the follow param (releaseFollow — the followed
+  // card's click; the control-group indicator carries no dismiss control
+  // anymore), so a preserved entry context cannot
   // re-arm it.
   // keepLoop=false drops the loop param instead (the range-edit rule —
   // see onLoopTime): after the user edits a bound the URL must mirror
@@ -1393,11 +1394,12 @@
   // churn every card's onclick for nothing. Clicking a card drives
   // engine.setFollow(slot) — the SAME call the F/1-9 keys and the
   // follow popover use, so everything visible (the camera dropdown →
-  // "Follow", the control-group "Following <name>" row + its ✕,
-  // uiFollow → the card's .pc-mark, camMode reconciliation) derives
+  // "Follow", the control-group "Following <name>" row — display-only,
+  // the indicator carries no controls), uiFollow → the card's .pc-mark,
+  // camMode reconciliation) derives
   // from the existing onChange mirror untouched. Clicking the card you
   // are ALREADY following (uiFollow === slot) RELEASES it instead — the
-  // F-toggle semantics with the ✕'s route hygiene (releaseFollow drops
+  // F-toggle semantics with releaseFollow's route hygiene (it drops
   // ?follow= too, so the entry effect can never resurrect it). NO
   // alive-gating: the keyboard (input.js) and the popover gate only
   // connectivity, follow-of-dead is well-defined (the renderer holds
@@ -1433,6 +1435,20 @@
     const build = (slots, col) =>
       slots
         .filter((slot) => playerConnected(slot, tick))
+        // CARD ORDER — the owner's teammate-color ruling (2026-11-11):
+        // each column reads top-to-bottom yellow → purple → green →
+        // blue → orange, mapped from the raw m_iCompTeammateColor by
+        // playercolor.colorRankOf (the ONE color home — the same
+        // validator as the card's ring). A missing/unknown color sorts
+        // LAST, never guessed; Array#sort is STABLE, so equal ranks
+        // (and every unknown color) keep roster/slot order. This reorders
+        // the CARDS only — cardGroups (who belongs to which column) and
+        // columnSideAt are untouched.
+        .sort((a, b) => {
+          const ra = colorRankOf(players[a] ? players[a].color : null);
+          const rb = colorRankOf(players[b] ? players[b].color : null);
+          return (ra ?? Infinity) - (rb ?? Infinity);
+        })
         .map((slot) => {
           const p = players[slot] || {};
           const alive = aliveAtFrame(frame, slot);
@@ -1537,7 +1553,8 @@
   // each-key can be the kind.
   const ctrlRows = $derived.by(() => {
     const rows = [];
-    if (uiFollow != null && players[uiFollow]) {
+    const showFollow = uiFollow != null && players[uiFollow];
+    if (showFollow) {
       rows.push({ kind: 'follow', name: players[uiFollow].name || `slot ${uiFollow}` });
     }
     if (uiLoopOn && uiLoopFrom >= 0 && uiLoopTo >= 0) {
@@ -1549,8 +1566,18 @@
     }
     if (uiSkipFreeze) rows.push({ kind: 'skip', text: 'skip freeze: on' });
     // Smart is the default camera — only a manual/selected mode is worth
-    // a row (camLabel is the popover's own label).
-    if (camMode !== 'smart') rows.push({ kind: 'cam', text: `camera: ${camLabel}` });
+    // a row (camLabel is the popover's own label). THE DEDUPE RULE (the
+    // owner's overlay ruling, 2026-11-11): while FOLLOWING, the follow
+    // row already states the fact — "Following <name>" and
+    // "camera: Follow" were the same information twice — so the
+    // camera-mode row renders ONLY when it adds something the follow
+    // row does not: Free (a non-default mode worth surfacing), or the
+    // transient follow-with-no-player state (never settled, but the
+    // indicator must stay truthful if it ever shows). The indicator is
+    // always right, never redundant.
+    if (camMode === 'free' || (camMode === 'follow' && !showFollow)) {
+      rows.push({ kind: 'cam', text: `camera: ${camLabel}` });
+    }
     if (packNote) rows.push({ kind: 'note', text: packNote });
     return rows;
   });
@@ -1678,13 +1705,16 @@
     if (engine.state.followSlot !== want) engine.setFollow(want);
   });
 
-  // Dismiss the follow row of the stage's control group: release the
-  // camera AND drop ?follow= from the route (entry context rides the
-  // query — navigateFilter preserves it, so the param has to go for the
-  // dismissal to stick). ALSO the release half of a CARD click —
-  // followHandlerFor routes a click on the already-followed card here
-  // (the F-toggle semantics), so this function now has two callers: the
-  // ✕ row and the card columns.
+  // Release the follow camera AND drop ?follow= from the route (entry
+  // context rides the query — navigateFilter preserves it, so the
+  // param has to go for the dismissal to stick). The stage indicator's
+  // ✕ is GONE (the owner's overlay ruling: no controls in the top-left
+  // indicator), so the caller here is now ONLY the release half of a
+  // CARD click — followHandlerFor routes a click on the already-followed
+  // card here (the F-toggle semantics). The other release paths never
+  // come through here: F / 1-9 and the canvas drag drive engine.setFollow
+  // directly (input.js), and the camera popover's Smart/Free releases
+  // through onCamMode below.
   function releaseFollow() {
     engine?.setFollow(null);
     if (query.follow) navigateFilter(filter, { keepFollow: false });
@@ -3118,13 +3148,19 @@
                theater mode is on. -->
           <!-- Control group: one row per NON-DEFAULT control state
                (ctrlRows — every state already had a mirror, so this adds
-               no plumbing). It is the ONE copy of each line: the follow
-               chip's dismiss button (row 1), the retired canvas
-               readout's follow:/loop: text (rows 1/2 — snapshots and
-               clips carry gameplay only now) and the packNote paragraph
-               that used to sit above the stage (the note row). The
-               canvas copy of all three died with the readout. The
-               collapsed dock hides it with the rest of the chrome. -->
+               no plumbing). It is the ONE copy of each line: the
+               retired canvas readout's follow:/loop: text (rows 1/2 —
+               snapshots and clips carry gameplay only now) and the
+               packNote paragraph that used to sit above the stage (the
+               note row). The canvas copy of all three died with the
+               readout. DISPLAY-ONLY (the owner's overlay ruling,
+               2026-11-11): the indicator carries NO controls — the
+               follow row's old ✕ is gone because the camera controls
+               already own release (F key, the camera popover's
+               Smart/Free, clicking the followed card again — and while
+               following, the camera row is deduped away with it, see
+               ctrlRows). The collapsed dock hides it with the rest of
+               the chrome. -->
           {#if !uiHudOff && ctrlRows.length && active}
             <div class="rp-ctrl-list" role="status">
               {#each ctrlRows as row (row.kind)}
@@ -3132,13 +3168,6 @@
                   <div class="rp-ctrl-row">
                     <span class="codicon codicon-eye" aria-hidden="true"></span>
                     <span class="rp-ctrl-text">Following {row.name}</span>
-                    <button
-                      class="btn small ghost"
-                      aria-label="Stop following {row.name}"
-                      title="Release the follow camera (F)"
-                      onclick={releaseFollow}
-                      ><span class="codicon codicon-close" aria-hidden="true"></span></button
-                    >
                   </div>
                 {:else}
                   <div class="rp-ctrl-row" class:rp-ctrl-warn={row.kind === 'note'}>{row.text}</div>

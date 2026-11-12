@@ -6704,3 +6704,65 @@ test("setCameraMode('smart') re-arms the ease — never snaps — and stepSmart 
   assert.ok(settled.cx < armed.cx - 50, 'the ease actually travelled toward the target (the center moved)');
   assert.ok(settled.s > armed.s * 1.5, '…and so did the zoom');
 });
+
+// --- resize while PAUSED (the mini→cover dock transition) -------------------
+// The owner's dock report (2026-11-11): expanding the mini player while
+// paused must repaint the frozen frame at the NEW size — with the engine
+// paused there is no per-frame draw to heal a stale viewport, so
+// resize() itself has to re-read the canvas box, reset the backing
+// store and draw the current state in one pass. A "one-time redraw"
+// that read STALE state would not help; this pin asserts the repaint
+// uses the new cssW/cssH end to end: the backing store, the background
+// pass it clears, and the world→screen projection every entity dot
+// rides. (The smart ease settling while paused is pinned separately by
+// smartHarness's convergence tests above — every `at()` there draws on
+// a paused engine.)
+test('resize() while paused repaints the current state at the NEW canvas size (mini → cover)', () => {
+  headlessGlobals();
+  const data = synthStore(8, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas(320, 190); // the dock's mini frame
+  const r = createRenderer(canvas, {
+    engine,
+    data,
+    players: [
+      { steamId: '1', name: 'alice', side: 'ct' },
+      { steamId: '2', name: 'bob', side: 't' },
+    ],
+  });
+  r.resize(); // the mini frame — drawn while the engine is PAUSED
+  assert.equal(engine.state.playing, false, 'the whole pin runs paused');
+  assert.equal(canvas.width, 320, 'mini backing store');
+  assert.equal(canvas.height, 190);
+  const fitMini = r.getCam().fit;
+  const probeMini = r.worldToScreen(10, 10);
+
+  // The dock expands: the same canvas element now lays out at cover size.
+  canvas.clientWidth = 1600;
+  canvas.clientHeight = 900;
+  const mark = canvas.log.length;
+  r.resize();
+
+  assert.equal(canvas.width, 1600, 'the backing store follows the new box');
+  assert.equal(canvas.height, 900);
+  const ops = canvas.log.slice(mark);
+  assert.ok(ops.length > 0, 'a draw ran while paused (nothing else would repaint)');
+  // The grid pass draws THROUGH the new viewport: its vertical lines
+  // end at y = cssH (900) and its horizontal lines at x = cssW (1600) —
+  // geometry that is impossible to emit from the stale 320×190 box.
+  const spansNewViewport = ops.some(
+    (e) => e.op === 'lineTo' && (e.args[0] === 1600 || e.args[1] === 900),
+  );
+  assert.ok(spansNewViewport, 'the repaint drew across the NEW viewport (1600×900), not the stale mini box');
+  // The camera re-fit for the new box and the entity projection moved
+  // with it — a dot's screen position is only valid inside the NEW
+  // viewport (the stale mini probe sat at ≤320×190 by construction).
+  const cam = r.getCam();
+  assert.ok(cam.fit > fitMini, `fit re-derived for the larger box (${fitMini} → ${cam.fit})`);
+  const probe = r.worldToScreen(10, 10);
+  assert.ok(probe.x >= 0 && probe.x <= 1600 && probe.y >= 0 && probe.y <= 900, `entity probe inside the new viewport: ${probe.x},${probe.y}`);
+  assert.ok(
+    Math.abs(probe.x - probeMini.x) > 10 || Math.abs(probe.y - probeMini.y) > 10,
+    'the projection actually moved with the resize (not the stale mini geometry)',
+  );
+});

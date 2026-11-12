@@ -18,8 +18,11 @@
 // calls engine.play() once the position data is up).
 //
 // The stage carries the ONE control group (.rp-ctrl-list): a row per
-// NON-DEFAULT control state (follow + its dismiss, loop range,
-// skip-freeze, a non-Smart camera, the map-pack note). It replaced the
+// NON-DEFAULT control state (the deduped follow row — while following
+// the camera-mode line is suppressed as the same fact twice — loop
+// range, skip-freeze, a non-Smart camera, the map-pack note). It is
+// DISPLAY-ONLY: no buttons (the owner's overlay ruling — the camera
+// controls own release). It replaced the
 // follow chip, the canvas bottom-left readout and the packNote
 // paragraph, so each of those lines has exactly ONE copy.
 //
@@ -243,8 +246,7 @@ export const iconURL = (name, manifest) =>
 // and the engine/renderer/input are inert objects.
 writeFileSync(
   join(dir, 'services.js'),
-  `export const getReplayMeta = () =>
-  Promise.resolve({
+  `const META = {
     hasSidecar: true,
     tickRate: 64,
     frames: 10,
@@ -262,7 +264,12 @@ writeFileSync(
       { steamId: '76561198000000005', name: 'Bravo2', side: 't' },
       { steamId: '76561198000000006', name: 'Lone', side: '' },
     ],
-  });
+  };
+  // Per-instance roster override (section P): the driver swaps the
+  // roster for ONE fresh mount (and clears it after) without touching
+  // the fixture every other section pins — everything else stays META.
+  export const getReplayMeta = () =>
+    Promise.resolve(globalThis.__metaOverride ? { ...META, ...globalThis.__metaOverride } : META);
 // Connection rows (player_connect / player_disconnect) for the card
 // visibility rule (playercard.js connectedAt): everyone is in the match
 // from tick 0; Alpha3 drops out at 192 and is back at 320 (hidden in
@@ -682,7 +689,13 @@ writeFileSync(
     setIcons() {},
     setVoices() {},
     setStateIndex() {},
-    resize() {},
+    resize() {
+      // Recorded so section J3 can pin the keep-alive activation
+      // contract: the mini→cover round trip repaints the frozen frame
+      // (the view's activation effect pushes a resize in BOTH
+      // directions) — and while PAUSED nothing else would repaint it.
+      globalThis.__resizes = (globalThis.__resizes || 0) + 1;
+    },
     draw() {},
     // The scrub-drag draw coalescing mark (renderer.requestDraw): a no-op
     // here — this harness's engine/renderer are inert — but the METHOD
@@ -1554,26 +1567,29 @@ check(
 // --- The stage's control group (.rp-ctrl-list) -------------------------------
 // State entering this section: Follow armed on slot 2 (above), the loop
 // cancelled by the earlier +15s seek, skip-freeze back OFF — so the
-// group holds exactly those two control rows plus the fixture's
-// ever-present packNote (the stubbed match has no map name).
-console.log('E1. stage control group: one row per non-default control state, the ONE copy of each line');
+// group holds exactly the FOLLOW row plus the fixture's ever-present
+// packNote (the stubbed match has no map name). While following the
+// camera-mode row is DEDUPED away (the owner's overlay ruling: the
+// indicator states "Following <name>" once — never the same fact twice
+// as "camera: Follow"), and the group carries NO controls (display-only
+// — the camera controls own release).
+console.log('E1. stage control group: one row per non-default control state, the ONE copy of each line, no controls');
 const ctrlList = () => stage.querySelector('.rp-ctrl-list');
 const ctrlRowEls = () => [...(ctrlList()?.querySelectorAll('.rp-ctrl-row') || [])];
 const ctrlTexts = () => ctrlRowEls().map((r) => r.textContent.trim());
 check(
-  'follow + camera + packNote rows render in the stage top-left group',
+  'while following: the follow row + packNote only (the redundant camera: Follow line is deduped)',
   !!ctrlList() &&
     JSON.stringify(ctrlTexts()) ===
       JSON.stringify([
         'Following Alpha3',
-        'camera: Follow',
         'Map name unknown — showing a plain grid',
       ]),
   JSON.stringify(ctrlTexts()),
 );
 check(
   "the packNote is the group's amber row — the ONE copy (no paragraph above the stage)",
-  ctrlRowEls()[2]?.classList.contains('rp-ctrl-warn') &&
+  ctrlRowEls()[1]?.classList.contains('rp-ctrl-warn') &&
     ![...target.querySelectorAll('.note-amber')].some((n) =>
       n.textContent.includes('Map name unknown'),
     ),
@@ -1581,18 +1597,23 @@ check(
 );
 check('no .follow-chip anywhere (the chip was replaced, not synonymed)', !target.querySelector('.follow-chip'));
 
-// The follow row keeps a REAL dismiss button (the canvas readout could
-// never offer one) — the retired chip's button, the same handler.
-const dismiss = ctrlList()?.querySelector('button[aria-label^="Stop following"]');
+// DISPLAY-ONLY: the indicator carries NO buttons — the old follow-row
+// dismiss ✕ is gone (the owner's ruling: no controls in the top-left
+// indicator, the camera controls already exist). Release still has every
+// home it needs: F / 1-9 (input.js), the camera popover's Smart/Free,
+// the canvas drag, and clicking the followed card again (F3 pins that
+// one end-to-end below).
 check(
-  'the follow row carries the dismiss button (its title still says F)',
-  !!dismiss && dismiss.getAttribute('title') === 'Release the follow camera (F)',
-  dismiss ? dismiss.getAttribute('title') : 'missing',
+  'the indicator is display-only: NO button/control inside .rp-ctrl-list',
+  !!ctrlList() && !ctrlList()?.querySelector('button'),
+  ctrlList()?.innerHTML || 'no list',
 );
-click(dismiss);
-await sleep();
+// Release through the CAMERA POPOVER (one of the surviving homes) —
+// follow goes away, and with it the follow row; the camera row stays
+// absent (back to the default Smart).
+await chooseCam('Smart');
 check(
-  'dismissing releases follow — and the camera row with it (camMode reconciles to Smart)',
+  'releasing via the camera popover clears the follow row (and never needed the indicator ✕)',
   JSON.stringify(ctrlTexts()) === JSON.stringify(['Map name unknown — showing a plain grid']),
   JSON.stringify(ctrlTexts()),
 );
@@ -2192,9 +2213,10 @@ check(
     endRight().every((c) => !c.classList.contains('pc-follow')),
 );
 // Clicking the card ALREADY followed RELEASES it — the F-toggle
-// semantics with the ✕'s route hygiene (releaseFollow drops ?follow=
+// semantics with releaseFollow's route hygiene (it drops ?follow=
 // too; this harness's query carries none, so only the engine call
-// shows).
+// shows). One of the release homes that outlive the indicator's ✕
+// (display-only control group — the owner's overlay ruling).
 click(alpha1);
 await sleep();
 check(
@@ -2667,7 +2689,9 @@ check(
 
 // --- (J): keep-alive — the collapsed dock + the activation contract -------
 // A THIRD instance mounts INACTIVE (App passes active=false while the
-// kept-alive replay sits over a match view): the load chain must run to
+// kept-alive replay sits over a match view) with an ENTRY ?tick= seed
+// (the watch-link shape — applied ONCE by startEngine, exactly as
+// section K pins for its own instance): the load chain must run to
 // completion WITHOUT autoplaying (audio over the match view is a bug),
 // the chrome unmounts down to frame + caption (stage/canvas stay — the
 // renderer holds the element), wasPlaying carries the resume intent
@@ -2691,15 +2715,26 @@ const target3 = document.createElement('div');
 document.body.appendChild(target3);
 const harness3Src = `<script>
   import Replay from './views/Replay.js';
+  // The entry ?tick= is the WATCH-LINK shape: applied ONCE by startEngine
+  // (the mount seed), then a consumed promise — section J3 pins that the
+  // dock round trip never re-applies it.
   let active = $state(false);
+  let query = $state({ tick: '192' });
   globalThis.__setActive = (v) => (active = v);
+  // THE expand leg: App's expandReplayHash rewrites the captured hash
+  // (drops the consumed ?tick=, stamps ?back=) and the route flips in
+  // ONE flush — query + activation together, exactly what hashchange does.
+  globalThis.__expand3 = (q) => {
+    query = q;
+    active = true;
+  };
 </script>
 <div
   class="dock-probe"
   onclick={() => (globalThis.__wrapperClicks = (globalThis.__wrapperClicks || 0) + 1)}
   onkeydown={() => (globalThis.__wrapperKeys = (globalThis.__wrapperKeys || 0) + 1)}
 >
-  <Replay id={1} query={{}} nav={(h) => (globalThis.__nav3 = (globalThis.__nav3 || []).concat(h))} {active} />
+  <Replay id={1} {query} nav={(h) => (globalThis.__nav3 = (globalThis.__nav3 || []).concat(h))} {active} />
 </div>`;
 const harness3Out = join(dir, 'harness3.js');
 svelteCompile(harness3Src, 'harness3.svelte', harness3Out);
@@ -3034,6 +3069,61 @@ check(
   'positive control: Enter on the wrapper reaches its keydown handler',
   (globalThis.__wrapperKeys || 0) === wrapK0 + 1,
   `wrapper keys +${(globalThis.__wrapperKeys || 0) - wrapK0}`,
+);
+
+// --- (J3): mini→cover while PAUSED — the repaint + the surviving playhead --
+// The owner's dock report (2026-11-11): expanding the mini player while
+// paused must both REPAINT the frozen frame at the new size (nothing
+// else redraws while the engine is paused — the activation effect pushes
+// renderer.resize() in both directions, the stage ResizeObserver covers
+// later size changes) and LEAVE THE PLAYHEAD ALONE: the captured hash's
+// ?tick= is a consumed promise (startEngine applied the mount seed
+// once), so the expand's query rewrite — the same one App's
+// expandReplayHash performs (drop ?tick=, stamp ?back=) landing in ONE
+// flush with the activation — must never seek back to it. Entry state
+// inherited from J2: EXPANDED, user-paused.
+console.log('J3. expand while paused: the activation repaints (renderer.resize) and the consumed entry tick never re-seeks');
+const readout3 = () => target3.querySelector('.replay-readout')?.getAttribute('title') || '';
+// Move the playhead OFF the entry tick first — so "the position
+// survived" is observable as more than "no second seek to 192".
+const scrub3 = target3.querySelector('input.scrubber');
+check('the scrubber is reachable while expanded', !!scrub3, 'no input.scrubber');
+scrub3.value = '7'; // tick 448
+scrub3.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
+await sleep();
+check('scrubbing moves the playhead (tick 448)', readout3().endsWith('tick 448'), readout3());
+
+// Collapse to the dock — paused (J2 left the engine paused), the frozen
+// query still carrying the consumed ?tick=192.
+globalThis.__setActive(false);
+await sleep();
+check('collapsed: the caption offers Play (still paused)', miniGlyph3() === 'play', miniGlyph3());
+const j3Seeks = (globalThis.__seeks || []).length;
+const j3Resizes = globalThis.__resizes || 0;
+
+// EXPAND — the query rewrite + activation land together (App's
+// expandReplayHash: ?tick= dropped, ?back= stamped).
+globalThis.__expand3({ back: 'match/1' });
+await sleep();
+check(
+  'the activation leg REPAINTS: renderer.resize() ran (the frozen frame at the new size)',
+  (globalThis.__resizes || 0) > j3Resizes,
+  `resizes +${(globalThis.__resizes || 0) - j3Resizes}`,
+);
+check(
+  'expanding never re-applies the consumed entry tick (NO seed seek across the transition)',
+  (globalThis.__seeks || []).length === j3Seeks,
+  JSON.stringify((globalThis.__seeks || []).slice(j3Seeks)),
+);
+check(
+  'the playhead is exactly where the user left it (tick 448 — not yanked back to 192)',
+  readout3().endsWith('tick 448'),
+  readout3(),
+);
+check(
+  'still PAUSED after the mini→cover switch (no resume call)',
+  !!target3.querySelector('.replay-transport button[aria-label="Play"]'),
+  'transport does not offer Play',
 );
 
 // --- (K): keep-alive entry seed — distinct applies ONCE, identical/null never
@@ -3583,6 +3673,67 @@ check(
   're-activating with the SAME ?follow= never re-emits setFollow',
   (globalThis.__follows || []).length === followsBase + 1,
   JSON.stringify((globalThis.__follows || []).slice(followsBase)),
+);
+
+// ============================================================================
+// APPENDED SECTION (player-card column order — the owner's color ruling) =====
+// A self-contained tail on purpose: it mounts its OWN instance with a
+// scrambled roster (meta override, cleared right after the load), so no
+// earlier section's counts/cards can see it.
+// ============================================================================
+console.log('P. player-card columns order by teammate color: yellow, purple, green, blue, orange, unknown last');
+const targetP = document.createElement('div');
+document.body.appendChild(targetP);
+// Every slot on the SAME side (one column), the five colors arriving in
+// NO particular order, two players WITHOUT a color (the 4v5/sub shape —
+// never guessed into a position). Fresh 17-digit steam ids → no
+// connection rows → every card is present from the first frame.
+globalThis.__metaOverride = {
+  players: [
+    { steamId: '76561198000000101', name: 'Blue', side: 'ct', color: 0 },
+    { steamId: '76561198000000102', name: 'Yellow', side: 'ct', color: 2 },
+    { steamId: '76561198000000103', name: 'NoColor1', side: 'ct' },
+    { steamId: '76561198000000104', name: 'Orange', side: 'ct', color: 3 },
+    { steamId: '76561198000000105', name: 'Purple', side: 'ct', color: 4 },
+    { steamId: '76561198000000106', name: 'Green', side: 'ct', color: 1 },
+    { steamId: '76561198000000107', name: 'NoColor2', side: 'ct' },
+  ],
+};
+const harnessPSrc = `<script>
+  import Replay from './views/Replay.js';
+</script>
+<Replay id={1} query={{}} nav={() => {}} />`;
+const harnessPOut = join(dir, 'harnessP.js');
+svelteCompile(harnessPSrc, 'harnessP.svelte', harnessPOut);
+const modP = await import(pathToFileURL(harnessPOut).href);
+mount(modP.default, { target: targetP });
+await sleep();
+await sleep(); // load → startEngine → the columns render
+globalThis.__metaOverride = null; // the override is per-mount only
+const namesP = () =>
+  [...targetP.querySelectorAll('.tc-col .pc-card')]
+    .map((c) => c.querySelector('.pc-name').textContent)
+    .join(',');
+check(
+  "the column reads yellow → purple → green → blue → orange (the ratified order), unknown colors LAST in slot order",
+  namesP() === 'Yellow,Purple,Green,Blue,Orange,NoColor1,NoColor2',
+  namesP(),
+);
+const cardP = (name) =>
+  [...targetP.querySelectorAll('.tc-col .pc-card')].find(
+    (c) => c.querySelector('.pc-name').textContent === name,
+  );
+check(
+  'the sort reads the SAME raw color the ring maps (Yellow wears #ECDF41, Blue #84C8ED)',
+  cardP('Yellow')?.style.getPropertyValue('--pc-color') === '#ECDF41' &&
+    cardP('Blue')?.style.getPropertyValue('--pc-color') === '#84C8ED',
+  `${cardP('Yellow')?.getAttribute('style')} / ${cardP('Blue')?.getAttribute('style')}`,
+);
+check(
+  'a player without a color still gets NO ring (unknown = last, never a guess)',
+  !!cardP('NoColor1') && !cardP('NoColor1').classList.contains('pc-color') &&
+    !cardP('NoColor2').classList.contains('pc-color'),
+  `${cardP('NoColor1')?.className} / ${cardP('NoColor2')?.className}`,
 );
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
