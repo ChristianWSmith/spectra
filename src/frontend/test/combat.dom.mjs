@@ -203,28 +203,20 @@ check(
 const engRows = rows(engTable);
 check('two engagement rows', engRows.length === 2, String(engRows.length));
 const first = engRows[0]?.querySelectorAll('td') || [];
-// The round cell lost its "R{n}" text with the icon-only pass: it is now
-// a SECOND play button in the same row (A5 ambiguity — the row's own ▶
-// follows the killer, this one watches the round). Both stay, told apart
-// by their titles.
-const engRoundBtn = first[1]?.querySelector('button');
-check(
-  'round cell is an icon-only play (no R{n} text left)',
-  !!engRoundBtn && first[1]?.textContent.trim() === '' && !!engRoundBtn.querySelector('.codicon-play'),
-  first[1]?.textContent,
-);
-check(
-  'round play title names the round',
-  engRoundBtn?.getAttribute('title') === 'Watch round 7 in the replay (from its start)',
-  engRoundBtn?.getAttribute('title'),
-);
-check('round play carries an aria-label', engRoundBtn?.getAttribute('aria-label') === 'Watch round 7', engRoundBtn?.getAttribute('aria-label'));
+// The Round cell is TEXT again (owner ruling: "no round play button
+// there" — the round-watch ▶ was removed): R{n} as a plain label, and
+// the row's ONLY play button is the event/follow ▶ in the Replay column
+// (A5 resolved to ONE play button per row).
+check('round cell renders the R{n} text label', first[1]?.textContent.trim() === 'R7', first[1]?.textContent);
+check('round cell carries NO button (no round play)', !first[1]?.querySelector('button'), first[1]?.innerHTML);
 const engPlayBtn = first[0]?.querySelector('button');
 check(
-  'A5: the row has TWO play buttons with DISTINCT titles',
-  !!engPlayBtn && !!engRoundBtn &&
-    engPlayBtn.getAttribute('title') !== engRoundBtn.getAttribute('title'),
-  JSON.stringify([engPlayBtn?.getAttribute('title'), engRoundBtn?.getAttribute('title')]),
+  'A5: ONE play button per row — the event/follow ▶ (killer), no round play',
+  first[0]?.querySelectorAll('button').length === 1 &&
+    !first[1]?.querySelector('button') &&
+    !!engPlayBtn &&
+    engPlayBtn.getAttribute('title') === 'Watch this engagement — follow alice (killer)',
+  JSON.stringify([engPlayBtn?.getAttribute('title'), first[1]?.innerHTML]),
 );
 check('time cell is time INTO the round', first[2]?.textContent.trim() === '0:10', first[2]?.textContent);
 check('raw tick kept in the cell title', first[2]?.getAttribute('title') === 'tick 10640', first[2]?.getAttribute('title'));
@@ -262,21 +254,6 @@ check(
   navEng || 'no navigation',
 );
 
-// The round play: seek-with-loop like every round-level link, and NO
-// follow (round-level controls never follow a player).
-click(engRoundBtn);
-await sleep();
-const navRound = (globalThis.__nav || [])[(globalThis.__nav || []).length - 1];
-check(
-  'round play seeks to the round start + span, NO follow, no filter',
-  !!navRound &&
-    navRound.includes('tick=10000') &&
-    navRound.includes('loop=10000,10960') &&
-    !navRound.includes('follow=') &&
-    !navRound.includes('cat='),
-  navRound || 'no navigation',
-);
-
 console.log('B. clutches card lists WON clutches only');
 const clutchSec = sections(root, 'Clutches')[0];
 check('provenance chip states the won-only scope', clutchSec?.querySelector('.provenance')?.textContent.includes('won only'), clutchSec?.querySelector('.provenance')?.textContent);
@@ -309,13 +286,18 @@ check(
     !navClutch.includes('cat='),
   navClutch || 'no navigation',
 );
-// …and the clutch row's round play is the SAME second-button pattern.
-const clutchRoundBtn = clutchRows[0]?.querySelectorAll('td')[1]?.querySelector('button');
+// …and the clutch Round cell is TEXT too: the R{n} label with no round
+// play — the clutch ▶ above is the row's only play button.
+const clutchCells = clutchRows[0]?.querySelectorAll('td') || [];
 check(
-  'clutch row round play: icon-only, distinct title, no follow',
-  !!clutchRoundBtn && clutchRoundBtn.textContent.trim() === '' &&
-    clutchRoundBtn.getAttribute('title') === 'Watch round 7 in the replay (from its start)',
-  clutchRoundBtn?.getAttribute('title'),
+  'clutch round cell renders the R{n} text label, no button',
+  clutchCells[1]?.textContent.trim() === 'R7' && !clutchCells[1]?.querySelector('button'),
+  clutchCells[1]?.textContent,
+);
+check(
+  'clutch row has exactly ONE play button (the event/follow ▶)',
+  clutchRows[0].querySelectorAll('button').length === 1,
+  String(clutchRows[0].querySelectorAll('button').length),
 );
 
 console.log('C. only lost clutches → explicit empty state');
@@ -384,13 +366,13 @@ check(
   /One kill/.test(dCells[3]?.textContent || '') && /killer side/.test(dCells[3]?.textContent || ''),
   dCells[3]?.textContent,
 );
-// The A5 two-buttons pattern holds on the MERGED row too.
+// The A5 ruling holds on the MERGED row too: ONE play button (the
+// event/follow ▶) and the Round cell as plain text.
 const dPlay = dCells[0]?.querySelector('button');
-const dRound = dCells[1]?.querySelector('button');
 check(
-  'A5 on the merged row: two play buttons with distinct titles',
-  !!dPlay && !!dRound && dPlay.getAttribute('title') !== dRound.getAttribute('title'),
-  JSON.stringify([dPlay?.getAttribute('title'), dRound?.getAttribute('title')]),
+  'A5 on the merged row: ONE play button (no round play beside it)',
+  dRows[0].querySelectorAll('button').length === 1 && !!dPlay && !dCells[1]?.querySelector('button'),
+  JSON.stringify([dPlay?.getAttribute('title'), String(dRows[0].querySelectorAll('button').length)]),
 );
 check(
   'the merged row ▶ still follows the killer',
@@ -398,9 +380,9 @@ check(
   dPlay?.getAttribute('title'),
 );
 check(
-  'the merged row keeps its round ▶ (no follow, round-scoped)',
-  !!dRound && dRound.getAttribute('title') === 'Watch round 7 in the replay (from its start)',
-  dRound?.getAttribute('title'),
+  'the merged round cell keeps its R{n} text (no round play)',
+  dCells[1]?.textContent.trim() === 'R7' && !dCells[1]?.querySelector('button'),
+  dCells[1]?.textContent,
 );
 
 // The kind chips FILTER merged rows by CONTAINED kind: the row shows

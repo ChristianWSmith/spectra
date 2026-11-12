@@ -16,7 +16,6 @@
     errText,
   } from '../services.js';
   import { fmtInt, fmtPercent, roundClock } from '../fmt.js';
-  import { roundStartTick, roundEndTick } from '../rounds.js';
   import { replayHash, entryLoopSpan, entryLoopAround } from '../nav.js';
   import { listedPlayers } from '../players.js';
   import { roundsByNumber } from '../replay/landmarks.js';
@@ -234,28 +233,11 @@
   // engagement tick, the clutch's own start→end span for a clutch row.
   // `follow` is the ROW'S ACTOR (entry context, never a filter): the
   // engagement's killer, the clutch's solo — absent actor → undefined,
-  // which buildHash drops (never a guessed follow). Round-level links
-  // (watchRound below) pass none.
+  // which buildHash drops (never a guessed follow).
   function replay(tick, loop, follow) {
     // `|| undefined` — buildHash drops null/undefined but would keep an
     // empty string as `follow=`; an actor-less row stamps NOTHING.
     nav(replayHash(id, {}, { tick, loop, follow: follow || undefined, back: `match/${id}/combat` }));
-  }
-
-  // Round chip → WATCH the round: its start tick plus the round's own
-  // start→end ?loop= span — the exact seek-with-loop the RoundDetail
-  // header's "Watch round" stamps (nav.entryLoopSpan over the canonical
-  // round→tick lookups, lib/rounds.js). A round without a usable tick
-  // stamps neither (buildHash drops null/undefined), so an unknown round
-  // makes no promise rather than a guessed one — never a landmark FILTER:
-  // outside the replay, buttons seek. ROUND-level → NO follow (only the
-  // row's own ▶ follows its actor); the button is icon-only play like
-  // every other tick link, which leaves TWO play buttons in one row —
-  // the row ▶ (follow the actor) beside the round ▶ (watch the round):
-  // their titles carry which is which.
-  function watchRound(round) {
-    const start = roundStartTick(rounds, round);
-    replay(start, entryLoopSpan(start, roundEndTick(rounds, round)));
   }
 
   // The Clutches card lists WON clutches only (the card's scope decision):
@@ -414,14 +396,12 @@
                   onclick={() => replay(g.tick, entryLoopAround(g.tick, tickRate), g.aSteam)}
                 />
               </td>
-              <td class="num">
-                <button
-                  class="btn small ghost"
-                  title="Watch round {g.round} in the replay (from its start)"
-                  aria-label="Watch round {g.round}"
-                  onclick={() => watchRound(g.round)}
-                ><span class="codicon codicon-play" aria-hidden="true"></span></button>
-              </td>
+              <!-- The Round cell is TEXT, not a control (owner ruling:
+                   "no round play button there"): R{n} as a plain label —
+                   a label isn't a play button, and the row's ONE ▶ is the
+                   event/follow play above. Round watching lives in the
+                   RoundDetail header's "Watch round". -->
+              <td class="num">R{g.round}</td>
               <td class="num mono" title="tick {g.tick}">{roundClock(g.tick, rbn.get(g.round), tickRate)}</td>
               <td>
                 <!-- ONE kill, up to TWO facts: the kinds are independent
@@ -506,14 +486,9 @@
                     />
                   {/if}
                 </td>
-                <td class="num">
-                  <button
-                    class="btn small ghost"
-                    title="Watch round {c.round} in the replay (from its start)"
-                    aria-label="Watch round {c.round}"
-                    onclick={() => watchRound(c.round)}
-                  ><span class="codicon codicon-play" aria-hidden="true"></span></button>
-                </td>
+                <!-- Same ruling as the engagement row: the Round cell is
+                     the R{n} label, never a second play button. -->
+                <td class="num">R{c.round}</td>
                 <td><strong>1v{c.size}</strong></td>
                 <td>
                   <ProfileLink
