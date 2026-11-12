@@ -11,7 +11,13 @@
 // grenade row before the swap, one GetEventDetails per chunk after it.
 // Two more tests pin the swap's SHAPE: the ids chunk at BULK_CHUNK with
 // zero per-row round trips, and a failed chunk fails soft over exactly
-// its own rows.
+// its own rows. The onProgress suite (loadWorld's optional progress
+// callback — the preload ledger's world-stage denominator) pins the
+// {done, total, unit} contract: the denominator lands before any read
+// runs and counts UNIQUE ids, done counts ids ATTEMPTED (a settle is a
+// settle — every chunk rejecting still reaches total), and the two
+// paths where NO read will run (no bounce rows / unresolvable binding)
+// report nothing at all.
 //
 // Run: node --test src/lib/world-hydration.test.js (from frontend/; the
 // lib test glob src/lib/*.test.js picks it up too).
@@ -27,10 +33,18 @@ installEsmDirHook();
 // before the module graph loads (hooks are per-process, this file runs
 // alone — the sfx/feed test pattern).
 const stub = (name) => new URL(`../../test/stubs/${name}`, import.meta.url).href;
+// Set by the onProgress "nothing to report" test below: the hook then
+// REFUSES the bindings specifier, so hydrateGrenadeEntities' dynamic
+// import rejects (the fail-soft "no resolvable binding" path) while the
+// already-loaded module graph is untouched.
+let refuseBindings = false;
 registerHooks({
   resolve(specifier, context, nextResolve) {
     if (specifier === '@wailsio/runtime') return { url: stub('wails-runtime.mjs'), shortCircuit: true };
-    if (specifier.includes('bindings/github.com')) return { url: stub('bindings.mjs'), shortCircuit: true };
+    if (specifier.includes('bindings/github.com')) {
+      if (refuseBindings) throw new Error('bindings unresolvable (scripted)');
+      return { url: stub('bindings.mjs'), shortCircuit: true };
+    }
     return nextResolve(specifier, context);
   },
 });
@@ -223,5 +237,203 @@ test('a FAILED chunk leaves exactly its rows entity-less (fail-soft, per chunk)'
     } else {
       assert.equal('entity' in r, false, `row ${r.id} (failed chunk) stays entity-less`);
     }
+  }
+});
+
+// --- onProgress (the preload ledger's world-stage denominator) ---------------
+
+test('onProgress: the denominator lands before the reads, done reaches total', async () => {
+  // N = the UNIQUE grenade ids: 401 rows' ids with one id REPEATED on a
+  // second row (dedupe pin) → two chunks → exactly one ordering-
+  // insensitive intermediate report (done = 400 or 1, depending on which
+  // chunk settles first).
+  const rows = [];
+  for (let i = 0; i < BULK_CHUNK + 1; i++) {
+    rows.push({
+      id: 1000 + i,
+      seq: i,
+      tick: 100 + i,
+      round: 1,
+      kind: i === 0 ? 'grenade_bounce' : 'grenade',
+      attacker: '100',
+      weapon: 'hegrenade',
+    });
+  }
+  rows.push({ ...rows[1], seq: BULK_CHUNK + 1 }); // duplicate id — the denominator counts ids, not rows
+
+  bindings.resetCalls();
+  bindings.handlers.GetEvents = () => rows.map((r) => ({ ...r }));
+  bindings.handlers.GetDropDetails = () => [];
+  bindings.handlers.GetGenericEvents = () => [];
+  bindings.handlers.GetEvent = () => null;
+  // One interleaved log: every report AND every read, so "the
+  // denominator lands BEFORE the chunks run" is checkable by ORDER.
+  const log = [];
+  bindings.handlers.GetEventDetails = (ids) => {
+    log.push({ kind: 'read', n: ids.length });
+    return ids.map((id) => ({ id, detailJson: `{"entity":${id}}` }));
+  };
+  const reports = [];
+  const world = await loadWorld({
+    matchId: 7,
+    players: [],
+    stateIndex: null,
+    ticks: null,
+    tickRate: 64,
+    onProgress: (p) => {
+      reports.push(p);
+      log.push({ kind: 'report', ...p });
+    },
+  });
+
+  const N = BULK_CHUNK + 1; // unique ids (the duplicate row is deduped away)
+  assert.deepEqual(
+    log[0],
+    { kind: 'report', done: 0, total: N, unit: 'grenade reads' },
+    'the {done:0,total:N} report fires BEFORE any chunk read runs',
+  );
+  assert.ok(
+    log.some((e) => e.kind === 'read'),
+    'the reads really ran after the report',
+  );
+  assert.deepEqual(reports[0], { done: 0, total: N, unit: 'grenade reads' });
+
+  // The FINAL report reaches done === total === N.
+  const last = reports[reports.length - 1];
+  assert.equal(last.done, N, 'final done === N');
+  assert.equal(last.total, N, 'final total === N');
+  assert.equal(last.unit, 'grenade reads');
+
+  // Ordering-insensitive on the intermediates: every report carries the
+  // same denominator and unit, done never regresses, and the single
+  // intermediate sits strictly inside (0, total).
+  for (const r of reports) {
+    assert.equal(r.total, N, 'the denominator never changes mid-run');
+    assert.equal(r.unit, 'grenade reads', 'the unit never changes');
+  }
+  const dones = reports.map((r) => r.done);
+  assert.deepEqual(dones, [...dones].sort((a, b) => a - b), 'done never regresses');
+  const mid = dones.slice(1, -1);
+  assert.equal(mid.length, 1, 'exactly one intermediate report (two chunks)');
+  assert.ok(mid[0] > 0 && mid[0] < N, `intermediate ${mid[0]} sits strictly inside (0, ${N})`);
+
+  // The reporting does not disturb the data path.
+  assert.equal(world.rows.length, rows.length, 'every row survives');
+});
+
+test('onProgress reaches total even when EVERY chunk read rejects (fail-soft)', async () => {
+  // Two chunks, both reads REJECT: a failed chunk's ids were still
+  // ATTEMPTED work, so done must reach total — the bar never sticks
+  // below 100% forever.
+  const rows = [];
+  for (let i = 0; i < BULK_CHUNK + 1; i++) {
+    rows.push({
+      id: 3000 + i,
+      seq: i,
+      tick: 100 + i,
+      round: 1,
+      kind: i === 0 ? 'grenade_bounce' : 'grenade',
+      attacker: '100',
+      weapon: 'hegrenade',
+    });
+  }
+  bindings.resetCalls();
+  bindings.handlers.GetEvents = () => rows.map((r) => ({ ...r }));
+  bindings.handlers.GetDropDetails = () => [];
+  bindings.handlers.GetGenericEvents = () => [];
+  bindings.handlers.GetEventDetails = () => Promise.reject(new Error('all chunk reads failed'));
+
+  const reports = [];
+  const world = await loadWorld({
+    matchId: 7,
+    players: [],
+    stateIndex: null,
+    ticks: null,
+    tickRate: 64,
+    onProgress: (p) => reports.push(p),
+  });
+
+  const N = BULK_CHUNK + 1;
+  assert.deepEqual(reports[0], { done: 0, total: N, unit: 'grenade reads' });
+  const last = reports[reports.length - 1];
+  assert.equal(last.done, N, 'done reaches total even when every chunk rejects');
+  assert.equal(last.total, N, 'the denominator held');
+  assert.equal(reports.length, 3, 'one report per chunk settle + the initial denominator');
+  for (const r of reports) assert.equal(r.total, N, 'every report carries the same denominator');
+
+  // The DATA side of fail-soft is unchanged: rows load, entity-less.
+  assert.equal(world.rows.length, rows.length, 'a failed read never drops rows');
+  for (const r of world.rows) assert.equal('entity' in r, false, `row ${r.id} stays entity-less`);
+});
+
+test('onProgress reports NOTHING when no hydration read will run', async () => {
+  // (a) grenade rows but NO grenade_bounce → the worth-doing gate
+  // early-returns: zero reads, zero reports (indeterminate, unchanged).
+  bindings.resetCalls();
+  bindings.handlers.GetEvents = () => [
+    { id: 601, seq: 0, tick: 100, round: 1, kind: 'grenade_throw', attacker: '100', weapon: 'smokegrenade' },
+    { id: 602, seq: 1, tick: 110, round: 1, kind: 'grenade', attacker: '100', weapon: 'hegrenade' },
+  ];
+  bindings.handlers.GetDropDetails = () => [];
+  bindings.handlers.GetGenericEvents = () => [];
+  bindings.handlers.GetEventDetails = () => {
+    throw new Error('must not run');
+  };
+  const reportsA = [];
+  await loadWorld({
+    matchId: 7,
+    players: [],
+    stateIndex: null,
+    ticks: null,
+    tickRate: 64,
+    onProgress: (p) => reportsA.push(p),
+  });
+  assert.deepEqual(reportsA, [], 'a match with no bounce rows reports nothing');
+  assert.equal(bindings.callCount('GetEventDetails'), 0, 'and no detail read ran');
+
+  // (a2) no grenade TARGETS at all (kills only) — the other half of the
+  // same early return: same silence.
+  bindings.resetCalls();
+  bindings.handlers.GetEvents = () => [
+    { id: 610, seq: 0, tick: 100, round: 1, kind: 'kill', attacker: '100', victim: '200', weapon: 'ak47' },
+  ];
+  const reportsA2 = [];
+  await loadWorld({
+    matchId: 7,
+    players: [],
+    stateIndex: null,
+    ticks: null,
+    tickRate: 64,
+    onProgress: (p) => reportsA2.push(p),
+  });
+  assert.deepEqual(reportsA2, [], 'a match with no grenade targets reports nothing');
+  assert.equal(bindings.callCount('GetEventDetails'), 0, 'and no detail read ran');
+
+  // (b) bounce rows present, but the binding import FAILS → the reads
+  // never run → zero reports (claiming work that never ran is not).
+  bindings.resetCalls();
+  bindings.handlers.GetEvents = () => [
+    { id: 620, seq: 0, tick: 100, round: 1, kind: 'grenade_bounce', attacker: '100', weapon: 'hegrenade' },
+    { id: 621, seq: 1, tick: 110, round: 1, kind: 'grenade', attacker: '100', weapon: 'smokegrenade' },
+  ];
+  bindings.handlers.GetEventDetails = () => {
+    throw new Error('must not run');
+  };
+  refuseBindings = true;
+  try {
+    const reportsB = [];
+    const world = await loadWorld({
+      matchId: 7,
+      players: [],
+      stateIndex: null,
+      ticks: null,
+      tickRate: 64,
+      onProgress: (p) => reportsB.push(p),
+    });
+    assert.deepEqual(reportsB, [], 'an unresolvable binding reports nothing');
+    assert.equal(bindings.callCount('GetEventDetails'), 0, 'and no detail read ran');
+    assert.equal(world.rows.length, 2, 'the rows still load (fail-soft)');
+  } finally {
+    refuseBindings = false;
   }
 });
