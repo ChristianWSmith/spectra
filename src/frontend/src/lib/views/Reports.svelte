@@ -67,28 +67,52 @@
   let docError = $state('');
   let rendering = $state(false);
 
+  // The template + match read (mount AND tplError's Retry): ONE error
+  // slot is fed by both reads, so it settles only when both do — a retry
+  // keeps the previous failure on screen until the outcome is known,
+  // then clears (both landed) or replaces it. Fulfilled reads still
+  // apply independently (the template grid stays usable when only the
+  // match list failed — its empty copy is gated on this error below).
+  async function loadTemplates() {
+    const [t, m] = await Promise.allSettled([
+      listReportTemplates(),
+      listMatches('', 'extracted_at', true),
+    ]);
+    if (t.status === 'fulfilled') {
+      templates = t.value || [];
+      if (templates.length && !templates.some((x) => x.id === tplId)) {
+        tplId = templates[0].id;
+      }
+    }
+    if (m.status === 'fulfilled') {
+      const rows = m.value || [];
+      matches = rows.filter((row) => row.status === 'ready' || row.status === '');
+      if (!matches.length) matches = rows;
+      // Default to the newest match only while nothing is selected — a
+      // route context id (seeded above) wins over it, and embedded (the
+      // Reports tab) never defaults: the passed id is authoritative.
+      if (!embedded && !matchId && matches.length) matchId = matches[0].id;
+    }
+    const failed = [t, m].find((r) => r.status === 'rejected');
+    tplError = failed ? errText(failed.reason) : '';
+  }
+
+  // The metrics read (mount AND metricsError's Retry): clears only when
+  // the read lands, so the appendix never claims "No custom stats yet"
+  // while the previous failure still stands.
+  async function loadMetricsList() {
+    try {
+      const rows = await listMetrics();
+      metrics = rows || [];
+      metricsError = '';
+    } catch (e) {
+      metricsError = errText(e);
+    }
+  }
+
   $effect(() => {
-    listReportTemplates()
-      .then((rows) => {
-        templates = rows || [];
-        if (templates.length && !templates.some((t) => t.id === tplId)) {
-          tplId = templates[0].id;
-        }
-      })
-      .catch((e) => (tplError = errText(e)));
-    listMatches('', 'extracted_at', true)
-      .then((rows) => {
-        matches = (rows || []).filter((m) => m.status === 'ready' || m.status === '');
-        if (!matches.length) matches = rows || [];
-        // Default to the newest match only while nothing is selected —
-        // a route context id (seeded above) wins over it, and embedded
-        // (the Reports tab) never defaults: the passed id is authoritative.
-        if (!embedded && !matchId && matches.length) matchId = matches[0].id;
-      })
-      .catch((e) => (tplError = tplError || errText(e)));
-    listMetrics()
-      .then((rows) => (metrics = rows || []))
-      .catch((e) => (metricsError = errText(e)));
+    loadTemplates();
+    loadMetricsList();
     listPlayers('')
       .then((rows) => {
         players = listedPlayers(rows) || [];
@@ -300,7 +324,10 @@
   {/if}
 
   {#if tplError}
-    <p class="error" role="alert">{tplError}</p>
+    <p class="error" role="alert">
+      {tplError}
+      <button class="btn small" onclick={loadTemplates}>Retry</button>
+    </p>
   {/if}
 
   <section class="panel">
@@ -331,12 +358,16 @@
           </span>
         </button>
       {:else}
-        <p class="muted" role="status">No report templates available.</p>
+        {#if !tplError}
+          <!-- Gated on tplError: a failed template/match read is UNKNOWN,
+               never "no templates" — the alert above carries it. -->
+          <p class="muted" role="status">No report templates available.</p>
+        {/if}
       {/each}
     </div>
     {#if tpl}
       <div class="rep-targets">
-        {#if !embedded && matches.length === 0}
+        {#if !embedded && matches.length === 0 && !tplError}
           <p class="muted" role="status">No matches in the library yet.</p>
         {/if}
         {#if embedded}
@@ -388,7 +419,10 @@
     <section class="panel">
       <h2>Stats appendix</h2>
       {#if metricsError}
-        <p class="error" role="alert">{metricsError}</p>
+        <p class="error" role="alert">
+          {metricsError}
+          <button class="btn small" onclick={loadMetricsList}>Retry</button>
+        </p>
       {/if}
       <p class="muted">
         Check stats to append their tables under the report (scoped to this
@@ -418,7 +452,11 @@
           {/each}
         </div>
       {:else}
-        <p class="muted" role="status">No custom stats yet — build one in the Builder.</p>
+        {#if !metricsError}
+          <!-- Gated on metricsError: a failed listMetrics read is UNKNOWN,
+               never "no custom stats" — the alert above carries it. -->
+          <p class="muted" role="status">No custom stats yet — build one in the Builder.</p>
+        {/if}
       {/each}
     </section>
 

@@ -33,7 +33,11 @@
   let entities = $state(null);
   let entError = $state('');
 
-  let gen = 0; // match-switch generation — drops stale async results
+  // One generation per inspector read — each drops its own stale async
+  // results when the match changes mid-flight (or a Retry supersedes
+  // them), without the two reads cancelling each other.
+  let provGen = 0;
+  let entGen = 0;
 
   // Reference block: a SHORT static summary of the golden demo's
   // network-message census, not a dump.
@@ -44,43 +48,62 @@
     'Ballistics-adjacent: CMsgTEFireBullets 3,302 + CMsgPlaceDecalEvent 1,514.',
   ];
 
-  $effect(() => {
-    listMatches('', 'extracted_at', true)
-      .then((rows) => {
-        matches = rows || [];
-        // Default to the newest match only while nothing is selected —
-        // a route context id (seeded above) wins over it, and embedded
-        // (the Details tab) never defaults: the passed id is authoritative.
-        if (!embedded && !matchId && matches.length) matchId = matches[0].id;
+  // The match list read (mount AND loadError's Retry): the error clears
+  // only when the read lands, so a retry never flashes the "No matches"
+  // empty state while the list is still unknown.
+  async function loadMatches() {
+    try {
+      const rows = await listMatches('', 'extracted_at', true);
+      matches = rows || [];
+      // Default to the newest match only while nothing is selected —
+      // a route context id (seeded above) wins over it, and embedded
+      // (the Details tab) never defaults: the passed id is authoritative.
+      if (!embedded && !matchId && matches.length) matchId = matches[0].id;
+      loadError = '';
+    } catch (e) {
+      loadError = errText(e);
+    }
+  }
+
+  // One inspector read (match switch AND its error's Retry): a plain ✕
+  // would strand the panel on "Loading…" forever (the data never
+  // arrives), so dismissing means actually re-fetching.
+  function loadProv(id) {
+    const my = ++provGen;
+    prov = null;
+    provError = '';
+    getProvenance(id)
+      .then((p) => {
+        if (my === provGen) prov = p;
       })
       .catch((e) => {
-        loadError = errText(e);
+        if (my === provGen) provError = errText(e);
       });
+  }
+
+  function loadEnt(id) {
+    const my = ++entGen;
+    entities = null;
+    entError = '';
+    getEntitySummary(id)
+      .then((s) => {
+        if (my === entGen) entities = s;
+      })
+      .catch((e) => {
+        if (my === entGen) entError = errText(e);
+      });
+  }
+
+  $effect(() => {
+    loadMatches();
   });
 
   // Reload every inspector when the selected match changes.
   $effect(() => {
     const id = matchId;
     if (!id) return;
-    const my = ++gen;
-    prov = null;
-    entities = null;
-    provError = entError = '';
-
-    getProvenance(id)
-      .then((p) => {
-        if (my === gen) prov = p;
-      })
-      .catch((e) => {
-        if (my === gen) provError = errText(e);
-      });
-    getEntitySummary(id)
-      .then((s) => {
-        if (my === gen) entities = s;
-      })
-      .catch((e) => {
-        if (my === gen) entError = errText(e);
-      });
+    loadProv(id);
+    loadEnt(id);
   });
 
   // Encrypted-message note (presence, never content).
@@ -112,20 +135,30 @@
   {/if}
 
   {#if loadError}
-    <p class="error" role="alert">{loadError}</p>
+    <p class="error" role="alert">
+      {loadError}
+      <button class="btn small" onclick={loadMatches}>Retry</button>
+    </p>
   {/if}
 
   {#if !matchId}
-    <div class="panel empty">
-      <p class="empty-title" role="status">No matches</p>
-      <p class="muted">Import a demo in the Library first.</p>
-    </div>
+    {#if !loadError}
+      <!-- Gated on loadError: a failed match-list read is UNKNOWN, never
+           "no matches" — the alert above carries it (and its Retry). -->
+      <div class="panel empty">
+        <p class="empty-title" role="status">No matches</p>
+        <p class="muted">Import a demo in the Library first.</p>
+      </div>
+    {/if}
   {:else}
     <!-- Provenance: reproducibility panel per match. -->
     <section class="panel">
       <h2>Import details</h2>
       {#if provError}
-        <p class="error" role="alert">{provError}</p>
+        <p class="error" role="alert">
+          {provError}
+          <button class="btn small" onclick={() => loadProv(matchId)}>Retry</button>
+        </p>
       {:else if !prov}
         <p class="muted" role="status">Loading…</p>
       {:else}
@@ -184,7 +217,10 @@
     <section class="panel">
       <h2>Advanced diagnostics</h2>
       {#if entError}
-        <p class="error" role="alert">{entError}</p>
+        <p class="error" role="alert">
+          {entError}
+          <button class="btn small" onclick={() => loadEnt(matchId)}>Retry</button>
+        </p>
       {:else if !entities}
         <p class="muted" role="status">Loading…</p>
       {:else}
