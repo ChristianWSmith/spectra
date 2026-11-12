@@ -1399,3 +1399,46 @@ at the end of the section.
   and https://cs-demo-manager.com/changelog (v3.14.0, v3.18.3);
   local decode of two CS2 `match730_*.dem.info` files in
   `~/…/Counter-Strike Global Offensive/game/csgo/replays/` (2026-11-11).
+
+- **Dating a match by patch number (demo header `patch_version`)** — can a
+  demo be placed in a CS2 patch window when it carries no played-at date
+  (see the played-at entry)? **Yes — the demo header IS the patch number,
+  and spectra already stores it.** `CDemoFileHeader.patch_version`
+  (`optional int32`, demo.proto field 2; read via
+  `RegisterNetMessageHandler(func(*msg.CDemoFileHeader))` — v6 has no
+  `Parser.Header()`) holds the in-game `PatchVersion` (`x.y.z.w` from
+  `steam.inf`) with dots removed: **1.40.8.9 → 14089, 1.41.1.3 → 14113,
+  1.41.9.6 → 14196**. Anchors (2026-11-12): demoinfocs pins protocol 14089
+  to the AnimGraph 2 update of 2025-07-28 while the r/cs2 update-bot titles
+  that day "Counter-Strike 2 update for 7/28/25 (1.40.8.9)"; 14113 is
+  demoinfocs' event-list threshold at the 2025-10-13/15 updates titled
+  "(1.41.1.3-rc1)"/"(1.41.1.4)"; the local `steam.inf` reads
+  `PatchVersion=1.41.9.6` (VersionDate Nov 04 2026) and spectra' library
+  carries 14171…14195 (1.41.7.1…1.41.9.5, 7/7 demos non-zero). The value
+  is integer and increases on nearly every client build (≈2–4/month,
+  incl. untitled hotfixes) — but **Valve publishes NO numbered patch
+  sequence**: an official patch is a date + free-text title, so the
+  patch→date window must come from community sources (r/cs2/r/GlobalOffensive
+  update-bot titles with `(x.y.z.w)`, cs2news.gg's per-update steam.inf
+  snapshots, SteamDB patchnotes date+BuildID, Valve's dated announcements).
+  Caveats: `patch_version` is `optional` (0 = unknown, never "patch 0");
+  compare decomposed `(x,y,z,w)` tuples, not raw ints, across `y` boundaries
+  (`w`/`z` roll 9→0); `matches.patch_version` + text twin `net_proto` exist
+  (`schema.sql:16,24`; UI `Match.svelte` "patch {fmtPatch(match.patchVersion)}"), while
+  `matchSummaryCols` omits it; within one patch, order by `extracted_at`
+  (= extraction completion, `extract.go:409` — import time, not play time).
+  The header's `build_num` (field 13) is read by nothing and its semantics
+  are unverified; a second copy of the protocol rides
+  `CSVCMsg_ServerInfo.protocol`.
+  **Source** — demoinfocs-golang v6.0.0-rc.1 module cache
+  (`msg/proto/v6/demo.proto:28-44`, `s2_commands.go:724-734` and
+  `:501-521`, `constants/constants.go:13-17`, `parser.go:598`);
+  https://www.reddit.com/r/cs2/comments/1mbstaq/ (7/28/25 → 1.40.8.9),
+  https://www.reddit.com/r/cs2/comments/1o5zu7s/ (10/13/25 → 1.41.1.3-rc1),
+  r/cs2 front page "update for 11/11/26 (1.41.9.7)";
+  https://cs2news.gg/cs2-update/ (steam.inf PatchVersion/ClientVersion per
+  update); https://steamdb.info/app/730/patchnotes/ (date + BuildID);
+  https://www.counter-strike.net/news/updates (dated, unnumbered);
+  https://github.com/advancedfx/advancedfx/issues/1172 (build 23296257 /
+  PatchVersion 1.41.6.2 / ClientVersion 2000827); local probes: install
+  `steam.inf` + read-only query of spectra' library (2026-11-12).
