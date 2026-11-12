@@ -837,13 +837,11 @@ func TestReprocessRecopyAndCreatedFlagGuard(t *testing.T) {
 	if got := readFile(t, copyPath); got != "re-copy me later" {
 		t.Errorf("pre-existing copy after a failed reprocess = %q, want it untouched", got)
 	}
-	m2, err := st.GetMatch(imported.MatchID)
-	if err != nil {
-		t.Fatalf("GetMatch: %v", err)
-	}
-	if m2.Status != models.StatusFailed {
-		t.Errorf("match status = %q, want failed (the failure still surfaces)", m2.Status)
-	}
+	// failJob writes the job row and the match row as two statements —
+	// waitStatus saw the job half land, so poll for the match half
+	// instead of one-shotting it (a one-shot read races the second
+	// write and sees the stale "parsing").
+	m2 := waitMatchStatus(t, st, imported.MatchID, models.StatusFailed)
 	if got := im.CopyState(m2.SHA256, m2.Path); got != CopyStateCopied {
 		t.Errorf("CopyState after failed reprocess = %q, want %q", got, CopyStateCopied)
 	}
