@@ -9,11 +9,16 @@
     getWarnings,
     getCombatStats,
     getRoundClasses,
+    getEconomy,
+    getClutches,
+    getEngagements,
+    getUtility,
     getVoicePresence,
     getMatchSummary,
     evictDemoCopy,
     listMetrics,
     previewMetric,
+    subscribeJobProgress,
     errText,
   } from '../services.js';
   // Preference keys (prefs.go) are read straight through the generated
@@ -282,6 +287,48 @@
   // selection-key comment above), so the effect is keyed on id alone.
   $effect(() => {
     preloadReplay(id);
+  });
+
+  // Tier 1 of the loading ladder (PRODUCT.md "### Defaults"): warm the
+  // per-match ANALYTICS set — this view's own KAST column and round chips
+  // plus the Combat/Utility/Economy tabs' reads — the MOMENT the match
+  // screen opens, so tab switches stop flashing "Loading…" / empty
+  // tables. Fire-and-forget: never awaited, never gates rendering; the
+  // reads below go through services' cachedRead wrappers, so this warm
+  // shares ONE entry per (method, args) with this view's own effects and
+  // with RoundDetail/CompareRounds.
+  //
+  // BAIL-OUT (mirror of preload.js:204-223 libraryJobsActive — READ-ONLY
+  // reference, that module owns the replay bundle memo and pulls in the
+  // whole preload engine, so the tiny flag is mirrored here): every
+  // spectra:* data event clears services' readCache and spectra:job-progress
+  // fires every ~100 ms, so warming cached reads mid-import is
+  // systematically wasted. subscribeJobProgress hands the CURRENT snapshot
+  // to the callback SYNCHRONOUSLY, so `running` is primed before the warm
+  // decision below — whatever slips through the first ~100 ms window is
+  // dropped by the flush listeners (the correctness net). The subscription
+  // is scoped to this effect run and unsubscribed in its cleanup (a
+  // component-lifetime registration would outlive every unmount). App
+  // reuses this view across id changes without remounting (see the
+  // selection-key comment above), so the effect is keyed on id alone —
+  // and a falsy id has nothing to warm.
+  $effect(() => {
+    const mid = id;
+    if (!(mid > 0)) return;
+    let running = false;
+    const off = subscribeJobProgress((snap) => {
+      running = !!(snap && snap.size);
+    });
+    if (running) return off;
+    void Promise.allSettled([
+      getEconomy(mid),
+      getRoundClasses(mid),
+      getCombatStats(mid),
+      getClutches(mid),
+      getEngagements(mid, ''),
+      getUtility(mid),
+    ]);
+    return off;
   });
 
   // Demo-copy state line (Details → Key facts): copyState is fs-derived
