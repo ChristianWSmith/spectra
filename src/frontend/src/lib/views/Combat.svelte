@@ -89,6 +89,11 @@
   let engagements = $state([]);
   let stats = $state([]);
   let error = $state('');
+  // Rung 3 of the loading ladder: without it every panel below renders as an
+  // empty table while the one Promise.all above is in flight — a false
+  // "no data" state. Plain indicator, transient (never seeded/remembered,
+  // never in the URL); cleared once on the first settled read.
+  let loading = $state(true);
   // Final side per player + the match's side-switch count: the inputs for
   // the team-identity colors on names. Scoreboard rows also carry the
   // exact-name fallback for rows without a steam id.
@@ -198,9 +203,13 @@
         sideSwitches = (m && m.sideSwitches) || 0;
         if (m && m.tickRate > 0) tickRate = m.tickRate;
         error = '';
+        loading = false;
       })
       .catch((e) => {
-        if (live) error = errText(e);
+        if (live) {
+          error = errText(e);
+          loading = false;
+        }
       });
     return () => (live = false);
   });
@@ -416,254 +425,261 @@
     <p class="error" role="alert">{error}</p>
   {/if}
 
-  <section class="panel comb-sec">
-    <h2>Combat stats</h2>
-    <div class="table-scroll">
-      <table class="data-table">
-        <thead>
-          <tr>
-            {#each STAT_COLS as col (col.key)}
-              <SortTh
-                label={col.label}
-                cls={col.title ? 'num def' : 'num'}
-                title={col.title || ''}
-                active={statSort.key === col.key}
-                desc={statSort.desc}
-                onclick={() => toggleStatSort(col.key)}
-              >
-                {#if col.inferred}
-                  <span class="chip badge-inferred" title={col.badge}>inferred</span>
-                {/if}
-              </SortTh>
-            {/each}
-          </tr>
-        </thead>
-        <tbody>
-          {#each sortedStats as r (r.steamId)}
+  {#if loading}
+    <!-- All three panels below come from ONE Promise.all: until it
+         settles, empty tables would be a false "no data" state — rung 3
+         of the loading ladder (plain indicator, transient). -->
+    <p class="muted" role="status">Loading combat data…</p>
+  {:else}
+    <section class="panel comb-sec">
+      <h2>Combat stats</h2>
+      <div class="table-scroll">
+        <table class="data-table">
+          <thead>
             <tr>
               {#each STAT_COLS as col (col.key)}
-                {#if col.key === 'name'}
-                  <td>
-                    <ProfileLink
-                      steam={r.steamId}
-                      name={r.name}
-                      {nav}
-                      cls={playerCls(r.steamId, r.name)}
-                      title="Open player profile"
-                    />
-                  </td>
-                {:else if col.key === 'kastPct'}
-                  <td class="num">
-                    <button
-                      class="comb-kast-btn"
-                      title="{KAST_DEF} — click for the per-round K/A/T/S grid"
-                      onclick={() => openKast(r)}
-                    >{col.fmt(r)}</button>
-                  </td>
-                {:else}
-                  <td class="num" title={col.title || ''}>{col.fmt(r)}</td>
-                {/if}
+                <SortTh
+                  label={col.label}
+                  cls={col.title ? 'num def' : 'num'}
+                  title={col.title || ''}
+                  active={statSort.key === col.key}
+                  desc={statSort.desc}
+                  onclick={() => toggleStatSort(col.key)}
+                >
+                  {#if col.inferred}
+                    <span class="chip badge-inferred" title={col.badge}>inferred</span>
+                  {/if}
+                </SortTh>
               {/each}
             </tr>
-          {:else}
-            <tr><td colspan={STAT_COLS.length} class="muted">No combat stats.</td></tr>
-          {/each}
-        </tbody>
-      </table>
-    </div>
-    <p class="muted comb-note">
-      Dotted headers and <span class="chip badge-inferred">inferred</span> badges
-      mark stats Spectra calculates rather than reads from the demo — hover for
-      the rule.
-    </p>
-  </section>
+          </thead>
+          <tbody>
+            {#each sortedStats as r (r.steamId)}
+              <tr>
+                {#each STAT_COLS as col (col.key)}
+                  {#if col.key === 'name'}
+                    <td>
+                      <ProfileLink
+                        steam={r.steamId}
+                        name={r.name}
+                        {nav}
+                        cls={playerCls(r.steamId, r.name)}
+                        title="Open player profile"
+                      />
+                    </td>
+                  {:else if col.key === 'kastPct'}
+                    <td class="num">
+                      <button
+                        class="comb-kast-btn"
+                        title="{KAST_DEF} — click for the per-round K/A/T/S grid"
+                        onclick={() => openKast(r)}
+                      >{col.fmt(r)}</button>
+                    </td>
+                  {:else}
+                    <td class="num" title={col.title || ''}>{col.fmt(r)}</td>
+                  {/if}
+                {/each}
+              </tr>
+            {:else}
+              <tr><td colspan={STAT_COLS.length} class="muted">No combat stats.</td></tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+      <p class="muted comb-note">
+        Dotted headers and <span class="chip badge-inferred">inferred</span> badges
+        mark stats Spectra calculates rather than reads from the demo — hover for
+        the rule.
+      </p>
+    </section>
 
-  <section class="panel comb-sec">
-    <h2>Engagements</h2>
-    <div class="comb-kinds" role="group" aria-label="Filter engagements by kind">
-      {#each ENG_KINDS as k (k)}
-        <button
-          class="btn small comb-kind"
-          class:active={engKind === k}
-          onclick={() => (engKind = k)}
-        >{k || 'all'}</button>
-      {/each}
-    </div>
-    <div class="table-scroll">
-      <table class="data-table">
-        <thead>
-          <tr>
-            <th scope="col"><span class="sr-only">Replay</span></th>
-            <th scope="col" class="num">Round</th>
-            <th scope="col" class="num def" title="Time into the round — how far past the round's start tick the engagement happened (exact tick in the tooltip)">Time</th>
-            <th scope="col">Kind</th>
-            <th scope="col">Killer</th>
-            <th scope="col"><span class="sr-only">versus</span></th>
-            <th scope="col">Victim</th>
-            <th scope="col" class="num def" title={ENG_DIST_DEF}>Dist (m)</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each visibleEngagements as g (g.key)}
-            <tr>
-              <td>
-                <!-- Row ▶ follows the ENGAGEMENT's KILLER (the owner's
-                     rule: the play button on a kill follows the killer). -->
-                <EventPlay
-                  tick={g.tick}
-                  title={g.aSteam
-                    ? `Watch this engagement — follow ${g.aName || g.aSteam} (killer)`
-                    : 'Watch this engagement in the replay'}
-                  label={g.aSteam
-                    ? `Watch tick ${g.tick} — follow ${g.aName || g.aSteam}`
-                    : `Watch tick ${g.tick} in the replay`}
-                  onclick={() => replay(g.tick, entryLoopAround(g.tick, tickRate), g.aSteam)}
-                />
-              </td>
-              <!-- The Round cell is TEXT, not a control (owner ruling:
-                   "no round play button there"): RD{n} as a plain label —
-                   a label isn't a play button, and the row's ONE ▶ is the
-                   event/follow play above. Round watching lives in the
-                   RoundDetail header's "Watch round". -->
-              <td class="num">RD{g.round}</td>
-              <td class="num mono" title="tick {g.tick}">{roundClock(g.tick, rbn.get(g.round), tickRate)}</td>
-              <td>
-                <!-- ONE kill, up to FOUR kind facts (opening / trade /
-                     traded / untraded — every kill yields ≥ 1 row): the
-                     kinds are independent detections over the same kill
-                     event (see engagementRows above), so a merged row
-                     wears its chips side by side — each keeping its own
-                     perspective title — plus an sr-only combined line,
-                     making the cell read as one kill with its facts
-                     rather than as two rows' worth of labels. -->
-                {#each g.kinds as k, i (k)}{#if i > 0}{' · '}{/if}<span class="chip comb-kind-chip {k}" title={ENG_KIND_TITLES[k] || k}>{k}</span>{/each}{#if g.kinds.length > 1}{' '}<span class="sr-only">One kill — {g.kinds.map((k) => ENG_KIND_TITLES[k] || k).join('; ')}</span>{/if}
-              </td>
-              <td>
-                <ProfileLink
-                  steam={g.aSteam}
-                  name={g.aName || '—'}
-                  {nav}
-                  cls={playerRoundCls(g.round, g.aSteam, g.aName)}
-                  title="Open profile — {g.aName}"
-                />
-              </td>
-              <td class="muted">vs</td>
-              <td>
-                <ProfileLink
-                  steam={g.bSteam}
-                  name={g.bName || '—'}
-                  {nav}
-                  cls={playerRoundCls(g.round, g.bSteam, g.bName)}
-                  title="Open profile — {g.bName}"
-                />
-              </td>
-              <td class="num" title={ENG_DIST_DEF}>{g.distance ? Math.round(g.distance) : '—'}</td>
-            </tr>
-          {:else}
-            <tr>
-              <td colspan="8" class="muted">
-                {error ? 'Engagements unavailable.' : 'No engagements match this filter.'}
-              </td>
-            </tr>
-          {/each}
-        </tbody>
-      </table>
-    </div>
-  </section>
-
-  <section class="panel comb-sec">
-    <h2>
-      Clutches <span class="chip provenance" title="Found by counting who is alive when the side drops to one player while the opponents still have ≥ 1; it ends when the solo dies or the last opponent falls. Shown per the won/lost toggle below (won on, lost off by default).">alive-count · won/lost toggle</span>
-    </h2>
-    <!-- Outcome TOGGLES — chip-style like the Engagements card's kind
-         chips, but independent (each flips its own boolean): won+lost = all
-         rows, won-only = the default/historical list, lost-only = the lost
-         rows, neither = the empty state below. Local $state only — never
-         route-query state (retention ruling pending). -->
-    <div class="comb-kinds" role="group" aria-label="Filter clutches by outcome">
-      <button
-        class="btn small comb-kind"
-        class:active={clutchWon}
-        aria-pressed={clutchWon}
-        onclick={() => (clutchWon = !clutchWon)}
-      >won</button>
-      <button
-        class="btn small comb-kind"
-        class:active={clutchLost}
-        aria-pressed={clutchLost}
-        onclick={() => (clutchLost = !clutchLost)}
-      >lost</button>
-    </div>
-    {#if clutches.length === 0 && !error}
-      <p class="muted" role="status">No clutches detected in this match.</p>
-    {:else if shownClutches.length === 0}
-      <p class="muted" role="status">{clutchEmptyText}</p>
-    {:else}
+    <section class="panel comb-sec">
+      <h2>Engagements</h2>
+      <div class="comb-kinds" role="group" aria-label="Filter engagements by kind">
+        {#each ENG_KINDS as k (k)}
+          <button
+            class="btn small comb-kind"
+            class:active={engKind === k}
+            onclick={() => (engKind = k)}
+          >{k || 'all'}</button>
+        {/each}
+      </div>
       <div class="table-scroll">
         <table class="data-table">
           <thead>
             <tr>
               <th scope="col"><span class="sr-only">Replay</span></th>
               <th scope="col" class="num">Round</th>
-              <th scope="col">Size</th>
-              <th scope="col">Player</th>
-              <th scope="col">Outcome</th>
-              <th scope="col">Bomb</th>
-              <th scope="col" class="num def" title="Remaining HP of the solo player when the clutch resolved: the last recorded health before the round ended (rows without that detail fall back to damage arithmetic, and a dead solo reads 0)">HP left</th>
+              <th scope="col" class="num def" title="Time into the round — how far past the round's start tick the engagement happened (exact tick in the tooltip)">Time</th>
+              <th scope="col">Kind</th>
+              <th scope="col">Killer</th>
+              <th scope="col"><span class="sr-only">versus</span></th>
+              <th scope="col">Victim</th>
+              <th scope="col" class="num def" title={ENG_DIST_DEF}>Dist (m)</th>
             </tr>
           </thead>
           <tbody>
-            {#each shownClutches as c (c.id)}
+            {#each visibleEngagements as g (g.key)}
               <tr>
                 <td>
-                  {#if c.replayAnchorTick > 0}
-                    <!-- Row ▶ follows the CLUTCH's solo (the row actor);
-                         the loop is the KILL-span ±10 s (clutchLoop). -->
-                    <EventPlay
-                      tick={c.replayAnchorTick}
-                      title={c.steamId
-                        ? `Watch this clutch — follow ${c.name || c.steamId}`
-                        : 'Watch this clutch in the replay'}
-                      label={c.steamId
-                        ? `Watch the clutch in round ${c.round} — follow ${c.name || c.steamId}`
-                        : `Watch the clutch in round ${c.round} in the replay`}
-                      onclick={() => replay(c.replayAnchorTick, clutchLoop(c), c.steamId)}
-                    />
-                  {/if}
-                </td>
-                <!-- Same ruling as the engagement row: the Round cell is
-                     the RD{n} label, never a second play button. -->
-                <td class="num">RD{c.round}</td>
-                <td><strong>1v{c.size}</strong></td>
-                <td>
-                  <ProfileLink
-                    steam={c.steamId}
-                    name={c.name || '—'}
-                    {nav}
-                    cls={playerRoundCls(c.round, c.steamId, c.name)}
-                    title="Open player profile"
+                  <!-- Row ▶ follows the ENGAGEMENT's KILLER (the owner's
+                       rule: the play button on a kill follows the killer). -->
+                  <EventPlay
+                    tick={g.tick}
+                    title={g.aSteam
+                      ? `Watch this engagement — follow ${g.aName || g.aSteam} (killer)`
+                      : 'Watch this engagement in the replay'}
+                    label={g.aSteam
+                      ? `Watch tick ${g.tick} — follow ${g.aName || g.aSteam}`
+                      : `Watch tick ${g.tick} in the replay`}
+                    onclick={() => replay(g.tick, entryLoopAround(g.tick, tickRate), g.aSteam)}
                   />
                 </td>
+                <!-- The Round cell is TEXT, not a control (owner ruling:
+                     "no round play button there"): RD{n} as a plain label —
+                     a label isn't a play button, and the row's ONE ▶ is the
+                     event/follow play above. Round watching lives in the
+                     RoundDetail header's "Watch round". -->
+                <td class="num">RD{g.round}</td>
+                <td class="num mono" title="tick {g.tick}">{roundClock(g.tick, rbn.get(g.round), tickRate)}</td>
                 <td>
-                  <span class="chip status {c.won ? 'ok' : 'bad'}">{c.won ? 'won' : 'lost'}</span>
+                  <!-- ONE kill, up to FOUR kind facts (opening / trade /
+                       traded / untraded — every kill yields ≥ 1 row): the
+                       kinds are independent detections over the same kill
+                       event (see engagementRows above), so a merged row
+                       wears its chips side by side — each keeping its own
+                       perspective title — plus an sr-only combined line,
+                       making the cell read as one kill with its facts
+                       rather than as two rows' worth of labels. -->
+                  {#each g.kinds as k, i (k)}{#if i > 0}{' · '}{/if}<span class="chip comb-kind-chip {k}" title={ENG_KIND_TITLES[k] || k}>{k}</span>{/each}{#if g.kinds.length > 1}{' '}<span class="sr-only">One kill — {g.kinds.map((k) => ENG_KIND_TITLES[k] || k).join('; ')}</span>{/if}
                 </td>
                 <td>
-                  {#if c.bombState && c.bombState !== 'none'}
-                    <span class="chip">bomb {c.bombState}</span>
-                  {:else}
-                    <span class="muted">—</span>
-                  {/if}
+                  <ProfileLink
+                    steam={g.aSteam}
+                    name={g.aName || '—'}
+                    {nav}
+                    cls={playerRoundCls(g.round, g.aSteam, g.aName)}
+                    title="Open profile — {g.aName}"
+                  />
                 </td>
-                <td class="num">{c.hpLeft}</td>
+                <td class="muted">vs</td>
+                <td>
+                  <ProfileLink
+                    steam={g.bSteam}
+                    name={g.bName || '—'}
+                    {nav}
+                    cls={playerRoundCls(g.round, g.bSteam, g.bName)}
+                    title="Open profile — {g.bName}"
+                  />
+                </td>
+                <td class="num" title={ENG_DIST_DEF}>{g.distance ? Math.round(g.distance) : '—'}</td>
               </tr>
             {:else}
-              <tr><td colspan="7" class="muted">{clutchEmptyText}</td></tr>
+              <tr>
+                <td colspan="8" class="muted">
+                  {error ? 'Engagements unavailable.' : 'No engagements match this filter.'}
+                </td>
+              </tr>
             {/each}
           </tbody>
         </table>
       </div>
-    {/if}
-  </section>
+    </section>
+
+    <section class="panel comb-sec">
+      <h2>
+        Clutches <span class="chip provenance" title="Found by counting who is alive when the side drops to one player while the opponents still have ≥ 1; it ends when the solo dies or the last opponent falls. Shown per the won/lost toggle below (won on, lost off by default).">alive-count · won/lost toggle</span>
+      </h2>
+      <!-- Outcome TOGGLES — chip-style like the Engagements card's kind
+           chips, but independent (each flips its own boolean): won+lost = all
+           rows, won-only = the default/historical list, lost-only = the lost
+           rows, neither = the empty state below. Local $state only — never
+           route-query state (retention ruling pending). -->
+      <div class="comb-kinds" role="group" aria-label="Filter clutches by outcome">
+        <button
+          class="btn small comb-kind"
+          class:active={clutchWon}
+          aria-pressed={clutchWon}
+          onclick={() => (clutchWon = !clutchWon)}
+        >won</button>
+        <button
+          class="btn small comb-kind"
+          class:active={clutchLost}
+          aria-pressed={clutchLost}
+          onclick={() => (clutchLost = !clutchLost)}
+        >lost</button>
+      </div>
+      {#if clutches.length === 0 && !error}
+        <p class="muted" role="status">No clutches detected in this match.</p>
+      {:else if shownClutches.length === 0}
+        <p class="muted" role="status">{clutchEmptyText}</p>
+      {:else}
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th scope="col"><span class="sr-only">Replay</span></th>
+                <th scope="col" class="num">Round</th>
+                <th scope="col">Size</th>
+                <th scope="col">Player</th>
+                <th scope="col">Outcome</th>
+                <th scope="col">Bomb</th>
+                <th scope="col" class="num def" title="Remaining HP of the solo player when the clutch resolved: the last recorded health before the round ended (rows without that detail fall back to damage arithmetic, and a dead solo reads 0)">HP left</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each shownClutches as c (c.id)}
+                <tr>
+                  <td>
+                    {#if c.replayAnchorTick > 0}
+                      <!-- Row ▶ follows the CLUTCH's solo (the row actor);
+                           the loop is the KILL-span ±10 s (clutchLoop). -->
+                      <EventPlay
+                        tick={c.replayAnchorTick}
+                        title={c.steamId
+                          ? `Watch this clutch — follow ${c.name || c.steamId}`
+                          : 'Watch this clutch in the replay'}
+                        label={c.steamId
+                          ? `Watch the clutch in round ${c.round} — follow ${c.name || c.steamId}`
+                          : `Watch the clutch in round ${c.round} in the replay`}
+                        onclick={() => replay(c.replayAnchorTick, clutchLoop(c), c.steamId)}
+                      />
+                    {/if}
+                  </td>
+                  <!-- Same ruling as the engagement row: the Round cell is
+                       the RD{n} label, never a second play button. -->
+                  <td class="num">RD{c.round}</td>
+                  <td><strong>1v{c.size}</strong></td>
+                  <td>
+                    <ProfileLink
+                      steam={c.steamId}
+                      name={c.name || '—'}
+                      {nav}
+                      cls={playerRoundCls(c.round, c.steamId, c.name)}
+                      title="Open player profile"
+                    />
+                  </td>
+                  <td>
+                    <span class="chip status {c.won ? 'ok' : 'bad'}">{c.won ? 'won' : 'lost'}</span>
+                  </td>
+                  <td>
+                    {#if c.bombState && c.bombState !== 'none'}
+                      <span class="chip">bomb {c.bombState}</span>
+                    {:else}
+                      <span class="muted">—</span>
+                    {/if}
+                  </td>
+                  <td class="num">{c.hpLeft}</td>
+                </tr>
+              {:else}
+                <tr><td colspan="7" class="muted">{clutchEmptyText}</td></tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {/if}
+    </section>
+  {/if}
 
   <Dialog open={!!kastSteam} label="KAST rounds for {kastName}" panelClass="wide" onClose={closeKast}>
     <div class="row-between">

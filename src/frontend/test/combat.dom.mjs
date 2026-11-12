@@ -101,13 +101,19 @@ writeFileSync(
 writeFileSync(
   join(dir, 'services.js'),
   `const d = () => globalThis.__combatData || {};
-export const getCombatStats = () => Promise.resolve(d().stats || []);
-export const getClutches = () => Promise.resolve(d().clutches || []);
-export const getEngagements = () => Promise.resolve(d().engagements || []);
-export const getPlayerRounds = () => Promise.resolve(d().playerRounds || []);
-export const getRounds = () => Promise.resolve(d().rounds || []);
-export const getScoreboard = () => Promise.resolve(d().scoreboard || []);
-export const getMatch = () => Promise.resolve(d().match || null);
+// __combatDelay (section K) holds every read back so the cold-start
+// loading gate is observable; unset/0 keeps the plain resolve.
+const wait = (v) =>
+  globalThis.__combatDelay
+    ? new Promise((res) => setTimeout(() => res(v), globalThis.__combatDelay))
+    : Promise.resolve(v);
+export const getCombatStats = () => wait(d().stats || []);
+export const getClutches = () => wait(d().clutches || []);
+export const getEngagements = () => wait(d().engagements || []);
+export const getPlayerRounds = () => wait(d().playerRounds || []);
+export const getRounds = () => wait(d().rounds || []);
+export const getScoreboard = () => wait(d().scoreboard || []);
+export const getMatch = () => wait(d().match || null);
 export const errText = (e) => (e == null ? 'unknown error' : String((e && e.message) || e));
 `,
 );
@@ -708,6 +714,33 @@ check(
   roundNs.length === 2 && roundNs.every((t) => /^RD\d+$/.test(t)) && roundNs.join(',') === 'RD6,RD7',
   roundNs.join(','),
 );
+
+// ---------------------------------------------------------------------------
+// Section K: the cold-start loading gate (loading ladder rung 3). Until the
+// one Promise.all settles, the view shows the plain loading line — it never
+// renders its panels as empty tables (a false "no data" state).
+console.log('K. cold start: the panels never claim "No combat stats." mid-load');
+{
+  globalThis.__combatDelay = 250;
+  const rootK = await render(base);
+  check(
+    'mid-load: loading line up, no empty-state text, no panel',
+    rootK.textContent.includes('Loading combat data…') &&
+      !rootK.textContent.includes('No combat stats.') &&
+      rootK.querySelectorAll('section.panel').length === 0,
+    rootK.textContent.replace(/\s+/g, ' ').slice(0, 140),
+  );
+  await sleep(400); // past the 250 ms delay
+  check(
+    'after the fetch lands: gate gone, all three panels render',
+    !rootK.textContent.includes('Loading combat data…') &&
+      sections(rootK, 'Combat stats').length === 1 &&
+      sections(rootK, 'Engagements').length === 1 &&
+      sections(rootK, 'Clutches').length === 1,
+    rootK.textContent.replace(/\s+/g, ' ').slice(0, 140),
+  );
+  globalThis.__combatDelay = 0;
+}
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');

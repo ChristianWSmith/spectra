@@ -96,13 +96,19 @@ writeFileSync(
 writeFileSync(
   join(dir, 'services.js'),
   `const d = () => globalThis.__cmpData || {};
-export const getMatch = () => Promise.resolve(d().match || null);
-export const getRounds = () => Promise.resolve(d().rounds || []);
-export const getScoreboard = () => Promise.resolve(d().scoreboard || []);
-export const getEconomy = () => Promise.resolve(d().economy || []);
-export const getUtility = () => Promise.resolve(d().utility || []);
-export const getRoundClasses = () => Promise.resolve(d().classes || []);
-export const getRoundDetail = (id, round) => Promise.resolve((d().details || {})[round] || null);
+// __cmpDelay (section D) holds every read back so the cold-start loading
+// gate is observable; unset/0 keeps the plain resolve.
+const wait = (v) =>
+  globalThis.__cmpDelay
+    ? new Promise((res) => setTimeout(() => res(v), globalThis.__cmpDelay))
+    : Promise.resolve(v);
+export const getMatch = () => wait(d().match || null);
+export const getRounds = () => wait(d().rounds || []);
+export const getScoreboard = () => wait(d().scoreboard || []);
+export const getEconomy = () => wait(d().economy || []);
+export const getUtility = () => wait(d().utility || []);
+export const getRoundClasses = () => wait(d().classes || []);
+export const getRoundDetail = (id, round) => wait((d().details || {})[round] || null);
 export const errText = (e) => (e == null ? 'unknown error' : String((e && e.message) || e));
 `,
 );
@@ -135,7 +141,7 @@ const harnessSrc = `<script>
 const harnessOut = join(dir, 'harness.js');
 svelteCompile(harnessSrc, 'harness.svelte', harnessOut);
 
-const { mount } = await import('svelte');
+const { mount, unmount } = await import('svelte');
 const mod = await import(pathToFileURL(harnessOut).href);
 
 const sleep = (ms = 40) => new Promise((r) => setTimeout(r, ms));
@@ -380,6 +386,35 @@ check(
   seqChips.length === 2 && seqChips.every((c) => c.textContent.trim() === 'RD5'),
   JSON.stringify(seqChips.map((c) => c.textContent.trim())),
 );
+
+// ---------------------------------------------------------------------------
+// Section D: the cold-start loading gate (loading ladder rung 3). Without it
+// a selection renders as EMPTY COLUMN SHELLS while the round reads are in
+// flight — with it, the plain loading line shows until they land. A second
+// mount (the first instance above is already settled) with every read held
+// back by __cmpDelay.
+console.log('D. cold start: never empty column shells while the round reads are in flight');
+{
+  globalThis.__cmpDelay = 250;
+  const t2 = document.createElement('div');
+  document.body.appendChild(t2);
+  const i2 = mount(mod.default, { target: t2 });
+  await sleep(60); // mid-load: the 250 ms delay has not elapsed
+  check(
+    'mid-load: loading line up, no column shells',
+    t2.textContent.includes('Loading rounds…') && !t2.querySelector('.cmp-col'),
+    t2.textContent.replace(/\s+/g, ' ').slice(0, 140),
+  );
+  await sleep(400); // past the delay
+  check(
+    'after the fetch lands: gate gone, both columns render',
+    !t2.textContent.includes('Loading rounds…') &&
+      t2.querySelectorAll('.cmp-col').length === 2,
+    t2.textContent.replace(/\s+/g, ' ').slice(0, 140),
+  );
+  await unmount(i2);
+  globalThis.__cmpDelay = 0;
+}
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');

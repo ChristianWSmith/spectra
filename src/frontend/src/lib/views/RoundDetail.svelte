@@ -27,6 +27,12 @@
   const backPath = $derived(query.back || '');
 
   let detail = $state(null);
+  // Rung 3 of the loading ladder: a plain indicator while the round reads
+  // are in flight — without it this view is a blank page with only a Back
+  // button. Transient (never seeded/remembered, never in the URL); cleared
+  // once like every first-load flag, so round-to-round navigation keeps the
+  // current content instead of flashing back to a spinner.
+  let loading = $state(true);
   let rounds = $state([]);
   let tickRate = $state(64);
   let sideSwitches = $state(0);
@@ -69,9 +75,13 @@
         if (m && m.tickRate > 0) tickRate = m.tickRate;
         if (m) sideSwitches = m.sideSwitches || 0;
         error = d ? '' : 'Round not found.';
+        loading = false;
       })
       .catch((e) => {
-        if (live) error = errText(e);
+        if (live) {
+          error = errText(e);
+          loading = false;
+        }
       });
     return () => (live = false);
   });
@@ -586,5 +596,9 @@
         </button>
       {/if}
     </div>
+  {:else if loading}
+    <!-- The round reads are still in flight: without this the view is a
+         blank page under its header (rung 3 — a plain indicator, transient). -->
+    <p class="muted" role="status">Loading round…</p>
   {/if}
 </div>
