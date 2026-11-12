@@ -42,6 +42,7 @@ go.work.sum
 .opencode/*
 !.opencode/skills/
 !.opencode/agents/
+!.opencode/plugins/
 !.opencode/opencode.json
 
 # CS2 Demos

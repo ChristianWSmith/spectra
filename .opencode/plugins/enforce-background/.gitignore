@@ -1,0 +1,3 @@
+# Dev-only type-check dependencies (runtime resolves @opencode/plugin from
+# the OpenCode host — no node_modules needed to load this plugin)
+node_modules/
