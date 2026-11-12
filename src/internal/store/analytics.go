@@ -101,6 +101,41 @@ func (s *Store) SetConfig(c models.AnalysisConfig) (models.AnalysisConfig, error
 	return s.GetConfig()
 }
 
+// SetMatchRuleVersion stamps matches.analyzed_rule_version — the
+// rule_version the match's derived rows were computed under. It is the
+// ONE writer of the column and is called only at the END of a successful
+// analytics.Compute (a failed pass keeps the previous stamp — 0 = never —
+// so the match stays behind and retryable). SaveExtracted never touches
+// the column (matchOwnedElsewhere), so a reprocess keeps its old stamp
+// until its analyze stage re-stamps it. Unknown ids yield ErrNotFound.
+func (s *Store) SetMatchRuleVersion(matchID int64, ruleVersion int) error {
+	res, err := s.db.Exec(
+		`UPDATE matches SET analyzed_rule_version = ? WHERE id = ?`, ruleVersion, matchID,
+	)
+	if err != nil {
+		return fmt.Errorf("store: set analyzed rule version: %w", err)
+	}
+	return affectedOrNotFound(res, "store: set analyzed rule version")
+}
+
+// GetMatchRuleVersion returns the match's rule stamp: the rule_version
+// its derived rows were last computed under, 0 when it was never
+// analyzed (0 is never a real version — analysis_config starts at 1).
+// Unknown ids yield ErrNotFound.
+func (s *Store) GetMatchRuleVersion(matchID int64) (int, error) {
+	var v int
+	err := s.db.QueryRow(
+		`SELECT analyzed_rule_version FROM matches WHERE id = ?`, matchID,
+	).Scan(&v)
+	if errors.Is(err, sql.ErrNoRows) {
+		return 0, ErrNotFound
+	}
+	if err != nil {
+		return 0, fmt.Errorf("store: get analyzed rule version: %w", err)
+	}
+	return v, nil
+}
+
 // ReplaceRoundClassifications swaps a match's round_classifications rows in
 // one transaction (delete-then-insert).
 func (s *Store) ReplaceRoundClassifications(matchID int64, rows []models.RoundClassification) error {

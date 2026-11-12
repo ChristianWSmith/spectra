@@ -87,8 +87,8 @@ func TestColumnListConstsMatchSchema(t *testing.T) {
 			t.Errorf("matchOwnedElsewhere: %q is not a column of matches", c)
 		}
 	}
-	if len(matchOwnedElsewhere) != 6 {
-		t.Errorf("matchOwnedElsewhere has %d entries, want 6 (id/path/sha256/size + 2 sidecar)", len(matchOwnedElsewhere))
+	if len(matchOwnedElsewhere) != 7 {
+		t.Errorf("matchOwnedElsewhere has %d entries, want 7 (id/path/sha256/size + 2 sidecar + the analytics rule stamp)", len(matchOwnedElsewhere))
 	}
 }
 

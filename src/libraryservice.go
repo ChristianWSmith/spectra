@@ -176,6 +176,15 @@ func (s *LibraryService) ListMapNames() ([]string, error) {
 	return s.st.ListMapNames()
 }
 
+// CountMatches counts the rows ListMatches(query, filter) would return —
+// the honest "N matches" behind a facet (e.g. {behind: true} → the "N
+// behind" the Settings re-run button shows next to RecomputeAll's k/N).
+// Same store.MatchListFilter, same matchListWhere spelling as the list
+// and the page window, so the count can never drift from them.
+func (s *LibraryService) CountMatches(query string, filter store.MatchListFilter) (int, error) {
+	return s.st.CountMatches(query, filter)
+}
+
 // DeleteMatch removes a match and its extracted data, including the
 // per-match position sidecar directory (best-effort — the delete
 // cascade removes the directory). When deleteDemo is set, spectra's OWN
