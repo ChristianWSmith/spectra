@@ -43,18 +43,22 @@
   let saveName = $state('');
   let saveError = $state('');
 
+  // The schema read (mount AND schemaError's Retry): the error clears
+  // only when the read lands, so the sidebar never claims "Loading
+  // schema…" while the previous failure still stands.
+  async function refreshSchema() {
+    try {
+      schema = (await getSchema()) || [];
+      schemaError = '';
+    } catch (e) {
+      schemaError = errText(e);
+    }
+  }
+
   $effect(() => {
-    let live = true;
-    getSchema()
-      .then((t) => {
-        if (live) schema = t || [];
-      })
-      .catch((e) => {
-        if (live) schemaError = errText(e);
-      });
+    refreshSchema();
     refreshHistory();
     refreshSaved();
-    return () => (live = false);
   });
 
   async function refreshHistory() {
@@ -200,11 +204,17 @@
     return new Date().toISOString().replace(/[:.]/g, '-').replace('T', '_').replace('Z', '');
   }
 
+  // CSV/JSON export through the native save dialog (lib/save.js): the
+  // dialog's cancel resolves to "" — a cancel is NOT an error and stays
+  // silent by contract; only a real failure (write error, backend
+  // rejection) lands in the statement panel's error slot, right under the
+  // Export buttons that produced it.
   async function download(text, mime, ext) {
+    runError = ''; // clears-on-retry: a new export starts with a clean slot
     try {
       await downloadText(`query-${stamp()}.${ext}`, mime, text);
     } catch (e) {
-      console.error('SQL export failed:', e);
+      runError = `Export failed: ${errText(e)}`;
     }
   }
 
@@ -251,7 +261,10 @@
         >
       </div>
       {#if schemaError}
-        <p class="error" role="alert">{schemaError}</p>
+        <p class="error" role="alert">
+          {schemaError}
+          <button class="btn small" onclick={refreshSchema}>Retry</button>
+        </p>
       {/if}
       <div class="sql-tables">
         {#each schema as t (t.name)}
@@ -324,7 +337,12 @@
           <span class="muted sql-hint">Ctrl/Cmd+Enter runs the statement.</span>
         </div>
         {#if runError}
-          <p class="error" role="alert">{runError}</p>
+          <p class="error" role="alert">
+            {runError}
+            <button class="btn small" aria-label="Dismiss" onclick={() => (runError = '')}
+              ><span class="codicon codicon-close"></span></button
+            >
+          </p>
         {/if}
       </section>
 
@@ -400,7 +418,10 @@
             <p class="error" role="alert">{saveError}</p>
           {/if}
           {#if savedError}
-            <p class="error" role="alert">{savedError}</p>
+            <p class="error" role="alert">
+              {savedError}
+              <button class="btn small" onclick={refreshSaved}>Retry</button>
+            </p>
           {/if}
           <div class="sql-hist-list">
             {#each saved as sq (sq.id)}
