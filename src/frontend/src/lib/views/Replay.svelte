@@ -75,7 +75,7 @@
   // Defaults"): load() starts the SAME memo Match's tier-1 effect warms
   // and awaits it (start-if-missing — a deep link to #/replay/:id
   // works), and the stage ledger below drives the tier-2 progress chip.
-  import { preloadReplay, onReplayPreloadProgress } from '../replay/preload.js';
+  import { preloadReplay, onReplayPreloadProgress, dropRejectedReplayPreload } from '../replay/preload.js';
   import { loadIconManifest, preloadIcons } from '../replay/icons.js';
   import {
     AUDIO_VOL_DEFAULT,
@@ -1975,6 +1975,25 @@
     // cards stay reactive to the late iconMap either way.
     loadIcons().catch(() => {});
     try {
+      // The load-time prefs are read FRESH — deliberately NOT off the
+      // bundle (preload.js): kvstore writes emit NO flush event, so a
+      // volume/knife-warmup/skip-freeze change made in Settings after a
+      // background preload would be served stale from the memo. The
+      // pre-preload semantics were "read at load time" and they are
+      // preserved exactly — but as ONE Promise.all started BEFORE the
+      // bundle await below, so the two overlap and the click path pays
+      // nothing extra (never a serialized stage). Every read fail-softs
+      // to null like every other pref read in load().
+      const prefsP = Promise.all([
+        getPref('show_knife_warmup_rounds').catch(() => null),
+        getPref('skip_freeze').catch(() => null),
+        getPref('voice_volume').catch(() => null),
+        getPref('guns_volume').catch(() => null),
+        getPref('utility_volume').catch(() => null),
+        getPref('c4_volume').catch(() => null),
+        getPref('announcer_volume').catch(() => null),
+        getPref('footsteps_volume').catch(() => null),
+      ]);
       // The pre-emptive bundle (the loading ladder — PRODUCT.md
       // "### Defaults"): Match's tier-1 effect warms it in the
       // background; here it is START-IF-MISSING (a deep link straight
@@ -2119,35 +2138,38 @@
       // the BUNDLE carries the rows (preload.js read them with the same
       // default).
       connRows = b.connRows || [];
+      // The load-time prefs, resolved: they have been in flight since
+      // BEFORE the bundle await (the Promise.all at the top of load()),
+      // so this is a microtask — never a serialized stage — and they
+      // carry the CURRENT store, not a preloaded snapshot.
+      const [knifePref, skipPref, vv, gv, uv, cv, av, sv] = await prefsP;
       // The DEFAULT entry tick (no explicit ?tick=): resolved from the
-      // bundle's pref read — the showKnifeWarmup $effect reads the same
-      // key asynchronously and could land AFTER startEngine applies the
-      // entry seek, which would start the replay on the wrong side of
-      // the knife/warmup-hiding pref. Unreadable store → hidden (the
-      // default).
-      entryDefaultTick = defaultEntryTick(b.prefs.knife === true);
+      // fresh load-time read — the showKnifeWarmup $effect reads the
+      // same key asynchronously and could land AFTER startEngine applies
+      // the entry seek, which would start the replay on the wrong side
+      // of the knife/warmup-hiding pref (the same race and the same
+      // resolution as before the preload existed). Unreadable store →
+      // hidden (the default).
+      entryDefaultTick = defaultEntryTick(knifePref === true);
       // Skip-freeze toggle (frontend-owned kvstore — the camera_mode
-      // pattern): the bundle's read lands before startEngine, so the
-      // first engine push carries the persisted choice; unset /
-      // unreadable → OFF (the default — the freeze skip is opt-in).
-      uiSkipFreeze = b.prefs.skip === true;
+      // pattern): read HERE, before startEngine, so the first engine
+      // push carries the persisted choice; unset / unreadable → OFF (the
+      // default — the freeze skip is opt-in).
+      uiSkipFreeze = skipPref === true;
       // Replay-audio faders: the six persisted levels (voice/guns/
-      // utility/C4/announcer/footsteps) off the bundle — before
+      // utility/C4/announcer/footsteps) read fresh here — before
       // startEngine applies them to the voice master and (once the
-      // sounds manifest proves non-empty) the sfx engine. Raw values
-      // (null = unset/unreadable) map through prefVolume's per-key
-      // default, fail-soft like every other pref read in load(). The
-      // FOOTSTEPS level reads with FOOTSTEPS_VOL_DEFAULT (1 = 100 %) —
-      // it is muted by the session mute, not by its fader.
-      {
-        const pv = b.prefs;
-        uiVoiceVol = prefVolume(pv.voice);
-        uiGunsVol = prefVolume(pv.guns);
-        uiUtilVol = prefVolume(pv.util);
-        uiC4Vol = prefVolume(pv.c4);
-        uiAnnouncerVol = prefVolume(pv.ann);
-        uiStepsVol = prefVolume(pv.steps, FOOTSTEPS_VOL_DEFAULT); // 100 % by default; muted by uiStepsMuted
-      }
+      // sounds manifest proves non-empty) the sfx engine. Null (unset /
+      // unreadable) maps through prefVolume's per-key default, fail-soft
+      // like every other pref read in load(). The FOOTSTEPS level reads
+      // with FOOTSTEPS_VOL_DEFAULT (1 = 100 %) — it is muted by the
+      // session mute, not by its fader.
+      uiVoiceVol = prefVolume(vv);
+      uiGunsVol = prefVolume(gv);
+      uiUtilVol = prefVolume(uv);
+      uiC4Vol = prefVolume(cv);
+      uiAnnouncerVol = prefVolume(av);
+      uiStepsVol = prefVolume(sv, FOOTSTEPS_VOL_DEFAULT); // 100 % by default; muted by uiStepsMuted
       // Flash-white overlay: the blind events joined with their narrow
       // flash-duration read — the duration lives on detail_json
       // (EventRow stays payload-free, so it needs its own query; the
@@ -2187,7 +2209,17 @@
       if (!live) return;
       startEngine();
     } catch (e) {
-      if (live) loadError = errText(e);
+      if (live) {
+        loadError = errText(e);
+        // A SURFACED failure drops its memo entry (only a rejected one
+        // can go — see dropRejectedReplayPreload): this visit's error
+        // stands alone — load() runs once per mount, so there is no
+        // refetch loop — while a LATER visit retries fresh instead of
+        // replaying one transient failure for the whole session. The
+        // no-op handler inside preloadReplay keeps the window before
+        // this point free of unhandled rejections.
+        dropRejectedReplayPreload(id);
+      }
     } finally {
       if (live) loading = false;
     }
