@@ -175,20 +175,35 @@ export function roundEndTick(rounds, number) {
   return r && Number.isFinite(r.endTick) ? r.endTick : null;
 }
 
+// usableWindow — the ONE usable-window predicate: the {start, end}
+// bounds a round row contributes, or null when the row cannot say a
+// real one (the warmup row ships start/freezeEnd 0 → fe ≤ start, a
+// corrupt row may ship freezeEnd ≤ start, a junk row a non-finite
+// tick) — never a guessed window. Both window readers derive from it:
+// freezeWindowAt (the per-tick lookup) and freezeWindows (the list
+// seekTargetTick walks), so the seek arithmetic can never disagree
+// with the playback snap about which rows carry a window.
+function usableWindow(r) {
+  if (!r || !Number.isFinite(r.startTick)) return null;
+  const fe = r.freezeEndTick;
+  if (!Number.isFinite(fe) || fe <= r.startTick) return null;
+  return { start: r.startTick, end: fe };
+}
+
 // freezeWindowAt — the ONE freeze WINDOW: the {start, end} bounds of the
 // round whose freeze contains `tick` (start ≤ tick < freezeEndTick, a
 // half-open window), or null when no round has a usable one. The window
 // is exactly the rule inFreezeTime reports on — this is its canonical
-// home, so both can never disagree. A row without a real window — the
-// warmup row ships start/freezeEnd 0, a corrupt row may ship
-// freezeEnd ≤ start — yields null rather than guessing, so callers skip
-// (or silence) nothing they do not actually know. Rounds arrive
+// home, so both can never disagree. A row without a real window yields
+// null rather than guessing (usableWindow above), so callers skip (or
+// silence) nothing they do not actually know. Rounds arrive
 // number-ordered (= start-tick-ordered), but the scan tolerates any
 // order by taking the LAST row whose start reaches tick.
 //
 // Consumers: inFreezeTime (the freeze-phase predicate behind bullets.js
-// / sfx.js), and the replay engine's auto-skip of the pre-round freeze
-// (skipFreeze jumps playhead → freezeEndTick, the first-action tick).
+// / sfx.js), the replay engine's auto-skip of the pre-round freeze
+// (skipFreeze jumps playhead → freezeEndTick, the first-action tick),
+// and seekTargetTick (the freeze-zero seek step, below).
 export function freezeWindowAt(rounds, tick) {
   if (!Number.isFinite(tick)) return null;
   let best = null;
@@ -197,9 +212,106 @@ export function freezeWindowAt(rounds, tick) {
     if (!best || r.startTick > best.startTick) best = r;
   }
   if (!best) return null;
-  const fe = best.freezeEndTick;
-  if (!Number.isFinite(fe) || fe <= best.startTick || tick >= fe) return null;
-  return { start: best.startTick, end: fe };
+  const w = usableWindow(best);
+  if (!w || tick >= w.end) return null;
+  return w;
+}
+
+// freezeWindows — every usable window of `rounds` as a DISJOINT list,
+// ascending by start: the walk list seekTargetTick (below) uses. Same
+// predicate as freezeWindowAt (usableWindow above), so a tick outside
+// this list is provably outside every window the playback snap can
+// fire on (freezeWindowAt's non-null answer always comes from a row
+// this list carries). Real rows are number-ordered = start-ordered and
+// a round's freeze ends before the next round starts (the round-over
+// gap is NOT a window), so data is already disjoint; overlapping
+// corrupt rows are MERGED — never dropped — so "the seek never lands
+// inside a window" stays structural. A merge can only over-skip
+// (contract MORE time to zero), which is the safe side: the playback
+// snap never fires where this list says freeze.
+export function freezeWindows(rounds) {
+  const out = [];
+  for (const r of rounds || []) {
+    const w = usableWindow(r);
+    if (w) out.push(w);
+  }
+  out.sort((a, b) => a.start - b.start);
+  const merged = [];
+  for (const w of out) {
+    const last = merged[merged.length - 1];
+    if (last && w.start < last.end) {
+      if (w.end > last.end) last.end = w.end;
+    } else {
+      merged.push({ start: w.start, end: w.end });
+    }
+  }
+  return merged;
+}
+
+// seekTargetTick — the ONE freeze-zero seek step: where a ±delta seek
+// lands when skip-freeze is armed (the ±15 s transport buttons'
+// arithmetic). Freeze windows are 0-LENGTH for the budget — the
+// interceding freeze time counts as 0 — so |delta| consumes only LIVE
+// time and the result never sits inside a usable window [start, end):
+// landing there would let loop()'s playback snap fire right after the
+// seek (the old bug: a backward ±15 s landed in the freeze and was
+// instantly bumped forward to its end, a forward one overshot).
+//
+// Backward (delta < 0) walks the windows DOWN from fromTick: a window
+// the position sits at/inside is exited downward at 0 cost, a window
+// below is crossed (start…end contracted to a point) at 0 cost, and
+// the budget spends only in the gaps between windows. Forward (delta >
+// 0) mirrors it: exit/cross UPWARD. Two boundary facts fall out of
+// gap < rem being required to cross: backward rem stays > 0 past every
+// window START, so a result can never sit exactly on one; a stop
+// lands ≥ a window END (half-open — freezeWindowAt(end) === null, the
+// safe side), and the forward mirror stops strictly BEFORE a start or
+// lands on the END when gap == rem exactly. Empty/absent rounds (or
+// no usable window nearby) degrade to plain from + delta; clamping to
+// the stream stays seekTick's job — a negative (or overshooting)
+// target is returned as-is.
+export function seekTargetTick(rounds, fromTick, delta) {
+  if (!Number.isFinite(fromTick) || !Number.isFinite(delta) || delta === 0) {
+    return fromTick + delta;
+  }
+  const wins = freezeWindows(rounds);
+  if (delta < 0) {
+    let rem = -delta;
+    let pos = fromTick;
+    for (let i = wins.length - 1; i >= 0; i--) {
+      const w = wins[i];
+      if (w.start >= pos) continue; // wholly at/above — not below
+      if (w.end >= pos) {
+        pos = w.start; // at/inside: exit downward, 0 cost
+        continue;
+      }
+      const gap = pos - w.end;
+      if (gap >= rem) {
+        pos -= rem; // stops in live play (≥ w.end — outside)
+        return pos;
+      }
+      rem -= gap; // cross the window at 0 cost
+      pos = w.start;
+    }
+    return pos - rem;
+  }
+  let rem = delta;
+  let pos = fromTick;
+  for (const w of wins) {
+    if (w.end <= pos) continue; // wholly at/below — not ahead
+    if (w.start <= pos) {
+      pos = w.end; // at/inside: exit upward, 0 cost
+      continue;
+    }
+    const gap = w.start - pos;
+    if (gap > rem) {
+      pos += rem; // stops in live play (< w.start — outside)
+      return pos;
+    }
+    rem -= gap; // cross at 0 cost; gap == rem → land on w.end with rem 0
+    pos = w.end;
+  }
+  return pos + rem;
 }
 
 // inFreezeTime — the ONE freeze-phase predicate: true while `tick` sits
