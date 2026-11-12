@@ -1447,10 +1447,81 @@ check(
   coldDrop().slice(0, 140),
 );
 
-// Section L leaves the delayed stubs and the mounted instance behind —
-// hand both back before the suite ends.
+// ---------------------------------------------------------------------------
+// Section M: the Match-header prefetch from natural pre-click triggers. All
+// four reads are services.cachedRead entries, so warming is fire-and-forget;
+// the bail-outs are what need pinning — one warm per row entry (mouseenter
+// fires once per entry, never per mousemove) with a per-id throttle, and
+// job-done re-warming the fresh match by FORCE (past that throttle), after
+// services.js's module-load flush listeners have already cleared the cache.
+console.log('M. row hover warms the Match header reads; job-done re-warms by force');
+const headerCalls = () =>
+  ['GetMatch', 'GetRounds', 'GetMatchSummary', 'GetVoicePresence'].map(bindings.callCount);
+// The match row — NOT the synthetic pending-import row rendered ahead of it
+// (that one has nothing to open, so it is never warmed).
+const coldRow = coldTarget.querySelector(
+  '.dropzone .data-table tbody tr:not([data-pending-import])',
+);
+const beforeWarm = headerCalls();
+coldRow.dispatchEvent(new dom.window.MouseEvent('mouseenter'));
+await sleep(20);
+check(
+  'hover fires the four header reads exactly once',
+  headerCalls().every((c, i) => c === beforeWarm[i] + 1),
+  JSON.stringify({ before: beforeWarm, after: headerCalls() }),
+);
+coldRow.dispatchEvent(new dom.window.MouseEvent('mouseenter'));
+await sleep(20);
+check(
+  'an immediate re-hover inside the per-row throttle does not re-fire',
+  headerCalls().every((c, i) => c === beforeWarm[i] + 1),
+  JSON.stringify(headerCalls()),
+);
+
+// Restore the handlers BEFORE the event below: job-done refetches jobs +
+// list + a scheduled (300 ms) demo scan, and that cleanup must not inherit
+// section L's delays.
 bindings.handlers.ListMatchesPage = prevList;
 bindings.LibraryService.ListJobs = prevJobs;
+const beforeDone = bindings.callCount('GetMatch');
+fire('spectra:job-done', { jobId: 99, matchId: 42, status: 'done', error: '' });
+await sleep(20);
+const matchCalls = bindings.calls.filter((c) => c.method === 'GetMatch');
+check(
+  'job-done warms the fresh match header by force (same id, inside the throttle)',
+  bindings.callCount('GetMatch') === beforeDone + 1 &&
+    matchCalls[matchCalls.length - 1].args[0] === 42,
+  JSON.stringify(matchCalls.slice(-2)),
+);
+
+// ---------------------------------------------------------------------------
+// Section N: the import-dir scan is off the hot path — event-driven rescans
+// go through the trailing debounce (scheduleDemoScan), so a burst of
+// job-done / library-changed events settles into ONE rescan instead of one
+// per event (a first scan can stream gigabytes through sha256 inside the
+// binding).
+console.log('N. an event burst coalesces into ONE import-dir rescan');
+{
+  // Count scans through the stub (the section-F replacement is a plain
+  // no-recording stub, so wrap it). The job-done above already scheduled
+  // one scan; the events fired below land inside its 300 ms window and
+  // push it out — still ONE call for the whole burst.
+  const prevScan = bindings.LibraryService.ListDemoFiles;
+  let scanCount = 0;
+  bindings.LibraryService.ListDemoFiles = (...args) => {
+    scanCount++;
+    return prevScan(...args);
+  };
+  fire('spectra:library-changed');
+  fire('spectra:job-done', { jobId: 100, matchId: 43, status: 'done', error: '' });
+  await sleep(600); // past the 300 ms debounce + the scan itself
+  check(
+    'three events in one burst → exactly one scan',
+    scanCount === 1,
+    String(scanCount),
+  );
+  bindings.LibraryService.ListDemoFiles = prevScan;
+}
 await unmount(coldInst);
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

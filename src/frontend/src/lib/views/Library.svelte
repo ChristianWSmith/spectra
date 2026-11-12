@@ -14,6 +14,11 @@
     onJobDone,
     onLibraryChanged,
     onFilesDropped,
+    onEvent,
+    getMatch,
+    getRounds,
+    getMatchSummary,
+    getVoicePresence,
     listDemoFiles,
     deleteDemoFile,
     invalidate,
@@ -119,10 +124,16 @@
   // by Remove/Cancel (pendingDemoPaths) — see the row markup below.
   let demoFiles = $state([]);
   let demoScanning = $state(false); // UI: refresh button + "Scanning…"
-  // Non-reactive in-flight guard: refreshDemoFiles runs inside the mount
-  // $effect, and reading $state there would make the effect depend on it
-  // (every scan start/end would re-run the effect → rescan forever).
-  // demoScanAgain queues one follow-up scan when an event lands mid-scan.
+  // The scan's progress point (spectra:scan-progress → StatusChip): 0 while
+  // the walk/stat phase runs (no honest denominator → indeterminate bar),
+  // a real bytes fraction while it hashes. Transient like every loading
+  // flag — never seeded, never in the URL.
+  let scanProgress = $state(0);
+  // Non-reactive in-flight guard: refreshDemoFiles WRITES $state
+  // (demoScanning / scanProgress), so a $effect must never READ those —
+  // that is why the mount $effect below SCHEDULES the first scan instead
+  // of running it inline. demoScanAgain queues one follow-up scan when an
+  // event lands mid-scan.
   let demoScanInFlight = false;
   let demoScanAgain = false;
   let demoError = $state('');
@@ -251,7 +262,10 @@
   $effect(() => {
     let live = true;
     refreshJobs();
-    refreshDemoFiles();
+    // Post-paint, not inline: the first scan is the expensive one (see
+    // scheduleDemoScan) and must not sit between the reads above and the
+    // first paint.
+    scheduleDemoScan(0);
     listMapNames()
       .then((names) => {
         if (live) mapNames = names || [];
@@ -264,15 +278,33 @@
       .catch(() => {});
     const offs = [
       subscribeJobProgress((snap) => (jobProgress = snap)),
-      onJobDone(() => {
+      // Scan progress (spectra:scan-progress): the import-dir panel's ONE
+      // StatusChip rides this — progress 0 = the walk phase's indeterminate
+      // bar, a real fraction while the backend hashes. Pure progress: it
+      // changes no row, so it stays OUT of services.js's read-cache
+      // invalidation list (the spectra:asset-progress rule).
+      onEvent('spectra:scan-progress', (p) => {
+        scanProgress = p && typeof p.progress === 'number' ? p.progress : 0;
+      }),
+      onJobDone((d) => {
         refreshJobs();
         refreshList();
-        refreshDemoFiles();
+        // Freshly imported match → warm ITS header: the user's probable
+        // next click (rung 1). Ordering is safe BY CONSTRUCTION: the
+        // read-cache flush listeners register at services.js module load,
+        // before this view-side subscription, so the flush has already
+        // happened by the time this runs and the warm below re-fetches
+        // fresh — never re-caching pre-flush data. `force` skips the
+        // hover's per-row throttle for the same reason.
+        if (d && d.matchId) warmMatchHeader(d.matchId, true);
+        scheduleDemoScan();
       }),
       onLibraryChanged(() => {
         refreshJobs();
         refreshList();
-        refreshDemoFiles();
+        // Coalesced: an import burst lands ONE rescan after it settles,
+        // never one per event (scheduleDemoScan).
+        scheduleDemoScan();
       }),
       // Drop only reaches JS when the pointer is over an element with
       // data-file-drop-target (the drop zone below).
@@ -283,6 +315,7 @@
     ];
     return () => {
       live = false;
+      cancelDemoScan(); // no scan may fire after the view is gone
       offs.forEach((off) => off());
     };
   });
@@ -413,7 +446,44 @@
   // caches every hash by path+size+mtime, so repeat scans are stat-only;
   // force drops the frontend read cache first (the Refresh button — a
   // demo downloaded while the app was open is not announced by any
-  // event).
+  // event). A first scan is NOT cheap (the walk can stream up to 2 GiB
+  // through sha256 inside the binding), so callers schedule it — see
+  // scheduleDemoScan below — instead of running it inline.
+  //
+  // Scan scheduling: event-driven rescans go through scheduleDemoScan, a
+  // TRAILING debounce — every request pushes the single pending scan out
+  // SCAN_DEBOUNCE_MS, so an import burst (job-done / library-changed per
+  // job) settles into ONE rescan instead of one per event, and the scan
+  // never runs inline in a handler. The mount scan is scheduled at delay 0
+  // (requestIdleCallback where available) so first paint and the cheaper
+  // mount reads above it never wait behind a folder walk. Explicit user
+  // actions (import / cancel / delete, the Refresh button) still call
+  // refreshDemoFiles directly: their outcome is what the user awaits.
+  const SCAN_DEBOUNCE_MS = 300;
+  let demoScanCancel = null; // cancels the ONE pending scheduled scan
+
+  function cancelDemoScan() {
+    if (demoScanCancel) {
+      demoScanCancel();
+      demoScanCancel = null;
+    }
+  }
+
+  function scheduleDemoScan(delay = SCAN_DEBOUNCE_MS) {
+    cancelDemoScan();
+    const fire = () => {
+      demoScanCancel = null;
+      refreshDemoFiles();
+    };
+    if (delay <= 0 && typeof requestIdleCallback === 'function') {
+      const h = requestIdleCallback(fire, { timeout: 1000 });
+      demoScanCancel = () => cancelIdleCallback(h);
+    } else {
+      const h = setTimeout(fire, Math.max(0, delay));
+      demoScanCancel = () => clearTimeout(h);
+    }
+  }
+
   async function refreshDemoFiles(force = false) {
     if (force) invalidate();
     if (demoScanInFlight) {
@@ -426,6 +496,7 @@
     }
     demoScanInFlight = true;
     demoScanning = true;
+    scanProgress = 0; // the walk phase's indeterminate point, until one lands
     try {
       demoFiles = await listDemoFiles();
       demoError = '';
@@ -575,6 +646,33 @@
   function openMatch(m) {
     if (!isOpenable(m)) return;
     nav(`/match/${m.id}`);
+  }
+
+  // --- Match-header prefetch (loading ladder rung 1) --------------------------
+  // Warming the FOUR reads the Match view's header effect fires when the
+  // row is opened — getMatch, getRounds, getMatchSummary, getVoicePresence —
+  // from the natural pre-click triggers: a row hover, and the job-done of a
+  // freshly imported match (the probable next click). All four already go
+  // through services.cachedRead, so this is fire-and-forget warming: the
+  // click that follows awaits an already-running promise, and every spectra:*
+  // data event flushes the cache, so a warm entry can never outlive its data.
+  // Bail-outs (warming must stay cheap): only OPENABLE rows are warmed from
+  // the pointer, and each row id warms at most once per WARM_MS — a pointer
+  // sweeping the table can never fire per-mousemove — while the id memory
+  // itself stays bounded. Failures are swallowed: this is speculative, and
+  // the view's own reads still run and surface their errors.
+  const WARM_MS = 3000;
+  const warmAt = new Map(); // matchId -> last warm timestamp (per-row throttle)
+  function warmMatchHeader(id, force = false) {
+    if (!id) return;
+    const now = Date.now();
+    if (!force && now - (warmAt.get(id) || 0) < WARM_MS) return;
+    if (warmAt.size > 512) warmAt.clear(); // bounded; rows re-warm cheaply
+    warmAt.set(id, now);
+    getMatch(id).catch(() => {});
+    getRounds(id).catch(() => {});
+    getMatchSummary(id).catch(() => {});
+    getVoicePresence(id).catch(() => {});
   }
 
   // Team names for rows whose extract recorded no clan name: the page's
@@ -779,6 +877,9 @@
               onclick={() => openMatch(m)}
               onkeydown={(e) =>
                 e.key === 'Enter' && e.target === e.currentTarget && openMatch(m)}
+              onmouseenter={() => {
+                if (isOpenable(m)) warmMatchHeader(m.id);
+              }}
               tabindex={isOpenable(m) ? 0 : undefined}
             >
               <td>{m.map || '—'}</td>
@@ -903,7 +1004,14 @@
       <p class="error" role="alert">{demoError}</p>
     {/if}
     {#if demoScanning && demoFiles.length === 0}
-      <p class="muted" role="status">Scanning folders…</p>
+      <!-- The scan's ONE progress widget (StatusChip — MapPackPrompt's
+           non-job precedent): spectra:scan-progress drives `progress`.
+           0 = the walk phase, which has no honest denominator → the
+           animated indeterminate bar; a real byte fraction while the
+           backend hashes. Never a second bar, never a fabricated "0%". -->
+      <p class="muted" role="status">
+        <StatusChip status="running" progress={scanProgress} /> Scanning folders…
+      </p>
     {:else if demoFiles.length === 0}
       <p class="muted" role="status">
         No demos found — add import dirs in Settings, or use Import… / drop files on this

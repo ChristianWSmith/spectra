@@ -50,6 +50,10 @@ export const MatchService = {
   GetMatch: rec('GetMatch'),
   GetScoreboard: rec('GetScoreboard'),
   GetRounds: rec('GetRounds'),
+  // The Match-header read set: getMatch/getRounds/getMatchSummary are the
+  // cached reads the Library's hover / job-done warm exercises
+  // (library.dom.mjs section M).
+  GetMatchSummary: rec('GetMatchSummary'),
   // Player sounds (sound_events): the windowed read + the presence count.
   GetSoundEvents: rec('GetSoundEvents'),
   GetSoundEventPresence: rec('GetSoundEventPresence'),
