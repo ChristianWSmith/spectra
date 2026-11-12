@@ -160,7 +160,7 @@
           <button class="btn small" onclick={() => loadProv(matchId)}>Retry</button>
         </p>
       {:else if !prov}
-        <p class="muted" role="status">Loading…</p>
+        <p class="muted" role="status"><StatusChip block detail="Loading…" /></p>
       {:else}
         <dl class="facts">
           <div>
@@ -229,7 +229,7 @@
           <button class="btn small" onclick={() => loadEnt(matchId)}>Retry</button>
         </p>
       {:else if !entities}
-        <p class="muted" role="status">Loading…</p>
+        <p class="muted" role="status"><StatusChip block detail="Loading…" /></p>
       {:else}
         <dl class="facts">
           <div>
