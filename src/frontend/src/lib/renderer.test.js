@@ -5586,9 +5586,13 @@ test('defuse ring denominator: kit evidence at the attempt start (5 s vs 10 s)',
 // dropHarness — a store + renderer with gun/util drop rows, one
 // same-name pickup and the round's end loaded. `layers` is passed to
 // setDropLayers (absent = never called = the default OFF state).
-function dropHarness({ layers } = {}) {
+// `frames` widens the synthetic store (seekTick clamps at the last
+// frame — a post-round golden-shaped draw needs ticks up to 15378);
+// `extraRows` are normalized AFTER the base rows (ids 10+), for fixtures
+// that add boundary/drop rows of their own.
+function dropHarness({ layers, frames = 1300, extraRows = [] } = {}) {
   headlessGlobals();
-  const data = synthStore(1300, 2);
+  const data = synthStore(frames, 2);
   const players = [
     { steamId: '1', name: 'alice', side: 'ct' },
     { steamId: '2', name: 'bob', side: 't' },
@@ -5611,6 +5615,7 @@ function dropHarness({ layers } = {}) {
     mk({ id: 3, seq: 3, tick: 300, round: 1, kind: 'weapon_pickup', attacker: '1', weapon: 'AK-47', posX: 80, posY: 80 }),
     mk({ id: 4, seq: 4, tick: 500, round: 1, kind: 'round_end' }),
     mk({ id: 5, seq: 5, tick: 550, round: 2, kind: 'round_start' }),
+    ...extraRows.map((row, i) => mk({ id: 10 + i, seq: 10 + i, ...row })),
   ]);
   r.setIcons({
     // Deliberately NON-square gun art: 48×24 → 28×14 at
@@ -5717,6 +5722,39 @@ test('drop layer: guns and util gate independently; pickup and round end clean u
   seq = dropSeek(h, 99);
   assert.equal(gunBody(seq).length, 0, 'before the death: nothing dropped yet');
   assert.equal(utilBody(seq).length, 0, '…for either item');
+  h.r.destroy();
+});
+
+test('drop layer: a post-round drop draws in the round-over tail and dies AT the next round_start (golden round-2 shape)', () => {
+  // The owner's bug, replayed: the golden demo's round 2 ends at 14930
+  // (round_end == bomb_explode) while the C4 kill + the deagle drop land
+  // at 14963 — AFTER the round_end — and the next round_start is 15378.
+  // A round_end-only scan finds no terminator at/after the drop, so the
+  // gun drew for the rest of the replay; the canonical cut (roundcut.js
+  // roundCutTick) bounds it at the next round_start.
+  const h = dropHarness({
+    layers: { guns: true },
+    frames: 16000, // seekTick clamps at the last frame — 15378 must exist
+    extraRows: [
+      { tick: 14930, round: 2, kind: 'round_end' },
+      {
+        tick: 14963, round: 2, kind: 'weapon_drop', attacker: '2',
+        weapon: 'AK-47', posX: 70, posY: 70, dropCat: 'gun',
+      },
+      { tick: 15378, round: 3, kind: 'round_start' },
+    ],
+  });
+  let seq = dropSeek(h, 15000);
+  assert.ok(gunBody(seq).length > 0, 'the post-round drop draws at 15000 (the round-over tail)');
+  seq = dropSeek(h, 15377);
+  assert.ok(gunBody(seq).length > 0, '…right up to the tick before the next round_start');
+  seq = dropSeek(h, 15378);
+  assert.equal(gunBody(seq).length, 0, 'gone AT the next round_start — not for the rest of the replay');
+  seq = dropSeek(h, 15379);
+  assert.equal(gunBody(seq).length, 0, '…and still gone a tick later');
+  // Backward scrub re-derives — pure, nothing sticky.
+  seq = dropSeek(h, 15000);
+  assert.ok(gunBody(seq).length > 0, 'a backwards scrub re-draws the drop');
   h.r.destroy();
 });
 
@@ -6123,6 +6161,7 @@ test('drops: the precomputed window answers exactly what dropEvidenceAt answers'
       { kind: 'weapon_drop', round: 1, tick: 140, weapon: 'M4A1-S' }, // no position → never visible
       { kind: 'weapon_drop', round: 2, tick: 700, weapon: 'AWP', x: 30, y: 30 },
       { kind: 'weapon_drop', round: 3, tick: 900, weapon: 'Glock-18', x: 40, y: 40 }, // no terminators
+      { kind: 'weapon_drop', round: 2, tick: 820, weapon: 'Nova', x: 60, y: 60 }, // AFTER round 2's end (800): post-round
     ],
     pickups: [
       { kind: 'weapon_pickup', round: 1, tick: 50, weapon: 'AK-47' }, // BEFORE the drop — no effect
@@ -6137,12 +6176,18 @@ test('drops: the precomputed window answers exactly what dropEvidenceAt answers'
       { kind: 'round_end', round: 2, tick: 800 },
       // round 3 has no round_end: the tail drop lives to the demo's end
     ],
+    roundStarts: [
+      { kind: 'round_start', round: 2, tick: 650 },
+      { kind: 'round_start', round: 3, tick: 850 },
+      // deliberately NO round_start after 900 — the no-boundary-rows
+      // case the tail drop pins below
+    ],
   };
   for (const d of ev.drops) {
     const win = dropWindow(d, ev);
     for (let t = -50; t <= 1200; t++) {
       const got = dropEvidenceAt(
-        { drops: [d], pickups: ev.pickups, roundEnds: ev.roundEnds },
+        { drops: [d], pickups: ev.pickups, roundEnds: ev.roundEnds, roundStarts: ev.roundStarts },
         t,
       );
       const want = !!win && t >= win.from && t < win.to;
@@ -6159,7 +6204,16 @@ test('drops: the precomputed window answers exactly what dropEvidenceAt answers'
   assert.deepEqual(dropWindow(ev.drops[1], ev), { from: 120, to: 600 }, 'round-end-terminated (the earlier end)');
   assert.equal(dropWindow(ev.drops[2], ev), null, 'no position → never visible');
   assert.deepEqual(dropWindow(ev.drops[3], ev), { from: 700, to: 800 }, 'a wrong-round pickup never hides');
-  assert.deepEqual(dropWindow(ev.drops[4], ev), { from: 900, to: Infinity }, 'no terminator → lives on');
+  assert.deepEqual(
+    dropWindow(ev.drops[4], ev),
+    { from: 900, to: Infinity },
+    'no boundary rows at/after it → roundCutTick null → lives on (the explicit no-rows case)',
+  );
+  assert.deepEqual(
+    dropWindow(ev.drops[5], ev),
+    { from: 820, to: 850 },
+    'post-round drop (its round already ended) → the next round_start is the cut',
+  );
 });
 
 test('scrub coalescing: requestDraw defers setHud draws to ONE rAF (latest tick wins)', () => {

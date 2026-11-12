@@ -235,6 +235,19 @@ test('no round_end rows → the window lives to Infinity', () => {
   assert.equal(drops.get(drop).to, Infinity);
 });
 
+test('a kit dropped AFTER its round ended cuts at the next round_start (the post-round tail)', () => {
+  // The golden round-2 shape for kits: round 7's round_end (9000)
+  // PRECEDES the drop (9500), so a round_end-only scan finds no
+  // terminator; the canonical cut (roundcut.js roundCutTick) falls
+  // through to the next round_start (10000).
+  const drop = kdrop(9500, 0, 0);
+  const { drops } = build([roundStart(0), roundEnd(9000), drop, roundStart(10000, 8)]);
+  const w = drops.get(drop);
+  assert.equal(w.to, 10000, 'the next round_start is the round terminator');
+  assert.ok(kitVisibleAt(w, 9999), 'visible in the round-over tail');
+  assert.equal(kitVisibleAt(w, 10000), false, 'gone AT the next round_start (half-open)');
+});
+
 // --- the window contract ---------------------------------------------------
 
 test('window [from,to) boundary equality', () => {

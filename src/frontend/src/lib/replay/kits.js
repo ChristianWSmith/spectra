@@ -12,10 +12,13 @@
 //      renderer's per-frame O(1) lookup, exactly drops.js
 //      buildDropWindows' contract.
 //
-//   2. kitWindow(dropRow, pickup, roundEnds) — the half-open [from, to)
-//      visibility rule for ONE drop (the mirror of drops.js dropWindow,
-//      same gate structure), exported so the rule is testable on its
-//      own.
+//   2. kitWindow(dropRow, pickup, roundEnds, roundStarts) — the
+//      half-open [from, to) visibility rule for ONE drop (the mirror of
+//      drops.js dropWindow, same gate structure), exported so the rule
+//      is testable on its own. The ROUND terminator is delegated to
+//      roundcut.js roundCutTick (the one round-boundary home — this
+//      module never scans the boundary rows itself); `pickup` stays the
+//      kit's own item terminator.
 //
 // WHY this is a separate module and not drops.js: the kit's evidence
 // shape is the OPPOSITE of a gun's. A gun's pickup row names the weapon
@@ -44,8 +47,10 @@
 //               position at the kill — extract agg.kill}
 //   kitPickups  weapon_pickup rows with weapon KIT_WEAPON {tick, round,
 //               steamId = the picker, x/y/z = the picker's position}
-//   roundEnds / roundStarts  the boundary rows (the window terminator
-//               and the roundContaining scoping)
+//   roundEnds / roundStarts  the boundary rows (the round TERMINATOR
+//               is roundcut.js roundCutTick's composition over them —
+//               this module never scans them itself; roundStarts also
+//               feeds roundContaining below)
 //   buyEnds     Map<round, tick> of that round's `buytime_ended` generic
 //               row (buyEndsFromRows converts the one
 //               getGenericEvents(id, 'buytime_ended', …) call's rows)
@@ -62,6 +67,7 @@
 //
 // Pure, seek-safe — unit-tested by src/lib/kits.test.js.
 import { hasDropPos } from './drops.js';
+import { roundCutTick } from './roundcut.js';
 
 // KIT_WEAPON — THE canonical kit spelling on events.weapon (the Go twin
 // is models.DefuseKitName; demoinfocs' EquipmentType.String() for
@@ -161,23 +167,26 @@ function roundContaining(tick, roundStarts) {
 //                    - the matched pickup's tick (the nearest-death
 //                      winner — buildKitEvidence resolves `pickup`;
 //                      null for a drop nobody claimed), and
-//                    - the FIRST same-round round_end at/after d.tick
-//                      (round-end cleanup — the exact gate drops.js
-//                      dropWindow uses, so the two layers can never
-//                      disagree about when a round's items vanish);
+//                    - roundCutTick(d, roundEnds, roundStarts) — the
+//                      canonical round boundary (roundcut.js): the
+//                      FIRST same-round round_end at/after d.tick,
+//                      else the next round_start (a kit dropped AFTER
+//                      its round ended — the post-round tail — ends
+//                      THERE), else null for a live/truncated round
+//                      (kept as Infinity — never a fabricated
+//                      boundary). The two layers (drops/kits) can never
+//                      disagree about when a round's items vanish:
+//                      they run the SAME composition;
 //                  Infinity when neither exists (lives until the demo
 //                  ends, exactly like dropWindow's fallback).
 // Half-open: visible at tick === from, gone at tick === to (pinned by
-// the boundary test).
-export function kitWindow(dropRow, pickup, roundEnds) {
+// the boundary test). `roundStarts` is OPTIONAL (a 4th arg): omitted /
+// empty it contributes no fallback cut, exactly like no boundary rows.
+export function kitWindow(dropRow, pickup, roundEnds, roundStarts) {
   const d = dropRow;
   if (!d || !Number.isFinite(d.tick) || !kitPos(d)) return null;
-  let to = Infinity;
-  for (const r of roundEnds || []) {
-    if (r && r.round === d.round && Number.isFinite(r.tick) && r.tick >= d.tick && r.tick < to) {
-      to = r.tick;
-    }
-  }
+  const cut = roundCutTick(d, roundEnds, roundStarts);
+  let to = cut !== null ? cut : Infinity;
   if (pickup && Number.isFinite(pickup.tick) && pickup.tick > d.tick && pickup.tick < to) {
     to = pickup.tick;
   }
@@ -296,7 +305,7 @@ export function buildKitEvidence(rows, buyEnds, tickRate) {
 
   const drops = new Map();
   for (const d of kitDrops) {
-    const w = kitWindow(d, claimed.get(d) || null, roundEnds);
+    const w = kitWindow(d, claimed.get(d) || null, roundEnds, roundStarts);
     if (w) drops.set(d, w);
   }
 

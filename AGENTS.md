@@ -270,6 +270,7 @@ Canonical homes (extend these, don't fork them):
 | Sort headers / stat cells | `lib/components/SortTh.svelte`, `lib/components/StatCard.svelte` — markup only; each view keeps its own sort state and backend |
 | Match pickers | `lib/components/MatchPicker.svelte` — Explorer, Reports, Builder all use it |
 | Radar coordinate transform | `lib/components/mapxform.js` `makeTransform` — THE pack→transform reader; camera/no-pack bounds fallback stay renderer-only |
+| Round-boundary terminators | `lib/replay/roundcut.js` `roundCutTick` — no module scans `roundEnds`/`roundStarts` itself; every transient entity's round-scoped visibility ends at that composition MIN'd with its own terminators (P2 buckets keep the ratified `nextRoundStartTick`-only rule in `ROUND_POLICY`) |
 | CS2 asset extraction (families, step order, outcome wording) | `frontend/src/lib/assets.js` `extractAllAssets` — Settings and MapPackPrompt both delegate; views own only their busy/progress/refresh rendering |
 | Job progress | `models.Job` — job-wide 0..1 (0 = indeterminate, never "0%") with the stage→range table beside the stage constants in `internal/models`; the emitter is `internal/library`'s progressReporter; render only through `StatusChip` (no second bar) |
 | Loading / pre-fetch preference ladder | `PRODUCT.md` `### Defaults` — THE statement; route loading/prefetch preference questions there, never restate the ladder in this file |

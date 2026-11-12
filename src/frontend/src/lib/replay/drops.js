@@ -12,15 +12,21 @@
 //     dropWindow for the equivalence proof).
 //
 // Rule, over an evidence bundle of pre-bucketed landmark rows
-// { drops, pickups, roundEnds } (landmarks.js normalizeEvent output —
-// kind / round / tick / weapon plus x/y/z aliased from the stored
-// posX/posY/posZ):
+// { drops, pickups, roundEnds, roundStarts } (landmarks.js
+// normalizeEvent output — kind / round / tick / weapon plus x/y/z
+// aliased from the stored posX/posY/posZ):
 //
 //   For tick T, with d = the LAST weapon_drop at/before T:
 //     1. no d → null (nothing dropped yet at T);
-//     2. d's round ended at/before T → null — the round-end cleanup
-//        parity with killEndTick / bombEvidenceAt: a previous round's
-//        drop must never anchor the current frame;
+//     2. d's ROUND TERMINATOR reached T → null — delegated to the
+//        canonical composition roundcut.js roundCutTick (the same-round
+//        round_end at/after d, else the next round_start, else nothing
+//        for a live/truncated round), so a previous round's drop can
+//        never anchor the current frame AND a drop stamped AFTER its
+//        round's end (the post-round C4-kill shape — golden round 2:
+//        round_end 14930 precedes the deagle drop at 14963, next
+//        round_start 15378) still ends at the next round_start instead
+//        of outliving the replay;
 //     3. a weapon_pickup of the SAME weapon name in the SAME round with
 //        d.tick < pickup ≤ T → null (somebody took it off the ground);
 //     4. d carries a stored position → visible AT that position
@@ -54,6 +60,12 @@
 // never re-derived here; models.IsUtilityWeapon owns that rule) and
 // the dropped gun's mag/reserve ammo rides the same join
 // (row.dropAmmo). Pure, seek-safe — unit-tested by src/lib/drops.test.js.
+//
+// The ROUND half of every window is NOT scanned here: roundcut.js
+// (roundCutTick) is THE round-boundary home (AGENTS one-canonical-way —
+// no module may scan roundEnds/roundStarts itself), this module keeps
+// only its own item terminators (the same-name pickup) and MINs the two.
+import { roundCutTick } from './roundcut.js';
 
 // hasDropPos reports whether a row carries a usable world position
 // (normalizeEvent aliases posX/posY → x/y; missing evidence stays
@@ -66,8 +78,9 @@ export function hasDropPos(row) {
 
 // dropEvidenceAt — THE drop reconstruction rule (see the module header).
 // Returns { state: 'dropped', row, x, y, z } while the item sits on the
-// ground, null once picked up / the round ended / no evidence — a pure
-// function of (evidence, tick), so a scrub re-derives everything.
+// ground, null once picked up / the round boundary passed (roundcut.js
+// roundCutTick) / no evidence — a pure function of (evidence, tick), so
+// a scrub re-derives everything.
 export function dropEvidenceAt(ev, tick) {
   const e = ev || {};
   let d = null;
@@ -78,14 +91,15 @@ export function dropEvidenceAt(ev, tick) {
   }
   if (!d) return null; // nothing dropped at/before T
 
-  // Round scoping: out of scope once that round's round_end reached T.
-  let end = null;
-  for (const r of e.roundEnds || []) {
-    if (r && r.round === d.round && r.tick >= d.tick && (!end || r.tick < end.tick)) {
-      end = r;
-    }
-  }
-  if (end && tick >= end.tick) return null;
+  // Round scoping — the canonical composition (roundcut.js roundCutTick:
+  // same-round round_end at/after the drop, else the next round_start,
+  // else null for a live/truncated round): a previous round's drop must
+  // never anchor the current frame, and a post-round drop (stamped past
+  // its own round_end — the C4-kill shape) ends at the next round_start
+  // instead of outliving the replay. Null = no boundary rows loaded →
+  // keep the item's own lifetime (the never-fabricate-a-boundary rule).
+  const cut = roundCutTick(d, e.roundEnds, e.roundStarts);
+  if (cut !== null && tick >= cut) return null;
 
   // Pickup termination: a same-name pickup in the drop's round after
   // the drop and at/before T means the item is carried — not ground.
@@ -104,7 +118,7 @@ export function dropEvidenceAt(ev, tick) {
 // [from, to) for ONE drop row, evaluated once over the match-static
 // inputs (the rows never change after setLandmarks, so the renderer
 // precomputes this beside dropEvidenceAt instead of rescanning the
-// pickups/round_end lists for every row on every frame —
+// pickups/boundary lists for every row on every frame —
 // drawDrops' per-frame cost is then an O(1) window test).
 //
 // Equivalence (pinned by the sweep in src/lib/renderer.test.js): for a
@@ -114,20 +128,26 @@ export function dropEvidenceAt(ev, tick) {
 //       ⇔  window !== null && tick >= window.from && tick < window.to
 // because the three gates are independent thresholds on the same row:
 //   1. selection     d.tick <= tick                    → from = d.tick
-//   2. round_end     tick < the round's first round_end at/after d.tick
+//   2. round cut     tick < roundCutTick(d, roundEnds, roundStarts) —
+//                    the canonical composition (roundcut.js): the
+//                    same-round round_end at/after d.tick, else the
+//                    next round_start (a post-round drop — stamped past
+//                    its own round_end — ends THERE, not forever)
 //   3. pickup        tick < the earliest same-name pickup in the round
 //                    after d.tick
 //   4. position      hasDropPos(d) — a position-less row is never
 //                    visible → null window (never drawn, never guessed)
-// `to` is Infinity when neither terminator exists (the row then lives
-// until the demo ends — exactly what dropEvidenceAt answers today).
+// `to` = MIN(round cut, earliest same-name pickup) — Infinity when
+// neither terminator exists (the row then lives until the demo ends —
+// exactly what dropEvidenceAt answers with no boundary rows loaded).
+// Windows are half-open: from === to (a drop stamped ON its round_end)
+// is degenerate and never draws; the query side agrees (null AT the
+// tick). Pure — unit-tested by src/lib/drops.test.js.
 export function dropWindow(d, ev) {
   const e = ev || {};
   if (!d || !Number.isFinite(d.tick) || !hasDropPos(d)) return null;
-  let to = Infinity;
-  for (const r of e.roundEnds || []) {
-    if (r && r.round === d.round && r.tick >= d.tick && r.tick < to) to = r.tick;
-  }
+  const cut = roundCutTick(d, e.roundEnds, e.roundStarts);
+  let to = cut !== null ? cut : Infinity;
   for (const p of e.pickups || []) {
     if (!p || !Number.isFinite(p.tick)) continue;
     if (p.round !== d.round || p.weapon !== d.weapon) continue;

@@ -420,6 +420,18 @@ at the end of the section.
   https://docs.pureskill.gg/datascience/adx/cs2/csds/enums/ (Molotov
   7.03 s, Incendiary 5.5 s) (all retrieved 2026-11-09).
 
+- **Post-round event stamps** — `round_end` can PRECEDE the blast it
+  decided: kills/drops/detonations land AFTER their round's `round_end`
+  (golden demo round 2: `bomb_explode` == `round_end` at 14930, the C4
+  kill + deagle drop at 14963, next `round_start` 15378; dev pool of 7
+  demos: 28 kills, 29 weapon_drops, 19 grenade dets, 2 bomb_plants, 2
+  bomb_explodes post-`end_tick`), so round-scoped consumers MUST fall
+  back to the next `round_start` or the row outlives the round forever
+  (the render-side rule: `frontend/src/lib/replay/roundcut.js`
+  `roundCutTick`).
+  **Source** — local read-only library query + golden tick dump
+  (2026-11-12); demoinfocs `clearGrenadeProjectiles` entry (above).
+
 - **Weapon/inventory icons in a CS2 install** — where the gun icons live
   for extraction. In `pak01_dir.vpk`: (1) killfeed/HUD-style SVG
   silhouettes at `panorama/images/icons/equipment/<weapon>.vsvg_c`

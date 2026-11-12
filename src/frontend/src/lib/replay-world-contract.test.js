@@ -124,3 +124,33 @@ test('SFX_CUE_KINDS ⊆ DRAW_KINDS (the audio half of the draw set)', () => {
   ];
   for (const k of built) assert.ok(SFX_CUE_KINDS.includes(k), `cue kind not registered: ${k}`);
 });
+
+test('round-boundary terminators live only in roundcut.js (drops/kits/bomb delegate)', () => {
+  // AGENTS one-canonical-way: no module may scan roundEnds itself for a
+  // round terminator — every transient entity's round-scoped visibility
+  // ends at roundcut.js roundCutTick (same-round round_end at/after the
+  // row, else the next round_start), MIN'd with the entity's own
+  // terminators (pickup / detonation / own lifetime / action
+  // completion). The scans below are the hand-rolled round_end-only
+  // loops that once let a post-round drop outlive the replay (the
+  // golden round-2 deagle).
+  for (const rel of ['drops.js', 'kits.js']) {
+    const src = read(rel);
+    assert.ok(
+      !/for\s*\([^)]*of\s*[^)]*roundEnds/.test(src),
+      `${rel} hand-scans roundEnds — delegate the round terminator to roundCutTick (roundcut.js)`,
+    );
+    assert.ok(src.includes("from './roundcut.js'"), `${rel} must import the canonical roundcut`);
+  }
+  // bomb.js keeps TWO sanctioned boundary sites, both commented in place:
+  // bombEndTick (its OWN terminators min'd with sameRoundEndTick /
+  // nextRoundStartTick — pinned, deliberately NOT unified with
+  // roundCutTick) and actionIntervals' round fallback + next-begin cap.
+  // What is forbidden is bombEvidenceAt's own scan of the bundle rows.
+  const bomb = read('bomb.js');
+  assert.ok(
+    !/for\s*\([^)]*of\s*e\.roundEnds/.test(bomb),
+    'bombEvidenceAt hand-scans e.roundEnds — delegate to roundCutTick (roundcut.js)',
+  );
+  assert.ok(bomb.includes("from './roundcut.js'"), 'bomb.js must import the canonical roundcut');
+});

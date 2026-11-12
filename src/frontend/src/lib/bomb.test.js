@@ -216,6 +216,26 @@ test('a previous round’s drop is scoped out by its round_end; a foreign pickup
   assert.equal(bombEvidenceAt(ev2, 5000).state, 'dropped');
 });
 
+test('a bomb dropped AFTER its round ended cuts at the next round_start (the post-round tail)', () => {
+  // The golden round-2 shape: round 7's round_end (1800) PRECEDES the
+  // drop (1900), so a round_end-only scan finds no terminator; the
+  // canonical cut (roundcut.js roundCutTick) falls through to the next
+  // round_start (2200) instead of anchoring the frame forever.
+  const d = drop(1900);
+  const ev = {
+    drops: [d],
+    pickups: [],
+    plants: [],
+    roundEnds: [roundEnd(1800)],
+    roundStarts: [roundStart(2200)],
+  };
+  assert.equal(bombEvidenceAt(ev, 2100).state, 'dropped', 'the round-over tail: the bomb really is on the ground');
+  assert.equal(bombEvidenceAt(ev, 2200), null, 'gone AT the next round_start');
+  assert.equal(bombEvidenceAt(ev, 2500), null, '…and for the rest of the replay');
+  // Backward scrub re-derives — pure, nothing sticky.
+  assert.equal(bombEvidenceAt(ev, 2100).state, 'dropped', 'a backwards scrub re-derives it');
+});
+
 test('the LAST drop ≤ T wins (drop → pickup → drop again)', () => {
   const d1 = drop(1000, 7, 10, 10);
   const pk = pickup(1200, 7, 20, 20);

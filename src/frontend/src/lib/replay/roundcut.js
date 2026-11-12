@@ -4,6 +4,26 @@
 // clearGrenadeProjectiles — so a smoke/fire/pop that outlived its round
 // is an artifact of OUR drawing, not of the demo).
 //
+// THE RULE (AGENTS one-canonical-way, "Round-boundary terminators"):
+// no module may scan roundEnds/roundStarts itself. Every transient
+// entity's round-scoped visibility ends at the canonical composition in
+// this file — roundCutTick (same-round round_end at/after the row, else
+// next round_start, else nothing for a live/truncated round) — MIN'd
+// with the entity's own terminators (pickup / detonation / own
+// lifetime / action completion). P2 buckets keep the ratified
+// nextRoundStartTick-only rule in ROUND_POLICY. Two compositions are
+// sanctioned and BOTH are pinned — deliberately NOT unified:
+//   roundCutTick — the EVIDENCE WINDOWS (drops.js dropEvidenceAt /
+//       dropWindow, kits.js kitWindow, bomb.js bombEvidenceAt): the
+//       round half is this composition, the item terminators (pickup /
+//       plant) MIN after it;
+//   min(end, next) — killEndTick (renderer.js death X) and bombEndTick
+//       (planted C4): their OWN terminator list first, then the
+//       round_end half (sameRoundEndTick) and the next round_start
+//       (nextRoundStartTick) only ever shortening — behavior pins win
+//       over consolidation, so the two shapes are never folded into
+//       one.
+//
 // The strategy was already solved twice, for the planted C4 (bomb.js
 // bombEndTick) and the death marker (renderer.js killEndTick); this module
 // is the ONE home for its scans, so the third, fourth… implementations
@@ -52,11 +72,17 @@
 //       the 3 s explosion ring on its own tick (one-frame flash). A bucket
 //       drawn BOTH ways (smoke/fire: the lingering area AND its
 //       detonation bloom) carries both rules.
-//   P3 keep — deliberately ABSENT (already canonical elsewhere): the death
-//       X (killEnds / killEndTick), the planted C4 (bombEndTick), the
-//       dropped C4 and guns (bombEvidenceAt / drops.js windows), the
-//       plant/defuse action rings (actionIntervals), the kill feed and the
-//       chat (round-scoped by their own overlays).
+//   P3 keep — the entity's OWN terminators stay with their canonical
+//       homes: the death X (killEnds / killEndTick), the planted C4
+//       (bombEndTick), the dropped C4 and guns (bombEvidenceAt /
+//       drops.js windows), the defuse kits (kits.js kitWindow), the
+//       plant/defuse action rings (actionIntervals), the kill feed and
+//       the chat (round-scoped by their own overlays). Their ROUND half
+//       is not hand-rolled: the EVIDENCE windows (bombEvidenceAt,
+//       drops.js, kits.js) delegate it to roundCutTick and keep only
+//       their own item terminators (pickup / plant) — see THE RULE
+//       above; killEndTick/bombEndTick keep their pinned min(end, next)
+//       composition instead.
 //   P4 deliberate non-consolidations — also ABSENT: players/trails (player
 //       state — freezetime movement is legitimate) and the tracers /
 //       blinds / voice+shot blooms (sub-second crossings), plus the
@@ -64,8 +90,11 @@
 //
 // Pure functions over pre-bucketed rows — unit-tested by
 // src/lib/roundcut.test.js; consumed by renderer.js setLandmarks (the
-// precomputed roundCuts Maps) and, for the two boundary scans, delegated
-// to by killEndTick (renderer.js) and bombEndTick (bomb.js).
+// precomputed roundCuts Maps), by the evidence windows that delegate
+// their round half here (drops.js, kits.js, bomb.js bombEvidenceAt —
+// pinned by replay-world-contract.test.js) and, for the two boundary
+// scans, delegated to by killEndTick (renderer.js) and bombEndTick
+// (bomb.js).
 
 // ROUND_POLICY — bucket → the round rules that bucket's drawings obey
 // (see the P1/P2/P3/P4 notes in the header).
