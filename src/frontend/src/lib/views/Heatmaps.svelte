@@ -31,9 +31,11 @@
   // params are involved (sticky-registry-only ruling): a deep link
   // lands at the defaults exactly as today, and the registry fills only
   // what the route leaves alone. The record holds controls + grid +
-  // gridLayer + lastKey TOGETHER, so a restored raster is consistent
-  // with the restored controls (no spurious dirty banner). Loading,
-  // error, region notes, pack/match data stay transient.
+  // gridLayer + lastKey + gen TOGETHER, so a restored raster is
+  // consistent with the controls it was fetched under AND still knows
+  // the population it depicts (gen — the region drill's source while the
+  // raster is stale). Loading, error, region notes, pack/match data stay
+  // transient.
   const heatDefaults = () => ({
     kind: 'presence',
     player: '',
@@ -44,6 +46,10 @@
     grid: null,
     gridLayer: 0,
     lastKey: '',
+    // The generating settings: captured with the fetch that produced
+    // `grid` (same moment the payload is built) and stored WITH it — see
+    // `src` below. null until the first successful Generate.
+    gen: null,
   });
   const heatKey = $derived(matchKey('heatmaps', id));
   // Deliberate ONE-TIME init capture: the derived is read inside a closure
@@ -70,6 +76,17 @@
   let roundTo = $state(heatSeed.roundTo); // <0 = all
 
   let grid = $state(heatSeed.grid);
+  // `gen` — the generating settings of the raster on screen: kind + the
+  // player/side/round controls the fetch actually sent, captured with the
+  // payload in generate(). The region drill composes EVERY arrival key
+  // from it (owner ruling: "query what's displayed"), so a stale raster
+  // under changed live controls still opens the population it depicts.
+  let gen = $state(heatSeed.gen);
+  // The single source the drill reads: the generating settings when a
+  // raster produced them, else the live controls — the fallback is only
+  // reachable with no raster at all (HeatmapLayer needs a grid to emit a
+  // region), so it never becomes a second source of truth.
+  const src = $derived(gen || { kind, player, team, roundFrom, roundTo });
   // Layer (floor) selector: `layer` is the LIVE selection — the radar
   // image switches with it immediately — while `gridLayer` is the layer
   // the displayed raster was FETCHED for. HeatmapLayer draws the raster
@@ -240,9 +257,10 @@
       grid = s.grid;
       gridLayer = s.gridLayer;
       lastKey = s.lastKey;
+      gen = s.gen;
       return;
     }
-    remember(k, { kind, player, team, roundFrom, roundTo, layer, grid, gridLayer, lastKey });
+    remember(k, { kind, player, team, roundFrom, roundTo, layer, grid, gridLayer, lastKey, gen });
   });
 
   // Live generate progress: the last spectra:heatmap-progress payload
@@ -292,6 +310,10 @@
     // overlay gate then compares exactly these two indices.
     const sel = layer;
     const l = layers[sel];
+    // The generating settings, captured WITH the payload below (the same
+    // live values the fetch sends) so `gen` always describes exactly the
+    // raster that lands — never a control the user touched mid-flight.
+    const genSel = { kind, player, team, roundFrom, roundTo };
     try {
       // The pack's own z band for the selected floor — half-open
       // [zMin, zMax), the convention layerIndexForZ applies
@@ -315,8 +337,12 @@
           : await getHeatmap(id, kind, filter);
       gridLayer = sel;
       lastKey = filterKey(kind, player, team, roundFrom, roundTo, sel);
+      // …and the population that fetch selected travels WITH the raster
+      // (the record keeps grid/gridLayer/lastKey/gen together).
+      gen = genSel;
     } catch (e) {
       grid = null;
+      gen = null; // no raster → no generating settings (never a stale pair)
       error = errText(e);
     } finally {
       loading = false;
@@ -357,20 +383,32 @@
   // gate reads the predicate, never a kind name — HeatmapLayer hides the
   // click affordance for the SAME predicate, and this is the view-side
   // backstop for a click that still lands.
+  //
+  // EVERYTHING HERE READS `src` — the raster's generating settings
+  // (owner ruling: "query what's displayed"): bbox AND cats AND player/
+  // side/rounds describe the population on screen, so a stale raster
+  // under changed live controls never opens an arrival that contradicts
+  // what the user is clicking. The live controls only reach the drill
+  // through the documented `src` fallback (no raster → nothing to click).
   function onRegion(bbox) {
-    const carries = heatRegionTakesBBox(kind);
+    const carries = heatRegionTakesBBox(src.kind);
     if (!carries) {
       regionChip = 'region not applied';
-      regionNote = `${kind} has no event rows behind it — nothing to query, so the click did not open the replay`;
+      regionNote = `${src.kind} has no event rows behind it — nothing to query, so the click did not open the replay`;
       return;
     }
-    // The heatmap's settings mirrored into the arrival filter (cats, the
+    // The raster's settings mirrored into the arrival filter (cats, the
     // player selector, the SIDE selector, the round range — `-1 = all`
     // maps to the filter's open bound). The side selector's value is
     // side-AT-ROUND (its old "Team" label was the misnomer — relabelled),
     // so it mirrors into the filter's `side` key; the `team` (identity)
     // key never rides this selector — identity is not a heatmap setting.
-    const filter = heatRegionFilter(kind, { player, side: team, roundFrom, roundTo });
+    const filter = heatRegionFilter(src.kind, {
+      player: src.player,
+      side: src.team,
+      roundFrom: src.roundFrom,
+      roundTo: src.roundTo,
+    });
     // Cell ± pad = the events whose splat can reach the clicked cell
     // (the kernel is windowed to zero AT pad, so a sample a touch beyond
     // the expanded edge contributes nothing — at most one cell of index
@@ -539,15 +577,15 @@
     </div>
   {/if}
 
-  <HeatmapLayer {map} {pack} {grid} {onRegion} {layer} {gridLayer} kind={kind} />
+  <HeatmapLayer {map} {pack} {grid} {onRegion} {layer} {gridLayer} kind={src.kind} />
 
   {#if grid}
     <p class="heat-hint muted">
-      {#if heatRegionTakesBBox(kind)}
+      {#if heatRegionTakesBBox(src.kind)}
         Click the map to open the replay events for that region (the clicked
         square, padded to the splat’s reach).
       {:else}
-        {kind} has no event rows behind it — clicking the map opens nothing.
+        {src.kind} has no event rows behind it — clicking the map opens nothing.
       {/if}
     </p>
   {:else if !loading}

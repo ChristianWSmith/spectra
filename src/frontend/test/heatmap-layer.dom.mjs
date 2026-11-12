@@ -399,8 +399,8 @@ console.log('J. Heatmaps.onRegion source pins: pad expansion + the no-bbox no-na
 const onRegionSrc = /function onRegion\(\w+\)\s*\{([\s\S]*?)\n  \}/.exec(heatSrc)?.[1] || '';
 check('onRegion body located in Heatmaps.svelte', onRegionSrc.length > 200, String(onRegionSrc.length));
 check(
-  'the gate reads heatRegionTakesBBox(kind) — generic, never a kind name',
-  /heatRegionTakesBBox\(kind\)/.test(onRegionSrc),
+  'the gate reads heatRegionTakesBBox(src.kind) — generic, never a kind name',
+  /heatRegionTakesBBox\(src\.kind\)/.test(onRegionSrc),
 );
 check(
   'bbox-less kinds return BEFORE replayHash (no navigation)',
@@ -420,6 +420,34 @@ check(
   'regionNote states the APPLIED (padded) rect — never the raw cell',
   /regionNote = `bbox \(\$\{Math\.round\(applied\.minX\)\}/.test(onRegionSrc) &&
     !/regionNote = `bbox \(\$\{Math\.round\(bbox\.minX\)\}/.test(onRegionSrc),
+);
+
+console.log('K. stale raster: the arrival reads the generating settings (source pin)');
+// Owner ruling — "query what's displayed": while the dirty banner is up
+// (live controls changed, raster not regenerated), the drill must still
+// open the population the RASTER on screen depicts. The generating
+// settings are captured with the fetch (generate → gen), stored with the
+// raster in the viewstate record, and read through the `src` derived —
+// no harness mounts the view, so these are source pins (same precedent
+// as H/J).
+const norm = heatSrc.replace(/\s+/g, ' ');
+check(
+  'src falls back to the live controls ONLY when no generating settings exist',
+  /const src = \$derived\(gen \|\| \{ kind, player, team, roundFrom, roundTo \}\)/.test(norm),
+);
+check(
+  'onRegion composes every arrival key from src (never the live controls)',
+  /heatRegionFilter\(src\.kind, \{ player: src\.player, side: src\.team, roundFrom: src\.roundFrom, roundTo: src\.roundTo,? \}\)/.test(
+    onRegionSrc.replace(/\s+/g, ' '),
+  ) && !/heatRegionFilter\(kind,/.test(onRegionSrc),
+);
+check(
+  'the generating settings are captured with the fetch and stored with the raster',
+  /const genSel = \{ kind, player, team, roundFrom, roundTo \}/.test(norm) &&
+    norm.includes('gen = genSel;') &&
+    norm.includes('gen = null;') &&
+    /remember\(k, \{[^}]*gen \}\)/.test(norm) &&
+    /gen: null,/.test(norm),
 );
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
