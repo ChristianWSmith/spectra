@@ -110,27 +110,37 @@
   const dirty = $derived(snapshot(form) !== baseline);
   const readOnly = $derived(form.origin !== 'user');
 
-  $effect(() => {
-    pins = readPins();
-    let live = true;
-    Promise.all([listMetrics(), listMatches('', 'extracted_at', false)])
-      .then(([defs, list]) => {
-        if (!live) return;
-        metrics = defs || [];
-        matches = list || [];
-      })
-      .catch((e) => {
-        if (live) listError = errText(e);
-      });
+  // The list read (mount AND listError's Retry): metrics + matches land
+  // together, so the error clears only when BOTH reads do — a retry can
+  // never clear the message while a read is still failing. pins stay
+  // OUTSIDE this function: they are read from localStorage once per
+  // mount (a retry must not re-derive them over the session's toggles).
+  async function loadLists() {
+    // Fired first, exactly as the mount effect did: the plugin states
+    // never wait on the metrics/match reads (nor on their failure).
     listPlugins()
       .then((states) => {
-        if (!live) return;
         disabledPlugins = new Set(
           (states || []).filter((s) => !s.enabled).map((s) => s.manifest.id),
         );
       })
       .catch(() => {});
-    return () => (live = false);
+    try {
+      const [defs, list] = await Promise.all([
+        listMetrics(),
+        listMatches('', 'extracted_at', false),
+      ]);
+      metrics = defs || [];
+      matches = list || [];
+      listError = '';
+    } catch (e) {
+      listError = errText(e);
+    }
+  }
+
+  $effect(() => {
+    pins = readPins();
+    loadLists();
   });
 
   async function refreshMetrics() {
@@ -353,7 +363,10 @@
   </header>
 
   {#if listError}
-    <p class="error" role="alert">{listError}</p>
+    <p class="error" role="alert">
+      {listError}
+      <button class="btn small" onclick={loadLists}>Retry</button>
+    </p>
   {/if}
   {#if saveError}
     <p class="error" role="alert">{saveError}</p>

@@ -388,6 +388,31 @@ check('no error line', !errorLine());
 await sleep(1100);
 check('auto-closed after full success', !open());
 
+console.log('H. probe failure routes into the dialog error slot — never the console');
+// A REAL rejection only: the resolved "family absent" states keep their
+// normal gate (A–E above pin it). With no status in hand the prompt
+// takes the same "no status → not-found" variant the gate computes.
+globalThis.__stub = {
+  ...allPresent(),
+  status: Promise.reject(new Error('status probe failed')),
+};
+await maybePrompt();
+check('probe rejection surfaces in the dialog (visible, not swallowed)', open());
+check(
+  'failure routed to p.error[role="alert"] with the probe context',
+  errorLine() === 'Couldn’t check the CS2 asset status: status probe failed',
+  JSON.stringify(errorLine()),
+);
+check('the slot stays dismissible through the Dialog actions', !!notNow());
+click(notNow());
+await sleep();
+check('dismissed in place', !open());
+// The presence gate itself is untouched: a healthy probe with every
+// family present still never opens.
+globalThis.__stub = allPresent();
+await maybePrompt();
+check('healthy probe → still closed (gate unchanged)', !open());
+
 if (errors.length) failures += errors.length;
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

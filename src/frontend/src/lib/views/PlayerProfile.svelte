@@ -62,40 +62,59 @@
     return () => (live = false);
   });
 
-  $effect(() => {
+  // One generation per read — each drops its own stale async result
+  // when the steam id (or the trend stat) changes mid-flight, or when a
+  // Retry supersedes the previous attempt.
+  let profileGen = 0;
+  let trendGen = 0;
+
+  // The profile read (mount AND profileError's Retry): the panel goes
+  // back to "Loading…" for the flight, so a retry never leaves a blank
+  // body or a stale failure on screen.
+  function loadProfile() {
     const sid = steamId;
+    const my = ++profileGen;
     profile = null;
     profileError = '';
     if (!sid) return;
-    let live = true;
     getProfile(sid)
       .then((p) => {
-        if (live) {
-          profile = p;
-          profileError = p ? '' : 'Profile not found.';
-        }
+        if (my !== profileGen) return;
+        profile = p;
+        profileError = p ? '' : 'Profile not found.';
       })
       .catch((e) => {
-        if (live) profileError = errText(e);
+        if (my === profileGen) profileError = errText(e);
       });
-    return () => (live = false);
-  });
+  }
 
   $effect(() => {
+    loadProfile();
+  });
+
+  // The trend read (mount, stat switch AND trendError's Retry): same
+  // contract — the error clears only when the read lands, so the
+  // "No trend data" copy never stands in for a failed read.
+  function loadTrend() {
     const sid = steamId;
     const m = metric;
+    const my = ++trendGen;
     trend = [];
     trendError = '';
     if (!sid) return;
-    let live = true;
     getCareerTrend(sid, m)
       .then((rows) => {
-        if (live) trend = rows || [];
+        if (my !== trendGen) return;
+        trend = rows || [];
+        trendError = '';
       })
       .catch((e) => {
-        if (live) trendError = errText(e);
+        if (my === trendGen) trendError = errText(e);
       });
-    return () => (live = false);
+  }
+
+  $effect(() => {
+    loadTrend();
   });
 
   function pick(steam) {
@@ -202,7 +221,10 @@
   </header>
 
   {#if profileError}
-    <p class="error" role="alert">{profileError}</p>
+    <p class="error" role="alert">
+      {profileError}
+      <button class="btn small" onclick={loadProfile}>Retry</button>
+    </p>
   {/if}
 
   {#if profile}
@@ -254,7 +276,10 @@
         </div>
       </div>
       {#if trendError}
-        <p class="error" role="alert">{trendError}</p>
+        <p class="error" role="alert">
+          {trendError}
+          <button class="btn small" onclick={loadTrend}>Retry</button>
+        </p>
       {:else if spark}
         <svg
           class="prof-spark"

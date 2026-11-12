@@ -95,8 +95,22 @@
       progress = null;
       open = true;
     } catch (e) {
-      // Detection failure must never block app startup.
-      console.error('asset status', e);
+      // Detection failure must never block app startup — and it must not
+      // vanish into the console either: surface it in the prompt's own
+      // error slot, which the Dialog already dismisses (Escape / backdrop
+      // / "Not now"). Only a REAL probe rejection lands here — the
+      // expected absent states (a resolved null status, unextracted
+      // families) are the missing* flags above and keep the normal gate.
+      // With no status in hand the dialog takes the same "no status →
+      // not-found" variant the gate computes, and "Choose folder…"
+      // re-establishes the status through setCS2Dir.
+      status = null;
+      notFound = true;
+      error = `Couldn’t check the CS2 asset status: ${errText(e)}`;
+      msg = '';
+      step = '';
+      progress = null;
+      open = true;
     }
   }
 
