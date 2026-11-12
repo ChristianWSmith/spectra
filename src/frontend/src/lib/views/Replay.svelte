@@ -927,12 +927,15 @@
   }
 
   // --- Export (native save dialog — lib/save.js) -----------------------------
-  // Cancel is a silent no-op by contract; real failures land in console.
+  // Cancel is a silent no-op by contract (save.js resolves ""); genuine
+  // failures (the dialog itself, the backend write) surface in the feed's
+  // own error line (feedError) — the export's status area, dismissible in
+  // place — never only in the console.
   async function download(filename, mime, text) {
     try {
       await downloadText(filename, mime, text);
     } catch (e) {
-      console.error('landmark export failed:', e);
+      feedError = 'Export failed: ' + errText(e);
     }
   }
 
@@ -2377,6 +2380,10 @@
       // the ui state, pushes the engine AND persists the `skip_freeze`
       // pref, exactly like the toolbar button.
       onSkipFreeze: toggleSkipFreeze,
+      // S — the PNG save's settle (the button's doSnapshot passes the SAME
+      // handler): failures land in the transport's snapshot chip instead of
+      // the console; a cancel settles null and surfaces nothing.
+      onSnapshotResult,
     });
     ro = new ResizeObserver(() => renderer.resize());
     ro.observe(stageEl);
@@ -2718,8 +2725,19 @@
     }
   }
 
+  // onSnapshotResult — input.js's PNG-save settle contract (the snapshot()
+  // it imports): an Error to surface, or null when the save settled without
+  // one (written, or the native dialog cancelled — cancel stays silent by
+  // save.js's contract, and the null clears a stale error on a retry).
+  // The message names WHAT failed (snapshot, not clip/export) and carries
+  // the canonical errText reason; the chip in the transport owns the ✕.
+  let snapError = $state('');
+  function onSnapshotResult(e) {
+    snapError = e ? `snapshot save failed: ${errText(e)}` : '';
+  }
+
   function doSnapshot() {
-    if (canvasEl && engine) snapshot(canvasEl, id, engine.state.tick);
+    if (canvasEl && engine) snapshot(canvasEl, id, engine.state.tick, onSnapshotResult);
   }
 
   // --- Clip recorder ---------------------------------------------------------
@@ -3842,6 +3860,20 @@
               onclick={doSnapshot}
               ><span class="codicon codicon-device-camera" aria-hidden="true"></span></button
             >
+            <!-- The snapshot's own status line (the clip chip's pattern,
+                 minus the recorder state machine): only a FAILED save ever
+                 renders — cancel and success settle null and clear it — and
+                 the ✕ (the clip chip's dismiss button) clears it in place. -->
+            {#if snapError}
+              <span class="chip bad" role="alert" title={snapError}>{snapError}</span>
+              <button
+                class="btn small ghost"
+                aria-label="Dismiss snapshot error"
+                title="Dismiss"
+                onclick={() => (snapError = '')}
+                ><span class="codicon codicon-close" aria-hidden="true"></span></button
+              >
+            {/if}
             <button
               class="btn clip-btn"
               class:primary={recState === 'recording'}
@@ -4050,7 +4082,20 @@
         <p class="error" role="alert">{savedError}</p>
       {/if}
       {#if feedError}
-        <p class="error" role="alert">{feedError}</p>
+        <!-- The feed's error line — load failures AND (since the export
+             audit) a failed CSV/JSON export, which names itself in the
+             message. Clearable in place: the ✕ (Match's warnings-panel
+             dismiss pattern) and the next filter change both clear it. -->
+        <p class="error" role="alert">
+          {feedError}
+          <button
+            class="btn small ghost"
+            aria-label="Dismiss"
+            title="Dismiss"
+            onclick={() => (feedError = '')}
+            ><span class="codicon codicon-close" aria-hidden="true"></span></button
+          >
+        </p>
       {/if}
 
       {#if !selected}

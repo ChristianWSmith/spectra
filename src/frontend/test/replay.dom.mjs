@@ -421,6 +421,11 @@ export const getBlindDurations = () => Promise.resolve([]);
 // stub: the view's join leaves every weapon_drop row unstamped (the
 // fail-soft path drawDrops draws nothing for).
 export const getDropDetails = () => Promise.resolve([]);
+// Bulk EventDetail read (world.js's grenade-entity hydration — the STATIC
+// services.js import): none in the stub, so every chunk resolves [] and the
+// grenade rows stay ENTITY-LESS (world.js's own fail-soft contract: an id
+// with no detail row is skipped upstream, never fabricated).
+export const getEventDetails = () => Promise.resolve([]);
 // Player sounds (sound_events): the fixture has NONE — presence reports
 // total 0, so the view's gate fetches NOTHING (the presence-zero path:
 // no rows, no cues, no error) and the sound-events read below is never
@@ -775,12 +780,27 @@ export function hudTeamNames(names, leftSide, rightSide) {
 `,
 );
 
+// input.js is stubbed for the VIEW (this driver pins structure, not the
+// key ladder — that is src/lib/input.test.js), but the stub RECORDS what
+// the view hands it so section R can drive the snapshot settle contract
+// from the outside: attachReplayInput's options (the S-key callback) and
+// every snapshot() call with its onResult handler.
 writeFileSync(
   join(dir, 'replay', 'input.js'),
-  `export const attachReplayInput = () => ({ detach() {} });
-export const snapshot = () => {};
+  `export const attachReplayInput = (opts) => {
+  globalThis.__replayInputOpts = (globalThis.__replayInputOpts || []).concat(opts || {});
+  return { detach() {} };
+};
+export const snapshot = (canvas, matchId, tick, onResult) => {
+  globalThis.__snapshots = (globalThis.__snapshots || []).concat({ matchId, tick, onResult });
+};
 `,
 );
+// …and the REAL input.js copied verbatim beside it (the audio-real.js
+// pattern — its one relative import resolves against this cache's stubs)
+// so section R can pin the module's OWN routing: rejection → the callback,
+// cancel ("") → a silent null settle.
+writeFileSync(join(dir, 'replay', 'input-real.js'), readFileSync('src/lib/replay/input.js', 'utf8'));
 
 // The voice engine stays INERT (this harness never constructs it — the
 // stubbed getVoicePresence resolves null), but replay/sfx.js imports the
@@ -807,10 +827,24 @@ writeFileSync(
 );
 
 writeFileSync(join(dir, 'save.js'), `export const saveExportURL = async () => '';\n`);
+// download.js — the save plumbing the view drives (export + clip) and the
+// one input-real.js reaches through. Every helper RECORDS its call and
+// honours ONE staged outcome from globalThis.__stageDownload
+// ({ reject } → a genuine save failure, { path } → a written file);
+// nothing staged resolves "" — save.js's cancel contract, which is what the
+// default (silent) behaviour of every existing pin relies on.
 writeFileSync(
   join(dir, 'download.js'),
-  `export const downloadBlob = async () => '';
-export const downloadText = async () => '';
+  `const stage = (kind, args) => {
+  globalThis.__downloads = (globalThis.__downloads || []).concat({ kind, args });
+  const s = globalThis.__stageDownload;
+  globalThis.__stageDownload = undefined;
+  if (s && s.reject) return Promise.reject(s.reject);
+  return Promise.resolve(s && s.path ? s.path : '');
+};
+export const downloadBlob = (...a) => stage('blob', a);
+export const downloadText = (...a) => stage('text', a);
+export const downloadCanvasPNG = (...a) => stage('png', a);
 `,
 );
 
@@ -4344,6 +4378,196 @@ check(
     tallQ().every((t) => t.hasAttribute('data-round')) &&
     !tallQ().some((t) => Math.abs(leftPct(t) - ((300 - T0) / (T1 - T0)) * 100) < 1e-9),
   `ticks ${tickDetailQ()}`,
+);
+
+// ============================================================================
+// APPENDED SECTION (the error audit: the two SILENT save failures) ==========
+// Two saves used to print ONLY to the console — Replay's export catch
+// (download, ~:931) and input.js's snapshot() (~:14) — and now settle into
+// an EXISTING status slot each: the feed's error line (the p.error under
+// the feed controls, next to the export menu) and the transport's snapshot
+// chip beside the camera button (the clip chip's pattern + ✕). Both go
+// through save.js's CANCEL contract (resolve "", never reject), so a cancel
+// must stay SILENT in both: nothing surfaces for it, and the snapshot's
+// null settle clears a stale error without ever showing one.
+// ============================================================================
+console.log('R. export + snapshot failures surface in place; a native-dialog cancel stays silent');
+
+const targetR = document.createElement('div');
+document.body.appendChild(targetR);
+// A NON-default filter (kills): the default round_starts category has no
+// feed row in this fixture (the stub registers the kit row under
+// weapon_pickup), so the export would be pinned against an empty feed —
+// and a non-default arrival may auto-reveal the rail, hence the toggle
+// guard below.
+const harnessRSrc = `<script>
+  import Replay from './views/Replay.js';
+</script>
+<Replay id={1} query={{ cat: 'kills' }} nav={() => {}} />`;
+const harnessROut = join(dir, 'harnessR.js');
+svelteCompile(harnessRSrc, 'harnessR.svelte', harnessROut);
+const optsBeforeR = (globalThis.__replayInputOpts || []).length;
+const dlBeforeR = (globalThis.__downloads || []).length;
+const snapBeforeR = (globalThis.__snapshots || []).length;
+const modR = await import(pathToFileURL(harnessROut).href);
+resetReplayPreload();
+mount(modR.default, { target: targetR });
+await sleep();
+await sleep();
+await sleep();
+
+// The export items live in the feed rail (collapsed on a fresh replay
+// unless the arrival reveal already opened it).
+const topbarR = targetR.querySelector('.replay-topbar');
+if (!targetR.querySelector('.replay-side')) click(topbarR?.querySelector('.side-toggle'));
+await sleep();
+const railR = targetR.querySelector('.replay-side');
+check('R: the feed rail is up for the export controls', !!railR);
+const csvR = railR?.querySelector('.lm-export-item');
+const jsonR = railR?.querySelectorAll('.lm-export-item')[1];
+check('R: CSV + JSON menu items present', !!csvR && !!jsonR);
+const rowsR = () => railR?.querySelectorAll('.lm-row').length || 0;
+for (let i = 0; i < 25 && rowsR() === 0; i++) await sleep(); // feed fetch settle
+check(
+  'R: the feed has rows to export (non-vacuous)',
+  rowsR() > 0,
+  `${rowsR()} rows :: ${(railR?.querySelector('.lm-scroll')?.textContent || '').replace(/\s+/g, ' ').slice(0, 200)}`,
+);
+const feedErrR = () => targetR.querySelector('.replay-side p.error[role="alert"]');
+
+// --- R1: a REJECTED export surfaces (named, with the errText reason) ------
+globalThis.__stageDownload = { reject: new Error('write /tmp/x.csv: denied') };
+click(csvR);
+await sleep();
+check(
+  'R1: a failed export surfaces in the feed error line — named + reason',
+  /Export failed:/.test(feedErrR()?.textContent || '') && /denied/.test(feedErrR()?.textContent || ''),
+  feedErrR()?.textContent,
+);
+check(
+  'R1: the export really ran (the save stage was reached)',
+  (globalThis.__downloads || []).slice(dlBeforeR).some((d) => d.kind === 'text'),
+  JSON.stringify((globalThis.__downloads || []).slice(dlBeforeR)),
+);
+
+// --- R2: the surfaced error is clearable IN PLACE (the ✕ pattern) ---------
+const exportDismissR = feedErrR()?.querySelector('button[aria-label="Dismiss"]');
+check('R2: the surfaced export error carries an ✕ dismiss', !!exportDismissR);
+click(exportDismissR);
+await sleep();
+check('R2: ✕ clears it in place', !feedErrR());
+check('R2: the view is still mounted after dismissing', !!targetR.querySelector('.replay-view'));
+
+// --- R3: the CANCEL contract stays silent ---------------------------------
+// Nothing staged → the stub resolves "" exactly like save.js's cancel
+// contract (save.js:11-13 / saveBlob's `if (!path) return ''`): the JSON
+// item must surface NOTHING.
+click(jsonR);
+await sleep();
+check(
+  'R3: a cancelled export surfaces nothing (no error line at all)',
+  !feedErrR(),
+  feedErrR()?.textContent,
+);
+
+// --- R4: the snapshot button's failure lands in the transport chip ---------
+const snapBtnR = targetR.querySelector('button[aria-label="Snapshot"]');
+check('R4: the snapshot button is up', !!snapBtnR);
+const snapsR = () => globalThis.__snapshots || [];
+const chipR = () => targetR.querySelector('.replay-transport .chip.bad');
+click(snapBtnR);
+check(
+  'R4: the button path hands the view\'s settle handler to input.js',
+  snapsR().length === snapBeforeR + 1 && typeof snapsR().at(-1)?.onResult === 'function',
+  `snapshots ${snapsR().length - snapBeforeR}`,
+);
+snapsR().at(-1).onResult(new Error('canvas snapshot produced no data'));
+await sleep();
+check(
+  'R4: a failed snapshot surfaces in the transport chip — named + reason',
+  /snapshot save failed:/.test(chipR()?.textContent || '') &&
+    /no data/.test(chipR()?.textContent || ''),
+  chipR()?.textContent,
+);
+const snapDismissR = chipR()?.nextElementSibling;
+check(
+  'R4: the chip carries the ✕ dismiss (the clip chip\'s pattern)',
+  snapDismissR?.getAttribute('aria-label') === 'Dismiss snapshot error',
+  snapDismissR?.getAttribute('aria-label') || 'missing',
+);
+click(snapDismissR);
+await sleep();
+check('R4: ✕ clears the chip in place', !chipR());
+check('R4: the view is still mounted after dismissing', !!targetR.querySelector('.replay-view'));
+
+// --- R5: the snapshot CANCEL settles null → silent, and clears a stale error
+click(snapBtnR);
+snapsR().at(-1).onResult(new Error('boom'));
+await sleep();
+check('R5: the error is up again before the cancel proof', !!chipR());
+click(snapBtnR);
+snapsR().at(-1).onResult(null); // what a cancelled (or written) save settles
+await sleep();
+check(
+  'R5: a cancel (null settle) surfaces nothing AND clears the stale error',
+  !chipR(),
+  chipR()?.textContent,
+);
+
+// --- R6: the S-key path — input.js gets the SAME handler -------------------
+const optsR = (globalThis.__replayInputOpts || []).slice(optsBeforeR).at(-1);
+check(
+  'R6: the view passes a settle callback into attachReplayInput (the S key)',
+  typeof optsR?.onSnapshotResult === 'function',
+);
+optsR?.onSnapshotResult(new Error('S-key save failed'));
+await sleep();
+check(
+  'R6: an S-key failure lands in the SAME chip',
+  /S-key save failed/.test(chipR()?.textContent || ''),
+  chipR()?.textContent,
+);
+click(targetR.querySelector('button[aria-label="Dismiss snapshot error"]'));
+await sleep();
+check('R6: dismissed in place', !chipR());
+
+// --- R7: input.js's OWN routing (the real module, copied verbatim) ---------
+// The view stub above pins the WIRING; this pins the module itself:
+// rejection → the callback, cancel ("") → a silent null settle, and a bare
+// caller (no callback) → the console fallback, never an unhandled rejection.
+const inputRealR = await import(pathToFileURL(join(dir, 'replay', 'input-real.js')).href);
+let settleR = 'never';
+globalThis.__stageDownload = { reject: new Error('backend write failed') };
+inputRealR.snapshot({}, 'm1', 123, (e) => (settleR = e));
+await sleep();
+check(
+  'R7: input.js routes a REJECTION to the callback (no console-only drop)',
+  settleR instanceof Error && settleR.message === 'backend write failed',
+  String(settleR),
+);
+settleR = 'never';
+globalThis.__stageDownload = undefined; // resolves "" — save.js's cancel contract
+inputRealR.snapshot({}, 'm1', 123, (e) => (settleR = e));
+await sleep();
+check(
+  'R7: a cancelled save settles NULL — no error ever reaches the view',
+  settleR === null,
+  String(settleR),
+);
+const loggedR = [];
+const origErrR = console.error;
+console.error = (...a) => loggedR.push(a.join(' '));
+try {
+  globalThis.__stageDownload = { reject: new Error('bare failure') };
+  inputRealR.snapshot({}, 'm1', 1);
+  await sleep();
+} finally {
+  console.error = origErrR;
+}
+check(
+  'R7: without a callback the failure still logs (never an unhandled rejection)',
+  loggedR.some((s) => s.includes('snapshot save failed')),
+  loggedR.join(' | '),
 );
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
