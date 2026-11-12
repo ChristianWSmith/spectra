@@ -816,6 +816,61 @@ input[type='checkbox']:focus-visible {
   font-variant-numeric: tabular-nums;
 }
 
+/* Block mode of the same widget (StatusChip `block`) — THE presentation
+   rule for a progress display OUTSIDE a table cell or row-shaped list
+   item lives in PRODUCT.md "### Defaults": centered, a RING when the
+   work is quantified (progress > 0) and a SPINNER when it is not
+   (progress 0 / absent — never a fabricated number), with the details
+   text underneath. Inline chips (table cells, list rows) keep .chip-bar
+   above and never render any of this — .lib-status-col's reserved-width
+   arithmetic depends on that compact shape. The track is the theme-aware
+   --divider wash (style-m3b.css re-declares it for light), so there is
+   deliberately no light-only twin. */
+.chip-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.chip-detail {
+  text-align: center;
+}
+
+.chip-ring {
+  display: block;
+}
+
+.chip-ring circle {
+  fill: none;
+  stroke-width: 3;
+}
+
+.chip-ring-track {
+  stroke: var(--divider);
+}
+
+.chip-ring-fill {
+  stroke: var(--accent);
+  transition: stroke-dashoffset 0.2s;
+}
+
+.chip-spin {
+  box-sizing: border-box;
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--divider);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: chip-spin 0.9s linear infinite;
+}
+
+@keyframes chip-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* --- Tables ---------------------------------------------------------------- */
 
 .table-scroll {

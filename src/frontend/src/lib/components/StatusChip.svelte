@@ -7,7 +7,31 @@
 // names what the bar is measuring (hash/copy/parse/store/analyze): it
 // always rides the tooltip and, while the bar shows a number, the text
 // beside it — the ONE progress widget, no second bar anywhere.
-let { status = '', progress = null, title = '', stage = '' } = $props();
+//
+// BLOCK mode (`block: true`) is the presentation for a progress display
+// OUTSIDE a table cell or row-shaped list item — THE rule lives in
+// PRODUCT.md "### Defaults": a CENTERED column with the indicator on
+// top and its details text underneath. The indicator is a RING when the
+// work is quantified (progress > 0) and a SPINNER when it is not
+// (progress 0 or absent — an unknown denominator is indeterminate, never
+// a fabricated number). The details line is the caller's `detail` (what
+// is actually happening), plus the stage label, plus the honest
+// percentage — non-empty parts joined by " · ".
+//
+// Inline mode (the default) is untouched by any of this: table cells and
+// row-shaped list items keep the compact pill + 44px bar, DOM and CSS
+// byte for byte (the .lib-status-col reserved-width arithmetic in
+// style.css and library.dom.mjs Section J depend on it). `status` means
+// nothing in block mode (there is no chip label to paint) and is simply
+// not rendered there.
+let {
+  status = '',
+  progress = null,
+  title = '',
+  stage = '',
+  block = false,
+  detail = '',
+} = $props();
 
 // Stage constants are the Go data contract (models.StageHash … for jobs,
 // heatmapStageLoad/heatmapStageRaster in analyticservice.go for
@@ -52,6 +76,29 @@ const PALETTE = {
 
 let pct = $derived(progress != null ? Math.round(progress * 100) : null);
 let palette = $derived(PALETTE[status] || 'idle');
+
+// Block-mode indicator rule: quantified (a real fraction > 0) draws the
+// ring; 0 and null both mean "no honest denominator" → the spinner.
+let quantified = $derived(pct != null && pct > 0);
+
+// Ring geometry — same 12-o'clock start as PlayerCard's reload ring
+// (the only other ring in the app): the arc is swept by stroke-dashoffset.
+const RING_R = 12;
+const RING_CIRC = 2 * Math.PI * RING_R;
+let ringOffset = $derived(RING_CIRC * (1 - (pct || 0) / 100));
+
+// The details line under the indicator: caller text + stage + percent,
+// each only when it has something to say. The percentage follows the
+// inline chip's honesty rule — shown only between 0 and 100 (never "0%",
+// and a finished bar needs no number beside it).
+let blockDetail = $derived.by(() => {
+  const parts = [];
+  if (detail) parts.push(detail.trim());
+  if (stage) parts.push(stageText);
+  if (pct != null && pct > 0 && pct < 100) parts.push(pct + '%');
+  return parts.join(' · ');
+});
+
 // Tooltip = the caller's title (a match's error text) + the stage + the
 // determinate percentage, in that order; absent parts are dropped.
 let tip = $derived.by(() => {
@@ -63,16 +110,47 @@ let tip = $derived.by(() => {
 });
 </script>
 
-<span class="chip status {palette}" title={tip}>
-  {LABELS[status] || status || '—'}
-  {#if pct != null && status !== 'ready' && status !== 'failed'}
-    <span class="chip-bar" aria-hidden="true">
-      <span class="chip-bar-fill" class:indeterminate={pct === 0} style="width:{pct || 100}%"></span>
-    </span>
-    {#if pct > 0 && pct < 100}
-      <span class="chip-pct">{stage ? stageText + ' ' : ''}{pct}%</span>
-    {:else if pct === 0 && stage}
-      <span class="chip-pct">{stageText}</span>
+{#if block}
+  <span class="chip-block" title={tip}>
+    {#if quantified}
+      <svg
+        class="chip-ring"
+        viewBox="0 0 28 28"
+        width="28"
+        height="28"
+        aria-hidden="true"
+        focusable="false"
+      >
+        <circle class="chip-ring-track" cx="14" cy="14" r={RING_R} />
+        <circle
+          class="chip-ring-fill"
+          cx="14"
+          cy="14"
+          r={RING_R}
+          transform="rotate(-90 14 14)"
+          stroke-dasharray="{RING_CIRC} {RING_CIRC}"
+          stroke-dashoffset={ringOffset}
+        />
+      </svg>
+    {:else}
+      <span class="chip-spin" aria-hidden="true"></span>
     {/if}
-  {/if}
-</span>
+    {#if blockDetail}
+      <span class="chip-detail">{blockDetail}</span>
+    {/if}
+  </span>
+{:else}
+  <span class="chip status {palette}" title={tip}>
+    {LABELS[status] || status || '—'}
+    {#if pct != null && status !== 'ready' && status !== 'failed'}
+      <span class="chip-bar" aria-hidden="true">
+        <span class="chip-bar-fill" class:indeterminate={pct === 0} style="width:{pct || 100}%"></span>
+      </span>
+      {#if pct > 0 && pct < 100}
+        <span class="chip-pct">{stage ? stageText + ' ' : ''}{pct}%</span>
+      {:else if pct === 0 && stage}
+        <span class="chip-pct">{stageText}</span>
+      {/if}
+    {/if}
+  </span>
+{/if}
