@@ -90,8 +90,10 @@
   let packTried = $state(false); // pack load attempt finished (ok or failed)
   let regionNote = $state('');
   // The note's chip wording is decided WITH the note (onRegion): a drill
-  // that carried its bbox says so, a presence click says the region was
-  // NOT applied. Both render only while regionNote is set.
+  // that carried its bbox says so, a bbox-less kind's click says the
+  // region was NOT applied — and that one never navigates (the gate in
+  // onRegion, mirroring the affordance HeatmapLayer hides). Both render
+  // only while regionNote is set.
   let regionChip = $state('filtered by region');
 
   let navTimer = null;
@@ -348,17 +350,26 @@
   // (HeatmapGrid.Pad — Go owns the kernel width; the store stays a dumb
   // rectangle predicate), and regionNote states the APPLIED (padded)
   // rect, because that is what was actually queried.
+  // A kind that takes NO bbox at all (heatRegionTakesBBox — presence,
+  // and any future bbox-less kind) does not navigate: the drill is a
+  // bbox drill, and an arrival without one opens the replay on its
+  // default feed as if a region had been selected (it had not). The
+  // gate reads the predicate, never a kind name — HeatmapLayer hides the
+  // click affordance for the SAME predicate, and this is the view-side
+  // backstop for a click that still lands.
   function onRegion(bbox) {
     const carries = heatRegionTakesBBox(kind);
+    if (!carries) {
+      regionChip = 'region not applied';
+      regionNote = `${kind} has no event rows behind it — nothing to query, so the click did not open the replay`;
+      return;
+    }
     // The heatmap's settings mirrored into the arrival filter (cats, the
     // player selector, the SIDE selector, the round range — `-1 = all`
-    // maps to the filter's open bound). presence is the exception: its
-    // raster has NO events behind it, so a bbox it cannot satisfy would
-    // guarantee an empty feed — that click arrives WITHOUT one (settings
-    // only). The side selector's value is side-AT-ROUND (its old "Team"
-    // label was the misnomer — relabelled), so it mirrors into the
-    // filter's `side` key; the `team` (identity) key never rides this
-    // selector — identity is not a heatmap setting.
+    // maps to the filter's open bound). The side selector's value is
+    // side-AT-ROUND (its old "Team" label was the misnomer — relabelled),
+    // so it mirrors into the filter's `side` key; the `team` (identity)
+    // key never rides this selector — identity is not a heatmap setting.
     const filter = heatRegionFilter(kind, { player, side: team, roundFrom, roundTo });
     // Cell ± pad = the events whose splat can reach the clicked cell
     // (the kernel is windowed to zero AT pad, so a sample a touch beyond
@@ -372,18 +383,9 @@
       maxX: bbox.maxX + pad,
       maxY: bbox.maxY + pad,
     };
-    if (carries) {
-      regionChip = 'filtered by region';
-      regionNote = `bbox (${Math.round(applied.minX)}, ${Math.round(applied.minY)}) → (${Math.round(applied.maxX)}, ${Math.round(applied.maxY)})`;
-    } else {
-      regionChip = 'region not applied';
-      regionNote = `${kind} has no event rows behind it — replay opens without a bbox`;
-    }
-    const target = replayHash(
-      id,
-      carries ? { ...filter, bbox: applied } : filter,
-      { back: `match/${id}/heatmaps` },
-    );
+    regionChip = 'filtered by region';
+    regionNote = `bbox (${Math.round(applied.minX)}, ${Math.round(applied.minY)}) → (${Math.round(applied.maxX)}, ${Math.round(applied.maxY)})`;
+    const target = replayHash(id, { ...filter, bbox: applied }, { back: `match/${id}/heatmaps` });
     if (navTimer) clearTimeout(navTimer);
     navTimer = setTimeout(() => {
       navTimer = null;
@@ -537,12 +539,16 @@
     </div>
   {/if}
 
-  <HeatmapLayer {map} {pack} {grid} {onRegion} {layer} {gridLayer} />
+  <HeatmapLayer {map} {pack} {grid} {onRegion} {layer} {gridLayer} kind={kind} />
 
   {#if grid}
     <p class="heat-hint muted">
-      Click the map to open the replay events for that region (the clicked
-      square, padded to the splat’s reach).
+      {#if heatRegionTakesBBox(kind)}
+        Click the map to open the replay events for that region (the clicked
+        square, padded to the splat’s reach).
+      {:else}
+        {kind} has no event rows behind it — clicking the map opens nothing.
+      {/if}
     </p>
   {:else if !loading}
     <p class="heat-empty muted" role="status">

@@ -50,6 +50,11 @@
   let grid = $state(mkGrid());
   let layer = $state(0);
   let gridLayer = $state(0);
+  // Drill surface: the kind Heatmaps passes its region gate with, and the
+  // regions the component emits (the driver clicks the canvas and reads
+  // what came back).
+  let kind = $state('kills');
+  const regions = [];
 
   // Driver controls. __setGrid(null) is the pre-Generate state; __newGrid
   // swaps in a fresh raster object the way Regenerate does after another
@@ -62,6 +67,11 @@
   globalThis.__setGrid = (g) => (grid = g);
   globalThis.__newGrid = () => (grid = mkGrid());
   globalThis.__singlePack = singlePack;
+  globalThis.__setKind = (k) => (kind = k);
+  globalThis.__regions = regions;
+  function onRegion(bbox, value) {
+    regions.push({ bbox, value });
+  }
 </script>
 
-<HeatmapLayer map="de_test" {pack} {grid} {layer} {gridLayer} />
+<HeatmapLayer map="de_test" {pack} {grid} {layer} {gridLayer} {kind} {onRegion} />
