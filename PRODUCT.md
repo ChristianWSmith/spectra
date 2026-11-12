@@ -96,6 +96,12 @@ differentiators:
   everything at any cost: wasted work must always be cheap to abandon
   (a bail-out), so eager loading never becomes a resource obsession, and
   loading flags are transient — they never persist or restore.
+- **Every error indication is dismissible:** an error may gate an
+  action, but the user must always be able to clear it in place — close
+  it, acknowledge it, or make it go away by retrying — never be left
+  stuck with a message whose only escape is navigating elsewhere or
+  restarting the app. Errors stay honest about what happened and what
+  to do next, and they are transient like every other UI flag.
 
 ### Preferences
 
