@@ -220,7 +220,9 @@ func (g *heatmapRaster) convolve() {
 // grid renders the raster as the wire HeatmapGrid (kind and Samples are the
 // caller's: presence counts the points it actually accumulated, events
 // report the pre-raster sample count). It is the terminal operation: the
-// first call convolves the deltas into cells.
+// first call convolves the deltas into cells. Pad carries this raster's
+// kernel reach to the client — the region drill's expansion (HeatmapGrid.Pad
+// in analyticservice.go).
 func (g *heatmapRaster) grid(kind string, samples int) HeatmapGrid {
 	if !g.rendered {
 		g.convolve()
@@ -228,7 +230,7 @@ func (g *heatmapRaster) grid(kind string, samples int) HeatmapGrid {
 	return HeatmapGrid{
 		Kind: kind, W: heatmapGridSide, H: heatmapGridSide,
 		MinX: g.minX, MinY: g.minY, MaxX: g.maxX, MaxY: g.maxY,
-		Max: maxCell(g.cells), Samples: samples, Cells: g.cells,
+		Max: maxCell(g.cells), Samples: samples, Pad: heatmapPad, Cells: g.cells,
 	}
 }
 
@@ -298,7 +300,7 @@ func combineSignedHeatmaps(kills, deaths HeatmapGrid) HeatmapGrid {
 	kOK, dOK := heatmapHasSignal(kills), heatmapHasSignal(deaths)
 	if !kOK && !dOK {
 		return HeatmapGrid{Kind: "kd", W: heatmapGridSide, H: heatmapGridSide,
-			Cells: make([]float64, heatmapGridSide*heatmapGridSide)}
+			Pad: heatmapPad, Cells: make([]float64, heatmapGridSide*heatmapGridSide)}
 	}
 	minX, minY := math.Inf(1), math.Inf(1)
 	maxX, maxY := math.Inf(-1), math.Inf(-1)
@@ -338,7 +340,7 @@ func combineSignedHeatmaps(kills, deaths HeatmapGrid) HeatmapGrid {
 	}
 	return HeatmapGrid{Kind: "kd", W: heatmapGridSide, H: heatmapGridSide,
 		MinX: minX, MinY: minY, MaxX: maxX, MaxY: maxY,
-		Max: maxAbsCell(cells), Samples: samples, Cells: cells}
+		Max: maxAbsCell(cells), Samples: samples, Pad: heatmapPad, Cells: cells}
 }
 
 // heatmapHasSignal reports whether a raster carries data (the empty

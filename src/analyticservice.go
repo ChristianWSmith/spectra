@@ -132,16 +132,26 @@ func (f HeatmapFilter) zInBand(z float64, hasZ bool) bool {
 // (world units → grid cells; streamed from the sidecar, never fully loaded
 // client-side).
 type HeatmapGrid struct {
-	Kind    string    `json:"kind"` // presence|kills|deaths|damage|<util>_<thrown|det>|kd (kd: the signed combine, GetHeatmapKD)
-	W       int       `json:"w"`
-	H       int       `json:"h"`
-	MinX    float64   `json:"minX"`
-	MinY    float64   `json:"minY"`
-	MaxX    float64   `json:"maxX"`
-	MaxY    float64   `json:"maxY"`
-	Max     float64   `json:"max"`
-	Samples int       `json:"samples"`
-	Cells   []float64 `json:"cells"` // row-major w*h, time-weighted (seconds) or counts
+	Kind    string  `json:"kind"` // presence|kills|deaths|damage|<util>_<thrown|det>|kd (kd: the signed combine, GetHeatmapKD)
+	W       int     `json:"w"`
+	H       int     `json:"h"`
+	MinX    float64 `json:"minX"`
+	MinY    float64 `json:"minY"`
+	MaxX    float64 `json:"maxX"`
+	MaxY    float64 `json:"maxY"`
+	Max     float64 `json:"max"`
+	Samples int     `json:"samples"`
+	// Pad is the world-unit reach of the splat kernel the raster was
+	// rendered with (= heatmapPad in heatmap.go — the 3σ reach every
+	// extent is padded by). The wire carries it so the region drill can
+	// expand the CLICKED CELL by it: a cell's value is the
+	// Gaussian-smeared sum of everything within pad, so the events whose
+	// splat can reach the cell live in cell ± pad — the raw ~30×36u cell
+	// edges hold almost no event endpoints (the drill that handed those
+	// edges over queried a region nothing had painted). Every grid carries
+	// it, empty rasters included (one contract, no zero special case).
+	Pad   float64   `json:"pad"`
+	Cells []float64 `json:"cells"` // row-major w*h, time-weighted (seconds) or counts
 }
 
 // heatmapGridSide/heatmapPad and the raster arithmetic live in heatmap.go
@@ -664,7 +674,7 @@ func (s *AnalyticsService) heatmapPresence(matchID int64, f HeatmapFilter, round
 	}
 	if math.IsInf(minX, 1) {
 		return HeatmapGrid{Kind: "presence", W: heatmapGridSide, H: heatmapGridSide,
-			Cells: make([]float64, heatmapGridSide*heatmapGridSide)}, nil
+			Pad: heatmapPad, Cells: make([]float64, heatmapGridSide*heatmapGridSide)}, nil
 	}
 	g := newHeatmapRaster(minX, minY, maxX, maxY)
 	samples := 0
@@ -765,7 +775,7 @@ func (s *AnalyticsService) heatmapEvents(matchID int64, kind string, f HeatmapFi
 	}
 	if len(samples) == 0 {
 		return HeatmapGrid{Kind: kind, W: heatmapGridSide, H: heatmapGridSide,
-			Cells: make([]float64, heatmapGridSide*heatmapGridSide)}, nil
+			Pad: heatmapPad, Cells: make([]float64, heatmapGridSide*heatmapGridSide)}, nil
 	}
 	minX, minY := math.Inf(1), math.Inf(1)
 	maxX, maxY := math.Inf(-1), math.Inf(-1)

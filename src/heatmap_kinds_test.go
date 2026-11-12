@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"math"
 	"path/filepath"
 	"strconv"
@@ -801,5 +802,69 @@ func TestHeatmapPresenceBandFilter(t *testing.T) {
 	if empty.Samples != 0 || empty.Max != 0 || len(empty.Cells) != heatmapGridSide*heatmapGridSide {
 		t.Errorf("presence in [500,600) = %d samples / max %v / %d cells, want an empty raster",
 			empty.Samples, empty.Max, len(empty.Cells))
+	}
+}
+
+// --- Wire contract: the region drill's pad ----------------------------------
+//
+// The displayed cell value is the Gaussian-smeared splat (σ = 150u,
+// windowed to zero at the 3σ reach = heatmapPad) of everything within the
+// kernel's reach, while the drill hands the CLICKED CELL's edges to the
+// feed — so the wire must carry the kernel reach for the view to expand
+// the cell by (Heatmaps.svelte onRegion: cell ± pad = the events whose
+// splat can reach the cell). The kd combine rebuilds the struct in
+// combineSignedHeatmaps and every empty raster takes an early-return
+// literal, so each construction path is pinned here: drop the field on
+// any one of them and that kind's drill silently reverts to the raw
+// ~30×36u cell (the owner's guaranteed-empty "No events match these
+// filters." arrival).
+func TestHeatmapGridCarriesKernelPad(t *testing.T) {
+	// The pad IS the kernel reach — not an independent magic number.
+	if heatmapPad != heatmapKernelReach || heatmapKernelReach != heatmapKernelSigmas*heatmapSigmaWorld {
+		t.Fatalf("pad %v / reach %v / %vσ·%vσ — pad must be the 3σ kernel reach",
+			heatmapPad, heatmapKernelReach, heatmapKernelSigmas, heatmapSigmaWorld)
+	}
+	st, id := seedHeatmapMatch(t, twoKills())
+	as := &AnalyticsService{st: st}
+	none := HeatmapFilter{RoundFrom: -1, RoundTo: -1}
+
+	kills, err := as.GetHeatmap(id, "kills", none)
+	if err != nil {
+		t.Fatalf("GetHeatmap(kills): %v", err)
+	}
+	if kills.Pad != heatmapPad {
+		t.Errorf("kills pad = %v, want %v (the kernel reach)", kills.Pad, heatmapPad)
+	}
+	// The kd combine path: heatmapEvents' grids are resampled into a NEW
+	// HeatmapGrid literal — the field must be carried across.
+	kd, err := as.GetHeatmapKD(id, none)
+	if err != nil {
+		t.Fatalf("GetHeatmapKD: %v", err)
+	}
+	if kd.Pad != heatmapPad {
+		t.Errorf("kd pad = %v, want %v (the combine must carry the kernel reach)", kd.Pad, heatmapPad)
+	}
+	// The empty-raster early return keeps the same contract.
+	empty, err := as.GetHeatmap(id, "decoy_thrown", none)
+	if err != nil {
+		t.Fatalf("GetHeatmap(decoy_thrown): %v", err)
+	}
+	if empty.Samples != 0 || empty.Pad != heatmapPad {
+		t.Errorf("empty grid = %d samples / pad %v, want 0 samples and pad %v",
+			empty.Samples, empty.Pad, heatmapPad)
+	}
+	// The JSON key the frontend reads (grid.pad) must survive the wire.
+	raw, err := json.Marshal(kills)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wire map[string]any
+	if err := json.Unmarshal(raw, &wire); err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := wire["pad"]; !ok {
+		t.Errorf("HeatmapGrid JSON has no pad key: %s", raw)
+	} else if v != float64(heatmapPad) {
+		t.Errorf("wire pad = %v, want %v", v, heatmapPad)
 	}
 }

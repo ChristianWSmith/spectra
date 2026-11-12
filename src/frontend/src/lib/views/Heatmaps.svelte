@@ -333,6 +333,17 @@
   // triggers the replay's feed reveal on entry (lib/replay/landmarks.js
   // shouldRevealFeed), which picks the mirrored keys up through the same
   // serialization.
+  // THE BBOX IS THE CELL EXPANDED BY grid.pad, never the raw cell edges:
+  // the displayed cell value is the Gaussian-smeared splat (σ = 150u,
+  // windowed to zero at the 3σ reach = pad) of everything within the
+  // kernel's reach, so cell ± pad is exactly the region whose events can
+  // have painted this cell — the raw ~30×36u cell holds almost no event
+  // endpoints, and querying it alone is what produced the guaranteed-
+  // empty "No events match these filters." arrival (the nearest kill in
+  // the owner's repro sat 238u away). The pad rides the wire from Go
+  // (HeatmapGrid.Pad — Go owns the kernel width; the store stays a dumb
+  // rectangle predicate), and regionNote states the APPLIED (padded)
+  // rect, because that is what was actually queried.
   function onRegion(bbox) {
     const carries = heatRegionTakesBBox(kind);
     // The heatmap's settings mirrored into the arrival filter (cats, the
@@ -345,16 +356,28 @@
     // filter's `side` key; the `team` (identity) key never rides this
     // selector — identity is not a heatmap setting.
     const filter = heatRegionFilter(kind, { player, side: team, roundFrom, roundTo });
+    // Cell ± pad = the events whose splat can reach the clicked cell
+    // (the kernel is windowed to zero AT pad, so a sample a touch beyond
+    // the expanded edge contributes nothing — at most one cell of index
+    // quantization at the zero-weight taper edge). A grid without a pad
+    // (none exist today) expands by 0 rather than inventing a reach.
+    const pad = grid && Number.isFinite(grid.pad) ? grid.pad : 0;
+    const applied = {
+      minX: bbox.minX - pad,
+      minY: bbox.minY - pad,
+      maxX: bbox.maxX + pad,
+      maxY: bbox.maxY + pad,
+    };
     if (carries) {
       regionChip = 'filtered by region';
-      regionNote = `bbox (${Math.round(bbox.minX)}, ${Math.round(bbox.minY)}) → (${Math.round(bbox.maxX)}, ${Math.round(bbox.maxY)})`;
+      regionNote = `bbox (${Math.round(applied.minX)}, ${Math.round(applied.minY)}) → (${Math.round(applied.maxX)}, ${Math.round(applied.maxY)})`;
     } else {
       regionChip = 'region not applied';
       regionNote = `${kind} has no event rows behind it — replay opens without a bbox`;
     }
     const target = replayHash(
       id,
-      carries ? { ...filter, bbox } : filter,
+      carries ? { ...filter, bbox: applied } : filter,
       { back: `match/${id}/heatmaps` },
     );
     if (navTimer) clearTimeout(navTimer);
@@ -514,7 +537,8 @@
 
   {#if grid}
     <p class="heat-hint muted">
-      Click the map to open the replay events for that region (the clicked square).
+      Click the map to open the replay events for that region (the clicked
+      square, padded to the splat’s reach).
     </p>
   {:else if !loading}
     <p class="heat-empty muted" role="status">
