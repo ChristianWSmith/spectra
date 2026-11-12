@@ -50,6 +50,12 @@ const (
 	EventJobProgress    = "spectra:job-progress"
 	EventJobDone        = "spectra:job-done"
 	EventLibraryChanged = "spectra:library-changed"
+	// EventScanProgress is one import-dir scan's progress (scan.go). It is
+	// deliberately NOT spectra:job-progress: that payload keys a jobId into
+	// the frontend's job store (services.js jobProgress map) and a scan is
+	// not a job — it has no jobId and never writes a jobs row (the same
+	// rule as mappackservice.go's spectra:asset-progress).
+	EventScanProgress = "spectra:scan-progress"
 )
 
 // progressMinInterval throttles byte-progress updates to at most one per

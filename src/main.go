@@ -174,8 +174,14 @@ func main() {
 
 	// Watched-folder scanner (Library's not-yet-imported demos): shares
 	// the store's match index and keeps its own hash cache for the life
-	// of the process.
-	sc := library.NewScanner(library.ScannerOptions{Store: st})
+	// of the process. Its progress rides spectra:scan-progress — NOT a job
+	// event, and it never writes a jobs row (see library.EventScanProgress).
+	sc := library.NewScanner(library.ScannerOptions{
+		Store: st,
+		Emit: func(name string, payload any) {
+			app.Event.Emit(name, payload)
+		},
+	})
 
 	app.RegisterService(application.NewService(&LibraryService{st: st, imp: imp, sc: sc, kvs: kvs, app: app}))
 	app.RegisterService(application.NewService(&MatchService{st: st, imp: imp}))
