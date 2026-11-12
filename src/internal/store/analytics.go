@@ -45,6 +45,8 @@ const (
 
 	roundClassCols = `round, label, confidence, rule_version, explanation`
 
+	roundSideClassCols = `round, side, class, why`
+
 	playerRoundCols = `round, steam_id, name, kills, assists, deaths, traded, survived,
 		kast, dmg, util_dmg, money_start, equip, spent, rule_version`
 
@@ -305,6 +307,34 @@ func (s *Store) ReplaceTradeOpps(matchID int64, opps, missed map[string]int) err
 		})
 }
 
+// ReplaceRoundSideClasses swaps a match's round_side_classes rows in one
+// transaction (canonical replaceMatchRows — delete-then-insert, so a
+// recompute under new thresholds leaves no stale class behind). Rows are
+// the per-(round, side) eco classes; a match with no counted rounds
+// ends up with no rows at all.
+//
+// CONTRACT: the classes arrive pre-derived from analytics.Compute — the
+// ONE writer, which applies cfg.EcoFullBuy / cfg.EcoForce at analyze
+// time (see AGENTS.md "Analysis-rule derived values": every rules-derived
+// value is stored at analyze time; read-time thresholding is forbidden).
+// This writer applies no rule of its own. Like the neighboring Replace*
+// functions, each table's transaction commits INDEPENDENTLY: a failed
+// pass may have already committed this table, or failed here while
+// earlier replaces committed — no cross-table rollback is attempted; the
+// pass never stamps (compute.go's RULE STAMP note), so the match stays
+// behind and the next run rewrites every table.
+func (s *Store) ReplaceRoundSideClasses(matchID int64, rows []models.RoundSideClass) error {
+	const op = "store: replace round side classes"
+	return s.replaceMatchRows(op, "round_side_classes", "match_id, "+roundSideClassCols, matchID, len(rows),
+		func(stmt *sql.Stmt, i int) error {
+			r := rows[i]
+			if _, err := stmt.Exec(matchID, r.Round, scrub(r.Side), scrub(r.Class), scrub(r.Why)); err != nil {
+				return fmt.Errorf("%s: %w", op, err)
+			}
+			return nil
+		})
+}
+
 // GetRoundClasses returns a match's stored classifications by round ASC.
 func (s *Store) GetRoundClasses(matchID int64) ([]models.RoundClassification, error) {
 	rows, err := s.db.Query(
@@ -458,13 +488,22 @@ func (s *Store) GetUtility(matchID int64) ([]models.UtilityEvent, error) {
 // rounds excluded — the counted-rounds predicate `warmup = 0 AND pregame = 0`
 // below is the SQL twin of analytics.CountedRounds; keep the two in sync:
 // index-based rules such as the MR12 pistol stride shift if a knife round
-// slips into either side): rounds ⋈ round_economy ⋈ round_classifications with
-// loss-bonus reconstruction applied. Loss bonus is INFERRED (reconstructed
+// slips into either side): rounds ⋈ round_economy ⋈ round_classifications ⋈
+// round_side_classes with loss-bonus reconstruction applied.
+//
+// READ CONTRACT (AGENTS.md "Analysis-rule derived values"): the per-side
+// ClassCT/ClassT/ClassWhy* fields are the STORED round_side_classes rows,
+// fetched verbatim — a match with no stored rows (never analyzed, or
+// analyzed before this table existed) reads ""/"" for both sides, which
+// the UI renders as its honest "unknown" chip; this function never
+// re-classifies (the retired read-time fill lived in analytics.EconomyRows
+// and survives only as the reference oracle in internal/analytics' eco
+// equivalence test). PistolRound derives from the STORED round label
+// (round_classifications.label = "pistol") — the same label the round
+// chips render, so the two can never disagree; it is a stored fact, not a
+// rule re-derivation. Loss bonus is INFERRED (reconstructed
 // from round winners under the CS2 loss-count rules — see
-// applyLossBonuses); InferredCT/ InferredT are set accordingly; per-side
-// ClassCT/ClassT/ClassWhy* stay empty for the caller to fill via
-// analytics.buyClass (unexported: package-internal only, and the store
-// cannot import analytics anyway — documented cycle deviation). SpentCT/
+// applyLossBonuses); InferredCT/ InferredT are set accordingly. SpentCT/
 // SpentT carry round_economy.spent — the side's real per-round buy spend
 // (sum of the players' cumulative money-spent deltas between freeze-time
 // ends, see extract.agg.freezeEnd). FreePistolCT/FreePistolT carry
@@ -482,11 +521,15 @@ func (s *Store) GetEconomy(matchID int64) ([]models.EconomyRow, error) {
 			COALESCE(ct.spent, 0), COALESCE(t.spent, 0),
 			COALESCE(ct.free_pistol_value, 0), COALESCE(t.free_pistol_value, 0),
 			COALESCE(rc.label, ''), COALESCE(rc.explanation, ''),
-			COALESCE(rc.rule_version, 0)
+			COALESCE(rc.rule_version, 0),
+			COALESCE(rsct.class, ''), COALESCE(rsct.why, ''),
+			COALESCE(rst.class, ''), COALESCE(rst.why, '')
 		 FROM rounds r
 		 LEFT JOIN round_economy ct ON ct.match_id = r.match_id AND ct.round = r.number AND ct.side = 'ct'
 		 LEFT JOIN round_economy t ON t.match_id = r.match_id AND t.round = r.number AND t.side = 't'
 		 LEFT JOIN round_classifications rc ON rc.match_id = r.match_id AND rc.round = r.number
+		 LEFT JOIN round_side_classes rsct ON rsct.match_id = r.match_id AND rsct.round = r.number AND rsct.side = 'ct'
+		 LEFT JOIN round_side_classes rst ON rst.match_id = r.match_id AND rst.round = r.number AND rst.side = 't'
 		 WHERE r.match_id = ? AND r.warmup = 0 AND r.pregame = 0
 		 ORDER BY r.number ASC`, matchID,
 	)
@@ -499,9 +542,11 @@ func (s *Store) GetEconomy(matchID int64) ([]models.EconomyRow, error) {
 		var r models.EconomyRow
 		if err := rows.Scan(&r.Round, &r.Winner, &r.Warmup, &r.EquipCT, &r.EquipT,
 			&r.MoneyCT, &r.MoneyT, &r.SpentCT, &r.SpentT, &r.FreePistolCT, &r.FreePistolT,
-			&r.Label, &r.Explanation, &r.RuleVersion); err != nil {
+			&r.Label, &r.Explanation, &r.RuleVersion,
+			&r.ClassCT, &r.ClassWhyCT, &r.ClassT, &r.ClassWhyT); err != nil {
 			return nil, fmt.Errorf("store: get economy: %w", err)
 		}
+		r.PistolRound = r.Label == "pistol"
 		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {

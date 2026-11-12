@@ -102,9 +102,26 @@ func TestClassifyPistolAndLabels(t *testing.T) {
 		{Number: 2, Winner: "ct", EquipCT: 5200, EquipT: 1400},
 		{Number: 3, Winner: "t", EquipCT: 2500, EquipT: 4200},
 	}
-	got := Classify(nil, rounds, testCfg)
+	got, gotSides := Classify(nil, rounds, testCfg)
 	if len(got) != 3 {
 		t.Fatalf("len = %d, want 3 (warmup excluded)", len(got))
+	}
+	// The SAME pass derives the per-side rows (round_side_classes): two
+	// per counted round, round ASC, ct before t.
+	if len(gotSides) != 6 {
+		t.Errorf("side rows = %d, want 6 (2 × 3 counted rounds)", len(gotSides))
+	}
+	for i, r := range got {
+		if gotSides[2*i].Round != r.Round || gotSides[2*i].Side != "ct" ||
+			gotSides[2*i+1].Round != r.Round || gotSides[2*i+1].Side != "t" {
+			t.Errorf("side rows %d/%d = %+v/%+v, want round %d ct then t",
+				2*i, 2*i+1, gotSides[2*i], gotSides[2*i+1], r.Round)
+		}
+		if gotSides[2*i].Class == "" || gotSides[2*i].Why == "" ||
+			gotSides[2*i+1].Class == "" || gotSides[2*i+1].Why == "" {
+			t.Errorf("round %d side rows = %+v/%+v, class and why are REQUIRED",
+				r.Round, gotSides[2*i], gotSides[2*i+1])
+		}
 	}
 	if got[0].Round != 1 || got[0].Label != "pistol" {
 		t.Errorf("round 1 = %+v, want pistol", got[0])
@@ -134,7 +151,7 @@ func TestClassifyPistolStride12(t *testing.T) {
 	for i := 0; i < 13; i++ {
 		rounds = append(rounds, RoundInfo{Number: i + 1, Winner: "ct", EquipCT: 5000, EquipT: 4500})
 	}
-	got := Classify(nil, rounds, testCfg)
+	got, _ := Classify(nil, rounds, testCfg)
 	if got[0].Label != "pistol" || got[12].Label != "pistol" {
 		t.Errorf("pistols at idx 0/12: got %q / %q", got[0].Label, got[12].Label)
 	}
@@ -629,25 +646,9 @@ func TestUtilKindUsesModelsUtilitySet(t *testing.T) {
 // pinned in internal/store/analytics_test.go: TestGetCombatStatsFromStoredRows
 // and TestGetCombatStatsSQLDecisions.
 
-func TestEconomyRowsFillsClasses(t *testing.T) {
-	rows := []models.EconomyRow{
-		{Round: 1, Winner: "ct", EquipCT: 800, EquipT: 800, WonCT: true, WonT: false, Label: "pistol"},
-		{Round: 2, Winner: "ct", EquipCT: 5200, EquipT: 1400, WonCT: true, WonT: false},
-		{Round: 3, Winner: "ct", EquipCT: 3000, EquipT: 1500, WonCT: true, WonT: false},
-	}
-	got := EconomyRows(rows, testCfg)
-	if !got[0].PistolRound || got[0].ClassCT != "pistol" || got[0].ClassT != "pistol" {
-		t.Errorf("round 1 = %+v, want pistol classes", got[0])
-	}
-	if got[1].ClassCT != "full" || got[1].ClassT != "eco" {
-		t.Errorf("round 2 classes = %q/%q, want full/eco", got[1].ClassCT, got[1].ClassT)
-	}
-	// T lost round 2 after a full-ish buy? T had 1400 in r2 (eco, not full
-	// after pistol) → r3 T 1500 is eco, not save.
-	if got[2].ClassT != "eco" {
-		t.Errorf("round 3 T class = %q, want eco", got[2].ClassT)
-	}
-	if got[1].ClassWhyCT == "" || got[1].ClassWhyT == "" {
-		t.Error("per-side explanations are REQUIRED")
-	}
-}
+// Per-side buy classes (pistol/full/force/eco/save + the REQUIRED why
+// strings) are pinned in eco_equivalence_test.go: the STORED
+// round_side_classes rows against the retired read-time fill
+// (analytics.EconomyRows) kept there as a reference oracle — the read
+// path itself was retired 2026-11-12 (AGENTS.md "Analysis-rule derived
+// values"), so this package no longer fills economy rows at read time.

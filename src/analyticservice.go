@@ -276,13 +276,21 @@ func (s *AnalyticsService) GetConfig() (models.AnalysisConfig, error) {
 // authoritative. Does NOT recompute — call RecomputeAnalysis per match
 // (or RecomputeAll for the behind set) explicitly.
 //
-// tradeOppDistance deliberately STAYS in the compare (owner ruling
-// 2026-11-12 — AGENTS.md "Analysis-rule derived values"): distance
-// changes the STORED match_trade_opps counts (analytics.Compute applies
-// it at analyze time, not at read time), so a distance save must bump →
-// every analyzed match goes behind → RecomputeAll rewrites the counts
-// under the new radius. A value that only affected a read could be
-// excluded from this compare; distance is no longer one of those.
+// Why every one of the four STAYS in the compare (owner ruling
+// 2026-11-12 — AGENTS.md "Analysis-rule derived values"): all four are
+// analysis-rule inputs whose outputs are STORED at analyze time, so a
+// save must bump → every analyzed match goes behind → RecomputeAll
+// rewrites the stored rows under the new rules. tradeOppDistance changes
+// the match_trade_opps counts (analytics.Compute applies it at analyze
+// time, not at read time); ecoFullBuy/ecoForce change the stored
+// round_classifications labels AND the per-side round_side_classes the
+// Economy tab and the reports read; tradeWindowS changes
+// player_stats.trade_kills. A value that only affected a read could be
+// excluded from this compare; none of the four is one of those — before
+// this ruling the eco pair still had a read-time consumer
+// (analytics.EconomyRows), which is exactly why the Economy tab could
+// show new thresholds while the round chips showed old labels until a
+// re-run.
 //
 // This is the single validation gate for analysis rules (the import
 // pipeline's analyze path and RecomputeAnalysis read the already-validated
@@ -629,18 +637,17 @@ func (s *AnalyticsService) emitEvent(name string, payload any) {
 }
 
 // GetEconomy returns per-round economy + buy classes (warmup rounds
-// excluded). Loss bonus is reconstructed (inferred — UI badge); per-side
-// classes are completed here via the shared analytics rules.
+// excluded). EVERYTHING rule-shaped in the result is a STORED read: the
+// per-side classes come from round_side_classes and the round label from
+// round_classifications (both written by analytics.Compute at analyze
+// time under the run's config), so the rows are uniformly stale until a
+// rules change bumps rule_version → behind → RecomputeAll — never a mix
+// of new-threshold side chips against old-threshold round chips (AGENTS.md
+// "Analysis-rule derived values"). Loss bonus stays a read-time
+// reconstruction (hardcoded CS2 loss-count rules — not a config rule) and
+// the inferred flags label it.
 func (s *AnalyticsService) GetEconomy(matchID int64) ([]models.EconomyRow, error) {
-	rows, err := s.st.GetEconomy(matchID)
-	if err != nil {
-		return nil, err
-	}
-	cfg, err := s.st.GetConfig()
-	if err != nil {
-		return nil, err
-	}
-	return analytics.EconomyRows(rows, analytics.ConfigFrom(cfg, 0)), nil
+	return s.st.GetEconomy(matchID)
 }
 
 // GetRoundClasses returns stored classifications.

@@ -31,6 +31,7 @@ func TestColumnListConstsMatchSchema(t *testing.T) {
 		{"eventCols", "events", eventCols},
 		{"analysisConfigCols", "analysis_config", analysisConfigCols},
 		{"roundClassCols", "round_classifications", roundClassCols},
+		{"roundSideClassCols", "round_side_classes", roundSideClassCols},
 		{"playerRoundCols", "player_round_stats", playerRoundCols},
 		{"clutchCols", "clutches", clutchCols},
 		{"engagementCols", "engagements", engagementCols},
@@ -108,6 +109,11 @@ func TestReplaceMatchRowsPlaceholderCount(t *testing.T) {
 		{"round_classifications", func() error {
 			return s.ReplaceRoundClassifications(id, []models.RoundClassification{
 				{Round: 1, Label: "full", Confidence: 1, RuleVersion: 1, Explanation: "x"},
+			})
+		}},
+		{"round_side_classes", func() error {
+			return s.ReplaceRoundSideClasses(id, []models.RoundSideClass{
+				{Round: 1, Side: "ct", Class: "full", Why: "x"},
 			})
 		}},
 		{"player_round_stats", func() error {

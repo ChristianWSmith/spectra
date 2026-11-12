@@ -170,14 +170,47 @@ func TestRenderMatchSnapshot(t *testing.T) {
 		"player0", "player9",
 		"## Scoreboard", "## Rounds", "## Economy", "## Clutches", "## Utility",
 		"| 1 | ct | ctWin |", // rounds table row
-		// Enriched buy classes render next to the stored round class
-		// (Class column stays the round_classifications label).
-		"| Class | CT buy | T buy |", "|  | full | full |",
+		"| Class | CT buy | T buy |",
+		// Unanalyzed fixture = the pre-change-DB statement: no stored
+		// round label and no stored side classes render EMPTY — the
+		// retired read-time fill would have shown "full/full" here
+		// (behavior change, 2026-11-12: report rows are stored reads).
+		"|  |  |  |",
 		"vtest-1",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("match.md missing %q\n---\n%s", want, out)
 		}
+	}
+	// After the analyze pass (what the import pipeline runs) the SAME
+	// report carries the stored label next to the stored side classes:
+	// round 1 is the index-0 pistol round, rounds 2-5 are full buys on
+	// both sides (CT 24000 / T 21000 vs 20000/10000).
+	cfg, err := st.GetConfig()
+	if err != nil {
+		t.Fatalf("GetConfig: %v", err)
+	}
+	if err := analytics.Compute(st, id, analytics.ConfigFrom(cfg, 0)); err != nil {
+		t.Fatalf("Compute: %v", err)
+	}
+	analyzedData, err := BuildMatchData(st, id)
+	if err != nil {
+		t.Fatalf("BuildMatchData (post-analyze): %v", err)
+	}
+	analyzed, err := Render(tpl.ID, tpl.Body, analyzedData)
+	if err != nil {
+		t.Fatalf("Render (post-analyze): %v", err)
+	}
+	for _, want := range []string{
+		"| pistol | pistol | pistol |", // round 1: stored label + stored side classes
+		"| full | full | full |",       // rounds 2-5
+	} {
+		if !strings.Contains(analyzed, want) {
+			t.Errorf("analyzed match.md missing %q\n---\n%s", want, analyzed)
+		}
+	}
+	if strings.Contains(analyzed, "|  |  |  |") {
+		t.Error("analyzed match.md still renders empty buy-class cells (stored rows not read)")
 	}
 	// Stability: re-rendering the same data is byte-identical.
 	again, err := Render(tpl.ID, tpl.Body, data)
@@ -282,11 +315,16 @@ func TestRenderPluginTemplate(t *testing.T) {
 	}
 }
 
-// TestMatchReportEconomyBuyClasses pins the approved surface-alignment
-// change: BuildMatchData runs the read-time enrichment (analytics.
-// EconomyRows under the stored analysis_config) exactly like
-// AnalyticsService.GetEconomy, so the report's economy rows carry the
-// per-side buy classes instead of empty ClassCT/ClassT.
+// TestMatchReportEconomyBuyClasses pins the stored-read contract of the
+// match report's economy rows (behavior change, 2026-11-12 — all-stored
+// eco): BuildMatchData does NO read-time enrichment anymore, it reads the
+// STORED per-side classes (round_side_classes, written by the analyze
+// pass) exactly like AnalyticsService.GetEconomy, so report and Economy
+// tab agree by construction. The fixture therefore runs the analyze pass
+// itself (it used to stay unanalyzed and leaned on the retired read-time
+// fill, which is what made round 1 read "full" — under the stored rules a
+// counted round at index 0 is a PISTOL round, the same label the round
+// chips render).
 func TestMatchReportEconomyBuyClasses(t *testing.T) {
 	st, err := store.Open(":memory:")
 	if err != nil {
@@ -294,6 +332,16 @@ func TestMatchReportEconomyBuyClasses(t *testing.T) {
 	}
 	defer func() { _ = st.Close() }()
 	id := seedMatch(t, st)
+
+	// Analyze the fixture under the seeded rules (what the import
+	// pipeline's analyze stage does) so the side classes are stored.
+	cfg, err := st.GetConfig()
+	if err != nil {
+		t.Fatalf("GetConfig: %v", err)
+	}
+	if err := analytics.Compute(st, id, analytics.ConfigFrom(cfg, 0)); err != nil {
+		t.Fatalf("Compute: %v", err)
+	}
 
 	data, err := BuildMatchData(st, id)
 	if err != nil {
@@ -303,8 +351,13 @@ func TestMatchReportEconomyBuyClasses(t *testing.T) {
 		t.Fatalf("economy rows = %d, want 5", len(data.Economy))
 	}
 	// Fixture buys: CT 24000 / T 21000, thresholds 20000 (full) / 10000
-	// (force) — both sides are full buys, with the why string populated.
-	for _, r := range data.Economy {
+	// (force) — round 1 is the index-0 PISTOL round, rounds 2-5 are full
+	// buys on both sides, with the why string populated.
+	if r := data.Economy[0]; !r.PistolRound || r.ClassCT != "pistol" || r.ClassT != "pistol" {
+		t.Errorf("round 1 = pistol=%v %q/%q, want pistol/pistol (stored round label + side rows)",
+			r.PistolRound, r.ClassCT, r.ClassT)
+	}
+	for _, r := range data.Economy[1:] {
 		if r.ClassCT != "full" || r.ClassT != "full" {
 			t.Errorf("round %d classes = %q/%q, want full/full", r.Round, r.ClassCT, r.ClassT)
 		}
@@ -312,27 +365,22 @@ func TestMatchReportEconomyBuyClasses(t *testing.T) {
 			t.Errorf("round %d why strings empty: %q/%q", r.Round, r.ClassWhyCT, r.ClassWhyT)
 		}
 	}
-	if data.Economy[0].ClassWhyCT != "equip 24000 ≥ full-buy threshold 20000 → full buy" {
-		t.Errorf("ClassWhyCT = %q", data.Economy[0].ClassWhyCT)
+	if data.Economy[1].ClassWhyCT != "equip 24000 ≥ full-buy threshold 20000 → full buy" {
+		t.Errorf("ClassWhyCT = %q", data.Economy[1].ClassWhyCT)
 	}
-	// The same rows the Economy tab serves (one canonical enrichment).
+	// The same rows the Economy tab serves — both are stored reads now, so
+	// the comparison is direct (no enrichment step on either side).
 	raw, err := st.GetEconomy(id)
 	if err != nil {
 		t.Fatalf("GetEconomy: %v", err)
 	}
-	cfg, err := st.GetConfig()
-	if err != nil {
-		t.Fatalf("GetConfig: %v", err)
+	if len(raw) != len(data.Economy) {
+		t.Fatalf("Economy tab rows = %d, report rows = %d", len(raw), len(data.Economy))
 	}
-	want := analytics.EconomyRows(raw, analytics.ConfigFrom(cfg, 0))
-	if len(want) != len(data.Economy) {
-		t.Fatalf("Economy tab rows = %d, report rows = %d", len(want), len(data.Economy))
-	}
-	for i := range want {
-		if want[i].ClassCT != data.Economy[i].ClassCT || want[i].ClassT != data.Economy[i].ClassT {
-			t.Errorf("round %d report classes %q/%q != Economy tab %q/%q",
-				want[i].Round, data.Economy[i].ClassCT, data.Economy[i].ClassT,
-				want[i].ClassCT, want[i].ClassT)
+	for i := range raw {
+		if raw[i] != data.Economy[i] {
+			t.Errorf("round %d report row %+v != Economy tab row %+v (one stored read)",
+				raw[i].Round, data.Economy[i], raw[i])
 		}
 	}
 }

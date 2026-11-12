@@ -2,8 +2,6 @@ package analytics
 
 import (
 	"fmt"
-
-	"github.com/ChristianWSmith/spectra/internal/models"
 )
 
 // buyClass classifies one side's buy for one round against the configured
@@ -20,6 +18,11 @@ import (
 // false + prevEquip 0 for the first round of a half/match → eco, not save).
 // Anti-eco and bonus classes are deferred: v1 keeps the rule
 // set minimal and documented.
+//
+// This is THE one implementation of the eco rule: it runs only inside the
+// analyze-time pass (Classify → store.ReplaceRoundSideClasses /
+// ReplaceRoundClassifications) and has NO read-time caller — the retired
+// read-time fill (EconomyRows) survives as a test-only reference oracle.
 func buyClass(equip int, prevWon bool, prevEquip int, cfg Config, pistol bool) (label, why string) {
 	if pistol {
 		return "pistol", fmt.Sprintf("half-start pistol round (equip %d)", equip)
@@ -36,13 +39,19 @@ func buyClass(equip int, prevWon bool, prevEquip int, cfg Config, pistol bool) (
 	return "eco", fmt.Sprintf("equip %d < force threshold %d → eco", equip, cfg.EcoForce)
 }
 
-// Classify derives one stored classification per non-warmup round.
+// Classify derives one stored classification per non-warmup round, plus
+// the per-side classes (round_side_classes) of the SAME pass — both are
+// analysis-rule outputs written by Compute under the run's config, never
+// re-derived at read time (AGENTS.md "Analysis-rule derived values").
 // Pistol rounds are detected by position in the non-warmup sequence
 // (MR12: index % 12 == 0). Every other round's label is the buy class of
 // the LOWER-equip side (ties → CT) — an "eco"/"force" round is defined by
 // the weaker side; both sides' reasoning lands in the explanation.
 // Confidence is always 1.0 in v1 (deterministic rules).
-func Classify(eco []RoundEconomyView, rounds []RoundInfo, cfg Config) []Classification {
+//
+// The returned side rows are ordered round ASC, then ct before t, for a
+// deterministic insert order.
+func Classify(eco []RoundEconomyView, rounds []RoundInfo, cfg Config) ([]Classification, []RoundSideClass) {
 	// Equip fallback: RoundInfo carries the sampled team equip; fall back
 	// to the round_economy view when the round row has none.
 	equipCT := map[int]int{}
@@ -58,6 +67,7 @@ func Classify(eco []RoundEconomyView, rounds []RoundInfo, cfg Config) []Classifi
 
 	real := CountedRounds(rounds)
 	out := make([]Classification, 0, len(real))
+	sides := make([]RoundSideClass, 0, 2*len(real))
 	for idx, r := range real {
 		ctEquip, tEquip := r.EquipCT, r.EquipT
 		if ctEquip == 0 {
@@ -98,30 +108,10 @@ func Classify(eco []RoundEconomyView, rounds []RoundInfo, cfg Config) []Classifi
 			RuleVersion: cfg.RuleVersion,
 			Explanation: explanation,
 		})
+		sides = append(sides,
+			RoundSideClass{Round: r.Number, Side: "ct", Class: ct, Why: ctWhy},
+			RoundSideClass{Round: r.Number, Side: "t", Class: t, Why: tWhy},
+		)
 	}
-	return out
-}
-
-// EconomyRows completes the per-side buy classes on a store.GetEconomy
-// result (the store cannot import analytics — documented cycle deviation —
-// so ClassCT/ClassT/ClassWhy* and PistolRound are filled here). Loss
-// bonus / inferred flags are already reconstructed by the store.
-func EconomyRows(rows []models.EconomyRow, cfg Config) []models.EconomyRow {
-	out := make([]models.EconomyRow, len(rows))
-	copy(out, rows)
-	for i := range out {
-		r := &out[i]
-		pistol := r.Label == "pistol"
-		r.PistolRound = pistol
-		var prevWonCT, prevWonT bool
-		var prevEquipCT, prevEquipT int
-		if i > 0 {
-			p := out[i-1]
-			prevWonCT, prevWonT = p.WonCT, p.WonT
-			prevEquipCT, prevEquipT = p.EquipCT, p.EquipT
-		}
-		r.ClassCT, r.ClassWhyCT, r.ClassT, r.ClassWhyT =
-			buyClassAllSides(r.EquipCT, r.EquipT, prevWonCT, prevWonT, prevEquipCT, prevEquipT, cfg, pistol)
-	}
-	return out
+	return out, sides
 }
