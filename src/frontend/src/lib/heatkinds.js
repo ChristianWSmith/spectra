@@ -71,8 +71,8 @@ export function heatKindLabel(kind) {
 // (internal/store/queries.go) matches their victim positions either way.
 // kd spans both views but keeps the kills projection (owner ruling).
 // presence has NO event counterpart at all (a sampled position grid): no
-// category, and heatRegionTakesBBox keeps its bbox out of the arrival as
-// well.
+// category — and heatRegionTakesBBox takes it out of the replay entirely
+// (a bbox-less kind does not drill AT ALL, see that predicate).
 export function heatRegionCats(kind) {
   if (kind.endsWith('_thrown')) return ['grenade_throws'];
   if (kind.endsWith('_det')) return ['grenade_dets'];
@@ -83,13 +83,17 @@ export function heatRegionCats(kind) {
 }
 
 // heatRegionTakesBBox — whether this kind's region drill may carry its
-// cell bbox at all. Every kind whose raster is splatted FROM event rows
-// does; presence is the exception: its raster is a sampled position grid
-// with no events behind it, so a bbox would guarantee an empty arrival —
-// a presence region click arrives at the replay WITHOUT one (the
-// mirrored settings below still ride along). Unknown ids take the bbox
-// (the selector only offers HEAT_KINDS; a bbox is the region drill's
-// whole point for anything with events behind it).
+// cell bbox at all, i.e. whether the kind may DRILL. Every kind whose
+// raster is splatted FROM event rows does; presence is the exception: its
+// raster is a sampled position grid with no events behind it, so no bbox
+// could be satisfied — and instead of arriving bbox-less (which opened
+// the replay as if a region had been selected — it had not), a bbox-less
+// kind does not navigate at all: HeatmapLayer drops the click AND hides
+// its cursor/title affordance, Heatmaps.onRegion returns before the nav —
+// both keyed off THIS predicate, never a kind-name check, so any future
+// bbox-less kind inherits both gates. Unknown ids take the bbox (the
+// selector only offers HEAT_KINDS; a bbox is the region drill's whole
+// point for anything with events behind it).
 export function heatRegionTakesBBox(kind) {
   return kind !== 'presence';
 }

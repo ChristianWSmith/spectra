@@ -77,6 +77,14 @@ globalThis.ResizeObserver = class {
   unobserve() {}
   disconnect() {}
 };
+// jsdom has no layout: getBoundingClientRect is all zeros, which the
+// click path refuses (rect.width <= 0). A fixed 1024×1024 rect at the
+// origin keeps the click mapping deterministic: client (x, y) → image
+// space (x, y), and W = H = 1024 (the harness pack's radar size), so
+// toWorld reads (x − 50, 50 − y) for its pos_x/pos_y/scale.
+dom.window.HTMLCanvasElement.prototype.getBoundingClientRect = function () {
+  return { left: 0, top: 0, right: 1024, bottom: 1024, width: 1024, height: 1024, x: 0, y: 0 };
+};
 try {
   Object.defineProperty(dom.window.Element.prototype, 'clientWidth', {
     configurable: true,
@@ -171,6 +179,17 @@ writeFileSync(join(dir, 'heatramp.js'), readFileSync('src/lib/heatramp.js', 'utf
 writeFileSync(
   join(dir, 'components', 'mapxform.js'),
   readFileSync('src/lib/components/mapxform.js', 'utf8'),
+);
+// heatkinds.js is HeatmapLayer's drill predicate (heatRegionTakesBBox);
+// it pulls replay/landmarks.js (sideVal) → rounds.js — the same
+// verbatim-copy chain the other drivers use for landmarks.
+mkdirSync(join(dir, 'replay'), { recursive: true });
+for (const rel of ['heatkinds.js', 'rounds.js']) {
+  writeFileSync(join(dir, rel), readFileSync(join('src/lib', rel), 'utf8'));
+}
+writeFileSync(
+  join(dir, 'replay', 'landmarks.js'),
+  readFileSync('src/lib/replay/landmarks.js', 'utf8'),
 );
 compileTo(
   readFileSync('src/lib/components/HeatmapLayer.svelte', 'utf8'),
@@ -294,6 +313,211 @@ check(
     /onclick=\{\(\) => \(error = ''\)\}/.test(errBlock) &&
     /codicon codicon-close/.test(errBlock),
   errBlock.replace(/\s+/g, ' ').slice(0, 160),
+);
+
+// --- Region clicks -----------------------------------------------------------
+//
+// The click path: client px → image space (the stubbed 1024×1024 rect) →
+// toWorld (the pack transform: pos_x −50, pos_y 50, scale 1) → the grid
+// cell containing the point. One click at client (10, 10) lands at world
+// (−40, 40): col = floor((−40 − (−50)) / 25) = 0, row = floor((40 −
+// (−50)) / 25) = 3 over the 4×4 fixture spanning [−50, 50]² — the raw cell
+// [−50, −25] × [25, 50]. HeatmapLayer emits the CELL; the view pads it by
+// grid.pad on the way into the drill (source-pinned in J below).
+const clickCanvas = (x, y) => {
+  const canvas = document.querySelector('canvas.heat-canvas');
+  canvas.dispatchEvent(
+    new dom.window.MouseEvent('click', { clientX: x, clientY: y, bubbles: true }),
+  );
+};
+
+console.log('I. region click: emits the cell; a bbox-less kind drills nowhere');
+reset();
+globalThis.__set(0, 0);
+globalThis.__setGrid(null);
+await sleep();
+globalThis.__regions.length = 0;
+clickCanvas(10, 10);
+check(
+  'no region before any Generate (no grid → no drill)',
+  globalThis.__regions.length === 0,
+  String(globalThis.__regions.length),
+);
+globalThis.__newGrid();
+await sleep();
+
+globalThis.__setKind('kills');
+await sleep();
+globalThis.__regions.length = 0;
+clickCanvas(10, 10);
+const hit = globalThis.__regions[0];
+check(
+  'kills: the click emits exactly one region',
+  globalThis.__regions.length === 1,
+  String(globalThis.__regions.length),
+);
+check(
+  'kills: the raw cell under the cursor (the view pads it — J)',
+  hit &&
+    hit.bbox.minX === -50 && hit.bbox.maxX === -25 &&
+    hit.bbox.minY === 25 && hit.bbox.maxY === 50,
+  JSON.stringify(hit && hit.bbox),
+);
+const canvasEl = document.querySelector('canvas.heat-canvas');
+check('kills: drill affordance present (title)', /Click a region/.test(canvasEl.title), canvasEl.title);
+check(
+  'kills: no inline cursor override (the stylesheet crosshair stands)',
+  canvasEl.style.cursor === '',
+  canvasEl.style.cursor,
+);
+
+// heatRegionTakesBBox(kind) === false → the click must not navigate.
+// HeatmapLayer hides the affordance AND drops the callback; Heatmaps'
+// onRegion carries the same gate (the nav backstop) — pinned in J.
+globalThis.__regions.length = 0;
+globalThis.__setKind('presence');
+await sleep();
+clickCanvas(10, 10);
+check(
+  'presence: the click emits NO region (no bbox → no drill)',
+  globalThis.__regions.length === 0,
+  String(globalThis.__regions.length),
+);
+check('presence: title states the drill is off', /No region drill/.test(canvasEl.title), canvasEl.title);
+check(
+  'presence: cursor affordance removed (inline default)',
+  canvasEl.style.cursor === 'default',
+  canvasEl.style.cursor,
+);
+globalThis.__setKind('kills');
+await sleep();
+
+console.log('J. Heatmaps.onRegion source pins: pad expansion + the no-bbox no-nav gate');
+// No driver mounts the Heatmaps VIEW (mounting it would drag in the whole
+// service surface), so its region composition is source-pinned here — the
+// same precedent as section H.
+const onRegionSrc = /function onRegion\([^)]*\)\s*\{([\s\S]*?)\n  \}/.exec(heatSrc)?.[1] || '';
+check('onRegion body located in Heatmaps.svelte', onRegionSrc.length > 200, String(onRegionSrc.length));
+check(
+  'the gate reads heatRegionTakesBBox(src.kind) — generic, never a kind name',
+  /heatRegionTakesBBox\(src\.kind\)/.test(onRegionSrc),
+);
+check(
+  'bbox-less kinds return BEFORE replayHash (no navigation)',
+  onRegionSrc.includes('!carries') &&
+    onRegionSrc.indexOf('return;') >= 0 &&
+    onRegionSrc.indexOf('return;') < onRegionSrc.indexOf('replayHash('),
+  `return@${onRegionSrc.indexOf('return;')} replayHash@${onRegionSrc.indexOf('replayHash(')}`,
+);
+check(
+  'the drill bbox expands the cell by grid.pad on all four sides',
+  /bbox\.minX - pad/.test(onRegionSrc) &&
+    /bbox\.minY - pad/.test(onRegionSrc) &&
+    /bbox\.maxX \+ pad/.test(onRegionSrc) &&
+    /bbox\.maxY \+ pad/.test(onRegionSrc),
+);
+check(
+  'regionNote states the APPLIED (padded) rect — never the raw cell',
+  /regionNote = `bbox \(\$\{Math\.round\(applied\.minX\)\}/.test(onRegionSrc) &&
+    !/regionNote = `bbox \(\$\{Math\.round\(bbox\.minX\)\}/.test(onRegionSrc),
+);
+
+console.log('K. stale raster: the arrival reads the generating settings (source pin)');
+// Owner ruling — "query what's displayed": while the dirty banner is up
+// (live controls changed, raster not regenerated), the drill must still
+// open the population the RASTER on screen depicts. The generating
+// settings are captured with the fetch (generate → gen), stored with the
+// raster in the viewstate record, and read through the `src` derived —
+// no harness mounts the view, so these are source pins (same precedent
+// as H/J).
+const norm = heatSrc.replace(/\s+/g, ' ');
+check(
+  'src falls back to the live controls ONLY when no generating settings exist',
+  /const src = \$derived\(gen \|\| \{ kind, player, team, roundFrom, roundTo \}\)/.test(norm),
+);
+check(
+  'onRegion composes every arrival key from src (never the live controls)',
+  /heatRegionFilter\(src\.kind, \{ player: src\.player, side: src\.team, roundFrom: src\.roundFrom, roundTo: src\.roundTo,? \}\)/.test(
+    onRegionSrc.replace(/\s+/g, ' '),
+  ) && !/heatRegionFilter\(kind,/.test(onRegionSrc),
+);
+check(
+  'the generating settings are captured with the fetch and stored with the raster',
+  /const genSel = \{ kind, player, team, roundFrom, roundTo \}/.test(norm) &&
+    norm.includes('gen = genSel;') &&
+    norm.includes('gen = null;') &&
+    /remember\(k, \{[^}]*gen \}\)/.test(norm) &&
+    /gen: null,/.test(norm),
+);
+
+console.log('L. signed kd cell: the emitted value carries the sign');
+// A kd grid is SIGNED (heatmap.go combineSignedHeatmaps: kills − deaths);
+// the harness paints whatever fixture it is handed, so the driver swaps in
+// a signed raster with the value under test at cell (col 0, row 3) — the
+// cell the standard click lands in. The value is the POST-SMEAR cell the
+// overlay draws (row 0 at grid.minY — the same indexing the click math
+// uses), so what the view reads is what the user sees.
+const mkSigned = (v) => ({
+  kind: 'kd',
+  w: 4,
+  h: 4,
+  max: 5,
+  samples: 100,
+  pad: 450,
+  minX: -50,
+  maxX: 50,
+  minY: -50,
+  maxY: 50,
+  cells: Array.from({ length: 16 }, (_, i) => (i === 12 ? v : 0)),
+});
+globalThis.__setKind('kd');
+await sleep();
+for (const v of [5, -5, 0]) {
+  globalThis.__setGrid(mkSigned(v));
+  await sleep();
+  globalThis.__regions.length = 0;
+  clickCanvas(10, 10);
+  const r = globalThis.__regions[0];
+  const label =
+    v > 0 ? 'positive (killers stood here)' : v < 0 ? 'negative (victims fell here)' : 'zero (no signal)';
+  check(`kd cell value ${label} is emitted as-is`, r && r.value === v, String(r && r.value));
+  check(
+    `kd bbox stays the raw cell for ${label} (the view pads it)`,
+    r &&
+      r.bbox.minX === -50 && r.bbox.maxX === -25 &&
+      r.bbox.minY === 25 && r.bbox.maxY === 50,
+    JSON.stringify(r && r.bbox),
+  );
+}
+// A click OUTSIDE the raster's own cells: no cell exists there, so the
+// value is MISSING (undefined) — never a fabricated 0 (the kd sign rule
+// reads missing as "no signal" → either endpoint).
+globalThis.__setGrid(mkSigned(5));
+await sleep();
+globalThis.__regions.length = 0;
+clickCanvas(500, 500);
+const out = globalThis.__regions[0];
+check(
+  'outside the raster the value is missing (undefined), not 0',
+  out && 'value' in out && out.value === undefined,
+  JSON.stringify(out),
+);
+
+console.log('M. kd sign → cats mapping (source pin over Heatmaps.onRegion)');
+// The override lives at the click site (Heatmaps.onRegion) — heatRegionCats
+// keeps its pinned ['kills'] default for kd (heatkinds.test.js untouched).
+const onRegionNorm = onRegionSrc.replace(/\s+/g, ' ');
+check('onRegion receives the cell value', /function onRegion\(\w+, value\)/.test(heatSrc));
+check(
+  'kd maps value > 0 → cats kills, value < 0 → cats deaths',
+  /src\.kind === 'kd'/.test(onRegionNorm) &&
+    /v > 0 \? \['kills'\] : \['deaths'\]/.test(onRegionNorm),
+);
+check(
+  'a 0 / missing cell → cats kills+deaths (either endpoint, killRoleFor → any)',
+  /Number\.isFinite\(v\) && v !== 0 \? \(v > 0 \? \['kills'\] : \['deaths'\]\) : \['kills', 'deaths'\]/.test(
+    onRegionNorm,
+  ),
 );
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

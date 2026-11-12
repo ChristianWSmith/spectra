@@ -132,16 +132,26 @@ func (f HeatmapFilter) zInBand(z float64, hasZ bool) bool {
 // (world units → grid cells; streamed from the sidecar, never fully loaded
 // client-side).
 type HeatmapGrid struct {
-	Kind    string    `json:"kind"` // presence|kills|deaths|damage|<util>_<thrown|det>|kd (kd: the signed combine, GetHeatmapKD)
-	W       int       `json:"w"`
-	H       int       `json:"h"`
-	MinX    float64   `json:"minX"`
-	MinY    float64   `json:"minY"`
-	MaxX    float64   `json:"maxX"`
-	MaxY    float64   `json:"maxY"`
-	Max     float64   `json:"max"`
-	Samples int       `json:"samples"`
-	Cells   []float64 `json:"cells"` // row-major w*h, time-weighted (seconds) or counts
+	Kind    string  `json:"kind"` // presence|kills|deaths|damage|<util>_<thrown|det>|kd (kd: the signed combine, GetHeatmapKD)
+	W       int     `json:"w"`
+	H       int     `json:"h"`
+	MinX    float64 `json:"minX"`
+	MinY    float64 `json:"minY"`
+	MaxX    float64 `json:"maxX"`
+	MaxY    float64 `json:"maxY"`
+	Max     float64 `json:"max"`
+	Samples int     `json:"samples"`
+	// Pad is the world-unit reach of the splat kernel the raster was
+	// rendered with (= heatmapPad in heatmap.go — the 3σ reach every
+	// extent is padded by). The wire carries it so the region drill can
+	// expand the CLICKED CELL by it: a cell's value is the
+	// Gaussian-smeared sum of everything within pad, so the events whose
+	// splat can reach the cell live in cell ± pad — the raw ~30×36u cell
+	// edges hold almost no event endpoints (the drill that handed those
+	// edges over queried a region nothing had painted). Every grid carries
+	// it, empty rasters included (one contract, no zero special case).
+	Pad   float64   `json:"pad"`
+	Cells []float64 `json:"cells"` // row-major w*h, time-weighted (seconds) or counts
 }
 
 // heatmapGridSide/heatmapPad and the raster arithmetic live in heatmap.go
@@ -695,8 +705,10 @@ func (s *AnalyticsService) GetCombatStats(matchID int64) ([]models.CombatStat, e
 // pos_*) or the blast position (grenade pos_*) of ONE utility kind
 // (models.UtilityWeaponKind — Molotov ≡ Incendiary). Filters are
 // applied server-side:
-// presence by round range via the tick↔round spans + steam/team via the
-// slot table; events by round, attacker (kills, and both grenade flavors —
+// presence by round range via the tick↔round spans — with every frame
+// inside a round's freeze window skipped (inFreezeTime — freeze time is
+// not live play, so the spawns never weigh the raster) — + steam/team via
+// the slot table; events by round, attacker (kills, and both grenade flavors —
 // the thrower) or victim (deaths/damage) and their side in that round
 // (exact freeze-end samples —
 // a round without them resolves no side, so a team filter drops it) and
@@ -727,7 +739,10 @@ func (s *AnalyticsService) GetHeatmap(matchID int64, kind string, f HeatmapFilte
 	}
 	roundSpans := make([]models.Round, len(roundInfos))
 	for i, r := range roundInfos {
-		roundSpans[i] = models.Round{Number: r.Number, StartTick: r.StartTick, EndTick: r.EndTick}
+		// FreezeEndTick rides along so presence can skip each round's
+		// freeze window (the stored round clock — inFreezeTime below).
+		roundSpans[i] = models.Round{Number: r.Number, StartTick: r.StartTick,
+			EndTick: r.EndTick, FreezeEndTick: r.FreezeEndTick}
 	}
 	// Team filters resolve sides from the extractor's exact per-round
 	// freeze-end samples: a round (or player) without a stored sample
@@ -749,8 +764,50 @@ func (s *AnalyticsService) GetHeatmap(matchID int64, kind string, f HeatmapFilte
 	return s.heatmapEvents(matchID, kind, f, sideAt)
 }
 
+// inFreezeTime is the Go twin of THE freeze-phase predicate,
+// frontend/src/lib/rounds.js freezeWindowAt / inFreezeTime (that file is
+// the canonical home of the rule — this side exists only because the
+// presence raster runs server-side): true while tick sits inside a
+// round's FREEZE time — round start ≤ tick < freezeEndTick, half-open,
+// so the freeze-end frame itself is live play — and only when the row
+// carries a USABLE window (freezeEnd > start: the warmup row ships 0 and
+// a corrupt row may ship fe ≤ start; neither may ever skip a frame it
+// does not actually know about, so both read as "no freeze"). The window
+// is the stored round clock, rounds.start_tick → rounds.freeze_end_tick
+// (read through store.GetRoundInfos; CS2.md "Competitive round clock" —
+// a round splits into FREEZE TIME then ROUND TIME, no assumed duration).
+// Rounds are chronological and non-overlapping, so the row whose start
+// reaches tick (last one wins, tie → first — the frontend's scan) is the
+// round roundAt resolved for the same tick.
+func inFreezeTime(rounds []models.Round, tick int) bool {
+	best := -1
+	for i, r := range rounds {
+		if r.StartTick > tick {
+			continue
+		}
+		if best < 0 || r.StartTick > rounds[best].StartTick {
+			best = i
+		}
+	}
+	if best < 0 {
+		return false
+	}
+	r := rounds[best]
+	return r.FreezeEndTick > r.StartTick && tick < r.FreezeEndTick
+}
+
 // heatmapPresence streams the whole sidecar stream and accumulates
 // time-weighted dwell per cell.
+//
+// FREEZE TIME IS NOT COUNTED: every frame whose tick falls inside a
+// round's freeze window is skipped in BOTH passes (inFreezeTime — the
+// stored start→freezeEnd interval), so the buy phase can no longer weigh
+// the T/CT spawns unfairly. The skip is on the frame (dwell is per
+// player-frame), before either the extent or the add pass sees it.
+// Round range (inRoundRange) and warmup/knife rows are handled exactly as
+// before: the round control governs which rounds count (an open range
+// still includes knife/warmup rounds — the same population the event
+// kinds select), and only freeze time is dropped now.
 //
 // The layer z band (f.zInBand) is applied in BOTH passes: the extent
 // pass (so the raster's bounds — the raster is bounds-derived, see
@@ -820,6 +877,12 @@ func (s *AnalyticsService) heatmapPresence(matchID int64, f HeatmapFilter, round
 		if !ok || !inRoundRange(rn) {
 			continue
 		}
+		// Freeze frames are not live play: they set no extent (inFreezeTime
+		// — the same skip the add pass applies, or the bounds would
+		// describe samples the dwell pass drops).
+		if inFreezeTime(rounds, fr.Tick) {
+			continue
+		}
 		for _, p := range fr.Players {
 			sid := strconv.FormatUint(p.SteamID, 10)
 			if !keep(sid, rn) || !f.zInBand(p.Z, true) {
@@ -831,13 +894,19 @@ func (s *AnalyticsService) heatmapPresence(matchID int64, f HeatmapFilter, round
 	}
 	if math.IsInf(minX, 1) {
 		return HeatmapGrid{Kind: "presence", W: heatmapGridSide, H: heatmapGridSide,
-			Cells: make([]float64, heatmapGridSide*heatmapGridSide)}, nil
+			Pad: heatmapPad, Cells: make([]float64, heatmapGridSide*heatmapGridSide)}, nil
 	}
 	g := newHeatmapRaster(minX, minY, maxX, maxY)
 	samples := 0
 	for _, fr := range frames {
 		rn, ok := roundAt(fr.Tick)
 		if !ok || !inRoundRange(rn) {
+			continue
+		}
+		// Freeze frames deposit no dwell (the buy phase is not live play —
+		// inFreezeTime): skipping the whole frame keeps the per-player dt
+		// honest for the frames that DO count.
+		if inFreezeTime(rounds, fr.Tick) {
 			continue
 		}
 		for _, p := range fr.Players {
@@ -932,7 +1001,7 @@ func (s *AnalyticsService) heatmapEvents(matchID int64, kind string, f HeatmapFi
 	}
 	if len(samples) == 0 {
 		return HeatmapGrid{Kind: kind, W: heatmapGridSide, H: heatmapGridSide,
-			Cells: make([]float64, heatmapGridSide*heatmapGridSide)}, nil
+			Pad: heatmapPad, Cells: make([]float64, heatmapGridSide*heatmapGridSide)}, nil
 	}
 	minX, minY := math.Inf(1), math.Inf(1)
 	maxX, maxY := math.Inf(-1), math.Inf(-1)

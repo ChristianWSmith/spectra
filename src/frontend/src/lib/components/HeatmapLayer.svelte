@@ -1,6 +1,7 @@
 <script>
   import { makeTransform } from './mapxform.js';
   import { renderHeatField } from '../heatramp.js';
+  import { heatRegionTakesBBox } from '../heatkinds.js';
 
   // Canvas heatmap layer: map-pack radar as base, HeatmapGrid raster as
   // overlay. All world→image math goes through mapxform's transform — the
@@ -29,7 +30,25 @@
   // cells never appear as blocks. cells[] is row-major (r*w+c) with row
   // 0 at grid.minY (the BOTTOM of image space — renderHeatField flips
   // rows into image space itself).
-  let { map = '', pack = null, grid = null, layer = 0, gridLayer = 0, onRegion = () => {} } = $props();
+  // `kind` is the heatmap kind the view's region gate reads (Heatmaps
+  // passes its own, so the cursor affordance and the click gate can never
+  // disagree with the view's nav gate). It defaults to '' = drillable
+  // (heatRegionTakesBBox: only presence refuses today), which keeps any
+  // driver that passes no kind on the old behavior.
+  let {
+    map = '',
+    pack = null,
+    grid = null,
+    layer = 0,
+    gridLayer = 0,
+    kind = '',
+    onRegion = () => {},
+  } = $props();
+
+  // The ONE drill affordance predicate (lib/heatkinds.js — generic: any
+  // future bbox-less kind is covered here and in Heatmaps.onRegion, never
+  // a kind-name special case in either place).
+  const drillable = $derived(heatRegionTakesBBox(kind));
 
   let canvas = $state(null);
   let radar = $state(null); // decoded radar image | null
@@ -252,7 +271,20 @@
   // cell size) → bbox drill into the replay landmark feed. Client pixels
   // map through the displayed size to IMAGE space (the backing store is
   // device pixels, so c.width is the wrong scale here).
+  // No bbox for this kind (heatRegionTakesBBox — the view's nav gate is
+  // the same predicate) → the click does nothing: a click that navigated
+  // nowhere useful would open the replay with no region selected. The
+  // cell readout under the cursor stays available (the title still names
+  // what the map shows) — only the DRILL affordance goes away.
+  // The cell's DISPLAYED value rides the callback (second argument): the
+  // post-smear figure the overlay paints — cells are row-major with row 0
+  // at grid.minY, the convention this cell math and heatramp's
+  // sampleField share — so the view can read the SIGN of a signed kd
+  // cell (> 0 killers stood here, < 0 victims fell here —
+  // heatmap.go combineSignedHeatmaps, kills − deaths). A cell outside
+  // the grid reads undefined (no signal — never a fabricated 0).
   function onClick(e) {
+    if (!drillable) return;
     const c = canvas;
     // baseTf (the LIVE floor's mapping — same space as the image on
     // screen and the W/H below): a click drills into the world region the
@@ -268,12 +300,16 @@
     const world = baseTf.toWorld(ix, iy);
     const ci = Math.floor((world.x - grid.minX) / cw);
     const ri = Math.floor((world.y - grid.minY) / ch);
-    onRegion({
-      minX: grid.minX + ci * cw,
-      minY: grid.minY + ri * ch,
-      maxX: grid.minX + (ci + 1) * cw,
-      maxY: grid.minY + (ri + 1) * ch,
-    });
+    const inGrid = ci >= 0 && ci < grid.w && ri >= 0 && ri < grid.h;
+    onRegion(
+      {
+        minX: grid.minX + ci * cw,
+        minY: grid.minY + ri * ch,
+        maxX: grid.minX + (ci + 1) * cw,
+        maxY: grid.minY + (ri + 1) * ch,
+      },
+      inGrid ? grid.cells[ri * grid.w + ci] : undefined,
+    );
   }
 </script>
 
@@ -283,7 +319,10 @@
     class="heat-canvas"
     width={bw}
     height={bh}
-    title="Click a region to open the replay events for that position"
+    title={drillable
+      ? 'Click a region to open the replay events for that position'
+      : 'No region drill for this heatmap kind — its raster has no event rows behind it'}
+    style={drillable ? undefined : 'cursor: default'}
     onclick={onClick}
     aria-label="Heatmap over the map grid"
   ></canvas>
