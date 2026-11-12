@@ -105,9 +105,14 @@ test('every category is well-formed and every typed kind is claimed at least onc
         seen.add(k);
       }
     } else if (c.source === 'generic') {
-      assert.ok(c.name || c.nameFrom, c.id);
+      // Q3a: every generic category is FIXED-NAME (the nameFrom/gname
+      // picker left with game_events) — a category without a name would
+      // yield no feed job.
+      assert.ok(c.name, c.id);
     } else {
-      assert.equal(c.source, 'chat');
+      // Q3a: the chat path left with its category — an unknown source
+      // fails here rather than silently rendering as chat.
+      assert.ok(c.source === 'event' || c.source === 'generic', c.id);
     }
   }
   // All stored kinds land in a category — no recorded activity is
@@ -449,21 +454,23 @@ test('scrubberMarkerClass maps every drawable bucket (the markers contract)', ()
 test('typedKindsFor unions enabled categories; enabledSources splits paths', () => {
   assert.deepEqual(typedKindsFor(['kills', 'round_wins']), ['kill', 'round_end']);
   assert.deepEqual(typedKindsFor(['kills', 'damage']), ['kill', 'damage']);
-  assert.deepEqual(typedKindsFor(['chat']), []);
+  // A generic category claims no typed KIND (its read is name-scoped).
+  assert.deepEqual(typedKindsFor(['buys']), []);
   assert.deepEqual(typedKindsFor([]), []);
   assert.deepEqual(typedKindsFor(['kills', 'kills']), ['kill']);
 
-  // convars left the FE registry (the owner's ConVars-out ruling): a
-  // stale id degrades silently here exactly like a stale URL does —
-  // categoryById → null → dropped (the unknown-id-drop pin below).
-  const src = enabledSources(['kills', 'chat', 'team_changes', 'game_events']);
+  // convars (Q1) and chat/team_changes/game_events (Q3a) left the FE
+  // registry: a stale id degrades silently here exactly like a stale URL
+  // does — categoryById → null → dropped (the unknown-id-drop pin below).
+  const src = enabledSources(['kills', 'buys']);
   assert.equal(src.event, true);
-  assert.equal(src.chat, true);
-  assert.deepEqual(src.generic.map((c) => c.id), ['team_changes', 'game_events']);
+  assert.deepEqual(src.generic.map((c) => c.id), ['buys']);
+  // Q3a: the chat PATH went with the chat category.
+  assert.equal('chat' in src, false, 'enabledSources still reports a chat path');
   assert.deepEqual(enabledSources(['convars']).generic, []);
+  assert.deepEqual(enabledSources(['chat']).generic, []);
   const none = enabledSources([]);
   assert.equal(none.event, false);
-  assert.equal(none.chat, false);
   assert.deepEqual(none.generic, []);
 });
 
@@ -558,19 +565,18 @@ test('normalizeChat / normalizeGeneric tag rows with who+label', () => {
   // [ALL]/[T]/[CT] tag the surfaces render); normalize* never re-derives it
   assert.equal(c.channel, 'all');
 
-  // A surviving generic category (convars left the FE registry — the Go
-  // labeler still labels those rows, they are just not browsable): the
+  // The generic category that survived Q3a (buys → item_purchase): the
   // stamp comes from the FETCH's catId — generic sources are one
   // category per name, so there is no shared-claim question there.
   const g = normalizeGeneric(
-    { rowId: 12, name: 'player_team', tick: 8, round: 1, payloadJson: '{}', who: 'alice', label: 'alice → T' },
-    'team_changes',
+    { rowId: 12, name: 'item_purchase', tick: 8, round: 1, payloadJson: '{}', who: 'alice', label: 'alice bought AK-47' },
+    'buys',
   );
   assert.equal(g.key, 'g:12');
   assert.equal(g.source, 'generic');
-  assert.equal(g.category, 'team_changes');
+  assert.equal(g.category, 'buys');
   assert.equal(g.who, 'alice');
-  assert.equal(g.label, 'alice → T');
+  assert.equal(g.label, 'alice bought AK-47');
 });
 
 test('filter <-> query round-trip: defaults serialize to nothing', () => {
@@ -581,7 +587,7 @@ test('filter <-> query round-trip: defaults serialize to nothing', () => {
 
   const f = {
     ...defaultFilter(),
-    cats: ['kills', 'chat'],
+    cats: ['kills', 'connects'],
     roundFrom: 3,
     roundTo: 7,
     steamId: '76561198012345678',
@@ -590,11 +596,10 @@ test('filter <-> query round-trip: defaults serialize to nothing', () => {
     distMax: 50,
     headshotOnly: true,
     bbox: { minX: -1, minY: -2, maxX: 3, maxY: 4 },
-    gname: 'weapon_fire',
   };
   const q = serializeLandmarkFilter(f);
   assert.deepEqual(q, {
-    cat: 'kills,chat',
+    cat: 'kills,connects',
     roundFrom: '3',
     roundTo: '7',
     player: '76561198012345678',
@@ -603,11 +608,10 @@ test('filter <-> query round-trip: defaults serialize to nothing', () => {
     distMax: '50',
     hs: '1',
     bbox: '-1,-2,3,4',
-    gname: 'weapon_fire',
   });
   const back = parseLandmarkFilter(q);
   assert.ok(filtersEqual(f, back), JSON.stringify([q, back]));
-  assert.deepEqual(back.cats, ['kills', 'chat']);
+  assert.deepEqual(back.cats, ['kills', 'connects']);
   assert.equal(back.roundFrom, 3);
   assert.equal(back.roundTo, 7);
   assert.equal(back.steamId, '76561198012345678');
@@ -646,7 +650,7 @@ test('shouldRevealFeed: a fresh entry (no prior filter) reveals every non-defaul
     { cat: '' }, // explicitly NO categories — a real state, not the default
     { weapon: 'AWP' },
     { hs: '1' },
-    { gname: 'weapon_fire' },
+    { side: 'ct' },
     { distMin: '10' },
     { distMax: '50' },
   ];
@@ -788,7 +792,7 @@ test('parse edge cases: empty cat = none, junk falls back, no shared arrays', ()
   // Each parse gets fresh arrays (callers may mutate freely).
   const a = parseLandmarkFilter({});
   const b = parseLandmarkFilter({});
-  a.cats.push('chat');
+  a.cats.push('connects');
   assert.deepEqual(b.cats, ['round_starts']);
 });
 

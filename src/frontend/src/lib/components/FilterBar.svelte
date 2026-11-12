@@ -6,7 +6,8 @@
   // Props:
   //   filter   — {roundFrom, roundTo, steamId, side, team, weapon, distMin, distMax,
   //               headshotOnly, bbox:{minX,minY,maxX,maxY}}
-  //              (the typed/scope subset — cats/gname live on the parent).
+  //              (the typed/scope subset — cats live on the parent;
+  //              Q3a removed the gname picker).
   //              side/team are the heatmap-mirror keys ('' | 'ct' | 't' —
   //              landmarks.sideVal is the ONE spelling of the rule).
   //              The round and distance bounds are INCLUSIVE and PARTIAL:

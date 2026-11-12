@@ -20,7 +20,7 @@
 //                            event-navigation context rides the query
 //                            (parseLandmarkFilter in lib/replay/
 //                            landmarks.js): cat/roundFrom/roundTo/
-//                            player/weapon/distMin/distMax/hs/bbox/gname
+//                            player/weapon/distMin/distMax/hs/bbox
 //                            plus side (side AT the event's round) and
 //                            team (start-side identity) — the heatmap
 //                            mirror keys, both '' = unconstrained — and
@@ -52,8 +52,11 @@
 // with the equivalent scope (the Timeline tab, the Match Chat tab and the
 // Context tab no longer exist as tabs):
 //   #/match/:id/timeline           → #/replay/:id
-//   #/match/:id/chat               → #/replay/:id?cat=chat
-//   #/match/:id/context            → #/replay/:id?cat=chat,connects,team_changes
+//   #/match/:id/chat               → #/replay/:id   (Q3a: the chat feed
+//                                     is gone — a legacy chat link lands
+//                                     on the default event browser)
+//   #/match/:id/context            → #/replay/:id?cat=connects (the only
+//                                     survivor of chat,connects,team_changes)
 //
 // Prefix routes (builder/sql/profiles/explorer/reports/settings) match
 // with startsWith, so "#/settings/foo" is still Settings; every other
@@ -135,14 +138,18 @@ export function parseHash(hash) {
   // A query on the legacy URL wins over the mapped default.
   m = path.match(/^\/match\/(\d+)\/timeline$/);
   if (m) return withQuery({ name: 'replay', id: Number(m[1]) });
+  // Q3a: `chat` and `team_changes` are no longer filter categories, so
+  // these legacy tabs map to what still exists — /chat to the plain feed
+  // (its whole scope is gone) and /context to `connects` (the one
+  // category of its old trio that survived the gameplay-only ruling).
   m = path.match(/^\/match\/(\d+)\/chat$/);
-  if (m) return withQuery({ name: 'replay', id: Number(m[1]), query: { cat: 'chat', ...(query || {}) } });
+  if (m) return withQuery({ name: 'replay', id: Number(m[1]) });
   m = path.match(/^\/match\/(\d+)\/context$/);
   if (m)
     return withQuery({
       name: 'replay',
       id: Number(m[1]),
-      query: { cat: 'chat,connects,team_changes', ...(query || {}) },
+      query: { cat: 'connects', ...(query || {}) },
     });
 
   // Any match tab: #/match/:id/<tab-slug>. An unknown segment (or a

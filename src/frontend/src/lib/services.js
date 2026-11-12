@@ -270,10 +270,6 @@ export function deleteDemoFile(path) {
   return LibraryService.DeleteDemoFile(path);
 }
 
-export function getGenericHistogram(id) {
-  return LibraryService.GetGenericHistogram(id);
-}
-
 export function getWarnings(id) {
   return LibraryService.GetWarnings(id);
 }
@@ -567,8 +563,8 @@ export function getCareerTrend(steamId, metric) { return ProfileService.GetCaree
 
 // The landmark feed's filter state lives in the route query
 // (lib/replay/landmarks.js parseLandmarkFilter — {cats, roundFrom,
-// roundTo, steamId, weapon, distMin, distMax, headshotOnly, bbox,
-// gname}). Heatmap click →
+// roundTo, steamId, side, team, weapon, distMin, distMax, headshotOnly,
+// bbox}). Heatmap click →
 // nav(buildHash('/replay/'+id, serializeLandmarkFilter({bbox}))).
 
 // --- MetricsService (M5) -----------------------------------------------------

@@ -88,26 +88,27 @@ test('legacy raw-event routes resolve to the canonical Replay feed', () => {
     id: 42,
     query: { player: '76561198012345678' },
   });
-  // The chat URL → Replay with the chat category enabled.
+  // The chat URL → Replay with NO mapped category (Q3a cut the chat
+  // feed: a legacy chat link lands on the default event browser).
   assert.deepEqual(parseHash('#/match/42/chat'), {
     name: 'replay',
     id: 42,
-    query: { cat: 'chat' },
   });
-  // The context URL → Replay with chat, connects and team changes
-  // enabled (convars left the FE registry — the owner's ConVars-out
-  // ruling; a stale cat=convars degrades through parseLandmarkFilter's
-  // unknown-id drop).
+  // The context URL → Replay with `connects`, the only survivor of its
+  // old chat+connects+team_changes trio (the gameplay-only ruling; a
+  // stale cat=chat/team_changes degrades through parseLandmarkFilter's
+  // unknown-id drop, same as convars did for the owner's ConVars-out
+  // ruling).
   assert.deepEqual(parseHash('#/match/42/context'), {
     name: 'replay',
     id: 42,
-    query: { cat: 'chat,connects,team_changes' },
+    query: { cat: 'connects' },
   });
   // Real query params win over the mapped default.
-  assert.deepEqual(parseHash('#/match/42/chat?cat=chat,kills'), {
+  assert.deepEqual(parseHash('#/match/42/chat?cat=kills,connects'), {
     name: 'replay',
     id: 42,
-    query: { cat: 'chat,kills' },
+    query: { cat: 'kills,connects' },
   });
 });
 
@@ -280,7 +281,7 @@ test('buildHash renders path + query; "/" stays readable, empties drop', () => {
   // is the meaningful "no categories" state.
   assert.equal(buildHash('/replay/5', { cat: '', tick: null, sel: undefined, round: 3 }), '/replay/5?cat=&round=3');
   // Values still encode their own specials.
-  assert.equal(buildHash('/replay/5', { gname: 'a b&c' }), '/replay/5?gname=a%20b%26c');
+  assert.equal(buildHash('/replay/5', { bbox: 'a b&c' }), '/replay/5?bbox=a%20b%26c');
   // Round-trips through parseHash.
   const h = buildHash('/replay/5', { cat: 'kills,chat', back: 'match/5/combat' });
   assert.deepEqual(parseHash('#' + h), {

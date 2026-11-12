@@ -2077,23 +2077,14 @@ input[type='checkbox']:focus-visible {
   accent-color: var(--accent);
 }
 
-.lm-gname {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  font-size: 0.85em;
-  color: var(--muted);
-}
-
 .lm-hint {
   margin: 0;
   font-size: 0.8em;
 }
 
 /* Filter dropdown panel — everything the ONE Filters toggle governs:
-   the category multi-select, the game-events name picker, the scope bar
-   and the saved-preset row. Shown/hidden as a unit (Replay's
-   filtersOpen). */
+   the category multi-select, the scope bar and the saved-preset row.
+   Shown/hidden as a unit (Replay's filtersOpen). */
 .lm-filter-panel {
   border: 1px solid var(--border);
   border-radius: var(--radius);

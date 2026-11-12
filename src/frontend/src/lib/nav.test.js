@@ -421,11 +421,13 @@ test('expandReplayHash rewrites ?back= and drops the consumed ?tick= (keeps loop
 test('expandReplayHash canonicalizes a legacy match-chat hash to its replay form', () => {
   // The keep-alive captures the RAW location hash — a legacy
   // #/match/:id/chat entry parses as a replay route, so expanding it must
-  // mint the canonical #/replay/:id form (with its default scope) and
-  // stamp the fresh back origin, never echo the match path back.
+  // mint the canonical #/replay/:id form and stamp the fresh back
+  // origin, never echo the match path back. Q3a: the chat SCOPE is gone
+  // with the chat category (router.js maps the legacy tab to the plain
+  // feed), so only the back origin rides along.
   assert.equal(
     expandReplayHash('#/match/5/chat', 'match/5/economy'),
-    '/replay/5?cat=chat&back=match/5/economy',
+    '/replay/5?back=match/5/economy',
   );
 });
 

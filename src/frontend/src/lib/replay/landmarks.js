@@ -132,8 +132,11 @@ export const DRAW_KINDS = [
   'round_start',
 ];
 
-// CATEGORIES — the filterable landmark categories. `source` picks the
-// backend retrieval path (typed events / chat / generic events);
+// CATEGORIES — the filterable landmark categories. GAMEPLAY-ONLY since
+// Q3a: the chat / team-change / game-event filters left the surface (the
+// store keeps those rows; this registry stops offering them) and `buys`
+// is the one generic (fixed-name) category left. `source` picks the
+// backend retrieval path (typed events / generic events);
 // `kinds` (event source) or `name` (generic source) scopes the query;
 // `default` categories are the sparse initial selection; `countedOnly`
 // restricts the category to counted rounds (lib/rounds.js isCounted —
@@ -182,9 +185,13 @@ export const CATEGORIES = [
   { id: 'damage', label: 'Damage', short: 'dmg', source: 'event', kinds: ['damage'] },
   { id: 'blinds', label: 'Flashes & blinds', short: 'flash', source: 'event', kinds: ['blind'] },
   { id: 'connects', label: 'Joins & leaves', short: 'join/leave', source: 'event', kinds: ['player_connect', 'player_disconnect'] },
-  { id: 'chat', label: 'Chat', short: 'chat', source: 'chat' },
-  { id: 'team_changes', label: 'Team changes', short: 'team', source: 'generic', name: 'player_team' },
-  { id: 'game_events', label: 'Game events', short: 'game', source: 'generic', nameFrom: 'gname' },
+  // Q3a (gameplay-only ruling): `chat`, `team_changes` and `game_events`
+  // (the gname name-picker) are CUT from the filter surface — the store
+  // keeps their rows, only this filter stops offering them. `buys` is
+  // the one generic category that remains: a FIXED-NAME read (no picker,
+  // no histogram), one job in feed.genericSource per filter that enables
+  // it.
+  { id: 'buys', label: 'Buys', short: 'buy', source: 'generic', name: 'item_purchase' },
 ];
 
 // The sparse default: round starts only — every other category is
@@ -414,12 +421,13 @@ export function typedKindsFor(catIds) {
 }
 
 // enabledSources reports which retrieval paths the feed needs for a
-// category set (the backend keeps one path per source).
+// category set (the backend keeps one path per source). The path split
+// follows the registry: after Q3a every category is `event` (typed) or
+// `generic` (a fixed name) — the chat path left with its category.
 export function enabledSources(catIds) {
   const cats = catIds.map(categoryById).filter(Boolean);
   return {
     event: cats.some((c) => c.source === 'event'),
-    chat: cats.some((c) => c.source === 'chat'),
     generic: cats.filter((c) => c.source === 'generic'),
   };
 }
@@ -556,6 +564,13 @@ export function normalizeWorld(ev) {
 // normalizeChat converts one ChatRow into a landmark row. The round
 // clock ("R12 1:23" with the match-relative fallback) is a formatting
 // concern — lib/fmt.js chatClock — not part of the row.
+// KEPT (not dead): no FEED SOURCE produces chat rows since Q3a cut the
+// chat category, but the chat ROW SHAPE is still vocabulary — the shared
+// LandmarkRow renders it (pinned by landmark-row.dom.mjs), RoundDetail
+// shows the same ChatRow vocabulary through its own round-chat list, and
+// a surface that lists chat again just re-registers a source (feed.js'
+// chatSource is the deleted template). Removing this would cascade into
+// LandmarkRow's chat display contract for no product gain.
 export function normalizeChat(c) {
   return {
     ...c,
@@ -627,7 +642,6 @@ export const DEFAULT_FILTER = {
   distMax: 0,
   headshotOnly: false,
   bbox: null, // {minX,minY,maxX,maxY}
-  gname: '', // generic event name for the game_events category
   // Side/Team — the heatmap mirror (both '' = unconstrained):
   //   side — the side AT the event's round (the exact per-round sample,
   //          swaps at halftime): the value the heatmap's Team selector
@@ -693,7 +707,6 @@ export function parseLandmarkFilter(query) {
       f.bbox = { minX: p[0], minY: p[1], maxX: p[2], maxY: p[3] };
     }
   }
-  f.gname = q.gname || '';
   f.side = sideVal(q.side);
   f.team = sideVal(q.team);
   return f;
@@ -720,7 +733,6 @@ export function serializeLandmarkFilter(filter) {
   if (f.distMax) q.distMax = String(f.distMax);
   if (f.headshotOnly) q.hs = '1';
   if (f.bbox) q.bbox = `${f.bbox.minX},${f.bbox.minY},${f.bbox.maxX},${f.bbox.maxY}`;
-  if (f.gname) q.gname = f.gname;
   if (f.side) q.side = f.side;
   if (f.team) q.team = f.team;
   return q;
