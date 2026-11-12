@@ -121,7 +121,7 @@ export const warmProfile = () => {};
 `,
 );
 
-for (const name of ['ProfileLink']) {
+for (const name of ['ProfileLink', 'StatusChip']) {
   svelteCompile(
     readFileSync(`src/lib/components/${name}.svelte`, 'utf8'),
     `${name}.svelte`,

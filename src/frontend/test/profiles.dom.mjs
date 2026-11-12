@@ -178,7 +178,7 @@ const svelteCompile = (src, filename, out) => {
 // Leaf components (no imports) → local bundles. The names match the
 // view's `../components/<Name>.svelte` specifiers after the rewrite
 // below, so the bundles keep their component names.
-for (const name of ['SortTh', 'Popover', 'StatCard']) {
+for (const name of ['SortTh', 'Popover', 'StatCard', 'StatusChip']) {
   svelteCompile(
     readFileSync(`src/lib/components/${name}.svelte`, 'utf8'),
     `${name}.svelte`,
@@ -518,6 +518,55 @@ check(
   String(g2.querySelectorAll('.prof-spark circle').length),
 );
 document.body.removeChild(g2);
+
+console.log('H. rung-3 loading lines render the canonical block spinner (never a number)');
+{
+  // The Profiles list read held open: the panel's loading line must be
+  // the block spinner with its details text underneath (owner ruling —
+  // a bare "Loading…" line converts to a centered spinner + details).
+  const prevListPlayers = bindings.ProfileService.ListPlayers;
+  bindings.ProfileService.ListPlayers = () => new Promise(() => {});
+  invalidate();
+  const hTarget = document.createElement('div');
+  document.body.appendChild(hTarget);
+  mount(profilesMod.default, { target: hTarget, props: { nav: () => {} } });
+  await sleep(80);
+  check(
+    'Profiles mid-load: block spinner + "Loading players…" underneath',
+    !!hTarget.querySelector('.chip-block .chip-spin') &&
+      hTarget.querySelector('.chip-detail')?.textContent.trim() === 'Loading players…' &&
+      !hTarget.querySelector('.chip-ring') &&
+      !hTarget.querySelector('.chip-pct'),
+    hTarget.querySelector('.chip-block')?.outerHTML.slice(0, 160) ?? 'missing',
+  );
+  document.body.removeChild(hTarget);
+  bindings.ProfileService.ListPlayers = prevListPlayers;
+  invalidate();
+
+  // The PlayerProfile read held open: same shape, same honesty (no
+  // ring, no percentage — there is no denominator to show).
+  const prevGetProfile = bindings.ProfileService.GetProfile;
+  bindings.ProfileService.GetProfile = () => new Promise(() => {});
+  invalidate();
+  const h2 = document.createElement('div');
+  document.body.appendChild(h2);
+  mount(profileMod.default, {
+    target: h2,
+    props: { steamId: '76561198000000001', nav: () => {} },
+  });
+  await sleep(80);
+  check(
+    'PlayerProfile mid-load: block spinner + "Loading…" underneath',
+    !!h2.querySelector('.chip-block .chip-spin') &&
+      h2.querySelector('.chip-detail')?.textContent.trim() === 'Loading…' &&
+      !h2.querySelector('.chip-ring') &&
+      !h2.querySelector('.chip-pct'),
+    h2.querySelector('.chip-block')?.outerHTML.slice(0, 160) ?? 'missing',
+  );
+  document.body.removeChild(h2);
+  bindings.ProfileService.GetProfile = prevGetProfile;
+  invalidate();
+}
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');

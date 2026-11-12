@@ -1,16 +1,38 @@
 // jsdom driver for MapPackPrompt: the presence-driven launch prompt —
 // gate logic (any asset family missing → open, all present → closed),
 // the not-found variant, "Not now" persisting NOTHING across remounts,
-// the busy gate on Escape/backdrop dismissal, the StatusChip progress
-// pattern, and the counts-only result line from lib/assets.js.
+// the busy gate on Escape/backdrop dismissal, the StatusChip BLOCK-mode
+// progress pattern (centered ring/spinner + details text underneath),
+// and the counts-only result line from lib/assets.js.
 //
 // jsdom is a declared devDependency; from frontend/ run:
 //   node --conditions browser test/map-pack-prompt.dom.mjs
+// (the hook below makes the browser condition stick under a plain
+// `node --test test/*.mjs` too — without it svelte resolves to the
+// SERVER build and mount() throws, which the runner reports as a bare
+// "pass 1" with zero checks executed).
+import { registerHooks } from 'node:module';
 import { JSDOM } from 'jsdom';
 import { compile } from 'svelte/compiler';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+
+// svelte's package exports pick the SERVER build without the `browser`
+// condition (mount() then throws "lifecycle_function_unavailable"), so
+// the driver adds it for every svelte specifier before anything imports
+// one (the same hook combat.dom.mjs installs).
+registerHooks({
+  resolve(specifier, context, nextResolve) {
+    if (specifier === 'svelte' || specifier.startsWith('svelte/')) {
+      return nextResolve(specifier, {
+        ...context,
+        conditions: ['browser', ...(context.conditions || [])],
+      });
+    }
+    return nextResolve(specifier, context);
+  },
+});
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>', {
   pretendToBeVisual: true,
@@ -255,7 +277,7 @@ check('reopens after a remount (no suppression)', open());
 click(notNow());
 await sleep();
 
-console.log('F. accept: busy gate + StatusChip progress + counts-only result');
+console.log('F. accept: busy gate + StatusChip block progress + counts-only result');
 // One gate PER FAMILY so the driver can hold each step open while it
 // feeds that step's spectra:asset-progress payloads (all three families
 // emit now — mappackservice.go's shared emitter).
@@ -284,12 +306,20 @@ check('opens', open());
 click(primary());
 await sleep(60);
 check('extract button disabled while busy', primary()?.disabled === true);
-check('Not now disabled while busy', notNow()?.disabled === true);
-const chip = panel()?.querySelector('.chip.status');
-const chipText = () => panel()?.querySelector('.chip.status')?.textContent || '';
-check('StatusChip shown while extracting', !!chip, panel()?.textContent.slice(0, 120));
+// The busy-button exemption (owner ruling): a busy BUTTON keeps its
+// plain "Extracting…" label — no spinner, no ring inside the button.
 check(
-  'step text names the running family',
+  'busy button label stays plain text (busy-button exemption)',
+  (primary()?.textContent || '').trim() === 'Extracting…' &&
+    !primary()?.querySelector('.chip-spin, .chip-ring, .chip-block'),
+  JSON.stringify(primary()?.textContent),
+);
+check('Not now disabled while busy', notNow()?.disabled === true);
+const block = panel()?.querySelector('.chip-block');
+const blockText = () => panel()?.querySelector('.chip-block')?.textContent || '';
+check('StatusChip shown while extracting (block mode)', !!block, panel()?.textContent.slice(0, 120));
+check(
+  'step text names the running family (the details line underneath)',
   (panel()?.textContent || '').includes('Extracting radar map packs'),
   panel()?.textContent.slice(0, 160),
 );
@@ -302,12 +332,13 @@ check('backdrop click ignored while busy', open());
 emitProgress({ family: 'map-packs', stage: 'extract', done: 1, total: 4 });
 await sleep();
 check(
-  'determinate chip shows 25%',
-  (panel()?.textContent || '').includes('25%'),
-  panel()?.querySelector('.chip.status')?.textContent,
+  'determinate display shows 25% in the details line under the ring',
+  !!panel()?.querySelector('.chip-block .chip-ring') &&
+    (panel()?.querySelector('.chip-detail')?.textContent || '').includes('25%'),
+  panel()?.querySelector('.chip-detail')?.textContent,
 );
 
-console.log('F2. icon/sound steps: their own emitters drive the bar');
+console.log('F2. icon/sound steps: their own emitters drive the indicator');
 releaseMaps();
 await sleep();
 check(
@@ -315,31 +346,36 @@ check(
   (panel()?.textContent || '').includes('Extracting equipment icons'),
   panel()?.textContent.slice(0, 160),
 );
-// The previous step's payload must NOT drive this step's bar: it stays
-// the animated indeterminate one until an icons payload lands.
+// The previous step's payload must NOT drive this step's display: it
+// stays the indeterminate spinner until an icons payload lands.
 check(
   'icons step starts indeterminate (stale map-packs payload gated out)',
-  !!panel()?.querySelector('.chip-bar-fill.indeterminate') &&
+  !!panel()?.querySelector('.chip-block .chip-spin') &&
+    !panel()?.querySelector('.chip-block .chip-ring') &&
     !(panel()?.textContent || '').includes(' of '),
   panel()?.textContent.slice(0, 200),
 );
 emitProgress({ family: 'icons', stage: 'extract', done: 60, total: 120 });
 await sleep();
-check('icons emitter → determinate chip shows 50%', chipText().includes('50%'), chipText());
 check(
-  'icons step row shows 60 of 120',
+  'icons emitter → ring shows 50% in the details line',
+  !!panel()?.querySelector('.chip-block .chip-ring') && blockText().includes('50%'),
+  blockText(),
+);
+check(
+  'details line shows 60 of 120',
   (panel()?.textContent || '').includes('60 of 120'),
   panel()?.textContent.slice(0, 200),
 );
 // A stale payload for another family (here: the finished map-pack run)
-// must never retarget this step's bar OR clobber its numbers: the
+// must never retarget this step's display OR clobber its numbers: the
 // listener filters on the running step's family (assets.js).
 emitProgress({ family: 'map-packs', stage: 'extract', done: 4, total: 4 });
 await sleep();
 check(
   'stale map-packs payload ignored during the icons step',
-  (panel()?.textContent || '').includes('60 of 120') && chipText().includes('50%'),
-  chipText(),
+  (panel()?.textContent || '').includes('60 of 120') && blockText().includes('50%'),
+  blockText(),
 );
 releaseIcons();
 await sleep();

@@ -127,7 +127,7 @@ export const warmProfile = () => {};
 `,
 );
 
-for (const name of ['EventFlags', 'ProfileLink', 'RoundStrip']) {
+for (const name of ['EventFlags', 'ProfileLink', 'RoundStrip', 'StatusChip']) {
   const src = readFileSync(`src/lib/components/${name}.svelte`, 'utf8').replace(
     // RoundStrip's generated kvstore binding path is written for
     // src/lib/components/ — at dir/components/ it would escape the cache.
@@ -472,6 +472,16 @@ console.log('G. cold start: never a blank page while the round reads are in flig
       !rootG.textContent.includes('Round result') &&
       !rootG.textContent.includes('Round 5'),
     rootG.textContent.replace(/\s+/g, ' ').slice(0, 140),
+  );
+  // The rung-3 fallback's SHAPE (owner ruling): the canonical block
+  // spinner with the same detail text underneath — no fabricated number.
+  check(
+    'mid-load: block spinner + details underneath, never a %',
+    !!rootG.querySelector('.chip-block .chip-spin') &&
+      rootG.querySelector('.chip-detail')?.textContent.trim() === 'Loading round…' &&
+      !rootG.querySelector('.chip-ring') &&
+      !rootG.querySelector('.chip-pct'),
+    rootG.querySelector('.chip-block')?.outerHTML.slice(0, 160) ?? 'missing',
   );
   await sleep(400); // past the 250 ms delay
   check(

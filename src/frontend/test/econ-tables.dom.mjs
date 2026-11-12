@@ -848,6 +848,17 @@ check(
   !matchSrc.includes('halfScore') && !matchSrc.includes('displayHalfScore'),
   '',
 );
+// The rung-3 loading lines in Match (owner ruling — a bare "Loading…"
+// becomes the canonical centered spinner + details underneath). Match's
+// DOM harness never HOLDS a loading window (its reads resolve at once),
+// so these are source pins over the view; the widget itself is pinned
+// mounted in library.dom.mjs Section G.
+check(
+  'Match’s two loading lines render the block spinner (warnings + body)',
+  (matchSrc.match(/<StatusChip block detail="Loading…" \/>/g) || []).length === 2 &&
+    !/role="status">Loading…<\/p>/.test(matchSrc),
+  String((matchSrc.match(/<StatusChip block detail="Loading…" \/>/g) || []).length),
+);
 
 // ---------------------------------------------------------------------------
 // Section I: every error indication in the Match view tree is dismissible

@@ -520,6 +520,41 @@ check(
   ),
 );
 
+console.log('N. progress presentation outside a cell (owner ruling, source pin)');
+// No driver mounts the Heatmaps VIEW (mounting it would drag in the
+// whole service surface), so the progress display's PLACEMENT is
+// source-pinned here — the same precedent as H/J/K. The rule
+// (PRODUCT.md "### Defaults"): outside a table cell a progress display
+// is a centered ring/spinner with its details text underneath, and a
+// horizontal control row cannot be "centered" — so the display lives in
+// its own row AFTER the toolbar closes, never inside it.
+const toolbarAt = heatSrc.indexOf('<div class="toolbar heat-controls">');
+const progressAt = heatSrc.indexOf('<StatusChip block');
+check('toolbar + block-mode progress both present', toolbarAt >= 0 && progressAt > toolbarAt, `${toolbarAt} ${progressAt}`);
+{
+  const between = heatSrc.slice(toolbarAt, progressAt);
+  const opens = (between.match(/<div\b/g) || []).length;
+  const closes = (between.match(/<\/div>/g) || []).length;
+  check(
+    'the toolbar CLOSES before the progress display starts (own row, centered)',
+    opens > 0 && opens === closes,
+    `opens=${opens} closes=${closes}`,
+  );
+}
+check(
+  'progress display is the block-mode StatusChip with its stage + fraction',
+  /<StatusChip block progress=\{heatPct\} stage=\{heatStage\} \/>/.test(heatSrc),
+  '',
+);
+// The busy-button exemption: the Generate button keeps its plain
+// "Generating…" label — no spinner or ring is ever rendered INSIDE it.
+check(
+  'Generate button keeps its plain busy label (busy-button exemption)',
+  /\{loading \? 'Generating\…' : grid \? 'Regenerate' : 'Generate'\}/.test(heatSrc) &&
+    !/<button[^>]*>[\s\S]{0,120}?chip-(spin|ring)/.test(heatSrc),
+  '',
+);
+
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');
 process.exit(failures || errors.length ? 1 : 0);

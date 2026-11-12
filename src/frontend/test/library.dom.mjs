@@ -924,6 +924,12 @@ const mountChip = (props) => {
   mount(chipMod.default, { target: el, props });
   return el;
 };
+// The inline chip's exact markup as it stood BEFORE block mode existed
+// (captured by compiling the pre-block StatusChip.svelte from git HEAD
+// next to the new one — the two outerHTML strings match byte for byte).
+// Block mode must never alter it: a diff here means inline mode changed.
+const INLINE_GOLDEN =
+  '<span class="chip status busy" title="reading demo · 42%">parsing <span class="chip-bar" aria-hidden="true"><span class="chip-bar-fill" style="width: 42%;"></span></span> <span class="chip-pct">reading demo 42%</span><!----><!----></span>';
 {
   const ind = mountChip({ status: 'parsing', progress: 0, stage: 'hash' });
   const indPct = ind.querySelector('.chip-pct');
@@ -964,6 +970,109 @@ const mountChip = (props) => {
     'caller title kept in the tooltip',
     titled.querySelector('.chip').getAttribute('title') === 'disk on fire · checking file',
     titled.querySelector('.chip').getAttribute('title'),
+  );
+
+  // --- BLOCK mode: the presentation rule for a progress display OUTSIDE
+  // a table cell (PRODUCT.md "### Defaults" — centered, a ring when the
+  // work is quantified and a spinner when it is not, with the details
+  // text underneath). The inline pins above must stay green untouched:
+  // the two modes share one component and one stylesheet, so this half
+  // also pins that NO block furniture ever leaks into inline markup.
+  const blk = (props) => mountChip({ block: true, ...props });
+
+  const quant = blk({ progress: 0.42, stage: 'parse', detail: 'Reading the demo' });
+  const quantBlock = quant.querySelector('.chip-block');
+  check(
+    'block mode wraps in .chip-block (no .chip.status pill beside it)',
+    !!quantBlock && !quant.querySelector('.chip.status'),
+    quant.innerHTML.slice(0, 200),
+  );
+  check(
+    'quantified → RING: no spinner, no inline bar',
+    !!quantBlock?.querySelector('.chip-ring') &&
+      !quantBlock.querySelector('.chip-spin') &&
+      !quantBlock.querySelector('.chip-bar'),
+    quantBlock ? quantBlock.innerHTML.slice(0, 200) : 'missing',
+  );
+  const quantFill = quantBlock?.querySelector('.chip-ring-fill');
+  const circ = 2 * Math.PI * 12; // RING_CIRC as declared in StatusChip.svelte
+  check(
+    'ring sweep encodes the honest percentage (never a fabricated arc)',
+    !!quantFill &&
+      Math.abs(Number(quantFill.getAttribute('stroke-dashoffset')) - circ * 0.58) < 0.01,
+    quantFill ? quantFill.getAttribute('stroke-dashoffset') : 'missing',
+  );
+  check(
+    'details line underneath: detail · stage · percent',
+    quantBlock?.querySelector('.chip-detail')?.textContent.trim() ===
+      'Reading the demo · reading demo · 42%',
+    quantBlock?.querySelector('.chip-detail')?.textContent ?? 'missing',
+  );
+  check(
+    'DOM order: indicator first, details text last',
+    !!quantBlock &&
+      quantBlock.firstElementChild?.classList.contains('chip-ring') &&
+      quantBlock.lastElementChild?.classList.contains('chip-detail'),
+    quantBlock ? quantBlock.innerHTML.slice(0, 200) : 'missing',
+  );
+
+  const zero = blk({ progress: 0, detail: 'Scanning folders…' });
+  const zeroBlock = zero.querySelector('.chip-block');
+  check(
+    'progress 0 → SPINNER, no ring, never "0%"',
+    !!zeroBlock?.querySelector('.chip-spin') &&
+      !zeroBlock.querySelector('.chip-ring') &&
+      !zero.textContent.includes('0%'),
+    zero.innerHTML.slice(0, 200),
+  );
+  check(
+    'progress 0 details line keeps the stage word but no number',
+    zeroBlock?.querySelector('.chip-detail')?.textContent.trim() === 'Scanning folders…',
+    zeroBlock?.querySelector('.chip-detail')?.textContent ?? 'missing',
+  );
+
+  // No progress prop at all = "cannot be quantified" → the same spinner
+  // (this is how the bare rung-3 "Loading…" lines render).
+  const bare = blk({ detail: 'Loading…' });
+  check(
+    'absent progress → spinner (the bare loading lines’ shape)',
+    !!bare.querySelector('.chip-block .chip-spin') &&
+      bare.querySelector('.chip-detail')?.textContent.trim() === 'Loading…',
+    bare.innerHTML.slice(0, 200),
+  );
+
+  // The centering is CSS (jsdom has no layout) — pin the rule in the
+  // ONE stylesheet spelling (.chip-block, public/style.css beside
+  // .chip-bar) so "centered" cannot silently regress to left-aligned.
+  const blockRule = /\.chip-block\s*\{[^}]*\}/.exec(
+    readFileSync(join('public', 'style.css'), 'utf8'),
+  )?.[0];
+  check(
+    'the block rule lays the column out centered',
+    !!blockRule &&
+      /display:\s*flex/.test(blockRule) &&
+      /flex-direction:\s*column/.test(blockRule) &&
+      /align-items:\s*center/.test(blockRule),
+    blockRule || '.chip-block rule not found in style.css',
+  );
+
+  // Inline mode stays byte-identical: the ORIGINAL chip element, with
+  // none of the block furniture anywhere in its subtree.
+  const inline = mountChip({ status: 'parsing', progress: 0.42, stage: 'parse' });
+  const inlineChip = inline.querySelector('.chip.status');
+  check(
+    'inline mode renders NO block furniture (no ring/spinner/detail)',
+    !!inlineChip &&
+      !inline.querySelector('.chip-block') &&
+      !inline.querySelector('.chip-ring') &&
+      !inline.querySelector('.chip-spin') &&
+      !inline.querySelector('.chip-detail'),
+    inline.innerHTML.slice(0, 240),
+  );
+  check(
+    'inline chip DOM byte-identical to the pre-block markup',
+    !!inlineChip && inlineChip.outerHTML === INLINE_GOLDEN,
+    inlineChip ? inlineChip.outerHTML : 'missing',
   );
 }
 
@@ -1438,6 +1547,16 @@ check(
     !coldTarget.querySelector('.dropzone .data-table'),
   coldDrop().slice(0, 140),
 );
+// The indicator's SHAPE (owner ruling + PRODUCT.md ladder rung 3): the
+// canonical centered spinner with its details text underneath — never a
+// number (there is no denominator for a first read).
+check(
+  'mid-load: block spinner + "Loading…" details underneath',
+  !!coldTarget.querySelector('.dropzone .chip-block .chip-spin') &&
+    coldTarget.querySelector('.dropzone .chip-detail')?.textContent.trim() === 'Loading…' &&
+    !coldTarget.querySelector('.chip-bar'),
+  coldTarget.querySelector('.dropzone .chip-block')?.outerHTML.slice(0, 160) ?? 'missing',
+);
 await sleep(400); // both reads landed
 check(
   'after both reads land: the list renders and the gate is gone',
@@ -1523,61 +1642,85 @@ console.log('N. an event burst coalesces into ONE import-dir rescan');
   bindings.LibraryService.ListDemoFiles = prevScan;
 }
 // ---------------------------------------------------------------------------
-// Section O: spectra:scan-progress drives the ONE StatusChip (MapPackPrompt's
-// non-job precedent) — 0 is the walk phase (indeterminate bar), a real byte
-// fraction flips it determinate, and the scan resolving hides it again. The
-// chip renders while a scan runs AND the import-dir list is still empty (the
-// expensive first scan is exactly that state), so the list is emptied first.
+// Section O: spectra:scan-progress drives the ONE StatusChip — in BLOCK
+// mode now (the centered ring/spinner + details text underneath that
+// PRODUCT.md "### Defaults" requires outside a table cell): 0 is the walk
+// phase (spinner, no number), a real byte fraction flips it to the ring
+// with its percentage in the details line, and the scan resolving hides it
+// again. The display renders while a scan runs AND the import-dir list is
+// still empty (the expensive first scan is exactly that state), so the
+// list is emptied first.
 console.log('O. scan progress drives the StatusChip: indeterminate → determinate → gone');
 {
   const prevScan = bindings.LibraryService.ListDemoFiles;
   const dirRoot = () =>
     coldTarget.querySelector('section[aria-label="Demos from your import dirs"]');
-  const chipOf = () => dirRoot()?.querySelector('.chip.status');
+  const blockOf = () => dirRoot()?.querySelector('.chip-block');
 
   // (a) Empty the import-dir list: one rescan resolving zero rows.
   bindings.LibraryService.ListDemoFiles = () => Promise.resolve([]);
   fire('spectra:library-changed');
   await sleep(500); // 300 ms debounce + the scan itself
   check(
-    'import-dir list emptied (the chip’s precondition)',
+    'import-dir list emptied (the display’s precondition)',
     !!dirRoot() && !dirRoot().querySelector('.data-table'),
     dirRoot() ? dirRoot().textContent.replace(/\s+/g, ' ').slice(0, 90) : 'no panel',
   );
 
-  // (b) Stall the NEXT scan mid-flight — the chip must be up and
-  // indeterminate (progress 0) while the walk phase runs.
+  // (b) Stall the NEXT scan mid-flight — the display must be up and
+  // indeterminate (progress 0) while the walk phase runs: the SPINNER,
+  // never a ring and never a number.
   let release;
   bindings.LibraryService.ListDemoFiles = () =>
     new Promise((res) => (release = () => res([])));
   fire('spectra:library-changed');
   await sleep(400); // past the debounce: the scan is now in flight
-  const stalledChip = chipOf();
+  const stalledBlock = blockOf();
   check(
-    'scan chip up and indeterminate while the scan runs (never "0%")',
-    !!stalledChip &&
-      !!stalledChip.querySelector('.chip-bar-fill.indeterminate') &&
-      !stalledChip.textContent.includes('0%'),
-    stalledChip ? stalledChip.textContent.replace(/\s+/g, ' ').trim() : 'missing',
+    'scan display up: spinner while the scan runs (never "0%", never a ring)',
+    !!stalledBlock &&
+      !!stalledBlock.querySelector('.chip-spin') &&
+      !stalledBlock.querySelector('.chip-ring') &&
+      !stalledBlock.textContent.includes('0%'),
+    stalledBlock ? stalledBlock.textContent.replace(/\s+/g, ' ').trim() : 'missing',
+  );
+  check(
+    'details text underneath names what is happening',
+    !!stalledBlock &&
+      stalledBlock.querySelector('.chip-detail')?.textContent.trim() === 'Scanning folders…',
+    stalledBlock?.querySelector('.chip-detail')?.textContent ?? 'missing',
   );
 
-  // (c) A real byte fraction renders determinate.
+  // (c) A real byte fraction renders the RING, with the percentage in
+  // the details line underneath — DOM order: indicator first, text after.
   fire('spectra:scan-progress', { stage: 'hash', progress: 0.42, done: 42, total: 100 });
   await sleep(20);
-  const fill = chipOf()?.querySelector('.chip-bar-fill');
+  const detBlock = blockOf();
+  const detFill = detBlock?.querySelector('.chip-ring-fill');
   check(
-    'scan chip reads the byte fraction: determinate fill at 42%',
-    !!fill &&
-      !fill.classList.contains('indeterminate') &&
-      fill.style.width === '42%' &&
-      (chipOf()?.textContent.includes('42%') ?? false),
-    fill ? `${fill.style.width} ${chipOf()?.textContent.replace(/\s+/g, ' ').trim()}` : 'missing',
+    'scan display reads the byte fraction: ring at 42%, no bar',
+    !!detBlock &&
+      !!detFill &&
+      !detBlock.querySelector('.chip-spin') &&
+      !detBlock.querySelector('.chip-bar') &&
+      Number(detFill.getAttribute('stroke-dashoffset')) > 0 &&
+      (detBlock.textContent.includes('42%') ?? false),
+    detBlock
+      ? `${detFill?.getAttribute('stroke-dashoffset')} ${detBlock.textContent.replace(/\s+/g, ' ').trim()}`
+      : 'missing',
+  );
+  check(
+    'indicator precedes the details text (ring/spinner → text)',
+    !!detBlock &&
+      detBlock.firstElementChild?.classList.contains('chip-ring') &&
+      detBlock.lastElementChild?.classList.contains('chip-detail'),
+    detBlock ? detBlock.innerHTML.slice(0, 200) : 'missing',
   );
 
-  // (d) The scan resolving hides the chip again.
+  // (d) The scan resolving hides the display again.
   release();
   await sleep(60);
-  check('scan chip gone once the scan lands', !chipOf(), chipOf()?.textContent ?? '');
+  check('scan display gone once the scan lands', !blockOf(), blockOf()?.textContent ?? '');
   bindings.LibraryService.ListDemoFiles = prevScan;
 }
 await unmount(coldInst);

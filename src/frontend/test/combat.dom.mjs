@@ -123,7 +123,7 @@ export const warmProfile = () => {};
 `,
 );
 
-for (const name of ['Dialog', 'SortTh', 'EventPlay', 'ProfileLink']) {
+for (const name of ['Dialog', 'SortTh', 'EventPlay', 'ProfileLink', 'StatusChip']) {
   svelteCompile(
     readFileSync(`src/lib/components/${name}.svelte`, 'utf8'),
     `${name}.svelte`,
@@ -734,6 +734,16 @@ console.log('K. cold start: the panels never claim "No combat stats." mid-load')
       !rootK.textContent.includes('No combat stats.') &&
       rootK.querySelectorAll('section.panel').length === 0,
     rootK.textContent.replace(/\s+/g, ' ').slice(0, 140),
+  );
+  // The rung-3 fallback's SHAPE (owner ruling): the canonical block
+  // spinner with the same detail text underneath — no fabricated number.
+  check(
+    'mid-load: block spinner + details underneath, never a %',
+    !!rootK.querySelector('.chip-block .chip-spin') &&
+      rootK.querySelector('.chip-detail')?.textContent.trim() === 'Loading combat data…' &&
+      !rootK.querySelector('.chip-ring') &&
+      !rootK.querySelector('.chip-pct'),
+    rootK.querySelector('.chip-block')?.outerHTML.slice(0, 160) ?? 'missing',
   );
   await sleep(400); // past the 250 ms delay
   check(

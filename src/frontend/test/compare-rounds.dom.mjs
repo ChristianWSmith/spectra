@@ -119,7 +119,7 @@ export const warmProfile = () => {};
 `,
 );
 
-for (const name of ['LandmarkRow', 'ProfileLink']) {
+for (const name of ['LandmarkRow', 'ProfileLink', 'StatusChip']) {
   const src = readFileSync(`src/lib/components/${name}.svelte`, 'utf8')
     // LandmarkRow imports its sibling ProfileLink as .svelte — at dir/
     // the compiled copy is a .js (the view's own imports are rewritten
@@ -410,6 +410,16 @@ console.log('D. cold start: never empty column shells while the round reads are 
     'mid-load: loading line up, no column shells',
     t2.textContent.includes('Loading rounds…') && !t2.querySelector('.cmp-col'),
     t2.textContent.replace(/\s+/g, ' ').slice(0, 140),
+  );
+  // The rung-3 fallback's SHAPE (owner ruling): the canonical block
+  // spinner with the same detail text underneath — no fabricated number.
+  check(
+    'mid-load: block spinner + details underneath, never a %',
+    !!t2.querySelector('.chip-block .chip-spin') &&
+      t2.querySelector('.chip-detail')?.textContent.trim() === 'Loading rounds…' &&
+      !t2.querySelector('.chip-ring') &&
+      !t2.querySelector('.chip-pct'),
+    t2.querySelector('.chip-block')?.outerHTML.slice(0, 160) ?? 'missing',
   );
   await sleep(400); // past the delay
   check(
