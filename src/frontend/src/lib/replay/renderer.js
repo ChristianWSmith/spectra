@@ -3302,15 +3302,19 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   //                   (master setOverlaysVisible or per-element
   //                   setOverlayLayers).
   //                   The canvas cannot measure DOM, so drawHUD keeps
-  //                   this region clear: CTRL_GROUP_BUDGET (0.28 × cssW,
-  //                   the .rp-ctrl-list width share, see below) plus the
-  //                   same 8 px is the score box's LEFT bound — a FIXED
-  //                   reservation of the region (the number mirrors that
-  //                   group's CSS max-width, which now sits bottom-right;
-  //                   the canvas measures no DOM either way),
-  //                   deliberately conservative: the button is a small
-  //                   icon cell, yet the full share stays reserved (and
-  //                   the region is empty while theater mode is off).
+  //                   this region clear: TOP_LEFT_RESERVE_PX (the
+  //                   button's measured width, see the constant below)
+  //                   plus the same 8 px is the score box's LEFT bound —
+  //                   a FIXED reservation of the region (the canvas
+  //                   measures no DOM either way), sized to this ONE
+  //                   occupant: a small icon cell (~36 px, below) that
+  //                   exists only while theater mode is on (the region
+  //                   is empty otherwise). It used to be the control
+  //                   group's 0.28 × cssW share (7450c5b, when
+  //                   .rp-ctrl-list sat TOP-LEFT); b5d21bf moved that
+  //                   group bottom-right and left this button behind —
+  //                   keeping the share skewed the score box rightward
+  //                   whenever the stage narrowed (events panel open).
   //   top-center    — score + round clock box (drawHUD), HUD_PAD anchors.
   //   top-right     — kill feed (drawKillFeed), KILL_FEED_EDGE anchors —
   //                   the gameplay record: it NEVER ellipsizes, and the
@@ -3380,15 +3384,22 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // C1 — the score box's gap constraints (region map above): the box
   // yields to BOTH neighbours — the stage's top-left DOM region (the
   // theater-exit button) on the left and the kill feed on the right.
-  // CTRL_GROUP_BUDGET mirrors the control group's CSS max-width share
-  // (style.css .rp-ctrl-list: 0.28 × stage — that group now sits
-  // bottom-right, but the share stays THE reservation for the top-left
-  // region, pinned); the canvas cannot measure DOM, so that region's
-  // right bound is the share + the same 8 px anchor. SCORE_FEED_GAP is
-  // the 8 px clearance the score box keeps from the feed's LEFT edge
-  // (KILL_FEED_EDGE's mirror-image literal, named for the pair it
-  // separates).
-  const CTRL_GROUP_BUDGET = 0.28; // share of cssW the control group may span
+  // TOP_LEFT_RESERVE_PX is that button's MEASURED width: style.css
+  // .rp-theater-exit is padding 8+8 px + border 1+1 px + one codicon at
+  // font-size 1em (the glyph's advance is exactly 1em — codicon.ttf
+  // upem 300, advance 300) = 18 + the root font size = 31/33/35 px
+  // across the 13/15/17 px font scale (lib/fontsize.js), so 36 covers
+  // the widest. Its old value was 0.28 × cssW — CTRL_GROUP_BUDGET
+  // mirroring .rp-ctrl-list's CSS max-width — which dated from
+  // 7450c5b, when that control group sat TOP-LEFT; b5d21bf moved the
+  // group bottom-right and only the button kept the slot, but the share
+  // stayed reserved and skewed the box rightward as the stage narrowed
+  // (e.g. the events panel open). The canvas cannot measure DOM, so a
+  // fixed constant stays — sized to the occupant, not to the stage.
+  // SCORE_FEED_GAP is the 8 px clearance the score box keeps from the
+  // feed's LEFT edge (KILL_FEED_EDGE's mirror-image literal, named for
+  // the pair it separates).
+  const TOP_LEFT_RESERVE_PX = 36; // px — theater-exit button width (region map above)
   const SCORE_FEED_GAP = 8; // px — score box → kill feed clearance
   // Codicon clock for the freeze-time line: the codicon font ships with
   // the app (@vscode/codicons/dist/codicon.css, imported app-wide in
@@ -3695,7 +3706,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // boolean `active` in Replay.svelte), never by a single element. While
   // false, draw() skips the whole overlay group (HUD box, kill feed,
   // chat — the DOM control-group rows go with them, gated view-side);
-  // the gameplay layers are NEVER gated, and CTRL_GROUP_BUDGET stays
+  // the gameplay layers are NEVER gated, and TOP_LEFT_RESERVE_PX stays
   // reserved so the score box's x-position does not jump when the group
   // comes back. BOOLEAN, exactly as before: per-element hiding rides
   // setOverlayLayers BELOW (a boolean `on !== false` contract — callers
@@ -3723,7 +3734,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // NOTE draw()'s gate still runs killFeedLayout()/chatLayout() even
   // when their layer is hidden: feed.left is the score box's right-hand
   // bound, so hiding the feed must NOT move the score box (the same
-  // philosophy as CTRL_GROUP_BUDGET's fixed reservation).
+  // philosophy as TOP_LEFT_RESERVE_PX's fixed reservation).
   let overlayLayers = { hud: true, feed: true, chat: true };
   function setOverlayLayers(f) {
     if (f) overlayLayers = { ...overlayLayers, ...f }; // spread-merge: one flag, whole triple pushed
@@ -3767,14 +3778,18 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
         let ms = top.map(measureLine);
         let w = boxWidthOf(ms);
         // C1 — the box lays into the gap the region map leaves: the
-        // top-left DOM region's right bound (CTRL_GROUP_BUDGET — the
-        // CSS-mirrored .rp-ctrl-list width share) on the left, the kill
-        // feed's left edge − SCORE_FEED_GAP on the right.
+        // top-left DOM region's right bound (TOP_LEFT_RESERVE_PX — the
+        // theater-exit button's width) on the left, the kill feed's
+        // left edge − SCORE_FEED_GAP on the right. The button's own
+        // `left: 8 px` anchor is the SAME 8 px literal as HUD_PAD (the
+        // region table's shared anchor), so reserve + pad lands the
+        // box's left edge at/after the button's right edge: 36 + 8 = 44
+        // ≥ 8 + 35 (the button at the widest font-size setting).
         // `feed` was measured FIRST this frame (killFeedLayout, called
         // by draw() before this); with no feed in scope the stage's own
         // right edge bounds the box.
         const rightBound = (feed ? feed.left : cssW) - SCORE_FEED_GAP;
-        const leftBound = cssW * CTRL_GROUP_BUDGET + HUD_PAD;
+        const leftBound = TOP_LEFT_RESERVE_PX + HUD_PAD;
         const line = top[0];
         if (w > rightBound - leftBound && line.scoreAnchor && ms[0].segs) {
           // The gap is too narrow for the line: cut the LONGER team
@@ -4220,7 +4235,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     // whenever the master is on: feed.left is the score box's
     // right-hand bound (hiding the kill feed must not move the score
     // box) and chatLayout is the chat's stack geometry — the same
-    // fixed-reservation philosophy as CTRL_GROUP_BUDGET. The gameplay
+    // fixed-reservation philosophy as TOP_LEFT_RESERVE_PX. The gameplay
     // layers above are never gated.
     if (overlaysVisible) {
       const feed = killFeedLayout();
