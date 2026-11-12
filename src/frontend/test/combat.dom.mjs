@@ -1,9 +1,12 @@
 // jsdom driver for Combat: the Engagements card's column order (round →
 // time into round → killer vs victim → distance in metres — no raw-tick
 // and no "won by" column), ONE-ROW-PER-KILL merging (a kill's trade +
-// untraded facts share one row with both chips — section D — plus the
-// opening+untraded pair, the contained-kind filter behaviour and the
-// grouping-key precision in E/F) and the Clutches card's won-only scope.
+// traded/untraded facts share one row with its chips — section D — plus
+// the opening+untraded pair, the contained-kind filter behaviour and the
+// grouping-key precision in E/F), the `traded` kind chip + filter (I), the
+// Clutches card's won/lost TOGGLE (default won ON / lost OFF — G) and its
+// long-event replay loop (H: solo's kill span ±10 s, padded-span
+// fallback, unstatable → no ?loop=), and the RD{n} round labels (J).
 //
 // jsdom is intentionally not a project dependency; from frontend/ run:
 //   npm i --no-save jsdom
@@ -182,10 +185,14 @@ const base = {
     { tick: 10704, round: 7, kind: 'untraded', aSteam: 'B', aName: 'bob', bSteam: 'A', bName: 'alice', distance: 0, wonBy: 't' },
   ],
   clutches: [
-    { id: 1, round: 7, size: 2, steamId: 'D', name: 'dave', won: false, hpLeft: 1, bombState: 'none', replayAnchorTick: 10500, startTick: 10400, endTick: 10700 },
-    // The won clutch carries its own span (analytics ClutchRow) — the ▶
-    // keeps the anchor SEEK and stamps start→end as the entry ?loop=.
-    { id: 2, round: 7, size: 1, steamId: 'C', name: 'carol', won: true, hpLeft: 42, bombState: 'planted', replayAnchorTick: 10600, startTick: 10480, endTick: 10960 },
+    { id: 1, round: 7, size: 2, steamId: 'D', name: 'dave', won: false, hpLeft: 1, bombState: 'none', replayAnchorTick: 10500, startTick: 10400, endTick: 10700, killTicks: '[10480]' },
+    // The WON clutch mirrors the GOLDEN round-7 shape: its span (10200 →
+    // 10960 — the making kill → the resolution) is far wider than the
+    // SOLO's kills inside it (10700, 10900 — killTicks, ClutchRow's
+    // "solo's kills after start"). The ▶ keeps the anchor SEEK
+    // (replayAnchorTick) but loops the KILL span padded ±10 s
+    // (10700−640, 10900+640) — never the raw span.
+    { id: 2, round: 7, size: 1, steamId: 'C', name: 'carol', won: true, hpLeft: 42, bombState: 'planted', replayAnchorTick: 10600, startTick: 10200, endTick: 10960, killTicks: '[10700,10900]' },
   ],
 };
 
@@ -204,10 +211,10 @@ const engRows = rows(engTable);
 check('two engagement rows', engRows.length === 2, String(engRows.length));
 const first = engRows[0]?.querySelectorAll('td') || [];
 // The Round cell is TEXT again (owner ruling: "no round play button
-// there" — the round-watch ▶ was removed): R{n} as a plain label, and
+// there" — the round-watch ▶ was removed): RD{n} as a plain label, and
 // the row's ONLY play button is the event/follow ▶ in the Replay column
 // (A5 resolved to ONE play button per row).
-check('round cell renders the R{n} text label', first[1]?.textContent.trim() === 'R7', first[1]?.textContent);
+check('round cell renders the RD{n} text label', first[1]?.textContent.trim() === 'RD7', first[1]?.textContent);
 check('round cell carries NO button (no round play)', !first[1]?.querySelector('button'), first[1]?.innerHTML);
 const engPlayBtn = first[0]?.querySelector('button');
 check(
@@ -227,8 +234,9 @@ check('distance rounded in metres', first[7]?.textContent.trim() === '19', first
 const second = engRows[1]?.querySelectorAll('td') || [];
 check('missing distance renders an em dash', second[7]?.textContent.trim() === '—', second[7]?.textContent);
 check(
-  'kind filter still offered',
-  [...eng.querySelectorAll('.comb-kind')].map((b) => b.textContent.trim()).join(',') === 'all,opening,trade,untraded',
+  'kind filter still offered (incl. the victim-side traded)',
+  [...eng.querySelectorAll('.comb-kind')].map((b) => b.textContent.trim()).join(',') ===
+    'all,opening,trade,traded,untraded',
   [...eng.querySelectorAll('.comb-kind')].map((b) => b.textContent.trim()).join(','),
 );
 
@@ -254,19 +262,34 @@ check(
   navEng || 'no navigation',
 );
 
-console.log('B. clutches card lists WON clutches only');
+console.log('B. clutches card: DEFAULT = won ON / lost OFF (today\'s list), kill-span loop');
 const clutchSec = sections(root, 'Clutches')[0];
-check('provenance chip states the won-only scope', clutchSec?.querySelector('.provenance')?.textContent.includes('won only'), clutchSec?.querySelector('.provenance')?.textContent);
+check(
+  'provenance chip states the won/lost toggle scope',
+  clutchSec?.querySelector('.provenance')?.textContent.includes('won/lost toggle') &&
+    /won on, lost off by default/.test(clutchSec?.querySelector('.provenance')?.getAttribute('title') || ''),
+  clutchSec?.querySelector('.provenance')?.textContent,
+);
 const clutchRows = rows(clutchSec?.querySelector('table') || document.createElement('table'));
 check('one clutch row (the won one)', clutchRows.length === 1, String(clutchRows.length));
 check('won clutch shown', clutchSec?.textContent.includes('carol'), '');
-check('lost clutch dropped', !clutchSec?.textContent.includes('dave'), '');
+check('lost clutch dropped by default', !clutchSec?.textContent.includes('dave'), '');
 check('lost clutch HP-left (1) gone with it', !clutchRows.some((r) => r.textContent.includes('1v2')), '');
 check('HP left column kept', clutchRows[0]?.textContent.includes('42'), clutchRows[0]?.textContent);
+check(
+  'default toggle state: won active, lost inactive',
+  [...clutchSec.querySelectorAll('.comb-kinds .comb-kind')].map(
+    (b) => `${b.textContent.trim()}:${b.classList.contains('active')}`,
+  ).join(',') === 'won:true,lost:false',
+  [...clutchSec.querySelectorAll('.comb-kinds .comb-kind')].map((b) => b.textContent.trim()).join(','),
+);
 
-// (B) the clutch ▶ keeps its anchor SEEK (replayAnchorTick), stamps the
-// clutch's own start→end span as the entry ?loop=, and follows the
-// CLUTCH's solo (the row actor).
+// (B) the clutch ▶ keeps its anchor SEEK (replayAnchorTick) and follows
+// the CLUTCH's solo — but the ?loop= is the LONG-EVENT rule: the solo's
+// kill span (killTicks 10700 → 10900) padded ±10 s = 640 ticks at 64
+// tick → 10060,11540. The raw span (10200,10960 — the making kill →
+// the resolution) must NOT appear: golden round 7's creating kill
+// (~13:34) is the teammate's death, not the solo's first kill (~14:10).
 const clutchPlay = clutchRows[0]?.querySelector('td button');
 check(
   'clutch ▶ is icon-only play naming the solo it follows',
@@ -278,20 +301,21 @@ click(clutchPlay);
 await sleep();
 const navClutch = (globalThis.__nav || [])[(globalThis.__nav || []).length - 1];
 check(
-  'clutch ▶ links tick + the clutch start→end loop + follow=the solo',
+  'clutch ▶ links tick + the KILL span ±10 s loop (not the raw span) + follow=the solo',
   !!navClutch &&
     navClutch.includes('tick=10600') &&
-    navClutch.includes('loop=10480,10960') &&
+    navClutch.includes('loop=10060,11540') &&
+    !navClutch.includes('loop=10200,10960') &&
     navClutch.includes('follow=C') &&
     !navClutch.includes('cat='),
   navClutch || 'no navigation',
 );
-// …and the clutch Round cell is TEXT too: the R{n} label with no round
+// …and the clutch Round cell is TEXT too: the RD{n} label with no round
 // play — the clutch ▶ above is the row's only play button.
 const clutchCells = clutchRows[0]?.querySelectorAll('td') || [];
 check(
-  'clutch round cell renders the R{n} text label, no button',
-  clutchCells[1]?.textContent.trim() === 'R7' && !clutchCells[1]?.querySelector('button'),
+  'clutch round cell renders the RD{n} text label, no button',
+  clutchCells[1]?.textContent.trim() === 'RD7' && !clutchCells[1]?.querySelector('button'),
   clutchCells[1]?.textContent,
 );
 check(
@@ -300,12 +324,12 @@ check(
   String(clutchRows[0].querySelectorAll('button').length),
 );
 
-console.log('C. only lost clutches → explicit empty state');
+console.log('C. only lost clutches + default toggles → explicit empty state');
 document.body.removeChild(root);
 const root2 = await render({ ...base, clutches: [base.clutches[0]] });
 const clutchSec2 = sections(root2, 'Clutches')[0];
 check(
-  'no-won-clutches message',
+  'no-won-clutches message (default won-only selection)',
   clutchSec2?.textContent.includes('No won clutches in this match.'),
   clutchSec2?.textContent.slice(0, 120),
 );
@@ -380,8 +404,8 @@ check(
   dPlay?.getAttribute('title'),
 );
 check(
-  'the merged round cell keeps its R{n} text (no round play)',
-  dCells[1]?.textContent.trim() === 'R7' && !dCells[1]?.querySelector('button'),
+  'the merged round cell keeps its RD{n} text (no round play)',
+  dCells[1]?.textContent.trim() === 'RD7' && !dCells[1]?.querySelector('button'),
   dCells[1]?.textContent,
 );
 
@@ -492,6 +516,188 @@ check(
   [...fRows[2].querySelectorAll('.comb-kind-chip')].length === 1 &&
     fRows[2].textContent.includes('bob'),
   fRows[2]?.textContent,
+);
+
+console.log('G. clutches won/lost TOGGLE: default won ON/lost OFF → both ON → won OFF → both OFF');
+document.body.removeChild(rootF);
+const rootG = await render(base);
+const clutchSecG = sections(rootG, 'Clutches')[0];
+const outBtn = (label) =>
+  [...(clutchSecG?.querySelectorAll('.comb-kinds .comb-kind') || [])].find(
+    (b) => b.textContent.trim() === label,
+  );
+const gTable = () => clutchSecG?.querySelector('table');
+const gRows = () => rows(gTable() || document.createElement('table'));
+const gChips = (tr) =>
+  [...(tr?.querySelectorAll('td .chip.status') || [])].map((c) =>
+    `${c.textContent.trim()}/${c.classList.contains('ok') ? 'ok' : c.classList.contains('bad') ? 'bad' : '?'}`,
+  );
+check('default: the won row only', gRows().length === 1 && gRows()[0]?.textContent.includes('carol'), String(gRows().length));
+
+click(outBtn('lost'));
+await sleep();
+check(
+  'lost ON → BOTH rows, the lost one wearing its lost/bad status chip',
+  gRows().length === 2 &&
+    gChips(gRows().find((r) => r.textContent.includes('dave'))).join(',') === 'lost/bad',
+  JSON.stringify([gRows().length, gRows().map(gChips)]),
+);
+
+click(outBtn('won'));
+await sleep();
+check(
+  'won OFF → lost-only list',
+  gRows().length === 1 && gRows()[0]?.textContent.includes('dave') &&
+    !clutchSecG?.textContent.includes('carol'),
+  JSON.stringify(gRows().map((r) => r.textContent.slice(0, 40))),
+);
+
+click(outBtn('lost'));
+await sleep();
+check(
+  'both OFF → filter-aware empty state (not a "no clutches" claim)',
+  !gTable() &&
+    clutchSecG?.textContent.includes('No clutch outcome selected — toggle won or lost above.'),
+  clutchSecG?.textContent.slice(0, 200),
+);
+check(
+  'provenance chip kept its alive-count rule + toggle wording',
+  /Found by counting who is alive/.test(clutchSecG?.querySelector('.provenance')?.getAttribute('title') || '') &&
+    clutchSecG?.querySelector('.provenance')?.textContent.includes('alive-count · won/lost toggle'),
+  clutchSecG?.querySelector('.provenance')?.textContent,
+);
+// …and the selection is LOCAL: no navigation happens for a toggle (a
+// state-retention ruling is pending — these never reach the route query).
+const navLenBeforeToggle = (globalThis.__nav || []).length;
+click(outBtn('won'));
+await sleep();
+check(
+  'toggle state stays local (no navigation, no route-query stamp)',
+  (globalThis.__nav || []).length === navLenBeforeToggle &&
+    !(globalThis.__nav || []).some((h) => h.includes('won=') || h.includes('lost=')),
+  JSON.stringify((globalThis.__nav || []).slice(-1)),
+);
+
+console.log('H. clutch loop edges: no-kill span is PADDED ±10 s; unstatable bounds stamp no loop=');
+document.body.removeChild(rootG);
+const rootH = await render({
+  ...base,
+  clutches: [
+    // Won clutch whose solo recorded NO kill in-span (bomb/time win):
+    // the fallback is the raw span PADDED ±10 s (10480−640, 10960+640)
+    // — never the bare span. killTicks is Go's NIL-slice wire form
+    // ("null" — json.Marshal of a nil []int); "[]", "" and garbage all
+    // take this same no-kills path (clutchKillTicks never guesses).
+    { id: 3, round: 7, size: 1, steamId: 'C', name: 'carol', won: true, hpLeft: 42, bombState: 'planted', replayAnchorTick: 10600, startTick: 10480, endTick: 10960, killTicks: 'null' },
+    // Unstatable bounds (never-a-promise): no ?loop= at all, the seek
+    // still fires.
+    { id: 4, round: 7, size: 2, steamId: 'D', name: 'dave', won: true, hpLeft: 1, bombState: 'none', replayAnchorTick: 10500, startTick: undefined, endTick: undefined, killTicks: '' },
+  ],
+});
+const hRows = rows(sections(rootH, 'Clutches')[0]?.querySelector('table') || document.createElement('table'));
+check('both fallback clutches listed (won ON by default)', hRows.length === 2, String(hRows.length));
+click(hRows[0]?.querySelector('td button'));
+await sleep();
+const navH1 = (globalThis.__nav || [])[(globalThis.__nav || []).length - 1];
+check(
+  'solo without kills → PADDED span loop (entryLoopSpanAround), not the raw span',
+  !!navH1 && navH1.includes('loop=9840,11600') && !navH1.includes('loop=10480,10960'),
+  navH1 || 'no navigation',
+);
+click(hRows[1]?.querySelector('td button'));
+await sleep();
+const navH2 = (globalThis.__nav || [])[(globalThis.__nav || []).length - 1];
+check(
+  'unstatable bounds → NO ?loop= (seek still stamped)',
+  !!navH2 && navH2.includes('tick=10500') && !navH2.includes('loop='),
+  navH2 || 'no navigation',
+);
+
+console.log('I. the `traded` kind: chip + victim-side title + contained-kind filter');
+document.body.removeChild(rootH);
+const tradedKill = {
+  tick: 10640,
+  round: 7,
+  aSteam: 'A',
+  aName: 'alice',
+  bSteam: 'B',
+  bName: 'bob',
+  distance: 7.888,
+  wonBy: 'ct',
+};
+const rootI = await render({
+  ...base,
+  engagements: [
+    // ONE kill answered on the killer side (trade) AND on the victim
+    // side (traded) — the merged row wears both chips.
+    { ...tradedKill, kind: 'trade' },
+    { ...tradedKill, kind: 'traded' },
+  ],
+});
+const engI = sections(rootI, 'Engagements')[0];
+const tableI = engI?.querySelector('table');
+const iRows = rows(tableI);
+check('trade+traded merge into ONE row', iRows.length === 1, String(iRows.length));
+const iChips = [...(iRows[0]?.querySelectorAll('.comb-kind-chip') || [])];
+check(
+  'the merged row carries the traded chip beside trade',
+  JSON.stringify(iChips.map((c) => c.textContent.trim())) === '["trade","traded"]',
+  JSON.stringify(iChips.map((c) => c.textContent.trim())),
+);
+check(
+  'traded chip title states the victim-side answered rule',
+  /answered by a teammate within the trade window \(victim side\)/.test(
+    iChips.find((c) => c.textContent.trim() === 'traded')?.getAttribute('title') || '',
+  ),
+  iChips.find((c) => c.textContent.trim() === 'traded')?.getAttribute('title'),
+);
+check(
+  'filter chip list offers traded',
+  [...engI.querySelectorAll('.comb-kind')].some((b) => b.textContent.trim() === 'traded'),
+  [...engI.querySelectorAll('.comb-kind')].map((b) => b.textContent.trim()).join(','),
+);
+click(kindBtn(engI, 'traded'));
+await sleep();
+check(
+  'filter traded → the merged row CONTAINS-matches and shows',
+  rows(tableI).length === 1 && !tableI.textContent.includes('No engagements match this filter.'),
+  String(rows(tableI).length),
+);
+click(kindBtn(engI, 'untraded'));
+await sleep();
+check(
+  'filter untraded → no match (an answered death is never untraded)',
+  [...tableI.querySelectorAll('.comb-kind-chip')].length === 0 &&
+    tableI.textContent.includes('No engagements match this filter.'),
+  tableI.textContent.slice(-90),
+);
+
+console.log('J. RD{n} everywhere in Combat — the KAST drill-down round label too');
+document.body.removeChild(rootI);
+const rootJ = await render({
+  ...base,
+  stats: [
+    {
+      steamId: 'A', name: 'alice', dmgNoKill: 120, dmgConvPct: 50, ffDamage: 0,
+      entryRate: 100, tradeRate: 0, untradedDeaths: 0, tradeOppMissed: 1,
+      kastPct: 50, kast: true,
+    },
+  ],
+  playerRounds: [
+    { round: 6, kills: 0, assists: 1, deaths: 0, traded: false, survived: true, kast: true },
+    { round: 7, kills: 2, assists: 0, deaths: 1, traded: true, survived: false, kast: true },
+  ],
+});
+const statsRow = rows(sections(rootJ, 'Combat stats')[0]?.querySelector('table') || document.createElement('table'))[0];
+const kastBtn = statsRow?.querySelector('.comb-kast-btn');
+check('KAST drill-down button present', !!kastBtn, statsRow?.textContent);
+click(kastBtn);
+await sleep();
+const roundNs = [...rootJ.querySelectorAll('.comb-round-n')].map((s) => s.textContent.trim());
+check(
+  'KAST per-round grid labels read RD{n}',
+  roundNs.length === 2 && roundNs.every((t) => /^RD\d+$/.test(t)) && roundNs.join(',') === 'RD6,RD7',
+  roundNs.join(','),
 );
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

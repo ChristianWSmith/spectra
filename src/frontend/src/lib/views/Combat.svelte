@@ -2,9 +2,10 @@
   // Combat tab: per-player damage/trade stats, the engagement deep-dive
   // (round → time-into-round → killer vs victim → distance in metres —
   // ONE row per KILL: a kill's independent kind facts — e.g. trade +
-  // untraded — share the one row, both chips in its Kind cell) and
-  // the WON clutches. Every inferred metric carries the badge with
-  // its definition in the title attribute.
+  // traded — share the one row, both chips in its Kind cell) and the
+  // clutches (won/lost toggle — won ON, lost OFF by default). Every
+  // inferred metric carries the badge with its definition in the title
+  // attribute.
   import {
     getCombatStats,
     getClutches,
@@ -16,7 +17,7 @@
     errText,
   } from '../services.js';
   import { fmtInt, fmtPercent, roundClock } from '../fmt.js';
-  import { replayHash, entryLoopSpan, entryLoopAround } from '../nav.js';
+  import { replayHash, entryLoopSpanAround, entryLoopAround } from '../nav.js';
   import { listedPlayers } from '../players.js';
   import { roundsByNumber } from '../replay/landmarks.js';
   import { playerStartClass, playerSideClassAt } from '../teams.js';
@@ -77,8 +78,11 @@
   ];
 
   // The engagement kinds the backend produces (analytics/engagements.go:
-  // opening | trade | untraded — "entry" is deferred, see models.go).
-  const ENG_KINDS = ['', 'opening', 'trade', 'untraded'];
+  // opening | trade | traded | untraded — "entry" is deferred, see
+  // models.go). "traded" is the victim-side ANSWERED fact — the natural
+  // pair of untraded — so every kill yields ≥ 1 row: exactly one
+  // victim-side row (traded OR untraded) plus the killer-side facts.
+  const ENG_KINDS = ['', 'opening', 'trade', 'traded', 'untraded'];
 
   let clutches = $state([]);
   let engagements = $state([]);
@@ -112,6 +116,13 @@
   }
 
   let engKind = $state('');
+  // Clutches card outcome toggle — LOCAL state only (the route-query
+  // retention ruling is pending; never stamp these into the URL): won ON
+  // and lost OFF by default, i.e. the card's historical won-only scope
+  // preserved, with lost rows one click away. Independent booleans (not
+  // one enum) so both ON lists every clutch and both OFF empties the card.
+  let clutchWon = $state(true);
+  let clutchLost = $state(false);
   let statSort = $state({ key: 'kastPct', desc: true });
 
   // KAST drill-down modal (per-round K/A/T/S grid).
@@ -150,26 +161,28 @@
   });
 
   // ONE rendered row per KILL. analytics/engagements.go emits up to
-  // THREE rows for a single kill event — opening / trade / untraded are
-  // independent detections over the SAME event (analytics_test.go
-  // TestEngagementsKinds pins one kill producing the trade row AND
-  // "Y's death untraded") — and every row of one kill carries the same
-  // round, tick, killer, victim and distance; only Kind differs. Two
-  // look-alike rows were therefore dual-semantics, not a duplicate
-  // emission: the owner ruled they merge into ONE row whose Kind cell
-  // carries both facts (Go keeps emitting per-kind rows — the stats
-  // consume those verbatim; the merge is presentation-only).
+  // FOUR rows for a single kill event — opening / trade / traded /
+  // untraded are independent detections over the SAME event
+  // (analytics_test.go TestEngagementsKinds pins one kill producing the
+  // trade row AND a victim-side row) and EVERY kill yields ≥ 1 row
+  // (exactly one victim-side row: traded OR untraded); every row of one
+  // kill carries the same round, tick, killer, victim and distance; only
+  // Kind differs. Two look-alike rows were therefore dual-semantics, not
+  // a duplicate emission: the owner ruled they merge into ONE row whose
+  // Kind cell carries both facts (Go keeps emitting per-kind rows — the
+  // stats consume those verbatim; the merge is presentation-only).
   //
   // Grouping key: round | tick | killer | victim. A same-tick same-pair
   // double kill cannot occur: every engagement row derives from ONE
   // player_death event, a victim dies at most once per round, and a
   // single kill emits at most one row per kind (opening once per round
-  // via firstKillDone; trade/untraded single emits) — so a group is
-  // exactly one kill and its kinds are distinct.
+  // via firstKillDone; trade/traded/untraded single emits) — so a group
+  // is exactly one kill and its kinds are distinct.
   //
   // Sort: a merged row keeps its FIRST member's position. The fetch is
   // GetEngagements ORDER BY seq (store/analytics.go; seq was written in
-  // round → tick → kind order with opening < trade < untraded), so Map
+  // round → tick → kind order with opening < trade < traded < untraded),
+  // so Map
   // insertion order — first appearance in that sorted stream — preserves
   // the round/tick ordering exactly: the merged row sits where its
   // earliest (lowest-kind) row used to, and nothing else moves.
@@ -193,7 +206,7 @@
         groups.set(key, g);
       }
       // Distinct kinds only (one kill emits each kind at most once);
-      // push keeps the fetch's opening → trade → untraded order.
+      // push keeps the fetch's opening → trade → traded → untraded order.
       if (!g.kinds.includes(e.kind)) g.kinds.push(e.kind);
     }
     return [...groups.values()];
@@ -230,22 +243,88 @@
 
   // Deep link into the replay at a tick, with an optional entry-only
   // ?loop= range stamped beside it (undefined = none): ±10 s around an
-  // engagement tick, the clutch's own start→end span for a clutch row.
-  // `follow` is the ROW'S ACTOR (entry context, never a filter): the
-  // engagement's killer, the clutch's solo — absent actor → undefined,
-  // which buildHash drops (never a guessed follow).
+  // engagement tick (singular event), the clutch's kill-span padded ±10 s
+  // (long event — clutchLoop below). `follow` is the ROW'S ACTOR (entry
+  // context, never a filter): the engagement's killer, the clutch's solo
+  // — absent actor → undefined, which buildHash drops (never a guessed
+  // follow).
   function replay(tick, loop, follow) {
     // `|| undefined` — buildHash drops null/undefined but would keep an
     // empty string as `follow=`; an actor-less row stamps NOTHING.
     nav(replayHash(id, {}, { tick, loop, follow: follow || undefined, back: `match/${id}/combat` }));
   }
 
-  // The Clutches card lists WON clutches only (the card's scope decision):
-  // a lost 1vN is dropped here rather than shown with an outcome chip, so
-  // this derived filter is the one place that rule lives — lost rows are
-  // simply not interesting here (their dead solos read 0 HP in
-  // analytics/clutches.go, never the old clamped 1).
-  const wonClutches = $derived(clutches.filter((c) => c.won));
+  // The Clutches card lists the clutches its WON/LOST toggles select
+  // (owner ruling: won ON, lost OFF by default — today's won-only scope
+  // is just the default state). Both ON = every clutch; both OFF = the
+  // empty state. This derived filter is the one place that rule lives.
+  // A lost 1vN is listed with its outcome chip rather than dropped (their
+  // dead solos read 0 HP in analytics/clutches.go, never the old clamped 1).
+  const shownClutches = $derived(
+    clutches.filter((c) => (c.won ? clutchWon : clutchLost)),
+  );
+
+  // Filter-aware empty state for the Clutches card: names exactly what
+  // the current toggle selection asked for ("No won clutches…" keeps the
+  // default-state wording), and with both outcomes off it says so rather
+  // than pretending the match had none (that case is the `clutches.length
+  // === 0` branch above).
+  const clutchEmptyText = $derived(
+    !clutchWon && !clutchLost
+      ? 'No clutch outcome selected — toggle won or lost above.'
+      : clutchWon && !clutchLost
+        ? 'No won clutches in this match.'
+        : !clutchWon && clutchLost
+          ? 'No lost clutches in this match.'
+          : 'No clutches in this match.',
+  );
+
+  // Parse a ClutchRow.killTicks value: Go ships it as a JSON array of
+  // int ticks (models.Clutch.KillTicks — the SOLO's kills strictly after
+  // the clutch started), so the string is the wire form. Anything
+  // unparseable / non-array / non-numeric reads as NO kills — never a
+  // guessed tick (the caller falls back to the padded span).
+  function clutchKillTicks(raw) {
+    if (typeof raw !== 'string' || raw === '') return [];
+    let v;
+    try {
+      v = JSON.parse(raw);
+    } catch {
+      return [];
+    }
+    if (!Array.isArray(v)) return [];
+    return v.map(Number).filter((n) => Number.isFinite(n) && n >= 0);
+  }
+
+  // The clutch row's ?loop= — the owner's LONG-EVENT rule: 10 s before
+  // the FIRST kill of the clutch to 10 s after the LAST kill of it
+  // (nav.entryLoopSpanAround is THE stamper for that shape; both bounds
+  // padded at the match tick rate, floored at 0, undefined when a bound
+  // is unstatable — buildHash then drops ?loop= entirely, never a
+  // partial promise).
+  //
+  // First/last kill come from ClutchRow.killTicks (the solo's kills
+  // AFTER the start) — chosen over re-deriving them from the engagements
+  // fetch: the DTO already ships them, so there is no second data path
+  // to keep in step, and the window semantics fall out structurally.
+  // Window semantics (golden round 7, inferno): the clutch SPAN opens at
+  // the teammate's death that made it a 1vN (~13:34) while the solo's
+  // first kill is ~14:10 and the last ~14:18 — the creating kill is NOT
+  // the solo's, so killTicks (attacker === solo, tick > startTick) can
+  // never include it, and the wanted loop 14:00–14:28 falls out of
+  // first−10 s / last+10 s without a special case. A won clutch whose
+  // solo has NO kill in the span (bomb/time wins) has an empty killTicks
+  // → fall back to the raw clutch span padded the SAME ±10 s (owner's
+  // fallback ruling) — never the bare span.
+  function clutchLoop(c) {
+    const kills = clutchKillTicks(c.killTicks);
+    if (kills.length > 0) {
+      const first = Math.min(...kills);
+      const last = Math.max(...kills);
+      return entryLoopSpanAround(first, last, tickRate);
+    }
+    return entryLoopSpanAround(c.startTick, c.endTick, tickRate);
+  }
 
   // KAST% cell click → per-round K/A/T/S grid for that player. The modal
   // header shows THIS row's kastPct — the exact value the column renders —
@@ -397,19 +476,20 @@
                 />
               </td>
               <!-- The Round cell is TEXT, not a control (owner ruling:
-                   "no round play button there"): R{n} as a plain label —
+                   "no round play button there"): RD{n} as a plain label —
                    a label isn't a play button, and the row's ONE ▶ is the
                    event/follow play above. Round watching lives in the
                    RoundDetail header's "Watch round". -->
-              <td class="num">R{g.round}</td>
+              <td class="num">RD{g.round}</td>
               <td class="num mono" title="tick {g.tick}">{roundClock(g.tick, rbn.get(g.round), tickRate)}</td>
               <td>
-                <!-- ONE kill, up to TWO facts: the kinds are independent
-                     detections over the same kill event (see
-                     engagementRows above), so a merged row wears BOTH
-                     chips side by side — each keeping its own
+                <!-- ONE kill, up to FOUR kind facts (opening / trade /
+                     traded / untraded — every kill yields ≥ 1 row): the
+                     kinds are independent detections over the same kill
+                     event (see engagementRows above), so a merged row
+                     wears its chips side by side — each keeping its own
                      perspective title — plus an sr-only combined line,
-                     making the cell read as one kill with two facts
+                     making the cell read as one kill with its facts
                      rather than as two rows' worth of labels. -->
                 {#each g.kinds as k, i (k)}{#if i > 0}{' · '}{/if}<span class="chip comb-kind-chip {k}" title={ENG_KIND_TITLES[k] || k}>{k}</span>{/each}{#if g.kinds.length > 1}{' '}<span class="sr-only">One kill — {g.kinds.map((k) => ENG_KIND_TITLES[k] || k).join('; ')}</span>{/if}
               </td>
@@ -448,12 +528,31 @@
 
   <section class="panel comb-sec">
     <h2>
-      Clutches <span class="chip provenance" title="Found by counting who is alive when the side drops to one player while the opponents still have ≥ 1; it ends when the solo dies or the last opponent falls. WON clutches only — a lost 1vN is not listed.">alive-count · won only</span>
+      Clutches <span class="chip provenance" title="Found by counting who is alive when the side drops to one player while the opponents still have ≥ 1; it ends when the solo dies or the last opponent falls. Shown per the won/lost toggle below (won on, lost off by default).">alive-count · won/lost toggle</span>
     </h2>
+    <!-- Outcome TOGGLES — chip-style like the Engagements card's kind
+         chips, but independent (each flips its own boolean): won+lost = all
+         rows, won-only = the default/historical list, lost-only = the lost
+         rows, neither = the empty state below. Local $state only — never
+         route-query state (retention ruling pending). -->
+    <div class="comb-kinds" role="group" aria-label="Filter clutches by outcome">
+      <button
+        class="btn small comb-kind"
+        class:active={clutchWon}
+        aria-pressed={clutchWon}
+        onclick={() => (clutchWon = !clutchWon)}
+      >won</button>
+      <button
+        class="btn small comb-kind"
+        class:active={clutchLost}
+        aria-pressed={clutchLost}
+        onclick={() => (clutchLost = !clutchLost)}
+      >lost</button>
+    </div>
     {#if clutches.length === 0 && !error}
       <p class="muted" role="status">No clutches detected in this match.</p>
-    {:else if wonClutches.length === 0}
-      <p class="muted" role="status">No won clutches in this match.</p>
+    {:else if shownClutches.length === 0}
+      <p class="muted" role="status">{clutchEmptyText}</p>
     {:else}
       <div class="table-scroll">
         <table class="data-table">
@@ -469,11 +568,12 @@
             </tr>
           </thead>
           <tbody>
-            {#each wonClutches as c (c.id)}
+            {#each shownClutches as c (c.id)}
               <tr>
                 <td>
                   {#if c.replayAnchorTick > 0}
-                    <!-- Row ▶ follows the CLUTCH's solo (the row actor). -->
+                    <!-- Row ▶ follows the CLUTCH's solo (the row actor);
+                         the loop is the KILL-span ±10 s (clutchLoop). -->
                     <EventPlay
                       tick={c.replayAnchorTick}
                       title={c.steamId
@@ -482,13 +582,13 @@
                       label={c.steamId
                         ? `Watch the clutch in round ${c.round} — follow ${c.name || c.steamId}`
                         : `Watch the clutch in round ${c.round} in the replay`}
-                      onclick={() => replay(c.replayAnchorTick, entryLoopSpan(c.startTick, c.endTick), c.steamId)}
+                      onclick={() => replay(c.replayAnchorTick, clutchLoop(c), c.steamId)}
                     />
                   {/if}
                 </td>
                 <!-- Same ruling as the engagement row: the Round cell is
-                     the R{n} label, never a second play button. -->
-                <td class="num">R{c.round}</td>
+                     the RD{n} label, never a second play button. -->
+                <td class="num">RD{c.round}</td>
                 <td><strong>1v{c.size}</strong></td>
                 <td>
                   <ProfileLink
@@ -512,7 +612,7 @@
                 <td class="num">{c.hpLeft}</td>
               </tr>
             {:else}
-              <tr><td colspan="7" class="muted">No won clutches in this match.</td></tr>
+              <tr><td colspan="7" class="muted">{clutchEmptyText}</td></tr>
             {/each}
           </tbody>
         </table>
@@ -551,7 +651,7 @@
       <div class="comb-kast-grid">
         {#each kastRows as r (r.round)}
           <div class="comb-round" class:kast={r.kast} title={kastDotTitle(r, 'all parts')}>
-            <span class="mono comb-round-n">R{r.round}</span>
+            <span class="mono comb-round-n">RD{r.round}</span>
             <span class="comb-dots">
               <span class="comb-dot" class:on={r.kills > 0} title={kastDotTitle(r, 'kill')}>K</span>
               <span class="comb-dot" class:on={r.assists > 0} title={kastDotTitle(r, 'assist')}>A</span>
