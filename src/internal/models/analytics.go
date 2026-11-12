@@ -306,11 +306,19 @@ func WinFor(side string, scoreCT, scoreT int) bool {
 	return (side == "ct" && scoreCT > scoreT) || (side == "t" && scoreT > scoreCT)
 }
 
-// ProfileTrendPoint is one career sparkline point (GetTrend).
+// ProfileTrendPoint is one career sparkline point (GetTrend) — the
+// point carries everything its tooltip renders: Patch is the demo
+// header's flattened CS2 PatchVersion (0 = unknown, never "patch 0") and
+// ExtractedAt is the match's IMPORT time (CS2 demos carry no played-at
+// date) — the GetTrend tiebreaker inside a patch, and the honest date
+// behind the tooltip's "Imported" label (self-contained: points older
+// than GetPlayerHistory's 100-row window still date correctly).
 type ProfileTrendPoint struct {
-	MatchID int64   `json:"matchId"`
-	Seq     int     `json:"seq"` // history index, oldest = 0
-	Value   float64 `json:"value"`
+	MatchID     int64     `json:"matchId"`
+	Seq         int       `json:"seq"` // position in GetTrend's row order (patch order), oldest = 0
+	Value       float64   `json:"value"`
+	Patch       int       `json:"patch"`       // flattened PatchVersion (x.y.z.w, dots removed; 0 = unknown)
+	ExtractedAt time.Time `json:"extractedAt"` // import time — the within-patch tiebreaker
 }
 
 // SavedFilterRow is one saved_filters preset row.

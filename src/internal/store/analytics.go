@@ -1102,8 +1102,26 @@ var trendMetricWhitelist = map[string]string{
 	"kd":   kdPerMatchSQL,
 	"hs":   "ps.hs_pct"}
 
-// GetTrend returns a per-match metric series for one player, oldest →
-// newest. metric ∈ adr|kast|kd|hs (unknown names yield an error).
+// GetTrend returns a per-match metric series for one player, ordered by
+// CS2 patch number — the authoritative "when this match was played" (a
+// demo carries no played-at date; see CS2.md's played-at entry) — with
+// import time (m.extracted_at) as the tiebreaker inside a patch.
+// metric ∈ adr|kast|kd|hs (unknown names yield an error).
+//
+// The row order IS the trend's x axis: known patches ascending first,
+// unknowns (m.patch_version = 0 — the column default and the demo
+// header's absent optional field, never "patch 0") TRAILING so an
+// unpatched match never anchors the head of the line, then
+// m.extracted_at ASC (import time — the within-patch tiebreaker) and
+// m.id ASC as the final deterministic tiebreak. Ordering on the RAW
+// flattened int (1.40.8.9 → 14089) is deliberate: CS2-era values are
+// fixed-width (x = 1 digit, y = 2, z/w = 1), so int order equals
+// (x,y,z,w) tuple order — the tuple caveat (a component growing past
+// its fixed width, e.g. z/w rolling past 9, would flip raw order) is
+// recorded in CS2.md instead of extra columns or a mapping table. Seq
+// below is computed from that row order and the renderer is ordinal, so
+// the ordering flows through as the x position.
+//
 // HUMANS ONLY (HumanOnlyBySteamID): this is the one profile read the
 // frontend fires for a bare /player/<id> URL without going through
 // GetProfile's GetCareer guard, so a bot id yields an empty series — no
@@ -1114,12 +1132,13 @@ func (s *Store) GetTrend(steamID, metric string) ([]models.ProfileTrendPoint, er
 		return nil, fmt.Errorf("store: unknown trend metric %q", metric)
 	}
 	rows, err := s.db.Query(
-		`SELECT m.id, `+expr+`
+		`SELECT m.id, `+expr+`, m.patch_version, m.extracted_at
 		 FROM player_stats ps
 		 JOIN matches m ON m.id = ps.match_id
 		 WHERE ps.steam_id = ? AND m.extracted_at IS NOT NULL
 		   AND `+HumanOnlyBySteamID("ps.steam_id", "ps.match_id")+`
-		 ORDER BY m.extracted_at ASC, m.id ASC`, scrub(steamID),
+		 ORDER BY (m.patch_version = 0) ASC, m.patch_version ASC,
+		          m.extracted_at ASC, m.id ASC`, scrub(steamID), // unknowns (0) trail; patch → import time → id (see doc)
 	)
 	if err != nil {
 		return nil, fmt.Errorf("store: get trend: %w", err)
@@ -1128,10 +1147,12 @@ func (s *Store) GetTrend(steamID, metric string) ([]models.ProfileTrendPoint, er
 	var out []models.ProfileTrendPoint
 	for rows.Next() {
 		var r models.ProfileTrendPoint
-		if err := rows.Scan(&r.MatchID, &r.Value); err != nil {
+		var extracted sql.NullTime
+		if err := rows.Scan(&r.MatchID, &r.Value, &r.Patch, &extracted); err != nil {
 			return nil, fmt.Errorf("store: get trend: %w", err)
 		}
 		r.Seq = len(out)
+		r.ExtractedAt = nullTime(extracted)
 		out = append(out, r)
 	}
 	if err := rows.Err(); err != nil {
