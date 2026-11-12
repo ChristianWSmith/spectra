@@ -1156,10 +1156,13 @@ check(
 );
 
 // --- The dead card's PAINT (the owner's ruling, 2026-11-11) ---------------
-// A STRONGER dim than the old 0.72 and the card's BORDER going gray —
-// both CSS-only, read from the component's injected sheet (comments
-// stripped, like the ring pins). Border-color, never outline: the
-// player-color box-shadow stays the card's ONE ring.
+// A STRONGER dim than the old 0.72 — CSS-only, read from the component's
+// injected sheet (comments stripped, like the ring pins). Border-color,
+// never outline: the player-color box-shadow stays the card's ONE ring,
+// and the gray border tint the original ruling carried was REMOVED by
+// the owner's follow-up ruling (2026-11-12) — the dead border falls
+// back to the card default (var(--border)); the DEAD chip in the head
+// carries the rest of the dead cue.
 const deadRule = ruleFor('pc-dead(?![\\w-])');
 check(
   'dead card dims MORE: opacity 0.55 (was 0.72)',
@@ -1167,8 +1170,8 @@ check(
   deadRule,
 );
 check(
-  'dead card: the BORDER goes gray (border-color tint, never an outline)',
-  /border-color:\s*var\(--muted\)/.test(deadRule) && !/outline/.test(deadRule),
+  'dead card: NO border tint (the border falls back to the card default — never an outline)',
+  !/border-color/.test(deadRule) && !/outline/.test(deadRule),
   deadRule,
 );
 check(
