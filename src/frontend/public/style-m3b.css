@@ -100,7 +100,9 @@
   color: var(--accent);
 }
 
-/* Engagement kind chips: opening = gold, trade = green, untraded = red. */
+/* Engagement kind chips: opening = gold, trade = green, traded = violet
+   (--info; victim-side answered, the natural pair of untraded's red),
+   untraded = red. */
 .comb-kind-chip.opening {
   color: var(--accent);
   border-color: var(--accent-50);
@@ -109,6 +111,11 @@
 .comb-kind-chip.trade {
   color: var(--success);
   border-color: rgba(76, 175, 125, 0.5);
+}
+
+.comb-kind-chip.traded {
+  color: var(--info);
+  border-color: rgba(181, 138, 245, 0.5);
 }
 
 .comb-kind-chip.untraded {
@@ -1022,6 +1029,7 @@
   --team-start-t: #b04f12;
   --success: #2f8558;
   --danger: #c94040;
+  --info: #6d3fd4;
 }
 
 [data-theme="light"] .chip {

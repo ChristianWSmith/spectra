@@ -14,7 +14,7 @@
 //   - profileservice.go             — career opening rate, profile Trade
 //     rate (trades ÷ trade opportunities) and the per-match averages
 //   - internal/extract/agg.go       — entry/opening/trade attribution
-//   - internal/analytics/engagements.go — opening|trade|untraded kinds
+//   - internal/analytics/engagements.go — opening|trade|traded|untraded kinds
 
 // The glossary Settings renders (Settings → Metric definitions). Every
 // entry is {term, inferred, text}; `inferred` drives the badge chip.

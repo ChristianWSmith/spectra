@@ -89,6 +89,11 @@
   --team-start-t: #ff904d;
   --success: #4caf7d;
   --danger: #e05b5b;
+  /* Semantic info hue — the engagement `traded` chip (the answered-death
+     kind). Violet, so all four engagement kinds stay glanceably distinct
+     (gold opening / green trade+traded / red untraded would collide);
+     light theme overrides it below. */
+  --info: #b58af5;
   --mono:
     'SF Mono', Menlo, Monaco, 'Cascadia Code', 'Cascadia Mono', Consolas,
     'Courier New', monospace;
