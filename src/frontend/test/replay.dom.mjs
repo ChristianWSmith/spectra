@@ -409,7 +409,6 @@ export const getGenericEvents = (id, name) =>
       ? [{ rowId: 1, name: 'buytime_ended', tick: 10, round: 1, payloadJson: '{}' }]
       : [],
   );
-export const getGenericHistogram = () => Promise.resolve([]);
 export const getMatch = () => Promise.resolve({ map: '', sideSwitches: 1 });
 export const getRounds = () =>
   Promise.resolve([
@@ -2290,13 +2289,36 @@ await sleep();
 const catMenu = panel?.querySelector('.lm-cat-menu');
 check('dropdown opens a checkbox list (multi-select)', !!catMenu);
 const catBoxes = catMenu ? [...catMenu.querySelectorAll('input[type="checkbox"]')] : [];
-// 16 = the registry after the gameplay pass: − convars (server settings
+// 14 = the registry after TWO owner rulings: − convars (server settings
 // left the FE — the owner's ConVars-out ruling; the Go labeler still
 // labels those rows), + Deaths (the SECOND view of the kill kind —
-// lib/replay/landmarks.js, shared claim). The checked-list pin below
-// stays 'Round starts' only: every addition is opt-in, default OFF.
-check('one checkbox per category', catBoxes.length === 16, String(catBoxes.length));
+// lib/replay/landmarks.js, shared claim), then − chat / team changes /
+// game events + Buys (Q3a — the filters are gameplay-only; the store
+// keeps those rows, only the filter stops offering them). The
+// checked-list pin below stays 'Round starts' only: every addition is
+// opt-in, default OFF.
+check('one checkbox per category', catBoxes.length === 14, String(catBoxes.length));
 const catLabel = (cb) => (cb.closest('label')?.textContent || '').trim();
+// Q3a: the three cut categories are gone from the dropdown and `buys`
+// (the one generic category left) is there — same shape as the convars
+// pin below.
+check(
+  'the cut categories are GONE from the dropdown (Q3a — gameplay-only)',
+  !['Chat', 'Team changes', 'Game events'].some((l) =>
+    catBoxes.some((cb) => catLabel(cb) === l),
+  ),
+  catBoxes.map(catLabel).join(', '),
+);
+check(
+  'the Buys category is in the dropdown (Q3a — the one generic left)',
+  !!catBoxes.find((cb) => catLabel(cb) === 'Buys'),
+  catBoxes.map(catLabel).join(', '),
+);
+check(
+  'the gname name-picker is gone with game_events (Q3a)',
+  !panel?.querySelector('#lm-gname'),
+  panel?.querySelector('#lm-gname') ? 'still rendered' : '',
+);
 check(
   'default selection: round starts ON, kills and round wins OFF',
   catBoxes.filter((cb) => cb.checked).map(catLabel).join(',') === 'Round starts',

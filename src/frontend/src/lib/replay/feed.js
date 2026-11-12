@@ -10,9 +10,10 @@
 //      can never drift. INVARIANT: no second site may compose query
 //      params from a filter (pinned by feed.test.js' source scan).
 //   2. FEED_SOURCES — THE source interface: one descriptor per
-//      retrieval path (typed events / chat / generic), each owning its
-//      job list, fetch, normalization, merge rank, sequence key and
-//      paging. A new path lands as ONE registration here.
+//      retrieval path (typed events / generic — Q3a made the filters
+//      gameplay-only), each owning its job list, fetch, normalization,
+//      merge rank, sequence key and paging. A new path lands as ONE
+//      registration here.
 //   3. feedJobs / runFeedJob / pageSlice — the job list a filter needs
 //      and the ONE paging rule (the +1 probe row).
 //   4. mergeSourceRows / composeFeedRows — the chronological merge (rank
@@ -20,9 +21,10 @@
 //      plus the round-visibility pref.
 //   5. entrySelection / fetchEntryRow — the ?sel= deep-link resolution
 //      (already-loaded row, else the typed event fetched by id).
-//   6. landmarkExportRows / precomposeChatLabels — the feed's CSV/JSON
-//      projection (moved here from landmarks.js: this is feed output
-//      shape, not vocabulary).
+//   6. landmarkExportRows — the feed's CSV/JSON projection (moved here
+//      from landmarks.js: this is feed output shape, not vocabulary).
+//      Its chat half left with Q3a (no chat can reach a feed export);
+//      the chat ROW SHAPE stays in landmarks.normalizeChat.
 //
 // Vocabulary stays in landmarks.js (lib/replay/landmarks.js): the
 // category registry, the buckets, the row shapes (normalize*), the
@@ -30,22 +32,19 @@
 // round-visibility RULE. This module is the RUNTIME over that
 // vocabulary.
 //
-// --- Queued follow-ups land as REGISTRATIONS here (NOT implemented) ------
-//   Q3a (cuts): drop chat + team_changes + game_events/gname, add
-//     `buys → item_purchase`. Landing spots: (a) delete the `chatSource`
-//     descriptor below — its rank, job list and normalization leave with
-//     it; (b) the generic descriptor needs NO code change: `buys` is a
-//     fixed-name category, so `jobs()` already yields one job per
-//     distinct name (the `nameFrom`/`gname` branch there disappears with
-//     the picker categories in landmarks' CATEGORIES, along with
-//     enabledSources' `chat` field and its pin); (c) in Replay.svelte the
-//     gname histogram (`hist`/`needHist` + the FilterBar picker) is
-//     chrome that goes with the picker; (d) feed.test.js's source-rank
-//     pin and its chat/gname job pins are the tests that move with it.
-//   Q3b (footsteps): register a FOURTH descriptor over GetSoundEvents'
+// --- The queued follow-up lands as a REGISTRATION here ---------------------
+//   Q3a (gameplay-only filters) is DONE: `chat`/`team_changes`/
+//     `game_events` and their gname picker are gone — `chatSource` was
+//     deleted, `genericSource.jobs` lost the `nameFrom`/gname branch and
+//     the name-dedupe (one job per FIXED-NAME category now), the rank
+//     table shrank to event: 0 / generic: 1, and the export lost its
+//     chat half. The FILTER's `gname` key died with the picker in
+//     landmarks.js; the in-view histogram chrome (hist/needHist +
+//     getGenericHistogram) died with it in Replay.svelte.
+//   Q3b (footsteps): register a THIRD descriptor over GetSoundEvents'
 //     tick window — page: null (that read is already a windowed read in
-//     services), normalize the sound row into a landmark row, rank 3
-//     after generic, seqOf = its own id. Three REGISTRATIONS, no
+//     services), normalize the sound row into a landmark row, rank 2
+//     (after generic), seqOf = its own id. Three REGISTRATIONS, no
 //     machinery: the `footsteps` category in landmarks' CATEGORIES, its
 //     path field in landmarks' enabledSources (the registry's path
 //     split, which every descriptor's jobs() reads), and this descriptor
@@ -53,15 +52,12 @@
 //     registry as they find it; the MARKER answer stays event-only
 //     (markers intersect the world rows, which are event kinds) —
 //     buildFeedQuery is untouched by it.
-import { getEvents, getChat, getGenericEvents, getEvent } from '../services.js';
-import { chatLine } from '../fmt.js';
-import { playerSideAt } from '../teams.js';
+import { getEvents, getGenericEvents, getEvent } from '../services.js';
 import {
   enabledSources,
   typedKindsFor,
   killRoleFor,
   normalizeEvent,
-  normalizeChat,
   normalizeGeneric,
   applyRoundPref,
 } from './landmarks.js';
@@ -135,12 +131,12 @@ export function buildFeedQuery(matchId, filter) {
 // --- THE source interface --------------------------------------------------
 //
 // One descriptor per retrieval path:
-//   id        — the page-slot namespace ('event' | 'chat' | 'generic');
+//   id        — the page-slot namespace ('event' | 'generic');
 //               it is also the landmark row's own `source` field, which
 //               is how the merge finds a row's rank/seqOf.
 //   rank      — the merge tiebreak when two rows share a tick (the
-//               sources are listed in merge order: events → chat →
-//               generic); a queued source appends its own rank here.
+//               sources are listed in merge order: events → generic); a
+//               queued source appends its own rank here.
 //   page      — {size} when the path pages, null for an unpaged read
 //               (runFeedJob then slices with Infinity: everything back,
 //               hasMore false).
@@ -185,51 +181,24 @@ const typedSource = {
   seqOf: (row) => row.seq,
 };
 
-// Q3a REMOVES this descriptor (and the chat category): its rank, job
-// list and normalization leave with it — nothing else in this module
-// special-cases chat.
-const chatSource = {
-  id: 'chat',
-  rank: 1,
-  page: null, // the chat read is one unpaged call
-  jobs(filter) {
-    return enabledSources(filter.cats).chat
-      ? [{ key: 'chat', round: srcRound(filter) }]
-      : [];
-  },
-  fetch(matchId, filter, job) {
-    return getChat(matchId, job.round, filter.steamId);
-  },
-  normalize: (row) => normalizeChat(row),
-  seqOf: (row) => row.id,
-};
-
-// The generic source — one job per DISTINCT name (two enabled categories
-// naming the same generic — e.g. a gname equal to a surviving source's
-// name — dedupe to a single read; the FIRST category in registry order
-// owns the category stamp, exactly as the old inline loop did).
-// Q3a: `buys → item_purchase` arrives as one more fixed-name CATEGORY in
-// landmarks' CATEGORIES — this descriptor already yields a job per name,
-// so no code changes here (the `nameFrom`/`gname` branch goes away with
-// the picker categories).
+// The generic source — ONE job per fixed-name category (Q3a: every
+// generic category now carries its own `name`, so the old name-picker
+// branch and the name-dedupe both left with the gname picker — a
+// category without a name yields no job, the registry's contract).
 const genericSource = {
   id: 'generic',
-  rank: 2,
+  rank: 1,
   page: { size: PAGE }, // one page per name
   jobs(filter) {
-    const cats = enabledSources(filter.cats).generic;
-    const names = new Map();
-    for (const c of cats) {
-      const name = c.nameFrom ? filter.gname : c.name;
-      if (name && !names.has(name)) names.set(name, c.id);
-    }
     const round = srcRound(filter);
-    return [...names].map(([name, catId]) => ({
-      key: `generic:${name}`,
-      name,
-      catId,
-      round,
-    }));
+    return enabledSources(filter.cats).generic
+      .filter((c) => !!c.name)
+      .map((c) => ({
+        key: `generic:${c.name}`,
+        name: c.name,
+        catId: c.id,
+        round,
+      }));
   },
   fetch(matchId, filter, job, offset) {
     return getGenericEvents(matchId, job.name, job.round, PAGE + 1, offset);
@@ -239,8 +208,9 @@ const genericSource = {
 };
 
 // THE registry — merge order = rank order. Q3b appends its footsteps
-// descriptor here (rank 3); Q3a deletes chatSource.
-export const FEED_SOURCES = [typedSource, chatSource, genericSource];
+// descriptor here (rank 2, after generic); Q3a already deleted
+// chatSource, which renumbered generic to rank 1.
+export const FEED_SOURCES = [typedSource, genericSource];
 
 const SOURCE_BY_ID = new Map(FEED_SOURCES.map((s) => [s.id, s]));
 
@@ -359,41 +329,19 @@ export async function fetchEntryRow(matchId, eventId, cats) {
 
 // --- The feed's export projection -----------------------------------------
 //
-// Moved here from landmarks.js: these shape the FEED's rows for CSV/JSON
-// output (feed output shape, not the row vocabulary). The chat line is
-// precomposed through THE display rule (fmt.chatLine — `donk666 [T]: lol`)
-// while `who` stays the bare name; the side inputs come from the caller's
-// side context ({players, sideSwitches, rounds}).
+// Moved here from landmarks.js: this shapes the FEED's rows for CSV
+// output (feed output shape, not the row vocabulary). Q3a removed the
+// chat half WITH the chat source — no chat row can reach a feed export
+// any more, so `details` is the row's own label for every source (the
+// chat-LINE rule itself lives in fmt.chatLine, which RoundDetail still
+// renders from the same ChatRow vocabulary).
 
-// sideOfChatRow resolves a chat row's SPEAKER side for the export tags —
-// the same teams.playerSideAt + fmt.chatLine composition the UI renders,
-// fed from the caller's side inputs (Replay has them in scope at the
-// export button). Missing inputs → '' → team chat exports channel-only
-// (no bracket), never a guessed side.
-function sideOfChatRow(r, sideCtx) {
-  const ctx = sideCtx || {};
-  return playerSideAt(ctx.players, ctx.sideSwitches, ctx.rounds, r.round, r.steamId, r.who);
-}
-
-function composeChatLabel(r, sideCtx) {
-  return chatLine(r.who || '', r.channel || '', sideOfChatRow(r, sideCtx), r.label || '');
-}
-
-// precomposeChatLabels returns the feed rows with every CHAT row's
-// `label` replaced by the full precomposed line (fmt.chatLine) — the
-// JSON export's shape, so exported JSON reads like the UI (who stays
-// bare).
-export function precomposeChatLabels(rows, sideCtx) {
-  return (rows || []).map((r) => (r.source === 'chat' ? { ...r, label: composeChatLabel(r, sideCtx) } : r));
-}
-
-// landmarkExportRows flattens the loaded feed into canonical CSV/JSON
-// export columns (time, round, source, type, event, player, details,
-// weapon, damage — plus the feed's category). Chat rows carry the
-// PRECOMPOSED line in `label` (see composeChatLabel); sideCtx is the
-// side inputs Replay has in scope at the export button — omitted, team
-// chat exports with no bracket (never guessed).
-export function landmarkExportRows(rows, sideCtx) {
+// landmarkExportRows flattens the loaded feed into canonical CSV
+// columns (time, round, source, type, event, player, details, weapon,
+// damage). `type` carries the STAMPED category (the enabled claim — a
+// deaths-only selection exports its kill rows as 'deaths') while `event`
+// keeps the demo kind.
+export function landmarkExportRows(rows) {
   const out = [['time', 'round', 'source', 'type', 'event', 'player', 'details', 'weapon', 'damage']];
   for (const r of rows || []) {
     out.push([
@@ -403,7 +351,7 @@ export function landmarkExportRows(rows, sideCtx) {
       r.category,
       r.kind || r.name || '',
       r.who || '',
-      r.source === 'chat' ? composeChatLabel(r, sideCtx) : r.label || '',
+      r.label || '',
       r.weapon || '',
       r.dmg != null ? r.dmg : '',
     ]);

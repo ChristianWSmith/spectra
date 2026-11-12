@@ -23,7 +23,6 @@
     getChat,
     getSoundEvents,
     getSoundEventPresence,
-    getGenericHistogram,
     getMatch,
     getRounds,
     getTeamNames,
@@ -65,7 +64,6 @@
     entrySelection,
     fetchEntryRow,
     landmarkExportRows,
-    precomposeChatLabels,
   } from '../replay/feed.js';
   import { attachReplayInput, snapshot } from '../replay/input.js';
   import { createVoiceEngine, fetchVoicePCM } from '../replay/audio.js';
@@ -456,7 +454,6 @@
   let feedLoading = $state(false);
   let feedSettled = $state(false);
   let feedError = $state('');
-  let hist = $state([]); // generic-event histogram (game_events scoping)
   let gen = 0; // feed generation — drops stale async results
 
   let feedF = null; // the filter the loaded feed belongs to (load-more)
@@ -690,22 +687,6 @@
     return out;
   });
 
-  // Generic-event histogram — only the game_events category needs name
-  // scoping (high-volume sources are never fetched unrestricted).
-  const needHist = $derived(filter.cats.includes('game_events'));
-  $effect(() => {
-    if (!needHist) return;
-    let off = true;
-    getGenericHistogram(id)
-      .then((h) => {
-        if (off) hist = h || [];
-      })
-      .catch(() => {
-        /* the select just stays empty */
-      });
-    return () => (off = false);
-  });
-
   // --- Selection + detail ----------------------------------------------------
   let selected = $state(null); // normalized landmark row
   let detail = $state(null); // EventDetail payloads (event source only)
@@ -858,16 +839,12 @@
     navigateFilter({ ...filter, cats });
   }
 
-  function setGname(name) {
-    navigateFilter({ ...filter, gname: name });
-  }
-
   function resetFilters() {
     navigateFilter(defaultFilter());
   }
 
-  // FilterBar commits its own (typed/scope) subset — cats/gname ride
-  // along untouched.
+  // FilterBar commits its own (typed/scope) subset — cats ride along
+  // untouched (Q3a: the gname picker is gone).
   function onBarFilter(next) {
     navigateFilter({ ...filter, ...next });
   }
@@ -915,18 +892,14 @@
     if (exportEl) exportEl.open = false;
   }
 
-  // Side inputs for the export's precomposed chat labels (the CSV/JSON
-  // feed export builds `label` through the canonical fmt.chatLine — same
-  // rule the UI renders; team chat without a resolvable side exports
-  // bracket-less, never a guessed side).
-  const exportSideCtx = () => ({ players, sideSwitches, rounds });
-
+  // The export is the FEED's rows only (Q3a: no chat can reach it — the
+  // chat-line rule stays in fmt.chatLine for RoundDetail's own chat list).
   function exportCSV() {
     closeExport();
     return download(
       `match-${id}-events.csv`,
       'text/csv;charset=utf-8',
-      toCSV(landmarkExportRows(feedRows, exportSideCtx())),
+      toCSV(landmarkExportRows(feedRows)),
     );
   }
 
@@ -935,7 +908,7 @@
     return download(
       `match-${id}-events.json`,
       'application/json',
-      JSON.stringify(precomposeChatLabels(feedRows, exportSideCtx()), null, 2),
+      JSON.stringify(feedRows, null, 2),
     );
   }
 
@@ -3888,28 +3861,6 @@
             </Popover>
           </span>
 
-          {#if needHist}
-            <label class="lm-gname" for="lm-gname">
-              Game events
-              <select
-                class="input"
-                id="lm-gname"
-                value={filter.gname}
-                onchange={(e) => setGname(e.currentTarget.value)}
-              >
-                <option value="">Pick an event name…</option>
-                {#each hist as h (h.name)}
-                  <option value={h.name}>{h.name} ({h.count})</option>
-                {/each}
-                {#if filter.gname && !hist.some((h) => h.name === filter.gname)}
-                  <option value={filter.gname}>{filter.gname}</option>
-                {/if}
-              </select>
-            </label>
-            {#if !filter.gname}
-              <p class="muted lm-hint">Big event lists load on demand — pick a name above.</p>
-            {/if}
-          {/if}
 
           <FilterBar {id} filter={filter} onchange={onBarFilter} showReset={false} />
 

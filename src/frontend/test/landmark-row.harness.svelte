@@ -74,15 +74,19 @@
     rounds: [{ number: 5 }],
   };
 
+  // The generic fixture mirrors the ONE generic category the registry
+  // still has (Q3a: buys → item_purchase — team_changes/game_events left
+  // the filter surface), so the row's chip resolves through
+  // categoryById instead of falling back to a raw id.
   const generic = {
     key: 'g:1',
     source: 'generic',
-    category: 'team_changes',
+    category: 'buys',
     tick: 3000,
     round: 5,
     who: 'alice',
-    label: 'moved to CT',
-    name: 'player_team',
+    label: 'alice bought AK-47',
+    name: 'item_purchase',
   };
 
   // The same generic row without a resolver in the props (CompareRounds

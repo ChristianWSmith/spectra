@@ -1,9 +1,9 @@
 <script>
   // Explorer — the demo-file DIAGNOSTICS surface: per-match provenance,
-  // entity summary and the static network-census reference. Event records
-  // are browsed in Replay's landmark feed (the game_events category),
-  // warnings live on the Match view, and the one ConVar
-  // parser is eventlabels.go on the Go side. Standalone (#/explorer/:id) the picker
+  // entity summary and the static network-census reference. Warnings
+  // live on the Match view, and the one ConVar parser is eventlabels.go
+  // on the Go side (the FE filter surface is gameplay-only since Q3a —
+  // generic event records are no longer a feed category). Standalone (#/explorer/:id) the picker
   // picks the match; embedded (the match view's Details tab) the passed
   // routeId is authoritative — no picker, no newest-match default.
   import { listMatches, getProvenance, getEntitySummary, errText } from '../services.js';

@@ -17,6 +17,7 @@ import { installEsmDirHook } from '../../test/esm-dir-hook.mjs';
 // before the hook install below.
 import {
   parseLandmarkFilter,
+  serializeLandmarkFilter,
   defaultFilter,
   normalizeEvent,
   normalizeChat,
@@ -52,7 +53,6 @@ const {
   composeFeedRows,
   entrySelection,
   landmarkExportRows,
-  precomposeChatLabels,
 } = await import('./replay/feed.js');
 
 // --- buildFeedQuery: THE one composer -------------------------------------
@@ -111,6 +111,16 @@ test('buildFeedQuery: deaths-only drives kinds + killRole, defaults stay default
   assert.equal(d.headshotOnly, false);
   // An absent bbox is OMITTED, never sent as an empty rect.
   assert.equal(buildFeedQuery(1, defaultFilter()).bbox, undefined);
+
+  // Q3a: the `gname` key died with the name-picker — it is neither
+  // parsed nor serialized any more, so a stale ?gname= in a deep link or
+  // an old saved filter drops out instead of becoming filter state.
+  assert.equal('gname' in defaultFilter(), false);
+  assert.equal(parseLandmarkFilter({ gname: 'weapon_fire' }).gname, undefined);
+  assert.equal(
+    'gname' in serializeLandmarkFilter({ ...defaultFilter(), gname: 'weapon_fire' }),
+    false,
+  );
 });
 
 // --- srcRound: the chat/generic single-round scope ------------------------
@@ -126,18 +136,21 @@ test('srcRound scopes a single-round range and stays match-wide otherwise', () =
 // --- THE source interface --------------------------------------------------
 
 test('FEED_SOURCES: one descriptor per path, ranks in merge order', () => {
-  assert.deepEqual(FEED_SOURCES.map((s) => s.id), ['event', 'chat', 'generic']);
-  assert.deepEqual(FEED_SOURCES.map((s) => s.rank), [0, 1, 2]);
+  // Q3a: the chat descriptor left with its category — two paths remain,
+  // and generic renumbered to rank 1 (the merge reads the rank off the
+  // descriptor, so nothing else moved).
+  assert.deepEqual(FEED_SOURCES.map((s) => s.id), ['event', 'generic']);
+  assert.deepEqual(FEED_SOURCES.map((s) => s.rank), [0, 1]);
   for (const s of FEED_SOURCES) {
     for (const fn of ['jobs', 'fetch', 'normalize', 'seqOf']) {
       assert.equal(typeof s[fn], 'function', `${s.id}.${fn}`);
     }
   }
-  // Paging specs: the typed and generic paths page (the +1 probe rule);
-  // the chat read is one unpaged call.
+  // Paging specs: both remaining paths page (the +1 probe rule) — the
+  // unpaged-source rule still exists and is pinned on pageSlice /
+  // runFeedJob below (a synthetic source carries page: null).
   assert.deepEqual(FEED_SOURCES[0].page, { size: PAGE });
-  assert.deepEqual(FEED_SOURCES[2].page, { size: PAGE });
-  assert.equal(FEED_SOURCES[1].page, null);
+  assert.deepEqual(FEED_SOURCES[1].page, { size: PAGE });
 });
 
 test('feedJobs: the job list IS the enabled check (one gate, not two)', () => {
@@ -147,36 +160,31 @@ test('feedJobs: the job list IS the enabled check (one gate, not two)', () => {
   assert.equal(def[0].key, 'event');
   assert.equal(def[0].source.id, 'event');
 
-  // Chat only → the chat job (match-wide: no exact round in the filter).
-  const chat = feedJobs(parseLandmarkFilter({ cat: 'chat' }));
-  assert.deepEqual(chat.map((j) => j.key), ['chat']);
-  assert.equal(chat[0].round, -1);
-
-  // A single-round range scopes the chat/generic reads to that round.
-  const scoped = feedJobs(parseLandmarkFilter({ cat: 'chat', roundFrom: '4', roundTo: '4' }));
+  // The generic category that survived Q3a (buys → item_purchase): ONE
+  // job per fixed-name category, carrying the owning category.
+  const buys = feedJobs(parseLandmarkFilter({ cat: 'buys' }));
+  assert.deepEqual(
+    buys.map((j) => [j.key, j.name, j.catId]),
+    [['generic:item_purchase', 'item_purchase', 'buys']],
+  );
+  // A single-round range scopes the generic read to that round (the same
+  // srcRound rule the chat read used before it left).
+  const scoped = feedJobs(parseLandmarkFilter({ cat: 'buys', roundFrom: '4', roundTo: '4' }));
   assert.equal(scoped[0].round, 4);
-
-  // Generic: one job per distinct NAME, carrying the owning category.
-  const team = feedJobs(parseLandmarkFilter({ cat: 'team_changes' }));
-  assert.deepEqual(team.map((j) => [j.key, j.name, j.catId]), [['generic:player_team', 'player_team', 'team_changes']]);
-  // The gname picker's category takes the URL's gname …
-  const picked = feedJobs(parseLandmarkFilter({ cat: 'game_events', gname: 'weapon_fire' }));
-  assert.deepEqual(picked.map((j) => [j.key, j.name]), [['generic:weapon_fire', 'weapon_fire']]);
-  // … and with no gname it yields NOTHING (an empty name is not a read).
-  assert.deepEqual(feedJobs(parseLandmarkFilter({ cat: 'game_events' })), []);
-
-  // Two categories naming the SAME generic → ONE job, first-in-registry
-  // order owns the stamp (the old inline dedupe rule, preserved).
-  const dup = feedJobs(parseLandmarkFilter({ cat: 'team_changes,game_events', gname: 'player_team' }));
-  assert.equal(dup.length, 1, JSON.stringify(dup));
-  assert.equal(dup[0].catId, 'team_changes');
+  // …and a wider range stays match-wide.
+  const wide = feedJobs(parseLandmarkFilter({ cat: 'buys', roundFrom: '4', roundTo: '9' }));
+  assert.equal(wide[0].round, -1);
 
   // No categories enabled → no work at all (and no marker job either:
   // an empty kinds list would mean "every kind" in the store contract).
   assert.deepEqual(feedJobs(parseLandmarkFilter({ cat: '' })), []);
+  // The cut categories yield NOTHING (a stale cat= in a saved filter or
+  // a legacy URL degrades to no jobs — the unknown-id drop).
+  assert.deepEqual(feedJobs(parseLandmarkFilter({ cat: 'chat' })), []);
+  assert.deepEqual(feedJobs(parseLandmarkFilter({ cat: 'team_changes,game_events' })), []);
   // Two sources on → two jobs, in rank order.
-  const both = feedJobs(parseLandmarkFilter({ cat: 'kills,chat' }));
-  assert.deepEqual(both.map((j) => j.source.id), ['event', 'chat']);
+  const both = feedJobs(parseLandmarkFilter({ cat: 'kills,buys' }));
+  assert.deepEqual(both.map((j) => j.source.id), ['event', 'generic']);
 });
 
 test('pageSlice: the ONE paging rule (the +1 probe row)', () => {
@@ -222,18 +230,20 @@ test('mergeSourceRows orders by tick, then the source rank, then the sequence ke
   const ev = (id, tick) => normalizeEvent({ id, seq: id, tick, round: 1, kind: 'kill' }, {});
   const chat = (id, tick) => normalizeChat({ id, tick, round: 1, name: 'a', text: 'x' });
   const gen = (rowId, tick) =>
-    normalizeGeneric({ rowId, name: 'player_team', tick, round: 1, payloadJson: '{}' }, 'team_changes');
+    normalizeGeneric({ rowId, name: 'item_purchase', tick, round: 1, payloadJson: '{}' }, 'buys');
 
   const merged = mergeSourceRows([
     ev(1, 300), ev(2, 100),
     chat(5, 100), chat(6, 200),
     gen(9, 100),
   ]);
-  // Same tick → event < chat < generic (the SOURCES' ranks); within a
-  // source → its own seq/id/rowId order.
+  // Same tick → the SOURCES' ranks (event 0, generic 1); a chat row is
+  // a row no descriptor claims since Q3a, so it takes the unknown-source
+  // TAIL rank (3) — the merge never crashes on it, it just sorts last.
+  // Within a source → its own seq/id/rowId order.
   assert.deepEqual(
     merged.map((r) => r.key),
-    ['e:2', 'c:5', 'g:9', 'c:6', 'e:1'],
+    ['e:2', 'g:9', 'c:5', 'c:6', 'e:1'],
   );
   assert.deepEqual(merged.map((r) => r.tick), [100, 100, 100, 200, 300]);
   // Empty input merges cleanly; holes are skipped, never thrown on.
@@ -304,17 +314,19 @@ test('entrySelection: the loaded row first, else the typed id, else nothing', ()
 // --- The export projection (moved here from landmarks.js) -------------------
 
 test('landmarkExportRows flattens the feed into canonical columns', () => {
+  // Q3a: no chat can reach a feed export any more — the chat-LINE half
+  // of this projection (precomposeChatLabels + the [T]/[CT] side
+  // indication) left WITH the chat source. The chat ROW shape itself
+  // stays in landmarks.normalizeChat (RoundDetail + LandmarkRow).
   const rows = [
     normalizeEvent({ id: 1, seq: 0, tick: 10, round: 1, kind: 'kill', attackerName: 'a', victimName: 'b', weapon: 'ak47', dmg: 100 }, {}),
-    normalizeChat({ id: 2, tick: 11, round: 1, name: 'alice', text: 'gl hf', kind: 'chat', channel: 'all' }),
+    normalizeGeneric({ rowId: 7, name: 'item_purchase', tick: 11, round: 1, payloadJson: '{}', who: 'alice', label: 'alice bought AK-47' }, 'buys'),
   ];
   const out = landmarkExportRows(rows);
   assert.deepEqual(out[0], ['time', 'round', 'source', 'type', 'event', 'player', 'details', 'weapon', 'damage']);
   assert.deepEqual(out[1], [10, 1, 'event', 'kills', 'kill', '', '', 'ak47', 100]);
-  // DELIBERATE pin: the chat `label` is the PRECOMPOSED line — the
-  // canonical fmt.chatLine (`name [tag]: text`) — while `who` stays the
-  // bare name (owner's export contract; matches what the UI renders).
-  assert.deepEqual(out[2], [11, 1, 'chat', 'chat', 'chat', 'alice', 'alice [ALL]: gl hf', '', '']);
+  // The generic row's `name` rides `event`, its label rides `details`.
+  assert.deepEqual(out[2], [11, 1, 'generic', 'buys', 'item_purchase', 'alice', 'alice bought AK-47', '', '']);
   // The `type` column carries the STAMPED category: a deaths-only
   // selection's kill row exports as 'deaths' while the `event` column
   // keeps the demo kind (the enabled-claim stamp).
@@ -325,54 +337,8 @@ test('landmarkExportRows flattens the feed into canonical columns', () => {
   const dout = landmarkExportRows([drow]);
   assert.equal(dout[1][3], 'deaths');
   assert.equal(dout[1][4], 'kill');
-});
-
-test('export chat labels side-indicate: [ALL] always, [T]/[CT] from the side inputs', () => {
-  // 14 counted rounds so switch 1 (after round 12) is in range —
-  // round 13 is second-half, round 1 first-half.
-  const rounds = Array.from({ length: 14 }, (_, i) => ({ number: i + 1 }));
-  const sideCtx = {
-    players: [
-      { steamId: '1', name: 'alice', side: 'ct' },
-      { steamId: '2', name: 'bob', side: 't' },
-    ],
-    sideSwitches: 1,
-    rounds,
-  };
-  const all = normalizeChat({ id: 1, tick: 5, round: 13, steamId: '1', name: 'alice', text: 'gg', kind: 'chat', channel: 'all' });
-  const teamCT = normalizeChat({ id: 2, tick: 6, round: 13, steamId: '1', name: 'alice', text: 'b site', kind: 'chat', channel: 'team' });
-  const teamT = normalizeChat({ id: 3, tick: 7, round: 1, steamId: '1', name: 'alice', text: 'mid', kind: 'chat', channel: 'team' });
-  const system = normalizeChat({ id: 4, tick: 8, round: 1, name: '', text: 'Match is live', kind: 'system' });
-  const out = landmarkExportRows([all, teamCT, teamT, system], sideCtx);
-  // all chat → [ALL] regardless of who spoke (alice is CT here)
-  assert.equal(out[1][6], 'alice [ALL]: gg');
-  // team chat → the SPEAKER'S SIDE at that round: alice finished ct, so
-  // round 13 (second half) is [CT] and round 1 (first half) is [T].
-  assert.equal(out[2][6], 'alice [CT]: b site');
-  assert.equal(out[3][6], 'alice [T]: mid');
-  // system row → plain text, no bracket, no colon
-  assert.equal(out[4][6], 'Match is live');
-  // `who` stays the BARE name in every chat row (the tag lives in label)
-  assert.deepEqual(out.slice(1).map((r) => r[5]), ['alice', 'alice', 'alice', '']);
-
-  // No side inputs (a surface without them) → team chat exports the line
-  // WITHOUT a bracket — never a guessed side; [ALL] still applies.
-  const noCtx = landmarkExportRows([all, teamCT]);
-  assert.equal(noCtx[1][6], 'alice [ALL]: gg');
-  assert.equal(noCtx[2][6], 'alice: b site');
-});
-
-test('precomposeChatLabels is the JSON export shape (label composed, others untouched)', () => {
-  const rows = [
-    normalizeEvent({ id: 1, seq: 0, tick: 10, round: 1, kind: 'kill', attackerName: 'a' }, {}),
-    normalizeChat({ id: 2, tick: 11, round: 1, name: 'alice', text: 'gl hf', kind: 'chat', channel: 'all' }),
-  ];
-  const out = precomposeChatLabels(rows);
-  assert.equal(out[0], rows[0], 'event rows pass through untouched');
-  assert.equal(out[1].label, 'alice [ALL]: gl hf', 'chat label precomposed for JSON');
-  assert.equal(out[1].who, 'alice', 'who stays the bare name');
-  assert.equal(out[1].text, 'gl hf', 'the raw text column is preserved');
-  assert.equal(rows[1].label, 'gl hf', 'the input rows are not mutated');
+  // An empty feed exports its header only (never a throw).
+  assert.deepEqual(landmarkExportRows([]), [out[0]]);
 });
 
 // --- The composer invariant (fs-scan) ---------------------------------------
