@@ -58,10 +58,15 @@ export function errText(e) {
 // spectra:analysis-progress (a re-run's start note) change no row — they
 // are NOT in the listener list below and never flush; each reaches only
 // its own chip.
-// Mutating wrappers (deleteMatch/importPaths/reprocess) also invalidate
-// on success: DeleteMatch emits no event at all, and the event round-trip
-// for the others can land AFTER the call site's own refetch - invalidating
-// inside the wrapper closes that race without any call-site change.
+// Mutating wrappers (deleteMatch/importPaths/reprocess/setAnalysisConfig)
+// also invalidate on success: DeleteMatch emits no event at all, and the
+// event round-trip for the others can land AFTER the call site's own
+// refetch - invalidating inside the wrapper closes that race without any
+// call-site change. setAnalysisConfig belongs because the config VALUES
+// are inputs to reads (GetCombatStats gates on tradeOppDistance): a save
+// with no re-run changes what those reads return and emits no event of
+// its own, so without this flush a distance/window edit served stale
+// Combat/profile numbers until some unrelated spectra:* event.
 // RecomputeAnalysis deliberately left that group: it SUBMITS a background
 // compute and resolves at submission, so its invalidation rides
 // spectra:analysis-done — completion, not submission (listener beside the
@@ -137,15 +142,27 @@ export function importPaths(paths) {
   });
 }
 
-// filter is the structured facet object ({map, player}) the store's
-// MatchListFilter takes — ANDed with each other and with the free-text
-// query server-side. The Library UI exposes ONLY the facets now (the
-// free-text box was removed), so the view passes query '' — the
-// parameter stays here so the binding/API keeps its shape. Normalized to
-// both keys so equivalent filters share one cache entry; callers that
-// only want the plain list pass nothing.
+// normFilter is the ONE normalization of the structured facet object the
+// store's MatchListFilter takes ({map, player, behind} — ANDed with each
+// other and with the free-text query server-side). Normalized to ALL keys
+// so equivalent filters share one cache entry; callers that only want the
+// plain list pass nothing. behind is the Settings re-run facet (ready AND
+// an older analyzed_rule_version — see store.MatchListFilter): it flows
+// through the shared matchListWhere like every other facet, so list, page
+// window and count can never disagree about who is behind.
+function normFilter(filter) {
+  return {
+    map: (filter && filter.map) || '',
+    player: (filter && filter.player) || '',
+    behind: !!(filter && filter.behind),
+  };
+}
+
+// The Library UI exposes ONLY the facets now (the free-text box was
+// removed), so the view passes query '' — the parameter stays here so
+// the binding/API keeps its shape.
 export function listMatches(query, sortKey, desc, filter) {
-  const f = { map: (filter && filter.map) || '', player: (filter && filter.player) || '' };
+  const f = normFilter(filter);
   return cachedRead('ListMatches', [query, sortKey, desc, f], () =>
     LibraryService.ListMatches(query, sortKey, desc, f),
   );
@@ -162,10 +179,22 @@ export function listMatches(query, sortKey, desc, filter) {
 // the rest on every spectra:* data event; listMatches stays unbounded
 // for its whole-library readers (import dedupe, MatchPicker, Settings).
 export function listMatchesPage(query, sortKey, desc, afterID, limit, filter) {
-  const f = { map: (filter && filter.map) || '', player: (filter && filter.player) || '' };
+  const f = normFilter(filter);
   return cachedRead('ListMatchesPage', [query, sortKey, desc, afterID, limit, f], () =>
     LibraryService.ListMatchesPage(query, sortKey, desc, afterID, limit, f),
   );
+}
+
+// countMatches counts the rows listMatches would return for the same
+// query+filter — the honest "N" behind a facet (the Settings re-run
+// list's "N behind", next to RecomputeAll's k/N). Same store.MatchListFilter
+// and the same matchListWhere spelling as the list and the page window
+// (all three ride normFilter), so the count can never drift from them.
+// Read-cached like the list it mirrors: every spectra:* data event, a
+// setAnalysisConfig save and spectra:analysis-done flush it with the rest.
+export function countMatches(query, filter) {
+  const f = normFilter(filter);
+  return cachedRead('CountMatches', [query, f], () => LibraryService.CountMatches(query, f));
 }
 
 // listMapNames returns the distinct map names present in the library
@@ -527,7 +556,22 @@ export function onAssetProgress(callback) {
 // --- AnalyticsService (M3) ---------------------------------------------------
 
 export function getAnalysisConfig() { return AnalyticsService.GetConfig(); }
-export function setAnalysisConfig(cfg) { return AnalyticsService.SetConfig(cfg); }
+
+// setAnalysisConfig saves the four rule thresholds. The wrapper
+// INVALIDATES on success like every other mutating wrapper (see the
+// comment at the top of this file): the config values gate reads such as
+// GetCombatStats, SetConfig emits no event, and without the flush a
+// distance/window edit served stale Combat/profile numbers until an
+// unrelated spectra:* event. The save NO-BUMP lives server-side
+// (AnalyticsService.SetConfig returns the current row untouched when the
+// four values are identical) — the caller compares ruleVersion to tell a
+// real bump from a no-op; this wrapper never touches bump semantics.
+export function setAnalysisConfig(cfg) {
+  return AnalyticsService.SetConfig(cfg).then((r) => {
+    invalidate();
+    return r;
+  });
+}
 // Recompute SUBMITS a background recompute — Go (analyticservice.go
 // RecomputeAnalysis) returns as soon as the run is queued, so the caller
 // resolves at SUBMISSION and the compute keeps running behind it. The
@@ -538,6 +582,17 @@ export function setAnalysisConfig(cfg) { return AnalyticsService.SetConfig(cfg);
 // post-return invalidate() encoded).
 export function recomputeAnalysis(matchId) {
   return AnalyticsService.RecomputeAnalysis(matchId);
+}
+
+// recomputeAll is the BULK twin of recomputeAnalysis: it resolves the
+// behind set SERVER-side (the button can never act on a stale client
+// list), captures the config ONCE for the batch, and returns
+// {submitted, skipped, total} at submission (submitted + skipped ===
+// total). Same ordering rule as recomputeAnalysis: NOT a flush point —
+// submission changes no row; the per-match spectra:analysis-done events
+// (listener below) flush as each member completes.
+export function recomputeAll() {
+  return AnalyticsService.RecomputeAll();
 }
 
 // spectra:analysis-done — a background recompute REPLACED a match's

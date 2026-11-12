@@ -38,6 +38,10 @@ export const LibraryService = {
   ImportDialog: rec('ImportDialog'),
   ListMatches: rec('ListMatches'),
   ListMatchesPage: rec('ListMatchesPage'),
+  // Honest "N behind" / "N total" count beside the Settings re-run list —
+  // same store.MatchListFilter as the list/page (services-cache pins the
+  // wrapper's filter normalization + flush).
+  CountMatches: rec('CountMatches'),
   ImportPaths: rec('ImportPaths'),
   DeleteMatch: rec('DeleteMatch'),
   Reprocess: rec('Reprocess'),
@@ -73,6 +77,15 @@ export const ReplayService = {};
 export const AnalyticsService = {
   // Background recompute (the cache tests pin its completion-driven flush).
   RecomputeAnalysis: rec('RecomputeAnalysis'),
+  // The BULK twin: resolves the behind set server-side, answers
+  // {submitted, skipped, total} — Settings' Re-run-all button.
+  RecomputeAll: rec('RecomputeAll'),
+  // In-flight run rehydration for the Settings recompute chips.
+  RecomputeStates: rec('RecomputeStates'),
+  // Analysis rules: GetConfig seeds the form (and its pristine snapshot),
+  // SetConfig is the mutating wrapper the flush pin drives.
+  GetConfig: rec('GetConfig'),
+  SetConfig: rec('SetConfig'),
   // The per-match analytics family (the six read-cached wrappers).
   GetEconomy: rec('GetEconomy'),
   GetRoundClasses: rec('GetRoundClasses'),

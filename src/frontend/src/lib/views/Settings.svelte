@@ -6,7 +6,9 @@
     getAnalysisConfig,
     setAnalysisConfig,
     recomputeAnalysis,
-    listMatches,
+    recomputeAll,
+    listMatchesPage,
+    countMatches,
     listPlugins,
     installPlugin,
     setPluginEnabled,
@@ -459,51 +461,174 @@
   let cfgMsg = $state('');
   let cfgLoading = $state(true);
 
-  // Per-match recompute list (recomputeAnalysis is per-match, never global).
-  let readyMatches = $state([]);
-  let matchesError = $state('');
-  // matchId → 'queued' | 'running' | 'ok' | error text. Recompute runs in
-  // the BACKGROUND now (analyticservice.go RecomputeAnalysis returns at
-  // submission): this view sets 'queued' at submit and the row's state
-  // then moves queued → running → ok/failed from the events below — never
-  // a state the backend didn't announce. Transient view state: not
-  // registered, not URL'd.
-  let recomputeState = $state({});
+  // Pristine tracking (save-UX honesty): cfgPristine snapshots the four
+  // editable fields as a save would submit them (Number(...) || 0 — the
+  // exact payload saveCfg sends), set on load and re-set after every
+  // successful save. cfgDirty is that comparison, so Save is disabled
+  // while the form matches the stored rules and the status slot reads
+  // "No changes" instead of the post-save re-run nudge. Bump semantics
+  // stay server-side (SetConfig no-ops an identical save); this only
+  // reports them.
+  const CFG_FIELDS = ['tradeWindowS', 'ecoFullBuy', 'ecoForce', 'tradeOppDistance'];
+  let cfgPristine = $state(null);
+  const cfgDirty = $derived.by(() => {
+    if (!cfgPristine) return false;
+    return CFG_FIELDS.some((f) => Number(cfg[f]) !== cfgPristine[f]);
+  });
+  function snapCfg() {
+    const s = {};
+    for (const f of CFG_FIELDS) s[f] = Number(cfg[f]) || 0;
+    cfgPristine = s;
+  }
 
-  // The re-run list read (mount AND matchesError's Retry): the error
-  // clears only when the read lands, so a retry never flashes the
-  // "no matches to re-run" copy while the list is still unknown.
-  function refreshReadyMatches() {
-    listMatches('', 'extracted_at', false)
-      .then((rows) => {
-        readyMatches = (rows || []).filter((m) => m.status === 'ready');
+  // The re-run list: ONLY matches behind the current rules — the behind
+  // facet (ready AND analyzed_rule_version < the live config's, 0/never
+  // counts) flows through store.matchListWhere server-side, so the list,
+  // its page windows and the CountMatches total can never disagree. It
+  // is BOUNDED: one keyset window per fetch (BEHIND_PAGE), Load more
+  // appends the next window up to the BEHIND_CAP render cap, and
+  // behindTotal (CountMatches) is the honest "N behind" the header and
+  // the Re-run-all button speak in. The old whole-library listMatches +
+  // client-side status === 'ready' filter is gone. Free-text query (always
+  // '' here — Settings has no search box) and the extracted_at sort ride
+  // the same shared WHERE/sort whitelist as the Library list.
+  const BEHIND_PAGE = 50;
+  const BEHIND_CAP = 200;
+  let behindRows = $state([]);
+  let behindTotal = $state(0); // CountMatches({behind:true}) — the honest N
+  let libTotal = $state(0); // CountMatches({}) — for the "All N analyzed" line
+  let behindHasNext = $state(false);
+  let behindLoading = $state(true);
+  let loadingMore = $state(false);
+  // Render cap: at most BEHIND_CAP rows in the DOM however many windows
+  // Load more appended — past it the "Showing X of N" line carries the
+  // honest remainder (X = rendered, N = CountMatches).
+  const shownMatches = $derived(behindRows.slice(0, BEHIND_CAP));
+  // The re-run list read's error slot (mount, analysis-done re-query AND
+  // matchesError's Retry): the error clears only when a read lands, so a
+  // retry never flashes a false "All N matches analyzed" empty claim —
+  // the alert below carries the failure (PRODUCT.md error-dismissibility).
+  let matchesError = $state('');
+
+  // listGen tags each (re)fetch so a Load-more reply that lands after a
+  // restart is dropped instead of appended (the Library's idiom);
+  // non-reactive on purpose — it is not state.
+  let behindGen = 0;
+
+  function refreshBehind() {
+    if (behindTimer) {
+      clearTimeout(behindTimer);
+      behindTimer = null;
+    }
+    const gen = ++behindGen;
+    behindLoading = true;
+    Promise.all([
+      listMatchesPage('', 'extracted_at', true, 0, BEHIND_PAGE, { behind: true }),
+      countMatches('', { behind: true }),
+      countMatches('', {}),
+    ])
+      .then(([page, n, total]) => {
+        if (gen !== behindGen) return; // a newer fetch superseded this one
+        behindRows = (page && page.rows) || [];
+        behindHasNext = !!(page && page.hasNext);
+        behindTotal = typeof n === 'number' ? n : 0;
+        libTotal = typeof total === 'number' ? total : 0;
         matchesError = '';
+        behindLoading = false; // gen-guarded: only a CURRENT reply ends the wait
       })
       .catch((e) => {
-        matchesError = errText(e);
+        if (gen === behindGen) {
+          matchesError = errText(e);
+          behindLoading = false;
+        }
       });
   }
 
-  // The background recompute's lifecycle (single subscription for the view
-  // lifetime; the unsubscribes are the $effect cleanup):
-  //   spectra:analysis-progress — a queued run actually started (stage
-  //     analyze, indeterminate — no fake percent).
-  //   spectra:analysis-done     — success (error '') or the failure text.
-  // The RecomputeStates read rehydrates runs already in flight when this
-  // view mounted, so a remount keeps an honest chip; it only fills ids
-  // this view has no state for, so a completion landing during the read
-  // can never be overwritten by its stale snapshot.
-  $effect(() => {
-    const offProgress = onEvent('spectra:analysis-progress', (d) => {
-      const cur = d ? recomputeState[d.matchId] : undefined;
-      if (cur === undefined || cur === 'queued') {
-        recomputeState = { ...recomputeState, [d.matchId]: 'running' };
-      }
+  // loadMoreBehind appends the NEXT window: the cursor is the last
+  // rendered row's id (the store resolves it to its stored sort value —
+  // ties are broken server-side, so windows never skip or duplicate a
+  // row). Duplicate ids are filtered out anyway, because a repeated
+  // keyed {#each} id would throw. Hard-stops at the render cap — past it
+  // the header's "showing X of N" line carries the honest remainder.
+  async function loadMoreBehind() {
+    if (loadingMore || !behindHasNext || !behindRows.length) return;
+    if (behindRows.length >= BEHIND_CAP) return;
+    loadingMore = true;
+    const gen = behindGen;
+    try {
+      const last = behindRows[behindRows.length - 1];
+      const page = await listMatchesPage('', 'extracted_at', true, last.id, BEHIND_PAGE, {
+        behind: true,
+      });
+      if (gen !== behindGen) return; // a refresh replaced the list meanwhile
+      const seen = new Set(behindRows.map((m) => m.id));
+      const add = ((page && page.rows) || []).filter((m) => !seen.has(m.id));
+      behindRows = [...behindRows, ...add];
+      behindHasNext = !!(page && page.hasNext);
+    } catch (e) {
+      if (gen === behindGen) matchesError = errText(e);
+    } finally {
+      loadingMore = false;
+    }
+  }
+
+  // Batch re-run-all state: the RecomputeAll answer plus the honest k/N
+  // the existing spectra:analysis-done subscription counts up (N =
+  // submitted; failed counts runs that finished with an error). Transient
+  // view state: not registered, not URL'd.
+  let allRun = $state(null); // {submitted, skipped, total, done, failed} | null
+  let allRunError = $state(''); // submission failure — its own slot (the list's Retry must not retry THIS)
+  const allRunActive = $derived(
+    !!allRun && allRun.done + allRun.failed < allRun.submitted,
+  );
+
+  // Re-run-all (ask 4): resolves the behind set SERVER-side — the button
+  // can never act on this list's stale copy — and answers with the honest
+  // {submitted, skipped, total}. Disabled while nothing is behind or a
+  // batch is still counting up; behind a confirmation like the per-match
+  // recompute() below.
+  async function recomputeAllBehind() {
+    allRunError = ''; // clears-on-retry: a new attempt starts clean
+    const ok = await confirmDlg?.ask({
+      title: 'Re-run every match behind the current rules?',
+      message:
+        `Re-run the analysis for all ${behindTotal} match${behindTotal === 1 ? '' : 'es'} ` +
+        'behind the current rules? Round types, KAST, clutches, engagements and ' +
+        'career numbers refresh too. Matches already re-running are skipped.',
+      confirmLabel: 'Re-run all',
+      danger: false,
     });
-    const offDone = onEvent('spectra:analysis-done', (d) => {
-      if (!d) return;
-      recomputeState = { ...recomputeState, [d.matchId]: d.error ? d.error : 'ok' };
-    });
+    if (!ok) return;
+    try {
+      const r = await recomputeAll();
+      allRun = {
+        submitted: (r && r.submitted) || 0,
+        skipped: (r && r.skipped) || 0,
+        total: (r && r.total) || 0,
+        done: 0,
+        failed: 0,
+      };
+      // Seed per-row queued/running chips for the batch — the same
+      // RecomputeStates rehydration the mount effect uses, so rows the
+      // events have not reached yet already show an honest chip.
+      rehydrateStates();
+    } catch (e) {
+      // Synchronous submission failure only; each member's outcome
+      // arrives as spectra:analysis-done.
+      allRunError = errText(e);
+    }
+  }
+
+  // Per-match recompute list (recomputeAnalysis is per-match; the bulk
+  // twin is recomputeAllBehind above).
+  let recomputeState = $state({});
+
+  // RecomputeStates rehydration: fills ids this view has no state for
+  // with their queued/running truth (mount, and after a re-run-all
+  // submission) — never overwriting a state an event already set, so a
+  // completion landing during the read can't be clobbered by its stale
+  // snapshot.
+  function rehydrateStates() {
     AnalyticsService.RecomputeStates()
       .then((s) => {
         const next = { ...recomputeState };
@@ -514,20 +639,62 @@
       .catch(() => {
         /* no rehydration — rows just start in their default state */
       });
+  }
+
+  // A burst of analysis-done events (a re-run-all batch) coalesces into
+  // ONE re-query of the list + counts — the rows leave the behind set as
+  // they stamp and the "N behind" decrements, but a dozen dones landing
+  // together must not fire a dozen fetches. Direct callers (mount, save)
+  // go through refreshBehind, which cancels a pending timer.
+  let behindTimer = null;
+  function scheduleBehindRefresh() {
+    if (behindTimer) return;
+    behindTimer = setTimeout(() => {
+      behindTimer = null;
+      refreshBehind();
+    }, 150);
+  }
+
+  // The background recompute's lifecycle (single subscription for the view
+  // lifetime; the unsubscribes are the $effect cleanup):
+  //   spectra:analysis-progress — a queued run actually started (stage
+  //     analyze, indeterminate — no fake percent).
+  //   spectra:analysis-done     — success (error '') or the failure text.
+  //     ALSO: re-query the behind list (a stamped row drops out, the
+  //     count decrements) and count the re-run-all batch's k/N.
+  // rehydrateStates() (above) rehydrates runs already in flight when this
+  // view mounted, so a remount keeps an honest chip.
+  $effect(() => {
+    const offProgress = onEvent('spectra:analysis-progress', (d) => {
+      const cur = d ? recomputeState[d.matchId] : undefined;
+      if (cur === undefined || cur === 'queued') {
+        recomputeState = { ...recomputeState, [d.matchId]: 'running' };
+      }
+    });
+    const offDone = onEvent('spectra:analysis-done', (d) => {
+      if (!d) return;
+      const failed = !!d.error;
+      recomputeState = { ...recomputeState, [d.matchId]: failed ? d.error : 'ok' };
+      // k/N for a re-run-all batch: count completions up to N = submitted
+      // (a per-match run or a pre-batch in-flight completion landing here
+      // can never push the counter past the batch's own size).
+      if (allRun && allRun.done + allRun.failed < allRun.submitted) {
+        allRun = { ...allRun, [failed ? 'failed' : 'done']: allRun[failed ? 'failed' : 'done'] + 1 };
+      }
+      // The row's stamp changed — re-query so it drops out and the
+      // "N behind" line (and the Re-run-all gate) stay truthful.
+      scheduleBehindRefresh();
+    });
+    rehydrateStates();
     return () => {
       offProgress();
       offDone();
+      if (behindTimer) {
+        clearTimeout(behindTimer);
+        behindTimer = null;
+      }
     };
   });
-
-  // Render cap: the list shows at most the RECOMPUTE_CAP MOST RECENT
-  // ready matches — readyMatches arrives oldest-first (extracted_at ASC),
-  // so the tail is the newest window — with a muted hint when the library
-  // is larger. The Re-run actions operate on exactly the listed rows
-  // (recompute semantics unchanged).
-  const RECOMPUTE_CAP = 200;
-  const shownMatches = $derived(readyMatches.slice(-RECOMPUTE_CAP));
-  const cappedMatches = $derived(readyMatches.length > shownMatches.length);
 
   // M4 audio self-test: probe creates a throwaway AudioContext,
   // resumes it (user click = gesture), and reports state/rate or the exact
@@ -613,13 +780,14 @@
         // Merge (not replace) so a missing key falls back to the default
         // above instead of binding an empty input that would save 0.
         if (c) cfg = { ...cfg, ...c };
+        snapCfg(); // pristine = the loaded rules — Save starts disabled
         cfgLoading = false;
       })
       .catch((e) => {
         cfgError = errText(e);
         cfgLoading = false;
       });
-    refreshReadyMatches();
+    refreshBehind();
     refreshPlugins();
     // Prefs: the font size re-reconciles against the durable kvstore (the
     // boot-time pass may still be in flight for a deep-linked Settings),
@@ -664,6 +832,7 @@
   async function saveCfg() {
     cfgError = '';
     cfgMsg = '';
+    const preVersion = cfg.ruleVersion; // for the defensive no-bump check
     try {
       const saved = await setAnalysisConfig({
         tradeWindowS: Number(cfg.tradeWindowS) || 0,
@@ -672,9 +841,23 @@
         tradeOppDistance: Number(cfg.tradeOppDistance) || 0,
       });
       if (saved) cfg = { ...cfg, ...saved };
-      cfgMsg =
-        `Saved. Matches you've already imported keep their old numbers` +
-        ' — re-run them below to apply the new rules.';
+      // The pristine snapshot follows the save: whatever the form says now
+      // IS the stored rules (bumped or byte-identical), so Save goes back
+      // to disabled until the next edit.
+      snapCfg();
+      if (saved && Number(saved.ruleVersion) === Number(preVersion)) {
+        // Defensive (the pristine gate should already prevent this): the
+        // server judged the values identical and did NOT bump — say "No
+        // changes", never the re-run nudge that implies a new version.
+        cfgMsg = 'No changes — the rules were already saved with these values.';
+      } else {
+        cfgMsg =
+          `Saved. Matches you've already imported keep their old numbers` +
+          ' — re-run them below to apply the new rules.';
+      }
+      // A bump changes the behind set (every ready match is now behind);
+      // even a no-bump save re-reads so the counts cannot go stale.
+      refreshBehind();
     } catch (e) {
       cfgError = errText(e);
     }
@@ -1281,25 +1464,102 @@
     </div>
     <div class="row-between">
       <span class="muted">Rules version: <strong class="mono">{cfg.ruleVersion}</strong></span>
-      <button class="btn primary" onclick={saveCfg}>Save rules</button>
+      <!-- Save is honest about dirtiness: pristine (loaded/saved values)
+           → disabled + "No changes" below, never the re-run nudge. -->
+      <button class="btn primary" disabled={cfgLoading || !cfgDirty} onclick={saveCfg}
+        >Save rules</button
+      >
     </div>
     {#if cfgMsg}
       <p class="sett-msg" role="status">{cfgMsg}</p>
+    {:else if !cfgLoading && !cfgError && !cfgDirty}
+      <p class="muted" role="status">No changes — the rules above are already saved.</p>
     {/if}
-    <p class="muted">
-      Saving applies these rules to future analysis. Matches already in your
-      library keep the numbers they had — re-run them below.
-    </p>
+    {#if cfgDirty}
+      <p class="muted">
+        Saving applies these rules to future analysis. Matches already in your
+        library keep the numbers they had — re-run them below.
+      </p>
+    {/if}
 
     <h3 class="section-title sett-sub">Re-run analysis…</h3>
     <p class="muted">
-      Per match, under the current rules (round types, KAST, clutches,
-      engagements and career numbers refresh too).
+      Only matches behind the current rules are listed — analyzed under an older
+      rules version or never analyzed. Per match, under the current rules (round
+      types, KAST, clutches, engagements and career numbers refresh too).
     </p>
     {#if matchesError}
       <p class="error" role="alert">
         {matchesError}
-        <button class="btn small" onclick={refreshReadyMatches}>Retry</button>
+        <button class="btn small" onclick={refreshBehind}>Retry</button>
+      </p>
+    {/if}
+    <!-- The honest count (CountMatches({behind:true}) — never the list's
+         length) beside the Re-run-all button. The empty claim is gated on
+         matchesError: a failed read is UNKNOWN, never "nothing behind". -->
+    <div class="row-between">
+      <span class="muted" role="status">
+        {#if matchesError}
+          <!-- the alert above carries the failure -->
+        {:else if behindLoading && !behindRows.length}
+          Loading…
+        {:else if behindTotal > 0}
+          {behindTotal} match{behindTotal === 1 ? '' : 'es'} behind the current rules
+        {:else if libTotal === 0}
+          No matches yet — import a demo first.
+        {:else}
+          All {libTotal} matches analyzed under current rules.
+        {/if}
+      </span>
+      <button
+        class="btn"
+        disabled={matchesError || behindLoading || behindTotal === 0 || allRunActive}
+        title={matchesError
+          ? 'The behind count is unknown — retry the list first'
+          : behindTotal === 0
+            ? 'No matches behind the current rules'
+            : allRunActive
+              ? 'A re-run is already in progress'
+              : `Re-run every match behind the current rules (${behindTotal})`}
+        onclick={recomputeAllBehind}
+      >
+        {allRunActive ? 'Re-running…' : 'Re-run all'}
+      </button>
+    </div>
+    <!-- k/N for the batch: N = RecomputeAll's submitted, k counted from
+         the SAME spectra:analysis-done subscription as the per-row chips
+         (no second progress machinery — the bar is StatusChip's). -->
+    {#if allRunError}
+      <p class="error" role="alert">
+        {allRunError}
+        <button class="btn small" onclick={recomputeAllBehind}>Retry</button>
+      </p>
+    {/if}
+    {#if allRun}
+      <p class="muted" role="status">
+        {#if allRun.submitted === 0}
+          Nothing new to queue{allRun.total > 0
+            ? ` — ${allRun.total} match${allRun.total === 1 ? ' is' : 'es'} already re-running`
+            : ''}.
+        {:else if allRunActive}
+          <StatusChip
+            status="running"
+            progress={allRun.submitted ? allRun.done / allRun.submitted : 0}
+            stage="analyze"
+          />
+          Re-running {allRun.submitted} match{allRun.submitted === 1 ? '' : 'es'} — {allRun.done}/{allRun.submitted}
+          analyzed.
+        {:else}
+          <span class="chip status ok">done</span>
+          Re-ran {allRun.submitted} match{allRun.submitted === 1 ? '' : 'es'} — {allRun.done}/{allRun.submitted}
+          analyzed.
+        {/if}
+        {#if allRun.skipped > 0}
+          {allRun.skipped} skipped (already re-running).
+        {/if}
+        {#if allRun.failed > 0}
+          <span class="error-text">{allRun.failed} failed.</span>
+        {/if}
       </p>
     {/if}
     <div class="sett-matches">
@@ -1332,16 +1592,22 @@
             {/if}
           </span>
         </div>
-      {:else}
-        <p class="muted" role="status">
-          {matchesError ? 'Matches unavailable.' : 'No matches to re-run yet.'}
-        </p>
       {/each}
-      {#if cappedMatches}
+      <!-- NO {:else} fallback here: the count line above owns every empty
+           state (loading / N behind / all analyzed / error), and a keyed
+           {#each} whose {:else} renders while the list is still empty
+           trips a Svelte runtime bug when the first window lands (the
+           else branch's effect nodes are null during reconcile —
+           pinned by test/settings.dom.mjs's working mount). -->
+      {#if shownMatches.length < behindTotal}
         <p class="muted" role="status">
-          Showing the {RECOMPUTE_CAP} most recent of {readyMatches.length} ready matches — older
-          ones aren’t listed.
+          Showing {shownMatches.length} of {behindTotal} behind the current rules.
         </p>
+      {/if}
+      {#if behindHasNext && shownMatches.length < BEHIND_CAP}
+        <button class="btn" disabled={loadingMore} onclick={loadMoreBehind}>
+          {loadingMore ? 'Loading…' : 'Load more'}
+        </button>
       {/if}
     </div>
   </section>
