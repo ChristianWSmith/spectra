@@ -1680,7 +1680,9 @@ input[type='checkbox']:focus-visible {
    radius / shadow verbatim) so it reads as app chrome over the radar;
    .btn's own hover/focus rules stay in force — no second hover
    spelling. It is a SIBLING of the canvas, outside .rp-ctrl-list and
-   outside every overlay gate: hiding it would softlock the view (the
+   outside every overlay gate — master (setOverlaysVisible) and
+   per-element (setOverlayLayers) alike: hiding it would softlock the
+   view (the
    transport is unmounted in theater mode). z-index 2 is the control
    group's tier — the two never overlap (bottom-right vs top-left). */
 .rp-theater-exit {
@@ -2397,12 +2399,14 @@ input[type='checkbox']:focus-visible {
   white-space: nowrap;
 }
 
-/* Speed / camera / follow-player popover panels: the same widget chrome
-   as .rp-loop-pop, but a vertical stack of option buttons (the active
-   one rides .btn.primary) instead of the inline from/to input row. */
+/* Speed / camera / follow-player / UI-overlays popover panels: the same
+   widget chrome as .rp-loop-pop, but a vertical stack of option buttons
+   (the active one rides .btn.primary) instead of the inline from/to
+   input row (the UI panel stacks .rp-drop-item checkbox rows instead). */
 .rp-speed-pop,
 .rp-cam-pop,
 .rp-follow-pop,
+.rp-ui-pop,
 .rp-drops-pop {
   display: flex;
   flex-direction: column;
@@ -2415,10 +2419,13 @@ input[type='checkbox']:focus-visible {
   white-space: nowrap;
 }
 
-/* Death-drop layer popover rows (the Categories .lm-cat-item checkbox
-   rows, scoped to Replay's rp- prefix — lm- stays the landmark feed's):
-   the MULTI-select over exactly Guns / Utility. The trigger's on-count
-   is the .lm-filter-count spelling (tabular numerals). */
+/* Popover checkbox rows (the Categories .lm-cat-item rows are the row
+   reference, scoped to Replay's rp- prefix — lm- stays the landmark
+   feed's): the MULTI-select rows of the drops popover (Guns / Utility /
+   Kits) and of the UI-overlays popover (score, feed, chat, stage
+   indicators) — ONE spelling for a popover checkbox row, never a second
+   per-popover class. The drops trigger's on-count is the
+   .lm-filter-count spelling (tabular numerals). */
 .rp-drop-item {
   display: flex;
   align-items: center;

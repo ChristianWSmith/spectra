@@ -3291,7 +3291,9 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   //   top-left      — THEATER-EXIT BUTTON, DOM (Replay.svelte
   //                   .rp-theater-exit): top/left 8 px, rendered only
   //                   while theater mode is on — the stage's only
-  //                   control then, never gated by the overlay toggle.
+  //                   control then, never gated by any overlay gate
+  //                   (master setOverlaysVisible or per-element
+  //                   setOverlayLayers).
   //                   The canvas cannot measure DOM, so drawHUD keeps
   //                   this region clear: CTRL_GROUP_BUDGET (0.28 × cssW,
   //                   the .rp-ctrl-list width share, see below) plus the
@@ -3318,8 +3320,9 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   //                   widest its left edge lands at 72% of the stage,
   //                   clear of the chat's 40% cap — one row per
   //                   non-default control state, display-only, while its
-  //                   own gate is open (the overlay toggle + rows +
-  //                   active); otherwise intentionally empty (the group
+  //                   own gate is open (the UI popover's stage-indicator
+  //                   flag + rows + active); otherwise intentionally
+  //                   empty (the group
   //                   renders no box at all when every row is in its
   //                   default state — documented, no code).
   //   above/below   — DOM chrome (.replay-topbar / .replay-transport),
@@ -3680,20 +3683,43 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     draw();
   }
 
-  // setOverlaysVisible(on): the ONE coarse overlay gate — the UI
-  // toggle's renderer half (Replay's toggleHud). While false, draw()
-  // skips the whole overlay group (HUD box, kill feed, chat — the DOM
-  // control-group rows go with them, gated view-side); the gameplay
-  // layers are NEVER gated, and CTRL_GROUP_BUDGET stays reserved so the
-  // score box's x-position does not jump when the group comes back.
-  // Additive like setHud: payloads keep flowing while hidden (the
-  // engine's per-change setHud still stores its payload), so
-  // re-enabling repaints the CURRENT state without a re-push. The
-  // drawDirty guard mirrors setHud's: the pending frame paints the
-  // burst's latest instead of a synchronous draw per event.
+  // setOverlaysVisible(on): the MASTER overlay gate — pushed by the
+  // keep-alive dock rule (collapse → world-only frame, expand → back;
+  // boolean `active` in Replay.svelte), never by a single element. While
+  // false, draw() skips the whole overlay group (HUD box, kill feed,
+  // chat — the DOM control-group rows go with them, gated view-side);
+  // the gameplay layers are NEVER gated, and CTRL_GROUP_BUDGET stays
+  // reserved so the score box's x-position does not jump when the group
+  // comes back. BOOLEAN, exactly as before: per-element hiding rides
+  // setOverlayLayers BELOW (a boolean `on !== false` contract — callers
+  // may keep passing plain booleans). Additive like setHud: payloads
+  // keep flowing while hidden (the engine's per-change setHud still
+  // stores its payload), so re-enabling repaints the CURRENT state
+  // without a re-push. The drawDirty guard mirrors setHud's: the pending
+  // frame paints the burst's latest instead of a synchronous draw per
+  // event.
   let overlaysVisible = true;
   function setOverlaysVisible(on) {
     overlaysVisible = on !== false;
+    if (drawDirty) return; // the pending frame paints the burst's latest
+    draw();
+  }
+
+  // Per-layer overlay state — the E3 popover's per-ELEMENT half, UNDER
+  // the master gate above (master off ⇒ nothing paints whatever these
+  // say). {hud: score box, feed: kill feed, chat} maps the view's
+  // {score, feed, chat} flags (Replay's setUiLayer pushes score→hud);
+  // the fourth popover element (stage indicators / .rp-ctrl-list) is
+  // DOM-only and never reaches the renderer. Defaults ALL ON — the
+  // view pushes its current flags beside every master push, exactly like
+  // setDropLayers/setHud (a repeat call is additive and harmless).
+  // NOTE draw()'s gate still runs killFeedLayout()/chatLayout() even
+  // when their layer is hidden: feed.left is the score box's right-hand
+  // bound, so hiding the feed must NOT move the score box (the same
+  // philosophy as CTRL_GROUP_BUDGET's fixed reservation).
+  let overlayLayers = { hud: true, feed: true, chat: true };
+  function setOverlayLayers(f) {
+    if (f) overlayLayers = { ...overlayLayers, ...f }; // spread-merge: one flag, whole triple pushed
     if (drawDirty) return; // the pending frame paints the burst's latest
     draw();
   }
@@ -3808,8 +3834,9 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // over a dark transparent box (entryBox) outlined in the KILLER's team
   // color (neutral when unknown); names are tinted by their own side AT
   // THE KILL TICK (sideAtFrame — the same rule the death markers use).
-  // Two icon-only rows replace the whole line (C4 checked FIRST):
-  //   • C4 death:   (explosion) victim — no killer/assister/attacker-side
+  // Two short glyph + victim rows replace the whole line (C4 checked
+  // FIRST):
+  //   • C4 death:   C4 icon + victim — no killer/assister/attacker-side
   //                 flags at all; outlined in T ORANGE (teamColor('t')):
   //                 the bomb always belongs to the T side, this is NOT a
   //                 killer's side (there is none).
@@ -3821,8 +3848,9 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // (iconFor('blind_kill') before the killer, iconFor('airborne') after
   // it, then the weapon's glyph, iconFor('noscope'/'throughsmoke'/
   // 'wallbang'/'headshot') after the weapon — internal/mappack/icons.go
-  // extracts them from panorama/images/hud/deathnotice/, except
-  // 'explosion' = the hud blast pip); a row whose glyph isn't extracted
+  // extracts them from panorama/images/hud/deathnotice/; the C4 row's
+  // glyph is the shared 'C4' image, never 'planted_c4' — deliberately
+  // not extracted, see its branch); a row whose glyph isn't extracted
   // yet draws WITHOUT it — no space reserved, so the other cells never
   // shift (degradation must not move what's on screen).
   // killFeedLayout — the feed's ONE per-frame layout pass: the scope
@@ -3885,17 +3913,26 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       const wbImg = k.wallbang ? iconFor('wallbang') : null;
       const hsImg = k.headshot ? iconFor('headshot') : null;
       // outlineSide: the box's team color — the KILLER's side normally,
-      // overridden for the two icon-only rows (see the header comment).
+      // overridden for the two glyph + victim rows (see the header
+      // comment).
       let outlineSide = kSide;
       let cells;
       if (k.weapon === 'C4') {
         // Bomb death: NO killer name, NO assister, NO attacker-side
         // flags. Outlined in T ORANGE — the bomb belongs to the T side
-        // (NOT the killer's side: there is none).
+        // (NOT the killer's side: there is none). The row shows the C4
+        // WEAPON icon (canonical key 'C4' — never 'planted_c4', which is
+        // deliberately not extracted; internal/mappack/icons.go) beside
+        // the victim, because that is what CS2's deathnotice binds for a
+        // bomb death (CS2.md "Kill-feed indicator glyphs"). The hud
+        // 'explosion' blast pip is dropped from this row: its artwork is
+        // 48×126 squeezed into a 14 px line → a ~3 px invisible speck
+        // that conveys nothing at this geometry (it never made the row
+        // read as "C4").
         outlineSide = 't';
         cells = [];
-        const boom = iconFor('explosion');
-        if (boom) cells.push({ img: boom }); // same skip-a-missing-glyph rule
+        const c4Img = iconFor('C4');
+        if (c4Img) cells.push({ img: c4Img }); // same skip-a-missing-glyph rule
         cells.push({ text: victim, fill: teamColor(vSide) });
       } else if (!k.attacker || k.attacker === k.victim) {
         // Suicide: world/fall (weapon 'World'), own utility, plain
@@ -4169,15 +4206,21 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     // the score box's right-hand bound — drawHUD's C1 clamp) and then
     // painted from exactly that measurement; ONE chatLayout() per frame
     // for the same reason — each scope/geometry computed once instead of
-    // once per phase. The whole group is ONE gate (setOverlaysVisible —
-    // the UI toggle): hidden, neither layout runs and the three corner
-    // regions stay empty — the gameplay layers above are never gated.
+    // once per phase. TWO gates: the MASTER (setOverlaysVisible) skips
+    // the whole group (the keep-alive dock rule), then the per-layer
+    // flags (setOverlayLayers — the E3 popover's elements) pick WHICH of
+    // the three paint. Both layouts still run for a HIDDEN layer
+    // whenever the master is on: feed.left is the score box's
+    // right-hand bound (hiding the kill feed must not move the score
+    // box) and chatLayout is the chat's stack geometry — the same
+    // fixed-reservation philosophy as CTRL_GROUP_BUDGET. The gameplay
+    // layers above are never gated.
     if (overlaysVisible) {
       const feed = killFeedLayout();
       const chat = chatLayout();
-      drawHUD(feed);
-      drawKillFeed(feed);
-      drawChat(chat); // in-game chat — the same overlay group as the kill feed
+      if (overlayLayers.hud) drawHUD(feed);
+      if (overlayLayers.feed) drawKillFeed(feed);
+      if (overlayLayers.chat) drawChat(chat); // in-game chat — the same overlay group as the kill feed
     }
     // Arm the settle loop when smart is still short of its target — a
     // paused seek (or a mode switch) has no other redraw driver. draw()
@@ -4197,6 +4240,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     setLandmarks,
     setHud,
     setOverlaysVisible,
+    setOverlayLayers,
     setIcons,
     setVoices,
     setBlinds,

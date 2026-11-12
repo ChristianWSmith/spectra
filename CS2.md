@@ -932,6 +932,19 @@ at the end of the section.
   **Source** — local probe + decode of pak01_dir.vpk + layout strings
   from `huddeathnotice.vxml_c` (2026-11-07).
 
+- **What CS2's kill feed shows for a bomb (C4) death** — the row has NO
+  killer name (attacker is absent: `attacker:65535`, see the
+  `player_death` flags entry) and shows the **weapon slot with the C4
+  icon** beside the victim; `huddeathnotice.vxml_c` binds bomb deaths to
+  the Suicide condition **plus the weapon slot**, and the deathnotice dir
+  has no dedicated explosion glyph (that's why the C4 row's only
+  context icon is the hud "blast" pip). A death with no attacker AND no
+  weapon (fall/world) instead shows the skull/suicide glyph + victim.
+  **Source** — CS2.md "Kill-feed indicator glyphs" (local decode of
+  `huddeathnotice.vxml_c`, 2026-11-07); CSGODOT PR #138 recreating
+  CS2's death notices ("The bomb's kill shows the C4 and the victim",
+  https://github.com/sidcarrollworks/CSGODOT/pull/138, 2026-11-12).
+
 - **`player_death` kill flags (what the death notice can show)** —
   every indicator the feed needs is game-computed on the event:
   `noscope` ("kill happened without a scope, used for death notice

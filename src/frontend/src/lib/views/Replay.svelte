@@ -266,16 +266,33 @@
   // Theater mode (session-only, like eventsOpen — no pref, no route
   // query): hides the top bar, the transport AND the feed aside so the
   // stage fills the column; the stage's own exit button is the only
-  // control left (it is never gated by the overlay toggle or by the
-  // control group, so there is no softlock path out).
+  // control left (it is never gated by any overlay gate — master or
+  // per-element — or by the control group, so there is no softlock path
+  // out).
   let theater = $state(false);
-  // UI-overlay toggle (session-only): INVERTED like the skip-freeze
-  // arm — uiHudOff true = the coarse overlay group (canvas score box /
-  // kill feed / chat + the DOM control-group rows) is HIDDEN, so the
-  // button wears the armed pattern (aria-pressed + warn) exactly like
-  // #rp-skip-freeze. One flag, two pushes (the setDropLayers pattern):
-  // the button flips it, startEngine re-pushes the current value.
-  let uiHudOff = $state(false);
+  // UI-overlay visibility (session-only): ONE object, FOUR independent
+  // elements — score/timer + kill feed + chat (canvas layers, pushed to
+  // renderer.setOverlayLayers as {score→hud, feed, chat}) and ctrl (the
+  // stage's .rp-ctrl-list status rows — view-side only, gated in the
+  // template). Defaults all ON; no pref, no route query, no viewstate
+  // registry entry (it is transient view state — the state-placement
+  // rule keeps it out of all three). The master renderer gate
+  // (setOverlaysVisible) is NOT this: it is boolean `active` (the
+  // keep-alive dock rule), and each element hides independently beneath
+  // it. The button's armed look (eye-closed + warn) is a SUMMARY of the
+  // four: it wears it whenever ANY element is hidden.
+  let uiHud = $state({ score: true, feed: true, chat: true, ctrl: true });
+  // The popover itself: same session-only flag + anchor pair as the
+  // loop/speed/camera/drops popovers above (reset in enterTheater AND
+  // the keep-alive deactivation — a panel open at unmount time would
+  // remount open over the stage).
+  let uiOpen = $state(false);
+  let uiAnchor = $state(null);
+  // The trigger's SUMMARY state (documented on the button too): armed
+  // (eye-closed + .warn) whenever ANY of the four elements is hidden,
+  // the plain open eye only when all four show — one glance, four
+  // independent flags.
+  const uiAnyHidden = $derived(!uiHud.score || !uiHud.feed || !uiHud.chat || !uiHud.ctrl);
   // ONE toggle governs every filter surface in the panel (the Filters
   // button): the category dropdown, the game-events name picker, the
   // FilterBar scope, the saved-preset controls and Reset all show/hide
@@ -1763,17 +1780,19 @@
   // engine AND remember whether to resume; close the transient popovers
   // (their anchors unmount with the chrome — same reset enterTheater does,
   // plus the feed's category picker). Everything else — theater, speed,
-  // loop, layer toggles, mutes, selection — is view mode and SURVIVES.
+  // loop, layer toggles, mutes, selection, the per-element uiHud flags —
+  // is view mode and SURVIVES.
   // The dock's render area is WORLD ONLY: collapse also pushes the canvas
-  // overlay group off (renderer.setOverlaysVisible — the SAME renderer
-  // half the E3 UI toggle drives, so the collapsed frame shows radar +
-  // gameplay and nothing else), and activate re-pushes the SESSION flag
-  // (uiHudOff — read through untrack like wasPlaying, so the effect still
-  // tracks ONLY `active`: the toggle pushes its own value while expanded).
+  // overlay group off (renderer.setOverlaysVisible — the MASTER gate, so
+  // the collapsed frame shows radar + gameplay and nothing else), and
+  // activate re-pushes the master (ON while expanded) PLUS the four
+  // per-element flags through untrack like wasPlaying, so the effect
+  // still tracks ONLY `active`: the popover's rows push their own values
+  // while expanded.
   // Activate (→ back on the replay route): resume iff it was playing when
   // left (engine.play() on a paused engine is a no-op when the flag was
   // cleared), then clear the flag. The effect tracks ONLY `active` —
-  // wasPlaying and uiHudOff are read through untrack so their own writes
+  // wasPlaying and uiHud are read through untrack so their own writes
   // cannot retrigger. renderer.resize() repaints the frozen frame at the
   // new size in BOTH directions (the wrapper flips display:contents ↔
   // fixed box; resize draws engine state even while paused, and the
@@ -1784,11 +1803,13 @@
       const resume = untrack(() => wasPlaying);
       wasPlaying = false;
       if (resume) engine?.play();
-      renderer?.setOverlaysVisible(!untrack(() => uiHudOff)); // the user's session flag survives the round trip
+      const h = untrack(() => uiHud);
+      renderer?.setOverlayLayers({ hud: h.score, feed: h.feed, chat: h.chat }); // the user's per-element flags survive the round trip
+      renderer?.setOverlaysVisible(true); // master = active (expanded)
       renderer?.resize();
       return;
     }
-    loopOpen = speedOpen = camOpen = followOpen = dropsOpen = volOpen = catsOpen = false;
+    loopOpen = speedOpen = camOpen = followOpen = dropsOpen = volOpen = catsOpen = uiOpen = false;
     wasPlaying = shouldResumeOnReturn(!!engine, engine?.state.playing === true);
     if (engine?.state.playing) engine.pause();
     renderer?.setOverlaysVisible(false); // the dock shows the world only
@@ -2292,13 +2313,18 @@
     // the pref effect may have run before the renderer existed, so the
     // CURRENT state is pushed here like every other setter).
     renderer.setDropLayers({ guns: dropGuns, util: dropUtil, kits: dropKits });
-    // UI-overlay visibility: the SAME current-state push — the toggle
-    // may have flipped before the engine rebuilt (or the view mounted
-    // with it already off), so re-push whatever uiHudOff says now —
-    // EXCEPT over the collapsed dock: a load finishing while inactive
-    // (active false) pushes the dock's world-only view instead, and the
-    // expand leg of the activation effect re-pushes the session flag.
-    renderer.setOverlaysVisible(active && !uiHudOff);
+    // UI-overlay visibility: the SAME current-state push — the popover
+    // may have flipped an element before the engine rebuilt (or the view
+    // mounted with elements already hidden), so re-push whatever uiHud
+    // says now — EXCEPT over the collapsed dock: a load finishing while
+    // inactive (active false) pushes the dock's world-only view instead
+    // (master off), and the expand leg of the activation effect re-pushes
+    // the session flags. The MASTER is boolean `active` (unchanged
+    // contract — the keep-alive dock rule); the per-element triple rides
+    // beside it, so a load while inactive leaves the flags intact under
+    // the closed master.
+    renderer.setOverlayLayers({ hud: uiHud.score, feed: uiHud.feed, chat: uiHud.chat });
+    renderer.setOverlaysVisible(active);
     offChange = engine.onChange((st) => {
       uiFrame = st.frame;
       uiTick = st.tick;
@@ -2646,20 +2672,24 @@
   // with no toolbar around them.
   function enterTheater() {
     theater = true;
-    loopOpen = speedOpen = camOpen = followOpen = dropsOpen = volOpen = false;
+    loopOpen = speedOpen = camOpen = followOpen = dropsOpen = volOpen = uiOpen = false;
   }
 
-  // toggleHud — the ONE coarse overlay toggle: canvas score box + kill
-  // feed + chat AND the DOM control-group rows go together (the whole
-  // overlay group, never the gameplay layers and never the theater-exit
-  // button). One flag, two pushes (the setDropLayers pattern): the view
-  // flag drives the button, renderer.setOverlaysVisible gates the paint
-  // — payloads keep flowing while hidden (setHud's additive semantics),
-  // so re-enabling repaints without a re-push. Session-only: no pref
-  // write (like theater, it is not a durable setting).
-  function toggleHud() {
-    uiHudOff = !uiHudOff;
-    renderer?.setOverlaysVisible(!uiHudOff);
+  // setUiLayer — ONE popover row's checkbox (the E3 rework of the old
+  // single toggleHud): flips that element's flag and pushes the whole
+  // triple (the setDropLayers push pattern — one flag, one push; the
+  // renderer spread-merges). Canvas layers only: the score box, kill
+  // feed and chat map {score→hud, feed, chat}; `ctrl` (the stage's
+  // .rp-ctrl-list rows) is DOM-only — it gates the template directly and
+  // never reaches the renderer. The master gate is untouched here:
+  // setOverlaysVisible belongs to the keep-alive dock rule (boolean
+  // `active`), never to an element. Session-only: no pref write (like
+  // theater, it is not a durable setting), so payloads keep flowing
+  // while an element is hidden (setHud's additive semantics) and
+  // re-checking repaints without a re-push.
+  function setUiLayer(key) {
+    uiHud[key] = !uiHud[key];
+    if (key !== 'ctrl') renderer?.setOverlayLayers({ hud: uiHud.score, feed: uiHud.feed, chat: uiHud.chat });
   }
 
   // toggleSkipFreeze — view state + engine push + durable write, all in
@@ -3185,7 +3215,7 @@
           <!-- Theater mode's way OUT: rendered only while theater is on,
                a SIBLING of the canvas (outside .rp-ctrl-list and outside
                every overlay-gated block — the one element neither the
-               UI toggle nor the control group may ever hide: it is the
+               UI popover nor the control group may ever hide: it is the
                only control left on screen, so hiding it would softlock
                the view). TOP-LEFT of the stage — the region map's
                reserved top-left slot (renderer.js); the score box's
@@ -3228,7 +3258,7 @@
                following, the camera row is deduped away with it, see
                ctrlRows). The collapsed dock hides it with the rest of
                the chrome. -->
-          {#if !uiHudOff && ctrlRows.length && active}
+          {#if uiHud.ctrl && ctrlRows.length && active}
             <div class="rp-ctrl-list" role="status">
               {#each ctrlRows as row (row.kind)}
                 {#if row.kind === 'follow'}
@@ -3536,26 +3566,56 @@
             </span>
           {/if}
 
-          <!-- UI overlays — the ONE coarse overlay toggle (chat, kill
-               feed, score/timer and the stage's control-group rows all
-               go together; gameplay layers and the theater-exit button
-               never do). Icon-only, between the camera selector and the
-               drops selector in every cam mode (the follow popover's
-               slot is conditional; this one is not). The armed pattern
-               is INVERTED like #rp-skip-freeze: uiHudOff true = the
-               group is HIDDEN, so pressed + warn mean "overlays off".
-               Session-only: no pref write (the setDropLayers push
-               pattern, one flag → renderer.setOverlaysVisible). -->
-          <button
-            class="btn"
-            id="rp-ui"
-            class:warn={uiHudOff}
-            aria-pressed={uiHudOff}
-            aria-label="UI overlays"
-            title="Show/hide the chat, kill feed, score/timer and stage indicators — one toggle (never hides the theater-exit button)"
-            onclick={toggleHud}
-            ><span class="codicon {uiHudOff ? 'codicon-eye-closed' : 'codicon-eye'}" aria-hidden="true"></span></button
-          >
+          <!-- UI overlays — a POPOVER of four per-element checkboxes
+               (the owner's rework of the old one-for-all toggle): Score/
+               timer + Kill feed + Chat (canvas layers →
+               renderer.setOverlayLayers, {score→hud}) and Stage
+               indicators (the stage's .rp-ctrl-list rows — view-side
+               only). Gameplay layers and the theater-exit button are
+               never offered. Icon-only trigger, between the camera
+               selector and the drops selector in every cam mode (the
+               follow popover's slot is conditional; this one is not),
+               on the canonical .rp-pop-host / Popover / .rp-pop family
+               exactly like the drops control below (the checkbox rows
+               reuse .rp-drop-item — ONE spelling for a popover checkbox
+               row). The armed look is a SUMMARY: eye-closed + .warn
+               while ANY element is hidden, the plain open eye when all
+               four show (aria-expanded/aria-haspopup advertise the
+               panel). Session-only: no pref write, no URL, no viewstate
+               (the setDropLayers push pattern, one flag → the triple). -->
+          <span class="rp-pop-host" bind:this={uiAnchor}>
+            <button
+              class="btn"
+              id="rp-ui"
+              class:warn={uiAnyHidden}
+              aria-expanded={uiOpen}
+              aria-haspopup="true"
+              aria-label="UI overlays"
+              title="Show/hide individual overlays — score/timer, kill feed, chat and stage indicators (never hides the theater-exit button)"
+              onclick={() => (uiOpen = !uiOpen)}
+              ><span class="codicon {uiAnyHidden ? 'codicon-eye-closed' : 'codicon-eye'}" aria-hidden="true"></span></button
+            >
+            <Popover open={uiOpen} anchor={uiAnchor} onClose={() => (uiOpen = false)}>
+              <div class="rp-pop rp-ui-pop" role="group" aria-label="UI overlays">
+                <label class="rp-drop-item" title="Show the team score and round clock">
+                  <input type="checkbox" checked={uiHud.score} onchange={() => setUiLayer('score')} />
+                  Score/timer
+                </label>
+                <label class="rp-drop-item" title="Show the kill feed">
+                  <input type="checkbox" checked={uiHud.feed} onchange={() => setUiLayer('feed')} />
+                  Kill feed
+                </label>
+                <label class="rp-drop-item" title="Show the in-game chat">
+                  <input type="checkbox" checked={uiHud.chat} onchange={() => setUiLayer('chat')} />
+                  Chat
+                </label>
+                <label class="rp-drop-item" title="Show the stage's status rows (following, loop, map-pack note)">
+                  <input type="checkbox" checked={uiHud.ctrl} onchange={() => setUiLayer('ctrl')} />
+                  Stage indicators
+                </label>
+              </div>
+            </Popover>
+          </span>
 
           <!-- Drops (spec: dropped guns/util/kits on the map): a
                MULTI-select popover between the camera selector and the

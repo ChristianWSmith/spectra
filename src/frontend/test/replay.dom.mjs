@@ -721,10 +721,19 @@ writeFileSync(
     },
     setHud() {},
     setOverlaysVisible(v) {
-      // Recorded so the driver can pin the toolbar wiring: startEngine
-      // pushes the current (default shown) state, #rp-ui pushes each
-      // flip — one flag, two pushes (the setDropLayers pattern).
+      // Recorded so the driver can pin the wiring: startEngine pushes
+      // boolean active, collapse pushes false / expand true (the
+      // MASTER gate — the keep-alive dock rule). One flag, two pushes
+      // (the setDropLayers pattern).
       globalThis.__overlays = !!v;
+    },
+    setOverlayLayers(v) {
+      // Recorded beside __overlays for the per-element half (the E3
+      // popover's four rows): startEngine/expand push the whole triple,
+      // each row pushes it again after flipping ONE flag — the real
+      // renderer spread-merges, so this copy merges too (an absent key
+      // keeps its previous value).
+      globalThis.__overlayLayers = { ...(globalThis.__overlayLayers || { hud: true, feed: true, chat: true }), ...v };
     },
     setIcons() {},
     setVoices() {},
@@ -1957,22 +1966,72 @@ click(dropBtn2); // close — later sections count toolbar chrome
 await sleep();
 check('the popover closes on its trigger', !controls.querySelector('.rp-drops-pop'));
 
-console.log('E3. UI overlay toggle: the ONE coarse chat/feed/score + control-group on-off, no pref');
+// --- E3: the UI-overlays POPOVER (the owner's rework of the one-for-all
+// toggle, 2026-11-12) --------------------------------------------------------
+// The trigger opens a panel of FOUR independent checkboxes — Score/timer,
+// Kill feed, Chat (canvas layers → renderer.setOverlayLayers, score→hud)
+// and Stage indicators (the .rp-ctrl-list rows, view-side only). The
+// MASTER setOverlaysVisible is NOT a row's business: it only ever moves
+// with `active` (the keep-alive dock rule), so a row flip leaves
+// globalThis.__overlays alone. Helpers are ROOT-scoped because several
+// Replay instances stay mounted at once — #rp-ui/.rp-ui-pop must never be
+// resolved against the whole document.
+const UI_OVERLAY_ROWS = ['Score/timer', 'Kill feed', 'Chat', 'Stage indicators'];
+const uiHostOf = (root) => root.querySelector('#rp-ui')?.parentElement || null;
+const uiPanelOf = (root) => root.querySelector('.rp-ui-pop');
+const uiBoxesOf = (root) => [...(uiPanelOf(root)?.querySelectorAll('input[type="checkbox"]') || [])];
+const uiLabelOf = (cb) => (cb.closest('label')?.textContent || '').trim();
+const uiLayerState = () => ({ ...globalThis.__overlayLayers });
+async function openUiPanel(root) {
+  if (!uiPanelOf(root)) {
+    click(root.querySelector('#rp-ui'));
+    await sleep();
+  }
+  return uiPanelOf(root);
+}
+// Flip ONE row to the requested state through the same DOM path a user
+// does (the panel stays open — it is a multi-select, like the drops one).
+async function uiRow(root, label, on) {
+  await openUiPanel(root);
+  const cb = uiBoxesOf(root).find((c) => uiLabelOf(c) === label);
+  if (cb && cb.checked !== on) {
+    cb.click();
+    await sleep();
+  }
+  return cb;
+}
+async function uiSetAll(root, on) {
+  for (const label of UI_OVERLAY_ROWS) await uiRow(root, label, on);
+}
+
+console.log('E3. UI overlays popover: four per-element checkboxes (score/timer, kill feed, chat, stage), no pref');
+const uiHost = uiHostOf(controls);
 const uiBtn = controls.querySelector('#rp-ui');
 check(
-  'the toggle sits immediately before the drops selector',
-  !!uiBtn && uiBtn.nextElementSibling === dropHost,
-  uiBtn ? `next = ${uiBtn.nextElementSibling?.id || uiBtn.nextElementSibling?.className}` : 'missing #rp-ui',
+  'the trigger host sits immediately before the drops selector',
+  !!uiBtn && uiHost?.nextElementSibling === dropHost,
+  uiBtn ? `next = ${uiHost?.nextElementSibling?.id || uiHost?.nextElementSibling?.className}` : 'missing #rp-ui',
 );
 check(
-  'icon-only, the open-eye glyph while the overlays show',
+  'icon-only, the open-eye glyph while every element shows',
   !!uiBtn?.querySelector('.codicon-eye') && !uiBtn.textContent.trim(),
   uiBtn ? JSON.stringify(uiBtn.textContent) : 'missing',
 );
 check(
-  'startEngine pushed the default (shown) to renderer.setOverlaysVisible',
-  globalThis.__overlays === true,
-  String(globalThis.__overlays),
+  'the trigger advertises the PANEL (aria-expanded=false, haspopup, a name + title)',
+  uiBtn?.getAttribute('aria-expanded') === 'false' &&
+    uiBtn?.getAttribute('aria-haspopup') === 'true' &&
+    !!uiBtn?.getAttribute('aria-label') &&
+    !!uiBtn?.getAttribute('title'),
+  `expanded=${uiBtn?.getAttribute('aria-expanded')} haspopup=${uiBtn?.getAttribute('aria-haspopup')}`,
+);
+check(
+  'startEngine pushed the default (master shown + all four elements on)',
+  globalThis.__overlays === true &&
+    globalThis.__overlayLayers?.hud === true &&
+    globalThis.__overlayLayers?.feed === true &&
+    globalThis.__overlayLayers?.chat === true,
+  `${globalThis.__overlays} / ${JSON.stringify(globalThis.__overlayLayers)}`,
 );
 check(
   'the control group is on screen to hide (the ever-present packNote row)',
@@ -1981,33 +2040,80 @@ check(
 );
 const prefKeys = () => JSON.stringify(Object.keys(globalThis.__prefs).sort());
 const prefsBefore = prefKeys();
-click(uiBtn);
-await sleep();
+const uiPop = await openUiPanel(controls);
+const uiBoxes = uiBoxesOf(controls);
 check(
-  'toggling OFF: the renderer got false AND the .rp-ctrl-list is gone',
-  globalThis.__overlays === false && !stage.querySelector('.rp-ctrl-list'),
-  `overlays=${globalThis.__overlays} ctrl=${!!stage.querySelector('.rp-ctrl-list')}`,
+  'the panel opens with exactly four rows, in order',
+  !!uiPop && JSON.stringify(uiBoxes.map(uiLabelOf)) === JSON.stringify(UI_OVERLAY_ROWS),
+  JSON.stringify(uiBoxes.map(uiLabelOf)),
 );
 check(
-  'the armed pattern (#rp-skip-freeze\'s shape): pressed + warn + eye-closed while hidden',
-  uiBtn.getAttribute('aria-pressed') === 'true' &&
-    uiBtn.classList.contains('warn') &&
-    !!uiBtn.querySelector('.codicon-eye-closed'),
-  `${uiBtn.getAttribute('aria-pressed')} warn=${uiBtn.classList.contains('warn')}`,
+  'all four start CHECKED (every element shows by default)',
+  uiBoxes.length === 4 && uiBoxes.every((cb) => cb.checked),
+  JSON.stringify(uiBoxes.map((cb) => cb.checked)),
 );
 check(
   'the toggle writes NO pref (session-only, like theater)',
   prefKeys() === prefsBefore,
   `${prefsBefore} → ${prefKeys()}`,
 );
-click(uiBtn);
-await sleep();
+
+// PER-ELEMENT coverage: hiding ONE element must leave the others pushed
+// on (the layers are independent), and the trigger's armed look is a
+// SUMMARY of the four flags — not a second master switch.
+await uiRow(controls, 'Chat', false);
 check(
-  'toggling back ON: the renderer got true and the control group returns',
-  globalThis.__overlays === true && !!stage.querySelector('.rp-ctrl-list'),
-  `overlays=${globalThis.__overlays} ctrl=${!!stage.querySelector('.rp-ctrl-list')}`,
+  'hiding Chat alone: the chat layer off, score + feed still ON, master untouched',
+  globalThis.__overlayLayers?.chat === false &&
+    globalThis.__overlayLayers?.hud === true &&
+    globalThis.__overlayLayers?.feed === true &&
+    globalThis.__overlays === true,
+  `${globalThis.__overlays} / ${JSON.stringify(uiLayerState())}`,
 );
-check('the open-eye glyph returns', !!uiBtn.querySelector('.codicon-eye'));
+check(
+  'the stage indicator list is still up (only the chat went)',
+  !!ctrlList(),
+  ctrlTexts().join(' | '),
+);
+check(
+  'the trigger arms as soon as ANY element is hidden (eye-closed + warn)',
+  uiBtn.classList.contains('warn') && !!uiBtn.querySelector('.codicon-eye-closed'),
+  `warn=${uiBtn.classList.contains('warn')} expanded=${uiBtn.getAttribute('aria-expanded')}`,
+);
+check('the panel stays open across the row clicks (multi-select)', !!controls.querySelector('.rp-ui-pop'));
+
+// The rest go too: every canvas layer off, the DOM list gone — and the
+// MASTER stays ON (it belongs to the keep-alive dock rule, not to a row).
+await uiRow(controls, 'Score/timer', false);
+await uiRow(controls, 'Kill feed', false);
+await uiRow(controls, 'Stage indicators', false);
+check(
+  'all four hidden: every layer off + .rp-ctrl-list gone, master still true',
+  globalThis.__overlays === true &&
+    globalThis.__overlayLayers?.hud === false &&
+    globalThis.__overlayLayers?.feed === false &&
+    globalThis.__overlayLayers?.chat === false &&
+    !stage.querySelector('.rp-ctrl-list'),
+  `${globalThis.__overlays} / ${JSON.stringify(uiLayerState())} ctrl=${!!stage.querySelector('.rp-ctrl-list')}`,
+);
+check('still NO pref after four flips', prefKeys() === prefsBefore, `${prefsBefore} → ${prefKeys()}`);
+
+// …and back: every element returns, the summary eye opens again.
+await uiSetAll(controls, true);
+check(
+  're-checking all four: layers on, the control group returns, the open-eye glyph returns',
+  globalThis.__overlays === true &&
+    globalThis.__overlayLayers?.hud === true &&
+    globalThis.__overlayLayers?.feed === true &&
+    globalThis.__overlayLayers?.chat === true &&
+    !!stage.querySelector('.rp-ctrl-list') &&
+    !!uiBtn.querySelector('.codicon-eye') &&
+    !uiBtn.classList.contains('warn'),
+  `${globalThis.__overlays} / ${JSON.stringify(uiLayerState())} warn=${uiBtn.classList.contains('warn')}`,
+);
+click(uiBtn); // close — later sections count toolbar chrome
+await sleep();
+check('the popover closes on its trigger', !controls.querySelector('.rp-ui-pop'));
 
 console.log('F. player-card columns: grouping, team names, mute wiring, absent-stream silence');
 const rbody = main.querySelector('.replay-body');
@@ -2912,36 +3018,66 @@ check(
 
 // --- SOFTLOCK PIN (B4 × B2): overlays off must never hide the exit path --
 // The transport and the control group are gone in theater mode; the
-// toggle's flag survives the round trip, so the exit button has to stay
-// renderable with overlays OFF — and the toggle has to work again after.
+// popover's per-element flags survive the round trip, so the exit button
+// has to stay renderable with EVERY element hidden — and the popover has
+// to work again after. Per-element coverage first (hiding ONLY chat
+// leaves score/feed pushed on — the layers are independent), then all
+// four go for the softlock leg.
 const transportAfter = target.querySelector('.replay-transport');
 const controlsAfter = transportAfter?.children[1];
 const uiBtnAfter = controlsAfter?.querySelector('#rp-ui');
-click(uiBtnAfter);
-await sleep();
+await uiRow(controlsAfter, 'Chat', false);
 check(
-  'overlays off: the control group is gone again',
-  globalThis.__overlays === false && !stage.querySelector('.rp-ctrl-list'),
-  `overlays=${globalThis.__overlays} ctrl=${!!stage.querySelector('.rp-ctrl-list')}`,
+  'hiding ONLY chat: score + feed stay pushed on (independent layers, master untouched)',
+  globalThis.__overlays === true &&
+    globalThis.__overlayLayers?.hud === true &&
+    globalThis.__overlayLayers?.feed === true &&
+    globalThis.__overlayLayers?.chat === false,
+  `${globalThis.__overlays} / ${JSON.stringify(uiLayerState())}`,
+);
+await uiSetAll(controlsAfter, false);
+check(
+  'all four hidden: the control group is gone again (the master stays ON while expanded)',
+  globalThis.__overlays === true &&
+    globalThis.__overlayLayers?.hud === false &&
+    globalThis.__overlayLayers?.feed === false &&
+    globalThis.__overlayLayers?.chat === false &&
+    !stage.querySelector('.rp-ctrl-list'),
+  `${globalThis.__overlays} / ${JSON.stringify(uiLayerState())} ctrl=${!!stage.querySelector('.rp-ctrl-list')}`,
+);
+check(
+  'the trigger is armed (eye-closed + warn) with every element hidden',
+  !!uiBtnAfter && uiBtnAfter.classList.contains('warn') && !!uiBtnAfter.querySelector('.codicon-eye-closed'),
+  uiBtnAfter ? `warn=${uiBtnAfter.classList.contains('warn')}` : 'missing #rp-ui',
 );
 click(target.querySelector('.replay-topbar #rp-theater'));
 await sleep();
-check('overlays off still renders the theater exit (never gated)', !!stage.querySelector('.rp-theater-exit'));
+check('all four hidden still renders the theater exit (never gated)', !!stage.querySelector('.rp-theater-exit'));
 click(stage.querySelector('.rp-theater-exit'));
 await sleep();
 const transportBack = target.querySelector('.replay-transport');
 check(
-  'exit returns the transport with overlays STILL off (no softlock, no state loss)',
-  !!transportBack && globalThis.__overlays === false && !stage.querySelector('.rp-ctrl-list'),
-  `transport=${!!transportBack} overlays=${globalThis.__overlays} ctrl=${!!stage.querySelector('.rp-ctrl-list')}`,
+  'exit returns the transport with all four STILL hidden (no softlock, no state loss)',
+  !!transportBack &&
+    globalThis.__overlays === true &&
+    globalThis.__overlayLayers?.hud === false &&
+    globalThis.__overlayLayers?.feed === false &&
+    globalThis.__overlayLayers?.chat === false &&
+    !stage.querySelector('.rp-ctrl-list'),
+  `transport=${!!transportBack} ${globalThis.__overlays} / ${JSON.stringify(uiLayerState())} ctrl=${!!stage.querySelector('.rp-ctrl-list')}`,
 );
-click(transportBack?.children[1]?.querySelector('#rp-ui'));
-await sleep();
+await uiSetAll(transportBack?.children[1], true);
 check(
-  'and the toggle round-trips again after the theater hop',
-  globalThis.__overlays === true && !!stage.querySelector('.rp-ctrl-list'),
-  `overlays=${globalThis.__overlays} ctrl=${!!stage.querySelector('.rp-ctrl-list')}`,
+  'and the popover round-trips again after the theater hop (all four back on)',
+  globalThis.__overlays === true &&
+    globalThis.__overlayLayers?.hud === true &&
+    globalThis.__overlayLayers?.feed === true &&
+    globalThis.__overlayLayers?.chat === true &&
+    !!stage.querySelector('.rp-ctrl-list'),
+  `${globalThis.__overlays} / ${JSON.stringify(uiLayerState())} ctrl=${!!stage.querySelector('.rp-ctrl-list')}`,
 );
+click(transportBack?.children[1]?.querySelector('#rp-ui')); // close — later sections count toolbar chrome
+await sleep();
 
 // --- (A) + (B): the range-edit rule and the entry ?loop= promise ----------
 // A SECOND Replay instance mounts against the ENTRY query the link sites
@@ -3051,9 +3187,10 @@ check(
 // the chrome unmounts down to frame + caption (stage/canvas stay — the
 // renderer holds the element), wasPlaying carries the resume intent
 // through both activation orders, and the render area stays WORLD ONLY:
-// collapse pushes renderer.setOverlaysVisible(false) (the E3 toggle's
-// renderer half), expand re-pushes the SESSION flag — a user's OFF
-// preference survives the round trip exactly like theater does. The
+// collapse pushes renderer.setOverlaysVisible(false) (the MASTER gate —
+// the keep-alive dock rule), expand re-pushes the master ON plus the
+// per-element uiHud flags — a user's hidden element survives the round
+// trip exactly like theater does. The
 // caption's REAL play/pause control replaces the old passive ▶ marker
 // (button pins + the dock-toggle flow in J2 below), and Replay mounts
 // INSIDE a .dock-probe wrapper whose Svelte handlers mirror App's
@@ -3061,8 +3198,9 @@ check(
 // engine stub counts play()/pause() (globalThis.__plays / __pauses —
 // play() idempotent like the real engine, pause() counts every call)
 // and the renderer stub records the last setOverlaysVisible into
-// globalThis.__overlays — snapshots are taken around each step, so the
-// earlier sections' play traffic cannot leak into these deltas.
+// globalThis.__overlays and the last setOverlayLayers into
+// globalThis.__overlayLayers — snapshots are taken around each step, so
+// the earlier sections' play traffic cannot leak into these deltas.
 console.log('J. keep-alive: inactive never autoplays; collapse pauses + world-only frame, expand resumes once, a deliberate pause stays paused');
 const playsBase = globalThis.__plays || 0;
 const pausesBase = globalThis.__pauses || 0;
@@ -3152,9 +3290,12 @@ check(
   `+${(globalThis.__plays || 0) - playsBase} play calls`,
 );
 check(
-  'expanding re-pushes the session overlay flag (ON by default)',
-  globalThis.__overlays === true,
-  `overlays=${globalThis.__overlays}`,
+  'expanding re-pushes the master (ON) with every element at its session value',
+  globalThis.__overlays === true &&
+    globalThis.__overlayLayers?.hud === true &&
+    globalThis.__overlayLayers?.feed === true &&
+    globalThis.__overlayLayers?.chat === true,
+  `${globalThis.__overlays} / ${JSON.stringify(globalThis.__overlayLayers)}`,
 );
 check('expanded: the player cards are back', !!target3.querySelector('.tc-col'));
 
@@ -3189,23 +3330,28 @@ check(
   `+${(globalThis.__plays || 0) - playsBase} play calls`,
 );
 check(
-  'expand restores the overlays (the session flag ON re-pushed)',
+  'expand restores the master gate (ON — it belongs to active, not to a row)',
   globalThis.__overlays === true,
   `overlays=${globalThis.__overlays}`,
 );
-// The user's overlay preference rides the round trip too (the same
-// session-state-survives rule as theater): flip the E3 toggle OFF while
-// expanded — the collapse/expand legs below must keep it OFF (never
-// snap back to the default ON).
+// The user's per-element preference rides the round trip too (the same
+// session-state-survives rule as theater): hide ALL FOUR elements while
+// expanded — the collapse/expand legs below must keep them hidden (never
+// snap back to the default ON), while the MASTER follows `active`.
 const uiBtn3 = target3.querySelector('#rp-ui');
-check('the E3 overlay toggle is reachable while expanded', !!uiBtn3, 'missing #rp-ui');
-click(uiBtn3);
-await sleep();
+check('the E3 popover trigger is reachable while expanded', !!uiBtn3, 'missing #rp-ui');
+await uiSetAll(target3, false);
 check(
-  'the E3 toggle drives the renderer flag (overlays OFF)',
-  globalThis.__overlays === false,
-  `overlays=${globalThis.__overlays}`,
+  'the rows drive the renderer layers (all hidden) while the master stays ON',
+  globalThis.__overlays === true &&
+    globalThis.__overlayLayers?.hud === false &&
+    globalThis.__overlayLayers?.feed === false &&
+    globalThis.__overlayLayers?.chat === false,
+  `${globalThis.__overlays} / ${JSON.stringify(uiLayerState())}`,
 );
+check('the stage indicator list is gone with Stage indicators hidden', !target3.querySelector('.rp-ctrl-list'));
+click(target3.querySelector('#rp-ui')); // close the panel — the legs below only need the flags
+await sleep();
 const playBtn3 = target3.querySelector('.replay-transport button[aria-label="Pause"]');
 check('the transport offers the Pause cell while playing', !!playBtn3, 'missing aria-label=Pause');
 click(playBtn3);
@@ -3232,9 +3378,12 @@ check(
   `+${(globalThis.__plays || 0) - playsAfterUser} play calls`,
 );
 check(
-  "the user's OFF overlay preference survives the round trip (expand re-pushes OFF)",
-  globalThis.__overlays === false,
-  `overlays=${globalThis.__overlays}`,
+  "the user's hidden elements survive the round trip (expand re-pushes them, master back ON)",
+  globalThis.__overlays === true &&
+    globalThis.__overlayLayers?.hud === false &&
+    globalThis.__overlayLayers?.feed === false &&
+    globalThis.__overlayLayers?.chat === false,
+  `${globalThis.__overlays} / ${JSON.stringify(uiLayerState())}`,
 );
 check('expanded: chrome fully restored', !!target3.querySelector('.replay-transport') && !!target3.querySelector('.tc-col'));
 
@@ -3306,9 +3455,12 @@ check(
   `wrapper clicks +${(globalThis.__wrapperClicks || 0) - wrapC0}`,
 );
 check(
-  'dock-play keeps the render area WORLD ONLY (overlays still OFF)',
-  globalThis.__overlays === false,
-  `overlays=${globalThis.__overlays}`,
+  'dock-play keeps the render area WORLD ONLY (master off while collapsed, elements still hidden)',
+  globalThis.__overlays === false &&
+    globalThis.__overlayLayers?.hud === false &&
+    globalThis.__overlayLayers?.feed === false &&
+    globalThis.__overlayLayers?.chat === false,
+  `${globalThis.__overlays} / ${JSON.stringify(uiLayerState())}`,
 );
 
 // DOCK PAUSE → the intent flips to "stay paused".
@@ -3347,9 +3499,12 @@ check(
   `plays +${(globalThis.__plays || 0) - playsDockRunning}`,
 );
 check(
-  'the OFF overlay preference still holds after the dock round trip',
-  globalThis.__overlays === false,
-  `overlays=${globalThis.__overlays}`,
+  'the hidden elements still hold after the dock round trip (master back ON with active)',
+  globalThis.__overlays === true &&
+    globalThis.__overlayLayers?.hud === false &&
+    globalThis.__overlayLayers?.feed === false &&
+    globalThis.__overlayLayers?.chat === false,
+  `${globalThis.__overlays} / ${JSON.stringify(uiLayerState())}`,
 );
 
 // The other direction: collapse the DOCK-PLAYING replay, dock-pause it

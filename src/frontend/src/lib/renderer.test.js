@@ -3572,7 +3572,7 @@ test('kill feed: noscope is gated to the four scoped snipers', () => {
   r.destroy();
 });
 
-test('kill feed: C4 death — explosion glyph + victim only, T-orange outline, no attacker-side flags', () => {
+test('kill feed: C4 death — C4 weapon icon + victim only, T-orange outline, no attacker-side flags', () => {
   headlessGlobals();
   const data = synthStore(1300, 2);
   const engine = createEngine(data, 64);
@@ -3608,7 +3608,11 @@ test('kill feed: C4 death — explosion glyph + victim only, T-orange outline, n
     }),
   ]);
   r.setIcons({
-    C4: { width: 32, height: 32, src: 'c4.svg' }, // the weapon glyph must stay out
+    // The C4 weapon image IS this row's context icon now (owner fix,
+    // 2026-11-12) — the canonical 'C4' key, never 'planted_c4'.
+    C4: { width: 32, height: 32, src: 'c4.svg' },
+    // The hud blast pip stays REGISTERED on purpose: the srcs pin below
+    // proves the row no longer draws it even when it is available.
     explosion: { width: 32, height: 32, src: 'blast.svg' },
     blind_kill: { width: 32, height: 32, src: 'blind.svg' },
     airborne: { width: 32, height: 32, src: 'air.svg' },
@@ -3638,24 +3642,28 @@ test('kill feed: C4 death — explosion glyph + victim only, T-orange outline, n
   assert.ok(!feedText('carol', 12), 'no assister either');
   assert.ok(feedText('alice', 12), 'the victim cell survives');
 
-  // [explosion(16)][victim(40)] + 1 gap + 2 inset = 80 → x = 712; the
-  // glyph starts at the inset (718), the victim one gap past it (746).
+  // [c4(16)][victim(40)] + 1 gap + 2 inset = 80 → x = 712; the glyph
+  // starts at the inset (718), the victim one gap past it (746). The
+  // C4 cell occupies the same 16 px square the blast pip did (both
+  // fixture icons are 32×32), so the box/glyph/victim x come out
+  // unchanged — only the SOURCE swapped (recomputed from the painter's
+  // recorded ops, not assumed).
   const box = opsSince(canvas.log, 'roundRect', mark).find(
     (e) => e.args[3] === KILL_FEED_LH && e.args[4] === KILL_FEED_R,
   );
   assert.deepEqual([box.args[0], box.args[1], box.args[2]], [712, 8, 80]);
-  const boom = bodyBySrc(canvas.log, mark, 'blast.svg');
-  assert.ok(boom, 'the explosion glyph is drawn at the killer cell’s x');
-  assert.equal(boom.args[1], 719, '…at the box inset (712 + 6 + 1)');
+  const c4 = bodyBySrc(canvas.log, mark, 'c4.svg');
+  assert.ok(c4, 'the C4 weapon glyph is drawn at the killer cell’s x');
+  assert.equal(c4.args[1], 719, '…at the box inset (712 + 6 + 1)');
   const victim = opsSince(canvas.log, 'fillText', mark).find((e) => e.args[0] === 'alice' && e.args[2] === 12);
   assert.equal(victim.args[1], 746, 'the victim is right-aligned as always');
   assert.equal(victim.fillStyle, '#5aa9e6', 'the victim name keeps the VICTIM’s side tint (CT)');
 
-  // Not ONE other glyph paints: no weapon image, no attacker-side flag.
+  // Not ONE other glyph paints: no blast pip, no attacker-side flag.
   const srcs = opsSince(canvas.log, 'drawImage', mark)
     .filter((e) => e.args[0] && e.args[0].src)
     .map((e) => e.args[0].src);
-  assert.deepEqual(srcs, ['blast.svg'], 'the row is explosion + victim, nothing else');
+  assert.deepEqual(srcs, ['c4.svg'], 'the row is the C4 icon + victim, nothing else');
 
   // Outline in T orange — the bomb belongs to the T side, NOT to either
   // player: the killer is T (a killer-side outline would be orange) and
@@ -6214,15 +6222,18 @@ test('scrub coalescing: requestDraw defers setHud draws to ONE rAF (latest tick 
   assert.equal(queue.length, 0, 'destroy() cancels it');
 });
 
-// --- UI overlay toggle (setOverlaysVisible) ----------------------------------
-// The ONE coarse overlay gate (Replay's toggleHud pushes it): while
+// --- Overlay gates (setOverlaysVisible master + setOverlayLayers) ----------
+// The MASTER gate (Replay's keep-alive dock rule pushes it): while
 // hidden, draw() skips the WHOLE group — HUD box, kill feed, chat — the
 // gameplay layers keep painting, the payloads keep flowing (setHud's
 // additive semantics) and re-enabling repaints the CURRENT state without
-// a re-push. The DOM control-group rows go with the group view-side
-// (Replay's {#if !uiHudOff}); this file owns the canvas half. The
-// CTRL_GROUP_BUDGET reservation is untouched either way — the score
-// box's x-position never moves when the group comes back.
+// a re-push. The per-element gate (setOverlayLayers — Replay's UI
+// popover rows) hides ONE of the three BENEATH the master; the DOM
+// control-group rows are view-side only (Replay's {#if uiHud.ctrl});
+// this file owns the canvas half. The CTRL_GROUP_BUDGET reservation is
+// untouched either way — the score box's x-position never moves when a
+// layer or the whole group comes back (killFeedLayout keeps running
+// under a hidden feed: its `left` is still the score box's bound).
 
 test('overlays: setOverlaysVisible(false) gates HUD/feed/chat — gameplay keeps painting, re-enable repaints', () => {
   headlessGlobals();
@@ -6289,6 +6300,103 @@ test('overlays: setOverlaysVisible(false) gates HUD/feed/chat — gameplay keeps
   );
   assert.equal(feedRows(re).length, 1, 'the kill feed comes back');
   assert.equal(chatRows(re).length, 1, 'the chat comes back');
+  r.destroy();
+});
+
+test('overlays: setOverlayLayers hides ONE element at a time, the master still wins, the score box never moves', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  // LENGTH-AWARE measureText (8 px/char): the harness's flat 40 px can
+  // never widen a feed row past the score box, so the C1 clamp could
+  // never engage — and "the score box never moves when the feed is
+  // hidden" would be a vacuous pin.
+  const canvas = recordingCanvas(800, 600, (s) => s.length * 8);
+  const r = createRenderer(canvas, { engine, data, players: HUD_PLAYERS });
+  const mk = (ev) => normalizeEvent(ev, {});
+  const round1 = { number: 1, label: 'R1', startTick: 0, freezeEndTick: 640, endTick: 1200, bombSite: '' };
+  r.setLandmarks([
+    // A deliberately WIDE feed row (a 40-char assister rides the killer
+    // cell): its left edge lands close enough to the stage's middle that
+    // drawHUD's C1 clamp ACTUALLY engages.
+    mk({
+      id: 1, seq: 1, tick: 50, round: 1, kind: 'kill',
+      attacker: '1', attackerName: 'alice', assisterName: 'z'.repeat(40),
+      victim: '2', victimName: 'bob', weapon: 'AK-47',
+    }),
+  ]);
+  r.setChat([{ id: 1, tick: 50, round: 1, steamId: '1', name: 'alice', text: 'one' }]);
+  r.setHud({ score: { ct: 1, t: 0 }, teamNames: { ct: 'NAVY', t: 'FURY' }, round: round1, tickRate: 64 });
+  r.resize();
+  engine.seekTick(100); // round 1, past the kill + the chat line
+
+  const feedRows = (from = 0) =>
+    opsSince(canvas.log, 'roundRect', from).filter((e) => e.args[4] === KILL_FEED_R && e.args[1] < 300);
+  const chatRows = (from = 0) =>
+    opsSince(canvas.log, 'roundRect', from).filter((e) => e.args[4] === KILL_FEED_R && e.args[1] >= 300);
+  const paint = () => {
+    const m = canvas.log.length;
+    r.draw();
+    return m;
+  };
+  const counts = (m) => ({
+    hud: hudBoxesSince(canvas.log, m).length,
+    feed: feedRows(m).length,
+    chat: chatRows(m).length,
+  });
+
+  // (1) default: all three paint AND the clamp is engaged — the score
+  // box's right edge sits exactly SCORE_FEED_GAP (8 px) left of the feed
+  // row's left edge (proving the box is bound by the feed, not centered).
+  let m = paint();
+  assert.deepEqual(counts(m), { hud: 1, feed: 1, chat: 1 }, 'default: score + feed + chat all paint');
+  const score0 = hudBoxesSince(canvas.log, m)[0];
+  const feed0 = feedRows(m)[0];
+  assert.equal(
+    score0.args[0] + score0.args[2],
+    feed0.args[0] - 8,
+    'the C1 clamp is engaged: score box right edge = feed left − SCORE_FEED_GAP (8)',
+  );
+  const scoreX0 = score0.args[0];
+
+  // (2) hide ONLY the feed: the score box does NOT move — killFeedLayout
+  // still ran (its `left` stayed the bound), the other two still paint.
+  r.setOverlayLayers({ feed: false });
+  m = paint();
+  assert.deepEqual(counts(m), { hud: 1, feed: 0, chat: 1 }, 'the feed layer hides alone');
+  assert.equal(
+    hudBoxesSince(canvas.log, m)[0].args[0],
+    scoreX0,
+    'the score box x is UNCHANGED with the feed hidden (no jump when it returns)',
+  );
+
+  // (3) hide ONLY the score box: feed + chat untouched.
+  r.setOverlayLayers({ hud: false, feed: true });
+  m = paint();
+  assert.deepEqual(counts(m), { hud: 0, feed: 1, chat: 1 }, 'the hud layer hides alone');
+
+  // (4) hide ONLY the chat: score + feed untouched.
+  r.setOverlayLayers({ hud: true, chat: false });
+  m = paint();
+  assert.deepEqual(counts(m), { hud: 1, feed: 1, chat: 0 }, 'the chat layer hides alone');
+
+  // (5) the MASTER still wins: every layer on, master off → nothing
+  // paints, and the gameplay layers keep going underneath.
+  r.setOverlayLayers({ chat: true });
+  r.setOverlaysVisible(false);
+  m = paint();
+  assert.deepEqual(counts(m), { hud: 0, feed: 0, chat: 0 }, 'master off gates all three whatever the layers say');
+  const tt = textsSince(canvas.log, m);
+  assert.ok(tt.includes('alice') && tt.includes('bob'), 'the gameplay name labels still paint under the master gate');
+
+  // (6) layer state is INDEPENDENT of the master: hide the score while
+  // the master is off, re-enable the master → the score stays hidden,
+  // the other two come back.
+  r.setOverlayLayers({ hud: false });
+  r.setOverlaysVisible(true);
+  m = paint();
+  assert.deepEqual(counts(m), { hud: 0, feed: 1, chat: 1 }, 're-enabling the master keeps the per-element flag');
+  r.setOverlayLayers({ hud: true });
   r.destroy();
 });
 
