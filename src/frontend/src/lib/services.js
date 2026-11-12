@@ -485,7 +485,8 @@ export function onFilesDropped(callback) {
 
 // onAssetProgress: per-item progress of the CS2 asset extractors —
 // {family, stage, done, total} (family: 'map-packs' | 'icons' | 'sounds';
-// only map-packs is emitted from Go today, see mappackservice.go).
+// all three are emitted from Go through the one shared emitter in
+// mappackservice.go, gated per step by lib/assets.js assetFamilyForStep).
 // Progress only: it flushes nothing, so it stays out of the read-cache
 // invalidation list at the top of this file.
 export function onAssetProgress(callback) {

@@ -256,21 +256,26 @@ click(notNow());
 await sleep();
 
 console.log('F. accept: busy gate + StatusChip progress + counts-only result');
-let release;
-const gate = new Promise((r) => (release = r));
+// One gate PER FAMILY so the driver can hold each step open while it
+// feeds that step's spectra:asset-progress payloads (all three families
+// emit now — mappackservice.go's shared emitter).
+let releaseMaps, releaseIcons, releaseSounds;
+const gateMaps = new Promise((r) => (releaseMaps = r));
+const gateIcons = new Promise((r) => (releaseIcons = r));
+const gateSounds = new Promise((r) => (releaseSounds = r));
 globalThis.__stub = {
   ...allPresent(),
   status: { ...allPresent().status, maps: [] },
   extractMapPacks: async () => {
-    await gate;
+    await gateMaps;
     return { maps: ['de_mirage'], errors: [] };
   },
   extractIcons: async () => {
-    await gate;
+    await gateIcons;
     return { count: 0, note: 'VPK unreadable' }; // partial failure
   },
   extractSounds: async () => {
-    await gate;
+    await gateSounds;
     return { count: 5, note: '' };
   },
 };
@@ -281,6 +286,7 @@ await sleep(60);
 check('extract button disabled while busy', primary()?.disabled === true);
 check('Not now disabled while busy', notNow()?.disabled === true);
 const chip = panel()?.querySelector('.chip.status');
+const chipText = () => panel()?.querySelector('.chip.status')?.textContent || '';
 check('StatusChip shown while extracting', !!chip, panel()?.textContent.slice(0, 120));
 check(
   'step text names the running family',
@@ -300,7 +306,57 @@ check(
   (panel()?.textContent || '').includes('25%'),
   panel()?.querySelector('.chip.status')?.textContent,
 );
-release();
+
+console.log('F2. icon/sound steps: their own emitters drive the bar');
+releaseMaps();
+await sleep();
+check(
+  'step advances to equipment icons',
+  (panel()?.textContent || '').includes('Extracting equipment icons'),
+  panel()?.textContent.slice(0, 160),
+);
+// The previous step's payload must NOT drive this step's bar: it stays
+// the animated indeterminate one until an icons payload lands.
+check(
+  'icons step starts indeterminate (stale map-packs payload gated out)',
+  !!panel()?.querySelector('.chip-bar-fill.indeterminate') &&
+    !(panel()?.textContent || '').includes(' of '),
+  panel()?.textContent.slice(0, 200),
+);
+emitProgress({ family: 'icons', stage: 'extract', done: 60, total: 120 });
+await sleep();
+check('icons emitter → determinate chip shows 50%', chipText().includes('50%'), chipText());
+check(
+  'icons step row shows 60 of 120',
+  (panel()?.textContent || '').includes('60 of 120'),
+  panel()?.textContent.slice(0, 200),
+);
+// A stale payload for another family (here: the finished map-pack run)
+// must never retarget this step's bar OR clobber its numbers: the
+// listener filters on the running step's family (assets.js).
+emitProgress({ family: 'map-packs', stage: 'extract', done: 4, total: 4 });
+await sleep();
+check(
+  'stale map-packs payload ignored during the icons step',
+  (panel()?.textContent || '').includes('60 of 120') && chipText().includes('50%'),
+  chipText(),
+);
+releaseIcons();
+await sleep();
+check(
+  'step advances to replay sounds',
+  (panel()?.textContent || '').includes('Extracting replay sounds'),
+  panel()?.textContent.slice(0, 160),
+);
+emitProgress({ family: 'sounds', stage: 'extract', done: 45, total: 45 });
+await sleep();
+check(
+  'sounds emitter → closing payload renders 45 of 45',
+  (panel()?.textContent || '').includes('45 of 45'),
+  panel()?.textContent.slice(0, 200),
+);
+
+releaseSounds();
 await sleep(100);
 check(
   'counts-only result line',
@@ -310,7 +366,10 @@ check(
 check('aggregated error line', errorLine() === 'icons: VPK unreadable.', JSON.stringify(errorLine()));
 check('stays open after a partial failure', open());
 check('busy cleared — buttons enabled again', primary()?.disabled === false);
-check('progress row gone after the run', !(panel()?.textContent || '').includes('Extracting radar map packs'));
+check(
+  'progress row gone after the run',
+  !(panel()?.textContent || '').includes('Extracting'),
+);
 
 console.log('G. full success → counts line + auto-close');
 globalThis.__stub = {

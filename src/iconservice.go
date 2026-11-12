@@ -3,6 +3,7 @@ package main
 import (
 	"strings"
 
+	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/services/kvstore"
 
 	"github.com/ChristianWSmith/spectra/internal/data"
@@ -25,6 +26,10 @@ import (
 // manifest: the frontend falls back to a text label.
 type IconService struct {
 	kvs *kvstore.KVStoreService
+	// app is the handle the shared spectra:asset-progress emitter rides
+	// (assetProgressFor in mappackservice.go) — nil in tests, which
+	// simply means no emission.
+	app *application.App
 }
 
 // IconManifest is the one icons contract, returned by the service AND
@@ -60,16 +65,21 @@ func (s *IconService) GetIconManifest() IconManifest {
 // refreshed manifest. Never panics and never fails the call: a missing
 // install or a VPK error comes back as extracted=false/Partial with a
 // human-readable note, because "no icons" is a fallback state (text
-// labels), not an error.
+// labels), not an error. Per-icon progress rides the shared
+// spectra:asset-progress emitter (assetProgressFor, family "icons") so
+// the frontend can render a determinate bar.
 func (s *IconService) ExtractIcons(cs2Dir string) IconManifest {
 	manual, _ := s.kvs.Get(prefsMapPackCS2PathKey).(string)
-	return extractIcons(cs2Dir, manual, data.IconsDir())
+	return extractIcons(cs2Dir, manual, data.IconsDir(), assetProgressFor(s.app, assetFamilyIcons))
 }
 
 // extractIcons is the testable core of ExtractIcons: detect the install
 // (explicit dir wins over detection via the saved manual path), extract
-// into outDir, and describe the outcome as a manifest.
-func extractIcons(cs2Dir, manual, outDir string) IconManifest {
+// into outDir, and describe the outcome as a manifest. progress (nil =
+// no emission) is the per-item callback forwarded to
+// mappack.WithProgress; the honest denominator is mappack's canonical
+// icon table — one call per canonical icon attempted.
+func extractIcons(cs2Dir, manual, outDir string, progress func(done, total int)) IconManifest {
 	if cs2Dir == "" {
 		cs2Dir = mappack.FindCS2(manual)
 	}
@@ -79,7 +89,7 @@ func extractIcons(cs2Dir, manual, outDir string) IconManifest {
 			Note:  "Counter-Strike 2 not found (install it, or choose its folder in Settings)",
 		}
 	}
-	_, errs, err := mappack.ExtractIcons(cs2Dir, outDir)
+	_, errs, err := mappack.ExtractIcons(cs2Dir, outDir, mappack.WithProgress(progress))
 	m := buildIconManifest(outDir)
 	var notes []string
 	if err != nil {

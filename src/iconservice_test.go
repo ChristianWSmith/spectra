@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ChristianWSmith/spectra/internal/mappack"
 )
 
 // TestBuildIconManifest pins the served manifest contract: fresh dir
@@ -128,9 +130,16 @@ func TestHandleIconsManifestRoute(t *testing.T) {
 
 // TestExtractIconsNoInstall: a cs2Dir without a VPK yields
 // extracted=false plus a human-readable note — a fallback state, never a
-// failure (the frontend keeps rendering text labels).
+// failure (the frontend keeps rendering text labels). Detection fails
+// BEFORE extraction starts, so the progress callback must never fire:
+// no run means no percentage is invented for the bar.
 func TestExtractIconsNoInstall(t *testing.T) {
-	m := extractIcons(filepath.Join(t.TempDir(), "no-cs2"), "", t.TempDir())
+	var progressCalls int
+	m := extractIcons(filepath.Join(t.TempDir(), "no-cs2"), "", t.TempDir(),
+		func(done, total int) { progressCalls++ })
+	if progressCalls != 0 {
+		t.Errorf("progress fired %d times before extraction could start, want 0", progressCalls)
+	}
 	if m.Extracted || m.Count != 0 {
 		t.Errorf("manifest = %+v, want nothing extracted", m)
 	}
@@ -139,5 +148,33 @@ func TestExtractIconsNoInstall(t *testing.T) {
 	}
 	if len(m.Icons) != 0 {
 		t.Errorf("icons = %v, want empty", m.Icons)
+	}
+}
+
+// TestExtractIconsProgressEmitted runs the ICON service's extraction
+// core against a real local CS2 install (mappack.FindCS2 auto-detects)
+// with the shared spectra:asset-progress emitter wired in — the headless
+// proof that a service-level run really fires the new emitter along a
+// REAL extraction path: events arrive with an honest denominator (the
+// canonical icon table, known before the first item) and the closing
+// call lands exactly on it. Skipped when CS2 isn't installed (CI never
+// has it — internal/mappack's synthetic TestExtractProgress carries the
+// portable extractor coverage). Output is a temp dir; nothing
+// Valve-derived is kept.
+func TestExtractIconsProgressEmitted(t *testing.T) {
+	cs2Dir := mappack.FindCS2("")
+	if cs2Dir == "" {
+		t.Skip("no local CS2 install found")
+	}
+	var seen []AssetProgressEvent
+	m := extractIcons(cs2Dir, "", t.TempDir(),
+		assetProgress(func(ev AssetProgressEvent) { seen = append(seen, ev) }, assetFamilyIcons))
+	last := assertAssetProgressRun(t, assetFamilyIcons, seen)
+	if !m.Extracted || m.Count == 0 {
+		t.Fatalf("manifest = %+v, want extracted icons", m)
+	}
+	// The denominator must never undercount what the run actually wrote.
+	if last.Total < m.Count {
+		t.Errorf("denominator total %d < %d extracted icons", last.Total, m.Count)
 	}
 }

@@ -30,7 +30,7 @@
     onAssetProgress,
     errText,
   } from '../services.js';
-  import { extractAllAssets } from '../assets.js';
+  import { extractAllAssets, assetFamilyForStep } from '../assets.js';
   import { probeAudio } from '../replay/audio.js';
   import { AUDIO_VOL_DEFAULT, FOOTSTEPS_VOL_DEFAULT, prefVolume } from '../replay/sfx.js';
   import { fmtDate, fmtBytes } from '../fmt.js';
@@ -242,32 +242,37 @@
   // Live extraction progress: mpStep names the family step currently
   // running (set before each awaited call in doExtract), mpProgress holds
   // the last spectra:asset-progress payload ({family, stage, done, total})
-  // — only map packs emit one today, so the icon/sound steps render the
-  // animated bar from the step label alone.
+  // — every family emits one now (mappackservice.go's shared emitter), so
+  // each step renders the determinate bar from its own numbers.
   let mpStep = $state('');
   let mpProgress = $state(null);
 
-  // The per-map payload while the map-pack step is running; null for the
-  // other steps (no emitter) so their bar never pretends to be determinate.
-  const mpMapProgress = $derived(
-    mpStep === 'radar map packs' && mpProgress && mpProgress.family === 'map-packs'
-      ? mpProgress
-      : null,
+  // The payload of the step CURRENTLY running, gated on that step's own
+  // family (assets.js assetFamilyForStep): a stale payload from the
+  // previous step or a concurrent run's payload for another family never
+  // drives this bar. Null between steps → the animated indeterminate bar
+  // (StatusChip's class:indeterminate) — never a pretended percentage.
+  const mpStepProgress = $derived(
+    mpProgress && mpProgress.family === assetFamilyForStep(mpStep) ? mpProgress : null,
   );
 
   // 0 = the animated indeterminate bar (StatusChip's class:indeterminate),
   // a real 0..1 = the determinate bar + its percentage.
   const mpPct = $derived(
-    mpMapProgress && mpMapProgress.total > 0
-      ? Math.min(1, mpMapProgress.done / mpMapProgress.total)
+    mpStepProgress && mpStepProgress.total > 0
+      ? Math.min(1, mpStepProgress.done / mpStepProgress.total)
       : 0,
   );
 
   // Subscribe for the whole view lifetime; the unsubscribe is the $effect
-  // cleanup (the pattern documented at services.js onEvent).
+  // cleanup (the pattern documented at services.js onEvent). Only the
+  // RUNNING step's family is accepted: a concurrent run's payloads
+  // (Replay's background icon auto-extract) and the previous step's
+  // closing payload can never clobber this step's numbers — worst case
+  // the bar stays indeterminate, never wrong.
   $effect(() => {
     const off = onAssetProgress((p) => {
-      if (p) mpProgress = p;
+      if (p && p.family === assetFamilyForStep(mpStep)) mpProgress = p;
     });
     return off;
   });
@@ -837,14 +842,15 @@
     {#if mpMsg}<p class="sett-msg" role="status">{mpMsg}</p>{/if}
     {#if mpError}<p class="error" role="alert">{mpError}</p>{/if}
     <!-- Live extraction progress: the app's ONE progress widget
-         (StatusChip) beside the step text. Map packs drive it with real
-         numbers from spectra:asset-progress; the icon/sound steps have no
-         emitter, so their bar stays the animated indeterminate one. -->
+         (StatusChip) beside the step text. Every family drives it with
+         real numbers from spectra:asset-progress (gated to the running
+         step's family); between steps the bar stays the animated
+         indeterminate one. -->
     {#if mpBusy && mpStep}
       <p class="muted" role="status">
         <StatusChip status="running" progress={mpPct} />
-        Extracting {mpStep}…{mpMapProgress && mpMapProgress.done > 0
-          ? ` ${mpMapProgress.done} of ${mpMapProgress.total}`
+        Extracting {mpStep}…{mpStepProgress && mpStepProgress.done > 0
+          ? ` ${mpStepProgress.done} of ${mpStepProgress.total}`
           : ''}
       </p>
     {/if}

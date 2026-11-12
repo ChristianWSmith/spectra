@@ -1,6 +1,7 @@
 // assets.js — THE shared CS2 asset-extraction driver: the three-family
 // sequence (radar map packs → equipment icons → replay sounds), the step
-// labels shown beside the ONE progress widget (StatusChip), and the
+// labels shown beside the ONE progress widget (StatusChip), the
+// spectra:asset-progress family each step's payloads carry, and the
 // aggregated outcome wording. Settings' CS2 assets section and the
 // launch prompt (MapPackPrompt.svelte) both run it — one home for the
 // step order, the per-family aggregation and the result message, so the
@@ -13,13 +14,15 @@
 import { extractMapPacks, extractIcons, extractSounds, errText } from './services.js';
 
 // The three families in extraction order. `label` is the step text the
-// caller shows while the family runs (only map packs emit
-// spectra:asset-progress today, so the icon/sound steps render the
-// indeterminate bar from the label alone); `failKey` prefixes that
+// caller shows while the family runs; `family` is the payload family
+// that step's extractor emits on spectra:asset-progress (mappackservice.go's
+// shared emitter — all three emit now), which the renderers gate their
+// determinate bar on through assetFamilyForStep; `failKey` prefixes that
 // family's entry in the aggregated error; `noun` is the singular result
 // word ("3 map packs", "1 icon").
 const ASSET_FAMILIES = [
   {
+    family: 'map-packs',
     label: 'radar map packs',
     failKey: 'map packs',
     noun: 'map pack',
@@ -28,6 +31,7 @@ const ASSET_FAMILIES = [
     errors: (out) => (out && out.errors) || [],
   },
   {
+    family: 'icons',
     label: 'equipment icons',
     failKey: 'icons',
     noun: 'icon',
@@ -36,6 +40,7 @@ const ASSET_FAMILIES = [
     errors: (out) => (out && out.note ? [out.note] : []),
   },
   {
+    family: 'sounds',
     label: 'replay sounds',
     failKey: 'sounds',
     noun: 'sound',
@@ -44,6 +49,17 @@ const ASSET_FAMILIES = [
     errors: (out) => (out && out.note ? [out.note] : []),
   },
 ];
+
+// assetFamilyForStep maps a step label (what onStep fired before each
+// awaited family) to the spectra:asset-progress family its payloads
+// carry — THE step→family gate both renderers use, so the determinate
+// bar only ever shows numbers for the family actually running: a stale
+// payload from the previous step, or a concurrent run's payload for
+// another family, never drives it. Unknown/empty step → '' (no family
+// matches → the indeterminate bar).
+export function assetFamilyForStep(label) {
+  return ASSET_FAMILIES.find((f) => f.label === label)?.family || '';
+}
 
 // extractAllAssets runs the three extractions SEQUENTIALLY (one call
 // into the shared Go lock at a time) under the caller's busy gate:

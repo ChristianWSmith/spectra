@@ -64,8 +64,15 @@ export const VoiceService = {
   GetVoiceLanes: rec('GetVoiceLanes'),
   GetVoiceIndex: rec('GetVoiceIndex'),
 };
-export const MapPackService = {};
-export const IconService = {};
-export const SoundService = {};
+export const MapPackService = {
+  // Radar extraction (lib/assets.test.js drives the three-family run).
+  ExtractMapPacks: rec('ExtractMapPacks'),
+};
+export const IconService = {
+  ExtractIcons: rec('ExtractIcons'),
+};
+export const SoundService = {
+  ExtractSounds: rec('ExtractSounds'),
+};
 export const DialogService = {};
 export const KVStoreService = { Get: rec('GetPref'), Set: rec('SetPref') };
