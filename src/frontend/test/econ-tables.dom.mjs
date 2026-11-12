@@ -135,8 +135,14 @@ function servicesStub() {
     "export const errText = (e) => (e == null ? 'unknown error' : String((e && e.message) || e));",
   ];
   for (const n of names) {
+    // A scripted Error is the FAILURE sentinel: that getter returns a
+    // rejected promise (section I drives the views' error indications;
+    // the fixtures above only ever script data).
     lines.push(
-      `export const ${n} = () => Promise.resolve(has('${n}') ? d().${n} : []);`,
+      `export const ${n} = () => {\n` +
+        `  const v = has('${n}') ? d().${n} : [];\n` +
+        `  return v instanceof Error ? Promise.reject(v) : Promise.resolve(v);\n` +
+        `};`,
     );
   }
   return lines.join('\n') + '\n';
@@ -842,6 +848,100 @@ check(
   !matchSrc.includes('halfScore') && !matchSrc.includes('displayHalfScore'),
   '',
 );
+
+// ---------------------------------------------------------------------------
+// Section I: every error indication in the Match view tree is dismissible
+// IN PLACE (PRODUCT.md "### Defaults": an error may gate an action, but the
+// user must always be able to clear it without navigating elsewhere). The
+// ✕ is the canonical idiom (Match's import-warnings panel): a `btn small`
+// with `codicon-close` INSIDE the `p.error[role="alert"]`, clearing the
+// state variable. Each sub-check asserts the view stays mounted (its own
+// content still rendered) and no navigation happened.
+console.log('I. error dismissals: Match top-level, KAST%, pinned stats, round types, Economy');
+const clickEl = (el) => el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+const alertP = (r, needle) =>
+  [...r.querySelectorAll('p.error[role="alert"]')].find((p) => p.textContent.includes(needle));
+const dismissInPlace = async (r, needle, stillThere) => {
+  const p = alertP(r, needle);
+  if (!p) return { found: false, detail: 'no alert with "' + needle + '"' };
+  const navBefore = (globalThis.__nav || []).length;
+  const btn = p.querySelector('button.btn.small .codicon-close')?.closest('button');
+  if (!btn) return { found: true, detail: 'no .btn.small dismiss inside the alert' };
+  clickEl(btn);
+  await sleep();
+  const gone = !alertP(r, needle);
+  const mounted = stillThere(r);
+  const noNav = (globalThis.__nav || []).length === navBefore;
+  return { found: true, gone, mounted, noNav, detail: '' };
+};
+
+// (a) Match's TOP-LEVEL error: the warnings read fails after the header
+// has landed (match.warningsCount > 0 → the warnings effect runs), so the
+// header proves the view is still mounted when the ✕ clears the message.
+{
+  const d = {
+    ...dataFor(13),
+    getMatch: { ...match, warningsCount: 1 },
+    getWarnings: new Error('warnings backend down'),
+  };
+  root = await showMatch(d, { routeTab: 'Rounds' });
+  const p = alertP(root, 'warnings backend down');
+  check('top-level failure renders the alert with its message', !!p, 'no top-level alert');
+  check('the ✕ rides INSIDE the alert', !!p?.querySelector('button.btn.small .codicon-close'), p ? p.innerHTML.slice(0, 160) : '');
+  check('the match header is still rendered (nothing unmounted)', !!root.querySelector('.match-sub'), '');
+  const res = await dismissInPlace(root, 'warnings backend down', (r) => !!r.querySelector('.match-sub'));
+  check(
+    '✕ clears the top-level error in place (header intact, no navigation)',
+    res.gone && res.mounted && res.noNav,
+    JSON.stringify(res),
+  );
+}
+
+// (b) combatError on the Scoreboard tab ("KAST% unavailable").
+{
+  const d = { ...dataFor(13), getCombatStats: new Error('kast backend down') };
+  root = await showMatch(d, { routeTab: 'Scoreboard' });
+  const p = alertP(root, 'KAST% unavailable');
+  check('KAST% failure renders its own alert', !!p && p.textContent.includes('kast backend down'), p ? p.textContent.trim() : 'no alert');
+  check('the ✕ rides INSIDE the KAST% alert', !!p?.querySelector('button.btn.small .codicon-close'), '');
+  const res = await dismissInPlace(root, 'KAST% unavailable', (r) => !!r.querySelector('.data-table.scoreboard'));
+  check('✕ clears the KAST% error in place (scoreboard table intact)', res.gone && res.mounted && res.noNav, JSON.stringify(res));
+}
+
+// (c) metricError ("Pinned stats unavailable") — needs a pinned metric so
+// the pins effect actually runs, then a failing ListMetrics.
+{
+  localStorage.setItem('spectra:pinned-metrics', '[7]');
+  const d = { ...dataFor(13), listMetrics: new Error('metrics backend down') };
+  root = await showMatch(d, { routeTab: 'Scoreboard' });
+  const p = alertP(root, 'Pinned stats unavailable');
+  check('pinned-stats failure renders its own alert', !!p && p.textContent.includes('metrics backend down'), p ? p.textContent.trim() : 'no alert');
+  const res = await dismissInPlace(root, 'Pinned stats unavailable', (r) => !!r.querySelector('.data-table.scoreboard'));
+  check('✕ clears the pinned-stats error in place (scoreboard table intact)', res.gone && res.mounted && res.noNav, JSON.stringify(res));
+  localStorage.removeItem('spectra:pinned-metrics');
+}
+
+// (d) classError on the Rounds tab ("Round types unavailable").
+{
+  const d = { ...dataFor(13), getRoundClasses: new Error('class backend down') };
+  root = await showMatch(d, { routeTab: 'Rounds' });
+  const p = alertP(root, 'Round types unavailable');
+  check('round-types failure renders its own alert', !!p && p.textContent.includes('class backend down'), p ? p.textContent.trim() : 'no alert');
+  const res = await dismissInPlace(root, 'Round types unavailable', (r) => !!r.querySelector('.view .data-table'));
+  check('✕ clears the round-types error in place (rounds table intact)', res.gone && res.mounted && res.noNav, JSON.stringify(res));
+}
+
+// (e) The Economy TAB's own error (Economy.svelte) — its fetch has no
+// in-view re-trigger, so the ✕ is its dismissal.
+{
+  const d = { ...dataFor(13), getEconomy: new Error('eco backend down') };
+  root = await showMatch(d, { routeTab: 'Economy' });
+  const p = alertP(root, 'eco backend down');
+  check('Economy failure renders its own alert', !!p, 'no Economy alert');
+  check('the ✕ rides INSIDE the Economy alert', !!p?.querySelector('button.btn.small .codicon-close'), '');
+  const res = await dismissInPlace(root, 'eco backend down', (r) => !!r.querySelector('.econ-head'));
+  check('✕ clears the Economy error in place (its head row intact)', res.gone && res.mounted && res.noNav, JSON.stringify(res));
+}
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 if (inst) unmount(inst);

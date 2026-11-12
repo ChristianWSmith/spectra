@@ -422,7 +422,12 @@
 
 <div class="view comb-view">
   {#if error}
-    <p class="error" role="alert">{error}</p>
+    <p class="error" role="alert">
+      {error}
+      <button class="btn small" aria-label="Dismiss error" onclick={() => (error = '')}>
+        <span class="codicon codicon-close"></span>
+      </button>
+    </p>
   {/if}
 
   {#if loading}
@@ -481,7 +486,12 @@
                 {/each}
               </tr>
             {:else}
-              <tr><td colspan={STAT_COLS.length} class="muted">No combat stats.</td></tr>
+              <!-- Honesty gate: a FAILED load must not claim the match
+                   has no combat stats (the error above says why nothing
+                   is here); the claim returns once error is cleared. -->
+              {#if !error}
+                <tr><td colspan={STAT_COLS.length} class="muted">No combat stats.</td></tr>
+              {/if}
             {/each}
           </tbody>
         </table>

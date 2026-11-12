@@ -760,7 +760,14 @@
 
 <div class="view">
   {#if error}
-    <p class="error" role="alert">{error}</p>
+    <!-- In-place dismissal: the ✕ clears the state variable itself (the
+         id-keyed effect below re-arms it on the next match load). -->
+    <p class="error" role="alert">
+      {error}
+      <button class="btn small" aria-label="Dismiss error" onclick={() => (error = '')}>
+        <span class="codicon codicon-close"></span>
+      </button>
+    </p>
   {/if}
 
   {#if match}
@@ -992,10 +999,20 @@
       </div>
     {:else if tab === 'Scoreboard'}
       {#if combatError}
-        <p class="error" role="alert">KAST% unavailable: {combatError}</p>
+        <p class="error" role="alert">
+          KAST% unavailable: {combatError}
+          <button class="btn small" aria-label="Dismiss KAST% error" onclick={() => (combatError = '')}>
+            <span class="codicon codicon-close"></span>
+          </button>
+        </p>
       {/if}
       {#if metricError}
-        <p class="error" role="alert">Pinned stats unavailable: {metricError}</p>
+        <p class="error" role="alert">
+          Pinned stats unavailable: {metricError}
+          <button class="btn small" aria-label="Dismiss pinned stats error" onclick={() => (metricError = '')}>
+            <span class="codicon codicon-close"></span>
+          </button>
+        </p>
       {/if}
       <div class="table-scroll">
         <table class="data-table scoreboard">
@@ -1167,7 +1184,12 @@
       </div>
     {:else if tab === 'Rounds'}
       {#if classError}
-        <p class="error" role="alert">Round types unavailable: {classError}</p>
+        <p class="error" role="alert">
+          Round types unavailable: {classError}
+          <button class="btn small" aria-label="Dismiss round types error" onclick={() => (classError = '')}>
+            <span class="codicon codicon-close"></span>
+          </button>
+        </p>
       {/if}
       <div class="table-scroll">
         <table class="data-table">

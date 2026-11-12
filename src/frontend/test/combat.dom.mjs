@@ -103,10 +103,14 @@ writeFileSync(
   `const d = () => globalThis.__combatData || {};
 // __combatDelay (section K) holds every read back so the cold-start
 // loading gate is observable; unset/0 keeps the plain resolve.
+// __combatError (section L) makes every read REJECT — the load-failure
+// path the dismissible alert is pinned against; unset/0 keeps it plain.
 const wait = (v) =>
-  globalThis.__combatDelay
-    ? new Promise((res) => setTimeout(() => res(v), globalThis.__combatDelay))
-    : Promise.resolve(v);
+  globalThis.__combatError
+    ? Promise.reject(new Error(globalThis.__combatError))
+    : globalThis.__combatDelay
+      ? new Promise((res) => setTimeout(() => res(v), globalThis.__combatDelay))
+      : Promise.resolve(v);
 export const getCombatStats = () => wait(d().stats || []);
 export const getClutches = () => wait(d().clutches || []);
 export const getEngagements = () => wait(d().engagements || []);
@@ -741,6 +745,44 @@ console.log('K. cold start: the panels never claim "No combat stats." mid-load')
     rootK.textContent.replace(/\s+/g, ' ').slice(0, 140),
   );
   globalThis.__combatDelay = 0;
+}
+
+// ---------------------------------------------------------------------------
+// Section L: the load failure is dismissible IN PLACE (PRODUCT.md "Every
+// error indication is dismissible") and is never paired with a false
+// "No combat stats." claim — the ✕ lives inside p.error[role="alert"] and
+// clears `error`, leaving the view (and its three panels) mounted.
+console.log('L. failed load: the error is dismissible in place, no false empty claim beside it');
+{
+  globalThis.__combatError = 'combat backend down';
+  const rootL = await render(base);
+  const errP = rootL.querySelector('p.error[role="alert"]');
+  check(
+    'failure renders the alert with its message',
+    !!errP && errP.textContent.includes('combat backend down'),
+    errP ? errP.textContent.trim() : 'no p.error',
+  );
+  check(
+    'the ✕ rides INSIDE the alert (btn small + codicon-close)',
+    !!errP?.querySelector('button.btn.small .codicon-close'),
+    errP ? errP.innerHTML.slice(0, 160) : '',
+  );
+  check(
+    'no false "No combat stats." claim beside the error (honesty gate)',
+    !rootL.textContent.includes('No combat stats.'),
+    rootL.textContent.replace(/\s+/g, ' ').slice(0, 160),
+  );
+  const panelsBefore = rootL.querySelectorAll('section.panel').length;
+  check('the three panels render around the failure', panelsBefore === 3, String(panelsBefore));
+  click(errP.querySelector('button.btn.small'));
+  await sleep();
+  check(
+    '✕ clears the error in place (view + panels still mounted, nothing navigated)',
+    !rootL.querySelector('p.error[role="alert"]') &&
+      rootL.querySelectorAll('section.panel').length === panelsBefore,
+    rootL.textContent.replace(/\s+/g, ' ').slice(0, 140),
+  );
+  globalThis.__combatError = 0;
 }
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

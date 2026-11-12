@@ -106,7 +106,12 @@ writeFileSync(
 writeFileSync(
   join(dir, 'services.js'),
   `const d = () => globalThis.__utility || {};
-export const getUtility = () => Promise.resolve(d().rows || []);
+// __utilityError (section I) makes the data read REJECT — the load-failure
+// path the dismissible alert is pinned against; unset it for plain reads.
+export const getUtility = () =>
+  globalThis.__utilityError
+    ? Promise.reject(new Error(globalThis.__utilityError))
+    : Promise.resolve(d().rows || []);
 export const getRounds = () => Promise.resolve(d().rounds || []);
 export const getScoreboard = () => Promise.resolve(d().scoreboard || []);
 export const getMatch = () => Promise.resolve(d().match || null);
@@ -422,6 +427,44 @@ check(
     !/44px/.test(ruleBody('.util-nade {') || ''),
   ruleBody('.util-nade {') || 'no .util-nade rule',
 );
+
+// ---------------------------------------------------------------------------
+// Section I: a failed load is dismissible IN PLACE (PRODUCT.md "Every
+// error indication is dismissible"). The ✕ is the canonical idiom — a
+// `btn small` with `codicon-close` INSIDE the `p.error[role="alert"]`,
+// clearing the state variable — and the view keeps rendering (its filters
+// toolbar stays mounted): no navigation, no remount.
+console.log('I. failed load: the error is dismissible in place (✕ clears it, view stays)');
+{
+  globalThis.__utilityError = 'utility backend down';
+  const errRoot = await show(); // fresh mount with the failing read
+  const errP = errRoot.querySelector('p.error[role="alert"]');
+  check(
+    'failure renders the alert with its message',
+    !!errP && errP.textContent.includes('utility backend down'),
+    errP ? errP.textContent.trim() : 'no p.error',
+  );
+  check(
+    'the ✕ rides INSIDE the alert (btn small + codicon-close)',
+    !!errP?.querySelector('button.btn.small .codicon-close'),
+    errP ? errP.innerHTML.slice(0, 160) : '',
+  );
+  check(
+    'the filters toolbar still renders (nothing unmounted)',
+    !!errRoot.querySelector('.util-filters'),
+    errRoot.textContent.replace(/\s+/g, ' ').slice(0, 120),
+  );
+  errP
+    .querySelector('button.btn.small')
+    .dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+  await sleep();
+  check(
+    '✕ clears the error in place (view + filters still mounted)',
+    !errRoot.querySelector('p.error[role="alert"]') && !!errRoot.querySelector('.util-filters'),
+    errRoot.textContent.replace(/\s+/g, ' ').slice(0, 120),
+  );
+  globalThis.__utilityError = 0;
+}
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 if (inst) unmount(inst);
