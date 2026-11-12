@@ -234,15 +234,28 @@ export function fmtPercent(x) {
   return `${round1(x)}%`;
 }
 
-// fmtDate renders a Date/ISO string as a locale date-time. A timestamp
-// the backend never wrote — the Go zero time.Time behind a NULL
-// matches.extracted_at, serialized as "0001-01-01T00:00:00Z" — is "not
-// extracted yet", not a date: it takes the placeholder instead of
-// rendering a year-0001 oddity on a still-parsing/queued/failed row.
-export function fmtDate(d) {
+// neverExtracted — THE "has this row ever extracted?" test: the Go zero
+// time.Time behind a NULL matches.extracted_at, serialized as
+// "0001-01-01T00:00:00Z" — what a queued/parsing/failed row carries
+// until SaveExtracted stamps it (an absent/unparseable stamp reads the
+// same: nothing was ever written). fmtDate renders its placeholder from
+// this same predicate; the Library match rows gate their
+// never-extracted presentation on it (queued-style "—" cells, the demo
+// file name in Matchup, the one cancel control while queued/parsing).
+export function neverExtracted(d) {
+  if (d == null || d === '') return true;
   const date = d instanceof Date ? d : new Date(d);
-  if (Number.isNaN(date.getTime())) return '—';
-  if (date.getUTCFullYear() <= 1) return '—'; // the Go zero time (never stamped)
+  if (Number.isNaN(date.getTime())) return true;
+  return date.getUTCFullYear() <= 1; // the Go zero time (never stamped)
+}
+
+// fmtDate renders a Date/ISO string as a locale date-time. A timestamp
+// the backend never wrote (neverExtracted above) is "not extracted yet",
+// not a date: it takes the placeholder instead of rendering a year-0001
+// oddity on a still-parsing/queued/failed row.
+export function fmtDate(d) {
+  if (neverExtracted(d)) return '—';
+  const date = d instanceof Date ? d : new Date(d);
   return date.toLocaleString(undefined, {
     year: 'numeric',
     month: 'short',

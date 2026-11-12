@@ -9,16 +9,25 @@
 // prompt).
 // Section E covers row navigation: a ready row opens /match/:id on click
 // and Enter, while a still-parsing row does neither (no click cursor, no
-// focus stop) and renders the never-extracted placeholder date — and its
-// Reprocess/Delete buttons are disabled with an "available once parsing
-// finishes" hint (the ready row's are live). Section D also pins the
-// empty state's copy: no import button of its own, the header owns it.
+// focus stop) and presents like the synthetic queued row — the
+// never-extracted gate (fmt.js neverExtracted, i.e. the extracted_at
+// stamp): the demo's file name in Matchup on the lib-demo-name cap, "—"
+// for score/rounds/duration (Size keeps its real value), the
+// placeholder date, and — with no job in the jobs snapshot — ZERO action
+// buttons (the disabled Re-parse/Delete pair is gone; the ready row's
+// pair stays live). Section D also pins the empty state's copy: no
+// import button of its own, the header owns it.
 // Section F covers the queue's visible half: synthetic import rows for
 // jobs with no match row yet (chip + determinate bar + Remove), a match
-// row owned by a queued reprocess (queued chip + Remove) and by a
-// running parse (Cancel + "reading demo 42%" determinate bar), the import-dir
-// row flipping to the live job with Import swapped for Remove, and the
-// multi-path ImportDialog hand-off (N paths → ONE ImportPaths call).
+// row owned by a queued reprocess (queued chip + Remove — one control;
+// this fixture is never-extracted) and by a running parse (Cancel only +
+// "reading demo 42%" determinate bar), the never-extracted FAILED row
+// (— cells, Re-parse/Delete live again — the cancel-then-retry
+// presentation), a REPROCESS mid-parse (old values kept + the 3-button
+// set — the anti-regression pin for the extracted_at gate), the
+// import-dir row flipping to the live job with Import swapped for
+// Remove, and the multi-path ImportDialog hand-off (N paths → ONE
+// ImportPaths call).
 // Section G mounts StatusChip directly: progress 0 is indeterminate
 // (moving bar, never "0%"), 0.42 renders "reading demo 42%".
 // Section H covers the keyset "Load more" pagination: the first window
@@ -173,7 +182,9 @@ const pageOf = (rows, afterID, limit) => {
 // preset itself must find nothing yet), plus a `parsing` facet that
 // returns a still-parsing row — the not-yet-extracted case (NULL
 // extracted_at arrives as the Go zero time "0001-01-01T00:00:00Z") the
-// view must neither date nor navigate.
+// view must neither date nor navigate — and, per the owner's queued-row
+// ruling, must present like the synthetic queued row (file name in
+// Matchup, "—" cells, no buttons while no job owns it).
 const row = {
   id: 1,
   path: '/d/a.dem',
@@ -196,6 +207,9 @@ const parsingRow = {
   size: 2097152,
   scoreCT: 0,
   scoreT: 0,
+  // Clan names a REAL fresh row never has (CreateMatchRow stores only
+  // path/sha/size/status) — they never reach the cell: the
+  // never-extracted gate shows the file name instead.
   ctName: 'Gamma',
   tName: 'Delta',
   realRounds: 0,
@@ -609,7 +623,7 @@ check('clear button gone', clearBtn().length === 0, String(clearBtn().length));
   );
 }
 
-console.log('E. a parsing row: honest placeholder date, no navigation');
+console.log('E. a parsing row: never-extracted presentation, honest date, no navigation');
 type(mapInput(), 'parsing');
 await sleep(350); // past the 250 ms debounce
 {
@@ -621,6 +635,29 @@ await sleep(350); // past the 250 ms debounce
     'EXTRACTED cell shows the placeholder, not a year-0001 date',
     cells[6] === '—',
     JSON.stringify(cells[6]),
+  );
+  // The owner's queued-row look, gated on the extracted_at stamp (never
+  // the status): the demo's file name takes the Matchup cell and
+  // score/rounds/duration read "—" instead of 0–0/0/0s. Size KEEPS its
+  // real value — it is known, and hiding real data to mirror the
+  // synthetic row's "—" would be a downgrade ("basically the same").
+  check(
+    'never-extracted cells: file name in Matchup, — score/rounds/duration, size kept',
+    cells[1] === 'b.dem' &&
+      cells[2] === '—' &&
+      cells[3] === '—' &&
+      cells[4] === '—' &&
+      cells[5] === '2.0 MB',
+    JSON.stringify(cells),
+  );
+  const nameEl = tr.children[1].querySelector('span');
+  check(
+    'match-row demo name rides the lib-demo-name cap with the full-path title',
+    !!nameEl &&
+      nameEl.classList.contains('lib-demo-name') &&
+      nameEl.getAttribute('title') === '/d/b.dem' &&
+      nameEl.textContent.trim() === 'b.dem',
+    tr.children[1].innerHTML.slice(0, 160),
   );
   check('row carries no pointer affordance', !tr.classList.contains('clickable'));
   check(
@@ -639,20 +676,18 @@ await sleep(350); // past the 250 ms debounce
     !!chip && chip.textContent.includes('parsing'),
     chip ? chip.textContent.trim() : 'missing',
   );
+  // RE-PIN (deliberate behavior change, owner ruling): a never-extracted
+  // parsing row with NO job in the jobs snapshot renders ZERO action
+  // buttons — the disabled Re-parse/Delete pair it used to show is gone
+  // (their disablement was the complaint), and a row no job owns is not
+  // actionable, so no fallback control is invented. The live pair stays
+  // on ready rows (section B) and failed rows (section F).
   check(
-    'row action buttons still present',
-    tr.querySelectorAll('.row-actions button').length === 2,
-    String(tr.querySelectorAll('.row-actions button').length),
-  );
-  // …but disabled while the row is parsing/queued, with a title hint that
-  // says when they come back.
-  const actBtns = [...tr.querySelectorAll('.row-actions button')];
-  check(
-    'parsing row action buttons disabled with the hint title',
-    actBtns.length === 2 &&
-      actBtns.every((b) => b.disabled) &&
-      actBtns.every((b) => b.title === 'Available once parsing finishes'),
-    JSON.stringify(actBtns.map((b) => [b.textContent.trim(), b.disabled, b.title])),
+    'no job known → ZERO action buttons (RE-PIN: was 2 disabled)',
+    tr.querySelectorAll('.row-actions button').length === 0,
+    [...tr.querySelectorAll('.row-actions button')]
+      .map((b) => b.textContent.trim())
+      .join(',') || 'none',
   );
 }
 
@@ -673,6 +708,9 @@ const queuedMatch = {
   tName: 'Side',
   realRounds: 0,
   durationS: 0,
+  // Never extracted — the fixture's reprocess job carries no prior data
+  // (a hybrid: kind 'reprocess', zero stamp), so the extracted_at gate
+  // gives it the one-control presentation (see the re-pin below).
   extractedAt: '0001-01-01T00:00:00Z',
   status: 'queued',
   error: '',
@@ -736,8 +774,70 @@ const dequeuedJob = {
   startedAt: null,
   finishedAt: '2026-01-05T00:00:04Z',
 };
+// A running REPROCESS of match 6 (never-extracted fixture rows are
+// covered above; this one owns the reprocess-with-prior-data row the two
+// new blocks below render). Inert for every earlier pin: it is not an
+// import job (no synthetic row), not failed/cancelled (no problems row),
+// and no earlier facet returns match id 6.
+const reprocessRunningJob = {
+  id: 15,
+  kind: 'reprocess',
+  path: '/d/old.dem',
+  status: 'running',
+  progress: 0.42,
+  stage: 'parse',
+  error: '',
+  matchId: 6,
+  createdAt: '2026-01-05T00:00:04Z',
+  startedAt: '2026-01-05T00:00:05Z',
+  finishedAt: null,
+};
+// Never-extracted FAILED row: the cancel-then-retry presentation. The
+// extracted_at gate keeps the queued-style cells after the cancel (a row
+// you just cancelled must not flip back to 0–0), while `failed` makes it
+// openable again — Re-parse/Delete live, no job owns it so no cancel.
+const failedFreshRow = {
+  id: 5,
+  path: '/d/failed.dem',
+  map: 'de_vertigo',
+  size: 512 * 1024,
+  scoreCT: 0,
+  scoreT: 0,
+  ctName: '',
+  tName: '',
+  realRounds: 0,
+  durationS: 0,
+  extractedAt: '0001-01-01T00:00:00Z',
+  status: 'failed',
+  error: 'parse blew up',
+};
+// REPROCESS mid-parse WITH prior data — the anti-regression pin for the
+// extracted_at gate: nothing clears the old values (Reprocess only flips
+// status), so the row keeps its score/rounds/duration/matchup and the
+// reference 3-button set (Cancel live, Re-parse/Delete disabled).
+const reprocessParsingRow = {
+  id: 6,
+  path: '/d/old.dem',
+  map: 'de_nuke',
+  size: 4096,
+  scoreCT: 13,
+  scoreT: 9,
+  ctName: 'Old',
+  tName: 'Guard',
+  realRounds: 22,
+  durationS: 1800,
+  extractedAt: '2026-01-04T00:00:00Z',
+  status: 'parsing',
+  error: '',
+};
 bindings.LibraryService.ListJobs = () =>
-  Promise.resolve([pendingImportJob, queuedReprocessJob, runningImportJob, dequeuedJob]);
+  Promise.resolve([
+    pendingImportJob,
+    queuedReprocessJob,
+    runningImportJob,
+    dequeuedJob,
+    reprocessRunningJob,
+  ]);
 bindings.LibraryService.ListDemoFiles = () =>
   Promise.resolve([
     { path: '/imports/new.dem', root: '/imports', size: 1234, modTime: '2026-01-01T00:00:00Z', hashed: false },
@@ -788,12 +888,16 @@ const cancelCalls = () => bindings.calls.filter((c) => c.method === 'CancelJob')
     fill ? `${fill.style.width} indeterminate=${fill.classList.contains('indeterminate')}` : 'missing',
   );
   const btns = [...tr.querySelectorAll('.row-actions button')];
+  // RE-PIN (deliberate behavior change): the never-extracted running row
+  // renders EXACTLY the enabled Cancel control — its disabled
+  // Re-parse/Delete pair is gone (owner ruling). The 42% chip pins above
+  // are untouched; the pair's disabled form survives on a reprocess with
+  // prior data (pinned in the reprocess block below).
   check(
-    'running parse row: Cancel live, Reprocess/Delete disabled',
-    btns.length === 3 &&
+    'running parse row: exactly the enabled Cancel control (RE-PIN: was Cancel + 2 disabled)',
+    btns.length === 1 &&
       btns[0].textContent.trim() === 'Cancel' &&
-      !btns[0].disabled &&
-      btns.slice(1).every((b) => b.disabled),
+      !btns[0].disabled,
     JSON.stringify(btns.map((b) => [b.textContent.trim(), b.disabled])),
   );
   const before = cancelCalls().length;
@@ -851,12 +955,17 @@ await sleep(350); // past the 250 ms debounce
     tr.querySelector('.chip.status')?.textContent.replace(/\s+/g, ' ').trim() ?? 'missing',
   );
   const mBtns = [...tr.querySelectorAll('.row-actions button')];
+  // RE-PIN (deliberate behavior change): this fixture is NEVER-EXTRACTED
+  // (extractedAt is the Go zero, scores/rounds/duration 0) despite its
+  // reprocess job, so the extracted_at gate gives it the one-control
+  // presentation — "if it's never-extracted, re-pin to 1". A reprocess
+  // WITH prior data keeps the 3-button set mid-parse — pinned in the
+  // reprocess block below.
   check(
-    'queued match row: Remove live, Re-parse/Delete disabled',
-    mBtns.length === 3 &&
+    'queued match row: exactly Remove, live (RE-PIN: was Remove + 2 disabled)',
+    mBtns.length === 1 &&
       mBtns[0].textContent.trim() === 'Remove' &&
-      !mBtns[0].disabled &&
-      mBtns.slice(1).every((b) => b.disabled),
+      !mBtns[0].disabled,
     JSON.stringify(mBtns.map((b) => [b.textContent.trim(), b.disabled])),
   );
   const beforeM = cancelCalls().length;
@@ -909,6 +1018,87 @@ await sleep(350); // past the 250 ms debounce
       pathCalls.at(-1).args[0][0] === '/imports/one.dem' &&
       pathCalls.at(-1).args[0][1] === '/imports/two.dem',
     JSON.stringify(pathCalls.map((c) => c.args)),
+  );
+}
+
+{
+  // Never-extracted FAILED row — the cancel-then-retry presentation.
+  // The extracted_at gate (never the status) keeps the queued-style
+  // cells: a row you just cancelled must not flip back to 0–0. `failed`
+  // is openable, so Re-parse/Delete are LIVE again (retry), and no job
+  // owns the row — so there is no cancel control beside them.
+  const prevRowsForFacetFail = rowsForFacet;
+  rowsForFacet = (f) =>
+    f && f.map === 'failedfresh' ? [failedFreshRow] : prevRowsForFacetFail(f);
+  type(mapInput(), 'failedfresh');
+  await sleep(350); // past the 250 ms debounce
+  const rows = matchRows(); // the synthetic import row still renders ahead
+  check('failed-fresh facet: synthetic row + the failed match row', rows.length === 2, String(rows.length));
+  const tr = rows[1];
+  const cells = [...tr.children].map((td) => td.textContent.trim());
+  check(
+    'failed fresh row keeps the never-extracted cells (file name, no 0–0 after a cancel)',
+    cells[1] === 'failed.dem' &&
+      cells[2] === '—' &&
+      cells[3] === '—' &&
+      cells[4] === '—' &&
+      cells[6] === '—',
+    JSON.stringify(cells),
+  );
+  const btns = [...tr.querySelectorAll('.row-actions button')];
+  check(
+    'failed fresh row actionable again: Re-parse + Delete live, no cancel control',
+    btns.length === 2 &&
+      btns.map((b) => b.textContent.trim()).join(',') === 'Re-parse,Delete' &&
+      btns.every((b) => !b.disabled),
+    JSON.stringify(btns.map((b) => [b.textContent.trim(), b.disabled])),
+  );
+  const chip = tr.querySelector('.chip.status');
+  check(
+    'failed chip still carries the error title',
+    !!chip && chip.textContent.includes('failed') && chip.getAttribute('title') === 'parse blew up',
+    chip ? `${chip.textContent.trim()} / ${chip.getAttribute('title')}` : 'missing',
+  );
+}
+
+{
+  // REPROCESS mid-parse WITH prior data — the anti-regression pin for
+  // the extracted_at gate: old values stay on screen (score/rounds/
+  // duration/matchup) and the row keeps the reference 3-button set —
+  // Cancel live, Re-parse/Delete disabled — exactly as before the
+  // never-extracted presentation was introduced.
+  const prevRowsForFacetRep = rowsForFacet;
+  rowsForFacet = (f) =>
+    f && f.map === 'reprocessing' ? [reprocessParsingRow] : prevRowsForFacetRep(f);
+  type(mapInput(), 'reprocessing');
+  await sleep(350); // past the 250 ms debounce
+  const rows = matchRows();
+  check('reprocess facet: synthetic row + the reprocess match row', rows.length === 2, String(rows.length));
+  const tr = rows[1];
+  const cells = [...tr.children].map((td) => td.textContent.trim());
+  check(
+    'reprocess parsing row keeps its OLD values (matchup, 13–9, 22 rounds, 30m00s)',
+    cells[1] === 'Old vs Guard' &&
+      cells[2] === '13–9' &&
+      cells[3] === '22' &&
+      cells[4] === '30m00s' &&
+      cells[6] !== '—',
+    JSON.stringify(cells),
+  );
+  const btns = [...tr.querySelectorAll('.row-actions button')];
+  check(
+    'reprocess parsing row keeps the 3-button set (Cancel live, pair disabled)',
+    btns.length === 3 &&
+      btns[0].textContent.trim() === 'Cancel' &&
+      !btns[0].disabled &&
+      btns.slice(1).every((b) => b.disabled),
+    JSON.stringify(btns.map((b) => [b.textContent.trim(), b.disabled])),
+  );
+  const pct = tr.querySelector('.chip-pct');
+  check(
+    'reprocess row still shows the live parse progress',
+    !!pct && pct.textContent.trim() === 'reading demo 42%',
+    pct ? pct.textContent.trim() : 'missing',
   );
 }
 
@@ -1404,6 +1594,8 @@ const ruleBody = (sel) => {
   // importing demo's file name — it rides the SAME truncation cap as every
   // other demo name in the view, so an unbounded basename cannot inflate
   // the column while the job runs and collapse it when the match row lands.
+  // A never-extracted MATCH row's Matchup cell carries the same class now
+  // (its pin lives in section E), so this rule covers that instance too.
   const synth = rows.find((tr) => tr.hasAttribute('data-pending-import'));
   const nameSpan = synth && synth.children[1].querySelector('span');
   check(
