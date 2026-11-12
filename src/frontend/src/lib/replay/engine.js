@@ -13,7 +13,7 @@
 // arrays — no per-frame objects — so scrub/seek/lerp are O(1)/O(log n).
 
 import { normTickRate } from '../fmt.js';
-import { freezeWindowAt } from '../rounds.js';
+import { freezeWindowAt, seekTargetTick } from '../rounds.js';
 
 // popcount for a 16-bit alive mask.
 function popcount16(m) {
@@ -271,6 +271,38 @@ export function createEngine(data, tickRate) {
     emit();
   }
 
+  // seekRelative(delta): the ±fixed-step transport seek (the ±15 s
+  // buttons) — the ONE caller of rounds.seekTargetTick. With
+  // skip-freeze armed the freeze-zero arithmetic applies: freeze
+  // windows are 0-length for the budget, so the landing is never
+  // inside one and loop()'s playback snap can never fire right after
+  // the seek (with the skip off this is exactly seekTick(from +
+  // delta)). Delegating to seekTick keeps the clamp, the loop-exit
+  // guard and the emit on the one shared path — seekTick/seekFrame/
+  // step semantics are untouched.
+  //
+  // Frame-rounding nudge (skip-freeze only): frameForTick rounds UP
+  // to the first frame at/after t, and that frame can sit just INSIDE
+  // a window whose start falls between two frames — from a t the
+  // helper proved outside. Landing there would snap on the next
+  // playback frame, so step back one frame instead: ticks[f-1] < t,
+  // and a window containing ticks[f-1] would contain t too — so it is
+  // provably outside every window. (f === 0 — the stream itself
+  // begins inside a freeze — cannot step back; it lands as-is.)
+  function seekRelative(delta) {
+    if (frames === 0) return;
+    const from = state.tick;
+    const t = state.skipFreeze ? seekTargetTick(rounds, from, delta) : from + delta;
+    if (state.skipFreeze) {
+      const f = frameForTick(t);
+      if (f > 0 && freezeWindowAt(rounds, ticks[f])) {
+        seekTick(ticks[f - 1]);
+        return;
+      }
+    }
+    seekTick(t);
+  }
+
   function seekFrame(f) {
     if (frames === 0) return;
     const clamped = Math.max(0, Math.min(frames - 1, Math.round(f)));
@@ -411,6 +443,7 @@ export function createEngine(data, tickRate) {
     setSpeed,
     stepSpeed,
     seekTick,
+    seekRelative,
     seekFrame,
     step,
     setLoop,
