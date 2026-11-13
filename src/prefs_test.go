@@ -88,14 +88,32 @@ func TestCopyOnImportPrefKey(t *testing.T) {
 	}
 }
 
-// The concurrent-imports pref is the other Go-CONSUMED Settings value
-// (library.Options.Concurrency via importConcurrencyPref, read per
-// claim) — the string is the durable contract: a rename silently orphans
-// every stored choice and reverts the user to the default as soon as
-// they have changed it once.
-func TestImportConcurrencyPrefKey(t *testing.T) {
-	if prefsImportConcurrencyKey != "import_concurrency" {
-		t.Errorf("import-concurrency key = %q, want %q", prefsImportConcurrencyKey, "import_concurrency")
+// The parallel-work pref is Go-CONSUMED (the shared work-token
+// budget's size — main sizes the budget with parallelWorkPref,
+// LibraryService.SetParallelWork writes it) — the string is the durable
+// contract: a rename silently orphans every stored choice and reverts
+// the user to the default as soon as they have changed it once.
+func TestParallelWorkPrefKey(t *testing.T) {
+	if prefsParallelWorkKey != "parallel_work" {
+		t.Errorf("parallel-work key = %q, want %q", prefsParallelWorkKey, "parallel_work")
+	}
+}
+
+// Removal pin for the retired import-scoped concurrency setting: the
+// machine-level "parallel work" knob subsumed it (ONE budget governs
+// every heavy task — imports, rules re-runs, asset extraction), so the
+// old key is orphaned and never read (pre-release no-migration policy).
+// If this fails, someone is reintroducing a second, import-only knob —
+// don't; there is exactly ONE budget and ONE setting for it.
+func TestRetiredImportConcurrencyPrefGone(t *testing.T) {
+	src, err := os.ReadFile("prefs.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, retired := range []string{"import_concurrency", "prefsImportConcurrencyKey", "maxConcurrentImports", "importConcurrencyPref"} {
+		if strings.Contains(string(src), retired) {
+			t.Errorf("prefs.go mentions %q — the import-scoped concurrency setting is retired; parallel_work is the one knob", retired)
+		}
 	}
 }
 

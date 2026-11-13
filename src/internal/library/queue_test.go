@@ -198,8 +198,9 @@ func TestReprocessCoalescesPendingJob(t *testing.T) {
 // TestParseConcurrency re-pins the old TestSingleParseInFlight (which
 // asserted max concurrent == 1, an artifact of the single worker) to the
 // configured-N semantics. The seam is Options.Concurrency — read once
-// per claim and clamped to [1, workerCount], exactly like the
-// import_concurrency pref in production. BEHAVIOR pins:
+// per claim and clamped to [1, workerCount], exactly like the shared
+// budget's live size production wires in (budget.Size — the "parallel
+// work" setting). BEHAVIOR pins:
 //   - N=1 admits exactly one parse and leaves job2 queued until job1's
 //     slot frees (the old assertion, now attributable to the admission
 //     semaphore instead of to a lone goroutine);

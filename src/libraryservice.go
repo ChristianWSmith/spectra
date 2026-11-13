@@ -9,6 +9,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/services/kvstore"
 
+	"github.com/ChristianWSmith/spectra/internal/budget"
 	"github.com/ChristianWSmith/spectra/internal/data"
 	"github.com/ChristianWSmith/spectra/internal/extract"
 	"github.com/ChristianWSmith/spectra/internal/library"
@@ -19,13 +20,21 @@ import (
 // LibraryService is the frontend-facing library surface: import (dialog +
 // paths), the import-dir demo list, the match list, delete/reprocess,
 // job control, and the raw-data inspectors. Thin delegate over
-// internal/store and the import pipeline.
+// internal/store and the import pipeline. It also owns the machine-level
+// "parallel work" setting (GetParallelWork/SetParallelWork) — the
+// resize path for the ONE shared work-token budget main wires in.
 type LibraryService struct {
 	st  *store.Store
 	imp *library.Importer
 	sc  *library.Scanner
 	kvs *kvstore.KVStoreService
 	app *application.App
+	// budget is the machine-wide work-token pool the "parallel work"
+	// setting resizes (SetParallelWork → budget.SetSize). Main wires ONE
+	// shared budget in — hand-wired like every other service dependency;
+	// nil (package tests) = the setting still stores and reads, the
+	// resize is a no-op.
+	budget *budget.Budget
 }
 
 // ImportDialog opens the native file picker for CS2 demos (.dem, .dem.zst)
@@ -101,37 +110,49 @@ func (s *LibraryService) SetDemoCopyOnImport(copy bool) error {
 	return s.kvs.Set(prefsCopyOnImportKey, copy)
 }
 
-// ImportConcurrency is Settings' "Concurrent imports" read: Value is the
-// effective job parallelism (stored pref, clamped — or the default when
-// unset), Max is this machine's ceiling (maxConcurrentImports —
-// budget.MachineTokens, the machine's work-token budget, the 1..Max
-// range the numeric control renders). One
-// round trip so the control always shows its bounds with its value.
-type ImportConcurrency struct {
+// ParallelWork is Settings' "Parallel work" read: Value is the
+// effective budget size (stored pref, clamped — or the default when
+// unset), Max is this machine's ceiling (budget.MachineTokens — the
+// detected hardware parallelism, the 1..Max range the numeric control
+// renders and can never exceed). One round trip so the control always
+// shows its bounds with its value; the backend owns BOTH numbers (the
+// frontend never guesses the ladder).
+type ParallelWork struct {
 	Value int `json:"value"`
 	Max   int `json:"max"`
 }
 
-// GetImportConcurrency reports how many import jobs run at once (1 =
-// sequential) and the machine's ceiling for the control. Unset/corrupt
-// pref ⇒ the default (the thread count); a stored out-of-range value
-// clamps. The pipeline reads the same pref per job
-// (library.Options.Concurrency), so this is the display half of it.
-func (s *LibraryService) GetImportConcurrency() ImportConcurrency {
-	return ImportConcurrency{
-		Value: importConcurrencyPref(s.kvs)(),
-		Max:   maxConcurrentImports(),
+// GetParallelWork reports the size of the ONE shared work-token budget
+// — how many heavy background tasks (imports, rules re-runs, asset
+// extraction) may run at once — and this machine's ceiling for the
+// control. Unset/corrupt pref ⇒ the default (the machine's
+// parallelism); a stored out-of-range value clamps. This is the
+// display half; the live pool follows SetParallelWork.
+func (s *LibraryService) GetParallelWork() ParallelWork {
+	return ParallelWork{
+		Value: parallelWorkPref(s.kvs),
+		Max:   budget.MachineTokens(),
 	}
 }
 
-// SetImportConcurrency stores the concurrent-imports count, clamped to
-// [1, Max] (a number out of range lands at the nearest bound — never an
-// error, never a value the pool can't honor). It applies to jobs from
-// the NEXT claim on — queued jobs pick the new value up too, because the
-// importer reads the pref per job, never at enqueue time (same shape as
-// SetDemoCopyOnImport).
-func (s *LibraryService) SetImportConcurrency(n int) error {
-	return s.kvs.Set(prefsImportConcurrencyKey, clampImportConcurrency(n))
+// SetParallelWork stores the parallel-work count, clamped to [1, Max]
+// (a number out of range lands at the nearest bound — never an error,
+// never a size the machine can't honor), then RESIZES the live budget
+// (budget.SetSize, same clamp) and wakes the import pool so the change
+// applies to work already queued or waiting: a worker parked for a
+// token wakes when the budget grows, and a queued job claims on the new
+// bound (see library.Wake). Persist first, then resize — a failed write
+// never leaves the live pool disagreeing with the stored pref.
+func (s *LibraryService) SetParallelWork(n int) error {
+	n = clampParallelWork(n)
+	if err := s.kvs.Set(prefsParallelWorkKey, n); err != nil {
+		return err
+	}
+	s.budget.SetSize(n) // nil budget (pref-only tests): no-op
+	if s.imp != nil {   // nil importer (pref-only tests): nothing parked to wake
+		s.imp.Wake()
+	}
+	return nil
 }
 
 // ChooseDemoDir opens the native folder picker for the import-dir list;

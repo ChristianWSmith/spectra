@@ -5,14 +5,15 @@
 // pref skips it, see Options.CopyEnabled), decompress (.dem.zst,
 // streamed — never to a temp file) and parse demos via internal/extract,
 // persisting through internal/store. Jobs are claimed strictly FIFO and
-// run concurrently up to the import_concurrency setting
-// (Options.Concurrency — 1 = sequential, the machine's work-token
-// budget = the default; see main.importConcurrencyPref) — and every
-// claimed job additionally takes ONE machine-wide work token from
-// internal/budget for its whole body (see worker), so imports share
-// the machine with asset extraction and background recomputes instead
-// of stacking on top of them. Progress and terminal
-// transitions are announced as Wails events (spectra:job-progress /
+// run concurrently up to the shared work-token budget's size
+// (Options.Concurrency reads budget.Size live in production — the
+// machine-level "parallel work" setting, so a resize applies to jobs
+// already queued; nil ⇒ 1 sequential for a construction site with no
+// budget wired) — and every claimed job additionally takes ONE
+// machine-wide work token from internal/budget for its whole body (see
+// worker), so imports share the machine with asset extraction and
+// background recomputes instead of stacking on top of them. Progress and
+// terminal transitions are announced as Wails events (spectra:job-progress /
 // spectra:job-done / spectra:library-changed) through an injected Emit
 // hook; originals are never written. The same package owns import-dir
 // discovery (Scan, DefaultDemoDirs, RemoveDemoFile) for the Library's
@@ -230,13 +231,14 @@ type LibraryChangedEvent struct{}
 // so they never touch the user's real data). CopyEnabled is the
 // copy-on-import setting read ONCE PER JOB at process time (so a Settings
 // toggle applies to jobs already queued); nil ⇒ copy — the default every
-// construction site without a pref gets. Concurrency is the
-// concurrent-imports setting read ONCE PER JOB at claim time (so a
-// Settings change applies to jobs already queued), clamped to
-// [1, workerCount]; nil ⇒ 1 (strictly sequential — the fallback for a
-// construction site with no pref wired; production wires
-// main.importConcurrencyPref, whose own default is
-// budget.MachineTokens — the machine's work-token budget). ComputeLock
+// construction site without a pref gets. Concurrency is the admission
+// bound read ONCE PER CLAIM (never at Enqueue/Reprocess — a Settings
+// change applies to jobs already queued), clamped to [1, workerCount];
+// production wires budget.Size — the LIVE size of the shared work-token
+// budget (the "parallel work" setting), so a resize applies to queued
+// jobs too and admission can never disagree with the token pool; nil ⇒ 1
+// (strictly sequential — the fallback for a construction site with no
+// budget wired). ComputeLock
 // serializes this importer's analytics pass against
 // every other analytics.Compute in the process — main wires ONE lock
 // into the importer and AnalyticsService's background recompute (rationale
@@ -281,12 +283,14 @@ type matchLifecycle struct {
 // is Go's execution parallelism GOMAXPROCS(0), container-quota aware;
 // rung 3, the single-threaded floor, is that helper's n < 1 guard).
 // Evaluated once at package init so the pool size is stable for the
-// process's life. The concurrency pref is clamped to [1, workerCount]
+// process's life. The admission bound is clamped to [1, workerCount]
 // (concurrencyLimit), so the goroutine count and the admission bound
-// can never disagree: the pool is sized for the MOST the setting may
-// ask, and a setting of 1 simply parks all but one worker. The same
-// helper sizes the machine-wide token pool the jobs draw from — the
-// goroutines and the tokens can never disagree either.
+// can never disagree: the pool is sized for the MOST the bound may
+// ask, and a bound of 1 simply parks all but one worker. The pool is
+// the CEILING — the machine's parallelism — while how many jobs actually
+// run is the shared token budget's size (budget.Size in production, the
+// "parallel work" setting), so the goroutines and the tokens can never
+// disagree either.
 var workerCount = budget.MachineTokens()
 
 // Importer owns the pool of background worker goroutines plus the
@@ -319,8 +323,8 @@ type Importer struct {
 }
 
 // New creates an Importer and starts its worker pool (workerCount
-// goroutines; how many may hold a job at once is the per-job concurrency
-// pref — see Options.Concurrency).
+// goroutines; how many may hold a job at once is the admission bound —
+// see Options.Concurrency, the budget's live size in production).
 func New(o Options) *Importer {
 	sidecarDir := o.SidecarDir
 	if sidecarDir == "" {
@@ -359,9 +363,11 @@ func New(o Options) *Importer {
 }
 
 // concurrencyLimit is the admission bound for the NEXT claim: the
-// concurrency pref read once per claim (never at Enqueue/Reprocess — a
-// Settings change applies to jobs already queued, exactly like
-// copy-on-import), clamped to [1, workerCount]. Called with im.mu held.
+// bound read once per claim (never at Enqueue/Reprocess — a Settings
+// change applies to jobs already queued, exactly like copy-on-import),
+// clamped to [1, workerCount]. Production wires budget.Size — the
+// shared work-token budget's LIVE size — so the admission bound and the
+// token pool read the same number. Called with im.mu held.
 func (im *Importer) concurrencyLimit() int {
 	n := 1
 	if im.concurrency != nil {
@@ -586,16 +592,34 @@ func (im *Importer) Shutdown() {
 	im.wg.Wait()
 }
 
+// Wake re-checks the claim predicate for every parked worker — the
+// claim cond's broadcast for a BOUND change (no new work arrived and no
+// slot freed). concurrencyLimit reads the admission bound live
+// (budget.Size in production), but a worker parked in cond.Wait is only
+// woken by a push, a slot release or Shutdown — so a GROW of the shared
+// budget with work already queued must poke the pool itself, or the
+// resize would not apply to queued jobs until the next unrelated wake.
+// (A shrink needs no wake: parked workers are already over the lower
+// bound. A wake with nothing changed costs one redundant re-check.)
+// LibraryService.SetParallelWork calls this right after budget.SetSize;
+// safe to call at any time.
+func (im *Importer) Wake() {
+	im.mu.Lock()
+	im.cond.Broadcast()
+	im.mu.Unlock()
+}
+
 // worker is ONE background goroutine of the pool. It parks on im.cond
-// until BOTH hold — the queue has a head AND a concurrency slot is free
+// until BOTH hold — the queue has a head AND a claim slot is free
 // (im.running < the limit read for THIS claim) — then pops the head and
 // claims it in the SAME critical section. Consequences, all deliberate:
 //
 //   - Claims stay strictly FIFO no matter how many workers race for a
 //     wake (queue[0] pops in enqueue order, the claim lands inside the
 //     same mutex hold), while job BODIES run concurrently up to the
-//     configured concurrency — the old "job2 queued while job1 runs"
-//     behavior is now exactly "job2 queued while every slot is full".
+//     admission bound (the budget's live size in production) — the old
+//     "job2 queued while job1 runs" behavior is now exactly "job2
+//     queued while every slot is full".
 //   - Cancel can only ever observe "queued" (pre-claim) or "running"
 //     (post-claim) — never the gap, because there is no gap.
 //   - The wait loop re-checks stopping under the mutex Shutdown flips it
@@ -691,7 +715,7 @@ func (im *Importer) push(item queueItem) bool {
 	im.queued[item.jobID] = item
 	// Broadcast, not a one-shot poke: every parked worker re-checks — one
 	// claims this item, the others re-park (or claim too when the
-	// concurrency pref leaves slots free).
+	// admission bound leaves slots free).
 	im.cond.Broadcast()
 	im.mu.Unlock()
 	return true

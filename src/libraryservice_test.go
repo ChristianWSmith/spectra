@@ -10,11 +10,14 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/adrg/xdg"
 	"github.com/wailsapp/wails/v3/pkg/services/kvstore"
 
+	"github.com/ChristianWSmith/spectra/internal/budget"
 	"github.com/ChristianWSmith/spectra/internal/data"
 	"github.com/ChristianWSmith/spectra/internal/extract"
 	"github.com/ChristianWSmith/spectra/internal/library"
@@ -218,62 +221,161 @@ func TestDemoCopyOnImportRoundTrip(t *testing.T) {
 	}
 }
 
-// TestImportConcurrencyRoundTrip pins the Settings control's contract:
-// unset (or corrupt) reads as the DEFAULT — the machine's thread count
-// (maxConcurrentImports) — Set sticks, out-of-range values clamp into
-// [1, Max] on the way in, and the pipeline-side closure
-// (library.Options.Concurrency via importConcurrencyPref) reads the SAME
-// key — the display half and the admission half never disagree.
-// BEHAVIOR pin of the new pref.
-func TestImportConcurrencyRoundTrip(t *testing.T) {
-	svc := newDemoDirsService(t)
-	pipeline := importConcurrencyPref(svc.kvs)
-	max := maxConcurrentImports()
+// TestParallelWorkRoundTrip pins the Settings control's contract:
+// unset (or corrupt) reads as the DEFAULT — this machine's parallelism
+// (budget.MachineTokens) — Set sticks, out-of-range values clamp into
+// [1, Max] on the way in, the pipeline-side read (parallelWorkPref —
+// what main sizes the budget with) reads the SAME key, and Set resizes
+// the LIVE work-token budget (b.Size follows): display half, stored
+// pref and pool never disagree. BEHAVIOR pin of the new pref.
+func TestParallelWorkRoundTrip(t *testing.T) {
+	b := budget.New(budget.MachineTokens())
+	svc := &LibraryService{kvs: kvstore.New(), budget: b}
+	max := budget.MachineTokens()
 
-	if got := svc.GetImportConcurrency(); got.Value != max || got.Max != max {
-		t.Errorf("unset pref = %+v, want {Value:%d Max:%d} (default = the thread count)", got, max, max)
+	if got := svc.GetParallelWork(); got.Value != max || got.Max != max {
+		t.Errorf("unset pref = %+v, want {Value:%d Max:%d} (default = this machine's parallelism)", got, max, max)
 	}
-	if got := pipeline(); got != max {
-		t.Errorf("pipeline closure = %d, want the default %d", got, max)
+	if got := parallelWorkPref(svc.kvs); got != max {
+		t.Errorf("pipeline read = %d, want the default %d", got, max)
 	}
 
-	if err := svc.SetImportConcurrency(1); err != nil {
-		t.Fatalf("SetImportConcurrency(1): %v", err)
+	if err := svc.SetParallelWork(1); err != nil {
+		t.Fatalf("SetParallelWork(1): %v", err)
 	}
-	if got := svc.GetImportConcurrency().Value; got != 1 {
+	if got := svc.GetParallelWork().Value; got != 1 {
 		t.Errorf("Get after Set(1) = %d, want 1", got)
 	}
-	if got := pipeline(); got != 1 {
-		t.Errorf("pipeline closure after Set(1) = %d, want 1 (the sequential rung)", got)
+	if got := parallelWorkPref(svc.kvs); got != 1 {
+		t.Errorf("pipeline read after Set(1) = %d, want 1 (one heavy task at a time)", got)
+	}
+	if got := b.Size(); got != 1 {
+		t.Errorf("live budget after Set(1) = %d, want 1 (the pool follows the setting)", got)
 	}
 
-	// Above the ceiling clamps — never more than the pool has workers.
-	if err := svc.SetImportConcurrency(max + 5); err != nil {
-		t.Fatalf("SetImportConcurrency(max+5): %v", err)
+	// Above the ceiling clamps — never more than the machine's parallelism.
+	if err := svc.SetParallelWork(max + 5); err != nil {
+		t.Fatalf("SetParallelWork(max+5): %v", err)
 	}
-	if got := svc.GetImportConcurrency().Value; got != max {
+	if got := svc.GetParallelWork().Value; got != max {
 		t.Errorf("Get after Set(max+5) = %d, want the ceiling %d", got, max)
 	}
-	if got := pipeline(); got != max {
-		t.Errorf("pipeline closure after Set(max+5) = %d, want the ceiling %d", got, max)
+	if got, size := parallelWorkPref(svc.kvs), b.Size(); got != max || size != max {
+		t.Errorf("pipeline = %d, live budget = %d, want the ceiling %d", got, size, max)
 	}
 
-	// Below the floor clamps to the single-threaded rung.
-	if err := svc.SetImportConcurrency(-3); err != nil {
-		t.Fatalf("SetImportConcurrency(-3): %v", err)
+	// Below the floor clamps to the single-task rung.
+	if err := svc.SetParallelWork(-3); err != nil {
+		t.Fatalf("SetParallelWork(-3): %v", err)
 	}
-	if got := svc.GetImportConcurrency().Value; got != 1 || pipeline() != 1 {
-		t.Errorf("after Set(-3): Get = %d, pipeline = %d, want 1/1", got, pipeline())
+	if got := svc.GetParallelWork().Value; got != 1 || parallelWorkPref(svc.kvs) != 1 || b.Size() != 1 {
+		t.Errorf("after Set(-3): Get = %d, pipeline = %d, budget = %d, want 1/1/1",
+			svc.GetParallelWork().Value, parallelWorkPref(svc.kvs), b.Size())
 	}
 
-	// A corrupt value falls back to the DEFAULT (the thread count), never
-	// to 0 (which would stall the pool) and never to a stale guess.
-	if err := svc.kvs.Set(prefsImportConcurrencyKey, "lots"); err != nil {
+	// A corrupt value falls back to the DEFAULT (the machine's
+	// parallelism), never to 0 (which would stall every heavy task) and
+	// never to a stale guess.
+	if err := svc.kvs.Set(prefsParallelWorkKey, "lots"); err != nil {
 		t.Fatalf("seed corrupt pref: %v", err)
 	}
-	if got := svc.GetImportConcurrency().Value; got != max || pipeline() != max {
-		t.Errorf("corrupt pref: Get = %d, pipeline = %d, want the default %d", got, pipeline(), max)
+	if got := svc.GetParallelWork().Value; got != max || parallelWorkPref(svc.kvs) != max {
+		t.Errorf("corrupt pref: Get = %d, pipeline = %d, want the default %d",
+			svc.GetParallelWork().Value, parallelWorkPref(svc.kvs), max)
 	}
+}
+
+// TestSetParallelWorkAppliesToQueuedJobs pins the owner liveness rule
+// end to end: a resize applies to work already QUEUED. With the budget
+// at 1, job2 cannot even claim (it stays queued — never a fake
+// "running"), and SetParallelWork(2) both resizes the live pool and
+// wakes the import pool, so job2 claims AND takes a token immediately —
+// the token comes AFTER the claim (the token-before-compute-lock order
+// is untouched; see library.worker).
+func TestSetParallelWorkAppliesToQueuedJobs(t *testing.T) {
+	if budget.MachineTokens() < 2 {
+		t.Skipf("machine has %d token(s) — cannot grow the budget past the ceiling", budget.MachineTokens())
+	}
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	b := budget.New(1)
+	entered := make(chan struct{}, 2)
+	block := make(chan struct{})
+	release := sync.OnceFunc(func() { close(block) })
+	defer release()
+	parse := func(ctx context.Context, r io.Reader, opts extract.ParseOptions) (*models.ExtractedMatch, error) {
+		entered <- struct{}{} // announce parse ENTRY (token already held)
+		select {
+		case <-block:
+		case <-ctx.Done():
+		}
+		return stubParse(ctx, r, opts)
+	}
+	imp := library.New(library.Options{
+		Store:         st,
+		Parse:         parse,
+		ParserVersion: "test",
+		SidecarDir:    t.TempDir(),
+		CopyDir:       t.TempDir(),
+		Concurrency:   b.Size, // production's seam: the budget's live size
+		Budget:        b,
+	})
+	t.Cleanup(imp.Shutdown)
+	svc := &LibraryService{st: st, imp: imp, kvs: kvstore.New(), budget: b}
+
+	ids := make([]string, 0, 2)
+	for _, name := range []string{"pw-1.dem", "pw-2.dem"} {
+		p := filepath.Join(t.TempDir(), name)
+		if err := os.WriteFile(p, []byte(name), 0o644); err != nil {
+			t.Fatalf("write %s: %v", name, err)
+		}
+		ids = append(ids, p)
+	}
+	jobIDs := imp.Enqueue(ids)
+	if len(jobIDs) != 2 {
+		t.Fatalf("Enqueue returned %d ids, want 2", len(jobIDs))
+	}
+
+	// Job1 claims at budget size 1, takes the token, parks in parse.
+	select {
+	case <-entered:
+	case <-time.After(10 * time.Second):
+		t.Fatal("job1 never entered parse — the budget never handed out its token")
+	}
+	// Job2 cannot claim above the bound: it stays QUEUED (honest
+	// display — a job waiting for a budget slot has not started).
+	if j, err := st.ListJobs(); err != nil {
+		t.Fatalf("ListJobs: %v", err)
+	} else {
+		for _, job := range j {
+			if job.ID == jobIDs[1] && job.Status != models.JobQueued {
+				t.Fatalf("job2 status = %q, want queued while the budget admits one task", job.Status)
+			}
+		}
+	}
+
+	// The Settings change: persist (clamped) → resize the live pool →
+	// wake the import pool. Job2 must claim AND get a token from the
+	// grow alone.
+	if err := svc.SetParallelWork(2); err != nil {
+		t.Fatalf("SetParallelWork(2): %v", err)
+	}
+	if got := b.Size(); got != 2 {
+		t.Errorf("live budget after Set(2) = %d, want 2", got)
+	}
+	if got := svc.GetParallelWork().Value; got != 2 {
+		t.Errorf("Get after Set(2) = %d, want 2", got)
+	}
+	select {
+	case <-entered:
+	case <-time.After(10 * time.Second):
+		t.Fatal("queued job never entered parse after the budget grew — the resize did not apply to queued work")
+	}
+	release() // let both parses finish (Shutdown in cleanup then joins cleanly)
 }
 
 // TestListMatchesPageStampsCopyState pins the ONE list-side annotation:

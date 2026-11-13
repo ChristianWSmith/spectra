@@ -298,18 +298,20 @@ export function setDemoCopyOnImport(copy) {
   return LibraryService.SetDemoCopyOnImport(copy);
 }
 
-// getImportConcurrency is Settings' "Concurrent imports" control read:
-// {value, max} — value is the effective jobs-at-once count (1 =
-// sequential), max this machine's ceiling (budget.MachineTokens on the
-// Go side — the machine's work-token budget, the control's 1..max
-// range). Go decides per claim
-// (library.Options.Concurrency), so a change applies to queued jobs too.
-export function getImportConcurrency() {
-  return LibraryService.GetImportConcurrency();
+// getParallelWork is Settings' "Parallel work" control read: {value,
+// max} — value is the size of the ONE shared work-token budget (how
+// many heavy background tasks — imports, rules re-runs, asset
+// extraction — run at once), max this machine's ceiling
+// (budget.MachineTokens on the Go side — the detected hardware
+// parallelism, the control's 1..max range; the frontend never guesses
+// either number). Go resizes the live budget on set, so a change
+// applies to work already queued or waiting.
+export function getParallelWork() {
+  return LibraryService.GetParallelWork();
 }
 
-export function setImportConcurrency(n) {
-  return LibraryService.SetImportConcurrency(n);
+export function setParallelWork(n) {
+  return LibraryService.SetParallelWork(n);
 }
 
 // listDemoFiles scans the configured import dirs; rows are demos NOT

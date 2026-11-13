@@ -32,7 +32,8 @@ func newTestImporterEmit(t *testing.T, parse func(ctx context.Context, r io.Read
 // newTestImporterN is newTestImporter with the concurrency seam set: the
 // importer reads Options.Concurrency once per claim (clamped to
 // [1, workerCount]), so n is this test's effective slot count — the same
-// lever the import_concurrency pref pulls in production.
+// lever production wires to the shared budget's live size (budget.Size,
+// the "parallel work" setting).
 func newTestImporterN(t *testing.T, parse func(ctx context.Context, r io.Reader, opts extract.ParseOptions) (*models.ExtractedMatch, error), n int) (*Importer, *store.Store) {
 	t.Helper()
 	return newTestImporterWith(t, Options{Parse: parse, Concurrency: func() int { return n }})

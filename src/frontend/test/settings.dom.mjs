@@ -25,10 +25,11 @@
 //   G. Load more: the keyset window appends with the last row's id as
 //      cursor; the "Showing X of N" line reports CountMatches, not the
 //      rendered length.
-//   H. Concurrent imports: the 1..max numeric control beside
-//      copy-on-import — bounds seeded from the backend, in-range values
-//      passed verbatim, out-of-range clamped to the ceiling before the
-//      Set, garbage clamped to 1 (never 0 — it would stall the pool).
+//   H. Parallel work: the 1..max numeric control in its OWN
+//      "Background work" card (the import-scoped control is gone) —
+//      bounds seeded from the backend, in-range values passed
+//      verbatim, out-of-range clamped to the ceiling before the Set,
+//      garbage clamped to 1 (never 0 — it would stall the budget).
 //
 // Backend semantics live in store.matchListWhere (the behind predicate),
 // AnalyticsService.SetConfig (the no-bump) and RecomputeAll (server-side
@@ -117,11 +118,11 @@ bindings.LibraryService.GetDataInfo = () =>
     parserVersion: 'v6', demoCount: 0, demoBytes: 0,
   });
 bindings.LibraryService.GetDemoCopyOnImport = () => Promise.resolve(true);
-// Concurrent-imports control: scripted {value, max} so the 1..max bounds
+// Parallel-work control: scripted {value, max} so the 1..max bounds
 // are observable; Set records the exact value the view hands back.
-bindings.LibraryService.GetImportConcurrency = () => Promise.resolve({ value: 1, max: 4 });
-bindings.LibraryService.SetImportConcurrency = (n) => {
-  bindings.calls.push({ method: 'SetImportConcurrency', args: [n] });
+bindings.LibraryService.GetParallelWork = () => Promise.resolve({ value: 1, max: 4 });
+bindings.LibraryService.SetParallelWork = (n) => {
+  bindings.calls.push({ method: 'SetParallelWork', args: [n] });
   return Promise.resolve();
 };
 bindings.PlatformService.ListPlugins = () => Promise.resolve([]);
@@ -473,43 +474,44 @@ console.log('E. empty state + error gating (a failed read is never "all analyzed
   check('all-analyzed line returns', body().includes('All 5 matches analyzed under current rules'));
 }
 
-console.log('H. concurrent imports: 1..max numeric control beside copy-on-import');
+console.log('H. parallel work: 1..max numeric control in its own Background work card');
 {
-  const concInput = () => document.getElementById('sett-concurrent-imports');
-  const concSets = () => bindings.calls.filter((c) => c.method === 'SetImportConcurrency');
-  check('control present beside the copy toggle', !!concInput());
-  check('label names it honestly', body().includes('Concurrent imports'));
-  check('min = 1 (the sequential floor)', concInput() && concInput().min === '1', concInput() && String(concInput().min));
-  check('max = the backend ceiling (4)', concInput() && concInput().max === '4', concInput() && concInput().max);
-  check('value seeded from the backend read', concInput() && concInput().value === '1', concInput() && concInput().value);
-  check('sequential meaning spelled out', body().includes('1 = sequential'));
-  check('no Set call on plain mount', concSets().length === 0, String(concSets().length));
+  const pwInput = () => document.getElementById('sett-parallel-work');
+  const pwSets = () => bindings.calls.filter((c) => c.method === 'SetParallelWork');
+  check('control present in the Background work card', !!pwInput());
+  check('label names it honestly', body().includes('Parallel work'));
+  check('min = 1 (the one-at-a-time floor)', pwInput() && pwInput().min === '1', pwInput() && String(pwInput().min));
+  check('max = the backend ceiling (4)', pwInput() && pwInput().max === '4', pwInput() && pwInput().max);
+  check('value seeded from the backend read', pwInput() && pwInput().value === '1', pwInput() && pwInput().value);
+  check('never-oversubscribes spelled out', body().includes('never runs more at once than your hardware can handle'));
+  check('no Set call on plain mount', pwSets().length === 0, String(pwSets().length));
+  check('old import-scoped control gone', !document.getElementById('sett-concurrent-imports'));
 
   // An in-range change reaches the backend verbatim.
-  type(concInput(), '3');
-  concInput().dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  type(pwInput(), '3');
+  pwInput().dispatchEvent(new dom.window.Event('change', { bubbles: true }));
   await sleep(20);
   check(
-    'SetImportConcurrency(3) for an in-range value',
-    concSets().length === 1 && JSON.stringify(concSets()[0].args) === '[3]',
-    JSON.stringify(concSets().map((c) => c.args)),
+    'SetParallelWork(3) for an in-range value',
+    pwSets().length === 1 && JSON.stringify(pwSets()[0].args) === '[3]',
+    JSON.stringify(pwSets().map((c) => c.args)),
   );
 
   // An out-of-range value clamps to the ceiling BEFORE it reaches Go,
   // and the input snaps to what was actually stored.
-  type(concInput(), '99');
-  concInput().dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  type(pwInput(), '99');
+  pwInput().dispatchEvent(new dom.window.Event('change', { bubbles: true }));
   await sleep(20);
-  check('99 clamps to max (4)', concSets().length === 2 && JSON.stringify(concSets()[1].args) === '[4]', JSON.stringify(concSets().map((c) => c.args)));
-  check('input snaps to the clamped value', concInput().value === '4', concInput().value);
+  check('99 clamps to max (4)', pwSets().length === 2 && JSON.stringify(pwSets()[1].args) === '[4]', JSON.stringify(pwSets().map((c) => c.args)));
+  check('input snaps to the clamped value', pwInput().value === '4', pwInput().value);
 
-  // Garbage (a number input yields "" for it) clamps to the sequential
-  // rung — never 0, which would stall the pool.
-  type(concInput(), 'banana');
-  concInput().dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+  // Garbage (a number input yields "" for it) clamps to the floor —
+  // never 0, which would stall every heavy task.
+  type(pwInput(), 'banana');
+  pwInput().dispatchEvent(new dom.window.Event('change', { bubbles: true }));
   await sleep(20);
-  check('non-numeric clamps to 1', concSets().length === 3 && JSON.stringify(concSets()[2].args) === '[1]', JSON.stringify(concSets().map((c) => c.args)));
-  check('input snaps to 1', concInput().value === '1', concInput().value);
+  check('non-numeric clamps to 1', pwSets().length === 3 && JSON.stringify(pwSets()[2].args) === '[1]', JSON.stringify(pwSets().map((c) => c.args)));
+  check('input snaps to 1', pwInput().value === '1', pwInput().value);
 }
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

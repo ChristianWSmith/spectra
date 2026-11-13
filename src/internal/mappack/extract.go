@@ -367,8 +367,11 @@ func ExtractMapPacks(cs2Dir, outDir string, opts ...ExtractOption) (maps []Extra
 // 1 is Go's execution parallelism GOMAXPROCS(0), container-quota
 // aware; rung 3, the single-threaded floor, is that helper's n < 1
 // guard). One-line delegate on purpose: the ladder lives in
-// internal/budget, never restated here. Not user-configurable (the
-// owner asked for a setting only on demo imports).
+// internal/budget, never restated here. It stays the machine-parallelism
+// CEILING, never the knob: how many map jobs actually run at once is
+// gated by the shared work-token budget each worker draws a token from
+// (extractConfig.budget — sized by the machine-level "parallel work"
+// setting), so the pool needs no knob of its own.
 func poolSize() int {
 	return budget.MachineTokens()
 }
