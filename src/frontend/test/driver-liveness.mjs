@@ -61,7 +61,8 @@ const PROBE_POOL = 4;
 
 // Minimum executed checks per driver (see header). Counts as of the
 // 2026-11-12 revival audit — the six revived drivers went 0 → their
-// real number here.
+// real number here; settings re-pinned 61 → 73 when the concurrent-
+// imports control added its section H (2026-11-13).
 const EXPECTED = {
   'app-dock.dom.mjs': 59,
   'combat.dom.mjs': 75,
@@ -81,7 +82,7 @@ const EXPECTED = {
   'replay.dom.mjs': 450,
   'round-detail.dom.mjs': 64,
   'round-strip.dom.mjs': 47,
-  'settings.dom.mjs': 61,
+  'settings.dom.mjs': 73,
   'stat-card.dom.mjs': 12,
   'utility.dom.mjs': 39,
   'voice-engine.dom.mjs': 7,
