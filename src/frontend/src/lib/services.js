@@ -737,16 +737,44 @@ export function warmProfile(steamId, nowMs) {
 
 // --- MetricsService (M5) -----------------------------------------------------
 
-// listMetrics is the library-wide metric-definition list (Builder's
-// dropdowns, Match's pinned columns, Reports, CommandPalette) — refetched
-// on every mount/tab switch before this; one read-cached entry now, like
-// listMapNames.
+// listMetrics is the library-wide metric-definition list (Match's pinned
+// columns, Reports, CommandPalette) — refetched on every mount/tab
+// switch before this; one read-cached entry now, like listMapNames.
 export function listMetrics() {
   return cachedRead('ListMetrics', [], () => MetricsService.ListMetrics());
 }
+// listMetricsPage is the Builder list's keyset window ("Load more"): the
+// same canonical order as listMetrics, ONE window of `limit` rows
+// strictly after `afterID` (0 = the first window), narrowed server-side
+// by `query` (case-insensitive LIKE over name/title), returned as
+// {rows, hasNext}. Read-cached keyed (query, afterID, limit) like
+// listMatchesPage — and the WHOLE cache (this entry included) flushes on
+// every spectra:* event and inside the mutating wrappers below: invalidate()
+// is readCache.clear(), so one save/delete refetches both the paged
+// window and listMetrics.
+export function listMetricsPage(query, afterID, limit) {
+  return cachedRead('ListMetricsPage', [query, afterID, limit], () =>
+    MetricsService.ListMetricsPage(query, afterID, limit),
+  );
+}
 export function getMetric(id) { return MetricsService.GetMetric(id); }
-export function saveMetric(m) { return MetricsService.SaveMetric(m); }
-export function deleteMetric(id) { return MetricsService.DeleteMetric(id); }
+// saveMetric/deleteMetric are mutating wrappers like deleteMatch: they
+// invalidate on SUCCESS (SaveMetric/DeleteMetric emit no spectra:* event,
+// so without the flush the Builder's list read — cached under the
+// pre-save listMetrics/ListMetricsPage key — served the stale promise and
+// a saved metric never appeared / a deleted one never left).
+export function saveMetric(m) {
+  return MetricsService.SaveMetric(m).then((r) => {
+    invalidate();
+    return r;
+  });
+}
+export function deleteMetric(id) {
+  return MetricsService.DeleteMetric(id).then((r) => {
+    invalidate();
+    return r;
+  });
+}
 export function previewMetric(id, expr, groupBy, scope, limit) {
   return MetricsService.PreviewMetric(id, expr || '', groupBy || '', scope || '', limit || 200);
 }

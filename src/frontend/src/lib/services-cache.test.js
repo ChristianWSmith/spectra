@@ -470,6 +470,89 @@ test('listPlayers/listMetrics are library-wide reads behind cachedRead (item 3)'
   assert.equal(bindings.callCount('ListPlayers'), 3);
 });
 
+// saveMetric/deleteMetric are mutating wrappers like deleteMatch: Go
+// emits no spectra:* event for either, so the wrapper itself must flush
+// the read cache on SUCCESS — otherwise the Builder's refresh after a
+// save/delete hits the cached pre-mutation listMetrics promise and a new
+// metric never appears (nor a deleted one leave). The flush is the FULL
+// invalidate(), so the paged window (listMetricsPage) refetches too.
+test('saveMetric invalidates on success (metric mutator)', async () => {
+  services.invalidate();
+  bindings.resetCalls();
+  bindings.handlers.SaveMetric = (m) => ({ ...m, id: 42 });
+  try {
+    const first = services.listMetrics();
+    await first;
+    assert.equal(bindings.callCount('ListMetrics'), 1);
+
+    const saved = await services.saveMetric({ id: 0, name: 'kd_per_round' });
+    assert.equal(saved.id, 42, 'the wrapper returns the server row untouched');
+
+    const after = services.listMetrics();
+    assert.notEqual(after, first, 'a save must flush the cached list');
+    await after;
+    assert.equal(bindings.callCount('ListMetrics'), 2, 'refetch after the save');
+  } finally {
+    delete bindings.handlers.SaveMetric;
+  }
+});
+
+test('deleteMetric invalidates on success (metric mutator)', async () => {
+  services.invalidate();
+  bindings.resetCalls();
+  const first = services.listMetrics();
+  await first;
+  assert.equal(bindings.callCount('ListMetrics'), 1);
+
+  await services.deleteMetric(42); // DeleteMetric emits nothing in Go
+  const after = services.listMetrics();
+  assert.notEqual(after, first, 'a delete must flush the cached list');
+  await after;
+  assert.equal(bindings.callCount('ListMetrics'), 2, 'refetch after the delete');
+});
+
+// listMetricsPage is the Builder list's keyset window behind the SAME
+// cachedRead: identical (query, afterID, limit) shares one promise, any
+// arg change misses, and every flush that reaches listMetrics reaches it
+// too — the save/delete wrappers call invalidate(), which clears the
+// WHOLE readCache (all keys), and the spectra:* listeners do the same.
+test('listMetricsPage is read-cached and flushes with the rest', async () => {
+  services.invalidate();
+  bindings.resetCalls();
+
+  const p1 = services.listMetricsPage('', 0, 100);
+  const p2 = services.listMetricsPage('', 0, 100);
+  assert.equal(p1, p2, 'same (query, after, limit) -> the same promise');
+  await p1;
+  assert.equal(bindings.callCount('ListMetricsPage'), 1, 'backend called once');
+
+  const next = services.listMetricsPage('', 42, 100);
+  const q = services.listMetricsPage('adr', 0, 100);
+  assert.notEqual(next, p1, 'afterID is part of the key');
+  assert.notEqual(q, p1, 'query is part of the key');
+  await Promise.all([next, q]);
+  assert.equal(bindings.callCount('ListMetricsPage'), 3);
+
+  // A spectra:* data event flushes it like every other cached read.
+  fire('spectra:job-done', { jobId: 1 });
+  const afterEvent = services.listMetricsPage('', 0, 100);
+  assert.notEqual(afterEvent, p1, 'event must flush the paged window');
+  await afterEvent;
+  assert.equal(bindings.callCount('ListMetricsPage'), 4);
+
+  // ...and so does a metric save (the wrapper's full invalidate()).
+  bindings.handlers.SaveMetric = (m) => ({ ...m, id: 7 });
+  try {
+    await services.saveMetric({ id: 0, name: 'x' });
+  } finally {
+    delete bindings.handlers.SaveMetric;
+  }
+  const afterSave = services.listMetricsPage('', 0, 100);
+  assert.notEqual(afterSave, afterEvent, 'a save must flush the paged window');
+  await afterSave;
+  assert.equal(bindings.callCount('ListMetricsPage'), 5);
+});
+
 test('getProfile/getCareerTrend are read-cached (item 6: profile cache)', async () => {
   services.invalidate();
   bindings.resetCalls();
