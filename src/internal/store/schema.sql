@@ -585,6 +585,11 @@ CREATE TABLE IF NOT EXISTS voice_presence (
 -- internal/store/platform_store.go embeds the identical DDL as its
 -- defensive ensureMetricsTable fallback and writes plugin rows into it
 -- (ON CONFLICT(name) DO UPDATE). Keep both copies byte-compatible.
+-- short_name is optional user-entered display text (DEFAULT ''): it is
+-- read ONLY where a metric column header is width-constrained — the
+-- display criterion there is short_name || title || name (today exactly
+-- one site: Match's scoreboard metric header), title || name everywhere
+-- else.
 --
 -- Builtins (origin='builtin') are seeded below: exactly ONE — trade_rate
 -- (owner ruling) — with the interpretation recorded in doc.
@@ -596,6 +601,7 @@ CREATE TABLE IF NOT EXISTS metrics (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	name TEXT UNIQUE NOT NULL,
 	title TEXT NOT NULL DEFAULT '',
+	short_name TEXT NOT NULL DEFAULT '',
 	expr TEXT NOT NULL,
 	group_by TEXT NOT NULL DEFAULT '',
 	format TEXT NOT NULL DEFAULT '',
@@ -629,6 +635,8 @@ CREATE TABLE IF NOT EXISTS saved_queries (
 -- THE builtin, seeded (see header): trade rate — trade successes ÷ total
 -- trade opportunities. INSERT OR IGNORE keyed on the UNIQUE name:
 -- re-applying the baseline on every Open must not duplicate or reset it.
+-- short_name is omitted on purpose (DEFAULT ''): the builtin ships with
+-- no short name, so its scoreboard header falls back to title.
 -- The expr is the join-grammar shape internal/metrics/doc.go documents:
 -- the engine derives
 -- `LEFT JOIN match_trade_opps ON player_stats.match_id = match_trade_opps.match_id

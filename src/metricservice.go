@@ -119,6 +119,9 @@ func (s *MetricsService) SaveMetric(m models.MetricRow) (models.MetricRow, error
 	if m.Title == "" {
 		m.Title = m.Name
 	}
+	// Optional short label (like title): trimmed, never required — an
+	// empty one keeps the display fallback (short_name || title || name).
+	m.ShortName = strings.TrimSpace(m.ShortName)
 	m.Format = strings.TrimSpace(m.Format)
 	if !metricFormats[m.Format] {
 		return models.MetricRow{}, fmt.Errorf("metrics: unknown format %q (valid: int, float1, percent, currency)", m.Format)

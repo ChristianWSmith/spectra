@@ -20,7 +20,8 @@ type MetricRow struct {
 	ID          int64     `json:"id"`
 	Name        string    `json:"name"` // UNIQUE across all origins
 	Title       string    `json:"title"`
-	Expr        string    `json:"expr"` // grammar: `from <table>[, <secondary>...]: <aggregations>` (doc.go)
+	ShortName   string    `json:"shortName"` // optional; read only at width-constrained metric column headers
+	Expr        string    `json:"expr"`      // grammar: `from <table>[, <secondary>...]: <aggregations>` (doc.go)
 	GroupBy     string    `json:"groupBy"`
 	Format      string    `json:"format"` // ""|int|float1|percent|currency
 	Doc         string    `json:"doc"`

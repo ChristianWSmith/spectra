@@ -18,6 +18,7 @@ import (
 //		id INTEGER PRIMARY KEY AUTOINCREMENT,
 //		name TEXT UNIQUE NOT NULL,
 //		title TEXT NOT NULL DEFAULT '',
+//		short_name TEXT NOT NULL DEFAULT '',
 //		expr TEXT NOT NULL,
 //		group_by TEXT NOT NULL DEFAULT '',
 //		format TEXT NOT NULL DEFAULT '',
@@ -34,6 +35,11 @@ import (
 // Full expression validation belongs to the metrics engine on preview/use
 // (plugin metric budget) — the plugin loader only enforces
 // structural sanity (name + expr non-empty).
+//
+// short_name (optional user-entered short label — the width-constrained
+// column-header display criterion short_name || title || name) is NOT a
+// plugin-metric field: ReplacePluginMetrics omits it from its INSERT, so
+// plugin rows always carry the DEFAULT ''.
 
 // PluginRow is one plugins-registry row (M5 §2.7).
 type PluginRow struct {
@@ -64,6 +70,7 @@ const metricsTableDDL = `CREATE TABLE IF NOT EXISTS metrics (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
 	name TEXT UNIQUE NOT NULL,
 	title TEXT NOT NULL DEFAULT '',
+	short_name TEXT NOT NULL DEFAULT '',
 	expr TEXT NOT NULL,
 	group_by TEXT NOT NULL DEFAULT '',
 	format TEXT NOT NULL DEFAULT '',
@@ -179,6 +186,9 @@ func (s *Store) DeletePluginRow(id string) error {
 // ReplacePluginMetrics swaps one plugin's metrics rows: deletes every row
 // with plugin_id, then upserts defs keyed by name (origin='plugin').
 // Pass nil/empty to just clear. Creates the metrics table when missing.
+// The INSERT deliberately omits short_name (DEFAULT empty string) —
+// plugin manifests carry no short label, so plugin metric rows never
+// have one.
 //
 // Deliberately NOT replaceMatchRows: the delete keys on plugin_id (not
 // match_id), the INSERT carries a literal 'plugin' for origin (9 of its 10

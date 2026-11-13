@@ -93,6 +93,7 @@ var columnNotes = map[string]map[string]string{
 	},
 	"metrics": {
 		"origin":      "builtin|user|plugin — the builtin origin ships seeded with the app (exactly one row: trade_rate)",
+		"short_name":  "optional user-entered short label — read ONLY at width-constrained metric column headers (short_name || title || name; title || name everywhere else)",
 		"expr":        "metric grammar: from <table>[, <secondary>...]: <aggregations> (extra sources join engine-side)",
 		"denominator": "scalar subquery source: ''|rounds|matches",
 	},

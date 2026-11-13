@@ -14,7 +14,7 @@ import (
 // The pragma order below IS the schema.sql column order — drift breaks
 // the plugin writer's explicit INSERT list.
 var metricColumnsContract = []string{
-	"id", "name", "title", "expr", "group_by", "format", "doc", "origin",
+	"id", "name", "title", "short_name", "expr", "group_by", "format", "doc", "origin",
 	"plugin_id", "denominator", "created_at",
 }
 
@@ -100,6 +100,9 @@ func TestMetricsSchemaFreshOpen(t *testing.T) {
 		if m.Doc == "" {
 			t.Errorf("builtin %q has empty doc", m.Name)
 		}
+		if m.ShortName != "" {
+			t.Errorf("builtin %q short_name = %q, want empty (the seed omits the column — DEFAULT '')", m.Name, m.ShortName)
+		}
 		if !strings.HasPrefix(m.Expr, "from ") {
 			t.Errorf("builtin %q expr %q missing source clause", m.Name, m.Expr)
 		}
@@ -112,7 +115,7 @@ func TestMetricCRUD(t *testing.T) {
 	s := openMem(t)
 
 	created, err := s.CreateMetric(models.MetricRow{
-		Name: "my_rate", Title: "My rate", Expr: "from events: count()",
+		Name: "my_rate", Title: "My rate", ShortName: "MR", Expr: "from events: count()",
 		GroupBy: "player", Format: "int", Doc: "d", Origin: "user",
 	})
 	if err != nil {
@@ -120,6 +123,9 @@ func TestMetricCRUD(t *testing.T) {
 	}
 	if created.ID == 0 || created.CreatedAt.IsZero() {
 		t.Fatalf("created row = %+v, want id + created_at set", created)
+	}
+	if created.ShortName != "MR" {
+		t.Fatalf("created short_name = %q, want %q (round-trip through the new column)", created.ShortName, "MR")
 	}
 
 	// Uniqueness across ALL origins: colliding with a builtin is rejected
@@ -145,13 +151,13 @@ func TestMetricCRUD(t *testing.T) {
 
 	// Update user metric.
 	updated, err := s.UpdateMetric(models.MetricRow{
-		ID: created.ID, Name: "my_rate", Title: "Renamed", Expr: "from rounds: count()",
+		ID: created.ID, Name: "my_rate", Title: "Renamed", ShortName: "MR2", Expr: "from rounds: count()",
 		GroupBy: "round", Origin: "user",
 	})
 	if err != nil {
 		t.Fatalf("UpdateMetric: %v", err)
 	}
-	if updated.Title != "Renamed" || updated.Expr != "from rounds: count()" {
+	if updated.Title != "Renamed" || updated.Expr != "from rounds: count()" || updated.ShortName != "MR2" {
 		t.Fatalf("updated = %+v", updated)
 	}
 
@@ -180,6 +186,9 @@ func TestMetricCRUD(t *testing.T) {
 	}
 	if pluginMetric.ID == 0 {
 		t.Fatal("plugin metric row missing from ListMetrics")
+	}
+	if pluginMetric.ShortName != "" {
+		t.Errorf("plugin metric short_name = %q, want empty (ReplacePluginMetrics omits the column — DEFAULT '')", pluginMetric.ShortName)
 	}
 	if _, err := s.UpdateMetric(models.MetricRow{ID: pluginMetric.ID, Name: "hijack", Expr: "from events: count()"}); err == nil || !strings.Contains(err.Error(), "cannot be modified") {
 		t.Errorf("plugin update err = %v, want immutability error", err)
