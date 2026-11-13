@@ -138,6 +138,26 @@ func TestGoldenStateStream(t *testing.T) {
 		t.Fatalf("DecodeStateRecords: %v", err)
 	}
 
+	// ---- sanitization boundary (owner ruling, 2026-11-12) ----
+	// Both sinks gate together in extract.Parse: position frame 0 IS the
+	// first counted round's start tick (no frame below the boundary is
+	// written), and the state stream starts at that same frame 0 — its
+	// first record is the boundary seed.
+	if len(em.Rounds) == 0 {
+		t.Fatal("no counted rounds")
+	}
+	if frames[0].Tick != em.Rounds[0].StartTick {
+		t.Errorf("first position frame tick = %d, want the first counted round's startTick %d",
+			frames[0].Tick, em.Rounds[0].StartTick)
+	}
+	if len(recs) == 0 || recs[0].Frame != 0 {
+		f0 := -1
+		if len(recs) > 0 {
+			f0 = recs[0].Frame
+		}
+		t.Errorf("first state record frame = %d, want 0 (the boundary frame)", f0)
+	}
+
 	// ---- size measurement (quoted in state.go's format doc) ----
 	stateInfo, err := os.Stat(filepath.Join(dir, StateBinName))
 	if err != nil {

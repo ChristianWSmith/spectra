@@ -127,6 +127,25 @@ func TestReplaySidecar(t *testing.T) {
 	}
 	frames := decodeSidecar(t, stream)
 
+	// ---- sanitization boundary (owner ruling, 2026-11-12) ----
+	// The sidecar timeline starts at the FIRST COUNTED round's start tick:
+	// frame 0 IS the boundary frame (extract.Parse's gate keeps it —
+	// events.RoundStart dispatches before events.FrameDone) and NO frame
+	// below the boundary exists — deleting the pre-pistol frames is the
+	// clamp, so this pins the whole invariant end-to-end.
+	if len(em.Rounds) == 0 {
+		t.Fatal("no counted rounds")
+	}
+	boundary := em.Rounds[0].StartTick
+	if int(frames[0].tick) != boundary {
+		t.Errorf("first sidecar frame tick = %d, want the first counted round's startTick %d", frames[0].tick, boundary)
+	}
+	for i, fr := range frames {
+		if int(fr.tick) < boundary {
+			t.Fatalf("frame %d (tick %d) below the first counted round's startTick %d", i, fr.tick, boundary)
+		}
+	}
+
 	got := replayGolden{
 		Frames:     len(frames),
 		Slots:      len(meta.Players),
@@ -265,7 +284,11 @@ func TestReplaySidecar(t *testing.T) {
 	}
 
 	// 4. Hard safety nets (always, even on -update-replay).
-	if got.Frames != 136948 || got.Slots != 10 || got.RealRounds != 23 || math.Abs(got.TickRate-64) > 0.01 {
+	// Frames: the SIDECAR frame count, which since the pre-first-counted-
+	// round sanitization gate (owner ruling, 2026-11-12) excludes the
+	// 3,349 pre-pistol frames — 136,948 (the demo's parse total, still
+	// pinned in extract/golden_test.go) − 3,349 = 133,599.
+	if got.Frames != 133599 || got.Slots != 10 || got.RealRounds != 23 || math.Abs(got.TickRate-64) > 0.01 {
 		t.Fatalf("safety net: golden demo identity drifted: %+v", got)
 	}
 
