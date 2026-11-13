@@ -8,8 +8,10 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"golang.org/x/image/draw"
 )
@@ -229,9 +231,13 @@ var extractMu sync.Mutex
 // at cs2Dir into outDir (created if needed), one subdirectory per map.
 // Existing packs are overwritten (idempotent re-extract after game
 // updates). Individual map failures are reported in errs but don't abort
-// the rest; a failure to even open the VPK is fatal. Options tune the
-// run: WithProgress fires once per map attempted, and WithBundledMeta
-// makes the committed frontend/public/maps copies the source of the
+// the rest; a failure to even open the VPK is fatal. The maps are
+// independent, so the decode+upscale work runs on a per-map worker pool
+// of poolSize() goroutines (the owner's thread ladder) — outputs,
+// result order and the progress contract are identical to the serial
+// loop. Options tune the run: WithProgress fires once per map attempted
+// (serialized — one call at a time), and WithBundledMeta makes the
+// committed frontend/public/maps copies the source of the
 // hand-authored elevation_regions that ride into every fresh meta.json.
 func ExtractMapPacks(cs2Dir, outDir string, opts ...ExtractOption) (maps []ExtractResult, errs []string, err error) {
 	extractMu.Lock()
@@ -272,8 +278,48 @@ func ExtractMapPacks(cs2Dir, outDir string, opts ...ExtractOption) (maps []Extra
 		jobs = append(jobs, packJob{radarPath: radarPath, mapName: base})
 	}
 
+	// Per-map worker pool (the owner's parallelization direction,
+	// 2026-11-12): the maps are independent — independent output dirs
+	// (outDir/<map>/, one dir per job; map names are unique because
+	// radarBase strips one fixed prefix+suffix off one unique VPK path),
+	// independent VPK reads (vpk is concurrency-safe — see its struct
+	// comment), no shared per-run artifact — so the CPU-bound
+	// decode+upscale+PNG work runs on poolSize() goroutines. The three
+	// asset FAMILIES stay sequential and extractMu stays at every entry
+	// (it is the cross-run serializer); this pool only parallelizes
+	// WITHIN one ExtractMapPacks run.
+	//
+	// Results are collected per job INDEX and merged in job order after
+	// the pool drains, so maps/errs land in exactly the serial order
+	// (jobs is v.names' sorted order) — deterministic run to run.
+	results := make([]error, len(jobs)) // nil = the map extracted
+	//
+	// Progress stays on the pre-existing contract: one call per
+	// COMPLETED map (a failed map counts), done strictly increasing
+	// 1..len(jobs), total known before the first map. progMu does two
+	// jobs: it serializes the counter increment and it HOLDS across the
+	// cfg.progress call, so callbacks never overlap — the consumer sees
+	// the same one-at-a-time stream the serial loop had (this is also
+	// what keeps TestConcurrentExtractions' maxActive ≤ 1 honest when
+	// the pool fires several completions back to back).
+	var progMu sync.Mutex
+	done := 0
+	runJobs(poolSize(), len(jobs), func(i int) {
+		job := jobs[i]
+		if extractJobHook != nil {
+			extractJobHook(job.mapName) // test seam: observe in-flight maps
+		}
+		err := extractOne(v, job.mapName, job.radarPath, outDir, &cfg)
+		progMu.Lock()
+		done++
+		if cfg.progress != nil {
+			cfg.progress(done, len(jobs))
+		}
+		progMu.Unlock()
+		results[i] = err
+	})
 	for i, job := range jobs {
-		if err := extractOne(v, job.mapName, job.radarPath, outDir, &cfg); err != nil {
+		if err := results[i]; err != nil {
 			errs = append(errs, fmt.Sprintf("%s: %v", job.mapName, err))
 		} else {
 			maps = append(maps, ExtractResult{
@@ -281,15 +327,73 @@ func ExtractMapPacks(cs2Dir, outDir string, opts ...ExtractOption) (maps []Extra
 				File: filepath.Join(outDir, job.mapName, packRadarPNG),
 			})
 		}
-		if cfg.progress != nil {
-			cfg.progress(i+1, len(jobs))
-		}
 	}
 	if len(maps) == 0 && len(errs) > 0 {
 		return nil, errs, fmt.Errorf("couldn't read the radar files in that CS2 folder (%d errors)", len(errs))
 	}
 	return maps, errs, nil
 }
+
+// poolSize is the per-map worker count for ExtractMapPacks' pool — the
+// product owner's thread ladder (2026-11-12): "equal to the number of
+// threads available on the machine … fall back to the number of cores
+// … fall back to single-threaded." runtime.NumCPU reports the hardware
+// threads (logical CPUs) schedulable to this process — the first rung;
+// when the runtime can't report any (n < 1, defensive) fall back to one
+// worker. Not user-configurable (the owner asked for a setting only on
+// demo imports).
+func poolSize() int {
+	n := runtime.NumCPU()
+	if n < 1 {
+		return 1
+	}
+	return n
+}
+
+// runJobs runs fn over every index 0..n-1 with at most workers
+// goroutines in flight — the pool ExtractMapPacks dispatches its map
+// jobs through. Workers pull the next index from one atomic counter
+// (work handed out on demand, no static split), fn runs concurrently
+// and must be safe for that, and every index runs exactly once. The
+// semaphore is the worker count itself: at most `workers` calls are
+// ever active. workers < 1 is clamped to 1 (the ladder's last rung).
+// fn panics propagate (an unrecovered panic kills the process, exactly
+// like the serial loop's).
+func runJobs(workers, n int, fn func(i int)) {
+	if n <= 0 {
+		return
+	}
+	if workers < 1 {
+		workers = 1
+	}
+	if workers > n {
+		workers = n
+	}
+	var next atomic.Int64
+	var wg sync.WaitGroup
+	wg.Add(workers)
+	for w := 0; w < workers; w++ {
+		go func() {
+			defer wg.Done()
+			for {
+				i := int(next.Add(1)) - 1
+				if i >= n {
+					return
+				}
+				fn(i)
+			}
+		}()
+	}
+	wg.Wait()
+}
+
+// extractJobHook, nil outside tests, is called by the pool with a
+// map's name BEFORE its extraction starts — the seam the pool tests
+// use to observe genuinely in-flight maps (a barrier through the REAL
+// ExtractMapPacks entry point, not a sleep). Set it before a run and
+// restore it after the run returns (the pool has drained by then), so
+// concurrent test goroutines never race on the variable.
+var extractJobHook func(mapName string)
 
 // radarBase derives a map/section name from a radar path:
 // panorama/images/overheadmaps/de_mirage_radar_psd.vtex_c → de_mirage.
@@ -549,6 +653,11 @@ func sectionLabel(s Section, all []Section) string {
 // extractor-derived and must stay fresh. Per-floor `elevation` keys are
 // NOT carried — the unmarshal/rewrite drops any stale ones (nothing
 // reads them).
+//
+// Concurrency: this runs inside the pool job for ONE map and touches
+// only that map's own dir/meta.json (jobs are per-map disjoint), so
+// within a run there is nothing to serialize; two overlapping RUNS are
+// excluded by extractMu at the entry point.
 func preserveElevation(dir string, meta *packMeta, bundled []byte) {
 	if len(bundled) > 0 {
 		var b packMeta
@@ -713,6 +822,12 @@ func unsharpMask(img *image.NRGBA, radius int, amount float64) *image.NRGBA {
 // so the upscale lives HERE — one choke point no radar file can escape
 // — while meta.json capture in extractOne/extractLayers keeps reading
 // the decoded bounds before the write and therefore stays logical.
+//
+// The fixed `path + ".tmp"` name is safe under the per-map pool: every
+// path is inside one job's own outDir/<map>/ directory and map dirs are
+// disjoint within a run (no shared manifest/index is written per map),
+// while extractMu keeps two runs from ever writing the same path at
+// once — so two live writers can never meet on one temp file.
 func writePNGAtomic(path string, img *image.NRGBA) error {
 	tmp := path + ".tmp"
 	f, err := os.Create(tmp)
