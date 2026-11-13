@@ -6,11 +6,32 @@
 //   npm i --no-save jsdom
 //   node --conditions browser test/stat-card.dom.mjs
 // (must be run with frontend/ as the working directory)
+// (the hook below makes the browser condition stick under a plain
+// `node --test test/*.mjs` too — without it svelte resolves to the
+// SERVER build and mount() throws, which the runner reports as a bare
+// "pass 1" with zero checks executed).
+import { registerHooks } from 'node:module';
 import { JSDOM } from 'jsdom';
 import { compile } from 'svelte/compiler';
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+
+// svelte's package exports pick the SERVER build without the `browser`
+// condition (mount() then throws "lifecycle_function_unavailable"), so
+// the driver adds it for every svelte specifier before anything imports
+// one (the same hook combat.dom.mjs installs).
+registerHooks({
+  resolve(specifier, context, nextResolve) {
+    if (specifier === 'svelte' || specifier.startsWith('svelte/')) {
+      return nextResolve(specifier, {
+        ...context,
+        conditions: ['browser', ...(context.conditions || [])],
+      });
+    }
+    return nextResolve(specifier, context);
+  },
+});
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>', {
   pretendToBeVisual: true,
