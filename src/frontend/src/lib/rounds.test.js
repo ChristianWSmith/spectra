@@ -1,5 +1,6 @@
 // Tests for lib/rounds.js — the canonical round helpers: the
-// counted-round predicate (the analytics CountedRounds twin),
+// round-number predicate (isCounted — today an identity over stored
+// rows, the legacy guard over a pre-reprocess match's negative numbers),
 // roundStartTick / roundEndTick, the round-number → start/end-tick
 // lookups behind every "jump to round N" link (the watch/drill links'
 // stamped ?tick=) and every round-span loop
@@ -26,6 +27,11 @@ const ROUNDS = [
   { number: 7, startTick: 24500 },
 ];
 
+// isCounted pins the ONE number rule (number >= 1): over stored rows it
+// is an IDENTITY (the extractor discards knife/warmup rounds at ingest)
+// — the negative rows here are the LEGACY shape a pre-reprocess match
+// still delivers, and keeping them out of the cadence/score/stat math is
+// the function's whole surviving job (the null/junk guards too).
 test('isCounted: only positive-numbered rounds are counted play', () => {
   assert.equal(isCounted(ROUNDS[2]), true);
   assert.equal(isCounted(ROUNDS[0]), false); // knife
@@ -39,7 +45,7 @@ test('isCounted: only positive-numbered rounds are counted play', () => {
 // after 24, then every 3 counted rounds (OT halves). The trailing-
 // marker suppression and counted-gating over a VISIBLE list are
 // separatorFlags' (below, same file); the DOM rendering of both is
-// pinned in test/round-strip.dom.mjs and test/economy.dom.mjs.
+// pinned in test/round-strip.dom.mjs and test/econ-tables.dom.mjs.
 test('separatorAfter: after 12, then 24 and every 3 OT rounds', () => {
   for (const n of [12, 24, 27, 30, 33, 36, 45]) {
     assert.equal(separatorAfter(n), true, `round ${n} should separate`);
@@ -55,7 +61,7 @@ test('separatorAfter: everything else does not separate', () => {
   for (let n = 1; n <= 11; n++) {
     assert.equal(separatorAfter(n), false, `round ${n} should not separate`);
   }
-  // Knife/warmup negatives, round 0 and junk are never separators.
+  // Legacy knife/warmup negatives, round 0 and junk are never separators.
   assert.equal(separatorAfter(0), false);
   assert.equal(separatorAfter(-12), false);
   assert.equal(separatorAfter(-2), false);
@@ -120,8 +126,10 @@ test('separatorFlags: trailing suppression — a boundary on the LAST row never 
 });
 
 test('separatorFlags: negative knife/warmup rows never flag nor shift a boundary', () => {
-  // The Rounds-tab / RoundStrip pref-on shape: three pre-match rows
-  // (negatives) ahead of the counted rounds.
+  // The LEGACY pre-reprocess shape (old imports only): three pre-match
+  // rows (negatives) ahead of the counted rounds — every rendered row
+  // now reaches separatorFlags (the visibility pref is dead), so this
+  // gating is what keeps a legacy row from shifting a marker.
   const preMatch = [
     { number: -3 },
     { number: -2 },
@@ -156,7 +164,8 @@ test('separatorFlags: empty, short and junk input degrade to no separators', () 
   assert.deepEqual(separatorFlags(countedRows(1)), [false]);
   // A round row with junk/missing fields is still not a separator.
   assert.deepEqual(separatorFlags([{ number: 12 }, { number: 13 }]), [false, false]);
-  // The counted predicate reads `number` (extract's renumber) and NOTHING
+  // The counted predicate reads `number` (the round number — a legacy
+  // negative ingest index is what it guards) and NOTHING
   // else: a row keyed like models.EconomyRow (`round`) is never counted
   // here — callers project the shape first (Economy.svelte maps
   // { number: r.round } before calling), so a mis-keyed call degrades to
@@ -275,23 +284,26 @@ test('roundEndTick returns null instead of a guessed time', () => {
 test('roundIndexLabel: counted rounds show their number', () => {
   assert.equal(roundIndexLabel(1), '1');
   assert.equal(roundIndexLabel(24), '24');
-  assert.equal(roundIndexLabel({ number: 12, warmup: false, pregame: false }), '12');
+  assert.equal(roundIndexLabel({ number: 12 }), '12');
 });
 
+// BEHAVIOR RE-PIN, labeled (knife/warmup discard, Phase 3): roundIndexLabel
+// used to prefer the row's pregame/warmup FLAGS when present — those
+// fields died with the discard (no read ever delivers them again), so
+// the NUMBER rule is the whole rule. The letters themselves stay as
+// LEGACY tolerance: a pre-reprocess match still carries negative
+// indices, and no surface may show a raw "-1".
 test('roundIndexLabel: negative indices map to K/W letters', () => {
-  // The golden demo's shape: -3 warmup, -2 knife, -1 warmup (a second
+  // The old renumber shape: -3 warmup, -2 knife, -1 warmup (a second
   // warmup after the knife round).
   assert.equal(roundIndexLabel(-3), 'W');
   assert.equal(roundIndexLabel(-2), 'K');
   assert.equal(roundIndexLabel(-1), 'W');
   assert.equal(roundIndexLabel(-4), 'W'); // a fourth pre-match round
-  // Rows decide from their flags when present.
-  assert.equal(roundIndexLabel({ number: -2, pregame: true, warmup: false }), 'K');
-  assert.equal(roundIndexLabel({ number: -1, pregame: false, warmup: true }), 'W');
-  assert.equal(roundIndexLabel({ number: -3, pregame: false, warmup: true }), 'W');
-  // Flagless rows fall back to the number rule.
+  // Row objects read their NUMBER (the flag branch is gone).
   assert.equal(roundIndexLabel({ number: -2 }), 'K');
   assert.equal(roundIndexLabel({ number: -1 }), 'W');
+  assert.equal(roundIndexLabel({ number: -3 }), 'W');
   // Numeric strings coerce; junk renders empty (never "NaN").
   assert.equal(roundIndexLabel('-2'), 'K');
   assert.equal(roundIndexLabel('x'), '');
@@ -465,10 +477,10 @@ test('seekTargetTick: empty/absent rounds and unusable rows degrade to plain fro
     assert.equal(seekTargetTick(rounds, 1000, -S15), 40, 'no windows → plain arithmetic');
     assert.equal(seekTargetTick(rounds, 1000, S15), 1960);
   }
-  // A warmup row (ships fe = 0 → no usable window)…
-  const warmupOnly = [{ number: -1, startTick: 200, freezeEndTick: 0, warmup: true }];
-  assert.equal(seekTargetTick(warmupOnly, 1000, -S15), 40, 'warmup is never a window');
-  assert.equal(seekTargetTick(warmupOnly, 1000, S15), 1960);
+  // A legacy row with no usable window (ships fe = 0)…
+  const feZero = [{ number: -1, startTick: 200, freezeEndTick: 0 }];
+  assert.equal(seekTargetTick(feZero, 1000, -S15), 40, 'an fe = 0 row is never a window');
+  assert.equal(seekTargetTick(feZero, 1000, S15), 1960);
   // …and a corrupt row (fe ≤ start).
   const corrupt = [{ number: 1, startTick: 1000, freezeEndTick: 900 }];
   assert.equal(seekTargetTick(corrupt, 5000, -S15), 4040);

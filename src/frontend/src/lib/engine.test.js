@@ -64,13 +64,15 @@ const F = (tick) => TICKS.indexOf(tick);
 
 // Two real freeze windows whose ends do NOT sit on a frame tick (700 / 2300
 // fall between 640/704 and 2240/2304) — that is what pins "lands on the
-// FIRST frame at/after freezeEndTick". The warmup row ships fe = 0 (no
-// window); round 1's endTick leaves the round-over GAP that must NOT be
-// skipped (it is not a freeze).
+// FIRST frame at/after freezeEndTick". The legacy fe = 0 row ships no
+// window (the warmup shape a pre-reprocess match still carries — the
+// defensive rule kept, Go's twin kept too); round 1's endTick leaves the
+// round-over GAP that must NOT be skipped (it is not a freeze). Round
+// rows carry no warmup/pregame flags anymore (the discard removed them).
 const ROUNDS = [
-  { number: -1, startTick: 128, freezeEndTick: 0, warmup: true, pregame: false },
-  { number: 1, startTick: 512, freezeEndTick: 700, endTick: 1984, warmup: false, pregame: false },
-  { number: 2, startTick: 2048, freezeEndTick: 2300, endTick: 4000, warmup: false, pregame: false },
+  { number: -1, startTick: 128, freezeEndTick: 0 },
+  { number: 1, startTick: 512, freezeEndTick: 700, endTick: 1984 },
+  { number: 2, startTick: 2048, freezeEndTick: 2300, endTick: 4000 },
 ];
 
 function fresh(rounds = ROUNDS) {
@@ -158,10 +160,12 @@ test('skipFreeze ON: each crossing lands on the first frame ≥ freezeEndTick, o
   e.pause();
 });
 
-// (3) data-driven: rows without a usable window are never skipped.
-test('skipFreeze never fires on a warmup (fe = 0) or a corrupt window (fe ≤ start)', () => {
+// (3) data-driven: rows without a usable window are never skipped (the
+// legacy fe = 0 warmup shape kept — no stored round ships it since the
+// discard, but a corrupt/legacy row must never skip a frame).
+test('skipFreeze never fires on an fe = 0 row or a corrupt window (fe ≤ start)', () => {
   const rounds = [
-    { number: -1, startTick: 128, freezeEndTick: 0, warmup: true }, // warmup ships fe = 0
+    { number: -1, startTick: 128, freezeEndTick: 0 }, // fe = 0 → no window
     { number: 1, startTick: 384, freezeEndTick: 300 }, // corrupt: fe ≤ start
   ];
   const e = fresh(rounds);

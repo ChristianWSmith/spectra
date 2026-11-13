@@ -15,7 +15,9 @@
 // PlayerRound DMG/K/A/D):
 //   - counted rounds ONLY (lib/rounds.js isCounted on the event's round
 //     row; a round the lookup does not know is NOT counted — Go only
-//     folds rounds CountedRounds returned),
+//     folds rounds CountedRounds returned). Every stored round is
+//     counted since the knife/warmup discard; the gate is the legacy
+//     guard over a pre-reprocess match's negative rows,
 //   - kills: enemy-only — side of killer vs victim resolved AT THE EVENT
 //     TICK by the injected sideAt callback; an unknown side never matches
 //     (Go's sameSide: a != "" && a == b), so an unknown side is
@@ -159,7 +161,7 @@ function emit(acc, started, steamIds) {
 //
 //   events   normalized typed event rows (Replay's drawNorm): only
 //            `kill` / `damage` rows do anything here
-//   opts.rounds   GetRounds rows (number/startTick/warmup/pregame)
+//   opts.rounds   GetRounds rows (number/startTick/…)
 //   opts.tick     the playhead tick (uiTick)
 //   opts.sideAt   (steamId, tick) => 'ct' | 't' | '' — side of that
 //            player AT THE EVENT'S TICK (Replay's position-store flags;

@@ -135,9 +135,10 @@ test('entrySeekTick: an exact ?tick= link is the only position source', () => {
   // Malformed / negative ?tick= is not a promise — null, never a guess.
   assert.equal(entrySeekTick({ tick: 'x' }), null);
   assert.equal(entrySeekTick({ tick: '-5' }), null);
-  // No position param at all: null → Replay applies the pref-based
-  // default (first counted round's start while the pref hides
-  // knife/warmup, frame 0 when it shows them) — the DELIBERATE CHANGE
+  // No position param at all: null → Replay applies its load-time
+  // default (the first counted round's start — the knife/warmup
+  // visibility pref that used to pick between it and frame 0 died with
+  // the discard) — the DELIBERATE CHANGE
   // that keeps "no promise" distinguishable from the explicit
   // first-frame target (?tick=0 → 0, asserted above).
   assert.equal(entrySeekTick({}), null);

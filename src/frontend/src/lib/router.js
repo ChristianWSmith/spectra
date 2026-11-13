@@ -8,10 +8,10 @@
 //   #/match/:id/<tab-slug>   any match tab — slug = tab name lowercased
 //                            (MATCH_TABS below is the canonical list;
 //                            Match.svelte's tab bar consumes it too)
-//   #/match/:id/round/:n     round numbers can be negative (knife /
-//                            warmup rounds carry negative indices — see
-//                            extract's renumber), so the round segment
-//                            allows "-?"; ?back=<path> remembers the
+//   #/match/:id/round/:n     round numbers can be negative (a pre-
+//                            reprocess match's knife/warmup rows still
+//                            carry negative indices), so the round
+//                            segment allows "-?"; ?back=<path> remembers the
 //                            originating view for the return trip
 //   #/player/:steamid        17-digit Steam id
 //   #/compare/:id            ?rounds=3,5,7 selects the compared rounds,
@@ -126,8 +126,8 @@ export function parseHash(hash) {
     return { ...route, query: { ...(route.query || {}), ...query } };
   };
 
-  // Round numbers can be negative (knife/warmup rounds carry negative
-  // indices — see extract's renumber), so the round segment allows "-?".
+  // Round numbers can be negative (a pre-reprocess match's knife/warmup
+  // rows carry negative indices), so the round segment allows "-?".
   // Checked before the generic tab segment so "round" never reads as a
   // tab slug.
   let m = path.match(/^\/match\/(\d+)\/round\/(-?\d+)$/);

@@ -230,9 +230,9 @@ test('normalizeWorld: every DRAW_KINDS kind yields a row — the world path has 
   assert.ok(normalizeWorld(unclaimed), 'the world gate is gone');
   assert.equal(normalizeWorld(unclaimed).bucket, '', 'an un-drawable kind keeps no bucket');
   assert.equal(normalizeWorld(null), null, 'a null row yields null, never a throw');
-  // No round policy either: a countedOnly kind from a knife round still
-  // normalizes (round visibility is the CONSUMER'S rule — the marker
-  // gate's applyRoundPref — never the shape's).
+  // No round policy either: a countedOnly kind from a legacy knife
+  // round still normalizes (round visibility is the CONSUMER'S rule —
+  // the marker gate's countedOnly rule — never the shape's).
   assert.ok(normalizeWorld({ id: 9, tick: 1, round: -2, kind: 'round_start' }));
 });
 
@@ -563,14 +563,18 @@ test('normalizeEvent tags the row, keeps source fields and drops unknown kinds',
   assert.equal(normalizeEvent({ ...ev, kind: 'teleport' }), null);
 });
 
+// The countedOnly policy is LEGACY tolerance now (the discard removed
+// round flags from the row shape; every stored round is counted): a
+// pre-reprocess match still delivers a negative round, and only a
+// counted-only category drops it.
 test('normalizeEvent round policy drops non-counted round categories only', () => {
   const rounds = new Map([
-    [1, { number: 1, warmup: false, pregame: false }],
-    [-1, { number: -1, warmup: true, pregame: false }],
+    [1, { number: 1 }],
+    [-1, { number: -1 }], // legacy warmup row
   ]);
   const win = (round) => ({ id: 9, seq: 1, tick: 5, round, kind: 'round_end' });
   assert.ok(normalizeEvent(win(1), { roundsByNumber: rounds }), 'counted round kept');
-  assert.equal(normalizeEvent(win(-1), { roundsByNumber: rounds }), null, 'warmup dropped');
+  assert.equal(normalizeEvent(win(-1), { roundsByNumber: rounds }), null, 'legacy warmup row dropped');
   // A round the lookup does not know is kept (defensive, never invented).
   assert.ok(normalizeEvent(win(42), { roundsByNumber: rounds }));
   // The policy does not touch other categories (kills stay in knife rounds).

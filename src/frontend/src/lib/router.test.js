@@ -45,7 +45,7 @@ test('#/match/:id/round/:n — negative rounds allowed ("-?")', () => {
     id: 42,
     round: 0,
   });
-  // knife/warmup rounds carry negative indices
+  // a pre-reprocess match's knife/warmup rounds carry negative indices
   assert.deepEqual(parseHash('#/match/42/round/-3'), {
     name: 'round',
     id: 42,

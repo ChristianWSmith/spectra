@@ -21,8 +21,8 @@
 
   let { id = 0, nav = () => {} } = $props();
 
-  let rows = $state([]); // non-warmup models.EconomyRow[]
-  let rounds = $state([]); // RoundRow[] (warmup counts / context)
+  let rows = $state([]); // models.EconomyRow[]
+  let rounds = $state([]); // RoundRow[] (round context)
   let match = $state(null); // models.Match — side switches + final score
   let names = $state({ ct: 'CT', t: 'T' }); // team names, final-side keyed
   let loading = $state(true);
@@ -40,7 +40,7 @@
     ])
       .then(([eco, rs, m, tn, sb]) => {
         if (!live) return;
-        rows = (eco || []).filter((r) => !r.warmup);
+        rows = eco || [];
         rounds = rs || [];
         match = m;
         // Team display names, keyed by each team's FINAL side — demo clan
@@ -62,8 +62,6 @@
     return () => (live = false);
   });
 
-  const warmupSkipped = $derived(rounds.filter((r) => r.warmup).length);
-
   // Loss-bonus values are never read from the demo — the store
   // reconstructs them from round results (store.GetEconomy →
   // applyLossBonuses), so EVERY row is inferred. The fact/inference badge
@@ -84,10 +82,11 @@
   // the table twin of RoundStrip's `.round-split`), so the interleaved
   // econ-why-row stays attached ABOVE the line and the last row can never
   // carry a trailing one. The projection to `{number}` is only the row
-  // SHAPE: isCounted/separatorAfter read `number` (extract's renumber —
-  // see lib/rounds.js), while models.EconomyRow keys its round as
-  // `round`. `rows` is counted-only (the store's SQL), so the ordinals
-  // separatorAfter expects are exactly these round numbers.
+  // SHAPE: isCounted/separatorAfter read `number` (a legacy negative
+  // ingest number must not shift a marker — see lib/rounds.js), while
+  // models.EconomyRow keys its round as `round`. Every stored round is
+  // counted since the discard, so the ordinals separatorAfter expects
+  // are exactly these round numbers.
   const sepFlags = $derived(separatorFlags(rows.map((r) => ({ number: r.round }))));
 
   // Winner cell label for ONE buy-types row: the TEAM that won that
@@ -270,8 +269,7 @@
   {:else}
     <div class="econ-head">
       <span class="muted"
-        >{rows.length} round{rows.length === 1 ? '' : 's'}
-        {#if warmupSkipped > 0}· {warmupSkipped} warmup skipped{/if}</span
+        >{rows.length} round{rows.length === 1 ? '' : 's'}</span
       >
       <span class="spacer"></span>
       <span class="muted econ-head-note"

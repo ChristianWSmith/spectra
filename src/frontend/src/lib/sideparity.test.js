@@ -137,8 +137,8 @@ test('teamKeyAt: a round\'s side resolves to the TEAM that played it', () => {
 });
 
 // A match's round rows the way the views hold them: the negative-numbered
-// warmup/knife rounds ahead of `counted` real rounds (extract's renumber —
-// the first real round is 1, so these never count).
+// warmup/knife rows a pre-reprocess match still carries ahead of `counted`
+// real rounds (the first real round is 1, so these never count).
 function roundList(counted) {
   return [
     { number: -2 },

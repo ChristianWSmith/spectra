@@ -14,8 +14,10 @@ function intoRoundSeconds(tick, round, tickRate) {
 
 // chatClock renders a chat line's time cell: "RD12 1:23" — how far INTO
 // its round the message was said, rendered with fmtClock. Messages with
-// no containing round, in a counted-out round (knife/warmup —
-// lib/rounds.js) or with a negative offset fall back to a match-relative
+// no containing round, in a legacy non-counted round (knife/warmup —
+// lib/rounds.js; only a pre-reprocess match still carries chat rows
+// there — discarded-round chat is never stored) or with a negative
+// offset fall back to a match-relative
 // clock (tick / tickRate) — plain "m:ss", never a negative; keep it
 // simple. The raw tick stays in the cell's title tooltip. This is THE
 // chat clock (the Replay feed's chat rows and RoundDetail's round chat

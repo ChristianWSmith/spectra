@@ -1,27 +1,38 @@
 // Round helpers — the ONE frontend home for round rules: the
-// counted-round predicate ("stats-eligible play"), the round-number →
-// start/end-tick lookups behind every "jump to round N" link and every
-// round-span loop range, the scoreline-through-a-round aggregate, the
-// round-group separator rule (the cadence + its gating over a rendered
-// list) and the money-reset cadence it also spells (moneyResetIndexes).
+// round-number predicate (isCounted), the round-number → start/end-tick
+// lookups behind every "jump to round N" link and every round-span loop
+// range, the scoreline-through-a-round aggregate, the round-group
+// separator rule (the cadence + its gating over a rendered list) and the
+// money-reset cadence it also spells (moneyResetIndexes).
 // Pure functions, no services.
 //
-// Cross-layer twins that must stay identical (all three are exercised by
-// the golden demo):
-//   - Go: analytics.CountedRounds (`!warmup && !pregame`) —
-//     internal/analytics/analytics.go, whose doc comment names this file.
-//   - Go: extract's renumber (internal/extract/build.go) stamps the
-//     numbering the check relies on: the first real round is 1 and
-//     knife/warmup rounds take NEGATIVE numbers (-2 knife, -1 warmup), so
-//     `number >= 1` excludes exactly the rounds CountedRounds drops (round
-//     0 never exists).
-//   - Go: store.GetEconomy's SQL twin (`warmup = 0 AND pregame = 0`).
+// Cross-layer cross-references:
+//   - Go: analytics.CountedRounds (internal/analytics/analytics.go) —
+//     today an IDENTITY over its input: the extractor discards
+//     knife/warmup/post-match rounds at ingest (extract.agg.roundStart —
+//     the rows are never stamped), so the rounds table holds only
+//     counted play; its doc comment names this file.
+//   - isCounted's rule (number >= 1) reads the numbering extract used to
+//     stamp: the first real round is 1 and knife/warmup rounds took
+//     NEGATIVE numbers (-2 knife, -1 warmup, round 0 never exists). New
+//     imports carry no negative rows; a LEGACY match (imported before
+//     the discard, never reprocessed) still does, and every rule here
+//     tolerates them: roundIndexLabel renders their W/K letters, the
+//     separator gating keeps them from shifting a marker, scoreThrough
+//     keeps their wins out of the scoreline.
+//   - the SQL twin `warmup = 0 AND pregame = 0` (store.GetEconomy) died
+//     with the columns.
 //
 // Used by every round range/select (Heatmaps' from/to ranges, Match's
-// chat round picker, FilterBar's round from/to bounds) and the Match
-// Rounds tab's hide-warmup pref.
+// chat round picker, FilterBar's round from/to bounds).
 
 // isCounted reports whether a round row is counted play (number >= 1).
+// Every STORED round is counted since the discard — over new data this
+// is an identity (mirror: Go analytics.CountedRounds) — and the function
+// survives as THE canonical guard for LEGACY negative rows wherever the
+// cadence, score and stat math must not let them through: if a
+// non-counted round ever reaches an input again, this is the ONE place
+// the filter lives (never re-spell `number >= 1` at a call site).
 export function isCounted(r) {
   return !!r && r.number >= 1;
 }
@@ -102,9 +113,10 @@ export function moneyResetIndexes(counted) {
 // semantics that used to live inline in RoundStrip.svelte:
 //
 //   - counted-gating: only a counted row can carry a separator, counted
-//     by its ORDINAL among the counted rows of this list (negative
-//     knife/warmup rows never increment the counter, so showing them —
-//     the Rounds/RoundStrip warmup pref — can never shift a marker);
+//     by its ORDINAL among the counted rows of this list (legacy
+//     negative knife/warmup rows never increment the counter, so
+//     rendering them — every row renders now, the visibility pref is
+//     dead — can never shift a marker);
 //   - trailing suppression: the LAST counted row never carries one (the
 //     boundary needs at least one more counted round after it), so a
 //     match ending exactly on 12/24/27/30/33 gets no dangling marker.
@@ -125,20 +137,16 @@ export function separatorFlags(rows) {
 }
 
 // roundIndexLabel renders a round's DISPLAY label: counted rounds show
-// their number ("12"), while negative ingest indices (extract's renumber)
-// show a single letter — the knife round shows "K" and every other
-// negative index shows "W" (warmup). A demo can carry more than one
-// warmup (they number backwards from round 1: -3 warmup, -2 knife,
-// -1 warmup), so the letter is decided by the round ROW's flags when a
-// row is available (pregame → K, warmup → W); a bare number falls back
-// to the number rule (-2 → K, any other negative → W). Used by the Match
-// ribbon (RoundStrip) and the Replay landmark feed's round column.
+// their number ("12"); a LEGACY negative ingest index (extract's old
+// renumber — only a pre-reprocess match still carries one) shows a
+// single letter — "-2" is the knife round ("K"), every other negative
+// index is a warmup ("W"). The round ROW's warmup/pregame flags used to
+// pick the letter when present; those fields died with the discard (no
+// read ever delivers them), so the number rule is the whole rule — a
+// label is never the raw negative number. Used by the Match ribbon
+// (RoundStrip) and the Replay landmark feed's round column.
 export function roundIndexLabel(r) {
-  if (r && typeof r === 'object') {
-    if (r.pregame) return 'K';
-    if (r.warmup) return 'W';
-    return roundIndexLabel(r.number);
-  }
+  if (r && typeof r === 'object') return roundIndexLabel(r.number);
   if (r == null || r === '') return '';
   const n = Number(r);
   if (!Number.isFinite(n)) return '';
@@ -329,12 +337,13 @@ export function inFreezeTime(rounds, tick) {
 // scoreThrough — the ONE scoreline-at-a-round aggregate: cumulative
 // counted-round WINS by side through `roundNumber` inclusive ({ct, t}).
 // Rounds are numbered in time order, so "number <= round" is "through
-// this round"; isCounted drops knife/warmup rows and unknown winners
-// (winner === "") count for neither side. Consumers: RoundDetail's
-// scoreline and Replay's HUD score (which passes the last round that
-// ENDED at the playhead, so a mid-round readout never shows a result
-// the round has not produced yet). Pure view aggregate over already-
-// fetched rows — see AGENTS.md "View-level aggregates".
+// this round"; isCounted keeps legacy negative rows' wins out of the
+// scoreline (every stored round is counted since the discard) and
+// unknown winners (winner === "") count for neither side. Consumers:
+// RoundDetail's scoreline and Replay's HUD score (which passes the last
+// round that ENDED at the playhead, so a mid-round readout never shows a
+// result the round has not produced yet). Pure view aggregate over
+// already-fetched rows — see AGENTS.md "View-level aggregates".
 export function scoreThrough(rounds, roundNumber) {
   const n = Number(roundNumber);
   let ct = 0;
