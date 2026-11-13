@@ -80,7 +80,7 @@
       title: '',
       shortName: '',
       expr: '',
-      groupBy: '',
+      scope: 'match',
       format: '',
       denominator: '',
       doc: '',
@@ -95,7 +95,7 @@
       title: f.title,
       shortName: f.shortName,
       expr: f.expr,
-      groupBy: f.groupBy,
+      scope: f.scope,
       format: f.format,
       denominator: f.denominator,
       doc: f.doc,
@@ -243,7 +243,6 @@
 
   $effect(() => {
     const expr = form.expr;
-    const gb = form.groupBy;
     const seq = ++exprSeq;
     if (!expr.trim()) {
       exprCheck = { state: 'idle' };
@@ -251,7 +250,7 @@
     }
     exprCheck = { state: 'pending' };
     const t = setTimeout(() => {
-      validateExpr(expr, gb)
+      validateExpr(expr)
         .then(([ok, e]) => {
           if (seq !== exprSeq) return;
           exprCheck = ok
@@ -273,7 +272,7 @@
       title: m.title || '',
       shortName: m.shortName || '',
       expr: m.expr,
-      groupBy: m.groupBy || '',
+      scope: m.scope || 'match',
       format: m.format || '',
       denominator: m.denominator || '',
       doc: m.doc || '',
@@ -343,7 +342,7 @@
         title: form.title.trim() || name,
         shortName: form.shortName.trim(),
         expr: form.expr,
-        groupBy: form.groupBy,
+        scope: form.scope,
         format: form.format,
         doc: form.doc.trim(),
         denominator: form.denominator,
@@ -381,7 +380,6 @@
       preview = await previewMetric(
         form.id,
         adhoc ? form.expr : '',
-        adhoc ? form.groupBy : '',
         '', // whole library: the builder has no scope selector
         PREVIEW_LIMIT,
       );
@@ -405,7 +403,7 @@
       </span>
       <span class="bld-row-sub">
         <span class="mono">{m.name}</span>
-        <span class="chip">{m.groupBy || 'none'}</span>
+        <span class="chip">{m.scope || 'match'}</span>
         <span class="chip">{m.format || 'raw'}</span>
         {#if m.origin === 'plugin'}
           <span class="chip bld-plugin">plugin</span>
@@ -540,15 +538,10 @@
             />
           </div>
           <div class="bld-field">
-            <label class="field-label" for="bld-group">GroupBy</label>
-            <select id="bld-group" class="input" bind:value={form.groupBy}>
-              <option value="">none</option>
-              <option value="player">player</option>
-              <option value="round">round</option>
-              <option value="team">team</option>
-              <option value="weapon">weapon</option>
-              <option value="side">side</option>
-              <option value="map">map</option>
+            <label class="field-label" for="bld-scope">Scope</label>
+            <select id="bld-scope" class="input" bind:value={form.scope}>
+              <option value="match">match — this player in this match</option>
+              <option value="profile">profile — this player's career</option>
             </select>
           </div>
           <div class="bld-field">

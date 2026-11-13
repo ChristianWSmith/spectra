@@ -317,7 +317,7 @@
         // Search-only (scoredItems r.search — never displayed): index the
         // short name so it also finds the metric.
         search: m.shortName || '',
-        sub: `${m.groupBy ? 'by ' + m.groupBy : 'ungrouped'} · ${m.origin || 'builtin'} · ${m.expr}`,
+        sub: `${m.scope || 'match'} · ${m.origin || 'builtin'} · ${m.expr}`,
         run: () => nav('/builder'),
       })),
     );
