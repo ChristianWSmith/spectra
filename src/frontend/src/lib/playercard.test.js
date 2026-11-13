@@ -196,17 +196,20 @@ test('STATS_TITLE documents the exact formula the row shows', () => {
 });
 
 // --- Connection (card presence) --------------------------------------------
-// The rows below are the nuke golden demo's ACTUAL player_connect /
-// player_disconnect events (dev DB match 3, notable rows): every human
-// connects at tick 1; Kr3shProSkuf disconnects at 23467 and reconnects
-// at 28801; the bot Crew joins late at 25155 and leaves at 28801 — the
-// roster keeps both slots the whole demo, which is exactly why the rule
-// exists (six CT cards otherwise).
+// BEHAVIOR RE-PIN, labeled (knife/warmup discard, Phase 3): the rows
+// below are the nuke demo's ACTUAL player_connect / player_disconnect
+// events AS STORED NOW — every demo's initial connects lived in the
+// discarded knife round (tick 1, round −2), so they are gone from a
+// fresh import and the fixture drops them too: initial presence derives
+// from the ROSTER instead (meta.players — no row needed). What remains
+// are the COUNTED-round rows: Kr3shProSkuf disconnects at 23467 and
+// reconnects at 28801; the bot Crew joins late at 25155 and leaves at
+// 28801 — the roster keeps both slots the whole demo, which is exactly
+// why the rule exists (six CT cards otherwise).
 const K3SH = '76561198067285210';
 const CREW = '18374686479671623692';
 const conn = (kind, tick, attacker) => ({ kind, tick, attacker });
 const nukeConnRows = [
-  conn('player_connect', 1, K3SH),
   conn('player_disconnect', 23467, K3SH),
   conn('player_connect', 25155, CREW),
   conn('player_disconnect', 28801, CREW),
@@ -217,7 +220,6 @@ const nukeConnRows = [
 test('indexConnections groups the typed rows per player, in tick order', () => {
   const idx = indexConnections(nukeConnRows);
   assert.deepEqual(idx.get(K3SH), [
-    { tick: 1, connected: true },
     { tick: 23467, connected: false },
     { tick: 28801, connected: true },
     { tick: 182637, connected: false },
@@ -247,6 +249,8 @@ test('indexConnections drops rows that say nothing about presence', () => {
 
 test('connectedAt: a disconnect hides the card until the reconnect unhides it', () => {
   const kr3sh = indexConnections(nukeConnRows).get(K3SH);
+  // Before the first recorded event the answer is ROSTER presence (true)
+  // — the discarded tick-1 connect row used to be the evidence here.
   assert.equal(connectedAt(kr3sh, 1), true);
   assert.equal(connectedAt(kr3sh, 23466), true, 'last tick before the disconnect');
   assert.equal(connectedAt(kr3sh, 23467), false, 'the disconnect itself hides it');
@@ -258,13 +262,22 @@ test('connectedAt: a disconnect hides the card until the reconnect unhides it', 
   assert.equal(connectedAt(kr3sh, 23466), true, 'back before the disconnect → visible again');
 });
 
-test('connectedAt: a late joiner is hidden BEFORE its first connect', () => {
+// BEHAVIOR RE-PIN, labeled (knife/warmup discard, Phase 3): connectedAt
+// no longer hides a card BEFORE its player's first recorded event —
+// every demo's initial connects were discarded at ingest, so "no connect
+// row yet" cannot mean "has not joined" anymore: the ROSTER is the
+// initial-presence evidence and only a recorded event says otherwise.
+// (Crew here stands in for any player with rows — a rejoiner's early
+// rounds keep their cards this way.) The bot LATE-JOIN hide lives in
+// presentAt's exception — pinned below ("never present before its
+// connect") — where a recorded connect still brackets the absence.
+test('connectedAt: before the first recorded event the card is PRESENT (roster)', () => {
   const crew = indexConnections(nukeConnRows).get(CREW);
-  assert.equal(connectedAt(crew, 0), false, 'the roster slot exists, the player does not yet');
-  assert.equal(connectedAt(crew, 25154), false, 'still out of the match');
+  assert.equal(connectedAt(crew, 0), true, 'roster presence, no row needed');
+  assert.equal(connectedAt(crew, 25154), true, 'still present until an event says otherwise');
   assert.equal(connectedAt(crew, 25155), true, 'visible from the connect tick');
   assert.equal(connectedAt(crew, 28800), true);
-  assert.equal(connectedAt(crew, 28801), false, 'and hidden again from its disconnect');
+  assert.equal(connectedAt(crew, 28801), false, 'hidden from its disconnect');
 });
 
 test('connectedAt: no events is connected — absence is never a disconnect', () => {

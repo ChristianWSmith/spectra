@@ -120,8 +120,9 @@ const svelteCompile = (src, filename, out) => {
 // Plain-ESM deps copied verbatim with their relative layout intact
 // (fmt → rounds, nav → router + replay/landmarks → rounds — the same copy
 // the landmark-row / combat drivers do); sideparity/teams/rounds/router
-// are RoundStrip's own copy set (its kvstore binding is stubbed below);
-// csv.js and payloadTree.js are import-free.
+// are RoundStrip's own copy set (it reads no kvstore key — the
+// knife/warmup visibility pref is retired); csv.js and payloadTree.js are
+// import-free.
 for (const rel of [
   'rounds.js', 'router.js', 'nav.js', 'fmt.js', 'csv.js', 'payloadTree.js',
   'sideparity.js', 'teams.js',
@@ -134,12 +135,6 @@ for (const rel of [
 ]) {
   writeFileSync(join(dir, rel), readFileSync(join('src/lib', rel), 'utf8'));
 }
-// RoundStrip reads show_knife_warmup_rounds through the kvstore binding
-// — a fresh-profile stub (key unset → warmup/knife cells hidden).
-writeFileSync(
-  join(dir, 'components', 'kvstore.js'),
-  'export const KVStoreService = { Get: () => Promise.resolve(undefined) };\n',
-);
 writeFileSync(
   join(dir, 'replay', 'landmarks.js'),
   readFileSync('src/lib/replay/landmarks.js', 'utf8'),
@@ -275,19 +270,19 @@ writeFileSync(
   export const getReplayMeta = () =>
     Promise.resolve(globalThis.__metaOverride ? { ...META, ...globalThis.__metaOverride } : META);
 // Connection rows (player_connect / player_disconnect) for the card
-// visibility rule (playercard.js connectedAt): everyone is in the match
-// from tick 0; Alpha3 drops out at 192 and is back at 320 (hidden in
-// between); Lone is a LATE joiner with NO presence before its 448
-// connect (the nuke bot's shape — a roster slot that exists before the
-// player does); Bravo1's first event is a disconnect at 1000 (the tail,
-// only reachable through the +/-15s transport). Every OTHER read
-// (drawRows, the blind join, the feed) stays empty as before.
+// visibility rule (playercard.js presentAt): fixture re-pin for the
+// knife/warmup discard — every demo's INITIAL connects lived in round −2
+// and are gone from a fresh import, so the five tick-0 rows below used
+// to exist here and do not anymore: initial presence now derives from
+// the ROSTER (meta.players, no row needed). What remains are the
+// counted-round rows: Alpha3 drops out at 192 and is back at 320 (hidden
+// in between); Lone's connect row survives as a REJOIN-shaped row — as a
+// human it does NOT hide the roster-present card before 448 (the bot
+// late-join hide lives in playercard.js presentAt's exception, pinned by
+// src/lib/playercard.test.js); Bravo1's first event is a disconnect at
+// 1000 (the tail, only reachable through the +/-15s transport). Every
+// OTHER read (drawRows, the blind join, the feed) stays empty as before.
 const CONN_ROWS = [
-  { kind: 'player_connect', tick: 0, attacker: '76561198000000001' },
-  { kind: 'player_connect', tick: 0, attacker: '76561198000000002' },
-  { kind: 'player_connect', tick: 0, attacker: '76561198000000003' },
-  { kind: 'player_connect', tick: 0, attacker: '76561198000000004' },
-  { kind: 'player_connect', tick: 0, attacker: '76561198000000005' },
   { kind: 'player_disconnect', tick: 192, attacker: '76561198000000003' },
   { kind: 'player_connect', tick: 320, attacker: '76561198000000003' },
   { kind: 'player_connect', tick: 448, attacker: '76561198000000006' },
@@ -476,8 +471,8 @@ export const deleteSavedFilter = () => Promise.resolve(null);
 // setPref persists into it and getPref both records the KEYS the view
 // reads (the mount-time drop_layers read IS the reload path) and serves
 // the stored value back. Only the drop-layer test writes here; every
-// other pref read (camera_mode, show_knife_warmup_rounds, the volumes)
-// still resolves undefined on a fresh profile.
+// other pref read (camera_mode, skip_freeze, the volumes) still resolves
+// undefined on a fresh profile.
 const PREFS = (globalThis.__prefs = globalThis.__prefs || {});
 const PREF_READS = (globalThis.__prefReads = globalThis.__prefReads || []);
 export const getPref = (key) => {
@@ -865,9 +860,9 @@ export const downloadCanvasPNG = (...a) => stage('png', a);
 
 // The child components — only their ./X.svelte imports need rewriting
 // to the compiled .js (ProfileLink is shared by LandmarkRow; TeamColumn
-// imports PlayerCard, so both card components join the list). RoundStrip
-// additionally reads the kvstore binding (the knife/warmup pref), whose
-// import is rewritten to the components/kvstore.js stub above.
+// imports PlayerCard, so both card components join the list). No kvstore
+// rewrite anymore — RoundStrip reads no preference key (the
+// knife/warmup visibility setting is retired).
 for (const name of [
   'ProfileLink', 'FilterBar', 'EventFlags', 'PayloadTree', 'LandmarkRow', 'Popover', 'RoundStrip',
   'PlayerCard', 'TeamColumn',
@@ -875,16 +870,10 @@ for (const name of [
   // ONE progress widget; MapPackPrompt's non-job precedent).
   'StatusChip',
 ]) {
-  let src = readFileSync(`src/lib/components/${name}.svelte`, 'utf8').replace(
+  const src = readFileSync(`src/lib/components/${name}.svelte`, 'utf8').replace(
     /from '\.\/(\w+)\.svelte'/g,
     "from './$1.js'",
   );
-  if (name === 'RoundStrip') {
-    src = src.replace(
-      "from '../../../bindings/github.com/wailsapp/wails/v3/pkg/services/kvstore'",
-      "from './kvstore.js'",
-    );
-  }
   svelteCompile(src, `${name}.svelte`, join(dir, 'components', `${name}.js`));
 }
 
@@ -1084,7 +1073,7 @@ check(
 );
 const ribbonCells = ribbon ? [...ribbon.querySelectorAll('.round-cell')] : [];
 check(
-  'ribbon cells render the counted rounds (knife/warmup hidden by default)',
+  'ribbon cells render every stored round (the visibility pref is retired — nothing hides)',
   JSON.stringify(ribbonCells.map((c) => c.textContent.trim())) === '["1","2"]',
   JSON.stringify(ribbonCells.map((c) => c.textContent.trim())),
 );
@@ -2312,12 +2301,14 @@ check('absent state stream shows NO state note', stateNotes.length === 0, String
 
 console.log('F2. connection: a disconnect hides the card, a reconnect unhides it');
 // The stubbed getEvents hands the view connect/disconnect rows for every
-// roster slot (services stub): all in the match from tick 0, Alpha3 out
-// in [192, 320), Lone a late joiner with NO presence before 448, Bravo1
-// gone from 1000 (the tail — only reachable with +15s, the frame scrub
-// tops out at the stub's last tick 576). The columns must follow the
-// PLAYHEAD in BOTH directions: scrubbing back re-shows a card, scrubbing
-// forward hides it again (never a sticky state).
+// roster slot (services stub): post-discard shape — no initial connects
+// (they were discarded with round −2), so every slot is in the match at
+// the start from the ROSTER; Alpha3 out in [192, 320); Lone's surviving
+// connect row (a rejoin-shaped row) does not hide its human card before
+// 448; Bravo1 gone from 1000 (the tail — only reachable with +15s, the
+// frame scrub tops out at the stub's last tick 576). The columns must
+// follow the PLAYHEAD in BOTH directions: scrubbing back re-shows a
+// card, scrubbing forward hides it again (never a sticky state).
 const leftNames = () =>
   [...leftCol.querySelectorAll('.pc-card')]
     .map((c) => c.querySelector('.pc-name').textContent)
@@ -2337,10 +2328,14 @@ check(
   leftNames() === 'Alpha1,Alpha2,Alpha3,Lone' && rightNames() === 'Bravo1,Bravo2',
   leftNames() + ' | ' + rightNames(),
 );
-await scrubTo(3); // tick 192 — inside Alpha3's gap, before Lone's join
+await scrubTo(3); // tick 192 — inside Alpha3's gap (Lone is roster-present)
+// BEHAVIOR RE-PIN, labeled (knife/warmup discard, Phase 3): only the
+// RECORDED gap hides a card now — Lone (a human roster slot whose only
+// surviving row is a late connect) is present from the roster the whole
+// time, so it stays listed through tick 192 and tick 0.
 check(
-  "at tick 192 only the two OUT players have no card (Alpha3's gap + Lone pre-join)",
-  leftNames() === 'Alpha1,Alpha2' && rightNames() === 'Bravo1,Bravo2',
+  "at tick 192 only the recorded gap has no card (Alpha3's out-window)",
+  leftNames() === 'Alpha1,Alpha2,Lone' && rightNames() === 'Bravo1,Bravo2',
   leftNames() + ' | ' + rightNames(),
 );
 // The follow popover must not offer a player the camera cannot track
@@ -2354,8 +2349,8 @@ const liveFollowOpts = () =>
     .map((b) => b.value)
     .filter((v) => v !== '');
 check(
-  'the follow popover drops the disconnected (and the not-yet-joined) player',
-  liveFollowOpts().join(',') === '0,1,3,4',
+  'the follow popover drops the disconnected player (roster-present slots stay)',
+  liveFollowOpts().join(',') === '0,1,3,4,5',
   liveFollowOpts().join(','),
 );
 click(followBtn()); // close — later sections count toolbar chrome
@@ -2367,34 +2362,49 @@ await chooseCam('Free');
 // disagree about a player who was out while the toggle flipped.
 click(teamBtn());
 await sleep();
-await scrubTo(5); // tick 320 — Alpha3 reconnected (Lone joins at 448)
+await scrubTo(5); // tick 320 — Alpha3 reconnected (Lone present throughout)
 check(
-  'the reconnect at 320 unhides Alpha3 (roster order kept)',
-  leftNames() === 'Alpha1,Alpha2,Alpha3',
+  'the reconnect at 320 unhides Alpha3 (roster order kept, Lone still listed)',
+  leftNames() === 'Alpha1,Alpha2,Alpha3,Lone',
   leftNames(),
 );
 const cardByName = (col, name) =>
   [...col.querySelectorAll('.pc-card')].find((c) => c.querySelector('.pc-name').textContent === name);
 check(
   'the team mute missed while out still applies to the returning card',
-  leftCol.querySelectorAll('.pc-mute[aria-pressed="true"]').length === 3 &&
+  // BEHAVIOR RE-PIN, labeled: 4 now, not 3 — every LEFT-column card is
+  // roster-present (Lone included), so the team mute presses once per
+  // listed card, Alpha3's among them.
+  leftCol.querySelectorAll('.pc-mute[aria-pressed="true"]').length === 4 &&
     cardByName(leftCol, 'Alpha3')?.querySelector('.pc-mute')?.getAttribute('aria-pressed') === 'true',
   String(leftCol.querySelectorAll('.pc-mute[aria-pressed="true"]').length),
 );
 click(teamBtn());
 await sleep();
-await scrubTo(0); // tick 0 — before Lone's 448 connect
+await scrubTo(0); // tick 0 — before Lone's surviving 448 connect row
+// BEHAVIOR RE-PIN, labeled (knife/warmup discard, Phase 3): the old
+// "late joiner has NO card before its connect" pin DIED with the
+// discard — initial connects are gone, a surviving human connect row is
+// a REJOIN, and initial presence is the ROSTER's answer (playercard.js
+// connectedAt), so Lone is listed from tick 0. The bot late-join hide
+// that used to be modeled here lives in presentAt's exception and is
+// pinned by src/lib/playercard.test.js ('never present before its
+// connect').
 check(
-  'a late joiner has NO card before its connect (the nuke bot phantom)',
-  leftNames() === 'Alpha1,Alpha2,Alpha3',
+  'initial presence is the roster — every slot has a card at tick 0 (no connect row needed)',
+  leftNames() === 'Alpha1,Alpha2,Alpha3,Lone' && rightNames() === 'Bravo1,Bravo2',
+  leftNames() + ' | ' + rightNames(),
+);
+await scrubTo(7); // tick 448 — Lone's surviving connect row
+check(
+  'Lone stays listed across its connect row (a human reconnect never hides the roster)',
+  leftNames() === 'Alpha1,Alpha2,Alpha3,Lone',
   leftNames(),
 );
-await scrubTo(7); // tick 448 — Lone connects
-check('Lone appears at the very tick it connects', leftNames() === 'Alpha1,Alpha2,Alpha3,Lone', leftNames());
 await scrubTo(3);
 check(
-  "scrubbing back into Alpha3's gap hides it again (Lone is still pre-join there)",
-  leftNames() === 'Alpha1,Alpha2',
+  "scrubbing back into Alpha3's gap hides it again (Lone is still roster-present there)",
+  leftNames() === 'Alpha1,Alpha2,Lone',
   leftNames(),
 );
 // Back to the round-2 playhead, then the TAIL disconnect through the

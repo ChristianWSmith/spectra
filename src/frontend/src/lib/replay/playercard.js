@@ -154,6 +154,14 @@ export function mainAmmoText(state) {
 // meta.players — so without this rule the columns grow a phantom card
 // (the nuke golden demo's sixth CT card) for the rest of the replay.
 //
+// ROSTER-BASED INITIAL PRESENCE (the knife/warmup discard): every demo's
+// initial connects lived in the discarded knife round, so a fresh import
+// has NO connect row for anyone — the roster itself (meta.players) is
+// the evidence that its players are IN the match at the start, and a
+// player with no recorded event at/before the playhead is present. Only
+// COUNTED-round rows (a mid-match disconnect, a rejoin, a late join)
+// override that; they are the same events and the same rules as before.
+//
 // indexConnections groups a match's typed connect/disconnect rows by the
 // identity EventRow.attacker carries — the SteamID64 for humans, the
 // synthetic bot id — which is EXACTLY meta.players[].steamId's spelling,
@@ -200,34 +208,39 @@ function stateAt(events, tick) {
 // connectedAt — is the player in the match at `tick`? (the card-visibility
 // rule for a HUMAN; `events` is indexConnections' list for ONE player, or
 // undefined):
-//   - at/after an event: that event's state — a disconnect hides the card
-//     until a reconnect unhides it (scrubbing back re-shows it, because
-//     the answer is a pure function of the playhead, never sticky);
-//   - BEFORE the player's first recorded event: hidden iff that first
-//     event is a connect — the roster slot exists but the player had not
-//     joined yet (the late-joining bot); a first event that is a
-//     disconnect means they were in the match before it, so visible;
-//   - no events at all: connected — absence of evidence is never treated
-//     as a disconnect (the same "no evidence" honesty as alive: null).
+//   - at/after a recorded event: that event's state — a disconnect hides
+//     the card until a reconnect unhides it (scrubbing back re-shows it,
+//     because the answer is a pure function of the playhead, never
+//     sticky);
+//   - BEFORE the player's first recorded event (or with no events at
+//     all): PRESENT — roster initial presence. The discard removed every
+//     demo's initial connects (they all lived in the knife round), so
+//     "no connect row yet" is no longer evidence of "has not joined":
+//     the roster says the player was in the match, and only a recorded
+//     event can say otherwise (absence of evidence is never read as a
+//     disconnect — the same honesty as before).
 export function connectedAt(events, tick) {
-  if (!events || events.length === 0) return true;
   const t = Number(tick);
   if (!Number.isFinite(t)) return true;
-  const ev = stateAt(events, t);
-  if (ev) return ev.connected;
-  return !events[0].connected;
+  const ev = stateAt(events || [], t);
+  return ev ? ev.connected : true;
 }
 
 // presentAt — THE one card-presence question for a roster slot (the
 // columns and the follow dropdown both read it): is this slot's player
 // IN the match at `tick`?
 //
-//   - a HUMAN slot is connectedAt's rule, unchanged;
+//   - a HUMAN slot is connectedAt's rule, unchanged — which is now
+//     roster-derived: no recorded event at/before `tick` → present (the
+//     roster is the initial-presence evidence; the discard removed every
+//     demo's initial connect rows);
 //   - a BOT slot is the replay exception — the ONLY place the app lists
 //     a bot — and it is listed ONLY while it is covering for a
 //     disconnected human, i.e. while ALL of these hold:
-//       1. the bot itself is connected at `tick` (its own recorded
-//          player_connect, no later disconnect), AND
+//       1. the bot itself is in at `tick` — its recorded
+//          player_connect with no later disconnect (a bot never needs
+//          the roster default below: coverage is evaluated against its
+//          RECORDED join tick — see the no-event branch);
 //       2. some SAME-SIDE human is disconnected at `tick` because of a
 //          recorded player_disconnect whose tick is AT OR BEFORE the
 //          connect that put the bot in the match — the human's absence
@@ -239,6 +252,16 @@ export function connectedAt(events, tick) {
 //     (players.side, the same table the column grouping uses) and both
 //     must be known and equal — an unknown side fails the pairing rather
 //     than guessing one (fail toward NOT listing the bot).
+//
+// NO recorded event at/before `tick` (the roster-derived initial state):
+// the bot is NOT listed — condition 2 needs the bot's RECORDED connect
+// tick to bracket the human's absence against, and every connect that
+// predates the rows (the discarded knife-round ones) predates every
+// recorded disconnect too — such a bot joined before any human could
+// leave, so it was never covering. A bot whose first recorded row is a
+// FUTURE connect has not joined yet (the late-join case — hidden until
+// that connect, exactly as before). Either way bots fail toward NOT
+// listed; the roster default only ever lists humans.
 //
 // Bot-ness is lib/players.js isBot (the players.is_bot flag the replay
 // meta now carries, with the synthetic 0xFF id shape as its backstop).
@@ -253,7 +276,8 @@ export function presentAt(index, roster, slot, tick) {
   if (!Number.isFinite(t)) return connectedAt(events, t);
 
   const joined = stateAt(events, t);
-  if (!joined || !joined.connected) return false; // out of the match now
+  if (!joined) return false; // no recorded join evidence at this playhead
+  if (!joined.connected) return false; // recorded disconnect → out of the match
   const rostered = Array.isArray(roster) ? roster : [];
   for (const q of rostered) {
     if (!q) continue;
