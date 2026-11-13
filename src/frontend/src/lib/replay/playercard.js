@@ -320,7 +320,8 @@ export function carriesC4(inventory) {
 //     CANCELLED it, so a cancellation ends the run with no special case;
 //   - progress = clamp((frame − start) / (end − start), 0, 1).
 //
-// The whole match stream is loaded (loadState fetches everything), so at
+// The whole stored state stream is loaded (loadState fetches everything —
+// since the pre-pistol sanitization gate it starts at round 1), so at
 // any playhead the end is known by look-ahead — including mid-run at the
 // live edge of playback. The ONE exception is a run the stream never
 // clears (the demo itself ends mid-reload): its duration is unknown, so

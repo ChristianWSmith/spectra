@@ -222,7 +222,8 @@ export async function fetchStateMeta(matchId) {
   return res.json();
 }
 
-// fetchState pulls the raw state stream (whole match by default).
+// fetchState pulls the raw state stream (the whole stored stream by
+// default — since the pre-pistol sanitization gate it starts at round 1).
 // 404 = the stream is absent → null (absent, not an error); other HTTP
 // failures throw.
 export async function fetchState(matchId, { from = 0, to = 0 } = {}) {

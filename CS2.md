@@ -286,6 +286,15 @@ at the end of the section.
   **Source** — golden-demo diag; awpy datasets.rs (2026-11-01);
   ingest renumber in `internal/extract/build.go` (2026-11-02); discard
   change verified on golden demo 2026-11-12 (roundsTotal 25 → 23).
+  **Also since 2026-11-12 (owner sanitization ruling)** — the sidecar
+  TIMELINE (position + state frames) and the VOICE stream start at the
+  first counted round's start tick as well: `extract.Parse` gates all
+  three sinks on the first counted round existing, so pre-r1 frames and
+  voice chunks are NEVER written (the replay scrubber's range is the
+  frames that exist — deleting them IS the clamp; a demo with no counted
+  round writes an empty stream). Golden demo: 136,948 → 133,599 sidecar
+  frames, voice 123,507 → 121,900 chunks. Reprocess applies it to
+  existing matches.
 
 - **MR12 regulation + MR3 overtime (round cadence, scoring, side
   switches)** — how a CS2 match is structured past round 12.
