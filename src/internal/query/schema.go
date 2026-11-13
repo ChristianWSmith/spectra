@@ -39,7 +39,7 @@ var tableNotes = map[string]string{
 
 	// M5 (this milestone).
 	"metrics":       "custom metric definitions (origin builtin|user|plugin; declarative metric grammar)",
-	"saved_queries": "named SQL console queries (unique names)",
+	"saved_queries": "named SQL console queries (unique names; each row's name is its display label and its description is the muted second line in the console list)",
 	"query_history": "SQL console run history (sql/ms/rows/ok, capped at 100 newest)",
 	"plugins":       "declarative plugin registry",
 }

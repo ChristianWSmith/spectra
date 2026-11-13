@@ -61,15 +61,53 @@ func (s *QueryService) ListSavedQueriesPage(afterName string, limit int) (*model
 	return s.st.ListSavedQueriesPage(afterName, limit)
 }
 
-func (s *QueryService) SaveQuery(name, sql string) (models.SavedQueryRow, error) {
+// SaveQuery stores a NEW saved query: name and description are BOTH
+// required (the server-side check is the one a client cannot bypass;
+// both are trimmed), SQL required as before. Run never sees either — it
+// takes raw SQL only. Duplicate names surface the store's friendly
+// "already exists" error.
+func (s *QueryService) SaveQuery(name, sql, description string) (models.SavedQueryRow, error) {
 	name = strings.TrimSpace(name)
+	description = strings.TrimSpace(description)
 	if name == "" {
 		return models.SavedQueryRow{}, errors.New("query: query name is required")
+	}
+	if description == "" {
+		return models.SavedQueryRow{}, errors.New("query: query description is required")
 	}
 	if strings.TrimSpace(sql) == "" {
 		return models.SavedQueryRow{}, errors.New("query: SQL is required")
 	}
-	return s.st.SaveQuery(name, sql)
+	return s.st.SaveQuery(name, sql, description)
+}
+
+// UpdateQuery rewrites the saved query with id (name/description/SQL —
+// same required-field validation as SaveQuery, so an update can never
+// blank either). Unknown ids report "no saved query with id"; a name
+// belonging to a DIFFERENT row reports the store's friendly uniqueness
+// error.
+func (s *QueryService) UpdateQuery(id int64, name, sql, description string) (models.SavedQueryRow, error) {
+	name = strings.TrimSpace(name)
+	description = strings.TrimSpace(description)
+	if name == "" {
+		return models.SavedQueryRow{}, errors.New("query: query name is required")
+	}
+	if description == "" {
+		return models.SavedQueryRow{}, errors.New("query: query description is required")
+	}
+	if strings.TrimSpace(sql) == "" {
+		return models.SavedQueryRow{}, errors.New("query: SQL is required")
+	}
+	row, err := s.st.UpdateQuery(models.SavedQueryRow{
+		ID: id, Name: name, Description: description, SQL: sql,
+	})
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return models.SavedQueryRow{}, fmt.Errorf("query: no saved query with id %d", id)
+		}
+		return models.SavedQueryRow{}, err
+	}
+	return row, nil
 }
 
 func (s *QueryService) DeleteQuery(id int64) error {

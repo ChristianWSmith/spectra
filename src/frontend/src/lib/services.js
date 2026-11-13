@@ -794,7 +794,13 @@ export function listSavedQueries() { return QueryService.ListSavedQueries(); }
 // no read cache: save/delete refetch the first window immediately, and a
 // cached window would only go stale between them.
 export function listSavedQueriesPage(afterName, limit) { return QueryService.ListSavedQueriesPage(afterName, limit || 0); }
-export function saveQuery(name, sql) { return QueryService.SaveQuery(name, sql); }
+// saveQuery INSERTs a new saved row; name AND description are both
+// required server-side (neither is required to Run — that path takes raw
+// SQL only). updateQuery rewrites the row with id (the console's Save
+// while tied to a loaded saved query) — same required fields, and a name
+// belonging to a different row reports the friendly uniqueness error.
+export function saveQuery(name, sql, description) { return QueryService.SaveQuery(name, sql, description); }
+export function updateQuery(id, name, sql, description) { return QueryService.UpdateQuery(id, name, sql, description); }
 export function deleteQuery(id) { return QueryService.DeleteQuery(id); }
 export function listQueryHistory(limit) { return QueryService.ListHistory(limit || 50); }
 export function clearQueryHistory() { return QueryService.ClearHistory(); }

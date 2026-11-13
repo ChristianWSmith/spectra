@@ -1403,6 +1403,37 @@ canvas.heat-canvas {
   font-weight: 600;
 }
 
+/* Saved row: the name is the primary line with its description as the
+   muted second line underneath (the Builder .bld-row-sub two-line wrap
+   pattern, kept inside the sql- prefix). .sql-saved-main is a column
+   whose min-width: 0 lets BOTH lines shrink below their content, so a
+   long name AND a long description ellipsize inside the row — the same
+   containment .sql-saved-name already had — instead of widening the row
+   past the panel edge; each line carries the full text on its title
+   tooltip. */
+.sql-saved-main {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.sql-saved-desc {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.75em;
+  color: var(--muted);
+}
+
+/* The description input rides the save bar beside the name (both are
+   required to save, neither to run) — wider than the name field so a
+   one-line purpose fits; the toolbar still wraps at narrow widths. */
+.sql-save-bar .input.sql-save-desc {
+  width: 220px;
+}
+
 .sql-save-bar .input {
   width: 130px;
   padding: 3px 8px;

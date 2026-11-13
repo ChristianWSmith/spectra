@@ -254,16 +254,22 @@ func TestSavedQueriesAndHistoryServiceFlow(t *testing.T) {
 		t.Errorf("history ok flags = %v,%v want false,true", hist[0].OK, hist[1].OK)
 	}
 
-	q, err := st.SaveQuery("kinds", "SELECT kind, COUNT(*) FROM events GROUP BY kind")
+	q, err := st.SaveQuery("kinds", "SELECT kind, COUNT(*) FROM events GROUP BY kind", "events grouped by kind")
 	if err != nil {
 		t.Fatalf("SaveQuery: %v", err)
 	}
-	if _, err := st.SaveQuery("kinds", "SELECT 1"); err == nil {
+	if q.Description != "events grouped by kind" {
+		t.Errorf("saved description = %q, want the stored one", q.Description)
+	}
+	if _, err := st.SaveQuery("kinds", "SELECT 1", "dup"); err == nil {
 		t.Error("duplicate saved name accepted")
 	}
 	list, err := st.ListSavedQueries()
 	if err != nil || len(list) != 1 || list[0].ID != q.ID {
 		t.Fatalf("list = %+v (err %v)", list, err)
+	}
+	if list[0].Description != "events grouped by kind" {
+		t.Errorf("listed description = %q, want the stored one", list[0].Description)
 	}
 	if err := st.ClearHistory(); err != nil {
 		t.Fatalf("ClearHistory: %v", err)

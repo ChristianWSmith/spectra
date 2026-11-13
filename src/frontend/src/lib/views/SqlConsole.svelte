@@ -4,6 +4,7 @@
     getSchema,
     listSavedQueriesPage,
     saveQuery,
+    updateQuery,
     deleteQuery,
     listQueryHistory,
     clearQueryHistory,
@@ -57,7 +58,13 @@
   let loadingMore = $state(false);
   let savedError = $state('');
   let saveName = $state('');
+  let saveDescription = $state('');
   let saveError = $state('');
+  // saveTarget is the SAVE TIE: {id, name} of the saved row the editor
+  // fields were loaded from (or last produced). Null = a fresh editor →
+  // Save inserts. Loading a saved row sets it; editing its SQL keeps it
+  // (no handler clears it on edit). Routing lives in saveCurrent.
+  let saveTarget = $state(null);
   // savedGen tags the current window sequence so a Load-more reply that
   // lands after a (re)fetch restart is dropped instead of interleaved;
   // non-reactive on purpose — it is not state (Library's listGen pattern).
@@ -187,10 +194,35 @@
     return s.replace(/\s+/g, ' ').trim();
   }
 
+  // loadSaved pulls a saved row into the editor AND ties Save to it:
+  // name + description fill their fields, saveTarget records the row.
+  // The tie is what makes the next Save an UPDATE of exactly this row.
+  function loadSaved(sq) {
+    sql = sq.sql;
+    saveName = sq.name;
+    saveDescription = sq.description || '';
+    saveTarget = { id: sq.id, name: sq.name };
+  }
+
+  // saveCurrent routes Save by the tie and the CURRENT name field:
+  //   tied AND the name still names an existing saved row → UPDATE the
+  //     tied row (its own name → rewrite SQL/description; a DIFFERENT
+  //     row's name → the unique constraint rejects it with the friendly
+  //     "already exists" error);
+  //   any other name (no tie, or a genuinely new name) → INSERT (a name
+  //     already taken lands on the same friendly uniqueness error).
+  // Name + description are BOTH required here and server-side; Run never
+  // sees either (it takes raw SQL only).
   async function saveCurrent() {
     saveError = '';
-    if (!saveName.trim()) {
+    const name = saveName.trim();
+    const description = saveDescription.trim();
+    if (!name) {
       saveError = 'Query name is required.';
+      return;
+    }
+    if (!description) {
+      saveError = 'Query description is required.';
       return;
     }
     if (!sql.trim()) {
@@ -198,8 +230,14 @@
       return;
     }
     try {
-      await saveQuery(saveName.trim(), sql);
-      saveName = '';
+      const named = saved.some((r) => r.name === name);
+      const row =
+        saveTarget && named
+          ? await updateQuery(saveTarget.id, name, sql, description)
+          : await saveQuery(name, sql, description);
+      // Stay tied to what was just stored: a repeat Save with this name
+      // updates it instead of colliding with itself.
+      saveTarget = { id: row.id, name: row.name };
       await refreshSaved();
     } catch (e) {
       saveError = errText(e);
@@ -210,6 +248,7 @@
     saveError = '';
     try {
       await deleteQuery(sq.id);
+      if (saveTarget && saveTarget.id === sq.id) saveTarget = null;
       await refreshSaved();
     } catch (e) {
       saveError = errText(e);
@@ -461,7 +500,15 @@
               <input
                 class="input"
                 placeholder="name…"
+                aria-label="Query name"
                 bind:value={saveName}
+                onkeydown={(e) => e.key === 'Enter' && saveCurrent()}
+              />
+              <input
+                class="input sql-save-desc"
+                placeholder="description…"
+                aria-label="Query description"
+                bind:value={saveDescription}
                 onkeydown={(e) => e.key === 'Enter' && saveCurrent()}
               />
               <button class="btn small" onclick={saveCurrent} disabled={!sql.trim()}>Save</button>
@@ -482,9 +529,14 @@
                 <button
                   class="sql-hist-load"
                   title={short(cellTitle(sq.sql), SQL_TITLE_CAP)}
-                  onclick={() => (sql = sq.sql)}
+                  onclick={() => loadSaved(sq)}
                 >
-                  <span class="sql-saved-name" title={sq.name}>{sq.name}</span>
+                  <span class="sql-saved-main">
+                    <span class="sql-saved-name" title={sq.name}>{sq.name}</span>
+                    {#if sq.description}
+                      <span class="sql-saved-desc" title={sq.description}>{sq.description}</span>
+                    {/if}
+                  </span>
                   <span class="mono sql-hist-sql">{short(truncateSql(sq.sql), 100)}</span>
                 </button>
                 <button
@@ -496,7 +548,7 @@
               </div>
             {:else}
               {#if !savedError}
-                <p class="muted" role="status">Nothing saved yet — run a statement, name it, press Save.</p>
+                <p class="muted" role="status">Nothing saved yet — run a statement, name it, describe it, press Save.</p>
               {/if}
             {/each}
           </div>
