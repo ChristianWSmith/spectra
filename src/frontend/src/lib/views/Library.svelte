@@ -740,7 +740,9 @@
          (#/library?map=&player= — the profile → library deep link), and
          each input offers suggestions drawn from the library itself
          (distinct maps / the profile list) without ever constraining
-         what may be typed. -->
+         what may be typed. The player facet carries no placeholder here:
+         SuggestInput's kind="player" default is the standard
+         "Search players..." hint (the same one Profiles wears). -->
     <div class="lib-filters" role="group" aria-label="Library filters">
       <span class="lib-filter-field">
         <label class="field-label" for="lib-filter-map">Map</label>
@@ -760,8 +762,7 @@
           id="lib-filter-player"
           inputClass="lib-filter"
           kind="player"
-          placeholder="Player name or SteamID"
-          ariaLabel="Filter by player"
+          ariaLabel="Search players"
           items={libPlayers}
           bind:value={playerFilter}
           onselect={(p) => (playerFilter = p.steamId || p.name)}

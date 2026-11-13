@@ -17,8 +17,16 @@
   // A value that matches nothing is never rejected: the input keeps its
   // text and the caller's facet keeps doing its LIKE filter — a
   // suggestion is a shortcut to an exact name, not a constraint.
+  //
+  // The hint is owned here too: a kind='player' box wears THE standard
+  // player-search hint (owner ruling — "Search players...", three ASCII
+  // periods, not the … glyph) unless the caller passes its own, so no
+  // call site re-spells it. A kind='text' box (Library's map facet) keeps
+  // passing its own placeholder as before.
   import Popover from './Popover.svelte';
   import { fmt1 } from '../fmt.js';
+
+  const PLAYER_SEARCH_HINT = 'Search players...';
 
   let {
     id = '',
@@ -43,6 +51,10 @@
   } = $props();
 
   const listId = $derived(id ? `${id}-list` : 'sg-list');
+
+  // The rendered hint: the caller's own placeholder wins; otherwise a
+  // player-kind box gets the standard hint (see the header comment).
+  const hint = $derived(placeholder || (kind === 'player' ? PLAYER_SEARCH_HINT : ''));
 
   let open = $state(false);
   let active = $state(0);
@@ -120,7 +132,7 @@
     class="input {inputClass}"
     class:active={!!value.trim()}
     type="search"
-    {placeholder}
+    placeholder={hint}
     aria-label={ariaLabel || null}
     role="combobox"
     aria-expanded={shown}

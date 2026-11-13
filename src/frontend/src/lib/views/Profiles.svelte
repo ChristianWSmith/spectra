@@ -150,7 +150,6 @@
     <SuggestInput
       id="pf-search"
       wrapClass="pf-search"
-      placeholder="Search players…"
       ariaLabel="Search players"
       items={players}
       kind="player"

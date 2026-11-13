@@ -207,12 +207,11 @@
       <h1>Player</h1>
     {/if}
     <div class="spacer"></div>
-    <label class="sr-only" for="prof-q">Find players</label>
+    <label class="sr-only" for="prof-q">Search players</label>
     <SuggestInput
       id="prof-q"
       wrapClass="prof-picker"
-      placeholder="Find players…"
-      ariaLabel="Find players"
+      ariaLabel="Search players"
       items={players}
       kind="player"
       align="end"
