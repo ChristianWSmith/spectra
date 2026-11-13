@@ -46,7 +46,7 @@ const (
 // The KindTrade row is THE trade-window rule (one owner):
 // analytics.Compute derives player_stats.trade_kills from these rows, so
 // the scoreboard Trade column, career trades, profile trade rate and the
-// successful_trades metric all follow cfg.TradeWindowS too.
+// trade_rate builtin metric all follow cfg.TradeWindowS too.
 // One kill can yield multiple rows (kinds are independent detections: the
 // first kill can also be untraded or traded per victim, a trade
 // kill's victim can themselves go untraded). Kills of a discarded round

@@ -243,8 +243,8 @@ func (s *Store) ReplaceUtility(matchID int64, rows []models.UtilityEvent) error 
 // steam IDs without a player_stats row are ignored. The extractor's
 // import-time value (hardcoded 5 s) is the seed this overwrites on every
 // Compute, which is what makes the column — and every consumer of it
-// (scoreboard Trade, career trades, profile trade rate, the
-// successful_trades metric, Combat TradeRate) — follow
+// (scoreboard Trade, career trades, profile trade rate, the trade_rate
+// builtin metric, Combat TradeRate) — follow
 // analysis_config.TradeWindowS.
 func (s *Store) ReplaceTradeKills(matchID int64, counts map[string]int) error {
 	const op = "store: replace trade kills"

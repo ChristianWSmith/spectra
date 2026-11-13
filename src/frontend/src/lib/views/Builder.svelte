@@ -23,7 +23,9 @@
   const PINS_KEY = 'spectra:pinned-metrics';
 
   const PREVIEW_LIMIT = 200;
-  const EXAMPLE = "from events: count(where kind='kill' and assisted_flash)";
+  // Placeholder shows the current grammar: a single source, or a comma
+  // list the engine joins (doc.go — the join extension).
+  const EXAMPLE = 'from player_stats, match_trade_opps: ratio(sum(trade_kills), sum(opps))';
 
   // Window size for the metric list: one page per fetch, one more per
   // Load-more click (backend default store.ListMetricsPageSize is the
@@ -76,6 +78,7 @@
       id: 0,
       name: '',
       title: '',
+      shortName: '',
       expr: '',
       groupBy: '',
       format: '',
@@ -90,6 +93,7 @@
     return JSON.stringify({
       name: f.name,
       title: f.title,
+      shortName: f.shortName,
       expr: f.expr,
       groupBy: f.groupBy,
       format: f.format,
@@ -267,6 +271,7 @@
       id: m.id,
       name: m.name,
       title: m.title || '',
+      shortName: m.shortName || '',
       expr: m.expr,
       groupBy: m.groupBy || '',
       format: m.format || '',
@@ -336,6 +341,7 @@
         id: readOnly ? 0 : form.id,
         name,
         title: form.title.trim() || name,
+        shortName: form.shortName.trim(),
         expr: form.expr,
         groupBy: form.groupBy,
         format: form.format,
@@ -349,6 +355,7 @@
       form.origin = saved.origin;
       form.name = saved.name;
       form.title = saved.title;
+      form.shortName = saved.shortName;
       baseline = snapshot(form);
       await refreshList(appliedQuery);
     } catch (e) {
@@ -524,6 +531,15 @@
             <input id="bld-title" class="input" bind:value={form.title} placeholder="Display label" />
           </div>
           <div class="bld-field">
+            <label class="field-label" for="bld-short">Short name (optional)</label>
+            <input
+              id="bld-short"
+              class="input"
+              bind:value={form.shortName}
+              placeholder="Short label for narrow column headers"
+            />
+          </div>
+          <div class="bld-field">
             <label class="field-label" for="bld-group">GroupBy</label>
             <select id="bld-group" class="input" bind:value={form.groupBy}>
               <option value="">none</option>
@@ -551,7 +567,6 @@
               <option value="">none</option>
               <option value="rounds">rounds</option>
               <option value="matches">matches</option>
-              <option value="player_rounds">player_rounds</option>
             </select>
           </div>
           <div class="bld-field wide">
@@ -569,9 +584,10 @@
               placeholder={EXAMPLE}
             ></textarea>
             <p class="bld-hint mono">
-              from &lt;table&gt;: count() | sum(col) | avg(col) | ratio(a, b) | stddev(col) |
-              percentile(p, col) — tables: events, engagements, rounds, player_stats,
-              player_round_stats, round_economy, clutches, utility_events, chat
+              from &lt;table&gt;[, &lt;table&gt;…]: count() | sum(col) | avg(col) | ratio(a, b) | stddev(col) |
+              percentile(p, col) — tables: events, engagements, rounds, player_stats, player_round_stats,
+              round_economy, clutches, utility_events, chat, match_trade_opps — a comma list LEFT JOINs the
+              sources engine-side (no user ON/join syntax); denominator: rounds | matches
             </p>
             {#if exprCheck.state === 'pending'}
               <p class="bld-expr-state muted">checking…</p>

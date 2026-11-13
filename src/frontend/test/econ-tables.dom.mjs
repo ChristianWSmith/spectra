@@ -1054,6 +1054,46 @@ console.log('J. Scoreboard metric header: m5-mth cap scope, tooltip survives, so
   localStorage.removeItem('spectra:pinned-metrics');
 }
 
+// (f) The short_name display criterion at its ONLY site: a width-
+// constrained metric header renders short || title || name (the short
+// name wins), while the metric CELL keeps title || name (the tooltip
+// below is the cell's own title attribute — the criterion partitions by
+// the medium, not by a table whitelist).
+{
+  localStorage.setItem('spectra:pinned-metrics', '[8]');
+  const d = {
+    ...dataFor(13),
+    listMetrics: [
+      {
+        id: 8,
+        name: 'util_dmg',
+        title: 'Utility damage per round',
+        shortName: 'UD',
+        doc: 'Grenade damage dealt per round',
+      },
+    ],
+    previewMetric: { rows: [{ group: 'A', value: 12.5, n: 13 }] },
+  };
+  root = await showMatch(d, { routeTab: 'Scoreboard' });
+  await sleep();
+  const mth = [...root.querySelectorAll('.data-table.scoreboard thead th')].find((t) =>
+    t.classList.contains('m5-mth'),
+  );
+  const label = (mth?.querySelector('.th-sort')?.textContent || '').trim();
+  check(
+    'the width-constrained metric header renders short_name (criterion: short || title || name)',
+    label === 'UD',
+    JSON.stringify(label),
+  );
+  const cellTitle = root.querySelector('.data-table.scoreboard tbody td.m5-cell')?.getAttribute('title') || '';
+  check(
+    'the metric cell keeps title || name in its tooltip (never the short name)',
+    cellTitle.includes('Utility damage per round') && !cellTitle.includes('UD'),
+    JSON.stringify(cellTitle),
+  );
+  localStorage.removeItem('spectra:pinned-metrics');
+}
+
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 if (inst) unmount(inst);
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');

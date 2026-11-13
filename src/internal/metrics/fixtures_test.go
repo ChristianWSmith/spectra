@@ -34,14 +34,12 @@ func seededStore(t *testing.T) *store.Store {
 	return st
 }
 
-// prdFixtures maps each PRD §5.16 example query ("treat them as
-// acceptance fixtures") onto its builtin metric row (schema.sql —
-// expr/groupBy/denominator are LOCKED to the baseline seed by this table)
-// plus the hand-computed seed expectation. interpretation records how v1
-// expresses examples the frozen grammar cannot state literally (DoD:
-// "demonstrably expressible" — never silently).
-var prdFixtures = []struct {
-	prdExample     string
+// builtinSeed maps the ONE schema-seeded builtin (schema.sql —
+// name/expr/group_by/denominator/doc are LOCKED to the baseline seed by
+// this table) onto its hand-computed seed expectation. interpretation
+// records how the seeded expression states the metric (never silently —
+// the formula and any proxy/deviation live in the row's doc).
+var builtinSeed = []struct {
 	name           string
 	expr           string
 	groupBy        string
@@ -54,84 +52,28 @@ var prdFixtures = []struct {
 	wantLabels     string // expected labels joined ("" = don't assert)
 }{
 	{
-		prdExample:  "How many deaths did a player suffer without being traded?",
-		name:        "untraded_deaths",
-		expr:        "from player_round_stats: count(where deaths=1 and traded=0)",
+		name:        "trade_rate",
+		expr:        "from player_stats, match_trade_opps: ratio(sum(trade_kills), sum(opps))",
 		groupBy:     "player",
-		denominator: "rounds",
-		interpretation: "count(player_round_stats rows deaths=1 traded=0) / count(rounds): per-round rate " +
-			"(×10 for the per-10-rounds display form — v1 has no scale factor, documented deviation)",
-		rows: 8, wantAll: 0.125, wantN: 72,
+		denominator: "",
+		interpretation: "trade successes / total trade opportunities over the engine-derived LEFT JOIN " +
+			"(match_id, steam_id) — a ratio, not a share, so it may exceed 100% (profile TradeRate note)",
+		// join_test.go TestJoinedAcceptanceRatio's seed math: ratio =
+		// 3i/30i = 0.1 for i ≤ 6; Grace's stored opps = 0 and Heidi's
+		// absent row both surface as Value 0 beside N.
+		rows: 8, wantValues: []float64{0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0, 0}, wantN: 3,
 		wantLabels: "Alice,Bob,Carol,Dave,Eve,Frank,Grace,Heidi",
-	},
-	{
-		prdExample:     "How often did a player successfully trade within a configurable time window?",
-		name:           "successful_trades",
-		expr:           "from player_stats: sum(trade_kills)",
-		groupBy:        "player",
-		interpretation: "sum(player_stats.trade_kills) per player; the window is the configured trade window (M1/M3 rule)",
-		rows:           8,
-		wantValues:     []float64{3, 6, 9, 12, 15, 18, 21, 24},
-		wantN:          3,
-		wantLabels:     "Alice,Bob,Carol,Dave,Eve,Frank,Grace,Heidi",
-	},
-	{
-		prdExample: "How many kills followed a teammate's flash?",
-		name:       "flash_assisted_kills",
-		expr:       "from events: count(where kind='kill' and assisted_flash)",
-		groupBy:    "player",
-		interpretation: "proxy: kill rows flagged assisted_flash (flash assist landed on the victim); " +
-			"the specific teammate throw is not linked per kill (cross-event join → v2)",
-		rows: 8,
-		// P1, P4 (odd rounds) and P5, P8 (even rounds) land the i∈{0,3}
-		// flash-assisted kills: 12/round-parity × 3 matches = 36 each.
-		wantValues: []float64{36, 0, 0, 36, 36, 0, 0, 36},
-	},
-	{
-		prdExample:  "How much utility value was spent per round?",
-		name:        "utility_value_per_round",
-		expr:        "from round_economy: sum(equip_value)",
-		denominator: "rounds",
-		interpretation: "sum(round_economy.equip_value)/count(rounds) = average both-sides buy value per round " +
-			"(equip_value includes utility; itemized utility-only spend is not extracted — proxy)",
-		rows: 1, wantAll: 4500, wantN: 144,
-	},
-	{
-		prdExample: "How often did a team convert a man advantage?",
-		name:       "round_win_rate",
-		expr:       "from rounds: ratio(count(where winner='ct'), count())",
-		interpretation: "man-advantage tagging needs per-tick alive counts (not stored in v1); " +
-			"closest expressible definition = CT round win share",
-		rows: 1, wantAll: 0.5, wantN: 72,
-	},
-	{
-		prdExample: "How frequently did a player die while isolated from teammates?",
-		name:       "isolated_deaths",
-		expr:       "from player_round_stats: ratio(count(where deaths=1 and traded=0), count(where deaths=1))",
-		groupBy:    "player",
-		interpretation: "spatial isolation lives in position sidecars; v1 SQL proxy = share of a player's " +
-			"deaths that went untraded",
-		rows: 8, wantAll: 0.5, wantN: 72,
-		wantLabels: "Alice,Bob,Carol,Dave,Eve,Frank,Grace,Heidi",
-	},
-	{
-		prdExample: "What percentage of opening kills resulted in round wins?",
-		name:       "opening_kill_round_win_pct",
-		expr:       "from engagements: ratio(count(where kind='opening' and won_by='ct'), count(where kind='opening'))",
-		interpretation: "rounds.first_kill_steam carries no side, so opener→round-winner is not a single-source " +
-			"join in v1; proxy = share of opening engagements won by CT",
-		rows: 1, wantAll: 0.5, wantN: 216,
 	},
 }
 
-// TestPRDFixtureMetrics is the acceptance test: every PRD §5.16
-// example must (a) exist as a builtin whose seeded expr matches this
-// table, (b) compile, (c) return the hand-computed seed values with labels
-// and sample sizes, and (d) carry formula documentation.
-func TestPRDFixtureMetrics(t *testing.T) {
+// TestBuiltinSeedMetrics is the acceptance test: the schema-seeded
+// builtin must (a) exist with a seeded expr matching this table, (b)
+// compile, (c) return the hand-computed seed values with labels and
+// sample sizes, and (d) carry formula documentation.
+func TestBuiltinSeedMetrics(t *testing.T) {
 	st := seededStore(t)
 
-	// (a) Lock the schema-seeded builtin rows to this table.
+	// (a) Lock the schema-seeded builtin row(s) to this table.
 	res, err := st.RunReadOnly(
 		`SELECT name, expr, group_by, denominator, doc FROM metrics WHERE origin = 'builtin' ORDER BY name`,
 		nil, 100, 5000,
@@ -143,10 +85,10 @@ func TestPRDFixtureMetrics(t *testing.T) {
 	for _, r := range res.Rows {
 		got[r[0].(string)] = [4]string{r[1].(string), r[2].(string), r[3].(string), r[4].(string)}
 	}
-	if len(got) != len(prdFixtures) {
-		t.Errorf("builtin count = %d, want %d", len(got), len(prdFixtures))
+	if len(got) != len(builtinSeed) {
+		t.Errorf("builtin count = %d, want %d", len(got), len(builtinSeed))
 	}
-	for _, f := range prdFixtures {
+	for _, f := range builtinSeed {
 		row, ok := got[f.name]
 		if !ok {
 			t.Errorf("builtin %q missing from the schema seed", f.name)
@@ -157,12 +99,12 @@ func TestPRDFixtureMetrics(t *testing.T) {
 				f.name, row[0], row[1], row[2], f.expr, f.groupBy, f.denominator)
 		}
 		if row[3] == "" {
-			t.Errorf("builtin %q has empty doc (PRD §5.16 formula documentation)", f.name)
+			t.Errorf("builtin %q has empty doc (every metric documents its formula)", f.name)
 		}
 	}
 
 	// (b)+(c)+(d) compile → run → assert values, sample sizes, labels.
-	for _, f := range prdFixtures {
+	for _, f := range builtinSeed {
 		t.Run(f.name, func(t *testing.T) {
 			if perr := Validate(f.expr, f.groupBy); perr != nil {
 				t.Fatalf("Validate: %v", perr)

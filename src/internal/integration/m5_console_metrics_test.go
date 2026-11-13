@@ -42,8 +42,8 @@ func openSeededLibrary(t *testing.T) *store.Store {
 	return st
 }
 
-// TestM5BuiltinMetricsPreview: every schema-seeded builtin (the seven
-// PRD §5.16 acceptance fixtures) compiles and runs on a fresh library —
+// TestM5BuiltinMetricsPreview: the schema-seeded builtin (trade rate —
+// the single seeded metric) compiles and runs on a fresh library —
 // the DoD "demonstrably expressible" loop end to end.
 func TestM5BuiltinMetricsPreview(t *testing.T) {
 	st := openSeededLibrary(t)
@@ -54,8 +54,8 @@ func TestM5BuiltinMetricsPreview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list builtins: %v", err)
 	}
-	if len(res.Rows) != 7 {
-		t.Fatalf("builtins = %d, want 7", len(res.Rows))
+	if len(res.Rows) != 1 {
+		t.Fatalf("builtins = %d, want 1", len(res.Rows))
 	}
 	for _, r := range res.Rows {
 		name, expr, groupBy, denom := r[0].(string), r[1].(string), r[2].(string), r[3].(string)

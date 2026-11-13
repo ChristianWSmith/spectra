@@ -14,12 +14,12 @@ import (
 // The pragma order below IS the schema.sql column order — drift breaks
 // the plugin writer's explicit INSERT list.
 var metricColumnsContract = []string{
-	"id", "name", "title", "expr", "group_by", "format", "doc", "origin",
+	"id", "name", "title", "short_name", "expr", "group_by", "format", "doc", "origin",
 	"plugin_id", "denominator", "created_at",
 }
 
 // TestMetricsSchemaFreshOpen: a fresh Open creates the M5 tables and
-// seeds the seven builtin metrics; a second Open re-applies the baseline
+// seeds the single builtin metric; a second Open re-applies the baseline
 // as a no-op — the seed INSERT is idempotent, so no builtin rows are
 // duplicated — and the metrics column contract plus the builtin set still
 // hold.
@@ -77,21 +77,18 @@ func TestMetricsSchemaFreshOpen(t *testing.T) {
 		}
 	}
 
-	// The seven builtins, names + doc present — still exactly seven
+	// The single builtin, name + doc present — still exactly one
 	// AFTER the reopen, so the baseline's seed did not duplicate rows
 	// (values validated by internal/metrics fixture tests).
 	list, err := s2.ListMetrics()
 	if err != nil {
 		t.Fatalf("ListMetrics: %v", err)
 	}
-	if len(list) != 7 {
-		t.Fatalf("builtin count after reopen = %d, want 7 (no duplicate seed rows)", len(list))
+	if len(list) != 1 {
+		t.Fatalf("builtin count after reopen = %d, want 1 (no duplicate seed rows)", len(list))
 	}
 	want := map[string]bool{
-		"untraded_deaths": true, "successful_trades": true,
-		"flash_assisted_kills": true, "utility_value_per_round": true,
-		"round_win_rate": true, "isolated_deaths": true,
-		"opening_kill_round_win_pct": true,
+		"trade_rate": true,
 	}
 	for _, m := range list {
 		if m.Origin != "builtin" {
@@ -102,6 +99,9 @@ func TestMetricsSchemaFreshOpen(t *testing.T) {
 		}
 		if m.Doc == "" {
 			t.Errorf("builtin %q has empty doc", m.Name)
+		}
+		if m.ShortName != "" {
+			t.Errorf("builtin %q short_name = %q, want empty (the seed omits the column — DEFAULT '')", m.Name, m.ShortName)
 		}
 		if !strings.HasPrefix(m.Expr, "from ") {
 			t.Errorf("builtin %q expr %q missing source clause", m.Name, m.Expr)
@@ -115,7 +115,7 @@ func TestMetricCRUD(t *testing.T) {
 	s := openMem(t)
 
 	created, err := s.CreateMetric(models.MetricRow{
-		Name: "my_rate", Title: "My rate", Expr: "from events: count()",
+		Name: "my_rate", Title: "My rate", ShortName: "MR", Expr: "from events: count()",
 		GroupBy: "player", Format: "int", Doc: "d", Origin: "user",
 	})
 	if err != nil {
@@ -124,10 +124,13 @@ func TestMetricCRUD(t *testing.T) {
 	if created.ID == 0 || created.CreatedAt.IsZero() {
 		t.Fatalf("created row = %+v, want id + created_at set", created)
 	}
+	if created.ShortName != "MR" {
+		t.Fatalf("created short_name = %q, want %q (round-trip through the new column)", created.ShortName, "MR")
+	}
 
 	// Uniqueness across ALL origins: colliding with a builtin is rejected
 	// with the friendly message (SaveMetric's builtin-collision rule).
-	if _, err := s.CreateMetric(models.MetricRow{Name: "round_win_rate", Expr: "from rounds: count()", Origin: "user"}); err == nil || !strings.Contains(err.Error(), "already exists") {
+	if _, err := s.CreateMetric(models.MetricRow{Name: "trade_rate", Expr: "from rounds: count()", Origin: "user"}); err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Errorf("builtin-name collision err = %v, want friendly uniqueness error", err)
 	}
 	if _, err := s.CreateMetric(models.MetricRow{Name: "my_rate", Expr: "from events: count()", Origin: "user"}); err == nil || !strings.Contains(err.Error(), "already exists") {
@@ -139,22 +142,22 @@ func TestMetricCRUD(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListMetrics: %v", err)
 	}
-	if len(all) != 8 {
-		t.Fatalf("list len = %d, want 8 (7 builtins + my_rate)", len(all))
+	if len(all) != 2 {
+		t.Fatalf("list len = %d, want 2 (1 builtin + my_rate)", len(all))
 	}
-	if all[0].Origin != "builtin" || all[7].Name != "my_rate" || all[7].Origin != "user" {
-		t.Fatalf("list order wrong: first = %s/%s, last = %s/%s", all[0].Origin, all[0].Name, all[7].Origin, all[7].Name)
+	if all[0].Origin != "builtin" || all[1].Name != "my_rate" || all[1].Origin != "user" {
+		t.Fatalf("list order wrong: first = %s/%s, last = %s/%s", all[0].Origin, all[0].Name, all[1].Origin, all[1].Name)
 	}
 
 	// Update user metric.
 	updated, err := s.UpdateMetric(models.MetricRow{
-		ID: created.ID, Name: "my_rate", Title: "Renamed", Expr: "from rounds: count()",
+		ID: created.ID, Name: "my_rate", Title: "Renamed", ShortName: "MR2", Expr: "from rounds: count()",
 		GroupBy: "round", Origin: "user",
 	})
 	if err != nil {
 		t.Fatalf("UpdateMetric: %v", err)
 	}
-	if updated.Title != "Renamed" || updated.Expr != "from rounds: count()" {
+	if updated.Title != "Renamed" || updated.Expr != "from rounds: count()" || updated.ShortName != "MR2" {
 		t.Fatalf("updated = %+v", updated)
 	}
 
@@ -183,6 +186,9 @@ func TestMetricCRUD(t *testing.T) {
 	}
 	if pluginMetric.ID == 0 {
 		t.Fatal("plugin metric row missing from ListMetrics")
+	}
+	if pluginMetric.ShortName != "" {
+		t.Errorf("plugin metric short_name = %q, want empty (ReplacePluginMetrics omits the column — DEFAULT '')", pluginMetric.ShortName)
 	}
 	if _, err := s.UpdateMetric(models.MetricRow{ID: pluginMetric.ID, Name: "hijack", Expr: "from events: count()"}); err == nil || !strings.Contains(err.Error(), "cannot be modified") {
 		t.Errorf("plugin update err = %v, want immutability error", err)
@@ -302,9 +308,9 @@ func filterMetricRef(rows []models.MetricRow, query string) []models.MetricRow {
 	return out
 }
 
-// TestListMetricsPageWindowsTileListOrder: 240 definitions (7
-// schema-seeded builtins + 230 user + 3 plugin) must tile into
-// 100/100/40 windows that concatenate to ListMetrics' exact order, every
+// TestListMetricsPageWindowsTileListOrder: 234 definitions (1
+// schema-seeded builtin + 230 user + 3 plugin) must tile into
+// 100/100/34 windows that concatenate to ListMetrics' exact order, every
 // id exactly once, with each origin group CONTIGUOUS across window
 // boundaries — the Builder renders its Builtins/Yours/Plugins headers
 // from those runs, so a boundary splitting a group must not reorder rows.
@@ -322,12 +328,12 @@ func TestListMetricsPageWindowsTileListOrder(t *testing.T) {
 	}
 
 	ref := metricRowsRef(t, s)
-	if len(ref) != 240 {
-		t.Fatalf("reference list = %d rows, want 240 (7 builtins + 230 user + 3 plugin)", len(ref))
+	if len(ref) != 234 {
+		t.Fatalf("reference list = %d rows, want 234 (1 builtin + 230 user + 3 plugin)", len(ref))
 	}
 	sizes, got := walkMetricPage(t, s, "", 0, ListMetricsPageSize)
-	if len(sizes) != 3 || sizes[0] != 100 || sizes[1] != 100 || sizes[2] != 40 {
-		t.Errorf("window sizes = %v, want [100 100 40]", sizes)
+	if len(sizes) != 3 || sizes[0] != 100 || sizes[1] != 100 || sizes[2] != 34 {
+		t.Errorf("window sizes = %v, want [100 100 34]", sizes)
 	}
 	if !sameIDs(metricIDs(got), metricIDs(ref)) {
 		t.Errorf("paged ids diverge from the ListMetrics reference order")
@@ -355,12 +361,12 @@ func TestListMetricsPageWindowsTileListOrder(t *testing.T) {
 }
 
 // TestListMetricsPageWindowBoundaries pins the exact boundary: 100 rows
-// (7 builtins + 93 users) is ONE window with HasNext false (the limit+1
+// (1 builtin + 99 users) is ONE window with HasNext false (the limit+1
 // probe found no row), 101 rows splits 100/1 with HasNext flipping
 // correctly, and limit 0 selects the default window size.
 func TestListMetricsPageWindowBoundaries(t *testing.T) {
 	s := openMem(t)
-	for i := range 93 {
+	for i := range 99 {
 		seedUserMetric(t, s, fmt.Sprintf("b%03d", i), "")
 	}
 
@@ -373,7 +379,7 @@ func TestListMetricsPageWindowBoundaries(t *testing.T) {
 	}
 
 	// The 101st row: the first window now reports a successor.
-	seedUserMetric(t, s, "b093", "")
+	seedUserMetric(t, s, "b099", "")
 	ref := metricIDs(metricRowsRef(t, s))
 	if len(ref) != 101 {
 		t.Fatalf("reference = %d rows, want 101", len(ref))
@@ -410,18 +416,18 @@ func TestListMetricsPageCursorPositions(t *testing.T) {
 	for i := range 250 {
 		seedUserMetric(t, s, fmt.Sprintf("c%03d", i), "")
 	}
-	ref := metricIDs(metricRowsRef(t, s)) // 7 builtins + 250 users
+	ref := metricIDs(metricRowsRef(t, s)) // 1 builtin + 250 users
 
-	// Cursor at the 100th row in order → the remaining 157.
+	// Cursor at the 100th row in order → the remaining 151.
 	page, err := s.ListMetricsPage("", ref[99], 200)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(mid): %v", err)
 	}
-	if len(page.Rows) != 157 || page.HasNext {
-		t.Errorf("mid cursor → %d rows, HasNext=%v; want 157, false", len(page.Rows), page.HasNext)
+	if len(page.Rows) != 151 || page.HasNext {
+		t.Errorf("mid cursor → %d rows, HasNext=%v; want 151, false", len(page.Rows), page.HasNext)
 	}
 	if !sameIDs(metricIDs(page.Rows), ref[100:]) {
-		t.Errorf("mid cursor rows = %v…, want the 157 ids after the cursor", metricIDs(page.Rows)[:3])
+		t.Errorf("mid cursor rows = %v…, want the 151 ids after the cursor", metricIDs(page.Rows)[:3])
 	}
 
 	// Cursor at the last row → an empty window, no successor.

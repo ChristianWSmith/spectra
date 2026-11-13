@@ -16,7 +16,7 @@ import (
 // all of it — the read-only console session never reaches these methods.
 
 // metricColumns is the full metrics column list in scan order.
-const metricColumns = `id, name, title, expr, group_by, format, doc, origin,
+const metricColumns = `id, name, title, short_name, expr, group_by, format, doc, origin,
 	plugin_id, denominator, created_at`
 
 // scanMetric reads one metrics row (created_at is nullable → zero time on
@@ -27,7 +27,7 @@ func scanMetric(row interface{ Scan(...any) error }) (models.MetricRow, error) {
 		createdAt sql.NullTime
 	)
 	err := row.Scan(
-		&m.ID, &m.Name, &m.Title, &m.Expr, &m.GroupBy, &m.Format, &m.Doc,
+		&m.ID, &m.Name, &m.Title, &m.ShortName, &m.Expr, &m.GroupBy, &m.Format, &m.Doc,
 		&m.Origin, &m.PluginID, &m.Denominator, &createdAt,
 	)
 	if err != nil {
@@ -78,9 +78,9 @@ const (
 	// ListMetricsPageSize is the default window (the Builder's first
 	// window and every "Load more" click fetches one of these). It is
 	// deliberately smaller than the library list's 200: the left rail is
-	// narrow, rows are two lines tall, and a realistic catalog (7
-	// builtins + user + plugin definitions) fits one window — so the
-	// window bound only matters for a pathological catalog, where it
+	// narrow, rows are two lines tall, and a realistic catalog (the
+	// seeded builtin + user + plugin definitions) fits one window — so
+	// the window bound only matters for a pathological catalog, where it
 	// still keeps the scan and the IPC payload bounded.
 	ListMetricsPageSize = 100
 	// ListMetricsPageMaxRows is the largest window any caller may ask
@@ -212,9 +212,9 @@ func (s *Store) GetMetric(id int64) (models.MetricRow, error) {
 // uniqueness error — API saves can never shadow a builtin.
 func (s *Store) CreateMetric(m models.MetricRow) (models.MetricRow, error) {
 	res, err := s.db.Exec(
-		`INSERT INTO metrics (name, title, expr, group_by, format, doc, origin, plugin_id, denominator, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		scrub(m.Name), scrub(m.Title), scrub(m.Expr), scrub(m.GroupBy),
+		`INSERT INTO metrics (name, title, short_name, expr, group_by, format, doc, origin, plugin_id, denominator, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		scrub(m.Name), scrub(m.Title), scrub(m.ShortName), scrub(m.Expr), scrub(m.GroupBy),
 		scrub(m.Format), scrub(m.Doc), scrub(m.Origin), scrub(m.PluginID),
 		scrub(m.Denominator), time.Now(),
 	)
@@ -243,9 +243,9 @@ func (s *Store) UpdateMetric(m models.MetricRow) (models.MetricRow, error) {
 		return models.MetricRow{}, fmt.Errorf("store: metric %q is origin %s and cannot be modified", existing.Name, existing.Origin)
 	}
 	if _, err := s.db.Exec(
-		`UPDATE metrics SET name = ?, title = ?, expr = ?, group_by = ?, format = ?,
+		`UPDATE metrics SET name = ?, title = ?, short_name = ?, expr = ?, group_by = ?, format = ?,
 			doc = ?, plugin_id = ?, denominator = ? WHERE id = ?`,
-		scrub(m.Name), scrub(m.Title), scrub(m.Expr), scrub(m.GroupBy),
+		scrub(m.Name), scrub(m.Title), scrub(m.ShortName), scrub(m.Expr), scrub(m.GroupBy),
 		scrub(m.Format), scrub(m.Doc), scrub(m.PluginID), scrub(m.Denominator), m.ID,
 	); err != nil {
 		if isUniqueErr(err) {

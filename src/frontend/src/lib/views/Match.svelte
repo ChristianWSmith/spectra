@@ -985,9 +985,13 @@
                   onclick={() => toggleSort(col.key)}
                 />
               {/each}
+              <!-- Width-constrained column header (the .m5-mth cap): THE
+                   short_name display criterion — short || title || name.
+                   Every other metric display (cell tooltip, unpin label,
+                   Reports, Builder rows, palette) reads title || name. -->
               {#each metricCols as mc (mc.def.id)}
                 <SortTh
-                  label={mc.def.title || mc.def.name}
+                  label={mc.def.shortName || mc.def.title || mc.def.name}
                   cls="num def m5-mth"
                   title="{mc.def.doc || mc.def.name}{mc.error ? ` — couldn’t calculate: ${mc.error}` : ''}"
                   active={sortKey === metricSortKey(mc.def.id)}
