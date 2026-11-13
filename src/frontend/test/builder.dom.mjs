@@ -247,13 +247,16 @@ const headersOf = (r) =>
 const rowNamed = (r, name) =>
   rowsOf(r).find((x) => x.querySelector('.bld-row-sub .mono')?.textContent.trim() === name);
 const toggle = (r, label) =>
-  [...r.querySelectorAll('label.filt-check')].find((l) => l.textContent.trim() === label)
-    ?.querySelector('input');
-const setCheck = (input, v) => {
-  input.checked = v;
-  input.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
-};
+  [...r.querySelectorAll('button.bld-src')].find((b) => b.textContent.trim() === label);
+// The source toggles are BUTTONS now (btn small bld-src — the Combat
+// Clutches won/lost pattern): state rides aria-pressed and a click flips
+// it. setToggle keeps the old setCheck semantics — an ABSOLUTE value,
+// clicking only when the current pressed state differs.
+const pressed = (b) => b?.getAttribute('aria-pressed') === 'true';
 const click = (el) => el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+const setToggle = (btn, v) => {
+  if (btn && pressed(btn) !== v) click(btn);
+};
 const type = (el, value) => {
   el.value = value;
   el.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
@@ -269,10 +272,10 @@ check(
   JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'mine', 0, 100]),
   JSON.stringify(pageCalls[0]),
 );
-const cbBuiltin = toggle(r, 'Built-in');
-const cbMine = toggle(r, 'My metrics');
-check('the Built-in toggle starts unchecked', !!cbBuiltin && !cbBuiltin.checked);
-check('the My metrics toggle starts checked', !!cbMine && cbMine.checked);
+const tgBuiltin = toggle(r, 'Built-in');
+const tgMine = toggle(r, 'My metrics');
+check('the Built-in toggle starts unchecked', !!tgBuiltin && !pressed(tgBuiltin));
+check('the My metrics toggle starts checked', !!tgMine && pressed(tgMine));
 check(
   'the rendered list is the mine partition (no builtin row)',
   JSON.stringify(namesOf(r)) === JSON.stringify(['adr_avg', 'my_kd', 'plug_stat']),
@@ -291,7 +294,7 @@ check(
 console.log('B. toggling Built-in ON restarts the keyset window at cursor 0 (both sources)');
 services.invalidate(); // same-key windows are cached — record this window fresh
 pageCalls.length = 0;
-setCheck(cbBuiltin, true);
+setToggle(tgBuiltin, true);
 await sleep(DEBOUNCE);
 check(
   'the toggle restarts the window: (query "", filter "", cursor 0, 100)',
@@ -308,7 +311,7 @@ check(
 console.log('C. Built-in only → both off (empty list is legal) → back to mine');
 services.invalidate();
 pageCalls.length = 0;
-setCheck(cbMine, false);
+setToggle(tgMine, false);
 await sleep(DEBOUNCE);
 check(
   'mine OFF → (query "", filter "builtin", cursor 0, 100)',
@@ -324,7 +327,7 @@ check(
 );
 services.invalidate();
 pageCalls.length = 0;
-setCheck(cbBuiltin, false);
+setToggle(tgBuiltin, false);
 await sleep(DEBOUNCE);
 check(
   'both off → (query "", filter "none", cursor 0, 100) — a legal empty read',
@@ -340,7 +343,7 @@ check(
 );
 services.invalidate();
 pageCalls.length = 0;
-setCheck(cbMine, true);
+setToggle(tgMine, true);
 await sleep(DEBOUNCE);
 check(
   'mine back ON → (query "", filter "mine", cursor 0, 100) — cursor reset again',
@@ -356,7 +359,7 @@ check(
 console.log('D. built-in immutability: the builtin row exposes no edit and no delete control');
 services.invalidate();
 pageCalls.length = 0;
-setCheck(cbBuiltin, true); // both on: builtin + user rows side by side
+setToggle(tgBuiltin, true); // both on: builtin + user rows side by side
 await sleep(DEBOUNCE);
 check(
   'both on → (query "", filter "", cursor 0, 100)',
@@ -492,7 +495,7 @@ console.log('H. the toggles are view-local registry state (restore, then reset t
 {
   // Leave a DISTINCT toggle state (Built-in ON, My metrics OFF) behind.
   services.invalidate();
-  setCheck(cbMine, false);
+  setToggle(tgMine, false);
   await sleep(DEBOUNCE);
   check(
     'the parting state is Built-in only',
@@ -501,12 +504,12 @@ console.log('H. the toggles are view-local registry state (restore, then reset t
     JSON.stringify(pageCalls[pageCalls.length - 1]) + ' rows=' + JSON.stringify(namesOf(r)),
   );
   r = await mountBuilder(); // unmount → remount, registry intact
-  const cbB2 = toggle(r, 'Built-in');
-  const cbM2 = toggle(r, 'My metrics');
+  const tgB2 = toggle(r, 'Built-in');
+  const tgM2 = toggle(r, 'My metrics');
   check(
     'unmount → remount restores the toggles (Built-in ON, My metrics OFF)',
-    !!cbB2 && cbB2.checked && !!cbM2 && !cbM2.checked,
-    `builtin=${cbB2 && cbB2.checked} mine=${cbM2 && cbM2.checked}`,
+    !!tgB2 && pressed(tgB2) && !!tgM2 && !pressed(tgM2),
+    `builtin=${tgB2 && pressed(tgB2)} mine=${tgM2 && pressed(tgM2)}`,
   );
   check(
     '…and the restored view shows the restored partition',
@@ -515,12 +518,12 @@ console.log('H. the toggles are view-local registry state (restore, then reset t
   );
   viewstate.resetViewState();
   r = await mountBuilder();
-  const cbB3 = toggle(r, 'Built-in');
-  const cbM3 = toggle(r, 'My metrics');
+  const tgB3 = toggle(r, 'Built-in');
+  const tgM3 = toggle(r, 'My metrics');
   check(
     'resetViewState() → the next mount is back to the defaults (OFF / ON)',
-    !!cbB3 && !cbB3.checked && !!cbM3 && cbM3.checked,
-    `builtin=${cbB3 && cbB3.checked} mine=${cbM3 && cbM3.checked}`,
+    !!tgB3 && !pressed(tgB3) && !!tgM3 && pressed(tgM3),
+    `builtin=${tgB3 && pressed(tgB3)} mine=${tgM3 && pressed(tgM3)}`,
   );
   check(
     '…and the default view is the mine partition again',

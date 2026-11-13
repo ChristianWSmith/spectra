@@ -561,16 +561,22 @@
            effect reads query + originFilter), server-side partition
            (store.ListMetricsPage — never a client-side slice of a page
            window). Built-in defaults OFF, My metrics ON; both off is
-           legal and leaves the empty list below. -->
+           legal and leaves the empty list below. Toggle BUTTONS — the
+           Combat Clutches won/lost pattern (btn small + aria-pressed,
+           class:active paints the on state). -->
       <div class="toolbar" role="group" aria-label="Metric sources">
-        <label class="filt-check">
-          <input type="checkbox" bind:checked={builtin} />
-          <span>Built-in</span>
-        </label>
-        <label class="filt-check">
-          <input type="checkbox" bind:checked={mine} />
-          <span>My metrics</span>
-        </label>
+        <button
+          class="btn small bld-src"
+          class:active={builtin}
+          aria-pressed={builtin}
+          onclick={() => (builtin = !builtin)}
+        >Built-in</button>
+        <button
+          class="btn small bld-src"
+          class:active={mine}
+          aria-pressed={mine}
+          onclick={() => (mine = !mine)}
+        >My metrics</button>
       </div>
       {#if metrics.length === 0 && !listError}
         {#if loading}
