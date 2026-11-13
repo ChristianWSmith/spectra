@@ -1148,6 +1148,30 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // when the icon map changes, never per frame.
   const tintCache = new Map();
 
+  // --- radar layer cache (the frame-time study's top-ranked candidate) ------
+  // drawRadar re-resamples the ~2048 px radar PNG at imageSmoothingQuality
+  // 'high' on EVERY frame — including the common cases where nothing about
+  // the layer changed (free-camera playback, paused redraws, scrub bursts).
+  // The cache keeps ONE offscreen canvas holding the last-rendered radar
+  // LAYER (the clearRect + panels/label pixels — nothing painted above it)
+  // plus the context residue drawRadar left, keyed by everything those
+  // pixels depend on (radarLayerKey below, by drawRadar's home). A key
+  // match BLITS the cached raster instead of re-running the path; any key
+  // change re-emits the full path byte-for-byte as before — the cache only
+  // ever SKIPS redundant work, never changes what is drawn. The visible
+  // canvas is what toBlob/captureStream read, and the blit writes it
+  // directly, so snapshot/clip consumers stay correct by construction.
+  // ONE canvas, resized in place when the backing store changes — never
+  // accumulated. Grid frames (no pack image — drawRadar draws nothing) are
+  // NOT cached: the grid is a few dozen strokes with no resample to save,
+  // and its readiness token ('0' per panel) can never equal a stored radar
+  // key, so a stale entry can never serve over a grid frame anyway.
+  const radarCache = { key: null, canvas: null, ctx: null, residue: null, dead: false };
+  // packEpoch — bumped by reproject() (THE panel rebuild: setPack, resize
+  // and setData all funnel through fit() → reproject), the cache's
+  // "which pack / images / panel geometry" identity component.
+  let packEpoch = 0;
+
   // Camera: center of view in image-pixel space + zoom multiplier over the
   // fit scale (which is recomputed on resize).
   const cam = { cx: 0, cy: 0, zoom: 1, fit: 1 };
@@ -1262,6 +1286,9 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // rebuilds the PANELS — the side-by-side layout offsets, per-panel
   // transforms and images (buildPanels).
   function reproject() {
+    packEpoch++; // the PANELS are about to be rebuilt (both branches
+    //               below) — every cached radar layer keyed on the old
+    //               ones is stale: the radar cache invalidates here.
     const b = store ? store.bounds : { minX: 0, maxX: 1024, minY: 0, maxY: 1024 };
     const spanX = Math.max(1, b.maxX - b.minX);
     const spanY = Math.max(1, b.maxY - b.minY);
@@ -2018,10 +2045,141 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     }
   }
 
+  // radarMoving — drawRadar's resample-quality motion signal: whether the
+  // camera moved beyond the settle tolerances (SMART_EPS_*) since the
+  // PREVIOUS radar draw. READ-ONLY — drawRadar records camSeen itself
+  // after painting — so the radar-cache key can ask the SAME question
+  // before deciding hit/miss without changing the answer: one predicate,
+  // two call sites (radarLayerKey + drawRadar), never a divergence.
+  // camSeen starts unset: the FIRST radar draw records without reacting
+  // (null → not moving → paints at 'high', the one-frame-stale
+  // initialisation the policy has always had).
+  function radarMoving() {
+    return (
+      camSeen.cx != null &&
+      (Math.abs(cam.cx - camSeen.cx) > SMART_EPS_CENTER ||
+        Math.abs(cam.cy - camSeen.cy) > SMART_EPS_CENTER ||
+        Math.abs(cam.zoom - camSeen.zoom) > SMART_EPS_ZOOM * Math.max(camSeen.zoom, 1e-9))
+    );
+  }
+
+  // radarLayerKey — the radar cache's key: every input the radar layer's
+  // pixels read (see the cache block by tintCache for the design).
+  //   size     — CSS size AND the device-pixel backing store (a dpr change
+  //              resizes canvas.width even when the CSS size holds)
+  //   camera   — cx, cy, zoom AND fit (the drawn scale is fit·zoom)
+  //   epoch    — packEpoch: the panels' identity (images, offsets,
+  //              extents — bumped by every reproject)
+  //   quality  — radarMoving()'s 'h'/'m', the smoothing policy drawRadar
+  //              applies (camSeen only advances inside drawRadar, so this
+  //              pre-draw read is exactly the value drawRadar would use;
+  //              a 'medium' entry is unreachable on the next frame —
+  //              camSeen == cam by then → 'h' → miss → one re-emit at
+  //              'high' → hits from then on, by design)
+  //   ready    — per-panel image-readiness token: '0' absent, '1'
+  //              complete === false (an async decode still in flight),
+  //              '2' ready — a load completing flips the token, so a
+  //              pre-load render can never be served after the image
+  //              arrives (the full path re-emits instead).
+  function radarLayerKey() {
+    let ready = '';
+    for (const p of panels) ready += !p.img ? '0' : p.img.complete === false ? '1' : '2';
+    return (
+      `${cssW}x${cssH}#${canvas.width}x${canvas.height}` +
+      `#${cam.cx},${cam.cy},${cam.zoom},${cam.fit}` +
+      `#${packEpoch}#${radarMoving() ? 'm' : 'h'}#${ready}`
+    );
+  }
+
+  // blitRadarCache — the cache HIT: clear the visible canvas and paint
+  // the cached layer back 1:1. The identity transform matters: the cache
+  // is stored in DEVICE pixels (round(cssW·dpr) wide) while ctx runs
+  // under the dpr transform, so drawing it in user space would resample
+  // by the sub-pixel rounding remainder and blur the copy. save/restore
+  // scopes the transform swap to exactly this blit.
+  function blitRadarCache() {
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, radarCache.canvas.width, radarCache.canvas.height);
+    ctx.drawImage(radarCache.canvas, 0, 0);
+    ctx.restore();
+    // …then replay the context residue the skipped path would have left —
+    // drawRadar's smoothing state plus drawLayerLabels' text/shadow/fill
+    // writes, captured VERBATIM at snapshot time (whatever they actually
+    // left, culling included — no re-derived list to drift): the layers
+    // above must see EXACTLY the state a miss would leave — a trail
+    // stroke records the fillStyle in force, hudBox captures ctx.font as
+    // its baseFont — or a hit would paint differently from a miss. The
+    // blit runs FIRST: today's radar drawImage happens before the labels
+    // paint anything, and a replayed shadowBlur could otherwise shadow it.
+    const r = radarCache.residue;
+    ctx.imageSmoothingEnabled = r.imageSmoothingEnabled;
+    ctx.imageSmoothingQuality = r.imageSmoothingQuality;
+    ctx.font = r.font;
+    ctx.textAlign = r.textAlign;
+    ctx.textBaseline = r.textBaseline;
+    ctx.fillStyle = r.fillStyle;
+    ctx.shadowColor = r.shadowColor;
+    ctx.shadowBlur = r.shadowBlur;
+  }
+
+  // snapshotRadarCache — the cache MISS store: copy the JUST-drawn radar
+  // layer into the one offscreen canvas and remember the key. draw()
+  // calls this immediately after clearRect + drawRadar, BEFORE any dynamic
+  // layer paints, so the visible canvas holds exactly the layer. The copy
+  // is device-pixel 1:1 (the cache ctx is never transformed) and starts
+  // from a full clearRect — without it, transparent layer regions would
+  // leak the previous entry's pixels through the source-over blit. The
+  // cache canvas is resized in place whenever the backing store changed —
+  // one canvas total, never accumulated. The residue capture is the
+  // complete set drawRadar/drawLayerLabels can write (the smoothing
+  // state + the labels' font/align/baseline/fill/shadow): if either grows
+  // a new state write, add it here — a missed field means a hit would
+  // diverge from a miss.
+  function snapshotRadarCache(key) {
+    if (radarCache.dead) return; // disarmed below: every draw misses (today's path)
+    if (!radarCache.ctx) {
+      try {
+        const cv = document.createElement('canvas');
+        radarCache.ctx = cv.getContext('2d');
+        if (radarCache.ctx) radarCache.canvas = cv;
+      } catch {
+        // no document / factory here (exotic host) — fall through to disarm
+      }
+      if (!radarCache.ctx) {
+        // Fail SOFT like tintedIcon: without an offscreen the cache simply
+        // never stores — every draw takes the miss path (byte-for-byte
+        // today's behavior) instead of throwing mid-frame.
+        radarCache.dead = true;
+        return;
+      }
+    }
+    if (radarCache.canvas.width !== canvas.width || radarCache.canvas.height !== canvas.height) {
+      radarCache.canvas.width = canvas.width; // assigning a size CLEARS it
+      radarCache.canvas.height = canvas.height;
+    }
+    radarCache.ctx.clearRect(0, 0, canvas.width, canvas.height);
+    radarCache.ctx.drawImage(canvas, 0, 0);
+    radarCache.residue = {
+      imageSmoothingEnabled: ctx.imageSmoothingEnabled,
+      imageSmoothingQuality: ctx.imageSmoothingQuality,
+      font: ctx.font,
+      textAlign: ctx.textAlign,
+      textBaseline: ctx.textBaseline,
+      fillStyle: ctx.fillStyle,
+      shadowColor: ctx.shadowColor,
+      shadowBlur: ctx.shadowBlur,
+    };
+    radarCache.key = key;
+  }
+
   // drawRadar — every panel's image at its side-by-side offset, then the
   // layer LABELS (multi-panel packs only — a single-layer map must look
   // exactly as it did before layers existed). Returns whether any panel
   // pixels were drawn (false → the caller draws the grid instead).
+  // (The radar LAYER cache lives in draw(): this function only runs on a
+  // cache miss, so its cost — the full-canvas resample — is paid only
+  // when something about the layer actually changed.)
   function drawRadar() {
     if (!panels.length) return false;
     const s = cam.fit * cam.zoom;
@@ -2031,17 +2189,11 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     // settled, 'medium' while it eases/moves (smart ease, follow, a
     // manual pan/zoom) — the browser's best filter is the expensive
     // resample, so a moving view pays for it only while it is actually
-    // moving. The signal is the camera's own delta since the previous
-    // radar draw, held to the SAME tolerances camConverged declares a
-    // settle (SMART_EPS_*), so a converged smart camera — and every
-    // paused frame — keeps 'high' exactly as before. camSeen starts
-    // unset: the FIRST radar draw records without reacting and paints at
-    // 'high' like it always did (one-frame-stale initialisation).
-    const moving =
-      camSeen.cx != null &&
-      (Math.abs(cam.cx - camSeen.cx) > SMART_EPS_CENTER ||
-        Math.abs(cam.cy - camSeen.cy) > SMART_EPS_CENTER ||
-        Math.abs(cam.zoom - camSeen.zoom) > SMART_EPS_ZOOM * Math.max(camSeen.zoom, 1e-9));
+    // moving. The signal is radarMoving() — the camera's own delta since
+    // the previous radar draw, held to the SAME tolerances camConverged
+    // declares a settle (SMART_EPS_*), so a converged smart camera — and
+    // every paused frame — keeps 'high' exactly as before.
+    const moving = radarMoving();
     camSeen.cx = cam.cx;
     camSeen.cy = cam.cy;
     camSeen.zoom = cam.zoom;
@@ -4241,8 +4393,21 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       if (st.followSlot == null && store && store.frames > 0) stepSmart(now);
       else smartConverged = true; // follow owns it / nothing to frame
     }
-    ctx.clearRect(0, 0, cssW, cssH);
-    if (!drawRadar()) drawGrid();
+    // RADAR LAYER CACHE: a key match blits the cached raster (the hit
+    // branch performs its own full clear in device space as part of the
+    // 1:1 blit); any miss runs the exact sequence below — today's
+    // clearRect + radar/grid — and, when radar pixels actually drew,
+    // snapshots the layer for the next draw. The key is built BEFORE
+    // drawRadar so it reads the same camera/camSeen state drawRadar
+    // would paint with.
+    const rkey = radarLayerKey();
+    if (radarCache.key === rkey) {
+      blitRadarCache();
+    } else {
+      ctx.clearRect(0, 0, cssW, cssH);
+      if (drawRadar()) snapshotRadarCache(rkey);
+      else drawGrid();
+    }
     if (store && store.frames > 0) {
       // center on the followed player before drawing the rest
       if (st.followSlot != null) {
@@ -4325,6 +4490,23 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     // canvas ops either way. The zero-size early return above draws
     // nothing and is deliberately not sampled.
     if (frameProbe.enabled) frameProbe.recordDraw(performance.now() - now);
+    // raster sync-probe — the raster-vs-DOM split (frameprobe.js documents
+    // what it measures and why the alternatives are rejected): every
+    // rasterEvery-th draw, the FIRST getImageData forces this frame's
+    // pending canvas raster to completion (flush + readback) and the
+    // SECOND re-reads with nothing pending (the readback-only floor — the
+    // probe's own cost), both recorded additively; recordFrame
+    // quarantines the ONE frame gap that carries the forced cost so the
+    // frame/draw series keep their semantics. Read-only: getImageData
+    // emits no canvas ops and changes no context state. Feature-detected:
+    // a harness context without it records nothing.
+    if (frameProbe.shouldSampleRaster() && typeof ctx.getImageData === 'function') {
+      const t0 = performance.now();
+      ctx.getImageData(0, 0, 1, 1);
+      const t1 = performance.now();
+      ctx.getImageData(0, 0, 1, 1);
+      frameProbe.recordRaster(t1 - t0, performance.now() - t1);
+    }
   }
 
   return {
