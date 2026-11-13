@@ -26,23 +26,37 @@ func newTestImporter(t *testing.T, parse func(ctx context.Context, r io.Reader, 
 // test observes the spectra:* event stream (progress points included).
 func newTestImporterEmit(t *testing.T, parse func(ctx context.Context, r io.Reader, opts extract.ParseOptions) (*models.ExtractedMatch, error), emit func(event string, data any)) (*Importer, *store.Store) {
 	t.Helper()
+	return newTestImporterWith(t, Options{Parse: parse, Emit: emit})
+}
+
+// newTestImporterN is newTestImporter with the concurrency seam set: the
+// importer reads Options.Concurrency once per claim (clamped to
+// [1, workerCount]), so n is this test's effective slot count — the same
+// lever the import_concurrency pref pulls in production.
+func newTestImporterN(t *testing.T, parse func(ctx context.Context, r io.Reader, opts extract.ParseOptions) (*models.ExtractedMatch, error), n int) (*Importer, *store.Store) {
+	t.Helper()
+	return newTestImporterWith(t, Options{Parse: parse, Concurrency: func() int { return n }})
+}
+
+// newTestImporterWith builds an Importer over an in-memory store from the
+// test's Options (Parse / Emit / CopyEnabled / Concurrency / ComputeLock
+// pass through as given) plus the import-pipeline test defaults.
+func newTestImporterWith(t *testing.T, o Options) (*Importer, *store.Store) {
+	t.Helper()
 	st, err := store.Open(":memory:")
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
 	t.Cleanup(func() { _ = st.Close() })
-	im := New(Options{
-		Store:         st,
-		Parse:         parse,
-		Emit:          emit,
-		ParserVersion: "test",
-		// Never the user's real data dir: test matches share the same
-		// numeric ids as real ones (Options doc), and copy-on-import must
-		// land in the test's own temp dir.
-		SidecarDir: t.TempDir(),
-		CopyDir:    t.TempDir(),
-	})
-	t.Cleanup(im.Shutdown)
+	o.Store = st
+	o.ParserVersion = "test"
+	// Never the user's real data dir: test matches share the same
+	// numeric ids as real ones (Options doc), and copy-on-import must
+	// land in the test's own temp dir.
+	o.SidecarDir = t.TempDir()
+	o.CopyDir = t.TempDir()
+	im := New(o)
+	t.Cleanup(im.Shutdown) // registered after st.Close → runs first (LIFO)
 	return im, st
 }
 

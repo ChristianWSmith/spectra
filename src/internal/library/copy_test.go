@@ -1,6 +1,7 @@
 package library
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"errors"
@@ -687,6 +688,71 @@ func TestAnalyzeFailureKeepsCopyAndMatch(t *testing.T) {
 	}
 	if got := im.CopyState(m.SHA256, m.Path); got != CopyStateCopied {
 		t.Errorf("CopyState after analysis failure = %q, want %q", got, CopyStateCopied)
+	}
+}
+
+// TestCopyFileConcurrentSameDst: concurrent copies of the same content
+// to the SAME destination both succeed and leave the bytes intact. Every
+// writer parks inside its first progress callback — with its OWN temp
+// file open (os.CreateTemp, unique per call) — before any byte lands;
+// under the old fixed dst+".part" temp all writers would share (and
+// truncate) one file, all but the first rename would fail ENOENT, and a
+// partial landing could pass for the real copy. BEHAVIOR pin (the
+// concurrent-copy guarantee the per-sha gate sits on top of).
+func TestCopyFileConcurrentSameDst(t *testing.T) {
+	copyDir := t.TempDir()
+	dst := filepath.Join(copyDir, "target.dem")
+	// Multi-chunk source: io.Copy reads in 32 KiB chunks, so onProgress
+	// fires mid-copy — that is where each writer parks.
+	src := filepath.Join(t.TempDir(), "src.dem")
+	big := make([]byte, 128*1024)
+	for i := range big {
+		big[i] = byte(i * 7)
+	}
+	if err := os.WriteFile(src, big, 0o644); err != nil {
+		t.Fatalf("write source: %v", err)
+	}
+
+	const copies = 4
+	parked := make(chan struct{}, copies)
+	resume := make(chan struct{})
+	errs := make(chan error, copies)
+	var wg sync.WaitGroup
+	for i := 0; i < copies; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			var once sync.Once
+			errs <- copyFile(src, dst, func(int64) {
+				once.Do(func() {
+					parked <- struct{}{}
+					<-resume
+				})
+			})
+		}()
+	}
+	// Every writer is parked with its temp open — channels, not sleeps.
+	for i := 0; i < copies; i++ {
+		select {
+		case <-parked:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("writer %d never started — concurrent copies must all reach their temp", i+1)
+		}
+	}
+	close(resume)
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Errorf("concurrent copyFile: %v, want all nil (unique temps)", err)
+		}
+	}
+	got, err := os.ReadFile(dst)
+	if err != nil {
+		t.Fatalf("read destination: %v", err)
+	}
+	if !bytes.Equal(got, big) {
+		t.Errorf("destination bytes = %d long, correct=%v, want the intact %d source bytes", len(got), bytes.Equal(got, big), len(big))
 	}
 }
 
