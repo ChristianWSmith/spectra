@@ -26,8 +26,11 @@ var ErrNotFound = errors.New("store: not found")
 const interruptedJobErr = "interrupted by restart"
 
 // childTables are the per-match child tables deleted (oldest dependency
-// first) by SaveExtracted and DeleteMatchData. All FK to matches(id).
-// voice_presence joins here too (M4): SaveExtracted clears it before a
+// first) by SaveExtracted and DeleteMatchData. All FK to matches(id)
+// except metric_values, which keys a reprocessed match's stored metric
+// rows off its match_id column without a matches FK (it REFERENCES
+// metrics(id)) and is cleared the same way. voice_presence joins here
+// too (M4): SaveExtracted clears it before a
 // reprocess's SaveVoicePresence refills it; sound_events joins with the
 // extract's other children (SaveExtracted re-inserts the rows every
 // reprocess). The voice CHUNK index is not
@@ -37,7 +40,7 @@ var childTables = []string{
 	"round_player_sides", "player_stats", "players", "teams", "warnings",
 	"round_classifications", "round_side_classes", "player_round_stats", "clutches",
 	"engagements", "utility_events", "match_trade_opps",
-	"voice_presence",
+	"voice_presence", "metric_values",
 }
 
 // Store is a SQLite-backed persistence handle. The underlying database is

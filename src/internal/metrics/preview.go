@@ -20,7 +20,8 @@ const (
 )
 
 // Def is the runtime metric handle Preview needs (the stored definition —
-// models.MetricRow — maps its Expr/GroupBy/Denominator onto this).
+// models.MetricRow — maps its Expr/Denominator onto this; GroupBy is
+// engine-side input only since the stored group_by column retired in W1).
 type Def struct {
 	Expr        string
 	GroupBy     string

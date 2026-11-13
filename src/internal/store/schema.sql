@@ -417,6 +417,48 @@ CREATE TABLE IF NOT EXISTS match_trade_opps (
 	PRIMARY KEY (match_id, steam_id)
 );
 
+-- Stored metric VALUES (owner rulings 2026-11-13): every saved metric is
+-- stored and never calculated for a saved read; a metric is always ONE
+-- number addressed to a player —
+--   match scope   → one value for this player in this match   (match_id > 0)
+--   profile scope → one value for this player's career        (match_id = 0)
+-- NO HISTORY: rows exist only for the CURRENT generation; outdated rows
+-- (either stamp behind) are DELETED by the compute pass, never retained.
+-- Stamps are INTERNAL-ONLY: the canonical read serves only rows where both
+-- stamps are live; no app surface renders a stamp. value 0 always beside n;
+-- a group the statement did not produce has NO row. steam_id has no FK — a
+-- career key does not FK to the per-match roster (player_career precedent,
+-- schema.sql:566-584). Reaching this table's shape on an existing DB is
+-- the wipe's job (pre-release: wipe + re-import, never ALTER).
+CREATE TABLE IF NOT EXISTS metric_values (
+	metric_id       INTEGER NOT NULL REFERENCES metrics(id) ON DELETE CASCADE,
+	match_id        INTEGER NOT NULL DEFAULT 0,   -- 0 = the profile (career) grain
+	steam_id        TEXT    NOT NULL,             -- the subject player (SteamID64, humans only)
+	value           REAL    NOT NULL DEFAULT 0,
+	n               INTEGER NOT NULL DEFAULT 0,   -- sample size behind the value
+	metric_version  INTEGER NOT NULL DEFAULT 0,   -- metrics.version these values were computed under (0 = never stamped = behind)
+	rule_version    INTEGER NOT NULL DEFAULT 0,   -- analysis rule generation that fed them (provenance + rules-axis staleness)
+	computed_at     DATETIME,
+	PRIMARY KEY (metric_id, match_id, steam_id),
+	CHECK (match_id >= 0)
+);
+
+-- Metric→metric dependencies (owner ruling 6): extracted from expr at save
+-- (the metric('name') ref) and stored by the referenced metric's UNIQUE
+-- name — the name IS the expression's identity; ids churn on plugin replace
+-- (ReplacePluginMetrics deletes + re-inserts), names do not. Re-derived
+-- wholesale from the CURRENT expression on every save — no edge ever points
+-- at a superseded expression (no-history model). dep_name has deliberately
+-- NO FK: a system-removed upstream (plugin disable) must leave the edge so
+-- the pass resolves-or-fails it honestly (missing upstream ⇒ dependent rows
+-- absent — never 0). metric_id FKs CASCADE. Deleting a REFERENCED metric is
+-- blocked at the API, never by the DB (plugin replace must not block).
+CREATE TABLE IF NOT EXISTS metric_deps (
+	metric_id INTEGER NOT NULL REFERENCES metrics(id) ON DELETE CASCADE,
+	dep_name  TEXT    NOT NULL,
+	PRIMARY KEY (metric_id, dep_name)
+);
+
 -- Tier 1 index pass (library-wide reads). Placed here because every table
 -- they target now exists (the baseline script runs top-to-bottom).
 --
@@ -456,6 +498,15 @@ CREATE INDEX IF NOT EXISTS idx_player_round_stats_steam ON player_round_stats(st
 CREATE INDEX IF NOT EXISTS idx_events_kind_match ON events(kind, match_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_path ON jobs(path);
 CREATE INDEX IF NOT EXISTS idx_jobs_match ON jobs(match_id);
+-- Stored metric values: match-leading serves the scoreboard/appendix read
+-- AND the childTables per-match clear; the steam_id-leading member is the
+-- career read (library-wide steam_id convention, like player_career's
+-- consumers); dep_name-leading serves the delete-block/dependents lookup.
+-- The PK's metric_id prefix already serves per-metric invalidation deletes
+-- and the sweep's per-metric outdated-row removal.
+CREATE INDEX IF NOT EXISTS idx_metric_values_match ON metric_values(match_id, metric_id);
+CREATE INDEX IF NOT EXISTS idx_metric_values_steam ON metric_values(steam_id, metric_id);
+CREATE INDEX IF NOT EXISTS idx_metric_deps_dep ON metric_deps(dep_name);
 CREATE INDEX IF NOT EXISTS idx_match_trade_opps_steam ON match_trade_opps(steam_id, match_id);
 
 CREATE TABLE IF NOT EXISTS clutches (
@@ -593,7 +644,7 @@ CREATE TABLE IF NOT EXISTS voice_presence (
 --
 -- Builtins (origin='builtin') are seeded below: exactly ONE — trade_rate
 -- (owner ruling) — with the interpretation recorded in doc.
--- internal/metrics' fixture test locks its name/expr/group_by/denominator/
+-- internal/metrics' fixture test locks its name/expr/scope/denominator/
 -- doc/count and proves it compiles and returns the hand-computed seed
 -- values under the join grammar (internal/metrics/doc.go).
 
@@ -603,12 +654,13 @@ CREATE TABLE IF NOT EXISTS metrics (
 	title TEXT NOT NULL DEFAULT '',
 	short_name TEXT NOT NULL DEFAULT '',
 	expr TEXT NOT NULL,
-	group_by TEXT NOT NULL DEFAULT '',
+	scope TEXT NOT NULL DEFAULT 'match' CHECK (scope IN ('match', 'profile')),
 	format TEXT NOT NULL DEFAULT '',
 	doc TEXT NOT NULL DEFAULT '',
 	origin TEXT NOT NULL DEFAULT 'user',
 	plugin_id TEXT NOT NULL DEFAULT '',
 	denominator TEXT NOT NULL DEFAULT '',
+	version INTEGER NOT NULL DEFAULT 1,
 	created_at DATETIME
 );
 
@@ -637,14 +689,17 @@ CREATE TABLE IF NOT EXISTS saved_queries (
 -- re-applying the baseline on every Open must not duplicate or reset it.
 -- short_name is omitted on purpose (DEFAULT ''): the builtin ships with
 -- no short name, so its scoreboard header falls back to title.
+-- scope is 'match' (the builtin's surface is the scoreboard pin; the
+-- profile's TradeRate stays the stored profile field); version is
+-- omitted (DEFAULT 1).
 -- The expr is the join-grammar shape internal/metrics/doc.go documents:
 -- the engine derives
 -- `LEFT JOIN match_trade_opps ON player_stats.match_id = match_trade_opps.match_id
 --  AND player_stats.steam_id = match_trade_opps.steam_id`.
-INSERT OR IGNORE INTO metrics (name, title, expr, group_by, format, doc, origin, denominator, created_at) VALUES
+INSERT OR IGNORE INTO metrics (name, title, expr, scope, format, doc, origin, denominator, created_at) VALUES
 ('trade_rate', 'Trade rate',
  'from player_stats, match_trade_opps: ratio(sum(trade_kills), sum(opps))',
- 'player', 'percent',
+ 'match', 'percent',
  'How often a player answered a teammate death inside the trade window. Formula: trade successes divided by total trade opportunities — sum(player_stats.trade_kills) / sum(match_trade_opps.opps) grouped by player over the joined sources, so the denominator is the trade opportunities analytics recorded for that player. It is a ratio, not a share, so the value MAY EXCEED 100% when a trade lands on a death the distance gate did not count (the same note as the profile TradeRate field). N is the player_stats rows behind the value.',
  'builtin', '', CURRENT_TIMESTAMP);
 

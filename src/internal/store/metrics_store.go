@@ -15,9 +15,10 @@ import (
 // the coordination contract in platform_store.go). The write handle owns
 // all of it — the read-only console session never reaches these methods.
 
-// metricColumns is the full metrics column list in scan order.
-const metricColumns = `id, name, title, short_name, expr, group_by, format, doc, origin,
-	plugin_id, denominator, created_at`
+// metricColumns is the full metrics column list in scan order: the DDL's
+// 13 columns in schema order, pinned by metricColumnsContract.
+const metricColumns = `id, name, title, short_name, expr, scope, format, doc, origin,
+	plugin_id, denominator, version, created_at`
 
 // scanMetric reads one metrics row (created_at is nullable → zero time on
 // NULL, which the coordination-contract DDL allows).
@@ -27,8 +28,8 @@ func scanMetric(row interface{ Scan(...any) error }) (models.MetricRow, error) {
 		createdAt sql.NullTime
 	)
 	err := row.Scan(
-		&m.ID, &m.Name, &m.Title, &m.ShortName, &m.Expr, &m.GroupBy, &m.Format, &m.Doc,
-		&m.Origin, &m.PluginID, &m.Denominator, &createdAt,
+		&m.ID, &m.Name, &m.Title, &m.ShortName, &m.Expr, &m.Scope, &m.Format, &m.Doc,
+		&m.Origin, &m.PluginID, &m.Denominator, &m.Version, &createdAt,
 	)
 	if err != nil {
 		return models.MetricRow{}, err
@@ -209,12 +210,20 @@ func (s *Store) GetMetric(id int64) (models.MetricRow, error) {
 
 // CreateMetric inserts a definition and returns the stored row. A name
 // already used by ANY origin (including builtins) yields a user-facing
-// uniqueness error — API saves can never shadow a builtin.
+// uniqueness error — API saves can never shadow a builtin. scope is
+// written from the row; version is NOT in the INSERT (column DEFAULT 1 —
+// the counter starts at 1 and only the semantic-edit bump moves it).
 func (s *Store) CreateMetric(m models.MetricRow) (models.MetricRow, error) {
+	// A zero scope is an OMITTED field (pre-W2 callers never send one):
+	// write the DDL DEFAULT's value — the CHECK rejects '' — so an
+	// omitted scope behaves exactly like the column DEFAULT 'match'.
+	if m.Scope == "" {
+		m.Scope = "match"
+	}
 	res, err := s.db.Exec(
-		`INSERT INTO metrics (name, title, short_name, expr, group_by, format, doc, origin, plugin_id, denominator, created_at)
+		`INSERT INTO metrics (name, title, short_name, expr, scope, format, doc, origin, plugin_id, denominator, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		scrub(m.Name), scrub(m.Title), scrub(m.ShortName), scrub(m.Expr), scrub(m.GroupBy),
+		scrub(m.Name), scrub(m.Title), scrub(m.ShortName), scrub(m.Expr), scrub(m.Scope),
 		scrub(m.Format), scrub(m.Doc), scrub(m.Origin), scrub(m.PluginID),
 		scrub(m.Denominator), time.Now(),
 	)
@@ -233,8 +242,19 @@ func (s *Store) CreateMetric(m models.MetricRow) (models.MetricRow, error) {
 
 // UpdateMetric replaces one definition (id must exist). Builtin and plugin
 // rows are immutable through this path — the plugin loader writes its own
-// rows via ReplacePluginMetrics, and builtins are schema-seeded.
+// rows via ReplacePluginMetrics, and builtins are schema-seeded. scope is
+// written from the row; version is deliberately NOT touched here — the
+// +1 bump on semantic edits (expr/scope/denominator, with the
+// transitive-dependent cascade) lives with the SaveMetric save
+// transaction in a later wave (stored-metrics design §2); until then this
+// stays a pure overwrite (no-history model — no shadow rows, no
+// versioned copies).
 func (s *Store) UpdateMetric(m models.MetricRow) (models.MetricRow, error) {
+	// Same omitted-scope rule as CreateMetric: '' → the DDL DEFAULT
+	// 'match', never the empty string the CHECK rejects.
+	if m.Scope == "" {
+		m.Scope = "match"
+	}
 	existing, err := s.GetMetric(m.ID)
 	if err != nil {
 		return models.MetricRow{}, err
@@ -243,9 +263,9 @@ func (s *Store) UpdateMetric(m models.MetricRow) (models.MetricRow, error) {
 		return models.MetricRow{}, fmt.Errorf("store: metric %q is origin %s and cannot be modified", existing.Name, existing.Origin)
 	}
 	if _, err := s.db.Exec(
-		`UPDATE metrics SET name = ?, title = ?, short_name = ?, expr = ?, group_by = ?, format = ?,
+		`UPDATE metrics SET name = ?, title = ?, short_name = ?, expr = ?, scope = ?, format = ?,
 			doc = ?, plugin_id = ?, denominator = ? WHERE id = ?`,
-		scrub(m.Name), scrub(m.Title), scrub(m.ShortName), scrub(m.Expr), scrub(m.GroupBy),
+		scrub(m.Name), scrub(m.Title), scrub(m.ShortName), scrub(m.Expr), scrub(m.Scope),
 		scrub(m.Format), scrub(m.Doc), scrub(m.PluginID), scrub(m.Denominator), m.ID,
 	); err != nil {
 		if isUniqueErr(err) {

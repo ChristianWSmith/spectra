@@ -11,7 +11,8 @@ import (
 // index — a dropped or renamed statement would silently degrade the
 // library-wide reads it exists for (RebuildCareer's per-group subqueries,
 // ListPlayers' bot check, the profile's stored trade-opportunity SUM,
-// the pending-job lookups) back into full-table scans. Mirrors the
+// the pending-job lookups, the stored metric-value reads) back into
+// full-table scans. Mirrors the
 // column-pin pattern in TestColumnListConstsMatchSchema, against
 // sqlite_master so the DDL really applied rather than merely being
 // present as text.
@@ -26,6 +27,9 @@ func TestTier1IndexesPresent(t *testing.T) {
 		"idx_jobs_path",
 		"idx_jobs_match",
 		"idx_match_trade_opps_steam",
+		"idx_metric_values_match",
+		"idx_metric_values_steam",
+		"idx_metric_deps_dep",
 	}
 	for _, name := range want {
 		var n int

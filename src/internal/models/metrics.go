@@ -22,12 +22,13 @@ type MetricRow struct {
 	Title       string    `json:"title"`
 	ShortName   string    `json:"shortName"` // optional; read only at width-constrained metric column headers
 	Expr        string    `json:"expr"`      // grammar: `from <table>[, <secondary>...]: <aggregations>` (doc.go)
-	GroupBy     string    `json:"groupBy"`
-	Format      string    `json:"format"` // ""|int|float1|percent|currency
+	Scope       string    `json:"scope"`     // match|profile — where the metric is addressed (DDL CHECK)
+	Format      string    `json:"format"`    // ""|int|float1|percent|currency
 	Doc         string    `json:"doc"`
 	Origin      string    `json:"origin"` // builtin|user|plugin
 	PluginID    string    `json:"pluginId"`
 	Denominator string    `json:"denominator"` // ""|rounds|matches
+	Version     int       `json:"-"`           // internal staleness stamp (metrics.version) — never marshalled to the frontend
 	CreatedAt   time.Time `json:"createdAt"`   // nullable column → zero when NULL
 }
 

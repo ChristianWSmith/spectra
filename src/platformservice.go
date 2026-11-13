@@ -318,7 +318,7 @@ func manifestFromPlugin(m plugin.Manifest) PluginManifest {
 	}
 	for _, d := range m.Metrics {
 		out.Metrics = append(out.Metrics, models.MetricRow{
-			Name: d.Name, Title: d.Title, Expr: d.Expr, GroupBy: d.GroupBy,
+			Name: d.Name, Title: d.Title, Expr: d.Expr, Scope: d.Scope,
 			Format: d.Format, Doc: d.Doc, Origin: "plugin", PluginID: m.ID,
 			Denominator: d.Denominator,
 		})

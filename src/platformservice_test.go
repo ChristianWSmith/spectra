@@ -197,7 +197,7 @@ const rootTestPlugin = `{
   "version": "1.0.0",
   "capabilities": {"metrics": {}, "report_templates": {}},
   "metrics": [
-    {"name": "root_count", "title": "Root count", "expr": "from events: count()", "groupBy": "none"}
+    {"name": "root_count", "title": "Root count", "expr": "from events: count()"}
   ],
   "reportTpls": [
     {"id": "root-match", "title": "Root match", "scope": "match", "format": "md", "body": "root plugin: {{.Match.Map}}"}
