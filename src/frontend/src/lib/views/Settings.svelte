@@ -1056,6 +1056,19 @@
       </p>
     {/if}
     <div class="row-between">
+      <span class="muted">
+        {demoDirsCustom
+          ? 'Saved as your list — the defaults no longer apply.'
+          : 'Defaults in effect: your Downloads folder and the CS2 replay folder, where the client saves downloaded matches.'}
+      </span>
+      <div class="sett-seg">
+        <button class="btn" onclick={addDemoDir}>Add folder…</button>
+        <button class="btn" disabled={!demoDirsCustom} onclick={onResetDemoDirs}
+          >Reset to defaults</button
+        >
+      </div>
+    </div>
+    <div class="row-between">
       <label class="filt-check" for="sett-copy-on-import">
         <input
           id="sett-copy-on-import"
@@ -1091,19 +1104,6 @@
         starts, so it applies to jobs already queued. Higher finishes a big batch sooner and
         uses more memory while parsing.</span
       >
-    </div>
-    <div class="row-between">
-      <span class="muted">
-        {demoDirsCustom
-          ? 'Saved as your list — the defaults no longer apply.'
-          : 'Defaults in effect: your Downloads folder and the CS2 replay folder, where the client saves downloaded matches.'}
-      </span>
-      <div class="sett-seg">
-        <button class="btn" onclick={addDemoDir}>Add folder…</button>
-        <button class="btn" disabled={!demoDirsCustom} onclick={onResetDemoDirs}
-          >Reset to defaults</button
-        >
-      </div>
     </div>
   </section>
 
