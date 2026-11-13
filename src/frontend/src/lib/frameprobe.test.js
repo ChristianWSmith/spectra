@@ -11,9 +11,11 @@ import assert from 'node:assert/strict';
 import {
   createFrameProbe,
   frameProbe,
+  probeEnabled,
   FRAME_PROBE_CAP,
   FRAME_GAP_MAX_MS,
 } from './replay/frameprobe.js';
+import { parseHash } from './router.js';
 
 test('empty session: no samples, nulls (never fabricated zeros), n/a line', () => {
   const p = createFrameProbe({ now: () => 0 });
@@ -232,4 +234,33 @@ test('defaults: 4096-sample window (4097th sample flips windowed on) and the 250
   assert.equal(d.windowed, true); // the oldest sample fell out of the ring
   assert.equal(d.min, 1); // …but the whole-session totals still hold it
   assert.equal(d.max, FRAME_PROBE_CAP + 1);
+});
+
+test('probeEnabled: THE ?probe=1 gate — literal "1" on the router-parsed query only', () => {
+  // Absent / wrong value / wrong key → never (the HUD must not appear
+  // without the param). Values arrive as STRINGS (URLSearchParams).
+  assert.equal(probeEnabled(null), false);
+  assert.equal(probeEnabled(undefined), false);
+  assert.equal(probeEnabled({}), false);
+  assert.equal(probeEnabled({ probe: '0' }), false);
+  assert.equal(probeEnabled({ probe: 'true' }), false);
+  assert.equal(probeEnabled({ probe: 1 }), false);
+  assert.equal(probeEnabled({ other: '1' }), false);
+  assert.equal(probeEnabled({ probe: '1' }), true);
+  // The integration pin: the gate reads the ROUTER's own parseHash
+  // query (the one query parser — frameprobe never parses a URL).
+  assert.equal(parseHash('#/replay/1?probe=1').query.probe, '1');
+  assert.equal(probeEnabled(parseHash('#/replay/1?probe=1').query), true);
+  assert.equal(probeEnabled(parseHash('#/replay/1').query), false);
+});
+
+test('showHud: the runtime console toggle defaults on and flips without touching collection', () => {
+  assert.equal(frameProbe.showHud, true);
+  frameProbe.showHud = false;
+  assert.equal(frameProbe.showHud, false);
+  // Hiding the strip never stops the SAMPLES (App's tick only reads it).
+  frameProbe.enabled = true;
+  frameProbe.recordDraw(1);
+  assert.equal(frameProbe.summarize().draws.count > 0, true);
+  frameProbe.showHud = true; // restore the default for anything after
 });

@@ -2658,3 +2658,40 @@ input[type='checkbox']:focus-visible {
   display: block;
   font-size: 0.78em;
 }
+
+/* --- Frame-probe HUD (lib/replay/frameprobe.js) — the ?probe=1 operator
+       readout --------------------------------------------------------------
+   NOT product UI: App.svelte renders this strip ONLY while its
+   probeLatched gate holds (the route query carried ?probe=1 — see
+   probeEnabled in frameprobe.js), it is aria-hidden, and pointer-events:
+   none makes it click-transparent — it can never intercept a click (the
+   .replay-topbar's rail toggle beneath the top-right corner stays fully
+   usable). The text is frameProbe.line(), rewritten once a second by
+   App's interval — never per-frame. Monospace (.mono, the one mono
+   spelling) at 11px over a semi-opaque panel wash keeps it legible over
+   the radar without shouting; .mono's 0.92em loses to this later rule on
+   equal specificity, so the 11px is the effective size.
+   z-index 50: ABOVE every content layer — popovers and the collapsed
+   dock (30), the expanded keep-alive cover (40) — so it reads over any
+   view, and BELOW the modal backdrop (.dlg-back 60) so dialogs stay
+   dominant and never fight it. top/right pin it to the window corner;
+   .content's scroll never moves a fixed element. */
+.probe-hud {
+  position: fixed;
+  top: 8px;
+  right: 8px;
+  z-index: 50;
+  max-width: min(440px, calc(100vw - 72px));
+  padding: 4px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--panel);
+  opacity: 0.92;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  user-select: none;
+}

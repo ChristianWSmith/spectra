@@ -20,6 +20,10 @@
   import { nextReplayAlive, backOrigin } from './lib/keepalive.js';
   import { arbitrate, captureScroll, scrollTopFor } from './lib/viewstate.svelte.js';
   import { listMatchesPage, listJobs } from './lib/services.js';
+  // The ?probe=1 operator readout (frameprobe.js — its entry comment is
+  // THE 60-second collection procedure). Same module instance the
+  // engine/renderer record into; probeEnabled is the ONE gate.
+  import { frameProbe, probeEnabled } from './lib/replay/frameprobe.js';
 
   // Hand-rolled hash router: the route table (parseHash) lives in
   // lib/router.js with its own tests; this component owns the hashchange
@@ -236,6 +240,34 @@
   const mainActions = NAV_ACTIONS.filter((a) => !a.bottom);
   const bottomActions = NAV_ACTIONS.filter((a) => a.bottom);
 
+  // Frame-probe HUD — the ?probe=1 operator readout (App-level so it
+  // shows over whatever view is active; procedure in frameprobe.js).
+  // probeLatched is THE latch: the boot route (firstRoute) or ANY later
+  // navigation whose parsed query carries ?probe=1 turns it on for the
+  // session — nav.js rebuilds queries on navigation, so a derived-only
+  // gate would drop the key (and the strip) exactly when the operator
+  // starts measuring. It can never appear WITHOUT the param. The 1 s
+  // tick reads the probe's own line() (no percentile logic here, no
+  // per-frame DOM writes) and honors the runtime console toggle
+  // __spectraFrameProbe.showHud; while the param was never seen there
+  // is no timer and no DOM at all.
+  let probeLatched = $state(probeEnabled(firstRoute.query));
+  let probeHud = $state(false);
+  let probeLine = $state('');
+  $effect(() => {
+    if (probeEnabled(route.query)) probeLatched = true;
+  });
+  $effect(() => {
+    if (!probeLatched) return; // no ?probe=1 → zero cost, no strip
+    probeHud = frameProbe.showHud !== false;
+    probeLine = frameProbe.line();
+    const id = setInterval(() => {
+      probeLine = frameProbe.line();
+      probeHud = frameProbe.showHud !== false;
+    }, 1000);
+    return () => clearInterval(id);
+  });
+
   onMount(() => {
     const onChange = () => {
       originHash = lastHash;
@@ -437,4 +469,14 @@
   </main>
   <CommandPalette {nav} />
   <MapPackPrompt bind:this={mapPackPrompt} />
+  <!-- Frame-probe HUD — the ?probe=1 operator readout (frameprobe.js;
+       gated by probeLatched above — it renders ONLY with the param).
+       Diagnostics, not product UI: aria-hidden, pointer-events: none
+       (it can never intercept a click — the topbar's rail toggle
+       beneath stays fully usable), and z-index 50 = above every content
+       layer (30/40), below the modal backdrop (.dlg-back 60). The text
+       is frameProbe.line() from the 1 s effect — never per-frame. -->
+  {#if probeHud}
+    <div class="probe-hud mono" aria-hidden="true">{probeLine}</div>
+  {/if}
 </div>

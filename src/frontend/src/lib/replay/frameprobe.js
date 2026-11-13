@@ -24,13 +24,24 @@
 // and `frame − draw` as the draw-vs-rest split (rest = raster + DOM patch
 // + everything else the browser does between two rAF callbacks).
 //
-// HOW TO COLLECT NUMBERS (60-second GUI session, DevTools console — a
-// Wails dev build exposes the WebKit inspector):
-//   1. `__spectraFrameProbe.reset()`   — optional fresh session
+// HOW TO COLLECT NUMBERS (60-second GUI session):
+//   1. ACTIVATE THE READOUT: start the app on a route whose query
+//      carries `?probe=1` (e.g. #/replay/<id>?probe=1) — the gate is
+//      probeEnabled() below (the ROUTER's already-parsed query, never a
+//      second parser). The readout is the fixed top-right HUD strip
+//      (App.svelte .probe-hud) showing `line()` refreshed once a
+//      second — NO devtools needed, which matters because production
+//      builds disable the WebKit inspector. It LATCHES: once a route
+//      carries the param the strip stays up for the session (nav.js
+//      rebuilds queries on navigation, so a derived-only gate would
+//      drop it mid-measurement). Runtime toggle from anywhere:
+//      __spectraFrameProbe.showHud = false / true.
 //   2. play a replay for ~60 s          — frame samples only arrive while
 //      the engine is PLAYING; draw samples also arrive while paused or
 //      scrubbing (every draw() funnels through the one probe call site)
-//   3. `__spectraFrameProbe.dump()`    — logs and returns one line:
+//   3. inspector path (devtools builds only): `__spectraFrameProbe.reset()`
+//      for a fresh session, then `__spectraFrameProbe.dump()` — logs and
+//      returns one line:
 //        frame n=3600 p50=16.7 p95=17.0 p99=18.1 max=33.4 | draw n=3600
 //        p50=2.1 p95=3.4 p99=5.0 max=12.3 | longtasks n=2 total=140.0ms
 //        | gaps=0 | span=60123ms
@@ -60,6 +71,16 @@ export const FRAME_PROBE_CAP = 4096;
 // Resume-gap bound: a rAF gap beyond this is a tab-switch/background
 // resume, not a frame (mirrors the dt clamp in engine.js loop()).
 export const FRAME_GAP_MAX_MS = 250;
+
+// probeEnabled — THE ?probe=1 gate for the on-screen readout: true only
+// for the literal value "1" on an ALREADY-PARSED route query (router.js
+// parseHash's generic query — this module never parses a URL itself,
+// so there is exactly one query parser in the app). App.svelte latches
+// its HUD on this at boot and on any later navigation carrying the
+// param; without it the strip never renders.
+export function probeEnabled(query) {
+  return query != null && query.probe === '1';
+}
 
 const f1 = (v) => (v == null ? 'n/a' : v.toFixed(1));
 
@@ -156,6 +177,9 @@ export function createFrameProbe({
   const probe = {
     // ALWAYS ON by default (see the header); console: `__spectraFrameProbe.enabled = false`
     enabled: true,
+    // The on-screen HUD's runtime toggle (App.svelte's 1 s tick reads
+    // it): false hides the ?probe=1 strip without touching collection.
+    showHud: true,
     // Set by installLongTaskTally when the browser supports
     // PerformanceObserver('longtask'); null = the tally measures nothing.
     longTaskObserver: null,
@@ -260,10 +284,12 @@ function installLongTaskTally(probe) {
 }
 
 // THE session singleton — one page load = one probe. Importing this
-// module (engine.js and renderer.js both do) installs the longtask
-// tally and publishes the ONE console-accessible exposure:
+// module (engine.js, renderer.js and App.svelte's HUD gate all do)
+// installs the longtask tally and publishes the ONE console-accessible
+// exposure:
 //   __spectraFrameProbe.reset() / .dump() / .line() / .summary() /
-//   .enabled = false
+//   .enabled = false   (stop collecting) /
+//   .showHud = false   (hide the ?probe=1 strip; see probeEnabled)
 export const frameProbe = createFrameProbe();
 installLongTaskTally(frameProbe);
 globalThis.__spectraFrameProbe = frameProbe;
