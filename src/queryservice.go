@@ -50,6 +50,17 @@ func (s *QueryService) ListSavedQueries() ([]models.SavedQueryRow, error) {
 	return s.st.ListSavedQueries()
 }
 
+// ListSavedQueriesPage returns ONE keyset window of the saved-query list
+// (the SQL console's "Load more"): the rows strictly after afterName
+// ("" = the first window) in name ASC order, at most limit rows (0 = the
+// store's default window), plus HasNext (another window follows). The
+// cursor is the last row's name — saved names are unique, so no id
+// tie-break is needed. ListSavedQueries stays unbounded for
+// CommandPalette's whole-list fuzzy search (see store.ListSavedQueriesPage).
+func (s *QueryService) ListSavedQueriesPage(afterName string, limit int) (*models.SavedQueryPage, error) {
+	return s.st.ListSavedQueriesPage(afterName, limit)
+}
+
 func (s *QueryService) SaveQuery(name, sql string) (models.SavedQueryRow, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {

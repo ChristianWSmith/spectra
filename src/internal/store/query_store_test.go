@@ -399,6 +399,228 @@ func TestSavedQueries(t *testing.T) {
 	}
 }
 
+// --- ListSavedQueriesPage (the console's keyset "Load more" window) ----
+// The saved-list twin of listpaged_test.go's ListMatchesPage contract:
+// windows tile ListSavedQueries' name ASC order exactly (no name skipped
+// or duplicated), the limit+1 probe flips HasNext at the exact boundary,
+// and a cursor — including one whose row was DELETED — positions the next
+// window (a name cursor is a position, not a row reference: no
+// ErrNotFound, see store.ListSavedQueriesPage).
+
+// seedSavedNames saves n queries named q00… in REVERSE insertion order,
+// so saved id order is the opposite of name order — a walk that followed
+// insertion/id order instead of ORDER BY name would fail these tests.
+func seedSavedNames(t *testing.T, s *Store, n int) []string {
+	t.Helper()
+	names := make([]string, n)
+	for i := range names {
+		names[i] = fmt.Sprintf("q%02d", i)
+	}
+	for i := len(names) - 1; i >= 0; i-- {
+		if _, err := s.SaveQuery(names[i], "SELECT "+names[i]); err != nil {
+			t.Fatalf("SaveQuery(%q): %v", names[i], err)
+		}
+	}
+	return names
+}
+
+// walkSavedPage drains every window from afterName, returning each
+// window's row count and the concatenated names in order. It fails the
+// test on a runaway loop (a cursor that never advances would spin).
+func walkSavedPage(t *testing.T, s *Store, afterName string, limit int) (sizes []int, names []string) {
+	t.Helper()
+	seen := 0
+	for {
+		page, err := s.ListSavedQueriesPage(afterName, limit)
+		if err != nil {
+			t.Fatalf("ListSavedQueriesPage(after=%q): %v", afterName, err)
+		}
+		sizes = append(sizes, len(page.Rows))
+		for _, r := range page.Rows {
+			names = append(names, r.Name)
+		}
+		if !page.HasNext {
+			return sizes, names
+		}
+		if len(page.Rows) == 0 {
+			t.Fatalf("window after=%q reported HasNext with no rows", afterName)
+		}
+		afterName = page.Rows[len(page.Rows)-1].Name
+		if seen++; seen > 1000 {
+			t.Fatalf("paging did not terminate after 1000 windows")
+		}
+	}
+}
+
+// savedOrder reads the unbounded ListSavedQueries order — the reference
+// every window walk is compared against (the SAME name ASC).
+func savedOrder(t *testing.T, s *Store) []string {
+	t.Helper()
+	rows, err := s.ListSavedQueries()
+	if err != nil {
+		t.Fatalf("ListSavedQueries: %v", err)
+	}
+	names := make([]string, 0, len(rows))
+	for _, r := range rows {
+		names = append(names, r.Name)
+	}
+	return names
+}
+
+// pageNames is the window's names in row order.
+func pageNames(p *models.SavedQueryPage) []string {
+	names := make([]string, 0, len(p.Rows))
+	for _, r := range p.Rows {
+		names = append(names, r.Name)
+	}
+	return names
+}
+
+func sameStrings(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// TestListSavedQueriesPageWindows seeds 45 saved queries inserted in
+// REVERSE id order and pages through them at limit 20. The windows must
+// tile ListSavedQueries' name ASC order exactly — every name once, in
+// reference order, window sizes 20/20/5 — because the keyset is the
+// UNIQUE name itself (no id tie-break needed, and insertion order must
+// not leak into the window order).
+func TestListSavedQueriesPageWindows(t *testing.T) {
+	s := openMem(t)
+	want := seedSavedNames(t, s, 45)
+
+	sizes, got := walkSavedPage(t, s, "", 20)
+	if len(sizes) != 3 || sizes[0] != 20 || sizes[1] != 20 || sizes[2] != 5 {
+		t.Errorf("window sizes = %v, want [20 20 5]", sizes)
+	}
+	if ref := savedOrder(t, s); !sameStrings(got, ref) {
+		t.Errorf("paged names = %v, want ListSavedQueries order %v", got, ref)
+	}
+	if !sameStrings(got, want) {
+		t.Errorf("paged names = %v, want the seeded name ASC order", got)
+	}
+	seen := map[string]int{}
+	for _, n := range got {
+		seen[n]++
+	}
+	for n, c := range seen {
+		if c != 1 {
+			t.Errorf("name %q appeared %d times across windows", n, c)
+		}
+	}
+	if len(seen) != 45 {
+		t.Errorf("paged %d distinct names, want 45", len(seen))
+	}
+}
+
+// TestListSavedQueriesPageBoundaries pins the exact boundary: 50 rows
+// (the default window) is ONE window with HasNext false (the limit+1
+// probe found no row), 51 rows splits 50/1 with HasNext flipping
+// correctly, and limit 0 selects ListSavedQueriesPageSize.
+func TestListSavedQueriesPageBoundaries(t *testing.T) {
+	s := openMem(t)
+	seedSavedNames(t, s, ListSavedQueriesPageSize)
+
+	page, err := s.ListSavedQueriesPage("", 0)
+	if err != nil {
+		t.Fatalf("ListSavedQueriesPage: %v", err)
+	}
+	if len(page.Rows) != ListSavedQueriesPageSize || page.HasNext {
+		t.Errorf("%d rows → %d rows, HasNext=%v; want %d, false",
+			ListSavedQueriesPageSize, len(page.Rows), page.HasNext, ListSavedQueriesPageSize)
+	}
+
+	// The 51st row: the first window now reports a successor.
+	if _, err := s.SaveQuery("q50", "SELECT q50"); err != nil {
+		t.Fatalf("SaveQuery(q50): %v", err)
+	}
+	full := savedOrder(t, s)
+	first, err := s.ListSavedQueriesPage("", ListSavedQueriesPageSize)
+	if err != nil {
+		t.Fatalf("ListSavedQueriesPage(first): %v", err)
+	}
+	if len(first.Rows) != ListSavedQueriesPageSize || !first.HasNext {
+		t.Fatalf("51 rows → first window %d rows, HasNext=%v; want %d, true",
+			len(first.Rows), first.HasNext, ListSavedQueriesPageSize)
+	}
+	if got, want := pageNames(first), full[:ListSavedQueriesPageSize]; !sameStrings(got, want) {
+		t.Errorf("first window = %v, want the first %d reference names %v", got, ListSavedQueriesPageSize, want)
+	}
+	cursor := first.Rows[len(first.Rows)-1].Name
+	second, err := s.ListSavedQueriesPage(cursor, ListSavedQueriesPageSize)
+	if err != nil {
+		t.Fatalf("ListSavedQueriesPage(second): %v", err)
+	}
+	if len(second.Rows) != 1 || second.HasNext {
+		t.Errorf("51 rows → second window %d rows, HasNext=%v; want 1, false", len(second.Rows), second.HasNext)
+	}
+	if got, want := pageNames(second), full[ListSavedQueriesPageSize:]; !sameStrings(got, want) {
+		t.Errorf("second window = %v, want the final reference name %v", got, want)
+	}
+}
+
+// TestListSavedQueriesPageCursorPositions covers a cursor into the
+// middle of the list, a cursor at the very last row (empty window,
+// HasNext false — never an error), and — the deliberate divergence from
+// ListMatchesPage's id cursor — a cursor whose row was DELETED: a name
+// is a POSITION in the order, so the window still lands exactly after
+// that name instead of failing with ErrNotFound.
+func TestListSavedQueriesPageCursorPositions(t *testing.T) {
+	s := openMem(t)
+	seedSavedNames(t, s, 25)
+	full := savedOrder(t, s)
+
+	// Cursor at the 10th name in order → the remaining 15.
+	page, err := s.ListSavedQueriesPage(full[9], 50)
+	if err != nil {
+		t.Fatalf("ListSavedQueriesPage(mid): %v", err)
+	}
+	if len(page.Rows) != 15 || page.HasNext {
+		t.Errorf("mid cursor → %d rows, HasNext=%v; want 15, false", len(page.Rows), page.HasNext)
+	}
+	if got, want := pageNames(page), full[10:]; !sameStrings(got, want) {
+		t.Errorf("mid cursor rows = %v, want the 15 names after the cursor %v", got, want)
+	}
+
+	// Cursor at the last row → an empty window, no successor.
+	last := full[len(full)-1]
+	page, err = s.ListSavedQueriesPage(last, 50)
+	if err != nil {
+		t.Fatalf("ListSavedQueriesPage(end): %v", err)
+	}
+	if len(page.Rows) != 0 || page.HasNext {
+		t.Errorf("end cursor → %d rows, HasNext=%v; want 0, false", len(page.Rows), page.HasNext)
+	}
+	if page.Rows == nil {
+		t.Error("empty window rows = nil, want an empty (non-nil) slice for the JSON []")
+	}
+
+	// A cursor row that was deleted: the position still stands.
+	var id int64
+	if err := s.db.QueryRow(`SELECT id FROM saved_queries WHERE name = ?`, full[9]).Scan(&id); err != nil {
+		t.Fatalf("lookup cursor id: %v", err)
+	}
+	if err := s.DeleteQuery(id); err != nil {
+		t.Fatalf("DeleteQuery: %v", err)
+	}
+	page, err = s.ListSavedQueriesPage(full[9], 50)
+	if err != nil {
+		t.Fatalf("ListSavedQueriesPage(deleted cursor): %v", err)
+	}
+	if got, want := pageNames(page), full[10:]; !sameStrings(got, want) {
+		t.Errorf("deleted cursor rows = %v, want the same 15 names after the position %v", got, want)
+	}
+}
+
 // modelsQueryHistory builds history rows for the FIFO test.
 func modelsQueryHistory(i int) models.QueryHistoryRow {
 	return models.QueryHistoryRow{

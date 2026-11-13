@@ -1373,10 +1373,19 @@ canvas.heat-canvas {
   white-space: nowrap;
 }
 
+/* Long saved-query names truncate inside the flex row (the canonical
+   ellipsis treatment, cf. .lib-demo-name / .sett-dir-path): min-width: 0
+   lets the flex item shrink below its content width, overflow +
+   text-overflow clip it with an ellipsis, and the full name rides the
+   title tooltip. Without the shrink allowance a long name overflows the
+   row and pushes the list past the panel's right edge. */
 .sql-saved-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 0.85em;
   font-weight: 600;
-  white-space: nowrap;
 }
 
 .sql-save-bar .input {

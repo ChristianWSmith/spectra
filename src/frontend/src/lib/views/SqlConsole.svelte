@@ -2,7 +2,7 @@
   import {
     runQuery,
     getSchema,
-    listSavedQueries,
+    listSavedQueriesPage,
     saveQuery,
     deleteQuery,
     listQueryHistory,
@@ -19,6 +19,11 @@
   // Server defaults echoed in the header (query.DefaultLimit / DefaultTimeoutMS).
   const DEFAULTS = 'rows cap 5,000 · timeout 5 s';
   const GRID_CAP = 2000; // render cap for very wide results; exports always carry every row
+  // Tooltip cap for the list rows' title attributes: the full statement
+  // loads into the editor on click, so a hover preview never puts a
+  // multi-MB raw SQL string into a DOM attribute (cellTitle gates on
+  // length, this bounds what survives the gate).
+  const SQL_TITLE_CAP = 500;
 
   let schema = $state([]);
   let schemaError = $state('');
@@ -39,10 +44,24 @@
 
   let history = $state([]);
   let historyError = $state('');
+  // Saved list: ONE keyset window per fetch (SAVED_PAGE) — the console's
+  // "Load more" (store.ListSavedQueriesPage): savedHasNext is the
+  // backend's limit+1 probe and the cursor is the last rendered row's
+  // name. These are plain view-local $state like Library's window state:
+  // every mount refetches the first window, so nothing here is seeded or
+  // remembered (State placement — transient window state, never in the
+  // registry or the URL).
+  const SAVED_PAGE = 50;
   let saved = $state([]);
+  let savedHasNext = $state(false);
+  let loadingMore = $state(false);
   let savedError = $state('');
   let saveName = $state('');
   let saveError = $state('');
+  // savedGen tags the current window sequence so a Load-more reply that
+  // lands after a (re)fetch restart is dropped instead of interleaved;
+  // non-reactive on purpose — it is not state (Library's listGen pattern).
+  let savedGen = 0;
 
   // The schema read (mount AND schemaError's Retry): the error clears
   // only when the read lands, so the sidebar never claims "Loading
@@ -72,11 +91,44 @@
   }
 
   async function refreshSaved() {
+    // Any full (re)fetch restarts the window: first window, replace —
+    // never append onto the previous window's rows (mount, save and
+    // delete all land here). The gen tag drops a stale reply so a
+    // Load-more racing a restart cannot interleave rows.
+    const gen = ++savedGen;
     try {
-      saved = (await listSavedQueries()) || [];
+      const page = await listSavedQueriesPage('', SAVED_PAGE);
+      if (gen !== savedGen) return;
+      saved = (page && page.rows) || [];
+      savedHasNext = !!(page && page.hasNext);
+      savedError = '';
+    } catch (e) {
+      if (gen === savedGen) savedError = errText(e);
+    }
+  }
+
+  // loadMoreSaved appends the NEXT window: the cursor is the last
+  // rendered row's name (unique — no tie-break, and a deleted row's name
+  // still positions the window). Duplicate names are filtered out anyway
+  // (a restart may have shifted the list), because a repeated keyed
+  // {#each} id would throw.
+  async function loadMoreSaved() {
+    if (loadingMore || !savedHasNext || !saved.length) return;
+    loadingMore = true;
+    const gen = savedGen;
+    try {
+      const last = saved[saved.length - 1];
+      const page = await listSavedQueriesPage(last.name, SAVED_PAGE);
+      if (gen !== savedGen) return; // a refresh replaced the list meanwhile
+      const seen = new Set(saved.map((sq) => sq.name));
+      const add = ((page && page.rows) || []).filter((sq) => !seen.has(sq.name));
+      saved = [...saved, ...add];
+      savedHasNext = !!(page && page.hasNext);
       savedError = '';
     } catch (e) {
       savedError = errText(e);
+    } finally {
+      loadingMore = false;
     }
   }
 
@@ -429,10 +481,10 @@
               <div class="sql-hist as-row">
                 <button
                   class="sql-hist-load"
-                  title={sq.sql}
+                  title={short(cellTitle(sq.sql), SQL_TITLE_CAP)}
                   onclick={() => (sql = sq.sql)}
                 >
-                  <span class="sql-saved-name">{sq.name}</span>
+                  <span class="sql-saved-name" title={sq.name}>{sq.name}</span>
                   <span class="mono sql-hist-sql">{short(truncateSql(sq.sql), 100)}</span>
                 </button>
                 <button
@@ -448,6 +500,17 @@
               {/if}
             {/each}
           </div>
+          <!-- Keyset pagination footer: only while another window exists
+               (backend hasNext). Appends the next SAVED_PAGE rows below
+               the ones already shown. -->
+          {#if savedHasNext}
+            <div class="row-between">
+              <span class="muted" role="status">Showing {saved.length} saved queries</span>
+              <button class="btn" disabled={loadingMore} onclick={loadMoreSaved}>
+                {loadingMore ? 'Loading…' : 'Load more'}
+              </button>
+            </div>
+          {/if}
         </section>
 
         <section class="panel">
@@ -460,7 +523,7 @@
           {/if}
           <div class="sql-hist-list">
             {#each history as h (h.id)}
-              <button class="sql-hist" title={h.sql} onclick={() => (sql = h.sql)}>
+              <button class="sql-hist" title={short(cellTitle(h.sql), SQL_TITLE_CAP)} onclick={() => (sql = h.sql)}>
                 <span
                   class="sql-dot"
                   class:ok={h.ok}
