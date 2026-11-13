@@ -232,15 +232,16 @@ async function showMatch(data, { routeTab = 'Rounds', kv = {} } = {}) {
 }
 
 // --- Fixture ---------------------------------------------------------------
-// The shape both tables see: 3 pre-match rows (two warmups + knife, the
-// negative renumbering) ahead of 13 counted rounds — MR12 regulation with
-// the halftime side switch REACHED (sideSwitches=1 lands after counted
-// round 12), so round 13 is era 1. Team names are keyed by FINAL side:
-// Alpha finished CT, Beta finished T.
+// The shape both tables see: 3 LEGACY pre-match rows (two warmups + the
+// knife — the negative indices a pre-reprocess match still carries; the
+// row flags themselves died with the discard) ahead of 13 counted rounds
+// — MR12 regulation with the halftime side switch REACHED (sideSwitches=1
+// lands after counted round 12), so round 13 is era 1. Team names are
+// keyed by FINAL side: Alpha finished CT, Beta finished T.
 const preMatch = [
-  { number: -3, warmup: true, pregame: false, winner: 'ct', reason: 'CTWin' },
-  { number: -2, warmup: false, pregame: true, winner: 't', reason: 'TerroristsWin' },
-  { number: -1, warmup: true, pregame: false, winner: 'ct', reason: 'CTWin' },
+  { number: -3, winner: 'ct', reason: 'CTWin' },
+  { number: -2, winner: 't', reason: 'TerroristsWin' },
+  { number: -1, winner: 'ct', reason: 'CTWin' },
 ];
 const WINNERS = { 5: '' }; // one undecided round → bare chip fallback
 const counted = (n) =>
@@ -249,8 +250,6 @@ const counted = (n) =>
     const winner = WINNERS[number] ?? (number === 1 || number === 13 ? 'ct' : number % 2 ? 't' : 'ct');
     return {
       number,
-      warmup: false,
-      pregame: false,
       winner,
       reason: winner === 'ct' ? 'CTWin' : winner === 't' ? 'TerroristsWin' : '',
       durationS: 95,
@@ -276,7 +275,6 @@ const economyRows = (n) =>
     const winner = WINNERS[number] ?? (number === 1 || number === 13 ? 'ct' : number % 2 ? 't' : 'ct');
     return {
       round: number,
-      warmup: false,
       winner,
       wonCT: winner === 'ct',
       wonT: winner === 't',
@@ -352,6 +350,17 @@ const splitRows = (table) =>
 // Round number of a round row (its first .econ-rd button, else the first cell).
 const roundOf = (tr) => (tr.querySelector('.econ-rd') || tr.children[1]).textContent.trim();
 
+// Winner cell chip of the round row whose RD reads `n` (rows render in
+// stored order; legacy negative rows render too — lookups are BY ROUND
+// NUMBER, never by position).
+const chipFor = (table, n) => {
+  const tr = rowsOf(table).filter((r) => !r.classList.contains('econ-why-row'))
+    .find((r) => roundOf(r) === String(n));
+  return tr ? tr.querySelector('td:nth-child(3) .chip.side') : null;
+};
+const rowFor = (table, n) =>
+  rowsOf(table).filter((r) => !r.classList.contains('econ-why-row')).find((r) => roundOf(r) === String(n));
+
 console.log('A. Rounds tab: RD header, side-colored TEAM winner names, split-before');
 let root = await showMatch(dataFor(13), { routeTab: 'Rounds' });
 let table = root.querySelector('.data-table');
@@ -361,47 +370,64 @@ check(
   headerTexts(table).includes('RD') && !headerTexts(table).includes('№'),
   JSON.stringify(headerTexts(table)),
 );
-check('pref-off renders the 13 counted rows only', rowsOf(table).length === 13, String(rowsOf(table).length));
-let chips = winnerChips(table, 3);
+// BEHAVIOR RE-PIN, labeled (knife/warmup discard, Phase 3): the
+// show_knife_warmup_rounds pref is retired — the Rounds tab renders
+// EVERY stored row (the fixture's 3 legacy pre-match rows included;
+// there is no filter left to apply), and the boundary is pinned by round
+// number so the legacy rows cannot shift it.
+check(
+  'every stored row renders (16 = 3 legacy pre-match + 13 counted, no pref)',
+  rowsOf(table).length === 16,
+  String(rowsOf(table).length),
+);
+check(
+  'first row is a legacy pre-match round (canonical W label in the Rd cell)',
+  rowsOf(table)[0].children[1].textContent.includes('W'),
+  rowsOf(table)[0].children[1].textContent,
+);
 // Round 1: era 0 — the final-CT team (Alpha) played T, so a round-1 CT
 // win belongs to the final-T team (Beta): the chip keeps the winning
 // SIDE's class (ct) but spells the TEAM's name.
+const chip1 = chipFor(table, 1);
 check(
   'round 1 winner = final-T team name (Beta) in the side-ct chip',
-  chips[0].classList.contains('side') && chips[0].classList.contains('ct') && chips[0].textContent.trim() === 'Beta',
-  chips[0] ? chips[0].className + ' "' + chips[0].textContent.trim() + '"' : 'missing chip',
+  !!chip1 && chip1.classList.contains('side') && chip1.classList.contains('ct') && chip1.textContent.trim() === 'Beta',
+  chip1 ? chip1.className + ' "' + chip1.textContent.trim() + '"' : 'missing chip',
 );
 // Round 5: no winner recorded → today's bare chip, never a guessed name.
+const chip5 = chipFor(table, 5);
 check(
   'round 5 (no winner) falls back to the neutral bare chip',
-  chips[4].classList.contains('none') && chips[4].textContent.trim() === '—',
-  chips[4] ? chips[4].className + ' "' + chips[4].textContent.trim() + '"' : 'missing',
+  !!chip5 && chip5.classList.contains('none') && chip5.textContent.trim() === '—',
+  chip5 ? chip5.className + ' "' + chip5.textContent.trim() + '"' : 'missing',
 );
 // Round 12 (era 0, winner 'ct') → the final-T team (Beta); round 13
 // (era 1, same winning side 'ct') → the final-CT team (Alpha) — the SAME
 // side, two different teams across the halftime switch.
+const chip12 = chipFor(table, 12);
+const chip13 = chipFor(table, 13);
 check(
   'round 12 winner = Beta (era 0 flips the mapping)',
-  chips[11].classList.contains('ct') && chips[11].textContent.trim() === 'Beta',
-  chips[11].className + ' "' + chips[11].textContent.trim() + '"',
+  !!chip12 && chip12.classList.contains('ct') && chip12.textContent.trim() === 'Beta',
+  chip12 ? chip12.className + ' "' + chip12.textContent.trim() + '"' : 'missing',
 );
 check(
   'round 13 winner = Alpha (era 1, sides back to final)',
-  chips[12].classList.contains('ct') && chips[12].textContent.trim() === 'Alpha',
-  chips[12].className + ' "' + chips[12].textContent.trim() + '"',
+  !!chip13 && chip13.classList.contains('ct') && chip13.textContent.trim() === 'Alpha',
+  chip13 ? chip13.className + ' "' + chip13.textContent.trim() + '"' : 'missing',
 );
 check(
-  'split-before sits on the round-13 row only',
+  'split-before sits on the round-13 row only (legacy rows never shift it)',
   splitRows(table).length === 1 && roundOf(splitRows(table)[0]) === '13',
   JSON.stringify(splitRows(table).map(roundOf)),
 );
 check(
   'round 12 carries no line (the boundary is BELOW it)',
-  !rowsOf(table)[11].classList.contains('split-before'),
+  !rowFor(table, 12)?.classList.contains('split-before'),
 );
 
-console.log('B. Rounds tab pref ON: negative rows never shift the boundary');
-root = await showMatch(dataFor(13), { routeTab: 'Rounds', kv: { show_knife_warmup_rounds: true } });
+console.log('B. legacy rows never shift the boundary (the retired pref is gone — no kv scenario)');
+root = await showMatch(dataFor(13), { routeTab: 'Rounds' });
 table = root.querySelector('.data-table');
 check('16 rows render (3 pre-match + 13 counted)', rowsOf(table).length === 16, String(rowsOf(table).length));
 check(
@@ -418,7 +444,7 @@ check(
 console.log('C. Rounds tab: 12 counted rounds → trailing suppression (no line at all)');
 root = await showMatch(dataFor(12), { routeTab: 'Rounds' });
 table = root.querySelector('.data-table');
-check('12 rows render', rowsOf(table).length === 12, String(rowsOf(table).length));
+check('15 rows render (3 legacy + 12 counted)', rowsOf(table).length === 15, String(rowsOf(table).length));
 check('no split-before row exists', splitRows(table).length === 0, JSON.stringify(splitRows(table).map(roundOf)));
 
 console.log('C2. Rounds tab: the buy-class chip wears THE palette (raw key as class, shared CSS)');
@@ -546,7 +572,7 @@ check(
   headerTexts(table).includes('RD'),
   JSON.stringify(headerTexts(table)),
 );
-chips = winnerChips(table, 2);
+const chips = winnerChips(table, 2);
 check(
   'economy round 1 winner = Beta (side-ct chip, era 0)',
   chips[0].classList.contains('ct') && chips[0].textContent.trim() === 'Beta',

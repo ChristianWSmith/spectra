@@ -97,13 +97,9 @@ writeFileSync(
   readFileSync('src/lib/replay/landmarks.js', 'utf8'),
 );
 
-// kvstore stand-in: RoundStrip reads show_knife_warmup_rounds on mount
-// (the round-strip driver's same stand-in, resolved from components/ via
-// the rewritten binding path below).
-writeFileSync(
-  join(dir, 'kvstore.js'),
-  'export const KVStoreService = { Get: () => Promise.resolve(globalThis.__showKnifeWarmup) };\n',
-);
+// No kvstore stand-in anymore: RoundStrip reads no preference key (the
+// knife/warmup visibility setting is retired), so there is no binding
+// import to rewrite below.
 
 // The view's data source is scripted, never a live Wails backend: the
 // driver sets globalThis.__roundDetail before each mount.
@@ -128,12 +124,7 @@ export const warmProfile = () => {};
 );
 
 for (const name of ['EventFlags', 'ProfileLink', 'RoundStrip', 'StatusChip']) {
-  const src = readFileSync(`src/lib/components/${name}.svelte`, 'utf8').replace(
-    // RoundStrip's generated kvstore binding path is written for
-    // src/lib/components/ — at dir/components/ it would escape the cache.
-    "from '../../../bindings/github.com/wailsapp/wails/v3/pkg/services/kvstore'",
-    "from '../kvstore.js'",
-  );
+  const src = readFileSync(`src/lib/components/${name}.svelte`, 'utf8');
   svelteCompile(src, `${name}.svelte`, join(dir, 'components', `${name}.js`));
 }
 
@@ -206,8 +197,6 @@ for (let n = 1; n <= 15; n++) {
     winner: n % 2 === 1 ? 'ct' : 't',
     reason: n === 5 ? 'target bombed' : 'bomb defused',
     durationS: 105,
-    warmup: false,
-    pregame: false,
     bombSite: 'A',
     startTick: (n - 1) * 2000,
     endTick: n * 2000 - 1,

@@ -1,11 +1,13 @@
-// jsdom driver for RoundStrip: the show_knife_warmup_rounds pref filter
-// (warmup/knife cells hidden by default, shown when the pref opts in, the
-// viewed round always kept), the canonical W/K display labels from
-// lib/rounds.js roundIndexLabel (never the raw negative index), the
-// side-parity arrows staying correct while those cells are hidden (the
+// jsdom driver for RoundStrip — the POST-PREF reality (knife/warmup
+// discard, Phase 3): the show_knife_warmup_rounds setting is retired,
+// RoundStrip reads no kvstore key, and EVERY stored row renders — this
+// driver pins that (no visibility filtering, no pref reads), the legacy
+// W/K display labels from lib/rounds.js roundIndexLabel that a
+// pre-reprocess match's negative rows still get (never the raw index),
+// the side-parity arrows staying correct with legacy rows present (the
 // MR12 switch after round 12 and the OT cadence 27, 30, …), and the
-// separator cadence (lib/rounds.js separatorAfter + the trailing-
-// marker suppression) staying anchored to counted rounds.
+// separator cadence (lib/rounds.js separatorAfter + the trailing-marker
+// suppression) staying anchored to counted rounds.
 //
 // jsdom is intentionally not a project dependency; from frontend/ run:
 //   npm i --no-save jsdom
@@ -65,30 +67,22 @@ const svelteCompile = (src, filename, out) => {
 
 // Plain ESM deps of RoundStrip → local copies (sideparity.js imports
 // ./rounds.js and teams.js imports ./sideparity.js — the copies keep
-// their own relative imports and resolve inside this directory).
+// their own relative imports and resolve inside this directory). No
+// kvstore stand-in: RoundStrip reads no preference key anymore.
 for (const f of ['rounds.js', 'sideparity.js', 'teams.js', 'router.js']) {
   writeFileSync(join(dir, f), readFileSync(join('src/lib', f), 'utf8'));
 }
 
-// kvstore stand-in: RoundStrip reads show_knife_warmup_rounds on mount;
-// the driver sets globalThis.__showKnifeWarmup per scenario (undefined =
-// key unset, exactly like a fresh profile).
-writeFileSync(
-  join(dir, 'kvstore.js'),
-  'export const KVStoreService = { Get: () => Promise.resolve(globalThis.__showKnifeWarmup) };\n',
-);
-
-// RoundStrip → rewrite its ../ imports to the local copies and the
-// generated kvstore binding to the stand-in.
+// RoundStrip → rewrite its ../ imports to the local copies.
 const rsSrc = readFileSync('src/lib/components/RoundStrip.svelte', 'utf8')
   .replace("from '../sideparity.js'", "from './sideparity.js'")
   .replace("from '../teams.js'", "from './teams.js'")
   .replace("from '../rounds.js'", "from './rounds.js'")
-  .replace("from '../router.js'", "from './router.js'")
-  .replace(
-    "from '../../../bindings/github.com/wailsapp/wails/v3/pkg/services/kvstore'",
-    "from './kvstore.js'",
-  );
+  .replace("from '../router.js'", "from './router.js'");
+if (rsSrc.includes('kvstore')) {
+  console.log('  FAIL RoundStrip imports the kvstore — the visibility pref is retired');
+  process.exit(1);
+}
 svelteCompile(rsSrc, 'RoundStrip.svelte', join(dir, 'roundstrip-bundle.js'));
 
 const harnessSrc = readFileSync('test/round-strip.harness.svelte', 'utf8');
@@ -107,7 +101,6 @@ async function showStrip(rounds, opts = {}) {
   globalThis.__rounds = rounds;
   globalThis.__current = opts.current || 0;
   globalThis.__sideSwitches = opts.sideSwitches ?? 1;
-  globalThis.__showKnifeWarmup = opts.pref; // undefined = unset
   inst = mount(mod.default, { target });
   await sleep();
 }
@@ -125,28 +118,28 @@ const labels = () => cells().map((c) => c.textContent.trim());
 const aria = () => cells().map((c) => c.getAttribute('aria-label'));
 const cellFor = (n) => cells().find((c) => c.textContent.trim() === String(n));
 
-// Three pre-match rounds (two warmups + the knife) ahead of four counted
-// rounds. sideSwitches=1 records a switch, but it lands AFTER counted
-// round 12 — a four-round match never reaches it, so with the team-above
-// having FINISHED CT it played T in all four counted rounds (era 0).
-const rounds = [
-  { number: -3, warmup: true, winner: 'ct', reason: 'CTWin' },
-  { number: -2, pregame: true, winner: 't', reason: 'TerroristsWin' },
-  { number: -1, warmup: true, winner: 'ct', reason: 'CTWin' },
-  { number: 1, winner: 'ct', reason: 'CTWin' },
-  { number: 2, winner: 't', reason: 'BombDefused' },
-  { number: 3, winner: 'ct', reason: 'TargetBombed' },
-  { number: 4, winner: 'ct', reason: 'CTWin' },
-];
+// Counted rounds only — the shape every NEW import stores (the extractor
+// discards knife/warmup rounds at ingest).
+const counted = (n) =>
+  Array.from({ length: n }, (_, i) => ({
+    number: i + 1,
+    winner: i % 2 ? 't' : 'ct',
+    reason: 'CTWin',
+  }));
 
-console.log('A. pref unset (default OFF): warmup/knife cells hidden');
-await showStrip(rounds);
-check('only counted cells render', JSON.stringify(labels()) === '["1","2","3","4"]', JSON.stringify(labels()));
-check(
-  'no W/K letters while hidden',
-  !labels().includes('W') && !labels().includes('K'),
-  JSON.stringify(labels()),
-);
+// The LEGACY shape a pre-reprocess match still delivers: three negative
+// pre-match rows ahead of the counted rounds. Every row renders now —
+// there is no visibility pref and no render filter.
+const preMatch = [
+  { number: -3, winner: 'ct', reason: 'CTWin' },
+  { number: -2, winner: 't', reason: 'TerroristsWin' },
+  { number: -1, winner: 'ct', reason: 'CTWin' },
+];
+const legacy = [...preMatch, ...counted(4)];
+
+console.log('A. counted-only rows render every cell with its number');
+await showStrip(counted(4));
+check('four cells render', JSON.stringify(labels()) === '["1","2","3","4"]', JSON.stringify(labels()));
 check(
   'counted cells keep their number as the aria-label',
   JSON.stringify(aria()) === '["Round 1","Round 2","Round 3","Round 4"]',
@@ -158,12 +151,8 @@ check(
   cells()[0].getAttribute('title'),
 );
 
-console.log('B. pref explicitly false: same as unset');
-await showStrip(rounds, { pref: false });
-check('only counted cells render', JSON.stringify(labels()) === '["1","2","3","4"]', JSON.stringify(labels()));
-
-console.log('C. pref ON: every cell renders with the canonical W/K labels');
-await showStrip(rounds, { pref: true });
+console.log('B. legacy pre-match rows render too (no pref, no filter) with the canonical W/K labels');
+await showStrip(legacy);
 check(
   'all seven cells render',
   JSON.stringify(labels()) === '["W","K","W","1","2","3","4"]',
@@ -186,25 +175,21 @@ check(
   cells()[1].getAttribute('title'),
 );
 
-console.log('D. pref OFF but the viewed round stays (RoundDetail current)');
-await showStrip(rounds, { current: -2 });
-check(
-  'the viewed knife round is kept, other pre-match rounds stay hidden',
-  JSON.stringify(labels()) === '["K","1","2","3","4"]',
-  JSON.stringify(labels()),
-);
-const knife = cellFor('K');
-check('the kept cell is marked current', !!knife.classList.contains('current'));
-check('aria-current on the kept cell', knife.getAttribute('aria-current') === 'true');
+console.log('C. the viewed round keeps its current marker even on a legacy row');
+await showStrip(legacy, { current: -2 });
+const knifeC = cellFor('K');
+check('the knife cell is marked current', !!knifeC && knifeC.classList.contains('current'));
+check('aria-current on the kept cell', !!knifeC && knifeC.getAttribute('aria-current') === 'true');
+check('every row still renders', cells().length === 7, String(cells().length));
 
-console.log('E. parity: arrows follow the FULL round list while cells are hidden');
-await showStrip(rounds); // pref OFF → only counted cells
+console.log('D. parity: arrows follow the FULL round list, legacy rows included');
+await showStrip(legacy);
 // sideAtRound over the full list: with only FOUR counted rounds the
 // recorded switch (which lands after counted round 12) has not happened
 // yet, so every cell reads era 0 — the team above (which FINISHED CT)
-// played T in all of them. The hidden pre-match rows must not shift any
+// played T in all of them. The legacy pre-match rows must not shift any
 // of it.
-const wantArrows = { 1: 'point-down', 2: 'point-up', 3: 'point-down', 4: 'point-down' };
+const wantArrows = { 1: 'point-down', 2: 'point-up', 3: 'point-down', 4: 'point-up' };
 for (const [n, cls] of Object.entries(wantArrows)) {
   const c = cellFor(n);
   check(
@@ -213,6 +198,15 @@ for (const [n, cls] of Object.entries(wantArrows)) {
     c ? c.className : 'missing cell ' + n,
   );
 }
+// The legacy cells carry era-0 arrows from the same derivation: the team
+// above played T, so a T win (the knife cell) points up and a CT win
+// points down.
+const knifeD = cellFor('K');
+check('the knife cell points up (era 0, its T win matches the team above)', !!knifeD && knifeD.classList.contains('point-up'), knifeD ? knifeD.className : 'missing knife cell');
+check(
+  'the legacy warmup cells point down (era 0, their CT wins do not)',
+  !!cellFor('W') && cellFor('W').classList.contains('point-down'),
+);
 
 // The same strip once the match reaches round 13: the switch lands
 // exactly at counted round 13, so round 12 (era 0, team above on T) keeps
@@ -222,8 +216,8 @@ const thirteen = Array.from({ length: 13 }, (_, i) => ({
   winner: 'ct',
   reason: 'CTWin',
 }));
-await showStrip([...rounds.slice(0, 3), ...thirteen]);
-check('13 counted cells render', cells().length === 13, String(cells().length));
+await showStrip([...preMatch, ...thirteen]);
+check('16 cells render (3 legacy + 13 counted)', cells().length === 16, String(cells().length));
 const r12 = cellFor('12');
 const r13 = cellFor('13');
 check(
@@ -237,18 +231,7 @@ check(
   r13 ? r13.className : 'missing cell 13',
 );
 
-console.log('F. separators: after counted 12, then 24 and every 3 OT rounds');
-// Counted rounds 1..n prefixed by the three pre-match rows (two
-// warmups + the knife): with the pref OFF only the counted cells
-// render, so the negative rows must not shift any marker (the counted
-// counter only advances on counted cells).
-const preMatch = rounds.slice(0, 3);
-const counted = (n) =>
-  Array.from({ length: n }, (_, i) => ({
-    number: i + 1,
-    winner: i % 2 ? 't' : 'ct',
-    reason: 'CTWin',
-  }));
+console.log('E. separators: after counted 12, then 24 and every 3 OT rounds');
 // The label of the cell each `.round-split` immediately FOLLOWS (cells
 // and markers are siblings in DOM order inside .round-strip).
 const splitsAfter = () => {
@@ -276,7 +259,7 @@ const matrix = [
   [34, ['12', '24', '27', '30', '33']],
 ];
 for (const [n, want] of matrix) {
-  await showStrip([...preMatch, ...counted(n)]); // pref OFF → counted cells only
+  await showStrip(counted(n));
   check(`${n} counted cells render`, cells().length === n, String(cells().length));
   const got = splitsAfter();
   check(
@@ -286,11 +269,11 @@ for (const [n, want] of matrix) {
   );
 }
 
-console.log('G. pref ON: negative knife/warmup cells never shift a separator');
-await showStrip([...preMatch, ...counted(25)], { pref: true });
-check('all 28 cells render (3 pre-match + 25 counted)', cells().length === 28, String(cells().length));
+console.log('F. legacy negative cells never shift a separator (all rows render)');
+await showStrip([...preMatch, ...counted(25)]);
+check('all 28 cells render (3 legacy + 25 counted)', cells().length === 28, String(cells().length));
 check(
-  'pre-match cells come first with their W/K labels',
+  'legacy cells come first with their W/K labels',
   JSON.stringify(labels().slice(0, 4)) === '["W","K","W","1"]',
   JSON.stringify(labels().slice(0, 4)),
 );
@@ -299,8 +282,13 @@ check(
   JSON.stringify(splitsAfter()) === '["12","24"]',
   JSON.stringify(splitsAfter()),
 );
+check(
+  'no marker hangs after a legacy cell',
+  splitsAfter().every((s) => !s.startsWith('-')),
+  JSON.stringify(splitsAfter()),
+);
 
-console.log('H. OT parity regression: 28 counted rounds, sideSwitches=2 (golden nuke shape)');
+console.log('G. OT parity regression: 28 counted rounds, sideSwitches=2 (golden nuke shape)');
 // The switch cadence is 12, then 27 (NO switch at OT start), so rounds
 // 13-27 are era 1: the team above (final CT) played T through OT rounds
 // 25-27 and is back on CT only from round 28. The old equal-era formula

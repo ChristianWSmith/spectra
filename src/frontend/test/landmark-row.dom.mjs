@@ -195,7 +195,11 @@ check(
 check('no legacy tick cell alongside the new columns', timedSlot.querySelector('.lm-tick') === null);
 const knifeSlot = slot('knife-row');
 check(
-  'knife round labels K (roundIndexLabel flags)',
+  // BEHAVIOR RE-PIN note (knife/warmup discard): the letter comes from
+  // the NUMBER rule now — roundIndexLabel's flag branch died with the
+  // discard (no row carries pregame/warmup), the label itself stays as
+  // legacy tolerance so a pre-reprocess row never shows a raw "-2".
+  'knife round labels K (roundIndexLabel number rule)',
   text(knifeSlot.querySelector('.lm-round')) === 'K',
   text(knifeSlot.querySelector('.lm-round')),
 );

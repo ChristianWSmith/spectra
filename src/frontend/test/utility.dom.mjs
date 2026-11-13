@@ -167,8 +167,6 @@ function check(name, cond, detail = '') {
 // must show. carol throws nothing (the toolbar's 0-match case).
 const rounds = Array.from({ length: 13 }, (_, i) => ({
   number: i + 1,
-  warmup: false,
-  pregame: false,
   winner: 'ct',
   reason: 'CTWin',
   startTick: i * 2000,
