@@ -482,7 +482,7 @@ func (s *Store) schemaColumns(table string) ([]models.SchemaColumnRow, error) {
 const (
 	queryHistoryCols = `sql, ms, row_count, ok, ran_at`
 
-	savedQueryCols = `name, sql, created_at`
+	savedQueryCols = `name, description, sql, created_at`
 )
 
 // AppendQueryHistory records one console run (success or error) and trims
@@ -560,7 +560,7 @@ func (s *Store) ListSavedQueries() ([]models.SavedQueryRow, error) {
 	var out []models.SavedQueryRow
 	for rows.Next() {
 		var r models.SavedQueryRow
-		if err := rows.Scan(&r.ID, &r.Name, &r.SQL, &r.CreatedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.Name, &r.Description, &r.SQL, &r.CreatedAt); err != nil {
 			return nil, fmt.Errorf("store: list saved queries: %w", err)
 		}
 		out = append(out, r)
@@ -626,7 +626,7 @@ func (s *Store) ListSavedQueriesPage(afterName string, limit int) (*models.Saved
 	page := &models.SavedQueryPage{Rows: []models.SavedQueryRow{}}
 	for rows.Next() {
 		var r models.SavedQueryRow
-		if err := rows.Scan(&r.ID, &r.Name, &r.SQL, &r.CreatedAt); err != nil {
+		if err := rows.Scan(&r.ID, &r.Name, &r.Description, &r.SQL, &r.CreatedAt); err != nil {
 			return nil, fmt.Errorf("store: list saved queries page: %w", err)
 		}
 		page.Rows = append(page.Rows, r)
@@ -641,12 +641,14 @@ func (s *Store) ListSavedQueriesPage(afterName string, limit int) (*models.Saved
 	return page, nil
 }
 
-// SaveQuery inserts a named query (duplicate names yield a user-facing
-// error) and returns the stored row.
-func (s *Store) SaveQuery(name, query string) (models.SavedQueryRow, error) {
+// SaveQuery inserts a named query with its description (duplicate names
+// yield a user-facing error) and returns the stored row. Name and
+// description are validated by the QueryService — the store only guards
+// the unique-name constraint and the NOT NULL columns.
+func (s *Store) SaveQuery(name, query, description string) (models.SavedQueryRow, error) {
 	res, err := s.db.Exec(
-		`INSERT INTO saved_queries (`+savedQueryCols+`) VALUES (?, ?, ?)`,
-		scrub(name), scrub(query), time.Now(),
+		`INSERT INTO saved_queries (`+savedQueryCols+`) VALUES (?, ?, ?, ?)`,
+		scrub(name), scrub(description), scrub(query), time.Now(),
 	)
 	if err != nil {
 		if isUniqueErr(err) {
@@ -661,8 +663,36 @@ func (s *Store) SaveQuery(name, query string) (models.SavedQueryRow, error) {
 	var r models.SavedQueryRow
 	if err := s.db.QueryRow(
 		`SELECT id, `+savedQueryCols+` FROM saved_queries WHERE id = ?`, id,
-	).Scan(&r.ID, &r.Name, &r.SQL, &r.CreatedAt); err != nil {
+	).Scan(&r.ID, &r.Name, &r.Description, &r.SQL, &r.CreatedAt); err != nil {
 		return models.SavedQueryRow{}, fmt.Errorf("store: save query: %w", err)
+	}
+	return r, nil
+}
+
+// UpdateQuery rewrites one saved query's name, SQL and description in
+// place (store precedent: UpdateMetric) — the fix for a typo in a saved
+// row, which INSERT-only SaveQuery could never correct. Unknown ids yield
+// ErrNotFound; a name colliding with a DIFFERENT row yields the same
+// friendly uniqueness error as SaveQuery.
+func (s *Store) UpdateQuery(q models.SavedQueryRow) (models.SavedQueryRow, error) {
+	res, err := s.db.Exec(
+		`UPDATE saved_queries SET name = ?, description = ?, sql = ? WHERE id = ?`,
+		scrub(q.Name), scrub(q.Description), scrub(q.SQL), q.ID,
+	)
+	if err != nil {
+		if isUniqueErr(err) {
+			return models.SavedQueryRow{}, fmt.Errorf("store: a query named %q already exists", scrub(q.Name))
+		}
+		return models.SavedQueryRow{}, fmt.Errorf("store: update query: %w", err)
+	}
+	if err := affectedOrNotFound(res, "store: update query"); err != nil {
+		return models.SavedQueryRow{}, err
+	}
+	var r models.SavedQueryRow
+	if err := s.db.QueryRow(
+		`SELECT id, `+savedQueryCols+` FROM saved_queries WHERE id = ?`, q.ID,
+	).Scan(&r.ID, &r.Name, &r.Description, &r.SQL, &r.CreatedAt); err != nil {
+		return models.SavedQueryRow{}, fmt.Errorf("store: update query: %w", err)
 	}
 	return r, nil
 }

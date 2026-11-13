@@ -41,11 +41,14 @@ type QueryHistoryRow struct {
 }
 
 // SavedQueryRow is one named console query (saved_queries, unique name).
+// Name is the display label; Description is the muted second line under
+// it (both required by the QueryService save/update validation).
 type SavedQueryRow struct {
-	ID        int64     `json:"id"`
-	Name      string    `json:"name"`
-	SQL       string    `json:"sql"`
-	CreatedAt time.Time `json:"createdAt"`
+	ID          int64     `json:"id"`
+	Name        string    `json:"name"`
+	Description string    `json:"description"`
+	SQL         string    `json:"sql"`
+	CreatedAt   time.Time `json:"createdAt"`
 }
 
 // SavedQueryPage is one keyset window of the saved-query list (the SQL

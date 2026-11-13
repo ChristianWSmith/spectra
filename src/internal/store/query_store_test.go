@@ -2,6 +2,7 @@ package store
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -365,20 +366,21 @@ func TestQueryHistoryFIFO(t *testing.T) {
 	}
 }
 
-// TestSavedQueries: unique names + CRUD.
+// TestSavedQueries: unique names + CRUD + the description field +
+// the update path (UpdateQuery: round-trip, colliding rename, unknown id).
 func TestSavedQueries(t *testing.T) {
 	s := openMem(t)
-	q, err := s.SaveQuery("openings", "SELECT * FROM engagements WHERE kind = 'opening'")
+	q, err := s.SaveQuery("openings", "SELECT * FROM engagements WHERE kind = 'opening'", "opening kills by player")
 	if err != nil {
 		t.Fatalf("SaveQuery: %v", err)
 	}
-	if q.ID == 0 || q.Name != "openings" || q.CreatedAt.IsZero() {
+	if q.ID == 0 || q.Name != "openings" || q.Description != "opening kills by player" || q.CreatedAt.IsZero() {
 		t.Fatalf("saved = %+v", q)
 	}
-	if _, err := s.SaveQuery("openings", "SELECT 1"); err == nil || !strings.Contains(err.Error(), "already exists") {
+	if _, err := s.SaveQuery("openings", "SELECT 1", "dup"); err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Errorf("duplicate err = %v, want friendly uniqueness error", err)
 	}
-	if _, err := s.SaveQuery("second", "SELECT 2"); err != nil {
+	if _, err := s.SaveQuery("second", "SELECT 2", "second row"); err != nil {
 		t.Fatalf("SaveQuery: %v", err)
 	}
 	list, err := s.ListSavedQueries()
@@ -388,14 +390,48 @@ func TestSavedQueries(t *testing.T) {
 	if list[0].Name != "openings" || list[1].Name != "second" { // name ASC
 		t.Errorf("order = %q,%q", list[0].Name, list[1].Name)
 	}
+	if list[0].Description != "opening kills by player" {
+		t.Errorf("description = %q, want the stored one (both reads carry the field)", list[0].Description)
+	}
+
+	// Update round-trip: SQL + description + name rewrite in place, the
+	// created_at stamp untouched.
+	up, err := s.UpdateQuery(models.SavedQueryRow{
+		ID: q.ID, Name: "openings v2", Description: "fixed typo", SQL: "SELECT 2",
+	})
+	if err != nil {
+		t.Fatalf("UpdateQuery: %v", err)
+	}
+	if up.Name != "openings v2" || up.Description != "fixed typo" || up.SQL != "SELECT 2" || !up.CreatedAt.Equal(q.CreatedAt) {
+		t.Fatalf("updated = %+v, want rewritten fields and the original created_at", up)
+	}
+	// The paged read (the console's window) carries it too.
+	page, err := s.ListSavedQueriesPage("", 0)
+	if err != nil || len(page.Rows) != 2 {
+		t.Fatalf("page = %d rows (err %v), want 2", len(page.Rows), err)
+	}
+	if page.Rows[0].Description != "fixed typo" {
+		t.Errorf("paged description = %q, want the updated one", page.Rows[0].Description)
+	}
+	// A rename onto a DIFFERENT row's name → the same friendly error.
+	if _, err := s.SaveQuery("taken", "SELECT 1", "d"); err != nil {
+		t.Fatalf("SaveQuery(taken): %v", err)
+	}
+	if _, err := s.UpdateQuery(models.SavedQueryRow{ID: q.ID, Name: "taken", Description: "d", SQL: "SELECT 2"}); err == nil || !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("colliding update err = %v, want friendly uniqueness error", err)
+	}
+	// Unknown id → ErrNotFound.
+	if _, err := s.UpdateQuery(models.SavedQueryRow{ID: 9999, Name: "x", Description: "d", SQL: "SELECT 1"}); !errors.Is(err, ErrNotFound) {
+		t.Errorf("update unknown id err = %v, want ErrNotFound", err)
+	}
 	if err := s.DeleteQuery(q.ID); err != nil {
 		t.Fatalf("DeleteQuery: %v", err)
 	}
 	if err := s.DeleteQuery(q.ID); err == nil {
 		t.Error("second delete succeeded, want ErrNotFound")
 	}
-	if list, _ := s.ListSavedQueries(); len(list) != 1 {
-		t.Fatalf("list after delete = %d", len(list))
+	if list, _ := s.ListSavedQueries(); len(list) != 2 {
+		t.Fatalf("list after delete = %d, want 2 (openings v2 + taken)", len(list))
 	}
 }
 
@@ -417,7 +453,7 @@ func seedSavedNames(t *testing.T, s *Store, n int) []string {
 		names[i] = fmt.Sprintf("q%02d", i)
 	}
 	for i := len(names) - 1; i >= 0; i-- {
-		if _, err := s.SaveQuery(names[i], "SELECT "+names[i]); err != nil {
+		if _, err := s.SaveQuery(names[i], "SELECT "+names[i], "seed "+names[i]); err != nil {
 			t.Fatalf("SaveQuery(%q): %v", names[i], err)
 		}
 	}
@@ -540,7 +576,7 @@ func TestListSavedQueriesPageBoundaries(t *testing.T) {
 	}
 
 	// The 51st row: the first window now reports a successor.
-	if _, err := s.SaveQuery("q50", "SELECT q50"); err != nil {
+	if _, err := s.SaveQuery("q50", "SELECT q50", "seed q50"); err != nil {
 		t.Fatalf("SaveQuery(q50): %v", err)
 	}
 	full := savedOrder(t, s)
