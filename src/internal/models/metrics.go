@@ -48,6 +48,17 @@ type SavedQueryRow struct {
 	CreatedAt time.Time `json:"createdAt"`
 }
 
+// SavedQueryPage is one keyset window of the saved-query list (the SQL
+// console's "Load more" pagination): Rows is the window in name ASC
+// order, HasNext reports whether another window follows it (the store's
+// limit+1 probe). The cursor is the last row's NAME — saved_queries.name
+// is UNIQUE, so a name alone positions the next window with no id
+// tie-break (see store.ListSavedQueriesPage).
+type SavedQueryPage struct {
+	Rows    []SavedQueryRow `json:"rows"`
+	HasNext bool            `json:"hasNext"`
+}
+
 // SchemaColumnRow is one table column from PRAGMA table_info (store shape).
 // Note is NOT a column: internal/query attaches the provenance note and the
 // store leaves it "" (see package docs — models is the shared vocabulary).

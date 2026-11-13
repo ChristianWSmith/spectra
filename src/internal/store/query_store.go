@@ -571,6 +571,76 @@ func (s *Store) ListSavedQueries() ([]models.SavedQueryRow, error) {
 	return out, nil
 }
 
+// Saved-query window bounds (ListSavedQueriesPage's rows per window).
+const (
+	// ListSavedQueriesPageSize is the default window (the SQL console's
+	// first window and every "Load more" click fetch one of these).
+	ListSavedQueriesPageSize = 50
+	// ListSavedQueriesPageMaxRows is the largest window any caller may
+	// ask for — the row scan stays bounded either way.
+	ListSavedQueriesPageMaxRows = 5000
+)
+
+// ListSavedQueriesPage returns ONE keyset window of the saved-query
+// list: the rows strictly after the cursor name (afterName "" starts the
+// first window) in ListSavedQueries' exact name ASC order, limited to
+// limit rows (<= 0 means ListSavedQueriesPageSize, clamped to
+// ListSavedQueriesPageMaxRows). HasNext reports whether another window
+// exists beyond the returned rows (the query reads limit+1 rows — a
+// window of exactly limit rows with no successor reports false).
+//
+// CURSOR: the last row's NAME. saved_queries.name is UNIQUE and NOT
+// NULL (the service rejects a blank name before it can be stored), so a
+// name is a stable keyset on its own: no id tie-break like
+// ListMatchesPage's (sort value, id) pairs, and — unlike that id cursor
+// — a cursor row deleted between windows is deliberately NOT an
+// ErrNotFound: `name > ?` is a POSITION in the order, and deleting the
+// row it named moves no other row's position. "" is the first-window
+// sentinel (no stored name can equal it).
+//
+// ListSavedQueries itself (the unbounded read CommandPalette's
+// whole-list fuzzy search needs) stays untouched — only the console's
+// list view pages.
+func (s *Store) ListSavedQueriesPage(afterName string, limit int) (*models.SavedQueryPage, error) {
+	if limit <= 0 {
+		limit = ListSavedQueriesPageSize
+	}
+	if limit > ListSavedQueriesPageMaxRows {
+		limit = ListSavedQueriesPageMaxRows
+	}
+	var b strings.Builder
+	b.WriteString(`SELECT id, ` + savedQueryCols + ` FROM saved_queries`)
+	var args []any
+	if afterName != "" {
+		b.WriteString(` WHERE name > ?`)
+		args = append(args, afterName)
+	}
+	// limit+1: the extra row is the "there is more" probe, never returned.
+	fmt.Fprintf(&b, " ORDER BY name ASC LIMIT %d", limit+1)
+
+	rows, err := s.db.Query(b.String(), args...)
+	if err != nil {
+		return nil, fmt.Errorf("store: list saved queries page: %w", err)
+	}
+	defer rows.Close()
+	page := &models.SavedQueryPage{Rows: []models.SavedQueryRow{}}
+	for rows.Next() {
+		var r models.SavedQueryRow
+		if err := rows.Scan(&r.ID, &r.Name, &r.SQL, &r.CreatedAt); err != nil {
+			return nil, fmt.Errorf("store: list saved queries page: %w", err)
+		}
+		page.Rows = append(page.Rows, r)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: list saved queries page: %w", err)
+	}
+	if len(page.Rows) > limit {
+		page.Rows = page.Rows[:limit]
+		page.HasNext = true
+	}
+	return page, nil
+}
+
 // SaveQuery inserts a named query (duplicate names yield a user-facing
 // error) and returns the stored row.
 func (s *Store) SaveQuery(name, query string) (models.SavedQueryRow, error) {
