@@ -700,7 +700,7 @@ INSERT OR IGNORE INTO metrics (name, title, expr, scope, format, doc, origin, de
 ('trade_rate', 'Trade rate',
  'from player_stats, match_trade_opps: ratio(sum(trade_kills), sum(opps))',
  'match', 'percent',
- 'How often a player answered a teammate death inside the trade window. Formula: trade successes divided by total trade opportunities — sum(player_stats.trade_kills) / sum(match_trade_opps.opps) grouped by player over the joined sources, so the denominator is the trade opportunities analytics recorded for that player. It is a ratio, not a share, so the value MAY EXCEED 100% when a trade lands on a death the distance gate did not count (the same note as the profile TradeRate field). N is the player_stats rows behind the value.',
+ 'How often a player answered a teammate death inside the trade window. Formula: trade successes divided by total trade opportunities — sum(player_stats.trade_kills) / sum(match_trade_opps.opps) addressed per player over the joined sources (one value per player: that player''s own trade_kills over that player''s own trade opportunities), so the denominator is the trade opportunities analytics recorded for that player. It is a ratio, not a share, so the value MAY EXCEED 100% when a trade lands on a death the distance gate did not count (the same note as the profile TradeRate field). N is the player_stats rows behind the value.',
  'builtin', '', CURRENT_TIMESTAMP);
 
 -- Advanced platform: declarative plugin registry (plan M5 §2.7 v1). One

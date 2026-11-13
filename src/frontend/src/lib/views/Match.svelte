@@ -466,7 +466,7 @@
         const picked = pinIds.map((pid) => byId.get(pid)).filter(Boolean);
         return Promise.all(
           picked.map((def) =>
-            previewMetric(def.id, '', 'player', `match:${id}`, 200)
+            previewMetric(def.id, '', `match:${id}`, 200)
               .then((pv) => columnOf(def, pv))
               .catch((e) => ({
                 def,

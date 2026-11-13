@@ -140,13 +140,12 @@ func (m *Manager) stateFor(row store.PluginRow) State {
 // state.
 // validateMetricExprs runs the real metrics-engine grammar on every bundled
 // metric so a plugin cannot persist expressions the engine would reject at
-// preview time (structural manifest checks live in manifest.go).
+// preview time (structural manifest checks live in manifest.go). Compile's
+// player-anchor rule applies too: a round-grain primary is refused at
+// install, exactly like a user save.
 func validateMetricExprs(man Manifest) error {
 	for _, d := range man.Metrics {
-		// groupBy retires with the stored-metrics wave: the manifest key
-		// is `scope` now, so validate ungrouped (the engine's groupBy
-		// parameter itself goes in the W2 grammar wave).
-		if pe := metrics.Validate(d.Expr, ""); pe != nil {
+		if pe := metrics.Validate(d.Expr); pe != nil {
 			return fmt.Errorf("plugin %q metric %q: %s", man.ID, d.Name, pe.Message)
 		}
 	}
@@ -258,15 +257,15 @@ func (m *Manager) Remove(id string) error {
 }
 
 // metricDefs converts validated manifest metrics into store rows (the
-// structural name/expr checks already ran in ValidateManifest).
-// MetricDef.Scope is deliberately NOT passed through: plugin manifests
-// carry no scope yet (W1), so the store's ReplacePluginMetrics INSERT
-// leaves the column at its DEFAULT 'match'.
+// structural name/expr/scope checks already ran in ValidateManifest).
+// Scope passes through: the store normalizes an omitted ("") scope to the
+// DDL DEFAULT 'match' (its omitted-field rule, same as CreateMetric), so
+// the INSERT always writes a CHECK-legal value.
 func metricDefs(man Manifest) []store.PluginMetricDef {
 	defs := make([]store.PluginMetricDef, 0, len(man.Metrics))
 	for _, d := range man.Metrics {
 		defs = append(defs, store.PluginMetricDef{
-			Name: d.Name, Title: d.Title, Expr: d.Expr,
+			Name: d.Name, Title: d.Title, Expr: d.Expr, Scope: d.Scope,
 			Format: d.Format, Doc: d.Doc, Denominator: d.Denominator,
 		})
 	}

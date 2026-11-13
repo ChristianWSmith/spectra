@@ -200,7 +200,7 @@
     const ap = { ...appendix, [id]: { loading: true, metric: m, groupBy: m.groupBy } };
     appendix = ap;
     try {
-      const pv = await previewMetric(id, '', m.groupBy, `match:${matchId}`);
+      const pv = await previewMetric(id, '', `match:${matchId}`);
       appendix = {
         ...appendix,
         [id]: {

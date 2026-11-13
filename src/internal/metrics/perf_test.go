@@ -222,12 +222,12 @@ func TestPerfPreview100Matches(t *testing.T) {
 		name string
 		def  Def
 	}{
-		{"grouped count by player", Def{Expr: "from events: count(where kind='kill')", GroupBy: "player"}},
-		{"ungrouped rate + denominator", Def{Expr: "from player_round_stats: count(where deaths=1 and traded=0)", Denominator: "rounds"}},
-		{"grouped avg by round", Def{Expr: "from events: avg(where kind='damage', dmg)", GroupBy: "round"}},
-		{"percentile p95 (raw fetch + Go compute)", Def{Expr: "from events: percentile(0.95, dmg)"}},
+		{"per-subject count of kills", Def{Expr: "from events: count(where kind='kill')"}},
+		{"per-subject rate + career denominator", Def{Expr: "from player_round_stats: count(where deaths=1 and traded=0)", Denominator: "rounds"}},
+		{"per-subject avg damage", Def{Expr: "from events: avg(where kind='damage', dmg)"}},
+		{"percentile p95 (raw fetch + Go partition)", Def{Expr: "from events: percentile(0.95, dmg)"}},
 		{"ratio of counts", Def{Expr: "from events: ratio(count(where kind='kill' and headshot), count(where kind='kill'))"}},
-		{"joined ratio by player (trade opps)", Def{Expr: "from player_stats, match_trade_opps: ratio(sum(trade_kills), sum(opps))", GroupBy: "player"}},
+		{"joined ratio (trade opps)", Def{Expr: "from player_stats, match_trade_opps: ratio(sum(trade_kills), sum(opps))"}},
 	}
 	for _, c := range previewCases {
 		start := time.Now()
@@ -247,17 +247,17 @@ func TestPerfPreview100Matches(t *testing.T) {
 // metric as SQL < 3 s — trivially, since compilation never sees row
 // counts; 1000 compiles stand in for the 1000-match budget).
 func TestPerfCompile(t *testing.T) {
-	exprs := []struct{ expr, group, denom string }{
-		{"from events: count(where kind='kill' and headshot)", "player", ""},
-		{"from player_round_stats: ratio(count(where deaths=1 and traded=0), count(where deaths=1))", "player", ""},
-		{"from rounds: ratio(count(where winner='ct'), count())", "", ""},
-		{"from events: stddev(where kind='damage', dmg)", "round", ""},
+	exprs := []struct{ expr, denom string }{
+		{"from events: count(where kind='kill' and headshot)", ""},
+		{"from player_round_stats: ratio(count(where deaths=1 and traded=0), count(where deaths=1))", ""},
+		{"from player_stats: ratio(count(where side='ct'), count())", ""},
+		{"from events: stddev(where kind='damage', dmg)", ""},
 	}
 	const iterations = 1000
 	start := time.Now()
 	for i := 0; i < iterations; i++ {
 		e := exprs[i%len(exprs)]
-		if _, perr := Compile(e.expr, e.group, e.denom, ""); perr != nil {
+		if _, perr := Compile(e.expr, e.denom, ""); perr != nil {
 			t.Fatalf("compile: %v", perr)
 		}
 	}

@@ -94,7 +94,7 @@ func TestMetricsTableDDLByteEqual(t *testing.T) {
 func TestPluginMetricsRows(t *testing.T) {
 	s := openMem(t)
 	defs := []PluginMetricDef{
-		{Name: "plug_count", Title: "Plug count", Expr: "from events: count()"},
+		{Name: "plug_count", Title: "Plug count", Expr: "from events: count()", Scope: "profile"},
 		{Name: "plug_dmg", Title: "Plug dmg", Expr: "from events: sum(dmg)"},
 	}
 	if err := s.ReplacePluginMetrics("p1", defs); err != nil {
@@ -106,6 +106,29 @@ func TestPluginMetricsRows(t *testing.T) {
 	}
 	if n != 2 {
 		t.Fatalf("metrics rows = %d, want 2", n)
+	}
+	// scope is WRITTEN THROUGH (W2): the declared profile scope lands,
+	// an omitted scope normalizes to the DDL DEFAULT 'match' (the store's
+	// omitted-field rule — same as CreateMetric), version stays DEFAULT 1.
+	var scope string
+	if err := s.db.QueryRow(`SELECT scope FROM metrics WHERE name = 'plug_count'`).Scan(&scope); err != nil {
+		t.Fatalf("select scope: %v", err)
+	}
+	if scope != "profile" {
+		t.Errorf("plug_count scope = %q, want profile (the manifest's scope written through)", scope)
+	}
+	if err := s.db.QueryRow(`SELECT scope FROM metrics WHERE name = 'plug_dmg'`).Scan(&scope); err != nil {
+		t.Fatalf("select scope: %v", err)
+	}
+	if scope != "match" {
+		t.Errorf("plug_dmg scope = %q, want match (omitted scope → the DDL default)", scope)
+	}
+	var version int
+	if err := s.db.QueryRow(`SELECT version FROM metrics WHERE name = 'plug_count'`).Scan(&version); err != nil {
+		t.Fatalf("select version: %v", err)
+	}
+	if version != 1 {
+		t.Errorf("plug_count version = %d, want 1 (version stays the column DEFAULT)", version)
 	}
 	// Upsert keyed by name: re-replace with one changed row + one new name.
 	if err := s.ReplacePluginMetrics("p1", []PluginMetricDef{

@@ -19,12 +19,12 @@ import (
 // whole library with a row cap; pinned metrics appear as scoreboard/profile
 // columns.
 //
-// W1 COMPAT (stored-metrics wave 1): the current frontend still SENDS a
-// groupBy field and has no scope select (its form changes land in W2), so
-// this service keeps its existing call signatures here — but the incoming
-// groupBy values are IGNORED (the metrics.group_by column is gone and the
-// parameter itself retires with the W2 grammar wave) and every API save
-// writes scope 'match'. Saves from the pre-W2 UI keep working end to end.
+// W2 (stored-metrics grammar wave) is DONE: the groupBy parameter is gone
+// from every signature (Compile/RunPreview/PreviewMetric/ValidateExpr and
+// the frontend wrappers), every statement is subject-addressed by the
+// engine, and SaveMetric validates + writes the real scope — the W1
+// ignored-arg shims and the forced scope 'match' are retired with the
+// frontend form change that ships in the same wave.
 
 // MetricPreviewRow is one preview result row.
 type MetricPreviewRow struct {
@@ -55,7 +55,7 @@ type ExprError struct {
 //
 // The full spec (source clause — single-source base form, comma-list
 // join extension — plus the aggregation list, the op table, condition
-// grammar, GroupBy/Denominator/Scope rules, join/population semantics,
+// grammar, Subject/Denominator/Scope rules, join/population semantics,
 // percentile and preview semantics) lives in ONE place: the
 // internal/metrics package doc (doc.go). This service only forwards
 // expressions to metrics.Compile / metrics.RunPreview and maps their
@@ -133,20 +133,24 @@ func (s *MetricsService) SaveMetric(m models.MetricRow) (models.MetricRow, error
 	if !metricFormats[m.Format] {
 		return models.MetricRow{}, fmt.Errorf("metrics: unknown format %q (valid: int, float1, percent, currency)", m.Format)
 	}
+	// Scope is a REAL field since W2: the DDL CHECK admits exactly these
+	// two values, so anything else (including an omitted "") is rejected
+	// here with the same friendly shape as Format — the API always writes
+	// it (the store's '' → 'match' fallback stays for direct
+	// CreateMetric/UpdateMetric callers).
+	m.Scope = strings.TrimSpace(m.Scope)
+	if m.Scope != "match" && m.Scope != "profile" {
+		return models.MetricRow{}, fmt.Errorf("metrics: unknown scope %q (valid: match, profile)", m.Scope)
+	}
 	// API path: origin forced to user; plugin rows are the loader's
 	// territory (platform_store.ReplacePluginMetrics) and cannot be
 	// created or hijacked through here.
 	m.Origin = "user"
 	m.PluginID = ""
-	// W1 compat: the current UI has no scope field (its select lands in
-	// W2) — every API save writes 'match' until then, which is exactly
-	// what the missing field resolves to via the DDL DEFAULT.
-	m.Scope = "match"
-	// Validate expression (+denominator) BEFORE any write. The stored
-	// group_by column is gone (W1) and MetricRow no longer carries one —
-	// validate ungrouped; the groupBy parameter retires engine-wide in
-	// the W2 grammar wave.
-	if _, perr := metrics.Compile(m.Expr, "", m.Denominator, ""); perr != nil {
+	// Validate expression (+denominator) BEFORE any write. Compile also
+	// enforces the player anchor (a primary without a subject is
+	// rejected), so a player-less definition never lands.
+	if _, perr := metrics.Compile(m.Expr, m.Denominator, ""); perr != nil {
 		return models.MetricRow{}, exprErrorErr(perr)
 	}
 	if strings.TrimSpace(m.Doc) == "" {
@@ -171,13 +175,10 @@ func (s *MetricsService) SaveMetric(m models.MetricRow) (models.MetricRow, error
 func (s *MetricsService) DeleteMetric(id int64) error { return s.st.DeleteMetric(id) }
 
 // PreviewMetric compiles expr (empty expr → use id) and runs it.
-// scope: "" = whole library; scope="match:<id>" limits single-match sources.
-// The groupBy argument is IGNORED in W1 (kept in the signature because
-// the current frontend still sends it): the stored group_by column is
-// gone, previews compile ungrouped, and the parameter itself retires with
-// the W2 form change.
-func (s *MetricsService) PreviewMetric(id int64, expr string, groupBy string, scope string, limit int) (MetricPreview, error) {
-	_ = groupBy // W1 compat: ignored — retired by the W2 frontend form change
+// scope: "" = whole library; scope="match:<id>" limits single-match
+// sources. The engine addresses every preview row by its subject — there
+// is no groupBy argument any more (retired with W2).
+func (s *MetricsService) PreviewMetric(id int64, expr string, scope string, limit int) (MetricPreview, error) {
 	var (
 		def  metrics.Def
 		echo models.MetricRow
@@ -191,7 +192,7 @@ func (s *MetricsService) PreviewMetric(id int64, expr string, groupBy string, sc
 		echo = full
 	} else {
 		// Ad-hoc expression: no denominator (rates are a property of the
-		// saved definition); no grouping (groupBy retired in W1).
+		// saved definition); the subject addressing is the engine's.
 		def = metrics.Def{Expr: expr}
 		echo = models.MetricRow{ID: id, Expr: expr}
 	}
@@ -214,12 +215,10 @@ func (s *MetricsService) PreviewMetric(id int64, expr string, groupBy string, sc
 }
 
 // ValidateExpr parses without executing (builder live-check). The
-// groupBy argument is IGNORED in W1 — same compat rule as PreviewMetric:
-// the current frontend still sends it, the stored column is gone, and the
-// parameter retires with the W2 form change.
-func (s *MetricsService) ValidateExpr(expr string, groupBy string) (bool, ExprError, error) {
-	_ = groupBy // W1 compat: ignored — retired by the W2 frontend form change
-	if perr := metrics.Validate(expr, ""); perr != nil {
+// grammar check is Compile's — the player anchor included, so a
+// player-less draft reports the same positioned error a save would.
+func (s *MetricsService) ValidateExpr(expr string) (bool, ExprError, error) {
+	if perr := metrics.Validate(expr); perr != nil {
 		return false, exprError(perr), nil
 	}
 	return true, ExprError{}, nil

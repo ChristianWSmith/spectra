@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ChristianWSmith/spectra/internal/models"
 	"github.com/ChristianWSmith/spectra/internal/store"
 )
 
@@ -77,9 +78,10 @@ func TestInstallGoodBundle(t *testing.T) {
 	if n := metricCount(t, st, "test-plug"); n != 1 {
 		t.Fatalf("metrics rows = %d, want 1", n)
 	}
-	// The manifest above OMITS scope (the metric scope key is `scope` now,
-	// renamed from groupBy with the stored-metrics W1 wave), so the stored
-	// row lands at the column DEFAULT 'match' and version at DEFAULT 1.
+	// The manifest above OMITS scope (the metric scope key is `scope`,
+	// written through since W2), so the stored row carries 'match' — the
+	// store's omitted-field normalization of the DDL DEFAULT — and
+	// version at DEFAULT 1.
 	mrows, err := st.ListMetrics()
 	if err != nil {
 		t.Fatalf("ListMetrics: %v", err)
@@ -89,7 +91,7 @@ func TestInstallGoodBundle(t *testing.T) {
 			continue
 		}
 		if m.Scope != "match" {
-			t.Errorf("plugin metric %q scope = %q, want match (manifest omitted scope — column DEFAULT)", m.Name, m.Scope)
+			t.Errorf("plugin metric %q scope = %q, want match (manifest omitted scope — normalized to the column DEFAULT)", m.Name, m.Scope)
 		}
 		if m.Version != 1 {
 			t.Errorf("plugin metric %q version = %d, want 1 (column DEFAULT)", m.Name, m.Version)
@@ -133,6 +135,47 @@ func TestInstallGoodBundle(t *testing.T) {
 	}
 }
 
+// TestPluginMetricScopeWriteThrough pins the manifest→store scope
+// write-through end to end (Install): a declared scope lands on the
+// stored row, an omitted one keeps the DDL DEFAULT 'match' (the store's
+// omitted-field rule), and version stays at DEFAULT 1 either way.
+func TestPluginMetricScopeWriteThrough(t *testing.T) {
+	st := openStore(t)
+	mgr := NewManager(st, t.TempDir())
+	manifest := `{
+  "id": "test-plug",
+  "name": "Test Plug",
+  "version": "1.0.0",
+  "metrics": [
+    {"name": "plug_career", "title": "Career", "expr": "from events: count()", "scope": "profile", "doc": "counts events"},
+    {"name": "plug_match", "title": "Match", "expr": "from events: count()", "doc": "counts events"}
+  ]
+}`
+	bundle := writeGoodBundle(t, t.TempDir(), manifest)
+	if _, err := mgr.Install(bundle); err != nil {
+		t.Fatalf("Install: %v", err)
+	}
+	rows, err := st.ListMetrics()
+	if err != nil {
+		t.Fatalf("ListMetrics: %v", err)
+	}
+	got := map[string]models.MetricRow{}
+	for _, m := range rows {
+		if m.Origin == "plugin" {
+			got[m.Name] = m
+		}
+	}
+	if len(got) != 2 {
+		t.Fatalf("plugin rows = %d, want 2 (%+v)", len(got), got)
+	}
+	if m := got["plug_career"]; m.Scope != "profile" || m.Version != 1 {
+		t.Errorf("plug_career = scope %q version %d, want profile/1", m.Scope, m.Version)
+	}
+	if m := got["plug_match"]; m.Scope != "match" || m.Version != 1 {
+		t.Errorf("plug_match = scope %q version %d, want match (omitted → the DDL default)/1", m.Scope, m.Version)
+	}
+}
+
 func TestInstallValidationMatrix(t *testing.T) {
 	st := openStore(t)
 	mgr := NewManager(st, t.TempDir())
@@ -148,6 +191,7 @@ func TestInstallValidationMatrix(t *testing.T) {
 		{"missing name", `{"id":"no-name","version":"1"}`, "name is required"},
 		{"missing version", `{"id":"no-ver","name":"B"}`, "version is required"},
 		{"empty metric expr", `{"id":"no-expr","name":"B","version":"1","metrics":[{"name":"m1","expr":"  "}]}`, "empty expr"},
+		{"bad metric scope", `{"id":"bad-mscope","name":"B","version":"1","metrics":[{"name":"m1","expr":"from events: count()","scope":"career"}]}`, "match|profile"},
 		{"bad tpl scope", `{"id":"bad-scope","name":"B","version":"1","reportTpls":[{"id":"tpl-r","scope":"deck","format":"md","body":"x"}]}`, "scope"},
 		{"bad tpl format", `{"id":"bad-fmt","name":"B","version":"1","reportTpls":[{"id":"tpl-r","scope":"match","format":"pdf","body":"x"}]}`, "format"},
 		{"not json", `not json at all`, "not valid JSON"},

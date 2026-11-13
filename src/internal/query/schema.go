@@ -77,7 +77,7 @@ var columnNotes = map[string]map[string]string{
 	},
 	"matches": {
 		"status": "queued|parsing|ready|failed",
-		"map":    "map name as extracted (source for groupBy=map)",
+		"map":    "map name as extracted",
 	},
 	"chat": {
 		"channel":   "chat channel: 'all' (renders [ALL]) | 'team' (renders the speaker's side [T]/[CT]) | '' for system messages",

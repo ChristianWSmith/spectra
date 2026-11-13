@@ -777,10 +777,15 @@ export function deleteMetric(id) {
     return r;
   });
 }
-export function previewMetric(id, expr, groupBy, scope, limit) {
-  return MetricsService.PreviewMetric(id, expr || '', groupBy || '', scope || '', limit || 200);
+// previewMetric runs a compiled expression: id rides an empty expr (the
+// SAVED definition — denominator included), a non-empty expr is ad-hoc.
+// scope: "" = whole library, "match:<id>" = one match. There is no
+// groupBy argument (retired with the W2 grammar wave) — the engine
+// addresses every preview row by its subject.
+export function previewMetric(id, expr, scope, limit) {
+  return MetricsService.PreviewMetric(id, expr || '', scope || '', limit || 200);
 }
-export function validateExpr(expr, groupBy) { return MetricsService.ValidateExpr(expr, groupBy || ''); }
+export function validateExpr(expr) { return MetricsService.ValidateExpr(expr); }
 
 // --- QueryService (M5) -------------------------------------------------------
 

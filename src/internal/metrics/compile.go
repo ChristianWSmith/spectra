@@ -12,12 +12,14 @@ import (
 type PlanMode int
 
 const (
-	// ModePlain: one aggregate row [v0..vK, n] over the whole scope.
-	ModePlain PlanMode = iota
-	// ModeGrouped: [grp, v0..vK, n] per group.
-	ModeGrouped
-	// ModePercentile: raw value rows [[x] | [x, d]] — percentile (and an
-	// optional scalar denominator) computed in Go.
+	// ModeGrouped: [subject, v0..vK, n] per subject — every statement is
+	// subject-addressed, so the output is always one row per player the
+	// statement produced (the groupBy parameter retired with W2; the
+	// subject grouping IS the addressing).
+	ModeGrouped PlanMode = iota
+	// ModePercentile: raw value rows [[subject, x] | [subject, x, d]] —
+	// percentile (and an optional denominator) computed in Go over each
+	// subject partition.
 	ModePercentile
 )
 
@@ -35,18 +37,20 @@ type Plan struct {
 	// provenance view.
 	Secondary   string
 	Source      string
-	GroupBy     string // normalized ("" = no grouping; "none" → "")
 	AggCount    int
 	SQLAggs     int // value columns in the phase-1 statement (before trailing n)
 	PercentileP float64
 	HasDenom    bool
 }
 
-// Compile parses + validates (grammar, sources, join keys, columns,
-// groupBy, scope, denominator, percentile, population rules) and emits
-// parameterized SQL. Any validation failure is a *ParseError carrying
+// Compile parses + validates (grammar, sources, the player anchor, join
+// keys, columns, scope, denominator, percentile, population rules) and
+// emits parameterized SQL. Every statement is subject-addressed: the
+// PRIMARY must carry a subject column, rows without one are dropped,
+// humans-only applies to the subject unconditionally, and the output is
+// grouped by it. Any validation failure is a *ParseError carrying
 // Message/Pos (the ExprError contract).
-func Compile(expr, groupBy, denominator, scope string) (Plan, *ParseError) {
+func Compile(expr, denominator, scope string) (Plan, *ParseError) {
 	spec, perr := Parse(expr)
 	if perr != nil {
 		return Plan{}, perr
@@ -58,6 +62,22 @@ func Compile(expr, groupBy, denominator, scope string) (Plan, *ParseError) {
 		}
 	}
 	primary := srcs[0].Name
+	// Player-relativity (owner criterion: the expression's output must be
+	// player-addressed; mechanically, the PRIMARY source's player mapping
+	// must be a SUBJECT column). PRIMARY-OWNS — the subject comes from the
+	// primary only, the same ownership as scope binding and the population
+	// anchor. Checked right after knownSource so SaveMetric, ad-hoc
+	// PreviewMetric and ValidateExpr all funnel through here and a
+	// player-less draft errors exactly like any invalid expression.
+	// Round/match-grain sources stay legal as JOIN PARTNERS of an anchored
+	// primary wherever joinKey allows (engagements, rounds) — the rule
+	// partitions by what the OUTPUT is, not by a source whitelist.
+	subject := sourceSubject[primary]
+	if subject == "" {
+		return Plan{}, errf(spec.SourcePos,
+			"expression is not player-anchored: primary source %q has no player subject — a metric's value must be per player (player sources: %s; round-grain sources can only join a player-anchored expression)",
+			primary, playerSources)
+	}
 
 	// Engine-derived joins (design (c)): every secondary pairs with the
 	// PRIMARY (star join) on a key joinKey derives from the declared
@@ -88,10 +108,6 @@ func Compile(expr, groupBy, denominator, scope string) (Plan, *ParseError) {
 	}
 	res := resolveColumns(srcs, oneToOne)
 
-	gexpr, perr := groupExpr(primary, groupBy)
-	if perr != nil {
-		return Plan{}, perr
-	}
 	matchID, perr := ParseScope(scope)
 	if perr != nil {
 		return Plan{}, perr
@@ -105,11 +121,7 @@ func Compile(expr, groupBy, denominator, scope string) (Plan, *ParseError) {
 		denomTable = t
 	}
 	for i := range spec.Aggs {
-		a := &spec.Aggs[i]
-		if a.Op == "percentile" && gexpr != "" {
-			return Plan{}, errf(a.Pos, "percentile() requires groupBy \"\" (computed in Go over all rows; grouped percentiles are not supported)")
-		}
-		if perr := validateAggIdents(a, res); perr != nil {
+		if perr := validateAggIdents(&spec.Aggs[i], res); perr != nil {
 			return Plan{}, perr
 		}
 	}
@@ -131,55 +143,22 @@ func Compile(expr, groupBy, denominator, scope string) (Plan, *ParseError) {
 		sqlAggs = append(sqlAggs, a)
 	}
 
-	gnorm := strings.ToLower(strings.TrimSpace(groupBy))
-	if gnorm == "none" {
-		gnorm = ""
-	}
-	// The humans-only condition (store.HumanOnlyBySteamID over the
-	// primary's player column) fires in two cases:
-	//
-	//   - Population alignment (owner ruling): a MULTI-source expression
-	//     whose source set MIXES populations (all-players vs
-	//     humans-only) applies it to the primary's player column
-	//     REGARDLESS of grouping — bot rows survive the LEFT join with
-	//     NULL secondary values, so this condition is what drops them
-	//     (grouped) / keeps the numerator human-only (ungrouped), aligning
-	//     populations on both sides. Accepted mixed pairs always carry the
-	//     primary's player dimension (the humans-only member's key is
-	//     (match, player), so joinKey forces it) — the anchor is never
-	//     empty. Pinned by TestJoinedPopulationAlignment.
-	//   - A `player`-grouped metric is a player LISTING (the preview
-	//     labels each group with a roster name), so it inherits the app's
-	//     humans-only rule: bot groups are dropped through the SAME
-	//     condition the roster reads use (store.HumanOnly), match-scoped
-	//     so the lookup rides the players PK. Grouping by anything else is
-	//     not a listing and stays untouched; a PLAIN (ungrouped)
-	//     single-source aggregate over event rows also stays untouched —
-	//     those record what happened, bots included. Both boundaries are
-	//     pinned by TestPlayerGroupExcludesBots.
-	//
-	// Note: phase2 (the percentile fetch) never groups — Compile rejects
-	// percentile+groupBy — so only the mixed-population case can put the
-	// condition there; phase1 and phase2 emit it identically (uniform
-	// qualification path, no second spelling).
-	humanGroup := ""
-	if mixedPopulations(srcs) {
-		humanGroup = groupColumns[primary]["player"]
-	} else if gnorm == "player" {
-		if col := groupColumns[primary]["player"]; col != "" && gexpr == col {
-			humanGroup = col
-		}
-	}
+	// Subject addressing (W2): every statement groups its output by the
+	// primary's subject column and restricts its rows with `subject <> ''`
+	// beside store.HumanOnly over the subject — UNCONDITIONAL, so the
+	// former mixed-population special case and the player-group case both
+	// collapsed into this one condition (the event-shaped "bots stay"
+	// boundary retired with them: an aggregate records human-subject rows
+	// only). Pinned by TestSubjectAddressingEmitted,
+	// TestJoinedPopulationAlignment and TestSubjectStatementExcludesBots.
 	plan := Plan{
 		Source:   primary,
-		GroupBy:  gnorm,
 		AggCount: len(spec.Aggs),
 		SQLAggs:  len(sqlAggs),
 		HasDenom: denomTable != "",
 	}
-	grouped := gexpr != ""
 	newEmitter := func() *emitter {
-		return &emitter{res: res, from: from, matchID: matchID, denom: denomTable, humanGroup: humanGroup}
+		return &emitter{res: res, from: from, matchID: matchID, denom: denomTable, subject: subject}
 	}
 
 	if firstPctl != nil {
@@ -190,18 +169,15 @@ func Compile(expr, groupBy, denominator, scope string) (Plan, *ParseError) {
 		plan.SQL, plan.Args = raw.sb.String(), raw.args
 		if len(sqlAggs) > 0 {
 			comp := newEmitter()
-			comp.phase1(sqlAggs, gexpr, grouped, false)
+			comp.phase1(sqlAggs, denomTable != "")
 			plan.Secondary = comp.sb.String()
 		}
 		return plan, nil
 	}
 
-	plan.Mode = ModePlain
-	if grouped {
-		plan.Mode = ModeGrouped
-	}
+	plan.Mode = ModeGrouped
 	agg := newEmitter()
-	agg.phase1(sqlAggs, gexpr, grouped, denomTable != "")
+	agg.phase1(sqlAggs, denomTable != "")
 	plan.SQL, plan.Args = agg.sb.String(), agg.args
 	if hasPctl {
 		var pctl *Agg
@@ -219,10 +195,10 @@ func Compile(expr, groupBy, denominator, scope string) (Plan, *ParseError) {
 }
 
 // Validate is the parse+whitelist check without execution (builder live
-// check). groupBy/scope are validated too (scope default "" — callers with
-// a scope compile directly).
-func Validate(expr, groupBy string) *ParseError {
-	_, perr := Compile(expr, groupBy, "", "")
+// check). The denominator/scope defaults are the save-time validation
+// shape ("" = whole library); callers with a scope compile directly.
+func Validate(expr string) *ParseError {
+	_, perr := Compile(expr, "", "")
 	return perr
 }
 
@@ -408,12 +384,12 @@ type emitter struct {
 	from    string
 	matchID int64  // 0 = whole library (bound on the PRIMARY only)
 	denom   string // denominator table ("" = none)
-	// humanGroup is the primary's player column when — and only when —
-	// the statement must apply the humans-only condition (a player group,
-	// or ANY grouping under a mixed-population source list): emitted
-	// next to the scope WHERE as store.HumanOnlyBySteamID over the
-	// primary's match_id.
-	humanGroup string
+	// subject is the primary's subject column (sourceSubject — Compile
+	// rejects a primary without one). It addresses every statement: the
+	// output groups by it and the WHERE carries `subject <> ''` beside
+	// the humans-only condition over it (writeSubject), phase1 and
+	// phase2 alike.
+	subject string
 }
 
 func (e *emitter) bind(v any) string {
@@ -431,38 +407,48 @@ func (e *emitter) matchIDExpr() string {
 	return "match_id"
 }
 
-// qualifyGroup anchors the group expression on the primary when joined.
-// The `map` subquery is emitted unqualified but self-anchored
-// (mapGroupExpr names its source, which equals the engine alias), so it
-// passes through untouched.
-func (e *emitter) qualifyGroup(gexpr string) string {
-	if !e.res.joined || strings.Contains(gexpr, "(") {
-		return gexpr
+// subjectExpr renders the subject column for the SELECT/GROUP BY: the
+// PRIMARY's own column, qualified when the statement joins. Column
+// resolution cannot qualify it (the subject may be owned by BOTH
+// sources — steam_id on player_stats and match_trade_opps — so it is
+// ambiguous through the owners map); the primary owns the anchor, so it
+// qualifies it directly. The single-source base form stays unqualified
+// (byte-stable emission).
+func (e *emitter) subjectExpr() string {
+	if e.res.joined {
+		return e.res.primary + "." + e.subject
 	}
-	return e.res.primary + "." + gexpr
+	return e.subject
 }
 
-// writeHumanOnly writes the humans-only condition with the right WHERE
-// connector (phase1 and phase2 share this — one spelling, both sides).
-func (e *emitter) writeHumanOnly(wroteWhere bool) {
+// writeSubject writes the subject-addressing condition with the right
+// WHERE connector (phase1 and phase2 share this — one spelling, both
+// sides): `subject <> ”` (a no-actor bucket — an event with no
+// attacker — never becomes a value) beside THE humans-only condition
+// (store.HumanOnlyBySteamID over the subject, match-scoped so the
+// lookup rides the players PK). UNCONDITIONAL: every statement is
+// subject-addressed, so the former mixed-population and player-group
+// special cases collapsed into this one condition.
+func (e *emitter) writeSubject(wroteWhere bool) {
 	if wroteWhere {
 		e.sb.WriteString(" AND ")
 	} else {
 		e.sb.WriteString(" WHERE ")
 	}
-	e.sb.WriteString(store.HumanOnlyBySteamID(e.res.primary+"."+e.humanGroup, e.res.primary+".match_id"))
+	e.sb.WriteString(e.subjectExpr())
+	e.sb.WriteString(" <> '' AND ")
+	e.sb.WriteString(store.HumanOnlyBySteamID(e.res.primary+"."+e.subject, e.res.primary+".match_id"))
 }
 
-// phase1 emits the aggregate statement: every SQL aggregation as a value
-// column (first = previewed value, wrapped by the denominator when set),
-// trailing COUNT(*) sample size, FROM (+ engine LEFT JOINs), scope WHERE
-// on the primary (+ the humans-only condition), GROUP/ORDER.
-func (e *emitter) phase1(aggs []*Agg, gexpr string, grouped, wrapDenom bool) {
+// phase1 emits the aggregate statement: the subject as the group column,
+// every SQL aggregation as a value column (first = previewed value,
+// wrapped by the denominator when set), trailing COUNT(*) sample size,
+// FROM (+ engine LEFT JOINs), scope WHERE on the primary (+ the subject
+// addressing condition), GROUP BY subject ORDER BY subject.
+func (e *emitter) phase1(aggs []*Agg, wrapDenom bool) {
 	e.sb.WriteString("SELECT ")
-	if grouped {
-		e.sb.WriteString(e.qualifyGroup(gexpr))
-		e.sb.WriteString(" AS grp, ")
-	}
+	e.sb.WriteString(e.subjectExpr())
+	e.sb.WriteString(" AS grp, ")
 	for i, a := range aggs {
 		if i > 0 {
 			e.sb.WriteString(", ")
@@ -487,27 +473,22 @@ func (e *emitter) phase1(aggs []*Agg, gexpr string, grouped, wrapDenom bool) {
 		e.sb.WriteString(e.bind(e.matchID))
 		wroteWhere = true
 	}
-	// Ungrouped mixed-population expressions apply the condition too
-	// (owner ruling: regardless of grouping) — the `grouped &&` guard is
-	// gone; single-source humanGroup is only ever set for a player group
-	// (grouped), so the base form's emission is unchanged.
-	if e.humanGroup != "" {
-		e.writeHumanOnly(wroteWhere)
-	}
-	if grouped {
-		e.sb.WriteString(" GROUP BY grp ORDER BY grp")
-	}
+	e.writeSubject(wroteWhere)
+	e.sb.WriteString(" GROUP BY grp ORDER BY grp")
 }
 
 // phase2 emits the raw-value statement for a percentile value: the
-// column (plus the scalar denominator when the metric has one), the SAME
-// FROM/join as the aggregate statement (uniform qualification path — the
-// phase-2 fetch carries the join/qualification day one), scope WHERE on
-// the primary (+ humans-only when the source list mixes populations) and
-// the optional per-agg filter. The row cap comes from RunReadOnly — no
-// SQL LIMIT, so truncation is detectable.
+// SUBJECT beside the value (the address Go partitions the fetch by) plus
+// the scalar denominator when the metric has one, the SAME FROM/join as
+// the aggregate statement (uniform qualification path — the phase-2
+// fetch carries the join/qualification day one), scope WHERE on the
+// primary (+ the subject addressing condition) and the optional per-agg
+// filter. The row cap comes from RunReadOnly — no SQL LIMIT, so
+// truncation is detectable.
 func (e *emitter) phase2(a *Agg, withDenom bool) {
 	e.sb.WriteString("SELECT ")
+	e.sb.WriteString(e.subjectExpr())
+	e.sb.WriteString(" AS grp, ")
 	e.sb.WriteString(e.res.qualify(a.Col))
 	e.sb.WriteString(" AS x")
 	if withDenom {
@@ -524,10 +505,8 @@ func (e *emitter) phase2(a *Agg, withDenom bool) {
 		e.sb.WriteString(e.bind(e.matchID))
 		wroteWhere = true
 	}
-	if e.humanGroup != "" {
-		e.writeHumanOnly(wroteWhere)
-		wroteWhere = true
-	}
+	e.writeSubject(wroteWhere)
+	wroteWhere = true
 	if a.Where != nil {
 		if wroteWhere {
 			e.sb.WriteString(" AND ")
@@ -540,13 +519,33 @@ func (e *emitter) phase2(a *Agg, withDenom bool) {
 	}
 }
 
-// emitDenom writes the scalar denominator subquery.
+// emitDenom writes the denominator subquery — ONE rule, two units: the
+// denominator counts the SCOPE's units for the subject.
+//
+//   - match scope (`match:<id>`): the match's units — the scalar
+//     `SELECT COUNT(*) FROM <rounds|matches> WHERE match_id = ?`, every
+//     player in the match sharing it (the emission is unchanged from the
+//     pre-subject engine).
+//   - library/profile scope (""): the subject's CAREER units, correlated
+//     on the subject — rounds → the subject's player_round_stats rows
+//     (one per player-round), matches → the subject's player_stats rows
+//     (one per player-match ⇒ matches played). The career table is
+//     ALIASED so the outer subject reference can never resolve to it
+//     when the primary and the career table are the same table, and the
+//     outer reference is always primary-qualified (inside a subquery an
+//     unqualified name would resolve to the inner table).
 func (e *emitter) emitDenom() {
 	e.sb.WriteString("(SELECT COUNT(*) FROM ")
-	e.sb.WriteString(e.denom)
 	if e.matchID > 0 {
+		e.sb.WriteString(e.denom)
 		e.sb.WriteString(" WHERE match_id = ")
 		e.sb.WriteString(e.bind(e.matchID))
+	} else {
+		e.sb.WriteString(denominatorCareerTables[e.denom])
+		e.sb.WriteString(" AS d WHERE d.steam_id = ")
+		e.sb.WriteString(e.res.primary)
+		e.sb.WriteString(".")
+		e.sb.WriteString(e.subject)
 	}
 	e.sb.WriteString(")")
 }
