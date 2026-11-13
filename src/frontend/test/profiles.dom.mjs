@@ -289,6 +289,16 @@ check(
   );
 }
 check('count line reads the full list', root.querySelector('.pf-count').textContent.includes('4 of 4 players'));
+// The standard player-search hint (owner ruling): Profiles and Library
+// wear the identical byte string, sourced from SuggestInput's
+// kind="player" default — pinned here mounted, in library.dom.mjs A for
+// the facet, and by source in player-search-hint.dom.mjs for the
+// PlayerProfile finder (no harness mounts that view).
+check(
+  'the search box wears THE standard hint (Search players...)',
+  root.querySelector('#pf-search')?.placeholder === 'Search players...',
+  root.querySelector('#pf-search')?.placeholder,
+);
 
 console.log('B. first click on Player → A→Z (never Z→A); second click flips; the map re-apply');
 click(headerBtn(root, 'Player'));

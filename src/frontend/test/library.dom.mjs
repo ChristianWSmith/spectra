@@ -339,6 +339,17 @@ const type = (el, value) => {
 console.log('A. deep-link preset seeds the facets and the first fetch');
 check('map input preset', mapInput().value === 'de_mirage', mapInput().value);
 check('player input preset', playerInput().value === '76561198000000001', playerInput().value);
+// The standard player-search hint (owner ruling): the player facet wears
+// the SAME byte string as Profiles' box — mounted here, in
+// profiles.dom.mjs A for the directory search, by source in
+// player-search-hint.dom.mjs for the PlayerProfile finder (no harness
+// mounts that view). The map facet keeps its own non-player hint.
+check(
+  'player facet wears the standard hint (Search players...)',
+  playerInput().placeholder === 'Search players...',
+  playerInput().placeholder,
+);
+check('map facet keeps its own hint', mapInput().placeholder === 'e.g. de_mirage', mapInput().placeholder);
 check('map facet marked active', mapInput().classList.contains('active'));
 check('player facet marked active', playerInput().classList.contains('active'));
 check('clear button present', clearBtn().length === 1, String(clearBtn().length));
