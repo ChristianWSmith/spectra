@@ -121,10 +121,51 @@ const (
 	// replay pairs throw → bounces → det by the projectile entity (the
 	// `entity` key in detail_json, shared with grenade_throw/grenade).
 	EventGrenadeBounce = "grenade_bounce"
-	EventRoundStart    = "round_start"
-	EventRoundEnd      = "round_end"
-	EventConnect       = "player_connect"
-	EventDisconnect    = "player_disconnect"
+	// EventExtinguish marks a fire being PUT OUT — the SOS
+	// Molotov.Extinguish soundevent, the ONLY extinguish soundevent in the
+	// install (no Incendiary variant: the same sound plays whether a
+	// Molotov or an Incendiary fire dies, and in BOTH scenarios the owner
+	// specified — smoke lands on a burning fire, or a firebomb lands
+	// inside an active smoke and never ignites). Captured by extract's
+	// third SOS wave (sos.go fireCueDefs) and played as an audio-only
+	// replay cue (sfx.js fireCues) — deliberately claimed by NO landmark
+	// CATEGORIES entry (owner: no feed visibility, 2026-11-12), so it is
+	// fetched by the world draw set but never listed by the feed.
+	EventExtinguish = "extinguish"
+	// EventStartFailed marks a firebomb's AIR-BURST failure cue — the SOS
+	// Molotov.StartFailed / IncGrenade.StartFailed soundevents (→
+	// …_detonate_air_01.vsnd_c): the fire grenade blooms in the air and no
+	// fire is emitted (owner ruling, 2026-11-12; corroborated by the asset
+	// names and the Sept 29 2023 patch's in-air vs on-ground bloom
+	// sounds). Audibly distinct from the extinguish cue; the row's weapon
+	// ("Molotov" / "Incendiary Grenade" — from the soundevent name, never
+	// guessed) selects which air-burst file plays. Captured and played
+	// unconditionally: play what the demo recorded. Unclaimed like the
+	// other cue kinds (no feed entry).
+	EventStartFailed = "start_failed"
+	// EventSmash marks a firebomb DETONATING (landing and breaking —
+	// owner's term, 2026-11-12): the SOS Molotov.Smash / IncGrenade.Pop
+	// soundevents — the only container-break sounds in their families
+	// (no IncGrenade.Smash exists; Pop is the incendiary twin by family
+	// elimination, flagged for the owner's by-ear verification). Both fire
+	// 0× across the current 7-demo pool and are captured anyway (owner
+	// decision: wire the dead capture, verify manually). Row weapon
+	// ("Molotov" / "Incendiary Grenade" from the soundevent name) picks
+	// which break file plays. Unclaimed: audio-only cue.
+	EventSmash = "smash"
+	// EventFadeOut marks Inferno.FadeOut — the fire fading out. It
+	// co-fires at +0 from the SAME source entity as the extinguish cue at
+	// suppressed landings (59/66 pool extinguish cues, 5/5 of the
+	// land-in-no-fire cases) and also plays at every fire's death — so,
+	// captured unconditionally, the replay plays it at fire expiry too
+	// (what the demo recorded). Kept because the inventory DOES show it
+	// firing at suppressed landings (the probe's carve-out). Unclaimed:
+	// audio-only cue, no feed entry.
+	EventFadeOut    = "fade_out"
+	EventRoundStart = "round_start"
+	EventRoundEnd   = "round_end"
+	EventConnect    = "player_connect"
+	EventDisconnect = "player_disconnect"
 )
 
 // Sound-event kinds (sound_events.kind) — the classification of one player

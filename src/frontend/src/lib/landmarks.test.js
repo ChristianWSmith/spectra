@@ -41,6 +41,16 @@ import {
 } from './replay/landmarks.js';
 import { isCounted } from './rounds.js';
 
+// WORLD_ONLY_KINDS — the four fire-cue kinds (Wave C) are AUDIO-ONLY by
+// owner decision (2026-11-12): NO CATEGORIES entry claims them, so
+// normalizeEvent never lists them and typedKindsFor never fetches them
+// for the feed, while normalizeWorld's claim-gate-free path yields every
+// row for sfx.js fireCues (the world fetch is kinds:DRAW_KINDS). The two
+// coverage assertions below exempt them — and assert they stay
+// UNCLAIMED: putting one behind a feed chip is a product decision, not
+// an accident.
+const WORLD_ONLY_KINDS = ['extinguish', 'start_failed', 'smash', 'fade_out'];
+
 test('LANDMARK_KINDS is the models.EventKind mirror (order included)', () => {
   assert.deepEqual(LANDMARK_KINDS, [
     'kill',
@@ -63,6 +73,13 @@ test('LANDMARK_KINDS is the models.EventKind mirror (order included)', () => {
     // models.EventKind's grenade_bounce (the SOS bounce rows) — order
     // mirrors the Go const block, so the mirror pin stays honest.
     'grenade_bounce',
+    // Wave C's four FIRE-CUE kinds (models.EventExtinguish …
+    // EventFadeOut), in Go-const order after grenade_bounce: audio-only
+    // replay cues — see WORLD_ONLY_KINDS below.
+    'extinguish',
+    'start_failed',
+    'smash',
+    'fade_out',
     'round_start',
     'round_end',
     'player_connect',
@@ -125,9 +142,19 @@ test('every category is well-formed and every typed kind is claimed at least onc
       if (c.source === 'sound') assert.equal(c.kinds, undefined, c.id);
     }
   }
-  // All stored kinds land in a category — no recorded activity is
-  // unreachable from the feed.
-  for (const k of LANDMARK_KINDS) assert.ok(seen.has(k), `unclaimed kind ${k}`);
+  // All stored kinds land in a category — EXCEPT the four WORLD-ONLY
+  // fire-cue kinds (owner decision, 2026-11-12: no feed visibility —
+  // they are fetched by the world path and played by sfx.js fireCues,
+  // never listed by the feed). The exemption asserts BOTH directions:
+  // every other kind IS claimed, and a cue kind must stay UNCLAIMED (a
+  // feed chip for one of these is a product decision, not drift).
+  for (const k of LANDMARK_KINDS) {
+    if (WORLD_ONLY_KINDS.includes(k)) {
+      assert.ok(!seen.has(k), `world-only kind ${k} must not be claimed by any category`);
+      continue;
+    }
+    assert.ok(seen.has(k), `unclaimed kind ${k}`);
+  }
 });
 
 test('categoryOfKind maps every kind and rejects unknown input', () => {
@@ -202,9 +229,16 @@ test('DRAW_KINDS ⊆ claimed kinds (the draw fetch can never outrun the registry
   // no claim gate, so an unclaimed draw kind would still RENDER — but no
   // feed filter could ever select it. The two registries must stay in
   // step; this is the direct subset assert beside the all-kinds coverage
-  // above.
+  // above. EXCEPTION: the four WORLD_ONLY fire-cue kinds ride the draw
+  // fetch SOLELY for the sfx cues and are deliberately unclaimed (owner
+  // decision, 2026-11-12) — for them the invariant flips: unclaimed or
+  // bust, so a feed chip can never appear by drift.
   for (const k of DRAW_KINDS) {
     assert.ok(LANDMARK_KINDS.includes(k), `draw kind not in LANDMARK_KINDS: ${k}`);
+    if (WORLD_ONLY_KINDS.includes(k)) {
+      assert.ok(!categoryOfKind(k), `world-only draw kind ${k} must stay unclaimed`);
+      continue;
+    }
     assert.ok(categoryOfKind(k), `unclaimed draw kind: ${k}`);
   }
 });
@@ -342,7 +376,13 @@ test('drawBucket buckets every drawable kind (renderer/scrubber contract)', () =
   assert.equal(drawBucket('round_start'), 'start');
   // damage rides the draw feed for the victim-hit flash (no scrubber
   // marker — see scrubberMarkerClass); the rest stay non-drawable:
-  for (const k of ['blind', 'player_connect', '']) {
+  // …and the four FIRE-CUE kinds — none contains a smoke/fire/molotov
+  // substring, so drawBucket's substring branches never claim them and
+  // they bucket '' (unpainted, no scrubber marker) while still riding
+  // DRAW_KINDS for the sfx cues. (A kind NAMED e.g. `fire_extinguish`
+  // would fall into the 'fire' bucket above and PAINT — the substring
+  // rules are why the vocabulary is plain `extinguish`.)
+  for (const k of ['blind', 'player_connect', '', 'extinguish', 'start_failed', 'smash', 'fade_out']) {
     assert.equal(drawBucket(k), '', k);
   }
   // Extended spellings keep their substring buckets.
@@ -354,8 +394,9 @@ test('drawBucket buckets every drawable kind (renderer/scrubber contract)', () =
   // markers and never as scrubber ticks, which come from the round ROWS;
   // drop/pickup ride it for the bomb evidence, damage for the map
   // flash, the plant/defuse ATTEMPT lifecycle for the progress rings
-  // and cue points, and grenade_bounce as the flight path's vertices —
-  // none of those adds a scrubber marker).
+  // and cue points, grenade_bounce as the flight path's vertices, and
+  // the four fire cues solely for the sfx cue builders (bucket '' —
+  // audio only), none of those adds a scrubber marker).
   assert.deepEqual([...DRAW_KINDS].sort(), [
     'bomb_defuse',
     'bomb_defuse_abort',
@@ -367,6 +408,8 @@ test('drawBucket buckets every drawable kind (renderer/scrubber contract)', () =
     'bomb_plant_abort',
     'bomb_plant_begin',
     'damage',
+    'extinguish',
+    'fade_out',
     'grenade',
     'grenade_bounce',
     'grenade_land',
@@ -374,6 +417,8 @@ test('drawBucket buckets every drawable kind (renderer/scrubber contract)', () =
     'kill',
     'round_end',
     'round_start',
+    'smash',
+    'start_failed',
     'weapon_drop',
     'weapon_pickup',
   ].sort());
@@ -725,27 +770,37 @@ test('applicableFilterFields: the owner rule table (kind-level applicability)', 
 });
 
 test('the applicability kind tables partition LANDMARK_KINDS (new kinds must be classified)', () => {
-  // ENDPOINT_KINDS' complement is exactly the four kinds that store NO
+  // ENDPOINT_KINDS' complement is exactly the EIGHT kinds that store NO
   // attacker/victim (extract agg): the round rows, the bomb explosion
-  // (bomb entity) and the grenade bounce (projectile only).
+  // (bomb entity), the grenade bounce (projectile only) and the four
+  // FIRE-CUE rows (their source is a projectile/inferno entity —
+  // sos.go fireCue never resolves a participant).
   assert.deepEqual(
     LANDMARK_KINDS.filter((k) => !ENDPOINT_KINDS.includes(k)).sort(),
-    ['bomb_explode', 'grenade_bounce', 'round_end', 'round_start'],
+    [
+      'bomb_explode', 'grenade_bounce', 'extinguish', 'fade_out',
+      'round_end', 'round_start', 'smash', 'start_failed',
+    ].sort(),
   );
   // SCOPED_KINDS is THE store mirror: heatmapScopedKinds (kill, damage)
-  // + heatmapScopedGrenades (the four projectile rows).
+  // + heatmapScopedGrenades (the four projectile rows). The fire cues
+  // are NOT scoped (they never reach a side/team-filtered query — the
+  // feed cannot fetch an unclaimed kind).
   assert.deepEqual(
     [...SCOPED_KINDS].sort(),
     ['damage', 'grenade', 'grenade_bounce', 'grenade_land', 'grenade_throw', 'kill'].sort(),
   );
   // WEAPON_KINDS' complement: every kind with no weapon column written
-  // in internal/extract.
+  // in internal/extract — the fire cues split by what their soundevent
+  // NAME spells: start_failed/smash rows carry the nade (in WEAPON_KINDS
+  // above), the nade-agnostic extinguish/fade_out rows write none.
   assert.deepEqual(
     LANDMARK_KINDS.filter((k) => !WEAPON_KINDS.includes(k)).sort(),
     [
       'blind', 'bomb_plant', 'bomb_defuse', 'bomb_drop', 'bomb_pickup',
       'bomb_plant_begin', 'bomb_plant_abort', 'bomb_defuse_start', 'bomb_defuse_abort',
       'player_connect', 'player_disconnect', 'round_start', 'round_end',
+      'extinguish', 'fade_out',
     ].sort(),
   );
   // Both positive tables stay closed over the stored vocabulary.

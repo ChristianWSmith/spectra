@@ -77,6 +77,17 @@ export const LANDMARK_KINDS = [
   // category claim or normalizeEvent drops it from the feed AND the draw
   // set (see CATEGORIES 'grenade_bounces').
   'grenade_bounce',
+  // The four FIRE-CUE kinds (models.EventExtinguish … EventFadeOut —
+  // Wave C's typed cue rows: smoke⇄fire extinguish, the air-burst
+  // failure, the detonation body-break, the fire fade-out). Audio-ONLY
+  // by owner decision (2026-11-12 — NO CATEGORIES entry claims them, so
+  // normalizeEvent never lists them and typedKindsFor never fetches
+  // them for the feed), while normalizeWorld's claim-gate-free path
+  // still yields every row for sfx.js fireCues.
+  'extinguish',
+  'start_failed',
+  'smash',
+  'fade_out',
   'round_start',
   'round_end',
   'player_connect',
@@ -136,6 +147,18 @@ export const DRAW_KINDS = [
   // rows by default: the 'drops' category below is opt-in.
   'weapon_drop',
   'weapon_pickup',
+  // The four FIRE-CUE kinds (models.EventExtinguish … EventFadeOut) ride
+  // the draw fetch SOLELY so the sfx engine sees them — sfx.js fireCues
+  // filters on kind and plays them on the utility bus. They bucket to ''
+  // (drawBucket falls through: no cue kind contains a smoke/fire/molotov
+  // substring), so the renderer's bucket switch paints nothing, the
+  // scrubber's marker gate finds no claim, and ROUND_POLICY cuts nothing
+  // — audio-only rows, exactly the owner's spec (play the cue, change no
+  // indicator).
+  'extinguish',
+  'start_failed',
+  'smash',
+  'fade_out',
   'round_end',
   'round_start',
 ];
@@ -489,10 +512,12 @@ export function enabledSources(catIds) {
 // agg.weaponDrop/weaponPickedUp and the bomb lifecycle
 // (plant/defuse/attempts/drop/pickup) write the actor, and
 // agg.connect/disconnect stamp the player key. The COMPLEMENT of this
-// set (pinned by the unit test) is the four kinds that store NO player:
+// set (pinned by the unit test) is the eight kinds that store NO player:
 // round_start / round_end (agg.roundStart/roundEnd — playerless rows),
-// bomb_explode (the bomb entity) and grenade_bounce (the projectile
-// only). Footsteps rides PLAYER through the sound SOURCE instead — see
+// bomb_explode (the bomb entity), grenade_bounce (the projectile
+// only) and the four FIRE-CUE kinds (sos.go fireCue: their source entity
+// is a projectile/inferno, never resolved to a participant). Footsteps
+// rides PLAYER through the sound SOURCE instead — see
 // applicableFilterFields.
 export const ENDPOINT_KINDS = [
   'kill',
@@ -536,13 +561,18 @@ export const SCOPED_KINDS = [
 // Write sites in internal/extract: agg.kill (k.weapon), agg.hurt
 // (damage), agg.grenadeBlast / grenadeThrown / grenadeBounced +
 // handlers.decoyLanded (the grenade family), agg.inferDeathDrops output
-// (weapon_drop), agg.weaponPickedUp (weapon_pickup) and agg.bombExploded
-// ("C4"). The COMPLEMENT (pinned) is the playerless/player-keyed kinds
-// that store no weapon: blind, the bomb plant/defuse lifecycle (drop/
-// pickup included — the dropped C4 row carries no weapon column),
-// connect/disconnect and the round rows. The generic `buys` category
-// has NO kinds at all, so buys-only exposes no weapon either (the
-// weapon clause only ever reaches typed rows).
+// (weapon_drop), agg.weaponPickedUp (weapon_pickup), agg.bombExploded
+// ("C4") — plus Wave C's fire cues whose soundevent NAME spells the nade
+// (sos.go fireCueDefs: start_failed and smash rows carry Molotov /
+// Incendiary Grenade; the extinguish/fade cues are nade-agnostic — ONE
+// sound for both nades — and write NO weapon, so they stay in the
+// complement). The COMPLEMENT (pinned) is the playerless/player-keyed
+// kinds that store no weapon: blind, the bomb plant/defuse lifecycle
+// (drop/pickup included — the dropped C4 row carries no weapon column),
+// connect/disconnect, the round rows and the two nade-agnostic fire
+// cues. The generic `buys` category has NO kinds at all, so buys-only
+// exposes no weapon either (the weapon clause only ever reaches typed
+// rows).
 export const WEAPON_KINDS = [
   'kill',
   'damage',
@@ -553,6 +583,10 @@ export const WEAPON_KINDS = [
   'weapon_drop',
   'weapon_pickup',
   'bomb_explode',
+  // Wave C's nade-spelled fire cues (their rows carry the weapon column;
+  // extinguish/fade_out deliberately do NOT — see the complement above).
+  'start_failed',
+  'smash',
 ];
 
 // applicableFilterFields — THE conditional-field derivation: which

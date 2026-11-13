@@ -19,12 +19,14 @@ import (
 )
 
 // TestDiagSOS re-parses the golden demo and reports the CMsgSosStartSoundEvent
-// facts both sound-event waves are built from: bounce message/dedupe/origin
+// facts all THREE sound-event waves are built from: bounce message/dedupe/origin
 // counts, which entity id a bounce's source index matches (thrower vs
 // projectile vs blast payload — the detail_json join key), player-sound
-// attribution rates and their failure reasons, and any player-sound NAME the
-// static candidate table does not cover (resolved against the local install's
-// soundevent table when CS2 is present). Run with:
+// attribution rates and their failure reasons, the fire-cue census (Wave C —
+// Molotov.Extinguish / StartFailed / Smash / IncGrenade.Pop / Inferno.FadeOut
+// per-name counts), and any player-sound NAME the static candidate table does
+// not cover (resolved against the local install's soundevent table when CS2 is
+// present). Run with:
 //
 //	SPECTRA_DIAG=1 go test ./internal/extract -run TestDiagSOS -v
 func TestDiagSOS(t *testing.T) {
@@ -366,8 +368,19 @@ func TestDiagSOS(t *testing.T) {
 		fmt.Printf("  sample:   %s\n", s)
 	}
 
+	// --- fire-cue wave (Wave C) ---------------------------------------------
+	cueCount := map[string]int{}
+	for _, s := range sos {
+		if def, ok := fireCueByHash[s.hash]; ok {
+			cueCount[def.name]++
+		}
+	}
+	fmt.Println("== SOS: fire-cue wave ==")
+	fmt.Printf("per-name=%v (Molotov.Smash/IncGrenade.Pop are 0× in the current pool — captured anyway, owner: wire the dead capture)\n", cueCount)
+
 	// --- name coverage (needs the local install for the full name table) --
 	unknown := map[uint32]int{}
+	cueMsg := 0
 	for _, s := range sos {
 		if _, ok := bounceByHash[s.hash]; ok {
 			continue
@@ -375,9 +388,13 @@ func TestDiagSOS(t *testing.T) {
 		if _, ok := playerSoundByHash[s.hash]; ok {
 			continue
 		}
+		if _, ok := fireCueByHash[s.hash]; ok {
+			cueMsg++ // Wave C's fire cues are KNOWN — never "unmatched"
+			continue
+		}
 		unknown[s.hash]++
 	}
-	fmt.Printf("== SOS: unmatched hashes: %d distinct / %d messages ==\n", len(unknown), len(sos)-matched-bounceMsg)
+	fmt.Printf("== SOS: unmatched hashes: %d distinct / %d messages ==\n", len(unknown), len(sos)-matched-bounceMsg-cueMsg)
 	if mappack.FindCS2("") == "" {
 		fmt.Println("(no local CS2 install — cannot name the unmatched hashes)")
 		return
