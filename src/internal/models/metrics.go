@@ -30,6 +30,16 @@ type MetricRow struct {
 	CreatedAt   time.Time `json:"createdAt"`   // nullable column → zero when NULL
 }
 
+// MetricListPage is one keyset window of the metric-definition list (the
+// Builder's "Load more" pagination): Rows is the window, in ListMetrics'
+// canonical builtin→user→plugin/name order, and HasNext reports whether
+// another window follows it. Shape mirrors models.MatchListPage (the
+// library list's window) minus the roster side channel.
+type MetricListPage struct {
+	Rows    []MetricRow `json:"rows"`
+	HasNext bool        `json:"hasNext"`
+}
+
 // QueryHistoryRow is one SQL console run (query_history, capped).
 type QueryHistoryRow struct {
 	ID    int64     `json:"id"`
