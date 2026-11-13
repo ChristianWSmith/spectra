@@ -23,7 +23,9 @@
   const PINS_KEY = 'spectra:pinned-metrics';
 
   const PREVIEW_LIMIT = 200;
-  const EXAMPLE = "from events: count(where kind='kill' and assisted_flash)";
+  // Placeholder shows the current grammar: a single source, or a comma
+  // list the engine joins (doc.go — the join extension).
+  const EXAMPLE = 'from player_stats, match_trade_opps: ratio(sum(trade_kills), sum(opps))';
 
   // Window size for the metric list: one page per fetch, one more per
   // Load-more click (backend default store.ListMetricsPageSize is the
@@ -565,7 +567,6 @@
               <option value="">none</option>
               <option value="rounds">rounds</option>
               <option value="matches">matches</option>
-              <option value="player_rounds">player_rounds</option>
             </select>
           </div>
           <div class="bld-field wide">
@@ -583,9 +584,10 @@
               placeholder={EXAMPLE}
             ></textarea>
             <p class="bld-hint mono">
-              from &lt;table&gt;: count() | sum(col) | avg(col) | ratio(a, b) | stddev(col) |
-              percentile(p, col) — tables: events, engagements, rounds, player_stats,
-              player_round_stats, round_economy, clutches, utility_events, chat
+              from &lt;table&gt;[, &lt;table&gt;…]: count() | sum(col) | avg(col) | ratio(a, b) | stddev(col) |
+              percentile(p, col) — tables: events, engagements, rounds, player_stats, player_round_stats,
+              round_economy, clutches, utility_events, chat, match_trade_opps — a comma list LEFT JOINs the
+              sources engine-side (no user ON/join syntax); denominator: rounds | matches
             </p>
             {#if exprCheck.state === 'pending'}
               <p class="bld-expr-state muted">checking…</p>
