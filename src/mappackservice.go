@@ -10,6 +10,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/services/kvstore"
 
+	"github.com/ChristianWSmith/spectra/internal/budget"
 	"github.com/ChristianWSmith/spectra/internal/data"
 	"github.com/ChristianWSmith/spectra/internal/mappack"
 )
@@ -119,6 +120,11 @@ func throttledAssetProgress(window time.Duration, emit func(AssetProgressEvent),
 type MapPackService struct {
 	app *application.App
 	kvs *kvstore.KVStoreService
+	// budget is the machine-wide work-token pool (internal/budget) each
+	// per-map pool job draws ONE token from (mappack.WithBudget). Main
+	// wires ONE shared budget in — hand-wired like every other service
+	// dependency; nil (package tests) = unbudgeted no-op.
+	budget *budget.Budget
 }
 
 // MapPackStatus reports what the frontend needs to decide whether to
@@ -177,7 +183,8 @@ func (s *MapPackService) ExtractMapPacks(cs2Dir string) ExtractOutcome {
 	}
 	maps, errs, err := mappack.ExtractMapPacks(cs2Dir, data.MapsDir(),
 		mappack.WithProgress(assetProgressFor(s.app, assetFamilyMapPacks)),
-		mappack.WithBundledMeta(bundledMapMeta))
+		mappack.WithBundledMeta(bundledMapMeta),
+		mappack.WithBudget(s.budget))
 	if err != nil {
 		errs = append(errs, err.Error())
 	}

@@ -300,8 +300,9 @@ export function setDemoCopyOnImport(copy) {
 
 // getImportConcurrency is Settings' "Concurrent imports" control read:
 // {value, max} — value is the effective jobs-at-once count (1 =
-// sequential), max this machine's ceiling (runtime.NumCPU on the Go
-// side, the control's 1..max range). Go decides per claim
+// sequential), max this machine's ceiling (budget.MachineTokens on the
+// Go side — the machine's work-token budget, the control's 1..max
+// range). Go decides per claim
 // (library.Options.Concurrency), so a change applies to queued jobs too.
 export function getImportConcurrency() {
   return LibraryService.GetImportConcurrency();

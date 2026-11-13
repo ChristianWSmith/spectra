@@ -220,7 +220,8 @@
   // CLAIM through library.Options.Concurrency, so a change here applies
   // to jobs already queued, exactly like copy-on-import above). 1 =
   // sequential; the default AND the ceiling come from the backend (the
-  // machine's thread count) — never guessed in the frontend. A read
+  // machine's work-token budget, budget.MachineTokens) — never guessed
+  // in the frontend. A read
   // failure keeps the sequential view (the control must never paint a
   // value the backend didn't say).
   let concurrency = $state(1);
@@ -1087,7 +1088,7 @@
       </div>
       <span class="muted"
         >How many demos import at the same time — 1 = sequential (one at a time), up to {concurrencyMax}
-        (this machine’s thread count, the default). The choice is read when each waiting demo
+        (this machine’s CPU parallelism, the default). The choice is read when each waiting demo
         starts, so it applies to jobs already queued. Higher finishes a big batch sooner and
         uses more memory while parsing.</span
       >

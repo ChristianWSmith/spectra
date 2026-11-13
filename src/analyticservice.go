@@ -13,6 +13,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/application"
 
 	"github.com/ChristianWSmith/spectra/internal/analytics"
+	"github.com/ChristianWSmith/spectra/internal/budget"
 	"github.com/ChristianWSmith/spectra/internal/data"
 	"github.com/ChristianWSmith/spectra/internal/models"
 	"github.com/ChristianWSmith/spectra/internal/sidecar"
@@ -171,6 +172,14 @@ type AnalyticsService struct {
 	// runner then keeps its private slot (still serialized, just not
 	// across services). Adopted before the first submit (useComputeLock).
 	computeLock *sync.Mutex
+	// budget is the machine-wide work-token pool (internal/budget): each
+	// background run takes ONE token BEFORE the compute slot (token →
+	// lock order, never reversed), so a bulk recompute shares the
+	// machine with imports and asset extraction instead of stacking on
+	// them. Nil in package tests (the no-op every construction site
+	// without wiring gets); main hands ONE shared budget in beside
+	// computeLock (useBudget, before any submit).
+	budget *budget.Budget
 }
 
 // Event names emitted by AnalyticsService. Deliberately NOT
@@ -416,6 +425,12 @@ type recomputeRunner struct {
 	// adopts the shared lock main injects through
 	// AnalyticsService.computeLock (useComputeLock, before any submit).
 	slot *sync.Mutex
+	// budget is the machine-wide work-token pool each run draws ONE
+	// token from BEFORE the slot (token → lock order — every
+	// compute-lock holder already owns a token, so the two can never
+	// cycle). nil ⇒ unbudgeted no-op (package tests). Adopted before
+	// the first submit (useBudget), beside useComputeLock.
+	budget *budget.Budget
 }
 
 // gate returns the runner's compute lock, creating the private one on
@@ -442,6 +457,23 @@ func (r *recomputeRunner) useComputeLock(shared *sync.Mutex) {
 	defer r.mu.Unlock()
 	if r.slot == nil {
 		r.slot = shared
+	}
+}
+
+// useBudget points the runner at the machine-wide work-token pool
+// (wired by main beside the compute lock — see AnalyticsService.budget)
+// before the first run is submitted: from then on every run takes ONE
+// token before its slot. Set-once under mu (mirrors useComputeLock's
+// first-resolution-wins), so a later call never writes a field a
+// spawned run reads. No-op when nothing is wired.
+func (r *recomputeRunner) useBudget(b *budget.Budget) {
+	if b == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.budget == nil {
+		r.budget = b
 	}
 }
 
@@ -483,7 +515,19 @@ func (r *recomputeRunner) markQueued(matchID int64) bool {
 // leaves (so the UI's last done of the batch implies the rebuild ran).
 func (r *recomputeRunner) spawn(matchID int64, emit func(name string, payload any), compute func() error, batch *careerBatch) {
 	go func() {
-		slot := r.gate() // one run at a time — see the serialization rationale
+		// Machine-wide work token BEFORE the compute slot (token →
+		// lock order, never reversed — see recomputeRunner.budget). No
+		// cancel signal exists for a queued run, so this is a plain
+		// blocking Acquire; a run waiting for a token still reads
+		// "queued" in RecomputeStates (it hasn't started). The budget
+		// is read under mu (written only by set-once useBudget); nil
+		// budget (package tests) = no-op.
+		r.mu.Lock()
+		b := r.budget
+		r.mu.Unlock()
+		b.Acquire()
+		defer b.Release() // runs after slot.Unlock below (LIFO)
+		slot := r.gate()  // one run at a time — see the serialization rationale
 		slot.Lock()
 		defer slot.Unlock()
 		r.mu.Lock()
@@ -604,6 +648,7 @@ func (s *AnalyticsService) RecomputeAnalysis(matchID int64) error {
 	cfg := analytics.ConfigFrom(c, 0)
 	st := s.st
 	s.rc.useComputeLock(s.computeLock) // share the ONE lock with the importer
+	s.rc.useBudget(s.budget)           // + ONE machine work token per run (beside the lock)
 	s.rc.submit(matchID, s.emitEvent, func() error {
 		return analytics.Compute(st, matchID, cfg)
 	})
@@ -666,6 +711,7 @@ func (s *AnalyticsService) RecomputeAll() (RecomputeAllResult, error) {
 	cfg := analytics.ConfigFrom(c, 0)
 	st := s.st
 	s.rc.useComputeLock(s.computeLock) // share the ONE lock with the importer
+	s.rc.useBudget(s.budget)           // + ONE machine work token per run (beside the lock)
 	submitted, skipped := s.rc.submitBatch(ids, s.emitEvent,
 		func(id int64) error { return analytics.ComputeForBatch(st, id, cfg) },
 		func() error { return st.RebuildCareer() },

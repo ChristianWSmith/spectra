@@ -104,7 +104,8 @@ func (s *LibraryService) SetDemoCopyOnImport(copy bool) error {
 // ImportConcurrency is Settings' "Concurrent imports" read: Value is the
 // effective job parallelism (stored pref, clamped — or the default when
 // unset), Max is this machine's ceiling (maxConcurrentImports —
-// runtime.NumCPU, the 1..Max range the numeric control renders). One
+// budget.MachineTokens, the machine's work-token budget, the 1..Max
+// range the numeric control renders). One
 // round trip so the control always shows its bounds with its value.
 type ImportConcurrency struct {
 	Value int `json:"value"`
