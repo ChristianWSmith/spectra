@@ -344,13 +344,11 @@ test('fireCues: fire-cue rows cue their manifest groups on the UTIL channel', ()
     { kind: 'extinguish', tick: 10 }, // nade-neutral: fixed group
     { kind: 'start_failed', weapon: 'Molotov', tick: 20 }, // per-nade via the soundevent-spelled weapon
     { kind: 'start_failed', weapon: 'Incendiary Grenade', tick: 30 },
-    { kind: 'smash', weapon: 'Molotov', tick: 40 },
-    { kind: 'smash', weapon: 'Incendiary Grenade', tick: 50 }, // the Pop twin's file
     { kind: 'fade_out', tick: 60 },
     // …and the silences: an unknown nade, a missing weapon, other kinds,
     // hostile input — never a substitute (the BOUNCE_GROUPS rule).
     { kind: 'start_failed', weapon: 'AK-47', tick: 70 },
-    { kind: 'smash', tick: 80 },
+    { kind: 'start_failed', tick: 80 },
     { kind: 'grenade', bucket: 'fire', weapon: 'Molotov', tick: 90 }, // the fire DETONATION is grenadeCues' row
     { kind: 'grenade_bounce', weapon: 'Molotov', tick: 100 }, // bounceCues' row
     null,
@@ -361,8 +359,6 @@ test('fireCues: fire-cue rows cue their manifest groups on the UTIL channel', ()
       '10:Fire extinguish:utility',
       '20:Molotov start failed:utility',
       '30:Incendiary Grenade start failed:utility',
-      '40:Molotov smash:utility',
-      '50:Incendiary Grenade pop:utility',
       '60:Fire fade out:utility',
     ],
   );
@@ -1627,19 +1623,13 @@ const BEEP_MANIFEST = {
     // bounce soundevent's own file sets) …
     'HE Grenade bounce': ['/api/sounds/he_bounce-1.wav'],
     'Flashbang bounce': ['/api/sounds/grenade_hit1.wav'],
-    // … the six FIRE-CUE groups (soundTable's Wave C entries — each cue
+    // … the four FIRE-CUE groups (soundTable's Wave C entries — each cue
     // soundevent's file set; internal/mappack/sounds.go. The
-    // extinguish/fade groups are nade-neutral, the rest are per-nade) …
+    // extinguish/fade groups are nade-neutral, the air-burst pair is
+    // per-nade) …
     'Fire extinguish': ['/api/sounds/molotov_extinguish.wav'],
     'Molotov start failed': ['/api/sounds/molotov_detonate_air_01.wav'],
     'Incendiary Grenade start failed': ['/api/sounds/inc_grenade_detonate_air_01.wav'],
-    'Molotov smash': [
-      '/api/sounds/molotov_smash_01.wav',
-      '/api/sounds/molotov_smash_02.wav',
-      '/api/sounds/molotov_smash_03.wav',
-      '/api/sounds/molotov_smash_04.wav',
-    ],
-    'Incendiary Grenade pop': ['/api/sounds/inc_grenade_pop_03.wav'],
     'Fire fade out': ['/api/sounds/fire_loop_fadeout_01.wav'],
     // … the two HEADSHOT-kill cue groups (soundTable's dink/bare pair) …
     'Headshot dink': ['/api/sounds/headshot_armor_e1.wav'],
@@ -2197,7 +2187,6 @@ test('engine: fire cues play on the utility bus through the guarded window', asy
       // The REAL pair — both co-firing rows must play (59/66 pool
       // extinguish cues carry both from one source).
       { kind: 'fade_out', bucket: '', tick: 1000 },
-      { kind: 'smash', bucket: '', weapon: 'Molotov', tick: 1000 },
       // An unknown nade → NO cue (the pure gate pins it; nothing may play).
       { kind: 'start_failed', bucket: '', weapon: 'AK-47', tick: 1001 },
     ]);
@@ -2211,15 +2200,8 @@ test('engine: fire cues play on the utility bus through the guarded window', asy
       1,
       'the fade half of the pair plays too',
     );
-    // The smash group holds four variants picked at RANDOM (pickVariant) —
-    // assert exactly one molotov_smash_* sample, whatever it picked.
-    assert.equal(
-      ctx.sources.filter((s) => s.buffer && /molotov_smash_0\d\.wav$/.test(s.buffer.url)).length,
-      1,
-      'the detonation body-break cue plays exactly one variant',
-    );
-    // EXACTLY those three: the unknown-nade start_failed row stayed silent.
-    assert.equal(ctx.sources.length, 3, 'only the three extracted cues played');
+    // EXACTLY those two: the unknown-nade start_failed row stayed silent.
+    assert.equal(ctx.sources.length, 2, 'only the two extracted cues played');
     sfx.destroy();
   } finally {
     restoreFetch();

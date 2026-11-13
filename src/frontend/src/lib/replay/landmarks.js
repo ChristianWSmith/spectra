@@ -73,16 +73,17 @@ export const LANDMARK_KINDS = [
   // category claim or normalizeEvent drops it from the feed AND the draw
   // set (see CATEGORIES 'grenade_bounces').
   'grenade_bounce',
-  // The four FIRE-CUE kinds (models.EventExtinguish … EventFadeOut —
+  // The three FIRE-CUE kinds (models.EventExtinguish … EventFadeOut —
   // Wave C's typed cue rows: smoke⇄fire extinguish, the air-burst
-  // failure, the detonation body-break, the fire fade-out). Audio-ONLY
+  // failure, the fire fade-out). Audio-ONLY
   // by owner decision (2026-11-12 — NO CATEGORIES entry claims them, so
   // normalizeEvent never lists them and typedKindsFor never fetches
   // them for the feed), while normalizeWorld's claim-gate-free path
-  // still yields every row for sfx.js fireCues.
+  // still yields every row for sfx.js fireCues. (The fourth cue kind
+  // `smash` — Molotov.Smash / IncGrenade.Pop — was DROPPED by owner
+  // ruling 2026-11-12; see CS2.md "Smoke ⇄ fire interactions".)
   'extinguish',
   'start_failed',
-  'smash',
   'fade_out',
   'round_start',
   'round_end',
@@ -143,7 +144,7 @@ export const DRAW_KINDS = [
   // rows by default: the 'drops' category below is opt-in.
   'weapon_drop',
   'weapon_pickup',
-  // The four FIRE-CUE kinds (models.EventExtinguish … EventFadeOut) ride
+  // The three FIRE-CUE kinds (models.EventExtinguish … EventFadeOut) ride
   // the draw fetch SOLELY so the sfx engine sees them — sfx.js fireCues
   // filters on kind and plays them on the utility bus. They bucket to ''
   // (drawBucket falls through: no cue kind contains a smoke/fire/molotov
@@ -153,7 +154,6 @@ export const DRAW_KINDS = [
   // indicator).
   'extinguish',
   'start_failed',
-  'smash',
   'fade_out',
   'round_end',
   'round_start',
@@ -561,7 +561,7 @@ export const SCOPED_KINDS = [
 // handlers.decoyLanded (the grenade family), agg.inferDeathDrops output
 // (weapon_drop), agg.weaponPickedUp (weapon_pickup), agg.bombExploded
 // ("C4") — plus Wave C's fire cues whose soundevent NAME spells the nade
-// (sos.go fireCueDefs: start_failed and smash rows carry Molotov /
+// (sos.go fireCueDefs: start_failed rows carry Molotov /
 // Incendiary Grenade; the extinguish/fade cues are nade-agnostic — ONE
 // sound for both nades — and write NO weapon, so they stay in the
 // complement). The COMPLEMENT (pinned) is the playerless/player-keyed
@@ -581,10 +581,9 @@ export const WEAPON_KINDS = [
   'weapon_drop',
   'weapon_pickup',
   'bomb_explode',
-  // Wave C's nade-spelled fire cues (their rows carry the weapon column;
+  // Wave C's nade-spelled fire cue (its rows carry the weapon column;
   // extinguish/fade_out deliberately do NOT — see the complement above).
   'start_failed',
-  'smash',
 ];
 
 // applicableFilterFields — THE conditional-field derivation: which

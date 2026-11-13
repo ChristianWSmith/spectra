@@ -53,8 +53,8 @@
 //     their THROWS (throwCues — the `${weapon} throw` manifest groups)
 //     and their BOUNCES (bounceCues — the `${weapon} bounce` groups,
 //     bucket 'utility'), the FIRE CUES (fireCues — the smoke⇄fire
-//     extinguish / air-burst failure / detonation body-break / fire
-//     fade rows, models.EventExtinguish … EventFadeOut, at the
+//     extinguish / air-burst failure / fire fade rows,
+//     models.EventExtinguish … EventFadeOut, at the
 //     demo-recorded tick, unconditionally — no smoke/fire-state gating,
 //     bucket 'utility'), knife cues are their damage rows — all in
 //     (prevTick, curTick] and all freeze-gated at cue-build time
@@ -241,12 +241,11 @@ export const SFX_CUE_KINDS = [
   'grenade_throw', // throwCues
   'grenade', // grenadeCues (detonation) + bombActionCues (plant/defuse begin+complete)
   'grenade_bounce', // bounceCues
-  // The four FIRE-CUE kinds (fireCues below — models.EventExtinguish …
+  // The three FIRE-CUE kinds (fireCues below — models.EventExtinguish …
   // EventFadeOut): audio-only cue rows the owner ruled not feed-visible
   // (2026-11-12), fetched through DRAW_KINDS so this engine sees them.
   'extinguish', // smoke⇄fire suppression cue (Molotov.Extinguish)
   'start_failed', // the AIR-BURST failure cue (owner ruling 2026-11-12)
-  'smash', // the firebomb DETONATING (Molotov.Smash / IncGrenade.Pop)
   'fade_out', // the fire fading out (Inferno.FadeOut)
   'bomb_explode', // grenadeCues (the C4 explosion)
   'bomb_plant', // bombAnnouncerCues + c4BeepRows (bucket 'plant')
@@ -413,11 +412,11 @@ export function bounceCues(rows, rounds) {
 // (internal/mappack/sounds.go soundTable — read-only, the exact keys the
 // extracted manifest carries): the NADE-NEUTRAL cues (the install has ONE
 // extinguish sound and ONE fade sound — no Incendiary variant — so the
-// kind alone picks the group) and the per-nade cues (the air-burst and
-// container-break files differ per nade; the row's weapon — spelled by
-// the soundevent name at extract time, sos.go fireCueDefs — picks
-// between them). An unknown/missing weapon makes NO cue: silence, never
-// a substitute (the BOUNCE_GROUPS rule).
+// kind alone picks the group) and the per-nade cue (the air-burst files
+// differ per nade; the row's weapon — spelled by the soundevent name at
+// extract time, sos.go fireCueDefs — picks between them). An
+// unknown/missing weapon makes NO cue: silence, never a substitute
+// (the BOUNCE_GROUPS rule).
 const FIRE_CUE_NAMES = {
   extinguish: 'Fire extinguish',
   fade_out: 'Fire fade out',
@@ -427,14 +426,6 @@ const FIRE_NADE_CUE_GROUPS = {
     ['Molotov', 'Molotov start failed'],
     ['Incendiary Grenade', 'Incendiary Grenade start failed'],
   ]),
-  // The firebomb DETONATING (landing and breaking — owner's term,
-  // 2026-11-12): Molotov.Smash keeps its four bottle-shatter variants,
-  // the incendiary's container break is IncGrenade.Pop (its only
-  // family twin — no IncGrenade.Smash exists in the install).
-  smash: new Map([
-    ['Molotov', 'Molotov smash'],
-    ['Incendiary Grenade', 'Incendiary Grenade pop'],
-  ]),
 };
 
 // fireCues — the FIRE-CUE list: models.EventExtinguish … EventFadeOut
@@ -443,7 +434,7 @@ const FIRE_NADE_CUE_GROUPS = {
 // smoke/fire-state gating: the demo recorded this sound at this tick, so
 // the replay plays it (the owner's fidelity rule; the pool shows every
 // scenario: smoke kills a burning fire, a firebomb lands in smoke and
-// never ignites, an air-burst, a detonation, a fire burning out).
+// never ignites, an air-burst, a fire burning out).
 // Freeze-gated with the SAME rule as grenadeCues/throwCues/bounceCues
 // (rounds.js inFreezeTime — the existing convention, not a new one: fires
 // are cleared at the round boundary, so a cue tick inside freeze would be
