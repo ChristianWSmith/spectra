@@ -59,12 +59,19 @@
     return { score: score + Math.max(0, 8 - (tl.length - ql.length) * 0.1), indices };
   }
 
+  // scoredItems matches q against each item's label and, when the row
+  // carries one, its EXTRA search haystack (r.search — indexed for
+  // matching only, never rendered: a metric's short name, so a short name
+  // finds the metric while the visible label stays title || name).
+  // Highlight indices always address the label — a haystack-only match
+  // renders unhighlighted.
   function scoredItems(q, rows) {
     const out = [];
     for (const r of rows) {
-      const m = fuzzy(q, r.label);
+      const lm = fuzzy(q, r.label);
+      const m = lm || (r.search ? fuzzy(q, r.search) : null);
       if (!m) continue;
-      out.push({ ...r, score: m.score, hl: m.indices });
+      out.push({ ...r, score: m.score, hl: lm ? m.indices : [] });
     }
     out.sort((a, b) => b.score - a.score);
     return out.slice(0, 15);
@@ -307,6 +314,9 @@
       q,
       rows.map((m) => ({
         label: m.title || m.name,
+        // Search-only (scoredItems r.search — never displayed): index the
+        // short name so it also finds the metric.
+        search: m.shortName || '',
         sub: `${m.groupBy ? 'by ' + m.groupBy : 'ungrouped'} · ${m.origin || 'builtin'} · ${m.expr}`,
         run: () => nav('/builder'),
       })),

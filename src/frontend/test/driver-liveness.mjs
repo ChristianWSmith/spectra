@@ -66,13 +66,14 @@ const PROBE_POOL = 4;
 // that control was replaced by the machine-level "Parallel work" knob
 // in its own card (one extra check: the old control's absence);
 // econ-tables re-pinned 94 → 98 when section J added the scoreboard
-// metric-header cap pins (2026-11-13).
+// metric-header cap pins (2026-11-13), and 98 → 100 when the short_name
+// display-criterion pin was added (2026-11-13).
 const EXPECTED = {
   'app-dock.dom.mjs': 59,
   'combat.dom.mjs': 75,
   'compare-rounds.dom.mjs': 27,
   'confirm-dialog.dom.mjs': 20,
-  'econ-tables.dom.mjs': 98,
+  'econ-tables.dom.mjs': 100,
   'heatmap-layer.dom.mjs': 49,
   'landmark-row.dom.mjs': 33,
   'library.dom.mjs': 167,

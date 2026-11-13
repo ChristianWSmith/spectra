@@ -76,6 +76,7 @@
       id: 0,
       name: '',
       title: '',
+      shortName: '',
       expr: '',
       groupBy: '',
       format: '',
@@ -90,6 +91,7 @@
     return JSON.stringify({
       name: f.name,
       title: f.title,
+      shortName: f.shortName,
       expr: f.expr,
       groupBy: f.groupBy,
       format: f.format,
@@ -267,6 +269,7 @@
       id: m.id,
       name: m.name,
       title: m.title || '',
+      shortName: m.shortName || '',
       expr: m.expr,
       groupBy: m.groupBy || '',
       format: m.format || '',
@@ -336,6 +339,7 @@
         id: readOnly ? 0 : form.id,
         name,
         title: form.title.trim() || name,
+        shortName: form.shortName.trim(),
         expr: form.expr,
         groupBy: form.groupBy,
         format: form.format,
@@ -349,6 +353,7 @@
       form.origin = saved.origin;
       form.name = saved.name;
       form.title = saved.title;
+      form.shortName = saved.shortName;
       baseline = snapshot(form);
       await refreshList(appliedQuery);
     } catch (e) {
@@ -522,6 +527,15 @@
           <div class="bld-field">
             <label class="field-label" for="bld-title">Title</label>
             <input id="bld-title" class="input" bind:value={form.title} placeholder="Display label" />
+          </div>
+          <div class="bld-field">
+            <label class="field-label" for="bld-short">Short name (optional)</label>
+            <input
+              id="bld-short"
+              class="input"
+              bind:value={form.shortName}
+              placeholder="Short label for narrow column headers"
+            />
           </div>
           <div class="bld-field">
             <label class="field-label" for="bld-group">GroupBy</label>
