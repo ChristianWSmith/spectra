@@ -97,11 +97,23 @@ const (
 
 // matchListSort whitelists ListMatches sort keys (identifiers only — every
 // user value is bound as a parameter).
+//
+// The score sort is split into the winner's and the loser's side of the
+// final scoreline (MAX/MIN over score_ct, score_t — exactly the two
+// columns the Library shows), one key per axis: winner_score desc = most
+// decisive finishes (13-1 above 13-12), loser_score asc = most lopsided
+// games (a low loser score is a stomp either way: 13-1 or 1-13), desc =
+// razor-close. The old composite "score" key ordered by the scoreline's
+// SUM — total rounds, which answers neither axis — and died with the
+// single Score column. Both score columns are NOT NULL (schema default
+// 0), so neither expression is ever NULL and keysetAfter's NULL arms
+// never fire for them.
 var matchListSort = map[string]string{
 	"extracted_at": "m.extracted_at",
 	"map":          "m.map",
 	"size":         "m.size",
-	"score":        "(m.score_ct + m.score_t)",
+	"winner_score": "MAX(m.score_ct, m.score_t)",
+	"loser_score":  "MIN(m.score_ct, m.score_t)",
 	"duration":     "m.playback_time_s",
 	"rounds":       "m.real_rounds",
 	"status":       "m.status",

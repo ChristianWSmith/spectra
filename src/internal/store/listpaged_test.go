@@ -437,6 +437,118 @@ func TestListMatchesPageBehindFacet(t *testing.T) {
 	}
 }
 
+// TestListMatchesScoreSortKeys: the split score sort — winner_score is
+// MAX(score_ct, score_t), loser_score is MIN(...) — gives each Library
+// score column its own axis. The fixture covers the shapes each axis
+// must order: a decisive win (13-1), a close loss (12-16), a draw
+// (12-12), equal-W-different-L rows (13-1 / 13-9 / 13-9 / 4-13 — all
+// W13) and an exact full tie (the two 13-9 rows), plus a never-extracted
+// 0-0 row. winner desc lists decisive finishes first (equal W ties break
+// by id DESC like every other key); loser asc lists stomps first (a low
+// loser score either way); the
+// keyset windows tile BOTH orders exactly — no row skipped or duplicated
+// across a tie — and the retired composite "score" key (the scoreline
+// SUM, total rounds) is off the whitelist: it falls back to the default
+// extracted_at like any unknown key.
+func TestListMatchesScoreSortKeys(t *testing.T) {
+	s := openMem(t)
+	// Seed bare rows and stamp the scoreline straight onto them — no
+	// extract needed for an order-by pin. ids ascend in seed order.
+	seed := func(n, ct, tr int) int64 {
+		t.Helper()
+		id := seedListRow(t, s, n, nil)
+		if _, err := s.db.Exec(
+			`UPDATE matches SET score_ct = ?, score_t = ? WHERE id = ?`, ct, tr, id,
+		); err != nil {
+			t.Fatalf("set score(%d): %v", n, err)
+		}
+		return id
+	}
+	decisive := seed(0, 13, 1)         // W13 L1 — a stomp, won
+	closeLoss := seed(1, 12, 16)       // W16 L12 — lost close
+	draw := seed(2, 12, 12)            // W12 L12 — both columns the same
+	tieA := seed(3, 13, 9)             // W13 L9
+	tieB := seed(4, 13, 9)             // exact tie with tieA
+	bigWin := seed(5, 4, 13)           // W13 L4 — same W, lowest L
+	never := seedListRow(t, s, 6, nil) // never extracted: 0-0 → W0 L0
+
+	// winner desc: 16 first, then the four W13 rows in id DESC (their L
+	// differs but the W key ties them), then the draw, then the 0-0 row.
+	wantWinner := []int64{closeLoss, bigWin, tieB, tieA, decisive, draw, never}
+	if got := listOrder(t, s, "winner_score", true); !sameIDs(got, wantWinner) {
+		t.Errorf("winner_score desc = %v, want %v", got, wantWinner)
+	}
+	// loser asc: the never-extracted 0-0 row first (its L is honestly 0,
+	// like every other zero-default sort), then 1, 4, the L9 tie (id
+	// DESC), then the L12 pair (close loss after the draw, id DESC).
+	wantLoser := []int64{never, decisive, bigWin, tieB, tieA, draw, closeLoss}
+	if got := listOrder(t, s, "loser_score", false); !sameIDs(got, wantLoser) {
+		t.Errorf("loser_score asc = %v, want %v", got, wantLoser)
+	}
+
+	// The keyset tiles both orders across the ties: windows of 3 must
+	// equal the reference list order exactly (cursor = stored MAX/MIN
+	// value + id DESC tie-break, like every other whitelisted key).
+	for _, c := range []struct {
+		name  string
+		key   string
+		desc  bool
+		sizes []int
+	}{
+		{"winner desc windows", "winner_score", true, []int{3, 3, 1}},
+		{"loser asc windows", "loser_score", false, []int{3, 3, 1}},
+	} {
+		sizes, got := walkPage(t, s, 0, c.key, c.desc, 3)
+		if len(sizes) != len(c.sizes) {
+			t.Errorf("%s window sizes = %v, want %v", c.name, sizes, c.sizes)
+			continue
+		}
+		for i := range sizes {
+			if sizes[i] != c.sizes[i] {
+				t.Errorf("%s window sizes = %v, want %v", c.name, sizes, c.sizes)
+				break
+			}
+		}
+		if !sameIDs(got, listOrder(t, s, c.key, c.desc)) {
+			t.Errorf("%s paged ids %v diverged from the reference order", c.name, got)
+		}
+		seen := map[int64]int{}
+		for _, id := range got {
+			seen[id]++
+		}
+		for id, n := range seen {
+			if n != 1 {
+				t.Errorf("%s: id %d appeared %d times across windows", c.name, id, n)
+			}
+		}
+	}
+
+	// The retired composite key: "score" is no longer whitelisted, so it
+	// behaves like any unknown key — the extracted_at default (all rows
+	// NULL here → id DESC), NOT either score axis.
+	fallback, err := s.ListMatches("", "score", true)
+	if err != nil {
+		t.Fatalf("ListMatches(score): %v", err)
+	}
+	def, err := s.ListMatches("", "extracted_at", true)
+	if err != nil {
+		t.Fatalf("ListMatches(extracted_at): %v", err)
+	}
+	var gotIDs, defIDs []int64
+	for i := range fallback {
+		gotIDs = append(gotIDs, fallback[i].ID)
+	}
+	for i := range def {
+		defIDs = append(defIDs, def[i].ID)
+	}
+	if !sameIDs(gotIDs, defIDs) {
+		t.Errorf("retired score key order = %v, want the extracted_at fallback %v", gotIDs, defIDs)
+	}
+	if sameIDs(gotIDs, wantWinner) {
+		t.Errorf("retired score key still orders by a score axis: %v", gotIDs)
+	}
+}
+
 // pageIDList is the window's ids in row order.
 func pageIDList(p *models.MatchListPage) []int64 {
 	ids := make([]int64, 0, len(p.Rows))
