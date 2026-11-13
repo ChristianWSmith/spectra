@@ -6,8 +6,10 @@
 //   OWNS  · the once-per-match fetch: the kinds:DRAW_KINDS anchor read
 //           + its side channels (the death-drop payload projection, the
 //           per-kill victimHelmet stamp from the state stream, the
-//           grenade-entity hydration, and the buytime_ended boundary the
-//           kit evidence needs);
+//           grenade-entity hydration, the buytime_ended boundary the
+//           kit evidence needs, and the recorded lingering-area ends
+//           — smokegrenade_expired / inferno_expire paired to their
+//           start rows and stamped as `areaEndTick`);
 //         · the canonical world NORMALIZATION (landmarks.normalizeWorld
 //           — no claim gate, no round policy, no category stamp: the
 //           feed's rules never reach the world);
@@ -48,6 +50,37 @@ const GRENADE_KINDS = new Set(['grenade_throw', 'grenade', 'grenade_bounce']);
 // Exported for world-hydration.test.js, which pins the chunk boundary.
 export const BULK_CHUNK = 400;
 
+// AREA_END_JOBS — the recorded lingering-area END pairs stamped onto the
+// typed smoke/fire rows (`areaEndTick` — the renderer's OWN end for the
+// roundcut 'area' policy). Each job pairs its two GENERIC rows by
+// entityid + round — the verified pairing (CS2.md "Smoke ⇄ fire
+// interactions": 707 smokegrenade_detonate → smokegrenade_expired pairs,
+// 626 inferno_startburn → inferno_expire fires with identical positions)
+// — then bridges the pair to the typed row by (bucket, round, tick): the
+// typed row and its generic START row are the SAME game event, demoinfocs
+// dispatching the typed handler and then GenericGameEvent inside ONE
+// handleGameEvent call (game_events.go), while blastFor (extract) and the
+// generic writer both read IngameTick() there — so their ticks are equal
+// by construction, never matched by guesswork (measured on the dev
+// library: 123/123 smokegrenade_detonate and 111/111 inferno_startburn
+// rows have their typed `grenade` row at the SAME tick+round). A pair
+// that cannot honestly match (missing entityid, no preceding start, a
+// round mismatch, a non-positive span) stamps NOTHING: the row keeps NO
+// field and the renderer falls back to its measured natural lifetime.
+const AREA_END_JOBS = [
+  { bucket: 'smoke', start: 'smokegrenade_detonate', end: 'smokegrenade_expired' },
+  { bucket: 'fire', start: 'inferno_startburn', end: 'inferno_expire' },
+];
+
+// GENERIC_PAGE — an EXPLICIT page for these reads: the store's default is
+// 500 rows (hard cap 5000) and one match can hold more of a single name
+// than that (the dev pool's densest name tops out at 774), so the default
+// would silently truncate pairs. 5000 is the store's cap: one call per
+// name covers every match, and even a beyond-cap name degrades to fewer
+// pairs (rows come back in rowid order, so a truncated page can only MISS
+// a pair, never cross one).
+const GENERIC_PAGE = 5000;
+
 // HYDRATION_UNIT — the onProgress unit for the hydration denominator,
 // lowercase-plural like the preload ledger's other units ('images' in
 // the pack stage, 'bytes' in positions): one unit per unique grenade
@@ -58,8 +91,8 @@ const HYDRATION_UNIT = 'grenade reads';
 // loadWorld — the ONE match-static world fetch. Sequential like the
 // inline code it replaces: the anchor read and its side channel first,
 // then the grenade hydration, then the buytime boundary (the kit
-// evidence's second input) — so startEngine's pushes always see a
-// complete world.
+// evidence's second input) and the recorded area ends — so startEngine's
+// pushes always see a complete world.
 //
 //   matchId   — the match to load.
 //   players   — meta.players (the sidecar slot table): the victimHelmet
@@ -88,14 +121,14 @@ const HYDRATION_UNIT = 'grenade reads';
 //               whether it RESOLVED or REJECTED (fail-soft contract: a
 //               failed chunk's ids were attempted work, so done reaches
 //               total even when every chunk rejects — the bar never
-//               sticks below 100%). The anchor/drop/buytime reads are
-//               single IPC calls with no honest count → never reported
+//               sticks below 100%). The anchor/drop/buytime/area-end
+//               reads are IPC calls with no honest count → never reported
 //               (an invented step denominator is the fake-stage this
 //               ledger refuses). The bar may reach 100% while the
-//               trailing buytime read + normalize still finish — the
-//               denominator counts the hydration reads; the stage
-//               completes when the whole load resolves — honest, since
-//               every counted id was really attempted.
+//               trailing buytime + area-end reads and normalize still
+//               finish — the denominator counts the hydration reads; the
+//               stage completes when the whole load resolves — honest,
+//               since every counted id was really attempted.
 export async function loadWorld({ matchId, players, stateIndex, ticks, tickRate, onProgress }) {
   const [rows, dropDetails] = await Promise.all([
     getEvents({ matchId, kinds: DRAW_KINDS, offset: 0, limit: 0 }).catch(() => []),
@@ -124,21 +157,106 @@ export async function loadWorld({ matchId, players, stateIndex, ticks, tickRate,
   // Fail-soft: an error → [] → an EMPTY boundary map, and a round with
   // no row reads as "no buy evidence" (never an invented buy window).
   const bt = await getGenericEvents(matchId, 'buytime_ended', -1, 0, 0).catch(() => []);
-  return buildWorld(hydrated, buyEndsFromRows(bt), tickRate);
+  // The recorded lingering-area ends (AREA_END_JOBS): fail-soft like
+  // every side channel — a rejected read yields an EMPTY map and every
+  // smoke/fire row keeps NO `areaEndTick`, so the renderer falls back to
+  // its measured natural lifetime (never an invented end).
+  const areaEnds = await loadAreaEnds(matchId);
+  return buildWorld(hydrated, buyEndsFromRows(bt), areaEnds, tickRate);
 }
 
 // buildWorld — raw (stamped) anchor rows → THE world object: the
-// canonical normalization once, plus the match-static kit evidence built
-// from it (both inputs are match-static, so it never rebuilds). kitEv
-// stays null while there is no boundary at all — an unknown answer,
-// never a guessed one — exactly the tri-state the cards read.
-function buildWorld(rawRows, buyEnds, tickRate) {
-  const rows = (rawRows || []).map((r) => normalizeWorld(r)).filter(Boolean);
+// canonical normalization once (plus the recorded area-end stamp, which
+// needs the bucket normalizeWorld computes) and the match-static kit
+// evidence built from it (all inputs are match-static, so it never
+// rebuilds). kitEv stays null while there is no boundary at all — an
+// unknown answer, never a guessed one — exactly the tri-state the cards
+// read.
+function buildWorld(rawRows, buyEnds, areaEnds, tickRate) {
+  const rows = (rawRows || [])
+    .map((r) => normalizeWorld(r))
+    .filter(Boolean)
+    .map((r) => stampAreaEnd(r, areaEnds));
   return {
     rows,
     buyEnds: buyEnds || null,
     kitEv: buyEnds ? buildKitEvidence(rows, buyEnds, tickRate) : null,
   };
+}
+
+// stampAreaEnd — the recorded-end stamp on ONE normalized row: a smoke or
+// fire row whose generic START row paired (loadAreaEnds) gets
+// `areaEndTick` — the absolute tick the demo recorded the area ending at
+// (a smoke's smokegrenade_expired, an extinguished fire's early
+// inferno_expire). Everything else keeps NO field: unknown is an ABSENT
+// field, never a stamped 0 (the world contract's unknown-stamp rule),
+// and the renderer's areaOwnEndTick then applies its measured fallback.
+// An end at/before the row's own tick is nonsense → not stamped (never a
+// backwards window). Pure — unit-tested by world-area-ends.test.js.
+function stampAreaEnd(row, areaEnds) {
+  if (row.bucket !== 'smoke' && row.bucket !== 'fire') return row;
+  const end = areaEnds && areaEnds.get(`${row.bucket}:${row.round}:${row.tick}`);
+  if (!Number.isFinite(end) || end <= row.tick) return row;
+  return { ...row, areaEndTick: end };
+}
+
+// genericEntityId — the pairing id out of one generic row's payload:
+// `entityid`, the game event's OWN field (the CS2.md pairing key for
+// smokegrenade_detonate/smokegrenade_expired and inferno_startburn/
+// inferno_expire). null = absent / non-numeric / 0 — that row can never
+// honestly pair (never a guessed id).
+function genericEntityId(row) {
+  if (!row || !row.payloadJson) return null;
+  let raw;
+  try {
+    raw = JSON.parse(row.payloadJson).entityid;
+  } catch {
+    return null; // malformed payload → unknown, never a throw
+  }
+  const id = Number(raw);
+  return Number.isFinite(id) && id > 0 ? id : null;
+}
+
+// loadAreaEnds — the recorded lingering-area ends: ONE map from
+// `${bucket}:${round}:${startTick}` → the recorded end tick, built from
+// the AREA_END_JOBS generic pairs (entityid + round, see there). The four
+// name reads run in parallel; a rejected read yields [] for that name
+// (→ no pairs for that job), so one failed side channel can never fail
+// the load or invent an end. Pairing is FIFO per key: start/end rows come
+// back in rowid order (chronological), a live entity id cannot repeat
+// inside a round, and each end consumes only a start that PRECEDES it —
+// an end before every waiting start is skipped, never force-matched.
+async function loadAreaEnds(matchId) {
+  const names = [];
+  for (const job of AREA_END_JOBS) names.push(job.start, job.end);
+  const lists = await Promise.all(
+    names.map((n) => getGenericEvents(matchId, n, -1, GENERIC_PAGE, 0).catch(() => [])),
+  );
+  const byName = new Map(names.map((n, i) => [n, lists[i] || []]));
+  const out = new Map();
+  for (const job of AREA_END_JOBS) {
+    // key → the start ticks still waiting for their end (row order)
+    const waiting = new Map();
+    for (const s of byName.get(job.start)) {
+      const id = genericEntityId(s);
+      if (id == null || !Number.isFinite(s.tick)) continue;
+      const key = `${job.bucket}:${s.round}:${id}`;
+      const q = waiting.get(key);
+      if (q) q.push(s.tick);
+      else waiting.set(key, [s.tick]);
+    }
+    for (const e of byName.get(job.end)) {
+      const id = genericEntityId(e);
+      if (id == null || !Number.isFinite(e.tick)) continue;
+      const q = waiting.get(`${job.bucket}:${e.round}:${id}`);
+      if (!q || q.length === 0) continue;
+      const start = q[0]; // the earliest waiting start (row order = chronological)
+      if (e.tick <= start) continue; // end precedes its start → not this area's end
+      q.shift();
+      out.set(`${job.bucket}:${e.round}:${start}`, e.tick);
+    }
+  }
+  return out;
 }
 
 // stampVictimHelmet — the headshot-cue input: every kill row gets
@@ -232,7 +350,8 @@ function grenadeEntity(detailJson) {
 //     never sticks below 100% forever).
 //   · the no-bounce/no-target early return reports nothing at all.
 // The other loadWorld phases (anchor read, drop details, buytime
-// boundary) are single IPC calls with no honest count → never reported.
+// boundary, recorded area ends) are IPC calls with no honest count →
+// never reported.
 async function hydrateGrenadeEntities(rows, onProgress) {
   const targets = rows.filter((r) => GRENADE_KINDS.has(r.kind) && Number.isFinite(r.id));
   if (!targets.length || !rows.some((r) => r.kind === 'grenade_bounce')) return rows;
@@ -280,6 +399,8 @@ async function hydrateGrenadeEntities(rows, onProgress) {
 // rows); they are never called from a filter edit — the dataset has no
 // filter dependency. `decoyPlan` is computed by the caller (the plan
 // needs Replay's engine/sideAt closures — see decoyPlanFor there).
+// world.rows carry the recorded `areaEndTick` stamp (loadAreaEnds) the
+// renderer's areaOwnEndTick reads as the lingering area's own end.
 export function pushWorldToRenderer(renderer, world, decoyPlan) {
   renderer.setLandmarks(world.rows);
   // Defuse-kit evidence beside the landmarks (the same additive-setter
