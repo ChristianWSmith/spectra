@@ -942,6 +942,15 @@ canvas.heat-canvas {
   gap: 8px;
 }
 
+/* Source toggles (Built-in / My metrics) above the list: `btn small`
+   buttons whose ON state is the accent border+text — the same active
+   spelling Combat's Clutches won/lost (.comb-kind.active) and Player-
+   Profile's trend buttons (.prof-metric.active) use, scoped to Builder. */
+.bld-src.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .bld-group h3 {
   font-size: 0.7rem;
   font-weight: 600;
