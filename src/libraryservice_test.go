@@ -218,6 +218,64 @@ func TestDemoCopyOnImportRoundTrip(t *testing.T) {
 	}
 }
 
+// TestImportConcurrencyRoundTrip pins the Settings control's contract:
+// unset (or corrupt) reads as the DEFAULT — the machine's thread count
+// (maxConcurrentImports) — Set sticks, out-of-range values clamp into
+// [1, Max] on the way in, and the pipeline-side closure
+// (library.Options.Concurrency via importConcurrencyPref) reads the SAME
+// key — the display half and the admission half never disagree.
+// BEHAVIOR pin of the new pref.
+func TestImportConcurrencyRoundTrip(t *testing.T) {
+	svc := newDemoDirsService(t)
+	pipeline := importConcurrencyPref(svc.kvs)
+	max := maxConcurrentImports()
+
+	if got := svc.GetImportConcurrency(); got.Value != max || got.Max != max {
+		t.Errorf("unset pref = %+v, want {Value:%d Max:%d} (default = the thread count)", got, max, max)
+	}
+	if got := pipeline(); got != max {
+		t.Errorf("pipeline closure = %d, want the default %d", got, max)
+	}
+
+	if err := svc.SetImportConcurrency(1); err != nil {
+		t.Fatalf("SetImportConcurrency(1): %v", err)
+	}
+	if got := svc.GetImportConcurrency().Value; got != 1 {
+		t.Errorf("Get after Set(1) = %d, want 1", got)
+	}
+	if got := pipeline(); got != 1 {
+		t.Errorf("pipeline closure after Set(1) = %d, want 1 (the sequential rung)", got)
+	}
+
+	// Above the ceiling clamps — never more than the pool has workers.
+	if err := svc.SetImportConcurrency(max + 5); err != nil {
+		t.Fatalf("SetImportConcurrency(max+5): %v", err)
+	}
+	if got := svc.GetImportConcurrency().Value; got != max {
+		t.Errorf("Get after Set(max+5) = %d, want the ceiling %d", got, max)
+	}
+	if got := pipeline(); got != max {
+		t.Errorf("pipeline closure after Set(max+5) = %d, want the ceiling %d", got, max)
+	}
+
+	// Below the floor clamps to the single-threaded rung.
+	if err := svc.SetImportConcurrency(-3); err != nil {
+		t.Fatalf("SetImportConcurrency(-3): %v", err)
+	}
+	if got := svc.GetImportConcurrency().Value; got != 1 || pipeline() != 1 {
+		t.Errorf("after Set(-3): Get = %d, pipeline = %d, want 1/1", got, pipeline())
+	}
+
+	// A corrupt value falls back to the DEFAULT (the thread count), never
+	// to 0 (which would stall the pool) and never to a stale guess.
+	if err := svc.kvs.Set(prefsImportConcurrencyKey, "lots"); err != nil {
+		t.Fatalf("seed corrupt pref: %v", err)
+	}
+	if got := svc.GetImportConcurrency().Value; got != max || pipeline() != max {
+		t.Errorf("corrupt pref: Get = %d, pipeline = %d, want the default %d", got, pipeline(), max)
+	}
+}
+
 // TestListMatchesPageStampsCopyState pins the ONE list-side annotation:
 // every row the Library renders carries its fs-derived CopyState
 // (copied/external/missing), while the store's own unbounded ListMatches

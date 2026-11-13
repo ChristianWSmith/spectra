@@ -101,6 +101,38 @@ func (s *LibraryService) SetDemoCopyOnImport(copy bool) error {
 	return s.kvs.Set(prefsCopyOnImportKey, copy)
 }
 
+// ImportConcurrency is Settings' "Concurrent imports" read: Value is the
+// effective job parallelism (stored pref, clamped — or the default when
+// unset), Max is this machine's ceiling (maxConcurrentImports —
+// runtime.NumCPU, the 1..Max range the numeric control renders). One
+// round trip so the control always shows its bounds with its value.
+type ImportConcurrency struct {
+	Value int `json:"value"`
+	Max   int `json:"max"`
+}
+
+// GetImportConcurrency reports how many import jobs run at once (1 =
+// sequential) and the machine's ceiling for the control. Unset/corrupt
+// pref ⇒ the default (the thread count); a stored out-of-range value
+// clamps. The pipeline reads the same pref per job
+// (library.Options.Concurrency), so this is the display half of it.
+func (s *LibraryService) GetImportConcurrency() ImportConcurrency {
+	return ImportConcurrency{
+		Value: importConcurrencyPref(s.kvs)(),
+		Max:   maxConcurrentImports(),
+	}
+}
+
+// SetImportConcurrency stores the concurrent-imports count, clamped to
+// [1, Max] (a number out of range lands at the nearest bound — never an
+// error, never a value the pool can't honor). It applies to jobs from
+// the NEXT claim on — queued jobs pick the new value up too, because the
+// importer reads the pref per job, never at enqueue time (same shape as
+// SetDemoCopyOnImport).
+func (s *LibraryService) SetImportConcurrency(n int) error {
+	return s.kvs.Set(prefsImportConcurrencyKey, clampImportConcurrency(n))
+}
+
 // ChooseDemoDir opens the native folder picker for the import-dir list;
 // an empty string means cancel. The caller persists the choice (the
 // picker itself is dialogs.go's chooseDirectory, shared with

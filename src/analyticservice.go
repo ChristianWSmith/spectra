@@ -164,6 +164,13 @@ type AnalyticsService struct {
 	st  *store.Store
 	app *application.App
 	rc  recomputeRunner
+	// computeLock is the shared ONE-COMPUTE-AT-A-TIME lock: main creates
+	// one and hands it to AnalyticsService and the import pipeline
+	// (library.Options.ComputeLock) alike, so a background recompute can
+	// never overlap an import's analyze pass. Nil in package tests — the
+	// runner then keeps its private slot (still serialized, just not
+	// across services). Adopted before the first submit (useComputeLock).
+	computeLock *sync.Mutex
 }
 
 // Event names emitted by AnalyticsService. Deliberately NOT
@@ -348,7 +355,11 @@ func (s *AnalyticsService) SetConfig(c models.AnalysisConfig) (models.AnalysisCo
 // analytics.Compute ends in store.RebuildCareer, a read-modify-write over
 // EVERY match's player_stats — two overlapping Computes could commit a
 // career rollup built from a pre-recompute snapshot (the store is
-// single-connection, but each Compute issues separate transactions).
+// single-connection, but each Compute issues separate transactions). The
+// slot is SHARED with the import pipeline: main wires the same mutex
+// into library.Options.ComputeLock, so an import's analyze pass and a
+// background recompute never overlap either (they both end in that same
+// rollup).
 //
 // RecomputeAll is the BULK twin: it resolves the behind set server-side
 // (store.MatchListFilter.Behind), reads the config ONCE, and queues one
@@ -399,7 +410,39 @@ type recomputeRunner struct {
 	mu      sync.Mutex
 	queued  map[int64]bool
 	running map[int64]bool
-	slot    sync.Mutex // one compute at a time (serialization rationale above)
+	// slot is the ONE compute lock (see the serialization rationale in
+	// the background-recompute block above). nil until first use keeps
+	// the zero value ready: gate() then creates a private one — or
+	// adopts the shared lock main injects through
+	// AnalyticsService.computeLock (useComputeLock, before any submit).
+	slot *sync.Mutex
+}
+
+// gate returns the runner's compute lock, creating the private one on
+// first use.
+func (r *recomputeRunner) gate() *sync.Mutex {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.slot == nil {
+		r.slot = &sync.Mutex{}
+	}
+	return r.slot
+}
+
+// useComputeLock points the runner at the shared compute lock (wired by
+// main beside the import pipeline — see AnalyticsService.computeLock)
+// before the first run is submitted: from then on imports and background
+// recomputes take turns on the ONE lock. No-op when nothing is wired or
+// when the runner already resolved its slot.
+func (r *recomputeRunner) useComputeLock(shared *sync.Mutex) {
+	if shared == nil {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.slot == nil {
+		r.slot = shared
+	}
 }
 
 // careerBatch is one submitBatch's deferred career rebuild: remaining is
@@ -440,8 +483,9 @@ func (r *recomputeRunner) markQueued(matchID int64) bool {
 // leaves (so the UI's last done of the batch implies the rebuild ran).
 func (r *recomputeRunner) spawn(matchID int64, emit func(name string, payload any), compute func() error, batch *careerBatch) {
 	go func() {
-		r.slot.Lock() // one run at a time — see the serialization rationale
-		defer r.slot.Unlock()
+		slot := r.gate() // one run at a time — see the serialization rationale
+		slot.Lock()
+		defer slot.Unlock()
 		r.mu.Lock()
 		delete(r.queued, matchID)
 		r.running[matchID] = true
@@ -559,6 +603,7 @@ func (s *AnalyticsService) RecomputeAnalysis(matchID int64) error {
 	}
 	cfg := analytics.ConfigFrom(c, 0)
 	st := s.st
+	s.rc.useComputeLock(s.computeLock) // share the ONE lock with the importer
 	s.rc.submit(matchID, s.emitEvent, func() error {
 		return analytics.Compute(st, matchID, cfg)
 	})
@@ -620,6 +665,7 @@ func (s *AnalyticsService) RecomputeAll() (RecomputeAllResult, error) {
 	}
 	cfg := analytics.ConfigFrom(c, 0)
 	st := s.st
+	s.rc.useComputeLock(s.computeLock) // share the ONE lock with the importer
 	submitted, skipped := s.rc.submitBatch(ids, s.emitEvent,
 		func(id int64) error { return analytics.ComputeForBatch(st, id, cfg) },
 		func() error { return st.RebuildCareer() },
