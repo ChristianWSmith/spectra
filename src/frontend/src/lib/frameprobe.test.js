@@ -2,7 +2,10 @@
 // stats accumulator: nearest-rank percentiles, the capped-window
 // bookkeeping (what stays whole-session exact vs what becomes
 // recent-window), the resume-gap rejection, the empty-session honesty,
-// the enabled gate, the reset contract and the console exposure.
+// the enabled gate, the reset contract, the console exposure, and the
+// raster-vs-DOM split (forced-sync readback sampling: the 1-in-N gate,
+// the flush + readback series, the line's additive raster segment and
+// the EXACT frame-gap quarantine that keeps the frame series clean).
 // Pure stats over an INJECTED clock — no DOM, no canvas, no rAF.
 // Run: node --test src/lib/frameprobe.test.js   (from frontend/)
 import test from 'node:test';
@@ -14,6 +17,7 @@ import {
   probeEnabled,
   FRAME_PROBE_CAP,
   FRAME_GAP_MAX_MS,
+  RASTER_SAMPLE_EVERY,
 } from './replay/frameprobe.js';
 import { parseHash } from './router.js';
 
@@ -224,9 +228,11 @@ test('exposure: the session singleton sits on the console-accessible global', ()
   assert.equal(typeof frameProbe.summarize, 'function');
 });
 
-test('defaults: 4096-sample window (4097th sample flips windowed on) and the 250 ms gap bound', () => {
+test('defaults: 4096-sample window (4097th sample flips windowed on), the 250 ms gap bound and the 1-in-60 raster rate', () => {
   assert.equal(FRAME_PROBE_CAP, 4096);
   assert.equal(FRAME_GAP_MAX_MS, 250);
+  assert.equal(RASTER_SAMPLE_EVERY, 60, 'the raster split samples every 60th draw by default');
+  assert.equal(createFrameProbe({ now: () => 0 }).rasterEvery, RASTER_SAMPLE_EVERY);
   const p = createFrameProbe({ now: () => 0 });
   for (let i = 1; i <= FRAME_PROBE_CAP + 1; i++) p.recordDraw(i);
   const d = p.summarize().draws;
@@ -263,4 +269,120 @@ test('showHud: the runtime console toggle defaults on and flips without touching
   frameProbe.recordDraw(1);
   assert.equal(frameProbe.summarize().draws.count > 0, true);
   frameProbe.showHud = true; // restore the default for anything after
+});
+
+// --- the raster-vs-DOM split (forced-sync readback sampling) ----------------
+//
+// The split's contract: an optional 1-in-`rasterEvery` sampled pair of
+// getImageData calls (performed by renderer.js draw()), recorded as TWO
+// additive series (flush = forced completion + readback — an UPPER bound
+// on raster; readback = the no-pending-work floor — the probe's own
+// cost), plus an EXACT quarantine of the one frame gap whose window
+// contains the sample. Existing series/line semantics stay untouched:
+// without raster samples the line is byte-identical to the old format.
+
+test('raster split: shouldSampleRaster samples every rasterEvery-th enabled draw; 0 disables', () => {
+  const p = createFrameProbe({ now: () => 0 });
+  p.rasterEvery = 3;
+  const hits = [];
+  for (let i = 1; i <= 9; i++) hits.push(p.shouldSampleRaster());
+  assert.deepEqual(hits, [false, false, true, false, false, true, false, false, true], 'every 3rd call samples');
+  // A disabled probe doesn't consume the schedule (re-enabling resumes it).
+  p.enabled = false;
+  assert.equal(p.shouldSampleRaster(), false, 'disabled → never samples');
+  p.enabled = true;
+  assert.equal(p.shouldSampleRaster(), false, 'the schedule did not advance while disabled (9 → 10)');
+  assert.equal(p.shouldSampleRaster(), false, '10');
+  assert.equal(p.shouldSampleRaster(), true, '12 → sample (the disabled call didn’t count)');
+  p.rasterEvery = 0;
+  assert.equal(p.shouldSampleRaster(), false, 'rasterEvery = 0 disables the split outright');
+});
+
+test('raster split: recordRaster records flush + readback and the line gains the raster segment', () => {
+  let t = 0;
+  const p = createFrameProbe({ now: () => t });
+  // No samples → the line is byte-identical to the pre-split format
+  // (the exact-string pins above stay green because of exactly this).
+  assert.ok(!p.line().includes('raster'), 'no raster samples → no raster segment');
+  t = 1000;
+  p.recordRaster(4.5, 0.5);
+  t = 1010;
+  p.recordRaster(6.25, 0.75);
+  const s = p.summarize().raster;
+  assert.equal(s.flush.count, 2, 'both forced-completion deltas recorded');
+  assert.equal(s.flush.max, 6.25, 'whole-session exact like every series');
+  assert.equal(s.readback.count, 2, 'the probe’s own readback cost is measured beside them');
+  assert.equal(s.readback.p50, 0.5, 'nearest-rank over [0.5, 0.75]');
+  assert.equal(s.every, 60, 'the rate rides on the summary');
+  assert.equal(s.quarantined, 0, 'nothing quarantined without recordFrame');
+  assert.equal(p.summarize().sessionMs, 10, 'the samples extend the session span like any other');
+  assert.match(
+    p.line(),
+    /\| draw n=0 p50=n\/a p95=n\/a p99=n\/a max=n\/a \| raster n=2 p50=4\.5 p95=6\.3 p99=6\.3 max=6\.3 readback p50=0\.5 \| longtasks unsupported \|/,
+    'the raster segment sits between draw and longtasks, existing segments untouched',
+  );
+});
+
+test('raster split: recordFrame quarantines exactly the gap carrying a sample’s forced cost', () => {
+  let t = 1000;
+  const p = createFrameProbe({ now: () => t });
+  p.recordRaster(5, 0.5); // sample at t=1000
+  // The next rAF (t=1016, gap 16.7 → window [999.3, 1016] CONTAINS the
+  // sample): dropped from `frames`, counted as quarantined — and not as
+  // a resume gap (it was a clean frame).
+  t = 1016;
+  p.recordFrame(16.7);
+  let s = p.summarize();
+  assert.equal(s.frames.count, 0, 'the contaminated gap is never a frame sample');
+  assert.equal(s.raster.quarantined, 1, '…it is counted as quarantined');
+  assert.equal(s.gaps, 0, '…and not as a resume gap');
+  // The following frame records normally (the quarantine is one-shot).
+  t = 1033;
+  p.recordFrame(16.7);
+  s = p.summarize();
+  assert.equal(s.frames.count, 1, 'the next clean gap records');
+  assert.equal(s.raster.quarantined, 1, 'only the contaminated one was dropped');
+  // A gap that STARTS after the sample (play() reset lastT on a resume)
+  // contains none of its cost → records normally.
+  p.recordRaster(5, 0.5); // sample at t=1033
+  t = 5000;
+  p.recordFrame(16.7); // window [4983.3, 5000] — starts long after the sample
+  s = p.summarize();
+  assert.equal(s.frames.count, 2, 'a post-resume gap is not quarantined');
+  assert.equal(s.raster.quarantined, 1, '…the sample’s window has passed');
+  // An INVALID gap carrying a sample still lands in `gaps` — it never
+  // reaches the series either way, so nothing is double-counted.
+  p.recordRaster(5, 0.5);
+  t = 5400;
+  p.recordFrame(9999); // resume gap — invalid
+  s = p.summarize();
+  assert.equal(s.gaps, 1, 'the resume gap counts as a gap');
+  assert.equal(s.raster.quarantined, 1, '…it was already excluded from frames');
+});
+
+test('raster split: a disabled probe records nothing; reset() clears the raster state but keeps the wiring', () => {
+  let t = 0;
+  const p = createFrameProbe({ now: () => t });
+  p.rasterEvery = 1;
+  p.enabled = false;
+  assert.equal(p.shouldSampleRaster(), false, 'disabled → no sampling');
+  p.recordRaster(5, 0.5);
+  let s = p.summarize().raster;
+  assert.equal(s.flush.count, 0, 'disabled → no raster samples');
+  p.enabled = true;
+  t = 100;
+  p.recordRaster(5, 0.5);
+  t = 116;
+  p.recordFrame(16.7); // window [99.3, 116] contains the sample → quarantined
+  s = p.summarize().raster;
+  assert.equal(s.flush.count, 1, 'enabled → sampled');
+  assert.equal(s.quarantined, 1, '…and its gap quarantined');
+  p.reset();
+  s = p.summarize().raster;
+  assert.equal(s.flush.count, 0, 'reset clears the flush series');
+  assert.equal(s.readback.count, 0, '…the readback series');
+  assert.equal(s.quarantined, 0, '…and the quarantine counter');
+  assert.equal(p.summarize().frames.count, 0, '…with every other sample');
+  assert.equal(p.rasterEvery, 1, 'reset keeps the wiring (the rate survives)');
+  assert.equal(p.enabled, true, '…enabled too');
 });

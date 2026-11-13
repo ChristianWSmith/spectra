@@ -1,7 +1,9 @@
 // frameprobe — the ADDITIVE frame-time measurement probe for the replay
-// renderer (instrumentation only: it never touches the canvas, the engine
-// state or the emitted ops, so a session with the probe disabled draws
-// byte-identically to one without it).
+// renderer (instrumentation only: this module never touches the canvas,
+// the engine state or the emitted ops — the raster split's readback is
+// PERFORMED by renderer.js draw() on this module's instruction,
+// read-only — so a session with the probe disabled draws byte-identically
+// to one without it).
 //
 // WHAT IT MEASURES — one session = one page load (`reset()` starts a new
 // one without touching the on/off wiring):
@@ -19,10 +21,55 @@
 //              detected: unsupported (WebKit support is uncertain) → no
 //              observer is installed and the summary says `unsupported`
 //              rather than a fake zero. Never throws either way.
+//   raster   — the RASTER-vs-DOM split sample: a forced-sync readback of
+//              the replay canvas (see RASTER SPLIT below) recorded as two
+//              additive series — `flush` (the first getImageData: forces
+//              this frame's pending canvas raster to completion, then
+//              reads 1 px — an UPPER bound on raster) and `readback` (the
+//              second getImageData with nothing pending — the probe's own
+//              readback cost, the floor). Best raster estimate = flush −
+//              readback; raster ≤ flush either way. Sampled (every
+//              rasterEvery-th draw, default 60), and the ONE frame gap
+//              that carries a sample's forced cost is quarantined
+//              (`raster.quarantined`), never entered into `frames` — so
+//              the frame/draw series keep their exact semantics.
+//
+// RASTER SPLIT — what it answers and why THIS method: the study's
+// `frame − draw` residual (~16 ms) mixes canvas raster + Svelte DOM
+// patch + compositor + idle; the split says whether the raster path (the
+// radar cache) or the DOM is the real lever. The candidates were all
+// evaluated and only one is sound in-page here:
+//   • PerformanceObserver('paint') — first-paint/first-contentful-paint
+//     ONLY: no per-frame paint entries exist. REJECTED.
+//   • PerformanceObserver('long-animation-frame') (LoAF) — Chrome-only;
+//     the target is WebKitGTK. REJECTED.
+//   • timing the engine's rAF callback — still excludes the Svelte DOM
+//     flush (a microtask after the callback) and style/layout/paint, so
+//     it does not split raster from DOM. REJECTED.
+//   • FORCED-SYNC readback (shipped): getImageData on a 2D canvas is
+//     specified to complete all pending drawing before returning — on an
+//     accelerated canvas it forces a GPU sync+readback, on a software
+//     canvas the display-list replay. The delta = raster + readback;
+//     pairing it with a no-pending-work readback of the same surface
+//     measures the readback component itself (its own cost, so the probe
+//     cannot hide behind its overhead). Two honest bounds: raster ≤ flush,
+//     and flush − readback is the estimate (if the second read is served
+//     from a cache the estimate drifts UP toward flush — still an upper
+//     bound, never an over-claim below the truth). It measures the STAGE
+//     canvas only — DOM/CSS paint of the overlays is by construction in
+//     the residual, which is exactly the split being asked for.
+// The probe is one sample per rasterEvery draws (default 60 ≈ 1/s at
+// 60 Hz): each sample costs two readbacks (quantified by the readback
+// series itself), lands in NO frame/draw series value (the contaminated
+// gap is dropped), and can be turned off wholesale with
+// `__spectraFrameProbe.rasterEvery = 0` (dense sampling for a short
+// session: `= 15`).
 //
 // READING THE RENDER-PARALLELISM GATE: `frame` p95 vs the 16.7 ms budget,
 // and `frame − draw` as the draw-vs-rest split (rest = raster + DOM patch
-// + everything else the browser does between two rAF callbacks).
+// + everything else the browser does between two rAF callbacks); with the
+// raster series present, `rest − raster(estimate)` isolates the DOM +
+// composite + idle remainder.
 //
 // HOW TO COLLECT NUMBERS (60-second GUI session):
 //   1. ACTIVATE THE READOUT: start the app on a route whose query
@@ -57,8 +104,12 @@
 //      for a fresh session, then `__spectraFrameProbe.dump()` — logs and
 //      returns one line:
 //        frame n=3600 p50=16.7 p95=17.0 p99=18.1 max=33.4 | draw n=3600
-//        p50=2.1 p95=3.4 p99=5.0 max=12.3 | longtasks n=2 total=140.0ms
+//        p50=2.1 p95=3.4 p99=5.0 max=12.3 | raster n=60 p50=2.4 p95=3.1
+//        p99=3.6 max=4.2 readback p50=0.4 | longtasks n=2 total=140.0ms
 //        | gaps=0 | span=60123ms
+//      (the `raster` segment appears only once a forced-sync sample has
+//      been taken — before that the line is byte-identical to the
+//      pre-split format; `summary()` carries both series whole-session.)
 //      (`summary()` = the same numbers as an object, `line()` = the
 //      string without logging; a series with no samples prints n/a.)
 //
@@ -77,7 +128,11 @@
 // `__spectraFrameProbe.enabled = false` stops it: the draw call site
 // then skips even its extra timestamp read, the record methods return
 // before touching the clock, and the longtask observer (installed once
-// at module load when the browser supports it) no-ops.
+// at module load when the browser supports it) no-ops. The raster split
+// samples only every `rasterEvery`-th draw (default 60) — two readbacks
+// per sample, its cost quantified by the `readback` series itself — and
+// `__spectraFrameProbe.rasterEvery = 0` disables the split entirely
+// without touching the rest of the probe.
 
 // The percentile window: 4096 samples ≈ 68 s of 60 Hz frames — a
 // 60-second measurement session is fully inside it.
@@ -85,6 +140,10 @@ export const FRAME_PROBE_CAP = 4096;
 // Resume-gap bound: a rAF gap beyond this is a tab-switch/background
 // resume, not a frame (mirrors the dt clamp in engine.js loop()).
 export const FRAME_GAP_MAX_MS = 250;
+// Default raster-split sampling rate: every 60th draw (~1/s at 60 Hz) —
+// 0 disables the split. Runtime-tunable:
+//   __spectraFrameProbe.rasterEvery = 0 | 15 | 60 | …
+export const RASTER_SAMPLE_EVERY = 60;
 
 // probeEnabled — THE ?probe=1 gate for the on-screen readout: true only
 // for the literal value "1" on an ALREADY-PARSED route query (router.js
@@ -177,6 +236,18 @@ export function createFrameProbe({
 } = {}) {
   const draws = createSeries(cap);
   const frames = createSeries(cap);
+  // raster split — two additive series (see the header's RASTER SPLIT):
+  // flush = the forced getImageData (pending raster + readback, an upper
+  // bound on raster), readback = the no-pending-work readback floor (the
+  // probe's own cost). rasterCount drives the 1-in-rasterEvery sampling;
+  // lastRasterAt arms the recordFrame quarantine (the gap measured by the
+  // NEXT recordFrame is the only one whose window can contain the
+  // forced cost); rasterQuarantined counts those dropped gap samples.
+  const rasterFlush = createSeries(cap);
+  const rasterReadback = createSeries(cap);
+  let rasterCount = 0;
+  let lastRasterAt = null;
+  let rasterQuarantined = 0;
   let gaps = 0; // rejected frame samples (resume gaps / invalid values)
   let longTaskCount = 0;
   let longTaskTotalMs = 0;
@@ -194,6 +265,11 @@ export function createFrameProbe({
     // The on-screen HUD's runtime toggle (App.svelte's 1 s tick reads
     // it): false hides the ?probe=1 strip without touching collection.
     showHud: true,
+    // Raster-split sampling rate: every rasterEvery-th draw is followed
+    // by the forced-sync readback pair (renderer.js draw()). Default
+    // RASTER_SAMPLE_EVERY (60 ≈ 1/s at 60 Hz); 0 disables the split
+    // without touching anything else. Console: `__spectraFrameProbe.rasterEvery = 15`.
+    rasterEvery: RASTER_SAMPLE_EVERY,
     // Set by installLongTaskTally when the browser supports
     // PerformanceObserver('longtask'); null = the tally measures nothing.
     longTaskObserver: null,
@@ -206,11 +282,50 @@ export function createFrameProbe({
       draws.record(ms);
     },
 
+    // shouldSampleRaster — the draw-site gate for the raster split: true
+    // on every rasterEvery-th ENABLED draw (a disabled probe doesn't
+    // consume the schedule, so disabling/re-enabling resumes it). The
+    // caller performs the readback pair and hands it to recordRaster.
+    shouldSampleRaster() {
+      if (!probe.enabled || !(probe.rasterEvery >= 1)) return false;
+      rasterCount++;
+      return rasterCount % probe.rasterEvery === 0;
+    },
+
+    // recordRaster(flushMs, readbackMs) — one forced-sync sample (see the
+    // header): flush = the getImageData that completed pending drawing
+    // (raster + readback), readback = the immediate re-read with nothing
+    // pending (the probe's own cost). Arms the frame-gap quarantine.
+    recordRaster(flushMs, readbackMs) {
+      if (!probe.enabled || !(flushMs >= 0) || !(readbackMs >= 0)) return;
+      const t = now();
+      touch(t);
+      rasterFlush.record(flushMs);
+      rasterReadback.record(readbackMs);
+      lastRasterAt = t;
+    },
+
     // frame-ms: one call per engine playback rAF. Anything outside
     // [0, gapMaxMs] is not a frame — counted as a gap, not recorded.
     recordFrame(ms) {
       if (!probe.enabled) return;
-      if (!(ms >= 0) || ms > gapMaxMs) {
+      const invalid = !(ms >= 0) || ms > gapMaxMs;
+      // Raster quarantine: this gap measures [now − ms, now] — the ONLY
+      // window that can contain a sampled forced-flush (the probe runs
+      // synchronously between two rAFs). A gap starting AFTER the sample
+      // (play() reset lastT on a resume) contains none of its cost and
+      // records normally; an invalid/resume gap still lands in `gaps`
+      // (excluded from the series either way).
+      if (lastRasterAt != null) {
+        const t = now();
+        const carries = lastRasterAt >= t - ms && lastRasterAt <= t;
+        lastRasterAt = null;
+        if (carries && !invalid) {
+          rasterQuarantined++;
+          return;
+        }
+      }
+      if (invalid) {
         gaps++;
         return;
       }
@@ -225,11 +340,17 @@ export function createFrameProbe({
       longTaskTotalMs += ms;
     },
 
-    // reset() restarts the SAMPLES only: `enabled` and the longtask
-    // observer are the probe's wiring and survive a session reset.
+    // reset() restarts the SAMPLES only: `enabled`, `rasterEvery` and
+    // the longtask observer are the probe's wiring and survive a session
+    // reset.
     reset() {
       draws.clear();
       frames.clear();
+      rasterFlush.clear();
+      rasterReadback.clear();
+      rasterCount = 0;
+      lastRasterAt = null;
+      rasterQuarantined = 0;
       gaps = 0;
       longTaskCount = 0;
       longTaskTotalMs = 0;
@@ -249,6 +370,12 @@ export function createFrameProbe({
           count: longTaskCount,
           totalMs: longTaskTotalMs,
         },
+        raster: {
+          every: probe.rasterEvery,
+          flush: rasterFlush.summary(),
+          readback: rasterReadback.summary(),
+          quarantined: rasterQuarantined,
+        },
       };
     },
 
@@ -260,8 +387,16 @@ export function createFrameProbe({
       const lt = s.longtasks.supported
         ? `longtasks n=${s.longtasks.count} total=${f1(s.longtasks.totalMs)}ms`
         : 'longtasks unsupported';
+      // The raster segment appears only once a sample exists — with no
+      // samples the line is byte-identical to the pre-split format (the
+      // existing pins). `readback p50=` is the probe's own readback cost
+      // beside the flush bound it qualifies.
+      const rast =
+        s.raster.flush.count > 0
+          ? ` | ${seg('raster', s.raster.flush)} readback p50=${f1(s.raster.readback.p50)}`
+          : '';
       return (
-        `${seg('frame', s.frames)} | ${seg('draw', s.draws)} | ${lt}` +
+        `${seg('frame', s.frames)} | ${seg('draw', s.draws)}${rast} | ${lt}` +
         ` | gaps=${s.gaps} | span=${Math.round(s.sessionMs)}ms`
       );
     },
@@ -303,7 +438,8 @@ function installLongTaskTally(probe) {
 // exposure:
 //   __spectraFrameProbe.reset() / .dump() / .line() / .summary() /
 //   .enabled = false   (stop collecting) /
-//   .showHud = false   (hide the ?probe=1 strip; see probeEnabled)
+//   .showHud = false   (hide the ?probe=1 strip; see probeEnabled) /
+//   .rasterEvery = 0   (disable the raster split; = 15 samples denser)
 export const frameProbe = createFrameProbe();
 installLongTaskTally(frameProbe);
 globalThis.__spectraFrameProbe = frameProbe;

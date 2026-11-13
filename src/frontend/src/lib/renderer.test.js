@@ -50,7 +50,14 @@
 // one stroke per band, the fade direction kept), the moving-vs-settled
 // radar smoothing quality, the cached chat cut, the one-pass HUD
 // measure, the precomputed drop window (swept against dropEvidenceAt)
-// and the scrub-drag draw coalescing.
+// and the scrub-drag draw coalescing — plus the RADAR LAYER CACHE pins
+// (a cold draw emits today's ops, a static second draw blits the cached
+// raster instead of re-running drawRadar, camera/size/pack/async-image
+// changes each re-emit the full path, grid frames are never cached, a
+// hit replays the radar layer's context residue, and a missing offscreen
+// factory disarms the cache fail-soft) and the raster sync-probe pin
+// (a sampled draw records the forced-readback pair through the
+// frameProbe singleton).
 // Run: node --test src/lib/renderer.test.js (from frontend/; the lib test
 // glob src/lib/*.test.js picks it up too).
 import test from 'node:test';
@@ -86,6 +93,9 @@ import { buildKitEvidence } from './replay/kits.js';
 import { createEngine } from './replay/engine.js';
 import { normalizeEvent } from './replay/landmarks.js';
 import { buildStateIndex } from './replay/state.js';
+// The frame-time probe singleton: renderer draw() samples the raster
+// split through it (the raster sync-probe pin below).
+import { frameProbe } from './replay/frameprobe.js';
 
 // slotPos builds one slot's interleaved Float32Array [x, y, z, yaw] from
 // a list of per-frame world positions.
@@ -746,8 +756,10 @@ const tintsSince = (mark = 0) => iconTints.slice(mark);
 
 // headlessGlobals — the browser globals createRenderer touches that node
 // has neither: a 1-dpr window, no-op rAF, and a canvas factory for the
-// icon tint cache (offscreen canvas → 'source-in' recolor). Idempotent,
-// so every end-to-end draw test installs it before driving the renderer.
+// icon tint cache (offscreen canvas → 'source-in' recolor) and the radar
+// layer cache (offscreen canvas → clearRect/drawImage snapshot copy).
+// Idempotent, so every end-to-end draw test installs it before driving
+// the renderer.
 function headlessGlobals() {
   globalThis.window = { devicePixelRatio: 1 };
   globalThis.requestAnimationFrame = () => 0;
@@ -757,6 +769,7 @@ function headlessGlobals() {
       const cv = { width: 0, height: 0 };
       cv.getContext = () => ({
         drawImage() {},
+        clearRect() {},
         fillRect() {
           iconTints.push({ color: this.fillStyle, w: cv.width, h: cv.height });
         },
@@ -6291,6 +6304,284 @@ test('radar smoothing: HIGH while the camera is settled, MEDIUM while it moves',
   r.draw();
   assert.equal(ctx.imageSmoothingQuality, 'high', 'paused and settled: high, never medium');
   r.destroy();
+});
+
+// --- radar layer cache (the frame-time study's top-ranked candidate) --------
+//
+// drawRadar re-resolves the full radar image (the ~2048 px resample at
+// imageSmoothingQuality 'high') every frame; the cache skips that
+// re-resolution when NOTHING the layer depends on changed. These pins
+// hold the contract: a COLD draw emits exactly today's ops (the cache
+// misses), a WARM draw with an unchanged key emits the blit instead of
+// the radar path, every key component (camera / canvas size / pack
+// identity / image readiness) re-emits the full path when it changes,
+// the grid fallback is never cached, and a hit replays the radar
+// layer's context residue so the layers above see identical state.
+
+// radarOp — the FULL path's panel drawImage (5-arg, source carries .src).
+// blitOp  — the cache HIT's blit (3-arg onto the offscreen cache canvas;
+//           every production drawImage is 5-arg, so 3-arg is the blit's
+//           signature, and an image fake always carries .src).
+const radarOp = (e) => e.op === 'drawImage' && e.args[0] && e.args[0].src === 'radar.png';
+const blitOp = (e) => e.op === 'drawImage' && e.args.length === 3 && !e.args[0].src;
+
+const singlePackMeta = () => ({
+  radar: { file: 'radar.png', width: 1024, height: 1024 },
+  transform: { pos_x: 0, pos_y: 0, scale: 1 },
+});
+
+test('radar layer cache: a static second draw BLITS the cached raster instead of re-running drawRadar', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: LAYER_PLAYERS });
+  r.setPack(singlePackMeta(), { width: 1024, height: 1024, src: 'radar.png' });
+
+  // COLD — the cache is empty: today's ops, verbatim (the geometry pins
+  // above pass unchanged because of exactly this).
+  const cold = canvas.log.length;
+  r.resize();
+  const coldOps = canvas.log.slice(cold);
+  assert.equal(coldOps.filter(radarOp).length, 1, 'the cold draw emits the full radar path');
+  assert.equal(coldOps.filter(blitOp).length, 0, '…and nothing to blit yet');
+
+  // WARM — identical key: the radar image is NOT re-emitted (the resample
+  // is the work being skipped); the layer arrives as ONE 1:1 blit of the
+  // cached offscreen raster instead.
+  const warm = canvas.log.length;
+  r.draw();
+  const warmOps = canvas.log.slice(warm);
+  assert.equal(warmOps.filter(radarOp).length, 0, 'the warm draw does NOT re-run drawRadar');
+  const blits = warmOps.filter(blitOp);
+  assert.equal(blits.length, 1, '…it blits the cached layer exactly once');
+  assert.deepEqual(blits[0].args.slice(1), [0, 0], 'the blit is the 1:1 copy at the origin');
+  // The blit takes the radar's slot at the BOTTOM of the frame: every
+  // dynamic layer still paints above it.
+  assert.ok(
+    warmOps.indexOf(blits[0]) < warmOps.findIndex((e) => e.op === 'arc'),
+    'the blit lands under the dynamic layers (the radar’s own slot)',
+  );
+  assert.ok(warmOps.some((e) => e.op === 'arc'), 'players still draw on a cache hit');
+  r.destroy();
+});
+
+test('radar layer cache: camera move / canvas resize / pack swap each re-emit the full radar path', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: LAYER_PLAYERS });
+  r.setPack(singlePackMeta(), { width: 1024, height: 1024, src: 'radar.png' });
+  r.resize(); // cold miss…
+  r.draw(); // …then a static warm frame: the baseline below really is a hit
+  assert.equal(canvas.log.filter(blitOp).length, 1, 'baseline: the static frame hits');
+
+  // CAMERA — panBy moves cx/cy → key change → full re-emit, never a
+  // blit of the stale view.
+  let mark = canvas.log.length;
+  r.panBy(40, 0);
+  r.draw();
+  let ops = canvas.log.slice(mark);
+  assert.equal(ops.filter(radarOp).length, 1, 'a camera move re-emits the radar');
+  assert.equal(ops.filter(blitOp).length, 0, '…never a blit of the pre-pan view');
+
+  // …and settled again. The PAN frame cached at 'medium' — the quality
+  // drawRadar actually applied — so the first settled frame re-emits at
+  // 'high' (today's pixels exactly: a 'medium' render must never be
+  // served to a 'high' frame) and only THEN does the static camera hit.
+  mark = canvas.log.length;
+  r.draw();
+  ops = canvas.log.slice(mark);
+  assert.equal(ops.filter(radarOp).length, 1, `the first settled frame re-emits at 'high' (the quality policy is part of the key)`);
+  assert.equal(ops.filter(blitOp).length, 0, '…never a blit of the medium-quality render');
+  mark = canvas.log.length;
+  r.draw();
+  ops = canvas.log.slice(mark);
+  assert.equal(ops.filter(blitOp).length, 1, '…now the static camera hits');
+  assert.equal(ops.filter(radarOp).length, 0, '…without re-emitting the radar');
+
+  // SIZE — the CSS size AND the device backing store are both in the key.
+  canvas.clientWidth = 640;
+  canvas.clientHeight = 480;
+  mark = canvas.log.length;
+  r.resize();
+  ops = canvas.log.slice(mark);
+  assert.equal(ops.filter(radarOp).length, 1, 'a canvas resize re-emits the radar at the new fit');
+  assert.equal(ops.filter(blitOp).length, 0, '…the old-size raster is never stretched over the new canvas');
+
+  // PACK — a setPack swap rebuilds the panels (packEpoch). fit() resets
+  // the camera to the SAME fitted values it already had, so the camera
+  // component alone would wrongly hit: only packEpoch catches this.
+  r.setPack(singlePackMeta(), { width: 1024, height: 1024, src: 'radar2.png' });
+  mark = canvas.log.length;
+  r.draw();
+  ops = canvas.log.slice(mark);
+  assert.equal(
+    ops.filter((e) => e.op === 'drawImage' && e.args[0] && e.args[0].src === 'radar2.png').length,
+    1,
+    'the swapped pack’s image re-emits (packEpoch is in the key)',
+  );
+  assert.equal(ops.filter(blitOp).length, 0, '…never a blit of the previous pack');
+  r.destroy();
+});
+
+test('radar layer cache: the async radar image arriving invalidates the key (a pre-load render is never served)', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: LAYER_PLAYERS });
+  // The image is set but its decode has NOT completed (complete === false
+  // — production's preload awaits im.decode() before setPack, but the
+  // cache key must not depend on that courtesy).
+  const img = { width: 1024, height: 1024, src: 'radar.png', complete: false };
+  r.setPack(singlePackMeta(), img);
+  r.resize(); // readiness token '1' (loading) — the full path draws
+  assert.equal(canvas.log.filter(radarOp).length, 1, 'the loading frame draws the full path');
+  assert.equal(canvas.log.filter(blitOp).length, 0, '…and caches it under the loading key');
+
+  const mark = canvas.log.length;
+  img.complete = true; // the decode lands
+  r.draw();
+  const ops = canvas.log.slice(mark);
+  assert.equal(
+    ops.filter(radarOp).length,
+    1,
+    'arrival flips the key → the full path re-emits (the pre-load render is never served)',
+  );
+  assert.equal(ops.filter(blitOp).length, 0, '…never a blit of the pre-load raster');
+
+  // From here the key is stable: the ready render caches and hits.
+  const mark2 = canvas.log.length;
+  r.draw();
+  const ops2 = canvas.log.slice(mark2);
+  assert.equal(ops2.filter(radarOp).length, 0, 'the ready frame no longer re-emits');
+  assert.equal(ops2.filter(blitOp).length, 1, '…it serves the ready render from the cache');
+  r.destroy();
+});
+
+test('radar layer cache: grid frames (no pack image) are never cached', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: LAYER_PLAYERS });
+  // NO setPack: drawRadar draws nothing (no panel has an image) → the
+  // grid path — a few dozen strokes with no resample to save, deliberately
+  // outside the cache (its readiness token can never match a stored
+  // radar key either).
+  r.resize();
+  const mark = canvas.log.length;
+  r.draw();
+  const ops = canvas.log.slice(mark);
+  assert.ok(
+    ops.some((e) => e.op === 'stroke' && e.strokeStyle === 'rgba(215, 221, 232, 0.06)'),
+    'the grid re-draws every frame (its ops are never replaced by a blit)',
+  );
+  assert.equal(ops.filter(blitOp).length, 0, 'no blit — the grid path is not cached');
+  r.destroy();
+});
+
+test('radar layer cache: without an offscreen factory the cache disarms fail-soft (draws never throw)', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: LAYER_PLAYERS });
+  r.setPack(singlePackMeta(), { width: 1024, height: 1024, src: 'radar.png' });
+  delete globalThis.document; // exotic host: no offscreen canvas factory
+  try {
+    r.resize(); // the snapshot's creation attempt fails → the cache disarms
+    assert.equal(canvas.log.filter(radarOp).length, 1, 'the full path still draws (nothing threw)');
+    const mark = canvas.log.length;
+    r.draw();
+    const ops = canvas.log.slice(mark);
+    assert.equal(ops.filter(radarOp).length, 1, 'every later draw misses — byte-for-byte today’s behavior');
+    assert.equal(ops.filter(blitOp).length, 0, '…and nothing is ever blitted');
+  } finally {
+    headlessGlobals(); // restore the factory for later tests (idempotent)
+    r.destroy();
+  }
+});
+
+test('radar layer cache: a hit replays the radar layer context residue (layers above see a miss’s state)', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  // MOVING slots (4 u/tick = 256 u/s): the trail layer strokes every
+  // frame, and its stroke op records the fillStyle/font IN FORCE — which
+  // on a miss is drawLayerLabels' residue (labels set fillStyle
+  // '#d7dde8' + font 'bold 11px …' and leave them). Without the replay,
+  // the hit frame's trails would carry the previous frame's END state
+  // instead — the observable this pin exists for.
+  for (let s = 0; s < data.slots.length; s++) {
+    for (let f = 0; f < data.frames; f++) data.slots[s].pos[f * 4] = 10 + s * 40 + f * 4;
+  }
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: LAYER_PLAYERS });
+  const upper = { width: 1024, height: 1024, src: 'radar.png' };
+  const lower = { width: 1024, height: 1024, src: 'radar_lower.png' };
+  r.setPack(layerMeta(), upper, null, [upper, lower]);
+  engine.seekTick(200); // a real trail window (frame 200 → [8, 200])
+
+  const firstTrailStroke = (from) => {
+    // The first stroke of the frame: labels only fillText, so on the miss
+    // frame the first stroke IS the trail layer's band stroke (and on the
+    // hit frame the blit is a drawImage — also after nothing that strokes).
+    const op = canvas.log.slice(from).find((e) => e.op === 'stroke');
+    assert.ok(op, 'the trail layer strokes on this frame');
+    return op;
+  };
+
+  // MISS (cold): the labels draw and leave their residue.
+  const missAt = canvas.log.length;
+  r.resize();
+  const missStroke = firstTrailStroke(missAt);
+  assert.equal(missStroke.fillStyle, '#d7dde8', 'sanity: the labels’ residue is in force on the miss frame');
+  assert.equal(missStroke.font, 'bold 11px system-ui, sans-serif', 'sanity: …font included');
+
+  // HIT (static camera): the same layer must see the SAME residue.
+  const hitAt = canvas.log.length;
+  r.draw();
+  const hitOps = canvas.log.slice(hitAt);
+  assert.equal(hitOps.filter(blitOp).length, 1, 'this frame is a cache hit');
+  const hitStroke = firstTrailStroke(hitAt);
+  assert.equal(
+    hitStroke.fillStyle,
+    missStroke.fillStyle,
+    'a hit replays the residue fillStyle (not the previous frame’s end state)',
+  );
+  assert.equal(hitStroke.font, missStroke.font, 'a hit replays the residue font — the HUD/feed measure in it too');
+  r.destroy();
+});
+
+test('raster sync-probe: a sampled draw performs the readback pair and records flush + readback', () => {
+  headlessGlobals();
+  const fp = frameProbe; // the session singleton — renderer draw() samples through it
+  const prevEvery = fp.rasterEvery;
+  const prevEnabled = fp.enabled;
+  fp.reset();
+  fp.enabled = true;
+  fp.rasterEvery = 1; // sample EVERY draw for this pin
+  try {
+    const data = synthStore(1300, 2);
+    const engine = createEngine(data, 64);
+    const canvas = recordingCanvas();
+    const r = createRenderer(canvas, { engine, data, players: LAYER_PLAYERS });
+    r.resize(); // one draw → one forced-sync sample
+    const s = fp.summarize().raster;
+    assert.equal(s.flush.count, 1, 'the sampled draw recorded the forced-completion delta');
+    assert.equal(s.readback.count, 1, '…and the no-pending-work readback (the probe’s own cost)');
+    assert.ok(s.flush.min >= 0 && s.readback.min >= 0, 'both series hold non-negative durations');
+    assert.equal(s.every, 1, 'the sampling rate rides on the summary');
+    assert.equal(s.quarantined, 0, 'the quarantine only ever drops FRAME gaps (none recorded here)');
+    r.destroy();
+  } finally {
+    fp.rasterEvery = prevEvery;
+    fp.enabled = prevEnabled;
+    fp.reset();
+  }
 });
 
 test('chat: the cut is cached per row + width — the measure loop runs once', () => {
