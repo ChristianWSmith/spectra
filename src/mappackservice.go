@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/wailsapp/wails/v3/pkg/application"
@@ -84,8 +85,17 @@ func throttledAssetProgress(window time.Duration, emit func(AssetProgressEvent),
 	if emit == nil {
 		return nil
 	}
+	// mu guards last and the emit itself: ExtractMapPacks' per-map pool
+	// completes maps on several goroutines, so callbacks may arrive
+	// concurrently. Serializing here keeps `last` race-free (clean
+	// under -race) and guarantees one emission at a time — the callback
+	// can never overlap itself, which is also what keeps the
+	// concurrent-extraction probe's maxActive ≤ 1 honest.
+	var mu sync.Mutex
 	var last time.Time
 	return func(done, total int) {
+		mu.Lock()
+		defer mu.Unlock()
 		now := time.Now()
 		if done < total && now.Sub(last) < window {
 			return
