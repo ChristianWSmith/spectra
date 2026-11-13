@@ -1,9 +1,11 @@
 <script>
 // Round progression strip: one cell per round, winner-tinted, click to
 // open the round. `current` highlights the round being viewed
-// (RoundDetail); 0 means "none" — round numbers are never 0, and knife /
-// warmup rounds are negative (their cells show the canonical W/K display
-// label from lib/rounds.js roundIndexLabel, never the raw index).
+// (RoundDetail); 0 means "none" — round numbers are never 0. Every
+// STORED round is counted play (the extractor discards knife/warmup
+// rounds at ingest), so all cells render; a legacy pre-reprocess row
+// with a negative index still shows the canonical W/K display label from
+// lib/rounds.js roundIndexLabel, never the raw index.
 //
 // The two teams are labelled ABOVE and BELOW the cells in the scoreline's
 // order (the team that finished CT on top, the team that finished T
@@ -21,19 +23,8 @@
 // dangling marker (the gating lives in ../rounds.js separatorFlags).
 import { sideAtRound } from '../sideparity.js';
 import { teamStartClass } from '../teams.js';
-import { isCounted, roundIndexLabel, separatorFlags } from '../rounds.js';
+import { roundIndexLabel, separatorFlags } from '../rounds.js';
 import { buildHash } from '../router.js';
-// Rounds visibility pref (key: show_knife_warmup_rounds, prefs.go).
-// Read HERE rather than passed in, so both call sites obey the one
-// setting — Match's header ribbon and RoundDetail's strip — without
-// either host view wiring it up (Match.svelte reads the same key for its
-// Rounds tab; see the comment there). Preference keys live in prefs.go
-// and are read straight through the generated kvstore binding —
-// services.js has no pref wrappers (Settings owns the writes). There is
-// no cross-view change event, so the read happens on every mount —
-// returning from Settings remounts the host view, which remounts this
-// strip.
-import { KVStoreService } from '../../../bindings/github.com/wailsapp/wails/v3/pkg/services/kvstore';
 
 let {
   rounds = [],
@@ -52,25 +43,6 @@ let {
   onselect = null,
 } = $props();
 
-// false (the default) hides the warmup/knife cells. kvstore values
-// round-trip as JSON — a bool stays a bool (Settings writes this key as a
-// real boolean); anything else (unset, null, corrupt) falls back to
-// false = hidden — the same coercion as Match.svelte's Rounds-tab read.
-let showKnifeWarmup = $state(false);
-
-$effect(() => {
-  let live = true;
-  KVStoreService.Get('show_knife_warmup_rounds')
-    .then((v) => {
-      if (live) showKnifeWarmup = v === true;
-    })
-    .catch(() => {
-      // Unreadable store → conservative default: hidden.
-      if (live) showKnifeWarmup = false;
-    });
-  return () => (live = false);
-});
-
 // Per-cell data: the separator marker after this cell (if any) + the
 // side the team-above played in that round. Sides swap at every half,
 // so each cell's side comes from the canonical side-parity helper
@@ -82,25 +54,16 @@ $effect(() => {
 // flags come from the canonical gating helper (../rounds.js
 // separatorFlags — cadence + counted-gating + trailing suppression).
 const cells = $derived.by(() => {
-  // Render filter behind the pref: warmup/knife cells drop out unless the
-  // pref opts in, with ONE exception — the round being viewed stays, so
-  // RoundDetail's `current` marker can still locate you on a knife /
-  // warmup round page (current 0 = "none" never matches, so round-0 rows
-  // can't sneak through either). The filter is for RENDERING only:
-  // sideAtRound below still receives the FULL rounds array, so side
-  // parity can never depend on this pref (sideAtRound counts counted
-  // rounds itself — see ../sideparity.js).
-  const visible = showKnifeWarmup
-    ? rounds
-    : rounds.filter((r) => isCounted(r) || (current !== 0 && r.number === current));
-  // Separator gating over the VISIBLE list — the ONE rule lives in
-  // ../rounds.js separatorFlags (a separator follows a counted cell only
-  // while at least one MORE counted cell follows it, and negative cells
-  // never shift a marker's position). It must run over `visible` (the
-  // list actually rendered), while sideAtRound below still gets the
-  // FULL list.
-  const flags = separatorFlags(visible);
-  return visible.map((r, i) => {
+  // Every STORED row renders — the extractor discards knife/warmup
+  // rounds at ingest, so there is no visibility pref to read and no
+  // render filter to apply (a legacy pre-reprocess row with a negative
+  // index renders as a W/K cell below, never hidden half-state).
+  // Separator gating over this rendered list — the ONE rule lives in
+  // ../rounds.js separatorFlags (counted-gating keeps a legacy negative
+  // row from shifting a marker's position, trailing suppression drops
+  // the marker after the last counted row).
+  const flags = separatorFlags(rounds);
+  return rounds.map((r, i) => {
     // The team above FINISHED CT, so its side in this round is the
     // canonical derivation (../sideparity.js sideAtRound → sideInEra —
     // the same one startSideFor feeds the team-identity name colors with).
@@ -134,7 +97,7 @@ const cells = $derived.by(() => {
         class="round-cell"
         class:ct={r.winner === 'ct'}
         class:t={r.winner === 't'}
-        class:warmup={r.warmup || r.pregame || r.winner === ''}
+        class:warmup={r.winner === ''}
         class:current={current === r.number}
         class:point-up={r.winner !== '' && r.winner === aboveSide}
         class:point-down={r.winner !== '' && r.winner !== aboveSide}
