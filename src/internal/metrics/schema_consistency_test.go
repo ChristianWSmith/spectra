@@ -18,7 +18,13 @@ import (
 //	   invalidate a compiled metric;
 //	b) the SQL console's schema browser annotates every metrics source
 //	   (query.Session.Schema notes ⊇ whitelist sources), so a source the
-//	   expression grammar accepts is documented where users browse it.
+//	   expression grammar accepts is documented where users browse it;
+//	c) the subject map the anchor validates against ⊆ the column
+//	   whitelist (every source carries a subject decision — rounds and
+//	   round_economy have none — and the anchor error's player list is
+//	   exactly its key set), and both denominator unit maps (the
+//	   match-scope scalar, the profile-scope career correlation) name
+//	   real tables under the same {rounds, matches} aliases.
 //
 // The whitelist itself stays a hand-curated copy (a different concern:
 // JSON/blob payload columns are deliberately excluded — see whitelist.go).
@@ -65,12 +71,56 @@ func TestSchemaConsistency(t *testing.T) {
 				t.Errorf("metrics whitelists %s.%s — not in the store schema", src, c)
 			}
 		}
-		// groupColumns must only reference whitelisted sources, and its
-		// plain (non-subquery) column expressions must exist too.
-		for token, col := range groupColumns[src] {
-			if _, ok := cols[col]; !ok && !strings.Contains(col, "(") {
-				t.Errorf("groupColumns[%s][%q] = %q is not a whitelisted column", src, token, col)
+		// The fixed join dimensions (sourceDims) must only reference
+		// whitelisted columns of their own source.
+		for token, col := range sourceDims[src] {
+			if !cols[col] {
+				t.Errorf("sourceDims[%s][%q] = %q is not a whitelisted column", src, token, col)
 			}
+		}
+	}
+
+	// The subject map (the anchor Compile validates against) is a SUBSET
+	// of the column whitelist — a subject that is not a whitelisted
+	// column of its own source would compile SQL the grammar cannot
+	// validate — and every source carries a subject DECISION: exactly
+	// rounds and round_economy have none (round-grain / side-grained).
+	for src, col := range sourceSubject {
+		cols, ok := sourceColumns[src]
+		if !ok {
+			t.Errorf("sourceSubject names non-source %q", src)
+			continue
+		}
+		if !cols[col] {
+			t.Errorf("sourceSubject[%s] = %q is not a whitelisted column", src, col)
+		}
+	}
+	for _, src := range sources {
+		_, has := sourceSubject[src]
+		want := src != "rounds" && src != "round_economy"
+		if has != want {
+			t.Errorf("source %q subject presence = %v, want %v (round-grain sources have no subject)", src, has, want)
+		}
+	}
+	// The anchor error's verbatim player list (playerSources) names
+	// exactly the subject-bearing sources — the copy in Compile and the
+	// map it reads cannot drift apart.
+	listed := map[string]bool{}
+	for _, s := range strings.Split(playerSources, ", ") {
+		listed[s] = true
+	}
+	if len(listed) != len(sourceSubject) {
+		t.Errorf("playerSources lists %d sources, sourceSubject declares %d — same set required",
+			len(listed), len(sourceSubject))
+	}
+	for src := range sourceSubject {
+		if !listed[src] {
+			t.Errorf("sourceSubject source %q missing from the anchor error list", src)
+		}
+	}
+	for src := range listed {
+		if _, ok := sourceSubject[src]; !ok {
+			t.Errorf("anchor error list names %q, which has no subject", src)
 		}
 	}
 
@@ -92,6 +142,21 @@ func TestSchemaConsistency(t *testing.T) {
 	for alias, table := range denominatorTables {
 		if _, ok := haveTable[table]; !ok {
 			t.Errorf("denominator %q maps to table %q, which is not in the store schema", alias, table)
+		}
+	}
+	// The profile-scope (career) denominator maps the SAME two aliases to
+	// real tables — one rule, two units (whitelist.go
+	// denominatorCareerTables): rounds → the subject's player_round_stats
+	// rows, matches → its player_stats rows.
+	if len(denominatorCareerTables) != len(denominatorTables) {
+		t.Errorf("denominatorCareerTables has %d entries, want %d (the same aliases)", len(denominatorCareerTables), len(denominatorTables))
+	}
+	for alias, table := range denominatorCareerTables {
+		if denominatorTables[alias] == "" {
+			t.Errorf("career denominator %q has no match-scope alias", alias)
+		}
+		if _, ok := haveTable[table]; !ok {
+			t.Errorf("career denominator %q maps to table %q, which is not in the store schema", alias, table)
 		}
 	}
 

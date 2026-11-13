@@ -47,10 +47,9 @@ var allowedCapabilities = map[string]bool{
 // MetricDef is one manifest metric definition (JSON shape is the shared
 // metric-definition contract — models.MetricRow minus createdAt/id
 // stamps; id/origin/pluginId are loader-assigned). The metric scope key
-// is `scope` (renamed from `groupBy` with the stored-metrics W1 wave):
-// parsed here as part of the manifest contract, but manifests are not
-// written through yet — ReplacePluginMetrics leaves the column at its
-// DEFAULT 'match' (store platform_store.go file doc).
+// is `scope` (renamed from `groupBy` with the stored-metrics W1 wave)
+// and it is WRITTEN THROUGH since W2: validated here (an omitted scope
+// keeps the DDL DEFAULT 'match'), stored by ReplacePluginMetrics.
 type MetricDef struct {
 	ID          int64  `json:"id"`
 	Name        string `json:"name"`
@@ -130,6 +129,13 @@ func ValidateManifest(data []byte) (Manifest, error) {
 		// expression when the metric is previewed/used (documented above).
 		if strings.TrimSpace(d.Expr) == "" {
 			return Manifest{}, fmt.Errorf("plugin %q: metric %q has an empty expr", m.ID, d.Name)
+		}
+		// scope is the metric's addressing (W2): exactly the two DDL
+		// values. An OMITTED scope keeps the column DEFAULT 'match' (the
+		// DDL's omitted-field rule, normalized at write time); anything
+		// else is an install error, not a silent fallback.
+		if d.Scope != "" && d.Scope != "match" && d.Scope != "profile" {
+			return Manifest{}, fmt.Errorf("plugin %q: metrics[%d] scope %q must be match|profile", m.ID, i, d.Scope)
 		}
 	}
 	for i, r := range m.ReportTpls {

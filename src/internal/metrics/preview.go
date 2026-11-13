@@ -20,15 +20,17 @@ const (
 )
 
 // Def is the runtime metric handle Preview needs (the stored definition —
-// models.MetricRow — maps its Expr/Denominator onto this; GroupBy is
-// engine-side input only since the stored group_by column retired in W1).
+// models.MetricRow — maps its Expr/Denominator onto this; the addressing
+// is the engine's: every statement is subject-grouped since the groupBy
+// parameter retired with W2).
 type Def struct {
 	Expr        string
-	GroupBy     string
 	Denominator string
 }
 
-// PreviewRow is one preview result (Label resolved — see Preview).
+// PreviewRow is one preview result (Label resolved — see Preview). Group
+// is the row's ADDRESS — the subject column of the statement (a
+// SteamID64 for every player-addressed row).
 type PreviewRow struct {
 	Group string
 	Label string
@@ -46,15 +48,15 @@ type Preview struct {
 
 // RunPreview compiles def, runs it against the whole library (scope "") or a
 // single match ("match:<id>") with a row cap of limit (≤0 → 200), and maps
-// groups. Returns (*ParseError, nil) for validation failures, (nil, err)
-// for execution failures. Group values that look like SteamID64 resolve to
+// subjects. Returns (*ParseError, nil) for validation failures, (nil, err)
+// for execution failures. Subject values that look like SteamID64 resolve to
 // the players-table name (scoped match, else library-wide latest); every
 // other group falls back to its raw key as Label.
 func RunPreview(st *store.Store, def Def, scope string, limit int) (Preview, *ParseError, error) {
 	if limit <= 0 {
 		limit = PreviewDefaultRow
 	}
-	plan, perr := Compile(def.Expr, def.GroupBy, def.Denominator, scope)
+	plan, perr := Compile(def.Expr, def.Denominator, scope)
 	if perr != nil {
 		return Preview{}, perr, nil
 	}
@@ -87,38 +89,59 @@ func RunPreview(st *store.Store, def Def, scope string, limit int) (Preview, *Pa
 				N:     toN(r[len(r)-1]),
 			})
 		}
-	case ModePlain:
-		if len(res.Rows) == 0 {
-			pv.Rows = append(pv.Rows, PreviewRow{}) // aggregate should always yield one row
-		} else {
-			r := res.Rows[0]
-			pv.Rows = append(pv.Rows, PreviewRow{Value: toFloat(r[0]), N: toN(r[len(r)-1])})
-		}
 	case ModePercentile:
-		vals := make([]float64, 0, len(res.Rows))
+		// Partition the raw fetch by the row's ADDRESS — the subject. A
+		// match-scoped run sees one match, so the subject alone is the
+		// address; "" scope partitions the whole library by subject (the
+		// batched pass addresses (match, subject) the same way). Each
+		// partition is THE subject's rows in scope: the p-quantile over
+		// its own sample, N = the numeric values behind it, and the
+		// denominator taken from the partition's OWN row (correlated on
+		// the subject at profile scope, a shared scalar at match scope).
+		// A subject the statement produced no row for has no partition (no
+		// row); a partition whose rows carry no numeric value yields value
+		// 0 with N 0 — the missing-data indicator, never a fabricated
+		// number. Keys sort like phase1's ORDER BY grp.
+		type partition struct {
+			vals     []float64
+			denom    float64
+			denomSet bool
+		}
+		parts := make(map[string]*partition)
+		keys := make([]string, 0, len(res.Rows))
 		for _, r := range res.Rows {
-			if len(r) == 0 {
+			if len(r) < 2 {
 				continue
 			}
-			if v, ok := numeric(r[0]); ok {
-				vals = append(vals, v)
+			key := toKey(r[0])
+			p := parts[key]
+			if p == nil {
+				p = &partition{}
+				parts[key] = p
+				keys = append(keys, key)
+			}
+			if v, ok := numeric(r[1]); ok {
+				p.vals = append(p.vals, v)
+			}
+			if plan.HasDenom && !p.denomSet {
+				p.denom = toFloat(r[len(r)-1])
+				p.denomSet = true
 			}
 		}
-		sort.Float64s(vals)
-		v := percentileOf(vals, plan.PercentileP)
-		if plan.HasDenom {
-			d := 0.0
-			if len(res.Rows) > 0 {
-				last := res.Rows[0][len(res.Rows[0])-1]
-				d = toFloat(last)
+		sort.Strings(keys)
+		for _, key := range keys {
+			p := parts[key]
+			sort.Float64s(p.vals)
+			v := percentileOf(p.vals, plan.PercentileP)
+			if plan.HasDenom {
+				if p.denom != 0 {
+					v /= p.denom
+				} else {
+					v = 0
+				}
 			}
-			if d != 0 {
-				v /= d
-			} else {
-				v = 0
-			}
+			pv.Rows = append(pv.Rows, PreviewRow{Group: key, Value: v, N: len(p.vals)})
 		}
-		pv.Rows = append(pv.Rows, PreviewRow{Value: v, N: len(vals)})
 	}
 
 	resolveLabels(st, pv.Rows, matchID)

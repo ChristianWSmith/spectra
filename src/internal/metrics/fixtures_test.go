@@ -3,6 +3,7 @@ package metrics
 import (
 	"database/sql"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/ChristianWSmith/spectra/internal/store"
@@ -38,20 +39,17 @@ func seededStore(t *testing.T) *store.Store {
 // name/expr/scope/denominator/doc are LOCKED to the baseline seed by
 // this table) onto its hand-computed seed expectation. interpretation
 // records how the seeded expression states the metric (never silently —
-// the formula and any proxy/deviation live in the row's doc).
-// groupBy is the ENGINE preview input only: the stored group_by column
-// is gone (stored-metrics W1 — the seed locks scope instead) and the
-// groupBy parameter itself retires with the W2 grammar wave; keeping it
-// here preserves the per-player seed-value shape this test proves.
+// the formula and any proxy/deviation live in the row's doc). There is
+// no groupBy input: since W2 every statement is subject-grouped by the
+// engine, which is exactly the per-player shape this test proves.
 var builtinSeed = []struct {
 	name           string
 	expr           string
 	scope          string
-	groupBy        string
 	denominator    string
 	interpretation string
 	rows           int
-	wantValues     []float64 // per group, ORDER BY grp ASC (nil → wantAll)
+	wantValues     []float64 // per subject, ORDER BY grp ASC (nil → wantAll)
 	wantAll        float64
 	wantN          int    // expected N per row (0 = don't assert)
 	wantLabels     string // expected labels joined ("" = don't assert)
@@ -60,7 +58,6 @@ var builtinSeed = []struct {
 		name:        "trade_rate",
 		expr:        "from player_stats, match_trade_opps: ratio(sum(trade_kills), sum(opps))",
 		scope:       "match",
-		groupBy:     "player",
 		denominator: "",
 		interpretation: "trade successes / total trade opportunities over the engine-derived LEFT JOIN " +
 			"(match_id, steam_id) — a ratio, not a share, so it may exceed 100% (profile TradeRate note)",
@@ -73,15 +70,21 @@ var builtinSeed = []struct {
 }
 
 // TestBuiltinSeedMetrics is the acceptance test: the schema-seeded
-// builtin must (a) exist with a seeded expr matching this table, (b)
-// compile, (c) return the hand-computed seed values with labels and
-// sample sizes, and (d) carry formula documentation.
+// builtin must (a) exist with a seeded expr + subject-addressed doc
+// matching this table, (b) compile, (c) return the hand-computed seed
+// values with labels and sample sizes, and (d) carry formula
+// documentation.
 func TestBuiltinSeedMetrics(t *testing.T) {
 	st := seededStore(t)
 
 	// (a) Lock the schema-seeded builtin row(s) to this table. The
-	// group_by column no longer exists (stored-metrics W1): the lock is
-	// scope now, per the schema.sql coordination-contract header.
+	// group_by column no longer exists (stored-metrics W1) and the
+	// groupBy parameter retired with W2: the lock is scope + the
+	// subject-addressed doc, per the schema.sql coordination-contract
+	// header. The doc reword moves WITH this lock (schema.sql's seed
+	// doc is prose-only — no DDL structure change): the retired
+	// "grouped by player" phrasing must be gone and the
+	// subject-addressed one present.
 	res, err := st.RunReadOnly(
 		`SELECT name, expr, scope, denominator, doc FROM metrics WHERE origin = 'builtin' ORDER BY name`,
 		nil, 100, 5000,
@@ -109,15 +112,21 @@ func TestBuiltinSeedMetrics(t *testing.T) {
 		if row[3] == "" {
 			t.Errorf("builtin %q has empty doc (every metric documents its formula)", f.name)
 		}
+		if strings.Contains(row[3], "grouped by player") {
+			t.Errorf("builtin %q doc still carries the retired groupBy phrasing: %s", f.name, row[3])
+		}
+		if !strings.Contains(row[3], "addressed per player over the joined sources") {
+			t.Errorf("builtin %q doc missing the subject-addressed phrasing: %s", f.name, row[3])
+		}
 	}
 
 	// (b)+(c)+(d) compile → run → assert values, sample sizes, labels.
 	for _, f := range builtinSeed {
 		t.Run(f.name, func(t *testing.T) {
-			if perr := Validate(f.expr, f.groupBy); perr != nil {
+			if perr := Validate(f.expr); perr != nil {
 				t.Fatalf("Validate: %v", perr)
 			}
-			pv, perr, err := RunPreview(st, Def{Expr: f.expr, GroupBy: f.groupBy, Denominator: f.denominator}, "", 500)
+			pv, perr, err := RunPreview(st, Def{Expr: f.expr, Denominator: f.denominator}, "", 500)
 			if perr != nil {
 				t.Fatalf("parse: %v", perr)
 			}
@@ -177,87 +186,160 @@ func TestSyntheticCorpusCounts(t *testing.T) {
 }
 
 // TestScopePreview proves scope="match:<id>" binding on a single-match
-// source (648 events/match) and the denominator scoping.
+// source (648 events/match): every statement is subject-addressed, so
+// the scoped run returns one row PER SUBJECT and their counts sum to the
+// match total; an unknown-but-well-formed match has no subject rows, so
+// the preview has no rows at all (a group the statement did not produce
+// has no row).
 func TestScopePreview(t *testing.T) {
 	st := seededStore(t)
-	pv, perr, err := RunPreview(st, Def{Expr: "from events: count()"}, "match:2", 10)
+	pv, perr, err := RunPreview(st, Def{Expr: "from events: count()"}, "match:2", 100)
 	if perr != nil || err != nil {
 		t.Fatalf("preview: %v %v", perr, err)
 	}
-	if len(pv.Rows) != 1 || pv.Rows[0].Value != 648 {
-		t.Fatalf("scoped count = %+v, want single row 648", pv.Rows)
+	if len(pv.Rows) != 8 {
+		t.Fatalf("scoped rows = %d, want 8 (one per subject) (%+v)", len(pv.Rows), pv.Rows)
+	}
+	total := 0
+	for _, r := range pv.Rows {
+		total += r.N
+	}
+	if total != 648 {
+		t.Errorf("per-subject counts total %d, want 648 (the match's events)", total)
 	}
 	if _, perr, _ := RunPreview(st, Def{Expr: "from events: count()"}, "match:99", 10); perr != nil {
 		t.Fatalf("compile: %v", perr)
 	}
-	// Unknown-but-well-formed match → count 0 (scalar aggregates keep one
-	// row with N=0 so the UI gets its missing-data indicator).
+	// Unknown-but-well-formed match → no rows (no subject in scope).
 	pv, _, err = RunPreview(st, Def{Expr: "from events: count(where kind='kill')"}, "match:99", 10)
 	if err != nil {
 		t.Fatalf("preview: %v", err)
 	}
-	if len(pv.Rows) != 1 || pv.Rows[0].Value != 0 || pv.Rows[0].N != 0 {
-		t.Fatalf("empty-scope preview = %+v, want single row 0/0", pv.Rows)
+	if len(pv.Rows) != 0 {
+		t.Fatalf("empty-scope preview = %+v, want no rows", pv.Rows)
 	}
 }
 
-// TestPercentilePreview covers the Go-side percentile path (no group),
-// including median sugar, filters, multi-aggregation lists where the
-// percentile leads, and denominator division.
+// subjectStat is one subject's oracle row (subjectStats).
+type subjectStat struct {
+	n        int
+	min, max float64
+}
+
+// subjectStats is the independent oracle for the partition pins: per
+// subject, the stored row count and value range of that subject's
+// events — plain SQL over the seed, no engine code involved. where is an
+// optional filter ("" = every event).
+func subjectStats(t *testing.T, st *store.Store, where string) map[string]subjectStat {
+	t.Helper()
+	q := "SELECT attacker, COUNT(*), MIN(dmg), MAX(dmg) FROM events"
+	if where != "" {
+		q += " WHERE " + where
+	}
+	q += " GROUP BY attacker"
+	res, err := st.RunReadOnly(q, nil, 100, 5000)
+	if err != nil {
+		t.Fatalf("oracle query: %v", err)
+	}
+	out := map[string]subjectStat{}
+	for _, r := range res.Rows {
+		out[r[0].(string)] = subjectStat{
+			n:   int(r[1].(int64)),
+			min: toFloat(r[2]),
+			max: toFloat(r[3]),
+		}
+	}
+	return out
+}
+
+// TestPercentilePreview covers the Go-side percentile path — now
+// PARTITIONED BY SUBJECT: one row per subject, each value the p-quantile
+// of THAT subject's rows (N and the value range are pinned against the
+// independent oracle above, so a partition that collapsed into a
+// library-wide quantile fails here). Hand-computable expectations live
+// in metrics_test.go's TestPercentilePartitionsBySubject; the
+// denominator case is exact because percentile(1.0, ·) is the subject's
+// max (100 — every player lands a kill) over the subject's career
+// rounds (72 = 3 matches × 24 player_round_stats rows).
 func TestPercentilePreview(t *testing.T) {
 	st := seededStore(t)
 	cases := []struct {
-		expr  string
-		want  float64
-		wantN int
+		name, expr, filter string
 	}{
-		// 1944 event dmg values: 144×0 (blind), 144 each of 10..100
-		// (damage), 360×100 (kills). p95 lands in the 100 block; median
-		// at position 971.5 → both neighbours 60.
-		{"from events: percentile(0.95, dmg)", 100, 1944},
-		{"from events: median(dmg)", 60, 1944},
-		{"from events: percentile(where kind='damage', 0.5, dmg)", 55, 1440},
-		{"from events: percentile(0.5, dmg), avg(dmg), count()", 60, 1944},
+		{"p95 per subject", "from events: percentile(0.95, dmg)", ""},
+		{"median per subject", "from events: median(dmg)", ""},
+		{"filtered median per subject", "from events: percentile(where kind='damage', 0.5, dmg)", "kind = 'damage'"},
+		{"percentile first of many", "from events: percentile(0.5, dmg), avg(dmg), count()", ""},
 	}
 	for _, c := range cases {
-		pv, perr, err := RunPreview(st, Def{Expr: c.expr}, "", 100)
-		if perr != nil || err != nil {
-			t.Fatalf("preview %q: %v %v", c.expr, perr, err)
-		}
-		if len(pv.Rows) != 1 {
-			t.Fatalf("preview %q rows = %d, want 1", c.expr, len(pv.Rows))
-		}
-		if pv.Rows[0].Value != c.want {
-			t.Errorf("preview %q value = %v, want %v", c.expr, pv.Rows[0].Value, c.want)
-		}
-		if pv.Rows[0].N != c.wantN {
-			t.Errorf("preview %q N = %d, want %d", c.expr, pv.Rows[0].N, c.wantN)
-		}
+		t.Run(c.name, func(t *testing.T) {
+			pv, perr, err := RunPreview(st, Def{Expr: c.expr}, "", 500)
+			if perr != nil || err != nil {
+				t.Fatalf("preview %q: %v %v", c.expr, perr, err)
+			}
+			oracle := subjectStats(t, st, c.filter)
+			if len(pv.Rows) != len(oracle) {
+				t.Fatalf("rows = %d, want %d (one per subject)", len(pv.Rows), len(oracle))
+			}
+			seen := 0
+			for _, r := range pv.Rows {
+				want, ok := oracle[r.Group]
+				if !ok {
+					t.Errorf("row group %q is not a subject of the oracle", r.Group)
+					continue
+				}
+				seen++
+				if r.N != want.n {
+					t.Errorf("subject %s N = %d, want %d (its own rows)", r.Group, r.N, want.n)
+				}
+				if r.Value < want.min || r.Value > want.max {
+					t.Errorf("subject %s value %v outside its own [%v, %v]", r.Group, r.Value, want.min, want.max)
+				}
+			}
+			if seen != len(oracle) {
+				t.Errorf("matched %d subjects, want %d", seen, len(oracle))
+			}
+		})
 	}
-	// Percentile + denominator: median(dmg)/count(rounds) = 60/72.
-	pv, perr, err := RunPreview(st, Def{Expr: "from events: median(dmg)", Denominator: "rounds"}, "", 100)
+
+	// Percentile + denominator: profile scope correlates the denominator
+	// on the subject — 100 (every subject's max) / 72 (its career
+	// rounds), exact for all eight subjects.
+	pv, perr, err := RunPreview(st, Def{Expr: "from events: percentile(1.0, dmg)", Denominator: "rounds"}, "", 100)
 	if perr != nil || err != nil {
 		t.Fatalf("preview with denom: %v %v", perr, err)
 	}
-	if want := 60.0 / 72.0; pv.Rows[0].Value != want {
-		t.Errorf("denominated median = %v, want %v", pv.Rows[0].Value, want)
+	if len(pv.Rows) != 8 {
+		t.Fatalf("denominated percentile rows = %d, want 8 (%+v)", len(pv.Rows), pv.Rows)
+	}
+	want := 100.0 / 72.0
+	for _, r := range pv.Rows {
+		if r.Value != want {
+			t.Errorf("subject %s denominated max = %v, want %v (100 / 72 career rounds)", r.Group, r.Value, want)
+		}
+		if r.N == 0 {
+			t.Errorf("subject %s N = 0, want its event count", r.Group)
+		}
 	}
 }
 
 // TestRowCapAndTruncation pins preview caps (preview has a row
-// cap; Truncated reports hitting it).
+// cap over the SUBJECT rows it returns; Truncated reports hitting it).
 func TestRowCapAndTruncation(t *testing.T) {
 	st := seededStore(t)
-	pv, perr, err := RunPreview(st, Def{Expr: "from events: count()", GroupBy: "player"}, "", 3)
+	pv, perr, err := RunPreview(st, Def{Expr: "from events: count()"}, "", 3)
 	if perr != nil || err != nil {
 		t.Fatalf("preview: %v %v", perr, err)
 	}
 	if len(pv.Rows) != 3 || !pv.Truncated {
 		t.Fatalf("rows = %d truncated = %v, want 3 rows capped", len(pv.Rows), pv.Truncated)
 	}
-	pv, _, err = RunPreview(st, Def{Expr: "from events: count()", GroupBy: "player"}, "", 500)
+	pv, _, err = RunPreview(st, Def{Expr: "from events: count()"}, "", 500)
 	if err != nil || pv.Truncated {
 		t.Fatalf("uncapped preview truncated = %v (err %v)", pv.Truncated, err)
+	}
+	if len(pv.Rows) != 8 {
+		t.Fatalf("uncapped rows = %d, want 8 (one per subject)", len(pv.Rows))
 	}
 }
 

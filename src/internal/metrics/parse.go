@@ -8,7 +8,7 @@ import (
 
 // ParseError describes a grammar/validation failure. Pos is a byte offset
 // into the expression source (0 for failures not tied to one position —
-// groupBy/scope problems). The M5 service maps this onto the frontend
+// scope/denominator problems). The M5 service maps this onto the frontend
 // ExprError contract verbatim.
 type ParseError struct {
 	Message string `json:"message"`
@@ -58,7 +58,7 @@ type SourceRef struct {
 }
 
 // Spec is a parsed expression: the source clause — one or more sources,
-// the FIRST of which is the PRIMARY (it owns groupBy resolution, scope
+// the FIRST of which is the PRIMARY (it owns the subject anchor, scope
 // binding and the population anchor; the rest are engine-joined) — plus
 // its aggregation list.
 type Spec struct {

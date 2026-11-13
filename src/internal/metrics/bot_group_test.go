@@ -17,8 +17,10 @@ const (
 )
 
 // botStore opens a file-backed store with ONE match whose roster carries
-// a human and a bot, plus one kill per actor (event rows keep bots; only
-// the player LISTING excludes them).
+// a human and a bot, two kills (one per actor) and one ACTOR-LESS event
+// (attacker "" — the shape a fall/world-damage row has): event rows keep
+// bots and no-actors in storage; the metrics layer's subject condition
+// is what excludes both from values.
 func botStore(t *testing.T) *store.Store {
 	t.Helper()
 	st, err := store.Open(filepath.Join(t.TempDir(), "bots.db"))
@@ -44,8 +46,10 @@ func botStore(t *testing.T) *store.Store {
 			{SteamID: botSteamID, Name: "Crew", Side: "ct", RoundsPlayed: 1},
 		},
 		Events: []models.Event{
-			{Tick: 100, Round: 1, Kind: models.EventKill, Attacker: aliceID, Victim: botSteamID, Weapon: "ak47"},
-			{Tick: 200, Round: 1, Kind: models.EventKill, Attacker: botSteamID, Victim: aliceID, Weapon: "ak47"},
+			{Seq: 0, Tick: 100, Round: 1, Kind: models.EventKill, Attacker: aliceID, Victim: botSteamID, Weapon: "ak47"},
+			{Seq: 1, Tick: 200, Round: 1, Kind: models.EventKill, Attacker: botSteamID, Victim: aliceID, Weapon: "ak47"},
+			// No actor: the `subject <> ''` half of the condition.
+			{Seq: 2, Tick: 300, Round: 1, Kind: "damage", Attacker: "", Victim: aliceID, Weapon: "", Dmg: 15},
 		},
 	}
 	if err := st.SaveExtracted(id, em); err != nil {
@@ -54,62 +58,62 @@ func botStore(t *testing.T) *store.Store {
 	return st
 }
 
-// TestPlayerGroupExcludesBots pins the metrics layer's slice of the
-// humans-only rule: a `player`-grouped metric is a player LISTING, so
-// bot groups are dropped through store.HumanOnlyBySteamID (the same
-// condition the roster reads use). Two boundaries are pinned with it:
-// an UNGROUPED aggregate still counts bot rows (it records what
-// happened — the event-shaped exception), and a non-player grouping is
-// untouched. Widening the filter past the player dimension is now
-// sanctioned for MULTI-source expressions whose source set mixes
-// populations — pinned separately by TestJoinedPopulationAlignment
-// (join_test.go); these single-source boundaries stay as they are.
-func TestPlayerGroupExcludesBots(t *testing.T) {
+// TestSubjectStatementExcludesBots pins the metrics layer's slice of the
+// humans-only rule under subject addressing: EVERY statement is
+// subject-addressed, so `subject <> ”` + store.HumanOnlyBySteamID over
+// the subject are UNCONDITIONAL. A player listing drops bot groups; a
+// plain event aggregate counts only human-subject rows (the former
+// "records what happened, bots included" boundary retired with the
+// mixed-population special case — joined sets are pinned separately by
+// TestJoinedPopulationAlignment); a match-scoped run takes the same
+// path. botStore's actor-less event pins the other half: a row with no
+// subject never becomes a value either.
+func TestSubjectStatementExcludesBots(t *testing.T) {
 	st := botStore(t)
 
-	grouped, perr, err := RunPreview(st, Def{
-		Expr: "from player_stats: count()", GroupBy: "player",
-	}, "", 100)
+	// The subject grouping IS the listing: the bot's group never appears.
+	grouped, perr, err := RunPreview(st, Def{Expr: "from player_stats: count()"}, "", 100)
 	if perr != nil || err != nil {
 		t.Fatalf("preview: %v %v", perr, err)
 	}
 	if len(grouped.Rows) != 1 || grouped.Rows[0].Group != aliceID {
-		t.Fatalf("player_stats by player = %+v, want only alice (the bot group is dropped)", grouped.Rows)
+		t.Fatalf("player_stats by subject = %+v, want only alice (the bot group is dropped)", grouped.Rows)
 	}
 	if grouped.Rows[0].Label != "alice" {
 		t.Errorf("label = %q, want alice", grouped.Rows[0].Label)
 	}
-
-	// Same rule on the other steam-id-keyed player dimensions.
-	for _, expr := range []string{"from events: count()"} {
-		pv, perr, err := RunPreview(st, Def{Expr: expr, GroupBy: "player"}, "", 100)
-		if perr != nil || err != nil {
-			t.Fatalf("preview %q: %v %v", expr, perr, err)
-		}
-		if len(pv.Rows) != 1 || pv.Rows[0].Group != aliceID {
-			t.Errorf("%s by player = %+v, want only alice", expr, pv.Rows)
-		}
+	if grouped.Rows[0].Value != 1 {
+		t.Errorf("count = %v, want 1 (the human's player_stats row)", grouped.Rows[0].Value)
 	}
 
-	// SCOPED: an ungrouped aggregate counts every row — bot kills are
-	// still "things that happened" (the event-shaped exception).
+	// Event rows: three stored (alice's kill, the bot's kill, the
+	// actor-less damage) → exactly one value, alice's kill. Both halves
+	// of the subject condition are load-bearing: humans-only drops the
+	// bot, `subject <> ''` drops the actor-less row.
 	plain, perr, err := RunPreview(st, Def{Expr: "from events: count()"}, "", 100)
 	if perr != nil || err != nil {
 		t.Fatalf("plain preview: %v %v", perr, err)
 	}
-	if len(plain.Rows) != 1 || plain.Rows[0].Value != 2 {
-		t.Errorf("ungrouped events count = %+v, want 2 (bots included — scope boundary)", plain.Rows)
+	if len(plain.Rows) != 1 || plain.Rows[0].Group != aliceID || plain.Rows[0].Value != 1 {
+		t.Errorf("events by subject = %+v, want only alice at 1 (bot and no-actor rows dropped)", plain.Rows)
 	}
 
-	// A scoped preview takes the same path (match_id binds into the
-	// statement, the humans-only condition rides the same WHERE).
-	scoped, perr, err := RunPreview(st, Def{
-		Expr: "from player_stats: count()", GroupBy: "player",
-	}, "match:1", 100)
+	// Same rule on the other subject-keyed source (thrower/attacker are
+	// the events/utility_events subjects; the condition is per subject,
+	// not per source population).
+	scoped, perr, err := RunPreview(st, Def{Expr: "from player_stats: count()"}, "match:1", 100)
 	if perr != nil || err != nil {
 		t.Fatalf("scoped preview: %v %v", perr, err)
 	}
 	if len(scoped.Rows) != 1 || scoped.Rows[0].Group != aliceID {
-		t.Errorf("scoped player_stats by player = %+v, want only alice", scoped.Rows)
+		t.Errorf("scoped player_stats by subject = %+v, want only alice", scoped.Rows)
+	}
+
+	scopedEvents, perr, err := RunPreview(st, Def{Expr: "from events: count()"}, "match:1", 100)
+	if perr != nil || err != nil {
+		t.Fatalf("scoped events preview: %v %v", perr, err)
+	}
+	if len(scopedEvents.Rows) != 1 || scopedEvents.Rows[0].Value != 1 {
+		t.Errorf("scoped events by subject = %+v, want only alice at 1", scopedEvents.Rows)
 	}
 }

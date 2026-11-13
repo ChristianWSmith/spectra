@@ -34,16 +34,17 @@ import (
 // metric write: a no-op once the baseline schema has created it, and a
 // safety net if this code ever runs against a database that predates it.
 // Full expression validation belongs to the metrics engine on preview/use
-// (plugin metric budget) — the plugin loader only enforces
-// structural sanity (name + expr non-empty).
+// (plugin metric budget) — the plugin loader enforces structural sanity
+// (name + expr non-empty, scope ∈ match|profile) and runs the engine
+// grammar at install.
 //
 // short_name (optional user-entered short label — the width-constrained
 // column-header display criterion short_name || title || name) is NOT a
 // plugin-metric field: ReplacePluginMetrics omits it from its INSERT, so
-// plugin rows always carry the DEFAULT ''. scope and version are omitted
-// for the same reason class: plugin manifests carry no scope yet, so
-// plugin rows land at the column DEFAULT 'match', and their version
-// starts at DEFAULT 1.
+// plugin rows always carry the DEFAULT ''. scope IS written through since
+// W2 (the manifest's validated scope; an omitted one is normalized to
+// 'match' by the same omitted-field rule CreateMetric uses), and version
+// stays omitted — plugin rows start at the column DEFAULT 1.
 
 // PluginRow is one plugins-registry row (M5 §2.7).
 type PluginRow struct {
@@ -58,13 +59,14 @@ type PluginRow struct {
 }
 
 // PluginMetricDef is one manifest metric ready to be written into the
-// metrics table (origin forced to 'plugin' by the writer). No Scope
-// field yet: plugin manifests carry no scope, so ReplacePluginMetrics
-// leaves the column to its DEFAULT 'match' (see the file doc).
+// metrics table (origin forced to 'plugin' by the writer). Scope is the
+// manifest's validated `scope` ("" = omitted → the store's omitted-field
+// rule normalizes it to 'match', see ReplacePluginMetrics).
 type PluginMetricDef struct {
 	Name        string
 	Title       string
 	Expr        string
+	Scope       string
 	Format      string
 	Doc         string
 	Denominator string
@@ -194,13 +196,14 @@ func (s *Store) DeletePluginRow(id string) error {
 // Pass nil/empty to just clear. Creates the metrics table when missing.
 // The INSERT deliberately omits short_name (DEFAULT empty string) —
 // plugin manifests carry no short label, so plugin metric rows never
-// have one. scope and version are omitted likewise (see the file doc):
-// plugin manifests carry no scope yet, so every plugin row lands at
-// scope DEFAULT 'match', and version lands at its DEFAULT 1.
+// have one. version is omitted likewise (DEFAULT 1). scope IS written:
+// an omitted ("" — direct callers that predate the field) scope is
+// normalized to 'match' here, the same omitted-field rule CreateMetric
+// and UpdateMetric apply, so the CHECK always sees a legal value.
 //
 // Deliberately NOT replaceMatchRows: the delete keys on plugin_id (not
-// match_id), the INSERT carries a literal 'plugin' for origin (8 of its 9
-// placeholders) plus an ON CONFLICT upsert clause — neither fits the
+// match_id), the INSERT carries a literal 'plugin' for origin (9 of its
+// 10 placeholders) plus an ON CONFLICT upsert clause — neither fits the
 // helper's `WHERE match_id = ?` + plain-VALUES body.
 func (s *Store) ReplacePluginMetrics(pluginID string, defs []PluginMetricDef) error {
 	if err := s.ensureMetricsTable(); err != nil {
@@ -215,10 +218,10 @@ func (s *Store) ReplacePluginMetrics(pluginID string, defs []PluginMetricDef) er
 		return fmt.Errorf("store: replace plugin metrics: %w", err)
 	}
 	stmt, err := tx.Prepare(
-		`INSERT INTO metrics (name, title, expr, format, doc, origin, plugin_id, denominator, created_at)
-		 VALUES (?, ?, ?, ?, ?, 'plugin', ?, ?, ?)
+		`INSERT INTO metrics (name, title, expr, scope, format, doc, origin, plugin_id, denominator, created_at)
+		 VALUES (?, ?, ?, ?, ?, ?, 'plugin', ?, ?, ?)
 		 ON CONFLICT(name) DO UPDATE SET
-			title = excluded.title, expr = excluded.expr,
+			title = excluded.title, expr = excluded.expr, scope = excluded.scope,
 			format = excluded.format, doc = excluded.doc, origin = excluded.origin,
 			plugin_id = excluded.plugin_id, denominator = excluded.denominator`,
 	)
@@ -227,8 +230,12 @@ func (s *Store) ReplacePluginMetrics(pluginID string, defs []PluginMetricDef) er
 	}
 	defer stmt.Close()
 	for _, d := range defs {
+		scope := d.Scope
+		if scope == "" {
+			scope = "match"
+		}
 		if _, err := stmt.Exec(
-			scrub(d.Name), scrub(d.Title), scrub(d.Expr),
+			scrub(d.Name), scrub(d.Title), scrub(d.Expr), scrub(scope),
 			scrub(d.Format), scrub(d.Doc), scrub(pluginID), scrub(d.Denominator), time.Now(),
 		); err != nil {
 			return fmt.Errorf("store: replace plugin metrics: %w", err)

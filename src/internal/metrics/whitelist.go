@@ -3,14 +3,15 @@ package metrics
 import "strings"
 
 // This file IS the whitelist: sources, per-source columns curated from
-// the store's schema (internal/store/schema.sql), the GroupBy mapping
-// table, the Denominator subquery sources, and the JOIN declarations
-// (dimensions, uniqueness keys, population — joinKey derives the engine
-// ON from them; no user text ever reaches an ON clause). Compile
-// validates every identifier an expression mentions against these
-// structures — unknown → ExprError{Message,Pos}. Nothing here is derived
-// at runtime from user input; the maps are the single place a schema
-// change must be mirrored.
+// the store's schema (internal/store/schema.sql), the subject (player
+// anchor) mapping, the fixed join dimensions, the Denominator subquery
+// sources, and the JOIN declarations (dimensions, uniqueness keys,
+// population — joinKey derives the engine ON from them; no user text
+// ever reaches an ON clause). Compile validates every identifier an
+// expression mentions against these structures — unknown →
+// ExprError{Message,Pos}. Nothing here is derived at runtime from user
+// input; the maps are the single place a schema change must be
+// mirrored.
 
 // Sources are the grammar's source-clause tables (package doc). One
 // source = the base form; a comma list joins them engine-side (design
@@ -89,74 +90,57 @@ func colSet(cols ...string) map[string]bool {
 	return m
 }
 
-// groupTokens are the valid GroupBy values of an ENGINE preview
-// definition (metrics.Def.GroupBy — the models.MetricRow group_by column
-// retired with the stored-metrics W1 wave, and the parameter itself goes
-// with the W2 grammar wave; frozen contract comment:
-// ""|player|round|team|weapon|side|map|none).
-var groupTokens = map[string]bool{
-	"player": true, "round": true, "team": true, "weapon": true,
-	"side": true, "map": true, "none": true,
+// sourceSubject maps every PLAYER-ANCHORED source to its subject column:
+// the column that answers "which player is this row about". It is THE
+// player dimension of the join declarations (sourceDimsOf), the column
+// every statement groups by, and the anchor Compile validates the
+// primary against (design §3 player-relativity — criterion: the
+// expression's output must be player-addressed, so the PRIMARY's player
+// mapping must be a SUBJECT column; primary-owns, like scope binding
+// and the population anchor). A source ABSENT from this map has no
+// subject — rounds (mvp is an attribute of a won round) and
+// round_economy (side-grained) — so it can never be a primary; it may
+// still join an anchored primary wherever joinKey allows (the rule
+// partitions by what the OUTPUT is, not by a source whitelist).
+var sourceSubject = map[string]string{
+	"events":             "attacker", // the acting player of the event
+	"engagements":        "a_steam",  // the A-side actor (every kind)
+	"utility_events":     "thrower",
+	"player_stats":       "steam_id",
+	"player_round_stats": "steam_id",
+	"clutches":           "steam_id",
+	"chat":               "steam_id",
+	"match_trade_opps":   "steam_id",
 }
 
-// mapGroupExpr is the fixed `map` group for every source (all sources
-// carry match_id; the correlated subquery is emitted by us — the user
-// never writes a table name). The anchor is the source's own name, which
-// is also its engine alias when the expression joins (aliases are the
-// table names — design (c)), so the subquery stays side-correct by
-// construction.
-func mapGroupExpr(source string) string {
-	return "(SELECT m2.map FROM matches m2 WHERE m2.id = " + source + ".match_id)"
-}
+// playerSources is the anchored-source list the anchor error renders
+// VERBATIM (the design's order — deliberately not the `sources` order).
+// Its set is pinned to sourceSubject's keys by TestSchemaConsistency
+// (schema_consistency_test.go), so the two cannot drift.
+const playerSources = "events, engagements, player_stats, player_round_stats, clutches, chat, utility_events, match_trade_opps"
 
-// groupColumns maps source → group token → the fixed column expression.
-// Anything unmapped is an ExprError (no ambiguous joins — the
-// engagements player ambiguity is resolved by fixing engagements.player to
-// the A-side actor; victim-side rates use player_round_stats.traded
-// instead). The round/player/side entries double as the source's JOIN
-// dimensions (sourceDimsOf): the owner ruling defines the player
-// dimension as exactly this groupColumns[…]["player"] column.
-var groupColumns = map[string]map[string]string{
-	"events": {
-		"player": "attacker", "round": "round", "weapon": "weapon",
-		"map": mapGroupExpr("events"),
-	},
-	"engagements": {
-		"player": "a_steam", "round": "round",
-		"map": mapGroupExpr("engagements"),
-	},
-	"rounds": {
-		"player": "mvp", "round": "number",
-		"map": mapGroupExpr("rounds"),
-	},
-	"player_stats": {
-		"player": "steam_id", "team": "side", "side": "side",
-		"map": mapGroupExpr("player_stats"),
-	},
-	"player_round_stats": {
-		"player": "steam_id", "round": "round",
-		"map": mapGroupExpr("player_round_stats"),
-	},
-	"round_economy": {
-		"round": "round", "team": "side", "side": "side",
-		"map": mapGroupExpr("round_economy"),
-	},
-	"clutches": {
-		"player": "steam_id", "round": "round",
-		"map": mapGroupExpr("clutches"),
-	},
-	"utility_events": {
-		"player": "thrower", "round": "round",
-		"map": mapGroupExpr("utility_events"),
-	},
-	"chat": {
-		"player": "steam_id", "round": "round",
-		"map": mapGroupExpr("chat"),
-	},
-	"match_trade_opps": {
-		"player": "steam_id",
-		"map":    mapGroupExpr("match_trade_opps"),
-	},
+// sourceDims maps source → join dimension → the fixed column that
+// carries it (round and side only — `match` is every source's match_id
+// and `player` is the subject column sourceSubject declares; both are
+// derived in sourceDimsOf). Anything unmapped is not a dimension of that
+// source (no ambiguous joins: the engagements player ambiguity is
+// resolved by fixing its player dimension to the A-side actor through
+// sourceSubject; victim-side rates use player_round_stats.traded
+// instead). This is what remains of the groupBy token mapping after W2:
+// the player token became sourceSubject's anchor, and the team/weapon/
+// map tokens retired with the parameter — round/side are the entries
+// joinKey still reads.
+var sourceDims = map[string]map[string]string{
+	"events":             {"round": "round"},
+	"engagements":        {"round": "round"},
+	"rounds":             {"round": "number"},
+	"player_stats":       {"side": "side"},
+	"player_round_stats": {"round": "round"},
+	"round_economy":      {"round": "round", "side": "side"},
+	"clutches":           {"round": "round"},
+	"utility_events":     {"round": "round"},
+	"chat":               {"round": "round"},
+	// match_trade_opps carries only match + player (both derived).
 }
 
 // denominatorTables whitelists models.MetricRow.Denominator (scalar
@@ -171,6 +155,20 @@ var denominatorTables = map[string]string{
 	"matches": "matches",
 }
 
+// denominatorCareerTables maps each denominator alias to the CAREER
+// grain table its PROFILE-scope ("") emission counts the subject's rows
+// from (design §3 denominator rule — one rule, two units: the
+// denominator counts the scope's units for the subject): rounds → the
+// subject's player_round_stats rows (one per player-round), matches →
+// the subject's player_stats rows (one per player-match ⇒ matches
+// played). Match scope (`match:<id>`) keeps denominatorTables' scalar
+// `rounds`/`matches` count over the match. Keys are pinned to
+// denominatorTables' by TestSchemaConsistency.
+var denominatorCareerTables = map[string]string{
+	"rounds":  "player_round_stats",
+	"matches": "player_stats",
+}
+
 // knownSource reports whether expr's source clause names a v1 source.
 func knownSource(name string) bool {
 	_, ok := sourceColumns[name]
@@ -180,25 +178,6 @@ func knownSource(name string) bool {
 // knownSourcesMsg renders the source list for error messages.
 func knownSourcesMsg() string { return strings.Join(sources, ", ") }
 
-// groupExpr resolves groupBy against source. Returns "" for no grouping
-// (""/none); an ExprError for unknown tokens, unmapped combinations and
-// (in Compile) percentile-with-group violations.
-func groupExpr(source, groupBy string) (string, *ParseError) {
-	g := strings.ToLower(strings.TrimSpace(groupBy))
-	if g == "" || g == "none" {
-		return "", nil
-	}
-	if !groupTokens[g] {
-		return "", errf(0, "unknown groupBy %q (valid: player, round, team, weapon, side, map, none)", groupBy)
-	}
-	m := groupColumns[source]
-	col, ok := m[g]
-	if !ok {
-		return "", errf(0, "groupBy %q is not supported for source %s (fixed mapping table)", g, source)
-	}
-	return col, nil
-}
-
 // ---- join declarations (design (c): engine-derived ON, no user text) ----
 //
 // Every source declares its join properties here, pinned against the real
@@ -207,7 +186,8 @@ func groupExpr(source, groupBy string) (string, *ParseError) {
 //
 //   - dimensions (sourceDimsOf): `match` (every source's match_id) plus
 //     `round`/`player`/`side` where the source carries them — the
-//     round/player/side columns are exactly the groupColumns mapping;
+//     player dimension IS the subject column (sourceSubject), the
+//     round/side columns are the sourceDims mapping;
 //   - uniqueness key (sourceUniqueKeys): the PK/UNIQUE column set that
 //     identifies one row of that table;
 //   - population (sourcePopulation): all-players vs humans-only.
@@ -217,19 +197,21 @@ func groupExpr(source, groupBy string) (string, *ParseError) {
 //
 //	events             (match_id, seq)        match round player(attacker)
 //	engagements        (match_id, seq)        match round player(a_steam)
-//	rounds             (match_id, number)     match round player(mvp)
+//	rounds             (match_id, number)     match round (no subject)
 //	player_stats       (match_id, steam_id)   match player side
 //	player_round_stats (match_id, round, steam_id)  match round player
-//	round_economy      (match_id, round, side)      match round side
+//	round_economy      (match_id, round, side)      match round side (no subject)
 //	clutches           (match_id, round, steam_id, start_tick)  match round player
 //	utility_events     (match_id, seq)        match round player(thrower)
 //	chat               (id)                   match round player(steam_id)
 //	match_trade_opps   (match_id, steam_id)   match player
 
 // population is the row population a source's rows represent — the
-// bot-exclusion dimension of the source list (owner ruling: a
-// multi-source expression whose source set MIXES populations applies
-// store.HumanOnly to the primary's player column regardless of grouping).
+// bot-exclusion dimension of the source list. Declared and pinned
+// against the DDL (TestJoinKeyDeclarationsMatchSchema), but compile no
+// longer BRANCHES on it: since subject addressing every statement applies
+// the humans-only rule to its subject, so the former mixed-population
+// special case collapsed into that one unconditional condition.
 type population int
 
 const (
@@ -273,18 +255,19 @@ var sourceUniqueKeys = map[string][]string{
 }
 
 // sourceDimsOf returns the join dimensions a source carries: `match`
-// (every source's match_id) plus round/player/side — derived from the
-// groupColumns mapping so the two can never drift (the owner ruling
-// defines the player dimension as the source's groupColumns[…]["player"]
-// column; the side dimension is the side column behind both the `side`
-// and `team` tokens).
+// (every source's match_id), `player` (the subject column — the owner
+// ruling defines the player dimension as exactly the subject), plus
+// round/side where the source declares them in sourceDims.
 func sourceDimsOf(src string) map[string]string {
 	d := make(map[string]string, 4)
 	if sourceColumns[src]["match_id"] {
 		d["match"] = "match_id"
 	}
-	for _, dim := range []string{"round", "player", "side"} {
-		if col := groupColumns[src][dim]; col != "" {
+	if col := sourceSubject[src]; col != "" {
+		d["player"] = col
+	}
+	for _, dim := range []string{"round", "side"} {
+		if col := sourceDims[src][dim]; col != "" {
 			d[dim] = col
 		}
 	}
@@ -353,21 +336,4 @@ func joinIsOneToOne(primary string, key []joinDim) bool {
 		}
 	}
 	return true
-}
-
-// mixedPopulations reports whether the source list spans BOTH
-// populations (owner ruling: such an expression aligns populations via
-// the primary's player column regardless of grouping; a list whose
-// sources all share one population keeps the single-source rule).
-func mixedPopulations(srcs []SourceRef) bool {
-	if len(srcs) < 2 {
-		return false
-	}
-	first := sourcePopulation[srcs[0].Name]
-	for _, s := range srcs[1:] {
-		if sourcePopulation[s.Name] != first {
-			return true
-		}
-	}
-	return false
 }
