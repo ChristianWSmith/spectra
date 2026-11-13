@@ -415,12 +415,18 @@ at the end of the section.
   `dispatchRoundStart`; its tests pin leftover projectiles destroyed and
   infernos expired at the clear (`TestRoundEndDestroyOrder_Deterministic`
   notes a demo with "leftover projectiles and infernos at several round
-  ends"). Smoke lasts ≈18 s; Molotov fire ≈7.03 s (`inferno_startburn` →
+  ends"). Smoke lasts ≈18 s by community claims (the demo measures
+  EXACTLY 1412 det→expired ticks = 22.06 s — see the "Smoke ⇄ fire
+  interactions" entry); Molotov fire ≈7.03 s (`inferno_startburn` →
   `inferno_expire`; Incendiary ≈5.5 s). Expiry game events exist in
   demoinfocs (`smokegrenade_expired` → `SmokeGrenadeExpired`,
-  `inferno_expire` → `InfernoExpired`) but are deliberately UNEXTRACTED
-  in spectra — the render-side rule (`frontend/src/lib/replay/roundcut.js`)
-  is sufficient and needs no new event rows.
+  `inferno_expire` → `InfernoExpired`); they stay UNEXTRACTED as typed
+  rows but are stored as raw `generic_events`, and since the owner's
+  2026-11-12 "fix the lifetimes" ruling the renderer consumes them from
+  there (`frontend/src/lib/replay/world.js` `loadAreaEnds` pairs each end
+  to its start by entityid + round and stamps `areaEndTick` on the typed
+  row; `roundcut.js` `entityEndTick` MINs it with the round cut) — the
+  render-side natural-lifetime fallback now only covers an UNPAIRED row.
   **Source** — demoinfocs-golang v6.0.0-rc.1 module cache:
   `pkg/demoinfocs/game_events.go` (`clearGrenadeProjectiles` def +
   `roundStart`/`roundOfficiallyEnded` calls + the expiry handler table),
@@ -1320,7 +1326,13 @@ at the end of the section.
   137×352, 119×449, 12×450); 63/626 fires in the dev library ended short
   (8…379 ticks), 58 of them with a `smokegrenade_detonate` within 300 u
   during the burn (56 within 144 u); paired start/expire carry identical
-  positions (626/626), so the pair is per-fire by `entityid`+round. (2) A
+  positions (626/626), so the pair is per-fire by `entityid`+round.
+  NOTE: the burn ROW cannot tell the two nades apart — demoinfocs
+  hardcodes `common.EqIncendiary` in `infernoStartBurn`/`infernoExpire`
+  (`game_events.go`), so every stored fire detonation reads
+  `weapon='Incendiary Grenade'` (dev library 111/111 burns for 59
+  Molotov + 54 Incendiary throws); the real type lives on the THROW row
+  (`grenade_throw` weapon). (2) A
   fire grenade suppressed by smoke produces NO `inferno_startburn` at
   all → no detonation row, no fire to draw: 25 of 1065
   Molotov/Incendiary bounces in the dev library never get a startburn
@@ -1400,7 +1412,9 @@ at the end of the section.
   `golden/*.dem.zst` (cue census, ±32-tick moment inventories around
   every cue and control landing, startburn→expire and det→expired
   lifetime histograms; hash resolution via mappack.SoundEventHash) and
-  read-only queries of the dev library (2026-11-12);
+  read-only queries of the dev library (2026-11-12) and the
+  demoinfocs-golang v6.0.0-rc.1 module cache (`game_events.go`
+  `infernoStartBurn`/`infernoExpire` hardcoding `common.EqIncendiary`);
   https://counterstrike.fandom.com/wiki/Molotov and /wiki/Smoke_Grenade
   (one-third rule, "flames will not deploy inside smoke");
   https://gamertagmythras.com/blog/counter-strike-2/cs2-utility-guide and
