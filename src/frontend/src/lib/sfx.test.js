@@ -72,6 +72,7 @@ const {
   grenadeCues,
   throwCues,
   bounceCues,
+  fireCues,
   footstepCues,
   footstepGroup,
   knifeCues,
@@ -334,6 +335,69 @@ test('bounceCues: FREEZE time gates the bounce, (tick|name) dedupes', () => {
   );
   // No rounds pushed → nothing gated (the same fail-open rule as throwCues).
   assert.equal(bounceCues([{ kind: 'grenade_bounce', weapon: 'HE Grenade', tick: 32 }]).length, 1);
+});
+
+// --- fire cues (smoke ⇄ fire / detonation / fade) ----------------------------
+
+test('fireCues: fire-cue rows cue their manifest groups on the UTIL channel', () => {
+  const cues = fireCues([
+    { kind: 'extinguish', tick: 10 }, // nade-neutral: fixed group
+    { kind: 'start_failed', weapon: 'Molotov', tick: 20 }, // per-nade via the soundevent-spelled weapon
+    { kind: 'start_failed', weapon: 'Incendiary Grenade', tick: 30 },
+    { kind: 'smash', weapon: 'Molotov', tick: 40 },
+    { kind: 'smash', weapon: 'Incendiary Grenade', tick: 50 }, // the Pop twin's file
+    { kind: 'fade_out', tick: 60 },
+    // …and the silences: an unknown nade, a missing weapon, other kinds,
+    // hostile input — never a substitute (the BOUNCE_GROUPS rule).
+    { kind: 'start_failed', weapon: 'AK-47', tick: 70 },
+    { kind: 'smash', tick: 80 },
+    { kind: 'grenade', bucket: 'fire', weapon: 'Molotov', tick: 90 }, // the fire DETONATION is grenadeCues' row
+    { kind: 'grenade_bounce', weapon: 'Molotov', tick: 100 }, // bounceCues' row
+    null,
+  ]);
+  assert.deepEqual(
+    cues.map((c) => `${c.tick}:${c.name}:${c.bucket}`),
+    [
+      '10:Fire extinguish:utility',
+      '20:Molotov start failed:utility',
+      '30:Incendiary Grenade start failed:utility',
+      '40:Molotov smash:utility',
+      '50:Incendiary Grenade pop:utility',
+      '60:Fire fade out:utility',
+    ],
+  );
+  // Sorted by tick (the engine's range window relies on it).
+  assert.ok(cues.every((c, i) => i === 0 || cues[i - 1].tick <= c.tick));
+});
+
+test('fireCues: FREEZE time gates the cue, (tick|name) dedupes, the pair survives', () => {
+  const cues = fireCues(
+    [
+      { kind: 'extinguish', tick: 32 }, // round-1 freeze → dropped
+      { kind: 'extinguish', tick: 100 }, // live → kept
+      { kind: 'extinguish', tick: 100 }, // duplicate → one cue
+      // Same tick, DIFFERENT cue names stay separate — the REAL
+      // extinguish + fade pair (co-fires from one source at 59/66 pool
+      // extinguish cues) must play BOTH sounds:
+      { kind: 'fade_out', tick: 100 },
+      { kind: 'start_failed', weapon: 'Molotov', tick: 100 },
+    ],
+    FREEZE_ROUNDS,
+  );
+  assert.deepEqual(
+    cues.map((c) => `${c.tick}:${c.name}`),
+    ['100:Fire extinguish', '100:Fire fade out', '100:Molotov start failed'],
+  );
+  // No rounds pushed → nothing gated (the same fail-open rule as bounceCues).
+  assert.equal(fireCues([{ kind: 'extinguish', tick: 32 }]).length, 1);
+});
+
+test('fireCues: absent rows make NO cue (empty, null, foreign kinds)', () => {
+  assert.deepEqual(fireCues([], FREEZE_ROUNDS), []);
+  assert.deepEqual(fireCues(null), []);
+  // Foreign-shaped rows are silently ignored — the cue exists only when
+  // the demo recorded it (no cue when absent).
+  assert.deepEqual(fireCues([{ kind: 'kill', tick: 10 }, { kind: 'round_end', tick: 20 }]), []);
 });
 
 // --- player sounds (footsteps / lands / jumps / fall damage) ----------------
@@ -1563,6 +1627,20 @@ const BEEP_MANIFEST = {
     // bounce soundevent's own file sets) …
     'HE Grenade bounce': ['/api/sounds/he_bounce-1.wav'],
     'Flashbang bounce': ['/api/sounds/grenade_hit1.wav'],
+    // … the six FIRE-CUE groups (soundTable's Wave C entries — each cue
+    // soundevent's file set; internal/mappack/sounds.go. The
+    // extinguish/fade groups are nade-neutral, the rest are per-nade) …
+    'Fire extinguish': ['/api/sounds/molotov_extinguish.wav'],
+    'Molotov start failed': ['/api/sounds/molotov_detonate_air_01.wav'],
+    'Incendiary Grenade start failed': ['/api/sounds/inc_grenade_detonate_air_01.wav'],
+    'Molotov smash': [
+      '/api/sounds/molotov_smash_01.wav',
+      '/api/sounds/molotov_smash_02.wav',
+      '/api/sounds/molotov_smash_03.wav',
+      '/api/sounds/molotov_smash_04.wav',
+    ],
+    'Incendiary Grenade pop': ['/api/sounds/inc_grenade_pop_03.wav'],
+    'Fire fade out': ['/api/sounds/fire_loop_fadeout_01.wav'],
     // … the two HEADSHOT-kill cue groups (soundTable's dink/bare pair) …
     'Headshot dink': ['/api/sounds/headshot_armor_e1.wav'],
     'Headshot bare': [
@@ -2097,6 +2175,51 @@ test('engine: bounce cues play on the utility bus through the guarded window', a
     const before = ctx.sources.length;
     engine.emit({ playing: true, speed: 1, tick: 4000 });
     assert.equal(ctx.sources.length, before, 'the forward jump replays nothing');
+    sfx.destroy();
+  } finally {
+    restoreFetch();
+  }
+});
+
+// The FIRE cue through the REAL play path: fire-cue rows → rebuildCues'
+// utilCues merge → (prevTick, curTick] → playGroup on the UTILITY bus —
+// the same channel the throw/detonation/bounce cues ride. The builder
+// tests alone cannot catch a missing merge, so this pins the WIRING:
+// every captured cue sound plays, the extinguish + fade pair plays BOTH
+// halves, and an unknown-nade row stays silent.
+test('engine: fire cues play on the utility bus through the guarded window', async () => {
+  resetSoundManifest();
+  const restoreFetch = stubManifestFetch();
+  try {
+    const { sfx, engine, ctx } = await makeSfx();
+    sfx.setLandmarks([
+      { kind: 'extinguish', bucket: '', tick: 1000 },
+      // The REAL pair — both co-firing rows must play (59/66 pool
+      // extinguish cues carry both from one source).
+      { kind: 'fade_out', bucket: '', tick: 1000 },
+      { kind: 'smash', bucket: '', weapon: 'Molotov', tick: 1000 },
+      // An unknown nade → NO cue (the pure gate pins it; nothing may play).
+      { kind: 'start_failed', bucket: '', weapon: 'AK-47', tick: 1001 },
+    ]);
+    engine.emit({ playing: true, speed: 1, tick: 990 }); // first draw → seed (jump)
+    engine.emit({ playing: true, speed: 1, tick: 1005 }); // ordinary step → crosses the cue tick
+    const ext = ctx.sources.filter((s) => s.buffer && s.buffer.url === '/api/sounds/molotov_extinguish.wav');
+    assert.equal(ext.length, 1, 'the extinguish cue plays exactly once');
+    assert.equal(ext[0].bus, ctx.gains[1], 'fire cues ride the utility bus (2nd gain)');
+    assert.equal(
+      ctx.sources.filter((s) => s.buffer && s.buffer.url === '/api/sounds/fire_loop_fadeout_01.wav').length,
+      1,
+      'the fade half of the pair plays too',
+    );
+    // The smash group holds four variants picked at RANDOM (pickVariant) —
+    // assert exactly one molotov_smash_* sample, whatever it picked.
+    assert.equal(
+      ctx.sources.filter((s) => s.buffer && /molotov_smash_0\d\.wav$/.test(s.buffer.url)).length,
+      1,
+      'the detonation body-break cue plays exactly one variant',
+    );
+    // EXACTLY those three: the unknown-nade start_failed row stayed silent.
+    assert.equal(ctx.sources.length, 3, 'only the three extracted cues played');
     sfx.destroy();
   } finally {
     restoreFetch();

@@ -52,6 +52,10 @@
 //   - utility cues are the landmark rows' DETONATIONS (grenadeCues),
 //     their THROWS (throwCues — the `${weapon} throw` manifest groups)
 //     and their BOUNCES (bounceCues — the `${weapon} bounce` groups,
+//     bucket 'utility'), the FIRE CUES (fireCues — the smoke⇄fire
+//     extinguish / air-burst failure / detonation body-break / fire
+//     fade rows, models.EventExtinguish … EventFadeOut, at the
+//     demo-recorded tick, unconditionally — no smoke/fire-state gating,
 //     bucket 'utility'), knife cues are their damage rows — all in
 //     (prevTick, curTick] and all freeze-gated at cue-build time
 //     (rounds.js inFreezeTime — the game forbids firing/utility during
@@ -237,6 +241,13 @@ export const SFX_CUE_KINDS = [
   'grenade_throw', // throwCues
   'grenade', // grenadeCues (detonation) + bombActionCues (plant/defuse begin+complete)
   'grenade_bounce', // bounceCues
+  // The four FIRE-CUE kinds (fireCues below — models.EventExtinguish …
+  // EventFadeOut): audio-only cue rows the owner ruled not feed-visible
+  // (2026-11-12), fetched through DRAW_KINDS so this engine sees them.
+  'extinguish', // smoke⇄fire suppression cue (Molotov.Extinguish)
+  'start_failed', // the AIR-BURST failure cue (owner ruling 2026-11-12)
+  'smash', // the firebomb DETONATING (Molotov.Smash / IncGrenade.Pop)
+  'fade_out', // the fire fading out (Inferno.FadeOut)
   'bomb_explode', // grenadeCues (the C4 explosion)
   'bomb_plant', // bombAnnouncerCues + c4BeepRows (bucket 'plant')
   'bomb_plant_begin', // bombActionCues (plant start)
@@ -387,6 +398,83 @@ export function bounceCues(rows, rounds) {
     if (inFreezeTime(rounds, row.tick)) continue;
     const name = `${weapon} bounce`;
     if (!BOUNCE_GROUPS.has(name)) continue; // decoy/unknown weapon → silence
+    const key = `${row.tick}|${name}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ tick: row.tick, name, bucket: 'utility' });
+  }
+  out.sort((a, b) => a.tick - b.tick);
+  return out;
+}
+
+// --- fire cues (smoke ⇄ fire interactions / detonation / fade) ---------------
+
+// FIRE_CUE_GROUPS — the manifest groups the fire-cue kinds address
+// (internal/mappack/sounds.go soundTable — read-only, the exact keys the
+// extracted manifest carries): the NADE-NEUTRAL cues (the install has ONE
+// extinguish sound and ONE fade sound — no Incendiary variant — so the
+// kind alone picks the group) and the per-nade cues (the air-burst and
+// container-break files differ per nade; the row's weapon — spelled by
+// the soundevent name at extract time, sos.go fireCueDefs — picks
+// between them). An unknown/missing weapon makes NO cue: silence, never
+// a substitute (the BOUNCE_GROUPS rule).
+const FIRE_CUE_NAMES = {
+  extinguish: 'Fire extinguish',
+  fade_out: 'Fire fade out',
+};
+const FIRE_NADE_CUE_GROUPS = {
+  start_failed: new Map([
+    ['Molotov', 'Molotov start failed'],
+    ['Incendiary Grenade', 'Incendiary Grenade start failed'],
+  ]),
+  // The firebomb DETONATING (landing and breaking — owner's term,
+  // 2026-11-12): Molotov.Smash keeps its four bottle-shatter variants,
+  // the incendiary's container break is IncGrenade.Pop (its only
+  // family twin — no IncGrenade.Smash exists in the install).
+  smash: new Map([
+    ['Molotov', 'Molotov smash'],
+    ['Incendiary Grenade', 'Incendiary Grenade pop'],
+  ]),
+};
+
+// fireCues — the FIRE-CUE list: models.EventExtinguish … EventFadeOut
+// rows → [{tick, name, bucket:'utility'}] in tick order, the cue at the
+// demo-recorded SOS tick. The cue fires UNCONDITIONALLY — no
+// smoke/fire-state gating: the demo recorded this sound at this tick, so
+// the replay plays it (the owner's fidelity rule; the pool shows every
+// scenario: smoke kills a burning fire, a firebomb lands in smoke and
+// never ignites, an air-burst, a detonation, a fire burning out).
+// Freeze-gated with the SAME rule as grenadeCues/throwCues/bounceCues
+// (rounds.js inFreezeTime — the existing convention, not a new one: fires
+// are cleared at the round boundary, so a cue tick inside freeze would be
+// a mis-stamped row; belt and braces for one, and the gate FAILS OPEN
+// when no rounds are pushed, exactly like its siblings). DE-duped by
+// (tick, name) like every other cue list — the extractor already dedupes
+// per (entity, tick, name), and two same-named cues on one tick are one
+// sound; the extinguish + fade PAIR carries different names, so BOTH
+// play (they co-fire from the same source at 59/66 pool extinguish
+// cues). Rides the UTILITY channel (bucket 'utility') through
+// rebuildCues' utilCues merge → playUtilInRange → setMuted('utility') /
+// setUtilityVolume, the same fader/mute as the detonation cues beside it.
+// Pure — unit-tested by src/lib/sfx.test.js.
+export function fireCues(rows, rounds) {
+  const seen = new Set();
+  const out = [];
+  for (const row of rows || []) {
+    if (!row || !Number.isFinite(row.tick)) continue;
+    const kind = String(row.kind || '');
+    let name = FIRE_CUE_NAMES[kind];
+    if (!name) {
+      const byNade = FIRE_NADE_CUE_GROUPS[kind];
+      if (byNade) {
+        const weapon = row.weapon == null || row.weapon === '' ? null : String(row.weapon);
+        if (!weapon) continue; // no weapon on the row → no cue, never invented
+        name = byNade.get(weapon);
+        if (!name) continue; // unknown nade → silence (the BOUNCE_GROUPS rule)
+      }
+    }
+    if (!name) continue; // not a fire-cue kind
+    if (inFreezeTime(rounds, row.tick)) continue;
     const key = `${row.tick}|${name}`;
     if (seen.has(key)) continue;
     seen.add(key);
@@ -2036,12 +2124,14 @@ export function createSfxEngine({ engine, matchId, onError }) {
   // rebuilt here: it arrives pre-derived through setDecoyPlan
   // (lib/replay/decoy.js).
   function rebuildCues() {
-    // The util list merges detonations and BOUNCES (bounceCues carries
-    // bucket 'utility') — one tick-sorted list → the ONE window selector
-    // (utilCuesInRange) serves both, on the same channel.
+    // The util list merges detonations, BOUNCES and the FIRE CUES
+    // (bounceCues/fireCues carry bucket 'utility') — one tick-sorted
+    // list → the ONE window selector (utilCuesInRange) serves all three,
+    // on the same channel.
     utilCues = [
       ...grenadeCues(landmarkRows, rounds),
       ...bounceCues(landmarkRows, rounds),
+      ...fireCues(landmarkRows, rounds),
     ].sort((a, b) => a.tick - b.tick);
     throwHits = throwCues(landmarkRows, rounds);
     knifeHits = knifeCues(landmarkRows, rounds);
