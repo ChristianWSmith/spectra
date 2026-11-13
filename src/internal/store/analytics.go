@@ -67,7 +67,12 @@ const (
 )
 
 // GetConfig returns the analysis_config row, seeding the defaults on first
-// use (single-row table: id = 1).
+// use (single-row table: id = 1). The seed is an UPSERT MISS: concurrent
+// first reads — N import jobs reaching the analyze stage together, or one
+// racing the frontend's GetConfig binding — can all miss the SELECT, so
+// the INSERT must lose gracefully (ON CONFLICT DO NOTHING) and every
+// caller re-reads the row that actually landed; a check-then-insert here
+// would fail all but the first reader with a raw UNIQUE constraint error.
 func (s *Store) GetConfig() (models.AnalysisConfig, error) {
 	var c models.AnalysisConfig
 	err := s.db.QueryRow(
@@ -76,13 +81,21 @@ func (s *Store) GetConfig() (models.AnalysisConfig, error) {
 	if errors.Is(err, sql.ErrNoRows) {
 		if _, err := s.db.Exec(
 			`INSERT INTO analysis_config (id, `+analysisConfigCols+`)
-			 VALUES (1, ?, ?, ?, ?, ?)`,
+			 VALUES (1, ?, ?, ?, ?, ?)
+			 ON CONFLICT(id) DO NOTHING`,
 			DefaultConfig.TradeWindowS, DefaultConfig.EcoFullBuy, DefaultConfig.EcoForce,
 			DefaultConfig.TradeOppDistance, DefaultConfig.RuleVersion,
 		); err != nil {
 			return models.AnalysisConfig{}, fmt.Errorf("store: seed analysis_config: %w", err)
 		}
-		return DefaultConfig, nil
+		// Re-read whatever row is there now: mine (defaults), or a
+		// concurrent seeder's / SetConfig's that won the race.
+		if err := s.db.QueryRow(
+			`SELECT `+analysisConfigCols+` FROM analysis_config WHERE id = 1`,
+		).Scan(&c.TradeWindowS, &c.EcoFullBuy, &c.EcoForce, &c.TradeOppDistance, &c.RuleVersion); err != nil {
+			return models.AnalysisConfig{}, fmt.Errorf("store: get analysis_config: %w", err)
+		}
+		return c, nil
 	}
 	if err != nil {
 		return models.AnalysisConfig{}, fmt.Errorf("store: get analysis_config: %w", err)

@@ -16,7 +16,9 @@ import (
 // after the user's original file is moved or deleted. The copy is
 // content-addressed: same bytes → same name → at most one copy per demo,
 // and the sha256 dedupe in process() rejects a second import before any
-// copy is made. The user's original file is only ever read; stored copies
+// copy is made — concurrent jobs that hash to the SAME sha serialize on
+// the per-sha gate first (shagate.go), so the loser takes the dedupe
+// path instead of racing the rename or the matches insert. The user's original file is only ever read; stored copies
 // are evictable (EvictDemoCopy / CopyState), and a match imported with
 // copying off simply has no copy — Reprocess then reads the stored path.
 
@@ -165,21 +167,30 @@ func (im *Importer) resolveDemoFile(sha, storedPath string) string {
 	return storedPath
 }
 
-// copyFile copies src to dst atomically (temp file + rename): a crash or
-// a full disk never leaves a truncated copy behind for a later import to
-// mistake for the real thing. onProgress (optional) receives the running
-// byte total as the copy reads — see copyDemo. The fixed temp name is
-// safe — the pipeline has a single worker, so two copies never run at
-// once.
+// copyFile copies src to dst atomically (a UNIQUE temp file beside dst + rename): a crash or a full disk never leaves a truncated copy behind
+// for a later import to mistake for the real thing, and CONCURRENT
+// copies of the same content (two jobs that hashed to one sha — the
+// importer's per-sha gate serializes the pipeline's own section, but the
+// temp stays unique regardless) can never share (and truncate) a single
+// .part file: each writer owns its own os.CreateTemp file and the renames
+// are atomic last-wins over identical bytes. onProgress (optional)
+// receives the running byte total as the copy reads — see copyDemo.
 func copyFile(src, dst string, onProgress func(consumed int64)) error {
 	in, err := os.Open(src)
 	if err != nil {
 		return err
 	}
 	defer in.Close()
-	tmp := dst + ".part"
-	out, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
+	out, err := os.CreateTemp(filepath.Dir(dst), filepath.Base(dst)+".part-*")
 	if err != nil {
+		return err
+	}
+	tmp := out.Name()
+	// CreateTemp lands 0600; a managed copy is an ordinary app-data file
+	// (0644 — the mode the fixed-temp version wrote).
+	if err := out.Chmod(0o644); err != nil {
+		_ = out.Close()
+		_ = os.Remove(tmp)
 		return err
 	}
 	if _, err := io.Copy(out, &countingReader{r: in, onRead: onProgress}); err != nil {

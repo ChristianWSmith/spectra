@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/pion/opus"
@@ -157,10 +158,16 @@ func main() {
 	})
 	svc.app = app
 
-	// Import pipeline: one worker goroutine, events out through the app's
-	// event manager. Deferred after st.Close above, so it runs first (LIFO).
-	// CopyEnabled reads the copy_on_import pref per job (copyOnImportPref),
-	// so the Settings toggle applies to queued jobs too.
+	// Import pipeline: a worker pool sized to this machine's thread count,
+	// events out through the app's event manager. Deferred after st.Close
+	// above, so it runs first (LIFO). CopyEnabled reads the
+	// copy_on_import pref per job (copyOnImportPref) and Concurrency the
+	// import_concurrency pref per claim (importConcurrencyPref), so a
+	// Settings change applies to queued jobs too. computeLock is the ONE
+	// analytics-pass lock shared with AnalyticsService below — an import's
+	// analyze and a background recompute never overlap (RebuildCareer is
+	// a full-library read-modify-write).
+	computeLock := &sync.Mutex{}
 	imp := library.New(library.Options{
 		Store: st,
 		Parse: extract.Parse,
@@ -169,6 +176,8 @@ func main() {
 		},
 		ParserVersion: extract.ParserVersion,
 		CopyEnabled:   copyOnImportPref(kvs),
+		Concurrency:   importConcurrencyPref(kvs),
+		ComputeLock:   computeLock,
 	})
 	defer imp.Shutdown()
 
@@ -186,7 +195,7 @@ func main() {
 	app.RegisterService(application.NewService(&LibraryService{st: st, imp: imp, sc: sc, kvs: kvs, app: app}))
 	app.RegisterService(application.NewService(&MatchService{st: st, imp: imp}))
 	app.RegisterService(application.NewService(&ReplayService{st: st, app: app}))
-	app.RegisterService(application.NewService(&AnalyticsService{st: st, app: app}))
+	app.RegisterService(application.NewService(&AnalyticsService{st: st, app: app, computeLock: computeLock}))
 	app.RegisterService(application.NewService(&ProfileService{st: st, app: app}))
 	app.RegisterService(application.NewService(&VoiceService{st: st, app: app}))
 	app.RegisterService(application.NewService(&MetricsService{st: st, app: app}))
@@ -245,8 +254,9 @@ func runImport(path string) {
 	defer func() { _ = st.Close() }()
 
 	// Same prefs as the GUI, loaded straight (no window, no service
-	// registration): the headless import honors copy_on_import, and an
-	// unset pref keeps the default of copying.
+	// registration): the headless import honors copy_on_import and
+	// import_concurrency, and an unset pref keeps the defaults of copying
+	// and of running jobs at the machine's thread count.
 	kvs := kvstore.NewWithConfig(&kvstore.Config{
 		Filename: prefsFilename(),
 		AutoSave: true,
@@ -260,6 +270,7 @@ func runImport(path string) {
 		Parse:         extract.Parse,
 		ParserVersion: extract.ParserVersion,
 		CopyEnabled:   copyOnImportPref(kvs),
+		Concurrency:   importConcurrencyPref(kvs),
 	})
 	defer imp.Shutdown()
 

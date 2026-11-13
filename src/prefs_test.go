@@ -88,6 +88,17 @@ func TestCopyOnImportPrefKey(t *testing.T) {
 	}
 }
 
+// The concurrent-imports pref is the other Go-CONSUMED Settings value
+// (library.Options.Concurrency via importConcurrencyPref, read per
+// claim) — the string is the durable contract: a rename silently orphans
+// every stored choice and reverts the user to the default as soon as
+// they have changed it once.
+func TestImportConcurrencyPrefKey(t *testing.T) {
+	if prefsImportConcurrencyKey != "import_concurrency" {
+		t.Errorf("import-concurrency key = %q, want %q", prefsImportConcurrencyKey, "import_concurrency")
+	}
+}
+
 // Removal pin for the retired knife/warmup display pref: the extractor
 // discards knife/warmup/post-match rounds at ingest, so every stored
 // round is a counted round and a visibility toggle has nothing to filter

@@ -1,15 +1,18 @@
-// Package library is the presentation-free import pipeline: a single-worker
-// job queue that hashes, dedupes (sha256), optionally copies the raw demo
-// into the app's managed demo dir (copy-on-import, the default — the
-// source file may later move or vanish; the copy_on_import pref skips it,
-// see Options.CopyEnabled), decompresses (.dem.zst, streamed — never to a
-// temp file) and parses demos via internal/extract, persisting through
-// internal/store. Progress and terminal transitions are announced as
-// Wails events (spectra:job-progress / spectra:job-done /
-// spectra:library-changed) through an injected Emit hook; originals are
-// never written. The same package owns import-dir discovery (Scan,
-// DefaultDemoDirs, RemoveDemoFile) for the Library's not-yet-imported
-// list.
+// Package library is the presentation-free import pipeline: a bounded
+// pool of worker goroutines that hash, dedupe (sha256), optionally copy
+// the raw demo into the app's managed demo dir (copy-on-import, the
+// default — the source file may later move or vanish; the copy_on_import
+// pref skips it, see Options.CopyEnabled), decompress (.dem.zst,
+// streamed — never to a temp file) and parse demos via internal/extract,
+// persisting through internal/store. Jobs are claimed strictly FIFO and
+// run concurrently up to the import_concurrency setting
+// (Options.Concurrency — 1 = sequential, the machine's thread count =
+// the default; see main.importConcurrencyPref). Progress and terminal
+// transitions are announced as Wails events (spectra:job-progress /
+// spectra:job-done / spectra:library-changed) through an injected Emit
+// hook; originals are never written. The same package owns import-dir
+// discovery (Scan, DefaultDemoDirs, RemoveDemoFile) for the Library's
+// not-yet-imported list.
 package library
 
 import (
@@ -23,6 +26,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -78,7 +82,7 @@ const (
 )
 
 // errShuttingDown is the refusal Enqueue/Reprocess surface once Shutdown
-// has begun: the worker will never claim anything new, so a job created
+// has begun: no worker will ever claim anything new, so a job created
 // now would sit queued forever without it.
 var errShuttingDown = errors.New("library: importer is shutting down")
 
@@ -222,7 +226,17 @@ type LibraryChangedEvent struct{}
 // so they never touch the user's real data). CopyEnabled is the
 // copy-on-import setting read ONCE PER JOB at process time (so a Settings
 // toggle applies to jobs already queued); nil ⇒ copy — the default every
-// construction site without a pref gets.
+// construction site without a pref gets. Concurrency is the
+// concurrent-imports setting read ONCE PER JOB at claim time (so a
+// Settings change applies to jobs already queued), clamped to
+// [1, workerCount]; nil ⇒ 1 (strictly sequential — the fallback for a
+// construction site with no pref wired; production wires
+// main.importConcurrencyPref, whose own default is the machine's thread
+// count). ComputeLock serializes this importer's analytics pass against
+// every other analytics.Compute in the process — main wires ONE lock
+// into the importer and AnalyticsService's background recompute (rationale
+// in im.analyze); nil ⇒ a private lock (Computes still serialize within
+// this importer; only the cross-service sharing needs wiring).
 type Options struct {
 	Store         *store.Store
 	Parse         func(ctx context.Context, r io.Reader, opts extract.ParseOptions) (*models.ExtractedMatch, error)
@@ -231,6 +245,8 @@ type Options struct {
 	SidecarDir    string
 	CopyDir       string
 	CopyEnabled   func() bool
+	Concurrency   func() int
+	ComputeLock   *sync.Mutex
 }
 
 // queueItem is one unit of work for the worker.
@@ -250,9 +266,27 @@ type matchLifecycle struct {
 	errMsg string
 }
 
-// Importer owns the single background worker goroutine plus the per-job
-// cancellation contexts. Create with New; call Shutdown before closing the
-// store.
+// workerCount is the worker-pool size: the machine's hardware threads —
+// runtime.NumCPU reports the logical CPUs usable by the process, which IS
+// rung 1 of the owner's thread ladder ("as many as the number of threads
+// available on the machine"; Go has no portable physical-core API, so the
+// cores rung cannot be taken portably and the floor is the
+// single-threaded rung — guarded by the n<1 check below). Evaluated once
+// at package init (NumCPU is constant for the process's life). The
+// concurrency pref is clamped to [1, workerCount] (concurrencyLimit), so
+// the goroutine count and the admission bound can never disagree: the
+// pool is sized for the MOST the setting may ask, and a setting of 1
+// simply parks all but one worker.
+var workerCount = func() int {
+	if n := runtime.NumCPU(); n >= 1 {
+		return n
+	}
+	return 1
+}()
+
+// Importer owns the pool of background worker goroutines plus the
+// per-job cancellation contexts. Create with New; call Shutdown before
+// closing the store.
 type Importer struct {
 	st            *store.Store
 	parse         func(ctx context.Context, r io.Reader, opts extract.ParseOptions) (*models.ExtractedMatch, error)
@@ -261,21 +295,26 @@ type Importer struct {
 	sidecarDir    string
 	copyDir       string
 	copyEnabled   func() bool // nil ⇒ copy (the default)
+	concurrency   func() int  // nil ⇒ 1 (sequential; see Options.Concurrency)
+	computeLock   *sync.Mutex // nil ⇒ a private lock (see im.analyze)
 
 	mu        sync.Mutex
+	cond      *sync.Cond // workers wait for work AND a free slot
 	queue     []queueItem
 	queued    map[int64]queueItem // jobs sitting in queue (for Cancel): kind+matchID
 	cancels   map[int64]context.CancelFunc
 	cancelled map[int64]bool           // Cancel() seen but not yet consumed by the worker
 	pending   map[int64]matchLifecycle // match rows Reprocess queued: prior state (key = matchID)
 	stopping  bool                     // Shutdown started: claims are refused
-	wake      chan struct{}
-	done      chan struct{}
+	running   int                      // jobs holding a concurrency slot (claimed → body done)
+	sha       *shaGate                 // per-content-hash admission (shagate.go)
 	once      sync.Once
 	wg        sync.WaitGroup
 }
 
-// New creates an Importer and starts its single worker goroutine.
+// New creates an Importer and starts its worker pool (workerCount
+// goroutines; how many may hold a job at once is the per-job concurrency
+// pref — see Options.Concurrency).
 func New(o Options) *Importer {
 	sidecarDir := o.SidecarDir
 	if sidecarDir == "" {
@@ -293,16 +332,41 @@ func New(o Options) *Importer {
 		sidecarDir:    sidecarDir,
 		copyDir:       copyDir,
 		copyEnabled:   o.CopyEnabled,
+		concurrency:   o.Concurrency,
+		computeLock:   o.ComputeLock,
 		queued:        map[int64]queueItem{},
 		cancels:       map[int64]context.CancelFunc{},
 		cancelled:     map[int64]bool{},
 		pending:       map[int64]matchLifecycle{},
-		wake:          make(chan struct{}, 1),
-		done:          make(chan struct{}),
+		sha:           newSHAGate(),
 	}
-	im.wg.Add(1)
-	go im.worker()
+	if im.computeLock == nil {
+		im.computeLock = &sync.Mutex{}
+	}
+	im.cond = sync.NewCond(&im.mu)
+	im.wg.Add(workerCount)
+	for i := 0; i < workerCount; i++ {
+		go im.worker()
+	}
 	return im
+}
+
+// concurrencyLimit is the admission bound for the NEXT claim: the
+// concurrency pref read once per claim (never at Enqueue/Reprocess — a
+// Settings change applies to jobs already queued, exactly like
+// copy-on-import), clamped to [1, workerCount]. Called with im.mu held.
+func (im *Importer) concurrencyLimit() int {
+	n := 1
+	if im.concurrency != nil {
+		n = im.concurrency()
+	}
+	if n < 1 {
+		n = 1 // single-threaded floor (a degenerate pref never stalls the pool)
+	}
+	if n > workerCount {
+		n = workerCount // never more than the pool has goroutines
+	}
+	return n
 }
 
 // copyOn is the copy-on-import decision for ONE job, read when the job
@@ -497,49 +561,99 @@ func (im *Importer) Cancel(jobID int64) error {
 	return nil
 }
 
-// Shutdown stops the worker: queued jobs are abandoned (store.Open marks
-// them interrupted on next launch), a running parse is cancelled, and the
-// call blocks until the worker has exited. Safe to call more than once.
+// Shutdown stops the pool: queued jobs are abandoned (store.Open marks
+// them interrupted on next launch), every running parse is cancelled
+// (the cancel-all loop iterates im.cancels — whatever N jobs hold one),
+// and the call blocks until every worker has exited. Safe to call more
+// than once.
 func (im *Importer) Shutdown() {
 	im.once.Do(func() {
 		im.mu.Lock()
 		im.stopping = true
-		close(im.done)
 		for _, cancel := range im.cancels {
 			cancel()
 		}
+		im.cond.Broadcast() // every parked worker re-checks stopping and exits
 		im.mu.Unlock()
 	})
 	im.wg.Wait()
 }
 
-// worker is the single background goroutine draining the queue.
+// worker is ONE background goroutine of the pool. It parks on im.cond
+// until BOTH hold — the queue has a head AND a concurrency slot is free
+// (im.running < the limit read for THIS claim) — then pops the head and
+// claims it in the SAME critical section. Consequences, all deliberate:
+//
+//   - Claims stay strictly FIFO no matter how many workers race for a
+//     wake (queue[0] pops in enqueue order, the claim lands inside the
+//     same mutex hold), while job BODIES run concurrently up to the
+//     configured concurrency — the old "job2 queued while job1 runs"
+//     behavior is now exactly "job2 queued while every slot is full".
+//   - Cancel can only ever observe "queued" (pre-claim) or "running"
+//     (post-claim) — never the gap, because there is no gap.
+//   - The wait loop re-checks stopping under the mutex Shutdown flips it
+//     under, so no worker can park after shutdown began; Shutdown's
+//     Broadcast is what frees the parked ones. This replaces the old
+//     buffered(1) wake channel: one poke could only ever wake one of N
+//     workers, and a slot release must wake the pool to re-check.
+//
+// A pre-claim skip (cancelled while queued) hands a reprocess's match row
+// back (restoreMatch) and moves on without taking a slot; after a job
+// body returns, its slot is released and every waiter re-checks.
 func (im *Importer) worker() {
 	defer im.wg.Done()
 	for {
-		select {
-		case <-im.done:
-			return
-		default:
-		}
 		im.mu.Lock()
-		if len(im.queue) > 0 {
-			item := im.queue[0]
-			im.queue = im.queue[1:]
+		for !im.stopping && (len(im.queue) == 0 || im.running >= im.concurrencyLimit()) {
+			im.cond.Wait()
+		}
+		if im.stopping {
 			im.mu.Unlock()
-			im.process(item)
+			return
+		}
+		item := im.queue[0]
+		im.queue = im.queue[1:]
+
+		// Claim the job (atomic with the pop — see the doc above). The
+		// cancelled map serializes against Cancel(): a job cancelled
+		// while queued (or before this claim landed) is skipped without
+		// touching its terminal store state; UpdateJob completes under
+		// this same lock hold. Every pre-claim exit hands a reprocess's
+		// match row back (restoreMatch): the job never touched it, so
+		// the artificial queued flip must not outlive the job.
+		if im.cancelled[item.jobID] {
+			delete(im.cancelled, item.jobID)
+			delete(im.queued, item.jobID)
+			im.mu.Unlock()
+			im.restoreMatch(item.matchID)
 			continue
 		}
-		im.mu.Unlock()
-		select {
-		case <-im.wake:
-		case <-im.done:
-			return
+		if err := im.st.UpdateJob(item.jobID, models.JobRunning, models.StageQueued, 0, ""); err != nil {
+			delete(im.cancelled, item.jobID)
+			delete(im.queued, item.jobID)
+			im.mu.Unlock()
+			im.restoreMatch(item.matchID)
+			continue
 		}
+		// The job owns the row from here: its own transitions (parsing →
+		// ready/failed) replace the queued flip, so drop the remembered state.
+		delete(im.pending, item.matchID)
+		ctx, cancel := context.WithCancel(context.Background())
+		im.cancels[item.jobID] = cancel
+		delete(im.queued, item.jobID)
+		im.running++
+		im.mu.Unlock()
+
+		im.process(item, ctx, cancel)
+
+		im.mu.Lock()
+		im.running--
+		im.cond.Broadcast() // a slot freed: wake the pool to re-check
+		im.mu.Unlock()
 	}
 }
 
-// push appends to the (unbounded) queue and pokes the worker. It reports
+// push appends to the (unbounded) queue and wakes the pool. It reports
 // false when the importer is stopping (Shutdown began): nothing will
 // ever claim the item, so the caller fails the job immediately instead of
 // leaving it queued forever.
@@ -551,58 +665,28 @@ func (im *Importer) push(item queueItem) bool {
 	}
 	im.queue = append(im.queue, item)
 	im.queued[item.jobID] = item
+	// Broadcast, not a one-shot poke: every parked worker re-checks — one
+	// claims this item, the others re-park (or claim too when the
+	// concurrency pref leaves slots free).
+	im.cond.Broadcast()
 	im.mu.Unlock()
-	select {
-	case im.wake <- struct{}{}:
-	default:
-	}
 	return true
 }
 
-// process runs one job end to end. Stage machine: queued → hash →
-// (import only) copy → decompress sniff → parse → store → analyze →
-// done, with any error or cancellation collapsing to failed/cancelled.
-// Progress is the job-wide mapping documented with progressHashEnd.
-func (im *Importer) process(item queueItem) {
+// process runs ONE claimed job end to end — the worker holds a
+// concurrency slot for the whole call. Stage machine: queued (emitted at
+// entry) → hash → (import only) copy → decompress sniff → parse → store
+// → analyze → done, with any error or cancellation collapsing to
+// failed/cancelled. Progress is the job-wide mapping documented with
+// progressHashEnd — per job: a job's own points are monotone no matter
+// which stages of OTHER jobs interleave with them.
+//
+// ctx/cancel come from the worker's claim (im.cancels holds cancel until
+// this returns); the deferred cleanup below releases both on every exit.
+func (im *Importer) process(item queueItem, ctx context.Context, cancel context.CancelFunc) {
 	jobID, kind := item.jobID, item.kind
 	matchID := item.matchID // 0 for import until the match row exists
 
-	// Claim the job. The cancelled map serializes against Cancel(): a job
-	// cancelled while queued (or between pop and claim) is skipped without
-	// touching its terminal store state. Claiming completes under the
-	// same lock hold, so Cancel can only ever observe "queued" (pre-claim)
-	// or "running" (post-claim) — never the gap. stopping refuses new
-	// work once Shutdown begins. Every pre-claim exit hands a reprocess's
-	// match row back (restoreMatch): the job never touched it, so the
-	// artificial queued flip must not outlive the job.
-	im.mu.Lock()
-	if im.stopping {
-		delete(im.queued, jobID)
-		im.mu.Unlock()
-		im.restoreMatch(matchID)
-		return
-	}
-	if im.cancelled[jobID] {
-		delete(im.cancelled, jobID)
-		delete(im.queued, jobID)
-		im.mu.Unlock()
-		im.restoreMatch(matchID)
-		return
-	}
-	if err := im.st.UpdateJob(jobID, models.JobRunning, models.StageQueued, 0, ""); err != nil {
-		delete(im.cancelled, jobID)
-		delete(im.queued, jobID)
-		im.mu.Unlock()
-		im.restoreMatch(matchID)
-		return
-	}
-	// The job owns the row from here: its own transitions (parsing →
-	// ready/failed) replace the queued flip, so drop the remembered state.
-	delete(im.pending, matchID)
-	ctx, cancel := context.WithCancel(context.Background())
-	im.cancels[jobID] = cancel
-	delete(im.queued, jobID)
-	im.mu.Unlock()
 	defer func() {
 		cancel()
 		im.mu.Lock()
@@ -640,6 +724,28 @@ func (im *Importer) process(item queueItem) {
 		return
 	}
 	sha := hex.EncodeToString(hasher.Sum(nil))
+
+	// Per-sha admission (shagate.go): with concurrent workers two jobs
+	// can hash identical bytes from different paths (or an import can
+	// race a reprocess's re-copy of the same content). The whole
+	// sha-critical section below — dedupe check → copy-on-import →
+	// CreateMatchRow, or the reprocess re-copy — runs one job at a time
+	// per hash, so the loser waits and then takes the clean "already
+	// imported (match N)" path instead of racing the UNIQUE
+	// matches.sha256 insert (a raw constraint error in the jobs list) or
+	// the managed-copy rename. Released before the long parse (release()
+	// after the branches): only the row-creating section is sha-scoped.
+	unlockSHA := im.sha.lock(sha)
+	shaHeld := true
+	// release ends the sha-critical section; calling it twice is a no-op,
+	// so the deferred call below stays correct on every early exit.
+	release := func() {
+		if shaHeld {
+			shaHeld = false
+			unlockSHA()
+		}
+	}
+	defer release()
 
 	// The copy-on-import decision for THIS job: read when the job runs,
 	// never at Enqueue/Reprocess time, so a Settings toggle applies to
@@ -735,6 +841,11 @@ func (im *Importer) process(item queueItem) {
 		}
 		createdCopy = true
 	}
+
+	// Row create / re-copy done: this job either owns its match row or
+	// bailed out above — the sha-critical section ends here, before the
+	// long parse (the deferred release above becomes a no-op).
+	release()
 
 	if err := im.st.SetMatchStatus(matchID, models.StatusParsing, ""); err != nil {
 		im.failJob(jobID, matchID, models.StageQueued, err.Error(), false)
@@ -934,12 +1045,22 @@ func (im *Importer) process(item queueItem) {
 	im.emitEvent(EventLibraryChanged, LibraryChangedEvent{})
 }
 
-// analyze runs analytics.Compute for one match under the stored config.
+// analyze runs analytics.Compute for one match under the stored config,
+// holding the compute lock for the WHOLE pass: Compute ends in
+// store.RebuildCareer, a read-modify-write over every match's
+// player_stats, so two overlapping Computes — this importer's N
+// concurrent jobs, or an import racing AnalyticsService's background
+// recompute — could commit a career rollup built from a pre-recompute
+// snapshot. Main wires ONE lock into both sides (library.Options and
+// AnalyticsService.computeLock); without that wiring the nil-option
+// private lock still serializes this importer's own Computes.
 func (im *Importer) analyze(matchID int64) error {
 	cfg, err := im.st.GetConfig()
 	if err != nil {
 		return err
 	}
+	im.computeLock.Lock()
+	defer im.computeLock.Unlock()
 	return analytics.Compute(im.st, matchID, analytics.ConfigFrom(cfg, 0))
 }
 

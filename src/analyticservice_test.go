@@ -261,27 +261,29 @@ func TestRecomputeAnalysisSubmitsInBackground(t *testing.T) {
 	as := &AnalyticsService{st: st}
 
 	// Hold the compute slot so the queued state is observable
-	// deterministically (the background goroutine blocks on it).
-	as.rc.slot.Lock()
+	// deterministically (the background goroutine blocks on it). gate()
+	// resolves the runner's lock on first use (shared or private).
+	slot := as.rc.gate()
+	slot.Lock()
 	if err := as.RecomputeAnalysis(4242); err != nil {
-		as.rc.slot.Unlock()
+		slot.Unlock()
 		t.Fatalf("submission: %v (only a config read may fail here)", err)
 	}
 	s := as.RecomputeStates()
 	if !slices.Equal(s.Queued, []int64{4242}) || len(s.Running) != 0 {
-		as.rc.slot.Unlock()
+		slot.Unlock()
 		t.Fatalf("states after submit = %+v, want queued=[4242] running=[]", s)
 	}
 	// Duplicate submit while in flight: still one queued run, no error.
 	if err := as.RecomputeAnalysis(4242); err != nil {
-		as.rc.slot.Unlock()
+		slot.Unlock()
 		t.Fatalf("duplicate submission: %v", err)
 	}
 	if s := as.RecomputeStates(); !slices.Equal(s.Queued, []int64{4242}) {
-		as.rc.slot.Unlock()
+		slot.Unlock()
 		t.Fatalf("states after duplicate submit = %+v, want the single queued run kept", s)
 	}
-	as.rc.slot.Unlock()
+	slot.Unlock()
 
 	// The background run fails (match 4242 does not exist — the error
 	// rides spectra:analysis-done, not the call) and the state drains.
@@ -748,25 +750,26 @@ func TestRecomputeAllResolvesBehindSet(t *testing.T) {
 	}
 
 	// Phase 1: one run already in flight — the batch skips it.
-	as.rc.slot.Lock()
+	slot := as.rc.gate()
+	slot.Lock()
 	if err := as.RecomputeAnalysis(id1); err != nil {
-		as.rc.slot.Unlock()
+		slot.Unlock()
 		t.Fatalf("RecomputeAnalysis: %v", err)
 	}
 	res, err := as.RecomputeAll()
 	if err != nil {
-		as.rc.slot.Unlock()
+		slot.Unlock()
 		t.Fatalf("RecomputeAll: %v", err)
 	}
 	if res != (RecomputeAllResult{Submitted: 2, Skipped: 1, Total: 3}) {
-		as.rc.slot.Unlock()
+		slot.Unlock()
 		t.Fatalf("RecomputeAll = %+v, want {submitted:2 skipped:1 total:3} (id1 in flight → skipped; queued/current not in the set)", res)
 	}
 	if s := as.RecomputeStates(); len(s.Queued) != 3 || len(s.Running) != 0 {
-		as.rc.slot.Unlock()
+		slot.Unlock()
 		t.Fatalf("states during submission = %+v, want 3 queued, 0 running", s)
 	}
-	as.rc.slot.Unlock()
+	slot.Unlock()
 
 	drainRecompute(t, as)
 

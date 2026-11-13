@@ -298,6 +298,19 @@ export function setDemoCopyOnImport(copy) {
   return LibraryService.SetDemoCopyOnImport(copy);
 }
 
+// getImportConcurrency is Settings' "Concurrent imports" control read:
+// {value, max} — value is the effective jobs-at-once count (1 =
+// sequential), max this machine's ceiling (runtime.NumCPU on the Go
+// side, the control's 1..max range). Go decides per claim
+// (library.Options.Concurrency), so a change applies to queued jobs too.
+export function getImportConcurrency() {
+  return LibraryService.GetImportConcurrency();
+}
+
+export function setImportConcurrency(n) {
+  return LibraryService.SetImportConcurrency(n);
+}
+
 // listDemoFiles scans the configured import dirs; rows are demos NOT
 // already in the library (recognised imports are omitted, newest first),
 // so deleting the match brings its file back on the next scan.
