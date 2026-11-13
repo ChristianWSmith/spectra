@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 )
 
 // VPK v2 (Source 2) reader — just enough to read CS2's pak01_dir.vpk:
@@ -37,12 +38,20 @@ type vpkEntry struct {
 }
 
 // vpk opens pak01_dir.vpk and indexes its tree for point lookups.
+//
+// A *vpk is safe for CONCURRENT read() calls (ExtractMapPacks' per-map
+// worker pool reads the same VPK from several goroutines): entries is
+// read-only after openVPK, file bytes are fetched with offset-free
+// ReadAt (never a shared Seek position), and the lazily-opened archive
+// handles are guarded by filesMu.
 type vpk struct {
 	dirPath  string // .../pak01_dir.vpk
 	baseDir  string // directory holding pak01_*.vpk
 	treeSize int64
 	entries  map[string]vpkEntry
-	files    map[string]*os.File // lazily opened numbered archives
+
+	filesMu sync.Mutex // guards files (lazily opened archives)
+	files   map[string]*os.File
 }
 
 // openVPK parses the directory tree of the VPK at path. The whole tree is
@@ -161,11 +170,14 @@ func (v *vpk) read(name string) (data []byte, found bool, err error) {
 			return nil, false, err
 		}
 	}
-	if _, err := f.Seek(base+int64(e.offset), io.SeekStart); err != nil {
-		return nil, false, err
-	}
+	// ReadAt (pread) reads at an EXPLICIT offset with no shared file
+	// position: concurrent pool workers reading through the same *os.File
+	// can never clobber each other's offset the way Seek+Read would.
+	// A short read comes back as io.EOF from ReadAt (ReadFull reported
+	// ErrUnexpectedEOF) — either way the read is an error, never a
+	// silently truncated buffer.
 	buf := make([]byte, e.length)
-	if _, err := io.ReadFull(f, buf); err != nil {
+	if _, err := f.ReadAt(buf, base+int64(e.offset)); err != nil {
 		return nil, false, fmt.Errorf("vpk: read %s: %w", name, err)
 	}
 	return append(data, buf...), true, nil
@@ -185,8 +197,13 @@ func (v *vpk) names(prefix, suffix string) []string {
 }
 
 // archiveFile opens (and caches) a numbered archive pak01_NNN.vpk.
+// The cache map is guarded by filesMu so concurrent pool workers can
+// race to open the same archive safely (exactly one handle wins, every
+// caller gets the same *os.File — safe to ReadAt concurrently).
 func (v *vpk) archiveFile(idx uint16) (*os.File, error) {
 	key := fmt.Sprintf("%03d", idx)
+	v.filesMu.Lock()
+	defer v.filesMu.Unlock()
 	if f, ok := v.files[key]; ok {
 		return f, nil
 	}
@@ -198,8 +215,13 @@ func (v *vpk) archiveFile(idx uint16) (*os.File, error) {
 	return f, nil
 }
 
-// close releases lazily opened archive handles.
+// close releases lazily opened archive handles. Callers must only close
+// after every reader is done (ExtractMapPacks defers it past the pool's
+// WaitGroup); filesMu is taken so the cache map itself is never walked
+// concurrently with an open.
 func (v *vpk) close() {
+	v.filesMu.Lock()
+	defer v.filesMu.Unlock()
 	for _, f := range v.files {
 		_ = f.Close()
 	}
