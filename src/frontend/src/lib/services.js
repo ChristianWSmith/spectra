@@ -757,6 +757,13 @@ export function validateExpr(expr, groupBy) { return MetricsService.ValidateExpr
 export function runQuery(sql, limit, timeoutMS) { return QueryService.Run(sql, limit || 0, timeoutMS || 0); }
 export function getSchema() { return QueryService.GetSchema(); }
 export function listSavedQueries() { return QueryService.ListSavedQueries(); }
+// listSavedQueriesPage is the console saved list's keyset window ("Load
+// more"): `limit` rows strictly after `afterName` ("" = the first
+// window), name ASC — saved names are unique, so the cursor is just the
+// last rendered row's name (see store.ListSavedQueriesPage). Plain call,
+// no read cache: save/delete refetch the first window immediately, and a
+// cached window would only go stale between them.
+export function listSavedQueriesPage(afterName, limit) { return QueryService.ListSavedQueriesPage(afterName, limit || 0); }
 export function saveQuery(name, sql) { return QueryService.SaveQuery(name, sql); }
 export function deleteQuery(id) { return QueryService.DeleteQuery(id); }
 export function listQueryHistory(limit) { return QueryService.ListHistory(limit || 50); }

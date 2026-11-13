@@ -2,7 +2,7 @@
   import {
     runQuery,
     getSchema,
-    listSavedQueries,
+    listSavedQueriesPage,
     saveQuery,
     deleteQuery,
     listQueryHistory,
@@ -44,10 +44,24 @@
 
   let history = $state([]);
   let historyError = $state('');
+  // Saved list: ONE keyset window per fetch (SAVED_PAGE) — the console's
+  // "Load more" (store.ListSavedQueriesPage): savedHasNext is the
+  // backend's limit+1 probe and the cursor is the last rendered row's
+  // name. These are plain view-local $state like Library's window state:
+  // every mount refetches the first window, so nothing here is seeded or
+  // remembered (State placement — transient window state, never in the
+  // registry or the URL).
+  const SAVED_PAGE = 50;
   let saved = $state([]);
+  let savedHasNext = $state(false);
+  let loadingMore = $state(false);
   let savedError = $state('');
   let saveName = $state('');
   let saveError = $state('');
+  // savedGen tags the current window sequence so a Load-more reply that
+  // lands after a (re)fetch restart is dropped instead of interleaved;
+  // non-reactive on purpose — it is not state (Library's listGen pattern).
+  let savedGen = 0;
 
   // The schema read (mount AND schemaError's Retry): the error clears
   // only when the read lands, so the sidebar never claims "Loading
@@ -77,11 +91,44 @@
   }
 
   async function refreshSaved() {
+    // Any full (re)fetch restarts the window: first window, replace —
+    // never append onto the previous window's rows (mount, save and
+    // delete all land here). The gen tag drops a stale reply so a
+    // Load-more racing a restart cannot interleave rows.
+    const gen = ++savedGen;
     try {
-      saved = (await listSavedQueries()) || [];
+      const page = await listSavedQueriesPage('', SAVED_PAGE);
+      if (gen !== savedGen) return;
+      saved = (page && page.rows) || [];
+      savedHasNext = !!(page && page.hasNext);
+      savedError = '';
+    } catch (e) {
+      if (gen === savedGen) savedError = errText(e);
+    }
+  }
+
+  // loadMoreSaved appends the NEXT window: the cursor is the last
+  // rendered row's name (unique — no tie-break, and a deleted row's name
+  // still positions the window). Duplicate names are filtered out anyway
+  // (a restart may have shifted the list), because a repeated keyed
+  // {#each} id would throw.
+  async function loadMoreSaved() {
+    if (loadingMore || !savedHasNext || !saved.length) return;
+    loadingMore = true;
+    const gen = savedGen;
+    try {
+      const last = saved[saved.length - 1];
+      const page = await listSavedQueriesPage(last.name, SAVED_PAGE);
+      if (gen !== savedGen) return; // a refresh replaced the list meanwhile
+      const seen = new Set(saved.map((sq) => sq.name));
+      const add = ((page && page.rows) || []).filter((sq) => !seen.has(sq.name));
+      saved = [...saved, ...add];
+      savedHasNext = !!(page && page.hasNext);
       savedError = '';
     } catch (e) {
       savedError = errText(e);
+    } finally {
+      loadingMore = false;
     }
   }
 
@@ -453,6 +500,17 @@
               {/if}
             {/each}
           </div>
+          <!-- Keyset pagination footer: only while another window exists
+               (backend hasNext). Appends the next SAVED_PAGE rows below
+               the ones already shown. -->
+          {#if savedHasNext}
+            <div class="row-between">
+              <span class="muted" role="status">Showing {saved.length} saved queries</span>
+              <button class="btn" disabled={loadingMore} onclick={loadMoreSaved}>
+                {loadingMore ? 'Loading…' : 'Load more'}
+              </button>
+            </div>
+          {/if}
         </section>
 
         <section class="panel">
