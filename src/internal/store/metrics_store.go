@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/ChristianWSmith/spectra/internal/models"
@@ -36,13 +37,23 @@ func scanMetric(row interface{ Scan(...any) error }) (models.MetricRow, error) {
 	return m, nil
 }
 
+// metricOriginRank is the canonical origin ordering expression: builtin
+// → user → plugin. It is THE order every metric list sorts by, shared by
+// ListMetrics' reference order and ListMetricsPage's windowed walk so the
+// two can never drift, and it is the first half of the paged read's
+// keyset key.
+const metricOriginRank = `CASE origin WHEN 'builtin' THEN 0 WHEN 'user' THEN 1 ELSE 2 END`
+
+// metricOrder is the canonical ORDER BY body (origin rank, then name
+// ASC). metrics.name is UNIQUE across every origin (schema.sql), so
+// (rank, name) is a unique, stable key for the whole list.
+const metricOrder = metricOriginRank + `, name ASC`
+
 // ListMetrics returns every definition, builtin first, then user, then
 // plugin (name ASC within each origin).
 func (s *Store) ListMetrics() ([]models.MetricRow, error) {
 	rows, err := s.db.Query(
-		`SELECT ` + metricColumns + ` FROM metrics
-		 ORDER BY CASE origin WHEN 'builtin' THEN 0 WHEN 'user' THEN 1 ELSE 2 END,
-			name ASC`,
+		`SELECT ` + metricColumns + ` FROM metrics ORDER BY ` + metricOrder,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("store: list metrics: %w", err)
@@ -60,6 +71,128 @@ func (s *Store) ListMetrics() ([]models.MetricRow, error) {
 		return nil, fmt.Errorf("store: list metrics: %w", err)
 	}
 	return out, nil
+}
+
+// Metric-list window bounds (ListMetricsPage's rows per window).
+const (
+	// ListMetricsPageSize is the default window (the Builder's first
+	// window and every "Load more" click fetches one of these). It is
+	// deliberately smaller than the library list's 200: the left rail is
+	// narrow, rows are two lines tall, and a realistic catalog (7
+	// builtins + user + plugin definitions) fits one window — so the
+	// window bound only matters for a pathological catalog, where it
+	// still keeps the scan and the IPC payload bounded.
+	ListMetricsPageSize = 100
+	// ListMetricsPageMaxRows is the largest window any caller may ask
+	// for — the row scan stays bounded either way.
+	ListMetricsPageMaxRows = 500
+)
+
+// ListMetricsPage returns ONE keyset window of the metric-definition
+// list ListMetrics returns: the rows strictly after the cursor row
+// (afterID — 0 starts the first window) in ListMetrics' exact order,
+// limited to limit rows (<= 0 means ListMetricsPageSize, clamped to
+// ListMetricsPageMaxRows). HasNext reports whether another window exists
+// beyond the returned rows (the query reads limit+1 rows — a window of
+// exactly limit rows with no successor reports false).
+//
+// SEARCH: query narrows the window SERVER-side with a case-insensitive
+// LIKE over name and title — the store.ListPlayers search spelling
+// (scrubbed, %-wrapped; SQLite's LIKE is ASCII case-insensitive by
+// default). It rides the SAME WHERE as the cursor predicate, so a
+// filtered walk tiles the filtered list exactly.
+//
+// CURSOR: the caller passes the last window's row id, and the store
+// resolves it to that row's stored (origin rank, name) — the same
+// in-store resolution ListMatchesPage does (one driver path, and a
+// cursor row that vanished between two windows is ErrNotFound instead of
+// a silently mis-placed page).
+//
+// KEYSET PREDICATE: `(rank, name) > (?, ?)` — SQLite's row-value
+// comparison is lexicographic over the pair, which is exactly what
+// `ORDER BY rank, name ASC` needs, and it keeps the CASE expression
+// spelled once instead of the three-fold composite expansion. The
+// composite key is unique (metrics.name is UNIQUE across origins), so
+// no id tie-break is needed: windows can neither skip nor duplicate a
+// row, and each origin stays contiguous across window boundaries — the
+// view renders its Builtins/Yours/Plugins headers from those runs.
+func (s *Store) ListMetricsPage(query string, afterID int64, limit int) (*models.MetricListPage, error) {
+	if limit <= 0 {
+		limit = ListMetricsPageSize
+	}
+	if limit > ListMetricsPageMaxRows {
+		limit = ListMetricsPageMaxRows
+	}
+	var (
+		where strings.Builder
+		args  []any
+	)
+	if qq := scrub(query); qq != "" {
+		where.WriteString(` WHERE (name LIKE ? OR title LIKE ?)`)
+		like := "%" + qq + "%"
+		args = append(args, like, like)
+	}
+	if afterID > 0 {
+		after, a, err := s.metricKeysetAfter(afterID)
+		if err != nil {
+			return nil, err
+		}
+		if where.Len() == 0 {
+			where.WriteString(" WHERE ")
+		} else {
+			where.WriteString(" AND ")
+		}
+		where.WriteString("(" + after + ")")
+		args = append(args, a...)
+	}
+	// limit+1: the extra row is the "there is more" probe, never returned.
+	var b strings.Builder
+	b.WriteString(`SELECT ` + metricColumns + ` FROM metrics`)
+	b.WriteString(where.String())
+	fmt.Fprintf(&b, " ORDER BY %s LIMIT %d", metricOrder, limit+1)
+
+	rows, err := s.db.Query(b.String(), args...)
+	if err != nil {
+		return nil, fmt.Errorf("store: list metrics page: %w", err)
+	}
+	defer rows.Close()
+	page := &models.MetricListPage{Rows: []models.MetricRow{}}
+	for rows.Next() {
+		m, err := scanMetric(rows)
+		if err != nil {
+			return nil, fmt.Errorf("store: list metrics page: %w", err)
+		}
+		page.Rows = append(page.Rows, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: list metrics page: %w", err)
+	}
+	if len(page.Rows) > limit {
+		page.Rows = page.Rows[:limit]
+		page.HasNext = true
+	}
+	return page, nil
+}
+
+// metricKeysetAfter resolves the cursor row (afterID) to its stored
+// (origin rank, name) and renders the "strictly after" row-value
+// predicate with its bound arguments (see ListMetricsPage). ErrNotFound
+// when the cursor row no longer exists.
+func (s *Store) metricKeysetAfter(afterID int64) (string, []any, error) {
+	var (
+		rank int
+		name string
+	)
+	err := s.db.QueryRow(
+		`SELECT `+metricOriginRank+`, name FROM metrics WHERE id = ?`, afterID,
+	).Scan(&rank, &name)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", nil, fmt.Errorf("store: list metrics page: cursor metric %d: %w", afterID, ErrNotFound)
+	}
+	if err != nil {
+		return "", nil, fmt.Errorf("store: list metrics page: cursor metric %d: %w", afterID, err)
+	}
+	return `(` + metricOriginRank + `, name) > (?, ?)`, []any{rank, name}, nil
 }
 
 // GetMetric returns one definition by id (ErrNotFound when absent).

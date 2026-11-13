@@ -31,6 +31,11 @@ export const AppService = { GetVersion: rec('GetVersion'), SaveWindowSize: rec('
 export const MetricsService = {
   // Library-wide metric definitions (listMetrics — the read-cache tests).
   ListMetrics: rec('ListMetrics'),
+  // The Builder list's keyset window (listMetricsPage) + the two metric
+  // mutators whose wrappers must invalidate on success.
+  ListMetricsPage: rec('ListMetricsPage'),
+  SaveMetric: rec('SaveMetric'),
+  DeleteMetric: rec('DeleteMetric'),
 };
 export const QueryService = {};
 export const PlatformService = {};

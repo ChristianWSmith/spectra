@@ -79,6 +79,18 @@ func (s *MetricsService) ListMetrics() ([]models.MetricRow, error) {
 	return s.st.ListMetrics()
 }
 
+// ListMetricsPage returns ONE keyset window of the same list ListMetrics
+// returns (the Builder's "Load more" pagination): the rows after afterID
+// (0 = the first window) for the same server-side search query, at most
+// limit rows (0 = the store's default window), plus HasNext (another
+// window follows) — see store.ListMetricsPage / models.MetricListPage.
+// ListMetrics itself stays unbounded for its whole-library readers
+// (Match's pinned scoreboard columns, Reports' appendix,
+// CommandPalette's search), which are not changing.
+func (s *MetricsService) ListMetricsPage(query string, afterID int64, limit int) (*models.MetricListPage, error) {
+	return s.st.ListMetricsPage(query, afterID, limit)
+}
+
 // GetMetric returns one by id (or name).
 func (s *MetricsService) GetMetric(id int64) (models.MetricRow, error) {
 	if id <= 0 {
