@@ -18,7 +18,7 @@ import (
 var matchColumns = []string{
 	"id", "path", "sha256", "size", "map", "patch_version", "tick_rate",
 	"duration_ticks", "playback_time_s", "frames", "server_name", "client_name",
-	"game_dir", "net_proto", "is_pov", "warmup_rounds", "real_rounds",
+	"game_dir", "net_proto", "is_pov", "real_rounds",
 	"score_ct", "score_t", "half_ct", "half_t", "side_switches",
 	"entity_classes", "end_entity_count", "parser_version", "extracted_at",
 	"parse_ms", "warnings_count", "status", "error",
@@ -253,8 +253,10 @@ var eventRowFrom = ` FROM events e
 	` + playersJoin(joinLeft, "asp", "e.match_id", "e.assister", true)
 
 // roundRowSelect joins display names for MVP/first-kill/first-death
-// ("" when the SteamID is absent or unknown).
-var roundRowSelect = `SELECT r.number, r.winner, r.reason, r.duration_s, r.warmup, r.pregame, r.bomb_site,
+// ("" when the SteamID is absent or unknown). Every stored round is
+// counted play (knife/warmup rounds are discarded at ingest), so no
+// warmup/pregame columns exist to select.
+var roundRowSelect = `SELECT r.number, r.winner, r.reason, r.duration_s, r.bomb_site,
 	r.mvp, COALESCE(mp.name, ''), r.mvp_reason, r.equip_ct, r.equip_t,
 	(SELECT COUNT(*) FROM events e WHERE e.match_id = r.match_id AND e.round = r.number AND e.kind = 'kill'),
 	r.first_kill_steam, COALESCE(fp.name, ''), r.first_death_steam, COALESCE(dp.name, ''),
@@ -713,7 +715,7 @@ func (s *Store) GetMatch(id int64) (*models.Match, error) {
 	err := s.db.QueryRow(`SELECT `+matchColumnsSQL+` FROM matches WHERE id = ?`, id).Scan(
 		&m.ID, &m.Path, &m.SHA256, &m.Size, &m.Map, &m.PatchVersion, &m.TickRate,
 		&m.DurationTicks, &m.PlaybackTimeS, &m.Frames, &m.ServerName, &m.ClientName,
-		&m.GameDir, &m.NetProto, &m.IsPOV, &m.WarmupRounds, &m.RealRounds, &m.ScoreCT,
+		&m.GameDir, &m.NetProto, &m.IsPOV, &m.RealRounds, &m.ScoreCT,
 		&m.ScoreT, &m.HalfCT, &m.HalfT, &m.SideSwitches, &m.EntityClasses,
 		&m.EndEntityCount, &m.ParserVersion, &extracted, &m.ParseMS, &m.WarningsCount,
 		&m.Status, &m.Error, &m.SampleRate, &m.PositionFrames,
@@ -817,12 +819,12 @@ func (s *Store) GetRounds(id int64) ([]models.RoundRow, error) {
 }
 
 // GetRoundDetail returns one round with its economy, typed events and chat
-// lines (ErrNotFound when the round is absent). Negative round numbers are
-// real rounds here — knife/warmup rounds take them (extract.agg.renumber:
-// -2 knife, -1 warmup) — so events are matched EXACTLY through
-// queryEvents' exactRound (never through the range, whose 0 = open
-// sentinel cannot express a round 0) and chat through queryChat's
-// exactRound switch.
+// lines (ErrNotFound when the round is absent). The round number is
+// matched EXACTLY through queryEvents' exactRound (never through the
+// range, whose 0 = open sentinel cannot express a round 0) and chat
+// through queryChat's exactRound switch — the exact-match discipline
+// predates the knife/warmup discard (rounds used to carry negative
+// numbers too) and stays: an unknown round is simply not found.
 func (s *Store) GetRoundDetail(id int64, round int) (*models.RoundDetail, error) {
 	rr, err := scanRoundRow(s.db.QueryRow(roundRowSelect+` AND r.number = ?`, id, round))
 	if errors.Is(err, sql.ErrNoRows) {
@@ -869,7 +871,7 @@ func (s *Store) GetRoundDetail(id int64, round int) (*models.RoundDetail, error)
 func scanRoundRow(row interface{ Scan(...any) error }) (models.RoundRow, error) {
 	var rr models.RoundRow
 	err := row.Scan(
-		&rr.Number, &rr.Winner, &rr.Reason, &rr.DurationS, &rr.Warmup, &rr.Pregame, &rr.BombSite,
+		&rr.Number, &rr.Winner, &rr.Reason, &rr.DurationS, &rr.BombSite,
 		&rr.MVP, &rr.MVPName, &rr.MVPReason, &rr.EquipCT, &rr.EquipT, &rr.Kills,
 		&rr.FirstKillSteam, &rr.FirstKillName, &rr.FirstDeathSteam, &rr.FirstDeathName,
 		&rr.StartTick, &rr.EndTick, &rr.FreezeEndTick,
@@ -1005,12 +1007,13 @@ func (s *Store) GetEvents(f models.EventFilter) ([]models.EventRow, error) {
 // bbox). It carries no LIMIT/OFFSET: paging belongs to the caller.
 //
 // exactRound, when non-nil, replaces the round range with `e.round = ?`
-// for THAT number — the round-detail read must match its (possibly
-// negative knife/warmup, possibly 0) round exactly. nil = the documented
-// EventFilter contract: an INCLUSIVE, PARTIAL range where each bound
-// adds its own clause only when non-zero, so a knife/warmup round number
-// (-1, -2) filters exactly like a positive one and 0 on a side means
-// "no bound on that side".
+// for THAT number — the round-detail read must match its round exactly
+// (an unknown round is simply not found; 0 never matches). nil = the
+// documented EventFilter contract: an INCLUSIVE, PARTIAL range where each
+// bound adds its own clause only when non-zero, so a negative bound
+// filters exactly like a positive one (negative numbers are ordinary
+// bounds of the open range — a range flag, not a warmup concept) and 0 on
+// a side means "no bound on that side".
 func (s *Store) eventWhere(f models.EventFilter, exactRound *int) (whereClause, error) {
 	var w whereClause
 	if exactRound != nil {
@@ -1549,8 +1552,8 @@ func (s *Store) GetChat(matchID int64, round int, player string) ([]models.ChatR
 }
 
 // queryChat is GetChat with an exactRound switch: round detail reads
-// must match a possibly negative knife/warmup round exactly, while the
-// public GetChat sentinel (round < 0 = all rounds) feeds the landmark
+// must match the round exactly (an unknown round yields no rows), while
+// the public GetChat sentinel (round < 0 = all rounds) feeds the landmark
 // chat source. The typed-event read no longer shares this switch — it
 // uses EventFilter's inclusive, partial round range (queryEvents).
 func (s *Store) queryChat(matchID int64, round int, exactRound bool, player string) ([]models.ChatRow, error) {

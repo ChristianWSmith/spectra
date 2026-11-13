@@ -37,8 +37,8 @@ package rules
 // switch (or with no switch at all) yields no flip — and the result is
 // ascending.
 //
-// Callers map an index back to a round NUMBER themselves (round numbers are
-// not dense: knife/warmup rounds take negative numbers, see
+// Callers map an index back to a round NUMBER themselves (stored round
+// numbers are dense 1..N since the knife/warmup discard — see
 // extract.agg.renumber), e.g. halfSwitchRound = rounds[idx(1)].Number.
 //
 // Frontend twin: flipIndexes in frontend/src/lib/sideparity.js.

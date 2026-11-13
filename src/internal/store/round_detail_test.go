@@ -1,72 +1,66 @@
 package store
 
 import (
+	"errors"
 	"testing"
 	"time"
 
 	"github.com/ChristianWSmith/spectra/internal/models"
 )
 
-// TestGetRoundDetailNegativeRounds pins the sentinel contract split:
+// TestGetRoundDetailExactRound pins the sentinel contract split:
 //
-//   - GetEvents now takes an INCLUSIVE, PARTIAL round range (0 = open on
+//   - GetEvents takes an INCLUSIVE, PARTIAL round range (0 = open on
 //     that side); both bounds open means every round of the match, which
 //     is what the timeline, Context view and the analytics pass read.
 //     The old "Round < 0 = all rounds" sentinel is gone — a negative
-//     bound is just a knife/warmup round number.
+//     bound is just an ordinary (here: unknown) round number.
 //   - GetChat keeps its own "round < 0 = every round" sentinel;
 //   - GetRoundDetail matches its round EXACTLY through queryEvents'
 //     exactRound (the range's 0 = open sentinel cannot express a round
-//     0), because extract.agg.renumber gives knife/warmup rounds
-//     NEGATIVE numbers (-2 knife, -1 warmup) that are real rounds with
-//     their own events and chat.
+//     0): a round with no rounds row — including any negative number,
+//     which no stored round carries since the knife/warmup discard — is
+//     ErrNotFound, never the whole match.
 //
-// Before the fix, detail for round -1 forwarded the negative number into
-// GetEvents/GetChat, whose `round >= 0` guard silently dropped the clause —
-// a knife-round drill-down returned EVERY event and chat line of the match.
-func TestGetRoundDetailNegativeRounds(t *testing.T) {
+// The regression this pins: detail for an unmatched round used to forward
+// its number into GetEvents/GetChat, whose `round >= 0` guard silently
+// dropped the clause — a drill-down returned EVERY event and chat line of
+// the match.
+func TestGetRoundDetailExactRound(t *testing.T) {
 	s := openMem(t)
 	id := saveTestMatch(t, s, "/d/neg.dem", "sha-neg", time.Now())
 	em := testExtracted("sha-neg", time.Now())
 	em.Rounds = []models.Round{
-		{Number: -2, Pregame: true, StartTick: 10, EndTick: 20}, // knife
-		{Number: -1, Warmup: true, StartTick: 30, EndTick: 40},  // warmup
-		{Number: 1, Winner: "ct", StartTick: 50, EndTick: 100},  // first real round
+		{Number: 1, Winner: "ct", StartTick: 50, EndTick: 100}, // the only stored round
 	}
 	em.Events = []models.Event{
-		{Seq: 0, Tick: 15, Round: -2, Kind: models.EventKill, Attacker: "100", Victim: "200"},
-		{Seq: 1, Tick: 35, Round: -1, Kind: models.EventKill, Attacker: "200", Victim: "100"},
-		{Seq: 2, Tick: 60, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "200"},
+		{Seq: 0, Tick: 15, Round: 0, Kind: models.EventKill, Attacker: "100", Victim: "200"},
+		{Seq: 1, Tick: 60, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "200"},
 	}
 	em.Chat = []models.Chat{
-		{Tick: 16, Round: -2, SteamID: "100", Name: "alice", Text: "knife", Kind: "chat"},
-		{Tick: 36, Round: -1, SteamID: "200", Name: "bob", Text: "warmup", Kind: "chat"},
+		{Tick: 16, Round: 0, SteamID: "100", Name: "alice", Text: "pre", Kind: "chat"},
 		{Tick: 61, Round: 1, SteamID: "100", Name: "alice", Text: "glhf", Kind: "chat"},
 	}
 	if err := s.SaveExtracted(id, em); err != nil {
 		t.Fatalf("SaveExtracted: %v", err)
 	}
 
-	for _, tc := range []struct {
-		round    int
-		wantTick int
-		wantText string
-	}{
-		{-2, 15, "knife"},
-		{-1, 35, "warmup"},
-		{1, 60, "glhf"},
-	} {
-		det, err := s.GetRoundDetail(id, tc.round)
-		if err != nil {
-			t.Fatalf("GetRoundDetail(%d): %v", tc.round, err)
-		}
-		if len(det.Events) != 1 || det.Events[0].Tick != tc.wantTick {
-			t.Errorf("GetRoundDetail(%d).Events = %+v, want exactly the round's 1 event (tick %d)",
-				tc.round, det.Events, tc.wantTick)
-		}
-		if len(det.Chat) != 1 || det.Chat[0].Text != tc.wantText {
-			t.Errorf("GetRoundDetail(%d).Chat = %+v, want exactly the round's 1 line (%q)",
-				tc.round, det.Chat, tc.wantText)
+	det, err := s.GetRoundDetail(id, 1)
+	if err != nil {
+		t.Fatalf("GetRoundDetail(1): %v", err)
+	}
+	if len(det.Events) != 1 || det.Events[0].Tick != 60 {
+		t.Errorf("GetRoundDetail(1).Events = %+v, want exactly the round's 1 event (tick 60)", det.Events)
+	}
+	if len(det.Chat) != 1 || det.Chat[0].Text != "glhf" {
+		t.Errorf("GetRoundDetail(1).Chat = %+v, want exactly the round's 1 line (%q)", det.Chat, "glhf")
+	}
+
+	// Unknown round numbers (0 and any negative) are not found — never a
+	// fall-through to every row of the match.
+	for _, round := range []int{0, -1, -2, 99} {
+		if _, err := s.GetRoundDetail(id, round); !errors.Is(err, ErrNotFound) {
+			t.Errorf("GetRoundDetail(%d) err = %v, want ErrNotFound", round, err)
 		}
 	}
 
@@ -75,23 +69,15 @@ func TestGetRoundDetailNegativeRounds(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetEvents(all): %v", err)
 	}
-	if len(all) != 3 {
-		t.Errorf("GetEvents(open range) = %d rows, want 3 (all rounds)", len(all))
+	if len(all) != 2 {
+		t.Errorf("GetEvents(open range) = %d rows, want 2 (all rounds)", len(all))
 	}
 	chat, err := s.GetChat(id, -1, "")
 	if err != nil {
 		t.Fatalf("GetChat(-1): %v", err)
 	}
-	if len(chat) != 3 {
-		t.Errorf("GetChat(-1) = %d rows, want 3 (all rounds)", len(chat))
-	}
-	// A round with no rows of its own yields empty, never the whole match.
-	empty, err := s.GetRoundDetail(id, -1)
-	if err != nil {
-		t.Fatalf("GetRoundDetail(-1): %v", err)
-	}
-	if len(empty.Events) != 1 || len(empty.Chat) != 1 {
-		t.Errorf("warmup detail = %d events / %d chat, want 1/1", len(empty.Events), len(empty.Chat))
+	if len(chat) != 2 {
+		t.Errorf("GetChat(-1) = %d rows, want 2 (all rounds)", len(chat))
 	}
 }
 
@@ -123,7 +109,7 @@ func TestGetChatPlayerScope(t *testing.T) {
 	if err != nil || len(alice) != 2 || alice[0].Text != "a1" || alice[1].Text != "a2" {
 		t.Errorf("GetChat(alice) = %+v (err %v), want a1,a2", alice, err)
 	}
-	// Round + player combined (exact round — negative rounds stay real).
+	// Round + player combined (exact round).
 	both, err := s.GetChat(id, 2, "100")
 	if err != nil || len(both) != 1 || both[0].Text != "a2" {
 		t.Errorf("GetChat(round 2, alice) = %+v (err %v), want a2", both, err)

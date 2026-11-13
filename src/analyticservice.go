@@ -636,8 +636,8 @@ func (s *AnalyticsService) emitEvent(name string, payload any) {
 	s.app.Event.Emit(name, payload)
 }
 
-// GetEconomy returns per-round economy + buy classes (warmup rounds
-// excluded). EVERYTHING rule-shaped in the result is a STORED read: the
+// GetEconomy returns per-round economy + buy classes. EVERYTHING
+// rule-shaped in the result is a STORED read: the
 // per-side classes come from round_side_classes and the round label from
 // round_classifications (both written by analytics.Compute at analyze
 // time under the run's config), so the rows are uniformly stale until a
@@ -744,7 +744,8 @@ func (s *AnalyticsService) GetHeatmap(matchID int64, kind string, f HeatmapFilte
 		}
 	}
 	// ONE round read feeds both shapes the heatmap needs: the canonical
-	// store.GetRoundInfos (warmup/pregame included — callers filter) plus
+	// store.GetRoundInfos (every stored round is counted — knife/warmup
+	// rounds are discarded at ingest) plus
 	// the Number/StartTick/EndTick projection store.RoundForTick's domain
 	// type takes (the shared tick→round mapping, same helper the voice
 	// writer uses).
@@ -785,8 +786,8 @@ func (s *AnalyticsService) GetHeatmap(matchID int64, kind string, f HeatmapFilte
 // presence raster runs server-side): true while tick sits inside a
 // round's FREEZE time — round start ≤ tick < freezeEndTick, half-open,
 // so the freeze-end frame itself is live play — and only when the row
-// carries a USABLE window (freezeEnd > start: the warmup row ships 0 and
-// a corrupt row may ship fe ≤ start; neither may ever skip a frame it
+// carries a USABLE window (freezeEnd > start: a corrupt or legacy row may
+// ship fe ≤ start; neither may ever skip a frame it
 // does not actually know about, so both read as "no freeze"). The window
 // is the stored round clock, rounds.start_tick → rounds.freeze_end_tick
 // (read through store.GetRoundInfos; CS2.md "Competitive round clock" —
@@ -819,10 +820,11 @@ func inFreezeTime(rounds []models.Round, tick int) bool {
 // stored start→freezeEnd interval), so the buy phase can no longer weigh
 // the T/CT spawns unfairly. The skip is on the frame (dwell is per
 // player-frame), before either the extent or the add pass sees it.
-// Round range (inRoundRange) and warmup/knife rows are handled exactly as
-// before: the round control governs which rounds count (an open range
-// still includes knife/warmup rounds — the same population the event
-// kinds select), and only freeze time is dropped now.
+// Round range (inRoundRange) is handled exactly as before: the round
+// control governs which rounds count (every stored round is counted —
+// knife/warmup rounds are discarded at ingest, so an open range and the
+// event kinds select the same population), and only freeze time is
+// dropped now.
 //
 // The layer z band (f.zInBand) is applied in BOTH passes: the extent
 // pass (so the raster's bounds — the raster is bounds-derived, see

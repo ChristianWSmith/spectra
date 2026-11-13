@@ -23,7 +23,8 @@ import (
 //     each kill d of the match where
 //       · d.kind = 'kill', attacker <> '' and attacker <> victim
 //         (world kills and suicides excluded);
-//       · d.round exists in rounds with warmup = 0 AND pregame = 0;
+//       · d.round exists in rounds (every stored round is counted —
+//         knife/warmup rounds are discarded at ingest);
 //       · attacker AND victim both have a freeze-end side sample for
 //         that round (round_player_sides EXISTS), both in {ct,t}, and
 //         the two differ (enemy kill);
@@ -89,13 +90,12 @@ func tradeOppCounts(
 	}
 
 	// Counted rounds that EXIST (the retired SQL joined rounds — a kill
-	// whose round row is absent never counted) with their warmup/pregame
-	// flags.
+	// whose round row is absent never counted). Every stored round is
+	// counted (the extractor discards knife/warmup rounds at ingest), so
+	// the set is just the round numbers.
 	counted := map[int]bool{}
 	for _, r := range rounds {
-		if !r.Warmup && !r.Pregame {
-			counted[r.Number] = true
-		}
+		counted[r.Number] = true
 	}
 
 	// Deaths per player per round (round-scoped aliveness for the

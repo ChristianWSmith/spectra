@@ -94,6 +94,36 @@ func TestColumnListConstsMatchSchema(t *testing.T) {
 	}
 }
 
+// TestDiscardedWarmupColumnsGone pins the knife/warmup discard's schema
+// half: the baseline carries NO warmup/pregame round flags and no
+// matches.warmup_rounds column (extract discards those rounds at ingest,
+// so nothing writes or reads them). An existing database keeps its dead
+// columns until a wipe + re-import (pre-release policy: the baseline only
+// CREATEs — no ALTER path), but a FRESH database must never grow them
+// again.
+func TestDiscardedWarmupColumnsGone(t *testing.T) {
+	s := openMem(t)
+	gone := map[string][]string{
+		"rounds":  {"warmup", "pregame"},
+		"matches": {"warmup_rounds"},
+	}
+	for table, cols := range gone {
+		have, err := s.schemaColumns(table)
+		if err != nil {
+			t.Fatalf("schemaColumns(%s): %v", table, err)
+		}
+		names := make(map[string]bool, len(have))
+		for _, c := range have {
+			names[c.Name] = true
+		}
+		for _, col := range cols {
+			if names[col] {
+				t.Errorf("%s.%s exists in the baseline — knife/warmup rounds are discarded at ingest", table, col)
+			}
+		}
+	}
+}
+
 // TestReplaceMatchRowsPlaceholderCount: replaceMatchRows derives the
 // placeholder count from the column list, so a list whose commas stop
 // matching its columns would bind the wrong arity. One row through every

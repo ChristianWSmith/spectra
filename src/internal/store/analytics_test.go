@@ -244,12 +244,11 @@ func TestGetEconomyLossBonusFollowsTeams(t *testing.T) {
 func TestGetEconomyLossBonus(t *testing.T) {
 	s := openMem(t)
 	id := saveTestMatch(t, s, "/d/econ.dem", "sha-econ", time.Now())
-	// saveTestMatch wrote 1 non-warmup round (winner ct); add two more via
-	// a fresh extract with 3 real rounds, all CT wins.
+	// saveTestMatch wrote 1 counted round (winner ct); replace it with a
+	// fresh extract of 3 counted rounds, all CT wins.
 	em := testExtracted("sha-econ", time.Now())
 	em.Match.RealRounds = 3
 	em.Rounds = []models.Round{
-		{Number: 0, Warmup: true},
 		{Number: 1, Winner: "ct", EquipCT: 4500, EquipT: 4200, StartTick: 100, EndTick: 2000},
 		{Number: 2, Winner: "ct", EquipCT: 5000, EquipT: 1500, StartTick: 2001, EndTick: 4000},
 		{Number: 3, Winner: "ct", EquipCT: 5000, EquipT: 1500, StartTick: 4001, EndTick: 6000},
@@ -275,7 +274,7 @@ func TestGetEconomyLossBonus(t *testing.T) {
 		t.Fatalf("GetEconomy: %v", err)
 	}
 	if len(rows) != 3 {
-		t.Fatalf("rows = %d, want 3 (warmup excluded)", len(rows))
+		t.Fatalf("rows = %d, want 3", len(rows))
 	}
 	// CS2 loss-count rules: every half starts at loss count 1, a loss
 	// steps the count up (+$500 each, cap $3400) and a win steps it DOWN
@@ -869,8 +868,8 @@ func TestGetPlayerWeaponJSONsHeadshots(t *testing.T) {
 		{Round: 1, SteamID: "200", Side: "t"},
 		{Round: 1, SteamID: "300", Side: "ct"},
 	}
-	// Rounds come from testExtracted: number 0 = warmup, 1 = real,
-	// number 2 = pregame (knife) — only the real round counts.
+	// Rounds come from testExtracted: only round 1 (counted) exists —
+	// events stamped to another round have no rounds row to join.
 	em.Events = []models.Event{
 		// Credited: enemy headshot in the counted round.
 		{Tick: 10, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "200", Weapon: "ak47", Headshot: true},
@@ -880,10 +879,11 @@ func TestGetPlayerWeaponJSONsHeadshots(t *testing.T) {
 		{Tick: 12, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "300", Weapon: "ak47", Headshot: true},
 		// Suicide headshot — no credit.
 		{Tick: 13, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "100", Weapon: "ak47", Headshot: true},
-		// Warmup round headshot — outside realPeriod.
+		// Headshot stamped to a round with no rounds row (a discarded
+		// round never stores one) — the rounds JOIN drops it.
 		{Tick: 14, Round: 0, Kind: models.EventKill, Attacker: "100", Victim: "200", Weapon: "awp", Headshot: true},
-		// Pregame (knife) round headshot — outside realPeriod.
-		{Tick: 15, Round: 2, Kind: models.EventKill, Attacker: "100", Victim: "200", Weapon: "awp", Headshot: true},
+		// Same for a round id the fixture never stored.
+		{Tick: 15, Round: 99, Kind: models.EventKill, Attacker: "100", Victim: "200", Weapon: "awp", Headshot: true},
 		// Another player's headshot — not alice's.
 		{Tick: 16, Round: 1, Kind: models.EventKill, Attacker: "200", Victim: "100", Weapon: "awp", Headshot: true},
 	}

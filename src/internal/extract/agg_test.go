@@ -18,26 +18,24 @@ func TestRoundStateMachine(t *testing.T) {
 
 	a.roundStart(1000, false, false, 115, "BOMB TARGET")
 	a.roundEnd(1500, "ct", "CTWin", "Round over", 64)
-	a.roundStart(2000, true, false, 115, "BOMB TARGET") // round 2: warmup
+	a.roundStart(2000, true, false, 115, "BOMB TARGET") // discarded warmup
 	a.roundEnd(2600, "t", "TerroristsWin", "", 64)
 	a.roundStart(3000, false, false, 115, "BOMB TARGET")
 
-	if len(a.rounds) != 3 {
-		t.Fatalf("rounds = %d, want 3", len(a.rounds))
+	// The warmup round is DISCARDED: it never enters the stored set (its
+	// chronological index 2 is skipped, so the counted rounds carry 1 and
+	// 3 until build.renumber rewrites them onto the dense 1..N).
+	if len(a.rounds) != 2 {
+		t.Fatalf("rounds = %d, want 2 (the warmup round is discarded)", len(a.rounds))
 	}
-	for i, r := range a.rounds {
-		if r.number != i+1 {
-			t.Errorf("round %d numbered %d, want %d", i, r.number, i+1)
-		}
+	if a.rounds[0].number != 1 || a.rounds[1].number != 3 {
+		t.Errorf("stored round numbers = %d/%d, want chronological 1/3", a.rounds[0].number, a.rounds[1].number)
 	}
-	if !a.rounds[1].warmup {
-		t.Error("round 2 should be flagged warmup")
+	if a.realRounds != 2 {
+		t.Errorf("realRounds = %d, want 2", a.realRounds)
 	}
-	if a.rounds[0].warmup || a.rounds[2].warmup {
-		t.Error("only round 2 is warmup")
-	}
-	if a.warmupRounds != 1 || a.realRounds != 2 {
-		t.Errorf("warmupRounds=%d realRounds=%d, want 1/2 (warmup counted but flagged)", a.warmupRounds, a.realRounds)
+	if a.discarding {
+		t.Error("discarding = true after the last (counted) RoundStart")
 	}
 	if a.rounds[0].winner != "ct" || a.rounds[0].reason != "CTWin" {
 		t.Errorf("round 1 end state = %s/%s, want ct/CTWin", a.rounds[0].winner, a.rounds[0].reason)
@@ -46,8 +44,11 @@ func TestRoundStateMachine(t *testing.T) {
 	if math.Abs(a.rounds[0].durationSec-wantDur) > 1e-9 {
 		t.Errorf("round 1 duration = %v, want %v", a.rounds[0].durationSec, wantDur)
 	}
-	if a.rounds[1].winner != "t" {
-		t.Errorf("warmup round winner = %q, want t", a.rounds[1].winner)
+	// The discarded round's end state must NOT land on the stored rounds:
+	// its roundEnd was dropped (rounds[1] is the still-open third round).
+	if a.rounds[1].winner != "" || a.rounds[1].durationSec != 0 {
+		t.Errorf("round 3 end state = %q/%v, want empty/0 (the warmup roundEnd was discarded)",
+			a.rounds[1].winner, a.rounds[1].durationSec)
 	}
 
 	// Side switch + half scores + final scores land in the match row.
@@ -70,17 +71,21 @@ func TestRoundStateMachine(t *testing.T) {
 	if m.Match.ScoreCT != 10 || m.Match.ScoreT != 13 {
 		t.Errorf("score = %d/%d, want 10/13", m.Match.ScoreCT, m.Match.ScoreT)
 	}
-	if m.Match.WarmupRounds != 1 || m.Match.RealRounds != 2 {
-		t.Errorf("match round counts = %d/%d, want 1/2", m.Match.WarmupRounds, m.Match.RealRounds)
+	if m.Match.RealRounds != 2 {
+		t.Errorf("realRounds = %d, want 2", m.Match.RealRounds)
 	}
 	if len(m.Teams) != 2 || m.Teams[0].Side != "ct" || m.Teams[1].Side != "t" {
 		t.Errorf("teams = %+v, want ct then t", m.Teams)
 	}
+	// The stored rounds renumber onto the dense 1..N numbering.
+	if len(m.Rounds) != 2 || m.Rounds[0].Number != 1 || m.Rounds[1].Number != 2 {
+		t.Fatalf("built rounds = %+v, want #1 and #2", m.Rounds)
+	}
 
-	// Round start/end events carry the INGEST round numbers after build:
-	// real rounds count 1..N while warmup/knife rounds take negative
-	// indices (here: real, warmup, real → 1, -1, 2).
-	wantRounds := []int{1, -1, 2}
+	// Round start/end boundary rows exist ONLY for counted rounds: the
+	// discarded warmup round emits neither its round_start nor its
+	// round_end, and the survivors renumber onto 1..2.
+	wantRounds := []int{1, 2}
 	starts, ends := 0, 0
 	for _, e := range m.Events {
 		switch e.Kind {
@@ -93,10 +98,13 @@ func TestRoundStateMachine(t *testing.T) {
 			starts++
 		case models.EventRoundEnd:
 			ends++
+			if e.Round != 1 {
+				t.Errorf("round_end has round %d, want 1 (only the counted round's)", e.Round)
+			}
 		}
 	}
-	if starts != 3 || ends != 2 {
-		t.Errorf("round events = %d starts / %d ends, want 3/2", starts, ends)
+	if starts != 2 || ends != 1 {
+		t.Errorf("round events = %d starts / %d ends, want 2/1 (discarded round contributes none)", starts, ends)
 	}
 }
 
@@ -640,10 +648,12 @@ func TestPayloadBoolUnit(t *testing.T) {
 	}
 }
 
-// TestPregameRoundGating: pregame (knife) rounds never pollute stats —
-// event rows still emit, but kills/damage/assists/participation skip and
-// the round counts as neither warmup nor real.
-func TestPregameRoundGating(t *testing.T) {
+// TestPregameRoundDiscard: knife (pregame) rounds are DISCARDED at
+// ingest — no round row, no event/chat/sound rows of that round, no stat
+// accumulators — while the first COUNTED round stores and stats normally.
+// (This replaced TestPregameRoundGating, whose subject — "event rows
+// still emit, only stats are gated" — died with the owner's discard.)
+func TestPregameRoundDiscard(t *testing.T) {
 	a := newAgg()
 	a.roundStart(0, false, true, 115, "BOMB TARGET") // knife round
 	a.kill(killInfo{
@@ -657,22 +667,22 @@ func TestPregameRoundGating(t *testing.T) {
 		tick: 11, real: false, attackerKey: 1, attackerName: "k",
 		victimKey: 2, victimName: "v", weapon: "Knife", healthDamage: 55,
 	})
+	a.chat(12, "100", "k", "gl", "all")
+	a.genericEvent("player_death", 13, `{"userid":1}`)
 	if a.players[1] != nil || a.players[2] != nil || a.players[3] != nil {
 		t.Fatalf("pregame kill created stat accumulators: %+v %+v %+v",
 			a.players[1], a.players[2], a.players[3])
 	}
-	// The event rows themselves are still emitted.
-	kills := 0
-	for _, e := range a.events {
-		if e.Kind == models.EventKill {
-			kills++
-		}
+	// No rows of ANY family survive a discarded round.
+	if len(a.events) != 0 || len(a.chatRows) != 0 || len(a.generic) != 0 {
+		t.Fatalf("discarded-round rows stored: events=%d chat=%d generic=%d",
+			len(a.events), len(a.chatRows), len(a.generic))
 	}
-	if kills != 1 {
-		t.Fatalf("pregame kill event row missing: %+v", a.events)
+	if len(a.rounds) != 0 {
+		t.Fatalf("rounds = %d, want 0 (the knife round is not stored)", len(a.rounds))
 	}
 
-	// First REAL round counts and its stats land.
+	// First COUNTED round stores and its stats land.
 	a.roundStart(100, false, false, 115, "BOMB TARGET")
 	a.kill(killInfo{
 		tick: 200, tickRate: 64, real: true,
@@ -688,14 +698,22 @@ func TestPregameRoundGating(t *testing.T) {
 		t.Fatalf("real kill not counted: %+v", p)
 	}
 	m := a.build()
-	if m.Match.RealRounds != 1 || m.Match.WarmupRounds != 0 {
-		t.Errorf("round counts = %d real / %d warmup, want 1/0", m.Match.RealRounds, m.Match.WarmupRounds)
+	if m.Match.RealRounds != 1 {
+		t.Errorf("realRounds = %d, want 1", m.Match.RealRounds)
 	}
-	if !m.Rounds[0].Pregame || m.Rounds[1].Pregame {
-		t.Errorf("pregame flags = %v/%v, want true/false", m.Rounds[0].Pregame, m.Rounds[1].Pregame)
+	if len(m.Rounds) != 1 || m.Rounds[0].Number != 1 {
+		t.Fatalf("built rounds = %+v, want only the counted round #1", m.Rounds)
 	}
+	// The knife round's rows never reached the output either.
+	for _, e := range m.Events {
+		if e.Tick < 100 {
+			t.Errorf("pre-counted-round event survived: %+v", e)
+		}
+	}
+	// Participation is recorded against the STORED round (chronological
+	// index 2 → renumbered to 1; participation keys stay chronological).
 	if rs := a.participation[1]; len(rs) != 1 || !rs[2] {
-		t.Errorf("participation = %v, want only round 2", rs)
+		t.Errorf("participation = %v, want only chrono round 2", rs)
 	}
 }
 
@@ -785,79 +803,92 @@ func TestFlashAssistSplit(t *testing.T) {
 	}
 }
 
-// TestMVPScanDelta: MVPs come from per-round counter diffs at RoundEnd;
-// warmup rounds never credit.
+// TestMVPScanDelta: MVPs come from per-round counter diffs at RoundEnd.
+// Knife (pregame) and warmup rounds are DISCARDED, so their MVP deltas
+// are absorbed by the counter diff and never credited — the scoreboard
+// mvps therefore starts at the first COUNTED round's own delta (owner-
+// accepted: the game's counter includes the golden demo's knife MVP, the
+// extractor no longer credits it).
 func TestMVPScanDelta(t *testing.T) {
 	a := newAgg()
-	a.roundStart(0, false, true, 115, "BOMB TARGET") // knife round (pregame)
-	a.mvpScan(1, "ace", 1)                           // knife MVP — credited (game counter includes it)
-	if p := a.players[1]; p == nil || p.mvps != 1 {
-		t.Fatalf("pregame MVP not credited: %+v", p)
+	a.roundStart(0, false, true, 115, "BOMB TARGET") // knife round (discarded)
+	a.mvpScan(1, "ace", 1)                           // knife MVP — absorbed, never credited
+	if p := a.players[1]; p != nil && p.mvps != 0 {
+		t.Fatalf("pregame MVP credited: %+v", p)
 	}
-	if a.rounds[0].mvp != "1" {
-		t.Fatalf("round MVP = %q, want 1", a.rounds[0].mvp)
+	if len(a.rounds) != 0 {
+		t.Fatalf("knife round stored: %+v", a.rounds)
 	}
 
-	a.roundStart(100, true, false, 115, "BOMB TARGET") // warmup
-	a.mvpScan(1, "ace", 2)                             // warmup MVP increase — dropped
-	if p := a.players[1]; p.mvps != 1 {
+	a.roundStart(100, true, false, 115, "BOMB TARGET") // warmup (discarded)
+	a.mvpScan(1, "ace", 2)                             // warmup MVP increase — absorbed
+	if p := a.players[1]; p != nil && p.mvps != 0 {
 		t.Fatalf("warmup MVP credited: %+v", p)
 	}
 
-	a.roundStart(200, false, false, 115, "BOMB TARGET") // real round
-	a.mvpScan(1, "ace", 3)
+	a.roundStart(200, false, false, 115, "BOMB TARGET") // first counted round
+	a.mvpScan(1, "ace", 3)                              // delta 3−2 = 1 (the counted round's own)
 	a.mvpScan(2, "other", 1)
-	if p := a.players[1]; p == nil || p.mvps != 2 {
-		t.Fatalf("real MVP delta = %+v, want 2", p)
+	if p := a.players[1]; p == nil || p.mvps != 1 {
+		t.Fatalf("counted MVP delta = %+v, want 1 (knife+warmup absorbed)", p)
 	}
 	if p := a.players[2]; p == nil || p.mvps != 1 {
 		t.Fatalf("other player MVP = %+v, want 1", p)
 	}
-	if a.rounds[2].mvp != "1" {
-		t.Fatalf("round 3 MVP = %q, want 1 (first observed)", a.rounds[2].mvp)
+	if a.rounds[0].mvp != "1" {
+		t.Fatalf("round MVP = %q, want 1 (first observed)", a.rounds[0].mvp)
 	}
 
 	// The announcement fills reason but never double-counts.
 	a.roundMVP(1, "ace", "MostEliminations")
-	if p := a.players[1]; p.mvps != 2 {
+	if p := a.players[1]; p.mvps != 1 {
 		t.Fatalf("announcement double-counted MVP: %+v", p)
 	}
-	if a.rounds[2].mvpReason != "MostEliminations" {
-		t.Fatalf("round MVP reason = %q", a.rounds[2].mvpReason)
+	if a.rounds[0].mvpReason != "MostEliminations" {
+		t.Fatalf("round MVP reason = %q", a.rounds[0].mvpReason)
 	}
 }
 
 // TestFreezeEndSides: freeze-end samples persist per-round sides and
-// update each player's last-observed (final) side; participation skips
-// warmup/pregame rounds.
+// update each player's last-observed (final) side. A DISCARDED round's
+// freeze end still observes sides (it is a fact about the player) but
+// stores no round-side rows and no participation — there is no round row
+// to hang them on.
 func TestFreezeEndSides(t *testing.T) {
 	a := newAgg()
-	a.roundStart(0, false, true, 115, "BOMB TARGET") // pregame
+	a.roundStart(0, false, true, 115, "BOMB TARGET") // pregame (discarded)
 	a.freezeEnd(10, 0, 0, 0, 0, []moneySample{
 		{key: 1, name: "a", side: "ct", money: 800},
 		{key: 2, name: "b", side: "t", money: 800},
 	})
-	a.roundStart(20, false, false, 115, "BOMB TARGET") // real, sides picked
+	if len(a.roundSides) != 0 || len(a.economy) != 0 {
+		t.Fatalf("discarded round stored rows: sides=%d economy=%d, want 0/0",
+			len(a.roundSides), len(a.economy))
+	}
+	a.roundStart(20, false, false, 115, "BOMB TARGET") // counted, sides picked
 	a.freezeEnd(30, 0, 0, 0, 0, []moneySample{
 		{key: 1, name: "a", side: "t", money: 3200},
 		{key: 2, name: "b", side: "ct", money: 2400},
 	})
 
-	if len(a.roundSides) != 4 {
-		t.Fatalf("round-side rows = %d, want 4", len(a.roundSides))
+	if len(a.roundSides) != 2 {
+		t.Fatalf("round-side rows = %d, want 2 (counted round only)", len(a.roundSides))
 	}
 	last := a.roundSides[len(a.roundSides)-1]
 	if last.Round != 2 || last.SteamID != "2" || last.Side != "ct" {
-		t.Fatalf("last round-side row = %+v, want round 2 / 2 / ct", last)
+		t.Fatalf("last round-side row = %+v, want chronological round 2 / 2 / ct", last)
 	}
+	// Last-observed side picked up on the discarded round's freeze end
+	// survives (the round-1 sample already overwrote it to t here).
 	if p := a.players[1]; p == nil || p.side != "t" {
 		t.Fatalf("last-observed side = %+v, want t", p)
 	}
 	if rs := a.participation[1]; len(rs) != 1 || !rs[2] {
-		t.Fatalf("participation = %v, want only counted round 2", rs)
+		t.Fatalf("participation = %v, want only counted chrono round 2", rs)
 	}
 	m := a.build()
-	if len(m.RoundSides) != 4 || m.RoundSides[3].Side != "ct" {
+	// build.renumber maps chrono 2 → dense 1.
+	if len(m.RoundSides) != 2 || m.RoundSides[1].Side != "ct" || m.RoundSides[1].Round != 1 {
 		t.Fatalf("built round sides = %+v", m.RoundSides)
 	}
 }
@@ -867,16 +898,23 @@ func TestFreezeEndSides(t *testing.T) {
 // freeze end — from 0 at the demo's first freeze end, only the delta on
 // later ones, and from the current total when the counter goes down (a
 // match restart resets it). A sample without a side updates its baseline
-// but contributes spend only once a side is known.
+// but contributes spend only once a side is known. The FIRST freeze end
+// here belongs to a DISCARDED knife round: it stores no rows but still
+// updates the baseline, so the knife round's spend never lands in the
+// pistol's delta.
 func TestFreezeEndSpentDeltas(t *testing.T) {
 	a := newAgg()
 
 	// 1) No baseline yet (the demo's first freeze end) → delta from 0.
-	a.roundStart(0, false, true, 115, "BOMB TARGET") // pregame knife
+	//    Discarded knife round: baseline only, no rows.
+	a.roundStart(0, false, true, 115, "BOMB TARGET")
 	a.freezeEnd(10, 0, 0, 0, 0, []moneySample{
 		{key: 1, name: "a", side: "ct", money: 800, spent: 3250},
 		{key: 2, name: "b", side: "t", money: 800, spent: 3250},
 	})
+	if len(a.economy) != 0 {
+		t.Fatalf("discarded round stored economy rows: %d, want 0", len(a.economy))
+	}
 
 	// 2) Only the delta since the previous freeze end counts (the knife
 	//    round's spend never lands in the pistol's).
@@ -896,8 +934,9 @@ func TestFreezeEndSpentDeltas(t *testing.T) {
 		{key: 3, name: "c", side: "ct", money: 0, spent: 10100}, // +101
 	})
 
+	// Chronological numbering: the knife round took index 1 (discarded),
+	// so the stored rounds are 2 and 3 until build.renumber.
 	want := []struct{ round, ct, t int }{
-		{1, 3250, 3250},
 		{2, 4000, 3400},
 		{3, 801, 0},
 	}
@@ -913,9 +952,10 @@ func TestFreezeEndSpentDeltas(t *testing.T) {
 			t.Errorf("round %d t row = %+v, want round %d / t / spent %d", w.round, tr, w.round, w.t)
 		}
 	}
-	// The built extract carries the same numbers to the store writer.
+	// The built extract carries the same numbers to the store writer
+	// (renumbered onto dense rounds 1 and 2).
 	m := a.build()
-	if len(m.RoundEconomy) != 6 || m.RoundEconomy[4].Spent != 801 {
+	if len(m.RoundEconomy) != 4 || m.RoundEconomy[2].Round != 2 || m.RoundEconomy[2].Spent != 801 {
 		t.Fatalf("built round economy = %+v", m.RoundEconomy)
 	}
 }
@@ -1075,7 +1115,8 @@ func TestEnemiesFlashed(t *testing.T) {
 		}
 	}
 
-	// Warmup/pregame blinds credit neither counter (real gate)…
+	// Non-real blinds (post-match play — a discarded round never reaches
+	// blind at all) credit neither counter (the real gate)…
 	a.blind(blindInfo{
 		tick: 50, real: false,
 		playerKey: 5, playerName: "warmup-v", playerSide: "ct",

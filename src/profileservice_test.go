@@ -18,7 +18,7 @@ func oppositeSide(side string) string {
 
 // newProfileFixture opens an in-memory store with TWO extracted matches
 // for the same player (alice: ct in match 1 with 10k/5d, t in match 2
-// with 4k/0d) plus the credited/teamkill/warmup kill events behind the
+// with 4k/0d) plus the credited/teamkill/round-less kill events behind the
 // weapon breakdowns, three tradeable teammate deaths per match behind the
 // trade-opportunity denominator, and one player_round_stats row per match
 // behind the Sides card, then returns a ProfileService over it.
@@ -72,7 +72,10 @@ func newProfileFixture(t *testing.T) *ProfileService {
 				Tick: 200, Round: 1, Kind: models.EventKill,
 				Attacker: "100", Victim: "300", Weapon: "ak47", Headshot: true,
 			},
-			models.Event{ // warmup headshot — outside realPeriod
+			models.Event{ // headshot stamped to a round with no round row
+				// (a discarded round — the extractor never stores one): the
+				// rounds JOIN in GetPlayerWeaponJSONs drops it, exactly the
+				// exclusion the old warmup flag used to provide.
 				Tick: 50, Round: 0, Kind: models.EventKill,
 				Attacker: "100", Victim: "200", Weapon: "awp", Headshot: true,
 			},
@@ -106,7 +109,6 @@ func newProfileFixture(t *testing.T) *ProfileService {
 					KillsByWeapon:  byWeapon, DamageByWeapon: `{"ak47":900}`},
 			},
 			Rounds: []models.Round{
-				{Number: 0, Warmup: true},
 				{Number: 1, Winner: "ct", StartTick: 100, EndTick: 5000},
 			},
 			RoundSides: []models.RoundPlayerSide{
@@ -131,7 +133,7 @@ func newProfileFixture(t *testing.T) *ProfileService {
 		}
 		// One counted round of per-round stats — the Sides card's rows
 		// (store.GetPlayerSideSplits). Alice plays it on `side`: match 1
-		// is the CT round (won — rounds[1].winner = "ct"), match 2 the T
+		// is the CT round (won — round 1's winner = "ct"), match 2 the T
 		// round (lost).
 		roundStats := models.PlayerRoundStat{
 			Round: 1, SteamID: "100", Name: "alice", KAST: n == 1, RuleVersion: 1,
@@ -289,7 +291,7 @@ func TestGetProfileWeaponsAndCareer(t *testing.T) {
 		t.Errorf("ak47 kills = %d, want 14 (10 + 4 across the two matches)", ak.Kills)
 	}
 	if ak.Headshots != 4 {
-		t.Errorf("ak47 headshots = %d, want 4 (3 + 1 credited enemy headshots; teamkill/warmup excluded)", ak.Headshots)
+		t.Errorf("ak47 headshots = %d, want 4 (3 + 1 credited enemy headshots; teamkill/round-less excluded)", ak.Headshots)
 	}
 	if ak.Headshots > ak.Kills {
 		t.Errorf("ak47 headshots %d > kills %d", ak.Headshots, ak.Kills)

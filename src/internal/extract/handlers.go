@@ -57,6 +57,9 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 		// Non-warmup round that isn't stats-eligible play → pregame
 		// (MatchZy-style knife round: match started, phase Pregame, or a
 		// post-match round while IsMatchStarted already flipped back).
+		// agg.roundStart discards both flavors: a warmup/pregame round is
+		// not ingested (no round row, no events/chat/sounds of that
+		// round — the owner's knife/warmup discard).
 		pregame := !warmup && !realPeriod(gs)
 		a.roundStart(gs.IngameTick(), warmup, pregame, e.TimeLimit, e.Objective)
 	})
@@ -270,8 +273,8 @@ func registerHandlers(p *demoinfocs.Parser, a *agg) {
 	// attempts (17 / 20 / 0), with an abort NEVER observed alongside a
 	// completion — so the extractor stores the events as dispatched and
 	// needs no completion-overrides-cancel filter. No stat counts these
-	// rows; warmup attempts are stored like every other bomb row (only
-	// the stats side gates on realPeriod).
+	// rows; attempts of a discarded round (knife/warmup) are never stored
+	// either — addEvent drops every row while agg.discarding is set.
 	p.RegisterEventHandler(func(e events.BombPlantBegin) {
 		gs := p.GameState()
 		key, name := uint64(0), ""

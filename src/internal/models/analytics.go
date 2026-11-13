@@ -39,13 +39,13 @@ type AnalysisConfig struct {
 }
 
 // RoundInfo is one round's summary for the analytics pass (read from the
-// rounds table). Number includes warmup/pregame rounds; Warmup and Pregame
-// distinguish them (neither is "counted" play).
+// rounds table). Number is the dense counted-round index: the extractor
+// discards knife/warmup rounds at ingest, so every stored round is
+// counted play (analytics.CountedRounds is a documented identity over
+// this set).
 type RoundInfo struct {
 	Number        int    `json:"number"`
 	Winner        string `json:"winner"` // "ct" | "t" | ""
-	Warmup        bool   `json:"warmup"`
-	Pregame       bool   `json:"pregame"`
 	StartTick     int    `json:"startTick"`
 	EndTick       int    `json:"endTick"`
 	FreezeEndTick int    `json:"freezeEndTick"`
@@ -224,7 +224,6 @@ type CombatStat struct {
 type EconomyRow struct {
 	Round        int    `json:"round"`
 	Winner       string `json:"winner"`
-	Warmup       bool   `json:"warmup"`
 	EquipCT      int    `json:"equipCT"`
 	EquipT       int    `json:"equipT"`
 	MoneyCT      int    `json:"moneyCT"`
@@ -287,9 +286,9 @@ type CareerSummary struct {
 // end-of-demo roster shows, and the input WinFor needs: the final score
 // names each side's team, so only the final side maps score → result).
 // StartSide is the side the player OPENED the match on — the freeze-end
-// sample of their first counted round (round_player_sides ⋈ rounds with
-// warmup = 0 AND pregame = 0, lowest number); "" when the match carries
-// no sample (never guessed — the profile renders it as "—").
+// sample of their first counted round (round_player_sides ⋈ rounds,
+// lowest number — every stored round is counted); "" when the match
+// carries no sample (never guessed — the profile renders it as "—").
 type ProfileHistoryRow struct {
 	MatchID     int64     `json:"matchId"`
 	ExtractedAt time.Time `json:"extractedAt"`

@@ -79,6 +79,9 @@ type moneySample struct {
 }
 
 // roundInfo is one round's running state (models.Round at build time).
+// Only COUNTED rounds are ever accumulated here: knife/warmup/post-match
+// rounds are discarded at ingest (see agg.roundStart), so the stored set
+// holds counted play only.
 type roundInfo struct {
 	number          int
 	winner          string
@@ -86,8 +89,6 @@ type roundInfo struct {
 	durationSec     float64
 	startTick       int
 	endTick         int
-	warmup          bool
-	pregame         bool
 	mvp             string
 	mvpReason       string
 	equipCT         int
@@ -181,14 +182,21 @@ type agg struct {
 	finalPresent  map[uint64]bool
 	participation map[uint64]map[int]bool
 
-	rounds        []roundInfo
-	currentRound  int
-	warmupRounds  int
-	pregameRounds int
-	realRounds    int
-	sideSwitches  int
-	halfCT        int
-	halfT         int
+	rounds       []roundInfo
+	currentRound int
+	realRounds   int
+	// discarding marks that the CURRENT round (or, before the first
+	// RoundStart, nothing yet) is not counted play — a knife/warmup/
+	// post-match round. While it is set no row of any family is stored
+	// and no a.rounds[last] write happens (the owner's knife/warmup
+	// discard: those rounds "shouldn't be ingested… discarded entirely").
+	// Rows emitted BEFORE the demo's first round are kept and belong to
+	// it — unless that first round itself turns out to be discarded, in
+	// which case dropPrefix wipes them with it.
+	discarding   bool
+	sideSwitches int
+	halfCT       int
+	halfT        int
 	// halfPending marks a GameHalfEnded observation awaiting the score
 	// (which that event fires before — see freezeEnd).
 	halfPending bool
@@ -234,7 +242,8 @@ type agg struct {
 
 	// soundEvents are the player sounds (footsteps/lands/jumps/fall
 	// damage) read from CMsgSosStartSoundEvent — stamped with the current
-	// round like every other row and renumbered with them (build.renumber).
+	// round like every other row and renumbered with them (build.renumber);
+	// sounds of a discarded round are never stored (agg.soundEvent).
 	soundEvents []models.SoundEvent
 
 	// bounceSeen dedupes grenade-bounce SOS messages by (source entity,
@@ -294,7 +303,9 @@ func (a *agg) ensure(key uint64, name string) *playerAgg {
 
 // evRound is the extractor's current round number for stored rows. Rows
 // emitted before the first RoundStart are attributed to round 1 so every
-// stored row lands inside the match's round range.
+// stored row lands inside the match's round range (build.renumber maps
+// them onto the first stored round; when that first round is discarded,
+// dropPrefix has already wiped them).
 func (a *agg) evRound() int {
 	if a.currentRound < 1 {
 		return 1
@@ -334,9 +345,11 @@ func (a *agg) warn(typeID int, message string) {
 // present players get their identity/scoreboard-only fields overwritten
 // from live entity state and are marked FinalStatePresent (provenance).
 // K/D/A/MVPs are deliberately NOT overwritten: event-derived stats follow
-// one convention for every player (warmup/pregame excluded, flash assists
-// split out) while the game's own counters disagree (m_iAssists includes
-// flash assists; m_iMVPs included the golden demo's knife-round MVP).
+// one convention for every player (counted rounds only — knife/warmup
+// rounds are discarded at ingest — flash assists split out) while the
+// game's own counters disagree (m_iAssists includes flash assists;
+// m_iMVPs includes the golden demo's knife-round MVP, which the extractor
+// no longer credits).
 func (a *agg) applyFinal(finals []finalPlayer) {
 	for _, f := range finals {
 		p := a.ensure(f.key, f.name)
@@ -358,22 +371,38 @@ func (a *agg) applyFinal(finals []finalPlayer) {
 
 // ---- round state machine ----
 
+// roundStart opens the next chronological round. warmup/pregame (the
+// handler's detection — see handlers.RoundStart) mark a round that is
+// NOT counted play: knife rounds, warmup and post-match rounds. Such a
+// round is DISCARDED — it never enters a.rounds, its boundary rows are
+// never emitted and every row emitted while it is current is dropped
+// (the owner's ruling: knife/warmup rounds are not ingested and carry no
+// setting). The chronological counter still bumps for them: row
+// chronology and the sidecar's per-round seed cadence
+// (extract.roundSeeds) read it, and build.renumber then renumbers the
+// stored (counted) rounds onto the dense 1..N numbering.
+//
+// Per-round state (roundKills, tradeWindow, victimHP, lastHeldUtil) is
+// reset at EVERY round start, counted or not — roundStart is the ONE
+// round-reset home, and a discarded round still closes a stretch of play
+// the next round must not inherit.
 func (a *agg) roundStart(tick int, warmup, pregame bool, timeLimit int, objective string) {
-	a.currentRound++
-	switch {
-	case warmup:
-		a.warmupRounds++
-	case pregame:
-		a.pregameRounds++
-	default:
-		a.realRounds++
+	counted := !warmup && !pregame
+	if len(a.rounds) == 0 && !counted {
+		// The demo opens on a discarded round: everything emitted before
+		// this first RoundStart (initial connects, pre-round system chat
+		// and raw events) belongs to it and goes with it.
+		a.dropPrefix()
 	}
-	a.rounds = append(a.rounds, roundInfo{
-		number:    a.currentRound,
-		startTick: tick,
-		warmup:    warmup,
-		pregame:   pregame,
-	})
+	a.currentRound++
+	a.discarding = !counted
+	if counted {
+		a.realRounds++
+		a.rounds = append(a.rounds, roundInfo{
+			number:    a.currentRound,
+			startTick: tick,
+		})
+	}
 	a.roundKills[a.currentRound] = make(map[uint64]int)
 	a.tradeWindow = make(map[uint64]tradeRec)
 	// Health resets with the round: every player spawns back at 100 HP.
@@ -382,6 +411,9 @@ func (a *agg) roundStart(tick int, warmup, pregame bool, timeLimit int, objectiv
 	// it to the round the death happens in) — cleared with the rest of
 	// the per-round state here, the ONE round-reset home.
 	a.lastHeldUtil = make(map[uint64]string)
+	if a.discarding {
+		return // no round_start row for a round that does not exist
+	}
 	a.addEvent(models.Event{
 		Tick:       tick,
 		Kind:       models.EventRoundStart,
@@ -389,7 +421,28 @@ func (a *agg) roundStart(tick int, warmup, pregame bool, timeLimit int, objectiv
 	}, "round_start")
 }
 
+// dropPrefix wipes every row accumulated before the demo's first
+// RoundStart — a prefix that exists only while that first round turns
+// out to be discarded (the rows are its: initial connects, pre-round
+// system chat/raw events). Nothing else can be in the slices yet
+// (economy/round_sides need a stored round; frameTyped indexes only the
+// events wiped here), so truncating to zero is exact. Payload caches
+// (rawLatest/frameQueue) stay: they feed pairing, not rows.
+func (a *agg) dropPrefix() {
+	a.events = a.events[:0]
+	a.generic = a.generic[:0]
+	a.chatRows = a.chatRows[:0]
+	a.soundEvents = a.soundEvents[:0]
+	a.frameTyped = a.frameTyped[:0]
+}
+
 func (a *agg) roundEnd(tick int, winner, reason, message string, tickRate float64) {
+	if a.discarding {
+		// Closing a discarded round: no round row to write (a.rounds'
+		// last entry would be the PREVIOUS counted round) and no
+		// round_end row for a round that does not exist.
+		return
+	}
 	if n := len(a.rounds); n > 0 {
 		r := &a.rounds[n-1]
 		r.winner = winner
@@ -435,20 +488,21 @@ func (a *agg) freezeEnd(tick, equipCT, equipT, scoreCT, scoreT int, samples []mo
 		a.ensure(s.key, s.name)
 	}
 	n := len(a.rounds)
-	if n == 0 {
-		return
+	// The round row is written only for a STORED (counted) round: a
+	// discarded round's freeze end still runs the bookkeeping below (side
+	// observation + the cumulative-spent baseline) but hangs no rows on
+	// itself — there is no round to hang them on.
+	r := (*roundInfo)(nil)
+	if n > 0 && !a.discarding {
+		r = &a.rounds[n-1]
+		r.freezeEndTick = tick
+		r.equipCT = equipCT
+		r.equipT = equipT
 	}
-	r := &a.rounds[n-1]
-	r.freezeEndTick = tick
-	r.equipCT = equipCT
-	r.equipT = equipT
-	// Warmup and pregame (knife) rounds are not "counted" play: no
-	// participation credit, no stat round. This predicate is the extract
-	// twin of analytics.CountedRounds (`!warmup && !pregame`) and of the
-	// store's SQL twin (`warmup = 0 AND pregame = 0` in store.GetEconomy) —
-	// all three must stay identical or index-based rules (MR12 pistol
-	// stride, half boundaries) shift.
-	counted := !r.warmup && !r.pregame
+	// Every stored round is counted play (the extractor discards
+	// knife/warmup rounds at ingest — agg.roundStart), so participation
+	// credit needs no round-flag gate anymore: it is gated on having a
+	// round row at all.
 
 	sum := map[string]int{}
 	cnt := map[string]int{}
@@ -463,7 +517,9 @@ func (a *agg) freezeEnd(tick, equipCT, equipT, scoreCT, scoreT int, samples []mo
 		// since the previous freeze time end. A missing baseline (the
 		// demo's first freeze end) or a counter that went DOWN (a match
 		// restart resets it) reads from 0, so the current total is the
-		// spend since that reset.
+		// spend since that reset. The baseline updates on DISCARDED
+		// rounds too: a knife/warmup round's spend must not leak into the
+		// first counted round's delta.
 		prev, seen := a.lastSpent[s.key]
 		delta := s.spent - prev
 		if !seen || delta < 0 {
@@ -475,19 +531,22 @@ func (a *agg) freezeEnd(tick, equipCT, equipT, scoreCT, scoreT int, samples []mo
 			// end-of-demo snapshot genuinely lacks (controller entity gone
 			// before the demo's last tick — post-match leavers are kept, see
 			// finalRoster), plus exact per-round rows for analytics/replay
-			// consumers.
+			// consumers. Observed on discarded rounds as well (it is a fact
+			// about the player, not about a round row).
 			if p := a.players[s.key]; p != nil {
 				p.side = s.side
 			}
-			a.roundSides = append(a.roundSides, models.RoundPlayerSide{
-				Round: r.number, SteamID: keyStr(s.key), Side: s.side,
-			})
+			if r != nil {
+				a.roundSides = append(a.roundSides, models.RoundPlayerSide{
+					Round: r.number, SteamID: keyStr(s.key), Side: s.side,
+				})
+			}
 			sum[s.side] += s.money
 			cnt[s.side]++
 			spent[s.side] += delta
 			freeP[s.side] += s.freePistol
 		}
-		if counted {
+		if r != nil {
 			rounds := a.participation[s.key]
 			if rounds == nil {
 				rounds = make(map[int]bool)
@@ -496,10 +555,12 @@ func (a *agg) freezeEnd(tick, equipCT, equipT, scoreCT, scoreT int, samples []mo
 			rounds[r.number] = true
 		}
 	}
-	a.economy = append(a.economy,
-		models.RoundEconomy{Round: r.number, Side: "ct", EquipValue: equipCT, MoneySampledSum: sum["ct"], MoneySamples: cnt["ct"], Spent: spent["ct"], FreePistolValue: freeP["ct"]},
-		models.RoundEconomy{Round: r.number, Side: "t", EquipValue: equipT, MoneySampledSum: sum["t"], MoneySamples: cnt["t"], Spent: spent["t"], FreePistolValue: freeP["t"]},
-	)
+	if r != nil {
+		a.economy = append(a.economy,
+			models.RoundEconomy{Round: r.number, Side: "ct", EquipValue: equipCT, MoneySampledSum: sum["ct"], MoneySamples: cnt["ct"], Spent: spent["ct"], FreePistolValue: freeP["ct"]},
+			models.RoundEconomy{Round: r.number, Side: "t", EquipValue: equipT, MoneySampledSum: sum["t"], MoneySamples: cnt["t"], Spent: spent["t"], FreePistolValue: freeP["t"]},
+		)
+	}
 
 	if a.halfPending {
 		a.halfPending = false
@@ -516,8 +577,12 @@ func (a *agg) freezeEnd(tick, equipCT, equipT, scoreCT, scoreT int, samples []mo
 // roundMVP fills the round's MVP fields from the round_mvp announcement
 // (reason source). The COUNT is not incremented here — mvpScan's
 // per-round counter diffs own counting so demos emitting both paths cannot
-// double-credit.
+// double-credit. Ignored while discarding: a discarded round has no round
+// row (a.rounds' last entry would be the previous counted round).
 func (a *agg) roundMVP(key uint64, name, reason string) {
+	if a.discarding {
+		return
+	}
 	if n := len(a.rounds); n > 0 {
 		r := &a.rounds[n-1]
 		if key != 0 && r.mvp == "" {
@@ -533,10 +598,12 @@ func (a *agg) roundMVP(key uint64, name, reason string) {
 // last observed value and credits the delta to the round being closed.
 // RoundMVPAnnouncement is absent in many CS2 demos (golden included);
 // m_iMVPs is not. The diff base starts at 0 so the first observed round
-// carries the full count (correct when the counter increments inside the
-// demo, e.g. the golden demo's knife-round MVP — which the game's own
-// counter includes and the external scoreboard matches). Warmup rounds are
-// never credited.
+// carries the full count — which is why the counter ALWAYS advances even
+// for a discarded round: a knife round's MVP (the game's own counter
+// includes it — the golden demo's knife MVP) is absorbed here and never
+// credited, exactly like a warmup one. Credit therefore starts at the
+// first COUNTED round's own delta (owner-accepted consequence: scoreboard
+// mvps drop by one MVP per knife round).
 func (a *agg) mvpScan(key uint64, name string, count int) {
 	if key == 0 {
 		return
@@ -547,22 +614,22 @@ func (a *agg) mvpScan(key uint64, name string, count int) {
 	if delta <= 0 {
 		return
 	}
-	n := len(a.rounds)
-	if n == 0 || a.rounds[n-1].warmup {
+	if a.discarding || len(a.rounds) == 0 {
 		return
 	}
 	p := a.ensure(key, name)
 	p.mvps += delta
-	if a.rounds[n-1].mvp == "" {
-		a.rounds[n-1].mvp = keyStr(key)
+	if a.rounds[len(a.rounds)-1].mvp == "" {
+		a.rounds[len(a.rounds)-1].mvp = keyStr(key)
 	}
 }
 
 // ---- combat ----
 
 // killInfo carries the plain values a Kill handler extracts from the event.
-// real marks stats-eligible play (warmup/pregame/post-match excluded —
-// handlers compute it via realPeriod).
+// real marks stats-eligible play (post-match kills excluded — handlers
+// compute it via realPeriod; discarded rounds are gated separately by
+// agg.discarding).
 type killInfo struct {
 	tick          int
 	real          bool
@@ -607,6 +674,11 @@ type killInfo struct {
 }
 
 func (a *agg) kill(k killInfo) {
+	if a.discarding {
+		// Knife/warmup/post-match round: no row, no stat — discarded at
+		// ingest (agg.roundStart).
+		return
+	}
 	// Trade-opportunity proximity (config-independent, measured once at
 	// extract time): the closest living teammate of the victim to the
 	// KILLER at this death tick, -1 when nobody is measurable. Stored on
@@ -659,8 +731,9 @@ func (a *agg) kill(k killInfo) {
 	// (zero vector) still stores the row — the frontend draws nothing
 	// without coordinates (drops.js), never a guessed one.
 	//
-	// Emitted for EVERY kill (warmup/pregame included) like the kill row
-	// itself: these are evidence rows for the map layer, not stats.
+	// Emitted for EVERY kill of a COUNTED round like the kill row itself:
+	// these are evidence rows for the map layer, not stats (kills of a
+	// discarded round never reach here — the guard above).
 	for _, d := range inferDeathDrops(k.inv, a.lastHeldUtil[k.victimKey], k.hasKit) {
 		detail := map[string]any{
 			"player": k.victimName,
@@ -686,8 +759,9 @@ func (a *agg) kill(k killInfo) {
 		}, "")
 	}
 
-	// Warmup knife fights, pregame (knife) rounds and post-match kills
-	// never pollute stats (event rows are still emitted).
+	// Post-match kills (IsMatchStarted flipped back inside the final
+	// counted round's tail) never pollute stats — the discarded-round
+	// case never reaches here (guard above).
 	if !k.real {
 		return
 	}
@@ -813,7 +887,8 @@ func (a *agg) kill(k killInfo) {
 }
 
 // hurtInfo carries the plain values a PlayerHurt handler extracts. real
-// marks stats-eligible play (warmup/pregame/post-match excluded).
+// marks stats-eligible play (post-match play excluded — discarded rounds
+// are gated by agg.discarding).
 type hurtInfo struct {
 	tick              int
 	real              bool
@@ -834,8 +909,11 @@ type hurtInfo struct {
 }
 
 func (a *agg) hurt(h hurtInfo) {
-	// Every PlayerHurt becomes an event (raw damage stream is never
-	// gated); stat accumulation below is gated.
+	if a.discarding {
+		return // discarded round: no damage row, no stat
+	}
+	// Every PlayerHurt of a counted round becomes an event; stat
+	// accumulation below is additionally gated on real (post-match).
 	a.addEvent(models.Event{
 		Tick:     h.tick,
 		Kind:     models.EventDamage,
@@ -918,7 +996,7 @@ func (a *agg) capDamage(victim uint64, dmg, healthAfter int) int {
 }
 
 func (a *agg) shot(key uint64, name string) {
-	if key == 0 {
+	if key == 0 || a.discarding {
 		return
 	}
 	a.ensure(key, name).shots++
@@ -940,6 +1018,9 @@ type blindInfo struct {
 }
 
 func (a *agg) blind(b blindInfo) {
+	if a.discarding {
+		return // discarded round: no blind row, no stat
+	}
 	a.addEvent(models.Event{
 		Tick:     b.tick,
 		Kind:     models.EventBlind,
@@ -961,7 +1042,7 @@ func (a *agg) blind(b blindInfo) {
 	// (player_blind fires per player blinded by the flash — CS2.md
 	// "Enemies flashed"). Teammates and self-blinds credit nothing: same
 	// cross-team rule as assists/damage (sameSide — an unknown side never
-	// matches). Warmup/pregame blinds are already gated by b.real.
+	// matches). Post-match blinds are gated by b.real.
 	if b.attackerKey != 0 && b.attackerKey != b.playerKey &&
 		!sameSide(b.attackerSide, b.playerSide) {
 		a.ensure(b.attackerKey, b.attackerName).enemiesFlashed++
@@ -1087,11 +1168,17 @@ func (a *agg) grenadeBounced(b bounceInfo) {
 // here; Round is stamped through the same evRound path every other row
 // uses (renumbered with them in build.renumber).
 func (a *agg) soundEvent(se models.SoundEvent) {
+	if a.discarding {
+		return // discarded round: no sound row
+	}
 	se.Round = a.evRound()
 	a.soundEvents = append(a.soundEvents, se)
 }
 
 func (a *agg) bombPlanted(tick int, site string, key uint64, name string, real bool, px, py, pz *float64) {
+	if a.discarding {
+		return // discarded round: no plant row, no bombSite write, no stat
+	}
 	if n := len(a.rounds); n > 0 {
 		a.rounds[n-1].bombSite = site
 	}
@@ -1111,6 +1198,9 @@ func (a *agg) bombPlanted(tick int, site string, key uint64, name string, real b
 }
 
 func (a *agg) bombDefused(tick int, site string, key uint64, name string, hasKit bool, real bool, px, py, pz *float64) {
+	if a.discarding {
+		return // discarded round: no defuse row, no stat
+	}
 	if key != 0 && real {
 		a.ensure(key, name).bombDefuses++
 	}
@@ -1281,6 +1371,9 @@ func (a *agg) disconnect(tick int, key uint64, name string) {
 }
 
 func (a *agg) chat(tick int, steam, name, text, channel string) {
+	if a.discarding {
+		return // discarded round: no chat row
+	}
 	a.chatRows = append(a.chatRows, models.Chat{
 		Tick:    tick,
 		Round:   a.evRound(),
@@ -1293,6 +1386,9 @@ func (a *agg) chat(tick int, steam, name, text, channel string) {
 }
 
 func (a *agg) systemChat(tick int, text string) {
+	if a.discarding {
+		return // discarded round: no chat row
+	}
 	a.chatRows = append(a.chatRows, models.Chat{
 		Tick:  tick,
 		Round: a.evRound(),
@@ -1315,8 +1411,12 @@ func (a *agg) rankUpdate(key uint64, name string, rank, wins int) {
 // addEvent appends a typed event; Round is stamped with the extractor's
 // current round number (clamped to >= 1). source is the originating game
 // event name whose raw payload is paired at frame end ("" when there is no
-// game-event source).
+// game-event source). Rows of a discarded round are never stored (the
+// owner's knife/warmup discard).
 func (a *agg) addEvent(ev models.Event, source string) {
+	if a.discarding {
+		return
+	}
 	ev.Round = a.evRound()
 	a.events = append(a.events, ev)
 	if source != "" {
@@ -1325,10 +1425,17 @@ func (a *agg) addEvent(ev models.Event, source string) {
 }
 
 // genericEvent stores one raw game-event row and queues its payload for
-// pairing with this frame's typed events.
+// pairing with this frame's typed events. The payload caches update
+// unconditionally (they feed pairing for whichever typed rows this frame
+// DOES store — a round boundary can mix a discarded round's generic
+// payload with the next round's typed row); the row itself is only stored
+// for a counted round.
 func (a *agg) genericEvent(name string, tick int, payload string) {
 	a.rawLatest[name] = payload
 	a.frameQueue[name] = append(a.frameQueue[name], payload)
+	if a.discarding {
+		return
+	}
 	a.generic = append(a.generic, models.GenericEvent{
 		Name:        name,
 		Tick:        tick,

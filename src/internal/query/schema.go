@@ -13,7 +13,7 @@ var tableNotes = map[string]string{
 	"teams":              "per-match team rows by side (name, flag, score, spend)",
 	"players":            "per-match player roster: SteamID64, name, final side (label source for metric previews)",
 	"player_stats":       "per-match scoreboard rollup per player (K/D/A, ADR, openings, trades, weapon JSON)",
-	"rounds":             "per-round outcome + timing (winner, reason, ticks, first kill, MVP, warmup/pregame flags)",
+	"rounds":             "per-round outcome + timing (winner, reason, ticks, first kill, MVP) — one row per COUNTED round (knife/warmup rounds are discarded at ingest)",
 	"round_player_sides": "per-round player sides from freeze-end samples (exact side per round — halftime switches)",
 	"round_economy":      "per-round per-side equipment value + money samples + spend (spent = Σ over the side's players of the freeze-time-end delta in the cumulative cash-spent counter; buy classification input) + free spawn-issued default-pistol value held at freeze end (free_pistol_value — granted pistols count inside equipment value, so net worth includes them)",
 	"events":             "normalized game events (kill/damage/blind/bomb/…) with tick, actors, weapon flags, positions",
@@ -56,10 +56,8 @@ var columnNotes = map[string]map[string]string{
 		"detail_json":    "per-kind payload JSON; kill events carry nearDist = the nearest living teammate of the victim to the killer at the death tick (world units, -1 sentinel when unmeasurable) — the trade-opportunity distance gate",
 	},
 	"rounds": {
-		"winner":  "ct|t|'' (empty = unresolved)",
-		"warmup":  "1 = warmup round (analytics excludes it)",
-		"pregame": "1 = pre-match (knife) round — GamePhase=Pregame, scoreboard resets after; excluded from stats like warmup",
-		"mvp":     "SteamID64 of the round MVP",
+		"winner": "ct|t|'' (empty = unresolved)",
+		"mvp":    "SteamID64 of the round MVP",
 	},
 	"round_player_sides": {
 		"side": "player's side in that round (ct|t) — freeze-end sample; sides switch at halftime, so this is the exact per-round truth",

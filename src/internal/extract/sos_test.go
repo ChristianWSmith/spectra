@@ -241,25 +241,33 @@ func TestGrenadeBouncedDedupeAndSkip(t *testing.T) {
 
 // TestSoundEventRowRoundAndBuild pins Wave B's row plumbing: agg.soundEvent
 // stamps the current round, build() carries the rows into the extract
-// output, and renumber() rewrites them with every other round-carrying row
-// (a warmup round's rows become negative like events/chat do).
+// output, renumber() rewrites them with every other round-carrying row
+// (chrono → dense), and a DISCARDED round's sounds are never stored.
 func TestSoundEventRowRoundAndBuild(t *testing.T) {
 	a := newAgg()
 	a.soundEvent(models.SoundEvent{Tick: 120, SteamID: "76561198000000001", Kind: models.SoundStep, Material: "Concrete", TeamPrefix: "ct", SOSName: "CT_Concrete.StepLeft"})
 	if a.soundEvents[0].Round != 1 {
 		t.Fatalf("round before any round = %d, want 1 (evRound clamps)", a.soundEvents[0].Round)
 	}
-	// A warmup round renumbers to -1 in build — sound rows ride the same
-	// mapping as events/chat/economy/sides (build.renumber).
+	// The first round is COUNTED, so the pre-round prefix survives with it.
+	a.roundStart(100, false, false, 0, "")
+	// A discarded (warmup) round stores no sound rows…
 	a.roundStart(200, true, false, 0, "")
-	a.soundEvent(models.SoundEvent{Tick: 240, SteamID: "76561198000000002", Kind: models.SoundLand, SOSName: "Land.Thud"})
+	a.soundEvent(models.SoundEvent{Tick: 240, SteamID: "76561198000000009", Kind: models.SoundStep, SOSName: "CT_Concrete.StepLeft"})
+	if len(a.soundEvents) != 1 {
+		t.Fatalf("discarded round kept sound rows: %d, want 1", len(a.soundEvents))
+	}
+	// …while the next counted round's row rides the renumber mapping
+	// (chronological 3 → dense 2).
+	a.roundStart(300, false, false, 0, "")
+	a.soundEvent(models.SoundEvent{Tick: 320, SteamID: "76561198000000002", Kind: models.SoundLand, SOSName: "Land.Thud"})
 
 	out := a.build()
 	if len(out.SoundEvents) != 2 {
 		t.Fatalf("build carried %d sound events, want 2", len(out.SoundEvents))
 	}
-	if out.SoundEvents[0].Round != -1 || out.SoundEvents[1].Round != -1 {
-		t.Errorf("rounds = %d/%d, want -1/-1 (warmup renumber)", out.SoundEvents[0].Round, out.SoundEvents[1].Round)
+	if out.SoundEvents[0].Round != 1 || out.SoundEvents[1].Round != 2 {
+		t.Errorf("rounds = %d/%d, want 1/2 (dense renumber)", out.SoundEvents[0].Round, out.SoundEvents[1].Round)
 	}
 	if out.SoundEvents[1].Kind != models.SoundLand || out.SoundEvents[1].SOSName != "Land.Thud" {
 		t.Errorf("second row = %+v", out.SoundEvents[1])

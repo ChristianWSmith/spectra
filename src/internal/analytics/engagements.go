@@ -49,8 +49,9 @@ const (
 // successful_trades metric all follow cfg.TradeWindowS too.
 // One kill can yield multiple rows (kinds are independent detections: the
 // first kill can also be untraded or traded per victim, a trade
-// kill's victim can themselves go untraded). Warmup and pregame rounds are
-// skipped; kills with an unknown-side killer or victim are skipped (team
+// kill's victim can themselves go untraded). Kills of a discarded round
+// never reach this pass (the extractor does not store knife/warmup round
+// rows); kills with an unknown-side killer or victim are skipped (team
 // attribution uses the per-round sides — sides carries the extractor's
 // exact samples; a round without them yields no engagement rows).
 func Engagements(events []models.Event, rounds []RoundInfo, cfg Config, players []PlayerRef, sides map[int]map[string]string) []Engagement {

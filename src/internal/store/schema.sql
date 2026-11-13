@@ -23,7 +23,6 @@ CREATE TABLE IF NOT EXISTS matches (
 	game_dir TEXT NOT NULL DEFAULT '',
 	net_proto TEXT NOT NULL DEFAULT '',
 	is_pov INTEGER NOT NULL DEFAULT 0,
-	warmup_rounds INTEGER NOT NULL DEFAULT 0,
 	real_rounds INTEGER NOT NULL DEFAULT 0,
 	score_ct INTEGER NOT NULL DEFAULT 0,
 	score_t INTEGER NOT NULL DEFAULT 0,
@@ -134,6 +133,9 @@ CREATE TABLE IF NOT EXISTS player_stats (
 	PRIMARY KEY (match_id, steam_id)
 );
 
+-- One row per COUNTED round. Knife/warmup/post-match rounds are discarded
+-- at ingest (extract.agg.roundStart never stores them), so number is the
+-- dense counted-round index 1..N and no warmup/pregame flag exists.
 CREATE TABLE IF NOT EXISTS rounds (
 	match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
 	number INTEGER NOT NULL,
@@ -142,7 +144,6 @@ CREATE TABLE IF NOT EXISTS rounds (
 	duration_s REAL NOT NULL DEFAULT 0,
 	start_tick INTEGER NOT NULL DEFAULT 0,
 	end_tick INTEGER NOT NULL DEFAULT 0,
-	warmup INTEGER NOT NULL DEFAULT 0,
 	mvp TEXT NOT NULL DEFAULT '',
 	mvp_reason TEXT NOT NULL DEFAULT '',
 	equip_ct INTEGER NOT NULL DEFAULT 0,
@@ -151,10 +152,6 @@ CREATE TABLE IF NOT EXISTS rounds (
 	freeze_end_tick INTEGER NOT NULL DEFAULT 0,
 	first_kill_steam TEXT NOT NULL DEFAULT '',
 	first_death_steam TEXT NOT NULL DEFAULT '',
-	-- pregame marks pre-match (knife) rounds: GamePhase=Pregame, score
-	-- resets afterwards — excluded from real_rounds/stats/analytics like
-	-- warmup.
-	pregame INTEGER NOT NULL DEFAULT 0,
 	PRIMARY KEY (match_id, number)
 );
 

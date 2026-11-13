@@ -90,13 +90,15 @@ type PlayerStatsRow struct {
 }
 
 // RoundRow is the round-browser row (round joined with display names).
+// Number is the dense counted-round index — knife/warmup rounds are
+// discarded at ingest, so no flag distinguishes them anymore (the
+// frontend's r.warmup/r.pregame reads are retired with the discard,
+// Phase 3).
 type RoundRow struct {
 	Number          int     `json:"number"`
 	Winner          string  `json:"winner"`
 	Reason          string  `json:"reason"`
 	DurationS       float64 `json:"durationS"`
-	Warmup          bool    `json:"warmup"`
-	Pregame         bool    `json:"pregame"`
 	BombSite        string  `json:"bombSite"`
 	MVP             string  `json:"mvp"`
 	MVPName         string  `json:"mvpName"`
@@ -210,11 +212,13 @@ func EventFromRow(r EventRow) Event {
 
 // EventFilter selects timeline rows. RoundFrom/RoundTo bound e.round
 // INCLUSIVELY and are a PARTIAL range: 0 = open on that side (round 0
-// never exists — extract's renumber gives real rounds 1.. and negative
-// knife/warmup numbers, so 0 is the only correct "unset" sentinel), both
-// unset = every round of the match. Round detail reads are NOT a filter
-// — store.GetRoundDetail matches its (possibly negative knife/warmup,
-// possibly 0) round EXACTLY through store.queryEvents' exactRound, see
+// never exists — extract numbers stored rounds 1.., so 0 is the only
+// correct "unset" sentinel), both unset = every round of the match.
+// Negative bounds stay ordinary bounds of the same open range (a range
+// flag, not a warmup concept — no stored round carries them since the
+// knife/warmup discard). Round detail reads are NOT a filter
+// — store.GetRoundDetail matches its round EXACTLY through
+// store.queryEvents' exactRound, see
 // that function. Kind "" = all kinds; SteamID matches attacker OR
 // victim (kind="kill" rows may be narrowed to ONE endpoint by KillRole —
 // see that field). Offset/Limit paginate (Limit <= 0 means "no limit" —

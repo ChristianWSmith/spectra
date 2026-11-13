@@ -38,7 +38,7 @@ func seedBotMatch(t *testing.T, s *Store) int64 {
 	em := withBot(testExtracted("sha-bots", time.Now()))
 	// The bot is the round MVP and the victim of a kill — event-shaped
 	// rows must KEEP its name (the product rule's exception).
-	em.Rounds[1].MVP = botSteamID
+	em.Rounds[0].MVP = botSteamID
 	em.Events = append(em.Events, models.Event{
 		Tick: 400, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: botSteamID,
 		Weapon: "ak47",
@@ -158,7 +158,7 @@ func TestBotsExcludedFromRosterReads(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetRounds: %v", err)
 		}
-		if len(rounds) < 2 || rounds[1].MVPName != "Crew" {
+		if len(rounds) < 1 || rounds[0].MVPName != "Crew" {
 			t.Fatalf("round MVP name = %+v, want Crew kept", rounds)
 		}
 		evs, err := s.GetEvents(models.EventFilter{MatchID: id, Kind: models.EventKill})

@@ -37,7 +37,6 @@ func (a *agg) build() *models.ExtractedMatch {
 		GameDir:           a.header.gameDir,
 		NetProto:          strconv.Itoa(a.header.patchVersion),
 		IsPOV:             a.header.isPOV,
-		WarmupRounds:      a.warmupRounds,
 		RealRounds:        a.realRounds,
 		ScoreCT:           a.ctTeam.score,
 		ScoreT:            a.tTeam.score,
@@ -170,8 +169,6 @@ func (a *agg) build() *models.ExtractedMatch {
 			DurationS:       r.durationSec,
 			StartTick:       r.startTick,
 			EndTick:         r.endTick,
-			Warmup:          r.warmup,
-			Pregame:         r.pregame,
 			MVP:             r.mvp,
 			MVPReason:       r.mvpReason,
 			EquipCT:         r.equipCT,
@@ -193,41 +190,24 @@ func (a *agg) build() *models.ExtractedMatch {
 	return out
 }
 
-// renumber assigns the ingest round numbering: the first real (non-warmup,
-// non-pregame) round is round 1 and real rounds count up from there, while
-// knife/warmup rounds take NEGATIVE indices counting backwards from round 1
-// (the round immediately before round 1 is -1). Sorting by number therefore
-// stays chronological — -2 (knife), -1 (warmup), 1 (pistol), 2, … — and the
-// first pistol round of the first half is round 1, matching how the game
-// and external scoreboards number rounds.
-//
-// During the parse every round is stamped with a chronological index
-// (knife = 1, warmup = 2, first real = 3 …) so rows can reference their
-// round before the match is known; this pass rewrites the rounds and every
-// row that carries a round number through one old→new table. Non-counted
-// rounds that appear AFTER real play has started (mid-match restarts) are
-// still numbered negatively, but can only sort before round 1 — a corner
-// case no standard demo hits.
+// renumber assigns the ingest round numbering. During the parse every
+// round is stamped with a chronological index (knife = 1, warmup = 2,
+// first counted round = 3 …) so rows can reference their round before the
+// match is known; the discarded (knife/warmup/post-match) rounds never
+// enter a.rounds and their rows are never stored (agg.roundStart), so the
+// stored set is exactly the counted rounds in chronological order and
+// this pass rewrites them — and every row that carries a round number —
+// through one old→new table onto the dense 1..N numbering the game and
+// external scoreboards use (first-half pistol = 1). The old negative
+// branch (knife = -2, warmup = -1) died with the discard: nothing is
+// numbered negatively anymore, and deleting its rows needs no downstream
+// renumbering — every consumer already sees 1..N.
 func (a *agg) renumber() {
 	mapping := make(map[int]int, len(a.rounds))
 	next := 1
 	for i := range a.rounds {
-		r := &a.rounds[i]
-		if r.warmup || r.pregame {
-			continue
-		}
-		mapping[r.number] = next
+		mapping[a.rounds[i].number] = next
 		next++
-	}
-	// Reverse walk so the non-counted round closest to round 1 gets -1.
-	pre := -1
-	for i := len(a.rounds) - 1; i >= 0; i-- {
-		r := &a.rounds[i]
-		if !r.warmup && !r.pregame {
-			continue
-		}
-		mapping[r.number] = pre
-		pre--
 	}
 	remap := func(old int) int {
 		if n, ok := mapping[old]; ok {

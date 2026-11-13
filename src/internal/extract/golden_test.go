@@ -83,9 +83,8 @@ func TestParseGolden(t *testing.T) {
 	if m.Match.ScoreCT != 10 || m.Match.ScoreT != 13 {
 		t.Errorf("score = CT %d – %d T, want 10–13", m.Match.ScoreCT, m.Match.ScoreT)
 	}
-	if m.Match.RealRounds != 23 || m.Match.WarmupRounds != 1 {
-		t.Errorf("rounds = %d real + %d warmup, want 23 + 1 (knife + warmup precede the first-half pistol)",
-			m.Match.RealRounds, m.Match.WarmupRounds)
+	if m.Match.RealRounds != 23 {
+		t.Errorf("realRounds = %d, want 23 (knife + warmup rounds are discarded at ingest)", m.Match.RealRounds)
 	}
 	if m.Match.SideSwitches != 1 {
 		t.Errorf("sideSwitches = %d, want 1", m.Match.SideSwitches)
@@ -111,59 +110,29 @@ func TestParseGolden(t *testing.T) {
 	}
 
 	// ---- rounds ----
-	// Ingest numbering: real rounds are 1..23 (first-half pistol = 1),
-	// knife/pregame and warmup rounds take negative indices counting back
-	// from round 1 (-2 knife, -1 warmup) so number order stays chrono.
-	if len(m.Rounds) != 25 {
-		t.Fatalf("rounds = %d, want 25", len(m.Rounds))
+	// Knife (pregame) and warmup rounds are DISCARDED at ingest: only the
+	// 23 counted rounds are stored, numbered densely 1..23 (first-half
+	// pistol = 1) — no negative numbers, no round flags.
+	if len(m.Rounds) != 23 {
+		t.Fatalf("rounds = %d, want 23 (the discarded knife/warmup rounds produce no rows)", len(m.Rounds))
 	}
-	warmupRounds := 0
 	for i, r := range m.Rounds {
-		var want int
-		switch i {
-		case 0: // pregame knife round
-			want = -2
-		case 1: // warmup
-			want = -1
-		default: // real rounds count 1..23
-			want = i - 1
-		}
-		if r.Number != want {
-			t.Errorf("round[%d].Number = %d, want %d (ingest numbering: pistol=1, pre-match negatives)",
-				i, r.Number, want)
-		}
-		if r.Warmup {
-			warmupRounds++
-			if r.Number != -1 {
-				t.Errorf("warmup round is #%d, want #-1", r.Number)
-			}
+		if r.Number != i+1 {
+			t.Errorf("round[%d].Number = %d, want %d (dense counted numbering)", i, r.Number, i+1)
 		}
 	}
-	if warmupRounds != 1 {
-		t.Errorf("warmup rounds = %d, want exactly 1", warmupRounds)
-	}
-	if m.Rounds[1].Winner != "" || m.Rounds[1].DurationS != 0 {
-		t.Errorf("warmup round end state = %q/%v, want empty/0", m.Rounds[1].Winner, m.Rounds[1].DurationS)
-	}
-	if m.Rounds[2].Number != 1 || m.Rounds[2].Warmup || m.Rounds[2].Pregame {
-		t.Errorf("round[2] = #%d warmup=%v pregame=%v, want the first-half pistol as round 1",
-			m.Rounds[2].Number, m.Rounds[2].Warmup, m.Rounds[2].Pregame)
+	if m.Rounds[0].Number != 1 {
+		t.Errorf("round[1] = #%d, want the first-half pistol as round 1", m.Rounds[0].Number)
 	}
 
-	// Freeze-end economy port check: the knife round (#-2) starts both
-	// sides at 3250; the first real round (#1, pistol) at 4000/3600.
+	// Freeze-end economy port check: the discarded knife round's row is
+	// gone; the first counted round (#1, pistol) starts both sides at
+	// 4000/3600.
 	econ := map[string]models.RoundEconomy{}
 	for _, e := range m.RoundEconomy {
-		switch e.Round {
-		case -2:
-			econ["knife-"+e.Side] = e
-		case 1:
+		if e.Round == 1 {
 			econ[e.Side] = e
 		}
-	}
-	if econ["knife-ct"].EquipValue != 3250 || econ["knife-t"].EquipValue != 3250 {
-		t.Errorf("knife round equip = ct %d / t %d, want 3250/3250",
-			econ["knife-ct"].EquipValue, econ["knife-t"].EquipValue)
 	}
 	if econ["ct"].EquipValue != 4000 || econ["t"].EquipValue != 3600 {
 		t.Errorf("round 1 (pistol) equip = ct %d / t %d, want 4000/3600",
@@ -246,9 +215,9 @@ func TestParseGolden(t *testing.T) {
 	}
 
 	// ---- typed events ----
-	// Round stamps follow the ingest numbering: -2/-1 for pre-match rows,
-	// 1..23 for real rounds.
-	minRound, maxRound := -2, 23
+	// Round stamps are the dense counted numbering: 1..23 (the discarded
+	// knife/warmup rounds contribute no rows at all).
+	minRound, maxRound := 1, 23
 	counts := map[string]int{}
 	for _, e := range m.Events {
 		counts[e.Kind]++
@@ -256,11 +225,11 @@ func TestParseGolden(t *testing.T) {
 			t.Errorf("event kind=%s tick=%d round=%d outside %d..%d", e.Kind, e.Tick, e.Round, minRound, maxRound)
 		}
 	}
-	if counts[models.EventKill] != 170 {
-		t.Errorf("kill events = %d, want 170", counts[models.EventKill])
+	if counts[models.EventKill] != 162 {
+		t.Errorf("kill events = %d, want 162 (170 minus the 8 knife/warmup kills the discard drops)", counts[models.EventKill])
 	}
-	if counts[models.EventDamage] != 662 {
-		t.Errorf("damage events = %d, want 662", counts[models.EventDamage])
+	if counts[models.EventDamage] != 637 {
+		t.Errorf("damage events = %d, want 637 (662 minus the discarded rounds' damage)", counts[models.EventDamage])
 	}
 
 	// ---- generic events (histogram source) ----
@@ -271,16 +240,16 @@ func TestParseGolden(t *testing.T) {
 			t.Errorf("generic %s tick=%d round=%d outside %d..%d", g.Name, g.Tick, g.Round, minRound, maxRound)
 		}
 	}
-	if len(distinct) != 46 {
-		t.Errorf("distinct generic event names = %d, want 46", len(distinct))
+	if len(distinct) != 43 {
+		t.Errorf("distinct generic event names = %d, want 43 (46 minus the names only knife/warmup rounds carried)", len(distinct))
 	}
-	if len(m.GenericEvents) < 20900 || len(m.GenericEvents) > 21200 {
-		t.Errorf("generic event rows = %d, want ~21032", len(m.GenericEvents))
+	if len(m.GenericEvents) < 20600 || len(m.GenericEvents) > 20700 {
+		t.Errorf("generic event rows = %d, want ~20647", len(m.GenericEvents))
 	}
 
 	// ---- chat ----
-	if len(m.Chat) != 34 {
-		t.Errorf("chat rows = %d, want 34", len(m.Chat))
+	if len(m.Chat) != 33 {
+		t.Errorf("chat rows = %d, want 33 (34 minus the one line a discarded round carried)", len(m.Chat))
 	}
 	for _, c := range m.Chat {
 		if c.Round < minRound || c.Round > maxRound {
@@ -337,7 +306,8 @@ func TestParseGolden(t *testing.T) {
 	}
 	// ADR = enemy damage capped per hit at the victim's remaining HP
 	// (overkill is not damage dealt), divided by the player's counted
-	// rounds (knife/warmup excluded). 116.9 is the external scoreboard's
+	// rounds (every stored round is counted — the discard already
+	// removed knife/warmup play). 116.9 is the external scoreboard's
 	// official value for this demo (its external scoreboard screenshot) —
 	// the extractor now matches it for all ten players.
 	if math.Abs(forever.ADR-116.9) > 0.05 {

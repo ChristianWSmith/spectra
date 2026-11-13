@@ -292,8 +292,13 @@ Canonical homes (extend these, don't fork them):
   `internal/analytics/eco_equivalence_test.go`);
   `store.GetCombatStats` SQL is authoritative for combat stats (its
   decisions are pinned by `TestGetCombatStatsSQLDecisions`); counted
-  rounds in `analytics.CountedRounds` (frontend twin: `lib/rounds.js`
-  `isCounted`); utility-weapon set in `models.IsUtilityWeapon`; win
+  rounds — the ONLY rounds: the extractor discards knife/warmup/
+  post-match rounds at ingest (`extract.agg.roundStart`), so every stored
+  round is counted and `analytics.CountedRounds` is a documented identity
+  over that set (its cross-reference home; the SQL twin
+  `warmup = 0 AND pregame = 0` died with the columns; the frontend twin
+  `lib/rounds.js isCounted` is retired by Phase 3 of the discard);
+  utility-weapon set in `models.IsUtilityWeapon`; win
   predicate `models.WinFor`; config building `analytics.ConfigFrom`.
   Never re-express a rule in a second layer — add a comment cross-referencing
   the canonical implementation instead.

@@ -889,27 +889,29 @@ func TestHeatmapGridCarriesKernelPad(t *testing.T) {
 // half-open, and only for a row with a usable window.
 
 // TestInFreezeTimeWindowRule pins the predicate itself: the half-open
-// bounds, the no-guess rows (warmup fe = 0, fe ≤ start) that must never
-// skip a frame, ticks no round claims, and row order.
+// bounds, the no-guess rows (fe = 0, fe ≤ start — defensive: the extract
+// discard means no stored round ships a warmup-shaped row anymore, but a
+// corrupt/legacy row must still never skip a frame), ticks no round
+// claims, and row order.
 func TestInFreezeTimeWindowRule(t *testing.T) {
 	rounds := []models.Round{
-		{Number: -1, StartTick: 100, FreezeEndTick: 0, EndTick: 400},     // warmup row ships fe = 0
-		{Number: 1, StartTick: 500, FreezeEndTick: 660, EndTick: 1400},   // a real freeze window
-		{Number: 2, StartTick: 1500, FreezeEndTick: 1500, EndTick: 2000}, // fe == start: no usable window
+		{Number: 1, StartTick: 100, FreezeEndTick: 0, EndTick: 400},      // fe = 0: no usable window
+		{Number: 2, StartTick: 500, FreezeEndTick: 660, EndTick: 1400},   // a real freeze window
+		{Number: 3, StartTick: 1500, FreezeEndTick: 1500, EndTick: 2000}, // fe == start: no usable window
 	}
 	cases := []struct {
 		tick int
 		want bool
 	}{
 		{99, false},   // before every round: no window
-		{100, false},  // inside the warmup row (start) — fe = 0 never skips
-		{150, false},  // anywhere in the warmup round: no usable window
-		{450, false},  // gap between rounds: the row whose start reaches it is the warmup one → no window
-		{500, true},   // round 1's start is INSIDE freeze
+		{100, false},  // inside the fe = 0 row (start) — fe = 0 never skips
+		{150, false},  // anywhere in the fe = 0 round: no usable window
+		{450, false},  // gap between rounds: the row whose start reaches it is the fe = 0 one → no window
+		{500, true},   // round 2's start is INSIDE freeze
 		{659, true},   // last freeze tick
 		{660, false},  // freeze END is exclusive — live play
 		{1400, false}, // after freeze end
-		{1500, false}, // knife-shaped fe == start: no window, nothing skipped
+		{1500, false}, // fe == start: no window, nothing skipped
 		{1700, false},
 		{2500, false}, // past the last round: no window
 	}
