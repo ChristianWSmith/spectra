@@ -13,9 +13,11 @@ import (
 )
 
 // TestGetPlayerSideSplits: rows come from player_round_stats ⋈ that
-// round's freeze-end side sample ⋈ the round's winner — warmup and
-// pregame rounds are dropped even with side samples and player rows
-// present, a counted round with no side sample yields NO row (unknown →
+// round's freeze-end side sample ⋈ the round's winner — a round with no
+// rounds row is dropped even with side samples and player rows
+// present (the extract discard means knife/warmup rounds never store a
+// row; the fixture's rounds 0 and 2 stand in), a counted round with no
+// side sample yields NO row (unknown →
 // skipped, never guessed), and ADR/KAST are the round-level sums/means
 // (player_round_stats.dmg ÷ rounds, 100 × AVG(kast)).
 func TestGetPlayerSideSplits(t *testing.T) {
@@ -25,16 +27,16 @@ func TestGetPlayerSideSplits(t *testing.T) {
 		t.Fatalf("CreateMatchRow: %v", err)
 	}
 	em := testExtracted("sha-sides", time.Now())
-	// testExtracted already has round 0 (warmup), round 1 (counted, winner
-	// ct) and round 2 (pregame). Add a second counted round won by T and
-	// a third counted round with NO side sample for the player.
+	// testExtracted already has round 1 (counted, winner ct). Add a
+	// second counted round won by T and a third counted round with NO
+	// side sample for the player.
 	em.Rounds = append(em.Rounds,
 		models.Round{Number: 3, Winner: "t"},
 		models.Round{Number: 4, Winner: "ct"},
 	)
 	em.RoundSides = append(em.RoundSides,
-		models.RoundPlayerSide{Round: 0, SteamID: "100", Side: "ct"}, // warmup
-		models.RoundPlayerSide{Round: 2, SteamID: "100", Side: "ct"}, // pregame
+		models.RoundPlayerSide{Round: 0, SteamID: "100", Side: "ct"}, // no rounds row
+		models.RoundPlayerSide{Round: 2, SteamID: "100", Side: "ct"}, // no rounds row
 		models.RoundPlayerSide{Round: 3, SteamID: "100", Side: "t"},
 		// round 4: deliberately no sample for 100.
 	)
@@ -62,8 +64,9 @@ func TestGetPlayerSideSplits(t *testing.T) {
 	if ct.Side != "ct" || tr.Side != "t" {
 		t.Fatalf("sides = %q/%q, want ct/t (ordered)", ct.Side, tr.Side)
 	}
-	// ct: only counted round 1 (warmup 0 and pregame 2 dropped; round 4
-	// has no side sample). Winner ct → 1 round win.
+	// ct: only round 1 (the fixture's round-0/round-2 side samples have
+	// no rounds row and drop out; round 4 has no side sample). Winner ct
+	// → 1 round win.
 	if ct.Rounds != 1 || ct.Wins != 1 || ct.Kills != 5 || ct.Deaths != 1 {
 		t.Errorf("ct row = %+v, want 1 round / 1 win / 5k / 1d", ct)
 	}
@@ -85,7 +88,8 @@ func TestGetPlayerSideSplits(t *testing.T) {
 // derived values" — the count is stored at analyze time; "no row" = 0),
 // scoped to the requested steam_id across every match of the library.
 // The RETIRED query-time derivation — and its reject-case fixture
-// (warmup/pregame kills, teamkills, suicides, unknown-side players, an
+// (kills of a round with no rounds row, teamkills, suicides,
+// unknown-side players, an
 // already-dead player, out-of-range/-1/missing nearDist, the boundary
 // values) — lives on as the reference oracle in internal/analytics'
 // tradeopps_equivalence_test.go (legacy query-time derivation, retired

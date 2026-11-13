@@ -35,10 +35,13 @@ func openFileStore(t *testing.T) (*Store, string) {
 func pf(v float64) *float64 { return &v }
 
 // testExtracted builds a synthetic extract: NUL bytes in player/chat/warning
-// strings, 2 players, 3 rounds (warmup + real + pregame), 5 events, 3 generic
+// strings, 2 players, 1 counted round, 5 events, 3 generic
 // events, 2 chat lines, 1 warning, teams, economies and per-round sides. The
 // first kill and
 // the bomb plant carry positions; the damage event has none (NULL roundtrip).
+// Knife/warmup rounds are discarded at ingest, so no fixture here carries a
+// non-counted round — a round with no rounds row stands in where a test
+// needs "this round does not exist" (round 0 below).
 func testExtracted(sha string, extractedAt time.Time) *models.ExtractedMatch {
 	return &models.ExtractedMatch{
 		Match: models.Match{
@@ -46,7 +49,7 @@ func testExtracted(sha string, extractedAt time.Time) *models.ExtractedMatch {
 			Map: "De_MiRaGe", PatchVersion: 14000, TickRate: 64,
 			DurationTicks: 1000, PlaybackTimeS: 15.625, Frames: 900,
 			ServerName: "sv\x00r", ClientName: "GOTV", GameDir: "csgo",
-			NetProto: "13371", WarmupRounds: 1, RealRounds: 1,
+			NetProto: "13371", RealRounds: 1,
 			ScoreCT: 1, ScoreT: 0, HalfCT: 1, HalfT: 0,
 			EntityClasses: 220, EndEntityCount: 80, ParserVersion: "v6.0.0-rc.1",
 			ExtractedAt: extractedAt, ParseMS: 42, WarningsCount: 1,
@@ -73,11 +76,9 @@ func testExtracted(sha string, extractedAt time.Time) *models.ExtractedMatch {
 				KillsByWeapon: `{"awp":5}`, DamageByWeapon: `{"awp":600}`},
 		},
 		Rounds: []models.Round{
-			{Number: 0, Warmup: true},
 			{Number: 1, Winner: "ct", Reason: "CTWin", DurationS: 117.5, StartTick: 100,
 				EndTick: 7620, MVP: "100", MVPReason: "kill", EquipCT: 25000, EquipT: 20000,
 				FreezeEndTick: 150, FirstKillSteam: "100", FirstDeathSteam: "200"},
-			{Number: 2, Pregame: true, StartTick: 7700},
 		},
 		RoundEconomy: []models.RoundEconomy{
 			{Round: 1, Side: "ct", EquipValue: 25000, MoneySampledSum: 15000, MoneySamples: 5},
@@ -107,7 +108,10 @@ func testExtracted(sha string, extractedAt time.Time) *models.ExtractedMatch {
 			{Name: "bomb_planted", Tick: 150, Round: 1, PayloadJSON: `{"site":"A"}`},
 		},
 		Chat: []models.Chat{
-			{Tick: 5, Round: 0, Kind: "system", Text: "Warmup started"},
+			// A chat line stamped to a round with no rounds row (round 0
+			// never exists): exactRound keeps it out of every round's
+			// detail while the match-wide read still returns it.
+			{Tick: 5, Round: 0, Kind: "system", Text: "Match started"},
 			{Tick: 10, Round: 1, SteamID: "100", Name: "al\x00ice", Text: "gl\x00hf", Kind: "chat", Channel: "all"},
 		},
 		Warnings: []string{"null\x00byte warning"},
@@ -176,7 +180,7 @@ func TestOpenBaselineSchemaIdempotent(t *testing.T) {
 		{"events", "apos_x", "REAL", 0, ""},
 		{"events", "apos_y", "REAL", 0, ""},
 		{"events", "apos_z", "REAL", 0, ""},
-		{"rounds", "pregame", "INTEGER", 1, "0"},
+		{"rounds", "freeze_end_tick", "INTEGER", 1, "0"},
 		{"player_stats", "flash_assists", "INTEGER", 1, "0"},
 		{"player_stats", "two_k", "INTEGER", 1, "0"},
 		{"chat", "decrypted", "INTEGER", 1, "0"},
@@ -354,7 +358,7 @@ func TestSaveExtractedRoundtrip(t *testing.T) {
 	if m.Map != "De_MiRaGe" || m.SHA256 != sha || m.Size != 1234 || m.PatchVersion != 14000 ||
 		m.TickRate != 64 || m.DurationTicks != 1000 || m.PlaybackTimeS != 15.625 || m.Frames != 900 ||
 		m.ClientName != "GOTV" || m.GameDir != "csgo" || m.NetProto != "13371" || m.IsPOV ||
-		m.WarmupRounds != 1 || m.RealRounds != 1 || m.ScoreCT != 1 || m.ScoreT != 0 ||
+		m.RealRounds != 1 || m.ScoreCT != 1 || m.ScoreT != 0 ||
 		m.HalfCT != 1 || m.HalfT != 0 || m.SideSwitches != 0 || m.EntityClasses != 220 ||
 		m.EndEntityCount != 80 || m.ParserVersion != "v6.0.0-rc.1" || m.ParseMS != 42 ||
 		m.WarningsCount != 1 || m.Status != models.StatusReady || m.Error != "" {
@@ -406,16 +410,10 @@ func TestSaveExtractedRoundtrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetRounds: %v", err)
 	}
-	if len(rounds) != 3 {
-		t.Fatalf("GetRounds len = %d, want 3", len(rounds))
+	if len(rounds) != 1 {
+		t.Fatalf("GetRounds len = %d, want 1 (only counted rounds are stored)", len(rounds))
 	}
-	if rounds[0].Number != 0 || !rounds[0].Warmup || rounds[0].MVPName != "" {
-		t.Errorf("warmup round mismatch: %+v", rounds[0])
-	}
-	if rounds[2].Number != 2 || !rounds[2].Pregame || rounds[2].Warmup {
-		t.Errorf("pregame round mismatch: %+v", rounds[2])
-	}
-	r1 := rounds[1]
+	r1 := rounds[0]
 	if r1.Number != 1 || r1.Winner != "ct" || r1.Reason != "CTWin" || r1.DurationS != 117.5 ||
 		r1.MVP != "100" || r1.MVPName != "alice" || r1.MVPReason != "kill" ||
 		r1.FirstKillSteam != "100" || r1.FirstKillName != "alice" ||
@@ -455,12 +453,15 @@ func TestSaveExtractedRoundtrip(t *testing.T) {
 		t.Errorf("detail chat mismatch: %+v", detail.Chat)
 	}
 
-	warmup, err := s.GetRoundDetail(id, 0)
-	if err != nil {
-		t.Fatalf("GetRoundDetail(0): %v", err)
+	// A round number with no rounds row is simply not found — the exact
+	// match never falls through to "every row of the match" (round 0
+	// never exists; negative numbers are ordinary unknowns since the
+	// knife/warmup discard).
+	if _, err := s.GetRoundDetail(id, 0); !errors.Is(err, ErrNotFound) {
+		t.Errorf("GetRoundDetail(0) err = %v, want ErrNotFound", err)
 	}
-	if len(warmup.Events) != 0 || len(warmup.Economy) != 0 || len(warmup.Chat) != 1 {
-		t.Errorf("warmup detail mismatch: %+v", warmup)
+	if _, err := s.GetRoundDetail(id, -1); !errors.Is(err, ErrNotFound) {
+		t.Errorf("GetRoundDetail(-1) err = %v, want ErrNotFound", err)
 	}
 	if _, err := s.GetRoundDetail(id, 99); !errors.Is(err, ErrNotFound) {
 		t.Errorf("GetRoundDetail(99) err = %v, want ErrNotFound", err)
@@ -623,7 +624,7 @@ func TestSaveExtractedReplaces(t *testing.T) {
 		{"warnings", len(mustWarnings(t, s, id))},
 		{"histogram", len(mustHist(t, s, id))},
 	}
-	want := map[string]int{"board": 2, "rounds": 3, "events": 5, "chat": 2, "warnings": 1, "histogram": 2}
+	want := map[string]int{"board": 2, "rounds": 1, "events": 5, "chat": 2, "warnings": 1, "histogram": 2}
 	for _, c := range checks {
 		if c.n != want[c.name] {
 			t.Errorf("%s count = %d, want %d (no duplicates)", c.name, c.n, want[c.name])
@@ -1114,16 +1115,18 @@ func TestGetEventsSideTeam(t *testing.T) {
 
 // TestGetEventsRoundRange pins the EventFilter round bounds: an
 // INCLUSIVE, PARTIAL range where 0 = open on that side (round 0 never
-// exists, so 0 can only mean "unset"), negative knife/warmup numbers are
-// ordinary bounds (the old "Round < 0 = all rounds" sentinel is gone),
-// and both bounds open = every round of the match.
+// exists, so 0 can only mean "unset"), negative numbers are ordinary
+// bounds of the same open range (the old "Round < 0 = all rounds"
+// sentinel is gone; no stored round carries them since the knife/warmup
+// discard, but the range arithmetic never special-cases them), and both
+// bounds open = every round of the match.
 func TestGetEventsRoundRange(t *testing.T) {
 	s := openMem(t)
 	id := saveTestMatch(t, s, "/d/rr.dem", "sha-round-range", time.Now())
 	em := testExtracted("sha-round-range", time.Now())
 	em.Rounds = []models.Round{
-		{Number: -2, Pregame: true, StartTick: 10, EndTick: 20}, // knife
-		{Number: -1, Warmup: true, StartTick: 30, EndTick: 40},  // warmup
+		{Number: -2, StartTick: 10, EndTick: 20},
+		{Number: -1, StartTick: 30, EndTick: 40},
 		{Number: 1, Winner: "ct", StartTick: 50, EndTick: 100},
 		{Number: 2, Winner: "t", StartTick: 100, EndTick: 150},
 	}
@@ -1170,7 +1173,7 @@ func TestGetEventsRoundRange(t *testing.T) {
 	want("negative bounds are real rounds", ticks(models.EventFilter{RoundFrom: -2, RoundTo: -1}), []int{15, 35})
 	want("negative min only", ticks(models.EventFilter{RoundFrom: -1}), []int{35, 60, 110})
 	want("negative max only", ticks(models.EventFilter{RoundTo: -1}), []int{15, 35})
-	want("warmup point range", ticks(models.EventFilter{RoundFrom: -1, RoundTo: -1}), []int{35})
+	want("negative point range", ticks(models.EventFilter{RoundFrom: -1, RoundTo: -1}), []int{35})
 	want("empty range", ticks(models.EventFilter{RoundFrom: 3}), []int{})
 	want("empty negative range", ticks(models.EventFilter{RoundFrom: -3, RoundTo: -3}), []int{})
 	// Partial range + another filter AND together (the shared whereClause).

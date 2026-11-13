@@ -162,7 +162,6 @@ type Match struct {
 	GameDir        string    `json:"gameDir"`
 	NetProto       string    `json:"netProto"`
 	IsPOV          bool      `json:"isPov"`
-	WarmupRounds   int       `json:"warmupRounds"`
 	RealRounds     int       `json:"realRounds"`
 	ScoreCT        int       `json:"scoreCT"`
 	ScoreT         int       `json:"scoreT"`
@@ -274,31 +273,27 @@ type PlayerStats struct {
 }
 
 // Round is one round's summary (rounds table). Number is the extractor's
-// chronological index (warmup and pregame rounds included — Warmup and
-// Pregame distinguish them; neither counts toward Match.RealRounds or any
-// stat). MVP/MVPReason are best-effort: some demos never emit round-MVP data
-// (the golden demo does not) — empty means "absent", not zero.
+// dense, counted-round index (first-half pistol = 1): knife/warmup/
+// post-match rounds are discarded at ingest (extract.agg.roundStart), so
+// every stored row is counted play. MVP/MVPReason are best-effort: some
+// demos never emit round-MVP data (the golden demo does not) — empty
+// means "absent", not zero.
 type Round struct {
-	MatchID   int64   `json:"matchId"`
-	Number    int     `json:"number"`
-	Winner    string  `json:"winner"` // "ct" | "t" | "" (warmup/none)
-	Reason    string  `json:"reason"` // CTWin | TerroristsWin | BombDefused | TargetBombed | …
-	DurationS float64 `json:"durationS"`
-	StartTick int     `json:"startTick"`
-	EndTick   int     `json:"endTick"`
-	Warmup    bool    `json:"warmup"`
-	// Pregame marks a pre-match (knife) round: runs with warmup=false and
-	// the match started but GamePhase()==Pregame; the scoreboard resets
-	// afterwards (golden demo round 1). Excluded from stats like Warmup.
-	Pregame         bool   `json:"pregame"`
-	MVP             string `json:"mvp"` // SteamID64, may be empty
-	MVPReason       string `json:"mvpReason"`
-	EquipCT         int    `json:"equipCT"`
-	EquipT          int    `json:"equipT"`
-	BombSite        string `json:"bombSite"` // "A" | "B" | ""
-	FreezeEndTick   int    `json:"freezeEndTick"`
-	FirstKillSteam  string `json:"firstKillSteam"`
-	FirstDeathSteam string `json:"firstDeathSteam"`
+	MatchID         int64   `json:"matchId"`
+	Number          int     `json:"number"`
+	Winner          string  `json:"winner"` // "ct" | "t" | "" (unresolved)
+	Reason          string  `json:"reason"` // CTWin | TerroristsWin | BombDefused | TargetBombed | …
+	DurationS       float64 `json:"durationS"`
+	StartTick       int     `json:"startTick"`
+	EndTick         int     `json:"endTick"`
+	MVP             string  `json:"mvp"` // SteamID64, may be empty
+	MVPReason       string  `json:"mvpReason"`
+	EquipCT         int     `json:"equipCT"`
+	EquipT          int     `json:"equipT"`
+	BombSite        string  `json:"bombSite"` // "A" | "B" | ""
+	FreezeEndTick   int     `json:"freezeEndTick"`
+	FirstKillSteam  string  `json:"firstKillSteam"`
+	FirstDeathSteam string  `json:"firstDeathSteam"`
 }
 
 // RoundEconomy is one side's economy sample for one round

@@ -35,7 +35,7 @@ var sourceColumns = map[string]map[string]bool{
 	),
 	"rounds": colSet(
 		"match_id", "number", "winner", "reason", "duration_s", "start_tick",
-		"end_tick", "warmup", "pregame", "mvp", "mvp_reason", "equip_ct",
+		"end_tick", "mvp", "mvp_reason", "equip_ct",
 		"equip_t", "bomb_site", "freeze_end_tick", "first_kill_steam",
 		"first_death_steam",
 	),

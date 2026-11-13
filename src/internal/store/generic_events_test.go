@@ -155,7 +155,8 @@ func TestGetEventsFilterMatrix(t *testing.T) {
 
 // TestGetGenericEventsRoundOffset pins the landmark feed's generic-source
 // contract: round < 0 = every round (the shared sentinel), round >= 0 is
-// an exact match (negative knife/warmup rounds are real rounds), and
+// an exact match (a round number the fixture never stored is simply an
+// exact value the rows match or not), and
 // limit/offset page in rowid order without silent truncation. RowID —
 // the record identity the feed selects on — is returned on every row.
 func TestGetGenericEventsRoundOffset(t *testing.T) {
@@ -191,8 +192,8 @@ func TestGetGenericEventsRoundOffset(t *testing.T) {
 		}
 	}
 
-	// Exact round (round 1), and the negative knife/warmup sentinel works
-	// as a REAL round number when the caller passes it explicitly.
+	// Exact round (round 1); the shared round < 0 sentinel returns every
+	// round's rows (the fixture's round -1 row included).
 	r2, err := s.GetGenericEvents(id, "weapon_fire", 2, 100, 0)
 	if err != nil || len(r2) != 2 || r2[0].Tick != 40 || r2[1].Tick != 50 {
 		t.Errorf("round 2 rows = %+v (err %v), want ticks 40,50", r2, err)

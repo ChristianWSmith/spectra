@@ -25,7 +25,7 @@ func seedMatch(t *testing.T, st *store.Store) int64 {
 			Map: "De_Mirage", PatchVersion: 14000, TickRate: 64,
 			DurationTicks: 2000, PlaybackTimeS: 31.25, Frames: 2000,
 			ServerName: "fixture-server", ClientName: "GOTV", GameDir: "csgo",
-			WarmupRounds: 1, RealRounds: 5, ScoreCT: 3, ScoreT: 2,
+			RealRounds: 5, ScoreCT: 3, ScoreT: 2,
 			EntityClasses: 220, EndEntityCount: 80, ParserVersion: "vtest-1",
 			ExtractedAt: time.Date(2026, 10, 31, 12, 0, 0, 0, time.UTC),
 			ParseMS:     99, WarningsCount: 1,

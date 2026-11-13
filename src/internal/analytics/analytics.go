@@ -21,7 +21,7 @@
 //     EconomyRows, survives only as the reference oracle in
 //     eco_equivalence_test.go).
 //   - OT pistol rounds are not special-cased (none in the golden demo):
-//     pistol = non-warmup sequence index % 12 == 0 (MR12 half starts).
+//     pistol = counted sequence index % 12 == 0 (MR12 half starts).
 //   - Per-player money_start/equip/spent stay 0: the item_equip payload
 //     carries no price/cost, so per-player per-round spend is not
 //     extractable (team-level equip/money live in the economy view).
@@ -45,9 +45,10 @@
 //     event (no such event exists).
 //   - Friendly fire uses each player's FINAL side (events carry no team).
 //
-// Round eligibility: CountedRounds drops warmup AND pregame (knife)
-// rounds everywhere — the game's own scoreboard excludes knife rounds,
-// and index-based rules (MR12 pistol stride) shift if they stay in.
+// Round eligibility: CountedRounds is the canonical filter and today an
+// identity — the extractor discards knife/warmup rounds at ingest, so
+// every stored round is counted play (index-based rules such as the MR12
+// pistol stride therefore never see a knife round).
 package analytics
 
 import (
@@ -137,20 +138,18 @@ func sortedEvents(events []models.Event) []models.Event {
 	return out
 }
 
-// CountedRounds filters rounds to stats-eligible play, preserving number
-// order: warmup rounds and pregame (knife) rounds are not counted play
-// (the golden demo's round 1 is a knife round the game itself excludes
-// from the scoreboard). This is the Go twin of two other predicates that
-// must stay identical: extract's `!warmup && !pregame` (agg.roundStart —
-// the rows are stamped there) and store.GetEconomy's
-// `warmup = 0 AND pregame = 0` SQL.
+// CountedRounds returns the rounds eligible for stats, preserving number
+// order. It is today an IDENTITY over its input: the extractor discards
+// knife/warmup/post-match rounds at ingest (extract.agg.roundStart — the
+// rows are never stamped), so the rounds table holds only counted play.
+// The function survives as THE canonical Go predicate — its callers
+// iterate its result — with the extract discard as its cross-reference
+// (the SQL twin `warmup = 0 AND pregame = 0` in store.GetEconomy died
+// with the columns). If a non-counted round ever reaches this input
+// again, this is the ONE place the filter returns.
 func CountedRounds(rounds []RoundInfo) []RoundInfo {
-	out := make([]RoundInfo, 0, len(rounds))
-	for _, r := range rounds {
-		if !r.Warmup && !r.Pregame {
-			out = append(out, r)
-		}
-	}
+	out := make([]RoundInfo, len(rounds))
+	copy(out, rounds)
 	return out
 }
 
@@ -187,9 +186,9 @@ func nameOf(players []PlayerRef) map[string]string {
 // unassigned players).
 func sameSide(a, b string) bool { return a != "" && a == b }
 
-// pistolEvery is the non-warmup sequence stride between half-start pistol
-// rounds under MR12 (indexes 0, 12, 24, …; OT not special-cased — see
-// package doc).
+// pistolEvery is the counted-round sequence stride between half-start
+// pistol rounds under MR12 (indexes 0, 12, 24, …; OT not special-cased —
+// see package doc).
 const pistolEvery = 12
 
 // buyClassAllSides classifies both sides of one round via buyClass,

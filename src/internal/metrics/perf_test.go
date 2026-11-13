@@ -48,7 +48,7 @@ func generateCorpus(n int) string {
 	for m := 1; m <= n; m++ {
 		mapName := maps[(m-1)%len(maps)]
 		matches = append(matches, fmt.Sprintf(
-			"('/seed/m%d.dem','seed%06d',1024,'%s',64.0,307200,4800.0,72000,'s','g','csgo','1',0,24,12,12,12,12,0,'v6','2026-01-01T00:00:00Z',100,0,'ready')",
+			"('/seed/m%d.dem','seed%06d',1024,'%s',64.0,307200,4800.0,72000,'s','g','csgo','1',24,12,12,12,12,0,'v6','2026-01-01T00:00:00Z',100,0,'ready')",
 			m, m, mapName))
 		teams = append(teams, fmt.Sprintf("(%d,'ct','Alpha','',12)", m), fmt.Sprintf("(%d,'t','Beta','',12)", m))
 		for i := 1; i <= 8; i++ {
@@ -68,7 +68,7 @@ func generateCorpus(n int) string {
 			}
 			start := (r - 1) * 128
 			rounds = append(rounds, fmt.Sprintf(
-				"(%d,%d,'%s','elimination',%d,%d,%d,0,'%s',2500,2000,%d,'%s','%s')",
+				"(%d,%d,'%s','elimination',%d,%d,%d,'%s',2500,2000,%d,'%s','%s')",
 				m, r, winner, 100+r, start, start+120, sid(((r-1)%8)+1), start+5,
 				sid(((r-1)%4)+1), sid(((r-1)%4)+5)))
 			econ = append(econ,
@@ -143,11 +143,11 @@ func generateCorpus(n int) string {
 		}
 	}
 
-	emit("matches", "path,sha256,size,map,tick_rate,duration_ticks,playback_time_s,frames,server_name,client_name,game_dir,net_proto,warmup_rounds,real_rounds,score_ct,score_t,half_ct,half_t,side_switches,parser_version,extracted_at,parse_ms,warnings_count,status", matches)
+	emit("matches", "path,sha256,size,map,tick_rate,duration_ticks,playback_time_s,frames,server_name,client_name,game_dir,net_proto,real_rounds,score_ct,score_t,half_ct,half_t,side_switches,parser_version,extracted_at,parse_ms,warnings_count,status", matches)
 	emit("teams", "match_id,side,name,flag,score", teams)
 	emit("players", "match_id,steam_id,name,is_bot,side", players)
 	emit("player_stats", "match_id,steam_id,side,name,kills,deaths,assists,headshots,mvps,score,total_damage,damage_taken,adr,hs_pct,rounds_played,opening_kills,trade_kills,money_spent_total", pstats)
-	emit("rounds", "match_id,number,winner,reason,duration_s,start_tick,end_tick,warmup,mvp,equip_ct,equip_t,freeze_end_tick,first_kill_steam,first_death_steam", rounds)
+	emit("rounds", "match_id,number,winner,reason,duration_s,start_tick,end_tick,mvp,equip_ct,equip_t,freeze_end_tick,first_kill_steam,first_death_steam", rounds)
 	emit("round_economy", "match_id,round,side,equip_value,money_sampled_sum,money_samples", econ)
 	emit("events", "match_id,seq,tick,round,kind,attacker,victim,weapon,headshot,wallbang,through_smoke,attacker_blind,assisted_flash,distance,hitgroup,dmg", events)
 	emit("player_round_stats", "match_id,round,steam_id,name,kills,assists,deaths,traded,survived,kast,dmg,util_dmg,money_start,equip,spent,rule_version", prows)

@@ -2,7 +2,8 @@
 // raw CS2 .dem stream (the caller handles .zstd decompression) and emits a
 // normalized models.ExtractedMatch — no report/markdown generation, and no
 // demoinfocs type ever appears in the output. Parser options, handler
-// families, warmup gating, and aggregation math all target the models
+// families, the knife/warmup discard (rounds that are not counted play
+// are never ingested), and aggregation math all target the models
 // contract.
 package extract
 

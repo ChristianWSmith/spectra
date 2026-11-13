@@ -267,7 +267,7 @@ const (
 		bomb_plants, bomb_defuses, money_spent_total, kills_by_weapon, damage_by_weapon`
 
 	roundCols = `number, winner, reason, duration_s, start_tick, end_tick,
-		warmup, pregame, mvp, mvp_reason, equip_ct, equip_t, bomb_site, freeze_end_tick,
+		mvp, mvp_reason, equip_ct, equip_t, bomb_site, freeze_end_tick,
 		first_kill_steam, first_death_steam`
 
 	roundEconomyCols = `round, side, equip_value, money_sampled_sum, money_samples, spent, free_pistol_value`
@@ -360,7 +360,7 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 
 	roundsStmt, err := tx.Prepare(
 		`INSERT INTO rounds (match_id, ` + roundCols + `)
-		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 	)
 	if err != nil {
 		return fmt.Errorf("store: save extracted: %w", err)
@@ -369,7 +369,7 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 	for _, r := range em.Rounds {
 		if _, err := roundsStmt.Exec(
 			matchID, r.Number, scrub(r.Winner), scrub(r.Reason), r.DurationS, r.StartTick, r.EndTick,
-			b2i(r.Warmup), b2i(r.Pregame), scrub(r.MVP), scrub(r.MVPReason), r.EquipCT, r.EquipT,
+			scrub(r.MVP), scrub(r.MVPReason), r.EquipCT, r.EquipT,
 			scrub(r.BombSite), r.FreezeEndTick, scrub(r.FirstKillSteam), scrub(r.FirstDeathSteam),
 		); err != nil {
 			return fmt.Errorf("store: save extracted: rounds: %w", err)
@@ -490,7 +490,7 @@ func (s *Store) SaveExtracted(matchID int64, em *models.ExtractedMatch) error {
 		`UPDATE matches SET `+strings.Join(set, ", ")+` WHERE id = ?`,
 		scrub(m.Map), m.PatchVersion, m.TickRate, m.DurationTicks, m.PlaybackTimeS, m.Frames,
 		scrub(m.ServerName), scrub(m.ClientName), scrub(m.GameDir), scrub(m.NetProto), b2i(m.IsPOV),
-		m.WarmupRounds, m.RealRounds, m.ScoreCT, m.ScoreT, m.HalfCT, m.HalfT, m.SideSwitches,
+		m.RealRounds, m.ScoreCT, m.ScoreT, m.HalfCT, m.HalfT, m.SideSwitches,
 		m.EntityClasses, m.EndEntityCount, scrub(m.ParserVersion), m.ExtractedAt, m.ParseMS,
 		m.WarningsCount, models.StatusReady, "", m.EncryptedMessages, matchID,
 	)

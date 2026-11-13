@@ -66,18 +66,16 @@ func TestGoldenProfileSideSplits(t *testing.T) {
 		t.Fatalf("analytics.Compute: %v", err)
 	}
 
-	// Counted rounds (the same !warmup && !pregame predicate the SQL
-	// uses): the golden demo has 23 (score 10–13; rounds -2 knife and
-	// -1 warmup excluded).
+	// Counted rounds: every stored round is counted (knife/warmup rounds
+	// are discarded at ingest), and the golden demo has 23 (score
+	// 10–13).
 	rounds, err := st.GetRoundInfos(id)
 	if err != nil {
 		t.Fatalf("GetRoundInfos: %v", err)
 	}
 	counted := map[int]bool{}
 	for _, r := range rounds {
-		if !r.Warmup && !r.Pregame {
-			counted[r.Number] = true
-		}
+		counted[r.Number] = true
 	}
 	if len(counted) != 23 {
 		t.Fatalf("counted rounds = %d, want 23 (golden demo baseline)", len(counted))

@@ -149,12 +149,12 @@ func TestReplaySidecar(t *testing.T) {
 		return x >= got.Bounds.MinX-1 && x <= got.Bounds.MaxX+1 && y >= got.Bounds.MinY-1 && y <= got.Bounds.MaxY+1
 	}
 
-	// 1. Freezetime sanity: every alive player at the first real round's
+	// 1. Freezetime sanity: every alive player at the first stored round's
 	// freeze end must be inside the map bounds (catches axis/quantization
 	// bugs; quantization is ±1 u).
 	var firstFreeze int
 	for _, r := range em.Rounds {
-		if !r.Warmup && r.FreezeEndTick > 0 {
+		if r.FreezeEndTick > 0 {
 			firstFreeze = r.FreezeEndTick
 			break
 		}
@@ -270,6 +270,10 @@ func TestReplaySidecar(t *testing.T) {
 	}
 
 	// 5. Fixture compare / regenerate.
+	// Phase 4 regenerates donk.replay.json: firstFreeze now reads the
+	// first STORED round's freeze end (the discarded knife round's 1280
+	// is gone — the pistol's 5029 takes over) and killPosPairs dropped
+	// with the 8 discarded knife/warmup kills (170 → 162).
 	fixPath := filepath.Join("testdata", "donk.replay.json")
 	if *updateReplay {
 		b, _ := json.MarshalIndent(got, "", "  ")

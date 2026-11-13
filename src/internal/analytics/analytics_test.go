@@ -94,17 +94,17 @@ func TestBuyClassThresholds(t *testing.T) {
 }
 
 func TestClassifyPistolAndLabels(t *testing.T) {
-	// 3 non-warmup rounds + 1 warmup: pistol by position, then label =
-	// lower-equip side's buy class.
+	// 3 counted rounds: pistol by position, then label =
+	// lower-equip side's buy class. (Knife/warmup rounds are discarded at
+	// ingest — a non-counted round never reaches this pass.)
 	rounds := []RoundInfo{
-		{Number: 0, Warmup: true},
 		{Number: 1, Winner: "ct", EquipCT: 800, EquipT: 800},
 		{Number: 2, Winner: "ct", EquipCT: 5200, EquipT: 1400},
 		{Number: 3, Winner: "t", EquipCT: 2500, EquipT: 4200},
 	}
 	got, gotSides := Classify(nil, rounds, testCfg)
 	if len(got) != 3 {
-		t.Fatalf("len = %d, want 3 (warmup excluded)", len(got))
+		t.Fatalf("len = %d, want 3", len(got))
 	}
 	// The SAME pass derives the per-side rows (round_side_classes): two
 	// per counted round, round ASC, ct before t.
@@ -146,7 +146,7 @@ func TestClassifyPistolAndLabels(t *testing.T) {
 }
 
 func TestClassifyPistolStride12(t *testing.T) {
-	// MR12: pistols at non-warmup indexes 0 and 12.
+	// MR12: pistols at counted indexes 0 and 12.
 	var rounds []RoundInfo
 	for i := 0; i < 13; i++ {
 		rounds = append(rounds, RoundInfo{Number: i + 1, Winner: "ct", EquipCT: 5000, EquipT: 4500})
@@ -202,7 +202,7 @@ func TestPlayerRoundsKASTTruthTable(t *testing.T) {
 		t.Errorf("D = %+v, want no KAST (death untraded)", d)
 	}
 	if len(got) != 4 {
-		t.Errorf("rows = %d, want 4 (every player × non-warmup round)", len(got))
+		t.Errorf("rows = %d, want 4 (every player × counted round)", len(got))
 	}
 	// Money/equip/spent are documented zeros in v1.
 	if a := byID["A"]; a.MoneyStart != 0 || a.Equip != 0 || a.Spent != 0 {
@@ -508,23 +508,29 @@ func TestEngagementsEveryKillHasARow(t *testing.T) {
 	}
 }
 
-func TestEngagementsSkipsWarmup(t *testing.T) {
+// TestEngagementsSkipsRoundlessKills: a kill stamped to a round with NO
+// stored round row produces no engagement rows. The knife/warmup discard
+// means such kills never reach events at all (extract.agg.roundStart
+// discards the round); this pins the pass's own round guard, which is
+// what used to express the warmup filter (the retired
+// TestEngagementsSkipsWarmup — its subject died with the discard).
+func TestEngagementsSkipsRoundlessKills(t *testing.T) {
 	players := []PlayerRef{{SteamID: "A", Side: "ct"}, {SteamID: "X", Side: "t"}}
-	rounds := []RoundInfo{{Number: 0, Warmup: true}, {Number: 1}}
+	rounds := []RoundInfo{{Number: 1}}
 	events := []models.Event{
-		ev(0, 10, 0, models.EventKill, "A", "X"),
+		ev(0, 10, 0, models.EventKill, "A", "X"), // round 0 has no round row
 		ev(1, 100, 1, models.EventKill, "A", "X"),
 	}
 	got := Engagements(events, rounds, testCfg, players, exactSides(rounds, players))
-	// Warmup produces no rows; the round-1 kill yields opening + untraded
-	// (X's death has no teammate revenge).
+	// The round-less kill produces no rows; the round-1 kill yields
+	// opening + untraded (X's death has no teammate revenge).
 	if len(got) != 2 {
 		t.Fatalf("engagements = %+v, want 2 rows from the round-1 kill", got)
 	}
 	kinds := map[string]bool{}
 	for _, e := range got {
 		if e.Round != 1 {
-			t.Errorf("row from warmup round: %+v", e)
+			t.Errorf("row from a round with no round row: %+v", e)
 		}
 		kinds[e.Kind] = true
 	}

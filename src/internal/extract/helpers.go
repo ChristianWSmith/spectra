@@ -105,6 +105,11 @@ func teammateColor(pl *common.Player) int {
 //     the game's own counters exclude them (golden demo round 1);
 //   - post-match cooldown kills: IsMatchStarted() flips back to false
 //     after the final round (golden demo's trailing World suicides).
+//
+// RoundStart pairs it with IsWarmupPeriod to decide whether a round is
+// DISCARDED (knife/warmup — agg.roundStart); the stat gates keep reading
+// it for the post-match case, where the current round is a stored one but
+// play is no longer stats-eligible.
 func realPeriod(gs *demoinfocs.GameState) bool {
 	return gs != nil && gs.IsMatchStarted() && !gs.IsWarmupPeriod() &&
 		gs.GamePhase() >= common.GamePhaseStartGamePhase

@@ -129,9 +129,7 @@ type goldenFixture struct {
 	HalfT              int            `json:"halfT"`
 	SideSwitches       int            `json:"sideSwitches"`
 	RealRounds         int            `json:"realRounds"`
-	WarmupRounds       int            `json:"warmupRounds"`
 	RoundsTotal        int            `json:"roundsTotal"`
-	WarmupRoundNumbers []int          `json:"warmupRoundNumbers"`
 	Events             map[string]int `json:"events"`
 	EventTotal         int            `json:"eventTotal"`
 	EventKindsDistinct int            `json:"eventKindsDistinct"`
@@ -341,7 +339,7 @@ func TestGolden(t *testing.T) {
 	// Chat channel capture (SayText2 MsgName): the golden pool carries ONLY
 	// all-chat MsgNames (Cstrike_Chat_All/_AllDead — golden-pool MsgName
 	// census), so every chat row must be kind "chat" with channel "all".
-	// Together with the fixture's chat count (34) this is also the
+	// Together with the fixture's chat count this is also the
 	// no-duplication pin: exactly one row per SayText2 message — a second
 	// consumer (the removed events.ChatMessage handler) would double both.
 	for i, c := range m.Chat {
@@ -586,19 +584,12 @@ func buildGolden(t *testing.T, m *models.ExtractedMatch, voice *countingVoiceSin
 		genericDistinct[g.Name] = true
 	}
 
-	var warmupRoundNumbers []int
 	finalState := 0
-	for _, r := range m.Rounds {
-		if r.Warmup {
-			warmupRoundNumbers = append(warmupRoundNumbers, r.Number)
-		}
-	}
 	for _, p := range m.Players {
 		if p.FinalStatePresent {
 			finalState++
 		}
 	}
-	sort.Ints(warmupRoundNumbers)
 
 	headline := make([]headlinePlayer, 0, len(m.PlayerStats))
 	for _, ps := range m.PlayerStats {
@@ -647,9 +638,7 @@ func buildGolden(t *testing.T, m *models.ExtractedMatch, voice *countingVoiceSin
 		HalfT:              m.Match.HalfT,
 		SideSwitches:       m.Match.SideSwitches,
 		RealRounds:         m.Match.RealRounds,
-		WarmupRounds:       m.Match.WarmupRounds,
 		RoundsTotal:        len(m.Rounds),
-		WarmupRoundNumbers: warmupRoundNumbers,
 		Events:             events,
 		EventTotal:         len(m.Events),
 		EventKindsDistinct: len(kindCounts),
@@ -682,11 +671,11 @@ func assertSafetyNets(t *testing.T, got *goldenFixture) {
 	if got.ScoreCT != 10 || got.ScoreT != 13 {
 		t.Errorf("safety: score = CT %d – %d T, want 10–13", got.ScoreCT, got.ScoreT)
 	}
-	if got.RoundsTotal != 25 {
-		t.Errorf("safety: roundsTotal = %d, want 25", got.RoundsTotal)
+	if got.RoundsTotal != 23 {
+		t.Errorf("safety: roundsTotal = %d, want 23 (counted rounds only — the discarded knife/warmup rounds produce no rows)", got.RoundsTotal)
 	}
 	if got.RealRounds != 23 {
-		t.Errorf("safety: realRounds = %d, want 23 (24 rounds minus the pregame knife round)", got.RealRounds)
+		t.Errorf("safety: realRounds = %d, want 23 (every stored round is counted)", got.RealRounds)
 	}
 	if got.Players != 10 {
 		t.Errorf("safety: players = %d, want 10", got.Players)
@@ -726,9 +715,10 @@ func compareGolden(t *testing.T, got, want *goldenFixture) {
 	cmpInt(t, "halfT", got.HalfT, want.HalfT)
 	cmpInt(t, "sideSwitches", got.SideSwitches, want.SideSwitches)
 	cmpInt(t, "realRounds", got.RealRounds, want.RealRounds)
-	cmpInt(t, "warmupRounds", got.WarmupRounds, want.WarmupRounds)
+	// Phase 4 regenerates donk.golden.json: roundsTotal (and the event /
+	// chat / generic counts below) drop with the knife/warmup discard —
+	// the committed fixture still carries the pre-discard numbers.
 	cmpInt(t, "roundsTotal", got.RoundsTotal, want.RoundsTotal)
-	cmpIntSlice(t, "warmupRoundNumbers", got.WarmupRoundNumbers, want.WarmupRoundNumbers)
 
 	for _, k := range modelEventKinds {
 		cmpInt(t, "events."+k, got.Events[k], want.Events[k])
@@ -802,19 +792,6 @@ func cmpFloat(t *testing.T, field string, got, want, tol float64) {
 	}
 	if math.Abs(got-want) > tol {
 		t.Errorf("%s = %.4f, want %.4f (±%v)", field, got, want, tol)
-	}
-}
-
-func cmpIntSlice(t *testing.T, field string, got, want []int) {
-	t.Helper()
-	if len(got) != len(want) {
-		t.Errorf("%s = %v, want %v (length %d vs %d)", field, got, want, len(got), len(want))
-		return
-	}
-	for i := range got {
-		if got[i] != want[i] {
-			t.Errorf("%s[%d] = %d, want %d", field, i, got[i], want[i])
-		}
 	}
 }
 

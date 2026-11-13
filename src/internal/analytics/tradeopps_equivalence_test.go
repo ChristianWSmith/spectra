@@ -28,7 +28,9 @@ package analytics
 //   - untraded vs traded vs opening engagement rows (only 'untraded'
 //     feeds missed) and the LIMIT-1 paired-kill join (duplicate kill
 //     rows at one tick keep the FIRST row's nearDist);
-//   - warmup / pregame rounds, a kill whose rounds row does not exist,
+//   - a kill whose rounds row does not exist — which is also how a
+//     knife/warmup kill is rejected today (the extractor discards those
+//     rounds at ingest, so their kills never reach events either) —,
 //     teamkill, suicide, world kill, and the human-only write (the bot
 //     earns opportunities in the oracle and stores none).
 
@@ -56,7 +58,6 @@ const legacyOppsSQL = `SELECT COUNT(*)
 	   ON vs.match_id = d.match_id AND vs.round = d.round AND vs.steam_id = d.victim
 	 WHERE d.kind = 'kill'
 	   AND d.attacker <> '' AND d.attacker <> d.victim AND d.victim <> ?
-	   AND rd.warmup = 0 AND rd.pregame = 0
 	   AND ks.side IN ('ct','t') AND vs.side IN ('ct','t') AND ks.side <> vs.side
 	   AND EXISTS (SELECT 1 FROM round_player_sides ps
 	               WHERE ps.match_id = d.match_id AND ps.round = d.round
@@ -91,9 +92,11 @@ const tradeOppBotSteamID = "18374686479671623692"
 // tradeOppFixture is a synthetic extract covering every branch of the
 // retired predicates (see the file comment). Round 1 is the main matrix
 // (alice "100" ct never fires a shot; bob "200" t is the killer), round
-// 0 is warmup and round 2 pregame (their kills must never count), round
-// 3 is counted but alice has NO side sample there, and round 99 has a
-// kill with no rounds row at all.
+// 3 is counted but alice has NO side sample there, round 99 has a kill
+// with no rounds row, and so do the round-0/round-2 kills (a
+// knife/warmup round has no row either — the extract discard makes its
+// kills unreachable in production, and the missing row is what rejects
+// them here).
 func tradeOppFixture() *models.ExtractedMatch {
 	k := func(tick, round int, attacker, victim, detail string) models.Event {
 		return models.Event{
@@ -134,14 +137,15 @@ func tradeOppFixture() *models.ExtractedMatch {
 			{SteamID: tradeOppBotSteamID, Side: "ct", Name: "bot", RoundsPlayed: 3},
 		},
 		Rounds: []models.Round{
-			{Number: 0, Warmup: true},
 			{Number: 1, Winner: "ct", StartTick: 64, EndTick: 7200, FreezeEndTick: 64},
-			{Number: 2, Pregame: true, StartTick: 7600},
 			{Number: 3, Winner: "t", StartTick: 8400, EndTick: 15000, FreezeEndTick: 8464},
 		},
 		RoundSides: []models.RoundPlayerSide{
-			// Round 0 (warmup): sides present so ONLY the warmup filter
-			// can reject the warmup kill.
+			// Rounds 0 and 2 have side samples but NO rounds row (they
+			// stand in for discarded knife/warmup rounds): only the
+			// missing round row can reject the kills below — the
+			// oracle's rounds JOIN and tradeOppCounts' counted set both
+			// drop them.
 			{Round: 0, SteamID: "100", Side: "ct"},
 			{Round: 0, SteamID: "200", Side: "t"},
 			{Round: 0, SteamID: "300", Side: "ct"},
@@ -157,8 +161,8 @@ func tradeOppFixture() *models.ExtractedMatch {
 			{Round: 1, SteamID: "900", Side: "ct"},
 			{Round: 1, SteamID: "910", Side: "ct"},
 			{Round: 1, SteamID: tradeOppBotSteamID, Side: "ct"},
-			// Round 2 (pregame): sides present, only the pregame filter
-			// can reject the kill.
+			// Rounds 0/2 (standing in for discarded knife/warmup rounds):
+			// sides known, only the missing round row rejects the kills.
 			{Round: 2, SteamID: "100", Side: "ct"},
 			{Round: 2, SteamID: "200", Side: "t"},
 			{Round: 2, SteamID: "300", Side: "ct"},
@@ -194,8 +198,8 @@ func tradeOppFixture() *models.ExtractedMatch {
 			k(310, 1, "200", "800", ""),                   // empty payload → json_valid('') = 0 → never counted
 			// A kill with NO rounds row (round 99) never counts.
 			k(9999, 99, "200", "300", `{"nearDist":150}`),
-			// Warmup (round 0) and pregame (round 2): sides known, the
-			// round flags alone must reject them.
+			// Rounds 0 and 2 stand in for discarded knife/warmup rounds:
+			// sides known, only the missing round row rejects them.
 			k(5, 0, "200", "300", `{"nearDist":150}`),
 			k(7700, 2, "200", "300", `{"nearDist":150}`),
 			// Round 3: alice has no side sample here (round-scoped

@@ -82,7 +82,9 @@ func TestGoldenKillAttackerInAirMatchesRawPayload(t *testing.T) {
 		v, ok := raw["attackerinair"]
 		if !ok {
 			// Pairing failure would show up here: every player_death
-			// payload carries the key (dev-DB census: 170/170).
+			// payload carries the key (golden census: 162/162 — the 8
+			// knife/warmup kills are discarded at ingest and never reach
+			// this loop).
 			t.Errorf("kill tick=%d seq=%d: raw_json has no attackerinair key (%s)", e.Tick, e.Seq, e.RawJSON)
 			continue
 		}
@@ -106,11 +108,12 @@ func TestGoldenKillAttackerInAirMatchesRawPayload(t *testing.T) {
 	}
 
 	// Safety nets (always, independent of the per-row loop): the golden
-	// baseline has 170 kills and every one of them carries the key, so an
+	// baseline has 162 kills (170 minus the 8 knife/warmup kills the
+	// discard drops) and every one of them carries the key, so an
 	// unpaired/stale payload or a payload-shape change fails loudly even if
 	// every flag happens to be false.
-	if kills != 170 {
-		t.Errorf("kill rows = %d, want 170 (golden baseline)", kills)
+	if kills != 162 {
+		t.Errorf("kill rows = %d, want 162 (golden baseline — knife/warmup kills discarded)", kills)
 	}
 	if withKey != kills {
 		t.Errorf("kills with an attackerinair payload key = %d, want %d (every kill)", withKey, kills)

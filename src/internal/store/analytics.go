@@ -484,12 +484,13 @@ func (s *Store) GetUtility(matchID int64) ([]models.UtilityEvent, error) {
 	return out, nil
 }
 
-// GetEconomy returns the per-round economy view (warmup and pregame/knife
-// rounds excluded — the counted-rounds predicate `warmup = 0 AND pregame = 0`
-// below is the SQL twin of analytics.CountedRounds; keep the two in sync:
-// index-based rules such as the MR12 pistol stride shift if a knife round
-// slips into either side): rounds ⋈ round_economy ⋈ round_classifications ⋈
-// round_side_classes with loss-bonus reconstruction applied.
+// GetEconomy returns the per-round economy view: rounds ⋈ round_economy ⋈
+// round_classifications ⋈ round_side_classes with loss-bonus
+// reconstruction applied. Every stored round is counted play — the
+// extractor discards knife/warmup rounds at ingest (extract.agg.roundStart),
+// so the counted-rounds predicate that used to sit in this query's WHERE
+// (`warmup = 0 AND pregame = 0`) is dead and went away with the columns
+// (the Go twin is analytics.CountedRounds, now a documented identity).
 //
 // READ CONTRACT (AGENTS.md "Analysis-rule derived values"): the per-side
 // ClassCT/ClassT/ClassWhy* fields are the STORED round_side_classes rows,
@@ -516,7 +517,7 @@ func (s *Store) GetUtility(matchID int64) ([]models.UtilityEvent, error) {
 // value on every side holding less cash than the pistols it still had.
 func (s *Store) GetEconomy(matchID int64) ([]models.EconomyRow, error) {
 	rows, err := s.db.Query(
-		`SELECT r.number, r.winner, r.warmup, r.equip_ct, r.equip_t,
+		`SELECT r.number, r.winner, r.equip_ct, r.equip_t,
 			COALESCE(ct.money_sampled_sum, 0), COALESCE(t.money_sampled_sum, 0),
 			COALESCE(ct.spent, 0), COALESCE(t.spent, 0),
 			COALESCE(ct.free_pistol_value, 0), COALESCE(t.free_pistol_value, 0),
@@ -530,7 +531,7 @@ func (s *Store) GetEconomy(matchID int64) ([]models.EconomyRow, error) {
 		 LEFT JOIN round_classifications rc ON rc.match_id = r.match_id AND rc.round = r.number
 		 LEFT JOIN round_side_classes rsct ON rsct.match_id = r.match_id AND rsct.round = r.number AND rsct.side = 'ct'
 		 LEFT JOIN round_side_classes rst ON rst.match_id = r.match_id AND rst.round = r.number AND rst.side = 't'
-		 WHERE r.match_id = ? AND r.warmup = 0 AND r.pregame = 0
+		 WHERE r.match_id = ?
 		 ORDER BY r.number ASC`, matchID,
 	)
 	if err != nil {
@@ -540,7 +541,7 @@ func (s *Store) GetEconomy(matchID int64) ([]models.EconomyRow, error) {
 	var out []models.EconomyRow
 	for rows.Next() {
 		var r models.EconomyRow
-		if err := rows.Scan(&r.Round, &r.Winner, &r.Warmup, &r.EquipCT, &r.EquipT,
+		if err := rows.Scan(&r.Round, &r.Winner, &r.EquipCT, &r.EquipT,
 			&r.MoneyCT, &r.MoneyT, &r.SpentCT, &r.SpentT, &r.FreePistolCT, &r.FreePistolT,
 			&r.Label, &r.Explanation, &r.RuleVersion,
 			&r.ClassCT, &r.ClassWhyCT, &r.ClassT, &r.ClassWhyT); err != nil {
@@ -939,11 +940,13 @@ func (s *Store) GetRoundEconomyViews(matchID int64) ([]models.RoundEconomyView, 
 	return out, nil
 }
 
-// GetRoundInfos returns one match's rounds as analytics RoundInfos (warmup
-// and pregame included — callers filter).
+// GetRoundInfos returns one match's rounds as analytics RoundInfos.
+// Every stored round is counted play (knife/warmup rounds are discarded
+// at ingest), so callers no longer filter — the read is the whole set in
+// number order.
 func (s *Store) GetRoundInfos(matchID int64) ([]models.RoundInfo, error) {
 	rows, err := s.db.Query(
-		`SELECT number, winner, warmup, pregame, start_tick, end_tick, freeze_end_tick, equip_ct, equip_t
+		`SELECT number, winner, start_tick, end_tick, freeze_end_tick, equip_ct, equip_t
 		 FROM rounds WHERE match_id = ? ORDER BY number ASC`, matchID,
 	)
 	if err != nil {
@@ -953,7 +956,7 @@ func (s *Store) GetRoundInfos(matchID int64) ([]models.RoundInfo, error) {
 	var out []models.RoundInfo
 	for rows.Next() {
 		var r models.RoundInfo
-		if err := rows.Scan(&r.Number, &r.Winner, &r.Warmup, &r.Pregame, &r.StartTick, &r.EndTick, &r.FreezeEndTick, &r.EquipCT, &r.EquipT); err != nil {
+		if err := rows.Scan(&r.Number, &r.Winner, &r.StartTick, &r.EndTick, &r.FreezeEndTick, &r.EquipCT, &r.EquipT); err != nil {
 			return nil, fmt.Errorf("store: get round infos: %w", err)
 		}
 		out = append(out, r)
@@ -1289,17 +1292,18 @@ func (s *Store) GetTrend(steamID, metric string) ([]models.ProfileTrendPoint, er
 // GetPlayerHistory returns one player's per-match history (most recent
 // first, ≤100) with KAST% averaged from player_round_stats per match (0
 // when the match has no analytics rows) and StartSide — the freeze-end
-// side sample of the player's first COUNTED round (warmup/pregame rounds
-// are not the side a match opens on; a match with no stored sample yields
-// "" rather than a guess). Side stays player_stats.side (final side) —
-// the input models.WinFor uses below.
+// side sample of the player's FIRST round (lowest number; every stored
+// round is counted — knife/warmup rounds are discarded at ingest, so no
+// counted-round predicate is needed here); a match with no stored sample
+// yields "" rather than a guess). Side stays player_stats.side (final
+// side) — the input models.WinFor uses below.
 func (s *Store) GetPlayerHistory(steamID string) ([]models.ProfileHistoryRow, error) {
 	rows, err := s.db.Query(
 		`SELECT m.id, m.extracted_at, m.map, m.score_ct, m.score_t, ps.side,
 			(SELECT rps.side FROM round_player_sides rps
 			 JOIN rounds r ON r.match_id = rps.match_id AND r.number = rps.round
 			 WHERE rps.match_id = ps.match_id AND rps.steam_id = ps.steam_id
-			   AND r.warmup = 0 AND r.pregame = 0 AND rps.side IN ('ct','t')
+			   AND rps.side IN ('ct','t')
 			 ORDER BY r.number ASC LIMIT 1),
 			ps.kills, ps.deaths, ps.assists, ps.adr,
 			`+kastPerMatchSQL+`
@@ -1361,9 +1365,11 @@ func (s *Store) GetPlayerClutchStats(steamID string) (models.ProfileClutchCounts
 //     equal sides block credit. The sides come from round_player_sides
 //     (freeze-end samples) via LEFT JOINs, so a missing sample on either
 //     side behaves like extract's unknown "" side and passes.
-//   - a counted round (rounds.warmup = 0 AND pregame = 0): extract's
-//     realPeriod gates warmup and pre-match (knife) rounds the same way,
-//     and those rounds' kills still land in events.
+//   - a counted round (every stored round is counted — knife/warmup
+//     rounds are discarded at ingest, so the rounds join only guarantees
+//     the round row exists; extract's realPeriod used to gate those
+//     rounds' kills the same way while their kill rows still landed in
+//     events).
 //
 // The golden-demo acceptance test pins the sum of the folded per-weapon
 // headshots to player_stats.headshots for every player.
@@ -1381,7 +1387,6 @@ func (s *Store) GetPlayerWeaponJSONs(steamID string) ([]models.ProfileWeaponJSON
 				WHERE e.match_id = ps.match_id AND e.attacker = ps.steam_id
 					AND e.kind = 'kill' AND e.headshot = 1
 					AND e.attacker <> e.victim
-					AND r.warmup = 0 AND r.pregame = 0
 					AND (ka.side IS NULL OR kv.side IS NULL OR ka.side <> kv.side)
 				GROUP BY e.weapon) w), '')
 		 FROM player_stats ps
@@ -1431,7 +1436,6 @@ func (s *Store) GetPlayerSideSplits(steamID string) ([]models.ProfileSideSplit, 
 		   ON rps.match_id = prs.match_id AND rps.round = prs.round AND rps.steam_id = prs.steam_id
 		 JOIN rounds rd ON rd.match_id = prs.match_id AND rd.number = prs.round
 		 WHERE prs.steam_id = ? AND rps.side IN ('ct','t')
-		   AND rd.warmup = 0 AND rd.pregame = 0
 		 GROUP BY rps.side
 		 ORDER BY rps.side ASC`, scrub(steamID),
 	)

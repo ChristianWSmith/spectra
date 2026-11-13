@@ -2,7 +2,7 @@
 
 - Path: {{.Match.Path}}
 - Score: **{{.CTName}} {{.Match.ScoreCT}} – {{.Match.ScoreT}} {{.TName}}**
-- Rounds: {{.Match.RealRounds}} real (+{{.Match.WarmupRounds}} warmup)
+- Rounds: {{.Match.RealRounds}}
 - Duration: {{.Match.PlaybackTimeS}} s @ {{.Match.TickRate}} ticks/s
 - Imported: {{.Match.ExtractedAt}} (parser {{.Match.ParserVersion}}, {{.Match.ParseMS}} ms)
 
@@ -18,7 +18,7 @@
 | --- | --- | --- | --- | --- | --- | --- | --- |
 {{range .Rounds}}| {{.Number}} | {{.Winner}} | {{.Reason}} | {{printf "%.1f" .DurationS}} | {{.Kills}} | {{.MVPName}} | {{.EquipCT}} | {{.EquipT}} |
 {{end}}
-## Economy (warmup excluded)
+## Economy
 
 | Round | Winner | Equip CT | Equip T | Money CT | Money T | Loss bonus CT | Loss bonus T | Class | CT buy | T buy |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |

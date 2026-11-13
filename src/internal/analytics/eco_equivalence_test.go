@@ -21,7 +21,7 @@ package analytics
 // threshold sets, plus hand-computed spot pins so "both sides equally
 // broken" cannot pass:
 //
-//   - pistol by non-warmup index (stored round label drives the oracle's
+//   - pistol by counted index (stored round label drives the oracle's
 //     pistol flag — classify.go's index stride and the stored label are
 //     the same computation, which is exactly why they cannot disagree);
 //   - full at/above EcoFullBuy, force at/above EcoForce but below full,
@@ -31,9 +31,10 @@ package analytics
 //     force line) and the save/force precedence when the current buy
 //     itself clears the force line;
 //   - a 0-equip round (no freeze-end samples at all);
-//   - warmup and pregame (knife) rounds excluded from BOTH the stored
-//     rows and the oracle's input (CountedRounds ⋈ store.GetEconomy's SQL
-//     twin), so the MR12 pistol stride cannot shift;
+//   - knife/warmup rounds never reach this pass at all — the extractor
+//     discards them at ingest (extract.agg.roundStart), so the fixture
+//     carries counted rounds only and the MR12 pistol stride cannot
+//     shift;
 //   - the equip fallback can never diverge: the extractor writes
 //     rounds.equip_ct and round_economy.equip_value from the SAME
 //     freeze-end value (extract/agg.go), so Classify's fallback and the
@@ -94,9 +95,11 @@ func clearStoredClasses(rows []models.EconomyRow) []models.EconomyRow {
 }
 
 // ecoFixture is a synthetic extract covering every branch of the retired
-// read-time classification (see the file comment). Round 0 is warmup and
-// round 1 a pregame (knife) round — neither may reach the stored rows;
-// counted rounds 2..7 follow (round 2 is the index-0 pistol).
+// read-time classification (see the file comment). Counted rounds 2..7
+// follow (round 2 is the index-0 pistol); no non-counted round exists —
+// knife/warmup rounds are discarded at ingest and cannot be expressed
+// here anymore (the retired fixture's warmup round 0 / pregame round 1
+// rows went away with the warmup/pregame columns).
 //
 // Counted-round matrix at the seeded thresholds (20000 full / 10000
 // force), winner chosen per round to exercise the prev-round rule:
@@ -140,10 +143,7 @@ func ecoFixture() *models.ExtractedMatch {
 			{SteamID: "100", Side: "ct", Name: "alice", RoundsPlayed: 6},
 			{SteamID: "200", Side: "t", Name: "bob", RoundsPlayed: 6},
 		},
-		Rounds: []models.Round{
-			{Number: 0, Warmup: true, StartTick: 0, EndTick: 64},
-			{Number: 1, Pregame: true, StartTick: 64, EndTick: 128},
-		},
+		Rounds: []models.Round{},
 	}
 	for _, r := range rounds {
 		em.Rounds = append(em.Rounds, models.Round{
@@ -212,7 +212,7 @@ func TestEcoStoredMatchesLegacyReadTimeClassification(t *testing.T) {
 				t.Fatalf("GetEconomy: %v", err)
 			}
 			if len(got) != 6 {
-				t.Fatalf("economy rows = %d, want 6 (warmup 0 + pregame 1 excluded)", len(got))
+				t.Fatalf("economy rows = %d, want 6 (the fixture's counted rounds 2..7)", len(got))
 			}
 			// Every stored class field must actually be filled — an
 			// all-empty comparison would pass vacuously.
@@ -243,7 +243,8 @@ func TestEcoStoredMatchesLegacyReadTimeClassification(t *testing.T) {
 // TestEcoClassMatrixPins pins the stored classes by hand for the seeded
 // thresholds (the equivalence above could pass if both sides shared a
 // bug): every branch of buyClass, both exact boundaries, the
-// save/force precedence and the counted-rounds filter.
+// save/force precedence (the counted-rounds filter itself retired with
+// the discard — every stored round is counted).
 func TestEcoClassMatrixPins(t *testing.T) {
 	cfg := models.AnalysisConfig{
 		TradeWindowS: 5, EcoFullBuy: 20000, EcoForce: 10000,
@@ -289,12 +290,12 @@ func TestEcoClassMatrixPins(t *testing.T) {
 			t.Errorf("round %d why strings empty (REQUIRED)", w.round)
 		}
 	}
-	// Excluded rounds never reach the view (and never shift the stride).
-	if _, ok := byRound[0]; ok {
-		t.Error("warmup round 0 reached the economy view")
-	}
-	if _, ok := byRound[1]; ok {
-		t.Error("pregame round 1 reached the economy view")
+	// Non-counted rounds can no longer reach the view OR the fixture: the
+	// extractor discards knife/warmup rounds at ingest (the retired
+	// fixture's round-0-warmup / round-1-pregame exclusion pins went away
+	// with the warmup/pregame columns — every stored round is counted).
+	if len(rows) != 6 {
+		t.Errorf("economy rows = %d, want 6 (rounds 2..7)", len(rows))
 	}
 	// Why strings name the thresholds (transparent rules) — spot pins on
 	// the boundary rows and the save's prev-round dependency.
