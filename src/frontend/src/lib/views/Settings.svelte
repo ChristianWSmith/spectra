@@ -27,6 +27,8 @@
     chooseDemoDir,
     getDemoCopyOnImport,
     setDemoCopyOnImport,
+    getImportConcurrency,
+    setImportConcurrency,
     freeAllDemoCopies,
     listJobs,
     onAssetProgress,
@@ -212,6 +214,47 @@
       copyOnImport = prev; // roll back — the pref didn't take
       demoDirError = errText(e);
     }
+  }
+
+  // Concurrent imports (the import_concurrency pref — Go reads it PER
+  // CLAIM through library.Options.Concurrency, so a change here applies
+  // to jobs already queued, exactly like copy-on-import above). 1 =
+  // sequential; the default AND the ceiling come from the backend (the
+  // machine's thread count) — never guessed in the frontend. A read
+  // failure keeps the sequential view (the control must never paint a
+  // value the backend didn't say).
+  let concurrency = $state(1);
+  let concurrencyMax = $state(1);
+
+  async function refreshConcurrency() {
+    try {
+      const c = await getImportConcurrency();
+      concurrency = c.value;
+      concurrencyMax = c.max;
+    } catch {
+      /* keep the sequential view */
+    }
+  }
+
+  async function setConcurrency(n) {
+    const prev = concurrency;
+    concurrency = n; // optimistic: the input paints immediately
+    try {
+      await setImportConcurrency(n);
+      demoDirError = '';
+    } catch (e) {
+      concurrency = prev; // roll back — the pref didn't take
+      demoDirError = errText(e);
+    }
+  }
+
+  // onConcurrencyChange snaps out-of-range or non-numeric input to the
+  // honest clamped value BEFORE saving (the input's own min/max are
+  // advisory — typed values still land on [1, concurrencyMax], never 0).
+  function onConcurrencyChange(e) {
+    const n = Math.min(Math.max(Number.parseInt(e.target.value, 10) || 1, 1), concurrencyMax);
+    e.target.value = String(n); // snap the DOM even when state doesn't move
+    setConcurrency(n);
   }
 
   // Plugins: declarative bundles installed by
@@ -820,6 +863,7 @@
       });
     refreshDemoDirs();
     refreshCopyOnImport();
+    refreshConcurrency();
   });
 
   async function saveCfg() {
@@ -1026,6 +1070,26 @@
         even after your original file is moved or deleted. Off: imports only reference your
         original file — nothing is duplicated, and Re-parse needs that file to still exist.
         Stored copies stay evictable either way (Data below, or Free copy in the Library).</span
+      >
+    </div>
+    <div class="row-between">
+      <div class="sett-field">
+        <label class="field-label" for="sett-concurrent-imports">Concurrent imports</label>
+        <input
+          class="input"
+          id="sett-concurrent-imports"
+          type="number"
+          min="1"
+          max={concurrencyMax}
+          value={concurrency}
+          onchange={onConcurrencyChange}
+        />
+      </div>
+      <span class="muted"
+        >How many demos import at the same time — 1 = sequential (one at a time), up to {concurrencyMax}
+        (this machine’s thread count, the default). The choice is read when each waiting demo
+        starts, so it applies to jobs already queued. Higher finishes a big batch sooner and
+        uses more memory while parsing.</span
       >
     </div>
     <div class="row-between">
