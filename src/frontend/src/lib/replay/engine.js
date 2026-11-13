@@ -14,6 +14,10 @@
 
 import { normTickRate } from '../fmt.js';
 import { freezeWindowAt, seekTargetTick } from '../rounds.js';
+// The additive frame-time probe (frameprobe.js — what it measures and
+// how to dump it is documented at the top of that module). The cadence
+// sample lives in loop(); playback semantics are untouched.
+import { frameProbe } from './frameprobe.js';
 
 // popcount for a 16-bit alive mask.
 function popcount16(m) {
@@ -150,7 +154,13 @@ export function createEngine(data, tickRate) {
 
   function loop(now) {
     if (!state.playing) return;
-    const dt = Math.min(0.25, (now - lastT) / 1000); // clamp tab-switch jumps
+    const gapMs = now - lastT;
+    const dt = Math.min(0.25, gapMs / 1000); // clamp tab-switch jumps
+    // frameprobe — ONE cadence sample per playback frame: the raw rAF
+    // gap. The probe drops resume gaps beyond its 250 ms bound (the same
+    // tab-switch threshold dt clamps above) as non-frames; disabled it
+    // no-ops here. Playback semantics below are untouched.
+    frameProbe.recordFrame(gapMs);
     lastT = now;
     tickF += tr * dt * state.speed;
     if (state.loopEnabled && state.loopFrom >= 0 && state.loopTo >= state.loopFrom) {

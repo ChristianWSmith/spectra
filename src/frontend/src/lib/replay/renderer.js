@@ -50,6 +50,10 @@ import { detonationStyleOf, sameUtilityWeapon } from './landmarks.js';
 // src/lib/layers.test.js).
 import { elevationFor, layerIndexForZ } from './layers.js';
 import { slotStateAt } from './state.js';
+// The additive frame-time probe (frameprobe.js — what it measures and
+// how to dump it is documented at the top of that module). Draw timing
+// lives at the BOTTOM of draw(); nothing here changes what is painted.
+import { frameProbe } from './frameprobe.js';
 import { bombEndTick, bombEvidenceAt, hasBombPos, actionIntervals, actionDurationTicks, actionProgressAt } from './bomb.js';
 import { buildDropWindows } from './drops.js';
 // The ONE round-boundary cleanup rule (ROUND_POLICY + entityEndTick) —
@@ -4313,6 +4317,14 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     if (camMode === 'smart' && st.followSlot == null && !smartConverged && !easeRaf) {
       easeRaf = requestAnimationFrame(easeTick);
     }
+    // frameprobe — ONE timing read around the whole paint body above:
+    // `now` (already read at entry for the animation clock) is t0, this
+    // is t1, and the delta is the synchronous draw-ms (command emit —
+    // raster happens after draw() returns). Gated on `enabled` so a
+    // disabled probe skips even this timestamp read; recording emits no
+    // canvas ops either way. The zero-size early return above draws
+    // nothing and is deliberately not sampled.
+    if (frameProbe.enabled) frameProbe.recordDraw(performance.now() - now);
   }
 
   return {
