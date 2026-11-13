@@ -1120,11 +1120,14 @@ test('world layers follow the tick: smoke/fire, death X, C4 icon, bullet tracer,
   r.draw();
   assert.equal(deathX(mark).length, 0, 'still gone one tick into the new round');
 
-  // --- the smoke lifetime (18 s) ends it, nothing is sticky ----------------
+  // --- the smoke is gone long after its round (the round cut owns it) ------
   mark = canvas.log.length;
-  engine.seekTick(1299); // age = (1299-128)/64 ≈ 18.3 s
+  engine.seekTick(1299); // round 1's round_end (400) cut it long ago —
+  // its OWN end is now det + 1412 = 1540 (the recorded/fallback smoke
+  // lifetime; the retired fixed 18 s = 1152 ended at 1280), so this seek
+  // proves the CUT and that nothing is sticky, not a fixed lifetime
   r.draw();
-  assert.equal(smokeCloud(mark).length, 0, 'the smoke cloud fades out after its lifetime');
+  assert.equal(smokeCloud(mark).length, 0, 'the smoke cloud is gone (round-cut, nothing sticky)');
 
   // --- bullet tracers: a traveling dash per row over its 0.1 s travel ------
   // (EVERY row animates — the `draw` selection was retired by spec;
@@ -1523,9 +1526,10 @@ test('round-end cleanup: the lingering smoke area dies AT round_end (boundary, s
   });
   const mk = (ev) => normalizeEvent(ev, {});
   r.setLandmarks([
-    // one smoke at tick 128: its own 18 s lifetime runs to 1280, but
-    // round 1 ENDS at 400 — the round cut wins (the leak the evidence
-    // found: smoke past the end rode into the next round's freezetime)
+    // one smoke at tick 128: its own end (the 1412-tick fallback — the
+    // demo-recorded areaEndTick when paired) runs to 1540, but round 1
+    // ENDS at 400 — the round cut wins (the leak the evidence found:
+    // smoke past the end rode into the next round's freezetime)
     mk({ id: 1, seq: 1, tick: 128, round: 1, kind: 'grenade', attacker: '1', weapon: 'Smoke Grenade', posX: 50, posY: 50 }),
     mk({ id: 2, seq: 2, tick: 400, round: 1, kind: 'round_end' }),
     mk({ id: 3, seq: 3, tick: 450, round: 2, kind: 'round_start' }),
@@ -1548,9 +1552,13 @@ test('round-end cleanup: the lingering smoke area dies AT round_end (boundary, s
   assert.equal(
     at(500),
     false,
-    'the 18 s smoke that outruns its round is cut (non-vacuous: its natural end is 1280)',
+    'the smoke that outruns its round is cut (non-vacuous: its natural end is 1540)',
   );
-  assert.equal(at(1299), false, 'and its own 18 s lifetime still ends it');
+  assert.equal(
+    at(1299),
+    false,
+    'still gone long after — the round cut (400) owns this, its natural end is 1540',
+  );
   r.destroy();
 });
 
@@ -1588,14 +1596,164 @@ test('round-end cleanup: a smoke/fire detonated AFTER round_end survives to the 
     return canvas.log.slice(mark).some((e) => e.op === 'fill' && e.fillStyle === fill);
   };
 
-  assert.equal(at(440, SMOKE_FILL), true, 'the post-round smoke keeps drawing (natural end 1572)');
+  assert.equal(at(440, SMOKE_FILL), true, 'the post-round smoke keeps drawing (natural end 1832)');
   assert.equal(at(449, SMOKE_FILL), true, '…right up to the tick before the next round_start');
   assert.equal(at(450, SMOKE_FILL), false, 'gone AT the next round_start');
   assert.equal(at(451, SMOKE_FILL), false, 'and still gone a tick later');
   assert.equal(at(430, SMOKE_FILL), true, 'a backwards scrub re-derives it');
-  assert.equal(at(445, FIRE_FILL), true, 'the post-round fire keeps burning (natural end 873)');
+  assert.equal(at(445, FIRE_FILL), true, 'the post-round fire keeps burning (natural end 875)');
   assert.equal(at(449, FIRE_FILL), true, '…up to the boundary');
   assert.equal(at(450, FIRE_FILL), false, 'the fire dies AT the next round_start too');
+  r.destroy();
+});
+
+// --- lingering-area OWN ends: recorded end vs measured fallback ---------------
+//
+// The owner ruling (2026-11-12): the DEMO's recorded end wins per entity
+// (world.js pairs smokegrenade_expired / inferno_expire to their start
+// rows by entityid + round and stamps `areaEndTick`); a row with NO
+// recorded end falls back to the MEASURED natural lifetime — smoke 1412
+// ticks, fire 352 (Incendiary) / 450 (Molotov), renderer.js
+// SMOKE_AREA_FALLBACK_TICKS / FIRE_AREA_FALLBACK_TICKS — never the
+// retired fixed 18 s (1152) / 7 s (448). The round cut still MINs both
+// (roundcut.js entityEndTick — the roundcut standard is untouched).
+
+test('unpaired areas die at their measured natural lifetimes (1412 smoke / 352 incendiary / 450 molotov)', () => {
+  headlessGlobals();
+  const data = synthStore(2000, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, {
+    engine,
+    data,
+    players: [
+      { steamId: '1', name: 'alice', side: 'ct' },
+      { steamId: '2', name: 'bob', side: 't' },
+    ],
+  });
+  const mk = (ev) => normalizeEvent(ev, {});
+  const SMOKE_FILL = 'rgba(135, 180, 218, 0.3)'; // alice is CT → the CT blend
+  const FIRE_FILL = 'rgba(235, 70, 55, 0.3)';
+  const at = (tick, fill) => {
+    const mark = canvas.log.length;
+    engine.seekTick(tick);
+    r.draw();
+    return canvas.log.slice(mark).some((e) => e.op === 'fill' && e.fillStyle === fill);
+  };
+  // drawnAt — IS the area painted at this tick, whatever alpha the fade
+  // has left (the exact-fill `at` cannot see a fading smoke).
+  const drawnAt = (tick, prefix) => {
+    const mark = canvas.log.length;
+    engine.seekTick(tick);
+    r.draw();
+    return canvas.log.slice(mark).some((e) => e.op === 'fill' && String(e.fillStyle).startsWith(prefix));
+  };
+  // smokeAlpha — the lingering smoke's fill alpha at a tick (the fade is
+  // the ONLY thing that changes it; null = not drawn at all).
+  const smokeAlpha = (tick) => {
+    const mark = canvas.log.length;
+    engine.seekTick(tick);
+    r.draw();
+    const f = canvas.log
+      .slice(mark)
+      .find((e) => e.op === 'fill' && String(e.fillStyle).startsWith('rgba(135, 180, 218'));
+    return f ? Number(String(f.fillStyle).slice(String(f.fillStyle).lastIndexOf(', ') + 2, -1)) : null;
+  };
+  const areaRow = (weapon) => [
+    mk({ id: 1, seq: 1, tick: 100, round: 1, kind: 'grenade', attacker: '1', weapon, posX: 50, posY: 50 }),
+  ];
+
+  // SMOKE: 100 + 1412 = 1512 (the retired fixed 18 s = 1152 died at 1252)
+  r.setLandmarks(areaRow('Smoke Grenade'));
+  r.resize();
+  assert.equal(at(1300, SMOKE_FILL), true, 'still drawing past the retired 1152-tick window');
+  assert.equal(smokeAlpha(1300), 0.3, '…at FULL alpha — the 2 s fade is anchored to 1412, not to 1152');
+  assert.equal(drawnAt(1511, 'rgba(135, 180, 218'), true, 'the unpaired smoke lives to det + 1411');
+  assert.equal(drawnAt(1512, 'rgba(135, 180, 218'), false, 'and dies AT det + 1412 (the measured constant)');
+  assert.equal(drawnAt(1513, 'rgba(135, 180, 218'), false, 'gone a tick later too');
+  const nearEnd = smokeAlpha(1500); // ownLeft = 12/64 s → fade 0.09375
+  assert.ok(nearEnd !== null && nearEnd > 0 && nearEnd < 0.3, `the last 2 s fade toward the recorded end (got ${nearEnd})`);
+
+  // INCENDIARY: 100 + 352 = 452 (the retired fixed 7 s ran to 448)
+  r.setLandmarks(areaRow('Incendiary Grenade'));
+  assert.equal(at(451, FIRE_FILL), true, 'the unpaired incendiary lives to det + 352');
+  assert.equal(at(452, FIRE_FILL), false, 'and dies AT det + 352 (5.5 s — the old 7 s over-drew it)');
+
+  // MOLOTOV: 100 + 450 = 550
+  r.setLandmarks(areaRow('Molotov'));
+  assert.equal(at(549, FIRE_FILL), true, 'the unpaired molotov lives to det + 450');
+  assert.equal(at(550, FIRE_FILL), false, 'and dies AT det + 450 (the measured natural lifetime)');
+  r.destroy();
+});
+
+test('a recorded areaEndTick wins over the natural window (paired), and the round cut still MINs it', () => {
+  headlessGlobals();
+  const data = synthStore(2000, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, {
+    engine,
+    data,
+    players: [
+      { steamId: '1', name: 'alice', side: 'ct' },
+      { steamId: '2', name: 'bob', side: 't' },
+    ],
+  });
+  const mk = (ev) => normalizeEvent(ev, {});
+  const SMOKE_FILL = 'rgba(135, 180, 218, 0.3)';
+  const FIRE_FILL = 'rgba(235, 70, 55, 0.3)';
+  const at = (tick, fill) => {
+    const mark = canvas.log.length;
+    engine.seekTick(tick);
+    r.draw();
+    return canvas.log.slice(mark).some((e) => e.op === 'fill' && e.fillStyle === fill);
+  };
+  const drawnAt = (tick, prefix) => {
+    const mark = canvas.log.length;
+    engine.seekTick(tick);
+    r.draw();
+    return canvas.log.slice(mark).some((e) => e.op === 'fill' && String(e.fillStyle).startsWith(prefix));
+  };
+  const smokeAlpha = (tick) => {
+    const mark = canvas.log.length;
+    engine.seekTick(tick);
+    r.draw();
+    const f = canvas.log
+      .slice(mark)
+      .find((e) => e.op === 'fill' && String(e.fillStyle).startsWith('rgba(135, 180, 218'));
+    return f ? Number(String(f.fillStyle).slice(String(f.fillStyle).lastIndexOf(', ') + 2, -1)) : null;
+  };
+
+  // (a) an EXTINGUISHED fire: the recorded early inferno_expire (+100)
+  // beats the 450-tick molotov window (the smoke-out case)
+  r.setLandmarks([
+    mk({ id: 1, seq: 1, tick: 100, round: 1, kind: 'grenade', attacker: '1', weapon: 'Molotov', posX: 60, posY: 60, areaEndTick: 200 }),
+  ]);
+  r.resize();
+  assert.equal(at(199, FIRE_FILL), true, 'drawn the tick before the recorded expire');
+  assert.equal(at(200, FIRE_FILL), false, 'dies AT the recorded early inferno_expire');
+  assert.equal(at(449, FIRE_FILL), false, 'and never reaches the un-paired 450-tick window');
+
+  // (b) a recorded end LATER than the fallback: the pairing wins both
+  // ways (1700 > 100 + 1412)
+  r.setLandmarks([
+    mk({ id: 2, seq: 2, tick: 100, round: 1, kind: 'grenade', attacker: '1', weapon: 'Smoke Grenade', posX: 50, posY: 50, areaEndTick: 1700 }),
+  ]);
+  assert.equal(at(1513, SMOKE_FILL), true, 'past the 1412 fallback — the recorded end keeps it alive');
+  assert.equal(smokeAlpha(1572), 0.3, 'full alpha until exactly 2 s before the recorded end (1700 − 128)');
+  assert.equal(drawnAt(1700, 'rgba(135, 180, 218'), false, 'dies AT the recorded end');
+  const fading = smokeAlpha(1699);
+  assert.ok(fading !== null && fading > 0 && fading < 0.3, `fading over its last 2 s toward the recorded end (got ${fading})`);
+
+  // (c) the round cut still MINs a recorded end (the roundcut standard)
+  r.setLandmarks([
+    mk({ id: 3, seq: 3, tick: 100, round: 1, kind: 'grenade', attacker: '1', weapon: 'Smoke Grenade', posX: 50, posY: 50, areaEndTick: 5000 }),
+    mk({ id: 4, seq: 4, tick: 400, round: 1, kind: 'round_end' }),
+    mk({ id: 5, seq: 5, tick: 450, round: 2, kind: 'round_start' }),
+  ]);
+  assert.equal(at(399, SMOKE_FILL), true, 'drawn the tick before round_end');
+  assert.equal(at(400, SMOKE_FILL), false, 'the round cut bounds the recorded end (gone AT round_end)');
+  assert.equal(at(449, SMOKE_FILL), false, 'and never resurfaces before the next round_start');
   r.destroy();
 });
 

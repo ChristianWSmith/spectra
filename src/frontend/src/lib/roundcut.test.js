@@ -128,7 +128,8 @@ test('entityEndTick: the own lifetime caps the cut, and vice versa', () => {
   const ends = [{ round: 1, tick: 400 }];
   const starts = [{ round: 2, tick: 450 }];
   // own = 128 + 18 s · 64 = 1280; the round cut is 400 → the round wins
-  // (the "18 s smoke outrunning the round" case)
+  // (a synthetic lifetime outrunning its round — the smoke's REAL own end
+  // is the recorded 1412 ticks, see the endTick test below)
   assert.equal(
     entityEndTick(row, { policy: 'area', lifetimeS: 18, tickRate: 64 }, ends, starts),
     400,
@@ -164,6 +165,50 @@ test('entityEndTick: a NaN-tick row ends at 0 (it can never draw)', () => {
     128 + 18 * 64,
   );
   assert.equal(entityEndTick({ round: 1, tick: 128 }, {}, ends0(), starts0()), null);
+});
+
+test('entityEndTick: a recorded absolute endTick is the own end (beats lifetimeS, still cut)', () => {
+  // The owner ruling (2026-11-12): use the DEMO's recorded end per entity
+  // when available — world.js stamps it as `areaEndTick` (the paired
+  // smokegrenade_expired / inferno_expire tick) and the renderer passes it
+  // as opts.endTick. The seconds-based lifetimeS stays the fallback form.
+  const row = { round: 1, tick: 128 };
+  const ends = [{ round: 1, tick: 900 }];
+  const starts = [{ round: 2, tick: 950 }];
+  // no round rows → the recorded end alone, EXACT (never re-derived from
+  // a lifetime: a smoke's recorded expiry is 1412 ticks, not 18 s)
+  assert.equal(entityEndTick(row, { policy: 'area', endTick: 1540, tickRate: 64 }, [], []), 1540);
+  // endTick PRECEDES the seconds lifetime (128 + 18·64 = 1280): the
+  // recorded end wins — an EXTINGUISHED fire's early inferno_expire beats
+  // the fixed window (the whole point of the ruling)
+  assert.equal(
+    entityEndTick(row, { policy: 'area', endTick: 700, lifetimeS: 18, tickRate: 64 }, [], []),
+    700,
+    'endTick takes precedence over lifetimeS',
+  );
+  // …and a recorded end BEYOND the round is still MIN'd with the round
+  // cut (the roundcut standard: the cut only ever shortens)
+  assert.equal(
+    entityEndTick(row, { policy: 'area', endTick: 5000, tickRate: 64 }, ends, starts),
+    900,
+    'the round cut bounds a recorded end that would outlive the round',
+  );
+  assert.equal(
+    entityEndTick(row, { policy: 'area', endTick: 700, tickRate: 64 }, ends, starts),
+    700,
+    'a recorded end inside the round wins over the later cut',
+  );
+  // a NON-finite recorded end is unknown → fall back to lifetimeS (never
+  // a fabricated end, never NaN leaking into the boundary spelling)
+  assert.equal(
+    entityEndTick(row, { policy: 'area', endTick: NaN, lifetimeS: 18, tickRate: 64 }, [], []),
+    1280,
+  );
+  // no recorded end and no lifetime → the cut alone (or null)
+  assert.equal(entityEndTick(row, { policy: 'area', endTick: undefined }, ends, starts), 900);
+  assert.equal(entityEndTick(row, { policy: 'area', endTick: undefined }, [], []), null);
+  // a NaN row tick still ends at 0 whatever own end is supplied
+  assert.equal(entityEndTick({ round: 1, tick: NaN }, { policy: 'area', endTick: 5000 }, [], []), 0);
 });
 
 // --- ROUND_POLICY: the ratified classification -------------------------------

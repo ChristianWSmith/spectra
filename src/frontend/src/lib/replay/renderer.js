@@ -135,14 +135,61 @@ const SMART_ZOOM_MIN = 0.08; // floor — a full-map spread must still fit;
 const SMART_ZOOM_MAX = 4; // cap — never tunnel-vision tighter than ~1/4 map
 const SMART_EPS_CENTER = 0.25; // img px — "converged" for the settle loop
 const SMART_EPS_ZOOM = 0.002; // relative zoom tolerance
-const SMOKE_LIFETIME_S = 18;
-const FIRE_LIFETIME_S = 7;
-// LIFETIME_S_BY_BUCKET — the roundcut 'area' policy's OWN lifetime per
-// bucket (entityEndTick takes min(lifetime, round cut), so a smoke whose
-// 18 s would outrun its round dies with the round instead). The only two
-// 'area' buckets in ROUND_POLICY — an 'area' bucket without an entry here
-// would be round-cut but never lifetime-capped (none exists today).
-const LIFETIME_S_BY_BUCKET = { smoke: SMOKE_LIFETIME_S, fire: FIRE_LIFETIME_S };
+// --- Lingering-area OWN ends (smoke / fire) ----------------------------------
+// The demo's recorded end WINS per entity: world.js pairs the generic
+// smokegrenade_expired / inferno_expire rows with their start rows
+// (entityid + round) and stamps `areaEndTick` onto the typed smoke/fire
+// row; a row with that stamp draws to it (roundcut.js entityEndTick's
+// `endTick`, still MIN'd with the round cut). The constants below are the
+// FALLBACK for a row with NO recorded end — an unpaired start (a failed
+// side channel, a cross-round pair that could not honestly match, an
+// import without the expiry rows) — expressed in TICKS because that is
+// the domain every measurement was made in (CS2.md "Smoke ⇄ fire
+// interactions", re-verified 2026-11-12):
+//   smoke 1412 — smokegrenade_detonate → smokegrenade_expired is EXACTLY
+//       1412 ticks = 22.06 s @64 tick, the modal value of all 7 pool
+//       demos' det→expired histograms (707 round-scoped pairs). The old
+//       fixed 18 s (1152 ticks) killed drawn smoke ~4.4 s early.
+//   fire 352 (Incendiary Grenade) / 450 (Molotov) — the modal natural
+//       startburn→expire lifetimes: 137×352 = 5.500 s (Incendiary) and
+//       Molotov 449 (119×) / 450 (12×) = 7.02–7.03 s, the owner-set
+//       fallback 450 (2026-11-12). SPELLING CAVEAT (measured): a burn
+//       row always says 'Incendiary Grenade' — demoinfocs hardcodes
+//       common.EqIncendiary in infernoStartBurn (game_events.go), and
+//       the dev library is 111/111 Incendiary-typed burns for 59
+//       Molotov + 54 Incendiary throws — so an UNPAIRED fire takes 352
+//       here even when it was a Molotov; the Molotov key is defensive.
+//       The recorded-end path above is exact for both, and it is the
+//       normal one (111/111 fires in the library have their
+//       inferno_expire). An EXTINGUISHED fire's true end is its
+//       recorded early inferno_expire (`areaEndTick`), never this
+//       window — the old fixed 7 s over-drew Incendiaries ~1.5 s and
+//       every smoke-out until the fixed end or the round cut.
+const SMOKE_AREA_FALLBACK_TICKS = 1412;
+const FIRE_AREA_FALLBACK_TICKS = {
+  'Incendiary Grenade': 352,
+  Molotov: 450,
+};
+// The defensive default for a fire row spelling neither weapon: NOT
+// reachable today (drawBucket buckets only Molotov / Incendiary Grenade
+// into 'fire'), and deliberately the LONGER measured natural lifetime —
+// an odd row may overdraw a little, never die early on a guess.
+const FIRE_AREA_FALLBACK_UNKNOWN_TICKS = 450;
+// areaOwnEndTick — ONE smoke/fire area's OWN end, the `endTick` input of
+// roundcut.js entityEndTick: the demo-recorded end when the world dataset
+// paired one (row.areaEndTick), else the measured natural-lifetime
+// fallback above. Pure and tick-domain — the ROUND half is NOT applied
+// here; entityEndTick MINs this with the round cut (the one canonical
+// composition). A non-finite row tick yields NaN, which entityEndTick
+// turns into its 0 convention (never draws) at the row check.
+function areaOwnEndTick(l) {
+  if (Number.isFinite(l.areaEndTick)) return l.areaEndTick;
+  const fb =
+    l.bucket === 'smoke'
+      ? SMOKE_AREA_FALLBACK_TICKS
+      : FIRE_AREA_FALLBACK_TICKS[l.weapon] ?? FIRE_AREA_FALLBACK_UNKNOWN_TICKS;
+  return l.tick + fb;
+}
 const FIRE_RADIUS = 130; // world units
 const SMOKE_RADIUS = 144;
 // Detonated-smoke TINT — the lingering area AND its detonation bloom ring
@@ -986,7 +1033,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // roundCuts — the unified round-boundary cutoffs (roundcut.js
   // ROUND_POLICY + entityEndTick), precomputed beside dropWins/killEnds
   // so no draw loop ever re-scans the round rows per frame:
-  //   areaCuts  — 'area' policy rows (P1): min(own lifetime, round cut);
+  //   areaCuts  — 'area' policy rows (P1): min(own end, round cut);
   //   popCuts   — 'pop' policy rows (P2): the next round_start only;
   //   decoyCuts — the decoy PLAN entries (the 'land' bucket's only draw
   //               site — the plan carries landTick, not a bucketed row).
@@ -1434,7 +1481,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
         case 'smoke':
           // Typed detonations land in their OWN bucket (drawBucket routes
           // grenade rows by weapon), so a smoke both blooms and fills the
-          // lingering-area array its lifetime model reads.
+          // lingering-area array its OWN-end model reads (areaOwnEndTick).
           smokes.push(l);
           dets.push(l);
           break;
@@ -1517,10 +1564,12 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     //              drawDeaths is a Map read per kill (it used to rescan
     //              the round_end/round_start rows per kill per frame);
     //   roundCuts — roundcut.js ROUND_POLICY + entityEndTick per
-    //              policy row: the P1 area cutoffs (min(own lifetime,
-    //              round cut)) and the P2 pop cutoffs (the next
-    //              round_start), plus the decoy plan's window cut — so
-    //              drawGrenades/drawBomb gate on one Map read per row.
+    //              policy row: the P1 area cutoffs (min(own end —
+    //              areaOwnEndTick, the recorded areaEndTick or the
+    //              measured fallback — and the round cut)) and the P2 pop
+    //              cutoffs (the next round_start), plus the decoy plan's
+    //              window cut — so drawGrenades/drawBomb gate on one Map
+    //              read per row.
     // tickRate is the engine's own (killEndTick defaults an invalid one
     // to 64 exactly as drawDeaths' live call would).
     dropWins = buildDropWindows(wdropEv);
@@ -1578,7 +1627,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
           l,
           entityEndTick(
             l,
-            { policy: 'area', lifetimeS: LIFETIME_S_BY_BUCKET[l.bucket], tickRate: tr },
+            { policy: 'area', endTick: areaOwnEndTick(l), tickRate: tr },
             roundEnds,
             roundStarts,
           ),
@@ -1601,13 +1650,15 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // areaEnd / popEnd — the precomputed roundCuts read for ONE row, with
   // the canonical roundcut rule as the fallback for any row a map somehow
   // misses (the killEnds fallback pattern: both are built together in
-  // rebuildRoundCuts, so the fallback never actually runs).
-  function areaEnd(l, lifetimeS) {
+  // rebuildRoundCuts, so the fallback never actually runs). The area's
+  // OWN end comes from areaOwnEndTick (recorded `areaEndTick` else the
+  // measured fallback), never a caller-supplied lifetime.
+  function areaEnd(l) {
     return (
       areaCuts.get(l) ??
       entityEndTick(
         l,
-        { policy: 'area', lifetimeS, tickRate: engine ? engine.tickRate : 0 },
+        { policy: 'area', endTick: areaOwnEndTick(l), tickRate: engine ? engine.tickRate : 0 },
         roundEnds,
         roundStarts,
       )
@@ -2177,15 +2228,23 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       const age = (tick - l.tick) / tr;
       if (age < 0) continue;
       // P1 round-end cleanup (roundcut.js): the area dies at the EARLIER
-      // of its 18 s lifetime and the round cut (round_end, else the next
-      // round_start) — gone AT the cutoff, its own tick always draws, so
-      // a paused seek to the boundary clears it and a backwards scrub
-      // re-derives it (nothing sticky).
-      const end = areaEnd(l, SMOKE_LIFETIME_S);
+      // of its OWN end (the demo-recorded areaEndTick when world.js
+      // paired one — smokegrenade_expired — else the 1412-tick natural
+      // fallback, see SMOKE_AREA_FALLBACK_TICKS) and the round cut
+      // (round_end, else the next round_start) — gone AT the cutoff, its
+      // own tick always draws, so a paused seek to the boundary clears it
+      // and a backwards scrub re-derives it (nothing sticky).
+      const end = areaEnd(l);
       if (tick >= end && tick !== l.tick) continue;
       const c = worldToScreen(l.x, l.y, l.z, scr1);
       const r = (SMOKE_RADIUS / scaleForZ(l.z)) * cam.fit * cam.zoom;
-      const fade = age > SMOKE_LIFETIME_S - 2 ? (SMOKE_LIFETIME_S - age) / 2 : 1;
+      // The 2 s fade runs over the LAST 2 s of the area's own END
+      // (recorded or fallback), not of a fixed age: a recorded 22.06 s
+      // smoke holds full alpha the whole way, and a round-cut death keeps
+      // its abrupt end (the cut sits before the own end, so this fade has
+      // not started there).
+      const ownLeft = (areaOwnEndTick(l) - tick) / tr;
+      const fade = ownLeft < 2 ? Math.max(0, ownLeft / 2) : 1;
       // team-tinted (the thrower's side, 50/50 with the smoke gray — see
       // SMOKE_CT/SMOKE_T) at the SAME 0.3/0.55 alphas as the old neutral;
       // an unresolvable thrower keeps that neutral gray verbatim.
@@ -2202,8 +2261,11 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       if (!hasPos(l)) continue;
       const age = (tick - l.tick) / tr;
       if (age < 0) continue;
-      // same P1 rule as the smoke area above, with the 7 s fire lifetime
-      const end = areaEnd(l, FIRE_LIFETIME_S);
+      // same P1 rule as the smoke area above, with the fire's OWN end:
+      // the recorded early inferno_expire when paired (an extinguished
+      // fire dies there), else the measured natural lifetime for the
+      // weapon (352 Incendiary / 450 Molotov — FIRE_AREA_FALLBACK_TICKS)
+      const end = areaEnd(l);
       if (tick >= end && tick !== l.tick) continue;
       const c = worldToScreen(l.x, l.y, l.z, scr1);
       const r = (FIRE_RADIUS / scaleForZ(l.z)) * cam.fit * cam.zoom;

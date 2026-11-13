@@ -41,10 +41,18 @@
 //                         loaded) returns null and the caller keeps its
 //                         own lifetime;
 //   entityEndTick       — min(own end, cut) with the fallback semantics:
-//                         an own lifetime (smoke 18 s / fire 7 s) bounds
-//                         the entity when there is no cut, and the cut
-//                         bounds it when the lifetime would outlive the
-//                         round. opts { policy, lifetimeS?, tickRate? };
+//                         an own end bounds the entity when there is no
+//                         cut, and the cut bounds it when the own end
+//                         would outlive the round. The own end arrives in
+//                         two forms — opts.endTick, an ABSOLUTE tick the
+//                         caller already knows (the demo-recorded
+//                         smokegrenade_expired / inferno_expire end that
+//                         world.js stamps as `areaEndTick`, or a
+//                         tick-domain natural-lifetime fallback the
+//                         renderer computes), preferred when finite; else
+//                         opts.lifetimeS, seconds × tickRate counted from
+//                         the row's tick. opts
+//                         { policy, endTick?, lifetimeS?, tickRate? };
 //                         a non-finite row tick ends at 0 — the draw
 //                         loops' boundary spelling then skips it forever
 //                         (the killEndTick → 0 convention).
@@ -61,10 +69,12 @@
 // the render path. Buckets absent from the table are NEVER round-cut:
 //
 //   P1 'area' — the LINGERING smoke/fire area dies AT its round's
-//       round_end, capped by its own lifetime (renderer.js SMOKE_LIFETIME_S
-//       / FIRE_LIFETIME_S). Evidence motivating it: smoke leaked in 7/80
-//       detections on the dev pool, worst +16.4 s past the end — into the
-//       NEXT round's freezetime; a fire leaked +57 ticks.
+//       round_end, capped by its OWN end (renderer.js areaOwnEndTick: the
+//       demo-recorded `areaEndTick` when world.js paired one, else the
+//       measured natural-lifetime fallback — smoke 1412 ticks, fire 352/450
+//       by weapon). Evidence motivating the round half: smoke leaked in
+//       7/80 detections on the dev pool, worst +16.4 s past the end — into
+//       the NEXT round's freezetime; a fire leaked +57 ticks.
 //   P2 'pop' — detonation pops, the bomb explode/defuse pops, grenade
 //       flight arcs and the decoy rest/noise window survive round_end and
 //       are cut only at the NEXT round_start. Why: bomb_explode sits
@@ -167,12 +177,17 @@ export function roundCutTick(row, roundEnds, roundStarts) {
 //   policy 'pop'  → nextRoundStartTick only (round_end is NOT a
 //                   terminator — see ROUND_POLICY P2);
 //   any other     → no round rule at all (P3/P4 buckets are never routed
-//                   here; the own lifetime, when given, still applies).
-// With an own `lifetimeS` the result is min(lifetime, cut) — the lifetime
-// alone when nothing cuts (truncated round), the cut alone when no
-// lifetime is given (a pop), null when neither applies (nothing to bound).
-// An invalid tickRate defaults to 64 exactly like killEndTick, and a
-// non-finite row tick ends at 0 (never draws — the killEndTick convention).
+//                   here; the own end, when given, still applies).
+// The OWN end: opts.endTick (an absolute tick — the demo-recorded
+// smokegrenade_expired / inferno_expire end world.js stamps as
+// `areaEndTick`, or the renderer's tick-domain natural-lifetime
+// fallback) wins whenever it is finite; otherwise opts.lifetimeS
+// (seconds × tickRate from the row's tick) is the own end. With an own
+// end the result is min(own, cut) — the own end alone when nothing cuts
+// (truncated round), the cut alone when neither form is given (a pop),
+// null when neither applies (nothing to bound). An invalid tickRate
+// defaults to 64 exactly like killEndTick, and a non-finite row tick
+// ends at 0 (never draws — the killEndTick convention).
 export function entityEndTick(row, opts, roundEnds, roundStarts) {
   if (!row || !Number.isFinite(row.tick)) return 0;
   const policy = opts && opts.policy;
@@ -180,7 +195,9 @@ export function entityEndTick(row, opts, roundEnds, roundStarts) {
   if (policy === 'area') cut = roundCutTick(row, roundEnds, roundStarts);
   else if (policy === 'pop') cut = nextRoundStartTick(row.tick, roundStarts);
   let own = null;
-  if (opts && Number.isFinite(opts.lifetimeS)) {
+  if (opts && Number.isFinite(opts.endTick)) {
+    own = opts.endTick;
+  } else if (opts && Number.isFinite(opts.lifetimeS)) {
     const tr = opts.tickRate > 0 ? opts.tickRate : 64;
     own = row.tick + opts.lifetimeS * tr;
   }
