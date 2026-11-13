@@ -28,8 +28,8 @@ func TestParseAndCompileValid(t *testing.T) {
 		{"percentile first of many", "from events: percentile(0.5, dmg), avg(dmg), count()", "", "", "", ModePercentile},
 		{"ratio nested filter", "from engagements: ratio(count(where kind='trade'), count(where kind='opening'))", "", "", "", ModePlain},
 		{"denominator rate", "from player_round_stats: count(where deaths=1 and traded=0)", "player", "rounds", "", ModeGrouped},
-		{"all denominators", "from rounds: count()", "", "matches", "", ModePlain},
-		{"player_rounds denom", "from player_round_stats: avg(kast)", "", "player_rounds", "", ModePlain},
+		{"matches denom", "from rounds: count()", "", "matches", "", ModePlain},
+		{"rounds denom on player_round_stats", "from player_round_stats: avg(kast)", "", "rounds", "", ModePlain},
 		{"map group", "from events: count()", "map", "", "", ModeGrouped},
 		{"match scope", "from events: count()", "", "", "match:3", ModePlain},
 		{"team group", "from player_stats: avg(adr)", "team", "", "", ModeGrouped},
@@ -45,6 +45,15 @@ func TestParseAndCompileValid(t *testing.T) {
 		// Plugin manifest exprs (internal/plugin coordination contract).
 		{"plugin plug_count", "from events: count()", "none", "", "", ModePlain},
 		{"plugin plug_dmg", "from events: sum(dmg)", "player", "", "", ModeGrouped},
+		// Multi-source joins (owner design (c)) — engine-derived ON.
+		{"joined acceptance ratio", "from player_stats, match_trade_opps: ratio(sum(trade_kills), sum(opps))", "player", "", "", ModeGrouped},
+		{"n:1 join", "from engagements, rounds: count()", "", "", "", ModePlain},
+		{"n:1 join grouped", "from engagements, rounds: count()", "round", "", "", ModeGrouped},
+		{"join with secondary condition", "from engagements, rounds: count(where winner='ct')", "", "", "", ModePlain},
+		{"percentile over join (day one)", "from player_stats, match_trade_opps: percentile(0.5, opps)", "", "", "", ModePercentile},
+		{"join + scope", "from player_stats, match_trade_opps: count()", "player", "", "match:3", ModeGrouped},
+		{"join + denominator", "from player_stats, match_trade_opps: sum(trade_kills)", "player", "rounds", "", ModeGrouped},
+		{"reversed 1:1 pair (secondary value column allowed)", "from match_trade_opps, player_stats: sum(kills)", "", "", "", ModePlain},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -95,6 +104,16 @@ func TestParseAndCompileInvalid(t *testing.T) {
 		{"dangling operator", "from events: count(where dmg >)", "", "", "", "expected a column or literal", true},
 		{"empty agg list", "from events:", "", "", "", "expected aggregation", true},
 		{"ratio missing arg", "from events: ratio(count())", "", "", "", "expected \",\"", true},
+		// Multi-source joins — malformed lists, key criterion, ambiguity,
+		// value-column rule (owner design (c)).
+		{"unknown second source", "from events, sqlite_master: count()", "", "", "", "unknown source table", true},
+		{"duplicate source", "from events, events: count()", "", "", "", "duplicate source", true},
+		{"missing source after comma", "from events, : count()", "", "", "", "expected source table name", true},
+		{"ambiguous column across sources", "from player_stats, match_trade_opps: sum(match_id)", "", "", "", "ambiguous column", true},
+		{"group token not on primary", "from player_stats, match_trade_opps: count()", "round", "", "", "not supported for source player_stats", false},
+		{"non-unique secondary", "from rounds, events: count()", "", "", "", "not unique", true},
+		{"secondary value column under n:1", "from engagements, rounds: sum(duration_s)", "", "", "", "not 1:1", true},
+		{"retired player_rounds denominator", "from rounds: count()", "", "player_rounds", "", "valid: rounds, matches", false},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -162,5 +181,51 @@ func TestCompiledSQLIsParameterized(t *testing.T) {
 	}
 	if plan.Args[0] != "kill" || plan.Args[1] != float64(50) || plan.Args[2] != int64(7) {
 		t.Errorf("args = %v, want [kill 50 7]", plan.Args)
+	}
+}
+
+// TestJoinedSQLIsParameterized extends the parameterization/injection
+// property to joined plans: no literal from the expression survives into
+// the statement text, binds keep textual order (condition literals
+// before the scope id — joins contribute no binds), there is no
+// statement separator, and only the expression's own whitelisted tables
+// appear in the FROM/JOIN positions.
+func TestJoinedSQLIsParameterized(t *testing.T) {
+	const expr = "from player_stats, match_trade_opps: count(where kills > 5 and opps >= 10)"
+	plan, perr := Compile(expr, "", "", "match:7")
+	if perr != nil {
+		t.Fatalf("compile: %v", perr)
+	}
+	for _, forbidden := range []string{"5", "10", "7", "'", ";"} {
+		if strings.Contains(plan.SQL, forbidden) {
+			t.Errorf("SQL leaks %q: %s", forbidden, plan.SQL)
+		}
+	}
+	if len(plan.Args) != 3 { // kills > 5, opps >= 10, match id (textual order)
+		t.Errorf("args = %v, want 3 binds", plan.Args)
+	}
+	if plan.Args[0] != float64(5) || plan.Args[1] != float64(10) || plan.Args[2] != int64(7) {
+		t.Errorf("args = %v, want [5 10 7]", plan.Args)
+	}
+	// The engine-chosen shape: primary first, LEFT JOIN secondary on the
+	// derived key, scope bound on the primary.
+	wantJoin := "FROM player_stats LEFT JOIN match_trade_opps ON " +
+		"player_stats.match_id = match_trade_opps.match_id AND " +
+		"player_stats.steam_id = match_trade_opps.steam_id"
+	if !strings.Contains(plan.SQL, wantJoin) {
+		t.Errorf("SQL missing join shape %q:\n%s", wantJoin, plan.SQL)
+	}
+	if !strings.Contains(plan.SQL, "WHERE player_stats.match_id = ?") {
+		t.Errorf("scope not bound on the primary:\n%s", plan.SQL)
+	}
+	// Only whitelisted tables in FROM/JOIN positions: every other known
+	// source must not appear anywhere in the statement.
+	for _, src := range sources {
+		if src == "player_stats" || src == "match_trade_opps" {
+			continue
+		}
+		if strings.Contains(plan.SQL, src) {
+			t.Errorf("SQL mentions non-source table %q: %s", src, plan.SQL)
+		}
 	}
 }

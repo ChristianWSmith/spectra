@@ -51,10 +51,20 @@ var exprKeywords = map[string]bool{
 // `a < = b` is a syntax error, not `<=`).
 var cmpOps = map[string]bool{"=": true, "!=": true, ">": true, ">=": true, "<": true, "<=": true}
 
-// Spec is a parsed expression: one source table + its aggregation list.
+// SourceRef is one entry of the source clause (Name at byte Pos).
+type SourceRef struct {
+	Name string
+	Pos  int
+}
+
+// Spec is a parsed expression: the source clause — one or more sources,
+// the FIRST of which is the PRIMARY (it owns groupBy resolution, scope
+// binding and the population anchor; the rest are engine-joined) — plus
+// its aggregation list.
 type Spec struct {
-	Source    string
+	Source    string // primary (Sources[0].Name) — kept for callers
 	SourcePos int
+	Sources   []SourceRef
 	Aggs      []Agg
 }
 
@@ -310,13 +320,35 @@ func (p *parser) parseSpec() (Spec, *ParseError) {
 	if exprKeywords[src.text] {
 		return Spec{}, errf(src.pos, "expected source table name, got keyword %q", src.text)
 	}
+	// Comma-separated source list (design (c)): `from a, b, c:` — the
+	// first name is the primary, the rest are engine-joined secondaries.
+	// Only bare identifiers appear here; ON/join-type/alias syntax does
+	// NOT exist, so no user text can ever reach a join clause.
+	srcs := []SourceRef{{Name: src.text, Pos: src.pos}}
+	for p.atPunct(",") {
+		p.i++
+		t2, ok := p.next()
+		if !ok || t2.kind != tIdent {
+			return Spec{}, p.errHere("expected source table name after \",\"")
+		}
+		if exprKeywords[t2.text] {
+			return Spec{}, errf(t2.pos, "expected source table name, got keyword %q", t2.text)
+		}
+		for _, s := range srcs {
+			if s.Name == t2.text {
+				return Spec{}, errf(t2.pos, "duplicate source %q in source list", t2.text)
+			}
+		}
+		srcs = append(srcs, SourceRef{Name: t2.text, Pos: t2.pos})
+	}
 	if perr := p.expectPunct(":"); perr != nil {
 		return Spec{}, perr
 	}
-	spec := Spec{Source: src.text, SourcePos: src.pos}
+	spec := Spec{Source: srcs[0].Name, SourcePos: srcs[0].Pos, Sources: srcs}
+	last := srcs[len(srcs)-1]
 	for {
 		if p.atEnd() {
-			return Spec{}, errf(src.pos+len(src.text)+1, "expected aggregation after \"%s:\"", src.text)
+			return Spec{}, errf(last.Pos+len(last.Name)+1, "expected aggregation after \"%s:\"", last.Name)
 		}
 		if p.atPunct(",") {
 			return Spec{}, p.errHere("unexpected %q (expected an aggregation)", ",")

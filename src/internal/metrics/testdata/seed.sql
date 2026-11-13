@@ -11,6 +11,12 @@
 --   rounds            : winner ct on odd r -> CT win rate 0.5
 --   engagements       : 1 opening + 1 trade + 1 untraded per round,
 --                       opening won_by ct on odd r -> 0.5
+--   match_trade_opps  : per player i (1..8) per match: opps = 10*i for
+--                       i<=6, Grace (i=7) opps=0 (the STORED-zero case),
+--                       Heidi (i=8) NO row (the ABSENT-row case — LEFT
+--                       join yields NULL, sum -> 0 beside N); missed = i
+--                       (0 for Grace); 3 matches x 7 rows = 21 rows.
+--                       HUMANS-only and sparse, like analytics.Compute.
 INSERT INTO matches (id, path, sha256, size, map, tick_rate, duration_ticks, playback_time_s, frames, server_name, client_name, game_dir, net_proto, real_rounds, score_ct, score_t, half_ct, half_t, side_switches, parser_version, extracted_at, parse_ms, warnings_count, status) VALUES (1, '/seed/match1.dem', 'seed0001', 1024, 'de_mirage', 64.0, 307200, 4800.0, 72000, 'seed-server', 'GOTV', 'csgo', '1374', 24, 12, 12, 12, 12, 0, 'v6.0.0-seed', '2026-01-01T00:00:00Z', 100, 0, 'ready');
 INSERT INTO teams (match_id, side, name, flag, score) VALUES (1, 'ct', 'Alpha', '', 12);
 INSERT INTO teams (match_id, side, name, flag, score) VALUES (1, 't', 'Beta', '', 12);
@@ -3248,3 +3254,28 @@ INSERT INTO chat (match_id, tick, round, steam_id, name, text, kind) VALUES (3, 
 INSERT INTO chat (match_id, tick, round, steam_id, name, text, kind) VALUES (3, 450, 2, '76561198000000002', 'Bob', 'gg wp', 'all');
 INSERT INTO chat (match_id, tick, round, steam_id, name, text, kind) VALUES (3, 850, 3, '76561198000000003', 'Carol', 'gg wp', 'all');
 INSERT INTO chat (match_id, tick, round, steam_id, name, text, kind) VALUES (3, 1250, 4, '76561198000000004', 'Dave', 'gg wp', 'all');
+
+-- match_trade_opps: per player i per match — opps = 10*i (i<=6),
+-- Grace opps=0 (stored-zero), Heidi ABSENT (absent-row); missed = i
+-- (Grace 0). 3 matches x 7 rows = 21. Humans-only + sparse by design.
+INSERT INTO match_trade_opps (match_id, steam_id, opps, missed) VALUES (1, '76561198000000001', 10, 1);
+INSERT INTO match_trade_opps (match_id, steam_id, opps, missed) VALUES (1, '76561198000000002', 20, 2);
+INSERT INTO match_trade_opps (match_id, steam_id, opps, missed) VALUES (1, '76561198000000003', 30, 3);
+INSERT INTO match_trade_opps (match_id, steam_id, opps, missed) VALUES (1, '76561198000000004', 40, 4);
+INSERT INTO match_trade_opps (match_id, steam_id, opps, missed) VALUES (1, '76561198000000005', 50, 5);
+INSERT INTO match_trade_opps (match_id, steam_id, opps, missed) VALUES (1, '76561198000000006', 60, 6);
+INSERT INTO match_trade_opps (match_id, steam_id, opps, missed) VALUES (1, '76561198000000007', 0, 0);
+INSERT INTO match_trade_opps (match_id, steam_id, opps, missed) VALUES (2, '76561198000000001', 10, 1);
+INSERT INTO match_trade_opps (match_id, steam_id, opps, missed) VALUES (2, '76561198000000002', 20, 2);
+INSERT INTO match_trade_opps (match_id, steam_id, opps, missed) VALUES (2, '76561198000000003', 30, 3);
+INSERT INTO match_trade_opps (match_id, steam_id, opps, missed) VALUES (2, '76561198000000004', 40, 4);
+INSERT INTO match_trade_opps (match_id, steam_id, opps, missed) VALUES (2, '76561198000000005', 50, 5);
+INSERT INTO match_trade_opps (match_id, steam_id, opps, missed) VALUES (2, '76561198000000006', 60, 6);
+INSERT INTO match_trade_opps (match_id, steam_id, opps, missed) VALUES (2, '76561198000000007', 0, 0);
+INSERT INTO match_trade_opps (match_id, steam_id, opps, missed) VALUES (3, '76561198000000001', 10, 1);
+INSERT INTO match_trade_opps (match_id, steam_id, opps, missed) VALUES (3, '76561198000000002', 20, 2);
+INSERT INTO match_trade_opps (match_id, steam_id, opps, missed) VALUES (3, '76561198000000003', 30, 3);
+INSERT INTO match_trade_opps (match_id, steam_id, opps, missed) VALUES (3, '76561198000000004', 40, 4);
+INSERT INTO match_trade_opps (match_id, steam_id, opps, missed) VALUES (3, '76561198000000005', 50, 5);
+INSERT INTO match_trade_opps (match_id, steam_id, opps, missed) VALUES (3, '76561198000000006', 60, 6);
+INSERT INTO match_trade_opps (match_id, steam_id, opps, missed) VALUES (3, '76561198000000007', 0, 0);

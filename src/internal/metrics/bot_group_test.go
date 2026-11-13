@@ -60,8 +60,10 @@ func botStore(t *testing.T) *store.Store {
 // condition the roster reads use). Two boundaries are pinned with it:
 // an UNGROUPED aggregate still counts bot rows (it records what
 // happened — the event-shaped exception), and a non-player grouping is
-// untouched. Widening the filter past the player dimension is a
-// deliberate, separately-pinned change.
+// untouched. Widening the filter past the player dimension is now
+// sanctioned for MULTI-source expressions whose source set mixes
+// populations — pinned separately by TestJoinedPopulationAlignment
+// (join_test.go); these single-source boundaries stay as they are.
 func TestPlayerGroupExcludesBots(t *testing.T) {
 	st := botStore(t)
 

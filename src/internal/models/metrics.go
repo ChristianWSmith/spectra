@@ -20,13 +20,13 @@ type MetricRow struct {
 	ID          int64     `json:"id"`
 	Name        string    `json:"name"` // UNIQUE across all origins
 	Title       string    `json:"title"`
-	Expr        string    `json:"expr"` // grammar: `from <table>: <aggregations>`
+	Expr        string    `json:"expr"` // grammar: `from <table>[, <secondary>...]: <aggregations>` (doc.go)
 	GroupBy     string    `json:"groupBy"`
 	Format      string    `json:"format"` // ""|int|float1|percent|currency
 	Doc         string    `json:"doc"`
 	Origin      string    `json:"origin"` // builtin|user|plugin
 	PluginID    string    `json:"pluginId"`
-	Denominator string    `json:"denominator"` // ""|rounds|matches|player_rounds
+	Denominator string    `json:"denominator"` // ""|rounds|matches
 	CreatedAt   time.Time `json:"createdAt"`   // nullable column → zero when NULL
 }
 

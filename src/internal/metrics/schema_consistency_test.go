@@ -1,6 +1,8 @@
 package metrics
 
 import (
+	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 
@@ -72,8 +74,21 @@ func TestSchemaConsistency(t *testing.T) {
 		}
 	}
 
-	// Denominator subquery sources are real tables (player_rounds maps to
-	// player_round_stats — the contract's alias).
+	// Denominator subquery sources are real tables, and the set is
+	// EXACTLY {rounds, matches} (owner ruling: the player_rounds alias
+	// was retired — player_round_stats stays a metric SOURCE; only the
+	// denominator option is gone).
+	if len(denominatorTables) != 2 {
+		t.Errorf("denominatorTables has %d entries, want exactly 2 (rounds, matches)", len(denominatorTables))
+	}
+	for alias, want := range map[string]string{"rounds": "rounds", "matches": "matches"} {
+		if got, ok := denominatorTables[alias]; !ok || got != want {
+			t.Errorf("denominatorTables[%q] = %q, ok=%v — want %q (the two surviving values)", alias, got, ok, want)
+		}
+	}
+	if _, retired := denominatorTables["player_rounds"]; retired {
+		t.Error("denominatorTables still carries the retired player_rounds alias")
+	}
 	for alias, table := range denominatorTables {
 		if _, ok := haveTable[table]; !ok {
 			t.Errorf("denominator %q maps to table %q, which is not in the store schema", alias, table)
@@ -94,4 +109,126 @@ func TestSchemaConsistency(t *testing.T) {
 			t.Errorf("metrics source %q has no note in the SQL console schema browser", src)
 		}
 	}
+}
+
+// TestJoinKeyDeclarationsMatchSchema pins the join declarations
+// (whitelist.go) against the real DDL — the TestSchemaConsistency
+// pattern for the join criterion:
+//
+//	a) every source declares a uniqueness key and a population (no
+//	   orphan declarations), every source carries the `match` dimension,
+//	   and every declared key column is whitelisted;
+//	b) each declared uniqueness key IS a real PK/UNIQUE of the table in
+//	   the store schema — joinKey's fan-out guard rests on DDL truth;
+//	c) match_trade_opps is declared humans-only (the first member of the
+//	   population split).
+func TestJoinKeyDeclarationsMatchSchema(t *testing.T) {
+	// RunReadOnly is file-backed only, so this test opens a temp file
+	// (not :memory:) — the pragma reads ride the read-only session.
+	st, err := store.Open(filepath.Join(t.TempDir(), "joinkeys.db"))
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+
+	// ---- (a) coverage: sources == keys == populations ----
+	if len(sourceUniqueKeys) != len(sources) || len(sourcePopulation) != len(sources) {
+		t.Errorf("coverage: %d sources, %d keys, %d populations — same set required",
+			len(sources), len(sourceUniqueKeys), len(sourcePopulation))
+	}
+	known := make(map[string]bool, len(sources))
+	for _, src := range sources {
+		known[src] = true
+		if _, ok := sourceUniqueKeys[src]; !ok {
+			t.Errorf("source %q has no declared uniqueness key", src)
+		}
+		if _, ok := sourcePopulation[src]; !ok {
+			t.Errorf("source %q has no declared population", src)
+		}
+		if !sourceColumns[src]["match_id"] {
+			t.Errorf("source %q does not carry the match dimension (match_id)", src)
+		}
+		for _, col := range sourceUniqueKeys[src] {
+			if !sourceColumns[src][col] {
+				t.Errorf("source %q key column %q is not whitelisted", src, col)
+			}
+		}
+	}
+	for src := range sourceUniqueKeys {
+		if !known[src] {
+			t.Errorf("uniqueness key declared for non-source %q", src)
+		}
+	}
+	for src := range sourcePopulation {
+		if !known[src] {
+			t.Errorf("population declared for non-source %q", src)
+		}
+	}
+
+	// ---- (b) declared keys ⊆ real PK/UNIQUE sets ----
+	for _, src := range sources {
+		actual := tableKeySets(t, st, src)
+		decl := strings.Join(sortedStrings(sourceUniqueKeys[src]), ",")
+		if !actual[decl] {
+			t.Errorf("source %q declared key [%s] is not a PK/UNIQUE of the table (real keys: %v)", src, decl, actual)
+		}
+	}
+
+	// ---- (c) population pin ----
+	if sourcePopulation["match_trade_opps"] != popHumansOnly {
+		t.Errorf("match_trade_opps population = %v, want popHumansOnly", sourcePopulation["match_trade_opps"])
+	}
+}
+
+// tableKeySets returns every real key (PK + UNIQUE constraint/index,
+// non-partial) of a table as a canonical comma-joined column set.
+func tableKeySets(t *testing.T, st *store.Store, table string) map[string]bool {
+	t.Helper()
+	sets := map[string]bool{}
+	res, err := st.RunReadOnly(
+		`SELECT name FROM pragma_table_info(?) WHERE pk > 0 ORDER BY pk`,
+		[]any{table}, 64, 5000,
+	)
+	if err != nil {
+		t.Fatalf("table_info %s: %v", table, err)
+	}
+	var pk []string
+	for _, r := range res.Rows {
+		pk = append(pk, r[0].(string))
+	}
+	if len(pk) > 0 {
+		sets[strings.Join(sortedStrings(pk), ",")] = true
+	}
+	res, err = st.RunReadOnly(
+		`SELECT name FROM pragma_index_list(?) WHERE "unique" = 1 AND origin IN ('pk','u') AND partial = 0`,
+		[]any{table}, 64, 5000,
+	)
+	if err != nil {
+		t.Fatalf("index_list %s: %v", table, err)
+	}
+	for _, r := range res.Rows {
+		idx, _ := r[0].(string)
+		cols, err := st.RunReadOnly(
+			`SELECT name FROM pragma_index_info(?) ORDER BY seqno`,
+			[]any{idx}, 64, 5000,
+		)
+		if err != nil {
+			t.Fatalf("index_info %s: %v", idx, err)
+		}
+		var names []string
+		for _, cr := range cols.Rows {
+			names = append(names, cr[0].(string))
+		}
+		if len(names) > 0 {
+			sets[strings.Join(sortedStrings(names), ",")] = true
+		}
+	}
+	return sets
+}
+
+// sortedStrings returns a sorted copy (canonical key comparison).
+func sortedStrings(in []string) []string {
+	out := append([]string(nil), in...)
+	sort.Strings(out)
+	return out
 }

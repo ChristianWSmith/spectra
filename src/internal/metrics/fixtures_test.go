@@ -212,6 +212,9 @@ func TestSyntheticCorpusCounts(t *testing.T) {
 		"events": 1944, "player_round_stats": 576, "round_economy": 144,
 		"engagements": 216, "utility_events": 216,
 		"chat": 12,
+		// Join fixtures: 3 matches × 7 rows (opps = 10i for i ≤ 6,
+		// Grace stored-zero; Heidi absent — seed.sql header).
+		"match_trade_opps": 21,
 	} {
 		res, err := st.RunReadOnly("SELECT COUNT(*) FROM "+table, nil, 1, 5000)
 		if err != nil {

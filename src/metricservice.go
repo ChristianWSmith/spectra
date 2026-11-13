@@ -44,14 +44,16 @@ type ExprError struct {
 	Pos     int    `json:"pos"`
 }
 
-// ---- metric expression grammar (v1 — FROZEN) ----
+// ---- metric expression grammar (widened — spec lives in ONE place) ----
 //
-// The full spec (source clause + aggregation list, the op table, condition
-// grammar, GroupBy/Denominator/Scope rules, percentile and preview
-// semantics) lives in ONE place: the internal/metrics package doc
-// (doc.go). This service only forwards expressions to metrics.Compile /
-// metrics.RunPreview and maps their ParseError onto the ExprError binding
-// shape — no grammar knowledge of its own, so the two can never drift.
+// The full spec (source clause — single-source base form, comma-list
+// join extension — plus the aggregation list, the op table, condition
+// grammar, GroupBy/Denominator/Scope rules, join/population semantics,
+// percentile and preview semantics) lives in ONE place: the
+// internal/metrics package doc (doc.go). This service only forwards
+// expressions to metrics.Compile / metrics.RunPreview and maps their
+// ParseError onto the ExprError binding shape — no grammar knowledge of
+// its own, so the two can never drift.
 
 // MetricsService — see doc comment above.
 type MetricsService struct {

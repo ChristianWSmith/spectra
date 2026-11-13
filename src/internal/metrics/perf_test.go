@@ -43,7 +43,7 @@ func generateCorpus(n int) string {
 	}
 
 	var (
-		matches, teams, players, pstats, rounds, econ, events, prows, engs, utils, chats []string
+		matches, teams, players, pstats, rounds, econ, events, prows, engs, utils, chats, mto []string
 	)
 	for m := 1; m <= n; m++ {
 		mapName := maps[(m-1)%len(maps)]
@@ -60,6 +60,16 @@ func generateCorpus(n int) string {
 			pstats = append(pstats, fmt.Sprintf(
 				"(%d,'%s','%s','%s',%d,%d,0,%d,1,%d,%d,%d,%g,50.0,24,%d,%d,150000)",
 				m, sid(i), side, names[i-1], 2*i, i, i, i*5, i*100, i*50, 50.0+5.0*float64(i), i, i))
+			// match_trade_opps mirrors seed.sql: opps = 10i (i ≤ 6),
+			// stored-zero for i = 7, absent for i = 8; humans-only +
+			// sparse like analytics.Compute's output.
+			if i <= 7 {
+				opps, missed := 10*i, i
+				if i == 7 {
+					opps, missed = 0, 0
+				}
+				mto = append(mto, fmt.Sprintf("(%d,'%s',%d,%d)", m, sid(i), opps, missed))
+			}
 		}
 		for r := 1; r <= 24; r++ {
 			winner := "t"
@@ -154,6 +164,7 @@ func generateCorpus(n int) string {
 	emit("engagements", "match_id,seq,tick,round,kind,a_steam,b_steam,distance,won_by", engs)
 	emit("utility_events", "match_id,seq,tick,round,thrower,thrower_name,kind,damage,flash_ms,site", utils)
 	emit("chat", "match_id,tick,round,steam_id,name,text,kind", chats)
+	emit("match_trade_opps", "match_id,steam_id,opps,missed", mto)
 	return b.String()
 }
 
@@ -216,6 +227,7 @@ func TestPerfPreview100Matches(t *testing.T) {
 		{"grouped avg by round", Def{Expr: "from events: avg(where kind='damage', dmg)", GroupBy: "round"}},
 		{"percentile p95 (raw fetch + Go compute)", Def{Expr: "from events: percentile(0.95, dmg)"}},
 		{"ratio of counts", Def{Expr: "from events: ratio(count(where kind='kill' and headshot), count(where kind='kill'))"}},
+		{"joined ratio by player (trade opps)", Def{Expr: "from player_stats, match_trade_opps: ratio(sum(trade_kills), sum(opps))", GroupBy: "player"}},
 	}
 	for _, c := range previewCases {
 		start := time.Now()

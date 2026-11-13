@@ -42,21 +42,53 @@ type Plan struct {
 	HasDenom    bool
 }
 
-// Compile parses + validates (grammar, source, columns, groupBy, scope,
-// denominator, percentile rules) and emits parameterized SQL. Any
-// validation failure is a *ParseError carrying Message/Pos (the ExprError
-// contract).
+// Compile parses + validates (grammar, sources, join keys, columns,
+// groupBy, scope, denominator, percentile, population rules) and emits
+// parameterized SQL. Any validation failure is a *ParseError carrying
+// Message/Pos (the ExprError contract).
 func Compile(expr, groupBy, denominator, scope string) (Plan, *ParseError) {
 	spec, perr := Parse(expr)
 	if perr != nil {
 		return Plan{}, perr
 	}
-	if !knownSource(spec.Source) {
-		return Plan{}, errf(spec.SourcePos, "unknown source table %q (valid: %s)", spec.Source, knownSourcesMsg())
+	srcs := spec.Sources
+	for _, s := range srcs {
+		if !knownSource(s.Name) {
+			return Plan{}, errf(s.Pos, "unknown source table %q (valid: %s)", s.Name, knownSourcesMsg())
+		}
 	}
-	cols := sourceColumns[spec.Source]
+	primary := srcs[0].Name
 
-	gexpr, perr := groupExpr(spec.Source, groupBy)
+	// Engine-derived joins (design (c)): every secondary pairs with the
+	// PRIMARY (star join) on a key joinKey derives from the declared
+	// dimensions/uniqueness keys — user text never reaches an ON clause,
+	// and a secondary that is not unique on its key is rejected (the
+	// fan-out guard). The join type is engine-chosen LEFT so a sparse
+	// secondary's missing rows surface as NULL ⇒ Value 0 beside N, never
+	// deleted primary rows. The FROM clause contributes no binds, and the
+	// scope below binds on the PRIMARY only (a scope predicate landing on
+	// a LEFT-joined secondary would silently convert the join to INNER).
+	from := primary
+	oneToOne := map[string]bool{}
+	for _, s := range srcs[1:] {
+		key, ok := joinKey(primary, s.Name)
+		if !ok {
+			return Plan{}, errf(s.Pos,
+				"cannot join source %q to %q: secondary %q is not unique on the shared dimensions (its primary key/unique key must consist entirely of join dimensions: match, round, player, side)",
+				s.Name, primary, s.Name)
+		}
+		from += " LEFT JOIN " + s.Name + " ON "
+		for i, d := range key {
+			if i > 0 {
+				from += " AND "
+			}
+			from += primary + "." + d.PrimaryCol + " = " + s.Name + "." + d.SecondaryCol
+		}
+		oneToOne[s.Name] = joinIsOneToOne(primary, key)
+	}
+	res := resolveColumns(srcs, oneToOne)
+
+	gexpr, perr := groupExpr(primary, groupBy)
 	if perr != nil {
 		return Plan{}, perr
 	}
@@ -68,7 +100,7 @@ func Compile(expr, groupBy, denominator, scope string) (Plan, *ParseError) {
 	if denominator != "" {
 		t, ok := denominatorTables[denominator]
 		if !ok {
-			return Plan{}, errf(0, "unknown denominator %q (valid: rounds, matches, player_rounds)", denominator)
+			return Plan{}, errf(0, "unknown denominator %q (valid: rounds, matches)", denominator)
 		}
 		denomTable = t
 	}
@@ -77,7 +109,7 @@ func Compile(expr, groupBy, denominator, scope string) (Plan, *ParseError) {
 		if a.Op == "percentile" && gexpr != "" {
 			return Plan{}, errf(a.Pos, "percentile() requires groupBy \"\" (computed in Go over all rows; grouped percentiles are not supported)")
 		}
-		if perr := validateAggIdents(a, spec.Source, cols); perr != nil {
+		if perr := validateAggIdents(a, res); perr != nil {
 			return Plan{}, perr
 		}
 	}
@@ -103,43 +135,63 @@ func Compile(expr, groupBy, denominator, scope string) (Plan, *ParseError) {
 	if gnorm == "none" {
 		gnorm = ""
 	}
-	// A `player`-grouped metric is a player LISTING (the preview labels
-	// each group with a roster name), so it inherits the app's humans-only
-	// rule: bot groups are dropped through store.HumanOnlyBySteamID —
-	// the SAME condition the roster reads use (store.HumanOnly), match-
-	// scoped so the lookup rides the players PK. Grouping by anything
-	// else is not a listing and stays untouched; a PLAIN (ungrouped)
-	// aggregate over event rows also stays untouched — those record what
-	// happened, bots included. Both boundaries are pinned by
-	// TestPlayerGroupExcludesBots.
+	// The humans-only condition (store.HumanOnlyBySteamID over the
+	// primary's player column) fires in two cases:
+	//
+	//   - Population alignment (owner ruling): a MULTI-source expression
+	//     whose source set MIXES populations (all-players vs
+	//     humans-only) applies it to the primary's player column
+	//     REGARDLESS of grouping — bot rows survive the LEFT join with
+	//     NULL secondary values, so this condition is what drops them
+	//     (grouped) / keeps the numerator human-only (ungrouped), aligning
+	//     populations on both sides. Accepted mixed pairs always carry the
+	//     primary's player dimension (the humans-only member's key is
+	//     (match, player), so joinKey forces it) — the anchor is never
+	//     empty. Pinned by TestJoinedPopulationAlignment.
+	//   - A `player`-grouped metric is a player LISTING (the preview
+	//     labels each group with a roster name), so it inherits the app's
+	//     humans-only rule: bot groups are dropped through the SAME
+	//     condition the roster reads use (store.HumanOnly), match-scoped
+	//     so the lookup rides the players PK. Grouping by anything else is
+	//     not a listing and stays untouched; a PLAIN (ungrouped)
+	//     single-source aggregate over event rows also stays untouched —
+	//     those record what happened, bots included. Both boundaries are
+	//     pinned by TestPlayerGroupExcludesBots.
 	//
 	// Note: phase2 (the percentile fetch) never groups — Compile rejects
-	// percentile+groupBy — so no percentile statement needs the condition.
+	// percentile+groupBy — so only the mixed-population case can put the
+	// condition there; phase1 and phase2 emit it identically (uniform
+	// qualification path, no second spelling).
 	humanGroup := ""
-	if gnorm == "player" {
-		if col := groupColumns[spec.Source]["player"]; col != "" && gexpr == col {
+	if mixedPopulations(srcs) {
+		humanGroup = groupColumns[primary]["player"]
+	} else if gnorm == "player" {
+		if col := groupColumns[primary]["player"]; col != "" && gexpr == col {
 			humanGroup = col
 		}
 	}
 	plan := Plan{
-		Source:   spec.Source,
+		Source:   primary,
 		GroupBy:  gnorm,
 		AggCount: len(spec.Aggs),
 		SQLAggs:  len(sqlAggs),
 		HasDenom: denomTable != "",
 	}
 	grouped := gexpr != ""
+	newEmitter := func() *emitter {
+		return &emitter{res: res, from: from, matchID: matchID, denom: denomTable, humanGroup: humanGroup}
+	}
 
 	if firstPctl != nil {
 		plan.Mode = ModePercentile
 		plan.PercentileP = firstPctl.P
-		primary := &emitter{source: spec.Source, matchID: matchID, denom: denomTable, humanGroup: humanGroup}
-		primary.phase2(firstPctl, denomTable != "")
-		plan.SQL, plan.Args = primary.sb.String(), primary.args
+		raw := newEmitter()
+		raw.phase2(firstPctl, denomTable != "")
+		plan.SQL, plan.Args = raw.sb.String(), raw.args
 		if len(sqlAggs) > 0 {
-			sec := &emitter{source: spec.Source, matchID: matchID, denom: denomTable, humanGroup: humanGroup}
-			sec.phase1(sqlAggs, gexpr, grouped, false)
-			plan.Secondary = sec.sb.String()
+			comp := newEmitter()
+			comp.phase1(sqlAggs, gexpr, grouped, false)
+			plan.Secondary = comp.sb.String()
 		}
 		return plan, nil
 	}
@@ -148,9 +200,9 @@ func Compile(expr, groupBy, denominator, scope string) (Plan, *ParseError) {
 	if grouped {
 		plan.Mode = ModeGrouped
 	}
-	primary := &emitter{source: spec.Source, matchID: matchID, denom: denomTable, humanGroup: humanGroup}
-	primary.phase1(sqlAggs, gexpr, grouped, denomTable != "")
-	plan.SQL, plan.Args = primary.sb.String(), primary.args
+	agg := newEmitter()
+	agg.phase1(sqlAggs, gexpr, grouped, denomTable != "")
+	plan.SQL, plan.Args = agg.sb.String(), agg.args
 	if hasPctl {
 		var pctl *Agg
 		for i := range spec.Aggs {
@@ -159,9 +211,9 @@ func Compile(expr, groupBy, denominator, scope string) (Plan, *ParseError) {
 				break
 			}
 		}
-		sec := &emitter{source: spec.Source, matchID: matchID, denom: denomTable, humanGroup: humanGroup}
-		sec.phase2(pctl, false)
-		plan.Secondary = sec.sb.String()
+		raw := newEmitter()
+		raw.phase2(pctl, false)
+		plan.Secondary = raw.sb.String()
 	}
 	return plan, nil
 }
@@ -194,18 +246,121 @@ func ParseScope(scope string) (int64, *ParseError) {
 	return id, nil
 }
 
+// colResolution maps unqualified column references onto the expression's
+// source set: an identifier resolves iff exactly ONE source owns it
+// (columns owned by 0 or ≥2 sources are ABSENT — referencing them is a
+// positioned ExprError; the grammar has no qualified-identifier syntax),
+// and emission qualifies with that owner when the statement joins.
+// Single-source expressions never qualify (byte-stable emission).
+type colResolution struct {
+	primary  string
+	joined   bool
+	names    []string          // source names (error text)
+	owners   map[string]string // column → owning source (exactly-one-owner only)
+	multi    map[string]bool   // columns owned by ≥2 sources (ambiguous)
+	oneToOne map[string]bool   // secondary → join with the primary is 1:1
+}
+
+// resolveColumns builds the resolution for a source list (oneToOne comes
+// from the derived join keys — see joinKey/joinIsOneToOne).
+func resolveColumns(srcs []SourceRef, oneToOne map[string]bool) *colResolution {
+	r := &colResolution{
+		primary:  srcs[0].Name,
+		joined:   len(srcs) > 1,
+		oneToOne: oneToOne,
+	}
+	count := map[string]int{}
+	first := map[string]string{}
+	for _, s := range srcs {
+		r.names = append(r.names, s.Name)
+		for c := range sourceColumns[s.Name] {
+			if _, ok := first[c]; !ok {
+				first[c] = s.Name
+			}
+			count[c]++
+		}
+	}
+	r.owners = make(map[string]string, len(first))
+	for c, n := range count {
+		if n == 1 {
+			r.owners[c] = first[c]
+		} else {
+			if r.multi == nil {
+				r.multi = map[string]bool{}
+			}
+			r.multi[c] = true
+		}
+	}
+	return r
+}
+
+// resolveCond checks a condition/filter column. Filters never multiply
+// rows, so any owned source's column may be used (a NULL secondary in a
+// filter simply does not satisfy the condition).
+func (r *colResolution) resolveCond(col string, pos int) *ParseError {
+	if _, ok := r.owners[col]; ok {
+		return nil
+	}
+	return r.unresolved(col, pos)
+}
+
+// resolveValue checks a VALUE column (sum/avg/min/max/stddev/percentile
+// argument): besides ownership it enforces the value-column rule — a
+// secondary's value column requires a 1:1 join, so a coarse secondary
+// value can never repeat at a finer grain (owner ruling; mechanically
+// decidable, positioned error).
+func (r *colResolution) resolveValue(col string, pos int) *ParseError {
+	owner, ok := r.owners[col]
+	if !ok {
+		return r.unresolved(col, pos)
+	}
+	if owner != r.primary && !r.oneToOne[owner] {
+		return errf(pos,
+			"value column %q comes from secondary source %q, but the join is not 1:1 — value columns must come from the primary (or from a 1:1 join)",
+			col, owner)
+	}
+	return nil
+}
+
+// unresolved renders the not-owned error (single-source keeps the legacy
+// wording byte-for-byte).
+func (r *colResolution) unresolved(col string, pos int) *ParseError {
+	if !r.joined {
+		return errf(pos, "unknown column %q for source %s", col, r.primary)
+	}
+	if r.multi[col] {
+		return errf(pos, "ambiguous column %q (owned by multiple sources — the grammar has no qualified-identifier syntax)", col)
+	}
+	return errf(pos, "unknown column %q (sources: %s)", col, strings.Join(r.names, ", "))
+}
+
+// qualify prefixes a column with its owning source when the statement
+// joins (the aliases are the table names — engine-chosen, no user text).
+func (r *colResolution) qualify(col string) string {
+	if !r.joined {
+		return col
+	}
+	if owner, ok := r.owners[col]; ok {
+		return owner + "." + col
+	}
+	return col // unreachable: every emitted column resolved at validation
+}
+
 // validateAggIdents walks one aggregation's condition/column identifiers —
-// every identifier must be on the source whitelist (parser output carries
-// identifier nodes; this is where they are checked).
-func validateAggIdents(a *Agg, source string, cols map[string]bool) *ParseError {
+// every identifier must resolve against the expression's source set
+// (parser output carries identifier nodes; this is where they are
+// checked and where the value-column rule fires).
+func validateAggIdents(a *Agg, res *colResolution) *ParseError {
 	var checkCond func(c *condNode) *ParseError
 	checkCond = func(c *condNode) *ParseError {
 		if c == nil {
 			return nil
 		}
 		for _, o := range []*operand{c.x, c.y} {
-			if o != nil && o.kind == opColumn && !cols[o.col] {
-				return errf(o.pos, "unknown column %q for source %s", o.col, source)
+			if o != nil && o.kind == opColumn {
+				if perr := res.resolveCond(o.col, o.pos); perr != nil {
+					return perr
+				}
 			}
 		}
 		if p := checkCond(c.l); p != nil {
@@ -219,16 +374,18 @@ func validateAggIdents(a *Agg, source string, cols map[string]bool) *ParseError 
 	if p := checkCond(a.Count); p != nil {
 		return p
 	}
-	if a.Col != "" && !cols[a.Col] {
-		return errf(a.ColPos, "unknown column %q for source %s", a.Col, source)
+	if a.Col != "" {
+		if perr := res.resolveValue(a.Col, a.ColPos); perr != nil {
+			return perr
+		}
 	}
 	if a.Num != nil {
-		if p := validateAggIdents(a.Num, source, cols); p != nil {
+		if p := validateAggIdents(a.Num, res); p != nil {
 			return p
 		}
 	}
 	if a.Den != nil {
-		if p := validateAggIdents(a.Den, source, cols); p != nil {
+		if p := validateAggIdents(a.Den, res); p != nil {
 			return p
 		}
 	}
@@ -237,17 +394,25 @@ func validateAggIdents(a *Agg, source string, cols map[string]bool) *ParseError 
 
 // emitter builds one statement: text into sb, positional binds into args,
 // strictly in textual order (mixing both in one pass is what keeps the
-// ?-order honest).
+// ?-order honest). Joins contribute NO binds (the ON is column = column,
+// engine-derived); literals still bind through bind/emitOperand.
 type emitter struct {
-	sb      strings.Builder
-	args    []any
-	source  string
-	matchID int64  // 0 = whole library
+	sb   strings.Builder
+	args []any
+	// res resolves/qualifies every column reference: joined statements
+	// prefix each column with its owning source (the aliases are the
+	// table names), single-source statements stay unqualified.
+	res *colResolution
+	// from is the FROM clause — the primary, plus the engine LEFT JOINs
+	// when the expression lists secondaries.
+	from    string
+	matchID int64  // 0 = whole library (bound on the PRIMARY only)
 	denom   string // denominator table ("" = none)
-	// humanGroup is the source's player column when — and only when — the
-	// statement groups by player ("" = no humans-only condition): the
-	// condition is emitted by phase1 next to the scope WHERE, as
-	// store.HumanOnlyBySteamID over this source's match_id.
+	// humanGroup is the primary's player column when — and only when —
+	// the statement must apply the humans-only condition (a player group,
+	// or ANY grouping under a mixed-population source list): emitted
+	// next to the scope WHERE as store.HumanOnlyBySteamID over the
+	// primary's match_id.
 	humanGroup string
 }
 
@@ -256,14 +421,46 @@ func (e *emitter) bind(v any) string {
 	return "?"
 }
 
+// matchIDExpr is the scope column: side-qualified when the statement
+// joins (an unqualified match_id would be ambiguous across the sources),
+// bare for the single-source base form (byte-stable emission).
+func (e *emitter) matchIDExpr() string {
+	if e.res.joined {
+		return e.res.primary + ".match_id"
+	}
+	return "match_id"
+}
+
+// qualifyGroup anchors the group expression on the primary when joined.
+// The `map` subquery is emitted unqualified but self-anchored
+// (mapGroupExpr names its source, which equals the engine alias), so it
+// passes through untouched.
+func (e *emitter) qualifyGroup(gexpr string) string {
+	if !e.res.joined || strings.Contains(gexpr, "(") {
+		return gexpr
+	}
+	return e.res.primary + "." + gexpr
+}
+
+// writeHumanOnly writes the humans-only condition with the right WHERE
+// connector (phase1 and phase2 share this — one spelling, both sides).
+func (e *emitter) writeHumanOnly(wroteWhere bool) {
+	if wroteWhere {
+		e.sb.WriteString(" AND ")
+	} else {
+		e.sb.WriteString(" WHERE ")
+	}
+	e.sb.WriteString(store.HumanOnlyBySteamID(e.res.primary+"."+e.humanGroup, e.res.primary+".match_id"))
+}
+
 // phase1 emits the aggregate statement: every SQL aggregation as a value
 // column (first = previewed value, wrapped by the denominator when set),
-// trailing COUNT(*) sample size, scope WHERE (+ the humans-only condition
-// for a player group), GROUP/ORDER.
+// trailing COUNT(*) sample size, FROM (+ engine LEFT JOINs), scope WHERE
+// on the primary (+ the humans-only condition), GROUP/ORDER.
 func (e *emitter) phase1(aggs []*Agg, gexpr string, grouped, wrapDenom bool) {
 	e.sb.WriteString("SELECT ")
 	if grouped {
-		e.sb.WriteString(gexpr)
+		e.sb.WriteString(e.qualifyGroup(gexpr))
 		e.sb.WriteString(" AS grp, ")
 	}
 	for i, a := range aggs {
@@ -281,44 +478,54 @@ func (e *emitter) phase1(aggs []*Agg, gexpr string, grouped, wrapDenom bool) {
 		e.emitValue(a)
 	}
 	e.sb.WriteString(", COUNT(*) AS n FROM ")
-	e.sb.WriteString(e.source)
+	e.sb.WriteString(e.from)
 	wroteWhere := false
 	if e.matchID > 0 {
-		e.sb.WriteString(" WHERE match_id = ")
+		e.sb.WriteString(" WHERE ")
+		e.sb.WriteString(e.matchIDExpr())
+		e.sb.WriteString(" = ")
 		e.sb.WriteString(e.bind(e.matchID))
 		wroteWhere = true
 	}
-	if grouped && e.humanGroup != "" {
-		if wroteWhere {
-			e.sb.WriteString(" AND ")
-		} else {
-			e.sb.WriteString(" WHERE ")
-		}
-		e.sb.WriteString(store.HumanOnlyBySteamID(e.source+"."+e.humanGroup, e.source+".match_id"))
+	// Ungrouped mixed-population expressions apply the condition too
+	// (owner ruling: regardless of grouping) — the `grouped &&` guard is
+	// gone; single-source humanGroup is only ever set for a player group
+	// (grouped), so the base form's emission is unchanged.
+	if e.humanGroup != "" {
+		e.writeHumanOnly(wroteWhere)
 	}
 	if grouped {
 		e.sb.WriteString(" GROUP BY grp ORDER BY grp")
 	}
 }
 
-// phase2 emits the raw-value statement for a percentile value: the column
-// (plus the scalar denominator when the metric has one), scope WHERE and
-// the optional per-agg filter. The row cap comes from RunReadOnly — no SQL
-// LIMIT, so truncation is detectable.
+// phase2 emits the raw-value statement for a percentile value: the
+// column (plus the scalar denominator when the metric has one), the SAME
+// FROM/join as the aggregate statement (uniform qualification path — the
+// phase-2 fetch carries the join/qualification day one), scope WHERE on
+// the primary (+ humans-only when the source list mixes populations) and
+// the optional per-agg filter. The row cap comes from RunReadOnly — no
+// SQL LIMIT, so truncation is detectable.
 func (e *emitter) phase2(a *Agg, withDenom bool) {
 	e.sb.WriteString("SELECT ")
-	e.sb.WriteString(a.Col)
+	e.sb.WriteString(e.res.qualify(a.Col))
 	e.sb.WriteString(" AS x")
 	if withDenom {
 		e.sb.WriteString(", ")
 		e.emitDenom()
 	}
 	e.sb.WriteString(" FROM ")
-	e.sb.WriteString(e.source)
+	e.sb.WriteString(e.from)
 	wroteWhere := false
 	if e.matchID > 0 {
-		e.sb.WriteString(" WHERE match_id = ")
+		e.sb.WriteString(" WHERE ")
+		e.sb.WriteString(e.matchIDExpr())
+		e.sb.WriteString(" = ")
 		e.sb.WriteString(e.bind(e.matchID))
+		wroteWhere = true
+	}
+	if e.humanGroup != "" {
+		e.writeHumanOnly(wroteWhere)
 		wroteWhere = true
 	}
 	if a.Where != nil {
@@ -360,7 +567,7 @@ func (e *emitter) emitValue(a *Agg) {
 		if a.Where == nil {
 			e.sb.WriteString(fn)
 			e.sb.WriteString("(")
-			e.sb.WriteString(a.Col)
+			e.sb.WriteString(e.res.qualify(a.Col))
 			e.sb.WriteString(")")
 			return
 		}
@@ -368,7 +575,7 @@ func (e *emitter) emitValue(a *Agg) {
 		e.sb.WriteString("(CASE WHEN ")
 		e.emitCond(a.Where)
 		e.sb.WriteString(" THEN ")
-		e.sb.WriteString(a.Col)
+		e.sb.WriteString(e.res.qualify(a.Col))
 		e.sb.WriteString(" END)")
 	case "stddev":
 		// sqrt(max(avg(x²) - avg(x)², 0)) — population σ, clamped so
@@ -400,13 +607,13 @@ func (e *emitter) emitValue(a *Agg) {
 // a conditional column's binds repeat with it, in order).
 func (e *emitter) emitStddevX(a *Agg) {
 	if a.Where == nil {
-		e.sb.WriteString(a.Col)
+		e.sb.WriteString(e.res.qualify(a.Col))
 		return
 	}
 	e.sb.WriteString("(CASE WHEN ")
 	e.emitCond(a.Where)
 	e.sb.WriteString(" THEN ")
-	e.sb.WriteString(a.Col)
+	e.sb.WriteString(e.res.qualify(a.Col))
 	e.sb.WriteString(" END)")
 }
 
@@ -442,10 +649,11 @@ func (e *emitter) emitCond(c *condNode) {
 	}
 }
 
-// emitOperand writes a whitelisted column verbatim or binds a literal.
+// emitOperand writes a whitelisted column verbatim (side-qualified when
+// the statement joins) or binds a literal.
 func (e *emitter) emitOperand(o *operand) {
 	if o.kind == opColumn {
-		e.sb.WriteString(o.col)
+		e.sb.WriteString(e.res.qualify(o.col))
 		return
 	}
 	switch {

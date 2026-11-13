@@ -93,8 +93,8 @@ var columnNotes = map[string]map[string]string{
 	},
 	"metrics": {
 		"origin":      "builtin|user|plugin — builtin rows ship seeded with the app",
-		"expr":        "metric grammar: from <table>: <aggregations>",
-		"denominator": "scalar subquery source: ''|rounds|matches|player_rounds",
+		"expr":        "metric grammar: from <table>[, <secondary>...]: <aggregations> (extra sources join engine-side)",
+		"denominator": "scalar subquery source: ''|rounds|matches",
 	},
 }
 
