@@ -21,10 +21,6 @@
     subscribeJobProgress,
     errText,
   } from '../services.js';
-  // Preference keys (prefs.go) are read straight through the generated
-  // kvstore binding — services.js has no pref wrappers (Settings owns the
-  // writes; Go never consumes these keys).
-  import { KVStoreService } from '../../../bindings/github.com/wailsapp/wails/v3/pkg/services/kvstore';
   import {
     fmtDuration,
     fmtBytes,
@@ -37,7 +33,7 @@
     fmtPatch,
   } from '../fmt.js';
   import { teamNames, teamStartClass, playerSideClassAt } from '../teams.js';
-  import { isCounted, roundIndexLabel, separatorFlags } from '../rounds.js';
+  import { roundIndexLabel, separatorFlags } from '../rounds.js';
   import { winnerTeamKey } from '../sideparity.js';
   import { MATCH_TABS, matchTabSlug, buildHash } from '../router.js';
   import RoundStrip from '../components/RoundStrip.svelte';
@@ -170,7 +166,7 @@
   let combatError = $state('');
   let classByRound = $state(new Map());
   let classError = $state('');
-  // Rounds-tab compare picker: round numbers (max 4, non-warmup only).
+  // Rounds-tab compare picker: round numbers (max 4).
   let compareSel = $state(selSeed.compareSel);
   let selLastKey = selSeed.key;
   $effect(() => {
@@ -190,55 +186,15 @@
     remember(k, { expanded, compareSel });
   });
 
-  // Rounds-tab visibility pref (key: show_knife_warmup_rounds, prefs.go).
-  // false (the default) hides warmup and pregame/knife rounds — they are
-  // negative/zero-numbered, not counted play. Read through the kvstore
-  // binding on mount and on every tab switch: Settings writes the key
-  // directly and there is no cross-view change event, so re-reading on
-  // activation is the refresh mechanism (returning from Settings
-  // remounts this view; switching to the Rounds tab re-runs the effect).
-  // The header ribbon obeys the SAME key but reads it itself inside
-  // RoundStrip, so RoundDetail's copy of the strip agrees too — see the
-  // comment there.
-  let showKnifeWarmup = $state(false);
-
-  // kvstore values round-trip as JSON — a bool stays a bool (Settings
-  // writes this key as a real boolean through the kvstore service).
-  // Anything else (unset, null, corrupt) falls back to false = hidden.
-  function coercePrefBool(v) {
-    return v === true;
-  }
-
-  $effect(() => {
-    id;
-    tab;
-    let live = true;
-    KVStoreService.Get('show_knife_warmup_rounds')
-      .then((v) => {
-        if (live) showKnifeWarmup = coercePrefBool(v);
-      })
-      .catch(() => {
-        // Unreadable store → conservative default: hidden.
-        if (live) showKnifeWarmup = false;
-      });
-    return () => (live = false);
-  });
-
-  // Rounds tab rows: hide warmup and pregame (knife) rounds unless the pref
-  // opts in (isCounted — lib/rounds.js, the analytics.CountedRounds
-  // twin). Only visibility changes — row numbers stay exactly as stored
-  // (negative for warmup/knife; they are extracted facts and are never
-  // renumbered here).
-  const viewRounds = $derived(showKnifeWarmup ? rounds : rounds.filter(isCounted));
-
-  // Side-switch boundary per VISIBLE row (index-aligned with viewRounds):
-  // the round-group separator gating from the canonical helper
+  // Side-switch boundary per row (index-aligned with rounds): the
+  // round-group separator gating from the canonical helper
   // (lib/rounds.js separatorFlags — cadence + counted-gating + trailing
   // suppression). Row i carries the boundary that follows row i-1 as its
   // `.split-before` class (public/style.css, the table twin of
-  // RoundStrip's `.round-split`), so pref-on negative rows never shift a
-  // line and the last row can never carry a trailing one.
-  const sepFlags = $derived(separatorFlags(viewRounds));
+  // RoundStrip's `.round-split`); counted-gating keeps a legacy
+  // pre-reprocess negative row from shifting a line and the last row can
+  // never carry a trailing one.
+  const sepFlags = $derived(separatorFlags(rounds));
 
   // localStorage contract (M5): 'spectra:pinned-metrics' holds a JSON array
   // of metric ids — written by Builder's pin toggles, read here when a
@@ -626,7 +582,7 @@
   }
 
   // SteamID64 guard — bots/short ids never match #/player/(\d{17}).
-  // --- Rounds-tab compare picker (max 4, non-warmup) ------------------------
+  // --- Rounds-tab compare picker (max 4) --------------------------------
   function toggleCompare(n) {
     if (compareSel.includes(n)) compareSel = compareSel.filter((x) => x !== n);
     else if (compareSel.length < 4) compareSel = [...compareSel, n];
@@ -1198,7 +1154,7 @@
               <th
                 scope="col"
                 class="num cmp-cmp-col"
-                title="Select rounds to compare (up to 4 — knife/warmup rounds excluded)"
+                title="Select rounds to compare (up to 4)"
               >Cmp</th>
               <th scope="col" class="num">RD</th>
               <th scope="col">Winner</th>
@@ -1218,7 +1174,7 @@
             </tr>
           </thead>
           <tbody>
-            {#each viewRounds as r, ri (r.number)}
+            {#each rounds as r, ri (r.number)}
               {@const cls = classByRound.get(r.number)}
               <tr
                 class="clickable"
@@ -1233,24 +1189,16 @@
                 tabindex="0"
               >
                 <td class="num cmp-cmp-col" onclick={(e) => e.stopPropagation()}>
-                  {#if !r.warmup}
-                    <input
-                      type="checkbox"
-                      class="cmp-cb"
-                      checked={compareSel.includes(r.number)}
-                      disabled={compareSel.length >= 4 && !compareSel.includes(r.number)}
-                      aria-label="Compare round {roundIndexLabel(r)}"
-                      onchange={() => toggleCompare(r.number)}
-                    />
-                  {/if}
+                  <input
+                    type="checkbox"
+                    class="cmp-cb"
+                    checked={compareSel.includes(r.number)}
+                    disabled={compareSel.length >= 4 && !compareSel.includes(r.number)}
+                    aria-label="Compare round {roundIndexLabel(r)}"
+                    onchange={() => toggleCompare(r.number)}
+                  />
                 </td>
-                <td class="num"
-                  >{roundIndexLabel(r)}{#if r.warmup}<span class="chip" title="warmup round — not counted play">warmup</span>{:else if r.pregame}<span
-                      class="chip"
-                      title="pre-match knife round — not counted play"
-                      >knife</span
-                    >{/if}</td
-                >
+                <td class="num">{roundIndexLabel(r)}</td>
                 <td>
                   <WinnerCell winner={r.winner} name={winnerName(r)} />
                 </td>
@@ -1312,7 +1260,7 @@
       </div>
       {#if compareSel.length > 0}
         <p class="cmp-hint">
-          {compareSel.length} of 4 rounds selected — warmup rounds cannot be compared.
+          {compareSel.length} of 4 rounds selected.
         </p>
       {/if}
       {#if compareSel.length >= 2}

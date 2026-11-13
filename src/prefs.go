@@ -30,11 +30,12 @@ const (
 	// consumes it.
 	prefsFontSizeKey = "font_size"
 
-	// prefsShowKnifeWarmupRoundsKey toggles showing knife (pregame) and
-	// warmup rounds — negative-numbered, not counted play — in the round
-	// lists. Boolean; default false (hidden). The frontend reads/writes it
-	// directly through the kvstore service — Go never consumes it.
-	prefsShowKnifeWarmupRoundsKey = "show_knife_warmup_rounds"
+	// The knife/warmup display pref (show knife + warmup rounds in the
+	// round lists) is RETIRED: the extractor discards knife/warmup
+	// rounds at ingest, so every stored round is a counted round and
+	// there is nothing left to filter (a stale value in a user's
+	// kvstore is orphaned and ignored — pinned gone by
+	// TestRetiredKnifeWarmupRoundsPrefGone).
 
 	// prefsDemoDirsKey holds the "import dirs" folder list the
 	// Library scans (absolute paths, normalized by library.NormalizeDirs).

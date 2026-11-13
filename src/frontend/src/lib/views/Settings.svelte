@@ -134,23 +134,6 @@
     setPref(key, level).catch((e) => (error = errText(e)));
   }
 
-  // Show knife & warmup rounds: pure kvstore pref
-  // `show_knife_warmup_rounds`, default off; the Match view consumes it.
-  let showKnife = $state(false);
-
-  function setShowKnife(v) {
-    error = ''; // clears-on-retry
-    showKnife = v;
-    setPref('show_knife_warmup_rounds', v).catch((e) => (error = errText(e)));
-  }
-
-  // kvstore round-trips JSON, and the only writer of this key passes a
-  // real boolean (the toggle's checked state) — anything that is not
-  // exactly true (unset, null, corrupt) reads as off.
-  function prefBool(v) {
-    return v === true;
-  }
-
   // Import dirs (the Settings panel of the same name): the Library lists
   // .dem / .dem.zst files found under them that are not in the library
   // yet, each with a one-click Import. The backend owns the pref — an
@@ -806,16 +789,10 @@
     refreshBehind();
     refreshPlugins();
     // Prefs: the font size re-reconciles against the durable kvstore (the
-    // boot-time pass may still be in flight for a deep-linked Settings),
-    // and the knife/warmup toggle reads its bool (never-set = off).
+    // boot-time pass may still be in flight for a deep-linked Settings).
     reconcileFontSize()
       .then((v) => (fontSize = v))
       .catch(() => {});
-    getPref('show_knife_warmup_rounds')
-      .then((v) => (showKnife = prefBool(v)))
-      .catch(() => {
-        /* keep the default (off) */
-      });
     // Replay-audio faders: read the six persisted levels back (the
     // boot-time pass may still be in flight for a deep-linked Settings);
     // never-set/corrupt falls to each key's OWN default — the shared 0.8
@@ -1184,25 +1161,6 @@
           >
         {/each}
       </div>
-    </div>
-  </section>
-
-  <section class="panel">
-    <h2>Match view</h2>
-    <div class="row-between">
-      <label class="filt-check" for="sett-knife">
-        <input
-          id="sett-knife"
-          type="checkbox"
-          checked={showKnife}
-          onchange={(e) => setShowKnife(e.target.checked)}
-        />
-        <span>Show knife &amp; warmup rounds</span>
-      </label>
-      <span class="muted"
-        >Include pregame knife and warmup rounds (negative round numbers,
-        not counted play) in the round lists. Off by default.</span
-      >
     </div>
   </section>
 

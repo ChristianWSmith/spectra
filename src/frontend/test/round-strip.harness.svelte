@@ -1,7 +1,8 @@
 <script>
   // Test harness for RoundStrip: fixture data comes from globals the
-  // driver sets per scenario (RoundStrip reads the kvstore pref on mount,
-  // so each scenario re-mounts the component).
+  // driver sets per scenario (the driver re-mounts per scenario so the
+  // component re-reads them). RoundStrip reads no preference — the
+  // knife/warmup visibility setting is retired.
   import RoundStrip from './roundstrip-bundle.js';
 
   const rounds = globalThis.__rounds || [];

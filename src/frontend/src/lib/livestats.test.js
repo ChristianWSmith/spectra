@@ -12,13 +12,15 @@ import assert from 'node:assert/strict';
 
 import { liveStats, liveStatsIncremental, createLiveStatsCursor } from './replay/livestats.js';
 
-// Rounds: #1 starts at 0, #2 at 1000; the knife (#-2) and a warmup (#-1)
-// are NOT counted, and round 99 never appears in the rows at all.
+// Rounds: #1 starts at 0, #2 at 1000; the legacy knife (#-2) and warmup
+// (#-1) rows are NOT counted (the discard removed the row flags — the
+// number rule is the whole rule), and round 99 never appears in the rows
+// at all.
 const ROUNDS = [
-  { number: -2, startTick: -5000, warmup: false, pregame: true },
-  { number: -1, startTick: -2000, warmup: true, pregame: false },
-  { number: 1, startTick: 0, warmup: false, pregame: false },
-  { number: 2, startTick: 1000, warmup: false, pregame: false },
+  { number: -2, startTick: -5000 },
+  { number: -1, startTick: -2000 },
+  { number: 1, startTick: 0 },
+  { number: 2, startTick: 1000 },
 ];
 
 // Sides are constant per player for these fixtures (sideAt is injected,
@@ -166,11 +168,11 @@ test('defensive inputs never throw', () => {
 // just on the happy path.
 
 const SWEEP_ROUNDS = [
-  { number: -2, startTick: -5000, warmup: false, pregame: true }, // knife
-  { number: -1, startTick: -2000, warmup: true, pregame: false }, // warmup
-  { number: 1, startTick: 0, warmup: false, pregame: false },
-  { number: 2, startTick: 1000, warmup: false, pregame: false },
-  { number: 3, startTick: 2000, warmup: false, pregame: false },
+  { number: -2, startTick: -5000 }, // legacy knife row
+  { number: -1, startTick: -2000 }, // legacy warmup row
+  { number: 1, startTick: 0 },
+  { number: 2, startTick: 1000 },
+  { number: 3, startTick: 2000 },
 ];
 const SWEEP_ROSTER = ['A', 'B', 'C', 'X', 'Y', 'Z'];
 

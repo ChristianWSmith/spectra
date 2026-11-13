@@ -43,7 +43,6 @@
     serializeLandmarkFilter,
     shouldRevealFeed,
     defaultFilter,
-    applyRoundPref,
     scrubberMarkerClass,
   } from '../replay/landmarks.js';
   // THE feed runtime — lib/replay/feed.js owns the one filter → query
@@ -477,49 +476,6 @@
 
   const rbn = $derived(roundsByNumber(rounds));
 
-  // Knife/warmup visibility pref (key: show_knife_warmup_rounds,
-  // prefs.go) — read the way Match.svelte reads it (kvstore, default OFF
-  // = hide). Applied as an ADDITIONAL feed filter (applyRoundPref in
-  // lib/replay/landmarks.js) on top of the category opt-in rules and
-  // the ?roundFrom/?roundTo scoping — it never overrides them; Settings
-  // writes the key directly and there is no cross-view change event, so
-  // the view re-reads it on mount (returning to Replay remounts it).
-  let showKnifeWarmup = $state(false);
-
-  $effect(() => {
-    let live = true;
-    getPref('show_knife_warmup_rounds')
-      .then((v) => {
-        // kvstore round-trips JSON — Settings writes a real boolean;
-        // anything else (unset, null, corrupt) reads as hidden.
-        if (live) showKnifeWarmup = v === true;
-      })
-      .catch(() => {
-        if (live) showKnifeWarmup = false; // unreadable store → hidden
-      });
-    return () => (live = false);
-  });
-
-  // The pref can empty an EXPLICITLY round-scoped feed (a deep link to
-  // ?roundFrom=-2&roundTo=-1 while the pref hides knife/warmup rounds
-  // matches nothing) — the empty state says so instead of the generic
-  // "no events" line. Only a scope whose KNOWN rounds are all hidden is
-  // blamed on the pref: a range that reaches a counted round, or names
-  // rounds the lookup does not know, is never the explanation (defensive,
-  // never invented — the same convention as normalizeEvent).
-  const prefHidesScope = $derived.by(() => {
-    if (showKnifeWarmup) return false;
-    const { roundFrom, roundTo } = filter;
-    if (roundFrom === 0 && roundTo === 0) return false;
-    const inScope = [];
-    for (const r of rbn.values()) {
-      if (roundFrom !== 0 && r.number < roundFrom) continue;
-      if (roundTo !== 0 && r.number > roundTo) continue;
-      inScope.push(r);
-    }
-    return inScope.length > 0 && inScope.every((r) => !isCounted(r));
-  });
-
   // Fetch effect: re-runs only when the SERIALIZED filter changes (the
   // query object identity changes on every route write — the string key
   // keeps unrelated query churn, e.g. sel dropping, from refetching).
@@ -621,15 +577,13 @@
 
   // The merged, categorized, chronological feed — ONE derivation in
   // feed.js: each source's rows normalized under the CURRENT filter (the
-  // enabled-claim stamp), the merge with the SOURCES' own ranks/seq keys,
-  // then the round-visibility pref (applyRoundPref) as an additional
-  // filter on top of the category opt-in rules and the round-range
+  // enabled-claim stamp) and the merge with the SOURCES' own ranks/seq
+  // keys, on top of the category opt-in rules and the round-range
   // scoping already in the query.
   const feedRows = $derived(
     composeFeedRows(feedPages, {
       roundsByNumber: rbn,
       cats: filter.cats,
-      showKnifeWarmup,
     }),
   );
 
@@ -702,14 +656,12 @@
       out.push({ cls: 'tall', pct: ((r.startTick - t0) / span) * 100, round: r.number });
     }
     if (!drawNorm.length || !markerKeys) return out; // the event pass may still be in flight
-    // The TWO client-side rules the list applies to the same rows (the
-    // SQL has neither): the knife/warmup visibility pref and the
-    // countedOnly category rule — keeping them is what makes markers a
-    // SUBSET of the list rather than a parallel answer. (The renderer's
-    // WORLD layers stay unfiltered: the map always shows the full
-    // spatial context — see the drawNorm comment.)
-    const norm = applyRoundPref(drawNorm, rbn, showKnifeWarmup);
-    for (const l of norm) {
+    // The ONE client-side rule the list applies to the same rows (the
+    // SQL has neither): the countedOnly category rule — keeping it is
+    // what makes markers a SUBSET of the list rather than a parallel
+    // answer. (The renderer's WORLD layers stay unfiltered: the map
+    // always shows the full spatial context — see the drawNorm comment.)
+    for (const l of drawNorm) {
       if (!markerKeys.has(l.id)) continue; // THE filter answer
       // Round rows never draw from the filtered answer: round-start
       // ticks are owned by pass 1 (a second tick at the same position
@@ -748,11 +700,10 @@
   let entrySelTick = 0; // its tick when it resolves before the engine is up
   // The DEFAULT entry tick when the URL makes no time promise (no valid
   // ?tick= — the round scope is filter state and never a promise):
-  // load() resolves it once, AWAITING the
-  // knife/warmup hiding pref (show_knife_warmup_rounds) — pref OFF → the
-  // first COUNTED round's start, pref ON → frame 0. It is not reactive
-  // on purpose: the pref decides where a replay LAUNCHES, not where an
-  // in-session filter change lands (those never re-run startEngine).
+  // load() resolves it once — the FIRST counted round's start (frame 0
+  // when no counted round carries a usable start). It is not reactive on
+  // purpose: it decides where a replay LAUNCHES, not where an in-session
+  // filter change lands (those never re-run startEngine).
   let entryDefaultTick = 0;
   let selApplied = false;
   // The LAST-APPLIED entry seed — the ONE record both seed-application
@@ -1562,7 +1513,7 @@
   // releases).
   //
   // Pref `camera_mode` (frontend-owned kvstore, the same pattern as
-  // font_size / show_knife_warmup_rounds) stores ONLY 'smart' | 'free':
+  // font_size) stores ONLY 'smart' | 'free':
   // Follow is NOT persisted — it needs a player and is entry/route state
   // (it rides ?follow=), so the pref keeps the last explicit Smart/Free
   // choice and a session's Follow can never stick across entries. Unset
@@ -1934,13 +1885,12 @@
   }
 
   // defaultEntryTick — where a replay starts when the entry URL makes
-  // NO time promise (nav.entrySeekTick returned null): the knife/warmup
-  // hiding pref decides — OFF (hidden, the default) lands on the FIRST
-  // COUNTED round's start so a hidden warmup/knife round is never the
-  // opening frame, ON (shown) lands on frame 0. No counted round (or no
-  // rounds loaded at all) → frame 0, never a guessed time.
-  function defaultEntryTick(showKW) {
-    if (showKW) return 0;
+  // NO time promise (nav.entrySeekTick returned null): the FIRST counted
+  // round's start, so a pre-reprocess legacy warmup/knife row is never
+  // the opening frame (the owner's ruling: entry at round 1 — the
+  // timeline stream itself still covers the whole match). No counted
+  // round (or no rounds loaded at all) → frame 0, never a guessed time.
+  function defaultEntryTick() {
     for (const r of rounds) {
       if (isCounted(r) && Number.isFinite(r.startTick)) return r.startTick;
     }
@@ -2007,15 +1957,14 @@
     try {
       // The load-time prefs are read FRESH — deliberately NOT off the
       // bundle (preload.js): kvstore writes emit NO flush event, so a
-      // volume/knife-warmup/skip-freeze change made in Settings after a
-      // background preload would be served stale from the memo. The
-      // pre-preload semantics were "read at load time" and they are
-      // preserved exactly — but as ONE Promise.all started BEFORE the
-      // bundle await below, so the two overlap and the click path pays
-      // nothing extra (never a serialized stage). Every read fail-softs
-      // to null like every other pref read in load().
+      // volume/skip-freeze change made in Settings after a background
+      // preload would be served stale from the memo. The pre-preload
+      // semantics were "read at load time" and they are preserved exactly
+      // — but as ONE Promise.all started BEFORE the bundle await below,
+      // so the two overlap and the click path pays nothing extra (never
+      // a serialized stage). Every read fail-softs to null like every
+      // other pref read in load().
       const prefsP = Promise.all([
-        getPref('show_knife_warmup_rounds').catch(() => null),
         getPref('skip_freeze').catch(() => null),
         getPref('voice_volume').catch(() => null),
         getPref('guns_volume').catch(() => null),
@@ -2172,15 +2121,12 @@
       // BEFORE the bundle await (the Promise.all at the top of load()),
       // so this is a microtask — never a serialized stage — and they
       // carry the CURRENT store, not a preloaded snapshot.
-      const [knifePref, skipPref, vv, gv, uv, cv, av, sv] = await prefsP;
-      // The DEFAULT entry tick (no explicit ?tick=): resolved from the
-      // fresh load-time read — the showKnifeWarmup $effect reads the
-      // same key asynchronously and could land AFTER startEngine applies
-      // the entry seek, which would start the replay on the wrong side
-      // of the knife/warmup-hiding pref (the same race and the same
-      // resolution as before the preload existed). Unreadable store →
-      // hidden (the default).
-      entryDefaultTick = defaultEntryTick(knifePref === true);
+      const [skipPref, vv, gv, uv, cv, av, sv] = await prefsP;
+      // The DEFAULT entry tick (no explicit ?tick=): resolved HERE from
+      // the first counted round — load() runs before startEngine applies
+      // the entry seek, so there is no race against a second read (every
+      // round-visibility pref read is gone with the setting).
+      entryDefaultTick = defaultEntryTick();
       // Skip-freeze toggle (frontend-owned kvstore — the camera_mode
       // pattern): read HERE, before startEngine, so the first engine
       // push carries the persisted choice; unset / unreadable → OFF (the
@@ -2486,9 +2432,8 @@
     // ?tick= is the ONLY position source — the round scope
     // (?roundFrom=/?roundTo=) is feed-filter state and NEVER seeks, so
     // a scope-only URL resolves null here; null means the URL made NO
-    // time promise, and then the pref-decided default (load() awaited
-    // the knife/warmup pref: first counted round's start while it hides
-    // them, frame 0 while it shows them) applies; a ?sel= landmark
+    // time promise, and then the load-time default (entryDefaultTick:
+    // the first counted round's start) applies; a ?sel= landmark
     // that resolved before the engine was up applies in between).
     // Applied once HERE per fresh load — the keep-alive's seed watcher
     // ("Keep-alive entry seed" above) owns every DISTINCT resolution
@@ -4126,8 +4071,6 @@
               No categories enabled — turn some on in Filters.
             {:else if feedLoading}
               <StatusChip block detail="Loading events…" />
-            {:else if prefHidesScope}
-              Knife/warmup rounds are hidden — show them in Settings, or clear the round range.
             {:else}
               No events match these filters.
             {/if}

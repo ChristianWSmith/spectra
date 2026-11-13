@@ -138,8 +138,9 @@
     return Number.isFinite(n) && n > 0 ? n : 0;
   }
 
-  // Round bounds keep NEGATIVE values (knife/warmup rounds are real
-  // rounds) and truncate to integers; empty/0/junk = unset.
+  // Round bounds keep NEGATIVE values (a pre-reprocess match still
+  // carries negative knife/warmup round numbers) and truncate to
+  // integers; empty/0/junk = unset.
   function roundNum(v) {
     const n = Math.trunc(Number(v));
     return Number.isFinite(n) && n !== 0 ? n : 0;

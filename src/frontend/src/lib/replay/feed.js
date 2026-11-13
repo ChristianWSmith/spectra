@@ -57,7 +57,6 @@ import {
   killRoleFor,
   normalizeEvent,
   normalizeGeneric,
-  applyRoundPref,
 } from './landmarks.js';
 
 // The feed's page size: a page read requests size+1 (the probe row that
@@ -354,15 +353,15 @@ export function mergeSourceRows(rows) {
 }
 
 // composeFeedRows — THE list derivation: the raw page slots → the
-// normalized, merged, round-visibility-pref'd feed rows.
+// normalized, merged feed rows.
 //   pages — { [key]: { job, rows, hasMore } } (the view's one state map)
-//   ctx   — { roundsByNumber, cats, showKnifeWarmup }
+//   ctx   — { roundsByNumber, cats }
 // Normalization happens HERE (per source descriptor), so a row's
 // enabled-claim stamp follows the CURRENT filter even though the raw
 // rows were fetched under it too, and the countedOnly rule has the round
-// index it needs. applyRoundPref (landmarks) is the additional
-// knife/warmup visibility rule on top — the feed's own category opt-in
-// rules and round-range scoping are already in the query.
+// index it needs. (The old knife/warmup visibility pref is retired with
+// the discard — every stored round is counted; the feed's category
+// opt-in rules and round-range scoping are already in the query.)
 export function composeFeedRows(pages, ctx) {
   const rows = [];
   for (const slot of Object.values(pages || {})) {
@@ -374,7 +373,7 @@ export function composeFeedRows(pages, ctx) {
       if (row) rows.push(row); // null = the feed's gate dropped it
     }
   }
-  return applyRoundPref(mergeSourceRows(rows), ctx.roundsByNumber, ctx.showKnifeWarmup);
+  return mergeSourceRows(rows);
 }
 
 // --- The ?sel= deep-link resolution ---------------------------------------

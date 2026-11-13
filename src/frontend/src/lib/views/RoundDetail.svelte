@@ -148,9 +148,9 @@
 
   // Scoreline at this round: cumulative counted-round wins through this
   // round — the ONE aggregate in lib/rounds.js scoreThrough (view-level
-  // over the already-fetched rounds rows; isCounted drops the
-  // knife/warmup winners, rounds are numbered in time order so
-  // "number <= round" is "through this round").
+  // over the already-fetched rounds rows; isCounted keeps a legacy
+  // negative row's winner out of the scoreline, rounds are numbered in
+  // time order so "number <= round" is "through this round").
   const scoreAt = $derived(scoreThrough(rounds, round));
 
   // Into-round clock for an event row ("0:47" = that far past the round
@@ -275,7 +275,7 @@
       <h1>
         {#if roundKind(detail.round)}
           <span
-            title={detail.round.pregame
+            title={roundKind(detail.round) === 'Knife'
               ? 'pre-match knife round — not counted play'
               : 'warmup round — not counted play'}
             >{roundKind(detail.round)} round</span
@@ -358,7 +358,7 @@
             <div>
               <dt>Score</dt>
               <dd
-                title="Counted-round wins through this round (knife/warmup excluded)"
+                title="Counted-round wins through this round"
               >
                 {#if round >= 1 && rounds.length}
                   <span class="ct">{scoreAt.ct}</span>–<span class="t">{scoreAt.t}</span>

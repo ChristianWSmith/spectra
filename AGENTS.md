@@ -297,7 +297,10 @@ Canonical homes (extend these, don't fork them):
   round is counted and `analytics.CountedRounds` is a documented identity
   over that set (its cross-reference home; the SQL twin
   `warmup = 0 AND pregame = 0` died with the columns; the frontend twin
-  `lib/rounds.js isCounted` is retired by Phase 3 of the discard);
+  `lib/rounds.js isCounted` survived Phase 3 the same way — an identity
+  over stored rows that stays THE canonical `number >= 1` guard for a
+  pre-reprocess match's legacy negative rows, never re-spelled at a call
+  site);
   utility-weapon set in `models.IsUtilityWeapon`; win
   predicate `models.WinFor`; config building `analytics.ConfigFrom`.
   Never re-express a rule in a second layer — add a comment cross-referencing

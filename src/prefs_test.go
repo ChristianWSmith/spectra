@@ -52,10 +52,6 @@ func TestFrontendPrefKeyStrings(t *testing.T) {
 	if prefsFontSizeKey != "font_size" {
 		t.Errorf("font-size key = %q, want %q", prefsFontSizeKey, "font_size")
 	}
-	if prefsShowKnifeWarmupRoundsKey != "show_knife_warmup_rounds" {
-		t.Errorf("knife/warmup key = %q, want %q",
-			prefsShowKnifeWarmupRoundsKey, "show_knife_warmup_rounds")
-	}
 	// The replay volume popover and Settings' Audio & voice section share
 	// these — one key rename would silently split the two surfaces.
 	if prefsVoiceVolumeKey != "voice_volume" {
@@ -89,6 +85,24 @@ func TestFrontendPrefKeyStrings(t *testing.T) {
 func TestCopyOnImportPrefKey(t *testing.T) {
 	if prefsCopyOnImportKey != "copy_on_import" {
 		t.Errorf("copy-on-import key = %q, want %q", prefsCopyOnImportKey, "copy_on_import")
+	}
+}
+
+// Removal pin for the retired knife/warmup display pref: the extractor
+// discards knife/warmup/post-match rounds at ingest, so every stored
+// round is a counted round and a visibility toggle has nothing to filter
+// (a stale kvstore value is orphaned and ignored — no migration, per the
+// pre-release policy). If this fails, someone is reintroducing the
+// setting — don't; the rows it hid are never stored.
+func TestRetiredKnifeWarmupRoundsPrefGone(t *testing.T) {
+	src, err := os.ReadFile("prefs.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, retired := range []string{"show_knife_warmup_rounds", "prefsShowKnifeWarmupRoundsKey"} {
+		if strings.Contains(string(src), retired) {
+			t.Errorf("prefs.go mentions %q — the knife/warmup display pref is retired; its rows are discarded at ingest", retired)
+		}
 	}
 }
 

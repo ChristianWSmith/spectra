@@ -127,9 +127,8 @@ export function sideAtRound(rounds, sideSwitches, roundNumber, finalSide) {
 // FINAL side — the key lib/teams.js names (teamNames) are keyed by, so
 // a round's winner cell can show a team NAME instead of the side name
 // that swaps meaning at halftime. Round-number based (through
-// sideAtRound), so a surface that re-filters its rows — the Rounds tab's
-// show-knife-warmup pref, counted-only economy rows — can never move the
-// answer.
+// sideAtRound), so a surface that re-filters its rows — counted-only
+// economy rows — can never move the answer.
 //
 // The derivation: sideAtRound answers which side the team that FINISHED
 // CT played in that round; if that side is the winning side, the winner

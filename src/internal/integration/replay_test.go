@@ -270,10 +270,6 @@ func TestReplaySidecar(t *testing.T) {
 	}
 
 	// 5. Fixture compare / regenerate.
-	// Phase 4 regenerates donk.replay.json: firstFreeze now reads the
-	// first STORED round's freeze end (the discarded knife round's 1280
-	// is gone — the pistol's 5029 takes over) and killPosPairs dropped
-	// with the 8 discarded knife/warmup kills (170 → 162).
 	fixPath := filepath.Join("testdata", "donk.replay.json")
 	if *updateReplay {
 		b, _ := json.MarshalIndent(got, "", "  ")

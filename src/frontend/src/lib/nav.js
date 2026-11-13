@@ -183,11 +183,12 @@ export function entryLoopSpanAround(firstTick, lastTick, tickRate) {
 //               promise");
 //   2. else null — the URL makes NO time promise, so there is nothing
 //               to resolve here: Replay applies the user's DEFAULT
-//               start position (the knife/warmup hiding pref decides
-//               between the first counted round's start and frame 0).
+//               start position (the first counted round's start — the
+//               knife/warmup display pref that used to pick between it
+//               and frame 0 died with the discard).
 //               Returning null instead of 0 keeps "no promise"
 //               distinguishable from an explicit first-frame target,
-//               which is the whole point of the pref-aware default —
+//               which is the whole point of the load-time default —
 //               and it is why a scope-only URL (a saved/bookmarked
 //               filter, a deep link) lands at that default while its
 //               filter still applies. Watch links from OUTSIDE the

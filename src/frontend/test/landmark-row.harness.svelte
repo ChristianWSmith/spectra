@@ -96,10 +96,11 @@
 
   // Round lookup (Replay passes roundsByNumber + tickRate): rows then
   // show the ROUND + MATCH-CLOCK columns instead of the legacy tick
-  // cell. Round 5 starts at tick 1920; round -2 is the knife round.
+  // cell. Round 5 starts at tick 1920; round -2 is a LEGACY knife row
+  // (the discard removed the row flags — the number rule labels it).
   const rounds = [
-    { number: 5, startTick: 1920, warmup: false, pregame: false },
-    { number: -2, startTick: 100, warmup: false, pregame: true },
+    { number: 5, startTick: 1920 },
+    { number: -2, startTick: 100 },
   ];
   const rbn = new Map(rounds.map((r) => [r.number, r]));
   const timed = { ...kill, key: 'e:3', tick: 3000, round: 5 };

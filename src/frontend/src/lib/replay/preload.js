@@ -566,7 +566,7 @@ async function readEvents(id, entry) {
 
 // PREFS ARE DELIBERATELY NOT BUNDLED (the load-time reads stay in
 // Replay's load()): kvstore writes emit NO flush event, so anything
-// memoized here would serve a volume/knife-warmup/skip-freeze change
+// memoized here would serve a volume/skip-freeze change
 // made in Settings AFTER this preload — stale, with no refresh path.
 // The pre-preload semantics were "read at load time" and they are
 // preserved exactly: Replay starts them as ONE Promise.all alongside

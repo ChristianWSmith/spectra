@@ -313,7 +313,15 @@ test('mergeSourceRows orders by tick, then the source rank, then the sequence ke
 
 // --- The list derivation ----------------------------------------------------
 
-test('composeFeedRows: normalize per source → merge → the round-visibility pref', () => {
+// BEHAVIOR CHANGE, labeled (knife/warmup discard, Phase 3): the
+// show_knife_warmup_rounds visibility rule that used to run here
+// (composeFeedRows → landmarks.applyRoundPref) is retired with the
+// setting — every stored round is counted, and a LEGACY negative-round
+// row now reaches the list like any other claimed row (no hidden
+// half-state; the category opt-in rules are the only client-side gate
+// left). The pin below is the surviving subject: per-source normalize →
+// merge (by tick) → the ENABLED-claim stamp.
+test('composeFeedRows: normalize per source → merge → the claim stamp', () => {
   const filter = parseLandmarkFilter({ cat: 'kills' });
   const [job] = feedJobs(filter); // the event job (the only one on)
   const pages = {
@@ -322,27 +330,24 @@ test('composeFeedRows: normalize per source → merge → the round-visibility p
       rows: [
         { id: 1, seq: 1, tick: 300, round: 2, kind: 'kill' },
         { id: 2, seq: 2, tick: 100, round: 1, kind: 'kill' },
-        { id: 3, seq: 3, tick: 150, round: -1, kind: 'kill' }, // warmup row
+        { id: 3, seq: 3, tick: 150, round: -1, kind: 'kill' }, // legacy warmup row
         { id: 4, seq: 4, tick: 160, round: 1, kind: 'teleport' }, // unclaimed → dropped
       ],
       hasMore: false,
     },
   };
   const rbn = new Map([
-    [-1, { number: -1, warmup: true }],
+    [-1, { number: -1 }],
     [1, { number: 1 }],
     [2, { number: 2 }],
   ]);
-  const ctx = { roundsByNumber: rbn, cats: filter.cats, showKnifeWarmup: false };
+  const ctx = { roundsByNumber: rbn, cats: filter.cats };
   const rows = composeFeedRows(pages, ctx);
-  // merged by tick, warmup hidden, unclaimed kind gated out, kill stamped
-  // with the ENABLED claim ('kills').
-  assert.deepEqual(rows.map((r) => r.key), ['e:2', 'e:1']);
+  // merged by tick, the unclaimed kind gated out, every claimed kill
+  // stamped with the ENABLED claim ('kills') — the legacy warmup row
+  // included (the visibility pref is dead).
+  assert.deepEqual(rows.map((r) => r.key), ['e:2', 'e:3', 'e:1']);
   assert.equal(rows[0].category, 'kills');
-  // Pref ON → the warmup row returns (the visibility rule is additional,
-  // never a replacement for the category opt-in rules).
-  const shown = composeFeedRows(pages, { ...ctx, showKnifeWarmup: true });
-  assert.deepEqual(shown.map((r) => r.key), ['e:2', 'e:3', 'e:1']);
   // No pages → no rows (never a throw).
   assert.deepEqual(composeFeedRows({}, ctx), []);
 });
@@ -410,7 +415,11 @@ test('soundSource: the round + player scopes ride the JOB (the tick-windowed con
   assert.equal(soundSource.normalize({ ...SOUND_ROW, round: 2 }, lower, {}, 6), null, 'below the lower bound');
 });
 
-test('composeFeedRows: a sound page lands with its index keys (the round pref still applies)', () => {
+// BEHAVIOR CHANGE, labeled (knife/warmup discard, Phase 3): the round-
+// visibility pref sub-case below is retired with the setting — a sound
+// row of a legacy negative round reaches the list exactly like any other
+// row (composeFeedRows applies no round-visibility rule anymore).
+test('composeFeedRows: a sound page lands with its index keys', () => {
   const filter = parseLandmarkFilter({ cat: 'footsteps' });
   const job = feedJobs(filter)[0];
   const pages = {
@@ -418,19 +427,19 @@ test('composeFeedRows: a sound page lands with its index keys (the round pref st
   };
   const rbn = new Map([
     [2, { number: 2 }],
-    [-2, { number: -2, warmup: true, pregame: true }],
+    [-2, { number: -2 }],
   ]);
-  const rows = composeFeedRows(pages, { roundsByNumber: rbn, cats: filter.cats, showKnifeWarmup: false });
+  const rows = composeFeedRows(pages, { roundsByNumber: rbn, cats: filter.cats });
   assert.deepEqual(rows.map((r) => r.key), ['s:0', 's:1']);
   assert.deepEqual(rows.map((r) => r.tick), [640, 700]);
   assert.equal(rows[0].category, 'footsteps');
-  // The knife/warmup visibility pref is a RULE, not a source detail — it
-  // applies to sound rows exactly as it does to event rows.
+  // A legacy negative-round sound row is NOT hidden anymore (the
+  // retired pref used to drop it): it lands like every other row.
   const warm = composeFeedRows(
     { [job.key]: { job, rows: [{ ...SOUND_ROW, round: -2 }], hasMore: false } },
-    { roundsByNumber: rbn, cats: filter.cats, showKnifeWarmup: false },
+    { roundsByNumber: rbn, cats: filter.cats },
   );
-  assert.deepEqual(warm.map((r) => r.key), [], 'a hidden warmup row never reaches the list');
+  assert.deepEqual(warm.map((r) => r.key), ['s:0'], 'a legacy row reaches the list');
 });
 
 // --- The ?sel= resolution ---------------------------------------------------

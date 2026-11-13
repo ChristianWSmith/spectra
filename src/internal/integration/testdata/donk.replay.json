@@ -3,7 +3,7 @@
   "slots": 10,
   "tickRate": 64,
   "realRounds": 23,
-  "firstFreezeTick": 1280,
+  "firstFreezeTick": 5029,
   "aliveAtFreeze": 10,
   "bounds": {
     "MinX": -2000,
@@ -24,6 +24,6 @@
     }
   },
   "maxPlantEccentricity": 225.70463949496207,
-  "killPosPairs": 170,
+  "killPosPairs": 162,
   "maxKillSidecarDelta": 1.3496725841161932
 }

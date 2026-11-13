@@ -303,7 +303,7 @@ test('normTickRate is the shared >0 ? :64 fallback', () => {
 // into THAT round, not into the overall game).
 
 const ROUND_MAP = new Map([
-  [-1, { number: -1, startTick: 400 }], // warmup — not counted play
+  [-1, { number: -1, startTick: 400 }], // legacy warmup — never counted play
   [1, { number: 1, startTick: 1200 }],
   [7, { number: 7, startTick: 24500 }],
   [9, { number: 9 }], // row without a startTick
@@ -319,7 +319,7 @@ test('chatClock: "RD{n} m:ss" — time into a counted round', () => {
 test('chatClock: falls back to the match-relative clock (never negative)', () => {
   // No containing round → plain match clock: 6960 / 64 = 108.75 → 1:49.
   assert.equal(chatClock({ round: 5, tick: 6960 }, ROUND_MAP, 64), '1:49');
-  // Counted-out round (warmup, lib/rounds.js isCounted): 1040 / 64 → 0:16.
+  // Legacy non-counted round (warmup, lib/rounds.js isCounted): 1040 / 64 → 0:16.
   assert.equal(chatClock({ round: -1, tick: 1040 }, ROUND_MAP, 64), '0:16');
   // Tick before the round's start → negative offset → match clock.
   assert.equal(chatClock({ round: 7, tick: 1000 }, ROUND_MAP, 64), '0:16');

@@ -14,15 +14,11 @@
 //   3. normalize*      — source rows (typed EventRow / ChatRow /
 //                        GenericEvent) → one landmark row shape that
 //                        preserves the source's own fields.
-//   4. applyRoundPref  — the show_knife_warmup_rounds visibility rule
-//                        (an ADDITIONAL feed filter on top of the
-//                        category opt-ins and ?roundFrom/?roundTo
-//                        scoping).
-//   5. filter <-> URL  — the landmark filter model serialized to the
+//   4. filter <-> URL  — the landmark filter model serialized to the
 //                        route query (deep links, refresh, back/forward)
 //                        and shouldRevealFeed, the feed-reveal-on-arrival
 //                        rule over it.
-//   6. conditional fields — applicableFilterFields /
+//   5. conditional fields — applicableFilterFields /
 //                        clearInapplicableFields: which FilterBar fields
 //                        can constrain a category set at all, and the
 //                        clearing rule both choke points (parse and
@@ -172,7 +168,9 @@ export const DRAW_KINDS = [
 // `kinds` (event source) or `name` (generic source) scopes the query;
 // `default` categories are the sparse initial selection; `countedOnly`
 // restricts the category to counted rounds (lib/rounds.js isCounted —
-// knife/warmup rounds are not part of the default narrative).
+// legacy tolerance: every stored round is counted since the knife/warmup
+// discard, but a pre-reprocess row must not enter the default
+// narrative).
 export const CATEGORIES = [
   { id: 'kills', label: 'Kills', short: 'kill', source: 'event', kinds: ['kill'] },
   // Deaths claims the SAME kind as Kills — deliberately SHARED: a death
@@ -677,9 +675,10 @@ export function normalizeEvent(ev, opts = {}) {
   if (opts.policy !== false) {
     const cat = categoryById(category);
     if (cat && cat.countedOnly && opts.roundsByNumber) {
-      // Knife/warmup rounds are real rows but not counted play — the
-      // canonical rule is lib/rounds.js isCounted (the analytics
-      // CountedRounds twin); a round the lookup does not know is kept.
+      // The canonical rule is lib/rounds.js isCounted — legacy
+      // tolerance: every stored round is counted since the knife/warmup
+      // discard, but a pre-reprocess negative row must not enter a
+      // counted-only narrative; a round the lookup does not know is kept.
       const r = opts.roundsByNumber.get(ev.round);
       if (r && !isCounted(r)) return null;
     }
@@ -725,7 +724,7 @@ export function normalizeEvent(ev, opts = {}) {
 //   2. NO round policy (no countedOnly drop, no roundsByNumber): the
 //      world shows the full spatial context — the consumers that need
 //      round-visibility apply it themselves where they mean it (the
-//      scrubber-marker gate's applyRoundPref), never in the shape.
+//      scrubber-marker gate's countedOnly rule), never in the shape.
 //
 // The returned row deliberately carries NO `category` field: the enabled
 // stamp is feed-only by construction, so no world consumer can read it
@@ -795,27 +794,6 @@ export function normalizeGeneric(g, category) {
     who: g.who || '',
     label: g.label || '',
   };
-}
-
-// applyRoundPref — the show_knife_warmup_rounds visibility rule (the
-// kvstore pref Settings writes; default OFF = hide knife/warmup rows):
-// with the pref off, every row of a NON-COUNTED round (negative ingest
-// indices — knife/warmup, lib/rounds.js isCounted) is dropped. It is an
-// ADDITIONAL filter on top of the category opt-in rules
-// (normalizeEvent's countedOnly) and the ?roundFrom/?roundTo scoping —
-// never a replacement for either; a row must pass all of them. A round
-// the lookup does not know (or a row with no round stamp) is KEPT —
-// defensive, never invented, the same convention as normalizeEvent.
-// Pref on → the input array comes back untouched (same reference).
-// Consumed by feed.composeFeedRows (the list) and Replay's scrubber
-// markers — the same rule on both reads, so they can never disagree.
-export function applyRoundPref(rows, roundsByNumber, showKnifeWarmup) {
-  if (showKnifeWarmup) return rows;
-  const by = roundsByNumber || new Map();
-  return rows.filter((r) => {
-    const round = by.get(r.round);
-    return !round || isCounted(round);
-  });
 }
 
 // --- Filter model <-> route query -------------------------------------------
