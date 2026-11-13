@@ -1363,18 +1363,27 @@ at the end of the section.
   captured and played as recorded.
 
   **`Molotov.Smash` (4 variants) → `molotov_smash_01..04.vsnd_c` and its
-  incendiary twin `IncGrenade.Pop` → `inc_grenade_pop_03.vsnd_c`** play
-  when a firebomb DETONATES — lands and breaks (owner ruling +
-  terminology, 2026-11-12: "plays when it lands… detonates"). There is
-  NO `IncGrenade.Smash` anywhere in the install (grep over all 21,220
-  soundevent names: Molotov.Smash is the only "smash"; IncGrenade.Pop is
-  the family's only container-break sound — its twin by elimination,
-  flagged for the owner's by-ear verification). Both fire **0× across all
-  7 pool demos** (two independent SOS censuses) — captured anyway per the
-  owner's wire-the-dead-capture decision; with zero pool occurrences
-  there is no demo-side tick alignment to sample until a newer demo
-  records them. Molotov smash keeps its four variants so repeated
-  detonations don't loop one sample; Pop ships one.
+  incendiary twin `IncGrenade.Pop` → `inc_grenade_pop_03.vsnd_c`** are
+  DROPPED from the capture (owner ruling, 2026-11-12, after by-ear
+  verification). They were meant to be the firebomb DETONATING — lands
+  and breaks — but the DETONATE sounds already have the character baked
+  in: the Molotov detonation sound carries the smash, the incendiary
+  detonation sound carries the characteristic pop, and the owner had
+  never heard either cue in game. **Both names are effectively unused:**
+  **0× across all 7 pool demos** (two independent SOS censuses) and
+  never observed in game — so the capture was removed end-to-end
+  (extract `fireCueDefs`, `models.EventSmash`, the soundTable groups,
+  the frontend cue registry), leaving the OTHER FOUR cue soundevents
+  (extinguish / air-burst failure / fade-out) captured and played. There
+  is NO `IncGrenade.Smash` anywhere in the install (grep over all 21,220
+  soundevent names: Molotov.Smash is the only "smash"; IncGrenade.Pop
+  was the family's only container-break sound — its twin by elimination).
+
+  **Landing vs bouncing (owner, 2026-11-12):** firebombs are coded to
+  DETONATE when landing on any sufficiently FLAT surface; a surface that
+  is NOT flat (e.g. a wall) makes them BOUNCE instead — the
+  bounce-vs-detonate split ("makes sense to suppress 'landing'" — the
+  owner's remark).
 
   `Molotov.Start`/`IncGrenade.Start` fire 1:1 with `inferno_startburn`
   (42+46=88=88 on de_cache — re-verified; `Inferno.Loop` likewise equals
@@ -1388,10 +1397,10 @@ at the end of the section.
   covered"), but the demo records only ONE `inferno_expire` per inferno —
   partial cell-by-cell extinguishing is not observable. Since 2026-07-20
   the C4 explosion also extinguishes fire and disperses smoke (a second
-  extinguish trigger). Spectra captures all six cue soundevents in the
+  extinguish trigger). Spectra captures all four cue soundevents in the
   third SOS wave (`internal/extract/sos.go` `fireCueDefs`) and plays them
   as audio-only cues on the utility bus (`frontend/src/lib/replay/sfx.js`
-  `fireCues`) — no feed category claims the four cue kinds (owner: no
+  `fireCues`) — no feed category claims the three cue kinds (owner: no
   feed visibility) and nothing new is drawn (the owner's indicator ruling:
   scenario (ii) needs no indicator — no startburn, no fire row).
   **Source** — local probe: `cs2find events/find/hash` over

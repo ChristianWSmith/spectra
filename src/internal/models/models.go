@@ -143,16 +143,6 @@ const (
 	// unconditionally: play what the demo recorded. Unclaimed like the
 	// other cue kinds (no feed entry).
 	EventStartFailed = "start_failed"
-	// EventSmash marks a firebomb DETONATING (landing and breaking —
-	// owner's term, 2026-11-12): the SOS Molotov.Smash / IncGrenade.Pop
-	// soundevents — the only container-break sounds in their families
-	// (no IncGrenade.Smash exists; Pop is the incendiary twin by family
-	// elimination, flagged for the owner's by-ear verification). Both fire
-	// 0× across the current 7-demo pool and are captured anyway (owner
-	// decision: wire the dead capture, verify manually). Row weapon
-	// ("Molotov" / "Incendiary Grenade" from the soundevent name) picks
-	// which break file plays. Unclaimed: audio-only cue.
-	EventSmash = "smash"
 	// EventFadeOut marks Inferno.FadeOut — the fire fading out. It
 	// co-fires at +0 from the SAME source entity as the extinguish cue at
 	// suppressed landings (59/66 pool extinguish cues, 5/5 of the

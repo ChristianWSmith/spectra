@@ -23,10 +23,9 @@ import (
 // counts, which entity id a bounce's source index matches (thrower vs
 // projectile vs blast payload — the detail_json join key), player-sound
 // attribution rates and their failure reasons, the fire-cue census (Wave C —
-// Molotov.Extinguish / StartFailed / Smash / IncGrenade.Pop / Inferno.FadeOut
-// per-name counts), and any player-sound NAME the static candidate table does
-// not cover (resolved against the local install's soundevent table when CS2 is
-// present). Run with:
+// Molotov.Extinguish / StartFailed / Inferno.FadeOut per-name counts), and
+// any player-sound NAME the static candidate table does not cover (resolved
+// against the local install's soundevent table when CS2 is present). Run with:
 //
 //	SPECTRA_DIAG=1 go test ./internal/extract -run TestDiagSOS -v
 func TestDiagSOS(t *testing.T) {
@@ -376,7 +375,7 @@ func TestDiagSOS(t *testing.T) {
 		}
 	}
 	fmt.Println("== SOS: fire-cue wave ==")
-	fmt.Printf("per-name=%v (Molotov.Smash/IncGrenade.Pop are 0× in the current pool — captured anyway, owner: wire the dead capture)\n", cueCount)
+	fmt.Printf("per-name=%v (Molotov.Smash/IncGrenade.Pop are DROPPED — owner ruling 2026-11-12, they never fired in the pool)\n", cueCount)
 
 	// --- name coverage (needs the local install for the full name table) --
 	unknown := map[uint32]int{}

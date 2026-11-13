@@ -104,18 +104,19 @@ var modelEventKinds = []string{
 	// the golden demo has no decoys, so its fixture entry is exactly 0
 	// — the one expected diff when this kind was added.
 	models.EventGrenadeLand,
-	// The four FIRE-CUE kinds (models.EventExtinguish … EventFadeOut —
+	// The three FIRE-CUE kinds (models.EventExtinguish … EventFadeOut —
 	// Wave C, extract/sos.go fireCueDefs): de_cache records 4 extinguish
 	// + 4 start_failed rows (66/9 messages pool-wide, none deduping —
-	// no (tick,source) pair repeats), ZERO smash (both names are 0× in
-	// the pool — captured anyway per the owner's wire-the-dead-capture
-	// decision), and fade_out wherever a fire dies or is suppressed (90
-	// messages on de_cache). The expected diff when these kinds were
-	// added: the events map gains 4 keys, eventTotal rises by the rows,
-	// eventKindsDistinct by the non-zero kinds.
+	// no (tick,source) pair repeats) and fade_out wherever a fire dies or
+	// is suppressed (90 messages on de_cache). The fourth cue kind,
+	// smash (Molotov.Smash / IncGrenade.Pop), is GONE by owner ruling
+	// (2026-11-12, by-ear verification: the detonate sounds already carry
+	// the smash/pop character; it was 0× in the pool, so the fixture
+	// loses only its `"smash": 0` key). The expected diff when these
+	// kinds were added: the events map gains 3 keys, eventTotal rises by
+	// the rows, eventKindsDistinct by the non-zero kinds.
 	models.EventExtinguish,
 	models.EventStartFailed,
-	models.EventSmash,
 	models.EventFadeOut,
 	models.EventRoundStart,
 	models.EventRoundEnd,

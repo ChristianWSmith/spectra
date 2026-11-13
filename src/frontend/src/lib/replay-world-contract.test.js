@@ -118,7 +118,7 @@ test('SFX_CUE_KINDS ⊆ DRAW_KINDS (the audio half of the draw set)', () => {
   // without the registry following it would leave the tie unverified.
   const built = [
     'kill', 'damage', 'grenade_throw', 'grenade', 'grenade_bounce',
-    'extinguish', 'start_failed', 'smash', 'fade_out',
+    'extinguish', 'start_failed', 'fade_out',
     'bomb_explode', 'round_end', 'round_start',
     ACTION_KINDS.plant.begin, ACTION_KINDS.plant.complete,
     ACTION_KINDS.defuse.begin, ACTION_KINDS.defuse.complete,
