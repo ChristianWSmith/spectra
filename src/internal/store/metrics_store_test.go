@@ -13,9 +13,16 @@ import (
 // platform_store.go (its metricsTableDDL must stay column-compatible).
 // The pragma order below IS the schema.sql column order — drift breaks
 // the plugin writer's explicit INSERT list.
+//
+// NO-HISTORY ruling (stored-metrics owner ruling, 2026-11-13): definitions
+// are ONE current row — this list must gain NO shadow/last-expression
+// column, no history table's worth of copies. A future "keep the old
+// expression" column (or any other definition-history column) is a
+// CONTRACT VIOLATION and must fail this test; computed values keep only
+// their current generation (metric_values), never definitions.
 var metricColumnsContract = []string{
-	"id", "name", "title", "short_name", "expr", "group_by", "format", "doc", "origin",
-	"plugin_id", "denominator", "created_at",
+	"id", "name", "title", "short_name", "expr", "scope", "format", "doc", "origin",
+	"plugin_id", "denominator", "version", "created_at",
 }
 
 // TestMetricsSchemaFreshOpen: a fresh Open creates the M5 tables and
@@ -25,7 +32,7 @@ var metricColumnsContract = []string{
 // hold.
 func TestMetricsSchemaFreshOpen(t *testing.T) {
 	s, path := openFileStore(t)
-	for _, table := range []string{"metrics", "query_history", "saved_queries"} {
+	for _, table := range []string{"metrics", "metric_values", "metric_deps", "query_history", "saved_queries"} {
 		var name string
 		if err := s.db.QueryRow(
 			`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`, table,
@@ -45,7 +52,7 @@ func TestMetricsSchemaFreshOpen(t *testing.T) {
 		_ = s2.Close()
 	})
 
-	for _, table := range []string{"metrics", "query_history", "saved_queries"} {
+	for _, table := range []string{"metrics", "metric_values", "metric_deps", "query_history", "saved_queries"} {
 		var name string
 		if err := s2.db.QueryRow(
 			`SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?`, table,
@@ -103,6 +110,12 @@ func TestMetricsSchemaFreshOpen(t *testing.T) {
 		if m.ShortName != "" {
 			t.Errorf("builtin %q short_name = %q, want empty (the seed omits the column — DEFAULT '')", m.Name, m.ShortName)
 		}
+		if m.Scope != "match" {
+			t.Errorf("builtin %q scope = %q, want match (the seed writes 'match' — the builtin's surface is the scoreboard pin)", m.Name, m.Scope)
+		}
+		if m.Version != 1 {
+			t.Errorf("builtin %q version = %d, want 1 (the seed omits the column — DEFAULT 1)", m.Name, m.Version)
+		}
 		if !strings.HasPrefix(m.Expr, "from ") {
 			t.Errorf("builtin %q expr %q missing source clause", m.Name, m.Expr)
 		}
@@ -116,7 +129,7 @@ func TestMetricCRUD(t *testing.T) {
 
 	created, err := s.CreateMetric(models.MetricRow{
 		Name: "my_rate", Title: "My rate", ShortName: "MR", Expr: "from events: count()",
-		GroupBy: "player", Format: "int", Doc: "d", Origin: "user",
+		Scope: "profile", Format: "int", Doc: "d", Origin: "user",
 	})
 	if err != nil {
 		t.Fatalf("CreateMetric: %v", err)
@@ -126,6 +139,12 @@ func TestMetricCRUD(t *testing.T) {
 	}
 	if created.ShortName != "MR" {
 		t.Fatalf("created short_name = %q, want %q (round-trip through the new column)", created.ShortName, "MR")
+	}
+	if created.Scope != "profile" {
+		t.Fatalf("created scope = %q, want %q (round-trip through the new column — not the DEFAULT)", created.Scope, "profile")
+	}
+	if created.Version != 1 {
+		t.Fatalf("created version = %d, want 1 (INSERT omits the column — DEFAULT 1)", created.Version)
 	}
 
 	// Uniqueness across ALL origins: colliding with a builtin is rejected
@@ -149,16 +168,24 @@ func TestMetricCRUD(t *testing.T) {
 		t.Fatalf("list order wrong: first = %s/%s, last = %s/%s", all[0].Origin, all[0].Name, all[1].Origin, all[1].Name)
 	}
 
-	// Update user metric.
+	// Update user metric (scope is written through; version is NOT bumped
+	// by the store in W1 — the semantic-edit bump lands with the
+	// save-side cascade wave).
 	updated, err := s.UpdateMetric(models.MetricRow{
 		ID: created.ID, Name: "my_rate", Title: "Renamed", ShortName: "MR2", Expr: "from rounds: count()",
-		GroupBy: "round", Origin: "user",
+		Scope: "match", Origin: "user",
 	})
 	if err != nil {
 		t.Fatalf("UpdateMetric: %v", err)
 	}
 	if updated.Title != "Renamed" || updated.Expr != "from rounds: count()" || updated.ShortName != "MR2" {
 		t.Fatalf("updated = %+v", updated)
+	}
+	if updated.Scope != "match" {
+		t.Fatalf("updated scope = %q, want match (UPDATE writes scope through)", updated.Scope)
+	}
+	if updated.Version != 1 {
+		t.Fatalf("updated version = %d, want 1 (no bump on update in W1)", updated.Version)
 	}
 
 	// Builtin + plugin rows are immutable through Update/Delete.
@@ -175,7 +202,7 @@ func TestMetricCRUD(t *testing.T) {
 	if err := s.DeleteMetric(builtinID); err == nil || !strings.Contains(err.Error(), "cannot be deleted") {
 		t.Errorf("builtin delete err = %v, want protection error", err)
 	}
-	if err := s.ReplacePluginMetrics("p1", []PluginMetricDef{{Name: "plug_a", Title: "A", Expr: "from events: count()", GroupBy: "none"}}); err != nil {
+	if err := s.ReplacePluginMetrics("p1", []PluginMetricDef{{Name: "plug_a", Title: "A", Expr: "from events: count()"}}); err != nil {
 		t.Fatalf("ReplacePluginMetrics: %v", err)
 	}
 	var pluginMetric models.MetricRow
@@ -189,6 +216,12 @@ func TestMetricCRUD(t *testing.T) {
 	}
 	if pluginMetric.ShortName != "" {
 		t.Errorf("plugin metric short_name = %q, want empty (ReplacePluginMetrics omits the column — DEFAULT '')", pluginMetric.ShortName)
+	}
+	if pluginMetric.Scope != "match" {
+		t.Errorf("plugin metric scope = %q, want match (plugin manifests carry no scope yet — the INSERT omits the column, DEFAULT 'match')", pluginMetric.Scope)
+	}
+	if pluginMetric.Version != 1 {
+		t.Errorf("plugin metric version = %d, want 1 (the INSERT omits the column — DEFAULT 1)", pluginMetric.Version)
 	}
 	if _, err := s.UpdateMetric(models.MetricRow{ID: pluginMetric.ID, Name: "hijack", Expr: "from events: count()"}); err == nil || !strings.Contains(err.Error(), "cannot be modified") {
 		t.Errorf("plugin update err = %v, want immutability error", err)
@@ -320,9 +353,9 @@ func TestListMetricsPageWindowsTileListOrder(t *testing.T) {
 		seedUserMetric(t, s, fmt.Sprintf("u%03d_metric", i), "")
 	}
 	if err := s.ReplacePluginMetrics("p1", []PluginMetricDef{
-		{Name: "plug_a", Title: "Plugin A", Expr: "from events: count()", GroupBy: "none"},
-		{Name: "plug_b", Title: "Plugin B", Expr: "from events: count()", GroupBy: "none"},
-		{Name: "plug_c", Title: "Plugin C", Expr: "from events: count()", GroupBy: "none"},
+		{Name: "plug_a", Title: "Plugin A", Expr: "from events: count()"},
+		{Name: "plug_b", Title: "Plugin B", Expr: "from events: count()"},
+		{Name: "plug_c", Title: "Plugin C", Expr: "from events: count()"},
 	}); err != nil {
 		t.Fatalf("ReplacePluginMetrics: %v", err)
 	}
@@ -460,7 +493,7 @@ func TestListMetricsPageSearch(t *testing.T) {
 	seedUserMetric(t, s, "adr_per_round", "ADR per round")
 	seedUserMetric(t, s, "win_rate", "Win rate")
 	if err := s.ReplacePluginMetrics("p1", []PluginMetricDef{
-		{Name: "plug_kd", Title: "Plugin K/D", Expr: "from events: count()", GroupBy: "none"},
+		{Name: "plug_kd", Title: "Plugin K/D", Expr: "from events: count()"},
 	}); err != nil {
 		t.Fatalf("ReplacePluginMetrics: %v", err)
 	}

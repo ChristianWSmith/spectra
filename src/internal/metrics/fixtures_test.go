@@ -35,13 +35,18 @@ func seededStore(t *testing.T) *store.Store {
 }
 
 // builtinSeed maps the ONE schema-seeded builtin (schema.sql —
-// name/expr/group_by/denominator/doc are LOCKED to the baseline seed by
+// name/expr/scope/denominator/doc are LOCKED to the baseline seed by
 // this table) onto its hand-computed seed expectation. interpretation
 // records how the seeded expression states the metric (never silently —
 // the formula and any proxy/deviation live in the row's doc).
+// groupBy is the ENGINE preview input only: the stored group_by column
+// is gone (stored-metrics W1 — the seed locks scope instead) and the
+// groupBy parameter itself retires with the W2 grammar wave; keeping it
+// here preserves the per-player seed-value shape this test proves.
 var builtinSeed = []struct {
 	name           string
 	expr           string
+	scope          string
 	groupBy        string
 	denominator    string
 	interpretation string
@@ -54,6 +59,7 @@ var builtinSeed = []struct {
 	{
 		name:        "trade_rate",
 		expr:        "from player_stats, match_trade_opps: ratio(sum(trade_kills), sum(opps))",
+		scope:       "match",
 		groupBy:     "player",
 		denominator: "",
 		interpretation: "trade successes / total trade opportunities over the engine-derived LEFT JOIN " +
@@ -73,9 +79,11 @@ var builtinSeed = []struct {
 func TestBuiltinSeedMetrics(t *testing.T) {
 	st := seededStore(t)
 
-	// (a) Lock the schema-seeded builtin row(s) to this table.
+	// (a) Lock the schema-seeded builtin row(s) to this table. The
+	// group_by column no longer exists (stored-metrics W1): the lock is
+	// scope now, per the schema.sql coordination-contract header.
 	res, err := st.RunReadOnly(
-		`SELECT name, expr, group_by, denominator, doc FROM metrics WHERE origin = 'builtin' ORDER BY name`,
+		`SELECT name, expr, scope, denominator, doc FROM metrics WHERE origin = 'builtin' ORDER BY name`,
 		nil, 100, 5000,
 	)
 	if err != nil {
@@ -94,9 +102,9 @@ func TestBuiltinSeedMetrics(t *testing.T) {
 			t.Errorf("builtin %q missing from the schema seed", f.name)
 			continue
 		}
-		if row[0] != f.expr || row[1] != f.groupBy || row[2] != f.denominator {
-			t.Errorf("builtin %q seeded row = expr %q group %q denom %q, want expr %q group %q denom %q",
-				f.name, row[0], row[1], row[2], f.expr, f.groupBy, f.denominator)
+		if row[0] != f.expr || row[1] != f.scope || row[2] != f.denominator {
+			t.Errorf("builtin %q seeded row = expr %q scope %q denom %q, want expr %q scope %q denom %q",
+				f.name, row[0], row[1], row[2], f.expr, f.scope, f.denominator)
 		}
 		if row[3] == "" {
 			t.Errorf("builtin %q has empty doc (every metric documents its formula)", f.name)

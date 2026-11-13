@@ -20,12 +20,13 @@ import (
 //		title TEXT NOT NULL DEFAULT '',
 //		short_name TEXT NOT NULL DEFAULT '',
 //		expr TEXT NOT NULL,
-//		group_by TEXT NOT NULL DEFAULT '',
+//		scope TEXT NOT NULL DEFAULT 'match' CHECK (scope IN ('match', 'profile')),
 //		format TEXT NOT NULL DEFAULT '',
 //		doc TEXT NOT NULL DEFAULT '',
 //		origin TEXT NOT NULL DEFAULT 'user',
 //		plugin_id TEXT NOT NULL DEFAULT '',
 //		denominator TEXT NOT NULL DEFAULT '',
+//		version INTEGER NOT NULL DEFAULT 1,
 //		created_at DATETIME
 //	);
 //
@@ -39,7 +40,10 @@ import (
 // short_name (optional user-entered short label — the width-constrained
 // column-header display criterion short_name || title || name) is NOT a
 // plugin-metric field: ReplacePluginMetrics omits it from its INSERT, so
-// plugin rows always carry the DEFAULT ''.
+// plugin rows always carry the DEFAULT ''. scope and version are omitted
+// for the same reason class: plugin manifests carry no scope yet, so
+// plugin rows land at the column DEFAULT 'match', and their version
+// starts at DEFAULT 1.
 
 // PluginRow is one plugins-registry row (M5 §2.7).
 type PluginRow struct {
@@ -54,12 +58,13 @@ type PluginRow struct {
 }
 
 // PluginMetricDef is one manifest metric ready to be written into the
-// metrics table (origin forced to 'plugin' by the writer).
+// metrics table (origin forced to 'plugin' by the writer). No Scope
+// field yet: plugin manifests carry no scope, so ReplacePluginMetrics
+// leaves the column to its DEFAULT 'match' (see the file doc).
 type PluginMetricDef struct {
 	Name        string
 	Title       string
 	Expr        string
-	GroupBy     string
 	Format      string
 	Doc         string
 	Denominator string
@@ -72,12 +77,13 @@ const metricsTableDDL = `CREATE TABLE IF NOT EXISTS metrics (
 	title TEXT NOT NULL DEFAULT '',
 	short_name TEXT NOT NULL DEFAULT '',
 	expr TEXT NOT NULL,
-	group_by TEXT NOT NULL DEFAULT '',
+	scope TEXT NOT NULL DEFAULT 'match' CHECK (scope IN ('match', 'profile')),
 	format TEXT NOT NULL DEFAULT '',
 	doc TEXT NOT NULL DEFAULT '',
 	origin TEXT NOT NULL DEFAULT 'user',
 	plugin_id TEXT NOT NULL DEFAULT '',
 	denominator TEXT NOT NULL DEFAULT '',
+	version INTEGER NOT NULL DEFAULT 1,
 	created_at DATETIME
 )`
 
@@ -188,10 +194,12 @@ func (s *Store) DeletePluginRow(id string) error {
 // Pass nil/empty to just clear. Creates the metrics table when missing.
 // The INSERT deliberately omits short_name (DEFAULT empty string) —
 // plugin manifests carry no short label, so plugin metric rows never
-// have one.
+// have one. scope and version are omitted likewise (see the file doc):
+// plugin manifests carry no scope yet, so every plugin row lands at
+// scope DEFAULT 'match', and version lands at its DEFAULT 1.
 //
 // Deliberately NOT replaceMatchRows: the delete keys on plugin_id (not
-// match_id), the INSERT carries a literal 'plugin' for origin (9 of its 10
+// match_id), the INSERT carries a literal 'plugin' for origin (8 of its 9
 // placeholders) plus an ON CONFLICT upsert clause — neither fits the
 // helper's `WHERE match_id = ?` + plain-VALUES body.
 func (s *Store) ReplacePluginMetrics(pluginID string, defs []PluginMetricDef) error {
@@ -207,10 +215,10 @@ func (s *Store) ReplacePluginMetrics(pluginID string, defs []PluginMetricDef) er
 		return fmt.Errorf("store: replace plugin metrics: %w", err)
 	}
 	stmt, err := tx.Prepare(
-		`INSERT INTO metrics (name, title, expr, group_by, format, doc, origin, plugin_id, denominator, created_at)
-		 VALUES (?, ?, ?, ?, ?, ?, 'plugin', ?, ?, ?)
+		`INSERT INTO metrics (name, title, expr, format, doc, origin, plugin_id, denominator, created_at)
+		 VALUES (?, ?, ?, ?, ?, 'plugin', ?, ?, ?)
 		 ON CONFLICT(name) DO UPDATE SET
-			title = excluded.title, expr = excluded.expr, group_by = excluded.group_by,
+			title = excluded.title, expr = excluded.expr,
 			format = excluded.format, doc = excluded.doc, origin = excluded.origin,
 			plugin_id = excluded.plugin_id, denominator = excluded.denominator`,
 	)
@@ -220,7 +228,7 @@ func (s *Store) ReplacePluginMetrics(pluginID string, defs []PluginMetricDef) er
 	defer stmt.Close()
 	for _, d := range defs {
 		if _, err := stmt.Exec(
-			scrub(d.Name), scrub(d.Title), scrub(d.Expr), scrub(d.GroupBy),
+			scrub(d.Name), scrub(d.Title), scrub(d.Expr),
 			scrub(d.Format), scrub(d.Doc), scrub(pluginID), scrub(d.Denominator), time.Now(),
 		); err != nil {
 			return fmt.Errorf("store: replace plugin metrics: %w", err)

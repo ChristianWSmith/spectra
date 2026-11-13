@@ -89,8 +89,10 @@ func colSet(cols ...string) map[string]bool {
 	return m
 }
 
-// groupTokens are the valid GroupBy values of a metric definition
-// (models.MetricRow.GroupBy — frozen contract comment:
+// groupTokens are the valid GroupBy values of an ENGINE preview
+// definition (metrics.Def.GroupBy — the models.MetricRow group_by column
+// retired with the stored-metrics W1 wave, and the parameter itself goes
+// with the W2 grammar wave; frozen contract comment:
 // ""|player|round|team|weapon|side|map|none).
 var groupTokens = map[string]bool{
 	"player": true, "round": true, "team": true, "weapon": true,

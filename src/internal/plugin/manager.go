@@ -143,7 +143,10 @@ func (m *Manager) stateFor(row store.PluginRow) State {
 // preview time (structural manifest checks live in manifest.go).
 func validateMetricExprs(man Manifest) error {
 	for _, d := range man.Metrics {
-		if pe := metrics.Validate(d.Expr, d.GroupBy); pe != nil {
+		// groupBy retires with the stored-metrics wave: the manifest key
+		// is `scope` now, so validate ungrouped (the engine's groupBy
+		// parameter itself goes in the W2 grammar wave).
+		if pe := metrics.Validate(d.Expr, ""); pe != nil {
 			return fmt.Errorf("plugin %q metric %q: %s", man.ID, d.Name, pe.Message)
 		}
 	}
@@ -256,11 +259,14 @@ func (m *Manager) Remove(id string) error {
 
 // metricDefs converts validated manifest metrics into store rows (the
 // structural name/expr checks already ran in ValidateManifest).
+// MetricDef.Scope is deliberately NOT passed through: plugin manifests
+// carry no scope yet (W1), so the store's ReplacePluginMetrics INSERT
+// leaves the column at its DEFAULT 'match'.
 func metricDefs(man Manifest) []store.PluginMetricDef {
 	defs := make([]store.PluginMetricDef, 0, len(man.Metrics))
 	for _, d := range man.Metrics {
 		defs = append(defs, store.PluginMetricDef{
-			Name: d.Name, Title: d.Title, Expr: d.Expr, GroupBy: d.GroupBy,
+			Name: d.Name, Title: d.Title, Expr: d.Expr,
 			Format: d.Format, Doc: d.Doc, Denominator: d.Denominator,
 		})
 	}

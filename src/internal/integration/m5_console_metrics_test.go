@@ -47,8 +47,12 @@ func openSeededLibrary(t *testing.T) *store.Store {
 // the DoD "demonstrably expressible" loop end to end.
 func TestM5BuiltinMetricsPreview(t *testing.T) {
 	st := openSeededLibrary(t)
+	// group_by is gone from the DDL (stored-metrics W1): the row is
+	// locked by scope, and the grouped preview input is pinned here as
+	// the engine argument (the parameter retires with the W2 grammar
+	// wave).
 	res, err := st.RunReadOnly(
-		`SELECT name, expr, group_by, denominator FROM metrics WHERE origin = 'builtin' ORDER BY name`,
+		`SELECT name, expr, scope, denominator FROM metrics WHERE origin = 'builtin' ORDER BY name`,
 		nil, 20, 5000,
 	)
 	if err != nil {
@@ -58,13 +62,16 @@ func TestM5BuiltinMetricsPreview(t *testing.T) {
 		t.Fatalf("builtins = %d, want 1", len(res.Rows))
 	}
 	for _, r := range res.Rows {
-		name, expr, groupBy, denom := r[0].(string), r[1].(string), r[2].(string), r[3].(string)
+		name, expr, scope, denom := r[0].(string), r[1].(string), r[2].(string), r[3].(string)
 		t.Run(name, func(t *testing.T) {
-			if perr := metrics.Validate(expr, groupBy); perr != nil {
+			if scope != "match" {
+				t.Fatalf("builtin scope = %q, want match", scope)
+			}
+			if perr := metrics.Validate(expr, "player"); perr != nil {
 				t.Fatalf("Validate(%q): %v", expr, perr)
 			}
 			pv, perr, err := metrics.RunPreview(st, metrics.Def{
-				Expr: expr, GroupBy: groupBy, Denominator: denom,
+				Expr: expr, GroupBy: "player", Denominator: denom,
 			}, "", 500)
 			if perr != nil || err != nil {
 				t.Fatalf("preview: %v %v (sql %s)", perr, err, pv.SQL)

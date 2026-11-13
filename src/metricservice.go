@@ -17,7 +17,14 @@ import (
 // into a validated AST (whitelisted tables/columns/ops — never interpolated
 // user SQL) and compiled to parameterized SQL. Preview runs against the
 // whole library with a row cap; pinned metrics appear as scoreboard/profile
-// columns (frontend composes via groupBy=player previews).
+// columns.
+//
+// W1 COMPAT (stored-metrics wave 1): the current frontend still SENDS a
+// groupBy field and has no scope select (its form changes land in W2), so
+// this service keeps its existing call signatures here — but the incoming
+// groupBy values are IGNORED (the metrics.group_by column is gone and the
+// parameter itself retires with the W2 grammar wave) and every API save
+// writes scope 'match'. Saves from the pre-W2 UI keep working end to end.
 
 // MetricPreviewRow is one preview result row.
 type MetricPreviewRow struct {
@@ -131,8 +138,15 @@ func (s *MetricsService) SaveMetric(m models.MetricRow) (models.MetricRow, error
 	// created or hijacked through here.
 	m.Origin = "user"
 	m.PluginID = ""
-	// Validate expression + groupBy (+denominator) BEFORE any write.
-	if _, perr := metrics.Compile(m.Expr, m.GroupBy, m.Denominator, ""); perr != nil {
+	// W1 compat: the current UI has no scope field (its select lands in
+	// W2) — every API save writes 'match' until then, which is exactly
+	// what the missing field resolves to via the DDL DEFAULT.
+	m.Scope = "match"
+	// Validate expression (+denominator) BEFORE any write. The stored
+	// group_by column is gone (W1) and MetricRow no longer carries one —
+	// validate ungrouped; the groupBy parameter retires engine-wide in
+	// the W2 grammar wave.
+	if _, perr := metrics.Compile(m.Expr, "", m.Denominator, ""); perr != nil {
 		return models.MetricRow{}, exprErrorErr(perr)
 	}
 	if strings.TrimSpace(m.Doc) == "" {
@@ -158,7 +172,12 @@ func (s *MetricsService) DeleteMetric(id int64) error { return s.st.DeleteMetric
 
 // PreviewMetric compiles expr (empty expr → use id) and runs it.
 // scope: "" = whole library; scope="match:<id>" limits single-match sources.
+// The groupBy argument is IGNORED in W1 (kept in the signature because
+// the current frontend still sends it): the stored group_by column is
+// gone, previews compile ungrouped, and the parameter itself retires with
+// the W2 form change.
 func (s *MetricsService) PreviewMetric(id int64, expr string, groupBy string, scope string, limit int) (MetricPreview, error) {
+	_ = groupBy // W1 compat: ignored — retired by the W2 frontend form change
 	var (
 		def  metrics.Def
 		echo models.MetricRow
@@ -168,18 +187,13 @@ func (s *MetricsService) PreviewMetric(id int64, expr string, groupBy string, sc
 		if err != nil {
 			return MetricPreview{}, err
 		}
-		gb := full.GroupBy
-		if strings.TrimSpace(groupBy) != "" {
-			gb = groupBy // explicit groupBy overrides the stored one ("none" → ungrouped)
-		}
-		def = metrics.Def{Expr: full.Expr, GroupBy: gb, Denominator: full.Denominator}
+		def = metrics.Def{Expr: full.Expr, Denominator: full.Denominator}
 		echo = full
-		echo.GroupBy = gb
 	} else {
 		// Ad-hoc expression: no denominator (rates are a property of the
-		// saved definition); groupBy used as given.
-		def = metrics.Def{Expr: expr, GroupBy: groupBy}
-		echo = models.MetricRow{ID: id, Expr: expr, GroupBy: groupBy}
+		// saved definition); no grouping (groupBy retired in W1).
+		def = metrics.Def{Expr: expr}
+		echo = models.MetricRow{ID: id, Expr: expr}
 	}
 	// limit ≤0 is normalized inside metrics.RunPreview — the one canonical
 	// default (PreviewDefaultRow), never here.
@@ -199,9 +213,13 @@ func (s *MetricsService) PreviewMetric(id int64, expr string, groupBy string, sc
 	}, nil
 }
 
-// ValidateExpr parses without executing (builder live-check).
+// ValidateExpr parses without executing (builder live-check). The
+// groupBy argument is IGNORED in W1 — same compat rule as PreviewMetric:
+// the current frontend still sends it, the stored column is gone, and the
+// parameter retires with the W2 form change.
 func (s *MetricsService) ValidateExpr(expr string, groupBy string) (bool, ExprError, error) {
-	if perr := metrics.Validate(expr, groupBy); perr != nil {
+	_ = groupBy // W1 compat: ignored — retired by the W2 frontend form change
+	if perr := metrics.Validate(expr, ""); perr != nil {
 		return false, exprError(perr), nil
 	}
 	return true, ExprError{}, nil

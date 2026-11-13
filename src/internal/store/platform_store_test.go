@@ -2,6 +2,7 @@ package store
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -66,11 +67,35 @@ func TestPluginRowsRoundTrip(t *testing.T) {
 	}
 }
 
+// TestMetricsTableDDLByteEqual pins the coordination contract's byte
+// level: metricsTableDDL (this file's defensive ensureMetricsTable copy,
+// mirrored in its file-doc contract block) must be BYTE-IDENTICAL to the
+// metrics CREATE in the embedded baseline schema. Column compatibility
+// alone (metricColumnsContract) is not enough — a CHECK/DEFAULT/position
+// drift would fork two definitions of the same table. The extraction
+// mirrors TestAnalysisConfigDDLDefaultsMatchGoSeed's schemaSQL walk.
+func TestMetricsTableDDLByteEqual(t *testing.T) {
+	start := strings.Index(schemaSQL, "CREATE TABLE IF NOT EXISTS metrics (")
+	if start < 0 {
+		t.Fatal("metrics DDL missing from schema.sql")
+	}
+	end := strings.Index(schemaSQL[start:], ");")
+	if end < 0 {
+		t.Fatal("metrics DDL block not terminated")
+	}
+	// Through the closing ')' — metricsTableDDL carries no trailing ';'.
+	block := schemaSQL[start : start+end+1]
+	if block != metricsTableDDL {
+		t.Fatalf("metricsTableDDL drifted from schema.sql\n--- schema.sql ---\n%s\n--- metricsTableDDL ---\n%s", block, metricsTableDDL)
+	}
+	t.Log("byte-equal: True")
+}
+
 func TestPluginMetricsRows(t *testing.T) {
 	s := openMem(t)
 	defs := []PluginMetricDef{
-		{Name: "plug_count", Title: "Plug count", Expr: "from events: count()", GroupBy: "none"},
-		{Name: "plug_dmg", Title: "Plug dmg", Expr: "from events: sum(dmg)", GroupBy: "player"},
+		{Name: "plug_count", Title: "Plug count", Expr: "from events: count()"},
+		{Name: "plug_dmg", Title: "Plug dmg", Expr: "from events: sum(dmg)"},
 	}
 	if err := s.ReplacePluginMetrics("p1", defs); err != nil {
 		t.Fatalf("ReplacePluginMetrics: %v", err)
@@ -84,7 +109,7 @@ func TestPluginMetricsRows(t *testing.T) {
 	}
 	// Upsert keyed by name: re-replace with one changed row + one new name.
 	if err := s.ReplacePluginMetrics("p1", []PluginMetricDef{
-		{Name: "plug_count", Title: "Plug count v2", Expr: "from events: count()", GroupBy: "none"},
+		{Name: "plug_count", Title: "Plug count v2", Expr: "from events: count()"},
 		{Name: "plug_new", Title: "New", Expr: "from events: count()"},
 	}); err != nil {
 		t.Fatalf("ReplacePluginMetrics(replace): %v", err)

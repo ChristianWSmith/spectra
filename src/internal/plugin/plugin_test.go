@@ -28,7 +28,7 @@ const goodManifest = `{
   "description": "fixture",
   "capabilities": {"metrics": {}, "report_templates": {}},
   "metrics": [
-    {"name": "plug_count", "title": "Plug count", "expr": "from events: count()", "groupBy": "none", "doc": "counts events"}
+    {"name": "plug_count", "title": "Plug count", "expr": "from events: count()", "doc": "counts events"}
   ],
   "reportTpls": [
     {"id": "plug-match", "title": "Plug match", "scope": "match", "format": "md", "body": "plug report for {{.Match.Map}}"}
@@ -76,6 +76,24 @@ func TestInstallGoodBundle(t *testing.T) {
 	}
 	if n := metricCount(t, st, "test-plug"); n != 1 {
 		t.Fatalf("metrics rows = %d, want 1", n)
+	}
+	// The manifest above OMITS scope (the metric scope key is `scope` now,
+	// renamed from groupBy with the stored-metrics W1 wave), so the stored
+	// row lands at the column DEFAULT 'match' and version at DEFAULT 1.
+	mrows, err := st.ListMetrics()
+	if err != nil {
+		t.Fatalf("ListMetrics: %v", err)
+	}
+	for _, m := range mrows {
+		if m.Origin != "plugin" {
+			continue
+		}
+		if m.Scope != "match" {
+			t.Errorf("plugin metric %q scope = %q, want match (manifest omitted scope — column DEFAULT)", m.Name, m.Scope)
+		}
+		if m.Version != 1 {
+			t.Errorf("plugin metric %q version = %d, want 1 (column DEFAULT)", m.Name, m.Version)
+		}
 	}
 	list, err := mgr.List()
 	if err != nil || len(list) != 1 || list[0].Error != "" {

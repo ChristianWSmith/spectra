@@ -45,14 +45,18 @@ var allowedCapabilities = map[string]bool{
 }
 
 // MetricDef is one manifest metric definition (JSON shape is the shared
-// metric-definition contract — models.MetricRow minus createdAt;
-// id/origin/pluginId are loader-assigned).
+// metric-definition contract — models.MetricRow minus createdAt/id
+// stamps; id/origin/pluginId are loader-assigned). The metric scope key
+// is `scope` (renamed from `groupBy` with the stored-metrics W1 wave):
+// parsed here as part of the manifest contract, but manifests are not
+// written through yet — ReplacePluginMetrics leaves the column at its
+// DEFAULT 'match' (store platform_store.go file doc).
 type MetricDef struct {
 	ID          int64  `json:"id"`
 	Name        string `json:"name"`
 	Title       string `json:"title"`
 	Expr        string `json:"expr"`
-	GroupBy     string `json:"groupBy"`
+	Scope       string `json:"scope"`
 	Format      string `json:"format"`
 	Doc         string `json:"doc"`
 	Origin      string `json:"origin"`
