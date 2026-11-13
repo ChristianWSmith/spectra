@@ -11,12 +11,13 @@ package mappack
 import (
 	"os"
 	"path/filepath"
-	"runtime"
 	"sort"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/ChristianWSmith/spectra/internal/budget"
 )
 
 // arriveTimeout is how long a barrier waits for the pool to hand it
@@ -229,16 +230,111 @@ func TestExtractMapPacksRunsMapsConcurrently(t *testing.T) {
 	}
 }
 
-// TestPoolSizeFollowsThreadLadder pins the worker count to the owner's
-// first rung (hardware threads): poolSize() == runtime.NumCPU(), never
-// below 1.
+// TestExtractMapPacksBudgetSerializesMaps pins the machine-wide work
+// token (internal/budget through WithBudget): with budget=1 the per-map
+// pool never has two maps inside the token region (hook + extractOne)
+// at once, even though poolSize() workers would happily overlap them
+// (TestExtractMapPacksRunsMapsConcurrently pins the overlap WITHOUT a
+// budget — this test is its bounded twin, so it skips on a
+// single-worker machine the same way). The first map parks in the hook
+// WHILE HOLDING the only token, so a second arrival inside the window
+// would mean the budget is not bounding; after the release every map
+// still completes (the bound serializes, never deadlocks).
+func TestExtractMapPacksBudgetSerializesMaps(t *testing.T) {
+	if poolSize() < 2 {
+		t.Skipf("poolSize() = %d on this machine — a one-worker pool serializes regardless of the budget", poolSize())
+	}
+	install := t.TempDir()
+	csgo := filepath.Join(install, "game", "csgo")
+	if err := os.MkdirAll(csgo, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const w, h = 8, 8
+	radar := buildVTex(t, w, h, vtexFormatBGRA8888, bgraPix(w, h), true)
+	files := map[string][]byte{}
+	for _, m := range []string{"de_alpha", "de_bravo", "de_charlie", "de_delta"} {
+		files["panorama/images/overheadmaps/"+m+"_radar_psd.vtex_c"] = radar
+	}
+	buildVPK(t, csgo, files)
+	out := t.TempDir()
+
+	// Hook INSIDE the token region (see the pool closure): arrivals are
+	// counted, and the first one parks until the test releases — with
+	// budget=1 a second arrival while parked is the bound failing.
+	var active, maxActive atomic.Int32
+	inflight := make(chan string, 4)
+	release := make(chan struct{})
+	released := false
+	defer func() {
+		if !released {
+			close(release)
+		}
+	}()
+	orig := extractJobHook
+	extractJobHook = func(mapName string) {
+		trackMax(&maxActive, active.Add(1))
+		inflight <- mapName
+		<-release
+		active.Add(-1)
+	}
+	defer func() { extractJobHook = orig }()
+
+	type outcome struct {
+		maps int
+		errs []string
+		err  error
+	}
+	done := make(chan outcome, 1)
+	go func() {
+		maps, errs, err := ExtractMapPacks(install, out, WithBudget(budget.New(1)))
+		done <- outcome{len(maps), errs, err}
+	}()
+
+	// First map enters and parks holding the only token.
+	select {
+	case <-inflight:
+	case <-time.After(arriveTimeout):
+		t.Fatal("ExtractMapPacks never started a map — the budget=1 run never got its first token")
+	}
+	// No second map may start while the only token is held (the pool
+	// has poolSize() ≥ 2 workers ready — without the budget the second
+	// arrival comes in microseconds, per the concurrent test above).
+	select {
+	case name := <-inflight:
+		t.Fatalf("map %q entered while the budget's only token was held — WithBudget is not bounding the pool", name)
+	case <-time.After(100 * time.Millisecond):
+	}
+	close(release)
+	released = true
+
+	select {
+	case got := <-done:
+		if got.err != nil || len(got.errs) > 0 {
+			t.Fatalf("extract: err=%v errs=%v", got.err, got.errs)
+		}
+		if got.maps != 4 {
+			t.Errorf("extracted %d maps, want 4 (the bound serializes, it must not strand jobs)", got.maps)
+		}
+	case <-time.After(arriveTimeout):
+		t.Fatal("ExtractMapPacks never finished after the release")
+	}
+	if m := maxActive.Load(); m != 1 {
+		t.Errorf("max maps inside the token region = %d, want exactly 1 (budget=1)", m)
+	}
+}
+
+// TestPoolSizeFollowsThreadLadder pins the worker count to the
+// canonical ladder rung: poolSize() == budget.MachineTokens() (the one
+// thread-ladder home — Go's execution parallelism, floor 1), never
+// below 1. Expected-source swap only (consolidation 2026-11-13): the
+// value is identical on this box (GOMAXPROCS(0) == NumCPU == 4).
 func TestPoolSizeFollowsThreadLadder(t *testing.T) {
 	got := poolSize()
-	if want := runtime.NumCPU(); got != want {
-		t.Errorf("poolSize() = %d, want runtime.NumCPU() = %d (the ladder's threads rung)", got, want)
+	if want := budget.MachineTokens(); got != want {
+		t.Errorf("poolSize() = %d, want budget.MachineTokens() = %d (the ladder's threads rung)", got, want)
 	}
 	if got < 1 {
 		t.Errorf("poolSize() = %d, want ≥1 (the ladder's single-threaded fallback)", got)
 	}
-	t.Logf("poolSize() = %d (runtime.NumCPU() = %d)", got, runtime.NumCPU())
+	t.Logf("poolSize() = %d (budget.MachineTokens() = %d)", got, budget.MachineTokens())
 }
