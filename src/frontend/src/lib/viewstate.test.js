@@ -96,10 +96,12 @@ test('remember: write-through round-trip — partials merge, repeated writes acc
   assert.equal(seed('sql', { sql: '' }).sql, 'select 2');
 
   // A partial that carries no defaults' keys still round-trips through
-  // seed's whitelist without widening the shape.
-  remember('builder', { form: { name: 'x' }, baseline: 'b' });
-  const b = seed('builder', { form: { name: '' }, baseline: '' });
-  assert.deepEqual(b, { form: { name: 'x' }, baseline: 'b' });
+  // seed's whitelist without widening the shape. The builder key carries
+  // its list search as well (the Builder's registry-seeded query — the
+  // Profiles search precedent), so the pin includes it.
+  remember('builder', { form: { name: 'x' }, baseline: 'b', query: 'kd' });
+  const b = seed('builder', { form: { name: '' }, baseline: '', query: '' });
+  assert.deepEqual(b, { form: { name: 'x' }, baseline: 'b', query: 'kd' });
 
   // Defensive: a non-object partial is ignored, a bogus key is refused.
   remember('sql', null);

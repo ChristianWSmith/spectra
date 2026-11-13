@@ -1,16 +1,14 @@
 <script>
   import {
-    listMetrics,
+    listMetricsPage,
     saveMetric,
     deleteMetric,
     previewMetric,
     validateExpr,
-    listMatches,
     listPlugins,
     errText,
   } from '../services.js';
   import { fmtInt, fmtMetric } from '../fmt.js';
-  import MatchPicker from '../components/MatchPicker.svelte';
   import ProfileLink from '../components/ProfileLink.svelte';
   import StatusChip from '../components/StatusChip.svelte';
   import { seed, remember } from '../viewstate.svelte.js';
@@ -27,21 +25,39 @@
   const PREVIEW_LIMIT = 200;
   const EXAMPLE = "from events: count(where kind='kill' and assisted_flash)";
 
+  // Window size for the metric list: one page per fetch, one more per
+  // Load-more click (backend default store.ListMetricsPageSize is the
+  // same 100 — the button's row counts and the store's window agree).
+  const PAGE_SIZE = 100;
+
+  // metrics is the ACCUMULATED keyset windows (never a whole-library
+  // fetch) in the store's canonical builtin → user → plugin / name
+  // order — the group headers below are derived from those contiguous
+  // origin runs. hasNext is the backend's limit+1 probe.
   let metrics = $state([]);
+  let hasNext = $state(false);
+  // First-window gate for the empty state — transient by the
+  // State-placement rule: never seeded, never remembered, never in the
+  // URL (it re-arms on every refresh, but only shows while the list is
+  // still empty).
+  let loading = $state(true);
+  let loadingMore = $state(false);
   let pins = $state([]);
-  let matches = $state([]);
   let disabledPlugins = $state(new Set());
   let listError = $state('');
 
-  // The editor form (fields + the dirty-check baseline) is view-local
-  // state: it restores across navigation through the process-scoped
-  // registry (viewstate.svelte.js — flat key; both travel together so
-  // the unsaved-changes flag reads exactly as it did on leave). Saving,
-  // previews, errors and the pin list stay transient / their own store.
-  const bldSeed = seed('builder', { form: newForm(), baseline: '' });
+  // The editor form (fields + the dirty-check baseline) and the list's
+  // search text are view-local state: they restore across navigation
+  // through the process-scoped registry (viewstate.svelte.js — flat key;
+  // they travel together so the unsaved-changes flag and the search read
+  // exactly as they did on leave; the search is the Profiles precedent).
+  // Saving, previews, errors, the window cursor and the pin list stay
+  // transient / their own store.
+  const bldSeed = seed('builder', { form: newForm(), baseline: '', query: '' });
   let form = $state(bldSeed.form);
   let baseline = $state(bldSeed.baseline);
-  $effect(() => remember('builder', { form, baseline }));
+  let query = $state(bldSeed.query);
+  $effect(() => remember('builder', { form, baseline, query }));
   let saveError = $state('');
   let saving = $state(false);
 
@@ -50,7 +66,6 @@
   let exprCheck = $state({ state: 'idle' });
   let exprSeq = 0;
 
-  let scope = $state(''); // '' = whole library, else match id (string)
   let preview = $state(null);
   let previewAdhoc = $state(false);
   let previewError = $state('');
@@ -102,23 +117,38 @@
     }
   }
 
-  const groups = $derived.by(() => ({
-    builtins: metrics.filter((m) => m.origin === 'builtin'),
-    yours: metrics.filter((m) => m.origin === 'user'),
-    plugins: metrics.filter((m) => m.origin === 'plugin'),
-  }));
+  // The left list's group runs: the paged read is origin-contiguous
+  // (store metricOrder — builtin → user → plugin, name ASC), so the
+  // accumulated windows form one run per origin present. The markup
+  // renders ONE header per run, so a window boundary inside a group
+  // never repeats a header — the final look matches the unpaginated
+  // grouped list.
+  const GROUP_LABEL = { builtin: 'Builtins', user: 'Yours', plugin: 'Plugins' };
+  const runs = $derived.by(() => {
+    const out = [];
+    for (const m of metrics) {
+      const last = out[out.length - 1];
+      if (last && last.origin === m.origin) last.rows.push(m);
+      else out.push({ origin: m.origin, rows: [m] });
+    }
+    return out;
+  });
 
   const dirty = $derived(snapshot(form) !== baseline);
   const readOnly = $derived(form.origin !== 'user');
 
-  // The list read (mount AND listError's Retry): metrics + matches land
-  // together, so the error clears only when BOTH reads do — a retry can
-  // never clear the message while a read is still failing. pins stay
-  // OUTSIDE this function: they are read from localStorage once per
-  // mount (a retry must not re-derive them over the session's toggles).
-  async function loadLists() {
-    // Fired first, exactly as the mount effect did: the plugin states
-    // never wait on the metrics/match reads (nor on their failure).
+  // The search text the current window sequence serves: refreshList
+  // writes it, loadMore reads it (the cursor's query) and the
+  // empty-result copy below names it — $state because the template
+  // references it.
+  let appliedQuery = $state('');
+  // listGen distinguishes the current window sequence from stale replies
+  // (see refreshList/loadMore); non-reactive on purpose — it is not state.
+  let listGen = 0;
+
+  // The plugin states fire-and-forget on mount AND on Retry: they never
+  // wait on the metric read (nor on its failure).
+  function loadPluginStates() {
     listPlugins()
       .then((states) => {
         disabledPlugins = new Set(
@@ -126,30 +156,84 @@
         );
       })
       .catch(() => {});
+  }
+
+  // Mount (runs once — it reads no reactive value): pins from
+  // localStorage once per mount (a retry must not re-derive them over the
+  // session's toggles) plus the plugin states.
+  $effect(() => {
+    pins = readPins();
+    loadPluginStates();
+  });
+
+  // The list read (mount AND listError's Retry): the first run is
+  // immediate (the list loads without the debounce delay), later runs
+  // fire 250 ms after a query change (the Library's debounce) so typing
+  // doesn't hammer the store. Every run RESTARTS the window at cursor 0.
+  let firstList = true;
+  $effect(() => {
+    const q = query;
+    if (firstList) {
+      firstList = false;
+      refreshList(q);
+      return;
+    }
+    const t = setTimeout(() => refreshList(q), 250);
+    return () => clearTimeout(t);
+  });
+
+  // Retry: the error slot's button — plugin states + a fresh first
+  // window for the query currently in the box.
+  async function loadLists() {
+    loadPluginStates();
+    await refreshList(query);
+  }
+
+  // refreshList RESTARTS the window sequence: cursor 0, replace — a
+  // search change, a save/delete refresh or a Retry must never APPEND
+  // onto the previous window's rows. listGen tags the sequence so a
+  // Load-more reply landing after a restart is dropped instead of
+  // appended (the Library's refreshList/loadMore shape).
+  async function refreshList(q = '') {
+    appliedQuery = q;
+    const gen = ++listGen;
+    loading = true;
     try {
-      const [defs, list] = await Promise.all([
-        listMetrics(),
-        listMatches('', 'extracted_at', false),
-      ]);
-      metrics = defs || [];
-      matches = list || [];
+      const page = await listMetricsPage(q, 0, PAGE_SIZE);
+      if (gen !== listGen) return;
+      metrics = (page && page.rows) || [];
+      hasNext = !!(page && page.hasNext);
       listError = '';
+      loading = false; // gen-guarded: only a CURRENT reply ends the wait
     } catch (e) {
-      listError = errText(e);
+      if (gen === listGen) {
+        listError = errText(e);
+        loading = false; // a failed first read shows the error, not a hang
+      }
     }
   }
 
-  $effect(() => {
-    pins = readPins();
-    loadLists();
-  });
-
-  async function refreshMetrics() {
+  // loadMore appends the NEXT window: the cursor is the last rendered
+  // row's id (the store resolves it to its stored origin-rank/name key,
+  // so windows never skip or duplicate a row). Duplicate ids are filtered
+  // out anyway — a repeated keyed {#each} id would throw.
+  async function loadMore() {
+    if (loadingMore || !hasNext || !metrics.length) return;
+    loadingMore = true;
+    const gen = listGen;
     try {
-      metrics = (await listMetrics()) || [];
+      const last = metrics[metrics.length - 1];
+      const page = await listMetricsPage(appliedQuery, last.id, PAGE_SIZE);
+      if (gen !== listGen) return; // a refresh replaced the list meanwhile
+      const seen = new Set(metrics.map((m) => m.id));
+      const add = ((page && page.rows) || []).filter((m) => !seen.has(m.id));
+      metrics = [...metrics, ...add];
+      hasNext = !!(page && page.hasNext);
       listError = '';
     } catch (e) {
-      listError = errText(e);
+      if (gen === listGen) listError = errText(e);
+    } finally {
+      loadingMore = false;
     }
   }
 
@@ -201,8 +285,11 @@
     saveError = '';
   }
 
-  function togglePin(m) {
-    pins = pins.includes(m.id) ? pins.filter((x) => x !== m.id) : [...pins, m.id];
+  // Id-based (not row-based): the edit card's Pin acts on form.id, which
+  // may sit beyond the windows fetched so far — a paged list must not
+  // make the toggle silently no-op.
+  function togglePin(id) {
+    pins = pins.includes(id) ? pins.filter((x) => x !== id) : [...pins, id];
     writePins(pins);
   }
 
@@ -216,7 +303,7 @@
       }
       if (form.id === m.id) newMetric();
       if (preview && preview.metric && preview.metric.id === m.id) preview = null;
-      await refreshMetrics();
+      await refreshList(appliedQuery);
     } catch (e) {
       saveError = errText(e);
     }
@@ -263,7 +350,7 @@
       form.name = saved.name;
       form.title = saved.title;
       baseline = snapshot(form);
-      await refreshMetrics();
+      await refreshList(appliedQuery);
     } catch (e) {
       saveError = errText(e);
     } finally {
@@ -288,7 +375,7 @@
         form.id,
         adhoc ? form.expr : '',
         adhoc ? form.groupBy : '',
-        scope ? `match:${scope}` : '',
+        '', // whole library: the builder has no scope selector
         PREVIEW_LIMIT,
       );
     } catch (e) {
@@ -336,7 +423,7 @@
         class:bld-pin-on={pins.includes(m.id)}
         title={pins.includes(m.id) ? 'Unpin from scoreboard' : 'Pin as scoreboard column'}
         aria-label="Toggle pin for {m.name}"
-        onclick={() => togglePin(m)}><span class="codicon codicon-pin"></span></button
+        onclick={() => togglePin(m.id)}><span class="codicon codicon-pin"></span></button
       >
       {#if m.origin === 'user'}
         <button
@@ -359,8 +446,6 @@
         metrics show as scoreboard columns on every match.
       </p>
     </div>
-    <div class="spacer"></div>
-    <button class="btn" onclick={() => nav('/reports')}>Open in Reports</button>
   </header>
 
   {#if listError}
@@ -381,32 +466,40 @@
           ><span class="codicon codicon-add"></span> New</button
         >
       </div>
-      {#if groups.builtins.length}
-        <div class="bld-group">
-          <h3>Builtins</h3>
-          {#each groups.builtins as m (m.id)}
-            {@render metricRow(m)}
-          {/each}
-        </div>
-      {/if}
-      {#if groups.yours.length}
-        <div class="bld-group">
-          <h3>Yours</h3>
-          {#each groups.yours as m (m.id)}
-            {@render metricRow(m)}
-          {/each}
-        </div>
-      {/if}
-      {#if groups.plugins.length}
-        <div class="bld-group">
-          <h3>Plugins</h3>
-          {#each groups.plugins as m (m.id)}
-            {@render metricRow(m)}
-          {/each}
-        </div>
-      {/if}
+      <!-- Server-side search: the debounced query reaches the store
+           (LIKE over name/title) and restarts the window at cursor 0. -->
+      <input
+        class="input"
+        type="search"
+        aria-label="Search metrics"
+        placeholder="Search metrics…"
+        bind:value={query}
+      />
       {#if metrics.length === 0 && !listError}
-        <p class="muted" role="status"><StatusChip block detail="Loading…" /></p>
+        {#if loading}
+          <p class="muted" role="status"><StatusChip block detail="Loading…" /></p>
+        {:else if appliedQuery}
+          <p class="muted" role="status">No metrics match “{appliedQuery}”.</p>
+        {/if}
+      {:else}
+        <!-- One header per contiguous origin run (runs above): a window
+             boundary inside a group never repeats the header. -->
+        {#each runs as run (run.origin + ':' + run.rows[0].id)}
+          <div class="bld-group">
+            <h3>{GROUP_LABEL[run.origin] || run.origin}</h3>
+            {#each run.rows as m (m.id)}
+              {@render metricRow(m)}
+            {/each}
+          </div>
+        {/each}
+        {#if hasNext}
+          <div class="row-between">
+            <span class="muted" role="status">Showing {metrics.length} metrics</span>
+            <button class="btn" disabled={loadingMore} onclick={loadMore}>
+              {loadingMore ? 'Loading…' : 'Load more'}
+            </button>
+          </div>
+        {/if}
       {/if}
     </section>
 
@@ -496,15 +589,11 @@
           <button class="btn primary" onclick={save} disabled={saving}>
             {saving ? 'Saving…' : form.id && !dirty ? 'Saved' : 'Save metric'}
           </button>
-          <button class="btn" onclick={newMetric}>New</button>
           <button
             class="btn"
             class:bld-pin-on={form.id > 0 && pins.includes(form.id)}
             disabled={form.id === 0}
-            onclick={() => {
-              const m = metrics.find((x) => x.id === form.id);
-              if (m) togglePin(m);
-            }}
+            onclick={() => togglePin(form.id)}
           >
             <span class="codicon codicon-pin"></span>
             {form.id > 0 && pins.includes(form.id) ? 'Pinned' : 'Pin'}
@@ -518,24 +607,7 @@
       <section class="panel bld-preview">
         <div class="row-between">
           <h2>Preview</h2>
-          <div class="toolbar bld-scope-bar">
-            <label class="bld-lab field-label" for="bld-scope">Scope</label>
-            <!-- Match scope picker: no selection = the whole library
-                 (placeholder), the clear button returns to it. -->
-            <MatchPicker
-              {matches}
-              value={Number(scope) || 0}
-              id="bld-scope"
-              placeholder="Whole library"
-              onselect={(mid) => (scope = mid ? String(mid) : '')}
-            />
-            {#if scope}
-              <button
-                class="btn small"
-                title="Preview across the whole library"
-                onclick={() => (scope = '')}>Whole library</button
-              >
-            {/if}
+          <div class="toolbar">
             <button class="btn primary" onclick={runPreview} disabled={previewBusy}>
               {previewBusy ? 'Running…' : 'Preview'}
             </button>
@@ -557,7 +629,7 @@
             </p>
           {/if}
           {#if preview.rows.length === 0}
-            <p class="muted" role="status">No groups for this scope — empty result.</p>
+            <p class="muted" role="status">No groups — empty result.</p>
           {:else}
             <div class="table-scroll">
               <table class="data-table">
@@ -598,7 +670,7 @@
           </details>
         {:else}
           <p class="muted" role="status">
-            Nothing previewed yet — pick a scope and press Preview (or <span class="codicon codicon-play"></span> on a metric).
+            Nothing previewed yet — press Preview (or <span class="codicon codicon-play"></span> on a metric).
           </p>
         {/if}
       </section>
