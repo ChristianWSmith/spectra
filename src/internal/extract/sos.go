@@ -265,8 +265,10 @@ type fireCueDef struct {
 // both fired 0× across the pool and were never heard by the owner in
 // game, and the detonate sounds already carry the smash/pop character.
 //
-// No round-count gating on any of these (knife/warmup discard is queued
-// separately — stamp rounds normally through addEvent → evRound).
+// No round-count gating on any of these: rows stamp through addEvent →
+// evRound like every events row, and addEvent is gated by agg.discarding
+// (the ingest discard), so a discarded knife/warmup round stores no cue
+// rows either.
 var fireCueDefs = []fireCueDef{
 	{name: "Molotov.Extinguish", kind: models.EventExtinguish, weapon: ""},
 	{name: "Molotov.StartFailed", kind: models.EventStartFailed, weapon: "Molotov"},
@@ -326,8 +328,8 @@ type fireCueInfo struct {
 // wave A (pool observation: hasOrigin=true on EVERY cue — 66/66
 // extinguish + 9/9 StartFailed messages carry one). Round rides the same
 // addEvent → evRound path as every events row and is renumbered with them
-// in build.renumber — no round-count gating here (knife/warmup discard is
-// queued separately). detail_json carries the source entity + the exact
+// in build.renumber — addEvent is gated by agg.discarding (the ingest
+// discard), so discarded rounds store no cue rows. detail_json carries the source entity + the exact
 // soundevent name — wave A's provenance keys, so the row always says
 // which cue it was.
 func (a *agg) fireCue(c fireCueInfo, seen map[fireCueKey]bool) {

@@ -227,7 +227,7 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 	//     src -1 or a source that resolves to no player skips the row,
 	//     identity is never guessed).
 	//   - Wave C: the fire-cue vocabulary (extinguish / air-burst failure /
-	//     detonation body-break / fire fade) → typed cue rows
+	//     fire fade) → typed cue rows
 	//     (models.EventExtinguish … EventFadeOut) with Wave A's exact
 	//     storage rule — deduped per (source entity, tick, name), origin
 	//     required through the same packed_params header. The seen-set is
