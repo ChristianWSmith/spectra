@@ -1297,6 +1297,110 @@ at the end of the section.
   https://docs.pureskill.gg/datascience/adx/cs2/csds/changelog,
   https://github.com/markus-wa/demoinfocs-golang/issues/751 (2026-11-09).
 
+- **Smoke ⇄ fire interactions: signals, cues, and lifetimes** — does a demo
+  carry anything for "smoke puts out fire" / "fire lands in smoke", and what
+  sound plays? There is NO game event: `inferno_extinguish` fires 0× (see
+  the optional-events entry above) and our own 7-demo library has 0 rows
+  for it. The signals that DO exist: (1) `inferno_expire` arrives EARLY
+  when a fire is put out — natural lifetimes are exactly 352 ticks (5.500 s,
+  Incendiary) and 449/450 ticks (7.02–7.03 s, Molotov) (re-verified 2026-11-12:
+  the modal values of every pool demo's startburn→expire histogram —
+  137×352, 119×449, 12×450); 63/626 fires in the dev library ended short
+  (8…379 ticks), 58 of them with a `smokegrenade_detonate` within 300 u
+  during the burn (56 within 144 u); paired start/expire carry identical
+  positions (626/626), so the pair is per-fire by `entityid`+round. (2) A
+  fire grenade suppressed by smoke produces NO `inferno_startburn` at
+  all → no detonation row, no fire to draw: 25 of 1065
+  Molotov/Incendiary bounces in the dev library never get a startburn
+  within 400 u for the rest of the round.
+
+  SOUND: the demo's SOS stream carries
+  **`Molotov.Extinguish` → `sounds/weapons/molotov/molotov_extinguish.vsnd_c`**
+  (the only extinguish soundevent in the install — no Incendiary variant;
+  the same cue plays for both nades' fires, the owner's hunch confirmed)
+  — **66 messages across the 7 golden-pool demos** (13/11/4/3/6/5/24 per
+  demo; corrected from an earlier 68 — two independent SOS censuses agree
+  on 66, no (tick,source) pair dedupes), in BOTH scenarios the owner
+  specified: smoke lands on a burning fire — 58×, the fire's own
+  startburn within 150 u of the cue (the smoke kills it, its expire comes
+  early) — and a firebomb lands in an active smoke with no fire ever
+  starting — 8×, no `inferno_startburn` within ±1000 ticks at all (the
+  named cases: de_cache@115441, de_cache@122910, de_anubis@44055,
+  de_anubis@65655, de_mirage@81834, plus de_ancient@31236,
+  de_dust2@90654, de_nuke@180704). The extinguish cue co-fires at +0
+  from the SAME source entity with **`Inferno.FadeOut` →
+  `fire_loop_fadeout_01.vsnd_c`** (the fire fading out) in 59/66
+  extinguish messages; FadeOut also plays whenever a fire dies (636× in
+  the pool), so it is captured unconditionally — the replay plays it
+  wherever the demo recorded it (the probe's carve-out: the inventory
+  DOES show it at suppressed landings).
+
+  **`Molotov.StartFailed` / `IncGrenade.StartFailed` →
+  `…_detonate_air_01.vsnd_c`** (9× observed: 5 mol / 4 inc) is its OWN
+  air-burst sound (owner ruling, 2026-11-12): a fire grenade that blooms
+  in the air fails to emit fire and plays it — NOT a smoke-extinguish
+  variant. Corroborated by the asset names
+  (`molotov_detonate_air_01.vsnd_c` / `inc_grenade_detonate_air_01.vsnd_c`),
+  the Sept 29 2023 patch's separate in-air vs on-ground bloom sounds, and
+  the Jan 27 2026 one-time fuse extension added precisely to stop
+  molotovs/incendiaries AIR-BURSTING off player bounces. The empirical
+  observation stays: of the 9, ~half had an active smoke within ~250-513u
+  plus a bounce of the same nade 12-45 ticks earlier, half had no smoke at
+  all — so smoke proximity sometimes co-occurs, but per the ruling the
+  sound means AIR-BURST, not "extinguished by smoke." Both names are
+  captured and played as recorded.
+
+  **`Molotov.Smash` (4 variants) → `molotov_smash_01..04.vsnd_c` and its
+  incendiary twin `IncGrenade.Pop` → `inc_grenade_pop_03.vsnd_c`** play
+  when a firebomb DETONATES — lands and breaks (owner ruling +
+  terminology, 2026-11-12: "plays when it lands… detonates"). There is
+  NO `IncGrenade.Smash` anywhere in the install (grep over all 21,220
+  soundevent names: Molotov.Smash is the only "smash"; IncGrenade.Pop is
+  the family's only container-break sound — its twin by elimination,
+  flagged for the owner's by-ear verification). Both fire **0× across all
+  7 pool demos** (two independent SOS censuses) — captured anyway per the
+  owner's wire-the-dead-capture decision; with zero pool occurrences
+  there is no demo-side tick alignment to sample until a newer demo
+  records them. Molotov smash keeps its four variants so repeated
+  detonations don't loop one sample; Pop ships one.
+
+  `Molotov.Start`/`IncGrenade.Start` fire 1:1 with `inferno_startburn`
+  (42+46=88=88 on de_cache — re-verified; `Inferno.Loop` likewise equals
+  startburn in every pool demo), so a suppressed fire plays no Start
+  sound. Smoke lifetime measured from the demo:
+  `smokegrenade_detonate` → `smokegrenade_expired` is EXACTLY 1412 ticks
+  = 22.06 s @64 tick (the modal value of all 7 pool demos' det→expired
+  histograms; 707 round-scoped pairs) — longer than the 18 s Spectra's
+  renderer draws and than the community's 18–20 s claims. Partial
+  extinguish is real game behaviour ("one third of the flames must be
+  covered"), but the demo records only ONE `inferno_expire` per inferno —
+  partial cell-by-cell extinguishing is not observable. Since 2026-07-20
+  the C4 explosion also extinguishes fire and disperses smoke (a second
+  extinguish trigger). Spectra captures all six cue soundevents in the
+  third SOS wave (`internal/extract/sos.go` `fireCueDefs`) and plays them
+  as audio-only cues on the utility bus (`frontend/src/lib/replay/sfx.js`
+  `fireCues`) — no feed category claims the four cue kinds (owner: no
+  feed visibility) and nothing new is drawn (the owner's indicator ruling:
+  scenario (ii) needs no indicator — no startburn, no fire row).
+  **Source** — local probe: `cs2find events/find/hash` over
+  pak01_dir.vpk (21,220 soundevent names — the Smash/Pop grep and the
+  literal hash pins), two scratch demoinfocs SOS parses of
+  `golden/*.dem.zst` (cue census, ±32-tick moment inventories around
+  every cue and control landing, startburn→expire and det→expired
+  lifetime histograms; hash resolution via mappack.SoundEventHash) and
+  read-only queries of the dev library (2026-11-12);
+  https://counterstrike.fandom.com/wiki/Molotov and /wiki/Smoke_Grenade
+  (one-third rule, "flames will not deploy inside smoke");
+  https://gamertagmythras.com/blog/counter-strike-2/cs2-utility-guide and
+  https://metabot.gg/en/cs2/guides/cs2-smokes-utility-fundamentals (both-way
+  interaction);
+  https://esports.gg/news/counter-strike-2/cs2-update-september-29-molotov-sound-bug
+  (in-air vs on-ground bloom sounds, 2023-09-30);
+  https://csgo.com/news/138825-cs2-patch-improves-molotovincendiary-grenades
+  (air-burst fuse extension, 2026-01-27);
+  https://escorenews.com/en/csgo/news/79667-… (C4 extinguishes fire, 2026-07-22)
+  (all 2026-11-12).
+
 - **C4 beep sounds — assets, events, cadence, and the final-10-second
   samples (spectra's replay beeps)** — where the beeps live and how the
   game paces them. Under `sounds/weapons/c4/` in pak01_dir.vpk:
