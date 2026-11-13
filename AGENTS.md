@@ -171,7 +171,7 @@ paths (everything else) — resolve project paths against `src/`.
 | `internal/models` | normalized domain types + read DTOs — the contract between extract, store, and the bindings |
 | `internal/store` | SQLite (modernc, single-writer, WAL) + embedded baseline schema (`schema.sql`, applied on every Open) + batch writers/queries; scrubs NUL bytes on every write |
 | `internal/extract` | demoinfocs v6 engine: handlers → `models.ExtractedMatch`; `Parse(ctx, r, progress)`; unit-tested accumulator |
-| `internal/library` | import pipeline: hash/dedupe, zstd sniff, single-worker job queue, cancellation, `spectra:*` events |
+| `internal/library` | import pipeline: hash/dedupe, zstd sniff, bounded worker pool (FIFO claims, concurrency via the `import_concurrency` pref — 1 = sequential, default = machine threads), cancellation, `spectra:*` events |
 | `internal/data` | XDG data-dir paths (db, per-match sidecars, tmp) |
 | `internal/integration` | golden-demo acceptance test (repo-root `golden/de_cache.dem.zst`, skip-if-absent/pointer, `-update` fixture regen) |
 | `internal/mappack` | CS2 radar extraction: Steam install detection → VPK v2 reader → vtex_c decode → map packs in the data dir (Valve IP never ships — see `mappackservice.go` + `frontend/public/maps/README.md`) |
