@@ -92,7 +92,7 @@ var columnNotes = map[string]map[string]string{
 		"kills_by_weapon": "JSON object (excluded from the metrics expression whitelist)",
 	},
 	"metrics": {
-		"origin":      "builtin|user|plugin — builtin rows ship seeded with the app",
+		"origin":      "builtin|user|plugin — the builtin origin ships seeded with the app (exactly one row: trade_rate)",
 		"expr":        "metric grammar: from <table>[, <secondary>...]: <aggregations> (extra sources join engine-side)",
 		"denominator": "scalar subquery source: ''|rounds|matches",
 	},

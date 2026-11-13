@@ -78,9 +78,9 @@ const (
 	// ListMetricsPageSize is the default window (the Builder's first
 	// window and every "Load more" click fetches one of these). It is
 	// deliberately smaller than the library list's 200: the left rail is
-	// narrow, rows are two lines tall, and a realistic catalog (7
-	// builtins + user + plugin definitions) fits one window — so the
-	// window bound only matters for a pathological catalog, where it
+	// narrow, rows are two lines tall, and a realistic catalog (the
+	// seeded builtin + user + plugin definitions) fits one window — so
+	// the window bound only matters for a pathological catalog, where it
 	// still keeps the scan and the IPC payload bounded.
 	ListMetricsPageSize = 100
 	// ListMetricsPageMaxRows is the largest window any caller may ask

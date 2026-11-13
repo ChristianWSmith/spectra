@@ -16,8 +16,8 @@ import (
 // player_stats.trade_kills is rewritten here from the same engagements
 // pass (KindTrade per killer), so the frozen extractor column (import-time
 // 5 s default) becomes cfg-aware for every consumer — the scoreboard
-// Trade column, career trades, profile trade rate and the successful_trades
-// metric — without touching their SQL. match_trade_opps (the two
+// Trade column, career trades, profile trade rate and the trade_rate
+// builtin metric — without touching their SQL. match_trade_opps (the two
 // distance-derived trade-opportunity counts, tradeopps.go) and
 // round_side_classes (the per-side eco classes, classify.go) are written
 // the same way: cfg.TradeOppDistance / cfg.EcoFullBuy / cfg.EcoForce are

@@ -586,10 +586,11 @@ CREATE TABLE IF NOT EXISTS voice_presence (
 -- defensive ensureMetricsTable fallback and writes plugin rows into it
 -- (ON CONFLICT(name) DO UPDATE). Keep both copies byte-compatible.
 --
--- Builtins (origin='builtin', ids 1..7) are the PRD §5.16 example queries —
--- each maps to the closest expressible definition with the interpretation
--- recorded in doc (internal/metrics fixture tests assert they compile and
--- return the hand-computed seed values).
+-- Builtins (origin='builtin') are seeded below: exactly ONE — trade_rate
+-- (owner ruling) — with the interpretation recorded in doc.
+-- internal/metrics' fixture test locks its name/expr/group_by/denominator/
+-- doc/count and proves it compiles and returns the hand-computed seed
+-- values under the join grammar (internal/metrics/doc.go).
 
 CREATE TABLE IF NOT EXISTS metrics (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -625,50 +626,18 @@ CREATE TABLE IF NOT EXISTS saved_queries (
 	created_at DATETIME NOT NULL
 );
 
--- PRD §5.16 acceptance fixtures, seeded as builtins (see header).
--- INSERT OR IGNORE keyed on the UNIQUE name: re-applying the baseline on
--- every Open must not duplicate or reset them.
+-- THE builtin, seeded (see header): trade rate — trade successes ÷ total
+-- trade opportunities. INSERT OR IGNORE keyed on the UNIQUE name:
+-- re-applying the baseline on every Open must not duplicate or reset it.
+-- The expr is the join-grammar shape internal/metrics/doc.go documents:
+-- the engine derives
+-- `LEFT JOIN match_trade_opps ON player_stats.match_id = match_trade_opps.match_id
+--  AND player_stats.steam_id = match_trade_opps.steam_id`.
 INSERT OR IGNORE INTO metrics (name, title, expr, group_by, format, doc, origin, denominator, created_at) VALUES
-('untraded_deaths', 'Untraded deaths per round',
- 'from player_round_stats: count(where deaths=1 and traded=0)',
- 'player', '',
- 'How many deaths a player suffered without being traded. Formula: count(player_round_stats rows where deaths=1 and traded=0) divided by count(rounds) — a per-round rate in scope; multiply by 10 for the per-10-rounds display form (the stored value is not scaled — a known deviation). traded is set by the analysis pass when a teammate answered the death inside the trade window.',
- 'builtin', 'rounds', CURRENT_TIMESTAMP),
-
-('successful_trades', 'Successful trades',
- 'from player_stats: sum(trade_kills)',
- 'player', '',
- 'How often a player successfully traded within a configurable time window. Formula: sum(player_stats.trade_kills) grouped by player. A trade kill answers a teammate death inside the configured trade window (the window lives in analysis_config).',
- 'builtin', '', CURRENT_TIMESTAMP),
-
-('flash_assisted_kills', 'Flash-assisted kills',
- 'from events: count(where kind=''kill'' and assisted_flash)',
- 'player', '',
- 'How many kills followed a teammates flash. Formula: count(events rows where kind=kill and assisted_flash) grouped by player (attacker side). Approximation: it uses the kill-assisted-by-flash flag; the specific teammate throw is not linked per kill (that cross-event join is not implemented).',
- 'builtin', '', CURRENT_TIMESTAMP),
-
-('utility_value_per_round', 'Utility value per round',
- 'from round_economy: sum(equip_value)',
- '', 'int',
- 'How much utility value was spent per round. Formula: sum(round_economy.equip_value) divided by count(rounds) — the average both-sides buy value per round in scope. round_economy.equip_value is the per-side equipment buy including utility; itemized utility-only spend is not extracted (a proxy).',
- 'builtin', 'rounds', CURRENT_TIMESTAMP),
-
-('round_win_rate', 'Round win rate (CT, man-advantage proxy)',
- 'from rounds: ratio(count(where winner=''ct''), count())',
- '', 'percent',
- 'How often a team converts a man advantage. Per-tick alive counts are not stored, so true man-advantage conversion is not computable in SQL; this is the closest expressible definition (CT round win share = rounds won by CT / total rounds) — a placeholder until per-round advantage tagging exists.',
- 'builtin', '', CURRENT_TIMESTAMP),
-
-('isolated_deaths', 'Isolated deaths share',
- 'from player_round_stats: ratio(count(where deaths=1 and traded=0), count(where deaths=1))',
+('trade_rate', 'Trade rate',
+ 'from player_stats, match_trade_opps: ratio(sum(trade_kills), sum(opps))',
  'player', 'percent',
- 'How frequently a player dies while isolated from teammates. Spatial isolation lives in the position sidecars, so this uses the SQL proxy: the share of a player deaths that went untraded (no teammate answered inside the trade window). Formula: count(deaths=1 and traded=0) / count(deaths=1) per player.',
- 'builtin', '', CURRENT_TIMESTAMP),
-
-('opening_kill_round_win_pct', 'Opening-kill round win share (CT proxy)',
- 'from engagements: ratio(count(where kind=''opening'' and won_by=''ct''), count(where kind=''opening''))',
- '', 'percent',
- 'What percentage of opening kills resulted in round wins. The opener side cannot be joined to the round winner inside a single source (rounds.first_kill_steam carries no side), so the expressible definition is the share of opening engagements won by CT — a proxy; the exact form needs a cross-source join.',
+ 'How often a player answered a teammate death inside the trade window. Formula: trade successes divided by total trade opportunities — sum(player_stats.trade_kills) / sum(match_trade_opps.opps) grouped by player over the joined sources, so the denominator is the trade opportunities analytics recorded for that player. It is a ratio, not a share, so the value MAY EXCEED 100% when a trade lands on a death the distance gate did not count (the same note as the profile TradeRate field). N is the player_stats rows behind the value.',
  'builtin', '', CURRENT_TIMESTAMP);
 
 -- Advanced platform: declarative plugin registry (plan M5 §2.7 v1). One
