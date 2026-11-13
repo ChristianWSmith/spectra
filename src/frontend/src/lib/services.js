@@ -747,16 +747,20 @@ export function listMetrics() {
 }
 // listMetricsPage is the Builder list's keyset window ("Load more"): the
 // same canonical order as listMetrics, ONE window of `limit` rows
-// strictly after `afterID` (0 = the first window), narrowed server-side
-// by `query` (case-insensitive LIKE over name/title), returned as
-// {rows, hasNext}. Read-cached keyed (query, afterID, limit) like
-// listMatchesPage — and the WHOLE cache (this entry included) flushes on
-// every spectra:* event and inside the mutating wrappers below: invalidate()
-// is readCache.clear(), so one save/delete refetches both the paged
-// window and listMetrics.
-export function listMetricsPage(query, afterID, limit) {
-  return cachedRead('ListMetricsPage', [query, afterID, limit], () =>
-    MetricsService.ListMetricsPage(query, afterID, limit),
+// strictly after `afterID` (0 = the first window), narrowed SERVER-side
+// by `query` (case-insensitive LIKE over name/title) AND by
+// `originFilter` (the Built-in / My metrics toggles: '' = both,
+// 'builtin', 'mine' = user + plugin, 'none' = both off — the store's
+// vocabulary, store.ListMetricsPage), returned as {rows, hasNext}.
+// Read-cached keyed (query, originFilter, afterID, limit) — the filter
+// rides the args, so it joins the ONE existing cache key and needs no
+// second cache — like listMatchesPage, and the WHOLE cache (this entry
+// included) flushes on every spectra:* event and inside the mutating
+// wrappers below: invalidate() is readCache.clear(), so one save/delete
+// refetches both the paged window and listMetrics.
+export function listMetricsPage(query, originFilter, afterID, limit) {
+  return cachedRead('ListMetricsPage', [query, originFilter, afterID, limit], () =>
+    MetricsService.ListMetricsPage(query, originFilter, afterID, limit),
   );
 }
 export function getMetric(id) { return MetricsService.GetMetric(id); }
