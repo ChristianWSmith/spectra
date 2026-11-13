@@ -289,16 +289,17 @@ func metricIDs(rows []models.MetricRow) []int64 {
 	return ids
 }
 
-// walkMetricPage drains every window from afterID for query, returning
-// each window's row count and the concatenated rows in order. Fails on a
-// runaway loop (a cursor that never advances would spin).
-func walkMetricPage(t *testing.T, s *Store, query string, afterID int64, limit int) (sizes []int, rows []models.MetricRow) {
+// walkMetricPage drains every window from afterID for query under the
+// origin filter, returning each window's row count and the concatenated
+// rows in order. Fails on a runaway loop (a cursor that never advances
+// would spin).
+func walkMetricPage(t *testing.T, s *Store, query string, originFilter string, afterID int64, limit int) (sizes []int, rows []models.MetricRow) {
 	t.Helper()
 	seen := 0
 	for {
-		page, err := s.ListMetricsPage(query, afterID, limit)
+		page, err := s.ListMetricsPage(query, originFilter, afterID, limit)
 		if err != nil {
-			t.Fatalf("ListMetricsPage(query=%q, after=%d): %v", query, afterID, err)
+			t.Fatalf("ListMetricsPage(query=%q, origin=%q, after=%d): %v", query, originFilter, afterID, err)
 		}
 		sizes = append(sizes, len(page.Rows))
 		rows = append(rows, page.Rows...)
@@ -364,7 +365,7 @@ func TestListMetricsPageWindowsTileListOrder(t *testing.T) {
 	if len(ref) != 234 {
 		t.Fatalf("reference list = %d rows, want 234 (1 builtin + 230 user + 3 plugin)", len(ref))
 	}
-	sizes, got := walkMetricPage(t, s, "", 0, ListMetricsPageSize)
+	sizes, got := walkMetricPage(t, s, "", "", 0, ListMetricsPageSize)
 	if len(sizes) != 3 || sizes[0] != 100 || sizes[1] != 100 || sizes[2] != 34 {
 		t.Errorf("window sizes = %v, want [100 100 34]", sizes)
 	}
@@ -403,7 +404,7 @@ func TestListMetricsPageWindowBoundaries(t *testing.T) {
 		seedUserMetric(t, s, fmt.Sprintf("b%03d", i), "")
 	}
 
-	page, err := s.ListMetricsPage("", 0, 0)
+	page, err := s.ListMetricsPage("", "", 0, 0)
 	if err != nil {
 		t.Fatalf("ListMetricsPage: %v", err)
 	}
@@ -417,7 +418,7 @@ func TestListMetricsPageWindowBoundaries(t *testing.T) {
 	if len(ref) != 101 {
 		t.Fatalf("reference = %d rows, want 101", len(ref))
 	}
-	first, err := s.ListMetricsPage("", 0, ListMetricsPageSize)
+	first, err := s.ListMetricsPage("", "", 0, ListMetricsPageSize)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(first): %v", err)
 	}
@@ -428,7 +429,7 @@ func TestListMetricsPageWindowBoundaries(t *testing.T) {
 		t.Errorf("first window = %v…, want the first 100 reference ids", metricIDs(first.Rows)[:3])
 	}
 	cursor := first.Rows[len(first.Rows)-1].ID
-	second, err := s.ListMetricsPage("", cursor, ListMetricsPageSize)
+	second, err := s.ListMetricsPage("", "", cursor, ListMetricsPageSize)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(second): %v", err)
 	}
@@ -452,7 +453,7 @@ func TestListMetricsPageCursorPositions(t *testing.T) {
 	ref := metricIDs(metricRowsRef(t, s)) // 1 builtin + 250 users
 
 	// Cursor at the 100th row in order → the remaining 151.
-	page, err := s.ListMetricsPage("", ref[99], 200)
+	page, err := s.ListMetricsPage("", "", ref[99], 200)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(mid): %v", err)
 	}
@@ -465,7 +466,7 @@ func TestListMetricsPageCursorPositions(t *testing.T) {
 
 	// Cursor at the last row → an empty window, no successor.
 	last := ref[len(ref)-1]
-	page, err = s.ListMetricsPage("", last, 200)
+	page, err = s.ListMetricsPage("", "", last, 200)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(end): %v", err)
 	}
@@ -477,7 +478,7 @@ func TestListMetricsPageCursorPositions(t *testing.T) {
 	}
 
 	// A cursor row that was deleted → ErrNotFound.
-	if _, err := s.ListMetricsPage("", 999999, 200); !errors.Is(err, ErrNotFound) {
+	if _, err := s.ListMetricsPage("", "", 999999, 200); !errors.Is(err, ErrNotFound) {
 		t.Errorf("missing cursor err = %v, want store.ErrNotFound", err)
 	}
 }
@@ -502,7 +503,7 @@ func TestListMetricsPageSearch(t *testing.T) {
 	// Name substring, ASCII case-insensitive: "adr" and "ADR" hit the
 	// same single row (no builtin title/name carries "adr").
 	for _, q := range []string{"adr", "ADR"} {
-		page, err := s.ListMetricsPage(q, 0, 100)
+		page, err := s.ListMetricsPage(q, "", 0, 100)
 		if err != nil {
 			t.Fatalf("ListMetricsPage(%q): %v", q, err)
 		}
@@ -513,7 +514,7 @@ func TestListMetricsPageSearch(t *testing.T) {
 
 	// Title-only substring: "K/D" appears in no name, but in two titles
 	// (user then plugin — the canonical group order still holds).
-	page, err := s.ListMetricsPage("K/D", 0, 100)
+	page, err := s.ListMetricsPage("K/D", "", 0, 100)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(K/D): %v", err)
 	}
@@ -525,7 +526,7 @@ func TestListMetricsPageSearch(t *testing.T) {
 
 	// The filtered walk (windows of 1) tiles the filtered reference
 	// exactly — the cursor resolves inside the filtered set too.
-	sizes, walked := walkMetricPage(t, s, "k/d", 0, 1)
+	sizes, walked := walkMetricPage(t, s, "k/d", "", 0, 1)
 	want := filterMetricRef(ref, "k/d")
 	if len(sizes) != len(want) {
 		t.Errorf("filtered walk = %d windows for %d matches, want one window per match", len(sizes), len(want))
@@ -535,7 +536,7 @@ func TestListMetricsPageSearch(t *testing.T) {
 	}
 
 	// No match: an empty (non-nil) window, no successor.
-	page, err = s.ListMetricsPage("zz_no_such_metric", 0, 100)
+	page, err = s.ListMetricsPage("zz_no_such_metric", "", 0, 100)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(no match): %v", err)
 	}
@@ -547,11 +548,193 @@ func TestListMetricsPageSearch(t *testing.T) {
 	}
 
 	// Empty query = the whole unfiltered list.
-	page, err = s.ListMetricsPage("", 0, 1000)
+	page, err = s.ListMetricsPage("", "", 0, 1000)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(empty): %v", err)
 	}
 	if !sameIDs(metricIDs(page.Rows), metricIDs(ref)) {
 		t.Errorf("empty-query window = %v…, want the full reference order", metricIDs(page.Rows)[:3])
+	}
+}
+
+// originFilterMetricRef applies ListMetricsPage's origin filter as the
+// Go-side reference — the SAME partition the SQL spells ("" = all,
+// "builtin" = origin == builtin, "mine" = everything else, "none" =
+// empty) — derived here independently of the store's WHERE builder, so
+// every filtered walk below is compared against a list the test computed
+// for itself.
+func originFilterMetricRef(rows []models.MetricRow, filter string) []models.MetricRow {
+	switch filter {
+	case "builtin":
+		var out []models.MetricRow
+		for _, m := range rows {
+			if m.Origin == "builtin" {
+				out = append(out, m)
+			}
+		}
+		return out
+	case "mine":
+		var out []models.MetricRow
+		for _, m := range rows {
+			if m.Origin != "builtin" {
+				out = append(out, m)
+			}
+		}
+		return out
+	case "none":
+		return []models.MetricRow{}
+	default:
+		return rows
+	}
+}
+
+// TestListMetricsPageOriginFilter pins the built-in partition filter —
+// the server-side predicate behind the Builder's Built-in / My metrics
+// toggles: each filter value selects exactly its side of the partition
+// (a client-side filter over a page window would be wrong, so the
+// partition is asserted over KEYSET WINDOWS too), "none" (both toggles
+// off) is a legal empty read with a non-nil window, and an unknown value
+// is rejected before any SQL.
+func TestListMetricsPageOriginFilter(t *testing.T) {
+	s := openMem(t)
+	for i := range 5 {
+		seedUserMetric(t, s, fmt.Sprintf("u%d_metric", i), "")
+	}
+	if err := s.ReplacePluginMetrics("p1", []PluginMetricDef{
+		{Name: "plug_a", Title: "Plugin A", Expr: "from events: count()"},
+		{Name: "plug_b", Title: "Plugin B", Expr: "from events: count()"},
+	}); err != nil {
+		t.Fatalf("ReplacePluginMetrics: %v", err)
+	}
+	ref := metricRowsRef(t, s) // 1 builtin + 5 user + 2 plugin
+	if len(ref) != 8 {
+		t.Fatalf("reference = %d rows, want 8 (1 builtin + 5 user + 2 plugin)", len(ref))
+	}
+
+	// Every filter value in ONE window: exactly its partition, in the
+	// canonical order, with no successor beyond it.
+	for _, filter := range []string{"", "builtin", "mine", "none"} {
+		want := originFilterMetricRef(ref, filter)
+		page, err := s.ListMetricsPage("", filter, 0, 100)
+		if err != nil {
+			t.Fatalf("ListMetricsPage(origin=%q): %v", filter, err)
+		}
+		if !sameIDs(metricIDs(page.Rows), metricIDs(want)) {
+			t.Errorf("origin=%q window = %v, want the partition ids %v", filter, metricIDs(page.Rows), metricIDs(want))
+		}
+		if page.HasNext {
+			t.Errorf("origin=%q reported HasNext for its %d rows in one window", filter, len(want))
+		}
+		if filter == "none" && page.Rows == nil {
+			t.Error("both-off window rows = nil, want an empty (non-nil) slice for the JSON []")
+		}
+	}
+
+	// The partition holds ACROSS keyset windows: "mine" in windows of 2
+	// tiles the mine reference exactly — sizes, order, no duplicates —
+	// and no builtin row ever leaks into a mine window.
+	sizes, got := walkMetricPage(t, s, "", "mine", 0, 2)
+	wantMine := originFilterMetricRef(ref, "mine") // 7 rows → [2 2 2 1]
+	if len(sizes) != 4 || sizes[0] != 2 || sizes[1] != 2 || sizes[2] != 2 || sizes[3] != 1 {
+		t.Errorf("mine window sizes = %v, want [2 2 2 1]", sizes)
+	}
+	if !sameIDs(metricIDs(got), metricIDs(wantMine)) {
+		t.Errorf("mine walk ids = %v, want %v", metricIDs(got), metricIDs(wantMine))
+	}
+	for _, m := range got {
+		if m.Origin == "builtin" {
+			t.Errorf("builtin %q leaked into a mine window", m.Name)
+		}
+	}
+
+	// Unknown filter value: rejected before any SQL (no window).
+	if _, err := s.ListMetricsPage("", "everything", 0, 100); err == nil ||
+		!strings.Contains(err.Error(), `unknown origin filter "everything"`) {
+		t.Errorf("unknown filter err = %v, want the friendly pre-SQL rejection", err)
+	}
+}
+
+// TestListMetricsPageOriginFilterSearchAndCursor pins the filter
+// COMPOSING with the search (both ride the SAME WHERE — a query that
+// matches a builtin AND a user row is partitioned, never unioned) and
+// with the cursor (a cursor row OUTSIDE the filtered set still resolves
+// to its stored key, so a walk starting from it continues exactly; the
+// Builder itself resets to cursor 0 on every toggle).
+func TestListMetricsPageOriginFilterSearchAndCursor(t *testing.T) {
+	s := openMem(t)
+	seedUserMetric(t, s, "my_trade_rate", "My trade rate")
+	seedUserMetric(t, s, "adr_per_round", "ADR per round")
+	ref := metricRowsRef(t, s) // builtin trade_rate + 2 users
+
+	// "trade rate" matches the BUILTIN's title and the user's title —
+	// one term spanning both sides of the partition.
+	hit := filterMetricRef(ref, "trade rate")
+	if len(hit) != 2 {
+		t.Fatalf(`query fixture: "trade rate" matched %d rows, want 2 (builtin + user)`, len(hit))
+	}
+	for _, tc := range []struct {
+		filter string
+		want   int
+	}{
+		{"", 2}, {"builtin", 1}, {"mine", 1}, {"none", 0},
+	} {
+		page, err := s.ListMetricsPage("trade rate", tc.filter, 0, 100)
+		if err != nil {
+			t.Fatalf("ListMetricsPage(q, origin=%q): %v", tc.filter, err)
+		}
+		want := originFilterMetricRef(hit, tc.filter)
+		if len(page.Rows) != tc.want || !sameIDs(metricIDs(page.Rows), metricIDs(want)) {
+			t.Errorf("q+origin=%q → %d rows (%v), want %d (%v)",
+				tc.filter, len(page.Rows), metricIDs(page.Rows), tc.want, metricIDs(want))
+		}
+	}
+	// Case-insensitive on BOTH sides: an upper-case term partitions the
+	// same way (SQLite LIKE's ASCII folding).
+	page, err := s.ListMetricsPage("TRADE RATE", "mine", 0, 100)
+	if err != nil {
+		t.Fatalf("ListMetricsPage(upper, mine): %v", err)
+	}
+	if wantIDs := metricIDs(originFilterMetricRef(hit, "mine")); !sameIDs(metricIDs(page.Rows), wantIDs) {
+		t.Errorf("upper-case q+mine = %v, want %v", metricIDs(page.Rows), wantIDs)
+	}
+
+	// The composed filtered walk (windows of 1) tiles the composed
+	// reference exactly — filter AND search inside one WHERE.
+	sizes, walked := walkMetricPage(t, s, "trade rate", "mine", 0, 1)
+	want := originFilterMetricRef(hit, "mine")
+	if len(sizes) != len(want) {
+		t.Errorf("composed walk = %d windows for %d matches, want one window per match", len(sizes), len(want))
+	}
+	if !sameIDs(metricIDs(walked), metricIDs(want)) {
+		t.Errorf("composed walk ids = %v, want %v", metricIDs(walked), metricIDs(want))
+	}
+
+	// CURSOR outside the filtered set: the builtin row is the cursor of
+	// a "mine" walk — it resolves to its stored (rank, name) and every
+	// mine row sorts after it, so the walk returns the whole mine side
+	// (never an error, never the builtin itself).
+	var builtinID int64
+	for _, m := range ref {
+		if m.Origin == "builtin" {
+			builtinID = m.ID
+		}
+	}
+	page, err = s.ListMetricsPage("", "mine", builtinID, 100)
+	if err != nil {
+		t.Fatalf("ListMetricsPage(mine, builtin cursor): %v", err)
+	}
+	if !sameIDs(metricIDs(page.Rows), metricIDs(originFilterMetricRef(ref, "mine"))) {
+		t.Errorf("mine walk from a builtin cursor = %v, want the whole mine side", metricIDs(page.Rows))
+	}
+
+	// A cursor on the FIRST mine row continues after it (the mid-list
+	// cursor, mine side): only the row that follows survives.
+	mine := originFilterMetricRef(ref, "mine")
+	page, err = s.ListMetricsPage("", "mine", mine[0].ID, 100)
+	if err != nil {
+		t.Fatalf("ListMetricsPage(mine, mid cursor): %v", err)
+	}
+	if !sameIDs(metricIDs(page.Rows), metricIDs(mine[1:])) {
+		t.Errorf("mine walk after %d = %v, want %v", mine[0].ID, metricIDs(page.Rows), metricIDs(mine[1:]))
 	}
 }

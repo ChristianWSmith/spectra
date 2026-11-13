@@ -48,18 +48,29 @@
   let disabledPlugins = $state(new Set());
   let listError = $state('');
 
-  // The editor form (fields + the dirty-check baseline) and the list's
-  // search text are view-local state: they restore across navigation
-  // through the process-scoped registry (viewstate.svelte.js — flat key;
-  // they travel together so the unsaved-changes flag and the search read
-  // exactly as they did on leave; the search is the Profiles precedent).
+  // The editor form (fields + the dirty-check baseline), the list's
+  // search text and the two source toggles are view-local state: they
+  // restore across navigation through the process-scoped registry
+  // (viewstate.svelte.js — flat key; they travel together so the
+  // unsaved-changes flag, the search and the toggles read exactly as
+  // they did on leave; the search is the Profiles precedent).
   // Saving, previews, errors, the window cursor and the pin list stay
   // transient / their own store.
-  const bldSeed = seed('builder', { form: newForm(), baseline: '', query: '' });
+  const bldSeed = seed('builder', {
+    form: newForm(),
+    baseline: '',
+    query: '',
+    // Built-in / My metrics toggles: built-in OFF, My metrics ON — the
+    // initial view lists the user's own metrics (user + plugin).
+    builtin: false,
+    mine: true,
+  });
   let form = $state(bldSeed.form);
   let baseline = $state(bldSeed.baseline);
   let query = $state(bldSeed.query);
-  $effect(() => remember('builder', { form, baseline, query }));
+  let builtin = $state(bldSeed.builtin);
+  let mine = $state(bldSeed.mine);
+  $effect(() => remember('builder', { form, baseline, query, builtin, mine }));
   let saveError = $state('');
   let saving = $state(false);
 
@@ -72,6 +83,13 @@
   let previewAdhoc = $state(false);
   let previewError = $state('');
   let previewBusy = $state(false);
+  // The format the preview's value column renders with: an AD-HOC
+  // preview echoes no stored row (its format is the form's — the
+  // definition being edited), a SAVED preview formats from the echoed
+  // stored row (preview.metric). The distinction matters because the
+  // row play can preview a BUILT-IN without loading it, so the form may
+  // hold a different metric (or none) than the one on screen.
+  const previewFormat = $derived(previewAdhoc ? form.format : preview?.metric?.format || '');
 
   function newForm() {
     return {
@@ -141,11 +159,28 @@
   const dirty = $derived(snapshot(form) !== baseline);
   const readOnly = $derived(form.origin !== 'user');
 
-  // The search text the current window sequence serves: refreshList
-  // writes it, loadMore reads it (the cursor's query) and the
-  // empty-result copy below names it — $state because the template
-  // references it.
+  // originFilter — THE one toggle → server-filter derivation: both on =
+  // the whole catalog (''), Built-in only / My metrics only = the
+  // store's partition words, both off = 'none' (an empty list — legal,
+  // it falls out of the same read path). "mine" is the store's
+  // complement (origin <> 'builtin': user + plugin), so the toggles can
+  // never disagree with the store about what "mine" means. It rides the
+  // list read's args — see refreshList — so it restarts the window
+  // exactly like a search change does (the effect below reads it) and
+  // joins listMetricsPage's cache key for free (services.js).
+  const originFilter = $derived.by(() => {
+    if (builtin && mine) return '';
+    if (builtin) return 'builtin';
+    if (mine) return 'mine';
+    return 'none';
+  });
+
+  // The search text AND origin filter the current window sequence
+  // serves: refreshList writes them, loadMore reads them (the cursor's
+  // query + filter) and the empty-result copy below names the query —
+  // $state because the template references them.
   let appliedQuery = $state('');
+  let appliedFilter = $state('');
   // listGen distinguishes the current window sequence from stale replies
   // (see refreshList/loadMore); non-reactive on purpose — it is not state.
   let listGen = 0;
@@ -172,38 +207,44 @@
 
   // The list read (mount AND listError's Retry): the first run is
   // immediate (the list loads without the debounce delay), later runs
-  // fire 250 ms after a query change (the Library's debounce) so typing
-  // doesn't hammer the store. Every run RESTARTS the window at cursor 0.
+  // fire 250 ms after a query OR toggle change (the Library's debounce)
+  // so typing doesn't hammer the store — and a source-toggle flip lands
+  // on this SAME path, which restarts the window at cursor 0 (a filter
+  // change never appends onto the previous filter's windows).
   let firstList = true;
   $effect(() => {
     const q = query;
+    const f = originFilter;
     if (firstList) {
       firstList = false;
-      refreshList(q);
+      refreshList(q, f);
       return;
     }
-    const t = setTimeout(() => refreshList(q), 250);
+    const t = setTimeout(() => refreshList(q, f), 250);
     return () => clearTimeout(t);
   });
 
   // Retry: the error slot's button — plugin states + a fresh first
-  // window for the query currently in the box.
+  // window for the query/filter currently in play.
   async function loadLists() {
     loadPluginStates();
-    await refreshList(query);
+    await refreshList(query, originFilter);
   }
 
   // refreshList RESTARTS the window sequence: cursor 0, replace — a
-  // search change, a save/delete refresh or a Retry must never APPEND
-  // onto the previous window's rows. listGen tags the sequence so a
-  // Load-more reply landing after a restart is dropped instead of
-  // appended (the Library's refreshList/loadMore shape).
-  async function refreshList(q = '') {
+  // search change, a source-toggle change, a save/delete refresh or a
+  // Retry must never APPEND onto the previous window's rows. listGen
+  // tags the sequence so a Load-more reply landing after a restart is
+  // dropped instead of appended (the Library's refreshList/loadMore
+  // shape). Both narrowings are SERVER-side (query LIKE + originFilter
+  // — store.ListMetricsPage), never a client-side slice of a window.
+  async function refreshList(q = '', f = '') {
     appliedQuery = q;
+    appliedFilter = f;
     const gen = ++listGen;
     loading = true;
     try {
-      const page = await listMetricsPage(q, 0, PAGE_SIZE);
+      const page = await listMetricsPage(q, f, 0, PAGE_SIZE);
       if (gen !== listGen) return;
       metrics = (page && page.rows) || [];
       hasNext = !!(page && page.hasNext);
@@ -227,7 +268,7 @@
     const gen = listGen;
     try {
       const last = metrics[metrics.length - 1];
-      const page = await listMetricsPage(appliedQuery, last.id, PAGE_SIZE);
+      const page = await listMetricsPage(appliedQuery, appliedFilter, last.id, PAGE_SIZE);
       if (gen !== listGen) return; // a refresh replaced the list meanwhile
       const seen = new Set(metrics.map((m) => m.id));
       const add = ((page && page.rows) || []).filter((m) => !seen.has(m.id));
@@ -266,6 +307,11 @@
   });
 
   function editMetric(m) {
+    // A built-in NEVER loads into the form (Feature B: built-ins have no
+    // edit affordance — the row's main area renders without a button for
+    // them, so this is the backstop for every load path). Plugin rows
+    // still load (read-only chip + fork-on-save).
+    if (m.origin === 'builtin') return;
     form = {
       id: m.id,
       name: m.name,
@@ -307,7 +353,7 @@
       }
       if (form.id === m.id) newMetric();
       if (preview && preview.metric && preview.metric.id === m.id) preview = null;
-      await refreshList(appliedQuery);
+      await refreshList(appliedQuery, appliedFilter);
     } catch (e) {
       saveError = errText(e);
     }
@@ -334,8 +380,10 @@
     }
     saving = true;
     try {
-      // Builtin/plugin rows are immutable through SaveMetric (the store
-      // rejects updates on them) — saving one forks a user copy (id 0).
+      // A plugin row is immutable through SaveMetric (the service and
+      // store reject updates on it) — saving one forks a user copy
+      // (id 0). Built-ins never reach the form at all (editMetric
+      // refuses them), so they cannot be saved from here either.
       const payload = {
         id: readOnly ? 0 : form.id,
         name,
@@ -356,7 +404,7 @@
       form.title = saved.title;
       form.shortName = saved.shortName;
       baseline = snapshot(form);
-      await refreshList(appliedQuery);
+      await refreshList(appliedQuery, appliedFilter);
     } catch (e) {
       saveError = errText(e);
     } finally {
@@ -364,22 +412,28 @@
     }
   }
 
-  async function runPreview() {
+  // runPreview() previews the FORM (the panel's Preview button);
+  // runPreview(row) previews that STORED definition straight off its id
+  // — the row play's path for a BUILT-IN, which never loads into the
+  // form. Saved-definition previews ride the id (expr "") so the
+  // denominator applies; edited/unsaved expressions are ad-hoc (no
+  // denominator).
+  async function runPreview(target) {
     previewError = '';
-    if (!form.expr.trim()) {
+    const id = target ? target.id : form.id;
+    const expr = target ? '' : form.expr;
+    if (!target && !expr.trim()) {
       preview = null;
       previewError = 'Enter an expression to preview.';
       return;
     }
     previewBusy = true;
-    // Saved-definition previews ride the id (expr "") so the denominator
-    // applies; edited/unsaved expressions are ad-hoc (no denominator).
-    const adhoc = dirty || form.id === 0;
+    const adhoc = !target && (dirty || form.id === 0);
     previewAdhoc = adhoc;
     try {
       preview = await previewMetric(
-        form.id,
-        adhoc ? form.expr : '',
+        id,
+        adhoc ? expr : '',
         '', // whole library: the builder has no scope selector
         PREVIEW_LIMIT,
       );
@@ -390,38 +444,58 @@
       previewBusy = false;
     }
   }
+
+  // The row play control: preview THIS row. Non-builtin rows load into
+  // the form first (existing behaviour — the panel then reads that
+  // definition); a built-in never loads (editMetric refuses it) and
+  // previews off its stored id, so a builtin still previews while the
+  // form stays untouched.
+  function previewRow(m) {
+    if (m.origin === 'builtin') {
+      runPreview(m);
+      return;
+    }
+    editMetric(m);
+    runPreview();
+  }
 </script>
+
+{#snippet rowMain(m)}
+  <span class="bld-row-title">
+    {m.title || m.name}
+    {#if m.doc}
+      <span class="m5-ib" title={m.doc}><span class="codicon codicon-info"></span></span>
+    {/if}
+  </span>
+  <span class="bld-row-sub">
+    <span class="mono">{m.name}</span>
+    <span class="chip">{m.scope || 'match'}</span>
+    <span class="chip">{m.format || 'raw'}</span>
+    {#if m.origin === 'plugin'}
+      <span class="chip bld-plugin">plugin</span>
+      {#if disabledPlugins.has(m.pluginId)}
+        <span class="chip bld-disabled">disabled</span>
+      {/if}
+    {/if}
+  </span>
+{/snippet}
 
 {#snippet metricRow(m)}
   <div class="bld-row" class:active={form.id === m.id}>
-    <button class="bld-row-main" onclick={() => editMetric(m)}>
-      <span class="bld-row-title">
-        {m.title || m.name}
-        {#if m.doc}
-          <span class="m5-ib" title={m.doc}><span class="codicon codicon-info"></span></span>
-        {/if}
-      </span>
-      <span class="bld-row-sub">
-        <span class="mono">{m.name}</span>
-        <span class="chip">{m.scope || 'match'}</span>
-        <span class="chip">{m.format || 'raw'}</span>
-        {#if m.origin === 'plugin'}
-          <span class="chip bld-plugin">plugin</span>
-          {#if disabledPlugins.has(m.pluginId)}
-            <span class="chip bld-disabled">disabled</span>
-          {/if}
-        {/if}
-      </span>
-    </button>
+    <!-- Built-ins expose NO edit affordance: their main area is plain
+         content (no button, no click-to-edit) — user/plugin rows keep
+         the button. Pin and preview stay live on every row. -->
+    {#if m.origin === 'builtin'}
+      <div class="bld-row-main bld-row-static">{@render rowMain(m)}</div>
+    {:else}
+      <button class="bld-row-main" onclick={() => editMetric(m)}>{@render rowMain(m)}</button>
+    {/if}
     <span class="bld-row-acts">
       <button
         class="btn small ghost"
         title="Preview this metric"
         aria-label="Preview {m.name}"
-        onclick={() => {
-          editMetric(m);
-          runPreview();
-        }}><span class="codicon codicon-play"></span></button
+        onclick={() => previewRow(m)}><span class="codicon codicon-play"></span></button
       >
       <button
         class="btn small ghost"
@@ -430,6 +504,9 @@
         aria-label="Toggle pin for {m.name}"
         onclick={() => togglePin(m.id)}><span class="codicon codicon-pin"></span></button
       >
+      <!-- Delete is the user-row control: built-ins are guarded
+           server-side (SaveMetric/DeleteMetric) and plugins are the
+           loader's territory, so neither ever shows one. -->
       {#if m.origin === 'user'}
         <button
           class="btn small ghost"
@@ -480,11 +557,31 @@
         placeholder="Search metrics…"
         bind:value={query}
       />
+      <!-- Source toggles: the same debounced restart as the search (one
+           effect reads query + originFilter), server-side partition
+           (store.ListMetricsPage — never a client-side slice of a page
+           window). Built-in defaults OFF, My metrics ON; both off is
+           legal and leaves the empty list below. -->
+      <div class="toolbar" role="group" aria-label="Metric sources">
+        <label class="filt-check">
+          <input type="checkbox" bind:checked={builtin} />
+          <span>Built-in</span>
+        </label>
+        <label class="filt-check">
+          <input type="checkbox" bind:checked={mine} />
+          <span>My metrics</span>
+        </label>
+      </div>
       {#if metrics.length === 0 && !listError}
         {#if loading}
           <p class="muted" role="status"><StatusChip block detail="Loading…" /></p>
         {:else if appliedQuery}
           <p class="muted" role="status">No metrics match “{appliedQuery}”.</p>
+        {:else}
+          <!-- Query-less empty: an empty My-metrics side (nothing built
+               yet) or both source toggles off — both legal, both say so
+               here instead of leaving a blank panel. -->
+          <p class="muted" role="status">No metrics to show.</p>
         {/if}
       {:else}
         <!-- One header per contiguous origin run (runs above): a window
@@ -513,7 +610,9 @@
         <div class="row-between">
           <h2>{form.id ? 'Edit metric' : 'New metric'}</h2>
           {#if readOnly}
-            <span class="chip bld-readonly" title="Builtins and plugin metrics are immutable — saving stores a copy of this definition as your own metric."
+            <!-- readOnly is plugin-only now: built-ins never load into
+                 the form (editMetric refuses them). -->
+            <span class="chip bld-readonly" title="Plugin metrics are immutable — saving stores a copy of this definition as your own metric."
               >read-only source</span
             >
           {/if}
@@ -617,7 +716,7 @@
         <div class="row-between">
           <h2>Preview</h2>
           <div class="toolbar">
-            <button class="btn primary" onclick={runPreview} disabled={previewBusy}>
+            <button class="btn primary" onclick={() => runPreview()} disabled={previewBusy}>
               {previewBusy ? 'Running…' : 'Preview'}
             </button>
             {#if preview}
@@ -665,7 +764,7 @@
                              stays plain text. -->
                         <ProfileLink steam={r.group} name={r.label || '—'} {nav} />
                       </td>
-                      <td class="num">{fmtMetric(r.value, form.format)}</td>
+                      <td class="num">{fmtMetric(r.value, previewFormat)}</td>
                       <td class="num">{fmtInt(r.n)}</td>
                     </tr>
                   {/each}

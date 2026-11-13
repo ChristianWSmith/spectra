@@ -67,9 +67,13 @@ const PROBE_POOL = 4;
 // in its own card (one extra check: the old control's absence);
 // econ-tables re-pinned 94 → 98 when section J added the scoreboard
 // metric-header cap pins (2026-11-13), and 98 → 100 when the short_name
-// display-criterion pin was added (2026-11-13).
+// display-criterion pin was added (2026-11-13). builder.dom.mjs entered
+// with 38 (2026-11-13 — the Builder list filter toggles + built-in
+// immutability wave: a NEW driver, the Builder view having had no
+// harness of its own).
 const EXPECTED = {
   'app-dock.dom.mjs': 59,
+  'builder.dom.mjs': 38,
   'combat.dom.mjs': 75,
   'compare-rounds.dom.mjs': 27,
   'confirm-dialog.dom.mjs': 20,

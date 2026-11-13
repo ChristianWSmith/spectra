@@ -103,11 +103,25 @@ const (
 // default). It rides the SAME WHERE as the cursor predicate, so a
 // filtered walk tiles the filtered list exactly.
 //
+// ORIGIN FILTER: originFilter narrows the window SERVER-side to one side
+// of the built-in partition — "builtin" (origin = 'builtin'), "mine"
+// (every OTHER origin: user + plugin — spelled as the complement
+// `origin <> 'builtin'`, so the two Builder toggles can never disagree
+// with the store about what "mine" means, and a future origin value
+// lands on the mine side by default), "none" (both toggles off — the
+// empty set, still one read path), "" (no predicate — the whole
+// catalog). It rides the SAME WHERE as the search and the cursor, so the
+// composed walk tiles the composed list exactly; a client-side filter
+// over a page window would drop rows at the window edges. An unknown
+// value is rejected before any SQL.
+//
 // CURSOR: the caller passes the last window's row id, and the store
 // resolves it to that row's stored (origin rank, name) — the same
 // in-store resolution ListMatchesPage does (one driver path, and a
 // cursor row that vanished between two windows is ErrNotFound instead of
-// a silently mis-placed page).
+// a silently mis-placed page). The cursor row may sit OUTSIDE the
+// origin-filtered set (a builtin cursor on a "mine" walk): it still
+// resolves, because the predicate is the row's stored key, not membership.
 //
 // KEYSET PREDICATE: `(rank, name) > (?, ?)` — SQLite's row-value
 // comparison is lexicographic over the pair, which is exactly what
@@ -117,7 +131,7 @@ const (
 // no id tie-break is needed: windows can neither skip nor duplicate a
 // row, and each origin stays contiguous across window boundaries — the
 // view renders its Builtins/Yours/Plugins headers from those runs.
-func (s *Store) ListMetricsPage(query string, afterID int64, limit int) (*models.MetricListPage, error) {
+func (s *Store) ListMetricsPage(query string, originFilter string, afterID int64, limit int) (*models.MetricListPage, error) {
 	if limit <= 0 {
 		limit = ListMetricsPageSize
 	}
@@ -128,23 +142,42 @@ func (s *Store) ListMetricsPage(query string, afterID int64, limit int) (*models
 		where strings.Builder
 		args  []any
 	)
+	// addWhere appends ONE ANDed predicate to the shared WHERE — every
+	// narrowing (origin filter, search, cursor) rides the same clause,
+	// so they compose in any order and none can silently bypass another.
+	addWhere := func(pred string, a ...any) {
+		if where.Len() == 0 {
+			where.WriteString(" WHERE ")
+		} else {
+			where.WriteString(" AND ")
+		}
+		where.WriteString(pred)
+		args = append(args, a...)
+	}
+	// The origin partition goes first (the coarsest narrowing). "none"
+	// is a constant-false predicate rather than a view-side short-circuit
+	// so both-off keeps the ONE read path (same cache key shape, same
+	// cursor semantics as every other window).
+	switch originFilter {
+	case "": // no predicate — the whole catalog
+	case "builtin":
+		addWhere(`origin = 'builtin'`)
+	case "mine":
+		addWhere(`origin <> 'builtin'`)
+	case "none":
+		addWhere(`0 = 1`)
+	default:
+		return nil, fmt.Errorf("store: list metrics page: unknown origin filter %q", originFilter)
+	}
 	if qq := scrub(query); qq != "" {
-		where.WriteString(` WHERE (name LIKE ? OR title LIKE ?)`)
-		like := "%" + qq + "%"
-		args = append(args, like, like)
+		addWhere(`(name LIKE ? OR title LIKE ?)`, "%"+qq+"%", "%"+qq+"%")
 	}
 	if afterID > 0 {
 		after, a, err := s.metricKeysetAfter(afterID)
 		if err != nil {
 			return nil, err
 		}
-		if where.Len() == 0 {
-			where.WriteString(" WHERE ")
-		} else {
-			where.WriteString(" AND ")
-		}
-		where.WriteString("(" + after + ")")
-		args = append(args, a...)
+		addWhere("("+after+")", a...)
 	}
 	// limit+1: the extra row is the "there is more" probe, never returned.
 	var b strings.Builder

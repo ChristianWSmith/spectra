@@ -36,9 +36,15 @@ export const MetricsService = {
   ListMetricsPage: rec('ListMetricsPage'),
   SaveMetric: rec('SaveMetric'),
   DeleteMetric: rec('DeleteMetric'),
+  // The Builder form's reads (builder.dom.mjs drives them): the live
+  // expression check and the row play's preview.
+  ValidateExpr: rec('ValidateExpr'),
+  PreviewMetric: rec('PreviewMetric'),
 };
 export const QueryService = {};
-export const PlatformService = {};
+// PlatformService: ListPlugins is the Builder mount's fire-and-forget
+// plugin-state read (a missing method would throw at mount).
+export const PlatformService = { ListPlugins: rec('ListPlugins') };
 export const LibraryService = {
   ImportDialog: rec('ImportDialog'),
   ListMatches: rec('ListMatches'),

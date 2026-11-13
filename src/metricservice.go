@@ -88,14 +88,17 @@ func (s *MetricsService) ListMetrics() ([]models.MetricRow, error) {
 
 // ListMetricsPage returns ONE keyset window of the same list ListMetrics
 // returns (the Builder's "Load more" pagination): the rows after afterID
-// (0 = the first window) for the same server-side search query, at most
+// (0 = the first window) for the same server-side search query AND the
+// same server-side origin filter ("" = all, "builtin", "mine" = user +
+// plugin, "none" = the both-toggles-off empty set — the Builder's
+// Built-in / My metrics toggles; see store.ListMetricsPage), at most
 // limit rows (0 = the store's default window), plus HasNext (another
 // window follows) — see store.ListMetricsPage / models.MetricListPage.
 // ListMetrics itself stays unbounded for its whole-library readers
 // (Match's pinned scoreboard columns, Reports' appendix,
 // CommandPalette's search), which are not changing.
-func (s *MetricsService) ListMetricsPage(query string, afterID int64, limit int) (*models.MetricListPage, error) {
-	return s.st.ListMetricsPage(query, afterID, limit)
+func (s *MetricsService) ListMetricsPage(query string, originFilter string, afterID int64, limit int) (*models.MetricListPage, error) {
+	return s.st.ListMetricsPage(query, originFilter, afterID, limit)
 }
 
 // GetMetric returns one by id (or name).
@@ -114,7 +117,9 @@ func (s *MetricsService) GetMetric(id int64) (models.MetricRow, error) {
 }
 
 // SaveMetric validates + upserts (origin forced to user for API saves;
-// plugin metrics are written by the plugin loader). Duplicate name → error.
+// plugin metrics are written by the plugin loader; an EXISTING built-in
+// row is rejected below — built-ins are immutable through this API).
+// Duplicate name → error.
 // The frontend echoes rows back as-is; CreatedAt is store-owned (stamped
 // on create, untouched on update).
 func (s *MetricsService) SaveMetric(m models.MetricRow) (models.MetricRow, error) {
@@ -147,6 +152,24 @@ func (s *MetricsService) SaveMetric(m models.MetricRow) (models.MetricRow, error
 	// created or hijacked through here.
 	m.Origin = "user"
 	m.PluginID = ""
+	// Built-ins are immutable through this API. The verdict reads the
+	// STORED row's origin — never what the caller sent (the payload's
+	// origin was just forced to "user" above, so it could not tell us
+	// anything anyway). Placement: cheapest-first — one indexed
+	// GetMetric BEFORE the compile, so a rejected edit never parses an
+	// expression — and only on the update path (m.ID > 0): a CREATE
+	// cannot touch a builtin, it can only COLLIDE with one, which stays
+	// CreateMetric's uniqueness error (the distinct path, pinned by
+	// TestSaveMetricBuiltinGuards).
+	if m.ID > 0 {
+		existing, err := s.st.GetMetric(m.ID)
+		if err != nil {
+			return models.MetricRow{}, err // unknown id: the store's ErrNotFound, as before
+		}
+		if existing.Origin == "builtin" {
+			return models.MetricRow{}, errors.New("metrics: built-in metrics can't be edited")
+		}
+	}
 	// Validate expression (+denominator) BEFORE any write. Compile also
 	// enforces the player anchor (a primary without a subject is
 	// rejected), so a player-less definition never lands.
@@ -171,8 +194,22 @@ func (s *MetricsService) SaveMetric(m models.MetricRow) (models.MetricRow, error
 	return saved, nil
 }
 
-// DeleteMetric removes a user metric (builtin protected).
-func (s *MetricsService) DeleteMetric(id int64) error { return s.st.DeleteMetric(id) }
+// DeleteMetric removes a user metric. Built-ins are rejected HERE with
+// the friendly service copy (store.DeleteMetric's own builtin guard
+// stays as the backstop behind it); the stored row is read once up front,
+// so an unknown id still reports the store's ErrNotFound exactly as
+// before. Plugin rows stay deletable (the plugin host re-seeds them on
+// enable) and user rows pass straight through.
+func (s *MetricsService) DeleteMetric(id int64) error {
+	existing, err := s.st.GetMetric(id)
+	if err != nil {
+		return err
+	}
+	if existing.Origin == "builtin" {
+		return errors.New("metrics: built-in metrics can't be deleted")
+	}
+	return s.st.DeleteMetric(id)
+}
 
 // PreviewMetric compiles expr (empty expr → use id) and runs it.
 // scope: "" = whole library; scope="match:<id>" limits single-match
