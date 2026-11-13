@@ -59,3 +59,38 @@ func TestValidPackName(t *testing.T) {
 		}
 	}
 }
+
+// TestInitialURL pins SPECTRA_START_HASH's validation: a "#"-rooted
+// fragment loads as "/" + hash (so location.hash carries the seed and
+// the router's firstRoute.query sees it — the ?probe=1 HUD latch, see
+// frontend/src/lib/replay/frameprobe.js); everything else — unset/empty,
+// a bare "#", a non-hash value, ASCII control bytes — falls back to the
+// stock "/" so a bad seed can never change startup, and startup with
+// the var unset stays byte-identical to the pre-seed behavior.
+func TestInitialURL(t *testing.T) {
+	tests := []struct {
+		name string
+		hash string
+		want string
+	}{
+		{"unset (empty)", "", "/"},
+		{"bare hash", "#", "/"},
+		{"no hash prefix", "replay/1?probe=1", "/"},
+		{"path, not a fragment", "/replay/1", "/"},
+		{"query without hash", "?probe=1", "/"},
+		{"NUL control byte", "#/x\x00y", "/"},
+		{"newline control byte", "#/x\ny", "/"},
+		{"DEL control byte", "#/x\x7fy", "/"},
+		{"arm at boot", "#/?probe=1", "/#/?probe=1"},
+		{"deep link to a replay", "#/replay/12?probe=1", "/#/replay/12?probe=1"},
+		{"printable oddities pass through (still #-rooted)", "#/weird path?x=1", "/#/weird path?x=1"},
+		{"non-ASCII fragment passes through (UTF-8 bytes are not control bytes)", "#/pÿ", "/#/pÿ"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := initialURL(tt.hash); got != tt.want {
+				t.Fatalf("initialURL(%q) = %q, want %q", tt.hash, got, tt.want)
+			}
+		})
+	}
+}

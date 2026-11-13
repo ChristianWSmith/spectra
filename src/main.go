@@ -232,7 +232,9 @@ func main() {
 		Height:    height,
 		MinWidth:  minWindowWidth,
 		MinHeight: minWindowHeight,
-		URL:       "/",
+		// SPECTRA_START_HASH seeds the initial hash (e.g. '#/?probe=1'
+		// → the frameprobe HUD); unset/malformed → the stock "/".
+		URL: initialURL(os.Getenv("SPECTRA_START_HASH")),
 		// Native file drag-and-drop: the JS runtime only forwards drops
 		// (from elements marked data-file-drop-target) when this flag is on;
 		// we re-emit them as a normal event the frontend subscribes to.
@@ -253,6 +255,29 @@ func main() {
 	if err := app.Run(); err != nil {
 		log.Fatal(err)
 	}
+}
+
+// initialURL is the window's startup URL: the stock "/" unless
+// SPECTRA_START_HASH seeds a hash fragment for it — the one-line
+// operator affordance for sessions that need a deep link at boot,
+// chiefly the frame-time probe's ?probe=1 HUD on a PRODUCTION build,
+// where no inspector exists to type the hash into (the full procedure
+// lives in frontend/src/lib/replay/frameprobe.js). Validation is strict
+// so a bad seed can never break startup: the value must be "#" + non-
+// empty content with no ASCII control bytes (a fragment the hash router
+// parses). Anything else — unset, empty, a bare "#", a non-hash value,
+// control bytes — falls back to "/" EXACTLY as before, so startup with
+// the var unset is byte-identical to never having this helper.
+func initialURL(hash string) string {
+	if len(hash) < 2 || hash[0] != '#' {
+		return "/"
+	}
+	for i := 0; i < len(hash); i++ {
+		if c := hash[i]; c < 0x20 || c == 0x7f {
+			return "/" // control bytes never reach the webview URL
+		}
+	}
+	return "/" + hash
 }
 
 // runImport drives one import headlessly: enqueue, poll the job until it

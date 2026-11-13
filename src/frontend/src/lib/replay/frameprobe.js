@@ -31,11 +31,25 @@
 //      second parser). The readout is the fixed top-right HUD strip
 //      (App.svelte .probe-hud) showing `line()` refreshed once a
 //      second — NO devtools needed, which matters because production
-//      builds disable the WebKit inspector. It LATCHES: once a route
-//      carries the param the strip stays up for the session (nav.js
-//      rebuilds queries on navigation, so a derived-only gate would
-//      drop it mid-measurement). Runtime toggle from anywhere:
-//      __spectraFrameProbe.showHud = false / true.
+//      builds disable the WebKit inspector.
+//      • PRODUCTION-BUILD ACTIVATION (no inspector exists to type a
+//        hash into) — seed the window's initial hash from the env:
+//          SPECTRA_START_HASH='#/?probe=1' ./spectra
+//            arm at boot, then navigate normally — or deep-link straight
+//            to a match: SPECTRA_START_HASH='#/replay/12?probe=1'
+//            ./spectra. ANY #/... hash works — the session will pick
+//            either shape (main.go initialURL: the seed must start with
+//            "#"; empty/malformed/control bytes fall back to the stock
+//            "/", so an unset or bad seed can never change startup).
+//          The param rides the HASH query (location.hash → firstRoute),
+//          and the LATCH below keeps it across every later navigation.
+//          MEASUREMENT-VALIDITY BONUS: the session then runs the
+//          PRODUCTION binary — the numbers come from the same minified
+//          release JS users run, with no dev-build caveat.
+//      • It LATCHES: once a route carries the param the strip stays up
+//        for the session (nav.js rebuilds queries on navigation, so a
+//        derived-only gate would drop it mid-measurement). Runtime
+//        toggle from anywhere: __spectraFrameProbe.showHud = false / true.
 //   2. play a replay for ~60 s          — frame samples only arrive while
 //      the engine is PLAYING; draw samples also arrive while paused or
 //      scrubbing (every draw() funnels through the one probe call site)
