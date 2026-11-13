@@ -57,7 +57,7 @@ func TestSOSGrenadeBounceVocabulary(t *testing.T) {
 	}
 }
 
-// TestSOSFireCueVocabulary pins Wave C's six fire-cue soundevents: their
+// TestSOSFireCueVocabulary pins Wave C's four fire-cue soundevents: their
 // events.kind and the canonical weapon (or the deliberate "" when the
 // soundevent names no nade), resolution through fireCueByHash, and — the
 // strongest form — each name's LITERAL murmur2 value (the hash rule's
@@ -66,7 +66,11 @@ func TestSOSGrenadeBounceVocabulary(t *testing.T) {
 // def, or a drift in the hash rule itself, fails here instead of silently
 // dropping the cue at import. Also pins the three waves' name
 // vocabularies as pairwise disjoint (one message → at most one wave) and
-// the ignition-family look-alikes as never-resolving.
+// the ignition-family look-alikes as never-resolving. The former
+// container-break pair (Molotov.Smash / IncGrenade.Pop) is GONE by owner
+// ruling (2026-11-12, by-ear verification: the detonate sounds already
+// carry the smash/pop character; 0× in the pool, never heard in game) —
+// so its murmur pins went with it.
 func TestSOSFireCueVocabulary(t *testing.T) {
 	want := []struct {
 		name   string
@@ -77,8 +81,6 @@ func TestSOSFireCueVocabulary(t *testing.T) {
 		{"Molotov.Extinguish", models.EventExtinguish, "", 0x76B5D77D},
 		{"Molotov.StartFailed", models.EventStartFailed, "Molotov", 0x7827DA8A},
 		{"IncGrenade.StartFailed", models.EventStartFailed, "Incendiary Grenade", 0xB456C38F},
-		{"Molotov.Smash", models.EventSmash, "Molotov", 0x0310DB06},
-		{"IncGrenade.Pop", models.EventSmash, "Incendiary Grenade", 0x4137A918},
 		{"Inferno.FadeOut", models.EventFadeOut, "", 0x1B045DA6},
 	}
 	if len(fireCueDefs) != len(want) {
@@ -100,7 +102,7 @@ func TestSOSFireCueVocabulary(t *testing.T) {
 	if len(fireCueByHash) != len(fireCueDefs) {
 		t.Errorf("fireCueByHash has %d entries, want %d (hash collision?)", len(fireCueByHash), len(fireCueDefs))
 	}
-	// Kind vocabulary: StartFailed and Extinguish/Smash/FadeOut stay
+	// Kind vocabulary: StartFailed and Extinguish/FadeOut stay
 	// distinct cues (audibly different sounds — the owner's spec), the
 	// nade-specific names share their moment's kind through the weapon
 	// column, and the extinguish/fade cues carry NO weapon (one sound for
@@ -115,11 +117,11 @@ func TestSOSFireCueVocabulary(t *testing.T) {
 		}
 	}
 	if !kinds[models.EventExtinguish] || !kinds[models.EventStartFailed] ||
-		!kinds[models.EventSmash] || !kinds[models.EventFadeOut] {
-		t.Errorf("fire-cue kinds = %v, want all four of extinguish/start_failed/smash/fade_out", kinds)
+		!kinds[models.EventFadeOut] {
+		t.Errorf("fire-cue kinds = %v, want all three of extinguish/start_failed/fade_out", kinds)
 	}
-	if len(kinds) != 4 {
-		t.Errorf("fire-cue kinds distinct = %d, want 4 (StartFailed must stay its own kind)", len(kinds))
+	if len(kinds) != 3 {
+		t.Errorf("fire-cue kinds distinct = %d, want 3 (StartFailed must stay its own kind)", len(kinds))
 	}
 	// Pairwise disjointness across the three waves: one SOS hash resolves
 	// to at most one wave's table, so no message is ever stored twice or
@@ -182,16 +184,19 @@ func TestFireCueDedupeAndSkip(t *testing.T) {
 		kind: models.EventFadeOut, hasPos: true, x: 5, y: 5, z: 5}, seen)
 	// Unparseable origin: claims the key, stores nothing — and the twin
 	// (which HAS a fine origin) dedupes away rather than a guessed position.
-	a.fireCue(fireCueInfo{tick: 200, entity: 600, name: "Molotov.Smash",
-		kind: models.EventSmash, weapon: "Molotov", hasPos: false}, seen)
-	a.fireCue(fireCueInfo{tick: 200, entity: 600, name: "Molotov.Smash",
-		kind: models.EventSmash, weapon: "Molotov", hasPos: true, x: 7, y: 7, z: 7}, seen)
+	// Re-pinned on a NADE-SPELLED cue (Molotov.StartFailed): the owner
+	// dropped Molotov.Smash / IncGrenade.Pop (2026-11-12), and the
+	// origin-required rule must still hold for a cue that carries a weapon.
+	a.fireCue(fireCueInfo{tick: 200, entity: 600, name: "Molotov.StartFailed",
+		kind: models.EventStartFailed, weapon: "Molotov", hasPos: false}, seen)
+	a.fireCue(fireCueInfo{tick: 200, entity: 600, name: "Molotov.StartFailed",
+		kind: models.EventStartFailed, weapon: "Molotov", hasPos: true, x: 7, y: 7, z: 7}, seen)
 	// Zero vector = the posPtrs "no position known" convention → skipped.
 	a.fireCue(fireCueInfo{tick: 300, entity: 700, name: "Inferno.FadeOut",
 		kind: models.EventFadeOut, hasPos: true, x: 0, y: 0, z: 0}, seen)
 
 	if len(a.events) != 3 {
-		t.Fatalf("events = %d, want 3 (the first's twin deduped; origin-less Smash claims-but-skips; the same-entity fade cue stored beside its extinguish sibling)", len(a.events))
+		t.Fatalf("events = %d, want 3 (the first's twin deduped; the origin-less cue claims-but-skips; the same-entity fade cue stored beside its extinguish sibling)", len(a.events))
 	}
 	// Rows carry the def's kind + weapon (nade from the soundevent name;
 	// "" for the nade-agnostic extinguish/fade cues) and a position —
@@ -218,11 +223,11 @@ func TestFireCueDedupeAndSkip(t *testing.T) {
 	if got := *a.events[0].PosX; got != 1 {
 		t.Errorf("first origin x = %v, want 1 (the first message wins)", got)
 	}
-	// The origin-less Smash and the zero-vector fade never became rows —
-	// and NO Smash row exists at all (both of its messages were claims).
+	// The origin-less cue (tick 200 — BOTH of its messages were claims)
+	// and the zero-vector fade (tick 300) never became rows.
 	for _, e := range a.events {
-		if e.Kind == models.EventSmash {
-			t.Errorf("skipped cue stored a row: kind=%s tick=%d", e.Kind, e.Tick)
+		if e.Tick == 200 {
+			t.Errorf("origin-less cue stored a row at tick 200")
 		}
 		if e.Tick == 300 {
 			t.Errorf("zero-vector cue stored a row at tick 300")
@@ -263,7 +268,7 @@ func TestFireCueDedupeAndSkip(t *testing.T) {
 	roundsByTick := map[int]int{}
 	for _, e := range out.Events {
 		switch e.Kind {
-		case models.EventExtinguish, models.EventStartFailed, models.EventSmash, models.EventFadeOut:
+		case models.EventExtinguish, models.EventStartFailed, models.EventFadeOut:
 			cueRows++
 			roundsByTick[e.Tick] = e.Round
 		}

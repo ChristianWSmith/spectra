@@ -22,7 +22,7 @@ import (
 //   - Wave B: the player-sound vocabulary (footsteps/lands/jumps/fall
 //     damage) → sound_events rows attributed to a participant;
 //   - Wave C: the fire-cue vocabulary (extinguish / air-burst failure /
-//     detonation body-break / fire fade-out) → typed cue rows
+//     fire fade-out) → typed cue rows
 //     (models.EventExtinguish … EventFadeOut — deduped, origin-required,
 //     audio-only: no landmark category claims them, sfx.js fireCues plays
 //     them).
@@ -211,21 +211,24 @@ func playerByEntity(gs *demoinfocs.GameState, entityID int) *common.Player {
 // Molotov.Extinguish, and the replay must play it (there is NO game event
 // for it: inferno_extinguish fires 0× ever — CS2.md). A fire grenade that
 // blooms mid-air carries Molotov.StartFailed / IncGrenade.StartFailed —
-// its OWN air-burst failure cue (owner ruling, 2026-11-12), a firebomb
-// DETONATING (landing and breaking) carries Molotov.Smash / IncGrenade.Pop
-// (owner ruling, 2026-11-12), and Inferno.FadeOut co-fires from the same
-// source as the extinguish cue at suppressed landings (the probe's
-// decision-rule capture). Captured unconditionally — play what the demo
-// recorded, no smoke/fire-state gating — and drawn NOWHERE: the owner's
-// indicator ruling stands, and scenario (ii) is correct by construction (a
-// suppressed fire never emits inferno_startburn, so no fire row exists to
-// draw).
+// its OWN air-burst failure cue (owner ruling, 2026-11-12), and
+// Inferno.FadeOut co-fires from the same source as the extinguish cue at
+// suppressed landings (the probe's decision-rule capture). Captured
+// unconditionally — play what the demo recorded, no smoke/fire-state
+// gating — and drawn NOWHERE: the owner's indicator ruling stands, and
+// scenario (ii) is correct by construction (a suppressed fire never
+// emits inferno_startburn, so no fire row exists to draw). The former
+// container-break pair (Molotov.Smash / IncGrenade.Pop — "the firebomb
+// DETONATING") is DROPPED: the owner ruled it out after by-ear
+// verification (2026-11-12) — the detonate sounds already carry the
+// smash/pop character, and neither name ever fired in game (0× in the
+// pool; see CS2.md).
 
 // fireCueDef is one fire-cue soundevent: the exact name, the events.kind
 // the row stores, and the canonical equipment name Event.Weapon carries —
-// "" when the soundevent itself does not identify the nade. The air-burst
-// and container-break names SPELL the nade (Molotov.* / IncGrenade.*), so
-// the row picks its asset file exactly like wave A's weapon column; the
+// "" when the soundevent itself does not identify the nade. The
+// air-burst names SPELL the nade (Molotov.* / IncGrenade.*), so the row
+// picks its asset file exactly like wave A's weapon column; the
 // extinguish and fade cues fire for BOTH nades' fires (one sound each —
 // no Incendiary variant exists), so a weapon there would be a guess and
 // stays empty (missing input ⇒ no value, never a fabricated one).
@@ -235,7 +238,7 @@ type fireCueDef struct {
 	weapon string
 }
 
-// fireCueDefs is Wave C's vocabulary — the six fire-family soundevents
+// fireCueDefs is Wave C's vocabulary — the four fire-family soundevents
 // the replay plays as audio-only cues, verified against the local
 // install's soundevents table (`cs2find events`, 2026-11-12):
 //
@@ -250,15 +253,6 @@ type fireCueDef struct {
 //     AIR-BURST failure cue (owner ruling, 2026-11-12: its own kind of
 //     sound; a fire grenade that blooms in the air emits no fire). 9× in
 //     the pool (5 mol / 4 inc).
-//   - Molotov.Smash → …/molotov_smash_01..04.vsnd_c and IncGrenade.Pop →
-//     …/inc_grenade_pop_03.vsnd_c — the firebomb DETONATING (landing and
-//     breaking; the owner's term). No IncGrenade.Smash exists (grep over
-//     all 21,220 install soundevent names: Molotov.Smash is the only
-//     "smash"), so Pop — the only container-break sound in the IncGrenade
-//     family — is the incendiary twin by elimination (flagged for the
-//     owner's by-ear verification). Both fire 0× across the current pool;
-//     captured anyway (owner decision: wire the dead capture, verify
-//     manually).
 //   - Inferno.FadeOut → …/fire_loop_fadeout_01.vsnd_c — the fire fading
 //     out: co-fires at +0 from the SAME source entity as Extinguish at
 //     suppressed landings (59/66 pool extinguish cues, 5/5 of the
@@ -266,14 +260,17 @@ type fireCueDef struct {
 //     show it there), and at every fire's death — so, captured
 //     unconditionally, the replay plays it wherever the demo recorded it.
 //
+// DROPPED 2026-11-12 (owner ruling after by-ear verification): the
+// container-break pair Molotov.Smash (4 variants) / IncGrenade.Pop —
+// both fired 0× across the pool and were never heard by the owner in
+// game, and the detonate sounds already carry the smash/pop character.
+//
 // No round-count gating on any of these (knife/warmup discard is queued
 // separately — stamp rounds normally through addEvent → evRound).
 var fireCueDefs = []fireCueDef{
 	{name: "Molotov.Extinguish", kind: models.EventExtinguish, weapon: ""},
 	{name: "Molotov.StartFailed", kind: models.EventStartFailed, weapon: "Molotov"},
 	{name: "IncGrenade.StartFailed", kind: models.EventStartFailed, weapon: "Incendiary Grenade"},
-	{name: "Molotov.Smash", kind: models.EventSmash, weapon: "Molotov"},
-	{name: "IncGrenade.Pop", kind: models.EventSmash, weapon: "Incendiary Grenade"},
 	{name: "Inferno.FadeOut", kind: models.EventFadeOut, weapon: ""},
 }
 

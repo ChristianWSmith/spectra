@@ -363,31 +363,25 @@ var soundTable = map[string][]string{
 		"sounds/physics/weapons/weapon_incendiary_impact_03.vsnd_c",
 		"sounds/physics/weapons/weapon_incendiary_impact_04.vsnd_c",
 	},
-	// ---- Fire-cue sounds (the replay's smoke⇄fire / detonation cues) ----
-	// The asset side of Wave C (extract/sos.go fireCueDefs — the six
+	// ---- Fire-cue sounds (the replay's smoke⇄fire / air-burst cues) ----
+	// The asset side of Wave C (extract/sos.go fireCueDefs — the four
 	// fire-family soundevents; name→file from `cs2find events`, existence
 	// re-checked against the VPK 2026-11-12). The extinguish and fade
 	// groups are NADE-NEUTRAL (one sound for both Molotov and Incendiary
 	// fires — the install has no Incendiary extinguish/fade variant), so
 	// their keys carry no weapon and sfx.js fireCues addresses them by
-	// kind alone; the air-burst and container-break groups are per-nade —
-	// sfx.js addresses them through the row's weapon column, which the
-	// soundevent NAME spells (Molotov.* / IncGrenade.* — never guessed).
-	// Molotov smash keeps its FOUR variants so repeated detonations don't
-	// loop one sample (the bounce-group convention above); the incendiary
-	// twin ships a single Pop sample. All six keys are internal groups
-	// (registered in internalSoundGroups below — the whole widening).
+	// kind alone; the air-burst group is per-nade — sfx.js addresses it
+	// through the row's weapon column, which the soundevent NAME spells
+	// (Molotov.* / IncGrenade.* — never guessed). All four keys are
+	// internal groups (registered in internalSoundGroups below — the
+	// whole widening). DROPPED 2026-11-12 (owner ruling after by-ear
+	// verification): the container-break groups "Molotov smash" (4
+	// variants) and "Incendiary Grenade pop" — 0× in the pool, never
+	// heard in game, and the detonate sounds already carry the character.
 	"Fire extinguish":                 {"sounds/weapons/molotov/molotov_extinguish.vsnd_c"},
 	"Molotov start failed":            {"sounds/weapons/molotov/molotov_detonate_air_01.vsnd_c"},
 	"Incendiary Grenade start failed": {"sounds/weapons/incgrenade/inc_grenade_detonate_air_01.vsnd_c"},
-	"Molotov smash": {
-		"sounds/weapons/molotov/molotov_smash_01.vsnd_c",
-		"sounds/weapons/molotov/molotov_smash_02.vsnd_c",
-		"sounds/weapons/molotov/molotov_smash_03.vsnd_c",
-		"sounds/weapons/molotov/molotov_smash_04.vsnd_c",
-	},
-	"Incendiary Grenade pop": {"sounds/weapons/incgrenade/inc_grenade_pop_03.vsnd_c"},
-	"Fire fade out":          {"sounds/weapons/molotov/fire_loop_fadeout_01.vsnd_c"},
+	"Fire fade out":                   {"sounds/weapons/molotov/fire_loop_fadeout_01.vsnd_c"},
 	// ---- Player sounds (footsteps / landings / jumps / fall damage) ----
 	// The asset side of the sound_events table (extract.sos.go): one
 	// `step <material>` group per FILE FAMILY under sounds/player/footsteps
@@ -850,16 +844,14 @@ var internalSoundGroups = map[string]bool{
 	"Smoke Grenade bounce":      true,
 	"Molotov bounce":            true,
 	"Incendiary Grenade bounce": true,
-	// The six FIRE-CUE groups (the replay's smoke⇄fire / air-burst /
-	// detonation / fade cues for the models.EventExtinguish …
+	// The four FIRE-CUE groups (the replay's smoke⇄fire / air-burst /
+	// fade cues for the models.EventExtinguish …
 	// EventFadeOut rows — soundTable carries each cue soundevent's file
-	// set; the extinguish/fade groups are nade-neutral, the rest are
-	// addressed through the row's weapon column).
+	// set; the extinguish/fade groups are nade-neutral, the air-burst
+	// pair is addressed through the row's weapon column).
 	"Fire extinguish":                 true,
 	"Molotov start failed":            true,
 	"Incendiary Grenade start failed": true,
-	"Molotov smash":                   true,
-	"Incendiary Grenade pop":          true,
 	"Fire fade out":                   true,
 	// The two HEADSHOT-kill cue groups (sfx.js headshotKillCues — the
 	// dink/bare pair stamped off the kill row's victimHelmet). Opaque
