@@ -244,6 +244,32 @@ After cloning, run `git lfs pull` if the golden demo is needed.
   reference docs); leave the comments as-is — when a citation encodes a
   durable rule, write the rule here instead of chasing the section.
 
+### Adopting principles (meta)
+
+- **Adoption means migration:** adopting a principle includes converting the
+  existing code that violates it — the sweep over current call sites is part
+  of the work, not a follow-up someone remembers: it ships in the same change,
+  or in an explicitly queued follow-up (recorded with its fence and trigger,
+  launched at the first opportunity). **Inconsistent application of a
+  principle is worse than no principle at all** — a half-migrated codebase
+  shows both patterns, readers can't tell which is canonical, and the stale
+  one reproduces by copy-paste. A new rule that doesn't state its migration
+  path is incomplete.
+- **Differentiate by criterion, not by exception:** when entities that shared
+  a common flow must be handled differently, first establish the exact
+  general criterion that partitions the category — the property that decides
+  which handling any member, present or future, receives — adopt it as the
+  principle, and apply it to every member; the entities that triggered the
+  fork are just its first instances (precedent: the bot-exclusion split is
+  stated as "event-shaped reads keep names / roster reads filter", not as a
+  table whitelist; the color-vs-pattern rule partitions by what the medium
+  carries). The duty fires on **any** split of a category's handling —
+  including a single sanctioned exception — and **inversely**: finding two
+  similar entities that appear to have been split with no stated
+  justification is itself a trigger to reconstruct the distinction,
+  formalize it, and adopt it as a principle. Pin the criterion with a test
+  where it's mechanical.
+
 ### One canonical way (consolidation conventions)
 
 Adopted by the application-wide consolidation pass. Before adding any
