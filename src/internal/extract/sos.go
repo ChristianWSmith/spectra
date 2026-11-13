@@ -15,12 +15,17 @@ import (
 // CMsgSosStartSoundEvent is the demo's sound-event channel: a fixed32
 // soundevent_hash (resolved to a name with mappack.SoundEventHash — the ONE
 // hash rule, no second copy), an optional source entity index, and
-// packed_params carrying per-event parameters. Two consumers read it here:
+// packed_params carrying per-event parameters. Three consumers read it here:
 //
 //   - Wave A: the five grenade BOUNCE soundevents → typed
 //     models.EventGrenadeBounce rows (deduped, origin-required);
 //   - Wave B: the player-sound vocabulary (footsteps/lands/jumps/fall
-//     damage) → sound_events rows attributed to a participant.
+//     damage) → sound_events rows attributed to a participant;
+//   - Wave C: the fire-cue vocabulary (extinguish / air-burst failure /
+//     detonation body-break / fire fade-out) → typed cue rows
+//     (models.EventExtinguish … EventFadeOut — deduped, origin-required,
+//     audio-only: no landmark category claims them, sfx.js fireCues plays
+//     them).
 //
 // Everything is name-driven: no VPK or surfaceproperties file is touched at
 // import time (imports must work without CS2 installed), so the candidate
@@ -197,4 +202,160 @@ func playerByEntity(gs *demoinfocs.GameState, entityID int) *common.Player {
 		}
 	}
 	return nil
+}
+
+// --- Wave C: the fire-cue vocabulary (smoke ⇄ fire interactions) -------------
+//
+// The owner's spec: when a smoke puts out a fire — or a firebomb lands in
+// an active smoke and never ignites — the demo's SOS stream carries
+// Molotov.Extinguish, and the replay must play it (there is NO game event
+// for it: inferno_extinguish fires 0× ever — CS2.md). A fire grenade that
+// blooms mid-air carries Molotov.StartFailed / IncGrenade.StartFailed —
+// its OWN air-burst failure cue (owner ruling, 2026-11-12), a firebomb
+// DETONATING (landing and breaking) carries Molotov.Smash / IncGrenade.Pop
+// (owner ruling, 2026-11-12), and Inferno.FadeOut co-fires from the same
+// source as the extinguish cue at suppressed landings (the probe's
+// decision-rule capture). Captured unconditionally — play what the demo
+// recorded, no smoke/fire-state gating — and drawn NOWHERE: the owner's
+// indicator ruling stands, and scenario (ii) is correct by construction (a
+// suppressed fire never emits inferno_startburn, so no fire row exists to
+// draw).
+
+// fireCueDef is one fire-cue soundevent: the exact name, the events.kind
+// the row stores, and the canonical equipment name Event.Weapon carries —
+// "" when the soundevent itself does not identify the nade. The air-burst
+// and container-break names SPELL the nade (Molotov.* / IncGrenade.*), so
+// the row picks its asset file exactly like wave A's weapon column; the
+// extinguish and fade cues fire for BOTH nades' fires (one sound each —
+// no Incendiary variant exists), so a weapon there would be a guess and
+// stays empty (missing input ⇒ no value, never a fabricated one).
+type fireCueDef struct {
+	name   string
+	kind   string
+	weapon string
+}
+
+// fireCueDefs is Wave C's vocabulary — the six fire-family soundevents
+// the replay plays as audio-only cues, verified against the local
+// install's soundevents table (`cs2find events`, 2026-11-12):
+//
+//   - Molotov.Extinguish → sounds/weapons/molotov/molotov_extinguish.vsnd_c
+//     — the ONLY extinguish soundevent in the install (no Incendiary
+//     variant; Incendiary landings play the same cue — the owner's hunch
+//     confirmed). 66× across the 7-demo golden pool: 58 where the firebomb
+//     ignited and smoke killed its own fire, 8 where no fire ever started
+//     (lands-in-active-smoke — both of the owner's scenarios).
+//   - Molotov.StartFailed → …/molotov_detonate_air_01.vsnd_c and
+//     IncGrenade.StartFailed → …/inc_grenade_detonate_air_01.vsnd_c — the
+//     AIR-BURST failure cue (owner ruling, 2026-11-12: its own kind of
+//     sound; a fire grenade that blooms in the air emits no fire). 9× in
+//     the pool (5 mol / 4 inc).
+//   - Molotov.Smash → …/molotov_smash_01..04.vsnd_c and IncGrenade.Pop →
+//     …/inc_grenade_pop_03.vsnd_c — the firebomb DETONATING (landing and
+//     breaking; the owner's term). No IncGrenade.Smash exists (grep over
+//     all 21,220 install soundevent names: Molotov.Smash is the only
+//     "smash"), so Pop — the only container-break sound in the IncGrenade
+//     family — is the incendiary twin by elimination (flagged for the
+//     owner's by-ear verification). Both fire 0× across the current pool;
+//     captured anyway (owner decision: wire the dead capture, verify
+//     manually).
+//   - Inferno.FadeOut → …/fire_loop_fadeout_01.vsnd_c — the fire fading
+//     out: co-fires at +0 from the SAME source entity as Extinguish at
+//     suppressed landings (59/66 pool extinguish cues, 5/5 of the
+//     no-own-fire landings — the probe's carve-out: the inventory DOES
+//     show it there), and at every fire's death — so, captured
+//     unconditionally, the replay plays it wherever the demo recorded it.
+//
+// No round-count gating on any of these (knife/warmup discard is queued
+// separately — stamp rounds normally through addEvent → evRound).
+var fireCueDefs = []fireCueDef{
+	{name: "Molotov.Extinguish", kind: models.EventExtinguish, weapon: ""},
+	{name: "Molotov.StartFailed", kind: models.EventStartFailed, weapon: "Molotov"},
+	{name: "IncGrenade.StartFailed", kind: models.EventStartFailed, weapon: "Incendiary Grenade"},
+	{name: "Molotov.Smash", kind: models.EventSmash, weapon: "Molotov"},
+	{name: "IncGrenade.Pop", kind: models.EventSmash, weapon: "Incendiary Grenade"},
+	{name: "Inferno.FadeOut", kind: models.EventFadeOut, weapon: ""},
+}
+
+// fireCueByHash resolves a demo SOS hash to its fire-cue definition (built
+// once at package init through mappack.SoundEventHash — the ONE hash rule,
+// no second copy; the three waves' name vocabularies are disjoint, so one
+// message resolves to at most one wave — pinned by
+// TestSOSFireCueVocabulary).
+var fireCueByHash = func() map[uint32]fireCueDef {
+	m := make(map[uint32]fireCueDef, len(fireCueDefs))
+	for _, d := range fireCueDefs {
+		m[mappack.SoundEventHash(d.name)] = d
+	}
+	return m
+}()
+
+// fireCueKey is Wave C's dedupe key: (source entity, tick, soundevent
+// name) — the SAME shape as wave A's bounceKey (agg.go), kept as its own
+// type so the two waves' seen-sets read honestly. The state is
+// Parse-local: extract.parse owns the map beside the handler that feeds
+// it (per-parse state lives with its only writer, exactly like every
+// other SOS-wave state); the name vocabularies are disjoint, so the maps
+// could not cross-collide even if shared (pinned by test).
+type fireCueKey struct {
+	entity int
+	tick   int
+	name   string
+}
+
+// fireCueInfo is one fire-cue SOS message (see models.EventExtinguish —
+// packed_params carries the cue's world position through the same 7-byte
+// header as wave A).
+type fireCueInfo struct {
+	tick    int
+	entity  int
+	name    string
+	kind    string
+	weapon  string
+	hasPos  bool
+	x, y, z float64
+}
+
+// fireCue stores ONE cue row per (source entity, tick, name) — Wave A's
+// rule byte-for-byte (TestGrenadeBouncedDedupeAndSkip's semantics):
+//
+//   - the FIRST message claims the key; a duplicate dedupes away;
+//   - a first message whose origin does not parse claims the key and
+//     stores NOTHING — its twin then dedupes rather than a guessed
+//     position (missing required input ⇒ no row);
+//   - a zero vector is the posPtrs "no position known" convention ⇒ skip.
+//
+// The origin comes from packed_params through the same 7-byte header as
+// wave A (pool observation: hasOrigin=true on EVERY cue — 66/66
+// extinguish + 9/9 StartFailed messages carry one). Round rides the same
+// addEvent → evRound path as every events row and is renumbered with them
+// in build.renumber — no round-count gating here (knife/warmup discard is
+// queued separately). detail_json carries the source entity + the exact
+// soundevent name — wave A's provenance keys, so the row always says
+// which cue it was.
+func (a *agg) fireCue(c fireCueInfo, seen map[fireCueKey]bool) {
+	key := fireCueKey{entity: c.entity, tick: c.tick, name: c.name}
+	if seen[key] {
+		return
+	}
+	seen[key] = true
+	if !c.hasPos {
+		return
+	}
+	px, py, pz := pos3(c.x, c.y, c.z)
+	if px == nil {
+		return
+	}
+	a.addEvent(models.Event{
+		Tick:   c.tick,
+		Kind:   c.kind,
+		Weapon: c.weapon,
+		PosX:   px,
+		PosY:   py,
+		PosZ:   pz,
+		DetailJSON: detailJSON(map[string]any{
+			"entity":     c.entity,
+			"soundevent": c.name,
+		}),
+	}, "")
 }

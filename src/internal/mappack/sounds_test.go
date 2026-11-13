@@ -385,6 +385,27 @@ func TestSoundTableKeysInIconTable(t *testing.T) {
 			"sounds/physics/weapons/weapon_incendiary_impact_03.vsnd_c",
 			"sounds/physics/weapons/weapon_incendiary_impact_04.vsnd_c",
 		},
+		// ---- the Wave C FIRE-CUE groups (each the cue soundevent's own
+		// file set; cs2find events + VPK existence, 2026-11-12) ----
+		// The extinguish/fade groups are nade-neutral (one sound for both
+		// Molotov and Incendiary fires — no Incendiary variant exists);
+		// the air-burst and container-break groups are per-nade and keyed
+		// through the row's weapon column (sfx.js fireCueName).
+		"Fire extinguish":                 {"sounds/weapons/molotov/molotov_extinguish.vsnd_c"},
+		"Molotov start failed":            {"sounds/weapons/molotov/molotov_detonate_air_01.vsnd_c"},
+		"Incendiary Grenade start failed": {"sounds/weapons/incgrenade/inc_grenade_detonate_air_01.vsnd_c"},
+		"Molotov smash": {
+			"sounds/weapons/molotov/molotov_smash_01.vsnd_c",
+			"sounds/weapons/molotov/molotov_smash_02.vsnd_c",
+			"sounds/weapons/molotov/molotov_smash_03.vsnd_c",
+			"sounds/weapons/molotov/molotov_smash_04.vsnd_c",
+		},
+		// The incendiary detonation-body twin: no IncGrenade.Smash exists
+		// (grep over all install soundevent names) — Pop is the only
+		// container-break sound in the family; 0× in the pool, wired per
+		// the owner's manual-verification flow.
+		"Incendiary Grenade pop": {"sounds/weapons/incgrenade/inc_grenade_pop_03.vsnd_c"},
+		"Fire fade out":          {"sounds/weapons/molotov/fire_loop_fadeout_01.vsnd_c"},
 		// ---- the Wave B player-sound groups (file lists = the READ-ONLY cs2find footsteps probe) ----
 		"step bass": {
 			"sounds/player/footsteps/bass_01.vsnd_c",

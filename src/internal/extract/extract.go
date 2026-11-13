@@ -210,8 +210,8 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 	p.RegisterNetMessageHandler(func(*msg.CSVCMsg_EncryptedData) {
 		a.countEncrypted()
 	})
-	// CMsgSosStartSoundEvent — the demo's sound-event channel, read by BOTH
-	// sound-event waves (internal/extract/sos.go owns the two static
+	// CMsgSosStartSoundEvent — the demo's sound-event channel, read by ALL
+	// THREE sound-event waves (internal/extract/sos.go owns the three static
 	// candidate tables, hashed ONCE at package init through
 	// mappack.SoundEventHash — the one hash rule, and no CS2 install is
 	// ever touched at import time):
@@ -226,8 +226,16 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 	//     handle, falling back to the participant's own m_hPawn link —
 	//     src -1 or a source that resolves to no player skips the row,
 	//     identity is never guessed).
+	//   - Wave C: the fire-cue vocabulary (extinguish / air-burst failure /
+	//     detonation body-break / fire fade) → typed cue rows
+	//     (models.EventExtinguish … EventFadeOut) with Wave A's exact
+	//     storage rule — deduped per (source entity, tick, name), origin
+	//     required through the same packed_params header. The seen-set is
+	//     Parse-local (beside this handler); the cues are audio-only (no
+	//     landmark category claims them) and are drawn nowhere.
 	// Tick reads the live game state; the round is the agg's current round
 	// (evRound), renumbered with every other row in build.renumber.
+	cueSeen := make(map[fireCueKey]bool)
 	p.RegisterNetMessageHandler(func(m *msg.CMsgSosStartSoundEvent) {
 		gs := p.GameState()
 		hash := m.GetSoundeventHash()
@@ -259,6 +267,20 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 				TeamPrefix: def.team,
 				SOSName:    def.name,
 			})
+		}
+		if def, ok := fireCueByHash[hash]; ok {
+			x, y, z, hasPos := sosOrigin(m.GetPackedParams())
+			a.fireCue(fireCueInfo{
+				tick:   gs.IngameTick(),
+				entity: src,
+				name:   def.name,
+				kind:   def.kind,
+				weapon: def.weapon,
+				hasPos: hasPos,
+				x:      x,
+				y:      y,
+				z:      z,
+			}, cueSeen)
 		}
 	})
 

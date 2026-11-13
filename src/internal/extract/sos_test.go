@@ -57,6 +57,235 @@ func TestSOSGrenadeBounceVocabulary(t *testing.T) {
 	}
 }
 
+// TestSOSFireCueVocabulary pins Wave C's six fire-cue soundevents: their
+// events.kind and the canonical weapon (or the deliberate "" when the
+// soundevent names no nade), resolution through fireCueByHash, and — the
+// strongest form — each name's LITERAL murmur2 value (the hash rule's
+// published output for these exact strings, captured through
+// mappack.SoundEventHash / `cs2find hash`, 2026-11-12): a rename of any
+// def, or a drift in the hash rule itself, fails here instead of silently
+// dropping the cue at import. Also pins the three waves' name
+// vocabularies as pairwise disjoint (one message → at most one wave) and
+// the ignition-family look-alikes as never-resolving.
+func TestSOSFireCueVocabulary(t *testing.T) {
+	want := []struct {
+		name   string
+		kind   string
+		weapon string
+		hash   uint32
+	}{
+		{"Molotov.Extinguish", models.EventExtinguish, "", 0x76B5D77D},
+		{"Molotov.StartFailed", models.EventStartFailed, "Molotov", 0x7827DA8A},
+		{"IncGrenade.StartFailed", models.EventStartFailed, "Incendiary Grenade", 0xB456C38F},
+		{"Molotov.Smash", models.EventSmash, "Molotov", 0x0310DB06},
+		{"IncGrenade.Pop", models.EventSmash, "Incendiary Grenade", 0x4137A918},
+		{"Inferno.FadeOut", models.EventFadeOut, "", 0x1B045DA6},
+	}
+	if len(fireCueDefs) != len(want) {
+		t.Fatalf("fireCueDefs has %d entries, want %d", len(fireCueDefs), len(want))
+	}
+	for _, w := range want {
+		if got := mappack.SoundEventHash(w.name); got != w.hash {
+			t.Errorf("SoundEventHash(%q) = 0x%08X, want 0x%08X (hash rule or name drifted)", w.name, got, w.hash)
+		}
+		d, ok := fireCueByHash[w.hash]
+		if !ok {
+			t.Fatalf("hash of %q does not resolve", w.name)
+		}
+		if d.name != w.name || d.kind != w.kind || d.weapon != w.weapon {
+			t.Errorf("hash resolution of %q = %+v, want {name:%q kind:%q weapon:%q}", w.name, d, w.name, w.kind, w.weapon)
+		}
+	}
+	// A hash collision would silently drop a name from the lookup table.
+	if len(fireCueByHash) != len(fireCueDefs) {
+		t.Errorf("fireCueByHash has %d entries, want %d (hash collision?)", len(fireCueByHash), len(fireCueDefs))
+	}
+	// Kind vocabulary: StartFailed and Extinguish/Smash/FadeOut stay
+	// distinct cues (audibly different sounds — the owner's spec), the
+	// nade-specific names share their moment's kind through the weapon
+	// column, and the extinguish/fade cues carry NO weapon (one sound for
+	// both nades — never guessed).
+	kinds := map[string]bool{}
+	for _, d := range fireCueDefs {
+		kinds[d.kind] = true
+	}
+	for k := range kinds {
+		if k == "" {
+			t.Error("empty fire-cue kind")
+		}
+	}
+	if !kinds[models.EventExtinguish] || !kinds[models.EventStartFailed] ||
+		!kinds[models.EventSmash] || !kinds[models.EventFadeOut] {
+		t.Errorf("fire-cue kinds = %v, want all four of extinguish/start_failed/smash/fade_out", kinds)
+	}
+	if len(kinds) != 4 {
+		t.Errorf("fire-cue kinds distinct = %d, want 4 (StartFailed must stay its own kind)", len(kinds))
+	}
+	// Pairwise disjointness across the three waves: one SOS hash resolves
+	// to at most one wave's table, so no message is ever stored twice or
+	// misrouted (the extract handler runs the branches independently).
+	for _, d := range fireCueDefs {
+		h := mappack.SoundEventHash(d.name)
+		if _, ok := bounceByHash[h]; ok {
+			t.Errorf("%q also resolves in bounceByHash (waves overlap)", d.name)
+		}
+		if _, ok := playerSoundByHash[h]; ok {
+			t.Errorf("%q also resolves in playerSoundByHash (waves overlap)", d.name)
+		}
+	}
+	for _, d := range grenadeBounceDefs {
+		if _, ok := fireCueByHash[mappack.SoundEventHash(d.name)]; ok {
+			t.Errorf("bounce %q also resolves in fireCueByHash", d.name)
+		}
+	}
+	// The ignition family and other look-alikes must never become cues:
+	// the replay already plays the normal-bloom files through the
+	// "Molotov"/"Incendiary Grenade" detonation groups, and the loop/ignite
+	// sounds fire only where a fire actually starts (0× at suppressed
+	// landings — the probe's carve-out stays closed for them).
+	for _, name := range []string{
+		"Molotov.Start", "Molotov.StartDistant", "IncGrenade.Start",
+		"Molotov.Bounce", "IncGrenade.Bounce", "IncGrenade.Bounce_M",
+		"Inferno.Loop", "Inferno.Fire.Ignite", "Molotov.Loop",
+		"Molotov.Throw", "SmokeGrenade.Extinguish",
+	} {
+		if _, ok := fireCueByHash[mappack.SoundEventHash(name)]; ok {
+			t.Errorf("%q must not resolve to a fire cue", name)
+		}
+	}
+}
+
+// TestFireCueDedupeAndSkip pins Wave C's storage rules on the accumulator:
+// dedupe by (source entity, tick, name) keeping the FIRST message (the
+// same semantics TestGrenadeBouncedDedupeAndSkip pins for Wave A), the
+// origin-required rule through the packed_params header, round stamping
+// through the one evRound path, and the provenance keys in detail_json.
+// The same-tick different-name case is REAL: the extinguish and fade cues
+// co-fire at +0 from the same source entity (59/66 pool extinguish cues)
+// and BOTH must become rows — the replay plays both sounds.
+func TestFireCueDedupeAndSkip(t *testing.T) {
+	a := newAgg()
+	seen := map[fireCueKey]bool{}
+
+	// The first message claims the key; its twin dedupes away (the origin
+	// of the FIRST message wins — same as Wave A).
+	a.fireCue(fireCueInfo{tick: 100, entity: 512, name: "Molotov.Extinguish",
+		kind: models.EventExtinguish, hasPos: true, x: 1, y: 2, z: 3}, seen)
+	a.fireCue(fireCueInfo{tick: 100, entity: 512, name: "Molotov.Extinguish",
+		kind: models.EventExtinguish, hasPos: true, x: 1.4, y: 2.4, z: 3.4}, seen)
+	// A DIFFERENT source entity at the same tick is a different cue …
+	a.fireCue(fireCueInfo{tick: 100, entity: 513, name: "Molotov.StartFailed",
+		kind: models.EventStartFailed, weapon: "Molotov", hasPos: true, x: 9, y: 9, z: 9}, seen)
+	// … and the SAME entity + tick with a different soundevent is a
+	// different cue — the real extinguish + fade pair: both stored.
+	a.fireCue(fireCueInfo{tick: 100, entity: 512, name: "Inferno.FadeOut",
+		kind: models.EventFadeOut, hasPos: true, x: 5, y: 5, z: 5}, seen)
+	// Unparseable origin: claims the key, stores nothing — and the twin
+	// (which HAS a fine origin) dedupes away rather than a guessed position.
+	a.fireCue(fireCueInfo{tick: 200, entity: 600, name: "Molotov.Smash",
+		kind: models.EventSmash, weapon: "Molotov", hasPos: false}, seen)
+	a.fireCue(fireCueInfo{tick: 200, entity: 600, name: "Molotov.Smash",
+		kind: models.EventSmash, weapon: "Molotov", hasPos: true, x: 7, y: 7, z: 7}, seen)
+	// Zero vector = the posPtrs "no position known" convention → skipped.
+	a.fireCue(fireCueInfo{tick: 300, entity: 700, name: "Inferno.FadeOut",
+		kind: models.EventFadeOut, hasPos: true, x: 0, y: 0, z: 0}, seen)
+
+	if len(a.events) != 3 {
+		t.Fatalf("events = %d, want 3 (the first's twin deduped; origin-less Smash claims-but-skips; the same-entity fade cue stored beside its extinguish sibling)", len(a.events))
+	}
+	// Rows carry the def's kind + weapon (nade from the soundevent name;
+	// "" for the nade-agnostic extinguish/fade cues) and a position —
+	// never a guess.
+	wantRows := []struct {
+		kind   string
+		weapon string
+		x      float64
+	}{
+		{models.EventExtinguish, "", 1},
+		{models.EventStartFailed, "Molotov", 9},
+		{models.EventFadeOut, "", 5},
+	}
+	for i := range wantRows {
+		if a.events[i].Kind != wantRows[i].kind || a.events[i].Weapon != wantRows[i].weapon {
+			t.Errorf("events[%d] kind/weapon = %q/%q, want %q/%q", i,
+				a.events[i].Kind, a.events[i].Weapon, wantRows[i].kind, wantRows[i].weapon)
+		}
+		if a.events[i].PosX == nil || *a.events[i].PosX != wantRows[i].x {
+			t.Errorf("events[%d].PosX = %v, want %v (the first message's origin wins)", i, a.events[i].PosX, wantRows[i].x)
+		}
+	}
+	// The deduped twin's origin (1.4) must NOT win — the first message's (1).
+	if got := *a.events[0].PosX; got != 1 {
+		t.Errorf("first origin x = %v, want 1 (the first message wins)", got)
+	}
+	// The origin-less Smash and the zero-vector fade never became rows —
+	// and NO Smash row exists at all (both of its messages were claims).
+	for _, e := range a.events {
+		if e.Kind == models.EventSmash {
+			t.Errorf("skipped cue stored a row: kind=%s tick=%d", e.Kind, e.Tick)
+		}
+		if e.Tick == 300 {
+			t.Errorf("zero-vector cue stored a row at tick 300")
+		}
+	}
+	// detail_json carries the provenance keys: source entity + the exact
+	// soundevent name (which cue it was).
+	var detail map[string]any
+	if err := json.Unmarshal([]byte(a.events[0].DetailJSON), &detail); err != nil {
+		t.Fatalf("detail_json: %v", err)
+	}
+	if detail["entity"] != float64(512) || detail["soundevent"] != "Molotov.Extinguish" {
+		t.Errorf("detail_json = %v, want entity 512 + soundevent Molotov.Extinguish", detail)
+	}
+	// Round rides the same evRound path as every events row: round 1
+	// before any RoundStart (evRound clamps).
+	if a.events[0].Round != 1 {
+		t.Errorf("round = %d, want 1 (evRound before any RoundStart)", a.events[0].Round)
+	}
+	// The FIRST round is COUNTED, so the pre-round cue prefix survives it.
+	a.roundStart(100, false, false, 0, "")
+	// A DISCARDED (warmup) round stores NO cue rows — the cues ride the
+	// same ingest discard as every other row (agg.addEvent drops them;
+	// a round that does not exist gets no round_start row either).
+	a.roundStart(200, true, false, 0, "")
+	a.fireCue(fireCueInfo{tick: 240, entity: 801, name: "Molotov.Extinguish",
+		kind: models.EventExtinguish, hasPos: true, x: 8, y: 8, z: 8}, seen)
+	// …while the next COUNTED round's cue is stored — renumber rewrites it
+	// chrono → dense (3 → 2) with every other round-carrying row.
+	a.roundStart(300, false, false, 0, "")
+	a.fireCue(fireCueInfo{tick: 320, entity: 800, name: "Inferno.FadeOut",
+		kind: models.EventFadeOut, hasPos: true, x: 3, y: 4, z: 5}, seen)
+
+	out := a.build()
+	// roundStart stores its own round_start rows, so build carries those
+	// plus the cue rows — count the cue kinds only.
+	cueRows := 0
+	roundsByTick := map[int]int{}
+	for _, e := range out.Events {
+		switch e.Kind {
+		case models.EventExtinguish, models.EventStartFailed, models.EventSmash, models.EventFadeOut:
+			cueRows++
+			roundsByTick[e.Tick] = e.Round
+		}
+	}
+	// The discarded round's cue (tick 240) is absent — its round has no
+	// rows at all; the 3 prefix cues (chrono round 1 → dense 1) and the
+	// counted-round cue (chrono 3 → dense 2) survive.
+	if cueRows != 4 {
+		t.Fatalf("build carried %d cue rows, want 4 (3 prefix + 1 counted-round; the discarded round's cue dropped)", cueRows)
+	}
+	if _, ok := roundsByTick[240]; ok {
+		t.Errorf("discarded round stored a cue row at tick 240")
+	}
+	// All three prefix cues share tick 100 → one map entry, round 1.
+	if r := roundsByTick[100]; r != 1 {
+		t.Errorf("prefix cue round = %d, want 1 (dense renumber)", r)
+	}
+	if r := roundsByTick[320]; r != 2 {
+		t.Errorf("counted-round cue round = %d, want 2 (chrono 3 → dense 2)", r)
+	}
+}
+
 // TestSOSPlayerSoundClassification pins Wave B's candidate table: the
 // kind/material/team split is decided AT TABLE BUILD (never at row time),
 // every candidate resolves back to itself through its hash, the lowercase
