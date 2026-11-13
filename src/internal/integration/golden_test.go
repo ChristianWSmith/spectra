@@ -154,8 +154,10 @@ type goldenFixture struct {
 	Players            int            `json:"players"`
 	FinalStatePlayers  int            `json:"finalStatePlayers"`
 	// Voice is the M4 voice-capture block (counting VoiceSink over
-	// CSVCMsg_VoiceData): baseline 2026-10-30 is 123,507 chunks / 10 XUIDs /
-	// 0 casters; safety nets enforce it.
+	// CSVCMsg_VoiceData): baseline 2026-10-30 was 123,507 chunks / 10
+	// XUIDs / 0 casters; the pre-first-counted-round sanitization gate
+	// (owner ruling, 2026-11-12) dropped 1,607 pre-pistol chunks →
+	// 121,900; safety nets enforce it.
 	Voice           goldenVoice      `json:"voice"`
 	PlayersHeadline []headlinePlayer `json:"playersHeadline"`
 	TopPlayer       topPlayer        `json:"topPlayer"`
@@ -265,11 +267,15 @@ func TestGoldenSkipBehavior(t *testing.T) {
 }
 
 // countingVoiceSink tallies the CSVCMsg_VoiceData stream for the fixture
-// (chunks / distinct XUIDs / caster chunks).
+// (chunks / distinct XUIDs / caster chunks) and records the first delivered
+// chunk's tick for the sanitization-boundary pin (owner ruling, 2026-11-12:
+// no chunk below the first counted round's startTick may reach a sink).
 type countingVoiceSink struct {
-	chunks int
-	xuids  map[uint64]bool
-	casts  int
+	chunks  int
+	xuids   map[uint64]bool
+	casts   int
+	minTick int
+	minSet  bool
 }
 
 func (s *countingVoiceSink) Add(c extract.VoiceChunk) error {
@@ -280,6 +286,10 @@ func (s *countingVoiceSink) Add(c extract.VoiceChunk) error {
 	s.xuids[c.XUID] = true
 	if c.Caster {
 		s.casts++
+	}
+	if !s.minSet || c.Tick < s.minTick {
+		s.minTick = c.Tick
+		s.minSet = true
 	}
 	return nil
 }
@@ -332,6 +342,19 @@ func TestGolden(t *testing.T) {
 		t.Fatal("extract.Parse returned nil ExtractedMatch")
 	}
 	t.Logf("parsed golden/de_cache.dem.zst in %.1fs (%d voice chunks)", parseSeconds, voice.chunks)
+
+	// ---- sanitization boundary (owner ruling, 2026-11-12) ----
+	// No voice chunk below the FIRST COUNTED round's startTick may reach
+	// the sink (extract.Parse's gate); the earliest delivered chunk must
+	// therefore sit at or after the boundary.
+	if len(m.Rounds) == 0 {
+		t.Fatal("no counted rounds")
+	}
+	voiceBoundary := m.Rounds[0].StartTick
+	if voice.minSet && voice.minTick < voiceBoundary {
+		t.Errorf("first voice chunk tick = %d, below the first counted round's startTick %d", voice.minTick, voiceBoundary)
+	}
+	t.Logf("first voice chunk tick = %d (first counted round startTick %d)", voice.minTick, voiceBoundary)
 
 	// Both known demos carry 0 svc_EncryptedData messages —
 	// the encrypted-chat path stays synthetic-only until a Valve MM demo
@@ -700,9 +723,13 @@ func assertSafetyNets(t *testing.T, got *goldenFixture) {
 	if got.TopPlayer.Kills != 25 {
 		t.Errorf("safety: topPlayer kills = %d, want 25", got.TopPlayer.Kills)
 	}
-	// M4 voice baseline (123,507 chunks, all 10 XUIDs, 0 casters).
-	if got.Voice.Chunks != 123507 {
-		t.Errorf("safety: voice chunks = %d, want 123507", got.Voice.Chunks)
+	// M4 voice baseline: 123,507 chunks before the pre-first-counted-round
+	// sanitization gate (owner ruling, 2026-11-12) dropped the 1,607
+	// pre-pistol chunks — 121,900 remain; all 10 XUIDs and 0 casters stay
+	// (every XUID also speaks during the match — a drift there would mean
+	// a player who spoke ONLY pre-pistol).
+	if got.Voice.Chunks != 121900 {
+		t.Errorf("safety: voice chunks = %d, want 121900", got.Voice.Chunks)
 	}
 	if got.Voice.XUIDs != 10 {
 		t.Errorf("safety: voice xuids = %d, want 10", got.Voice.XUIDs)

@@ -1887,9 +1887,12 @@
   // defaultEntryTick — where a replay starts when the entry URL makes
   // NO time promise (nav.entrySeekTick returned null): the FIRST counted
   // round's start, so a pre-reprocess legacy warmup/knife row is never
-  // the opening frame (the owner's ruling: entry at round 1 — the
-  // timeline stream itself still covers the whole match). No counted
-  // round (or no rounds loaded at all) → frame 0, never a guessed time.
+  // the opening frame (the owner's ruling: entry at round 1 — and since
+  // the pre-pistol sanitization gate the timeline stream itself now
+  // STARTS AT round 1, so this is also the stream's first frame). No
+  // counted round → 0, but the stream is empty then too (the gate writes
+  // nothing pre-pistol) and the existing frames === 0 guards render a
+  // blank replay — never a guessed time.
   function defaultEntryTick() {
     for (const r of rounds) {
       if (isCounted(r) && Number.isFinite(r.startTick)) return r.startTick;

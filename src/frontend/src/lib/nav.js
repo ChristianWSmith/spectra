@@ -178,9 +178,11 @@ export function entryLoopSpanAround(firstTick, lastTick, tickRate) {
 // mid-session:
 //   1. ?tick=  — an exact tick link (event/round-start "watch" buttons)
 //               wins as-is when it names a real non-negative tick —
-//               0 included (a round-1 start link stamps tick 0, and an
-//               explicit first frame must not be reinterpreted as "no
-//               promise");
+//               0 included (an explicit first-frame target must not be
+//               reinterpreted as "no promise"; a round-1 start link
+//               stamps that round's startTick, not 0 — since the
+//               pre-pistol sanitization gate the stream starts at round
+//               1, and an out-of-range ?tick= simply clamps);
 //   2. else null — the URL makes NO time promise, so there is nothing
 //               to resolve here: Replay applies the user's DEFAULT
 //               start position (the first counted round's start — the
@@ -206,8 +208,10 @@ export function entryLoopSpanAround(firstTick, lastTick, tickRate) {
 export function entrySeekTick(query) {
   const q = query || {};
   // ?tick= is explicit whenever it names a real non-negative tick —
-  // 0 included (a round-1 start link stamps tick 0, and an explicit
-  // first frame must not be reinterpreted as "no promise").
+  // 0 included (an explicit first-frame target must not be
+  // reinterpreted as "no promise"; a round-1 start link stamps that
+  // round's startTick, not 0 — the stream starts at round 1 since the
+  // pre-pistol sanitization gate, and an out-of-range tick clamps).
   if (q.tick != null && q.tick !== '') {
     const tick = Number(q.tick);
     if (Number.isFinite(tick) && tick >= 0) return tick;

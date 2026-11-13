@@ -53,8 +53,11 @@ type Series struct {
 // requires a known side — final-side here, exact per-round samples in the
 // heatmap filters).
 // durationTicks ≤ 0 falls back to the largest frame tick; buckets ≤ 0
-// means DefaultBuckets. Warmup frames are kept: their values are valid
-// positions.
+// means DefaultBuckets. Frames before the first counted round are no
+// longer written (extract's pre-pistol sanitization gate — owner ruling,
+// 2026-11-12), so their early buckets carry no samples and stay at the
+// -1 empty sentinel — never a guessed value (a legacy sidecar written
+// before the gate keeps its pre-r1 frames until the match is reprocessed).
 func Compute(dir, kind string, buckets, durationTicks int, sides map[uint64]string) (Series, error) {
 	if kind != KindSpacing && kind != KindSpread {
 		return Series{}, fmt.Errorf("spatial: unknown series kind %q", kind)

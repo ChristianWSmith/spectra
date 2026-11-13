@@ -3,8 +3,10 @@
 // normalized models.ExtractedMatch — no report/markdown generation, and no
 // demoinfocs type ever appears in the output. Parser options, handler
 // families, the knife/warmup discard (rounds that are not counted play
-// are never ingested), and aggregation math all target the models
-// contract.
+// are never ingested), the pre-first-counted-round sanitization gate (the
+// position/state/voice sinks only receive data from the first counted
+// round's start tick on — owner ruling, 2026-11-12), and aggregation math
+// all target the models contract.
 package extract
 
 import (
@@ -134,7 +136,11 @@ type StateSink interface {
 // StateSink); it rides alongside Positions — both are called once per
 // FrameDone, Positions first (the state stream reuses the position
 // stream's slot table, so the position sample assigns slots). Voice,
-// if non-nil, receives every CSVCMsg_VoiceData chunk.
+// if non-nil, receives every CSVCMsg_VoiceData chunk. All THREE sinks are
+// gated by the sanitization rule (owner ruling, 2026-11-12): nothing
+// before the first counted round's start tick is delivered — see the
+// gate comment in Parse's FrameDone handler. Progress is NOT gated (it
+// counts the demo's frames, not the delivered stream).
 // NetKey, when non-empty, is the chat decryption key extracted from a
 // <demo>.info companion (demoinfocs.MatchInfoDecryptionKey) and enables
 // decryption of svc_EncryptedData net-messages during the parse.
@@ -178,7 +184,16 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 	// Voice chunks (M4): net-message handlers run on the parse goroutine
 	// (MsgQueueBufferSize(0) is sequential), so sinkErr/cancel mirror the
 	// FrameDone positions-sink abort below. Only registered when a sink is
-	// wired — a demo-independent no-op otherwise.
+	// wired — a demo-independent no-op otherwise. Chunks are BUFFERED for
+	// the current frame (voiceGate) and only delivered at FrameDone: the
+	// sanitization gate below (owner ruling, 2026-11-12) is not yet known
+	// at handler time — events.RoundStart dispatches at the END of the
+	// frame, after the frame's net messages. Holding the payload for one
+	// frame is safe: demoinfocs unmarshals into a fresh message per net
+	// message (proto.Unmarshal copies bytes fields — parsing.go's
+	// msgBufPool comment), and the slice is consumed before the next
+	// FrameDone returns.
+	voice := voiceGate{}
 	if opts.Voice != nil {
 		p.RegisterNetMessageHandler(func(m *msg.CSVCMsg_VoiceData) {
 			if sinkErr != nil {
@@ -192,16 +207,13 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 			if len(payload) == 0 {
 				return
 			}
-			if err := opts.Voice.Add(VoiceChunk{
+			voice.add(VoiceChunk{
 				Tick:    p.GameState().IngameTick(),
 				XUID:    m.GetXuid(),
 				Payload: payload,
 				Caster:  m.GetCaster(),
 				Section: audio.GetSectionNumber(),
-			}); err != nil {
-				sinkErr = fmt.Errorf("extract: voice sink: %w", err)
-				cancel()
-			}
+			})
 		})
 	}
 	// svc_EncryptedData counter (M4): decrypted inner messages dispatch as
@@ -295,7 +307,25 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 	p.RegisterEventHandler(func(events.FrameDone) {
 		frames++
 		a.flushRaw()
-		if sink := opts.Positions; sink != nil && sinkErr == nil {
+		// Sanitization gate (owner ruling, 2026-11-12): the sidecar
+		// timeline (positions + state) and the voice stream START AT THE
+		// FIRST COUNTED round's start tick — no pre-pistol byte is ever
+		// written. Gate signal: a.rounds gains its entry only for a
+		// counted round (agg.roundStart), and events.RoundStart dispatches
+		// BEFORE events.FrameDone for the same frame (demoinfocs v6
+		// parsing.go handleFrameParsed runs processFrameGameEvents first),
+		// so the boundary frame (tick == startTick) is KEPT: by the time
+		// this handler evaluates the gate, the boundary round exists.
+		// frames++ and the progress tracker below stay UNGATED — they
+		// count the demo's frames (matches.frames / the final-progress
+		// pin), not the written stream. A demo with NO counted round never
+		// opens the gate: zero frames/voice are written (meta.Frames = 0)
+		// and the replay renders blank through its existing frames === 0
+		// guards — the ruling read literally: with no first pistol round,
+		// EVERY byte is pre-pistol. Deliberate, not a bug; no fallback is
+		// guessed (pre-release policy: never invent data).
+		gateOpen := len(a.rounds) > 0
+		if sink := opts.Positions; gateOpen && sink != nil && sinkErr == nil {
 			gs := p.GameState()
 			frameBuf = frameBuf[:0]
 			for _, pl := range gs.Participants().Playing() {
@@ -330,8 +360,13 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 		// State stream (see StateSink): every playing participant, dead
 		// included (hp 0 is a sample, not an inference). Runs AFTER the
 		// position sink so the shared slot table locks on position
-		// samples first.
-		if sink := opts.State; sink != nil && sinkErr == nil {
+		// samples first. Gated together with the position sink: both
+		// sinks must advance in lockstep (sidecar's frames counter), and
+		// seeds.take is NOT called while the gate is closed — the zero
+		// value stays armed, so the boundary frame's round-counter change
+		// makes the first written record a seed (plus the state writer's
+		// !prev.valid forces full records on the first record anyway).
+		if sink := opts.State; gateOpen && sink != nil && sinkErr == nil {
 			gs := p.GameState()
 			stateBuf = stateBuf[:0]
 			for _, pl := range gs.Participants().Playing() {
@@ -345,10 +380,30 @@ func Parse(ctx context.Context, r io.Reader, opts ParseOptions) (*models.Extract
 				cancel()
 			}
 		}
+		// Voice: deliver (or discard) this frame's buffered chunks now —
+		// AFTER events.RoundStart has dispatched for the frame, so the
+		// gate is evaluated post-boundary: chunks AT the startTick that
+		// arrived in the boundary frame are KEPT, every earlier frame's
+		// chunks were already discarded at their own FrameDone.
+		if opts.Voice != nil {
+			if err := voice.frameEnd(gateOpen && sinkErr == nil, opts.Voice); err != nil {
+				sinkErr = err
+				cancel()
+			}
+		}
 		pt.frame(frames, frameTotal(p))
 	})
 
 	err := p.ParseToEnd(ctx)
+	// Voice net messages can still arrive after the final FrameDone
+	// (end-of-demo packets): deliver them when the gate is open (exactly
+	// the old immediate-delivery behavior), discard them when it is
+	// closed (every byte is pre-pistol by definition).
+	if opts.Voice != nil && sinkErr == nil {
+		if err := voice.frameEnd(len(a.rounds) > 0, opts.Voice); err != nil {
+			sinkErr = err
+		}
+	}
 	if sinkErr != nil {
 		return nil, sinkErr
 	}

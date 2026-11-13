@@ -109,16 +109,19 @@ package sidecar
 //	           the stream exists, so its presence IS the capability
 //	           marker (absent = no state stream; readers fail soft)
 //
-// MEASURED on the golden demo (TestGoldenStateStream, 136,948 frames /
-// 23 rounds): 18,834 records — 157,686 B raw / 95,744 B zstd (~154 KB /
-// ~94 KB), against 9,102,512 B raw / 2,559,642 B zstd for the positions
-// stream — i.e. ~1.7% raw / ~3.7% zstd of the sidecar, inside the
+// MEASURED on the golden demo (TestGoldenStateStream, 133,599 sidecar
+// frames / 23 rounds — the timeline starts at the first counted round
+// since the pre-pistol sanitization gate, owner ruling 2026-11-12, so the
+// stream no longer covers the demo's full 136,948 parsed frames): 18,713
+// records — 168,409 B raw / 98,860 B zstd (~164 KB / ~96 KB), against
+// 8,847,682 B raw / 2,493,442 B zstd for the positions stream — i.e.
+// ~1.9% raw / ~4.0% zstd of the sidecar, inside the
 // 100–400 KB raw per-match estimate (order-of-magnitude: the test
 // re-measures the current sizes on every run, and the record-count bounds
 // it asserts hold because every field is diffed — unchanged frames stay
 // record-free). Absolute
-// frame uvarints cost 54,467 B of that raw total; a frameDelta encoding
-// would be 18,886 B — the 35,581 B raw saving (less after zstd) buys
+// frame uvarints cost 53,810 B of that raw total; a frameDelta encoding
+// would be 18,759 B — the 35,051 B raw saving (less after zstd) buys
 // nothing: absolute frames keep every block and every range-filtered
 // subsequence independently decodable (see the layout above), while
 // deltas would need the baseline record a range read never fetched.

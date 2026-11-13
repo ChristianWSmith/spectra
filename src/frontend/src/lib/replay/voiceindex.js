@@ -16,8 +16,9 @@
 // Caller guidance: fetch ~1 BUCKET PER SECOND of match time for a live
 // "talking" ring (the bucket a tick lands in is the ring's granularity
 // — speech shorter than a bucket still lights its whole bucket). The
-// fetch is cheap: the Go side counts stored voice chunks (a whole match
-// is ~10k chunks), no PCM is touched, so even a match-long index is a
+// fetch is cheap: the Go side counts stored voice chunks (a whole
+// stored match stream is ~10k chunks — since the pre-pistol gate it
+// starts at round 1), no PCM is touched, so even a match-long index is a
 // few KB.
 //
 // Returns {fromTick, toTick, buckets, counts} where counts is a Map of
