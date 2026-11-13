@@ -6,8 +6,12 @@
 // streamed — never to a temp file) and parse demos via internal/extract,
 // persisting through internal/store. Jobs are claimed strictly FIFO and
 // run concurrently up to the import_concurrency setting
-// (Options.Concurrency — 1 = sequential, the machine's thread count =
-// the default; see main.importConcurrencyPref). Progress and terminal
+// (Options.Concurrency — 1 = sequential, the machine's work-token
+// budget = the default; see main.importConcurrencyPref) — and every
+// claimed job additionally takes ONE machine-wide work token from
+// internal/budget for its whole body (see worker), so imports share
+// the machine with asset extraction and background recomputes instead
+// of stacking on top of them. Progress and terminal
 // transitions are announced as Wails events (spectra:job-progress /
 // spectra:job-done / spectra:library-changed) through an injected Emit
 // hook; originals are never written. The same package owns import-dir
@@ -26,7 +30,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -36,6 +39,7 @@ import (
 	demoinfocs "github.com/markus-wa/demoinfocs-golang/v6/pkg/demoinfocs"
 
 	"github.com/ChristianWSmith/spectra/internal/analytics"
+	"github.com/ChristianWSmith/spectra/internal/budget"
 	"github.com/ChristianWSmith/spectra/internal/data"
 	"github.com/ChristianWSmith/spectra/internal/extract"
 	"github.com/ChristianWSmith/spectra/internal/models"
@@ -231,12 +235,17 @@ type LibraryChangedEvent struct{}
 // Settings change applies to jobs already queued), clamped to
 // [1, workerCount]; nil ⇒ 1 (strictly sequential — the fallback for a
 // construction site with no pref wired; production wires
-// main.importConcurrencyPref, whose own default is the machine's thread
-// count). ComputeLock serializes this importer's analytics pass against
+// main.importConcurrencyPref, whose own default is
+// budget.MachineTokens — the machine's work-token budget). ComputeLock
+// serializes this importer's analytics pass against
 // every other analytics.Compute in the process — main wires ONE lock
 // into the importer and AnalyticsService's background recompute (rationale
 // in im.analyze); nil ⇒ a private lock (Computes still serialize within
-// this importer; only the cross-service sharing needs wiring).
+// this importer; only the cross-service sharing needs wiring). Budget
+// is the machine-wide work-token pool every claimed job draws ONE
+// token from for its whole body (internal/budget — taken BEFORE the
+// compute lock, never after); nil ⇒ unbudgeted (the no-op every test
+// constructs; production wires ONE shared budget from main).
 type Options struct {
 	Store         *store.Store
 	Parse         func(ctx context.Context, r io.Reader, opts extract.ParseOptions) (*models.ExtractedMatch, error)
@@ -247,6 +256,7 @@ type Options struct {
 	CopyEnabled   func() bool
 	Concurrency   func() int
 	ComputeLock   *sync.Mutex
+	Budget        *budget.Budget
 }
 
 // queueItem is one unit of work for the worker.
@@ -266,23 +276,18 @@ type matchLifecycle struct {
 	errMsg string
 }
 
-// workerCount is the worker-pool size: the machine's hardware threads —
-// runtime.NumCPU reports the logical CPUs usable by the process, which IS
-// rung 1 of the owner's thread ladder ("as many as the number of threads
-// available on the machine"; Go has no portable physical-core API, so the
-// cores rung cannot be taken portably and the floor is the
-// single-threaded rung — guarded by the n<1 check below). Evaluated once
-// at package init (NumCPU is constant for the process's life). The
-// concurrency pref is clamped to [1, workerCount] (concurrencyLimit), so
-// the goroutine count and the admission bound can never disagree: the
-// pool is sized for the MOST the setting may ask, and a setting of 1
-// simply parks all but one worker.
-var workerCount = func() int {
-	if n := runtime.NumCPU(); n >= 1 {
-		return n
-	}
-	return 1
-}()
+// workerCount is the worker-pool size: the machine's work-token count
+// (budget.MachineTokens — THE thread ladder, documented there: rung 1
+// is Go's execution parallelism GOMAXPROCS(0), container-quota aware;
+// rung 3, the single-threaded floor, is that helper's n < 1 guard).
+// Evaluated once at package init so the pool size is stable for the
+// process's life. The concurrency pref is clamped to [1, workerCount]
+// (concurrencyLimit), so the goroutine count and the admission bound
+// can never disagree: the pool is sized for the MOST the setting may
+// ask, and a setting of 1 simply parks all but one worker. The same
+// helper sizes the machine-wide token pool the jobs draw from — the
+// goroutines and the tokens can never disagree either.
+var workerCount = budget.MachineTokens()
 
 // Importer owns the pool of background worker goroutines plus the
 // per-job cancellation contexts. Create with New; call Shutdown before
@@ -294,9 +299,10 @@ type Importer struct {
 	parserVersion string
 	sidecarDir    string
 	copyDir       string
-	copyEnabled   func() bool // nil ⇒ copy (the default)
-	concurrency   func() int  // nil ⇒ 1 (sequential; see Options.Concurrency)
-	computeLock   *sync.Mutex // nil ⇒ a private lock (see im.analyze)
+	copyEnabled   func() bool    // nil ⇒ copy (the default)
+	concurrency   func() int     // nil ⇒ 1 (sequential; see Options.Concurrency)
+	computeLock   *sync.Mutex    // nil ⇒ a private lock (see im.analyze)
+	budget        *budget.Budget // nil ⇒ unbudgeted (see Options.Budget)
 
 	mu        sync.Mutex
 	cond      *sync.Cond // workers wait for work AND a free slot
@@ -334,6 +340,7 @@ func New(o Options) *Importer {
 		copyEnabled:   o.CopyEnabled,
 		concurrency:   o.Concurrency,
 		computeLock:   o.ComputeLock,
+		budget:        o.Budget,
 		queued:        map[int64]queueItem{},
 		cancels:       map[int64]context.CancelFunc{},
 		cancelled:     map[int64]bool{},
@@ -644,7 +651,24 @@ func (im *Importer) worker() {
 		im.running++
 		im.mu.Unlock()
 
-		im.process(item, ctx, cancel)
+		// Token BEFORE the compute lock (see the worker doc above): the
+		// job body runs only while it holds one machine work token; a
+		// nil Budget (tests) reports true and holds nothing.
+		if im.budget.AcquireWait(ctx.Done()) {
+			im.process(item, ctx, cancel)
+			im.budget.Release() // paired with the acquire above
+		} else {
+			// done fired while parked for a token: terminate through the
+			// existing running-cancel path (failJob "cancelled" — for a
+			// user Cancel the row is already cancelled, and these are the
+			// same writes/events that path's parse abort makes) plus the
+			// claim-time cleanup process would have run.
+			im.failJob(item.jobID, item.matchID, models.StageQueued, "cancelled", true)
+			cancel()
+			im.mu.Lock()
+			delete(im.cancels, item.jobID)
+			im.mu.Unlock()
+		}
 
 		im.mu.Lock()
 		im.running--
