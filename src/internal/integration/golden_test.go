@@ -715,9 +715,6 @@ func compareGolden(t *testing.T, got, want *goldenFixture) {
 	cmpInt(t, "halfT", got.HalfT, want.HalfT)
 	cmpInt(t, "sideSwitches", got.SideSwitches, want.SideSwitches)
 	cmpInt(t, "realRounds", got.RealRounds, want.RealRounds)
-	// Phase 4 regenerates donk.golden.json: roundsTotal (and the event /
-	// chat / generic counts below) drop with the knife/warmup discard —
-	// the committed fixture still carries the pre-discard numbers.
 	cmpInt(t, "roundsTotal", got.RoundsTotal, want.RoundsTotal)
 
 	for _, k := range modelEventKinds {
