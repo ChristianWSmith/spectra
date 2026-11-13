@@ -417,6 +417,48 @@ CREATE TABLE IF NOT EXISTS match_trade_opps (
 	PRIMARY KEY (match_id, steam_id)
 );
 
+-- Stored metric VALUES (owner rulings 2026-11-13): every saved metric is
+-- stored and never calculated for a saved read; a metric is always ONE
+-- number addressed to a player —
+--   match scope   → one value for this player in this match   (match_id > 0)
+--   profile scope → one value for this player's career        (match_id = 0)
+-- NO HISTORY: rows exist only for the CURRENT generation; outdated rows
+-- (either stamp behind) are DELETED by the compute pass, never retained.
+-- Stamps are INTERNAL-ONLY: the canonical read serves only rows where both
+-- stamps are live; no app surface renders a stamp. value 0 always beside n;
+-- a group the statement did not produce has NO row. steam_id has no FK — a
+-- career key does not FK to the per-match roster (player_career precedent,
+-- schema.sql:515-533). Reaching this table's shape on an existing DB is
+-- the wipe's job (pre-release: wipe + re-import, never ALTER).
+CREATE TABLE IF NOT EXISTS metric_values (
+	metric_id       INTEGER NOT NULL REFERENCES metrics(id) ON DELETE CASCADE,
+	match_id        INTEGER NOT NULL DEFAULT 0,   -- 0 = the profile (career) grain
+	steam_id        TEXT    NOT NULL,             -- the subject player (SteamID64, humans only)
+	value           REAL    NOT NULL DEFAULT 0,
+	n               INTEGER NOT NULL DEFAULT 0,   -- sample size behind the value
+	metric_version  INTEGER NOT NULL DEFAULT 0,   -- metrics.version these values were computed under (0 = never stamped = behind)
+	rule_version    INTEGER NOT NULL DEFAULT 0,   -- analysis rule generation that fed them (provenance + rules-axis staleness)
+	computed_at     DATETIME,
+	PRIMARY KEY (metric_id, match_id, steam_id),
+	CHECK (match_id >= 0)
+);
+
+-- Metric→metric dependencies (owner ruling 6): extracted from expr at save
+-- (the metric('name') ref) and stored by the referenced metric's UNIQUE
+-- name — the name IS the expression's identity; ids churn on plugin replace
+-- (ReplacePluginMetrics deletes + re-inserts), names do not. Re-derived
+-- wholesale from the CURRENT expression on every save — no edge ever points
+-- at a superseded expression (no-history model). dep_name has deliberately
+-- NO FK: a system-removed upstream (plugin disable) must leave the edge so
+-- the pass resolves-or-fails it honestly (missing upstream ⇒ dependent rows
+-- absent — never 0). metric_id FKs CASCADE. Deleting a REFERENCED metric is
+-- blocked at the API, never by the DB (plugin replace must not block).
+CREATE TABLE IF NOT EXISTS metric_deps (
+	metric_id INTEGER NOT NULL REFERENCES metrics(id) ON DELETE CASCADE,
+	dep_name  TEXT    NOT NULL,
+	PRIMARY KEY (metric_id, dep_name)
+);
+
 -- Tier 1 index pass (library-wide reads). Placed here because every table
 -- they target now exists (the baseline script runs top-to-bottom).
 --
@@ -450,6 +492,13 @@ CREATE TABLE IF NOT EXISTS match_trade_opps (
 -- first). jobs grows append-forever and these run per listed demo file /
 -- per reprocess, so they must not degrade into table scans as history
 -- accumulates.
+--
+-- Stored metric values: match-leading serves the scoreboard/appendix read
+-- AND the childTables per-match clear; the steam_id-leading member is the
+-- career read (library-wide steam_id convention, like player_career's
+-- consumers); dep_name-leading serves the delete-block/dependents lookup.
+-- The PK's metric_id prefix already serves per-metric invalidation deletes
+-- and the sweep's per-metric outdated-row removal.
 CREATE INDEX IF NOT EXISTS idx_players_steam ON players(steam_id);
 CREATE INDEX IF NOT EXISTS idx_player_stats_steam ON player_stats(steam_id, match_id);
 CREATE INDEX IF NOT EXISTS idx_player_round_stats_steam ON player_round_stats(steam_id, match_id);
@@ -457,6 +506,9 @@ CREATE INDEX IF NOT EXISTS idx_events_kind_match ON events(kind, match_id);
 CREATE INDEX IF NOT EXISTS idx_jobs_path ON jobs(path);
 CREATE INDEX IF NOT EXISTS idx_jobs_match ON jobs(match_id);
 CREATE INDEX IF NOT EXISTS idx_match_trade_opps_steam ON match_trade_opps(steam_id, match_id);
+CREATE INDEX IF NOT EXISTS idx_metric_values_match ON metric_values(match_id, metric_id);
+CREATE INDEX IF NOT EXISTS idx_metric_values_steam ON metric_values(steam_id, metric_id);
+CREATE INDEX IF NOT EXISTS idx_metric_deps_dep ON metric_deps(dep_name);
 
 CREATE TABLE IF NOT EXISTS clutches (
 	match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,

@@ -39,6 +39,8 @@ var tableNotes = map[string]string{
 
 	// M5 (this milestone).
 	"metrics":       "custom metric definitions (origin builtin|user|plugin; declarative metric grammar)",
+	"metric_values": "stored metric VALUES: one number per saved metric per player — match grain (match_id > 0) or career grain (match_id = 0); value 0 always beside n (sample size), a group the statement did not produce has no row",
+	"metric_deps":   "metric→metric dependency edges (which metrics each metric's expression references by name)",
 	"saved_queries": "named SQL console queries (unique names; each row's name is its display label and its description is the muted second line in the console list)",
 	"query_history": "SQL console run history (sql/ms/rows/ok, capped at 100 newest)",
 	"plugins":       "declarative plugin registry",
@@ -95,6 +97,7 @@ var columnNotes = map[string]map[string]string{
 		"origin":      "builtin|user|plugin — the builtin origin ships seeded with the app (exactly one row: trade_rate)",
 		"short_name":  "optional user-entered short label — read ONLY at width-constrained metric column headers (short_name || title || name; title || name everywhere else)",
 		"expr":        "metric grammar: from <table>[, <secondary>...]: <aggregations> (extra sources join engine-side)",
+		"scope":       "'match'|'profile' — where the metric is addressed: this player in one match, or this player's career",
 		"denominator": "scalar subquery source: ''|rounds|matches",
 	},
 }
