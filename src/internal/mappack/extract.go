@@ -8,12 +8,13 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
 
 	"golang.org/x/image/draw"
+
+	"github.com/ChristianWSmith/spectra/internal/budget"
 )
 
 // Extraction: from a CS2 install dir, enumerate radar textures in
@@ -189,6 +190,14 @@ type extractConfig struct {
 	// stub dist on a fresh clone, a map extracted but never bundled) →
 	// nil → the data-dir copy is the only source — never an error.
 	bundledMeta func(mapName string) []byte
+	// budget is the machine-wide work-token pool (internal/budget): each
+	// pool worker takes ONE token around its extractOne (a sustained
+	// heavy unit), so map decoding shares the machine with imports and
+	// recomputes instead of stacking on them. nil ⇒ unbudgeted (the
+	// no-op every construction site without the option gets — tests
+	// included); production wires ONE shared budget from main through
+	// WithBudget.
+	budget *budget.Budget
 }
 
 // WithProgress supplies the per-item progress callback
@@ -204,6 +213,15 @@ func WithProgress(fn func(done, total int)) ExtractOption {
 // extraction only knows the data-dir pack's own previous meta.json.
 func WithBundledMeta(fn func(mapName string) []byte) ExtractOption {
 	return func(c *extractConfig) { c.bundledMeta = fn }
+}
+
+// WithBudget supplies the machine-wide work-token pool (extractConfig.
+// budget): every per-map pool worker takes ONE token around its
+// extractOne and hands it back after — the map job's share of the
+// machine (wired from main.go through MapPackService; nil keeps the
+// unbudgeted behavior).
+func WithBudget(b *budget.Budget) ExtractOption {
+	return func(c *extractConfig) { c.budget = b }
 }
 
 // metaFor returns the bundled meta.json bytes for mapName, or nil when
@@ -233,7 +251,8 @@ var extractMu sync.Mutex
 // updates). Individual map failures are reported in errs but don't abort
 // the rest; a failure to even open the VPK is fatal. The maps are
 // independent, so the decode+upscale work runs on a per-map worker pool
-// of poolSize() goroutines (the owner's thread ladder) — outputs,
+// of poolSize() goroutines (budget.MachineTokens — the thread ladder)
+// — outputs,
 // result order and the progress contract are identical to the serial
 // loop. Options tune the run: WithProgress fires once per map attempted
 // (serialized — one call at a time), and WithBundledMeta makes the
@@ -306,10 +325,19 @@ func ExtractMapPacks(cs2Dir, outDir string, opts ...ExtractOption) (maps []Extra
 	done := 0
 	runJobs(poolSize(), len(jobs), func(i int) {
 		job := jobs[i]
+		// Machine-wide work token BEFORE the CPU-bound extractOne
+		// (internal/budget): one token per map job, held for the whole
+		// decode+upscale+write. Plain blocking Acquire — asset
+		// extraction has no cancellation, so a map job parked while a
+		// full import batch holds every token waits for the next job
+		// boundary (the accepted tradeoff: an honest, unquantifiable
+		// wait). nil budget (no WithBudget) = no-op, unchanged.
+		cfg.budget.Acquire()
 		if extractJobHook != nil {
-			extractJobHook(job.mapName) // test seam: observe in-flight maps
+			extractJobHook(job.mapName) // test seam: observe in-flight maps (inside the token)
 		}
 		err := extractOne(v, job.mapName, job.radarPath, outDir, &cfg)
+		cfg.budget.Release()
 		progMu.Lock()
 		done++
 		if cfg.progress != nil {
@@ -334,20 +362,15 @@ func ExtractMapPacks(cs2Dir, outDir string, opts ...ExtractOption) (maps []Extra
 	return maps, errs, nil
 }
 
-// poolSize is the per-map worker count for ExtractMapPacks' pool — the
-// product owner's thread ladder (2026-11-12): "equal to the number of
-// threads available on the machine … fall back to the number of cores
-// … fall back to single-threaded." runtime.NumCPU reports the hardware
-// threads (logical CPUs) schedulable to this process — the first rung;
-// when the runtime can't report any (n < 1, defensive) fall back to one
-// worker. Not user-configurable (the owner asked for a setting only on
-// demo imports).
+// poolSize is the per-map worker count for ExtractMapPacks' pool —
+// budget.MachineTokens, THE thread ladder (documented there once: rung
+// 1 is Go's execution parallelism GOMAXPROCS(0), container-quota
+// aware; rung 3, the single-threaded floor, is that helper's n < 1
+// guard). One-line delegate on purpose: the ladder lives in
+// internal/budget, never restated here. Not user-configurable (the
+// owner asked for a setting only on demo imports).
 func poolSize() int {
-	n := runtime.NumCPU()
-	if n < 1 {
-		return 1
-	}
-	return n
+	return budget.MachineTokens()
 }
 
 // runJobs runs fn over every index 0..n-1 with at most workers
@@ -388,11 +411,12 @@ func runJobs(workers, n int, fn func(i int)) {
 }
 
 // extractJobHook, nil outside tests, is called by the pool with a
-// map's name BEFORE its extraction starts — the seam the pool tests
-// use to observe genuinely in-flight maps (a barrier through the REAL
-// ExtractMapPacks entry point, not a sleep). Set it before a run and
-// restore it after the run returns (the pool has drained by then), so
-// concurrent test goroutines never race on the variable.
+// map's name BEFORE its extraction starts — inside the worker's
+// machine-work-token hold (see the pool closure) — the seam the pool
+// tests use to observe genuinely in-flight maps (a barrier through the
+// REAL ExtractMapPacks entry point, not a sleep). Set it before a run
+// and restore it after the run returns (the pool has drained by then),
+// so concurrent test goroutines never race on the variable.
 var extractJobHook func(mapName string)
 
 // radarBase derives a map/section name from a radar path:

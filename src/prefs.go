@@ -3,10 +3,11 @@ package main
 import (
 	"math"
 	"path/filepath"
-	"runtime"
 
 	"github.com/adrg/xdg"
 	"github.com/wailsapp/wails/v3/pkg/services/kvstore"
+
+	"github.com/ChristianWSmith/spectra/internal/budget"
 )
 
 // Preference keys stored in the app's kvstore (a JSON file under the OS
@@ -57,8 +58,8 @@ const (
 
 	// prefsImportConcurrencyKey is how many import jobs run AT ONCE (the
 	// "Concurrent imports" numeric control in Settings; 1 = sequential).
-	// Integer, DEFAULT runtime.NumCPU() — this machine's thread count
-	// (unset ⇒ maxConcurrentImports below decides the ladder). Written by
+	// Integer, DEFAULT budget.MachineTokens — the machine's work-token
+	// budget (unset ⇒ maxConcurrentImports below decides the ladder). Written by
 	// LibraryService.SetImportConcurrency, read by
 	// library.Options.Concurrency PER JOB at claim time (so a change
 	// applies to jobs already queued — the copy-on-import shape) and
@@ -175,29 +176,31 @@ func copyOnImportPref(kvs *kvstore.KVStoreService) func() bool {
 }
 
 // maxConcurrentImports is the ceiling AND the default of the
-// import_concurrency pref — the owner's thread ladder (2026-11-12), one
+// import_concurrency pref — the owner's thread ladder (2026-11-12; the
+// ladder's home is budget.MachineTokens since 2026-11-13), one
 // rung at a time:
 //
-//  1. Threads: runtime.NumCPU() — the number of logical CPUs (hardware
-//     threads) usable by the process, i.e. exactly "the number of threads
-//     available on the machine". This is rung 1 and it is reachable, so
-//     it is THE default.
+//  1. Threads: runtime.GOMAXPROCS(0) — see budget.MachineTokens, THE
+//     canonical ladder (consolidated there 2026-11-13): Go's execution
+//     parallelism honors a GOMAXPROCS env var or container CPU quota
+//     where NumCPU would over-allocate. This is rung 1 and it is
+//     reachable, so it is THE default.
 //  2. Cores: unreachable portably — Go exposes no physical-core API
 //     (SMT makes threads ≠ cores and there is no stdlib way to ask), so
 //     this rung is documented rather than taken.
-//  3. Single-threaded: the floor. NumCPU is ≥ 1 on every supported
-//     platform; the n < 1 guard below still collapses a degenerate answer
-//     to 1 so the setting can never ask for 0 (or negative) jobs.
+//  3. Single-threaded: the floor — budget.MachineTokens' n < 1 guard
+//     collapses a degenerate answer to 1 so the setting can never ask
+//     for 0 (or negative) jobs.
 //
-// The stored value is clamped into [1, this] on every read and write
+// The pref now means "how many of the machine's work tokens imports
+// may take" (one token per job — internal/budget). The stored value is
+// clamped into [1, this] on every read and write
 // (clampImportConcurrency): a corrupt or stale pref never asks for more
-// concurrency than the pool has workers (library.workerCount — NumCPU
-// again, so the two bounds always agree), nor for less than one.
+// concurrency than the pool has workers (library.workerCount — the same
+// budget.MachineTokens, so the two bounds always agree), nor for less
+// than one.
 func maxConcurrentImports() int {
-	if n := runtime.NumCPU(); n >= 1 {
-		return n
-	}
-	return 1 // single-threaded rung (defensive — see the ladder above)
+	return budget.MachineTokens()
 }
 
 // clampImportConcurrency folds a requested value into [1, max].
@@ -216,7 +219,7 @@ func clampImportConcurrency(n int) int {
 // kvstore: the import_concurrency pref consulted ONCE PER JOB (claim
 // time), so a Settings change applies to jobs already queued — the same
 // per-job shape as copyOnImportPref. Unset or corrupt ⇒ the default
-// (maxConcurrentImports — the machine's thread count); an out-of-range
+// (maxConcurrentImports — the machine's work-token budget); an out-of-range
 // integer clamps into [1, max] instead of falling back, so a stale pref
 // from a bigger machine still runs here — at this machine's bound. The
 // kvstore is internally locked (RWMutex), so a worker goroutine may call

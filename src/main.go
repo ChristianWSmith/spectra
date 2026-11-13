@@ -27,6 +27,7 @@ import (
 	"github.com/wailsapp/wails/v3/pkg/updater/providers/github"
 
 	"github.com/ChristianWSmith/spectra/internal/analytics"
+	"github.com/ChristianWSmith/spectra/internal/budget"
 	"github.com/ChristianWSmith/spectra/internal/data"
 	"github.com/ChristianWSmith/spectra/internal/extract"
 	"github.com/ChristianWSmith/spectra/internal/library"
@@ -158,8 +159,9 @@ func main() {
 	})
 	svc.app = app
 
-	// Import pipeline: a worker pool sized to this machine's thread count,
-	// events out through the app's event manager. Deferred after st.Close
+	// Import pipeline: a worker pool sized to the machine's work-token
+	// count (budget.MachineTokens), events out through the app's event
+	// manager. Deferred after st.Close
 	// above, so it runs first (LIFO). CopyEnabled reads the
 	// copy_on_import pref per job (copyOnImportPref) and Concurrency the
 	// import_concurrency pref per claim (importConcurrencyPref), so a
@@ -167,7 +169,16 @@ func main() {
 	// analytics-pass lock shared with AnalyticsService below — an import's
 	// analyze and a background recompute never overlap (RebuildCareer is
 	// a full-library read-modify-write).
+	//
+	// ONE machine-wide work-token budget (internal/budget): every
+	// sustained heavy unit — an import job, an asset map job, a rules
+	// recompute — takes ONE token for its duration, so overlapping
+	// subsystems share the machine's GOMAXPROCS tokens deterministically
+	// instead of stacking (alone, each still gets ALL tokens). Hand-wired
+	// into every consumer below (services take dependencies by hand);
+	// every token is acquired BEFORE the compute lock, never after.
 	computeLock := &sync.Mutex{}
+	b := budget.New(budget.MachineTokens())
 	imp := library.New(library.Options{
 		Store: st,
 		Parse: extract.Parse,
@@ -178,6 +189,7 @@ func main() {
 		CopyEnabled:   copyOnImportPref(kvs),
 		Concurrency:   importConcurrencyPref(kvs),
 		ComputeLock:   computeLock,
+		Budget:        b,
 	})
 	defer imp.Shutdown()
 
@@ -195,13 +207,13 @@ func main() {
 	app.RegisterService(application.NewService(&LibraryService{st: st, imp: imp, sc: sc, kvs: kvs, app: app}))
 	app.RegisterService(application.NewService(&MatchService{st: st, imp: imp}))
 	app.RegisterService(application.NewService(&ReplayService{st: st, app: app}))
-	app.RegisterService(application.NewService(&AnalyticsService{st: st, app: app, computeLock: computeLock}))
+	app.RegisterService(application.NewService(&AnalyticsService{st: st, app: app, computeLock: computeLock, budget: b}))
 	app.RegisterService(application.NewService(&ProfileService{st: st, app: app}))
 	app.RegisterService(application.NewService(&VoiceService{st: st, app: app}))
 	app.RegisterService(application.NewService(&MetricsService{st: st, app: app}))
 	app.RegisterService(application.NewService(&QueryService{st: st, app: app}))
 	app.RegisterService(application.NewService(&PlatformService{st: st, app: app}))
-	app.RegisterService(application.NewService(&MapPackService{kvs: kvs, app: app}))
+	app.RegisterService(application.NewService(&MapPackService{kvs: kvs, app: app, budget: b}))
 	app.RegisterService(application.NewService(&IconService{kvs: kvs, app: app}))
 	app.RegisterService(application.NewService(&SoundService{kvs: kvs, app: app}))
 	// DialogService: native save dialogs + writes. SaveExport serves the
@@ -256,7 +268,10 @@ func runImport(path string) {
 	// Same prefs as the GUI, loaded straight (no window, no service
 	// registration): the headless import honors copy_on_import and
 	// import_concurrency, and an unset pref keeps the defaults of copying
-	// and of running jobs at the machine's thread count.
+	// and of running jobs at the machine's work-token budget
+	// (budget.MachineTokens). Single producer here, but the same ONE
+	// budget shape as the GUI wiring: the job takes one token for its
+	// body (Budget below) — consistent, not load-bearing.
 	kvs := kvstore.NewWithConfig(&kvstore.Config{
 		Filename: prefsFilename(),
 		AutoSave: true,
@@ -271,6 +286,7 @@ func runImport(path string) {
 		ParserVersion: extract.ParserVersion,
 		CopyEnabled:   copyOnImportPref(kvs),
 		Concurrency:   importConcurrencyPref(kvs),
+		Budget:        budget.New(budget.MachineTokens()),
 	})
 	defer imp.Shutdown()
 
