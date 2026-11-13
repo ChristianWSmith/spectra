@@ -19,6 +19,11 @@
   // Server defaults echoed in the header (query.DefaultLimit / DefaultTimeoutMS).
   const DEFAULTS = 'rows cap 5,000 · timeout 5 s';
   const GRID_CAP = 2000; // render cap for very wide results; exports always carry every row
+  // Tooltip cap for the list rows' title attributes: the full statement
+  // loads into the editor on click, so a hover preview never puts a
+  // multi-MB raw SQL string into a DOM attribute (cellTitle gates on
+  // length, this bounds what survives the gate).
+  const SQL_TITLE_CAP = 500;
 
   let schema = $state([]);
   let schemaError = $state('');
@@ -429,10 +434,10 @@
               <div class="sql-hist as-row">
                 <button
                   class="sql-hist-load"
-                  title={sq.sql}
+                  title={short(cellTitle(sq.sql), SQL_TITLE_CAP)}
                   onclick={() => (sql = sq.sql)}
                 >
-                  <span class="sql-saved-name">{sq.name}</span>
+                  <span class="sql-saved-name" title={sq.name}>{sq.name}</span>
                   <span class="mono sql-hist-sql">{short(truncateSql(sq.sql), 100)}</span>
                 </button>
                 <button
@@ -460,7 +465,7 @@
           {/if}
           <div class="sql-hist-list">
             {#each history as h (h.id)}
-              <button class="sql-hist" title={h.sql} onclick={() => (sql = h.sql)}>
+              <button class="sql-hist" title={short(cellTitle(h.sql), SQL_TITLE_CAP)} onclick={() => (sql = h.sql)}>
                 <span
                   class="sql-dot"
                   class:ok={h.ok}
