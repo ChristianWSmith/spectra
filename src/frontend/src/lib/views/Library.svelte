@@ -42,13 +42,17 @@
   // column (the store whitelists the keys — see matchListSort), a second
   // click on the active header flips the direction. The first click
   // applies the column's natural default — newest/largest first for dates
-  // and sizes, A→Z for names. Matchup is synthesized client-side and
-  // Actions is not data, so those headers stay plain.
+  // and sizes, A→Z for names. The split score columns default along their
+  // own axis: W Score desc = most decisive finishes first, L Score asc =
+  // most lopsided games first (a low loser score is a stomp either way).
+  // Matchup is synthesized client-side and Actions is not data, so those
+  // headers stay plain.
   const SORT_DEFAULT_DESC = {
     extracted_at: true,
     map: false,
     size: true,
-    score: true,
+    winner_score: true,
+    loser_score: false,
     duration: true,
     rounds: true,
     status: false,
@@ -834,7 +838,8 @@
           <tr>
             <SortTh label="Map" active={sortKey === 'map'} {desc} onclick={() => toggleSort('map')} />
             <th scope="col">Matchup</th>
-            <SortTh label="Score" cls="num" active={sortKey === 'score'} {desc} onclick={() => toggleSort('score')} />
+            <SortTh label="W Score" cls="num" active={sortKey === 'winner_score'} {desc} onclick={() => toggleSort('winner_score')} />
+            <SortTh label="L Score" cls="num" active={sortKey === 'loser_score'} {desc} onclick={() => toggleSort('loser_score')} />
             <SortTh label="Rounds" cls="num" active={sortKey === 'rounds'} {desc} onclick={() => toggleSort('rounds')} />
             <SortTh label="Duration" cls="num" active={sortKey === 'duration'} {desc} onclick={() => toggleSort('duration')} />
             <SortTh label="Size" cls="num" active={sortKey === 'size'} {desc} onclick={() => toggleSort('size')} />
@@ -861,6 +866,7 @@
                    inflate the Matchup column while the job ran, then collapse
                    it the moment the match row landed. -->
               <td><span class="mono lib-demo-name" title={job.path}>{basename(job.path)}</span></td>
+              <td class="num">—</td>
               <td class="num">—</td>
               <td class="num">—</td>
               <td class="num">—</td>
@@ -917,13 +923,23 @@
                   {matchup(m)}
                 {/if}
               </td>
+              <!-- Split score columns: W = max(scoreCT, scoreT), L =
+                   min() — the composite "13–9" line had no meaningful
+                   single sort order, each axis does (winner_score /
+                   loser_score in matchListSort). The W cell carries the
+                   WINNER's side colour: the final score is the side at
+                   match end, which is what colour means here; a draw has
+                   no winner, so both cells stay neutral, and a
+                   never-extracted row shows "—" in both (the extracted_at
+                   gate above). -->
               <td class="num">
                 {#if neverExt}
                   —
                 {:else}
-                  <span class="ct">{m.scoreCT}</span>–<span class="t">{m.scoreT}</span>
+                  <span class:ct={m.scoreCT > m.scoreT} class:t={m.scoreT > m.scoreCT}>{Math.max(m.scoreCT, m.scoreT)}</span>
                 {/if}
               </td>
+              <td class="num">{neverExt ? '—' : Math.min(m.scoreCT, m.scoreT)}</td>
               <td class="num">{neverExt ? '—' : m.realRounds}</td>
               <td class="num">{neverExt ? '—' : fmtDuration(m.durationS)}</td>
               <td class="num">{fmtBytes(m.size)}</td>

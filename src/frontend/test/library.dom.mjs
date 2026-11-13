@@ -12,11 +12,11 @@
 // focus stop) and presents like the synthetic queued row — the
 // never-extracted gate (fmt.js neverExtracted, i.e. the extracted_at
 // stamp): the demo's file name in Matchup on the lib-demo-name cap, "—"
-// for score/rounds/duration (Size keeps its real value), the
-// placeholder date, and — with no job in the jobs snapshot — ZERO action
-// buttons (the disabled Re-parse/Delete pair is gone; the ready row's
-// pair stays live). Section D also pins the empty state's copy: no
-// import button of its own, the header owns it.
+// for the W/L score, rounds and duration cells (Size keeps its real
+// value), the placeholder date, and — with no job in the jobs snapshot —
+// ZERO action buttons (the disabled Re-parse/Delete pair is gone; the
+// ready row's pair stays live). Section D also pins the empty state's
+// copy: no import button of its own, the header owns it.
 // Section F covers the queue's visible half: synthetic import rows for
 // jobs with no match row yet (chip + determinate bar + Remove), a match
 // row owned by a queued reprocess (queued chip + Remove — one control;
@@ -410,6 +410,37 @@ await sleep(350); // past the 250 ms debounce
   check('fetch fired with the new map facet', f && f.map === 'cache', JSON.stringify(c && c.args));
   check('player facet preserved', f && f.player === '76561198000000001');
   check('scripted rows render', $('tbody tr').length === 1, String($('tbody tr').length));
+  // RE-PIN (owner ruling — a composite "13–9" scoreline has no
+  // meaningful single sort order): the one Score column is TWO columns,
+  // W Score = max(scoreCT, scoreT), L Score = min(), each with its own
+  // store sort key (winner_score / loser_score). Header old → new:
+  // "Score" → "W Score" + "L Score". Cell old → new: "13–9" (CT-blue 13,
+  // T-orange 9) → "13" in the WINNER's side colour (CT took this match —
+  // colour = the side at match end, which is what the final score is) +
+  // a neutral "9" (the loser's side colour says nothing new here).
+  {
+    const heads = [...document.querySelectorAll('.dropzone .data-table thead th')].map(
+      (th) => th.textContent.trim(),
+    );
+    check(
+      'RE-PIN: Score header split into W Score + L Score (exact "Score" gone)',
+      heads.includes('W Score') && heads.includes('L Score') && !heads.includes('Score'),
+      JSON.stringify(heads),
+    );
+    const scoreTr = $('tbody tr')[0];
+    const scoreCells = [...scoreTr.children].map((td) => td.textContent.trim());
+    const wSpan = scoreTr.children[2].querySelector('span');
+    check(
+      'RE-PIN: cell 13–9 → W 13 (winner side colour) + L 9 (neutral)',
+      scoreCells[2] === '13' &&
+        scoreCells[3] === '9' &&
+        !!wSpan &&
+        wSpan.classList.contains('ct') &&
+        !wSpan.classList.contains('t') &&
+        !scoreTr.children[3].querySelector('.ct, .t'),
+      `${JSON.stringify(scoreCells)} / w=${wSpan && wSpan.className} / l=${scoreTr.children[3].innerHTML}`,
+    );
+  }
   // An extracted (ready) row stays the openable kind: pointer cursor +
   // focus stop + navigation on click AND on Enter.
   {
@@ -644,21 +675,23 @@ await sleep(350); // past the 250 ms debounce
   const cells = [...tr.children].map((td) => td.textContent.trim());
   check(
     'EXTRACTED cell shows the placeholder, not a year-0001 date',
-    cells[6] === '—',
-    JSON.stringify(cells[6]),
+    cells[7] === '—',
+    JSON.stringify(cells[7]),
   );
   // The owner's queued-row look, gated on the extracted_at stamp (never
-  // the status): the demo's file name takes the Matchup cell and
-  // score/rounds/duration read "—" instead of 0–0/0/0s. Size KEEPS its
+  // the status): the demo's file name takes the Matchup cell and the
+  // W/L score, rounds and duration cells read "—" instead of 0–0/0/0s
+  // (the split score column shows "—" in BOTH halves). Size KEEPS its
   // real value — it is known, and hiding real data to mirror the
   // synthetic row's "—" would be a downgrade ("basically the same").
   check(
-    'never-extracted cells: file name in Matchup, — score/rounds/duration, size kept',
+    'never-extracted cells: file name in Matchup, — W score/L score/rounds/duration, size kept',
     cells[1] === 'b.dem' &&
       cells[2] === '—' &&
       cells[3] === '—' &&
       cells[4] === '—' &&
-      cells[5] === '2.0 MB',
+      cells[5] === '—' &&
+      cells[6] === '2.0 MB',
     JSON.stringify(cells),
   );
   const nameEl = tr.children[1].querySelector('span');
@@ -824,7 +857,7 @@ const failedFreshRow = {
 };
 // REPROCESS mid-parse WITH prior data — the anti-regression pin for the
 // extracted_at gate: nothing clears the old values (Reprocess only flips
-// status), so the row keeps its score/rounds/duration/matchup and the
+// status), so the row keeps its W/L score, rounds/duration/matchup and the
 // reference 3-button set (Cancel live, Re-parse/Delete disabled).
 const reprocessParsingRow = {
   id: 6,
@@ -1053,7 +1086,8 @@ await sleep(350); // past the 250 ms debounce
       cells[2] === '—' &&
       cells[3] === '—' &&
       cells[4] === '—' &&
-      cells[6] === '—',
+      cells[5] === '—' &&
+      cells[7] === '—',
     JSON.stringify(cells),
   );
   const btns = [...tr.querySelectorAll('.row-actions button')];
@@ -1074,9 +1108,9 @@ await sleep(350); // past the 250 ms debounce
 
 {
   // REPROCESS mid-parse WITH prior data — the anti-regression pin for
-  // the extracted_at gate: old values stay on screen (score/rounds/
-  // duration/matchup) and the row keeps the reference 3-button set —
-  // Cancel live, Re-parse/Delete disabled — exactly as before the
+  // the extracted_at gate: old values stay on screen (W/L score,
+  // rounds/duration/matchup) and the row keeps the reference 3-button
+  // set — Cancel live, Re-parse/Delete disabled — exactly as before the
   // never-extracted presentation was introduced.
   const prevRowsForFacetRep = rowsForFacet;
   rowsForFacet = (f) =>
@@ -1088,12 +1122,13 @@ await sleep(350); // past the 250 ms debounce
   const tr = rows[1];
   const cells = [...tr.children].map((td) => td.textContent.trim());
   check(
-    'reprocess parsing row keeps its OLD values (matchup, 13–9, 22 rounds, 30m00s)',
+    'reprocess parsing row keeps its OLD values (matchup, 13/9 split, 22 rounds, 30m00s)',
     cells[1] === 'Old vs Guard' &&
-      cells[2] === '13–9' &&
-      cells[3] === '22' &&
-      cells[4] === '30m00s' &&
-      cells[6] !== '—',
+      cells[2] === '13' &&
+      cells[3] === '9' &&
+      cells[4] === '22' &&
+      cells[5] === '30m00s' &&
+      cells[7] !== '—',
     JSON.stringify(cells),
   );
   const btns = [...tr.querySelectorAll('.row-actions button')];
@@ -1562,14 +1597,17 @@ const ruleBody = (sel) => {
     head ? head.outerHTML.slice(0, 140) : 'no Status header',
   );
   const rows = matchRows();
+  // children[8]: the split score columns added a cell before Status
+  // (Map, Matchup, W Score, L Score, Rounds, Duration, Size, Imported,
+  // Status, Actions).
   check(
     'every match-table row reserves its status cell',
-    rows.length > 0 && rows.every((tr) => tr.children[7].classList.contains('lib-status-col')),
-    JSON.stringify(rows.map((tr) => tr.children[7] && tr.children[7].className)),
+    rows.length > 0 && rows.every((tr) => tr.children[8].classList.contains('lib-status-col')),
+    JSON.stringify(rows.map((tr) => tr.children[8] && tr.children[8].className)),
   );
   check(
     'the synthetic job row reserves its status cell too',
-    rows.some((tr) => tr.hasAttribute('data-pending-import') && tr.children[7].classList.contains('lib-status-col')),
+    rows.some((tr) => tr.hasAttribute('data-pending-import') && tr.children[8].classList.contains('lib-status-col')),
   );
 
   const dirHead = $(
@@ -1627,7 +1665,10 @@ console.log('K. view-state registry: sort restores across a remount; URL facets 
   // The jsdom cross-talk rule (viewstate.svelte.js header): this suite
   // shares ONE registry instance — reset before pinning fresh mounts.
   viewstate.resetViewState();
-  // A rendered table (→ sortable headers): one ready row, no facets.
+  // A rendered table (→ sortable headers): two ready rows, no facets —
+  // the second is the DRAW fixture for the split score columns (equal
+  // scores: both W/L cells show the same value, max = min, no invented
+  // tie-break, and neither cell is side-coloured — no side took it).
   const kRow = {
     id: 42,
     path: '/d/k.dem',
@@ -1643,7 +1684,22 @@ console.log('K. view-state registry: sort restores across a remount; URL facets 
     status: 'ready',
     error: '',
   };
-  rowsForFacet = () => [kRow];
+  const drawRow = {
+    id: 43,
+    path: '/d/draw.dem',
+    map: 'de_season',
+    size: 2048,
+    scoreCT: 12,
+    scoreT: 12,
+    ctName: 'D1',
+    tName: 'D2',
+    realRounds: 24,
+    durationS: 2400,
+    extractedAt: '2026-02-03T00:00:00Z',
+    status: 'ready',
+    error: '',
+  };
+  rowsForFacet = () => [kRow, drawRow];
 
   const mountLib = async (query) => {
     // Flush the read cache (services.cachedRead — same module instance
@@ -1672,6 +1728,71 @@ console.log('K. view-state registry: sort restores across a remount; URL facets 
   check(
     'fresh mount sorts by the default key/direction',
     sortOf() && sortOf().sk === 'extracted_at' && sortOf().desc === true,
+    JSON.stringify(sortOf()),
+  );
+
+  // (a2) the split score columns: cell values on both rendered rows
+  // (13-11 → W13 in the winner's side colour + neutral L11; the draw
+  // 12-12 → both cells 12, neither side-coloured), then one header
+  // click per axis — first click applies the column's natural default
+  // (W desc = most decisive finishes first, L asc = most lopsided games
+  // first), the second flips the active header like every other SortTh.
+  {
+    const rowByText = (txt) =>
+      [...document.querySelectorAll('.dropzone .data-table tbody tr')].find((tr) =>
+        tr.textContent.includes(txt),
+      );
+    const cellsOf = (tr) => (tr ? [...tr.children].map((td) => td.textContent.trim()) : null);
+
+    const kTr = rowByText('K1 vs K2');
+    const kCells = cellsOf(kTr);
+    const kW = kTr && kTr.children[2].querySelector('span');
+    check(
+      'ready row split: W 13 (winner side colour) + L 11 (neutral)',
+      !!kCells &&
+        kCells[2] === '13' &&
+        kCells[3] === '11' &&
+        !!kW &&
+        kW.classList.contains('ct') &&
+        !kW.classList.contains('t') &&
+        !kTr.children[3].querySelector('.ct, .t'),
+      JSON.stringify(kCells),
+    );
+
+    const dTr = rowByText('D1 vs D2');
+    const dCells = cellsOf(dTr);
+    const dW = dTr && dTr.children[2].querySelector('span');
+    check(
+      'draw row: both cells 12 (max = min), no side colour on either cell',
+      !!dCells &&
+        dCells[2] === '12' &&
+        dCells[3] === '12' &&
+        !!dW &&
+        !dW.classList.contains('ct') &&
+        !dW.classList.contains('t') &&
+        !dTr.children[3].querySelector('.ct, .t'),
+      JSON.stringify(dCells),
+    );
+  }
+  click(sortBtn(a.t, 'W Score'));
+  await sleep(350); // past the 250 ms debounce
+  check(
+    'W Score click → winner_score, default desc (most decisive finishes first)',
+    sortOf() && sortOf().sk === 'winner_score' && sortOf().desc === true,
+    JSON.stringify(sortOf()),
+  );
+  click(sortBtn(a.t, 'W Score'));
+  await sleep(350);
+  check(
+    'second W Score click flips the direction (desc → asc)',
+    sortOf() && sortOf().sk === 'winner_score' && sortOf().desc === false,
+    JSON.stringify(sortOf()),
+  );
+  click(sortBtn(a.t, 'L Score'));
+  await sleep(350);
+  check(
+    'L Score click → loser_score, default asc (most lopsided games first)',
+    sortOf() && sortOf().sk === 'loser_score' && sortOf().desc === false,
     JSON.stringify(sortOf()),
   );
 
@@ -1761,11 +1882,14 @@ check(
   coldTarget.querySelector('.dropzone .chip-block')?.outerHTML.slice(0, 160) ?? 'missing',
 );
 await sleep(400); // both reads landed
+// Row count is section K's fixture (the ready row + the split-score
+// draw row): the pin is the GATE (no Loading…, table present), the
+// count just proves the data rendered.
 check(
   'after both reads land: the list renders and the gate is gone',
   !coldTarget.textContent.includes('Loading…') &&
     coldTarget.querySelectorAll('.dropzone .data-table tbody tr:not([data-pending-import])')
-      .length === 1,
+      .length === 2,
   coldDrop().slice(0, 140),
 );
 
