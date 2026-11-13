@@ -980,6 +980,80 @@ const dismissInPlace = async (r, needle, stillThere) => {
   check('✕ clears the Economy error in place (its head row intact)', res.gone && res.mounted && res.noNav, JSON.stringify(res));
 }
 
+console.log('J. Scoreboard metric header: m5-mth cap scope, tooltip survives, source pin');
+{
+  // One pinned metric so the METRIC SortTh actually renders: the width
+  // cap is a class Match puts on the metric header only (static
+  // SCORE_COLS must never wear it), the ⓘ / (n) / unpin widgets must
+  // stay OUTSIDE the capped .th-sort button (the cap bounds the label
+  // text alone), and the th's title tooltip must survive untouched.
+  // jsdom has no layout, so the cap RULE itself is pinned from the
+  // stylesheet source (section G's precedent).
+  localStorage.setItem('spectra:pinned-metrics', '[7]');
+  const d = {
+    ...dataFor(13),
+    listMetrics: [
+      { id: 7, name: 'util_dmg', title: 'Utility damage per round', doc: 'Grenade damage dealt per round' },
+    ],
+    previewMetric: {
+      rows: [
+        { group: 'A', value: 12.5, n: 13 },
+        { group: 'B', value: 9.2, n: 13 },
+      ],
+    },
+  };
+  root = await showMatch(d, { routeTab: 'Scoreboard' });
+  await sleep();
+  const ths = [...root.querySelectorAll('.data-table.scoreboard thead th')];
+  const metricTh = ths.find(
+    (t) => (t.querySelector('.th-sort')?.textContent || '').includes('Utility damage per round'),
+  );
+  const staticTh = ths.find((t) => (t.querySelector('.th-sort')?.textContent || '').trim() === 'K');
+  check(
+    'metric header wears m5-mth (the cap scope); static SCORE_COLS never do',
+    !!metricTh &&
+      metricTh.classList.contains('m5-mth') &&
+      !!staticTh &&
+      !staticTh.classList.contains('m5-mth'),
+    metricTh
+      ? `metric=${metricTh.className} static=${staticTh ? staticTh.className : 'no K header'}`
+      : 'no metric header rendered',
+  );
+  const widgetsInButton = metricTh?.querySelector('.th-sort .m5-ib, .th-sort .m5-n, .th-sort .m5-unpin');
+  const widgetCount = metricTh
+    ? metricTh.querySelectorAll(':scope > .m5-ib, :scope > .m5-n, :scope > .m5-unpin').length
+    : -1;
+  check(
+    'the cap covers the label button only — ⓘ / (n) / unpin stay outside it',
+    !!metricTh && !widgetsInButton && widgetCount === 3,
+    `outside-widgets=${widgetCount} inside-button=${!!widgetsInButton}`,
+  );
+  check(
+    'the metric th still carries its title tooltip (SortTh untouched)',
+    !!metricTh && metricTh.getAttribute('title') === 'Grenade damage dealt per round',
+    metricTh ? JSON.stringify(metricTh.getAttribute('title')) : 'no metric header',
+  );
+  const cssM3a = readFileSync('public/style-m3a.css', 'utf8');
+  const ruleOf = (src, sel) => {
+    const i = src.indexOf(sel);
+    if (i < 0) return null;
+    const open = src.indexOf('{', i);
+    if (open < 0) return null;
+    const close = src.indexOf('}', open);
+    return close < 0 ? null : src.slice(open + 1, close);
+  };
+  const capRule = ruleOf(cssM3a, '.m5-mth .th-sort {');
+  check(
+    'the metric-header cap rule still bounds the label (max-width + ellipsis + nowrap)',
+    !!capRule &&
+      /max-width:\s*260px/.test(capRule) &&
+      /text-overflow:\s*ellipsis/.test(capRule) &&
+      /white-space:\s*nowrap/.test(capRule),
+    capRule ? capRule.trim() : 'rule .m5-mth .th-sort not found in public/style-m3a.css',
+  );
+  localStorage.removeItem('spectra:pinned-metrics');
+}
+
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
 if (inst) unmount(inst);
 console.log(failures ? `\n${failures} FAILURE(S)` : '\nALL PASS');

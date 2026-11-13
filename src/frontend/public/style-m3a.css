@@ -898,6 +898,21 @@ canvas.heat-canvas {
   color: var(--danger);
 }
 
+/* Metric header label rides the canonical truncation cap (the
+   .lib-demo-name pattern in style.css) so one long metric title can
+   never widen its scoreboard column without bound; the header's full
+   tooltip is the th's title, untouched. Scope is m5-mth, the class
+   Match puts on the METRIC SortTh only — static SCORE_COLS don't wear
+   it — and the ⓘ / (n) / unpin widgets sit OUTSIDE .th-sort, so the
+   cap applies to the label text alone. */
+.m5-mth .th-sort {
+  display: inline-block;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .m5-cell {
   font-variant-numeric: tabular-nums;
 }

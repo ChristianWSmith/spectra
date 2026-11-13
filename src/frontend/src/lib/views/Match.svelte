@@ -988,7 +988,7 @@
               {#each metricCols as mc (mc.def.id)}
                 <SortTh
                   label={mc.def.title || mc.def.name}
-                  cls="num def"
+                  cls="num def m5-mth"
                   title="{mc.def.doc || mc.def.name}{mc.error ? ` — couldn’t calculate: ${mc.error}` : ''}"
                   active={sortKey === metricSortKey(mc.def.id)}
                   {desc}

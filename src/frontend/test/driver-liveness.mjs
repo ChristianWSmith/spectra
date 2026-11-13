@@ -64,13 +64,15 @@ const PROBE_POOL = 4;
 // real number here; settings re-pinned 61 → 73 when the concurrent-
 // imports control added its section H (2026-11-13), and 73 → 74 when
 // that control was replaced by the machine-level "Parallel work" knob
-// in its own card (one extra check: the old control's absence).
+// in its own card (one extra check: the old control's absence);
+// econ-tables re-pinned 94 → 98 when section J added the scoreboard
+// metric-header cap pins (2026-11-13).
 const EXPECTED = {
   'app-dock.dom.mjs': 59,
   'combat.dom.mjs': 75,
   'compare-rounds.dom.mjs': 27,
   'confirm-dialog.dom.mjs': 20,
-  'econ-tables.dom.mjs': 94,
+  'econ-tables.dom.mjs': 98,
   'heatmap-layer.dom.mjs': 49,
   'landmark-row.dom.mjs': 33,
   'library.dom.mjs': 167,
