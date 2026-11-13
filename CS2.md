@@ -98,7 +98,9 @@ at the end of the section.
   them; `m_iMVPs` does NOT (includes the knife MVP). Detection:
   non-warmup round with `GamePhase() < StartGame || !IsMatchStarted()`
   → pregame; gate stats on `IsMatchStarted() && !IsWarmupPeriod() &&
-  GamePhase() >= StartGame`. **Source** — spectra golden demo
+  GamePhase() >= StartGame`. spectra still DETECTS them with exactly
+  this rule, but since 2026-11-12 uses it to DISCARD them at ingest
+  (see "Round numbering"). **Source** — spectra golden demo
   (golden/de_cache.dem.zst round 1: phase=1, score resets 0/1 → 0/0);
   MatchZy lifecycle (github.com/shobhit-pathak/MatchZy Utility.cs);
   roundtable docs/round-eligibility.md (2026-11-01).
@@ -203,9 +205,13 @@ at the end of the section.
 
 - **MVPs** — `RoundMVPAnnouncement` (round_mvp) is often absent in CS2
   demos; recover per-round MVPs by diffing `Player.MVPs()` (`m_iMVPs`)
-  at each RoundEnd. The counter includes knife-round MVPs (spectra
-  counts them to match scoreboards). **Source** — golden-demo diag;
-  roundtable src/replay/README.md (2026-11-01).
+  at each RoundEnd. The counter includes knife-round MVPs, but since
+  2026-11-12 spectra discards knife rounds at ingest and ABSORBS that
+  delta — the knife MVP is never credited (owner-accepted: spectra'
+  scoreboard `mvps` runs 1 below the game's counter on demos with a
+  knife round). **Source** — golden-demo diag;
+  roundtable src/replay/README.md (2026-11-01); discard change
+  (2026-11-12).
 
 - **Side is a per-round fact, not a player identity** — `m_iTeamNum`
   (2=T, 3=CT) flips at halftime, at the knife→pistol side pick, and
@@ -266,14 +272,20 @@ at the end of the section.
 - **Round numbering** — the game numbers rounds from the first counted
   (non-warmup, non-knife) round: the first-half pistol is "Round 1";
   warmup and knife rounds are unnumbered. spectra ingest mirrors that:
-  real rounds are 1..N in chronological order and every other round takes
-  a NEGATIVE index counting back from round 1 (the round immediately
-  before round 1 is −1), so sorting by number stays chronological
-  (−2 knife, −1 warmup, 1 pistol, …). MR12 halves are counted-round
-  indices 0 and 12. Round-filter sentinels stay "-1 = all" (never a valid
-  round number), so filter dropdowns offer counted rounds only.
+  **since 2026-11-12 knife/warmup rounds are DISCARDED at ingest** (no
+  round row, no events — owner ruling), so every stored round is a
+  counted round and numbering is the chrono→dense 1..N shift in
+  `internal/extract/build.go` (a discarded round still consumes a chrono
+  index for row order + sidecar seed cadence; negatives never exist in
+  new data). PRE-DISCARD libraries keep their old negative rows
+  (−2 knife, −1 warmup) until reprocess — the frontend's W/K labels
+  survive as legacy tolerance. MR12 halves are counted-round indices 0
+  and 12. Round-filter sentinels stay "-1 = all" (range-open semantics,
+  never a valid round number), so filter dropdowns offer counted rounds
+  only.
   **Source** — golden-demo diag; awpy datasets.rs (2026-11-01);
-  ingest renumber in `internal/extract/build.go` (2026-11-02).
+  ingest renumber in `internal/extract/build.go` (2026-11-02); discard
+  change verified on golden demo 2026-11-12 (roundsTotal 25 → 23).
 
 - **MR12 regulation + MR3 overtime (round cadence, scoring, side
   switches)** — how a CS2 match is structured past round 12.
