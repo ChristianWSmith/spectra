@@ -60,6 +60,7 @@
   import StatCard from '../components/StatCard.svelte';
   import ProfileLink from '../components/ProfileLink.svelte';
   import WinnerCell from '../components/WinnerCell.svelte';
+  import { readOrder, resolvePinIds, pinnedInSequence } from '../metricorder.js';
   import { seed, remember, matchKey } from '../viewstate.svelte.js';
   // Tier 1 of the loading ladder (PRODUCT.md "### Defaults"): the
   // replay's data bundle, warmed in the BACKGROUND from this screen.
@@ -451,14 +452,21 @@
   // Sorting a metric key never leaves the client (the fetch effect skips
   // m:* keys), so GetScoreboard ordering for the M1/M3/M4 columns is
   // untouched; players without a value for the metric sort last either way.
+  // render = FIXED_BLOCK ++ resolveOrder ∩ pins (design §1.3): pins
+  // SELECT the columns, the order pref SEQUENCES them — the pins array's
+  // own order stopped being an ordering source.
   function readPins() {
+    // The RAW stored selection — null when the key is ABSENT (the
+    // absent-vs-present rule lives in metricorder.resolvePinIds:
+    // absent ⇒ DEFAULT_PINS through the catalog, present ⇒ verbatim).
     try {
       const raw = localStorage.getItem('spectra:pinned-metrics');
-      const arr = raw ? JSON.parse(raw) : [];
-      if (!Array.isArray(arr)) return [];
+      if (raw == null) return null;
+      const arr = JSON.parse(raw);
+      if (!Array.isArray(arr)) return null;
       return [...new Set(arr.map(Number).filter((n) => Number.isFinite(n)))];
     } catch {
-      return [];
+      return null;
     }
   }
 
@@ -495,21 +503,27 @@
     let live = true;
     // Read localStorage directly — reading the `pins` state here would make
     // it a dependency of this effect and re-trigger it on every pin write.
-    const pinIds = readPins();
-    pins = pinIds;
+    const stored = readPins(); // null = ABSENT → metricorder resolves DEFAULT_PINS
+    pins = stored || [];
     metricCols = [];
     metricError = '';
-    if (pinIds.length === 0) return;
-    listMetrics()
-      .then((defs) => {
-        const byId = new Map((defs || []).map((d) => [d.id, d]));
-        // The pin picker filters scope='match' (design §5): a
-        // profile-scope metric's surface is PlayerProfile's career
-        // panel, never a scoreboard column.
-        const picked = pinIds
-          .map((pid) => byId.get(pid))
-          .filter((d) => d && (d.scope || 'match') === 'match');
-        if (picked.length === 0) return [];
+    if (stored && stored.length === 0) return; // present-empty: nothing pinned
+    Promise.all([listMetrics(), readOrder('match')])
+      .then(([defs, order]) => {
+        if (!live) return;
+        const rows = defs || [];
+        // Absent key ⇒ DEFAULT_PINS resolved by name through the catalog
+        // (design §1.6 — nothing resolves before the seeds land, so this
+        // equals today's "absent ⇒ []"); present ⇒ verbatim.
+        const pinIds = resolvePinIds('match', stored, rows);
+        pins = pinIds;
+        if (pinIds.length === 0) return;
+        // THE composition (lib/metricorder.js — the ONE site): the
+        // sequence filtered to the pinned set. The pins array orders
+        // nothing; a newly pinned metric appears where the sequence
+        // puts it, never appended.
+        const picked = pinnedInSequence('match', order, rows, pinIds);
+        if (picked.length === 0) return;
         const ids = picked.map((d) => d.id);
         // ONE stored read for every pin (design §5: N previewMetric
         // calls → one stored read) beside the one compute-state read.
@@ -529,7 +543,7 @@
         );
       })
       .then((cols) => {
-        if (live) metricCols = cols;
+        if (live && cols) metricCols = cols;
       })
       .catch((e) => {
         if (live) metricError = errText(e);

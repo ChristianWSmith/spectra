@@ -17,6 +17,7 @@
     onMetricDone,
     errText,
   } from '../services.js';
+  import { readOrder, inSequence } from '../metricorder.js';
   import {
     metricPresentation,
     metricStateTitle,
@@ -71,6 +72,9 @@
 
   let metrics = $state([]);
   let metricsError = $state('');
+  // The match-scope ORDER pref (metricorder; null = absent ⇒ default
+  // sequence) — presentation only, never gates the checkbox list.
+  let orderPref = $state(null);
   let checked = $state(repSeed.checked); // metricId → true (appendix selection)
   $effect(() => remember('reports', { tplId, matchId, steamId, roundNo, checked }));
   // appendix: metricId → {loading, rows?, error?, metric, unitHasRows}.
@@ -142,7 +146,9 @@
   // both land together so the checkbox list and its state chips settle
   // from one attempt. Clears only when BOTH land, so the appendix never
   // claims "No custom stats yet" while the previous failure still
-  // stands.
+  // stands. The match ORDER pref rides the same reload but feeds only
+  // the sequence (metricorder) — a failed or absent read falls back to
+  // the default sequence, never into the error slot that gates the list.
   async function loadMetricsList() {
     try {
       const [rows, states] = await Promise.all([listMetrics(), getMetricComputeState()]);
@@ -152,6 +158,9 @@
     } catch (e) {
       metricsError = errText(e);
     }
+    readOrder('match')
+      .then((o) => (orderPref = o))
+      .catch(() => (orderPref = null));
   }
 
   $effect(() => {
@@ -220,8 +229,13 @@
   // The checkbox list is FLAT and match-scope only (design §5: the
   // Reports appendix is a per-match document — profile-scope metrics
   // surface on PlayerProfile, and the groupBy grouping died with the
-  // W2 grammar wave: every row is "per player").
-  const matchMetrics = $derived(metrics.filter((m) => (m.scope || 'match') === 'match'));
+  // W2 grammar wave: every row is "per player"). It renders in the
+  // match ORDER sequence (lib/metricorder.js — the one ordering
+  // mechanism): scope-filtered catalog in sequence order, absent pref ⇒
+  // the default sequence (catalog order over the unranked). The pins
+  // array never orders this list — the appendix selection is the
+  // checkboxes' own.
+  const matchMetrics = $derived(inSequence('match', orderPref, metrics));
 
   // ONE stored read for the whole checked set (design §5: no per-toggle
   // query-time run): re-runs whenever the target, the selection, the

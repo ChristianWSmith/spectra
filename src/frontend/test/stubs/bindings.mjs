@@ -147,4 +147,4 @@ export const SoundService = {
   ExtractSounds: rec('ExtractSounds'),
 };
 export const DialogService = {};
-export const KVStoreService = { Get: rec('GetPref'), Set: rec('SetPref') };
+export const KVStoreService = { Get: rec('GetPref'), Set: rec('SetPref'), Delete: rec('Delete') };

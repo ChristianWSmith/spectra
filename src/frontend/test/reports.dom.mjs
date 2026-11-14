@@ -14,7 +14,12 @@
 //      table, no fabricated number);
 //   E. the live feed flips a checked metric to processing and
 //      metric-done refetches the stored rows (the cache flushed);
-//   F. the no-version pin over every rendered metric output.
+//   F. the no-version pin over every rendered metric output;
+//   G. the checkbox list follows the match ORDER pref (dogfooding
+//      design §1): absent key ⇒ the default sequence (= catalog order,
+//      pinned in A), a saved order re-sequences the list, and a
+//      deleted key (reset) returns it to the default — the pins array
+//      never orders this list.
 //
 // services.js runs against the shared TEST STUBS (no live Wails
 // backend), 'svelte' is pinned to the CLIENT entry so plain `node --test`
@@ -119,6 +124,7 @@ svelteCompile(playerPickerSrc, 'PlayerPicker.svelte', join(dir, 'playerpicker.js
 // .svelte imports point at the local bundles.
 const repSrc = readFileSync('src/lib/views/Reports.svelte', 'utf8')
   .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`)
+  .replace("from '../metricorder.js'", `from '${fileURL('src/lib/metricorder.js')}'`)
   .replace("from '../metricstate.js'", `from '${fileURL('src/lib/metricstate.js')}'`)
   .replace("from '../players.js'", `from '${fileURL('src/lib/players.js')}'`)
   .replace("from '../viewstate.svelte.js'", `from '${fileURL('src/lib/viewstate.svelte.js')}'`)
@@ -353,6 +359,35 @@ console.log('F. no version number or timestamp in any rendered metric output');
     if (leakRe.test(el.textContent || '')) leaks.push(`text: ${el.textContent.trim().slice(0, 80)}`);
   }
   check('no version number or timestamp appears anywhere in the appendix output', leaks.length === 0, leaks.join(' | '));
+}
+
+console.log('G. the checkbox list follows the match ORDER pref (metricorder — the one sequence)');
+{
+  // Absent pref ⇒ the default sequence, which over this unranks catalog
+  // equals catalog order (already pinned by A's Match-stat-first list).
+  bindings.handlers.GetPref = (key) =>
+    key === 'metric_order_match' ? ['behind_stat', 'match_stat'] : undefined;
+  const r2 = await mountReports();
+  const boxes = [...r2.querySelectorAll('.rep-metric')];
+  check(
+    'a saved order re-sequences the appendix list (behind_stat first)',
+    boxes.length === 2 &&
+      boxes[0].textContent.includes('Behind stat') &&
+      boxes[1].textContent.includes('Match stat'),
+    JSON.stringify(boxes.map((b) => b.textContent.replace(/\s+/g, ' ').trim().slice(0, 40))),
+  );
+  // Reset deletes the key (metricorder.resetOrder → kvstore Delete) —
+  // here: the key simply stops resolving, and the default returns.
+  delete bindings.handlers.GetPref;
+  const r3 = await mountReports();
+  const boxes2 = [...r3.querySelectorAll('.rep-metric')];
+  check(
+    'key gone → the default sequence again (catalog order)',
+    boxes2.length === 2 &&
+      boxes2[0].textContent.includes('Match stat') &&
+      boxes2[1].textContent.includes('Behind stat'),
+    JSON.stringify(boxes2.map((b) => b.textContent.replace(/\s+/g, ' ').trim().slice(0, 40))),
+  );
 }
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

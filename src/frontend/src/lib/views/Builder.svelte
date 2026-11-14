@@ -1,6 +1,7 @@
 <script>
   import {
     listMetricsPage,
+    listMetrics,
     listMatches,
     listPlayers,
     getMetric,
@@ -17,6 +18,7 @@
     listPlugins,
     errText,
   } from '../services.js';
+  import { resolvePinIds } from '../metricorder.js';
   import {
     liveMetricState,
     metricStateTitle,
@@ -26,6 +28,7 @@
   import { fmtInt, fmtMetric } from '../fmt.js';
   import ProfileLink from '../components/ProfileLink.svelte';
   import StatusChip from '../components/StatusChip.svelte';
+  import MetricOrderDialog from '../components/MetricOrderDialog.svelte';
   import { seed, remember } from '../viewstate.svelte.js';
 
   let { nav = () => {} } = $props();
@@ -68,6 +71,20 @@
   let profilePins = $state([]); // profile-scope pin ids (PROFILE_PINS_KEY)
   let disabledPlugins = $state(new Set());
   let listError = $state('');
+  // The library-wide catalog the ABSENT pins key resolves its
+  // DEFAULT_PINS through (design §1.6 — one cached listMetrics() read,
+  // shared with the Order dialog) and the in-flight promise for it, so
+  // a pin toggle in the first milliseconds after mount waits for the
+  // catalog instead of writing from an unresolved selection.
+  let catalog = [];
+  let catalogP = Promise.resolve([]);
+  // The Order dialog's open state — transient by the state-placement
+  // rule: never seeded, never remembered, never in the URL.
+  let orderOpen = $state(false);
+
+  function openOrder() {
+    orderOpen = true;
+  }
 
   // --- Compute state + progress (design §4/§5) -----------------------------
   // The Builder is THE compute-state surface: every list item and the
@@ -196,15 +213,32 @@
     });
   }
 
+  // readPins: the RAW stored selection — null when the key is ABSENT.
+  // The absent-vs-present rule lives in metricorder.resolvePinIds
+  // (design §1.6): absent ⇒ DEFAULT_PINS resolved by name through the
+  // catalog, present (even '[]') ⇒ the stored selection verbatim.
   function readPins(key) {
     try {
       const raw = localStorage.getItem(key);
-      const arr = raw ? JSON.parse(raw) : [];
-      if (!Array.isArray(arr)) return [];
+      if (raw == null) return null;
+      const arr = JSON.parse(raw);
+      if (!Array.isArray(arr)) return null;
       return [...new Set(arr.map(Number).filter((n) => Number.isFinite(n)))];
     } catch {
-      return [];
+      return null;
     }
+  }
+
+  // effectivePins — the selection this surface ACTUALLY shows (and the
+  // base every toggle writes FROM, so a first pin toggle can never
+  // silently drop the defaults): the stored ids when the key is
+  // present, DEFAULT_PINS (name → id through the loaded catalog) when
+  // it is absent. A still-empty catalog resolves defaults to [] — the
+  // mount effect re-applies this once listMetrics lands.
+  function effectivePins(key, scope) {
+    const stored = readPins(key);
+    if (stored !== null) return stored;
+    return resolvePinIds(scope, null, catalog);
   }
 
   function writePins(key, ids) {
@@ -292,12 +326,25 @@
   }
 
   // Mount (runs once — it reads no reactive value): pins from
-  // localStorage once per mount (a retry must not re-derive them over the
-  // session's toggles) plus the plugin states.
+  // localStorage once per mount (a retry must not re-derive them over
+  // the session's toggles) plus the plugin states. The stored
+  // selection applies immediately; an ABSENT key resolves its
+  // DEFAULT_PINS (design §1.6) once the library-wide catalog lands —
+  // re-reading localStorage at that point is safe because every pin
+  // write goes through writePins first (localStorage is the session's
+  // truth).
   $effect(() => {
-    pins = readPins(PINS_KEY);
-    profilePins = readPins(PROFILE_PINS_KEY);
+    pins = readPins(PINS_KEY) ?? [];
+    profilePins = readPins(PROFILE_PINS_KEY) ?? [];
     loadPluginStates();
+    catalogP = listMetrics()
+      .then((rows) => {
+        catalog = rows || [];
+        pins = effectivePins(PINS_KEY, 'match');
+        profilePins = effectivePins(PROFILE_PINS_KEY, 'profile');
+        return catalog;
+      })
+      .catch(() => catalog);
   });
 
   // The list read (mount AND listError's Retry): the first run is
@@ -447,11 +494,18 @@
         s = 'match';
       }
     }
+    // An absent key resolves its defaults through the catalog — wait
+    // for the mount read so a first toggle can never drop them.
+    await catalogP;
     const key = s === 'profile' ? PROFILE_PINS_KEY : PINS_KEY;
     const otherKey = key === PROFILE_PINS_KEY ? PINS_KEY : PROFILE_PINS_KEY;
-    const cur = readPins(key);
+    const otherScope = s === 'profile' ? 'match' : 'profile';
+    const cur = effectivePins(key, s);
     const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
-    const other = readPins(otherKey).filter((x) => x !== id);
+    // The OTHER scope's effective selection minus this id — writing it
+    // materializes that key too (same rule as the order's first move:
+    // the write carries the selection the other surface already shows).
+    const other = effectivePins(otherKey, otherScope).filter((x) => x !== id);
     writePins(key, next);
     writePins(otherKey, other);
     if (key === PROFILE_PINS_KEY) {
@@ -786,9 +840,24 @@
     <section class="panel bld-list">
       <div class="row-between">
         <h2>Metrics</h2>
-        <button class="btn small" onclick={newMetric}
-          ><span class="codicon codicon-add"></span> New</button
-        >
+        <div class="toolbar">
+          <!-- The order is a property of the metric SET across both
+               surfaces (not of one metric's editor), so it sits beside
+               the other set-level action; the arrow pair is the repo's
+               move vocabulary (MatchPicker / PlayerPicker /
+               CommandPalette). -->
+          <button
+            class="btn small"
+            onclick={openOrder}
+            title="Set the order of scoreboard columns and profile cards"
+            ><span class="codicon codicon-arrow-up"></span><span
+              class="codicon codicon-arrow-down"></span
+            > Order…</button
+          >
+          <button class="btn small" onclick={newMetric}
+            ><span class="codicon codicon-add"></span> New</button
+          >
+        </div>
       </div>
       <!-- Server-side search: the debounced query reaches the store
            (LIKE over name/title) and restarts the window at cursor 0. -->
@@ -1084,4 +1153,13 @@
       </section>
     </div>
   </div>
+
+  <!-- ONE dialog, two stacked sections (design §2.2); its open state
+       is transient (openOrder above), pins ride as read-only props. -->
+  <MetricOrderDialog
+    open={orderOpen}
+    pinnedMatch={pins}
+    pinnedProfile={profilePins}
+    onClose={() => (orderOpen = false)}
+  />
 </div>

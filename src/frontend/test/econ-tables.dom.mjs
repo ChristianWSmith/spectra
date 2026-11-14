@@ -155,6 +155,10 @@ export const KVStoreService = {
     if (globalThis.__kv) globalThis.__kv[k] = v;
     return Promise.resolve();
   },
+  Delete: (k) => {
+    if (globalThis.__kv) delete globalThis.__kv[k];
+    return Promise.resolve();
+  },
 };
 // Only Heatmaps calls into it, and never during a mount here; a Proxy
 // keeps any method linkable without enumerating them.

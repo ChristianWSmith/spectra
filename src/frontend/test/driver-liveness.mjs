@@ -80,9 +80,15 @@ const PROBE_POOL = 4;
 // NEW at 16 (the flat match-scope list, the stored read, the export
 // copy, the behind chip + "value not computed" line, the live feed and
 // the no-version pin).
+// Dogfooding W1 (metric ordering, 2026-11-14): builder 56 → 72 (section
+// J — the Order dialog: entry point, two stacked sections, read-only
+// fixed block, write-through keyboard/button moves, Reset → Delete,
+// read-only pin indicator, Close) and reports 16 → 18 (section G — the
+// appendix list follows the match order pref: saved order re-sequences,
+// key gone → default sequence).
 const EXPECTED = {
   'app-dock.dom.mjs': 59,
-  'builder.dom.mjs': 56,
+  'builder.dom.mjs': 72,
   'combat.dom.mjs': 75,
   'compare-rounds.dom.mjs': 27,
   'confirm-dialog.dom.mjs': 20,
@@ -98,7 +104,7 @@ const EXPECTED = {
   'profiles.dom.mjs': 51,
   'progress-presentation.dom.mjs': 19,
   'replay.dom.mjs': 450,
-  'reports.dom.mjs': 16,
+  'reports.dom.mjs': 18,
   'round-detail.dom.mjs': 64,
   'round-strip.dom.mjs': 47,
   'settings.dom.mjs': 74,

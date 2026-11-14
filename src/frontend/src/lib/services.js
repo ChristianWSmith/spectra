@@ -1020,3 +1020,4 @@ export function saveExport(urlPath, defaultName, extensions) {
 
 export function getPref(key) { return KVStoreService.Get(key); }
 export function setPref(key, value) { return KVStoreService.Set(key, value); }
+export function deletePref(key) { return KVStoreService.Delete(key); }

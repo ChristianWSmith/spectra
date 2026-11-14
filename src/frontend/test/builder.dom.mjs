@@ -30,7 +30,13 @@
 //      quantifies with the live k/N feed (block form on the card, inline
 //      bar in the row), metric-done refetches the state and clears the
 //      feed, the draft-vs-saved preview criterion holds, and no rendered
-//      state output carries a version number or timestamp.
+//      state output carries a version number or timestamp;
+//   J. the Order dialog (dogfooding design §2): the list-header entry
+//      point, ONE dialog with two stacked sections, the read-only fixed
+//      block over the full catalog in sequence order, keyboard moves
+//      write the pref through (SetPref with the whole sequence), Reset
+//      deletes both keys, the pin indicator is read-only, and Close
+//      dismisses.
 //
 // Backend semantics — the SQL partition + keyset tiling
 // (store.TestListMetricsPageOriginFilter*) and the SaveMetric/DeleteMetric
@@ -119,6 +125,13 @@ bindings.PlatformService.ListPlugins = () => Promise.resolve([]);
 // The live expression check resolves "valid" so loading a row for edit
 // never parks an error state beside the form.
 bindings.handlers.ValidateExpr = () => [true, {}];
+
+// The library-wide catalog (one cached listMetrics()): the mount effect
+// resolves an ABSENT pins key's DEFAULT_PINS (design §1.6) through it,
+// and the Order dialog lists the FULL catalog (design §2.4 — one
+// listMetrics() on open). Scripted BEFORE the first mount so the
+// resolved selection is stable across every section.
+bindings.MetricsService.ListMetrics = () => Promise.resolve(METRICS);
 
 // The fixture catalog in the store's canonical order (builtin → user →
 // plugin, name ASC within each origin) — the order the paged read and
@@ -245,17 +258,34 @@ const plSrc = readFileSync('src/lib/components/ProfileLink.svelte', 'utf8')
   .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`);
 svelteCompile(plSrc, 'ProfileLink.svelte', join(dir, 'profilelink.js'));
 
+// The Order dialog + its Dialog wrapper: the dialog rewrites its
+// services/metricorder imports to the same absolute URLs the view links
+// (one module instance each) and its ./Dialog.svelte to the local
+// bundle; Dialog itself is a leaf apart from 'svelte'.
+const moSrc = readFileSync('src/lib/components/MetricOrderDialog.svelte', 'utf8')
+  .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`)
+  .replace("from '../metricorder.js'", `from '${fileURL('src/lib/metricorder.js')}'`)
+  .replace("from './Dialog.svelte'", "from './dialog.js'");
+svelteCompile(moSrc, 'MetricOrderDialog.svelte', join(dir, 'metricorderdialog.js'));
+svelteCompile(
+  readFileSync('src/lib/components/Dialog.svelte', 'utf8'),
+  'Dialog.svelte',
+  join(dir, 'dialog.js'),
+);
+
 // The view: plain-ESM imports (services/fmt/viewstate) resolve from
 // their real module locations — viewstate through the SAME absolute URL
 // the pins below import, so the view and the test share one registry
 // instance (the jsdom cross-talk rule in that module's header).
 const bldSrc = readFileSync('src/lib/views/Builder.svelte', 'utf8')
   .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`)
+  .replace("from '../metricorder.js'", `from '${fileURL('src/lib/metricorder.js')}'`)
   .replace("from '../fmt.js'", `from '${fileURL('src/lib/fmt.js')}'`)
   .replace("from '../metricstate.js'", `from '${fileURL('src/lib/metricstate.js')}'`)
   .replace("from '../viewstate.svelte.js'", `from '${fileURL('src/lib/viewstate.svelte.js')}'`)
   .replace("from '../components/ProfileLink.svelte'", "from './profilelink.js'")
-  .replace("from '../components/StatusChip.svelte'", "from './statuschip.js'");
+  .replace("from '../components/StatusChip.svelte'", "from './statuschip.js'")
+  .replace("from '../components/MetricOrderDialog.svelte'", "from './metricorderdialog.js'");
 svelteCompile(bldSrc, 'Builder.svelte', join(dir, 'builder-bundle.js'));
 
 const { mount, unmount } = await import('svelte');
@@ -769,6 +799,181 @@ console.log('I. compute-state surface: list chips, editor card, k/N progress, dr
     leaks.length === 0,
     leaks.join(' | '),
   );
+}
+
+console.log('J. the Order dialog: entry point, write-through moves, Reset, read-only pins, fixed block');
+{
+  // Pin one metric first (on the Builder row — pin TOGGLING stays with
+  // this single writer) so the dialog has a pinned indicator to show.
+  const pinBtn = rowNamed(r, 'adr_avg')?.querySelector('[aria-label="Toggle pin for adr_avg"]');
+  click(pinBtn);
+  await sleep(60);
+
+  const orderBtn = [...r.querySelectorAll('.bld-list button')].find((b) =>
+    b.textContent.includes('Order'),
+  );
+  check(
+    'the Order… button sits in the list header beside New, arrow-glyph pair',
+    !!orderBtn &&
+      !!orderBtn.querySelector('.codicon-arrow-up') &&
+      !!orderBtn.querySelector('.codicon-arrow-down') &&
+      [...(orderBtn.parentElement?.querySelectorAll('button') || [])].some((b) =>
+        b.textContent.includes('New'),
+      ),
+    orderBtn ? orderBtn.textContent.replace(/\s+/g, ' ').trim() : 'no Order button',
+  );
+
+  bindings.resetCalls();
+  click(orderBtn);
+  await sleep(150);
+  const dlg = document.querySelector('.dlg-panel.mo-prompt');
+  check(
+    'the dialog opens (mo-prompt panel with role=dialog)',
+    !!dlg && dlg.getAttribute('role') === 'dialog',
+    dlg ? 'open' : 'not found',
+  );
+  check(
+    'both order prefs were read through their bare kvstore keys',
+    ['metric_order_match', 'metric_order_profile'].every((k) =>
+      bindings.calls.some((c) => c.method === 'GetPref' && c.args[0] === k),
+    ),
+    JSON.stringify(bindings.calls.filter((c) => c.method === 'GetPref').map((c) => c.args)),
+  );
+
+  const sec = (scope) => dlg?.querySelector(`.mo-sec[data-mo-scope="${scope}"]`);
+  const dRows = (scope) => [...(sec(scope)?.querySelectorAll('.mo-row') || [])];
+  const dNames = (scope) => dRows(scope).map((x) => x.dataset.moName);
+
+  check(
+    'one dialog, two stacked sections (scoreboard then profile — no tabs)',
+    [...(dlg?.querySelectorAll('.mo-sec-title') || [])].map((h) => h.textContent.trim()).join(' | ') ===
+      'Scoreboard (match metrics) | Player profile (profile metrics)' &&
+      !dlg?.querySelector('[role="tab"]'),
+    [...(dlg?.querySelectorAll('.mo-sec-title') || [])].map((h) => h.textContent.trim()).join(' | '),
+  );
+  {
+    const fixed = sec('match')?.querySelector('.mo-fixed');
+    const items = fixed ? [...fixed.querySelectorAll('.mo-fixed-item')].map((x) => x.textContent) : [];
+    check(
+      'fixed block: read-only context (role=list, aria-readonly, no controls, not draggable) — Go stats only',
+      !!fixed &&
+        fixed.getAttribute('role') === 'list' &&
+        fixed.getAttribute('aria-readonly') === 'true' &&
+        items[0] === 'Name' &&
+        items[items.length - 1] === 'Score' &&
+        items.includes('KDA') &&
+        !items.includes('ADR') &&
+        !items.includes('KAST%') &&
+        !fixed.querySelector('button') &&
+        !fixed.hasAttribute('draggable') &&
+        !fixed.querySelector('[draggable]'),
+      fixed ? JSON.stringify(items) : 'no fixed block',
+    );
+  }
+  check(
+    'the metric list covers the FULL catalog in the default sequence (absent pref)',
+    JSON.stringify(dNames('match')) ===
+      JSON.stringify(['trade_rate', 'adr_avg', 'my_kd', 'plug_stat']),
+    JSON.stringify(dNames('match')),
+  );
+  check(
+    'the profile section says so when its catalog is empty',
+    !!sec('profile')?.textContent.includes('No profile metrics yet.'),
+    sec('profile')?.textContent.replace(/\s+/g, ' ').slice(0, 120),
+  );
+  {
+    const rows = dRows('match');
+    const up0 = rows[0]?.querySelector('[aria-label="Move trade_rate up"]');
+    const down0 = rows[0]?.querySelector('[aria-label="Move trade_rate down"]');
+    const downLast = rows[3]?.querySelector('[aria-label="Move plug_stat down"]');
+    check(
+      'every row carries labelled ↑/↓ buttons; the boundary ones are disabled',
+      !!up0 && up0.disabled && !!down0 && !down0.disabled && !!downLast && downLast.disabled,
+      `up0=${up0 && up0.disabled} down0=${down0 && !down0.disabled} downLast=${downLast && downLast.disabled}`,
+    );
+  }
+  {
+    const row0 = dRows('match')[0];
+    row0.focus();
+    row0.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    await sleep(80);
+    check(
+      'ArrowDown on the focused row moves it one slot down',
+      JSON.stringify(dNames('match')) ===
+        JSON.stringify(['adr_avg', 'trade_rate', 'my_kd', 'plug_stat']),
+      JSON.stringify(dNames('match')),
+    );
+    const set = bindings.calls.find((c) => c.method === 'SetPref');
+    check(
+      'the move is write-through: SetPref carries the key AND the whole resolved sequence',
+      !!set &&
+        set.args[0] === 'metric_order_match' &&
+        JSON.stringify(set.args[1]) ===
+          JSON.stringify(['adr_avg', 'trade_rate', 'my_kd', 'plug_stat']),
+      set ? JSON.stringify(set.args) : 'no SetPref call',
+    );
+  }
+  {
+    // Focus follows the moved row — pinned through the BUTTON path: a
+    // keyboard move re-focuses the same DOM node (the keyed each moves
+    // nodes), so only a button click on a NON-focused row can prove
+    // focusRow ran. The move also leaves a non-default sequence behind,
+    // which is what the reset check below must undo.
+    const btn = dRows('match')
+      .find((x) => x.dataset.moName === 'my_kd')
+      ?.querySelector('[aria-label="Move my_kd up"]');
+    click(btn);
+    await sleep(80);
+    check(
+      'focus follows the row moved by its button',
+      document.activeElement?.dataset?.moName === 'my_kd' &&
+        JSON.stringify(dNames('match')) ===
+          JSON.stringify(['adr_avg', 'my_kd', 'trade_rate', 'plug_stat']),
+      `${document.activeElement?.className ?? 'none'} seq=${JSON.stringify(dNames('match'))}`,
+    );
+  }
+  {
+    const pinnedRow = dRows('match').find((x) => x.dataset.moName === 'adr_avg');
+    const pin = pinnedRow?.querySelector('.mo-pin');
+    const plain = dRows('match').find((x) => x.dataset.moName === 'trade_rate')?.querySelector('.mo-pin');
+    check(
+      'pin indicator: filled on the pinned row, dimmed on the unpinned one',
+      !!pin && pin.classList.contains('mo-pin-on') && !!plain && !plain.classList.contains('mo-pin-on'),
+      `pin=${pin && pin.className} plain=${plain && plain.className}`,
+    );
+    check(
+      'the indicator is READ-ONLY — a span, no pin-toggle control anywhere in the dialog',
+      !!pin && pin.tagName === 'SPAN' && !pinnedRow.querySelector('button[aria-label*="pin" i]') &&
+        !dlg.querySelector('[aria-label^="Toggle pin"]'),
+      pin ? pin.outerHTML : 'no indicator',
+    );
+  }
+  {
+    const resetBtn = [...dlg.querySelectorAll('button')].find((b) =>
+      b.textContent.includes('Reset order'),
+    );
+    click(resetBtn);
+    await sleep(80);
+    const dels = bindings.calls.filter((c) => c.method === 'Delete');
+    check(
+      'Reset order deletes BOTH pref keys (key gone ⇒ default sequence)',
+      JSON.stringify(dels.map((c) => c.args[0]).sort()) ===
+        JSON.stringify(['metric_order_match', 'metric_order_profile']),
+      JSON.stringify(dels.map((c) => c.args)),
+    );
+    check(
+      'the lists snap back to the default sequence after reset',
+      JSON.stringify(dNames('match')) ===
+        JSON.stringify(['trade_rate', 'adr_avg', 'my_kd', 'plug_stat']),
+      JSON.stringify(dNames('match')),
+    );
+  }
+  {
+    const closeBtn = [...dlg.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Close');
+    click(closeBtn);
+    await sleep(60);
+    check('Close dismisses the dialog', !document.querySelector('.dlg-panel.mo-prompt'));
+  }
 }
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));
