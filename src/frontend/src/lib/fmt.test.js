@@ -223,6 +223,12 @@ test('fmtMoney renders the signed, rounded, grouped Economy style', () => {
 test('fmtMetric drives every format tag, currency through fmtMoney', () => {
   assert.equal(fmtMetric(1234.56, 'int'), fmtInt(1234.56));
   assert.equal(fmtMetric(1234.56, 'float1'), fmt1(1234.56));
+  assert.equal(fmtMetric(1234.56, 'float2'), fmt2(1234.56));
+  // float2 keeps the two-decimal tail UNCONDITIONALLY — a whole number
+  // renders 2.00, never the auto-format's "2" (Q6: the K/D seeds).
+  assert.equal(fmtMetric(2, 'float2'), fmt2(2));
+  assert.equal(fmtMetric(2, 'float2'), '2.00');
+  assert.equal(fmtMetric(2, undefined), '2'); // the divergence float2 exists to close
   assert.equal(fmtMetric(0.523, 'percent'), fmtPercent(52.3));
   assert.equal(fmtMetric(1234.56, 'currency'), fmtMoney(1234.56));
   assert.equal(fmtMetric(-5, 'currency'), '−$5');

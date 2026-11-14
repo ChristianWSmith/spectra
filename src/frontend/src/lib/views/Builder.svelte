@@ -988,6 +988,7 @@
               <option value="">auto</option>
               <option value="int">int</option>
               <option value="float1">float1</option>
+              <option value="float2">float2</option>
               <option value="percent">percent</option>
               <option value="currency">currency</option>
             </select>

@@ -89,10 +89,21 @@ const PROBE_POOL = 4;
 const EXPECTED = {
   'app-dock.dom.mjs': 59,
   'builder.dom.mjs': 72,
-  'combat.dom.mjs': 75,
+  // combat 75 → 86 (2026-11-14, dogfooding W2): +2 section J (the KAST
+  // cell renders the metric value; the dialog header reads it — the
+  // client-side fallback's 100% would disagree with the stored 50%),
+  // +2 section L (a dead backend now surfaces the metric-slot alert too
+  // — two dismissals), +7 the new section M (header positions, the
+  // default KAST-metric order, value/dash cells, the behind chip).
+  'combat.dom.mjs': 86,
   'compare-rounds.dom.mjs': 27,
   'confirm-dialog.dom.mjs': 20,
-  'econ-tables.dom.mjs': 107,
+  // econ-tables 107 → 108 (2026-11-14, dogfooding W2): −3 the KAST%
+  // error-dismissal sub-checks (combatError died with the KAST% metric
+  // column), +4 the new section K (fixed block first, the four
+  // converted metric columns after it, the m5-mth cap scope, the
+  // fmtMetric cell values).
+  'econ-tables.dom.mjs': 108,
   'heatmap-layer.dom.mjs': 49,
   'landmark-row.dom.mjs': 33,
   'library.dom.mjs': 167,

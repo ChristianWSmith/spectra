@@ -88,7 +88,7 @@ const svelteCompile = (src, filename, out) => {
 // sideparity) — the same copy the landmark-row / stat-card drivers do.
 // viewstate.svelte.js is Combat's view-state registry (match-scoped
 // seed/remember — see its header; plain JS, copied raw).
-for (const rel of ['rounds.js', 'sideparity.js', 'router.js', 'nav.js', 'teams.js', 'definitions.js', 'fmt.js', 'players.js', 'viewstate.svelte.js']) {
+for (const rel of ['rounds.js', 'sideparity.js', 'router.js', 'nav.js', 'teams.js', 'definitions.js', 'fmt.js', 'players.js', 'viewstate.svelte.js', 'metricstate.js']) {
   writeFileSync(join(dir, rel), readFileSync(join('src/lib', rel), 'utf8'));
 }
 writeFileSync(
@@ -118,6 +118,14 @@ export const getPlayerRounds = () => wait(d().playerRounds || []);
 export const getRounds = () => wait(d().rounds || []);
 export const getScoreboard = () => wait(d().scoreboard || []);
 export const getMatch = () => wait(d().match || null);
+// The three converted stat slots read the canonical stored path (W2):
+// defs → one values read → the compute-state read. The live progress
+// feeds are subscriptions, not reads — they stay plain no-ops here.
+export const listMetrics = () => wait(d().listMetrics || []);
+export const getMetricValuesForMatch = () => wait(d().metricValues || []);
+export const getMetricComputeState = () => wait(d().metricStates || []);
+export const subscribeMetricProgress = () => () => {};
+export const onMetricDone = () => () => {};
 export const errText = (e) => (e == null ? 'unknown error' : String((e && e.message) || e));
 export const warmProfile = () => {};
 `,
@@ -200,6 +208,27 @@ const base = {
     { steamId: 'B', name: 'bob', side: 't' },
   ],
   stats: [],
+  // The three converted stat slots' canonical read (W2): the seeded
+  // catalog, fresh stored rows and fresh compute states, so every
+  // section renders metric-backed cells; sections M/N script variants.
+  listMetrics: [
+    { id: 11, name: 'entry_rate', title: 'Entry%', shortName: 'Entry%', scope: 'match', format: 'percent', doc: 'Formula: entry_rate' },
+    { id: 12, name: 'trade_rate_deaths', title: 'Trade%', shortName: 'Trade%', scope: 'match', format: 'percent', doc: 'Formula: trade_rate_deaths' },
+    { id: 13, name: 'kast', title: 'KAST%', shortName: 'KAST%', scope: 'match', format: 'percent', doc: 'Formula: kast' },
+  ],
+  metricValues: [
+    { metricId: 11, steamId: 'A', value: 0.5, n: 24 },
+    { metricId: 11, steamId: 'B', value: 0.25, n: 24 },
+    { metricId: 12, steamId: 'A', value: 1.5, n: 12 },
+    { metricId: 12, steamId: 'B', value: 0, n: 12 },
+    { metricId: 13, steamId: 'A', value: 0.5, n: 24 },
+    { metricId: 13, steamId: 'B', value: 0.75, n: 24 },
+  ],
+  metricStates: [
+    { metricId: 11, state: 'fresh' },
+    { metricId: 12, state: 'fresh' },
+    { metricId: 13, state: 'fresh' },
+  ],
   engagements: [
     { tick: 10640, round: 7, kind: 'opening', aSteam: 'A', aName: 'alice', bSteam: 'B', bName: 'bob', distance: 19.4, wonBy: 'ct' },
     { tick: 10704, round: 7, kind: 'untraded', aSteam: 'B', aName: 'bob', bSteam: 'A', bName: 'alice', distance: 0, wonBy: 't' },
@@ -696,11 +725,13 @@ console.log('J. RD{n} everywhere in Combat — the KAST drill-down round label t
 document.body.removeChild(rootI);
 const rootJ = await render({
   ...base,
+  // The KAST cell is metric-value-backed now (W2): the row carries only
+  // the Go residual columns, and the 50% comes from the kast seed's
+  // stored row (base.metricValues — alice 0.5 ×100).
   stats: [
     {
       steamId: 'A', name: 'alice', dmgNoKill: 120, dmgConvPct: 50, ffDamage: 0,
-      entryRate: 100, tradeRate: 0, untradedDeaths: 0, tradeOppMissed: 1,
-      kastPct: 50, kast: true,
+      untradedDeaths: 0, tradeOppMissed: 1,
     },
   ],
   playerRounds: [
@@ -711,6 +742,11 @@ const rootJ = await render({
 const statsRow = rows(sections(rootJ, 'Combat stats')[0]?.querySelector('table') || document.createElement('table'))[0];
 const kastBtn = statsRow?.querySelector('.comb-kast-btn');
 check('KAST drill-down button present', !!kastBtn, statsRow?.textContent);
+check(
+  'the KAST cell renders the METRIC value (50% from the stored kast row)',
+  (kastBtn?.textContent || '').trim() === '50%',
+  kastBtn?.textContent,
+);
 click(kastBtn);
 await sleep();
 const roundNs = [...rootJ.querySelectorAll('.comb-round-n')].map((s) => s.textContent.trim());
@@ -718,6 +754,19 @@ check(
   'KAST per-round grid labels read RD{n}',
   roundNs.length === 2 && roundNs.every((t) => /^RD\d+$/.test(t)) && roundNs.join(',') === 'RD6,RD7',
   roundNs.join(','),
+);
+// The dialog header reads the SAME metric cell presentation — and the
+// client-side fallback % (audit N18) is dead: both scripted rounds are
+// KAST, so a fallback would compute 100%; the header must show the
+// stored metric's 50% instead.
+check(
+  'the dialog header reads the metric cell (50%), never the client-side fallback (100%)',
+  /50% KAST over 2 rounds/.test(
+    [...rootJ.querySelectorAll('.view p.muted')]
+      .map((p) => p.textContent.replace(/\s+/g, ' '))
+      .join(' | '),
+  ),
+  [...rootJ.querySelectorAll('.view p.muted')].map((p) => p.textContent.replace(/\s+/g, ' ')).join(' | ').slice(0, 200),
 );
 
 // ---------------------------------------------------------------------------
@@ -784,15 +833,114 @@ console.log('L. failed load: the error is dismissible in place, no false empty c
   );
   const panelsBefore = rootL.querySelectorAll('section.panel').length;
   check('the three panels render around the failure', panelsBefore === 3, String(panelsBefore));
+  // A dead backend fails BOTH reads — the main load and the metric-slot
+  // read — so two alerts surface, each dismissible in place (behind the
+  // metric alert the three fixed slots keep the honest dash).
+  const alerts = [...rootL.querySelectorAll('p.error[role="alert"]')];
+  check(
+    'both failures surface: the load alert and the metric-slot alert',
+    alerts.length === 2 && alerts.every((p) => p.textContent.includes('combat backend down')),
+    alerts.map((p) => p.textContent.trim().slice(0, 60)).join(' | '),
+  );
   click(errP.querySelector('button.btn.small'));
   await sleep();
+  const afterMain = [...rootL.querySelectorAll('p.error[role="alert"]')];
   check(
-    '✕ clears the error in place (view + panels still mounted, nothing navigated)',
-    !rootL.querySelector('p.error[role="alert"]') &&
+    '✕ clears the load error in place (metric alert remains, panels mounted, nothing navigated)',
+    afterMain.length === 1 &&
+      afterMain[0] !== errP &&
+      rootL.querySelectorAll('section.panel').length === panelsBefore,
+    rootL.textContent.replace(/\s+/g, ' ').slice(0, 140),
+  );
+  click(afterMain[0].querySelector('button.btn.small'));
+  await sleep();
+  check(
+    'the metric-slot alert dismisses too — no alert left, view still mounted',
+    rootL.querySelectorAll('p.error[role="alert"]').length === 0 &&
       rootL.querySelectorAll('section.panel').length === panelsBefore,
     rootL.textContent.replace(/\s+/g, ' ').slice(0, 140),
   );
   globalThis.__combatError = 0;
+}
+
+// ---------------------------------------------------------------------------
+// Section M: the three converted stat slots are metric-value-backed (W2):
+// same positions, the canonical stored read, the five-state presentation.
+console.log('M. Entry% / Trade% / KAST% are metric columns — value, dash, chip, default order');
+{
+  const rootM = await render({
+    ...base,
+    stats: [
+      { steamId: 'A', name: 'alice', dmgNoKill: 120, dmgConvPct: 50, ffDamage: 0, untradedDeaths: 0, tradeOppMissed: 1 },
+      { steamId: 'B', name: 'bob', dmgNoKill: 40, dmgConvPct: 25, ffDamage: 5, untradedDeaths: 1, tradeOppMissed: 0 },
+    ],
+    metricValues: [
+      { metricId: 11, steamId: 'A', value: 0.5, n: 24 }, // alice Entry% = 50%
+      // bob has NO entry_rate row → the honest dash (the unit IS covered)
+      { metricId: 12, steamId: 'B', value: 2.5, n: 12 }, // bob Trade% = 250%
+      { metricId: 13, steamId: 'A', value: 0.5, n: 24 },
+      { metricId: 13, steamId: 'B', value: 0.75, n: 24 },
+    ],
+    metricStates: [
+      { metricId: 11, state: 'fresh' },
+      { metricId: 12, state: 'fresh' },
+      { metricId: 13, state: 'fresh' },
+    ],
+  });
+  const tableM = sections(rootM, 'Combat stats')[0]?.querySelector('table');
+  check('stats table rendered', !!tableM);
+  check(
+    'the three converted headers keep their EXACT positions',
+    JSON.stringify(headerTexts(tableM)) ===
+      JSON.stringify(['Player', 'Damage (no kill)', 'Kill conversion %', 'FF', 'Entry%', 'Trade%', 'Untraded deaths', 'Missed trades inferred', 'KAST%']),
+    JSON.stringify(headerTexts(tableM)),
+  );
+  const mRows = rows(tableM);
+  check(
+    'the default statSort follows the KAST metric (desc: bob 0.75 leads alice 0.5)',
+    mRows.length === 2 && mRows[0].textContent.includes('bob') && mRows[1].textContent.includes('alice'),
+    mRows.map((r) => r.textContent.replace(/\s+/g, ' ').slice(0, 30)).join(' || '),
+  );
+  const cellsOf = (tr) => [...tr.children].map((c) => c.textContent.trim());
+  const aliceCells = cellsOf(mRows.find((r) => r.textContent.includes('alice')));
+  const bobCells = cellsOf(mRows.find((r) => r.textContent.includes('bob')));
+  check(
+    'Entry% renders the metric value / the honest dash where the player has no row',
+    aliceCells[4] === '50%' && bobCells[4] === '—',
+    `alice=${aliceCells[4]} bob=${bobCells[4]}`,
+  );
+  check('Trade% renders the metric value (250% — a ratio over deaths)', bobCells[5] === '250%', bobCells[5]);
+  check(
+    'KAST% renders the metric values (50% / 75%)',
+    aliceCells[8] === '50%' && bobCells[8] === '75%',
+    `${aliceCells[8]} / ${bobCells[8]}`,
+  );
+
+  // The behind state renders the CHIP, never a number (five-state).
+  const rootM2 = await render({
+    ...base,
+    stats: [
+      { steamId: 'A', name: 'alice', dmgNoKill: 1, dmgConvPct: 0, ffDamage: 0, untradedDeaths: 0, tradeOppMissed: 0 },
+    ],
+    metricValues: [],
+    metricStates: [
+      { metricId: 11, state: 'behind' },
+      { metricId: 12, state: 'behind' },
+      { metricId: 13, state: 'behind' },
+    ],
+  });
+  const m2Row = rows(sections(rootM2, 'Combat stats')[0]?.querySelector('table')).find((r) =>
+    r.textContent.includes('alice'),
+  );
+  const behindCells = cellsOf(m2Row);
+  check(
+    'behind renders the idle chip with the design copy in all three slots, never a number',
+    behindCells[4].includes('behind') &&
+      !/\d/.test(behindCells[4]) &&
+      behindCells[5].includes('behind') &&
+      behindCells[8].includes('behind'),
+    JSON.stringify([behindCells[4], behindCells[5], behindCells[8]]),
+  );
 }
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

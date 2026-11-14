@@ -23,7 +23,7 @@ type MetricRow struct {
 	ShortName   string    `json:"shortName"` // optional; read only at width-constrained metric column headers
 	Expr        string    `json:"expr"`      // grammar: `from <table>[, <secondary>...]: <aggregations>` (doc.go)
 	Scope       string    `json:"scope"`     // match|profile — where the metric is addressed (DDL CHECK)
-	Format      string    `json:"format"`    // ""|int|float1|percent|currency
+	Format      string    `json:"format"`    // ""|int|float1|float2|percent|currency
 	Doc         string    `json:"doc"`
 	Origin      string    `json:"origin"` // builtin|user|plugin
 	PluginID    string    `json:"pluginId"`

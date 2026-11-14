@@ -166,9 +166,11 @@ export function fmtMoney(v) {
 
 // fmtMetric renders one metric value for its format tag — the tag-driven
 // formatter shared by the metric Builder's preview and the match
-// scoreboard's pinned-metric columns (int | float1 | percent | currency,
-// defaulting by integrality). PlayerProfile's per-key metric formatter is
-// a different shape (metric id, not format tag) and stays local.
+// scoreboard's pinned-metric columns (int | float1 | float2 | percent |
+// currency, defaulting by integrality). float2 keeps a two-decimal tail
+// unconditionally (Q6 — a whole-number K/D renders 2.00, never "2").
+// PlayerProfile's per-key metric formatter is a different shape (metric
+// id, not format tag) and stays local.
 export function fmtMetric(v, format) {
   if (!Number.isFinite(v)) return '—';
   switch (format) {
@@ -176,6 +178,8 @@ export function fmtMetric(v, format) {
       return fmtInt(v);
     case 'float1':
       return fmt1(v);
+    case 'float2':
+      return fmt2(v);
     case 'percent':
       return fmtPercent(v * 100);
     case 'currency':

@@ -244,7 +244,7 @@ func (s *Store) ReplaceUtility(matchID int64, rows []models.UtilityEvent) error 
 // import-time value (hardcoded 5 s) is the seed this overwrites on every
 // Compute, which is what makes the column — and every consumer of it
 // (scoreboard Trade, career trades, profile trade rate, the trade_rate
-// builtin metric, Combat TradeRate) — follow
+// and trade_rate_deaths builtin metrics) — follow
 // analysis_config.TradeWindowS.
 func (s *Store) ReplaceTradeKills(matchID int64, counts map[string]int) error {
 	const op = "store: replace trade kills"
@@ -684,12 +684,15 @@ func sideFlips(rounds []models.EconomyRow, exact map[int]map[string]string) []bo
 
 // GetCombatStats computes per-player combat deep-dive rows from stored data
 // — damage conversion and friendly fire from the events
-// table, entry/trade rates from player_stats, untraded deaths from
-// engagements, KAST% from player_round_stats. All four percent fields of
-// the returned row (DMGConvPct, EntryRate, TradeRate, KASTPct) share one
-// scale: 0..100 percents — the read-DTO convention every consumer renders
-// with frontend fmtPercent directly (a 0..1 fraction there renders as
-// "0.05%", not "5%"); the scale note at the assignments is pinned by
+// table, untraded deaths from engagements. The former Entry%, Trade%
+// and KAST% computations are GONE (dogfooding W2 — adoption-means-
+// migration): the Combat tab reads the entry_rate / trade_rate_deaths /
+// kast builtin metric rows through the canonical stored read instead,
+// and the columns that existed only for them left this query. What
+// remains keeps one scale: DMGConvPct is a 0..100 percent — the
+// read-DTO convention every consumer renders with frontend fmtPercent
+// directly (a 0..1 fraction there renders as "0.05%", not "5%"); the
+// scale note at the assignment is pinned by
 // TestGetCombatStatsFromStoredRows. Team attribution (friendly fire)
 // uses each player's FINAL side — events carry no team column, so this
 // is an approximation (documented; badge in UI). The trade-opportunity
@@ -731,8 +734,8 @@ func sideFlips(rounds []models.EconomyRow, exact map[int]map[string]string) []bo
 //     columns are deliberately different metrics.
 //  5. BASE ROWS ARE HUMANS ONLY (HumanOnly): the per-player table this
 //     builds is a roster/aggregate surface, so a bot's stats row never
-//     reaches it — its DAMAGE (dmgs), untraded deaths, trade
-//     opportunities and KAST are still aggregated by steam_id but are
+//     reaches it — its DAMAGE (dmgs), untraded deaths and trade
+//     opportunities are still aggregated by steam_id but are
 //     dropped with the row. The event-shaped inputs (damage/kill events,
 //     engagements) are untouched: they keep recording what a bot did.
 //     Pinned by TestBotsExcludedFromRosterReads.
@@ -827,32 +830,12 @@ func (s *Store) GetCombatStats(matchID int64) ([]models.CombatStat, error) {
 		return nil, fmt.Errorf("store: get combat stats: %w", err)
 	}
 
-	// KAST% per player from player_round_stats.
-	kastPct := map[string]float64{}
-	kastRows, err := s.db.Query(
-		`SELECT steam_id, 100.0 * AVG(kast) FROM player_round_stats
-		 WHERE match_id = ? GROUP BY steam_id`, matchID,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("store: get combat stats: %w", err)
-	}
-	defer kastRows.Close()
-	for kastRows.Next() {
-		var sid string
-		var pct float64
-		if err := kastRows.Scan(&sid, &pct); err != nil {
-			return nil, fmt.Errorf("store: get combat stats: %w", err)
-		}
-		kastPct[sid] = pct
-	}
-	if err := kastRows.Err(); err != nil {
-		return nil, fmt.Errorf("store: get combat stats: %w", err)
-	}
-
 	// Base rows: every HUMAN with stats for the match (decision 5 — a
-	// bot's stats row never reaches this roster table).
+	// bot's stats row never reaches this roster table). The base columns
+	// that existed only for EntryRate/TradeRate left with them (W2): this
+	// is identity + the stored-damage join keys the row already needs.
 	base, err := s.db.Query(
-		`SELECT ps.steam_id, p.name, ps.entry_kills, ps.trade_kills, ps.deaths, ps.rounds_played
+		`SELECT ps.steam_id, p.name
 		 FROM player_stats ps
 		 `+playersJoin(joinInner, "p", "ps.match_id", "ps.steam_id", false)+`
 		 WHERE ps.match_id = ? AND `+HumanOnly("p")+` ORDER BY p.name ASC`, matchID,
@@ -864,8 +847,7 @@ func (s *Store) GetCombatStats(matchID int64) ([]models.CombatStat, error) {
 	var out []models.CombatStat
 	for base.Next() {
 		var r models.CombatStat
-		var entryKills, tradeKills, deaths, roundsPlayed int
-		if err := base.Scan(&r.SteamID, &r.Name, &entryKills, &tradeKills, &deaths, &roundsPlayed); err != nil {
+		if err := base.Scan(&r.SteamID, &r.Name); err != nil {
 			return nil, fmt.Errorf("store: get combat stats: %w", err)
 		}
 		d := dmgs[r.SteamID]
@@ -874,21 +856,14 @@ func (s *Store) GetCombatStats(matchID int64) ([]models.CombatStat, error) {
 			r.DMGConvPct = 100 * float64(d.onKill) / float64(d.total)
 		}
 		r.FFDamage = d.ff
-		// Percent scale (pinned by TestGetCombatStatsFromStoredRows): all
-		// four percent fields of this row are 0..100, like KASTPct and
-		// DMGConvPct above — NOT 0..1 fractions. Entry% is bounded within
-		// 0..100 by construction (the extractor credits at most one first
-		// blood per round — extract/agg.go); Trade% is a ratio over the
-		// player's own deaths and may legitimately exceed 100.
-		if roundsPlayed > 0 {
-			r.EntryRate = 100 * float64(entryKills) / float64(roundsPlayed)
-		}
-		if deaths > 0 {
-			r.TradeRate = 100 * float64(tradeKills) / float64(deaths)
-		}
+		// Percent scale (pinned by TestGetCombatStatsFromStoredRows):
+		// DMGConvPct is 0..100 — NOT a 0..1 fraction. It (with
+		// FFDamage/UntradedDeaths/TradeOppMissed) stays Go per the
+		// documented residual: the grammar cannot express the same-tick
+		// EXISTS split (audit N7–N9) or victim-side equality. Entry%,
+		// Trade% and KAST% left with the metric conversion (W2).
 		r.UntradedDeaths = untraded[r.SteamID]
 		r.TradeOppMissed = tradeOpp[r.SteamID] // distance-gated subset (UI badge)
-		r.KASTPct = kastPct[r.SteamID]
 		out = append(out, r)
 	}
 	if err := base.Err(); err != nil {

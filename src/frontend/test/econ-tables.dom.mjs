@@ -903,7 +903,7 @@ check(
 // with `codicon-close` INSIDE the `p.error[role="alert"]`, clearing the
 // state variable. Each sub-check asserts the view stays mounted (its own
 // content still rendered) and no navigation happened.
-console.log('I. error dismissals: Match top-level, KAST%, pinned stats, round types, Economy');
+console.log('I. error dismissals: Match top-level, pinned stats, round types, Economy');
 const clickEl = (el) => el.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
 const alertP = (r, needle) =>
   [...r.querySelectorAll('p.error[role="alert"]')].find((p) => p.textContent.includes(needle));
@@ -943,18 +943,7 @@ const dismissInPlace = async (r, needle, stillThere) => {
   );
 }
 
-// (b) combatError on the Scoreboard tab ("KAST% unavailable").
-{
-  const d = { ...dataFor(13), getCombatStats: new Error('kast backend down') };
-  root = await showMatch(d, { routeTab: 'Scoreboard' });
-  const p = alertP(root, 'KAST% unavailable');
-  check('KAST% failure renders its own alert', !!p && p.textContent.includes('kast backend down'), p ? p.textContent.trim() : 'no alert');
-  check('the ✕ rides INSIDE the KAST% alert', !!p?.querySelector('button.btn.small .codicon-close'), '');
-  const res = await dismissInPlace(root, 'KAST% unavailable', (r) => !!r.querySelector('.data-table.scoreboard'));
-  check('✕ clears the KAST% error in place (scoreboard table intact)', res.gone && res.mounted && res.noNav, JSON.stringify(res));
-}
-
-// (c) metricError ("Pinned stats unavailable") — needs a pinned metric so
+// (b) metricError ("Pinned stats unavailable") — needs a pinned metric so
 // the pins effect actually runs, then a failing ListMetrics.
 {
   localStorage.setItem('spectra:pinned-metrics', '[7]');
@@ -967,7 +956,7 @@ const dismissInPlace = async (r, needle, stillThere) => {
   localStorage.removeItem('spectra:pinned-metrics');
 }
 
-// (d) classError on the Rounds tab ("Round types unavailable").
+// (c) classError on the Rounds tab ("Round types unavailable").
 {
   const d = { ...dataFor(13), getRoundClasses: new Error('class backend down') };
   root = await showMatch(d, { routeTab: 'Rounds' });
@@ -977,7 +966,7 @@ const dismissInPlace = async (r, needle, stillThere) => {
   check('✕ clears the round-types error in place (rounds table intact)', res.gone && res.mounted && res.noNav, JSON.stringify(res));
 }
 
-// (e) The Economy TAB's own error (Economy.svelte) — its fetch has no
+// (d) The Economy TAB's own error (Economy.svelte) — its fetch has no
 // in-view re-trigger, so the ✕ is its dismissal.
 {
   const d = { ...dataFor(13), getEconomy: new Error('eco backend down') };
@@ -1241,6 +1230,77 @@ console.log('J. Scoreboard metric header: m5-mth cap scope, tooltip survives, so
     'no version number or timestamp appears in any metric cell/header output',
     leaks.length === 0,
     leaks.join(' | '),
+  );
+  localStorage.removeItem('spectra:pinned-metrics');
+}
+
+console.log('K. Scoreboard order: the fixed Go block first, then ADR · KAST% · HS% · K/D as metric columns');
+{
+  // The four converted columns (design §3.4): they left SCORE_COLS and
+  // arrive as PINNED METRIC columns at the tail, in today's relative
+  // order. Pins are set EXPLICITLY here (a present key renders the
+  // stored selection verbatim — W1's absent→DEFAULT_PINS rule resolves
+  // a fresh install to these same four ids in this same order, pinned
+  // in metricorder.test.js); the fixed block is code and no pref can
+  // reorder or preempt it.
+  localStorage.setItem('spectra:pinned-metrics', '[1,2,3,4]');
+  const mk = (id, name, format) => ({
+    id, name, title: name, shortName: name, scope: 'match', format,
+    doc: `Formula: ${name}`,
+  });
+  const d = {
+    ...dataFor(13),
+    listMetrics: [
+      mk(1, 'ADR', 'float1'),
+      mk(2, 'KAST%', 'percent'),
+      mk(3, 'HS%', 'percent'),
+      mk(4, 'K/D', 'float2'),
+    ],
+    // Fresh rows for alice only — bob's metric cells render the honest
+    // dash (the unit IS covered, he just has no row).
+    getMetricValuesForMatch: [
+      { metricId: 1, steamId: 'A', value: 90, n: 13 },
+      { metricId: 2, steamId: 'A', value: 0.71, n: 13 },
+      { metricId: 3, steamId: 'A', value: 0.5, n: 13 },
+      { metricId: 4, steamId: 'A', value: 1.67, n: 13 },
+    ],
+    getMetricComputeState: [1, 2, 3, 4].map((metricId) => ({ metricId, state: 'fresh' })),
+  };
+  root = await showMatch(d, { routeTab: 'Scoreboard' });
+  await sleep();
+  const ths = [...root.querySelectorAll('.data-table.scoreboard thead th')];
+  const labelOf = (th) => (th.querySelector('.th-sort')?.textContent || th.textContent || '').trim();
+  const labels = ths.map(labelOf);
+  const fixed = ['Name', 'Team', 'K', 'D', 'A', 'KDA', 'DMG', 'Rnds', '2K', '3K', '4K', '5K', 'Entry', 'Trade', 'Opening K/D', 'Streak', 'Util', 'MVPs', 'Score'];
+  const converted = ['ADR', 'KAST%', 'HS%', 'K/D'];
+  check(
+    'the fixed block leads in store order (no converted column inside it)',
+    JSON.stringify(labels.slice(1, 1 + fixed.length)) === JSON.stringify(fixed),
+    JSON.stringify(labels),
+  );
+  check(
+    'the four converted columns follow, in today’s relative order',
+    JSON.stringify(labels.slice(1 + fixed.length)) === JSON.stringify(converted),
+    JSON.stringify(labels.slice(1 + fixed.length)),
+  );
+  check(
+    'exactly those four headers wear m5-mth (fixed ones never do)',
+    ths.filter((t) => t.classList.contains('m5-mth')).length === 4 &&
+      ths.slice(1, 1 + fixed.length).every((t) => !t.classList.contains('m5-mth')),
+    String(ths.filter((t) => t.classList.contains('m5-mth')).length),
+  );
+  const alice = [...root.querySelectorAll('.data-table.scoreboard tbody tr')].find(
+    (r) => (r.querySelector('.name-cell')?.textContent || '').includes('alice'),
+  );
+  const cellAt = (i) => (alice ? alice.children[i].textContent.trim() : 'no alice row');
+  const first = 1 + fixed.length;
+  check(
+    'the metric cells render through fmtMetric (90.0 / 71% / 50% / 1.67)',
+    cellAt(first) === '90.0' &&
+      cellAt(first + 1) === '71%' &&
+      cellAt(first + 2) === '50%' &&
+      cellAt(first + 3) === '1.67',
+    [cellAt(first), cellAt(first + 1), cellAt(first + 2), cellAt(first + 3)].join(' | '),
   );
   localStorage.removeItem('spectra:pinned-metrics');
 }
