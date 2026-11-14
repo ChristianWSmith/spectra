@@ -269,13 +269,13 @@ func TestSaveMetricBuiltinGuards(t *testing.T) {
 	}
 }
 
-// TestListMetricsPageArity pins the service passthrough: all SIX
-// arguments reach the store in their positions — the two NEW filter
-// words (scope, denominator) included — since a dropped, defaulted or
-// reordered arg would select a different window than the one asserted
-// here. The filter vocabulary is the store's: each unknown word comes
-// back as the store's own pre-SQL rejection (which is only reachable
-// when the argument lands at all).
+// TestListMetricsPageArity pins the service passthrough: all SEVEN
+// arguments reach the store in their positions — the four filter words
+// (origin, scope, denominator, format) included — since a dropped,
+// defaulted or reordered arg would select a different window than the
+// one asserted here. The filter vocabulary is the store's: each unknown
+// word comes back as the store's own pre-SQL rejection (which is only
+// reachable when the argument lands at all).
 func TestListMetricsPageArity(t *testing.T) {
 	st, err := store.Open(filepath.Join(t.TempDir(), "list-page.db"))
 	if err != nil {
@@ -307,9 +307,9 @@ func TestListMetricsPageArity(t *testing.T) {
 	}
 
 	// Every filter empty + limit 0 (store default) = the whole canonical
-	// list — the four filter slots really are the filters (a stray value
+	// list — the five filter slots really are the filters (a stray value
 	// would narrow this).
-	page, err := svc.ListMetricsPage("", "", "", "", 0, 0)
+	page, err := svc.ListMetricsPage("", "", "", "", "", 0, 0)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(all empty): %v", err)
 	}
@@ -322,26 +322,62 @@ func TestListMetricsPageArity(t *testing.T) {
 		}
 	}
 
-	// The three filters in one call: origin 'mine' + scope 'match' +
-	// denominator 'rounds' selects exactly the one seeded user row (the
-	// plugin's/other users' rows differ on a predicate, the builtins are
-	// excluded by origin) — so every filter word landed where it belongs.
-	page, err = svc.ListMetricsPage("", "mine", "match", "rounds", 0, 0)
+	// The four filters in one call: origin 'mine' + scope 'match' +
+	// denominator 'rounds' + format 'float1' selects exactly the one
+	// seeded user row (the plugin's/other users' rows differ on a
+	// predicate, the builtins are excluded by origin) — so every filter
+	// word landed where it belongs.
+	page, err = svc.ListMetricsPage("", "mine", "match", "rounds", "float1", 0, 0)
 	if err != nil {
-		t.Fatalf("ListMetricsPage(mine, match, rounds): %v", err)
+		t.Fatalf("ListMetricsPage(mine, match, rounds, float1): %v", err)
 	}
 	if len(page.Rows) != 1 || page.Rows[0].Name != "per_round_rate" ||
-		page.Rows[0].Scope != "match" || page.Rows[0].Denominator != "rounds" {
+		page.Rows[0].Scope != "match" || page.Rows[0].Denominator != "rounds" ||
+		page.Rows[0].Format != "float1" {
 		got := make([]string, 0, len(page.Rows))
 		for _, m := range page.Rows {
-			got = append(got, m.Name+"("+m.Scope+"/"+m.Denominator+")")
+			got = append(got, m.Name+"("+m.Scope+"/"+m.Denominator+"/"+m.Format+")")
 		}
-		t.Errorf("mine+match+rounds = %v, want [per_round_rate(match/rounds)]", got)
+		t.Errorf("mine+match+rounds+float1 = %v, want [per_round_rate(match/rounds/float1)]", got)
 	}
 
-	// The cursor (arg 5): the first row as afterID drops it and keeps
+	// The format word answers in ITS position (arg 5): both seeded user
+	// rows are float1, so float1 keeps every mine row while percent
+	// narrows the same call to nothing — counts derived from the
+	// catalog above, never pinned.
+	var mineFloat1, minePercent int
+	for _, m := range all {
+		if m.Origin == "builtin" {
+			continue
+		}
+		switch m.Format {
+		case "float1":
+			mineFloat1++
+		case "percent":
+			minePercent++
+		}
+	}
+	if mineFloat1 == 0 {
+		t.Fatalf("fixture has no float1 mine row — the format narrowing check would be vacuous")
+	}
+	f1, err := svc.ListMetricsPage("", "mine", "", "", "float1", 0, 0)
+	if err != nil {
+		t.Fatalf("ListMetricsPage(mine, format=float1): %v", err)
+	}
+	if len(f1.Rows) != mineFloat1 {
+		t.Errorf("mine+float1 = %d rows, want every float1 mine row (%d)", len(f1.Rows), mineFloat1)
+	}
+	pc, err := svc.ListMetricsPage("", "mine", "", "", "percent", 0, 0)
+	if err != nil {
+		t.Fatalf("ListMetricsPage(mine, format=percent): %v", err)
+	}
+	if len(pc.Rows) != minePercent {
+		t.Errorf("mine+percent = %d rows, want every percent mine row (%d)", len(pc.Rows), minePercent)
+	}
+
+	// The cursor (arg 6): the first row as afterID drops it and keeps
 	// the rest, in order — with the store's default limit still in play.
-	cursored, err := svc.ListMetricsPage("", "", "", "", all[0].ID, 0)
+	cursored, err := svc.ListMetricsPage("", "", "", "", "", all[0].ID, 0)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(cursor): %v", err)
 	}
@@ -350,8 +386,8 @@ func TestListMetricsPageArity(t *testing.T) {
 			len(cursored.Rows), cursored.Rows[0].ID, len(all)-1, all[0].ID)
 	}
 
-	// The limit (arg 6): 1 row + the has-next probe.
-	limited, err := svc.ListMetricsPage("", "", "", "", 0, 1)
+	// The limit (arg 7): 1 row + the has-next probe.
+	limited, err := svc.ListMetricsPage("", "", "", "", "", 0, 1)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(limit 1): %v", err)
 	}
@@ -366,15 +402,18 @@ func TestListMetricsPageArity(t *testing.T) {
 		{"origin", "everything", `unknown origin filter "everything"`},
 		{"scope", "career", `unknown scope filter "career"`},
 		{"denominator", "games", `unknown denominator filter "games"`},
+		{"format", "huge", `unknown format filter "huge"`},
 	} {
 		var err error
 		switch tc.slot {
 		case "origin":
-			_, err = svc.ListMetricsPage("", tc.word, "", "", 0, 100)
+			_, err = svc.ListMetricsPage("", tc.word, "", "", "", 0, 100)
 		case "scope":
-			_, err = svc.ListMetricsPage("", "", tc.word, "", 0, 100)
+			_, err = svc.ListMetricsPage("", "", tc.word, "", "", 0, 100)
 		case "denominator":
-			_, err = svc.ListMetricsPage("", "", "", tc.word, 0, 100)
+			_, err = svc.ListMetricsPage("", "", "", tc.word, "", 0, 100)
+		case "format":
+			_, err = svc.ListMetricsPage("", "", "", "", tc.word, 0, 100)
 		}
 		if err == nil || !strings.Contains(err.Error(), tc.want) {
 			t.Errorf("%s filter %q: err = %v, want the store's %s", tc.slot, tc.word, err, tc.want)

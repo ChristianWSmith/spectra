@@ -125,7 +125,9 @@ func exprErrorErr(perr *metrics.ParseError) error {
 // metricFormats are the accepted Format values (contract). float2 keeps
 // a two-decimal tail unconditionally (Q6 — the K/D seeds render2.00,
 // never the auto-format's "2"); it is a display tag only, no DDL and no
-// grammar change.
+// grammar change. The store's format filter keeps the SAME vocabulary
+// in canonical enum order (store.metricFormatTokens) — one list, two
+// layers, never a token this map lacks.
 var metricFormats = map[string]bool{"": true, "int": true, "float1": true, "float2": true, "percent": true, "currency": true}
 
 // ListMetrics returns all definitions (builtin first).
@@ -137,18 +139,20 @@ func (s *MetricsService) ListMetrics() ([]models.MetricRow, error) {
 // returns (the Builder's "Load more" pagination): the rows after afterID
 // (0 = the first window) for the same server-side search query AND the
 // same server-side filters — origin ("" = all, "builtin", "mine" = user +
-// plugin, "none" = both toggles off), scope ("match", "profile", "none")
-// and denominator ("rounds", "matches", "none" — with the store's
+// plugin, "none" = both toggles off), scope ("match", "profile", "none"),
+// denominator ("rounds", "matches", "none" — with the store's
 // denominator-less rule: a row with no denominator passes in every
-// state), which are the Builder's three toggle PAIRS; see
-// store.ListMetricsPage — at most limit rows (0 = the store's default
-// window), plus HasNext (another window follows) — see store.ListMetricsPage
-// / models.MetricListPage.
+// state) and format (the Builder's Type group: "" = every format,
+// "none" = none, or the canonical comma-subset of format tokens where
+// "auto" names the ” format) — which are the Builder's four filter
+// groups; see store.ListMetricsPage — at most limit rows (0 = the
+// store's default window), plus HasNext (another window follows) — see
+// store.ListMetricsPage / models.MetricListPage.
 // ListMetrics itself stays unbounded for its whole-library readers
 // (Match's pinned scoreboard columns, Reports' appendix,
 // CommandPalette's search), which are not changing.
-func (s *MetricsService) ListMetricsPage(query string, originFilter string, scopeFilter string, denomFilter string, afterID int64, limit int) (*models.MetricListPage, error) {
-	return s.st.ListMetricsPage(query, originFilter, scopeFilter, denomFilter, afterID, limit)
+func (s *MetricsService) ListMetricsPage(query string, originFilter string, scopeFilter string, denomFilter string, formatFilter string, afterID int64, limit int) (*models.MetricListPage, error) {
+	return s.st.ListMetricsPage(query, originFilter, scopeFilter, denomFilter, formatFilter, afterID, limit)
 }
 
 // GetMetric returns one by id (or name).

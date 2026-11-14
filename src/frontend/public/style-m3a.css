@@ -972,7 +972,8 @@ canvas.heat-canvas {
   font-size: 0.85em;
 }
 
-/* One group = its label over its two option rows. */
+/* One group = its label over its option rows (two for the pairs, six
+   for the Type group's format checkboxes). */
 .bld-filter-group {
   display: flex;
   flex-direction: column;

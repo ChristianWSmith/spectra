@@ -755,25 +755,28 @@ export function listMetrics() {
 // listMetricsPage is the Builder list's keyset window ("Load more"): the
 // same canonical order as listMetrics, ONE window of `limit` rows
 // strictly after `afterID` (0 = the first window), narrowed SERVER-side
-// by `query` (case-insensitive LIKE over name/title) AND by the three
-// toggle-pair filters — `originFilter` (Built-in / My metrics: '' = both,
+// by `query` (case-insensitive LIKE over name/title) AND by the four
+// filter groups — `originFilter` (Built-in / My metrics: '' = both,
 // 'builtin', 'mine' = user + plugin, 'none' = both off),
-// `scopeFilter` (Match / Profile: '', 'match', 'profile', 'none') and
+// `scopeFilter` (Match / Profile: '', 'match', 'profile', 'none'),
 // `denomFilter` (Rounds / Matches: '', 'rounds', 'matches', 'none' — the
-// store's vocabulary and its denominator-less rule, store.ListMetricsPage),
-// returned as {rows, hasNext}.
+// store's vocabulary and its denominator-less rule) and `formatFilter`
+// (Type: '' = every format, 'none' = none, or the canonical comma-subset
+// of format tokens where 'auto' names the '' format — the store's
+// vocabulary, store.ListMetricsPage), returned as {rows, hasNext}.
 // Read-cached keyed (query, originFilter, scopeFilter, denomFilter,
-// afterID, limit) — every filter rides the args, so they join the ONE
-// existing cache key and need no second cache — like listMatchesPage,
-// and the WHOLE cache (this entry included) flushes on every spectra:*
-// event and inside the mutating wrappers below: invalidate() is
-// readCache.clear(), so one save/delete refetches both the paged window
-// and listMetrics.
-export function listMetricsPage(query, originFilter, scopeFilter, denomFilter, afterID, limit) {
+// formatFilter, afterID, limit) — every filter rides the args, so they
+// join the ONE existing cache key and need no second cache — like
+// listMatchesPage, and the WHOLE cache (this entry included) flushes on
+// every spectra:* event and inside the mutating wrappers below:
+// invalidate() is readCache.clear(), so one save/delete refetches both
+// the paged window and listMetrics.
+export function listMetricsPage(query, originFilter, scopeFilter, denomFilter, formatFilter, afterID, limit) {
   return cachedRead(
     'ListMetricsPage',
-    [query, originFilter, scopeFilter, denomFilter, afterID, limit],
-    () => MetricsService.ListMetricsPage(query, originFilter, scopeFilter, denomFilter, afterID, limit),
+    [query, originFilter, scopeFilter, denomFilter, formatFilter, afterID, limit],
+    () =>
+      MetricsService.ListMetricsPage(query, originFilter, scopeFilter, denomFilter, formatFilter, afterID, limit),
   );
 }
 export function getMetric(id) { return MetricsService.GetMetric(id); }

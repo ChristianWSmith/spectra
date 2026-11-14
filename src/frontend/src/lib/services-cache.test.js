@@ -519,43 +519,46 @@ test('deleteMetric invalidates on success (metric mutator)', async () => {
 
 // listMetricsPage is the Builder list's keyset window behind the SAME
 // cachedRead: identical (query, originFilter, scopeFilter, denomFilter,
-// afterID, limit) shares one promise, any arg change misses — every
-// filter rides the args, so the Built-in/My-metrics, Match/Profile and
-// Rounds/Matches toggles join the key with NO second cache — and every
-// flush that reaches listMetrics reaches it too: the save/delete
-// wrappers call invalidate(), which clears the WHOLE readCache (all
-// keys), and the spectra:* listeners do the same.
-test('listMetricsPage is read-cached (all three filters in the key) and flushes with the rest', async () => {
+// formatFilter, afterID, limit) shares one promise, any arg change
+// misses — every filter rides the args, so the Built-in/My-metrics,
+// Match/Profile, Rounds/Matches and Type toggles join the key with NO
+// second cache — and every flush that reaches listMetrics reaches it
+// too: the save/delete wrappers call invalidate(), which clears the
+// WHOLE readCache (all keys), and the spectra:* listeners do the same.
+test('listMetricsPage is read-cached (all four filters in the key) and flushes with the rest', async () => {
   services.invalidate();
   bindings.resetCalls();
 
-  const p1 = services.listMetricsPage('', '', '', '', 0, 100);
-  const p2 = services.listMetricsPage('', '', '', '', 0, 100);
-  assert.equal(p1, p2, 'same (query, origin, scope, denom, after, limit) -> the same promise');
+  const p1 = services.listMetricsPage('', '', '', '', '', 0, 100);
+  const p2 = services.listMetricsPage('', '', '', '', '', 0, 100);
+  assert.equal(p1, p2, 'same (query, origin, scope, denom, format, after, limit) -> the same promise');
   await p1;
   assert.equal(bindings.callCount('ListMetricsPage'), 1, 'backend called once');
 
-  const mine = services.listMetricsPage('', 'mine', '', '', 0, 100);
-  const profile = services.listMetricsPage('', '', 'profile', '', 0, 100);
-  const rounds = services.listMetricsPage('', '', '', 'rounds', 0, 100);
-  const none = services.listMetricsPage('', '', '', 'none', 0, 100);
-  const next = services.listMetricsPage('', '', '', '', 42, 100);
-  const q = services.listMetricsPage('adr', '', '', '', 0, 100);
+  const mine = services.listMetricsPage('', 'mine', '', '', '', 0, 100);
+  const profile = services.listMetricsPage('', '', 'profile', '', '', 0, 100);
+  const rounds = services.listMetricsPage('', '', '', 'rounds', '', 0, 100);
+  const none = services.listMetricsPage('', '', '', '', 'none', 0, 100);
+  const fmt = services.listMetricsPage('', '', '', '', 'auto,int', 0, 100);
+  const next = services.listMetricsPage('', '', '', '', '', 42, 100);
+  const q = services.listMetricsPage('adr', '', '', '', '', 0, 100);
   assert.notEqual(mine, p1, 'originFilter is part of the key');
   assert.notEqual(profile, p1, 'scopeFilter is part of the key');
   assert.notEqual(rounds, p1, 'denomFilter is part of the key');
   assert.notEqual(none, rounds, 'every denom word is its own key entry');
+  assert.notEqual(fmt, p1, 'formatFilter is part of the key');
+  assert.notEqual(fmt, none, 'every format word is its own key entry');
   assert.notEqual(next, p1, 'afterID is part of the key');
   assert.notEqual(q, p1, 'query is part of the key');
-  await Promise.all([mine, profile, rounds, none, next, q]);
-  assert.equal(bindings.callCount('ListMetricsPage'), 7);
+  await Promise.all([mine, profile, rounds, none, fmt, next, q]);
+  assert.equal(bindings.callCount('ListMetricsPage'), 8);
 
   // A spectra:* data event flushes it like every other cached read.
   fire('spectra:job-done', { jobId: 1 });
-  const afterEvent = services.listMetricsPage('', '', '', '', 0, 100);
+  const afterEvent = services.listMetricsPage('', '', '', '', '', 0, 100);
   assert.notEqual(afterEvent, p1, 'event must flush the paged window');
   await afterEvent;
-  assert.equal(bindings.callCount('ListMetricsPage'), 8);
+  assert.equal(bindings.callCount('ListMetricsPage'), 9);
 
   // ...and so does a metric save (the wrapper's full invalidate()).
   bindings.handlers.SaveMetric = (m) => ({ ...m, id: 7 });
@@ -564,10 +567,10 @@ test('listMetricsPage is read-cached (all three filters in the key) and flushes 
   } finally {
     delete bindings.handlers.SaveMetric;
   }
-  const afterSave = services.listMetricsPage('', '', '', '', 0, 100);
+  const afterSave = services.listMetricsPage('', '', '', '', '', 0, 100);
   assert.notEqual(afterSave, afterEvent, 'a save must flush the paged window');
   await afterSave;
-  assert.equal(bindings.callCount('ListMetricsPage'), 9);
+  assert.equal(bindings.callCount('ListMetricsPage'), 10);
 });
 
 test('getProfile/getCareerTrend are read-cached (item 6: profile cache)', async () => {
