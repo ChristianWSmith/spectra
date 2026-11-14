@@ -805,7 +805,9 @@ at the end of the section.
   "in position" is the extract-time proximity measure on the kill event
   (`detail_json.nearDist`, the nearest living teammate of the victim to
   the killer, −1 = nobody measurable) gated by the configured
-  trade-opportunity distance — see `store.CountPlayerTradeOpportunities`.
+  trade-opportunity distance — see `analytics.tradeOppCounts` (the
+  stored-count predicate; `store.GetCombatStats`' TradeOppMissed reads
+  its twin).
   **Source** — https://leetify.com/blog/leetify-stats-glossary (2026-11-05).
 - **`weapon_fire` game-event payload (CS2)** — what each shot event
   carries (acceptance cross-check for sampled attack-button state):
