@@ -29,6 +29,7 @@
   import ProfileLink from '../components/ProfileLink.svelte';
   import StatusChip from '../components/StatusChip.svelte';
   import MetricOrderDialog from '../components/MetricOrderDialog.svelte';
+  import Popover from '../components/Popover.svelte';
   import { seed, remember } from '../viewstate.svelte.js';
 
   let { nav = () => {} } = $props();
@@ -86,6 +87,27 @@
     orderOpen = true;
   }
 
+  // The filter multi-select's open state + its two anchors — transient
+  // by the state-placement rule (a popover): never seeded, never
+  // remembered, never in the URL, so every mount starts closed. The
+  // anchor is the canonical Popover's outside/Escape target, the
+  // trigger is where a keyboard dismissal returns focus.
+  let filterOpen = $state(false);
+  let filterAnchor = $state(null);
+  let filterTrigger = $state(null);
+
+  // Dismissal split (MatchPicker's): Escape returns focus to the
+  // trigger — focus must not strand on a node the panel just removed —
+  // while a pointer dismissal leaves it where the click put it.
+  function closeFilters() {
+    filterOpen = false;
+    filterTrigger?.focus();
+  }
+
+  function closeFiltersOutside() {
+    filterOpen = false;
+  }
+
   // --- Compute state + progress (design §4/§5) -----------------------------
   // The Builder is THE compute-state surface: every list item and the
   // editor card wear the state chip (all five words), and processing
@@ -138,25 +160,26 @@
   }
 
   // The editor form (fields + the dirty-check baseline), the list's
-  // search text and the three toggle PAIRS are view-local state: they
-  // restore across navigation through the process-scoped registry
-  // (viewstate.svelte.js — flat key; they travel together so the
-  // unsaved-changes flag, the search and the toggles read exactly as
-  // they did on leave; the search is the Profiles precedent).
+  // search text and the filter multi-select's SIX CHECKBOXES are
+  // view-local state: they restore across navigation through the
+  // process-scoped registry (viewstate.svelte.js — flat key; they
+  // travel together so the unsaved-changes flag, the search and the
+  // filter checks read exactly as they did on leave; the search is the
+  // Profiles precedent). The panel's OPEN state is transient (above).
   // Saving, previews, errors, the window cursor and the pin list stay
   // transient / their own store.
   const bldSeed = seed('builder', {
     form: newForm(),
     baseline: '',
     query: '',
-    // Source pair: the owner's STANDING default — Built-in OFF, My
+    // Origin group: the owner's STANDING default — Built-in OFF, My
     // metrics ON — so the initial view lists the user's own metrics
-    // (user + plugin). The two NEW pairs start BOTH ON (the owner's
-    // addendum: "both scopes and both denominators toggled on"), so the
-    // scope/denominator filters narrow nothing on first render. Each
-    // pair narrows SERVER-side only when a toggle goes off (originFilter
-    // / scopeFilter / denomFilter below), and both-off is legal in every
-    // pair.
+    // (user + plugin). The Scope and Denominator groups start BOTH
+    // options ON (the owner's addendum: "both scopes and both
+    // denominators toggled on"), so neither narrows the first render.
+    // Each group narrows SERVER-side only when an option goes off
+    // (originFilter / scopeFilter / denomFilter below), and both-off is
+    // legal in every group.
     builtin: false,
     mine: true,
     scopeMatch: true,
@@ -324,15 +347,16 @@
   const builtinLoaded = $derived(form.origin === 'builtin');
   const saveDisabled = $derived(saving || builtinLoaded);
 
-  // originFilter — THE one toggle → server-filter derivation: both on =
-  // the whole catalog (''), Built-in only / My metrics only = the
-  // store's partition words, both off = 'none' (an empty list — legal,
-  // it falls out of the same read path). "mine" is the store's
-  // complement (origin <> 'builtin': user + plugin), so the toggles can
-  // never disagree with the store about what "mine" means. It rides the
-  // list read's args — see refreshList — so it restarts the window
-  // exactly like a search change does (the effect below reads it) and
-  // joins listMetricsPage's cache key for free (services.js).
+  // originFilter — THE one checked-set → server-word derivation (the
+  // multi-select's Origin group): both checked = the whole catalog
+  // (''), Built-in only / My metrics only = the store's partition words,
+  // neither checked = 'none' (an empty list — legal, it falls out of the
+  // same read path). "mine" is the store's complement (origin <>
+  // 'builtin': user + plugin), so the options can never disagree with
+  // the store about what "mine" means. It rides the list read's args —
+  // see refreshList — so it restarts the window exactly like a search
+  // change does (the effect below reads it) and joins listMetricsPage's
+  // cache key for free (services.js).
   const originFilter = $derived.by(() => {
     if (builtin && mine) return '';
     if (builtin) return 'builtin';
@@ -340,12 +364,12 @@
     return 'none';
   });
 
-  // scopeFilter / denomFilter — the SAME derivation over the two new
-  // pairs (Match / Profile, Rounds / Matches): both on = no predicate,
-  // one on = that side, both off = 'none'. The store owns what each
-  // word means — including the denominator pair's denominator-less
-  // rule (a row with no denominator passes in every state, so its
-  // "none" is not the empty set the other two spell).
+  // scopeFilter / denomFilter — the SAME derivation over the other two
+  // groups (Match / Profile, Rounds / Matches): both checked = no
+  // predicate, one checked = that side, neither = 'none'. The store
+  // owns what each word means — including the denominator group's
+  // denominator-less rule (a row with no denominator passes in every
+  // state, so its "none" is not the empty set the other two spell).
   const scopeFilter = $derived.by(() => {
     if (scopeMatch && scopeProfile) return '';
     if (scopeMatch) return 'match';
@@ -407,11 +431,11 @@
 
   // The list read (mount AND listError's Retry): the first run is
   // immediate (the list loads without the debounce delay), later runs
-  // fire 250 ms after a query OR toggle change (the Library's debounce)
-  // so typing doesn't hammer the store — and ANY toggle flip (source,
-  // scope or denominator) lands on this SAME path, which restarts the
-  // window at cursor 0 (a filter change never appends onto the previous
-  // filter's windows).
+  // fire 250 ms after a query OR filter change (the Library's debounce)
+  // so typing doesn't hammer the store — and ANY checkbox flip in the
+  // multi-select (origin, scope or denominator) lands on this SAME
+  // path, which restarts the window at cursor 0 (a filter change never
+  // appends onto the previous filter's windows).
   let firstList = true;
   $effect(() => {
     const q = query;
@@ -435,7 +459,7 @@
   }
 
   // refreshList RESTARTS the window sequence: cursor 0, replace — a
-  // search change, a toggle change (any of the three pairs), a
+  // search change, a filter change (any of the three groups), a
   // save/delete refresh or a Retry must never APPEND onto the previous
   // window's rows. listGen tags the sequence so a Load-more reply
   // landing after a restart is dropped instead of appended (the
@@ -945,59 +969,97 @@
         placeholder="Search metrics…"
         bind:value={query}
       />
-      <!-- Toggle lines: THREE pairs, ONE PAIR PER LINE (owner verbatim).
-           The source pair keeps its standing default — Built-in OFF,
-           My metrics ON (owner ruling: the initial view lists the user's
-           own metrics); the two NEW pairs start BOTH ON (owner
-           addendum: both scopes and both denominators toggled on), so
-           neither narrows the first render. Each pair drives one
-           SERVER-side narrowing (originFilter / scopeFilter /
-           denomFilter below) on the same debounced restart as the
-           search; both off is legal in every pair and leaves the empty
-           state below. Toggle BUTTONS — the Combat Clutches won/lost
-           pattern (btn small + aria-pressed, class:active paints the on
-           state). -->
-      <div class="toolbar" role="group" aria-label="Metric sources">
-        <button
-          class="btn small bld-src"
-          class:active={builtin}
-          aria-pressed={builtin}
-          onclick={() => (builtin = !builtin)}
-        >Built-in</button>
-        <button
-          class="btn small bld-src"
-          class:active={mine}
-          aria-pressed={mine}
-          onclick={() => (mine = !mine)}
-        >My metrics</button>
-      </div>
-      <div class="toolbar" role="group" aria-label="Metric scopes">
-        <button
-          class="btn small bld-src"
-          class:active={scopeMatch}
-          aria-pressed={scopeMatch}
-          onclick={() => (scopeMatch = !scopeMatch)}
-        >Match</button>
-        <button
-          class="btn small bld-src"
-          class:active={scopeProfile}
-          aria-pressed={scopeProfile}
-          onclick={() => (scopeProfile = !scopeProfile)}
-        >Profile</button>
-      </div>
-      <div class="toolbar" role="group" aria-label="Metric denominators">
-        <button
-          class="btn small bld-src"
-          class:active={denomRounds}
-          aria-pressed={denomRounds}
-          onclick={() => (denomRounds = !denomRounds)}
-        >Rounds</button>
-        <button
-          class="btn small bld-src"
-          class:active={denomMatches}
-          aria-pressed={denomMatches}
-          onclick={() => (denomMatches = !denomMatches)}
-        >Matches</button>
+      <!-- ONE multi-select for every list filter (owner ruling:
+           "probably just a multi-select is good enough") — it replaces
+           the three toggle-button lines: a trigger opens ONE checkbox
+           panel with three labelled groups (Origin / Scope /
+           Denominator) over the SAME six viewstate booleans and the
+           SAME debounced list read below. The FilterBar vein — the
+           control commits, the parent owns the filter state, the
+           debounced refetch follows — without reusing FilterBar itself
+           (that is the landmark feed's conditional-fields panel).
+           Dismissal is the canonical Popover's (Escape / outside
+           pointerdown); focus returns to the trigger on Escape only. -->
+      <div class="toolbar">
+        <span class="bld-filter-host" bind:this={filterAnchor}>
+          <button
+            class="btn small"
+            class:primary={filterOpen}
+            bind:this={filterTrigger}
+            aria-haspopup="true"
+            aria-expanded={filterOpen}
+            aria-controls={filterOpen ? 'bld-filter-pop' : null}
+            title="Choose which metrics the list shows"
+            onclick={() => (filterOpen = !filterOpen)}
+            ><span class="codicon codicon-filter" aria-hidden="true"></span> Filters
+            <span class="codicon codicon-chevron-down" aria-hidden="true"></span></button
+          >
+          <Popover
+            open={filterOpen}
+            anchor={filterAnchor}
+            onClose={closeFilters}
+            onOutside={closeFiltersOutside}
+          >
+            <div
+              class="bld-filter-pop"
+              id="bld-filter-pop"
+              role="group"
+              aria-label="Metric filters"
+            >
+              <div class="bld-filter-group" role="group" aria-label="Origin">
+                <span class="filt-lab">Origin</span>
+                <label class="filt-check"
+                  ><input
+                    type="checkbox"
+                    checked={builtin}
+                    onchange={(e) => (builtin = e.currentTarget.checked)}
+                  /> Built-in</label
+                >
+                <label class="filt-check"
+                  ><input
+                    type="checkbox"
+                    checked={mine}
+                    onchange={(e) => (mine = e.currentTarget.checked)}
+                  /> My metrics</label
+                >
+              </div>
+              <div class="bld-filter-group" role="group" aria-label="Scope">
+                <span class="filt-lab">Scope</span>
+                <label class="filt-check"
+                  ><input
+                    type="checkbox"
+                    checked={scopeMatch}
+                    onchange={(e) => (scopeMatch = e.currentTarget.checked)}
+                  /> Match</label
+                >
+                <label class="filt-check"
+                  ><input
+                    type="checkbox"
+                    checked={scopeProfile}
+                    onchange={(e) => (scopeProfile = e.currentTarget.checked)}
+                  /> Profile</label
+                >
+              </div>
+              <div class="bld-filter-group" role="group" aria-label="Denominator">
+                <span class="filt-lab">Denominator</span>
+                <label class="filt-check"
+                  ><input
+                    type="checkbox"
+                    checked={denomRounds}
+                    onchange={(e) => (denomRounds = e.currentTarget.checked)}
+                  /> Rounds</label
+                >
+                <label class="filt-check"
+                  ><input
+                    type="checkbox"
+                    checked={denomMatches}
+                    onchange={(e) => (denomMatches = e.currentTarget.checked)}
+                  /> Matches</label
+                >
+              </div>
+            </div>
+          </Popover>
+        </span>
       </div>
       {#if metrics.length === 0 && !listError}
         {#if loading}
@@ -1005,8 +1067,8 @@
         {:else if appliedQuery}
           <p class="muted" role="status">No metrics match “{appliedQuery}”.</p>
         {:else}
-          <!-- Query-less empty: a filter pair narrowed the window to
-               nothing (an empty My-metrics side, both source toggles
+          <!-- Query-less empty: a filter group narrowed the window to
+               nothing (an empty My-metrics side, both origin options
                off, Match+Profile off) — legal, and said so here instead
                of leaving a blank panel. -->
           <p class="muted" role="status">No metrics to show.</p>
