@@ -1,9 +1,11 @@
 package store
 
-// Profile read-model queries: the Sides card's per-round side splits, the
-// Trade rate's opportunity denominator and the two per-match counter
-// averages (profileservice.GetProfile). Each pins the decisions its doc
-// comment states — no side/proximity/round guess ever produces a count.
+// Profile read-model queries: the Sides card's per-round side splits and
+// the Trade rate's opportunity denominator. Each pins the decisions its
+// doc comment states — no side/proximity/round guess ever produces a
+// count. (The per-match counter means that used to live here left with
+// GetPlayerMatchAverages' removal — dogfooding W3: the two cards they
+// served now read the career_avg_* metric rows.)
 
 import (
 	"testing"
@@ -134,42 +136,6 @@ func TestCountPlayerTradeOpportunities(t *testing.T) {
 	}
 	if n, err := s.CountPlayerTradeOpportunities("100"); err != nil || n != 3 {
 		t.Errorf("opportunities after re-run = %d, %v, want 3 (1 + 2)", n, err)
-	}
-}
-
-// TestGetPlayerMatchAverages: the per-match means read player_stats
-// directly (one row per match) — 3/50 in the first match, 5/100 in the
-// second, so 4/75; a player with no rows averages 0 rather than NULL.
-func TestGetPlayerMatchAverages(t *testing.T) {
-	s := openMem(t)
-	saveTestMatch(t, s, "/d/avg1.dem", "sha-avg1", time.Now())
-	id2, err := s.CreateMatchRow("/d/avg2.dem", "sha-avg2", 5)
-	if err != nil {
-		t.Fatalf("CreateMatchRow: %v", err)
-	}
-	em := testExtracted("sha-avg2", time.Now().Add(time.Hour))
-	em.PlayerStats[0].EnemiesFlashed = 5
-	em.PlayerStats[0].UtilityDamage = 100
-	if err := s.SaveExtracted(id2, em); err != nil {
-		t.Fatalf("SaveExtracted: %v", err)
-	}
-
-	avg, err := s.GetPlayerMatchAverages("100")
-	if err != nil {
-		t.Fatalf("GetPlayerMatchAverages: %v", err)
-	}
-	if avg.EnemiesFlashed < 3.99 || avg.EnemiesFlashed > 4.01 {
-		t.Errorf("enemiesFlashed = %v, want 4 ((3+5)/2)", avg.EnemiesFlashed)
-	}
-	if avg.UtilDamage < 74.9 || avg.UtilDamage > 75.1 {
-		t.Errorf("utilDamage = %v, want 75 ((50+100)/2)", avg.UtilDamage)
-	}
-	empty, err := s.GetPlayerMatchAverages("999")
-	if err != nil {
-		t.Fatalf("GetPlayerMatchAverages(unknown): %v", err)
-	}
-	if empty.EnemiesFlashed != 0 || empty.UtilDamage != 0 {
-		t.Errorf("unknown player averages = %+v, want 0/0", empty)
 	}
 }
 

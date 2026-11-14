@@ -20,14 +20,7 @@
     metricProgressFrac,
     metricProgressStage,
   } from '../metricstate.js';
-  import {
-    ADR_SIGMA_DEF,
-    OPENING_DEF,
-    PROFILE_TRADE_DEF,
-    AVG_FLASHED_DEF,
-    AVG_UTIL_DEF,
-    KAST_DEF,
-  } from '../definitions.js';
+  import { OPENING_DEF } from '../definitions.js';
   import { fmt1, fmt2, fmtPercent, fmtDate, fmtInt, fmtPatch, fmtMetric } from '../fmt.js';
   import { buildHash } from '../router.js';
   import { readOrder, resolvePinIds, pinnedInSequence } from '../metricorder.js';
@@ -354,44 +347,32 @@
   {/if}
 
   {#if profile}
+    <!-- The FIXED block of the profile surface (dogfooding design §1.5):
+         the Go-rendered stats in their current relative order, minus the
+         nine cards that converted to metrics. The "Career metrics"
+         panel below is the metric half of the same surface — with W1's
+         default pins it re-expresses today's eleven cards as these 4
+         fixed cards followed by 9 metric rows. -->
     <div class="stat-grid">
       <StatCard label="Matches" value={profile.matches} sub={`${profile.wins} wins`} title="Matches in the library for this player" />
       <StatCard label="Win%" value={fmtPercent(profile.winPct)} sub={`${profile.wins}/${profile.matches || 0}`} title="Share of matches won" />
-      <StatCard label="ADR ± σ" value={`${fmt1(profile.adrAvg)} ± ${fmt1(profile.adrStd)}`} sub="consistency" title={ADR_SIGMA_DEF} />
-      <StatCard label="K/D" value={fmt2(profile.kd)} sub="career" title="Kills ÷ deaths across all matches" />
-      <StatCard label="HS%" value={fmtPercent(profile.hsPct)} sub="headshots" title="Headshot share of kills" />
-      <StatCard label="KAST%" value={fmtPercent(profile.kastPct)} sub="kill/assist/trade/survive" title={KAST_DEF} />
       <StatCard label="Opening duels" value={fmtPercent(profile.openingRate)} sub="win rate" title={OPENING_DEF} />
-      <StatCard
-        label="Trade rate"
-        value={fmtPercent(profile.tradeRate)}
-        sub={profile.tradeOpps > 0 ? `${profile.trades} of ${profile.tradeOpps} opportunities` : 'trades ÷ opportunities'}
-        title={PROFILE_TRADE_DEF}
-      />
       <StatCard
         label="Clutches"
         value={profile.clutches}
-        sub={`${fmtPercent(profile.clutchWinPct)} won`}
-        title="Clutches (1vN) found in this player's matches, and the share won"
-      />
-      <StatCard
-        label="Avg enemies flashed"
-        value={fmt1(profile.avgEnemiesFlashed)}
-        sub="per match"
-        title={AVG_FLASHED_DEF}
-      />
-      <StatCard
-        label="Avg util damage"
-        value={fmt1(profile.avgUtilDamage)}
-        sub="per match"
-        title={AVG_UTIL_DEF}
+        sub="1vN"
+        title="Clutches (1vN) found in this player's matches"
       />
     </div>
 
-    <!-- Career metrics: profile-scope pins read from the stored career
-         rows (design §5 — one canonical read for the whole pinned set,
-         the state machine per cell). Hidden entirely while nothing is
-         pinned that resolves; a failed read shows its own alert. -->
+    <!-- Career metrics — the METRIC half of the profile surface
+         (dogfooding design §3.5): profile-scope pins read from the
+         stored career rows (one canonical read for the whole pinned
+         set, the state machine per cell). With W1's default pins this
+         renders the nine converted metrics in default order directly
+         after the four fixed cards above — today's eleven cards,
+         re-expressed. Hidden entirely while nothing is pinned that
+         resolves; a failed read shows its own alert. -->
     {#if careerCols.length > 0 || careerError}
       <section class="panel">
         <h2>Career metrics</h2>

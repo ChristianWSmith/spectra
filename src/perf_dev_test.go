@@ -61,8 +61,8 @@ func TestPerfServiceDevDB(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetProfile: %v", err)
 	}
-	t.Logf("GetProfile(%s): matches=%d ADR=%.1f KAST=%.1f in %s",
-		steam, pf.Matches, pf.ADRAvg, pf.KASTPct, time.Since(t0).Round(time.Millisecond))
+	t.Logf("GetProfile(%s): matches=%d wins=%d clutches=%d openingRate=%.1f in %s",
+		steam, pf.Matches, pf.Wins, pf.Clutches, pf.OpeningRate, time.Since(t0).Round(time.Millisecond))
 }
 
 // TestPerfVoiceDevDB measures the M4 voice routes against the developer's

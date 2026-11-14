@@ -1221,21 +1221,33 @@ func (s *Store) ListPlayers(query string) ([]models.CareerSummary, error) {
 	return out, nil
 }
 
-// trendMetricWhitelist maps GetTrend metric names to SQL expressions
-// (identifiers only — no user input ever reaches the query text). The kast
-// and kd entries reuse the shared scope consts in queries.go — the same
-// expressions GetPlayerHistory and GetScoreboard run.
-var trendMetricWhitelist = map[string]string{
-	"adr":  "ps.adr",
-	"kast": kastPerMatchSQL,
-	"kd":   kdPerMatchSQL,
-	"hs":   "ps.hs_pct"}
+// trendMetricSeed maps GetTrend's four trend-button names to the
+// MATCH-scope seed metric names whose stored rows the series reads
+// (dogfooding design §3.5's D13: the trend consumes the match-scope
+// adr / kast / kd / hs_pct rows — never the profile-scope career_*
+// twins; the button set stays these four — making it metric-driven is a
+// product extension, out of scope). Unknown names yield an error (the
+// API contract below); a definition missing from the catalog yields an
+// honest empty series, never a Go recomputation.
+var trendMetricSeed = map[string]string{
+	"adr":  "adr",
+	"kast": "kast",
+	"kd":   "kd",
+	"hs":   "hs_pct",
+}
 
 // GetTrend returns a per-match metric series for one player, ordered by
 // CS2 patch number — the authoritative "when this match was played" (a
 // demo carries no played-at date; see CS2.md's played-at entry) — with
 // import time (m.extracted_at) as the tiebreaker inside a patch.
 // metric ∈ adr|kast|kd|hs (unknown names yield an error).
+//
+// The VALUES are the stored match-scope metric rows (design §3.5's
+// gated D13 conversion — one series read, GetPlayerMetricSeries): a
+// match with no FRESH row for the metric is SKIPPED, so an uncomputed or
+// behind metric shows an honest gap in the sparkline (which already
+// needs ≥2 points) instead of a number the store never produced — Q3's
+// ruling, and §3.7's "never a fallback-to-Go".
 //
 // The row order IS the trend's x axis: known patches ascending first,
 // unknowns (m.patch_version = 0 — the column default and the demo
@@ -1251,53 +1263,57 @@ var trendMetricWhitelist = map[string]string{
 // below is computed from that row order and the renderer is ordinal, so
 // the ordering flows through as the x position.
 //
-// HUMANS ONLY (HumanOnlyBySteamID): this is the one profile read the
-// frontend fires for a bare /player/<id> URL without going through
-// GetProfile's GetCareer guard, so a bot id yields an empty series — no
-// bot aggregate ever reaches the profile's trend card.
+// HUMANS ONLY (HumanOnlyBySteamID, applied inside the series read): this
+// is the one profile read the frontend fires for a bare /player/<id>
+// URL without going through GetProfile's GetCareer guard, so a bot id
+// yields an empty series — no bot aggregate ever reaches the profile's
+// trend card.
 func (s *Store) GetTrend(steamID, metric string) ([]models.ProfileTrendPoint, error) {
-	expr, ok := trendMetricWhitelist[metric]
+	seed, ok := trendMetricSeed[metric]
 	if !ok {
 		return nil, fmt.Errorf("store: unknown trend metric %q", metric)
 	}
-	rows, err := s.db.Query(
-		`SELECT m.id, `+expr+`, m.patch_version, m.extracted_at
-		 FROM player_stats ps
-		 JOIN matches m ON m.id = ps.match_id
-		 WHERE ps.steam_id = ? AND m.extracted_at IS NOT NULL
-		   AND `+HumanOnlyBySteamID("ps.steam_id", "ps.match_id")+`
-		 ORDER BY (m.patch_version = 0) ASC, m.patch_version ASC,
-		          m.extracted_at ASC, m.id ASC`, scrub(steamID), // unknowns (0) trail; patch → import time → id (see doc)
-	)
+	m, found, err := s.seriesMetricFor(seed)
 	if err != nil {
 		return nil, fmt.Errorf("store: get trend: %w", err)
 	}
-	defer rows.Close()
-	var out []models.ProfileTrendPoint
-	for rows.Next() {
-		var r models.ProfileTrendPoint
-		var extracted sql.NullTime
-		if err := rows.Scan(&r.MatchID, &r.Value, &r.Patch, &extracted); err != nil {
-			return nil, fmt.Errorf("store: get trend: %w", err)
-		}
-		r.Seq = len(out)
-		r.ExtractedAt = nullTime(extracted)
-		out = append(out, r)
+	if !found {
+		return nil, nil // definition gone → honest empty series
 	}
-	if err := rows.Err(); err != nil {
+	series, err := s.GetPlayerMetricSeries(steamID, []int64{m.id})
+	if err != nil {
 		return nil, fmt.Errorf("store: get trend: %w", err)
+	}
+	var out []models.ProfileTrendPoint
+	for _, p := range series {
+		out = append(out, models.ProfileTrendPoint{
+			MatchID:     p.MatchID,
+			Seq:         len(out), // position in the series row order (oldest = 0)
+			Value:       p.Value * m.scale,
+			Patch:       p.Patch,
+			ExtractedAt: p.ExtractedAt,
+		})
 	}
 	return out, nil
 }
 
 // GetPlayerHistory returns one player's per-match history (most recent
-// first, ≤100) with KAST% averaged from player_round_stats per match (0
-// when the match has no analytics rows) and StartSide — the freeze-end
+// first, ≤100): every raw/inferred column the history table shows plus
+// StartSide — the freeze-end
 // side sample of the player's FIRST round (lowest number; every stored
 // round is counted — knife/warmup rounds are discarded at ingest, so no
 // counted-round predicate is needed here); a match with no stored sample
 // yields "" rather than a guess). Side stays player_stats.side (final
 // side) — the input models.WinFor uses below.
+//
+// The ADR and KAST% cells read the STORED match-scope metric rows (the
+// `adr`/`kast` seeds — design §3.5's gated D13 conversion, the same
+// series read GetTrend uses), never the ps.adr / kastPerMatchSQL
+// query-time arithmetic they replaced: a match with no FRESH row leaves
+// that cell ABSENT (nil → the profile's honest "—"), never a fabricated
+// 0 and never a fallback-to-Go recomputation. The display scale follows
+// the definition's format tag (see seriesMetric) so the cells keep the
+// 0..100 percent they have always rendered.
 func (s *Store) GetPlayerHistory(steamID string) ([]models.ProfileHistoryRow, error) {
 	rows, err := s.db.Query(
 		`SELECT m.id, m.extracted_at, m.map, m.score_ct, m.score_t, ps.side,
@@ -1306,8 +1322,7 @@ func (s *Store) GetPlayerHistory(steamID string) ([]models.ProfileHistoryRow, er
 			 WHERE rps.match_id = ps.match_id AND rps.steam_id = ps.steam_id
 			   AND rps.side IN ('ct','t')
 			 ORDER BY r.number ASC LIMIT 1),
-			ps.kills, ps.deaths, ps.assists, ps.adr,
-			`+kastPerMatchSQL+`
+			ps.kills, ps.deaths, ps.assists
 		 FROM player_stats ps
 		 JOIN matches m ON m.id = ps.match_id
 		 WHERE ps.steam_id = ? AND m.extracted_at IS NOT NULL
@@ -1325,7 +1340,7 @@ func (s *Store) GetPlayerHistory(steamID string) ([]models.ProfileHistoryRow, er
 		var startSide sql.NullString
 		if err := rows.Scan(
 			&r.MatchID, &extracted, &r.Map, &r.ScoreCT, &r.ScoreT, &r.Side, &startSide,
-			&r.Kills, &r.Deaths, &r.Assists, &r.ADR, &r.KASTPct,
+			&r.Kills, &r.Deaths, &r.Assists,
 		); err != nil {
 			return nil, fmt.Errorf("store: get player history: %w", err)
 		}
@@ -1336,6 +1351,63 @@ func (s *Store) GetPlayerHistory(steamID string) ([]models.ProfileHistoryRow, er
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("store: get player history: %w", err)
+	}
+	if len(out) == 0 {
+		return out, nil
+	}
+
+	// The two metric-backed cells, filled from ONE series read (the
+	// history rows are keyed by match id, so the read's trend order does
+	// not matter here). A metric definition absent from the catalog (or a
+	// match with no fresh row) simply leaves that cell nil.
+	adr, adrFound, err := s.seriesMetricFor("adr")
+	if err != nil {
+		return nil, fmt.Errorf("store: get player history: %w", err)
+	}
+	kast, kastFound, err := s.seriesMetricFor("kast")
+	if err != nil {
+		return nil, fmt.Errorf("store: get player history: %w", err)
+	}
+	ids := make([]int64, 0, 2)
+	if adrFound {
+		ids = append(ids, adr.id)
+	}
+	if kastFound {
+		ids = append(ids, kast.id)
+	}
+	if len(ids) == 0 {
+		return out, nil
+	}
+	series, err := s.GetPlayerMetricSeries(steamID, ids)
+	if err != nil {
+		return nil, fmt.Errorf("store: get player history: %w", err)
+	}
+	byMatch := make(map[int64]map[int64]float64, len(series))
+	for _, p := range series {
+		m := byMatch[p.MatchID]
+		if m == nil {
+			m = make(map[int64]float64, 2)
+			byMatch[p.MatchID] = m
+		}
+		m[p.MetricID] = p.Value
+	}
+	for i := range out {
+		m := byMatch[out[i].MatchID]
+		if m == nil {
+			continue
+		}
+		if adrFound {
+			if v, ok := m[adr.id]; ok {
+				scaled := v * adr.scale
+				out[i].ADR = &scaled
+			}
+		}
+		if kastFound {
+			if v, ok := m[kast.id]; ok {
+				scaled := v * kast.scale
+				out[i].KASTPct = &scaled
+			}
+		}
 	}
 	return out, nil
 }
@@ -1411,7 +1483,7 @@ func (s *Store) GetPlayerWeaponJSONs(steamID string) ([]models.ProfileWeaponJSON
 	return out, nil
 }
 
-// ---- profile read models (side splits, trade opportunities, averages) ----
+// ---- profile read models (side splits, trade opportunities) ----
 
 // GetPlayerSideSplits rolls a player's per-round stats up by the side
 // they played each round — the profile's Sides card. Every counted round
@@ -1459,12 +1531,14 @@ func (s *Store) GetPlayerSideSplits(steamID string) ([]models.ProfileSideSplit, 
 }
 
 // CountPlayerTradeOpportunities returns how many trade opportunities a
-// player had across every match in the library — the denominator of the
-// profile's Trade rate (profileservice.GetProfile): one `SUM(opps)` seek
+// player had across every match in the library — one `SUM(opps)` seek
 // over the stored match_trade_opps rows (steam_id index — µs at every
 // library scale; the query-time derivation it replaced scanned every
 // kill ever recorded and failed at 1k+ matches: 8.16 s @1k, 77.9 s @10k
-// per profile open on the single DB connection).
+// per profile open on the single DB connection). It was the profile
+// Trade rate card's denominator until that card converted to the
+// career_trade_rate metric (dogfooding W3) — the count itself stays as
+// the stored aggregate over the metric's own source rows.
 //
 // The count is written per match by analytics.Compute (AGENTS.md
 // "Analysis-rule derived values" — rules-derived values are STORED at
@@ -1494,22 +1568,4 @@ func (s *Store) CountPlayerTradeOpportunities(steamID string) (int, error) {
 		return 0, fmt.Errorf("store: count player trade opportunities: %w", err)
 	}
 	return n, nil
-}
-
-// GetPlayerMatchAverages returns per-match means over the player's
-// player_stats rows (one row per match played): enemies flashed and
-// utility damage. AVG over rows IS the per-match average here — no
-// player_career column exists for them and the baseline schema has no
-// migration path (a new career column would break an existing database),
-// so the mean is taken at read time instead of at rollup time.
-func (s *Store) GetPlayerMatchAverages(steamID string) (models.ProfileAverages, error) {
-	var a models.ProfileAverages
-	err := s.db.QueryRow(
-		`SELECT COALESCE(AVG(enemies_flashed), 0), COALESCE(AVG(utility_damage), 0)
-		 FROM player_stats WHERE steam_id = ?`, scrub(steamID),
-	).Scan(&a.EnemiesFlashed, &a.UtilDamage)
-	if err != nil {
-		return models.ProfileAverages{}, fmt.Errorf("store: get player match averages: %w", err)
-	}
-	return a, nil
 }

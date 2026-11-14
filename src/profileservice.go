@@ -42,12 +42,15 @@ type ProfileSide struct {
 	KD          float64 `json:"kd"`
 }
 
-// ProfileMap is the per-map split.
+// ProfileMap is the per-map split. ADR is the mean of the match-history
+// rows' STORED `adr` metric values for that map — nil when no match on
+// the map carries a fresh row (the profile renders "—"), never a
+// fabricated 0.
 type ProfileMap struct {
-	Map     string  `json:"map"`
-	Matches int     `json:"matches"`
-	Wins    int     `json:"wins"`
-	ADR     float64 `json:"adr"`
+	Map     string   `json:"map"`
+	Matches int      `json:"matches"`
+	Wins    int      `json:"wins"`
+	ADR     *float64 `json:"adr"`
 }
 
 // ProfileWeapon is weapon proficiency.
@@ -58,30 +61,26 @@ type ProfileWeapon struct {
 	Headshots int    `json:"headshots"`
 }
 
-// Profile is the full cross-match read model.
+// Profile is the full cross-match read model — the DESIGNED HYBRID
+// (dogfooding design §3.5): the raw/inferred and non-expressible stats
+// (N2–N6 + raw) stay Go-rendered here, while the nine converted stats
+// (ADR ± σ, K/D, HS%, KAST%, Trade rate, clutch win share, avg enemies
+// flashed, avg util damage) are deliberately ABSENT from this DTO — the
+// profile reads them as stored metric rows through the canonical career
+// read (the "Career metrics" panel), and the history's ADR/KAST cells
+// read the match-scope rows (store.GetPlayerHistory).
 type Profile struct {
-	SteamID           string                     `json:"steamId"`
-	Name              string                     `json:"name"`
-	Matches           int                        `json:"matches"`
-	Wins              int                        `json:"wins"`
-	WinPct            float64                    `json:"winPct"`
-	ADRAvg            float64                    `json:"adrAvg"`
-	ADRStd            float64                    `json:"adrStd"` // consistency (PRD §5.13)
-	KD                float64                    `json:"kd"`
-	HSPct             float64                    `json:"hsPct"`
-	KASTPct           float64                    `json:"kastPct"`
-	OpeningRate       float64                    `json:"openingRate"` // duel win rate, 0..100
-	TradeRate         float64                    `json:"tradeRate"`   // 0..100 percent (see GetProfile)
-	Trades            int                        `json:"trades"`      // successful trades (player_stats.trade_kills)
-	TradeOpps         int                        `json:"tradeOpps"`   // trade opportunities — TradeRate's denominator
-	Clutches          int                        `json:"clutches"`
-	ClutchWinPct      float64                    `json:"clutchWinPct"`
-	AvgEnemiesFlashed float64                    `json:"avgEnemiesFlashed"` // per-match mean enemies flashed
-	AvgUtilDamage     float64                    `json:"avgUtilDamage"`     // per-match mean utility damage
-	Sides             []ProfileSide              `json:"sides"`
-	Maps              []ProfileMap               `json:"maps"`
-	Weapons           []ProfileWeapon            `json:"weapons"` // top by kills
-	History           []models.ProfileHistoryRow `json:"history"` // most recent first, ≤100
+	SteamID     string                     `json:"steamId"`
+	Name        string                     `json:"name"`
+	Matches     int                        `json:"matches"`
+	Wins        int                        `json:"wins"`
+	WinPct      float64                    `json:"winPct"`
+	OpeningRate float64                    `json:"openingRate"` // duel win rate, 0..100
+	Clutches    int                        `json:"clutches"`
+	Sides       []ProfileSide              `json:"sides"`
+	Maps        []ProfileMap               `json:"maps"`
+	Weapons     []ProfileWeapon            `json:"weapons"` // top by kills
+	History     []models.ProfileHistoryRow `json:"history"` // most recent first, ≤100
 }
 
 // weaponTopLimit caps the profile's weapon proficiency list.
@@ -97,9 +96,13 @@ type ProfileService struct {
 // career row yields an empty profile (SteamID filled) rather than an error
 // — the frontend shows an empty state. Per-weapon headshots come from the
 // stored kill events (store.GetPlayerWeaponJSONs), folded per weapon by
-// mergeWeapons alongside kills and damage; the Trade rate denominator,
-// the per-ROUND side splits and the per-match counter means come from the
-// three profile queries at the bottom of internal/store/analytics.go.
+// mergeWeapons alongside kills and damage; the per-ROUND side splits come
+// from store.GetPlayerSideSplits. The nine stats that converted to
+// metrics (dogfooding design §3.5 — ADR ± σ, K/D, HS%, KAST%, Trade
+// rate, clutch win share, avg enemies flashed, avg util damage) are
+// computed NOWHERE in this function any more: the profile reads them as
+// stored rows through the canonical career read, and the history's
+// ADR/KAST cells read the match-scope rows inside store.GetPlayerHistory.
 func (s *ProfileService) GetProfile(steamID string) (Profile, error) {
 	p := Profile{SteamID: steamID}
 
@@ -116,59 +119,16 @@ func (s *ProfileService) GetProfile(steamID string) (Profile, error) {
 	if p.Matches > 0 {
 		p.WinPct = 100 * float64(p.Wins) / float64(p.Matches)
 	}
-	p.ADRAvg = career.ADRAvg
-	p.ADRStd = career.ADRStd
-	p.KD = career.KD
-	p.HSPct = career.HSPct
-	p.KASTPct = career.KASTPct
 	if career.Openings > 0 {
 		p.OpeningRate = 100 * float64(career.OpenerWins) / float64(career.Openings)
 	}
 	p.Clutches = career.Clutches
-	clutches, err := s.st.GetPlayerClutchStats(steamID)
-	if err != nil {
-		return Profile{}, err
-	}
-	if clutches.Played > 0 {
-		p.ClutchWinPct = 100 * float64(clutches.Won) / float64(clutches.Played)
-	}
 
 	history, err := s.st.GetPlayerHistory(steamID)
 	if err != nil {
 		return Profile{}, err
 	}
 	p.History = history
-
-	// TradeRate over the whole career: 100 × successful trades ÷ total
-	// trade opportunities. The numerator is player_stats.trade_kills via
-	// the career rollup (recomputed by analytics.Compute, so it follows
-	// the configured trade window); the denominator is
-	// store.CountPlayerTradeOpportunities — SUM of the stored
-	// match_trade_opps rows analytics.Compute writes (AGENTS.md
-	// "Analysis-rule derived values"), so both sides span every match
-	// in the library, unlike the ≤100-row history (the old denominator,
-	// the player's own deaths). Percent scale: 0..100 like OpeningRate
-	// above and every other *Pct/*Rate field on this DTO — the value
-	// fmtPercent renders directly. It is a ratio, not a share, so it may
-	// exceed 100 when a trade lands on a death the proximity gate did not
-	// count (pinned by TestGetProfileTradeRatePercent).
-	opps, err := s.st.CountPlayerTradeOpportunities(steamID)
-	if err != nil {
-		return Profile{}, err
-	}
-	p.Trades = career.Trades
-	p.TradeOpps = opps
-	if opps > 0 {
-		p.TradeRate = 100 * float64(career.Trades) / float64(opps)
-	}
-
-	// Per-match means of the stored counters with no career column.
-	avg, err := s.st.GetPlayerMatchAverages(steamID)
-	if err != nil {
-		return Profile{}, err
-	}
-	p.AvgEnemiesFlashed = avg.EnemiesFlashed
-	p.AvgUtilDamage = avg.UtilDamage
 
 	// Per-ROUND side splits: players switch sides at halftime, so the
 	// Sides card compares rounds played on CT vs T (never one row per
@@ -195,24 +155,38 @@ func (s *ProfileService) GetProfile(steamID string) (Profile, error) {
 		})
 	}
 
-	mapAgg := map[string]*ProfileMap{}
+	// Per-map fold over the history. The ADR column is the mean of the
+	// history rows' STORED `adr` metric values — a row with no fresh
+	// metric row contributes nothing (and a map whose rows all lack one
+	// keeps ADR nil → "—"), so the divisor is the number of rows that
+	// actually carried a value, never the raw match count.
+	type mapAggT struct {
+		ProfileMap
+		adrSum float64
+		adrN   int
+	}
+	mapAgg := map[string]*mapAggT{}
 	for _, h := range history {
 		m := mapAgg[h.Map]
 		if m == nil {
-			m = &ProfileMap{Map: h.Map}
+			m = &mapAggT{ProfileMap: ProfileMap{Map: h.Map}}
 			mapAgg[h.Map] = m
 		}
 		m.Matches++
 		if h.Win {
 			m.Wins++
 		}
-		m.ADR += h.ADR
+		if h.ADR != nil {
+			m.adrSum += *h.ADR
+			m.adrN++
+		}
 	}
 	for _, m := range mapAgg {
-		if m.Matches > 0 {
-			m.ADR /= float64(m.Matches)
+		if m.adrN > 0 {
+			adr := m.adrSum / float64(m.adrN)
+			m.ADR = &adr
 		}
-		p.Maps = append(p.Maps, *m)
+		p.Maps = append(p.Maps, m.ProfileMap)
 	}
 	sort.Slice(p.Maps, func(i, j int) bool {
 		if p.Maps[i].Matches != p.Maps[j].Matches {

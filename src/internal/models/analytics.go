@@ -278,8 +278,12 @@ type CareerSummary struct {
 }
 
 // ProfileHistoryRow is one match-history entry for a player profile.
-// KASTPct is the average over player_round_stats for the match (0 when the
-// match has no stored player_round_stats rows).
+// ADR and KASTPct are the STORED match-scope metric values (design
+// §3.5's D13 — the same `adr`/`kast` rows the profile's trend reads,
+// never the query-time SQL arithmetic they replaced): nil means the
+// match has no FRESH row for that metric, and the profile renders the
+// honest "—" in that cell (never a fabricated 0, never a
+// fallback-to-Go recomputation).
 //
 // Side is the player's FINAL side (player_stats.side — the side the
 // end-of-demo roster shows, and the input WinFor needs: the final score
@@ -300,8 +304,8 @@ type ProfileHistoryRow struct {
 	Kills       int       `json:"kills"`
 	Deaths      int       `json:"deaths"`
 	Assists     int       `json:"assists"`
-	ADR         float64   `json:"adr"`
-	KASTPct     float64   `json:"kastPct"`
+	ADR         *float64  `json:"adr"`     // stored `adr` metric row; nil = no fresh row
+	KASTPct     *float64  `json:"kastPct"` // stored `kast` metric row (0..100); nil = no fresh row
 }
 
 // ProfileSideSplit is one side's per-ROUND rollup across a player's
@@ -320,13 +324,6 @@ type ProfileSideSplit struct {
 	Deaths  int     `json:"deaths"`
 	ADR     float64 `json:"adr"`
 	KASTPct float64 `json:"kastPct"`
-}
-
-// ProfileAverages are per-match means over a player's player_stats rows
-// (one row per match played) — the profile's "per match" stat cards.
-type ProfileAverages struct {
-	EnemiesFlashed float64 `json:"enemiesFlashed"`
-	UtilDamage     float64 `json:"utilDamage"`
 }
 
 // WinFor reports whether side won the match with the given final score —
