@@ -1,0 +1,40 @@
+# Frontend unit tests — the mechanical pin for the user-facing-text
+# criterion (frontend/src/lib/strings-audit.test.js). CI never ran
+# node --test: the build workflow only runs `make vet`/`make test` (Go), and
+# frontend deps are installed inside the build AFTER the test step, so the
+# audit cannot ride along there (design §4.4). This is the lint.yml analogue
+# for the frontend: fast, push + PR, no Wails/GTK deps needed.
+#
+# Scope is the audit test for now (it runs green on a fresh checkout — no
+# generated bindings required). Widening to `node --test src/lib/*.test.js`
+# is a separate decision: download/input tests import services.js and need
+# the generated frontend/bindings/ tree, which only a build produces.
+name: Frontend Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  strings-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: src/frontend/package-lock.json
+
+      - name: Install frontend deps
+        run: npm ci
+        working-directory: src/frontend
+
+      - name: Strings audit (user-facing-text denylist)
+        run: node --test src/lib/strings-audit.test.js
+        working-directory: src/frontend
