@@ -311,15 +311,29 @@ func (s *Store) GetMetricValuesForPlayer(steamID string, metricIDs []int64) ([]m
 	return out, nil
 }
 
+// MetricDisplayScale is THE format-keyed display-unit conversion for a
+// stored metric value: percent metrics store a 0..1 FRACTION while every
+// percent surface renders 0..100 (fmtPercent, the profile's trend and
+// history DTOs, the report read-back), so a FRESH value multiplies by
+// 100 on its way out; every other format stores its display number as
+// it stands (scale 1). One spelling — seriesMetricFor (the trend and
+// history series read) and the report package's Go read-back both derive
+// from it, so a format tag can never mean two scales in two readers
+// (dogfooding design §3.6: "percent values ×100"). This is a unit
+// conversion on a fresh stored value, never a recomputation: a subject
+// with no fresh row never reaches it (the reads omit it).
+func MetricDisplayScale(format string) float64 {
+	if format == "percent" {
+		return 100
+	}
+	return 1
+}
+
 // seriesMetric is one metric's series-read parameters: the definition id
 // GetPlayerMetricSeries filters on, plus the display scale its format
-// tag implies. Percent metrics store a 0..1 FRACTION while the profile's
-// trend and history DTOs have always carried the 0..100 percent their
-// consumers render (fmtPercent / the sparkline's fmtProfileMetric) — so
-// the format tag drives the same display-unit conversion the design's
-// report read-back applies (§3.6: "percent values ×100"). That is a unit
-// conversion on a FRESH stored value, never a recomputation: a match with
-// no fresh row never reaches this line (the series read omits it).
+// tag implies (MetricDisplayScale — percent metrics store a 0..1
+// FRACTION while the profile's trend and history DTOs have always
+// carried the 0..100 percent their consumers render).
 type seriesMetric struct {
 	id    int64
 	scale float64
@@ -337,11 +351,7 @@ func (s *Store) seriesMetricFor(seedName string) (seriesMetric, bool, error) {
 	if err != nil {
 		return seriesMetric{}, false, err
 	}
-	m := seriesMetric{id: def.ID, scale: 1}
-	if def.Format == "percent" {
-		m.scale = 100
-	}
-	return m, true, nil
+	return seriesMetric{id: def.ID, scale: MetricDisplayScale(def.Format)}, true, nil
 }
 
 // GetPlayerMetricSeries is THE match-grain SERIES read — the one store

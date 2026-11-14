@@ -15,6 +15,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"strconv"
 	"text/template"
 	"time"
 
@@ -38,6 +39,8 @@ type Template struct {
 // Economy rows carry the STORED per-side buy classes (ClassCT/ClassT/
 // ClassWhy*, PistolRound) exactly as store.GetEconomy reads them — no
 // report-side enrichment, so report and app agree by construction.
+// Metrics carries the metric-backed ADR/HS%/KD cells (design §3.6's Go
+// read-back — MetricCells), keyed by the scoreboard row's SteamID.
 type MatchReport struct {
 	Match       models.Match
 	CTName      string
@@ -47,6 +50,7 @@ type MatchReport struct {
 	Economy     []models.EconomyRow
 	Clutches    []models.Clutch
 	Utility     []models.UtilityEvent
+	Metrics     map[string]MetricCells
 	GeneratedAt time.Time
 }
 
@@ -56,7 +60,118 @@ type PlayerReport struct {
 	SteamID     string
 	Player      models.PlayerStatsRow
 	Rounds      []models.PlayerRoundStat
+	Metrics     map[string]MetricCells
 	GeneratedAt time.Time
+}
+
+// MetricCells is one report subject's metric-backed display cells — the
+// Go read-back (dogfooding design §3.6): the builtin templates render
+// ADR / HS% / KD from the STORED fresh metric rows (one canonical read,
+// store.GetMetricValuesForMatch), never from a Go computation and never
+// from the scoreboard's passthrough adr/hs_pct columns. Each cell is
+// already formatted for the document — the format-keyed display scale
+// (store.MetricDisplayScale: percent ×100) plus the printf precision
+// today's templates spelled (ADR %.1f, HS% %.0f, KD %.2f) — and a
+// subject with NO fresh row carries the honest dash "—": absent or
+// behind renders the missing marker, never a recomputed number and
+// never a fabricated 0 (Q8).
+type MetricCells struct {
+	ADR   string
+	HSPct string
+	KD    string
+}
+
+// reportMetricSeeds are the seed names the builtin templates render,
+// each bound to the MetricCells field it fills. The seed name is the
+// stable identity (ids churn on plugin replace); a definition missing
+// from the catalog simply leaves every cell at the dash — the same
+// honest-empty contract store.seriesMetricFor gives the trend read.
+var reportMetricSeeds = []struct {
+	seed string
+	fill func(*MetricCells, string)
+}{
+	{seed: "adr", fill: func(c *MetricCells, s string) { c.ADR = s }},
+	{seed: "hs_pct", fill: func(c *MetricCells, s string) { c.HSPct = s }},
+	{seed: "kd", fill: func(c *MetricCells, s string) { c.KD = s }},
+}
+
+// reportCellDash is what a cell renders when the store carries no fresh
+// value for the subject (Q8's honest missing marker).
+const reportCellDash = "—"
+
+// reportCell formats one FRESH stored value for the document: the
+// format-keyed display scale (store.MetricDisplayScale — percent
+// stores a 0..1 fraction and renders 0..100) and the printf precision
+// the templates used to spell over GetScoreboard's Go-computed columns
+// (ADR %.1f, HS% %.0f, KD %.2f — exactly the seeds' float1/percent/
+// float2 tags). The default arm is unreachable for the shipped seeds
+// and keeps full precision rather than inventing a rounding.
+func reportCell(v float64, format string, scale float64) string {
+	switch format {
+	case "percent":
+		return fmt.Sprintf("%.0f", v*scale)
+	case "float1":
+		return fmt.Sprintf("%.1f", v*scale)
+	case "float2":
+		return fmt.Sprintf("%.2f", v*scale)
+	default:
+		return strconv.FormatFloat(v*scale, 'f', -1, 64)
+	}
+}
+
+// metricCells resolves the report's seed names → ids and reads this
+// match's FRESH rows in ONE canonical read (design §3.6 — never a
+// recomputation), returning steamId → the formatted cells. Every roster
+// row starts at the dash, so a subject the read produced no row for
+// (absent, behind, or filtered out of the roster) keeps it.
+func metricCells(st *store.Store, matchID int64, sb []models.PlayerStatsRow) (map[string]MetricCells, error) {
+	cells := make(map[string]MetricCells, len(sb))
+	for _, r := range sb {
+		cells[r.SteamID] = MetricCells{ADR: reportCellDash, HSPct: reportCellDash, KD: reportCellDash}
+	}
+	type resolved struct {
+		id     int64
+		format string
+		scale  float64
+		fill   func(*MetricCells, string)
+	}
+	want := make([]resolved, 0, len(reportMetricSeeds))
+	for _, sc := range reportMetricSeeds {
+		def, err := st.GetMetricByName(sc.seed)
+		if errors.Is(err, store.ErrNotFound) {
+			continue // definition gone → the cells stay at the dash
+		}
+		if err != nil {
+			return nil, fmt.Errorf("report: metric %s: %w", sc.seed, err)
+		}
+		want = append(want, resolved{id: def.ID, format: def.Format, scale: store.MetricDisplayScale(def.Format), fill: sc.fill})
+	}
+	if len(want) == 0 {
+		return cells, nil
+	}
+	ids := make([]int64, len(want))
+	byID := make(map[int64]resolved, len(want))
+	for i, w := range want {
+		ids[i] = w.id
+		byID[w.id] = w
+	}
+	values, err := st.GetMetricValuesForMatch(matchID, ids)
+	if err != nil {
+		return nil, fmt.Errorf("report: metric values: %w", err)
+	}
+	for _, v := range values {
+		w, ok := byID[v.MetricID]
+		if !ok {
+			continue
+		}
+		c, ok := cells[v.SteamID]
+		if !ok {
+			c = MetricCells{ADR: reportCellDash, HSPct: reportCellDash, KD: reportCellDash}
+		}
+		w.fill(&c, reportCell(v.Value, w.format, w.scale))
+		cells[v.SteamID] = c
+	}
+	return cells, nil
 }
 
 // RoundReport is the round-scope data map.
@@ -99,10 +214,17 @@ func BuildMatchData(st *store.Store, matchID int64) (*MatchReport, error) {
 		return nil, fmt.Errorf("report: utility: %w", err)
 	}
 	ctName, tName := teamNames(st, matchID, sb)
+	// The metric-backed ADR/HS%/KD cells (design §3.6's Go read-back):
+	// ONE canonical read of the stored fresh rows for this match.
+	cells, err := metricCells(st, matchID, sb)
+	if err != nil {
+		return nil, err
+	}
 	return &MatchReport{
 		Match: *m, CTName: ctName, TName: tName, Scoreboard: sb,
 		Rounds: rounds, Economy: econ,
-		Clutches: clutches, Utility: utility, GeneratedAt: time.Now().UTC(),
+		Clutches: clutches, Utility: utility, Metrics: cells,
+		GeneratedAt: time.Now().UTC(),
 	}, nil
 }
 
@@ -191,9 +313,15 @@ func BuildPlayerData(st *store.Store, matchID int64, steamID string) (*PlayerRep
 	if err != nil {
 		return nil, fmt.Errorf("report: player rounds: %w", err)
 	}
+	// Same read-back as the match scope (design §3.6): the player's
+	// ADR/HS%/KD cells come from the stored fresh rows for this match.
+	cells, err := metricCells(st, matchID, sb)
+	if err != nil {
+		return nil, err
+	}
 	return &PlayerReport{
 		Match: *m, SteamID: steamID, Player: agg, Rounds: prs,
-		GeneratedAt: time.Now().UTC(),
+		Metrics: cells, GeneratedAt: time.Now().UTC(),
 	}, nil
 }
 
