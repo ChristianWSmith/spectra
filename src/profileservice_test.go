@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
@@ -18,10 +19,9 @@ func oppositeSide(side string) string {
 
 // newProfileFixture opens an in-memory store with TWO extracted matches
 // for the same player (alice: ct in match 1 with 10k/5d, t in match 2
-// with 4k/0d) plus the credited/teamkill/round-less kill events behind the
-// weapon breakdowns, three tradeable teammate deaths per match behind the
-// trade-opportunity denominator, and one player_round_stats row per match
-// behind the Sides card, then returns a ProfileService over it.
+// with 4k/0d) plus the credited/teamkill/round-less kill events behind
+// the weapon breakdowns and one player_round_stats row per match behind
+// the Sides card, then returns a ProfileService over it.
 func newProfileFixture(t *testing.T) *ProfileService {
 	t.Helper()
 	st, err := store.Open(":memory:")
@@ -51,22 +51,14 @@ func newProfileFixture(t *testing.T) *ProfileService {
 				Attacker: "100", Victim: "200", Weapon: "ak47", Headshot: true,
 			})
 		}
-		// Trade opportunities: bob kills alice's teammates carl/dave/eve
-		// in the counted round with a measurable nearDist inside the
-		// default 1000u trade-opportunity distance — three opportunities
-		// for alice per match (she is alive and on the victim's side in
-		// round 1). The kill events are what analytics.Compute gates on
-		// when it WRITES match_trade_opps; this fixture seeds the row
-		// that pass produces (the store test pins the SUM read, the
-		// analytics equivalence test pins the gating) — see
-		// TestGetProfileTradeRatePercent for the total.
-		for i, victim := range []string{"300", "400", "500"} {
-			events = append(events, models.Event{
-				Tick: 150 + 10*i, Round: 1, Kind: models.EventKill,
-				Attacker: "200", Victim: victim,
-				DetailJSON: `{"killer":"bob","victim":"victim","nearDist":500}`,
-			})
-		}
+		// Trade-opportunity kills (bob takes out alice's teammates
+		// carl/dave/eve) are deliberately ABSENT: the profile's Trade
+		// rate card converted to the career_trade_rate metric in
+		// dogfooding W3, the DTO no longer carries trade rate counts,
+		// and nothing in this fixture reads match_trade_opps any more —
+		// the store's own TestCountPlayerTradeOpportunities still pins
+		// that stored read. carl/dave/eve stay in the roster so the
+		// side-split fixture keeps a full team.
 		events = append(events,
 			models.Event{ // teamkill headshot — no credit anywhere
 				Tick: 200, Round: 1, Kind: models.EventKill,
@@ -98,15 +90,7 @@ func newProfileFixture(t *testing.T) *ProfileService {
 				{SteamID: "100", Side: side, Name: "alice",
 					Kills: kills, Deaths: deaths, Headshots: creditedHS,
 					ADR: 80, HSPct: 60, RoundsPlayed: 24,
-					// Trade kills feed career.Trades → the profile's Trade
-					// rate card (TestGetProfileTradeRatePercent pins the
-					// percent scale of that card).
-					TradeKills: 2,
-					// The two per-match averages (TestGetProfileAverages):
-					// match 1 reads 8 flashed / 120 util, match 2 4 / 60.
-					EnemiesFlashed: 8 - 4*(n-1),
-					UtilityDamage:  120 - 60*(n-1),
-					KillsByWeapon:  byWeapon, DamageByWeapon: `{"ak47":900}`},
+					KillsByWeapon: byWeapon, DamageByWeapon: `{"ak47":900}`},
 			},
 			Rounds: []models.Round{
 				{Number: 1, Winner: "ct", StartTick: 100, EndTick: 5000},
@@ -122,14 +106,6 @@ func newProfileFixture(t *testing.T) *ProfileService {
 		}
 		if err := st.SaveExtracted(id, em); err != nil {
 			t.Fatalf("SaveExtracted: %v", err)
-		}
-		// The stored trade-opportunity rows analytics.Compute writes for
-		// alice here: three tradeable teammate deaths per match under the
-		// default distance (nearDist 500 ≤ 1000) — the profile reads them
-		// through store.CountPlayerTradeOpportunities (SUM over
-		// match_trade_opps).
-		if err := st.ReplaceTradeOpps(id, map[string]int{"100": 3}, nil); err != nil {
-			t.Fatalf("ReplaceTradeOpps: %v", err)
 		}
 		// One counted round of per-round stats — the Sides card's rows
 		// (store.GetPlayerSideSplits). Alice plays it on `side`: match 1
@@ -199,43 +175,55 @@ func TestGetProfileSidesKD(t *testing.T) {
 	}
 }
 
-// TestGetProfileTradeRatePercent pins the SCALE and the FORMULA of the
-// profile's Trade rate card: 100 × successful trades ÷ trade
-// opportunities (0..100 percent, like every other *Pct/*Rate field on
-// the Profile DTO — the value fmtPercent renders directly). The fixture's
-// alice has 2 career trades per match (4 total) over 3 tradeable
-// teammate deaths per match (6 opportunities), so the card must show
-// 66.7%, NOT the old 4 trades ÷ 5 own deaths (80%).
-func TestGetProfileTradeRatePercent(t *testing.T) {
+// TestGetProfileDesignedHybrid pins the DTO contract dogfooding design
+// §3.5 leaves behind — the audit's §5.2.5 prediction made literal: the
+// raw/inferred and non-expressible stats (N2–N6) STAY on the Go DTO and
+// the nine converted stats are GONE from it. The profile reads those as
+// stored metric rows through the canonical career read (the "Career
+// metrics" panel), so a reintroduced field here would be exactly the
+// second presentation path the conversion removes — the JSON key SET is
+// the contract, checked both ways.
+func TestGetProfileDesignedHybrid(t *testing.T) {
 	svc := newProfileFixture(t)
 	p, err := svc.GetProfile("100")
 	if err != nil {
 		t.Fatalf("GetProfile: %v", err)
 	}
-	if p.Trades != 4 || p.TradeOpps != 6 {
-		t.Errorf("trades/opportunities = %d/%d, want 4/6 (2 trades × 2 matches, 3 teammate deaths × 2 matches)",
-			p.Trades, p.TradeOpps)
-	}
-	if p.TradeRate < 66.6 || p.TradeRate > 66.7 {
-		t.Errorf("tradeRate = %v, want ~66.67 (4 ÷ 6 ×100)", p.TradeRate)
-	}
-}
-
-// TestGetProfileAverages: the two per-match average cards read
-// player_stats.enemies_flashed / utility_damage averaged over the
-// player's matches — match 1 stores 8/120, match 2 stores 4/60, so the
-// cards must show 6 and 90 (per match, not career sums).
-func TestGetProfileAverages(t *testing.T) {
-	svc := newProfileFixture(t)
-	p, err := svc.GetProfile("100")
+	raw, err := json.Marshal(p)
 	if err != nil {
-		t.Fatalf("GetProfile: %v", err)
+		t.Fatalf("marshal profile: %v", err)
 	}
-	if p.AvgEnemiesFlashed < 5.99 || p.AvgEnemiesFlashed > 6.01 {
-		t.Errorf("avgEnemiesFlashed = %v, want 6 ((8+4)/2)", p.AvgEnemiesFlashed)
+	var got map[string]any
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatalf("unmarshal profile: %v", err)
 	}
-	if p.AvgUtilDamage < 89.9 || p.AvgUtilDamage > 90.1 {
-		t.Errorf("avgUtilDamage = %v, want 90 ((120+60)/2)", p.AvgUtilDamage)
+	staying := []string{
+		"steamId", "name", "matches", "wins", "winPct", "openingRate",
+		"clutches", "sides", "maps", "weapons", "history",
+	}
+	converted := []string{
+		"adrAvg", "adrStd", "kd", "hsPct", "kastPct", "tradeRate",
+		"trades", "tradeOpps", "clutchWinPct", "avgEnemiesFlashed",
+		"avgUtilDamage",
+	}
+	for _, k := range staying {
+		if _, ok := got[k]; !ok {
+			t.Errorf("staying field %q missing from the Profile DTO: %s", k, raw)
+		}
+	}
+	for _, k := range converted {
+		if _, ok := got[k]; ok {
+			t.Errorf("converted field %q is back on the Profile DTO (second presentation path): %s", k, raw)
+		}
+	}
+	if len(got) != len(staying) {
+		t.Errorf("Profile DTO carries %d fields, want exactly the %d staying ones: %s",
+			len(got), len(staying), raw)
+	}
+	// The staying Go stats are still REAL values, not zeros: two
+	// matches, one win (alice's ct match), 50%.
+	if p.Matches != 2 || p.Wins != 1 || p.WinPct < 49.9 || p.WinPct > 50.1 {
+		t.Errorf("matches/wins/winPct = %d/%d/%v, want 2/1/50", p.Matches, p.Wins, p.WinPct)
 	}
 }
 
@@ -261,19 +249,27 @@ func TestGetProfileHistoryStartingSide(t *testing.T) {
 	if p.History[0].Win || !p.History[1].Win {
 		t.Errorf("win = %v/%v, want false/true (final side vs 13–10)", p.History[0].Win, p.History[1].Win)
 	}
+	// The ADR/KAST cells read STORED metric rows (D13). This fixture
+	// never runs the metric sweep, so both are absent — the honest nil
+	// the profile renders as "—", never a fabricated 0.
+	for i, h := range p.History {
+		if h.ADR != nil || h.KASTPct != nil {
+			t.Errorf("history[%d] adr/kast = %v/%v, want nil with no stored metric rows",
+				i, h.ADR, h.KASTPct)
+		}
+	}
 }
 
-// TestGetProfileWeaponsAndCareer: the Weapons table folds per-weapon
-// headshots from the stored kill events alongside kills/damage, and the
-// career K/D + HS% StatCards read the non-zero player_career rollup.
-func TestGetProfileWeaponsAndCareer(t *testing.T) {
+// TestGetProfileWeapons: the Weapons table folds per-weapon headshots
+// from the stored kill events alongside kills/damage. (The career K/D +
+// HS% StatCards this test used to check left with those fields — the
+// profile reads them as metric rows now; the rollup itself is pinned by
+// the store's TestCareerRebuildMath.)
+func TestGetProfileWeapons(t *testing.T) {
 	svc := newProfileFixture(t)
 	p, err := svc.GetProfile("100")
 	if err != nil {
 		t.Fatalf("GetProfile: %v", err)
-	}
-	if p.KD <= 0 || p.HSPct <= 0 {
-		t.Errorf("career kd/hsPct = %v/%v, want both > 0", p.KD, p.HSPct)
 	}
 	if len(p.Weapons) == 0 {
 		t.Fatal("no weapon rows")

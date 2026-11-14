@@ -66,15 +66,18 @@ const (
 //
 // Zero-denominator spelling, deliberate scope variants (do NOT unify):
 // the store floors the denominator — `MAX(deaths, 1)` — so a player with no
-// deaths reports K/D 0 instead of NULL, because the scoreboard/trend cells
-// are typed floats with no "missing" state. internal/metrics expresses the
+// deaths reports K/D 0 instead of NULL, because the scoreboard cell is a
+// typed float with no "missing" state (the profile's trend gained honest
+// gaps when it moved to stored metric rows — dogfooding W3).
+// internal/metrics expresses the
 // same idea generically as `1.0*a1 / NULLIF(a2, 0)` (ratio()): there a NULL
 // denominator is the honest "no rows to divide by" the preview renders as
 // Value 0 with N, and the operands are user-chosen columns the compiler
 // cannot assume a floor for. Same intent, two scopes, two spellings.
 const (
 	// kdPerMatchSQL is kills/deaths for ONE match, deaths floored at 1
-	// (GetScoreboard's SELECT and GetTrend's per-match series).
+	// (GetScoreboard's SELECT — the trend's per-match series read stored
+	// metric rows since dogfooding W3).
 	kdPerMatchSQL = `CAST(ps.kills AS REAL) / MAX(ps.deaths, 1)`
 
 	// kdCareerSQL is the career rollup's K/D (RebuildCareer): sums across
@@ -83,9 +86,11 @@ const (
 
 	// kastPerMatchSQL is a player's KAST% WITHIN one match, correlated
 	// from the outer row to that match's player_round_stats rows (0 when
-	// the match has no analytics rows). Used by GetTrend's per-match
-	// series and GetPlayerHistory; the aliases m/ps must exist in the
-	// outer query.
+	// the match has no analytics rows). RETIRED as a production read by
+	// dogfooding W3 — GetTrend and GetPlayerHistory read the stored `kast`
+	// metric rows now — and kept as the reference oracle's expression in
+	// metric_series_read_test.go; the aliases m/ps must exist in the outer
+	// query.
 	kastPerMatchSQL = `COALESCE((SELECT 100.0 * AVG(prs.kast) FROM player_round_stats prs
 		WHERE prs.match_id = m.id AND prs.steam_id = ps.steam_id), 0)`
 

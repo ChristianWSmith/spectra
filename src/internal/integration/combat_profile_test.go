@@ -18,6 +18,7 @@ import (
 
 	"github.com/ChristianWSmith/spectra/internal/analytics"
 	"github.com/ChristianWSmith/spectra/internal/extract"
+	"github.com/ChristianWSmith/spectra/internal/metrics"
 	"github.com/ChristianWSmith/spectra/internal/models"
 	"github.com/ChristianWSmith/spectra/internal/store"
 )
@@ -60,7 +61,9 @@ func parseGolden(t *testing.T) *models.ExtractedMatch {
 //     range where teammates trade automatically).
 //   - The folded per-weapon headshots must equal player_stats.headshots
 //     per player (same eligibility extract used to credit them).
-//   - The profile trend series kd/hs must be non-zero.
+//   - The profile trend series kd/hs must be non-zero — the values are
+//     the STORED match-scope metric rows since dogfooding W3 (design
+//     §3.5's D13 conversion), so the sweep runs above before the read.
 func TestGoldenCombatProfileSurfaces(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping golden-demo parse in -short mode")
@@ -97,6 +100,14 @@ func TestGoldenCombatProfileSurfaces(t *testing.T) {
 	cfg := analytics.ConfigFrom(seeded, 0)
 	if err := analytics.Compute(st, id, cfg); err != nil {
 		t.Fatalf("analytics.Compute: %v", err)
+	}
+	// The profile trend reads the STORED match-scope metric rows since
+	// dogfooding W3 (design §3.5's D13 conversion), so the sweep
+	// production runs in the import/analyze job body has to run here too
+	// — without it the trend would honestly read an empty series and the
+	// kd/hs assertions below could never see a value.
+	if _, err := metrics.Sweep(context.Background(), st, nil); err != nil {
+		t.Fatalf("metrics.Sweep: %v", err)
 	}
 
 	stats, err := st.GetCombatStats(id)

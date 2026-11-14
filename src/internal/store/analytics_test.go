@@ -763,7 +763,12 @@ func TestCareerRebuildMath(t *testing.T) {
 		t.Errorf("alice name = %q, want alice2 (latest match)", alice.Name)
 	}
 
-	// ListPlayers + trend.
+	// ListPlayers + trend. The trend reads the STORED match-scope `adr`
+	// rows now (dogfooding design §3.5's D13 conversion), so seed the
+	// rows a completed sweep would have written — 60 for match 1, 90 for
+	// match 2, the same numbers the rollup asserts above.
+	seedFreshMetricValue(t, s, "adr", "100", id, 60)
+	seedFreshMetricValue(t, s, "adr", "100", id2, 90)
 	list, err := s.ListPlayers("")
 	if err != nil || len(list) != 2 {
 		t.Fatalf("ListPlayers = %+v, %v", list, err)
@@ -792,7 +797,11 @@ func TestCareerRebuildMath(t *testing.T) {
 // CS2.md), import time (extracted_at) as the tiebreak inside a patch
 // (id after that), and unknown patches (patch_version = 0) trailing no
 // matter how early they imported. Seq is computed from that row order,
-// so it follows automatically. The value/seq/unknown-metric assertions
+// so it follows automatically. The VALUES come from the stored
+// match-scope `adr` metric rows (dogfooding W3's D13 conversion) — each
+// save stores the row a completed sweep would have written; the
+// equivalence against the retired SQL lives in
+// metric_series_read_test.go. The value/seq/unknown-metric assertions
 // live in TestCareerRebuildMath above.
 func TestGetTrend(t *testing.T) {
 	s := openMem(t)
@@ -800,6 +809,10 @@ func TestGetTrend(t *testing.T) {
 
 	// save stores one match for player "100" with the given patch, import
 	// time and ADR — the ADR identifies the row in the returned series.
+	// The trend reads the STORED match-scope `adr` rows since dogfooding
+	// W3, so each save also stores the row a completed sweep would have
+	// written (the same ADR value, so both readings identify the row
+	// identically).
 	save := func(name string, patch int, at time.Time, adr float64) int64 {
 		t.Helper()
 		id, err := s.CreateMatchRow("/d/"+name+".dem", "sha-"+name, 1234)
@@ -812,6 +825,7 @@ func TestGetTrend(t *testing.T) {
 		if err := s.SaveExtracted(id, em); err != nil {
 			t.Fatalf("SaveExtracted(%s): %v", name, err)
 		}
+		seedFreshMetricValue(t, s, "adr", "100", id, adr)
 		return id
 	}
 

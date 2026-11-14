@@ -1,20 +1,27 @@
 package store
 
-// W3g GROUNDWORK — the profile's trend/history conversion (dogfooding
-// design §3.5's gated sub-wave, owner ruling Q3 APPROVED): the ONE new
-// store read GetPlayerMetricSeries serves the stored match-scope metric
-// series that GetTrend and GetPlayerHistory switch to.
+// W3g — the profile's trend/history conversion (dogfooding design §3.5's
+// gated sub-wave, owner ruling Q3 APPROVED): GetTrend and
+// GetPlayerHistory stop running SQL arithmetic over player_stats and
+// read the STORED match-scope metric rows instead, through the one new
+// series read GetPlayerMetricSeries.
 //
-// The test below is the CHARACTERIZATION, run BEFORE the switch
-// (2026-11-14): it pins the new read against legacyTrendPoints — the
-// RETIRED GetTrend query kept verbatim as the reference oracle (the
-// trade-opps / eco oracle precedent), spelled with the same expressions
-// trendMetricWhitelist used — on data where both exist, plus the two gap
-// shapes (no row at all; a present-but-unstamped row), the retired row
-// order, and the unchanged unknown-metric contract. The conversion's own
-// pins (GetTrend == that oracle, the percent display scale and Q1's
-// zero-denominator divergences, the history cells) follow with the
-// switch in the next commit.
+// These pins are the proof the swap changed no number on data where both
+// sides exist, and that a row the store does not have is an honest GAP:
+//
+//  1. legacyTrendPoints — the RETIRED GetTrend query kept verbatim as
+//     the reference oracle (the trade-opps / eco oracle precedent),
+//     spelled with the same expressions trendMetricWhitelist used;
+//  2. GetTrend == that oracle (the conversion's equivalence pin);
+//  3. GetPlayerMetricSeries-derived points == that oracle on the matches
+//     carrying a FRESH row (this half was run against the OLD GetTrend
+//     before the switch — the characterization, 2026-11-14);
+//  4. a match with NO row, or only a STALE-stamped one, is skipped —
+//     the gap the sparkline's ≥2-point requirement renders, never a
+//     fabricated 0 and never a fallback-to-Go recomputation;
+//  5. percent-format metrics keep their 0..100 display scale (the store
+//     keeps a 0..1 fraction) and Q1's deliberate divergences (zero
+//     denominators) surface as the metric semantics, not the SQL ones.
 
 import (
 	"database/sql"
@@ -259,5 +266,202 @@ func TestGetPlayerMetricSeriesMatchesLegacyTrend(t *testing.T) {
 	// The career grain never leaks into a match-grain series.
 	if pts, err := s.GetPlayerMetricSeries("", nil); err != nil || len(pts) != 0 {
 		t.Errorf("GetPlayerMetricSeries(\"\") = %v, %v — a series is always one subject", pts, err)
+	}
+}
+
+// TestGetTrendConvertedEqualsLegacySeries is the CONVERSION pin: GetTrend
+// (now a thin wrapper over the series read) still equals the retired
+// query's output on every fresh-covered match — the equivalence the
+// characterization above established, held after the switch.
+func TestGetTrendConvertedEqualsLegacySeries(t *testing.T) {
+	s, ids := trendFixture(t)
+
+	legacy := legacyTrendPoints(t, s, "100", "adr")
+	covered := []models.ProfileTrendPoint{}
+	for _, p := range legacy {
+		if p.MatchID == ids["trend-b"] || p.MatchID == ids["trend-d"] {
+			continue
+		}
+		covered = append(covered, p)
+	}
+	trend, err := s.GetTrend("100", "adr")
+	if err != nil {
+		t.Fatalf("GetTrend: %v", err)
+	}
+	if len(trend) != len(covered) {
+		t.Fatalf("GetTrend = %d points, want %d (the fresh-covered subset): %+v",
+			len(trend), len(covered), trend)
+	}
+	for i := range trend {
+		if !sameTrendPoint(trend[i], covered[i]) {
+			t.Errorf("GetTrend[%d] = %+v, want the legacy point %+v", i, trend[i], covered[i])
+		}
+		if trend[i].Seq != i {
+			t.Errorf("GetTrend[%d].Seq = %d, want %d (ordinal over the surviving points)", i, trend[i].Seq, i)
+		}
+	}
+	seen := map[int64]bool{}
+	for _, p := range trend {
+		seen[p.MatchID] = true
+	}
+	if seen[ids["trend-b"]] || seen[ids["trend-d"]] {
+		t.Errorf("GetTrend served a gap match: %+v", trend)
+	}
+}
+
+// TestGetTrendPercentScaleAndQ1Divergences pins the two display-unit
+// facts the conversion carries and the one divergence owner ruling Q1
+// accepted:
+//
+//   - percent-format metrics store a 0..1 FRACTION while the trend has
+//     always served 0..100 (fmtPercent / fmtProfileMetric) — kast and
+//     hs must come back ×100, equal to the retired SQL;
+//   - Q1: a zero denominator yields the metric's 0-beside-N where the
+//     retired SQL floored it (alice is 10k/0d → kd 10.00 retired, 0
+//     now), and a match with no analytics rows used to read KAST 0
+//     while the metric has no rows at all → a gap.
+func TestGetTrendPercentScaleAndQ1Divergences(t *testing.T) {
+	s := openMem(t)
+	base := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+
+	// match q1-a: alice 10k/0d/4hs with one KAST round; match q1-b: no
+	// player_round_stats rows at all (the KAST gap case). Both keep
+	// testExtracted's player_stats (10k/0d/4hs, adr 60, hs_pct 40).
+	save := func(name string, at time.Time, rounds []models.PlayerRoundStat) int64 {
+		t.Helper()
+		id, err := s.CreateMatchRow("/d/"+name+".dem", "sha-"+name, 42)
+		if err != nil {
+			t.Fatalf("CreateMatchRow(%s): %v", name, err)
+		}
+		em := testExtracted("sha-"+name, at)
+		if err := s.SaveExtracted(id, em); err != nil {
+			t.Fatalf("SaveExtracted(%s): %v", name, err)
+		}
+		if rounds != nil {
+			if err := s.ReplacePlayerRounds(id, rounds); err != nil {
+				t.Fatalf("ReplacePlayerRounds(%s): %v", name, err)
+			}
+		}
+		return id
+	}
+	idA := save("q1-a", base.Add(time.Hour), []models.PlayerRoundStat{
+		{Round: 1, SteamID: "100", KAST: true},
+	})
+	idB := save("q1-b", base, nil)
+
+	// The rows the sweep would store: kast = AVG(flag) = 1.0, hs =
+	// headshots/kills = 0.4, kd = kills/deaths → NULLIF → 0 (Q1).
+	seedFreshMetricValue(t, s, "kast", "100", idA, 1.0)
+	seedFreshMetricValue(t, s, "hs_pct", "100", idA, 0.4)
+	seedFreshMetricValue(t, s, "kd", "100", idA, 0)
+
+	byMatch := func(metric string) map[int64]float64 {
+		t.Helper()
+		out := map[int64]float64{}
+		for _, p := range legacyTrendPoints(t, s, "100", metric) {
+			out[p.MatchID] = p.Value
+		}
+		return out
+	}
+	trendByMatch := func(metric string) map[int64]float64 {
+		t.Helper()
+		pts, err := s.GetTrend("100", metric)
+		if err != nil {
+			t.Fatalf("GetTrend(%s): %v", metric, err)
+		}
+		out := map[int64]float64{}
+		for _, p := range pts {
+			out[p.MatchID] = p.Value
+		}
+		return out
+	}
+
+	// kast: 100 × 1 == the retired 100.0 × AVG(kast); the analytics-less
+	// match is a GAP (Q1: 0-round KAST → "—"), where the retired
+	// COALESCE(...) served a fabricated 0.
+	legacyKast := byMatch("kast")
+	if legacyKast[idA] != 100 || legacyKast[idB] != 0 {
+		t.Fatalf("legacy kast = %v, want {a:100 b:0} (the retired COALESCE spelling)", legacyKast)
+	}
+	kast := trendByMatch("kast")
+	if len(kast) != 1 || kast[idA] != 100 {
+		t.Errorf("kast trend = %v, want exactly {a:100} (×100 of the stored 1.0; b has no rows)", kast)
+	}
+
+	// hs: 0.4 × 100 == the retired ps.hs_pct (40) — equal, no scaling
+	// surprise on the side where both agree.
+	legacyHS := byMatch("hs")
+	hs := trendByMatch("hs")
+	if legacyHS[idA] != 40 || legacyHS[idB] != 40 {
+		t.Fatalf("legacy hs = %v, want 40 for both (testExtracted hs_pct)", legacyHS)
+	}
+	if len(hs) != 1 || hs[idA] != legacyHS[idA] {
+		t.Errorf("hs trend = %v, want {a:%v} (the stored fraction ×100 == the legacy column)", hs, legacyHS[idA])
+	}
+
+	// kd: the DIVERGENCE Q1 accepted — alice is 10k/0d, so the retired
+	// floor showed the kill count (10) while the metric's NULLIF shows
+	// the honest 0-beside-N.
+	legacyKD := byMatch("kd")
+	if legacyKD[idA] != 10 {
+		t.Fatalf("legacy kd = %v, want 10 (kills / MAX(deaths,1))", legacyKD)
+	}
+	kd := trendByMatch("kd")
+	if len(kd) != 1 || kd[idA] != 0 {
+		t.Errorf("kd trend = %v, want {a:0} (Q1: NULLIF, never the floored 10)", kd)
+	}
+}
+
+// TestGetPlayerHistoryReadsStoredMetricRows pins the history table's two
+// metric-backed cells (design §3.5's D13): ADR and KAST% come from the
+// stored match-scope `adr`/`kast` rows — ADR in the metric's own units,
+// KAST% scaled ×100 for the 0..100 cell — and a match with no fresh row
+// leaves the cell NIL (the profile's honest "—"), never the retired
+// query-time ps.adr / kastPerMatchSQL arithmetic and never a 0.
+func TestGetPlayerHistoryReadsStoredMetricRows(t *testing.T) {
+	s := openMem(t)
+	base := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
+	save := func(name string, at time.Time) int64 {
+		t.Helper()
+		id, err := s.CreateMatchRow("/d/"+name+".dem", "sha-"+name, 42)
+		if err != nil {
+			t.Fatalf("CreateMatchRow(%s): %v", name, err)
+		}
+		if err := s.SaveExtracted(id, testExtracted("sha-"+name, at)); err != nil {
+			t.Fatalf("SaveExtracted(%s): %v", name, err)
+		}
+		return id
+	}
+	older := save("hist-older", base)
+	newer := save("hist-newer", base.Add(time.Hour))
+
+	// Only the NEWER match carries fresh rows.
+	seedFreshMetricValue(t, s, "adr", "100", newer, 63.5)
+	seedFreshMetricValue(t, s, "kast", "100", newer, 0.75)
+
+	rows, err := s.GetPlayerHistory("100")
+	if err != nil {
+		t.Fatalf("GetPlayerHistory: %v", err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("history = %d rows, want 2: %+v", len(rows), rows)
+	}
+	if rows[0].MatchID != newer || rows[1].MatchID != older {
+		t.Fatalf("history order = %d, %d; want most-recent-first (%d, %d)",
+			rows[0].MatchID, rows[1].MatchID, newer, older)
+	}
+	if rows[0].ADR == nil || *rows[0].ADR != 63.5 {
+		t.Errorf("newer ADR = %v, want 63.5 (the stored `adr` row, own units)", rows[0].ADR)
+	}
+	if rows[0].KASTPct == nil || *rows[0].KASTPct != 75 {
+		t.Errorf("newer KASTPct = %v, want 75 (the stored 0.75 fraction ×100 for the 0..100 cell)", rows[0].KASTPct)
+	}
+	if rows[1].ADR != nil || rows[1].KASTPct != nil {
+		t.Errorf("older adr/kast = %v/%v, want nil/nil (no fresh rows → honest gap)",
+			rows[1].ADR, rows[1].KASTPct)
+	}
+	// The raw/inferred cells the history keeps are untouched.
+	if rows[0].Kills != 10 || rows[0].Deaths != 0 || rows[0].Map == "" {
+		t.Errorf("newer row lost its raw columns: %+v", rows[0])
 	}
 }
