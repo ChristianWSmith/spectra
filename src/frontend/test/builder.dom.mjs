@@ -31,12 +31,15 @@
 //      bar in the row), metric-done refetches the state and clears the
 //      feed, the draft-vs-saved preview criterion holds, and no rendered
 //      state output carries a version number or timestamp;
-//   J. the Order dialog (dogfooding design §2): the list-header entry
-//      point, ONE dialog with two stacked sections, the read-only fixed
-//      block over the full catalog in sequence order, keyboard moves
-//      write the pref through (SetPref with the whole sequence), Reset
-//      deletes both keys, the pin indicator is read-only, and Close
-//      dismisses.
+//   J. the Order dialog (dogfooding design §2 + metrics UI wave B):
+//      the list-header entry point, ONE dialog with two stacked
+//      sections, the PINS-ONLY reorder list (pinned metrics in
+//      sequence order — the unpinned catalog entries and the old pin
+//      indicator are gone), the help line + the pins-empty state,
+//      the read-only fixed block over the listbox/option rows, the
+//      grabber handle as the drag source, keyboard/button moves that
+//      write the WHOLE sequence through (SetPref), Reset → Delete,
+//      and Close.
 //
 // Backend semantics — the SQL partition + keyset tiling
 // (store.TestListMetricsPageOriginFilter*) and the SaveMetric/DeleteMetric
@@ -128,9 +131,10 @@ bindings.handlers.ValidateExpr = () => [true, {}];
 
 // The library-wide catalog (one cached listMetrics()): the mount effect
 // resolves an ABSENT pins key's DEFAULT_PINS (design §1.6) through it,
-// and the Order dialog lists the FULL catalog (design §2.4 — one
-// listMetrics() on open). Scripted BEFORE the first mount so the
-// resolved selection is stable across every section.
+// and the Order dialog reads the FULL catalog too (design §2.4 — one
+// listMetrics() on open; wave B renders only the pinned subset of it).
+// Scripted BEFORE the first mount so the resolved selection is stable
+// across every section.
 bindings.MetricsService.ListMetrics = () => Promise.resolve(METRICS);
 
 // The fixture catalog in the store's canonical order (builtin → user →
@@ -801,14 +805,13 @@ console.log('I. compute-state surface: list chips, editor card, k/N progress, dr
   );
 }
 
-console.log('J. the Order dialog: entry point, write-through moves, Reset, read-only pins, fixed block');
+console.log('J. the Order dialog: pins-only list, handle drag, write-through moves, Reset, Close');
 {
-  // Pin one metric first (on the Builder row — pin TOGGLING stays with
-  // this single writer) so the dialog has a pinned indicator to show.
-  const pinBtn = rowNamed(r, 'adr_avg')?.querySelector('[aria-label="Toggle pin for adr_avg"]');
-  click(pinBtn);
-  await sleep(60);
-
+  // Two opens: FIRST with nothing pinned — the honest empty state plus
+  // the help line (the owner copy rule: user's domain, no dev
+  // shorthand — the retired "fixed Go stats" phrase must be gone);
+  // THEN after pinning three metrics from the Builder rows (the single
+  // pins writer) — the reorder suite over the PINNED list only.
   const orderBtn = [...r.querySelectorAll('.bld-list button')].find((b) =>
     b.textContent.includes('Order'),
   );
@@ -826,7 +829,7 @@ console.log('J. the Order dialog: entry point, write-through moves, Reset, read-
   bindings.resetCalls();
   click(orderBtn);
   await sleep(150);
-  const dlg = document.querySelector('.dlg-panel.mo-prompt');
+  let dlg = document.querySelector('.dlg-panel.mo-prompt');
   check(
     'the dialog opens (mo-prompt panel with role=dialog)',
     !!dlg && dlg.getAttribute('role') === 'dialog',
@@ -840,6 +843,8 @@ console.log('J. the Order dialog: entry point, write-through moves, Reset, read-
     JSON.stringify(bindings.calls.filter((c) => c.method === 'GetPref').map((c) => c.args)),
   );
 
+  // Closures over `dlg` — re-read on every use, so the second open
+  // below re-queries through the same helpers.
   const sec = (scope) => dlg?.querySelector(`.mo-sec[data-mo-scope="${scope}"]`);
   const dRows = (scope) => [...(sec(scope)?.querySelectorAll('.mo-row') || [])];
   const dNames = (scope) => dRows(scope).map((x) => x.dataset.moName);
@@ -851,13 +856,60 @@ console.log('J. the Order dialog: entry point, write-through moves, Reset, read-
       !dlg?.querySelector('[role="tab"]'),
     [...(dlg?.querySelectorAll('.mo-sec-title') || [])].map((h) => h.textContent.trim()).join(' | '),
   );
+
+  // The help line (wave B verbiage): pins-only + where to pin, in the
+  // user's domain — and the owner-flagged development-process phrase
+  // is retired for good.
+  const note = (dlg?.querySelector('.mo-note')?.textContent || '').replace(/\s+/g, ' ').trim();
+  check(
+    'help line: the list is PINS-ONLY and points at the metric list’s pin buttons; no dev-process phrase',
+    /Only your pinned metrics are listed here/.test(note) &&
+      /pin buttons in the metric list/.test(note) &&
+      !/Go stats/i.test(dlg?.textContent || ''),
+    note,
+  );
+
+  check(
+    'nothing pinned yet → the match section says nothing to order and points at the pin buttons (no rows, no listbox)',
+    !!sec('match') &&
+      /Nothing to order yet — pin metrics from the metric list/.test(sec('match').textContent) &&
+      !!sec('match').querySelector('p[role="status"]') &&
+      dRows('match').length === 0 &&
+      !sec('match').querySelector('[role="listbox"]'),
+    sec('match')?.textContent.replace(/\s+/g, ' ').trim().slice(0, 160),
+  );
+  check(
+    'the profile section says so when its catalog is empty',
+    !!sec('profile')?.textContent.includes('No profile metrics yet.'),
+    sec('profile')?.textContent.replace(/\s+/g, ' ').slice(0, 120),
+  );
   {
-    // The section's ARIA structure (2026-11-14 a11y fix): the fixed
-    // context is a READ-ONLY list — role=list cannot carry
-    // aria-readonly, so the read-only statement is the list's
-    // accessible NAME, the visible caption "… not reorderable" — and
-    // the reorderable half is the listbox/option pair that makes the
-    // row's tabindex, keydown and drag handlers valid (role=listitem
+    const closeBtn = [...dlg.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Close');
+    click(closeBtn);
+    await sleep(60);
+    check('Close dismisses the empty dialog', !document.querySelector('.dlg-panel.mo-prompt'));
+  }
+
+  // Pin three of the four match metrics from the Builder rows —
+  // trade_rate stays UNPINNED, which is exactly what the pins-only
+  // list must never show.
+  for (const name of ['adr_avg', 'my_kd', 'plug_stat']) {
+    click(rowNamed(r, name)?.querySelector(`[aria-label="Toggle pin for ${name}"]`));
+    await sleep(40);
+  }
+
+  bindings.resetCalls();
+  click(orderBtn);
+  await sleep(150);
+  dlg = document.querySelector('.dlg-panel.mo-prompt');
+
+  {
+    // The section's ARIA structure (2026-11-14 a11y fix, unchanged by
+    // wave B): the fixed context is a READ-ONLY list — role=list
+    // cannot carry aria-readonly, so the read-only statement is the
+    // list's accessible NAME, the visible caption "… not reorderable" —
+    // and the reorderable half is the listbox/option pair that makes
+    // the row's tabindex, keydown and drag handlers valid (role=listitem
     // is non-interactive and would flag all three).
     const secEl = sec('match');
     const fixed = secEl?.querySelector('.mo-fixed');
@@ -866,7 +918,7 @@ console.log('J. the Order dialog: entry point, write-through moves, Reset, read-
     const rows = [...(list?.querySelectorAll('.mo-row') || [])];
     const items = fixed ? [...fixed.querySelectorAll('.mo-fixed-item')].map((x) => x.textContent) : [];
     check(
-      'fixed block: read-only context (role=list, named "not reorderable", no controls, not draggable) — Go stats only; the reorderable half is a listbox of unselected options',
+      'fixed block: read-only context (role=list, named "not reorderable", no controls, not draggable); the reorderable half is a listbox of unselected options',
       !!fixed &&
         fixed.getAttribute('role') === 'list' &&
         fixed.getAttribute('aria-labelledby') === cap?.id &&
@@ -882,28 +934,45 @@ console.log('J. the Order dialog: entry point, write-through moves, Reset, read-
         list?.getAttribute('role') === 'listbox' &&
         list?.getAttribute('aria-labelledby') === secEl?.querySelector('.mo-sec-title')?.id &&
         rows.length > 0 &&
-        rows.every((r) => r.getAttribute('role') === 'option' && r.getAttribute('aria-selected') === 'false'),
+        rows.every((x) => x.getAttribute('role') === 'option' && x.getAttribute('aria-selected') === 'false'),
       fixed && list
-        ? `${JSON.stringify(items)} list=${list.getAttribute('role')} rows=${rows.map((r) => r.getAttribute('role')).join(',')}`
+        ? `${JSON.stringify(items)} list=${list.getAttribute('role')} rows=${rows.length}`
         : 'no fixed block',
     );
   }
   check(
-    'the metric list covers the FULL catalog in the default sequence (absent pref)',
-    JSON.stringify(dNames('match')) ===
-      JSON.stringify(['trade_rate', 'adr_avg', 'my_kd', 'plug_stat']),
+    'the list shows ONLY the pinned metrics in sequence order — the unpinned trade_rate never appears',
+    JSON.stringify(dNames('match')) === JSON.stringify(['adr_avg', 'my_kd', 'plug_stat']) &&
+      !dRows('match').some((x) => x.dataset.moName === 'trade_rate'),
     JSON.stringify(dNames('match')),
-  );
-  check(
-    'the profile section says so when its catalog is empty',
-    !!sec('profile')?.textContent.includes('No profile metrics yet.'),
-    sec('profile')?.textContent.replace(/\s+/g, ' ').slice(0, 120),
   );
   {
     const rows = dRows('match');
-    const up0 = rows[0]?.querySelector('[aria-label="Move trade_rate up"]');
-    const down0 = rows[0]?.querySelector('[aria-label="Move trade_rate down"]');
-    const downLast = rows[3]?.querySelector('[aria-label="Move plug_stat down"]');
+    check(
+      'every row carries a grabber handle as THE drag source (draggable on the handle, never on the row) — aria-hidden, the named ↑/↓ buttons stay the accessible path',
+      rows.length === 3 &&
+        rows.every((x) => {
+          const g = x.querySelector('.mo-grip');
+          return (
+            !!g &&
+            g.getAttribute('draggable') === 'true' &&
+            g.getAttribute('aria-hidden') === 'true' &&
+            !x.hasAttribute('draggable')
+          );
+        }),
+      rows
+        .map(
+          (x) =>
+            `${x.dataset.moName}:handle=${x.querySelector('.mo-grip')?.getAttribute('draggable')} row-draggable=${x.hasAttribute('draggable')}`,
+        )
+        .join(', '),
+    );
+  }
+  {
+    const rows = dRows('match');
+    const up0 = rows[0]?.querySelector('[aria-label="Move adr_avg up"]');
+    const down0 = rows[0]?.querySelector('[aria-label="Move adr_avg down"]');
+    const downLast = rows[2]?.querySelector('[aria-label="Move plug_stat down"]');
     check(
       'every row carries labelled ↑/↓ buttons; the boundary ones are disabled',
       !!up0 && up0.disabled && !!down0 && !down0.disabled && !!downLast && downLast.disabled,
@@ -911,23 +980,22 @@ console.log('J. the Order dialog: entry point, write-through moves, Reset, read-
     );
   }
   {
-    const row0 = dRows('match')[0];
-    row0.focus();
-    row0.dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    const rows = dRows('match');
+    rows[0].focus();
+    rows[0].dispatchEvent(new dom.window.KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
     await sleep(80);
     check(
-      'ArrowDown on the focused row moves it one slot down',
-      JSON.stringify(dNames('match')) ===
-        JSON.stringify(['adr_avg', 'trade_rate', 'my_kd', 'plug_stat']),
+      'ArrowDown on the focused row moves it one slot down (within the pinned list)',
+      JSON.stringify(dNames('match')) === JSON.stringify(['my_kd', 'adr_avg', 'plug_stat']),
       JSON.stringify(dNames('match')),
     );
     const set = bindings.calls.find((c) => c.method === 'SetPref');
     check(
-      'the move is write-through: SetPref carries the key AND the whole resolved sequence',
+      'the move is write-through: SetPref carries the key AND the whole sequence — the unpinned entry keeps its slot',
       !!set &&
         set.args[0] === 'metric_order_match' &&
         JSON.stringify(set.args[1]) ===
-          JSON.stringify(['adr_avg', 'trade_rate', 'my_kd', 'plug_stat']),
+          JSON.stringify(['trade_rate', 'my_kd', 'adr_avg', 'plug_stat']),
       set ? JSON.stringify(set.args) : 'no SetPref call',
     );
   }
@@ -938,32 +1006,44 @@ console.log('J. the Order dialog: entry point, write-through moves, Reset, read-
     // focusRow ran. The move also leaves a non-default sequence behind,
     // which is what the reset check below must undo.
     const btn = dRows('match')
-      .find((x) => x.dataset.moName === 'my_kd')
-      ?.querySelector('[aria-label="Move my_kd up"]');
+      .find((x) => x.dataset.moName === 'plug_stat')
+      ?.querySelector('[aria-label="Move plug_stat up"]');
     click(btn);
     await sleep(80);
     check(
       'focus follows the row moved by its button',
-      document.activeElement?.dataset?.moName === 'my_kd' &&
-        JSON.stringify(dNames('match')) ===
-          JSON.stringify(['adr_avg', 'my_kd', 'trade_rate', 'plug_stat']),
+      document.activeElement?.dataset?.moName === 'plug_stat' &&
+        JSON.stringify(dNames('match')) === JSON.stringify(['my_kd', 'plug_stat', 'adr_avg']),
       `${document.activeElement?.className ?? 'none'} seq=${JSON.stringify(dNames('match'))}`,
     );
   }
   {
-    const pinnedRow = dRows('match').find((x) => x.dataset.moName === 'adr_avg');
-    const pin = pinnedRow?.querySelector('.mo-pin');
-    const plain = dRows('match').find((x) => x.dataset.moName === 'trade_rate')?.querySelector('.mo-pin');
+    // Handle-driven DnD, dispatched ON the grabber: dragstart bubbles
+    // to the row's handler (the row itself is not draggable), the
+    // dragover/drop pair resolves the insertion slot, and the very
+    // same write-through move() runs. jsdom has no DragEvent, but these
+    // are plain native listeners, so a bubbling Event exercises the
+    // real chain.
+    const rows = dRows('match');
+    const grip = rows[0].querySelector('.mo-grip');
+    grip.dispatchEvent(new dom.window.Event('dragstart', { bubbles: true }));
+    rows[1].dispatchEvent(new dom.window.Event('dragover', { bubbles: true, cancelable: true }));
+    rows[1].dispatchEvent(new dom.window.Event('drop', { bubbles: true, cancelable: true }));
+    await sleep(80);
     check(
-      'pin indicator: filled on the pinned row, dimmed on the unpinned one',
-      !!pin && pin.classList.contains('mo-pin-on') && !!plain && !plain.classList.contains('mo-pin-on'),
-      `pin=${pin && pin.className} plain=${plain && plain.className}`,
+      'dragging the GRABBER handle reorders the row (its dragstart reaches the row’s handlers)',
+      JSON.stringify(dNames('match')) === JSON.stringify(['plug_stat', 'my_kd', 'adr_avg']),
+      JSON.stringify(dNames('match')),
+    );
+  }
+  {
+    const offender = ['.mo-pin', '[aria-label^="Toggle pin"]', 'button[aria-label*="pin" i]'].find(
+      (sel) => dlg.querySelector(sel),
     );
     check(
-      'the indicator is READ-ONLY — a span, no pin-toggle control anywhere in the dialog',
-      !!pin && pin.tagName === 'SPAN' && !pinnedRow.querySelector('button[aria-label*="pin" i]') &&
-        !dlg.querySelector('[aria-label^="Toggle pin"]'),
-      pin ? pin.outerHTML : 'no indicator',
+      'no pin indicator and no pin control anywhere in the dialog — only pinned rows render; pinning stays with the list',
+      !offender,
+      offender ? `found ${offender}` : '',
     );
   }
   {
@@ -980,9 +1060,8 @@ console.log('J. the Order dialog: entry point, write-through moves, Reset, read-
       JSON.stringify(dels.map((c) => c.args)),
     );
     check(
-      'the lists snap back to the default sequence after reset',
-      JSON.stringify(dNames('match')) ===
-        JSON.stringify(['trade_rate', 'adr_avg', 'my_kd', 'plug_stat']),
+      'the list snaps back to the DEFAULT sequence (pinned, in default order) after reset',
+      JSON.stringify(dNames('match')) === JSON.stringify(['adr_avg', 'my_kd', 'plug_stat']),
       JSON.stringify(dNames('match')),
     );
   }
