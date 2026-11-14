@@ -75,6 +75,16 @@ func TestFrontendPrefKeyStrings(t *testing.T) {
 	if prefsFootstepsVolumeKey != "footsteps_volume" {
 		t.Errorf("footsteps volume key = %q, want %q", prefsFootstepsVolumeKey, "footsteps_volume")
 	}
+	// The metric ORDER pref pair (metricorder.js — the Builder's Order
+	// dialog writes them, the match/profile/report surfaces read them;
+	// Go never consumes them). One key rename silently detaches a
+	// stored arrangement back to the default sequence.
+	if prefsMetricOrderMatchKey != "metric_order_match" {
+		t.Errorf("metric order (match) key = %q, want %q", prefsMetricOrderMatchKey, "metric_order_match")
+	}
+	if prefsMetricOrderProfileKey != "metric_order_profile" {
+		t.Errorf("metric order (profile) key = %q, want %q", prefsMetricOrderProfileKey, "metric_order_profile")
+	}
 }
 
 // The copy toggle is one of the few prefs Go CONSUMES (library.Options

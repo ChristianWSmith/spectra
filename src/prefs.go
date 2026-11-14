@@ -32,6 +32,18 @@ const (
 	// consumes it.
 	prefsFontSizeKey = "font_size"
 
+	// prefsMetricOrderMatchKey / prefsMetricOrderProfileKey hold the
+	// user's preferred render order of METRICS on the two surfaces (the
+	// fixed Go-rendered stats are a constant code prefix and are never
+	// stored). Value: a JSON array of metric NAMES (name is the stable
+	// identity — ids churn on plugin replace), scope-matched on read;
+	// absent = the default order (metricorder.js DEFAULT_RANKS). Written
+	// by the Builder's Order dialog through the kvstore service — the
+	// frontend reads/writes it directly; Go never consumes it
+	// (font_size precedent).
+	prefsMetricOrderMatchKey   = "metric_order_match"
+	prefsMetricOrderProfileKey = "metric_order_profile"
+
 	// The knife/warmup display pref (show knife + warmup rounds in the
 	// round lists) is RETIRED: the extractor discards knife/warmup
 	// rounds at ingest, so every stored round is a counted round and
