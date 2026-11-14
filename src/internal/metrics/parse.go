@@ -26,17 +26,24 @@ const (
 	maxCondDepth = 64
 )
 
-// aggOps is THE op table — unknown ops are ExprErrors.
+// aggOps is THE op table — unknown ops are ExprErrors. `metric` is the
+// value reference (design §2): a ref joins the op table so it reuses the
+// tStr lexer and yields positioned ParseErrors, but it is legal in
+// exactly two positions (a top-level aggregation and a ratio() operand —
+// see parseMetricArg and the parseColArg/parseOperand denials).
 var aggOps = map[string]bool{
 	"count": true, "sum": true, "avg": true, "min": true, "max": true,
 	"stddev": true, "percentile": true, "median": true, "ratio": true,
+	"metric": true,
 }
 
 // ratioNestedOps restricts ratio()'s arguments to value aggregations
 // (percentile is Go-side, ratio is a single-SQL expression — no nesting).
+// `metric` is a VALUE term, so it is a legal ratio operand — one of the
+// ref's two legal positions (design §2).
 var ratioNestedOps = map[string]bool{
 	"count": true, "sum": true, "avg": true, "min": true, "max": true,
-	"stddev": true,
+	"stddev": true, "metric": true,
 }
 
 // exprKeywords are case-insensitive contextual keywords (they only carry
@@ -70,7 +77,7 @@ type Spec struct {
 
 // Agg is one aggregation node.
 type Agg struct {
-	Op     string // count|sum|avg|min|max|stddev|percentile|ratio (median normalized to percentile)
+	Op     string // count|sum|avg|min|max|stddev|percentile|ratio|metric (median normalized to percentile)
 	Alias  string // optional AS alias (reserved for metric views, unused by preview)
 	Where  *condNode
 	Col    string // value column (sum/avg/min/max/stddev/percentile)
@@ -80,6 +87,13 @@ type Agg struct {
 	Num    *Agg      // ratio numerator
 	Den    *Agg      // ratio denominator
 	Pos    int       // byte offset of the op name
+	// Op == "metric": the referenced metric's name and the byte span of
+	// its '...' literal (RefPos inclusive, RefEnd exclusive). The span is
+	// what the rename splice rewrites in place (design §2 identity rule:
+	// the name lives in the text AND in metric_deps).
+	RefName string
+	RefPos  int
+	RefEnd  int
 }
 
 // operand kinds in conditions.
@@ -381,7 +395,7 @@ func (p *parser) parseAgg(top bool) (Agg, *ParseError) {
 	}
 	op := strings.ToLower(t.text)
 	if !aggOps[op] {
-		return Agg{}, errf(t.pos, "unknown aggregation %q (valid: count, sum, avg, min, max, stddev, percentile, median, ratio)", t.text)
+		return Agg{}, errf(t.pos, "unknown aggregation %q (valid: count, sum, avg, min, max, stddev, percentile, median, ratio, metric)", t.text)
 	}
 	agg := Agg{Op: op, Pos: t.pos}
 	if perr := p.expectPunct("("); perr != nil {
@@ -391,6 +405,11 @@ func (p *parser) parseAgg(top bool) (Agg, *ParseError) {
 	switch op {
 	case "count":
 		agg.Count, perr = p.parseCountArgs()
+	case "metric":
+		// The value reference — handled here (not in parseOpArgs) so it
+		// never sees the `where <cond>,` filter prefix: a ref is a
+		// computed value, never a row transform.
+		agg, perr = p.parseMetricArg(agg)
 	default:
 		agg, perr = p.parseOpArgs(agg)
 	}
@@ -443,11 +462,11 @@ func (p *parser) parseOpArgs(agg Agg) (Agg, *ParseError) {
 	}
 	switch agg.Op {
 	case "sum", "avg", "min", "max", "stddev":
-		return p.parseColArg(agg)
+		return p.parseColArg(agg, agg.Op)
 	case "median":
 		agg.Op = "percentile"
 		agg.P = 0.5
-		return p.parseColArg(agg)
+		return p.parseColArg(agg, "median")
 	case "percentile":
 		t, ok := p.next()
 		if !ok || t.kind != tNum {
@@ -461,7 +480,7 @@ func (p *parser) parseOpArgs(agg Agg) (Agg, *ParseError) {
 		if perr := p.expectPunct(","); perr != nil {
 			return Agg{}, perr
 		}
-		return p.parseColArg(agg)
+		return p.parseColArg(agg, "percentile")
 	case "ratio":
 		num, perr := p.parseAgg(false)
 		if perr != nil {
@@ -486,11 +505,48 @@ func (p *parser) parseOpArgs(agg Agg) (Agg, *ParseError) {
 	return Agg{}, errf(agg.Pos, "internal: unhandled aggregation %q", agg.Op)
 }
 
-// parseColArg reads the single whitelisted value column.
-func (p *parser) parseColArg(agg Agg) (Agg, *ParseError) {
+// parseMetricArg reads `metric('<name>')` — the value reference (design
+// §2). The literal's byte span lands on the Agg (RefPos/RefEnd) so the
+// rename splice can rewrite it in place; the name is checked only for
+// emptiness here (existence is the SERVICE's — Compile resolves against
+// the map the service fills from the catalog).
+func (p *parser) parseMetricArg(agg Agg) (Agg, *ParseError) {
+	t, ok := p.next()
+	if !ok {
+		return Agg{}, p.errHere("expected a metric name string in metric(...)")
+	}
+	// Denied position: a ref may not nest inside a ref (the criterion is
+	// "a ref may appear only where a computed value may appear" — a
+	// ref's argument is a NAME, never a value).
+	if t.kind == tIdent && strings.EqualFold(t.text, "metric") {
+		return Agg{}, errf(t.pos, "metric() cannot be nested inside metric()")
+	}
+	if t.kind != tStr {
+		return Agg{}, errf(t.pos, "expected a metric name string in metric(...) (got %q)", t.text)
+	}
+	if t.val == "" {
+		return Agg{}, errf(t.pos, "metric() reference name is empty")
+	}
+	// t.text is the raw literal WITH quotes — exactly the span a splice
+	// replaces.
+	agg.RefName, agg.RefPos, agg.RefEnd = t.val, t.pos, t.pos+len(t.text)
+	return agg, nil
+}
+
+// parseColArg reads the single whitelisted value column. `op` is the op
+// AS WRITTEN (median reports as median, not its normalized percentile) —
+// it only ever shapes the denied-position error below.
+func (p *parser) parseColArg(agg Agg, op string) (Agg, *ParseError) {
 	t, ok := p.next()
 	if !ok || t.kind != tIdent {
 		return Agg{}, p.errHere("expected a column name")
+	}
+	// Denied position (design §2): a ref is a computed value, not a row
+	// transform — aggregating a broadcast scalar double-aggregates it.
+	// `metric` is not a whitelisted column of ANY source, so this ident
+	// can only be the ref keyword.
+	if strings.EqualFold(t.text, "metric") {
+		return Agg{}, errf(t.pos, "metric() is a value reference — it cannot appear inside %s()", op)
 	}
 	if exprKeywords[t.text] {
 		return Agg{}, errf(t.pos, "expected a column name, got keyword %q", t.text)
@@ -592,6 +648,13 @@ func (p *parser) parseOperand() (*operand, *ParseError) {
 	}
 	switch t.kind {
 	case tIdent:
+		// Denied position (design §2): conditions/filters are row-level
+		// predicates over SOURCE columns — a computed value has no row
+		// to test. `metric` is not a column of any source, so this ident
+		// can only be the ref keyword.
+		if strings.EqualFold(t.text, "metric") {
+			return nil, errf(t.pos, "metric() is a value reference — it cannot appear in a condition or filter (they are row-level predicates over source columns)")
+		}
 		if strings.EqualFold(t.text, "true") {
 			return &operand{kind: opLit, isBool: true, bval: true, pos: t.pos}, nil
 		}

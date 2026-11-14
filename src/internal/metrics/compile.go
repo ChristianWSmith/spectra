@@ -50,7 +50,42 @@ type Plan struct {
 // humans-only applies to the subject unconditionally, and the output is
 // grouped by it. Any validation failure is a *ParseError carrying
 // Message/Pos (the ExprError contract).
+//
+// Compile is the REF-FREE entry point: an expression holding a
+// metric() reference must compile through CompileRefs with the
+// resolution the service looked up (a nil map reports the ref as
+// unresolvable — this wrapper exists so every existing call site keeps
+// its shape).
 func Compile(expr, denominator, scope string) (Plan, *ParseError) {
+	return CompileRefs(expr, denominator, scope, nil)
+}
+
+// CompileRefs is Compile plus the metric() references (design §2): refs
+// maps each referenced name to its resolved RefTarget (id, grain, live
+// stamps) — filled by the SERVICE from the catalog, never by this
+// package (Compile stays pure: user text never reaches SQL, and neither
+// does a catalog lookup).
+//
+// Each distinct ref compiles to ONE engine-derived INNER JOIN over
+// metric_values (alias md0, md1, … in first-appearance order):
+//
+//	INNER JOIN metric_values md0 ON md0.metric_id = ?
+//	  AND md0.match_id = <0 | primary.match_id>
+//	  AND md0.steam_id = <primary's subject>
+//	  AND md0.metric_version = ? AND md0.rule_version = ?
+//
+// INNER is the designed semantics: a missing or outdated upstream DROPS
+// the dependent's row — absent = unknown, never 0 (sources keep their
+// Value-0-beside-N honesty row; a MISSING DEPENDENCY is not a zero).
+// The join forces column qualification (metric_values shares match_id /
+// steam_id with every source, so an unqualified reference would be
+// ambiguous), which is why a single-source ref-bearing statement emits
+// qualified columns while the ref-free base form stays byte-stable.
+//
+// metric_values is EMPTY until the W3 compute pass: a ref-bearing
+// preview therefore honestly returns NO rows today (upstream absent →
+// dependent dropped). That is the INNER contract working, not a defect.
+func CompileRefs(expr, denominator, scope string, refs map[string]RefTarget) (Plan, *ParseError) {
 	spec, perr := Parse(expr)
 	if perr != nil {
 		return Plan{}, perr
@@ -59,6 +94,15 @@ func Compile(expr, denominator, scope string) (Plan, *ParseError) {
 	for _, s := range srcs {
 		if !knownSource(s.Name) {
 			return Plan{}, errf(s.Pos, "unknown source table %q (valid: %s)", s.Name, knownSourcesMsg())
+		}
+	}
+	// Ref name resolution, beside the source resolution it mirrors: a
+	// name the caller did not resolve is the SAME friendly positioned
+	// error the save path spells, so a draft, a preview and a save can
+	// never disagree about a reference.
+	for _, r := range MetricRefs(spec) {
+		if _, ok := refs[r.Name]; !ok {
+			return Plan{}, errf(r.Pos, "unknown metric reference %q", r.Name)
 		}
 	}
 	primary := srcs[0].Name
@@ -126,6 +170,32 @@ func Compile(expr, denominator, scope string) (Plan, *ParseError) {
 		}
 	}
 
+	// metric() ref joins (see CompileRefs' doc for the shape and the
+	// INNER rationale). Built AFTER validateAggIdents so the single-
+	// source "unknown column … for source X" wording stays byte-stable
+	// for ref-free expressions — qualification only flips once a ref is
+	// actually present.
+	refAliases := map[string]string{}
+	var refArgs []any
+	if refsFound := MetricRefs(spec); len(refsFound) > 0 {
+		// Force qualification: metric_values carries match_id/steam_id,
+		// so every primary column reference must name its table.
+		res.joined = true
+		for _, name := range DistinctNames(refsFound) {
+			t := refs[name]
+			alias := "md" + strconv.Itoa(len(refAliases))
+			refAliases[name] = alias
+			from += " INNER JOIN metric_values " + alias + " ON " +
+				alias + ".metric_id = ? AND " + alias + ".match_id = " + refMatchExpr(t, primary) +
+				" AND " + alias + ".steam_id = " + primary + "." + subject +
+				" AND " + alias + ".metric_version = ? AND " + alias + ".rule_version = ?"
+			// Bind order follows the join's textual order: id, then the
+			// two stamps (the match key is a constant/column, never a
+			// bind).
+			refArgs = append(refArgs, t.ID, t.Version, t.RuleVersion)
+		}
+	}
+
 	// Split the list: SQL aggregations (one statement) vs percentile
 	// (Go-side raw fetch). The FIRST aggregation is the previewed value.
 	var sqlAggs []*Agg
@@ -158,7 +228,10 @@ func Compile(expr, denominator, scope string) (Plan, *ParseError) {
 		HasDenom: denomTable != "",
 	}
 	newEmitter := func() *emitter {
-		return &emitter{res: res, from: from, matchID: matchID, denom: denomTable, subject: subject}
+		return &emitter{
+			res: res, from: from, fromArgs: refArgs, matchID: matchID,
+			denom: denomTable, subject: subject, refAliases: refAliases,
+		}
 	}
 
 	if firstPctl != nil {
@@ -197,9 +270,28 @@ func Compile(expr, denominator, scope string) (Plan, *ParseError) {
 // Validate is the parse+whitelist check without execution (builder live
 // check). The denominator/scope defaults are the save-time validation
 // shape ("" = whole library); callers with a scope compile directly.
+// An expression holding a metric() reference cannot be validated here —
+// this entry point carries no catalog — and reports the ref as
+// unresolvable; drafts go through the service (ValidateExpr), which
+// resolves references against the saved metrics first.
 func Validate(expr string) *ParseError {
 	_, perr := Compile(expr, "", "")
 	return perr
+}
+
+// refMatchExpr renders the ref join's match_id key: the profile grain's
+// rows live at match_id = 0 (one career row per subject); a match-grain
+// dependency rides the row's own match — the primary's match_id column,
+// which the statement has already restricted to the scope id at
+// "match:<id>" (so the correlation and the scope predicate agree).
+// Only 'match'/'profile' exist (the metrics CHECK, and the store's
+// omitted-scope rule normalizes to 'match'), so anything else reads as
+// match-grain — the same rule CreateMetric/UpdateMetric apply.
+func refMatchExpr(t RefTarget, primary string) string {
+	if t.Scope == "profile" {
+		return "0"
+	}
+	return primary + ".match_id"
 }
 
 // ParseScope resolves the preview scope: "" (whole library) or
@@ -390,11 +482,31 @@ type emitter struct {
 	// the humans-only condition over it (writeSubject), phase1 and
 	// phase2 alike.
 	subject string
+	// fromArgs are the binds the metric() ref joins carry (id + the two
+	// stamps, in the FROM clause's textual order). They are appended to
+	// args at the exact point the emitter writes `from`, so bind order
+	// stays strictly textual: select-list binds first, ref-join binds,
+	// then WHERE binds.
+	fromArgs []any
+	// refAliases maps each metric() reference's name to its
+	// metric_values alias (md0, md1, …) — the emitter writes
+	// `<alias>.value` where a ref aggregation appears.
+	refAliases map[string]string
 }
 
 func (e *emitter) bind(v any) string {
 	e.args = append(e.args, v)
 	return "?"
+}
+
+// writeFrom emits the FROM clause (primary + engine LEFT JOINs +
+// metric() ref joins) together with the ref joins' binds, at the exact
+// textual position — the binds ride along with the text they belong to,
+// which is what keeps ?-order honest in a builder that interleaves text
+// and args.
+func (e *emitter) writeFrom() {
+	e.sb.WriteString(e.from)
+	e.args = append(e.args, e.fromArgs...)
 }
 
 // matchIDExpr is the scope column: side-qualified when the statement
@@ -464,7 +576,7 @@ func (e *emitter) phase1(aggs []*Agg, wrapDenom bool) {
 		e.emitValue(a)
 	}
 	e.sb.WriteString(", COUNT(*) AS n FROM ")
-	e.sb.WriteString(e.from)
+	e.writeFrom()
 	wroteWhere := false
 	if e.matchID > 0 {
 		e.sb.WriteString(" WHERE ")
@@ -496,7 +608,7 @@ func (e *emitter) phase2(a *Agg, withDenom bool) {
 		e.emitDenom()
 	}
 	e.sb.WriteString(" FROM ")
-	e.sb.WriteString(e.from)
+	e.writeFrom()
 	wroteWhere := false
 	if e.matchID > 0 {
 		e.sb.WriteString(" WHERE ")
@@ -596,6 +708,11 @@ func (e *emitter) emitValue(a *Agg) {
 		e.sb.WriteString(") / NULLIF((")
 		e.emitValue(a.Den)
 		e.sb.WriteString("), 0)")
+	case "metric":
+		// The ref's INNER-JOINed upstream value — the alias is engine-
+		// chosen (md0, md1, …), never user text.
+		e.sb.WriteString(e.refAliases[a.RefName])
+		e.sb.WriteString(".value")
 	default:
 		// percentile never reaches SQL (phase2 fetches raw values).
 		e.sb.WriteString("NULL")
