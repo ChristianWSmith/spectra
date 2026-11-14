@@ -22,10 +22,13 @@ const (
 // Def is the runtime metric handle Preview needs (the stored definition —
 // models.MetricRow — maps its Expr/Denominator onto this; the addressing
 // is the engine's: every statement is subject-grouped since the groupBy
-// parameter retired with W2).
+// parameter retired with W2). Refs carries the expression's metric()
+// references RESOLVED against the saved catalog (design §2) — the
+// service fills it; a nil map compiles only ref-free expressions.
 type Def struct {
 	Expr        string
 	Denominator string
+	Refs        map[string]RefTarget
 }
 
 // PreviewRow is one preview result (Label resolved — see Preview). Group
@@ -56,7 +59,7 @@ func RunPreview(st *store.Store, def Def, scope string, limit int) (Preview, *Pa
 	if limit <= 0 {
 		limit = PreviewDefaultRow
 	}
-	plan, perr := Compile(def.Expr, def.Denominator, scope)
+	plan, perr := CompileRefs(def.Expr, def.Denominator, scope, def.Refs)
 	if perr != nil {
 		return Preview{}, perr, nil
 	}

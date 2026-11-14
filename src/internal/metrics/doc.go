@@ -52,6 +52,9 @@
 //	                               float cell with no NULL state vs this
 //	                               generic compiler over user-chosen
 //	                               columns; both are deliberate.
+//	metric('<name>')               another SAVED metric's value — see
+//	                               "Metric references" below (exactly two
+//	                               legal positions, never elsewhere)
 //
 // Conditions (the <cond> grammar): operands are whitelisted columns,
 // numbers, 'strings', true/false; operators are = != > >= < <=, AND, OR,
@@ -60,6 +63,76 @@
 // bound as a `?` parameter; every column identifier is checked against
 // the source set's whitelist before compilation, unknown →
 // ExprError{Message,Pos}.
+//
+// # Metric references (metric('name'))
+//
+// A ref reads ANOTHER saved metric's value: `ratio(sum(dmg),
+// metric('career_avg'))`. The name lives in the expression text (the
+// formula stays readable — ids in formulas are unreadable, and the name
+// IS the identity: metrics.name is UNIQUE across origins, so name→id
+// resolution at save is total) AND in the stored metric_deps edge, which
+// the save re-derives WHOLESALE from the current expression — no edge
+// ever points at a superseded one (no-history model).
+//
+// LEGAL POSITIONS — exactly two, and the criterion that generates them:
+// **a ref may appear only where a computed value may appear.** A
+// top-level aggregation in the agg list, and a ratio() numerator or
+// denominator operand (ratioNestedOps). DENIED, each with a targeted
+// positioned error (parse.go): inside sum/avg/min/max/stddev/percentile/
+// median — *"metric() is a value reference — it cannot appear inside
+// sum()"* (a ref is a computed value, not a row transform; aggregating a
+// broadcast scalar double-aggregates it); inside a condition or filter —
+// *"... it cannot appear in a condition or filter (they are row-level
+// predicates over source columns)"*; and nested inside metric() —
+// *"metric() cannot be nested inside metric()"*.
+//
+// COMPILE: a ref becomes ONE engine-derived INNER JOIN per distinct name
+// (alias md0, md1, … in first-appearance order; CompileRefs' doc has the
+// exact ON):
+//
+//	INNER JOIN metric_values md0 ON md0.metric_id = ?
+//	  AND md0.match_id = <0 | the row's match>
+//	  AND md0.steam_id = <the statement's subject>
+//	  AND md0.metric_version = ? AND md0.rule_version = ?
+//
+// The row key is the dependent's subject address — which is why a ref
+// resolves iff the dependent's row key CONTAINS every key column of the
+// dependency's grain (cross-scope rule): match key (match_id, steam_id)
+// and profile key (steam_id). Same-scope refs and a PROFILE dependency
+// inside a match metric are fine (the row's player key carries the
+// career scalar); a MATCH dependency inside a profile metric is a save
+// error — *"metric 'x' is match-scoped and cannot be used inside a
+// profile-scoped metric (a career value cannot read a per-match value)"*.
+// The INNER join is deliberate and separate from the sources' sparse-row
+// rule: a missing or outdated upstream DROPS the dependent's row —
+// absent = unknown, never 0 (both stamps must be live, so an outdated
+// upstream reads as absent too). Compile never touches the catalog: the
+// SERVICE resolves every name (existence → *"unknown metric reference
+// "x""*, positioned at the literal) and passes the targets in
+// (CompileRefs/Def.Refs), so SaveMetric, ad-hoc ValidateExpr and
+// PreviewMetric share one resolution and one copy. A draft is always
+// CALCULATED — its refs resolve against SAVED metrics.
+//
+// SAVE-TIME GRAPH: inside the save transaction the service resolves
+// names → enforces cross-scope → walks {existing metric_deps edges} ∪
+// {the new refs} for cycles (*"cyclic metric reference: a → b → a"*,
+// self-reference immediate; the walk is a pure graph helper,
+// graph.go) → replaces the metric's edges wholesale. A RENAMED metric
+// with dependents > 0 additionally splices every dependent's
+// metric('old') literals using the parse's own literal spans, re-parses,
+// re-resolves and re-Compile-validates each rewrite — any failure errors
+// the save with NOTHING written — and bumps nothing (a rename changes no
+// semantics). Deleting a referenced metric is blocked at the API
+// (*"cannot delete metric "x": referenced by y, z — edit or delete those
+// first"*); system removal (plugin replace/disable) is not blockable, so
+// dep_name deliberately carries NO foreign key and the edge dangles for
+// the compute pass to resolve-or-fail honestly (missing upstream ⇒
+// dependent rows absent, never 0), while metric_id's ON DELETE CASCADE
+// removes the deleted metric's own edges.
+//
+// The compute pass, its cascade version bumps and the metric_values
+// writers are wave 3 (design §6) — nothing here schedules or stores a
+// computed value.
 //
 // # Sources and the column whitelist
 //

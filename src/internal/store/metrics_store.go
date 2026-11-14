@@ -231,7 +231,41 @@ func (s *Store) metricKeysetAfter(afterID int64) (string, []any, error) {
 
 // GetMetric returns one definition by id (ErrNotFound when absent).
 func (s *Store) GetMetric(id int64) (models.MetricRow, error) {
-	m, err := scanMetric(s.db.QueryRow(`SELECT `+metricColumns+` FROM metrics WHERE id = ?`, id))
+	return getMetricRow(s.db, id)
+}
+
+// GetMetricByName returns one definition by its UNIQUE name (ErrNotFound
+// when absent). metrics.name is UNIQUE across every origin, so name→id
+// resolution is TOTAL — this is the lookup behind metric() references
+// (design §2 identity: the name IS the expression's identity).
+func (s *Store) GetMetricByName(name string) (models.MetricRow, error) {
+	m, err := scanMetric(s.db.QueryRow(
+		`SELECT `+metricColumns+` FROM metrics WHERE name = ?`, scrub(name),
+	))
+	if errors.Is(err, sql.ErrNoRows) {
+		return models.MetricRow{}, ErrNotFound
+	}
+	if err != nil {
+		return models.MetricRow{}, fmt.Errorf("store: get metric by name: %w", err)
+	}
+	return m, nil
+}
+
+// metricsExec is the statement surface a metrics write runs on: the
+// store's single write handle (the plain Create/Update paths) or the
+// open transaction SaveMetricWithDeps wraps its writes in. Reads ride
+// the same surface — the store is capped at ONE connection, so a
+// transaction must do its own reads (a s.db read while the tx holds the
+// connection would block on it).
+type metricsExec interface {
+	Exec(query string, args ...any) (sql.Result, error)
+	QueryRow(query string, args ...any) *sql.Row
+}
+
+// getMetricRow is GetMetric over an arbitrary statement surface (the
+// write handle or an open transaction).
+func getMetricRow(q metricsExec, id int64) (models.MetricRow, error) {
+	m, err := scanMetric(q.QueryRow(`SELECT `+metricColumns+` FROM metrics WHERE id = ?`, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return models.MetricRow{}, ErrNotFound
 	}
@@ -241,19 +275,16 @@ func (s *Store) GetMetric(id int64) (models.MetricRow, error) {
 	return m, nil
 }
 
-// CreateMetric inserts a definition and returns the stored row. A name
-// already used by ANY origin (including builtins) yields a user-facing
-// uniqueness error — API saves can never shadow a builtin. scope is
-// written from the row; version is NOT in the INSERT (column DEFAULT 1 —
-// the counter starts at 1 and only the semantic-edit bump moves it).
-func (s *Store) CreateMetric(m models.MetricRow) (models.MetricRow, error) {
+// insertMetric is CreateMetric's INSERT: the plain path calls it on the
+// write handle, the atomic save on its transaction.
+func insertMetric(q metricsExec, m models.MetricRow) (int64, error) {
 	// A zero scope is an OMITTED field (pre-W2 callers never send one):
 	// write the DDL DEFAULT's value — the CHECK rejects '' — so an
 	// omitted scope behaves exactly like the column DEFAULT 'match'.
 	if m.Scope == "" {
 		m.Scope = "match"
 	}
-	res, err := s.db.Exec(
+	res, err := q.Exec(
 		`INSERT INTO metrics (name, title, short_name, expr, scope, format, doc, origin, plugin_id, denominator, created_at)
 		 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		scrub(m.Name), scrub(m.Title), scrub(m.ShortName), scrub(m.Expr), scrub(m.Scope),
@@ -262,13 +293,57 @@ func (s *Store) CreateMetric(m models.MetricRow) (models.MetricRow, error) {
 	)
 	if err != nil {
 		if isUniqueErr(err) {
-			return models.MetricRow{}, fmt.Errorf("store: a metric named %q already exists", scrub(m.Name))
+			return 0, fmt.Errorf("store: a metric named %q already exists", scrub(m.Name))
 		}
-		return models.MetricRow{}, fmt.Errorf("store: create metric: %w", err)
+		return 0, fmt.Errorf("store: create metric: %w", err)
 	}
 	id, err := res.LastInsertId()
 	if err != nil {
-		return models.MetricRow{}, fmt.Errorf("store: create metric: %w", err)
+		return 0, fmt.Errorf("store: create metric: %w", err)
+	}
+	return id, nil
+}
+
+// updateMetric is UpdateMetric's UPDATE plus its origin gate (the plain
+// path calls it on the write handle, the atomic save on its transaction
+// — the gate reads the stored row through the SAME surface, so it sees
+// the transaction's own view).
+func updateMetric(q metricsExec, m models.MetricRow) error {
+	// Same omitted-scope rule as insertMetric: '' → the DDL DEFAULT
+	// 'match', never the empty string the CHECK rejects.
+	if m.Scope == "" {
+		m.Scope = "match"
+	}
+	existing, err := getMetricRow(q, m.ID)
+	if err != nil {
+		return err
+	}
+	if existing.Origin != "user" {
+		return fmt.Errorf("store: metric %q is origin %s and cannot be modified", existing.Name, existing.Origin)
+	}
+	if _, err := q.Exec(
+		`UPDATE metrics SET name = ?, title = ?, short_name = ?, expr = ?, scope = ?, format = ?,
+			doc = ?, plugin_id = ?, denominator = ? WHERE id = ?`,
+		scrub(m.Name), scrub(m.Title), scrub(m.ShortName), scrub(m.Expr), scrub(m.Scope),
+		scrub(m.Format), scrub(m.Doc), scrub(m.PluginID), scrub(m.Denominator), m.ID,
+	); err != nil {
+		if isUniqueErr(err) {
+			return fmt.Errorf("store: a metric named %q already exists", scrub(m.Name))
+		}
+		return fmt.Errorf("store: update metric: %w", err)
+	}
+	return nil
+}
+
+// CreateMetric inserts a definition and returns the stored row. A name
+// already used by ANY origin (including builtins) yields a user-facing
+// uniqueness error — API saves can never shadow a builtin. scope is
+// written from the row; version is NOT in the INSERT (column DEFAULT 1 —
+// the counter starts at 1 and only the semantic-edit bump moves it).
+func (s *Store) CreateMetric(m models.MetricRow) (models.MetricRow, error) {
+	id, err := insertMetric(s.db, m)
+	if err != nil {
+		return models.MetricRow{}, err
 	}
 	return s.GetMetric(id)
 }
@@ -283,28 +358,8 @@ func (s *Store) CreateMetric(m models.MetricRow) (models.MetricRow, error) {
 // stays a pure overwrite (no-history model — no shadow rows, no
 // versioned copies).
 func (s *Store) UpdateMetric(m models.MetricRow) (models.MetricRow, error) {
-	// Same omitted-scope rule as CreateMetric: '' → the DDL DEFAULT
-	// 'match', never the empty string the CHECK rejects.
-	if m.Scope == "" {
-		m.Scope = "match"
-	}
-	existing, err := s.GetMetric(m.ID)
-	if err != nil {
+	if err := updateMetric(s.db, m); err != nil {
 		return models.MetricRow{}, err
-	}
-	if existing.Origin != "user" {
-		return models.MetricRow{}, fmt.Errorf("store: metric %q is origin %s and cannot be modified", existing.Name, existing.Origin)
-	}
-	if _, err := s.db.Exec(
-		`UPDATE metrics SET name = ?, title = ?, short_name = ?, expr = ?, scope = ?, format = ?,
-			doc = ?, plugin_id = ?, denominator = ? WHERE id = ?`,
-		scrub(m.Name), scrub(m.Title), scrub(m.ShortName), scrub(m.Expr), scrub(m.Scope),
-		scrub(m.Format), scrub(m.Doc), scrub(m.PluginID), scrub(m.Denominator), m.ID,
-	); err != nil {
-		if isUniqueErr(err) {
-			return models.MetricRow{}, fmt.Errorf("store: a metric named %q already exists", scrub(m.Name))
-		}
-		return models.MetricRow{}, fmt.Errorf("store: update metric: %w", err)
 	}
 	return s.GetMetric(m.ID)
 }
@@ -325,4 +380,175 @@ func (s *Store) DeleteMetric(id int64) error {
 		return fmt.Errorf("store: delete metric: %w", err)
 	}
 	return affectedOrNotFound(res, "store: delete metric")
+}
+
+// DependentRewrite is ONE dependent metric's rename splice (design §2):
+// the SERVICE prepares it — parse the dependent's expr, replace its
+// metric('old') literal spans, re-parse and re-compile-validate the
+// result, re-extract its refs — and the store applies it inside
+// SaveMetricWithDeps' transaction. Nothing is written until every
+// rewrite has validated, and a write failure rolls the whole save back.
+type DependentRewrite struct {
+	ID   int64
+	Expr string
+	Deps []string
+}
+
+// SaveMetricWithDeps upserts one definition AND re-derives its
+// metric_deps edges wholesale from the caller-extracted refs (design §2
+// no-history rule: edges always describe the CURRENT expression, so no
+// edge ever points at a superseded one), optionally applying dependents'
+// rename splices — ALL in ONE transaction, so a failed save (a name
+// collision, a rewrite that cannot land) leaves every row untouched.
+//
+// The edges are keyed by NAME, never by id: metrics.name is the
+// expression's identity and ids churn on plugin replace
+// (ReplacePluginMetrics deletes + re-inserts). dep_name deliberately
+// has NO foreign key — a system-removed upstream (plugin disable) must
+// leave the edge so the compute pass resolves-or-fails it honestly;
+// metric_id's ON DELETE CASCADE is the backstop for the metric's OWN
+// edges (pinned by TestMetricDepsCascadeOnDelete).
+//
+// ReplacePluginMetrics never routes through here (it owns its own
+// transaction and never parses exprs), so this method's edge
+// maintenance can never block a plugin replace.
+func (s *Store) SaveMetricWithDeps(m models.MetricRow, deps []string, rewrites []DependentRewrite) (models.MetricRow, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return models.MetricRow{}, fmt.Errorf("store: save metric: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var id int64
+	if m.ID > 0 {
+		if err := updateMetric(tx, m); err != nil {
+			return models.MetricRow{}, err
+		}
+		id = m.ID
+	} else {
+		if id, err = insertMetric(tx, m); err != nil {
+			return models.MetricRow{}, err
+		}
+	}
+	if err := replaceMetricDeps(tx, id, deps); err != nil {
+		return models.MetricRow{}, err
+	}
+	for _, r := range rewrites {
+		res, err := tx.Exec(`UPDATE metrics SET expr = ? WHERE id = ?`, scrub(r.Expr), r.ID)
+		if err != nil {
+			return models.MetricRow{}, fmt.Errorf("store: rewrite dependent metric: %w", err)
+		}
+		if err := affectedOrNotFound(res, "store: rewrite dependent metric"); err != nil {
+			return models.MetricRow{}, err
+		}
+		if err := replaceMetricDeps(tx, r.ID, r.Deps); err != nil {
+			return models.MetricRow{}, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return models.MetricRow{}, fmt.Errorf("store: save metric: %w", err)
+	}
+	return s.GetMetric(id)
+}
+
+// replaceMetricDeps rewrites ONE metric's edge set from the extracted
+// refs: delete every current row, then insert the new set
+// (deduplicated — metric_deps is a SET keyed (metric_id, dep_name),
+// while the extractor legitimately lists a name once per occurrence).
+func replaceMetricDeps(q metricsExec, metricID int64, deps []string) error {
+	if _, err := q.Exec(`DELETE FROM metric_deps WHERE metric_id = ?`, metricID); err != nil {
+		return fmt.Errorf("store: replace metric deps: %w", err)
+	}
+	seen := make(map[string]bool, len(deps))
+	for _, d := range deps {
+		if seen[d] {
+			continue
+		}
+		seen[d] = true
+		if _, err := q.Exec(
+			`INSERT INTO metric_deps (metric_id, dep_name) VALUES (?, ?)`, metricID, scrub(d),
+		); err != nil {
+			return fmt.Errorf("store: replace metric deps: %w", err)
+		}
+	}
+	return nil
+}
+
+// MetricDeps returns the metric's stored edges (the reference names its
+// CURRENT expression holds), sorted — the round-trip read: after every
+// save shape the rows equal the distinct metrics.MetricRefs of the
+// stored expression.
+func (s *Store) MetricDeps(metricID int64) ([]string, error) {
+	rows, err := s.db.Query(`SELECT dep_name FROM metric_deps WHERE metric_id = ? ORDER BY dep_name`, metricID)
+	if err != nil {
+		return nil, fmt.Errorf("store: metric deps: %w", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, fmt.Errorf("store: metric deps: %w", err)
+		}
+		out = append(out, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: metric deps: %w", err)
+	}
+	return out, nil
+}
+
+// MetricDependents returns every metric whose expression references
+// `name` as a full row (name ASC), served by the dep_name-leading index
+// — the delete-block read and the rename splice's work list.
+func (s *Store) MetricDependents(name string) ([]models.MetricRow, error) {
+	rows, err := s.db.Query(
+		`SELECT `+metricColumns+` FROM metrics WHERE id IN
+			(SELECT metric_id FROM metric_deps WHERE dep_name = ?) ORDER BY name ASC`,
+		scrub(name),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("store: metric dependents: %w", err)
+	}
+	defer rows.Close()
+	var out []models.MetricRow
+	for rows.Next() {
+		m, err := scanMetric(rows)
+		if err != nil {
+			return nil, fmt.Errorf("store: metric dependents: %w", err)
+		}
+		out = append(out, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: metric dependents: %w", err)
+	}
+	return out, nil
+}
+
+// ListMetricEdges returns the whole dependency graph keyed by metric
+// name (name → the names its expression references), both levels sorted
+// — the pure cycle check's input (design §2: a save walks {existing
+// edges} ∪ {the saved metric's new refs}).
+func (s *Store) ListMetricEdges() (map[string][]string, error) {
+	rows, err := s.db.Query(
+		`SELECT m.name, d.dep_name FROM metric_deps d
+		 JOIN metrics m ON m.id = d.metric_id
+		 ORDER BY m.name ASC, d.dep_name ASC`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("store: list metric edges: %w", err)
+	}
+	defer rows.Close()
+	out := map[string][]string{}
+	for rows.Next() {
+		var from, to string
+		if err := rows.Scan(&from, &to); err != nil {
+			return nil, fmt.Errorf("store: list metric edges: %w", err)
+		}
+		out[from] = append(out[from], to)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: list metric edges: %w", err)
+	}
+	return out, nil
 }
