@@ -165,11 +165,17 @@
 {#snippet section(scope, title)}
   {@const seq = inSequence(scope, orders[scope], defs)}
   <section class="mo-sec" data-mo-scope={scope}>
-    <h3 class="mo-sec-title">{title}</h3>
-    <p class="mo-fixed-cap muted">Fixed stats — always first, not reorderable</p>
+    <h3 class="mo-sec-title" id="mo-sec-title-{scope}">{title}</h3>
+    <p class="mo-fixed-cap muted" id="mo-fixed-cap-{scope}">
+      Fixed stats — always first, not reorderable
+    </p>
     <!-- The fixed block as READ-ONLY context (never draggable, no
-         buttons, no state — values do not render in this dialog). -->
-    <div class="mo-fixed" role="list" aria-readonly="true">
+         buttons, no state — values do not render in this dialog).
+         aria-readonly is NOT a supported property of role=list (nor of
+         role=listitem), so the read-only statement is carried by the
+         list's accessible NAME — the visible caption above, heard when
+         a screen reader enters the list. -->
+    <div class="mo-fixed" role="list" aria-labelledby="mo-fixed-cap-{scope}">
       {#each fixedBlock(scope) as label (label)}
         <span class="mo-fixed-item" role="listitem">{label}</span>
       {/each}
@@ -179,10 +185,20 @@
         {scope === 'profile' ? 'No profile metrics yet.' : 'No match metrics yet.'}
       </p>
     {:else}
-      <div class="mo-list">
+      <!-- The reorderable half is a real listbox/option pair: option is
+           the ARIA construct that legitimately carries tabindex, a
+           keydown handler and drag handlers (role=listitem cannot — it
+           is non-interactive), so ↑/↓ and HTML5 DnD stay unchanged.
+           aria-selected is required on option and is statically false:
+           this dialog never selects anything (pinning stays with
+           Builder's rows). The listbox takes its name from the section
+           heading. -->
+      <div class="mo-list" role="listbox" aria-labelledby="mo-sec-title-{scope}">
         {#each seq as m, i (m.name)}
           <div
             class="mo-row"
+            role="option"
+            aria-selected="false"
             data-mo-scope={scope}
             data-mo-name={m.name}
             draggable="true"
