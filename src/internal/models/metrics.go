@@ -32,6 +32,19 @@ type MetricRow struct {
 	CreatedAt   time.Time `json:"createdAt"`   // nullable column → zero when NULL
 }
 
+// MetricValue is ONE stored metric value the canonical read serves
+// (stored-metrics design §5) — the frontend contract for a value slot,
+// at either grain (match rows at match_id > 0, career rows at 0):
+// exactly {metricId, steamId, value, n}. Deliberately carries NO stamp:
+// metric_version / rule_version / computed_at are INTERNAL-ONLY and
+// never leave the store, so no view, tooltip or export can render one.
+type MetricValue struct {
+	MetricID int64   `json:"metricId"`
+	SteamID  string  `json:"steamId"` // the subject player (SteamID64, humans only)
+	Value    float64 `json:"value"`
+	N        int     `json:"n"` // sample size behind the value
+}
+
 // MetricListPage is one keyset window of the metric-definition list (the
 // Builder's "Load more" pagination): Rows is the window, in ListMetrics'
 // canonical builtin→user→plugin/name order, and HasNext reports whether

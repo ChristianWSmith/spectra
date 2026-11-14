@@ -160,6 +160,15 @@ type TeamNames struct {
 // GetTeamNames returns a match's CT/T display names (thin delegate over
 // store.GetTeamNames; store.ErrNotFound surfaces as an error, like every
 // sibling method).
+// GetPlayerRefs returns one match's participants (identity + final side
+// + bot flag) — the roster read model (store.GetPlayerRefs), never the
+// 37-column scoreboard. Reports' metrics appendix uses it to label the
+// stored metric_values rows of THIS match (the canonical value read
+// carries steam ids only — labels stay a roster concern).
+func (s *MatchService) GetPlayerRefs(matchID int64) ([]models.PlayerRef, error) {
+	return s.st.GetPlayerRefs(matchID)
+}
+
 func (s *MatchService) GetTeamNames(matchID int64) (TeamNames, error) {
 	ct, t, err := s.st.GetTeamNames(matchID)
 	if err != nil {

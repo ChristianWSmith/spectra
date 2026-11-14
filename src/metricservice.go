@@ -564,6 +564,74 @@ func (s *MetricsService) PreviewMetric(id int64, expr string, scope string, limi
 	}, nil
 }
 
+// ---- The canonical value reads (stored-metrics design §5) -----------------
+//
+// ONE read per value surface, straight through to the store's canonical
+// read: fresh rows only, canonical metric order, DTO exactly
+// {metricId, steamId, value, n} (no stamps — internal-only by
+// construction). These are what every view reads for a SAVED metric;
+// PreviewMetric stays the on-demand calculator for unsaved/dirty
+// drafts, which have no stored rows to read.
+
+// GetMetricValuesForMatch returns the requested metrics' fresh stored
+// rows for ONE match (matchID > 0), canonical metric order then
+// steam_id; metricIDs empty = every metric.
+func (s *MetricsService) GetMetricValuesForMatch(matchID int64, metricIDs []int64) ([]models.MetricValue, error) {
+	return s.st.GetMetricValuesForMatch(matchID, metricIDs)
+}
+
+// GetMetricValuesForPlayer returns fresh CAREER rows (match_id = 0):
+// steamID "" = the whole career bucket (every player — the value
+// slot's unit coverage plus Builder's all-players profile preview),
+// non-empty = that one player. metricIDs empty = every metric.
+func (s *MetricsService) GetMetricValuesForPlayer(steamID string, metricIDs []int64) ([]models.MetricValue, error) {
+	return s.st.GetMetricValuesForPlayer(steamID, metricIDs)
+}
+
+// CompileMetric compiles WITHOUT executing (design §5's no-execution
+// Compile): the provenance SQL a clean-saved Builder preview shows
+// beside its stored rows — provenance without calculating a value, so
+// a saved read never runs the plan. expr "" uses the SAVED definition
+// by id (denominator + resolved refs included — exactly what
+// PreviewMetric would have run); a non-empty expr is ad-hoc (no
+// denominator, refs against the saved catalog). scope binds like
+// PreviewMetric's ("" = whole library). Returns the statement(s), never
+// a result set; parse/resolution failures come back as the shared
+// ExprError-shaped error.
+func (s *MetricsService) CompileMetric(id int64, expr string, scope string) (string, error) {
+	var (
+		def      metrics.Def
+		depScope string // the dependent's stored scope ("" for a draft)
+	)
+	if strings.TrimSpace(expr) == "" {
+		full, err := s.GetMetric(id)
+		if err != nil {
+			return "", err
+		}
+		def = metrics.Def{Expr: full.Expr, Denominator: full.Denominator}
+		depScope = full.Scope
+	} else {
+		def = metrics.Def{Expr: expr}
+	}
+	refs, perr, err := s.resolveRefsExpr(def.Expr, depScope)
+	if err != nil {
+		return "", err
+	}
+	if perr != nil {
+		return "", exprErrorErr(perr)
+	}
+	def.Refs = refs
+	plan, perr := metrics.CompileRefs(def.Expr, def.Denominator, scope, def.Refs)
+	if perr != nil {
+		return "", exprErrorErr(perr)
+	}
+	sql := plan.SQL
+	if plan.Secondary != "" {
+		sql += "\n" + plan.Secondary
+	}
+	return sql, nil
+}
+
 // ValidateExpr parses without executing (builder live-check). The
 // grammar check is Compile's — the player anchor included, so a
 // player-less draft reports the same positioned error a save would.

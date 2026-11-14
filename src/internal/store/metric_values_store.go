@@ -3,9 +3,12 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/ChristianWSmith/spectra/internal/models"
 )
 
 // This file is the stored-metrics VALUE surface (stored-metrics design
@@ -181,6 +184,129 @@ func (s *Store) InsertMetricValues(metricID int64, metricVersion, ruleVersion in
 		return fmt.Errorf("store: insert metric values: %w", err)
 	}
 	return nil
+}
+
+// ---- The canonical READ (stored-metrics design §5) -------------------------
+//
+// ONE read per value surface: GetMetricValuesForMatch (the match grain —
+// scoreboard pins, Reports appendix) and GetMetricValuesForPlayer (the
+// career grain — PlayerProfile's panel, Builder's saved preview). Both
+// serve FRESH rows only — the SAME metricValueFreshCond the sweep's
+// selection and MetricCoverage spell (design §4: one predicate, shared
+// by sweep and read), so an outdated row never leaves the store and no
+// caller can ever render a stale value. The DTO is exactly
+// {metricId, steamId, value, n}: no stamps, no computed_at (they are
+// INTERNAL-ONLY — models.MetricValue carries no such field, so a stamp
+// cannot reach a view, tooltip or export by construction). Rows come
+// back in the canonical metric order (metricOrder — builtin → user →
+// plugin, name ASC) then steam_id, so a caller zips them against
+// ListMetrics without a second sort.
+
+// metricValueFreshSQL is the read's row clause: a row is fresh iff it
+// was computed under the metric's CURRENT version and the CURRENT
+// analysis rule version — metricValueFreshCond, prefixed with the join
+// it needs (m.version).
+const metricValueFreshSQL = `SELECT v.metric_id, v.steam_id, v.value, v.n
+	FROM metric_values v
+	JOIN metrics m ON m.id = v.metric_id
+	WHERE ` + metricValueFreshCond
+
+// metricIDsCond appends the optional metric filter (`AND v.metric_id IN
+// (…)`) and returns its args; an empty set means "every metric" (no
+// clause — the caller asked for the whole pinned/checked set it has).
+func metricIDsCond(metricIDs []int64) (string, []any) {
+	if len(metricIDs) == 0 {
+		return "", nil
+	}
+	ph := make([]string, len(metricIDs))
+	args := make([]any, len(metricIDs))
+	for i, id := range metricIDs {
+		ph[i] = "?"
+		args[i] = id
+	}
+	return " AND v.metric_id IN (" + strings.Join(ph, ",") + ")", args
+}
+
+// scanMetricValues drains a canonical-read cursor into canonical order.
+func scanMetricValues(rows *sql.Rows) ([]models.MetricValue, error) {
+	var out []models.MetricValue
+	for rows.Next() {
+		var v models.MetricValue
+		if err := rows.Scan(&v.MetricID, &v.SteamID, &v.Value, &v.N); err != nil {
+			return nil, err
+		}
+		out = append(out, v)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// GetMetricValuesForMatch is THE match-grain value read (design §5):
+// every FRESH stored row of the requested metrics for ONE match
+// (match_id = matchID; matchID must be > 0 — the career grain is
+// GetMetricValuesForPlayer), in canonical metric order then steam_id.
+// metricIDs narrows the read (empty = every metric). Absent rows are
+// ABSENT: the read never fabricates a 0 for a player the statement did
+// not produce — the view renders the state instead.
+func (s *Store) GetMetricValuesForMatch(matchID int64, metricIDs []int64) ([]models.MetricValue, error) {
+	if matchID <= 0 {
+		return nil, errors.New("store: metric values for match: match id is required")
+	}
+	cfg, err := s.GetConfig()
+	if err != nil {
+		return nil, fmt.Errorf("store: metric values for match: %w", err)
+	}
+	idCond, idArgs := metricIDsCond(metricIDs)
+	q := metricValueFreshSQL + ` AND v.match_id = ?` + idCond + `
+		ORDER BY ` + metricOrder + `, v.steam_id`
+	args := append([]any{cfg.RuleVersion, matchID}, idArgs...)
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("store: metric values for match: %w", err)
+	}
+	defer rows.Close()
+	out, err := scanMetricValues(rows)
+	if err != nil {
+		return nil, fmt.Errorf("store: metric values for match: %w", err)
+	}
+	return out, nil
+}
+
+// GetMetricValuesForPlayer is THE career-grain value read (design §5):
+// FRESH stored rows at match_id = 0 (the profile grain), in canonical
+// metric order then steam_id. steamID "" reads the WHOLE career bucket
+// (every player — the coverage a value slot needs to tell "no data for
+// this player" from "behind", and Builder's all-players profile
+// preview); a non-empty steamID narrows to that one player.
+// metricIDs narrows the read (empty = every metric). Same honesty rule
+// as the match read: a player with no stored row has NO row.
+func (s *Store) GetMetricValuesForPlayer(steamID string, metricIDs []int64) ([]models.MetricValue, error) {
+	cfg, err := s.GetConfig()
+	if err != nil {
+		return nil, fmt.Errorf("store: metric values for player: %w", err)
+	}
+	idCond, idArgs := metricIDsCond(metricIDs)
+	steamCond := ""
+	var args []any
+	if steamID != "" {
+		steamCond = " AND v.steam_id = ?"
+		args = append(args, steamID)
+	}
+	q := metricValueFreshSQL + ` AND v.match_id = 0` + steamCond + idCond + `
+		ORDER BY ` + metricOrder + `, v.steam_id`
+	args = append(append([]any{cfg.RuleVersion}, args...), idArgs...)
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("store: metric values for player: %w", err)
+	}
+	defer rows.Close()
+	out, err := scanMetricValues(rows)
+	if err != nil {
+		return nil, fmt.Errorf("store: metric values for player: %w", err)
+	}
+	return out, nil
 }
 
 // QueryWrite executes a SELECT on the WRITE handle — the compute
