@@ -58,8 +58,8 @@ func TestComputeWritesTradeOpps(t *testing.T) {
 	if n := storedOpps(t, st, "100"); n != 8 {
 		t.Errorf("alice opps after fresh Compute = %d, want 8", n)
 	}
-	if missed := combatMissed(t, st, id); missed["300"] != 3 {
-		t.Errorf("carl missed = %d, want 3 (duplicate t=100 rows pair to the first kill + round 3)", missed["300"])
+	if n := storedMissed(t, st, "300"); n != 3 {
+		t.Errorf("carl missed = %d, want 3 (duplicate t=100 rows pair to the first kill + round 3)", n)
 	}
 
 	// The batch twin shares the body: re-running through ComputeForBatch
@@ -70,8 +70,8 @@ func TestComputeWritesTradeOpps(t *testing.T) {
 	if n := storedOpps(t, st, "100"); n != 8 {
 		t.Errorf("alice opps after batch Compute = %d, want 8 (same write path)", n)
 	}
-	if missed := combatMissed(t, st, id); missed["300"] != 3 {
-		t.Errorf("carl missed after batch Compute = %d, want 3", missed["300"])
+	if n := storedMissed(t, st, "300"); n != 3 {
+		t.Errorf("carl missed after batch Compute = %d, want 3", n)
 	}
 
 	// A zero-round match (bare lifecycle row, no extract) writes NOTHING:
@@ -120,19 +120,37 @@ func TestComputeTradeOppsFollowRadius(t *testing.T) {
 	}
 }
 
-// combatMissed reads the stored missed counts through GetCombatStats
-// (the only public surface for them), keyed by steam id.
-func combatMissed(t *testing.T, st *store.Store, matchID int64) map[string]int {
+// storedMissed reads one player's stored "trade opportunities missed"
+// count — the analyze-time gate's output (analytics.tradeOppCounts →
+// match_trade_opps.missed), the number the Combat tab's "Missed trades"
+// column reads through the missed_trades builtin metric since W2b
+// (GetCombatStats no longer carries the field). The WRITE path is what
+// these tests pin — the read is one index seek through QueryWrite (the
+// write handle, which — unlike RunReadOnly — also serves a :memory:
+// fixture; the same ValidateReadOnlySQL gate applies), COALESCE so an
+// absent row reads 0 exactly like the retired reader did.
+func storedMissed(t *testing.T, st *store.Store, sid string) int {
 	t.Helper()
-	rows, err := st.GetCombatStats(matchID)
+	res, err := st.QueryWrite(context.Background(),
+		`SELECT COALESCE(SUM(missed), 0) FROM match_trade_opps WHERE steam_id = ?`,
+		[]any{sid}, 1)
 	if err != nil {
-		t.Fatalf("GetCombatStats: %v", err)
+		t.Fatalf("stored missed(%s): %v", sid, err)
 	}
-	out := map[string]int{}
-	for _, r := range rows {
-		out[r.SteamID] = r.TradeOppMissed
+	if len(res.Rows) != 1 {
+		t.Fatalf("stored missed(%s): %d rows, want 1", sid, len(res.Rows))
 	}
-	return out
+	switch v := res.Rows[0][0].(type) {
+	case int64:
+		return int(v)
+	case float64:
+		return int(v)
+	case int:
+		return v
+	default:
+		t.Fatalf("stored missed(%s): unexpected value %T (%v)", sid, v, v)
+		return 0
+	}
 }
 
 // storedOpps reads one player's stored trade-opportunity count — the

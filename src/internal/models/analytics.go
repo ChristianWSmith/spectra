@@ -183,21 +183,19 @@ type UtilityEvent struct {
 }
 
 // CombatStat is one per-player combat deep-dive row derived from stored
-// rows. TradeOppMissed is inferred — a gated subset of the untraded
-// deaths (the kill event's detail_json.nearDist within the configured
-// trade-opportunity distance, gated at analyze time and stored in
-// match_trade_opps — see the store.GetCombatStats notes) — and
-// needs a UI badge. The former EntryRate/TradeRate/KASTPct fields are
-// gone (dogfooding W2): the Combat tab reads the entry_rate /
-// trade_rate_deaths / kast builtin metric rows instead.
+// rows — the damage-conversion and friendly-fire residual of the Combat
+// tab's table (audit N7–N9: neither the same-tick EXISTS split nor the
+// final-side equality is expressible as a metric expression). The former
+// EntryRate/TradeRate/KASTPct fields are gone (dogfooding W2) and the
+// UntradedDeaths/TradeOppMissed fields left with the W2b metric
+// conversion: the Combat tab reads the entry_rate / trade_rate_deaths /
+// kast / missed_trades / untraded_deaths builtin metric rows instead.
 type CombatStat struct {
-	SteamID        string  `json:"steamId"`
-	Name           string  `json:"name"`
-	DMGNoKill      int     `json:"dmgNoKill"`
-	DMGConvPct     float64 `json:"dmgConvPct"`
-	FFDamage       int     `json:"ffDamage"`
-	UntradedDeaths int     `json:"untradedDeaths"`
-	TradeOppMissed int     `json:"tradeOppMissed"` // inferred heuristic
+	SteamID    string  `json:"steamId"`
+	Name       string  `json:"name"`
+	DMGNoKill  int     `json:"dmgNoKill"`
+	DMGConvPct float64 `json:"dmgConvPct"`
+	FFDamage   int     `json:"ffDamage"`
 }
 
 // EconomyRow is the raw per-round economy view (rounds ⋈ round_economy ⋈

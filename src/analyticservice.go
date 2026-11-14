@@ -827,8 +827,9 @@ func (s *AnalyticsService) GetUtility(matchID int64) ([]UtilityRow, error) {
 	return out, nil
 }
 
-// GetCombatStats returns per-player engagement/damage deep-dive rows
-// (computed from stored rows; TradeOppMissed is inferred — UI badge).
+// GetCombatStats returns per-player damage/FF deep-dive rows (computed
+// from stored rows — the Combat tab's residual columns; every converted
+// stat reads its builtin metric rows instead).
 func (s *AnalyticsService) GetCombatStats(matchID int64) ([]models.CombatStat, error) {
 	return s.st.GetCombatStats(matchID)
 }

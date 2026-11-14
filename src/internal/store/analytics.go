@@ -683,35 +683,20 @@ func sideFlips(rounds []models.EconomyRow, exact map[int]map[string]string) []bo
 }
 
 // GetCombatStats computes per-player combat deep-dive rows from stored data
-// — damage conversion and friendly fire from the events
-// table, untraded deaths from engagements. The former Entry%, Trade%
-// and KAST% computations are GONE (dogfooding W2 — adoption-means-
-// migration): the Combat tab reads the entry_rate / trade_rate_deaths /
-// kast builtin metric rows through the canonical stored read instead,
-// and the columns that existed only for them left this query. What
-// remains keeps one scale: DMGConvPct is a 0..100 percent — the
-// read-DTO convention every consumer renders with frontend fmtPercent
-// directly (a 0..1 fraction there renders as "0.05%", not "5%"); the
-// scale note at the assignment is pinned by
+// — damage conversion and friendly fire from the events table. The
+// former Entry%, Trade% and KAST% computations are GONE (dogfooding W2
+// — adoption-means-migration), and the trade-opportunity counts left
+// with them in W2b: the Combat tab reads the entry_rate /
+// trade_rate_deaths / kast / missed_trades / untraded_deaths builtin
+// metric rows through the canonical stored read instead, and the two
+// columns that existed only for them (UntradedDeaths, TradeOppMissed)
+// left this query. What remains keeps one scale: DMGConvPct is a 0..100
+// percent — the read-DTO convention every consumer renders with frontend
+// fmtPercent directly (a 0..1 fraction there renders as "0.05%", not
+// "5%"); the scale note at the assignment is pinned by
 // TestGetCombatStatsFromStoredRows. Team attribution (friendly fire)
 // uses each player's FINAL side — events carry no team column, so this
-// is an approximation (documented; badge in UI). The trade-opportunity
-// counts do no side attribution here at all: they arrive stored per
-// player (analytics gates them on the exact per-round freeze-end sides
-// at analyze time).
-// UntradedDeaths is the raw engagement count (timing only);
-// TradeOppMissed is the distance-gated subset of it (inferred heuristic —
-// UI badge): an untraded death counts only when the kill event's
-// detail_json.nearDist — the closest living teammate of the victim to the
-// KILLER at the death tick, measured once at extract time (extract.
-// nearTeammateDist) — was ≥ 0 (nobody measurable → -1 → never counted)
-// and ≤ the analysis_config.trade_opp_distance (default 1000 units,
-// calibrated to the range trades actually happen in — see DefaultConfig).
-// That gate runs ONCE at analyze time: analytics.Compute stores the
-// per-match counts in match_trade_opps, and this read returns them
-// (AGENTS.md "Analysis-rule derived values" — read-time thresholding of
-// rule outputs is forbidden; the query-time json_extract gate retired
-// 2026-11-12).
+// is an approximation (documented; badge in UI).
 //
 // This SQL is AUTHORITATIVE for the read-time decisions below (they
 // have no second implementation anywhere), and every decision is pinned
@@ -724,21 +709,21 @@ func sideFlips(rounds []models.EconomyRow, exact map[int]map[string]string) []bo
 //     tick — a same-tick trade kill credits the actual killer, never any
 //     other death of the victim on that tick.
 //  3. Rows come back ordered by player NAME (ORDER BY p.name ASC).
-//  4. TradeOppMissed READS THE STORED count (match_trade_opps.missed —
-//     written by analytics.Compute under the match's rule version and
-//     cfg.TradeOppDistance). "No row" = 0, exactly like a missing
-//     player_stats row. The proximity gate itself moved out of this
-//     query into analyze time; its equivalence with the retired
-//     query-time SQL is pinned by internal/analytics' trade-opps oracle
-//     test. UntradedDeaths stays the ungated read-time count — the two
-//     columns are deliberately different metrics.
+//  4. RETIRED with the W2b metric conversion — neither trade-opportunity
+//     count is read here any more: "Missed trades" reads
+//     match_trade_opps.missed and "Untraded deaths" the victim-side
+//     engagement count as the missed_trades / untraded_deaths builtin
+//     metric rows (the proximity gate itself stays at analyze time —
+//     analytics.tradeOppCounts; AGENTS.md "Analysis-rule derived
+//     values" — read-time thresholding of rule outputs is forbidden).
+//     The slot keeps its number so the "decision 5" cross-references
+//     stay valid.
 //  5. BASE ROWS ARE HUMANS ONLY (HumanOnly): the per-player table this
 //     builds is a roster/aggregate surface, so a bot's stats row never
-//     reaches it — its DAMAGE (dmgs), untraded deaths and trade
-//     opportunities are still aggregated by steam_id but are
-//     dropped with the row. The event-shaped inputs (damage/kill events,
-//     engagements) are untouched: they keep recording what a bot did.
-//     Pinned by TestBotsExcludedFromRosterReads.
+//     reaches it — its DAMAGE (dmgs) is still aggregated by steam_id
+//     but is dropped with the row. The event-shaped inputs (damage/kill
+//     events, engagements) are untouched: they keep recording what a
+//     bot did. Pinned by TestBotsExcludedFromRosterReads.
 //
 // Change these decisions (and this comment) deliberately — they are
 // pinned by TestGetCombatStatsSQLDecisions.
@@ -779,56 +764,10 @@ func (s *Store) GetCombatStats(matchID int64) ([]models.CombatStat, error) {
 		return nil, fmt.Errorf("store: get combat stats: %w", err)
 	}
 
-	// Untraded deaths per victim (raw — timing only, no position claim).
-	untraded := map[string]int{}
-	utrRows, err := s.db.Query(
-		`SELECT b_steam, COUNT(*) FROM engagements
-		 WHERE match_id = ? AND kind = 'untraded' AND b_steam <> '' GROUP BY b_steam`, matchID,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("store: get combat stats: %w", err)
-	}
-	defer utrRows.Close()
-	for utrRows.Next() {
-		var sid string
-		var n int
-		if err := utrRows.Scan(&sid, &n); err != nil {
-			return nil, fmt.Errorf("store: get combat stats: %w", err)
-		}
-		untraded[sid] = n
-	}
-	if err := utrRows.Err(); err != nil {
-		return nil, fmt.Errorf("store: get combat stats: %w", err)
-	}
-
-	// Trade opportunities missed: the STORED per-match counts —
-	// analytics.Compute writes match_trade_opps under
-	// cfg.TradeOppDistance at analyze time (AGENTS.md "Analysis-rule
-	// derived values"; the retired query-time json_extract gate is kept
-	// as the reference oracle in internal/analytics' equivalence test).
-	// The canonical home of the gate is analytics.tradeOppCounts — this
-	// read only fetches the stored number (decision 4 in the doc
-	// comment). No row = 0, the same absence rule as a missing
-	// player_stats row below.
-	tradeOpp := map[string]int{}
-	toRows, err := s.db.Query(
-		`SELECT steam_id, missed FROM match_trade_opps WHERE match_id = ?`, matchID,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("store: get combat stats: %w", err)
-	}
-	defer toRows.Close()
-	for toRows.Next() {
-		var sid string
-		var n int
-		if err := toRows.Scan(&sid, &n); err != nil {
-			return nil, fmt.Errorf("store: get combat stats: %w", err)
-		}
-		tradeOpp[sid] = n
-	}
-	if err := toRows.Err(); err != nil {
-		return nil, fmt.Errorf("store: get combat stats: %w", err)
-	}
+	// Untraded deaths and trade opportunities are NOT read here any more
+	// (W2b): the Combat tab reads them as the untraded_deaths /
+	// missed_trades builtin metric rows through the canonical stored
+	// read — decision 4 in the doc comment.
 
 	// Base rows: every HUMAN with stats for the match (decision 5 — a
 	// bot's stats row never reaches this roster table). The base columns
@@ -857,13 +796,11 @@ func (s *Store) GetCombatStats(matchID int64) ([]models.CombatStat, error) {
 		}
 		r.FFDamage = d.ff
 		// Percent scale (pinned by TestGetCombatStatsFromStoredRows):
-		// DMGConvPct is 0..100 — NOT a 0..1 fraction. It (with
-		// FFDamage/UntradedDeaths/TradeOppMissed) stays Go per the
-		// documented residual: the grammar cannot express the same-tick
-		// EXISTS split (audit N7–N9) or victim-side equality. Entry%,
-		// Trade% and KAST% left with the metric conversion (W2).
-		r.UntradedDeaths = untraded[r.SteamID]
-		r.TradeOppMissed = tradeOpp[r.SteamID] // distance-gated subset (UI badge)
+		// DMGConvPct is 0..100 — NOT a 0..1 fraction. It (with FFDamage)
+		// stays Go per the documented residual: the grammar cannot
+		// express the same-tick EXISTS split (audit N7–N9). Entry%,
+		// Trade%, KAST%, Missed trades and Untraded deaths left with the
+		// metric conversion (W2 / W2b).
 		out = append(out, r)
 	}
 	if err := base.Err(); err != nil {

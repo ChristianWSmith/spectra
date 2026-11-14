@@ -1118,36 +1118,9 @@ func TestGetCombatStatsFromStoredRows(t *testing.T) {
 		{Tick: 10, Round: 1, Kind: models.EventDamage, Attacker: "100", Victim: "200", Dmg: 60},
 		{Tick: 20, Round: 1, Kind: models.EventDamage, Attacker: "100", Victim: "200", Dmg: 40},
 		{Tick: 30, Round: 1, Kind: models.EventDamage, Attacker: "100", Victim: "300", Dmg: 10}, // FF (both ct)
-		// Kill events backing the two untraded engagements below: alice's
-		// teammate was 150u from bob's killer on tick 50 (inside the 200u
-		// radius) but 500u away on tick 60 (beyond). analytics.Compute
-		// gates on these payloads when it WRITES match_trade_opps — this
-		// read is distance-blind (decision 4), so the stored row seeded
-		// below stands in for that pass. UntradedDeaths stays the raw
-		// read-time count either way.
-		{Tick: 50, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "200",
-			DetailJSON: `{"killer":"alice","victim":"bob","nearDist":150}`},
-		{Tick: 60, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "200",
-			DetailJSON: `{"killer":"alice","victim":"bob","nearDist":500}`},
 	}
 	if err := s.SaveExtracted(id, em); err != nil {
 		t.Fatalf("SaveExtracted: %v", err)
-	}
-	// TradeOppMissed reads the STORED count (match_trade_opps): seed the
-	// row analytics.Compute writes for bob under a 200u radius — of his
-	// two untraded deaths only the 150u one is inside the gate (the gate
-	// itself lives in analytics.tradeOpCount's retired-SQL equivalence
-	// test; the read never thresholds — AGENTS.md "Analysis-rule derived
-	// values").
-	if err := s.ReplaceTradeOpps(id, nil, map[string]int{"200": 1}); err != nil {
-		t.Fatalf("ReplaceTradeOpps: %v", err)
-	}
-	if err := s.ReplaceEngagements(id, []models.Engagement{
-		{Tick: 50, Round: 1, Kind: "untraded", ASteam: "100", BSteam: "200"},
-		{Tick: 60, Round: 1, Kind: "untraded", ASteam: "100", BSteam: "200"},
-		{Tick: 70, Round: 1, Kind: "opening", ASteam: "100", BSteam: "200"},
-	}); err != nil {
-		t.Fatalf("ReplaceEngagements: %v", err)
 	}
 	rows, err := s.GetCombatStats(id)
 	if err != nil {
@@ -1173,46 +1146,28 @@ func TestGetCombatStatsFromStoredRows(t *testing.T) {
 	}
 	// Percent scale decision: DMGConvPct ~54.55 above is 0..100 — NOT a
 	// 0..1 fraction (the Combat tab's fmtPercent renders "54.55%", never
-	// "0.55%"). EntryRate/TradeRate/KASTPct are GONE (dogfooding W2): the
-	// Combat tab reads the entry_rate / trade_rate_deaths / kast builtin
-	// metric rows instead, so this test re-pinned to the residual read —
-	// "these three left with the metric conversion; the rest decide as
-	// before". Untraded rows attribute to victim 200 (bob), not alice.
-	// Decision 4: UntradedDeaths is the raw timing count (2),
-	// TradeOppMissed reads the stored count (1 — the row seeded above
-	// for the 200u gate; a player with no match_trade_opps row reads 0,
-	// the absence rule).
-	var bob *models.CombatStat
-	for i := range rows {
-		if rows[i].SteamID == "200" {
-			bob = &rows[i]
-		}
-	}
-	if bob == nil {
-		t.Fatalf("no bob row in %+v", rows)
-	}
-	if bob.UntradedDeaths != 2 {
-		t.Errorf("bob untraded = %d, want 2 (raw timing count)", bob.UntradedDeaths)
-	}
-	if bob.TradeOppMissed != 1 {
-		t.Errorf("bob tradeOppMissed = %d, want 1 (the stored row seeded for the 200u gate)", bob.TradeOppMissed)
-	}
-	// Absence rule: alice has NO match_trade_opps row (a zero-count
-	// player writes none) and must read 0, not NULL/fabricated.
-	if alice.TradeOppMissed != 0 {
-		t.Errorf("alice tradeOppMissed = %d, want 0 (no stored row → 0)", alice.TradeOppMissed)
-	}
+	// "0.55%"). EntryRate/TradeRate/KASTPct are GONE (dogfooding W2) and
+	// UntradedDeaths/TradeOppMissed left with the W2b metric conversion:
+	// the Combat tab reads the entry_rate / trade_rate_deaths / kast /
+	// missed_trades / untraded_deaths builtin metric rows instead, so
+	// this test re-pinned to the residual read — "these five left with
+	// the metric conversion; the rest decide as before". The two W2b
+	// counts are pinned where they now live: the missed_trades /
+	// untraded_deaths seeds in internal/metrics and the stored-count
+	// writer in internal/analytics' trade-opps tests.
 }
 
 // TestGetCombatStatsSQLDecisions pins the decisions in the
 // GetCombatStats doc comment. Decisions 1–3 and 5 (FF shape,
 // damage-on-kill tick match, name order, humans-only base rows — the
 // bot seeded below must never reach the result) are read-time SQL and
-// stay pinned here. Decision 4 (TradeOppMissed) MOVED with the stored
-// count: this test pins its READ contract (stored row → number, no row
-// → 0, distance-blind — AGENTS.md "Analysis-rule derived values"),
-// while internal/analytics' trade-opps equivalence test pins the gate
-// itself against the retired query-time SQL.
+// stay pinned here. Decision 4 (the trade-opportunity counts) left with
+// the W2b metric conversion: the Combat tab reads match_trade_opps.missed
+// and the victim-side engagement count as the missed_trades /
+// untraded_deaths builtin metric rows — the read contract those seeds
+// carry is pinned by internal/metrics' fixture/equivalence tests, and
+// internal/analytics' trade-opps tests still pin the gate itself against
+// the retired query-time SQL.
 func TestGetCombatStatsSQLDecisions(t *testing.T) {
 	s := openMem(t)
 	id := saveTestMatch(t, s, "/d/combat2.dem", "sha-combat2", time.Now())
@@ -1282,76 +1237,9 @@ func TestGetCombatStatsSQLDecisions(t *testing.T) {
 		t.Errorf("dave ff/noKill = %d/%d, want 10/10 ('' == '' counts as FF)", dave.FFDamage, dave.DMGNoKill)
 	}
 
-	// (4) TradeOppMissed READS THE STORED count: the proximity gate
-	//     moved from this query to analyze time (analytics.Compute →
-	//     match_trade_opps, gated on cfg.TradeOppDistance there — the
-	//     retired query-time json_extract derivation survives as the
-	//     reference oracle in internal/analytics'
-	//     tradeopps_equivalence_test.go, which also pins the gate cases
-	//     this section used to run inline: beyond-range, the -1
-	//     sentinel, keyless/malformed payload, missing kill event, the
-	//     0 and exact-radius boundaries, and the per-radius re-runs).
-	//     Seed the rows a 200u compute wrote for amy — one of her six
-	//     untraded deaths was in range — and pin both counts plus the
-	//     absence rule (no row → 0).
-	if err := s.ReplaceEngagements(id, []models.Engagement{
-		{Tick: 400, Round: 1, Kind: "untraded", ASteam: "100", BSteam: "200"},
-		{Tick: 410, Round: 1, Kind: "untraded", ASteam: "100", BSteam: "200"},
-		{Tick: 420, Round: 1, Kind: "untraded", ASteam: "100", BSteam: "200"},
-		{Tick: 430, Round: 1, Kind: "untraded", ASteam: "100", BSteam: "200"},
-		{Tick: 440, Round: 1, Kind: "untraded", ASteam: "100", BSteam: "200"},
-		{Tick: 450, Round: 1, Kind: "untraded", ASteam: "100", BSteam: "200"},
-	}); err != nil {
-		t.Fatalf("ReplaceEngagements (stored): %v", err)
-	}
-	if err := s.ReplaceTradeOpps(id, nil, map[string]int{"200": 1}); err != nil {
-		t.Fatalf("ReplaceTradeOpps: %v", err)
-	}
-	gated, err := s.GetCombatStats(id)
-	if err != nil {
-		t.Fatalf("GetCombatStats (stored): %v", err)
-	}
-	var gatedAmy *models.CombatStat
-	for i := range gated {
-		if gated[i].SteamID == "200" {
-			gatedAmy = &gated[i]
-		}
-	}
-	if gatedAmy == nil {
-		t.Fatalf("no amy row in %+v", gated)
-	}
-	if gatedAmy.UntradedDeaths != 6 {
-		t.Errorf("amy untraded = %d, want 6 (raw count is never gated)", gatedAmy.UntradedDeaths)
-	}
-	if gatedAmy.TradeOppMissed != 1 {
-		t.Errorf("amy tradeOppMissed = %d, want 1 (the stored row seeded for the 200u gate)", gatedAmy.TradeOppMissed)
-	}
-	// Absence rule: zoe has no match_trade_opps row (a zero-count player
-	// writes none) and reads 0, exactly like a missing player_stats row.
-	for i := range gated {
-		if gated[i].SteamID == "100" && gated[i].TradeOppMissed != 0 {
-			t.Errorf("zoe tradeOppMissed = %d, want 0 (no stored row → 0)", gated[i].TradeOppMissed)
-		}
-	}
-	// The read is DISTANCE-BLIND: changing the configured radius cannot
-	// move it anymore — only a re-run rewrites the stored numbers (the
-	// bump → behind → RecomputeAll loop is pinned by analyticservice
-	// TestTradeOppDistanceChangeRecomputesStoredCounts and the
-	// equivalence test's per-radius runs).
-	if _, err := s.SetConfig(models.AnalysisConfig{
-		TradeWindowS: 5, EcoFullBuy: 20000, EcoForce: 10000, TradeOppDistance: 600, RuleVersion: 1,
-	}); err != nil {
-		t.Fatalf("SetConfig (distance 600): %v", err)
-	}
-	still, err := s.GetCombatStats(id)
-	if err != nil {
-		t.Fatalf("GetCombatStats (after SetConfig): %v", err)
-	}
-	for i := range still {
-		if still[i].SteamID == "200" && still[i].TradeOppMissed != 1 {
-			t.Errorf("amy tradeOppMissed after SetConfig(600) = %d, want 1 (the read never thresholds)", still[i].TradeOppMissed)
-		}
-	}
+	// (4) — the trade-opportunity counts — left with the W2b metric
+	// conversion: neither count is read here any more (see the func
+	// comment and the GetCombatStats doc comment's retired slot 4).
 }
 
 func TestDeleteMatchRebuildsCareer(t *testing.T) {

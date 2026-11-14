@@ -55,10 +55,12 @@ func parseGolden(t *testing.T) *models.ExtractedMatch {
 // analytics pipeline on the golden demo and pins the read models the
 // profile/combat views render:
 //
-//   - TradeOppMissed must be a strict, non-empty subset of UntradedDeaths
-//     for EVERY player at the default trade-opportunity distance (the
-//     metric degenerated to all-zero when the gate radius sat inside the
-//     range where teammates trade automatically).
+//   - the missed-trades count must be a strict, non-empty subset of the
+//     untraded-deaths count for EVERY player at the default
+//     trade-opportunity distance (the metric degenerated to all-zero
+//     when the gate radius sat inside the range where teammates trade
+//     automatically) — both counts read directly from their stored rows
+//     since the W2b conversion (GetCombatStats carries neither field).
 //   - The folded per-weapon headshots must equal player_stats.headshots
 //     per player (same eligibility extract used to credit them).
 //   - The profile trend series kd/hs must be non-zero — the values are
@@ -77,7 +79,7 @@ func TestGoldenCombatProfileSurfaces(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open store: %v", err)
 	}
-	defer func() { _ = st.Close() }()
+	defer func() { _ = st.CloseRO(); _ = st.Close() }()
 	id, err := st.CreateMatchRow("golden-cp", "sha-golden-cp", 0)
 	if err != nil {
 		t.Fatalf("CreateMatchRow: %v", err)
@@ -110,6 +112,16 @@ func TestGoldenCombatProfileSurfaces(t *testing.T) {
 		t.Fatalf("metrics.Sweep: %v", err)
 	}
 
+	// W2b: the Combat tab's "Missed trades" / "Untraded deaths" columns
+	// are fixed metric slots now (m:missed_trades / m:untraded_deaths),
+	// so GetCombatStats carries neither field. The GATE meaning is
+	// unchanged — the two counts are re-pinned here as direct stored
+	// reads over the same rows the seeds read: missed =
+	// match_trade_opps.missed (analytics.Compute's analyze-time gate),
+	// untraded = COUNT(*) of kind='untraded' engagement rows grouped by
+	// the victim (b_steam — the untraded_deaths seed's source). The
+	// roster the per-player assertions walk stays GetCombatStats (the
+	// humans-only base rows, decision 5 — names for the messages).
 	stats, err := st.GetCombatStats(id)
 	if err != nil {
 		t.Fatalf("GetCombatStats: %v", err)
@@ -117,17 +129,66 @@ func TestGoldenCombatProfileSurfaces(t *testing.T) {
 	if len(stats) == 0 {
 		t.Fatal("no combat rows")
 	}
+	missedRes, err := st.RunReadOnly(
+		`SELECT steam_id, missed FROM match_trade_opps WHERE match_id = ?`,
+		[]any{id}, 500, 5000,
+	)
+	if err != nil {
+		t.Fatalf("read match_trade_opps: %v", err)
+	}
+	untradedRes, err := st.RunReadOnly(
+		`SELECT b_steam, COUNT(*) FROM engagements
+		 WHERE match_id = ? AND kind = 'untraded' AND b_steam <> ''
+		 GROUP BY b_steam`,
+		[]any{id}, 500, 5000,
+	)
+	if err != nil {
+		t.Fatalf("read untraded engagements: %v", err)
+	}
+	storedCount := func(v any) int {
+		t.Helper()
+		switch n := v.(type) {
+		case int64:
+			return int(n)
+		case float64:
+			return int(n)
+		case int:
+			return n
+		default:
+			t.Fatalf("stored count: unexpected value %T (%v)", v, v)
+			return 0
+		}
+	}
+	countBySteam := func(res store.ROResult, what string) map[string]int {
+		t.Helper()
+		out := map[string]int{}
+		for _, row := range res.Rows {
+			if len(row) != 2 {
+				t.Fatalf("%s row = %#v, want 2 columns", what, row)
+			}
+			sid, ok := row[0].(string)
+			if !ok {
+				t.Fatalf("%s key = %T (%v), want a steam id", what, row[0], row[0])
+			}
+			out[sid] = storedCount(row[1])
+		}
+		return out
+	}
+	missedBy := countBySteam(missedRes, "match_trade_opps")
+	untradedBy := countBySteam(untradedRes, "untraded engagements")
+
 	var oppTotal, untradedTotal int
 	for _, r := range stats {
-		oppTotal += r.TradeOppMissed
-		untradedTotal += r.UntradedDeaths
-		if r.TradeOppMissed <= 0 {
-			t.Errorf("player %s: tradeOppMissed = 0 (untraded %d) — gated metric degenerated",
-				r.Name, r.UntradedDeaths)
+		missed, untraded := missedBy[r.SteamID], untradedBy[r.SteamID]
+		oppTotal += missed
+		untradedTotal += untraded
+		if missed <= 0 {
+			t.Errorf("player %s: missed = 0 (untraded %d) — gated metric degenerated",
+				r.Name, untraded)
 		}
-		if r.TradeOppMissed > r.UntradedDeaths {
-			t.Errorf("player %s: tradeOppMissed %d > untradedDeaths %d",
-				r.Name, r.TradeOppMissed, r.UntradedDeaths)
+		if missed > untraded {
+			t.Errorf("player %s: missed %d > untraded %d",
+				r.Name, missed, untraded)
 		}
 	}
 	if oppTotal == 0 || oppTotal >= untradedTotal {
