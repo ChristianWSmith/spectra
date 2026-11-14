@@ -174,7 +174,7 @@ paths (everything else) — resolve project paths against `src/`.
 | `internal/library` | import pipeline: hash/dedupe, zstd sniff, bounded worker pool (FIFO claims; the admission bound reads the shared budget's LIVE size — the `parallel_work` pref via `budget.Size`, so a resize applies to jobs already queued, and `Importer.Wake` pokes parked workers on a grow; every claimed job also takes ONE machine-wide work token from `internal/budget` for its whole body), cancellation, `spectra:*` events |
 | `internal/data` | XDG data-dir paths (db, per-match sidecars, tmp) |
 | `internal/integration` | golden-demo acceptance test (repo-root `golden/de_cache.dem.zst`, skip-if-absent/pointer, `-update` fixture regen) |
-| `internal/mappack` | CS2 radar extraction: Steam install detection → VPK v2 reader → vtex_c decode → map packs in the data dir (Valve IP never ships — see `mappackservice.go` + `frontend/public/maps/README.md`) |
+| `internal/mappack` | CS2 radar extraction: Steam install detection → VPK v2 reader → vtex_c decode → map packs in the data dir (never ships Valve IP — PRODUCT.md; see `mappackservice.go` + `frontend/public/maps/README.md`) |
 | `cmd/cs2find` + `internal/mappack/devtool.go` | the in-repo dev tool `cs2find` — READ-ONLY search/decode of the local CS2 install and dump of the canonical tables; engine sits beside the mappack internals (no export churn, never a second decoder) |
 | `prefs.go` | preference keys + window-size helpers (backed by the v3 `kvstore` service) |
 | `version.go` | **stamp-only**: `var version = "dev"` — CI overwrites the whole file on release builds; never put logic here |
@@ -352,11 +352,13 @@ Canonical homes (extend these, don't fork them):
   (`isHuman`/`listedPlayers`, frontend twin) are THE filter; every
   roster/aggregate/selection read routes through it. Event-shaped reads
   (round MVP/first-blood rows, kill-feed attacker/victim cells, chat,
-  engagements) deliberately keep bot names — they record what happened.
+  engagements) deliberately keep bot names — they record what happened
+  (stance: PRODUCT.md **Event surfaces record what happened**).
   The ONE exception is the replay view: `lib/replay/playercard.js`
   `presentAt` lists a bot only while it is covering a disconnected
   same-side human (see the CS2.md bot-substitution entry).
-- **The launch asset prompt is presence-driven:** `MapPackPrompt.maybePrompt`
+- **The launch asset prompt is presence-driven** (stance: PRODUCT.md
+  `### Defaults`): `MapPackPrompt.maybePrompt`
   opens whenever any of the three families is missing (map-pack data
   dir empty / `icons.extracted` / `sounds.extracted`) — every launch,
   until extraction fills them. No suppression pref exists
@@ -485,7 +487,8 @@ Canonical homes (extend these, don't fork them):
   unexported internals, so there is no export churn and never a second
   decoder). `table` only prints `soundTable`/`iconTable` (they stay THE
   mappings); `events`/`hash --resolve` are exploratory over the local
-  install. Valve IP never ships: `-o` defaults to `<tmp>/cs2find/`, a
+  install. cs2find output rules (PRODUCT.md **Valve IP never ships**):
+  `-o` defaults to `<tmp>/cs2find/`, a
   working-tree target warns, and tests write only to `t.TempDir()`.
 - **Tests:** characterization tests before behavior changes; frontend unit
   tests are `node --test src/lib/*.test.js` (run from `frontend/`),

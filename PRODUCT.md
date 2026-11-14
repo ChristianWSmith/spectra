@@ -62,6 +62,8 @@ differentiators:
   a stale number.
 - **Feature-parity with competitors is evidence, never justification.**
 - **Never present a feature the app cannot fully support offline.**
+- **Valve IP never ships:** extracted CS2 assets are re-extractable
+  from the user's install, never bundled.
 - **Breaking changes:** at-will before the first release; after 1.0,
   major versions only.
 
@@ -119,6 +121,14 @@ differentiators:
   stuck with a message whose only escape is navigating elsewhere or
   restarting the app. Errors stay honest about what happened and what
   to do next, and they are transient like every other UI flag.
+- **The launch asset prompt is presence-driven:** it opens whenever
+  any of the three asset families is missing (map packs / icons /
+  sounds) — every launch, until extraction fills them; there is no
+  suppression preference, and "Not now" / Escape dismiss for the
+  session only.
+- **Event surfaces record what happened:** kill feed, chat, round-MVP
+  and similar event rows show bot names as they occurred; bots are
+  filtered from rosters, aggregates and selections.
 
 ### Preferences
 
@@ -196,7 +206,8 @@ When evaluating a new feature proposal:
    asks** — agents do not append feature ideas to it. The owner is the
    PO; rejections are not recorded anywhere — removed means removed.
 6. `roadmap/PATH.md` carries the priority order and the completion
-   checkboxes; keep it updated as work lands.
+   checkboxes; when the owner has explicitly opened roadmap work, keep
+   it updated as work lands.
 
 ## README rule
 
