@@ -236,15 +236,16 @@ After cloning, run `git lfs pull` if the golden demo is needed.
   `mode=ro` + `query_only` connection (timeout + row cap); the write
   handle is never reachable from the console. Keep that layering when
   touching either side.
-- **Metrics carry their formula and their N:** every metric documents its
-  formula (fallback `Formula: <expr>`), and missing data surfaces as
-  value 0 beside `N` (the sample size) — never a fabricated number.
+- **Metrics carry their formula and their N:** PRODUCT.md **Honest
+  metrics** is THE statement — never restate it here. Implementation
+  side: the metrics system's fallback `Formula: <expr>` is how a metric
+  documents itself (see the onboarding rule below).
 - **New metrics are onboarded through the metrics system, never
   hand-rolled in Go (owner, 2026-11-14):** adding a stat/metric = a
   seeded built-in (or saved user metric) with an expression. A hardcoded
   calculation in a service, store query, or view duplicates what the
   metrics system already provides — storage with the formula/N honesty
-  contract (bullet above), ordering, the state vocabulary, the Builder —
+  contract (PRODUCT.md **Honest metrics**), ordering, the state vocabulary, the Builder —
   and would only need migrating later (adoption means migration).
   Provenance still decides what is NOT a metric: raw event reads stay in
   `internal/extract`, analysis-rule stored outputs stay in
@@ -312,7 +313,7 @@ Canonical homes (extend these, don't fork them):
 | CS2 asset extraction (families, step order, outcome wording) | `frontend/src/lib/assets.js` `extractAllAssets` — Settings and MapPackPrompt both delegate; views own only their busy/progress/refresh rendering |
 | Job progress | `models.Job` — job-wide 0..1 (0 = indeterminate, never "0%") with the stage→range table beside the stage constants in `internal/models`; the emitter is `internal/library`'s progressReporter; render only through `StatusChip` (no second bar) |
 | Cross-subsystem concurrency | `internal/budget` — THE resizable work-token pool (counting: one mutex + FIFO waiter hand-off; `SetSize` clamped `[1, MachineTokens()]` — the backend of the ONE machine-level "parallel work" setting) + `MachineTokens()` = THE thread ladder (GOMAXPROCS(0), floor 1; the three former `runtime.NumCPU` copies consolidated there); every sustained heavy unit (import job / asset map job / recompute run) takes ONE token BEFORE the compute lock, never after; nil budget = unbudgeted no-op (the test seam) |
-| Progress presentation | `PRODUCT.md` `### Defaults` — THE statement (outside a table cell: centered ring, or spinner when unquantifiable, details underneath; busy buttons exempt; in-cell/list-row progress stays compact inline); never restate it in this file |
+| Progress presentation | `PRODUCT.md` `### Defaults` — THE statement (Progress presentation); never restate it in this file |
 | Loading / pre-fetch preference ladder | `PRODUCT.md` `### Defaults` — THE statement; route loading/prefetch preference questions there, never restate the ladder in this file |
 | Library-wide index coverage | `internal/store/schema.sql` — the one baseline index block; new library-wide (`steam_id`/`kind`-leading, pending-job) indexes go in the Tier-1 block with their rationale comment, never beside their table alone |
 | Bot exclusion (Go) | `store.HumanOnly` / `store.HumanOnlyBySteamID` (`internal/store/queries.go`, beside `playersJoin`) — THE roster/aggregate/selection filter; `playersJoin` itself is NOT a bot filter |
@@ -375,8 +376,9 @@ Canonical homes (extend these, don't fork them):
   returns the **200 most recent** jobs (display cap only; the `jobs`
   table is never pruned — pruning is Tier 2).
 - **Version nothing until the first release — no versioned migrations,
-  no versioned contracts, no legacy-data fallbacks** (pre-release
-  policy): until we've cut our first release the repo versions NOTHING
+  no versioned contracts, no legacy-data fallbacks** (the engineering
+  application of PRODUCT.md **Breaking changes** — at-will before the
+  first release): until we've cut our first release the repo versions NOTHING
   it invented — no format-version constants or keys, no compat gates, no
   "reprocess on version mismatch" branches, no version-history comments.
   Every contract (the DB schema, the sidecar streams, map-pack meta) is
