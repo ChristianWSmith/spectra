@@ -186,11 +186,37 @@ starts", or implementation waiting on a research/evaluation stage).
 Such work is **queued**, and the queue is a first-class part of your
 board, not a mental note.
 
+**Fences are graded — hard or soft — a judgement call made when the
+fence is drawn, based on how much the contested files are expected to
+move:**
+
+- **Hard fence (the default):** the contested files belong to the
+  in-flight item exclusively; the queued item starts only when the
+  fence lifts. Draw it whenever the merge conflict would be more than
+  trivial: both items rewriting the same region of a file, shared pins
+  each side re-derives (test-count/liveness expectations, fixture
+  values), or queued-brief assumptions the in-flight item will
+  invalidate.
+- **Soft fence (advisory only — to enable parallel workstreams):**
+  draw it when you judge the merge conflict on the shared file(s)
+  would be near-trivial — distant hunks, additive changes in
+  different regions, no shared assertions. A soft fence blocks
+  nothing: both items run concurrently, and the fence exists only so
+  every agent involved knows what to expect. The soft-fenced brief
+  names the shared file(s) and the in-flight item that also touches
+  them, and tells the worker to keep changes in those files minimal
+  and localized (no drive-by edits in the other item's region) and to
+  leave conflict resolution to the lead. Report the pair as
+  running-parallel with the overlap noted; soft-fenced overlap is a
+  board annotation, not a queue entry. After integrating either side,
+  re-run verification — a clean textual merge is not a green battery.
+
 - **Record entries the moment the block is created.** Whenever you
   fence files in a brief or accept a sequencing constraint, immediately
   check whether anything already decided falls behind it. Each entry
-  carries: a one-line scope, what blocks it, and the exact trigger
-  (the condition whose satisfaction unblocks it). Report the queue in
+  carries: a one-line scope, what blocks it, the exact trigger
+  (the condition whose satisfaction unblocks it), and — when the block
+  is a fence — its grade. Report the queue in
   your status boards ("Running … Queued …") so it survives into session
   summaries and recovery — after a recovery, re-derive the queue from
   the last board report before claiming it is empty.
