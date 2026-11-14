@@ -40,11 +40,26 @@ export const MetricsService = {
   // expression check and the row play's preview.
   ValidateExpr: rec('ValidateExpr'),
   PreviewMetric: rec('PreviewMetric'),
+  // The canonical STORED-value reads + the compute-state read
+  // (stored-metrics design §5 — the read-path tests drive these; the
+  // value reads are cachedRead, the state read deliberately is not).
+  GetMetricValuesForMatch: rec('GetMetricValuesForMatch'),
+  GetMetricValuesForPlayer: rec('GetMetricValuesForPlayer'),
+  GetMetricComputeState: rec('GetMetricComputeState'),
+  // The no-execution Compile (provenance for a clean-saved preview) +
+  // the one-definition read the scope-routed pin resolves through.
+  CompileMetric: rec('CompileMetric'),
+  GetMetric: rec('GetMetric'),
 };
 export const QueryService = {};
 // PlatformService: ListPlugins is the Builder mount's fire-and-forget
-// plugin-state read (a missing method would throw at mount).
-export const PlatformService = { ListPlugins: rec('ListPlugins') };
+// plugin-state read (a missing method would throw at mount); the two
+// report reads drive test/reports.dom.mjs.
+export const PlatformService = {
+  ListPlugins: rec('ListPlugins'),
+  ListReportTemplates: rec('ListReportTemplates'),
+  RenderReport: rec('RenderReport'),
+};
 export const LibraryService = {
   ImportDialog: rec('ImportDialog'),
   ListMatches: rec('ListMatches'),
@@ -80,6 +95,9 @@ export const MatchService = {
   GetEvent: rec('GetEvent'),
   GetEventDetails: rec('GetEventDetails'),
   GetDropDetails: rec('GetDropDetails'),
+  // The roster read model: Reports' metrics appendix labels the stored
+  // metric_values rows of one match through it (design §5).
+  GetPlayerRefs: rec('GetPlayerRefs'),
   // Player sounds (sound_events): the windowed read + the presence count.
   GetSoundEvents: rec('GetSoundEvents'),
   GetSoundEventPresence: rec('GetSoundEventPresence'),

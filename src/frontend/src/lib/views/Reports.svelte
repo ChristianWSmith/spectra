@@ -10,12 +10,24 @@
     getRounds,
     getScoreboard,
     listMetrics,
-    previewMetric,
+    getMetricValuesForMatch,
+    getMetricComputeState,
+    getPlayerRefs,
+    subscribeMetricProgress,
+    onMetricDone,
     errText,
   } from '../services.js';
+  import {
+    metricPresentation,
+    metricStateTitle,
+    liveMetricState,
+    metricProgressFrac,
+    metricProgressStage,
+  } from '../metricstate.js';
   import { listedPlayers } from '../players.js';
   import MatchPicker from '../components/MatchPicker.svelte';
   import PlayerPicker from '../components/PlayerPicker.svelte';
+  import StatusChip from '../components/StatusChip.svelte';
   import { seed, remember } from '../viewstate.svelte.js';
 
   let { nav = () => {}, routeId = 0, embedded = false } = $props();
@@ -61,7 +73,36 @@
   let metricsError = $state('');
   let checked = $state(repSeed.checked); // metricId → true (appendix selection)
   $effect(() => remember('reports', { tplId, matchId, steamId, roundNo, checked }));
-  let appendix = $state({}); // metricId → {loading, rows?, error?, metric, groupBy}
+  // appendix: metricId → {loading, rows?, error?, metric, unitHasRows}.
+  // rows are the CANONICAL read's stored values for THIS match (design
+  // §5: a checked metric reads stored rows — no per-toggle query-time
+  // run), shaped {id, label, value, n} with the label from the roster
+  // read (GetPlayerRefs). `unitHasRows` is the sibling coverage that
+  // separates '—' from the behind chip.
+  let appendix = $state({});
+  // The compute state (id → {state, error}) and the live progress feed:
+  // a checked metric with no fresh rows for this match renders its
+  // STATE instead of a table (design §5's state machine).
+  let metricStates = $state(new Map());
+  let metricProgress = $state(new Map());
+  let appendixReload = $state(0);
+  // appendixGen tags one appendix load sequence (a selection or target
+  // change supersedes an in-flight reply — the loadMore/refreshList
+  // pattern); non-reactive on purpose.
+  let appendixGen = 0;
+
+  $effect(() => subscribeMetricProgress((snap) => (metricProgress = snap)));
+  // Completion is the refetch point: metric-done replaced the stored
+  // rows (the cache already flushed through services' listener) and
+  // moved fresh/behind, so both the state map and the checked set
+  // reload — the doc above them is a generated snapshot the user
+  // re-renders.
+  $effect(() =>
+    onMetricDone(() => {
+      appendixReload += 1;
+      loadMetricsList();
+    }),
+  );
 
   let doc = $state(''); // rendered report text
   let docError = $state('');
@@ -97,13 +138,16 @@
     tplError = failed ? errText(failed.reason) : '';
   }
 
-  // The metrics read (mount AND metricsError's Retry): clears only when
-  // the read lands, so the appendix never claims "No custom stats yet"
-  // while the previous failure still stands.
+  // The metrics + compute-state read (mount AND metricsError's Retry):
+  // both land together so the checkbox list and its state chips settle
+  // from one attempt. Clears only when BOTH land, so the appendix never
+  // claims "No custom stats yet" while the previous failure still
+  // stands.
   async function loadMetricsList() {
     try {
-      const rows = await listMetrics();
+      const [rows, states] = await Promise.all([listMetrics(), getMetricComputeState()]);
       metrics = rows || [];
+      metricStates = new Map((states || []).map((s) => [s.metricId, s]));
       metricsError = '';
     } catch (e) {
       metricsError = errText(e);
@@ -173,51 +217,108 @@
     return () => (live = false);
   });
 
-  // Group the metric checkbox list by groupBy (player/round/team/…).
-  const metricGroups = $derived.by(() => {
-    const g = new Map();
-    for (const m of metrics) {
-      const k = m.groupBy || 'ungrouped';
-      if (!g.has(k)) g.set(k, []);
-      g.get(k).push(m);
-    }
-    return [...g.entries()];
-  });
+  // The checkbox list is FLAT and match-scope only (design §5: the
+  // Reports appendix is a per-match document — profile-scope metrics
+  // surface on PlayerProfile, and the groupBy grouping died with the
+  // W2 grammar wave: every row is "per player").
+  const matchMetrics = $derived(metrics.filter((m) => (m.scope || 'match') === 'match'));
 
-  async function toggleMetric(m) {
-    const id = m.id;
-    const next = { ...checked };
-    if (next[id]) {
-      delete next[id];
-      checked = next;
-      const ap = { ...appendix };
-      delete ap[id];
-      appendix = ap;
+  // ONE stored read for the whole checked set (design §5: no per-toggle
+  // query-time run): re-runs whenever the target, the selection, the
+  // definition list or a metric-done completion changes it. Each checked
+  // id that still resolves to a definition gets an entry — an id whose
+  // metric is gone drops out (deleted metrics never render), and a
+  // checked metric with no stored row for this match keeps an honest
+  // empty row list (the state decides what renders, never a 0).
+  $effect(() => {
+    const gen = ++appendixGen;
+    const mid = matchId;
+    appendixReload; // spectra:metric-done → refetch (the cache flushed)
+    const defs = new Map(metrics.map((m) => [m.id, m]));
+    const sel = Object.keys(checked)
+      .map(Number)
+      .filter((id) => defs.has(id))
+      .sort((a, b) => a - b);
+    if (!sel.length) {
+      appendix = {};
       return;
     }
-    next[id] = true;
+    const pending = {};
+    for (const id of sel) pending[id] = { loading: true, metric: defs.get(id) };
+    appendix = pending;
+    Promise.all([getMetricValuesForMatch(mid, sel), getPlayerRefs(mid)])
+      .then(([values, refs]) => {
+        if (gen !== appendixGen) return;
+        const bySteam = new Map((refs || []).map((r) => [r.steamId, r.name]));
+        const byMetric = new Map();
+        for (const v of values || []) {
+          if (!byMetric.has(v.metricId)) byMetric.set(v.metricId, []);
+          byMetric.get(v.metricId).push(v);
+        }
+        const next = {};
+        for (const id of sel) {
+          const rows = (byMetric.get(id) || []).map((v) => ({
+            id: v.steamId,
+            label: bySteam.get(v.steamId) || v.steamId,
+            value: v.value,
+            n: v.n,
+          }));
+          next[id] = {
+            loading: false,
+            rows,
+            metric: defs.get(id),
+            unitHasRows: rows.length > 0,
+          };
+        }
+        appendix = next;
+      })
+      .catch((e) => {
+        if (gen !== appendixGen) return;
+        const next = {};
+        for (const id of sel) {
+          next[id] = { loading: false, error: errText(e), metric: defs.get(id) };
+        }
+        appendix = next;
+      });
+  });
+
+  // toggleMetric flips the selection only — the effect above does the
+  // reading (stored rows, one call for the whole set).
+  function toggleMetric(m) {
+    const id = m.id;
+    const next = { ...checked };
+    if (next[id]) delete next[id];
+    else next[id] = true;
     checked = next;
-    const ap = { ...appendix, [id]: { loading: true, metric: m, groupBy: m.groupBy } };
-    appendix = ap;
-    try {
-      const pv = await previewMetric(id, '', `match:${matchId}`);
-      appendix = {
-        ...appendix,
-        [id]: {
-          loading: false,
-          rows: (pv && pv.rows) || [],
-          ms: pv ? pv.ms : 0,
-          metric: m,
-          groupBy: (pv && pv.metric && pv.metric.groupBy) || m.groupBy,
-          truncated: pv ? !!pv.truncated : false,
-        },
-      };
-    } catch (e) {
-      appendix = {
-        ...appendix,
-        [id]: { loading: false, error: errText(e), metric: m, groupBy: m.groupBy },
-      };
-    }
+  }
+
+  // THE state machine for one appendix entry (lib/metricstate.js,
+  // design §5): the live progress feed wins, then value / '—' / chip.
+  // A value-kind entry carries its rows; everything else renders the
+  // state word.
+  function appendixPres(id) {
+    const a = appendix[id];
+    if (!a || a.loading || a.error) return null;
+    // Number(): Object.entries hands the id over as a STRING key while
+    // the state/progress Maps key by NUMBER — a raw '3' would miss every
+    // Map and render the unknown-state dash.
+    const key = Number(id);
+    const st = liveMetricState(metricProgress, metricStates, key);
+    const row = a.rows && a.rows.length ? a.rows[0] : null;
+    return metricPresentation(st, row, a.unitHasRows);
+  }
+
+  // The checkbox indicator: fresh → the honest row count; any other
+  // state → the state chip (StatusChip — the ONE widget; the ms chip is
+  // gone: timing was never provenance). The chip's title is the state
+  // copy (failed carries the compute error, never a stamp).
+  function appendixChip(id) {
+    const pres = appendixPres(id);
+    if (!pres) return null;
+    if (pres.kind === 'value') return { kind: 'rows', n: appendix[id].rows.length };
+    const state = pres.kind === 'nodata' ? 'no-data' : pres.state;
+    const st = metricStates.get(id);
+    return { kind: 'state', state, title: metricStateTitle(state, st && st.error) };
   }
 
   function fmtVal(v) {
@@ -253,21 +354,36 @@
 
   // --- Metrics appendix ------------------------------------------------------
   function appendixEntries() {
-    return Object.entries(appendix).filter(([, a]) => !a.loading && !a.error && a.rows);
+    return Object.entries(appendix).filter(([, a]) => !a.loading && !a.error && a.rows && a.metric);
+  }
+
+  // The per-metric meta line: fresh rows → "per player · N rows" (the
+  // design §5 copy — the groupBy line and the `· N ms` timing are gone:
+  // timing was never provenance); any other state → the honest
+  // "value not computed" line with the state word. No stamp, no
+  // timestamp, ever (design §5's export pin).
+  function appendixLine(id, a) {
+    const pres = appendixPres(id);
+    if (pres && pres.kind === 'value') {
+      return `per player · ${a.rows.length} rows · match #${matchId}`;
+    }
+    // A chip presentation carries the state word; the neutral dash means
+    // the state had not landed — 'no-data' is the honest reading there.
+    const word = pres && pres.kind === 'chip' ? pres.state : 'no-data';
+    return `value not computed — ${word}`;
   }
 
   function appendixMd() {
     const ents = appendixEntries();
     if (!ents.length) return '';
     let out = '\n\n## Stats appendix\n\n';
-    for (const [, a] of ents) {
+    for (const [id, a] of ents) {
       out += `### ${a.metric.title || a.metric.name}\n\n`;
-      out += `group by ${a.groupBy || 'none'} · ${a.rows.length} rows · match #${matchId}`;
-      if (a.truncated) out += ' · truncated';
-      out += ` · ${a.ms} ms\n\n`;
+      out += `${appendixLine(id, a)}\n\n`;
+      if ((appendixPres(id) || {}).kind !== 'value') continue;
       out += '| Group | Label | Value | n |\n|---|---|---|---|\n';
       for (const r of a.rows) {
-        out += `| ${mdCell(r.group)} | ${mdCell(r.label)} | ${fmtVal(r.value)} | ${r.n} |\n`;
+        out += `| ${mdCell(r.id)} | ${mdCell(r.label)} | ${fmtVal(r.value)} | ${r.n} |\n`;
       }
       out += '\n';
     }
@@ -282,12 +398,13 @@
     const ents = appendixEntries();
     if (!ents.length) return '';
     let out = '<section class="rep-appendix-doc"><h2>Stats appendix</h2>';
-    for (const [, a] of ents) {
+    for (const [id, a] of ents) {
       out += `<h3>${esc(a.metric.title || a.metric.name)}</h3>`;
-      out += `<p>group by ${esc(a.groupBy || 'none')} · ${a.rows.length} rows · match #${matchId}${a.truncated ? ' · truncated' : ''} · ${a.ms} ms</p>`;
+      out += `<p>${esc(appendixLine(id, a))}</p>`;
+      if ((appendixPres(id) || {}).kind !== 'value') continue;
       out += '<table class="data-table mini"><thead><tr><th>Group</th><th>Label</th><th class="num">Value</th><th class="num">n</th></tr></thead><tbody>';
       for (const r of a.rows) {
-        out += `<tr><td>${esc(r.group)}</td><td>${esc(r.label)}</td><td class="num">${fmtVal(r.value)}</td><td class="num">${r.n}</td></tr>`;
+        out += `<tr><td>${esc(r.id)}</td><td>${esc(r.label)}</td><td class="num">${fmtVal(r.value)}</td><td class="num">${r.n}</td></tr>`;
       }
       out += '</tbody></table>';
     }
@@ -429,33 +546,44 @@
         match). They are composed with the rendered document and shown in the
         Preview below.
       </p>
-      {#each metricGroups as [group, rows] (group)}
-        <div class="rep-mgroup">
-          <h3 class="section-title rep-sub">by {group}</h3>
-          {#each rows as m (m.id)}
-            <label class="filt-check rep-metric">
-              <input
-                type="checkbox"
-                checked={!!checked[m.id]}
-                onchange={() => toggleMetric(m)}
+      {#each matchMetrics as m (m.id)}
+        <label class="filt-check rep-metric">
+          <input
+            type="checkbox"
+            checked={!!checked[m.id]}
+            onchange={() => toggleMetric(m)}
+          />
+          <span>{m.title || m.name}</span>
+          <span class="muted mono rep-metric-expr">{m.expr}</span>
+          {#if appendix[m.id] && appendix[m.id].loading}
+            <span class="muted">…</span>
+          {:else if appendix[m.id] && appendix[m.id].error}
+            <span class="error-text" title={appendix[m.id].error}>failed</span>
+          {:else}
+            {@const chip = appendixChip(m.id)}
+            {#if chip && chip.kind === 'rows'}
+              <span class="chip">{chip.n} rows</span>
+            {:else if chip}
+              <!-- State in lieu of rows (design §5): processing /
+                   failed / behind / no-data through StatusChip. -->
+              <StatusChip
+                status={chip.state}
+                title={chip.title}
+                progress={metricProgressFrac(metricProgress, m.id)}
+                stage={metricProgressStage(metricProgress, m.id)}
               />
-              <span>{m.title || m.name}</span>
-              <span class="muted mono rep-metric-expr">{m.expr}</span>
-              {#if appendix[m.id] && appendix[m.id].loading}
-                <span class="muted">…</span>
-              {:else if appendix[m.id] && appendix[m.id].error}
-                <span class="error-text" title={appendix[m.id].error}>failed</span>
-              {:else if appendix[m.id] && appendix[m.id].rows}
-                <span class="chip">{appendix[m.id].rows.length} rows</span>
-              {/if}
-            </label>
-          {/each}
-        </div>
+            {/if}
+          {/if}
+        </label>
       {:else}
         {#if !metricsError}
           <!-- Gated on metricsError: a failed listMetrics read is UNKNOWN,
                never "no custom stats" — the alert above carries it. -->
-          <p class="muted" role="status">No custom stats yet — build one in the Builder.</p>
+          <p class="muted" role="status">
+            {metrics.length
+              ? 'No match-scoped stats yet — profile-scoped stats surface on the player profile.'
+              : 'No custom stats yet — build one in the Builder.'}
+          </p>
         {/if}
       {/each}
     </section>

@@ -67,17 +67,26 @@ const PROBE_POOL = 4;
 // in its own card (one extra check: the old control's absence);
 // econ-tables re-pinned 94 → 98 when section J added the scoreboard
 // metric-header cap pins (2026-11-13), and 98 → 100 when the short_name
-// display-criterion pin was added (2026-11-13). builder.dom.mjs entered
+// display-criterion pin was added (2026-11-13); builder.dom.mjs entered
 // with 38 (2026-11-13 — the Builder list filter toggles + built-in
 // immutability wave: a NEW driver, the Builder view having had no
 // harness of its own).
+// W4 (stored-metrics read path, 2026-11-13): builder 38 → 56 (section I
+// — state chips on list items + editor card, k/N progress, metric-done
+// refetch, the draft-vs-saved preview criterion, no-version pin) and
+// econ-tables 100 → 107 (section G — the Match value-slot state machine:
+// five states + the honest dash + no-version pin); profiles 45 → 51
+// (section I — PlayerProfile's Career metrics panel); reports.dom.mjs is
+// NEW at 16 (the flat match-scope list, the stored read, the export
+// copy, the behind chip + "value not computed" line, the live feed and
+// the no-version pin).
 const EXPECTED = {
   'app-dock.dom.mjs': 59,
-  'builder.dom.mjs': 38,
+  'builder.dom.mjs': 56,
   'combat.dom.mjs': 75,
   'compare-rounds.dom.mjs': 27,
   'confirm-dialog.dom.mjs': 20,
-  'econ-tables.dom.mjs': 100,
+  'econ-tables.dom.mjs': 107,
   'heatmap-layer.dom.mjs': 49,
   'landmark-row.dom.mjs': 33,
   'library.dom.mjs': 167,
@@ -86,9 +95,10 @@ const EXPECTED = {
   'payload-tree.dom.mjs': 21,
   'player-card.dom.mjs': 174,
   'player-search-hint.dom.mjs': 21,
-  'profiles.dom.mjs': 45,
+  'profiles.dom.mjs': 51,
   'progress-presentation.dom.mjs': 19,
   'replay.dom.mjs': 450,
+  'reports.dom.mjs': 16,
   'round-detail.dom.mjs': 64,
   'round-strip.dom.mjs': 47,
   'settings.dom.mjs': 74,

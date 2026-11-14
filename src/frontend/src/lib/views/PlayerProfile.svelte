@@ -2,7 +2,24 @@
   // Cross-match player profile (PRD §5.13): header stats,
   // hand-rolled SVG sparklines (no chart lib), splits and
   // match history. Inline player picker (listPlayers) lives at the top.
-  import { getProfile, listPlayers, getCareerTrend, errText } from '../services.js';
+  import {
+    getProfile,
+    listPlayers,
+    getCareerTrend,
+    listMetrics,
+    getMetricValuesForPlayer,
+    getMetricComputeState,
+    subscribeMetricProgress,
+    onMetricDone,
+    errText,
+  } from '../services.js';
+  import {
+    metricPresentation,
+    metricStateTitle,
+    liveMetricState,
+    metricProgressFrac,
+    metricProgressStage,
+  } from '../metricstate.js';
   import {
     ADR_SIGMA_DEF,
     OPENING_DEF,
@@ -11,7 +28,7 @@
     AVG_UTIL_DEF,
     KAST_DEF,
   } from '../definitions.js';
-  import { fmt1, fmt2, fmtPercent, fmtDate, fmtInt, fmtPatch } from '../fmt.js';
+  import { fmt1, fmt2, fmtPercent, fmtDate, fmtInt, fmtPatch, fmtMetric } from '../fmt.js';
   import { buildHash } from '../router.js';
   import StatCard from '../components/StatCard.svelte';
   import SuggestInput from '../components/SuggestInput.svelte';
@@ -117,6 +134,100 @@
   $effect(() => {
     loadTrend();
   });
+
+  // --- Career metrics (stored-metrics design §1a/§5) -----------------------
+  // Profile-scope pins live under their OWN localStorage key —
+  // 'spectra:pinned-profile-metrics' — written scope-routed by Builder's
+  // single pin button (design §3: one mechanism, scope-routed); the
+  // scoreboard key never carries them and vice versa. Ids resolve through
+  // listMetrics (scope='profile' only) and read the CAREER grain through
+  // the canonical read (match_id = 0 rows; the bucket read also carries
+  // the unit coverage the state machine needs). Rendered per the design's
+  // state machine: fresh → the value, no-data → '—', anything else → the
+  // state chip — never a fabricated 0, never a version number.
+  const PROFILE_PINS_KEY = 'spectra:pinned-profile-metrics';
+  let careerPins = $state([]);
+  let careerCols = $state([]);
+  let careerError = $state('');
+  let metricStates = $state(new Map());
+  let metricProgress = $state(new Map());
+  // Refetch trigger: spectra:metric-done replaced the stored rows (the
+  // read cache already flushed through services' listener).
+  let careerReload = $state(0);
+
+  function readProfilePins() {
+    try {
+      const raw = localStorage.getItem(PROFILE_PINS_KEY);
+      const arr = raw ? JSON.parse(raw) : [];
+      if (!Array.isArray(arr)) return [];
+      return [...new Set(arr.map(Number).filter((n) => Number.isFinite(n)))];
+    } catch {
+      return [];
+    }
+  }
+
+  $effect(() => subscribeMetricProgress((snap) => (metricProgress = snap)));
+  $effect(() => onMetricDone(() => (careerReload += 1)));
+
+  $effect(() => {
+    careerReload; // spectra:metric-done → refetch (the cache flushed)
+    const sid = steamId;
+    let live = true;
+    const pinIds = readProfilePins();
+    careerPins = pinIds;
+    careerCols = [];
+    careerError = '';
+    if (!sid || pinIds.length === 0) return;
+    listMetrics()
+      .then((defs) => {
+        const byId = new Map((defs || []).map((d) => [d.id, d]));
+        const picked = pinIds.map((p) => byId.get(p)).filter((d) => d && d.scope === 'profile');
+        if (picked.length === 0) return [];
+        const ids = picked.map((d) => d.id);
+        // ONE stored read for every profile pin (the whole career bucket
+        // — rows for other players are this unit's coverage, never
+        // displayed here) beside the one compute-state read.
+        return Promise.all([getMetricValuesForPlayer('', ids), getMetricComputeState()]).then(
+          ([values, states]) => {
+            const byMetric = new Map();
+            for (const v of values || []) {
+              if (!byMetric.has(v.metricId)) byMetric.set(v.metricId, []);
+              byMetric.get(v.metricId).push(v);
+            }
+            const stateById = new Map((states || []).map((s) => [s.metricId, s]));
+            if (live) metricStates = stateById;
+            return picked.map((def) => {
+              const unit = byMetric.get(def.id) || [];
+              return {
+                def,
+                row: unit.find((v) => v.steamId === sid) || null,
+                unitHasRows: unit.length > 0,
+                error: (stateById.get(def.id) && stateById.get(def.id).error) || '',
+              };
+            });
+          },
+        );
+      })
+      .then((cols) => {
+        if (live) careerCols = cols;
+      })
+      .catch((e) => {
+        if (live) careerError = errText(e);
+      });
+    return () => (live = false);
+  });
+
+  // THE state machine for one career cell (lib/metricstate.js, design §5).
+  function careerPres(col) {
+    const st = liveMetricState(metricProgress, metricStates, col.def.id);
+    return metricPresentation(st, col.row, col.unitHasRows);
+  }
+
+  function careerTitle(col, pres) {
+    if (pres.kind === 'value') return `${col.def.title || col.def.name} — sample size n=${pres.n}`;
+    if (pres.kind === 'nodata') return 'no data for this player';
+    return metricStateTitle(pres.state, col.error);
+  }
 
   function pick(steam) {
     q = '';
@@ -261,6 +372,58 @@
         title={AVG_UTIL_DEF}
       />
     </div>
+
+    <!-- Career metrics: profile-scope pins read from the stored career
+         rows (design §5 — one canonical read for the whole pinned set,
+         the state machine per cell). Hidden entirely while nothing is
+         pinned that resolves; a failed read shows its own alert. -->
+    {#if careerCols.length > 0 || careerError}
+      <section class="panel">
+        <h2>Career metrics</h2>
+        {#if careerError}
+          <p class="error" role="alert">
+            Career metrics unavailable: {careerError}
+            <button class="btn small" onclick={() => (careerReload += 1)}>Retry</button>
+          </p>
+        {/if}
+        {#if careerCols.length > 0}
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th scope="col">Metric</th>
+                  <th scope="col" class="num">Value</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each careerCols as col (col.def.id)}
+                  {@const pres = careerPres(col)}
+                  <tr>
+                    <td title={col.def.doc || col.def.name}
+                      >{col.def.title || col.def.name}</td
+                    >
+                    <td class="num" title={careerTitle(col, pres)}>
+                      {#if pres.kind === 'value'}
+                        {fmtMetric(pres.value, col.def.format)}
+                      {:else if pres.kind === 'nodata'}
+                        —
+                      {:else}
+                        <StatusChip
+                          status={pres.state}
+                          title={careerTitle(col, pres)}
+                          progress={metricProgressFrac(metricProgress, col.def.id)}
+                          stage={metricProgressStage(metricProgress, col.def.id)}
+                        />
+                      {/if}
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        {/if}
+      </section>
+    {/if}
 
     <section class="panel">
       <div class="row-between">

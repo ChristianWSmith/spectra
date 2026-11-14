@@ -27,8 +27,12 @@ import { fileURLToPath } from 'node:url';
 const PREF_SITES = new Set([
   'lib/theme.js', // 'spectra:theme' — the only store the theme has
   'lib/fontsize.js', // 'spectra:font-size' — pre-paint cache; kvstore is truth
-  'lib/views/Match.svelte', // 'spectra:pinned-metrics' (read side)
-  'lib/views/Builder.svelte', // 'spectra:pinned-metrics' (the one writer)
+  'lib/views/Match.svelte', // 'spectra:pinned-metrics' (match-scope pins, read side)
+  'lib/views/Builder.svelte', // BOTH pin keys — the one writer, scope-routed:
+  //   'spectra:pinned-metrics' (match scope → the scoreboard) and
+  //   'spectra:pinned-profile-metrics' (profile scope → PlayerProfile's
+  //   Career metrics panel; stored-metrics design §3's scope-routed pin)
+  'lib/views/PlayerProfile.svelte', // 'spectra:pinned-profile-metrics' (read side)
 ]);
 
 const SRC_EXT = new Set(['.js', '.svelte', '.mjs']);

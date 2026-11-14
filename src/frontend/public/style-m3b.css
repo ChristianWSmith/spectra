@@ -807,12 +807,6 @@ label.filt-lab {
 
 /* --- Reports (rep-) --------------------------------------------------------- */
 
-/* Spacing only — the typography comes from .section-title (style.css).
-   Reports' per-group sub-heading (Metrics appendix groups). */
-.rep-sub {
-  margin-top: 6px;
-}
-
 .rep-tpl-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
@@ -869,13 +863,6 @@ label.filt-lab {
 
 .rep-hint {
   font-size: 0.8em;
-}
-
-.rep-mgroup {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  margin-top: 4px;
 }
 
 .rep-metric {

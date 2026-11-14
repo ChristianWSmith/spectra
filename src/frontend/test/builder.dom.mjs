@@ -1,5 +1,6 @@
 // jsdom driver for the metrics Builder's list UX (owner wave: list
-// filter toggles + built-in immutability).
+// filter toggles + built-in immutability + the W4 state surface).
+// Section labels below match the run's console.log letters:
 //   A. the Built-in / My metrics source toggles — defaults built-in OFF,
 //      My metrics ON — and the SERVER-side origin partition they drive:
 //      the scripted backend below applies store.ListMetricsPage's exact
@@ -9,17 +10,27 @@
 //   B. a toggle restarts the keyset window at cursor 0 — the same path
 //      as a search change (one debounced effect reads query +
 //      originFilter) — and the group headers follow the partition;
-//   C. built-in immutability in the UI: a builtin row renders NO edit
+//   C. built-in only → both toggles off (a legal empty read) → back;
+//   D. built-in immutability in the UI: a builtin row renders NO edit
 //      control (its main area is plain content — a div, never a button)
 //      and NO delete control, while a user row renders both; pin and
-//      preview stay live on the builtin row, and the builtin preview
-//      runs off the stored id WITHOUT loading the form (its percent
-//      format comes from the echoed stored row, not the empty form);
-//   D. a user row still loads the form for editing (unaffected);
-//   E. the search composes with the filter in ONE server call;
-//   F. the toggles are view-local registry state (viewstate.svelte.js):
+//      preview stay live on the builtin row;
+//   E. a SAVED (unmodified) preview reads the canonical stored-value
+//      read for the newest ready match + the no-execution compile as
+//      provenance, shows the STATE indicator instead of a timing chip,
+//      and never loads the form (design §5's saved-form criterion —
+//      PreviewMetric stays the on-demand calculator for dirty drafts);
+//   F. a user row still loads the form for editing (unaffected);
+//   G. the search composes with the filter in ONE server call;
+//   H. the toggles are view-local registry state (viewstate.svelte.js):
 //      they restore across unmount → remount, and resetViewState()
-//      returns the next mount to the defaults.
+//      returns the next mount to the defaults;
+//   I. the compute-state surface (design §4/§5): every list item and
+//      the editor card wear its state chip (all five words), processing
+//      quantifies with the live k/N feed (block form on the card, inline
+//      bar in the row), metric-done refetches the state and clears the
+//      feed, the draft-vs-saved preview criterion holds, and no rendered
+//      state output carries a version number or timestamp.
 //
 // Backend semantics — the SQL partition + keyset tiling
 // (store.TestListMetricsPageOriginFilter*) and the SaveMetric/DeleteMetric
@@ -96,6 +107,11 @@ process.on('unhandledRejection', (e) => {
 
 const bindings = await import('./stubs/bindings.mjs');
 const services = await import(pathToFileURL('src/lib/services.js').href);
+// The Wails event-bus stub — the SAME module instance services.js
+// subscribes to (the '@wailsio/runtime' hook above redirects to this
+// file, built from the same cwd-relative path), so firing here drives
+// the view's metric-progress / metric-done listeners.
+const { fire } = await import(pathToFileURL(join('test', 'stubs', 'wails-runtime.mjs')).href);
 
 // The mount-time fire-and-forget plugin-state read: an empty list keeps
 // every row's plugin chip undimmed.
@@ -153,7 +169,9 @@ bindings.handlers.ListMetricsPage = (q, originFilter, afterID, limit) => {
 
 // The row play's preview: the stored definition echoed back (the shape
 // MetricPreview carries — `metric` is the full row), recorded so the
-// checks can assert the builtin preview rode the SAVED id (expr "").
+// checks can assert the AD-HOC (dirty draft) leg still rides
+// PreviewMetric — the SAVED leg must NOT (design §5: a saved +
+// unmodified definition reads its stored rows).
 const previewCalls = [];
 bindings.handlers.PreviewMetric = (id, expr, scope, limit) => {
   previewCalls.push([id, expr, scope, limit]);
@@ -165,6 +183,43 @@ bindings.handlers.PreviewMetric = (id, expr, scope, limit) => {
     sql: 'select 1',
     truncated: false,
   };
+};
+
+// --- The SAVED-preview read path (design §5) -------------------------------
+// The canonical stored-value read (recorded so the checks can pin the
+// args), the no-execution compile for provenance, the newest-ready-match
+// resolution, the label source, and the compute-state read.
+const storedCalls = [];
+bindings.handlers.GetMetricValuesForMatch = (matchID, metricIDs) => {
+  storedCalls.push([matchID, metricIDs]);
+  return (metricIDs || []).map((id) => ({
+    metricId: id,
+    steamId: '76561198000000001',
+    value: id === 1 ? 0.412 : 6,
+    n: 13,
+  }));
+};
+const compileCalls = [];
+bindings.handlers.CompileMetric = (id, expr, scope) => {
+  compileCalls.push([id, expr, scope]);
+  return 'select 1';
+};
+bindings.handlers.ListMatches = () => [{ id: 9, status: 'ready', map: 'de_cache' }];
+bindings.handlers.ListPlayers = () => [{ steamId: '76561198000000001', name: 'alice' }];
+bindings.handlers.GetMetric = (id) => METRICS.find((m) => m.id === id) || null;
+
+// The compute-state read: one entry per metric covering the whole
+// vocabulary (the state-surface section below asserts each chip).
+let computeStates = [
+  { metricId: 1, state: 'fresh' },
+  { metricId: 2, state: 'behind' },
+  { metricId: 3, state: 'failed', error: 'upstream vanished' },
+  { metricId: 4, state: 'processing' },
+];
+let stateReads = 0;
+bindings.handlers.GetMetricComputeState = () => {
+  stateReads++;
+  return computeStates;
 };
 
 const dir = join('node_modules', '.cache', 'spectra-dom-tests', 'builder');
@@ -197,6 +252,7 @@ svelteCompile(plSrc, 'ProfileLink.svelte', join(dir, 'profilelink.js'));
 const bldSrc = readFileSync('src/lib/views/Builder.svelte', 'utf8')
   .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`)
   .replace("from '../fmt.js'", `from '${fileURL('src/lib/fmt.js')}'`)
+  .replace("from '../metricstate.js'", `from '${fileURL('src/lib/metricstate.js')}'`)
   .replace("from '../viewstate.svelte.js'", `from '${fileURL('src/lib/viewstate.svelte.js')}'`)
   .replace("from '../components/ProfileLink.svelte'", "from './profilelink.js'")
   .replace("from '../components/StatusChip.svelte'", "from './statuschip.js'");
@@ -416,16 +472,28 @@ check(
   await sleep(40);
 }
 
-console.log('E. the builtin still PREVIEWS — off its stored id, without loading the form');
+console.log('E. the builtin PREVIEWS from its STORED rows — a saved read never calculates');
 previewCalls.length = 0;
+storedCalls.length = 0;
+compileCalls.length = 0;
 {
   const bRow = rowNamed(r, 'trade_rate');
   click(bRow.querySelector('[aria-label="Preview trade_rate"]'));
-  await sleep(80);
+  await sleep(120);
   check(
-    'the preview rides the stored id with an empty expr (saved definition)',
-    JSON.stringify(previewCalls[0]) === JSON.stringify([1, '', '', 200]),
-    JSON.stringify(previewCalls[0]),
+    'the saved preview read the stored rows for the newest ready match',
+    JSON.stringify(storedCalls[0]) === JSON.stringify([9, [1]]),
+    JSON.stringify(storedCalls[0]),
+  );
+  check(
+    'PreviewMetric was NOT called — saved + unmodified reads stored (design §5)',
+    previewCalls.length === 0,
+    JSON.stringify(previewCalls),
+  );
+  check(
+    'the provenance SQL came from the no-execution compile of that same match',
+    JSON.stringify(compileCalls[0]) === JSON.stringify([1, '', 'match:9']),
+    JSON.stringify(compileCalls[0]),
   );
   check(
     'the preview table renders',
@@ -438,11 +506,33 @@ previewCalls.length = 0;
     valueCell === '41.2%',
     String(valueCell),
   );
+  const previewText = r.querySelector('.bld-preview')?.textContent || '';
+  check(
+    'the panel names the unit the stored rows came from (match stated)',
+    previewText.includes('newest ready match #9') && previewText.includes('de_cache'),
+    previewText.replace(/\s+/g, ' ').slice(0, 200),
+  );
+  check(
+    'the saved preview shows the STATE indicator and no timing chip (it timed nothing)',
+    !!r.querySelector('.bld-preview .toolbar .chip.status') &&
+      ![...r.querySelectorAll('.bld-preview .toolbar .chip')].some((c) => /ms$/.test(c.textContent.trim())),
+    r.querySelector('.bld-preview .toolbar')?.textContent.replace(/\s+/g, ' '),
+  );
   check(
     'previewing a builtin still does NOT load the form',
     heading(r) === 'New metric' && r.querySelector('#bld-name')?.value === '',
     `heading=${heading(r)} name=${r.querySelector('#bld-name')?.value}`,
   );
+  // The fresh state chip on the list item (the state vocabulary's
+  // fifth word — the others are pinned in section I).
+  {
+    const chip = rowNamed(r, 'trade_rate')?.querySelector('.bld-row-sub .chip.status');
+    check(
+      'list item: fresh renders the ok chip',
+      !!chip && chip.classList.contains('ok') && chip.textContent.trim() === 'fresh',
+      chip ? `${chip.className} "${chip.textContent.trim()}"` : 'no chip',
+    );
+  }
 }
 
 console.log('F. a user row still loads the form for editing (unaffected)');
@@ -529,6 +619,155 @@ console.log('H. the toggles are view-local registry state (restore, then reset t
     '…and the default view is the mine partition again',
     JSON.stringify(namesOf(r)) === JSON.stringify(['adr_avg', 'my_kd', 'plug_stat']),
     JSON.stringify(namesOf(r)),
+  );
+}
+
+console.log('I. compute-state surface: list chips, editor card, k/N progress, draft-vs-saved preview');
+{
+  const chipOf = (name) => rowNamed(r, name)?.querySelector('.bld-row-sub .chip.status');
+  const editorPanel = () => r.querySelector('.bld-right > section.panel');
+  const previewBtn = () =>
+    [...r.querySelectorAll('.bld-preview .toolbar button')].find((b) =>
+      b.textContent.includes('Preview'),
+    );
+
+  // Every list item wears its state chip (the scripted states: 2
+  // behind, 3 failed, 4 processing — and 1 fresh, checked in E).
+  {
+    const chip = chipOf('adr_avg');
+    check(
+      'list item: behind renders the idle chip',
+      !!chip && chip.classList.contains('idle') && chip.textContent.trim() === 'behind',
+      chip ? `${chip.className} "${chip.textContent.trim()}"` : 'no chip',
+    );
+  }
+  {
+    const chip = chipOf('my_kd');
+    check(
+      'list item: failed renders the bad chip with the engine error as its title',
+      !!chip &&
+        chip.classList.contains('bad') &&
+        chip.textContent.trim() === 'failed' &&
+        chip.getAttribute('title') === 'upstream vanished',
+      chip ? `${chip.className} title=${chip.getAttribute('title')}` : 'no chip',
+    );
+  }
+  {
+    const chip = chipOf('plug_stat');
+    check(
+      'list item: processing renders the busy chip',
+      !!chip && chip.classList.contains('busy') && chip.textContent.includes('processing'),
+      chip ? `${chip.className} "${chip.textContent.trim()}"` : 'no chip',
+    );
+  }
+
+  // The editor card shows the loaded metric's state (adr_avg = behind).
+  click(rowNamed(r, 'adr_avg').querySelector('button.bld-row-main'));
+  await sleep(60);
+  {
+    const chip = editorPanel()?.querySelector('.chip.status');
+    check(
+      'editor card: the loaded metric shows its state chip (behind)',
+      !!chip && chip.classList.contains('idle') && chip.textContent.trim() === 'behind',
+      chip ? `${chip.className} "${chip.textContent.trim()}"` : 'no chip',
+    );
+    check(
+      'no block progress while nothing runs for this metric',
+      !editorPanel()?.querySelector('.bld-card-prog'),
+      editorPanel()?.querySelector('.bld-card-prog')?.textContent ?? '',
+    );
+  }
+
+  // The live feed flips BOTH surfaces to processing and quantifies:
+  // the card goes block-form with the honest k/N underneath, the list
+  // row keeps the compact inline bar (in-cell rule).
+  fire('spectra:metric-progress', { metricId: 2, stage: 'compute', done: 2, total: 5 });
+  await sleep(60);
+  {
+    const prog = editorPanel()?.querySelector('.bld-card-prog .chip-block');
+    check(
+      'editor card: processing shows the block indicator with "computing 2 of 5 metrics" underneath',
+      !!prog && prog.textContent.includes('computing 2 of 5 metrics'),
+      prog ? prog.textContent.replace(/\s+/g, ' ') : 'no block progress',
+    );
+    const chip = chipOf('adr_avg');
+    check(
+      'list item: the same metric quantifies with the inline k/N bar',
+      !!chip &&
+        chip.classList.contains('busy') &&
+        chip.textContent.includes('processing') &&
+        !!chip.querySelector('.chip-bar') &&
+        chip.textContent.includes('40%'),
+      chip ? chip.textContent.replace(/\s+/g, ' ') : 'no chip',
+    );
+  }
+
+  // metric-done: the sweep is over — the state read refetches and the
+  // feed clears, so the card falls back to the refetched word.
+  {
+    const before = stateReads;
+    fire('spectra:metric-done', { ok: true, error: '', metricIds: [2] });
+    await sleep(80);
+    check('metric-done refetches GetMetricComputeState', stateReads > before, `${before} -> ${stateReads}`);
+    const chip = editorPanel()?.querySelector('.chip.status');
+    check(
+      'the feed cleared: the editor is back to the refetched behind chip',
+      !editorPanel()?.querySelector('.bld-card-prog') &&
+        !!chip &&
+        chip.classList.contains('idle'),
+      chip ? `${chip.className} "${chip.textContent.trim()}"` : 'no chip',
+    );
+  }
+
+  // THE draft-vs-saved preview criterion: clean-saved form → stored
+  // rows (no PreviewMetric); dirty draft → on-demand calculation.
+  storedCalls.length = 0;
+  previewCalls.length = 0;
+  compileCalls.length = 0;
+  click(previewBtn());
+  await sleep(120);
+  check(
+    'clean-saved form preview reads stored rows (PreviewMetric untouched)',
+    JSON.stringify(storedCalls[0]) === JSON.stringify([9, [2]]) && previewCalls.length === 0,
+    `stored=${JSON.stringify(storedCalls)} preview=${JSON.stringify(previewCalls)}`,
+  );
+
+  type(r.querySelector('#bld-name'), 'adr_avg_edited'); // dirty the form
+  await sleep(20);
+  storedCalls.length = 0;
+  previewCalls.length = 0;
+  click(previewBtn());
+  await sleep(120);
+  check(
+    'a dirty draft previews on demand through PreviewMetric (no stored read)',
+    previewCalls.length === 1 && storedCalls.length === 0,
+    `stored=${JSON.stringify(storedCalls)} preview=${JSON.stringify(previewCalls)}`,
+  );
+  check(
+    'the ad-hoc preview keeps its timing chip (it genuinely computed)',
+    [...r.querySelectorAll('.bld-preview .toolbar .chip')].some((c) =>
+      /ms$/.test(c.textContent.trim()),
+    ),
+    r.querySelector('.bld-preview .toolbar')?.textContent.replace(/\s+/g, ' '),
+  );
+
+  // The no-version pin on this surface: no stamp, version number or
+  // timestamp in any state chip, chip title, progress detail or the
+  // preview toolbar.
+  const leakRe = /version|\bv\d+\b|\d{4}-\d{2}-\d{2}|rule stamp|computed at/i;
+  const leaks = [];
+  for (const chip of r.querySelectorAll('.chip.status, .chip-block')) {
+    const tip = chip.getAttribute('title') || '';
+    if (leakRe.test(tip)) leaks.push(`title: ${tip}`);
+    if (leakRe.test(chip.textContent || '')) leaks.push(`text: ${chip.textContent.trim()}`);
+  }
+  for (const w of r.querySelectorAll('.bld-preview .toolbar .chip')) {
+    if (leakRe.test(w.textContent || '')) leaks.push(`toolbar: ${w.textContent.trim()}`);
+  }
+  check(
+    'no version number or timestamp appears in any Builder state output',
+    leaks.length === 0,
+    leaks.join(' | '),
   );
 }
 

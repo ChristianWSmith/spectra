@@ -1048,6 +1048,14 @@ canvas.heat-canvas {
   border-color: var(--accent-50);
 }
 
+/* The editor card's compute-progress block (stored-metrics design §4):
+   spacing only — the StatusChip block form (centered ring/spinner + the
+   honest k/N underneath) styles itself; outside a table cell, per
+   PRODUCT.md "Progress presentation". */
+.bld-card-prog {
+  margin: 2px 0 10px;
+}
+
 .bld-fields {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));

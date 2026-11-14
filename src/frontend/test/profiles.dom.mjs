@@ -21,7 +21,13 @@
 //      match's patch (fmtPatch) followed by the honest "Imported" date
 //      (read off the trend point's own extractedAt), and the x-axis
 //      caption names the patch-ordered sequence — the chart must not
-//      read as a played-on timeline.
+//      read as a played-on timeline;
+//   I. PlayerProfile's "Career metrics" panel (stored-metrics design
+//      §1a/§5): the profile-scope pins (spectra:pinned-profile-metrics)
+//      read the STORED career rows through the canonical read — fresh
+//      renders the value with its n, a non-fresh state renders the chip
+//      and never a number, a match-scope metric never surfaces here, and
+//      no rendered output carries a version number.
 //
 // Backend semantics are out of scope here: ListPlayers' ORDER BY
 // (last-seen DESC, steam_id ASC) lives in store.ListPlayers
@@ -69,7 +75,7 @@ for (const k of [
   'SVGElement', 'Element', 'Node', 'Text', 'Comment', 'DocumentFragment',
   'getComputedStyle', 'requestAnimationFrame', 'cancelAnimationFrame',
   'CustomEvent', 'Event', 'KeyboardEvent', 'MouseEvent', 'MutationObserver',
-  'DOMParser',
+  'DOMParser', 'localStorage',
 ]) {
   if (!(k in dom.window)) continue;
   try {
@@ -576,6 +582,107 @@ console.log('H. rung-3 loading lines render the canonical block spinner (never a
   document.body.removeChild(h2);
   bindings.ProfileService.GetProfile = prevGetProfile;
   invalidate();
+}
+
+console.log('I. PlayerProfile Career metrics: profile pins read STORED career rows with state chips');
+{
+  // The profile-scope pin key (design §3's scope-routed pin — Builder's
+  // single button writes it) plus the stored career rows and the state
+  // read. Only amy's profile is mounted; only HER row may render even
+  // though the read is the whole career bucket (other players' rows are
+  // this unit's coverage, never displayed).
+  localStorage.setItem('spectra:pinned-profile-metrics', '[51,52]');
+  bindings.MetricsService.ListMetrics = () =>
+    Promise.resolve([
+      {
+        id: 51, name: 'career_kd', title: 'Career K/D', scope: 'profile',
+        format: 'float1', doc: 'Formula: kills / deaths', origin: 'user',
+      },
+      {
+        id: 52, name: 'career_avg', title: 'Career avg', scope: 'profile',
+        format: '', doc: 'Formula: avg dmg', origin: 'user',
+      },
+      {
+        id: 53, name: 'match_only', title: 'Match only', scope: 'match',
+        format: '', doc: 'Formula: x', origin: 'user',
+      },
+    ]);
+  bindings.MetricsService.GetMetricValuesForPlayer = () =>
+    Promise.resolve([
+      { metricId: 51, steamId: '76561198000000001', value: 1.5, n: 40 },
+      { metricId: 51, steamId: '76561198000000002', value: 2.5, n: 99 },
+    ]);
+  bindings.MetricsService.GetMetricComputeState = () =>
+    Promise.resolve([
+      { metricId: 51, state: 'fresh' },
+      { metricId: 52, state: 'behind' },
+      { metricId: 53, state: 'fresh' },
+    ]);
+  invalidate();
+  const iTarget = document.createElement('div');
+  document.body.appendChild(iTarget);
+  mount(profileMod.default, {
+    target: iTarget,
+    props: { steamId: '76561198000000001', nav: () => {} },
+  });
+  await sleep(120);
+
+  const panel = [...iTarget.querySelectorAll('section.panel')].find((s) =>
+    s.textContent.includes('Career metrics'),
+  );
+  check('the Career metrics panel renders for the profile pins', !!panel, 'no panel');
+  const rows = panel ? [...panel.querySelectorAll('tbody tr')] : [];
+  check(
+    'exactly the two profile-scope pins list (a match-scope metric never surfaces here)',
+    rows.length === 2 &&
+      rows[0].textContent.includes('Career K/D') &&
+      rows[1].textContent.includes('Career avg'),
+    JSON.stringify(rows.map((r) => r.textContent.trim())),
+  );
+  {
+    const cell = rows[0]?.children[1];
+    check(
+      'fresh renders the STORED value with n in the tooltip',
+      !!cell && cell.textContent.trim() === '1.5' && !cell.querySelector('.chip.status') &&
+        (cell.getAttribute('title') || '').includes('sample size n=40'),
+      cell ? `${cell.textContent.trim()} title=${cell.getAttribute('title')}` : 'no cell',
+    );
+  }
+  {
+    const cell = rows[1]?.children[1];
+    const chip = cell?.querySelector('.chip.status');
+    check(
+      'behind renders the chip with the design copy, never a number',
+      !!chip &&
+        chip.classList.contains('idle') &&
+        chip.textContent.trim() === 'behind' &&
+        cell.getAttribute('title') === 'value not available yet — recompute pending' &&
+        !/\d/.test(cell.textContent),
+      cell ? `${chip ? chip.className : 'no chip'} "${cell.textContent.trim()}"` : 'no cell',
+    );
+  }
+  check(
+    "another player's bucket row never renders on this profile",
+    !panel?.textContent.includes('2.5'),
+    panel?.textContent.replace(/\s+/g, ' ').slice(0, 200),
+  );
+  {
+    const leaks = [];
+    const re = /version|\bv\d+\b|\d{4}-\d{2}-\d{2}|rule stamp|computed at/i;
+    for (const el of panel ? panel.querySelectorAll('.chip, td[title]') : []) {
+      const tip = el.getAttribute('title') || '';
+      if (re.test(tip)) leaks.push(`title: ${tip}`);
+      if (re.test(el.textContent || '')) leaks.push(`text: ${el.textContent.trim()}`);
+    }
+    check(
+      'no version number or timestamp appears in the Career metrics output',
+      leaks.length === 0,
+      leaks.join(' | '),
+    );
+  }
+
+  localStorage.removeItem('spectra:pinned-profile-metrics');
+  document.body.removeChild(iTarget);
 }
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

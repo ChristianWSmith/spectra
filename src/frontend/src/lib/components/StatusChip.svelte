@@ -48,6 +48,11 @@ const STAGE_LABELS = {
   queued: 'waiting',
   load: 'reading replay data',
   raster: 'building heatmap',
+  // The metric sweep's per-metric phases (metrics.StageRemove /
+  // StageCompute — stored-metrics design §4): translated here at the
+  // display layer like every other payload stage.
+  remove: 'clearing',
+  compute: 'computing',
 };
 
 let stageText = $derived(STAGE_LABELS[stage] || stage);
@@ -60,6 +65,15 @@ const LABELS = {
   running: 'running',
   done: 'done',
   cancelled: 'cancelled',
+  // The metric compute-state vocabulary (stored-metrics design §5) —
+  // the five words GetMetricComputeState serves, rendered through THIS
+  // chip (never a second widget). 'fresh'/'no-data' appear on the
+  // Builder's state surface; value slots render fresh as the number and
+  // no-data as the '—'.
+  processing: 'processing',
+  fresh: 'fresh',
+  'no-data': 'no-data',
+  behind: 'behind',
 };
 
 // Lifecycle state → the shared .chip palette modifier (style.css). An
@@ -72,6 +86,12 @@ const PALETTE = {
   parsing: 'busy',
   running: 'busy',
   cancelled: 'idle',
+  // Metric states: processing = .chip.busy (design §5 state 1),
+  // failed = .chip.bad, behind/no-data = .chip.idle, fresh = .chip.ok.
+  processing: 'busy',
+  fresh: 'ok',
+  'no-data': 'idle',
+  behind: 'idle',
 };
 
 let pct = $derived(progress != null ? Math.round(progress * 100) : null);
