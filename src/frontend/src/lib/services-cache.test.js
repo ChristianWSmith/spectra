@@ -2,11 +2,13 @@
 // same promise instance, different args miss, every data-carrying
 // spectra:* event (and the explicit invalidate()/mutating wrappers)
 // flush so the next call refetches — spectra:asset-progress,
-// spectra:heatmap-progress and spectra:analysis-progress being the
-// progress-only events that do NOT (they change no row), and
-// spectra:analysis-done being the recompute's completion flush (the
-// wrapper itself submits and returns, so completion — not submission —
-// is where the cache is invalidated).
+// spectra:heatmap-progress, spectra:analysis-progress and
+// spectra:metric-progress being the progress-only events that do NOT
+// (they change no row), and spectra:analysis-done /
+// spectra:metric-done being the recompute completions' flush (the
+// wrappers themselves submit and return, so completion — not
+// submission — is where the cache is invalidated; metric-done joins
+// the SAME listener set — one cache, one flush path).
 //
 // services.js is loaded against TEST STUBS for its two runtime
 // dependencies (test/stubs/) — the real bindings talk to a live Wails
@@ -45,9 +47,13 @@ const SPECTRA_EVENTS = [
   'spectra:job-done',
   'spectra:job-progress',
   'spectra:files-dropped',
+  // The metric sweep's DATA change (stored metric_values rows replaced)
+  // — design §5 joins it to the SAME flush listener set: one cache,
+  // one flush path, no second invalidation mechanism.
+  'spectra:metric-done',
 ];
 
-test('the four spectra:* events each register an invalidation listener', () => {
+test('the five spectra:* events each register an invalidation listener', () => {
   for (const name of SPECTRA_EVENTS) {
     assert.ok(listenerCount(name) >= 1, `${name} has a listener`);
   }
@@ -612,4 +618,114 @@ test('warmProfile: hover prefetch is throttled per steamId', async () => {
   assert.equal(bindings.callCount('GetProfile'), 3, 'a different id warms on its own');
   services.warmProfile('', 33_000);
   assert.equal(bindings.callCount('GetProfile'), 3, 'no id, no warm');
+});
+
+// --- Stored metric values + compute state (design §5) -----------------------
+
+// spectra:metric-progress is PROGRESS-ONLY (design §4): it must reach
+// its own subscribers (the progress store below) and must NOT sit in
+// the flush list — the rows land at metric-done, which does flush (its
+// loop test above). This mirrors the asset/heatmap/analysis-progress
+// pins; asserted BEFORE any subscribeMetricProgress in this process, so
+// the zero listener count means "no module-load flush listener".
+test('spectra:metric-progress delivers payloads and flushes nothing', async () => {
+  assert.equal(
+    listenerCount('spectra:metric-progress'),
+    0,
+    'no cache-flush listener for a progress-only event',
+  );
+  services.invalidate();
+  bindings.resetCalls();
+  const first = services.getMatch(7);
+  await first;
+
+  const seen = [];
+  const off = services.onEvent('spectra:metric-progress', (p) => seen.push(p));
+  const payload = { metricId: 7, stage: 'compute', done: 2, total: 5 };
+  fire('spectra:metric-progress', payload);
+  assert.deepEqual(seen, [payload], 'the subscriber gets the Go payload');
+
+  const second = services.getMatch(7);
+  assert.equal(second, first, 'progress must not evict the cached read');
+  await second;
+  assert.equal(bindings.callCount('GetMatch'), 1, 'no refetch on metric progress');
+  off();
+});
+
+// The progress STORE every value slot subscribes to: metric-progress
+// updates the snapshot (k/N per metric), metric-done clears it (the
+// sweep is over — the refetch carries the outcome), and unsubscribing
+// stops the feed. It shares the event, never a second bus.
+test('subscribeMetricProgress: the live k/N feed updates on progress and clears on metric-done', async () => {
+  const seen = [];
+  const off = services.subscribeMetricProgress((snap) => seen.push(snap));
+  assert.equal(seen.length, 1, 'the current snapshot is handed over synchronously');
+
+  fire('spectra:metric-progress', { metricId: 7, stage: 'remove', done: 1, total: 3 });
+  fire('spectra:metric-progress', { metricId: 7, stage: 'compute', done: 2, total: 3 });
+  let snap = seen[seen.length - 1];
+  assert.equal(snap.size, 1, 'one metric in flight');
+  assert.equal(snap.get(7).done, 2, 'the latest k/N wins');
+  assert.equal(snap.get(7).stage, 'compute');
+
+  fire('spectra:metric-done', { ok: true, error: '', metricIds: [7] });
+  snap = seen[seen.length - 1];
+  assert.equal(snap.size, 0, 'metric-done clears the feed (nothing is in flight)');
+
+  off();
+  const before = seen.length;
+  fire('spectra:metric-progress', { metricId: 7, stage: 'compute', done: 1, total: 3 });
+  assert.equal(seen.length, before, 'an unsubscribed store gets no more snapshots');
+});
+
+// The canonical value reads join the ONE cachedRead (keyed (method,
+// args), flushed by the listener set above — metric-done included);
+// GetMetricComputeState is DELIBERATELY UNCACHED (design §5: the
+// transient processing/failed words change without a data event, so a
+// cache would serve them stale).
+test('value reads are cachedRead; GetMetricComputeState is deliberately not cached', async () => {
+  services.invalidate();
+  bindings.resetCalls();
+  const ids = [7, 8];
+
+  const m1 = services.getMetricValuesForMatch(3, ids);
+  const m2 = services.getMetricValuesForMatch(3, ids);
+  assert.equal(m1, m2, 'same (match, ids) -> the same promise');
+  await m1;
+  assert.equal(bindings.callCount('GetMetricValuesForMatch'), 1, 'one backend call');
+
+  // Every arg is part of the key (match id, the pin/checkbox set).
+  await services.getMetricValuesForMatch(4, ids);
+  await services.getMetricValuesForMatch(3, [7]);
+  assert.equal(bindings.callCount('GetMetricValuesForMatch'), 3);
+
+  const p1 = services.getMetricValuesForPlayer('', ids);
+  const p2 = services.getMetricValuesForPlayer('', ids);
+  assert.equal(p1, p2, 'the career-bucket read is a cache hit');
+  await p1;
+  assert.equal(bindings.callCount('GetMetricValuesForPlayer'), 1);
+  await services.getMetricValuesForPlayer('76561198000000001', ids);
+  assert.equal(bindings.callCount('GetMetricValuesForPlayer'), 2, 'steamID is part of the key');
+
+  // The roster label read is cachedRead like every other single-match read.
+  const r1 = services.getPlayerRefs(3);
+  const r2 = services.getPlayerRefs(3);
+  assert.equal(r1, r2, 'GetPlayerRefs is a cache hit');
+  await r1;
+  assert.equal(bindings.callCount('GetPlayerRefs'), 1);
+
+  // metric-done — the DATA change — flushes them with the rest (the
+  // loop test above pins the listener; this pins the effect).
+  fire('spectra:metric-done', { ok: true, error: '', metricIds: [7] });
+  const after = services.getMetricValuesForMatch(3, ids);
+  assert.notEqual(after, m1, 'metric-done must flush the value read');
+  await after;
+  assert.equal(bindings.callCount('GetMetricValuesForMatch'), 4, 'refetch after the sweep');
+
+  // The state read never shares an entry — two calls, two backend reads.
+  const s1 = services.getMetricComputeState();
+  const s2 = services.getMetricComputeState();
+  assert.notEqual(s1, s2, 'compute state is deliberately uncached');
+  await Promise.all([s1, s2]);
+  assert.equal(bindings.callCount('GetMetricComputeState'), 2);
 });

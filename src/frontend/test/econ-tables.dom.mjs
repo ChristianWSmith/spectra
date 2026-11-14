@@ -327,8 +327,13 @@ const dataFor = (countedN) => ({
   getWarnings: [],
   getCombatStats: [],
   getRoundClasses: [],
+  // The pinned-column reads (stored-metrics design §5): the canonical
+  // stored-value read + the compute-state read. Defaults = no pins
+  // asked for rows and no state landed (the section fixtures below
+  // script their own); an unscripted name resolves [] through the stub.
   listMetrics: [],
-  previewMetric: null,
+  getMetricValuesForMatch: [],
+  getMetricComputeState: [],
   getEconomy: economyRows(countedN),
   getTeamNames: { ct: 'Alpha', t: 'Beta' },
 });
@@ -995,12 +1000,14 @@ console.log('J. Scoreboard metric header: m5-mth cap scope, tooltip survives, so
     listMetrics: [
       { id: 7, name: 'util_dmg', title: 'Utility damage per round', doc: 'Grenade damage dealt per round' },
     ],
-    previewMetric: {
-      rows: [
-        { group: 'A', value: 12.5, n: 13 },
-        { group: 'B', value: 9.2, n: 13 },
-      ],
-    },
+    // The pin reads STORED rows through the canonical read (design §5:
+    // N previewMetric calls → one stored read) beside the state read;
+    // fresh + rows → the cells render the numbers.
+    getMetricValuesForMatch: [
+      { metricId: 7, steamId: 'A', value: 12.5, n: 13 },
+      { metricId: 7, steamId: 'B', value: 9.2, n: 13 },
+    ],
+    getMetricComputeState: [{ metricId: 7, state: 'fresh' }],
   };
   root = await showMatch(d, { routeTab: 'Scoreboard' });
   await sleep();
@@ -1072,7 +1079,8 @@ console.log('J. Scoreboard metric header: m5-mth cap scope, tooltip survives, so
         doc: 'Grenade damage dealt per round',
       },
     ],
-    previewMetric: { rows: [{ group: 'A', value: 12.5, n: 13 }] },
+    getMetricValuesForMatch: [{ metricId: 8, steamId: 'A', value: 12.5, n: 13 }],
+    getMetricComputeState: [{ metricId: 8, state: 'fresh' }],
   };
   root = await showMatch(d, { routeTab: 'Scoreboard' });
   await sleep();
@@ -1090,6 +1098,145 @@ console.log('J. Scoreboard metric header: m5-mth cap scope, tooltip survives, so
     'the metric cell keeps title || name in its tooltip (never the short name)',
     cellTitle.includes('Utility damage per round') && !cellTitle.includes('UD'),
     JSON.stringify(cellTitle),
+  );
+  localStorage.removeItem('spectra:pinned-metrics');
+}
+
+// (g) Scoreboard metric value slots run THE state machine (design §5):
+// every non-fresh state renders its chip and NEVER a number, fresh
+// renders the stored value, a covered unit with a player missing a row
+// renders the honest dash — and no rendered metric output ever carries
+// a version number or a timestamp (the no-version pin).
+{
+  localStorage.setItem('spectra:pinned-metrics', '[91,92,93,94,95]');
+  const mk = (id, name) => ({ id, name, title: name, doc: `Formula: ${name}` });
+  const d = {
+    ...dataFor(13),
+    listMetrics: [
+      mk(91, 'm_processing'),
+      mk(92, 'm_failed'),
+      mk(93, 'm_behind'),
+      mk(94, 'm_fresh'),
+      mk(95, 'm_nodata'),
+    ],
+    // Only metric 94 has a stored row — and only for alice (bob has
+    // none while the unit IS covered → the no-data dash).
+    getMetricValuesForMatch: [{ metricId: 94, steamId: 'A', value: 8, n: 5 }],
+    getMetricComputeState: [
+      { metricId: 91, state: 'processing' },
+      { metricId: 92, state: 'failed', error: 'upstream vanished' },
+      { metricId: 93, state: 'behind' },
+      { metricId: 94, state: 'fresh' },
+      { metricId: 95, state: 'no-data' },
+    ],
+  };
+  root = await showMatch(d, { routeTab: 'Scoreboard' });
+  await sleep();
+  const ths = [...root.querySelectorAll('.data-table.scoreboard thead th')];
+  const idxOf = (label) =>
+    ths.findIndex((t) => (t.querySelector('.th-sort')?.textContent || '').includes(label));
+  const rowsOfSb = [...root.querySelectorAll('.data-table.scoreboard tbody tr')];
+  const cellAt = (label, player) => {
+    const i = idxOf(label);
+    const row = rowsOfSb.find((r) =>
+      (r.querySelector('.name-cell')?.textContent || '').includes(player),
+    );
+    return i >= 0 && row ? row.children[i] : null;
+  };
+  const chipIn = (cell) => cell?.querySelector('.chip.status');
+
+  {
+    const cell = cellAt('m_processing', 'alice');
+    const chip = chipIn(cell);
+    check(
+      'processing renders the busy chip with its word, never a number',
+      !!chip &&
+        chip.classList.contains('busy') &&
+        chip.textContent.includes('processing') &&
+        !/\d/.test(cell.textContent),
+      cell ? cell.textContent.trim() : 'no cell',
+    );
+  }
+  {
+    const cell = cellAt('m_failed', 'alice');
+    const chip = chipIn(cell);
+    check(
+      'failed renders the bad chip and carries the engine error as its title',
+      !!chip &&
+        chip.classList.contains('bad') &&
+        chip.textContent.trim() === 'failed' &&
+        cell.getAttribute('title') === 'upstream vanished',
+      cell ? `${chip ? chip.className : 'no chip'} title=${cell.getAttribute('title')}` : 'no cell',
+    );
+  }
+  {
+    const cell = cellAt('m_behind', 'alice');
+    const chip = chipIn(cell);
+    check(
+      'behind renders the idle chip with the design copy',
+      !!chip &&
+        chip.classList.contains('idle') &&
+        chip.textContent.trim() === 'behind' &&
+        cell.getAttribute('title') === 'value not available yet — recompute pending',
+      cell ? `${chip ? chip.className : 'no chip'} title=${cell.getAttribute('title')}` : 'no cell',
+    );
+  }
+  {
+    const freshA = cellAt('m_fresh', 'alice');
+    const freshB = cellAt('m_fresh', 'bob');
+    check(
+      'fresh renders the STORED value (never a chip)',
+      !!freshA && freshA.textContent.trim() === '8' && !freshA.querySelector('.chip.status'),
+      freshA ? freshA.textContent.trim() : 'no cell',
+    );
+    check(
+      'a covered unit with no row for this player renders the honest dash',
+      !!freshB &&
+        freshB.textContent.trim() === '—' &&
+        freshB.getAttribute('title') === 'no data for this player',
+      freshB ? `${freshB.textContent.trim()} title=${freshB.getAttribute('title')}` : 'no cell',
+    );
+  }
+  {
+    const cell = cellAt('m_nodata', 'alice');
+    check(
+      'no-data renders the dash with its copy, never a 0',
+      !!cell &&
+        cell.textContent.trim() === '—' &&
+        cell.getAttribute('title') === 'no data for this player',
+      cell ? `${cell.textContent.trim()} title=${cell.getAttribute('title')}` : 'no cell',
+    );
+  }
+
+  // The no-version pin: no stamp, version number or timestamp anywhere
+  // in the metric columns' rendered output (titles + chip text). The
+  // sample size "n=5" is data, not a stamp — the regex targets
+  // version-shaped and date-shaped strings specifically.
+  const leakRe = /version|\bv\d+\b|\d{4}-\d{2}-\d{2}|rule stamp|computed at/i;
+  const metricThs = ths.filter((t) => t.classList.contains('m5-mth'));
+  const leaks = [];
+  for (const th of metricThs) {
+    const tip = th.getAttribute('title') || '';
+    if (leakRe.test(tip)) leaks.push(`th: ${tip}`);
+    for (const w of th.querySelectorAll('.m5-ib, .m5-n')) {
+      const t = w.getAttribute('title') || '';
+      if (leakRe.test(t)) leaks.push(`th widget: ${t}`);
+    }
+  }
+  for (const tr of rowsOfSb) {
+    for (const td of tr.querySelectorAll('td.m5-cell')) {
+      const tip = td.getAttribute('title') || '';
+      if (leakRe.test(tip)) leaks.push(`cell: ${tip}`);
+      for (const chip of td.querySelectorAll('.chip')) {
+        const text = chip.textContent || '';
+        if (leakRe.test(text)) leaks.push(`chip: ${text}`);
+      }
+    }
+  }
+  check(
+    'no version number or timestamp appears in any metric cell/header output',
+    leaks.length === 0,
+    leaks.join(' | '),
   );
   localStorage.removeItem('spectra:pinned-metrics');
 }
