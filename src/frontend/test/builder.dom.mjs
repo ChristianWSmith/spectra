@@ -1,29 +1,39 @@
-// jsdom driver for the metrics Builder's list UX (owner wave: list
-// filter toggles + built-in immutability + the W4 state surface).
+// jsdom driver for the metrics Builder's list UX (owner wave A: the
+// built-in editor load + the scope/denominator filter pairs + the
+// denominator chip).
 // Section labels below match the run's console.log letters:
-//   A. the Built-in / My metrics source toggles — defaults built-in OFF,
-//      My metrics ON — and the SERVER-side origin partition they drive:
-//      the scripted backend below applies store.ListMetricsPage's exact
-//      predicate to the fixture, so a view that filtered client-side,
-//      passed the wrong partition word, or forgot the arg would render
-//      the wrong rows here;
-//   B. a toggle restarts the keyset window at cursor 0 — the same path
-//      as a search change (one debounced effect reads query +
-//      originFilter) — and the group headers follow the partition;
-//   C. built-in only → both toggles off (a legal empty read) → back;
-//   D. built-in immutability in the UI: a builtin row renders NO edit
-//      control (its main area is plain content — a div, never a button)
-//      and NO delete control, while a user row renders both; pin and
-//      preview stay live on the builtin row;
+//   A. the three toggle PAIRS (Built-in|My metrics, Match|Profile,
+//      Rounds|Matches — one pair per line, all six ON by default: the
+//      first window is the whole catalog) and the SERVER-side
+//      narrowings they drive: the scripted backend below applies
+//      store.ListMetricsPage's exact predicates to the fixture, so a
+//      view that filtered client-side, passed the wrong partition word,
+//      or forgot an arg would render the wrong rows here; the
+//      denominator chip rides each row beside its scope chip;
+//   B. a source toggle restarts the keyset window at cursor 0 — the
+//      same path as a search change (one debounced effect reads query +
+//      originFilter + scopeFilter + denomFilter) — the group headers
+//      follow the partition, and both source toggles off is a legal
+//      empty read;
+//   C. the scope pair and the denominator pair narrow the SAME server
+//      call (exact args + cursor reset), both-off on the scope pair is
+//      the empty state, and the lead's denominator-less rule holds:
+//      a metric with no denominator passes whatever the pair says;
+//   D. the built-in EDITOR load: a builtin row is a button like every
+//      other and fills the form read-only — Save disabled with the
+//      end-user reason, chip present, delete absent, pin/preview live —
+//      Save stays disabled through an edit (dirty never re-enables it)
+//      and loading a user row, a plugin row or New fully restores the
+//      editable state;
 //   E. a SAVED (unmodified) preview reads the canonical stored-value
 //      read for the newest ready match + the no-execution compile as
 //      provenance, shows the STATE indicator instead of a timing chip,
 //      and never loads the form (design §5's saved-form criterion —
 //      PreviewMetric stays the on-demand calculator for dirty drafts);
 //   F. a user row still loads the form for editing (unaffected);
-//   G. the search composes with the filter in ONE server call;
+//   G. the search composes with the filters in ONE server call;
 //   H. the toggles are view-local registry state (viewstate.svelte.js):
-//      they restore across unmount → remount, and resetViewState()
+//      all six restore across unmount → remount, and resetViewState()
 //      returns the next mount to the defaults;
 //   I. the compute-state surface (design §4/§5): every list item and
 //      the editor card wear its state chip (all five words), processing
@@ -38,11 +48,12 @@
 //      deletes both keys, the pin indicator is read-only, and Close
 //      dismisses.
 //
-// Backend semantics — the SQL partition + keyset tiling
-// (store.TestListMetricsPageOriginFilter*) and the SaveMetric/DeleteMetric
-// guards (TestSaveMetricBuiltinGuards) — live in the Go tests; the
-// read-cache key carries originFilter via services-cache.test.js. This
-// pins the VIEW wiring only.
+// Backend semantics — the SQL partitions + keyset tiling
+// (store.TestListMetricsPageOriginFilter*,
+// TestListMetricsPageScopeFilter/DenominatorFilter/AllFiltersCompose)
+// and the SaveMetric/DeleteMetric guards (TestSaveMetricBuiltinGuards)
+// — live in the Go tests; the read-cache key carries all three filter
+// words via services-cache.test.js. This pins the VIEW wiring only.
 //
 // jsdom is a declared devDependency of frontend/ — a plain `npm ci`
 // there provides it (never `npm i --no-save`, which makes the next
@@ -135,13 +146,15 @@ bindings.MetricsService.ListMetrics = () => Promise.resolve(METRICS);
 
 // The fixture catalog in the store's canonical order (builtin → user →
 // plugin, name ASC within each origin) — the order the paged read and
-// the view's group headers are built on.
+// the view's group headers are built on. Denominators: one 'rounds', one
+// 'matches', two denominator-less — the chip presence/absence and the
+// denominator-less rule both read these.
 const METRICS = [
   {
     id: 1, name: 'trade_rate', title: 'Trade rate', shortName: '',
     expr: 'from player_stats, match_trade_opps: ratio(sum(trade_kills), sum(opps))',
     scope: 'match', format: 'percent', doc: 'Formula: trade successes / opportunities',
-    origin: 'builtin', pluginId: '', denominator: '',
+    origin: 'builtin', pluginId: '', denominator: 'rounds',
   },
   {
     id: 2, name: 'adr_avg', title: 'ADR average', shortName: 'ADR',
@@ -152,7 +165,7 @@ const METRICS = [
     id: 3, name: 'my_kd', title: 'My K/D', shortName: '',
     expr: 'from events: ratio(count(victim), count(attacker))', scope: 'match',
     format: 'float1', doc: 'Formula: kills / deaths', origin: 'user', pluginId: '',
-    denominator: '',
+    denominator: 'matches',
   },
   {
     id: 4, name: 'plug_stat', title: 'Plugin stat', shortName: '',
@@ -161,16 +174,26 @@ const METRICS = [
   },
 ];
 
-// The scripted paged read: the SAME partition + LIKE the store applies
-// (store.ListMetricsPage), recorded so the checks can assert the exact
-// args the view sent — (query, originFilter, afterID, limit).
+// The scripted paged read: the SAME partitions + LIKE the store applies
+// (store.ListMetricsPage — including the denominator-less rule), recorded
+// so the checks can assert the exact args the view sent —
+// (query, originFilter, scopeFilter, denomFilter, afterID, limit).
 const pageCalls = [];
-bindings.handlers.ListMetricsPage = (q, originFilter, afterID, limit) => {
-  pageCalls.push([q, originFilter, afterID, limit]);
+bindings.handlers.ListMetricsPage = (q, originFilter, scopeFilter, denomFilter, afterID, limit) => {
+  pageCalls.push([q, originFilter, scopeFilter, denomFilter, afterID, limit]);
   let rows = METRICS.slice();
   if (originFilter === 'builtin') rows = rows.filter((m) => m.origin === 'builtin');
   else if (originFilter === 'mine') rows = rows.filter((m) => m.origin !== 'builtin');
   else if (originFilter === 'none') rows = [];
+  if (scopeFilter === 'match') rows = rows.filter((m) => (m.scope || 'match') === 'match');
+  else if (scopeFilter === 'profile') rows = rows.filter((m) => m.scope === 'profile');
+  else if (scopeFilter === 'none') rows = [];
+  // The denominator-less rule (lead ruling): a metric with NO
+  // denominator passes in every state — including both-off ("none"),
+  // which keeps exactly those rows instead of an empty window.
+  if (denomFilter === 'rounds') rows = rows.filter((m) => !m.denominator || m.denominator === 'rounds');
+  else if (denomFilter === 'matches') rows = rows.filter((m) => !m.denominator || m.denominator === 'matches');
+  else if (denomFilter === 'none') rows = rows.filter((m) => !m.denominator);
   if (q) {
     const needle = String(q).toLowerCase();
     rows = rows.filter((m) => `${m.name} ${m.title}`.toLowerCase().includes(needle));
@@ -348,76 +371,95 @@ const type = (el, value) => {
   el.dispatchEvent(new dom.window.Event('input', { bubbles: true }));
 };
 const heading = (r) => r.querySelector('.bld-right h2')?.textContent.trim();
+// The row's CHIPS minus the compute-state one (StatusChip) — the static
+// identity chips in render order: scope, denominator (when present),
+// format, plugin.
+const chipsOf = (r, name) =>
+  [...(rowNamed(r, name)?.querySelectorAll('.bld-row-sub .chip:not(.status)') || [])].map((c) =>
+    c.textContent.trim(),
+  );
+// The editor card's Save button and its read-only chip (the one
+// .bld-readonly in the view — the form header's).
+const saveButton = (r) => r.querySelector('.bld-actions .btn.primary');
+const formChip = (r) => r.querySelector('.bld-readonly');
 
 viewstate.resetViewState();
 
-console.log('A. defaults: Built-in OFF / My metrics ON — the first window is the mine partition');
+console.log('A. defaults: all six toggles ON, one pair per line — the first window is the whole catalog');
 let r = await mountBuilder();
 check(
-  'first list call = (query "", filter "mine", cursor 0, 100)',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'mine', 0, 100]),
+  'first list call = (query "", origin "", scope "", denominator "", cursor 0, 100)',
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', 0, 100]),
   JSON.stringify(pageCalls[0]),
 );
 const tgBuiltin = toggle(r, 'Built-in');
 const tgMine = toggle(r, 'My metrics');
-check('the Built-in toggle starts unchecked', !!tgBuiltin && !pressed(tgBuiltin));
-check('the My metrics toggle starts checked', !!tgMine && pressed(tgMine));
+const tgMatch = toggle(r, 'Match');
+const tgProfile = toggle(r, 'Profile');
+const tgRounds = toggle(r, 'Rounds');
+const tgMatches = toggle(r, 'Matches');
 check(
-  'the rendered list is the mine partition (no builtin row)',
-  JSON.stringify(namesOf(r)) === JSON.stringify(['adr_avg', 'my_kd', 'plug_stat']),
-  JSON.stringify(namesOf(r)),
+  'every toggle starts pressed — all three pairs default ON',
+  [tgBuiltin, tgMine, tgMatch, tgProfile, tgRounds, tgMatches].every((b) => b && pressed(b)),
+  JSON.stringify([tgBuiltin, tgMine, tgMatch, tgProfile, tgRounds, tgMatches].map((b) => b && pressed(b))),
 );
 check(
-  'group headers follow the partition (Yours + Plugins, no Builtins)',
-  JSON.stringify(headersOf(r)) === JSON.stringify(['Yours', 'Plugins']),
-  JSON.stringify(headersOf(r)),
+  'each pair sits on its own line — three labelled groups in order',
+  JSON.stringify(
+    [...r.querySelectorAll('.bld-list [role="group"][aria-label^="Metric "]')].map((g) =>
+      g.getAttribute('aria-label'),
+    ),
+  ) === JSON.stringify(['Metric sources', 'Metric scopes', 'Metric denominators']),
+  JSON.stringify(
+    [...r.querySelectorAll('.bld-list [role="group"]')].map((g) => g.getAttribute('aria-label')),
+  ),
+);
+check(
+  'the whole catalog renders, byte-identical to the unfiltered list',
+  JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate', 'adr_avg', 'my_kd', 'plug_stat']) &&
+    JSON.stringify(headersOf(r)) === JSON.stringify(['Builtins', 'Yours', 'Plugins']),
+  JSON.stringify(namesOf(r)) + ' headers=' + JSON.stringify(headersOf(r)),
+);
+check(
+  'the denominator chip rides beside the scope chip when a metric carries one',
+  JSON.stringify(chipsOf(r, 'trade_rate')) === JSON.stringify(['match', 'rounds', 'percent']) &&
+    JSON.stringify(chipsOf(r, 'my_kd')) === JSON.stringify(['match', 'matches', 'float1']),
+  JSON.stringify(chipsOf(r, 'trade_rate')) + ' / ' + JSON.stringify(chipsOf(r, 'my_kd')),
+);
+check(
+  'a denominator-less metric shows NO denominator chip (absence is honest)',
+  JSON.stringify(chipsOf(r, 'adr_avg')) === JSON.stringify(['match', 'float1']) &&
+    JSON.stringify(chipsOf(r, 'plug_stat')) === JSON.stringify(['match', 'int', 'plugin']),
+  JSON.stringify(chipsOf(r, 'adr_avg')) + ' / ' + JSON.stringify(chipsOf(r, 'plug_stat')),
 );
 check(
   'the server-side search box is rendered',
   !!r.querySelector('input[type="search"][aria-label="Search metrics"]'),
 );
 
-console.log('B. toggling Built-in ON restarts the keyset window at cursor 0 (both sources)');
+console.log('B. the source pair narrows server-side (cursor 0) and both-off is a legal empty read');
 services.invalidate(); // same-key windows are cached — record this window fresh
 pageCalls.length = 0;
-setToggle(tgBuiltin, true);
+setToggle(tgBuiltin, false);
 await sleep(DEBOUNCE);
 check(
-  'the toggle restarts the window: (query "", filter "", cursor 0, 100)',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', 0, 100]),
+  'Built-in OFF → (query "", origin "mine", scope "", denominator "", cursor 0, 100)',
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'mine', '', '', 0, 100]),
   JSON.stringify(pageCalls[0]),
 );
 check(
-  'all four rows render with the Builtins header',
-  JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate', 'adr_avg', 'my_kd', 'plug_stat']) &&
-    headersOf(r).includes('Builtins'),
+  'the mine partition renders (Yours + Plugins headers, no Builtins)',
+  JSON.stringify(namesOf(r)) === JSON.stringify(['adr_avg', 'my_kd', 'plug_stat']) &&
+    JSON.stringify(headersOf(r)) === JSON.stringify(['Yours', 'Plugins']),
   JSON.stringify(namesOf(r)) + ' headers=' + JSON.stringify(headersOf(r)),
 );
-
-console.log('C. Built-in only → both off (empty list is legal) → back to mine');
 services.invalidate();
 pageCalls.length = 0;
 setToggle(tgMine, false);
 await sleep(DEBOUNCE);
 check(
-  'mine OFF → (query "", filter "builtin", cursor 0, 100)',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'builtin', 0, 100]),
-  JSON.stringify(pageCalls[0]),
-);
-check(
-  'only the builtin row renders (Yours/Plugins headers gone)',
-  JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate']) &&
-    !headersOf(r).includes('Yours') &&
-    !headersOf(r).includes('Plugins'),
-  JSON.stringify(namesOf(r)) + ' headers=' + JSON.stringify(headersOf(r)),
-);
-services.invalidate();
-pageCalls.length = 0;
-setToggle(tgBuiltin, false);
-await sleep(DEBOUNCE);
-check(
-  'both off → (query "", filter "none", cursor 0, 100) — a legal empty read',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'none', 0, 100]),
+  'both source toggles off → origin "none" — a legal empty read',
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'none', '', '', 0, 100]),
   JSON.stringify(pageCalls[0]),
 );
 check(
@@ -429,36 +471,131 @@ check(
 );
 services.invalidate();
 pageCalls.length = 0;
+setToggle(tgBuiltin, true);
+await sleep(DEBOUNCE);
+check(
+  'Built-in back ON (My metrics still off) → origin "builtin" — the built-in partition',
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'builtin', '', '', 0, 100]) &&
+    JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate']),
+  JSON.stringify(pageCalls[0]) + ' rows=' + JSON.stringify(namesOf(r)),
+);
+services.invalidate();
+pageCalls.length = 0;
 setToggle(tgMine, true);
 await sleep(DEBOUNCE);
 check(
-  'mine back ON → (query "", filter "mine", cursor 0, 100) — cursor reset again',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'mine', 0, 100]),
+  'both source toggles back on → the whole catalog window again',
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', 0, 100]) &&
+    rowsOf(r).length === 4,
+  JSON.stringify(pageCalls[0]) + ' rows=' + rowsOf(r).length,
+);
+
+console.log('C. the scope and denominator pairs narrow the same server call (the denominator-less rule holds)');
+services.invalidate();
+pageCalls.length = 0;
+setToggle(tgMatch, false); // Profile only
+await sleep(DEBOUNCE);
+check(
+  'Match OFF → (query "", origin "", scope "profile", denominator "", cursor 0, 100)',
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', 'profile', '', 0, 100]),
   JSON.stringify(pageCalls[0]),
 );
 check(
-  'the mine rows render again',
+  'Profile only → the empty state (the fixture carries no profile-scoped metric)',
+  rowsOf(r).length === 0 && r.textContent.includes('No metrics to show.'),
+  `rows=${rowsOf(r).length}`,
+);
+services.invalidate();
+pageCalls.length = 0;
+setToggle(tgProfile, false); // both scope toggles off
+await sleep(DEBOUNCE);
+check(
+  'both scope toggles off → scope "none" — the same legal empty read as origin',
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', 'none', '', 0, 100]) &&
+    rowsOf(r).length === 0 &&
+    r.textContent.includes('No metrics to show.'),
+  JSON.stringify(pageCalls[0]) + ' rows=' + rowsOf(r).length,
+);
+services.invalidate();
+pageCalls.length = 0;
+setToggle(tgMatch, true); // Match only
+await sleep(DEBOUNCE);
+check(
+  'Match back ON (Profile still off) → scope "match" — cursor reset again',
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', 'match', '', 0, 100]) &&
+    rowsOf(r).length === 4,
+  JSON.stringify(pageCalls[0]) + ' rows=' + rowsOf(r).length,
+);
+services.invalidate();
+pageCalls.length = 0;
+setToggle(tgProfile, true);
+await sleep(DEBOUNCE);
+check(
+  'both scope toggles on → scope "" — no narrowing',
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', 0, 100]) && rowsOf(r).length === 4,
+  JSON.stringify(pageCalls[0]) + ' rows=' + rowsOf(r).length,
+);
+services.invalidate();
+pageCalls.length = 0;
+setToggle(tgRounds, false); // Matches only
+await sleep(DEBOUNCE);
+check(
+  'Rounds OFF → (…, denominator "matches", cursor 0, 100)',
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', 'matches', 0, 100]),
+  JSON.stringify(pageCalls[0]),
+);
+check(
+  'Matches only → the matches metric AND both denominator-less rows (the no-denominator rule)',
   JSON.stringify(namesOf(r)) === JSON.stringify(['adr_avg', 'my_kd', 'plug_stat']),
   JSON.stringify(namesOf(r)),
 );
-
-console.log('D. built-in immutability: the builtin row exposes no edit and no delete control');
 services.invalidate();
 pageCalls.length = 0;
-setToggle(tgBuiltin, true); // both on: builtin + user rows side by side
+setToggle(tgMatches, false); // both denominator toggles off
 await sleep(DEBOUNCE);
 check(
-  'both on → (query "", filter "", cursor 0, 100)',
-  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', 0, 100]),
+  'both denominator toggles off → denominator "none"',
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', 'none', 0, 100]),
   JSON.stringify(pageCalls[0]),
 );
+check(
+  'both off → ONLY the denominator-less rows: they pass whatever the pair says',
+  JSON.stringify(namesOf(r)) === JSON.stringify(['adr_avg', 'plug_stat']),
+  JSON.stringify(namesOf(r)),
+);
+services.invalidate();
+pageCalls.length = 0;
+setToggle(tgRounds, true); // Rounds only
+await sleep(DEBOUNCE);
+check(
+  'Rounds back ON (Matches off) → the rounds metric + the denominator-less rows',
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', 'rounds', 0, 100]) &&
+    JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate', 'adr_avg', 'plug_stat']),
+  JSON.stringify(pageCalls[0]) + ' rows=' + JSON.stringify(namesOf(r)),
+);
+services.invalidate();
+pageCalls.length = 0;
+setToggle(tgMatches, true);
+await sleep(DEBOUNCE);
+check(
+  'both denominator toggles on → denominator "" — all four rows again',
+  JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', 0, 100]) && rowsOf(r).length === 4,
+  JSON.stringify(pageCalls[0]) + ' rows=' + rowsOf(r).length,
+);
+
+console.log('D. a built-in row loads the editor READ-ONLY: Save disabled, chip present, no delete');
 {
   const bRow = rowNamed(r, 'trade_rate');
   const uRow = rowNamed(r, 'adr_avg');
+  const pRow = rowNamed(r, 'plug_stat');
+  const saveBtn = () => saveButton(r);
+  const chip = () => formChip(r);
+  const REASON = "Built-in metrics can't be edited";
+
   check('the builtin row renders', !!bRow, JSON.stringify(namesOf(r)));
   check(
-    'the builtin row main area is plain content — NO edit button',
-    !!bRow && !bRow.querySelector('button.bld-row-main') && !!bRow.querySelector('div.bld-row-main'),
+    'the builtin row main area is a button, like every other row',
+    !!bRow && !!bRow.querySelector('button.bld-row-main'),
     bRow ? [...bRow.children].map((c) => c.className || c.tagName).join(' | ') : 'no row',
   );
   check(
@@ -473,22 +610,11 @@ check(
       !!bRow.querySelector('[aria-label="Preview trade_rate"]'),
   );
   check(
-    'a user row still HAS an edit button and a delete control',
-    !!uRow &&
-      !!uRow.querySelector('button.bld-row-main') &&
-      !!uRow.querySelector('[aria-label="Delete adr_avg"]'),
+    'a user row still HAS a delete control',
+    !!uRow && !!uRow.querySelector('[aria-label="Delete adr_avg"]'),
     uRow ? [...uRow.children].map((c) => c.className || c.tagName).join(' | ') : 'no row',
   );
-  // The form is untouched: heading "New metric", empty name field.
-  check('the form starts at "New metric"', heading(r) === 'New metric', heading(r));
-  click(bRow.querySelector('div.bld-row-main'));
-  await sleep(60);
-  check(
-    'clicking the builtin main area does NOT load the form',
-    heading(r) === 'New metric' && r.querySelector('#bld-name')?.value === '',
-    `heading=${heading(r)} name=${r.querySelector('#bld-name')?.value}`,
-  );
-  // The builtin still pins.
+  // The builtin still pins (round trip — the pin state is left as found).
   const pinBtn = bRow.querySelector('[aria-label="Toggle pin for trade_rate"]');
   click(pinBtn);
   await sleep(40);
@@ -498,8 +624,103 @@ check(
       pinBtn.getAttribute('title') === 'Unpin from scoreboard',
     `class=${pinBtn.className} title=${pinBtn.getAttribute('title')}`,
   );
-  click(pinBtn); // leave the pin state as it was found
+  click(pinBtn);
   await sleep(40);
+
+  // The form is untouched: heading "New metric", empty name field.
+  check('the form starts at "New metric"', heading(r) === 'New metric', heading(r));
+  click(bRow.querySelector('button.bld-row-main'));
+  await sleep(60);
+  check(
+    'clicking the builtin row loads it into the editor',
+    heading(r) === 'Edit metric' && r.querySelector('#bld-name')?.value === 'trade_rate',
+    `heading=${heading(r)} name=${r.querySelector('#bld-name')?.value}`,
+  );
+  check(
+    'the loaded definition fills every field (title, expression, scope, format, denominator, doc)',
+    r.querySelector('#bld-title')?.value === 'Trade rate' &&
+      (r.querySelector('#bld-expr')?.value || '').includes('ratio(sum(trade_kills)') &&
+      r.querySelector('#bld-scope')?.value === 'match' &&
+      r.querySelector('#bld-format')?.value === 'percent' &&
+      r.querySelector('#bld-denom')?.value === 'rounds' &&
+      (r.querySelector('#bld-doc')?.value || '').includes('trade successes'),
+    `title=${r.querySelector('#bld-title')?.value} denom=${r.querySelector('#bld-denom')?.value}`,
+  );
+  check(
+    'the read-only chip is present, worded for the user',
+    !!chip() && chip().textContent.trim() === 'built-in' && chip().getAttribute('title') === REASON,
+    chip() ? `${chip().className} title=${chip().getAttribute('title')}` : 'no chip',
+  );
+  check(
+    'Save is DISABLED and states the reason',
+    !!saveBtn() &&
+      saveBtn().disabled &&
+      saveBtn().getAttribute('title') === REASON &&
+      saveBtn().textContent.trim() === 'Save metric',
+    saveBtn()
+      ? `disabled=${saveBtn().disabled} text="${saveBtn().textContent.trim()}" title=${saveBtn().getAttribute('title')}`
+      : 'no Save button',
+  );
+  check(
+    'the note under the buttons repeats the same reason',
+    (r.querySelector('.bld-actions .bld-note')?.textContent || '').includes(REASON),
+    r.querySelector('.bld-actions .bld-note')?.textContent?.replace(/\s+/g, ' ').trim(),
+  );
+
+  // Dirtying the form must NEVER re-enable Save for a loaded built-in.
+  type(r.querySelector('#bld-name'), 'trade_rate_edited');
+  await sleep(20);
+  check(
+    'editing the loaded built-in keeps Save disabled (the dirty flag never re-enables it)',
+    !!saveBtn() && saveBtn().disabled && !!chip() && heading(r) === 'Edit metric',
+    `disabled=${saveBtn().disabled} chip=${!!chip()}`,
+  );
+
+  // → a USER row restores the fully editable state.
+  click(uRow.querySelector('button.bld-row-main'));
+  await sleep(60);
+  check(
+    'loading a user metric restores the editable state (Save on, no chip)',
+    heading(r) === 'Edit metric' &&
+      r.querySelector('#bld-name')?.value === 'adr_avg' &&
+      !saveBtn().disabled &&
+      !chip(),
+    `name=${r.querySelector('#bld-name')?.value} disabled=${saveBtn().disabled} chip=${!!chip()}`,
+  );
+
+  // → back to the built-in: read-only again.
+  click(bRow.querySelector('button.bld-row-main'));
+  await sleep(60);
+  check(
+    'loading the built-in again re-disables Save and brings the chip back',
+    r.querySelector('#bld-name')?.value === 'trade_rate' && !!saveBtn()?.disabled && !!chip(),
+    `disabled=${saveBtn()?.disabled} chip=${!!chip()}`,
+  );
+
+  // → a PLUGIN row keeps its OWN chip with an enabled Save (it forks).
+  click(pRow.querySelector('button.bld-row-main'));
+  await sleep(60);
+  check(
+    'a plugin row loads with the plugin chip and an enabled Save (fork-on-save)',
+    r.querySelector('#bld-name')?.value === 'plug_stat' &&
+      !!chip() &&
+      chip().textContent.trim() === 'read-only source' &&
+      !saveBtn().disabled,
+    `name=${r.querySelector('#bld-name')?.value} chip=${chip() && chip().textContent.trim()} disabled=${saveBtn().disabled}`,
+  );
+
+  // → New resets everything (the reset transition, both ways pinned).
+  const newBtn = [...r.querySelectorAll('.bld-list button')].find((b) => b.textContent.includes('New'));
+  click(newBtn);
+  await sleep(60);
+  check(
+    'New resets to the fresh editable state (heading, empty form, Save on, no chip)',
+    heading(r) === 'New metric' &&
+      r.querySelector('#bld-name')?.value === '' &&
+      !saveBtn().disabled &&
+      !chip(),
+    `heading=${heading(r)} name=${r.querySelector('#bld-name')?.value} disabled=${saveBtn().disabled} chip=${!!chip()}`,
+  );
 }
 
 console.log('E. the builtin PREVIEWS from its STORED rows — a saved read never calculates');
@@ -583,16 +804,19 @@ console.log('F. a user row still loads the form for editing (unaffected)');
   );
 }
 
-console.log('G. the search composes with the filter in ONE server call');
+console.log('G. the search composes with the filters in ONE server call');
 {
   const search = r.querySelector('input[type="search"][aria-label="Search metrics"]');
   services.invalidate();
   pageCalls.length = 0;
+  setToggle(tgBuiltin, false); // narrow the origin first…
+  await sleep(DEBOUNCE);
+  pageCalls.length = 0; // …so the typing below is the only call recorded
   type(search, 'adr');
   await sleep(DEBOUNCE);
   check(
-    'typing restarts the window with BOTH narrowings: (query "adr", filter "", cursor 0, 100)',
-    JSON.stringify(pageCalls[0]) === JSON.stringify(['adr', '', 0, 100]),
+    'typing restarts the window with BOTH narrowings: (query "adr", origin "mine", scope "", denominator "", cursor 0, 100)',
+    JSON.stringify(pageCalls[0]) === JSON.stringify(['adr', 'mine', '', '', 0, 100]),
     JSON.stringify(pageCalls[0]),
   );
   check(
@@ -605,49 +829,80 @@ console.log('G. the search composes with the filter in ONE server call');
   type(search, '');
   await sleep(DEBOUNCE);
   check(
-    'clearing the query restores the full partition window',
-    JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', 0, 100]) && rowsOf(r).length === 4,
+    'clearing the query restores the mine partition window',
+    JSON.stringify(pageCalls[0]) === JSON.stringify(['', 'mine', '', '', 0, 100]) &&
+      JSON.stringify(namesOf(r)) === JSON.stringify(['adr_avg', 'my_kd', 'plug_stat']),
+    JSON.stringify(pageCalls[0]) + ' rows=' + JSON.stringify(namesOf(r)),
+  );
+  services.invalidate();
+  pageCalls.length = 0;
+  setToggle(tgBuiltin, true);
+  await sleep(DEBOUNCE);
+  check(
+    'Built-in back ON → the whole catalog window again',
+    JSON.stringify(pageCalls[0]) === JSON.stringify(['', '', '', '', 0, 100]) && rowsOf(r).length === 4,
     JSON.stringify(pageCalls[0]) + ' rows=' + rowsOf(r).length,
   );
 }
 
-console.log('H. the toggles are view-local registry state (restore, then reset to defaults)');
+console.log('H. the toggles are view-local registry state (restore all six, then reset to defaults)');
 {
-  // Leave a DISTINCT toggle state (Built-in ON, My metrics OFF) behind.
+  // Leave a DISTINCT state behind — one key OFF from EACH pair, so the
+  // restore proves every one of the six keys round-trips.
+  const six = (t) =>
+    [t.builtin, t.mine, t.match, t.profile, t.rounds, t.matches].map((b) => !!b && pressed(b));
   services.invalidate();
-  setToggle(tgMine, false);
+  pageCalls.length = 0;
+  setToggle(tgBuiltin, false);
+  await sleep(DEBOUNCE);
+  services.invalidate();
+  pageCalls.length = 0;
+  setToggle(tgMatches, false);
   await sleep(DEBOUNCE);
   check(
-    'the parting state is Built-in only',
-    JSON.stringify(pageCalls[pageCalls.length - 1]) === JSON.stringify(['', 'builtin', 0, 100]) &&
-      JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate']),
+    'the parting state is mine + Rounds (Built-in OFF, Matches OFF)',
+    JSON.stringify(pageCalls[pageCalls.length - 1]) ===
+      JSON.stringify(['', 'mine', '', 'rounds', 0, 100]) &&
+      JSON.stringify(namesOf(r)) === JSON.stringify(['adr_avg', 'plug_stat']),
     JSON.stringify(pageCalls[pageCalls.length - 1]) + ' rows=' + JSON.stringify(namesOf(r)),
   );
   r = await mountBuilder(); // unmount → remount, registry intact
-  const tgB2 = toggle(r, 'Built-in');
-  const tgM2 = toggle(r, 'My metrics');
+  const t2 = {
+    builtin: toggle(r, 'Built-in'),
+    mine: toggle(r, 'My metrics'),
+    match: toggle(r, 'Match'),
+    profile: toggle(r, 'Profile'),
+    rounds: toggle(r, 'Rounds'),
+    matches: toggle(r, 'Matches'),
+  };
   check(
-    'unmount → remount restores the toggles (Built-in ON, My metrics OFF)',
-    !!tgB2 && pressed(tgB2) && !!tgM2 && !pressed(tgM2),
-    `builtin=${tgB2 && pressed(tgB2)} mine=${tgM2 && pressed(tgM2)}`,
+    'unmount → remount restores ALL six toggles (only Built-in + Matches off)',
+    JSON.stringify(six(t2)) === JSON.stringify([false, true, true, true, true, false]),
+    JSON.stringify(six(t2)),
   );
   check(
-    '…and the restored view shows the restored partition',
-    JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate']),
+    '…and the restored view shows the restored rows',
+    JSON.stringify(namesOf(r)) === JSON.stringify(['adr_avg', 'plug_stat']),
     JSON.stringify(namesOf(r)),
   );
   viewstate.resetViewState();
   r = await mountBuilder();
-  const tgB3 = toggle(r, 'Built-in');
-  const tgM3 = toggle(r, 'My metrics');
+  const t3 = {
+    builtin: toggle(r, 'Built-in'),
+    mine: toggle(r, 'My metrics'),
+    match: toggle(r, 'Match'),
+    profile: toggle(r, 'Profile'),
+    rounds: toggle(r, 'Rounds'),
+    matches: toggle(r, 'Matches'),
+  };
   check(
-    'resetViewState() → the next mount is back to the defaults (OFF / ON)',
-    !!tgB3 && !pressed(tgB3) && !!tgM3 && pressed(tgM3),
-    `builtin=${tgB3 && pressed(tgB3)} mine=${tgM3 && pressed(tgM3)}`,
+    'resetViewState() → the next mount is back to the defaults (all six ON)',
+    JSON.stringify(six(t3)) === JSON.stringify([true, true, true, true, true, true]),
+    JSON.stringify(six(t3)),
   );
   check(
-    '…and the default view is the mine partition again',
-    JSON.stringify(namesOf(r)) === JSON.stringify(['adr_avg', 'my_kd', 'plug_stat']),
+    '…and the default view is the whole catalog again',
+    JSON.stringify(namesOf(r)) === JSON.stringify(['trade_rate', 'adr_avg', 'my_kd', 'plug_stat']),
     JSON.stringify(namesOf(r)),
   );
 }
