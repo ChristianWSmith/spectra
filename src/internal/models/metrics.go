@@ -45,6 +45,23 @@ type MetricValue struct {
 	N        int     `json:"n"` // sample size behind the value
 }
 
+// MetricSeriesPoint is ONE fresh stored match-grain value carrying the
+// match's trend-position fields (store.GetPlayerMetricSeries): the value
+// plus Patch and ExtractedAt — the sparkline's x axis and its tooltip's
+// "when" (CS2 patch order, import time as the within-patch tiebreaker;
+// see store.GetTrend's doc). Like MetricValue it carries NO stamps:
+// metric_version / rule_version / computed_at stay internal, while
+// patch/imported-at are MATCH facts (already public on every match DTO),
+// never metric-version state.
+type MetricSeriesPoint struct {
+	MetricID    int64     `json:"metricId"`
+	MatchID     int64     `json:"matchId"`
+	Value       float64   `json:"value"`
+	N           int       `json:"n"` // sample size behind the value
+	Patch       int       `json:"patch"`
+	ExtractedAt time.Time `json:"extractedAt"` // the match's import time
+}
+
 // MetricListPage is one keyset window of the metric-definition list (the
 // Builder's "Load more" pagination): Rows is the window, in ListMetrics'
 // canonical builtin→user→plugin/name order, and HasNext reports whether

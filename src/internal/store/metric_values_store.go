@@ -190,7 +190,9 @@ func (s *Store) InsertMetricValues(metricID int64, metricVersion, ruleVersion in
 //
 // ONE read per value surface: GetMetricValuesForMatch (the match grain —
 // scoreboard pins, Reports appendix) and GetMetricValuesForPlayer (the
-// career grain — PlayerProfile's panel, Builder's saved preview). Both
+// career grain — PlayerProfile's panel, Builder's saved preview), plus
+// GetPlayerMetricSeries (the match-grain SERIES — the profile's trend
+// and history cells, dogfooding design §3.5 W3g/D13). All three
 // serve FRESH rows only — the SAME metricValueFreshCond the sweep's
 // selection and MetricCoverage spell (design §4: one predicate, shared
 // by sweep and read), so an outdated row never leaves the store and no
@@ -305,6 +307,100 @@ func (s *Store) GetMetricValuesForPlayer(steamID string, metricIDs []int64) ([]m
 	out, err := scanMetricValues(rows)
 	if err != nil {
 		return nil, fmt.Errorf("store: metric values for player: %w", err)
+	}
+	return out, nil
+}
+
+// seriesMetric is one metric's series-read parameters: the definition id
+// GetPlayerMetricSeries filters on, plus the display scale its format
+// tag implies. Percent metrics store a 0..1 FRACTION while the profile's
+// trend and history DTOs have always carried the 0..100 percent their
+// consumers render (fmtPercent / the sparkline's fmtProfileMetric) — so
+// the format tag drives the same display-unit conversion the design's
+// report read-back applies (§3.6: "percent values ×100"). That is a unit
+// conversion on a FRESH stored value, never a recomputation: a match with
+// no fresh row never reaches this line (the series read omits it).
+type seriesMetric struct {
+	id    int64
+	scale float64
+}
+
+// seriesMetricFor resolves a SEED metric name (adr|kast|kd|hs_pct) to
+// its seriesMetric. ok=false when the catalog carries no such definition
+// — the caller then renders an honest empty series / nil cells instead
+// of falling back to Go arithmetic.
+func (s *Store) seriesMetricFor(seedName string) (seriesMetric, bool, error) {
+	def, err := s.GetMetricByName(seedName)
+	if errors.Is(err, ErrNotFound) {
+		return seriesMetric{}, false, nil
+	}
+	if err != nil {
+		return seriesMetric{}, false, err
+	}
+	m := seriesMetric{id: def.ID, scale: 1}
+	if def.Format == "percent" {
+		m.scale = 100
+	}
+	return m, true, nil
+}
+
+// GetPlayerMetricSeries is THE match-grain SERIES read — the one store
+// read behind the profile's trend sparkline and match-history cells
+// (dogfooding design §3.5's gated sub-wave W3g / D13): every FRESH
+// stored row of the requested metrics for ONE subject at match grain
+// (match_id > 0), carrying the match's patch and import time.
+//
+// Same honesty rules as the two canonical reads above: FRESH rows only
+// (metricValueFreshCond — the ONE spelling; an outdated row is present
+// but never served), and an ABSENT row is ABSENT — a match the compute
+// pass produced no fresh row for does not appear, so the caller renders
+// an honest gap (the sparkline's ≥2-point requirement does the rest)
+// and never a recomputed or fabricated number.
+//
+// The row order IS the trend's x axis (the rationale lives on GetTrend's
+// doc, which used to spell this query): known CS2 patch numbers
+// ascending, unknowns (patch_version = 0 — the column default, never
+// "patch 0") trailing, then m.extracted_at ASC (the within-patch
+// tiebreaker), m.id ASC, and finally v.metric_id ASC so a multi-metric
+// request is deterministic inside one match.
+//
+// HUMANS ONLY (HumanOnlyBySteamID): the compute pass never writes a bot
+// row, and the guard keeps a bot id from ever resolving to a series —
+// the same contract GetTrend has always documented (this is the profile
+// read reachable from a bare /player/<id> URL).
+func (s *Store) GetPlayerMetricSeries(steamID string, metricIDs []int64) ([]models.MetricSeriesPoint, error) {
+	cfg, err := s.GetConfig()
+	if err != nil {
+		return nil, fmt.Errorf("store: metric values series: %w", err)
+	}
+	idCond, idArgs := metricIDsCond(metricIDs)
+	q := `SELECT v.metric_id, v.match_id, v.value, v.n, mt.patch_version, mt.extracted_at
+		FROM metric_values v
+		JOIN metrics m ON m.id = v.metric_id
+		JOIN matches mt ON mt.id = v.match_id
+		WHERE ` + metricValueFreshCond + `
+		  AND v.steam_id = ? AND v.match_id > 0 AND mt.extracted_at IS NOT NULL
+		  AND ` + HumanOnlyBySteamID("v.steam_id", "v.match_id") + idCond + `
+		ORDER BY (mt.patch_version = 0) ASC, mt.patch_version ASC,
+		         mt.extracted_at ASC, mt.id ASC, v.metric_id ASC`
+	args := append([]any{cfg.RuleVersion, scrub(steamID)}, idArgs...)
+	rows, err := s.db.Query(q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("store: metric values series: %w", err)
+	}
+	defer rows.Close()
+	var out []models.MetricSeriesPoint
+	for rows.Next() {
+		var p models.MetricSeriesPoint
+		var extracted sql.NullTime
+		if err := rows.Scan(&p.MetricID, &p.MatchID, &p.Value, &p.N, &p.Patch, &extracted); err != nil {
+			return nil, fmt.Errorf("store: metric values series: %w", err)
+		}
+		p.ExtractedAt = nullTime(extracted)
+		out = append(out, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("store: metric values series: %w", err)
 	}
 	return out, nil
 }
