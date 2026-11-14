@@ -102,11 +102,12 @@ func builtinOf(t *testing.T, svc *MetricsService) models.MetricRow {
 }
 
 // TestMetricDepsRoundTrip pins the edge contract across EVERY save
-// shape: create, display-only edit, expression edit (wholesale re-derive),
-// duplicate refs collapsing to one edge, and rename. The metric's version
-// stays untouched throughout — bumps are wave 3 and no save shape here is
-// a semantic edit the counter would answer (a rename changes no
-// semantics, a display-only edit changes none either).
+// shape: create, display-only edit, expression edit (wholesale re-
+// derive), duplicate refs collapsing to one edge, and rename. The
+// metric's version stays untouched by every shape HERE — display-only
+// and rename are not semantic edits (W3's bump answers expr/scope/
+// denominator only; an expression EDIT does bump, pinned by
+// TestSaveMetricCascadeBump in metricpass_test.go).
 func TestMetricDepsRoundTrip(t *testing.T) {
 	f := newDepsFixture(t)
 	builtin := builtinOf(t, f.svc)
@@ -390,7 +391,7 @@ func TestRenameSplicesDependents(t *testing.T) {
 		t.Errorf("name = %q, want renamed_up", renamed.Name)
 	}
 	if renamed.Version != 1 {
-		t.Errorf("version = %d, want 1 — a rename must not bump (bumps are wave 3)", renamed.Version)
+		t.Errorf("version = %d, want 1 — a rename must not bump (W3's bump answers semantics only)", renamed.Version)
 	}
 
 	// Every dependent's expression AND edge set follow the name.
@@ -541,9 +542,12 @@ func seedDepEventsMatch(t *testing.T, st *store.Store) int64 {
 }
 
 // seedStoredValue writes ONE metric_values row through a second SQLite
-// connection. It is a TEST FIXTURE, not a writer: the compute pass and
-// its writers are wave 3 and this package ships no production code that
-// writes the table (nothing here is exported).
+// connection. It is a TEST FIXTURE for the ref-join pins: production
+// writes flow through the W3 compute pass (metrics.Sweep →
+// store.InsertMetricValues) — this helper seeds an EXACT stamp state a
+// sweep would not naturally produce yet (e.g. a live upstream value
+// before the dependent computes), so a preview can be pinned without
+// running the pass first.
 func seedStoredValue(t *testing.T, dbPath string, metricID, matchID int64, steamID string, value float64, n, metricVersion, ruleVersion int) {
 	t.Helper()
 	db, err := sql.Open("sqlite", dbPath+"?_pragma=busy_timeout(5000)&_pragma=foreign_keys(1)")
@@ -630,7 +634,7 @@ func TestDraftRefsResolveAgainstSavedMetrics(t *testing.T) {
 		t.Fatalf("ad-hoc preview: %v", err)
 	}
 	if len(pv.Rows) != 0 {
-		t.Errorf("rows = %+v, want none (metric_values is empty until W3 — INNER drops the dependent)", pv.Rows)
+		t.Errorf("rows = %+v, want none (no live upstream row exists — INNER drops the dependent; this fixture never runs a sweep)", pv.Rows)
 	}
 	if !strings.Contains(pv.SQL, "INNER JOIN metric_values") {
 		t.Errorf("preview SQL carries no ref join:\n%s", pv.SQL)
