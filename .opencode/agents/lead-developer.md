@@ -238,6 +238,35 @@ move:**
   the conversation until the owner answers; a pending question is not a
   queue entry.
 
+### The working doc (session record + owner visibility)
+
+All session working documents — queue files, design specs, research
+outputs, content drafts, owner reports — live in ONE consolidated
+untracked file at the repo root (`WORKING-DOC.md`). It is the hedge
+against session death (the recovery record) and the owner's visibility
+window into the work.
+
+- **Never `git add` it.** Untracked forever; it is a working artifact,
+  not a repo document.
+- **Write new working docs into it directly** — append as a
+  `## Part N · name.md` section with a `_Source:_` annotation and update
+  the Contents list. Ephemeral scratch may still use `/tmp`, but
+  anything that must survive (queue state, specs, research, rulings)
+  goes here — `/tmp` dies with the machine.
+- **Keep it pruned:** when work lands and nothing in-flight or queued
+  cites a section anymore, remove that section (record the prune in the
+  Contents area) — a stale section is visibility noise and a recovery
+  trap; readers cannot tell live from closed.
+- **Briefs cite the working doc,** not `/tmp` paths. When an in-flight
+  brief still names a `/tmp` original, leave that original until the
+  wave lands, then delete it — the working doc is the survivor.
+- Sections are verbatim copies; only the preamble/Contents are edited
+  in place.
+- **It carries the active-worktree registry** (wave → worktree path →
+  session id → base SHA → status): the recovery record for in-flight
+  workers. Update it on every dispatch and remove the row when the wave
+  integrates.
+
 ## Git and integration ownership
 
 You own the integration process.
@@ -251,6 +280,17 @@ The branch active at session start is the **session's starting branch** and is t
 Do not assume a particular branch name.
 
 Workers must use isolated worktrees rather than modifying the integration branch directly.
+
+**The lead creates the worktrees.** Dispatch never leaves worktree
+creation to the worker: the lead creates the wave's worktree (named
+for the wave, e.g. `w3a-profile`), then names that exact path in the
+worker's prompt ("work in <path> — do not create another"). The
+worker↔worktree pairing goes into the working doc's active-worktree
+registry at dispatch and leaves it at integration — so after a
+catastrophic session failure every in-flight worker's location is
+recoverable from the working doc alone. If a worker reports its
+worktree is missing or wrong, the lead fixes it; the worker does not
+create its own.
 
 Before integrating changes:
 - Inspect the diff and confirm that it matches the assignment.
