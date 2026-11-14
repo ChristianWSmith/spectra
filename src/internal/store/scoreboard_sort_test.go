@@ -7,21 +7,23 @@ import (
 	"github.com/ChristianWSmith/spectra/internal/models"
 )
 
-// TestGetScoreboardKDAndKDASorting pins the ORDER BY decision behind the
-// scoreboard's K/D and KDA columns: scoreboardSort maps "kd"/"kda" to the
-// bare identifiers `kd`/`kda`, which resolve ONLY through GetScoreboard's
-// result-column aliases (`kdPerMatchSQL AS kd` and
-// `(kills+assists)/max(deaths,1) AS kda`). Without the aliases SQLite
-// reports "no such column: kd" and sorting by either column fails
-// outright — the frontend's K/D and KDA headers were unusable.
+// TestGetScoreboardKDASorting pins the ORDER BY decision behind the
+// scoreboard's KDA column: scoreboardSort maps "kda" to the bare
+// identifier `kda`, which resolves ONLY through GetScoreboard's
+// result-column alias (`(kills+assists)/max(deaths,1) AS kda`).
+// Without the alias SQLite reports "no such column: kda" and sorting by
+// it fails outright — the frontend's KDA header was unusable.
 //
-// The fixture is built so the ratio orders differ from the kills order
-// (alice leads on kills at 10 but has the worst K/D at 10/10), so a query
-// that silently fell back to the map's kills default — or ordered by the
+// There is NO `kd` case any more: the K/D select/sort key left with the
+// report read-back (dogfooding W4 — reports render the stored `kd`
+// metric rows, no caller sorts by the Go column). The fixture is built
+// so the ratio order differs from the kills order (alice leads on kills
+// at 10 but has the worst KDA at (10+100)/10), so a query that
+// silently fell back to the map's kills default — or ordered by the
 // wrong expression — would put the wrong row first. This must fail on a
 // dropped alias AND on a wrong ordering. Mirrors TestGetScoreboardSorting
 // (store_test.go) with ratio-divergent data.
-func TestGetScoreboardKDAndKDASorting(t *testing.T) {
+func TestGetScoreboardKDASorting(t *testing.T) {
 	s := openMem(t)
 	id := saveTestMatch(t, s, "/d/kd-sort.dem", "sha-kd-sort", time.Now())
 	em := testExtracted("sha-kd-sort", time.Now())
@@ -32,11 +34,11 @@ func TestGetScoreboardKDAndKDASorting(t *testing.T) {
 	}
 	em.PlayerStats = []models.PlayerStats{
 		// alice: the most kills (kills order → first) but the worst
-		// ratios — kd 10/10 = 1.0, kda (10+100)/10 = 11.0.
+		// ratio — kda (10+100)/10 = 11.0.
 		{SteamID: "100", Name: "alice", Side: "ct", Kills: 10, Deaths: 10, Assists: 100, RoundsPlayed: 2},
-		// bob: kd 5/1 = 5.0 (best), kda (5+0)/1 = 5.0.
+		// bob: kda (5+0)/1 = 5.0.
 		{SteamID: "200", Name: "bob", Side: "t", Kills: 5, Deaths: 1, RoundsPlayed: 2},
-		// carl: kd 8/2 = 4.0, kda (8+0)/2 = 4.0.
+		// carl: kda (8+0)/2 = 4.0.
 		{SteamID: "300", Name: "carl", Side: "ct", Kills: 8, Deaths: 2, RoundsPlayed: 2},
 	}
 	if err := s.SaveExtracted(id, em); err != nil {
@@ -48,12 +50,9 @@ func TestGetScoreboardKDAndKDASorting(t *testing.T) {
 		desc    bool
 		want    []string
 	}{
-		// kd DESC → bob (5.0), carl (4.0), alice (1.0): NOT the kills
-		// order (alice first), so the kd expression is what ordered.
-		{"kd", true, []string{"200", "300", "100"}},
-		{"kd", false, []string{"100", "300", "200"}},
 		// kda DESC → alice (11.0), bob (5.0), carl (4.0): differs from
-		// both the kills order and the kd order above.
+		// the kills order (alice first either way for DESC, but ASC
+		// below inverts it), so the kda expression is what ordered.
 		{"kda", true, []string{"100", "200", "300"}},
 		{"kda", false, []string{"300", "200", "100"}},
 	}
@@ -73,8 +72,9 @@ func TestGetScoreboardKDAndKDASorting(t *testing.T) {
 		}
 	}
 
-	// The aliases are result columns only — the scanned KD/KDA values stay
-	// the computed ratios (floored denominator: alice's 10 deaths divide).
+	// The alias is a result column only — the scanned KDA value stays
+	// the computed ratio (floored denominator: alice's 10 deaths
+	// divide).
 	board, err := s.GetScoreboard(id, "kills", true)
 	if err != nil {
 		t.Fatalf("GetScoreboard(kills): %v", err)
@@ -86,8 +86,21 @@ func TestGetScoreboardKDAndKDASorting(t *testing.T) {
 	if alice.SteamID != "100" {
 		t.Fatalf("kills desc first = %q, want alice", alice.SteamID)
 	}
-	if alice.KD != 1.0 || alice.KDA != 11.0 {
-		t.Errorf("alice kd/kda = %v/%v, want 1/11 (kdPerMatchSQL, (kills+assists)/max(deaths,1))",
-			alice.KD, alice.KDA)
+	if alice.KDA != 11.0 {
+		t.Errorf("alice kda = %v, want 11 ((kills+assists)/max(deaths,1))", alice.KDA)
+	}
+
+	// A `kd` sort key is unknown now: it must fall back to the map's
+	// fixed default (kills DESC) instead of erroring on a dropped alias.
+	byKD, err := s.GetScoreboard(id, "kd", true)
+	if err != nil {
+		t.Fatalf("GetScoreboard(kd): %v", err)
+	}
+	stems := make([]string, len(byKD))
+	for i, r := range byKD {
+		stems[i] = r.SteamID
+	}
+	if len(byKD) != 3 || byKD[0].SteamID != "100" {
+		t.Errorf("kd sort key rows = %v, want the kills DESC fallback (alice first)", stems)
 	}
 }

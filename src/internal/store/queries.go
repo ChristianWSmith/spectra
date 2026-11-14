@@ -57,27 +57,29 @@ const (
 )
 
 // Shared SQL expressions — ONE definition per scope. K/D and KAST% are the
-// two metrics computed at both the per-match layer (one player_stats row of
-// one match) and the career layer (a player's whole history, GROUP BY
+// two metrics that exist at both the per-match layer (one player_stats row
+// of one match) and the career layer (a player's whole history, GROUP BY
 // steam_id); the two shapes are genuinely different SQL, so they stay
-// separate consts instead of one parameterized string. Keep them here, next
-// to each other: the whole point is that the trend/profile queries and the
-// scoreboard cannot drift from the career rollup.
+// separate consts instead of one parameterized string. Keep them here,
+// next to each other: the career rollup and the per-match spellings must
+// never drift from each other.
 //
 // Zero-denominator spelling, deliberate scope variants (do NOT unify):
 // the store floors the denominator — `MAX(deaths, 1)` — so a player with no
-// deaths reports K/D 0 instead of NULL, because the scoreboard cell is a
-// typed float with no "missing" state (the profile's trend gained honest
-// gaps when it moved to stored metric rows — dogfooding W3).
-// internal/metrics expresses the
-// same idea generically as `1.0*a1 / NULLIF(a2, 0)` (ratio()): there a NULL
-// denominator is the honest "no rows to divide by" the preview renders as
-// Value 0 with N, and the operands are user-chosen columns the compiler
-// cannot assume a floor for. Same intent, two scopes, two spellings.
+// deaths reports K/D 0 instead of NULL, because this is a typed float with
+// no "missing" state. The display surfaces moved to stored metric rows
+// (dogfooding W3/W4): the trend, history and report read-backs render the
+// metric's generic `ratio()` spelling (a NULL denominator is the honest
+// "no rows to divide by", shown as value 0 with N or as "—"). Same
+// intent, two scopes, two spellings.
 const (
-	// kdPerMatchSQL is kills/deaths for ONE match, deaths floored at 1
-	// (GetScoreboard's SELECT — the trend's per-match series read stored
-	// metric rows since dogfooding W3).
+	// kdPerMatchSQL is kills/deaths for ONE match, deaths floored at 1.
+	// RETIRED as a production read by dogfooding W4 — GetScoreboard's
+	// SELECT/sort lost it when the report templates switched to the
+	// stored `kd` metric rows — and kept as the reference oracle's
+	// expression in metric_series_read_test.go (the same fate
+	// kastPerMatchSQL met in W3); the aliases m/ps must exist in the
+	// outer query.
 	kdPerMatchSQL = `CAST(ps.kills AS REAL) / MAX(ps.deaths, 1)`
 
 	// kdCareerSQL is the career rollup's K/D (RebuildCareer): sums across
@@ -125,10 +127,12 @@ var matchListSort = map[string]string{
 }
 
 // scoreboardSort whitelists GetScoreboard sort keys (identifiers only).
-// `kd`/`kda` are GetScoreboard's SELECT aliases for the two computed
-// ratio expressions — ORDER BY reaches them only through the alias (see
-// the GetScoreboard doc comment; without it SQLite reports "no such
-// column: kd").
+// `kda` is GetScoreboard's SELECT alias for the computed ratio
+// expression — ORDER BY reaches it only through the alias (see the
+// GetScoreboard doc comment; without it SQLite reports "no such column:
+// kda"). There is no `kd` key any more: the K/D column left the
+// scoreboard with the report read-back (dogfooding W4) — the frontend
+// sorts K/D through the metric columns' `m:` path instead.
 var scoreboardSort = map[string]string{
 	"name":            "p.name",
 	"side":            "ps.side",
@@ -138,7 +142,6 @@ var scoreboardSort = map[string]string{
 	"headshots":       "ps.headshots",
 	"hs_pct":          "ps.hs_pct",
 	"adr":             "ps.adr",
-	"kd":              "kd",
 	"kda":             "kda",
 	"total_damage":    "ps.total_damage",
 	"damage_taken":    "ps.damage_taken",
@@ -750,12 +753,16 @@ func (s *Store) GetMatch(id int64) (*models.Match, error) {
 
 // GetScoreboard returns one player's-aggregate rows for a match, joined
 // with identity, sorted by a whitelisted sortKey (default kills DESC).
-// KD = kdPerMatchSQL (kills/max(deaths,1)); KDA = (kills+assists)/max(deaths,1).
-// Both ratio expressions are aliased `kd`/`kda` in the SELECT: the
-// scoreboardSort map orders by those bare identifiers, and ORDER BY can
+// KDA = (kills+assists)/max(deaths,1) — derived but inexpressible in the
+// metric grammar (N1), so it stays Go; it is aliased `kda` in the SELECT:
+// the scoreboardSort map orders by that bare identifier, and ORDER BY can
 // only reach a computed expression through its result-column alias (the
-// aliases are applied here, at the use site — kdPerMatchSQL itself stays
-// unaliased for GetTrend). Pinned by TestGetScoreboardKDAndKDASorting.
+// alias is applied here, at the use site — kdPerMatchSQL/kastPerMatchSQL
+// stay unaliased for their reference-oracle role in the store's tests).
+// The former `kd` select/sort key left with the report read-back
+// (dogfooding W4): reports render the stored `kd` metric rows now, no
+// caller sorts by it, and the frontend stopped reading row.kd in W2.
+// Pinned by TestGetScoreboardKDASorting.
 // BOTS ARE EXCLUDED (HumanOnly) — this is THE roster read, so every
 // consumer inherits the exclusion (Match's tables/cards and top-stats,
 // the Combat/Utility/Heatmaps/Economy/CompareRounds/RoundDetail/Reports/
@@ -775,7 +782,6 @@ func (s *Store) GetScoreboard(id int64, sortKey string, desc bool) ([]models.Pla
 		`SELECT ps.steam_id, p.name, p.is_bot, p.side, p.final_state_present,
 			ps.rounds_played, ps.kills, ps.deaths,
 			ps.assists, ps.flash_assists, ps.headshots, ps.hs_pct, ps.adr,
-			`+kdPerMatchSQL+` AS kd,
 			CAST(ps.kills + ps.assists AS REAL) / MAX(ps.deaths, 1) AS kda,
 			ps.total_damage, ps.damage_taken, ps.entry_kills, ps.entry_deaths,
 			ps.opening_kills, ps.opening_deaths, ps.trade_kills, ps.best_streak,
@@ -798,7 +804,7 @@ func (s *Store) GetScoreboard(id int64, sortKey string, desc bool) ([]models.Pla
 		if err := rows.Scan(
 			&r.SteamID, &r.Name, &r.IsBot, &r.Side, &r.FinalStatePresent,
 			&r.RoundsPlayed, &r.Kills, &r.Deaths,
-			&r.Assists, &r.FlashAssists, &r.Headshots, &r.HSPct, &r.ADR, &r.KD, &r.KDA, &r.TotalDamage,
+			&r.Assists, &r.FlashAssists, &r.Headshots, &r.HSPct, &r.ADR, &r.KDA, &r.TotalDamage,
 			&r.DamageTaken, &r.EntryKills, &r.EntryDeaths, &r.OpeningKills, &r.OpeningDeaths,
 			&r.TradeKills, &r.BestStreak, &r.TwoK, &r.ThreeK, &r.FourK, &r.FiveK, &r.UtilityDamage,
 			&r.EnemiesFlashed, &r.FlashedTimes, &r.BombPlants, &r.BombDefuses, &r.MVPs,

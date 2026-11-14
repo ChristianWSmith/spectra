@@ -46,12 +46,13 @@
 //	median(<col>)                  sugar for percentile(0.5, <col>)
 //	ratio(<a1>, <a2>)              1.0*a1 / NULLIF(a2, 0); a1/a2 are value
 //	                               aggregations (no nested ratio/percentile).
-//	                               Spelling note: the store's fixed K/D
-//	                               metric floors instead (MAX(deaths, 1),
-//	                               internal/store kdPerMatchSQL) — a typed
-//	                               float cell with no NULL state vs this
-//	                               generic compiler over user-chosen
-//	                               columns; both are deliberate.
+//	                               Spelling note: the store's career K/D
+//	                               rollup floors instead (MAX(SUM(deaths),
+//	                               1), internal/store kdCareerSQL) — a
+//	                               stored rollup column with no NULL state
+//	                               vs this generic compiler over
+//	                               user-chosen columns; both are
+//	                               deliberate.
 //	metric('<name>')               another SAVED metric's value — see
 //	                               "Metric references" below (exactly two
 //	                               legal positions, never elsewhere)

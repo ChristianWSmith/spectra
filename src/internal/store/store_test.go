@@ -394,7 +394,7 @@ func TestSaveExtractedRoundtrip(t *testing.T) {
 		t.Errorf("alice row mismatch: %+v", alice)
 	}
 	if alice.Kills != 10 || alice.Deaths != 0 || alice.Assists != 2 || alice.FlashAssists != 1 ||
-		alice.KD != 10 || alice.KDA != 12 {
+		alice.KDA != 12 {
 		t.Errorf("alice stats mismatch: %+v", alice)
 	}
 	if alice.HSPct != 40 || alice.ADR != 60 || alice.MoneySpent != 7500 ||
@@ -402,7 +402,7 @@ func TestSaveExtractedRoundtrip(t *testing.T) {
 		alice.KillsByWeapon != `{"ak47":10}` || alice.DamageByWeapon != `{"ak47":1200}` {
 		t.Errorf("alice detail mismatch: %+v", alice)
 	}
-	if bob.SteamID != "200" || bob.Name != "bob" || bob.Side != "t" || bob.KD != 2.5 || bob.KDA != 3 {
+	if bob.SteamID != "200" || bob.Name != "bob" || bob.Side != "t" || bob.KDA != 3 {
 		t.Errorf("bob row mismatch: %+v", bob)
 	}
 
