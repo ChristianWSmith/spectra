@@ -212,7 +212,8 @@ const docsSrc = readFileSync('src/lib/components/DocsPopup.svelte', 'utf8')
   .replace("from '../docs/registry.js'", `from '${libURL('docs/registry.js')}'`)
   .replace("from '../docs/markdown.js'", `from '${libURL('docs/markdown.js')}'`)
   .replace("from '../docs/manuals/index.js'", `from '${libURL('docs/manuals/index.js')}'`)
-  .replace("import '../docs/manuals/index.js';", `import '${libURL('docs/manuals/index.js')}';`);
+  .replace("import '../docs/manuals/index.js';", `import '${libURL('docs/manuals/index.js')}';`)
+  .replace("from '../strings/index.js'", `from '${libURL('strings/index.js')}'`);
 compileSvelte(docsSrc, 'DocsPopup.svelte', localURL('docspopup.js'));
 
 // Builder + its component deps — the compile discipline of

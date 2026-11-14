@@ -23,6 +23,7 @@
   import { listDocs, sectionAnchor } from '../docs/registry.js';
   import { parseBlocks } from '../docs/markdown.js';
   import '../docs/manuals/index.js'; // self-registering manuals
+  import * as S from '../strings/index.js'; // chrome copy (strings-audit Check B)
 
   let { open = false, section = null, token = 0, onClose = () => {} } = $props();
 
@@ -109,12 +110,12 @@
   <Dialog open={open} label={doc.title} backClass="doc-back" panelClass="doc-panel" {onClose}>
     <div class="doc-head">
       <h1>{doc.title}</h1>
-      <button class="btn" type="button" title="Close help" aria-label="Close help" onclick={onClose}>
+      <button class="btn" type="button" title={S.common.closeHelp} aria-label={S.common.closeHelp} onclick={onClose}>
         <span class="codicon codicon-close" aria-hidden="true"></span>
       </button>
     </div>
     <div class="doc-main">
-      <nav class="doc-toc" aria-label="Contents">
+      <nav class="doc-toc" aria-label={S.common.tocLabel}>
         {#if docs.length > 1}
           <div class="doc-switch">
             {#each docs as d, i (d.id)}
@@ -137,7 +138,7 @@
             onclick={() => goTo(s.id, true)}>{s.title}</button
           >
         {/each}
-        <button type="button" class="doc-toc-top" onclick={backToTop}>Back to top</button>
+        <button type="button" class="doc-toc-top" onclick={backToTop}>{S.common.backToTop}</button>
       </nav>
       <div class="doc-body" bind:this={bodyEl}>
         {#each doc.sections as s (s.id)}
@@ -147,7 +148,7 @@
                  tabindex -1 lets goTo() land focus on user navigation. -->
             <h2 id={sectionAnchor(doc.id, s.id)} tabindex="-1">{s.title}</h2>
             {#if s.placeholder}
-              <p class="doc-placeholder">Coming soon — this part of the guide isn't written yet.</p>
+              <p class="doc-placeholder">{S.common.guideComingSoon}</p>
             {:else}
               <DocBlocks blocks={blocksOf(s)} onNav={(id) => goTo(id, true)} />
             {/if}
