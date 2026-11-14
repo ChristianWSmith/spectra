@@ -22,12 +22,17 @@ import (
 // command palette render raw — time.Time would JSON-marshal the zero
 // value as "0001-01-01T00:00:00Z" (indistinguishable from a real value
 // for those readers) and add a time-of-day they don't want.
+//
+// Deliberately NO ADR field (dogfooding W4): the picker and the
+// suggestion rows read the stored `career_adr` metric rows through
+// services.careerAdrRows — the canonical career read — so a
+// Go-computed ADR never reaches a view while player_career.adr_avg is
+// written-only (Q4's dual-write).
 type ProfileSummary struct {
-	SteamID  string  `json:"steamId"`
-	Name     string  `json:"name"`
-	Matches  int     `json:"matches"`
-	LastSeen string  `json:"lastSeen"` // date of most recent match ("" if unknown)
-	ADRAvg   float64 `json:"adrAvg"`
+	SteamID  string `json:"steamId"`
+	Name     string `json:"name"`
+	Matches  int    `json:"matches"`
+	LastSeen string `json:"lastSeen"` // date of most recent match ("" if unknown)
 }
 
 // ProfileSide is the player's per-ROUND split by side (players switch
@@ -251,6 +256,9 @@ func mergeWeapons(rows []models.ProfileWeaponJSONs) []ProfileWeapon {
 }
 
 // ListPlayers searches profile identities ("" = all, ordered by recency).
+// The rows carry identity + recency only: the ADR the picker/suggestions
+// render comes from the stored `career_adr` metric rows (the frontend's
+// canonical career read), never from this Go path.
 func (s *ProfileService) ListPlayers(query string) ([]ProfileSummary, error) {
 	rows, err := s.st.ListPlayers(query)
 	if err != nil {
@@ -258,7 +266,7 @@ func (s *ProfileService) ListPlayers(query string) ([]ProfileSummary, error) {
 	}
 	out := make([]ProfileSummary, len(rows))
 	for i, r := range rows {
-		out[i] = ProfileSummary{SteamID: r.SteamID, Name: r.Name, Matches: r.Matches, ADRAvg: r.ADRAvg}
+		out[i] = ProfileSummary{SteamID: r.SteamID, Name: r.Name, Matches: r.Matches}
 		if !r.LastSeen.IsZero() {
 			out[i].LastSeen = r.LastSeen.Format("2006-01-02")
 		}

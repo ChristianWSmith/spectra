@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -291,5 +292,43 @@ func TestGetProfileWeapons(t *testing.T) {
 	}
 	if ak.Headshots > ak.Kills {
 		t.Errorf("ak47 headshots %d > kills %d", ak.Headshots, ak.Kills)
+	}
+}
+
+// TestListPlayersCarriesNoADR pins dogfooding W4's removal on the
+// service DTO: the picker rows carry identity + recency ONLY. The ADR
+// the player suggestions and the report picker render comes from the
+// stored `career_adr` metric rows (frontend services.careerAdrRows —
+// the canonical career read), so no Go-computed ADR may survive here,
+// not even as a field name — while RebuildCareer keeps WRITING
+// player_career.adr_avg (Q4's dual-write) and store.ListPlayers stops
+// selecting it.
+func TestListPlayersCarriesNoADR(t *testing.T) {
+	svc := newProfileFixture(t)
+	rows, err := svc.ListPlayers("")
+	if err != nil {
+		t.Fatalf("ListPlayers: %v", err)
+	}
+	if len(rows) == 0 {
+		t.Fatal("ListPlayers returned no rows (fixture ran RebuildCareer)")
+	}
+	raw, err := json.Marshal(rows)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if strings.Contains(string(raw), "adrAvg") {
+		t.Errorf("picker rows still carry an ADR field (second presentation path): %s", raw)
+	}
+	found := false
+	for _, r := range rows {
+		if r.Name == "alice" {
+			found = true
+			if r.Matches != 2 {
+				t.Errorf("alice matches = %d, want 2", r.Matches)
+			}
+		}
+	}
+	if !found {
+		t.Errorf("alice missing from %s", raw)
 	}
 }

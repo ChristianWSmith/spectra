@@ -147,14 +147,29 @@ bindings.LibraryService.ListMapNames = () =>
   Promise.resolve(['de_ancient', 'de_cache', 'de_mirage']);
 bindings.ProfileService.ListPlayers = () =>
   Promise.resolve([
-    { steamId: '76561198000000001', name: 'alice', matches: 3, adrAvg: 71.25, lastSeen: '2026-01-02' },
-    { steamId: '76561198000000002', name: 'bob', matches: 1, adrAvg: 55.5, lastSeen: '2026-01-01' },
+    { steamId: '76561198000000001', name: 'alice', matches: 3, lastSeen: '2026-01-02' },
+    { steamId: '76561198000000002', name: 'bob', matches: 1, lastSeen: '2026-01-01' },
     // A BOT in the source list (the pre-rule shape): the canonical
     // client-side filter (lib/players.js listedPlayers) must drop it —
     // the checks below pin that neither the suggestion list nor a typed
     // bot query ever surfaces it.
-    { steamId: '18374686479671623692', name: 'Crew', matches: 1, adrAvg: 40, lastSeen: '2026-01-03' },
+    { steamId: '18374686479671623692', name: 'Crew', matches: 1, lastSeen: '2026-01-03' },
   ]);
+// The suggestion row's career ADR comes from the STORED `career_adr`
+// bucket (SuggestInput → services.careerAdrRows), never from a
+// Go-computed field on the summary row — ProfileSummary dropped adrAvg
+// in dogfooding W4. The value below is deliberately NOT bob's old
+// adrAvg (55.5): the assertion pins the SOURCE, not the number.
+bindings.MetricsService.ListMetrics = () =>
+  Promise.resolve([
+    {
+      id: 71, name: 'career_adr', title: 'ADR', scope: 'profile', format: 'float1',
+      doc: 'Formula: avg(adr)', origin: 'builtin', shortName: 'ADR', denominator: '',
+      pluginId: '', expr: '',
+    },
+  ]);
+bindings.MetricsService.GetMetricValuesForPlayer = () =>
+  Promise.resolve([{ metricId: 71, steamId: '76561198000000002', value: 61.5, n: 1 }]);
 
 // pageOf mimics the store's keyset window over a scripted row array:
 // start AFTER the cursor row (afterID), take one window, report whether
@@ -256,11 +271,13 @@ const cdSrc = readFileSync('src/lib/components/ConfirmDialog.svelte', 'utf8').re
 );
 svelteCompile(cdSrc, 'ConfirmDialog.svelte', join(dir, 'confirmdialog.js'));
 
-// SuggestInput (the shared suggestion dropdown) imports Popover and the
-// plain-ESM fmt helper → local bundle + absolute module URL.
+// SuggestInput (the shared suggestion dropdown) imports Popover, the
+// plain-ESM fmt helper and services (the career ADR metric read) →
+// local bundle + absolute module URLs.
 const siSrc = readFileSync('src/lib/components/SuggestInput.svelte', 'utf8')
   .replace("from './Popover.svelte'", "from './popover.js'")
-  .replace("from '../fmt.js'", `from '${fileURL('src/lib/fmt.js')}'`);
+  .replace("from '../fmt.js'", `from '${fileURL('src/lib/fmt.js')}'`)
+  .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`);
 svelteCompile(siSrc, 'SuggestInput.svelte', join(dir, 'suggestinput.js'));
 
 // Library → its plain-ESM imports (services/fmt/teams) resolve from the
@@ -569,8 +586,10 @@ await sleep(20);
     JSON.stringify(rows.map((r) => r.textContent.trim())),
   );
   check(
-    'player row carries the profile summary (matches + ADR)',
-    rows[0].textContent.includes('1 match') && rows[0].textContent.includes('ADR 55.5'),
+    'player row carries matches + the STORED career ADR metric (never ListPlayers\' adrAvg)',
+    rows[0].textContent.includes('1 match') &&
+      rows[0].textContent.includes('ADR 61.5') &&
+      !rows[0].textContent.includes('55.5'),
     rows[0].textContent.trim(),
   );
 }

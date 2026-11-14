@@ -1174,6 +1174,12 @@ func (s *Store) GetCareer(steamID string) (*models.CareerRow, error) {
 // never lists — this is the Profiles list, CommandPalette's player search
 // and Library's player facet, so a bot is unselectable even on a database
 // whose player_career still carries pre-rule bot rows.
+//
+// This read no longer selects `c.adr_avg` (dogfooding W4): the picker's
+// ADR cell reads the stored `career_adr` metric rows through the
+// frontend's canonical career read, and player_career's derived columns
+// are written-only from here on (RebuildCareer's Q4 dual-write — no
+// production reader remains).
 func (s *Store) ListPlayers(query string) ([]models.CareerSummary, error) {
 	// MAX(extracted_at) is formatted via strftime: the scalar subquery's
 	// result loses the DATETIME declared type (the driver would hand back
@@ -1182,7 +1188,7 @@ func (s *Store) ListPlayers(query string) ([]models.CareerSummary, error) {
 		strftime('%Y-%m-%dT%H:%M:%fZ', (SELECT MAX(m.extracted_at) FROM player_stats ps
 			JOIN matches m ON m.id = ps.match_id
 			WHERE ps.steam_id = c.steam_id)),
-		c.updated_at, c.adr_avg
+		c.updated_at
 		FROM player_career c
 		WHERE ` + HumanOnlyBySteamID("c.steam_id", "")
 	var args []any
@@ -1204,7 +1210,7 @@ func (s *Store) ListPlayers(query string) ([]models.CareerSummary, error) {
 			last    sql.NullString
 			updated time.Time
 		)
-		if err := rows.Scan(&r.SteamID, &r.Name, &r.Matches, &last, &updated, &r.ADRAvg); err != nil {
+		if err := rows.Scan(&r.SteamID, &r.Name, &r.Matches, &last, &updated); err != nil {
 			return nil, fmt.Errorf("store: list players: %w", err)
 		}
 		r.LastSeen = updated

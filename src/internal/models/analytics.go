@@ -274,7 +274,6 @@ type CareerSummary struct {
 	Name     string    `json:"name"`
 	Matches  int       `json:"matches"`
 	LastSeen time.Time `json:"lastSeen"`
-	ADRAvg   float64   `json:"adrAvg"`
 }
 
 // ProfileHistoryRow is one match-history entry for a player profile.

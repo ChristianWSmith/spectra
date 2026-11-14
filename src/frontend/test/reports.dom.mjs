@@ -116,7 +116,8 @@ const matchPickerSrc = readFileSync('src/lib/components/MatchPicker.svelte', 'ut
   .replace("from './Popover.svelte'", "from './popover.js'");
 svelteCompile(matchPickerSrc, 'MatchPicker.svelte', join(dir, 'matchpicker.js'));
 const playerPickerSrc = readFileSync('src/lib/components/PlayerPicker.svelte', 'utf8')
-  .replace("from '../fmt.js'", `from '${fileURL('src/lib/fmt.js')}'`);
+  .replace("from '../fmt.js'", `from '${fileURL('src/lib/fmt.js')}'`)
+  .replace("from '../services.js'", `from '${fileURL('src/lib/services.js')}'`);
 svelteCompile(playerPickerSrc, 'PlayerPicker.svelte', join(dir, 'playerpicker.js'));
 
 // The view: plain-ESM imports resolve from their real module locations

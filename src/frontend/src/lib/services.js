@@ -824,6 +824,32 @@ export function getMetricValuesForPlayer(steamID, metricIDs) {
     MetricsService.GetMetricValuesForPlayer(steamID || '', metricIDs || []),
   );
 }
+// careerAdrRows is THE one fetch of the stored `career_adr` bucket for a
+// roster-sized surface (the player suggestions and the report picker's
+// career line — dogfooding W4): the definition resolved by NAME through
+// the catalog, then ONE batched career-grain read for the WHOLE bucket
+// (steamID "" — never per-player calls, the same shape Profiles' ADR
+// column uses), keyed steamId → {value, n}. Both underlying reads are
+// the cachedRead wrappers above, so concurrent widgets share one
+// backend call and a spectra:* flush is picked up by the next ask.
+// A definition missing from the catalog (or a failed read) yields an
+// EMPTY map: the caller renders the honest dash — never a Go-computed
+// number, never a fabricated 0.
+export function careerAdrRows() {
+  return listMetrics().then((defs) => {
+    const def = (defs || []).find(
+      (d) => d && d.name === 'career_adr' && (d.scope || 'match') === 'profile',
+    );
+    if (!def) return new Map();
+    return getMetricValuesForPlayer('', [def.id]).then((values) => {
+      const rows = new Map();
+      for (const v of values || []) {
+        if (v.metricId === def.id) rows.set(v.steamId, v);
+      }
+      return rows;
+    });
+  });
+}
 // getPlayerRefs is one match's roster (identity + final side + bot
 // flag) — Reports' appendix labels the stored rows with it (the value
 // read carries steam ids only; names stay a roster concern). Read-
