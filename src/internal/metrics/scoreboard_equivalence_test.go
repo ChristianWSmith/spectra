@@ -387,11 +387,12 @@ func TestStoredColumnSeedsEquivalence(t *testing.T) {
 // GetCombatStats' TradeOppMissed rule — the stored per-match counts
 // folded over the match's human roster, a missing row reading 0
 // (analytics.go: SELECT steam_id, missed FROM match_trade_opps, then
-// tradeOpp[sid] with the absent→0 fold). Two layers, both pinned while
-// the Go side still exists (W2b removes it with the column's switch):
-// the plain-SQL spelling of the rule (which outlives the Go code) and
-// the Go fold itself — W2b drops the second layer's block when
-// TradeOppMissed leaves models.CombatStat.
+// tradeOpp[sid] with the absent→0 fold). Originally two layers: the
+// plain-SQL spelling of the rule and the Go fold itself. Layer 2 was
+// dropped when W2b removed TradeOppMissed from models.CombatStat
+// (adoption-means-migration — the Go side no longer exists to
+// compare against); layer 1, the SQL rule, outlives the Go code and
+// remains the whole oracle.
 func TestMissedTradesEquivalence(t *testing.T) {
 	st := seededStore(t)
 	expr := seedExpr(t, st, "missed_trades")
@@ -423,22 +424,6 @@ func TestMissedTradesEquivalence(t *testing.T) {
 				}
 				if gotV != v {
 					t.Errorf("missed_trades[%s] = %v, want GetCombatStats' TradeOppMissed rule %v", sid, gotV, v)
-				}
-			}
-
-			// Layer 2 — the Go fold itself, while it exists (W2b):
-			// every roster player's TradeOppMissed equals the seed.
-			stats, err := st.GetCombatStats(matchID)
-			if err != nil {
-				t.Fatalf("GetCombatStats: %v", err)
-			}
-			if len(stats) != len(want) {
-				t.Fatalf("GetCombatStats rows = %d, roster rows = %d", len(stats), len(want))
-			}
-			for _, cs := range stats {
-				if got[cs.SteamID] != float64(cs.TradeOppMissed) {
-					t.Errorf("missed_trades[%s] = %v, want the Go TradeOppMissed %d",
-						cs.SteamID, got[cs.SteamID], cs.TradeOppMissed)
 				}
 			}
 		})
