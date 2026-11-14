@@ -33,7 +33,7 @@
   import Popover from '../components/Popover.svelte';
   import { seed, remember } from '../viewstate.svelte.js';
 
-  let { nav = () => {} } = $props();
+  let { nav = () => {}, openDocs = () => {} } = $props();
 
   // localStorage contract (M5 §2.1): TWO keys, one mechanism, routed by
   // the metric's scope (stored-metrics design §3) —
@@ -971,6 +971,21 @@
         metrics on a player profile.
       </p>
     </div>
+    <!-- Metric-language help: opens the docs popup AT the
+         metric-language section (openDocs prop — no navigation, the
+         Builder stays mounted behind the sheet). The global .spacer
+         inside .view-header right-aligns it (Library's header does the
+         same). Not a route: no hash change, no active treatment. -->
+    <div class="spacer"></div>
+    <button
+      class="btn"
+      type="button"
+      title="Metric language help"
+      aria-label="Metric language help"
+      onclick={() => openDocs('metric-language')}
+    >
+      <span class="codicon codicon-question" aria-hidden="true"></span>
+    </button>
   </header>
 
   {#if listError}

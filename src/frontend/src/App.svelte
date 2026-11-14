@@ -13,6 +13,7 @@
   import Profiles from './lib/views/Profiles.svelte';
   import CommandPalette from './lib/components/CommandPalette.svelte';
   import MapPackPrompt from './lib/components/MapPackPrompt.svelte';
+  import DocsPopup from './lib/components/DocsPopup.svelte';
   import PlayerProfile from './lib/views/PlayerProfile.svelte';
   import CompareRounds from './lib/views/CompareRounds.svelte';
   import { parseHash } from './lib/router.js';
@@ -73,6 +74,27 @@
   let originHash = $state('');
   let lastHash = location.hash;
   let mapPackPrompt = $state(null); // MapPackPrompt instance (bind:this)
+
+  // Documentation popup (the user guide) — TRANSIENT by State placement:
+  // dialogs never restore, so open/target live only in this $state (no
+  // URL, no viewstate registry, no storage). `docsSection` is the target
+  // for the NEXT open (null = the guide's top/TOC) and is cleared on
+  // close; `docsToken` bumps on every request so asking for the SAME
+  // section while already open still re-targets (the popup's scroll
+  // effect is value-keyed). Two entry points call openDocs: the sidebar
+  // Help button (null) and Builder's `?` ('metric-language').
+  let docsOpen = $state(false);
+  let docsSection = $state(null);
+  let docsToken = $state(0);
+  function openDocs(section) {
+    docsSection = section ?? null;
+    docsToken += 1;
+    docsOpen = true;
+  }
+  function closeDocs() {
+    docsOpen = false;
+    docsSection = null;
+  }
 
   // Keep-alive activation: true only while the ROUTE is the replay view
   // (the record is non-null only in scope, so route.name alone decides).
@@ -344,6 +366,23 @@
       </button>
     {/each}
     <div class="spacer"></div>
+    <!-- Help — opens the docs popup; NOT a route, so it never takes the
+         nav's active treatment and is never "the current view" (no
+         class:active, no aria-current, no nav() call, no hash change).
+         It is a button that wears the nav chrome, deliberately NOT in
+         NAV_ACTIONS — that list is navigations (hash + active(route)),
+         and overlay openers are actions. -->
+    <button
+      class="nav-item"
+      type="button"
+      title="Help"
+      aria-label="Help"
+      aria-haspopup="dialog"
+      aria-expanded={docsOpen}
+      onclick={() => openDocs(null)}
+    >
+      <span class="codicon codicon-question" aria-hidden="true"></span>
+    </button>
     <!-- Pinned bottom entries (Settings) — same list, split by the
          `bottom` flag; see mainActions above. -->
     {#each bottomActions as a (a.label)}
@@ -452,7 +491,7 @@
                nothing beneath the overlay, exactly like a replay route with
                no back. -->
         {:else if viewRoute.name === 'builder'}
-          <Builder {nav} />
+          <Builder {nav} {openDocs} />
         {:else if viewRoute.name === 'sql'}
           <SqlConsole {nav} />
         {:else if viewRoute.name === 'profiles'}
@@ -469,6 +508,9 @@
   </main>
   <CommandPalette {nav} />
   <MapPackPrompt bind:this={mapPackPrompt} />
+  <!-- The help side-sheet — transient overlay state (see openDocs
+       above), mounted beside the other App-level overlays. -->
+  <DocsPopup open={docsOpen} section={docsSection} token={docsToken} onClose={closeDocs} />
   <!-- Frame-probe HUD — the ?probe=1 operator readout (frameprobe.js;
        gated by probeLatched above — it renders ONLY with the param).
        Diagnostics, not product UI: aria-hidden, pointer-events: none
