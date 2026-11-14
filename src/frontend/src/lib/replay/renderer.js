@@ -1091,6 +1091,11 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // tick (see drawDeaths / drawPlayers' hit flash).
   let kills = [];
   let damages = []; // damages[slot] = [tick, …]
+  // Disconnect rows (bucket 'disconnect') — the kill feed's glyph+name
+  // line only (see killFeedLayout's disconnect branch): kept SEPARATE
+  // from kills so they can never reach drawDeaths' death-X markers, and
+  // rebuilt by setLandmarks like the rest.
+  let disconnects = [];
   // Plant/defuse ATTEMPT intervals grouped by the ACTOR's slot —
   // rebuilt by setLandmarks from bomb.js actionIntervals (THE one
   // interval rule — visibility only), rendered as a pure function of
@@ -1429,6 +1434,7 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     roundEnds = [];
     roundStarts = [];
     kills = [];
+    disconnects = [];
     damages = [];
     hitTracers = [];
     const hitSeen = new Set();
@@ -1448,6 +1454,12 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
           // slot whose dot the X replaces; x/y are the kill row's stored
           // VICTIM position (normalizeEvent aliases posX/posY).
           kills.push(l);
+          break;
+        case 'disconnect':
+          // The kill feed's glyph+name line ONLY — never a death marker
+          // (there is no body to mark) and never a `kills[]` row (that
+          // bucket feeds drawDeaths' X). killFeedLayout merges them in.
+          disconnects.push(l);
           break;
         case 'damage':
           // Victim-hit flash (spec 25): grouped by victim slot — only the
@@ -4061,7 +4073,8 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
 
   // --- Kill feed -------------------------------------------------------------
   // Top-right, canvas-drawn (snapshots and clip recordings capture ONLY
-  // the canvas): the kills of the ROUND CONTAINING the playhead that have
+  // the canvas): the kills — and the disconnect lines — of the ROUND
+  // CONTAINING the playhead that have
   // already happened — round-scoped AND tick ≤ playhead, so a round
   // change clears the feed and a backwards scrub re-derives it (nothing
   // sticky, nothing remembered). Rows run OLDEST → NEWEST top-anchored on
@@ -4074,8 +4087,14 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // over a dark transparent box (entryBox) outlined in the KILLER's team
   // color (neutral when unknown); names are tinted by their own side AT
   // THE KILL TICK (sideAtFrame — the same rule the death markers use).
-  // Two short glyph + victim rows replace the whole line (C4 checked
-  // FIRST):
+  // Three short rows replace the whole line (the disconnect row checked
+  // FIRST, then C4, then suicide):
+  //   • Disconnect:  the game's disconnect glyph + the LEAVER's name —
+  //                 NO killer, assister or victim cell at all (a
+  //                 player_disconnect row has no counterpart), outlined
+  //                 in the LEAVER's side (mirrors the suicide row — the
+  //                 leaver IS this row's attacker; an unresolvable side
+  //                 stays neutral, never a guessed color).
   //   • C4 death:   C4 icon + victim — no killer/assister/attacker-side
   //                 flags at all; outlined in T ORANGE (teamColor('t')):
   //                 the bomb always belongs to the T side, this is NOT a
@@ -4090,7 +4109,9 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
   // 'wallbang'/'headshot') after the weapon — internal/mappack/icons.go
   // extracts them from panorama/images/hud/deathnotice/; the C4 row's
   // glyph is the shared 'C4' image, never 'planted_c4' — deliberately
-  // not extracted, see its branch); a row whose glyph isn't extracted
+  // not extracted, see its branch; the disconnect row's glyph is
+  // iconFor('disconnect'), the equipment-dir symbol — see its branch); a
+  // row whose glyph isn't extracted
   // yet draws WITHOUT it — no space reserved, so the other cells never
   // shift (degradation must not move what's on screen).
   // killFeedLayout — the feed's ONE per-frame layout pass: the scope
@@ -4109,6 +4130,16 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
     const rn = hud.round.number;
     const rows = [];
     for (const k of kills) {
+      if (!k || k.round !== rn || !Number.isFinite(k.tick) || k.tick > st.tick) continue;
+      rows.push(k);
+    }
+    // Disconnect rows ride the SAME scope rule (round-scoped, tick ≤
+    // playhead) and the SAME newest-6 cap as kills — they are feed rows,
+    // not world markers, so one leaver line and one kill share the
+    // stack. The stable sort keeps the merge order on a tie: a kill and
+    // a disconnect at the SAME tick render kill-first (kills are
+    // collected first above).
+    for (const k of disconnects) {
       if (!k || k.round !== rn || !Number.isFinite(k.tick) || k.tick > st.tick) continue;
       rows.push(k);
     }
@@ -4153,11 +4184,25 @@ export function createRenderer(canvas, { engine, data, players, onUserCamera = n
       const wbImg = k.wallbang ? iconFor('wallbang') : null;
       const hsImg = k.headshot ? iconFor('headshot') : null;
       // outlineSide: the box's team color — the KILLER's side normally,
-      // overridden for the two glyph + victim rows (see the header
-      // comment).
+      // overridden for the short glyph rows (see the header comment).
       let outlineSide = kSide;
       let cells;
-      if (k.weapon === 'C4') {
+      if (k.bucket === 'disconnect') {
+        // Disconnect: the game's disconnect glyph + the LEAVER's name —
+        // NO killer/assister/victim cell (a player_disconnect row has no
+        // counterpart), so the row never falls into the suicide or
+        // normal branches below (which would render `name → ?`). The
+        // side resolution above already resolves the LEAVER (the row's
+        // attacker IS the leaver's key — event-shaped reads keep bot
+        // names, so a bot's disconnect shows its bot name like any
+        // player), so the outline and the name tint both take it;
+        // unresolvable → neutral, never a guessed color.
+        outlineSide = kSide;
+        cells = [];
+        const dcImg = iconFor('disconnect');
+        if (dcImg) cells.push({ img: dcImg }); // same skip-a-missing-glyph rule
+        cells.push({ text: k.attackerName || k.attacker || '?', fill: teamColor(kSide) });
+      } else if (k.weapon === 'C4') {
         // Bomb death: NO killer name, NO assister, NO attacker-side
         // flags. Outlined in T ORANGE — the bomb belongs to the T side
         // (NOT the killer's side: there is none). The row shows the C4
