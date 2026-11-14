@@ -136,16 +136,19 @@ func (s *MetricsService) ListMetrics() ([]models.MetricRow, error) {
 // ListMetricsPage returns ONE keyset window of the same list ListMetrics
 // returns (the Builder's "Load more" pagination): the rows after afterID
 // (0 = the first window) for the same server-side search query AND the
-// same server-side origin filter ("" = all, "builtin", "mine" = user +
-// plugin, "none" = the both-toggles-off empty set — the Builder's
-// Built-in / My metrics toggles; see store.ListMetricsPage), at most
-// limit rows (0 = the store's default window), plus HasNext (another
-// window follows) — see store.ListMetricsPage / models.MetricListPage.
+// same server-side filters — origin ("" = all, "builtin", "mine" = user +
+// plugin, "none" = both toggles off), scope ("match", "profile", "none")
+// and denominator ("rounds", "matches", "none" — with the store's
+// denominator-less rule: a row with no denominator passes in every
+// state), which are the Builder's three toggle PAIRS; see
+// store.ListMetricsPage — at most limit rows (0 = the store's default
+// window), plus HasNext (another window follows) — see store.ListMetricsPage
+// / models.MetricListPage.
 // ListMetrics itself stays unbounded for its whole-library readers
 // (Match's pinned scoreboard columns, Reports' appendix,
 // CommandPalette's search), which are not changing.
-func (s *MetricsService) ListMetricsPage(query string, originFilter string, afterID int64, limit int) (*models.MetricListPage, error) {
-	return s.st.ListMetricsPage(query, originFilter, afterID, limit)
+func (s *MetricsService) ListMetricsPage(query string, originFilter string, scopeFilter string, denomFilter string, afterID int64, limit int) (*models.MetricListPage, error) {
+	return s.st.ListMetricsPage(query, originFilter, scopeFilter, denomFilter, afterID, limit)
 }
 
 // GetMetric returns one by id (or name).

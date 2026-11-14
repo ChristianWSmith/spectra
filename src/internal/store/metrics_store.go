@@ -115,12 +115,28 @@ const (
 // over a page window would drop rows at the window edges. An unknown
 // value is rejected before any SQL.
 //
+// SCOPE FILTER: scopeFilter is the SAME shape over the scope column —
+// "match", "profile", "none" (both toggles off — every row carries one
+// of the two values, so the empty set, same spelling as origin's),
+// "" (no predicate). An unknown value is rejected before any SQL.
+//
+// DENOMINATOR FILTER: denomFilter is the one pair that does NOT
+// partition the table — a metric may carry NO denominator (” — counts,
+// plain sums; the column's DEFAULT). Lead ruling (2026-11-14, pinned by
+// TestListMetricsPageDenominatorFilter): such a row is NEVER filtered
+// out by this pair, whatever the toggles say — it carries no
+// denominator to filter on. So a side reads
+// `(denominator = '<side>' OR denominator = ”)` and "none" (both
+// toggles off) keeps the denominator-less rows only — deliberately NOT
+// the empty set the origin/scope "none" spells, because the ” rows
+// still pass. An unknown value is rejected before any SQL.
+//
 // CURSOR: the caller passes the last window's row id, and the store
 // resolves it to that row's stored (origin rank, name) — the same
 // in-store resolution ListMatchesPage does (one driver path, and a
 // cursor row that vanished between two windows is ErrNotFound instead of
-// a silently mis-placed page). The cursor row may sit OUTSIDE the
-// origin-filtered set (a builtin cursor on a "mine" walk): it still
+// a silently mis-placed page). The cursor row may sit OUTSIDE a
+// filtered set (a builtin cursor on a "mine" walk): it still
 // resolves, because the predicate is the row's stored key, not membership.
 //
 // KEYSET PREDICATE: `(rank, name) > (?, ?)` — SQLite's row-value
@@ -131,7 +147,7 @@ const (
 // no id tie-break is needed: windows can neither skip nor duplicate a
 // row, and each origin stays contiguous across window boundaries — the
 // view renders its Builtins/Yours/Plugins headers from those runs.
-func (s *Store) ListMetricsPage(query string, originFilter string, afterID int64, limit int) (*models.MetricListPage, error) {
+func (s *Store) ListMetricsPage(query string, originFilter string, scopeFilter string, denomFilter string, afterID int64, limit int) (*models.MetricListPage, error) {
 	if limit <= 0 {
 		limit = ListMetricsPageSize
 	}
@@ -143,8 +159,9 @@ func (s *Store) ListMetricsPage(query string, originFilter string, afterID int64
 		args  []any
 	)
 	// addWhere appends ONE ANDed predicate to the shared WHERE — every
-	// narrowing (origin filter, search, cursor) rides the same clause,
-	// so they compose in any order and none can silently bypass another.
+	// narrowing (origin filter, scope filter, denominator filter,
+	// search, cursor) rides the same clause, so they compose in any
+	// order and none can silently bypass another.
 	addWhere := func(pred string, a ...any) {
 		if where.Len() == 0 {
 			where.WriteString(" WHERE ")
@@ -168,6 +185,34 @@ func (s *Store) ListMetricsPage(query string, originFilter string, afterID int64
 		addWhere(`0 = 1`)
 	default:
 		return nil, fmt.Errorf("store: list metrics page: unknown origin filter %q", originFilter)
+	}
+	// The scope partition: both values are DDL-checked, so both-off is
+	// the empty set exactly like origin's "none".
+	switch scopeFilter {
+	case "": // no predicate — both scopes
+	case "match":
+		addWhere(`scope = 'match'`)
+	case "profile":
+		addWhere(`scope = 'profile'`)
+	case "none":
+		addWhere(`0 = 1`)
+	default:
+		return nil, fmt.Errorf("store: list metrics page: unknown scope filter %q", scopeFilter)
+	}
+	// The denominator pair (see the DENOMINATOR FILTER note above): the
+	// '' rows pass in EVERY state — including "none", which therefore
+	// keeps them instead of spelling the empty set. The parens are load-
+	// bearing: OR binds looser than the ANDs this builder writes.
+	switch denomFilter {
+	case "": // no predicate — every denominator, '' included
+	case "rounds":
+		addWhere(`(denominator = 'rounds' OR denominator = '')`)
+	case "matches":
+		addWhere(`(denominator = 'matches' OR denominator = '')`)
+	case "none":
+		addWhere(`denominator = ''`)
+	default:
+		return nil, fmt.Errorf("store: list metrics page: unknown denominator filter %q", denomFilter)
 	}
 	if qq := scrub(query); qq != "" {
 		addWhere(`(name LIKE ? OR title LIKE ?)`, "%"+qq+"%", "%"+qq+"%")

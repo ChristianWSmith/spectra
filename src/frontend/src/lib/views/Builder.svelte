@@ -138,7 +138,7 @@
   }
 
   // The editor form (fields + the dirty-check baseline), the list's
-  // search text and the two source toggles are view-local state: they
+  // search text and the three toggle PAIRS are view-local state: they
   // restore across navigation through the process-scoped registry
   // (viewstate.svelte.js — flat key; they travel together so the
   // unsaved-changes flag, the search and the toggles read exactly as
@@ -149,17 +149,41 @@
     form: newForm(),
     baseline: '',
     query: '',
-    // Built-in / My metrics toggles: built-in OFF, My metrics ON — the
-    // initial view lists the user's own metrics (user + plugin).
-    builtin: false,
+    // Every pair starts BOTH ON (owner wave): the first render is the
+    // whole catalog — byte-identical to the unfiltered list the source
+    // pair alone produced when both of its toggles were on. Each pair
+    // narrows SERVER-side only when a toggle goes off (originFilter /
+    // scopeFilter / denomFilter below), and both-off is legal in every
+    // pair.
+    builtin: true,
     mine: true,
+    scopeMatch: true,
+    scopeProfile: true,
+    denomRounds: true,
+    denomMatches: true,
   });
   let form = $state(bldSeed.form);
   let baseline = $state(bldSeed.baseline);
   let query = $state(bldSeed.query);
   let builtin = $state(bldSeed.builtin);
   let mine = $state(bldSeed.mine);
-  $effect(() => remember('builder', { form, baseline, query, builtin, mine }));
+  let scopeMatch = $state(bldSeed.scopeMatch);
+  let scopeProfile = $state(bldSeed.scopeProfile);
+  let denomRounds = $state(bldSeed.denomRounds);
+  let denomMatches = $state(bldSeed.denomMatches);
+  $effect(() =>
+    remember('builder', {
+      form,
+      baseline,
+      query,
+      builtin,
+      mine,
+      scopeMatch,
+      scopeProfile,
+      denomRounds,
+      denomMatches,
+    }),
+  );
   let saveError = $state('');
   let saving = $state(false);
 
@@ -285,7 +309,18 @@
   });
 
   const dirty = $derived(snapshot(form) !== baseline);
+  // readOnly — a loaded definition the API never updates in place: a
+  // PLUGIN row forks on save (payload id 0 → a new user copy), a
+  // BUILT-IN row is not savable at all (saveDisabled below). Both wear
+  // the form's read-only chip; neither ever shows a delete control.
   const readOnly = $derived(form.origin !== 'user');
+  // saveDisabled — THE promise for a loaded built-in (owner wave): the
+  // Save button stays off whatever the dirty flag says — the baseline
+  // is re-snapshotted with every load, so neither a clean load nor an
+  // edit can re-enable it. The service-level SaveMetric/DeleteMetric
+  // guards (60ecdb7) are the backstop behind this, not a substitute.
+  const builtinLoaded = $derived(form.origin === 'builtin');
+  const saveDisabled = $derived(saving || builtinLoaded);
 
   // originFilter — THE one toggle → server-filter derivation: both on =
   // the whole catalog (''), Built-in only / My metrics only = the
@@ -303,12 +338,33 @@
     return 'none';
   });
 
-  // The search text AND origin filter the current window sequence
+  // scopeFilter / denomFilter — the SAME derivation over the two new
+  // pairs (Match / Profile, Rounds / Matches): both on = no predicate,
+  // one on = that side, both off = 'none'. The store owns what each
+  // word means — including the denominator pair's denominator-less
+  // rule (a row with no denominator passes in every state, so its
+  // "none" is not the empty set the other two spell).
+  const scopeFilter = $derived.by(() => {
+    if (scopeMatch && scopeProfile) return '';
+    if (scopeMatch) return 'match';
+    if (scopeProfile) return 'profile';
+    return 'none';
+  });
+  const denomFilter = $derived.by(() => {
+    if (denomRounds && denomMatches) return '';
+    if (denomRounds) return 'rounds';
+    if (denomMatches) return 'matches';
+    return 'none';
+  });
+
+  // The search text AND the three filters the current window sequence
   // serves: refreshList writes them, loadMore reads them (the cursor's
-  // query + filter) and the empty-result copy below names the query —
+  // query + filters) and the empty-result copy below names the query —
   // $state because the template references them.
   let appliedQuery = $state('');
   let appliedFilter = $state('');
+  let appliedScope = $state('');
+  let appliedDenom = $state('');
   // listGen distinguishes the current window sequence from stale replies
   // (see refreshList/loadMore); non-reactive on purpose — it is not state.
   let listGen = 0;
@@ -350,43 +406,49 @@
   // The list read (mount AND listError's Retry): the first run is
   // immediate (the list loads without the debounce delay), later runs
   // fire 250 ms after a query OR toggle change (the Library's debounce)
-  // so typing doesn't hammer the store — and a source-toggle flip lands
-  // on this SAME path, which restarts the window at cursor 0 (a filter
-  // change never appends onto the previous filter's windows).
+  // so typing doesn't hammer the store — and ANY toggle flip (source,
+  // scope or denominator) lands on this SAME path, which restarts the
+  // window at cursor 0 (a filter change never appends onto the previous
+  // filter's windows).
   let firstList = true;
   $effect(() => {
     const q = query;
     const f = originFilter;
+    const sc = scopeFilter;
+    const dn = denomFilter;
     if (firstList) {
       firstList = false;
-      refreshList(q, f);
+      refreshList(q, f, sc, dn);
       return;
     }
-    const t = setTimeout(() => refreshList(q, f), 250);
+    const t = setTimeout(() => refreshList(q, f, sc, dn), 250);
     return () => clearTimeout(t);
   });
 
   // Retry: the error slot's button — plugin states + a fresh first
-  // window for the query/filter currently in play.
+  // window for the query/filters currently in play.
   async function loadLists() {
     loadPluginStates();
-    await refreshList(query, originFilter);
+    await refreshList(query, originFilter, scopeFilter, denomFilter);
   }
 
   // refreshList RESTARTS the window sequence: cursor 0, replace — a
-  // search change, a source-toggle change, a save/delete refresh or a
-  // Retry must never APPEND onto the previous window's rows. listGen
-  // tags the sequence so a Load-more reply landing after a restart is
-  // dropped instead of appended (the Library's refreshList/loadMore
-  // shape). Both narrowings are SERVER-side (query LIKE + originFilter
+  // search change, a toggle change (any of the three pairs), a
+  // save/delete refresh or a Retry must never APPEND onto the previous
+  // window's rows. listGen tags the sequence so a Load-more reply
+  // landing after a restart is dropped instead of appended (the
+  // Library's refreshList/loadMore shape). Every narrowing is
+  // SERVER-side (query LIKE + originFilter + scopeFilter + denomFilter
   // — store.ListMetricsPage), never a client-side slice of a window.
-  async function refreshList(q = '', f = '') {
+  async function refreshList(q = '', f = '', sc = '', dn = '') {
     appliedQuery = q;
     appliedFilter = f;
+    appliedScope = sc;
+    appliedDenom = dn;
     const gen = ++listGen;
     loading = true;
     try {
-      const page = await listMetricsPage(q, f, 0, PAGE_SIZE);
+      const page = await listMetricsPage(q, f, sc, dn, 0, PAGE_SIZE);
       if (gen !== listGen) return;
       metrics = (page && page.rows) || [];
       hasNext = !!(page && page.hasNext);
@@ -410,7 +472,14 @@
     const gen = listGen;
     try {
       const last = metrics[metrics.length - 1];
-      const page = await listMetricsPage(appliedQuery, appliedFilter, last.id, PAGE_SIZE);
+      const page = await listMetricsPage(
+        appliedQuery,
+        appliedFilter,
+        appliedScope,
+        appliedDenom,
+        last.id,
+        PAGE_SIZE,
+      );
       if (gen !== listGen) return; // a refresh replaced the list meanwhile
       const seen = new Set(metrics.map((m) => m.id));
       const add = ((page && page.rows) || []).filter((m) => !seen.has(m.id));
@@ -448,12 +517,12 @@
     return () => clearTimeout(t);
   });
 
+  // editMetric loads ANY stored definition into the form — a BUILT-IN
+  // included (owner wave: the user reads how a built-in is written in
+  // the editor), presented read-only: Save stays disabled for it
+  // (saveDisabled above) and the read-only chip names the reason.
+  // Plugin rows load the same way with their own chip and fork-on-save.
   function editMetric(m) {
-    // A built-in NEVER loads into the form (Feature B: built-ins have no
-    // edit affordance — the row's main area renders without a button for
-    // them, so this is the backstop for every load path). Plugin rows
-    // still load (read-only chip + fork-on-save).
-    if (m.origin === 'builtin') return;
     form = {
       id: m.id,
       name: m.name,
@@ -535,7 +604,7 @@
         preview = null;
         previewKey = null;
       }
-      await refreshList(appliedQuery, appliedFilter);
+      await refreshList(appliedQuery, appliedFilter, appliedScope, appliedDenom);
     } catch (e) {
       saveError = errText(e);
     }
@@ -562,12 +631,14 @@
     }
     saving = true;
     try {
-      // A plugin row is immutable through SaveMetric (the service and
+      // A PLUGIN row is immutable through SaveMetric (the service and
       // store reject updates on it) — saving one forks a user copy
-      // (id 0). Built-ins never reach the form at all (editMetric
-      // refuses them), so they cannot be saved from here either.
+      // (id 0). A loaded BUILT-IN keeps its id, so a save that somehow
+      // reached here would hit SaveMetric's built-in guard instead of
+      // forking a copy of it — and in the UI the button never gets
+      // there (saveDisabled), the guard being the backstop behind it.
       const payload = {
-        id: readOnly ? 0 : form.id,
+        id: form.origin === 'plugin' ? 0 : form.id,
         name,
         title: form.title.trim() || name,
         shortName: form.shortName.trim(),
@@ -586,7 +657,7 @@
       form.title = saved.title;
       form.shortName = saved.shortName;
       baseline = snapshot(form);
-      await refreshList(appliedQuery, appliedFilter);
+      await refreshList(appliedQuery, appliedFilter, appliedScope, appliedDenom);
     } catch (e) {
       saveError = errText(e);
     } finally {
@@ -596,8 +667,8 @@
 
   // runPreview() previews the FORM (the panel's Preview button);
   // runPreview(row) previews that STORED definition straight off its id
-  // — the row play's path for a BUILT-IN, which never loads into the
-  // form.
+  // — the row play's path for a BUILT-IN, which preview leaves out of
+  // the form entirely (preview is not edit).
   //
   // DESIGN §5 PREVIEW CRITERION (THE saved-form criterion): a metric
   // VALUE is read from stored rows iff it is addressed by a SAVED
@@ -729,9 +800,9 @@
 
   // The row play control: preview THIS row. Non-builtin rows load into
   // the form first (existing behaviour — the panel then reads that
-  // definition); a built-in never loads (editMetric refuses it) and
-  // previews off its stored id, so a builtin still previews while the
-  // form stays untouched.
+  // definition); a built-in previews off its STORED id and leaves the
+  // form exactly as it was (preview is not edit), so a builtin still
+  // previews while the form stays untouched.
   function previewRow(m) {
     if (m.origin === 'builtin') {
       runPreview(m);
@@ -752,6 +823,13 @@
   <span class="bld-row-sub">
     <span class="mono">{m.name}</span>
     <span class="chip">{m.scope || 'match'}</span>
+    <!-- The denominator chip (owner wave): the SAME plain .chip the
+         scope chip renders — no new concept class — and only when the
+         metric carries a denominator at all (absence is honest: a count
+         or plain sum has none). -->
+    {#if m.denominator}
+      <span class="chip">{m.denominator}</span>
+    {/if}
     <span class="chip">{m.format || 'raw'}</span>
     <!-- The compute-state surface (design §4/§5): EVERY list item wears
          its state chip through StatusChip — processing quantifies with
@@ -777,14 +855,11 @@
 
 {#snippet metricRow(m)}
   <div class="bld-row" class:active={form.id === m.id}>
-    <!-- Built-ins expose NO edit affordance: their main area is plain
-         content (no button, no click-to-edit) — user/plugin rows keep
-         the button. Pin and preview stay live on every row. -->
-    {#if m.origin === 'builtin'}
-      <div class="bld-row-main bld-row-static">{@render rowMain(m)}</div>
-    {:else}
-      <button class="bld-row-main" onclick={() => editMetric(m)}>{@render rowMain(m)}</button>
-    {/if}
+    <!-- Every stored row loads into the editor: a user row edits, a
+         plugin row forks, a BUILT-IN loads read-only (Save disabled —
+         owner wave, so the user can read how it is written). Pin and
+         preview stay live on every row; delete stays user-only. -->
+    <button class="bld-row-main" onclick={() => editMetric(m)}>{@render rowMain(m)}</button>
     <span class="bld-row-acts">
       <button
         class="btn small ghost"
@@ -868,13 +943,15 @@
         placeholder="Search metrics…"
         bind:value={query}
       />
-      <!-- Source toggles: the same debounced restart as the search (one
-           effect reads query + originFilter), server-side partition
-           (store.ListMetricsPage — never a client-side slice of a page
-           window). Built-in defaults OFF, My metrics ON; both off is
-           legal and leaves the empty list below. Toggle BUTTONS — the
-           Combat Clutches won/lost pattern (btn small + aria-pressed,
-           class:active paints the on state). -->
+      <!-- Toggle lines: THREE pairs, ONE PAIR PER LINE (owner verbatim),
+           every pair starting BOTH ON — the first render is the whole
+           catalog, byte-identical to the unfiltered list. Each pair
+           drives one SERVER-side narrowing (originFilter / scopeFilter
+           / denomFilter below) on the same debounced restart as the
+           search; both off is legal in every pair and leaves the empty
+           state below. Toggle BUTTONS — the Combat Clutches won/lost
+           pattern (btn small + aria-pressed, class:active paints the on
+           state). -->
       <div class="toolbar" role="group" aria-label="Metric sources">
         <button
           class="btn small bld-src"
@@ -889,15 +966,44 @@
           onclick={() => (mine = !mine)}
         >My metrics</button>
       </div>
+      <div class="toolbar" role="group" aria-label="Metric scopes">
+        <button
+          class="btn small bld-src"
+          class:active={scopeMatch}
+          aria-pressed={scopeMatch}
+          onclick={() => (scopeMatch = !scopeMatch)}
+        >Match</button>
+        <button
+          class="btn small bld-src"
+          class:active={scopeProfile}
+          aria-pressed={scopeProfile}
+          onclick={() => (scopeProfile = !scopeProfile)}
+        >Profile</button>
+      </div>
+      <div class="toolbar" role="group" aria-label="Metric denominators">
+        <button
+          class="btn small bld-src"
+          class:active={denomRounds}
+          aria-pressed={denomRounds}
+          onclick={() => (denomRounds = !denomRounds)}
+        >Rounds</button>
+        <button
+          class="btn small bld-src"
+          class:active={denomMatches}
+          aria-pressed={denomMatches}
+          onclick={() => (denomMatches = !denomMatches)}
+        >Matches</button>
+      </div>
       {#if metrics.length === 0 && !listError}
         {#if loading}
           <p class="muted" role="status"><StatusChip block detail="Loading…" /></p>
         {:else if appliedQuery}
           <p class="muted" role="status">No metrics match “{appliedQuery}”.</p>
         {:else}
-          <!-- Query-less empty: an empty My-metrics side (nothing built
-               yet) or both source toggles off — both legal, both say so
-               here instead of leaving a blank panel. -->
+          <!-- Query-less empty: a filter pair narrowed the window to
+               nothing (an empty My-metrics side, both source toggles
+               off, Match+Profile off) — legal, and said so here instead
+               of leaving a blank panel. -->
           <p class="muted" role="status">No metrics to show.</p>
         {/if}
       {:else}
@@ -926,9 +1032,15 @@
       <section class="panel">
         <div class="row-between">
           <h2>{form.id ? 'Edit metric' : 'New metric'}</h2>
-          {#if readOnly}
-            <!-- readOnly is plugin-only now: built-ins never load into
-                 the form (editMetric refuses them). -->
+          {#if builtinLoaded}
+            <!-- A built-in loads read-only (owner wave): the chip names
+                 it in the user's words, mirroring the plugin chip. -->
+            <span class="chip bld-readonly" title="Built-in metrics can't be edited"
+              >built-in</span
+            >
+          {:else if readOnly}
+            <!-- Plugin rows: immutable through Save — saving stores a
+                 copy of this definition as your own metric. -->
             <span class="chip bld-readonly" title="Plugin metrics are immutable — saving stores a copy of this definition as your own metric."
               >read-only source</span
             >
@@ -1034,8 +1146,17 @@
         </div>
 
         <div class="toolbar bld-actions">
-          <button class="btn primary" onclick={save} disabled={saving}>
-            {saving ? 'Saving…' : form.id && !dirty ? 'Saved' : 'Save metric'}
+          <button
+            class="btn primary"
+            onclick={save}
+            disabled={saveDisabled}
+            title={builtinLoaded ? 'Built-in metrics can\'t be edited' : undefined}
+          >
+            {saving
+              ? 'Saving…'
+              : !builtinLoaded && form.id && !dirty
+                ? 'Saved'
+                : 'Save metric'}
           </button>
           <button
             class="btn"
@@ -1047,7 +1168,11 @@
             {form.id > 0 && pinnedIn(form.id) !== '' ? 'Pinned' : 'Pin'}
           </button>
           <span class="muted bld-note">
-            Saved metrics are appended to match reports in Reports.
+            <!-- The disabled Save's reason, in the user's words (the
+                 button carries the same string as its tooltip). -->
+            {builtinLoaded
+              ? 'Built-in metrics can\'t be edited'
+              : 'Saved metrics are appended to match reports in Reports.'}
           </span>
         </div>
       </section>

@@ -268,3 +268,116 @@ func TestSaveMetricBuiltinGuards(t *testing.T) {
 		t.Errorf("plugin delete: %v", err)
 	}
 }
+
+// TestListMetricsPageArity pins the service passthrough: all SIX
+// arguments reach the store in their positions — the two NEW filter
+// words (scope, denominator) included — since a dropped, defaulted or
+// reordered arg would select a different window than the one asserted
+// here. The filter vocabulary is the store's: each unknown word comes
+// back as the store's own pre-SQL rejection (which is only reachable
+// when the argument lands at all).
+func TestListMetricsPageArity(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "list-page.db"))
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = st.CloseRO(); _ = st.Close() })
+	svc := &MetricsService{st: st}
+
+	if _, err := svc.SaveMetric(models.MetricRow{
+		Name: "per_round_rate", Title: "Per round rate", Expr: "from player_stats: ratio(sum(kills), sum(rounds_played))",
+		Scope: "match", Format: "float1", Denominator: "rounds", Doc: "Formula: kills / rounds played",
+		Origin: "user",
+	}); err != nil {
+		t.Fatalf("SaveMetric(match/rounds): %v", err)
+	}
+	if _, err := svc.SaveMetric(models.MetricRow{
+		Name: "career_rate", Title: "Career rate", Expr: "from player_stats: avg(adr)",
+		Scope: "profile", Format: "float1", Doc: "Formula: mean ADR", Origin: "user",
+	}); err != nil {
+		t.Fatalf("SaveMetric(profile): %v", err)
+	}
+
+	all, err := svc.ListMetrics()
+	if err != nil {
+		t.Fatalf("ListMetrics: %v", err)
+	}
+	if len(all) < 3 {
+		t.Fatalf("catalog = %d rows, want the seeded builtins + 2 users", len(all))
+	}
+
+	// Every filter empty + limit 0 (store default) = the whole canonical
+	// list — the four filter slots really are the filters (a stray value
+	// would narrow this).
+	page, err := svc.ListMetricsPage("", "", "", "", 0, 0)
+	if err != nil {
+		t.Fatalf("ListMetricsPage(all empty): %v", err)
+	}
+	if len(page.Rows) != len(all) {
+		t.Errorf("unfiltered window = %d rows, want the whole list (%d)", len(page.Rows), len(all))
+	}
+	for i, m := range page.Rows {
+		if m.ID != all[i].ID {
+			t.Fatalf("unfiltered window diverges from ListMetrics order at %d: %d vs %d", i, m.ID, all[i].ID)
+		}
+	}
+
+	// The three filters in one call: origin 'mine' + scope 'match' +
+	// denominator 'rounds' selects exactly the one seeded user row (the
+	// plugin's/other users' rows differ on a predicate, the builtins are
+	// excluded by origin) — so every filter word landed where it belongs.
+	page, err = svc.ListMetricsPage("", "mine", "match", "rounds", 0, 0)
+	if err != nil {
+		t.Fatalf("ListMetricsPage(mine, match, rounds): %v", err)
+	}
+	if len(page.Rows) != 1 || page.Rows[0].Name != "per_round_rate" ||
+		page.Rows[0].Scope != "match" || page.Rows[0].Denominator != "rounds" {
+		got := make([]string, 0, len(page.Rows))
+		for _, m := range page.Rows {
+			got = append(got, m.Name+"("+m.Scope+"/"+m.Denominator+")")
+		}
+		t.Errorf("mine+match+rounds = %v, want [per_round_rate(match/rounds)]", got)
+	}
+
+	// The cursor (arg 5): the first row as afterID drops it and keeps
+	// the rest, in order — with the store's default limit still in play.
+	cursored, err := svc.ListMetricsPage("", "", "", "", all[0].ID, 0)
+	if err != nil {
+		t.Fatalf("ListMetricsPage(cursor): %v", err)
+	}
+	if len(cursored.Rows) != len(all)-1 || cursored.Rows[0].ID != all[1].ID {
+		t.Errorf("cursor window = %d rows (first %d), want the %d rows after %d",
+			len(cursored.Rows), cursored.Rows[0].ID, len(all)-1, all[0].ID)
+	}
+
+	// The limit (arg 6): 1 row + the has-next probe.
+	limited, err := svc.ListMetricsPage("", "", "", "", 0, 1)
+	if err != nil {
+		t.Fatalf("ListMetricsPage(limit 1): %v", err)
+	}
+	if len(limited.Rows) != 1 || !limited.HasNext {
+		t.Errorf("limit 1 → %d rows (HasNext=%v), want 1, true", len(limited.Rows), limited.HasNext)
+	}
+
+	// Each filter slot answers in ITS position: the store's pre-SQL
+	// rejection names the argument that carried the bad word — an arg
+	// dropped or shifted on the way down would surface as "" and pass.
+	for _, tc := range []struct{ slot, word, want string }{
+		{"origin", "everything", `unknown origin filter "everything"`},
+		{"scope", "career", `unknown scope filter "career"`},
+		{"denominator", "games", `unknown denominator filter "games"`},
+	} {
+		var err error
+		switch tc.slot {
+		case "origin":
+			_, err = svc.ListMetricsPage("", tc.word, "", "", 0, 100)
+		case "scope":
+			_, err = svc.ListMetricsPage("", "", tc.word, "", 0, 100)
+		case "denominator":
+			_, err = svc.ListMetricsPage("", "", "", tc.word, 0, 100)
+		}
+		if err == nil || !strings.Contains(err.Error(), tc.want) {
+			t.Errorf("%s filter %q: err = %v, want the store's %s", tc.slot, tc.word, err, tc.want)
+		}
+	}
+}
