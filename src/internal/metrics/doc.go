@@ -124,7 +124,11 @@
 // the save with NOTHING written — and bumps nothing (a rename changes no
 // semantics). Deleting a referenced metric is blocked at the API
 // (*"cannot delete metric "x": referenced by y, z — edit or delete those
-// first"*); system removal (plugin replace/disable) is not blockable, so
+// first"*), and BUILT-INS (origin = 'builtin') are immutable on both
+// paths — SaveMetric and DeleteMetric reject them outright, the guard
+// firing BEFORE the reference block, and the Builder exposes no edit
+// affordance for them; system removal (plugin replace/disable) is not
+// blockable, so
 // dep_name deliberately carries NO foreign key and the edge dangles for
 // the compute pass to resolve-or-fail honestly (missing upstream ⇒
 // dependent rows absent, never 0), while metric_id's ON DELETE CASCADE
@@ -144,8 +148,21 @@
 // directly, never rolled up from per-match rows. The cascade version
 // bump is save-side (SaveMetricWithDeps' semanticBump); the scheduler,
 // spectra:metric-progress/-done and GetMetricComputeState are the
-// service's (src/metriccompute.go). Version stamps are INTERNAL-ONLY —
-// no preview, event or state string ever renders one.
+// service's (src/metriccompute.go).
+//
+// STORED, NEVER QUERY-TIME: a saved metric's value lives in
+// metric_values, written by the sweep; every surface reads it through
+// the canonical reads (store.GetMetricValuesForMatch /
+// GetMetricValuesForPlayer — fresh rows only, the same predicate
+// spelling) and never recomputes it. THE preview criterion: a value is
+// read from stored rows iff it belongs to a saved definition whose form
+// is unmodified — an unsaved (id 0) or dirty draft has no rows and is
+// compiled and executed on demand (a draft is always CALCULATED, see
+// "Metric references" above). What a value slot may show is exactly
+// five states — processing, failed, fresh, no-data, behind
+// (GetMetricComputeState; the display twin is metricstate.js
+// metricPresentation) — and Version stamps are INTERNAL-ONLY: no
+// preview, event, chip or state string ever renders one.
 //
 // # Sources and the column whitelist
 //

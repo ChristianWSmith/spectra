@@ -57,7 +57,9 @@ differentiators:
   where external state silently changes what the app does is not.
 - **Honest metrics:** missing data surfaces as value 0 beside N (the
   sample size), never a fabricated number; every metric documents its
-  formula.
+  formula. A computed metric is shown as its stored value — while a
+  recompute is pending the slot shows a processing/behind state, never
+  a stale number.
 - **Feature-parity with competitors is evidence, never justification.**
 - **Never present a feature the app cannot fully support offline.**
 - **Breaking changes:** at-will before the first release; after 1.0,
