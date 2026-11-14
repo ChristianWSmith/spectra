@@ -26,6 +26,7 @@
     metricProgressStage,
   } from '../metricstate.js';
   import { fmtInt, fmtMetric } from '../fmt.js';
+  import { METRIC_FORMATS, formatFilterWord } from '../metricformats.js';
   import ProfileLink from '../components/ProfileLink.svelte';
   import StatusChip from '../components/StatusChip.svelte';
   import MetricOrderDialog from '../components/MetricOrderDialog.svelte';
@@ -160,7 +161,7 @@
   }
 
   // The editor form (fields + the dirty-check baseline), the list's
-  // search text and the filter multi-select's SIX CHECKBOXES are
+  // search text and the filter multi-select's TWELVE CHECKBOXES are
   // view-local state: they restore across navigation through the
   // process-scoped registry (viewstate.svelte.js — flat key; they
   // travel together so the unsaved-changes flag, the search and the
@@ -186,6 +187,15 @@
     scopeProfile: true,
     denomRounds: true,
     denomMatches: true,
+    // Type group: the owner's ruling ("all six checked — auto + int +
+    // float1 + float2 + percent + currency") — only Built-in starts off,
+    // so the first render is unfiltered on every group but Origin.
+    formatAuto: true,
+    formatInt: true,
+    formatFloat1: true,
+    formatFloat2: true,
+    formatPercent: true,
+    formatCurrency: true,
   });
   let form = $state(bldSeed.form);
   let baseline = $state(bldSeed.baseline);
@@ -196,6 +206,12 @@
   let scopeProfile = $state(bldSeed.scopeProfile);
   let denomRounds = $state(bldSeed.denomRounds);
   let denomMatches = $state(bldSeed.denomMatches);
+  let formatAuto = $state(bldSeed.formatAuto);
+  let formatInt = $state(bldSeed.formatInt);
+  let formatFloat1 = $state(bldSeed.formatFloat1);
+  let formatFloat2 = $state(bldSeed.formatFloat2);
+  let formatPercent = $state(bldSeed.formatPercent);
+  let formatCurrency = $state(bldSeed.formatCurrency);
   $effect(() =>
     remember('builder', {
       form,
@@ -207,6 +223,12 @@
       scopeProfile,
       denomRounds,
       denomMatches,
+      formatAuto,
+      formatInt,
+      formatFloat1,
+      formatFloat2,
+      formatPercent,
+      formatCurrency,
     }),
   );
   let saveError = $state('');
@@ -383,7 +405,26 @@
     return 'none';
   });
 
-  // The search text AND the three filters the current window sequence
+  // formatFilter — the fourth group's (Type) checked-set → server word:
+  // unlike the three PAIRS it is six checkboxes, so the derivation is
+  // the canonical one in lib/metricformats.js (all six = '' no
+  // predicate, none = 'none', otherwise the canonical comma-subset —
+  // "auto" being the format select's Auto, the '' format). Same
+  // plumbing as the others: it rides the list read's args (refreshList
+  // below restarts the window on any flip) and joins
+  // listMetricsPage's cache key for free (services.js).
+  const formatFilter = $derived(
+    formatFilterWord({
+      auto: formatAuto,
+      int: formatInt,
+      float1: formatFloat1,
+      float2: formatFloat2,
+      percent: formatPercent,
+      currency: formatCurrency,
+    }),
+  );
+
+  // The search text AND the four filters the current window sequence
   // serves: refreshList writes them, loadMore reads them (the cursor's
   // query + filters) and the empty-result copy below names the query —
   // $state because the template references them.
@@ -391,6 +432,7 @@
   let appliedFilter = $state('');
   let appliedScope = $state('');
   let appliedDenom = $state('');
+  let appliedFormat = $state('');
   // listGen distinguishes the current window sequence from stale replies
   // (see refreshList/loadMore); non-reactive on purpose — it is not state.
   let listGen = 0;
@@ -433,21 +475,22 @@
   // immediate (the list loads without the debounce delay), later runs
   // fire 250 ms after a query OR filter change (the Library's debounce)
   // so typing doesn't hammer the store — and ANY checkbox flip in the
-  // multi-select (origin, scope or denominator) lands on this SAME
-  // path, which restarts the window at cursor 0 (a filter change never
-  // appends onto the previous filter's windows).
+  // multi-select (origin, scope, denominator or format) lands on this
+  // SAME path, which restarts the window at cursor 0 (a filter change
+  // never appends onto the previous filter's windows).
   let firstList = true;
   $effect(() => {
     const q = query;
     const f = originFilter;
     const sc = scopeFilter;
     const dn = denomFilter;
+    const fm = formatFilter;
     if (firstList) {
       firstList = false;
-      refreshList(q, f, sc, dn);
+      refreshList(q, f, sc, dn, fm);
       return;
     }
-    const t = setTimeout(() => refreshList(q, f, sc, dn), 250);
+    const t = setTimeout(() => refreshList(q, f, sc, dn, fm), 250);
     return () => clearTimeout(t);
   });
 
@@ -455,26 +498,28 @@
   // window for the query/filters currently in play.
   async function loadLists() {
     loadPluginStates();
-    await refreshList(query, originFilter, scopeFilter, denomFilter);
+    await refreshList(query, originFilter, scopeFilter, denomFilter, formatFilter);
   }
 
   // refreshList RESTARTS the window sequence: cursor 0, replace — a
-  // search change, a filter change (any of the three groups), a
+  // search change, a filter change (any of the four groups), a
   // save/delete refresh or a Retry must never APPEND onto the previous
   // window's rows. listGen tags the sequence so a Load-more reply
   // landing after a restart is dropped instead of appended (the
   // Library's refreshList/loadMore shape). Every narrowing is
-  // SERVER-side (query LIKE + originFilter + scopeFilter + denomFilter
-  // — store.ListMetricsPage), never a client-side slice of a window.
-  async function refreshList(q = '', f = '', sc = '', dn = '') {
+  // SERVER-side (query LIKE + originFilter + scopeFilter + denomFilter +
+  // formatFilter — store.ListMetricsPage), never a client-side slice of
+  // a window.
+  async function refreshList(q = '', f = '', sc = '', dn = '', fm = '') {
     appliedQuery = q;
     appliedFilter = f;
     appliedScope = sc;
     appliedDenom = dn;
+    appliedFormat = fm;
     const gen = ++listGen;
     loading = true;
     try {
-      const page = await listMetricsPage(q, f, sc, dn, 0, PAGE_SIZE);
+      const page = await listMetricsPage(q, f, sc, dn, fm, 0, PAGE_SIZE);
       if (gen !== listGen) return;
       metrics = (page && page.rows) || [];
       hasNext = !!(page && page.hasNext);
@@ -503,6 +548,7 @@
         appliedFilter,
         appliedScope,
         appliedDenom,
+        appliedFormat,
         last.id,
         PAGE_SIZE,
       );
@@ -972,10 +1018,10 @@
       <!-- ONE multi-select for every list filter (owner ruling:
            "probably just a multi-select is good enough") — it replaces
            the three toggle-button lines: a trigger opens ONE checkbox
-           panel with three labelled groups (Origin / Scope /
-           Denominator) over the SAME six viewstate booleans and the
-           SAME debounced list read below. The FilterBar vein — the
-           control commits, the parent owns the filter state, the
+           panel with four labelled groups (Origin / Scope /
+           Denominator / Type) over the SAME twelve viewstate booleans
+           and the SAME debounced list read below. The FilterBar vein —
+           the control commits, the parent owns the filter state, the
            debounced refetch follows — without reusing FilterBar itself
            (that is the landmark feed's conditional-fields panel).
            Dismissal is the canonical Popover's (Escape / outside
@@ -1057,6 +1103,56 @@
                   /> Matches</label
                 >
               </div>
+              <!-- Type = the metric's format (the editor's Format
+                   select vocabulary, lib/metricformats.js): every
+                   option its own checkbox, ALL six checked by default
+                   (the owner's ruling) — only Built-in starts off — so
+                   the first render carries format '' (no predicate). -->
+              <div class="bld-filter-group" role="group" aria-label="Type">
+                <span class="filt-lab">Type</span>
+                <label class="filt-check"
+                  ><input
+                    type="checkbox"
+                    checked={formatAuto}
+                    onchange={(e) => (formatAuto = e.currentTarget.checked)}
+                  /> Auto</label
+                >
+                <label class="filt-check"
+                  ><input
+                    type="checkbox"
+                    checked={formatInt}
+                    onchange={(e) => (formatInt = e.currentTarget.checked)}
+                  /> Int</label
+                >
+                <label class="filt-check"
+                  ><input
+                    type="checkbox"
+                    checked={formatFloat1}
+                    onchange={(e) => (formatFloat1 = e.currentTarget.checked)}
+                  /> Float1</label
+                >
+                <label class="filt-check"
+                  ><input
+                    type="checkbox"
+                    checked={formatFloat2}
+                    onchange={(e) => (formatFloat2 = e.currentTarget.checked)}
+                  /> Float2</label
+                >
+                <label class="filt-check"
+                  ><input
+                    type="checkbox"
+                    checked={formatPercent}
+                    onchange={(e) => (formatPercent = e.currentTarget.checked)}
+                  /> Percent</label
+                >
+                <label class="filt-check"
+                  ><input
+                    type="checkbox"
+                    checked={formatCurrency}
+                    onchange={(e) => (formatCurrency = e.currentTarget.checked)}
+                  /> Currency</label
+                >
+              </div>
             </div>
           </Popover>
         </span>
@@ -1069,8 +1165,8 @@
         {:else}
           <!-- Query-less empty: a filter group narrowed the window to
                nothing (an empty My-metrics side, both origin options
-               off, Match+Profile off) — legal, and said so here instead
-               of leaving a blank panel. -->
+               off, Match+Profile off, every Type box off) — legal, and
+               said so here instead of leaving a blank panel. -->
           <p class="muted" role="status">No metrics to show.</p>
         {/if}
       {:else}
@@ -1163,13 +1259,13 @@
           </div>
           <div class="bld-field">
             <label class="field-label" for="bld-format">Format</label>
+            <!-- The vocabulary renders from THE canonical list
+                 (lib/metricformats.js — same order and tokens as the
+                 Type filter's options; auto's value is the '' format). -->
             <select id="bld-format" class="input" bind:value={form.format}>
-              <option value="">auto</option>
-              <option value="int">int</option>
-              <option value="float1">float1</option>
-              <option value="float2">float2</option>
-              <option value="percent">percent</option>
-              <option value="currency">currency</option>
+              {#each METRIC_FORMATS as f (f.token)}
+                <option value={f.value}>{f.token}</option>
+              {/each}
             </select>
           </div>
           <div class="bld-field">
