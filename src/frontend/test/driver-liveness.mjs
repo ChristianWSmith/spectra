@@ -93,7 +93,9 @@ const PROBE_POOL = 4;
 // honest gap, behind chip, metric-value sort with gaps last).
 const EXPECTED = {
   'app-dock.dom.mjs': 59,
-  'builder.dom.mjs': 72,
+  // builder 72 → 76 (2026-11-14, metrics UI wave B): section J is now
+  // 20 checks — pins-only list, help line + empty state, grabber drag.
+  'builder.dom.mjs': 76,
   // combat 75 → 86 (2026-11-14, dogfooding W2): +2 section J (the KAST
   // cell renders the metric value; the dialog header reads it — the
   // client-side fallback's 100% would disagree with the stored 50%),
