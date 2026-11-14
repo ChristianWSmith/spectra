@@ -4112,7 +4112,7 @@ test('kill feed: missing round-4 indicator images reserve NO cell (no gap either
 // bot names (store/queries.go + players.js) — a bot's 20-digit synthetic
 // key renders the BOT's name.
 
-test('kill feed: a disconnect row — disconnect glyph + leaver name only, leaver-side outline and tint', () => {
+test('kill feed: a disconnect row — disconnect glyph + leaver name only, leaver-side (or neutral) outline and tint', () => {
   headlessGlobals();
   const data = synthStore(1300, 2);
   const engine = createEngine(data, 64);
@@ -4122,11 +4122,15 @@ test('kill feed: a disconnect row — disconnect glyph + leaver name only, leave
   r.setLandmarks([
     // alice (slot 0 → CT) leaves at tick 50, bob (slot 1 → T) at 60 —
     // two leavers so BOTH side tints/outlines come from the rule rather
-    // than from one convenient side. NO victim field at all: a
-    // disconnect row has no counterpart (the normal branch would render
-    // `name → ?` and the suicide branch a victim cell).
+    // than from one convenient side. The third leaver is NOT in the
+    // roster: her side is unresolvable, so outline and tint must degrade
+    // to NEUTRAL (never a guessed color — ruling 2026-11-14). NO victim
+    // field at all on any of them: a disconnect row has no counterpart
+    // (the normal branch would render `name → ?` and the suicide branch
+    // a victim cell).
     mk({ id: 1, seq: 1, tick: 50, round: 1, kind: 'player_disconnect', attacker: '1', attackerName: 'alice' }),
     mk({ id: 2, seq: 2, tick: 60, round: 1, kind: 'player_disconnect', attacker: '2', attackerName: 'bob' }),
+    mk({ id: 3, seq: 3, tick: 65, round: 1, kind: 'player_disconnect', attacker: '765611980000004242', attackerName: 'stranger' }),
   ]);
   // Every OTHER feed glyph is registered on purpose: the row must draw
   // its OWN disconnect glyph and nothing else — never the suicide glyph,
@@ -4162,6 +4166,7 @@ test('kill feed: a disconnect row — disconnect glyph + leaver name only, leave
     [
       [712, 8, 80],
       [712, 30, 80],
+      [712, 52, 80],
     ],
   );
   // Only the disconnect glyph paints — once per row, never a weapon,
@@ -4169,7 +4174,7 @@ test('kill feed: a disconnect row — disconnect glyph + leaver name only, leave
   const srcs = opsSince(canvas.log, 'drawImage', mark)
     .filter((e) => e.args[0] && e.args[0].src)
     .map((e) => e.args[0].src);
-  assert.deepEqual(srcs, ['disc.svg', 'disc.svg']);
+  assert.deepEqual(srcs, ['disc.svg', 'disc.svg', 'disc.svg']);
 
   // The name cell: the leaver's roster name, one gap past the glyph
   // (712 + 6 + 16 + 12 = 746), tinted by the LEAVER's side — and no
@@ -4181,18 +4186,22 @@ test('kill feed: a disconnect row — disconnect glyph + leaver name only, leave
   const bob = opsSince(canvas.log, 'fillText', mark).find((e) => e.args[0] === 'bob' && e.args[2] === 34);
   assert.equal(bob.args[1], 746);
   assert.equal(bob.fillStyle, '#e6a35a', 'the T leaver’s name is T-tinted');
+  const stranger = opsSince(canvas.log, 'fillText', mark).find((e) => e.args[0] === 'stranger' && e.args[2] === 56);
+  assert.ok(stranger, 'an unresolvable leaver still renders her name');
+  assert.equal(stranger.fillStyle, '#9aa4b5', '…in NEUTRAL — an unknown side is never guessed');
   const feedLineTexts = opsSince(canvas.log, 'fillText', mark)
-    .filter((e) => e.args[2] === 12 || e.args[2] === 34)
+    .filter((e) => e.args[2] === 12 || e.args[2] === 34 || e.args[2] === 56)
     .map((e) => e.args[0]);
   assert.ok(!feedLineTexts.includes('→'), 'no killer→victim arrow on a disconnect line');
   assert.ok(!feedLineTexts.includes('?'), 'no victim cell — the normal branch never runs');
 
   // Outline = the LEAVER's side (mirrors the suicide row; ruling
-  // 2026-11-14), resolved from the row's own attacker key.
+  // 2026-11-14), resolved from the row's own attacker key; the
+  // unresolvable leaver takes the neutral hairline instead.
   assert.deepEqual(
     entryBoxOps(canvas.log, mark).map((b) => b.stroke),
-    ['#5aa9e6', '#e6a35a'],
-    'leaver-side outlines: CT leaver, T leaver',
+    ['#5aa9e6', '#e6a35a', '#9aa4b5'],
+    'leaver-side outlines: CT leaver, T leaver, neutral for the unknown side',
   );
   r.destroy();
 });
