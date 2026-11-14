@@ -40,12 +40,28 @@ export const ORDER_KEYS = Object.freeze({
 // converted columns; anything unranked (user/plugin metrics, not-yet
 // seeded names) has rank ∞ and enters in catalog order.
 //
-// Match: the four scoreboard columns that convert to metrics keep
-// today's exact relative order — adr #6 (Match.svelte SCORE_COLS :98),
-// kast #7 (:99), hs_pct #8 (:100), kd #9 (:101); everything else was
-// never on the scoreboard (rank ∞).
+// Match: the twelve scoreboard columns that render as metrics keep
+// today's exact relative order — the original 23-column scoreboard's
+// positions: A #5 < ADR #6 < KAST% #7 < HS% #8 < K/D #9 < 2K #13 <
+// 3K #14 < 4K #15 < 5K #16 < Entry #17 < Trade #18 < Streak #20 (the
+// W2a swap converted the eight SCORE_COLS entries that sat among the
+// fixed block; dogfood W2 had already converted the tail four);
+// everything else was never on the scoreboard (rank ∞).
 export const DEFAULT_RANKS = Object.freeze({
-  match: Object.freeze({ adr: 1, kast: 2, hs_pct: 3, kd: 4 }),
+  match: Object.freeze({
+    assists: 1,
+    adr: 2,
+    kast: 3,
+    hs_pct: 4,
+    kd: 5,
+    two_k: 6,
+    three_k: 7,
+    four_k: 8,
+    five_k: 9,
+    entry_kills: 10,
+    trade_kills: 11,
+    best_streak: 12,
+  }),
   // Profile: today's StatCards grid order (PlayerProfile.svelte :342-374)
   // minus the cards that stay Go — Matches, Win%, Opening duels and the
   // Clutches COUNT are fixed-block, never ranked. The σ half of
@@ -73,10 +89,27 @@ export const DEFAULT_RANKS = Object.freeze({
 // explicit "pin nothing" is never overridden. No migration marker
 // (pre-release no-versioning policy).
 //
-// match = adr, kast, hs_pct, kd — NOT trade_rate (today it is not a
-// scoreboard column). profile = the nine rank-1..9 names above.
+// match = the twelve always-on scoreboard columns: the four that
+// converted in dogfood W2 plus the eight SCORE_COLS the W2a swap
+// moved (NOT trade_rate — today it is not a scoreboard column;
+// entry_deaths stays unpinned because it only ever renders inside the
+// Opening K/D pair cell's fixed named slot). profile = the nine
+// rank-1..9 names above.
 export const DEFAULT_PINS = Object.freeze({
-  match: Object.freeze(['adr', 'kast', 'hs_pct', 'kd']),
+  match: Object.freeze([
+    'assists',
+    'adr',
+    'kast',
+    'hs_pct',
+    'kd',
+    'two_k',
+    'three_k',
+    'four_k',
+    'five_k',
+    'entry_kills',
+    'trade_kills',
+    'best_streak',
+  ]),
   profile: Object.freeze([
     'career_adr',
     'career_adr_sigma',
@@ -96,9 +129,12 @@ export const DEFAULT_PINS = Object.freeze({
 // preference can promote a metric ahead of it. The dialog renders it
 // read-only as context ("where will my metric land?").
 //
-// match: SCORE_COLS (Match.svelte :89-133) minus adr/kast/hs_pct/kd
-// (→ metrics D1/D6/D4/D5) — Name, Team, K, D, A, KDA, DMG, Rnds,
-// 2K–5K, Entry, Trade, Opening K/D, Streak, Util, MVPs, Score.
+// match: SCORE_COLS (Match.svelte) minus every entry that renders as
+// a metric — adr/kast/hs_pct/kd (dogfood W2) and A, 2K–5K, Entry,
+// Trade, Streak (the W2a swap) — leaving Name, Team, K, D, KDA, DMG,
+// Rnds, Opening K/D, Util, MVPs, Score. Opening K/D STAYS fixed: it
+// keeps its fixed position (design Q2) while its cell composes the
+// entry_kills / entry_deaths metric halves.
 // profile: the StatCards grid (PlayerProfile.svelte :342-374) minus
 // ADR ± σ, K/D, HS%, KAST%, Trade rate, the Clutches win-% sub, Avg
 // enemies flashed and Avg util damage (→ metrics) — Matches, Win%,
@@ -109,18 +145,10 @@ export const FIXED_BLOCK = Object.freeze({
     'Team',
     'K',
     'D',
-    'A',
     'KDA',
     'DMG',
     'Rnds',
-    '2K',
-    '3K',
-    '4K',
-    '5K',
-    'Entry',
-    'Trade',
     'Opening K/D',
-    'Streak',
     'Util',
     'MVPs',
     'Score',

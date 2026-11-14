@@ -53,8 +53,21 @@ test('ORDER_KEYS are the two bare kvstore keys (no version marker)', () => {
   assert.ok(!Object.values(ORDER_KEYS).some((k) => /\bv\d\b|version|_v/.test(k)));
 });
 
-test('DEFAULT_RANKS.match replicates today\'s scoreboard: adr, kast, hs_pct, kd', () => {
-  assert.deepEqual(DEFAULT_RANKS.match, { adr: 1, kast: 2, hs_pct: 3, kd: 4 });
+test('DEFAULT_RANKS.match replicates today\'s scoreboard: the twelve converted columns in display order', () => {
+  assert.deepEqual(DEFAULT_RANKS.match, {
+    assists: 1,
+    adr: 2,
+    kast: 3,
+    hs_pct: 4,
+    kd: 5,
+    two_k: 6,
+    three_k: 7,
+    four_k: 8,
+    five_k: 9,
+    entry_kills: 10,
+    trade_kills: 11,
+    best_streak: 12,
+  });
 });
 
 test('DEFAULT_RANKS.profile replicates today\'s card grid (nine converted cards)', () => {
@@ -71,16 +84,30 @@ test('DEFAULT_RANKS.profile replicates today\'s card grid (nine converted cards)
   });
 });
 
-test('DEFAULT_PINS: match = the four always-on columns (NOT trade_rate), profile = the nine cards', () => {
-  assert.deepEqual(DEFAULT_PINS.match, ['adr', 'kast', 'hs_pct', 'kd']);
+test('DEFAULT_PINS: match = the twelve always-on columns (NOT trade_rate), profile = the nine cards', () => {
+  assert.deepEqual(DEFAULT_PINS.match, [
+    'assists',
+    'adr',
+    'kast',
+    'hs_pct',
+    'kd',
+    'two_k',
+    'three_k',
+    'four_k',
+    'five_k',
+    'entry_kills',
+    'trade_kills',
+    'best_streak',
+  ]);
   assert.deepEqual(DEFAULT_PINS.profile, Object.keys(DEFAULT_RANKS.profile));
+  // The pins select exactly the ranked match set (the §4.3 invariant).
+  assert.deepEqual(DEFAULT_PINS.match, Object.keys(DEFAULT_RANKS.match));
 });
 
 test('FIXED_BLOCK: the Go stats\' labels minus the converted entries (post-conversion order)', () => {
   assert.deepEqual(FIXED_BLOCK.match, [
-    'Name', 'Team', 'K', 'D', 'A', 'KDA', 'DMG', 'Rnds',
-    '2K', '3K', '4K', '5K', 'Entry', 'Trade', 'Opening K/D',
-    'Streak', 'Util', 'MVPs', 'Score',
+    'Name', 'Team', 'K', 'D', 'KDA', 'DMG', 'Rnds', 'Opening K/D',
+    'Util', 'MVPs', 'Score',
   ]);
   assert.deepEqual(FIXED_BLOCK.profile, ['Matches', 'Win%', 'Opening duels', 'Clutches']);
   // Never reorderable: the accessor returns the same constant list.
@@ -171,11 +198,12 @@ test('absent pins key → DEFAULT_PINS resolved by name through the catalog', ()
     { id: 3, name: 'kd' },
     { id: 1, name: 'adr' },
   ];
-  // DEFAULT_PINS order (not catalog order): kast/hs_pct are not seeded
-  // yet → resolve to nothing; the resolved ids keep the DEFAULT order.
+  // DEFAULT_PINS order (not catalog order): ten of the twelve default
+  // names are absent from this catalog → resolve to nothing; the
+  // resolved ids keep the DEFAULT order.
   assert.deepEqual(resolvePinIds('match', null, catalog), [1, 3]);
-  // Before W2's seeds (no default names in the catalog) → [] — exactly
-  // today's "absent ⇒ []" behaviour, no visible change.
+  // A catalog with no default names in it → [] — the honest
+  // "nothing resolves" fallback, same shape as an empty selection.
   assert.deepEqual(resolvePinIds('match', null, []), []);
   assert.deepEqual(resolvePinIds('profile', null, []), []);
 });
@@ -268,7 +296,8 @@ test('resetOrder deletes the key (both scopes route to their own key)', async ()
 
 test('defaultRanker: unranked/user names are ∞, unknown scopes rank everything ∞', () => {
   const rank = defaultRanker('match');
-  assert.equal(rank('adr'), 1);
+  assert.equal(rank('assists'), 1);
+  assert.equal(rank('adr'), 2);
   assert.equal(rank('not_seeded_yet'), Infinity);
   assert.equal(defaultRanker('profile')('career_kd'), 3);
   assert.equal(defaultRanker('nope')('adr'), Infinity, 'a bogus scope never ranks anything');
