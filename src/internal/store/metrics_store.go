@@ -353,10 +353,10 @@ func (s *Store) CreateMetric(m models.MetricRow) (models.MetricRow, error) {
 // rows via ReplacePluginMetrics, and builtins are schema-seeded. scope is
 // written from the row; version is deliberately NOT touched here — the
 // +1 bump on semantic edits (expr/scope/denominator, with the
-// transitive-dependent cascade) lives with the SaveMetric save
-// transaction in a later wave (stored-metrics design §2); until then this
-// stays a pure overwrite (no-history model — no shadow rows, no
-// versioned copies).
+// transitive-dependent cascade) lives in SaveMetricWithDeps' save
+// transaction (stored-metrics design §4), which is THE save path the
+// service routes through; this plain overwrite stays the raw store API
+// (no-history model — no shadow rows, no versioned copies).
 func (s *Store) UpdateMetric(m models.MetricRow) (models.MetricRow, error) {
 	if err := updateMetric(s.db, m); err != nil {
 		return models.MetricRow{}, err
@@ -401,6 +401,17 @@ type DependentRewrite struct {
 // rename splices — ALL in ONE transaction, so a failed save (a name
 // collision, a rewrite that cannot land) leaves every row untouched.
 //
+// semanticBump is design §4's version-axis marking: when the save
+// changed the metric's SEMANTICS (expr / scope / denominator — the
+// caller decides by comparing against the stored row, the
+// analyticservice.go SetConfig no-op pattern), the same transaction
+// bumps the metric's version AND every transitive dependent's
+// (bumpMetricAndDependents), so after commit nothing is partially
+// behind and the behind set IS the remaining work. Display-only edits,
+// no-op saves and renames pass false: no bump, no recompute (a rename
+// changes no semantics). The bump writes NOTHING into metric_values —
+// deleting outdated rows is the sweep's alone.
+//
 // The edges are keyed by NAME, never by id: metrics.name is the
 // expression's identity and ids churn on plugin replace
 // (ReplacePluginMetrics deletes + re-inserts). dep_name deliberately
@@ -412,7 +423,7 @@ type DependentRewrite struct {
 // ReplacePluginMetrics never routes through here (it owns its own
 // transaction and never parses exprs), so this method's edge
 // maintenance can never block a plugin replace.
-func (s *Store) SaveMetricWithDeps(m models.MetricRow, deps []string, rewrites []DependentRewrite) (models.MetricRow, error) {
+func (s *Store) SaveMetricWithDeps(m models.MetricRow, deps []string, rewrites []DependentRewrite, semanticBump bool) (models.MetricRow, error) {
 	tx, err := s.db.Begin()
 	if err != nil {
 		return models.MetricRow{}, fmt.Errorf("store: save metric: %w", err)
@@ -442,6 +453,14 @@ func (s *Store) SaveMetricWithDeps(m models.MetricRow, deps []string, rewrites [
 			return models.MetricRow{}, err
 		}
 		if err := replaceMetricDeps(tx, r.ID, r.Deps); err != nil {
+			return models.MetricRow{}, err
+		}
+	}
+	// The cascade bump runs LAST inside the same tx (order is irrelevant
+	// — atomic): by now the graph the walk sees is the post-save one
+	// (edges replaced, rename splices applied).
+	if semanticBump && m.ID > 0 {
+		if err := bumpMetricAndDependents(tx, id); err != nil {
 			return models.MetricRow{}, err
 		}
 	}

@@ -38,6 +38,10 @@ const (
 //	                    mid-parse for CS2, frames only signal the end)
 //	store   0.90        persisting the extract
 //	analyze 0.95        post-import analytics pass
+//	metrics 0.95 → 0.99 post-import metric compute pass (stored-metrics
+//	                    design §4; only emitted when the importer has an
+//	                    AfterAnalyze hook — a metric failure never fails
+//	                    the job)
 //	done    1.00
 const (
 	// StageHash is the sha256 pass over the source file (before any
@@ -54,6 +58,11 @@ const (
 	StageStore      = "store"
 	// StageAnalyze is the post-import analytics pass (M3, library worker).
 	StageAnalyze = "analyze"
+	// StageMetrics is the post-import metric compute pass (stored-metrics
+	// design §4): the sweep of stored metric values, riding the job's
+	// held work token. Emitted only when library.Options.AfterAnalyze is
+	// wired (production); a metric failure never fails the job.
+	StageMetrics = "metrics"
 	StageDone    = "done"
 )
 

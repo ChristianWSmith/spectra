@@ -130,9 +130,22 @@
 // dependent rows absent, never 0), while metric_id's ON DELETE CASCADE
 // removes the deleted metric's own edges.
 //
-// The compute pass, its cascade version bumps and the metric_values
-// writers are wave 3 (design §6) — nothing here schedules or stores a
-// computed value.
+// The compute pass (design §4) is W3 and lives HERE, beside the
+// executor: pass.go holds metrics.Sweep — the behind-set selection
+// (store.MetricCoverage is the ONE predicate spelling, shared with the
+// read-state surface), the forward-closure + topological ordering over
+// metric_deps, and the two-phase per-metric unit (phase 1 removes the
+// metric's rows, phase 2 commits fresh ones stamped with both live
+// versions — that commit is the commit marker; a crash anywhere leaves
+// the metric absent → behind → retried). CompilePassMatch is the
+// pass-only address mode (batched GROUP BY match_id, subject); a
+// profile-scope metric computes through CompileRefs at scope "" and
+// stores at the career grain (match_id = 0) — a career value is stored
+// directly, never rolled up from per-match rows. The cascade version
+// bump is save-side (SaveMetricWithDeps' semanticBump); the scheduler,
+// spectra:metric-progress/-done and GetMetricComputeState are the
+// service's (src/metriccompute.go). Version stamps are INTERNAL-ONLY —
+// no preview, event or state string ever renders one.
 //
 // # Sources and the column whitelist
 //

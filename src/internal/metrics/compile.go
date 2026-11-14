@@ -41,6 +41,13 @@ type Plan struct {
 	SQLAggs     int // value columns in the phase-1 statement (before trailing n)
 	PercentileP float64
 	HasDenom    bool
+	// MatchAddress marks the PASS-ONLY batched mode (CompilePassMatch):
+	// every row carries its match_id as the LEADING column (the address
+	// Go partitions the pass's fetch by — (match_id, subject)), and a
+	// match-scope denominator correlates on the row's match. false = the
+	// preview shapes: a scoped run binds one match id, scope "" groups by
+	// subject alone (profile/career values store at match_id = 0).
+	MatchAddress bool
 }
 
 // Compile parses + validates (grammar, sources, the player anchor, join
@@ -82,10 +89,33 @@ func Compile(expr, denominator, scope string) (Plan, *ParseError) {
 // ambiguous), which is why a single-source ref-bearing statement emits
 // qualified columns while the ref-free base form stays byte-stable.
 //
-// metric_values is EMPTY until the W3 compute pass: a ref-bearing
-// preview therefore honestly returns NO rows today (upstream absent →
-// dependent dropped). That is the INNER contract working, not a defect.
+// metric_values is written by the W3 compute pass (metrics.Sweep); a
+// ref-bearing preview over a not-yet-computed upstream honestly returns
+// NO rows (upstream absent → dependent dropped). That is the INNER
+// contract working, not a defect.
 func CompileRefs(expr, denominator, scope string, refs map[string]RefTarget) (Plan, *ParseError) {
+	return compileRefs(expr, denominator, scope, refs, false)
+}
+
+// CompilePassMatch is the PASS-ONLY address mode (stored-metrics design
+// §3): the batched match-scope statement the compute pass runs ONCE per
+// sweep over the whole library. It compiles like the "" library scope
+// (no scope predicate) but the output groups by (match_id, subject) —
+// Plan.MatchAddress marks the leading address column — and a
+// match-scope denominator correlates on the ROW's match instead of
+// binding one scope id, so one statement produces every match's
+// per-player values. The single-match "match:<id>" form stays the
+// preview's mode; a profile-scope compute passes through CompileRefs at
+// scope "" (the career statement — GROUP BY subject over the whole
+// library), because a career value is stored directly at the career
+// grain (design §1b: match_id = 0), not rolled up from per-match rows.
+func CompilePassMatch(expr, denominator string, refs map[string]RefTarget) (Plan, *ParseError) {
+	return compileRefs(expr, denominator, "", refs, true)
+}
+
+// compileRefs is the one implementation CompileRefs and CompilePassMatch
+// share (batched selects the pass-only address mode above).
+func compileRefs(expr, denominator, scope string, refs map[string]RefTarget, batched bool) (Plan, *ParseError) {
 	spec, perr := Parse(expr)
 	if perr != nil {
 		return Plan{}, perr
@@ -222,15 +252,17 @@ func CompileRefs(expr, denominator, scope string, refs map[string]RefTarget) (Pl
 	// only). Pinned by TestSubjectAddressingEmitted,
 	// TestJoinedPopulationAlignment and TestSubjectStatementExcludesBots.
 	plan := Plan{
-		Source:   primary,
-		AggCount: len(spec.Aggs),
-		SQLAggs:  len(sqlAggs),
-		HasDenom: denomTable != "",
+		Source:       primary,
+		AggCount:     len(spec.Aggs),
+		SQLAggs:      len(sqlAggs),
+		HasDenom:     denomTable != "",
+		MatchAddress: batched,
 	}
 	newEmitter := func() *emitter {
 		return &emitter{
 			res: res, from: from, fromArgs: refArgs, matchID: matchID,
 			denom: denomTable, subject: subject, refAliases: refAliases,
+			batched: batched,
 		}
 	}
 
@@ -492,6 +524,12 @@ type emitter struct {
 	// metric_values alias (md0, md1, …) — the emitter writes
 	// `<alias>.value` where a ref aggregation appears.
 	refAliases map[string]string
+	// batched is the PASS-ONLY address mode (CompilePassMatch): the
+	// statement carries match_id as a leading SELECT/GROUP BY column
+	// (every row addressed by (match_id, subject)) and a match-scope
+	// denominator correlates on the ROW's match instead of binding one
+	// scope id. false = the preview shapes (byte-stable emission).
+	batched bool
 }
 
 func (e *emitter) bind(v any) string {
@@ -556,9 +594,16 @@ func (e *emitter) writeSubject(wroteWhere bool) {
 // every SQL aggregation as a value column (first = previewed value,
 // wrapped by the denominator when set), trailing COUNT(*) sample size,
 // FROM (+ engine LEFT JOINs), scope WHERE on the primary (+ the subject
-// addressing condition), GROUP BY subject ORDER BY subject.
+// addressing condition), GROUP BY subject ORDER BY subject. In the
+// pass-only batched mode (CompilePassMatch) the row's match_id leads
+// both the SELECT and the GROUP BY — one statement, every match's
+// per-player values (design §3).
 func (e *emitter) phase1(aggs []*Agg, wrapDenom bool) {
 	e.sb.WriteString("SELECT ")
+	if e.batched {
+		e.sb.WriteString(e.matchIDExpr())
+		e.sb.WriteString(" AS mid, ")
+	}
 	e.sb.WriteString(e.subjectExpr())
 	e.sb.WriteString(" AS grp, ")
 	for i, a := range aggs {
@@ -586,6 +631,10 @@ func (e *emitter) phase1(aggs []*Agg, wrapDenom bool) {
 		wroteWhere = true
 	}
 	e.writeSubject(wroteWhere)
+	if e.batched {
+		e.sb.WriteString(" GROUP BY mid, grp ORDER BY mid, grp")
+		return
+	}
 	e.sb.WriteString(" GROUP BY grp ORDER BY grp")
 }
 
@@ -596,9 +645,14 @@ func (e *emitter) phase1(aggs []*Agg, wrapDenom bool) {
 // fetch carries the join/qualification day one), scope WHERE on the
 // primary (+ the subject addressing condition) and the optional per-agg
 // filter. The row cap comes from RunReadOnly — no SQL LIMIT, so
-// truncation is detectable.
+// truncation is detectable. Batched mode (CompilePassMatch) leads with
+// the row's match_id — the pass partitions (match_id, subject).
 func (e *emitter) phase2(a *Agg, withDenom bool) {
 	e.sb.WriteString("SELECT ")
+	if e.batched {
+		e.sb.WriteString(e.matchIDExpr())
+		e.sb.WriteString(" AS mid, ")
+	}
 	e.sb.WriteString(e.subjectExpr())
 	e.sb.WriteString(" AS grp, ")
 	e.sb.WriteString(e.res.qualify(a.Col))
@@ -638,6 +692,9 @@ func (e *emitter) phase2(a *Agg, withDenom bool) {
 //     `SELECT COUNT(*) FROM <rounds|matches> WHERE match_id = ?`, every
 //     player in the match sharing it (the emission is unchanged from the
 //     pre-subject engine).
+//   - pass-only batched mode (CompilePassMatch): the SAME match-scope
+//     count, correlated on the ROW's match instead of a bound scope id —
+//     one statement still computes every match's rate (design §3).
 //   - library/profile scope (""): the subject's CAREER units, correlated
 //     on the subject — rounds → the subject's player_round_stats rows
 //     (one per player-round), matches → the subject's player_stats rows
@@ -648,11 +705,21 @@ func (e *emitter) phase2(a *Agg, withDenom bool) {
 //     unqualified name would resolve to the inner table).
 func (e *emitter) emitDenom() {
 	e.sb.WriteString("(SELECT COUNT(*) FROM ")
-	if e.matchID > 0 {
+	switch {
+	case e.batched:
+		// Pass-only batch: count the ROW's match's units. The outer
+		// reference is ALWAYS primary-qualified (an unqualified match_id
+		// inside the subquery would resolve to the inner table's column
+		// — `match_id = match_id` — and count the whole table).
+		e.sb.WriteString(e.denom)
+		e.sb.WriteString(" WHERE match_id = ")
+		e.sb.WriteString(e.res.primary)
+		e.sb.WriteString(".match_id")
+	case e.matchID > 0:
 		e.sb.WriteString(e.denom)
 		e.sb.WriteString(" WHERE match_id = ")
 		e.sb.WriteString(e.bind(e.matchID))
-	} else {
+	default:
 		e.sb.WriteString(denominatorCareerTables[e.denom])
 		e.sb.WriteString(" AS d WHERE d.steam_id = ")
 		e.sb.WriteString(e.res.primary)
