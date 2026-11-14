@@ -16,10 +16,12 @@
 //      metric-done refetches the stored rows (the cache flushed);
 //   F. the no-version pin over every rendered metric output;
 //   G. the checkbox list follows the match ORDER pref (dogfooding
-//      design §1): absent key ⇒ the default sequence (= catalog order,
-//      pinned in A), a saved order re-sequences the list, and a
-//      deleted key (reset) returns it to the default — the pins array
-//      never orders this list.
+//      design §1) AND the exported document's sections follow the same
+//      sequence (the W4 addendum — design §2.5): absent key ⇒ the
+//      default sequence (= catalog order, pinned in A), a saved order
+//      re-sequences the list and the generated document, and a deleted
+//      key (reset) returns both to the default — the pins array never
+//      orders this list.
 //
 // services.js runs against the shared TEST STUBS (no live Wails
 // backend), 'svelte' is pinned to the CLIENT entry so plain `node --test`
@@ -377,6 +379,40 @@ console.log('G. the checkbox list follows the match ORDER pref (metricorder — 
       boxes[1].textContent.includes('Match stat'),
     JSON.stringify(boxes.map((b) => b.textContent.replace(/\s+/g, ' ').trim().slice(0, 40))),
   );
+  // The EXPORTED document follows the SAME sequence (design §2.5's
+  // intent — the W4 addendum): appendixEntries() sorts by the match
+  // sequence instead of the selection's id-ASC build order, so the
+  // generated document's sections re-order with the pref too. The
+  // selection itself persists in the view registry (sections B/D
+  // checked both), so only the ORDER is under test here. It must run
+  // while this mount is live — mounting the next root unmounts and
+  // detaches this one.
+  const generate = async (root) => {
+    for (const box of [...root.querySelectorAll('.rep-metric')]) {
+      const cb = box.querySelector('input[type="checkbox"]');
+      if (cb && !cb.checked) {
+        cb.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+        await sleep(60);
+      }
+    }
+    const gen = [...root.querySelectorAll('button')].find((b) =>
+      b.textContent.includes('Generate report'),
+    );
+    gen.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    await sleep(120);
+    return root.querySelector('.rep-md')?.textContent || '';
+  };
+  const sectionOrder = (text) => [text.indexOf('### Match stat'), text.indexOf('### Behind stat')];
+  const doc2 = await generate(r2);
+  {
+    const [m, b] = sectionOrder(doc2);
+    check(
+      'the exported document orders its sections by the match sequence (behind_stat first)',
+      m > -1 && b > -1 && b < m,
+      doc2.replace(/\s+/g, ' ').slice(0, 300),
+    );
+  }
+
   // Reset deletes the key (metricorder.resetOrder → kvstore Delete) —
   // here: the key simply stops resolving, and the default returns.
   delete bindings.handlers.GetPref;
@@ -389,6 +425,15 @@ console.log('G. the checkbox list follows the match ORDER pref (metricorder — 
       boxes2[1].textContent.includes('Behind stat'),
     JSON.stringify(boxes2.map((b) => b.textContent.replace(/\s+/g, ' ').trim().slice(0, 40))),
   );
+  const doc3 = await generate(r3);
+  {
+    const [m, b] = sectionOrder(doc3);
+    check(
+      'key gone → the document returns to the default section order (match_stat first)',
+      m > -1 && b > -1 && m < b,
+      doc3.replace(/\s+/g, ' ').slice(0, 300),
+    );
+  }
 }
 
 check('no runtime errors', errors.length === 0, errors.map((e) => e.message).join(' | '));

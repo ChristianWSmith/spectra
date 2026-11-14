@@ -367,8 +367,26 @@
   }
 
   // --- Metrics appendix ------------------------------------------------------
+  // THE section order of the exported document — appendixEntries is the
+  // ONE list appendixMd/appendixHtml walk (the W4 addendum to W1:
+  // design §2.5's intent — a document is read top-down in the order the
+  // surface renders its metrics, so the exported appendix follows the
+  // match SEQUENCE, not the selection's id-ASC build order). matchMetrics
+  // IS that sequence (metricorder.inSequence — the one ordering
+  // mechanism); an entry whose metric fell out of it (scope filter, a
+  // definition the catalog no longer lists) trails, id-ASC.
   function appendixEntries() {
-    return Object.entries(appendix).filter(([, a]) => !a.loading && !a.error && a.rows && a.metric);
+    const rank = new Map(matchMetrics.map((m, i) => [m.id, i]));
+    return Object.entries(appendix)
+      .filter(([, a]) => !a.loading && !a.error && a.rows && a.metric)
+      .sort(([a], [b]) => {
+        const ra = rank.get(Number(a));
+        const rb = rank.get(Number(b));
+        if (ra === undefined && rb === undefined) return Number(a) - Number(b);
+        if (ra === undefined) return 1;
+        if (rb === undefined) return -1;
+        return ra - rb;
+      });
   }
 
   // The per-metric meta line: fresh rows → "per player · N rows" (the
