@@ -110,7 +110,7 @@ func TestExtractRealCS2Icons(t *testing.T) {
 	for _, key := range []string{
 		"AK-47", "Smoke Grenade", "C4", "Kevlar + Helmet",
 		"headshot", "blind_kill", "noscope", "throughsmoke", "wallbang",
-		"airborne", "suicide", "explosion",
+		"airborne", "suicide", "explosion", "disconnect",
 	} {
 		if files[key] == "" {
 			t.Errorf("manifest key %q missing (have %d keys)", key, len(files))

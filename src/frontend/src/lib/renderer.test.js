@@ -90,6 +90,9 @@ import {
 } from './replay/renderer.js';
 import { dropEvidenceAt, dropWindow } from './replay/drops.js';
 import { buildKitEvidence } from './replay/kits.js';
+// The canonical synthetic-bot-id shape (the disconnect-line bot pin
+// below asserts its fixture really is a bot key).
+import { isBotId } from './players.js';
 import { createEngine } from './replay/engine.js';
 import { normalizeEvent } from './replay/landmarks.js';
 import { buildStateIndex } from './replay/state.js';
@@ -4095,6 +4098,302 @@ test('kill feed: missing round-4 indicator images reserve NO cell (no gap either
     .filter((e) => e.args[0] && e.args[0].src)
     .map((e) => e.args[0].src);
   assert.deepEqual(srcs, ['awp.svg'], 'no indicator glyph pixels are drawn');
+  r.destroy();
+});
+
+// --- kill-feed disconnect lines (bucket 'disconnect') -----------------------
+//
+// The player_disconnect row's feed contract: the game's disconnect glyph
+// + the LEAVER's name — NO killer/assister/victim cell (the row has no
+// counterpart), the LEAVER's side for both the outline and the name tint
+// (mirrors the suicide row; an unresolvable side stays neutral), the SAME
+// round scope / newest-6 cap / append order as kills, name-only with NO
+// gap when the glyph isn't extracted yet, and — event-shaped reads keep
+// bot names (store/queries.go + players.js) — a bot's 20-digit synthetic
+// key renders the BOT's name.
+
+test('kill feed: a disconnect row — disconnect glyph + leaver name only, leaver-side (or neutral) outline and tint', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: HUD_PLAYERS });
+  const mk = (ev) => normalizeEvent(ev, {});
+  r.setLandmarks([
+    // alice (slot 0 → CT) leaves at tick 50, bob (slot 1 → T) at 60 —
+    // two leavers so BOTH side tints/outlines come from the rule rather
+    // than from one convenient side. The third leaver is NOT in the
+    // roster: her side is unresolvable, so outline and tint must degrade
+    // to NEUTRAL (never a guessed color — ruling 2026-11-14). NO victim
+    // field at all on any of them: a disconnect row has no counterpart
+    // (the normal branch would render `name → ?` and the suicide branch
+    // a victim cell).
+    mk({ id: 1, seq: 1, tick: 50, round: 1, kind: 'player_disconnect', attacker: '1', attackerName: 'alice' }),
+    mk({ id: 2, seq: 2, tick: 60, round: 1, kind: 'player_disconnect', attacker: '2', attackerName: 'bob' }),
+    mk({ id: 3, seq: 3, tick: 65, round: 1, kind: 'player_disconnect', attacker: '765611980000004242', attackerName: 'stranger' }),
+  ]);
+  // Every OTHER feed glyph is registered on purpose: the row must draw
+  // its OWN disconnect glyph and nothing else — never the suicide glyph,
+  // never a weapon/flag cell.
+  r.setIcons({
+    disconnect: { width: 32, height: 32, src: 'disc.svg' },
+    suicide: { width: 32, height: 32, src: 'suicide.svg' },
+    C4: { width: 32, height: 32, src: 'c4.svg' },
+    headshot: { width: 32, height: 32, src: 'hs.svg' },
+    'AK-47': { width: 32, height: 32, src: 'ak.svg' },
+  });
+  r.setHud({
+    score: { ct: 0, t: 0 },
+    teamNames: { ct: '', t: '' },
+    round: { number: 1, label: 'R1', startTick: 0, freezeEndTick: 640, endTick: 1200, bombSite: '' },
+    tickRate: 64,
+  });
+  r.resize();
+
+  engine.seekTick(100);
+  const mark = canvas.log.length;
+  r.draw();
+
+  // [disc(16)][name(40)] + 1 gap + 2 inset = 80 → x = 712 — the same
+  // two-cell geometry the C4/suicide rows lay out, one box per leaver on
+  // the 22 px pitch. The feed renders from disconnects[] ALONE here
+  // (kills is empty): the merge is what makes a leaver-only round show.
+  const boxes = opsSince(canvas.log, 'roundRect', mark).filter(
+    (e) => e.args[3] === KILL_FEED_LH && e.args[4] === KILL_FEED_R,
+  );
+  assert.deepEqual(
+    boxes.map((e) => [e.args[0], e.args[1], e.args[2]]),
+    [
+      [712, 8, 80],
+      [712, 30, 80],
+      [712, 52, 80],
+    ],
+  );
+  // Only the disconnect glyph paints — once per row, never a weapon,
+  // flag or suicide cell.
+  const srcs = opsSince(canvas.log, 'drawImage', mark)
+    .filter((e) => e.args[0] && e.args[0].src)
+    .map((e) => e.args[0].src);
+  assert.deepEqual(srcs, ['disc.svg', 'disc.svg', 'disc.svg']);
+
+  // The name cell: the leaver's roster name, one gap past the glyph
+  // (712 + 6 + 16 + 12 = 746), tinted by the LEAVER's side — and no
+  // arrow, no victim/'?' cell (the normal/suicide branches never run).
+  const alice = opsSince(canvas.log, 'fillText', mark).find((e) => e.args[0] === 'alice' && e.args[2] === 12);
+  assert.ok(alice, 'the leaver name is the row’s only text cell');
+  assert.equal(alice.args[1], 746, 'the name sits one gap past the glyph');
+  assert.equal(alice.fillStyle, '#5aa9e6', 'the CT leaver’s name keeps her side tint');
+  const bob = opsSince(canvas.log, 'fillText', mark).find((e) => e.args[0] === 'bob' && e.args[2] === 34);
+  assert.equal(bob.args[1], 746);
+  assert.equal(bob.fillStyle, '#e6a35a', 'the T leaver’s name is T-tinted');
+  const stranger = opsSince(canvas.log, 'fillText', mark).find((e) => e.args[0] === 'stranger' && e.args[2] === 56);
+  assert.ok(stranger, 'an unresolvable leaver still renders her name');
+  assert.equal(stranger.fillStyle, '#9aa4b5', '…in NEUTRAL — an unknown side is never guessed');
+  const feedLineTexts = opsSince(canvas.log, 'fillText', mark)
+    .filter((e) => e.args[2] === 12 || e.args[2] === 34 || e.args[2] === 56)
+    .map((e) => e.args[0]);
+  assert.ok(!feedLineTexts.includes('→'), 'no killer→victim arrow on a disconnect line');
+  assert.ok(!feedLineTexts.includes('?'), 'no victim cell — the normal branch never runs');
+
+  // Outline = the LEAVER's side (mirrors the suicide row; ruling
+  // 2026-11-14), resolved from the row's own attacker key; the
+  // unresolvable leaver takes the neutral hairline instead.
+  assert.deepEqual(
+    entryBoxOps(canvas.log, mark).map((b) => b.stroke),
+    ['#5aa9e6', '#e6a35a', '#9aa4b5'],
+    'leaver-side outlines: CT leaver, T leaver, neutral for the unknown side',
+  );
+  r.destroy();
+});
+
+test('kill feed: a disconnect glyph missing from the manifest reserves NO cell (name-only, no gap)', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: HUD_PLAYERS });
+  const mk = (ev) => normalizeEvent(ev, {});
+  r.setLandmarks([
+    mk({ id: 1, seq: 1, tick: 50, round: 1, kind: 'player_disconnect', attacker: '1', attackerName: 'alice' }),
+  ]);
+  // Manifest WITHOUT 'disconnect' — a pre-re-extraction install (the icon
+  // lands in the manifest only after Settings → "Extract all CS2
+  // assets"): the row must draw name-only, with NO reserved glyph slot.
+  r.setIcons({ 'AK-47': { width: 32, height: 32, src: 'ak.svg' } });
+  r.setHud({
+    score: { ct: 0, t: 0 },
+    teamNames: { ct: '', t: '' },
+    round: { number: 1, label: 'R1', startTick: 0, freezeEndTick: 640, endTick: 1200, bombSite: '' },
+    tickRate: 64,
+  });
+  r.resize();
+
+  engine.seekTick(100);
+  const mark = canvas.log.length;
+  r.draw();
+
+  // Name-only geometry: 12 + 40 = 52 → x = 740 — i.e. the name lands at
+  // the SAME 746 as the glyphed row (the box just loses the 16 px slot +
+  // gap), so the degradation moves nothing on screen.
+  const box = opsSince(canvas.log, 'roundRect', mark).find(
+    (e) => e.args[3] === KILL_FEED_LH && e.args[4] === KILL_FEED_R,
+  );
+  assert.deepEqual([box.args[0], box.args[1], box.args[2]], [740, 8, 52]);
+  const alice = opsSince(canvas.log, 'fillText', mark).find((e) => e.args[0] === 'alice' && e.args[2] === 12);
+  assert.ok(alice, 'the leaver name survives without the glyph');
+  assert.equal(alice.args[1], 746, 'the name keeps its position (no gap to close)');
+  assert.equal(alice.fillStyle, '#5aa9e6', 'the side tint is unchanged');
+  const srcs = opsSince(canvas.log, 'drawImage', mark)
+    .filter((e) => e.args[0] && e.args[0].src)
+    .map((e) => e.args[0].src);
+  assert.deepEqual(srcs, [], 'no disconnect glyph pixels are drawn');
+  r.destroy();
+});
+
+test('kill feed: disconnect rows share the round scope and the newest-6 cap with kills', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: HUD_PLAYERS });
+  const mk = (ev) => normalizeEvent(ev, {});
+  const kill = (id, tick, attackerName, victimName) =>
+    mk({ id, seq: id, tick, round: 1, kind: 'kill', attacker: '1', attackerName, victim: '2', victimName, weapon: 'AK-47' });
+  const disc = (id, tick, attackerName) =>
+    mk({ id, seq: id, tick, round: 1, kind: 'player_disconnect', attacker: '1', attackerName });
+  r.setLandmarks([
+    kill(1, 10, 'k10', 'v10'),
+    kill(2, 20, 'k20', 'v20'),
+    kill(3, 30, 'k30', 'v30'),
+    disc(4, 40, 'd40'),
+    disc(5, 50, 'd50'),
+    disc(6, 60, 'd60'),
+    disc(7, 70, 'd70'),
+    // Round 2's leaver — never in round 1's feed (the SAME round scope
+    // the kills obey), shown only once the HUD round changes.
+    mk({ id: 8, seq: 8, tick: 900, round: 2, kind: 'player_disconnect', attacker: '2', attackerName: 'd900' }),
+  ]);
+  r.setIcons({ disconnect: { width: 32, height: 32, src: 'disc.svg' } });
+  r.setHud({
+    score: { ct: 0, t: 0 },
+    teamNames: { ct: '', t: '' },
+    round: { number: 1, label: 'R1', startTick: 0, freezeEndTick: 640, endTick: 1200, bombSite: '' },
+    tickRate: 64,
+  });
+  r.resize();
+
+  engine.seekTick(100); // all seven round-1 rows are in the past
+  const mark = canvas.log.length;
+  r.draw();
+  // 3 kills + 4 disconnects = 7 rows in scope → the cap keeps the NEWEST
+  // 6 (kills and disconnects draw from ONE sorted pool): the tick-10
+  // kill drops, the newest leaver (d70) sits at the BOTTOM row.
+  assert.equal(feedBoxesSince(canvas.log, mark).length, 6, 'one box per surviving row across both kinds');
+  const textsAt = (y) =>
+    opsSince(canvas.log, 'fillText', mark).filter((e) => e.args[2] === y).map((e) => e.args[0]);
+  assert.ok(textsAt(12).includes('k20'), 'the oldest survivor (a KILL) heads the stack');
+  assert.ok(textsAt(122).includes('d70'), 'the newest leaver sits at the BOTTOM (row 5)');
+  const all = opsSince(canvas.log, 'fillText', mark).map((e) => e.args[0]);
+  assert.ok(!all.includes('k10'), 'the oldest row fell off with the cap');
+  assert.ok(!all.includes('d900'), "round 2's leaver is out of round 1's scope");
+
+  // Round change → the feed clears and re-derives for round 2 (the SAME
+  // clearing rule the kills have).
+  r.setHud({
+    score: { ct: 0, t: 0 },
+    teamNames: { ct: '', t: '' },
+    round: { number: 2, label: 'R2', startTick: 0, freezeEndTick: 640, endTick: 1200, bombSite: '' },
+    tickRate: 64,
+  });
+  engine.seekTick(1000);
+  const mark2 = canvas.log.length;
+  r.draw();
+  assert.equal(feedBoxesSince(canvas.log, mark2).length, 1, "round 2's feed is its own leaver line");
+  const later = opsSince(canvas.log, 'fillText', mark2).find((e) => e.args[0] === 'd900' && e.args[2] === 12);
+  assert.ok(later, 'the round-2 leaver renders');
+  assert.equal(later.args[1], 746, 'glyph + name geometry, as in round 1');
+  r.destroy();
+});
+
+test('kill feed: a kill and a disconnect at the SAME tick render kill-first (the stable merge order)', () => {
+  headlessGlobals();
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  const r = createRenderer(canvas, { engine, data, players: HUD_PLAYERS });
+  const mk = (ev) => normalizeEvent(ev, {});
+  r.setLandmarks([
+    // Same tick, same round: kills are collected first, so the stable
+    // sort keeps the kill ABOVE the leaver line (a deterministic tie —
+    // never an array-order accident of the source rows).
+    mk({ id: 1, seq: 9, tick: 70, round: 1, kind: 'kill', attacker: '1', attackerName: 'killer', victim: '2', victimName: 'victim', weapon: 'AK-47' }),
+    mk({ id: 2, seq: 1, tick: 70, round: 1, kind: 'player_disconnect', attacker: '2', attackerName: 'leaver' }),
+  ]);
+  r.setIcons({ disconnect: { width: 32, height: 32, src: 'disc.svg' } });
+  r.setHud({
+    score: { ct: 0, t: 0 },
+    teamNames: { ct: '', t: '' },
+    round: { number: 1, label: 'R1', startTick: 0, freezeEndTick: 640, endTick: 1200, bombSite: '' },
+    tickRate: 64,
+  });
+  r.resize();
+
+  engine.seekTick(100);
+  const mark = canvas.log.length;
+  r.draw();
+  assert.equal(feedBoxesSince(canvas.log, mark).length, 2, 'both same-tick rows render');
+  const at = (txt, y) =>
+    opsSince(canvas.log, 'fillText', mark).some((e) => e.args[0] === txt && e.args[2] === y);
+  assert.ok(at('killer', 12), 'the kill heads the stack (row 0 → text y 12)');
+  assert.ok(at('leaver', 34), 'the leaver line follows it (row 1 → text y 34)');
+  assert.ok(!at('leaver', 12), 'the disconnect never jumps ABOVE the same-tick kill');
+  r.destroy();
+});
+
+test('kill feed: a bot disconnect renders the BOT name (event-shaped reads keep bot names)', () => {
+  headlessGlobals();
+  const BOT = '18374686479671623692'; // extract.isBotKey's 0xFF synthetic id (20 digits)
+  assert.ok(isBotId(BOT), 'the fixture id really is a synthetic bot key');
+  const data = synthStore(1300, 2);
+  const engine = createEngine(data, 64);
+  const canvas = recordingCanvas();
+  // The bot occupies a ROSTER slot (bots have one — the nuke demo's Crew
+  // disconnects at 28801), so its side resolves like any player's.
+  const players = [
+    { steamId: '1', name: 'alice', side: 'ct' },
+    { steamId: BOT, name: 'Crew', side: 't' },
+  ];
+  const r = createRenderer(canvas, { engine, data, players });
+  const mk = (ev) => normalizeEvent(ev, {});
+  r.setLandmarks([
+    mk({ id: 1, seq: 1, tick: 50, round: 1, kind: 'player_disconnect', attacker: BOT, attackerName: 'Crew' }),
+  ]);
+  r.setIcons({ disconnect: { width: 32, height: 32, src: 'disc.svg' } });
+  r.setHud({
+    score: { ct: 0, t: 0 },
+    teamNames: { ct: '', t: '' },
+    round: { number: 1, label: 'R1', startTick: 0, freezeEndTick: 640, endTick: 1200, bombSite: '' },
+    tickRate: 64,
+  });
+  r.resize();
+
+  engine.seekTick(100);
+  const mark = canvas.log.length;
+  r.draw();
+
+  const boxes = opsSince(canvas.log, 'roundRect', mark).filter(
+    (e) => e.args[3] === KILL_FEED_LH && e.args[4] === KILL_FEED_R,
+  );
+  assert.equal(boxes.length, 1, 'the bot’s disconnect line renders — never filtered out');
+  const crew = opsSince(canvas.log, 'fillText', mark).find((e) => e.args[0] === 'Crew' && e.args[2] === 12);
+  assert.ok(crew, 'the BOT’s name is the cell (event-shaped reads keep bot names)');
+  assert.equal(crew.args[1], 746, 'glyph + name geometry');
+  assert.equal(crew.fillStyle, '#e6a35a', 'the bot’s roster slot resolves its side (T)');
+  assert.deepEqual(
+    entryBoxOps(canvas.log, mark).map((b) => b.stroke),
+    ['#e6a35a'],
+    'the bot’s line is outlined in its side too',
+  );
   r.destroy();
 });
 

@@ -385,6 +385,12 @@ test('drawBucket buckets every drawable kind (renderer/scrubber contract)', () =
   for (const k of ['blind', 'player_connect', '', 'extinguish', 'start_failed', 'fade_out']) {
     assert.equal(drawBucket(k), '', k);
   }
+  // The kill feed's disconnect line gets its OWN bucket — never 'kill'
+  // (that bucket feeds the death-X world markers: a leaver has no body
+  // to mark) and never '' (the renderer's disconnect branch keys on it).
+  // player_connect stays bucketless beside it: a join is a card-presence
+  // row only, nothing draws it.
+  assert.equal(drawBucket('player_disconnect'), 'disconnect');
   // Extended spellings keep their substring buckets.
   assert.equal(drawBucket('smoke'), 'smoke');
   assert.equal(drawBucket('molotov'), 'fire');
@@ -415,6 +421,9 @@ test('drawBucket buckets every drawable kind (renderer/scrubber contract)', () =
     'grenade_land',
     'grenade_throw',
     'kill',
+    // the kill feed's disconnect line (own bucket — see drawBucket above;
+    // its feed claim stays the default-OFF 'connects' category)
+    'player_disconnect',
     'round_end',
     'round_start',
     'start_failed',
@@ -503,6 +512,10 @@ test('scrubberMarkerClass maps every drawable bucket (the markers contract)', ()
   // …and 'bounce' too: the vertices of a flight carry no scrubber tick of
   // their own — the flight's DETONATION carries the det marker.
   assert.equal(scrubberMarkerClass('bounce'), '');
+  // …and 'disconnect': the kill feed's glyph+name line is a feed row, not
+  // a moment on the timeline (consistent with damage/land — ruling
+  // 2026-11-14).
+  assert.equal(scrubberMarkerClass('disconnect'), '');
   assert.equal(scrubberMarkerClass(''), '');
   assert.equal(scrubberMarkerClass(null), '');
   // 'decoy' is no longer a bucket ANYWHERE: detonationStyle('Decoy

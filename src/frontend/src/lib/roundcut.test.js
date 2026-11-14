@@ -235,6 +235,9 @@ test('ROUND_POLICY: P1 areas and P2 pops are classified; P3/P4 buckets are absen
     'wdrop',
     'wpickup',
     'damage',
+    // the kill feed's glyph+name line: a feed row, never round-cut (it
+    // dies with the round scope in killFeedLayout, like the kills)
+    'disconnect',
     'round',
     'start',
     'plant_begin',
