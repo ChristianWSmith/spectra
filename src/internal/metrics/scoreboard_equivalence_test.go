@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"fmt"
 	"path/filepath"
 	"strconv"
 	"testing"
@@ -328,3 +329,85 @@ func TestExtractShapedScoreboardEquivalence(t *testing.T) {
 
 // itoa formats a match id for a scope string.
 func itoa(v int64) string { return strconv.FormatInt(v, 10) }
+
+// TestCareerOpeningEquivalence is the opening-duel trio's acceptance
+// oracle (design addendum I9): the three profile seeds equal the career
+// rollup the store keeps (RebuildCareer → GetCareer: openings =
+// Σ(opening_kills + opening_deaths), opener_wins = Σ(opening_kills)),
+// and the rate equals the EXACT percentage the Opening duels card
+// computes (profileservice: 100 × opener_wins / openings, guarded to
+// plain 0 when a career has no duels) — the number the conversion must
+// not move.
+func TestCareerOpeningEquivalence(t *testing.T) {
+	st := seededStore(t)
+	if err := st.RebuildCareer(); err != nil {
+		t.Fatalf("RebuildCareer: %v", err)
+	}
+	openings := previewAt(t, st, seedExpr(t, st, "career_openings"), "")
+	wins := previewAt(t, st, seedExpr(t, st, "career_opener_wins"), "")
+	rate := previewAt(t, st, seedExpr(t, st, "career_opening_rate"), "")
+	if len(openings) != 8 || len(wins) != 8 || len(rate) != 8 {
+		t.Fatalf("preview rows = %d/%d/%d, want 8 subjects each (%v/%v/%v)", len(openings), len(wins), len(rate), openings, wins, rate)
+	}
+
+	for i := 1; i <= 8; i++ {
+		sid := fmt.Sprintf("7656119800000000%d", i)
+		career, err := st.GetCareer(sid)
+		if err != nil {
+			t.Fatalf("GetCareer(%s): %v", sid, err)
+		}
+		if openings[sid] != float64(career.Openings) {
+			t.Errorf("career_openings[%s] = %v, want the career rollup's %d", sid, openings[sid], career.Openings)
+		}
+		if wins[sid] != float64(career.OpenerWins) {
+			t.Errorf("career_opener_wins[%s] = %v, want the career rollup's %d", sid, wins[sid], career.OpenerWins)
+		}
+		// The card's own formula: its guard shows plain 0 where the
+		// metric shows 0 beside N — the same displayed number.
+		wantPct := 0.0
+		if career.Openings > 0 {
+			wantPct = 100 * float64(career.OpenerWins) / float64(career.Openings)
+		}
+		if rate[sid]*100 != wantPct {
+			t.Errorf("career_opening_rate[%s] ×100 = %v, want the Opening-duels card's %v", sid, rate[sid]*100, wantPct)
+		}
+	}
+}
+
+// TestUntradedDeathsEquivalence is the victim-side count's acceptance
+// oracle (design addendum I20): the seed equals, subject for subject,
+// the SQL the Combat tab's Untraded deaths column read before it
+// converted (GetCombatStats' GROUP BY b_steam over the untraded
+// engagements) at every fixture match — a victim-side subject with no
+// untraded duel reads 0 from its own rows (never a missing row, never a
+// fabricated one).
+func TestUntradedDeathsEquivalence(t *testing.T) {
+	st := seededStore(t)
+	expr := seedExpr(t, st, "untraded_deaths")
+	for _, matchID := range []int64{1, 2, 3} {
+		scope := "match:" + itoa(matchID)
+		t.Run(scope, func(t *testing.T) {
+			got := previewAt(t, st, expr, scope)
+			want := oracle(t, st,
+				`SELECT b_steam, COUNT(*) FROM engagements
+				 WHERE match_id = ? AND kind = 'untraded' GROUP BY b_steam`,
+				matchID)
+			if len(want) != 4 {
+				t.Fatalf("oracle victims = %d, want 4 (the match's untraded victims)", len(want))
+			}
+			if len(got) != 8 {
+				t.Errorf("preview rows = %d, want 8 (every roster player has victim-side rows)", len(got))
+			}
+			for sid, n := range want {
+				if got[sid] != n {
+					t.Errorf("untraded_deaths[%s] = %v, want the GROUP BY b_steam count %v", sid, got[sid], n)
+				}
+			}
+			for sid, v := range got {
+				if _, victim := want[sid]; !victim && v != 0 {
+					t.Errorf("victim-side subject %s = %v, want 0 (its duels carry no untraded row)", sid, v)
+				}
+			}
+		})
+	}
+}

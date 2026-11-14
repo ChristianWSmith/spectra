@@ -42,9 +42,10 @@ func openSeededLibrary(t *testing.T) *store.Store {
 	return st
 }
 
-// TestM5BuiltinMetricsPreview: the sixteen schema-seeded builtins
-// (trade_rate + the dogfooding set) each compile and run on a fresh
-// library — the DoD "demonstrably expressible" loop end to end.
+// TestM5BuiltinMetricsPreview: the fifty-eight schema-seeded builtins
+// (trade_rate + the dogfooding set + the inferred set) each compile and
+// run on a fresh library — the DoD "demonstrably expressible" loop end
+// to end.
 func TestM5BuiltinMetricsPreview(t *testing.T) {
 	st := openSeededLibrary(t)
 	// group_by is gone from the DDL (stored-metrics W1) and the groupBy
@@ -53,15 +54,28 @@ func TestM5BuiltinMetricsPreview(t *testing.T) {
 	// player the statement produced).
 	res, err := st.RunReadOnly(
 		`SELECT name, expr, scope, denominator FROM metrics WHERE origin = 'builtin' ORDER BY name`,
-		nil, 20, 5000,
+		nil, 100, 5000,
 	)
 	if err != nil {
 		t.Fatalf("list builtins: %v", err)
 	}
-	if len(res.Rows) != 16 {
-		t.Fatalf("builtins = %d, want 16 (trade_rate + the dogfooding set — design §3.0)", len(res.Rows))
+	if len(res.Rows) != 58 {
+		t.Fatalf("builtins = %d, want 58 (trade_rate + the dogfooding set + the 42-row inferred set)", len(res.Rows))
 	}
 	scopes := map[string]int{}
+	// A seed over an EMPTY primary or an empty corpus table honestly
+	// returns no rows at all: the clutchless corpus (the seven clutch
+	// seeds) and the corpus's two unwritten analysis tables (the five
+	// side_class seeds) produce no subject groups — a subject-grouped
+	// statement over an empty table never fabricates a 0 row. Every
+	// other seed has subjects to address.
+	emptyOK := map[string]bool{
+		"clutches": true, "clutch_win_rate": true, "clutch_avg_size": true,
+		"clutch_avg_hp": true, "clutch_avg_equip": true,
+		"career_clutches": true, "career_clutch_win_rate": true,
+		"side_class_eco": true, "side_class_force": true, "side_class_full": true,
+		"side_class_save": true, "side_class_pistol": true,
+	}
 	for _, r := range res.Rows {
 		name, expr, scope, denom := r[0].(string), r[1].(string), r[2].(string), r[3].(string)
 		scopes[scope]++
@@ -78,12 +92,7 @@ func TestM5BuiltinMetricsPreview(t *testing.T) {
 			if perr != nil || err != nil {
 				t.Fatalf("preview: %v %v (sql %s)", perr, err, pv.SQL)
 			}
-			// career_clutch_win_rate has no rows on this corpus: the
-			// committed seed records NO clutches (its honest empty — a
-			// subject-grouped statement over an empty table produces no
-			// groups, never a fabricated 0 row). Every other seed has
-			// subjects to address.
-			if len(pv.Rows) == 0 && name != "career_clutch_win_rate" {
+			if len(pv.Rows) == 0 && !emptyOK[name] {
 				t.Fatalf("preview returned no rows")
 			}
 			for _, pr := range pv.Rows {
@@ -93,10 +102,11 @@ func TestM5BuiltinMetricsPreview(t *testing.T) {
 			}
 		})
 	}
-	// The scope split is part of the seed contract: 7 match / 9 profile
-	// (the profile rows land inert — their surface converts in W3).
-	if scopes["match"] != 7 || scopes["profile"] != 9 {
-		t.Errorf("scope split = %d match / %d profile, want 7 / 9", scopes["match"], scopes["profile"])
+	// The scope split is part of the seed contract: 45 match / 13
+	// profile (the profile rows land inert — their surface converts in
+	// W3).
+	if scopes["match"] != 45 || scopes["profile"] != 13 {
+		t.Errorf("scope split = %d match / %d profile, want 45 / 13", scopes["match"], scopes["profile"])
 	}
 }
 
