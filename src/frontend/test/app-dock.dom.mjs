@@ -210,6 +210,19 @@ writeStub(
 <div class="stub-mappackprompt" />
 `,
 );
+// DocsPopup — App mounts it unconditionally with the transient
+// open/section/token/onClose props (this driver stubs every overlay;
+// the popup's own contract lives in test/docs.dom.mjs). Without this
+// stub App's blanket `./lib/components/*.svelte → .js` rewrite would
+// point at a bundle this cache never writes and the mount would fail.
+writeStub(
+  'lib/components/DocsPopup.svelte',
+  `<script>
+  let { open = false, section = null, token = 0, onClose = () => {} } = $props();
+</script>
+{#if open}<div class="stub-docspopup" data-section={section ?? ''} />{/if}
+`,
+);
 
 // App.svelte → its ./lib/**/*.svelte imports resolve to the stubs above
 // (rewritten to .js like every other harness); everything else (svelte,

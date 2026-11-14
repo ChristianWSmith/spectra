@@ -1,0 +1,540 @@
+// The metric-language manual — the REAL content chapter of the user
+// guide (user-guide.js composes these sections in at its
+// metric-language position; every other guide section is an explicit
+// placeholder until written).
+//
+// PORTED VERBATIM from the researcher's reference draft (2026-11-14),
+// whose accepted AND refused examples were executed against the real
+// engine (69/69 checks — see the draft's accuracy appendix). The
+// wording is content, not chrome: do not "improve" a claim without
+// re-verifying it against src/internal/metrics (doc.go / parse.go /
+// whitelist.go / compile.go). Two mechanical port notes: the draft's
+// `###` subsections are `# here` (the section title owns the popup's
+// <h2>, so content headings start at <h3> — no heading-level skips),
+// and the draft's own TOC was dropped (the popup renders its own).
+export const metricLanguageSections = [
+  {
+    id: 'metric-language',
+    title: 'Metric language',
+    blocks: `A **metric** is one number for one player: "this player's trade rate", "this player's KAST%". Everything in the language exists to let you state such a number precisely.
+
+Three properties are worth knowing before anything else:
+
+- **It is always per player.** A metric never produces a team total or a match total. Every formula has to answer "which player is this number about?" — see [Player anchor](#player-anchor).
+- **Saved metrics are kept, not recalculated on the spot.** Once you save a metric and it has been worked out, the app keeps the value and every screen reads that kept value — reports and scoreboards do not re-derive it each time they open. If something changes that affects it (new matches imported, the analysis rules updated), it is worked out again in the background and the slot waits honestly until then (see [Missing data](#missing-data)). An expression you have **not** saved is the exception: it is calculated on demand while you preview it.
+- **Every metric has a scope** — either "this player in this match" or "this player's career" (see [Scope](#scope)).
+
+A saved metric also carries a written explanation of its own formula — one is required when you save — shown in the ⓘ tooltip next to it, so nobody has to read the expression to know what a number means.`,
+  },
+  {
+    id: 'writing-an-expression',
+    title: 'Writing an expression',
+    blocks: `The whole language is one shape:
+
+\`\`\`
+from <sources>: <aggregation>, <aggregation>, …
+\`\`\`
+
+For example:
+
+\`\`\`
+from player_stats: ratio(sum(kills), sum(deaths))
+\`\`\`
+
+- **Sources** come after \`from\`, separated by commas, and are closed by a \`:\`. One source is the usual case; a comma list lets you pull in extra data (see [Combining sources](#combining-sources)). The first source always leads.
+- **Aggregations** follow the colon, separated by commas. Each one is \`op(...)\`. The **first** aggregation is the value the metric shows; further ones are carried along for provenance.
+- An optional \`AS name\` label may follow any top-level aggregation. It is a label only — it does not change the value.
+- Keywords are case-insensitive: \`from\`, \`FROM\`, \`sum\`, \`SUM\`, \`where\`, \`WHERE\` all work. Source and column names are **not**: they must be spelled exactly as listed here — \`Kills\` is wrong, \`kills\` is right.
+- Text in \`-- …\` (to end of line) or \`/* … */\` is a comment and is ignored. String literals use single quotes; write \`''\` inside a string for a literal quote (\`text = 'it''s fine'\`).
+- Practical limits: 8192 bytes of text, up to 16 aggregations, conditions nested up to 64 levels deep.
+- Errors point at the place in your text that failed, so the builder can show you the exact spot.`,
+  },
+  {
+    id: 'sources',
+    title: 'Sources',
+    blocks: `Ten sources are available. A **source** is one of the bodies of stored data a formula may count and add up over; each has a fixed set of columns you may mention.
+
+| Source | One row is … | Anchors on (the player column) |
+|---|---|---|
+| \`events\` | one recorded match event (kill, damage, flash, grenade, bomb action, round boundary) | \`attacker\` |
+| \`engagements\` | one duel record: an opening, a trade, or a death that was traded or left untraded | \`a_steam\` |
+| \`rounds\` | one round | — none |
+| \`player_stats\` | one player's line in one match (the scoreboard numbers) | \`steam_id\` |
+| \`player_round_stats\` | one player's numbers in one round | \`steam_id\` |
+| \`round_economy\` | one side's economy in one round | — none |
+| \`clutches\` | one detected 1vN clutch | \`steam_id\` |
+| \`utility_events\` | one grenade throw paired with its detonation | \`thrower\` |
+| \`chat\` | one chat line | \`steam_id\` |
+| \`match_trade_opps\` | the trade opportunities analytics recorded for one player in one match | \`steam_id\` |
+
+# events
+
+Every recorded event of a match: kills, damage, blinding, grenade and bomb actions, round start/end. Rows with no acting player (an event nobody caused) are never counted.
+
+**Columns:** \`match_id\`, \`seq\`, \`tick\`, \`round\`, \`kind\`, \`attacker\`, \`victim\`, \`assister\`, \`weapon\`, \`headshot\`, \`wallbang\`, \`noscope\`, \`through_smoke\`, \`attacker_blind\`, \`assisted_flash\`, \`distance\`, \`hitgroup\`, \`dmg\`, \`site\`, \`pos_x\`, \`pos_y\`, \`pos_z\`
+
+# engagements
+
+Duel records the analysis pass derives from the event feed: \`opening\` (first blood), \`trade\` (answering a teammate's death), \`traded\` and \`untraded\` deaths. Each row pairs the actor (\`a_steam\`) with the other player (\`b_steam\`) and records who won the duel (\`won_by\`) and how far apart they were.
+
+**Columns:** \`match_id\`, \`seq\`, \`tick\`, \`round\`, \`kind\`, \`a_steam\`, \`a_name\`, \`b_steam\`, \`b_name\`, \`distance\`, \`won_by\`
+
+# rounds
+
+One row per round: who won it and why, how long it lasted, the MVP, each side's equipment value, the bomb site, and which player drew first blood (\`first_kill_steam\`) and who died first (\`first_death_steam\`). A round belongs to no single player, so this source cannot lead a formula — it can only be combined with a player source.
+
+**Columns:** \`match_id\`, \`number\`, \`winner\`, \`reason\`, \`duration_s\`, \`start_tick\`, \`end_tick\`, \`mvp\`, \`mvp_reason\`, \`equip_ct\`, \`equip_t\`, \`bomb_site\`, \`freeze_end_tick\`, \`first_kill_steam\`, \`first_death_steam\`
+
+# player_stats
+
+The classic scoreboard line, one row per player per match: kills, deaths, assists, headshots, damage dealt and taken, ADR, rounds played, entry and opening kills/deaths, trade kills, best streak, multi-kill tiers (2K–5K), utility damage, enemies flashed, times flashed, bomb plants and defuses, and money spent.
+
+**Columns:** \`match_id\`, \`steam_id\`, \`side\`, \`name\`, \`kills\`, \`deaths\`, \`assists\`, \`flash_assists\`, \`headshots\`, \`teamkills\`, \`suicides\`, \`mvps\`, \`score\`, \`total_damage\`, \`damage_taken\`, \`shots\`, \`hits\`, \`adr\`, \`hs_pct\`, \`rounds_played\`, \`entry_kills\`, \`entry_deaths\`, \`opening_kills\`, \`opening_deaths\`, \`trade_kills\`, \`best_streak\`, \`two_k\`, \`three_k\`, \`four_k\`, \`five_k\`, \`utility_damage\`, \`enemies_flashed\`, \`flashed_times\`, \`bomb_plants\`, \`bomb_defuses\`, \`money_spent_total\`
+
+# player_round_stats
+
+One row per player per round: kills, assists, deaths, whether the death was traded, whether they survived, the KAST flag for that round, damage and utility damage, and the money and equipment they started the round with.
+
+**Columns:** \`match_id\`, \`round\`, \`steam_id\`, \`name\`, \`kills\`, \`assists\`, \`deaths\`, \`traded\`, \`survived\`, \`kast\`, \`dmg\`, \`util_dmg\`, \`money_start\`, \`equip\`, \`spent\`, \`rule_version\`
+
+# round_economy
+
+One row per round **per side**: equipment value, sampled money, money spent, and the free pistol-round value. A side belongs to no single player, so this source cannot lead a formula.
+
+**Columns:** \`match_id\`, \`round\`, \`side\`, \`equip_value\`, \`money_sampled_sum\`, \`money_samples\`, \`spent\`, \`free_pistol_value\`
+
+# clutches
+
+One row per detected 1vN situation: how many opponents the lone player was up against when it began (\`size\` — a 1v3 has size 3), who was in it, when it started and ended, the bomb state, hit points left, equipment, and whether it was won (\`won\`, stored as 0/1).
+
+**Columns:** \`match_id\`, \`round\`, \`size\`, \`steam_id\`, \`name\`, \`start_tick\`, \`end_tick\`, \`bomb_state\`, \`hp_left\`, \`equip\`, \`won\`, \`replay_anchor\`
+
+# utility_events
+
+One row per grenade throw paired with its detonation: who threw it (\`thrower\`), what kind (\`he\`, \`flash\`, \`smoke\`, \`molotov\`, \`decoy\`), where it detonated, how much damage it did, how long the flash blinded, and the site.
+
+**Columns:** \`match_id\`, \`seq\`, \`tick\`, \`round\`, \`thrower\`, \`thrower_name\`, \`kind\`, \`det_x\`, \`det_y\`, \`damage\`, \`flash_ms\`, \`site\`
+
+# chat
+
+One row per chat line, plus the speaker's channel and the provenance columns for encrypted chat (\`decrypted\`, \`key_source\`). \`text\` is available so you can count exact phrases.
+
+**Columns:** \`id\`, \`match_id\`, \`tick\`, \`round\`, \`steam_id\`, \`name\`, \`text\`, \`kind\`, \`channel\`, \`decrypted\`, \`key_source\`
+
+# match_trade_opps
+
+One row per player per match with the trade opportunities the analysis recorded for them (\`opps\`) and how many they missed (\`missed\`). This source is **sparse**: a player who had no opportunities has no row, and bots are never written here — see [Missing data](#missing-data).
+
+**Columns:** \`match_id\`, \`steam_id\`, \`opps\`, \`missed\`
+
+> **Not available as columns:** payload columns that hold JSON or lists (for example the per-weapon damage breakdowns) are deliberately excluded; a metric is a single number, and there is no way to break a value down by category inside the language.`,
+  },
+  {
+    id: 'player-anchor',
+    title: 'Player anchor',
+    blocks: `Every metric answers a question about **one player**, so the source that *leads* your formula must identify a player.
+
+\`rounds\` and \`round_economy\` describe rounds and sides, not people, so they can never lead. Starting with one of them is refused immediately:
+
+\`\`\`
+from rounds: count()
+\`\`\`
+
+\`\`\`
+expression is not player-anchored: primary source "rounds" has no player
+subject — a metric's value must be per player (player sources: events,
+engagements, player_stats, player_round_stats, clutches, chat,
+utility_events, match_trade_opps; round-grain sources can only join a
+player-anchored expression)
+\`\`\`
+
+The eight sources that **can** lead are \`events\`, \`engagements\`, \`player_stats\`, \`player_round_stats\`, \`clutches\`, \`chat\`, \`utility_events\` and \`match_trade_opps\` — each one names a player in every row (\`attacker\`, \`a_steam\`, \`thrower\` or \`steam_id\`).
+
+The rule is about the *first* source only. Round-level sources remain perfectly usable as extra sources behind an anchored lead:
+
+\`\`\`
+from engagements, rounds: count()          -- allowed: engagements leads
+from rounds, events: count()               -- refused: rounds leads
+\`\`\``,
+  },
+  {
+    id: 'operators',
+    title: 'Operators',
+    blocks: `| Operator | What it produces |
+|---|---|
+| \`count()\` | the number of rows in scope |
+| \`count(<condition>)\` | the rows where the condition holds |
+| \`sum(col)\` / \`sum(a + b + …)\` | a total — the one place columns may be added |
+| \`avg(col)\` / \`min(col)\` / \`max(col)\` | mean, smallest, largest |
+| \`stddev(col)\` | population standard deviation (σ), never below 0 |
+| \`percentile(p, col)\` | the p-quantile of that player's own values, \`p\` between 0 and 1 |
+| \`median(col)\` | shorthand for \`percentile(0.5, col)\` |
+| \`ratio(a, b)\` | \`a ÷ b\`, with a zero denominator answered honestly (see below) |
+| \`metric('name')\` | another saved metric's value — see [Metric references](#metric-references) |
+
+Anything else is refused at that position, with the list of valid operators in the message.
+
+# count
+
+\`\`\`
+from player_stats: count()
+from events: count(where kind = 'kill' and headshot)
+from events: count(headshot)
+\`\`\`
+
+\`count()\` counts every row. A condition counts only the rows that satisfy it; \`where\` is optional in \`count\`, so \`count(kind = 'kill')\` and \`count(where kind = 'kill')\` mean the same thing. A bare operand means "is set": \`count(headshot)\` counts the rows where \`headshot\` is not zero.
+
+# sum, avg, min and max
+
+\`\`\`
+from player_stats: sum(total_damage)
+from player_stats: sum(where side = 'ct', total_damage)
+from events: min(tick), max(tick)
+\`\`\`
+
+Each takes **one** column. An optional filter comes first, after \`where\`, separated by a comma: \`sum(where <condition>, col)\` keeps only the rows the condition selects.
+
+# sum with several columns
+
+\`sum\` is the only operator that accepts added columns:
+
+\`\`\`
+from player_stats: sum(opening_kills + opening_deaths)
+from player_stats: ratio(sum(kills + assists), sum(deaths))
+\`\`\`
+
+Adding inside \`sum\` is the same as adding the separate totals, which is why it is allowed and nothing else is: \`avg(kills + deaths)\`, \`min(a + b)\` and \`sum(kills) + sum(deaths)\` are all refused. Columns only — no numbers, no parentheses, no \`metric()\` inside the chain.
+
+# stddev
+
+\`\`\`
+from player_stats: stddev(adr)
+\`\`\`
+
+The population standard deviation of that player's own values. It is clamped at 0 so rounding noise can never produce a negative spread.
+
+# percentile and median
+
+\`\`\`
+from events: percentile(0.95, dmg)
+from events: median(dmg)
+\`\`\`
+
+\`p\` must be between 0 and 1 (so \`percentile(1.5, dmg)\` is refused). The percentile is taken over **that player's own rows in scope** — each player gets their own distribution, interpolated between their sorted values — and \`N\` reports how many values went into it. \`median(col)\` is exactly \`percentile(0.5, col)\`.
+
+# ratio
+
+\`\`\`
+from player_stats: ratio(sum(kills), sum(deaths))
+\`\`\`
+
+\`ratio(a, b)\` divides \`a\` by \`b\`. Both halves must be aggregations from this list — \`count\`, \`sum\`, \`avg\`, \`min\`, \`max\`, \`stddev\` or \`metric('name')\` — and never another \`ratio\` or a \`percentile\`. If \`b\` is zero the value comes out as **0 beside N** rather than an error or an invented number (see [Missing data](#missing-data)).
+
+# Conditions and filters
+
+Conditions select rows, and appear in \`count(...)\` and in the \`where …,\` filter prefix of \`sum\`/\`avg\`/\`min\`/\`max\`/\`stddev\`/\`percentile\`/\`median\`.
+
+- **Operands:** a column, a number, a \`'string'\`, or \`true\`/\`false\`.
+- **Comparisons:** \`=\`, \`!=\`, \`>\`, \`>=\`, \`<\`, \`<=\`.
+- **Logic:** \`and\`, \`or\`, \`not\`, and parentheses for grouping.
+- A bare operand means "is set": \`count(headshot)\`.
+
+\`\`\`
+from events: count(where dmg >= 50 and (kind = 'kill' or not headshot))
+from player_stats: sum(where side = 'ct', total_damage)
+\`\`\`
+
+Conditions are row-by-row tests over the source's own columns, so **arithmetic and \`metric()\` are not allowed inside them**: \`count(where a + b > 0)\` is a syntax error, and a \`metric()\` reference in a condition is refused with \`metric() is a value reference — it cannot appear in a condition or filter (they are row-level predicates over source columns)\`.`,
+  },
+  {
+    id: 'combining-sources',
+    title: 'Combining sources',
+    blocks: `A comma list after \`from\` brings a second (or third) source into the same formula:
+
+\`\`\`
+from player_stats, match_trade_opps: ratio(sum(trade_kills), sum(opps))
+\`\`\`
+
+- **You never describe how the rows line up.** The app works out the pairing from the data itself: the first source leads, and each extra source is matched to it on the fields they share (match, round, player, side). There is no syntax for writing a join condition, and none is needed.
+- **Matching is generous, not strict.** A player with no matching row in the extra source still gets their value (the missing side simply contributes nothing, which shows up as 0 beside N) instead of disappearing.
+- **Double counting is refused.** An extra source may only be used if its rows are uniquely identified by the shared fields; otherwise every leading row would be multiplied and every \`count()\`/\`sum()\` would be inflated. For example:
+
+  \`\`\`
+  from engagements, rounds: count()          -- fine: rounds is unique per round of a match
+  from player_stats, rounds: count()         -- refused
+  cannot join source "rounds" to "player_stats": secondary "rounds" is not
+  unique on the shared dimensions (its primary key/unique key must consist
+  entirely of join dimensions: match, round, player, side)
+  \`\`\`
+
+- **Numbers come from the lead, or from a one-to-one partner.** \`sum\`/\`avg\`/\`min\`/\`max\`/\`stddev\`/\`percentile\` may read a column from the extra source only when the pairing is one-to-one, so a coarse number can never be repeated at a finer grain:
+
+  \`\`\`
+  from engagements, rounds: sum(duration_s)
+  value column "duration_s" comes from secondary source "rounds", but the join
+  is not 1:1 — value columns must come from the primary (or from a 1:1 join)
+  \`\`\`
+
+  Filters have no such restriction, because filtering never multiplies rows: \`from engagements, rounds: count(where duration_s > 30)\` is fine.
+- **Shared column names must be unique in your list.** If two listed sources both own a column, it cannot be named on its own — \`from events, player_round_stats: count(where round > 3)\` is refused with \`ambiguous column "round" (owned by multiple sources — the grammar has no qualified-identifier syntax)\`. Pick a column only one of them has, or drop one of the sources.
+- The same source may not be listed twice.`,
+  },
+  {
+    id: 'scope',
+    title: 'Scope',
+    blocks: `A metric is computed either for one match or for a whole career:
+
+| Scope | Means | Shown as |
+|---|---|---|
+| \`match\` | this player in this match | a pinned metric appears as a scoreboard column on every match, and saved metrics are appended to match reports |
+| \`profile\` | this player's career, over every match in the library | Career metrics on a player profile |
+
+Both are computed per player; the scope only decides **how much of the library** the number is taken over. Any other scope value is refused.`,
+  },
+  {
+    id: 'denominators',
+    title: 'Denominators',
+    blocks: `A metric may optionally divide itself by a count of rounds or matches — that is what turns a total into a *rate* ("per round", "per match"). There are exactly two choices, \`rounds\` and \`matches\`; anything else is refused.
+
+**One rule, two readings — the denominator always counts the units of the scope, for that player:**
+
+- **Match scope:** it counts the units of *that match* — how many rounds were played in it. Every player in the match shares that same count, which is correct for a per-player rate in one match. (With \`matches\` at match scope the count is that one match, so the value is unchanged.)
+- **Career scope:** it counts *that player's* units — the rounds they personally played, or the matches they personally played.
+
+Examples:
+
+| Expression | Denominator | Scope | The value means |
+|---|---|---|---|
+| \`from player_stats: sum(kills)\` | \`rounds\` | match | kills ÷ the rounds played in that match |
+| \`from player_stats: sum(kills)\` | \`matches\` | career | kills ÷ the matches this player played |
+| \`from player_stats: sum(total_damage)\` | \`rounds\` | career | damage ÷ the rounds this player played |
+
+Two details worth remembering:
+
+- The denominator divides the **first** aggregation only — the value the metric shows.
+- A zero count never errors: the value becomes **0 beside N** (see [Missing data](#missing-data)).
+
+In an ad-hoc preview of an unsaved expression, the denominator applies once the metric is saved.`,
+  },
+  {
+    id: 'metric-references',
+    title: 'Metric references',
+    blocks: `\`metric('name')\` reads **another saved metric's value for the same player**:
+
+\`\`\`
+from player_stats: ratio(sum(kills), metric('career_kd'))
+\`\`\`
+
+References are written by **name**, so formulas stay readable; renaming a metric automatically rewrites every formula that referenced it.
+
+# Where a reference may appear
+
+Exactly two positions — a reference may appear only where a finished value may appear:
+
+1. **As an aggregation on its own:** \`from player_stats: metric('career_kast')\`
+2. **As either half of a \`ratio()\`:** \`ratio(sum(kills), metric('career_kd'))\` or \`ratio(metric('career_kd'), count())\`
+
+Everything else is refused, each with its own message:
+
+| Refused place | Message | Why |
+|---|---|---|
+| inside \`sum\`/\`avg\`/\`min\`/\`max\`/\`stddev\`/\`percentile\`/\`median\` | \`metric() is a value reference — it cannot appear inside sum()\` | a reference is one finished number for the player, not a set of rows to average or add |
+| inside a condition or filter | \`metric() is a value reference — it cannot appear in a condition or filter (they are row-level predicates over source columns)\` | a condition tests individual rows of your sources; a reference has no rows |
+| inside another reference | \`metric() cannot be nested inside metric()\` | the argument of \`metric()\` is a name, not a value |
+| an unknown name | \`unknown metric reference "nope"\` | the name must match a saved metric exactly |
+
+# Scope rule between references
+
+- A match metric may read a career metric (the player's career value travels into the match row).
+- A career metric may **not** read a match metric — a career number has no single match to read it from:
+
+  \`\`\`
+  metrics: metric 'trade_rate' is match-scoped and cannot be used inside a
+  profile-scoped metric (a career value cannot read a per-match value)
+  \`\`\`
+
+  Recompute it from the sources instead — that is what the shipped career Trade rate does.
+
+# When the other metric isn't ready
+
+A reference resolves only against a value that is actually there. If the referenced metric has not been computed yet (or its own inputs have changed), your metric shows **no value at all** for that player rather than a zero — "not there" and "zero" are different answers, and the language keeps them apart.
+
+You also cannot build a loop (\`a\` reading \`b\` reading \`a\`, or a metric reading itself): cyclic references are refused when saving. And a metric that others reference cannot be deleted until those formulas are edited or removed — the refusal names them.`,
+  },
+  {
+    id: 'missing-data',
+    title: 'Missing data',
+    blocks: `Every value slot shows one of three things: **a number**, **a dash**, or **a state chip**.
+
+# N and the honest zero
+
+Beside a number you will see **N** — how many rows stand behind that value (for a percentile, how many of that player's values were used). It appears as its own column in the preview and report tables and as *"sample size n=…"* in a value's tooltip. It is the sample size: a number with \`N = 3\` is a much weaker claim than the same number with \`N = 300\`.
+
+**0 beside N** means: the formula ran over real rows, but its own inputs were empty — most often a division whose bottom half was zero (a player with no deaths in a K/D formula). The value is shown as 0 with its N rather than as an error, an empty cell, or a made-up figure.
+
+**A dash (—)** means something different: there were **no rows at all** for that player in that scope (a player who never entered a clutch has no clutch win rate). Nothing is fabricated in either case.
+
+# The five value states
+
+| State | What you see | What it means |
+|---|---|---|
+| \`processing\` | a busy chip — *"recomputing — this value is not final yet"* | the metric is being worked out right now; the old number (if any) is withheld rather than shown stale |
+| \`failed\` | a bad chip; its tooltip carries the error text | the last attempt failed and no fresh value exists |
+| \`fresh\` | the number (tooltip: the formula and its N) | a current value was read and is being shown |
+| \`no-data\` | a dash — *"no data for this player"* | the metric is up to date but has nothing to show for this player |
+| \`behind\` | an idle chip — *"value not available yet — recompute pending"* | the value has not been computed for this unit yet, or what it is computed from has changed |
+
+Notes on how they behave:
+
+- \`processing\` outranks everything: while a recomputation runs you never see a stale number and never a bare dash mid-flight.
+- The words above are the complete vocabulary; no internal bookkeeping is ever rendered in a value slot.
+- When the value is missing because a metric another one depends on is missing, the result is \`no-data\` — never a zero.`,
+  },
+  {
+    id: 'previewing',
+    title: 'Previewing',
+    blocks: `You can run any expression before saving it:
+
+- As you type, the expression is checked continuously and reported as **valid** or as an error at a byte position in your text.
+- **Preview** runs it read-only against your library and lists one row per player with their value and N. It is capped at 200 rows by default and 10 seconds; a percentile-first formula reads up to 500,000 raw values before it stops.
+- **The first aggregation is the value shown.** If you list several, the others are carried along but only the first is surfaced as the value.
+- A **saved, unmodified** metric shows its stored value; an **unsaved or edited** expression is calculated on the spot for the preview. Editing a saved metric's formula therefore previews your draft version until you save it.
+- A preview of a metric with a denominator in an unsaved form notes that the denominator applies after save.`,
+  },
+  {
+    id: 'built-in-metrics',
+    title: 'Built-in metrics',
+    blocks: `Spectra ships **sixteen** built-in metrics — seven scoped to a match (\`trade_rate\`, \`adr\`, \`entry_rate\`, \`hs_pct\`, \`kast\`, \`kd\`, \`trade_rate_deaths\`) and nine for a career (\`career_adr\`, \`career_adr_sigma\`, \`career_avg_enemies_flashed\`, \`career_avg_util_damage\`, \`career_clutch_win_rate\`, \`career_hs_pct\`, \`career_kast\`, \`career_kd\`, \`career_trade_rate\`). Those names are what you use in a \`metric('…')\` reference.
+
+They are **read-only**:
+
+- They load into the builder with a \`built-in\` chip and a disabled Save; *"Built-in metrics can't be edited"* and *"Built-in metrics can't be deleted"* are enforced, not merely hidden — there is no delete control on them either.
+- You can still **preview** one, **reference** it from your own formula with \`metric('trade_rate')\`, and **pin** it as a column or panel entry.
+- What each one measures is written in its ⓘ tooltip as \`Formula: …\`.`,
+  },
+  {
+    id: 'worked-examples',
+    title: 'Worked examples',
+    blocks: `Every expression below was accepted exactly as written when checked against the app's own expression checker.
+
+**Counts and totals**
+
+\`\`\`
+from player_stats: count()                                     -- rows for this source
+from events: count(), sum(dmg), avg(distance)                  -- several aggregations
+from events: count(where kind = 'kill' and headshot)           -- headshot kills
+from player_stats: count() AS matches                          -- optional label
+\`\`\`
+
+**Rates and shares**
+
+\`\`\`
+from player_stats: ratio(sum(kills), sum(deaths))              -- K/D
+from player_stats: ratio(sum(total_damage), sum(rounds_played)) -- ADR
+from player_round_stats: avg(kast)                             -- KAST%
+from clutches: avg(won)                                        -- clutch win share
+from player_stats: ratio(sum(headshots), sum(kills))           -- HS%
+\`\`\`
+
+**Filters**
+
+\`\`\`
+from player_stats: sum(where side = 'ct', total_damage)        -- CT-side damage only
+from events: count(headshot)                                   -- "is set" test
+from events: count(where dmg >= 50 and (kind = 'kill' or not headshot))
+\`\`\`
+
+**The additive chain**
+
+\`\`\`
+from player_stats: sum(opening_kills + opening_deaths)         -- openings total
+from player_stats: ratio(sum(kills + assists), sum(deaths))    -- KDA
+from player_stats: sum(where side = 'ct', opening_kills + opening_deaths)
+\`\`\`
+
+**Spread and position**
+
+\`\`\`
+from player_stats: stddev(adr)                                 -- career ADR σ
+from events: percentile(0.95, dmg)                             -- top 5% hits
+from events: median(dmg)                                       -- middle hit
+from events: min(tick), max(tick)
+\`\`\`
+
+**Combined sources**
+
+\`\`\`
+from player_stats, match_trade_opps: ratio(sum(trade_kills), sum(opps))
+from engagements, rounds: count()
+from engagements, rounds: count(where duration_s > 30)         -- a filter can read the partner
+\`\`\`
+
+**Scope and denominators** (the scope and denominator are options you pick for the metric, not part of the expression text)
+
+| Expression | Denominator | Scope |
+|---|---|---|
+| \`from player_stats: count()\` | \`rounds\` | match |
+| \`from player_stats: sum(kills)\` | \`matches\` | career |
+| \`from events: count()\` | — | one match (\`match:7\`) |
+
+**References**
+
+\`\`\`
+from player_stats: ratio(sum(kills), metric('career_kd'))      -- ref in a ratio
+from player_stats: metric('career_kast')                       -- ref as the value
+from events: ratio(metric('career_kd'), count())               -- ref in the numerator
+\`\`\`
+
+**Refused (with the message you would see)**
+
+\`\`\`
+from rounds: count()
+→ expression is not player-anchored: primary source "rounds" has no player subject …
+
+from matches: count()
+→ unknown source table "matches" (valid: events, engagements, rounds, player_stats, …)
+
+from player_stats: sum(kills) + sum(deaths)
+→ expected "," or end of expression (got "+")
+
+from player_stats: avg(kills + deaths)
+→ avg() takes a single column — only sum() accepts an additive column expression (sum(col + col …))
+
+from player_stats: sum(metric('career_kd'))
+→ metric() is a value reference — it cannot appear inside sum()
+
+from player_stats: count(where metric('career_kd') > 1)
+→ metric() is a value reference — it cannot appear in a condition or filter (…)
+
+from player_stats, rounds: count()
+→ cannot join source "rounds" to "player_stats": secondary "rounds" is not unique …
+
+from player_stats: percentile(1.5, adr)
+→ percentile fraction must be in [0,1] (got "1.5")
+\`\`\``,
+  },
+  {
+    id: 'common-errors',
+    title: 'Common errors',
+    blocks: `| Message | What it means |
+|---|---|
+| \`empty expression: expected "from <table>: <aggregations>"\` | nothing was typed yet |
+| \`expected "from <table>:" (got "…")\` | a formula always starts with \`from <sources>:\` |
+| \`unknown source table "x" (valid: …)\` | the source name is misspelled or does not exist (see [Sources](#sources)) |
+| \`unknown column "x" for source y\` | that column is not part of that source, or the name's case is wrong |
+| \`ambiguous column "x" (owned by multiple sources …)\` | two sources in your list both own that column |
+| \`expression is not player-anchored: …\` | the leading source does not identify a player (see [Player anchor](#player-anchor)) |
+| \`cannot join source "a" to "b": … not unique on the shared dimensions\` | the extra source's rows are not uniquely identified by the shared fields — using it would multiply your counts |
+| \`value column "x" comes from secondary source "y", but the join is not 1:1 …\` | a number may only be read from a one-to-one partner |
+| \`avg() takes a single column — only sum() accepts an additive column expression …\` | only \`sum(a + b)\` may add columns |
+| \`expected "," or end of expression (got "+")\` | arithmetic between aggregations (like \`sum(a) + sum(b)\`) is not part of the language |
+| \`percentile fraction must be in [0,1]\` | the first argument of \`percentile\` must be between 0 and 1 |
+| \`unknown aggregation "x" (valid: count, sum, avg, min, max, stddev, percentile, median, ratio, metric)\` | the operator is misspelled |
+| \`metric() …\` (several variants) | a reference is in a place it may not appear — see [Metric references](#metric-references) |
+| \`unknown metric reference "x"\` | no saved metric has that exact name |
+| \`unknown denominator "x" (valid: rounds, matches)\` | only \`rounds\` and \`matches\` exist |
+| \`invalid scope "x": expected "match:<id>" or "" (whole library)\` | scope is either one match or the whole library |
+
+_The live check under the expression box reports each message exactly as written above. The same expression failure raised while **saving** appears as \`metrics: … (at byte N)\`; the other save-time refusals (references, cycles, built-ins, scope rules) also carry a \`metrics: \` prefix._`,
+  },
+];
