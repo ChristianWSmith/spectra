@@ -35,17 +35,30 @@ func seededStore(t *testing.T) *store.Store {
 	return st
 }
 
-// builtinSeed maps the ONE schema-seeded builtin (schema.sql —
-// name/expr/scope/denominator/doc are LOCKED to the baseline seed by
-// this table) onto its hand-computed seed expectation. interpretation
-// records how the seeded expression states the metric (never silently —
-// the formula and any proxy/deviation live in the row's doc). There is
-// no groupBy input: since W2 every statement is subject-grouped by the
-// engine, which is exactly the per-player shape this test proves.
+// builtinSeed maps the SIXTEEN schema-seeded builtins (schema.sql —
+// name/expr/scope/format/short_name/denominator are LOCKED to the
+// baseline seed by this table) onto their hand-computed seed
+// expectations. interpretation records how the seeded expression states
+// the metric (never silently — the formula and any proxy/deviation
+// live in the row's doc). There is no groupBy input: since W2 every
+// statement is subject-grouped by the engine, which is exactly the
+// per-player shape this test proves.
+//
+// The expectations are hand-computed over the committed corpus
+// (testdata/seed.sql — 3 identical matches × 8 players × 24 rounds;
+// formulas in its header): player_stats carries kills = 2i, deaths = i,
+// headshots = i, total_damage = 100i, adr = 50+5i, rounds_played = 24,
+// trade_kills = i per match for player i (1..8), entry_kills /
+// utility_damage / enemies_flashed are absent → 0, and every player has
+// 72 player_round_stats rows with a 0.5 KAST mean (36 of 72). The
+// corpus has NO clutches and no player_round_stats surprises, which is
+// what makes the N values (COUNT(*) behind each aggregate) exact.
 var builtinSeed = []struct {
 	name           string
 	expr           string
 	scope          string
+	format         string
+	shortName      string
 	denominator    string
 	interpretation string
 	rows           int
@@ -58,6 +71,8 @@ var builtinSeed = []struct {
 		name:        "trade_rate",
 		expr:        "from player_stats, match_trade_opps: ratio(sum(trade_kills), sum(opps))",
 		scope:       "match",
+		format:      "percent",
+		shortName:   "",
 		denominator: "",
 		interpretation: "trade successes / total trade opportunities over the engine-derived LEFT JOIN " +
 			"(match_id, steam_id) — a ratio, not a share, so it may exceed 100% (profile TradeRate note)",
@@ -65,36 +80,174 @@ var builtinSeed = []struct {
 		// 3i/30i = 0.1 for i ≤ 6; Grace's stored opps = 0 and Heidi's
 		// absent row both surface as Value 0 beside N.
 		rows: 8, wantValues: []float64{0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0, 0}, wantN: 3,
-		wantLabels: "Alice,Bob,Carol,Dave,Eve,Frank,Grace,Heidi",
+		wantLabels: eightLabels,
+	},
+	{
+		// D1: sum(total_damage)/sum(rounds_played) = 300i/72 per player
+		// across the three identical matches — NOT the corpus's
+		// hand-written adr column (an independent gradient for the
+		// avg(adr)/stddev fixtures; see scoreboard_equivalence_test.go).
+		name: "adr", expr: "from player_stats: ratio(sum(total_damage), sum(rounds_played))",
+		scope: "match", format: "float1", shortName: "ADR", denominator: "",
+		interpretation: "damage per round re-computed from raw inputs (extract's adr formula)",
+		rows:           8,
+		wantValues:     []float64{300.0 / 72, 600.0 / 72, 900.0 / 72, 1200.0 / 72, 1500.0 / 72, 1800.0 / 72, 2100.0 / 72, 2400.0 / 72},
+		wantN:          3, wantLabels: eightLabels,
+	},
+	{
+		// D7: entry_kills is absent from the corpus's INSERTs → 0 for
+		// everyone; the denominator (72 rounds) is non-NULL, so the
+		// ratio is a plain 0, not NULL-beside-N.
+		name: "entry_rate", expr: "from player_stats: ratio(sum(entry_kills), sum(rounds_played))",
+		scope: "match", format: "percent", shortName: "Entry%", denominator: "",
+		interpretation: "first-bloods per round played (0 — the corpus records no entry kills)",
+		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		// D4: sum(headshots)/sum(kills) = 3i/6i = 0.5 for every player.
+		name: "hs_pct", expr: "from player_stats: ratio(sum(headshots), sum(kills))",
+		scope: "match", format: "percent", shortName: "HS%", denominator: "",
+		interpretation: "headshot share of kills (corpus: headshots = kills/2 → 0.5)",
+		rows:           8, wantAll: 0.5, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		// D6: AVG over the player's 72 player_round_stats rows — 36
+		// KAST rounds each → 0.5, N = 72 (the source rows, not matches).
+		name: "kast", expr: "from player_round_stats: avg(kast)",
+		scope: "match", format: "percent", shortName: "KAST%", denominator: "",
+		interpretation: "per-round KAST flag mean (36/72 per player)",
+		rows:           8, wantAll: 0.5, wantN: 72, wantLabels: eightLabels,
+	},
+	{
+		// D5: sum(kills)/sum(deaths) = 6i/3i = 2 for every player (no
+		// zero-death subject here — Q1's NULLIF edge is the doc note).
+		name: "kd", expr: "from player_stats: ratio(sum(kills), sum(deaths))",
+		scope: "match", format: "float2", shortName: "K/D", denominator: "",
+		interpretation: "kills per death (corpus: kills = 2×deaths → 2)",
+		rows:           8, wantAll: 2, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		// D8: sum(trade_kills)/sum(deaths) = 3i/3i = 1 (100%) — a ratio
+		// over OWN deaths, unlike trade_rate's opportunities denominator.
+		name: "trade_rate_deaths", expr: "from player_stats: ratio(sum(trade_kills), sum(deaths))",
+		scope: "match", format: "percent", shortName: "Trade%", denominator: "",
+		interpretation: "trades as a share of the player's own deaths (corpus: equal → 1)",
+		rows:           8, wantAll: 1, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		// D2: AVG over the three identical per-match adr rows → the
+		// corpus's adr column itself (50+5i).
+		name: "career_adr", expr: "from player_stats: avg(adr)",
+		scope: "profile", format: "float1", shortName: "ADR", denominator: "",
+		interpretation: "mean of per-match ADR (owner ruling Q2: mean-of-ratios, never pooled)",
+		rows:           8,
+		wantValues:     []float64{55, 60, 65, 70, 75, 80, 85, 90},
+		wantN:          3, wantLabels: eightLabels,
+	},
+	{
+		// D3: population σ over three IDENTICAL values → exactly 0
+		// (the sqrt(max(…,0)) idiom clamps float noise).
+		name: "career_adr_sigma", expr: "from player_stats: stddev(adr)",
+		scope: "profile", format: "float1", shortName: "ADR σ", denominator: "",
+		interpretation: "population stddev of per-match ADR (constant series → 0)",
+		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		// D11: enemies_flashed absent from the corpus's INSERTs → 0.
+		name: "career_avg_enemies_flashed", expr: "from player_stats: avg(enemies_flashed)",
+		scope: "profile", format: "float1", shortName: "Avg enemies flashed", denominator: "",
+		interpretation: "mean enemies flashed per match (0 — the corpus records none)",
+		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		// D12: utility_damage absent from the corpus's INSERTs → 0.
+		name: "career_avg_util_damage", expr: "from player_stats: avg(utility_damage)",
+		scope: "profile", format: "float1", shortName: "Avg util damage", denominator: "",
+		interpretation: "mean utility damage per match (0 — the corpus records none)",
+		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		// D10: the corpus records NO clutches (see TestSyntheticCorpus-
+		// Counts), so a subject-grouped statement produces no groups →
+		// zero rows. Honest empty, never a fabricated 0 row.
+		name: "career_clutch_win_rate", expr: "from clutches: avg(won)",
+		scope: "profile", format: "percent", shortName: "Clutch win %", denominator: "",
+		interpretation: "share of the player's clutches won (clutchless corpus → no rows)",
+		rows:           0,
+	},
+	{
+		// D4p: same pooled shape as hs_pct at profile scope (the corpus
+		// is three identical matches, so pooled == per-match).
+		name: "career_hs_pct", expr: "from player_stats: ratio(sum(headshots), sum(kills))",
+		scope: "profile", format: "percent", shortName: "HS%", denominator: "",
+		interpretation: "career pooled headshot share (0.5 — identical to the match seed here)",
+		rows:           8, wantAll: 0.5, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		// D6p: all 72 career rows — same mean as the match seed here
+		// (three identical matches), N the career row count.
+		name: "career_kast", expr: "from player_round_stats: avg(kast)",
+		scope: "profile", format: "percent", shortName: "KAST%", denominator: "",
+		interpretation: "career KAST mean over every stored round (0.5 — 36/72)",
+		rows:           8, wantAll: 0.5, wantN: 72, wantLabels: eightLabels,
+	},
+	{
+		// D5p: pooled kills/deaths over the whole career — 2, the same
+		// shape as kdCareerSQL (sums, never a mean of ratios).
+		name: "career_kd", expr: "from player_stats: ratio(sum(kills), sum(deaths))",
+		scope: "profile", format: "float2", shortName: "K/D", denominator: "",
+		interpretation: "career pooled kills per death (6i/3i = 2)",
+		rows:           8, wantAll: 2, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		// D9: byte-identical expr to trade_rate at PROFILE scope — the
+		// cross-scope ref ban forbids referencing the match seed, so the
+		// join recomputes from the sources; same numbers here.
+		name: "career_trade_rate", expr: "from player_stats, match_trade_opps: ratio(sum(trade_kills), sum(opps))",
+		scope: "profile", format: "percent", shortName: "Trade rate", denominator: "",
+		interpretation: "career trade opportunities ratio (recomputes the join — cross-scope ref ban)",
+		rows:           8, wantValues: []float64{0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0, 0}, wantN: 3,
+		wantLabels: eightLabels,
 	},
 }
 
+// eightLabels is the corpus roster in subject (steam_id) ASC order —
+// every grouped preview's label expectation.
+const eightLabels = "Alice,Bob,Carol,Dave,Eve,Frank,Grace,Heidi"
+
 // TestBuiltinSeedMetrics is the acceptance test: the schema-seeded
-// builtin must (a) exist with a seeded expr + subject-addressed doc
+// builtins must (a) exist with seeded expr + subject-addressed doc
 // matching this table, (b) compile, (c) return the hand-computed seed
 // values with labels and sample sizes, and (d) carry formula
 // documentation.
 func TestBuiltinSeedMetrics(t *testing.T) {
 	st := seededStore(t)
 
-	// (a) Lock the schema-seeded builtin row(s) to this table. The
+	// (a) Lock the schema-seeded builtin rows to this table. The
 	// group_by column no longer exists (stored-metrics W1) and the
-	// groupBy parameter retired with W2: the lock is scope + the
-	// subject-addressed doc, per the schema.sql coordination-contract
-	// header. The doc reword moves WITH this lock (schema.sql's seed
-	// doc is prose-only — no DDL structure change): the retired
-	// "grouped by player" phrasing must be gone and the
-	// subject-addressed one present.
+	// groupBy parameter retired with W2: the lock is scope + format +
+	// short_name + the subject-addressed doc, per the schema.sql
+	// coordination-contract header. The doc reword moves WITH this lock
+	// (schema.sql's seed doc is prose-only — no DDL structure change):
+	// the retired "grouped by player" phrasing must be gone and the
+	// subject-addressed one present — "addressed per player" for every
+	// seed, with the join wording ("over the joined sources") required
+	// of exactly the multi-source exprs (the criterion that partitions
+	// the two phrasings).
 	res, err := st.RunReadOnly(
-		`SELECT name, expr, scope, denominator, doc FROM metrics WHERE origin = 'builtin' ORDER BY name`,
+		`SELECT name, expr, scope, denominator, doc, format, short_name FROM metrics WHERE origin = 'builtin' ORDER BY name`,
 		nil, 100, 5000,
 	)
 	if err != nil {
 		t.Fatalf("read builtins: %v", err)
 	}
-	got := map[string][4]string{}
+	type seedRow struct{ expr, scope, denom, doc, format, shortName string }
+	got := map[string]seedRow{}
 	for _, r := range res.Rows {
-		got[r[0].(string)] = [4]string{r[1].(string), r[2].(string), r[3].(string), r[4].(string)}
+		got[r[0].(string)] = seedRow{
+			expr: r[1].(string), scope: r[2].(string), denom: r[3].(string),
+			doc: r[4].(string), format: r[5].(string), shortName: r[6].(string),
+		}
 	}
 	if len(got) != len(builtinSeed) {
 		t.Errorf("builtin count = %d, want %d", len(got), len(builtinSeed))
@@ -105,18 +258,34 @@ func TestBuiltinSeedMetrics(t *testing.T) {
 			t.Errorf("builtin %q missing from the schema seed", f.name)
 			continue
 		}
-		if row[0] != f.expr || row[1] != f.scope || row[2] != f.denominator {
+		if row.expr != f.expr || row.scope != f.scope || row.denom != f.denominator {
 			t.Errorf("builtin %q seeded row = expr %q scope %q denom %q, want expr %q scope %q denom %q",
-				f.name, row[0], row[1], row[2], f.expr, f.scope, f.denominator)
+				f.name, row.expr, row.scope, row.denom, f.expr, f.scope, f.denominator)
 		}
-		if row[3] == "" {
+		if row.format != f.format {
+			t.Errorf("builtin %q format = %q, want %q", f.name, row.format, f.format)
+		}
+		if row.shortName != f.shortName {
+			t.Errorf("builtin %q short_name = %q, want %q", f.name, row.shortName, f.shortName)
+		}
+		if row.doc == "" {
 			t.Errorf("builtin %q has empty doc (every metric documents its formula)", f.name)
 		}
-		if strings.Contains(row[3], "grouped by player") {
-			t.Errorf("builtin %q doc still carries the retired groupBy phrasing: %s", f.name, row[3])
+		if strings.Contains(row.doc, "grouped by player") {
+			t.Errorf("builtin %q doc still carries the retired groupBy phrasing: %s", f.name, row.doc)
 		}
-		if !strings.Contains(row[3], "addressed per player over the joined sources") {
-			t.Errorf("builtin %q doc missing the subject-addressed phrasing: %s", f.name, row[3])
+		if !strings.Contains(row.doc, "addressed per player") {
+			t.Errorf("builtin %q doc missing the subject-addressed phrasing: %s", f.name, row.doc)
+		}
+		// The join wording is required of exactly the MULTI-SOURCE
+		// exprs — the source clause (up to the ":") carries the comma,
+		// never a function-argument list.
+		srcClause := f.expr
+		if i := strings.Index(f.expr, ":"); i >= 0 {
+			srcClause = f.expr[:i]
+		}
+		if strings.Contains(srcClause, ",") && !strings.Contains(row.doc, "over the joined sources") {
+			t.Errorf("builtin %q doc missing the joined-source phrasing: %s", f.name, row.doc)
 		}
 	}
 

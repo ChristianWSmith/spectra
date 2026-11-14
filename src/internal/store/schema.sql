@@ -642,11 +642,17 @@ CREATE TABLE IF NOT EXISTS voice_presence (
 -- one site: Match's scoreboard metric header), title || name everywhere
 -- else.
 --
--- Builtins (origin='builtin') are seeded below: exactly ONE — trade_rate
--- (owner ruling) — with the interpretation recorded in doc.
--- internal/metrics' fixture test locks its name/expr/scope/denominator/
--- doc/count and proves it compiles and returns the hand-computed seed
--- values under the join grammar (internal/metrics/doc.go).
+-- Builtins (origin='builtin') are seeded below: exactly SIXTEEN —
+-- trade_rate (owner ruling) plus the dogfooding set (design §3.0: 7
+-- match / 9 profile scopes) — trade_rate + adr, entry_rate, hs_pct,
+-- kast, kd, trade_rate_deaths (match) and the nine career_* rows
+-- (profile, inert until their surface switches). The profile rows land
+-- here with the match rows: one owner for one statement, zero visible
+-- effect (nothing reads them until the profile surface converts).
+-- internal/metrics' fixture test locks each row's name/expr/scope/
+-- format/short_name/denominator/doc/count and proves every expression
+-- compiles and returns the hand-computed seed values under the join
+-- grammar (internal/metrics/doc.go).
 
 CREATE TABLE IF NOT EXISTS metrics (
 	id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -684,23 +690,107 @@ CREATE TABLE IF NOT EXISTS saved_queries (
 	created_at DATETIME NOT NULL
 );
 
--- THE builtin, seeded (see header): trade rate — trade successes ÷ total
--- trade opportunities. INSERT OR IGNORE keyed on the UNIQUE name:
--- re-applying the baseline on every Open must not duplicate or reset it.
--- short_name is omitted on purpose (DEFAULT ''): the builtin ships with
--- no short name, so its scoreboard header falls back to title.
--- scope is 'match' (the builtin's surface is the scoreboard pin; the
--- profile's TradeRate stays the stored profile field); version is
--- omitted (DEFAULT 1).
--- The expr is the join-grammar shape internal/metrics/doc.go documents:
--- the engine derives
+-- THE builtins, seeded (see header): exactly sixteen — trade_rate (the
+-- original owner ruling) plus the dogfooding set: six more match-scope
+-- rows and nine profile-scope rows, each with the interpretation
+-- recorded in its doc. INSERT OR IGNORE keyed on the UNIQUE name:
+-- re-applying the baseline on every Open must not duplicate or reset a
+-- row. short_name is written explicitly: trade_rate ships empty ('' —
+-- its scoreboard header falls back to title), the dogfooding set carries
+-- the width-constrained header labels (display criterion
+-- short_name || title || name — Match's scoreboard metric header).
+-- version is omitted (DEFAULT 1) on every row.
+-- The exprs are the grammar shapes internal/metrics/doc.go documents;
+-- trade_rate's is the join-grammar example — the engine derives
 -- `LEFT JOIN match_trade_opps ON player_stats.match_id = match_trade_opps.match_id
---  AND player_stats.steam_id = match_trade_opps.steam_id`.
-INSERT OR IGNORE INTO metrics (name, title, expr, scope, format, doc, origin, denominator, created_at) VALUES
-('trade_rate', 'Trade rate',
+--  AND player_stats.steam_id = match_trade_opps.steam_id` (career_trade_rate
+-- recomputes the same join at profile scope: the cross-scope ref ban
+-- forbids referencing the match seed from a profile metric).
+INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, format, doc, origin, denominator, created_at) VALUES
+('trade_rate', 'Trade rate', '',
  'from player_stats, match_trade_opps: ratio(sum(trade_kills), sum(opps))',
  'match', 'percent',
  'How often a player answered a teammate death inside the trade window. Formula: trade successes divided by total trade opportunities — sum(player_stats.trade_kills) / sum(match_trade_opps.opps) addressed per player over the joined sources (one value per player: that player''s own trade_kills over that player''s own trade opportunities), so the denominator is the trade opportunities analytics recorded for that player. It is a ratio, not a share, so the value MAY EXCEED 100% when a trade lands on a death the distance gate did not count (the same note as the profile TradeRate field). N is the player_stats rows behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+-- match-scope dogfooding set (D1/D4/D5/D6/D7/D8): the four converted
+-- scoreboard columns plus the Combat Entry%/Trade% pair — recompute
+-- from the raw stored inputs, never a query-time calculation.
+('adr', 'ADR', 'ADR',
+ 'from player_stats: ratio(sum(total_damage), sum(rounds_played))',
+ 'match', 'float1',
+ 'Formula: sum(player_stats.total_damage) / sum(player_stats.rounds_played) — enemy damage per round the player played, addressed per player (one value per player: that player''s own damage over that player''s own rounds). It recomputes from the raw inputs rather than reading the stored adr column; on extract-written data the two are identical (extract computes adr = total_damage / rounds_played). A subject with no rounds behind it yields value 0 beside N — ratio''s NULLIF, the house zero-denominator rule. N is the player_stats rows behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('entry_rate', 'Entry%', 'Entry%',
+ 'from player_stats: ratio(sum(entry_kills), sum(rounds_played))',
+ 'match', 'percent',
+ 'Formula: sum(player_stats.entry_kills) / sum(player_stats.rounds_played) — entry (first-blood) kills as a share of the rounds the player played, addressed per player (one value per player: that player''s own entries over that player''s own rounds). A 0..1 fraction rendered as percent (×100) — the same 100 × entry_kills / rounds_played the Combat Entry% column computed before converting to this metric. Bounded 0..100 by construction (extract credits at most one first blood per round). A subject with no rounds yields value 0 beside N (ratio''s NULLIF). N is the player_stats rows behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('hs_pct', 'HS%', 'HS%',
+ 'from player_stats: ratio(sum(headshots), sum(kills))',
+ 'match', 'percent',
+ 'Formula: sum(player_stats.headshots) / sum(player_stats.kills) — headshots as a share of the player''s kills, addressed per player (one value per player: that player''s own headshots over that player''s own kills). A 0..1 fraction rendered as percent (×100) — the same 100 × headshots / kills the stored hs_pct column carries on extract-written data (extract computes pct(headshots, kills)). A subject with no kills yields value 0 beside N (ratio''s NULLIF). N is the player_stats rows behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('kast', 'KAST%', 'KAST%',
+ 'from player_round_stats: avg(kast)',
+ 'match', 'percent',
+ 'Formula: avg(player_round_stats.kast) — the share of the player''s recorded rounds in which they earned K, A, T or S (the per-round KAST flag the analytics pass stores), addressed per player (one value per player: that player''s own rounds). A 0..1 fraction rendered as percent (×100) — the same 100 × AVG(kast) the scoreboard''s KAST% column and kastPerMatchSQL spell. A subject with no stored rounds has no rows (renders —), never a fabricated 0. N is the player_round_stats rows behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('kd', 'K/D', 'K/D',
+ 'from player_stats: ratio(sum(kills), sum(deaths))',
+ 'match', 'float2',
+ 'Formula: sum(player_stats.kills) / sum(player_stats.deaths) — kills per death over the player''s matches, addressed per player (one value per player: that player''s own kills over that player''s own deaths). DIVERGENCE (deliberate — internal/metrics/doc.go ratio note): the metric divides by NULLIF(deaths, 0), so a subject with NO deaths shows value 0 beside N (the honest no-denominator), where the store''s fixed scoreboard spelling floors the denominator (MAX(deaths, 1) — kdPerMatchSQL) and shows the kill count instead. N is the player_stats rows behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('trade_rate_deaths', 'Trade%', 'Trade%',
+ 'from player_stats: ratio(sum(trade_kills), sum(deaths))',
+ 'match', 'percent',
+ 'Formula: sum(player_stats.trade_kills) / sum(player_stats.deaths) — trade kills as a share of the player''s own deaths, addressed per player (one value per player: that player''s own trades over that player''s own deaths). A RATIO, not a share: it MAY EXCEED 100% (a trade can land on a death the distance gate did not count — the same note as the trade_rate seed), and it is a different stat from trade_rate, whose denominator is the trade opportunities analytics recorded (match_trade_opps.opps). A 0..1 fraction rendered as percent (×100); a subject with no deaths yields value 0 beside N (ratio''s NULLIF). N is the player_stats rows behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+-- profile-scope dogfooding set (D2/D3/D5/D6/D9/D10/D11/D12): inert
+-- until their surface converts — nothing reads a profile-scope seed yet.
+('career_adr', 'ADR', 'ADR',
+ 'from player_stats: avg(adr)',
+ 'profile', 'float1',
+ 'Formula: avg(player_stats.adr) — the mean of the player''s per-match ADR values across their career, addressed per player (one value per player: that player''s own per-match adr rows). A MEAN OF RATIOS, deliberately not the pooled ratio(sum(total_damage), sum(rounds_played)): the mean preserves the stored per-match adr column exactly (owner ruling Q2), where a pooled form over uneven rounds_played would be a different number. N is the player_stats rows behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('career_adr_sigma', 'ADR σ', 'ADR σ',
+ 'from player_stats: stddev(adr)',
+ 'profile', 'float1',
+ 'Formula: stddev(player_stats.adr) — the population standard deviation (σ) of the player''s per-match ADR across their career, addressed per player (one value per player: that player''s own per-match adr rows). The grammar''s population idiom sqrt(max(avg(x²) − avg(x)², 0)) is byte-for-byte RebuildCareer''s stored adr_std computation, so the two agree (clamped at 0 for float noise). N is the player_stats rows behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('career_avg_enemies_flashed', 'Avg enemies flashed', 'Avg enemies flashed',
+ 'from player_stats: avg(enemies_flashed)',
+ 'profile', 'float1',
+ 'Formula: avg(player_stats.enemies_flashed) — the player''s mean enemies-flashed count per match across their career, addressed per player (one value per player: that player''s own per-match enemies_flashed rows). N is the player_stats rows behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('career_avg_util_damage', 'Avg util damage', 'Avg util damage',
+ 'from player_stats: avg(utility_damage)',
+ 'profile', 'float1',
+ 'Formula: avg(player_stats.utility_damage) — the player''s mean utility damage per match across their career, addressed per player (one value per player: that player''s own per-match utility_damage rows). N is the player_stats rows behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('career_clutch_win_rate', 'Clutch win %', 'Clutch win %',
+ 'from clutches: avg(won)',
+ 'profile', 'percent',
+ 'Formula: avg(clutches.won) — the share of the player''s clutches they won (won is the stored 0/1 outcome), addressed per player (one value per player: that player''s own clutches). This is the WIN SHARE the profile card''s "X% won" sub-line showed; the clutch COUNT stays a stored inferred stat. A 0..1 fraction rendered as percent (×100); a subject with no recorded clutches has no rows (renders —), never a fabricated 0. N is the clutches rows behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('career_hs_pct', 'HS%', 'HS%',
+ 'from player_stats: ratio(sum(headshots), sum(kills))',
+ 'profile', 'percent',
+ 'Formula: sum(player_stats.headshots) / sum(player_stats.kills) — headshots as a share of the player''s kills pooled over their whole career, addressed per player (one value per player: that player''s own headshots over that player''s own kills). The pooled shape is identical to the stored career hs_pct (SUM(headshots) / SUM(kills)). A 0..1 fraction rendered as percent (×100); a subject with no kills yields value 0 beside N (ratio''s NULLIF). N is the player_stats rows behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('career_kast', 'KAST%', 'KAST%',
+ 'from player_round_stats: avg(kast)',
+ 'profile', 'percent',
+ 'Formula: avg(player_round_stats.kast) — the mean KAST flag over every stored round of the player''s career, addressed per player (one value per player: that player''s own rounds). Identical shape to the career rollup''s kastCareerSQL (100 × AVG over all of the player''s player_round_stats rows); a 0..1 fraction rendered as percent (×100). A subject with no stored rounds has no rows (renders —), never a fabricated 0. N is the player_round_stats rows behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('career_kd', 'K/D', 'K/D',
+ 'from player_stats: ratio(sum(kills), sum(deaths))',
+ 'profile', 'float2',
+ 'Formula: sum(player_stats.kills) / sum(player_stats.deaths) — kills per death pooled over the player''s whole career, addressed per player (one value per player: that player''s own kills over that player''s own deaths). Same shape as the career rollup''s kdCareerSQL (sums across every match, never an average of per-match ratios). DIVERGENCE (deliberate — internal/metrics/doc.go ratio note): the metric divides by NULLIF(deaths, 0), so a player with NO deaths shows value 0 beside N (the honest no-denominator), where kdCareerSQL floors the denominator (MAX(SUM(deaths), 1)). N is the player_stats rows behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('career_trade_rate', 'Trade rate', 'Trade rate',
+ 'from player_stats, match_trade_opps: ratio(sum(trade_kills), sum(opps))',
+ 'profile', 'percent',
+ 'Formula: sum(player_stats.trade_kills) / sum(match_trade_opps.opps) over the engine-derived LEFT JOIN on (match_id, steam_id) — trade successes divided by the trade opportunities analytics recorded for that player across their career, addressed per player over the joined sources (one value per player: that player''s own trade_kills over that player''s own trade opportunities). It is a RATIO, not a share, so the value MAY EXCEED 100% when a trade lands on a death the distance gate did not count (the same note as the match-scope trade_rate seed and the profile TradeRate field). It recomputes from the sources because a match-scoped metric cannot be referenced inside a profile-scoped metric (the cross-scope ref ban). N is the player_stats rows behind the value.',
  'builtin', '', CURRENT_TIMESTAMP);
 
 -- Advanced platform: declarative plugin registry (plan M5 §2.7 v1). One

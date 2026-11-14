@@ -42,9 +42,9 @@ func openSeededLibrary(t *testing.T) *store.Store {
 	return st
 }
 
-// TestM5BuiltinMetricsPreview: the schema-seeded builtin (trade rate —
-// the single seeded metric) compiles and runs on a fresh library —
-// the DoD "demonstrably expressible" loop end to end.
+// TestM5BuiltinMetricsPreview: the sixteen schema-seeded builtins
+// (trade_rate + the dogfooding set) each compile and run on a fresh
+// library — the DoD "demonstrably expressible" loop end to end.
 func TestM5BuiltinMetricsPreview(t *testing.T) {
 	st := openSeededLibrary(t)
 	// group_by is gone from the DDL (stored-metrics W1) and the groupBy
@@ -58,14 +58,16 @@ func TestM5BuiltinMetricsPreview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list builtins: %v", err)
 	}
-	if len(res.Rows) != 1 {
-		t.Fatalf("builtins = %d, want 1", len(res.Rows))
+	if len(res.Rows) != 16 {
+		t.Fatalf("builtins = %d, want 16 (trade_rate + the dogfooding set — design §3.0)", len(res.Rows))
 	}
+	scopes := map[string]int{}
 	for _, r := range res.Rows {
 		name, expr, scope, denom := r[0].(string), r[1].(string), r[2].(string), r[3].(string)
+		scopes[scope]++
 		t.Run(name, func(t *testing.T) {
-			if scope != "match" {
-				t.Fatalf("builtin scope = %q, want match", scope)
+			if scope != "match" && scope != "profile" {
+				t.Fatalf("builtin scope = %q, want match|profile", scope)
 			}
 			if perr := metrics.Validate(expr); perr != nil {
 				t.Fatalf("Validate(%q): %v", expr, perr)
@@ -76,7 +78,12 @@ func TestM5BuiltinMetricsPreview(t *testing.T) {
 			if perr != nil || err != nil {
 				t.Fatalf("preview: %v %v (sql %s)", perr, err, pv.SQL)
 			}
-			if len(pv.Rows) == 0 {
+			// career_clutch_win_rate has no rows on this corpus: the
+			// committed seed records NO clutches (its honest empty — a
+			// subject-grouped statement over an empty table produces no
+			// groups, never a fabricated 0 row). Every other seed has
+			// subjects to address.
+			if len(pv.Rows) == 0 && name != "career_clutch_win_rate" {
 				t.Fatalf("preview returned no rows")
 			}
 			for _, pr := range pv.Rows {
@@ -85,6 +92,11 @@ func TestM5BuiltinMetricsPreview(t *testing.T) {
 				}
 			}
 		})
+	}
+	// The scope split is part of the seed contract: 7 match / 9 profile
+	// (the profile rows land inert — their surface converts in W3).
+	if scopes["match"] != 7 || scopes["profile"] != 9 {
+		t.Errorf("scope split = %d match / %d profile, want 7 / 9", scopes["match"], scopes["profile"])
 	}
 }
 
