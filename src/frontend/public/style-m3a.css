@@ -942,13 +942,41 @@ canvas.heat-canvas {
   gap: 8px;
 }
 
-/* Source toggles (Built-in / My metrics) above the list: `btn small`
-   buttons whose ON state is the accent border+text — the same active
-   spelling Combat's Clutches won/lost (.comb-kind.active) and Player-
-   Profile's trend buttons (.prof-metric.active) use, scoped to Builder. */
-.bld-src.active {
-  border-color: var(--accent);
-  color: var(--accent);
+/* Filter multi-select (owner ruling: ONE control replaces the three
+   toggle lines — origin / scope / denominator): the host is the
+   canonical Popover's anchor (position: relative so the panel attaches
+   — the .lm-cats / .rp-pop-host spelling) and the panel is the
+   checkbox stack. Group labels render through .filt-lab and option
+   rows through .filt-check — the shared filter-label / checkbox-row
+   classes Reports and Settings already render through, never a bld-
+   synonym for either. */
+.bld-filter-host {
+  position: relative;
+  display: inline-flex;
+}
+
+.bld-filter-pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 180px;
+  padding: 6px 8px;
+  background: var(--widget-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.4);
+  font-size: 0.85em;
+}
+
+/* One group = its label over its two option rows. */
+.bld-filter-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 .bld-group h3 {

@@ -97,7 +97,14 @@ const EXPECTED = {
   // filter/editor sections (72 → 91 with section J at its base 16) and
   // UI-B reworked section J 16 → 20 (pins-only list, help line + empty
   // state, grabber drag) — combined 91 − 16 + 20 = 95.
-  'builder.dom.mjs': 95,
+  // builder 95 → 99 (2026-11-14, metrics list-filter multi-select): the
+  // three toggle-button lines became ONE Filters trigger + Popover
+  // checkbox panel. Section A reworked 7 → 11 (the trigger replaces the
+  // lines, opens the panel, pins the defaults — Built-in unchecked,
+  // rest checked — and the three labelled groups, then closes it both
+  // by click and by Escape); B/C/G/H kept their check counts and only
+  // swapped toggle flips for checkbox flips; D/E/F/I/J untouched.
+  'builder.dom.mjs': 99,
   // combat 75 → 86 (2026-11-14, dogfooding W2): +2 section J (the KAST
   // cell renders the metric value; the dialog header reads it — the
   // client-side fallback's 100% would disagree with the stored 50%),
