@@ -1,11 +1,13 @@
 package store
 
 // Profile read-model queries: the Sides card's per-round side splits and
-// the Trade rate's opportunity denominator. Each pins the decisions its
+// the history row's freeze-end start side. Each pins the decisions its
 // doc comment states — no side/proximity/round guess ever produces a
-// count. (The per-match counter means that used to live here left with
-// GetPlayerMatchAverages' removal — dogfooding W3: the two cards they
-// served now read the career_avg_* metric rows.)
+// value. (The counters that used to live here followed their cards into
+// the metric reads: GetPlayerMatchAverages in dogfooding W3 and the
+// Trade rate's library-wide opportunity denominator,
+// CountPlayerTradeOpportunities, in W4 — the cards read career_*/trade
+// metric rows now.)
 
 import (
 	"testing"
@@ -81,61 +83,6 @@ func TestGetPlayerSideSplits(t *testing.T) {
 	}
 	if tr.ADR < 99.9 || tr.ADR > 100.1 || tr.KASTPct != 0 {
 		t.Errorf("t ADR/KAST = %v/%v, want 100/0", tr.ADR, tr.KASTPct)
-	}
-}
-
-// TestCountPlayerTradeOpportunities pins the STORED read: the profile's
-// trade-opportunity denominator is SUM(opps) over the match_trade_opps
-// rows analytics.Compute writes per match (AGENTS.md "Analysis-rule
-// derived values" — the count is stored at analyze time; "no row" = 0),
-// scoped to the requested steam_id across every match of the library.
-// The RETIRED query-time derivation — and its reject-case fixture
-// (kills of a round with no rounds row, teamkills, suicides,
-// unknown-side players, an
-// already-dead player, out-of-range/-1/missing nearDist, the boundary
-// values) — lives on as the reference oracle in internal/analytics'
-// tradeopps_equivalence_test.go (legacy query-time derivation, retired
-// 2026-11-12), which pins stored == oracle on exactly those cases.
-func TestCountPlayerTradeOpportunities(t *testing.T) {
-	s := openMem(t)
-	id1, err := s.CreateMatchRow("/d/tradeopp1.dem", "sha-tradeopp1", 7)
-	if err != nil {
-		t.Fatalf("CreateMatchRow: %v", err)
-	}
-	id2, err := s.CreateMatchRow("/d/tradeopp2.dem", "sha-tradeopp2", 7)
-	if err != nil {
-		t.Fatalf("CreateMatchRow (2): %v", err)
-	}
-	// Rows as analytics.Compute writes them: match 1 credits alice three
-	// opportunities (and bob one — another player's row must not leak
-	// into alice's SUM), match 2 two more for alice. A third match is
-	// left with NO rows: absence contributes 0.
-	if err := s.ReplaceTradeOpps(id1, map[string]int{"100": 3, "200": 1}, nil); err != nil {
-		t.Fatalf("ReplaceTradeOpps (1): %v", err)
-	}
-	if err := s.ReplaceTradeOpps(id2, map[string]int{"100": 2}, nil); err != nil {
-		t.Fatalf("ReplaceTradeOpps (2): %v", err)
-	}
-
-	n, err := s.CountPlayerTradeOpportunities("100")
-	if err != nil {
-		t.Fatalf("CountPlayerTradeOpportunities: %v", err)
-	}
-	if n != 5 {
-		t.Errorf("opportunities = %d, want 5 (3 + 2 across matches; bob's row excluded)", n)
-	}
-	if n, err := s.CountPlayerTradeOpportunities("999"); err != nil || n != 0 {
-		t.Errorf("unknown player = %d, %v, want 0, nil (no rows → 0)", n, err)
-	}
-
-	// A recompute REPLACES the match's rows (delete-then-insert): match 1
-	// re-ran under a narrower radius and now stores one opportunity —
-	// the SUM follows the stored rows, never a query-time threshold.
-	if err := s.ReplaceTradeOpps(id1, map[string]int{"100": 1}, nil); err != nil {
-		t.Fatalf("ReplaceTradeOpps (re-run): %v", err)
-	}
-	if n, err := s.CountPlayerTradeOpportunities("100"); err != nil || n != 3 {
-		t.Errorf("opportunities after re-run = %d, %v, want 3 (1 + 2)", n, err)
 	}
 }
 

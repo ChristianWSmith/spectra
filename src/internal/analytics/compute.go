@@ -21,8 +21,8 @@ import (
 // distance-derived trade-opportunity counts, tradeopps.go) and
 // round_side_classes (the per-side eco classes, classify.go) are written
 // the same way: cfg.TradeOppDistance / cfg.EcoFullBuy / cfg.EcoForce are
-// applied HERE, at analyze time, and read back by store.GetCombatStats /
-// store.CountPlayerTradeOpportunities and store.GetEconomy respectively.
+// applied HERE, at analyze time, and read back by store.GetCombatStats
+// and store.GetEconomy respectively.
 //
 // RULE STAMP: a successful pass ends by writing cfg.RuleVersion to
 // matches.analyzed_rule_version (store.SetMatchRuleVersion — the one

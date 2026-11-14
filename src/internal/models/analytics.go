@@ -358,12 +358,6 @@ type SavedFilterRow struct {
 	CreatedAt  time.Time `json:"createdAt"`
 }
 
-// ProfileClutchCounts aggregates one player's clutch records (played/won).
-type ProfileClutchCounts struct {
-	Played int `json:"played"`
-	Won    int `json:"won"`
-}
-
 // ProfileWeaponJSONs is one match's weapon breakdown JSON triplet (merge
 // in the caller — see ProfileService.GetProfile). HeadshotsByWeapon is
 // derived from the stored kill events (not an extract column), with the

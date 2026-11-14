@@ -1418,18 +1418,6 @@ func (s *Store) GetPlayerHistory(steamID string) ([]models.ProfileHistoryRow, er
 	return out, nil
 }
 
-// GetPlayerClutchStats aggregates one player's clutch records (played/won).
-func (s *Store) GetPlayerClutchStats(steamID string) (models.ProfileClutchCounts, error) {
-	var c models.ProfileClutchCounts
-	err := s.db.QueryRow(
-		`SELECT COUNT(*), COALESCE(SUM(won), 0) FROM clutches WHERE steam_id = ?`, scrub(steamID),
-	).Scan(&c.Played, &c.Won)
-	if err != nil {
-		return models.ProfileClutchCounts{}, fmt.Errorf("store: get player clutch stats: %w", err)
-	}
-	return c, nil
-}
-
 // GetPlayerWeaponJSONs returns one player's per-match weapon-breakdown JSON
 // triplets (merge in the caller — ProfileService.GetProfile).
 //
@@ -1534,44 +1522,4 @@ func (s *Store) GetPlayerSideSplits(steamID string) ([]models.ProfileSideSplit, 
 		return nil, fmt.Errorf("store: get player side splits: %w", err)
 	}
 	return out, nil
-}
-
-// CountPlayerTradeOpportunities returns how many trade opportunities a
-// player had across every match in the library — one `SUM(opps)` seek
-// over the stored match_trade_opps rows (steam_id index — µs at every
-// library scale; the query-time derivation it replaced scanned every
-// kill ever recorded and failed at 1k+ matches: 8.16 s @1k, 77.9 s @10k
-// per profile open on the single DB connection). It was the profile
-// Trade rate card's denominator until that card converted to the
-// career_trade_rate metric (dogfooding W3) — the count itself stays as
-// the stored aggregate over the metric's own source rows.
-//
-// The count is written per match by analytics.Compute (AGENTS.md
-// "Analysis-rule derived values" — rules-derived values are STORED at
-// analyze time; "no row" = 0, the same absence rule as a missing
-// player_stats row). The exact predicate lives THERE, in
-// analytics.tradeOppCounts: an enemy kill in a counted round whose
-// victim was this player's teammate, the player alive at the death
-// tick, and the kill's detail_json.nearDist within
-// [0, analysis_config.trade_opp_distance] — the proximity is measured
-// to the NEAREST living teammate of the victim (team-level), so the
-// gate can credit someone who was himself out of range — the same
-// documented approximation as GetCombatStats' final-side friendly
-// fire. The numerator (successful trades) is player_stats.trade_kills
-// via the career rollup, so both sides follow the configured rules.
-//
-// The RETIRED query-time SQL (legacy query-time derivation, retired
-// 2026-11-12) is kept verbatim as the reference oracle in
-// internal/analytics' trade-opps equivalence test, which pins stored ==
-// oracle on synthetic fixtures.
-func (s *Store) CountPlayerTradeOpportunities(steamID string) (int, error) {
-	sid := scrub(steamID)
-	var n int
-	err := s.db.QueryRow(
-		`SELECT COALESCE(SUM(opps), 0) FROM match_trade_opps WHERE steam_id = ?`, sid,
-	).Scan(&n)
-	if err != nil {
-		return 0, fmt.Errorf("store: count player trade opportunities: %w", err)
-	}
-	return n, nil
 }

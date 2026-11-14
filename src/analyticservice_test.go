@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -455,13 +456,34 @@ func TestTradeOppDistanceChangeRecomputesStoredCounts(t *testing.T) {
 		}
 		return 0
 	}
+	// The library-wide trade-opportunity SUM the store's
+	// CountPlayerTradeOpportunities used to serve (removed in dogfooding
+	// W4 with its last consumer) — spelled inline here: one index seek
+	// over the rows analytics.Compute stores, never a threshold.
+	// QueryWrite (the write handle) because this fixture is :memory:
+	// and RunReadOnly needs a file-backed database.
 	opps := func(t *testing.T, sid string) int {
 		t.Helper()
-		n, err := st.CountPlayerTradeOpportunities(sid)
+		res, err := st.QueryWrite(context.Background(),
+			`SELECT COALESCE(SUM(opps), 0) FROM match_trade_opps WHERE steam_id = ?`,
+			[]any{sid}, 1)
 		if err != nil {
-			t.Fatalf("CountPlayerTradeOpportunities: %v", err)
+			t.Fatalf("stored opps(%s): %v", sid, err)
 		}
-		return n
+		if len(res.Rows) != 1 {
+			t.Fatalf("stored opps(%s): %d rows, want 1", sid, len(res.Rows))
+		}
+		switch v := res.Rows[0][0].(type) {
+		case int64:
+			return int(v)
+		case float64:
+			return int(v)
+		case int:
+			return v
+		default:
+			t.Fatalf("stored opps(%s): unexpected value %T (%v)", sid, v, v)
+			return 0
+		}
 	}
 
 	// Run under the seeded default (1000u): both deaths in range.

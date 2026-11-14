@@ -57,9 +57,9 @@ func newProfileFixture(t *testing.T) *ProfileService {
 		// rate card converted to the career_trade_rate metric in
 		// dogfooding W3, the DTO no longer carries trade rate counts,
 		// and nothing in this fixture reads match_trade_opps any more —
-		// the store's own TestCountPlayerTradeOpportunities still pins
-		// that stored read. carl/dave/eve stay in the roster so the
-		// side-split fixture keeps a full team.
+		// internal/analytics' trade-opps tests pin that stored write.
+		// carl/dave/eve stay in the roster so the side-split fixture
+		// keeps a full team.
 		events = append(events,
 			models.Event{ // teamkill headshot — no credit anywhere
 				Tick: 200, Round: 1, Kind: models.EventKill,

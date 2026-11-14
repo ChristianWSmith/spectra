@@ -45,10 +45,10 @@ import (
 )
 
 // legacyOppsSQL is the RETIRED query-time derivation of one player's
-// trade opportunities across the library (was
-// store.CountPlayerTradeOpportunities — legacy query-time derivation,
-// retired 2026-11-12). Verbatim reference oracle; params are
-// sid, sid, sid, distance.
+// trade opportunities across the library (the shape the retired
+// store.CountPlayerTradeOpportunities answered from stored rows —
+// legacy query-time derivation, retired 2026-11-12). Verbatim reference
+// oracle; params are sid, sid, sid, distance.
 const legacyOppsSQL = `SELECT COUNT(*)
 	 FROM events d
 	 JOIN rounds rd ON rd.match_id = d.match_id AND rd.number = d.round
@@ -308,10 +308,7 @@ func TestTradeOppStoredMatchesLegacyQuery(t *testing.T) {
 			var botOracle int
 			for _, p := range refs {
 				want := oracleOpps(p.SteamID, tc.distance)
-				got, err := st.CountPlayerTradeOpportunities(p.SteamID)
-				if err != nil {
-					t.Fatalf("CountPlayerTradeOpportunities(%q): %v", p.SteamID, err)
-				}
+				got := storedOpps(t, st, p.SteamID)
 				if p.IsBot {
 					// Deliberate divergence (human-only writes): the
 					// oracle counts the bot's opportunities, the stored
@@ -333,8 +330,8 @@ func TestTradeOppStoredMatchesLegacyQuery(t *testing.T) {
 			if tc.distance > 0 && botOracle == 0 {
 				t.Fatalf("fixture weak: the bot earns no opportunities in the oracle at %du", tc.distance)
 			}
-			if n, err := st.CountPlayerTradeOpportunities("999"); err != nil || n != 0 {
-				t.Errorf("unknown player = %d, %v, want 0, nil", n, err)
+			if n := storedOpps(t, st, "999"); n != 0 {
+				t.Errorf("unknown player = %d, want 0 (no rows → 0)", n)
 			}
 
 			// --- missed: stored GetCombatStats == legacy oracle, per
@@ -365,7 +362,7 @@ func TestTradeOppStoredMatchesLegacyQuery(t *testing.T) {
 			// exact-radius, t900 zero-radius, t309 JSON-true→1 = 8 @1000;
 			// @200 drops the 500u dup and t200 = 6; @0 keeps only t900),
 			// and dave's 500u death sits exactly on the narrow gate.
-			if got, _ := st.CountPlayerTradeOpportunities("100"); got != tc.aliceOpps {
+			if got := storedOpps(t, st, "100"); got != tc.aliceOpps {
 				t.Errorf("alice opps = %d, want %d (hand-computed)", got, tc.aliceOpps)
 			}
 			if got := byID["400"].TradeOppMissed; got != tc.daveMissed {
