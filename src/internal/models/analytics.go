@@ -187,18 +187,17 @@ type UtilityEvent struct {
 // deaths (the kill event's detail_json.nearDist within the configured
 // trade-opportunity distance, gated at analyze time and stored in
 // match_trade_opps — see the store.GetCombatStats notes) — and
-// needs a UI badge.
+// needs a UI badge. The former EntryRate/TradeRate/KASTPct fields are
+// gone (dogfooding W2): the Combat tab reads the entry_rate /
+// trade_rate_deaths / kast builtin metric rows instead.
 type CombatStat struct {
 	SteamID        string  `json:"steamId"`
 	Name           string  `json:"name"`
 	DMGNoKill      int     `json:"dmgNoKill"`
 	DMGConvPct     float64 `json:"dmgConvPct"`
 	FFDamage       int     `json:"ffDamage"`
-	EntryRate      float64 `json:"entryRate"`
-	TradeRate      float64 `json:"tradeRate"`
 	UntradedDeaths int     `json:"untradedDeaths"`
 	TradeOppMissed int     `json:"tradeOppMissed"` // inferred heuristic
-	KASTPct        float64 `json:"kastPct"`
 }
 
 // EconomyRow is the raw per-round economy view (rounds ⋈ round_economy ⋈

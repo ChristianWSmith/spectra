@@ -14,9 +14,21 @@
     getRounds,
     getScoreboard,
     getMatch,
+    listMetrics,
+    getMetricValuesForMatch,
+    getMetricComputeState,
+    subscribeMetricProgress,
+    onMetricDone,
     errText,
   } from '../services.js';
-  import { fmtInt, fmtPercent, roundClock } from '../fmt.js';
+  import { fmtInt, fmtPercent, fmtMetric, roundClock } from '../fmt.js';
+  import {
+    metricPresentation,
+    liveMetricState,
+    metricStateTitle,
+    metricProgressFrac,
+    metricProgressStage,
+  } from '../metricstate.js';
   import { replayHash, entryLoopSpanAround, entryLoopAround } from '../nav.js';
   import { listedPlayers } from '../players.js';
   import { roundsByNumber } from '../replay/landmarks.js';
@@ -40,6 +52,12 @@
 
   let { id = 0, nav = () => {} } = $props();
 
+  // The three converted stats are FIXED-SLOT metric columns (design §1.3:
+  // this view is NOT sequenced — the owner named scoreboard and profile
+  // only): same positions as before, values from the ONE canonical
+  // stored read. Their keys are `m:<metric name>` — the metric's STABLE
+  // identity (ids churn on plugin replace) — which also lets the default
+  // statSort below name the KAST slot statically.
   const STAT_COLS = [
     { key: 'name', label: 'Player', fmt: (r) => r.name },
     { key: 'dmgNoKill', label: 'Damage (no kill)', fmt: (r) => fmtInt(r.dmgNoKill) },
@@ -50,18 +68,8 @@
       title: DMG_CONV_DEF,
     },
     { key: 'ffDamage', label: 'FF', fmt: (r) => fmtInt(r.ffDamage) },
-    {
-      key: 'entryRate',
-      label: 'Entry%',
-      fmt: (r) => fmtPercent(r.entryRate),
-      title: ENTRY_DEF,
-    },
-    {
-      key: 'tradeRate',
-      label: 'Trade%',
-      fmt: (r) => fmtPercent(r.tradeRate),
-      title: TRADE_DEF,
-    },
+    { key: 'm:entry_rate', metric: 'entry_rate', label: 'Entry%', title: ENTRY_DEF },
+    { key: 'm:trade_rate_deaths', metric: 'trade_rate_deaths', label: 'Trade%', title: TRADE_DEF },
     {
       key: 'untradedDeaths',
       label: 'Untraded deaths',
@@ -76,8 +84,15 @@
       badge: TRADE_OPP_MISSED_DEF,
       inferred: true,
     },
-    { key: 'kastPct', label: 'KAST%', fmt: (r) => fmtPercent(r.kastPct), title: KAST_DEF },
+    { key: 'm:kast', metric: 'kast', label: 'KAST%', title: KAST_DEF, kast: true },
   ];
+
+  // The KAST slot's column — the drill-down button and its dialog read
+  // the same fixed entry.
+  const kastCol = STAT_COLS.find((c) => c.kast);
+  // The metric names the three slots resolve through (the catalog lookup
+  // keys the read below).
+  const metricSlots = new Set(STAT_COLS.filter((c) => c.metric).map((c) => c.metric));
 
   // The engagement kinds the backend produces (analytics/engagements.go:
   // opening | trade | traded | untraded — "entry" is deferred, see
@@ -135,7 +150,9 @@
     engKind: '',
     clutchWon: true,
     clutchLost: false,
-    statSort: { key: 'kastPct', desc: true },
+    // The default ordering follows the KAST slot — now a METRIC column
+    // (m:<name> keys), so the default names it statically.
+    statSort: { key: 'm:kast', desc: true },
   });
   const combKey = $derived(matchKey('combat', id));
   // Deliberate ONE-TIME init capture: the derived is read inside a closure
@@ -179,7 +196,11 @@
   // KAST drill-down modal (per-round K/A/T/S grid).
   let kastSteam = $state('');
   let kastName = $state('');
-  let kastPct = $state(null); // the row's displayed KAST% (never recomputed)
+  // The KAST cell's PRESENTATION when the dialog opened — the header
+  // reads exactly what the column rendered (fresh → the value, a state →
+  // the chip, otherwise the honest dash); the client-side fallback %
+  // (audit N18) died with the metric conversion.
+  let kastPres = $state(null);
   let kastRows = $state([]);
   let kastLoading = $state(false);
   let kastError = $state('');
@@ -214,6 +235,108 @@
       });
     return () => (live = false);
   });
+
+  // --- the three converted stat slots: metric-value-backed (W2) --------
+  // ONE listMetrics → ONE getMetricValuesForMatch for the three seeds →
+  // the compute-state read, composed through THE state machine
+  // (lib/metricstate.js) exactly like Match's scoreboard cells. The
+  // slots are fixed (this view is not sequenced), so a failed read keeps
+  // them on the honest dash behind a dismissible alert — never a
+  // fabricated number, never a silent degradation.
+  let metricByName = $state(new Map()); // metric name → {def, map, unitHasRows, error}
+  let metricStates = $state(new Map());
+  let metricProgress = $state(new Map());
+  let metricReload = $state(0);
+  let metricError = $state('');
+
+  $effect(() => subscribeMetricProgress((snap) => (metricProgress = snap)));
+  $effect(() => onMetricDone(() => (metricReload += 1)));
+
+  $effect(() => {
+    id;
+    metricReload; // spectra:metric-done → refetch (the cache flushed)
+    let live = true;
+    metricByName = new Map();
+    metricError = '';
+    listMetrics()
+      .then((defs) => {
+        const picked = (defs || []).filter((d) => metricSlots.has(d.name));
+        if (picked.length === 0) return new Map();
+        const ids = picked.map((d) => d.id);
+        return Promise.all([getMetricValuesForMatch(id, ids), getMetricComputeState()]).then(
+          ([values, states]) => {
+            const byMetric = new Map();
+            for (const v of values || []) {
+              if (!byMetric.has(v.metricId)) byMetric.set(v.metricId, []);
+              byMetric.get(v.metricId).push(v);
+            }
+            const stateById = new Map((states || []).map((s) => [s.metricId, s]));
+            if (live) metricStates = stateById;
+            const out = new Map();
+            for (const def of picked) {
+              const rows = byMetric.get(def.id) || [];
+              out.set(def.name, {
+                def,
+                map: new Map(rows.map((r) => [r.steamId, r])),
+                unitHasRows: rows.length > 0,
+                error: (stateById.get(def.id) || {}).error || '',
+              });
+            }
+            return out;
+          },
+        );
+      })
+      .then((cols) => {
+        if (live) metricByName = cols;
+      })
+      .catch((e) => {
+        if (live) metricError = errText(e);
+      });
+    return () => (live = false);
+  });
+
+  // slot — one fixed metric slot's resolved column data (undefined until
+  // the read lands).
+  function slot(col) {
+    return metricByName.get(col.metric);
+  }
+
+  // slotPres — THE state machine (lib/metricstate.js) over a fixed slot:
+  // the same composition Match's scoreboard cells use, view-local like
+  // PlayerProfile's career cells — the RULE itself is never re-spelled
+  // here. No column data yet → the neutral dash (never a guessed chip
+  // and never a number).
+  function slotPres(col, r) {
+    const mc = slot(col);
+    if (!mc) return metricPresentation('', null, false);
+    const st = liveMetricState(metricProgress, metricStates, mc.def.id);
+    return metricPresentation(st, mc.map.get(r.steamId) || null, mc.unitHasRows);
+  }
+
+  function slotTitle(col, pres) {
+    const mc = slot(col);
+    const name = mc ? mc.def.title || mc.def.name : col.label;
+    if (pres.kind === 'value') return `${name} — sample size n=${pres.n}`;
+    if (pres.kind === 'nodata') return 'no data for this player';
+    return metricStateTitle(pres.state, (mc && mc.error) || '');
+  }
+
+  // slotText — the cell's text half: the stored number through the
+  // metric's format tag, the honest dash, or nothing (a state chip
+  // renders instead).
+  function slotText(col, pres) {
+    if (pres.kind === 'nodata') return '—';
+    if (pres.kind !== 'value') return '';
+    const mc = slot(col);
+    return fmtMetric(pres.value, (mc && mc.def.format) || '');
+  }
+
+  // cellValue — one player's fresh value for a slot's metric (null when
+  // the player has no row: the honest missing that sorts last).
+  function cellValue(mc, r) {
+    const row = mc.map.get(r.steamId);
+    return row && Number.isFinite(row.value) ? row.value : null;
+  }
 
   // ONE rendered row per KILL. analytics/engagements.go emits up to
   // FOUR rows for a single kill event — opening / trade / traded /
@@ -278,6 +401,18 @@
     const { key, desc } = statSort;
     const rows = [...stats];
     rows.sort((a, b) => {
+      if (key.startsWith('m:')) {
+        // The metric slots sort client-side with NULLS LAST (the m:
+        // pattern from Match's scoreboard): a player with no fresh row
+        // for the metric always lands after one with a value.
+        const mc = metricByName.get(key.slice(2));
+        const va = mc ? cellValue(mc, a) : null;
+        const vb = mc ? cellValue(mc, b) : null;
+        if (va == null && vb == null) return 0;
+        if (va == null) return 1;
+        if (vb == null) return -1;
+        return desc ? vb - va : va - vb;
+      }
       const av = a[key];
       const bv = b[key];
       let c;
@@ -382,13 +517,13 @@
   }
 
   // KAST% cell click → per-round K/A/T/S grid for that player. The modal
-  // header shows THIS row's kastPct — the exact value the column renders —
-  // so the two can never disagree; the per-round grid below is the
-  // breakdown behind it.
+  // header shows THIS row's KAST slot presentation — the exact thing the
+  // column renders — so the two can never disagree; the per-round grid
+  // below is the breakdown behind it.
   async function openKast(row) {
     kastSteam = row.steamId;
     kastName = row.name;
-    kastPct = Number.isFinite(row.kastPct) ? row.kastPct : null;
+    kastPres = slotPres(kastCol, row);
     kastRows = [];
     kastError = '';
     kastLoading = true;
@@ -404,7 +539,7 @@
 
   function closeKast() {
     kastSteam = '';
-    kastPct = null;
+    kastPres = null;
     kastRows = [];
     kastError = '';
   }
@@ -438,8 +573,31 @@
          details underneath, transient). -->
     <p class="muted" role="status"><StatusChip block detail="Loading combat data…" /></p>
   {:else}
+    {#if metricError}
+      <!-- The metric read failed: the three fixed slots keep rendering
+           the honest dash behind it (never a fabricated number), and the
+           failure itself is dismissible in place (house rule). -->
+      <p class="error" role="alert">
+        Metric-backed stats unavailable: {metricError}
+        <button class="btn small" aria-label="Dismiss metric stats error" onclick={() => (metricError = '')}>
+          <span class="codicon codicon-close"></span>
+        </button>
+      </p>
+    {/if}
     <section class="panel comb-sec">
       <h2>Combat stats</h2>
+      <!-- A metric slot's state chip (processing / failed / behind) —
+           the five-state presentation's markup half; the RULE lives in
+           lib/metricstate.js. Rendered inside the slot's cell (the KAST
+           slot wraps it in its drill-down button). -->
+      {#snippet metricChip(col, pres)}
+        <StatusChip
+          status={pres.state}
+          title={slotTitle(col, pres)}
+          progress={metricProgressFrac(metricProgress, slot(col)?.def.id)}
+          stage={metricProgressStage(metricProgress, slot(col)?.def.id)}
+        />
+      {/snippet}
       <div class="table-scroll">
         <table class="data-table">
           <thead>
@@ -474,14 +632,25 @@
                         title="Open player profile"
                       />
                     </td>
-                  {:else if col.key === 'kastPct'}
-                    <td class="num">
-                      <button
-                        class="comb-kast-btn"
-                        title="{KAST_DEF} — click for the per-round K/A/T/S grid"
-                        onclick={() => openKast(r)}
-                      >{col.fmt(r)}</button>
-                    </td>
+                  {:else if col.metric}
+                    <!-- Metric-value-backed fixed slot: the same
+                         five-state presentation as Match's scoreboard
+                         cells (value / honest dash / state chip). -->
+                    {@const pres = slotPres(col, r)}
+                    {#if col.kast}
+                      <td class="num">
+                        <button
+                          class="comb-kast-btn"
+                          title="{KAST_DEF} — click for the per-round K/A/T/S grid"
+                          onclick={() => openKast(r)}
+                          >{slotText(col, pres)}{#if pres.kind === 'chip'}{@render metricChip(col, pres)}{/if}</button
+                        >
+                      </td>
+                    {:else}
+                      <td class="num" title={slotTitle(col, pres)}
+                        >{slotText(col, pres)}{#if pres.kind === 'chip'}{@render metricChip(col, pres)}{/if}</td
+                      >
+                    {/if}
                   {:else}
                     <td class="num" title={col.title || ''}>{col.fmt(r)}</td>
                   {/if}
@@ -709,10 +878,22 @@
     </div>
     <p class="muted" title={KAST_DEF}>
       {#if kastRows.length > 0}
-        {kastPct != null
-          ? fmtPercent(kastPct)
-          : fmtPercent((kastRows.filter((r) => r.kast).length / kastRows.length) * 100)} KAST over
-        {kastRows.length} rounds —
+        <!-- The SAME presentation the KAST cell rendered when the dialog
+             opened: fresh → the value, a state → the chip, otherwise the
+             honest dash. The client-side fallback % (audit N18) is gone
+             with the metric conversion. -->
+        {#if kastPres && kastPres.kind === 'value'}
+          {fmtMetric(kastPres.value, (slot(kastCol) && slot(kastCol).def.format) || 'percent')}
+          KAST over {kastRows.length} rounds —
+        {:else if kastPres && kastPres.kind === 'chip'}
+          <StatusChip
+            status={kastPres.state}
+            title={metricStateTitle(kastPres.state, (slot(kastCol) && slot(kastCol).error) || '')}
+          />
+          KAST over {kastRows.length} rounds —
+        {:else}
+          — KAST over {kastRows.length} rounds —
+        {/if}
       {/if}
       dots = K kill · A assist · T traded · S survived (filled = applied).
     </p>

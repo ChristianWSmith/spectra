@@ -1092,9 +1092,12 @@ func TestGetCombatStatsFromStoredRows(t *testing.T) {
 		{SteamID: "200", Name: "bob", Side: "t"},
 		{SteamID: "300", Name: "carl", Side: "ct"},
 	}
+	// The base row's columns that fed EntryRate/TradeRate left with them
+	// (W2 — the metric seeds own those numbers now): only the row's
+	// existence and identity feed this read.
 	em.PlayerStats = []models.PlayerStats{
-		{SteamID: "100", Name: "alice", Side: "ct", EntryKills: 1, TradeKills: 2, Deaths: 1, RoundsPlayed: 2},
-		{SteamID: "200", Name: "bob", Side: "t", Deaths: 1, RoundsPlayed: 2},
+		{SteamID: "100", Name: "alice", Side: "ct"},
+		{SteamID: "200", Name: "bob", Side: "t"},
 	}
 	em.Events = []models.Event{
 		{Tick: 10, Round: 1, Kind: models.EventKill, Attacker: "100", Victim: "200"},
@@ -1125,11 +1128,6 @@ func TestGetCombatStatsFromStoredRows(t *testing.T) {
 	if err := s.ReplaceTradeOpps(id, nil, map[string]int{"200": 1}); err != nil {
 		t.Fatalf("ReplaceTradeOpps: %v", err)
 	}
-	if err := s.ReplacePlayerRounds(id, []models.PlayerRoundStat{
-		{Round: 1, SteamID: "100", KAST: true},
-	}); err != nil {
-		t.Fatalf("ReplacePlayerRounds: %v", err)
-	}
 	if err := s.ReplaceEngagements(id, []models.Engagement{
 		{Tick: 50, Round: 1, Kind: "untraded", ASteam: "100", BSteam: "200"},
 		{Tick: 60, Round: 1, Kind: "untraded", ASteam: "100", BSteam: "200"},
@@ -1159,23 +1157,17 @@ func TestGetCombatStatsFromStoredRows(t *testing.T) {
 	if alice.FFDamage != 10 {
 		t.Errorf("ffDamage = %d, want 10", alice.FFDamage)
 	}
-	// Percent scale decision: every percent field of a CombatStat row is
-	// 0..100 (DMGConvPct ~54.55 above, KASTPct 100 below), so EntryRate =
-	// 100 × 1 entry kill / 2 rounds = 50 and TradeRate = 100 × 2 trades /
-	// 1 death = 200 (a ratio over own deaths — allowed above 100). These
-	// were 0..1 fractions before (0.5/2.0), which the Combat tab's
-	// fmtPercent rendered as "0.5%"/"2%" instead of "50%"/"200%".
-	if alice.EntryRate != 50 || alice.TradeRate != 200 {
-		t.Errorf("entry/trade rate = %v/%v, want 50/200 (0..100 percent scale, like dmgConvPct/kastPct)",
-			alice.EntryRate, alice.TradeRate)
-	}
-	if alice.KASTPct != 100 {
-		t.Errorf("kastPct = %v, want 100", alice.KASTPct)
-	}
-	// Untraded rows attribute to victim 200 (bob), not alice. Decision 4:
-	// UntradedDeaths is the raw timing count (2), TradeOppMissed reads the
-	// stored count (1 — the row seeded above for the 200u gate; a player
-	// with no match_trade_opps row reads 0, the absence rule).
+	// Percent scale decision: DMGConvPct ~54.55 above is 0..100 — NOT a
+	// 0..1 fraction (the Combat tab's fmtPercent renders "54.55%", never
+	// "0.55%"). EntryRate/TradeRate/KASTPct are GONE (dogfooding W2): the
+	// Combat tab reads the entry_rate / trade_rate_deaths / kast builtin
+	// metric rows instead, so this test re-pinned to the residual read —
+	// "these three left with the metric conversion; the rest decide as
+	// before". Untraded rows attribute to victim 200 (bob), not alice.
+	// Decision 4: UntradedDeaths is the raw timing count (2),
+	// TradeOppMissed reads the stored count (1 — the row seeded above
+	// for the 200u gate; a player with no match_trade_opps row reads 0,
+	// the absence rule).
 	var bob *models.CombatStat
 	for i := range rows {
 		if rows[i].SteamID == "200" {
