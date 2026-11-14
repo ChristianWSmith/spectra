@@ -10,7 +10,7 @@
 // aggregation list, each `op(args) [AS alias]`:
 //
 //	expr := "from" source { "," source } ":" agg { "," agg }
-//	source := table
+//	source := table | curated alias (a second source over the same table)
 //	agg  := op "(" [ args ] ")" [ "AS" ident ]
 //
 // The base form is SINGLE-SOURCE — one `from <table>:` per expression,
@@ -181,12 +181,18 @@
 //
 // # Sources and the column whitelist
 //
-// The ten sources (columns curated from the store schema,
+// The fourteen sources (columns curated from the store schema,
 // internal/store/schema.sql — JSON/blob
 // payload columns such as events.detail_json, events.raw_json,
 // utility_events.affected, player_stats.kills_by_weapon are deliberately
 // excluded): events, engagements, rounds, player_stats, player_round_stats,
-// round_economy, clutches, utility_events, chat, match_trade_opps.
+// round_economy, clutches, utility_events, chat, match_trade_opps,
+// round_classifications, round_side_classes, round_player_sides,
+// engagements_victim. One source is an ALIAS (the grammar's
+// `source := table | curated alias`): engagements_victim is the
+// engagements table under a second, victim-anchored subject — every
+// other source IS its own table (whitelist.go sourceTable resolves the
+// physical table at the FROM/JOIN position).
 // See whitelist.go for the exact column sets — and for the join
 // declarations (dimensions, uniqueness keys, population) the engine
 // derives every ON from.
@@ -206,9 +212,17 @@
 // (positioned error): it would fan out primary rows and silently inflate
 // count()/sum()/N. Worked keys: player_stats + match_trade_opps →
 // (match_id, steam_id) — 1:1; engagements + rounds → (match_id, round)
-// — n:1; rounds + events, player_round_stats + clutches and
-// rounds + round_economy are rejected (secondary not unique on the
-// shared dimensions).
+// — n:1; player_round_stats + round_classifications → (match_id, round)
+// — n:1 (the round label is the round's, so the primary's finer grain
+// repeats it — a CONDITION column, never a value); round_player_sides +
+// round_side_classes → (match_id, round, side) — n:1 (the ONLY anchored
+// primary carrying side beside round); rounds + events,
+// player_round_stats + clutches, rounds + round_economy and
+// player_round_stats + round_side_classes are rejected (secondary not
+// unique on the shared dimensions — the last because player_round_stats
+// has no side dimension). One source rejects as a SECONDARY at all:
+// engagements_victim — its key carries seq, which is never a join
+// dimension (primary-only; alias SQL pins in join_test).
 //
 // The join type is engine-chosen LEFT (primary LEFT JOIN secondary),
 // never user syntax: a sparse secondary (match_trade_opps writes no row
@@ -250,18 +264,23 @@
 // A metric is always ONE number addressed to a player, so every
 // statement is subject-addressed. The PRIMARY source must carry a
 // SUBJECT column (whitelist.go sourceSubject): events → attacker,
-// engagements → a_steam, utility_events → thrower, and player_stats /
-// player_round_stats / clutches / chat / match_trade_opps → steam_id.
-// rounds and round_economy have NO subject (mvp is an attribute of a
-// won round; round_economy is side-grained). A primary without a
-// subject is rejected right after the source check, positioned at the
+// engagements → a_steam, engagements_victim → b_steam (its curated
+// alias — the same table, the victim as subject), utility_events →
+// thrower, and player_stats / player_round_stats / clutches / chat /
+// match_trade_opps / round_player_sides → steam_id.
+// rounds, round_economy, round_classifications and round_side_classes
+// have NO subject (mvp is an attribute of a won round; round_economy is
+// side-grained; the round label and the per-side class are round-grain
+// outputs). A primary without a subject is rejected right after the
+// source check, positioned at the
 // source clause:
 //
 //	expression is not player-anchored: primary source "rounds" has no
 //	player subject — a metric's value must be per player (player
 //	sources: events, engagements, player_stats, player_round_stats,
-//	clutches, chat, utility_events, match_trade_opps; round-grain
-//	sources can only join a player-anchored expression)
+//	clutches, chat, utility_events, match_trade_opps, round_player_sides,
+//	engagements_victim; round-grain sources can only join a
+//	player-anchored expression)
 //
 // The criterion is PRIMARY-OWNS (owner confirm-or-veto note 1): the
 // subject comes from the primary only — the same ownership as scope

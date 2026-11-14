@@ -35,7 +35,7 @@ func seededStore(t *testing.T) *store.Store {
 	return st
 }
 
-// builtinSeed maps the SIXTEEN schema-seeded builtins (schema.sql —
+// builtinSeed maps the FIFTY-EIGHT schema-seeded builtins (schema.sql —
 // name/expr/scope/format/short_name/denominator are LOCKED to the
 // baseline seed by this table) onto their hand-computed seed
 // expectations. interpretation records how the seeded expression states
@@ -207,6 +207,304 @@ var builtinSeed = []struct {
 		scope: "profile", format: "percent", shortName: "Trade rate", denominator: "",
 		interpretation: "career trade opportunities ratio (recomputes the join — cross-scope ref ban)",
 		rows:           8, wantValues: []float64{0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0, 0}, wantN: 3,
+		wantLabels: eightLabels,
+	},
+	// ---- inferred set, match scope (27). Corpus math (seed.sql header):
+	// the per-match columns the corpus does NOT write default to 0, the
+	// per-round flags are exact, and the N of a player_stats-backed seed
+	// is the subject's 3 matches.
+	{
+		name: "assists", expr: "from player_stats: sum(assists)",
+		scope: "match", format: "int", shortName: "A", denominator: "",
+		interpretation: "cross-team assist count (corpus records assists = 0)",
+		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		name: "flash_assists", expr: "from player_stats: sum(flash_assists)",
+		scope: "match", format: "int", shortName: "", denominator: "",
+		interpretation: "AssistedFlash-split assists (column absent from the corpus → 0)",
+		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		name: "enemies_flashed", expr: "from player_stats: sum(enemies_flashed)",
+		scope: "match", format: "int", shortName: "", denominator: "",
+		interpretation: "blinded enemies (column absent from the corpus → 0)",
+		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		name: "entry_kills", expr: "from player_stats: sum(entry_kills)",
+		scope: "match", format: "int", shortName: "Entry", denominator: "",
+		interpretation: "first bloods (column absent → 0; the corpus writes opening_kills instead, which is why the I4 direct form diverges here)",
+		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		name: "entry_deaths", expr: "from player_stats: sum(entry_deaths)",
+		scope: "match", format: "int", shortName: "", denominator: "",
+		interpretation: "first-blood victims (column absent → 0)",
+		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		name: "best_streak", expr: "from player_stats: max(best_streak)",
+		scope: "match", format: "int", shortName: "Streak", denominator: "",
+		interpretation: "longest streak (column absent → 0); one player_stats row per subject-match, so max == the stored value",
+		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		name: "two_k", expr: "from player_stats: sum(two_k)",
+		scope: "match", format: "int", shortName: "2K", denominator: "",
+		interpretation: "rounds with exactly 2 kills (column absent → 0)",
+		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		name: "three_k", expr: "from player_stats: sum(three_k)",
+		scope: "match", format: "int", shortName: "3K", denominator: "",
+		interpretation: "rounds with exactly 3 kills (column absent → 0)",
+		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		name: "four_k", expr: "from player_stats: sum(four_k)",
+		scope: "match", format: "int", shortName: "4K", denominator: "",
+		interpretation: "rounds with exactly 4 kills (column absent → 0)",
+		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		name: "five_k", expr: "from player_stats: sum(five_k)",
+		scope: "match", format: "int", shortName: "5K", denominator: "",
+		interpretation: "rounds with exactly 5 kills (column absent → 0)",
+		rows:           8, wantAll: 0, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		// The corpus writes assists = 0 in every player_round_stats row.
+		name: "rounds_with_assist", expr: "from player_round_stats: count(where assists > 0)",
+		scope: "match", format: "int", shortName: "", denominator: "",
+		interpretation: "rounds with ≥1 assist (the KAST A component as a count — corpus: 0)",
+		rows:           8, wantAll: 0, wantN: 72, wantLabels: eightLabels,
+	},
+	{
+		// traded iff the player died and the round ≤ 12 → 3 per match
+		// (seed.sql header) → 9 over the three identical matches.
+		name: "rounds_traded", expr: "from player_round_stats: sum(traded)",
+		scope: "match", format: "int", shortName: "", denominator: "",
+		interpretation: "the player's traded deaths (the KAST T flag; corpus: 3/match × 3)",
+		rows:           8, wantAll: 9, wantN: 72, wantLabels: eightLabels,
+	},
+	{
+		// trade_kills = i per match for player i (1..8) → library 3i.
+		name: "trade_kills", expr: "from player_stats: sum(trade_kills)",
+		scope: "match", format: "int", shortName: "Trade", denominator: "",
+		interpretation: "stored trade-kill count (corpus: 3i)",
+		rows:           8, wantValues: []float64{3, 6, 9, 12, 15, 18, 21, 24}, wantN: 3,
+		wantLabels: eightLabels,
+	},
+	{
+		// missed = i per match for i ≤ 6, Grace stored-zero, Heidi
+		// absent (LEFT JOIN → NULL → 0 beside N), exactly like
+		// TestJoinedAcceptanceRatio's opps side.
+		name: "missed_trades", expr: "from player_stats, match_trade_opps: sum(missed)",
+		scope: "match", format: "int", shortName: "", denominator: "",
+		interpretation: "missed trade opps over the player_stats-anchored LEFT JOIN (corpus: 3i / 0 / 0)",
+		rows:           8, wantValues: []float64{3, 6, 9, 12, 15, 18, 0, 0}, wantN: 3,
+		wantLabels: eightLabels,
+	},
+	{
+		// engagements: 1 opening + 1 trade + 1 untraded per round over
+		// 8 players; the subject's N is its own a_steam rows (36/18
+		// alternating), so N is deliberately not asserted (wantN 0).
+		name: "eng_opening", expr: "from engagements: count(where kind = 'opening')",
+		scope: "match", format: "int", shortName: "", denominator: "",
+		interpretation: "opening duels with the subject as A-side (corpus: 18/0 alternating)",
+		rows:           8, wantValues: []float64{18, 0, 18, 0, 0, 18, 0, 18},
+		wantLabels: eightLabels,
+	},
+	{
+		name: "eng_trade", expr: "from engagements: count(where kind = 'trade')",
+		scope: "match", format: "int", shortName: "", denominator: "",
+		interpretation: "strict-window trades, A-side (corpus: the opening pattern's complement)",
+		rows:           8, wantValues: []float64{0, 18, 0, 18, 18, 0, 18, 0},
+		wantLabels: eightLabels,
+	},
+	{
+		name: "eng_traded", expr: "from engagements: count(where kind = 'traded')",
+		scope: "match", format: "int", shortName: "", denominator: "",
+		interpretation: "A-side kills that got answered — the corpus records NO traded rows (the traded FLAG lives on player_round_stats)",
+		rows:           8, wantAll: 0, wantLabels: eightLabels,
+	},
+	{
+		name: "eng_untraded", expr: "from engagements: count(where kind = 'untraded')",
+		scope: "match", format: "int", shortName: "", denominator: "",
+		interpretation: "A-side kills nobody answered (corpus: 18/0 alternating)",
+		rows:           8, wantValues: []float64{18, 0, 18, 0, 0, 18, 0, 18},
+		wantLabels: eightLabels,
+	},
+	{
+		// Clutchless corpus (TestSyntheticCorpusCounts) — honest empty,
+		// never a fabricated 0 row: rows 0 for all five match-scope
+		// clutch seeds and the profile twin below.
+		name: "clutches", expr: "from clutches: count()",
+		scope: "match", format: "int", shortName: "", denominator: "",
+		interpretation: "1vN attempt count (clutchless corpus → no rows)",
+		rows:           0,
+	},
+	{
+		name: "clutch_win_rate", expr: "from clutches: avg(won)",
+		scope: "match", format: "percent", shortName: "", denominator: "",
+		interpretation: "share of clutches won (clutchless corpus → no rows)",
+		rows:           0,
+	},
+	{
+		name: "clutch_avg_size", expr: "from clutches: avg(size)",
+		scope: "match", format: "float1", shortName: "", denominator: "",
+		interpretation: "mean clutch size (clutchless corpus → no rows)",
+		rows:           0,
+	},
+	{
+		name: "clutch_avg_hp", expr: "from clutches: avg(hp_left)",
+		scope: "match", format: "float1", shortName: "", denominator: "",
+		interpretation: "mean ending HP (clutchless corpus → no rows)",
+		rows:           0,
+	},
+	{
+		name: "clutch_avg_equip", expr: "from clutches: avg(equip)",
+		scope: "match", format: "currency", shortName: "", denominator: "",
+		interpretation: "mean held equipment value (clutchless corpus → no rows)",
+		rows:           0,
+	},
+	{
+		// utility_events: 216 rows over 8 subjects (3 matches × 24
+		// rounds × 1 detonation of each of 3 kinds ÷ 8) → 27 each.
+		name: "util_nades", expr: "from utility_events: count()",
+		scope: "match", format: "int", shortName: "", denominator: "",
+		interpretation: "detonation count (corpus: 27 per subject)",
+		rows:           8, wantAll: 27, wantN: 27, wantLabels: eightLabels,
+	},
+	{
+		name: "util_dmg", expr: "from utility_events: sum(damage)",
+		scope: "match", format: "int", shortName: "", denominator: "",
+		interpretation: "paired detonation damage (corpus: 180 per subject)",
+		rows:           8, wantAll: 180, wantN: 27, wantLabels: eightLabels,
+	},
+	{
+		name: "util_flash_ms", expr: "from utility_events: sum(flash_ms)",
+		scope: "match", format: "int", shortName: "", denominator: "",
+		interpretation: "paired blind milliseconds (corpus: 5400 per subject)",
+		rows:           8, wantAll: 5400, wantN: 27, wantLabels: eightLabels,
+	},
+	{
+		// No weapon_drop events in the corpus → value 0; the subject's N
+		// is its own event count (270/234 alternating) → not asserted.
+		name: "weapon_drops", expr: "from events: count(where kind = 'weapon_drop')",
+		scope: "match", format: "int", shortName: "", denominator: "",
+		interpretation: "death-drop count (corpus: none recorded)",
+		rows:           8, wantAll: 0, wantLabels: eightLabels,
+	},
+	// ---- inferred set, T2 (10): the corpus writes NEITHER analysis
+	// table (round_classifications / round_player_sides are empty), so
+	// every label/class count is 0 over a LEFT JOIN that keeps all 72
+	// player-rounds (N), while the empty round_player_sides primary
+	// produces no groups at all — the value-acceptance rig with INSERTed
+	// rows lives in join_test.go TestJoinedClassificationValues.
+	{
+		name: "round_label_eco", expr: "from player_round_stats, round_classifications: count(where label = 'eco')",
+		scope: "match", format: "int", shortName: "", denominator: "",
+		interpretation: "rounds labeled eco (empty secondary → 0 beside N = the primary's rounds)",
+		rows:           8, wantAll: 0, wantN: 72, wantLabels: eightLabels,
+	},
+	{
+		name: "round_label_force", expr: "from player_round_stats, round_classifications: count(where label = 'force')",
+		scope: "match", format: "int", shortName: "", denominator: "",
+		interpretation: "rounds labeled force (empty secondary → 0)",
+		rows:           8, wantAll: 0, wantN: 72, wantLabels: eightLabels,
+	},
+	{
+		name: "round_label_full", expr: "from player_round_stats, round_classifications: count(where label = 'full')",
+		scope: "match", format: "int", shortName: "", denominator: "",
+		interpretation: "rounds labeled full (empty secondary → 0)",
+		rows:           8, wantAll: 0, wantN: 72, wantLabels: eightLabels,
+	},
+	{
+		name: "round_label_save", expr: "from player_round_stats, round_classifications: count(where label = 'save')",
+		scope: "match", format: "int", shortName: "", denominator: "",
+		interpretation: "rounds labeled save (empty secondary → 0)",
+		rows:           8, wantAll: 0, wantN: 72, wantLabels: eightLabels,
+	},
+	{
+		name: "pistol_rounds", expr: "from player_round_stats, round_classifications: count(where label = 'pistol')",
+		scope: "match", format: "int", shortName: "", denominator: "",
+		interpretation: "rounds carrying the stored pistol label (empty secondary → 0)",
+		rows:           8, wantAll: 0, wantN: 72, wantLabels: eightLabels,
+	},
+	{
+		name: "side_class_eco", expr: "from round_player_sides, round_side_classes: count(where class = 'eco')",
+		scope: "match", format: "int", shortName: "", denominator: "",
+		interpretation: "rounds played on an eco-classified side (empty primary → no rows)",
+		rows:           0,
+	},
+	{
+		name: "side_class_force", expr: "from round_player_sides, round_side_classes: count(where class = 'force')",
+		scope: "match", format: "int", shortName: "", denominator: "",
+		interpretation: "rounds played on a force-classified side (empty primary → no rows)",
+		rows:           0,
+	},
+	{
+		name: "side_class_full", expr: "from round_player_sides, round_side_classes: count(where class = 'full')",
+		scope: "match", format: "int", shortName: "", denominator: "",
+		interpretation: "rounds played on a full-buy side (empty primary → no rows)",
+		rows:           0,
+	},
+	{
+		name: "side_class_save", expr: "from round_player_sides, round_side_classes: count(where class = 'save')",
+		scope: "match", format: "int", shortName: "", denominator: "",
+		interpretation: "rounds played on a save side (empty primary → no rows)",
+		rows:           0,
+	},
+	{
+		name: "side_class_pistol", expr: "from round_player_sides, round_side_classes: count(where class = 'pistol')",
+		scope: "match", format: "int", shortName: "", denominator: "",
+		interpretation: "rounds played on a pistol-classified side (empty primary → no rows)",
+		rows:           0,
+	},
+	// ---- inferred set, profile scope (1).
+	{
+		name: "career_clutches", expr: "from clutches: count()",
+		scope: "profile", format: "int", shortName: "", denominator: "",
+		interpretation: "career 1vN count (clutchless corpus → no rows)",
+		rows:           0,
+	},
+	// ---- addendum: the opening-duel trio (profile) + the victim-side
+	// duel count (match).
+	{
+		// opening_kills = i per match, opening_deaths absent → the
+		// denominator equals the numerator, so the rate is exactly 1.
+		name: "career_opening_rate", expr: "from player_stats: ratio(sum(opening_kills), sum(opening_kills + opening_deaths))",
+		scope: "profile", format: "percent", shortName: "", denominator: "",
+		interpretation: "career first-blood duel win share (corpus records no opening deaths → 1.0)",
+		rows:           8, wantAll: 1, wantN: 3, wantLabels: eightLabels,
+	},
+	{
+		name: "career_openings", expr: "from player_stats: sum(opening_kills + opening_deaths)",
+		scope: "profile", format: "int", shortName: "", denominator: "",
+		interpretation: "career opening duels = RebuildCareer's openings (corpus: 3i)",
+		rows:           8, wantValues: []float64{3, 6, 9, 12, 15, 18, 21, 24}, wantN: 3,
+		wantLabels: eightLabels,
+	},
+	{
+		name: "career_opener_wins", expr: "from player_stats: sum(opening_kills)",
+		scope: "profile", format: "int", shortName: "", denominator: "",
+		interpretation: "career opening kills = RebuildCareer's opener_wins (corpus: 3i)",
+		rows:           8, wantValues: []float64{3, 6, 9, 12, 15, 18, 21, 24}, wantN: 3,
+		wantLabels: eightLabels,
+	},
+	{
+		// addendum: the victim-side count — the SAME untraded rows read
+		// through engagements_victim (subject b_steam). Every corpus
+		// player appears as a victim (so 8 rows; 4 of them with value
+		// 18, the other 4 with 0 — rows with no untraded duel, never a
+		// missing row), and the per-subject N is that victim's own
+		// engagement rows (18/36 alternating) → not asserted.
+		name: "untraded_deaths", expr: "from engagements_victim: count(where kind = 'untraded')",
+		scope: "match", format: "int", shortName: "", denominator: "",
+		interpretation: "unanswered deaths (b_steam side; corpus: 0,18,0,18,18,0,18,0)",
+		rows:           8, wantValues: []float64{0, 18, 0, 18, 18, 0, 18, 0},
 		wantLabels: eightLabels,
 	},
 }

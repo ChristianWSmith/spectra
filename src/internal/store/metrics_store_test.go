@@ -28,12 +28,14 @@ var metricColumnsContract = []string{
 
 // schemaSeededBuiltins is the schema.sql seed's per-row contract: every
 // builtin's scope, format and short_name (design §3.0's candidates→
-// seeds table — 7 match / 9 profile; trade_rate is the one row that
-// ships an empty short_name). The fixture VALUES/exprs live in
-// internal/metrics' fixture test; this map is the store-side pin that
-// every row lands with the shape the seed declares.
+// seeds table, grown by the 42-row inferred set — 45 match / 13
+// profile; short_name is written only where a header is
+// width-constrained, so trade_rate and most inferred rows ship ”). The
+// fixture VALUES/exprs live in internal/metrics' fixture test; this map
+// is the store-side pin that every row lands with the shape the seed
+// declares.
 var schemaSeededBuiltins = map[string]struct{ scope, format, shortName string }{
-	// match scope (7) — trade_rate + the scoreboard/Combat conversions.
+	// match scope (45) — trade_rate + the scoreboard/Combat conversions.
 	"trade_rate":        {"match", "percent", ""},
 	"adr":               {"match", "float1", "ADR"},
 	"entry_rate":        {"match", "percent", "Entry%"},
@@ -41,7 +43,7 @@ var schemaSeededBuiltins = map[string]struct{ scope, format, shortName string }{
 	"kast":              {"match", "percent", "KAST%"},
 	"kd":                {"match", "float2", "K/D"},
 	"trade_rate_deaths": {"match", "percent", "Trade%"},
-	// profile scope (9) — the career set, inert until W3 switches the
+	// profile scope (13) — the career set, inert until W3 switches the
 	// profile surface to it.
 	"career_adr":                 {"profile", "float1", "ADR"},
 	"career_adr_sigma":           {"profile", "float1", "ADR σ"},
@@ -52,12 +54,62 @@ var schemaSeededBuiltins = map[string]struct{ scope, format, shortName string }{
 	"career_kast":                {"profile", "percent", "KAST%"},
 	"career_kd":                  {"profile", "float2", "K/D"},
 	"career_trade_rate":          {"profile", "percent", "Trade rate"},
+	// inferred set — match scope (27): the stored per-match stats; only
+	// the eight width-constrained scoreboard columns ship a short_name.
+	"assists":            {"match", "int", "A"},
+	"flash_assists":      {"match", "int", ""},
+	"enemies_flashed":    {"match", "int", ""},
+	"entry_kills":        {"match", "int", "Entry"},
+	"entry_deaths":       {"match", "int", ""},
+	"best_streak":        {"match", "int", "Streak"},
+	"two_k":              {"match", "int", "2K"},
+	"three_k":            {"match", "int", "3K"},
+	"four_k":             {"match", "int", "4K"},
+	"five_k":             {"match", "int", "5K"},
+	"rounds_with_assist": {"match", "int", ""},
+	"rounds_traded":      {"match", "int", ""},
+	"trade_kills":        {"match", "int", "Trade"},
+	"missed_trades":      {"match", "int", ""},
+	"eng_opening":        {"match", "int", ""},
+	"eng_trade":          {"match", "int", ""},
+	"eng_traded":         {"match", "int", ""},
+	"eng_untraded":       {"match", "int", ""},
+	"clutches":           {"match", "int", ""},
+	"clutch_win_rate":    {"match", "percent", ""},
+	"clutch_avg_size":    {"match", "float1", ""},
+	"clutch_avg_hp":      {"match", "float1", ""},
+	"clutch_avg_equip":   {"match", "currency", ""},
+	"util_nades":         {"match", "int", ""},
+	"util_dmg":           {"match", "int", ""},
+	"util_flash_ms":      {"match", "int", ""},
+	"weapon_drops":       {"match", "int", ""},
+	// inferred set — profile scope (1).
+	"career_clutches": {"profile", "int", ""},
+	// inferred set — T2 (10): counts over the stored round/side labels.
+	"round_label_eco":   {"match", "int", ""},
+	"round_label_force": {"match", "int", ""},
+	"round_label_full":  {"match", "int", ""},
+	"round_label_save":  {"match", "int", ""},
+	"pistol_rounds":     {"match", "int", ""},
+	"side_class_eco":    {"match", "int", ""},
+	"side_class_force":  {"match", "int", ""},
+	"side_class_full":   {"match", "int", ""},
+	"side_class_save":   {"match", "int", ""},
+	"side_class_pistol": {"match", "int", ""},
+	// addendum — the victim-side duel count (1, match) and the
+	// opening-duel trio (3, profile).
+	"untraded_deaths":     {"match", "int", ""},
+	"career_opening_rate": {"profile", "percent", ""},
+	"career_openings":     {"profile", "int", ""},
+	"career_opener_wins":  {"profile", "int", ""},
 }
 
 // TestMetricsSchemaFreshOpen: a fresh Open creates the M5 tables and
-// seeds the sixteen builtin metrics; a second Open re-applies the
+// seeds the fifty-eight builtin metrics; a second Open re-applies the
 // baseline as a no-op — the seed INSERT is idempotent, so no builtin
-// rows are duplicated — and the metrics column contract plus the
+// rows are duplicated (and the 42 rows added by the inferred set are
+// exactly the ones an older seed reaches through the same OR IGNORE) —
+// and the metrics column contract plus the
 // builtin set still hold.
 func TestMetricsSchemaFreshOpen(t *testing.T) {
 	s, path := openFileStore(t)
@@ -113,10 +165,11 @@ func TestMetricsSchemaFreshOpen(t *testing.T) {
 		}
 	}
 
-	// The sixteen builtins, name + doc present — still exactly sixteen
-	// AFTER the reopen, so the baseline's seed did not duplicate rows
-	// (values validated by internal/metrics fixture tests). Scope split
-	// (7 match / 9 profile) and short_name/format are PER-SEED asserts
+	// The fifty-eight builtins, name + doc present — still exactly
+	// fifty-eight AFTER the reopen, so the baseline's seed did not
+	// duplicate rows (values validated by internal/metrics fixture
+	// tests). Scope split
+	// (45 match / 13 profile) and short_name/format are PER-SEED asserts
 	// (the old blanket "all match / all short_name empty" held only when
 	// there was one row — design §3.4's pin table).
 	list, err := s2.ListMetrics()
@@ -151,7 +204,7 @@ func TestMetricsSchemaFreshOpen(t *testing.T) {
 				m.Name, m.ShortName, seeded.shortName)
 		}
 		if m.Scope != seeded.scope {
-			t.Errorf("builtin %q scope = %q, want %q (the seed writes the per-row scope — 7 match / 9 profile)",
+			t.Errorf("builtin %q scope = %q, want %q (the seed writes the per-row scope — 45 match / 13 profile)",
 				m.Name, m.Scope, seeded.scope)
 		}
 		if m.Format != seeded.format {
@@ -200,14 +253,14 @@ func TestMetricCRUD(t *testing.T) {
 		t.Errorf("duplicate-name err = %v, want friendly uniqueness error", err)
 	}
 
-	// List: builtins first (all sixteen schema-seeded rows), then user
-	// rows.
+	// List: builtins first (all fifty-eight schema-seeded rows), then
+	// user rows.
 	all, err := s.ListMetrics()
 	if err != nil {
 		t.Fatalf("ListMetrics: %v", err)
 	}
 	if len(all) != len(schemaSeededBuiltins)+1 {
-		t.Fatalf("list len = %d, want %d (16 builtins + my_rate)", len(all), len(schemaSeededBuiltins)+1)
+		t.Fatalf("list len = %d, want %d (58 builtins + my_rate)", len(all), len(schemaSeededBuiltins)+1)
 	}
 	for i, m := range all[:len(schemaSeededBuiltins)] {
 		if m.Origin != "builtin" {
@@ -392,9 +445,9 @@ func filterMetricRef(rows []models.MetricRow, query string) []models.MetricRow {
 	return out
 }
 
-// TestListMetricsPageWindowsTileListOrder: 249 definitions (16
+// TestListMetricsPageWindowsTileListOrder: 291 definitions (58
 // schema-seeded builtins + 230 user + 3 plugin) must tile into
-// 100/100/49 windows that concatenate to ListMetrics' exact order, every
+// 100/100/91 windows that concatenate to ListMetrics' exact order, every
 // id exactly once, with each origin group CONTIGUOUS across window
 // boundaries — the Builder renders its Builtins/Yours/Plugins headers
 // from those runs, so a boundary splitting a group must not reorder rows.
@@ -412,12 +465,12 @@ func TestListMetricsPageWindowsTileListOrder(t *testing.T) {
 	}
 
 	ref := metricRowsRef(t, s)
-	if len(ref) != 249 {
-		t.Fatalf("reference list = %d rows, want 249 (16 builtins + 230 user + 3 plugin)", len(ref))
+	if len(ref) != 291 {
+		t.Fatalf("reference list = %d rows, want 291 (58 builtins + 230 user + 3 plugin)", len(ref))
 	}
 	sizes, got := walkMetricPage(t, s, "", "", "", "", "", 0, ListMetricsPageSize)
-	if len(sizes) != 3 || sizes[0] != 100 || sizes[1] != 100 || sizes[2] != 49 {
-		t.Errorf("window sizes = %v, want [100 100 49]", sizes)
+	if len(sizes) != 3 || sizes[0] != 100 || sizes[1] != 100 || sizes[2] != 91 {
+		t.Errorf("window sizes = %v, want [100 100 91]", sizes)
 	}
 	if !sameIDs(metricIDs(got), metricIDs(ref)) {
 		t.Errorf("paged ids diverge from the ListMetrics reference order")
@@ -445,12 +498,12 @@ func TestListMetricsPageWindowsTileListOrder(t *testing.T) {
 }
 
 // TestListMetricsPageWindowBoundaries pins the exact boundary: 100 rows
-// (16 builtins + 84 users) is ONE window with HasNext false (the limit+1
+// (58 builtins + 42 users) is ONE window with HasNext false (the limit+1
 // probe found no row), 101 rows splits 100/1 with HasNext flipping
 // correctly, and limit 0 selects the default window size.
 func TestListMetricsPageWindowBoundaries(t *testing.T) {
 	s := openMem(t)
-	for i := range 84 {
+	for i := range 42 {
 		seedUserMetric(t, s, fmt.Sprintf("b%03d", i), "")
 	}
 
@@ -500,18 +553,19 @@ func TestListMetricsPageCursorPositions(t *testing.T) {
 	for i := range 250 {
 		seedUserMetric(t, s, fmt.Sprintf("c%03d", i), "")
 	}
-	ref := metricIDs(metricRowsRef(t, s)) // 16 builtins + 250 users
+	ref := metricIDs(metricRowsRef(t, s)) // 58 builtins + 250 users
 
-	// Cursor at the 100th row in order → the remaining 166.
-	page, err := s.ListMetricsPage("", "", "", "", "", ref[99], 200)
+	// Cursor at the 100th row in order → the remaining 208 (the window
+	// limit must clear the remainder: 300 > 58 builtins + 250 users − 100).
+	page, err := s.ListMetricsPage("", "", "", "", "", ref[99], 300)
 	if err != nil {
 		t.Fatalf("ListMetricsPage(mid): %v", err)
 	}
-	if len(page.Rows) != 166 || page.HasNext {
-		t.Errorf("mid cursor → %d rows, HasNext=%v; want 166, false", len(page.Rows), page.HasNext)
+	if len(page.Rows) != 208 || page.HasNext {
+		t.Errorf("mid cursor → %d rows, HasNext=%v; want 208, false", len(page.Rows), page.HasNext)
 	}
 	if !sameIDs(metricIDs(page.Rows), ref[100:]) {
-		t.Errorf("mid cursor rows = %v…, want the 166 ids after the cursor", metricIDs(page.Rows)[:3])
+		t.Errorf("mid cursor rows = %v…, want the 208 ids after the cursor", metricIDs(page.Rows)[:3])
 	}
 
 	// Cursor at the last row → an empty window, no successor.
@@ -669,9 +723,9 @@ func TestListMetricsPageOriginFilter(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("ReplacePluginMetrics: %v", err)
 	}
-	ref := metricRowsRef(t, s) // 16 builtins + 5 user + 2 plugin
-	if len(ref) != 23 {
-		t.Fatalf("reference = %d rows, want 23 (16 builtins + 5 user + 2 plugin)", len(ref))
+	ref := metricRowsRef(t, s) // 58 builtins + 5 user + 2 plugin
+	if len(ref) != 65 {
+		t.Fatalf("reference = %d rows, want 65 (58 builtins + 5 user + 2 plugin)", len(ref))
 	}
 
 	// Every filter value in ONE window: exactly its partition, in the
@@ -727,7 +781,7 @@ func TestListMetricsPageOriginFilterSearchAndCursor(t *testing.T) {
 	s := openMem(t)
 	seedUserMetric(t, s, "my_trade_rate", "My trade rate")
 	seedUserMetric(t, s, "adr_per_round", "ADR per round")
-	ref := metricRowsRef(t, s) // 16 builtins (incl. trade_rate + career_trade_rate) + 2 users
+	ref := metricRowsRef(t, s) // 58 builtins (incl. trade_rate + career_trade_rate) + 2 users
 
 	// "trade rate" matches TWO builtin titles (trade_rate — the original
 	// seed — and career_trade_rate — the profile twin the dogfooding set

@@ -646,13 +646,23 @@ CREATE TABLE IF NOT EXISTS voice_presence (
 -- one site: Match's scoreboard metric header), title || name everywhere
 -- else.
 --
--- Builtins (origin='builtin') are seeded below: exactly SIXTEEN —
+-- Builtins (origin='builtin') are seeded below: exactly FIFTY-EIGHT —
 -- trade_rate (owner ruling) plus the dogfooding set (design §3.0: 7
 -- match / 9 profile scopes) — trade_rate + adr, entry_rate, hs_pct,
 -- kast, kd, trade_rate_deaths (match) and the nine career_* rows
--- (profile, inert until their surface switches). The profile rows land
--- here with the match rows: one owner for one statement, zero visible
--- effect (nothing reads them until the profile surface converts).
+-- (profile, inert until their surface switches) — plus the 42-row
+-- inferred set: 38 match-scope restatements (27 single-source rows over
+-- the per-match player stats, rounds, duels, clutches, grenades and
+-- drops; 10 over the stored round/side buy classifications; 1
+-- victim-side duel count) and 4 profile-scope rows (career_clutches +
+-- the three opening-duel rows). Scope split: 45 match / 13 profile.
+-- The profile rows land here with the match rows: one owner for one
+-- statement, zero visible effect (nothing reads them until their
+-- surface converts). These rows are how the set reaches a database
+-- seeded before them: the INSERT OR IGNORE below ADDS missing rows at
+-- every Open and never rewrites a stored one (pre-release policy: no
+-- migrations, no versioned contracts — stale seed text stays as
+-- written until the row is wiped).
 -- internal/metrics' fixture test locks each row's name/expr/scope/
 -- format/short_name/denominator/doc/count and proves every expression
 -- compiles and returns the hand-computed seed values under the join
@@ -694,14 +704,18 @@ CREATE TABLE IF NOT EXISTS saved_queries (
 	created_at DATETIME NOT NULL
 );
 
--- THE builtins, seeded (see header): exactly sixteen — trade_rate (the
--- original owner ruling) plus the dogfooding set: six more match-scope
--- rows and nine profile-scope rows, each with the interpretation
--- recorded in its doc. INSERT OR IGNORE keyed on the UNIQUE name:
--- re-applying the baseline on every Open must not duplicate or reset a
--- row. short_name is written explicitly: trade_rate ships empty ('' —
--- its scoreboard header falls back to title), the dogfooding set carries
--- the width-constrained header labels (display criterion
+-- THE builtins, seeded (see header): exactly fifty-eight — trade_rate
+-- (the original owner ruling), the dogfooding set (six more match-scope
+-- rows and nine profile-scope rows) and the inferred set (42 rows: 38
+-- match / 4 profile), each with the interpretation recorded in its doc.
+-- INSERT OR IGNORE keyed on the UNIQUE name: re-applying the baseline
+-- on every Open must not duplicate or reset a row — it is also the one
+-- path by which rows 17…58 reach a database seeded before them.
+-- short_name is written explicitly: header labels ONLY — the
+-- dogfooding set's scoreboard/Combat labels and, among the inferred
+-- set, the eight width-constrained scoreboard columns (A, Entry,
+-- Streak, 2K, 3K, 4K, 5K, Trade); every other row ships empty ('' —
+-- its header falls back to title; display criterion
 -- short_name || title || name — Match's scoreboard metric header).
 -- version is omitted (DEFAULT 1) on every row.
 -- The exprs are the grammar shapes internal/metrics/doc.go documents;
@@ -795,6 +809,228 @@ INSERT OR IGNORE INTO metrics (name, title, short_name, expr, scope, format, doc
  'from player_stats, match_trade_opps: ratio(sum(trade_kills), sum(opps))',
  'profile', 'percent',
  'Formula: sum(player_stats.trade_kills) / sum(match_trade_opps.opps) over the engine-derived LEFT JOIN on (match_id, steam_id) — trade successes divided by the trade opportunities analytics recorded for that player across their career, addressed per player over the joined sources (one value per player: that player''s own trade_kills over that player''s own trade opportunities). It is a RATIO, not a share, so the value MAY EXCEED 100% when a trade lands on a death the distance gate did not count (the same note as the match-scope trade_rate seed and the profile TradeRate field). It recomputes from the sources because a match-scoped metric cannot be referenced inside a profile-scoped metric (the cross-scope ref ban). N is the player_stats rows behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+-- ---- inferred set, match scope (27 rows): per-match restatements of
+-- the stored player, round, duel, clutch, grenade and drop facts — one
+-- metric, one number; every row LIST they count stays source data.
+('assists', 'Assists', 'A',
+ 'from player_stats: sum(assists)',
+ 'match', 'int',
+ 'Formula: sum(player_stats.assists) — cross-team assists this player earned (assists that are not flash assists), addressed per player (one value per player: that player''s own assists). Equals the A column on the scoreboard. N counts this player''s matches behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('flash_assists', 'Flash assists', '',
+ 'from player_stats: sum(flash_assists)',
+ 'match', 'int',
+ 'Formula: sum(player_stats.flash_assists) — assists credited for blinding an enemy whom a teammate then killed, addressed per player (one value per player: that player''s own flash assists). Equals the Flash assists count in the match''s expanded player row. N counts this player''s matches behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('enemies_flashed', 'Enemies flashed', '',
+ 'from player_stats: sum(enemies_flashed)',
+ 'match', 'int',
+ 'Formula: sum(player_stats.enemies_flashed) — enemies blinded by this player''s flashes (each blinded enemy counted once), addressed per player (one value per player: that player''s own blinded-enemy count). Equals the Enemies flashed count in the match''s expanded player row; the profile''s Avg enemies flashed is the per-match average of the same stat. N counts this player''s matches behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('entry_kills', 'Entry kills', 'Entry',
+ 'from player_stats: sum(entry_kills)',
+ 'match', 'int',
+ 'Formula: sum(player_stats.entry_kills) — round-opening first-blood kills, addressed per player (one value per player: that player''s own first bloods). Equals the Entry column on the scoreboard — entry kills and opening kills are recorded at the same moment, so this one number serves both. N counts this player''s matches behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('entry_deaths', 'Entry deaths', '',
+ 'from player_stats: sum(entry_deaths)',
+ 'match', 'int',
+ 'Formula: sum(player_stats.entry_deaths) — round-opening first-blood victims: enemies who drew first blood against this player, addressed per player (one value per player: that player''s own first-blood deaths). The second half of the Opening K/D column is this stat; it is pinnable on its own too. N counts this player''s matches behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('best_streak', 'Best streak', 'Streak',
+ 'from player_stats: max(best_streak)',
+ 'match', 'int',
+ 'Formula: max(player_stats.best_streak) — the longest kill streak the player reached in the match, addressed per player (one value per player: that player''s own streak). Equals the Streak column on the scoreboard. N counts this player''s matches behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('two_k', '2K', '2K',
+ 'from player_stats: sum(two_k)',
+ 'match', 'int',
+ 'Formula: sum(player_stats.two_k) — rounds in which the player recorded exactly 2 kills (every round counts at exactly one tier), addressed per player (one value per player: that player''s own rounds). Equals the 2K column on the scoreboard. N counts this player''s matches behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('three_k', '3K', '3K',
+ 'from player_stats: sum(three_k)',
+ 'match', 'int',
+ 'Formula: sum(player_stats.three_k) — rounds in which the player recorded exactly 3 kills (every round counts at exactly one tier), addressed per player (one value per player: that player''s own rounds). Equals the 3K column on the scoreboard. N counts this player''s matches behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('four_k', '4K', '4K',
+ 'from player_stats: sum(four_k)',
+ 'match', 'int',
+ 'Formula: sum(player_stats.four_k) — rounds in which the player recorded exactly 4 kills (every round counts at exactly one tier), addressed per player (one value per player: that player''s own rounds). Equals the 4K column on the scoreboard. N counts this player''s matches behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('five_k', '5K', '5K',
+ 'from player_stats: sum(five_k)',
+ 'match', 'int',
+ 'Formula: sum(player_stats.five_k) — rounds in which the player recorded exactly 5 kills (a five-kill round is counted here and in no other tier), addressed per player (one value per player: that player''s own rounds). Equals the 5K column on the scoreboard. N counts this player''s matches behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('rounds_with_assist', 'Assist rounds', '',
+ 'from player_round_stats: count(where assists > 0)',
+ 'match', 'int',
+ 'Formula: count(player_round_stats rows WHERE assists > 0) — the player''s rounds with at least one assist: the KAST A component as a round count, addressed per player (one value per player: that player''s own rounds). Deliberately a COUNT of rounds — summing the assists themselves would just repeat the Assists metric. N counts this player''s rounds behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('rounds_traded', 'Traded rounds', '',
+ 'from player_round_stats: sum(traded)',
+ 'match', 'int',
+ 'Formula: sum(player_round_stats.traded) — rounds in which this player''s own death was answered inside the trade window: the KAST T component, addressed per player (one value per player: that player''s own rounds). It counts the player''s deaths that were traded, exactly what the per-round flag records. N counts this player''s rounds behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('trade_kills', 'Trade kills', 'Trade',
+ 'from player_stats: sum(trade_kills)',
+ 'match', 'int',
+ 'Formula: sum(player_stats.trade_kills) — kills that answered a teammate''s death inside the trade window, addressed per player (one value per player: that player''s own trades). Equals the Trade column on the scoreboard and is the numerator of Trade rate. N counts this player''s matches behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('missed_trades', 'Missed trades', '',
+ 'from player_stats, match_trade_opps: sum(missed)',
+ 'match', 'int',
+ 'Formula: sum(match_trade_opps.missed) — trade opportunities the player missed: a teammate''s death nobody answered inside the window, addressed per player over the joined sources (one value per player: that player''s own missed opportunities). The opportunity counts are recorded per match, and a player recorded with zero opportunities still shows the honest 0 beside N instead of vanishing. N counts this player''s matches behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('eng_opening', 'Opening engagements', '',
+ 'from engagements: count(where kind = ''opening'')',
+ 'match', 'int',
+ 'Formula: count(engagements rows WHERE kind = ''opening'') — round-opening duel kills with this player as the killer, addressed per player (one value per player: that player''s own opening duels). The same idea as Entry kills, counted from the recorded duel list: rounds whose sides were never recorded at freeze time are skipped here while Entry still counts them, so this can read slightly lower. N counts this player''s recorded duels behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('eng_trade', 'Trade engagements', '',
+ 'from engagements: count(where kind = ''trade'')',
+ 'match', 'int',
+ 'Formula: count(engagements rows WHERE kind = ''trade'') — strict-window trade kills with this player as the killer, addressed per player (one value per player: that player''s own trades). The same number as Trade kills, counted straight from the recorded duel list so the two readings can be compared. N counts this player''s recorded duels behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('eng_traded', 'Kills traded (A-side)', '',
+ 'from engagements: count(where kind = ''traded'')',
+ 'match', 'int',
+ 'Formula: count(engagements rows WHERE kind = ''traded'') — this player''s kills that the enemy answered by killing this player inside the trade window (this player got traded), addressed per player (one value per player: that player''s own traded kills). Counted from the KILLER''s side — the only side this metric addresses; a player''s own unanswered deaths instead are Untraded deaths. N counts this player''s recorded duels behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('eng_untraded', 'Kills untraded (A-side)', '',
+ 'from engagements: count(where kind = ''untraded'')',
+ 'match', 'int',
+ 'Formula: count(engagements rows WHERE kind = ''untraded'') — this player''s kills the enemy did NOT answer inside the trade window, addressed per player (one value per player: that player''s own unanswered kills). Counted from the KILLER''s side — it is not the same as Untraded deaths, which counts from the victim''s side. N counts this player''s recorded duels behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('clutches', 'Clutches', '',
+ 'from clutches: count()',
+ 'match', 'int',
+ 'Formula: count(clutches) — the 1vN clutch attempts recorded for this player in the match, addressed per player (one value per player: that player''s own clutches). The clutch LIST (rounds and kill ticks) stays a match detail; this is its count. A player with no clutches has no row (renders —), never a fabricated 0. N counts this player''s clutches behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('clutch_win_rate', 'Clutch win %', '',
+ 'from clutches: avg(won)',
+ 'match', 'percent',
+ 'Formula: avg(clutches.won) — the share of the player''s clutches they won (a 0..1 fraction shown as a percent), addressed per player (one value per player: that player''s own clutches). The match-scope twin of the career Clutch win %. No clutches → no row (renders —), never a fabricated 0. N counts this player''s clutches behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('clutch_avg_size', 'Avg clutch size', '',
+ 'from clutches: avg(size)',
+ 'match', 'float1',
+ 'Formula: avg(clutches.size) — the mean size (the N of the 1vN) of the player''s clutches, addressed per player (one value per player: that player''s own clutches). No clutches → no row (renders —). N counts this player''s clutches behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('clutch_avg_hp', 'Avg clutch HP', '',
+ 'from clutches: avg(hp_left)',
+ 'match', 'float1',
+ 'Formula: avg(clutches.hp_left) — the mean hit points the player ended their clutches with (0 means they died alone in the attempt), addressed per player (one value per player: that player''s own clutches). No clutches → no row (renders —). N counts this player''s clutches behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('clutch_avg_equip', 'Avg clutch equip', '',
+ 'from clutches: avg(equip)',
+ 'match', 'currency',
+ 'Formula: avg(clutches.equip) — the mean equipment value the player held in their clutches (whole dollars), addressed per player (one value per player: that player''s own clutches). No clutches → no row (renders —). N counts this player''s clutches behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('util_nades', 'Nades thrown', '',
+ 'from utility_events: count()',
+ 'match', 'int',
+ 'Formula: count(utility_events) — grenade detonations credited to this player''s throws (one per detonation), addressed per player (one value per player: that player''s own throws). The per-throw rows and the round/team subtotals stay where they are — this counts the detonations only. N counts this player''s grenade detonations behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('util_dmg', 'Util damage (paired)', '',
+ 'from utility_events: sum(damage)',
+ 'match', 'int',
+ 'Formula: sum(utility_events.damage) — damage this player''s grenades dealt inside their burn window, addressed per player (one value per player: that player''s own grenade damage). A different count from the utility damage stat, which credits every hit the thrower landed: a hit landing outside a grenade''s window is not counted here, so the two agree only when every hit lands inside its detonation''s window. N counts this player''s grenade detonations behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('util_flash_ms', 'Blind time (ms)', '',
+ 'from utility_events: sum(flash_ms)',
+ 'match', 'int',
+ 'Formula: sum(utility_events.flash_ms) — the total blind time this player''s flashes applied (each flash''s duration added up), addressed per player (one value per player: that player''s own flashes). Shown as a whole number of milliseconds: metric values have no time format yet. N counts this player''s grenade detonations behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('weapon_drops', 'Weapon drops', '',
+ 'from events: count(where kind = ''weapon_drop'')',
+ 'match', 'int',
+ 'Formula: count(events rows WHERE kind = ''weapon_drop'') — weapon drops recorded at this player''s deaths (the dropped weapon is credited to the player who died), addressed per player (one value per player: that player''s own deaths that left a drop). The per-drop list stays a replay detail; this is its count. N counts this player''s recorded events behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+-- ---- inferred set, profile scope (1 row).
+('career_clutches', 'Clutches', '',
+ 'from clutches: count()',
+ 'profile', 'int',
+ 'Formula: count(clutches) over the whole library — the player''s career 1vN clutch count, addressed per player (one value per player: that player''s own clutches). Equals the Clutches number on the player''s profile; the clutch list itself stays a match detail. No clutches → no row (renders —). N counts this player''s clutches across their career.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+-- ---- inferred set, T2 (10 rows): counts over the stored analysis-rule
+-- outputs — a round label and a per-side buy class are round-grain
+-- text, so a metric counts them per player and never renders them.
+('round_label_eco', 'Rounds labeled eco', '',
+ 'from player_round_stats, round_classifications: count(where label = ''eco'')',
+ 'match', 'int',
+ 'Formula: count(player_round_stats rows joined to round_classifications ON (match_id, round) WHERE label = ''eco'') — the rounds this player played carrying the recorded round label eco (the buy classification the analysis stored for that round), addressed per player over the joined sources (one value per player: that player''s own rounds). Counts only: the label wording stays a per-round detail. N counts this player''s rounds behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('round_label_force', 'Rounds labeled force', '',
+ 'from player_round_stats, round_classifications: count(where label = ''force'')',
+ 'match', 'int',
+ 'Formula: count(player_round_stats rows joined to round_classifications ON (match_id, round) WHERE label = ''force'') — the rounds this player played carrying the recorded round label force (the buy classification the analysis stored for that round), addressed per player over the joined sources (one value per player: that player''s own rounds). Counts only: the label wording stays a per-round detail. N counts this player''s rounds behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('round_label_full', 'Rounds labeled full', '',
+ 'from player_round_stats, round_classifications: count(where label = ''full'')',
+ 'match', 'int',
+ 'Formula: count(player_round_stats rows joined to round_classifications ON (match_id, round) WHERE label = ''full'') — the rounds this player played carrying the recorded round label full (the buy classification the analysis stored for that round), addressed per player over the joined sources (one value per player: that player''s own rounds). Counts only: the label wording stays a per-round detail. N counts this player''s rounds behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('round_label_save', 'Rounds labeled save', '',
+ 'from player_round_stats, round_classifications: count(where label = ''save'')',
+ 'match', 'int',
+ 'Formula: count(player_round_stats rows joined to round_classifications ON (match_id, round) WHERE label = ''save'') — the rounds this player played carrying the recorded round label save (the buy classification the analysis stored for that round), addressed per player over the joined sources (one value per player: that player''s own rounds). Counts only: the label wording stays a per-round detail. N counts this player''s rounds behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('pistol_rounds', 'Pistol rounds', '',
+ 'from player_round_stats, round_classifications: count(where label = ''pistol'')',
+ 'match', 'int',
+ 'Formula: count(player_round_stats rows joined to round_classifications ON (match_id, round) WHERE label = ''pistol'') — pistol rounds this player played (the analysis''s stored half-start label), addressed per player over the joined sources (one value per player: that player''s own rounds). It counts the label the analysis already recorded — which rounds count as pistols is never re-derived here. N counts this player''s rounds behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('side_class_eco', 'Rounds on eco side', '',
+ 'from round_player_sides, round_side_classes: count(where class = ''eco'')',
+ 'match', 'int',
+ 'Formula: count(round_player_sides rows joined to round_side_classes ON (match_id, round, side) WHERE class = ''eco'') — rounds this player played on a side the analysis classified as an eco buy, addressed per player over the joined sources (one value per player: that player''s own rounds). The side chips stay round-by-round details; this is the per-player count of them. A player with no recorded rounds has no row (renders —). N counts this player''s rounds behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('side_class_force', 'Rounds on force side', '',
+ 'from round_player_sides, round_side_classes: count(where class = ''force'')',
+ 'match', 'int',
+ 'Formula: count(round_player_sides rows joined to round_side_classes ON (match_id, round, side) WHERE class = ''force'') — rounds this player played on a side the analysis classified as a force buy, addressed per player over the joined sources (one value per player: that player''s own rounds). The side chips stay round-by-round details; this is the per-player count of them. A player with no recorded rounds has no row (renders —). N counts this player''s rounds behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('side_class_full', 'Rounds on full-buy side', '',
+ 'from round_player_sides, round_side_classes: count(where class = ''full'')',
+ 'match', 'int',
+ 'Formula: count(round_player_sides rows joined to round_side_classes ON (match_id, round, side) WHERE class = ''full'') — rounds this player played on a side the analysis classified as a full buy, addressed per player over the joined sources (one value per player: that player''s own rounds). The side chips stay round-by-round details; this is the per-player count of them. A player with no recorded rounds has no row (renders —). N counts this player''s rounds behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('side_class_save', 'Rounds on save side', '',
+ 'from round_player_sides, round_side_classes: count(where class = ''save'')',
+ 'match', 'int',
+ 'Formula: count(round_player_sides rows joined to round_side_classes ON (match_id, round, side) WHERE class = ''save'') — rounds this player played on a side the analysis classified as a save, addressed per player over the joined sources (one value per player: that player''s own rounds). The side chips stay round-by-round details; this is the per-player count of them. A player with no recorded rounds has no row (renders —). N counts this player''s rounds behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('side_class_pistol', 'Rounds on pistol side', '',
+ 'from round_player_sides, round_side_classes: count(where class = ''pistol'')',
+ 'match', 'int',
+ 'Formula: count(round_player_sides rows joined to round_side_classes ON (match_id, round, side) WHERE class = ''pistol'') — rounds this player played on a side classified as pistol (both sides of a pistol round classify as pistol), addressed per player over the joined sources (one value per player: that player''s own rounds). The side chips stay round-by-round details; this is the per-player count of them. A player with no recorded rounds has no row (renders —). N counts this player''s rounds behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+-- ---- addendum: the victim-side duel count (1 row) — the engagements
+-- table read through its curated victim-side source (whitelist.go
+-- engagements_victim).
+('untraded_deaths', 'Untraded deaths', '',
+ 'from engagements_victim: count(where kind = ''untraded'')',
+ 'match', 'int',
+ 'Formula: count(engagements rows WHERE kind = ''untraded'') — deaths of this player that nobody answered inside the trade window, addressed per player (one value per player: that player''s own unanswered deaths — every duel counted here has this player as its victim). Equals the Untraded deaths column on the Combat tab. Deaths caused by a teammate count too; only suicides and rounds with an unknown side record no duel at all. A player with no recorded duels as a victim has no row (renders —), never a fabricated 0. N counts this player''s recorded duels as a victim.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+-- ---- addendum: the opening-duel trio (3 rows, profile scope) — the
+-- additive sum(a + b) chain is what the duel total needs.
+('career_opening_rate', 'Opening duels', '',
+ 'from player_stats: ratio(sum(opening_kills), sum(opening_kills + opening_deaths))',
+ 'profile', 'percent',
+ 'Formula: sum(player_stats.opening_kills) / sum(player_stats.opening_kills + player_stats.opening_deaths) — the share of the player''s career opening duels they won (first bloods won ÷ duels), addressed per player (one value per player: that player''s own opening duels). A 0..1 fraction shown as a percent — the same percentage the Opening duels card shows. A player with no recorded duels shows 0 beside N, the same number the card showed. N counts this player''s matches behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('career_openings', 'Openings', '',
+ 'from player_stats: sum(opening_kills + opening_deaths)',
+ 'profile', 'int',
+ 'Formula: sum(player_stats.opening_kills + player_stats.opening_deaths) — the player''s career opening duels: the opening kill plus the first-blood deaths it produced, addressed per player (one value per player: that player''s own opening duels). The duel count behind the Opening duels percentage. N counts this player''s matches behind the value.',
+ 'builtin', '', CURRENT_TIMESTAMP),
+('career_opener_wins', 'Opener wins', '',
+ 'from player_stats: sum(opening_kills)',
+ 'profile', 'int',
+ 'Formula: sum(player_stats.opening_kills) — opening kills across the player''s career, addressed per player (one value per player: that player''s own opening kills). The wins half of the Opening duels percentage. N counts this player''s matches behind the value.',
  'builtin', '', CURRENT_TIMESTAMP);
 
 -- Advanced platform: declarative plugin registry (plan M5 §2.7 v1). One

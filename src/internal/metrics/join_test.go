@@ -1,8 +1,13 @@
 package metrics
 
 import (
+	"database/sql"
+	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/ChristianWSmith/spectra/internal/store"
 )
 
 // Execution-level pins for the multi-source join extension (owner design
@@ -280,5 +285,201 @@ func TestJoinedPopulationAlignment(t *testing.T) {
 	}
 	if len(allPlayers.Rows) != 1 || allPlayers.Rows[0].Value != 1 {
 		t.Fatalf("all-players join count = %+v, want 1 (human only)", allPlayers.Rows)
+	}
+}
+
+// TestJoinedClassificationPairs pins the W1 classification-source joins
+// (whitelist.go): the two ACCEPTED pairs emit the engine-derived ON —
+// the side dimension joining only where BOTH sides carry it — and the
+// rejections that partition them: round_side_classes needs a side-
+// carrying primary (round_player_sides is the ONLY one), and
+// engagements_victim rejects as a SECONDARY at all because its key
+// carries seq (never a join dimension) — which is what makes it a
+// primary-only source.
+func TestJoinedClassificationPairs(t *testing.T) {
+	accepted := []struct{ name, expr, wantJoin string }{
+		{
+			"round label pair",
+			"from player_round_stats, round_classifications: count(where label = 'eco')",
+			"LEFT JOIN round_classifications ON player_round_stats.match_id = round_classifications.match_id " +
+				"AND player_round_stats.round = round_classifications.round",
+		},
+		{
+			"side class pair",
+			"from round_player_sides, round_side_classes: count(where class = 'eco')",
+			"LEFT JOIN round_side_classes ON round_player_sides.match_id = round_side_classes.match_id " +
+				"AND round_player_sides.round = round_side_classes.round " +
+				"AND round_player_sides.side = round_side_classes.side",
+		},
+	}
+	for _, c := range accepted {
+		t.Run(c.name, func(t *testing.T) {
+			plan, perr := Compile(c.expr, "", "")
+			if perr != nil {
+				t.Fatalf("Compile(%q): %v", c.expr, perr)
+			}
+			if !strings.Contains(plan.SQL, c.wantJoin) {
+				t.Errorf("SQL missing join %q:\n%s", c.wantJoin, plan.SQL)
+			}
+		})
+	}
+
+	rejected := []struct{ name, expr, wantMsg string }{
+		{"no side dim on the primary", "from player_round_stats, round_side_classes: count()", "not unique on the shared dimensions"},
+		{"alias is primary-only", "from player_stats, engagements_victim: count()", "not unique on the shared dimensions"},
+	}
+	for _, c := range rejected {
+		t.Run(c.name, func(t *testing.T) {
+			if _, perr := Compile(c.expr, "", ""); perr == nil {
+				t.Fatalf("Compile(%q) succeeded, want rejection containing %q", c.expr, c.wantMsg)
+			} else if !strings.Contains(perr.Message, c.wantMsg) {
+				t.Errorf("message = %q, want substring %q", perr.Message, c.wantMsg)
+			}
+		})
+	}
+}
+
+// TestAliasSourceEmission pins the curated-alias shape (whitelist.go
+// sourceTable) at the emitted SQL: the FROM names the PHYSICAL table
+// under the source's alias, and every condition — scope, the subject
+// guard, the humans-only subquery — keys off the alias, never off a
+// bare `engagements` reference (identity sources' text is untouched by
+// construction: an alias is the ONLY thing that flips the branch).
+func TestAliasSourceEmission(t *testing.T) {
+	plan, perr := Compile("from engagements_victim: count(where kind = 'untraded')", "", "match:7")
+	if perr != nil {
+		t.Fatalf("Compile: %v", perr)
+	}
+	for _, want := range []string{
+		"FROM engagements AS engagements_victim",
+		"WHERE match_id = ?",
+		"b_steam <> ''",
+		"p.steam_id = engagements_victim.b_steam",
+		"SUM(CASE WHEN (kind = ?) THEN 1 ELSE 0 END)",
+	} {
+		if !strings.Contains(plan.SQL, want) {
+			t.Errorf("alias SQL missing %q:\n%s", want, plan.SQL)
+		}
+	}
+	// The untraded A-side twin still emits its own identity FROM — the
+	// alias never leaks into the plain engagements source.
+	plain, perr := Compile("from engagements: count(where kind = 'untraded')", "", "match:7")
+	if perr != nil {
+		t.Fatalf("Compile(twin): %v", perr)
+	}
+	if !strings.Contains(plain.SQL, "FROM engagements ") || strings.Contains(plain.SQL, "AS engagements") {
+		t.Errorf("identity source emission changed:\n%s", plain.SQL)
+	}
+}
+
+// classificationStore opens the committed corpus with ONE match's worth
+// of STORED analysis output beside it — the analysis-rule outputs a
+// fresh import carries (AGENTS "Analysis-rule derived values"): round
+// labels (8 force + 16 eco over match 1's 24 rounds), per-side buy
+// classes (6 full + 18 eco per side) and the freeze-end sides for every
+// player-round. The corpus ships both tables EMPTY (testdata/seed.sql),
+// which is what the fixture seeds' honest 0/empty expectations rest on —
+// this rig is what proves the restatements COUNT what they claim.
+func classificationStore(t *testing.T) *store.Store {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "t2.db")
+	st, err := store.Open(path)
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = st.CloseRO()
+		_ = st.Close()
+	})
+	db, err := sql.Open("sqlite", path+"?_pragma=busy_timeout(5000)")
+	if err != nil {
+		t.Fatalf("open seed conn: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	if err := LoadSeed(db); err != nil {
+		t.Fatalf("LoadSeed: %v", err)
+	}
+	for r := 1; r <= 24; r++ {
+		label := "eco"
+		if r <= 8 {
+			label = "force"
+		}
+		if _, err := db.Exec(
+			`INSERT INTO round_classifications (match_id, round, label, confidence, rule_version, explanation) VALUES (1, ?, ?, 1.0, 1, '')`,
+			r, label,
+		); err != nil {
+			t.Fatalf("insert round_classifications r=%d: %v", r, err)
+		}
+		class := "eco"
+		if r <= 6 {
+			class = "full"
+		}
+		for _, side := range []string{"ct", "t"} {
+			if _, err := db.Exec(
+				`INSERT INTO round_side_classes (match_id, round, side, class, why) VALUES (1, ?, ?, ?, '')`,
+				r, side, class,
+			); err != nil {
+				t.Fatalf("insert round_side_classes r=%d %s: %v", r, side, err)
+			}
+		}
+		for i := 1; i <= 8; i++ {
+			side := "ct"
+			if i > 4 {
+				side = "t"
+			}
+			if _, err := db.Exec(
+				`INSERT INTO round_player_sides (match_id, round, steam_id, side) VALUES (1, ?, ?, ?)`,
+				r, fmt.Sprintf("7656119800000000%d", i), side,
+			); err != nil {
+				t.Fatalf("insert round_player_sides r=%d p=%d: %v", r, i, err)
+			}
+		}
+	}
+	return st
+}
+
+// TestJoinedClassificationValues is the T2 value acceptance: over the
+// inserted analysis rows (classificationStore), every restatement counts
+// exactly its hand-computed number PER SUBJECT — force 8 / eco 16 /
+// pistol 0 and side full 6 / eco 18 / pistol 0, each with N = 24 (the
+// subject's player-rounds — the LEFT join keeps every primary row even
+// when the label is absent).
+func TestJoinedClassificationValues(t *testing.T) {
+	st := classificationStore(t)
+	const scope = "match:1"
+	cases := []struct {
+		name, expr string
+		want       float64
+	}{
+		{"round_label_force", "from player_round_stats, round_classifications: count(where label = 'force')", 8},
+		{"round_label_eco", "from player_round_stats, round_classifications: count(where label = 'eco')", 16},
+		{"pistol_rounds", "from player_round_stats, round_classifications: count(where label = 'pistol')", 0},
+		{"side_class_full", "from round_player_sides, round_side_classes: count(where class = 'full')", 6},
+		{"side_class_eco", "from round_player_sides, round_side_classes: count(where class = 'eco')", 18},
+		{"side_class_pistol", "from round_player_sides, round_side_classes: count(where class = 'pistol')", 0},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			pv, perr, err := RunPreview(st, Def{Expr: c.expr}, scope, 100)
+			if perr != nil || err != nil {
+				t.Fatalf("preview: %v %v (sql: %s)", perr, err, pv.SQL)
+			}
+			if len(pv.Rows) != 8 {
+				t.Fatalf("rows = %d, want 8 (one per subject) (%+v)", len(pv.Rows), pv.Rows)
+			}
+			var labels []string
+			for i, r := range pv.Rows {
+				if r.Value != c.want {
+					t.Errorf("row %d (%s) value = %v, want %v", i, r.Label, r.Value, c.want)
+				}
+				if r.N != 24 {
+					t.Errorf("row %d (%s) N = %d, want 24 (the subject's player-rounds)", i, r.Label, r.N)
+				}
+				labels = append(labels, r.Label)
+			}
+			if got := joinComma(labels); got != eightLabels {
+				t.Errorf("labels = %q, want %q", got, eightLabels)
+			}
+		})
 	}
 }

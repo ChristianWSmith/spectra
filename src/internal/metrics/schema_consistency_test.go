@@ -61,9 +61,12 @@ func TestSchemaConsistency(t *testing.T) {
 	}
 
 	for src, cols := range sourceColumns {
-		tableCols, ok := haveTable[src]
+		// A curated ALIAS source (whitelist.go sourceTable) resolves to
+		// its physical table before the existence check — "source" and
+		// "store table" are the same set only through tableFor.
+		tableCols, ok := haveTable[tableFor(src)]
 		if !ok {
-			t.Errorf("metrics source %q has no table in the store schema", src)
+			t.Errorf("metrics source %q resolves to no table in the store schema", src)
 			continue
 		}
 		for c := range cols {
@@ -84,7 +87,9 @@ func TestSchemaConsistency(t *testing.T) {
 	// of the column whitelist — a subject that is not a whitelisted
 	// column of its own source would compile SQL the grammar cannot
 	// validate — and every source carries a subject DECISION: exactly
-	// rounds and round_economy have none (round-grain / side-grained).
+	// rounds, round_economy, round_classifications and round_side_classes
+	// have none (round-grain / side-grained — a round's label and a
+	// round×side class are attributes OF the round, never of one player).
 	for src, col := range sourceSubject {
 		cols, ok := sourceColumns[src]
 		if !ok {
@@ -95,9 +100,13 @@ func TestSchemaConsistency(t *testing.T) {
 			t.Errorf("sourceSubject[%s] = %q is not a whitelisted column", src, col)
 		}
 	}
+	subjectLess := map[string]bool{
+		"rounds": true, "round_economy": true,
+		"round_classifications": true, "round_side_classes": true,
+	}
 	for _, src := range sources {
 		_, has := sourceSubject[src]
-		want := src != "rounds" && src != "round_economy"
+		want := !subjectLess[src]
 		if has != want {
 			t.Errorf("source %q subject presence = %v, want %v (round-grain sources have no subject)", src, has, want)
 		}
@@ -170,7 +179,9 @@ func TestSchemaConsistency(t *testing.T) {
 		notes[tb.Name] = tb.Note
 	}
 	for _, src := range sources {
-		if strings.TrimSpace(notes[src]) == "" {
+		// The console annotates PHYSICAL tables, so an alias source
+		// resolves through sourceTable to its table's note.
+		if strings.TrimSpace(notes[tableFor(src)]) == "" {
 			t.Errorf("metrics source %q has no note in the SQL console schema browser", src)
 		}
 	}
@@ -231,8 +242,10 @@ func TestJoinKeyDeclarationsMatchSchema(t *testing.T) {
 	}
 
 	// ---- (b) declared keys ⊆ real PK/UNIQUE sets ----
+	// An alias source's declared key is its PHYSICAL table's key
+	// (sourceTable resolves before the DDL read).
 	for _, src := range sources {
-		actual := tableKeySets(t, st, src)
+		actual := tableKeySets(t, st, tableFor(src))
 		decl := strings.Join(sortedStrings(sourceUniqueKeys[src]), ",")
 		if !actual[decl] {
 			t.Errorf("source %q declared key [%s] is not a PK/UNIQUE of the table (real keys: %v)", src, decl, actual)
