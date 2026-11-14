@@ -443,18 +443,35 @@ func TestTradeOppDistanceChangeRecomputesStoredCounts(t *testing.T) {
 		t.Fatalf("SaveExtracted: %v", err)
 	}
 
+	// The stored "trade opportunities missed" count the Combat column
+	// read through GetCombatStats until W2b (the column now reads the
+	// missed_trades builtin metric): one index seek over the rows
+	// analytics.Compute stores, never a threshold. QueryWrite (the write
+	// handle) because this fixture is :memory: and RunReadOnly needs a
+	// file-backed database; COALESCE so an absent row reads 0 exactly
+	// like the retired reader did.
 	missedRow := func(t *testing.T, sid string) int {
 		t.Helper()
-		rows, err := st.GetCombatStats(id)
+		res, err := st.QueryWrite(context.Background(),
+			`SELECT COALESCE(SUM(missed), 0) FROM match_trade_opps WHERE match_id = ? AND steam_id = ?`,
+			[]any{id, sid}, 1)
 		if err != nil {
-			t.Fatalf("GetCombatStats: %v", err)
+			t.Fatalf("stored missed(%s): %v", sid, err)
 		}
-		for _, r := range rows {
-			if r.SteamID == sid {
-				return r.TradeOppMissed
-			}
+		if len(res.Rows) != 1 {
+			t.Fatalf("stored missed(%s): %d rows, want 1", sid, len(res.Rows))
 		}
-		return 0
+		switch v := res.Rows[0][0].(type) {
+		case int64:
+			return int(v)
+		case float64:
+			return int(v)
+		case int:
+			return v
+		default:
+			t.Fatalf("stored missed(%s): unexpected value %T (%v)", sid, v, v)
+			return 0
+		}
 	}
 	// The library-wide trade-opportunity SUM the store's
 	// CountPlayerTradeOpportunities used to serve (removed in dogfooding

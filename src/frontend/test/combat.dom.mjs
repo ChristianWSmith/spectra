@@ -118,7 +118,7 @@ export const getPlayerRounds = () => wait(d().playerRounds || []);
 export const getRounds = () => wait(d().rounds || []);
 export const getScoreboard = () => wait(d().scoreboard || []);
 export const getMatch = () => wait(d().match || null);
-// The three converted stat slots read the canonical stored path (W2):
+// The five converted stat slots read the canonical stored path (W2/W2b):
 // defs → one values read → the compute-state read. The live progress
 // feeds are subscriptions, not reads — they stay plain no-ops here.
 export const listMetrics = () => wait(d().listMetrics || []);
@@ -208,13 +208,15 @@ const base = {
     { steamId: 'B', name: 'bob', side: 't' },
   ],
   stats: [],
-  // The three converted stat slots' canonical read (W2): the seeded
+  // The five converted stat slots' canonical read (W2/W2b): the seeded
   // catalog, fresh stored rows and fresh compute states, so every
   // section renders metric-backed cells; sections M/N script variants.
   listMetrics: [
     { id: 11, name: 'entry_rate', title: 'Entry%', shortName: 'Entry%', scope: 'match', format: 'percent', doc: 'Formula: entry_rate' },
     { id: 12, name: 'trade_rate_deaths', title: 'Trade%', shortName: 'Trade%', scope: 'match', format: 'percent', doc: 'Formula: trade_rate_deaths' },
     { id: 13, name: 'kast', title: 'KAST%', shortName: 'KAST%', scope: 'match', format: 'percent', doc: 'Formula: kast' },
+    { id: 14, name: 'untraded_deaths', title: 'Untraded deaths', shortName: '', scope: 'match', format: 'int', doc: 'Formula: untraded_deaths' },
+    { id: 15, name: 'missed_trades', title: 'Missed trades', shortName: '', scope: 'match', format: 'int', doc: 'Formula: missed_trades' },
   ],
   metricValues: [
     { metricId: 11, steamId: 'A', value: 0.5, n: 24 },
@@ -223,11 +225,17 @@ const base = {
     { metricId: 12, steamId: 'B', value: 0, n: 12 },
     { metricId: 13, steamId: 'A', value: 0.5, n: 24 },
     { metricId: 13, steamId: 'B', value: 0.75, n: 24 },
+    { metricId: 14, steamId: 'A', value: 1, n: 6 },
+    { metricId: 14, steamId: 'B', value: 0, n: 6 },
+    { metricId: 15, steamId: 'A', value: 2, n: 6 },
+    { metricId: 15, steamId: 'B', value: 0, n: 6 },
   ],
   metricStates: [
     { metricId: 11, state: 'fresh' },
     { metricId: 12, state: 'fresh' },
     { metricId: 13, state: 'fresh' },
+    { metricId: 14, state: 'fresh' },
+    { metricId: 15, state: 'fresh' },
   ],
   engagements: [
     { tick: 10640, round: 7, kind: 'opening', aSteam: 'A', aName: 'alice', bSteam: 'B', bName: 'bob', distance: 19.4, wonBy: 'ct' },
@@ -726,12 +734,12 @@ document.body.removeChild(rootI);
 const rootJ = await render({
   ...base,
   // The KAST cell is metric-value-backed now (W2): the row carries only
-  // the Go residual columns, and the 50% comes from the kast seed's
+  // the Go residual columns (W2b dropped untradedDeaths/tradeOppMissed —
+  // both are metric slots), and the 50% comes from the kast seed's
   // stored row (base.metricValues — alice 0.5 ×100).
   stats: [
     {
       steamId: 'A', name: 'alice', dmgNoKill: 120, dmgConvPct: 50, ffDamage: 0,
-      untradedDeaths: 0, tradeOppMissed: 1,
     },
   ],
   playerRounds: [
@@ -835,7 +843,7 @@ console.log('L. failed load: the error is dismissible in place, no false empty c
   check('the three panels render around the failure', panelsBefore === 3, String(panelsBefore));
   // A dead backend fails BOTH reads — the main load and the metric-slot
   // read — so two alerts surface, each dismissible in place (behind the
-  // metric alert the three fixed slots keep the honest dash).
+  // metric alert the five fixed slots keep the honest dash).
   const alerts = [...rootL.querySelectorAll('p.error[role="alert"]')];
   check(
     'both failures surface: the load alert and the metric-slot alert',
@@ -864,15 +872,19 @@ console.log('L. failed load: the error is dismissible in place, no false empty c
 }
 
 // ---------------------------------------------------------------------------
-// Section M: the three converted stat slots are metric-value-backed (W2):
-// same positions, the canonical stored read, the five-state presentation.
-console.log('M. Entry% / Trade% / KAST% are metric columns — value, dash, chip, default order');
+// Section M: the five converted stat slots are metric-value-backed
+// (W2/W2b): same positions, the canonical stored read, the five-state
+// presentation — including the two W2b slots (Untraded deaths,
+// Missed trades) that left GetCombatStats for their builtin rows.
+console.log('M. Entry% / Trade% / Untraded deaths / Missed trades / KAST% are metric columns — value, dash, chip, default order');
 {
   const rootM = await render({
     ...base,
+    // The Go residual columns only: untradedDeaths/tradeOppMissed are
+    // metric slots now, so the stub rows never carry them.
     stats: [
-      { steamId: 'A', name: 'alice', dmgNoKill: 120, dmgConvPct: 50, ffDamage: 0, untradedDeaths: 0, tradeOppMissed: 1 },
-      { steamId: 'B', name: 'bob', dmgNoKill: 40, dmgConvPct: 25, ffDamage: 5, untradedDeaths: 1, tradeOppMissed: 0 },
+      { steamId: 'A', name: 'alice', dmgNoKill: 120, dmgConvPct: 50, ffDamage: 0 },
+      { steamId: 'B', name: 'bob', dmgNoKill: 40, dmgConvPct: 25, ffDamage: 5 },
     ],
     metricValues: [
       { metricId: 11, steamId: 'A', value: 0.5, n: 24 }, // alice Entry% = 50%
@@ -880,17 +892,25 @@ console.log('M. Entry% / Trade% / KAST% are metric columns — value, dash, chip
       { metricId: 12, steamId: 'B', value: 2.5, n: 12 }, // bob Trade% = 250%
       { metricId: 13, steamId: 'A', value: 0.5, n: 24 },
       { metricId: 13, steamId: 'B', value: 0.75, n: 24 },
+      // The W2b slots carry the numbers the Go columns showed: alice 1
+      // untraded / 2 missed, bob 0 missed; bob has NO untraded_deaths
+      // row → the honest dash (the unit IS covered).
+      { metricId: 14, steamId: 'A', value: 1, n: 6 },
+      { metricId: 15, steamId: 'A', value: 2, n: 6 },
+      { metricId: 15, steamId: 'B', value: 0, n: 6 },
     ],
     metricStates: [
       { metricId: 11, state: 'fresh' },
       { metricId: 12, state: 'fresh' },
       { metricId: 13, state: 'fresh' },
+      { metricId: 14, state: 'fresh' },
+      { metricId: 15, state: 'fresh' },
     ],
   });
   const tableM = sections(rootM, 'Combat stats')[0]?.querySelector('table');
   check('stats table rendered', !!tableM);
   check(
-    'the three converted headers keep their EXACT positions',
+    'the five converted headers keep their EXACT positions',
     JSON.stringify(headerTexts(tableM)) ===
       JSON.stringify(['Player', 'Damage (no kill)', 'Kill conversion %', 'FF', 'Entry%', 'Trade%', 'Untraded deaths', 'Missed trades inferred', 'KAST%']),
     JSON.stringify(headerTexts(tableM)),
@@ -915,18 +935,29 @@ console.log('M. Entry% / Trade% / KAST% are metric columns — value, dash, chip
     aliceCells[8] === '50%' && bobCells[8] === '75%',
     `${aliceCells[8]} / ${bobCells[8]}`,
   );
+  // The two W2b slots: the stored counts as metric values (1 / 2), a
+  // stored 0 rendering as 0 (never a fabricated dash), and bob's missing
+  // untraded_deaths row as the honest dash.
+  check(
+    'Untraded deaths / Missed trades render their metric values (value, stored 0, dash where no row)',
+    aliceCells[6] === '1' && bobCells[6] === '—' &&
+      aliceCells[7] === '2' && bobCells[7] === '0',
+    `alice=${aliceCells[6]}/${aliceCells[7]} bob=${bobCells[6]}/${bobCells[7]}`,
+  );
 
   // The behind state renders the CHIP, never a number (five-state).
   const rootM2 = await render({
     ...base,
     stats: [
-      { steamId: 'A', name: 'alice', dmgNoKill: 1, dmgConvPct: 0, ffDamage: 0, untradedDeaths: 0, tradeOppMissed: 0 },
+      { steamId: 'A', name: 'alice', dmgNoKill: 1, dmgConvPct: 0, ffDamage: 0 },
     ],
     metricValues: [],
     metricStates: [
       { metricId: 11, state: 'behind' },
       { metricId: 12, state: 'behind' },
       { metricId: 13, state: 'behind' },
+      { metricId: 14, state: 'behind' },
+      { metricId: 15, state: 'behind' },
     ],
   });
   const m2Row = rows(sections(rootM2, 'Combat stats')[0]?.querySelector('table')).find((r) =>
@@ -934,12 +965,14 @@ console.log('M. Entry% / Trade% / KAST% are metric columns — value, dash, chip
   );
   const behindCells = cellsOf(m2Row);
   check(
-    'behind renders the idle chip with the design copy in all three slots, never a number',
+    'behind renders the idle chip with the design copy in all five slots, never a number',
     behindCells[4].includes('behind') &&
       !/\d/.test(behindCells[4]) &&
       behindCells[5].includes('behind') &&
+      behindCells[6].includes('behind') &&
+      behindCells[7].includes('behind') &&
       behindCells[8].includes('behind'),
-    JSON.stringify([behindCells[4], behindCells[5], behindCells[8]]),
+    JSON.stringify([behindCells[4], behindCells[5], behindCells[6], behindCells[7], behindCells[8]]),
   );
 }
 

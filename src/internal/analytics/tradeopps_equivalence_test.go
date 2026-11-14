@@ -334,25 +334,25 @@ func TestTradeOppStoredMatchesLegacyQuery(t *testing.T) {
 				t.Errorf("unknown player = %d, want 0 (no rows → 0)", n)
 			}
 
-			// --- missed: stored GetCombatStats == legacy oracle, per
-			// human base row (bots never reach the base rows — decision
-			// 5 — while the oracle may list them; assert the fixture's
-			// bot divergence explicitly).
+			// --- missed: stored match_trade_opps == legacy oracle, per
+			// human ref (W2b: GetCombatStats no longer carries the field —
+			// the Combat column reads this stored count through the
+			// missed_trades builtin metric). The humans-only write is
+			// asserted for the bot exactly like the opps side above: it
+			// earns counts in the oracle and stores none.
 			want := oracleMissed(tc.distance)
-			got, err := st.GetCombatStats(id)
-			if err != nil {
-				t.Fatalf("GetCombatStats: %v", err)
-			}
-			byID := map[string]models.CombatStat{}
-			for _, r := range got {
-				byID[r.SteamID] = r
-				if want[r.SteamID] != r.TradeOppMissed {
-					t.Errorf("player %s missed: stored = %d, legacy oracle = %d (must be equal)",
-						r.SteamID, r.TradeOppMissed, want[r.SteamID])
+			for _, p := range refs {
+				got := storedMissed(t, st, p.SteamID)
+				if p.IsBot {
+					if got != 0 {
+						t.Errorf("bot stored missed = %d, want 0 (match_trade_opps is humans-only)", got)
+					}
+					continue
 				}
-			}
-			if _, ok := byID[tradeOppBotSteamID]; ok {
-				t.Error("bot reached the GetCombatStats base rows (decision 5 violated)")
+				if want[p.SteamID] != got {
+					t.Errorf("player %s missed: stored = %d, legacy oracle = %d (must be equal)",
+						p.SteamID, got, want[p.SteamID])
+				}
 			}
 			if tc.distance >= 150 && want[tradeOppBotSteamID] == 0 {
 				t.Fatalf("fixture weak: the bot's untraded in-range death never reaches the oracle at %du", tc.distance)
@@ -365,7 +365,7 @@ func TestTradeOppStoredMatchesLegacyQuery(t *testing.T) {
 			if got := storedOpps(t, st, "100"); got != tc.aliceOpps {
 				t.Errorf("alice opps = %d, want %d (hand-computed)", got, tc.aliceOpps)
 			}
-			if got := byID["400"].TradeOppMissed; got != tc.daveMissed {
+			if got := storedMissed(t, st, "400"); got != tc.daveMissed {
 				t.Errorf("dave missed = %d, want %d (500u death vs the %du radius)", got, tc.daveMissed, tc.distance)
 			}
 		})
